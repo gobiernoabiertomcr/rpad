@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>(Maqueta) Mi espacio - RPAD</title>
+    <meta name="description" content="Tus licencias, tus horas extras, tu agenda y lo que te queda">
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- CSS Global -->
+    <link rel="stylesheet" href="css/main.css?v=20261109">
+    <link rel="stylesheet" href="css/maqueta.css?v=3">
+    <style>
+        /* Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 8): los tokens y las piezas del Seguimiento y de Proyectos, con
+           los tres fondos que faltaban (ámbar, gris y violeta) */
+        :root {
+            --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA;
+            --sg-borde-control: #76879F; --sg-cielo: #DCEEF5;
+            --sg-sol: #FCE8A8; --sg-sol-borde: #E3B63C; --sg-ambar: #7A5200; --sg-ambar-fondo: #FFF4D6;
+            --sg-verde: #2E6B4C; --sg-verde-fondo: #DDF1E6;
+            --sg-azul: #24507A; --sg-azul-fondo: #DCEAF7;
+            --sg-rojo: #8A3434; --sg-rojo-fondo: #F8E1E1;
+            --sg-violeta: #5B4691; --sg-violeta-fondo: #ECE7F6;
+            --sg-gris: #8A97A8; --sg-gris-fondo: #EEF1F5;
+        }
+
+        /* Lo oculto con el atributo hidden no vuelve por una regla de display más específica */
+        [hidden] { display: none !important; }
+        .visualmente-oculto { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+        .main-content { min-width: 0; background: var(--gray-100); }
+        .me-pagina { width: 100%; max-width: 1180px; margin: 0 auto; }
+        .me-bajada { margin: -14px 0 20px; color: var(--sg-suave); max-width: 76ch; line-height: 1.5; }
+        .me-acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+        /* Botones */
+        .sg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 999px; font: inherit; font-weight: 600; font-size: 0.9rem; border: 1px solid transparent; white-space: nowrap; cursor: pointer; text-decoration: none; }
+        .sg-btn svg { flex: none; }
+        .sg-btn-tinta { background: var(--sg-tinta); color: #fff; }
+        .sg-btn-borde { background: #fff; color: var(--sg-tinta); border-color: var(--sg-borde-control); }
+        .sg-btn-chico { height: 34px; padding: 0 14px; font-size: 0.86rem; }
+        .sg-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+        /* Pestañas (las de Proyectos), con la marca ámbar del Resumen cuando algo vence pronto */
+        .me-pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--sg-linea); margin-bottom: 18px; overflow-x: auto; scrollbar-width: none; }
+        .me-pestana { padding: 10px 18px; background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; font: inherit; font-weight: 600; color: var(--sg-suave); cursor: pointer; white-space: nowrap; }
+        .me-pestana:hover { color: var(--sg-tinta); }
+        .me-pestana[aria-selected="true"] { color: var(--sg-tinta); border-bottom-color: var(--sg-tinta); }
+        .me-pestana .me-marca { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #C98A00; margin-left: 6px; vertical-align: middle; }
+
+        /* Estados de una pestaña: cargando y sin JavaScript */
+        .me-estado { margin: 0; background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 28px 24px; color: var(--sg-suave); }
+
+        /* Tarjetas */
+        .me-tarjeta { background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 20px 24px; }
+        .me-tarjeta + .me-tarjeta { margin-top: 16px; }
+        .me-tarjeta h2, .me-tarjeta h3 { margin: 0; font-family: var(--f-titulo); font-weight: 650; letter-spacing: -0.01em; font-size: 1.12rem; color: var(--sg-tinta); }
+        .me-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 14px; }
+        .me-cabeza > span, .me-nota { color: var(--sg-suave); font-size: 0.88rem; }
+        .me-nota { margin: 12px 0 0; line-height: 1.5; }
+        .me-vacio { margin: 4px 0 0; color: var(--sg-suave); }
+
+        /* Avisos */
+        .me-aviso { display: flex; gap: 12px 16px; align-items: center; flex-wrap: wrap; padding: 12px 16px; border-radius: 12px; margin: 0 0 16px; font-size: 0.92rem; line-height: 1.45; border: 1px solid; }
+        .me-aviso p { margin: 0; }
+        .me-aviso-gris { background: var(--sg-sutil); border-color: var(--sg-linea); color: var(--sg-texto); }
+        .me-aviso-azul { background: #EEF5FC; border-color: #C9DCEF; color: var(--sg-azul); }
+        .me-aviso-error { background: #FBEEEE; border-color: #EFCACA; color: var(--sg-rojo); }
+
+        /* Insignias */
+        .me-insignia { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+        .me-insignia.azul { background: var(--sg-azul-fondo); color: var(--sg-azul); }
+        .me-insignia.verde { background: var(--sg-verde-fondo); color: var(--sg-verde); }
+        .me-insignia.ambar { background: var(--sg-ambar-fondo); color: var(--sg-ambar); }
+        .me-insignia.violeta { background: var(--sg-violeta-fondo); color: var(--sg-violeta); }
+        .me-insignia.gris { background: var(--sg-gris-fondo); color: var(--sg-suave); }
+        .me-insignia.rojo { background: var(--sg-rojo-fondo); color: var(--sg-rojo); }
+        .me-insignia.borde { background: #fff; border: 1px solid var(--sg-linea); color: var(--sg-suave); font-weight: 500; }
+
+        /* Chips de filtro, con su cantidad */
+        .sg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+        .sg-chip { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--sg-borde-control); background: #fff; font: inherit; font-size: 0.86rem; font-weight: 500; color: var(--sg-texto); cursor: pointer; white-space: nowrap; }
+        .sg-chip[aria-pressed="true"] { background: var(--sg-tinta); border-color: var(--sg-tinta); color: #fff; }
+        .sg-chip b { font-variant-numeric: tabular-nums; }
+
+        /* El selector del año */
+        .me-segmento { display: inline-flex; border: 1px solid var(--sg-borde-control); border-radius: 999px; padding: 3px; background: #fff; }
+        .me-segmento button { white-space: nowrap; height: 30px; padding: 0 14px; border-radius: 999px; border: 0; background: none; font: inherit; font-size: 0.86rem; font-weight: 600; color: var(--sg-suave); cursor: pointer; font-variant-numeric: tabular-nums; }
+        .me-segmento button[aria-pressed="true"] { background: var(--sg-tinta); color: #fff; }
+
+        /* Listas (filas): la fecha, el cuerpo y «Editar». En gris, lo que no cuenta */
+        .me-lista { list-style: none; margin: 0; padding: 0; }
+        .me-fila { display: grid; grid-template-columns: 190px minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; padding: 12px 0; border-top: 1px solid var(--sg-linea); }
+        .me-fila:first-child { border-top: 0; padding-top: 2px; }
+        .me-fila.me-fila-dos { grid-template-columns: 190px minmax(0, 1fr); }
+        .me-fila-fecha { font-weight: 600; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+        .me-fila-fecha small { display: block; font-weight: 400; color: var(--sg-suave); font-size: 0.82rem; }
+        /* Una nota o un motivo largo sin espacios se corta: no ensancha la fila */
+        .me-fila-cuerpo { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; min-width: 0; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .me-fila-cuerpo .me-detalle { color: var(--sg-suave); font-size: 0.88rem; }
+        .me-fila-cuerpo .me-detalle-aviso { color: var(--sg-ambar); font-weight: 600; }
+        .me-fila-cuerpo .me-fila-nota { font-style: italic; }
+        .me-fila.tenue .me-fila-fecha, .me-fila.tenue .me-fila-cuerpo { color: var(--sg-suave); }
+
+        /* Tablas de horas extras: cada mes es un botón que elige el día por día */
+        .me-tabla-marco { overflow-x: auto; }
+        .me-tabla { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+        .me-tabla th { text-align: left; font-size: 0.8rem; font-weight: 600; color: var(--sg-suave); padding: 0 12px 10px 0; border-bottom: 1px solid var(--sg-linea); white-space: nowrap; }
+        .me-tabla td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--sg-linea); vertical-align: top; color: var(--sg-texto); }
+        .me-tabla tr:last-child td { border-bottom: 0; }
+        .me-tabla td small { display: block; color: var(--sg-suave); font-size: 0.82rem; margin-top: 2px; }
+        .me-tabla .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .me-tabla .me-insignia { white-space: normal; }
+        .me-tabla tr.tenue td { color: var(--sg-suave); }
+        .me-mes-boton { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; white-space: nowrap; }
+        .me-mes-boton[aria-pressed="true"] { text-decoration: none; border-bottom: 3px solid var(--sg-tinta); }
+        .me-tabla tr.tenue .me-mes-boton { color: var(--sg-suave); }
+        .me-uso { display: flex; gap: 8px 16px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+        .me-uso .me-nota { margin: 0; }
+
+        /* El Resumen «Niveles» (maqueta 1, con sus tokens y sus clases pasados a --sg-* y .me-*): la modalidad y el año, «Vence
+           pronto», los faltantes, «Lo que te queda» (los tanques y las pastillas) y, al costado, «Hoy y mañana». El sol marca solo lo
+           que vence */
+        .me-contexto { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; margin: 0 0 14px; color: var(--sg-suave); font-size: 0.92rem; }
+        .me-contexto b { color: var(--sg-texto); }
+        .me-titulo { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.02em; color: var(--sg-tinta); }
+        .me-subtitulo { margin: 20px 0 8px; font-family: var(--f-titulo); font-weight: 700; font-size: 0.98rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+        .me-aviso-ambar { background: var(--sg-ambar-fondo); border-color: #F0D78C; color: var(--sg-ambar); }
+        .me-faltantes { margin: 0; padding-left: 18px; }
+
+        /* Vence pronto: la fecha en un bloque amarillo, qué vence y el botón que lo resuelve */
+        .me-vence { background: #fff; border: 1px solid var(--sg-linea); border-radius: 20px; padding: 18px 24px 8px; margin: 0 0 20px; }
+        .me-vence-lista { list-style: none; margin: 10px 0 0; padding: 0; }
+        .me-vence-item { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 12px 0; border-top: 1px solid var(--sg-linea); }
+        .me-vence-item:first-child { border-top: 0; }
+        .me-fecha { width: 58px; height: 62px; border-radius: 14px; background: var(--sg-sol); border: 1px solid var(--sg-sol-borde); display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--sg-ambar); font-size: 0.8rem; font-weight: 600; line-height: 1.1; }
+        .me-fecha b { font-family: var(--f-titulo); font-size: 1.65rem; font-weight: 750; color: var(--sg-tinta); letter-spacing: -0.03em; }
+        .me-vence-texto { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
+        .me-vence-cuando { font-size: 0.8rem; font-weight: 600; color: var(--sg-ambar); }
+        .me-vence-texto b { font-size: 1.02rem; color: var(--sg-texto); }
+        .me-vence-texto > span:last-child { font-size: 0.88rem; color: var(--sg-suave); }
+
+        /* La grilla: «Lo que te queda» y, al costado, «Hoy y mañana» (en una pantalla angosta, debajo). Sin «Hoy y mañana» (sin
+           nadie que no esté y sin próximo feriado), el otro ocupa todo el ancho */
+        .me-resumen-grilla { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 280px); gap: 20px; align-items: start; }
+        .me-resumen-grilla > :only-child { grid-column: 1 / -1; }
+        .me-panel { background: #fff; border: 1px solid var(--sg-linea); border-radius: 20px; padding: 22px 28px 20px; min-width: 0; }
+        .me-panel-cabeza { display: flex; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; margin-bottom: 16px; }
+        .me-panel-cabeza .me-titulo { margin-right: auto; }
+        .me-panel-al, .me-panel-cabeza .sg-link { font-size: 0.88rem; }
+        .me-panel-al { color: var(--sg-suave); }
+
+        /* Los tanques apoyan sobre la misma línea: el número arriba, el tanque y el nombre con su total debajo. Cada uno es un link a
+           su pestaña (con el foco visible de la página) */
+        .me-niveles-fila { display: flex; gap: 20px 26px; align-items: flex-end; flex-wrap: wrap; }
+        .me-nivel-vac { display: flex; gap: 14px; align-items: flex-end; min-width: 0; }
+        .me-nivel-vac .me-leyenda-vac { width: 184px; padding-bottom: 46px; }
+        .me-niveles-resto { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+        .me-nivel { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 100px; padding: 8px 4px 6px; border-radius: 14px; color: inherit; text-decoration: none; }
+        .me-nivel-vac > .me-nivel { min-width: 104px; }
+        .me-nivel:hover { background: var(--sg-sutil); }
+        .me-nivel-num { display: flex; align-items: baseline; gap: 5px; color: var(--sg-suave); font-size: 0.84rem; }
+        .me-nivel-num b { font-family: var(--f-titulo); font-size: 2.9rem; font-weight: 750; letter-spacing: -0.04em; color: var(--sg-tinta); line-height: 1; font-variant-numeric: tabular-nums; }
+        .me-nivel-num.chico { flex-direction: column; align-items: center; gap: 0; }
+        .me-nivel-num.chico b { font-size: 1.9rem; }
+        .me-nivel-pie { display: flex; flex-direction: column; align-items: center; text-align: center; line-height: 1.3; }
+        .me-nivel-pie b { font-size: 0.86rem; color: var(--sg-texto); font-weight: 600; white-space: nowrap; }
+        .me-nivel-pie span { font-size: 0.76rem; color: var(--sg-suave); white-space: nowrap; }
+        .me-nivel.vence .me-nivel-num b, .me-nivel.vence .me-nivel-pie b { color: var(--sg-ambar); }
+        .me-tanque { display: block; flex: none; }
+        .me-tanque .t-fondo { fill: #F1F5F9; }
+        .me-tanque .t-borde { fill: none; stroke: #C6D2E0; stroke-width: 2; }
+
+        /* Las capas, en el tanque y en su lista: la licencia que vence en el sol, las demás en tinta y en azul medio, lo cargado a
+           futuro rayado (el patrón del SVG) y lo que todavía no se habilita, punteado */
+        .me-tanque .c-tinta { fill: var(--sg-tinta); }
+        .me-tanque .c-medio { fill: #4C7AB0; }
+        .me-tanque .c-vence { fill: var(--sg-sol-borde); }
+        .me-tanque .c-por-habilitar { fill: #fff; stroke: #9AA8BA; stroke-width: 2; stroke-dasharray: 4 3; }
+        .me-muestra { display: inline-block; width: 14px; height: 14px; border-radius: 4px; box-sizing: border-box; }
+        .me-muestra.c-tinta { background: var(--sg-tinta); }
+        .me-muestra.c-medio { background: #4C7AB0; }
+        .me-muestra.c-vence { background: var(--sg-sol-borde); }
+        .me-muestra.c-cargadas { background: repeating-linear-gradient(135deg, var(--sg-tinta) 0 2px, #fff 2px 5px); box-shadow: inset 0 0 0 1.5px var(--sg-tinta); }
+        .me-muestra.c-por-habilitar { background: #fff; border: 2px dashed #9AA8BA; }
+        .me-leyenda-vac { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+        .me-leyenda-vac li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 0.8rem; color: var(--sg-suave); line-height: 1.3; overflow-wrap: anywhere; }
+        .me-leyenda-vac li b { display: block; font-size: 0.9rem; color: var(--sg-texto); font-weight: 600; }
+        .me-leyenda-vac .me-n { font-family: var(--f-titulo); font-size: 1.25rem; font-weight: 700; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
+        .me-leyenda-vac li.vence, .me-leyenda-vac li.vence b { color: var(--sg-ambar); }
+        .me-leyenda-vac li.tenue b, .me-leyenda-vac li.tenue .me-n { color: var(--sg-suave); }
+
+        /* El único movimiento de la página: al abrir, los tanques se llenan desde abajo una sola vez (mi-espacio.js les saca
+           data-llenar dos cuadros después de que se ven), uno detrás del otro */
+        .me-tanque-nivel { transition: transform 0.85s cubic-bezier(0.2, 0.75, 0.25, 1); }
+        [data-llenar] .me-tanque-nivel { transform: translateY(var(--alto)); }
+        .me-niveles-resto .me-nivel:nth-child(1) .me-tanque-nivel { transition-delay: 0.12s; }
+        .me-niveles-resto .me-nivel:nth-child(2) .me-tanque-nivel { transition-delay: 0.18s; }
+        .me-niveles-resto .me-nivel:nth-child(3) .me-tanque-nivel { transition-delay: 0.24s; }
+        .me-niveles-resto .me-nivel:nth-child(4) .me-tanque-nivel { transition-delay: 0.3s; }
+        /* Quietos y llenos desde el principio (sin el parpadeo de los dos cuadros vacíos) */
+        @media (prefers-reduced-motion: reduce) { .me-tanque-nivel, [data-llenar] .me-tanque-nivel { transition: none; transform: none; } }
+
+        /* Debajo de los tanques, los francos o las horas a favor mes por mes: el que vence en el sol, el que todavía suma punteado y lo
+           no utilizado previamente en gris */
+        .me-niveles-pie { margin-top: 18px; padding-top: 4px; border-top: 1px solid var(--sg-linea); }
+        .me-pastillas { list-style: none; margin: 0; padding: 0; display: flex; gap: 10px; flex-wrap: wrap; }
+        .me-pastilla { display: flex; align-items: center; gap: 12px; padding: 8px 16px 8px 12px; border-radius: 14px; border: 1px solid var(--sg-linea); background: #fff; }
+        .me-pastilla > b { font-family: var(--f-titulo); font-size: 1.6rem; font-weight: 750; color: var(--sg-tinta); line-height: 1; min-width: 26px; text-align: center; }
+        .me-pastilla span { font-size: 0.78rem; color: var(--sg-suave); line-height: 1.3; }
+        .me-pastilla span b { display: block; font-size: 0.88rem; color: var(--sg-texto); }
+        .me-pastilla.vence { background: var(--sg-sol); border-color: var(--sg-sol-borde); }
+        .me-pastilla.vence span, .me-pastilla.vence span b { color: var(--sg-ambar); }
+        .me-pastilla.pendiente { border-style: dashed; border-color: #9AA8BA; }
+        .me-pastilla.pendiente > b { color: var(--sg-suave); }
+        .me-pastilla.previo { background: var(--sg-gris-fondo); border-color: #D3DBE5; }
+        .me-pastilla.previo > b, .me-pastilla.previo span b { color: var(--sg-suave); }
+        .me-previos { margin: 12px 0 0; font-size: 0.82rem; color: var(--sg-suave); max-width: 75ch; }
+
+        /* Hoy y mañana: quién no está y el próximo feriado */
+        .me-hoy { background: var(--sg-sutil); border: 1px solid var(--sg-linea); border-radius: 20px; padding: 20px 22px; min-width: 0; }
+        .me-hoy .me-vacio { font-size: 0.9rem; }
+        .me-ausentes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+        .me-ausente { display: flex; gap: 10px; align-items: center; min-width: 0; overflow-wrap: anywhere; }
+        .me-ausente b { display: block; font-size: 0.92rem; font-weight: 600; color: var(--sg-texto); line-height: 1.3; }
+        .me-ausente small { display: block; font-size: 0.8rem; color: var(--sg-suave); }
+        .me-inicial { width: 34px; height: 34px; border-radius: 50%; background: #fff; border: 1px solid var(--sg-linea); display: inline-flex; align-items: center; justify-content: center; font-size: 0.74rem; font-weight: 700; color: var(--sg-suave); flex: none; }
+        .me-feriado { margin: 0; font-size: 0.9rem; color: var(--sg-texto); display: flex; flex-direction: column; }
+        .me-feriado b { font-weight: 600; }
+        /* Hoy y mañana, desde la agenda: los eventos de hoy y de mañana (la hora en tinta; la de un compartido, en violeta) y «Ver
+           la agenda» */
+        .me-eventos-hoy { list-style: none; margin: 12px 0 10px; padding: 0; }
+        .me-eventos-hoy li { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px; padding: 9px 0; border-top: 1px solid var(--sg-linea); overflow-wrap: anywhere; }
+        .me-eventos-hoy li:first-child { border-top: 0; padding-top: 0; }
+        .me-evento-hora { font-family: var(--f-titulo); font-weight: 700; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
+        .me-eventos-hoy li.compartido .me-evento-hora { color: var(--sg-violeta); }
+        .me-eventos-hoy b { display: block; font-size: 0.92rem; font-weight: 600; color: var(--sg-texto); line-height: 1.3; }
+        .me-eventos-hoy small { display: block; font-size: 0.8rem; color: var(--sg-suave); }
+        .me-hoy > .me-vacio { margin: 12px 0 10px; }
+        .me-hoy > .sg-link { font-size: 0.9rem; }
+
+        /* La agenda (spec 2026-10-26-mi-espacio-agenda, 6; maqueta 1, #agenda): el mes y, al costado, los próximos. El mes es una tabla
+           de lunes a domingo (la cabeza dice cada día), con hasta 3 cosas por día y «y N más». Los colores: lo tuyo en tinta, lo
+           compartido en violeta, tus licencias y francos en verde, los feriados en el sol y los compañeros en gris */
+        .me-mes-y-proximos { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+        .me-mes-y-proximos > .me-tarjeta + .me-tarjeta { margin-top: 0; }
+        .me-mes-cabeza { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .me-tarjeta .me-mes-cabeza h2 { margin: 0 8px; min-width: 150px; text-align: center; }
+        .me-mes-cabeza #ag-nuevo-evento { margin-left: auto; }
+        .me-flecha { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 1px solid var(--sg-borde-control); background: #fff; color: var(--sg-tinta); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+        .me-mes { width: 100%; table-layout: fixed; border-collapse: collapse; }
+        .me-mes th { padding: 6px 8px; border: 1px solid var(--sg-linea); background: var(--sg-sutil); font-size: 0.76rem; font-weight: 600; color: var(--sg-suave); text-align: left; }
+        .me-celda { height: 98px; padding: 4px 4px 6px; border: 1px solid var(--sg-linea); vertical-align: top; background: #fff; }
+        .me-celda-cuerpo, .me-resto { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .me-celda.otro-mes { background: var(--sg-sutil); }
+        .me-celda.otro-mes .me-num { color: var(--sg-gris); }
+        .me-celda.finde { background: #FAFBFC; }
+        .me-celda.feriado { background: #FFFBEB; }
+        .me-num { font-size: 0.8rem; font-weight: 600; color: var(--sg-texto); padding: 2px 4px; align-self: flex-start; font-variant-numeric: tabular-nums; }
+        .me-celda.hoy .me-num { background: var(--sg-tinta); color: #fff; border-radius: 999px; min-width: 22px; text-align: center; }
+        .me-ev { display: block; max-width: 100%; margin: 0; font: inherit; font-size: 0.74rem; line-height: 1.25; padding: 2px 6px; border: 0; border-left: 3px solid; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+        button.me-ev { width: 100%; cursor: pointer; }
+        .me-ev.propio, .me-leyenda .propio { background: var(--sg-azul-fondo); border-color: var(--sg-tinta); color: var(--sg-tinta); }
+        .me-ev.compartido, .me-leyenda .compartido { background: var(--sg-violeta-fondo); border-color: var(--sg-violeta); color: var(--sg-violeta); }
+        .me-ev.licencia, .me-leyenda .licencia { background: var(--sg-verde-fondo); border-color: var(--sg-verde); color: var(--sg-verde); }
+        .me-ev.feriado, .me-leyenda .feriado { background: var(--sg-sol); border-color: #C98A00; color: var(--sg-ambar); }
+        .me-ev.ausente, .me-leyenda .ausente { background: var(--sg-gris-fondo); border-color: var(--sg-gris); color: var(--sg-suave); }
+        .me-mas { align-self: flex-start; background: none; border: 0; padding: 0 0 0 6px; font: inherit; font-size: 0.72rem; color: var(--sg-suave); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+        .me-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; list-style: none; margin: 12px 0 0; padding: 0; font-size: 0.82rem; color: var(--sg-suave); }
+        .me-leyenda li { display: inline-flex; align-items: center; gap: 6px; }
+        .me-leyenda i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border-left: 3px solid; }
+        /* Los próximos: un grupo por título (Hoy, Mañana, Esta semana y Más adelante) y, en cada cosa, la hora, el título y el
+           detalle (de un evento, quién está y su aviso) */
+        .me-proximos h3 { margin: 14px 0 6px; font-family: inherit; font-size: 0.78rem; font-weight: 700; letter-spacing: 0; color: var(--sg-suave); }
+        .me-proximos h3:first-child { margin-top: 0; }
+        .me-prox-lista { list-style: none; margin: 0; padding: 0; }
+        .me-prox { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 2px 10px; padding: 8px 0; border-top: 1px solid var(--sg-linea); overflow-wrap: anywhere; }
+        .me-prox:first-child { border-top: 0; }
+        .me-prox-hora { font-weight: 600; font-size: 0.86rem; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+        .me-prox-titulo { font-size: 0.9rem; font-weight: 600; color: var(--sg-texto); }
+        button.me-prox-titulo { background: none; border: 0; padding: 0; font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--sg-texto); text-align: left; cursor: pointer; }
+        .me-prox-detalle { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 0.8rem; color: var(--sg-suave); }
+
+        /* Los formularios (maqueta 2): los modales de administración, con el lenguaje del Seguimiento y de Proyectos. Un clic en el
+           velo no los cierra: son formularios largos. El cuerpo se desplaza y el pie (los botones) queda siempre a la vista */
+        .modal.me-modal { max-width: 660px; border-radius: 18px; }
+        .modal.me-modal-chico { max-width: 480px; }
+        .me-modal .modal-header { padding: 18px 24px; }
+        .me-modal .modal-title { margin: 0; min-width: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.25rem; letter-spacing: -0.01em; color: var(--sg-tinta); overflow-wrap: anywhere; }
+        .me-modal .modal-close { color: var(--sg-suave); }
+        .me-modal .modal-body { padding: 18px 24px 4px; }
+        .me-modal .modal-footer { background: #fff; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; }
+        .me-modal .modal-footer .botones { display: flex; gap: 10px; margin-left: auto; }
+        .me-modal .form-group { margin-bottom: 16px; min-width: 0; }
+        .me-modal .form-label { font-weight: 600; color: var(--sg-texto); }
+        .me-modal .form-input, .me-modal .form-select { height: 44px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; color: var(--sg-texto); }
+        .me-modal .form-hint { color: var(--sg-suave); font-size: 0.84rem; line-height: 1.4; }
+        .me-modal .form-error { color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; margin: 4px 0 0; overflow-wrap: anywhere; }
+        .me-modal .form-textarea { min-height: 76px; padding: 10px 12px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; color: var(--sg-texto); line-height: 1.45; }
+        .me-modal .form-input[aria-invalid="true"], .me-modal .form-select[aria-invalid="true"], .me-modal .form-textarea[aria-invalid="true"], .me-opcion:has(input[aria-invalid="true"]), .me-numero input[aria-invalid="true"] + span { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+        .me-modal-error { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; border: 1px solid #EFCACA; background: #FBEEEE; color: var(--sg-rojo); font-weight: 600; font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .me-modal-de { margin: 0 0 16px; color: var(--sg-texto); font-size: 0.92rem; }
+        .me-opcional { font-weight: 400; color: var(--sg-suave); }
+        .me-fila-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0 14px; }
+        .me-grupo { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+        .me-grupo legend { padding: 0; margin-bottom: 8px; }
+        .me-grupo .form-hint { margin: 8px 0 0; }
+        /* Las opciones grandes (los tipos y los estudios): un radio con su nombre y, debajo, lo que queda */
+        .me-opciones { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+        .me-opcion { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--sg-borde-control); border-radius: 12px; background: #fff; cursor: pointer; color: var(--sg-texto); }
+        .me-opcion:hover { background: var(--sg-sutil); }
+        .me-opcion input { width: 17px; height: 17px; margin: 2px 0 0; accent-color: var(--sg-tinta); flex: none; }
+        .me-opcion > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+        .me-opcion b { font-size: 0.9rem; }
+        .me-opcion small { font-size: 0.78rem; color: var(--sg-suave); line-height: 1.3; }
+        .me-opcion:has(input:checked) { border-color: var(--sg-tinta); background: #F3F7FC; box-shadow: inset 0 0 0 1px var(--sg-tinta); }
+        /* Los días de vacaciones: radios con forma de número */
+        .me-numeros { display: flex; gap: 6px; flex-wrap: wrap; }
+        .me-numero { position: relative; display: inline-flex; }
+        .me-numero input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+        .me-numero span { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--sg-borde-control); background: #fff; font-weight: 600; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+        .me-numero input:checked + span { background: var(--sg-tinta); border-color: var(--sg-tinta); color: #fff; }
+        .me-numero input:focus-visible + span { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        /* El cálculo del servidor, el aviso del paso a Configuración y el de los días sin auditor */
+        .me-recuadro { margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .me-recuadro p { margin: 0; }
+        .me-recuadro p + p { margin-top: 6px; }
+        .me-calculo { background: var(--sg-azul-fondo); color: var(--sg-azul); }
+        .me-recuadro.azul { background: #EEF5FC; border: 1px solid #C9DCEF; color: var(--sg-azul); }
+        .me-recuadro.ambar { background: var(--sg-ambar-fondo); border: 1px solid #F0D78C; color: var(--sg-ambar); }
+        .me-check { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 16px; font-size: 0.92rem; color: var(--sg-texto); line-height: 1.4; cursor: pointer; }
+        .me-check input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--sg-tinta); flex: none; }
+        .me-check small { display: block; color: var(--sg-suave); font-size: 0.84rem; }
+        .me-campos-saldo { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 14px; }
+        /* El evento (maqueta 2, #evento): «¿Quién lo ve?» con dos opciones grandes (botones con aria-pressed) y, si es compartido, las
+           personas, cada una con sus iniciales (en violeta la elegida; con «Todos», las demás deshabilitadas) */
+        .me-opciones.dos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        button.me-opcion { width: 100%; font: inherit; text-align: left; }
+        .me-opcion[aria-pressed="true"] { border-color: var(--sg-tinta); background: #F3F7FC; box-shadow: inset 0 0 0 1px var(--sg-tinta); }
+        .me-personas { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .me-persona { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px 0 4px; border-radius: 999px; border: 1px solid var(--sg-borde-control); background: #fff; font: inherit; font-size: 0.86rem; color: var(--sg-texto); cursor: pointer; }
+        .me-persona i { width: 28px; height: 28px; border-radius: 50%; background: var(--sg-gris-fondo); color: var(--sg-suave); font-style: normal; font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+        .me-persona[aria-pressed="true"] { border-color: var(--sg-violeta); background: var(--sg-violeta-fondo); color: var(--sg-violeta); font-weight: 600; }
+        .me-persona[aria-pressed="true"] i { background: var(--sg-violeta); color: #fff; }
+        .me-persona:disabled { opacity: 0.55; cursor: default; }
+        .me-personas[aria-invalid="true"] .me-persona { border-color: var(--sg-rojo); }
+        .me-personas-estado { font-size: 0.84rem; color: var(--sg-suave); }
+        /* Un evento ajeno (maqueta 2, #evento-ajeno): cuándo, el detalle (con sus renglones) y quién lo creó y quiénes están */
+        .me-ajeno-cuando { margin: 0 0 8px; font-size: 1rem; font-weight: 700; color: var(--sg-texto); }
+        .me-ajeno-detalle { margin: 0 0 10px; color: var(--sg-texto); white-space: pre-line; overflow-wrap: anywhere; }
+        .me-ajeno-quien { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin: 0 0 16px; font-size: 0.88rem; color: var(--sg-suave); overflow-wrap: anywhere; }
+        .me-pie-izquierda { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+        .me-pie-izquierda small { color: var(--sg-suave); font-size: 0.82rem; }
+        .sg-link.me-link-rojo { color: var(--sg-rojo); }
+        .sg-btn-rojo { background: var(--sg-rojo); color: #fff; }
+        .sg-btn:disabled { opacity: 0.55; cursor: default; }
+        .me-modal :focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        .me-modal .me-numero input:focus-visible { outline: none; box-shadow: none; }
+
+        /* Foco visible (el de Proyectos: anillo --tinta de 3 px con halo --sol-fuerte) */
+        .me-pagina a:focus-visible, .me-pagina button:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        .me-pagina .me-pestana:focus-visible { outline-offset: -3px; border-radius: 6px 6px 0 0; box-shadow: none; }
+
+        @media (max-width: 1100px) {
+            .me-resumen-grilla { grid-template-columns: minmax(0, 1fr); }
+        }
+        @media (max-width: 980px) {
+            .me-fila { grid-template-columns: 1fr auto; }
+            .me-fila-cuerpo { grid-column: 1 / -1; grid-row: 2; }
+            .me-fila.me-fila-dos { grid-template-columns: 1fr; }
+            .me-mes-y-proximos { grid-template-columns: minmax(0, 1fr); }
+        }
+        @media (max-width: 760px) {
+            .me-vence, .me-panel { padding-left: 16px; padding-right: 16px; }
+            .me-vence-item { grid-template-columns: 58px minmax(0, 1fr); }
+            .me-vence-item .sg-btn { grid-column: 2; justify-self: start; }
+            .me-nivel-vac { flex-wrap: wrap; }
+            .me-nivel-vac .me-leyenda-vac { padding-bottom: 0; }
+        }
+        /* En el teléfono, los próximos primero y el mes como puntos de colores por día (maqueta 1), en el color fuerte de cada clase (el
+           de su texto: el fondo pastel casi no se ve sobre el blanco de la celda); en el evento, «Solo yo» y «Compartido», una debajo
+           de la otra */
+        @media (max-width: 640px) {
+            .me-tarjeta { padding: 16px; }
+            .me-proximos-tarjeta { order: -1; }
+            .me-mes th { padding: 6px 2px; text-align: center; }
+            .me-celda { height: 64px; }
+            .me-mes .me-ev { font-size: 0; padding: 0; height: 6px; border-left-width: 0; background: currentColor; }
+            .me-opciones.dos { grid-template-columns: minmax(0, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir el menú" aria-controls="sidebar" aria-expanded="false">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+                </button>
+                <a href="index.html" class="header-marca">
+                    <img src="img/logo.png" alt="Municipalidad de Comodoro Rivadavia" class="header-logo">
+                    <span class="header-marca-texto">
+                        <span class="header-title">RPAD</span>
+                        <span class="header-subtitle">Registro Permanente de Actualización de Datasets</span>
+                    </span>
+                </a>
+            </div>
+            <nav class="header-nav" aria-label="Principal">
+                <a href="index.html">Inicio</a>
+                <a href="datasets.html">Datasets</a>
+                <a href="calendario.html">Calendario</a>
+                <a href="contacto.html">Contacto</a>
+            </nav>
+            <div class="header-right" id="header-actions">
+                <a href="login.html" class="btn btn-primary btn-sm"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg> Ingresar</a>
+            </div>
+        </header>
+
+        <!-- Sidebar Overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar" aria-label="Menú">
+            <div class="sidebar-header">
+                <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="sidebar-logo">
+            </div>
+            <nav class="sidebar-nav">
+                <div class="sidebar-section hidden" id="sidebarPrincipal">
+                    <div class="sidebar-section-title">Principal</div>
+                    <a href="index.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Inicio</span></a>
+                    <a href="datasets.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg><span>Datasets</span></a>
+                    <a href="calendario.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg><span>Calendario</span></a>
+                    <a href="contacto.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Contacto</span></a>
+                </div>
+                <div class="sidebar-section hidden" id="sidebarAdmin">
+                    <div class="sidebar-section-title">Administración</div>
+                    <a href="admin.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>Gestión de Datasets</span></a>
+                    <a href="correos.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Correos</span></a>
+                    <a href="configuracion.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Configuración</span></a>
+                </div>
+                <div class="sidebar-section hidden" id="sidebarTools">
+                    <div class="sidebar-section-title">Herramientas</div>
+                    <a href="reportes.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Métricas y Reportes</span></a>
+                    <a href="notas.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg><span>Notas</span></a>
+                    <a href="proyectos.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M8 10v4"/><path d="M12 10v2"/><path d="M16 10v6"/></svg><span>Proyectos</span></a>
+                    <a href="seguimiento.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span>Seguimiento</span></a>
+                </div>
+                <div class="sidebar-section hidden" id="sidebarAccount">
+                    <div class="sidebar-section-title">Mi cuenta</div>
+                    <a href="perfil.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Mi Perfil</span></a>
+                    <a href="mi-espacio.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg><span>Mi espacio</span></a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="me-pagina">
+                <!-- Page Header -->
+                <div class="page-header">
+                    <h1 class="page-title">
+                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+                        Mi espacio
+                    </h1>
+                    <!-- «Nuevo evento» se ve siempre: la agenda no depende de la modalidad (decisión del usuario, 27/10/2026). «Cargar
+                         horas extras» y «Cargar licencia», solo con la modalidad cargada: mi-espacio.js los muestra -->
+                    <div class="me-acciones">
+                        <button type="button" class="sg-btn sg-btn-borde" id="btn-nuevo-evento">Nuevo evento</button>
+                        <button type="button" class="sg-btn sg-btn-borde" id="btn-cargar-horas" hidden>Cargar horas extras</button>
+                        <button type="button" class="sg-btn sg-btn-tinta" id="btn-cargar-licencia" hidden><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Cargar licencia</button>
+                    </div>
+                </div>
+                <p class="me-bajada">Tus licencias, tus horas extras y tu agenda. Lo que cargás acá lo ves solo vos, salvo los eventos que compartís y, si querés, tus ausencias (sin decir de qué son).</p>
+
+                <!-- La región viva de la página: mi-espacio.js anuncia acá el año que se cargó, lo que no se pudo cargar y lo que se
+                     guardó o se borró (lo que se vuelve a dibujar no la toca) -->
+                <p class="visualmente-oculto" id="me-anuncio" role="status"></p>
+                <noscript><p class="me-estado">Para ver Mi espacio hace falta JavaScript.</p></noscript>
+
+                <!-- Las cuatro pestañas, cada una en la dirección (#resumen, #licencias, #horas, #agenda) -->
+                <div class="me-pestanas" role="tablist" aria-label="Mi espacio">
+                    <button type="button" class="me-pestana" role="tab" id="tab-resumen" aria-selected="true" aria-controls="vista-resumen" data-pestana="resumen">Resumen<span id="me-marca"></span></button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-licencias" aria-selected="false" aria-controls="vista-licencias" data-pestana="licencias" tabindex="-1">Licencias</button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-horas" aria-selected="false" aria-controls="vista-horas" data-pestana="horas" tabindex="-1">Horas extras</button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-agenda" aria-selected="false" aria-controls="vista-agenda" data-pestana="agenda" tabindex="-1">Agenda</button>
+                </div>
+                <section id="vista-resumen" role="tabpanel" aria-labelledby="tab-resumen"><p class="me-estado">Cargando…</p></section>
+                <section id="vista-licencias" role="tabpanel" aria-labelledby="tab-licencias" hidden><p class="me-estado">Cargando tus licencias…</p></section>
+                <section id="vista-horas" role="tabpanel" aria-labelledby="tab-horas" hidden><p class="me-estado">Cargando tus horas extras…</p></section>
+                <!-- La agenda (spec 2026-10-26-mi-espacio-agenda, 6; maqueta 1, #agenda): el mes, que mi-espacio.js dibuja en #ag-mes (el
+                     título en #ag-mes-titulo), y, al costado, los próximos 30 días en #ag-proximos. Lo que se vuelve a dibujar no es una
+                     región viva: el mes que se elige se anuncia en #me-anuncio. El mes no va en la dirección -->
+                <section id="vista-agenda" role="tabpanel" aria-labelledby="tab-agenda" hidden>
+                    <div class="me-mes-y-proximos">
+                        <div class="me-tarjeta">
+                            <div class="me-mes-cabeza">
+                                <button type="button" class="me-flecha" id="ag-anterior" aria-label="Mes anterior"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+                                <h2 id="ag-mes-titulo">Este mes</h2>
+                                <button type="button" class="me-flecha" id="ag-siguiente" aria-label="Mes siguiente"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+                                <button type="button" class="sg-btn sg-btn-borde sg-btn-chico" id="ag-hoy">Hoy</button>
+                                <button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" id="ag-nuevo-evento">Nuevo evento</button>
+                            </div>
+                            <div id="ag-mes"></div>
+                            <!-- Los colores. «Compañeros que no están», solo para quien los ve (administración: decisión del usuario,
+                                 27/10/2026); mi-espacio.js lo muestra -->
+                            <ul class="me-leyenda" aria-label="Los colores del mes">
+                                <li><i class="propio" aria-hidden="true"></i>Solo vos</li>
+                                <li><i class="compartido" aria-hidden="true"></i>Compartidos</li>
+                                <li><i class="licencia" aria-hidden="true"></i>Tus licencias y francos</li>
+                                <li><i class="feriado" aria-hidden="true"></i>Feriados</li>
+                                <li id="ag-leyenda-ausentes" hidden><i class="ausente" aria-hidden="true"></i>Compañeros que no están</li>
+                            </ul>
+                        </div>
+                        <section class="me-tarjeta me-proximos-tarjeta" aria-labelledby="ag-proximos-titulo">
+                            <div class="me-cabeza"><h2 id="ag-proximos-titulo">Próximos</h2></div>
+                            <div class="me-proximos" id="ag-proximos"><p class="me-vacio">Cargando…</p></div>
+                        </section>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Footer -->
+            <footer class="footer">
+                <div class="footer-cuerpo">
+                    <div class="footer-marca">
+                        <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="footer-logo">
+                        <p class="footer-direccion">Dirección de Datos Públicos y Comunicación</p>
+                        <p>D. G. de Modernización e Investigación Territorial<br>Subsecretaría de Modernización y Transparencia</p>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">El registro</h2>
+                        <ul>
+                            <li><a href="index.html">Inicio</a></li>
+                            <li><a href="datasets.html">Datasets</a></li>
+                            <li><a href="calendario.html">Calendario</a></li>
+                            <li><a href="contacto.html">Contacto</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Datos abiertos</h2>
+                        <ul>
+                            <li><a href="https://datos.comodoro.gov.ar" target="_blank" rel="noopener">datos.comodoro.gov.ar</a></li>
+                            <li>Licencia CC BY-SA 4.0</li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Marco legal</h2>
+                        <ul>
+                            <li>Ordenanza N° 17.662/23, artículo 8°</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <span>© <span id="footer-anio">2026</span> Secretaría de Gobierno, Modernización y Transparencia. Municipalidad de Comodoro Rivadavia</span>
+                    <span>RPAD v2.0.0</span>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <!-- Los formularios (spec 2026-10-26-mi-espacio-licencias-y-horas, 4, 6 y 8): los modales de administración, que un clic en el
+         velo no cierra (son formularios largos). mi-espacio.js pone los títulos, las opciones y los textos del servidor. Cada campo
+         tiene su <id>-error en su aria-describedby, y el error sin campo va arriba del cuerpo, dentro del modal. Los textos no
+         tienen maxlength: cuenta unidades de UTF-16 (un emoji, dos) y el servidor cuenta caracteres -->
+
+    <!-- «Cargar licencia» y «Corregir la licencia»: el tipo, sus campos, el cálculo del servidor, «Mostrar a mis compañeros» (solo
+         administración), la persona a cargo del firmante (solo en sus vacaciones), el aviso del paso a Configuración y el de los
+         días sin auditor -->
+    <div class="modal-overlay" id="modal-licencia">
+        <div class="modal me-modal" role="dialog" aria-modal="true" aria-labelledby="modal-licencia-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-licencia-titulo">Cargar licencia</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="ml-error" role="alert" hidden></p>
+                <fieldset class="me-grupo" id="ml-tipos" aria-describedby="ml-tipos-error">
+                    <legend class="form-label">Tipo</legend>
+                    <div class="me-opciones" id="ml-tipos-opciones"></div>
+                    <p class="form-error" id="ml-tipos-error" hidden></p>
+                </fieldset>
+                <div class="me-fila-campos">
+                    <div class="form-group">
+                        <label class="form-label" for="ml-desde" id="ml-desde-rotulo">Desde</label>
+                        <input type="date" class="form-input" id="ml-desde" aria-describedby="ml-fechas-ayuda ml-desde-error">
+                        <p class="form-error" id="ml-desde-error" hidden></p>
+                    </div>
+                    <div class="form-group" id="ml-grupo-hasta">
+                        <label class="form-label" for="ml-hasta">Hasta, inclusive</label>
+                        <input type="date" class="form-input" id="ml-hasta" aria-describedby="ml-fechas-ayuda ml-hasta-error">
+                        <p class="form-error" id="ml-hasta-error" hidden></p>
+                    </div>
+                    <div class="form-group" id="ml-grupo-horas" hidden>
+                        <label class="form-label" for="ml-horas">Horas</label>
+                        <select class="form-select" id="ml-horas" aria-describedby="ml-horas-error"></select>
+                        <p class="form-error" id="ml-horas-error" hidden></p>
+                    </div>
+                </div>
+                <p class="form-hint me-modal-de" id="ml-fechas-ayuda" hidden></p>
+                <div class="me-recuadro me-calculo" id="ml-calculo" hidden></div>
+                <div class="form-group">
+                    <label class="form-label" for="ml-nota">Nota <span class="me-opcional">(opcional)</span></label>
+                    <input type="text" class="form-input" id="ml-nota" autocomplete="off" aria-describedby="ml-nota-error">
+                    <p class="form-error" id="ml-nota-error" hidden></p>
+                </div>
+                <label class="me-check" id="ml-grupo-mostrar" hidden><input type="checkbox" id="ml-mostrar" checked aria-describedby="ml-mostrar-ayuda"><span>Mostrar a mis compañeros que no estoy<small id="ml-mostrar-ayuda"></small></span></label>
+                <div class="form-group" id="ml-grupo-autorizado" hidden>
+                    <label class="form-label" for="ml-autorizado">Autorizo a presentar las notas en mi nombre a:</label>
+                    <select class="form-select" id="ml-autorizado" aria-describedby="ml-autorizado-ayuda ml-autorizado-error"></select>
+                    <p class="form-hint" id="ml-autorizado-ayuda">Solo aparecen los admins y editores activos con su firma cargada en Mi Perfil.</p>
+                    <p class="form-error" id="ml-autorizado-error" hidden></p>
+                </div>
+                <div class="me-recuadro azul" id="ml-paso" hidden></div>
+                <div class="me-recuadro ambar" id="ml-sin-auditor" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <div class="me-pie-izquierda">
+                    <button type="button" class="sg-link me-link-rojo" id="ml-borrar" hidden>Borrar la licencia</button>
+                    <small id="ml-pie" hidden></small>
+                </div>
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="ml-guardar">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- «Cargar horas extras» y «Corregir las horas extras»: el día y el horario, de a media hora, con lo que suman en el mes -->
+    <div class="modal-overlay" id="modal-horas">
+        <div class="modal me-modal" role="dialog" aria-modal="true" aria-labelledby="modal-horas-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-horas-titulo">Cargar horas extras</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="mh-error" role="alert" hidden></p>
+                <div class="me-fila-campos">
+                    <div class="form-group">
+                        <label class="form-label" for="mh-fecha">Fecha</label>
+                        <input type="date" class="form-input" id="mh-fecha" aria-describedby="mh-fecha-error">
+                        <p class="form-error" id="mh-fecha-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="mh-desde">De</label>
+                        <input type="time" class="form-input" id="mh-desde" step="1800" aria-describedby="mh-desde-error">
+                        <p class="form-error" id="mh-desde-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="mh-hasta">A</label>
+                        <input type="time" class="form-input" id="mh-hasta" step="1800" aria-describedby="mh-hasta-error">
+                        <p class="form-error" id="mh-hasta-error" hidden></p>
+                    </div>
+                </div>
+                <p class="me-recuadro me-calculo" id="mh-suma" hidden></p>
+                <div class="form-group">
+                    <label class="form-label" for="mh-nota">Nota <span class="me-opcional">(opcional)</span></label>
+                    <input type="text" class="form-input" id="mh-nota" autocomplete="off" aria-describedby="mh-nota-error">
+                    <p class="form-error" id="mh-nota-error" hidden></p>
+                </div>
+                <p class="form-hint">Si pasa la medianoche, se carga en el día en que empezó.</p>
+            </div>
+            <div class="modal-footer">
+                <div class="me-pie-izquierda">
+                    <button type="button" class="sg-link me-link-rojo" id="mh-borrar" hidden>Borrar las horas extras</button>
+                </div>
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="mh-guardar">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- «Mis vacaciones y saldos» (spec, sección 4): la modalidad, los días de la licencia del año, los estudios y «Para arrancar»,
+         el saldo inicial (los campos los arma el servidor; mi-espacio.js los ajusta a lo que se elige arriba) -->
+    <div class="modal-overlay" id="modal-saldos">
+        <div class="modal me-modal" role="dialog" aria-modal="true" aria-labelledby="modal-saldos-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-saldos-titulo">Mis vacaciones y saldos</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="ms-error" role="alert" hidden></p>
+                <p class="me-modal-de" id="ms-modalidad"></p>
+                <fieldset class="me-grupo" id="ms-dias" aria-describedby="ms-dias-ayuda ms-dias-mitades ms-dias-error">
+                    <legend class="form-label" id="ms-dias-rotulo">Días de la licencia</legend>
+                    <div class="me-numeros" id="ms-dias-opciones"></div>
+                    <p class="form-hint" id="ms-dias-ayuda">Según tu antigüedad, se elige cada año.</p>
+                    <p class="form-hint" id="ms-dias-mitades"></p>
+                    <p class="form-error" id="ms-dias-error" hidden></p>
+                </fieldset>
+                <fieldset class="me-grupo" id="ms-estudios" aria-describedby="ms-estudios-error">
+                    <legend class="form-label">Licencia por estudios</legend>
+                    <div class="me-opciones" id="ms-estudios-opciones"></div>
+                    <p class="form-error" id="ms-estudios-error" hidden></p>
+                </fieldset>
+                <fieldset class="me-grupo">
+                    <legend class="form-label">Para arrancar</legend>
+                    <p class="form-hint">Lo que tenías antes de empezar con Mi espacio. Se carga una vez, para que los saldos den bien.</p>
+                    <div id="ms-campos"></div>
+                </fieldset>
+            </div>
+            <div class="modal-footer">
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="ms-guardar">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- «Registrar un uso autorizado» (spec, 3.5 y 3.6): la fecha y, en contrato, las horas (en planta, un franco: el día entero),
+         con el cálculo y el aviso del paso a Configuración, como «Cargar licencia» -->
+    <div class="modal-overlay" id="modal-uso">
+        <div class="modal me-modal" role="dialog" aria-modal="true" aria-labelledby="modal-uso-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-uso-titulo">Registrar un uso autorizado</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="mu-error" role="alert" hidden></p>
+                <div class="me-fila-campos">
+                    <div class="form-group">
+                        <label class="form-label" for="mu-fecha">Fecha</label>
+                        <input type="date" class="form-input" id="mu-fecha" aria-describedby="mu-fecha-error">
+                        <p class="form-error" id="mu-fecha-error" hidden></p>
+                    </div>
+                    <div class="form-group" id="mu-grupo-horas" hidden>
+                        <label class="form-label" for="mu-horas">Horas</label>
+                        <select class="form-select" id="mu-horas" aria-describedby="mu-horas-error"></select>
+                        <p class="form-error" id="mu-horas-error" hidden></p>
+                    </div>
+                </div>
+                <div class="me-recuadro me-calculo" id="mu-calculo" hidden></div>
+                <div class="form-group">
+                    <label class="form-label" for="mu-nota">Nota <span class="me-opcional">(opcional)</span></label>
+                    <input type="text" class="form-input" id="mu-nota" autocomplete="off" aria-describedby="mu-nota-error">
+                    <p class="form-error" id="mu-nota-error" hidden></p>
+                </div>
+                <label class="me-check" id="mu-grupo-mostrar" hidden><input type="checkbox" id="mu-mostrar" checked aria-describedby="mu-mostrar-ayuda"><span>Mostrar a mis compañeros que no estoy<small id="mu-mostrar-ayuda"></small></span></label>
+                <div class="me-recuadro azul" id="mu-paso" hidden></div>
+                <div class="me-recuadro ambar" id="mu-sin-auditor" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <div class="me-pie-izquierda">
+                    <button type="button" class="sg-link me-link-rojo" id="mu-borrar" hidden>Borrar el uso autorizado</button>
+                    <small id="mu-pie" hidden></small>
+                </div>
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="mu-guardar">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- «Nuevo evento» y «Editar evento» (spec 2026-10-26-mi-espacio-agenda, 1 y 6; maqueta 2, #evento): qué, la fecha y las
+         horas (la de fin, opcional), el detalle, quién lo ve (solo administración comparte: mi-espacio.js muestra «¿Quién lo ve?»
+         con Auth.isAdmin()), con quién (las personas o «Todos») y el recordatorio, con cuándo sale (#ev-aviso, que calcula el
+         servidor; lo describe el select, no es una región viva). #ev-recordatorio-ayuda arranca vacía: mi-espacio.js la escribe solo
+         en un evento compartido (lo que apunta aria-describedby se lee aunque esté oculto). Va antes de la confirmación: todos los
+         velos tienen el mismo z-index y el que va más abajo en el HTML queda arriba -->
+    <div class="modal-overlay" id="modal-evento">
+        <div class="modal me-modal" role="dialog" aria-modal="true" aria-labelledby="modal-evento-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-evento-titulo">Nuevo evento</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="ev-error" role="alert" hidden></p>
+                <div class="form-group">
+                    <label class="form-label" for="ev-titulo">Qué</label>
+                    <input type="text" class="form-input" id="ev-titulo" autocomplete="off" aria-describedby="ev-titulo-error">
+                    <p class="form-error" id="ev-titulo-error" hidden></p>
+                </div>
+                <div class="me-fila-campos">
+                    <div class="form-group">
+                        <label class="form-label" for="ev-fecha">Fecha</label>
+                        <input type="date" class="form-input" id="ev-fecha" aria-describedby="ev-fecha-error">
+                        <p class="form-error" id="ev-fecha-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="ev-desde">De</label>
+                        <input type="time" class="form-input" id="ev-desde" aria-describedby="ev-desde-error">
+                        <p class="form-error" id="ev-desde-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="ev-hasta">A <span class="me-opcional">(opcional)</span></label>
+                        <input type="time" class="form-input" id="ev-hasta" aria-describedby="ev-hasta-error">
+                        <p class="form-error" id="ev-hasta-error" hidden></p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="ev-detalle">Detalle <span class="me-opcional">(opcional)</span></label>
+                    <textarea class="form-textarea" id="ev-detalle" rows="3" aria-describedby="ev-detalle-error"></textarea>
+                    <p class="form-error" id="ev-detalle-error" hidden></p>
+                </div>
+                <div class="me-grupo" id="ev-grupo-quien" role="group" aria-labelledby="ev-quien-rotulo" hidden>
+                    <span class="form-label" id="ev-quien-rotulo">¿Quién lo ve?</span>
+                    <div class="me-opciones dos">
+                        <button type="button" class="me-opcion" id="ev-solo" aria-pressed="true"><span><b>Solo yo</b><small>Nadie más lo ve</small></span></button>
+                        <button type="button" class="me-opcion" id="ev-compartido" aria-pressed="false"><span><b>Compartido</b><small>Con las personas que elijas</small></span></button>
+                    </div>
+                </div>
+                <fieldset class="me-grupo" id="ev-grupo-personas" aria-describedby="ev-personas-ayuda ev-personas-error" hidden>
+                    <legend class="form-label">Con quién <span class="me-opcional" id="ev-personas-cuantas"></span></legend>
+                    <div class="me-personas" id="ev-personas"></div>
+                    <p class="form-hint" id="ev-personas-ayuda">Les llega un email cuando los sumás, y otro si cambiás o borrás el evento. Solo vos lo podés cambiar.</p>
+                    <p class="form-error" id="ev-personas-error" hidden></p>
+                </fieldset>
+                <div class="form-group">
+                    <label class="form-label" for="ev-recordatorio">Recordatorio por email</label>
+                    <select class="form-select" id="ev-recordatorio" aria-describedby="ev-aviso ev-recordatorio-ayuda ev-recordatorio-error"></select>
+                    <p class="form-hint" id="ev-aviso" hidden></p>
+                    <p class="form-hint" id="ev-recordatorio-ayuda" hidden></p>
+                    <p class="form-error" id="ev-recordatorio-error" hidden></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="me-pie-izquierda">
+                    <button type="button" class="sg-link me-link-rojo" id="ev-borrar" hidden>Borrar el evento</button>
+                </div>
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="ev-guardar">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Un evento que compartió otra persona (spec, sección 2; maqueta 2, #evento-ajeno): el título del evento es el del modal, cuándo
+         es, el detalle, quién lo creó y quiénes están, y «Mi recordatorio», que se guarda al elegirlo (el evento no cambia). No tiene
+         nada que cancelar: se cierra con «Cerrar» -->
+    <div class="modal-overlay" id="modal-evento-ajeno">
+        <div class="modal me-modal me-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-evento-ajeno-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-evento-ajeno-titulo">Evento</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="mea-error" role="alert" hidden></p>
+                <p class="me-ajeno-cuando" id="mea-cuando"></p>
+                <p class="me-ajeno-detalle" id="mea-detalle" hidden></p>
+                <p class="me-ajeno-quien" id="mea-quien"></p>
+                <div class="form-group">
+                    <label class="form-label" for="mea-recordatorio">Mi recordatorio</label>
+                    <select class="form-select" id="mea-recordatorio" aria-describedby="mea-aviso mea-ayuda"></select>
+                    <p class="form-hint" id="mea-aviso" hidden></p>
+                    <p class="form-hint" id="mea-ayuda">Solo quien lo creó puede cambiar el evento.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-tinta" id="mea-cerrar" data-cerrar>Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmar un borrado (un modal chico, no confirm()), sobre el formulario: Escape lo cierra primero. El texto lo arma
+         textoDeConfirmacion, en texto plano -->
+    <div class="modal-overlay" id="modal-confirmar">
+        <div class="modal me-modal me-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-confirmar-titulo" aria-describedby="modal-confirmar-texto">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-confirmar-titulo">¿Borrar?</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="mc-error" role="alert" hidden></p>
+                <p class="me-modal-de" id="modal-confirmar-texto"></p>
+            </div>
+            <div class="modal-footer">
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-rojo" id="modal-confirmar-si">Borrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts del RPAD -->
+    <!-- MAQUETA: los datos guardados de la API real (copia con datos inventados), los Word de muestra y la sesión de prueba -->
+    <script src="js/datos.js"></script>
+    <script src="js/words.js"></script>
+    <script src="js/nota-licencia.js"></script>
+    <script src="js/maqueta-api.js?v=2"></script>
+    <script src="js/config.js"></script>
+    <script src="js/auth.js?v=20261204"></script>
+    <script src="js/main.js?v=20261204"></script>
+    <script src="js/api.js?v=20261204"></script>
+    <script src="js/mi-espacio.js?v=maqueta2"></script>
+    <script src="js/maqueta-paso2.js?v=3"></script>
+</body>
+</html>
