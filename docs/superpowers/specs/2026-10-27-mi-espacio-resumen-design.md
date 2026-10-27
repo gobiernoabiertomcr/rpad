@@ -107,8 +107,8 @@ Sin tarjeta, sobre el fondo de la página.
 
 Al final, después de una línea, con su título. El usuario lo eligió abajo y en columnas.
 - **Las columnas,** separadas por una línea vertical y sin tarjetas:
-  - **Hoy:** los eventos de la agenda de hoy (la hora en negrita, el título y debajo «con todos», «solo vos»…) y, para quien ve a los compañeros, los que hoy no están («Julieta Arce no está» y debajo «Vuelve el martes 03/11»);
-  - **Mañana:** lo mismo de mañana;
+  - **Hoy:** los eventos de la agenda de hoy (`dia: 'hoy'`: la hora en negrita, el título y debajo `quien`, «con todos», «solo vos»…; ver 4.4) y, para quien ve a los compañeros, los que hoy no están («Julieta Arce no está» y debajo «Vuelve el martes 03/11»);
+  - **Mañana:** lo mismo de mañana (`dia: 'manana'`);
   - **Próximo feriado:** el día en negrita y el nombre debajo.
 - **«Ver la agenda»** va al final de la última columna, si hay eventos.
 - **Una columna sin nada no va.** Sin ninguna, la sección tampoco, como hoy.
@@ -126,8 +126,9 @@ Al final, después de una línea, con su título. El usuario lo eligió abajo y 
 
 ## 3. El movimiento
 
-- **Cuándo:** una sola vez, la primera vez que se ve el Resumen en esa carga de la página, con la misma regla que hoy tienen los tanques (`pagina.tanquesLlenos` y `llenarTanques`).
-  - Si se vuelve a dibujar después de guardar algo, no se mueve.
+- **Cuándo:** una sola vez por carga de la página: la primera vez que se dibuja la banda y se ve, con la misma regla que hoy tienen los tanques (`pagina.tanquesLlenos` y `llenarTanques`).
+  - **Se mueve aunque aparezca después de guardar algo,** si es la primera vez que se dibuja. Pasa con quien recién empieza: el primer Resumen es la invitación a «Mis vacaciones y saldos», y la banda aparece recién al guardarlo.
+  - **Una vez que se movió, no se mueve más** en esa carga de la página, aunque se vuelva a dibujar después de guardar una licencia.
   - Si el Resumen está oculto porque se abrió otra pestaña, espera a que se vea.
 - **Qué pasa:**
   1. **La regla y la frase,** en unos 1,3 s. Los tramos se dibujan de izquierda a derecha, uno detrás del otro (`scaleX` desde la izquierda, cada uno con un tiempo proporcional a sus días). Al mismo tiempo, el número de la frase sube de 0 al suyo, y el número de cada tramo aparece cuando su tramo casi terminó.
@@ -146,6 +147,7 @@ Cada cosa de `vence_pronto` cambia `cuando` y `detalle` por **`texto`**, una lí
 - **Faltan 2 días o más:** «Vence el viernes 30/10, en 3 días.» o «Vencen el jueves 31/12, en 65 días.». El día va con `diaLargo` y en minúscula.
 - **Falta 1:** «Vence mañana.» o «Vencen mañana.».
 - **Es hoy:** «Vence hoy.» o «Vencen hoy.».
+- **Ya pasó:** «Venció el viernes 30/10.» o «Vencieron el viernes 30/10.». Pasa con el franco o las horas a favor del mes después de su último día hábil, cuando ese día no es el último del mes; por ejemplo, el sábado 31/10/2026 con el viernes 30/10. Siguen en la lista hasta que termina el mes, como hoy (`venceProntoDe` no cambia de criterio: lo usado ese viernes se puede cargar después). «Venció» es neutro, como «vence»: no dice «perdiste».
 - **Singular o plural, según la cantidad:**
   - 1 franco, 1 hora a favor o 1 día de licencia: «Vence»;
   - 2 francos, 1,5 horas o 15 días: «Vencen».
@@ -171,6 +173,14 @@ Decisión del usuario (27/10/2026): «Vence el…» para todo, para unificar. La
 
 `extraordinaria` pasa a «Atención médica extraordinaria: sin tope. No usaste en 2026.» («Usaste 1 día en 2026.», «Usaste 3 días en 2026.»). Sale «y aparte de los 25 días».
 
+### 4.4 Los eventos de «Hoy y mañana»
+
+La agenda arma cada evento con `eventosDeHoyYManana` (`services/miEspacioEventosReglas.js`, en su rama): `{ id, hora, titulo, compartido, detalle }`, donde `detalle` junta el día y con quién («Hoy · solo vos»). Para las columnas de 2.3, cada evento suma dos campos, sin sacar ninguno (los tests de la agenda siguen valiendo):
+- **`dia`:** `'hoy'` o `'manana'`;
+- **`quien`:** el `quien_texto` del ítem en minúscula («solo vos», «con 4 personas», «de Laura Gómez»), o '' sin él. Es lo que hoy va después de « · » en `detalle`.
+
+La página no corta `detalle`: usa `dia` y `quien` (Ruling 19).
+
 ## 5. Accesibilidad
 
 - **La banda** es una `section` con `aria-labelledby` en la frase.
@@ -188,6 +198,7 @@ Decisión del usuario (27/10/2026): «Vence el…» para todo, para unificar. La
 ## 6. El código
 
 - **`services/miEspacioResumen.js`:** los textos de la sección 4 (`titular`; `texto` en lugar de `cuando` y `detalle`; la extraordinaria corta), puros y con sus tests en `tests/mi-espacio-resumen.test.js`. Los tests que comparan esos campos se reescriben con los textos nuevos.
+- **`services/miEspacioEventosReglas.js`** (de la agenda): `eventosDeHoyYManana` suma `dia` y `quien` (4.4), con su test.
 - **`public/js/mi-espacio.js`:** las funciones puras del Resumen se reemplazan; los nombres quedan para quien lo construye. Son:
   - `htmlDeVencePronto`, `svgDeTanque`, `htmlDeNivel`, `htmlDeLeyendaDeVacaciones`, `htmlDeTanques`, `htmlDePastillas`, `htmlDeLoQueTeQueda`, `htmlDeHoyYManana` (con los eventos de la agenda) y `htmlDelResumen`;
   - `TANQUE_GRANDE` y `TANQUE_CHICO` se van.
@@ -206,7 +217,7 @@ Cuando se escribió esta spec, la agenda se estaba construyendo (rama `claude/mi
 - `htmlDeHoyYManana` suma los eventos y «Ver la agenda» (`href="#agenda"`);
 - la página suma la pestaña Agenda y el botón «Nuevo evento».
 
-Titular usa esos eventos como dice 2.3, sin cambiar su forma. La Task 1 de la implementación lee lo que la agenda dejó de verdad en el main y ajusta el plan:
+Titular usa esos eventos como dice 2.3, con los dos campos de 4.4. La Task 1 de la implementación lee lo que la agenda dejó de verdad en el main y ajusta el plan:
 - los nombres;
 - qué trae cada evento;
 - si «Hoy y mañana» cambió de forma;
@@ -226,7 +237,9 @@ Titular usa esos eventos como dice 2.3, sin cambiar su forma. La Task 1 de la im
 - **Con 1 día o con 0, la frase cambia** (4.2). La bajada no dice «Otros» si la cifra es 0.
 - **«Mis vacaciones y saldos»** pasa a la cabeza de «El resto de 2026», al lado de la fecha.
 - **El día de hoy y la modalidad** van arriba de la frase, en lugar del renglón «Planta permanente · Año 2026». El año queda en «El resto de 2026».
-- **El movimiento sigue la regla de hoy:** una vez por carga de la página y quieto con `prefers-reduced-motion`.
+- **El movimiento sigue la regla de hoy:** una vez por carga de la página, también si la banda aparece recién después de guardar el saldo inicial, y quieto con `prefers-reduced-motion`.
+- **Lo que ya venció** dice «Venció el viernes 30/10.» (4.1).
+- **Los eventos suman `dia` y `quien`** para las columnas de «Hoy y mañana» (4.4).
 
 ## Lo que queda para quien lo construye
 
