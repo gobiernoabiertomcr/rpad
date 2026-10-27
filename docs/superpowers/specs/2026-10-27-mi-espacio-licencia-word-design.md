@@ -1,6 +1,6 @@
 # Mi espacio: la nota de licencia en Word
 
-Fecha: 27/10/2026. **Estado: borrador para la revisión del usuario.** Salió de la charla del 27/10/2026 con el usuario, en una sesión aparte de la coordinadora de Mi espacio. Se suma a la pestaña Licencias de Mi espacio (entrega 2, `2026-10-26-mi-espacio-licencias-y-horas-design.md`, en producción desde el 27/10/2026).
+Fecha: 27/10/2026. **Estado: aprobado por el usuario el 27/10/2026.** Salió de la charla del 27/10/2026 con el usuario, en una sesión aparte de la coordinadora de Mi espacio. Se suma a la pestaña Licencias de Mi espacio (entrega 2, `2026-10-26-mi-espacio-licencias-y-horas-design.md`, en producción desde el 27/10/2026).
 
 **Va en la cola después del Resumen «Titular»** (`2026-10-27-mi-espacio-resumen-design.md`, en su rama), que cambia los mismos archivos de la página (`public/mi-espacio.html` y `public/js/mi-espacio.js`). El plan arranca leyendo el main de ese momento.
 
