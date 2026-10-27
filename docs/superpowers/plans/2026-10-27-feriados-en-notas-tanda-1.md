@@ -497,7 +497,7 @@ Sin código.
     - **«lo mismo con una médica con persona autorizada (cargada en Configuración)»:**
       - el 02/01, `sin_anticipo` true y `autorizado` el de ella;
       - `correr('2027-01-04').generadas[0].tipo` es `'autorizacion'` y le siguen las notas con las dos firmas.
-      - Si algo de esto no coincide con los textos de la sección 6, marcarlo «a mostrar al usuario» en el commit y avisar a la coordinadora. Por la lectura del código, coincide: la víspera dentro de la otra licencia no es modo titular, así que no hay anticipo, y la autorización sale tardía el primer día.
+      - Si algo de esto no coincide con los textos de la sección 6, marcarlo «a mostrar al usuario» en el commit y avisarle al usuario antes del merge. Por la lectura del código, coincide: la víspera dentro de la otra licencia no es modo titular, así que no hay anticipo, y la autorización sale tardía el primer día.
     - **«la próxima nota de auditoría, 5 días hábiles después de la del 04/11, es el 12/11»:**
       - un cambio en el canal nota, ya incluido en una nota de auditoría del 04/11 (`notas_digitales_cambios`);
       - `estadoNotas({ hoy: '2026-11-05' }).auditoria.proxima` es `'2026-11-12'`.
