@@ -214,17 +214,17 @@ describe('el Resumen «Niveles»', () => {
     assert.deepEqual(botonesDe(cabeza).map(({ atributos, texto }) => [atributos['data-abrir'], texto]), [['saldos', 'Mis vacaciones y saldos']]);
     // Las pastillas y la médica extraordinaria, dentro de «Lo que te queda»
     assert.ok(html.includes(M.htmlDePastillas(planta.pastillas)));
-    assert.ok(html.includes('<p class="me-previos">Atención médica extraordinaria: sin tope y aparte de los 25 días. No usaste en 2026.</p>'));
+    assert.ok(html.includes('<p class="me-previos">Atención médica extraordinaria: sin tope. No usaste en 2026.</p>'));
     assert.ok(html.indexOf('me-previos') < html.indexOf('Hoy y mañana'));
   });
 
   it('Vence pronto: cada cosa con su fecha en el bloque amarillo, qué vence y el botón que la resuelve, con su tipo', () => {
     const html = M.htmlDeVencePronto(planta.vence_pronto);
     assert.match(html, /^<section class="me-vence" aria-labelledby="me-vence-titulo"><h2 class="me-titulo" id="me-vence-titulo">Vence pronto<\/h2>/);
+    // El servidor ya no manda `cuando` ni `detalle` (los reemplaza `texto`, del Resumen «Titular»): la página todavía no lo dibuja
     assert.deepEqual(filasDe(html).map(({ clases, texto }) => [clases.join(' '), texto]), [
-      ['me-vence-item', '30 oct Viernes 30/10 1 franco compensatorio de octubre Es el último día hábil del mes. Si no lo usás, queda como '
-        + 'no utilizado previamente. Cargarlo'],
-      ['me-vence-item', '31 dic Jueves 31/12 3 días de la licencia 2024 Ese día vence la licencia 2024. Cargar vacaciones']
+      ['me-vence-item', '30 oct 1 franco compensatorio de octubre Cargarlo'],
+      ['me-vence-item', '31 dic 3 días de la licencia 2024 Cargar vacaciones']
     ]);
     // El bloque de la fecha es decorativo: «Viernes 30/10» ya la dice
     assert.ok(html.includes('<span class="me-fecha" aria-hidden="true"><b>30</b>oct</span>'));

@@ -820,29 +820,42 @@ export const itemsDeFeriados = (lista, desde, hasta) => {
 const minuscula = (texto) => texto.charAt(0).toLowerCase() + texto.slice(1);
 
 /**
- * Los eventos de «Hoy y mañana» del Resumen (spec, sección 6), de los ítems de `itemDeEvento` (los que ve la persona) y hoy
- * ('AAAA-MM-DD'): los de hoy y los de mañana (el día siguiente corrido), por día y hora (los de la misma hora, en el orden
- * recibido), cada uno `{ id, hora, titulo, compartido, detalle }`. `detalle` es «Hoy · solo vos», «Mañana · con 4 personas» o
- * «Hoy · de <creador>» (el `quien_texto` del ítem, en minúscula; sin él, «Hoy» o «Mañana»); `compartido`, si el evento es
- * compartido (el violeta de la página). Ni los de antes ni los de pasado mañana. Nada tira: sin una lista o un hoy válido,
- * []; lo que no es un evento de esos dos días no cuenta.
+ * Los eventos de «Hoy y mañana» del Resumen (spec, sección 6, y spec 2026-10-27-mi-espacio-resumen, 4.4), de los ítems de
+ * `itemDeEvento` (los que ve la persona), hoy ('AAAA-MM-DD') y ahora ('AAAA-MM-DD HH:MM:SS' de `ahoraArgentina()`, o sin los
+ * segundos): los de hoy y los de mañana (el día siguiente corrido), por día y hora (los de la misma hora, en el orden
+ * recibido), cada uno `{ id, hora, titulo, compartido, detalle, dia, quien }`. `detalle` es «Hoy · solo vos», «Mañana · con 4
+ * personas» o «Hoy · de <creador>» (el `quien_texto` del ítem, en minúscula; sin él, «Hoy» o «Mañana»); `dia`, 'hoy' o
+ * 'manana', y `quien`, lo que va después de « · » («solo vos»; sin `quien_texto`, ''), para las columnas de la página, que no
+ * corta `detalle`; `compartido`, si el evento es compartido (el violeta de la página). Ni los de antes ni los de pasado
+ * mañana, ni los de hoy que ya terminaron (decisión del usuario, 27/10/2026): los que tienen su fin (`hasta` si es una hora;
+ * si no, `desde`) antes de la hora y el minuto de ahora (a las 10:00, uno de 09:00 a 10:00 todavía va; a las 10:01, ya no).
+ * Sin un ahora que sirva o con uno de otro día, no saca ninguno; uno sin ninguna hora, tampoco (no se sabe si terminó). Los de
+ * mañana van todos. Nada tira: sin una lista o un hoy válido, []; lo que no es un evento de esos dos días no cuenta.
  */
-export const eventosDeHoyYManana = (items, hoy) => {
+export const eventosDeHoyYManana = (items, hoy, ahora) => {
   if (!Array.isArray(items) || !esFechaIso(hoy)) return [];
   const manana = sumarDias(hoy, 1);
   const hora = (item) => (esHora(item.desde) ? item.desde : '');
+  const horaDeAhora = esMomento(ahora) && ahora.slice(0, 10) === hoy ? ahora.slice(11, 16) : null;
+  const yaTermino = (item) => {
+    if (horaDeAhora === null || item.fecha !== hoy) return false;
+    const fin = esHora(item.hasta) ? item.hasta : hora(item);
+    return fin !== '' && fin < horaDeAhora;
+  };
   return items
-    .filter((item) => esObjeto(item) && (item.fecha === hoy || item.fecha === manana))
+    .filter((item) => esObjeto(item) && (item.fecha === hoy || item.fecha === manana) && !yaTermino(item))
     .sort((a, b) => compararTexto(a.fecha, b.fecha) || compararTexto(hora(a), hora(b)))
     .map((item) => {
       const dia = item.fecha === hoy ? 'Hoy' : 'Mañana';
-      const quien = typeof item.quien_texto === 'string' ? item.quien_texto.trim() : '';
+      const quien = typeof item.quien_texto === 'string' ? minuscula(item.quien_texto.trim()) : '';
       return {
         id: idPositivo(item.id),
         hora: hora(item),
         titulo: typeof item.titulo === 'string' ? item.titulo : '',
         compartido: esSi(item.compartido),
-        detalle: quien === '' ? dia : `${dia} · ${minuscula(quien)}`
+        detalle: quien === '' ? dia : `${dia} · ${quien}`,
+        dia: item.fecha === hoy ? 'hoy' : 'manana',
+        quien
       };
     });
 };

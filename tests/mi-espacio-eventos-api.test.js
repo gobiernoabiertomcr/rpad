@@ -817,20 +817,28 @@ describe('lo demás de la agenda', () => {
 });
 
 describe('«Hoy y mañana» del Resumen: los eventos', () => {
+  // La API usa la hora real y los de hoy que ya terminaron no van (spec 2026-10-27-mi-espacio-resumen, 4.4): los de hoy que
+  // tienen que salir terminan a las 23:59
   it('uno de hoy y uno compartido de mañana salen; uno de pasado mañana, uno de ayer y uno que no ve, no', async () => {
-    const deHoy = await crear('adminA', { titulo: 'Llamar a Vialidad por el TMDA', fecha: dia(0), desde: '12:00', hasta: '' });
+    const deHoy = await crear('adminA', { titulo: 'Llamar a Vialidad por el TMDA', fecha: dia(0), desde: '12:00', hasta: '23:59' });
     const deManana = await crear('adminB', { fecha: dia(1), desde: '10:00', ...compartidoCon('adminA') });
     await crear('adminA', { titulo: 'Pasado mañana', fecha: dia(2) });
     await crear('adminA', { titulo: 'Ayer', fecha: dia(-1) });
-    await crear('adminB', { titulo: 'De adminB, personal', fecha: dia(0) });
+    await crear('adminB', { titulo: 'De adminB, personal', fecha: dia(0), hasta: '23:59' });
 
     const res = await api.get('/mi-espacio/resumen', como('adminA'));
     assert.equal(res.status, 200, JSON.stringify(res.body));
     const { hoy_y_manana: hoyYManana } = res.body.data;
     assert.deepEqual(Object.keys(hoyYManana), ['ausentes_hoy', 'ausentes_manana', 'proximo_feriado', 'eventos']);
     assert.deepEqual(hoyYManana.eventos, [
-      { id: deHoy, hora: '12:00', titulo: 'Llamar a Vialidad por el TMDA', compartido: false, detalle: 'Hoy · solo vos' },
-      { id: deManana, hora: '10:00', titulo: 'Reunión de equipo', compartido: true, detalle: 'Mañana · de Test adminB' }
+      {
+        id: deHoy, hora: '12:00', titulo: 'Llamar a Vialidad por el TMDA', compartido: false, detalle: 'Hoy · solo vos',
+        dia: 'hoy', quien: 'solo vos'
+      },
+      {
+        id: deManana, hora: '10:00', titulo: 'Reunión de equipo', compartido: true, detalle: 'Mañana · de Test adminB',
+        dia: 'manana', quien: 'de Test adminB'
+      }
     ]);
 
     // Quien lo creó lo ve con sus personas
@@ -842,8 +850,20 @@ describe('«Hoy y mañana» del Resumen: los eventos', () => {
     assert.deepEqual(delLector.body.data.hoy_y_manana.eventos, []);
   });
 
+  it('el de hoy que ya terminó no va; el de mañana a la misma hora, sí', async () => {
+    const yaTermino = await crear('adminA', { titulo: 'Ya terminó', fecha: dia(0), desde: '00:00', hasta: '00:01' });
+    const deManana = await crear('adminA', { titulo: 'Mañana temprano', fecha: dia(1), desde: '00:00', hasta: '00:01' });
+    const antes = ahoraArgentina();
+    const res = await api.get('/mi-espacio/resumen', como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const ids = res.body.data.hoy_y_manana.eventos.map((evento) => evento.id);
+    assert.ok(ids.includes(deManana), JSON.stringify(ids));
+    // Entre las 00:00 y las 00:01 todavía no terminó: solo se mira si el pedido salió más tarde, el mismo día
+    if (antes.slice(0, 10) === hoy && antes.slice(11, 16) > '00:01') assert.ok(!ids.includes(yaTermino), JSON.stringify(ids));
+  });
+
   it('aislado: si leer los eventos falla, el Resumen sale igual, con la lista vacía', async () => {
-    await crear('adminA', { fecha: dia(0) });
+    await crear('adminA', { fecha: dia(0), hasta: '23:59' });
     await query('RENAME TABLE mi_espacio_eventos TO mi_espacio_eventos_falla_simulada');
     try {
       const res = await api.get('/mi-espacio/resumen', como('adminA'));
