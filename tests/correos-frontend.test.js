@@ -418,6 +418,9 @@ describe('correos.js: días sin auditor en el Estado (spec 2026-10-15-dias-habil
         `<div class="nd-alerta nd-advertencia">${ADVERTENCIA}</div>`);
       assert.equal(await dibujar({ tipo: 'autorizado-no-vigente', nivel: 'error', mensaje: ERROR }),
         `<div class="nd-alerta">${ERROR}</div>`);
+      // De licencia todos los días hábiles (decisión del usuario, 27/10/2026), la misma alerta llega como advertencia
+      assert.equal(await dibujar({ tipo: 'autorizado-no-vigente', nivel: 'advertencia', mensaje: ERROR }),
+        `<div class="nd-alerta nd-advertencia">${ERROR}</div>`);
     });
 
     it('al volver a cargar el Estado, lo que ya no corresponde se oculta', async () => {

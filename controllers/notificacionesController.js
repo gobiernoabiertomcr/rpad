@@ -2,6 +2,7 @@ import { sendEmailToArea, verifyConnection, listaDeCorreos } from '../services/e
 import * as templates from '../services/emailTemplates.js';
 import { ejecutarNotasDigitales, anotarEnLaUltimaCorrida } from '../services/notasDigitales.js';
 import { sacarFotoSiCorresponde } from '../services/metricasFoto.js';
+import { enviarAvisosDeVencimiento } from '../services/miEspacioAvisos.js';
 import { obtenerConfig, conPedido } from '../services/notasDigitalesDatos.js';
 import { hoyArgentina, proximoDiaHabil, esDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
@@ -51,14 +52,18 @@ const areaDeEjemplo = (fecha) => {
 // día hábil): un sábado, lo del lunes en lugar de nada
 const fechaDelProximoAviso = () => proximoDiaHabil(hoyArgentina());
 
+// Lo que la corrida anota en la última corrida que muestra Correos > Estado cuando fallan los avisos de Mi espacio
+const textoFallaDeMiEspacio = (mensaje) => `No se pudieron enviar los avisos de Mi espacio: ${mensaje}`;
+
 /**
- * Proceso diario (cron de las 8:15): aviso directo a las áreas, Notas Digitales y, desde el 10/01, la foto del año anterior
+ * Proceso diario (cron de las 8:15): aviso directo a las áreas, Notas Digitales, desde el 10/01 la foto del año anterior y
+ * los avisos de vencimiento de Mi espacio
  */
 export const ejecutarNotificacionesDiarias = async (req, res) => {
   const hoy = hoyArgentina();
   const resultados = {
     fecha: new Date().toISOString(), enviados: [], errores: [], sinDatasets: [], notasDigitales: null, dia_habil: null,
-    avisos_retenidos: null, foto: null
+    avisos_retenidos: null, foto: null, miEspacio: null
   };
 
   try {
@@ -116,6 +121,27 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
       console.error('Error en la foto del año:', error?.stack ?? error);
       resultados.errores.push({ tipo: 'foto-del-anio', error: mensaje });
       await anotarEnLaUltimaCorrida(`No se pudo sacar la foto del año: ${mensaje}`).catch(() => {});
+    }
+
+    // El email de lo que vence pronto en Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 9): después de las Notas
+    // Digitales (registrarInicio borra lo anotado en la última corrida) y de la foto, con su propio control de día hábil (con
+    // los feriados de la tabla; resultados.dia_habil sigue con los 9 fijos). Aislado: un error acá (también si falta una
+    // tabla) no frena la respuesta, queda en la última corrida y lo que no salió sale en la próxima corrida de su tramo. Un
+    // email que no salió va a los errores con su persona y el texto del envío; en la última corrida, solo el motivo fijo
+    // (el texto de nodemailer puede traer la dirección de email)
+    try {
+      resultados.miEspacio = await enviarAvisosDeVencimiento({ hoy });
+      const fallidos = resultados.miEspacio.errores;
+      if (fallidos.length > 0) {
+        resultados.errores.push(...fallidos.map((fallo) => ({ tipo: 'mi-espacio', ...fallo })));
+        const motivos = [...new Set(fallidos.map(({ motivo }) => motivo))].join('; ');
+        await anotarEnLaUltimaCorrida(textoFallaDeMiEspacio(motivos)).catch(() => {});
+      }
+    } catch (error) {
+      const mensaje = String(error?.message ?? error);
+      console.error('Error en los avisos de Mi espacio:', error?.stack ?? error);
+      resultados.errores.push({ tipo: 'mi-espacio', error: mensaje });
+      await anotarEnLaUltimaCorrida(textoFallaDeMiEspacio(mensaje)).catch(() => {});
     }
 
     const success = resultados.errores.length === 0;

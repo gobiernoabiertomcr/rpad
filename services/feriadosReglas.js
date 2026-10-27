@@ -5,14 +5,17 @@
  * campo.
  *
  * Dos partes:
- * - Contar días hábiles con los feriados (`feriadosDelRango`, `esDiaHabilCon`, `diasHabilesDe`, `diasHabilesEntre`), para
- *   Mi espacio (la entrega 2). Envuelven a `esDiaHabil` (`services/notasDigitalesCalendario.js`) sin cambiarlo: los
- *   feriados solo sacan días hábiles, nunca los agregan, y con un Set vacío se cuenta exactamente lo mismo que con
- *   `esDiaHabil`. El resto del sistema sigue con `esDiaHabil` y los 9 fijos.
+ * - Contar días hábiles con los feriados (`feriadosDelRango`, `esDiaHabilCon`, `diasHabilesDe`, `diasHabilesEntre`,
+ *   `proximoDiaHabilCon`, `restarDiasHabilesCon`, `ultimoDiaHabilDelMesCon`), para Mi espacio (la entrega 2). Envuelven a
+ *   `esDiaHabil` (`services/notasDigitalesCalendario.js`) sin cambiarlo: los feriados solo sacan días hábiles, nunca los
+ *   agregan, y con un Set vacío se cuenta exactamente lo mismo que con `esDiaHabil`. El resto del sistema sigue con
+ *   `esDiaHabil` y los 9 fijos.
  * - Para la API de los feriados y la pestaña Feriados de Configuración: los tipos y sus nombres, los mensajes, la validación
  *   de un feriado (`validarFeriado`, y `errorDeLaCorreccion` en una corrección), de «no rige» (`validarRige`) y de la baja
- *   desde un año (`bajaDesde`), la lista de un año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`) y los
- *   años del selector (`aniosDelSelector`). Los textos son planos: escaparlos le toca a quien los dibuja.
+ *   desde un año (`bajaDesde`), la lista de un año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`), los
+ *   años del selector (`aniosDelSelector`), las fechas en que rige uno en un rango de años (`fechasDelFeriado`) y, de ellas, las
+ *   que cambian un día hábil (`fechasQueCambianDiasHabiles`: con esas se cuentan las licencias de Mi espacio que lo incluyen).
+ *   Los textos son planos: escaparlos le toca a quien los dibuja.
  * `FERIADOS_FIJOS` es un array que se puede modificar: acá nunca se le escribe y se recorre una copia.
  *
  * Una fila es la de `services/feriadosDatos.js`: `{ id, fecha, nombre, tipo, trasladado_de, se_repite, hasta_anio, activo,
@@ -142,6 +145,23 @@ export const fechaEnElAnio = (fila, anio) => {
   return proyeccion !== null && proyeccion.rige ? proyeccion.fecha : null;
 };
 
+/**
+ * Las fechas en que rige la fila de desdeAnio a hastaAnio (los dos incluidos, enteros), de la más vieja a la más nueva:
+ * `fechaEnElAnio` de cada año del rango, sin los null. Todas, caigan o no en un día hábil: esta función no filtra nada más. Uno
+ * que se repite da las de todos los años en que rige (decisión del usuario, 26/10/2026); uno que no se repite, solo su fecha, si
+ * cae en el rango. Con una fila o un rango que no sirven, []. Solo recorre los años que existen (de 1 a 9999). Las licencias de
+ * Mi espacio que incluye un feriado no se cuentan con estas, sino con las que deja `fechasQueCambianDiasHabiles`.
+ */
+export const fechasDelFeriado = (fila, desdeAnio, hastaAnio) => {
+  if (!Number.isInteger(desdeAnio) || !Number.isInteger(hastaAnio)) return [];
+  const fechas = [];
+  for (let anio = Math.max(desdeAnio, 1); anio <= Math.min(hastaAnio, 9999); anio++) {
+    const fecha = fechaEnElAnio(fila, anio);
+    if (fecha !== null) fechas.push(fecha);
+  }
+  return fechas;
+};
+
 // El Set de los días no hábiles por feriado del rango, los dos días incluidos: los 9 fijos de cada año del rango y las filas
 // que rigen (fechaEnElAnio). Con una fecha que no es una fecha, o hasta anterior a desde, un Set vacío. Quien cuenta días
 // pide el rango con margen: lo que queda afuera no está en el Set.
@@ -165,6 +185,21 @@ export const feriadosDelRango = (filas, desde, hasta) => {
 export const esDiaHabilCon = (fecha, feriados) =>
   esFechaIso(fecha) && esDiaHabil(fecha) && !(feriados instanceof Set && feriados.has(fecha));
 
+/**
+ * Las fechas de `fechasDelFeriado(fila, desdeAnio, hastaAnio)` en que el feriado cambia de verdad un día hábil (decisión del
+ * usuario, 27/10/2026: el modal cuenta solo las licencias de Mi espacio en las que cambia algo): las que sin él serían un día
+ * hábil, o sea, que no caen sábado ni domingo, no son uno de los 9 fijos y ningún feriado de `otrasFilas` rige ese día
+ * (`feriadosDelRango`: uno dado de baja o un año que no rige no cuenta). Uno que se repite, cada año por separado: el 13/12 es
+ * domingo en 2026 y lunes en 2027. `otrasFilas` va sin la fila misma (la que se corrige: la saca quien llama); una que no es una
+ * lista no saca ningún día.
+ */
+export const fechasQueCambianDiasHabiles = (fila, desdeAnio, hastaAnio, otrasFilas) => {
+  const fechas = fechasDelFeriado(fila, desdeAnio, hastaAnio);
+  if (fechas.length === 0) return [];
+  const otros = feriadosDelRango(otrasFilas, fechas[0], fechas.at(-1));
+  return fechas.filter((fecha) => esDiaHabilCon(fecha, otros));
+};
+
 // Los días hábiles de desde a hasta, los dos incluidos (diasHabilesTranscurridos no cuenta el primero). [] si hasta es
 // anterior a desde o alguna no es una fecha.
 export const diasHabilesDe = (desde, hasta, feriados) => {
@@ -180,6 +215,44 @@ export const diasHabilesDe = (desde, hasta, feriados) => {
 
 // Cuántos días hábiles hay de desde a hasta, los dos incluidos
 export const diasHabilesEntre = (desde, hasta, feriados) => diasHabilesDe(desde, hasta, feriados).length;
+
+// Lo más lejos que se busca un día hábil, en días: un año bisiesto entero
+const TOPE_DE_VUELTAS = 366;
+
+// La fecha, si es un día hábil con los feriados, o el primero que la sigue. null si no es una fecha o si en 366 días (la
+// fecha y los 365 que siguen) no hay ninguno, y nunca pasa del 31/12/9999
+export const proximoDiaHabilCon = (fecha, feriados) => {
+  let dia = fecha;
+  for (let vuelta = 0; vuelta < TOPE_DE_VUELTAS && esFechaIso(dia); vuelta++, dia = sumarDias(dia, 1)) {
+    if (esDiaHabilCon(dia, feriados)) return dia;
+  }
+  return null;
+};
+
+// El n-ésimo día hábil anterior a la fecha, sin contarla (con n = 0, la fecha misma), con los feriados. null si no es una
+// fecha, si n no es un entero de 0 en adelante o si en los 366 días anteriores no se juntan n
+export const restarDiasHabilesCon = (fecha, n, feriados) => {
+  if (!esFechaIso(fecha) || !Number.isInteger(n) || n < 0) return null;
+  let dia = fecha;
+  for (let vuelta = 0, contados = 0; contados < n; vuelta++) {
+    if (vuelta === TOPE_DE_VUELTAS) return null;
+    dia = sumarDias(dia, -1);
+    if (!esFechaIso(dia)) return null;
+    if (esDiaHabilCon(dia, feriados)) contados++;
+  }
+  return dia;
+};
+
+// El último día hábil del mes 'AAAA-MM', con los feriados. null si no es un mes o si ningún día del mes es hábil: nunca da
+// un día de otro mes
+export const ultimoDiaHabilDelMesCon = (mes, feriados) => {
+  if (typeof mes !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return null;
+  for (let dia = 31; dia >= 1; dia--) {
+    const fecha = `${mes}-${String(dia).padStart(2, '0')}`;
+    if (esFechaIso(fecha) && esDiaHabilCon(fecha, feriados)) return fecha;
+  }
+  return null;
+};
 
 const rechazo = (campo, mensaje) => ({ datos: null, error: { campo, mensaje } });
 

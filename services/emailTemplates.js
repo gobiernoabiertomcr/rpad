@@ -474,3 +474,37 @@ export const resumenAvisosRetenidosTemplate = (retenidos) => {
     ].join('\n')
   };
 };
+
+// =====================================================
+// MI ESPACIO: el aviso de vencimiento (spec 2026-10-26-mi-espacio-licencias-y-horas, 9)
+// =====================================================
+
+const NOTA_VENCIMIENTO_MI_ESPACIO = 'Este aviso te llega una sola vez por cada cosa. Lo que cargás en Mi espacio lo ves solo vos.';
+
+/**
+ * Lo que vence pronto en Mi espacio, a la persona (la corrida de las 8:15, services/miEspacioAvisos.js). avisos: los
+ * `{ texto }` de avisosDeVencimiento (services/miEspacioReglas.js), en texto plano, un renglón por cosa: vacaciones, francos y
+ * horas, nunca el tipo de una licencia médica. El botón abre el Resumen.
+ */
+export const vencimientoMiEspacioTemplate = ({ nombre_completo, avisos }) => {
+  const url = `${RPAD_URL}/mi-espacio.html#resumen`;
+  const renglones = avisos.map(aviso => aviso.texto);
+  return {
+    subject: 'RPAD: lo que vence pronto en Mi espacio',
+    html: plantillaSimple({
+      titulo: 'Lo que vence pronto',
+      parrafos: [`Hola, ${escapeHtml(nombre_completo)}.`, ...renglones.map(escapeHtml)],
+      boton: { texto: 'Ver en Mi espacio', url },
+      notas: [escapeHtml(NOTA_VENCIMIENTO_MI_ESPACIO)]
+    }),
+    text: [
+      `Hola, ${nombre_completo}.`,
+      '',
+      ...renglones,
+      '',
+      `Ver en Mi espacio: ${url}`,
+      '',
+      NOTA_VENCIMIENTO_MI_ESPACIO
+    ].join('\n')
+  };
+};

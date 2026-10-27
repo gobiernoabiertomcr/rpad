@@ -65,6 +65,20 @@ const TABLAS_METRICAS = ['metricas_fotos', 'actualizaciones_recibido'];
 // repite no rige
 const TABLAS_FERIADOS = ['feriados', 'feriados_no_rige'];
 
+// Las seis tablas de Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 5): los años, el arranque, el saldo
+// inicial, las licencias, las horas extras y los avisos de vencimiento enviados
+const TABLAS_MI_ESPACIO = ['mi_espacio_anios', 'mi_espacio_arranque', 'mi_espacio_saldos', 'mi_espacio_licencias', 'mi_espacio_horas_extras', 'mi_espacio_avisos'];
+
+// El motor y la colación de unas tablas: `columnas` no los ve
+const motoresDe = async (conexion, base, tablas) => {
+  const [filas] = await conexion.query(
+    `SELECT TABLE_NAME AS tabla, ENGINE AS motor, TABLE_COLLATION AS colacion
+     FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (?) ORDER BY TABLE_NAME`,
+    [base, tablas]
+  );
+  return filas.map(f => `${f.tabla} ${f.motor} ${f.colacion}`);
+};
+
 const contar = async (tabla) => {
   const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_TEMPORAL}\`.\`${tabla}\``);
   return total;
@@ -344,6 +358,83 @@ describe('database/schema.sql', () => {
     ]);
   });
 
+  it('Mi espacio: seis tablas con sus columnas, claves y FK (spec 2026-10-26-mi-espacio-licencias-y-horas, 5)', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => TABLAS_MI_ESPACIO.some(tabla => c.startsWith(`${tabla}.`)));
+    assert.deepEqual(lista, [
+      // Los días de vacaciones y los estudios de cada persona, por año
+      'mi_espacio_anios.usuario_id int(11) null=NO default=null key=PRI',
+      'mi_espacio_anios.anio smallint(6) null=NO default=null key=PRI',
+      'mi_espacio_anios.dias_vacaciones tinyint(4) null=NO default=null key=',
+      "mi_espacio_anios.estudios enum('universitario','secundario') null=YES default=NULL key=",
+      'mi_espacio_anios.created_at timestamp null=YES default=current_timestamp() key=',
+      'mi_espacio_anios.updated_at timestamp null=YES default=current_timestamp() key=',
+      // El día en que se cargó el saldo inicial: uno por persona
+      'mi_espacio_arranque.usuario_id int(11) null=NO default=null key=PRI',
+      'mi_espacio_arranque.fecha date null=NO default=null key=',
+      'mi_espacio_arranque.created_at timestamp null=YES default=current_timestamp() key=',
+      // Los emails de vencimiento enviados: uno por persona y por cosa
+      'mi_espacio_avisos.usuario_id int(11) null=NO default=null key=PRI',
+      'mi_espacio_avisos.clave varchar(40) null=NO default=null key=PRI',
+      'mi_espacio_avisos.enviado_at datetime null=NO default=null key=',
+      'mi_espacio_horas_extras.id int(11) null=NO default=null key=PRI',
+      'mi_espacio_horas_extras.usuario_id int(11) null=NO default=null key=MUL',
+      'mi_espacio_horas_extras.fecha date null=NO default=null key=',
+      'mi_espacio_horas_extras.desde time null=NO default=null key=',
+      'mi_espacio_horas_extras.hasta time null=NO default=null key=',
+      'mi_espacio_horas_extras.nota varchar(200) null=YES default=NULL key=',
+      'mi_espacio_horas_extras.activo tinyint(1) null=NO default=1 key=',
+      'mi_espacio_horas_extras.created_at timestamp null=YES default=current_timestamp() key=',
+      'mi_espacio_horas_extras.updated_at timestamp null=YES default=current_timestamp() key=',
+      'mi_espacio_licencias.id int(11) null=NO default=null key=PRI',
+      'mi_espacio_licencias.usuario_id int(11) null=NO default=null key=MUL',
+      "mi_espacio_licencias.tipo enum('vacaciones','franquicia','estudios','medica','medica_extraordinaria','familiar','franco','horas_a_favor','uso_autorizado') null=NO default=null key=",
+      // Iguales en lo de un día
+      'mi_espacio_licencias.desde date null=NO default=null key=',
+      'mi_espacio_licencias.hasta date null=NO default=null key=',
+      // Solo en la franquicia, las horas a favor y el uso autorizado
+      'mi_espacio_licencias.horas decimal(3,1) null=YES default=NULL key=',
+      // «Mostrar a mis compañeros»
+      'mi_espacio_licencias.mostrar tinyint(1) null=NO default=1 key=',
+      'mi_espacio_licencias.nota varchar(200) null=YES default=NULL key=',
+      // El paso a Configuración → Licencias: la licencia de allá, si la creó o se unió a una que ya estaba, y por qué no pasó
+      'mi_espacio_licencias.licencia_oficial_id int(11) null=YES default=NULL key=MUL',
+      "mi_espacio_licencias.oficial enum('creada','unida') null=YES default=NULL key=",
+      'mi_espacio_licencias.sin_pasar varchar(200) null=YES default=NULL key=',
+      'mi_espacio_licencias.activo tinyint(1) null=NO default=1 key=',
+      'mi_espacio_licencias.created_at timestamp null=YES default=current_timestamp() key=',
+      'mi_espacio_licencias.updated_at timestamp null=YES default=current_timestamp() key=',
+      // El saldo inicial, una fila por concepto (en vacaciones, el año de la licencia; en el resto, el del arranque)
+      'mi_espacio_saldos.usuario_id int(11) null=NO default=null key=PRI',
+      "mi_espacio_saldos.concepto enum('vacaciones','franquicias','estudios','medica','familiar','horas_no_utilizadas') null=NO default=null key=PRI",
+      'mi_espacio_saldos.anio smallint(6) null=NO default=null key=PRI',
+      'mi_espacio_saldos.cantidad decimal(5,1) null=NO default=0.0 key=',
+      'mi_espacio_saldos.updated_at timestamp null=YES default=current_timestamp() key='
+    ]);
+    // Borrar a la persona borra lo suyo; borrar la licencia de Configuración deja la de Mi espacio sin el vínculo
+    assert.deepEqual(await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO), [
+      'mi_espacio_anios.usuario_id -> usuarios.id (fk_mi_espacio_anios_usuario) borrado=CASCADE',
+      'mi_espacio_arranque.usuario_id -> usuarios.id (fk_mi_espacio_arranque_usuario) borrado=CASCADE',
+      'mi_espacio_avisos.usuario_id -> usuarios.id (fk_mi_espacio_avisos_usuario) borrado=CASCADE',
+      'mi_espacio_horas_extras.usuario_id -> usuarios.id (fk_mi_espacio_horas_extras_usuario) borrado=CASCADE',
+      'mi_espacio_licencias.licencia_oficial_id -> usuarios_licencias.id (fk_mi_espacio_licencias_oficial) borrado=SET NULL',
+      'mi_espacio_licencias.usuario_id -> usuarios.id (fk_mi_espacio_licencias_usuario) borrado=CASCADE',
+      'mi_espacio_saldos.usuario_id -> usuarios.id (fk_mi_espacio_saldos_usuario) borrado=CASCADE'
+    ]);
+    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO), [
+      'mi_espacio_anios.PRIMARY (usuario_id,anio) repetible=0',
+      'mi_espacio_arranque.PRIMARY (usuario_id) repetible=0',
+      'mi_espacio_avisos.PRIMARY (usuario_id,clave) repetible=0',
+      'mi_espacio_horas_extras.idx_mi_espacio_horas_usuario (usuario_id,fecha) repetible=1',
+      'mi_espacio_horas_extras.PRIMARY (id) repetible=0',
+      'mi_espacio_licencias.fk_mi_espacio_licencias_oficial (licencia_oficial_id) repetible=1',
+      'mi_espacio_licencias.idx_mi_espacio_licencias_usuario (usuario_id,desde,hasta) repetible=1',
+      'mi_espacio_licencias.PRIMARY (id) repetible=0',
+      'mi_espacio_saldos.PRIMARY (usuario_id,concepto,anio) repetible=0'
+    ]);
+    assert.deepEqual(await motoresDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO),
+      [...TABLAS_MI_ESPACIO].sort().map(tabla => `${tabla} InnoDB utf8mb4_unicode_ci`));
+  });
+
   // Generador de Notas (spec 2026-10-24-generador-de-notas, 2 y 8): el ámbito del área decide qué nota de la DGMIT le toca
   it('areas tiene ambito (municipal o externo, municipal por defecto) después de articulo_superior', async () => {
     const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('areas.'));
@@ -364,7 +455,7 @@ describe('database/schema.sql', () => {
     assert.deepEqual({ ...fk }, { tabla: 'cambios_pendientes', columna: 'id', borrado: 'SET NULL' });
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige']) {
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO]) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
@@ -1674,5 +1765,116 @@ describe('migracion-feriados-datos.sql', () => {
     const [[fila]] = await root.query(consultas[0]);
     assert.deepEqual(Object.fromEntries(Object.entries(fila).map(([clave, valor]) => [clave, Number(valor)])),
       { filas: 28, de_2026: 19, de_2027: 9, se_repiten: 3 });
+  });
+});
+
+// Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 5): los años, el arranque, el saldo inicial, las licencias, las
+// horas extras y los avisos de vencimiento enviados. La migración y su vuelta atrás, sobre una base descartable creada con
+// schema.sql
+describe('migracion-mi-espacio.sql', () => {
+  const BASE_MI_ESPACIO = 'rpad_schema_mi_espacio_test';
+  const MIGRACION = 'migracion-mi-espacio.sql';
+  const ROLLBACK = 'rollback-mi-espacio.sql';
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const esDeLasTablas = (c) => TABLAS_MI_ESPACIO.some(tabla => c.startsWith(`${tabla}.`));
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main)
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_MI_ESPACIO}\``);
+    await root.query(`CREATE DATABASE \`${BASE_MI_ESPACIO}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_MI_ESPACIO}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) {
+      await root.query([...TABLAS_MI_ESPACIO].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
+    }
+  };
+  // Una persona con una licencia de Configuración y una fila en cada tabla, con la licencia de Mi espacio apuntando a la de
+  // Configuración: lo que la vuelta atrás tiene que poder borrar con las FK puestas
+  const cargarDatos = async () => {
+    const [{ insertId: usuario }] = await root.query(
+      `INSERT INTO \`${BASE_MI_ESPACIO}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES ('t_admin', 'x', 'Persona de Prueba', 't_admin@rpad.test', 'admin')`);
+    const [{ insertId: oficial }] = await root.query(
+      `INSERT INTO \`${BASE_MI_ESPACIO}\`.usuarios_licencias (usuario_id, desde, hasta, creado_por) VALUES (?, '2026-11-03', '2026-11-05', ?)`, [usuario, usuario]);
+    await root.query(`INSERT INTO \`${BASE_MI_ESPACIO}\`.mi_espacio_anios (usuario_id, anio, dias_vacaciones, estudios) VALUES (?, 2026, 20, 'universitario')`, [usuario]);
+    await root.query(`INSERT INTO \`${BASE_MI_ESPACIO}\`.mi_espacio_arranque (usuario_id, fecha) VALUES (?, '2026-10-26')`, [usuario]);
+    await root.query(`INSERT INTO \`${BASE_MI_ESPACIO}\`.mi_espacio_saldos (usuario_id, concepto, anio, cantidad) VALUES (?, 'franquicias', 2026, 10.5)`, [usuario]);
+    await root.query(
+      `INSERT INTO \`${BASE_MI_ESPACIO}\`.mi_espacio_licencias (usuario_id, tipo, desde, hasta, licencia_oficial_id, oficial) VALUES (?, 'vacaciones', '2026-11-03', '2026-11-05', ?, 'creada')`,
+      [usuario, oficial]);
+    await root.query(`INSERT INTO \`${BASE_MI_ESPACIO}\`.mi_espacio_horas_extras (usuario_id, fecha, desde, hasta) VALUES (?, '2026-10-20', '19:00', '22:00')`, [usuario]);
+    await root.query(`INSERT INTO \`${BASE_MI_ESPACIO}\`.mi_espacio_avisos (usuario_id, clave, enviado_at) VALUES (?, 'horas-2026-10', '2026-10-26 08:15:00')`, [usuario]);
+    return { usuario, oficial };
+  };
+  const contarEn = async (tabla) => {
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_MI_ESPACIO}\`.\`${tabla}\``);
+    return total;
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_MI_ESPACIO}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega (nada de DROP, RENAME ni CHECK)', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+  });
+
+  it('las cabeceras dicen la spec, el orden, que se puede repetir y cómo se deshace; el rollback, que se pierde lo cargado y que lo de Configuración queda', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-10-26-mi-espacio-licencias-y-horas-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código/);
+    assert.match(cabecera(MIGRACION), /después de migracion-feriados\.sql/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-mi-espacio\.sql/);
+    assert.match(cabecera(ROLLBACK), /migracion-mi-espacio\.sql/);
+    assert.match(cabecera(ROLLBACK), /primero volver a subir los archivos anteriores/);
+    assert.match(cabecera(ROLLBACK), /se pierden/i);
+    assert.match(cabecera(ROLLBACK), /Las licencias que pasaron a Configuración → Licencias quedan allí/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('el rollback solo borra las seis tablas, en orden inverso: no toca usuarios_licencias ni ninguna otra', () => {
+    const borrados = [...codigo(ROLLBACK).matchAll(/DROP TABLE IF EXISTS `(\w+)`/gi)].map(m => m[1]);
+    assert.deepEqual(borrados, [...TABLAS_MI_ESPACIO].reverse());
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELETE|UPDATE|ALTER|TRUNCATE|INSERT)\b/i);
+  });
+
+  it('desde la estructura de main deja la de schema.sql y se puede repetir', async () => {
+    await crearBase({ conLoNuevo: false });
+    const anterior = await columnas(root, BASE_MI_ESPACIO);
+    assert.ok(!anterior.some(esDeLasTablas), 'la base de partida ya tiene las tablas');
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_MI_ESPACIO), await columnas(root, BASE_TEMPORAL));
+    // Y también las claves foráneas, los índices, el motor y la colación, que las columnas no muestran
+    assert.deepEqual(await clavesAjenasDe(root, BASE_MI_ESPACIO, TABLAS_MI_ESPACIO), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO));
+    assert.deepEqual(await indicesDe(root, BASE_MI_ESPACIO, TABLAS_MI_ESPACIO), await indicesDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO));
+    assert.deepEqual(await motoresDe(root, BASE_MI_ESPACIO, TABLAS_MI_ESPACIO), await motoresDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO));
+  });
+
+  it('el rollback se puede repetir, deja la estructura de main sin borrar a la persona ni la licencia de Configuración a la que apuntaba, y la migración la recupera', async () => {
+    await crearBase({ conLoNuevo: true });
+    const { usuario, oficial } = await cargarDatos();
+    for (const tabla of TABLAS_MI_ESPACIO) assert.equal(await contarEn(tabla), 1, tabla);
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin las seis tablas
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
+    assert.deepEqual(await columnas(root, BASE_MI_ESPACIO), deMain);
+    // La persona y la licencia que había pasado a Configuración siguen ahí, tal cual
+    assert.equal(await contarEn('usuarios'), 1);
+    const [licencias] = await root.query(
+      `SELECT id, usuario_id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, anulada
+       FROM \`${BASE_MI_ESPACIO}\`.usuarios_licencias`);
+    assert.deepEqual(licencias.map(l => ({ ...l })), [{ id: oficial, usuario_id: usuario, desde: '2026-11-03', hasta: '2026-11-05', anulada: 0 }]);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_MI_ESPACIO), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_MI_ESPACIO, TABLAS_MI_ESPACIO), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO));
+    assert.deepEqual(await indicesDe(root, BASE_MI_ESPACIO, TABLAS_MI_ESPACIO), await indicesDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO));
+    assert.deepEqual(await motoresDe(root, BASE_MI_ESPACIO, TABLAS_MI_ESPACIO), await motoresDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO));
   });
 });

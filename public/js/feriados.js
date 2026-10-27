@@ -9,9 +9,10 @@
 // (data-anio-feriado, data-filtro-feriado, data-editar-feriado, data-cerrar-feriado y data-cerrar-baja-feriado), y su Escape cierra
 // solo sus modales, primero el de la baja. La lista la manda el servidor ya armada (GET /api/feriados: las fechas, el día de la
 // semana, el tipo y las aclaraciones); acá no se recalcula nada, y el modal corrige con la fecha guardada (fecha_guardada), nunca con
-// la del año que se mira (en uno que se repite, lo dice debajo de la fecha: ayudaDeLaFechaFeriado). Escribe con API.pedirJson
-// (POST, PUT y DELETE de /feriados; api.js no cambió). #feriados-anuncio es la única región viva de la vista: lo que se vuelve a
-// dibujar no lleva aria-live.
+// la del año que se mira (en uno que se repite, lo dice debajo de la fecha: ayudaDeLaFechaFeriado). Debajo de la fecha dice también
+// cuántas licencias de Mi espacio la incluyen (GET /feriados/afectadas, 300 ms después del último cambio de la fecha o de «Se
+// repite» hecho por quien usa el modal; abrirlo no lo pide). Escribe con API.pedirJson (POST, PUT y DELETE de /feriados; api.js no
+// cambió). #feriados-anuncio es la única región viva de la vista: lo que se vuelve a dibujar no lleva aria-live.
 
 // =====================================================
 // El estado de la pestaña
@@ -31,6 +32,10 @@ const htmlEscritoFeriados = new Map(); // el HTML escrito en el selector y en lo
 let modalDelFeriado = null;
 // La confirmación de la baja abierta, null si no hay: { modal (el del feriado), feriado, origen («Dar de baja»), enviando }
 let bajaDelFeriado = null;
+// Cuántas licencias de Mi espacio incluye la fecha del modal: el temporizador de la espera (null si no hay) y el turno (solo se
+// escribe la respuesta del último pedido)
+let temporizadorDeAfectadasFeriado = null;
+let turnoDeAfectadasFeriado = 0;
 
 // =====================================================
 // Las constantes
@@ -372,14 +377,37 @@ const ayudaDeLaFechaFeriado = (feriado, anioNoRige = null) => {
   return esAnioFeriado(anioNoRige) ? `${ayuda} Si solo en ${anioNoRige} se corrió, marcá «En ${anioNoRige} no rige».` : ayuda;
 };
 
-// El aria-describedby de la fecha (`actual`, los ids que ya tiene) con la ayuda (fe-fecha-ayuda, antes del error) o sin ella; los
-// demás ids quedan como estaban
-const describedbyDeLaFechaFeriado = (actual, conAyuda) => {
-  const ids = textoFeriado(actual).split(/\s+/).filter((id) => id !== '' && id !== 'fe-fecha-ayuda');
-  if (!conAyuda) return ids.join(' ');
-  const error = ids.indexOf('fe-fecha-error');
-  ids.splice(error === -1 ? ids.length : error, 0, 'fe-fecha-ayuda');
-  return ids.join(' ');
+// El aria-describedby de la fecha (`actual`, los ids que ya tiene) con la ayuda (fe-fecha-ayuda) o sin ella y con las licencias
+// afectadas (fe-fecha-afectadas) o sin ellas: cada una, según `conAyuda` y `conAfectadas`, o como estaba si es undefined. Van en el
+// orden en que se ven, la ayuda y después las afectadas, antes del error; los demás ids quedan como estaban
+const describedbyDeLaFechaFeriado = (actual, conAyuda, conAfectadas) => {
+  const ids = textoFeriado(actual).split(/\s+/).filter((id) => id !== '');
+  const nuevos = [['fe-fecha-ayuda', conAyuda], ['fe-fecha-afectadas', conAfectadas]]
+    .filter(([id, con]) => (con === undefined ? ids.includes(id) : Boolean(con))).map(([id]) => id);
+  const resto = ids.filter((id) => id !== 'fe-fecha-ayuda' && id !== 'fe-fecha-afectadas');
+  const error = resto.indexOf('fe-fecha-error');
+  resto.splice(error === -1 ? resto.length : error, 0, ...nuevos);
+  return resto.join(' ');
+};
+
+// La espera después del último cambio de la fecha o de «Se repite» antes de pedir cuántas licencias de Mi espacio la incluyen
+const ESPERA_AFECTADAS_FERIADO = 300;
+
+// Debajo de la fecha, texto plano (va con textContent): cuántas licencias de Mi espacio incluyen el feriado, con lo que manda GET
+// /api/feriados/afectadas. Con 0, o con lo que no es una cantidad, nada
+const textoDeAfectadasFeriado = (cantidad) => {
+  if (!Number.isInteger(cantidad) || cantidad <= 0) return '';
+  return cantidad === 1
+    ? '1 licencia cargada lo incluye: sus días hábiles se recalculan.'
+    : `${String(cantidad)} licencias cargadas lo incluyen: sus días hábiles se recalculan.`;
+};
+
+// GET /feriados/afectadas con la fecha y «se repite» del modal y, al corregir, el id del feriado (su baja y sus años que no rigen los
+// pone el servidor); null sin una fecha (a medias o vacía): no se pide nada
+const rutaDeAfectadasFeriado = (fecha, seRepite, id) => {
+  if (!esFechaFeriado(fecha)) return null;
+  const ruta = `/feriados/afectadas?fecha=${fecha}&se_repite=${seRepite === true ? '1' : '0'}`;
+  return esIdDeFeriado(id) ? `${ruta}&id=${String(id)}` : ruta;
 };
 
 // El aviso de un guardado que salió bien: los mensajes del servidor y después sus avisos (fin de semana, ya hay uno ese día), cada uno
@@ -718,6 +746,8 @@ function abrirModalFeriado(feriado, origen) {
   pasaAl.max = conAnio ? `${anio}-12-31` : '';
   porIdFeriado('fe-baja').hidden = editado === null;
   bloquearModalFeriado(false);
+  // Sin las licencias afectadas de otra apertura: abrirlo no las pide (solo un cambio de la fecha o de «Se repite»)
+  cancelarAfectadasFeriado();
   actualizarDiaFeriado();
   actualizarSeccionDelAnioFeriado();
   modal.classList.add('active');
@@ -730,6 +760,63 @@ function abrirModalFeriado(feriado, origen) {
 function actualizarDiaFeriado() {
   const dia = porIdFeriado('fe-fecha-dia');
   if (dia) dia.textContent = diaDeLaSemanaFeriado(porIdFeriado('fe-fecha')?.value) ?? '';
+}
+
+// Un cambio de la fecha hecho por quien usa el modal: su día al lado y, después de la espera, las licencias que la incluyen
+function alCambiarLaFechaFeriado() {
+  actualizarDiaFeriado();
+  programarAfectadasFeriado();
+}
+
+// Un cambio de «Se repite» hecho por quien usa el modal: «no rige» y la ayuda de la fecha y, después de la espera, las licencias
+function alCambiarSeRepiteFeriado() {
+  actualizarSeccionDelAnioFeriado();
+  programarAfectadasFeriado();
+}
+
+// Las licencias afectadas debajo de la fecha (textoDeAfectadasFeriado; '' la esconde), atadas a la fecha por su aria-describedby
+// solo mientras se ven
+function mostrarAfectadasFeriado(texto) {
+  const leyenda = porIdFeriado('fe-fecha-afectadas');
+  const fecha = porIdFeriado('fe-fecha');
+  if (!leyenda || !fecha) return;
+  leyenda.textContent = texto;
+  leyenda.hidden = texto === '';
+  fecha.setAttribute('aria-describedby', describedbyDeLaFechaFeriado(fecha.getAttribute('aria-describedby'), undefined, texto !== ''));
+}
+
+// Lo pendiente ya no se escribe (el temporizador se cancela y la respuesta que todavía no llegó se descarta) y la cantidad de antes
+// se va: es la de otra fecha, o de otra apertura
+function cancelarAfectadasFeriado() {
+  clearTimeout(temporizadorDeAfectadasFeriado);
+  temporizadorDeAfectadasFeriado = null;
+  turnoDeAfectadasFeriado++;
+  mostrarAfectadasFeriado('');
+}
+
+// Después de un cambio: la cantidad de antes se va y, ESPERA_AFECTADAS_FERIADO ms después del último cambio, se pide la de ahora
+function programarAfectadasFeriado() {
+  cancelarAfectadasFeriado();
+  const sesion = modalDelFeriado;
+  if (!sesion) return;
+  const turno = turnoDeAfectadasFeriado;
+  temporizadorDeAfectadasFeriado = setTimeout(() => pedirAfectadasFeriado(sesion, turno), ESPERA_AFECTADAS_FERIADO);
+}
+
+// Pide cuántas licencias incluyen la fecha y «se repite» que tiene el modal ahora (sin una fecha, nada) y las muestra, si es la
+// respuesta del último pedido y el modal sigue siendo el mismo
+async function pedirAfectadasFeriado(sesion, turno) {
+  temporizadorDeAfectadasFeriado = null;
+  const ruta = rutaDeAfectadasFeriado(porIdFeriado('fe-fecha')?.value, porIdFeriado('fe-se-repite')?.checked === true, sesion.id);
+  if (ruta === null) return;
+  let cantidad = null;
+  try {
+    cantidad = (await API.pedirJson('GET', ruta))?.data?.licencias_afectadas;
+  } catch {
+    // Si el pedido falla, no se muestra nada: es un aviso, no frena el guardado
+  }
+  if (turno !== turnoDeAfectadasFeriado || modalDelFeriado !== sesion) return;
+  mostrarAfectadasFeriado(textoDeAfectadasFeriado(cantidad));
 }
 
 // «No rige» se ve al corregir uno que se repite mientras «Se repite» siga tildado; «Se pasó al», con «no rige» marcado
@@ -852,9 +939,12 @@ async function recargarFeriadosYEnfocar(sesion) {
   if (modalDelFeriado === null && bajaDelFeriado === null) devolverFocoFeriado(sesion);
 }
 
+// Cierra el modal; si es el abierto, las licencias afectadas que estaban por pedirse o por llegar ya no se escriben
 function terminarModalFeriado(sesion) {
   porIdFeriado('modal-feriado').classList.remove('active');
-  if (modalDelFeriado === sesion) modalDelFeriado = null;
+  if (modalDelFeriado !== sesion) return;
+  modalDelFeriado = null;
+  cancelarAfectadasFeriado();
 }
 
 // La × y «Cancelar» (y Escape): nunca mientras se guarda. Si algo ya se guardó (un guardado a medias), la lista se vuelve a pedir
@@ -1070,9 +1160,9 @@ function iniciarModalesFeriado() {
   porIdFeriado('fe-tipo-opciones').innerHTML = htmlDeTiposFeriado();
   modal.addEventListener('click', alHacerClicEnModalFeriado);
   baja.addEventListener('click', alHacerClicEnModalBajaFeriado);
-  porIdFeriado('fe-fecha').addEventListener('input', actualizarDiaFeriado);
-  porIdFeriado('fe-fecha').addEventListener('change', actualizarDiaFeriado);
-  porIdFeriado('fe-se-repite').addEventListener('change', actualizarSeccionDelAnioFeriado);
+  porIdFeriado('fe-fecha').addEventListener('input', alCambiarLaFechaFeriado);
+  porIdFeriado('fe-fecha').addEventListener('change', alCambiarLaFechaFeriado);
+  porIdFeriado('fe-se-repite').addEventListener('change', alCambiarSeRepiteFeriado);
   porIdFeriado('fe-no-rige').addEventListener('change', actualizarSeccionDelAnioFeriado);
   porIdFeriado('fe-guardar').addEventListener('click', guardarFeriado);
   porIdFeriado('fe-baja').addEventListener('click', (evento) => abrirModalBajaFeriado(evento.currentTarget));

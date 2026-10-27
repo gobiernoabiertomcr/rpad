@@ -28,7 +28,7 @@ import {
   deleteArea
 } from '../controllers/areasController.js';
 import {
-  listarFeriados, crearFeriado, corregirFeriado, cambiarRige, darDeBajaFeriado
+  listarFeriados, afectadasPorFeriado, crearFeriado, corregirFeriado, cambiarRige, darDeBajaFeriado
 } from '../controllers/feriadosController.js';
 import {
   ejecutarNotificacionesDiarias,
@@ -60,6 +60,11 @@ import {
   elegirFirmante
 } from '../controllers/notasDigitalesController.js';
 import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/firmasController.js';
+import {
+  verResumen, listarLicenciasMias, listarHorasExtras, verAnio, verSaldoInicial, calcularLicencia, cargarLicenciaMia,
+  corregirLicenciaMia, borrarLicenciaMia, cargarHorasExtras, corregirHorasExtras, borrarHorasExtras, guardarAnio,
+  guardarSaldoInicial, listarAusentes, verFirmante
+} from '../controllers/miEspacioController.js';
 import {
   reporteEstadoGeneral,
   reporteAvisos,
@@ -182,6 +187,27 @@ router.get('/auth/profile/firma', authMiddleware, adminOnly, verMiFirma);
 router.put('/auth/profile/firma', authMiddleware, adminOnly, guardarMiFirma);
 router.get('/auth/profile/firma/imagen', authMiddleware, adminOnly, verImagenMiFirma);
 
+// Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, sección 10): cada persona con sesión, cualquiera sea su rol, ve
+// solo lo suyo (req.user.userId)
+router.get('/mi-espacio/resumen', authMiddleware, verResumen);
+router.get('/mi-espacio/licencias', authMiddleware, listarLicenciasMias);
+// El cálculo va antes que las rutas con :id
+router.post('/mi-espacio/licencias/calculo', authMiddleware, calcularLicencia);
+router.post('/mi-espacio/licencias', authMiddleware, cargarLicenciaMia);
+router.put('/mi-espacio/licencias/:id', authMiddleware, corregirLicenciaMia);
+router.delete('/mi-espacio/licencias/:id', authMiddleware, borrarLicenciaMia);
+router.get('/mi-espacio/horas-extras', authMiddleware, listarHorasExtras);
+router.post('/mi-espacio/horas-extras', authMiddleware, cargarHorasExtras);
+router.put('/mi-espacio/horas-extras/:id', authMiddleware, corregirHorasExtras);
+router.delete('/mi-espacio/horas-extras/:id', authMiddleware, borrarHorasExtras);
+router.get('/mi-espacio/anio/:anio', authMiddleware, verAnio);
+router.put('/mi-espacio/anio/:anio', authMiddleware, guardarAnio);
+router.get('/mi-espacio/saldo-inicial', authMiddleware, verSaldoInicial);
+router.put('/mi-espacio/saldo-inicial', authMiddleware, guardarSaldoInicial);
+// «Hoy no están» (sección 7: sin esAdmin, nadie) y los datos del campo del firmante titular (sección 6: a los demás, nada)
+router.get('/mi-espacio/ausentes', authMiddleware, listarAusentes);
+router.get('/mi-espacio/firmante', authMiddleware, verFirmante);
+
 // Datasets (escritura - solo admin)
 router.post('/datasets', authMiddleware, adminOnly, createDataset);
 router.put('/datasets/:id', authMiddleware, adminOnly, updateDataset);
@@ -195,8 +221,9 @@ router.put('/areas/:id', authMiddleware, adminOnly, updateArea);
 router.delete('/areas/:id', authMiddleware, adminOnly, deleteArea);
 
 // Feriados (spec 2026-10-26-feriados, 3): los lee cualquier rol con sesión; cargan, corrigen, marcan «no rige» y dan de baja
-// solo administración. …/rige va antes que /:id
+// solo administración, que también pide cuántas licencias de Mi espacio incluye uno (…/afectadas, el modal). …/rige va antes que /:id
 router.get('/feriados', authMiddleware, listarFeriados);
+router.get('/feriados/afectadas', authMiddleware, adminOnly, afectadasPorFeriado);
 router.post('/feriados', authMiddleware, adminOnly, crearFeriado);
 router.put('/feriados/:id/rige', authMiddleware, adminOnly, cambiarRige);
 router.put('/feriados/:id', authMiddleware, adminOnly, corregirFeriado);

@@ -43,8 +43,9 @@ after(async () => {
 beforeEach(async () => {
   await asegurarBaseDePrueba();
   // Cada test arranca sin feriados cargados: los años del selector dependen de lo que haya. feriados_no_rige se va con sus
-  // feriados (ON DELETE CASCADE)
+  // feriados (ON DELETE CASCADE). Y sin licencias de Mi espacio: las cuenta licencias_afectadas
   await query('DELETE FROM feriados');
+  await query('DELETE FROM mi_espacio_licencias');
 });
 
 const como = (clave) => ({ token: usuarios[clave].token });
@@ -394,8 +395,10 @@ describe('POST /feriados (alta)', () => {
     assert.equal(res.body.success, true);
     assert.equal(res.body.message, 'Feriado cargado.');
     assert.deepEqual(res.body.avisos, []);
-    assert.deepEqual(Object.keys(res.body.data), ['id']);
+    assert.deepEqual(Object.keys(res.body.data), ['id', 'licencias_afectadas']);
     assert.ok(Number.isInteger(res.body.data.id) && res.body.data.id > 0);
+    // Sin licencias de Mi espacio cargadas, ninguna lo incluye
+    assert.equal(res.body.data.licencias_afectadas, 0);
     assert.deepEqual(await filaGuardada(res.body.data.id), {
       fecha: '2026-02-16', nombre: 'Carnaval', tipo: 'nacional', trasladado_de: null, se_repite: 0, hasta_anio: null, activo: 1,
       creado_por: usuarios.admin.id
@@ -488,7 +491,7 @@ describe('PUT /feriados/:id (corregir)', () => {
     const id = await insertarFeriado({ fecha: '2026-02-16', nombre: 'Carnava' });
     const res = await api.put(`/feriados/${id}`, carnaval({ fecha: '2026-02-17', nombre: 'Carnaval' }), como('admin'));
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.deepEqual(res.body, { success: true, message: 'Feriado corregido.', avisos: [] });
+    assert.deepEqual(res.body, { success: true, message: 'Feriado corregido.', avisos: [], data: { licencias_afectadas: 0 } });
     assert.deepEqual(await filaGuardada(id), {
       fecha: '2026-02-17', nombre: 'Carnaval', tipo: 'nacional', trasladado_de: null, se_repite: 0, hasta_anio: null, activo: 1,
       creado_por: null
@@ -846,5 +849,209 @@ describe('DELETE /feriados/:id (baja)', () => {
       assert.deepEqual(res.body, { success: false, error: MENSAJES_FERIADO.desde, campo: 'desde' }, consulta);
     }
     assert.deepEqual(await todoLoGuardado(), antes);
+  });
+});
+
+// Cuántas licencias de Mi espacio incluye un feriado (spec 2026-10-26-feriados, 3 y 6; la entrega 2 lo suma): GET
+// /feriados/afectadas, antes de guardar, y licencias_afectadas en la respuesta del alta y de la corrección, con lo guardado. Uno que
+// se repite cuenta todos los años en que rige (decisión del usuario, 26/10/2026), cada licencia una vez. Las licencias, por SQL
+describe('las licencias de Mi espacio que incluye un feriado', () => {
+  // Una licencia de Mi espacio de esa persona, de desde a hasta (activa, salvo que se diga)
+  const insertarLicencia = async (clave, desde, hasta, activo = 1) => (await query(
+    "INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, activo) VALUES (?, 'vacaciones', ?, ?, ?)",
+    [usuarios[clave].id, desde, hasta, activo]
+  )).insertId;
+  // GET /feriados/afectadas con esa consulta, como administración: el número, con la forma de la respuesta controlada
+  const afectadas = async (consulta) => {
+    const res = await api.get(`/feriados/afectadas${consulta}`, como('admin'));
+    assert.equal(res.status, 200, `${consulta}: ${JSON.stringify(res.body)}`);
+    assert.deepEqual(Object.keys(res.body).sort(), ['data', 'success'], consulta);
+    assert.equal(res.body.success, true, consulta);
+    assert.deepEqual(Object.keys(res.body.data), ['licencias_afectadas'], consulta);
+    return res.body.data.licencias_afectadas;
+  };
+
+  it('dos licencias de dos personas incluyen el 16/02/2026: el GET da 2 y el alta de ese día trae licencias_afectadas: 2', async () => {
+    await insertarLicencia('admin', '2026-02-16', '2026-02-20');
+    await insertarLicencia('editor', '2026-02-12', '2026-02-16');
+    // Las que no cuentan: una que no lo incluye y una dada de baja que sí
+    await insertarLicencia('superadmin', '2026-02-17', '2026-02-18');
+    await insertarLicencia('admin', '2026-02-16', '2026-02-16', 0);
+    assert.equal(await afectadas('?fecha=2026-02-16'), 2);
+    assert.equal(await afectadas('?fecha=2026-02-16&se_repite=0'), 2);
+    assert.equal(await afectadas('?fecha=2026-02-19'), 1);
+    assert.equal(await afectadas('?fecha=2026-03-02'), 0);
+
+    const alta = await api.post('/feriados', carnaval(), como('admin'));
+    assert.equal(alta.status, 201, JSON.stringify(alta.body));
+    assert.equal(alta.body.data.licencias_afectadas, 2);
+    // La corrección cuenta con la fecha que quedó guardada: el 13/02 solo lo incluye la del editor
+    const correccion = await api.put(`/feriados/${alta.body.data.id}`, carnaval({ fecha: '2026-02-13' }), como('admin'));
+    assert.equal(correccion.status, 200, JSON.stringify(correccion.body));
+    assert.deepEqual(correccion.body.data, { licencias_afectadas: 1 });
+  });
+
+  it('una fecha que no es una fecha da 400 en fecha', async () => {
+    for (const consulta of ['', '?fecha=', '?fecha=abc', '?fecha=2026-02-30', '?fecha=2026-2-16', '?fecha=2026-02-16&fecha=2026-02-17']) {
+      const res = await api.get(`/feriados/afectadas${consulta}`, como('admin'));
+      assert.equal(res.status, 400, `«${consulta}»: ${JSON.stringify(res.body)}`);
+      assert.deepEqual(res.body, { success: false, error: MENSAJES_FERIADO.fecha, campo: 'fecha' }, consulta);
+    }
+  });
+
+  // Las fechas de los tests de «Todos los años» son el 15/12, un día hábil en 2025 (lunes), 2026 (martes) y 2027 (miércoles): así
+  // cada año cuenta (desde la decisión del usuario del 27/10/2026, una fecha que no cambia un día hábil no cuenta). Los otros
+  // feriados guardados van el 16/12 y el 17/12, días hábiles de esos años, para no ser «otro feriado ese día» del 15/12
+  it('«Todos los años»: uno que se repite cuenta las licencias de cada año en que rige; uno que no, solo las del suyo', async () => {
+    await insertarLicencia('admin', '2026-12-11', '2026-12-16');
+    await insertarLicencia('editor', '2027-12-15', '2027-12-15');
+    // Una de antes de su primer año no cuenta: no rige hacia atrás
+    await insertarLicencia('superadmin', '2025-12-12', '2025-12-16');
+    assert.equal(await afectadas('?fecha=2026-12-15&se_repite=1'), 2);
+    assert.equal(await afectadas('?fecha=2026-12-15&se_repite=0'), 1);
+    assert.equal(await afectadas('?fecha=2026-12-15'), 1);
+    assert.equal(await afectadas('?fecha=2027-12-15&se_repite=1'), 1);
+    // se_repite es '1' o '0': cualquier otro valor es '0'
+    for (const valor of ['true', 'si', '2', '']) assert.equal(await afectadas(`?fecha=2026-12-15&se_repite=${valor}`), 1, valor);
+  });
+
+  it('una licencia que incluye el feriado de dos años cuenta una vez', async () => {
+    await insertarLicencia('admin', '2026-12-11', '2027-12-16');
+    assert.equal(await afectadas('?fecha=2026-12-15&se_repite=1'), 1);
+  });
+
+  it('con el id de uno guardado se usan su baja y sus años que no rigen; sin id, o con uno que no sirve, no', async () => {
+    await insertarLicencia('admin', '2026-12-11', '2026-12-16');
+    await insertarLicencia('editor', '2027-12-15', '2027-12-15');
+    const sin2027 = await insertarFeriado({ fecha: '2026-12-16', nombre: 'Día del Petróleo', tipo: 'provincial', se_repite: 1 });
+    await noRige(sin2027, 2027);
+    const hasta2026 = await insertarFeriado({
+      fecha: '2026-12-17', nombre: 'Otro que se repite', tipo: 'provincial', se_repite: 1, hasta_anio: 2026
+    });
+    // Dado de baja, ese mismo día: tampoco es «otro feriado»
+    const deBaja = await insertarFeriado({ fecha: '2026-12-15', nombre: 'Dado de baja', se_repite: 1, hasta_anio: 2026, activo: 0 });
+    // El modal los pasa al 15/12: sus años que no rigen y su baja desde un año van con ellos
+    assert.equal(await afectadas(`?fecha=2026-12-15&se_repite=1&id=${sin2027}`), 1);
+    assert.equal(await afectadas(`?fecha=2026-12-15&se_repite=1&id=${hasta2026}`), 1);
+    // La fecha y «se repite» son los del modal, no los guardados
+    assert.equal(await afectadas(`?fecha=2027-12-15&se_repite=1&id=${hasta2026}`), 0);
+    assert.equal(await afectadas(`?fecha=2026-12-15&se_repite=0&id=${sin2027}`), 1);
+    // En 2027 sin2027 no rige; sin «se repite», el del modal es solo de 2027 y sus años que no rigen no cuentan
+    assert.equal(await afectadas(`?fecha=2027-12-15&se_repite=1&id=${sin2027}`), 0);
+    assert.equal(await afectadas(`?fecha=2027-12-15&se_repite=0&id=${sin2027}`), 1);
+    for (const id of [deBaja, 999999, 'abc', '0', '']) {
+      assert.equal(await afectadas(`?fecha=2026-12-15&se_repite=1&id=${id}`), 2, String(id));
+    }
+  });
+
+  it('el alta y la corrección de uno que se repite cuentan con lo guardado, también sus años que no rigen', async () => {
+    await insertarLicencia('admin', '2026-12-11', '2026-12-16');
+    await insertarLicencia('editor', '2027-12-15', '2027-12-15');
+    const alta = await api.post('/feriados',
+      { fecha: '2026-12-15', nombre: 'Día del Petróleo', tipo: 'provincial', se_repite: true }, como('admin'));
+    assert.equal(alta.status, 201, JSON.stringify(alta.body));
+    assert.equal(alta.body.data.licencias_afectadas, 2);
+    await noRige(alta.body.data.id, 2027);
+    const correccion = await api.put(`/feriados/${alta.body.data.id}`,
+      { fecha: '2026-12-15', nombre: 'Día del Petróleo Nacional', tipo: 'provincial', se_repite: true }, como('admin'));
+    assert.equal(correccion.status, 200, JSON.stringify(correccion.body));
+    assert.equal(correccion.body.data.licencias_afectadas, 1);
+  });
+
+  // Decisión del usuario (27/10/2026): el 13/12 es domingo en 2026 y lunes en 2027, así que de uno que se repite solo cuenta el de
+  // 2027, cada año por separado
+  it('un domingo no cambia ningún día hábil: el 13/12 que se repite cuenta solo en 2027, cuando cae lunes', async () => {
+    await insertarLicencia('admin', '2026-12-10', '2026-12-14');
+    await insertarLicencia('editor', '2027-12-13', '2027-12-13');
+    assert.equal(await afectadas('?fecha=2026-12-13&se_repite=1'), 1);
+    assert.equal(await afectadas('?fecha=2026-12-13&se_repite=0'), 0);
+    assert.equal(await afectadas('?fecha=2026-12-13'), 0);
+    assert.equal(await afectadas('?fecha=2027-12-13&se_repite=0'), 1);
+    const alta = await api.post('/feriados',
+      { fecha: '2026-12-13', nombre: 'Día del Petróleo', tipo: 'provincial', se_repite: true }, como('admin'));
+    assert.equal(alta.status, 201, JSON.stringify(alta.body));
+    assert.equal(alta.body.data.licencias_afectadas, 1);
+    await noRige(alta.body.data.id, 2027);
+    const correccion = await api.put(`/feriados/${alta.body.data.id}`,
+      { fecha: '2026-12-13', nombre: 'Día del Petróleo Nacional', tipo: 'provincial', se_repite: true }, como('admin'));
+    assert.equal(correccion.status, 200, JSON.stringify(correccion.body));
+    assert.equal(correccion.body.data.licencias_afectadas, 0);
+  });
+
+  // Solo si cambia algo (decisión del usuario, 27/10/2026): una fecha que sin el feriado ya no era un día hábil (sábado, domingo,
+  // uno de los 9 fijos u otro feriado que rige ese día) no cuenta
+  it('solo las fechas que cambian un día hábil: un sábado o el 25/12 dan 0, el lunes da 1 y, con otro feriado ese lunes, 0',
+    async () => {
+      // Del viernes 30/10 al martes 3/11/2026, y otra que incluye la Navidad
+      await insertarLicencia('admin', '2026-10-30', '2026-11-03');
+      await insertarLicencia('editor', '2026-12-21', '2026-12-28');
+      assert.equal(await afectadas('?fecha=2026-10-31'), 0);
+      assert.equal(await afectadas('?fecha=2026-11-01'), 0);
+      assert.equal(await afectadas('?fecha=2026-12-25'), 0);
+      assert.equal(await afectadas('?fecha=2026-11-02'), 1);
+      const alta = await api.post('/feriados', carnaval({ fecha: '2026-10-31', nombre: 'Un sábado' }), como('admin'));
+      assert.equal(alta.status, 201, JSON.stringify(alta.body));
+      assert.equal(alta.body.data.licencias_afectadas, 0);
+
+      await insertarFeriado({ fecha: '2026-11-02', nombre: 'Otro feriado ese lunes' });
+      assert.equal(await afectadas('?fecha=2026-11-02'), 0);
+      const mismoDia = await api.post('/feriados', carnaval({ fecha: '2026-11-02', nombre: 'El mismo lunes' }), como('admin'));
+      assert.equal(mismoDia.status, 201, JSON.stringify(mismoDia.body));
+      assert.equal(mismoDia.body.data.licencias_afectadas, 0);
+    });
+
+  it('corregir un feriado no lo cuenta a él como «otro feriado» ese día; uno que se repite en dos años hábiles cuenta una vez',
+    async () => {
+      // El 2/11 es lunes en 2026 y martes en 2027
+      await insertarLicencia('admin', '2026-11-02', '2026-11-02');
+      await insertarLicencia('editor', '2026-10-26', '2027-11-05');
+      const alta = await api.post('/feriados', carnaval({ fecha: '2026-11-02', nombre: 'Feriado del 2/11', se_repite: true }),
+        como('admin'));
+      assert.equal(alta.status, 201, JSON.stringify(alta.body));
+      const { id } = alta.body.data;
+      assert.equal(alta.body.data.licencias_afectadas, 2);
+      // Con su id, no se cuenta a sí mismo; sin él, ya guardado, es otro feriado ese día y no cambia nada
+      assert.equal(await afectadas(`?fecha=2026-11-02&se_repite=1&id=${id}`), 2);
+      assert.equal(await afectadas(`?fecha=2026-11-02&se_repite=0&id=${id}`), 2);
+      assert.equal(await afectadas('?fecha=2026-11-02&se_repite=1'), 0);
+      const correccion = await api.put(`/feriados/${id}`,
+        carnaval({ fecha: '2026-11-02', nombre: 'Feriado del 2 de noviembre', se_repite: true }), como('admin'));
+      assert.equal(correccion.status, 200, JSON.stringify(correccion.body));
+      assert.equal(correccion.body.data.licencias_afectadas, 2);
+    });
+
+  // Es aislado: el feriado ya está guardado y la respuesta no cambia (la tabla, renombrada mientras tanto en la base de prueba)
+  it('si la cuenta falla, el alta y la corrección se guardan igual, con licencias_afectadas: null', async () => {
+    await asegurarBaseDePrueba();
+    await query('RENAME TABLE mi_espacio_licencias TO mi_espacio_licencias_fuera');
+    try {
+      const alta = await api.post('/feriados', carnaval(), como('admin'));
+      assert.equal(alta.status, 201, JSON.stringify(alta.body));
+      assert.deepEqual(Object.keys(alta.body).sort(), ['avisos', 'data', 'message', 'success']);
+      assert.equal(alta.body.message, 'Feriado cargado.');
+      assert.deepEqual(alta.body.data, { id: alta.body.data.id, licencias_afectadas: null });
+      assert.equal((await filaGuardada(alta.body.data.id)).nombre, 'Carnaval');
+
+      const correccion = await api.put(`/feriados/${alta.body.data.id}`, carnaval({ nombre: 'Carnaval 2026' }), como('admin'));
+      assert.equal(correccion.status, 200, JSON.stringify(correccion.body));
+      assert.deepEqual(correccion.body, {
+        success: true, message: 'Feriado corregido.', avisos: [], data: { licencias_afectadas: null }
+      });
+      assert.equal((await filaGuardada(alta.body.data.id)).nombre, 'Carnaval 2026');
+
+      // El GET es la cuenta: si falla, 500
+      const res = await api.get('/feriados/afectadas?fecha=2026-02-16', como('admin'));
+      assert.equal(res.status, 500);
+      assert.equal(res.body.success, false);
+    } finally {
+      await query('RENAME TABLE mi_espacio_licencias_fuera TO mi_espacio_licencias');
+    }
+  });
+
+  it('el lector y el colaborador reciben 403; sin sesión, 401', async () => {
+    for (const clave of ['lector', 'colab']) {
+      assert.equal((await api.get('/feriados/afectadas?fecha=2026-02-16', como(clave))).status, 403, clave);
+    }
+    assert.equal((await api.get('/feriados/afectadas?fecha=2026-02-16')).status, 401);
   });
 });

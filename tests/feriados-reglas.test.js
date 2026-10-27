@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   TIPOS_FERIADO, NOMBRES_TIPO_FERIADO, NOMBRES_DE_LOS_FIJOS,
   diaDeLaSemana, fechaEnElAnio, feriadosDelRango, esDiaHabilCon, diasHabilesDe, diasHabilesEntre,
+  proximoDiaHabilCon, restarDiasHabilesCon, ultimoDiaHabilDelMesCon, fechasDelFeriado, fechasQueCambianDiasHabiles,
   MENSAJES_FERIADO, FECHA_MINIMA_FERIADO, LARGO_NOMBRE_FERIADO,
   validarFeriado, validarRige, bajaDesde, errorDeLaCorreccion, feriadosDelAnio, avisosDeLaFecha, aniosDelSelector
 } from '../services/feriadosReglas.js';
@@ -166,6 +167,117 @@ describe('fechaEnElAnio', () => {
     }
     for (const anio of ['2026', 2026.5, NaN, null, undefined, -2026, 20260]) {
       assert.equal(fechaEnElAnio(QUE_SE_REPITE, anio), null, String(anio));
+    }
+  });
+});
+
+// Las fechas en que rige un feriado en un rango de años, para contar las licencias de Mi espacio que lo incluyen (decisión del
+// usuario, 26/10/2026: uno que se repite cuenta todos los años en que rige)
+describe('fechasDelFeriado', () => {
+  const DESDE_2026 = fila({ fecha: '2026-12-13', se_repite: 1 });
+
+  it('uno que se repite desde 2026, de 2024 a 2027: las de 2026 y 2027 (no hacia atrás)', () => {
+    assert.deepEqual(fechasDelFeriado(DESDE_2026, 2024, 2027), ['2026-12-13', '2027-12-13']);
+    assert.deepEqual(fechasDelFeriado(DESDE_2026, 2027, 2029), ['2027-12-13', '2028-12-13', '2029-12-13']);
+    assert.deepEqual(fechasDelFeriado(DESDE_2026, 2024, 2025), []);
+  });
+
+  it('con hasta_anio 2026, solo la de 2026; con no_rige [2027], tampoco la de 2027', () => {
+    assert.deepEqual(fechasDelFeriado({ ...DESDE_2026, hasta_anio: 2026 }, 2024, 2027), ['2026-12-13']);
+    assert.deepEqual(fechasDelFeriado({ ...DESDE_2026, no_rige: [2027] }, 2024, 2027), ['2026-12-13']);
+    assert.deepEqual(fechasDelFeriado({ ...DESDE_2026, no_rige: [2027] }, 2024, 2028), ['2026-12-13', '2028-12-13']);
+  });
+
+  it('uno que no se repite: su fecha, si cae en el rango', () => {
+    const deUnAnio = { ...DESDE_2026, se_repite: 0 };
+    assert.deepEqual(fechasDelFeriado(deUnAnio, 2024, 2027), ['2026-12-13']);
+    assert.deepEqual(fechasDelFeriado(deUnAnio, 2026, 2026), ['2026-12-13']);
+    assert.deepEqual(fechasDelFeriado(deUnAnio, 2027, 2028), []);
+    assert.deepEqual(fechasDelFeriado(deUnAnio, 2024, 2025), []);
+  });
+
+  it('un 29/02 que se repite saltea los años sin 29/02', () => {
+    assert.deepEqual(fechasDelFeriado(fila({ fecha: '2028-02-29', se_repite: 1 }), 2027, 2033), ['2028-02-29', '2032-02-29']);
+  });
+
+  it('una dada de baja no rige ningún año', () => {
+    assert.deepEqual(fechasDelFeriado({ ...DESDE_2026, activo: 0 }, 2024, 2027), []);
+  });
+
+  it('con una entrada inválida, []', () => {
+    for (const mala of [null, undefined, 'hola', 3, [], {}, fila({ fecha: '2026-02-30' })]) {
+      assert.deepEqual(fechasDelFeriado(mala, 2024, 2027), [], JSON.stringify(mala));
+    }
+    for (const [desde, hasta] of [[2027, 2026], ['2024', 2027], [2024, '2027'], [2024.5, 2027], [null, 2027], [2024, NaN],
+      [undefined, undefined]]) {
+      assert.deepEqual(fechasDelFeriado(DESDE_2026, desde, hasta), [], `${desde} ${hasta}`);
+    }
+  });
+
+  it('un rango enorme no se recorre fuera de los años que existen', () => {
+    assert.deepEqual(fechasDelFeriado({ ...DESDE_2026, se_repite: 0 }, -1e9, 1e9), ['2026-12-13']);
+    assert.deepEqual(fechasDelFeriado(fila({ fecha: '9998-12-13', se_repite: 1 }), 9990, 1e9), ['9998-12-13', '9999-12-13']);
+  });
+});
+
+// Las fechas en que un feriado cambia de verdad un día hábil (decisión del usuario, 27/10/2026): solo por ellas el modal cuenta
+// las licencias de Mi espacio que lo incluyen
+describe('fechasQueCambianDiasHabiles', () => {
+  it('un sábado o un domingo no cambia ningún día hábil; un lunes, sí', () => {
+    assert.deepEqual(fechasQueCambianDiasHabiles(fila({ fecha: '2026-10-31' }), 2026, 2026, []), []);
+    assert.deepEqual(fechasQueCambianDiasHabiles(fila({ fecha: '2026-11-01' }), 2026, 2026, []), []);
+    assert.deepEqual(fechasQueCambianDiasHabiles(fila({ fecha: '2026-11-02' }), 2026, 2026, []), ['2026-11-02']);
+  });
+
+  it('el mismo día que uno de los 9 fijos (el viernes 25/12/2026) no cambia nada', () => {
+    assert.deepEqual(fechasQueCambianDiasHabiles(fila({ fecha: '2026-12-25' }), 2026, 2026, []), []);
+  });
+
+  it('otro feriado que ese día rige: no cambia nada; uno dado de baja, uno que ese año no rige o de otro día, no cuenta', () => {
+    const lunes = fila({ id: 1, fecha: '2026-11-02' });
+    assert.deepEqual(fechasQueCambianDiasHabiles(lunes, 2026, 2026, [fila({ id: 2, fecha: '2026-11-02' })]), []);
+    // Uno que se repite desde antes, proyectado a ese año
+    assert.deepEqual(fechasQueCambianDiasHabiles(lunes, 2026, 2026, [fila({ id: 2, fecha: '2025-11-02', se_repite: 1 })]), []);
+    for (const otra of [
+      fila({ id: 2, fecha: '2026-11-02', activo: 0 }),
+      fila({ id: 2, fecha: '2025-11-02', se_repite: 1, no_rige: [2026] }),
+      fila({ id: 2, fecha: '2025-11-02', se_repite: 1, hasta_anio: 2025 }),
+      fila({ id: 2, fecha: '2026-11-03' })
+    ]) {
+      assert.deepEqual(fechasQueCambianDiasHabiles(lunes, 2026, 2026, [otra]), ['2026-11-02'], JSON.stringify(otra));
+    }
+  });
+
+  it('uno que se repite en dos años hábiles (el 15/12 es martes en 2026 y miércoles en 2027): las dos fechas', () => {
+    const delQuince = fila({ fecha: '2026-12-15', se_repite: 1 });
+    assert.deepEqual(fechasQueCambianDiasHabiles(delQuince, 2026, 2027, []), ['2026-12-15', '2027-12-15']);
+    // Otro feriado el 16/12 no le saca nada; uno que no se repite, solo su año
+    assert.deepEqual(fechasQueCambianDiasHabiles(delQuince, 2025, 2028, [fila({ id: 2, fecha: '2026-12-16', se_repite: 1 })]),
+      ['2026-12-15', '2027-12-15', '2028-12-15']);
+    assert.deepEqual(fechasQueCambianDiasHabiles({ ...delQuince, se_repite: 0 }, 2026, 2027, []), ['2026-12-15']);
+  });
+
+  it('uno que se repite, cada año por separado: el 13/12 es domingo en 2026 y lunes en 2027', () => {
+    const petroleo = fila({ fecha: '2026-12-13', se_repite: 1 });
+    assert.deepEqual(fechasDelFeriado(petroleo, 2026, 2027), ['2026-12-13', '2027-12-13']);
+    assert.deepEqual(fechasQueCambianDiasHabiles(petroleo, 2026, 2027, []), ['2027-12-13']);
+    // Otro feriado que rige solo en 2027 ese día: ya ningún año cambia nada
+    assert.deepEqual(fechasQueCambianDiasHabiles(petroleo, 2026, 2027, [fila({ id: 2, fecha: '2027-12-13' })]), []);
+    // Con el 2027 que no rige, tampoco
+    assert.deepEqual(fechasQueCambianDiasHabiles({ ...petroleo, no_rige: [2027] }, 2026, 2027, []), []);
+  });
+
+  it('las fechas son las de fechasDelFeriado: un año fuera del rango, uno dado de baja o una entrada que no sirve, []', () => {
+    assert.deepEqual(fechasQueCambianDiasHabiles(fila({ fecha: '2026-11-02' }), 2027, 2028, []), []);
+    assert.deepEqual(fechasQueCambianDiasHabiles(fila({ fecha: '2026-11-02', activo: 0 }), 2026, 2026, []), []);
+    for (const mala of [null, undefined, 'hola', 3, [], {}, fila({ fecha: '2026-02-30' })]) {
+      assert.deepEqual(fechasQueCambianDiasHabiles(mala, 2026, 2027, []), [], JSON.stringify(mala));
+    }
+    assert.deepEqual(fechasQueCambianDiasHabiles(fila({ fecha: '2026-11-02' }), '2026', 2026, []), []);
+    // Unas otras que no son una lista, o con filas raras, no sacan nada
+    for (const otras of [undefined, null, 'x', 3, {}, [null, 'x', 3, {}, []]]) {
+      assert.deepEqual(fechasQueCambianDiasHabiles(fila({ fecha: '2026-11-02' }), 2026, 2026, otras), ['2026-11-02'],
+        JSON.stringify(otras));
     }
   });
 });
@@ -859,6 +971,8 @@ describe('ninguna función tira', () => {
           avisosDeLaFecha('2026-04-02', [a, b], b);
           aniosDelSelector(a, b);
           aniosDelSelector([a, b], HOY);
+          fechasDelFeriado(a, b, b);
+          fechasDelFeriado(a, 2026, 2027);
         }, `${JSON.stringify(a)} ${JSON.stringify(b)}`);
       }
     }
@@ -885,6 +999,90 @@ describe('FERIADOS_FIJOS', () => {
     validarFeriado(PEDIDO, HOY);
     assert.equal(feriadosDelAnio([], 2026).every((item) => item.aclaraciones.length === 0), true);
     assert.deepEqual(FERIADOS_FIJOS, ['01-01', '03-24', '04-02', '05-01', '05-25', '06-20', '07-09', '12-08', '12-25']);
+    assert.deepEqual(FERIADOS_FIJOS, FIJOS_LITERALES);
+  });
+});
+
+describe('proximoDiaHabilCon, restarDiasHabilesCon y ultimoDiaHabilDelMesCon', () => {
+  // Todos los días de 2026, como feriados: ningún día hábil en todo el año
+  const TODO_2026 = new Set(DIAS_DE_2026_Y_2027.filter((dia) => dia.anio === 2026).map((dia) => dia.fecha));
+
+  it('ultimoDiaHabilDelMesCon: el último día hábil del mes, con los feriados', () => {
+    assert.equal(ultimoDiaHabilDelMesCon('2026-10', new Set()), '2026-10-30');
+    assert.equal(ultimoDiaHabilDelMesCon('2026-10', new Set(['2026-10-30'])), '2026-10-29');
+    // Diciembre de 2026 termina un jueves; febrero de 2027, un domingo; el 29/02/2028 es martes
+    assert.equal(ultimoDiaHabilDelMesCon('2026-12', new Set()), '2026-12-31');
+    assert.equal(ultimoDiaHabilDelMesCon('2027-02', new Set()), '2027-02-26');
+    assert.equal(ultimoDiaHabilDelMesCon('2028-02', new Set()), '2028-02-29');
+    // Sin un Set, solo los fijos
+    assert.equal(ultimoDiaHabilDelMesCon('2026-10', undefined), '2026-10-30');
+  });
+
+  it('ultimoDiaHabilDelMesCon: un mes sin ningún día hábil da null, nunca un día de otro mes', () => {
+    assert.equal(ultimoDiaHabilDelMesCon('2026-10', TODO_2026), null);
+  });
+
+  it('restarDiasHabilesCon: el n-ésimo día hábil anterior, sin contar la fecha', () => {
+    assert.equal(restarDiasHabilesCon('2026-10-30', 5, new Set()), '2026-10-23');
+    assert.equal(restarDiasHabilesCon('2026-10-30', 5, new Set(['2026-10-26'])), '2026-10-22');
+    // El 01/01 es fijo y el 02 y el 03 de enero de 2027, fin de semana
+    assert.equal(restarDiasHabilesCon('2027-01-04', 1, new Set()), '2026-12-31');
+    // Desde un sábado, el anterior es el viernes; con 0, la fecha misma
+    assert.equal(restarDiasHabilesCon('2026-10-31', 1, new Set()), '2026-10-30');
+    assert.equal(restarDiasHabilesCon('2026-10-31', 0, new Set()), '2026-10-31');
+  });
+
+  it('restarDiasHabilesCon: un tope de 366 vueltas', () => {
+    // 2026 tiene 253 días hábiles: el 253° antes del 01/01/2027 es el primero del año, el 02/01/2026
+    assert.equal(restarDiasHabilesCon('2027-01-01', 253, new Set()), '2026-01-02');
+    // El 254° es el 31/12/2025, a 366 días; el 255°, el 30/12/2025, ya no se busca
+    assert.equal(restarDiasHabilesCon('2027-01-01', 254, new Set()), '2025-12-31');
+    assert.equal(restarDiasHabilesCon('2027-01-01', 255, new Set()), null);
+  });
+
+  it('proximoDiaHabilCon: la fecha, si es hábil, o la siguiente que lo es', () => {
+    assert.equal(proximoDiaHabilCon('2026-10-31', new Set()), '2026-11-02');
+    assert.equal(proximoDiaHabilCon('2026-10-31', new Set(['2026-11-02'])), '2026-11-03');
+    assert.equal(proximoDiaHabilCon('2026-10-30', new Set()), '2026-10-30');
+    assert.equal(proximoDiaHabilCon('2026-10-30', new Set(['2026-10-30'])), '2026-11-02');
+    assert.equal(proximoDiaHabilCon('2027-01-01', new Set()), '2027-01-04');
+  });
+
+  it('proximoDiaHabilCon: un tope de 366 vueltas', () => {
+    // Desde el domingo 04/01/2026, con todo 2026 feriado: el lunes 04/01/2027 está a 365 días
+    assert.equal(proximoDiaHabilCon('2026-01-04', TODO_2026), '2027-01-04');
+    // Desde el sábado 03/01/2026, el 04/01/2027 queda a 366: ya no se busca
+    assert.equal(proximoDiaHabilCon('2026-01-03', TODO_2026), null);
+  });
+
+  it('null con una entrada inválida, y nunca pasan del 31/12/9999', () => {
+    const malas = ['hola', '2026-02-30', '2026-2-3', 20260203, null, undefined, '', {}, [], Object.create(null), Symbol('x')];
+    for (const mala of malas) {
+      assert.doesNotThrow(() => {
+        assert.equal(proximoDiaHabilCon(mala, new Set()), null);
+        assert.equal(restarDiasHabilesCon(mala, 1, new Set()), null);
+        assert.equal(restarDiasHabilesCon('2026-10-30', mala, new Set()), null);
+        assert.equal(ultimoDiaHabilDelMesCon(mala, new Set()), null);
+        proximoDiaHabilCon('2026-10-31', mala);
+        restarDiasHabilesCon('2026-10-30', 5, mala);
+        ultimoDiaHabilDelMesCon('2026-10', mala);
+      });
+    }
+    for (const n of [-1, 1.5, NaN, Infinity, '5']) assert.equal(restarDiasHabilesCon('2026-10-30', n, new Set()), null);
+    for (const mes of ['2026-13', '2026-00', '2026-1', '202610', '2026-10-01']) {
+      assert.equal(ultimoDiaHabilDelMesCon(mes, new Set()), null, mes);
+    }
+    assert.equal(proximoDiaHabilCon('9999-12-31', new Set()), '9999-12-31');
+    assert.equal(proximoDiaHabilCon('9999-12-31', new Set(['9999-12-31'])), null);
+    assert.equal(ultimoDiaHabilDelMesCon('9999-12', new Set()), '9999-12-31');
+  });
+
+  it('no cambian el Set ni FERIADOS_FIJOS', () => {
+    const feriados = new Set(['2026-10-30']);
+    proximoDiaHabilCon('2026-10-30', feriados);
+    restarDiasHabilesCon('2026-11-02', 3, feriados);
+    ultimoDiaHabilDelMesCon('2026-10', feriados);
+    assert.deepEqual([...feriados], ['2026-10-30']);
     assert.deepEqual(FERIADOS_FIJOS, FIJOS_LITERALES);
   });
 });

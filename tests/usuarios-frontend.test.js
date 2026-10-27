@@ -267,6 +267,28 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
     assert.match(cambiarDesde('2026-12-20'), /por adelantado el último día hábil anterior/);
   });
 
+  // spec 2026-10-26-mi-espacio-licencias-y-horas, 6: la licencia que creó Mi espacio lleva la insignia, al lado del nombre
+  it('la insignia «Cargada desde Mi espacio», solo con desde_mi_espacio en true', () => {
+    const panel = cargarPanel();
+    panel.contexto.getInitials = (nombre) => nombre.slice(0, 2);
+    evaluar(panel.contexto, "datosLicencias = { hoy: '2026-11-10', firmante_titular_id: 3, licencias: [], usuarios: [], autorizables: [] }");
+    const fila = (cambios) => {
+      panel.contexto.__l = {
+        id: 9, usuario_id: 4, usuario_nombre: 'Persona de Prueba', desde: '2026-11-26', hasta: '2026-11-27', estado: 'futura',
+        creado_por_nombre: 'Persona de Prueba', ...cambios
+      };
+      return evaluar(panel.contexto, 'filaLicencia(__l)');
+    };
+    const INSIGNIA = '<span class="etiqueta etiqueta-mi-espacio">Cargada desde Mi espacio</span>';
+    assert.ok(fila({ desde_mi_espacio: true }).includes(`<strong>Persona de Prueba</strong>${INSIGNIA}</div>`));
+    // También en una terminada o anulada, y en la del titular, después de «Firma las notas»
+    assert.ok(fila({ desde_mi_espacio: true, estado: 'anulada' }).includes(INSIGNIA));
+    assert.ok(fila({ desde_mi_espacio: true, usuario_id: 3 }).includes(`Firma las notas</span>${INSIGNIA}</div>`));
+    for (const cambios of [{ desde_mi_espacio: false }, {}, { desde_mi_espacio: 1 }]) {
+      assert.ok(!fila(cambios).includes('Mi espacio'), JSON.stringify(cambios));
+    }
+  });
+
   describe('persona autorizada con licencia propia dentro de la del titular (spec 6.3)', () => {
     const NOMBRE = 'Persona Autorizada';
     // El titular tiene licencia del 01/03/2027 al 31/03/2027

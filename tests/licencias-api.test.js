@@ -12,7 +12,6 @@ import {
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 const SOLO_TITULAR = 'La autorización para presentar las notas la da solo el firmante titular.';
 const CUBRE_TODA = 'La persona autorizada está de licencia todos los días hábiles de tu licencia: no podría presentar ninguna nota.';
-const sinDiasComoAutorizada = (desde, hasta) => `Es la persona autorizada a presentar las notas durante la licencia de Test superadmin (del ${formatoCorto(desde)} al ${formatoCorto(hasta)}) y con esta licencia no le quedaría ningún día hábil para hacerlo: primero hay que cambiar esa autorización.`;
 let base, servidor, api, usuarios, dbReal;
 const hoy = hoyArgentina();
 const dia = (n) => sumarDias(hoy, n);
@@ -196,15 +195,26 @@ describe('autorización del firmante titular (spec 6.3)', () => {
     assert.equal((await autorizar(q(12), q(13))).status, 201);
   });
 
-  it('al cambiar las fechas de la licencia del titular, la misma regla con las fechas nuevas', async () => {
+  // Decisión del usuario (27/10/2026): el control de la persona autorizada corre solo cuando se la elige o se la cambia. Con
+  // ella de licencia todos los días, cambiar las fechas de la licencia del titular (también administración, que no puede
+  // cambiar a la persona autorizada) se guarda: esos días son «sin autorizado»
+  it('al cambiar solo las fechas de la licencia del titular, la persona autorizada no se vuelve a controlar', async () => {
     await titular(usuarios.superadmin);
     await conFirma(usuarios.adminA);
     const { body } = await cargar({ usuario_id: usuarios.superadmin.id, desde: q(0), hasta: q(1), autorizado_id: usuarios.adminA.id }, comoSuper());
     assert.equal((await cargar({ usuario_id: usuarios.adminA.id, desde: q(2), hasta: q(4) })).status, 201);
     const tapada = await api.put(`/usuarios/licencias/${body.data.id}`, { desde: q(2), hasta: q(4) }, comoSuper());
-    assert.equal(tapada.status, 409);
-    assert.deepEqual([tapada.body.error, tapada.body.campo], [CUBRE_TODA, 'autorizado_id']);
+    assert.equal(tapada.status, 200, JSON.stringify(tapada.body));
+    assert.deepEqual([tapada.body.data.desde, tapada.body.data.hasta, tapada.body.data.autorizado_id], [q(2), q(4), usuarios.adminA.id]);
+    const porAdministracion = await api.put(`/usuarios/licencias/${body.data.id}`, { desde: q(2), hasta: q(3) }, comoA());
+    assert.equal(porAdministracion.status, 200, JSON.stringify(porAdministracion.body));
+    assert.equal(porAdministracion.body.data.autorizado_id, usuarios.adminA.id);
     assert.equal((await api.put(`/usuarios/licencias/${body.data.id}`, { desde: q(1), hasta: q(4) }, comoSuper())).status, 200);
+    // Elegirla otra vez (sacarla y volver a ponerla) sí se controla
+    assert.equal((await api.put(`/usuarios/licencias/${body.data.id}`, { desde: q(2), hasta: q(4), autorizado_id: null }, comoSuper())).status, 200);
+    const elegida = await api.put(`/usuarios/licencias/${body.data.id}`, { desde: q(2), hasta: q(4), autorizado_id: usuarios.adminA.id }, comoSuper());
+    assert.equal(elegida.status, 409);
+    assert.deepEqual([elegida.body.error, elegida.body.campo], [CUBRE_TODA, 'autorizado_id']);
   });
 
   it('cortar a ayer una licencia en curso del titular con autorizada no es "de licencia todos los días hábiles"', async () => {
@@ -238,34 +248,53 @@ describe('autorización del firmante titular (spec 6.3)', () => {
     assert.equal((await api.put(`/usuarios/licencias/${delTitular}`, {}, comoSuper())).status, 200, 'un pedido sin cambios');
   });
 
-  it('la persona autorizada puede tomarse una licencia superpuesta en parte, pero no una que la deje sin días hábiles (409)', async () => {
-    await titular(usuarios.superadmin);
-    await conFirma(usuarios.adminA);
-    await cargar({ usuario_id: usuarios.superadmin.id, desde: q(0), hasta: q(4), autorizado_id: usuarios.adminA.id }, comoSuper());
-    const sinDias = sinDiasComoAutorizada(q(0), q(4));
-    const entera = await cargar({ usuario_id: usuarios.adminA.id, desde: q(-1), hasta: q(4) });
-    assert.equal(entera.status, 409);
-    assert.deepEqual([entera.body.error, entera.body.campo], [sinDias, 'fechas']);
+  // Decisión del usuario (27/10/2026): la persona autorizada puede tomarse licencia aunque no le quede ningún día hábil de la
+  // del titular («Si no está, no se presentan notas»). La licencia del titular no cambia
+  describe('la persona autorizada puede tomarse licencia aunque no le quede ningún día hábil de la del titular', () => {
+    let delTitular;
+    beforeEach(async () => {
+      await titular(usuarios.superadmin);
+      await conFirma(usuarios.adminA);
+      const res = await cargar({ usuario_id: usuarios.superadmin.id, desde: q(0), hasta: q(4), autorizado_id: usuarios.adminA.id }, comoSuper());
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      delTitular = res.body.data;
+      // Como si la autorización ya se hubiera comunicado
+      await query('UPDATE usuarios_licencias SET nota_autorizacion_id = 999 WHERE id = ?', [delTitular.id]);
+    });
+    const comoQuedoLaDelTitular = async () => (await query(
+      'SELECT autorizado_id, nota_autorizacion_id, anulada FROM usuarios_licencias WHERE id = ?', [delTitular.id]
+    ))[0];
+    const suyas = async () => (await query(
+      `SELECT DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta FROM usuarios_licencias
+       WHERE usuario_id = ? AND anulada = 0 ORDER BY desde`, [usuarios.adminA.id]
+    )).map(l => [l.desde, l.hasta]);
 
-    const parcial = await cargar({ usuario_id: usuarios.adminA.id, desde: q(3), hasta: q(8) });
-    assert.equal(parcial.status, 201, JSON.stringify(parcial.body));
-    // Sumada a la que ya tiene (del jueves al martes siguiente), una del viernes anterior al miércoles no le deja ninguno
-    const sumada = await cargar({ usuario_id: usuarios.adminA.id, desde: q(-3), hasta: q(2) });
-    assert.equal(sumada.status, 409);
-    assert.deepEqual([sumada.body.error, sumada.body.campo], [sinDias, 'fechas']);
-  });
+    it('una que cubre todos los días hábiles se guarda', async () => {
+      const entera = await cargar({ usuario_id: usuarios.adminA.id, desde: q(-1), hasta: q(4) });
+      assert.equal(entera.status, 201, JSON.stringify(entera.body));
+      assert.deepEqual(await suyas(), [[q(-1), q(4)]]);
+      assert.deepEqual(await comoQuedoLaDelTitular(), { autorizado_id: usuarios.adminA.id, nota_autorizacion_id: 999, anulada: 0 });
+    });
 
-  it('al editar su licencia, la persona autorizada no cuenta la versión guardada', async () => {
-    await titular(usuarios.superadmin);
-    await conFirma(usuarios.adminA);
-    await cargar({ usuario_id: usuarios.superadmin.id, desde: q(0), hasta: q(4), autorizado_id: usuarios.adminA.id }, comoSuper());
-    const { body } = await cargar({ usuario_id: usuarios.adminA.id, desde: q(0), hasta: q(3) });
-    assert.equal(body.data?.desde, q(0), JSON.stringify(body));
-    // Pasarla del martes al viernes le deja libre el lunes (la guardada, del lunes al jueves, ya no cuenta)
-    assert.equal((await api.put(`/usuarios/licencias/${body.data.id}`, { desde: q(1), hasta: q(4) }, comoA())).status, 200);
-    const entera = await api.put(`/usuarios/licencias/${body.data.id}`, { desde: q(0), hasta: q(4) }, comoA());
-    assert.equal(entera.status, 409);
-    assert.deepEqual([entera.body.error, entera.body.campo], [sinDiasComoAutorizada(q(0), q(4)), 'fechas']);
+    it('una superpuesta en parte, y otra que sumada a ella no le deja ninguno, también', async () => {
+      const parcial = await cargar({ usuario_id: usuarios.adminA.id, desde: q(3), hasta: q(8) });
+      assert.equal(parcial.status, 201, JSON.stringify(parcial.body));
+      // Sumada a la que ya tiene (del jueves al martes siguiente), una del viernes anterior al miércoles no le deja ninguno
+      const sumada = await cargar({ usuario_id: usuarios.adminA.id, desde: q(-3), hasta: q(2) });
+      assert.equal(sumada.status, 201, JSON.stringify(sumada.body));
+      assert.deepEqual(await suyas(), [[q(-3), q(2)], [q(3), q(8)]]);
+      assert.deepEqual(await comoQuedoLaDelTitular(), { autorizado_id: usuarios.adminA.id, nota_autorizacion_id: 999, anulada: 0 });
+    });
+
+    it('editarla para cubrir todos los días se guarda', async () => {
+      const { body } = await cargar({ usuario_id: usuarios.adminA.id, desde: q(0), hasta: q(3) });
+      assert.equal(body.data?.desde, q(0), JSON.stringify(body));
+      assert.equal((await api.put(`/usuarios/licencias/${body.data.id}`, { desde: q(1), hasta: q(4) }, comoA())).status, 200);
+      const entera = await api.put(`/usuarios/licencias/${body.data.id}`, { desde: q(0), hasta: q(4) }, comoA());
+      assert.equal(entera.status, 200, JSON.stringify(entera.body));
+      assert.deepEqual(await suyas(), [[q(0), q(4)]]);
+      assert.deepEqual(await comoQuedoLaDelTitular(), { autorizado_id: usuarios.adminA.id, nota_autorizacion_id: 999, anulada: 0 });
+    });
   });
 
   it('autorizables trae las licencias en curso y futuras de cada persona (no las pasadas ni las anuladas)', async () => {
@@ -365,6 +394,179 @@ describe('marca en la lista de usuarios (spec 5.5)', () => {
     assert.deepEqual(de(usuarios.adminA), { desde: dia(10), hasta: dia(12), en_curso: false });
     assert.equal(de(usuarios.superadmin), null);
     assert.deepEqual((await api.get(`/usuarios/${usuarios.adminB.id}`, comoA())).body.data.licencia, { desde: dia(-1), hasta: dia(3), en_curso: true });
+  });
+});
+
+// Configuración muestra la insignia «Cargada desde Mi espacio» en las licencias que creó Mi espacio (spec
+// 2026-10-26-mi-espacio-licencias-y-horas, 6): las que apunta una fila creada y activa de mi_espacio_licencias
+describe('la insignia «Cargada desde Mi espacio»', () => {
+  const guardar = async (desde, hasta) => (await query(
+    'INSERT INTO usuarios_licencias (usuario_id, desde, hasta, creado_por) VALUES (?, ?, ?, ?)',
+    [usuarios.adminB.id, desde, hasta, usuarios.adminB.id]
+  )).insertId;
+  // Una fila de Mi espacio con las fechas de la licencia de Configuración a la que apunta
+  const deMiEspacio = (licenciaId, oficial, activo = 1) => query(
+    `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, licencia_oficial_id, oficial, activo)
+     SELECT usuario_id, 'vacaciones', desde, hasta, id, ?, ? FROM usuarios_licencias WHERE id = ?`,
+    [oficial, activo, licenciaId]
+  );
+
+  it('la trae la que creó Mi espacio, mientras esa fila esté activa; no una unida ni una cargada en Configuración', async () => {
+    await query('DELETE FROM mi_espacio_licencias');
+    const creada = await guardar(dia(5), dia(6));
+    const unida = await guardar(dia(10), dia(12));
+    const dadaDeBaja = await guardar(dia(15), dia(16));
+    const deConfiguracion = await guardar(dia(20), dia(21));
+    const varias = await guardar(dia(25), dia(26));
+    await deMiEspacio(creada, 'creada');
+    await deMiEspacio(unida, 'unida');
+    await deMiEspacio(dadaDeBaja, 'creada', 0);
+    // Varias filas pueden apuntar a la misma licencia (la creada y las unidas): sigue siendo una sola en la lista
+    for (const oficial of ['unida', 'creada', 'unida']) await deMiEspacio(varias, oficial);
+
+    const { body } = await api.get('/usuarios/licencias', comoA());
+    assert.deepEqual(body.data.licencias.map(l => [l.id, l.desde_mi_espacio]), [
+      [creada, true], [unida, false], [dadaDeBaja, false], [deConfiguracion, false], [varias, true]
+    ]);
+    // Configuración la edita y la anula como siempre, y la insignia sigue
+    const editada = await api.put(`/usuarios/licencias/${creada}`, { desde: dia(5), hasta: dia(7) }, comoA());
+    assert.equal(editada.status, 200, JSON.stringify(editada.body));
+    assert.equal(editada.body.data.desde_mi_espacio, true);
+    const anulada = await api.post(`/usuarios/licencias/${creada}/anular`, {}, comoA());
+    assert.equal(anulada.status, 200, JSON.stringify(anulada.body));
+    assert.equal(anulada.body.data.desde_mi_espacio, true);
+    const pasadas = await api.get('/usuarios/licencias?incluir_pasadas=1', comoA());
+    assert.equal(pasadas.body.data.licencias.find(l => l.id === creada).desde_mi_espacio, true);
+    // Una cargada en Configuración, no
+    const nueva = await cargar({ usuario_id: usuarios.adminA.id, desde: dia(30), hasta: dia(31) });
+    assert.equal(nueva.status, 201, JSON.stringify(nueva.body));
+    assert.equal(nueva.body.data.desde_mi_espacio, false);
+    await query('DELETE FROM mi_espacio_licencias');
+  });
+});
+
+// El alta, la edición y la anulación de Configuración, en un servicio que comparte con Mi espacio (spec
+// 2026-10-26-mi-espacio-licencias-y-horas, 6): recibe la conexión de una transacción abierta y el actor, y no la abre ni la cierra
+describe('el servicio compartido (services/licenciasOficialesService.js)', () => {
+  let servicio, pool;
+
+  before(async () => {
+    // Usan el pool: se importan después de apuntar DB_NAME a la base de prueba
+    servicio = await import('../services/licenciasOficialesService.js');
+    pool = (await import('../config/database.js')).default;
+  });
+
+  after(async () => {
+    await pool?.end();
+  });
+
+  // Como el controlador: abre la transacción, bloquea los usuarios, corre el trabajo y la confirma
+  const enTransaccion = async (trabajo) => {
+    const conexion = await pool.getConnection();
+    try {
+      await conexion.beginTransaction();
+      await servicio.bloquearUsuarios(conexion);
+      const resultado = await trabajo(conexion);
+      await conexion.commit();
+      return resultado;
+    } catch (error) {
+      await conexion.rollback();
+      throw error;
+    } finally {
+      conexion.release();
+    }
+  };
+  const notaDe = async (id) => (await query('SELECT nota_autorizacion_id AS n FROM usuarios_licencias WHERE id = ?', [id]))[0].n;
+
+  it('cambiarLicencia sin cambios: sinCambios, sin historial y conserva la nota de autorización', async () => {
+    await titular(usuarios.superadmin);
+    await conFirma(usuarios.adminA);
+    const { insertId: id } = await query(
+      `INSERT INTO usuarios_licencias (usuario_id, desde, hasta, autorizado_id, autorizado_at, nota_autorizacion_id, creado_por)
+       VALUES (?, ?, ?, ?, ?, 999, ?)`,
+      [usuarios.superadmin.id, dia(5), dia(10), usuarios.adminA.id, `${hoy} 10:00:00`, usuarios.superadmin.id]
+    );
+    // El historial no se borra entre tests: se cuenta lo que se suma
+    const editadas = (await historial(usuarios.superadmin.id, 'licencia_editada')).length;
+    // Las mismas fechas, con la misma persona autorizada o sin decir nada de ella (Mi espacio, al cambiar el tipo o la nota)
+    for (const autorizadoPedido of [usuarios.adminA.id, undefined]) {
+      const resultado = await enTransaccion(conexion => servicio.cambiarLicencia(conexion, {
+        licenciaId: id, desde: dia(5), hasta: dia(10), autorizadoPedido, actorId: usuarios.superadmin.id, hoy
+      }));
+      assert.equal(resultado.rechazo, undefined, JSON.stringify(resultado.rechazo));
+      assert.equal(resultado.sinCambios, true);
+      assert.equal(resultado.auditoriaId, null);
+      assert.deepEqual([resultado.antes.id, resultado.despues.desde, resultado.despues.hasta, resultado.despues.autorizado_id],
+        [id, dia(5), dia(10), usuarios.adminA.id]);
+    }
+    assert.equal(await notaDe(id), 999);
+    assert.equal((await historial(usuarios.superadmin.id, 'licencia_editada')).length, editadas);
+  });
+
+  it('cargarLicencia con una superposición: el rechazo, con su motivo, y no escribe nada', async () => {
+    assert.equal((await cargar({ usuario_id: usuarios.adminB.id, desde: dia(1), hasta: dia(5) })).status, 201);
+    const cargadas = (await historial(usuarios.adminB.id, 'licencia_cargada')).length;
+    const resultado = await enTransaccion(conexion => servicio.cargarLicencia(conexion, {
+      usuarioId: usuarios.adminB.id, desde: dia(5), hasta: dia(8), actorId: usuarios.adminB.id, hoy
+    }));
+    assert.deepEqual(resultado, {
+      rechazo: {
+        status: 409, campo: 'fechas', motivo: 'superpuesta',
+        error: `Se superpone con otra licencia de la misma persona (del ${formatoCorto(dia(1))} al ${formatoCorto(dia(5))}).`
+      }
+    });
+    assert.equal((await query('SELECT COUNT(*) AS n FROM usuarios_licencias WHERE usuario_id = ?', [usuarios.adminB.id]))[0].n, 1);
+    assert.equal((await historial(usuarios.adminB.id, 'licencia_cargada')).length, cargadas);
+  });
+
+  // Decisión del usuario (27/10/2026): ya no hay rechazo 'autorizada_sin_dias'
+  it('siendo la persona autorizada sin días hábiles: se carga, sin rechazo', async () => {
+    await titular(usuarios.superadmin);
+    await conFirma(usuarios.adminA);
+    const delTitular = await cargar({ usuario_id: usuarios.superadmin.id, desde: q(0), hasta: q(4), autorizado_id: usuarios.adminA.id }, comoSuper());
+    assert.equal(delTitular.status, 201, JSON.stringify(delTitular.body));
+    const resultado = await enTransaccion(conexion => servicio.cargarLicencia(conexion, {
+      usuarioId: usuarios.adminA.id, desde: q(-1), hasta: q(4), actorId: usuarios.adminA.id, hoy
+    }));
+    assert.equal(resultado.rechazo, undefined, JSON.stringify(resultado.rechazo));
+    assert.deepEqual(Object.keys(resultado).sort(), ['auditoriaId', 'licencia']);
+    assert.deepEqual([resultado.licencia.usuario_id, resultado.licencia.desde, resultado.licencia.hasta],
+      [usuarios.adminA.id, q(-1), q(4)]);
+    assert.equal((await query('SELECT COUNT(*) AS n FROM usuarios_licencias WHERE usuario_id = ?', [usuarios.adminA.id]))[0].n, 1);
+  });
+
+  it('cada rechazo, con su status, su campo y su motivo', async () => {
+    await titular(usuarios.superadmin);
+    await conFirma(usuarios.adminA);
+    const motivoDe = async (promesa) => {
+      const { rechazo } = await promesa;
+      return [rechazo?.status, rechazo?.campo, rechazo?.motivo];
+    };
+    // El alta (el actor no cuenta: que la autorización la dé el titular lo controla Configuración antes)
+    const cargarCon = (datos) => enTransaccion(conexion => servicio.cargarLicencia(conexion, { actorId: usuarios.superadmin.id, hoy, ...datos }));
+    assert.deepEqual(await motivoDe(cargarCon({ usuarioId: usuarios.adminB.id, desde: dia(5), hasta: dia(2) })), [400, 'fechas', 'fechas']);
+    assert.deepEqual(await motivoDe(cargarCon({ usuarioId: usuarios.lector.id, desde: dia(1), hasta: dia(2) })), [400, 'usuario_id', 'rol']);
+    assert.deepEqual(await motivoDe(cargarCon({ usuarioId: usuarios.adminB.id, desde: dia(5), hasta: dia(10), autorizadoId: usuarios.adminA.id })),
+      [400, 'autorizado_id', 'no_es_titular']);
+    assert.deepEqual(await motivoDe(cargarCon({ usuarioId: usuarios.superadmin.id, desde: dia(5), hasta: dia(10), autorizadoId: usuarios.adminB.id })),
+      [400, 'autorizado_id', 'no_autorizable']);
+    // adminA, de licencia del domingo anterior al viernes: no le queda ningún día hábil de la del titular
+    assert.equal((await cargar({ usuario_id: usuarios.adminA.id, desde: q(-1), hasta: q(4) })).status, 201);
+    assert.deepEqual(await motivoDe(cargarCon({ usuarioId: usuarios.superadmin.id, desde: q(0), hasta: q(4), autorizadoId: usuarios.adminA.id })),
+      [409, 'autorizado_id', 'autorizado_sin_dias']);
+    // La edición y la anulación, de una licencia en curso
+    const { insertId: id } = await query(
+      'INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [usuarios.adminB.id, dia(-3), dia(5)]
+    );
+    const cambiarCon = (datos) => enTransaccion(conexion => servicio.cambiarLicencia(conexion, {
+      licenciaId: id, desde: dia(-3), hasta: dia(5), actorId: usuarios.adminA.id, hoy, ...datos
+    }));
+    assert.deepEqual(await motivoDe(cambiarCon({ licenciaId: 999999 })), [404, null, 'no_encontrada']);
+    assert.deepEqual(await motivoDe(cambiarCon({ desde: dia(-2) })), [400, 'fechas', 'edicion']);
+    assert.deepEqual(await motivoDe(cambiarCon({ autorizadoPedido: usuarios.adminA.id })), [403, 'autorizado_id', 'solo_titular']);
+    const anularCon = (licenciaId) => enTransaccion(conexion => servicio.anularLicenciaDe(conexion, { licenciaId, actorId: usuarios.adminA.id, hoy }));
+    assert.deepEqual(await motivoDe(anularCon(999999)), [404, null, 'no_encontrada']);
+    assert.deepEqual(await motivoDe(anularCon(id)), [409, null, 'no_se_anula']);
   });
 });
 

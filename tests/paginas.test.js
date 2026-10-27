@@ -20,17 +20,19 @@ const VERSION = '20261204';
 // spec 2026-10-24-generador-de-notas, 1; Configuración reemplaza a Usuarios y Áreas: la tercera pestaña, Áreas, y la pestaña en la
 // dirección, spec 2026-10-24-configuracion, 1 y 6; la ayuda del lector nombra Proyectos en lugar de Gestión, spec
 // 2026-10-25-proyectos, 11; la cuarta pestaña, Feriados, con su vista y «Nuevo feriado», y al mostrarla llama a cargarFeriados de
-// feriados.js, spec 2026-10-26-feriados, 4): su versión es propia (solo la usa configuracion.html; subió al mismo número que
-// VERSION_FERIADOS, y siguen siendo independientes)
-const VERSION_PANTALLAS = '20261208';
+// feriados.js, spec 2026-10-26-feriados, 4; la insignia «Cargada desde Mi espacio» en la lista de Licencias, spec
+// 2026-10-26-mi-espacio-licencias-y-horas, 6): su versión es propia (solo la usa configuracion.html; es independiente de
+// VERSION_FERIADOS)
+const VERSION_PANTALLAS = '20261209';
 // areas.js (reescrito para la pestaña Áreas de Configuración, spec 2026-10-24-configuracion, 4 y 6), que en areas.html cargaba
 // ?v=20261204: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
 // configuracion.html)
 const VERSION_AREAS = '20261205';
 // feriados.js (la pestaña Feriados de Configuración, la cuarta: el selector del año, los filtros y la tabla, spec
-// 2026-10-26-feriados, 4): el número siguiente al más alto de este archivo cuando se creó (VERSION_REPORTES). Su versión es propia
-// (solo la usa configuracion.html)
-const VERSION_FERIADOS = '20261208';
+// 2026-10-26-feriados, 4): el número siguiente al más alto de este archivo cuando se creó (VERSION_REPORTES). Cambió después (cuántas
+// licencias de Mi espacio incluye la fecha, en el modal del feriado, spec 2026-10-26-mi-espacio-licencias-y-horas). Su versión es
+// propia (solo la usa configuracion.html)
+const VERSION_FERIADOS = '20261209';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
 // reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6):
@@ -76,6 +78,10 @@ const VERSION_NOTAS = '20261204';
 // del área, spec 2026-10-25-proyectos, 1, 2 y 10): el número siguiente al más alto de este archivo cuando se creó (con el renombre,
 // VERSION_REPORTES y VERSION_PANTALLAS subieron al mismo número; siguen siendo independientes). Su versión es propia
 const VERSION_PROYECTOS = '20261206';
+// mi-espacio.js (la página nueva de Mi espacio, con las pestañas Resumen, Licencias y Horas extras, spec
+// 2026-10-26-mi-espacio-licencias-y-horas, 8 y 11): el mismo número que VERSION_PANTALLAS y VERSION_FERIADOS, que subieron con esta
+// entrega (siguen siendo independientes). Su versión es propia
+const VERSION_MI_ESPACIO = '20261209';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -94,8 +100,8 @@ describe('páginas', () => {
 
   // El script propio de esta pantalla cambió con los días sin auditor, después con la superposición parcial, con el aviso en su
   // fecha (el texto del efecto de la licencia en las notas, con persona autorizada), con Configuración (la tercera pestaña y la
-  // pestaña en la dirección), con el renombre de Gestión a Proyectos (la ayuda del lector) y, por último, con la cuarta pestaña,
-  // Feriados
+  // pestaña en la dirección), con el renombre de Gestión a Proyectos (la ayuda del lector), con la cuarta pestaña, Feriados, y,
+  // por último, con la insignia «Cargada desde Mi espacio» en la lista de Licencias
   for (const [pagina, script] of [['configuracion.html', 'usuarios']]) {
     it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
       assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));
@@ -256,12 +262,13 @@ describe('páginas', () => {
       }
     });
 
-    it('el aviso azul dice, tal cual, que estos feriados todavía no cambian los días hábiles del sistema', () => {
+    // Desde la entrega 2 (spec 2026-10-26-feriados, 4): cuentan para Mi espacio y nada más
+    it('el aviso azul dice, tal cual, que estos feriados cuentan solo para Mi espacio', () => {
       const aviso = bloque(/<p class="fe-aviso" id="feriados-aviso">[\s\S]*?<\/p>/);
       assert.ok(aviso, 'el aviso');
       assert.match(aviso, /<svg aria-hidden="true"/);
       assert.equal(aviso.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(),
-        'Por ahora, estos feriados no cambian los días hábiles del sistema: las Notas Digitales, la auditoría y Métricas siguen con los 9 feriados fijos.');
+        'Por ahora, estos feriados cuentan solo para Mi espacio: los días hábiles de las licencias y los francos. Las Notas Digitales, la auditoría y Métricas siguen con los 9 feriados fijos.');
     });
 
     it('la tarjeta: el título, el selector del año y los filtros como grupos con su nombre, la lista y el vacío', () => {
@@ -312,7 +319,7 @@ describe('páginas', () => {
     const modalFeriado = () => bloque(/<div class="modal-overlay" id="modal-feriado">[\s\S]*?(?=<div class="modal-overlay" id="modal-baja-feriado">)/);
     const modalBaja = () => bloque(/<div class="modal-overlay" id="modal-baja-feriado">[\s\S]*?(?=<script )/);
     const IDS_DEL_MODAL = ['modal-feriado', 'modal-feriado-titulo', 'feriado-error', 'fe-fecha', 'fe-fecha-dia', 'fe-fecha-ayuda',
-      'fe-fecha-error', 'fe-nombre', 'fe-nombre-error', 'fe-tipo', 'fe-tipo-opciones', 'fe-tipo-error', 'fe-trasladado', 'fe-trasladado-ayuda',
+      'fe-fecha-afectadas', 'fe-fecha-error', 'fe-nombre', 'fe-nombre-error', 'fe-tipo', 'fe-tipo-opciones', 'fe-tipo-error', 'fe-trasladado', 'fe-trasladado-ayuda',
       'fe-trasladado-error', 'fe-se-repite', 'fe-se-repite-error', 'fe-anio', 'fe-no-rige', 'fe-no-rige-texto', 'fe-pasa-al-grupo',
       'fe-pasa-al', 'fe-pasa-al-ayuda', 'fe-pasa-al-error', 'fe-baja', 'fe-guardar'];
     const IDS_DE_LA_BAJA = ['modal-baja-feriado', 'modal-baja-feriado-titulo', 'baja-feriado-texto', 'baja-feriado-desde-grupo',
@@ -376,8 +383,9 @@ describe('páginas', () => {
       const modal = modalFeriado();
       assert.match(modal, /<input type="date" id="fe-fecha" class="form-input" min="2025-01-01" aria-required="true" aria-describedby="fe-fecha-dia fe-fecha-error">\s*<span class="fe-dia" id="fe-fecha-dia"><\/span>/);
       // La ayuda de la fecha (revisión final, 1): vacía y oculta; feriados.js la escribe al corregir uno que se repite y la suma al
-      // aria-describedby de la fecha mientras se ve
-      assert.match(modal, /<span class="fe-dia" id="fe-fecha-dia"><\/span>\s*<\/div>\s*<p class="form-hint" id="fe-fecha-ayuda" hidden><\/p>\s*<p class="form-error" id="fe-fecha-error" hidden><\/p>/);
+      // aria-describedby de la fecha mientras se ve. Debajo, igual, cuántas licencias de Mi espacio incluye la fecha (desde la entrega
+      // 2): feriados.js la escribe después de un cambio de la fecha o de «Se repite»
+      assert.match(modal, /<span class="fe-dia" id="fe-fecha-dia"><\/span>\s*<\/div>\s*<p class="form-hint" id="fe-fecha-ayuda" hidden><\/p>\s*<p class="form-hint" id="fe-fecha-afectadas" hidden><\/p>\s*<p class="form-error" id="fe-fecha-error" hidden><\/p>/);
       assert.match(modal, /<label class="form-label" for="fe-fecha">Fecha <span class="requerido" aria-hidden="true">\*<\/span><\/label>/);
       assert.match(modal, /<input type="date" id="fe-trasladado" class="form-input" min="2025-01-01" aria-describedby="fe-trasladado-ayuda fe-trasladado-error">/);
       assert.match(modal, /<label class="form-label" for="fe-trasladado">Trasladado del <span class="fe-opcional">\(opcional\)<\/span><\/label>/);
@@ -441,7 +449,8 @@ describe('páginas', () => {
   // Sitio público (spec 2026-10-17-fechas-datasets, 11): cada página carga su script con ?v=, una sola vez y después de api.js
   for (const [pagina, script, version] of [['datasets.html', 'datasets', VERSION_PUBLICAS], ['dataset.html', 'dataset-detail', VERSION_PUBLICAS],
     ['calendario.html', 'calendario', VERSION_PUBLICAS], ['index.html', 'dashboard', VERSION_PORTADA], ['seguimiento.html', 'seguimiento', VERSION_SEGUIMIENTO],
-    ['reportes.html', 'reportes', VERSION_REPORTES], ['notas.html', 'notas', VERSION_NOTAS], ['proyectos.html', 'proyectos', VERSION_PROYECTOS]]) {
+    ['reportes.html', 'reportes', VERSION_REPORTES], ['notas.html', 'notas', VERSION_NOTAS], ['proyectos.html', 'proyectos', VERSION_PROYECTOS],
+    ['mi-espacio.html', 'mi-espacio', VERSION_MI_ESPACIO]]) {
     it(`${pagina}: ${script}.js con la versión ${version}, después de api.js`, () => {
       const scripts = [...leer(pagina).matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
       assert.deepEqual(scripts.filter(src => src.startsWith(`js/${script}.js`)), [`js/${script}.js?v=${version}`]);
@@ -604,6 +613,205 @@ describe('páginas', () => {
     });
   });
 
+  // El menú de Mi cuenta (spec 2026-10-26-mi-espacio-licencias-y-horas, 11): Mi Perfil, con la persona, y Mi espacio, con el
+  // calendario con la tilde (calendar-check de Lucide, escrito en el HTML: no está en ICON_SELECTOR_MAP ni en Icons de main.js). Las
+  // demás páginas copian el menú de index.html (la carcasa, más abajo)
+  describe('el menú de Mi cuenta', () => {
+    const PERSONA = '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>';
+    const CALENDARIO_CON_TILDE = '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/>';
+
+    it('index.html: Mi Perfil con la persona y Mi espacio con el calendario con la tilde, en ese orden', () => {
+      const bloque = leer('index.html').match(/<div class="sidebar-section hidden" id="sidebarAccount">[\s\S]*?<\/nav>/)?.[0] ?? '';
+      assert.match(bloque, /<div class="sidebar-section-title">Mi cuenta<\/div>/);
+      const links = [...bloque.matchAll(/<a href="([^"]+)" class="sidebar-link">(<svg [^>]*>[\s\S]*?<\/svg>)<span>([^<]+)<\/span><\/a>/g)]
+        .map(([, href, svg, texto]) => ({ href, svg, texto }));
+      assert.deepEqual(links.map(l => l.href), ['perfil.html', 'mi-espacio.html']);
+      assert.deepEqual(links.map(l => l.texto), ['Mi Perfil', 'Mi espacio']);
+      assert.equal(bloque.match(/<a /g)?.length, 2, 'ningún otro link');
+      const [perfil, miEspacio] = links;
+      assert.ok(perfil.svg.endsWith(`>${PERSONA}</svg>`), 'Mi Perfil: la persona');
+      assert.ok(miEspacio.svg.endsWith(`>${CALENDARIO_CON_TILDE}</svg>`), 'Mi espacio: el calendario con la tilde');
+      for (const { href, svg } of links) assert.match(svg, /^<svg aria-hidden="true" xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">/, href);
+    });
+
+    it('main.js no cambia: el calendario con la tilde no está en ICON_SELECTOR_MAP ni en Icons (aparecería como ícono en Proyectos)', () => {
+      const main = fs.readFileSync(new URL('js/main.js', DIRECTORIO), 'utf8');
+      assert.ok(!main.includes('m9 16 2 2 4-4'));
+    });
+  });
+
+  // La página de Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 8 y 11): la carcasa de index.html (más abajo), el título, el
+  // h1 con el calendario con la tilde, los botones de carga, las tres pestañas con sus paneles y una sola región viva
+  describe('mi-espacio.html: la página', () => {
+    const html = () => leer('mi-espacio.html');
+    const bloque = (patron) => html().match(patron)?.[0] ?? '';
+
+    it('el título, la descripción y el h1 «Mi espacio» con el calendario con la tilde, decorativo', () => {
+      assert.ok(html().includes('<title>Mi espacio - RPAD</title>'));
+      assert.ok(html().includes('<meta name="description" content="Tus licencias, tus horas extras y lo que te queda">'));
+      const h1 = bloque(/<h1 class="page-title">[\s\S]*?<\/h1>/);
+      assert.match(h1, /<svg aria-hidden="true"[^>]*><path d="M8 2v4"\/><path d="M16 2v4"\/><rect width="18" height="18" x="3" y="4" rx="2"\/><path d="M3 10h18"\/><path d="m9 16 2 2 4-4"\/><\/svg>/);
+      assert.equal(h1.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(), 'Mi espacio');
+    });
+
+    it('«Cargar horas extras» y «Cargar licencia» son botones, ocultos hasta saber la modalidad', () => {
+      assert.match(html(), /<button type="button" class="sg-btn sg-btn-borde" id="btn-cargar-horas" hidden>Cargar horas extras<\/button>/);
+      assert.match(html(), /<button type="button" class="sg-btn sg-btn-tinta" id="btn-cargar-licencia" hidden><svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>Cargar licencia<\/button>/);
+    });
+
+    it('las pestañas Resumen (con la marca), Licencias y Horas extras, cada una con su panel; de entrada, el Resumen', () => {
+      const lista = bloque(/<div class="me-pestanas" role="tablist" aria-label="Mi espacio">[\s\S]*?<\/div>/);
+      const pestanas = [...lista.matchAll(/<button type="button" class="me-pestana" role="tab" id="tab-(\w+)" aria-selected="(true|false)" aria-controls="vista-(\w+)" data-pestana="(\w+)"(?: tabindex="-1")?>([\s\S]*?)<\/button>/g)]
+        .map(([, id, elegida, panel, pestana, texto]) => [id, elegida, panel, pestana, texto]);
+      assert.deepEqual(pestanas, [
+        ['resumen', 'true', 'resumen', 'resumen', 'Resumen<span id="me-marca"></span>'],
+        ['licencias', 'false', 'licencias', 'licencias', 'Licencias'],
+        ['horas', 'false', 'horas', 'horas', 'Horas extras']
+      ]);
+      for (const [nombre, oculto] of [['resumen', ''], ['licencias', ' hidden'], ['horas', ' hidden']]) {
+        assert.match(html(), new RegExp(`<section id="vista-${nombre}" role="tabpanel" aria-labelledby="tab-${nombre}"${oculto}>`), nombre);
+      }
+    });
+
+    // Fuera de los modales, #me-anuncio es la única región viva; dentro de cada modal, solo su error sin campo (role="alert", como en
+    // Configuración y Proyectos: el formulario está detrás del velo de los demás). Lo que se vuelve a dibujar (el cálculo, el paso,
+    // la suma) no es una región viva
+    it('#me-anuncio es la única región viva de la página, fuera de las pestañas y de sus paneles; en los modales, solo su error', () => {
+      assert.match(html(), /<p class="visualmente-oculto" id="me-anuncio" role="status"><\/p>/);
+      const pagina = html().slice(0, html().indexOf('<div class="modal-overlay"'));
+      assert.equal(pagina.match(/role="(status|alert|log)"/g)?.length, 1);
+      assert.doesNotMatch(html(), /aria-live/);
+      assert.ok(html().indexOf('id="me-anuncio"') < html().indexOf('role="tablist"'), 'antes de las pestañas');
+      const enLosModales = [...html().slice(pagina.length).matchAll(/<[^>]*role="(status|alert|log)"[^>]*>/g)].map(([etiqueta]) => etiqueta);
+      assert.deepEqual(enLosModales.map((etiqueta) => etiqueta.match(/id="([^"]+)"/)[1]), ['ml-error', 'mh-error', 'ms-error', 'mu-error', 'mc-error']);
+      assert.ok(enLosModales.every((etiqueta) => etiqueta.includes('role="alert"') && etiqueta.includes(' hidden')));
+    });
+
+    it('ningún id se repite', () => {
+      const ids = [...html().matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+      assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), []);
+    });
+
+    // Los formularios (spec 2026-10-26-mi-espacio-licencias-y-horas, 8): cinco modales de administración después del footer y fuera
+    // del contenido, con los ids que usa mi-espacio.js, una sola vez y ninguno de la carcasa
+    describe('los modales', () => {
+      const MODALES = {
+        'modal-licencia': ['modal-licencia-titulo', 'ml-error', 'ml-tipos', 'ml-tipos-opciones', 'ml-tipos-error', 'ml-desde-rotulo',
+          'ml-desde', 'ml-desde-error', 'ml-grupo-hasta', 'ml-hasta', 'ml-hasta-error', 'ml-grupo-horas', 'ml-horas', 'ml-horas-error',
+          'ml-fechas-ayuda', 'ml-calculo', 'ml-nota', 'ml-nota-error', 'ml-grupo-mostrar', 'ml-mostrar', 'ml-mostrar-ayuda',
+          'ml-grupo-autorizado', 'ml-autorizado', 'ml-autorizado-ayuda', 'ml-autorizado-error', 'ml-paso', 'ml-sin-auditor', 'ml-borrar',
+          'ml-pie', 'ml-guardar'],
+        'modal-horas': ['modal-horas-titulo', 'mh-error', 'mh-fecha', 'mh-fecha-error', 'mh-desde', 'mh-desde-error', 'mh-hasta',
+          'mh-hasta-error', 'mh-suma', 'mh-nota', 'mh-nota-error', 'mh-borrar', 'mh-guardar'],
+        'modal-saldos': ['modal-saldos-titulo', 'ms-error', 'ms-modalidad', 'ms-dias', 'ms-dias-rotulo', 'ms-dias-opciones', 'ms-dias-ayuda',
+          'ms-dias-mitades', 'ms-dias-error', 'ms-estudios', 'ms-estudios-opciones', 'ms-estudios-error', 'ms-campos', 'ms-guardar'],
+        'modal-uso': ['modal-uso-titulo', 'mu-error', 'mu-fecha', 'mu-fecha-error', 'mu-grupo-horas', 'mu-horas', 'mu-horas-error',
+          'mu-calculo', 'mu-nota', 'mu-nota-error', 'mu-grupo-mostrar', 'mu-mostrar', 'mu-mostrar-ayuda', 'mu-paso', 'mu-sin-auditor',
+          'mu-borrar', 'mu-pie', 'mu-guardar'],
+        'modal-confirmar': ['modal-confirmar-titulo', 'mc-error', 'modal-confirmar-texto', 'modal-confirmar-si']
+      };
+      const nombres = Object.keys(MODALES);
+      // Cada modal, hasta el siguiente (el último, hasta los scripts)
+      const modal = (id) => {
+        const siguiente = nombres[nombres.indexOf(id) + 1];
+        const fin = siguiente ? `(?=<div class="modal-overlay" id="${siguiente}">)` : '(?=\\s*<!-- Scripts del RPAD -->)';
+        return bloque(new RegExp(`<div class="modal-overlay" id="${id}">[\\s\\S]*?${fin}`));
+      };
+      const posicion = (texto) => html().indexOf(texto);
+
+      it('van después del footer, fuera del contenido, en su orden y antes de los scripts', () => {
+        let anterior = posicion('</main>');
+        assert.ok(posicion('</footer>') < anterior, 'el footer, dentro del contenido');
+        for (const id of nombres) {
+          assert.ok(modal(id), id);
+          assert.ok(posicion(`id="${id}"`) > anterior, `${id}, después`);
+          anterior = posicion(`id="${id}"`);
+        }
+        assert.ok(anterior < posicion('<script '), 'antes de los scripts');
+      });
+
+      it('cada id está una sola vez, en su modal, y ninguno es de la carcasa', () => {
+        const ids = [...html().matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+        const carcasa = [...html().slice(0, posicion('<div class="modal-overlay"')).matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+        for (const [id, propios] of Object.entries(MODALES)) {
+          const deEste = [...modal(id).matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+          // Todos los ids del modal son los suyos, y no hay otros
+          assert.deepEqual(deEste.sort(), [id, ...propios].sort(), id);
+          for (const propio of [id, ...propios]) {
+            assert.equal(ids.filter(otro => otro === propio).length, 1, propio);
+            assert.ok(!carcasa.includes(propio), `${propio} no es de la carcasa`);
+          }
+        }
+      });
+
+      it('los de administración: role="dialog", aria-modal y su título; la × y «Cancelar» con data-cerrar, y sin <form>', () => {
+        for (const id of nombres) {
+          const html = modal(id);
+          assert.match(html, new RegExp(`<div class="modal me-modal(?: me-modal-chico)?" role="dialog" aria-modal="true" aria-labelledby="${id}-titulo"`), id);
+          assert.match(html, /<button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;<\/button>/, id);
+          assert.match(html, /<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar<\/button>/, id);
+          assert.doesNotMatch(html, /<form\b|maxlength|onclick=/, id);
+        }
+        assert.match(modal('modal-confirmar'), /aria-describedby="modal-confirmar-texto"/);
+      });
+
+      it('cada campo dice su error en aria-describedby, y el campo del firmante es el de Configuración', () => {
+        for (const control of ['ml-desde', 'ml-hasta', 'ml-horas', 'ml-nota', 'ml-autorizado', 'mh-fecha', 'mh-desde', 'mh-hasta', 'mh-nota',
+          'mu-fecha', 'mu-horas', 'mu-nota']) {
+          assert.match(html(), new RegExp(`id="${control}"[^>]*aria-describedby="[^"]*${control}-error[^"]*"`), control);
+        }
+        for (const grupo of ['ml-tipos', 'ms-dias', 'ms-estudios']) {
+          assert.match(html(), new RegExp(`<fieldset class="me-grupo" id="${grupo}" aria-describedby="[^"]*${grupo}-error"`), grupo);
+        }
+        assert.match(modal('modal-licencia'), /<label class="form-label" for="ml-autorizado">Autorizo a presentar las notas en mi nombre a:<\/label>/);
+        assert.match(modal('modal-licencia'), /<p class="form-hint" id="ml-autorizado-ayuda">Solo aparecen los admins y editores activos con su firma cargada en Mi Perfil\.<\/p>/);
+        // Las horas extras, de a media hora
+        for (const control of ['mh-desde', 'mh-hasta']) assert.match(html(), new RegExp(`<input type="time" class="form-input" id="${control}" step="1800"`), control);
+      });
+    });
+
+    it('los scripts, a secas y en su orden: config, auth, main, api y mi-espacio.js', () => {
+      const scripts = [...html().matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+      assert.deepEqual(scripts, ['js/config.js', `js/auth.js?v=${VERSION}`, `js/main.js?v=${VERSION}`, `js/api.js?v=${VERSION}`,
+        `js/mi-espacio.js?v=${VERSION_MI_ESPACIO}`]);
+      assert.equal(html().match(/<script\b/g).length, scripts.length, 'ningún <script> con otros atributos');
+    });
+
+    // Los tokens del Seguimiento van en el <style> de la página, con los tres que faltaban (spec 8), y toda var() que usa se define
+    // en main.css o en este <style>, salvo --alto: el alto de cada tanque, que mi-espacio.js escribe en el nivel de su SVG
+    it('el <style> define los tokens --sg-* con --sg-ambar-fondo, --sg-gris-fondo y --sg-violeta-fondo, y toda var() que usa', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      for (const token of ['--sg-tinta', '--sg-suave', '--sg-linea', '--sg-ambar-fondo', '--sg-gris-fondo', '--sg-violeta-fondo']) {
+        assert.match(estilo, new RegExp(`${token}:`), token);
+      }
+      const css = fs.readFileSync(new URL('../public/css/main.css', import.meta.url), 'utf8') + estilo;
+      for (const [, variable] of estilo.matchAll(/var\((--[\w-]+)\)/g)) {
+        if (variable !== '--alto') assert.ok(new RegExp(`${variable}\\s*:`).test(css), `${variable} definida`);
+      }
+      assert.ok(leer('js/mi-espacio.js').includes('<g class="me-tanque-nivel" style="--alto:${alto}px">'), '--alto, en el SVG de cada tanque');
+      assert.doesNotMatch(estilo, /text-transform:\s*uppercase/);
+    });
+
+    // El Resumen «Niveles» (spec 8): el único movimiento de la página es el de los tanques, que se llenan una vez con una transición
+    // de transform (mientras tienen data-llenar, vacíos) y no se mueven con prefers-reduced-motion; los tokens del Resumen de la
+    // maqueta (--rs-* y .op-*) pasaron a --sg-* y .me-*, en el <style> de la página y nunca en main.css
+    it('el Resumen: la transición de los tanques, quieta con prefers-reduced-motion, y sin los tokens de la maqueta', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      assert.match(estilo, /\.me-tanque-nivel \{ transition: transform [^}]+\}/);
+      assert.match(estilo, /\[data-llenar\] \.me-tanque-nivel \{ transform: translateY\(var\(--alto\)\); \}/);
+      // Quietos y llenos desde el principio (sin el parpadeo de los dos cuadros vacíos)
+      assert.ok(estilo.includes('@media (prefers-reduced-motion: reduce) { .me-tanque-nivel, [data-llenar] .me-tanque-nivel { transition: none; transform: none; } }'));
+      // Ninguna otra animación ni transición
+      assert.doesNotMatch(estilo, /animation|@keyframes/);
+      assert.equal(estilo.match(/transition: transform/g).length, 1);
+      assert.doesNotMatch(estilo, /--rs-|\.op-|\.rs-/);
+      const main = fs.readFileSync(new URL('../public/css/main.css', import.meta.url), 'utf8');
+      assert.doesNotMatch(main, /--sg-|\.me-tanque/);
+      // Las clases de las capas de los tanques que dibuja mi-espacio.js
+      for (const clase of ['c-vence', 'c-tinta', 'c-medio', 'c-cargadas', 'c-por-habilitar']) assert.ok(estilo.includes(`.${clase}`), clase);
+    });
+  });
+
   // Si no hay a quién autorizar, la lista solo dice "Nadie": la aclaración explica quiénes pueden aparecer
   it('configuracion.html: debajo del selector de persona autorizada dice quiénes aparecen', () => {
     const grupo = leer('configuracion.html').match(/<div class="form-group" id="grupo-autorizado"[\s\S]*?<\/div>/)?.[0] ?? '';
@@ -611,13 +819,15 @@ describe('páginas', () => {
   });
 
   // Carcasa compartida (spec 2026-10-18-rediseno-publico, 5): encabezado con el nav principal, menú lateral y footer nuevos,
-  // copiados a mano en cada página (las 13, con la portada; eran 14 hasta que Configuración reemplazó a Usuarios y Áreas, y siguen
-  // siendo 13 con Proyectos, que reemplaza a Gestión: spec 2026-10-25-proyectos, 11)
+  // copiados a mano en cada página (las 14, con la portada; eran 14 hasta que Configuración reemplazó a Usuarios y Áreas, siguieron
+  // siendo 13 con Proyectos, que reemplaza a Gestión, spec 2026-10-25-proyectos, 11, y vuelven a ser 14 con Mi espacio, spec
+  // 2026-10-26-mi-espacio-licencias-y-horas, 11)
   const CON_CARCASA = paginas.filter(p => leer(p).includes('id="sidebar"'));
   const FUENTES = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap';
 
-  it('hay 13 páginas con carcasa', () => {
-    assert.equal(CON_CARCASA.length, 13);
+  it('hay 14 páginas con carcasa', () => {
+    assert.equal(CON_CARCASA.length, 14);
+    assert.ok(CON_CARCASA.includes('mi-espacio.html'), 'mi-espacio.html');
   });
 
   for (const pagina of CON_CARCASA) {
@@ -635,7 +845,7 @@ describe('páginas', () => {
         assert.match(html, new RegExp(`id="${id}"`), id);
       }
       assert.match(html, /<nav class="header-nav" aria-label="Principal">/);
-      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'correos.html', 'configuracion.html', 'reportes.html', 'notas.html', 'proyectos.html', 'seguimiento.html', 'perfil.html']) {
+      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'correos.html', 'configuracion.html', 'reportes.html', 'notas.html', 'proyectos.html', 'seguimiento.html', 'perfil.html', 'mi-espacio.html']) {
         assert.ok(html.includes(`href="${destino}"`), destino);
       }
       assert.ok(!html.includes('verificar.html'), 'sin el link roto a verificar.html');
@@ -667,7 +877,7 @@ describe('páginas', () => {
     });
   }
 
-  // Lo copiado a mano queda fijado (spec 5: el mismo markup en las 13): el encabezado, el velo, el menú lateral y el footer de cada
+  // Lo copiado a mano queda fijado (spec 5: el mismo markup en las 14): el encabezado, el velo, el menú lateral y el footer de cada
   // página son los de index.html, con sus atributos de accesibilidad. Solo cambian la marca de la página actual y la sangría
   const PIEZAS_DE_LA_CARCASA = {
     encabezado: /<header class="header">[\s\S]*?<\/header>/,
