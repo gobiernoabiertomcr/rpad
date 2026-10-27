@@ -3421,6 +3421,21 @@ describe('el formulario del evento: lo puro', () => {
       .endsWith('No se pudo cargar la lista de personas. Probá de nuevo en unos minutos.'));
   });
 
+  it('htmlDePersonasDelEvento: si no llegó con un motivo del servidor (el 403), dice ese, escapado', () => {
+    assert.ok(textoDe(M.htmlDePersonasDelEvento([], { personas: [] }, { sinLista: 'fallo', motivo: MENSAJES_EVENTO.sinPermiso }))
+      .endsWith('No tenés permiso para compartir eventos.'));
+    const html = M.htmlDePersonasDelEvento([], { personas: [] }, { sinLista: 'fallo', motivo: MALICIOSO });
+    assert.ok(html.includes(ESCAPADO));
+    assert.ok(!html.includes('<img'));
+    // Sin motivo, o mientras llega, como siempre
+    for (const motivo of ['', '   ', null, 7]) {
+      assert.ok(textoDe(M.htmlDePersonasDelEvento([], { personas: [] }, { sinLista: 'fallo', motivo }))
+        .endsWith('No se pudo cargar la lista de personas. Probá de nuevo en unos minutos.'), String(motivo));
+    }
+    assert.ok(textoDe(M.htmlDePersonasDelEvento([], { personas: [] }, { sinLista: 'cargando', motivo: MENSAJES_EVENTO.sinPermiso }))
+      .endsWith('Cargando las personas…'));
+  });
+
   it('personasParaElegir: las de la lista y, al final, las del evento que ya no están en ella (no se sacan sin querer)', () => {
     const valores = { conocidas: [{ id: 3, nombre: 'Martín Ríos' }, { id: 8, nombre: 'Persona de Prueba' }] };
     assert.deepEqual(plano(M.personasParaElegir(PERSONAS_PARA_COMPARTIR, valores)).map((persona) => persona.id), [4, 6, 7, 3, 5, 8]);
@@ -3662,16 +3677,20 @@ describe('el formulario del evento en la página (DOM falso)', () => {
     });
 
   it('en un evento compartido, la ayuda del recordatorio dice que les llega a todos (uno nuevo y uno propio con personas)', async () => {
-    const pagina = montarPagina({ hash: '#agenda', admin: true, responder: conElFormulario() });
-    await pagina.iniciar();
-    await pagina.tocar(pagina.el('btn-nuevo-evento'));
-    await pagina.tocar(pagina.el('ev-compartido'));
-    assert.equal(pagina.el('ev-recordatorio-ayuda').textContent, AYUDA_COMPARTIDO);
-    assert.equal(pagina.el('ev-recordatorio-ayuda').hidden, false);
-    await pagina.tecla('Escape');
-    await abrirElEvento(pagina, '12');
-    assert.equal(pagina.el('ev-recordatorio-ayuda').textContent, AYUDA_COMPARTIDO);
-    assert.equal(pagina.el('ev-recordatorio-ayuda').hidden, false);
+    // Uno propio con personas, en una página recién montada: la ayuda la escribe abrirlo (en el HTML está vacía)
+    const existente = montarPagina({ hash: '#agenda', admin: true, responder: conElFormulario() });
+    await existente.iniciar();
+    assert.equal(existente.el('ev-recordatorio-ayuda').textContent, '');
+    await abrirElEvento(existente, '12');
+    assert.equal(existente.el('ev-recordatorio-ayuda').textContent, AYUDA_COMPARTIDO);
+    assert.equal(existente.el('ev-recordatorio-ayuda').hidden, false);
+    // Uno nuevo, al elegir «Compartido»
+    const nuevo = montarPagina({ hash: '#agenda', admin: true, responder: conElFormulario() });
+    await nuevo.iniciar();
+    await nuevo.tocar(nuevo.el('btn-nuevo-evento'));
+    await nuevo.tocar(nuevo.el('ev-compartido'));
+    assert.equal(nuevo.el('ev-recordatorio-ayuda').textContent, AYUDA_COMPARTIDO);
+    assert.equal(nuevo.el('ev-recordatorio-ayuda').hidden, false);
   });
 
   it('si las personas no llegan, lo dice y se vuelven a pedir la próxima vez', async () => {
@@ -3691,6 +3710,21 @@ describe('el formulario del evento en la página (DOM falso)', () => {
     await pagina.tocar(pagina.el('ev-compartido'));
     assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS).length, 2);
     assert.equal(pagina.el('ev-personas').innerHTML, M.htmlDePersonasDelEvento(PERSONAS_PARA_COMPARTIR, { personas: [] }));
+  });
+
+  it('con un 403 de las personas (un rol viejo en el navegador), dice el mensaje del servidor, no «Probá de nuevo»', async () => {
+    const pagina = montarPagina({
+      admin: true,
+      responder: conElFormulario({
+        extra: (metodo, ruta) => (ruta === RUTA_DE_PERSONAS ? respuesta(403, { success: false, error: MENSAJES_EVENTO.sinPermiso }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.tocar(pagina.el('ev-compartido'));
+    const texto = textoDe(pagina.el('ev-personas').innerHTML);
+    assert.ok(texto.endsWith('No tenés permiso para compartir eventos.'), texto);
+    assert.ok(!texto.includes('Probá de nuevo'), texto);
   });
 
   // Review Focus 5: dos eventos compartidos mandarían dos invitaciones
@@ -4076,6 +4110,35 @@ describe('el detalle de un evento ajeno en la página (DOM falso)', () => {
     await pagina.escribir('mea-recordatorio', 'ninguno', 'change');
     assert.deepEqual(abiertos(pagina), []);
     assert.deepEqual(pagina.estado.toasts, [[MENSAJES_EVENTO.noEncontrado, 'error']]);
+    assert.deepEqual(rangosPedidos(pagina).slice(rangos).sort(), [RUTA_DEL_MES, RUTA_DE_PROXIMOS]);
+  });
+
+  it('un 404 después de un cambio de «Mi recordatorio» que salió bien vuelve a pedir la agenda una sola vez', async () => {
+    let puts = 0;
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        extra: (metodo, ruta) => {
+          if (metodo !== 'PUT' || !ruta.endsWith('/mi-recordatorio')) return undefined;
+          puts += 1;
+          if (puts === 1) {
+            return ok({ mi_recordatorio: 'ninguno', aviso: avisoDe({ fecha: '2026-10-29', desde: '09:00', recordatorio: 'ninguno' },
+              { ahora: AHORA, feriados: SIN_FERIADOS }) }, 'Recordatorio apagado.');
+          }
+          return respuesta(404, { success: false, error: MENSAJES_EVENTO.noEncontrado });
+        }
+      })
+    });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '14');
+    await pagina.escribir('mea-recordatorio', 'ninguno', 'change');
+    assert.deepEqual(abiertos(pagina), ['modal-evento-ajeno']);
+    const rangos = rangosPedidos(pagina).length;
+    await pagina.escribir('mea-recordatorio', 'evento', 'change');
+    await pagina.esperar();
+    assert.equal(puts, 2);
+    assert.deepEqual(abiertos(pagina), []);
+    // Una sola recarga: un pedido del mes y uno de los próximos (cerrar el detalle y el 404 no la piden dos veces)
     assert.deepEqual(rangosPedidos(pagina).slice(rangos).sort(), [RUTA_DEL_MES, RUTA_DE_PROXIMOS]);
   });
 });

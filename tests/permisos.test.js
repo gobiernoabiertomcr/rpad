@@ -3,6 +3,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
 import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, db } from './helpers.js';
+import { BLOQUEO_EVENTOS } from '../services/miEspacioEventosReglas.js';
 
 let servidor, api, usuarios;
 
@@ -428,7 +429,6 @@ describe('cron', () => {
   });
 
   it('/cron/eventos: 200 con la clave por encabezado (con el candado tomado: no escribe ni manda nada)', async () => {
-    const BLOQUEO_EVENTOS = 'rpad_mi_espacio_eventos';
     const contar = async () => Number((await query('SELECT COUNT(*) AS n FROM mi_espacio_eventos_corridas'))[0].n)
       + Number((await query('SELECT COUNT(*) AS n FROM mi_espacio_evento_envios'))[0].n);
     const antes = await contar();

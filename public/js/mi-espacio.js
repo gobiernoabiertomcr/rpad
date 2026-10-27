@@ -1337,9 +1337,10 @@ const MENSAJE_SIN_PERSONAS = 'No se pudo cargar la lista de personas. Probá de 
 /**
  * Con quién se comparte: «Todos» primero (`data-persona="todos"`) y cada persona (`data-persona="<id>"`, con sus iniciales,
  * decorativas, y su nombre), botones con aria-pressed. Con «Todos» elegido, las demás van deshabilitadas (todos ya están). `sinLista`:
- * 'cargando' o 'fallo' dice por qué todavía no está la lista (las del evento y «Todos» se pueden elegir igual).
+ * 'cargando' o 'fallo' dice por qué todavía no está la lista (las del evento y «Todos» se pueden elegir igual); con 'fallo', `motivo`
+ * es el mensaje del servidor que lo explica (el 403 de un rol viejo en el navegador), escapado, y sin él, «Probá de nuevo…».
  */
-function htmlDePersonasDelEvento(personas, valores, { sinLista = null } = {}) {
+function htmlDePersonasDelEvento(personas, valores, { sinLista = null, motivo = '' } = {}) {
   const datos = esObjeto(valores) ? valores : {};
   const paraTodos = datos.para_todos === true;
   const elegidas = Array.isArray(datos.personas) ? datos.personas : [];
@@ -1355,7 +1356,7 @@ function htmlDePersonasDelEvento(personas, valores, { sinLista = null } = {}) {
   }
   let estado = '';
   if (sinLista === 'cargando') estado = 'Cargando las personas…';
-  else if (sinLista === 'fallo') estado = MENSAJE_SIN_PERSONAS;
+  else if (sinLista === 'fallo') estado = conTexto(motivo) ? esc(motivo) : MENSAJE_SIN_PERSONAS;
   return botones.join('') + (estado ? `<span class="me-personas-estado">${estado}</span>` : '');
 }
 
@@ -2923,14 +2924,16 @@ async function confirmarElBorrado() {
 
 // ---- El evento (la agenda: spec 2026-10-26-mi-espacio-agenda, 1, 2 y 6) ----
 
-// GET /mi-espacio/personas, una sola vez (si falla, se vuelve a pedir la próxima): con quiénes se puede compartir, o null
+// GET /mi-espacio/personas, una sola vez (si falla, se vuelve a pedir la próxima): `{ lista, motivo }`, con quiénes se puede
+// compartir o, si no llegó, `lista` null y, con un 403 (un rol viejo en el navegador: ya no es administración), el mensaje del
+// servidor en `motivo` («No tenés permiso para compartir eventos.»); con otra falla, ''
 function personasParaCompartir() {
   pagina.personas ??= API.pedirJson('GET', '/mi-espacio/personas').then(
-    ({ data }) => listaDe(data),
+    ({ data }) => ({ lista: listaDe(data), motivo: '' }),
     (error) => {
       pagina.personas = null;
       if (error?.status === 401) irAlLogin();
-      return null;
+      return { lista: null, motivo: error?.status === 403 ? comoTexto(error.message) : '' };
     }
   );
   return pagina.personas;
@@ -2948,7 +2951,7 @@ function abrirEvento({ item = null, volverA = null } = {}) {
   const valores = valoresDelEvento(item, { fecha: Utils.hoyEnArgentina() });
   const formulario = {
     item, valores, puedeCompartir, guardando: false, temporizador: null, pedidoDelAviso: 0, lista: null,
-    sinLista: puedeCompartir ? 'cargando' : null
+    sinLista: puedeCompartir ? 'cargando' : null, motivoSinLista: ''
   };
   pagina.evento = formulario;
   porId('modal-evento-titulo').textContent = item ? 'Editar evento' : 'Nuevo evento';
@@ -2965,10 +2968,11 @@ function abrirEvento({ item = null, volverA = null } = {}) {
   programarAvisoDelEvento();
   abrirModal('modal-evento', { volverA, foco: () => porId('ev-titulo'), alCerrar: cerrarFormularioDeEvento });
   if (puedeCompartir) {
-    personasParaCompartir().then((lista) => {
+    personasParaCompartir().then(({ lista, motivo }) => {
       if (pagina.evento !== formulario) return;
       formulario.lista = lista;
       formulario.sinLista = lista === null ? 'fallo' : null;
+      formulario.motivoSinLista = motivo;
       pintarPersonas();
     });
   }
@@ -3007,7 +3011,7 @@ function pintarPersonas() {
   const formulario = pagina.evento;
   if (!formulario) return;
   porId('ev-personas').innerHTML = htmlDePersonasDelEvento(personasParaElegir(formulario.lista, formulario.valores), formulario.valores,
-    { sinLista: formulario.sinLista });
+    { sinLista: formulario.sinLista, motivo: formulario.motivoSinLista });
   porId('ev-personas-cuantas').textContent = textoDeCuantasPersonas(formulario.valores);
 }
 
@@ -3181,8 +3185,11 @@ async function guardarMiRecordatorio() {
     select.disabled = false;
     select.value = ajeno.elegido;
     if (error?.status === 401) irAlLogin();
-    else if (error?.status === 404) noEstaMas('modal-evento-ajeno', error);
-    else if (pagina.eventoAjeno === ajeno) {
+    else if (error?.status === 404) {
+      // noEstaMas ya vuelve a pedir todo: cerrar el detalle no lo pide otra vez (aunque antes un cambio haya salido bien)
+      ajeno.recargarAlCerrar = false;
+      noEstaMas('modal-evento-ajeno', error);
+    } else if (pagina.eventoAjeno === ajeno) {
       avisoDelModal('eventoAjeno', motivoDeLaFalla(error, MENSAJE_NO_SE_GUARDO));
       select.focus?.();
     }

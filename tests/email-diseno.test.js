@@ -351,7 +351,7 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     // Nuevos con la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, 4): el detalle va en su párrafo, después de la
     // línea del evento
     'evento: invitación': `${RPAD} Te sumaron a un evento Persona de Prueba te sumó a un evento: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00. Sala de reuniones del 2.º piso. Ver en Mi espacio Solo quien lo creó lo puede cambiar. Si cambia o se cancela, te llega otro email. ${PIE}`,
-    'evento: cambio': `${RPAD} Cambió un evento Cambió un evento: Reunión de equipo, miércoles 28/10/2026 de 10:00 a 11:00. Sala de reuniones del 2.º piso. Antes: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00 Lo cambió Persona de Prueba. Ver en Mi espacio ${PIE}`,
+    'evento: cambio': `${RPAD} Cambió un evento Cambió un evento: Reunión de equipo, miércoles 28/10/2026 de 10:00 a 11:00. Antes: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00 Sala de reuniones del 2.º piso. Lo cambió Persona de Prueba. Ver en Mi espacio ${PIE}`,
     'evento: cancelación': `${RPAD} Se canceló un evento Se canceló: Reunión de equipo, martes 27/10/2026 a las 10:00. Sala de reuniones del 2.º piso. Lo canceló Persona de Prueba. Ver en Mi espacio ${PIE}`,
     'evento: recordatorio': `${RPAD} Recordatorio Hoy a las 10:00: Reunión de equipo Sala de reuniones del 2.º piso. Ver en Mi espacio Te llega porque el evento tiene un recordatorio por email. Lo podés apagar desde el evento, en la Agenda de Mi espacio. ${PIE}`
   };
@@ -486,7 +486,7 @@ describe('Los emails de los eventos de la agenda', () => {
     assert.ok(textoVisible(plantillas.eventoInvitacionTemplate({ creador: 'Persona de Prueba', evento: sinFin }).html)
       .includes('Persona de Prueba te sumó a un evento: Reunión de equipo, martes 27/10/2026 a las 10:00.'));
     assert.ok(textoVisible(plantillas.eventoCambioTemplate({ creador: 'Persona de Prueba', antes: sinFin, despues: EVENTO }).html)
-      .includes('Antes: Reunión de equipo, martes 27/10/2026 a las 10:00 Lo cambió'));
+      .includes('Antes: Reunión de equipo, martes 27/10/2026 a las 10:00 Sala de reuniones del 2.º piso. Lo cambió'));
   });
 
   it('los textos alternativos: los párrafos separados por un renglón en blanco, el link y la nota', () => {
@@ -497,8 +497,8 @@ describe('Los emails de los eventos de la agenda', () => {
       'Solo quien lo creó lo puede cambiar. Si cambia o se cancela, te llega otro email.'
     ].join('\n\n'));
     assert.equal(caso('evento: cambio').text, [
-      'Cambió un evento: Reunión de equipo, miércoles 28/10/2026 de 10:00 a 11:00.', detalle,
-      'Antes: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00', 'Lo cambió Persona de Prueba.', link
+      'Cambió un evento: Reunión de equipo, miércoles 28/10/2026 de 10:00 a 11:00.',
+      'Antes: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00', detalle, 'Lo cambió Persona de Prueba.', link
     ].join('\n\n'));
     assert.equal(caso('evento: cancelación').text, [
       'Se canceló: Reunión de equipo, martes 27/10/2026 a las 10:00.', detalle, 'Lo canceló Persona de Prueba.', link

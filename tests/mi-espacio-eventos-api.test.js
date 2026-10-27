@@ -983,8 +983,8 @@ describe('los emails del guardado', () => {
     const deB = emails.filter((email) => email.casillas.includes(usuarios.adminB.email));
     assert.deepEqual(deB.map((email) => email.asunto).sort(), [ASUNTOS.cambio, ASUNTOS.cambio, ASUNTOS.invitacion].sort());
     const elUltimo = deB.find((email) => email.texto.includes('miércoles'));
-    const cambio = `Cambió un evento: ${titulo()}, miércoles ${fechaLarga(q(2))} de 11:00 a 12:00. Otro detalle `
-      + `Antes: ${titulo()}, martes ${fechaLarga(q(1))} de 11:00 a 12:00 Lo cambió Test adminA. Ver en Mi espacio`;
+    const cambio = `Cambió un evento: ${titulo()}, miércoles ${fechaLarga(q(2))} de 11:00 a 12:00. `
+      + `Antes: ${titulo()}, martes ${fechaLarga(q(1))} de 11:00 a 12:00 Otro detalle Lo cambió Test adminA. Ver en Mi espacio`;
     assert.ok(elUltimo.texto.includes(cambio), elUltimo.texto);
     const delSuperadmin = emails.filter((email) => email.casillas.includes(usuarios.superadmin.email));
     assert.equal(delSuperadmin.length, 1);
@@ -1063,6 +1063,31 @@ describe('los emails del guardado', () => {
     } finally {
       await query('UPDATE usuarios SET email = ? WHERE id = ?', [usuarios.adminB.email, idDe('adminB')]);
     }
+  });
+
+  // Los emails salen solo con un 2xx (guardarEvento): un rechazo no manda nada ni deja filas. Lo prueba un guardado posterior que
+  // sí manda (si los rechazados hubieran mandado algo, habría más filas)
+  it('un guardado rechazado no manda nada ni deja filas: el 400 con la hora cambiada y el 404 de quien no lo creó', async () => {
+    const conLosDos = compartidoCon('adminB', 'editor');
+    const id = await crear('adminA', conMarca(conLosDos));
+    await esperarEnvios(id, 2);
+    // adminA le cambia la hora con «A» antes de «De»: 400, no se guarda
+    const invalido = await cambiar('adminA', id, conMarca({ ...conLosDos, desde: '12:00', hasta: '11:00' }));
+    assert.equal(invalido.status, 400, JSON.stringify(invalido.body));
+    // adminB no lo creó: cambiarle la hora y borrarlo le dan 404
+    assert.equal((await cambiar('adminB', id, conMarca({ ...compartidoCon('adminA', 'editor'), desde: '09:00' }))).status, 404);
+    assert.equal((await borrar('adminB', id)).status, 404);
+    // Un cambio de hora que sí sale: el cambio, a los dos, con la hora nueva
+    assert.equal((await cambiar('adminA', id, conMarca({ ...conLosDos, desde: '08:00', hasta: '09:00' }))).status, 200);
+    const envios = await esperarEnvios(id, 4);
+    assert.equal(envios.length, 4, JSON.stringify(envios));
+    assert.deepEqual(quienes(envios.slice(2)), [['cambio', 'adminB'], ['cambio', 'editor']]);
+    assert.ok(envios.slice(2).every((envio) => envio.para === `${q(1)} 08:00` && envio.success === 1), JSON.stringify(envios));
+    const emails = await esperarEmails(4);
+    assert.equal(emails.length, 4, JSON.stringify(emails.map((email) => email.asunto)));
+    assert.deepEqual(emails.map((email) => email.asunto).sort(),
+      [ASUNTOS.cambio, ASUNTOS.cambio, ASUNTOS.invitacion, ASUNTOS.invitacion]);
+    assert.ok(!emails.some((email) => email.asunto === ASUNTOS.cancelacion));
   });
 
   // El servicio, llamado en el proceso del test (el pool ya apunta a la base de prueba): con la barrera EMAIL_SOLO_A, que

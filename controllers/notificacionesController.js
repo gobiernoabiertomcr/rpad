@@ -249,10 +249,10 @@ export const ejecutarNotificacionCambiosPendientes = async (req, res) => {
 /**
  * La corrida de los recordatorios de la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, sección 5): la llama una
  * Tarea Cron cada media hora; solo manda en días hábiles, con su propio candado (services/miEspacioEventosCorrida.js).
- * Siempre responde con `data` (lo que devolvió la corrida): con otra corrida en curso, 200 «Otra corrida de los
+ * Cuando la corrida termina, responde con `data` (lo que devolvió): con otra corrida en curso, 200 «Otra corrida de los
  * recordatorios está en curso.»; un día que no es hábil, 200 «Hoy no es día hábil: no se mandan recordatorios.»; con
  * fallidos o errores, 207; si no, 200 «Recordatorios enviados: N.» (el mensaje es el resultado que queda anotado). Una
- * excepción (no se pudo tomar el candado), 500.
+ * excepción (no se pudo tomar el candado), 500 `{ success: false, error }`, sin `data`.
  */
 export const ejecutarRecordatoriosDeEventos = async (req, res) => {
   try {

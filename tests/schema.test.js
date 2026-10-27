@@ -71,7 +71,7 @@ const TABLAS_MI_ESPACIO = ['mi_espacio_anios', 'mi_espacio_arranque', 'mi_espaci
 
 // Las cuatro tablas de la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, 3), en el orden de la migración: los
 // eventos, con quién se comparte cada uno, los emails enviados y la última corrida de los recordatorios
-const TABLAS_AGENDA = ['mi_espacio_eventos', 'mi_espacio_evento_personas', 'mi_espacio_evento_envios', 'mi_espacio_eventos_corridas'];
+const TABLAS_MI_ESPACIO_AGENDA = ['mi_espacio_eventos', 'mi_espacio_evento_personas', 'mi_espacio_evento_envios', 'mi_espacio_eventos_corridas'];
 
 // Las columnas generadas de unas tablas, con cómo se guardan y su expresión: `columnas` no lee EXTRA
 const generadasDe = async (conexion, base, tablas) => {
@@ -452,7 +452,7 @@ describe('database/schema.sql', () => {
   });
 
   it('la agenda de Mi espacio: cuatro tablas con sus columnas, claves y FK (spec 2026-10-26-mi-espacio-agenda, 3)', async () => {
-    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => TABLAS_AGENDA.some(tabla => c.startsWith(`${tabla}.`)));
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => TABLAS_MI_ESPACIO_AGENDA.some(tabla => c.startsWith(`${tabla}.`)));
     assert.deepEqual(lista, [
       // El evento: personal o compartido (con personas elegidas o con toda la administración), en hora argentina
       'mi_espacio_eventos.id int(11) null=NO default=null key=PRI',
@@ -495,18 +495,18 @@ describe('database/schema.sql', () => {
       'mi_espacio_evento_personas.sin_recordatorio tinyint(1) null=NO default=0 key='
     ]);
     // La columna generada se guarda (STORED): se calcula al escribir la fila, no en cada lectura
-    assert.deepEqual((await generadasDe(root, BASE_TEMPORAL, TABLAS_AGENDA)).map(c => c.split(':')[0]),
+    assert.deepEqual((await generadasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_AGENDA)).map(c => c.split(':')[0]),
       ['mi_espacio_evento_envios.recordatorio_unico STORED GENERATED']);
     // Borrar el evento borra sus personas y sus envíos; borrar a una persona borra su lugar y sus envíos, y deja sin autor
     // los eventos que creó
-    assert.deepEqual(await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_AGENDA), [
+    assert.deepEqual(await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_AGENDA), [
       'mi_espacio_eventos.creado_por -> usuarios.id (fk_mi_espacio_eventos_creado_por) borrado=SET NULL',
       'mi_espacio_evento_envios.evento_id -> mi_espacio_eventos.id (fk_mi_espacio_evento_envios_evento) borrado=CASCADE',
       'mi_espacio_evento_envios.usuario_id -> usuarios.id (fk_mi_espacio_evento_envios_usuario) borrado=CASCADE',
       'mi_espacio_evento_personas.evento_id -> mi_espacio_eventos.id (fk_mi_espacio_evento_personas_evento) borrado=CASCADE',
       'mi_espacio_evento_personas.usuario_id -> usuarios.id (fk_mi_espacio_evento_personas_usuario) borrado=CASCADE'
     ]);
-    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_AGENDA), [
+    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_AGENDA), [
       'mi_espacio_eventos.fk_mi_espacio_eventos_creado_por (creado_por) repetible=1',
       'mi_espacio_eventos.idx_mi_espacio_eventos_fecha (fecha,activo) repetible=1',
       'mi_espacio_eventos.PRIMARY (id) repetible=0',
@@ -519,7 +519,7 @@ describe('database/schema.sql', () => {
       'mi_espacio_evento_personas.PRIMARY (evento_id,usuario_id) repetible=0'
     ]);
     // En el orden de la base, que no distingue mayúsculas: «eventos» va antes que «evento_» (la S antes del guion bajo)
-    assert.deepEqual(await motoresDe(root, BASE_TEMPORAL, TABLAS_AGENDA),
+    assert.deepEqual(await motoresDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_AGENDA),
       ['mi_espacio_eventos', 'mi_espacio_eventos_corridas', 'mi_espacio_evento_envios', 'mi_espacio_evento_personas']
         .map(tabla => `${tabla} InnoDB utf8mb4_unicode_ci`));
   });
@@ -544,7 +544,7 @@ describe('database/schema.sql', () => {
     assert.deepEqual({ ...fk }, { tabla: 'cambios_pendientes', columna: 'id', borrado: 'SET NULL' });
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO, ...TABLAS_AGENDA]) {
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO, ...TABLAS_MI_ESPACIO_AGENDA]) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
@@ -1972,7 +1972,7 @@ describe('migracion-mi-espacio.sql', () => {
 // enviados y la última corrida de los recordatorios. La migración y su vuelta atrás, sobre una base descartable creada con
 // schema.sql
 describe('migracion-mi-espacio-agenda.sql', () => {
-  const BASE_AGENDA = 'rpad_schema_mi_espacio_agenda_test';
+  const BASE_MI_ESPACIO_AGENDA = 'rpad_schema_mi_espacio_agenda_test';
   const MIGRACION = 'migracion-mi-espacio-agenda.sql';
   const ROLLBACK = 'rollback-mi-espacio-agenda.sql';
   // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
@@ -1980,54 +1980,54 @@ describe('migracion-mi-espacio-agenda.sql', () => {
   // Sin los comentarios: lo que de verdad se ejecuta
   const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
   const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
-  const esDeLasTablas = (c) => TABLAS_AGENDA.some(tabla => c.startsWith(`${tabla}.`));
+  const esDeLasTablas = (c) => TABLAS_MI_ESPACIO_AGENDA.some(tabla => c.startsWith(`${tabla}.`));
   // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main)
   const crearBase = async ({ conLoNuevo }) => {
-    await root.query(`DROP DATABASE IF EXISTS \`${BASE_AGENDA}\``);
-    await root.query(`CREATE DATABASE \`${BASE_AGENDA}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-    await root.query(`USE \`${BASE_AGENDA}\``);
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_MI_ESPACIO_AGENDA}\``);
+    await root.query(`CREATE DATABASE \`${BASE_MI_ESPACIO_AGENDA}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_MI_ESPACIO_AGENDA}\``);
     await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
     if (!conLoNuevo) {
-      await root.query([...TABLAS_AGENDA].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
+      await root.query([...TABLAS_MI_ESPACIO_AGENDA].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
     }
   };
   // Quien crea el evento, una persona invitada y el evento compartido con ella
   const cargarEvento = async () => {
     const [{ insertId: creadora }] = await root.query(
-      `INSERT INTO \`${BASE_AGENDA}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES ('t_admin', 'x', 'Persona de Prueba', 't_admin@rpad.test', 'admin')`);
+      `INSERT INTO \`${BASE_MI_ESPACIO_AGENDA}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES ('t_admin', 'x', 'Persona de Prueba', 't_admin@rpad.test', 'admin')`);
     const [{ insertId: invitada }] = await root.query(
-      `INSERT INTO \`${BASE_AGENDA}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES ('t_editor', 'x', 'Test Editor', 't_editor@rpad.test', 'editor')`);
+      `INSERT INTO \`${BASE_MI_ESPACIO_AGENDA}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES ('t_editor', 'x', 'Test Editor', 't_editor@rpad.test', 'editor')`);
     const [{ insertId: evento }] = await root.query(
-      `INSERT INTO \`${BASE_AGENDA}\`.mi_espacio_eventos (creado_por, titulo, detalle, fecha, desde, hasta, compartido) VALUES (?, 'Reunión de equipo', 'En la sala grande', '2026-10-27', '10:00', '11:00', 1)`,
+      `INSERT INTO \`${BASE_MI_ESPACIO_AGENDA}\`.mi_espacio_eventos (creado_por, titulo, detalle, fecha, desde, hasta, compartido) VALUES (?, 'Reunión de equipo', 'En la sala grande', '2026-10-27', '10:00', '11:00', 1)`,
       [creadora]);
     return { creadora, invitada, evento };
   };
   // Una fila en cada tabla: lo que la vuelta atrás tiene que poder borrar con las FK puestas
   const cargarDatos = async () => {
     const { evento, invitada } = await cargarEvento();
-    await root.query(`INSERT INTO \`${BASE_AGENDA}\`.mi_espacio_evento_personas (evento_id, usuario_id, sin_recordatorio) VALUES (?, ?, 1)`, [evento, invitada]);
+    await root.query(`INSERT INTO \`${BASE_MI_ESPACIO_AGENDA}\`.mi_espacio_evento_personas (evento_id, usuario_id, sin_recordatorio) VALUES (?, ?, 1)`, [evento, invitada]);
     await root.query(
-      `INSERT INTO \`${BASE_AGENDA}\`.mi_espacio_evento_envios (evento_id, usuario_id, tipo, para, enviado_at, success) VALUES (?, ?, 'invitacion', '2026-10-27 10:00:00', '2026-10-26 09:12:00', 1)`,
+      `INSERT INTO \`${BASE_MI_ESPACIO_AGENDA}\`.mi_espacio_evento_envios (evento_id, usuario_id, tipo, para, enviado_at, success) VALUES (?, ?, 'invitacion', '2026-10-27 10:00:00', '2026-10-26 09:12:00', 1)`,
       [evento, invitada]);
     await root.query(
-      `INSERT INTO \`${BASE_AGENDA}\`.mi_espacio_eventos_corridas (id, inicio_at, fin_at, resultado, con_errores) VALUES (1, '2026-10-27 08:30:00', '2026-10-27 08:30:04', 'Recordatorios enviados: 1. Fallidos: 0.', 0)`);
+      `INSERT INTO \`${BASE_MI_ESPACIO_AGENDA}\`.mi_espacio_eventos_corridas (id, inicio_at, fin_at, resultado, con_errores) VALUES (1, '2026-10-27 08:30:00', '2026-10-27 08:30:04', 'Recordatorios enviados: 1. Fallidos: 0.', 0)`);
   };
   const contarEn = async (tabla) => {
-    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_AGENDA}\`.\`${tabla}\``);
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_MI_ESPACIO_AGENDA}\`.\`${tabla}\``);
     return total;
   };
   // La misma estructura que schema.sql: las columnas y también las claves foráneas, los índices, el motor, la colación y la
   // columna generada, que las columnas no muestran
   const comoSchema = async () => {
-    assert.deepEqual(await columnas(root, BASE_AGENDA), await columnas(root, BASE_TEMPORAL));
-    assert.deepEqual(await clavesAjenasDe(root, BASE_AGENDA, TABLAS_AGENDA), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_AGENDA));
-    assert.deepEqual(await indicesDe(root, BASE_AGENDA, TABLAS_AGENDA), await indicesDe(root, BASE_TEMPORAL, TABLAS_AGENDA));
-    assert.deepEqual(await motoresDe(root, BASE_AGENDA, TABLAS_AGENDA), await motoresDe(root, BASE_TEMPORAL, TABLAS_AGENDA));
-    assert.deepEqual(await generadasDe(root, BASE_AGENDA, TABLAS_AGENDA), await generadasDe(root, BASE_TEMPORAL, TABLAS_AGENDA));
+    assert.deepEqual(await columnas(root, BASE_MI_ESPACIO_AGENDA), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_MI_ESPACIO_AGENDA, TABLAS_MI_ESPACIO_AGENDA), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_AGENDA));
+    assert.deepEqual(await indicesDe(root, BASE_MI_ESPACIO_AGENDA, TABLAS_MI_ESPACIO_AGENDA), await indicesDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_AGENDA));
+    assert.deepEqual(await motoresDe(root, BASE_MI_ESPACIO_AGENDA, TABLAS_MI_ESPACIO_AGENDA), await motoresDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_AGENDA));
+    assert.deepEqual(await generadasDe(root, BASE_MI_ESPACIO_AGENDA, TABLAS_MI_ESPACIO_AGENDA), await generadasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_AGENDA));
   };
 
   after(async () => {
-    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_AGENDA}\``);
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_MI_ESPACIO_AGENDA}\``);
   });
 
   it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega (nada de DROP, RENAME ni CHECK)', () => {
@@ -2055,14 +2055,14 @@ describe('migracion-mi-espacio-agenda.sql', () => {
 
   it('el rollback solo borra las cuatro tablas, en orden inverso (corridas, envíos, personas y eventos): no toca usuarios ni ninguna otra', () => {
     const borrados = [...codigo(ROLLBACK).matchAll(/DROP TABLE IF EXISTS `(\w+)`/gi)].map(m => m[1]);
-    assert.deepEqual(borrados, [...TABLAS_AGENDA].reverse());
+    assert.deepEqual(borrados, [...TABLAS_MI_ESPACIO_AGENDA].reverse());
     assert.deepEqual(borrados, ['mi_espacio_eventos_corridas', 'mi_espacio_evento_envios', 'mi_espacio_evento_personas', 'mi_espacio_eventos']);
     assert.doesNotMatch(codigo(ROLLBACK), /\b(DELETE|UPDATE|ALTER|TRUNCATE|INSERT)\b/i);
   });
 
   it('desde la estructura de main deja la de schema.sql y se puede repetir', async () => {
     await crearBase({ conLoNuevo: false });
-    const anterior = await columnas(root, BASE_AGENDA);
+    const anterior = await columnas(root, BASE_MI_ESPACIO_AGENDA);
     assert.ok(!anterior.some(esDeLasTablas), 'la base de partida ya tiene las tablas');
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION));
@@ -2072,12 +2072,12 @@ describe('migracion-mi-espacio-agenda.sql', () => {
   it('el rollback se puede repetir, deja la estructura de main sin borrar a las personas, y la migración la recupera', async () => {
     await crearBase({ conLoNuevo: true });
     await cargarDatos();
-    for (const tabla of TABLAS_AGENDA) assert.equal(await contarEn(tabla), 1, tabla);
+    for (const tabla of TABLAS_MI_ESPACIO_AGENDA) assert.equal(await contarEn(tabla), 1, tabla);
     await root.query(sql(ROLLBACK));
     await root.query(sql(ROLLBACK));
     // La estructura de main: la de schema.sql sin las cuatro tablas
     const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
-    assert.deepEqual(await columnas(root, BASE_AGENDA), deMain);
+    assert.deepEqual(await columnas(root, BASE_MI_ESPACIO_AGENDA), deMain);
     // Quien creó el evento y la persona invitada siguen ahí
     assert.equal(await contarEn('usuarios'), 2);
     // La migración vuelve a dejar exactamente la estructura de schema.sql
@@ -2094,7 +2094,7 @@ describe('migracion-mi-espacio-agenda.sql', () => {
       const { creadora, invitada, evento } = await cargarEvento();
       const reservar = async (tipo, para, usuario = invitada) => {
         const [resultado] = await root.query(
-          `INSERT IGNORE INTO \`${BASE_AGENDA}\`.mi_espacio_evento_envios (evento_id, usuario_id, tipo, para) VALUES (?, ?, ?, ?)`,
+          `INSERT IGNORE INTO \`${BASE_MI_ESPACIO_AGENDA}\`.mi_espacio_evento_envios (evento_id, usuario_id, tipo, para) VALUES (?, ?, ?, ?)`,
           [evento, usuario, tipo, para]);
         return resultado.affectedRows;
       };
@@ -2110,7 +2110,7 @@ describe('migracion-mi-espacio-agenda.sql', () => {
         assert.equal(await reservar(tipo, '2026-10-27 10:00:00'), 1, tipo);
       }
       const [filas] = await root.query(
-        `SELECT tipo, recordatorio_unico, success, enviado_at FROM \`${BASE_AGENDA}\`.mi_espacio_evento_envios ORDER BY id`);
+        `SELECT tipo, recordatorio_unico, success, enviado_at FROM \`${BASE_MI_ESPACIO_AGENDA}\`.mi_espacio_evento_envios ORDER BY id`);
       // Reservados: sin enviar todavía (enviado_at NULL) y sin éxito; recordatorio_unico, 1 solo en los recordatorios
       assert.deepEqual(filas.map(f => `${f.tipo} ${f.recordatorio_unico} ${f.success} ${f.enviado_at}`), [
         'recordatorio 1 0 null',

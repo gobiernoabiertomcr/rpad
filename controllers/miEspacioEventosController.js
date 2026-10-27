@@ -291,9 +291,11 @@ const guardarMiFila = async (conexion, evento, usuarioId, sinAviso) => {
 };
 
 // PUT /api/mi-espacio/eventos/:id/mi-recordatorio (`{ sin_aviso: true | false }`): una invitada apaga o prende su
-// recordatorio; el evento no cambia. Responde su recordatorio y cuándo sale, como los da itemDeEvento
-export const cambiarMiRecordatorio = (req, res) => responder(res, 'Error al cambiar tu recordatorio', () =>
-  enTransaccion(async (conexion) => {
+// recordatorio; el evento no cambia. Responde su recordatorio y cuándo sale, como los da itemDeEvento. Los feriados se leen
+// antes de abrir la transacción: adentro, el pool tomaría una segunda conexión mientras la fila del evento está bloqueada
+export const cambiarMiRecordatorio = (req, res) => responder(res, 'Error al cambiar tu recordatorio', async () => {
+  const filasFeriados = await filasDeFeriados();
+  return enTransaccion(async (conexion) => {
     const usuario = quienPide(req);
     const evento = await eventoVisible(req.params.id, usuario, conexion, { bloquear: true });
     if (evento === null) return noEncontrado();
@@ -303,11 +305,12 @@ export const cambiarMiRecordatorio = (req, res) => responder(res, 'Error al camb
     await guardarMiFila(conexion, evento, usuario.id, sinAviso);
     const personas = [...evento.personas.filter((persona) => persona.id !== usuario.id),
       { id: usuario.id, nombre: '', sin_recordatorio: sinAviso }];
-    const feriados = await feriadosParaLosAvisos(evento.fecha, evento.fecha);
+    const feriados = feriadosDelRango(filasFeriados, desdeDeLosFeriados(evento.fecha), evento.fecha);
     const { mi_recordatorio: miRecordatorio, aviso } =
       itemDeEvento({ ...evento, personas }, { usuarioId: usuario.id, ahora: ahoraArgentina(), feriados });
     return [200, {
       success: true, data: { mi_recordatorio: miRecordatorio, aviso },
       message: sinAviso ? 'Recordatorio apagado.' : 'Recordatorio prendido.'
     }];
-  }));
+  });
+});

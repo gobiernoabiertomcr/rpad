@@ -546,8 +546,9 @@ const parrafoDelDetalle = (evento) => {
   return detalle === '' ? null : { html: escapeHtml(detalle).replace(/\r\n|\r|\n/g, '<br>'), texto: detalle };
 };
 
-// Uno de los emails de un evento: el título, los párrafos (los null no van; el detalle, después de la línea del evento), el
-// botón «Ver en Mi espacio» y, si hay, una nota. El texto alternativo dice lo mismo, con un renglón en blanco entre los párrafos
+// Uno de los emails de un evento: el título, los párrafos (los null no van; el detalle, después de la línea del evento, y en el
+// cambio, después de «Antes: …»), el botón «Ver en Mi espacio» y, si hay, una nota. El texto alternativo dice lo mismo, con un
+// renglón en blanco entre los párrafos
 const emailDelEvento = ({ asunto, titulo, parrafos, nota = null }) => {
   const lista = parrafos.filter(Boolean);
   const notas = nota === null ? [] : [nota];
@@ -582,15 +583,16 @@ export const eventoInvitacionTemplate = ({ creador, evento }) => emailDelEvento(
 /**
  * El cambio, a los que siguen en un evento cuando quien lo creó le cambia el título, la fecha o la hora (cambioQueAvisa).
  * `antes` y `despues`: el evento antes y después de guardar. «Cambió un evento: Reunión de equipo, miércoles 28/10/2026 de 10:00
- * a 11:00.», el detalle de ahora, lo de antes tachado («Antes: …», con <s> dentro del párrafo) y quién lo cambió.
+ * a 11:00.», lo de antes tachado («Antes: …», con <s> dentro del párrafo, justo debajo: la comparación va junta), el detalle de
+ * ahora y quién lo cambió.
  */
 export const eventoCambioTemplate = ({ creador, antes, despues }) => emailDelEvento({
   asunto: 'RPAD: cambió un evento',
   titulo: 'Cambió un evento',
   parrafos: [
     parrafoDelEvento('Cambió un evento: ', { negrita: campoDelEvento(despues, 'titulo') }, `, ${cuandoDelEvento(despues)}.`),
-    parrafoDelDetalle(despues),
     parrafoDelEvento('Antes: ', { tachado: textoDelEvento(antes) }),
+    parrafoDelDetalle(despues),
     parrafoDelEvento(`Lo cambió ${nombreDelCreador(creador)}.`)
   ]
 });
