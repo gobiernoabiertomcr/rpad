@@ -100,6 +100,7 @@ Tablas nuevas, en `migracion-mi-espacio-agenda.sql` (aditiva y repetible) con su
 - **Invitación**, al sumar a alguien: «Laura Gómez te sumó a un evento: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00.» Lleva el detalle.
 - **Cambio**, si quien lo creó cambia la fecha, la hora o el título: «Cambió un evento: …», con lo de antes tachado (`<s>` dentro de un párrafo). Si solo cambia el detalle o el recordatorio, no sale.
 - **Cancelación**: «Se canceló: Reunión de equipo, martes 27/10/2026 a las 10:00.»
+- **A quien se saca de un evento** (o a todos, si pasa a «Solo yo») no le llega ningún email (respuesta del usuario: «Estamos todos en el mismo espacio físico.»). El evento desaparece de su agenda.
 - **Recordatorio**: «Hoy a las 10:00: Reunión de equipo», «Mañana a las 10:00: …» o «El lunes 02/11 a las 10:00: …», según cuándo sale. El texto se arma con la fecha real del envío. Le llega a quien lo creó y a cada invitado, salvo a quien lo apagó. Un evento personal solo se lo manda a quien lo creó.
 - **Llegan aunque la persona esté de licencia:** van al mail laboral y los ve a la vuelta (respuesta del usuario, 26/10/2026). La agenda no sigue la regla del RPAD de no mandar emails durante la licencia.
 - **Los emails que no salieron** quedan en `mi_espacio_evento_envios` con `success = 0`.
@@ -114,6 +115,7 @@ Tablas nuevas, en `migracion-mi-espacio-agenda.sql` (aditiva y repetible) con su
 - **La hora de aviso** es la del evento menos su anticipación (1 o 2 horas), o la misma hora del día hábil anterior. Si cae en un día que no es hábil, pasa al día hábil anterior, a esa misma hora (sección 1). La calcula `momentoDelAviso`, con los feriados.
 - **La precisión es de media hora:** el aviso sale en la primera corrida desde su hora.
 - **Si una corrida no lo mandó** (el evento se creó después, la corrida falló o el envío falló), sale en la siguiente de un día hábil, mientras el evento no haya empezado.
+- **Un recordatorio atrasado no sale de madrugada** (respuesta del usuario). Es atrasado si pasó más de media hora desde su hora de aviso: entonces sale solo entre las 7:00 y las 20:00 de un día hábil, siempre antes de que empiece el evento. Fuera de esa franja, espera a las 7:00 del día hábil siguiente. Por ejemplo, un evento creado a las 22:00 para el día siguiente a las 8:00 avisa a las 7:00. Los que salen a tiempo no cambian: «2 horas antes» de un evento a las 8:00 sale a las 6:00.
 - **Sin repetidos:** el `INSERT IGNORE` de la reserva (sección 3) hace que dos corridas no manden dos veces.
 - **Su propio candado:** `GET_LOCK` con otro nombre (`rpad_mi_espacio_eventos`), nunca el de las Notas Digitales. La de las 8:30 puede coincidir con la de las 8:15, que tarda unos minutos, y si tomara el candado de las Notas, las Notas de ese día no saldrían. `conBloqueo` (`services/notasDigitales.js`) hoy es privado y tiene el nombre fijo: se le pasa el nombre y se exporta, sin cambiar lo que hace para las Notas. Si el candado está tomado, la corrida termina como «ocupada», que no es un error.
 - **Las funciones reciben el momento** (`{ ahora }`), así los tests usan un hoy fijo.
@@ -235,6 +237,8 @@ En `controllers/miEspacioController.js`, o en un controlador propio de eventos, 
 - El recordatorio llega aunque la persona esté de licencia, porque va al mail laboral.
 - Una Tarea Cron nueva, cada media hora o cada hora, para los recordatorios.
 - La lista de personas responde al lector y al colaborador con un 403 y un mensaje.
+- A quien se saca de un evento no le llega ningún email.
+- Un recordatorio atrasado sale solo entre las 7:00 y las 20:00 de un día hábil, siempre antes del evento (la hora de cierre la agregué yo, porque «desde las 7:00» solo no frenaba los de la noche).
 - Aprobó todas las decisiones mías de la primera revisión y las de la segunda, salvo la de no sumar un cron.
 
 **Mías, aprobadas por el usuario en la segunda sesión (26/10/2026):**
