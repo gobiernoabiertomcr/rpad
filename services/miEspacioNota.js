@@ -44,7 +44,7 @@ const SALUDO = 'De mi mayor consideración:';
 const PIDO = 'Me dirijo a Ud. a fin de solicitarle tenga a bien autorizar ';
 const CIERRE = 'Sin otro particular, saludo a Ud. atentamente.';
 // La línea sobre la que se firma, en la vista (el Word escribe la suya)
-const LINEA_DE_LA_FIRMA = '_'.repeat(30);
+export const LINEA_DE_LA_FIRMA = '_'.repeat(30);
 
 // Cuántos meses antes se hicieron las horas extras que se usan: el franco, dos (el de diciembre sale de las de octubre); las
 // horas a favor, uno. Los mismos que MESES_HASTA_EL_FRANCO y MESES_HASTA_LAS_HORAS de miEspacioReglas.js
