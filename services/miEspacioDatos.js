@@ -1,10 +1,11 @@
 /**
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 5 y 10): las consultas de lo que cargó cada persona, de
  * solo lectura y parametrizadas. Devuelven el `Estado` de las reglas (services/miEspacioReglas.js), solo con las filas
- * activas, lo que el paso a Configuración (sección 6) lee de las licencias de Configuración y las ausencias que ven los
- * compañeros («Hoy no están», sección 7). Lo que llega de la base como texto se convierte acá (el pool no tiene
- * `dateStrings` ni `decimalNumbers`): las fechas se leen con DATE_FORMAT ('AAAA-MM-DD'), los DECIMAL, tinyint y smallint
- * pasan por Number() (el '7.5' de unas horas, el '8.0' de un saldo) y los TIME ('19:00:00') se cortan a 'HH:MM'.
+ * activas, lo que el paso a Configuración (sección 6) lee de las licencias de Configuración, las ausencias que ven los
+ * compañeros («Hoy no están», sección 7) y quiénes están de licencia el día del email de vencimiento (sección 9). Lo que
+ * llega de la base como texto se convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las fechas se leen con
+ * DATE_FORMAT ('AAAA-MM-DD'), los DECIMAL, tinyint y smallint pasan por Number() (el '7.5' de unas horas, el '8.0' de un
+ * saldo) y los TIME ('19:00:00') se cortan a 'HH:MM'.
  * Sin consultas N+1: las tablas se leen una vez para todas las personas (`estadosDe`). `conexion`: el pool, o la de una
  * transacción (lee lo que ella ve).
  */
@@ -265,4 +266,28 @@ export const ausenciasVisibles = async (desde, hasta, { excluir = null } = {}, c
   return filas
     .filter((fila) => esAdmin(fila.rol) && esDiaEntero(fila))
     .map((fila) => ({ usuario_id: Number(fila.usuario_id), nombre: fila.nombre_completo, desde: fila.desde, hasta: fila.hasta }));
+};
+
+/**
+ * Quiénes de `usuarioIds` están de licencia el día `fecha` ('AAAA-MM-DD'), para el email de vencimiento (spec, sección 9: no
+ * sale a quien ese día está de licencia): con una licencia de Configuración sin anular, o con una de Mi espacio activa y de
+ * día entero (`esDiaEntero`; con «Mostrar» o sin él: eso es para los compañeros). Dos consultas para todas las personas. Los
+ * ids que no sirven no cuentan; sin ninguno, o sin una fecha, un Set vacío (sin consultar).
+ * @returns {Promise<Set<number>>}
+ */
+export const ausentesEn = async (fecha, usuarioIds, conexion = pool) => {
+  const ids = [...new Set((Array.isArray(usuarioIds) ? usuarioIds : []).map(idPositivo).filter((id) => id !== null))];
+  const ausentes = new Set();
+  if (!esFechaIso(fecha) || ids.length === 0) return ausentes;
+  const [oficiales] = await conexion.query(
+    'SELECT DISTINCT usuario_id FROM usuarios_licencias WHERE usuario_id IN (?) AND anulada = 0 AND desde <= ? AND hasta >= ?',
+    [ids, fecha, fecha]
+  );
+  for (const fila of oficiales) ausentes.add(Number(fila.usuario_id));
+  const [mias] = await conexion.query(
+    'SELECT usuario_id, tipo, horas FROM mi_espacio_licencias WHERE usuario_id IN (?) AND activo = 1 AND desde <= ? AND hasta >= ?',
+    [ids, fecha, fecha]
+  );
+  for (const fila of mias) if (esDiaEntero(fila)) ausentes.add(Number(fila.usuario_id));
+  return ausentes;
 };

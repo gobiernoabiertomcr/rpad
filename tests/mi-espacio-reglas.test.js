@@ -22,7 +22,7 @@ import {
   TEXTO_ANTES_DEL_ARRANQUE, camposDelSaldoInicial, validarSaldoInicial, validarAnio, fueraDeLaModalidad, calcular,
   faltantesDe, problemaDeLaCarga, evaluarLicencia,
   vinculoDe, textoDelVinculo, limiteParaCambiarTipo, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja, vinculosDeLaLista,
-  pasoPrevistoDe, ausenciasUnidas, textoNoEsta, textoDeLaVuelta, ausentesDelRango
+  pasoPrevistoDe, ausenciasUnidas, textoNoEsta, textoDeLaVuelta, ausentesDelRango, avisosDeVencimiento
 } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
@@ -2407,6 +2407,10 @@ describe('«Hoy no están»', () => {
       fila('7', 'Laura Gómez', '2026-10-28', '2026-10-28'),
       fila(7, 'Laura Gómez', '2026-10-27', '2026-10-27'),
       fila(null, 'Sin id', '2026-10-27', '2026-10-27'),
+      // Un id vacío (Number('') es 0), el 0 y uno negativo no son una persona
+      fila('', 'Id vacío', '2026-10-27', '2026-10-27'),
+      fila(0, 'Id cero', '2026-10-27', '2026-10-27'),
+      fila(-7, 'Id negativo', '2026-10-27', '2026-10-27'),
       fila(4, 'Al revés', '2026-10-28', '2026-10-27'),
       fila(5, 'Sin fecha', '2026-02-30', '2026-03-02'),
       null,
@@ -2462,5 +2466,94 @@ describe('«Hoy no están»', () => {
     // Sin un día hábil después (el fin del calendario), la vuelta es null
     assert.deepEqual(ausenciasUnidas([fila(7, 'Laura Gómez', '9999-12-30', '9999-12-31')], SIN_FERIADOS),
       [unida(7, 'Laura Gómez', '9999-12-30', '9999-12-31', null)]);
+  });
+});
+
+// El email de vencimiento (spec, sección 9): lo que está en su tramo. El franco o las horas a favor del mes de hoy, desde 5
+// días hábiles antes del último día hábil del mes hasta ese día; los días de la licencia que vence el 31/12, desde el primer
+// día hábil de diciembre. En octubre de 2026 el último día hábil es el viernes 30/10 y el tramo arranca el viernes 23/10
+describe('avisosDeVencimiento', () => {
+  const avisos = (caso, hoy, feriados = SIN_FERIADOS, estado = caso.estado) =>
+    avisosDeVencimiento(calcular(estado, { hoy, feriados }), { hoy, feriados, modalidad: estado.modalidad });
+  const FRANCO_DE_OCTUBRE = {
+    clave: 'franco-2026-10',
+    texto: 'Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el viernes 30/10.'
+  };
+  const LICENCIA_2024 = { clave: 'licencia-2024', texto: 'Tenés 3 días de la licencia 2024: vence el 31/12/2026.' };
+
+  it('PLANTA: el franco de octubre sale del 23/10 al 30/10, el último día hábil del mes', () => {
+    assert.deepEqual(avisos(PLANTA, '2026-10-22'), []);
+    assert.deepEqual(avisos(PLANTA, '2026-10-23'), [FRANCO_DE_OCTUBRE]);
+    assert.deepEqual(avisos(PLANTA, '2026-10-30'), [FRANCO_DE_OCTUBRE]);
+    // El sábado 31/10 ya pasó el último día hábil; en noviembre, el franco de noviembre todavía no está en su tramo
+    assert.deepEqual(avisos(PLANTA, '2026-10-31'), []);
+    assert.deepEqual(avisos(PLANTA, '2026-11-02'), []);
+  });
+
+  it('PLANTA: los días de la licencia 2024 salen desde el primer día hábil de diciembre', () => {
+    // El 30/11 la licencia todavía no: solo el franco de noviembre, en su último día hábil
+    assert.deepEqual(avisos(PLANTA, '2026-11-30').map((aviso) => aviso.clave), ['franco-2026-11']);
+    assert.deepEqual(avisos(PLANTA, '2026-12-01'), [LICENCIA_2024]);
+    // El 23/12 entra también el franco de diciembre (el 25/12 es feriado: el tramo va del 23/12 al jueves 31/12), primero
+    assert.deepEqual(avisos(PLANTA, '2026-12-23'), [
+      { clave: 'franco-2026-12', texto: 'Tenés 1 franco compensatorio para usar en diciembre: el último día hábil es el jueves 31/12.' },
+      LICENCIA_2024
+    ]);
+    assert.deepEqual(avisos(PLANTA, '2026-12-31').map((aviso) => aviso.clave), ['franco-2026-12', 'licencia-2024']);
+    // En enero ya venció: la del año anterior al de hoy − 2 no se avisa
+    assert.deepEqual(avisos(PLANTA, '2027-01-04'), []);
+  });
+
+  it('CONTRATO: las horas a favor de octubre, con «hora» en singular solo con 1', () => {
+    assert.deepEqual(avisos(CONTRATO, '2026-10-26'), [{
+      clave: 'horas-2026-10',
+      texto: 'Tenés 1,5 horas a favor para usar en octubre: el último día hábil es el viernes 30/10.'
+    }]);
+    const media = conLicencias(CONTRATO.estado, { id: 100, tipo: 'horas_a_favor', desde: '2026-10-27', hasta: '2026-10-27', horas: 0.5 });
+    assert.deepEqual(avisos(CONTRATO, '2026-10-26', SIN_FERIADOS, media), [{
+      clave: 'horas-2026-10', texto: 'Tenés 1 hora a favor para usar en octubre: el último día hábil es el viernes 30/10.'
+    }]);
+    // Sin días de la licencia 2024 (su saldo es 0), en diciembre no hay nada que avisar
+    assert.deepEqual(avisos(CONTRATO, '2026-12-01'), []);
+  });
+
+  it('con los feriados: el último día hábil, el tramo, el plural y «1 día»', () => {
+    // El viernes 30/10 feriado: el último es el jueves 29/10 y el tramo arranca el jueves 22/10
+    assert.deepEqual(avisos(PLANTA, '2026-10-22', new Set(['2026-10-30'])), [{
+      clave: 'franco-2026-10', texto: 'Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el jueves 29/10.'
+    }]);
+    // El viernes 23/10 feriado: el franco de ese día no descuenta y quedan los 2
+    assert.deepEqual(avisos(PLANTA, '2026-10-22', new Set(['2026-10-23'])), [{
+      clave: 'franco-2026-10', texto: 'Tenés 2 francos compensatorios para usar en octubre: el último día hábil es el viernes 30/10.'
+    }]);
+    // Dos días más de vacaciones salen de la 2024: le queda 1
+    const conMas = conLicencias(PLANTA.estado, vacaciones(100, '2026-11-10', '2026-11-11'));
+    assert.deepEqual(avisos(PLANTA, '2026-12-01', SIN_FERIADOS, conMas),
+      [{ clave: 'licencia-2024', texto: 'Tenés 1 día de la licencia 2024: vence el 31/12/2026.' }]);
+  });
+
+  it('solo lo que queda: sin disponibles, o de la otra modalidad, nada', () => {
+    // El franco de octubre usado (dos francos cargados en octubre)
+    const usado = conLicencias(PLANTA.estado, { id: 100, tipo: 'franco', desde: '2026-10-27', hasta: '2026-10-27', horas: null });
+    assert.deepEqual(avisos(PLANTA, '2026-10-26', SIN_FERIADOS, usado), []);
+    // Las vacaciones de la 2024 cargadas en diciembre ya no se avisan
+    const cargadas = conLicencias(PLANTA.estado, vacaciones(100, '2026-12-14', '2026-12-16'));
+    assert.deepEqual(avisos(PLANTA, '2026-12-01', SIN_FERIADOS, cargadas), []);
+    // Con otra modalidad, el franco no se avisa
+    const hoy = '2026-10-26';
+    assert.deepEqual(avisosDeVencimiento(calcular(PLANTA.estado, { hoy, feriados: SIN_FERIADOS }),
+      { hoy, feriados: SIN_FERIADOS, modalidad: 'contrato' }), []);
+  });
+
+  it('nada tira', () => {
+    const raros = [undefined, null, '', 'x', 0, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
+    for (const valor of raros) {
+      assert.deepEqual(avisosDeVencimiento(valor, valor), [], String(valor));
+      assert.deepEqual(avisosDeVencimiento(valor, { hoy: '2026-10-26', feriados: valor, modalidad: 'planta' }), [], String(valor));
+      const calculo = calcular(PLANTA.estado, { hoy: '2026-10-26', feriados: SIN_FERIADOS });
+      assert.doesNotThrow(() => avisosDeVencimiento(calculo, { hoy: valor, feriados: valor, modalidad: valor }), String(valor));
+      assert.doesNotThrow(() => avisosDeVencimiento({ francos: [valor], horasAFavor: valor, reparto: { ordinarias: [valor] } },
+        { hoy: '2026-12-01', feriados: SIN_FERIADOS, modalidad: 'planta' }), String(valor));
+    }
   });
 });

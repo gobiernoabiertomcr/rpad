@@ -23,10 +23,13 @@
  * (`faltantesDe`, 3.10) y la evaluación de una carga (`evaluarLicencia`: una carga nueva que no cierra no se guarda). Y el
  * paso de las ausencias de día entero a Configuración → Licencias (sección 6): qué se hace al cargar, corregir y borrar, y
  * lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`, `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`). Por
- * último, lo que ven los compañeros, «Hoy no están» (sección 7: `ausenciasUnidas` y `ausentesDelRango`, sin el tipo). Los
- * textos son planos: escaparlos le toca a quien los dibuja.
+ * último, lo que ven los compañeros, «Hoy no están» (sección 7: `ausenciasUnidas` y `ausentesDelRango`, sin el tipo), y lo
+ * que dice el email de vencimiento (sección 9: `avisosDeVencimiento`). Los textos son planos: escaparlos le toca a quien los
+ * dibuja.
  */
-import { diasHabilesDe, ultimoDiaHabilDelMesCon, proximoDiaHabilCon, diaDeLaSemana } from './feriadosReglas.js';
+import {
+  diasHabilesDe, ultimoDiaHabilDelMesCon, proximoDiaHabilCon, restarDiasHabilesCon, diaDeLaSemana
+} from './feriadosReglas.js';
 import { diasEntre, esFechaIso, formatoCorto, sumarDias, diaHabilAnterior } from './notasDigitalesCalendario.js';
 import { puedeTenerLicencia, puedeAnularse } from './licenciasReglas.js';
 
@@ -1612,13 +1615,14 @@ export const textoDeLaVuelta = (fecha) => (esFechaIso(fecha) ? `Vuelve el ${diaD
  * días no hábiles (los 9 fijos y los feriados del Set) unidas en una, como `unirAusencias` de Configuración:
  * `[{ usuario_id, nombre, desde, hasta, vuelve }]`, por desde, nombre y usuario_id. `vuelve` es el primer día hábil después
  * del hasta (`proximoDiaHabilCon`), o null si no hay. Solo esas claves: aunque las filas traigan el tipo o la nota, no
- * pasan. Las filas sin un usuario_id o sin unas fechas en orden no cuentan.
+ * pasan. Las filas sin un usuario_id entero positivo o sin unas fechas en orden no cuentan.
  */
 export const ausenciasUnidas = (filas, feriados) => {
   const porPersona = new Map();
   for (const fila of listaDe(filas)) {
     const usuarioId = esObjeto(fila) ? idDe(fila.usuario_id) : NaN;
-    if (!Number.isInteger(usuarioId) || !conFechas(fila)) continue;
+    // Una persona es un entero positivo: '' (Number('') es 0), el 0 y los negativos no
+    if (!Number.isInteger(usuarioId) || usuarioId <= 0 || !conFechas(fila)) continue;
     if (!porPersona.has(usuarioId)) porPersona.set(usuarioId, []);
     porPersona.get(usuarioId).push(fila);
   }
@@ -1659,4 +1663,60 @@ export const ausentesDelRango = (unidas, desde, hasta) => {
         vuelve_texto: textoDeLaVuelta(vuelve)
       };
     });
+};
+
+// El email de vencimiento (spec, sección 9): el franco o las horas a favor del mes de hoy se avisan desde 5 días hábiles antes
+// del último día hábil del mes, y los días de la licencia que vence el 31/12, desde el primer día hábil de diciembre
+const DIAS_HABILES_ANTES_DEL_ULTIMO = 5;
+const DESDE_EL_AVISO_DE_LA_LICENCIA = '12-01';
+
+// «el viernes 30/10»
+const elDia = (fecha) => `el ${diaDeLaSemana(fecha)} ${diaYMes(fecha)}`;
+const textoDelFranco = (cantidad, mes, ultimo) => `Tenés ${numeroTexto(cantidad)} `
+  + `${esUna(cantidad) ? 'franco compensatorio' : 'francos compensatorios'} para usar en ${nombreDelMes(mes)}: el último día `
+  + `hábil es ${elDia(ultimo)}.`;
+const textoDeLasHorasAFavor = (cantidad, mes, ultimo) =>
+  `Tenés ${textoDeHoras(cantidad)} a favor para usar en ${nombreDelMes(mes)}: el último día hábil es ${elDia(ultimo)}.`;
+const textoDeLaLicencia = (dias, anio, vence) => `Tenés ${diasTexto(dias)} de la licencia ${anio}: vence el ${fechaCorta(vence)}.`;
+
+/**
+ * Lo que dice el email de vencimiento (spec, sección 9): lo que vence pronto y hoy está en su tramo, `[{ clave, texto }]`, por
+ * fecha. La clave es la que la corrida anota en `mi_espacio_avisos`, así cada cosa se avisa una sola vez.
+ * - `franco-AAAA-MM` en planta y `horas-AAAA-MM` en contrato: lo que queda (`disponibles`) del franco o de las horas a favor
+ *   del mes de hoy, desde 5 días hábiles antes del último día hábil del mes (`restarDiasHabilesCon`) hasta ese día
+ *   (`ultimoDiaHabilDelMesCon`), con los feriados.
+ * - `licencia-AAAA`: los días disponibles de la licencia ordinaria que vence el 31/12 de este año (la de dos años antes),
+ *   desde el primer día hábil de diciembre (`proximoDiaHabilCon`) hasta el 31/12.
+ * `calculo` es el de `calcular` con ese hoy y esos feriados. Nunca dice el tipo de una licencia médica: solo vacaciones,
+ * francos y horas. Sin un cálculo o un hoy válidos, []; sin una modalidad, solo la licencia.
+ */
+export const avisosDeVencimiento = (calculo, opciones) => {
+  const { hoy, feriados, modalidad } = esObjeto(opciones) ? opciones : {};
+  if (!esObjeto(calculo) || !esFechaIso(hoy)) return [];
+  const avisos = [];
+
+  const mes = hoy.slice(0, 7);
+  const ultimo = ultimoDiaHabilDelMesCon(mes, feriados);
+  const desde = ultimo === null ? null : restarDiasHabilesCon(ultimo, DIAS_HABILES_ANTES_DEL_ULTIMO, feriados);
+  const planta = modalidad === 'planta';
+  if (desde !== null && desde <= hoy && hoy <= ultimo && (planta || modalidad === 'contrato')) {
+    const delMes = listaDe(planta ? calculo.francos : calculo.horasAFavor)
+      .find((fila) => esObjeto(fila) && fila.mes_de_uso === mes);
+    const quedan = numeroDe(delMes?.disponibles);
+    if (quedan > 0) {
+      avisos.push(planta
+        ? { clave: `franco-${mes}`, texto: textoDelFranco(quedan, mes, ultimo) }
+        : { clave: `horas-${mes}`, texto: textoDeLasHorasAFavor(quedan, mes, ultimo) });
+    }
+  }
+
+  const finDelAnio = fechaDe(anioDe(hoy), '12-31');
+  const inicio = proximoDiaHabilCon(fechaDe(anioDe(hoy), DESDE_EL_AVISO_DE_LA_LICENCIA), feriados);
+  if (inicio !== null && inicio <= hoy && hoy <= finDelAnio) {
+    const vieja = listaDe(esObjeto(calculo.reparto) ? calculo.reparto.ordinarias : []).find((ordinaria) =>
+      esObjeto(ordinaria) && Number.isInteger(ordinaria.anio) && ordinaria.vence === finDelAnio);
+    const dias = numeroDe(vieja?.disponibles);
+    if (dias > 0) avisos.push({ clave: `licencia-${vieja.anio}`, texto: textoDeLaLicencia(dias, vieja.anio, finDelAnio) });
+  }
+  return avisos;
 };

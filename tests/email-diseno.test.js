@@ -317,7 +317,8 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     'invitación': 'Tu acceso al RPAD',
     'recuperación': 'Restablecé tu contraseña del RPAD',
     'aviso al superadmin': 'RPAD: cambio en los usuarios',
-    'resumen de avisos retenidos': 'RPAD: cambios en los usuarios durante tu licencia'
+    'resumen de avisos retenidos': 'RPAD: cambios en los usuarios durante tu licencia',
+    'vencimiento de Mi espacio': 'RPAD: lo que vence pronto en Mi espacio'
   };
 
   it('el asunto de cada plantilla es el de antes', () => {
@@ -339,7 +340,9 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     'invitación': `${RPAD} Tu acceso al RPAD Hola, Persona Nueva. Te dieron acceso al Registro Permanente de Actualización de Datasets (RPAD) con el usuario pnueva y el rol Administrador. Para empezar, elegí tu contraseña con el botón de abajo. Elegir mi contraseña El link sirve una sola vez y vence el 19 de octubre de 2026 a las 10:30 h. Si vence, pedí uno nuevo desde "¿Olvidaste tu contraseña?" en la pantalla de ingreso, o pedíselo a un administrador. ${PIE}`,
     'recuperación': `${RPAD} Restablecé tu contraseña Hola, Persona Nueva. Recibimos un pedido para restablecer la contraseña del usuario pnueva en el RPAD. Elegir una contraseña nueva El link sirve una sola vez y vence el 19 de octubre de 2026 a las 10:30 h. Si no lo pediste, ignorá este email: tu contraseña actual sigue funcionando. ${PIE}`,
     'aviso al superadmin': `${RPAD} Cambio en los usuarios del RPAD Persona Admin (padmin) hizo este cambio: Persona Lectora (plectora): Lector → Administrador Fecha: 16 de octubre de 2026 a las 10:30 h Ver el panel de usuarios Este aviso te llega porque sos superadmin y el cambio lo hizo otro administrador. ${PIE}`,
-    'resumen de avisos retenidos': `${RPAD} Cambios en los usuarios durante tu licencia Mientras estabas de licencia hubo 2 cambios que te habrían llegado como aviso: 10 de noviembre de 2026 a las 10:00 h – Persona Admin (padmin): Persona Lectora (plectora): Desactivado 10 de noviembre de 2026 a las 12:30 h – Persona Admin (padmin): Persona Lectora (plectora): Lector → Administrador Ver el panel de usuarios Este resumen te llega porque sos superadmin y estos avisos no se enviaron durante tu licencia. ${PIE}`
+    'resumen de avisos retenidos': `${RPAD} Cambios en los usuarios durante tu licencia Mientras estabas de licencia hubo 2 cambios que te habrían llegado como aviso: 10 de noviembre de 2026 a las 10:00 h – Persona Admin (padmin): Persona Lectora (plectora): Desactivado 10 de noviembre de 2026 a las 12:30 h – Persona Admin (padmin): Persona Lectora (plectora): Lector → Administrador Ver el panel de usuarios Este resumen te llega porque sos superadmin y estos avisos no se enviaron durante tu licencia. ${PIE}`,
+    // Nuevo con Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 9): sin el tipo de ninguna licencia médica
+    'vencimiento de Mi espacio': `${RPAD} Lo que vence pronto Hola, Persona de Prueba. Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el viernes 30/10. Tenés 3 días de la licencia 2024: vence el 31/12/2026. Ver en Mi espacio Este aviso te llega una sola vez por cada cosa. Lo que cargás en Mi espacio lo ves solo vos. ${PIE}`
   };
 
   for (const { nombre, email } of casos) {
@@ -367,6 +370,39 @@ describe('Los avisos al superadmin abren Configuración', () => {
       for (const texto of [html, text]) assert.ok(!texto.includes('usuarios.html'), nombre);
     });
   }
+});
+
+// El aviso de vencimiento de Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 9): el botón abre el Resumen, el texto
+// alternativo dice lo mismo y el nombre y los renglones van escapados
+describe('El aviso de vencimiento de Mi espacio', () => {
+  const NOMBRE = 'vencimiento de Mi espacio';
+
+  it('el botón «Ver en Mi espacio» abre mi-espacio.html#resumen', () => {
+    const { email: { html } } = casos.find(c => c.nombre === NOMBRE);
+    assert.match(html, /<a href="[^"]*\/mi-espacio\.html#resumen" [^>]*>Ver en Mi espacio<\/a>/);
+  });
+
+  it('el texto alternativo: el saludo, un renglón por cosa, el link y la nota', () => {
+    const { email: { text } } = casos.find(c => c.nombre === NOMBRE);
+    assert.equal(text, [
+      'Hola, Persona de Prueba.',
+      '',
+      'Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el viernes 30/10.',
+      'Tenés 3 días de la licencia 2024: vence el 31/12/2026.',
+      '',
+      `Ver en Mi espacio: ${plantillas.RPAD_URL}/mi-espacio.html#resumen`,
+      '',
+      'Este aviso te llega una sola vez por cada cosa. Lo que cargás en Mi espacio lo ves solo vos.'
+    ].join('\n'));
+  });
+
+  it('el nombre y los renglones van escapados en el HTML y tal cual en el texto', () => {
+    const raro = '<img src=x onerror=alert(1)> & más';
+    const { html, text } = plantillas.vencimientoMiEspacioTemplate({ nombre_completo: raro, avisos: [{ clave: 'x', texto: raro }] });
+    assert.ok(!html.includes('<img'));
+    assert.equal(html.split('&lt;img src=x onerror=alert(1)&gt; &amp; más').length - 1, 2);
+    assert.equal(text.split(raro).length - 1, 2);
+  });
 });
 
 describe('Remitente único', () => {

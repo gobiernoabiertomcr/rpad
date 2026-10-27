@@ -54,7 +54,18 @@ export const casosDeEmail = (t) => {
       }),
       boton: true
     },
-    { nombre: 'resumen de avisos retenidos', email: t.resumenAvisosRetenidosTemplate([fila('Desactivado', '13:00'), fila('Lector → Administrador', '15:30')]), boton: true }
+    { nombre: 'resumen de avisos retenidos', email: t.resumenAvisosRetenidosTemplate([fila('Desactivado', '13:00'), fila('Lector → Administrador', '15:30')]), boton: true },
+    {
+      nombre: 'vencimiento de Mi espacio',
+      email: t.vencimientoMiEspacioTemplate({
+        nombre_completo: 'Persona de Prueba',
+        avisos: [
+          { clave: 'franco-2026-10', texto: 'Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el viernes 30/10.' },
+          { clave: 'licencia-2024', texto: 'Tenés 3 días de la licencia 2024: vence el 31/12/2026.' }
+        ]
+      }),
+      boton: true
+    }
   ];
 };
 
