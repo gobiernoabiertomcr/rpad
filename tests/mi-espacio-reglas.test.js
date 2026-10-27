@@ -2062,10 +2062,19 @@ describe('el paso a Configuración', () => {
       assert.deepEqual(correccion(anterior, anterior, vinculo, { autorizadoCambia: true }), { accion: 'cambiar' });
     });
 
-    it('«ya empezó» quiere decir antes de hoy: la de hoy se corrige entera; la de ayer, solo hasta; la terminada, nada', () => {
+    it('las fechas siguen a Configuración: desde hoy o antes, solo el hasta; la terminada, nada; la de hoy todavía se borra', () => {
+      // Una que empieza hoy está en curso para Configuración (validarEdicion): el desde queda fijo, pero se anula
       const deHoy = oficialDe(7, HOY, '2026-10-30');
-      assert.deepEqual(correccion(creadaDe(deHoy), filaDe({ desde: '2026-10-27', hasta: '2026-10-30' }),
-        { estado: 'creada', oficial: deHoy }), { accion: 'cambiar' });
+      const deHoyVinculo = { estado: 'creada', oficial: deHoy };
+      assert.deepEqual(correccion(creadaDe(deHoy), filaDe({ desde: '2026-10-27', hasta: '2026-10-30' }), deHoyVinculo),
+        { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.soloHasta } });
+      assert.deepEqual(correccion(creadaDe(deHoy), filaDe({ desde: HOY, hasta: '2026-11-04' }), deHoyVinculo),
+        { accion: 'cambiar' });
+      assert.deepEqual(pasoDeLaBaja({ vinculo: deHoyVinculo, hoy: HOY }), { accion: 'anular' });
+      // Una que todavía no empezó, entera
+      const deManana = oficialDe(7, '2026-10-27', '2026-10-30');
+      assert.deepEqual(correccion(creadaDe(deManana), filaDe({ desde: '2026-10-28', hasta: '2026-10-30' }),
+        { estado: 'creada', oficial: deManana }), { accion: 'cambiar' });
       const enCurso = oficialDe(7, '2026-10-23', '2026-10-29');
       const vinculo = { estado: 'creada', oficial: enCurso };
       assert.deepEqual(correccion(creadaDe(enCurso), filaDe({ desde: '2026-10-22', hasta: '2026-10-29' }), vinculo),
@@ -2080,6 +2089,53 @@ describe('el paso a Configuración', () => {
         { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.fechasFijas } });
       // Sin cambiar las fechas, una terminada se corrige igual (el tipo, la nota)
       assert.deepEqual(correccion(creadaDe(terminada), creadaDe(terminada, { tipo: 'medica' }), fija), { accion: 'nada' });
+    });
+
+    it('una creada cuya copia no pasó: sin cambiar las fechas se corrige siempre; los límites, con las de Configuración', () => {
+      // La de Configuración terminó el 23/10; la fila quedó del 19/10 al 22/10 con el motivo
+      const terminada = oficialDe(7, '2026-10-19', '2026-10-23');
+      const vinculo = { estado: 'creada', oficial: terminada };
+      const anterior = creadaDe(terminada, { hasta: '2026-10-22', sin_pasar: 'La fecha de fin tiene que ser ayer o posterior' });
+      assert.deepEqual(correccion(anterior, { ...anterior, nota: 'Turno' }, vinculo), { accion: 'nada' });
+      assert.deepEqual(correccion(anterior, { ...anterior, tipo: 'familiar', mostrar: 0 }, vinculo), { accion: 'nada' });
+      // Volver a las fechas de Configuración no le cambia nada; otras, no se puede
+      assert.deepEqual(correccion(anterior, { ...anterior, hasta: '2026-10-23' }, vinculo), { accion: 'nada' });
+      assert.deepEqual(correccion(anterior, { ...anterior, hasta: '2026-10-21' }, vinculo),
+        { error: { campo: 'hasta', mensaje: MENSAJES_MI_ESPACIO.fechasFijas } });
+      assert.deepEqual(vinculosDeLaLista([{ ...anterior, id: 1 }], { oficiales: new Map([[7, terminada]]), hoy: HOY,
+        puedeTener: true }).get(1), {
+        configuracion: {
+          texto: `${textoEnConfiguracion('2026-10-19', '2026-10-23')} ${textoNoPaso('La fecha de fin tiene que ser ayer o posterior')}`,
+          insignia: 'aviso'
+        },
+        puede_borrar: false, solo_hasta: false, fechas_fijas: true
+      });
+
+      // En curso en Configuración desde el 23/10; la fila quedó desde el 21/10
+      const enCurso = oficialDe(7, '2026-10-23', '2026-10-29');
+      const enCursoVinculo = { estado: 'creada', oficial: enCurso };
+      const corrida = creadaDe(enCurso, { desde: '2026-10-21', sin_pasar: 'Se superpone con otra licencia' });
+      assert.deepEqual(correccion(corrida, { ...corrida, nota: 'Turno' }, enCursoVinculo), { accion: 'nada' });
+      // Solo el hasta: se intenta (Configuración dirá si lo acepta); el desde, solo de vuelta al de Configuración
+      assert.deepEqual(correccion(corrida, { ...corrida, hasta: '2026-11-03' }, enCursoVinculo), { accion: 'cambiar' });
+      assert.deepEqual(correccion(corrida, { ...corrida, desde: '2026-10-22' }, enCursoVinculo),
+        { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.soloHasta } });
+      assert.deepEqual(correccion(corrida, { ...corrida, desde: '2026-10-23', hasta: '2026-11-03' }, enCursoVinculo),
+        { accion: 'cambiar' });
+      assert.deepEqual(correccion(corrida, { ...corrida, desde: '2026-10-23' }, enCursoVinculo), { accion: 'nada' });
+    });
+
+    it('una creada que todavía no empezó, corregida toda al pasado: se anula en Configuración', () => {
+      const futura = oficialDe(7, '2026-11-02', '2026-11-06');
+      assert.deepEqual(correccion(creadaDe(futura), filaDe({ desde: '2026-10-19', hasta: '2026-10-21' }),
+        { estado: 'creada', oficial: futura }), { accion: 'anular' });
+      const deHoy = oficialDe(7, HOY, HOY);
+      assert.deepEqual(correccion(creadaDe(deHoy), filaDe({ tipo: 'medica', desde: '2026-10-22', hasta: '2026-10-23' }),
+        { estado: 'creada', oficial: deHoy }), { accion: 'anular' });
+      // Hasta ayer, una que ya empezó no se anula: Configuración dirá si se puede cortar
+      const enCurso = oficialDe(7, '2026-10-23', '2026-10-29');
+      assert.deepEqual(correccion(creadaDe(enCurso), filaDe({ desde: '2026-10-23', hasta: '2026-10-25' }),
+        { estado: 'creada', oficial: enCurso }), { accion: 'cambiar' });
     });
 
     it('la franquicia de 7 horas que pasa a 3: se anula antes de empezar (también si empieza hoy) y queda después', () => {
@@ -2208,9 +2264,11 @@ describe('el paso a Configuración', () => {
         creadaDe(terminada, { id: 3 }),
         franquicia('2026-11-10', 3, { id: 4 }),
         filaDe({ id: 5, desde: '2026-11-16', hasta: '2026-11-16' }),
-        creadaDe(futura, { id: 6, licencia_oficial_id: 10, desde: '2026-11-23', hasta: '2026-11-24' })
+        creadaDe(futura, { id: 6, licencia_oficial_id: 10, desde: '2026-11-23', hasta: '2026-11-24' }),
+        creadaDe(oficialDe(11, HOY, '2026-10-28'), { id: 7 })
       ];
-      const oficiales = new Map([[7, futura], [8, enCurso], [9, terminada], [10, oficialDe(10, '2026-11-23', '2026-11-25')]]);
+      const oficiales = new Map([[7, futura], [8, enCurso], [9, terminada], [10, oficialDe(10, '2026-11-23', '2026-11-25')],
+        [11, oficialDe(11, HOY, '2026-10-28')]]);
       const vinculos = vinculosDeLaLista(filas, { oficiales, tocadas: new Set([10]), hoy: HOY, puedeTener: true });
       const creada = { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' };
       assert.deepEqual(vinculos.get(1), { configuracion: creada, puede_borrar: true, solo_hasta: false, fechas_fijas: false });
@@ -2226,7 +2284,9 @@ describe('el paso a Configuración', () => {
         configuracion: { texto: `${textoEnConfiguracion('2026-11-23', '2026-11-25')} ${TEXTO_NO_SE_COPIA}`, insignia: 'aviso' },
         puede_borrar: true, solo_hasta: false, fechas_fijas: false
       });
-      assert.deepEqual([...vinculos.keys()].sort(), [1, 2, 3, 4, 6]);
+      // La que empieza hoy: el desde queda fijo, pero todavía se borra
+      assert.deepEqual(vinculos.get(7), { configuracion: creada, puede_borrar: true, solo_hasta: true, fechas_fijas: false });
+      assert.deepEqual([...vinculos.keys()].sort(), [1, 2, 3, 4, 6, 7]);
     });
   });
 

@@ -20,7 +20,7 @@ import {
   TEXTO_ANULADA_POR_ADMINISTRACION, TEXTO_NO_DIA_ENTERO
 } from '../services/miEspacioReglas.js';
 
-let base, servidor, api, usuarios, dbReal, emailSoloA, datos, pool, firmas;
+let base, servidor, api, usuarios, dbReal, emailSoloA, datos, pool, firmas, controlador;
 const hoy = hoyArgentina();
 const ANIO = Number(hoy.slice(0, 4));
 const dia = (n) => sumarDias(hoy, n);
@@ -63,6 +63,7 @@ before(async () => {
   process.env.EMAIL_SOLO_A = '';
   datos = await import('../services/miEspacioDatos.js');
   firmas = await import('../services/notasDigitalesFirmas.js');
+  controlador = await import('../controllers/miEspacioController.js');
   pool = (await import('../config/database.js')).default;
 });
 
@@ -1178,6 +1179,128 @@ describe('el paso a Configuración', () => {
     assert.deepEqual(await deConfiguracion('adminA'), []);
     assert.deepEqual((await filaDeLaLista('adminA', res.body.data.id, ANIO)).configuracion,
       { texto: textoNoPaso('La licencia puede durar como máximo 365 días'), insignia: 'aviso' });
+  });
+
+  it('una creada cuya copia no pasó y cuya licencia de Configuración ya terminó: la nota, el tipo y «Mostrar» se corrigen igual',
+    async () => {
+      // Las dos filas por SQL: la de Configuración terminó, y la de Mi espacio quedó con otro hasta y el motivo
+      await listoParaCargar('adminA');
+      const motivo = 'La fecha de fin tiene que ser ayer o posterior, y no anterior al inicio';
+      const oficial = await deAdministracion('adminA', dia(-10), dia(-6));
+      await query('UPDATE usuarios_licencias SET creado_por = ? WHERE id = ?', [usuarios.adminA.id, oficial]);
+      const { insertId: id } = await query(
+        `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, licencia_oficial_id, oficial, sin_pasar)
+         VALUES (?, 'medica', ?, ?, ?, 'creada', ?)`,
+        [usuarios.adminA.id, dia(-10), dia(-7), oficial, motivo]
+      );
+      const antes = await deConfiguracion('adminA');
+      const delAnio = Number(dia(-10).slice(0, 4));
+      const esperada = {
+        configuracion: { texto: `${textoEnConfiguracion(dia(-10), dia(-6))} ${textoNoPaso(motivo)}`, insignia: 'aviso' },
+        puede_borrar: false, solo_hasta: false, fechas_fijas: true
+      };
+      const comoQueda = async () => {
+        const { configuracion, puede_borrar: puedeBorrar, solo_hasta: soloHasta, fechas_fijas: fechasFijas } =
+          await filaDeLaLista('adminA', id, delAnio);
+        return { configuracion, puede_borrar: puedeBorrar, solo_hasta: soloHasta, fechas_fijas: fechasFijas };
+      };
+      assert.deepEqual(await comoQueda(), esperada);
+
+      for (const cambio of [{ nota: 'Turno' }, { tipo: 'familiar' }, { tipo: 'familiar', mostrar: false }]) {
+        const res = await corregirMia('adminA', id, { tipo: 'medica', desde: dia(-10), hasta: dia(-7), ...cambio });
+        assert.equal(res.status, 200, `${JSON.stringify(cambio)}: ${JSON.stringify(res.body)}`);
+        assert.deepEqual(res.body.avisos, []);
+      }
+      assert.deepEqual(await deConfiguracion('adminA'), antes);
+      assert.deepEqual(vinculoDe((await vinculosDe('adminA'))[0]), [oficial, 'creada', motivo]);
+      assert.deepEqual(await comoQueda(), esperada);
+      // Otras fechas, no: ya terminó
+      const otras = await corregirMia('adminA', id, { tipo: 'familiar', desde: dia(-10), hasta: dia(-8) });
+      assert.equal(otras.status, 400);
+      assert.deepEqual(otras.body, { success: false, error: MENSAJES_MI_ESPACIO.fechasFijas, campo: 'hasta' });
+      // Las de Configuración, sí: vuelve a estar al día
+      const alDia = await corregirMia('adminA', id, { tipo: 'familiar', desde: dia(-10), hasta: dia(-6) });
+      assert.equal(alDia.status, 200, JSON.stringify(alDia.body));
+      assert.deepEqual(vinculoDe((await vinculosDe('adminA'))[0]), [oficial, 'creada', null]);
+      assert.deepEqual(await deConfiguracion('adminA'), antes);
+    });
+
+  it('una creada que empieza hoy: el desde queda fijo, el hasta se copia y todavía se puede borrar', async () => {
+    await listoParaCargar('adminA');
+    const { body } = await cargarMia('adminA', { tipo: 'medica', desde: hoy, hasta: dia(4) });
+    assert.ok(body.success, JSON.stringify(body));
+    const { id } = body.data;
+    const fila = await filaDeLaLista('adminA', id, ANIO);
+    assert.deepEqual([fila.puede_borrar, fila.solo_hasta, fila.fechas_fijas], [true, true, false]);
+
+    const otroDesde = await corregirMia('adminA', id, { tipo: 'medica', desde: dia(1), hasta: dia(4) });
+    assert.equal(otroDesde.status, 400);
+    assert.deepEqual(otroDesde.body, { success: false, error: MENSAJES_MI_ESPACIO.soloHasta, campo: 'desde' });
+    const otroHasta = await corregirMia('adminA', id, { tipo: 'medica', desde: hoy, hasta: dia(5) });
+    assert.equal(otroHasta.status, 200, JSON.stringify(otroHasta.body));
+    assert.deepEqual((await deConfiguracion('adminA')).map((l) => [l.desde, l.hasta, l.anulada]), [[hoy, dia(5), 0]]);
+    assert.deepEqual(vinculoDe((await vinculosDe('adminA'))[0])[2], null);
+
+    const borrar = await api.delete(`/mi-espacio/licencias/${id}`, como('adminA'));
+    assert.equal(borrar.status, 200, JSON.stringify(borrar.body));
+    assert.equal((await deConfiguracion('adminA'))[0].anulada, 1);
+  });
+
+  it('una creada que todavía no empezó, corregida toda al pasado: se anula en Configuración', async () => {
+    await listoParaCargar('adminA');
+    const { body } = await cargarMia('adminA', { tipo: 'medica', desde: q(0), hasta: q(2) });
+    const res = await corregirMia('adminA', body.data.id, { tipo: 'medica', desde: dia(-10), hasta: dia(-8) });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal((await deConfiguracion('adminA'))[0].anulada, 1);
+    assert.deepEqual(vinculoDe((await vinculosDe('adminA'))[0]), [null, null, null]);
+    const [anulada] = await historialDe('adminA', 'licencia_anulada');
+    assert.equal(anulada.actor_id, usuarios.adminA.id);
+    assert.equal((await filaDeLaLista('adminA', body.data.id, Number(dia(-10).slice(0, 4)))).configuracion, null);
+  });
+
+  it('un rol que cambia entre la lectura previa y el bloqueo: la transacción vuelve a empezar con todos bloqueados', async () => {
+    // El controlador en este proceso, con el pool de la base de prueba: la primera conexión que pide la transacción llega
+    // después de que el lector pasó a admin, así que con lo leído bajo el bloqueo tiene que empezar de nuevo
+    await conLectorConVinculo(async () => {
+      await listoParaCargar('lector');
+      const pedirConexion = pool.getConnection;
+      const propia = Object.hasOwn(pool, 'getConnection');
+      const primeras = [];
+      let liberadas = 0;
+      pool.getConnection = async function conRolCambiado() {
+        if (primeras.length === 0) await query("UPDATE usuarios SET rol = 'admin' WHERE id = ?", [usuarios.lector.id]);
+        const conexion = await pedirConexion.call(pool);
+        const indice = primeras.length;
+        primeras.push(null);
+        const consultar = conexion.query.bind(conexion);
+        conexion.query = (sql, ...resto) => {
+          primeras[indice] ??= sql;
+          return consultar(sql, ...resto);
+        };
+        const liberar = conexion.release.bind(conexion);
+        conexion.release = () => {
+          liberadas += 1;
+          return liberar();
+        };
+        return conexion;
+      };
+      const respuesta = { status(codigo) { this.codigo = codigo; return this; }, json(cuerpo) { this.cuerpo = cuerpo; } };
+      try {
+        const pedido = { user: { userId: usuarios.lector.id }, body: { tipo: 'medica', desde: q(0), hasta: q(1) } };
+        await controlador.cargarLicenciaMia(pedido, respuesta);
+      } finally {
+        if (propia) pool.getConnection = pedirConexion;
+        else delete pool.getConnection;
+      }
+      assert.equal(respuesta.codigo, 201, JSON.stringify(respuesta.cuerpo));
+      assert.equal(primeras.length, 2);
+      assert.match(primeras[0], /WHERE id = \? FOR UPDATE/);
+      assert.match(primeras[1], /ORDER BY id FOR UPDATE/);
+      assert.equal(liberadas, 2);
+      // Con el rol leído bajo el bloqueo, pasó a Configuración
+      assert.deepEqual((await deConfiguracion('lector')).map((l) => [l.desde, l.hasta]), [[q(0), q(1)]]);
+      assert.equal((await vinculosDe('lector')).length, 1);
+    });
   });
 
   it('el doble envío: dos POST simultáneos iguales dejan una sola fila en cada tabla (Review Focus 3)', async () => {

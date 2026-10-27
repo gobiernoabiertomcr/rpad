@@ -1468,16 +1468,19 @@ const ESTADOS_CON_OFICIAL = Object.freeze(['creada', 'creada_cambiada', 'creada_
  * de `vinculoDe`). `autorizadoCambia`: el pedido cambia la persona a cargo; `personaACargo`: la persona es el firmante
  * titular y su licencia de Configuración deja a alguien a cargo. Devuelve `{ accion }`, o `{ error: { campo, mensaje } }`:
  * - sin vínculo, lo de `pasoDeLaCarga`; un rol que no puede tener licencia, siempre `'nada'`;
- * - una creada sigue a la de Configuración (sus fechas son las de la fila; si una copia no pasó, mandan las de
- *   Configuración):
+ * - una creada sigue a la de Configuración. Si la corrección cambia las fechas se mira contra la fila guardada (`anterior`);
+ *   hasta dónde se pueden cambiar, con las fechas de Configuración (son las mismas, salvo que una copia anterior no haya
+ *   pasado):
  *   - unas vacaciones con persona a cargo que pasan a otro tipo: después de `limiteParaCambiarTipo`, el error `tipoFijo` en
  *     `tipo`; hasta ese día, el cambio le saca la persona a cargo (`sin_persona_a_cargo: true` en `'cambiar'`);
  *   - si no es de día entero, `'anular'` si todavía se puede anular (`puedeAnularse`: empieza hoy o después); si no,
  *     `'quedar'`;
- *   - con otras fechas: si terminó antes de hoy, `fechasFijas` (en el campo que cambia); si empezó antes de hoy y cambia el
- *     desde, `soloHasta` en `desde`; si no, `'cambiar'`;
- *   - si solo cambia la persona a cargo (o la pierde), `'cambiar'`; si no, `'nada'` (el tipo, la nota y «Mostrar» no tocan
- *     Configuración);
+ *   - con otras fechas, que no son las de Configuración: si la corregida termina antes de hoy y la de Configuración todavía
+ *     se puede anular, `'anular'`; si la de Configuración terminó antes de hoy, `fechasFijas` (en el campo que cambia); si
+ *     empieza hoy o antes y se mueve el desde, `soloHasta` en `desde` (como `validarEdicion`, que con el desde de hoy ya la
+ *     da en curso); si no, `'cambiar'`;
+ *   - sin cambiar las fechas nunca hay un error de fechas: si cambia la persona a cargo (o la pierde), `'cambiar'`; si no,
+ *     `'nada'` (el tipo, la nota y «Mostrar» se cambian siempre, sin tocar Configuración);
  * - una creada que administración cambió o anuló: `'nada'`;
  * - una unida que sigue cubierta y de día entero: `'nada'`; si no, `{ accion: 'soltar', luego }`, con `luego` el
  *   `pasoDeLaCarga` de la corregida.
@@ -1500,12 +1503,19 @@ export const pasoDeLaCorreccion = (entrada) => {
   }
   if (!esDiaEntero(fila)) return { accion: puedeAnularse(oficial, hoy) ? 'anular' : 'quedar' };
   const cambiar = pierdeLaPersona ? { accion: 'cambiar', sin_persona_a_cargo: true } : { accion: 'cambiar' };
-  const otroDesde = fila.desde !== oficial.desde;
-  if (otroDesde || fila.hasta !== oficial.hasta) {
+  // Si la corrección cambia las fechas, contra la fila guardada (o la de Configuración, si la guardada no sirve). Volver a las
+  // de Configuración no le cambia nada a Configuración
+  const guardada = conFechas(anterior) ? anterior : oficial;
+  const otroDesde = fila.desde !== guardada.desde;
+  const comoEnConfiguracion = fila.desde === oficial.desde && fila.hasta === oficial.hasta;
+  if ((otroDesde || fila.hasta !== guardada.hasta) && !comoEnConfiguracion) {
+    if (fila.hasta < hoy && puedeAnularse(oficial, hoy)) return { accion: 'anular' };
     if (oficial.hasta < hoy) {
       return { error: { campo: otroDesde ? 'desde' : 'hasta', mensaje: MENSAJES_MI_ESPACIO.fechasFijas } };
     }
-    if (oficial.desde < hoy && otroDesde) return { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.soloHasta } };
+    if (oficial.desde <= hoy && otroDesde && fila.desde !== oficial.desde) {
+      return { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.soloHasta } };
+    }
     return cambiar;
   }
   return pierdeLaPersona || autorizadoCambia === true ? cambiar : { accion: 'nada' };
@@ -1527,7 +1537,8 @@ export const pasoDeLaBaja = (entrada) => {
  * Los vínculos de la lista (`filasDeLicencias`): un Map del id de cada fila (número) a `{ configuracion, puede_borrar,
  * solo_hasta, fechas_fijas }`, solo de las que tienen algo para decir o son creadas. `configuracion` es el de
  * `textoDelVinculo`; `puede_borrar`, `solo_hasta` y `fechas_fijas` son los de una creada (de día entero, las fechas), con las
- * fechas de Configuración, como `pasoDeLaBaja` y `pasoDeLaCorreccion`: las demás se borran y se corrigen libres. Las
+ * fechas de Configuración, como `pasoDeLaBaja` y `pasoDeLaCorreccion`: se borra si empieza hoy o después, el desde queda
+ * fijo si empieza hoy o antes y las fechas, si terminó antes de hoy. Las demás se borran y se corrigen libres. Las
  * opciones son `{ oficiales, tocadas, hoy, puedeTener }`: las licencias de Configuración por id (Map), los ids que otra
  * persona editó o anuló (Set) y si la persona puede tener licencia hoy.
  */
@@ -1546,7 +1557,7 @@ export const vinculosDeLaLista = (licencias, opciones) => {
     vinculos.set(idDe(fila.id), {
       configuracion,
       puede_borrar: pasoDeLaBaja({ vinculo, hoy }).error === undefined,
-      solo_hasta: fechasDeLaCreada && vinculo.oficial.desde < hoy && vinculo.oficial.hasta >= hoy,
+      solo_hasta: fechasDeLaCreada && vinculo.oficial.desde <= hoy && vinculo.oficial.hasta >= hoy,
       fechas_fijas: fechasDeLaCreada && vinculo.oficial.hasta < hoy
     });
   }

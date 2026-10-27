@@ -1,9 +1,10 @@
 /**
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 5 y 10): las consultas de lo que cargó cada persona, de
  * solo lectura y parametrizadas. Devuelven el `Estado` de las reglas (services/miEspacioReglas.js), solo con las filas
- * activas, y lo que el paso a Configuración (sección 6) lee de las licencias de Configuración. Lo que llega de la base como texto se convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las
- * fechas se leen con DATE_FORMAT ('AAAA-MM-DD'), los DECIMAL, tinyint y smallint pasan por Number() (el '7.5' de unas
- * horas, el '8.0' de un saldo) y los TIME ('19:00:00') se cortan a 'HH:MM'.
+ * activas, y lo que el paso a Configuración (sección 6) lee de las licencias de Configuración. Lo que llega de la base como
+ * texto se convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las fechas se leen con DATE_FORMAT
+ * ('AAAA-MM-DD'), los DECIMAL, tinyint y smallint pasan por Number() (el '7.5' de unas horas, el '8.0' de un saldo) y los
+ * TIME ('19:00:00') se cortan a 'HH:MM'.
  * Sin consultas N+1: las tablas se leen una vez para todas las personas (`estadosDe`). `conexion`: el pool, o la de una
  * transacción (lee lo que ella ve).
  */

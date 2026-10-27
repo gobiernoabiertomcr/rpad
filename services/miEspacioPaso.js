@@ -90,7 +90,8 @@ const planDeLaCorreccion = async (conexion, { persona, anterior, fila, hoy, auto
  * El paso de una corrección: `anterior` es la fila guardada (con su vínculo) y `fila`, la corregida, ya validada.
  * `autorizadoPedido`: undefined si el pedido no dice nada de la persona a cargo, null para «nadie» o un id. Una creada que
  * administración cambió responde además `avisos: [TEXTO_NO_SE_COPIA]`. Lo que queda como estaba (nada, o una creada que ya
- * empezó y no se pudo anular) conserva el vínculo; una creada que no se pudo copiar lo conserva con el motivo.
+ * empezó y no se pudo anular) conserva el vínculo; una creada que no se pudo copiar lo conserva con el motivo, hasta que una
+ * corrección se copia o la deja con las fechas de Configuración.
  */
 export const aplicarCorreccion = async (conexion, { persona, anterior, fila, hoy, autorizadoPedido }) => {
   const { vinculo, paso } = await planDeLaCorreccion(conexion, { persona, anterior, fila, hoy, autorizadoPedido });
@@ -120,6 +121,11 @@ export const aplicarCorreccion = async (conexion, { persona, anterior, fila, hoy
   }
   // Una creada que ya empezó y dejó de ser de día entero queda en Configuración: lo dice textoSigueEnConfiguracion
   if (paso.accion === 'quedar') return { ...queda, sin_pasar: null };
+  // Una creada cuya copia no había pasado y que vuelve a las fechas de Configuración: ya no hay nada sin pasar
+  const { oficial } = vinculo;
+  if (vinculo.estado === 'creada' && fila.desde === oficial.desde && fila.hasta === oficial.hasta) {
+    return { ...queda, sin_pasar: null };
+  }
   return queda;
 };
 
