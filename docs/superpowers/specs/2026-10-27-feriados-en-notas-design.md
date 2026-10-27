@@ -156,6 +156,7 @@ El email de los 40 días no cambia ningún vencimiento de fin de mes entre novie
 **El efecto en las notas de una licencia del firmante sin anticipo** (Configuración → Licencias y el formulario de Mi espacio: `efectoEnNotas`, que está en `usuarios.js` y copiado en `mi-espacio.js`). Cuando la víspera cae dentro de otra licencia del firmante:
 - **Sin persona autorizada:** «Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.»
 - **Con persona autorizada:** «Empieza a continuación de otra licencia: los avisos no se adelantan. Desde el primer día, {nombre} presenta las notas con las dos firmas, después de la nota que comunica la autorización.»
+- **Una licencia del firmante sin días hábiles** (Configuración y Mi espacio): «No tiene días hábiles: las notas no cambian.», la frase que ya usa Correos → Estado en ese caso (mía, agregada en el plan).
 - Quien lo construye confirma con un test qué hace la corrida en ese caso. Si hace otra cosa, el texto dice lo que hace y se le muestra al usuario antes del merge.
 
 **Correos → Estado, la licencia del firmante sin anticipo** (`textoLicenciaFirmante` de `public/js/correos.js`, que hoy dice siempre «los avisos se anticipan el …» en una licencia futura):
@@ -209,7 +210,7 @@ Antes del merge de la tanda 1 se simulan las corridas de las 8:15 y de las 14:00
 - el 02/11, el 09/11 y el 23/11, «Día no hábil»; el 03/11 salen el aviso interno del 31/12 y la reiteración de noviembre; el 24/11, el aviso externo del 31/12;
 - la víspera es el viernes 04/12 (el 07/12 es no laborable y el 08/12, fijo), con la nota de autorización a la persona autorizada;
 - durante la licencia, ninguna nota el 14/12, el 23, 24, 25, 30 y 31/12, el 01/01 ni del 04/01 al 08/01; los avisos en su fecha que caen en esos días se presentan el día hábil anterior en que la persona autorizada está;
-- las reiteraciones de enero salen el 11/01, a la vuelta del firmante, y el Estado lo anuncia desde el 20/11 (cuando se carga la licencia de la persona autorizada);
+- las reiteraciones de enero salen el 11/01, a la vuelta del firmante, y el Estado las anuncia para el 11/01 desde que empieza a mostrarlas (hasta la corrida del 01/12 muestra la reiteración de diciembre; la de enero aparece desde ahí, ya con el 11/01);
 - cada fecha que anuncia el Estado es la que después cumple la corrida.
 
 ## 9. Documentación, despliegue, plazos y plan B
@@ -262,7 +263,7 @@ Borrar la Tarea Cron ese día es peor: la alerta «sin corrida» y el riesgo de 
 
 - **La víspera es exacta.** Si alguien carga un feriado en la víspera de una licencia del firmante el día anterior a esa víspera, después de las 8:15, la nueva víspera ya pasó y el adelanto se pierde (lo mismo que hoy si se carga la licencia tarde). Con persona autorizada, la nota de autorización sale el primer día de la licencia; sin ella, los avisos esperan la vuelta.
 - **El primer recordatorio de las 14:00 no se predice** en el Estado (como hoy).
-- **Lo ya enviado no cambia:** las notas, sus anexos y los `cuenta_desde` guardados quedan como están. Un `cuenta_desde` que cae en un feriado de la tabla solo cambia el día en que se vuelve a presentar el aviso en su fecha (el hábil anterior dentro de la licencia), no la cuenta de la reiteración.
+- **Lo ya enviado no cambia:** las notas, sus anexos y los `cuenta_desde` guardados quedan como están. Un `cuenta_desde` que cae en un feriado de la tabla solo cambia el día en que se vuelve a presentar el aviso en su fecha (el hábil anterior dentro de la licencia), no la cuenta de la reiteración. Si no queda ningún día hábil anterior dentro de la licencia (el feriado es el primer día), ese dataset no se vuelve a presentar en su fecha, como pasa hoy cuando no queda ningún día: lo toma la reiteración.
 - **El formulario de Configuración → Licencias, antes de guardar,** sigue diciendo «el último día hábil anterior» cuando cambia la fecha de inicio (no le pide nada al servidor, como hoy): en una licencia que sigue a otra, ese texto anuncia un adelanto que no va a pasar. Al guardar, la fila dice lo real. Mi espacio sí lo dice antes de guardar (su cálculo previo).
 
 ## Lo que queda para quien lo construye
