@@ -11,7 +11,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
-import { filasDeLicencias, tablaDeHorasExtras, resumenDe, proximoFeriadoDe, diaLargo, mesTitulo } from '../services/miEspacioResumen.js';
+import {
+  filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, resumenDe, proximoFeriadoDe, diaLargo, mesTitulo
+} from '../services/miEspacioResumen.js';
+import { notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota } from '../services/miEspacioNota.js';
 import {
   DIAS_DE_PROXIMOS, itemDeEvento, itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, MENSAJES_EVENTO,
   LARGO_TITULO_EVENTO, LARGO_DETALLE_EVENTO, FECHA_MINIMA_EVENTO, fechaMaximaEvento, textoRangoEvento, RECORDATORIOS,
@@ -24,7 +27,7 @@ import {
   DIAS_ESTUDIOS,
   DIAS_POR_EXAMEN, JORNADA, LARGO_NOTA, horasDe as horasDelServidor, camposDelSaldoInicial, validarSaldoInicial, textoSaldo,
   textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaDelFirmante,
-  TIPOS_DE_UN_DIA, TIPOS_POR_HORAS, esDiaEntero
+  TIPOS_DE_UN_DIA, TIPOS_POR_HORAS, esDiaEntero, TEXTO_NO_SE_COPIA
 } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
@@ -1459,7 +1462,9 @@ const crearDom = () => {
       },
       contains(otro) { for (let nodo = otro; nodo; nodo = nodo.parentNode) if (nodo === el) return true; return false; },
       scrollIntoView() {},
-      focus() { if (!el.disabled && el.isConnected) dom.activo = el; }
+      focus() { if (!el.disabled && el.isConnected) dom.activo = el; },
+      // Como en el navegador: el que tiene el foco lo suelta (queda en ningún lado, el <body>)
+      blur() { if (dom.activo === el) dom.activo = null; }
     };
     return el;
   };
@@ -2508,17 +2513,45 @@ describe('los formularios: lo puro', () => {
 
 // La página con los formularios (DOM falso)
 
+// La respuesta de GET /api/mi-espacio/licencias/:id/nota como la arma el servidor (verNotaDeLicencia), para la licencia `id` de
+// `estado`: su fila de la lista (filaDeUnaLicencia), la hoja (htmlDeLaNota, ya escapada), la fecha y la aclaración. La persona
+// de planta, con un cargo inventado; `fecha`, el día en que se guardó
+const CARGO_DE_PRUEBA = 'Analista de datos';
+const respuestaDeLaNota = (estado, id, { fecha = HOY } = {}) => {
+  const persona = { nombre: PLANTA.persona.nombre_completo, cargo: CARGO_DE_PRUEBA, vinculo: PLANTA.persona.vinculo };
+  const { nota } = notaDeLicencia(estado.licencias.find((fila) => fila.id === id), { fecha, persona, feriados: SIN_FERIADOS });
+  return comoLlega({
+    fila: filaDeUnaLicencia(estado, calculoDe(estado), { id, hoy: HOY, persona: PLANTA.persona, feriados: SIN_FERIADOS }),
+    html: htmlDeLaNota(nota), fecha, aclaracion: aclaracionDeLaNota(fecha)
+  });
+};
+const RUTA_DE_LA_NOTA = /^\/api\/mi-espacio\/licencias\/(\d+)\/nota$/;
+
 // Lo que contesta el servidor falso en los formularios, además de lo de entrada: el cálculo (de la persona de planta, con
-// `soyTitular`), el firmante y lo que se pase en `extra` (que gana)
-const conFormularios = ({ soyTitular = false, comoAutorizada = [], extra = () => undefined } = {}) => (metodo, ruta, cuerpo) => {
-  const propia = extra(metodo, ruta, cuerpo);
-  if (propia !== undefined) return propia;
-  if (metodo === 'POST' && ruta === '/api/mi-espacio/licencias/calculo') {
-    const { id, ...entrada } = cuerpo;
-    return ok(respuestaDelCalculo(entrada, { soyTitular, editadaId: id ?? null, comoAutorizada }));
-  }
-  if (ruta === '/api/mi-espacio/firmante') return ok(soyTitular ? FIRMANTE : { soy_titular: false });
-  return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+// `soyTitular`), el firmante, la nota de la última licencia guardada (la del POST o el PUT, con el id que pide GET …/:id/nota;
+// sin ninguna guardada, la de PLANTA con ese id) y lo que se pase en `extra` (que gana)
+const conFormularios = ({ soyTitular = false, comoAutorizada = [], extra = () => undefined } = {}) => {
+  let guardada = null;
+  return (metodo, ruta, cuerpo) => {
+    const corregida = /^\/api\/mi-espacio\/licencias\/(\d+)$/.exec(ruta);
+    if ((metodo === 'POST' && ruta === '/api/mi-espacio/licencias') || (metodo === 'PUT' && corregida)) guardada = cuerpo;
+    const propia = extra(metodo, ruta, cuerpo);
+    if (propia !== undefined) return propia;
+    if (metodo === 'POST' && ruta === '/api/mi-espacio/licencias/calculo') {
+      const { id, ...entrada } = cuerpo;
+      return ok(respuestaDelCalculo(entrada, { soyTitular, editadaId: id ?? null, comoAutorizada }));
+    }
+    if (ruta === '/api/mi-espacio/firmante') return ok(soyTitular ? FIRMANTE : { soy_titular: false });
+    const nota = RUTA_DE_LA_NOTA.exec(ruta);
+    if (metodo === 'GET' && nota) {
+      const id = Number(nota[1]);
+      const otras = PLANTA.estado.licencias.filter((fila) => fila.id !== id);
+      const estado = guardada === null ? PLANTA.estado : conLicencias({ ...PLANTA.estado, licencias: otras },
+        licencia(id, guardada.tipo, guardada.desde, guardada.hasta, typeof guardada.horas === 'number' ? guardada.horas : null));
+      return ok(respuestaDeLaNota(estado, id));
+    }
+    return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+  };
 };
 // Abre «Cargar licencia» desde el encabezado, elige el tipo, escribe las fechas y deja que salga el cálculo
 const cargarLicencia = async (pagina, { tipo = 'vacaciones', desde = VACACIONES.desde, hasta = VACACIONES.hasta, horas } = {}) => {
@@ -2611,7 +2644,9 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.equal(pagina.el('ml-guardar').disabled, false);
   });
 
-  it('un guardado con un fetch que tarda deja «Guardar» deshabilitado y manda un solo POST; después, el Resumen y el aviso', async () => {
+  // Desde la nota de licencia en Word (spec 2026-10-27-mi-espacio-licencia-word, 6): al guardar, el modal pasa al segundo paso (lo
+  // dice el título y #me-anuncio, sin aviso flotante) y la página vuelve a pedir todo de fondo; «Listo» lo cierra
+  it('un guardado con un fetch que tarda deja «Guardar» deshabilitado y manda un solo POST; después, el segundo paso y el Resumen', async () => {
     let soltar;
     const demorado = new Promise((resolver) => { soltar = resolver; });
     const pagina = montarPagina({
@@ -2625,6 +2660,9 @@ describe('los formularios en la página (DOM falso)', () => {
     const resumenes = pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length;
     await pagina.tocar(pagina.el('ml-guardar'));
     assert.equal(pagina.el('ml-guardar').disabled, true);
+    // Mientras guarda, no se cierra
+    await pagina.tecla('Escape');
+    assert.equal(pagina.abierto('modal-licencia'), true);
     await pagina.tocar(pagina.el('ml-guardar'));
     pagina.el('ml-guardar').disabled = false;
     await pagina.tocar(pagina.el('ml-guardar'));
@@ -2633,11 +2671,16 @@ describe('los formularios en la página (DOM falso)', () => {
       { tipo: 'vacaciones', desde: '2026-11-16', hasta: '2026-11-20', mostrar: true, nota: '' });
     soltar();
     await pagina.esperar();
-    assert.equal(pagina.abierto('modal-licencia'), false);
-    assert.equal(pagina.el('me-anuncio').textContent, 'Licencia cargada.');
-    // Y se ve: el aviso de la página (el toast), además de la región viva
-    assert.deepEqual(pagina.estado.toasts, [['Licencia cargada.', 'success']]);
+    assert.equal(pagina.abierto('modal-licencia'), true);
+    assert.equal(pagina.el('modal-licencia-titulo').textContent, 'Licencia cargada');
+    assert.equal(pagina.el('me-anuncio').textContent, 'Licencia cargada. Podés descargar la nota en Word.');
+    // Sin el aviso flotante: lo dice el título
+    assert.deepEqual(pagina.estado.toasts, []);
     assert.equal(pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length, resumenes + 1);
+    assert.equal(pagina.pedidosA('GET', '/api/mi-espacio/licencias/9/nota').length, 1);
+    await pagina.tocar(pagina.el('ml-paso-dos-pie').querySelector('[data-cerrar]'));
+    assert.equal(pagina.abierto('modal-licencia'), false);
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 1);
   });
 
   it('un 400 en horas pone aria-invalid y el mensaje en #ml-horas, con el foco; uno sin campo va a #ml-error', async () => {
@@ -2682,6 +2725,10 @@ describe('los formularios en la página (DOM falso)', () => {
     await pagina.tocar(pagina.el('ml-guardar'));
     await pagina.esperar();
     assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 1);
+    // Guardada: el segundo paso, y «Listo» cierra
+    assert.equal(pagina.el('modal-licencia-titulo').textContent, 'Licencia cargada');
+    assert.equal(pagina.el('ml-paso-dos').hidden, false);
+    await pagina.tocar(pagina.el('ml-paso-dos-pie').querySelector('[data-cerrar]'));
     assert.equal(pagina.abierto('modal-licencia'), false);
   });
 
@@ -2848,7 +2895,8 @@ describe('los formularios en la página (DOM falso)', () => {
     const [put] = pagina.pedidosA('PUT', '/api/mi-espacio/licencias/6');
     assert.ok(!Object.hasOwn(put.cuerpo, 'autorizado_id'), 'sin cambiar la persona, no la manda');
     assert.equal(put.cuerpo.hasta, '2026-11-19');
-    assert.equal(pagina.el('me-anuncio').textContent, 'Licencia corregida.');
+    assert.equal(pagina.el('modal-licencia-titulo').textContent, 'Licencia corregida');
+    assert.equal(pagina.el('me-anuncio').textContent, 'Licencia corregida. Podés descargar la nota en Word.');
   });
 
   // Sin saber quién queda a cargo, el formulario no dice «Sin persona autorizada…»: sería falso (la persona se conserva)
@@ -2965,6 +3013,9 @@ describe('los formularios en la página (DOM falso)', () => {
       assert.ok(pagina.el('ml-paso').textContent.includes(AVISO_DEL_PASO));
       await pagina.tocar(pagina.el('ml-guardar'));
       assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 1);
+      // Guardada: el segundo paso, y «Listo» cierra
+      assert.equal(pagina.el('modal-licencia-titulo').textContent, 'Licencia cargada');
+      await pagina.tocar(pagina.el('ml-paso-dos-pie').querySelector('[data-cerrar]'));
       assert.equal(pagina.abierto('modal-licencia'), false);
     });
 
@@ -2992,7 +3043,8 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 0);
   });
 
-  // La recarga de la lista reemplaza el «Editar» que abrió el modal: el foco va a su equivalente, nunca queda en <body>
+  // La recarga de la lista reemplaza el «Editar» que abrió el modal: el foco va a su equivalente, nunca queda en <body>. Desde la
+  // nota de licencia en Word, el guardado pasa al segundo paso (la lista se recarga detrás): al cerrarlo con «Listo», el foco va ahí
   it('después de guardar desde la lista, el foco va al «Editar» nuevo de la misma fila', async () => {
     const pagina = montarPagina({
       hash: '#licencias',
@@ -3007,6 +3059,10 @@ describe('los formularios en la página (DOM falso)', () => {
     const nuevo = pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]');
     assert.notEqual(nuevo, viejo, 'la lista se volvió a dibujar');
     assert.equal(viejo.isConnected, false);
+    // Mientras se ve el segundo paso, el foco está en «Descargar Word»
+    assert.equal(pagina.documento.activeElement, pagina.el('ml-descargar-word'));
+    await pagina.tocar(pagina.el('ml-paso-dos-pie').querySelector('[data-cerrar]'));
+    assert.equal(pagina.abierto('modal-licencia'), false);
     assert.equal(pagina.documento.activeElement, nuevo);
   });
 
@@ -4826,5 +4882,503 @@ describe('«Word» en la lista de licencias (DOM falso)', () => {
     assert.equal(pagina.pedidosA('GET', RUTA_DEL_WORD).length, 1);
     assert.equal(boton.disabled, false);
     assert.deepEqual(pagina.estado.descargas.map(({ download }) => download), ['Nota de licencia - Atención médica - 2026-11-05.docx']);
+  });
+
+  // El navegador suelta el foco de un botón que se deshabilita (queda en <body>): al terminar, vuelve a él. Pero si mientras bajaba la
+  // persona llevó el foco a otro lado (otro control, o el modal que abrió), ahí queda: la descarga no se lo saca
+  it('al terminar, el foco vuelve al botón solo si se perdió mientras bajaba; si la persona lo llevó a otro lado, ahí queda', async () => {
+    const pendientes = [];
+    const pagina = montarPagina({ hash: '#licencias', responder: conElWord(() => new Promise((resolver) => { pendientes.push(resolver); })) });
+    await pagina.iniciar();
+    const soltarUna = async () => {
+      assert.equal(pendientes.length, 1, 'una descarga en vuelo');
+      pendientes.shift()(archivo(new BlobFalso(['x']), DISPOSICION));
+      await pagina.esperar();
+    };
+
+    // Se perdió: vuelve al botón
+    botonWord(pagina).focus();
+    await pagina.tocar(botonWord(pagina));
+    pagina.dom.activo = null;
+    await soltarUna();
+    assert.equal(pagina.documento.activeElement, botonWord(pagina));
+
+    // La persona lo llevó a otra pestaña: ahí queda
+    await pagina.tocar(botonWord(pagina));
+    const pestana = pagina.el('tab-resumen');
+    pestana.focus();
+    await soltarUna();
+    assert.equal(pagina.documento.activeElement, pestana);
+    assert.equal(botonWord(pagina).disabled, false);
+
+    // Abrió «Cargar licencia» mientras bajaba: el foco queda en el modal
+    botonWord(pagina).focus();
+    await pagina.tocar(botonWord(pagina));
+    await pagina.tocar(pagina.el('btn-cargar-licencia'));
+    await pagina.correr();
+    const enElModal = pagina.documento.activeElement;
+    assert.equal(enElModal, pagina.el('ml-tipos').querySelector('input'));
+    await soltarUna();
+    assert.equal(pagina.documento.activeElement, enElModal);
+    assert.equal(pagina.estado.descargas.length, 3);
+  });
+});
+
+// =====================================================================================================================================
+// El segundo paso de «Cargar licencia» (spec 2026-10-27-mi-espacio-licencia-word, 6; maqueta, versión C, «La nota a la vista»): al
+// guardar una licencia, el modal no se cierra: muestra la licencia guardada, la nota a la vista (GET …/nota) y «Descargar Word»
+// =====================================================================================================================================
+
+// Las vacaciones nuevas de cargarLicencia (VACACIONES), guardadas con el id 9, y su nota como la arma el servidor
+const CON_LA_NUEVE = conLicencias(PLANTA.estado, licencia(9, 'vacaciones', VACACIONES.desde, VACACIONES.hasta));
+const NOTA_DE_LA_NUEVE = respuestaDeLaNota(CON_LA_NUEVE, 9);
+const NOTA_DE_LA_SEIS = respuestaDeLaNota(PLANTA.estado, 6);
+const RUTA_DE_LA_NUEVE = '/api/mi-espacio/licencias/9/nota';
+const ALTA_DE_LA_NUEVE = respuesta(201, { success: true, data: { id: 9 }, message: 'Licencia cargada.' });
+const MENSAJE_SIN_VISTA = 'La licencia quedó guardada, pero no se pudo armar la vista de la nota. Probá «Descargar Word» o bajala '
+  + 'después con «Word» en la lista.';
+const ANUNCIO_DEL_ALTA = 'Licencia cargada. Podés descargar la nota en Word.';
+const DISPOSICION_DE_LA_NUEVE = 'attachment; filename="Nota de licencia - Licencia anual ordinaria - 2026-11-16.docx"; '
+  + "filename*=UTF-8''Nota%20de%20licencia%20-%20Licencia%20anual%20ordinaria%20-%202026-11-16.docx";
+
+describe('el segundo paso de «Cargar licencia»: lo puro', () => {
+  it('los textos: el título, el anuncio con los avisos, «Armando la nota…» y el de la vista que no se pudo armar', () => {
+    assert.equal(M.tituloDelSegundoPaso(false), 'Licencia cargada');
+    assert.equal(M.tituloDelSegundoPaso(true), 'Licencia corregida');
+    assert.equal(M.anuncioDelSegundoPaso(false, []), ANUNCIO_DEL_ALTA);
+    assert.equal(M.anuncioDelSegundoPaso(false, undefined), ANUNCIO_DEL_ALTA);
+    // Los avisos, después; lo que no es un texto con algo, no
+    assert.equal(M.anuncioDelSegundoPaso(true, [TEXTO_NO_SE_COPIA, '', '  ', null, 3]),
+      `Licencia corregida. Podés descargar la nota en Word. ${TEXTO_NO_SE_COPIA}`);
+    assert.equal(M.TEXTO_ARMANDO_LA_NOTA, 'Armando la nota…');
+    assert.equal(M.MENSAJE_SIN_VISTA, MENSAJE_SIN_VISTA);
+  });
+
+  it('htmlDelSegundoPaso: la licencia con su tilde, la insignia, las fechas y lo que suman, y en gris lo demás; «Así sale la nota», la aclaración y la hoja tal cual', () => {
+    const { fila, html: hoja, aclaracion } = NOTA_DE_LA_NUEVE;
+    const html = M.htmlDelSegundoPaso({ ...NOTA_DE_LA_NUEVE, avisos: [] });
+    assert.ok(fila.de_licencias_texto && fila.mostrar_texto && !fila.configuracion, 'la fila de prueba trae los dos textos, sin Configuración');
+    assert.equal(html, '<div class="me-paso-dos-hecho"><span class="me-tilde" aria-hidden="true">'
+      + `${M.TILDE_DEL_SEGUNDO_PASO}</span><div class="me-paso-dos-licencia"><p class="me-paso-dos-linea">`
+      + '<span class="me-insignia azul">Vacaciones</span><b class="me-paso-dos-fechas">16/11 al 20/11/2026</b>'
+      + `<span class="me-paso-dos-cantidad">${fila.cantidad_texto}</span></p>`
+      + `<p class="me-paso-dos-detalle"><span>${fila.de_licencias_texto}</span> <span>${fila.mostrar_texto}</span></p></div></div>`
+      + '<h3 class="me-paso-dos-titulo">Así sale la nota</h3>'
+      + `<p class="me-paso-dos-ayuda">${aclaracion}</p>`
+      + `<div class="me-mesa">${hoja}</div>`);
+    // La tilde es decorativa: lo dice el título del modal
+    assert.match(M.TILDE_DEL_SEGUNDO_PASO, /^<svg [^>]*aria-hidden="true"[^>]*>/);
+    // La hoja del servidor, tal cual: los renglones vacíos son <p></p>
+    assert.ok(hoja.startsWith('<div class="me-hoja"><div class="me-hoja-texto"><p class="derecha">'));
+    assert.ok(hoja.includes('<p></p>'));
+  });
+
+  it('htmlDelSegundoPaso: lo de Configuración va en gris, también con algo para revisar; la insignia, con el color de su tipo', () => {
+    const fila = { ...NOTA_DE_LA_NUEVE.fila, tipo: 'medica', tipo_nombre: 'Médica', de_licencias_texto: '',
+      configuracion: { texto: 'En Configuración: cargada.', insignia: 'aviso' }, mostrar_texto: '' };
+    const html = M.htmlDelSegundoPaso({ fila, html: '<p>x</p>', aclaracion: '', avisos: [] });
+    assert.ok(html.includes('<span class="me-insignia rojo">Médica</span>'));
+    assert.ok(html.includes('<p class="me-paso-dos-detalle"><span>En Configuración: cargada.</span></p>'));
+    assert.doesNotMatch(html, /me-detalle-aviso|ambar/);
+    assert.ok(M.htmlDelSegundoPaso({ fila: { ...fila, tipo: 'otro' }, html: '' }).includes('<span class="me-insignia gris">'));
+  });
+
+  it('htmlDelSegundoPaso: los avisos, en un recuadro ámbar arriba de todo; todo texto del servidor escapado, salvo la hoja', () => {
+    const fila = {
+      tipo: 'vacaciones', tipo_nombre: MALICIOSO, fechas_texto: MALICIOSO, cantidad_texto: MALICIOSO, de_licencias_texto: MALICIOSO,
+      configuracion: { texto: MALICIOSO, insignia: 'aviso' }, mostrar_texto: MALICIOSO
+    };
+    const hoja = '<div class="me-hoja"><div class="me-hoja-texto"><p>Tal cual</p><p></p></div></div>';
+    const html = M.htmlDelSegundoPaso({ fila, html: hoja, aclaracion: MALICIOSO, avisos: [TEXTO_NO_SE_COPIA, MALICIOSO, ''] });
+    assert.ok(html.startsWith(`<div class="me-recuadro ambar"><p>${TEXTO_NO_SE_COPIA}</p><p>${ESCAPADO}</p></div>`
+      + '<div class="me-paso-dos-hecho">'));
+    assert.ok(!html.includes(MALICIOSO));
+    // El aviso, el tipo, las fechas, lo que suman, los tres detalles y la aclaración
+    assert.equal(html.split(ESCAPADO).length - 1, 8);
+    assert.ok(html.endsWith(`<div class="me-mesa">${hoja}</div>`));
+  });
+
+  it('htmlDelSegundoPaso tolera lo que falta: sin fila ni aclaración, sin avisos que sean una lista, sin hoja; nunca tira', () => {
+    assert.equal(M.htmlDelSegundoPaso({ fila: null, html: '<p>x</p>', aclaracion: '', avisos: 'no es una lista' }),
+      '<h3 class="me-paso-dos-titulo">Así sale la nota</h3><div class="me-mesa"><p>x</p></div>');
+    assert.equal(M.htmlDelSegundoPaso({ fila: 'una fila', html: 12, aclaracion: 3 }),
+      '<h3 class="me-paso-dos-titulo">Así sale la nota</h3><div class="me-mesa"></div>');
+    assert.equal(M.htmlDelSegundoPaso(), '<h3 class="me-paso-dos-titulo">Así sale la nota</h3><div class="me-mesa"></div>');
+    sinNumerosRaros(M.htmlDelSegundoPaso({ fila: { tipo: 'vacaciones' }, html: '' }), 'una fila sin textos');
+  });
+});
+
+// Lo que contesta el servidor falso para guardar las vacaciones nuevas (la 9): el alta y, en `nota`, lo que contesta GET …/9/nota
+// (una función: puede devolver una promesa que el test resuelve después; sin ella, la del servidor falso); `extra`, como en
+// conFormularios
+const conElAlta = ({ nota, extra = () => undefined } = {}) => conFormularios({
+  extra: (metodo, ruta, cuerpo) => {
+    const propia = extra(metodo, ruta, cuerpo);
+    if (propia !== undefined) return propia;
+    if (metodo === 'POST' && ruta === '/api/mi-espacio/licencias') return ALTA_DE_LA_NUEVE;
+    if (nota && metodo === 'GET' && ruta === RUTA_DE_LA_NUEVE) return nota();
+    return undefined;
+  }
+});
+// Lo que se ve del modal de la licencia: abierto, el título y cuáles de sus partes están ocultas (el cuerpo y el pie del formulario,
+// y los del segundo paso)
+const delModal = (pagina) => ({
+  abierto: pagina.abierto('modal-licencia'), titulo: pagina.el('modal-licencia-titulo').textContent,
+  ocultos: ['ml-cuerpo', 'ml-pie-del-formulario', 'ml-paso-dos', 'ml-paso-dos-pie'].filter((id) => pagina.el(id).hidden)
+});
+const EN_EL_SEGUNDO_PASO = (titulo = 'Licencia cargada') => ({ abierto: true, titulo, ocultos: ['ml-cuerpo', 'ml-pie-del-formulario'] });
+const listo = (pagina) => pagina.el('ml-paso-dos-pie').querySelector('[data-cerrar]');
+const esperandoLaNota = (avisos = '') => `${avisos}<p class="me-aviso me-aviso-gris">Armando la nota…</p>`;
+const sinVista = (avisos = '') => `${avisos}<p class="me-aviso me-aviso-error">${MENSAJE_SIN_VISTA}</p>`;
+// Una promesa que el test resuelve después, con su resolver
+const demorada = () => {
+  let soltar;
+  const promesa = new Promise((resolver) => { soltar = resolver; });
+  return { promesa, soltar: (valor) => soltar(valor) };
+};
+
+describe('el segundo paso de «Cargar licencia» (DOM falso)', () => {
+  it('al guardar una nueva (POST 201) el modal no se cierra: «Licencia cargada», «Armando la nota…» hasta que llega GET …/9/nota, y después la licencia y la hoja', async () => {
+    const nota = demorada();
+    const pagina = montarPagina({ responder: conElAlta({ nota: () => nota.promesa }) });
+    await pagina.iniciar();
+    await cargarLicencia(pagina);
+    const resumenes = pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length;
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.deepEqual(delModal(pagina), EN_EL_SEGUNDO_PASO());
+    assert.equal(pagina.el('ml-paso-dos').innerHTML, esperandoLaNota());
+    // Pide la nota, con el token en el encabezado, y la página vuelve a pedir todo de fondo
+    const pedidos = pagina.pedidosA('GET', RUTA_DE_LA_NUEVE);
+    assert.equal(pedidos.length, 1);
+    assert.equal(pedidos[0].encabezados.Authorization, 'Bearer token-de-prueba');
+    assert.equal(pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length, resumenes + 1);
+    // El foco, en «Descargar Word»; lo que se guardó se anuncia, sin aviso flotante
+    assert.equal(pagina.documento.activeElement, pagina.el('ml-descargar-word'));
+    assert.equal(pagina.el('me-anuncio').textContent, ANUNCIO_DEL_ALTA);
+    assert.deepEqual(pagina.estado.toasts, []);
+
+    nota.soltar(ok(NOTA_DE_LA_NUEVE));
+    await pagina.esperar();
+    const cuerpo = pagina.el('ml-paso-dos');
+    assert.equal(cuerpo.innerHTML, M.htmlDelSegundoPaso({ ...NOTA_DE_LA_NUEVE, avisos: [] }));
+    assert.equal(cuerpo.querySelector('.me-insignia').textContent, 'Vacaciones');
+    assert.equal(cuerpo.querySelector('.me-paso-dos-fechas').textContent, '16/11 al 20/11/2026');
+    assert.equal(cuerpo.querySelector('.me-paso-dos-ayuda').textContent, NOTA_DE_LA_NUEVE.aclaracion);
+    assert.ok(cuerpo.querySelector('.me-mesa .me-hoja .me-hoja-texto'), 'la hoja del servidor');
+    assert.deepEqual(delModal(pagina), EN_EL_SEGUNDO_PASO());
+    assert.equal(pagina.documento.activeElement, pagina.el('ml-descargar-word'));
+    assert.deepEqual(pagina.estado.toasts, []);
+
+    // El formulario terminó: nada que siga calculando, y «Escape» no está bloqueado por un guardado
+    const antes = calculos(pagina).length;
+    await pagina.correr();
+    assert.equal(calculos(pagina).length, antes);
+    assert.equal(vm.runInContext('pagina.formulario', pagina.contexto), null);
+  });
+
+  it('la corrección (PUT 200) con un aviso: «Licencia corregida», el aviso en un recuadro ámbar (también mientras llega la nota) y en #me-anuncio', async () => {
+    const nota = demorada();
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conFormularios({
+        extra: (metodo, ruta) => {
+          if (metodo === 'PUT') {
+            return respuesta(200, { success: true, data: { id: 6 }, message: 'Licencia corregida.', avisos: [TEXTO_NO_SE_COPIA] });
+          }
+          return metodo === 'GET' && ruta === '/api/mi-espacio/licencias/6/nota' ? nota.promesa : undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]'));
+    await pagina.correr();
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.deepEqual(delModal(pagina), EN_EL_SEGUNDO_PASO('Licencia corregida'));
+    const recuadro = `<div class="me-recuadro ambar"><p>${TEXTO_NO_SE_COPIA}</p></div>`;
+    assert.equal(pagina.el('ml-paso-dos').innerHTML, esperandoLaNota(recuadro));
+    assert.equal(pagina.el('me-anuncio').textContent, `Licencia corregida. Podés descargar la nota en Word. ${TEXTO_NO_SE_COPIA}`);
+    assert.deepEqual(pagina.estado.toasts, []);
+    nota.soltar(ok(NOTA_DE_LA_SEIS));
+    await pagina.esperar();
+    assert.equal(pagina.el('ml-paso-dos').innerHTML, M.htmlDelSegundoPaso({ ...NOTA_DE_LA_SEIS, avisos: [TEXTO_NO_SE_COPIA] }));
+    assert.ok(pagina.el('ml-paso-dos').innerHTML.startsWith(recuadro));
+    assert.equal(pagina.pedidosA('GET', '/api/mi-espacio/licencias/6/nota').length, 1);
+  });
+
+  it('otro año: una licencia de 2027, que la lista de 2026 no muestra, se ve igual (la fila viene de …/nota)', async () => {
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conFormularios({
+        extra: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/mi-espacio/licencias'
+          ? respuesta(201, { success: true, data: { id: 10 }, message: 'Licencia cargada.' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await cargarLicencia(pagina, { desde: '2027-02-01', hasta: '2027-02-05' });
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.el('vista-licencias').querySelector('[data-editar-licencia="10"]'), null, 'la lista de 2026 no la muestra');
+    const nota = respuestaDeLaNota(conLicencias(PLANTA.estado, licencia(10, 'vacaciones', '2027-02-01', '2027-02-05')), 10);
+    assert.equal(nota.fila.fechas_texto, '01/02 al 05/02/2027');
+    assert.equal(pagina.el('ml-paso-dos').innerHTML, M.htmlDelSegundoPaso({ ...nota, avisos: [] }));
+    assert.equal(pagina.el('ml-paso-dos').querySelector('.me-paso-dos-fechas').textContent, '01/02 al 05/02/2027');
+  });
+
+  it('«Listo», la × y Escape cierran; al volver a abrir «Cargar licencia» está el formulario', async () => {
+    const cerrar = {
+      listo: (pagina) => pagina.tocar(listo(pagina)),
+      cruz: (pagina) => pagina.tocar(pagina.el('modal-licencia').querySelector('.modal-close')),
+      escape: (pagina) => pagina.tecla('Escape')
+    };
+    for (const [como, hacer] of Object.entries(cerrar)) {
+      const pagina = montarPagina({ responder: conElAlta() });
+      await pagina.iniciar();
+      await cargarLicencia(pagina);
+      await pagina.tocar(pagina.el('ml-guardar'));
+      assert.deepEqual(delModal(pagina), EN_EL_SEGUNDO_PASO(), como);
+      await hacer(pagina);
+      assert.equal(pagina.abierto('modal-licencia'), false, como);
+      assert.equal(pagina.el('ml-paso-dos').innerHTML, '', como);
+      // Desde el encabezado: el foco vuelve a «Cargar licencia»
+      assert.equal(pagina.documento.activeElement, pagina.el('btn-cargar-licencia'), como);
+      await pagina.tocar(pagina.el('btn-cargar-licencia'));
+      await pagina.correr();
+      assert.deepEqual(delModal(pagina), { abierto: true, titulo: 'Cargar licencia', ocultos: ['ml-paso-dos', 'ml-paso-dos-pie'] }, como);
+      assert.equal(pagina.el('ml-guardar').disabled, false, como);
+      assert.equal(pagina.documento.activeElement, pagina.el('ml-tipos').querySelector('input'), como);
+    }
+  });
+
+  it('una respuesta de …/nota que llega con el modal cerrado, o después de otro guardado, no pinta nada', async () => {
+    const notas = [];
+    const pagina = montarPagina({ responder: conElAlta({ nota: () => { const una = demorada(); notas.push(una); return una.promesa; } }) });
+    await pagina.iniciar();
+    const guardar = async () => {
+      await cargarLicencia(pagina);
+      await pagina.tocar(pagina.el('ml-guardar'));
+      assert.equal(pagina.el('ml-paso-dos').innerHTML, esperandoLaNota());
+    };
+
+    // Con el modal cerrado: nada
+    await guardar();
+    await pagina.tocar(listo(pagina));
+    notas[0].soltar(ok(NOTA_DE_LA_NUEVE));
+    await pagina.esperar();
+    assert.equal(pagina.el('ml-paso-dos').innerHTML, '');
+    assert.equal(pagina.el('ml-paso-dos').hidden, true);
+
+    // Después de otro guardado: ni la nota ni la falla de la anterior
+    await guardar();
+    await pagina.tocar(listo(pagina));
+    await guardar();
+    notas[1].soltar(respuesta(500, { success: false, error: 'Error al armar la nota' }));
+    await pagina.esperar();
+    assert.equal(pagina.el('ml-paso-dos').innerHTML, esperandoLaNota());
+    assert.equal(pagina.el('me-anuncio').textContent.trim(), ANUNCIO_DEL_ALTA);
+    notas[2].soltar(ok(NOTA_DE_LA_NUEVE));
+    await pagina.esperar();
+    assert.equal(pagina.el('ml-paso-dos').innerHTML, M.htmlDelSegundoPaso({ ...NOTA_DE_LA_NUEVE, avisos: [] }));
+    assert.equal(notas.length, 3);
+  });
+
+  it('si …/nota falla: MENSAJE_SIN_VISTA (anunciado) y «Descargar Word» sigue andando; con un 401, al login', async () => {
+    const fallas = [
+      () => respuesta(500, { success: false, error: 'Error al armar la nota' }),
+      () => respuesta(404, { success: false, error: 'Licencia no encontrada' }),
+      () => ok({ fila: NOTA_DE_LA_NUEVE.fila, html: '', fecha: HOY, aclaracion: '' }),
+      () => { throw new TypeError('Failed to fetch'); }
+    ];
+    for (const falla of fallas) {
+      const pagina = montarPagina({
+        responder: conElAlta({
+          nota: falla,
+          extra: (metodo, ruta) => (ruta === '/api/mi-espacio/licencias/9/word' ? archivo(new BlobFalso(['x']), DISPOSICION_DE_LA_NUEVE) : undefined)
+        })
+      });
+      await pagina.iniciar();
+      await cargarLicencia(pagina);
+      await pagina.tocar(pagina.el('ml-guardar'));
+      assert.deepEqual(delModal(pagina), EN_EL_SEGUNDO_PASO(), String(falla));
+      assert.equal(pagina.el('ml-paso-dos').innerHTML, sinVista(), String(falla));
+      assert.equal(pagina.el('me-anuncio').textContent, MENSAJE_SIN_VISTA, String(falla));
+      assert.equal(pagina.estado.sesionCerrada, false);
+      await pagina.tocar(pagina.el('ml-descargar-word'));
+      assert.deepEqual(pagina.estado.descargas.map(({ download }) => download),
+        ['Nota de licencia - Licencia anual ordinaria - 2026-11-16.docx'], String(falla));
+    }
+
+    // Una corrección con avisos: los avisos siguen arriba
+    const corregida = montarPagina({
+      hash: '#licencias',
+      responder: conFormularios({
+        extra: (metodo, ruta) => {
+          if (metodo === 'PUT') return respuesta(200, { success: true, data: { id: 6 }, avisos: [TEXTO_NO_SE_COPIA] });
+          return ruta.endsWith('/nota') ? respuesta(500, { success: false, error: 'Error al armar la nota' }) : undefined;
+        }
+      })
+    });
+    await corregida.iniciar();
+    await corregida.tocar(corregida.el('vista-licencias').querySelector('[data-editar-licencia="6"]'));
+    await corregida.correr();
+    await corregida.tocar(corregida.el('ml-guardar'));
+    assert.equal(corregida.el('ml-paso-dos').innerHTML, sinVista(`<div class="me-recuadro ambar"><p>${TEXTO_NO_SE_COPIA}</p></div>`));
+
+    const vencida = montarPagina({ responder: conElAlta({ nota: () => respuesta(401, { success: false, error: 'Token expirado' }) }) });
+    await vencida.iniciar();
+    await cargarLicencia(vencida);
+    await vencida.tocar(vencida.el('ml-guardar'));
+    assert.equal(vencida.estado.sesionCerrada, true);
+    assert.equal(vencida.ventana.location.href, 'login.html');
+  });
+
+  it('«Descargar Word» baja con bajarWordDeLicencia(id, botón), el mismo camino que «Word» de la lista', async () => {
+    const pagina = montarPagina({ responder: conElAlta() });
+    await pagina.iniciar();
+    await cargarLicencia(pagina);
+    await pagina.tocar(pagina.el('ml-guardar'));
+    const llamadas = [];
+    const deVerdad = pagina.contexto.bajarWordDeLicencia;
+    pagina.contexto.bajarWordDeLicencia = (id, boton) => { llamadas.push([id, boton]); };
+    await pagina.tocar(pagina.el('ml-descargar-word'));
+    assert.equal(llamadas.length, 1);
+    assert.equal(llamadas[0][0], 9);
+    assert.equal(llamadas[0][1], pagina.el('ml-descargar-word'));
+    pagina.contexto.bajarWordDeLicencia = deVerdad;
+  });
+
+  it('«Descargar Word»: GET …/9/word con el token, el botón deshabilitado mientras baja y el nombre del servidor; si se cierra mientras, el foco no vuelve al modal', async () => {
+    const word = demorada();
+    const pagina = montarPagina({ responder: conElAlta({ extra: (metodo, ruta) => (ruta === '/api/mi-espacio/licencias/9/word' ? word.promesa : undefined) }) });
+    await pagina.iniciar();
+    await cargarLicencia(pagina);
+    await pagina.tocar(pagina.el('ml-guardar'));
+    const boton = pagina.el('ml-descargar-word');
+    await pagina.tocar(boton);
+    const pedidos = pagina.pedidosA('GET', '/api/mi-espacio/licencias/9/word');
+    assert.equal(pedidos.length, 1);
+    assert.equal(pedidos[0].encabezados.Authorization, 'Bearer token-de-prueba');
+    assert.equal(boton.disabled, true);
+    // Se cierra mientras baja: el foco va adonde va al cerrar (al botón que abrió el modal) y ahí queda
+    await pagina.tecla('Escape');
+    assert.equal(pagina.abierto('modal-licencia'), false);
+    assert.equal(pagina.documento.activeElement, pagina.el('btn-cargar-licencia'));
+    word.soltar(archivo(new BlobFalso(['x']), DISPOSICION_DE_LA_NUEVE));
+    await pagina.esperar();
+    assert.equal(boton.disabled, false);
+    assert.deepEqual(pagina.estado.descargas.map(({ download }) => download), ['Nota de licencia - Licencia anual ordinaria - 2026-11-16.docx']);
+    assert.equal(pagina.documento.activeElement, pagina.el('btn-cargar-licencia'));
+  });
+
+  it('al cerrar, el foco va adonde va después de guardar: el «Editar» nuevo de la licencia, también si la lista se recarga después de cerrar; desde la lista, «Cargar licencia» nuevo', async () => {
+    const lista = demorada();
+    let recargas = 0;
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conFormularios({
+        extra: (metodo, ruta) => {
+          if (metodo === 'PUT') return ok({ id: 6 }, 'Licencia corregida.');
+          if (metodo === 'POST' && ruta === '/api/mi-espacio/licencias') return ALTA_DE_LA_NUEVE;
+          if (ruta === '/api/mi-espacio/licencias') { recargas += 1; return recargas === 2 ? lista.promesa : undefined; }
+          return undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    // La recarga de la lista todavía no llegó al cerrar: el foco vuelve al «Editar» viejo y, cuando llega, al nuevo
+    const viejo = pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]');
+    viejo.focus();
+    await pagina.tocar(viejo);
+    await pagina.correr();
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.documento.activeElement, pagina.el('ml-descargar-word'));
+    await pagina.tocar(listo(pagina));
+    assert.equal(pagina.documento.activeElement, viejo);
+    lista.soltar(ok(licenciasDe(PLANTA)));
+    await pagina.esperar();
+    const nuevo = pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]');
+    assert.notEqual(nuevo, viejo);
+    assert.equal(pagina.documento.activeElement, nuevo);
+
+    // «Cargar licencia» de la lista: la recarga ya llegó; al cerrar, el foco va al «Cargar licencia» nuevo
+    const cargar = pagina.el('vista-licencias').querySelector('[data-cargar="licencia"]');
+    cargar.focus();
+    await pagina.tocar(cargar);
+    await pagina.correr();
+    await pagina.elegir('ml-tipo', 'vacaciones');
+    await pagina.escribir('ml-desde', VACACIONES.desde);
+    await pagina.escribir('ml-hasta', VACACIONES.hasta);
+    await pagina.correr();
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(cargar.isConnected, false, 'la lista se volvió a dibujar');
+    await pagina.tocar(listo(pagina));
+    assert.equal(pagina.documento.activeElement, pagina.el('vista-licencias').querySelector('[data-cargar="licencia"]'));
+  });
+
+  it('«Registrar un uso autorizado» se sigue cerrando al guardar: sin segundo paso ni GET …/nota', async () => {
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: conFormularios({
+        extra: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/mi-espacio/licencias'
+          ? respuesta(201, { success: true, data: { id: 11 }, message: 'Uso autorizado registrado.' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-abrir="uso"]'));
+    await pagina.escribir('mu-fecha', '2026-11-16');
+    await pagina.correr();
+    await pagina.tocar(pagina.el('mu-guardar'));
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 1);
+    assert.equal(pagina.abierto('modal-uso'), false);
+    assert.equal(pagina.abierto('modal-licencia'), false);
+    assert.deepEqual(pagina.estado.toasts, [['Uso autorizado registrado.', 'success']]);
+    assert.equal(pagina.el('me-anuncio').textContent, 'Uso autorizado registrado.');
+    assert.ok(!pagina.rutas().some((ruta) => ruta.endsWith('/nota')));
+    assert.equal(pagina.el('ml-paso-dos').hidden, true);
+  });
+});
+
+// Los estilos del segundo paso (spec 2026-10-27-mi-espacio-licencia-word, 6, «Calidad»), leídos del <style> de mi-espacio.html
+const escaparRegex = (texto) => texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const estiloDeLaPagina = () => leer('mi-espacio.html').match(/<style>([\s\S]*?)<\/style>/)[1];
+// Lo de adentro de la regla de ese selector (sola, al principio de su línea), o null
+const reglaDe = (selector) => new RegExp(`(?:^|\\n)\\s*${escaparRegex(selector)}\\s*\\{([^}]*)\\}`).exec(estiloDeLaPagina())?.[1] ?? null;
+// El contraste de dos colores #RRGGBB (WCAG 2.1)
+const luminancia = (hex) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const contraste = (uno, otro) => {
+  const [claro, oscuro] = [luminancia(uno), luminancia(otro)].sort((a, b) => b - a);
+  return (claro + 0.05) / (oscuro + 0.05);
+};
+
+describe('mi-espacio.html: los estilos del segundo paso', () => {
+  it('la hoja: A4 a escala de su ancho, Arial 11 con interlineado 1,15, la sangría y la firma; los renglones vacíos tienen su alto', () => {
+    const hoja = reglaDe('.me-hoja');
+    assert.ok(hoja, '.me-hoja');
+    assert.match(hoja, /container-type: inline-size;/);
+    assert.match(hoja, /aspect-ratio: 210 \/ 297;/);
+    assert.match(reglaDe('.me-hoja-texto'), /padding: 11\.9cqw 14\.29cqw;/);
+    assert.match(reglaDe('.me-hoja-texto'), /font: 1\.848cqw\/1\.32 Arial, Helvetica, sans-serif;/);
+    // Un <p></p> sin alto mínimo se aplasta: los renglones vacíos de la nota desaparecerían
+    assert.match(reglaDe('.me-hoja-texto p'), /min-height: 1\.32em;/);
+    assert.match(reglaDe('.me-hoja-texto .sangria'), /text-indent: 5\.95cqw;/);
+    assert.match(reglaDe('.me-hoja-texto .firma'), /margin-left: 38\.1cqw;/);
+  });
+
+  it('la mesa, gris y sin alto máximo ni su propia barra: el que se desplaza es el cuerpo del modal', () => {
+    const mesa = reglaDe('.me-mesa');
+    assert.match(mesa, /background: var\(--sg-gris-fondo\);/);
+    assert.doesNotMatch(estiloDeLaPagina(), /\.me-(?:mesa|hoja)[^{]*\{[^}]*(?:max-height|overflow)/);
+  });
+
+  it('«Word» deshabilitado mientras baja: el cursor de espera y el gris de los textos secundarios, con 4,5:1 o más sobre blanco', () => {
+    const regla = reglaDe('.sg-link:disabled');
+    assert.ok(regla, '.sg-link:disabled');
+    assert.match(regla, /cursor: progress;/);
+    assert.match(regla, /color: var\(--sg-suave\);/);
+    assert.doesNotMatch(regla, /opacity/);
+    const suave = /--sg-suave: (#[0-9A-Fa-f]{6});/.exec(estiloDeLaPagina())[1];
+    assert.ok(contraste(suave, '#FFFFFF') >= 4.5, `${suave}: ${contraste(suave, '#FFFFFF').toFixed(2)}:1`);
   });
 });

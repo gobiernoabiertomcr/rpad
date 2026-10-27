@@ -34,7 +34,11 @@
  * extras» (con lo que suman en el mes), «Mis vacaciones y saldos» (se abre solo sin el saldo inicial), «Registrar un uso
  * autorizado» y la confirmación de un borrado, que se abre sobre el formulario. Los abren los botones del encabezado y los data-*
  * de las pestañas (data-cargar, data-abrir, data-editar-licencia, data-editar-horas y, en «Vence pronto», data-accion con su
- * data-tipo). Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad: los mensajes y
+ * data-tipo). Al guardar una licencia (no un uso autorizado), «Cargar licencia» no se cierra: pasa al segundo paso (spec
+ * 2026-10-27-mi-espacio-licencia-word, 6; la versión C de la maqueta), con la licencia guardada, la nota a la vista (GET
+ * /mi-espacio/licencias/:id/nota, la hoja armada y escapada por el servidor, que va tal cual), «Listo» y «Descargar Word»; lo
+ * guardado se anuncia en #me-anuncio, sin aviso flotante, y al cerrar el foco va adonde va después de cualquier guardado.
+ * Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad: los mensajes y
  * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), camposConLoElegido (camposDelSaldoInicial), las de
  * Configuración (efectoEnNotas, textoSinAuditor, textoAusenciasAutorizado y parametrosSinAuditor, de usuarios.js) y, en la agenda,
  * DIAS_DE_PROXIMOS (services/miEspacioEventosReglas.js), diaLargoDe (diaLargo) y tituloDelMes (mesTitulo, los dos de
@@ -50,8 +54,9 @@
  * que se usó (en la agenda, al del mismo lugar —la grilla o los próximos—, saltando los ocultos). Pide los datos con
  * API.pedirJson. Todo texto del servidor pasa por Utils.escapeHtml (también en los aria-label) y un número se escribe con String
  * (Utils.escapeHtml(0) da ''); lo que va con textContent (los títulos de los modales, la confirmación), tal cual. Lo que cambia se anuncia en #me-anuncio, la única región viva de la página (en cada modal, su error sin
- * campo es role="alert"); lo que dice el servidor al guardar o borrar, y un formulario que no se pudo abrir, se ve además en un
- * aviso (avisarMiEspacio: el showToast de main.js, como en Áreas, Feriados y Proyectos).
+ * campo es role="alert"); lo que dice el servidor al guardar o borrar (salvo al guardar una licencia: lo dice el segundo paso), y
+ * un formulario que no se pudo abrir, se ve además en un aviso (avisarMiEspacio: el showToast de main.js, como en Áreas, Feriados
+ * y Proyectos).
  */
 
 // =====================================================
@@ -880,6 +885,64 @@ function textoDeConfirmacion(fila) {
   return `${comoTexto(datos.tipo_nombre)} del ${comoTexto(datos.fechas_texto)}${nota}.${enConfiguracion}`;
 }
 
+// ---- El segundo paso de «Cargar licencia» (spec 2026-10-27-mi-espacio-licencia-word, 6; la versión C de la maqueta) ----
+
+// Lo que dice el segundo paso mientras llega GET …/nota y, si no llega, que la licencia igual quedó guardada
+const TEXTO_ARMANDO_LA_NOTA = 'Armando la nota…';
+const MENSAJE_SIN_VISTA = 'La licencia quedó guardada, pero no se pudo armar la vista de la nota. Probá «Descargar Word» o bajala '
+  + 'después con «Word» en la lista.';
+// La tilde verde de la licencia guardada (check de Lucide), decorativa: lo dice el título del modal
+const TILDE_DEL_SEGUNDO_PASO = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" '
+  + 'stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+  + '<path d="M20 6 9 17l-5-5"/></svg>';
+
+// El título del modal en el segundo paso: el alta o la corrección
+const tituloDelSegundoPaso = (corregida) => (corregida === true ? 'Licencia corregida' : 'Licencia cargada');
+
+// Los avisos con los que respondió el guardado (solo la corrección los trae: por ejemplo, que ya no se copia a Configuración), los
+// que son un texto con algo
+const avisosDelGuardado = (avisos) => (Array.isArray(avisos) ? avisos.filter(conTexto) : []);
+
+// Lo que se anuncia en #me-anuncio al pasar al segundo paso (no hay aviso flotante: lo dice el título): qué se guardó, que se puede
+// bajar la nota y los avisos
+const anuncioDelSegundoPaso = (corregida, avisos) =>
+  [`${tituloDelSegundoPaso(corregida)}. Podés descargar la nota en Word.`, ...avisosDelGuardado(avisos)].join(' ');
+
+// Los avisos del guardado, en un recuadro ámbar arriba de todo (sin avisos, '')
+const htmlDeLosAvisosDelGuardado = (avisos) => {
+  const textos = avisosDelGuardado(avisos);
+  return textos.length > 0 ? `<div class="me-recuadro ambar">${textos.map((texto) => `<p>${esc(texto)}</p>`).join('')}</div>` : '';
+};
+
+// El segundo paso sin la nota: los avisos y «Armando la nota…», hasta que llega; o los avisos y MENSAJE_SIN_VISTA, si no llegó
+const htmlDelSegundoPasoEnEspera = (avisos) => htmlDeLosAvisosDelGuardado(avisos) + htmlDeMensaje(TEXTO_ARMANDO_LA_NOTA);
+const htmlDelSegundoPasoSinVista = (avisos) => htmlDeLosAvisosDelGuardado(avisos) + htmlDeError(MENSAJE_SIN_VISTA);
+
+/**
+ * El cuerpo del segundo paso con lo que manda GET …/nota: los avisos del guardado (`avisos`, en ámbar); la licencia guardada, con la
+ * tilde, la insignia de su tipo, las fechas y lo que suma y, en gris, de qué licencias sale, lo de Configuración y lo que ven los
+ * compañeros (los textos de `fila`, la misma de la lista, aunque la lista muestre otro año); «Así sale la nota», con la
+ * `aclaracion` debajo; y la hoja (`html`, armada y escapada por el servidor: va tal cual, como la nota del Generador de Notas) sobre
+ * la mesa gris. Todo otro texto del servidor, escapado. Sin fila, sin la licencia; sin hoja, la mesa vacía
+ */
+function htmlDelSegundoPaso({ fila = null, html = '', aclaracion = '', avisos = [] } = {}) {
+  const partes = [htmlDeLosAvisosDelGuardado(avisos)];
+  if (esObjeto(fila)) {
+    const linea = [`<span class="me-insignia ${deMapa(CLASE_DEL_TIPO, fila.tipo, 'gris')}">${esc(fila.tipo_nombre)}</span>`];
+    if (conTexto(fila.fechas_texto)) linea.push(`<b class="me-paso-dos-fechas">${esc(fila.fechas_texto)}</b>`);
+    if (conTexto(fila.cantidad_texto)) linea.push(`<span class="me-paso-dos-cantidad">${esc(fila.cantidad_texto)}</span>`);
+    const detalles = [fila.de_licencias_texto, esObjeto(fila.configuracion) ? fila.configuracion.texto : null, fila.mostrar_texto]
+      .filter(conTexto).map((texto) => `<span>${esc(texto)}</span>`);
+    partes.push(`<div class="me-paso-dos-hecho"><span class="me-tilde" aria-hidden="true">${TILDE_DEL_SEGUNDO_PASO}</span>`
+      + `<div class="me-paso-dos-licencia"><p class="me-paso-dos-linea">${linea.join('')}</p>`
+      + (detalles.length > 0 ? `<p class="me-paso-dos-detalle">${detalles.join(' ')}</p>` : '') + '</div></div>');
+  }
+  partes.push('<h3 class="me-paso-dos-titulo">Así sale la nota</h3>');
+  if (conTexto(aclaracion)) partes.push(`<p class="me-paso-dos-ayuda">${esc(aclaracion)}</p>`);
+  partes.push(`<div class="me-mesa">${typeof html === 'string' ? html : ''}</div>`);
+  return partes.join('');
+}
+
 // ---- Las horas extras ----
 
 const NOMBRES_DE_LOS_MESES = Object.freeze([
@@ -1553,15 +1616,18 @@ document.addEventListener('DOMContentLoaded', () => {
 // `modales`, los abiertos, del de abajo al de arriba (la confirmación se abre sobre el formulario); `formulario`, el de «Cargar
 // licencia» o del uso autorizado abierto; `horasExtras`, el de las horas extras; `saldos`, el de «Mis vacaciones y saldos»
 // (`saldosAbiertosSolos`: ya se abrió solo una vez); `confirmacion`, el borrado que se confirma; y `firmante`, el pedido de
-// GET /mi-espacio/firmante (una sola vez). La agenda: `evento`, el formulario del evento abierto (su propio estado: el cálculo de
-// las licencias mira `formulario`, y no se tienen que cruzar); `eventoAjeno`, el detalle de un evento de otra persona; y
-// `personas`, el pedido de GET /mi-espacio/personas (una sola vez, y solo para administración)
+// GET /mi-espacio/firmante (una sola vez). El segundo paso de «Cargar licencia» (la licencia ya guardada, con la nota a la vista):
+// `segundoPaso`, `{ id, corregida, avisos }` mientras se ve (si no, null), y `pedidos.nota` numera cada GET …/nota (también al
+// cerrar: la respuesta que llega con el modal cerrado o después de otro guardado se descarta). La agenda: `evento`, el formulario
+// del evento abierto (su propio estado: el cálculo de las licencias mira `formulario`, y no se tienen que cruzar); `eventoAjeno`,
+// el detalle de un evento de otra persona; y `personas`, el pedido de GET /mi-espacio/personas (una sola vez, y solo para
+// administración)
 const pagina = {
   pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, bandaAnimada: false,
   mesDeEventos: null, delMes: null, proximos: null,
-  cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0 },
+  cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0, nota: 0 },
   modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null,
-  evento: null, eventoAjeno: null, personas: null
+  segundoPaso: null, evento: null, eventoAjeno: null, personas: null
 };
 
 const porId = (id) => document.getElementById(id);
@@ -1879,8 +1945,10 @@ async function pedirWordDeLicencia(id) {
 /**
  * «Word» de una fila de la lista (y «Descargar Word» del segundo paso del modal): baja la nota de la licencia `id` con el nombre que
  * da el servidor (o NOMBRE_DEL_WORD_POR_DEFECTO). Mientras baja, `boton` queda deshabilitado (un segundo clic no pide nada) y, si
- * tenía el foco, lo recupera al terminar (deshabilitado, lo suelta). Con un 401, al login; con otro error, el aviso con el mensaje
- * del servidor (el 409 de una licencia sin días hábiles) o, sin mensaje (o sin respuesta), MENSAJE_SIN_DESCARGA
+ * tenía el foco y se perdió mientras tanto (deshabilitado, el navegador lo suelta a <body>), lo recupera al terminar; si la persona
+ * lo llevó a otro lado (otro control, o el modal que abrió o cerró mientras bajaba), ahí queda. Con un 401, al login; con otro
+ * error, el aviso con el mensaje del servidor (el 409 de una licencia sin días hábiles) o, sin mensaje (o sin respuesta),
+ * MENSAJE_SIN_DESCARGA
  */
 async function bajarWordDeLicencia(id, boton) {
   if (boton?.disabled) return;
@@ -1898,7 +1966,8 @@ async function bajarWordDeLicencia(id, boton) {
     irAlLogin();
     return;
   }
-  if (teniaElFoco) boton.focus?.();
+  const activo = document.activeElement;
+  if (teniaElFoco && (!activo || activo === document.body)) boton.focus?.();
   if (falla) avisarMiEspacio(Number.isInteger(falla.status) && conTexto(falla.message) ? falla.message : MENSAJE_SIN_DESCARGA, 'error');
 }
 
@@ -2217,6 +2286,10 @@ function conectarFormularios() {
     porId(`${prefijo}-guardar`).addEventListener('click', () => guardarLicencia(nombre));
     porId(`${prefijo}-borrar`).addEventListener('click', () => pedirBorrarLicencia(nombre));
   }
+  // «Descargar Word» del segundo paso: la nota de la licencia guardada, por el mismo camino que «Word» de la lista
+  porId('ml-descargar-word').addEventListener('click', () => {
+    if (pagina.segundoPaso) bajarWordDeLicencia(pagina.segundoPaso.id, porId('ml-descargar-word'));
+  });
 
   for (const id of ['mh-fecha', 'mh-desde', 'mh-hasta']) {
     porId(id).addEventListener('input', actualizarLaSuma);
@@ -2536,6 +2609,8 @@ async function abrirLicencia({ fila = null, tipo = null, volverA = null } = {}) 
   const tipos = listaDe(pagina.resumen?.tipos);
   const opciones = fila && !tipos.some((opcion) => opcion.tipo === valores.tipo)
     ? [...tipos, { tipo: valores.tipo, nombre: fila.tipo_nombre, queda_texto: '' }] : tipos;
+  // Siempre abre el formulario (el segundo paso se va al cerrar el modal: esto es por las dudas)
+  quitarSegundoPaso();
   porId('modal-licencia-titulo').textContent = fila ? `Corregir la licencia del ${comoTexto(fila.fechas_texto)}` : 'Cargar licencia';
   porId('ml-tipos-opciones').innerHTML = htmlDeTiposDeLicencia(opciones, valores.tipo);
   porId('ml-desde').value = valores.desde;
@@ -2817,7 +2892,8 @@ async function actualizarSinAuditor(formulario, valores) {
 
 // «Guardar»: los errores del formulario antes de pedir nada; si el último cálculo no llegó, lo vuelve a pedir y no guarda (sin él
 // no se vio qué pasa con Configuración); si no, POST o PUT. Mientras, «Guardar» queda deshabilitado (un doble clic manda un solo
-// pedido). Al guardar, se cierra, se avisa lo que dijo el servidor y se vuelve a pedir todo
+// pedido). Guardada una licencia, el modal pasa al segundo paso (pasarAlSegundoPaso); un uso autorizado, que no tiene nota, se
+// cierra, se avisa lo que dijo el servidor y se vuelve a pedir todo
 async function guardarLicencia(nombre) {
   const formulario = pagina.formulario;
   const boton = porId(`${FORMULARIOS[nombre].prefijo}-guardar`);
@@ -2838,6 +2914,10 @@ async function guardarLicencia(nombre) {
       ? await API.pedirJson('PUT', `/mi-espacio/licencias/${encodeURIComponent(formulario.fila.id)}`, cuerpo)
       : await API.pedirJson('POST', '/mi-espacio/licencias', cuerpo);
     formulario.guardando = false;
+    if (nombre === 'licencia') {
+      pasarAlSegundoPaso(formulario, respuesta);
+      return;
+    }
     cerrarModal(FORMULARIOS[nombre].modal);
     avisarLaRespuesta(respuesta);
     volverAPedirTodo();
@@ -2850,6 +2930,100 @@ async function guardarLicencia(nombre) {
   } finally {
     if (pagina.formulario === formulario) boton.disabled = formulario.esperando;
   }
+}
+
+// ---- El segundo paso de «Cargar licencia» (spec 2026-10-27-mi-espacio-licencia-word, 6) ----
+
+/**
+ * Guardada una licencia (POST o PUT, 2xx), el modal no se cierra: pasa al segundo paso (mostrarSegundoPaso), con la licencia
+ * guardada, la nota a la vista y «Descargar Word». Antes de recargar se guarda adónde va el foco al cerrar: el respaldo del botón
+ * que abrió el modal, como después de cualquier guardado (volverAPedirTodo lo calcula con el foco, que acá queda en el modal, y la
+ * recarga reemplaza ese botón). La página vuelve a pedir todo de fondo (así la lista de atrás ya la muestra) y el formulario
+ * termina: su cálculo, la persona a cargo y sus temporizadores ya no siguen. Al cerrar el modal (Escape, la × o «Listo»), el
+ * segundo paso se va, el foco que quedó en el modal se suelta y, cuando termina la recarga, va al respaldo (si el botón que lo abrió
+ * sigue ahí, cerrarModal se lo da mientras tanto)
+ */
+function pasarAlSegundoPaso(formulario, respuesta) {
+  const { modal } = FORMULARIOS.licencia;
+  const sesion = pagina.modales.find((una) => una.id === modal) ?? null;
+  const respaldo = respaldoDelFoco(sesion?.volverA ?? null);
+  const recarga = volverAPedirTodo();
+  mostrarSegundoPaso({
+    id: respuesta?.data?.id ?? formulario.fila?.id ?? null, corregida: Boolean(formulario.fila), avisos: respuesta?.avisos ?? []
+  });
+  cerrarFormulario();
+  if (sesion === null) return;
+  sesion.alCerrar = () => {
+    soltarElFocoDe(modal);
+    quitarSegundoPaso();
+    const aplicar = () => devolverElFoco(respaldo);
+    recarga.then(aplicar, aplicar);
+  };
+}
+
+// El foco que quedó dentro de un modal que se cierra se suelta (queda en <body>): así devolverElFoco lo lleva al respaldo
+function soltarElFocoDe(id) {
+  const activo = document.activeElement;
+  if (activo && activo !== document.body && porId(id)?.contains?.(activo)) activo.blur?.();
+}
+
+/**
+ * Muestra el segundo paso de la licencia `id` en lugar del formulario: el título («Licencia cargada» o «Licencia corregida»), el
+ * cuerpo (los avisos del guardado y «Armando la nota…», hasta que llega GET …/nota) y el pie («Listo» y «Descargar Word»). El
+ * foco va a «Descargar Word» y #me-anuncio dice lo que se guardó, con los avisos (no hay aviso flotante: lo dice el título)
+ */
+function mostrarSegundoPaso({ id, corregida, avisos }) {
+  pagina.segundoPaso = { id, corregida: corregida === true, avisos: avisosDelGuardado(avisos) };
+  const pedido = ++pagina.pedidos.nota;
+  porId('modal-licencia-titulo').textContent = tituloDelSegundoPaso(pagina.segundoPaso.corregida);
+  porId('ml-cuerpo').hidden = true;
+  porId('ml-pie-del-formulario').hidden = true;
+  const cuerpo = porId('ml-paso-dos');
+  cuerpo.innerHTML = htmlDelSegundoPasoEnEspera(pagina.segundoPaso.avisos);
+  cuerpo.hidden = false;
+  cuerpo.scrollTop = 0;
+  porId('ml-paso-dos-pie').hidden = false;
+  porId('ml-descargar-word').focus?.();
+  anunciar(anuncioDelSegundoPaso(pagina.segundoPaso.corregida, pagina.segundoPaso.avisos));
+  pedirLaNotaDelSegundoPaso(id, pedido);
+}
+
+// GET …/nota: con la respuesta, la licencia y la hoja (htmlDelSegundoPaso); si no llega (o llega sin hoja), MENSAJE_SIN_VISTA,
+// también anunciado: la licencia ya se guardó y «Descargar Word» sigue andando. Con un 401, al login. Una respuesta de otro segundo
+// paso, o que llega con el modal cerrado (`pedido` ya no es el último), no toca nada
+async function pedirLaNotaDelSegundoPaso(id, pedido) {
+  let data = null;
+  let falla = null;
+  try {
+    ({ data } = await API.pedirJson('GET', `/mi-espacio/licencias/${encodeURIComponent(id)}/nota`));
+  } catch (error) {
+    falla = error ?? new Error('');
+  }
+  if (pedido !== pagina.pedidos.nota || pagina.segundoPaso === null) return;
+  if (falla?.status === 401) {
+    irAlLogin();
+    return;
+  }
+  const { avisos } = pagina.segundoPaso;
+  if (falla === null && esObjeto(data) && conTexto(data.html)) {
+    porId('ml-paso-dos').innerHTML = htmlDelSegundoPaso({ fila: data.fila, html: data.html, aclaracion: data.aclaracion, avisos });
+    return;
+  }
+  porId('ml-paso-dos').innerHTML = htmlDelSegundoPasoSinVista(avisos);
+  anunciar(MENSAJE_SIN_VISTA);
+}
+
+// Al cerrar el modal: el segundo paso se va (una respuesta de GET …/nota que llegue después se descarta) y vuelven el cuerpo y el
+// pie del formulario, para la próxima vez que se abra
+function quitarSegundoPaso() {
+  pagina.pedidos.nota += 1;
+  pagina.segundoPaso = null;
+  const cuerpo = porId('ml-paso-dos');
+  cuerpo.hidden = true;
+  cuerpo.innerHTML = '';
+  porId('ml-paso-dos-pie').hidden = true;
+  porId('ml-cuerpo').hidden = false;
+  porId('ml-pie-del-formulario').hidden = false;
 }
 
 // «Borrar»: la confirmación, sobre el formulario
