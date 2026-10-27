@@ -326,7 +326,8 @@ const tiposDe = (panel, tanques) => TIPOS_POR_MODALIDAD[panel.modalidad]
 /**
  * El Resumen «Niveles» (spec, secciones 3.9 y 8), todo lo de `GET /api/mi-espacio/resumen`. Recibe `{ persona, estado,
  * calculo, hoy, feriados, hoyYManana }`: `persona` es `{ id, nombre_completo, rol, vinculo }`, `calculo` el de `calcular`
- * con ese hoy y esos feriados, y `hoyYManana` lo que arma quien lo llama (`{ ausentes, proximo_feriado }`), que va tal cual.
+ * con ese hoy y esos feriados, y `hoyYManana` lo que arma quien lo llama (`{ ausentes_hoy, ausentes_manana, proximo_feriado }`),
+ * que va tal cual.
  * Devuelve `{ modalidad: { clave, texto } | null, anio, al_texto, mensaje, abrir_saldos, persona: { nombre, ve_companeros,
  * audita, es_superadmin }, marca, vence_pronto, faltantes, tanques: { vacaciones, otros } | null, pastillas, extraordinaria,
  * tipos, hoy_y_manana }`:
@@ -360,7 +361,7 @@ export const resumenDe = (entrada) => {
     pastillas: null,
     extraordinaria: null,
     tipos: [],
-    hoy_y_manana: esObjeto(hoyYManana) ? { ...hoyYManana } : { ausentes: [], proximo_feriado: null }
+    hoy_y_manana: esObjeto(hoyYManana) ? { ...hoyYManana } : { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null }
   };
   if (modalidad === null) return { ...resumen, mensaje: MENSAJES_MI_ESPACIO.sinModalidad };
   if (!esFechaIso(datos.arranque)) return { ...resumen, mensaje: MENSAJES_MI_ESPACIO.sinArranque, abrir_saldos: true };

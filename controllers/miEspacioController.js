@@ -16,7 +16,7 @@ import pool from '../config/database.js';
 import { hoyArgentina, sumarDias, diasEntre, esFechaIso } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, anioVigente, camposDelSaldoInicial, textoDeLasMitades, evaluarLicencia,
-  validarHorasExtras, validarAnio, validarSaldoInicial, modalidadDe, ausenciasUnidas, ausentesDelRango
+  validarHorasExtras, validarAnio, validarSaldoInicial, modalidadDe, ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana
 } from '../services/miEspacioReglas.js';
 import { resumenDe, filasDeLicencias, tablaDeHorasExtras, proximoFeriadoDe } from '../services/miEspacioResumen.js';
 import {
@@ -59,14 +59,15 @@ const responder = async (res, mensaje, operacion) => {
   }
 };
 
-// GET /api/mi-espacio/resumen: el Resumen «Niveles», ya calculado. «Hoy y mañana» lleva los compañeros que no están hoy o
-// mañana (`ausentesPara`: a quien no es de administración, ninguno) y el próximo feriado, con las mismas filas de los
-// feriados del cálculo (sin leerlas otra vez)
+// GET /api/mi-espacio/resumen: el Resumen «Niveles», ya calculado. «Hoy y mañana» lleva los compañeros que no están hoy y, aparte,
+// los que empiezan mañana (`ausentesPara` de hoy a mañana, en dos grupos con `ausentesDeHoyYManana`: decisión del usuario,
+// 27/10/2026; a quien no es de administración, ninguno) y el próximo feriado, con las mismas filas de los feriados del cálculo (sin
+// leerlas otra vez)
 export const verResumen = (req, res) => responder(res, 'Error al obtener el Resumen', async () => {
   const hoy = hoyArgentina();
   const { persona, estado, feriados, filasFeriados, calculo } = await contextoDe(req.user.userId, hoy);
   const { ausentes } = await ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados });
-  const hoyYManana = { ausentes, proximo_feriado: proximoFeriadoDe(filasFeriados, hoy) };
+  const hoyYManana = { ...ausentesDeHoyYManana(ausentes, hoy), proximo_feriado: proximoFeriadoDe(filasFeriados, hoy) };
   return conDatos(resumenDe({ persona, estado, calculo, hoy, feriados, hoyYManana }));
 });
 

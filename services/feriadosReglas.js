@@ -13,8 +13,9 @@
  * - Para la API de los feriados y la pestaña Feriados de Configuración: los tipos y sus nombres, los mensajes, la validación
  *   de un feriado (`validarFeriado`, y `errorDeLaCorreccion` en una corrección), de «no rige» (`validarRige`) y de la baja
  *   desde un año (`bajaDesde`), la lista de un año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`), los
- *   años del selector (`aniosDelSelector`) y las fechas en que rige uno en un rango de años (`fechasDelFeriado`: con ellas se
- *   cuentan las licencias de Mi espacio que lo incluyen). Los textos son planos: escaparlos le toca a quien los dibuja.
+ *   años del selector (`aniosDelSelector`), las fechas en que rige uno en un rango de años (`fechasDelFeriado`) y, de ellas, las
+ *   que cambian un día hábil (`fechasQueCambianDiasHabiles`: con esas se cuentan las licencias de Mi espacio que lo incluyen).
+ *   Los textos son planos: escaparlos le toca a quien los dibuja.
  * `FERIADOS_FIJOS` es un array que se puede modificar: acá nunca se le escribe y se recorre una copia.
  *
  * Una fila es la de `services/feriadosDatos.js`: `{ id, fecha, nombre, tipo, trasladado_de, se_repite, hasta_anio, activo,
@@ -147,8 +148,9 @@ export const fechaEnElAnio = (fila, anio) => {
 /**
  * Las fechas en que rige la fila de desdeAnio a hastaAnio (los dos incluidos, enteros), de la más vieja a la más nueva:
  * `fechaEnElAnio` de cada año del rango, sin los null. Para contar las licencias de Mi espacio que incluye un feriado: uno que
- * se repite cuenta todos los años en que rige (decisión del usuario, 26/10/2026). Uno que no se repite da solo su fecha, si cae
- * en el rango. Con una fila o un rango que no sirven, []. Solo recorre los años que existen (de 1 a 9999).
+ * se repite cuenta todos los años en que rige (decisión del usuario, 26/10/2026), y de ellas solo las que cambian un día hábil
+ * (`fechasQueCambianDiasHabiles`). Uno que no se repite da solo su fecha, si cae en el rango. Con una fila o un rango que no
+ * sirven, []. Solo recorre los años que existen (de 1 a 9999).
  */
 export const fechasDelFeriado = (fila, desdeAnio, hastaAnio) => {
   if (!Number.isInteger(desdeAnio) || !Number.isInteger(hastaAnio)) return [];
@@ -182,6 +184,21 @@ export const feriadosDelRango = (filas, desde, hasta) => {
 // (esDiaHabil da true); un segundo parámetro que no es un Set no saca ningún día.
 export const esDiaHabilCon = (fecha, feriados) =>
   esFechaIso(fecha) && esDiaHabil(fecha) && !(feriados instanceof Set && feriados.has(fecha));
+
+/**
+ * Las fechas de `fechasDelFeriado(fila, desdeAnio, hastaAnio)` en que el feriado cambia de verdad un día hábil (decisión del
+ * usuario, 27/10/2026: el modal cuenta solo las licencias de Mi espacio en las que cambia algo): las que sin él serían un día
+ * hábil, o sea, que no caen sábado ni domingo, no son uno de los 9 fijos y ningún feriado de `otrasFilas` rige ese día
+ * (`feriadosDelRango`: uno dado de baja o un año que no rige no cuenta). Uno que se repite, cada año por separado: el 13/12 es
+ * domingo en 2026 y lunes en 2027. `otrasFilas` va sin la fila misma (la que se corrige: la saca quien llama); una que no es una
+ * lista no saca ningún día.
+ */
+export const fechasQueCambianDiasHabiles = (fila, desdeAnio, hastaAnio, otrasFilas) => {
+  const fechas = fechasDelFeriado(fila, desdeAnio, hastaAnio);
+  if (fechas.length === 0) return [];
+  const otros = feriadosDelRango(otrasFilas, fechas[0], fechas.at(-1));
+  return fechas.filter((fecha) => esDiaHabilCon(fecha, otros));
+};
 
 // Los días hábiles de desde a hasta, los dos incluidos (diasHabilesTranscurridos no cuenta el primero). [] si hasta es
 // anterior a desde o alguna no es una fecha.

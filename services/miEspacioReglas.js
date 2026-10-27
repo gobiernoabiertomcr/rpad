@@ -23,9 +23,9 @@
  * (`faltantesDe`, 3.10) y la evaluación de una carga (`evaluarLicencia`: una carga nueva que no cierra no se guarda). Y el
  * paso de las ausencias de día entero a Configuración → Licencias (sección 6): qué se hace al cargar, corregir y borrar, y
  * lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`, `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`). Por
- * último, lo que ven los compañeros, «Hoy no están» (sección 7: `ausenciasUnidas` y `ausentesDelRango`, sin el tipo), y lo
- * que dice el email de vencimiento (sección 9: `avisosDeVencimiento`). Los textos son planos: escaparlos le toca a quien los
- * dibuja.
+ * último, lo que ven los compañeros, «Hoy no están» (sección 7: `ausenciasUnidas` y `ausentesDelRango`, sin el tipo, y los dos
+ * grupos de «Hoy y mañana», `ausentesDeHoyYManana`), y lo que dice el email de vencimiento (sección 9: `avisosDeVencimiento`).
+ * Los textos son planos: escaparlos le toca a quien los dibuja.
  */
 import {
   diasHabilesDe, ultimoDiaHabilDelMesCon, proximoDiaHabilCon, restarDiasHabilesCon, diaDeLaSemana
@@ -1672,6 +1672,26 @@ export const ausentesDelRango = (unidas, desde, hasta) => {
         vuelve_texto: textoDeLaVuelta(vuelve)
       };
     });
+};
+
+/**
+ * «Hoy y mañana» del Resumen, en dos grupos (decisión del usuario, 27/10/2026): de `ausentes` (los de `ausentesDelRango` de hoy
+ * a mañana), `{ ausentes_hoy, ausentes_manana }`. En hoy, los que hoy no están (desde <= hoy <= hasta), con su vuelta; en
+ * mañana, los que empiezan mañana (el día siguiente corrido) y hoy están. Quien falta hoy y mañana va solo en hoy. Cada uno con
+ * las seis claves de `ausentesDelRango`, en el orden recibido: nunca el tipo, la nota ni un id. Sin un hoy válido, los dos vacíos.
+ */
+export const ausentesDeHoyYManana = (ausentes, hoy) => {
+  const grupos = { ausentes_hoy: [], ausentes_manana: [] };
+  if (!esFechaIso(hoy)) return grupos;
+  const manana = sumarDias(hoy, 1);
+  for (const ausente of listaDe(ausentes)) {
+    if (!conFechas(ausente)) continue;
+    const { nombre, desde, hasta, vuelve, texto, vuelve_texto: vuelveTexto } = ausente;
+    const delGrupo = { nombre, desde, hasta, vuelve, texto, vuelve_texto: vuelveTexto };
+    if (desde <= hoy && hoy <= hasta) grupos.ausentes_hoy.push(delGrupo);
+    else if (desde === manana) grupos.ausentes_manana.push(delGrupo);
+  }
+  return grupos;
 };
 
 // El email de vencimiento (spec, sección 9): el franco o las horas a favor del mes de hoy se avisan desde 5 días hábiles antes

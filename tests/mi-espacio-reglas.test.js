@@ -22,7 +22,7 @@ import {
   TEXTO_ANTES_DEL_ARRANQUE, camposDelSaldoInicial, validarSaldoInicial, validarAnio, fueraDeLaModalidad, calcular,
   faltantesDe, problemaDeLaCarga, evaluarLicencia,
   vinculoDe, textoDelVinculo, limiteParaCambiarTipo, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja, vinculosDeLaLista,
-  pasoPrevistoDe, ausenciasUnidas, textoNoEsta, textoDeLaVuelta, ausentesDelRango, avisosDeVencimiento
+  pasoPrevistoDe, ausenciasUnidas, textoNoEsta, textoDeLaVuelta, ausentesDelRango, ausentesDeHoyYManana, avisosDeVencimiento
 } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
@@ -2471,6 +2471,52 @@ describe('«Hoy no están»', () => {
     assert.deepEqual(ausentesDelRango(unidas, '2026-10-30', '2026-10-28'), []);
   });
 
+  // Decisión del usuario (27/10/2026): «Hoy no están» y «Mañana no están», por separado
+  it('ausentesDeHoyYManana: en hoy, los que ya empezaron (también de hoy a pasado mañana); en mañana, los que empiezan mañana',
+    () => {
+      // Hoy es el lunes 26/10/2026 y mañana, el martes 27/10
+      const unidas = [
+        unida(7, 'Laura Gómez', '2026-10-21', '2026-10-26', '2026-10-27'),
+        unida(9, 'Martín Ríos', '2026-10-26', '2026-10-28', '2026-10-29'),
+        unida(3, 'Diego Fernández', '2026-10-27', '2026-10-27', '2026-10-28'),
+        unida(4, 'Carla Benítez', '2026-10-27', '2026-11-03', '2026-11-04')
+      ];
+      const ausentes = ausentesDelRango(unidas, '2026-10-26', '2026-10-27');
+      const grupos = ausentesDeHoyYManana(ausentes, '2026-10-26');
+      assert.deepEqual(Object.keys(grupos), ['ausentes_hoy', 'ausentes_manana']);
+      assert.deepEqual(grupos.ausentes_hoy, [ausentes[0], ausentes[1]]);
+      assert.deepEqual(grupos.ausentes_manana, [ausentes[2], ausentes[3]]);
+      // Cada uno con las seis claves de siempre, en su orden
+      for (const ausente of [...grupos.ausentes_hoy, ...grupos.ausentes_manana]) {
+        assert.deepEqual(Object.keys(ausente), ['nombre', 'desde', 'hasta', 'vuelve', 'texto', 'vuelve_texto']);
+      }
+      // Quien falta hoy y mañana va solo en hoy, con su vuelta
+      assert.deepEqual(grupos.ausentes_hoy.map((ausente) => [ausente.nombre, ausente.vuelve_texto]),
+        [['Laura Gómez', 'Vuelve el martes 27/10'], ['Martín Ríos', 'Vuelve el jueves 29/10']]);
+    });
+
+  it('ausentesDeHoyYManana: lo que no toca hoy ni mañana no va; tampoco el tipo ni la nota; mañana es el día siguiente corrido',
+    () => {
+      const ausente = (desde, hasta, extra = {}) => ({
+        nombre: 'Laura Gómez', desde, hasta, vuelve: null, texto: 'Laura Gómez no está', vuelve_texto: null, ...extra
+      });
+      const lista = [ausente('2026-10-20', '2026-10-23'), ausente('2026-10-28', '2026-10-28'), ausente('2026-10-27', '2026-10-26'),
+        ausente('2026-02-30', '2026-10-27'), null, 'x', ausente('2026-10-26', '2026-10-26', { tipo: 'medica', nota: 'Turno', id: 4 })];
+      assert.deepEqual(ausentesDeHoyYManana(lista, '2026-10-26'),
+        { ausentes_hoy: [ausente('2026-10-26', '2026-10-26')], ausentes_manana: [] });
+      // Un viernes: mañana es el sábado
+      assert.deepEqual(ausentesDeHoyYManana([ausente('2026-10-31', '2026-11-02')], '2026-10-30'),
+        { ausentes_hoy: [], ausentes_manana: [ausente('2026-10-31', '2026-11-02')] });
+    });
+
+  it('ausentesDeHoyYManana: sin un hoy válido o sin una lista, los dos grupos vacíos', () => {
+    for (const raro of [undefined, null, '', 'x', 0, {}, '2026-02-30']) {
+      assert.deepEqual(ausentesDeHoyYManana([{ nombre: 'Laura Gómez', desde: '2026-10-26', hasta: '2026-10-26' }], raro),
+        { ausentes_hoy: [], ausentes_manana: [] }, String(raro));
+      assert.deepEqual(ausentesDeHoyYManana(raro, '2026-10-26'), { ausentes_hoy: [], ausentes_manana: [] }, String(raro));
+    }
+  });
+
   it('nada tira', () => {
     const raros = [undefined, null, '', 'x', 0, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
     for (const valor of raros) {
@@ -2482,6 +2528,9 @@ describe('«Hoy no están»', () => {
         textoDeLaVuelta(valor);
         ausentesDelRango(valor, valor, valor);
         ausentesDelRango([valor, unida(7, valor, '2026-10-26', '2026-10-26', valor)], '2026-10-26', '2026-10-26');
+        ausentesDeHoyYManana(valor, valor);
+        ausentesDeHoyYManana([valor, unida(7, valor, '2026-10-26', '2026-10-26', valor)], '2026-10-26');
+        ausentesDeHoyYManana([unida(7, 'Laura Gómez', '9999-12-31', '9999-12-31', null)], '9999-12-31');
       }, String(valor));
     }
     assert.deepEqual(ausenciasUnidas(null, null), []);

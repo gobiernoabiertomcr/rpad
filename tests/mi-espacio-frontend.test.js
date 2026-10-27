@@ -12,7 +12,8 @@ import fs from 'fs';
 import vm from 'vm';
 import { filasDeLicencias, tablaDeHorasExtras, resumenDe, proximoFeriadoDe } from '../services/miEspacioResumen.js';
 import {
-  calcular, vinculosDeLaLista, MENSAJES_MI_ESPACIO, ausenciasUnidas, ausentesDelRango, DIAS_VACACIONES, DIAS_ESTUDIOS,
+  calcular, vinculosDeLaLista, MENSAJES_MI_ESPACIO, ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, DIAS_VACACIONES,
+  DIAS_ESTUDIOS,
   DIAS_POR_EXAMEN, JORNADA, LARGO_NOTA, horasDe as horasDelServidor, camposDelSaldoInicial, validarSaldoInicial, textoSaldo,
   textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaSinDias
 } from '../services/miEspacioReglas.js';
@@ -59,17 +60,20 @@ const horasDe = (caso, { estado = caso.estado, anio = 2026 } = {}) =>
 const SIN_MODALIDAD = Object.freeze({ modalidad: null, mensaje: MENSAJES_MI_ESPACIO.sinModalidad });
 
 // «Hoy y mañana» como lo arma el controlador: las ausencias unidas de los compañeros entre hoy y mañana (a quien no es de
-// administración, ninguna: se pasan solo cuando hacen falta) y el próximo feriado, el de la maqueta
+// administración, ninguna: se pasan solo cuando hacen falta), en dos grupos (los que no están hoy y los que empiezan mañana), y el
+// próximo feriado, el de la maqueta
 const MANANA = '2026-10-27';
 const FERIADO_SOBERANIA = Object.freeze({
   id: 1, fecha: '2026-11-23', nombre: 'Día de la Soberanía Nacional', tipo: 'nacional', trasladado_de: null,
   se_repite: 0, hasta_anio: null, activo: 1, no_rige: []
 });
 const AUSENCIA_DE_MARTIN = Object.freeze({ usuario_id: 3, nombre: 'Martín Ríos', desde: '2026-10-26', hasta: '2026-10-30' });
+// Empieza mañana: va en «Mañana no están»
+const AUSENCIA_DE_DIEGO = Object.freeze({ usuario_id: 4, nombre: 'Diego Fernández', desde: MANANA, hasta: MANANA });
 const resumenDel = (caso, { estado = caso.estado, persona = caso.persona, ausencias = [] } = {}) => comoLlega(resumenDe({
   persona, estado, calculo: calculoDe(estado), hoy: HOY, feriados: SIN_FERIADOS,
   hoyYManana: {
-    ausentes: ausentesDelRango(ausenciasUnidas(ausencias, SIN_FERIADOS), HOY, MANANA),
+    ...ausentesDeHoyYManana(ausentesDelRango(ausenciasUnidas(ausencias, SIN_FERIADOS), HOY, MANANA), HOY),
     proximo_feriado: proximoFeriadoDe([FERIADO_SOBERANIA], HOY)
   }
 }));
@@ -100,6 +104,8 @@ const filasDeTablaDe = (html) => [...(html.match(/<tbody>([\s\S]*?)<\/tbody>/)?.
   }));
 
 const MALICIOSO = '<img src=x onerror=alert(1)>';
+// Lo que dice la página cuando un pedido no llega al servidor
+const MENSAJE_SIN_CONEXION = 'No se pudo conectar con el servidor. Probá de nuevo en unos minutos.';
 const ESCAPADO = '&lt;img src=x onerror=alert(1)&gt;';
 
 describe('mi-espacio.js: al cargarse', () => {
@@ -346,35 +352,62 @@ describe('el Resumen «Niveles»', () => {
     assert.equal(M.htmlDelResumen(planta).includes('me-aviso-ambar'), false);
   });
 
-  it('Hoy y mañana: los compañeros que no están, con su vuelta, y el próximo feriado «Lunes 23/11»', () => {
+  it('Hoy y mañana: los compañeros que no están hoy, con su vuelta, y el próximo feriado «Lunes 23/11»', () => {
     const html = M.htmlDeHoyYManana(planta.hoy_y_manana, planta.persona.ve_companeros);
     assert.match(html, /^<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 class="me-titulo" id="me-hoy-titulo">Hoy y mañana<\/h2>/);
-    assert.equal(textoDe(html), 'Hoy y mañana No están MR Martín Ríos no está Vuelve el lunes 02/11 Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
+    assert.equal(textoDe(html), 'Hoy y mañana Hoy no están MR Martín Ríos no está Vuelve el lunes 02/11 Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
     // Las iniciales son decorativas
     assert.ok(html.includes('<span class="me-inicial" aria-hidden="true">MR</span>'));
     assert.ok(html.includes('<p class="me-feriado"><b>Lunes 23/11</b>Día de la Soberanía Nacional</p>'));
   });
 
+  // Decisión del usuario (27/10/2026): «Hoy no están» y «Mañana no están», por separado y en ese orden, antes del feriado
+  it('Hoy y mañana: «Hoy no están» y, aparte, «Mañana no están», cada uno con su título, antes del próximo feriado', () => {
+    const resumen = resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_DIEGO, AUSENCIA_DE_MARTIN] });
+    const html = M.htmlDeHoyYManana(resumen.hoy_y_manana, true);
+    assert.equal(textoDe(html), 'Hoy y mañana Hoy no están MR Martín Ríos no está Vuelve el lunes 02/11 '
+      + 'Mañana no están DF Diego Fernández no está Vuelve el miércoles 28/10 Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
+    assert.deepEqual([...html.matchAll(/<h3 class="me-subtitulo">([^<]*)<\/h3>/g)].map(([, titulo]) => titulo),
+      ['Hoy no están', 'Mañana no están', 'Próximo feriado']);
+    assert.equal([...html.matchAll(/<ul class="me-ausentes">/g)].length, 2);
+    // Un grupo vacío no aparece: con solo el de mañana, sin «Hoy no están»
+    const soloManana = M.htmlDeHoyYManana(resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_DIEGO] }).hoy_y_manana, true);
+    assert.equal(textoDe(soloManana), 'Hoy y mañana Mañana no están DF Diego Fernández no está Vuelve el miércoles 28/10 '
+      + 'Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
+  });
+
   // Review Focus 5
-  it('Hoy y mañana: un ausente con HTML en el nombre se ve escapado', () => {
-    const resumen = resumenDel(PLANTA, { ausencias: [{ ...AUSENCIA_DE_MARTIN, nombre: '<b>x</b>' }] });
+  it('Hoy y mañana: un ausente con HTML en el nombre se ve escapado, en los dos grupos', () => {
+    const resumen = resumenDel(PLANTA, {
+      ausencias: [{ ...AUSENCIA_DE_MARTIN, nombre: '<b>x</b>' }, { ...AUSENCIA_DE_DIEGO, nombre: MALICIOSO }]
+    });
     const html = M.htmlDeHoyYManana(resumen.hoy_y_manana, true);
     assert.ok(!html.includes('<b>x</b>'));
+    assert.ok(!html.includes('<img'));
     assert.ok(html.includes('<b>&lt;b&gt;x&lt;/b&gt; no está</b>'));
+    assert.ok(html.includes(`<b>${ESCAPADO} no está</b>`));
     assert.ok(M.htmlDelResumen(resumen).includes('&lt;b&gt;x&lt;/b&gt; no está'));
   });
 
-  it('Hoy y mañana: quien no ve a sus compañeros no tiene «No están»; sin ausentes, tampoco; sin feriado, no va', () => {
+  it('Hoy y mañana: quien no ve a sus compañeros no tiene los grupos; sin ausentes, tampoco; sin nada, no hay sección', () => {
+    const conLosDos = resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_DIEGO, AUSENCIA_DE_MARTIN] }).hoy_y_manana;
     const lectora = M.htmlDeHoyYManana(contrato.hoy_y_manana, contrato.persona.ve_companeros);
     assert.equal(textoDe(lectora), 'Hoy y mañana Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
+    assert.equal(textoDe(M.htmlDeHoyYManana(conLosDos, false)), 'Hoy y mañana Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
     // Solo el true literal
-    assert.ok(!M.htmlDeHoyYManana(planta.hoy_y_manana, 'true').includes('No están'));
-    // Sin nadie que no esté, el bloque «No están» no aparece (como «Vence pronto» vacío): solo se ven los de administración que
-    // eligieron mostrarse, así que «están todos» podría no ser cierto
-    const sinAusentes = M.htmlDeHoyYManana({ ausentes: [], proximo_feriado: null }, true);
-    assert.equal(textoDe(sinAusentes), 'Hoy y mañana');
-    assert.ok(!M.htmlDeHoyYManana({ ausentes: [], proximo_feriado: planta.hoy_y_manana.proximo_feriado }, true).includes('No están'));
-    assert.doesNotThrow(() => M.htmlDeHoyYManana(undefined, true));
+    assert.ok(!M.htmlDeHoyYManana(conLosDos, 'true').includes('no están'));
+    // Sin nadie que no esté, los grupos no aparecen (como «Vence pronto» vacío): solo se ven los de administración que eligieron
+    // mostrarse, así que «están todos» podría no ser cierto
+    const soloElFeriado = { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: planta.hoy_y_manana.proximo_feriado };
+    assert.equal(textoDe(M.htmlDeHoyYManana(soloElFeriado, true)), 'Hoy y mañana Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
+    // Sin ausentes y sin próximo feriado, la sección no se dibuja
+    assert.equal(M.htmlDeHoyYManana({ ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null }, true), '');
+    assert.equal(M.htmlDeHoyYManana(conLosDos, false).includes('me-ausentes'), false);
+    assert.equal(M.htmlDeHoyYManana({ ...conLosDos, proximo_feriado: null }, false), '');
+    for (const raro of [undefined, null, 'x', {}]) assert.equal(M.htmlDeHoyYManana(raro, true), '', String(raro));
+    const sinHoyYManana = M.htmlDelResumen({ ...planta, hoy_y_manana: { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null } });
+    assert.equal(sinHoyYManana.includes('me-hoy'), false);
+    assert.ok(sinHoyYManana.includes('Lo que te queda'));
   });
 
   it('sin modalidad, el mensaje; sin arranque, la invitación a «Mis vacaciones y saldos»', () => {
@@ -889,7 +922,9 @@ const RESPUESTAS_DE_ENTRADA = (metodo, ruta) => {
 const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, auditor = false } = {}) => {
   const { dom, documento } = crearDom();
   const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [] };
-  const temporizadores = [];
+  // Los temporizadores pendientes, por su id: un número que solo crece (un clearTimeout viejo nunca anula uno nuevo)
+  const temporizadores = new Map();
+  let ultimoTemporizador = 0;
   const ventana = {
     location: { search: '', hash, pathname: '/mi-espacio.html', href: `/mi-espacio.html${hash}` },
     history: {
@@ -914,8 +949,12 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
       clearSession: () => { estado.sesionCerrada = true; }
     },
     URLSearchParams,
-    setTimeout: (funcion, ms) => { temporizadores.push({ funcion, ms }); return temporizadores.length; },
-    clearTimeout: (id) => { if (temporizadores[id - 1]) temporizadores[id - 1].funcion = null; },
+    setTimeout: (funcion, ms) => {
+      ultimoTemporizador += 1;
+      temporizadores.set(ultimoTemporizador, { funcion, ms });
+      return ultimoTemporizador;
+    },
+    clearTimeout: (id) => { temporizadores.delete(id); },
     fetch: async (url, opciones = {}) => {
       const metodo = opciones.method ?? 'GET';
       const cuerpo = opciones.body === undefined ? undefined : JSON.parse(opciones.body);
@@ -934,7 +973,13 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
   const pedidosA = (metodo, ruta) => estado.pedidos.filter((p) => p.metodo === metodo && p.ruta === ruta);
   // Corre los temporizadores que hay (los que se programan mientras, en la próxima vuelta) y espera lo que pidan
   const correr = async () => {
-    for (const temporizador of temporizadores.splice(0)) temporizador.funcion?.();
+    for (const id of [...temporizadores.keys()]) {
+      // Uno que otro anuló mientras tanto ya no está
+      const temporizador = temporizadores.get(id);
+      if (!temporizador) continue;
+      temporizadores.delete(id);
+      temporizador.funcion();
+    }
     await esperar();
   };
   const iniciar = async () => { await contexto.iniciarMiEspacio(); await esperar(); };
@@ -1475,6 +1520,11 @@ describe('los formularios: lo puro', () => {
     ]);
     // Sin nadie elegido, el efecto sin persona autorizada; una médica, solo los avisos del servidor (con el de sin persona a cargo)
     assert.ok(textoDe(M.htmlDelPaso(paso, { ...opciones, autorizado: null })).includes('Sin persona autorizada'));
+    // Sin saber quién queda a cargo (conEfecto: false), el efecto no va: ni con nadie ni con una persona
+    for (const autorizado of [null, 'Martín Ríos']) {
+      assert.deepEqual([...M.htmlDelPaso(paso, { ...opciones, autorizado, conEfecto: false }).matchAll(/<p>([\s\S]*?)<\/p>/g)]
+        .map(([, texto]) => texto), [AVISO_DEL_PASO], String(autorizado));
+    }
     const medica = respuestaDelCalculo(MEDICA, { soyTitular: true }).paso;
     assert.deepEqual([...M.htmlDelPaso(medica, opciones).matchAll(/<p>([\s\S]*?)<\/p>/g)].map(([, texto]) => texto),
       [AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO]);
@@ -1556,6 +1606,26 @@ const cargarLicencia = async (pagina, { tipo = 'vacaciones', desde = VACACIONES.
   await pagina.correr();
 };
 const calculos = (pagina) => pagina.pedidosA('POST', '/api/mi-espacio/licencias/calculo');
+// La persona de planta sin el saldo inicial: «Mis vacaciones y saldos» se abre solo, con lo que mandan GET /anio y GET /saldo-inicial;
+// `extra`, como en conFormularios
+const conSaldosParaArrancar = ({ extra = () => undefined } = {}) => {
+  const resumen = resumenDel(PLANTA, { estado: { ...PLANTA.estado, arranque: null, anios: [], saldos: [] } });
+  const campos = camposDelSaldoInicial({ modalidad: 'planta', arranque: HOY, anios: [] }).map((campo) => ({ ...campo, valor: null }));
+  const anio = {
+    anio: 2026, dias_vacaciones: null, estudios: null, heredado: false, texto_mitades: null,
+    textos_mitades: Object.fromEntries(DIAS_VACACIONES.map((dias) => [String(dias), textoDeLasMitades(2026, dias)]))
+  };
+  return conFormularios({
+    extra: (metodo, ruta, cuerpo) => {
+      const propia = extra(metodo, ruta, cuerpo);
+      if (propia !== undefined) return propia;
+      if (ruta === '/api/mi-espacio/resumen') return ok(resumen);
+      if (metodo === 'GET' && ruta === '/api/mi-espacio/anio/2026') return ok(anio);
+      if (metodo === 'GET' && ruta === '/api/mi-espacio/saldo-inicial') return ok({ arranque: null, modalidad: 'planta', campos });
+      return undefined;
+    }
+  });
+};
 
 describe('los formularios en la página (DOM falso)', () => {
   it('«Cargar licencia»: los tipos del Resumen, el foco al tipo y, al cerrar, de vuelta al botón', async () => {
@@ -1689,10 +1759,79 @@ describe('los formularios en la página (DOM falso)', () => {
     await pagina.tocar(pagina.el('ml-guardar'));
     assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 0);
     assert.equal(calculos(pagina).length, 0);
-    assert.equal(pagina.el('ml-tipos').getAttribute('aria-invalid'), 'true');
+    // En un grupo de opciones, aria-invalid va en sus radios: en el fieldset no vale (ARIA 1.2)
+    const radios = pagina.el('ml-tipos').querySelectorAll('input');
+    assert.ok(radios.length > 0);
+    assert.ok(radios.every((radio) => radio.getAttribute('aria-invalid') === 'true'));
+    assert.equal(pagina.el('ml-tipos').getAttribute('aria-invalid'), null);
     assert.equal(pagina.el('ml-tipos-error').textContent, MENSAJES_MI_ESPACIO.tipo);
+    assert.equal(pagina.el('ml-desde').getAttribute('aria-invalid'), 'true');
     assert.equal(pagina.el('ml-desde-error').textContent, MENSAJES_MI_ESPACIO.fecha);
     assert.equal(pagina.documento.activeElement, pagina.el('ml-tipos').querySelector('input'));
+    // Al elegir el tipo, el cálculo limpia los errores: también los de los radios
+    await pagina.elegir('ml-tipo', 'medica');
+    await pagina.correr();
+    assert.ok(radios.every((radio) => radio.getAttribute('aria-invalid') === null));
+    assert.equal(pagina.el('ml-tipos-error').hidden, true);
+  });
+
+  // Sin respuesta del servidor, API.pedirJson tira el «Failed to fetch» del navegador, sin status: nunca se muestra en inglés
+  it('sin conexión, los avisos dicen por qué en castellano: al guardar, al borrar y en el saldo inicial', async () => {
+    const sinConexion = () => { throw new TypeError('Failed to fetch'); };
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conFormularios({ extra: (metodo) => (metodo === 'PUT' || metodo === 'DELETE' ? sinConexion() : undefined) })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]'));
+    await pagina.correr();
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.el('ml-error').textContent, MENSAJE_SIN_CONEXION);
+    assert.equal(pagina.el('ml-error').hidden, false);
+    assert.equal(pagina.abierto('modal-licencia'), true);
+    await pagina.tocar(pagina.el('ml-borrar'));
+    await pagina.tocar(pagina.el('modal-confirmar-si'));
+    assert.equal(pagina.el('mc-error').textContent, MENSAJE_SIN_CONEXION);
+    assert.equal(pagina.abierto('modal-confirmar'), true);
+
+    const saldos = montarPagina({
+      responder: conSaldosParaArrancar({
+        extra: (metodo, ruta) => {
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/anio/2026') return ok({ anio: 2026 }, 'Días del año guardados.');
+          return metodo === 'PUT' ? sinConexion() : undefined;
+        }
+      })
+    });
+    await saldos.iniciar();
+    await saldos.correr();
+    await saldos.elegir('ms-dia', '20');
+    await saldos.elegir('ms-estudio', '');
+    for (const campo of saldos.el('ms-campos').querySelectorAll('input')) campo.value = '0';
+    await saldos.tocar(saldos.el('ms-guardar'));
+    assert.equal(saldos.el('ms-error').textContent, `Los días del año se guardaron, pero el saldo inicial no: ${MENSAJE_SIN_CONEXION}`);
+    assert.equal(saldos.abierto('modal-saldos'), true);
+  });
+
+  it('«Mis vacaciones y saldos»: los errores de los días y de los estudios van en sus radios, que los describen', async () => {
+    const pagina = montarPagina({ responder: conSaldosParaArrancar() });
+    await pagina.iniciar();
+    await pagina.correr();
+    assert.equal(pagina.abierto('modal-saldos'), true);
+    for (const [grupo, nombre] of [['ms-dias', 'ms-dia'], ['ms-estudios', 'ms-estudio']]) {
+      const radios = pagina.documento.querySelectorAll(`input[name="${nombre}"]`);
+      assert.ok(radios.length > 0, nombre);
+      assert.ok(radios.every((radio) => radio.getAttribute('aria-describedby') === `${grupo}-error`), nombre);
+    }
+    await pagina.tocar(pagina.el('ms-guardar'));
+    assert.equal(pagina.pedidosA('PUT', '/api/mi-espacio/anio/2026').length, 0);
+    for (const [grupo, nombre, mensaje] of [['ms-dias', 'ms-dia', MENSAJES_MI_ESPACIO.diasVacaciones],
+      ['ms-estudios', 'ms-estudio', MENSAJES_MI_ESPACIO.estudios]]) {
+      assert.equal(pagina.el(`${grupo}-error`).textContent, mensaje, grupo);
+      assert.equal(pagina.el(grupo).getAttribute('aria-invalid'), null, grupo);
+      assert.ok(pagina.documento.querySelectorAll(`input[name="${nombre}"]`).every((radio) => radio.getAttribute('aria-invalid') === 'true'),
+        nombre);
+    }
+    assert.equal(pagina.documento.activeElement, pagina.el('ms-dias').querySelector('input'));
   });
 
   it('la persona a cargo, solo en vacaciones: #ml-grupo-autorizado oculto en una médica y visible en unas vacaciones del titular', async () => {
@@ -1777,6 +1916,119 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.ok(!Object.hasOwn(put.cuerpo, 'autorizado_id'), 'sin cambiar la persona, no la manda');
     assert.equal(put.cuerpo.hasta, '2026-11-19');
     assert.equal(pagina.el('me-anuncio').textContent, 'Licencia corregida.');
+  });
+
+  // Sin saber quién queda a cargo, el formulario no dice «Sin persona autorizada…»: sería falso (la persona se conserva)
+  it('la persona a cargo que ya no cumple las condiciones, elegida: el paso no dice «Sin persona autorizada»', async () => {
+    const lista = licenciasDe(PLANTA);
+    lista.licencias[0] = { ...lista.licencias[0], desde: '2026-11-16', hasta: '2026-11-20', fechas_texto: '16/11 al 20/11/2026',
+      en_configuracion: { licencia_id: 40, autorizado_id: 7 } };
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conFormularios({ soyTitular: true, extra: (metodo, ruta) => (ruta === '/api/mi-espacio/licencias' ? ok(lista) : undefined) })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]'));
+    await pagina.correr();
+    assert.equal(pagina.el('ml-grupo-autorizado').hidden, false);
+    assert.equal(pagina.el('ml-autorizado').value, '7');
+    const opcion = pagina.el('ml-autorizado').querySelectorAll('option').find((uno) => uno.getAttribute('value') === '7');
+    assert.equal(opcion.textContent, 'Otro usuario (ya no cumple las condiciones)');
+    assert.ok(pagina.el('ml-paso').textContent.includes(AVISO_DEL_PASO));
+    assert.ok(!pagina.el('ml-paso').textContent.includes('Sin persona autorizada'));
+    assert.ok(!pagina.el('ml-paso').textContent.includes('Los avisos que tocarían'));
+    // «Nadie», elegido a mano, sí lo dice; Martín Ríos, su efecto
+    await pagina.escribir('ml-autorizado', '', 'change');
+    assert.ok(pagina.el('ml-paso').textContent.includes('Sin persona autorizada'));
+    await pagina.escribir('ml-autorizado', '3', 'change');
+    assert.ok(pagina.el('ml-paso').textContent.includes('una nota que comunica la autorización a Martín Ríos'));
+  });
+
+  it('si GET /mi-espacio/firmante falla, el campo queda oculto y el paso no dice «Sin persona autorizada»', async () => {
+    const pagina = montarPagina({
+      responder: conFormularios({
+        soyTitular: true,
+        extra: (metodo, ruta) => (ruta === '/api/mi-espacio/firmante' ? respuesta(500, { success: false, error: 'Error' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await cargarLicencia(pagina);
+    assert.equal(pagina.el('ml-grupo-autorizado').hidden, true);
+    assert.ok(pagina.el('ml-paso').textContent.includes(AVISO_DEL_PASO));
+    assert.ok(!pagina.el('ml-paso').textContent.includes('Sin persona autorizada'));
+    // Y al guardar, autorizado_id no viaja
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.ok(!Object.hasOwn(pagina.pedidosA('POST', '/api/mi-espacio/licencias')[0].cuerpo, 'autorizado_id'));
+  });
+
+  // La recarga de la lista reemplaza el «Editar» que abrió el modal: el foco va a su equivalente, nunca queda en <body>
+  it('después de guardar desde la lista, el foco va al «Editar» nuevo de la misma fila', async () => {
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conFormularios({ extra: (metodo) => (metodo === 'PUT' ? ok({ id: 6 }, 'Licencia corregida.') : undefined) })
+    });
+    await pagina.iniciar();
+    const viejo = pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]');
+    viejo.focus();
+    await pagina.tocar(viejo);
+    await pagina.correr();
+    await pagina.tocar(pagina.el('ml-guardar'));
+    const nuevo = pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]');
+    assert.notEqual(nuevo, viejo, 'la lista se volvió a dibujar');
+    assert.equal(viejo.isConnected, false);
+    assert.equal(pagina.documento.activeElement, nuevo);
+  });
+
+  it('después de borrar desde la lista, el foco va al «Editar» de la fila que seguía; sin ninguna fila, al título del panel',
+    async () => {
+      const lista = licenciasDe(PLANTA);
+      let despues = { ...lista, licencias: lista.licencias.filter((fila) => fila.id !== 6) };
+      let borrada = false;
+      const pagina = montarPagina({
+        hash: '#licencias',
+        responder: conFormularios({
+          extra: (metodo, ruta) => {
+            if (metodo === 'DELETE') { borrada = true; return ok(undefined, 'Licencia borrada.'); }
+            if (ruta === '/api/mi-espacio/licencias') return ok(borrada ? despues : lista);
+            return undefined;
+          }
+        })
+      });
+      await pagina.iniciar();
+      const vista = pagina.el('vista-licencias');
+      vista.querySelector('[data-editar-licencia="6"]').focus();
+      await pagina.tocar(vista.querySelector('[data-editar-licencia="6"]'));
+      await pagina.tocar(pagina.el('ml-borrar'));
+      await pagina.tocar(pagina.el('modal-confirmar-si'));
+      assert.equal(vista.querySelector('[data-editar-licencia="6"]'), null);
+      assert.equal(pagina.documento.activeElement, vista.querySelector('[data-editar-licencia="5"]'));
+
+      // La última: sin filas ni saldo inicial, el título de la tarjeta, que recibe el foco con tabindex="-1"
+      borrada = false;
+      despues = { ...lista, licencias: [], filtros: [], saldo_inicial: null };
+      vista.querySelector('[data-editar-licencia="1"]').focus();
+      await pagina.tocar(vista.querySelector('[data-editar-licencia="1"]'));
+      await pagina.tocar(pagina.el('ml-borrar'));
+      await pagina.tocar(pagina.el('modal-confirmar-si'));
+      const titulo = vista.querySelector('h2');
+      assert.equal(titulo.textContent, 'Mis licencias de 2026');
+      assert.equal(titulo.getAttribute('tabindex'), '-1');
+      assert.equal(pagina.documento.activeElement, titulo);
+    });
+
+  it('después de guardar unas horas extras del día por día, el foco va a su «Editar» nuevo', async () => {
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: conFormularios({ extra: (metodo) => (metodo === 'PUT' ? ok({ id: 12 }, 'Horas extras corregidas.') : undefined) })
+    });
+    await pagina.iniciar();
+    const viejo = pagina.el('vista-horas').querySelector('[data-editar-horas="12"]');
+    viejo.focus();
+    await pagina.tocar(viejo);
+    await pagina.tocar(pagina.el('mh-guardar'));
+    assert.equal(pagina.abierto('modal-horas'), false);
+    assert.equal(viejo.isConnected, false);
+    assert.equal(pagina.documento.activeElement, pagina.el('vista-horas').querySelector('[data-editar-horas="12"]'));
   });
 
   it('un 404 al guardar cierra el modal, lo avisa y vuelve a pedir la pestaña', async () => {
@@ -1899,19 +2151,10 @@ describe('los formularios en la página (DOM falso)', () => {
   });
 
   it('«Mis vacaciones y saldos»: se abre solo sin el saldo inicial, guarda el año y después el saldo; si el saldo falla, queda abierto', async () => {
-    const resumen = resumenDel(PLANTA, { estado: { ...PLANTA.estado, arranque: null, anios: [], saldos: [] } });
-    const campos = camposDelSaldoInicial({ modalidad: 'planta', arranque: HOY, anios: [] }).map((campo) => ({ ...campo, valor: null }));
-    const anio = {
-      anio: 2026, dias_vacaciones: null, estudios: null, heredado: false, texto_mitades: null,
-      textos_mitades: Object.fromEntries(DIAS_VACACIONES.map((dias) => [String(dias), textoDeLasMitades(2026, dias)]))
-    };
     let saldo = respuesta(400, { success: false, error: 'Escribí un número de 0 a 30.', campo: 'vacaciones-2024' });
     const pagina = montarPagina({
-      responder: conFormularios({
+      responder: conSaldosParaArrancar({
         extra: (metodo, ruta) => {
-          if (ruta === '/api/mi-espacio/resumen') return ok(resumen);
-          if (metodo === 'GET' && ruta === '/api/mi-espacio/anio/2026') return ok(anio);
-          if (metodo === 'GET' && ruta === '/api/mi-espacio/saldo-inicial') return ok({ arranque: null, modalidad: 'planta', campos });
           if (metodo === 'PUT' && ruta === '/api/mi-espacio/anio/2026') return ok({ anio: 2026 }, 'Días del año guardados.');
           if (metodo === 'PUT' && ruta === '/api/mi-espacio/saldo-inicial') return saldo;
           return undefined;
@@ -1938,11 +2181,14 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.equal(pagina.abierto('modal-saldos'), true);
     assert.equal(pagina.el('ms-error').textContent, 'Los días del año se guardaron, pero el saldo inicial no: Escribí un número de 0 a 30.');
     assert.equal(pagina.el('ms-campo-vacaciones-2024').getAttribute('aria-invalid'), 'true');
-    // Al reintentar, sale
+    // Al reintentar, sale; el foco vuelve al botón del Resumen que lo abrió, el nuevo (el Resumen se volvió a dibujar)
     saldo = ok({ arranque: HOY }, 'Saldo inicial guardado.');
+    const delResumen = pagina.el('vista-resumen').querySelector('[data-abrir="saldos"]');
     await pagina.tocar(pagina.el('ms-guardar'));
     assert.equal(pagina.abierto('modal-saldos'), false);
     assert.equal(pagina.el('me-anuncio').textContent, 'Saldo inicial guardado.');
+    assert.equal(delResumen.isConnected, false);
+    assert.equal(pagina.documento.activeElement, pagina.el('vista-resumen').querySelector('[data-abrir="saldos"]'));
   });
 
   it('«Registrar un uso autorizado» en contrato: con las horas, de a media hora', async () => {

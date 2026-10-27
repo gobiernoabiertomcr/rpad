@@ -13,7 +13,7 @@ import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos
 
 const { calcular, MENSAJES_MI_ESPACIO } = reglas;
 
-const HOY_Y_MANANA = Object.freeze({ ausentes: [], proximo_feriado: null });
+const HOY_Y_MANANA = Object.freeze({ ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null });
 
 const calculoDe = (estado, hoy = HOY) => calcular(estado, { hoy, feriados: SIN_FERIADOS });
 
@@ -269,10 +269,13 @@ describe('el Resumen de PLANTA', () => {
   });
 
   it('«Hoy y mañana» es el que llega', () => {
-    const hoyYManana = { ausentes: [{ nombre: 'Martín Ríos' }], proximo_feriado: { fecha: '2026-11-23' } };
+    const hoyYManana = {
+      ausentes_hoy: [{ nombre: 'Martín Ríos' }], ausentes_manana: [{ nombre: 'Diego Fernández' }],
+      proximo_feriado: { fecha: '2026-11-23' }
+    };
     assert.deepEqual(resumenDel(PLANTA, { hoyYManana }).hoy_y_manana, hoyYManana);
     assert.deepEqual(resumenDe({ persona: PLANTA.persona, estado: PLANTA.estado, calculo: calculoDe(PLANTA.estado),
-      hoy: HOY, feriados: SIN_FERIADOS }).hoy_y_manana, { ausentes: [], proximo_feriado: null });
+      hoy: HOY, feriados: SIN_FERIADOS }).hoy_y_manana, { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null });
   });
 });
 

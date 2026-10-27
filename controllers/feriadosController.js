@@ -1,7 +1,7 @@
 // Feriados (spec 2026-10-26-feriados, sección 3): los días no hábiles que no son los 9 fijos, para la pestaña Feriados de
 // Configuración y para Mi espacio. GET /api/feriados lo lee cualquier rol con sesión (authMiddleware); cargar, corregir, «no
-// rige», la baja y GET /api/feriados/afectadas (cuántas licencias de Mi espacio incluye un feriado), solo administración
-// (authMiddleware + adminOnly).
+// rige», la baja y GET /api/feriados/afectadas (cuántas licencias de Mi espacio incluye un feriado en un día que era hábil), solo
+// administración (authMiddleware + adminOnly).
 // Las reglas son puras (services/feriadosReglas.js) y las consultas de lectura están en services/feriadosDatos.js; acá se
 // escribe. Hoy es hoyArgentina(). Respuestas { success, data?, error?, campo?, message?, avisos? }.
 // Orden de los controles en las que reciben un id: un id que no es un entero positivo, que no existe o dado de baja da 404
@@ -47,9 +47,10 @@ export const listarFeriados = async (req, res) => {
 };
 
 // GET /api/feriados/afectadas?fecha=&se_repite=&id=: cuántas licencias de Mi espacio incluye el feriado del modal, antes de guardar
-// (licenciasQueIncluyen). La fecha y «se repite» ('1'; cualquier otro valor es '0') son los del modal; con el id de uno guardado (al
-// corregir), sus años que no rigen y su baja desde un año; sin id, o con uno que no sirve, no existe o está dado de baja, ninguno.
-// Una fecha que no es una fecha da 400 en `fecha`
+// (licenciasQueIncluyen: solo por las fechas en que cambia un día hábil). La fecha y «se repite» ('1'; cualquier otro valor es '0')
+// son los del modal; con el id de uno guardado (al corregir), sus años que no rigen y su baja desde un año, y no se lo cuenta como
+// otro feriado ese día; sin id, o con uno que no sirve, no existe o está dado de baja, ninguno. Una fecha que no es una fecha da 400
+// en `fecha`
 export const afectadasPorFeriado = async (req, res) => {
   const { fecha, se_repite: seRepite, id } = req.query;
   if (!esFechaIso(fecha)) return res.status(400).json({ success: false, error: MENSAJES_FERIADO.fecha, campo: 'fecha' });
@@ -59,7 +60,8 @@ export const afectadasPorFeriado = async (req, res) => {
       fecha, se_repite: seRepite === '1' ? 1 : 0, hasta_anio: guardada?.hasta_anio ?? null, no_rige: guardada?.no_rige ?? [],
       activo: 1
     };
-    res.json({ success: true, data: { licencias_afectadas: await licenciasQueIncluyen(fila) } });
+    const licencias = await licenciasQueIncluyen(fila, { excluir: guardada?.id ?? null });
+    res.json({ success: true, data: { licencias_afectadas: licencias } });
   } catch (error) {
     console.error('Error contando las licencias que incluyen el feriado:', error);
     res.status(500).json({ success: false, error: 'Error al contar las licencias que incluyen el feriado' });
@@ -67,12 +69,13 @@ export const afectadasPorFeriado = async (req, res) => {
 };
 
 // Cuántas licencias de Mi espacio incluyen el feriado `id` tal como quedó guardado (filaDeFeriado, con el pool: después del commit),
-// para la respuesta del alta y de la corrección. Aislado: el feriado ya se guardó, así que si la cuenta falla va null y el error,
-// a la consola, sin cambiar el resto de la respuesta. Uno que mientras tanto se dio de baja no incluye ninguna
+// para la respuesta del alta y de la corrección, sin contarlo a él como otro feriado ese día. Aislado: el feriado ya se guardó, así
+// que si la cuenta falla va null y el error, a la consola, sin cambiar el resto de la respuesta. Uno que mientras tanto se dio de
+// baja no incluye ninguna
 const licenciasAfectadasDe = async (id) => {
   try {
     const fila = await filaDeFeriado(id);
-    return fila ? await licenciasQueIncluyen(fila) : 0;
+    return fila ? await licenciasQueIncluyen(fila, { excluir: id }) : 0;
   } catch (error) {
     console.error('Error contando las licencias que incluyen el feriado guardado:', error);
     return null;

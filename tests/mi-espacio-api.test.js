@@ -352,7 +352,8 @@ describe('el Resumen', () => {
     assert.equal(data.anio, ANIO);
     assert.ok(data.tanques.vacaciones);
     assert.deepEqual(data.tanques.otros.map(otro => otro.clave), ['horas_a_favor', 'medica', 'familiar']);
-    assert.deepEqual(data.hoy_y_manana.ausentes, []);
+    assert.deepEqual(data.hoy_y_manana.ausentes_hoy, []);
+    assert.deepEqual(data.hoy_y_manana.ausentes_manana, []);
     assert.equal(data.hoy_y_manana.proximo_feriado.fecha, proximo);
     if (deLaTabla) assert.equal(data.hoy_y_manana.proximo_feriado.nombre, 'Feriado de prueba');
   });
@@ -1821,21 +1822,31 @@ describe('«Hoy no están»', () => {
     }
   });
 
-  it('el Resumen: «Hoy y mañana» trae a los que no están hoy o mañana, para quien puede verlos', async () => {
-    await conLicencia('adminB', { tipo: 'medica', desde: dia(-2), hasta: hoy });
-    await conLicencia('superadmin', { tipo: 'familiar', desde: dia(1) });
-    // Ya volvió: no está
-    await conLicencia('editor', { tipo: 'medica', desde: dia(-3), hasta: dia(-1) });
-    const res = await api.get('/mi-espacio/resumen', como('adminA'));
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.deepEqual(res.body.data.hoy_y_manana.ausentes, [
-      ausente('Martín Ríos', dia(-2), hoy, proximoDiaHabil(dia(1))),
-      ausente('Diego Fernández', dia(1), dia(1), proximoDiaHabil(dia(2)))
-    ]);
-    const delLector = await api.get('/mi-espacio/resumen', como('lector'));
-    assert.equal(delLector.status, 200, JSON.stringify(delLector.body));
-    assert.deepEqual(delLector.body.data.hoy_y_manana.ausentes, []);
-  });
+  // Decisión del usuario (27/10/2026): «Hoy no están» y «Mañana no están», por separado
+  it('el Resumen: «Hoy y mañana» trae a los que no están hoy y, aparte, a los que empiezan mañana, para quien puede verlos',
+    async () => {
+      // De hoy a pasado mañana: solo en hoy, con su vuelta
+      await conLicencia('adminB', { tipo: 'medica', desde: hoy, hasta: dia(2), nota: 'Turno con la doctora' });
+      // Empieza mañana: solo en mañana
+      await conLicencia('superadmin', { tipo: 'familiar', desde: dia(1) });
+      // Ya volvió: no está
+      await conLicencia('editor', { tipo: 'medica', desde: dia(-3), hasta: dia(-1) });
+      const res = await api.get('/mi-espacio/resumen', como('adminA'));
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      const { hoy_y_manana: hoyYManana } = res.body.data;
+      assert.deepEqual(Object.keys(hoyYManana), ['ausentes_hoy', 'ausentes_manana', 'proximo_feriado']);
+      assert.deepEqual(hoyYManana.ausentes_hoy, [ausente('Martín Ríos', hoy, dia(2), proximoDiaHabil(dia(3)))]);
+      assert.deepEqual(hoyYManana.ausentes_manana, [ausente('Diego Fernández', dia(1), dia(1), proximoDiaHabil(dia(2)))]);
+      for (const cada of [...hoyYManana.ausentes_hoy, ...hoyYManana.ausentes_manana]) {
+        assert.deepEqual(Object.keys(cada), CLAVES_DEL_AUSENTE);
+      }
+      const texto = JSON.stringify(hoyYManana);
+      for (const nada of ['medica', 'familiar', 'Turno']) assert.ok(!texto.includes(nada), nada);
+      const delLector = await api.get('/mi-espacio/resumen', como('lector'));
+      assert.equal(delLector.status, 200, JSON.stringify(delLector.body));
+      assert.deepEqual(delLector.body.data.hoy_y_manana.ausentes_hoy, []);
+      assert.deepEqual(delLector.body.data.hoy_y_manana.ausentes_manana, []);
+    });
 });
 
 // Lo que necesita el campo «Autorizo a presentar las notas en mi nombre a:» (spec, sección 6): al firmante titular, lo mismo

@@ -13,7 +13,7 @@
 import pool from '../config/database.js';
 import { calcular, modalidadDe, esDiaEntero } from './miEspacioReglas.js';
 import { filasDeFeriados } from './feriadosDatos.js';
-import { feriadosDelRango, fechasDelFeriado } from './feriadosReglas.js';
+import { feriadosDelRango, fechasQueCambianDiasHabiles } from './feriadosReglas.js';
 import { idPositivo } from './proyectosReglas.js';
 import { esAdmin } from './usuariosReglas.js';
 import { esFechaIso } from './notasDigitalesCalendario.js';
@@ -297,17 +297,21 @@ export const ausentesEn = async (fecha, usuarioIds, conexion = pool) => {
  * Cuántas licencias de Mi espacio activas, de cualquier persona, incluyen alguno de los días de un feriado (spec
  * 2026-10-26-feriados, 3 y 6: sus días hábiles se recalculan), para el modal del feriado y la respuesta del alta y de la
  * corrección. `fila` tiene la forma de las de `filasDeFeriados` (`{ fecha, se_repite, hasta_anio, no_rige, activo }`): uno que se
- * repite cuenta todos los años en que rige (`fechasDelFeriado`, del primer año de las licencias activas al último), y cada
- * licencia cuenta una vez aunque lo incluya dos años. Solo el número: ni personas ni tipos. Sin licencias activas, o sin ninguna
- * fecha en ese rango, 0 (sin contar).
+ * repite cuenta todos los años en que rige (del primer año de las licencias activas al último), y cada licencia cuenta una vez
+ * aunque lo incluya dos años. Solo cuentan las fechas en que el feriado cambia un día hábil (`fechasQueCambianDiasHabiles`,
+ * decisión del usuario, 27/10/2026): no las de un sábado, un domingo, uno de los 9 fijos u otro feriado activo ese día, sin
+ * contar el feriado `excluir` (el id del que se corrige, o del que se acaba de guardar: no es «otro»). Solo el número: ni
+ * personas ni tipos. Sin licencias activas, o sin ninguna fecha que cambie algo, 0 (sin contar).
  * @returns {Promise<number>}
  */
-export const licenciasQueIncluyen = async (fila, conexion = pool) => {
+export const licenciasQueIncluyen = async (fila, { excluir = null } = {}, conexion = pool) => {
   const [[rango]] = await conexion.query(
     'SELECT YEAR(MIN(desde)) AS primero, YEAR(MAX(hasta)) AS ultimo FROM mi_espacio_licencias WHERE activo = 1'
   );
   if (rango.primero === null || rango.ultimo === null) return 0;
-  const fechas = fechasDelFeriado(fila, Number(rango.primero), Number(rango.ultimo));
+  const excluido = idPositivo(excluir);
+  const otras = (await filasDeFeriados(conexion)).filter((otra) => otra.id !== excluido);
+  const fechas = fechasQueCambianDiasHabiles(fila, Number(rango.primero), Number(rango.ultimo), otras);
   if (fechas.length === 0) return 0;
   const [[{ cantidad }]] = await conexion.query(
     `SELECT COUNT(*) AS cantidad FROM mi_espacio_licencias

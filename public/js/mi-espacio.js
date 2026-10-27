@@ -258,24 +258,31 @@ const iniciales = (nombre) => {
   return palabras.length === 1 ? inicial(palabras[0]) : inicial(palabras[0]) + inicial(palabras.at(-1));
 };
 
+// Un compañero que no está: sus iniciales, «Laura Gómez no está» y la vuelta, con los textos del servidor
+const htmlDeAusente = (ausente) => '<li class="me-ausente">'
+  + `<span class="me-inicial" aria-hidden="true">${esc(iniciales(ausente.nombre))}</span><span><b>${esc(ausente.texto)}</b>`
+  + `${conTexto(ausente.vuelve_texto) ? `<small>${esc(ausente.vuelve_texto)}</small>` : ''}</span></li>`;
+
 /**
- * «Hoy y mañana» (el `hoy_y_manana` del Resumen): «No están», solo para quien ve a sus compañeros (`veCompaneros`, el true
- * literal: administración), con el texto y la vuelta que manda el servidor, y el próximo feriado. Sin nadie que no esté, el
- * bloque no va (como «Vence pronto»): solo se ven los de administración que eligieron mostrarse, así que «están todos» podría
- * no ser cierto.
+ * «Hoy y mañana» (el `hoy_y_manana` del Resumen): «Hoy no están» y, aparte, «Mañana no están» (los que empiezan mañana: decisión
+ * del usuario, 27/10/2026), solo para quien ve a sus compañeros (`veCompaneros`, el true literal: administración), con el texto y
+ * la vuelta que manda el servidor, y el próximo feriado. Un grupo vacío no va (como «Vence pronto»): solo se ven los de
+ * administración que eligieron mostrarse, así que «están todos» podría no ser cierto. Sin ninguno de los tres, no hay sección.
  */
 function htmlDeHoyYManana(datos, veCompaneros) {
   const hoy = esObjeto(datos) ? datos : {};
-  let html = '<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 class="me-titulo" id="me-hoy-titulo">Hoy y mañana</h2>';
-  const ausentes = veCompaneros === true ? listaDe(hoy.ausentes).map((ausente) => '<li class="me-ausente">'
-    + `<span class="me-inicial" aria-hidden="true">${esc(iniciales(ausente.nombre))}</span><span><b>${esc(ausente.texto)}</b>`
-    + `${conTexto(ausente.vuelve_texto) ? `<small>${esc(ausente.vuelve_texto)}</small>` : ''}</span></li>`) : [];
-  if (ausentes.length > 0) html += `<h3 class="me-subtitulo">No están</h3><ul class="me-ausentes">${ausentes.join('')}</ul>`;
+  const grupo = (titulo, ausentes) => {
+    const filas = veCompaneros === true ? listaDe(ausentes).map(htmlDeAusente) : [];
+    return filas.length > 0 ? `<h3 class="me-subtitulo">${titulo}</h3><ul class="me-ausentes">${filas.join('')}</ul>` : '';
+  };
   const feriado = hoy.proximo_feriado;
-  if (esObjeto(feriado)) {
-    html += `<h3 class="me-subtitulo">Próximo feriado</h3><p class="me-feriado"><b>${esc(feriado.cuando)}</b>${esc(feriado.nombre)}</p>`;
-  }
-  return `${html}</section>`;
+  const cuerpo = grupo('Hoy no están', hoy.ausentes_hoy) + grupo('Mañana no están', hoy.ausentes_manana)
+    + (esObjeto(feriado)
+      ? `<h3 class="me-subtitulo">Próximo feriado</h3><p class="me-feriado"><b>${esc(feriado.cuando)}</b>${esc(feriado.nombre)}</p>`
+      : '');
+  if (cuerpo === '') return '';
+  return '<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 class="me-titulo" id="me-hoy-titulo">Hoy y mañana</h2>'
+    + `${cuerpo}</section>`;
 }
 
 /**
@@ -714,16 +721,16 @@ function htmlDelCalculo(data, tipo) {
 /**
  * Lo que dice el formulario del paso a Configuración (el `paso` del cálculo), un párrafo por texto. Si pasa, los avisos del
  * servidor y, en las vacaciones del firmante titular, el efecto en las notas con la persona a cargo elegida (`autorizado`, su
- * nombre, o null) y los días en que ella está de licencia (`ausencias`, las de GET /mi-espacio/firmante), con las fechas del
- * formulario (`desde` y `hasta`) y `hoy`. Si no pasa, por qué (una de administración que la cubre o con la que se superpone);
- * sin nada que decir, ''.
+ * nombre, o null: nadie) y los días en que ella está de licencia (`ausencias`, las de GET /mi-espacio/firmante), con las fechas
+ * del formulario (`desde` y `hasta`) y `hoy`. Con `conEfecto` false (no se sabe quién queda a cargo), el efecto no va. Si no
+ * pasa, por qué (una de administración que la cubre o con la que se superpone); sin nada que decir, ''.
  */
-function htmlDelPaso(paso, { autorizado = null, ausencias = [], hoy = '', desde = '', hasta = '' } = {}) {
+function htmlDelPaso(paso, { autorizado = null, ausencias = [], hoy = '', desde = '', hasta = '', conEfecto = true } = {}) {
   if (!esObjeto(paso)) return '';
   const parrafos = [];
   if (paso.pasa === true) {
     parrafos.push(...(Array.isArray(paso.avisos) ? paso.avisos : []).filter(conTexto));
-    if (esObjeto(paso.firmante) && paso.firmante.puede_autorizar === true) {
+    if (conEfecto !== false && esObjeto(paso.firmante) && paso.firmante.puede_autorizar === true) {
       const nombre = conTexto(autorizado) ? autorizado : null;
       parrafos.push(efectoEnNotas({ desde, vispera: paso.firmante.vispera }, nombre, hoy));
       if (nombre !== null) parrafos.push(...textoAusenciasAutorizado(nombre, listaDe(ausencias), desde, hasta));
@@ -861,9 +868,10 @@ const cuerpoDelSaldo = (valores, campos) => ({
   saldos: Object.fromEntries(listaDe(campos).map((campo) => [campo.clave, numeroDelCampo(deMapa(valores, campo.clave, ''))]))
 });
 
-// Los días de vacaciones del año, como números para elegir
+// Los días de vacaciones del año, como números para elegir (cada uno describe el error del grupo, como los tipos de licencia)
 const htmlDeDiasDeVacaciones = (elegidos) => DIAS_VACACIONES.map((dias) => '<label class="me-numero">'
-  + `<input type="radio" name="ms-dia" value="${String(dias)}"${dias === elegidos ? ' checked' : ''}><span>${String(dias)}</span></label>`)
+  + `<input type="radio" name="ms-dia" value="${String(dias)}"${dias === elegidos ? ' checked' : ''} aria-describedby="ms-dias-error">`
+  + `<span>${String(dias)}</span></label>`)
   .join('');
 
 // La licencia por estudios: universitaria, secundaria o «No estudio» (el valor vacío). `elegidos`: la carrera, '' por «No
@@ -875,7 +883,7 @@ function htmlDeEstudios(elegidos) {
     ['', 'No estudio', 'Sin licencia por estudios']
   ];
   return opciones.map(([valor, nombre, detalle]) => '<label class="me-opcion">'
-    + `<input type="radio" name="ms-estudio" value="${valor}"${valor === elegidos ? ' checked' : ''}>`
+    + `<input type="radio" name="ms-estudio" value="${valor}"${valor === elegidos ? ' checked' : ''} aria-describedby="ms-estudios-error">`
     + `<span><b>${nombre}</b><small>${detalle}</small></span></label>`).join('');
 }
 
@@ -952,10 +960,13 @@ function mostrarFalla(vista, texto, conAnuncio = true) {
   if (conAnuncio) anunciar(texto);
 }
 
+// El control de una pestaña con ese atributo y ese valor, o null
+const controlCon = (vista, atributo, valor) =>
+  [...porId(vista).querySelectorAll(`[${atributo}]`)].find((uno) => uno.getAttribute(atributo) === valor) ?? null;
+
 // Después de volver a dibujar una pestaña, el foco va al control equivalente al que se usó (el botón viejo ya no está)
 function enfocar(vista, atributo, valor) {
-  const control = [...porId(vista).querySelectorAll(`[${atributo}]`)].find((uno) => uno.getAttribute(atributo) === valor);
-  control?.focus();
+  controlCon(vista, atributo, valor)?.focus();
 }
 
 // Abre la pestaña de la dirección y pide el Resumen (primero: la pestaña Resumen no lo pide dos veces). Devuelve las cargas, para
@@ -1344,8 +1355,12 @@ function alApretarUnaTecla(evento) {
 
 // ---- Los errores ----
 
-// Muestra (o saca, con null) el error de un campo: su párrafo (<id>-error) y aria-invalid en el control (en un grupo de opciones,
-// en su fieldset). false si el control no está
+// Un grupo de opciones: el fieldset de unos radios (ml-tipos, ms-dias, ms-estudios)
+const esGrupoDeOpciones = (control) => String(control?.tagName).toLowerCase() === 'fieldset';
+
+// Muestra (o saca, con null) el error de un campo: su párrafo (<id>-error) y aria-invalid en el control. En un grupo de opciones,
+// aria-invalid va en cada radio (en un fieldset no vale: ARIA 1.2), que ya lo describe con aria-describedby. false si el control
+// no está
 function ponerError(id, mensaje) {
   const control = id ? porId(id) : null;
   if (!control) return false;
@@ -1354,17 +1369,17 @@ function ponerError(id, mensaje) {
     parrafo.textContent = mensaje ?? '';
     parrafo.hidden = !mensaje;
   }
-  if (mensaje) control.setAttribute('aria-invalid', 'true');
-  else control.removeAttribute('aria-invalid');
+  for (const marcado of esGrupoDeOpciones(control) ? control.querySelectorAll('input') : [control]) {
+    if (mensaje) marcado.setAttribute('aria-invalid', 'true');
+    else marcado.removeAttribute('aria-invalid');
+  }
   return true;
 }
 
 // El control que recibe el foco de un campo: en un grupo de opciones, la elegida o la primera
 function controlDeFoco(id) {
   const control = porId(id);
-  if (String(control?.tagName).toLowerCase() === 'fieldset') {
-    return control.querySelector('input:checked') ?? control.querySelector('input') ?? control;
-  }
+  if (esGrupoDeOpciones(control)) return control.querySelector('input:checked') ?? control.querySelector('input') ?? control;
   return control;
 }
 
@@ -1397,11 +1412,21 @@ function mostrarErrores(nombre, errores) {
 const conSusControles = (nombre, errores) => Object.entries(errores)
   .map(([campo, mensaje]) => [deMapa(FORMULARIOS[nombre].campos, campo, null), mensaje]);
 
+// Un pedido que no llegó al servidor: API.pedirJson tira el error del navegador («Failed to fetch»), sin status y en inglés
+const MENSAJE_SIN_CONEXION = 'No se pudo conectar con el servidor. Probá de nuevo en unos minutos.';
+const MENSAJE_NO_SE_GUARDO = 'No se pudo guardar. Probá de nuevo en unos minutos.';
+
+// Lo que se dice de una falla: el mensaje del servidor; sin respuesta (sin status), MENSAJE_SIN_CONEXION; sin mensaje, `sinMensaje`
+const motivoDeLaFalla = (falla, sinMensaje) => {
+  if (!falla?.status) return MENSAJE_SIN_CONEXION;
+  return conTexto(falla.message) ? falla.message : sinMensaje;
+};
+
 // Un error del servidor al guardar: con un campo del formulario, en ese campo y con el foco ahí; sin campo (o uno que no es del
-// formulario), arriba del modal, con el foco en el botón
+// formulario, o sin respuesta), arriba del modal, con el foco en el botón
 function mostrarFallaDelServidor(nombre, falla, boton) {
   limpiarErrores(nombre);
-  const mensaje = falla?.message || 'No se pudo guardar. Probá de nuevo en unos minutos.';
+  const mensaje = motivoDeLaFalla(falla, MENSAJE_NO_SE_GUARDO);
   const id = deMapa(FORMULARIOS[nombre].campos, falla?.campo, null);
   if (ponerError(id, mensaje)) {
     controlDeFoco(id)?.focus?.();
@@ -1411,19 +1436,85 @@ function mostrarFallaDelServidor(nombre, falla, boton) {
   boton.focus?.();
 }
 
+// Las pestañas que se vuelven a dibujar después de guardar o de borrar, y lo que identifica a un control que abre un modal, en este
+// orden: el «Editar» de una fila (por su id), «Mis vacaciones y saldos», «Cambiar» o «Registrar un uso autorizado», «Cargar
+// licencia» o «Cargar horas extras» de una tarjeta y un botón de «Vence pronto» (por su tipo)
+const VISTAS_QUE_SE_DIBUJAN = Object.freeze(['vista-resumen', 'vista-licencias', 'vista-horas']);
+const IDENTIDADES_DEL_FOCO = Object.freeze(['data-editar-licencia', 'data-editar-horas', 'data-abrir', 'data-cargar', 'data-tipo']);
+
+const identidadDe = (control) => {
+  const atributo = IDENTIDADES_DEL_FOCO.find((uno) => typeof control?.getAttribute?.(uno) === 'string');
+  return atributo ? { atributo, valor: control.getAttribute(atributo) } : null;
+};
+
+/**
+ * Adónde va el foco cuando se vuelve a dibujar la pestaña del control que lo tiene (el botón que abrió el modal, al que cerrarModal
+ * lo devolvió y que la recarga reemplaza), como respaldoDeLaEliminacion de proyectos.js: `{ vista, candidatos }`, del preferido al
+ * último, o null si el control no está en una pestaña (los del encabezado no se vuelven a dibujar) o no abre un modal. Los
+ * candidatos: el mismo control (el «Editar» de la misma fila), los de su misma lista (el que seguía, después el anterior: la fila
+ * se borró), el título de su panel (por su texto), el primer título de la pestaña y la pestaña misma.
+ */
+function respaldoDelFoco(control) {
+  const vista = VISTAS_QUE_SE_DIBUJAN.find((id) => porId(id)?.contains?.(control));
+  const propia = identidadDe(control);
+  if (!vista || propia === null) return null;
+  const lista = control.closest('li')?.parentNode;
+  const botones = lista ? [...lista.querySelectorAll('button')] : [];
+  const lugar = botones.indexOf(control);
+  const vecinos = lugar === -1 ? [] : [...botones.slice(lugar + 1), ...botones.slice(0, lugar).reverse()];
+  const panel = control.closest('.me-tarjeta') ?? control.closest('section');
+  const titulo = panel?.querySelector('h2') ?? panel?.querySelector('h3');
+  return {
+    vista,
+    candidatos: [propia, ...vecinos.map(identidadDe).filter((identidad) => identidad !== null),
+      ...(titulo ? [{ titulo: titulo.textContent }] : []), { primerTitulo: true }, { pestana: true }]
+  };
+}
+
+// El control de la pestaña que corresponde a un candidato de respaldoDelFoco, o null
+function controlDelCandidato(vista, candidato) {
+  if (candidato.atributo) {
+    const control = controlCon(vista, candidato.atributo, candidato.valor);
+    return control && !control.disabled ? control : null;
+  }
+  const titulos = [...porId(vista).querySelectorAll('h2'), ...porId(vista).querySelectorAll('h3')];
+  if (candidato.titulo !== undefined) return titulos.find((uno) => uno.textContent === candidato.titulo) ?? null;
+  if (candidato.primerTitulo) return titulos[0] ?? null;
+  return porId(`tab-${vista.slice('vista-'.length)}`);
+}
+
+// Si el foco se perdió (el control que lo tenía ya no está: quedó en <body>), va al primer candidato que está. Un título recibe el
+// foco con tabindex="-1". Con un modal abierto, o si el foco ya está en otro lado, no se toca
+function devolverElFoco(respaldo) {
+  if (respaldo === null || pagina.modales.length > 0) return;
+  const activo = document.activeElement;
+  if (activo && activo !== document.body && activo.isConnected !== false) return;
+  for (const candidato of respaldo.candidatos) {
+    const control = controlDelCandidato(respaldo.vista, candidato);
+    if (!control) continue;
+    if (/^h[23]$/.test(String(control.tagName).toLowerCase())) control.setAttribute('tabindex', '-1');
+    control.focus?.();
+    return;
+  }
+}
+
 // Después de guardar o de borrar: el Resumen y las pestañas que ya se cargaron (la que se ve, enseguida y con el año que tenía,
-// sin anunciarlo: se anuncia lo que se guardó; las otras, cuando se vuelvan a abrir)
-function volverAPedirTodo() {
-  cargarResumen();
+// sin anunciarlo: se anuncia lo que se guardó; las otras, cuando se vuelvan a abrir). El foco, que cerrarModal devolvió al botón
+// que abrió el modal, va a su equivalente cuando terminan (respaldoDelFoco: la recarga reemplazó el botón)
+async function volverAPedirTodo() {
+  const respaldo = respaldoDelFoco(document.activeElement);
+  const cargas = [cargarResumen()];
   const delAnio = (datos) => (Number.isInteger(datos.anio) && datos.anio !== anioDeHoy() ? datos.anio : null);
   if (pagina.licencias !== null) {
-    if (pagina.pestana === 'licencias') cargarLicencias(delAnio(pagina.licencias), { conAnuncio: false });
+    if (pagina.pestana === 'licencias') cargas.push(cargarLicencias(delAnio(pagina.licencias), { conAnuncio: false }));
     else pagina.licencias = null;
   }
   if (pagina.horas !== null) {
-    if (pagina.pestana === 'horas') cargarHorasExtras(delAnio(pagina.horas), { conAnuncio: false });
+    if (pagina.pestana === 'horas') cargas.push(cargarHorasExtras(delAnio(pagina.horas), { conAnuncio: false }));
     else pagina.horas = null;
   }
+  await Promise.all(cargas);
+  devolverElFoco(respaldo);
 }
 
 // Lo que dice el servidor al guardar: el mensaje y sus avisos (por ejemplo, que una corrección ya no se copia a Configuración)
@@ -1663,15 +1754,19 @@ function datosDelFirmante() {
 }
 
 // El aviso del paso a Configuración: azul si pasa; si no, en ámbar, por qué. En las vacaciones del titular, con el efecto en las
-// notas de la persona elegida y sus días de licencia
+// notas de la persona elegida y sus días de licencia, solo si se sabe quién queda a cargo: «Nadie» o una de la lista. Con el
+// campo oculto (GET /mi-espacio/firmante falló: la persona que tenía se conserva) o con «Otro usuario (ya no cumple las
+// condiciones)», «Sin persona autorizada…» sería falso y el efecto no va
 function pintarPaso(formulario) {
   const caja = porId(`${FORMULARIOS[formulario.nombre].prefijo}-paso`);
   const valores = valoresDelFormulario(formulario);
-  const elegida = conPersonaACargo(formulario)
+  const conCampo = conPersonaACargo(formulario);
+  const elegida = conCampo
     ? listaDe(formulario.firmante?.autorizables).find((persona) => String(persona.id) === valores.autorizado) : undefined;
   caja.innerHTML = htmlDelPaso(formulario.paso, {
     autorizado: elegida?.nombre_completo ?? null, ausencias: elegida?.ausencias ?? [],
-    hoy: formulario.firmante?.hoy ?? Utils.hoyEnArgentina(), desde: valores.desde, hasta: valores.hasta
+    hoy: formulario.firmante?.hoy ?? Utils.hoyEnArgentina(), desde: valores.desde, hasta: valores.hasta,
+    conEfecto: conCampo && (elegida !== undefined || !conTexto(valores.autorizado))
   });
   caja.hidden = caja.innerHTML === '';
   caja.classList.toggle('azul', formulario.paso?.pasa === true);
@@ -1914,9 +2009,9 @@ async function guardarSaldos() {
       // El año ya se guardó: el motivo del saldo, en su campo (si es de «Para arrancar» o de los días) y arriba del modal
       limpiarErrores('saldos');
       const id = porId(`ms-campo-${error?.campo}`) ? `ms-campo-${error.campo}` : deMapa(FORMULARIOS.saldos.campos, error?.campo, null);
-      ponerError(id, error?.message);
-      const motivo = comoTexto(error?.message).replace(/\.$/, '');
-      avisoDelModal('saldos', `Los días del año se guardaron, pero el saldo inicial no: ${motivo}.`);
+      const motivo = motivoDeLaFalla(error, MENSAJE_NO_SE_GUARDO);
+      ponerError(id, motivo);
+      avisoDelModal('saldos', `Los días del año se guardaron, pero el saldo inicial no: ${motivo.replace(/\.$/, '')}.`);
       (id ? controlDeFoco(id) : boton)?.focus?.();
     }
   } finally {
@@ -1963,7 +2058,7 @@ async function confirmarElBorrado() {
       cerrarModal('modal-confirmar');
       noEstaMas(actual.formulario, error);
     } else if (pagina.confirmacion === actual) {
-      avisoDelModal('confirmar', error?.message || 'No se pudo borrar. Probá de nuevo en unos minutos.');
+      avisoDelModal('confirmar', motivoDeLaFalla(error, 'No se pudo borrar. Probá de nuevo en unos minutos.'));
       boton.focus?.();
     }
   } finally {

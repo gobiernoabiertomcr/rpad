@@ -80,6 +80,7 @@ Todo lo que se cuenta en días se cuenta en días hábiles: de lunes a viernes, 
 - **Las horas extras se pueden cargar en cualquier día,** también un sábado o un feriado.
 
 Los días hábiles no se guardan: se calculan cada vez, así un feriado nuevo corrige lo ya cargado (entrega 1, sección 6).
+- **El modal del feriado** (Configuración → Feriados) dice «N licencias cargadas lo incluyen: sus días hábiles se recalculan.» solo por las fechas en que el feriado cambia de verdad un día hábil: las que sin él serían hábiles (no caen sábado ni domingo, no son uno de los 9 fijos y ningún otro feriado activo rige ese día, sin contar el que se corrige). Uno que se repite se mira año por año, y cada licencia cuenta una vez. Si ninguna fecha cambia nada, el modal no dice nada (decisión del usuario, 27/10/2026).
 
 ## 3. Las reglas
 
@@ -291,6 +292,7 @@ Lo propuse yo y el usuario lo aprobó: «Está perfecta tu sugerencia».
 - **La casilla «Mostrar a mis compañeros que no estoy»,** marcada de entrada, hace que las ausencias de día completo se vean como «Laura Gómez no está», sin el tipo.
   - Controla solo lo que se ve en Mi espacio. Si la licencia pasa a Configuración, administración ve igual las fechas en Configuración → Licencias y en «De licencia hasta» de Usuarios. El usuario decidió dejarla así (26/10/2026).
 - **Dónde aparecen:** en «Hoy y mañana» del Resumen y, desde la entrega 3, en la agenda de todos.
+  - En el Resumen van en dos grupos (decisión del usuario, 27/10/2026): **«Hoy no están»**, los que no están hoy, y **«Mañana no están»**, los que empiezan mañana (el día siguiente corrido) y hoy están. Cada uno con «Laura Gómez no está» y «Vuelve el lunes 02/11». Quien falta hoy y mañana va solo en «Hoy no están». Un grupo vacío no se muestra.
 - **No se muestran las franquicias ni las horas a favor de menos de 7 horas.**
 - **«Los compañeros» son administración:** superadmin, admin y editor (`esAdmin`; respuesta del usuario).
   - Solo ellos ven las ausencias de los demás, y solo se muestran las ausencias de ellos.
@@ -318,7 +320,7 @@ Las medidas, los colores y los textos están en las maquetas. Acá van las regla
   - **Debajo, los francos (o las horas a favor) mes por mes, en pastillas:** la del mes que vence en amarillo, la que todavía suma punteada y lo no utilizado previamente en gris. Una línea aclara la médica extraordinaria.
   - **Cada tanque es un link** a su pestaña, con el foco visible del RPAD.
   - **El único movimiento de la página:** al abrir, los tanques se llenan desde abajo una vez, y no se mueven con `prefers-reduced-motion`.
-- **Al costado, «Hoy y mañana»:** «No están», el próximo feriado y, desde la entrega 3, los eventos de hoy y mañana. En el teléfono va debajo.
+- **Al costado, «Hoy y mañana»:** «Hoy no están», «Mañana no están» (sección 7), el próximo feriado y, desde la entrega 3, los eventos de hoy y mañana. Sin nada de eso, la sección no aparece. En el teléfono va debajo.
 
 **Licencias:**
 - la lista del año, con el selector de año y los filtros por tipo como botones con su cantidad;
@@ -494,6 +496,10 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
 - Si el firmante carga una licencia que empieza hoy o antes, el formulario avisa que las notas de hoy ya salieron a las 8:15 con su firma.
 - Los modales no se cierran con un clic en el velo, como en Configuración.
 - La función de servicio compartida con Configuración no cambia nada de lo que hoy hace Configuración.
+
+**Del usuario, después de aprobar el plan (27/10/2026):**
+- «Hoy y mañana» separa a los que no están hoy («Hoy no están») de los que empiezan mañana («Mañana no están»), cada uno con su vuelta (sección 7).
+- El modal del feriado cuenta solo las licencias en las que el feriado cambia de verdad un día hábil: no los sábados, los domingos, los 9 fijos ni un día en que ya rige otro feriado; con uno que se repite, cada año por separado (sección 2).
 
 **Respuestas del usuario a la revisión (26/10/2026):**
 - «Los compañeros» son administración: superadmin, admin y editor.
