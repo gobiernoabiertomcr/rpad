@@ -789,3 +789,64 @@ CREATE TABLE `mi_espacio_avisos` (
   PRIMARY KEY (`usuario_id`,`clave`),
   CONSTRAINT `fk_mi_espacio_avisos_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- La agenda de Mi espacio (database/updates/migracion-mi-espacio-agenda.sql): los eventos (personales o compartidos, con
+-- personas elegidas o para_todos; fecha y horas en hora argentina), con quién se compartió cada uno y si apagó su
+-- recordatorio (en uno para todos, solo quien lo apagó), qué email salió a quién (la clave única vale solo para los recordatorios: recordatorio_unico es 1 en ellos y
+-- NULL en el resto) y la última corrida de los recordatorios (una sola fila, id = 1), para Correos → Estado
+-- =====================================================
+CREATE TABLE `mi_espacio_eventos` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `creado_por` int(11) DEFAULT NULL,
+  `titulo` varchar(150) NOT NULL,
+  `detalle` text DEFAULT NULL,
+  `fecha` date NOT NULL,
+  `desde` time NOT NULL,
+  `hasta` time DEFAULT NULL,
+  `compartido` tinyint(1) NOT NULL DEFAULT 0,
+  `para_todos` tinyint(1) NOT NULL DEFAULT 0,
+  `recordatorio` enum('ninguno','1h','2h','dia_anterior') NOT NULL DEFAULT '2h',
+  `activo` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_mi_espacio_eventos_fecha` (`fecha`,`activo`),
+  KEY `fk_mi_espacio_eventos_creado_por` (`creado_por`),
+  CONSTRAINT `fk_mi_espacio_eventos_creado_por` FOREIGN KEY (`creado_por`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `mi_espacio_evento_personas` (
+  `evento_id` int(11) NOT NULL,
+  `usuario_id` int(11) NOT NULL,
+  `sin_recordatorio` tinyint(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`evento_id`,`usuario_id`),
+  KEY `fk_mi_espacio_evento_personas_usuario` (`usuario_id`),
+  CONSTRAINT `fk_mi_espacio_evento_personas_evento` FOREIGN KEY (`evento_id`) REFERENCES `mi_espacio_eventos` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mi_espacio_evento_personas_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `mi_espacio_evento_envios` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `evento_id` int(11) NOT NULL,
+  `usuario_id` int(11) NOT NULL,
+  `tipo` enum('recordatorio','invitacion','cambio','cancelacion') NOT NULL,
+  `para` datetime NOT NULL,
+  `enviado_at` datetime DEFAULT NULL,
+  `success` tinyint(1) NOT NULL DEFAULT 0,
+  `recordatorio_unico` tinyint(1) GENERATED ALWAYS AS (case when `tipo` = 'recordatorio' then 1 end) STORED,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mi_espacio_evento_envios_recordatorio` (`evento_id`,`usuario_id`,`para`,`recordatorio_unico`),
+  KEY `fk_mi_espacio_evento_envios_usuario` (`usuario_id`),
+  CONSTRAINT `fk_mi_espacio_evento_envios_evento` FOREIGN KEY (`evento_id`) REFERENCES `mi_espacio_eventos` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mi_espacio_evento_envios_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `mi_espacio_eventos_corridas` (
+  `id` tinyint(4) NOT NULL,
+  `inicio_at` datetime DEFAULT NULL,
+  `fin_at` datetime DEFAULT NULL,
+  `resultado` varchar(1000) DEFAULT NULL,
+  `con_errores` tinyint(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
