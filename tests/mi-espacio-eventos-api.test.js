@@ -72,6 +72,12 @@ after(async () => {
   await base?.borrar();
 });
 
+// Cuidado con lo que queda de un test anterior: el servidor manda los emails de un guardado después de responder, así que
+// los de un test pueden llegar a Mailpit, y anotarse en mi_espacio_evento_envios, después de que empezó el siguiente (y
+// después de este vaciado y de estos DELETE). Todo lo que lee Mailpit filtra por la marca del test (en el título: las
+// casillas son las mismas en todo el archivo, no alcanzan) y todo lo que lee mi_espacio_evento_envios, por su evento: nunca
+// contar todo lo que hay. La corrida de los recordatorios se prueba en tests/mi-espacio-eventos-corrida.test.js, con su
+// propia base
 beforeEach(async () => {
   await asegurarBaseDePrueba();
   process.env.EMAIL_SOLO_A = '';

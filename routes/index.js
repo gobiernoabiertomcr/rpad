@@ -36,7 +36,8 @@ import {
   verificarSMTP,
   previewEmail,
   ejecutarNotificacionCambiosPendientes,
-  previewCambiosPendientes
+  previewCambiosPendientes,
+  ejecutarRecordatoriosDeEventos
 } from '../controllers/notificacionesController.js';
 import {
   listarNotas,
@@ -349,6 +350,8 @@ router.post('/notas/generar', authMiddleware, usaGeneradorDeNotas, generarNota);
 // =====================================================
 router.get('/cron/notificaciones', cronAuth, ejecutarNotificacionesDiarias);
 router.get('/cron/cambios-pendientes', cronAuth, ejecutarNotificacionCambiosPendientes);
+// Los recordatorios de la agenda de Mi espacio: una Tarea Cron cada media hora (*/30)
+router.get('/cron/eventos', cronAuth, ejecutarRecordatoriosDeEventos);
 
 // =====================================================
 // Gestión: Métricas y Proyectos (protegidas)

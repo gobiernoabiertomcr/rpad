@@ -12,7 +12,7 @@ import {
   fechaMaximaEvento, textoRangoEvento, validarEvento, momentoDelAviso, textoDelAviso, cuandoDelEvento,
   cuandoCortoDelEvento, cuandoEsElEvento, cuandoFue, textoDelEvento, listaConY, inicialesDe,
   recordatoriosQueTocan, cambioQueAvisa, emailsDelGuardado, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento,
-  itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana
+  itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, textoDelResultadoDeEventos
 } from '../services/miEspacioEventosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
 
@@ -672,6 +672,57 @@ describe('recordatoriosQueTocan', () => {
     assert.deepEqual(quienes({ envios: null }, '2026-11-03 08:00'), [1, 2]);
     const enviosRaros = [null, 42, 'envio', { usuario_id: 'abc', para: PARA, success: 1 }];
     assert.deepEqual(quienes({ envios: enviosRaros }, '2026-11-03 08:00'), [1, 2]);
+  });
+});
+
+// Lo que dice la última corrida de los recordatorios (mi_espacio_eventos_corridas.resultado, en Correos → Estado) y el mensaje
+// de la respuesta del cron
+describe('textoDelResultadoDeEventos', () => {
+  const resultado = (datos) => ({ dia_habil: true, enviados: 0, fallidos: 0, errores: [], ...datos });
+
+  it('un día no hábil: «Día no hábil: no se mandan recordatorios.»', () => {
+    assert.equal(textoDelResultadoDeEventos(resultado({ dia_habil: false })), 'Día no hábil: no se mandan recordatorios.');
+  });
+
+  it('los enviados y, si hubo, los fallidos', () => {
+    assert.equal(textoDelResultadoDeEventos(resultado({ enviados: 2, fallidos: 1 })), 'Recordatorios enviados: 2. Fallidos: 1.');
+    assert.equal(textoDelResultadoDeEventos(resultado({ enviados: 2 })), 'Recordatorios enviados: 2.');
+    assert.equal(textoDelResultadoDeEventos(resultado({ enviados: 1 })), 'Recordatorios enviados: 1.');
+    assert.equal(textoDelResultadoDeEventos(resultado({ fallidos: 3 })), 'Recordatorios enviados: 0. Fallidos: 3.');
+    assert.equal(textoDelResultadoDeEventos(resultado()), 'Recordatorios enviados: 0.');
+  });
+
+  it('con un error: « Errores: …», cada uno con su evento y su persona, separados por «; »', () => {
+    const conUno = resultado({ enviados: 1, errores: [{ evento_id: 12, usuario_id: 4, error: 'Falla simulada' }] });
+    assert.equal(textoDelResultadoDeEventos(conUno), 'Recordatorios enviados: 1. Errores: evento 12, persona 4: Falla simulada');
+    // Uno de toda la corrida (sin evento ni persona) va con su mensaje solo; sin un mensaje, «sin detalle»
+    const conDos = resultado({
+      enviados: 2, fallidos: 1,
+      errores: [
+        { evento_id: 12, usuario_id: 4, error: 'Falla simulada' },
+        { evento_id: null, usuario_id: null, error: 'La base no responde' },
+        { evento_id: 7, usuario_id: null, error: '' }
+      ]
+    });
+    assert.equal(textoDelResultadoDeEventos(conDos), 'Recordatorios enviados: 2. Fallidos: 1. Errores: evento 12, persona 4: '
+      + 'Falla simulada; La base no responde; evento 7: sin detalle');
+    // Sin saber si el día es hábil (la corrida falló antes de leer los feriados), las cuentas y el error
+    assert.equal(textoDelResultadoDeEventos(resultado({ dia_habil: null, errores: [{ error: 'La base no responde' }] })),
+      'Recordatorios enviados: 0. Errores: La base no responde');
+  });
+
+  it('cortado a 1000 caracteres, contados con Array.from', () => {
+    const largo = resultado({ errores: [{ evento_id: 1, usuario_id: 2, error: '😀'.repeat(2000) }] });
+    const texto = textoDelResultadoDeEventos(largo);
+    assert.equal(Array.from(texto).length, 1000);
+    assert.ok(texto.startsWith('Recordatorios enviados: 0. Errores: evento 1, persona 2: 😀'));
+    assert.ok(texto.endsWith('😀'));
+  });
+
+  it('nada tira: lo que no es un resultado cuenta como sin nada; los errores raros no cuentan', () => {
+    for (const raro of [undefined, null, 42, 'x', []]) assert.equal(textoDelResultadoDeEventos(raro), 'Recordatorios enviados: 0.');
+    assert.equal(textoDelResultadoDeEventos(resultado({ enviados: -1, fallidos: 'dos', errores: [null, 42, 'x'] })),
+      'Recordatorios enviados: 0.');
   });
 });
 

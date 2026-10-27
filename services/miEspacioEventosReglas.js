@@ -9,7 +9,8 @@
  * los de la corrida de los recordatorios (la ventana, el candado y los atrasados). Después, la validación de un evento
  * (`validarEvento`), el momento en que sale su recordatorio, con los feriados (`momentoDelAviso`: nunca en un día que no es
  * hábil), los textos de cuándo es un evento y cuándo sale su aviso, y quién recibe qué: los recordatorios de una corrida
- * (`recordatoriosQueTocan`, con los atrasados) y los emails de un guardado (`emailsDelGuardado` y `cambioQueAvisa`). Al
+ * (`recordatoriosQueTocan`, con los atrasados, y lo que dice la corrida: `textoDelResultadoDeEventos`) y los emails de un
+ * guardado (`emailsDelGuardado` y `cambioQueAvisa`). Al
  * final, lo que dice la API: el pedido de cuándo sale un aviso (`validarAvisoDelEvento`), las personas de un guardado
  * (`personasDelPedido`), cuándo sale el aviso (`avisoDe`) y cada evento como lo ve quien lo pide (`itemDeEvento`); lo demás
  * de la agenda (tus licencias, los compañeros que no están y los feriados: `itemDeLicencia`, `itemDeAusencia` e
@@ -423,6 +424,45 @@ export const recordatoriosQueTocan = (eventos, contexto) => {
     }
   }
   return tocan.sort((a, b) => a.evento_id - b.evento_id || a.usuario_id - b.usuario_id);
+};
+
+// El largo de mi_espacio_eventos_corridas.resultado (varchar(1000): caracteres, contados con Array.from)
+const LARGO_DEL_RESULTADO = 1000;
+// Una cantidad de la corrida: un entero de 0 en adelante; lo demás, 0
+const cantidadDe = (valor) => (Number.isInteger(valor) && valor > 0 ? valor : 0);
+
+// Un error de la corrida en una línea: 'evento 12, persona 4: <error>' (sin evento ni persona, solo el error; sin un error
+// que sea un texto, 'sin detalle')
+const textoDelError = ({ evento_id: eventoId, usuario_id: usuarioId, error }) => {
+  const quien = [
+    idPositivo(eventoId) === null ? null : `evento ${idPositivo(eventoId)}`,
+    idPositivo(usuarioId) === null ? null : `persona ${idPositivo(usuarioId)}`
+  ].filter(Boolean).join(', ');
+  const mensaje = typeof error === 'string' && error.trim() !== '' ? error.trim() : 'sin detalle';
+  return quien === '' ? mensaje : `${quien}: ${mensaje}`;
+};
+
+/**
+ * Lo que dice una corrida de los recordatorios (spec, sección 5), de lo que devuelve `ejecutarRecordatoriosDeEventos`
+ * (`{ dia_habil, enviados, fallidos, errores: [{ evento_id, usuario_id, error }] }`): lo que se anota como su resultado en
+ * mi_espacio_eventos_corridas (Correos → Estado) y el mensaje de la respuesta del cron.
+ * - un día que no es hábil (`dia_habil` false): «Día no hábil: no se mandan recordatorios.»;
+ * - si no (también sin saber si era hábil: la corrida falló antes de leer los feriados): «Recordatorios enviados: 2.» y, si
+ *   hubo, « Fallidos: 1.» (emails que no salieron: se reintentan en la corrida siguiente);
+ * - con errores, « Errores: evento 12, persona 4: <error>; <error>» (uno de toda la corrida, sin evento ni persona).
+ * Cortado a 1000 caracteres (Array.from). Nada tira: lo que no es un resultado cuenta como sin nada, una cantidad rara como 0
+ * y un error que no es un objeto no cuenta.
+ */
+export const textoDelResultadoDeEventos = (resultado) => {
+  const { dia_habil: diaHabil, enviados, fallidos, errores } = esObjeto(resultado) ? resultado : {};
+  let texto = 'Día no hábil: no se mandan recordatorios.';
+  if (diaHabil !== false) {
+    texto = `Recordatorios enviados: ${cantidadDe(enviados)}.`;
+    if (cantidadDe(fallidos) > 0) texto += ` Fallidos: ${cantidadDe(fallidos)}.`;
+  }
+  const lineas = listaDe(errores).filter(esObjeto).map(textoDelError);
+  if (lineas.length > 0) texto += ` Errores: ${lineas.join('; ')}`;
+  return Array.from(texto).slice(0, LARGO_DEL_RESULTADO).join('');
 };
 
 /**

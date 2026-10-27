@@ -3,6 +3,8 @@ import * as templates from '../services/emailTemplates.js';
 import { ejecutarNotasDigitales, anotarEnLaUltimaCorrida } from '../services/notasDigitales.js';
 import { sacarFotoSiCorresponde } from '../services/metricasFoto.js';
 import { enviarAvisosDeVencimiento } from '../services/miEspacioAvisos.js';
+import { ejecutarRecordatoriosDeEventos as correrLosRecordatorios } from '../services/miEspacioEventosCorrida.js';
+import { textoDelResultadoDeEventos } from '../services/miEspacioEventosReglas.js';
 import { obtenerConfig, conPedido } from '../services/notasDigitalesDatos.js';
 import { hoyArgentina, proximoDiaHabil, esDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
@@ -241,6 +243,32 @@ export const ejecutarNotificacionCambiosPendientes = async (req, res) => {
       error: 'Error ejecutando notificación de cambios pendientes',
       details: error.message
     });
+  }
+};
+
+/**
+ * La corrida de los recordatorios de la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, sección 5): la llama una
+ * Tarea Cron cada media hora; solo manda en días hábiles, con su propio candado (services/miEspacioEventosCorrida.js).
+ * Siempre responde con `data` (lo que devolvió la corrida): con otra corrida en curso, 200 «Otra corrida de los
+ * recordatorios está en curso.»; un día que no es hábil, 200 «Hoy no es día hábil: no se mandan recordatorios.»; con
+ * fallidos o errores, 207; si no, 200 «Recordatorios enviados: N.» (el mensaje es el resultado que queda anotado). Una
+ * excepción (no se pudo tomar el candado), 500.
+ */
+export const ejecutarRecordatoriosDeEventos = async (req, res) => {
+  try {
+    const data = await correrLosRecordatorios();
+    if (data.ocupada) {
+      return res.status(200).json({ success: true, message: 'Otra corrida de los recordatorios está en curso.', data });
+    }
+    if (data.dia_habil === false) {
+      return res.status(200).json({ success: true, message: 'Hoy no es día hábil: no se mandan recordatorios.', data });
+    }
+    const success = data.fallidos === 0 && data.errores.length === 0;
+    res.status(success ? 200 : 207).json({ success, message: textoDelResultadoDeEventos(data), data });
+  } catch (error) {
+    // Solo la pila: los errores de mysql2 traen la consulta armada con sus valores
+    console.error('Error en los recordatorios de la agenda:', error?.stack ?? error);
+    res.status(500).json({ success: false, error: 'Error en los recordatorios de la agenda' });
   }
 };
 
