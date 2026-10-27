@@ -1,6 +1,7 @@
-// Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 2, 3.1 y 4): las constantes, los textos y las reglas
-// de las vacaciones (las dos mitades, el vencimiento y la licencia más vieja primero), contadas en días hábiles con los
-// feriados y desde el arranque. Puras, sin base, sobre los casos de tests/fixtures/mi-espacio-casos.js.
+// Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 2, 3.1 a 3.4, 3.8 y 4): las constantes, los textos,
+// las reglas de las vacaciones (las dos mitades, el vencimiento y la licencia más vieja primero), lo que suma cada licencia
+// contra su tope del año y la validación de una carga, contadas en días hábiles con los feriados y desde el arranque.
+// Puras, sin base, sobre los casos de tests/fixtures/mi-espacio-casos.js.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -13,7 +14,7 @@ import {
   textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA, TEXTO_ANULADA_POR_ADMINISTRACION,
   TEXTO_NO_DIA_ENTERO,
   mitadesDe, habilitaciones, venceLaLicencia, anioVigente, ordinariasDe, diasQueDescuentan, repartoDeVacaciones,
-  textoDelReparto
+  textoDelReparto, rangoDeFechas, esDiaEntero, topeDe, usoDeLosTopes, validarLicencia
 } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
@@ -387,7 +388,21 @@ describe('textoDelReparto', () => {
       'Salen de la licencia 2024, la más vieja. Te quedan 3 días, todos de la 2024 (vencen el 31/12/2026).');
     const unoSolo = soloVacaciones('2026-10-26', { 2024: 6, 2025: 0, 2026: 0 });
     assert.equal(textoDe(unoSolo, vacaciones(100, '2026-11-03', '2026-11-09')),
-      'Salen de la licencia 2024, la más vieja. Te queda 1 día, de la 2024 (vence el 31/12/2026).');
+      'Salen de la licencia 2024, la más vieja. Te queda 1 día de la 2024 (vence el 31/12/2026).');
+  });
+
+  it('el id se busca como número: el de un pedido llega como texto', () => {
+    const reparto = repartoDeVacaciones(PLANTA.estado, { hoy: HOY, feriados: SIN_FERIADOS });
+    assert.equal(textoDelReparto(reparto, '6'), textoDelReparto(reparto, 6));
+    assert.notEqual(textoDelReparto(reparto, '6'), '');
+    // Una fila con el id como texto queda con su id como número
+    const conTexto = repartoDeVacaciones(soloVacaciones('2026-10-26', { 2024: 8, 2025: 0, 2026: 0 },
+      vacaciones('100', '2026-11-03', '2026-11-09'), vacaciones('101', '2026-11-10', '2026-11-16')),
+    { hoy: HOY, feriados: SIN_FERIADOS });
+    assert.deepEqual(conTexto.porFila.get(100), [{ anio: 2024, dias: 5 }]);
+    assert.deepEqual(conTexto.porFila.get(101), [{ anio: 2024, dias: 3 }]);
+    assert.deepEqual(conTexto.sinCubrir.get(101), ['2026-11-13', '2026-11-16']);
+    assert.equal(conTexto.porFila.has('100'), false);
   });
 
   it('sin días que salgan de una licencia, no hay texto', () => {
@@ -397,8 +412,292 @@ describe('textoDelReparto', () => {
   });
 });
 
+describe('el rango de fechas y el día entero', () => {
+  it('rangoDeFechas: del 01/01 de dos años antes al 31/12 del año siguiente', () => {
+    assert.deepEqual(rangoDeFechas('2026-10-26'), { desde: '2024-01-01', hasta: '2027-12-31' });
+    assert.deepEqual(rangoDeFechas('2027-01-01'), { desde: '2025-01-01', hasta: '2028-12-31' });
+    for (const hoy of [null, undefined, '', '2026-02-30', 20261026]) assert.equal(rangoDeFechas(hoy), null);
+  });
+
+  it('esDiaEntero: los de días enteros, y los de horas con 7', () => {
+    for (const tipo of ['vacaciones', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco']) {
+      assert.equal(esDiaEntero({ tipo, horas: null }), true, tipo);
+    }
+    assert.equal(esDiaEntero({ tipo: 'franquicia', horas: 7 }), true);
+    assert.equal(esDiaEntero({ tipo: 'franquicia', horas: 3 }), false);
+    assert.equal(esDiaEntero({ tipo: 'horas_a_favor', horas: 7 }), true);
+    assert.equal(esDiaEntero({ tipo: 'horas_a_favor', horas: 6.5 }), false);
+    assert.equal(esDiaEntero({ tipo: 'uso_autorizado', horas: 7 }), true);
+    // El DECIMAL llega de la base como texto
+    assert.equal(esDiaEntero({ tipo: 'franquicia', horas: '7.0' }), true);
+    assert.equal(esDiaEntero({ tipo: 'franquicia', horas: null }), false);
+    // Un tipo que no es de Mi espacio nunca es día entero
+    assert.equal(esDiaEntero({ tipo: 'otro', horas: 7 }), false);
+    for (const raro of [null, undefined, 'franco', 7, []]) assert.equal(esDiaEntero(raro), false);
+  });
+});
+
+describe('los topes', () => {
+  // Una licencia más (las de los casos tienen ids del 1 al 6: las de los tests, desde el 100)
+  const licencia = (tipo, desde, hasta, horas = null) => ({ id: 100, tipo, desde, hasta, horas });
+  const usoDe = (topes, tipo, anio) => topes.find((tope) => tope.tipo === tipo && tope.anio === anio);
+
+  it('topeDe: el de cada tipo, y el de estudios, según la carrera del año', () => {
+    assert.equal(topeDe('franquicia', 2026, PLANTA.estado.anios), 42);
+    assert.equal(topeDe('medica', 2026, PLANTA.estado.anios), 25);
+    assert.equal(topeDe('familiar', 2026, PLANTA.estado.anios), 25);
+    assert.equal(topeDe('estudios', 2026, PLANTA.estado.anios), 15);
+    assert.equal(topeDe('estudios', 2026, CONTRATO.estado.anios), 10);
+    // El año siguiente hereda la carrera; uno sin ningún año cargado, o con «No estudio», no tiene
+    assert.equal(topeDe('estudios', 2027, PLANTA.estado.anios), 15);
+    assert.equal(topeDe('estudios', 2025, PLANTA.estado.anios), null);
+    assert.equal(topeDe('estudios', 2026, [{ anio: 2026, dias_vacaciones: 20, estudios: null }]), null);
+    assert.equal(topeDe('medica_extraordinaria', 2026, PLANTA.estado.anios), null);
+    for (const tipo of ['vacaciones', 'franco', 'otro', 'toString', '__proto__', null]) {
+      assert.equal(topeDe(tipo, 2026, PLANTA.estado.anios), null);
+    }
+  });
+
+  it('PLANTA: lo de antes del arranque no suma, el saldo inicial sí', () => {
+    assert.deepEqual(usoDeLosTopes(PLANTA.estado, { feriados: SIN_FERIADOS }), [
+      { tipo: 'franquicia', anio: 2026, usados: 17, tope: 42 },
+      { tipo: 'estudios', anio: 2026, usados: 6, tope: 15 },
+      { tipo: 'medica', anio: 2026, usados: 3, tope: 25 },
+      { tipo: 'familiar', anio: 2026, usados: 2, tope: 25 }
+    ]);
+  });
+
+  it('las franquicias se cuentan en horas', () => {
+    const estado = conLicencias(PLANTA.estado, licencia('franquicia', '2026-11-10', '2026-11-10', 3),
+      { ...licencia('franquicia', '2026-11-11', '2026-11-11', '2.0'), id: 101 });
+    assert.equal(usoDe(usoDeLosTopes(estado, { feriados: SIN_FERIADOS }), 'franquicia', 2026).usados, 22);
+  });
+
+  it('cruza el año: cada día en el suyo', () => {
+    const estado = { ...PLANTA.estado, saldos: [], licencias: [licencia('medica', '2026-12-28', '2027-01-05')] };
+    // El 01/01 es feriado fijo, y el 02 y el 03, fin de semana
+    assert.deepEqual(usoDeLosTopes(estado, { feriados: SIN_FERIADOS }), [
+      { tipo: 'medica', anio: 2026, usados: 4, tope: 25 },
+      { tipo: 'medica', anio: 2027, usados: 2, tope: 25 }
+    ]);
+  });
+
+  it('cruza el arranque: solo cuentan los días desde el arranque', () => {
+    const estado = conLicencias(PLANTA.estado, licencia('medica', '2026-10-23', '2026-10-28'));
+    // El 23/10 es anterior al arranque: suma el 26, el 27 y el 28 a los 3 del saldo
+    assert.equal(usoDe(usoDeLosTopes(estado, { feriados: SIN_FERIADOS }), 'medica', 2026).usados, 6);
+  });
+
+  it('la extraordinaria se cuenta, sin tope; los feriados no cuentan', () => {
+    const estado = conLicencias(PLANTA.estado, licencia('medica_extraordinaria', '2026-11-16', '2026-11-20'));
+    assert.deepEqual(usoDe(usoDeLosTopes(estado, { feriados: new Set(['2026-11-18']) }), 'medica_extraordinaria', 2026),
+      { tipo: 'medica_extraordinaria', anio: 2026, usados: 4, tope: null });
+  });
+
+  it('el tope de estudios es el de la carrera de cada año', () => {
+    const estado = {
+      ...CONTRATO.estado,
+      anios: [...CONTRATO.estado.anios, { anio: 2027, dias_vacaciones: 15, estudios: 'universitario' }],
+      licencias: [licencia('estudios', '2027-03-01', '2027-03-02')]
+    };
+    assert.deepEqual(usoDeLosTopes(estado, { feriados: SIN_FERIADOS }).filter((tope) => tope.tipo === 'estudios'), [
+      { tipo: 'estudios', anio: 2026, usados: 3, tope: 10 },
+      { tipo: 'estudios', anio: 2027, usados: 2, tope: 15 }
+    ]);
+  });
+});
+
+describe('validarLicencia', () => {
+  const validar = (entrada, contexto = {}) =>
+    validarLicencia(entrada, { hoy: HOY, estado: PLANTA.estado, feriados: SIN_FERIADOS, ...contexto });
+  const enContrato = (entrada, contexto = {}) => validar(entrada, { estado: CONTRATO.estado, ...contexto });
+  const errorDe = (resultado) => resultado.error;
+  const sinErrores = (resultado) => {
+    assert.equal(resultado.error, null);
+    return resultado.datos;
+  };
+
+  it('una carga que sirve: los datos, con la nota recortada', () => {
+    assert.deepEqual(validar({ tipo: 'franquicia', desde: '2026-11-10', hasta: '2026-11-10', horas: 3, nota: '  Trámite  ' }),
+      {
+        datos: { tipo: 'franquicia', desde: '2026-11-10', hasta: '2026-11-10', horas: 3, mostrar: 1, nota: 'Trámite' },
+        error: null
+      });
+    assert.deepEqual(sinErrores(validar({ tipo: 'medica', desde: '2026-11-16', hasta: '2026-11-20', horas: 4, nota: '   ' })),
+      { tipo: 'medica', desde: '2026-11-16', hasta: '2026-11-20', horas: null, mostrar: 1, nota: null });
+  });
+
+  it('el tipo: el de la modalidad, y el uso autorizado solo desde su formulario', () => {
+    const tipo = { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipo };
+    assert.deepEqual(errorDe(enContrato({ tipo: 'franquicia', desde: '2026-11-10', horas: 3 })), tipo);
+    assert.deepEqual(errorDe(validar({ tipo: 'horas_a_favor', desde: '2026-11-10', horas: 3 })), tipo);
+    for (const otro of [undefined, null, '', 'otro', 'toString', '__proto__', 3]) {
+      assert.deepEqual(errorDe(validar({ tipo: otro, desde: '2026-11-10', hasta: '2026-11-10' })), tipo);
+    }
+    assert.deepEqual(errorDe(validar({ tipo: 'uso_autorizado', desde: '2026-11-10' })), tipo);
+    assert.deepEqual(errorDe(validar({ tipo: 'uso_autorizado', desde: '2026-11-10' }, { uso_autorizado: 'true' })), tipo);
+    assert.equal(errorDe(validar({ tipo: 'uso_autorizado', desde: '2026-11-10' }, { uso_autorizado: true })), null);
+    // Sin modalidad no hay ningún tipo
+    assert.deepEqual(errorDe(validar({ tipo: 'medica', desde: '2026-11-10', hasta: '2026-11-10' },
+      { estado: { ...PLANTA.estado, modalidad: null } })), tipo);
+  });
+
+  it('las fechas: el formato, el rango, el orden y los de un día', () => {
+    const fecha = MENSAJES_MI_ESPACIO.fecha;
+    const rango = textoRango('2024-01-01', '2027-12-31');
+    assert.deepEqual(errorDe(validar({ tipo: 'medica', desde: '2026-02-30', hasta: '2026-11-10' })),
+      { campo: 'desde', mensaje: fecha });
+    assert.deepEqual(errorDe(validar({ tipo: 'medica', desde: '2026-11-10' })), { campo: 'hasta', mensaje: fecha });
+    assert.deepEqual(errorDe(validar({ tipo: 'medica', desde: '2026-11-10', hasta: '10/11/2026' })),
+      { campo: 'hasta', mensaje: fecha });
+    assert.deepEqual(errorDe(validar({ tipo: 'medica', desde: '2023-12-31', hasta: '2024-01-02' })),
+      { campo: 'desde', mensaje: rango });
+    assert.deepEqual(errorDe(validar({ tipo: 'medica', desde: '2027-12-31', hasta: '2028-01-03' })),
+      { campo: 'hasta', mensaje: rango });
+    assert.equal(errorDe(validar({ tipo: 'medica', desde: '2024-01-02', hasta: '2024-01-02' })), null);
+    assert.deepEqual(errorDe(validar({ tipo: 'medica', desde: '2026-11-12', hasta: '2026-11-10' })),
+      { campo: 'hasta', mensaje: MENSAJES_MI_ESPACIO.hastaAntes });
+    // Los de un día: sin hasta, el mismo día; con otro, unDia
+    assert.equal(sinErrores(validar({ tipo: 'franco', desde: '2026-11-10', hasta: '' })).hasta, '2026-11-10');
+    assert.equal(sinErrores(validar({ tipo: 'franco', desde: '2026-11-10' })).hasta, '2026-11-10');
+    assert.deepEqual(errorDe(validar({ tipo: 'franco', desde: '2026-11-10', hasta: '2026-11-11' })),
+      { campo: 'hasta', mensaje: MENSAJES_MI_ESPACIO.unDia });
+    assert.deepEqual(errorDe(enContrato({ tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-12', horas: 2 })),
+      { campo: 'hasta', mensaje: MENSAJES_MI_ESPACIO.unDia });
+    // Sin un hoy válido no hay rango: ninguna fecha pasa
+    assert.deepEqual(errorDe(validar({ tipo: 'medica', desde: '2026-11-10', hasta: '2026-11-10' }, { hoy: null })),
+      { campo: 'desde', mensaje: fecha });
+  });
+
+  it('los días hábiles: sinDiasHabiles, o diaNoHabil en los de un día', () => {
+    assert.deepEqual(errorDe(validar({ tipo: 'medica', desde: '2026-10-31', hasta: '2026-11-01' })),
+      { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.sinDiasHabiles });
+    assert.deepEqual(errorDe(validar({ tipo: 'franquicia', desde: '2026-10-31', horas: 2 })),
+      { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.diaNoHabil });
+    // Un feriado de la tabla tampoco es hábil
+    assert.deepEqual(errorDe(validar({ tipo: 'franquicia', desde: '2026-11-10', horas: 2 },
+      { feriados: new Set(['2026-11-10']) })), { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.diaNoHabil });
+    assert.deepEqual(errorDe(validar({ tipo: 'medica', desde: '2026-11-23', hasta: '2026-11-23' },
+      { feriados: new Set(['2026-11-23']) })), { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.sinDiasHabiles });
+  });
+
+  it('las horas: franquicias enteras, de a media hora en contrato, 7 en el uso autorizado de planta', () => {
+    const enteras = { campo: 'horas', mensaje: MENSAJES_MI_ESPACIO.horasEnteras };
+    const medias = { campo: 'horas', mensaje: MENSAJES_MI_ESPACIO.horasMedias };
+    const franquicia = (horas) => validar({ tipo: 'franquicia', desde: '2026-11-10', horas });
+    const aFavor = (horas) => enContrato({ tipo: 'horas_a_favor', desde: '2026-11-10', horas });
+    for (const horas of [2.5, 8, 0, -1, undefined, null, '', 'x', true, [3], { horas: 3 }]) {
+      assert.deepEqual(errorDe(franquicia(horas)), enteras, String(horas));
+    }
+    assert.equal(sinErrores(franquicia(1)).horas, 1);
+    assert.equal(sinErrores(franquicia('7')).horas, 7);
+    for (const horas of [2.25, 7.5, 0, 0.25, undefined, null, '', 'x', false, [2]]) {
+      assert.deepEqual(errorDe(aFavor(horas)), medias, String(horas));
+    }
+    assert.equal(sinErrores(aFavor(0.5)).horas, 0.5);
+    assert.equal(sinErrores(aFavor('2.5')).horas, 2.5);
+    assert.equal(sinErrores(aFavor(7)).horas, 7);
+    const usoEnContrato = (horas) =>
+      enContrato({ tipo: 'uso_autorizado', desde: '2026-11-10', horas }, { uso_autorizado: true });
+    assert.deepEqual(errorDe(usoEnContrato(7.5)), medias);
+    assert.equal(sinErrores(usoEnContrato(3.5)).horas, 3.5);
+    // En planta un uso autorizado es un franco entero: siempre 7, llegue lo que llegue
+    for (const horas of [undefined, null, 3, 'x']) {
+      assert.equal(sinErrores(validar({ tipo: 'uso_autorizado', desde: '2026-11-10', horas }, { uso_autorizado: true }))
+        .horas, 7);
+    }
+    // Los de días enteros no llevan horas
+    assert.equal(sinErrores(validar({ tipo: 'franco', desde: '2026-11-10', horas: 3 })).horas, null);
+  });
+
+  it('la nota: hasta 200 caracteres, contados de a uno', () => {
+    const nota = (texto) => validar({ tipo: 'franco', desde: '2026-11-10', nota: texto });
+    assert.deepEqual(errorDe(nota('a'.repeat(201))), { campo: 'nota', mensaje: MENSAJES_MI_ESPACIO.nota });
+    assert.equal(sinErrores(nota('a'.repeat(200))).nota, 'a'.repeat(200));
+    // 200 emojis son 400 unidades de UTF-16, pero 200 caracteres
+    assert.equal(sinErrores(nota('😀'.repeat(200))).nota, '😀'.repeat(200));
+    assert.deepEqual(errorDe(nota('😀'.repeat(201))), { campo: 'nota', mensaje: MENSAJES_MI_ESPACIO.nota });
+    // Se cuenta recortada; vacía, o lo que no es un texto, es null
+    assert.equal(sinErrores(nota(` ${'a'.repeat(200)} `)).nota, 'a'.repeat(200));
+    for (const vacia of [undefined, null, '', '   ', 5, {}]) assert.equal(sinErrores(nota(vacia)).nota, null);
+  });
+
+  it('mostrar es 1 salvo con false, 0 o «0»', () => {
+    const mostrar = (valor) => sinErrores(validar({ tipo: 'franco', desde: '2026-11-10', mostrar: valor })).mostrar;
+    for (const valor of [false, 0, '0']) assert.equal(mostrar(valor), 0, String(valor));
+    for (const valor of [undefined, null, true, 1, '1', 'no', '']) assert.equal(mostrar(valor), 1, String(valor));
+  });
+
+  it('dos licencias no comparten un día, salvo la que se corrige', () => {
+    const superpuesta = { campo: 'desde', mensaje: 'Ya tenés una licencia cargada el 05/11/2026: corregí la que ya está.' };
+    const franquicia = { tipo: 'franquicia', desde: '2026-11-05', horas: 2 };
+    assert.deepEqual(errorDe(validar(franquicia)), superpuesta);
+    assert.equal(errorDe(validar(franquicia, { editadaId: 6 })), null);
+    assert.equal(errorDe(validar(franquicia, { editadaId: '6' })), null);
+    assert.deepEqual(errorDe(validar(franquicia, { editadaId: 5 })), superpuesta);
+    // Con la primera fecha en común: el franco del 23/10, antes que las vacaciones del 03/11
+    assert.deepEqual(errorDe(validar({ tipo: 'medica', desde: '2026-10-20', hasta: '2026-11-04' })),
+      { campo: 'desde', mensaje: textoSuperpuesta('2026-10-23') });
+    assert.deepEqual(errorDe(validar({ tipo: 'medica', desde: '2026-11-09', hasta: '2026-11-13' })),
+      { campo: 'desde', mensaje: textoSuperpuesta('2026-11-09') });
+    // Pegadas no se superponen
+    assert.equal(errorDe(validar({ tipo: 'medica', desde: '2026-11-10', hasta: '2026-11-13' })), null);
+  });
+
+  it('estudios: de 1 a 3 días hábiles, y solo en un año en que estudia', () => {
+    assert.equal(errorDe(validar({ tipo: 'estudios', desde: '2026-11-16', hasta: '2026-11-18' })), null);
+    assert.deepEqual(errorDe(validar({ tipo: 'estudios', desde: '2026-11-16', hasta: '2026-11-19' })),
+      { campo: 'hasta', mensaje: MENSAJES_MI_ESPACIO.porExamen });
+    // Del viernes al martes: 3 días hábiles
+    assert.equal(errorDe(validar({ tipo: 'estudios', desde: '2026-11-13', hasta: '2026-11-17' })), null);
+    const noEstudia = { ...PLANTA.estado, anios: [{ anio: 2026, dias_vacaciones: 20, estudios: null }] };
+    assert.deepEqual(errorDe(validar({ tipo: 'estudios', desde: '2026-11-16', hasta: '2026-11-17' }, { estado: noEstudia })),
+      { campo: 'tipo', mensaje: textoNoEstudia(2026) });
+    // Lo anterior al arranque queda como historia: se carga aunque ese año no tenga la carrera elegida
+    assert.equal(errorDe(validar({ tipo: 'estudios', desde: '2025-11-10', hasta: '2025-11-11' })), null);
+  });
+
+  it('el orden de los controles', () => {
+    // El tipo antes que las fechas, las fechas antes que las horas, las horas antes que la nota y la superposición
+    assert.equal(errorDe(enContrato({ tipo: 'franquicia', desde: 'x', horas: 9 })).campo, 'tipo');
+    assert.equal(errorDe(validar({ tipo: 'franquicia', desde: 'x', horas: 9 })).campo, 'desde');
+    assert.equal(errorDe(validar({ tipo: 'franquicia', desde: '2026-10-31', horas: 9 })).mensaje,
+      MENSAJES_MI_ESPACIO.diaNoHabil);
+    assert.equal(errorDe(validar({ tipo: 'franquicia', desde: '2026-11-05', horas: 9, nota: 'a'.repeat(201) })).campo,
+      'horas');
+    assert.equal(errorDe(validar({ tipo: 'franquicia', desde: '2026-11-05', horas: 2, nota: 'a'.repeat(201) })).campo,
+      'nota');
+    // La superposición antes que los de estudios
+    assert.deepEqual(errorDe(validar({ tipo: 'estudios', desde: '2026-11-05', hasta: '2026-11-11' })),
+      { campo: 'desde', mensaje: textoSuperpuesta('2026-11-05') });
+  });
+});
+
 describe('nada tira', () => {
   const raros = [undefined, null, '', 'x', 0, -3, 2.5, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
+
+  it('las demás licencias, los topes y la validación con entradas raras', () => {
+    assert.deepEqual(validarLicencia(null, { hoy: HOY, estado: PLANTA.estado, feriados: SIN_FERIADOS }),
+      { datos: null, error: { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipo } });
+    for (const valor of raros) {
+      assert.doesNotThrow(() => {
+        rangoDeFechas(valor);
+        esDiaEntero(valor);
+        topeDe(valor, valor, valor);
+        topeDe('estudios', valor, valor);
+        usoDeLosTopes(valor, valor);
+        usoDeLosTopes(PLANTA.estado, valor);
+        usoDeLosTopes({ arranque: HOY, anios: valor, saldos: [valor], licencias: [valor, { tipo: 'medica', desde: valor }] });
+        validarLicencia(valor, valor);
+        validarLicencia({ tipo: 'medica', desde: '2026-11-10', hasta: '2026-11-10' },
+          { hoy: HOY, estado: { modalidad: 'planta', anios: valor, licencias: [valor, { id: valor, desde: valor }] } });
+        validarLicencia({ tipo: 'franquicia', desde: '2026-11-10', horas: valor, nota: valor, mostrar: valor },
+          { hoy: HOY, estado: PLANTA.estado, feriados: valor, editadaId: valor });
+      });
+      assert.equal(validarLicencia(valor, valor).error.campo, 'tipo');
+    }
+    assert.deepEqual(usoDeLosTopes(null), []);
+  });
 
   it('un estado vacío, null o con listas que no son listas', () => {
     for (const estado of [...raros, { arranque: HOY, anios: 'x', saldos: null, licencias: [null, 3, {}], horasExtras: 5 }]) {

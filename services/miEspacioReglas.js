@@ -14,8 +14,9 @@
  * Acá están las constantes y los textos de todo Mi espacio (los mensajes, los de las cargas y los del paso a
  * Configuración) y las vacaciones (spec, 3.1): cada año tiene su licencia, que se habilita en dos mitades (el 1/7 y el 1/1
  * del año siguiente) y vence el 31/12 de dos años después; cada día hábil de unas vacaciones sale de la licencia más vieja
- * que ese día esté habilitada, no vencida y con días libres (`repartoDeVacaciones`). Los textos son planos: escaparlos le
- * toca a quien los dibuja.
+ * que ese día esté habilitada, no vencida y con días libres (`repartoDeVacaciones`). Después, las demás licencias (3.2 a
+ * 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`) y la validación de una carga (`validarLicencia`, con
+ * la regla de 3.8: dos licencias no comparten un día). Los textos son planos: escaparlos le toca a quien los dibuja.
  */
 import { diasHabilesDe } from './feriadosReglas.js';
 import { esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
@@ -96,6 +97,14 @@ const MESES = Object.freeze([
 
 const esObjeto = (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
 const listaDe = (valor) => (Array.isArray(valor) ? valor : []);
+// Un número del pedido o de la base: un número, o un texto que lo es ('7', '2.5', el '7.0' de un DECIMAL); lo demás
+// (vacío, booleanos, listas, objetos), NaN
+const numeroDe = (valor) => {
+  if (typeof valor === 'number') return valor;
+  return typeof valor === 'string' && valor.trim() !== '' ? Number(valor) : NaN;
+};
+// Un id como número (el de la base llega como número; el de un pedido, como texto): lo que no es ninguno de los dos, NaN
+const idDe = (valor) => (typeof valor === 'number' || typeof valor === 'string' ? Number(valor) : NaN);
 const anioDe = (fecha) => Number(fecha.slice(0, 4));
 // Un año con el que se puede armar una fecha de dos años después: un entero de 1 a 9997, o un texto de cuatro cifras
 const anioValido = (valor) => {
@@ -310,8 +319,9 @@ const habilitadoAl = (ordinaria, fecha) =>
  * - `ordinarias`: las de `ordinariasDe`, cada una con lo de hoy: `habilitado` (sus mitades habilitadas hasta hoy),
  *   `por_habilitar` (el resto, menos lo cargado a futuro de lo que todavía no se habilitó), `usados` (asignados hasta hoy),
  *   `cargados` (asignados después de hoy) y `disponibles` (lo habilitado que no se asignó; 0 si ya venció).
- * - `porFila`: un Map de cada id de vacaciones a `[{ anio, dias }]`, por año (una sin días que descuenten, []).
- * - `sinCubrir`: un Map del id a sus días sin cubrir, solo de las que tienen alguno.
+ * - `porFila`: un Map de cada id de vacaciones a `[{ anio, dias }]`, por año (una sin días que descuenten, []). El id va
+ *   como número (`idDe`): así se busca también con el de un pedido, que llega como texto.
+ * - `sinCubrir`: un Map del id (también como número) a sus días sin cubrir, solo de las que tienen alguno.
  * - `hoy`: el de las opciones, o null (`textoDelReparto` lo usa para saber qué licencia vence este año).
  */
 export const repartoDeVacaciones = (estado, opciones) => {
@@ -325,10 +335,11 @@ export const repartoDeVacaciones = (estado, opciones) => {
   const dias = [];
   for (const fila of listaDe(datos.licencias)) {
     if (!esObjeto(fila) || fila.tipo !== 'vacaciones') continue;
-    contadosPorFila.set(fila.id, new Map());
-    for (const fecha of diasQueDescuentan(fila, datos, feriados)) dias.push({ fecha, id: fila.id });
+    const id = idDe(fila.id);
+    contadosPorFila.set(id, new Map());
+    for (const fecha of diasQueDescuentan(fila, datos, feriados)) dias.push({ fecha, id });
   }
-  dias.sort((a, b) => compararTexto(a.fecha, b.fecha) || (Number(a.id) || 0) - (Number(b.id) || 0));
+  dias.sort((a, b) => compararTexto(a.fecha, b.fecha) || (a.id || 0) - (b.id || 0));
 
   for (const { fecha, id } of dias) {
     const elegida = ordinarias.find((ordinaria) =>
@@ -375,7 +386,7 @@ export const repartoDeVacaciones = (estado, opciones) => {
  */
 export const textoDelReparto = (reparto, filaId) => {
   if (!esObjeto(reparto) || !(reparto.porFila instanceof Map)) return '';
-  const partes = listaDe(reparto.porFila.get(filaId)).filter(esObjeto);
+  const partes = listaDe(reparto.porFila.get(idDe(filaId))).filter(esObjeto);
   if (partes.length === 0) return '';
   const salen = partes.length === 1
     ? `Salen de la licencia ${partes[0].anio}, la más vieja.`
@@ -392,7 +403,186 @@ export const textoDelReparto = (reparto, filaId) => {
   if (conDias.length === 0) quedan = 'No te quedan días disponibles.';
   else if (conDias.length > 1) {
     quedan = `Te quedan ${diasTexto(total)}: ${enLista(conDias.map((o) => `${numeroTexto(o.disponibles)} ${deLa(o)}`))}.`;
-  } else if (total === 1) quedan = `Te queda 1 día, ${deLa(conDias[0])}.`;
+  } else if (total === 1) quedan = `Te queda 1 día ${deLa(conDias[0])}.`;
   else quedan = `Te quedan ${diasTexto(total)}, todos ${deLa(conDias[0])}.`;
   return `${salen} ${quedan}`;
+};
+
+// El rango de fechas de una licencia o de unas horas extras: del 01/01 de dos años antes al 31/12 del año siguiente
+// (`{ desde, hasta }`), o null si hoy no es una fecha
+export const rangoDeFechas = (hoy) => {
+  if (!esFechaIso(hoy)) return null;
+  const anio = anioDe(hoy);
+  const rango = { desde: fechaDe(anio - 2, '01-01'), hasta: fechaDe(anio + 1, '12-31') };
+  return esFechaIso(rango.desde) && esFechaIso(rango.hasta) ? rango : null;
+};
+
+// Las ausencias de día completo (spec, sección 6): las licencias de días enteros, y las de horas con la jornada entera
+const TIPOS_DE_DIA_ENTERO = Object.freeze([
+  'vacaciones', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco'
+]);
+const TIPOS_POR_HORAS = Object.freeze(['franquicia', 'horas_a_favor', 'uso_autorizado']);
+export const esDiaEntero = (fila) => esObjeto(fila) && (TIPOS_DE_DIA_ENTERO.includes(fila.tipo)
+  || (TIPOS_POR_HORAS.includes(fila.tipo) && numeroDe(fila.horas) === JORNADA));
+
+/**
+ * El tope del año de un tipo: las 42 horas de franquicia, los 25 días de atención médica y de grupo familiar, y en estudios
+ * los de la carrera de ese año (la de `anioVigente`: 15 universitaria y 10 secundaria). null con «No estudio» o sin ningún
+ * año cargado, en la médica extraordinaria (no tiene) y en cualquier otro tipo.
+ */
+export const topeDe = (tipo, anio, anios) => {
+  if (tipo === 'estudios') {
+    const carrera = anioVigente(anios, anio)?.estudios ?? null;
+    return carrera === null ? null : DIAS_ESTUDIOS[carrera];
+  }
+  return typeof tipo === 'string' && Object.hasOwn(TOPES, tipo) ? TOPES[tipo] : null;
+};
+
+// Los tipos que se cuentan por año, en el orden del Resumen (la extraordinaria no tiene tope, pero se cuenta igual: «Usaste
+// 3 días en 2026.»), y el tipo de cada concepto del saldo inicial
+const TIPOS_CON_TOPE = Object.freeze(['franquicia', 'estudios', 'medica', 'familiar', 'medica_extraordinaria']);
+const TIPO_DEL_SALDO = Object.freeze({
+  franquicias: 'franquicia', estudios: 'estudios', medica: 'medica', familiar: 'familiar'
+});
+
+/**
+ * Lo que suma cada tipo con tope en cada año (spec, 3.2 a 3.4): `[{ tipo, anio, usados, tope }]`, por tipo (en el orden de
+ * `TIPOS_CON_TOPE`) y por año. Cada día que descuenta (`diasQueDescuentan`: en los tipos con saldo inicial, desde el
+ * arranque) cuenta en su año: un día, o sus horas en la franquicia. El saldo inicial de cada tipo suma en el año del
+ * arranque. Va cada tipo y año con algún día o con su saldo cargado (aunque sea 0); `tope` es el de `topeDe`. Comparar
+ * `usados` con `tope` le toca a quien lo usa. Sin un estado, [].
+ */
+export const usoDeLosTopes = (estado, opciones) => {
+  if (!esObjeto(estado)) return [];
+  const { feriados } = esObjeto(opciones) ? opciones : {};
+  const usados = new Map(TIPOS_CON_TOPE.map((tipo) => [tipo, new Map()]));
+  const sumar = (tipo, anio, cantidad) => usados.get(tipo).set(anio, (usados.get(tipo).get(anio) ?? 0) + cantidad);
+  // Lo que no es un número positivo no suma
+  const positivo = (valor) => {
+    const numero = numeroDe(valor);
+    return Number.isFinite(numero) && numero > 0 ? numero : 0;
+  };
+
+  if (esFechaIso(estado.arranque)) {
+    const anio = anioDe(estado.arranque);
+    for (const saldo of listaDe(estado.saldos)) {
+      if (!esObjeto(saldo) || numeroDe(saldo.anio) !== anio) continue;
+      const { concepto } = saldo;
+      if (typeof concepto === 'string' && Object.hasOwn(TIPO_DEL_SALDO, concepto)) {
+        sumar(TIPO_DEL_SALDO[concepto], anio, positivo(saldo.cantidad));
+      }
+    }
+  }
+  for (const fila of listaDe(estado.licencias)) {
+    if (!esObjeto(fila) || !usados.has(fila.tipo)) continue;
+    const porDia = fila.tipo === 'franquicia' ? positivo(fila.horas) : 1;
+    for (const dia of diasQueDescuentan(fila, estado, feriados)) sumar(fila.tipo, anioDe(dia), porDia);
+  }
+
+  return TIPOS_CON_TOPE.flatMap((tipo) => [...usados.get(tipo)]
+    .sort(([a], [b]) => a - b)
+    .map(([anio, cantidad]) => ({ tipo, anio, usados: cantidad, tope: topeDe(tipo, anio, estado.anios) })));
+};
+
+// Los tipos de un solo día: desde y hasta son el mismo
+const TIPOS_DE_UN_DIA = Object.freeze(['franquicia', 'franco', 'horas_a_favor', 'uso_autorizado']);
+// Vacío: no vino, null o un texto de espacios
+const esVacio = (valor) => valor === undefined || valor === null || (typeof valor === 'string' && valor.trim() === '');
+const rechazo = (campo, mensaje) => ({ datos: null, error: { campo, mensaje } });
+
+// Las horas de una carga: `{ horas }`, o `{ error }` con la clave de su mensaje
+const horasDeLaCarga = (tipo, valor, modalidad) => {
+  // En planta, un uso autorizado es un franco: el día entero
+  if (tipo === 'uso_autorizado' && modalidad === 'planta') return { horas: JORNADA };
+  const horas = numeroDe(valor);
+  if (tipo === 'franquicia') {
+    return Number.isInteger(horas) && horas >= 1 && horas <= JORNADA ? { horas } : { error: 'horasEnteras' };
+  }
+  if (tipo === 'horas_a_favor' || tipo === 'uso_autorizado') {
+    return Number.isInteger(horas * 2) && horas >= 0.5 && horas <= JORNADA ? { horas } : { error: 'horasMedias' };
+  }
+  return { horas: null };
+};
+
+// La primera fecha que [desde, hasta] comparte con otra licencia cargada (no con la que se corrige), o null
+const primeraFechaEnComun = (licencias, desde, hasta, editadaId) => {
+  const editada = idDe(editadaId);
+  let primera = null;
+  for (const fila of listaDe(licencias)) {
+    if (!esObjeto(fila) || idDe(fila.id) === editada || !esFechaIso(fila.desde) || !esFechaIso(fila.hasta)) continue;
+    if (fila.hasta < fila.desde || fila.desde > hasta || fila.hasta < desde) continue;
+    const enComun = fila.desde > desde ? fila.desde : desde;
+    if (primera === null || enComun < primera) primera = enComun;
+  }
+  return primera;
+};
+
+/**
+ * Valida una licencia, el cuerpo de un alta o de una corrección. El contexto es `{ hoy, estado, feriados, editadaId,
+ * uso_autorizado }` (`editadaId`, el id de la que se corrige, como número o como texto). Devuelve `{ datos, error }`:
+ * `error` es null, o `{ campo, mensaje }` del primero que no sirve, y entonces `datos` es null; si no, `datos` es
+ * `{ tipo, desde, hasta, horas, mostrar, nota }`. Los controles, en este orden:
+ * 1. el tipo, uno de la modalidad del estado; `uso_autorizado`, solo desde su formulario (`uso_autorizado: true`);
+ * 2. las fechas: el formato (`fecha`, en su campo), el rango de `rangoDeFechas` (`textoRango`), que hasta no sea anterior
+ *    a desde (`hastaAntes`) y, en los de un día, que sean el mismo (sin hasta, toma desde; otro, `unDia` en `hasta`);
+ * 3. los días hábiles, con los feriados: ninguno da `sinDiasHabiles`, o `diaNoHabil` en los de un día (en `desde`);
+ * 4. las horas: en la franquicia, enteras de 1 a 7 (`horasEnteras`); en las horas a favor y el uso autorizado de contrato,
+ *    de 0,5 a 7 de a media hora (`horasMedias`); en el uso autorizado de planta, siempre 7; en el resto, null;
+ * 5. la nota: recortada, de hasta 200 caracteres contados con Array.from (vacía, o lo que no es un texto, es null);
+ * 6. que no comparta un día con otra licencia cargada (spec, 3.8): `textoSuperpuesta` con la primera fecha en común, en
+ *    `desde`;
+ * 7. en estudios, de 1 a 3 días hábiles (`porExamen`, en `hasta`), y que los días que descuentan sean de años en que
+ *    estudia (`textoNoEstudia`, en `tipo`): lo anterior al arranque queda como historia y no se controla.
+ * `mostrar` es 1 salvo con false, 0 o '0'. Los topes no se controlan acá: los compara `problemaDeLaCarga` con lo cargado.
+ * Sin un hoy válido no pasa ninguna fecha; una entrada o un contexto que no son objetos cuentan como `{}`.
+ */
+export const validarLicencia = (entrada, contexto) => {
+  const fuente = esObjeto(entrada) ? entrada : {};
+  const { hoy, estado, feriados, editadaId, uso_autorizado: desdeSuFormulario } = esObjeto(contexto) ? contexto : {};
+  const datos = esObjeto(estado) ? estado : {};
+  const { modalidad } = datos;
+  const { tipo, desde } = fuente;
+
+  const tipos = typeof modalidad === 'string' && Object.hasOwn(TIPOS_POR_MODALIDAD, modalidad)
+    ? TIPOS_POR_MODALIDAD[modalidad] : [];
+  if (!tipos.includes(tipo) || (tipo === 'uso_autorizado' && desdeSuFormulario !== true)) {
+    return rechazo('tipo', MENSAJES_MI_ESPACIO.tipo);
+  }
+
+  const deUnDia = TIPOS_DE_UN_DIA.includes(tipo);
+  const hasta = deUnDia && esVacio(fuente.hasta) ? desde : fuente.hasta;
+  if (!esFechaIso(desde)) return rechazo('desde', MENSAJES_MI_ESPACIO.fecha);
+  if (!esFechaIso(hasta)) return rechazo('hasta', MENSAJES_MI_ESPACIO.fecha);
+  const rango = rangoDeFechas(hoy);
+  if (rango === null) return rechazo('desde', MENSAJES_MI_ESPACIO.fecha);
+  const fueraDelRango = (fecha) => fecha < rango.desde || fecha > rango.hasta;
+  if (fueraDelRango(desde)) return rechazo('desde', textoRango(rango.desde, rango.hasta));
+  if (fueraDelRango(hasta)) return rechazo('hasta', textoRango(rango.desde, rango.hasta));
+  if (hasta < desde) return rechazo('hasta', MENSAJES_MI_ESPACIO.hastaAntes);
+  if (deUnDia && hasta !== desde) return rechazo('hasta', MENSAJES_MI_ESPACIO.unDia);
+
+  // Con las dos fechas en el rango, contar los días hábiles no da más de cuatro años de vueltas
+  const dias = diasHabilesDe(desde, hasta, feriados);
+  if (dias.length === 0) {
+    return rechazo('desde', deUnDia ? MENSAJES_MI_ESPACIO.diaNoHabil : MENSAJES_MI_ESPACIO.sinDiasHabiles);
+  }
+
+  const { horas, error: errorDeLasHoras } = horasDeLaCarga(tipo, fuente.horas, modalidad);
+  if (errorDeLasHoras) return rechazo('horas', MENSAJES_MI_ESPACIO[errorDeLasHoras]);
+
+  const nota = typeof fuente.nota === 'string' ? fuente.nota.trim() : '';
+  if (Array.from(nota).length > LARGO_NOTA) return rechazo('nota', MENSAJES_MI_ESPACIO.nota);
+
+  const enComun = primeraFechaEnComun(datos.licencias, desde, hasta, editadaId);
+  if (enComun !== null) return rechazo('desde', textoSuperpuesta(enComun));
+
+  if (tipo === 'estudios') {
+    if (dias.length > DIAS_POR_EXAMEN) return rechazo('hasta', MENSAJES_MI_ESPACIO.porExamen);
+    const sinCarrera = diasQueDescuentan({ tipo, desde, hasta }, datos, feriados).map(anioDe)
+      .find((anio) => topeDe('estudios', anio, datos.anios) === null);
+    if (sinCarrera !== undefined) return rechazo('tipo', textoNoEstudia(sinCarrera));
+  }
+
+  const mostrar = [false, 0, '0'].includes(fuente.mostrar) ? 0 : 1;
+  return { datos: { tipo, desde, hasta, horas, mostrar, nota: nota === '' ? null : nota }, error: null };
 };
