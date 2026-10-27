@@ -1,5 +1,5 @@
 // Motor de Notas Digitales: calendario, numeración, envío, reintentos y concurrencia (base de prueba + Mailpit)
-import { describe, it, before, after, beforeEach } from 'node:test';
+import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearBaseDePrueba, cerrarDb, query, mailpit, db, MAILPIT_URL } from './helpers.js';
 import { crearDataset, crearNota, crearEmailViejo, limpiarBase, configurarNotas, crearArea, conFallaSimulada, asegurarBaseDePrueba } from './notas-fixtures.js';
@@ -492,6 +492,67 @@ describe('fallas, reintentos y concurrencia', () => {
     await assert.rejects(motor.reintentarNota(999999), motor.ErrorDeUso);
     const [{ libre }] = await query('SELECT IS_FREE_LOCK(?) AS libre', [BLOQUEO]);
     assert.equal(Number(libre), 1);
+  });
+
+  // conBloqueo, exportado para la corrida de los recordatorios de la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda,
+  // sección 5), con el nombre como parámetro: con otro nombre no choca con el de las Notas Digitales; sin él, es el de siempre
+  it('conBloqueo con otro nombre corre aunque el de las Notas esté tomado; sin el nombre, no corre', async () => {
+    const OTRO = 'rpad_mi_espacio_eventos';
+    let corridas = 0;
+    const fn = async () => {
+      corridas += 1;
+      return 'hecho';
+    };
+    const liberar = await tomarBloqueoAjeno();
+    try {
+      assert.deepEqual(await motor.conBloqueo(fn, OTRO), { ocupado: false, resultado: 'hecho' });
+      assert.equal(corridas, 1);
+      assert.deepEqual(await motor.conBloqueo(fn), { ocupado: true });
+      assert.equal(corridas, 1);
+    } finally {
+      await liberar();
+    }
+    // Los dos quedan libres
+    for (const nombre of [OTRO, BLOQUEO]) {
+      const [{ libre }] = await query('SELECT IS_FREE_LOCK(?) AS libre', [nombre]);
+      assert.equal(Number(libre), 1, nombre);
+    }
+    assert.deepEqual(await motor.conBloqueo(fn), { ocupado: false, resultado: 'hecho' });
+    assert.equal(corridas, 2);
+  });
+
+  it('conBloqueo: si no puede liberar el bloqueo, lo dice en la consola con su nombre (el de las Notas, como siempre)', async () => {
+    const pool = (await import('../config/database.js')).default;
+    // Una conexión que toma el bloqueo y falla al liberarlo: se descarta (al cerrarse, la base lo libera)
+    const pedidos = [];
+    const conexion = {
+      query: async (sql, valores) => {
+        pedidos.push([sql, valores]);
+        if (sql.includes('RELEASE_LOCK')) throw new Error('Falla simulada');
+        return [[{ bloqueo: 1 }]];
+      },
+      release: mock.fn(),
+      destroy: mock.fn()
+    };
+    const getConnection = mock.method(pool, 'getConnection', async () => conexion);
+    const log = mock.method(console, 'error', () => {});
+    try {
+      assert.deepEqual(await motor.conBloqueo(async () => 'hecho'), { ocupado: false, resultado: 'hecho' });
+      assert.deepEqual(await motor.conBloqueo(async () => 'otro', 'rpad_mi_espacio_eventos'), { ocupado: false, resultado: 'otro' });
+    } finally {
+      getConnection.mock.restore();
+      log.mock.restore();
+    }
+    assert.deepEqual(pedidos, [
+      ['SELECT GET_LOCK(?, 0) AS bloqueo', [BLOQUEO]], ['SELECT RELEASE_LOCK(?)', [BLOQUEO]],
+      ['SELECT GET_LOCK(?, 0) AS bloqueo', ['rpad_mi_espacio_eventos']], ['SELECT RELEASE_LOCK(?)', ['rpad_mi_espacio_eventos']]
+    ]);
+    assert.deepEqual(log.mock.calls.map((llamada) => llamada.arguments), [
+      ['⚠️ No se pudo liberar el bloqueo de Notas Digitales:', 'Falla simulada'],
+      ['⚠️ No se pudo liberar el bloqueo rpad_mi_espacio_eventos:', 'Falla simulada']
+    ]);
+    assert.equal(conexion.destroy.mock.callCount(), 2);
+    assert.equal(conexion.release.mock.callCount(), 0);
   });
 });
 

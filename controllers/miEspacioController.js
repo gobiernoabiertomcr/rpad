@@ -11,9 +11,10 @@
 // inicial («Mis vacaciones y saldos», sección 4) se guardan también cada uno en una transacción, sin tocar Configuración, y
 // ningún faltante los frena (3.10). Un id de otra persona responde 404, como uno que no existe: no se revela que existe
 // (sección 10). Lo único de otras personas que se ve es «Hoy no están» (sección 7: quién de administración no está, nunca de
-// qué) y, solo el firmante titular, las personas que puede autorizar con sus licencias (sección 6), como en Configuración.
+// qué), los eventos que le compartieron, en «Hoy y mañana» (los de la agenda: controllers/miEspacioEventosController.js) y,
+// solo el firmante titular, las personas que puede autorizar con sus licencias (sección 6), como en Configuración.
 import pool from '../config/database.js';
-import { hoyArgentina, sumarDias, diasEntre, esFechaIso } from '../services/notasDigitalesCalendario.js';
+import { hoyArgentina, ahoraArgentina, sumarDias, diasEntre, esFechaIso } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, anioVigente, camposDelSaldoInicial, textoDeLasMitades, evaluarLicencia,
   validarHorasExtras, validarAnio, validarSaldoInicial, modalidadDe, ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana
@@ -29,6 +30,8 @@ import {
 import { puedeTenerLicencia } from '../services/licenciasReglas.js';
 import { idPositivo } from '../services/proyectosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
+import { eventosVisibles } from '../services/miEspacioEventosDatos.js';
+import { itemDeEvento, eventosDeHoyYManana } from '../services/miEspacioEventosReglas.js';
 
 // Los años que se pueden pedir (las reglas aceptan más: el control va acá)
 const ANIO_MINIMO = 2000;
@@ -60,15 +63,37 @@ const responder = async (res, mensaje, operacion) => {
   }
 };
 
+/**
+ * Los eventos de «Hoy y mañana» (spec 2026-10-26-mi-espacio-agenda, sección 6): los que la persona (`{ id, rol }`) ve hoy y
+ * mañana, como en la agenda (`eventosVisibles` e `itemDeEvento`), en `eventosDeHoyYManana`. `feriados`: el Set del cálculo
+ * (cubre el aviso de cada evento). Aislado: si leerlos falla, el Resumen sale igual, con [], y el error queda en la consola.
+ */
+const eventosDelResumen = async (usuario, hoy, feriados) => {
+  try {
+    const eventos = await eventosVisibles(usuario, hoy, sumarDias(hoy, 1));
+    const ahora = ahoraArgentina();
+    return eventosDeHoyYManana(eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados })), hoy);
+  } catch (error) {
+    console.error('Error al obtener los eventos de hoy y mañana:', error?.stack ?? error);
+    return [];
+  }
+};
+
 // GET /api/mi-espacio/resumen: el Resumen «Niveles», ya calculado. «Hoy y mañana» lleva los compañeros que no están hoy y, aparte,
 // los que empiezan mañana (`ausentesPara` de hoy a mañana, en dos grupos con `ausentesDeHoyYManana`: decisión del usuario,
-// 27/10/2026; a quien no es de administración, ninguno) y el próximo feriado, con las mismas filas de los feriados del cálculo (sin
-// leerlas otra vez)
+// 27/10/2026; a quien no es de administración, ninguno), el próximo feriado, con las mismas filas de los feriados del cálculo
+// (sin leerlas otra vez), y, al final, los eventos de hoy y de mañana (`eventos`, aislados: ver eventosDelResumen). Van también
+// sin modalidad: la página decide qué mostrar
 export const verResumen = (req, res) => responder(res, 'Error al obtener el Resumen', async () => {
   const hoy = hoyArgentina();
   const { persona, estado, feriados, filasFeriados, calculo } = await contextoDe(req.user.userId, hoy);
-  const { ausentes } = await ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados });
-  const hoyYManana = { ...ausentesDeHoyYManana(ausentes, hoy), proximo_feriado: proximoFeriadoDe(filasFeriados, hoy) };
+  const [{ ausentes }, eventos] = await Promise.all([
+    ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados }),
+    eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, feriados)
+  ]);
+  const hoyYManana = {
+    ...ausentesDeHoyYManana(ausentes, hoy), proximo_feriado: proximoFeriadoDe(filasFeriados, hoy), eventos
+  };
   return conDatos(resumenDe({ persona, estado, calculo, hoy, feriados, hoyYManana }));
 });
 
@@ -456,21 +481,36 @@ export const guardarSaldoInicial = (req, res) => responder(res, 'Error al guarda
 // «Hoy no están» (spec, sección 7): los compañeros que no están en un rango, sin el tipo ni la nota. «Los compañeros» son
 // administración (`esAdmin`): solo ellos ven a los demás, y solo se ven ellos
 
-// El rango más largo que se puede pedir, los dos días incluidos
-const DIAS_DE_AUSENTES = 93;
-const MENSAJE_RANGO_DE_AUSENTES = `Elegí un rango de hasta ${DIAS_DE_AUSENTES} días.`;
+// El rango más largo que se puede pedir, los dos días incluidos (también el de la agenda: GET /api/mi-espacio/eventos, en
+// controllers/miEspacioEventosController.js, con rangoDelPedido)
+export const DIAS_DE_AUSENTES = 93;
+export const MENSAJE_RANGO_DE_AUSENTES = `Elegí un rango de hasta ${DIAS_DE_AUSENTES} días.`;
 // Cuánto antes y después del rango se leen las ausencias: una se une con las seguidas (separadas solo por días no hábiles),
 // así la que empezó antes o sigue después se ve entera, con su desde y su vuelta. Una cadena de más de un año se corta ahí
 const MARGEN_DE_LAS_AUSENCIAS = 366;
 
 // Una fecha del pedido: 'AAAA-MM-DD' de un año de ANIO_MINIMO a ANIO_MAXIMO; cualquier otra cosa (una repetida, que Express
 // da como lista), null
-const fechaDelPedido = (valor) => {
+export const fechaDelPedido = (valor) => {
   if (!esFechaIso(valor)) return null;
   const anio = Number(valor.slice(0, 4));
   return anio >= ANIO_MINIMO && anio <= ANIO_MAXIMO ? valor : null;
 };
-const rechazoDeLasFechas = (mensaje) => [400, { success: false, error: mensaje, campo: 'fechas' }];
+export const rechazoDeLasFechas = (mensaje) => [400, { success: false, error: mensaje, campo: 'fechas' }];
+
+/**
+ * El rango de un pedido (`?desde=AAAA-MM-DD&hasta=AAAA-MM-DD`, en `query`): `{ desde, hasta }`, o `{ rechazo }` con el
+ * [status, cuerpo] del 400 en `fechas`: una fecha que falta o no sirve (fechaDelPedido) o un hasta anterior al desde,
+ * MENSAJES_MI_ESPACIO.fecha; más de DIAS_DE_AUSENTES días contando los dos, MENSAJE_RANGO_DE_AUSENTES. Lo usan «Hoy no
+ * están» y la agenda
+ */
+export const rangoDelPedido = (query) => {
+  const desde = fechaDelPedido(query?.desde);
+  const hasta = fechaDelPedido(query?.hasta);
+  if (desde === null || hasta === null || hasta < desde) return { rechazo: rechazoDeLasFechas(MENSAJES_MI_ESPACIO.fecha) };
+  if (diasEntre(desde, hasta) + 1 > DIAS_DE_AUSENTES) return { rechazo: rechazoDeLasFechas(MENSAJE_RANGO_DE_AUSENTES) };
+  return { desde, hasta };
+};
 
 /**
  * Los compañeros que no están entre desde y hasta, como los ve `persona` (`{ id, rol }`): `{ puede_ver, ausentes }`. Sin
@@ -478,9 +518,10 @@ const rechazoDeLasFechas = (mensaje) => [400, { success: false, error: mensaje, 
  * (`ausenciasVisibles`, sin las de la persona), leídas con margen, unidas con los feriados que necesitan (`feriadosPara` con
  * hoy: cubre los años de las filas, que se cargan hasta el año que viene, y la vuelta que pasa al siguiente) y cortadas al
  * rango (`ausentesDelRango`: `{ nombre, desde, hasta, vuelve, texto, vuelve_texto }`). `filasFeriados`: las filas de los
- * feriados, si ya se leyeron.
+ * feriados, si ya se leyeron. La usan «Hoy no están», el Resumen y la agenda (GET /api/mi-espacio/eventos, en
+ * controllers/miEspacioEventosController.js): leer las ausencias solo dentro del rango cortaría las que empezaron antes.
  */
-const ausentesPara = async (persona, { desde, hasta, hoy, filasFeriados = null }) => {
+export const ausentesPara = async (persona, { desde, hasta, hoy, filasFeriados = null }) => {
   if (!esAdmin(persona?.rol)) return { puede_ver: false, ausentes: [] };
   const filas = await ausenciasVisibles(sumarDias(desde, -MARGEN_DE_LAS_AUSENCIAS), sumarDias(hasta, MARGEN_DE_LAS_AUSENCIAS),
     { excluir: persona.id });
@@ -491,10 +532,8 @@ const ausentesPara = async (persona, { desde, hasta, hoy, filasFeriados = null }
 // GET /api/mi-espacio/ausentes?desde=AAAA-MM-DD&hasta=AAAA-MM-DD: «Hoy no están» de un rango de hasta 93 días. Las fechas se
 // validan antes que nada, también para quien no puede ver (400 en `fechas`)
 export const listarAusentes = (req, res) => responder(res, 'Error al obtener quiénes no están', async () => {
-  const desde = fechaDelPedido(req.query.desde);
-  const hasta = fechaDelPedido(req.query.hasta);
-  if (desde === null || hasta === null || hasta < desde) return rechazoDeLasFechas(MENSAJES_MI_ESPACIO.fecha);
-  if (diasEntre(desde, hasta) + 1 > DIAS_DE_AUSENTES) return rechazoDeLasFechas(MENSAJE_RANGO_DE_AUSENTES);
+  const { desde, hasta, rechazo } = rangoDelPedido(req.query);
+  if (rechazo) return rechazo;
   return conDatos(await ausentesPara({ id: req.user.userId, rol: req.user.rol }, { desde, hasta, hoy: hoyArgentina() }));
 });
 

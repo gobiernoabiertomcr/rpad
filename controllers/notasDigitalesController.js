@@ -12,6 +12,8 @@ import { firmaDeUsuario } from '../services/firmasService.js';
 import { bloquesDeNotaDigital, NotaNoReconocida } from '../services/notasDigitalesWord.js';
 import { renderDocx, membreteParaWord } from '../services/notasWord.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
+import { estadoDeLosRecordatorios } from '../services/miEspacioEventosCorrida.js';
+import { alertaSinEstadoDeEventos } from '../services/miEspacioEventosReglas.js';
 
 const TIPOS = ['aviso', 'reiteracion'];
 // El libro también filtra las notas de autorización y las de auditoría (spec 2026-10-15, 7.2 y 10.4)
@@ -240,9 +242,28 @@ export const reintentarNota = async (req, res) => {
   }
 };
 
+// Los recordatorios de la agenda de Mi espacio en el Estado (spec 2026-10-26-mi-espacio-agenda, 5): `eventos` = { texto,
+// corrida }, la línea de la última corrida, y sus alertas. Nunca tira: si no se pueden leer, `eventos` es null y va la
+// advertencia eventos-sin-estado (en la consola, solo la pila: los errores de mysql2 traen la consulta con sus valores)
+const estadoDeLosEventos = async () => {
+  try {
+    const { texto, corrida, alertas } = await estadoDeLosRecordatorios();
+    return { eventos: { texto, corrida }, alertas };
+  } catch (error) {
+    console.error('Error al leer la última corrida de los recordatorios:', error?.stack ?? error);
+    return { eventos: null, alertas: [alertaSinEstadoDeEventos()] };
+  }
+};
+
+// El estado de las Notas Digitales (estadoNotas, que no cambia) con los recordatorios de la agenda: `eventos` y sus alertas al
+// final de las de siempre (cargarEstado de correos.js las dibuja todas y prende el punto de la pestaña con ellas)
 export const verEstado = async (req, res) => {
   try {
-    res.json({ success: true, data: await notas.estadoNotas() });
+    const [estado, deLosEventos] = await Promise.all([notas.estadoNotas(), estadoDeLosEventos()]);
+    res.json({
+      success: true,
+      data: { ...estado, eventos: deLosEventos.eventos, alertas: [...estado.alertas, ...deLosEventos.alertas] }
+    });
   } catch (error) {
     errorInterno(res, 'Error al obtener el estado de las notas', error);
   }

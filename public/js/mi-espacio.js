@@ -1,10 +1,11 @@
 /**
  * Mi espacio - RPAD (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 8 y 11)
- * El panel personal de cada usuario: sus licencias, sus horas extras y lo que le queda, en tres pestañas que viajan en la dirección
- * (#resumen, #licencias y #horas). Lo que se carga acá lo ve solo su dueño. Los números y los textos los arma el servidor
- * (GET /api/mi-espacio/resumen, /mi-espacio/licencias?anio= y /mi-espacio/horas-extras?anio=, con services/miEspacioResumen.js) y
- * la página los imprime tal cual: no recalcula nada (Ruling 19). Sin la modalidad cargada, cada pestaña muestra el mensaje del
- * servidor y no deja cargar nada.
+ * El panel personal de cada usuario: sus licencias, sus horas extras, lo que le queda y su agenda, en cuatro pestañas que viajan en
+ * la dirección (#resumen, #licencias, #horas y #agenda). Lo que se carga acá lo ve solo su dueño, salvo los eventos que comparte. Los
+ * números y los textos los arma el servidor (GET /api/mi-espacio/resumen, /mi-espacio/licencias?anio=, /mi-espacio/horas-extras?anio=
+ * y /mi-espacio/eventos?desde=&hasta=, con services/miEspacioResumen.js y services/miEspacioEventosReglas.js) y la página los imprime
+ * tal cual: no recalcula nada (Ruling 19). Sin la modalidad cargada, las tres primeras pestañas muestran el mensaje del servidor y no
+ * dejan cargar nada; la agenda se ve igual (decisión del usuario, 27/10/2026).
  * - Resumen «Niveles»: la modalidad y el año; «Vence pronto» (cada cosa con su fecha en un bloque amarillo y el botón que la
  *   resuelve), los faltantes en un aviso ámbar, «Lo que te queda» (un tanque SVG por saldo, cada uno un link a su pestaña, y debajo
  *   las pastillas de los francos o de las horas a favor) y, al costado, «Hoy y mañana» (quién no está, solo para administración, y
@@ -14,6 +15,15 @@
  *   «Cambiar». Lo anterior al saldo inicial y lo que no corresponde a la modalidad actual se ven en gris, con su motivo.
  * - Horas extras: la tabla por mes (en planta, los francos; en contrato, las horas a favor) y el día por día de un mes (cada mes de
  *   la tabla es un botón; de entrada, el en curso) y, en contrato, las horas no utilizadas previamente.
+ * - Agenda (spec 2026-10-26-mi-espacio-agenda, 6): el mes de lunes a domingo, con «‹», «›», «Hoy» y hasta 3 cosas por día («y N
+ *   más» muestra el resto), en sus colores (lo tuyo, lo compartido, tus licencias y francos, los feriados y los compañeros que no
+ *   están) con su leyenda, y al costado los próximos 30 días (Hoy, Mañana, Esta semana y Más adelante). El mes no va en la
+ *   dirección. «Hoy y mañana» del Resumen suma los eventos de hoy y de mañana. Un evento propio (de la grilla o de los próximos) abre
+ *   su formulario; uno de otra persona, su detalle con «Mi recordatorio» (que se guarda al elegirlo); los dos «Nuevo evento», el
+ *   formulario vacío (hoy y «2 horas antes»), también sin modalidad. Compartir («¿Quién lo ve?», con las personas de
+ *   GET /mi-espacio/personas, pedidas una vez, o «Todos») es solo de administración (Auth.isAdmin(), el true literal): el lector y
+ *   el colaborador tienen solo eventos personales. Cuándo sale el recordatorio lo dice el servidor (GET /mi-espacio/eventos/aviso,
+ *   300 ms después del último cambio; una respuesta vieja se descarta).
  * Los formularios (secciones 4, 6 y 8; maqueta 2), modales que un clic en el velo no cierra: «Cargar licencia» (los tipos de la
  * modalidad con lo que queda de cada uno, el cálculo del servidor 300 ms después del último cambio, «Mostrar a mis compañeros»,
  * el aviso del paso a Configuración, la persona a cargo del firmante en sus vacaciones y los días sin auditor), «Cargar horas
@@ -21,14 +31,21 @@
  * autorizado» y la confirmación de un borrado, que se abre sobre el formulario. Los abren los botones del encabezado y los data-*
  * de las pestañas (data-cargar, data-abrir, data-editar-licencia, data-editar-horas y, en «Vence pronto», data-accion con su
  * data-tipo). Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad: los mensajes y
- * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), camposConLoElegido (camposDelSaldoInicial) y las de
- * Configuración (efectoEnNotas, textoSinAuditor, textoAusenciasAutorizado y parametrosSinAuditor, de usuarios.js).
+ * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), camposConLoElegido (camposDelSaldoInicial), las de
+ * Configuración (efectoEnNotas, textoSinAuditor, textoAusenciasAutorizado y parametrosSinAuditor, de usuarios.js) y, en la agenda,
+ * DIAS_DE_PROXIMOS (services/miEspacioEventosReglas.js), diaLargoDe (diaLargo) y tituloDelMes (mesTitulo, los dos de
+ * services/miEspacioResumen.js), y en el evento, las de services/miEspacioEventosReglas.js: MENSAJES_EVENTO, LARGO_TITULO_EVENTO,
+ * LARGO_DETALLE_EVENTO, FECHA_MINIMA_EVENTO, fechaMaximaEvento, textoRangoDelEvento (textoRangoEvento), RECORDATORIOS,
+ * RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, erroresDelEvento (validarEvento, en sus bordes), cuandoDelEventoDe
+ * (cuandoDelEvento) e iniciales (inicialesDe), e idDeLaPersona (idPositivo de services/proyectosReglas.js). La agenda no recalcula
+ * días hábiles ni textos: los días que pinta una licencia o un compañero, el aviso, quién está y «Hasta el …» los manda el
+ * servidor; acá solo se cuentan los días de la grilla, con Date.UTC.
  * Al cargarse el archivo solo declara (tests/mi-espacio-frontend.test.js lo carga en un vm después del api.js de verdad): lo que
  * arma HTML es puro y va primero; lo que toca el DOM o la API va aparte, al final (iniciarMiEspacio, enganchado a
  * DOMContentLoaded), con los eventos delegados en contenedores fijos: volver a dibujar no engancha nada, y el foco vuelve al control
- * que se usó. Pide los datos con API.pedirJson. Todo texto del servidor pasa por Utils.escapeHtml (también en los aria-label) y un
- * número se escribe con String (Utils.escapeHtml(0) da ''); lo que va con textContent (los títulos de los modales, la
- * confirmación), tal cual. Lo que cambia se anuncia en #me-anuncio, la única región viva de la página (en cada modal, su error sin
+ * que se usó (en la agenda, al del mismo lugar —la grilla o los próximos—, saltando los ocultos). Pide los datos con
+ * API.pedirJson. Todo texto del servidor pasa por Utils.escapeHtml (también en los aria-label) y un número se escribe con String
+ * (Utils.escapeHtml(0) da ''); lo que va con textContent (los títulos de los modales, la confirmación), tal cual. Lo que cambia se anuncia en #me-anuncio, la única región viva de la página (en cada modal, su error sin
  * campo es role="alert"); lo que dice el servidor al guardar o borrar, y un formulario que no se pudo abrir, se ve además en un
  * aviso (avisarMiEspacio: el showToast de main.js, como en Áreas, Feriados y Proyectos).
  */
@@ -38,7 +55,7 @@
 // =====================================================
 
 // Las pestañas, en su orden: el fragmento de la dirección. Uno desconocido, o ninguno, abre el Resumen
-const PESTANAS = Object.freeze(['resumen', 'licencias', 'horas']);
+const PESTANAS = Object.freeze(['resumen', 'licencias', 'horas', 'agenda']);
 
 // Copia de MENSAJES_MI_ESPACIO.sinArranque (services/miEspacioReglas.js), atada por un test de paridad
 const TEXTO_SIN_ARRANQUE = 'Para empezar, completá «Mis vacaciones y saldos».';
@@ -251,9 +268,10 @@ function htmlDeLoQueTeQueda(resumen) {
     + `${conTexto(resumen.extraordinaria) ? `<p class="me-previos">${esc(resumen.extraordinaria)}</p>` : ''}</div></section>`;
 }
 
-// Las iniciales de un nombre, decorativas: la primera letra del primero y del último
+// Las iniciales de un nombre, decorativas: la primera letra del primero y del último. Lo que no es un texto, '' (copia de inicialesDe
+// de services/miEspacioEventosReglas.js, atada por un test de paridad)
 const iniciales = (nombre) => {
-  const palabras = String(nombre ?? '').trim().split(/\s+/).filter(Boolean);
+  const palabras = typeof nombre === 'string' ? nombre.trim().split(/\s+/).filter(Boolean) : [];
   const inicial = (palabra) => Array.from(palabra)[0].toUpperCase();
   if (palabras.length === 0) return '';
   return palabras.length === 1 ? inicial(palabras[0]) : inicial(palabras[0]) + inicial(palabras.at(-1));
@@ -264,11 +282,23 @@ const htmlDeAusente = (ausente) => '<li class="me-ausente">'
   + `<span class="me-inicial" aria-hidden="true">${esc(iniciales(ausente.nombre))}</span><span><b>${esc(ausente.texto)}</b>`
   + `${conTexto(ausente.vuelve_texto) ? `<small>${esc(ausente.vuelve_texto)}</small>` : ''}</span></li>`;
 
+// Los eventos de hoy y de mañana (los `eventos` de «Hoy y mañana»: `{ id, hora, titulo, compartido, detalle }`, con «Hoy · solo vos»
+// o «Mañana · con 4 personas» del servidor): la hora (en violeta, la de un compartido), el título y quién; sin ninguno, «No tenés
+// eventos hoy ni mañana.». Después, «Ver la agenda», que abre su pestaña (data-pestana, como los tanques)
+function htmlDeEventosDeHoy(eventos) {
+  const filas = listaDe(eventos).map((evento) => `<li${evento.compartido === true ? ' class="compartido"' : ''}>`
+    + `<span class="me-evento-hora">${esc(evento.hora)}</span><span><b>${esc(evento.titulo)}</b><small>${esc(evento.detalle)}</small></span></li>`);
+  return (filas.length > 0 ? `<ol class="me-eventos-hoy">${filas.join('')}</ol>` : '<p class="me-vacio">No tenés eventos hoy ni mañana.</p>')
+    + '<a class="sg-link" href="#agenda" data-pestana="agenda">Ver la agenda</a>';
+}
+
 /**
- * «Hoy y mañana» (el `hoy_y_manana` del Resumen): «Hoy no están» y, aparte, «Mañana no están» (los que empiezan mañana: decisión
- * del usuario, 27/10/2026), solo para quien ve a sus compañeros (`veCompaneros`, el true literal: administración), con el texto y
- * la vuelta que manda el servidor, y el próximo feriado. Un grupo vacío no va (como «Vence pronto»): solo se ven los de
- * administración que eligieron mostrarse, así que «están todos» podría no ser cierto. Sin ninguno de los tres, no hay sección.
+ * «Hoy y mañana» (el `hoy_y_manana` del Resumen): desde la agenda, los eventos de hoy y de mañana con «Ver la agenda» (solo si
+ * `eventos` es una lista: un Resumen sin la clave se dibuja como antes); «Hoy no están» y, aparte, «Mañana no están» (los que
+ * empiezan mañana: decisión del usuario, 27/10/2026), solo para quien ve a sus compañeros (`veCompaneros`, el true literal:
+ * administración), con el texto y la vuelta que manda el servidor, y el próximo feriado. Un grupo vacío no va (como «Vence
+ * pronto»): solo se ven los de administración que eligieron mostrarse, así que «están todos» podría no ser cierto. Con los eventos,
+ * la sección está siempre (sin ninguno, lo dice); sin ellos y sin ninguno de los otros tres, no hay sección.
  */
 function htmlDeHoyYManana(datos, veCompaneros) {
   const hoy = esObjeto(datos) ? datos : {};
@@ -277,13 +307,14 @@ function htmlDeHoyYManana(datos, veCompaneros) {
     return filas.length > 0 ? `<h3 class="me-subtitulo">${titulo}</h3><ul class="me-ausentes">${filas.join('')}</ul>` : '';
   };
   const feriado = hoy.proximo_feriado;
+  const conEventos = Array.isArray(hoy.eventos);
   const cuerpo = grupo('Hoy no están', hoy.ausentes_hoy) + grupo('Mañana no están', hoy.ausentes_manana)
     + (esObjeto(feriado)
       ? `<h3 class="me-subtitulo">Próximo feriado</h3><p class="me-feriado"><b>${esc(feriado.cuando)}</b>${esc(feriado.nombre)}</p>`
       : '');
-  if (cuerpo === '') return '';
+  if (cuerpo === '' && !conEventos) return '';
   return '<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 class="me-titulo" id="me-hoy-titulo">Hoy y mañana</h2>'
-    + `${cuerpo}</section>`;
+    + `${conEventos ? htmlDeEventosDeHoy(hoy.eventos) : ''}${cuerpo}</section>`;
 }
 
 /**
@@ -923,6 +954,501 @@ function htmlDeCamposDelSaldo(campos, valores) {
 }
 
 // =====================================================
+// Lo puro: la agenda (spec 2026-10-26-mi-espacio-agenda, 6)
+// =====================================================
+
+// Los próximos van de hoy a hoy + 30 (copia de DIAS_DE_PROXIMOS de services/miEspacioEventosReglas.js, atada por un test de paridad).
+// En un día del mes se ven hasta 3 cosas; el resto, con «y N más»
+const DIAS_DE_PROXIMOS = 30;
+const COSAS_POR_DIA = 3;
+// Los días de la semana, de lunes a domingo: el nombre («lunes 26/10») y el corto (la cabeza del mes y «Mié 28»)
+const NOMBRES_DE_LOS_DIAS = Object.freeze(['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']);
+const DIAS_CORTOS = Object.freeze(['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']);
+
+// 'AAAA-MM' de un mes que se puede pedir (de 2000 a 2100, los años de las fechas de GET /mi-espacio/eventos)
+const esMesDeTexto = (mes) => typeof mes === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(mes)
+  && Number(mes.slice(0, 4)) >= 2000 && Number(mes.slice(0, 4)) <= 2100;
+// Los días se cuentan con Date.UTC sobre las partes de la fecha (diaUtc), nunca con la hora local: la fecha de un momento UTC y la
+// fecha de `dias` días después (o antes)
+const fechaDeUtc = (ms) => new Date(ms).toISOString().slice(0, 10);
+const sumarDiasA = (fecha, dias) => fechaDeUtc(diaUtc(fecha) + dias * 86400000);
+// El lugar de una fecha en la semana: 0 el lunes … 6 el domingo
+const lugarEnLaSemana = (fecha) => (new Date(diaUtc(fecha)).getUTCDay() + 6) % 7;
+// «lunes 26/10» (como diaLargo de services/miEspacioResumen.js, atada por un test de paridad), «Mié 28» y «Mar 03/11»
+const diaLargoDe = (fecha) => `${NOMBRES_DE_LOS_DIAS[lugarEnLaSemana(fecha)]} ${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`;
+const diaDeEstaSemana = (fecha) => `${DIAS_CORTOS[lugarEnLaSemana(fecha)]} ${String(Number(fecha.slice(8, 10)))}`;
+const diaMasAdelante = (fecha) => `${DIAS_CORTOS[lugarEnLaSemana(fecha)]} ${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`;
+
+/**
+ * Los días de la grilla de un mes ('AAAA-MM'), de lunes a domingo: del lunes de la semana del 1 al domingo de la del último, cada
+ * uno `{ fecha, dia, del_mes, finde }` (`dia`, el número del día; `del_mes`, si es del mes y no de un vecino; `finde`, sábado o
+ * domingo). Un mes que no sirve, [].
+ */
+function diasDeLaGrilla(mes) {
+  if (!esMesDeTexto(mes)) return [];
+  const primero = `${mes}-01`;
+  const ultimo = fechaDeUtc(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0));
+  const hasta = sumarDiasA(ultimo, 6 - lugarEnLaSemana(ultimo));
+  const dias = [];
+  for (let fecha = sumarDiasA(primero, -lugarEnLaSemana(primero)); fecha <= hasta; fecha = sumarDiasA(fecha, 1)) {
+    dias.push({ fecha, dia: Number(fecha.slice(8, 10)), del_mes: fecha.slice(0, 7) === mes, finde: lugarEnLaSemana(fecha) >= 5 });
+  }
+  return dias;
+}
+
+// El mes `n` meses después (con `n` negativo, antes): 'AAAA-MM', o null si el mes o `n` no sirven o se sale de los que se piden
+function mesVecino(mes, n) {
+  if (!esMesDeTexto(mes) || !Number.isInteger(n)) return null;
+  const indice = Number(mes.slice(0, 4)) * 12 + Number(mes.slice(5, 7)) - 1 + n;
+  const vecino = `${String(Math.floor(indice / 12))}-${String((indice % 12) + 1).padStart(2, '0')}`;
+  return esMesDeTexto(vecino) ? vecino : null;
+}
+
+// 'Octubre 2026' (como mesTitulo de services/miEspacioResumen.js, atada por un test de paridad); un mes que no sirve, ''
+function tituloDelMes(mes) {
+  if (!esMesDeTexto(mes)) return '';
+  const nombre = nombreDelMes(mes);
+  return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${mes.slice(0, 4)}`;
+}
+
+// Lo que se pide para un mes (`{ desde, hasta }`: toda su grilla, con los días de los meses vecinos) y para los próximos (de hoy a
+// hoy + DIAS_DE_PROXIMOS); con un mes o un hoy que no sirven, null
+function rangoDeLaGrilla(mes) {
+  const dias = diasDeLaGrilla(mes);
+  return dias.length > 0 ? { desde: dias[0].fecha, hasta: dias.at(-1).fecha } : null;
+}
+const rangoDeProximos = (hoy) => (esFechaDeTexto(hoy) ? { desde: hoy, hasta: sumarDiasA(hoy, DIAS_DE_PROXIMOS) } : null);
+
+// La hora de un evento ('HH:MM'), o ''
+const horaDelEvento = (evento) => (typeof evento.desde === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(evento.desde) ? evento.desde : '');
+// El color de un evento: violeta si es compartido (también uno de otra persona, que se ve solo porque te lo compartieron); si no,
+// tinta
+const claseDelEvento = (evento) => (evento.compartido === true || evento.es_mio !== true ? 'compartido' : 'propio');
+// Los eventos (los ítems de GET /mi-espacio/eventos) con una fecha, por fecha, hora y título
+const eventosEnOrden = (eventos) => listaDe(eventos).filter((evento) => esFechaDeTexto(evento.fecha))
+  .sort((a, b) => a.fecha.localeCompare(b.fecha) || horaDelEvento(a).localeCompare(horaDelEvento(b))
+    || comoTexto(a.titulo).localeCompare(comoTexto(b.titulo), 'es'));
+// Los días en que se pinta una licencia o un compañero: los hábiles dentro del rango (`dias`, del servidor)
+const diasPintados = (fila) => (Array.isArray(fila.dias) ? fila.dias.filter(esFechaDeTexto) : []);
+
+/**
+ * Lo que va en cada día del mes (lo que manda GET /mi-espacio/eventos para la grilla): `Map<fecha, [{ clase, texto, evento_id? }]>`.
+ * En un día, en este orden: los feriados («Feriado: …»), tus licencias («Franquicia, 2 h»), los compañeros que no están («Laura
+ * Gómez no está») y los eventos por hora y título («10:00 Reunión de equipo», con su `evento_id`). Las licencias y los compañeros,
+ * en sus `dias`. `clase` es el color: 'feriado', 'licencia', 'ausente', 'propio' o 'compartido'.
+ */
+function cosasPorDia(datos) {
+  const fuente = esObjeto(datos) ? datos : {};
+  const porDia = new Map();
+  const sumar = (fecha, cosa) => {
+    if (!esFechaDeTexto(fecha)) return;
+    if (!porDia.has(fecha)) porDia.set(fecha, []);
+    porDia.get(fecha).push(cosa);
+  };
+  for (const feriado of listaDe(fuente.feriados)) sumar(feriado.fecha, { clase: 'feriado', texto: comoTexto(feriado.texto) });
+  for (const licencia of listaDe(fuente.licencias)) {
+    for (const dia of diasPintados(licencia)) sumar(dia, { clase: 'licencia', texto: comoTexto(licencia.texto) });
+  }
+  for (const ausente of listaDe(fuente.ausentes)) {
+    for (const dia of diasPintados(ausente)) sumar(dia, { clase: 'ausente', texto: comoTexto(ausente.texto) });
+  }
+  for (const evento of eventosEnOrden(fuente.eventos)) {
+    const texto = [horaDelEvento(evento), comoTexto(evento.titulo)].filter(conTexto).join(' ');
+    sumar(evento.fecha, { clase: claseDelEvento(evento), texto, evento_id: evento.id ?? null });
+  }
+  return porDia;
+}
+
+// Una cosa de un día: un evento es un botón (lo abre, con su id); lo demás, un texto. Los dos con su title: en la celda se corta
+const htmlDeCosa = (cosa) => {
+  const texto = esc(cosa.texto);
+  return Object.hasOwn(cosa, 'evento_id')
+    ? `<button type="button" class="me-ev ${cosa.clase}" data-evento="${esc(cosa.evento_id)}" title="${texto}">${texto}</button>`
+    : `<span class="me-ev ${cosa.clase}" title="${texto}">${texto}</span>`;
+};
+
+// Un día de la grilla: su número y hasta 3 cosas; el resto, oculto, y «y N más», que lo muestra (data-ver-mas). Hoy, con
+// aria-current; los fines de semana, los feriados y los días de los meses vecinos, con otro fondo
+function htmlDeLaCelda(dia, cosas, hoy) {
+  const clases = ['me-celda', !dia.del_mes && 'otro-mes', dia.finde && 'finde', cosas.some((cosa) => cosa.clase === 'feriado') && 'feriado',
+    dia.fecha === hoy && 'hoy'].filter(Boolean).join(' ');
+  const resto = cosas.slice(COSAS_POR_DIA);
+  const mas = resto.length > 0 ? `<div class="me-resto" hidden>${resto.map(htmlDeCosa).join('')}</div>`
+    + `<button type="button" class="me-mas" data-ver-mas="${dia.fecha}">y ${String(resto.length)} más</button>` : '';
+  return `<td class="${clases}"${dia.fecha === hoy ? ' aria-current="date"' : ''}><div class="me-celda-cuerpo">`
+    + `<span class="me-num">${String(dia.dia)}</span>${cosas.slice(0, COSAS_POR_DIA).map(htmlDeCosa).join('')}${mas}</div></td>`;
+}
+
+/**
+ * El mes ('AAAA-MM') con lo que manda GET /mi-espacio/eventos para su grilla (`datos`; sin ellos, mientras se piden, la grilla
+ * vacía) y `hoy`: una tabla de lunes a domingo, nombrada por el título del mes (#ag-mes-titulo), con la cabeza de los días (el corto
+ * a la vista y el nombre para el lector de pantalla) y una celda por día. Un mes que no sirve, ''.
+ */
+function htmlDelMes(mes, datos, hoy) {
+  const dias = diasDeLaGrilla(mes);
+  if (dias.length === 0) return '';
+  const cosas = cosasPorDia(datos);
+  const cabeza = DIAS_CORTOS.map((corto, i) => `<th scope="col"><span aria-hidden="true">${corto}</span>`
+    + `<span class="visualmente-oculto">${NOMBRES_DE_LOS_DIAS[i]}</span></th>`).join('');
+  const semanas = [];
+  for (let i = 0; i < dias.length; i += 7) {
+    semanas.push(`<tr>${dias.slice(i, i + 7).map((dia) => htmlDeLaCelda(dia, cosas.get(dia.fecha) ?? [], hoy)).join('')}</tr>`);
+  }
+  return `<table class="me-mes" aria-labelledby="ag-mes-titulo"><thead><tr>${cabeza}</tr></thead><tbody>${semanas.join('')}</tbody></table>`;
+}
+
+/**
+ * Los próximos (lo que manda GET /mi-espacio/eventos de hoy a hoy + 30), agrupados en «Hoy, lunes 26/10», «Mañana, martes 27/10»,
+ * «Esta semana» (hasta el domingo) y «Más adelante», sin grupos vacíos: `[{ titulo, items }]`. Cada ítem, `{ hora, titulo, detalle,
+ * clase }` y, si es un evento, `quien` y `evento_id`. En un día, primero lo de todo el día (los feriados, tus licencias y los
+ * compañeros, en ese orden) y después los eventos por hora y título. Hoy y mañana dicen la hora (o «Todo el día»); esta semana,
+ * «Mié 28», y más adelante, «Mar 03/11», con la hora del evento en el título. Lo de varios días va una vez, el día en que empieza o
+ * hoy, si ya empezó, con su «Hasta el …»; lo que terminó antes de hoy o es de después del rango no va. El detalle de un evento es su
+ * aviso corto («Aviso 2 h antes») y `quien`, el «Solo vos», «Con 4 personas» o «De …» del servidor. Con un hoy que no sirve, [].
+ */
+function gruposDeProximos(datos, hoy) {
+  const rango = rangoDeProximos(hoy);
+  if (rango === null) return [];
+  const fuente = esObjeto(datos) ? datos : {};
+  const enRango = (fecha) => esFechaDeTexto(fecha) && fecha >= hoy && fecha <= rango.hasta;
+  const cosas = [];
+  const deTodoElDia = (fecha, clase, texto, detalle) => {
+    if (enRango(fecha)) cosas.push({ fecha, clase, texto: comoTexto(texto), detalle: comoTexto(detalle) });
+  };
+  const deVariosDias = (fila, clase) => {
+    if (!esFechaDeTexto(fila.desde) || !esFechaDeTexto(fila.hasta) || fila.hasta < hoy) return;
+    deTodoElDia(fila.desde > hoy ? fila.desde : hoy, clase, fila.texto, fila.hasta_texto);
+  };
+  for (const feriado of listaDe(fuente.feriados)) deTodoElDia(feriado.fecha, 'feriado', feriado.texto, '');
+  for (const licencia of listaDe(fuente.licencias)) deVariosDias(licencia, 'licencia');
+  for (const ausente of listaDe(fuente.ausentes)) deVariosDias(ausente, 'ausente');
+  for (const evento of eventosEnOrden(fuente.eventos)) {
+    if (!enRango(evento.fecha)) continue;
+    cosas.push({
+      fecha: evento.fecha, clase: claseDelEvento(evento), hora: horaDelEvento(evento), texto: comoTexto(evento.titulo),
+      detalle: comoTexto(esObjeto(evento.aviso) ? evento.aviso.corto : ''), quien: comoTexto(evento.quien_texto), evento_id: evento.id ?? null
+    });
+  }
+  // Por fecha; en un día, en el orden en que se sumaron (sort es estable)
+  cosas.sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+  const manana = sumarDiasA(hoy, 1);
+  const domingo = sumarDiasA(hoy, 6 - lugarEnLaSemana(hoy));
+  const grupos = [
+    { titulo: `Hoy, ${diaLargoDe(hoy)}`, es: (fecha) => fecha === hoy, dia: null },
+    { titulo: `Mañana, ${diaLargoDe(manana)}`, es: (fecha) => fecha === manana, dia: null },
+    { titulo: 'Esta semana', es: (fecha) => fecha <= domingo, dia: diaDeEstaSemana },
+    { titulo: 'Más adelante', es: () => true, dia: diaMasAdelante }
+  ].map((grupo) => ({ ...grupo, items: [] }));
+  for (const cosa of cosas) {
+    const grupo = grupos.find((uno) => uno.es(cosa.fecha));
+    const esEvento = Object.hasOwn(cosa, 'evento_id');
+    const item = grupo.dia === null
+      ? { hora: esEvento ? cosa.hora : 'Todo el día', titulo: cosa.texto }
+      : { hora: grupo.dia(cosa.fecha), titulo: esEvento && cosa.hora ? `${cosa.hora} ${cosa.texto}` : cosa.texto };
+    Object.assign(item, { detalle: cosa.detalle, clase: cosa.clase });
+    if (esEvento) Object.assign(item, { quien: cosa.quien, evento_id: cosa.evento_id });
+    grupo.items.push(item);
+  }
+  return grupos.filter((grupo) => grupo.items.length > 0).map(({ titulo, items }) => ({ titulo, items }));
+}
+
+// Una cosa de los próximos: la hora, el título (un evento es un botón con su id: lo abre) y el detalle (de un evento, quién está, en
+// su color, y su aviso)
+const htmlDeProximo = (item) => {
+  const titulo = Object.hasOwn(item, 'evento_id')
+    ? `<button type="button" class="me-prox-titulo" data-evento="${esc(item.evento_id)}">${esc(item.titulo)}</button>`
+    : `<span class="me-prox-titulo">${esc(item.titulo)}</span>`;
+  const quien = conTexto(item.quien) ? `<span class="me-insignia ${item.clase === 'propio' ? 'azul' : 'violeta'}">${esc(item.quien)}</span>` : '';
+  const detalle = quien !== '' || conTexto(item.detalle) ? `<span class="me-prox-detalle">${quien}${esc(item.detalle)}</span>` : '';
+  return `<li class="me-prox ${esc(item.clase)}"><span class="me-prox-hora">${esc(item.hora)}</span>${titulo}${detalle}</li>`;
+};
+
+// Los próximos, cada grupo con su título; sin nada, «No hay nada en los próximos 30 días.»
+function htmlDeProximos(grupos) {
+  const conAlgo = listaDe(grupos).filter((grupo) => listaDe(grupo.items).length > 0);
+  if (conAlgo.length === 0) return `<p class="me-vacio">No hay nada en los próximos ${String(DIAS_DE_PROXIMOS)} días.</p>`;
+  return conAlgo.map((grupo) => `<h3>${esc(grupo.titulo)}</h3><ul class="me-prox-lista">${listaDe(grupo.items).map(htmlDeProximo).join('')}</ul>`)
+    .join('');
+}
+
+// =====================================================
+// Lo puro: el formulario del evento y el detalle de uno ajeno (spec 2026-10-26-mi-espacio-agenda, 1, 2 y 6; maqueta 2)
+// =====================================================
+
+// ---- Copias mínimas de services/miEspacioEventosReglas.js, para avisar en el momento (el servidor valida igual), atadas por tests
+// de paridad ----
+
+const MENSAJES_EVENTO = Object.freeze({
+  titulo: 'Escribí qué es el evento.',
+  tituloLargo: 'El título puede tener hasta 150 caracteres.',
+  desde: 'Elegí a qué hora empieza.',
+  hasta: 'La hora de fin tiene que ser después de la de inicio, el mismo día.',
+  detalle: 'El detalle puede tener hasta 1000 caracteres.',
+  personas: 'Elegí con quién lo compartís, o «Todos».',
+  personasInvalidas: 'Solo podés compartirlo con las personas de la lista.',
+  recordatorio: 'Elegí cuándo te llega el recordatorio.',
+  sinPermiso: 'No tenés permiso para compartir eventos.',
+  noEncontrado: 'Evento no encontrado',
+  miRecordatorio: 'Elegí si querés el recordatorio.',
+  esTuyo: 'El recordatorio de tu evento se cambia en el evento.'
+});
+// El largo del título y del detalle (en caracteres contados con Array.from) y la fecha más vieja; la más nueva, fechaMaximaEvento
+const LARGO_TITULO_EVENTO = 150;
+const LARGO_DETALLE_EVENTO = 1000;
+const FECHA_MINIMA_EVENTO = '2025-01-01';
+// Los recordatorios, en el orden del formulario, el de entrada y cómo se muestra cada uno
+const RECORDATORIOS = Object.freeze(['1h', '2h', 'dia_anterior', 'ninguno']);
+const RECORDATORIO_POR_DEFECTO = '2h';
+const TEXTO_RECORDATORIO = Object.freeze({
+  '1h': '1 hora antes', '2h': '2 horas antes', dia_anterior: 'El día hábil anterior', ninguno: 'Sin aviso'
+});
+
+// La fecha más nueva de un evento: el mismo día dos años después de hoy (un 29/02 da el 28/02); null si hoy no es una fecha; después
+// del año 9999, el 31/12/9999
+const fechaMaximaEvento = (hoy) => {
+  if (!esFechaDeTexto(hoy)) return null;
+  const anio = Number(hoy.slice(0, 4)) + 2;
+  if (anio > 9999) return '9999-12-31';
+  const mesYDia = hoy.slice(5) === '02-29' ? '02-28' : hoy.slice(5);
+  return `${String(anio).padStart(4, '0')}-${mesYDia}`;
+};
+// El error de una fecha fuera del rango, como textoRangoEvento: «La fecha tiene que ser del 01/01/2025 al 26/10/2028.» (sin un
+// tope, la raya)
+const textoRangoDelEvento = (hasta) => `La fecha tiene que ser del ${Utils.fechaCorta(FECHA_MINIMA_EVENTO)} al ${Utils.fechaCorta(hasta)}.`;
+// Un id de una persona, como idPositivo de services/proyectosReglas.js: un entero positivo de hasta 10 cifras, en número o en texto;
+// si no, null
+const idDeLaPersona = (valor) => {
+  if (typeof valor !== 'string' && typeof valor !== 'number') return null;
+  const texto = String(valor);
+  return /^[1-9]\d{0,9}$/.test(texto) ? Number(texto) : null;
+};
+// 'HH:MM' de 00:00 a 23:59 (ni '9:00' ni '10:00:00')
+const esHoraDeTexto = (valor) => typeof valor === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(valor);
+// 'martes 27/10/2026', de una fecha ya controlada
+const diaConFechaDe = (fecha) => `${NOMBRES_DE_LOS_DIAS[lugarEnLaSemana(fecha)]} ${fecha.slice(8, 10)}/${fecha.slice(5, 7)}/${fecha.slice(0, 4)}`;
+// Cuándo es un evento, como cuandoDelEvento: «martes 27/10/2026 de 10:00 a 11:00», o «… a las 10:00» sin hora de fin; si no sirve,
+// la raya
+const cuandoDelEventoDe = (evento) => {
+  if (!esObjeto(evento) || !esFechaDeTexto(evento.fecha) || !esHoraDeTexto(evento.desde)) return '—';
+  const dia = diaConFechaDe(evento.fecha);
+  return esHoraDeTexto(evento.hasta) ? `${dia} de ${evento.desde} a ${evento.hasta}` : `${dia} a las ${evento.desde}`;
+};
+const conMayuscula = (texto) => texto.charAt(0).toUpperCase() + texto.slice(1);
+
+/**
+ * Los errores de un evento antes de pedir nada (`{ campo: mensaje }`, todos, en el orden del formulario; sin ninguno, {}), con los
+ * controles y los mensajes de validarEvento (el primero es el suyo: test de paridad en sus bordes). `valores` tiene las claves del
+ * cuerpo (titulo, fecha, desde, hasta, detalle, compartido, para_todos, personas y recordatorio): el título y el detalle recortados
+ * y contados con Array.from; la fecha de FECHA_MINIMA_EVENTO a fechaMaximaEvento(hoy); las horas 'HH:MM' y la de fin, si viene,
+ * después de la de inicio; compartido sin «Todos» (solo el true literal), con personas que sean ids (una lista que falta o vacía,
+ * `personas`; un id que no sirve, `personasInvalidas`; los dos en `personas`); con «Todos», las personas no cuentan; y el
+ * recordatorio (sin él, o null, 2 horas antes) de la lista. Quién puede compartir y que las personas sean de la lista, el servidor.
+ */
+function erroresDelEvento(valores, hoy) {
+  const datos = esObjeto(valores) ? valores : {};
+  const errores = {};
+  const titulo = comoTexto(datos.titulo).trim();
+  if (titulo === '') errores.titulo = MENSAJES_EVENTO.titulo;
+  else if (Array.from(titulo).length > LARGO_TITULO_EVENTO) errores.titulo = MENSAJES_EVENTO.tituloLargo;
+  const maxima = fechaMaximaEvento(hoy);
+  if (!esFechaDeTexto(datos.fecha) || maxima === null || datos.fecha < FECHA_MINIMA_EVENTO || datos.fecha > maxima) {
+    errores.fecha = textoRangoDelEvento(maxima);
+  }
+  if (!esHoraDeTexto(datos.desde)) errores.desde = MENSAJES_EVENTO.desde;
+  const sinHasta = datos.hasta === undefined || datos.hasta === null || datos.hasta === '';
+  if (!sinHasta && (!esHoraDeTexto(datos.hasta) || (esHoraDeTexto(datos.desde) && datos.hasta <= datos.desde))) {
+    errores.hasta = MENSAJES_EVENTO.hasta;
+  }
+  if (Array.from(comoTexto(datos.detalle).trim()).length > LARGO_DETALLE_EVENTO) errores.detalle = MENSAJES_EVENTO.detalle;
+  if (datos.compartido === true && datos.para_todos !== true) {
+    if (!Array.isArray(datos.personas) || datos.personas.length === 0) errores.personas = MENSAJES_EVENTO.personas;
+    else if (datos.personas.some((id) => idDeLaPersona(id) === null)) errores.personas = MENSAJES_EVENTO.personasInvalidas;
+  }
+  if (!RECORDATORIOS.includes(datos.recordatorio ?? RECORDATORIO_POR_DEFECTO)) errores.recordatorio = MENSAJES_EVENTO.recordatorio;
+  return errores;
+}
+
+// ---- Lo de cada formulario ----
+
+/**
+ * Los valores del formulario del evento: los de un evento propio (un ítem de GET /mi-espacio/eventos, con `personas_ids`) o, sin él,
+ * los de uno nuevo, con la `fecha` que se le pasa (hoy) y «2 horas antes». Las horas y el detalle, como texto ('' sin ellos);
+ * `personas`, los ids elegidos ([] con «Todos»); `conocidas`, las personas del evento con su nombre (`{ id, nombre }`), así una
+ * que ya no está en la lista para compartir (dejó de ser administración) se ve y no se saca sin querer.
+ */
+function valoresDelEvento(item, { fecha = '' } = {}) {
+  if (!esObjeto(item)) {
+    return {
+      id: null, titulo: '', fecha: comoTexto(fecha), desde: '', hasta: '', detalle: '', compartido: false, para_todos: false,
+      personas: [], conocidas: [], recordatorio: RECORDATORIO_POR_DEFECTO
+    };
+  }
+  const nombres = Array.isArray(item.personas) ? item.personas : [];
+  const conocidas = (Array.isArray(item.personas_ids) ? item.personas_ids : [])
+    .map((id, i) => ({ id: idDeLaPersona(id), nombre: comoTexto(nombres[i]) })).filter((persona) => persona.id !== null);
+  const compartido = item.compartido === true;
+  const paraTodos = compartido && item.para_todos === true;
+  return {
+    id: item.id ?? null, titulo: comoTexto(item.titulo), fecha: comoTexto(item.fecha), desde: comoTexto(item.desde),
+    hasta: comoTexto(item.hasta), detalle: comoTexto(item.detalle), compartido, para_todos: paraTodos,
+    personas: paraTodos ? [] : conocidas.map((persona) => persona.id), conocidas,
+    recordatorio: RECORDATORIOS.includes(item.recordatorio) ? item.recordatorio : RECORDATORIO_POR_DEFECTO
+  };
+}
+
+/**
+ * El cuerpo de POST /mi-espacio/eventos y PUT /mi-espacio/eventos/:id (el formulario entero): el título y el detalle recortados, la
+ * fecha, las horas (sin hora de fin, null) y el recordatorio. Solo con `puedeCompartir` (administración; el true literal), además
+ * `compartido`, `para_todos` (solo si es compartido) y `personas` (con «Todos» o sin compartir, []): el lector y el colaborador
+ * tienen solo eventos personales, y su cuerpo no trae nada de eso.
+ */
+function cuerpoDelEvento(valores, { puedeCompartir = false } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  const cuerpo = {
+    titulo: comoTexto(datos.titulo).trim(), fecha: comoTexto(datos.fecha), desde: comoTexto(datos.desde),
+    hasta: conTexto(datos.hasta) ? datos.hasta : null, detalle: comoTexto(datos.detalle).trim(), recordatorio: datos.recordatorio
+  };
+  if (puedeCompartir !== true) return cuerpo;
+  const compartido = datos.compartido === true;
+  const paraTodos = compartido && datos.para_todos === true;
+  return {
+    ...cuerpo, compartido, para_todos: paraTodos,
+    personas: compartido && !paraTodos && Array.isArray(datos.personas) ? [...datos.personas] : []
+  };
+}
+
+// Las personas para elegir: las de la lista para compartir (GET /mi-espacio/personas; null mientras llega o si no llegó) y, al
+// final, las del evento que no están en ella (`valores.conocidas`)
+function personasParaElegir(lista, valores) {
+  const delServidor = listaDe(lista);
+  const enLaLista = new Set(delServidor.map((persona) => idDeLaPersona(persona.id)));
+  const delEvento = listaDe(esObjeto(valores) ? valores.conocidas : null)
+    .filter((persona) => idDeLaPersona(persona.id) !== null && !enLaLista.has(idDeLaPersona(persona.id)));
+  return [...delServidor, ...delEvento];
+}
+
+// El ícono de «Todos» (Lucide «users»), decorativo
+const ICONO_DE_TODOS = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'
+  + '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+const MENSAJE_SIN_PERSONAS = 'No se pudo cargar la lista de personas. Probá de nuevo en unos minutos.';
+
+/**
+ * Con quién se comparte: «Todos» primero (`data-persona="todos"`) y cada persona (`data-persona="<id>"`, con sus iniciales,
+ * decorativas, y su nombre), botones con aria-pressed. Con «Todos» elegido, las demás van deshabilitadas (todos ya están). `sinLista`:
+ * 'cargando' o 'fallo' dice por qué todavía no está la lista (las del evento y «Todos» se pueden elegir igual); con 'fallo', `motivo`
+ * es el mensaje del servidor que lo explica (el 403 de un rol viejo en el navegador), escapado, y sin él, «Probá de nuevo…».
+ */
+function htmlDePersonasDelEvento(personas, valores, { sinLista = null, motivo = '' } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  const paraTodos = datos.para_todos === true;
+  const elegidas = Array.isArray(datos.personas) ? datos.personas : [];
+  const botones = [`<button type="button" class="me-persona" data-persona="todos" aria-pressed="${String(paraTodos)}">`
+    + `<i aria-hidden="true">${ICONO_DE_TODOS}</i>Todos</button>`];
+  for (const persona of listaDe(personas)) {
+    const id = idDeLaPersona(persona.id);
+    if (id === null) continue;
+    const sigla = conTexto(persona.iniciales) ? persona.iniciales : iniciales(persona.nombre);
+    botones.push(`<button type="button" class="me-persona" data-persona="${String(id)}" `
+      + `aria-pressed="${String(!paraTodos && elegidas.includes(id))}"${paraTodos ? ' disabled' : ''}>`
+      + `<i aria-hidden="true">${esc(sigla)}</i>${esc(persona.nombre)}</button>`);
+  }
+  let estado = '';
+  if (sinLista === 'cargando') estado = 'Cargando las personas…';
+  else if (sinLista === 'fallo') estado = conTexto(motivo) ? esc(motivo) : MENSAJE_SIN_PERSONAS;
+  return botones.join('') + (estado ? `<span class="me-personas-estado">${estado}</span>` : '');
+}
+
+// Un clic en una persona (`valor`: 'todos' o su id): «Todos» se prende o se apaga y saca a las elegidas (con «Todos» están todos);
+// una persona se suma o se saca, salvo con «Todos». Devuelve los valores nuevos
+function elegirPersona(valores, valor) {
+  const datos = esObjeto(valores) ? valores : {};
+  const personas = Array.isArray(datos.personas) ? datos.personas : [];
+  if (valor === 'todos') return { ...datos, para_todos: datos.para_todos !== true, personas: [] };
+  const id = idDeLaPersona(valor);
+  if (id === null || datos.para_todos === true) return { ...datos, personas: [...personas] };
+  return { ...datos, personas: personas.includes(id) ? personas.filter((otra) => otra !== id) : [...personas, id] };
+}
+
+// Cuántas personas eligió, al lado de «Con quién»: «(1 persona)», «(4 personas)»; sin ninguna o con «Todos», nada
+function textoDeCuantasPersonas(valores) {
+  const datos = esObjeto(valores) ? valores : {};
+  const cuantas = Array.isArray(datos.personas) ? datos.personas.length : 0;
+  if (datos.para_todos === true || cuantas === 0) return '';
+  return `(${String(cuantas)} ${cuantas === 1 ? 'persona' : 'personas'})`;
+}
+
+// Los recordatorios, en el orden de RECORDATORIOS, con el elegido (uno que no es de la lista, el de entrada)
+function htmlDeOpcionesDeRecordatorio(elegido) {
+  const actual = RECORDATORIOS.includes(elegido) ? elegido : RECORDATORIO_POR_DEFECTO;
+  return RECORDATORIOS.map((clave) => `<option value="${clave}"${clave === actual ? ' selected' : ''}>${esc(TEXTO_RECORDATORIO[clave])}</option>`)
+    .join('');
+}
+
+// La ruta de GET /mi-espacio/eventos/aviso (cuándo sale el recordatorio, que calcula el servidor con los feriados) para la fecha, la
+// hora y el recordatorio del formulario; sin una fecha o una hora que sirvan, o con «Sin aviso» (no hay nada que decir), null
+function pedidoDelAviso(valores) {
+  const { fecha, desde, recordatorio } = esObjeto(valores) ? valores : {};
+  if (!esFechaDeTexto(fecha) || !esHoraDeTexto(desde) || !RECORDATORIOS.includes(recordatorio) || recordatorio === 'ninguno') return null;
+  return `/mi-espacio/eventos/aviso?fecha=${encodeURIComponent(fecha)}&desde=${encodeURIComponent(desde)}`
+    + `&recordatorio=${encodeURIComponent(recordatorio)}`;
+}
+
+// «Mi recordatorio» de un evento ajeno: 'evento' (el que eligió quien lo creó) o 'ninguno' (lo apagó, o quien lo creó eligió «Sin
+// aviso»)
+function miRecordatorioDe(item) {
+  const datos = esObjeto(item) ? item : {};
+  const conAviso = RECORDATORIOS.includes(datos.recordatorio) && datos.recordatorio !== 'ninguno';
+  return conAviso && datos.mi_recordatorio !== 'ninguno' ? 'evento' : 'ninguno';
+}
+
+/**
+ * El detalle de un evento ajeno (un ítem de GET /mi-espacio/eventos con `es_mio` false), cada parte en HTML escapado (el título va
+ * con textContent): `cuando` («Jueves 29/10/2026 de 09:00 a 10:00»), `detalle` (el texto; los renglones los respeta el <style>),
+ * `quien` (la insignia «Compartido» y el «Lo creó … Están: vos, …» del servidor) y `opciones`, las de «Mi recordatorio»: el que
+ * eligió quien lo creó («2 horas antes (el que eligió Martín Ríos)») y «Sin aviso», con la elegida; si quien lo creó eligió «Sin
+ * aviso», solo ese texto.
+ */
+function htmlDelEventoAjeno(item) {
+  const datos = esObjeto(item) ? item : {};
+  const cuando = cuandoDelEventoDe(datos);
+  const elegido = miRecordatorioDe(datos);
+  const conAviso = RECORDATORIOS.includes(datos.recordatorio) && datos.recordatorio !== 'ninguno';
+  const textoDelEvento = conTexto(datos.recordatorio_texto) ? datos.recordatorio_texto : TEXTO_RECORDATORIO[datos.recordatorio] ?? '';
+  const opcion = (valor, texto) => `<option value="${valor}"${valor === elegido ? ' selected' : ''}>${esc(texto)}</option>`;
+  const opciones = conAviso
+    ? opcion('evento', `${textoDelEvento}${conTexto(datos.creador) ? ` (el que eligió ${datos.creador})` : ''}`)
+      + opcion('ninguno', TEXTO_RECORDATORIO.ninguno)
+    : opcion('ninguno', conTexto(datos.recordatorio_texto) ? datos.recordatorio_texto : TEXTO_RECORDATORIO.ninguno);
+  return {
+    cuando: esc(cuando === '—' ? cuando : conMayuscula(cuando)),
+    detalle: esc(comoTexto(datos.detalle)),
+    quien: `<span class="me-insignia violeta">Compartido</span>${conTexto(datos.quien_largo) ? `<span>${esc(datos.quien_largo)}</span>` : ''}`,
+    opciones
+  };
+}
+
+/**
+ * La confirmación del borrado de un evento propio, en texto plano (va con textContent): «¿Borrar «Reunión de equipo» del martes
+ * 27/10/2026?» y, si es compartido, a quiénes les llega la cancelación: « A las 4 personas les llega un email que dice que se
+ * canceló.», «A la persona…» o «A toda la administración…». Uno de antes de hoy (`hoy`) no la manda: el servidor no avisa de un
+ * evento que ya empezó.
+ */
+function textoDeConfirmacionDeEvento(item, { hoy = '' } = {}) {
+  const datos = esObjeto(item) ? item : {};
+  const cuando = esFechaDeTexto(datos.fecha) ? ` del ${diaConFechaDe(datos.fecha)}` : '';
+  const pregunta = `¿Borrar «${comoTexto(datos.titulo).trim()}»${cuando}?`;
+  const yaPaso = esFechaDeTexto(hoy) && esFechaDeTexto(datos.fecha) && datos.fecha < hoy;
+  if (datos.compartido !== true || yaPaso) return pregunta;
+  const cancelacion = 'un email que dice que se canceló.';
+  if (datos.para_todos === true) return `${pregunta} A toda la administración le llega ${cancelacion}`;
+  const cuantas = Array.isArray(datos.personas) ? datos.personas.length : 0;
+  if (cuantas === 0) return pregunta;
+  return cuantas === 1 ? `${pregunta} A la persona le llega ${cancelacion}` : `${pregunta} A las ${String(cuantas)} personas les llega ${cancelacion}`;
+}
+
+// =====================================================
 // La página (DOM y API)
 // =====================================================
 
@@ -935,17 +1461,23 @@ document.addEventListener('DOMContentLoaded', () => {
   iniciarMiEspacio();
 });
 
-// El estado de la página: el Resumen, la lista de licencias con su filtro y la tabla de horas extras con su mes (null hasta que
-// llegan, y después de una carga que falló). `pedidos` numera las cargas de cada pestaña: una respuesta que llega después de otra
-// más nueva se descarta. `cargandoResumen`: hay un pedido del Resumen en vuelo. `tanquesLlenos`: los tanques del Resumen ya se
-// llenaron (pasa una sola vez). Los formularios: `modales`, los abiertos, del de abajo al de arriba (la confirmación se abre
-// sobre el formulario); `formulario`, el de «Cargar licencia» o del uso autorizado abierto; `horasExtras`, el de las horas extras;
-// `saldos`, el de «Mis vacaciones y saldos» (`saldosAbiertosSolos`: ya se abrió solo una vez); `confirmacion`, el borrado que se
-// confirma; y `firmante`, el pedido de GET /mi-espacio/firmante (una sola vez)
+// El estado de la página: el Resumen, la lista de licencias con su filtro, la tabla de horas extras con su mes y, en la agenda, el
+// mes que se ve (`mesDeEventos`, 'AAAA-MM': de entrada, el de hoy; no va en la dirección), lo de su grilla (`delMes`) y los próximos
+// (`proximos`) (null hasta que llegan, y después de una carga que falló). `pedidos` numera las cargas de cada pestaña (en la agenda,
+// las del mes y las de los próximos): una respuesta que llega después de otra más nueva se descarta. `cargandoResumen`: hay un
+// pedido del Resumen en vuelo. `tanquesLlenos`: los tanques del Resumen ya se llenaron (pasa una sola vez). Los formularios:
+// `modales`, los abiertos, del de abajo al de arriba (la confirmación se abre sobre el formulario); `formulario`, el de «Cargar
+// licencia» o del uso autorizado abierto; `horasExtras`, el de las horas extras; `saldos`, el de «Mis vacaciones y saldos»
+// (`saldosAbiertosSolos`: ya se abrió solo una vez); `confirmacion`, el borrado que se confirma; y `firmante`, el pedido de
+// GET /mi-espacio/firmante (una sola vez). La agenda: `evento`, el formulario del evento abierto (su propio estado: el cálculo de
+// las licencias mira `formulario`, y no se tienen que cruzar); `eventoAjeno`, el detalle de un evento de otra persona; y
+// `personas`, el pedido de GET /mi-espacio/personas (una sola vez, y solo para administración)
 const pagina = {
   pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, tanquesLlenos: false,
-  cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0 },
-  modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null
+  mesDeEventos: null, delMes: null, proximos: null,
+  cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0 },
+  modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null,
+  evento: null, eventoAjeno: null, personas: null
 };
 
 const porId = (id) => document.getElementById(id);
@@ -982,9 +1514,11 @@ function mostrarFalla(vista, texto, conAnuncio = true) {
   if (conAnuncio) anunciar(texto);
 }
 
-// El control de una pestaña con ese atributo y ese valor, o null
-const controlCon = (vista, atributo, valor) =>
-  [...porId(vista).querySelectorAll(`[${atributo}]`)].find((uno) => uno.getAttribute(atributo) === valor) ?? null;
+// Los controles de una pestaña con ese atributo y ese valor (en la agenda, un evento está en la grilla y en los próximos), y el
+// primero, o null
+const controlesCon = (vista, atributo, valor) =>
+  [...porId(vista).querySelectorAll(`[${atributo}]`)].filter((uno) => uno.getAttribute(atributo) === valor);
+const controlCon = (vista, atributo, valor) => controlesCon(vista, atributo, valor)[0] ?? null;
 
 // Después de volver a dibujar una pestaña, el foco va al control equivalente al que se usó (el botón viejo ya no está)
 function enfocar(vista, atributo, valor) {
@@ -996,7 +1530,10 @@ function enfocar(vista, atributo, valor) {
 function iniciarMiEspacio() {
   conectarEventos();
   const resumen = cargarResumen();
-  return Promise.all([mostrarPestana(pestanaDeHash(window.location.hash)), resumen]);
+  const cargas = Promise.all([mostrarPestana(pestanaDeHash(window.location.hash)), resumen]);
+  // Las fuentes llegan después y ensanchan las pestañas: la elegida se vuelve a llevar a la vista
+  document.fonts?.ready?.then?.(() => llevarALaVista(porId(`tab-${pagina.pestana}`)));
+  return cargas;
 }
 
 function conectarEventos() {
@@ -1009,8 +1546,10 @@ function conectarEventos() {
   porId('vista-resumen').addEventListener('click', alTocarResumen);
   porId('vista-licencias').addEventListener('click', alTocarLicencias);
   porId('vista-horas').addEventListener('click', alTocarHoras);
+  porId('vista-agenda').addEventListener('click', alTocarEventos);
   porId('btn-cargar-licencia').addEventListener('click', (evento) => abrirLicencia({ volverA: evento.currentTarget }));
   porId('btn-cargar-horas').addEventListener('click', (evento) => abrirHorasExtras({ volverA: evento.currentTarget }));
+  porId('btn-nuevo-evento').addEventListener('click', (evento) => abrirEvento({ volverA: evento.currentTarget }));
   conectarFormularios();
 }
 
@@ -1027,6 +1566,7 @@ function mostrarPestana(nombre) {
     pestana.tabIndex = activa ? 0 : -1;
     porId(`vista-${otra}`).hidden = !activa;
   }
+  llevarALaVista(porId(`tab-${pagina.pestana}`));
   window.history?.replaceState?.(null, '', `#${pagina.pestana}`);
   if (pagina.pestana === 'resumen') {
     if (pagina.resumen === null && !pagina.cargandoResumen) return cargarResumen();
@@ -1034,7 +1574,19 @@ function mostrarPestana(nombre) {
   }
   if (pagina.pestana === 'licencias' && pagina.licencias === null) return cargarLicencias(null);
   if (pagina.pestana === 'horas' && pagina.horas === null) return cargarHorasExtras(null);
+  if (pagina.pestana === 'agenda' && (pagina.delMes === null || pagina.proximos === null)) return cargarEventos();
   return Promise.resolve();
+}
+
+// En el teléfono no entran las cuatro pestañas y la barra se desplaza de costado: la elegida se lleva a la vista (al abrir con
+// #agenda, por ejemplo desde un email), moviendo solo la barra, nunca la página
+function llevarALaVista(pestana) {
+  const barra = pestana?.parentNode;
+  const caja = pestana?.getBoundingClientRect?.();
+  const marco = barra?.getBoundingClientRect?.();
+  if (!caja || !marco || typeof barra.scrollLeft !== 'number') return;
+  if (caja.right > marco.right) barra.scrollLeft += caja.right - marco.right;
+  else if (caja.left < marco.left) barra.scrollLeft -= marco.left - caja.left;
 }
 
 // Teclado en la barra: flechas (con vuelta), Inicio y Fin. Mueven el foco y activan la pestaña. Con Alt, Ctrl o Cmd son atajos del
@@ -1263,6 +1815,144 @@ async function alTocarHoras(evento) {
   }
 }
 
+// ---- La agenda ----
+
+// Lo que se dice cuando no llega el mes o los próximos (en su lugar de la pestaña y en #me-anuncio)
+const MENSAJE_SIN_MES = 'No se pudo cargar el mes. Probá de nuevo en unos minutos.';
+const MENSAJE_SIN_PROXIMOS = 'No se pudieron cargar los próximos. Probá de nuevo en unos minutos.';
+
+// GET /mi-espacio/eventos de un rango `{ desde, hasta }`
+const rutaDeEventos = ({ desde, hasta }) => `/mi-espacio/eventos?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`;
+
+// La pestaña Agenda: pide lo de la grilla del mes que se ve (de entrada, el de hoy) y los próximos, dos GET /mi-espacio/eventos, los
+// que todavía no llegaron o, con `forzar` (después de guardar o de borrar), los dos, sin borrar lo que se ve mientras. `conAnuncio`:
+// una falla se anuncia (después de guardar, no). Devuelve las cargas
+function cargarEventos({ forzar = false, conAnuncio = true } = {}) {
+  if (!esMesDeTexto(pagina.mesDeEventos)) pagina.mesDeEventos = Utils.hoyEnArgentina().slice(0, 7);
+  const cargas = [];
+  if (forzar || pagina.delMes === null) cargas.push(cargarMesDeEventos(pagina.mesDeEventos, { conAnuncio }));
+  if (forzar || pagina.proximos === null) cargas.push(cargarProximos({ conAnuncio }));
+  return Promise.all(cargas);
+}
+
+// Pide lo de la grilla de un mes y lo dibuja; mientras, sin nada de antes, la grilla vacía con su título. Una respuesta vieja (de otro
+// mes o de un pedido anterior) se descarta. `anunciarElMes`: al cambiar de mes, su título se anuncia cuando llega. Si falla, la
+// grilla lo dice y queda sin datos: volver a la pestaña lo pide otra vez
+async function cargarMesDeEventos(mes, { conAnuncio = true, anunciarElMes = false } = {}) {
+  const rango = rangoDeLaGrilla(mes);
+  if (rango === null) return;
+  const pedido = ++pagina.pedidos.mes;
+  if (pagina.delMes === null) pintarMesDeEventos();
+  try {
+    const { data } = await API.pedirJson('GET', rutaDeEventos(rango));
+    if (pedido !== pagina.pedidos.mes) return;
+    pagina.delMes = esObjeto(data) ? data : {};
+    pintarMesDeEventos();
+    if (anunciarElMes) anunciar(tituloDelMes(mes));
+  } catch (error) {
+    if (pedido !== pagina.pedidos.mes) return;
+    if (error?.status === 401) irAlLogin();
+    else {
+      pagina.delMes = null;
+      mostrarFalla('ag-mes', MENSAJE_SIN_MES, conAnuncio);
+    }
+  }
+}
+
+// El título y la grilla del mes que se ve. «Compañeros que no están», en la leyenda, solo para quien los ve (decisión del usuario,
+// 27/10/2026): lo dice el servidor (`puede_compartir`, administración) y, hasta que llega, queda oculto
+function pintarMesDeEventos() {
+  porId('ag-mes-titulo').textContent = tituloDelMes(pagina.mesDeEventos);
+  porId('ag-mes').innerHTML = htmlDelMes(pagina.mesDeEventos, pagina.delMes, Utils.hoyEnArgentina());
+  if (esObjeto(pagina.delMes)) porId('ag-leyenda-ausentes').hidden = pagina.delMes.puede_compartir !== true;
+}
+
+// Muestra otro mes («‹», «›» y «Hoy»): el título y la grilla vacía enseguida, y lo de la grilla cuando llega
+function mostrarMesDeEventos(mes) {
+  if (!esMesDeTexto(mes)) return Promise.resolve();
+  pagina.mesDeEventos = mes;
+  pagina.delMes = null;
+  return cargarMesDeEventos(mes, { anunciarElMes: true });
+}
+
+// Pide los próximos (de hoy a hoy + 30) y los dibuja; si falla, como el mes
+async function cargarProximos({ conAnuncio = true } = {}) {
+  const rango = rangoDeProximos(Utils.hoyEnArgentina());
+  if (rango === null) return;
+  const pedido = ++pagina.pedidos.proximos;
+  try {
+    const { data } = await API.pedirJson('GET', rutaDeEventos(rango));
+    if (pedido !== pagina.pedidos.proximos) return;
+    pagina.proximos = esObjeto(data) ? data : {};
+    pintarProximos();
+  } catch (error) {
+    if (pedido !== pagina.pedidos.proximos) return;
+    if (error?.status === 401) irAlLogin();
+    else {
+      pagina.proximos = null;
+      mostrarFalla('ag-proximos', MENSAJE_SIN_PROXIMOS, conAnuncio);
+    }
+  }
+}
+
+function pintarProximos() {
+  porId('ag-proximos').innerHTML = htmlDeProximos(gruposDeProximos(pagina.proximos, Utils.hoyEnArgentina()));
+}
+
+// «y N más»: muestra el resto en su celda, se va y el foco pasa a lo primero que apareció (un texto lo recibe con tabindex="-1")
+function verElResto(boton) {
+  const resto = boton.closest('.me-celda')?.querySelector('.me-resto');
+  if (!resto) return;
+  resto.hidden = false;
+  const primero = resto.querySelector('.me-ev');
+  if (primero && String(primero.tagName).toLowerCase() !== 'button') primero.setAttribute('tabindex', '-1');
+  primero?.focus?.();
+  boton.hidden = true;
+}
+
+// Un evento de la grilla o de los próximos (el botón con su data-evento): el ítem de lo que llegó, buscado primero en lo del mismo
+// lugar (los próximos o el mes), o null
+function eventoDelBoton(boton) {
+  const id = boton.getAttribute('data-evento');
+  const delMes = listaDe(pagina.delMes?.eventos);
+  const proximos = listaDe(pagina.proximos?.eventos);
+  const enOrden = porId('ag-proximos')?.contains?.(boton) ? [...proximos, ...delMes] : [...delMes, ...proximos];
+  return enOrden.find((item) => String(item.id) === id) ?? null;
+}
+
+// Un clic en la pestaña: «‹» y «›» (el mes anterior o el siguiente), «Hoy» (el mes de hoy; si ya se ve y llegó, nada), «Nuevo
+// evento», un evento (el propio abre su formulario; el de otra persona, su detalle) y «y N más»
+function alTocarEventos(evento) {
+  const objetivo = evento.target;
+  const nuevo = objetivo?.closest?.('#ag-nuevo-evento');
+  if (nuevo) {
+    abrirEvento({ volverA: nuevo });
+    return;
+  }
+  const deUnEvento = objetivo?.closest?.('[data-evento]');
+  if (deUnEvento) {
+    const item = eventoDelBoton(deUnEvento);
+    if (item?.es_mio === true) abrirEvento({ item, volverA: deUnEvento });
+    else if (item) abrirEventoAjeno({ item, volverA: deUnEvento });
+    return;
+  }
+  if (objetivo?.closest?.('#ag-anterior')) {
+    mostrarMesDeEventos(mesVecino(pagina.mesDeEventos, -1));
+    return;
+  }
+  if (objetivo?.closest?.('#ag-siguiente')) {
+    mostrarMesDeEventos(mesVecino(pagina.mesDeEventos, 1));
+    return;
+  }
+  if (objetivo?.closest?.('#ag-hoy')) {
+    const deHoy = Utils.hoyEnArgentina().slice(0, 7);
+    if (deHoy !== pagina.mesDeEventos || pagina.delMes === null) mostrarMesDeEventos(deHoy);
+    return;
+  }
+  const verMas = objetivo?.closest?.('[data-ver-mas]');
+  if (verMas) verElResto(verMas);
+}
+
 // =====================================================
 // Los formularios (DOM y API)
 // =====================================================
@@ -1289,6 +1979,16 @@ const FORMULARIOS = Object.freeze({
     modal: 'modal-horas', prefijo: 'mh', campos: { fecha: 'mh-fecha', desde: 'mh-desde', hasta: 'mh-hasta', nota: 'mh-nota' }
   },
   saldos: { modal: 'modal-saldos', prefijo: 'ms', campos: { dias_vacaciones: 'ms-dias', estudios: 'ms-estudios' } },
+  // La agenda: el formulario del evento (`compartido`, el permiso, no tiene control: va arriba del modal) y el detalle de uno ajeno
+  // (todo lo que falla, en #mea-error)
+  evento: {
+    modal: 'modal-evento', prefijo: 'ev',
+    campos: {
+      titulo: 'ev-titulo', fecha: 'ev-fecha', desde: 'ev-desde', hasta: 'ev-hasta', detalle: 'ev-detalle', personas: 'ev-personas',
+      recordatorio: 'ev-recordatorio'
+    }
+  },
+  eventoAjeno: { modal: 'modal-evento-ajeno', prefijo: 'mea', campos: {} },
   confirmar: { modal: 'modal-confirmar', prefijo: 'mc', campos: {} }
 });
 
@@ -1339,6 +2039,19 @@ function conectarFormularios() {
   porId('ms-estudios').addEventListener('change', alElegirEnLosSaldos);
   porId('ms-guardar').addEventListener('click', guardarSaldos);
 
+  // El evento: la fecha, la hora y el recordatorio piden cuándo sale el aviso; «Solo yo» y «Compartido»; cada persona (delegado en
+  // la lista, que se vuelve a dibujar); «Guardar» y «Borrar». El detalle de uno ajeno: «Mi recordatorio» se guarda enseguida
+  for (const id of ['ev-fecha', 'ev-desde', 'ev-recordatorio']) {
+    porId(id).addEventListener('input', alCambiarElCuando);
+    porId(id).addEventListener('change', alCambiarElCuando);
+  }
+  porId('ev-solo').addEventListener('click', () => elegirQuienLoVe(false));
+  porId('ev-compartido').addEventListener('click', () => elegirQuienLoVe(true));
+  porId('ev-personas').addEventListener('click', alTocarUnaPersona);
+  porId('ev-guardar').addEventListener('click', guardarEvento);
+  porId('ev-borrar').addEventListener('click', pedirBorrarEvento);
+  porId('mea-recordatorio').addEventListener('change', guardarMiRecordatorio);
+
   porId('modal-confirmar-si').addEventListener('click', confirmarElBorrado);
 }
 
@@ -1369,6 +2082,8 @@ function estaOcupado(modal) {
   if (modal === 'modal-confirmar') return pagina.confirmacion?.ocupado === true;
   if (modal === 'modal-horas') return pagina.horasExtras?.guardando === true;
   if (modal === 'modal-saldos') return pagina.saldos?.guardando === true;
+  if (modal === 'modal-evento') return pagina.evento?.guardando === true;
+  if (modal === 'modal-evento-ajeno') return pagina.eventoAjeno?.guardando === true;
   return pagina.formulario?.guardando === true && FORMULARIOS[pagina.formulario.nombre].modal === modal;
 }
 
@@ -1409,10 +2124,14 @@ function ponerError(id, mensaje) {
   return true;
 }
 
-// El control que recibe el foco de un campo: en un grupo de opciones, la elegida o la primera
+// El control que recibe el foco de un campo: en un grupo de opciones, la elegida o la primera; en una lista de botones (las
+// personas de un evento), el primero que se puede tocar
 function controlDeFoco(id) {
   const control = porId(id);
   if (esGrupoDeOpciones(control)) return control.querySelector('input:checked') ?? control.querySelector('input') ?? control;
+  if (String(control?.tagName).toLowerCase() === 'div') {
+    return [...control.querySelectorAll('button')].find((boton) => !boton.disabled) ?? control;
+  }
   return control;
 }
 
@@ -1476,13 +2195,25 @@ function mostrarFallaDelServidor(nombre, falla, boton) {
 
 // Las pestañas que se vuelven a dibujar después de guardar o de borrar, y lo que identifica a un control que abre un modal, en este
 // orden: el «Editar» de una fila (por su id), «Mis vacaciones y saldos», «Cambiar» o «Registrar un uso autorizado», «Cargar
-// licencia» o «Cargar horas extras» de una tarjeta y un botón de «Vence pronto» (por su tipo)
-const VISTAS_QUE_SE_DIBUJAN = Object.freeze(['vista-resumen', 'vista-licencias', 'vista-horas']);
-const IDENTIDADES_DEL_FOCO = Object.freeze(['data-editar-licencia', 'data-editar-horas', 'data-abrir', 'data-cargar', 'data-tipo']);
+// licencia» o «Cargar horas extras» de una tarjeta, un botón de «Vence pronto» (por su tipo) y un evento de la agenda (por su id)
+const VISTAS_QUE_SE_DIBUJAN = Object.freeze(['vista-resumen', 'vista-licencias', 'vista-horas', 'vista-agenda']);
+const IDENTIDADES_DEL_FOCO = Object.freeze(['data-editar-licencia', 'data-editar-horas', 'data-abrir', 'data-cargar', 'data-tipo',
+  'data-evento']);
 
+// El id del lugar de la pestaña donde está un control (el primer antepasado con id, antes de la pestaña: en la agenda, 'ag-mes' o
+// 'ag-proximos'), o null
+const lugarDe = (control) => {
+  for (let nodo = control?.parentNode; typeof nodo?.getAttribute === 'function'; nodo = nodo.parentNode) {
+    const id = nodo.getAttribute('id');
+    if (id) return VISTAS_QUE_SE_DIBUJAN.includes(id) ? null : id;
+  }
+  return null;
+};
+
+// Lo que identifica a un control: su atributo, su valor y su lugar (`dentro`: un evento está en la grilla y en los próximos)
 const identidadDe = (control) => {
   const atributo = IDENTIDADES_DEL_FOCO.find((uno) => typeof control?.getAttribute?.(uno) === 'string');
-  return atributo ? { atributo, valor: control.getAttribute(atributo) } : null;
+  return atributo ? { atributo, valor: control.getAttribute(atributo), dentro: lugarDe(control) } : null;
 };
 
 /**
@@ -1509,37 +2240,42 @@ function respaldoDelFoco(control) {
   };
 }
 
-// El control de la pestaña que corresponde a un candidato de respaldoDelFoco, o null
-function controlDelCandidato(vista, candidato) {
+// Los controles de la pestaña que corresponden a un candidato de respaldoDelFoco, del preferido al último ([] si no hay): de un
+// control, los que están a la vista y habilitados (uno dentro de un «y N más» oculto, no), primero el del mismo lugar que el que
+// se usó (los próximos o la grilla); de un título, el que dice ese texto, el primero de la pestaña o la pestaña misma
+function controlesDelCandidato(vista, candidato) {
   if (candidato.atributo) {
-    const control = controlCon(vista, candidato.atributo, candidato.valor);
-    return control && !control.disabled ? control : null;
+    const controles = controlesCon(vista, candidato.atributo, candidato.valor).filter((uno) => !uno.disabled && !estaOculto(uno));
+    const lugar = candidato.dentro ? porId(candidato.dentro) : null;
+    return lugar ? [...controles.filter((uno) => lugar.contains(uno)), ...controles.filter((uno) => !lugar.contains(uno))] : controles;
   }
   const titulos = [...porId(vista).querySelectorAll('h2'), ...porId(vista).querySelectorAll('h3')];
-  if (candidato.titulo !== undefined) return titulos.find((uno) => uno.textContent === candidato.titulo) ?? null;
-  if (candidato.primerTitulo) return titulos[0] ?? null;
-  return porId(`tab-${vista.slice('vista-'.length)}`);
+  let control = porId(`tab-${vista.slice('vista-'.length)}`);
+  if (candidato.titulo !== undefined) control = titulos.find((uno) => uno.textContent === candidato.titulo) ?? null;
+  else if (candidato.primerTitulo) control = titulos[0] ?? null;
+  return control ? [control] : [];
 }
 
-// Si el foco se perdió (el control que lo tenía ya no está: quedó en <body>), va al primer candidato que está. Un título recibe el
-// foco con tabindex="-1". Con un modal abierto, o si el foco ya está en otro lado, no se toca
+// Si el foco se perdió (el control que lo tenía ya no está: quedó en <body>), va al primer candidato que está y que lo toma (si uno
+// no lo toma, el siguiente). Un título recibe el foco con tabindex="-1". Con un modal abierto, o si el foco ya está en otro lado, no
+// se toca
 function devolverElFoco(respaldo) {
   if (respaldo === null || pagina.modales.length > 0) return;
   const activo = document.activeElement;
   if (activo && activo !== document.body && activo.isConnected !== false) return;
   for (const candidato of respaldo.candidatos) {
-    const control = controlDelCandidato(respaldo.vista, candidato);
-    if (!control) continue;
-    if (/^h[23]$/.test(String(control.tagName).toLowerCase())) control.setAttribute('tabindex', '-1');
-    control.focus?.();
-    return;
+    for (const control of controlesDelCandidato(respaldo.vista, candidato)) {
+      if (/^h[23]$/.test(String(control.tagName).toLowerCase())) control.setAttribute('tabindex', '-1');
+      control.focus?.();
+      if (document.activeElement === control) return;
+    }
   }
 }
 
 // Después de guardar o de borrar: el Resumen y las pestañas que ya se cargaron (la que se ve, enseguida y con el año que tenía
-// y, en Horas extras, el mes del día por día, sin anunciarlo: se anuncia lo que se guardó; las otras, cuando se vuelvan a abrir).
-// El foco, que cerrarModal devolvió al botón que abrió el modal, va a su equivalente cuando terminan (respaldoDelFoco: la recarga
-// reemplazó el botón)
+// y, en Horas extras, el mes del día por día, y en la agenda, el mes que se ve, sin anunciarlo: se anuncia lo que se guardó; las
+// otras, cuando se vuelvan a abrir). La agenda se vuelve a pedir siempre: también muestra las licencias. El foco, que cerrarModal
+// devolvió al botón que abrió el modal, va a su equivalente cuando terminan (respaldoDelFoco: la recarga reemplazó el botón)
 async function volverAPedirTodo() {
   const respaldo = respaldoDelFoco(document.activeElement);
   const cargas = [cargarResumen()];
@@ -1552,6 +2288,14 @@ async function volverAPedirTodo() {
     if (pagina.pestana === 'horas') {
       cargas.push(cargarHorasExtras(anioQueTenia(pagina.horas), { conAnuncio: false, mes: pagina.mes }));
     } else pagina.horas = null;
+  }
+  if (pagina.pestana === 'agenda') cargas.push(cargarEventos({ forzar: true, conAnuncio: false }));
+  else {
+    // Lo que se estaba pidiendo ya es viejo: se descarta
+    pagina.delMes = null;
+    pagina.proximos = null;
+    pagina.pedidos.mes += 1;
+    pagina.pedidos.proximos += 1;
   }
   await Promise.all(cargas);
   devolverElFoco(respaldo);
@@ -2175,5 +2919,279 @@ async function confirmarElBorrado() {
     }
   } finally {
     boton.disabled = false;
+  }
+}
+
+// ---- El evento (la agenda: spec 2026-10-26-mi-espacio-agenda, 1, 2 y 6) ----
+
+// GET /mi-espacio/personas, una sola vez (si falla, se vuelve a pedir la próxima): `{ lista, motivo }`, con quiénes se puede
+// compartir o, si no llegó, `lista` null y, con un 403 (un rol viejo en el navegador: ya no es administración), el mensaje del
+// servidor en `motivo` («No tenés permiso para compartir eventos.»); con otra falla, ''
+function personasParaCompartir() {
+  pagina.personas ??= API.pedirJson('GET', '/mi-espacio/personas').then(
+    ({ data }) => ({ lista: listaDe(data), motivo: '' }),
+    (error) => {
+      pagina.personas = null;
+      if (error?.status === 401) irAlLogin();
+      return { lista: null, motivo: error?.status === 403 ? comoTexto(error.message) : '' };
+    }
+  );
+  return pagina.personas;
+}
+
+/**
+ * Abre el formulario del evento: «Nuevo evento» (hoy y «2 horas antes») o «Editar evento» con uno propio (`item`, de lo que llegó de
+ * GET /mi-espacio/eventos). Sin modalidad se abre igual (decisión del usuario, 27/10/2026). «¿Quién lo ve?» y las personas, solo
+ * con Auth.isAdmin() (el true literal): el lector y el colaborador tienen solo eventos personales, y no piden la lista. El foco va
+ * a «Qué» y, al cerrar, vuelve a `volverA`
+ */
+function abrirEvento({ item = null, volverA = null } = {}) {
+  if (pagina.evento !== null) return;
+  const puedeCompartir = Auth.isAdmin?.() === true;
+  const valores = valoresDelEvento(item, { fecha: Utils.hoyEnArgentina() });
+  const formulario = {
+    item, valores, puedeCompartir, guardando: false, temporizador: null, pedidoDelAviso: 0, lista: null,
+    sinLista: puedeCompartir ? 'cargando' : null, motivoSinLista: ''
+  };
+  pagina.evento = formulario;
+  porId('modal-evento-titulo').textContent = item ? 'Editar evento' : 'Nuevo evento';
+  for (const campo of ['titulo', 'fecha', 'desde', 'hasta', 'detalle']) porId(`ev-${campo}`).value = valores[campo];
+  porId('ev-recordatorio').innerHTML = htmlDeOpcionesDeRecordatorio(valores.recordatorio);
+  porId('ev-recordatorio').value = valores.recordatorio;
+  porId('ev-grupo-quien').hidden = !puedeCompartir;
+  porId('ev-borrar').hidden = item === null;
+  porId('ev-guardar').disabled = false;
+  limpiarErrores('evento');
+  pintarQuienLoVe();
+  // Cuándo sale su aviso: el que llegó con el evento, mientras se pide de nuevo (pudo pasar el día)
+  mostrarAvisoDelEvento(item && valores.recordatorio !== 'ninguno' ? item.aviso?.texto : '');
+  programarAvisoDelEvento();
+  abrirModal('modal-evento', { volverA, foco: () => porId('ev-titulo'), alCerrar: cerrarFormularioDeEvento });
+  if (puedeCompartir) {
+    personasParaCompartir().then(({ lista, motivo }) => {
+      if (pagina.evento !== formulario) return;
+      formulario.lista = lista;
+      formulario.sinLista = lista === null ? 'fallo' : null;
+      formulario.motivoSinLista = motivo;
+      pintarPersonas();
+    });
+  }
+}
+
+// Al cerrar el formulario, lo que esperaba se descarta
+function cerrarFormularioDeEvento() {
+  clearTimeout(pagina.evento?.temporizador);
+  pagina.evento = null;
+}
+
+// Lo que dice el formulario abierto: lo escrito y lo elegido con los botones
+const valoresDelFormularioDeEvento = (formulario) => ({
+  ...formulario.valores, titulo: porId('ev-titulo').value, fecha: porId('ev-fecha').value, desde: porId('ev-desde').value,
+  hasta: porId('ev-hasta').value, detalle: porId('ev-detalle').value, recordatorio: porId('ev-recordatorio').value
+});
+
+// Debajo del recordatorio de un evento compartido
+const AYUDA_DEL_RECORDATORIO_COMPARTIDO = 'Les llega a todas las personas del evento.';
+
+// «Solo yo» o «Compartido» (aria-pressed) y, si es compartido, con quién y que el recordatorio les llega a todos. Esa ayuda la
+// describe el select (aria-describedby), que la lee aunque esté oculta: en uno personal, además de ocultarse, se vacía
+function pintarQuienLoVe() {
+  const { valores, puedeCompartir } = pagina.evento;
+  const compartido = puedeCompartir && valores.compartido;
+  porId('ev-solo').setAttribute('aria-pressed', String(!valores.compartido));
+  porId('ev-compartido').setAttribute('aria-pressed', String(valores.compartido));
+  porId('ev-grupo-personas').hidden = !compartido;
+  const ayuda = porId('ev-recordatorio-ayuda');
+  ayuda.textContent = compartido ? AYUDA_DEL_RECORDATORIO_COMPARTIDO : '';
+  ayuda.hidden = !compartido;
+  pintarPersonas();
+}
+
+function pintarPersonas() {
+  const formulario = pagina.evento;
+  if (!formulario) return;
+  porId('ev-personas').innerHTML = htmlDePersonasDelEvento(personasParaElegir(formulario.lista, formulario.valores), formulario.valores,
+    { sinLista: formulario.sinLista, motivo: formulario.motivoSinLista });
+  porId('ev-personas-cuantas').textContent = textoDeCuantasPersonas(formulario.valores);
+}
+
+function elegirQuienLoVe(compartido) {
+  const formulario = pagina.evento;
+  if (!formulario || formulario.guardando) return;
+  formulario.valores = { ...formulario.valores, compartido };
+  ponerError('ev-personas', null);
+  pintarQuienLoVe();
+}
+
+// Un clic en una persona (o en «Todos»): la lista se vuelve a dibujar y el foco queda en la que se tocó
+function alTocarUnaPersona(evento) {
+  const formulario = pagina.evento;
+  const boton = evento.target?.closest?.('[data-persona]');
+  if (!formulario || formulario.guardando || !boton || boton.disabled) return;
+  const valor = boton.getAttribute('data-persona');
+  formulario.valores = elegirPersona(formulario.valores, valor);
+  ponerError('ev-personas', null);
+  pintarPersonas();
+  porId('ev-personas').querySelector(`[data-persona="${valor}"]`)?.focus?.();
+}
+
+// Cuándo sale el recordatorio, debajo del select (lo describe: no es una región viva); sin nada que decir, oculto
+function mostrarAvisoDelEvento(texto) {
+  const aviso = porId('ev-aviso');
+  aviso.textContent = comoTexto(texto);
+  aviso.hidden = aviso.textContent === '';
+}
+
+// Cambió la fecha, la hora o el recordatorio: el aviso que se veía ya no vale, y se vuelve a pedir
+function alCambiarElCuando() {
+  if (!pagina.evento) return;
+  mostrarAvisoDelEvento('');
+  programarAvisoDelEvento();
+}
+
+// El aviso se pide 300 ms después del último cambio (sin una fecha y una hora que sirvan, o con «Sin aviso», no se pide); lo que
+// estaba en vuelo queda viejo
+function programarAvisoDelEvento() {
+  const formulario = pagina.evento;
+  if (!formulario) return;
+  clearTimeout(formulario.temporizador);
+  formulario.pedidoDelAviso += 1;
+  const ruta = pedidoDelAviso(valoresDelFormularioDeEvento(formulario));
+  if (ruta === null) return;
+  formulario.temporizador = setTimeout(() => pedirAvisoDelEvento(formulario, ruta), ESPERA_DEL_CALCULO);
+}
+
+// GET /mi-espacio/eventos/aviso: el texto del servidor (con los feriados). Una respuesta vieja (el formulario cambió o se cerró
+// mientras) se descarta; si falla, no se dice nada (el error, si lo hay, sale al guardar)
+async function pedirAvisoDelEvento(formulario, ruta) {
+  if (pagina.evento !== formulario) return;
+  const pedido = formulario.pedidoDelAviso;
+  const vigente = () => pagina.evento === formulario && pedido === formulario.pedidoDelAviso;
+  try {
+    const { data } = await API.pedirJson('GET', ruta);
+    if (vigente()) mostrarAvisoDelEvento(esObjeto(data) ? data.texto : '');
+  } catch (error) {
+    if (!vigente()) return;
+    if (error?.status === 401) irAlLogin();
+    else mostrarAvisoDelEvento('');
+  }
+}
+
+// «Guardar»: los errores antes de pedir nada; si no, POST o PUT. Mientras, «Guardar» queda deshabilitado y el modal no se cierra: un
+// doble clic manda un solo pedido (dos eventos compartidos mandarían dos invitaciones). Al guardar, se cierra, se avisa lo que dijo el
+// servidor y se vuelve a pedir todo (la agenda y el Resumen)
+async function guardarEvento() {
+  const formulario = pagina.evento;
+  const boton = porId('ev-guardar');
+  if (!formulario || formulario.guardando) return;
+  const valores = valoresDelFormularioDeEvento(formulario);
+  if (mostrarErrores('evento', conSusControles('evento', erroresDelEvento(valores, Utils.hoyEnArgentina())))) return;
+  const cuerpo = cuerpoDelEvento(valores, { puedeCompartir: formulario.puedeCompartir });
+  formulario.guardando = true;
+  boton.disabled = true;
+  try {
+    const respuesta = formulario.item
+      ? await API.pedirJson('PUT', `/mi-espacio/eventos/${encodeURIComponent(formulario.item.id)}`, cuerpo)
+      : await API.pedirJson('POST', '/mi-espacio/eventos', cuerpo);
+    formulario.guardando = false;
+    cerrarModal('modal-evento');
+    avisarLaRespuesta(respuesta);
+    volverAPedirTodo();
+  } catch (error) {
+    formulario.guardando = false;
+    boton.disabled = false;
+    if (error?.status === 401) irAlLogin();
+    else if (error?.status === 404) noEstaMas('modal-evento', error);
+    else if (pagina.evento === formulario) mostrarFallaDelServidor('evento', error, boton);
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+// «Borrar el evento»: la confirmación, sobre el formulario, con lo guardado (no lo que se está escribiendo)
+function pedirBorrarEvento() {
+  const formulario = pagina.evento;
+  if (!formulario?.item || formulario.guardando) return;
+  const { item } = formulario;
+  pedirConfirmacion({
+    titulo: 'Borrar el evento', texto: textoDeConfirmacionDeEvento(item, { hoy: Utils.hoyEnArgentina() }), volverA: porId('ev-borrar'),
+    formulario: 'modal-evento', borrar: () => API.pedirJson('DELETE', `/mi-espacio/eventos/${encodeURIComponent(item.id)}`)
+  });
+}
+
+// ---- El detalle de un evento ajeno ----
+
+/**
+ * Abre el detalle de un evento que compartió otra persona (spec, sección 2; maqueta 2, #evento-ajeno): el título (con textContent),
+ * cuándo es, el detalle, quién lo creó y quiénes están, y «Mi recordatorio», con el foco. Solo quien lo creó puede cambiarlo.
+ * `recargarAlCerrar`: «Mi recordatorio» cambió; la agenda se vuelve a pedir al cerrar, después de que el foco vuelva al evento
+ * (mientras está abierto, volver a dibujar la agenda dejaría a `volverA` fuera de la página)
+ */
+function abrirEventoAjeno({ item, volverA = null }) {
+  if (pagina.eventoAjeno !== null) return;
+  const partes = htmlDelEventoAjeno(item);
+  const elegido = miRecordatorioDe(item);
+  pagina.eventoAjeno = { item, elegido, guardando: false, recargarAlCerrar: false };
+  porId('modal-evento-ajeno-titulo').textContent = comoTexto(item.titulo);
+  porId('mea-cuando').innerHTML = partes.cuando;
+  porId('mea-detalle').innerHTML = partes.detalle;
+  porId('mea-detalle').hidden = partes.detalle === '';
+  porId('mea-quien').innerHTML = partes.quien;
+  const select = porId('mea-recordatorio');
+  select.innerHTML = partes.opciones;
+  select.value = elegido;
+  select.disabled = false;
+  mostrarAvisoAjeno(item.aviso?.texto, elegido);
+  avisoDelModal('eventoAjeno', '');
+  abrirModal('modal-evento-ajeno', { volverA, foco: () => porId('mea-recordatorio'), alCerrar: cerrarEventoAjeno });
+}
+
+function cerrarEventoAjeno() {
+  const recargar = pagina.eventoAjeno?.recargarAlCerrar === true;
+  pagina.eventoAjeno = null;
+  if (recargar) Promise.resolve().then(volverAPedirTodo);
+}
+
+// Cuándo sale «Mi recordatorio» (el texto del servidor); apagado, nada
+function mostrarAvisoAjeno(texto, elegido) {
+  const aviso = porId('mea-aviso');
+  aviso.textContent = elegido === 'evento' ? comoTexto(texto) : '';
+  aviso.hidden = aviso.textContent === '';
+}
+
+// «Mi recordatorio»: el PUT enseguida (el evento no cambia). Mientras, el select queda deshabilitado y el detalle no se cierra; si
+// sale bien, se anuncia y se dice cuándo sale; si falla, el select vuelve a lo de antes y el error va arriba del detalle (un 404,
+// como al guardar). El foco vuelve al select
+async function guardarMiRecordatorio() {
+  const ajeno = pagina.eventoAjeno;
+  const select = porId('mea-recordatorio');
+  if (!ajeno || ajeno.guardando || select.value === ajeno.elegido) return;
+  const elegido = select.value;
+  ajeno.guardando = true;
+  select.disabled = true;
+  avisoDelModal('eventoAjeno', '');
+  try {
+    const respuesta = await API.pedirJson('PUT', `/mi-espacio/eventos/${encodeURIComponent(ajeno.item.id)}/mi-recordatorio`,
+      { sin_aviso: elegido === 'ninguno' });
+    ajeno.guardando = false;
+    ajeno.elegido = elegido;
+    ajeno.recargarAlCerrar = true;
+    select.disabled = false;
+    mostrarAvisoAjeno(respuesta?.data?.aviso?.texto, elegido);
+    avisarLaRespuesta(respuesta);
+    select.focus?.();
+  } catch (error) {
+    ajeno.guardando = false;
+    select.disabled = false;
+    select.value = ajeno.elegido;
+    if (error?.status === 401) irAlLogin();
+    else if (error?.status === 404) {
+      // noEstaMas ya vuelve a pedir todo: cerrar el detalle no lo pide otra vez (aunque antes un cambio haya salido bien)
+      ajeno.recargarAlCerrar = false;
+      noEstaMas('modal-evento-ajeno', error);
+    } else if (pagina.eventoAjeno === ajeno) {
+      avisoDelModal('eventoAjeno', motivoDeLaFalla(error, MENSAJE_NO_SE_GUARDO));
+      select.focus?.();
+    }
   }
 }
