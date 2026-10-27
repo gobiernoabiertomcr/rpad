@@ -38,8 +38,8 @@
         if (!lista.length) return '';
         return `<aside class="o2-vence" aria-labelledby="o2-vence-titulo"><h2 id="o2-vence-titulo">Vence pronto</h2><ol class="o2-entradas">${lista.map((c, i) =>
             `<li class="o2-entrada"><span class="o2-talon" aria-hidden="true"><b>${esc(c.dia)}</b>${esc(c.mes)}</span>`
-            + `<span class="o2-entrada-cuerpo"><span class="cuando">${esc(c.cuando)}, faltan ${esc(c.faltan)} días</span><b id="o2-vence-${i}">${esc(c.titulo)}</b>`
-            + `<span class="detalle">${esc(c.detalle)}</span><button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-maqueta-accion="Cargar licencia" aria-describedby="o2-vence-${i}">${esc(c.accion.texto)}</button></span></li>`).join('')}</ol></aside>`;
+            + `<span class="o2-entrada-cuerpo"><b id="o2-vence-${i}">${esc(c.titulo)}</b>`
+            + `<span class="detalle">${esc(c.corto)}</span><button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-maqueta-accion="Cargar licencia" aria-describedby="o2-vence-${i}">${esc(c.accion.texto)}</button></span></li>`).join('')}</ol></aside>`;
     }
 
     function resto(r) {
@@ -58,7 +58,7 @@
             + `<span class="o2-resto-al"><span>${esc(r.al_texto)}</span><button type="button" class="sg-link" data-maqueta-accion="Mis vacaciones y saldos">Mis vacaciones y saldos</button></span></div>`
             + `<ul class="o2-numeros">${numeros}</ul>`
             + (meses.length ? `<p class="o2-meses"><b>${esc(p.titulo)}:</b>${meses.join('')}</p>` : '')
-            + `<p class="o2-extra">${esc(r.extraordinaria)}</p></section>`;
+            + `<p class="o2-extra">${esc(r.extraordinaria_corta)}</p></section>`;
     }
 
     function hoy(r) {

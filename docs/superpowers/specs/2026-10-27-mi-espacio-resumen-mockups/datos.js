@@ -1,9 +1,11 @@
 /* MAQUETA (27/10/2026): los cuatro estados del Resumen, con la forma de lo que manda hoy GET /api/mi-espacio/resumen
    (services/miEspacioResumen.js, resumenDe) más lo que sumaría alguna opción, marcado «nuevo»: los días que faltan de cada cosa
    que vence, las fechas de cada capa y de cada tope (la opción 3 dibuja hasta cuándo se puede usar cada cosa), la fecha del
-   feriado y los eventos de la agenda (entrega 3: hoy_y_manana.eventos). Hoy es el martes 27/10/2026. Nombres inventados. */
+   feriado, los eventos de la agenda (entrega 3: hoy_y_manana.eventos) y, para Titular, el texto corto de cada cosa que vence
+   (`corto`, en lugar de `cuando` y `detalle`) y la médica extraordinaria más corta (`extraordinaria_corta`). Hoy es el martes 27/10/2026. Nombres inventados. */
 (() => {
     const FERIADO = { fecha: '2026-11-02', cuando: 'Lunes 02/11', nombre: 'Jura de fidelidad a la Bandera Argentina de los pueblos tehuelches y mapuches' };
+    const CORTA = (usados) => `Atención médica extraordinaria: sin tope. ${usados ? `Usaste ${usados} días en 2026.` : 'No usaste en 2026.'}`;
     const EXTRAORDINARIA = (usados) => `Atención médica extraordinaria: sin tope y aparte de los 25 días. ${usados ? `Usaste ${usados} días en 2026.` : 'No usaste en 2026.'}`;
     const tope = (clave, nombre, valor, total, unidad) => ({
         clave, nombre, numero: String(valor).replace('.', ','), unidad: valor === 1 ? unidad[0] : unidad[1],
@@ -25,7 +27,7 @@
                 persona: { ve_companeros: true },
                 marca: true,
                 vence_pronto: [
-                    { fecha: '2026-12-31', dia: '31', mes: 'dic', cuando: 'Jueves 31/12', titulo: '15 días de la licencia 2024', detalle: 'Ese día vence la licencia 2024.', accion: { texto: 'Cargar vacaciones', tipo: 'vacaciones' }, faltan: 65 },
+                    { fecha: '2026-12-31', dia: '31', mes: 'dic', cuando: 'Jueves 31/12', titulo: '15 días de la licencia 2024', detalle: 'Ese día vence la licencia 2024.', accion: { texto: 'Cargar vacaciones', tipo: 'vacaciones' }, faltan: 65, corto: 'Vencen el jueves 31/12, en 65 días.' },
                 ],
                 faltantes: [],
                 tanques: {
@@ -51,7 +53,7 @@
                     meses: [{ numero: '1', mes: 'Diciembre', nota: 'Octubre sigue sumando', estado: 'pendiente', mes_de_uso: '2026-12' }],
                     previo: null,
                 },
-                extraordinaria: EXTRAORDINARIA(0),
+                extraordinaria: EXTRAORDINARIA(0), extraordinaria_corta: CORTA(0),
                 hoy_y_manana: { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: FERIADO, eventos: [] },
             },
         },
@@ -66,7 +68,7 @@
                 persona: { ve_companeros: false },
                 marca: true,
                 vence_pronto: [
-                    { fecha: '2026-10-30', dia: '30', mes: 'oct', cuando: 'Viernes 30/10', titulo: '1,5 horas a favor de octubre', detalle: 'Es el último día hábil del mes. Lo que no uses pasa a horas no utilizadas previamente.', accion: { texto: 'Usarlas', tipo: 'horas_a_favor' }, faltan: 3 },
+                    { fecha: '2026-10-30', dia: '30', mes: 'oct', cuando: 'Viernes 30/10', titulo: '1,5 horas a favor de octubre', detalle: 'Es el último día hábil del mes. Lo que no uses pasa a horas no utilizadas previamente.', accion: { texto: 'Usarlas', tipo: 'horas_a_favor' }, faltan: 3, corto: 'Vencen el viernes 30/10, en 3 días.' },
                 ],
                 faltantes: [],
                 tanques: {
@@ -98,7 +100,7 @@
                     ],
                     previo: { numero: '6,5', titulo: 'Agosto', nota: 'No utilizadas previamente' },
                 },
-                extraordinaria: EXTRAORDINARIA(0),
+                extraordinaria: EXTRAORDINARIA(0), extraordinaria_corta: CORTA(0),
                 hoy_y_manana: {
                     ausentes_hoy: [], ausentes_manana: [], proximo_feriado: FERIADO,
                     eventos: [{ dia: 'manana', hora: '16:00', titulo: 'Entrega del informe trimestral', detalle: 'Mañana · solo vos', compartido: false }],
@@ -116,8 +118,8 @@
                 persona: { ve_companeros: true },
                 marca: true,
                 vence_pronto: [
-                    { fecha: '2026-10-30', dia: '30', mes: 'oct', cuando: 'Viernes 30/10', titulo: '1 franco compensatorio de octubre', detalle: 'Es el último día hábil del mes. Si no lo usás, queda como no utilizado previamente.', accion: { texto: 'Cargarlo', tipo: 'franco' }, faltan: 3 },
-                    { fecha: '2026-12-31', dia: '31', mes: 'dic', cuando: 'Jueves 31/12', titulo: '3 días de la licencia 2024', detalle: 'Ese día vence la licencia 2024.', accion: { texto: 'Cargar vacaciones', tipo: 'vacaciones' }, faltan: 65 },
+                    { fecha: '2026-10-30', dia: '30', mes: 'oct', cuando: 'Viernes 30/10', titulo: '1 franco compensatorio de octubre', detalle: 'Es el último día hábil del mes. Si no lo usás, queda como no utilizado previamente.', accion: { texto: 'Cargarlo', tipo: 'franco' }, faltan: 3, corto: 'Vence el viernes 30/10, en 3 días.' },
+                    { fecha: '2026-12-31', dia: '31', mes: 'dic', cuando: 'Jueves 31/12', titulo: '3 días de la licencia 2024', detalle: 'Ese día vence la licencia 2024.', accion: { texto: 'Cargar vacaciones', tipo: 'vacaciones' }, faltan: 65, corto: 'Vencen el jueves 31/12, en 65 días.' },
                 ],
                 faltantes: [],
                 tanques: {
@@ -148,7 +150,7 @@
                     ],
                     previo: { numero: '1', titulo: 'Agosto', nota: 'No utilizado previamente' },
                 },
-                extraordinaria: EXTRAORDINARIA(4),
+                extraordinaria: EXTRAORDINARIA(4), extraordinaria_corta: CORTA(4),
                 hoy_y_manana: {
                     ausentes_hoy: [
                         { nombre: 'Julieta Arce', texto: 'Julieta Arce no está', vuelve_texto: 'Vuelve el martes 03/11' },
@@ -199,7 +201,7 @@
                     meses: [{ numero: '1', mes: 'Noviembre', nota: 'Por las horas de septiembre', estado: 'disponible', mes_de_uso: '2026-11' }],
                     previo: null,
                 },
-                extraordinaria: EXTRAORDINARIA(0),
+                extraordinaria: EXTRAORDINARIA(0), extraordinaria_corta: CORTA(0),
                 hoy_y_manana: { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: FERIADO, eventos: [] },
             },
         },

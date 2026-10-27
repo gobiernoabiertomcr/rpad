@@ -47,7 +47,7 @@
     const Maqueta = {
         opciones: {},
         esc, reducido, contar, iniciales, numeroDe, aviso,
-        opcion: '1', estado: 'planta',
+        opcion: '2', estado: 'planta',
 
         // El contexto de arriba (la modalidad y el año), como en la página real
         contexto: (r) => `<p class="me-contexto"><span><b>${esc(r.modalidad.texto)}</b></span><span>Año ${esc(r.anio)}</span></p>`,
