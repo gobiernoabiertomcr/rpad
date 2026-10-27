@@ -1,0 +1,62 @@
+/* MAQUETA (27/10/2026): lo de la página real (el <style> de public/mi-espacio.html) que comparten las cuatro opciones, y la
+   barra de la maqueta. Las opciones van en opcion-N.css, cada una con su prefijo (.o1-, .o2-, .o3-, .o4-). */
+:root {
+    --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA;
+    --sg-borde-control: #76879F; --sg-cielo: #DCEEF5;
+    --sg-sol: #FCE8A8; --sg-sol-borde: #E3B63C; --sg-ambar: #7A5200; --sg-ambar-fondo: #FFF4D6;
+    --sg-verde: #2E6B4C; --sg-verde-fondo: #DDF1E6;
+    --sg-azul: #24507A; --sg-azul-fondo: #DCEAF7;
+    --sg-rojo: #8A3434; --sg-rojo-fondo: #F8E1E1;
+    --sg-violeta: #5B4691; --sg-violeta-fondo: #ECE7F6;
+    --sg-gris: #8A97A8; --sg-gris-fondo: #EEF1F5;
+    --sg-medio: #4C7AB0;
+}
+
+[hidden] { display: none !important; }
+.visualmente-oculto { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.main-content { min-width: 0; background: var(--gray-100); padding-bottom: 0; }
+.me-pagina { width: 100%; max-width: 1180px; margin: 0 auto; padding-bottom: 150px; }
+.me-bajada { margin: -14px 0 20px; color: var(--sg-suave); max-width: 76ch; line-height: 1.5; }
+.me-acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.sg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 999px; font: inherit; font-weight: 600; font-size: 0.9rem; border: 1px solid transparent; white-space: nowrap; cursor: pointer; text-decoration: none; }
+.sg-btn svg { flex: none; }
+.sg-btn-tinta { background: var(--sg-tinta); color: #fff; }
+.sg-btn-borde { background: #fff; color: var(--sg-tinta); border-color: var(--sg-borde-control); }
+.sg-btn-chico { height: 34px; padding: 0 14px; font-size: 0.86rem; }
+.sg-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+.me-pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--sg-linea); margin-bottom: 18px; overflow-x: auto; scrollbar-width: none; }
+.me-pestana { padding: 10px 18px; background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; font: inherit; font-weight: 600; color: var(--sg-suave); cursor: pointer; white-space: nowrap; }
+.me-pestana:hover { color: var(--sg-tinta); }
+.me-pestana[aria-selected="true"] { color: var(--sg-tinta); border-bottom-color: var(--sg-tinta); }
+.me-pestana .me-marca { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #C98A00; margin-left: 6px; vertical-align: middle; }
+.me-estado { margin: 0; background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 28px 24px; color: var(--sg-suave); }
+
+.me-contexto { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; margin: 0 0 14px; color: var(--sg-suave); font-size: 0.92rem; }
+.me-contexto b { color: var(--sg-texto); }
+.me-aviso { display: flex; gap: 12px 16px; align-items: center; flex-wrap: wrap; padding: 12px 16px; border-radius: 12px; margin: 0 0 16px; font-size: 0.92rem; line-height: 1.45; border: 1px solid; }
+.me-aviso-ambar { background: var(--sg-ambar-fondo); border-color: #F0D78C; color: var(--sg-ambar); }
+
+/* Foco visible (el de la página real: anillo --tinta de 3 px con halo --sol-fuerte) */
+.me-pagina a:focus-visible, .me-pagina button:focus-visible, .me-pagina [tabindex]:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+.me-pagina .me-pestana:focus-visible { outline-offset: -3px; border-radius: 6px 6px 0 0; box-shadow: none; }
+
+/* ---------------------------------------------------------------- La barra de la maqueta (no es parte del diseño) */
+.mq-barra { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 200; width: min(1120px, calc(100% - 20px)); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 14px; border-radius: 16px; background: #0F1B2D; color: #E6EDF6; font-size: 0.82rem; box-shadow: 0 10px 30px rgba(15, 27, 45, 0.35); }
+.mq-grupo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mq-rotulo { color: #9FB2C8; font-weight: 600; }
+.mq-botones { display: flex; gap: 4px; flex-wrap: wrap; }
+.mq-botones button, .mq-repetir { height: 30px; padding: 0 11px; border-radius: 999px; border: 1px solid #34465F; background: transparent; color: #E6EDF6; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.mq-botones button[aria-pressed="true"] { background: #F2B705; border-color: #F2B705; color: #0F1B2D; }
+.mq-repetir { margin-left: auto; }
+.mq-idea { flex-basis: 100%; margin: 0; color: #BFD0E3; line-height: 1.4; }
+.mq-barra button:focus-visible { outline: 3px solid #F2B705; outline-offset: 2px; }
+.mq-aviso { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); z-index: 210; background: var(--sg-tinta); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 0.88rem; opacity: 0; pointer-events: none; transition: opacity 0.2s; max-width: calc(100% - 32px); }
+.mq-aviso.visible { opacity: 1; }
+@media (max-width: 640px) {
+    .mq-barra { bottom: 8px; padding: 8px 10px; gap: 6px 10px; }
+    .mq-idea { display: none; }
+    .mq-repetir { margin-left: 0; }
+    .me-pagina { padding-bottom: 210px; }
+}

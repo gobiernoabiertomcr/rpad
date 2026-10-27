@@ -1,0 +1,91 @@
+/* Opción 4 · Tablero: el Resumen como un tablero de salidas de aeropuerto, en el azul de la carcasa. Los números y las fechas
+   van en paletas que, al abrir, giran hasta quedar en su valor (el único movimiento). Lo que vence, en paletas amarillas. */
+.o4 { --o4-fondo: #142B4A; --o4-paleta: #22416B; --o4-paleta-arriba: #28497A; --o4-texto: #FFFFFF; --o4-suave: #AFC3DA; --o4-rotulo: #8FB0D3; --o4-linea: rgba(255, 255, 255, 0.1); }
+
+.o4-tablero { background: var(--o4-fondo); color: var(--o4-texto); border-radius: 24px; padding: 20px 24px 22px; min-width: 0; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04); }
+.o4-tablero + .o4-tablero, .o4-grilla { margin-top: 16px; }
+.o4-cabeza { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 12px; }
+.o4-cabeza h2 { margin: 0 auto 0 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.2rem; letter-spacing: -0.015em; color: #fff; display: flex; align-items: center; gap: 10px; }
+.o4-cabeza h2 svg { color: var(--sol-fuerte); }
+.o4-cabeza span { color: var(--o4-suave); font-size: 0.86rem; }
+.o4-cabeza .sg-link { color: #fff; font-size: 0.86rem; }
+
+/* Las paletas: un casillero por carácter, partido al medio, en la letra de los títulos */
+.o4-paletas { display: inline-flex; gap: 3px; vertical-align: middle; }
+.o4-paleta { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 0.78em; height: 1.22em; border-radius: 5px; font-family: var(--f-titulo); font-weight: 750; font-variant-numeric: tabular-nums; color: #fff; line-height: 1;
+    background: linear-gradient(180deg, var(--o4-paleta-arriba) 0 50%, var(--o4-paleta) 50% 100%); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.25); }
+.o4-paleta::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(0, 0, 0, 0.35); }
+.o4-paleta.signo { width: 0.4em; background: transparent; box-shadow: none; color: var(--o4-suave); }
+.o4-paleta.signo::after { display: none; }
+.o4-paleta.coma { width: 0.32em; background: transparent; box-shadow: none; }
+.o4-paleta.coma::after { display: none; }
+.o4-vence .o4-paleta:not(.signo):not(.coma) { background: linear-gradient(180deg, #EBC452 0 50%, var(--sg-sol-borde) 50% 100%); color: var(--sg-tinta); }
+.o4-grande { font-size: 1.9rem; }
+.o4-medio { font-size: 1.35rem; }
+.o4-chico { font-size: 1.05rem; }
+
+/* Vence pronto: una fila por cosa */
+.o4-salidas { list-style: none; margin: 0; padding: 0; }
+.o4-salida { display: grid; grid-template-columns: 150px minmax(0, 1fr) 150px auto; gap: 8px 22px; align-items: center; padding: 12px 0; border-top: 1px solid var(--o4-linea); }
+.o4-salida:first-child { border-top: 0; padding-top: 2px; }
+.o4-salida-que { min-width: 0; overflow-wrap: anywhere; }
+.o4-salida-que b { display: block; font-size: 1.05rem; color: #fff; }
+.o4-salida-que span { font-size: 0.84rem; color: var(--o4-suave); }
+.o4-faltan { display: flex; flex-direction: column; gap: 3px; font-size: 0.76rem; color: var(--o4-rotulo); }
+.o4-salida .sg-btn { background: #fff; color: var(--sg-tinta); border-color: #fff; }
+.o4-rotulo-col { font-size: 0.74rem; color: var(--o4-rotulo); font-weight: 600; display: block; margin-bottom: 4px; }
+
+/* La grilla: lo que te queda y, al costado, hoy y mañana */
+.o4-grilla { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); gap: 16px; align-items: start; }
+
+/* Lo que te queda: una tabla de verdad, sin los bordes de la tabla del sitio */
+.o4-tabla { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.o4-tabla caption { text-align: left; }
+.o4-tabla th { text-align: left; font-size: 0.74rem; font-weight: 600; color: var(--o4-rotulo); padding: 0 12px 8px 0; border-bottom: 1px solid var(--o4-linea); white-space: nowrap; }
+.o4-tabla td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--o4-linea); vertical-align: middle; color: var(--o4-suave); }
+.o4-tabla tr:last-child td { border-bottom: 0; }
+.o4-tabla .que a { color: #fff; font-weight: 700; text-decoration: none; font-size: 0.98rem; }
+.o4-tabla .que a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.o4-tabla .que small { display: block; color: var(--o4-suave); font-size: 0.78rem; font-weight: 400; }
+.o4-tabla .num { white-space: nowrap; }
+.o4-tabla .num .unidad { margin-left: 8px; font-size: 0.82rem; color: var(--o4-suave); }
+.o4-tabla tr.sub td { padding-top: 6px; padding-bottom: 6px; }
+.o4-tabla tr.sub .que { padding-left: 18px; }
+.o4-tabla tr.sub .que span { color: #E6EEF7; font-weight: 600; }
+.o4-tabla tr.sub.tenue .que span, .o4-tabla tr.sub.tenue .o4-paleta { color: var(--o4-suave); }
+.o4-tabla tr.vence .que span, .o4-tabla tr.vence .hasta { color: #F6D77A; }
+.o4-tabla tr.grupo td { border-bottom: 0; padding-bottom: 2px; }
+
+/* Las luces: diez, encendidas en la proporción de lo que queda */
+.o4-luces { display: inline-flex; gap: 4px; }
+.o4-luces i { width: 9px; height: 9px; border-radius: 50%; background: rgba(255, 255, 255, 0.12); }
+.o4-luces i.on { background: #7FD1A8; box-shadow: 0 0 6px rgba(127, 209, 168, 0.55); }
+.o4-luces.vence i.on { background: #F6D77A; box-shadow: 0 0 6px rgba(246, 215, 122, 0.6); }
+
+.o4-pie { margin: 14px 0 0; font-size: 0.82rem; color: var(--o4-suave); line-height: 1.5; }
+.o4-meses { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 4px 0 0; padding: 0; list-style: none; }
+.o4-meses li { display: flex; align-items: center; gap: 8px; font-size: 0.84rem; color: var(--o4-suave); }
+.o4-meses li b { color: #fff; }
+.o4-meses li.vence b { color: #F6D77A; }
+
+/* Hoy y mañana, como un tablero de llegadas */
+.o4-hoy h3 { margin: 14px 0 8px; font-size: 0.8rem; font-weight: 700; color: var(--sol-fuerte); }
+.o4-hoy h3:first-of-type { margin-top: 2px; }
+.o4-llegadas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.o4-llegadas li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; font-size: 0.9rem; line-height: 1.3; overflow-wrap: anywhere; }
+.o4-llegadas li small { display: block; color: var(--o4-suave); font-size: 0.78rem; }
+.o4-hoy .sg-link { color: #fff; font-size: 0.86rem; display: inline-block; margin-top: 14px; }
+
+.o4 a:focus-visible, .o4 button:focus-visible { outline: 3px solid var(--sol-fuerte) !important; outline-offset: 2px; box-shadow: none !important; }
+
+@media (max-width: 1100px) {
+    .o4-grilla { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+    .o4-tablero { padding: 16px; }
+    .o4-salida { grid-template-columns: minmax(0, 1fr) auto; }
+    .o4-salida .o4-salida-que { grid-column: 1 / -1; grid-row: 2; }
+    .o4-salida .sg-btn { grid-column: 1 / -1; justify-self: start; }
+    .o4-tabla .luces, .o4-tabla th.luces { display: none; }
+    .o4-grande { font-size: 1.5rem; }
+}

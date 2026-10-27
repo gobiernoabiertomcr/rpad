@@ -1,9 +1,10 @@
 /**
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 3.9, 7 y 8): el panel como datos. De lo cargado (el
- * `Estado`), su `Calculo` (`calcular` de services/miEspacioReglas.js), hoy y los feriados salen el Resumen «Niveles»
- * (`resumenDe`), la lista de licencias de un año (`filasDeLicencias`) y las tablas de horas extras (`tablaDeHorasExtras`),
- * con todos sus números y sus textos: la página los imprime tal cual y no recalcula nada (Ruling 19). También el próximo
- * feriado de «Hoy y mañana» (`proximoFeriadoDe`).
+ * `Estado`), su `Calculo` (`calcular` de services/miEspacioReglas.js), hoy y los feriados salen el Resumen «Titular»
+ * (`resumenDe`; spec 2026-10-27-mi-espacio-resumen, sección 4: la frase de la banda, lo que vence en una línea y la médica
+ * extraordinaria corta), la lista de licencias de un año (`filasDeLicencias`) y las tablas de horas extras
+ * (`tablaDeHorasExtras`), con todos sus números y sus textos: la página los imprime tal cual y no recalcula nada (Ruling 19).
+ * También el próximo feriado de «Hoy y mañana» (`proximoFeriadoDe`).
  *
  * Puras (sin pool ni Date local: las fechas son texto 'AAAA-MM-DD' y los meses, 'AAAA-MM'). Ninguna función tira: una
  * entrada rara da null, '', '—', una lista vacía o un objeto vacío. Todo número va como número y todo texto, como texto
@@ -14,7 +15,7 @@ import { diaDeLaSemana, diasHabilesDe, feriadosDelAnio, proximoDiaHabilCon } fro
 import { diasEntre, esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
 import { esAdmin, esAuditor } from './usuariosReglas.js';
 import {
-  MENSAJES_MI_ESPACIO, MODALIDADES, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, NOMBRES_TIPO, TOPES, JORNADA,
+  MENSAJES_MI_ESPACIO, MODALIDADES, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, NOMBRES_TIPO, JORNADA,
   numeroTexto, mesEnFrase, nombreDelMes, diaYMes, enLista, modalidadDe, mesMas, topeDe, diasQueDescuentan, esDiaEntero,
   fueraDeLaModalidad, tieneSaldoInicial, horasDe, textoSinNoUtilizadas
 } from './miEspacioReglas.js';
@@ -42,6 +43,7 @@ const anioPedido = (valor) => {
 };
 const compararTexto = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const mayuscula = (texto) => texto.charAt(0).toUpperCase() + texto.slice(1);
+const minuscula = (texto) => texto.charAt(0).toLowerCase() + texto.slice(1);
 // '1 día', '3 días', '1,5 horas': la cantidad con su unidad, en singular solo con 1
 const conUnidad = (cantidad, una, varias) => `${numeroTexto(cantidad)} ${cantidad === 1 ? una : varias}`;
 const fechaCorta = (fecha) => (esFechaIso(fecha) ? formatoCorto(fecha) : '—');
@@ -79,16 +81,29 @@ const usadosDe = (cuenta, tipo, anio) => cantidadDe(listaDe(cuenta.topes)
 const noUtilizadasDel = (cuenta, anio) => (esObjeto(cuenta.noUtilizadas) && Object.hasOwn(cuenta.noUtilizadas, anio)
   && esObjeto(cuenta.noUtilizadas[anio]) ? cuenta.noUtilizadas[anio] : null);
 
-// «Vence pronto» (spec, 3.9)
-const DETALLE_DEL_FRANCO = 'Es el último día hábil del mes. Si no lo usás, queda como no utilizado previamente.';
-const DETALLE_DE_LOS_FRANCOS = 'Es el último día hábil del mes. Si no los usás, quedan como no utilizados previamente.';
-const DETALLE_DE_LAS_HORAS = 'Es el último día hábil del mes. Lo que no uses pasa a horas no utilizadas previamente.';
+// «Vence pronto» (spec, 3.9; la línea de cada cosa, spec 2026-10-27-mi-espacio-resumen, 4.1)
 // Desde qué día del año se avisa la licencia que vence el 31/12
 const AVISO_DE_LA_LICENCIA = '10-01';
 
-const cosaQueVence = (fecha, titulo, detalle, accion) => ({
-  fecha, dia: String(Number(fecha.slice(8, 10))), mes: MESES_CORTOS[Number(fecha.slice(5, 7)) - 1],
-  cuando: mayuscula(diaLargo(fecha)), titulo, detalle, accion
+// La línea de lo que vence, según los días corridos de hoy a su fecha: «Vence el viernes 30/10, en 4 días.», «Vence mañana.»,
+// «Vence hoy.» o, si ya pasó (el franco o las horas a favor del mes después de su último día hábil, que siguen en la lista
+// hasta que termina el mes), «Venció el viernes 30/10.». En singular solo con una cantidad de 1 (1 franco, 1 hora o 1 día);
+// si no, «Vencen» y «Vencieron». «Venció» es neutro, como «vence»: nunca «perdiste»
+const textoDeLoQueVence = (fecha, cantidad, hoy) => {
+  const una = cantidad === 1;
+  const faltan = diasEntre(hoy, fecha);
+  if (faltan < 0) return `${una ? 'Venció' : 'Vencieron'} el ${diaLargo(fecha)}.`;
+  const vence = una ? 'Vence' : 'Vencen';
+  if (faltan === 0) return `${vence} hoy.`;
+  if (faltan === 1) return `${vence} mañana.`;
+  return `${vence} el ${diaLargo(fecha)}, en ${faltan} días.`;
+};
+
+// Una cosa de «Vence pronto»: `{ fecha, dia, mes, titulo, texto, accion }` (el día y el mes, del talón; `accion`, el botón que
+// la resuelve)
+const cosaQueVence = ({ fecha, cantidad, titulo, accion }, hoy) => ({
+  fecha, dia: String(Number(fecha.slice(8, 10))), mes: MESES_CORTOS[Number(fecha.slice(5, 7)) - 1], titulo,
+  texto: textoDeLoQueVence(fecha, cantidad, hoy), accion
 });
 
 /**
@@ -102,13 +117,13 @@ const venceProntoDe = ({ modalidad, hoy, mes, cuenta }) => {
   const delMes = delMesDeUso(planta ? cuenta.francos : cuenta.horasAFavor, mes);
   const quedan = cantidadDe(delMes?.disponibles);
   if (quedan > 0 && esFechaIso(delMes.ultimo_dia_habil)) {
-    lista.push(planta
-      ? cosaQueVence(delMes.ultimo_dia_habil,
-        `${conUnidad(quedan, 'franco compensatorio', 'francos compensatorios')} de ${nombreDelMes(mes)}`,
-        quedan === 1 ? DETALLE_DEL_FRANCO : DETALLE_DE_LOS_FRANCOS,
-        { texto: quedan === 1 ? 'Cargarlo' : 'Cargarlos', tipo: 'franco' })
-      : cosaQueVence(delMes.ultimo_dia_habil, `${conUnidad(quedan, 'hora', 'horas')} a favor de ${nombreDelMes(mes)}`,
-        DETALLE_DE_LAS_HORAS, { texto: quedan === 1 ? 'Usarla' : 'Usarlas', tipo: 'horas_a_favor' }));
+    const titulo = planta
+      ? `${conUnidad(quedan, 'franco compensatorio', 'francos compensatorios')} de ${nombreDelMes(mes)}`
+      : `${conUnidad(quedan, 'hora', 'horas')} a favor de ${nombreDelMes(mes)}`;
+    const accion = planta
+      ? { texto: quedan === 1 ? 'Cargarlo' : 'Cargarlos', tipo: 'franco' }
+      : { texto: quedan === 1 ? 'Usarla' : 'Usarlas', tipo: 'horas_a_favor' };
+    lista.push(cosaQueVence({ fecha: delMes.ultimo_dia_habil, cantidad: quedan, titulo, accion }, hoy));
   }
 
   const anio = hoy.slice(0, 4);
@@ -117,9 +132,11 @@ const venceProntoDe = ({ modalidad, hoy, mes, cuenta }) => {
     const vieja = ordinariasDel(cuenta).find((ordinaria) =>
       ordinaria.vence === finDelAnio && cantidadDe(ordinaria.disponibles) > 0);
     if (vieja !== undefined) {
-      lista.push(cosaQueVence(finDelAnio,
-        `${conUnidad(cantidadDe(vieja.disponibles), 'día', 'días')} de la licencia ${vieja.anio}`,
-        `Ese día vence la licencia ${vieja.anio}.`, { texto: 'Cargar vacaciones', tipo: 'vacaciones' }));
+      const dias = cantidadDe(vieja.disponibles);
+      lista.push(cosaQueVence({
+        fecha: finDelAnio, cantidad: dias, titulo: `${conUnidad(dias, 'día', 'días')} de la licencia ${vieja.anio}`,
+        accion: { texto: 'Cargar vacaciones', tipo: 'vacaciones' }
+      }, hoy));
     }
   }
   return lista.sort((a, b) => compararTexto(a.fecha, b.fecha));
@@ -198,6 +215,60 @@ const tanqueDeVacaciones = (panel) => {
     capacidad: capas.reduce((suma, capa) => suma + capa.n, 0),
     aria: `Vacaciones: ${conUnidad(numero, 'día hábil disponible', 'días hábiles disponibles')}. Ver tus licencias`,
     capas
+  };
+};
+
+// La banda «Titular» (spec 2026-10-27-mi-espacio-resumen, 4.2)
+
+/**
+ * La bajada de la frase: una oración `{ texto, vence }` por cada capa del tanque de vacaciones que explica la regla, en este
+ * orden y solo las que hay: la licencia que vence en el año («3 vencen el jueves 31/12.», `vence`: en ámbar en la página), lo
+ * cargado a futuro («5 ya están cargados para noviembre.») y lo que todavía no se habilita («Otros 10 se habilitan el
+ * 1/1/2027.»; sin «Otros» si la frase no tiene días). Los días son los de cada capa y los meses y las fechas, los de su nota,
+ * que dice lo mismo con mayúscula («Cargados para noviembre», «Se habilitan el 1/1/2027»): no se vuelven a calcular. La capa
+ * `vence` es la de la licencia que vence el 31/12 de este año. En singular solo con 1. Sin ninguna, [].
+ */
+const bajadaDe = ({ numero, capas }, hoy) => {
+  const capa = (clase) => capas.find((una) => una.clase === clase);
+  const bajada = [];
+  const vence = capa('vence');
+  if (vence !== undefined) {
+    const vencen = vence.n === 1 ? 'vence' : 'vencen';
+    bajada.push({ texto: `${numeroTexto(vence.n)} ${vencen} el ${diaLargo(`${hoy.slice(0, 4)}-12-31`)}.`, vence: true });
+  }
+  const cargadas = capa('cargadas');
+  if (cargadas !== undefined) {
+    const estan = cargadas.n === 1 ? 'ya está' : 'ya están';
+    bajada.push({ texto: `${numeroTexto(cargadas.n)} ${estan} ${minuscula(cargadas.nota)}.`, vence: false });
+  }
+  const porHabilitar = capa('por_habilitar');
+  if (porHabilitar !== undefined) {
+    let otros = '';
+    if (numero > 0) otros = porHabilitar.n === 1 ? 'Otro ' : 'Otros ';
+    bajada.push({ texto: `${otros}${numeroTexto(porHabilitar.n)} ${minuscula(porHabilitar.nota)}.`, vence: false });
+  }
+  return bajada;
+};
+
+/**
+ * La frase de la banda: `{ encabezado, antes, cifra, despues, bajada }`. `encabezado` es el día de hoy sin el año y la
+ * modalidad en minúscula («Lunes 26 de octubre, planta permanente»); `antes`, `cifra` y `despues`, la frase partida alrededor
+ * de los días de vacaciones disponibles (los del tanque): «Te quedan», '33' y «días de vacaciones»; con 1, «Te queda», '1' y
+ * «día de vacaciones»; con 0, «No te quedan días de vacaciones», '' y '' (la página no dibuja el número).
+ */
+const titularDe = ({ hoy }, modalidad, vacaciones) => {
+  const { numero } = vacaciones;
+  let frase = ['No te quedan días de vacaciones', '', ''];
+  if (numero === 1) frase = ['Te queda', '1', 'día de vacaciones'];
+  else if (numero > 0) frase = ['Te quedan', numeroTexto(numero), 'días de vacaciones'];
+  const [antes, cifra, despues] = frase;
+  return {
+    encabezado: `${mayuscula(diaDeLaSemana(hoy))} ${Number(hoy.slice(8, 10))} de ${nombreDelMes(hoy.slice(0, 7))}, `
+      + minuscula(modalidad.texto),
+    antes,
+    cifra,
+    despues,
+    bajada: bajadaDe(vacaciones, hoy)
   };
 };
 
@@ -290,10 +361,11 @@ const pastillasDe = ({ modalidad, mes, anio, cuenta }) => {
   return { titulo: planta ? 'Francos compensatorios' : 'Horas a favor', meses, previo: previoDe(planta, anio, cuenta) };
 };
 
+// La médica extraordinaria, en una línea corta (spec 2026-10-27-mi-espacio-resumen, 4.3)
 const textoDeLaExtraordinaria = ({ anio, cuenta }) => {
   const usados = usadosDe(cuenta, 'medica_extraordinaria', anio);
   const enElAnio = usados > 0 ? `Usaste ${conUnidad(usados, 'día', 'días')} en ${anio}.` : `No usaste en ${anio}.`;
-  return `Atención médica extraordinaria: sin tope y aparte de los ${TOPES.medica} días. ${enElAnio}`;
+  return `Atención médica extraordinaria: sin tope. ${enElAnio}`;
 };
 
 // Los nombres de las opciones de «Cargar licencia» (los de la maqueta)
@@ -324,17 +396,19 @@ const tiposDe = (panel, tanques) => TIPOS_POR_MODALIDAD[panel.modalidad]
   .map((tipo) => ({ tipo, nombre: NOMBRES_DE_LAS_OPCIONES[tipo], queda_texto: quedaDelTipo(tipo, panel, tanques) }));
 
 /**
- * El Resumen «Niveles» (spec, secciones 3.9 y 8), todo lo de `GET /api/mi-espacio/resumen`. Recibe `{ persona, estado,
- * calculo, hoy, feriados, hoyYManana }`: `persona` es `{ id, nombre_completo, rol, vinculo }`, `calculo` el de `calcular`
- * con ese hoy y esos feriados, y `hoyYManana` lo que arma quien lo llama (`{ ausentes_hoy, ausentes_manana, proximo_feriado }`),
- * que va tal cual.
+ * El Resumen «Titular» (spec, secciones 3.9 y 8, y spec 2026-10-27-mi-espacio-resumen, sección 4), todo lo de
+ * `GET /api/mi-espacio/resumen`. Recibe `{ persona, estado, calculo, hoy, feriados, hoyYManana }`: `persona` es `{ id,
+ * nombre_completo, rol, vinculo }`, `calculo` el de `calcular` con ese hoy y esos feriados, y `hoyYManana` lo que arma quien
+ * lo llama (`{ ausentes_hoy, ausentes_manana, proximo_feriado, eventos }`), que va tal cual.
  * Devuelve `{ modalidad: { clave, texto } | null, anio, al_texto, mensaje, abrir_saldos, persona: { nombre, ve_companeros,
- * audita, es_superadmin }, marca, vence_pronto, faltantes, tanques: { vacaciones, otros } | null, pastillas, extraordinaria,
- * tipos, hoy_y_manana }`:
+ * audita, es_superadmin }, marca, vence_pronto, faltantes, tanques: { vacaciones, otros } | null, titular, pastillas,
+ * extraordinaria, tipos, hoy_y_manana }`:
  * - sin modalidad, `mensaje` es `sinModalidad` y no hay nada que mostrar ni cargar;
  * - con modalidad y sin arranque, `mensaje` es `sinArranque` y `abrir_saldos` es true (se abre «Mis vacaciones y saldos»);
- * - si no, `marca` dice si hay algo en `vence_pronto`, `faltantes` son los textos de `faltantesDe` y `tipos`, las opciones
- *   de «Cargar licencia» con lo que queda de cada una.
+ * - si no, `marca` dice si hay algo en `vence_pronto` (cada cosa `{ fecha, dia, mes, titulo, texto, accion }`, con su línea en
+ *   `texto`: «Vence el viernes 30/10, en 4 días.»), `faltantes` son los textos de `faltantesDe`, `titular` es la frase de la
+ *   banda (`{ encabezado, antes, cifra, despues, bajada: [{ texto, vence }] }`; null sin tanques), `extraordinaria` la línea
+ *   corta de la médica extraordinaria y `tipos`, las opciones de «Cargar licencia» con lo que queda de cada una.
  * `ve_companeros` es `esAdmin` (los compañeros son administración: spec, sección 7) y `audita`, `esAuditor`.
  */
 export const resumenDe = (entrada) => {
@@ -358,6 +432,7 @@ export const resumenDe = (entrada) => {
     vence_pronto: [],
     faltantes: [],
     tanques: null,
+    titular: null,
     pastillas: null,
     extraordinaria: null,
     tipos: [],
@@ -380,6 +455,7 @@ export const resumenDe = (entrada) => {
     faltantes: listaDe(panel.cuenta.faltantes)
       .filter((faltante) => esObjeto(faltante) && typeof faltante.texto === 'string').map((faltante) => faltante.texto),
     tanques,
+    titular: titularDe(panel, resumen.modalidad, tanques.vacaciones),
     pastillas: pastillasDe(panel),
     extraordinaria: textoDeLaExtraordinaria(panel),
     tipos: tiposDe(panel, tanques)

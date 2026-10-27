@@ -1387,18 +1387,58 @@ describe('eventosDeHoyYManana', () => {
   it('los de hoy y los de mañana, por día y hora, con «Hoy · …» y «Mañana · …»; ni ayer ni pasado mañana', () => {
     const eventos = eventosDeHoyYManana(ITEMS, HOY);
     assert.deepEqual(eventos, [
-      { id: 5, hora: '09:00', titulo: 'Capacitación', compartido: true, detalle: 'Hoy · de Laura Gómez' },
-      { id: 3, hora: '12:00', titulo: 'Llamar a Vialidad por el TMDA', compartido: false, detalle: 'Hoy · solo vos' },
-      { id: 6, hora: '09:30', titulo: 'Mesa con Catastro', compartido: true, detalle: 'Mañana · con todos' },
-      { id: 2, hora: '10:00', titulo: 'Reunión de equipo', compartido: true, detalle: 'Mañana · con 4 personas' }
+      {
+        id: 5, hora: '09:00', titulo: 'Capacitación', compartido: true, detalle: 'Hoy · de Laura Gómez', dia: 'hoy',
+        quien: 'de Laura Gómez'
+      },
+      {
+        id: 3, hora: '12:00', titulo: 'Llamar a Vialidad por el TMDA', compartido: false, detalle: 'Hoy · solo vos', dia: 'hoy',
+        quien: 'solo vos'
+      },
+      {
+        id: 6, hora: '09:30', titulo: 'Mesa con Catastro', compartido: true, detalle: 'Mañana · con todos', dia: 'manana',
+        quien: 'con todos'
+      },
+      {
+        id: 2, hora: '10:00', titulo: 'Reunión de equipo', compartido: true, detalle: 'Mañana · con 4 personas', dia: 'manana',
+        quien: 'con 4 personas'
+      }
     ]);
-    for (const evento of eventos) assert.deepEqual(Object.keys(evento), ['id', 'hora', 'titulo', 'compartido', 'detalle']);
+    for (const evento of eventos) {
+      assert.deepEqual(Object.keys(evento), ['id', 'hora', 'titulo', 'compartido', 'detalle', 'dia', 'quien']);
+    }
   });
 
   it('nada tira: sin una lista o sin un hoy, ninguno; lo que no es un evento no cuenta', () => {
     for (const items of [null, undefined, 42, 'x', {}]) assert.deepEqual(eventosDeHoyYManana(items, HOY), []);
     for (const hoy of [null, undefined, 'abc', '2026-02-30']) assert.deepEqual(eventosDeHoyYManana(ITEMS, hoy), []);
     assert.deepEqual(eventosDeHoyYManana([null, 'x', 42, [], item({ id: 3, quien_texto: undefined })], HOY),
-      [{ id: 3, hora: '10:00', titulo: 'Evento', compartido: false, detalle: 'Hoy' }]);
+      [{ id: 3, hora: '10:00', titulo: 'Evento', compartido: false, detalle: 'Hoy', dia: 'hoy', quien: '' }]);
+  });
+
+  // Decisión del usuario (27/10/2026; spec 2026-10-27-mi-espacio-resumen, 4.4): los de hoy que ya terminaron no van
+  it('con ahora, los de hoy que ya terminaron no van; los de mañana, todos', () => {
+    const ids = (lista, ahora) => eventosDeHoyYManana(lista, HOY, ahora).map((evento) => evento.id);
+    // A las 10:00, la Capacitación de las 09:00 (sin hora de fin) ya terminó; el llamado de las 12:00 todavía no. Los de
+    // mañana van todos, aunque su hora ya haya pasado hoy (la Mesa con Catastro es a las 09:30)
+    assert.deepEqual(ids(ITEMS, `${HOY} 10:00:00`), [3, 6, 2]);
+    // Con hora de fin: de 09:00 a 10:00 a las 10:00 todavía va, a las 10:01 ya no; de 09:00 a 11:00, sí
+    const conFin = [item({ id: 7, desde: '09:00', hasta: '10:00' }), item({ id: 8, desde: '09:00', hasta: '11:00' })];
+    assert.deepEqual(ids(conFin, `${HOY} 10:00:00`), [7, 8]);
+    assert.deepEqual(ids(conFin, `${HOY} 10:01:00`), [8]);
+    // A las 23:59, de hoy ninguno; de mañana, todos
+    assert.deepEqual(ids(ITEMS, `${HOY} 23:59:00`), [6, 2]);
+    // Una hora de fin que no es una hora cuenta como sin ella (el fin es el inicio); sin ninguna hora, no se sabe si terminó: va
+    const raros = [item({ id: 9, desde: '09:00', hasta: '25:00' }), item({ id: 10, desde: 'x', hasta: null })];
+    assert.deepEqual(ids(raros, `${HOY} 10:00:00`), [10]);
+  });
+
+  it('sin ahora, con uno que no sirve o de otro día, van todos', () => {
+    const todos = [5, 3, 6, 2];
+    for (const ahora of [undefined, null, 'x', 42, '', `${HOY}`, `${HOY} 25:00:00`, '2026-10-25 10:00:00', '2026-10-27 10:00:00',
+      '2026-02-30 10:00:00']) {
+      assert.deepEqual(eventosDeHoyYManana(ITEMS, HOY, ahora).map((evento) => evento.id), todos, String(ahora));
+    }
+    assert.deepEqual(eventosDeHoyYManana(ITEMS, HOY).map((evento) => evento.id), todos);
   });
 });
