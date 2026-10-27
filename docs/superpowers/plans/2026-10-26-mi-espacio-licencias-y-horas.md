@@ -18,7 +18,7 @@
 
 ## Global Constraints
 
-- **Antes de la Task 1: los feriados tienen que estar en main** (`git log main --oneline` muestra el merge de `feat/feriados`, con `services/feriadosReglas.js`, `services/feriadosDatos.js` y `GET /api/feriados`). Si no están, parar y avisar: no se empieza nada.
+- **Antes de la Task 1: los feriados tienen que estar en main** (`git log main --oneline` muestra el merge de los feriados, con `services/feriadosReglas.js`, `services/feriadosDatos.js` y `GET /api/feriados`; es `c7627f0`, «Merge branch 'claude/funny-mahavira-3f16dc'», no `feat/feriados`: corrección de la Task 1, al leer el main nuevo). Si no están, parar y avisar: no se empieza nada.
 - **No romper nada:** `npm test` completo antes y después de cada tarea, con el candado `C:\Users\Mariano\.rpad-suite.lock`, mirando antes que no haya otro `node --test` corriendo. Nunca dos suites a la vez.
 - **Todos los subagentes van con Opus:** implementar, revisar y corregir.
 - **Ningún email real** (en local todo va a Mailpit). Nunca llamar a `/api/cron/*`: la corrida se prueba llamando al controlador o al servicio.
@@ -154,7 +154,7 @@
 - [ ] **Step 1: Preparar el trabajo.**
   - Comprobar que los feriados están en main (Global Constraints). Si no, parar.
   - **Leer el main nuevo** (pedido del usuario): `git log` y `git diff` de lo que entró desde que se escribió este plan, la entrega de feriados y cualquier otra. Ajustar este plan en la rama si algo cambió: los nombres y las firmas de `feriadosReglas.js` y `feriadosDatos.js`, las versiones, los tests, la cantidad de tablas o de páginas. Si un cambio es una decisión del usuario, preguntárselo a la sesión coordinadora, sin decidirlo.
-  - El worktree, en la rama `feat/mi-espacio`, cortada de `main`. Si este plan no está en main, mergear `docs/mi-espacio-pre-plan` en la rama.
+  - El worktree, en la rama `feat/mi-espacio`, cortada de `main`. Si este plan no está en main, mergear `docs/mi-espacio-pre-plan` en la rama. (Corrección de la Task 1, al leer el main nuevo: el worktree ya está armado en la rama `claude/mi-espacio-licencias-fc16d6`, con main —`c7627f0`— y `docs/mi-espacio-pre-plan` ya mergeados —`3f8a11d`—, el junction de `node_modules` y `DB_NAME=rpad_rama_mi_espacio` en su `.env`; donde este plan dice `feat/mi-espacio`, es esa rama.)
   - Junction de `node_modules` a `C:\git\rpad\node_modules`.
   - La base `rpad_rama_mi_espacio`: copia de `datospublicos_mcr_rpad`, que ya tiene los feriados (`DROP`, `CREATE`, volcado y `GRANT` a `rpad`, como en las entregas anteriores). En el `.env` del worktree, `DB_NAME=rpad_rama_mi_espacio`.
   - `npm test` completo, con el candado: anotar el total de tests y que haya 0 fallas.
@@ -536,7 +536,7 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
 ### Task 8: Cargar, corregir y borrar licencias, y el cálculo previo (sin Configuración todavía)
 
 **Files:**
-- Modify: `controllers/miEspacioController.js`, `routes/index.js`, `tests/mi-espacio-api.test.js`
+- Modify: `controllers/miEspacioController.js`, `routes/index.js`, `tests/mi-espacio-api.test.js`, `tests/permisos.test.js` (el Step 1 le suma rutas: corrección de la Task 1, al leer el main nuevo)
 
 **Interfaces:**
 - Consumes: `evaluarLicencia` (Task 5); `contextoDe` (Task 7); `idPositivo` (`services/proyectosReglas.js`); `esAdmin` (`services/usuariosReglas.js`).
@@ -581,12 +581,13 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
 **Interfaces:**
 - Produces (en `services/licenciasOficialesService.js`; reciben la conexión de la transacción y el actor, nunca `req`, y no abren ni cierran la transacción):
   - **Lo que se mueve tal cual desde el controlador:**
-    - `COLUMNAS_LICENCIA` y `DESDE_LICENCIA`, que suman `EXISTS (SELECT 1 FROM mi_espacio_licencias m WHERE m.licencia_oficial_id = l.id AND m.oficial = 'creada' AND m.activo = 1) AS desde_mi_espacio`;
-    - `buscarLicenciaOficial(conexion, id)`;
+    - `COLUMNAS_LICENCIA` y `DESDE_LICENCIA` (en el controlador se llaman `COLUMNAS` y `DESDE`: corrección de la Task 1, al leer el main nuevo), que suman `EXISTS (SELECT 1 FROM mi_espacio_licencias m WHERE m.licencia_oficial_id = l.id AND m.oficial = 'creada' AND m.activo = 1) AS desde_mi_espacio`;
+    - `buscarLicenciaOficial(conexion, id)` (en el controlador, `buscarLicencia`);
     - `firmanteTitular(conexion = pool)`;
     - `autorizables(conexion, titular)` y `conSusLicencias(personas, hoy)`;
-    - `bloquearUsuarios(conexion)`.
-  - **`rechazoDeLaBase(conexion, { licenciaId, usuarioId, desde, hasta, autorizadoId, autorizadoNuevo }) → Rechazo | null`.** Un `Rechazo` es `{ status, error, campo, motivo }`, con los mismos `status`, `error` y `campo` de hoy. Los motivos:
+    - `bloquearUsuarios(conexion)`;
+    - `periodo` y `MENSAJE_SOLO_TITULAR`, exportado (corrección de la Task 1, al leer el main nuevo: `rechazoDeLaBase` arma sus mensajes con `periodo`, `cambiarLicencia` devuelve el 403 con `MENSAJE_SOLO_TITULAR` y el alta del controlador lo sigue usando antes de abrir la transacción).
+  - **`rechazoDeLaBase(conexion, { licenciaId, usuarioId, desde, hasta, autorizadoId, autorizadoNuevo }) → Rechazo | null`.** Un `Rechazo` es `{ status, error, campo, motivo }`, con los mismos `status`, `error` y `campo` de hoy (hoy devuelve el array `[status, mensaje, campo]` y el controlador lo esparce en `responderError(res, ...rechazo)`: el alta y la edición de Configuración pasan a leer el objeto; corrección de la Task 1, al leer el main nuevo). Los motivos:
     - `'rol'`;
     - `'superpuesta'`;
     - `'autorizada_sin_dias'`, que suma `licencia: { desde, hasta, nombre }`;
@@ -699,7 +700,7 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
       - si adminB anula la de Configuración por `POST /usuarios/licencias/:id/anular`, la fila dice `TEXTO_ANULADA_POR_ADMINISTRACION` y una corrección no toca `usuarios_licencias`;
       - si le cambia las fechas, dice «En Configuración: del …» y la corrección responde `avisos: [TEXTO_NO_SE_COPIA]`;
       - si acorta la que cubría una `unida`, la fila dice «Ya no está cubierta en Configuración del …».
-    - **«la franquicia de 7 a 3»:** antes de empezar, la de Configuración queda anulada y el vínculo, en NULL. Si ya empezó (cargada para hoy), queda y la fila dice `textoSigueEnConfiguracion`.
+    - **«la franquicia de 7 a 3»:** antes de empezar, la de Configuración queda anulada y el vínculo, en NULL. Si ya empezó (de ayer, con las dos filas —la de Configuración y la `creada`— cargadas por SQL, porque el paso solo crea las que terminan hoy o después; una cargada para hoy todavía se anula, porque `puedeAnularse` es `desde >= hoy`, como en el test puro: corrección de la Task 1, al leer el main nuevo), queda y la fila dice `textoSigueEnConfiguracion`.
     - **«el rol del momento»:** una licencia del lector no pasa; si el lector pasa a admin por SQL, recién al corregirla aparece en Configuración.
     - **«el firmante titular»:**
       - el titular carga con `autorizado_id` de una persona con firma, y la de Configuración queda con `autorizado_id` y `autorizado_at`;
@@ -707,7 +708,7 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
       - **«solo las vacaciones dejan persona a cargo»:** el titular carga una médica con `autorizado_id` y recibe 400 en `autorizado_id` con `autorizadoSoloVacaciones`, sin ninguna fila nueva; la misma carga sin el campo pasa a Configuración con `autorizado_id` NULL. Lo mismo con una franquicia de 7 h;
       - `POST /licencias/calculo` del titular con `desde` = hoy trae `AVISO_NOTAS_DE_HOY` y `vispera`; el de una médica trae `AVISO_SIN_PERSONA_A_CARGO` y `puede_autorizar: false`, y el de unas vacaciones, `puede_autorizar: true` sin ese aviso;
       - el del superadmin, `AVISO_DEL_PASO_SUPERADMIN`; el del lector, `pasa: false`;
-      - **«el tipo de unas vacaciones con persona a cargo»:** vacaciones del titular desde un lunes, con persona a cargo.
+      - **«el tipo de unas vacaciones con persona a cargo»:** vacaciones del titular desde un lunes, con persona a cargo. (Corrección de la Task 1, al leer el main nuevo: el servidor de prueba usa la fecha real y no hay forma de fijar «hoy», como dice `tests/licencias-api.test.js`. En la API, con `desde` = `q(0)` el cambio da 200, y con `desde` = el primer día hábil después de hoy —`proximoDiaHabil(sumarDias(hoy, 1))`, con los 9 fijos— da 400 en `tipo`; el borde exacto —desde un lunes, el límite es el jueves anterior, inclusive, y el viernes ya no— y el Carnaval van en el test puro de `limiteParaCambiarTipo`.)
         - Con hoy el jueves anterior (2 días hábiles antes), pasarlas a médica da 200, y la de Configuración queda con `autorizado_id` NULL.
         - Con hoy el viernes (la víspera), da 400 en `tipo` con `tipoFijo` y no cambia nada.
         - Con un lunes de Carnaval en el medio, el límite se cuenta con los 9 fijos.
@@ -723,7 +724,7 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
 ### Task 11: La API de horas extras y de «Mis vacaciones y saldos»
 
 **Files:**
-- Modify: `controllers/miEspacioController.js`, `routes/index.js`, `tests/mi-espacio-api.test.js`
+- Modify: `controllers/miEspacioController.js`, `routes/index.js`, `tests/mi-espacio-api.test.js`, `tests/permisos.test.js` (el Step 1 le suma rutas: corrección de la Task 1, al leer el main nuevo)
 
 **Interfaces:**
 - Consumes: `validarHorasExtras` (Task 4); `validarAnio`, `validarSaldoInicial` y `camposDelSaldoInicial` (Task 5).
@@ -765,7 +766,7 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
 ### Task 12: «Hoy no están» y lo que necesita el firmante
 
 **Files:**
-- Modify: `services/miEspacioDatos.js`, `services/miEspacioReglas.js`, `controllers/miEspacioController.js`, `routes/index.js`, `tests/mi-espacio-reglas.test.js`, `tests/mi-espacio-api.test.js`
+- Modify: `services/miEspacioDatos.js`, `services/miEspacioReglas.js`, `controllers/miEspacioController.js`, `routes/index.js`, `tests/mi-espacio-reglas.test.js`, `tests/mi-espacio-api.test.js`, `tests/permisos.test.js` (el Step 1 le suma rutas: corrección de la Task 1, al leer el main nuevo)
 
 **Interfaces:**
 - Consumes: `esDiaEntero` (Task 3); `proximoDiaHabilCon` (Task 4); `firmanteTitular`, `autorizables` y `conSusLicencias` (Task 9).
@@ -788,7 +789,7 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
     - **«la vuelta con un feriado»:** con un feriado cargado en `feriados`, el día siguiente al fin de una ausencia, la vuelta lo saltea;
     - **«el rango»:** 94 días dan 400 en `fechas`;
     - **«el firmante»:** el titular recibe `soy_titular: true` con `autorizables[0].ausencias`; adminB recibe `{ soy_titular: false }`.
-  - **`tests/permisos.test.js`:** `RUTAS_MI_ESPACIO` suma `/mi-espacio/ausentes` y `/mi-espacio/firmante`, y el lector y el colaborador las usan con 200.
+  - **`tests/permisos.test.js`:** `RUTAS_MI_ESPACIO` suma `['GET', '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27']` y `['GET', '/mi-espacio/firmante']`, y el lector y el colaborador las usan con 200 (las fechas van en la ruta: sin ellas, `ausentes` da el 400 en `fechas` si valida las fechas antes de mirar el rol; corrección de la Task 1, al leer el main nuevo).
 - [ ] **Step 2:** Correr: FAIL.
 - [ ] **Step 3: Implementar.**
 - [ ] **Step 4:** Correr `tests/mi-espacio-reglas.test.js`, `tests/mi-espacio-api.test.js` y `tests/permisos.test.js`: PASS.
@@ -839,15 +840,17 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
 ### Task 14: Lo que la entrega 1 le dejó a esta: las licencias afectadas por un feriado y el aviso azul
 
 **Files:**
-- Modify: `services/miEspacioDatos.js`, `controllers/feriadosController.js`, `routes/index.js`, `public/js/feriados.js`, `public/configuracion.html`, `tests/feriados-api.test.js`, `tests/feriados-frontend.test.js`, `tests/paginas.test.js`, `tests/permisos.test.js`
+- Modify: `services/feriadosReglas.js`, `services/miEspacioDatos.js`, `controllers/feriadosController.js`, `routes/index.js`, `public/js/feriados.js`, `public/configuracion.html`, `tests/feriados-reglas.test.js`, `tests/feriados-api.test.js`, `tests/feriados-frontend.test.js`, `tests/paginas.test.js`, `tests/permisos.test.js`
 
 **Interfaces:**
 - Consumes: la entrega 1 (`crearFeriado`, `corregirFeriado` y el modal `#modal-feriado` con `fe-fecha`).
 - Produces:
-  - **`licenciasQueIncluyen(fecha) → Promise<number>`** (datos): las filas activas de `mi_espacio_licencias` de cualquier persona con `desde <= fecha <= hasta`.
-  - **`GET /api/feriados/afectadas?fecha=`** (`afectadasPorFeriado`; `authMiddleware` + `adminOnly`) → `{ success, data: { licencias_afectadas } }`. Una fecha inválida da 400 en `fecha`.
-  - **`POST` y `PUT /api/feriados[/:id]`** suman `licencias_afectadas` de la fecha guardada. Es aislado: si la cuenta falla, va `null` y se registra en la consola, sin cambiar la respuesta.
-  - **El modal del feriado:** debajo de la fecha, 300 ms después del último cambio, muestra:
+  - **Un feriado que se repite cuenta todos los años en que rige** (decisión del usuario, 26/10/2026, al leer el main nuevo: «Todos los años»). La cuenta es de las licencias que incluyen alguno de sus días, cada licencia una vez, aunque incluya el feriado de dos años.
+  - **`fechasDelFeriado(fila, desdeAnio, hastaAnio) → string[]`** (pura, en `services/feriadosReglas.js`, sin tocar las de la entrega 1): `fechaEnElAnio(fila, anio)` para cada año del rango, sin los null. Respeta lo que ya hace `fechaEnElAnio`: desde el año de su fecha (no hacia atrás), hasta `hasta_anio`, sin los años de `no_rige` y sin un 29/02 que no existe. Uno que no se repite da solo su fecha, si cae en el rango. Con una entrada inválida, `[]`.
+  - **`licenciasQueIncluyen(fila) → Promise<number>`** (datos, en `services/miEspacioDatos.js`): `fila` tiene la forma de las de `filasDeFeriados` (`{ fecha, se_repite, hasta_anio, no_rige, activo: 1 }`). Lee el primer y el último año de las licencias activas de `mi_espacio_licencias` (`MIN(desde)` y `MAX(hasta)`; sin ninguna, 0 sin más consultas), arma las fechas con `fechasDelFeriado` en ese rango y cuenta las filas activas, de cualquier persona, que incluyen alguna (`desde <= fecha <= hasta`, con un `?` por fecha, parametrizado).
+  - **`GET /api/feriados/afectadas?fecha=&se_repite=&id=`** (`afectadasPorFeriado`; `authMiddleware` + `adminOnly`) → `{ success, data: { licencias_afectadas } }`. Una fecha inválida da 400 en `fecha`. `se_repite` es `'1'` o `'0'` (otro valor, `'0'`). Con `id` de un feriado que existe (corregir), se usan su `hasta_anio` y su `no_rige` guardados con la fecha y `se_repite` del modal; sin `id`, o con uno que no existe, sin baja ni años que no rigen.
+  - **`POST` y `PUT /api/feriados[/:id]`** suman `licencias_afectadas` del feriado ya guardado (`filaDeFeriado(id)` después del commit). Es aislado: si la cuenta falla, va `null` y se registra en la consola, sin cambiar la respuesta.
+  - **El modal del feriado:** debajo de la fecha, 300 ms después del último cambio de `fe-fecha` o de `fe-se-repite`, pide `/feriados/afectadas` con la fecha, `se_repite` y, al corregir, el `id`, y muestra:
     - «1 licencia cargada lo incluye: sus días hábiles se recalculan.» o «2 licencias cargadas lo incluyen: sus días hábiles se recalculan.»;
     - con 0, nada;
     - la respuesta vieja se descarta.
@@ -856,13 +859,14 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
   - `VERSION_FERIADOS = '20261209'`.
 
 - [ ] **Step 1: Escribir los tests que fallan:**
-  - **`tests/feriados-api.test.js`:** con dos licencias de Mi espacio que incluyen el 16/02/2026 (por SQL, de dos personas), `GET /feriados/afectadas?fecha=2026-02-16` da 2, y un `POST` de ese día trae `licencias_afectadas: 2`; `?fecha=abc` da 400.
-  - **`tests/feriados-frontend.test.js`:** `textoDeAfectadasFeriado` con 0, 1 y 2, y el aviso nuevo. Con el DOM falso, el modal pide `/feriados/afectadas` una sola vez después de dos cambios seguidos de la fecha.
+  - **`tests/feriados-reglas.test.js`:** `fechasDelFeriado` de uno que se repite desde 2026, de 2024 a 2027, da las de 2026 y 2027 (no hacia atrás); con `hasta_anio` 2026, solo la de 2026; con `no_rige: [2027]`, solo la de 2026; uno que no se repite, su fecha; un 29/02 que se repite saltea los años sin 29/02; `null` da `[]`.
+  - **`tests/feriados-api.test.js`:** con dos licencias de Mi espacio que incluyen el 16/02/2026 (por SQL, de dos personas), `GET /feriados/afectadas?fecha=2026-02-16` da 2, y un `POST` de ese día trae `licencias_afectadas: 2`; `?fecha=abc` da 400. **«Todos los años»:** con una licencia que incluye el 13/12/2026 y otra que incluye el 13/12/2027, `?fecha=2026-12-13&se_repite=1` da 2 y `se_repite=0`, 1; una sola licencia del 10/12/2026 al 15/12/2027 cuenta 1; con `id` de un feriado guardado que se repite y no rige en 2027, da 1. Las aserciones que hoy fijan la forma de esas respuestas cambian para sumar `licencias_afectadas`: las claves del alta (`['avisos', 'data', 'message', 'success']` y `data` = `['id']`, en «Carnaval 2026 da 201…») y el cuerpo entero de la corrección (`{ success, message, avisos }`, en «cambia el nombre y la fecha») (corrección de la Task 1, al leer el main nuevo).
+  - **`tests/feriados-frontend.test.js`:** `textoDeAfectadasFeriado` con 0, 1 y 2. Con el DOM falso, el modal pide `/feriados/afectadas` una sola vez después de dos cambios seguidos de la fecha. (Corrección de la Task 1, al leer el main nuevo: el aviso azul no va acá, porque está escrito en `configuracion.html` y `feriados.js` no lo arma; va en `tests/paginas.test.js`. Y el `crearPagina` de este archivo corre cada `setTimeout` enseguida y su `servidor` falso contesta cualquier GET con la lista de un año: este test necesita una opción con temporizadores que el test vence, como `temporizadores` de `tests/proyectos-frontend.test.js`, sin cambiar la de siempre, y su propia respuesta para `/feriados/afectadas`.)
   - **`tests/permisos.test.js`:** `['GET', '/feriados/afectadas?fecha=2026-02-16']` en `RUTAS_SOLO_ADMIN`.
-  - **`tests/paginas.test.js`:** `VERSION_FERIADOS = '20261209'`.
-- [ ] **Step 2:** Correr los cuatro: FAIL.
+  - **`tests/paginas.test.js`:** `VERSION_FERIADOS = '20261209'`, y el aviso nuevo, tal cual, en el test «el aviso azul dice, tal cual, …» de la pestaña Feriados (corrección de la Task 1, al leer el main nuevo).
+- [ ] **Step 2:** Correr los cinco: FAIL.
 - [ ] **Step 3: Implementar.**
-- [ ] **Step 4:** Correr los cuatro: PASS.
+- [ ] **Step 4:** Correr los cinco: PASS.
 - [ ] **Step 5: Commit:** `feat(feriados): cuántas licencias de Mi espacio incluye la fecha, y el aviso de que cuentan para Mi espacio`.
 
 ### Task 15: La página, la carcasa en las 14 y las pestañas Licencias y Horas extras
@@ -947,7 +951,7 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
   - **Lo puro:** `valoresDeLicencia(fila | null, tipo)`, `erroresDeLicencia(valores) → { campo: mensaje }` (obligatorios, formatos y nota), `cuerpoDeLicencia(valores, { soyTitular })`, `htmlDeTiposDeLicencia(tipos, elegido)`, `htmlDelCalculo(data)`, `htmlDelPaso(paso, { autorizado, ausencias, hoy })`, `valoresDelSaldo(campos)`, `erroresDelSaldo(valores, campos)`, `textoDeConfirmacion(fila)` (texto plano) y `textoDeLaSuma(valores, tabla, modalidad)`: en planta, «3,5 horas. En octubre llevás 14 horas: 2 francos compensatorios para usar en diciembre.»; en contrato, «… en noviembre vas a tener 7,5 horas a favor.»; si el mes no está en la tabla cargada, solo «3,5 horas.».
   - **El comportamiento:**
     - el cálculo se pide 300 ms después del último cambio y se descarta la respuesta vieja; «Guardar» queda deshabilitado hasta la respuesta;
-    - un error con campo va a su campo (`aria-invalid` y el foco) y, sin campo, a `#ml-error`; un 404 cierra el modal, avisa y vuelve a pedir la pestaña; después de guardar se vuelven a pedir el Resumen y la pestaña, y el mensaje va a `#me-anuncio`;
+    - un error con campo va a su campo (`aria-invalid` y el foco) y, sin campo, a `#ml-error`; `fechas` (el 409 de la persona autorizada, Task 10) no es un campo del formulario y va a `ml-desde`, y `autorizado_id`, a `ml-autorizado` (corrección de la Task 1, al leer el main nuevo); un 404 cierra el modal, avisa y vuelve a pedir la pestaña; después de guardar se vuelven a pedir el Resumen y la pestaña, y el mensaje va a `#me-anuncio`;
     - «Mis vacaciones y saldos» se abre solo con `abrir_saldos`, y desde el Resumen con «Mis vacaciones y saldos». Guarda con `PUT /anio/:anio` y después `PUT /saldo-inicial`; si el segundo falla, queda abierto con «Los días del año se guardaron, pero el saldo inicial no: <motivo>.»;
     - «Registrar un uso autorizado» abre `#modal-uso` (en planta, sin horas);
     - el aviso de los días sin auditor aparece solo cuando `paso.pasa`, con `Auth.isAuditor()`;
@@ -989,7 +993,7 @@ a hoy: habilitado = Σ mitades con habilita <= hoy; por_habilitar = el resto
 - [ ] **Step 3: Recorrido en el navegador** sobre `rpad_rama_mi_espacio`: como una persona de planta (admin), el modal que se abre solo, vacaciones, una franquicia, horas extras, un franco, el Resumen y la insignia en Configuración → Licencias; como una de contrato (lectora), horas a favor y un uso autorizado; el foco, Escape, `prefers-reduced-motion` y 375 px. Capturas para el usuario.
 - [ ] **Step 4: Revisión final de toda la rama** con Opus; se corrigen los hallazgos críticos e importantes.
 - [ ] **Step 5:** `npm test` completo con el candado: 0 fallas, y el total de la Task 1 más los tests nuevos.
-- [ ] **Step 6: Kit `RPAD-deploy-mi-espacio` en el Escritorio:** los archivos cambiados en su ruta y los dos SQL; `PASOS.txt` (con los feriados ya desplegados: `migracion-mi-espacio.sql`, subir los archivos y Restart; sin cron nuevo); la lista contra `git diff --name-only main...feat/mi-espacio`.
+- [ ] **Step 6: Kit `RPAD-deploy-mi-espacio` en el Escritorio:** los archivos cambiados en su ruta y los dos SQL; `PASOS.txt` (con los feriados ya desplegados: `migracion-mi-espacio.sql`, subir los archivos y Restart; sin cron nuevo); la lista contra `git diff --name-only main...claude/mi-espacio-licencias-fc16d6` (la rama del worktree: corrección de la Task 1, al leer el main nuevo).
 - [ ] **Step 7: Merge y push** (autorizado por el usuario si todo está bien): traer main con merge (no rebase) y volver a correr la suite; merge en main y push; comprobar que main y origin coinciden; aplicar la migración a `datospublicos_mcr_rpad`, con un respaldo antes.
 - [ ] **Step 8: Limpieza:** quitar el junction de `node_modules` antes de `git worktree remove` y borrar la base `rpad_rama_mi_espacio`.
 - [ ] **Step 9: Avisar a la sesión coordinadora** con el hash del merge, el nombre del kit, la cantidad de tests antes y después, y lo que el usuario tiene que desplegar. Con ese aviso arranca la sesión de la agenda.
