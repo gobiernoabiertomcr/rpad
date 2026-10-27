@@ -1,6 +1,6 @@
 # Feriados en todo el sistema: un solo calendario de días hábiles
 
-Fecha: 27/10/2026. **Estado: revisada (un agente la leyó como quien la construye); falta la aprobación del usuario.** Salió de la simulación del 27/10/2026 (las corridas del 28/10/2026 al 05/02/2027 con licencias cargadas desde Mi espacio) y de la charla con el usuario del mismo día. Sigue a la spec de Feriados (`2026-10-26-feriados-design.md`), cuya sección 8 anotaba qué mirar en cada módulo, y la reemplaza en su no objetivo: «el resto del sistema no cambia en esta etapa».
+Fecha: 27/10/2026. **Estado: aprobada por el usuario el 27/10/2026** (revisada antes por un agente que la leyó como quien la construye). Salió de la simulación del 27/10/2026 (las corridas del 28/10/2026 al 05/02/2027 con licencias cargadas desde Mi espacio) y de la charla con el usuario del mismo día. Sigue a la spec de Feriados (`2026-10-26-feriados-design.md`), cuya sección 8 anotaba qué mirar en cada módulo, y la reemplaza en su no objetivo: «el resto del sistema no cambia en esta etapa».
 
 ## Por qué
 
@@ -195,18 +195,22 @@ El email de los 40 días no cambia ningún vencimiento de fin de mes entre novie
 
 ## 8. Verificación: la simulación otra vez
 
-Antes del merge de la tanda 1 se vuelve a correr la simulación del 27/10 con el código nuevo y con el de antes, para comparar. Los scripts y el volcado de la base están copiados en la carpeta de notas compartida de la coordinadora (`simulacion-mi-espacio/sim/`; el original estaba en una carpeta temporal). Se copian a otra carpeta y se cambian: el código que corren (esta rama), los frenos del nombre de la base (para aceptar `rpad_rama_feriados_notas`, la copia de esta entrega, y nada más), la etiqueta de Mailpit y los textos fijos del informe. Se suman:
-- miradas al Estado el 28/10, 30/10, 03/11, 06/11, 20/11, 03/12, 04/12, 21/12, 29/12 y 04/01;
-- un cambio pendiente propuesto el 30/10, para ver el canal del 03/11.
+Antes del merge de la tanda 1 se simulan las corridas de las 8:15 y de las 14:00, día por día, **con el código de la tanda 1** (decisión del usuario: la simulación va después de implementar los feriados), **del 28/10/2026 al 05/02/2027**, con el escenario del usuario. Para comparar, el mismo escenario se corre también con el código de producción (mi decisión: tarda unos minutos).
 
-Lo esperado:
-- el 02/11 y el 09/11, «Día no hábil»;
-- el 03/11 salen el aviso interno y la reiteración;
-- el 24/11 sale el aviso externo;
-- la víspera es el 04/12;
-- el Estado anuncia cada una de esas fechas antes y anuncia el 11/01 para las reiteraciones de enero.
+**El escenario del usuario.** Todas las licencias se cargan desde Mi espacio y pasan solas a Configuración → Licencias.
+- **05/11:** el firmante carga sus vacaciones del 09/12/2026 al 08/01/2027, con la persona autorizada a cargo.
+- **20/11:** la persona autorizada carga sus vacaciones del 04/01 al 15/01/2027 y, en Configuración → Feriados, cuatro asuetos municipales: el 23, el 24, el 30 y el 31/12/2026.
+- **24/11:** el firmante corrige el Día del Petróleo del 13/12 al 14/12/2026, con «Trasladado del 13/12».
+- Mías, para probar lo que falta: un cambio pendiente propuesto el 30/10 (el canal del 03/11) y miradas a Correos → Estado el 28/10, 30/10, 03/11, 06/11, 20/11, 24/11, 03/12, 04/12, 21/12, 29/12, 04/01 y 11/01.
 
-Ningún email real: van a archivos y a Mailpit. La base se borra al cerrar.
+**Cómo.** Los scripts y el volcado de la base del 27/10 están copiados en la carpeta de notas compartida de la coordinadora (`simulacion-mi-espacio/sim/`; el original estaba en una carpeta temporal). Se copian a otra carpeta y se cambian: el código que corren (esta rama), los frenos del nombre de la base (para aceptar `rpad_rama_feriados_notas`, la copia de esta entrega, y nada más), la etiqueta de Mailpit, los textos fijos del informe y las acciones del escenario. Ningún email real: van a archivos y al Mailpit local. Nada pasa por `/api/cron`. La base se borra al cerrar. El informe va al Escritorio, fuera del repo.
+
+**Lo que se tiene que ver con la tanda 1:**
+- el 02/11, el 09/11 y el 23/11, «Día no hábil»; el 03/11 salen el aviso interno del 31/12 y la reiteración de noviembre; el 24/11, el aviso externo del 31/12;
+- la víspera es el viernes 04/12 (el 07/12 es no laborable y el 08/12, fijo), con la nota de autorización a la persona autorizada;
+- durante la licencia, ninguna nota el 14/12, el 23, 24, 25, 30 y 31/12, el 01/01 ni del 04/01 al 08/01; los avisos en su fecha que caen en esos días se presentan el día hábil anterior en que la persona autorizada está;
+- las reiteraciones de enero salen el 11/01, a la vuelta del firmante, y el Estado lo anuncia desde el 20/11 (cuando se carga la licencia de la persona autorizada);
+- cada fecha que anuncia el Estado es la que después cumple la corrida.
 
 ## 9. Documentación, despliegue, plazos y plan B
 
