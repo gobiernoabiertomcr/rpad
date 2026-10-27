@@ -1938,7 +1938,7 @@ describe('«Hoy no están»', () => {
       const res = await api.get('/mi-espacio/resumen', como('adminA'));
       assert.equal(res.status, 200, JSON.stringify(res.body));
       const { hoy_y_manana: hoyYManana } = res.body.data;
-      assert.deepEqual(Object.keys(hoyYManana), ['ausentes_hoy', 'ausentes_manana', 'proximo_feriado']);
+      assert.deepEqual(Object.keys(hoyYManana), ['ausentes_hoy', 'ausentes_manana', 'proximo_feriado', 'eventos']);
       assert.deepEqual(hoyYManana.ausentes_hoy, [ausente('Martín Ríos', hoy, dia(2), proximoDiaHabil(dia(3)))]);
       assert.deepEqual(hoyYManana.ausentes_manana, [ausente('Diego Fernández', dia(1), dia(1), proximoDiaHabil(dia(2)))]);
       for (const cada of [...hoyYManana.ausentes_hoy, ...hoyYManana.ausentes_manana]) {

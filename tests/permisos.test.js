@@ -2,7 +2,8 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
-import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
+import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, db } from './helpers.js';
+import { BLOQUEO_EVENTOS } from '../services/miEspacioEventosReglas.js';
 
 let servidor, api, usuarios;
 
@@ -120,12 +121,20 @@ describe('lector', () => {
   for (const ruta of ['/auth/profile', '/datasets', '/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar',
     '/gestion/metricas', '/gestion/proyectos', '/gestion/timeline', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/ciclo-de-vida',
     '/feriados', '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial',
-    '/mi-espacio/anio/2026', '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/firmante']) {
+    '/mi-espacio/anio/2026', '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/firmante',
+    '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.lector.token });
       assert.equal(res.status, 200);
     });
   }
+
+  // La agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, sección 1): solo administración comparte eventos
+  it('recibe 403 en GET /mi-espacio/personas', async () => {
+    const res = await api.get('/mi-espacio/personas', { token: usuarios.lector.token });
+    assert.equal(res.status, 403);
+    assert.equal(res.body.error, 'No tenés permiso para compartir eventos.');
+  });
 
   // El Seguimiento de un dataset lo ve cualquier rol con sesión (spec 2026-10-20-seguimiento-dataset)
   it('puede usar GET /seguimiento/:id', async () => {
@@ -214,7 +223,15 @@ const RUTAS_MI_ESPACIO = [
   ['PUT', '/mi-espacio/anio/2026'],
   ['PUT', '/mi-espacio/saldo-inicial'],
   ['GET', '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27'],
-  ['GET', '/mi-espacio/firmante']
+  ['GET', '/mi-espacio/firmante'],
+  // La agenda (spec 2026-10-26-mi-espacio-agenda, sección 7)
+  ['GET', '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27'],
+  ['GET', '/mi-espacio/eventos/aviso?fecha=2026-10-27&desde=10:00&recordatorio=2h'],
+  ['GET', '/mi-espacio/personas'],
+  ['POST', '/mi-espacio/eventos'],
+  ['PUT', '/mi-espacio/eventos/1'],
+  ['DELETE', '/mi-espacio/eventos/1'],
+  ['PUT', '/mi-espacio/eventos/1/mi-recordatorio']
 ];
 
 describe('Mi espacio', () => {
@@ -239,12 +256,19 @@ describe('colaborador', () => {
   for (const ruta of ['/auth/profile', '/datasets', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/estado-general', '/reportes/avisos',
     '/reportes/agenda', '/reportes/para-completar', '/gestion/proyectos', '/gestion/timeline', '/reportes/ciclo-de-vida', '/feriados',
     '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial', '/mi-espacio/anio/2026',
-    '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/firmante']) {
+    '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/firmante',
+    '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.colaborador.token });
       assert.equal(res.status, 200);
     });
   }
+
+  it('recibe 403 en GET /mi-espacio/personas', async () => {
+    const res = await api.get('/mi-espacio/personas', { token: usuarios.colaborador.token });
+    assert.equal(res.status, 403);
+    assert.equal(res.body.error, 'No tenés permiso para compartir eventos.');
+  });
 
   it('puede usar GET /seguimiento/:id', async () => {
     const [{ id }] = await query('SELECT id FROM datasets LIMIT 1');
@@ -392,5 +416,36 @@ describe('cron', () => {
   it('acepta la clave correcta por query (como la llama el cron de cPanel)', async () => {
     const res = await api.get(`/cron/cambios-pendientes?secret=${encodeURIComponent(process.env.CRON_SECRET)}`);
     assert.equal(res.status, 200);
+  });
+
+  // La corrida de los recordatorios de la agenda de Mi espacio (cada media hora). El servidor de este archivo usa la base del
+  // .env, no una de prueba: con la clave, la corrida correría de verdad (anotaría su última corrida y mandaría los recordatorios
+  // de los eventos que haya). Por eso el pedido con la clave va con el candado de la corrida tomado en otra conexión: responde 200
+  // «ocupada» sin escribir ni mandar nada. La corrida en sí se prueba en tests/mi-espacio-eventos-corrida.test.js
+  it('/cron/eventos: 403 sin clave y con una incorrecta', async () => {
+    assert.equal((await api.get('/cron/eventos')).status, 403);
+    assert.equal((await api.get('/cron/eventos', { headers: { 'x-cron-secret': 'incorrecta' } })).status, 403);
+    assert.equal((await api.get('/cron/eventos?secret=')).status, 403);
+  });
+
+  it('/cron/eventos: 200 con la clave por encabezado (con el candado tomado: no escribe ni manda nada)', async () => {
+    const contar = async () => Number((await query('SELECT COUNT(*) AS n FROM mi_espacio_eventos_corridas'))[0].n)
+      + Number((await query('SELECT COUNT(*) AS n FROM mi_espacio_evento_envios'))[0].n);
+    const antes = await contar();
+    const conexion = await db().getConnection();
+    try {
+      const [[{ tomado }]] = await conexion.query('SELECT GET_LOCK(?, 10) AS tomado', [BLOQUEO_EVENTOS]);
+      assert.equal(Number(tomado), 1);
+      const res = await api.get('/cron/eventos', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.deepEqual(res.body, {
+        success: true, message: 'Otra corrida de los recordatorios está en curso.',
+        data: { ocupada: true, dia_habil: null, enviados: 0, fallidos: 0, errores: [] }
+      });
+    } finally {
+      await conexion.query('SELECT RELEASE_LOCK(?)', [BLOQUEO_EVENTOS]);
+      conexion.release();
+    }
+    assert.equal(await contar(), antes);
   });
 });

@@ -104,9 +104,10 @@ export const idPositivo = (valor) => {
   return ID.test(texto) ? Number(texto) : null;
 };
 
-// Las áreas: ids sin repetidos, en el orden recibido. null si no es un array o si algún elemento no es un id (no se
-// descartan en silencio). Vacío o null es ninguna área. Los vistos van en un Set: tiempo lineal
-const idsDeAreas = (valor) => {
+// Una lista de ids (idPositivo), sin repetidos y en el orden recibido: las áreas de un proyecto y las personas de un evento
+// de la agenda (services/miEspacioEventosReglas.js). null si no es un array o si algún elemento no es un id (no se
+// descartan en silencio). null es una lista vacía (ninguna área). Los vistos van en un Set: tiempo lineal
+export const idsPositivos = (valor) => {
   if (valor === null) return [];
   if (!Array.isArray(valor)) return null;
   const ids = [];
@@ -186,7 +187,7 @@ const CAMPOS_DEL_PROYECTO = [
   ['color', (valor) => conFormato(valor, (texto) => COLOR.test(texto), MENSAJES_PROYECTOS.color)],
   ['icono', (valor) => conFormato(valor, (texto) => ICONOS_PROYECTO.includes(texto), MENSAJES_PROYECTOS.icono)],
   ['areas', (valor) => {
-    const ids = valor === undefined ? [] : idsDeAreas(valor);
+    const ids = valor === undefined ? [] : idsPositivos(valor);
     return ids === null ? { valor: null, mensaje: MENSAJES_PROYECTOS.areas } : { valor: ids, mensaje: null };
   }]
 ];

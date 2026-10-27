@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mi espacio - RPAD</title>
-    <meta name="description" content="Tus licencias, tus horas extras y lo que te queda">
+    <meta name="description" content="Tus licencias, tus horas extras, tu agenda y lo que te queda">
     <link rel="icon" type="image/png" href="img/icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -227,6 +227,59 @@
         .me-inicial { width: 34px; height: 34px; border-radius: 50%; background: #fff; border: 1px solid var(--sg-linea); display: inline-flex; align-items: center; justify-content: center; font-size: 0.74rem; font-weight: 700; color: var(--sg-suave); flex: none; }
         .me-feriado { margin: 0; font-size: 0.9rem; color: var(--sg-texto); display: flex; flex-direction: column; }
         .me-feriado b { font-weight: 600; }
+        /* Hoy y mañana, desde la agenda: los eventos de hoy y de mañana (la hora en tinta; la de un compartido, en violeta) y «Ver
+           la agenda» */
+        .me-eventos-hoy { list-style: none; margin: 12px 0 10px; padding: 0; }
+        .me-eventos-hoy li { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px; padding: 9px 0; border-top: 1px solid var(--sg-linea); overflow-wrap: anywhere; }
+        .me-eventos-hoy li:first-child { border-top: 0; padding-top: 0; }
+        .me-evento-hora { font-family: var(--f-titulo); font-weight: 700; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
+        .me-eventos-hoy li.compartido .me-evento-hora { color: var(--sg-violeta); }
+        .me-eventos-hoy b { display: block; font-size: 0.92rem; font-weight: 600; color: var(--sg-texto); line-height: 1.3; }
+        .me-eventos-hoy small { display: block; font-size: 0.8rem; color: var(--sg-suave); }
+        .me-hoy > .me-vacio { margin: 12px 0 10px; }
+        .me-hoy > .sg-link { font-size: 0.9rem; }
+
+        /* La agenda (spec 2026-10-26-mi-espacio-agenda, 6; maqueta 1, #agenda): el mes y, al costado, los próximos. El mes es una tabla
+           de lunes a domingo (la cabeza dice cada día), con hasta 3 cosas por día y «y N más». Los colores: lo tuyo en tinta, lo
+           compartido en violeta, tus licencias y francos en verde, los feriados en el sol y los compañeros en gris */
+        .me-mes-y-proximos { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+        .me-mes-y-proximos > .me-tarjeta + .me-tarjeta { margin-top: 0; }
+        .me-mes-cabeza { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .me-tarjeta .me-mes-cabeza h2 { margin: 0 8px; min-width: 150px; text-align: center; }
+        .me-mes-cabeza #ag-nuevo-evento { margin-left: auto; }
+        .me-flecha { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 1px solid var(--sg-borde-control); background: #fff; color: var(--sg-tinta); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+        .me-mes { width: 100%; table-layout: fixed; border-collapse: collapse; }
+        .me-mes th { padding: 6px 8px; border: 1px solid var(--sg-linea); background: var(--sg-sutil); font-size: 0.76rem; font-weight: 600; color: var(--sg-suave); text-align: left; }
+        .me-celda { height: 98px; padding: 4px 4px 6px; border: 1px solid var(--sg-linea); vertical-align: top; background: #fff; }
+        .me-celda-cuerpo, .me-resto { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .me-celda.otro-mes { background: var(--sg-sutil); }
+        .me-celda.otro-mes .me-num { color: var(--sg-gris); }
+        .me-celda.finde { background: #FAFBFC; }
+        .me-celda.feriado { background: #FFFBEB; }
+        .me-num { font-size: 0.8rem; font-weight: 600; color: var(--sg-texto); padding: 2px 4px; align-self: flex-start; font-variant-numeric: tabular-nums; }
+        .me-celda.hoy .me-num { background: var(--sg-tinta); color: #fff; border-radius: 999px; min-width: 22px; text-align: center; }
+        .me-ev { display: block; max-width: 100%; margin: 0; font: inherit; font-size: 0.74rem; line-height: 1.25; padding: 2px 6px; border: 0; border-left: 3px solid; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+        button.me-ev { width: 100%; cursor: pointer; }
+        .me-ev.propio, .me-leyenda .propio { background: var(--sg-azul-fondo); border-color: var(--sg-tinta); color: var(--sg-tinta); }
+        .me-ev.compartido, .me-leyenda .compartido { background: var(--sg-violeta-fondo); border-color: var(--sg-violeta); color: var(--sg-violeta); }
+        .me-ev.licencia, .me-leyenda .licencia { background: var(--sg-verde-fondo); border-color: var(--sg-verde); color: var(--sg-verde); }
+        .me-ev.feriado, .me-leyenda .feriado { background: var(--sg-sol); border-color: #C98A00; color: var(--sg-ambar); }
+        .me-ev.ausente, .me-leyenda .ausente { background: var(--sg-gris-fondo); border-color: var(--sg-gris); color: var(--sg-suave); }
+        .me-mas { align-self: flex-start; background: none; border: 0; padding: 0 0 0 6px; font: inherit; font-size: 0.72rem; color: var(--sg-suave); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+        .me-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; list-style: none; margin: 12px 0 0; padding: 0; font-size: 0.82rem; color: var(--sg-suave); }
+        .me-leyenda li { display: inline-flex; align-items: center; gap: 6px; }
+        .me-leyenda i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border-left: 3px solid; }
+        /* Los próximos: un grupo por título (Hoy, Mañana, Esta semana y Más adelante) y, en cada cosa, la hora, el título y el
+           detalle (de un evento, quién está y su aviso) */
+        .me-proximos h3 { margin: 14px 0 6px; font-family: inherit; font-size: 0.78rem; font-weight: 700; letter-spacing: 0; color: var(--sg-suave); }
+        .me-proximos h3:first-child { margin-top: 0; }
+        .me-prox-lista { list-style: none; margin: 0; padding: 0; }
+        .me-prox { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 2px 10px; padding: 8px 0; border-top: 1px solid var(--sg-linea); overflow-wrap: anywhere; }
+        .me-prox:first-child { border-top: 0; }
+        .me-prox-hora { font-weight: 600; font-size: 0.86rem; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+        .me-prox-titulo { font-size: 0.9rem; font-weight: 600; color: var(--sg-texto); }
+        button.me-prox-titulo { background: none; border: 0; padding: 0; font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--sg-texto); text-align: left; cursor: pointer; }
+        .me-prox-detalle { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 0.8rem; color: var(--sg-suave); }
 
         /* Los formularios (maqueta 2): los modales de administración, con el lenguaje del Seguimiento y de Proyectos. Un clic en el
            velo no los cierra: son formularios largos. El cuerpo se desplaza y el pie (los botones) queda siempre a la vista */
@@ -243,7 +296,8 @@
         .me-modal .form-input, .me-modal .form-select { height: 44px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; color: var(--sg-texto); }
         .me-modal .form-hint { color: var(--sg-suave); font-size: 0.84rem; line-height: 1.4; }
         .me-modal .form-error { color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; margin: 4px 0 0; overflow-wrap: anywhere; }
-        .me-modal .form-input[aria-invalid="true"], .me-modal .form-select[aria-invalid="true"], .me-opcion:has(input[aria-invalid="true"]), .me-numero input[aria-invalid="true"] + span { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+        .me-modal .form-textarea { min-height: 76px; padding: 10px 12px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; color: var(--sg-texto); line-height: 1.45; }
+        .me-modal .form-input[aria-invalid="true"], .me-modal .form-select[aria-invalid="true"], .me-modal .form-textarea[aria-invalid="true"], .me-opcion:has(input[aria-invalid="true"]), .me-numero input[aria-invalid="true"] + span { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
         .me-modal-error { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; border: 1px solid #EFCACA; background: #FBEEEE; color: var(--sg-rojo); font-weight: 600; font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
         .me-modal-de { margin: 0 0 16px; color: var(--sg-texto); font-size: 0.92rem; }
         .me-opcional { font-weight: 400; color: var(--sg-suave); }
@@ -278,6 +332,23 @@
         .me-check input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--sg-tinta); flex: none; }
         .me-check small { display: block; color: var(--sg-suave); font-size: 0.84rem; }
         .me-campos-saldo { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 14px; }
+        /* El evento (maqueta 2, #evento): «¿Quién lo ve?» con dos opciones grandes (botones con aria-pressed) y, si es compartido, las
+           personas, cada una con sus iniciales (en violeta la elegida; con «Todos», las demás deshabilitadas) */
+        .me-opciones.dos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        button.me-opcion { width: 100%; font: inherit; text-align: left; }
+        .me-opcion[aria-pressed="true"] { border-color: var(--sg-tinta); background: #F3F7FC; box-shadow: inset 0 0 0 1px var(--sg-tinta); }
+        .me-personas { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .me-persona { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px 0 4px; border-radius: 999px; border: 1px solid var(--sg-borde-control); background: #fff; font: inherit; font-size: 0.86rem; color: var(--sg-texto); cursor: pointer; }
+        .me-persona i { width: 28px; height: 28px; border-radius: 50%; background: var(--sg-gris-fondo); color: var(--sg-suave); font-style: normal; font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+        .me-persona[aria-pressed="true"] { border-color: var(--sg-violeta); background: var(--sg-violeta-fondo); color: var(--sg-violeta); font-weight: 600; }
+        .me-persona[aria-pressed="true"] i { background: var(--sg-violeta); color: #fff; }
+        .me-persona:disabled { opacity: 0.55; cursor: default; }
+        .me-personas[aria-invalid="true"] .me-persona { border-color: var(--sg-rojo); }
+        .me-personas-estado { font-size: 0.84rem; color: var(--sg-suave); }
+        /* Un evento ajeno (maqueta 2, #evento-ajeno): cuándo, el detalle (con sus renglones) y quién lo creó y quiénes están */
+        .me-ajeno-cuando { margin: 0 0 8px; font-size: 1rem; font-weight: 700; color: var(--sg-texto); }
+        .me-ajeno-detalle { margin: 0 0 10px; color: var(--sg-texto); white-space: pre-line; overflow-wrap: anywhere; }
+        .me-ajeno-quien { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin: 0 0 16px; font-size: 0.88rem; color: var(--sg-suave); overflow-wrap: anywhere; }
         .me-pie-izquierda { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
         .me-pie-izquierda small { color: var(--sg-suave); font-size: 0.82rem; }
         .sg-link.me-link-rojo { color: var(--sg-rojo); }
@@ -297,6 +368,7 @@
             .me-fila { grid-template-columns: 1fr auto; }
             .me-fila-cuerpo { grid-column: 1 / -1; grid-row: 2; }
             .me-fila.me-fila-dos { grid-template-columns: 1fr; }
+            .me-mes-y-proximos { grid-template-columns: minmax(0, 1fr); }
         }
         @media (max-width: 760px) {
             .me-vence, .me-panel { padding-left: 16px; padding-right: 16px; }
@@ -305,8 +377,16 @@
             .me-nivel-vac { flex-wrap: wrap; }
             .me-nivel-vac .me-leyenda-vac { padding-bottom: 0; }
         }
+        /* En el teléfono, los próximos primero y el mes como puntos de colores por día (maqueta 1), en el color fuerte de cada clase (el
+           de su texto: el fondo pastel casi no se ve sobre el blanco de la celda); en el evento, «Solo yo» y «Compartido», una debajo
+           de la otra */
         @media (max-width: 640px) {
             .me-tarjeta { padding: 16px; }
+            .me-proximos-tarjeta { order: -1; }
+            .me-mes th { padding: 6px 2px; text-align: center; }
+            .me-celda { height: 64px; }
+            .me-mes .me-ev { font-size: 0; padding: 0; height: 6px; border-left-width: 0; background: currentColor; }
+            .me-opciones.dos { grid-template-columns: minmax(0, 1fr); }
         }
     </style>
 </head>
@@ -383,28 +463,61 @@
                         <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
                         Mi espacio
                     </h1>
-                    <!-- Solo con la modalidad cargada: mi-espacio.js los muestra -->
+                    <!-- «Nuevo evento» se ve siempre: la agenda no depende de la modalidad (decisión del usuario, 27/10/2026). «Cargar
+                         horas extras» y «Cargar licencia», solo con la modalidad cargada: mi-espacio.js los muestra -->
                     <div class="me-acciones">
+                        <button type="button" class="sg-btn sg-btn-borde" id="btn-nuevo-evento">Nuevo evento</button>
                         <button type="button" class="sg-btn sg-btn-borde" id="btn-cargar-horas" hidden>Cargar horas extras</button>
                         <button type="button" class="sg-btn sg-btn-tinta" id="btn-cargar-licencia" hidden><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Cargar licencia</button>
                     </div>
                 </div>
-                <p class="me-bajada">Tus licencias y tus horas extras. Lo que cargás acá lo ves solo vos, salvo, si querés, tus ausencias (sin decir de qué son).</p>
+                <p class="me-bajada">Tus licencias, tus horas extras y tu agenda. Lo que cargás acá lo ves solo vos, salvo los eventos que compartís y, si querés, tus ausencias (sin decir de qué son).</p>
 
                 <!-- La región viva de la página: mi-espacio.js anuncia acá el año que se cargó, lo que no se pudo cargar y lo que se
                      guardó o se borró (lo que se vuelve a dibujar no la toca) -->
                 <p class="visualmente-oculto" id="me-anuncio" role="status"></p>
                 <noscript><p class="me-estado">Para ver Mi espacio hace falta JavaScript.</p></noscript>
 
-                <!-- Las tres pestañas, cada una en la dirección (#resumen, #licencias, #horas) -->
+                <!-- Las cuatro pestañas, cada una en la dirección (#resumen, #licencias, #horas, #agenda) -->
                 <div class="me-pestanas" role="tablist" aria-label="Mi espacio">
                     <button type="button" class="me-pestana" role="tab" id="tab-resumen" aria-selected="true" aria-controls="vista-resumen" data-pestana="resumen">Resumen<span id="me-marca"></span></button>
                     <button type="button" class="me-pestana" role="tab" id="tab-licencias" aria-selected="false" aria-controls="vista-licencias" data-pestana="licencias" tabindex="-1">Licencias</button>
                     <button type="button" class="me-pestana" role="tab" id="tab-horas" aria-selected="false" aria-controls="vista-horas" data-pestana="horas" tabindex="-1">Horas extras</button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-agenda" aria-selected="false" aria-controls="vista-agenda" data-pestana="agenda" tabindex="-1">Agenda</button>
                 </div>
                 <section id="vista-resumen" role="tabpanel" aria-labelledby="tab-resumen"><p class="me-estado">Cargando…</p></section>
                 <section id="vista-licencias" role="tabpanel" aria-labelledby="tab-licencias" hidden><p class="me-estado">Cargando tus licencias…</p></section>
                 <section id="vista-horas" role="tabpanel" aria-labelledby="tab-horas" hidden><p class="me-estado">Cargando tus horas extras…</p></section>
+                <!-- La agenda (spec 2026-10-26-mi-espacio-agenda, 6; maqueta 1, #agenda): el mes, que mi-espacio.js dibuja en #ag-mes (el
+                     título en #ag-mes-titulo), y, al costado, los próximos 30 días en #ag-proximos. Lo que se vuelve a dibujar no es una
+                     región viva: el mes que se elige se anuncia en #me-anuncio. El mes no va en la dirección -->
+                <section id="vista-agenda" role="tabpanel" aria-labelledby="tab-agenda" hidden>
+                    <div class="me-mes-y-proximos">
+                        <div class="me-tarjeta">
+                            <div class="me-mes-cabeza">
+                                <button type="button" class="me-flecha" id="ag-anterior" aria-label="Mes anterior"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+                                <h2 id="ag-mes-titulo">Este mes</h2>
+                                <button type="button" class="me-flecha" id="ag-siguiente" aria-label="Mes siguiente"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+                                <button type="button" class="sg-btn sg-btn-borde sg-btn-chico" id="ag-hoy">Hoy</button>
+                                <button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" id="ag-nuevo-evento">Nuevo evento</button>
+                            </div>
+                            <div id="ag-mes"></div>
+                            <!-- Los colores. «Compañeros que no están», solo para quien los ve (administración: decisión del usuario,
+                                 27/10/2026); mi-espacio.js lo muestra -->
+                            <ul class="me-leyenda" aria-label="Los colores del mes">
+                                <li><i class="propio" aria-hidden="true"></i>Solo vos</li>
+                                <li><i class="compartido" aria-hidden="true"></i>Compartidos</li>
+                                <li><i class="licencia" aria-hidden="true"></i>Tus licencias y francos</li>
+                                <li><i class="feriado" aria-hidden="true"></i>Feriados</li>
+                                <li id="ag-leyenda-ausentes" hidden><i class="ausente" aria-hidden="true"></i>Compañeros que no están</li>
+                            </ul>
+                        </div>
+                        <section class="me-tarjeta me-proximos-tarjeta" aria-labelledby="ag-proximos-titulo">
+                            <div class="me-cabeza"><h2 id="ag-proximos-titulo">Próximos</h2></div>
+                            <div class="me-proximos" id="ag-proximos"><p class="me-vacio">Cargando…</p></div>
+                        </section>
+                    </div>
+                </section>
             </div>
 
             <!-- Footer -->
@@ -643,6 +756,109 @@
         </div>
     </div>
 
+    <!-- «Nuevo evento» y «Editar evento» (spec 2026-10-26-mi-espacio-agenda, 1 y 6; maqueta 2, #evento): qué, la fecha y las
+         horas (la de fin, opcional), el detalle, quién lo ve (solo administración comparte: mi-espacio.js muestra «¿Quién lo ve?»
+         con Auth.isAdmin()), con quién (las personas o «Todos») y el recordatorio, con cuándo sale (#ev-aviso, que calcula el
+         servidor; lo describe el select, no es una región viva). #ev-recordatorio-ayuda arranca vacía: mi-espacio.js la escribe solo
+         en un evento compartido (lo que apunta aria-describedby se lee aunque esté oculto). Va antes de la confirmación: todos los
+         velos tienen el mismo z-index y el que va más abajo en el HTML queda arriba -->
+    <div class="modal-overlay" id="modal-evento">
+        <div class="modal me-modal" role="dialog" aria-modal="true" aria-labelledby="modal-evento-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-evento-titulo">Nuevo evento</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="ev-error" role="alert" hidden></p>
+                <div class="form-group">
+                    <label class="form-label" for="ev-titulo">Qué</label>
+                    <input type="text" class="form-input" id="ev-titulo" autocomplete="off" aria-describedby="ev-titulo-error">
+                    <p class="form-error" id="ev-titulo-error" hidden></p>
+                </div>
+                <div class="me-fila-campos">
+                    <div class="form-group">
+                        <label class="form-label" for="ev-fecha">Fecha</label>
+                        <input type="date" class="form-input" id="ev-fecha" aria-describedby="ev-fecha-error">
+                        <p class="form-error" id="ev-fecha-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="ev-desde">De</label>
+                        <input type="time" class="form-input" id="ev-desde" aria-describedby="ev-desde-error">
+                        <p class="form-error" id="ev-desde-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="ev-hasta">A <span class="me-opcional">(opcional)</span></label>
+                        <input type="time" class="form-input" id="ev-hasta" aria-describedby="ev-hasta-error">
+                        <p class="form-error" id="ev-hasta-error" hidden></p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="ev-detalle">Detalle <span class="me-opcional">(opcional)</span></label>
+                    <textarea class="form-textarea" id="ev-detalle" rows="3" aria-describedby="ev-detalle-error"></textarea>
+                    <p class="form-error" id="ev-detalle-error" hidden></p>
+                </div>
+                <div class="me-grupo" id="ev-grupo-quien" role="group" aria-labelledby="ev-quien-rotulo" hidden>
+                    <span class="form-label" id="ev-quien-rotulo">¿Quién lo ve?</span>
+                    <div class="me-opciones dos">
+                        <button type="button" class="me-opcion" id="ev-solo" aria-pressed="true"><span><b>Solo yo</b><small>Nadie más lo ve</small></span></button>
+                        <button type="button" class="me-opcion" id="ev-compartido" aria-pressed="false"><span><b>Compartido</b><small>Con las personas que elijas</small></span></button>
+                    </div>
+                </div>
+                <fieldset class="me-grupo" id="ev-grupo-personas" aria-describedby="ev-personas-ayuda ev-personas-error" hidden>
+                    <legend class="form-label">Con quién <span class="me-opcional" id="ev-personas-cuantas"></span></legend>
+                    <div class="me-personas" id="ev-personas"></div>
+                    <p class="form-hint" id="ev-personas-ayuda">Les llega un email cuando los sumás, y otro si cambiás o borrás el evento. Solo vos lo podés cambiar.</p>
+                    <p class="form-error" id="ev-personas-error" hidden></p>
+                </fieldset>
+                <div class="form-group">
+                    <label class="form-label" for="ev-recordatorio">Recordatorio por email</label>
+                    <select class="form-select" id="ev-recordatorio" aria-describedby="ev-aviso ev-recordatorio-ayuda ev-recordatorio-error"></select>
+                    <p class="form-hint" id="ev-aviso" hidden></p>
+                    <p class="form-hint" id="ev-recordatorio-ayuda" hidden></p>
+                    <p class="form-error" id="ev-recordatorio-error" hidden></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="me-pie-izquierda">
+                    <button type="button" class="sg-link me-link-rojo" id="ev-borrar" hidden>Borrar el evento</button>
+                </div>
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="ev-guardar">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Un evento que compartió otra persona (spec, sección 2; maqueta 2, #evento-ajeno): el título del evento es el del modal, cuándo
+         es, el detalle, quién lo creó y quiénes están, y «Mi recordatorio», que se guarda al elegirlo (el evento no cambia). No tiene
+         nada que cancelar: se cierra con «Cerrar» -->
+    <div class="modal-overlay" id="modal-evento-ajeno">
+        <div class="modal me-modal me-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-evento-ajeno-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-evento-ajeno-titulo">Evento</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="mea-error" role="alert" hidden></p>
+                <p class="me-ajeno-cuando" id="mea-cuando"></p>
+                <p class="me-ajeno-detalle" id="mea-detalle" hidden></p>
+                <p class="me-ajeno-quien" id="mea-quien"></p>
+                <div class="form-group">
+                    <label class="form-label" for="mea-recordatorio">Mi recordatorio</label>
+                    <select class="form-select" id="mea-recordatorio" aria-describedby="mea-aviso mea-ayuda"></select>
+                    <p class="form-hint" id="mea-aviso" hidden></p>
+                    <p class="form-hint" id="mea-ayuda">Solo quien lo creó puede cambiar el evento.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-tinta" id="mea-cerrar" data-cerrar>Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Confirmar un borrado (un modal chico, no confirm()), sobre el formulario: Escape lo cierra primero. El texto lo arma
          textoDeConfirmacion, en texto plano -->
     <div class="modal-overlay" id="modal-confirmar">
@@ -669,6 +885,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/mi-espacio.js?v=20261209"></script>
+    <script src="js/mi-espacio.js?v=20261210"></script>
 </body>
 </html>

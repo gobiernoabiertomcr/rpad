@@ -243,6 +243,11 @@ async function cargarEstado() {
       alertasPintadas = htmlDeAlertas;
     }
     document.getElementById('nd-ultima-corrida').textContent = textoUltimaCorrida(estado.ultima_corrida);
+    // Los recordatorios de la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, 5): la línea la arma el servidor; sin
+    // estado.eventos (no la pudo leer, o una respuesta de antes) queda oculta. Sus alertas ya vienen en estado.alertas
+    const eventos = document.getElementById('nd-eventos');
+    eventos.textContent = typeof estado.eventos?.texto === 'string' ? estado.eventos.texto : '';
+    eventos.hidden = eventos.textContent === '';
     const licencia = document.getElementById('nd-licencia');
     licencia.textContent = textoLicenciaFirmante(estado.licencia_firmante);
     licencia.hidden = !estado.licencia_firmante;

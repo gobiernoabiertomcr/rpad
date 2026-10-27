@@ -282,25 +282,29 @@ export const enviarNota = async (id) => {
   return resultado;
 };
 
-// Ejecuta fn con el bloqueo de Notas Digitales tomado. El bloqueo vive en la base (vale para todos los
-// procesos de Passenger) y pertenece a la conexión que lo pidió, así que se mantiene una conexión
-// dedicada hasta liberarlo. Si está ocupado, devuelve { ocupado: true } sin ejecutar fn.
-const conBloqueo = async (fn) => {
+// Ejecuta fn con el bloqueo `nombre` tomado (de entrada, el de Notas Digitales). El bloqueo vive en la base (vale para
+// todos los procesos de Passenger) y pertenece a la conexión que lo pidió, así que se mantiene una conexión
+// dedicada hasta liberarlo. Si está ocupado, devuelve { ocupado: true } sin ejecutar fn; si no, { ocupado: false, resultado }.
+// Exportada para la corrida de los recordatorios de la agenda de Mi espacio (services/miEspacioEventosCorrida.js), que usa
+// su propio nombre: dos corridas con nombres distintos no se frenan entre sí (la de las 8:30 de los recordatorios no deja
+// sin Notas Digitales a la de las 8:15). Con el nombre de siempre, todo es como antes, también el aviso de la consola.
+export const conBloqueo = async (fn, nombre = BLOQUEO) => {
   const conexion = await pool.getConnection();
   let descartar = false;
   try {
-    const [[{ bloqueo }]] = await conexion.query('SELECT GET_LOCK(?, 0) AS bloqueo', [BLOQUEO]);
+    const [[{ bloqueo }]] = await conexion.query('SELECT GET_LOCK(?, 0) AS bloqueo', [nombre]);
     // GET_LOCK devuelve 1 si lo tomó, 0 si está ocupado y NULL ante un error
     if (Number(bloqueo) !== 1) return { ocupado: true };
     try {
       return { ocupado: false, resultado: await fn() };
     } finally {
       try {
-        await conexion.query('SELECT RELEASE_LOCK(?)', [BLOQUEO]);
+        await conexion.query('SELECT RELEASE_LOCK(?)', [nombre]);
       } catch (error) {
         // No tapa el resultado ni el error de fn. Sin RELEASE_LOCK la conexión se cierra:
         // al terminar la sesión la base libera el bloqueo igual.
-        console.error('⚠️ No se pudo liberar el bloqueo de Notas Digitales:', error.message);
+        const cual = nombre === BLOQUEO ? 'de Notas Digitales' : nombre;
+        console.error(`⚠️ No se pudo liberar el bloqueo ${cual}:`, error.message);
         descartar = true;
       }
     }
