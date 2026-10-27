@@ -29,7 +29,8 @@
  * que se usó. Pide los datos con API.pedirJson. Todo texto del servidor pasa por Utils.escapeHtml (también en los aria-label) y un
  * número se escribe con String (Utils.escapeHtml(0) da ''); lo que va con textContent (los títulos de los modales, la
  * confirmación), tal cual. Lo que cambia se anuncia en #me-anuncio, la única región viva de la página (en cada modal, su error sin
- * campo es role="alert").
+ * campo es role="alert"); lo que dice el servidor al guardar o borrar, y un formulario que no se pudo abrir, se ve además en un
+ * aviso (avisarMiEspacio: el showToast de main.js, como en Áreas, Feriados y Proyectos).
  */
 
 // =====================================================
@@ -597,8 +598,8 @@ const numeroDelCampo = (texto) => {
 };
 const largoDeLaNota = (nota) => Array.from(comoTexto(nota).trim()).length;
 
-// Los tipos de un solo día (el campo es «Fecha»: desde y hasta son el mismo) y los que se cargan en horas, como en
-// services/miEspacioReglas.js
+// Los tipos de un solo día (el campo es «Fecha»: desde y hasta son el mismo) y los que se cargan en horas: copias de
+// TIPOS_DE_UN_DIA y TIPOS_POR_HORAS de services/miEspacioReglas.js, atadas por un test de paridad
 const TIPOS_DE_UN_DIA = Object.freeze(['franquicia', 'franco', 'horas_a_favor', 'uso_autorizado']);
 const TIPOS_CON_HORAS = Object.freeze(['franquicia', 'horas_a_favor', 'uso_autorizado']);
 const deUnDia = (tipo) => TIPOS_DE_UN_DIA.includes(tipo);
@@ -609,6 +610,15 @@ const horasDelTipo = (tipo, modalidad) => {
   if (tipo === 'horas_a_favor' || (tipo === 'uso_autorizado' && modalidad !== 'planta')) return 'medias';
   return null;
 };
+// Si una licencia es de día entero, como esDiaEntero del servidor (atada por un test de paridad): una de horas, solo con la
+// jornada entera (el uso autorizado de planta es un franco, el día entero). Solo esas se les muestran a los compañeros (spec,
+// sección 7): las de menos de 7 horas, nunca. `horas`, como las escribe el campo
+const esDeDiaEntero = (tipo, horas, modalidad) => !TIPOS_CON_HORAS.includes(tipo) || horasDelTipo(tipo, modalidad) === null
+  || numeroDelCampo(horas) === JORNADA;
+// Lo que dice el formulario si el cálculo no llegó (un error del servidor, o sin conexión): sin él no se ve qué pasa con
+// Configuración, así que «Guardar» lo vuelve a pedir antes de guardar
+const textoSinCalculo = (falla) => `No se pudo calcular: ${falla?.status ? 'hubo un error en el servidor'
+  : 'no se pudo conectar con el servidor'}. Probá de nuevo en unos minutos.`;
 
 /**
  * Los valores de «Cargar licencia» (o del uso autorizado): los de una fila de la lista que se corrige o, sin fila, los de una
@@ -765,11 +775,11 @@ const nombreDelMes = (mes, mas = 0) => NOMBRES_DE_LOS_MESES[(Number(mes.slice(5,
 const textoDeHoras = (horas) => `${numeroConComa(horas)} ${horas === 1 ? 'hora' : 'horas'}`;
 
 /**
- * Lo que suman unas horas extras mientras se cargan: «3,5 horas.» y, si el mes está en la tabla cargada (la de la pestaña),
- * lo que lleva con ellas (sin contar dos veces las que se corrigen, `valores.id`) y lo que da: en planta, los francos
- * compensatorios para usar dos meses después («… En octubre llevás 14 horas: 2 francos compensatorios para usar en
- * diciembre.»; sin llegar a 7 horas, solo lo que lleva); en contrato, las horas a favor del mes siguiente. Un horario que no
- * sirve, ''.
+ * Lo que suman unas horas extras mientras se cargan: «3,5 horas.» y, si la fecha es del año de la tabla cargada (la de la
+ * pestaña), lo que lleva el mes con ellas (sin contar dos veces las que se corrigen, `valores.id`; un mes sin fila en la tabla,
+ * la primera carga del mes, llevaba 0) y lo que da: en planta, los francos compensatorios para usar dos meses después («… En
+ * octubre llevás 14 horas: 2 francos compensatorios para usar en diciembre.»; sin llegar a 7 horas, solo lo que lleva); en
+ * contrato, las horas a favor del mes siguiente. Un horario que no sirve, ''.
  */
 function textoDeLaSuma(valores, tabla, modalidad) {
   const datos = esObjeto(valores) ? valores : {};
@@ -777,7 +787,7 @@ function textoDeLaSuma(valores, tabla, modalidad) {
   if (horas === null) return '';
   const base = `${textoDeHoras(horas)}.`;
   const mes = esFechaDeTexto(datos.fecha) ? datos.fecha.slice(0, 7) : null;
-  if (mes === null || !listaDe(tabla?.meses).some((fila) => fila.mes === mes)) return base;
+  if (mes === null || !esObjeto(tabla) || tabla.anio !== Number(mes.slice(0, 4))) return base;
   const otras = listaDe(deMapa(tabla.dias_por_mes, mes, []))
     .filter((dia) => datos.id === null || datos.id === undefined || String(dia.id) !== String(datos.id))
     .reduce((suma, dia) => suma + (horasDelHorario(dia.desde, dia.hasta) ?? 0), 0);
@@ -947,6 +957,18 @@ function anunciar(texto) {
   if (!region || !texto) return;
   region.textContent = region.textContent === texto ? `${texto} ` : texto;
 }
+
+// Un aviso de la página, como en Áreas, Feriados y Proyectos: el toast de main.js (showToast inserta HTML: se escapa) y, como el
+// toast no se anuncia, lo mismo en #me-anuncio. `tipo`: 'success', 'error' o 'warning'
+function avisarMiEspacio(texto, tipo) {
+  if (!conTexto(texto)) return;
+  if (typeof showToast === 'function') showToast(esc(texto), tipo);
+  anunciar(texto);
+}
+
+// Lo que se dice cuando un formulario no se puede abrir
+const MENSAJE_SIN_RESUMEN = 'No se pudo abrir el formulario: no se pudo cargar el resumen. Probá de nuevo en unos minutos.';
+const MENSAJE_SIN_SALDOS = 'No se pudo abrir «Mis vacaciones y saldos». Probá de nuevo en unos minutos.';
 
 // La sesión venció (401): se cierra y al login
 function irAlLogin() {
@@ -1178,15 +1200,16 @@ async function alTocarLicencias(evento) {
 
 // ---- Horas extras ----
 
-// Pide las horas extras de un año (null: el en curso); el día por día vuelve al mes de entrada. Si falla, como las licencias:
-// volver a la pestaña la pide otra vez. Devuelve si dibujó la pestaña
-async function cargarHorasExtras(anio, { conAnuncio = true } = {}) {
+// Pide las horas extras de un año (null: el en curso); el día por día vuelve al mes de entrada o, con `mes` (la recarga después
+// de guardar), sigue en ese mes si está en la tabla. Si falla, como las licencias: volver a la pestaña la pide otra vez.
+// Devuelve si dibujó la pestaña
+async function cargarHorasExtras(anio, { conAnuncio = true, mes = null } = {}) {
   const pedido = ++pagina.pedidos.horas;
   try {
     const { data } = await API.pedirJson('GET', Number.isInteger(anio) ? `/mi-espacio/horas-extras?anio=${anio}` : '/mi-espacio/horas-extras');
     if (pedido !== pagina.pedidos.horas) return false;
     pagina.horas = esObjeto(data) ? data : {};
-    pagina.mes = mesInicialDe(pagina.horas);
+    pagina.mes = mesDeLaTabla(pagina.horas, mes);
     pintarHoras();
     if (conAnuncio && Number.isInteger(anio) && Number.isInteger(pagina.horas.anio)) anunciar(`Horas extras de ${pagina.horas.anio}`);
     return true;
@@ -1293,7 +1316,12 @@ function conectarFormularios() {
     porId(id).addEventListener('input', programarCalculo);
     porId(id).addEventListener('change', programarCalculo);
   }
-  for (const id of ['ml-horas', 'mu-horas']) porId(id).addEventListener('change', programarCalculo);
+  for (const id of ['ml-horas', 'mu-horas']) {
+    porId(id).addEventListener('change', () => {
+      pintarMostrar();
+      programarCalculo();
+    });
+  }
   porId('ml-autorizado').addEventListener('change', () => { if (pagina.formulario) pintarPaso(pagina.formulario); });
   for (const nombre of ['licencia', 'uso']) {
     const { prefijo } = FORMULARIOS[nombre];
@@ -1358,12 +1386,18 @@ function alApretarUnaTecla(evento) {
 // Un grupo de opciones: el fieldset de unos radios (ml-tipos, ms-dias, ms-estudios)
 const esGrupoDeOpciones = (control) => String(control?.tagName).toLowerCase() === 'fieldset';
 
+// Si un control está dentro de algo oculto (un grupo con hidden, como el «Hasta» de los tipos de un día): su error no se vería
+const estaOculto = (control) => {
+  for (let nodo = control; typeof nodo?.tagName === 'string'; nodo = nodo.parentNode) if (nodo.hidden === true) return true;
+  return false;
+};
+
 // Muestra (o saca, con null) el error de un campo: su párrafo (<id>-error) y aria-invalid en el control. En un grupo de opciones,
 // aria-invalid va en cada radio (en un fieldset no vale: ARIA 1.2), que ya lo describe con aria-describedby. false si el control
-// no está
+// no está o, al poner un error, si está oculto (quien llama lo dice arriba del modal)
 function ponerError(id, mensaje) {
   const control = id ? porId(id) : null;
-  if (!control) return false;
+  if (!control || (mensaje && estaOculto(control))) return false;
   const parrafo = porId(`${id}-error`);
   if (parrafo) {
     parrafo.textContent = mensaje ?? '';
@@ -1400,12 +1434,15 @@ function limpiarErrores(nombre) {
   avisoDelModal(nombre, '');
 }
 
-// Los errores (`[[id del control, mensaje]]`), todos juntos (los demás campos quedan limpios), y el foco al primero. true si hubo
+// Los errores (`[[id del control, mensaje]]`), todos juntos (los demás campos quedan limpios), y el foco al primero. Uno sin un
+// control a la vista va arriba del modal. true si hubo
 function mostrarErrores(nombre, errores) {
   limpiarErrores(nombre);
   const conControl = errores.filter(([id, mensaje]) => ponerError(id, mensaje));
+  const sinControl = errores.filter((error) => !conControl.includes(error));
+  if (sinControl.length > 0) avisoDelModal(nombre, sinControl.map(([, mensaje]) => mensaje).join(' '));
   if (conControl.length > 0) controlDeFoco(conControl[0][0])?.focus?.();
-  return conControl.length > 0;
+  return errores.length > 0;
 }
 
 // Los errores de un formulario por campo (`{ campo: mensaje }`) con su control
@@ -1423,8 +1460,9 @@ const motivoDeLaFalla = (falla, sinMensaje) => {
   return conTexto(falla.message) ? falla.message : sinMensaje;
 };
 
-// Un error del servidor al guardar: con un campo del formulario, en ese campo y con el foco ahí; sin campo (o uno que no es del
-// formulario, o sin respuesta), arriba del modal, con el foco en el botón
+// Un error del servidor al guardar: con un campo del formulario a la vista, en ese campo y con el foco ahí; sin campo (o uno que
+// no es del formulario o está oculto, o sin respuesta), arriba del modal, con el foco en el botón (quien llama lo habilita antes:
+// uno deshabilitado no recibe el foco)
 function mostrarFallaDelServidor(nombre, falla, boton) {
   limpiarErrores(nombre);
   const mensaje = motivoDeLaFalla(falla, MENSAJE_NO_SE_GUARDO);
@@ -1499,20 +1537,22 @@ function devolverElFoco(respaldo) {
   }
 }
 
-// Después de guardar o de borrar: el Resumen y las pestañas que ya se cargaron (la que se ve, enseguida y con el año que tenía,
-// sin anunciarlo: se anuncia lo que se guardó; las otras, cuando se vuelvan a abrir). El foco, que cerrarModal devolvió al botón
-// que abrió el modal, va a su equivalente cuando terminan (respaldoDelFoco: la recarga reemplazó el botón)
+// Después de guardar o de borrar: el Resumen y las pestañas que ya se cargaron (la que se ve, enseguida y con el año que tenía
+// y, en Horas extras, el mes del día por día, sin anunciarlo: se anuncia lo que se guardó; las otras, cuando se vuelvan a abrir).
+// El foco, que cerrarModal devolvió al botón que abrió el modal, va a su equivalente cuando terminan (respaldoDelFoco: la recarga
+// reemplazó el botón)
 async function volverAPedirTodo() {
   const respaldo = respaldoDelFoco(document.activeElement);
   const cargas = [cargarResumen()];
-  const delAnio = (datos) => (Number.isInteger(datos.anio) && datos.anio !== anioDeHoy() ? datos.anio : null);
+  const anioQueTenia = (datos) => (Number.isInteger(datos.anio) && datos.anio !== anioDeHoy() ? datos.anio : null);
   if (pagina.licencias !== null) {
-    if (pagina.pestana === 'licencias') cargas.push(cargarLicencias(delAnio(pagina.licencias), { conAnuncio: false }));
+    if (pagina.pestana === 'licencias') cargas.push(cargarLicencias(anioQueTenia(pagina.licencias), { conAnuncio: false }));
     else pagina.licencias = null;
   }
   if (pagina.horas !== null) {
-    if (pagina.pestana === 'horas') cargas.push(cargarHorasExtras(delAnio(pagina.horas), { conAnuncio: false }));
-    else pagina.horas = null;
+    if (pagina.pestana === 'horas') {
+      cargas.push(cargarHorasExtras(anioQueTenia(pagina.horas), { conAnuncio: false, mes: pagina.mes }));
+    } else pagina.horas = null;
   }
   await Promise.all(cargas);
   devolverElFoco(respaldo);
@@ -1521,19 +1561,35 @@ async function volverAPedirTodo() {
 // Lo que dice el servidor al guardar: el mensaje y sus avisos (por ejemplo, que una corrección ya no se copia a Configuración)
 const textoDeLaRespuesta = (respuesta) => [respuesta?.message, ...(Array.isArray(respuesta?.avisos) ? respuesta.avisos : [])]
   .filter(conTexto).join(' ');
+// …en un aviso de la página: de éxito o, con avisos, de advertencia
+const avisarLaRespuesta = (respuesta) => avisarMiEspacio(textoDeLaRespuesta(respuesta),
+  Array.isArray(respuesta?.avisos) && respuesta.avisos.some(conTexto) ? 'warning' : 'success');
 
 // Un 404 (lo que se corregía o se borraba ya no está): se cierra el formulario, se avisa y se vuelve a pedir todo
 function noEstaMas(modal, falla) {
   cerrarModal(modal);
-  anunciar(falla?.message);
+  avisarMiEspacio(falla?.message, 'error');
   volverAPedirTodo();
+}
+
+// Los formularios necesitan el Resumen (los tipos de «Cargar licencia» y si falta el saldo inicial): si todavía no llegó, o
+// falló, se pide antes de abrir; si no llega, se avisa. true si se puede abrir (si mientras tanto se abrió otro modal, no)
+async function hayResumen() {
+  if (pagina.resumen !== null) return true;
+  await cargarResumen();
+  if (pagina.resumen === null) {
+    avisarMiEspacio(MENSAJE_SIN_RESUMEN, 'error');
+    return false;
+  }
+  return pagina.modales.length === 0;
 }
 
 // ---- «Cargar licencia» y «Registrar un uso autorizado» ----
 
 // Abre «Cargar licencia»: nueva (con el `tipo` de «Vence pronto») o la corrección de una fila de la lista. El uso autorizado tiene su
 // formulario. Sin el saldo inicial no se puede cargar nada: abre «Mis vacaciones y saldos»
-function abrirLicencia({ fila = null, tipo = null, volverA = null } = {}) {
+async function abrirLicencia({ fila = null, tipo = null, volverA = null } = {}) {
+  if (pagina.resumen === null && !(await hayResumen())) return;
   if (pagina.resumen?.abrir_saldos === true) {
     abrirSaldos(volverA);
     return;
@@ -1566,7 +1622,8 @@ function abrirLicencia({ fila = null, tipo = null, volverA = null } = {}) {
 }
 
 // Abre «Registrar un uso autorizado» (nuevo, o la corrección de una fila): la fecha y, en contrato, las horas
-function abrirUso({ fila = null, volverA = null } = {}) {
+async function abrirUso({ fila = null, volverA = null } = {}) {
+  if (pagina.resumen === null && !(await hayResumen())) return;
   if (pagina.resumen?.abrir_saldos === true) {
     abrirSaldos(volverA);
     return;
@@ -1585,19 +1642,20 @@ function abrirUso({ fila = null, volverA = null } = {}) {
 }
 
 // Lo común de los dos: el estado del formulario (el pedido del cálculo numera cada uno: una respuesta vieja se descarta;
-// `esperando`, hay uno programado o en vuelo, y «Guardar» espera su respuesta), la nota, «Mostrar a mis compañeros» (solo
-// administración), «Borrar» (o por qué no se puede) y lo que dice el cálculo, vacío hasta que llega
+// `esperando`, hay uno programado o en vuelo, y «Guardar» espera su respuesta; `sinCalculo`, el último no llegó, y «Guardar» lo
+// vuelve a pedir en lugar de guardar), la nota, «Mostrar a mis compañeros», «Borrar» (o por qué no se puede) y lo que dice el
+// cálculo, vacío hasta que llega
 function iniciarFormulario(nombre, { fila, valores }) {
   const { prefijo } = FORMULARIOS[nombre];
   cerrarFormulario();
   pagina.formulario = {
-    nombre, fila, valores, tipo: valores.tipo, paso: null, pedido: 0, esperando: false, temporizador: null, guardando: false,
-    pedidoSinAuditor: 0, firmante: null, autorizadoListo: false
+    nombre, fila, valores, tipo: valores.tipo, paso: null, pedido: 0, esperando: false, sinCalculo: false, temporizador: null,
+    guardando: false, pedidoSinAuditor: 0, firmante: null, autorizadoListo: false
   };
   limpiarErrores(nombre);
   porId(`${prefijo}-nota`).value = valores.nota;
   porId(`${prefijo}-mostrar`).checked = valores.mostrar;
-  porId(`${prefijo}-grupo-mostrar`).hidden = pagina.resumen?.persona?.ve_companeros !== true;
+  pintarMostrar();
   const quien = comoTexto(pagina.resumen?.persona?.nombre);
   porId(`${prefijo}-mostrar-ayuda`).textContent = `Ven «${quien} no está», sin el tipo de licencia.`;
   porId(`${prefijo}-borrar`).hidden = !(fila && fila.puede_borrar !== false);
@@ -1630,6 +1688,19 @@ function pintarCamposDelTipo() {
     porId('ml-horas').innerHTML = htmlDeOpcionesDeHoras(enHoras, elegidas);
     porId('ml-horas').value = elegidas;
   }
+  pintarMostrar();
+}
+
+// «Mostrar a mis compañeros»: solo para administración (los compañeros son administración) y solo en una licencia de día
+// entero (esDeDiaEntero): una franquicia o unas horas de menos de 7 horas no se les muestran nunca (spec, sección 7). Oculta,
+// no se lee: viaja lo que tenía
+function pintarMostrar() {
+  const formulario = pagina.formulario;
+  if (!formulario) return;
+  const { prefijo } = FORMULARIOS[formulario.nombre];
+  const horas = porId(`${prefijo}-grupo-horas`).hidden ? '' : porId(`${prefijo}-horas`).value;
+  porId(`${prefijo}-grupo-mostrar`).hidden = pagina.resumen?.persona?.ve_companeros !== true
+    || !esDeDiaEntero(formulario.tipo, horas, modalidadActual());
 }
 
 // Lo que dice el formulario abierto, como lo lee valoresDeLicencia
@@ -1663,15 +1734,25 @@ function programarCalculo() {
   formulario.temporizador = setTimeout(() => pedirCalculo(formulario), ESPERA_DEL_CALCULO);
 }
 
+// Pide el cálculo enseguida, sin la espera (desde «Guardar», cuando el anterior no llegó): mientras, «Guardar» espera
+function calcularYa(formulario) {
+  clearTimeout(formulario.temporizador);
+  formulario.esperando = true;
+  porId(`${FORMULARIOS[formulario.nombre].prefijo}-guardar`).disabled = true;
+  return pedirCalculo(formulario);
+}
+
 // El cálculo del servidor (POST /licencias/calculo, sin guardar nada): los días, de qué licencia salen, lo que queda, el error si
 // no se puede guardar (en su campo, sin llevarse el foco) y el paso a Configuración. Sin el tipo y las fechas (o las horas) no hay
-// nada que pedir. Una respuesta vieja (el formulario cambió o se cerró mientras) se descarta
+// nada que pedir. Una respuesta vieja (el formulario cambió o se cerró mientras) se descarta. Si no llega (un error del servidor
+// o sin conexión), el formulario lo dice y queda `sinCalculo`: sin él no se ve qué pasa con Configuración
 async function pedirCalculo(formulario) {
   if (pagina.formulario !== formulario) return;
   const pedido = ++formulario.pedido;
   const valores = valoresDelFormulario(formulario);
   const { tipo, desde, hasta, horas } = erroresDeLicencia(valores, { modalidad: modalidadActual() });
   let data = null;
+  let falla = null;
   if (!tipo && !desde && !hasta && !horas) {
     const cuerpo = cuerpoDeLicencia(valores);
     if (valores.id !== null) cuerpo.id = valores.id;
@@ -1683,20 +1764,23 @@ async function pedirCalculo(formulario) {
         irAlLogin();
         return;
       }
+      falla = error ?? {};
     }
     if (pagina.formulario !== formulario || pedido !== formulario.pedido) return;
   }
-  await pintarCalculo(formulario, esObjeto(data) ? data : null, valores);
+  formulario.sinCalculo = falla !== null;
+  await pintarCalculo(formulario, esObjeto(data) ? data : null, valores, falla);
   if (pagina.formulario !== formulario || pedido !== formulario.pedido) return;
   formulario.esperando = false;
   porId(`${FORMULARIOS[formulario.nombre].prefijo}-guardar`).disabled = formulario.guardando;
 }
 
-async function pintarCalculo(formulario, data, valores) {
+async function pintarCalculo(formulario, data, valores, falla = null) {
   const { nombre } = formulario;
   const { prefijo } = FORMULARIOS[nombre];
   formulario.paso = esObjeto(data?.paso) ? data.paso : null;
   limpiarErrores(nombre);
+  if (falla !== null) avisoDelModal(nombre, textoSinCalculo(falla));
   if (esObjeto(data?.error) && conTexto(data.error.mensaje)) {
     if (!ponerError(deMapa(FORMULARIOS[nombre].campos, data.error.campo, null), data.error.mensaje)) {
       avisoDelModal(nombre, data.error.mensaje);
@@ -1756,18 +1840,20 @@ function datosDelFirmante() {
 
 // El aviso del paso a Configuración: azul si pasa; si no, en ámbar, por qué. En las vacaciones del titular, con el efecto en las
 // notas de la persona elegida y sus días de licencia, solo si se sabe quién queda a cargo: «Nadie» o una de la lista. Con el
-// campo oculto (GET /mi-espacio/firmante falló: la persona que tenía se conserva) o con «Otro usuario (ya no cumple las
-// condiciones)», «Sin persona autorizada…» sería falso y el efecto no va
+// campo oculto al corregir (GET /mi-espacio/firmante falló: la persona que tenía se conserva) o con «Otro usuario (ya no cumple
+// las condiciones)», «Sin persona autorizada…» sería falso y el efecto no va. En unas nuevas con el campo oculto, nadie queda a
+// cargo (autorizado_id no viaja): ahí sí es cierto y va
 function pintarPaso(formulario) {
   const caja = porId(`${FORMULARIOS[formulario.nombre].prefijo}-paso`);
   const valores = valoresDelFormulario(formulario);
   const conCampo = conPersonaACargo(formulario);
   const elegida = conCampo
     ? listaDe(formulario.firmante?.autorizables).find((persona) => String(persona.id) === valores.autorizado) : undefined;
+  const nuevaSinCampo = !conCampo && formulario.nombre === 'licencia' && formulario.fila === null;
   caja.innerHTML = htmlDelPaso(formulario.paso, {
     autorizado: elegida?.nombre_completo ?? null, ausencias: elegida?.ausencias ?? [],
     hoy: formulario.firmante?.hoy ?? Utils.hoyEnArgentina(), desde: valores.desde, hasta: valores.hasta,
-    conEfecto: conCampo && (elegida !== undefined || !conTexto(valores.autorizado))
+    conEfecto: nuevaSinCampo || (conCampo && (elegida !== undefined || !conTexto(valores.autorizado)))
   });
   caja.hidden = caja.innerHTML === '';
   caja.classList.toggle('azul', formulario.paso?.pasa === true);
@@ -1796,14 +1882,21 @@ async function actualizarSinAuditor(formulario, valores) {
   caja.hidden = periodos.length === 0;
 }
 
-// «Guardar»: los errores del formulario antes de pedir nada; si no hay, POST o PUT. Mientras, «Guardar» queda deshabilitado (un
-// doble clic manda un solo pedido). Al guardar, se cierra, se anuncia lo que dijo el servidor y se vuelve a pedir todo
+// «Guardar»: los errores del formulario antes de pedir nada; si el último cálculo no llegó, lo vuelve a pedir y no guarda (sin él
+// no se vio qué pasa con Configuración); si no, POST o PUT. Mientras, «Guardar» queda deshabilitado (un doble clic manda un solo
+// pedido). Al guardar, se cierra, se avisa lo que dijo el servidor y se vuelve a pedir todo
 async function guardarLicencia(nombre) {
   const formulario = pagina.formulario;
   const boton = porId(`${FORMULARIOS[nombre].prefijo}-guardar`);
   if (formulario?.nombre !== nombre || formulario.guardando || formulario.esperando) return;
   const valores = valoresDelFormulario(formulario);
   if (mostrarErrores(nombre, conSusControles(nombre, erroresDeLicencia(valores, { modalidad: modalidadActual() })))) return;
+  if (formulario.sinCalculo) {
+    await calcularYa(formulario);
+    // Mientras esperaba quedó deshabilitado: el foco vuelve a él
+    if (pagina.formulario === formulario) boton.focus?.();
+    return;
+  }
   const cuerpo = cuerpoDeLicencia(valores, { soyTitular: conPersonaACargo(formulario) });
   formulario.guardando = true;
   boton.disabled = true;
@@ -1813,10 +1906,11 @@ async function guardarLicencia(nombre) {
       : await API.pedirJson('POST', '/mi-espacio/licencias', cuerpo);
     formulario.guardando = false;
     cerrarModal(FORMULARIOS[nombre].modal);
-    anunciar(textoDeLaRespuesta(respuesta));
+    avisarLaRespuesta(respuesta);
     volverAPedirTodo();
   } catch (error) {
     formulario.guardando = false;
+    boton.disabled = formulario.esperando;
     if (error?.status === 401) irAlLogin();
     else if (error?.status === 404) noEstaMas(FORMULARIOS[nombre].modal, error);
     else if (pagina.formulario === formulario) mostrarFallaDelServidor(nombre, error, boton);
@@ -1841,7 +1935,8 @@ function pedirBorrarLicencia(nombre) {
 
 // Abre «Cargar horas extras» (nuevas, o la corrección de un día del día por día), con lo que suman en el mes: si la tabla de la
 // pestaña todavía no llegó, la pide, sin mostrar la pestaña
-function abrirHorasExtras({ dia = null, volverA = null } = {}) {
+async function abrirHorasExtras({ dia = null, volverA = null } = {}) {
+  if (pagina.resumen === null && !(await hayResumen())) return;
   if (pagina.resumen?.abrir_saldos === true) {
     abrirSaldos(volverA);
     return;
@@ -1886,10 +1981,11 @@ async function guardarHorasExtras() {
       : await API.pedirJson('POST', '/mi-espacio/horas-extras', cuerpoDeHoras(valores));
     formulario.guardando = false;
     cerrarModal('modal-horas');
-    anunciar(textoDeLaRespuesta(respuesta));
+    avisarLaRespuesta(respuesta);
     volverAPedirTodo();
   } catch (error) {
     formulario.guardando = false;
+    boton.disabled = false;
     if (error?.status === 401) irAlLogin();
     else if (error?.status === 404) noEstaMas('modal-horas', error);
     else if (pagina.horasExtras === formulario) mostrarFallaDelServidor('horasExtras', error, boton);
@@ -1911,30 +2007,34 @@ function pedirBorrarHorasExtras() {
 // ---- «Mis vacaciones y saldos» ----
 
 // Abre «Mis vacaciones y saldos» (spec, sección 4) con lo que vale para el año en curso (GET /anio/:anio) y los campos de «Para
-// arrancar» (GET /saldo-inicial). Si no se puede, lo anuncia
+// arrancar» (GET /saldo-inicial). Si no se puede, un aviso lo dice (sin el saldo inicial, los botones de carga llevan acá: nunca
+// quedan sin responder). `recargarAlCerrar`: el año se guardó y el saldo no; al cerrarlo, la página se vuelve a pedir
 async function abrirSaldos(volverA = null) {
   if (pagina.saldos !== null) return;
   const anio = anioDeHoy();
   pagina.saldos = { cargando: true };
-  let delAnio;
+  let deEseAnio;
   let saldo;
   try {
-    [{ data: delAnio }, { data: saldo }] = await Promise.all([
+    [{ data: deEseAnio }, { data: saldo }] = await Promise.all([
       API.pedirJson('GET', `/mi-espacio/anio/${anio}`), API.pedirJson('GET', '/mi-espacio/saldo-inicial')
     ]);
   } catch (error) {
     pagina.saldos = null;
     if (error?.status === 401) irAlLogin();
-    else anunciar('No se pudo abrir «Mis vacaciones y saldos». Probá de nuevo en unos minutos.');
+    else avisarMiEspacio(MENSAJE_SIN_SALDOS, 'error');
     return;
   }
-  if (!esObjeto(delAnio) || !esObjeto(saldo) || !Array.isArray(saldo.campos)) {
+  if (!esObjeto(deEseAnio) || !esObjeto(saldo) || !Array.isArray(saldo.campos)) {
     pagina.saldos = null;
-    anunciar(comoTexto(saldo?.mensaje) || comoTexto(delAnio?.mensaje));
+    avisarMiEspacio(comoTexto(saldo?.mensaje) || comoTexto(deEseAnio?.mensaje) || MENSAJE_SIN_SALDOS, 'warning');
     return;
   }
-  const dias = DIAS_VACACIONES.includes(delAnio.dias_vacaciones) ? delAnio.dias_vacaciones : null;
-  pagina.saldos = { anio, campos: saldo.campos, camposDelModal: saldo.campos, textos: delAnio.textos_mitades, guardando: false };
+  const dias = DIAS_VACACIONES.includes(deEseAnio.dias_vacaciones) ? deEseAnio.dias_vacaciones : null;
+  pagina.saldos = {
+    anio, campos: saldo.campos, camposDelModal: saldo.campos, textos: deEseAnio.textos_mitades, guardando: false,
+    recargarAlCerrar: false
+  };
   const modalidad = pagina.resumen?.modalidad?.texto;
   porId('ms-modalidad').innerHTML = conTexto(modalidad)
     ? `Modalidad: <b>${esc(modalidad)}</b> <span class="me-opcional">(la carga administración en Configuración → Usuarios)</span>` : '';
@@ -1942,11 +2042,19 @@ async function abrirSaldos(volverA = null) {
   porId('ms-dias-rotulo').textContent = `Días de la licencia ${String(anio)}`;
   porId('ms-dias-opciones').innerHTML = htmlDeDiasDeVacaciones(dias);
   // Sin días elegidos todavía (la primera vez), los estudios tampoco; si no, null es «No estudio»
-  porId('ms-estudios-opciones').innerHTML = htmlDeEstudios(dias === null ? undefined : (delAnio.estudios ?? ''));
+  porId('ms-estudios-opciones').innerHTML = htmlDeEstudios(dias === null ? undefined : (deEseAnio.estudios ?? ''));
   pintarCamposDelSaldo(valoresDelSaldo(saldo.campos));
   limpiarErrores('saldos');
   porId('ms-guardar').disabled = false;
-  abrirModal('modal-saldos', { volverA, foco: () => controlDeFoco('ms-dias'), alCerrar: () => { pagina.saldos = null; } });
+  abrirModal('modal-saldos', { volverA, foco: () => controlDeFoco('ms-dias'), alCerrar: cerrarSaldos });
+}
+
+// Al cerrar «Mis vacaciones y saldos» guardado a medias (con «Cancelar», la × o Escape), los días del año nuevos ya están en la
+// base: la página se vuelve a pedir, después de que el foco vuelva al botón que lo abrió (respaldoDelFoco lo busca)
+function cerrarSaldos() {
+  const recargar = pagina.saldos?.recargarAlCerrar === true;
+  pagina.saldos = null;
+  if (recargar) Promise.resolve().then(volverAPedirTodo);
 }
 
 // Lo elegido en el modal: los días (o null) y los estudios (la carrera, null por «No estudio» o undefined si no eligió)
@@ -1999,15 +2107,18 @@ async function guardarSaldos() {
     anioGuardado = true;
     const respuesta = await API.pedirJson('PUT', '/mi-espacio/saldo-inicial', cuerpoDelSaldo(valores, saldos.camposDelModal));
     saldos.guardando = false;
+    saldos.recargarAlCerrar = false;
     cerrarModal('modal-saldos');
-    anunciar(textoDeLaRespuesta(respuesta));
+    avisarLaRespuesta(respuesta);
     volverAPedirTodo();
   } catch (error) {
     saldos.guardando = false;
+    boton.disabled = false;
     if (error?.status === 401) irAlLogin();
     else if (pagina.saldos === saldos && !anioGuardado) mostrarFallaDelServidor('saldos', error, boton);
     else if (pagina.saldos === saldos) {
       // El año ya se guardó: el motivo del saldo, en su campo (si es de «Para arrancar» o de los días) y arriba del modal
+      saldos.recargarAlCerrar = true;
       limpiarErrores('saldos');
       const id = porId(`ms-campo-${error?.campo}`) ? `ms-campo-${error.campo}` : deMapa(FORMULARIOS.saldos.campos, error?.campo, null);
       const motivo = motivoDeLaFalla(error, MENSAJE_NO_SE_GUARDO);
@@ -2050,10 +2161,11 @@ async function confirmarElBorrado() {
     actual.ocupado = false;
     cerrarModal('modal-confirmar');
     cerrarModal(actual.formulario);
-    anunciar(textoDeLaRespuesta(respuesta));
+    avisarLaRespuesta(respuesta);
     volverAPedirTodo();
   } catch (error) {
     actual.ocupado = false;
+    boton.disabled = false;
     if (error?.status === 401) irAlLogin();
     else if (error?.status === 404) {
       cerrarModal('modal-confirmar');

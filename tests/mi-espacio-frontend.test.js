@@ -15,7 +15,8 @@ import {
   calcular, vinculosDeLaLista, MENSAJES_MI_ESPACIO, ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, DIAS_VACACIONES,
   DIAS_ESTUDIOS,
   DIAS_POR_EXAMEN, JORNADA, LARGO_NOTA, horasDe as horasDelServidor, camposDelSaldoInicial, validarSaldoInicial, textoSaldo,
-  textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaSinDias
+  textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaSinDias,
+  TIPOS_DE_UN_DIA, TIPOS_POR_HORAS, esDiaEntero
 } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
@@ -918,10 +919,11 @@ const RESPUESTAS_DE_ENTRADA = (metodo, ruta) => {
 
 // `cuadros`: con true, la ventana tiene un requestAnimationFrame que anota las funciones en estado.cuadros (las corre el test);
 // sin él, la página no anima. Los temporizadores no corren solos: `correr` corre los que hay (el foco de los modales y la
-// espera del cálculo). `auditor`: lo que contesta Auth.isAuditor(). Hoy es HOY
+// espera del cálculo). `auditor`: lo que contesta Auth.isAuditor(). Hoy es HOY. `estado.toasts`: cada showToast (el de main.js),
+// [mensaje, tipo]
 const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, auditor = false } = {}) => {
   const { dom, documento } = crearDom();
-  const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [] };
+  const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [], toasts: [] };
   // Los temporizadores pendientes, por su id: un número que solo crece (un clearTimeout viejo nunca anula uno nuevo)
   const temporizadores = new Map();
   let ultimoTemporizador = 0;
@@ -948,6 +950,7 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
       getAuthHeaders: () => ({ 'Content-Type': 'application/json', Authorization: 'Bearer token-de-prueba' }),
       clearSession: () => { estado.sesionCerrada = true; }
     },
+    showToast: (mensaje, tipo) => { estado.toasts.push([mensaje, tipo]); },
     URLSearchParams,
     setTimeout: (funcion, ms) => {
       ultimoTemporizador += 1;
@@ -1331,6 +1334,9 @@ describe('los formularios: las paridades', () => {
     assert.equal(M.LARGO_NOTA, LARGO_NOTA);
     for (const maximo of [0, 7, 15, 25, 30, 42, 200]) assert.equal(M.textoSaldo(maximo), textoSaldo(maximo), String(maximo));
     assert.equal(M.TEXTO_SIN_ARRANQUE, MENSAJES_MI_ESPACIO.sinArranque);
+    // Los tipos de un solo día y los que se cargan en horas
+    assert.deepEqual(plano(M.TIPOS_DE_UN_DIA), [...TIPOS_DE_UN_DIA]);
+    assert.deepEqual(plano(M.TIPOS_CON_HORAS), [...TIPOS_POR_HORAS]);
   });
 
   it('horasDelHorario es horasDe: diez horarios, con la medianoche y los que no sirven', () => {
@@ -1551,8 +1557,19 @@ describe('los formularios: lo puro', () => {
     const contrato = horasDe(CONTRATO);
     assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-10-28', desde: '19:00', hasta: '22:30' }, contrato, 'contrato'),
       '3,5 horas. En octubre llevás 7,5 horas: en noviembre vas a tener 7,5 horas a favor.');
-    // Un mes que no está en la tabla cargada, o sin tabla: solo las horas; un horario que no sirve, nada
-    assert.equal(M.textoDeLaSuma({ ...valores, fecha: '2026-11-03' }, planta, 'planta'), '3,5 horas.');
+    // La primera del mes (un mes sin fila en la tabla cuenta 0 horas antes de esta carga): también dice lo que lleva y lo que da
+    assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-05-15', desde: '09:00', hasta: '17:00' }, planta, 'planta'),
+      '8 horas. En mayo llevás 8 horas: 1 franco compensatorio para usar en julio.');
+    assert.equal(M.textoDeLaSuma({ ...valores, fecha: '2026-11-03' }, planta, 'planta'), '3,5 horas. En noviembre llevás 3,5 horas.');
+    assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-08-15', desde: '09:00', hasta: '17:00' }, contrato, 'contrato'),
+      '8 horas. En agosto llevás 8 horas: en septiembre vas a tener 8 horas a favor.');
+    // Con la tabla vacía del año (ninguna cargada), igual
+    const vacia = { ...planta, meses: [], dias_por_mes: {} };
+    assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-08-15', desde: '09:00', hasta: '17:00' }, vacia, 'planta'),
+      '8 horas. En agosto llevás 8 horas: 1 franco compensatorio para usar en octubre.');
+    // Una fecha de otro año que el de la tabla cargada, o sin tabla: solo las horas; un horario que no sirve, nada
+    assert.equal(M.textoDeLaSuma({ ...valores, fecha: '2027-01-05' }, planta, 'planta'), '3,5 horas.');
+    assert.equal(M.textoDeLaSuma(valores, { ...planta, anio: null }, 'planta'), '3,5 horas.');
     assert.equal(M.textoDeLaSuma(valores, null, 'planta'), '3,5 horas.');
     assert.equal(M.textoDeLaSuma({ ...valores, hasta: '19:00' }, planta, 'planta'), '');
     // Pasa la medianoche: cuenta en el día en que empezó
@@ -1710,6 +1727,8 @@ describe('los formularios en la página (DOM falso)', () => {
     await pagina.esperar();
     assert.equal(pagina.abierto('modal-licencia'), false);
     assert.equal(pagina.el('me-anuncio').textContent, 'Licencia cargada.');
+    // Y se ve: el aviso de la página (el toast), además de la región viva
+    assert.deepEqual(pagina.estado.toasts, [['Licencia cargada.', 'success']]);
     assert.equal(pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length, resumenes + 1);
   });
 
@@ -1944,21 +1963,119 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.ok(pagina.el('ml-paso').textContent.includes('una nota que comunica la autorización a Martín Ríos'));
   });
 
-  it('si GET /mi-espacio/firmante falla, el campo queda oculto y el paso no dice «Sin persona autorizada»', async () => {
+  // En unas vacaciones nuevas, sin el campo nadie queda a cargo (autorizado_id no viaja y el servidor la crea sin persona a cargo):
+  // ahí «Sin persona autorizada…» es cierto y se dice
+  it('si GET /mi-espacio/firmante falla en unas vacaciones nuevas, el campo queda oculto y el paso dice «Sin persona autorizada»',
+    async () => {
+      const pagina = montarPagina({
+        responder: conFormularios({
+          soyTitular: true,
+          extra: (metodo, ruta) => (ruta === '/api/mi-espacio/firmante' ? respuesta(500, { success: false, error: 'Error' }) : undefined)
+        })
+      });
+      await pagina.iniciar();
+      await cargarLicencia(pagina);
+      assert.equal(pagina.el('ml-grupo-autorizado').hidden, true);
+      assert.ok(pagina.el('ml-paso').textContent.includes(AVISO_DEL_PASO));
+      assert.ok(pagina.el('ml-paso').textContent.includes('Sin persona autorizada'));
+      // Y al guardar, autorizado_id no viaja
+      await pagina.tocar(pagina.el('ml-guardar'));
+      assert.ok(!Object.hasOwn(pagina.pedidosA('POST', '/api/mi-espacio/licencias')[0].cuerpo, 'autorizado_id'));
+    });
+
+  // Al corregir, la persona que tenía se conserva: sin saber quién es, «Sin persona autorizada…» sería falso
+  it('si GET /mi-espacio/firmante falla al corregir unas vacaciones, el paso no dice «Sin persona autorizada»', async () => {
+    const lista = licenciasDe(PLANTA);
+    lista.licencias[0] = { ...lista.licencias[0], desde: '2026-11-16', hasta: '2026-11-20', fechas_texto: '16/11 al 20/11/2026',
+      en_configuracion: { licencia_id: 40, autorizado_id: 3 } };
     const pagina = montarPagina({
+      hash: '#licencias',
       responder: conFormularios({
         soyTitular: true,
-        extra: (metodo, ruta) => (ruta === '/api/mi-espacio/firmante' ? respuesta(500, { success: false, error: 'Error' }) : undefined)
+        extra: (metodo, ruta) => {
+          if (ruta === '/api/mi-espacio/firmante') return respuesta(500, { success: false, error: 'Error' });
+          if (ruta === '/api/mi-espacio/licencias') return ok(lista);
+          if (metodo === 'PUT') return ok({ id: 6 }, 'Licencia corregida.');
+          return undefined;
+        }
       })
     });
     await pagina.iniciar();
-    await cargarLicencia(pagina);
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]'));
+    await pagina.correr();
     assert.equal(pagina.el('ml-grupo-autorizado').hidden, true);
     assert.ok(pagina.el('ml-paso').textContent.includes(AVISO_DEL_PASO));
     assert.ok(!pagina.el('ml-paso').textContent.includes('Sin persona autorizada'));
-    // Y al guardar, autorizado_id no viaja
     await pagina.tocar(pagina.el('ml-guardar'));
-    assert.ok(!Object.hasOwn(pagina.pedidosA('POST', '/api/mi-espacio/licencias')[0].cuerpo, 'autorizado_id'));
+    assert.ok(!Object.hasOwn(pagina.pedidosA('PUT', '/api/mi-espacio/licencias/6')[0].cuerpo, 'autorizado_id'));
+  });
+
+  // Sin el cálculo no se ve qué pasa con Configuración (el aviso del paso): la licencia no se guarda sin él
+  it('si el cálculo falla, lo dice en el modal, sin el aviso del paso, y «Guardar» lo vuelve a pedir en lugar de guardar',
+    async () => {
+      let falla = respuesta(500, { success: false, error: 'Error al calcular la licencia' });
+      const pagina = montarPagina({
+        responder: conFormularios({
+          extra: (metodo, ruta) => {
+            if (metodo === 'POST' && ruta === '/api/mi-espacio/licencias/calculo' && falla !== null) {
+              return typeof falla === 'function' ? falla() : falla;
+            }
+            if (metodo === 'POST' && ruta === '/api/mi-espacio/licencias') {
+              return respuesta(201, { success: true, data: { id: 9 }, message: 'Licencia cargada.' });
+            }
+            return undefined;
+          }
+        })
+      });
+      await pagina.iniciar();
+      await cargarLicencia(pagina);
+      assert.equal(pagina.el('ml-error').textContent, 'No se pudo calcular: hubo un error en el servidor. Probá de nuevo en unos minutos.');
+      assert.equal(pagina.el('ml-error').hidden, false);
+      assert.equal(pagina.el('ml-paso').hidden, true);
+      assert.equal(pagina.el('ml-calculo').hidden, true);
+      assert.equal(pagina.el('ml-guardar').disabled, false, 'para volver a intentar');
+      // «Guardar» vuelve a pedir el cálculo y no guarda; sin conexión, lo dice en castellano
+      falla = () => { throw new TypeError('Failed to fetch'); };
+      const antes = calculos(pagina).length;
+      await pagina.tocar(pagina.el('ml-guardar'));
+      assert.equal(calculos(pagina).length, antes + 1);
+      assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 0);
+      assert.equal(pagina.el('ml-error').textContent,
+        'No se pudo calcular: no se pudo conectar con el servidor. Probá de nuevo en unos minutos.');
+      // Cuando sale, el aviso del paso se ve y recién el próximo «Guardar» guarda
+      falla = null;
+      await pagina.tocar(pagina.el('ml-guardar'));
+      assert.equal(calculos(pagina).length, antes + 2);
+      assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 0);
+      assert.equal(pagina.el('ml-error').hidden, true);
+      assert.ok(pagina.el('ml-paso').textContent.includes(AVISO_DEL_PASO));
+      await pagina.tocar(pagina.el('ml-guardar'));
+      assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 1);
+      assert.equal(pagina.abierto('modal-licencia'), false);
+    });
+
+  it('el cálculo del uso autorizado que falla, también: en #mu-error, y «Guardar» lo vuelve a pedir', async () => {
+    let falla = true;
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: conFormularios({
+        extra: (metodo, ruta) => {
+          if (metodo !== 'POST' || !ruta.endsWith('/calculo')) return undefined;
+          return falla ? respuesta(500, { success: false, error: 'Error al calcular la licencia' }) : ok({ error: null, vista: null, paso: null });
+        }
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-abrir="uso"]'));
+    await pagina.escribir('mu-fecha', '2026-11-16');
+    await pagina.correr();
+    assert.equal(pagina.el('mu-error').textContent, 'No se pudo calcular: hubo un error en el servidor. Probá de nuevo en unos minutos.');
+    falla = false;
+    const antes = calculos(pagina).length;
+    await pagina.tocar(pagina.el('mu-guardar'));
+    assert.equal(calculos(pagina).length, antes + 1);
+    assert.equal(pagina.el('mu-error').hidden, true);
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 0);
   });
 
   // La recarga de la lista reemplaza el «Editar» que abrió el modal: el foco va a su equivalente, nunca queda en <body>
@@ -2251,5 +2368,196 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.equal(pagina.abierto('modal-licencia'), true);
     assert.equal(pagina.el('ml-tipos').querySelector('input:checked').getAttribute('value'), 'franco');
     assert.equal(pagina.el('ml-grupo-hasta').hidden, true);
+  });
+
+  // Como las páginas hermanas (Áreas, Feriados, Proyectos): el toast se ve y la región viva lo anuncia. showToast inserta HTML
+  it('lo que dice el servidor se ve en un aviso de la página (escapado) y se anuncia: un 404 al guardar y un borrado', async () => {
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conFormularios({
+        extra: (metodo) => {
+          if (metodo === 'PUT') return respuesta(404, { success: false, error: MALICIOSO });
+          if (metodo === 'DELETE') return ok(undefined, 'Licencia borrada.');
+          return undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]'));
+    await pagina.correr();
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.deepEqual(pagina.estado.toasts, [[ESCAPADO, 'error']]);
+    assert.equal(pagina.el('me-anuncio').textContent, MALICIOSO);
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="6"]'));
+    await pagina.tocar(pagina.el('ml-borrar'));
+    await pagina.tocar(pagina.el('modal-confirmar-si'));
+    assert.deepEqual(pagina.estado.toasts.at(-1), ['Licencia borrada.', 'success']);
+  });
+
+  // Sin el saldo inicial, los tres botones llevan acá: una persona nueva nunca queda frente a botones que no responden
+  it('si «Mis vacaciones y saldos» no se puede abrir (GET /anio o GET /saldo-inicial fallan), un aviso lo dice cada vez', async () => {
+    let falla = true;
+    const pagina = montarPagina({
+      responder: conSaldosParaArrancar({
+        extra: (metodo, ruta) => (falla && ruta === '/api/mi-espacio/saldo-inicial'
+          ? respuesta(500, { success: false, error: 'Error al obtener el saldo inicial' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.correr();
+    const texto = 'No se pudo abrir «Mis vacaciones y saldos». Probá de nuevo en unos minutos.';
+    assert.equal(pagina.abierto('modal-saldos'), false);
+    assert.deepEqual(pagina.estado.toasts, [[texto, 'error']]);
+    assert.equal(pagina.el('me-anuncio').textContent, texto);
+    await pagina.tocar(pagina.el('btn-cargar-licencia'));
+    assert.equal(pagina.abierto('modal-licencia'), false);
+    assert.equal(pagina.estado.toasts.length, 2);
+    // Cuando responde, se abre
+    falla = false;
+    await pagina.tocar(pagina.el('vista-resumen').querySelector('[data-abrir="saldos"]'));
+    assert.equal(pagina.abierto('modal-saldos'), true);
+  });
+
+  it('«Cargar licencia» antes de que llegue el Resumen (o si falló) lo pide; si no llega, lo avisa y no abre sin los tipos',
+    async () => {
+      let falla = true;
+      const pagina = montarPagina({
+        hash: '#licencias',
+        responder: conFormularios({
+          extra: (metodo, ruta) => (falla && ruta === '/api/mi-espacio/resumen' ? respuesta(500, { success: false, error: 'Error' })
+            : undefined)
+        })
+      });
+      await pagina.iniciar();
+      const resumenes = () => pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length;
+      assert.equal(resumenes(), 1);
+      await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-cargar="licencia"]'));
+      assert.equal(resumenes(), 2);
+      assert.equal(pagina.abierto('modal-licencia'), false);
+      assert.deepEqual(pagina.estado.toasts,
+        [['No se pudo abrir el formulario: no se pudo cargar el resumen. Probá de nuevo en unos minutos.', 'error']]);
+      falla = false;
+      await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-cargar="licencia"]'));
+      assert.equal(resumenes(), 3);
+      assert.equal(pagina.abierto('modal-licencia'), true);
+      assert.equal(pagina.el('ml-tipos-opciones').innerHTML, M.htmlDeTiposDeLicencia(RESUMEN_DE_PLANTA.tipos, ''));
+    });
+
+  it('un error del servidor en un campo oculto (el hasta de una franquicia) va al aviso del modal, no queda invisible', async () => {
+    const pagina = montarPagina({
+      responder: conFormularios({
+        extra: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/mi-espacio/licencias'
+          ? respuesta(400, { success: false, error: 'La fecha no es válida.', campo: 'hasta' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await cargarLicencia(pagina, { tipo: 'franquicia', desde: '2026-11-16', horas: '3' });
+    assert.equal(pagina.el('ml-grupo-hasta').hidden, true);
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.el('ml-error').textContent, 'La fecha no es válida.');
+    assert.equal(pagina.el('ml-error').hidden, false);
+    assert.equal(pagina.el('ml-hasta-error').hidden, true);
+    assert.equal(pagina.el('ml-hasta').getAttribute('aria-invalid'), null);
+    assert.equal(pagina.documento.activeElement, pagina.el('ml-guardar'));
+  });
+
+  it('«Mis vacaciones y saldos» guardado a medias (el año sí, el saldo no) y cerrado con «Cancelar»: vuelve a pedir la página',
+    async () => {
+      const pagina = montarPagina({
+        responder: conSaldosParaArrancar({
+          extra: (metodo, ruta) => {
+            if (metodo === 'PUT' && ruta === '/api/mi-espacio/anio/2026') return ok({ anio: 2026 }, 'Días del año guardados.');
+            if (metodo === 'PUT' && ruta === '/api/mi-espacio/saldo-inicial') {
+              return respuesta(400, { success: false, error: 'Escribí un número de 0 a 30.', campo: 'vacaciones-2024' });
+            }
+            return undefined;
+          }
+        })
+      });
+      await pagina.iniciar();
+      await pagina.correr();
+      await pagina.elegir('ms-dia', '20');
+      await pagina.elegir('ms-estudio', '');
+      for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
+      await pagina.tocar(pagina.el('ms-guardar'));
+      assert.equal(pagina.abierto('modal-saldos'), true);
+      const resumenes = () => pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length;
+      const antes = resumenes();
+      await pagina.tocar(pagina.el('modal-saldos').querySelector('.modal-footer [data-cerrar]'));
+      assert.equal(pagina.abierto('modal-saldos'), false);
+      assert.equal(resumenes(), antes + 1);
+      // Sin nada guardado, cerrarlo no pide nada
+      await pagina.tocar(pagina.el('vista-resumen').querySelector('[data-abrir="saldos"]'));
+      assert.equal(pagina.abierto('modal-saldos'), true);
+      await pagina.tocar(pagina.el('modal-saldos').querySelector('.modal-footer [data-cerrar]'));
+      assert.equal(resumenes(), antes + 1);
+    });
+
+  it('después de guardar unas horas extras de un mes pasado, el día por día sigue en ese mes', async () => {
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: conFormularios({ extra: (metodo) => (metodo === 'PUT' ? ok({ id: 5 }, 'Horas extras corregidas.') : undefined) })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-mes="2026-08"]'));
+    const editar = pagina.el('vista-horas').querySelector('[data-editar-horas="5"]');
+    assert.ok(editar, 'el día por día de agosto');
+    editar.focus();
+    await pagina.tocar(editar);
+    await pagina.tocar(pagina.el('mh-guardar'));
+    assert.equal(pagina.abierto('modal-horas'), false);
+    assert.equal(pagina.el('vista-horas').querySelector('[data-mes="2026-08"]').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.documento.activeElement, pagina.el('vista-horas').querySelector('[data-editar-horas="5"]'));
+  });
+
+  // Spec, sección 7: las franquicias y las horas de menos de 7 horas no se les muestran nunca a los compañeros
+  it('«Mostrar a mis compañeros» solo en una licencia de día entero: no en una franquicia ni unas horas de menos de 7', async () => {
+    const pagina = montarPagina({ responder: conFormularios() });
+    await pagina.iniciar();
+    await cargarLicencia(pagina, { tipo: 'franquicia', desde: '2026-11-16', horas: '3' });
+    assert.equal(pagina.el('ml-grupo-mostrar').hidden, true);
+    // Con la jornada entera, sí
+    await pagina.escribir('ml-horas', '7', 'change');
+    assert.equal(pagina.el('ml-grupo-mostrar').hidden, false);
+    await pagina.escribir('ml-horas', '6', 'change');
+    assert.equal(pagina.el('ml-grupo-mostrar').hidden, true);
+    // Una de días enteros, sí
+    await pagina.elegir('ml-tipo', 'medica');
+    assert.equal(pagina.el('ml-grupo-mostrar').hidden, false);
+    await pagina.tocar(pagina.el('modal-licencia').querySelector('.modal-footer [data-cerrar]'));
+    // El uso autorizado de planta es un franco, el día entero
+    await pagina.tocar(pagina.el('tab-horas'));
+    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-abrir="uso"]'));
+    assert.equal(pagina.el('mu-grupo-mostrar').hidden, false);
+  });
+
+  it('esDeDiaEntero: las de horas, solo con la jornada entera; el uso autorizado de planta es el día entero', () => {
+    for (const [tipo, horas, modalidad, esperado] of [['horas_a_favor', '3', 'contrato', false], ['horas_a_favor', '7', 'contrato', true],
+      ['uso_autorizado', '6.5', 'contrato', false], ['uso_autorizado', '7', 'contrato', true], ['uso_autorizado', '', 'planta', true],
+      ['franquicia', '', 'planta', false], ['franquicia', '7', 'planta', true], ['vacaciones', '', 'planta', true],
+      ['franco', '', 'planta', true], ['', '', 'planta', true]]) {
+      assert.equal(M.esDeDiaEntero(tipo, horas, modalidad), esperado, `${tipo} ${horas} ${modalidad}`);
+    }
+    // Lo mismo que esDiaEntero del servidor con las horas que guarda (el uso autorizado de planta, la jornada entera)
+    for (const tipo of ['vacaciones', 'medica', 'franco', 'franquicia', 'horas_a_favor', 'uso_autorizado']) {
+      for (const modalidad of ['planta', 'contrato']) {
+        for (const horas of ['', '0.5', '3', '6.5', '7']) {
+          let guardadas = null;
+          if (tipo === 'uso_autorizado' && modalidad === 'planta') guardadas = JORNADA;
+          else if (TIPOS_POR_HORAS.includes(tipo) && horas !== '') guardadas = Number(horas);
+          assert.equal(M.esDeDiaEntero(tipo, horas, modalidad), esDiaEntero({ tipo, horas: guardadas }), `${tipo} ${horas} ${modalidad}`);
+        }
+      }
+    }
+  });
+});
+
+describe('mi-espacio.html: los estilos de los errores', () => {
+  // aria-invalid va en cada radio, no en el fieldset (ARIA 1.2): el borde rojo se engancha del radio
+  it('el borde rojo de un grupo de opciones con error sale del radio con aria-invalid', () => {
+    const html = leer('mi-espacio.html');
+    assert.ok(html.includes('.me-opcion:has(input[aria-invalid="true"])'));
+    assert.ok(html.includes('.me-numero input[aria-invalid="true"] + span'));
+    assert.ok(!html.includes('.me-grupo[aria-invalid="true"]'));
   });
 });

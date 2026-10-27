@@ -243,7 +243,7 @@
         .me-modal .form-input, .me-modal .form-select { height: 44px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; color: var(--sg-texto); }
         .me-modal .form-hint { color: var(--sg-suave); font-size: 0.84rem; line-height: 1.4; }
         .me-modal .form-error { color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; margin: 4px 0 0; overflow-wrap: anywhere; }
-        .me-modal .form-input[aria-invalid="true"], .me-modal .form-select[aria-invalid="true"], .me-grupo[aria-invalid="true"] .me-opcion, .me-grupo[aria-invalid="true"] .me-numero span { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+        .me-modal .form-input[aria-invalid="true"], .me-modal .form-select[aria-invalid="true"], .me-opcion:has(input[aria-invalid="true"]), .me-numero input[aria-invalid="true"] + span { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
         .me-modal-error { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; border: 1px solid #EFCACA; background: #FBEEEE; color: var(--sg-rojo); font-weight: 600; font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
         .me-modal-de { margin: 0 0 16px; color: var(--sg-texto); font-size: 0.92rem; }
         .me-opcional { font-weight: 400; color: var(--sg-suave); }
