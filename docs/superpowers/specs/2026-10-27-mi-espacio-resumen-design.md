@@ -126,7 +126,7 @@ Al final, después de una línea, con su título. El usuario lo eligió abajo y 
   - la frase se achica con su `clamp`;
   - la barra baja a 38 px de alto;
   - la lista de la regla pasa a una columna.
-- **Los números del resto** van de a dos por fila.
+- **Los números del resto** van de a dos por fila. Esto, y las columnas de «Hoy y mañana» una debajo de la otra, empiezan ya en 760 px (ver «Decisiones»).
 
 ## 3. El movimiento
 
@@ -137,7 +137,7 @@ Al final, después de una línea, con su título. El usuario lo eligió abajo y 
 - **Qué pasa:**
   1. **La regla y la frase,** en unos 1,3 s. Los tramos se dibujan de izquierda a derecha, uno detrás del otro (`scaleX` desde la izquierda, cada uno con un tiempo proporcional a sus días). Al mismo tiempo, el número de la frase sube de 0 al suyo, y el número de cada tramo aparece cuando su tramo casi terminó.
   2. **Las líneas del resto,** a los 0,9 s. Se llenan de izquierda a derecha, una detrás de la otra, y sus números suben con ellas.
-- **Con qué:** CSS, la Web Animations API (`element.animate`) y `requestAnimationFrame` para los números, sin librerías. Sin `requestAnimationFrame` (los tests), todo queda en su valor final.
+- **Con qué:** transiciones de CSS y `requestAnimationFrame` para los números, sin librerías. La página le pone `data-animar` a la pestaña, que en el `<style>` deja vacíos y sin transición los tramos y las líneas, y se lo saca dos cuadros después: ahí empiezan las transiciones, cada una con la demora y la duración que van en su `style`. Los números suben con `requestAnimationFrame`: el de la frase, mientras se dibuja la regla; los del resto, con la misma curva que sus líneas. Sin `requestAnimationFrame` (los tests), todo queda en su valor final.
 - **Con `prefers-reduced-motion: reduce`,** nada se mueve: todo está en su valor desde el principio, sin el parpadeo de un cuadro vacío.
 - **Lo que no se mueve:** «Vence pronto», «Hoy y mañana», la ola, y nada que dé vueltas o se repita.
 
@@ -192,8 +192,8 @@ La página no corta `detalle`: usa `dia` y `quien` (Ruling 19).
 - **La banda** es una `section` con `aria-labelledby` en la frase.
 - **«Vence pronto»** es una `aside` con su título (`h2`).
 - **«El resto»** y **«Hoy y mañana»** son `section`, cada una con su `h2`.
-- **El número de la frase que sube** va en un `span` con `aria-hidden="true"`, y al lado va el número final, oculto a la vista (`.visualmente-oculto`). Un lector de pantalla nunca lee un número a medio contar. En los números del resto alcanza con el `aria-label` del link.
-- **La barra de la regla** es decorativa (`aria-hidden`). La lista de debajo dice lo mismo en texto.
+- **El número de la frase que sube** va en un `span` con `aria-hidden="true"`, encima de una copia invisible del final que le da su ancho (también `aria-hidden`), y al lado va el número final, oculto a la vista (`.visualmente-oculto`). Un lector de pantalla nunca lee un número a medio contar. En los números del resto alcanza con el `aria-label` del link.
+- **La barra de la regla** es decorativa (`aria-hidden`). La lista de debajo dice lo mismo en texto, con su nombre: «Tus vacaciones, por licencia» (`aria-label`).
 - **El talón de cada entrada** es decorativo, porque su línea ya dice la fecha. El botón se describe con el título de lo que vence (`aria-describedby`), como hoy.
 - **El foco visible** es el de la página: el anillo `--tinta` con halo `--sol-fuerte`.
 - **El contraste,** 4,5:1 o más en todo el texto, también:
@@ -247,6 +247,12 @@ Titular usa esos eventos como dice 2.3, con los dos campos de 4.4. La Task 1 de 
 - **El movimiento sigue la regla de hoy:** una vez por carga de la página, también si la banda aparece recién después de guardar el saldo inicial, y quieto con `prefers-reduced-motion`.
 - **Lo que ya venció** dice «Venció el viernes 30/10.» (4.1).
 - **Los eventos suman `dia` y `quien`** para las columnas de «Hoy y mañana» (4.4).
+- **De la revisión final (27/10/2026):**
+  - **El movimiento usa transiciones de CSS,** no la Web Animations API: `data-animar` en la pestaña, que se saca dos cuadros después, y los números con `requestAnimationFrame` (sección 3). Se ve igual. Las líneas del resto usan la misma curva que sus números (`cubic-bezier(0.33, 1, 0.68, 1)`, la de 1 − (1 − x)³), así el número no se adelanta a su línea.
+  - **Con `prefers-reduced-motion`, tampoco cuentan los números:** están en su valor desde el principio, sin pasar por 0.
+  - **La lista de la regla se llama «Tus vacaciones, por licencia»** (`aria-label`), como en la maqueta aprobada.
+  - **El número de la frase mide desde el principio lo que el valor final:** una copia invisible del final y el número que sube van en la misma celda. No queda un hueco antes de un número de una cifra, y el título no se vuelve a partir cuando el conteo pasa de 9 a 10.
+  - **A media anchura, ninguna fila empieza con la línea que separa:** con más de 760 px, los números del resto y las columnas de «Hoy y mañana» van cada uno en una sola fila. Con 760 px o menos, los números van de a dos por fila, sin la línea en el primero de cada una, y las columnas, una debajo de la otra. Antes, entre unos 641 y 711 px, quedaban 3 + 1 con la línea al principio de la segunda fila.
 
 ## Lo que queda para quien lo construye
 
