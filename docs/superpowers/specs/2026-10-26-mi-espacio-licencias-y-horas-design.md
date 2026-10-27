@@ -312,6 +312,8 @@ Las medidas, los colores y los textos están en las maquetas. Acá van las regla
 - **Los modales** son los de administración (`.modal-overlay` y `.modal` con `.active`, `aria-modal`). Un clic en el velo no los cierra, como en Configuración: son formularios largos.
 - **Es una de las páginas con carcasa,** que pasan a ser 14 (sección 11).
 
+El Resumen «Niveles» se reemplazó por «Titular» (`2026-10-27-mi-espacio-resumen-design.md`).
+
 **Resumen, «Niveles»** (maqueta 1):
 - **Arriba, la modalidad y el año.**
 - **«Vence pronto»:** cada cosa con su fecha en un bloque amarillo (el día grande y el mes), qué vence y un botón para resolverla («Cargarlo», «Usarlas», «Cargar vacaciones»).

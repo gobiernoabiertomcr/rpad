@@ -1,11 +1,12 @@
 // Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 8 y 11), ejecutado en Node: lo puro de public/js/mi-espacio.js
-// (las pestañas; el Resumen «Niveles», con Vence pronto, los faltantes, los tanques, las pastillas y Hoy y mañana; la lista de
-// licencias con su selector del año y sus filtros, las tablas de horas extras, el día por día y las horas no utilizadas previamente)
-// con los datos que arma el servidor (services/miEspacioResumen.js) sobre los casos de tests/fixtures/mi-espacio-casos.js, pasados
-// por JSON como los manda la API; y, con un DOM falso y un fetch falso, la carga de las pestañas. Los formularios (Task 17): lo puro,
-// las copias atadas por tests de paridad (con services/miEspacioReglas.js y con usuarios.js, en su propio vm) y, con el DOM falso,
-// los modales. Como proyectos.js, el script al cargarse solo declara: se carga en un vm después del api.js de verdad
-// (Utils.escapeHtml). Las personas son las inventadas de la maqueta.
+// (las pestañas; el Resumen «Titular» de la spec 2026-10-27-mi-espacio-resumen, con los faltantes, la banda —la frase, Vence pronto y
+// la regla—, el resto y Hoy y mañana en columnas; la lista de licencias con su selector del año y sus filtros, las tablas de horas
+// extras, el día por día y las horas no utilizadas previamente) con los datos que arma el servidor (services/miEspacioResumen.js)
+// sobre los casos de tests/fixtures/mi-espacio-casos.js, pasados por JSON como los manda la API; y, con un DOM falso y un fetch
+// falso, la carga de las pestañas. Los formularios (Task 17): lo puro, las copias atadas por tests de paridad (con
+// services/miEspacioReglas.js y con usuarios.js, en su propio vm) y, con el DOM falso, los modales. Como proyectos.js, el script al
+// cargarse solo declara: se carga en un vm después del api.js de verdad (Utils.escapeHtml). Las personas son las inventadas de la
+// maqueta.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
@@ -114,6 +115,9 @@ const MALICIOSO = '<img src=x onerror=alert(1)>';
 // Lo que dice la página cuando un pedido no llega al servidor
 const MENSAJE_SIN_CONEXION = 'No se pudo conectar con el servidor. Probá de nuevo en unos minutos.';
 const ESCAPADO = '&lt;img src=x onerror=alert(1)&gt;';
+// Con una comilla doble adelante: en un atributo, intenta cerrarlo y abrir una etiqueta
+const CON_COMILLAS = '"><img src=x onerror=alert(1)>';
+const CON_COMILLAS_ESCAPADO = '&quot;&gt;&lt;img src=x onerror=alert(1)&gt;';
 
 describe('mi-espacio.js: al cargarse', () => {
   it('no toca el DOM: solo declara y espera el DOMContentLoaded', () => {
@@ -193,149 +197,124 @@ describe('sin modalidad y sin arranque', () => {
 // Los links de un HTML: { atributos, adentro, texto }
 const linksDe = (html) => [...html.matchAll(/<a ([^>]*)>([\s\S]*?)<\/a>/g)]
   .map(([, atributos, adentro]) => ({ atributos: atributosDe(atributos), adentro, texto: textoDe(adentro) }));
-// Las capas de un tanque (los rect con la clase de una capa), con sus números: { clase, y, alto }
-const capasDelSvg = (svg) => [...svg.matchAll(/<rect class="(c-[\w-]+)"([^>]*)\/>/g)].map(([, clase, atributos]) => {
-  const leidos = atributosDe(atributos);
-  return { clase, y: Number(leidos.y), alto: Number(leidos.height) };
-});
-const casi = (a, b, tolerancia = 0.11) => Math.abs(a - b) <= tolerancia;
+// El Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen, 2 y 5), con los textos que arma el servidor: los tramos de la regla
+// ({ clase, n, demora, duracion, numero }), las filas de una lista con o sin clase ({ clases, html, texto }) y las columnas de «Hoy y
+// mañana» ({ titulo, html, texto })
+const tramosDe = (html) => [...html.matchAll(/<span class="me-tramo (\w+)" style="--n:([^;"]*);--demora:([^;"]*);--duracion:([^;"]*)"><span>([^<]*)<\/span><\/span>/g)]
+  .map(([, clase, n, demora, duracion, numero]) => ({ clase, n, demora, duracion, numero }));
+const itemsDe = (html) => [...html.matchAll(/<li(?: class="([^"]*)")?>([\s\S]*?)<\/li>/g)]
+  .map(([, clases = '', adentro]) => ({ clases: clases.split(' ').filter(Boolean), html: adentro, texto: textoDe(adentro) }));
+const columnasDe = (html) => [...html.matchAll(/<div class="me-columna"><h3>([^<]*)<\/h3>([\s\S]*?)<\/div>/g)]
+  .map(([, titulo, adentro]) => ({ titulo, html: adentro, texto: textoDe(adentro) }));
+// Los títulos (h2) de un HTML, como los lee un lector de pantalla: sin lo que va con aria-hidden (el de la frase, con el número una
+// sola vez, el oculto a la vista)
+const sinLoDecorativo = (html) => html.replace(/<(\w+)\b[^>]*\baria-hidden="true"[^>]*>[^<]*<\/\1>/g, '');
+const titulosDe = (html) => [...html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/g)].map(([, adentro]) => textoDe(sinLoDecorativo(adentro)));
+// La línea de cada número del resto: [--p, --demora]
+const lineasDe = (html) => [...html.matchAll(/<span class="me-linea" aria-hidden="true"><i style="--p:([^;"]*)%;--demora:([^;"]*)ms"><\/i><\/span>/g)]
+  .map(([, p, demora]) => [p, demora]);
+const VER_LA_AGENDA = '<a class="sg-link" href="#agenda" data-pestana="agenda">Ver la agenda</a>';
+const CABEZA_DE_HOY = '<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 id="me-hoy-titulo">Hoy y mañana</h2>';
+const SIN_EVENTOS = '<p class="me-vacio">No tenés eventos hoy ni mañana.</p>';
+const sinNumerosRaros = (html, mensaje) => assert.doesNotMatch(html, /NaN|Infinity|undefined|null/, mensaje);
 
-describe('el Resumen «Niveles»', () => {
+describe('el Resumen «Titular»', () => {
   const planta = resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_MARTIN] });
   const contrato = resumenDel(CONTRATO);
+  // Los eventos de hoy y de mañana como los arma el servidor (Task 2: con `dia` y `quien`): «Llamar a Vialidad…» hoy a las 12:00,
+  // solo vos, y «Reunión de equipo» mañana a las 10:00, con 4 personas. Se arman al correr cada caso (las ayudas de la agenda están
+  // más abajo en el archivo)
+  const eventosDeHoy = () => comoLlega(eventosDeHoyYManana(respuestaDeEventos({ desde: HOY, hasta: MANANA }).eventos, HOY));
 
-  it('PLANTA: arriba la modalidad y el año; después Vence pronto, Lo que te queda y Hoy y mañana, en ese orden', () => {
+  it('PLANTA: la banda (la frase, «Vence pronto» y la regla, y la ola), «El resto de 2026» y «Hoy y mañana», en ese orden; sin el renglón de la modalidad', () => {
     const html = M.htmlDelResumen(planta);
-    assert.ok(html.startsWith('<p class="me-contexto"><span><b>Planta permanente</b></span><span>Año 2026</span></p>'));
-    assert.deepEqual([...html.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map(([, titulo]) => titulo), ['Vence pronto', 'Lo que te queda', 'Hoy y mañana']);
-    // «Lo que te queda» dice el día y abre «Mis vacaciones y saldos»
-    const cabeza = html.match(/<div class="me-panel-cabeza">[\s\S]*?<\/div>/)[0];
-    assert.ok(textoDe(cabeza).startsWith('Lo que te queda Al lunes 26/10/2026'));
-    assert.deepEqual(botonesDe(cabeza).map(({ atributos, texto }) => [atributos['data-abrir'], texto]), [['saldos', 'Mis vacaciones y saldos']]);
-    // Las pastillas y la médica extraordinaria, dentro de «Lo que te queda»
-    assert.ok(html.includes(M.htmlDePastillas(planta.pastillas)));
-    assert.ok(html.includes('<p class="me-previos">Atención médica extraordinaria: sin tope y aparte de los 25 días. No usaste en 2026.</p>'));
-    assert.ok(html.indexOf('me-previos') < html.indexOf('Hoy y mañana'));
+    assert.ok(html.startsWith('<section class="me-banda" aria-labelledby="me-frase"><div class="me-banda-cuerpo">'));
+    assert.deepEqual(titulosDe(html), ['Te quedan 33 días de vacaciones', 'Vence pronto', 'El resto de 2026', 'Hoy y mañana']);
+    const lugares = ['class="me-titular"', 'class="me-vence"', 'class="me-regla"', 'class="me-ola"', 'class="me-resto"', 'class="me-hoy"']
+      .map((clase) => html.indexOf(clase));
+    assert.ok(lugares.every((lugar) => lugar > 0), String(lugares));
+    assert.deepEqual(lugares, [...lugares].sort((a, b) => a - b));
+    assert.equal(html, M.htmlDeLaBanda(planta) + M.htmlDelResto(planta) + M.htmlDeHoyYManana(planta.hoy_y_manana, true));
+    // El renglón «Planta permanente · Año 2026» se fue: el día y la modalidad van arriba de la frase, y el año, en «El resto de 2026»
+    assert.ok(!html.includes('me-contexto'));
+    assert.ok(!html.includes('Año 2026'));
   });
 
-  it('Vence pronto: cada cosa con su fecha en el bloque amarillo, qué vence y el botón que la resuelve, con su tipo', () => {
+  it('la banda: una section que se nombra con la frase; adentro, la frase, «Vence pronto» y la regla, y después la ola, decorativa', () => {
+    const banda = M.htmlDeLaBanda(planta);
+    const cuerpo = M.htmlDeLaFrase(planta.titular) + M.htmlDeVencePronto(planta.vence_pronto) + M.htmlDeLaRegla(planta.tanques.vacaciones);
+    const abre = `<section class="me-banda" aria-labelledby="me-frase"><div class="me-banda-cuerpo">${cuerpo}</div>`;
+    assert.ok(banda.startsWith(abre));
+    assert.match(banda.slice(abre.length), /^<svg class="me-ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="[^"]+" fill="currentColor"\/><\/svg><\/section>$/);
+    // Sin la frase o sin los tanques (sin un hoy válido), no hay banda
+    assert.equal(M.htmlDeLaBanda({ ...planta, titular: null }), '');
+    assert.equal(M.htmlDeLaBanda({ ...planta, tanques: null }), '');
+  });
+
+  it('la banda y el resto, sin un Resumen (null, undefined, un número o un texto): nada, sin romperse', () => {
+    for (const raro of [null, undefined, 42, 'x']) {
+      assert.equal(M.htmlDeLaBanda(raro), '', String(raro));
+      assert.equal(M.htmlDelResto(raro), '', String(raro));
+    }
+  });
+
+  it('la frase: el día y la modalidad, «Te quedan 33 días de vacaciones» con el número tres veces (el final invisible, el que se ve y el oculto) y la bajada', () => {
+    assert.equal(M.htmlDeLaFrase(planta.titular), '<div class="me-titular"><p class="me-banda-dia">Lunes 26 de octubre, planta permanente</p>'
+      + '<h2 class="me-frase" id="me-frase">Te quedan <span class="me-cifra"><span class="me-cifra-final" aria-hidden="true">33</span>'
+      + '<span aria-hidden="true" data-contar>33</span><span class="visualmente-oculto">33</span></span> días de vacaciones</h2>'
+      + '<p class="me-frase-bajada"><b class="vence">3 vencen el jueves 31/12.</b> 5 ya están cargados para noviembre. '
+      + 'Otros 10 se habilitan el 1/1/2027.</p></div>');
+    // CONTRATO: una sola oración, que no vence
+    assert.ok(M.htmlDeLaFrase(contrato.titular).startsWith('<div class="me-titular"><p class="me-banda-dia">Lunes 26 de octubre, contrato</p>'));
+    assert.ok(M.htmlDeLaFrase(contrato.titular).endsWith('</h2><p class="me-frase-bajada">Otros 7 se habilitan el 1/1/2027.</p></div>'));
+    // Con 1 día: «Te queda 1 día de vacaciones», y el número, también tres veces
+    const uno = M.htmlDeLaFrase({ ...planta.titular, antes: 'Te queda', cifra: '1', despues: 'día de vacaciones' });
+    assert.equal(titulosDe(uno)[0], 'Te queda 1 día de vacaciones');
+    assert.ok(uno.includes('<span class="me-cifra"><span class="me-cifra-final" aria-hidden="true">1</span><span aria-hidden="true" data-contar>1</span>'
+      + '<span class="visualmente-oculto">1</span></span>'));
+    // Con 0: la frase sin el número (sin cifra, sin .me-cifra); sin oraciones, sin bajada
+    const sinDias = M.htmlDeLaFrase({ ...planta.titular, antes: 'No te quedan días de vacaciones', cifra: '', despues: '', bajada: [] });
+    assert.ok(sinDias.includes('<h2 class="me-frase" id="me-frase">No te quedan días de vacaciones</h2>'));
+    assert.ok(!sinDias.includes('me-cifra'));
+    assert.ok(!sinDias.includes('data-contar'));
+    assert.ok(!sinDias.includes('me-frase-bajada'));
+    assert.equal(M.htmlDeLaFrase(null), '');
+  });
+
+  it('«Vence pronto»: un aside con su título; cada cosa, una entrada con el talón decorativo, el título, su línea y el botón con su tipo', () => {
     const html = M.htmlDeVencePronto(planta.vence_pronto);
-    assert.match(html, /^<section class="me-vence" aria-labelledby="me-vence-titulo"><h2 class="me-titulo" id="me-vence-titulo">Vence pronto<\/h2>/);
+    assert.ok(html.startsWith('<aside class="me-vence" aria-labelledby="me-vence-titulo"><h2 id="me-vence-titulo">Vence pronto</h2><ol class="me-entradas">'));
+    assert.ok(html.endsWith('</ol></aside>'));
     assert.deepEqual(filasDe(html).map(({ clases, texto }) => [clases.join(' '), texto]), [
-      ['me-vence-item', '30 oct Viernes 30/10 1 franco compensatorio de octubre Es el último día hábil del mes. Si no lo usás, queda como '
-        + 'no utilizado previamente. Cargarlo'],
-      ['me-vence-item', '31 dic Jueves 31/12 3 días de la licencia 2024 Ese día vence la licencia 2024. Cargar vacaciones']
+      ['me-entrada', '30 oct 1 franco compensatorio de octubre Vence el viernes 30/10, en 4 días. Cargarlo'],
+      ['me-entrada', '31 dic 3 días de la licencia 2024 Vencen el jueves 31/12, en 66 días. Cargar vacaciones']
     ]);
-    // El bloque de la fecha es decorativo: «Viernes 30/10» ya la dice
-    assert.ok(html.includes('<span class="me-fecha" aria-hidden="true"><b>30</b>oct</span>'));
+    // El talón es decorativo: la línea ya dice la fecha
+    assert.ok(html.includes('<span class="me-talon" aria-hidden="true"><b>30</b>oct</span>'));
+    assert.ok(html.includes('<b id="me-vence-0">1 franco compensatorio de octubre</b><span class="me-entrada-texto">Vence el viernes 30/10, en 4 días.</span>'));
     assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [texto, atributos['data-accion'], atributos['data-tipo'], atributos['aria-describedby']]), [
       ['Cargarlo', 'cargar-licencia', 'franco', 'me-vence-0'], ['Cargar vacaciones', 'cargar-licencia', 'vacaciones', 'me-vence-1']
     ]);
-    assert.ok(html.includes('<b id="me-vence-0">1 franco compensatorio de octubre</b>'));
+    // Los textos largos de «Niveles» se fueron
+    assert.ok(!html.includes('Viernes 30/10'));
+    assert.ok(!html.includes('Es el último día hábil'));
+    // CONTRATO: las horas a favor
+    assert.deepEqual(filasDe(M.htmlDeVencePronto(contrato.vence_pronto)).map(({ texto }) => texto),
+      ['30 oct 1,5 horas a favor de octubre Vencen el viernes 30/10, en 4 días. Usarlas']);
     assert.equal(M.htmlDeVencePronto([]), '');
     assert.equal(M.htmlDeVencePronto(null), '');
   });
 
-  it('el tanque de vacaciones es un link a #licencias con el aria-label del servidor, y su SVG es decorativo', () => {
-    const [vacaciones] = linksDe(M.htmlDeTanques(planta.tanques));
-    assert.equal(vacaciones.atributos.href, '#licencias');
-    assert.equal(vacaciones.atributos['data-pestana'], 'licencias');
-    assert.equal(vacaciones.atributos['aria-label'], 'Vacaciones: 33 días hábiles disponibles. Ver tus licencias');
-    assert.match(vacaciones.adentro, /<svg class="me-tanque" [^>]*aria-hidden="true"/);
-    assert.equal(vacaciones.texto, '33 días Vacaciones de 3 licencias');
-  });
-
-  it('el tanque de vacaciones: cinco capas de abajo hacia arriba, cada una n / capacidad × alto, que suman el tanque y ninguna sale', () => {
-    const { vacaciones } = planta.tanques;
-    assert.equal(vacaciones.capacidad, 48);
-    const svg = M.svgDeTanque({ capas: vacaciones.capas, capacidad: vacaciones.capacidad, ancho: 88, alto: 176, id: 'me-tanque-0' });
-    assert.match(svg, /^<svg class="me-tanque" viewBox="0 0 88 176" width="88" height="176" aria-hidden="true" focusable="false">/);
-    const capas = capasDelSvg(svg);
-    assert.deepEqual(capas.map(({ clase }) => clase), ['c-vence', 'c-tinta', 'c-medio', 'c-cargadas', 'c-por-habilitar']);
-    capas.forEach(({ alto }, i) => assert.ok(casi(alto, (vacaciones.capas[i].n / 48) * 176), `capa ${i}: ${alto}`));
-    // La primera apoya en el fondo, cada una sobre la anterior, y la última llega arriba de todo
-    assert.ok(casi(capas[0].y + capas[0].alto, 176));
-    for (let i = 1; i < capas.length; i += 1) assert.ok(casi(capas[i].y + capas[i].alto, capas[i - 1].y), `capa ${i} sobre la anterior`);
-    assert.ok(casi(capas.at(-1).y, 0));
-    assert.ok(casi(capas.reduce((suma, { alto }) => suma + alto, 0), 176));
-    assert.ok(capas.every(({ y, alto }) => y >= 0 && alto >= 0 && y + alto <= 176.0001));
-    // Las cargadas, rayadas (el patrón del propio tanque); las por habilitar, con su clase (punteadas en el <style>)
-    assert.ok(svg.includes('<pattern id="me-tanque-0-rayas"'));
-    assert.match(svg, /<rect class="c-cargadas" fill="url\(#me-tanque-0-rayas\)"/);
-    assert.ok(svg.includes('<clipPath id="me-tanque-0">') && svg.includes('clip-path="url(#me-tanque-0)"'));
-    // El nivel que se llena al abrir
-    assert.ok(svg.includes('<g class="me-tanque-nivel" style="--alto:176px">'));
-  });
-
-  it('al lado del tanque de vacaciones, la lista de cada capa con su número: lo que vence en ámbar; lo cargado y lo que no se habilita, en gris', () => {
-    const html = M.htmlDeTanques(planta.tanques);
-    const leyenda = html.match(/<ul class="me-leyenda-vac">[\s\S]*?<\/ul>/)[0];
-    assert.deepEqual(filasDe(leyenda).map(({ clases, texto }) => [clases.join(' '), texto]), [
-      ['me-capa vence', 'Licencia 2024 Vence el 31/12/2026 3'],
-      ['me-capa', 'Licencia 2025 Vence el 31/12/2027 20'],
-      ['me-capa', 'Licencia 2026 La primera mitad 10'],
-      ['me-capa tenue', 'Cargados Cargados para noviembre 5'],
-      ['me-capa tenue', 'Todavía no Se habilitan el 1/1/2027 10']
-    ]);
-    assert.deepEqual([...leyenda.matchAll(/<i class="me-muestra (c-[\w-]+)" aria-hidden="true"><\/i>/g)].map(([, clase]) => clase),
-      ['c-vence', 'c-tinta', 'c-medio', 'c-cargadas', 'c-por-habilitar']);
-  });
-
-  it('los demás tanques: cada uno un link a su pestaña, con el número arriba y el nombre con su total debajo', () => {
-    const [, ...otros] = linksDe(M.htmlDeTanques(planta.tanques));
-    assert.deepEqual(otros.map(({ atributos, texto }) => [atributos.href, atributos['aria-label'], texto]), [
-      ['#licencias', 'Franquicias: quedan 25 de 42 horas. Ver tus licencias', '25 horas Franquicias de 42 horas'],
-      ['#licencias', 'Estudios: quedan 9 de 15 días. Ver tus licencias', '9 días Estudios de 15 días'],
-      ['#licencias', 'Atención médica: quedan 22 de 25 días. Ver tus licencias', '22 días Atención médica de 25 días'],
-      ['#licencias', 'Grupo familiar: quedan 23 de 25 días. Ver tus licencias', '23 días Grupo familiar de 25 días']
-    ]);
-    // Ninguno vence: tinta, sin ámbar; el de franquicias, 25 de 42 del alto
-    assert.ok(otros.every(({ atributos }) => atributos.class === 'me-nivel'));
-    const [franquicias] = capasDelSvg(otros[0].adentro);
-    assert.equal(franquicias.clase, 'c-tinta');
-    assert.ok(casi(franquicias.alto, (25 / 42) * 112));
-  });
-
-  it('CONTRATO: el tanque de horas a favor, que vence este mes, en ámbar y con su link a #horas', () => {
-    const [vacaciones, horas, ...resto] = linksDe(M.htmlDeTanques(contrato.tanques));
-    assert.equal(vacaciones.atributos['aria-label'], 'Vacaciones: 13 días hábiles disponibles. Ver tus licencias');
-    assert.equal(horas.atributos.href, '#horas');
-    assert.equal(horas.atributos['data-pestana'], 'horas');
-    assert.equal(horas.atributos.class, 'me-nivel vence');
-    assert.equal(horas.atributos['aria-label'], 'Horas a favor: quedan 1,5 de 10,5 horas en octubre. Ver tus horas extras');
-    assert.equal(horas.texto, '1,5 horas Horas a favor de 10,5 en octubre');
-    assert.deepEqual(capasDelSvg(horas.adentro).map(({ clase }) => clase), ['c-vence']);
-    assert.ok(resto.every(({ atributos }) => atributos.href === '#licencias' && atributos.class === 'me-nivel'));
-    // Sin la licencia que vence, tres capas: las dos licencias y lo que no se habilita
-    assert.deepEqual(capasDelSvg(vacaciones.adentro).map(({ clase }) => clase), ['c-tinta', 'c-medio', 'c-por-habilitar']);
-  });
-
-  it('las pastillas: el mes que vence, el disponible, el que todavía suma y lo no utilizado previamente', () => {
-    const html = M.htmlDePastillas(planta.pastillas);
-    assert.match(html, /^<h3 class="me-subtitulo">Francos compensatorios<\/h3><ol class="me-pastillas">/);
-    assert.deepEqual(filasDe(html).map(({ clases, texto }) => [clases.join(' '), texto]), [
-      ['me-pastilla vence', '1 Octubre Hasta el viernes 30/10'],
-      ['me-pastilla', '1 Noviembre Por las horas de septiembre'],
-      ['me-pastilla pendiente', '1 Diciembre Octubre sigue sumando'],
-      ['me-pastilla previo', '1 Agosto No utilizado previamente']
-    ]);
-    assert.deepEqual(filasDe(M.htmlDePastillas(contrato.pastillas)).map(({ clases, texto }) => [clases.join(' '), texto]), [
-      ['me-pastilla vence', '1,5 Octubre De 10,5, hasta el viernes 30/10'],
-      ['me-pastilla pendiente', '4 Noviembre Octubre sigue sumando'],
-      ['me-pastilla previo', '6,5 Horas de 2026 No utilizadas previamente']
-    ]);
-    // Sin ningún mes ni nada no utilizado, nada
-    assert.equal(M.htmlDePastillas({ titulo: 'Francos compensatorios', meses: [], previo: null }), '');
-    assert.equal(M.htmlDePastillas(null), '');
-  });
-
-  it('sin nada que venza: sin «Vence pronto» y sin marca', () => {
+  it('sin nada que venza: sin «Vence pronto», la frase y la regla a todo el ancho (sin-vence) y sin marca', () => {
     const resumen = resumenDel(PLANTA, { estado: SIN_NADA_QUE_VENZA });
     assert.deepEqual(resumen.vence_pronto, []);
     assert.equal(resumen.marca, false);
     const html = M.htmlDelResumen(resumen);
+    assert.ok(html.startsWith('<section class="me-banda" aria-labelledby="me-frase"><div class="me-banda-cuerpo sin-vence"><div class="me-titular">'));
+    assert.ok(!html.includes('<aside'));
     assert.ok(!html.includes('Vence pronto'));
     assert.doesNotMatch(html, /data-accion/);
+    assert.ok(M.htmlDelResumen(planta).includes('<div class="me-banda-cuerpo"><div class="me-titular">'));
     assert.equal(M.htmlDeMarca(resumen.marca), '');
   });
 
@@ -345,80 +324,164 @@ describe('el Resumen «Niveles»', () => {
     for (const otro of [false, 1, 'true', null, undefined, {}]) assert.equal(M.htmlDeMarca(otro), '', String(otro));
   });
 
-  it('los faltantes: un aviso ámbar arriba de «Lo que te queda»', () => {
+  it('la regla de PLANTA: la barra decorativa, partida en un tramo por capa con sus días, y debajo la lista de cada licencia', () => {
+    const html = M.htmlDeLaRegla(planta.tanques.vacaciones);
+    assert.ok(html.startsWith('<div class="me-regla"><div class="me-barra" aria-hidden="true" style="grid-template-columns: '
+      + 'minmax(0, 3fr) minmax(0, 20fr) minmax(0, 10fr) minmax(0, 5fr) minmax(0, 10fr)">'));
+    const tramos = tramosDe(html);
+    assert.deepEqual(tramos.map(({ clase, n, numero }) => [clase, n, numero]), [
+      ['vence', '3', '3'], ['tinta', '20', '20'], ['medio', '10', '10'], ['cargadas', '5', '5'], ['por_habilitar', '10', '10']
+    ]);
+    // El movimiento (spec, 3): empiezan a los 250 ms y cada uno dura max(160, n / 48 × 1300) ms, uno detrás del otro
+    assert.deepEqual(tramos.map(({ demora, duracion }) => [demora, duracion]), [
+      ['250ms', '160ms'], ['410ms', '542ms'], ['952ms', '271ms'], ['1223ms', '160ms'], ['1383ms', '271ms']
+    ]);
+    for (let i = 1; i < tramos.length; i += 1) {
+      assert.equal(parseInt(tramos[i].demora, 10), parseInt(tramos[i - 1].demora, 10) + parseInt(tramos[i - 1].duracion, 10), `tramo ${i}`);
+    }
+    // La lista, con su nombre (el de la maqueta aprobada): cada capa con su muestra (decorativa), «Licencia 2024: 3» y su nota; la
+    // que vence, en ámbar
+    const lista = html.match(/<ul class="me-regla-lista" aria-label="Tus vacaciones, por licencia">([\s\S]*?)<\/ul>/)[1];
+    assert.deepEqual(itemsDe(lista).map(({ clases, texto }) => [clases.join(' '), texto]), [
+      ['vence', 'Licencia 2024: 3 Vence el 31/12/2026'],
+      ['', 'Licencia 2025: 20 Vence el 31/12/2027'],
+      ['', 'Licencia 2026: 10 La primera mitad'],
+      ['', 'Cargados: 5 Cargados para noviembre'],
+      ['', 'Todavía no: 10 Se habilitan el 1/1/2027']
+    ]);
+    assert.ok(lista.startsWith('<li class="vence"><i class="me-muestra vence" aria-hidden="true"></i><span><b>Licencia 2024: 3</b>Vence el 31/12/2026</span></li>'));
+    assert.deepEqual([...lista.matchAll(/<i class="me-muestra (\w+)" aria-hidden="true"><\/i>/g)].map(([, clase]) => clase),
+      ['vence', 'tinta', 'medio', 'cargadas', 'por_habilitar']);
+    assert.ok(html.endsWith('</ul></div>'));
+    // CONTRATO: sin la licencia que vence, las dos licencias y lo que todavía no se habilita
+    assert.deepEqual(tramosDe(M.htmlDeLaRegla(contrato.tanques.vacaciones)).map(({ clase, n }) => [clase, n]),
+      [['tinta', '5'], ['medio', '8'], ['por_habilitar', '7']]);
+  });
+
+  // Review Focus 4
+  it('capas raras, la capacidad en 0 y un total en 0: ningún NaN ni Infinity; una n que no es un número positivo cuenta 0', () => {
+    const raras = {
+      capacidad: 40,
+      capas: [{ clase: 'tinta', n: 0 }, { clase: 'medio', n: null }, { clase: 'vence', n: 'x' }, { clase: 'otra', n: -2 },
+        { clase: 'medio', n: 1 }, { clase: 'tinta', n: 39 }, null]
+    };
+    const html = M.htmlDeLaRegla(raras);
+    sinNumerosRaros(html);
+    assert.ok(html.includes('style="grid-template-columns: minmax(0, 0fr) minmax(0, 0fr) minmax(0, 0fr) minmax(0, 0fr) minmax(0, 1fr) minmax(0, 39fr)"'));
+    // Una clase desconocida, en tinta; el tramo de 1 día entre 40 lleva su número (el <style> lo oculta si no entra) y dura lo mínimo
+    assert.deepEqual(tramosDe(html).map(({ clase, n, numero, duracion }) => [clase, n, numero, duracion]), [
+      ['tinta', '0', '0', '160ms'], ['medio', '0', '0', '160ms'], ['vence', '0', '0', '160ms'], ['tinta', '0', '0', '160ms'],
+      ['medio', '1', '1', '160ms'], ['tinta', '39', '39', '1268ms']
+    ]);
+    assert.ok(html.includes('<b>: 0</b>'), 'una capa sin nombre, con su número');
+    // La capacidad en 0, o que no es un número positivo: los tramos quietos (0 ms)
+    for (const capacidad of [0, -3, NaN, Infinity, undefined, null, '48', {}]) {
+      const quieta = M.htmlDeLaRegla({ capacidad, capas: [{ clase: 'tinta', n: 3 }, { clase: 'medio', n: 2 }] });
+      sinNumerosRaros(quieta, String(capacidad));
+      assert.deepEqual(tramosDe(quieta).map(({ demora, duracion }) => [demora, duracion]), [['0ms', '0ms'], ['0ms', '0ms']], String(capacidad));
+    }
+    // Sin capas, o sin el tanque de vacaciones, no hay regla
+    assert.equal(M.htmlDeLaRegla({ capacidad: 10, capas: [] }), '');
+    assert.equal(M.htmlDeLaRegla(null), '');
+    // Un total en 0 (las horas a favor sin horas): la línea vacía
+    const sinHoras = resumenDel(CONTRATO, { estado: { ...CONTRATO.estado, horasExtras: [], licencias: [] } });
+    assert.equal(sinHoras.tanques.otros.find(({ clave }) => clave === 'horas_a_favor').total, 0);
+    const resto = M.htmlDelResto(sinHoras);
+    sinNumerosRaros(resto);
+    assert.deepEqual(lineasDe(resto)[0], ['0', '900']);
+    // Un valor que pasa el total, negativo o que no es un número: entre 0% y 100%
+    const [franquicias] = planta.tanques.otros;
+    const otros = [{ ...franquicias, valor: 50 }, { ...franquicias, valor: -3 }, { ...franquicias, valor: 'x', total: NaN }, { ...franquicias, total: Infinity }];
+    const raro = M.htmlDelResto({ ...planta, tanques: { ...planta.tanques, otros } });
+    sinNumerosRaros(raro);
+    assert.deepEqual(lineasDe(raro).map(([p]) => p), ['100', '0', '0', '0']);
+  });
+
+  it('el resto: la cabeza con «El resto de 2026», el día y «Mis vacaciones y saldos»; un número con su línea por saldo, cada uno un link a su pestaña', () => {
+    const html = M.htmlDelResto(planta);
+    assert.ok(html.startsWith('<section class="me-resto" aria-labelledby="me-resto-titulo"><div class="me-resto-cabeza"><h2 id="me-resto-titulo">El resto de 2026</h2>'));
+    const cabeza = html.match(/<div class="me-resto-cabeza">[\s\S]*?<\/div>/)[0];
+    assert.equal(textoDe(cabeza), 'El resto de 2026 Al lunes 26/10/2026 Mis vacaciones y saldos');
+    assert.deepEqual(botonesDe(cabeza).map(({ atributos, texto }) => [atributos['data-abrir'], texto]), [['saldos', 'Mis vacaciones y saldos']]);
+    assert.ok(html.includes('<ul class="me-numeros"><li><a class="me-numero" href="#licencias"'));
+    const numeros = linksDe(html);
+    assert.deepEqual(numeros.map(({ atributos, texto }) => [atributos.class, atributos.href, atributos['data-pestana'], atributos['aria-label'], texto]), [
+      ['me-numero', '#licencias', 'licencias', 'Franquicias: quedan 25 de 42 horas. Ver tus licencias', '25 horas Franquicias de 42 horas'],
+      ['me-numero', '#licencias', 'licencias', 'Estudios: quedan 9 de 15 días. Ver tus licencias', '9 días Estudios de 15 días'],
+      ['me-numero', '#licencias', 'licencias', 'Atención médica: quedan 22 de 25 días. Ver tus licencias', '22 días Atención médica de 25 días'],
+      ['me-numero', '#licencias', 'licencias', 'Grupo familiar: quedan 23 de 25 días. Ver tus licencias', '23 días Grupo familiar de 25 días']
+    ]);
+    // El número que sube al abrir (data-contar) con su unidad al lado
+    assert.ok(numeros[0].adentro.startsWith('<span class="grande"><b data-contar>25</b><small>horas</small></span>'));
+    // La línea, decorativa, que se llena en la proporción valor / total (25 de 42 = 59,5%), con su demora: 900 ms + 90 ms por línea
+    assert.deepEqual(lineasDe(html), [['59.5', '900'], ['60', '990'], ['88', '1080'], ['92', '1170']]);
+  });
+
+  it('CONTRATO: las horas a favor, que vencen este mes, en ámbar y con su link a #horas', () => {
+    const [horas, ...resto] = linksDe(M.htmlDelResto(contrato));
+    assert.equal(horas.atributos.class, 'me-numero vence');
+    assert.equal(horas.atributos.href, '#horas');
+    assert.equal(horas.atributos['data-pestana'], 'horas');
+    assert.equal(horas.atributos['aria-label'], 'Horas a favor: quedan 1,5 de 10,5 horas en octubre. Ver tus horas extras');
+    assert.equal(horas.texto, '1,5 horas Horas a favor de 10,5 en octubre');
+    assert.ok(horas.adentro.includes('<b data-contar>1,5</b>'));
+    assert.deepEqual(lineasDe(horas.adentro), [['14.3', '900']]);
+    assert.ok(resto.every(({ atributos }) => atributos.href === '#licencias' && atributos.class === 'me-numero'));
+  });
+
+  it('los francos o las horas a favor, mes por mes, en una línea: el que vence, el disponible, el que todavía suma y lo no utilizado previamente', () => {
+    const mesesDe = (html) => [...html.matchAll(/<span class="me-mes([^"]*)"><strong>([^<]*)<\/strong> ([^<]*) <span>([^<]*)<\/span><\/span>/g)]
+      .map(([, clases, numero, mes, nota]) => [clases.trim(), numero, mes, nota]);
+    const html = M.htmlDeLosMeses(planta.pastillas);
+    assert.ok(html.startsWith('<p class="me-meses"><b>Francos compensatorios:</b><span class="me-mes vence">'));
+    assert.ok(html.endsWith('</span></p>'));
+    assert.deepEqual(mesesDe(html), [
+      ['vence', '1', 'Octubre', 'Hasta el viernes 30/10'],
+      ['', '1', 'Noviembre', 'Por las horas de septiembre'],
+      ['pendiente', '1', 'Diciembre', 'Octubre sigue sumando'],
+      ['previo', '1', 'Agosto', 'No utilizado previamente']
+    ]);
+    assert.ok(html.includes('<span class="me-mes pendiente"><strong>1</strong> Diciembre <span>Octubre sigue sumando</span></span>'));
+    assert.deepEqual(mesesDe(M.htmlDeLosMeses(contrato.pastillas)), [
+      ['vence', '1,5', 'Octubre', 'De 10,5, hasta el viernes 30/10'],
+      ['pendiente', '4', 'Noviembre', 'Octubre sigue sumando'],
+      ['previo', '6,5', 'Horas de 2026', 'No utilizadas previamente']
+    ]);
+    // En el resto, después de los números
+    assert.ok(M.htmlDelResto(planta).includes(`</ul>${html}`));
+    // Solo lo no utilizado, sin meses: la línea con eso solo
+    assert.deepEqual(mesesDe(M.htmlDeLosMeses({ ...planta.pastillas, meses: [] })), [['previo', '1', 'Agosto', 'No utilizado previamente']]);
+    // Sin ningún mes ni nada no utilizado, la línea no va
+    const sinMeses = { titulo: 'Francos compensatorios', meses: [], previo: null };
+    assert.equal(M.htmlDeLosMeses(sinMeses), '');
+    assert.equal(M.htmlDeLosMeses(null), '');
+    assert.ok(!M.htmlDelResto({ ...planta, pastillas: sinMeses }).includes('me-meses'));
+  });
+
+  it('la médica extraordinaria, en una línea chica al final del resto; sin tanques (sin un hoy válido), no hay resto', () => {
+    assert.ok(M.htmlDelResto(planta).endsWith('<p class="me-extra">Atención médica extraordinaria: sin tope. No usaste en 2026.</p></section>'));
+    assert.ok(!M.htmlDelResto({ ...planta, extraordinaria: null }).includes('me-extra'));
+    assert.equal(M.htmlDelResto({ ...planta, tanques: null }), '');
+    // Un Resumen sin tanques ni frase (sin un hoy válido) no se rompe: sin la banda y sin el resto, con «Hoy y mañana»
+    const sinHoy = M.htmlDelResumen({ ...planta, titular: null, tanques: null, pastillas: null, extraordinaria: null, vence_pronto: [] });
+    assert.ok(!sinHoy.includes('me-banda'));
+    assert.ok(!sinHoy.includes('me-resto'));
+    assert.ok(sinHoy.startsWith(CABEZA_DE_HOY));
+  });
+
+  it('los faltantes: un aviso ámbar arriba de todo, antes de la banda', () => {
     const resumen = resumenDel(PLANTA, { estado: conLicencias(PLANTA.estado, licencia(100, 'franco', '2027-02-01')) });
     const texto = 'Revisá tus francos de febrero de 2027: cargaste 1 y no corresponde ninguno.';
     assert.deepEqual(resumen.faltantes, [texto]);
     const html = M.htmlDelResumen(resumen);
-    assert.ok(html.includes(`<p class="me-aviso me-aviso-ambar">${texto}</p>`));
-    assert.ok(html.indexOf('Vence pronto') >= 0, 'con «Vence pronto»');
-    assert.ok(html.indexOf('Vence pronto') < html.indexOf('me-aviso-ambar'));
-    assert.ok(html.indexOf('me-aviso-ambar') < html.indexOf('Lo que te queda'));
+    assert.ok(html.startsWith(`<p class="me-aviso me-aviso-ambar">${texto}</p><section class="me-banda"`));
     // Varios, en una lista; ninguno, nada
     const dos = M.htmlDeFaltantes([texto, 'Revisá tus vacaciones: para el 15/06/2027 faltan 2 días habilitados.']);
     assert.match(dos, /^<div class="me-aviso me-aviso-ambar"><ul class="me-faltantes"><li>Revisá tus francos/);
-    assert.equal(filasDe(dos.replace(/<li>/g, '<li class="">')).length, 2);
+    assert.equal(itemsDe(dos).length, 2);
     assert.equal(M.htmlDeFaltantes([]), '');
     assert.equal(M.htmlDeFaltantes(undefined), '');
     assert.equal(M.htmlDelResumen(planta).includes('me-aviso-ambar'), false);
-  });
-
-  it('Hoy y mañana: los compañeros que no están hoy, con su vuelta, y el próximo feriado «Lunes 23/11»', () => {
-    const html = M.htmlDeHoyYManana(planta.hoy_y_manana, planta.persona.ve_companeros);
-    assert.match(html, /^<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 class="me-titulo" id="me-hoy-titulo">Hoy y mañana<\/h2>/);
-    assert.equal(textoDe(html), 'Hoy y mañana Hoy no están MR Martín Ríos no está Vuelve el lunes 02/11 Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
-    // Las iniciales son decorativas
-    assert.ok(html.includes('<span class="me-inicial" aria-hidden="true">MR</span>'));
-    assert.ok(html.includes('<p class="me-feriado"><b>Lunes 23/11</b>Día de la Soberanía Nacional</p>'));
-  });
-
-  // Decisión del usuario (27/10/2026): «Hoy no están» y «Mañana no están», por separado y en ese orden, antes del feriado
-  it('Hoy y mañana: «Hoy no están» y, aparte, «Mañana no están», cada uno con su título, antes del próximo feriado', () => {
-    const resumen = resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_DIEGO, AUSENCIA_DE_MARTIN] });
-    const html = M.htmlDeHoyYManana(resumen.hoy_y_manana, true);
-    assert.equal(textoDe(html), 'Hoy y mañana Hoy no están MR Martín Ríos no está Vuelve el lunes 02/11 '
-      + 'Mañana no están DF Diego Fernández no está Vuelve el miércoles 28/10 Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
-    assert.deepEqual([...html.matchAll(/<h3 class="me-subtitulo">([^<]*)<\/h3>/g)].map(([, titulo]) => titulo),
-      ['Hoy no están', 'Mañana no están', 'Próximo feriado']);
-    assert.equal([...html.matchAll(/<ul class="me-ausentes">/g)].length, 2);
-    // Un grupo vacío no aparece: con solo el de mañana, sin «Hoy no están»
-    const soloManana = M.htmlDeHoyYManana(resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_DIEGO] }).hoy_y_manana, true);
-    assert.equal(textoDe(soloManana), 'Hoy y mañana Mañana no están DF Diego Fernández no está Vuelve el miércoles 28/10 '
-      + 'Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
-  });
-
-  // Review Focus 5
-  it('Hoy y mañana: un ausente con HTML en el nombre se ve escapado, en los dos grupos', () => {
-    const resumen = resumenDel(PLANTA, {
-      ausencias: [{ ...AUSENCIA_DE_MARTIN, nombre: '<b>x</b>' }, { ...AUSENCIA_DE_DIEGO, nombre: MALICIOSO }]
-    });
-    const html = M.htmlDeHoyYManana(resumen.hoy_y_manana, true);
-    assert.ok(!html.includes('<b>x</b>'));
-    assert.ok(!html.includes('<img'));
-    assert.ok(html.includes('<b>&lt;b&gt;x&lt;/b&gt; no está</b>'));
-    assert.ok(html.includes(`<b>${ESCAPADO} no está</b>`));
-    assert.ok(M.htmlDelResumen(resumen).includes('&lt;b&gt;x&lt;/b&gt; no está'));
-  });
-
-  it('Hoy y mañana: quien no ve a sus compañeros no tiene los grupos; sin ausentes, tampoco; sin nada, no hay sección', () => {
-    const conLosDos = resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_DIEGO, AUSENCIA_DE_MARTIN] }).hoy_y_manana;
-    const lectora = M.htmlDeHoyYManana(contrato.hoy_y_manana, contrato.persona.ve_companeros);
-    assert.equal(textoDe(lectora), 'Hoy y mañana Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
-    assert.equal(textoDe(M.htmlDeHoyYManana(conLosDos, false)), 'Hoy y mañana Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
-    // Solo el true literal
-    assert.ok(!M.htmlDeHoyYManana(conLosDos, 'true').includes('no están'));
-    // Sin nadie que no esté, los grupos no aparecen (como «Vence pronto» vacío): solo se ven los de administración que eligieron
-    // mostrarse, así que «están todos» podría no ser cierto
-    const soloElFeriado = { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: planta.hoy_y_manana.proximo_feriado };
-    assert.equal(textoDe(M.htmlDeHoyYManana(soloElFeriado, true)), 'Hoy y mañana Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
-    // Sin ausentes y sin próximo feriado, la sección no se dibuja
-    assert.equal(M.htmlDeHoyYManana({ ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null }, true), '');
-    assert.equal(M.htmlDeHoyYManana(conLosDos, false).includes('me-ausentes'), false);
-    assert.equal(M.htmlDeHoyYManana({ ...conLosDos, proximo_feriado: null }, false), '');
-    for (const raro of [undefined, null, 'x', {}]) assert.equal(M.htmlDeHoyYManana(raro, true), '', String(raro));
-    const sinHoyYManana = M.htmlDelResumen({ ...planta, hoy_y_manana: { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null } });
-    assert.equal(sinHoyYManana.includes('me-hoy'), false);
-    assert.ok(sinHoyYManana.includes('Lo que te queda'));
   });
 
   it('sin modalidad, el mensaje; sin arranque, la invitación a «Mis vacaciones y saldos»', () => {
@@ -430,51 +493,111 @@ describe('el Resumen «Niveles»', () => {
     assert.equal(M.htmlDelResumen(null), '');
   });
 
-  it('un Resumen sin tanques ni pastillas (sin un hoy válido) no se rompe: sin «Lo que te queda»', () => {
-    const html = M.htmlDelResumen({ ...planta, tanques: null, pastillas: null, extraordinaria: null, vence_pronto: [] });
-    assert.ok(!html.includes('Lo que te queda'));
-    assert.ok(html.includes('Hoy y mañana'));
+  it('«Hoy y mañana»: tres columnas, Hoy (los eventos y quién no está), Mañana y Próximo feriado; «Ver la agenda» al final de la última', () => {
+    const html = M.htmlDeHoyYManana({ ...planta.hoy_y_manana, eventos: eventosDeHoy() }, true);
+    assert.ok(html.startsWith(`${CABEZA_DE_HOY}<div class="me-columnas">`));
+    assert.ok(html.endsWith('</div></div></section>'));
+    assert.deepEqual(columnasDe(html).map(({ titulo, texto }) => [titulo, texto]), [
+      ['Hoy', '12:00 Llamar a Vialidad por el TMDA solo vos Martín Ríos no está Vuelve el lunes 02/11'],
+      ['Mañana', '10:00 Reunión de equipo con 4 personas'],
+      ['Próximo feriado', 'Lunes 23/11 Día de la Soberanía Nacional Ver la agenda']
+    ]);
+    // La hora, el título y debajo quién (sin el día de `detalle`); quien no está, con su vuelta debajo (nunca el tipo)
+    const [hoy, manana, feriado] = columnasDe(html);
+    // (con un espacio después de la hora: sin él, un lector de pantalla y lo copiado dirían «12:00Llamar…»)
+    assert.equal(hoy.html, '<ul><li><time>12:00</time> Llamar a Vialidad por el TMDA<small>solo vos</small></li>'
+      + '<li class="ausente">Martín Ríos no está<small>Vuelve el lunes 02/11</small></li></ul>');
+    assert.equal(manana.html, '<ul><li><time>10:00</time> Reunión de equipo<small>con 4 personas</small></li></ul>');
+    assert.equal(feriado.html, `<ul><li><b>Lunes 23/11</b><small>Día de la Soberanía Nacional</small></li></ul>${VER_LA_AGENDA}`);
+    assert.ok(!html.includes('Hoy · '));
+    // Con eventos, sin «No tenés eventos…», y «Ver la agenda» una sola vez
+    assert.ok(!html.includes('me-vacio'));
+    assert.equal(html.split('Ver la agenda').length - 1, 1);
+    // En el Resumen
+    assert.ok(M.htmlDelResumen({ ...planta, hoy_y_manana: { ...planta.hoy_y_manana, eventos: eventosDeHoy() } }).endsWith(html));
   });
 
-  it('svgDeTanque: con la capacidad en 0 o rara, o con capas raras, ningún NaN ni Infinity, y nada sale del tanque', () => {
-    const sinNumeros = (svg) => assert.doesNotMatch(svg, /NaN|Infinity|undefined|null/);
-    for (const capacidad of [0, -3, NaN, Infinity, undefined, null, '48', {}]) {
-      const svg = M.svgDeTanque({ capas: [{ clase: 'tinta', n: 3 }], capacidad, ancho: 52, alto: 112, id: 'me-tanque-1' });
-      sinNumeros(svg);
-      assert.deepEqual(capasDelSvg(svg).map(({ y, alto }) => [y, alto]), [[112, 0]], String(capacidad));
+  it('«Hoy y mañana»: un evento sin quién, sin el renglón de debajo', () => {
+    const [primero] = eventosDeHoy();
+    const html = M.htmlDeHoyYManana({ ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null, eventos: [{ ...primero, quien: '' }] }, true);
+    assert.equal(columnasDe(html)[0].html, '<ul><li><time>12:00</time> Llamar a Vialidad por el TMDA</li></ul>' + VER_LA_AGENDA);
+  });
+
+  it('«Hoy y mañana»: los que no están, solo para quien ve a sus compañeros (el true literal); los que empiezan mañana, en Mañana', () => {
+    const conLosDos = resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_DIEGO, AUSENCIA_DE_MARTIN] }).hoy_y_manana;
+    assert.deepEqual(columnasDe(M.htmlDeHoyYManana(conLosDos, true)).map(({ titulo, texto }) => [titulo, texto]), [
+      ['Hoy', 'Martín Ríos no está Vuelve el lunes 02/11'],
+      ['Mañana', 'Diego Fernández no está Vuelve el miércoles 28/10'],
+      ['Próximo feriado', 'Lunes 23/11 Día de la Soberanía Nacional']
+    ]);
+    for (const otro of [false, 'true', 1, undefined]) {
+      const html = M.htmlDeHoyYManana(conLosDos, otro);
+      assert.ok(!html.includes('ausente') && !html.includes('no está'), String(otro));
+      assert.deepEqual(columnasDe(html).map(({ titulo }) => titulo), ['Próximo feriado'], String(otro));
     }
-    // Capas que pasan la capacidad se cortan en el borde de arriba; una n negativa, rara o que no es un número cuenta 0
-    const desbordado = capasDelSvg(M.svgDeTanque({
-      capas: [{ clase: 'tinta', n: 30 }, { clase: 'medio', n: -5 }, { clase: 'vence', n: '7' }, { clase: 'otra', n: 30 }, null],
-      capacidad: 40, ancho: 52, alto: 112, id: 'x'
-    }));
-    assert.deepEqual(desbordado.map(({ clase }) => clase), ['c-tinta', 'c-medio', 'c-vence', 'c-tinta']);
-    assert.ok(casi(desbordado[0].alto, 84));
-    assert.deepEqual(desbordado.slice(1, 3).map(({ alto }) => alto), [0, 0]);
-    assert.ok(casi(desbordado[3].alto, 28) && casi(desbordado[3].y, 0));
-    // Sin capas, el tanque vacío; sin medidas, las de los tanques chicos
-    sinNumeros(M.svgDeTanque({ capas: undefined, capacidad: 10, id: 'y' }));
-    assert.match(M.svgDeTanque({ capas: [], capacidad: 10, id: 'y' }), /viewBox="0 0 52 112"/);
-    // El id va solo con letras, números y guiones
-    assert.ok(M.svgDeTanque({ capas: [], capacidad: 1, id: '"><img src=x>' }).includes('<clipPath id="imgsrcx">'));
+    // Quien no ve a sus compañeros ve igual sus eventos
+    const conEventos = M.htmlDeHoyYManana({ ...conLosDos, eventos: eventosDeHoy() }, false);
+    assert.deepEqual(columnasDe(conEventos).map(({ titulo, texto }) => [titulo, texto]), [
+      ['Hoy', '12:00 Llamar a Vialidad por el TMDA solo vos'],
+      ['Mañana', '10:00 Reunión de equipo con 4 personas'],
+      ['Próximo feriado', 'Lunes 23/11 Día de la Soberanía Nacional Ver la agenda']
+    ]);
+    // CONTRATO (una lectora): solo el feriado
+    assert.deepEqual(columnasDe(M.htmlDeHoyYManana(contrato.hoy_y_manana, contrato.persona.ve_companeros)).map(({ titulo }) => titulo),
+      ['Próximo feriado']);
   });
 
-  it('un tanque de horas a favor sin horas (el total en 0) se dibuja vacío, sin NaN', () => {
-    const resumen = resumenDel(CONTRATO, { estado: { ...CONTRATO.estado, horasExtras: [], licencias: [] } });
-    const horas = resumen.tanques.otros.find(({ clave }) => clave === 'horas_a_favor');
-    assert.equal(horas.total, 0);
-    const html = M.htmlDeTanques(resumen.tanques);
-    assert.doesNotMatch(html, /NaN|Infinity/);
-    assert.ok(capasDelSvg(linksDe(html)[1].adentro).every(({ alto }) => alto === 0));
+  it('«Hoy y mañana» sin la lista de eventos (un Resumen anterior a la agenda): una columna vacía no va y no hay «Ver la agenda»; sin ninguna, no hay sección', () => {
+    const soloElFeriado = { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: planta.hoy_y_manana.proximo_feriado };
+    assert.equal(M.htmlDeHoyYManana(soloElFeriado, true), `${CABEZA_DE_HOY}<div class="me-columnas"><div class="me-columna"><h3>Próximo feriado</h3>`
+      + '<ul><li><b>Lunes 23/11</b><small>Día de la Soberanía Nacional</small></li></ul></div></div></section>');
+    assert.ok(!M.htmlDeHoyYManana(planta.hoy_y_manana, true).includes('Ver la agenda'));
+    assert.equal(M.htmlDeHoyYManana({ ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null }, true), '');
+    for (const raro of [undefined, null, 'x', {}]) assert.equal(M.htmlDeHoyYManana(raro, true), '', String(raro));
+    const sinHoyYManana = M.htmlDelResumen({ ...planta, hoy_y_manana: { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null } });
+    assert.ok(!sinHoyYManana.includes('me-hoy'));
+    assert.ok(sinHoyYManana.includes('me-resto'));
   });
 
-  // Review Focus 5
-  it('todo texto del servidor del Resumen se escapa: Vence pronto, los tanques, la lista, las pastillas y la modalidad', () => {
-    const conHtml = comoLlega(planta);
-    conHtml.modalidad.texto = MALICIOSO;
-    Object.assign(conHtml.vence_pronto[0], { dia: MALICIOSO, mes: MALICIOSO, cuando: MALICIOSO, titulo: MALICIOSO, detalle: MALICIOSO });
+  // Decisión del usuario (27/10/2026): con la agenda, la sección está siempre
+  it('«Hoy y mañana» con la agenda y sin eventos: la sección va siempre, con «No tenés eventos hoy ni mañana.» y «Ver la agenda»', () => {
+    const nada = { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null, eventos: [] };
+    assert.equal(M.htmlDeHoyYManana(nada, true), `${CABEZA_DE_HOY}${SIN_EVENTOS}${VER_LA_AGENDA}</section>`);
+    assert.equal(M.htmlDeHoyYManana(nada, false), `${CABEZA_DE_HOY}${SIN_EVENTOS}${VER_LA_AGENDA}</section>`);
+    // Con el feriado: la frase, la columna del feriado y «Ver la agenda» al final de esa columna
+    const conFeriado = M.htmlDeHoyYManana({ ...nada, proximo_feriado: planta.hoy_y_manana.proximo_feriado }, true);
+    assert.equal(conFeriado, `${CABEZA_DE_HOY}${SIN_EVENTOS}<div class="me-columnas"><div class="me-columna"><h3>Próximo feriado</h3>`
+      + `<ul><li><b>Lunes 23/11</b><small>Día de la Soberanía Nacional</small></li></ul>${VER_LA_AGENDA}</div></div></section>`);
+    // Con un compañero que no está: la frase y su columna, antes de la del feriado
+    const conMartin = M.htmlDeHoyYManana({ ...planta.hoy_y_manana, eventos: [] }, true);
+    assert.ok(conMartin.startsWith(`${CABEZA_DE_HOY}${SIN_EVENTOS}<div class="me-columnas">`));
+    assert.deepEqual(columnasDe(conMartin).map(({ titulo }) => titulo), ['Hoy', 'Próximo feriado']);
+    // Un evento de otro día (que el servidor no manda) no cuenta como uno de hoy ni de mañana
+    const [primero] = eventosDeHoy();
+    assert.equal(M.htmlDeHoyYManana({ ...nada, eventos: [{ ...primero, dia: 'otro' }] }, true), `${CABEZA_DE_HOY}${SIN_EVENTOS}${VER_LA_AGENDA}</section>`);
+  });
+
+  it('«Hoy y mañana» con eventos: sin la frase, y «Ver la agenda» al final de la última columna, sea cual sea', () => {
+    const sinFeriado = { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null };
+    const html = M.htmlDeHoyYManana({ ...sinFeriado, eventos: eventosDeHoy() }, true);
+    assert.ok(!html.includes('No tenés eventos'));
+    const columnas = columnasDe(html);
+    assert.deepEqual(columnas.map(({ titulo }) => titulo), ['Hoy', 'Mañana']);
+    assert.ok(columnas[1].html.endsWith(VER_LA_AGENDA));
+    assert.ok(!columnas[0].html.includes('Ver la agenda'));
+    // Solo los de hoy: una columna, «Hoy», con «Ver la agenda»
+    const soloHoy = M.htmlDeHoyYManana({ ...sinFeriado, eventos: eventosDeHoy().filter(({ dia }) => dia === 'hoy') }, true);
+    assert.deepEqual(columnasDe(soloHoy).map(({ titulo, texto }) => [titulo, texto]), [['Hoy', '12:00 Llamar a Vialidad por el TMDA solo vos Ver la agenda']]);
+  });
+
+  // Review Focus 1
+  it('todo texto del servidor del Resumen se escapa: la frase y su bajada, lo que vence, la regla, el resto, los eventos y quien no está, también en los aria-label', () => {
+    const conHtml = comoLlega(resumenDel(PLANTA, { ausencias: [{ ...AUSENCIA_DE_MARTIN, nombre: MALICIOSO }, { ...AUSENCIA_DE_DIEGO, nombre: '<b>x</b>' }] }));
+    Object.assign(conHtml.titular, { encabezado: MALICIOSO, antes: MALICIOSO, cifra: MALICIOSO, despues: MALICIOSO });
+    conHtml.titular.bajada[0].texto = MALICIOSO;
+    conHtml.titular.bajada[1].texto = MALICIOSO;
+    Object.assign(conHtml.vence_pronto[0], { dia: MALICIOSO, mes: MALICIOSO, titulo: MALICIOSO, texto: MALICIOSO });
     conHtml.vence_pronto[0].accion = { texto: MALICIOSO, tipo: MALICIOSO };
-    Object.assign(conHtml.tanques.vacaciones, { numero: MALICIOSO, unidad: MALICIOSO, pie: MALICIOSO, aria: MALICIOSO });
     Object.assign(conHtml.tanques.vacaciones.capas[0], { nombre: MALICIOSO, nota: MALICIOSO, clase: MALICIOSO });
     Object.assign(conHtml.tanques.otros[0], { nombre: MALICIOSO, numero: MALICIOSO, unidad: MALICIOSO, de: MALICIOSO, aria: MALICIOSO, pestana: MALICIOSO });
     conHtml.pastillas.titulo = MALICIOSO;
@@ -484,14 +607,61 @@ describe('el Resumen «Niveles»', () => {
     conHtml.al_texto = MALICIOSO;
     conHtml.faltantes = [MALICIOSO];
     conHtml.hoy_y_manana.proximo_feriado = { fecha: '2026-11-23', cuando: MALICIOSO, nombre: MALICIOSO };
+    conHtml.hoy_y_manana.eventos = comoLlega(eventosDeHoyYManana(respuestaDeEventos({ desde: HOY, hasta: MANANA }, {
+      eventos: [eventoDe(71, MALICIOSO, HOY, '12:00'), eventoDe(72, 'Otro', MANANA, '10:00', { ...DE_MARTIN, creador: MALICIOSO })]
+    }).eventos, HOY));
+    assert.equal(conHtml.hoy_y_manana.eventos[1].quien, `de ${MALICIOSO}`);
     const html = M.htmlDelResumen(conHtml);
     assert.ok(!html.includes('<img'), 'ningún <img> de verdad');
-    assert.ok(html.split(ESCAPADO).length - 1 >= 30);
-    // Un aria-label del servidor, escapado; una pestaña desconocida, a Licencias; una clase desconocida, en tinta
-    assert.equal(linksDe(html)[0].atributos['aria-label'], ESCAPADO);
-    assert.equal(linksDe(html)[1].atributos.href, '#licencias');
-    assert.equal(capasDelSvg(linksDe(html)[0].adentro)[0].clase, 'c-tinta');
+    assert.ok(!html.includes('<b>x</b>'));
+    assert.ok(html.split(ESCAPADO).length - 1 >= 30, String(html.split(ESCAPADO).length - 1));
+    // La frase (el número, en los dos lugares) y su bajada
+    assert.ok(html.includes(`<p class="me-banda-dia">${ESCAPADO}</p><h2 class="me-frase" id="me-frase">${ESCAPADO} <span class="me-cifra">`
+      + `<span class="me-cifra-final" aria-hidden="true">${ESCAPADO}</span><span aria-hidden="true" data-contar>${ESCAPADO}</span>`
+      + `<span class="visualmente-oculto">${ESCAPADO}</span></span> ${ESCAPADO}</h2>`));
+    assert.ok(html.includes(`<p class="me-frase-bajada"><b class="vence">${ESCAPADO}</b> ${ESCAPADO} `));
+    // Lo que vence: el título, su línea, el botón y su tipo
+    assert.ok(html.includes(`<b id="me-vence-0">${ESCAPADO}</b><span class="me-entrada-texto">${ESCAPADO}</span>`));
     assert.equal(botonesDe(html).find(({ atributos }) => atributos['data-accion']).atributos['data-tipo'], ESCAPADO);
+    // La regla: una clase desconocida, en tinta
+    assert.equal(tramosDe(html)[0].clase, 'tinta');
+    assert.ok(html.includes(`<b>${ESCAPADO}: 3</b>${ESCAPADO}`));
+    // El resto: el aria-label del servidor, escapado; una pestaña desconocida, a Licencias
+    const [numero] = linksDe(html).filter(({ atributos }) => atributos.class?.startsWith('me-numero'));
+    assert.equal(numero.atributos['aria-label'], ESCAPADO);
+    assert.equal(numero.atributos.href, '#licencias');
+    assert.ok(numero.adentro.includes(`<b data-contar>${ESCAPADO}</b><small>${ESCAPADO}</small>`));
+    // Los eventos (el título y quién) y quien no está
+    assert.ok(html.includes(`<li><time>12:00</time> ${ESCAPADO}<small>solo vos</small></li>`));
+    assert.ok(html.includes(`<small>de ${ESCAPADO}</small>`));
+    assert.ok(html.includes(`<li class="ausente">${ESCAPADO} no está<small>`));
+    assert.ok(html.includes('<li class="ausente">&lt;b&gt;x&lt;/b&gt; no está<small>'));
+  });
+
+  // Review Focus 1: con una comilla doble, un texto del servidor en un atributo no lo puede cerrar
+  it('una comilla doble del servidor no sale de su atributo: el aria-label de los números del resto y el data-tipo de «Vence pronto»', () => {
+    const conComillas = comoLlega(planta);
+    conComillas.tanques.otros = conComillas.tanques.otros.map((tanque) => ({ ...tanque, aria: CON_COMILLAS }));
+    conComillas.vence_pronto = conComillas.vence_pronto.map((cosa) => ({ ...cosa, accion: { ...cosa.accion, tipo: CON_COMILLAS } }));
+    const html = M.htmlDelResumen(conComillas);
+    assert.ok(!html.includes('<img'), 'ningún <img> de verdad');
+    assert.ok(!html.includes(CON_COMILLAS));
+    // Cada link del resto conserva sus cuatro atributos, y el aria-label tiene el texto entero, escapado
+    const numeros = linksDe(html).filter(({ atributos }) => atributos.class?.startsWith('me-numero'));
+    assert.equal(numeros.length, 4);
+    for (const { atributos, adentro } of numeros) {
+      assert.deepEqual(Object.keys(atributos), ['class', 'href', 'data-pestana', 'aria-label']);
+      assert.equal(atributos['aria-label'], CON_COMILLAS_ESCAPADO);
+      assert.ok(adentro.startsWith('<span class="grande">'));
+    }
+    // Cada botón de «Vence pronto», con sus cinco atributos: el data-tipo escapado y el aria-describedby a su título
+    const botones = botonesDe(html).filter(({ atributos }) => atributos['data-accion'] === 'cargar-licencia');
+    assert.equal(botones.length, 2);
+    botones.forEach(({ atributos }, i) => {
+      assert.deepEqual(Object.keys(atributos), ['type', 'class', 'data-accion', 'data-tipo', 'aria-describedby']);
+      assert.equal(atributos['data-tipo'], CON_COMILLAS_ESCAPADO);
+      assert.equal(atributos['aria-describedby'], `me-vence-${String(i)}`);
+    });
   });
 });
 
@@ -783,10 +953,9 @@ describe('las horas extras', () => {
 });
 
 // =====================================================================================================================================
-// La agenda (spec 2026-10-26-mi-espacio-agenda, 6; Task 9): el mes, los próximos, los colores y los eventos de «Hoy y mañana», con lo
-// que manda GET /api/mi-espacio/eventos armado por el servidor (itemDeEvento, itemDeLicencia, itemDeAusencia e itemsDeFeriados de
-// services/miEspacioEventosReglas.js), pasado por JSON. Hoy es el lunes 26/10/2026 y quien mira es Laura Gómez (1); las personas son
-// las inventadas de la maqueta
+// La agenda (spec 2026-10-26-mi-espacio-agenda, 6; Task 9): el mes, los próximos y los colores (los eventos de «Hoy y mañana», con
+// el Resumen «Titular», más arriba), con lo que manda GET /api/mi-espacio/eventos (los ítems de services/miEspacioEventosReglas.js),
+// pasado por JSON. Hoy es el lunes 26/10/2026 y quien mira es Laura Gómez (1); las personas son las inventadas de la maqueta
 // =====================================================================================================================================
 
 const AHORA = `${HOY} 09:00:00`;
@@ -1109,46 +1278,6 @@ describe('la agenda: los próximos', () => {
   });
 });
 
-describe('la agenda: los eventos de «Hoy y mañana»', () => {
-  const planta = resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_MARTIN] });
-  const items = respuestaDeEventos({ desde: HOY, hasta: MANANA }).eventos;
-  const EVENTOS_DE_HOY = comoLlega(eventosDeHoyYManana(items, HOY));
-
-  it('los eventos de hoy y mañana con su hora, su título y quién; después, «Ver la agenda», y los compañeros y el feriado', () => {
-    const html = M.htmlDeHoyYManana({ ...planta.hoy_y_manana, eventos: EVENTOS_DE_HOY }, true);
-    assert.equal(textoDe(html), 'Hoy y mañana 12:00 Llamar a Vialidad por el TMDA Hoy · solo vos 10:00 Reunión de equipo Mañana · con 4 personas '
-      + 'Ver la agenda Hoy no están MR Martín Ríos no está Vuelve el lunes 02/11 Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
-    assert.ok(html.includes('<ol class="me-eventos-hoy"><li><span class="me-evento-hora">12:00</span><span><b>Llamar a Vialidad por el TMDA</b>'
-      + '<small>Hoy · solo vos</small></span></li><li class="compartido"><span class="me-evento-hora">10:00</span>'));
-    assert.deepEqual(linksDe(html).map(({ atributos, texto }) => [atributos.href, atributos['data-pestana'], texto]), [['#agenda', 'agenda', 'Ver la agenda']]);
-    assert.ok(M.htmlDelResumen({ ...planta, hoy_y_manana: { ...planta.hoy_y_manana, eventos: EVENTOS_DE_HOY } }).includes('Ver la agenda'));
-  });
-
-  it('sin eventos, «No tenés eventos hoy ni mañana.» y «Ver la agenda», aunque no haya nadie que no esté ni feriado', () => {
-    const html = M.htmlDeHoyYManana({ ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null, eventos: [] }, true);
-    assert.equal(textoDe(html), 'Hoy y mañana No tenés eventos hoy ni mañana. Ver la agenda');
-    assert.ok(html.includes('<p class="me-vacio">No tenés eventos hoy ni mañana.</p>'));
-    // Quien no ve a sus compañeros ve igual sus eventos
-    assert.equal(textoDe(M.htmlDeHoyYManana({ ...planta.hoy_y_manana, eventos: EVENTOS_DE_HOY }, false)),
-      'Hoy y mañana 12:00 Llamar a Vialidad por el TMDA Hoy · solo vos 10:00 Reunión de equipo Mañana · con 4 personas Ver la agenda '
-      + 'Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
-    // Sin la clave (un Resumen anterior a la agenda), como antes
-    assert.equal(M.htmlDeHoyYManana({ ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null }, true), '');
-    assert.ok(!M.htmlDeHoyYManana(planta.hoy_y_manana, true).includes('Ver la agenda'));
-  });
-
-  // Review Focus 2
-  it('un título y un nombre con HTML se ven escapados en «Hoy y mañana»', () => {
-    const conHtml = comoLlega(eventosDeHoyYManana(respuestaDeEventos({ desde: HOY, hasta: MANANA }, {
-      eventos: [eventoDe(71, MALICIOSO, HOY, '12:00'), eventoDe(72, 'Otro', MANANA, '10:00', { ...DE_MARTIN, creador: MALICIOSO })]
-    }).eventos, HOY));
-    const html = M.htmlDeHoyYManana({ ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null, eventos: conHtml }, true);
-    assert.ok(!html.includes('<img'));
-    assert.ok(html.includes(`<b>${ESCAPADO}</b>`));
-    assert.ok(html.includes(`<small>Mañana · de ${ESCAPADO}</small>`));
-  });
-});
-
 // =====================================================================================================================================
 // La página con un DOM falso: un árbol de elementos armado con el HTML de mi-espacio.html y con lo que la página escribe en innerHTML
 // (con sus atributos, el foco y los eventos, que burbujean como en el navegador; el de tests/proyectos-frontend.test.js) y un fetch
@@ -1295,10 +1424,12 @@ const RESPUESTAS_DE_ENTRADA = (metodo, ruta) => {
 };
 
 // `cuadros`: con true, la ventana tiene un requestAnimationFrame que anota las funciones en estado.cuadros (las corre el test);
-// sin él, la página no anima. Los temporizadores no corren solos: `correr` corre los que hay (el foco de los modales y la
-// espera del cálculo). `auditor`: lo que contesta Auth.isAuditor(); `admin`, Auth.isAdmin() (la página lo pregunta solo al abrir el
-// formulario del evento: compartir es de administración). Hoy es HOY. `estado.toasts`: cada showToast (el de main.js), [mensaje, tipo]
-const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, auditor = false, admin = false } = {}) => {
+// sin él, la página no anima. `reducido`: con true, la ventana tiene un matchMedia que dice que la persona pidió menos movimiento
+// (prefers-reduced-motion: reduce); sin él, no hay matchMedia. Los temporizadores no corren solos: `correr` corre los que hay (el
+// foco de los modales y la espera del cálculo). `auditor`: lo que contesta Auth.isAuditor(); `admin`, Auth.isAdmin() (la página lo
+// pregunta solo al abrir el formulario del evento: compartir es de administración). Hoy es HOY. `estado.toasts`: cada showToast (el
+// de main.js), [mensaje, tipo]
+const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, reducido = false, auditor = false, admin = false } = {}) => {
   const { dom, documento } = crearDom();
   const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [], toasts: [] };
   // Los temporizadores pendientes, por su id: un número que solo crece (un clearTimeout viejo nunca anula uno nuevo)
@@ -1313,7 +1444,8 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
       }
     },
     addEventListener() {},
-    ...(cuadros ? { requestAnimationFrame: (funcion) => { estado.cuadros.push(funcion); return estado.cuadros.length; } } : {})
+    ...(cuadros ? { requestAnimationFrame: (funcion) => { estado.cuadros.push(funcion); return estado.cuadros.length; } } : {}),
+    ...(reducido ? { matchMedia: (consulta) => ({ matches: consulta === '(prefers-reduced-motion: reduce)' }) } : {})
   };
   const contexto = vm.createContext({
     CONFIG: { API_URL: '/api' },
@@ -1385,8 +1517,9 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
   };
   // Una tecla en el elemento con el foco (sin foco, en el documento)
   const tecla = async (key) => { (documento.activeElement ?? documento).disparar('keydown', { key }); await esperar(); };
-  // Un cuadro del navegador: corre lo que se pidió con requestAnimationFrame hasta ahora (lo que se pida adentro, en el próximo)
-  const cuadro = () => { for (const funcion of estado.cuadros.splice(0)) funcion(0); };
+  // Un cuadro del navegador: corre lo que se pidió con requestAnimationFrame hasta ahora (lo que se pida adentro, en el próximo),
+  // con `tiempo`, el momento del cuadro en ms (el que da requestAnimationFrame); sin él, un cuadro sin tiempo
+  const cuadro = (tiempo) => { for (const funcion of estado.cuadros.splice(0)) funcion(tiempo); };
   const abierto = (id) => el(id).classList.contains('active');
   return {
     contexto, dom, documento, ventana, estado, el, rutas, pedidosA, iniciar, tocar, esperar, correr, escribir, elegir, tecla,
@@ -1428,11 +1561,12 @@ describe('mi-espacio.js: la página (DOM falso)', () => {
     assert.equal(pagina.el('vista-resumen').querySelector('.me-vence'), null);
   });
 
-  it('un tanque lleva a su pestaña: la abre (la pide la primera vez), escribe el fragmento y el foco va a la pestaña', async () => {
+  it('un número del resto lleva a su pestaña: la abre (la pide la primera vez), escribe el fragmento y el foco va a la pestaña', async () => {
     const pagina = montarPagina();
     await pagina.iniciar();
-    const tanque = pagina.el('vista-resumen').querySelectorAll('[data-pestana]').find((link) => link.getAttribute('href') === '#licencias');
-    const evento = tanque.disparar('click');
+    const numero = pagina.el('vista-resumen').querySelectorAll('[data-pestana]').find((link) => link.getAttribute('href') === '#licencias');
+    assert.ok(numero.classList.contains('me-numero'));
+    const evento = numero.disparar('click');
     await pagina.esperar();
     assert.equal(evento.defaultPrevented, true);
     assert.equal(pagina.el('tab-licencias').getAttribute('aria-selected'), 'true');
@@ -1442,45 +1576,9 @@ describe('mi-espacio.js: la página (DOM falso)', () => {
     assert.ok(pagina.rutas().includes('/api/mi-espacio/licencias'));
     // Con Ctrl (abrir en otra pestaña del navegador), el link hace lo suyo
     await pagina.tocar(pagina.el('tab-resumen'));
-    const conCtrl = tanque.disparar('click', { ctrlKey: true });
+    const conCtrl = numero.disparar('click', { ctrlKey: true });
     assert.equal(conCtrl.defaultPrevented, false);
     assert.equal(pagina.el('tab-resumen').getAttribute('aria-selected'), 'true');
-  });
-
-  it('los tanques se llenan una sola vez, dos cuadros después de verse el Resumen; un Resumen que se vuelve a dibujar ya no se mueve', async () => {
-    const pagina = montarPagina({ cuadros: true });
-    await pagina.iniciar();
-    const fila = pagina.el('vista-resumen').querySelector('.me-niveles-fila');
-    assert.equal(fila.getAttribute('data-llenar'), '');
-    pagina.cuadro();
-    assert.equal(fila.getAttribute('data-llenar'), '', 'el primer cuadro los dibuja vacíos');
-    pagina.cuadro();
-    assert.equal(fila.getAttribute('data-llenar'), null, 'el segundo los llena');
-    await pagina.contexto.cargarResumen();
-    assert.equal(pagina.el('vista-resumen').querySelector('.me-niveles-fila').getAttribute('data-llenar'), null);
-    assert.equal(pagina.estado.cuadros.length, 0);
-  });
-
-  it('con el Resumen oculto (#licencias), los tanques esperan vacíos a que se vea la pestaña', async () => {
-    const pagina = montarPagina({ hash: '#licencias', cuadros: true });
-    await pagina.iniciar();
-    const fila = pagina.el('vista-resumen').querySelector('.me-niveles-fila');
-    assert.equal(fila.getAttribute('data-llenar'), '');
-    assert.equal(pagina.estado.cuadros.length, 0);
-    await pagina.tocar(pagina.el('tab-resumen'));
-    pagina.cuadro();
-    pagina.cuadro();
-    assert.equal(fila.getAttribute('data-llenar'), null);
-    // Volver a la pestaña no los vuelve a llenar
-    await pagina.tocar(pagina.el('tab-horas'));
-    await pagina.tocar(pagina.el('tab-resumen'));
-    assert.equal(pagina.estado.cuadros.length, 0);
-  });
-
-  it('sin requestAnimationFrame, los tanques se ven llenos enseguida', async () => {
-    const pagina = montarPagina();
-    await pagina.iniciar();
-    assert.equal(pagina.el('vista-resumen').querySelector('.me-niveles-fila').getAttribute('data-llenar'), null);
   });
 
   it('#licencias: pide el Resumen y las licencias del año en curso, y dibuja la lista', async () => {
@@ -1656,6 +1754,315 @@ describe('mi-espacio.js: la página (DOM falso)', () => {
     assert.equal(pagina.el('me-anuncio').textContent, 'Mis licencias de 2027');
     // Y la vieja no se lleva el foco
     assert.equal(pagina.documento.activeElement, vista.querySelector('[data-anio="2027"]'));
+  });
+});
+
+// =====================================================================================================================================
+// El movimiento del Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen, 3 y 5), con el DOM falso: una sola vez por carga de la
+// página, la primera vez que la banda se dibuja y se ve. La regla y las líneas del resto se mueven en el <style> (data-animar en
+// #vista-resumen, que se saca dos cuadros después); los números (data-contar) los cuenta mi-espacio.js con requestAnimationFrame.
+// Reemplazan los tres de los tanques de «Niveles»
+// =====================================================================================================================================
+
+// El número de la frase que sube (el que se ve, decorativo), el final invisible que le da su ancho y el oculto a la vista, y los
+// números del resto, en su orden
+const cifraDe = (pagina) => pagina.el('me-frase')?.querySelector('[data-contar]') ?? null;
+const cifraFinalDe = (pagina) => pagina.el('me-frase')?.querySelector('.me-cifra-final') ?? null;
+const cifraOcultaDe = (pagina) => pagina.el('me-frase')?.querySelector('.visualmente-oculto') ?? null;
+const numerosDelRestoDe = (pagina) => pagina.el('vista-resumen').querySelectorAll('.me-numero [data-contar]');
+const textosDe = (elementos) => elementos.map((elemento) => elemento.textContent);
+// Los números del resto de PLANTA, como los manda el servidor
+const PLANTA_EN_SU_VALOR = Object.freeze(['25', '9', '22', '23']);
+// Lo que lee un lector de pantalla de un elemento del DOM falso: su texto, sin lo que va con aria-hidden
+const textoParaLectores = (elemento) => elemento.hijos
+  .map((hijo) => (typeof hijo === 'string' ? hijo : (hijo.getAttribute('aria-hidden') === 'true' ? '' : textoParaLectores(hijo))))
+  .join('').replace(/\s+/g, ' ').trim();
+// Corre cuadros con tiempo (el de requestAnimationFrame, en ms), de a 16 desde `desde`, mientras se pida alguno, y anota después de
+// cada uno el texto de cada elemento: por elemento, [[ms desde el primer cuadro, texto]]
+const cuadrosConTiempo = (pagina, elementos, desde = 1000) => {
+  const vistos = elementos.map(() => []);
+  for (let tiempo = desde; pagina.estado.cuadros.length > 0; tiempo += 16) {
+    assert.ok(tiempo < desde + 10000, 'los cuadros se terminan');
+    pagina.cuadro(tiempo);
+    elementos.forEach((elemento, i) => vistos[i].push([tiempo - desde, elemento.textContent]));
+  }
+  return vistos;
+};
+// Un número que sube (lo anotado por cuadrosConTiempo): en 0 hasta su demora, en enteros que no bajan y no llegan al final mientras
+// cuenta (pasa por alguno más que 0), y desde su demora más su duración, el texto final tal cual, que ya no cambia
+const comprobarConteo = (vistos, { final, demora, duracion }, nombre) => {
+  const hasta = Number(final.replace(',', '.'));
+  const llega = vistos.findIndex(([, texto]) => texto === final);
+  assert.ok(llega > 0, `${nombre}: llega a ${final}`);
+  assert.ok(vistos.slice(llega).every(([, texto]) => texto === final), `${nombre}: termina en ${final} y ahí queda`);
+  assert.ok(vistos[llega][0] >= demora + duracion, `${nombre}: llega a los ${vistos[llega][0]} ms`);
+  assert.ok(vistos[llega - 1][0] < demora + duracion, `${nombre}: no llega tarde`);
+  const contando = vistos.slice(0, llega);
+  assert.ok(contando.filter(([ms]) => ms < demora).every(([, texto]) => texto === '0'), `${nombre}: espera su demora en 0`);
+  assert.ok(contando.every(([, texto]) => /^\d+$/.test(texto) && Number(texto) < hasta), `${nombre}: en enteros, sin pasarse`);
+  const numeros = contando.map(([, texto]) => Number(texto));
+  assert.ok(numeros.every((numero, i) => i === 0 || numero >= numeros[i - 1]), `${nombre}: no baja`);
+  assert.ok(numeros.some((numero) => numero > 0), `${nombre}: sube`);
+};
+const conResumen = (resumen) => (metodo, ruta) => (ruta === '/api/mi-espacio/resumen' ? ok(resumen) : RESPUESTAS_DE_ENTRADA(metodo, ruta));
+
+describe('el movimiento del Resumen «Titular» (DOM falso)', () => {
+  it('se mueve una sola vez: data-animar en el primer cuadro y no en el segundo; un Resumen que se vuelve a dibujar llega quieto y en su valor', async () => {
+    const pagina = montarPagina({ cuadros: true });
+    await pagina.iniciar();
+    const vista = pagina.el('vista-resumen');
+    assert.ok(vista.querySelector('.me-banda'), 'la banda');
+    // Al verse, la regla y las líneas, vacías (data-animar), y los números, en 0
+    assert.equal(vista.getAttribute('data-animar'), '');
+    assert.equal(cifraDe(pagina).textContent, '0');
+    assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), ['0', '0', '0', '0']);
+    pagina.cuadro();
+    assert.equal(vista.getAttribute('data-animar'), '', 'el primer cuadro las dibuja vacías');
+    pagina.cuadro();
+    assert.equal(vista.getAttribute('data-animar'), null, 'en el segundo empiezan las transiciones');
+    // Un cuadro sin tiempo (el DOM falso) deja cada número en su valor
+    assert.equal(cifraDe(pagina).textContent, '33');
+    assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR);
+    assert.equal(pagina.estado.cuadros.length, 0);
+    assert.equal(vm.runInContext('pagina.bandaAnimada', pagina.contexto), true);
+    // Se vuelve a dibujar (por ejemplo, después de guardar una licencia): ya no se mueve
+    const vieja = cifraDe(pagina);
+    await pagina.contexto.cargarResumen();
+    assert.equal(vieja.isConnected, false);
+    assert.equal(vista.getAttribute('data-animar'), null);
+    assert.equal(cifraDe(pagina).textContent, '33');
+    assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR);
+    assert.equal(pagina.estado.cuadros.length, 0);
+  });
+
+  it('con el Resumen oculto (#licencias), la banda espera quieta a que se vea; volver a la pestaña no la vuelve a mover', async () => {
+    const pagina = montarPagina({ hash: '#licencias', cuadros: true });
+    await pagina.iniciar();
+    const vista = pagina.el('vista-resumen');
+    assert.ok(vista.querySelector('.me-banda'), 'la banda, dibujada en la pestaña oculta');
+    assert.equal(vista.getAttribute('data-animar'), null);
+    assert.equal(cifraDe(pagina).textContent, '33');
+    assert.equal(pagina.estado.cuadros.length, 0);
+    await pagina.tocar(pagina.el('tab-resumen'));
+    assert.equal(vista.getAttribute('data-animar'), '');
+    assert.equal(cifraDe(pagina).textContent, '0');
+    pagina.cuadro();
+    pagina.cuadro();
+    assert.equal(vista.getAttribute('data-animar'), null);
+    assert.equal(cifraDe(pagina).textContent, '33');
+    assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR);
+    assert.equal(pagina.estado.cuadros.length, 0);
+    await pagina.tocar(pagina.el('tab-horas'));
+    await pagina.tocar(pagina.el('tab-resumen'));
+    assert.equal(vista.getAttribute('data-animar'), null);
+    assert.equal(cifraDe(pagina).textContent, '33');
+    assert.equal(pagina.estado.cuadros.length, 0);
+  });
+
+  it('sin requestAnimationFrame, nada se mueve: ni data-animar, y los números en su valor desde el principio', async () => {
+    const pagina = montarPagina();
+    await pagina.iniciar();
+    const vista = pagina.el('vista-resumen');
+    for (const momento of ['al abrir', 'al volver a la pestaña']) {
+      assert.ok(vista.querySelector('.me-banda'), momento);
+      assert.equal(vista.getAttribute('data-animar'), null, momento);
+      assert.equal(cifraDe(pagina).textContent, '33', momento);
+      assert.equal(cifraFinalDe(pagina).textContent, '33', momento);
+      assert.equal(cifraOcultaDe(pagina).textContent, '33', momento);
+      assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR, momento);
+      await pagina.tocar(pagina.el('tab-horas'));
+      await pagina.tocar(pagina.el('tab-resumen'));
+    }
+  });
+
+  it('sin el saldo inicial, el primer Resumen es la invitación: la banda aparece al guardar «Mis vacaciones y saldos» y se mueve (es la primera vez)', async () => {
+    let guardado = false;
+    const pagina = montarPagina({
+      cuadros: true,
+      responder: conSaldosParaArrancar({
+        extra: (metodo, ruta) => {
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/anio/2026') return ok({ anio: 2026 }, 'Días del año guardados.');
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/saldo-inicial') {
+            guardado = true;
+            return ok({ arranque: HOY }, 'Saldo inicial guardado.');
+          }
+          return guardado && ruta === '/api/mi-espacio/resumen' ? ok(RESUMEN_DE_PLANTA) : undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    await pagina.correr();
+    const vista = pagina.el('vista-resumen');
+    assert.equal(pagina.abierto('modal-saldos'), true);
+    assert.equal(vista.querySelector('.me-banda'), null, 'la invitación, sin la banda');
+    assert.equal(vista.getAttribute('data-animar'), null);
+    assert.equal(pagina.estado.cuadros.length, 0);
+    await pagina.elegir('ms-dia', '20');
+    await pagina.elegir('ms-estudio', 'universitario');
+    for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
+    await pagina.tocar(pagina.el('ms-guardar'));
+    await pagina.esperar();
+    assert.equal(pagina.abierto('modal-saldos'), false);
+    assert.ok(vista.querySelector('.me-banda'), 'la banda, al guardar');
+    assert.equal(vista.getAttribute('data-animar'), '');
+    assert.equal(cifraDe(pagina).textContent, '0');
+    pagina.cuadro();
+    pagina.cuadro();
+    assert.equal(vista.getAttribute('data-animar'), null);
+    assert.equal(cifraDe(pagina).textContent, '33');
+    assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR);
+  });
+
+  // Review Focus 2
+  it('un lector de pantalla nunca lee un número a medio contar: el que sube va con aria-hidden y el oculto dice 33 desde el primer cuadro', async () => {
+    const pagina = montarPagina({ cuadros: true });
+    await pagina.iniciar();
+    const visible = cifraDe(pagina);
+    const final = cifraFinalDe(pagina);
+    const oculto = cifraOcultaDe(pagina);
+    assert.equal(visible.getAttribute('aria-hidden'), 'true');
+    assert.equal(final.getAttribute('aria-hidden'), 'true');
+    assert.ok(oculto.classList.contains('visualmente-oculto'));
+    assert.equal(oculto.getAttribute('aria-hidden'), null);
+    assert.equal(visible.textContent, '0');
+    assert.equal(final.textContent, '33');
+    assert.equal(oculto.textContent, '33');
+    // El título de la pestaña, como lo lee un lector de pantalla, en cada cuadro: el número una sola vez, el final
+    const frase = pagina.el('me-frase');
+    assert.equal(textoParaLectores(frase), 'Te quedan 33 días de vacaciones');
+    const titulo = { get textContent() { return textoParaLectores(frase); } };
+    const [vistos, finales, ocultos, leidos] = cuadrosConTiempo(pagina, [visible, final, oculto, titulo]);
+    assert.ok(vistos.some(([, texto]) => texto !== '0' && texto !== '33'), 'el que se ve pasa por números intermedios');
+    assert.ok(finales.every(([, texto]) => texto === '33'), 'el final invisible (el ancho del número) dice siempre 33');
+    assert.ok(ocultos.every(([, texto]) => texto === '33'), 'el oculto dice siempre 33');
+    assert.ok(leidos.every(([, texto]) => texto === 'Te quedan 33 días de vacaciones'), 'el título se lee siempre entero');
+  });
+
+  // El número de la frase mide desde el primer cuadro lo que el valor final (sin hueco antes de un final de una cifra ni un salto de
+  // ancho al pasar de 9 a 10): el final invisible y el que sube, en la misma celda de una grilla, el que sube a la derecha
+  it('el <style>: el número de la frase, una grilla con el final invisible y el que sube en la misma celda, sin un ancho mínimo fijo', () => {
+    const estilo = leer('mi-espacio.html').match(/<style>([\s\S]*?)<\/style>/)[1];
+    assert.ok(estilo.includes('.me-cifra { display: inline-grid; justify-items: end; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }'));
+    assert.ok(estilo.includes('.me-cifra-final, .me-cifra [data-contar] { grid-area: 1 / 1; }'));
+    assert.ok(estilo.includes('.me-cifra-final { visibility: hidden; }'));
+    assert.doesNotMatch(estilo, /\.me-cifra \{[^}]*min-width/);
+    // El oculto a la vista es absoluto: no ocupa lugar en la grilla
+    assert.match(estilo, /\.visualmente-oculto \{ position: absolute !important;/);
+  });
+
+  // Review Focus 3
+  it('con cuadros con tiempo, cada número sube en enteros, con su demora y su duración, y termina en el texto del servidor: 33, 1,5 y 0', async () => {
+    // PLANTA: la frase, con la regla (250 ms de demora y 1300 de duración), y las franquicias, con su línea (900 ms y 700)
+    const planta = montarPagina({ cuadros: true });
+    await planta.iniciar();
+    const resto = numerosDelRestoDe(planta);
+    const [frase, franquicias, medica] = cuadrosConTiempo(planta, [cifraDe(planta), resto[0], resto[2]]);
+    comprobarConteo(frase, { final: '33', demora: 250, duracion: 1300 }, 'la frase');
+    comprobarConteo(franquicias, { final: '25', demora: 900, duracion: 700 }, 'las franquicias');
+    // La tercera línea empieza 180 ms después de la primera
+    comprobarConteo(medica, { final: '22', demora: 1080, duracion: 700 }, 'la atención médica');
+    // CONTRATO: las horas a favor, con decimales, terminan en «1,5» tal cual (antes, solo 0 y 1)
+    const contrato = montarPagina({ cuadros: true, responder: conResumen(resumenDel(CONTRATO)) });
+    await contrato.iniciar();
+    const [horas] = cuadrosConTiempo(contrato, [numerosDelRestoDe(contrato)[0]]);
+    comprobarConteo(horas, { final: '1,5', demora: 900, duracion: 700 }, 'las horas a favor');
+    assert.deepEqual([...new Set(horas.map(([, texto]) => texto))], ['0', '1', '1,5']);
+    // Uno en 0 (CONTRATO sin horas extras: las horas a favor) sigue en 0 en todos los cuadros
+    const sinHorasExtras = resumenDel(CONTRATO, { estado: { ...CONTRATO.estado, horasExtras: [], licencias: [] } });
+    const sinHoras = montarPagina({ cuadros: true, responder: conResumen(sinHorasExtras) });
+    await sinHoras.iniciar();
+    const [cero] = numerosDelRestoDe(sinHoras);
+    assert.equal(cero.textContent, '0');
+    const [vistosDelCero] = cuadrosConTiempo(sinHoras, [cero]);
+    assert.ok(vistosDelCero.length > 0);
+    assert.ok(vistosDelCero.every(([, texto]) => texto === '0'));
+  });
+
+  // Review Focus 5
+  it('un Resumen que se vuelve a dibujar mientras la banda se mueve llega quieto y completo, y los cuadros que quedan del conteo viejo no lo tocan', async () => {
+    // Después del primer cuadro (con data-animar todavía puesto) y a mitad del conteo (la frase va por la mitad)
+    for (const tiempos of [[1000], [1000, 1016, 1900]]) {
+      const pagina = montarPagina({ cuadros: true });
+      await pagina.iniciar();
+      const vista = pagina.el('vista-resumen');
+      const vieja = cifraDe(pagina);
+      for (const tiempo of tiempos) pagina.cuadro(tiempo);
+      if (tiempos.length === 1) assert.equal(vista.getAttribute('data-animar'), '', 'todavía no empezaron las transiciones');
+      else assert.ok(!['0', '33'].includes(vieja.textContent), `a medio contar: ${vieja.textContent}`);
+      // Se guarda una licencia: el Resumen se vuelve a dibujar
+      await pagina.contexto.cargarResumen();
+      assert.equal(vieja.isConnected, false);
+      const textoViejo = vieja.textContent;
+      const nueva = cifraDe(pagina);
+      const quieto = (momento) => {
+        assert.equal(vista.getAttribute('data-animar'), null, momento);
+        assert.equal(cifraDe(pagina), nueva, momento);
+        assert.equal(nueva.textContent, '33', momento);
+        assert.equal(cifraOcultaDe(pagina).textContent, '33', momento);
+        assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR, momento);
+      };
+      quieto(`${String(tiempos)}: recién dibujado`);
+      // Los cuadros que quedan (el conteo viejo y el que sacaba data-animar) no tocan el nuevo, y se terminan
+      for (let tiempo = tiempos.at(-1) + 16; pagina.estado.cuadros.length > 0; tiempo += 16) {
+        assert.ok(tiempo < 20000, 'los cuadros se terminan');
+        pagina.cuadro(tiempo);
+        quieto(`${String(tiempos)}: a los ${String(tiempo)} ms`);
+      }
+      // El conteo viejo se detuvo: no escribió más en el número que ya no está
+      assert.equal(vieja.textContent, textoViejo);
+    }
+  });
+
+  it('lo puro del movimiento: el valor de un número como lo escribe el servidor (con coma) y la demora de una línea del resto', () => {
+    assert.equal(M.numeroDelTexto('33'), 33);
+    assert.equal(M.numeroDelTexto('1,5'), 1.5);
+    assert.equal(M.numeroDelTexto('0'), 0);
+    assert.equal(M.numeroDelTexto(' 10,5 '), 10.5);
+    for (const raro of ['', '-3', '1.5', '1,', ',5', 'x', MALICIOSO, null, undefined, 12]) assert.equal(M.numeroDelTexto(raro), null, String(raro));
+    // La de cada línea, del style que escribe htmlDelResto: 900 ms y 90 más por línea
+    const demoras = [...M.htmlDelResto(resumenDel(PLANTA)).matchAll(/<i style="([^"]*)">/g)].map(([, estilo]) => M.demoraDelEstilo(estilo));
+    assert.deepEqual(demoras, [900, 990, 1080, 1170]);
+    for (const raro of ['', '--p:10%', null, undefined, '--demora:abc']) assert.equal(M.demoraDelEstilo(raro), 0, String(raro));
+  });
+
+  // La spec (3): con prefers-reduced-motion, nada se mueve y todo está en su valor desde el principio. La regla y las líneas, en el
+  // <style> (el test de abajo); los números no cuentan
+  it('con prefers-reduced-motion: reduce, los números no cuentan: están en su valor desde el principio, sin pasar por 0', async () => {
+    const pagina = montarPagina({ cuadros: true, reducido: true });
+    await pagina.iniciar();
+    const elementos = [cifraDe(pagina), cifraFinalDe(pagina), ...numerosDelRestoDe(pagina)];
+    const finales = ['33', '33', ...PLANTA_EN_SU_VALOR];
+    assert.deepEqual(textosDe(elementos), finales);
+    const vistos = cuadrosConTiempo(pagina, elementos);
+    vistos.forEach((deUno, i) => assert.ok(deUno.every(([, texto]) => texto === finales[i]), finales[i]));
+    assert.deepEqual(textosDe(elementos), finales);
+  });
+
+  it('el <style>: la regla y las líneas, vacías y sin transición con data-animar; después, cada una con su --demora y su --duracion; quietas con prefers-reduced-motion', () => {
+    const estilo = leer('mi-espacio.html').match(/<style>([\s\S]*?)<\/style>/)[1];
+    // Los tramos, uno detrás del otro con su demora y su duración (las del style que escribe mi-espacio.js); el número de cada
+    // uno, cuando su tramo casi terminó; las líneas, de 700 ms (los mismos que cuenta el número de cada una) y con su curva: la de
+    // contarHasta, 1 − (1 − x)³, que en CSS es cubic-bezier(0.33, 1, 0.68, 1) (el número sube con su línea, no se le adelanta)
+    assert.ok(estilo.includes('.me-tramo { transition: transform var(--duracion) cubic-bezier(0.4, 0, 0.3, 1) var(--demora); }'));
+    assert.ok(estilo.includes('.me-tramo > span { transition: opacity 200ms ease calc(var(--demora) + var(--duracion) * 0.7); }'));
+    assert.ok(estilo.includes(`.me-linea i { transition: transform ${String(M.DURACION_DE_LA_LINEA)}ms cubic-bezier(0.33, 1, 0.68, 1) var(--demora); }`));
+    assert.equal(M.DURACION_DE_LA_LINEA, 700);
+    assert.match(leer('js/mi-espacio.js'), /Math\.floor\(hasta \* \(1 - \(1 - avance\) \*\* 3\)\)/);
+    // Con data-animar, vacías y sin transición: si ya se habían dibujado llenas, se vacían de golpe
+    assert.ok(estilo.includes('#vista-resumen[data-animar] .me-tramo, #vista-resumen[data-animar] .me-linea i { transform: scaleX(0); transition: none; }'));
+    assert.ok(estilo.includes('#vista-resumen[data-animar] .me-tramo > span { opacity: 0; transition: none; }'));
+    // Con prefers-reduced-motion, sin transiciones ni transformaciones, y el número de cada tramo a la vista, también con data-animar
+    const inicio = estilo.indexOf('@media (prefers-reduced-motion: reduce) {');
+    assert.ok(inicio > estilo.indexOf('#vista-resumen[data-animar] .me-tramo > span {'), 'después de las reglas que anula');
+    const reducido = estilo.slice(inicio, estilo.indexOf('}', inicio) + 1);
+    for (const selector of ['.me-tramo', '.me-tramo > span', '.me-linea i', '#vista-resumen[data-animar] .me-tramo',
+      '#vista-resumen[data-animar] .me-tramo > span', '#vista-resumen[data-animar] .me-linea i']) {
+      assert.ok(reducido.split('{')[1].split(',').map((parte) => parte.trim()).includes(selector), selector);
+    }
+    assert.match(reducido, /\{ transition: none; transform: none; opacity: 1; \}/);
+    // Sin restos de los tanques de «Niveles»
+    assert.doesNotMatch(leer('js/mi-espacio.js'), /llenarTanques|tanquesLlenos|data-llenar|me-niveles|me-tanque/);
+    assert.doesNotMatch(estilo, /data-llenar|me-tanque/);
   });
 });
 

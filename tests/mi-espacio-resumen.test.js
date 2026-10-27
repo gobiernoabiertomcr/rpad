@@ -1,7 +1,8 @@
 // Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 3.9, 7 y 8): el panel como datos. El Resumen
-// «Niveles» (Vence pronto, los tanques, las pastillas y las opciones de «Cargar licencia»), la lista de licencias de un año,
-// las tablas de horas extras y el próximo feriado, con todos sus números y sus textos: la página los imprime tal cual
-// (Ruling 19). Puras, sin base, sobre los casos de tests/fixtures/mi-espacio-casos.js y sin feriados de la tabla.
+// «Titular» (spec 2026-10-27-mi-espacio-resumen, sección 4: la frase de la banda, Vence pronto en una línea, los tanques, las
+// pastillas y las opciones de «Cargar licencia»), la lista de licencias de un año, las tablas de horas extras y el próximo
+// feriado, con todos sus números y sus textos: la página los imprime tal cual (Ruling 19). Puras, sin base, sobre los casos
+// de tests/fixtures/mi-espacio-casos.js y sin feriados de la tabla.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -86,7 +87,7 @@ describe('el Resumen de PLANTA', () => {
     const resumen = resumenDel(PLANTA);
     assert.deepEqual(Object.keys(resumen), [
       'modalidad', 'anio', 'al_texto', 'mensaje', 'abrir_saldos', 'persona', 'marca', 'vence_pronto', 'faltantes', 'tanques',
-      'pastillas', 'extraordinaria', 'tipos', 'hoy_y_manana'
+      'titular', 'pastillas', 'extraordinaria', 'tipos', 'hoy_y_manana'
     ]);
     assert.deepEqual(resumen.modalidad, { clave: 'planta', texto: 'Planta permanente' });
     assert.equal(resumen.anio, 2026);
@@ -97,20 +98,22 @@ describe('el Resumen de PLANTA', () => {
     assert.deepEqual(resumen.faltantes, []);
   });
 
-  it('Vence pronto: el franco de octubre y los días de la licencia 2024, por fecha', () => {
+  it('Vence pronto: el franco de octubre y los días de la licencia 2024, por fecha, cada uno con su línea', () => {
     const resumen = resumenDel(PLANTA);
     assert.equal(resumen.marca, true);
     assert.deepEqual(resumen.vence_pronto, [
       {
-        fecha: '2026-10-30', dia: '30', mes: 'oct', cuando: 'Viernes 30/10', titulo: '1 franco compensatorio de octubre',
-        detalle: 'Es el último día hábil del mes. Si no lo usás, queda como no utilizado previamente.',
-        accion: { texto: 'Cargarlo', tipo: 'franco' }
+        fecha: '2026-10-30', dia: '30', mes: 'oct', titulo: '1 franco compensatorio de octubre',
+        texto: 'Vence el viernes 30/10, en 4 días.', accion: { texto: 'Cargarlo', tipo: 'franco' }
       },
       {
-        fecha: '2026-12-31', dia: '31', mes: 'dic', cuando: 'Jueves 31/12', titulo: '3 días de la licencia 2024',
-        detalle: 'Ese día vence la licencia 2024.', accion: { texto: 'Cargar vacaciones', tipo: 'vacaciones' }
+        fecha: '2026-12-31', dia: '31', mes: 'dic', titulo: '3 días de la licencia 2024',
+        texto: 'Vencen el jueves 31/12, en 66 días.', accion: { texto: 'Cargar vacaciones', tipo: 'vacaciones' }
       }
     ]);
+    for (const cosa of resumen.vence_pronto) {
+      assert.deepEqual(Object.keys(cosa), ['fecha', 'dia', 'mes', 'titulo', 'texto', 'accion']);
+    }
   });
 
   it('Vence pronto con dos francos sin usar: en plural', () => {
@@ -118,8 +121,37 @@ describe('el Resumen de PLANTA', () => {
     const estado = { ...PLANTA.estado, licencias: PLANTA.estado.licencias.filter((fila) => fila.tipo !== 'franco') };
     const [franco] = resumenDel(PLANTA, { estado }).vence_pronto;
     assert.equal(franco.titulo, '2 francos compensatorios de octubre');
-    assert.equal(franco.detalle, 'Es el último día hábil del mes. Si no los usás, quedan como no utilizados previamente.');
+    assert.equal(franco.texto, 'Vencen el viernes 30/10, en 4 días.');
     assert.deepEqual(franco.accion, { texto: 'Cargarlos', tipo: 'franco' });
+  });
+
+  it('Vence pronto según los días corridos que faltan: mañana, hoy y ya pasó, en singular o en plural', () => {
+    const textos = (hoy, estado = PLANTA.estado) =>
+      resumenDel(PLANTA, { estado, hoy }).vence_pronto.map(({ titulo, texto }) => [titulo, texto]);
+    assert.deepEqual(textos('2026-10-29'), [
+      ['1 franco compensatorio de octubre', 'Vence mañana.'],
+      ['3 días de la licencia 2024', 'Vencen el jueves 31/12, en 63 días.']
+    ]);
+    assert.deepEqual(textos('2026-10-30')[0], ['1 franco compensatorio de octubre', 'Vence hoy.']);
+    // El sábado 31/10 el franco ya venció el viernes, pero sigue en la lista hasta que termina el mes
+    assert.deepEqual(textos('2026-10-31')[0], ['1 franco compensatorio de octubre', 'Venció el viernes 30/10.']);
+    const dosFrancos = { ...PLANTA.estado, licencias: PLANTA.estado.licencias.filter((fila) => fila.tipo !== 'franco') };
+    assert.deepEqual(textos('2026-10-31', dosFrancos)[0], ['2 francos compensatorios de octubre', 'Vencieron el viernes 30/10.']);
+    // El franco de diciembre y los días de la licencia 2024 vencen el mismo jueves 31/12
+    assert.deepEqual(textos('2026-12-30'), [
+      ['1 franco compensatorio de diciembre', 'Vence mañana.'], ['3 días de la licencia 2024', 'Vencen mañana.']
+    ]);
+    assert.deepEqual(textos('2026-12-31'), [
+      ['1 franco compensatorio de diciembre', 'Vence hoy.'], ['3 días de la licencia 2024', 'Vencen hoy.']
+    ]);
+  });
+
+  it('Vence pronto con 1 día de la licencia que vence: en singular', () => {
+    const estado = { ...PLANTA.estado, saldos: PLANTA.estado.saldos.map((saldo) =>
+      (saldo.concepto === 'vacaciones' && saldo.anio === 2024 ? { ...saldo, cantidad: 6 } : saldo)) };
+    const licencia2024 = resumenDel(PLANTA, { estado }).vence_pronto.find((cosa) => cosa.accion.tipo === 'vacaciones');
+    assert.deepEqual([licencia2024.titulo, licencia2024.texto],
+      ['1 día de la licencia 2024', 'Vence el jueves 31/12, en 66 días.']);
   });
 
   it('el franco de octubre ya usado no está en Vence pronto', () => {
@@ -223,15 +255,14 @@ describe('el Resumen de PLANTA', () => {
     assert.equal(pastillas[1].nota, 'Por las horas de octubre');
   });
 
-  it('la médica extraordinaria', () => {
-    assert.equal(resumenDel(PLANTA).extraordinaria,
-      'Atención médica extraordinaria: sin tope y aparte de los 25 días. No usaste en 2026.');
+  it('la médica extraordinaria, en una línea corta', () => {
+    assert.equal(resumenDel(PLANTA).extraordinaria, 'Atención médica extraordinaria: sin tope. No usaste en 2026.');
     const tres = conLicencias(PLANTA.estado, licencia(100, 'medica_extraordinaria', '2026-11-10', '2026-11-12'));
     assert.equal(resumenDel(PLANTA, { estado: tres }).extraordinaria,
-      'Atención médica extraordinaria: sin tope y aparte de los 25 días. Usaste 3 días en 2026.');
+      'Atención médica extraordinaria: sin tope. Usaste 3 días en 2026.');
     const uno = conLicencias(PLANTA.estado, licencia(100, 'medica_extraordinaria', '2026-11-10'));
     assert.equal(resumenDel(PLANTA, { estado: uno }).extraordinaria,
-      'Atención médica extraordinaria: sin tope y aparte de los 25 días. Usaste 1 día en 2026.');
+      'Atención médica extraordinaria: sin tope. Usaste 1 día en 2026.');
   });
 
   it('los tipos de «Cargar licencia», con lo que queda, sin el uso autorizado', () => {
@@ -318,10 +349,16 @@ describe('el Resumen de CONTRATO', () => {
     const resumen = resumenDel(CONTRATO);
     assert.equal(resumen.marca, true);
     assert.deepEqual(resumen.vence_pronto, [{
-      fecha: '2026-10-30', dia: '30', mes: 'oct', cuando: 'Viernes 30/10', titulo: '1,5 horas a favor de octubre',
-      detalle: 'Es el último día hábil del mes. Lo que no uses pasa a horas no utilizadas previamente.',
-      accion: { texto: 'Usarlas', tipo: 'horas_a_favor' }
+      fecha: '2026-10-30', dia: '30', mes: 'oct', titulo: '1,5 horas a favor de octubre',
+      texto: 'Vencen el viernes 30/10, en 4 días.', accion: { texto: 'Usarlas', tipo: 'horas_a_favor' }
     }]);
+  });
+
+  it('Vence pronto con 1 hora a favor: en singular', () => {
+    const estado = conLicencias(CONTRATO.estado, licencia(100, 'horas_a_favor', '2026-10-28', '2026-10-28', 0.5));
+    assert.deepEqual(resumenDel(CONTRATO, { estado }).vence_pronto.map(({ titulo, texto, accion }) => [titulo, texto, accion]), [
+      ['1 hora a favor de octubre', 'Vence el viernes 30/10, en 4 días.', { texto: 'Usarla', tipo: 'horas_a_favor' }]
+    ]);
   });
 
   it('la lectora no ve a sus compañeros ni audita', () => {
@@ -343,6 +380,126 @@ describe('el Resumen de CONTRATO', () => {
     assert.equal(resumen.marca, false);
     assert.equal(resumen.tanques.otros[0].vence, false);
     assert.deepEqual(resumen.pastillas.meses[0], { numero: '0', mes: 'Octubre', nota: 'Todas usadas', estado: 'disponible' });
+  });
+});
+
+describe('la banda «Titular»', () => {
+  const saldosDeVacaciones = (dias) => PLANTA.estado.saldos.map((saldo) =>
+    (saldo.concepto === 'vacaciones' && Object.hasOwn(dias, saldo.anio) ? { ...saldo, cantidad: dias[saldo.anio] } : saldo));
+  const sinVacaciones = PLANTA.estado.licencias.filter((fila) => fila.tipo !== 'vacaciones');
+  // Un cálculo de PLANTA con las ordinarias cambiadas (para las cantidades que el reparto no da con licencias de 10 a 30 días)
+  const conOrdinarias = (cambio) => {
+    const calculo = calculoDe(PLANTA.estado);
+    return { ...calculo, reparto: { ...calculo.reparto, ordinarias: calculo.reparto.ordinarias.map(cambio) } };
+  };
+  const titularCon = (calculo) => resumenDe({
+    persona: PLANTA.persona, estado: PLANTA.estado, calculo, hoy: HOY, feriados: SIN_FERIADOS, hoyYManana: HOY_Y_MANANA
+  }).titular;
+
+  it('PLANTA: el día y la modalidad, la frase partida alrededor del número y la bajada, con lo que vence primero', () => {
+    assert.deepEqual(resumenDel(PLANTA).titular, {
+      encabezado: 'Lunes 26 de octubre, planta permanente', antes: 'Te quedan', cifra: '33', despues: 'días de vacaciones',
+      bajada: [
+        { texto: '3 vencen el jueves 31/12.', vence: true },
+        { texto: '5 ya están cargados para noviembre.', vence: false },
+        { texto: 'Otros 10 se habilitan el 1/1/2027.', vence: false }
+      ]
+    });
+  });
+
+  it('CONTRATO: sin licencia que venza ni nada cargado, solo lo que se habilita', () => {
+    assert.deepEqual(resumenDel(CONTRATO).titular, {
+      encabezado: 'Lunes 26 de octubre, contrato', antes: 'Te quedan', cifra: '13', despues: 'días de vacaciones',
+      bajada: [{ texto: 'Otros 7 se habilitan el 1/1/2027.', vence: false }]
+    });
+  });
+
+  it('el encabezado: el día de la semana con mayúscula, el día sin cero, el mes y la modalidad en minúscula', () => {
+    const politica = resumenDel(PLANTA, { persona: { ...PLANTA.persona, vinculo: 'planta_politica' } });
+    assert.equal(politica.titular.encabezado, 'Lunes 26 de octubre, planta política');
+    assert.equal(resumenDel(PLANTA, { hoy: '2026-11-03' }).titular.encabezado, 'Martes 3 de noviembre, planta permanente');
+  });
+
+  it('con 1 día disponible: «Te queda», en singular', () => {
+    const estado = { ...PLANTA.estado, saldos: saldosDeVacaciones({ 2024: 1, 2025: 0, 2026: 0 }), licencias: sinVacaciones };
+    assert.deepEqual(resumenDel(PLANTA, { estado }).titular, {
+      encabezado: 'Lunes 26 de octubre, planta permanente', antes: 'Te queda', cifra: '1', despues: 'día de vacaciones',
+      bajada: [
+        { texto: '1 vence el jueves 31/12.', vence: true }, { texto: 'Otros 10 se habilitan el 1/1/2027.', vence: false }
+      ]
+    });
+  });
+
+  it('con 0: «No te quedan días de vacaciones», sin número, y lo que se habilita sin «Otros»', () => {
+    // Con el arranque el 01/09, unas vacaciones ya tomadas del 02/09 al 23/10 consumen todo lo habilitado (38 días hábiles)
+    const estado = { ...PLANTA.estado, arranque: '2026-09-01', licencias: [...sinVacaciones,
+      licencia(100, 'vacaciones', '2026-09-02', '2026-10-23')] };
+    const resumen = resumenDel(PLANTA, { estado });
+    assert.equal(resumen.tanques.vacaciones.numero, 0);
+    assert.deepEqual(resumen.faltantes, []);
+    assert.deepEqual(resumen.titular, {
+      encabezado: 'Lunes 26 de octubre, planta permanente', antes: 'No te quedan días de vacaciones', cifra: '', despues: '',
+      bajada: [{ texto: '10 se habilitan el 1/1/2027.', vence: false }]
+    });
+  });
+
+  it('1 que vence y 1 cargado: en singular', () => {
+    const estado = { ...PLANTA.estado, saldos: saldosDeVacaciones({ 2024: 2 }),
+      licencias: [...sinVacaciones, licencia(6, 'vacaciones', '2026-11-03')] };
+    assert.deepEqual(resumenDel(PLANTA, { estado }).titular.bajada, [
+      { texto: '1 vence el jueves 31/12.', vence: true },
+      { texto: '1 ya está cargado para noviembre.', vence: false },
+      { texto: 'Otros 10 se habilitan el 1/1/2027.', vence: false }
+    ]);
+  });
+
+  it('los meses y las fechas de la bajada son los de las notas de las capas', () => {
+    const conDiciembre = conLicencias(PLANTA.estado, licencia(100, 'vacaciones', '2026-12-14', '2026-12-15'));
+    const { tanques, titular } = resumenDel(PLANTA, { estado: conDiciembre });
+    assert.equal(tanques.vacaciones.capas.find((capa) => capa.clase === 'cargadas').nota, 'Cargados para noviembre y diciembre');
+    assert.deepEqual(titular.bajada.map((oracion) => oracion.texto), [
+      '1 vence el jueves 31/12.', '7 ya están cargados para noviembre y diciembre.', 'Otros 10 se habilitan el 1/1/2027.'
+    ]);
+
+    // Con el arranque en marzo, la 2026 todavía no habilitó nada: sus dos mitades están por habilitar
+    const marzo = { ...PLANTA.estado, arranque: '2026-03-02', licencias: [] };
+    const resumen = resumenDe({
+      persona: PLANTA.persona, estado: marzo, calculo: calculoDe(marzo, '2026-03-10'), hoy: '2026-03-10',
+      feriados: SIN_FERIADOS, hoyYManana: HOY_Y_MANANA
+    });
+    assert.deepEqual(resumen.titular, {
+      encabezado: 'Martes 10 de marzo, planta permanente', antes: 'Te quedan', cifra: '28', despues: 'días de vacaciones',
+      bajada: [
+        { texto: '8 vencen el jueves 31/12.', vence: true },
+        { texto: 'Otros 20 se habilitan el 1/7/2026 y el 1/1/2027.', vence: false }
+      ]
+    });
+  });
+
+  it('1 por habilitar: «Otro 1 se habilita…» y, con la cifra en 0, «1 se habilita…»', () => {
+    const uno = titularCon(conOrdinarias((ordinaria) =>
+      (ordinaria.anio === 2026 ? { ...ordinaria, por_habilitar: 1 } : ordinaria)));
+    assert.deepEqual(uno.bajada.at(-1), { texto: 'Otro 1 se habilita el 1/1/2027.', vence: false });
+    const sinDias = titularCon(conOrdinarias((ordinaria) => ({
+      ...ordinaria, disponibles: 0, cargados: 0, por_habilitar: ordinaria.anio === 2026 ? 1 : 0
+    })));
+    assert.deepEqual(sinDias, {
+      encabezado: 'Lunes 26 de octubre, planta permanente', antes: 'No te quedan días de vacaciones', cifra: '', despues: '',
+      bajada: [{ texto: '1 se habilita el 1/1/2027.', vence: false }]
+    });
+  });
+
+  it('sin nada que vence, cargado ni por habilitar, la bajada va vacía', () => {
+    const nada = titularCon(conOrdinarias((ordinaria) => ({ ...ordinaria, disponibles: 0, cargados: 0, por_habilitar: 0 })));
+    assert.deepEqual(nada.bajada, []);
+    assert.equal(nada.antes, 'No te quedan días de vacaciones');
+  });
+
+  it('sin modalidad, sin arranque o sin un hoy válido, no hay banda', () => {
+    const sinModalidad = { ...PLANTA.estado, modalidad: null };
+    assert.equal(resumenDel(PLANTA, { estado: sinModalidad, persona: { ...PLANTA.persona, vinculo: null } }).titular, null);
+    assert.equal(resumenDel(PLANTA, { estado: { ...PLANTA.estado, arranque: null } }).titular, null);
+    assert.equal(resumenDe({ persona: PLANTA.persona, estado: PLANTA.estado, calculo: calculoDe(PLANTA.estado) }).titular, null);
   });
 });
 

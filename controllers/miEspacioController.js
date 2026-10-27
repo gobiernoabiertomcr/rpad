@@ -64,22 +64,25 @@ const responder = async (res, mensaje, operacion) => {
 };
 
 /**
- * Los eventos de «Hoy y mañana» (spec 2026-10-26-mi-espacio-agenda, sección 6): los que la persona (`{ id, rol }`) ve hoy y
- * mañana, como en la agenda (`eventosVisibles` e `itemDeEvento`), en `eventosDeHoyYManana`. `feriados`: el Set del cálculo
- * (cubre el aviso de cada evento). Aislado: si leerlos falla, el Resumen sale igual, con [], y el error queda en la consola.
+ * Los eventos de «Hoy y mañana» (spec 2026-10-26-mi-espacio-agenda, sección 6, y spec 2026-10-27-mi-espacio-resumen, 4.4):
+ * los que la persona (`{ id, rol }`) ve hoy y mañana, como en la agenda (`eventosVisibles` e `itemDeEvento`), en
+ * `eventosDeHoyYManana`, cada uno con su `dia` y su `quien`. El mismo `ahora` (`ahoraArgentina()`) da el aviso de cada evento
+ * y saca los de hoy que ya terminaron (decisión del usuario, 27/10/2026). `feriados`: el Set del cálculo (cubre el aviso de
+ * cada evento). Aislado: si leerlos falla, el Resumen sale igual, con [], y el error queda en la consola.
  */
 const eventosDelResumen = async (usuario, hoy, feriados) => {
   try {
     const eventos = await eventosVisibles(usuario, hoy, sumarDias(hoy, 1));
     const ahora = ahoraArgentina();
-    return eventosDeHoyYManana(eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados })), hoy);
+    return eventosDeHoyYManana(eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados })), hoy,
+      ahora);
   } catch (error) {
     console.error('Error al obtener los eventos de hoy y mañana:', error?.stack ?? error);
     return [];
   }
 };
 
-// GET /api/mi-espacio/resumen: el Resumen «Niveles», ya calculado. «Hoy y mañana» lleva los compañeros que no están hoy y, aparte,
+// GET /api/mi-espacio/resumen: el Resumen «Titular», ya calculado. «Hoy y mañana» lleva los compañeros que no están hoy y, aparte,
 // los que empiezan mañana (`ausentesPara` de hoy a mañana, en dos grupos con `ausentesDeHoyYManana`: decisión del usuario,
 // 27/10/2026; a quien no es de administración, ninguno), el próximo feriado, con las mismas filas de los feriados del cálculo
 // (sin leerlas otra vez), y, al final, los eventos de hoy y de mañana (`eventos`, aislados: ver eventosDelResumen). Van también
