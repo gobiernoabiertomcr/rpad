@@ -78,6 +78,10 @@ const VERSION_NOTAS = '20261204';
 // del área, spec 2026-10-25-proyectos, 1, 2 y 10): el número siguiente al más alto de este archivo cuando se creó (con el renombre,
 // VERSION_REPORTES y VERSION_PANTALLAS subieron al mismo número; siguen siendo independientes). Su versión es propia
 const VERSION_PROYECTOS = '20261206';
+// mi-espacio.js (la página nueva de Mi espacio, con las pestañas Resumen, Licencias y Horas extras, spec
+// 2026-10-26-mi-espacio-licencias-y-horas, 8 y 11): el mismo número que VERSION_PANTALLAS y VERSION_FERIADOS, que subieron con esta
+// entrega (siguen siendo independientes). Su versión es propia
+const VERSION_MI_ESPACIO = '20261209';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -445,7 +449,8 @@ describe('páginas', () => {
   // Sitio público (spec 2026-10-17-fechas-datasets, 11): cada página carga su script con ?v=, una sola vez y después de api.js
   for (const [pagina, script, version] of [['datasets.html', 'datasets', VERSION_PUBLICAS], ['dataset.html', 'dataset-detail', VERSION_PUBLICAS],
     ['calendario.html', 'calendario', VERSION_PUBLICAS], ['index.html', 'dashboard', VERSION_PORTADA], ['seguimiento.html', 'seguimiento', VERSION_SEGUIMIENTO],
-    ['reportes.html', 'reportes', VERSION_REPORTES], ['notas.html', 'notas', VERSION_NOTAS], ['proyectos.html', 'proyectos', VERSION_PROYECTOS]]) {
+    ['reportes.html', 'reportes', VERSION_REPORTES], ['notas.html', 'notas', VERSION_NOTAS], ['proyectos.html', 'proyectos', VERSION_PROYECTOS],
+    ['mi-espacio.html', 'mi-espacio', VERSION_MI_ESPACIO]]) {
     it(`${pagina}: ${script}.js con la versión ${version}, después de api.js`, () => {
       const scripts = [...leer(pagina).matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
       assert.deepEqual(scripts.filter(src => src.startsWith(`js/${script}.js`)), [`js/${script}.js?v=${version}`]);
@@ -608,6 +613,98 @@ describe('páginas', () => {
     });
   });
 
+  // El menú de Mi cuenta (spec 2026-10-26-mi-espacio-licencias-y-horas, 11): Mi Perfil, con la persona, y Mi espacio, con el
+  // calendario con la tilde (calendar-check de Lucide, escrito en el HTML: no está en ICON_SELECTOR_MAP ni en Icons de main.js). Las
+  // demás páginas copian el menú de index.html (la carcasa, más abajo)
+  describe('el menú de Mi cuenta', () => {
+    const PERSONA = '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>';
+    const CALENDARIO_CON_TILDE = '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/>';
+
+    it('index.html: Mi Perfil con la persona y Mi espacio con el calendario con la tilde, en ese orden', () => {
+      const bloque = leer('index.html').match(/<div class="sidebar-section hidden" id="sidebarAccount">[\s\S]*?<\/nav>/)?.[0] ?? '';
+      assert.match(bloque, /<div class="sidebar-section-title">Mi cuenta<\/div>/);
+      const links = [...bloque.matchAll(/<a href="([^"]+)" class="sidebar-link">(<svg [^>]*>[\s\S]*?<\/svg>)<span>([^<]+)<\/span><\/a>/g)]
+        .map(([, href, svg, texto]) => ({ href, svg, texto }));
+      assert.deepEqual(links.map(l => l.href), ['perfil.html', 'mi-espacio.html']);
+      assert.deepEqual(links.map(l => l.texto), ['Mi Perfil', 'Mi espacio']);
+      assert.equal(bloque.match(/<a /g)?.length, 2, 'ningún otro link');
+      const [perfil, miEspacio] = links;
+      assert.ok(perfil.svg.endsWith(`>${PERSONA}</svg>`), 'Mi Perfil: la persona');
+      assert.ok(miEspacio.svg.endsWith(`>${CALENDARIO_CON_TILDE}</svg>`), 'Mi espacio: el calendario con la tilde');
+      for (const { href, svg } of links) assert.match(svg, /^<svg aria-hidden="true" xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">/, href);
+    });
+
+    it('main.js no cambia: el calendario con la tilde no está en ICON_SELECTOR_MAP ni en Icons (aparecería como ícono en Proyectos)', () => {
+      const main = fs.readFileSync(new URL('js/main.js', DIRECTORIO), 'utf8');
+      assert.ok(!main.includes('m9 16 2 2 4-4'));
+    });
+  });
+
+  // La página de Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 8 y 11): la carcasa de index.html (más abajo), el título, el
+  // h1 con el calendario con la tilde, los botones de carga, las tres pestañas con sus paneles y una sola región viva
+  describe('mi-espacio.html: la página', () => {
+    const html = () => leer('mi-espacio.html');
+    const bloque = (patron) => html().match(patron)?.[0] ?? '';
+
+    it('el título, la descripción y el h1 «Mi espacio» con el calendario con la tilde, decorativo', () => {
+      assert.ok(html().includes('<title>Mi espacio - RPAD</title>'));
+      assert.ok(html().includes('<meta name="description" content="Tus licencias, tus horas extras y lo que te queda">'));
+      const h1 = bloque(/<h1 class="page-title">[\s\S]*?<\/h1>/);
+      assert.match(h1, /<svg aria-hidden="true"[^>]*><path d="M8 2v4"\/><path d="M16 2v4"\/><rect width="18" height="18" x="3" y="4" rx="2"\/><path d="M3 10h18"\/><path d="m9 16 2 2 4-4"\/><\/svg>/);
+      assert.equal(h1.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(), 'Mi espacio');
+    });
+
+    it('«Cargar horas extras» y «Cargar licencia» son botones, ocultos hasta saber la modalidad', () => {
+      assert.match(html(), /<button type="button" class="sg-btn sg-btn-borde" id="btn-cargar-horas" hidden>Cargar horas extras<\/button>/);
+      assert.match(html(), /<button type="button" class="sg-btn sg-btn-tinta" id="btn-cargar-licencia" hidden><svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>Cargar licencia<\/button>/);
+    });
+
+    it('las pestañas Resumen (con la marca), Licencias y Horas extras, cada una con su panel; de entrada, el Resumen', () => {
+      const lista = bloque(/<div class="me-pestanas" role="tablist" aria-label="Mi espacio">[\s\S]*?<\/div>/);
+      const pestanas = [...lista.matchAll(/<button type="button" class="me-pestana" role="tab" id="tab-(\w+)" aria-selected="(true|false)" aria-controls="vista-(\w+)" data-pestana="(\w+)"(?: tabindex="-1")?>([\s\S]*?)<\/button>/g)]
+        .map(([, id, elegida, panel, pestana, texto]) => [id, elegida, panel, pestana, texto]);
+      assert.deepEqual(pestanas, [
+        ['resumen', 'true', 'resumen', 'resumen', 'Resumen<span id="me-marca"></span>'],
+        ['licencias', 'false', 'licencias', 'licencias', 'Licencias'],
+        ['horas', 'false', 'horas', 'horas', 'Horas extras']
+      ]);
+      for (const [nombre, oculto] of [['resumen', ''], ['licencias', ' hidden'], ['horas', ' hidden']]) {
+        assert.match(html(), new RegExp(`<section id="vista-${nombre}" role="tabpanel" aria-labelledby="tab-${nombre}"${oculto}>`), nombre);
+      }
+    });
+
+    it('#me-anuncio es la única región viva, fuera de las pestañas y de sus paneles', () => {
+      assert.match(html(), /<p class="visualmente-oculto" id="me-anuncio" role="status"><\/p>/);
+      assert.equal(html().match(/role="(status|alert|log)"/g)?.length, 1);
+      assert.doesNotMatch(html(), /aria-live/);
+      assert.ok(html().indexOf('id="me-anuncio"') < html().indexOf('role="tablist"'), 'antes de las pestañas');
+    });
+
+    it('ningún id se repite', () => {
+      const ids = [...html().matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+      assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), []);
+    });
+
+    it('los scripts, a secas y en su orden: config, auth, main, api y mi-espacio.js', () => {
+      const scripts = [...html().matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+      assert.deepEqual(scripts, ['js/config.js', `js/auth.js?v=${VERSION}`, `js/main.js?v=${VERSION}`, `js/api.js?v=${VERSION}`,
+        `js/mi-espacio.js?v=${VERSION_MI_ESPACIO}`]);
+      assert.equal(html().match(/<script\b/g).length, scripts.length, 'ningún <script> con otros atributos');
+    });
+
+    // Los tokens del Seguimiento van en el <style> de la página, con los tres que faltaban (spec 8), y toda var() que usa se define
+    // en main.css o en este <style>
+    it('el <style> define los tokens --sg-* con --sg-ambar-fondo, --sg-gris-fondo y --sg-violeta-fondo, y toda var() que usa', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      for (const token of ['--sg-tinta', '--sg-suave', '--sg-linea', '--sg-ambar-fondo', '--sg-gris-fondo', '--sg-violeta-fondo']) {
+        assert.match(estilo, new RegExp(`${token}:`), token);
+      }
+      const css = fs.readFileSync(new URL('../public/css/main.css', import.meta.url), 'utf8') + estilo;
+      for (const [, variable] of estilo.matchAll(/var\((--[\w-]+)\)/g)) assert.ok(new RegExp(`${variable}\\s*:`).test(css), `${variable} definida`);
+      assert.doesNotMatch(estilo, /text-transform:\s*uppercase/);
+    });
+  });
+
   // Si no hay a quién autorizar, la lista solo dice "Nadie": la aclaración explica quiénes pueden aparecer
   it('configuracion.html: debajo del selector de persona autorizada dice quiénes aparecen', () => {
     const grupo = leer('configuracion.html').match(/<div class="form-group" id="grupo-autorizado"[\s\S]*?<\/div>/)?.[0] ?? '';
@@ -615,13 +712,15 @@ describe('páginas', () => {
   });
 
   // Carcasa compartida (spec 2026-10-18-rediseno-publico, 5): encabezado con el nav principal, menú lateral y footer nuevos,
-  // copiados a mano en cada página (las 13, con la portada; eran 14 hasta que Configuración reemplazó a Usuarios y Áreas, y siguen
-  // siendo 13 con Proyectos, que reemplaza a Gestión: spec 2026-10-25-proyectos, 11)
+  // copiados a mano en cada página (las 14, con la portada; eran 14 hasta que Configuración reemplazó a Usuarios y Áreas, siguieron
+  // siendo 13 con Proyectos, que reemplaza a Gestión, spec 2026-10-25-proyectos, 11, y vuelven a ser 14 con Mi espacio, spec
+  // 2026-10-26-mi-espacio-licencias-y-horas, 11)
   const CON_CARCASA = paginas.filter(p => leer(p).includes('id="sidebar"'));
   const FUENTES = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap';
 
-  it('hay 13 páginas con carcasa', () => {
-    assert.equal(CON_CARCASA.length, 13);
+  it('hay 14 páginas con carcasa', () => {
+    assert.equal(CON_CARCASA.length, 14);
+    assert.ok(CON_CARCASA.includes('mi-espacio.html'), 'mi-espacio.html');
   });
 
   for (const pagina of CON_CARCASA) {
@@ -639,7 +738,7 @@ describe('páginas', () => {
         assert.match(html, new RegExp(`id="${id}"`), id);
       }
       assert.match(html, /<nav class="header-nav" aria-label="Principal">/);
-      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'correos.html', 'configuracion.html', 'reportes.html', 'notas.html', 'proyectos.html', 'seguimiento.html', 'perfil.html']) {
+      for (const destino of ['index.html', 'datasets.html', 'calendario.html', 'contacto.html', 'admin.html', 'correos.html', 'configuracion.html', 'reportes.html', 'notas.html', 'proyectos.html', 'seguimiento.html', 'perfil.html', 'mi-espacio.html']) {
         assert.ok(html.includes(`href="${destino}"`), destino);
       }
       assert.ok(!html.includes('verificar.html'), 'sin el link roto a verificar.html');
@@ -671,7 +770,7 @@ describe('páginas', () => {
     });
   }
 
-  // Lo copiado a mano queda fijado (spec 5: el mismo markup en las 13): el encabezado, el velo, el menú lateral y el footer de cada
+  // Lo copiado a mano queda fijado (spec 5: el mismo markup en las 14): el encabezado, el velo, el menú lateral y el footer de cada
   // página son los de index.html, con sus atributos de accesibilidad. Solo cambian la marca de la página actual y la sangría
   const PIEZAS_DE_LA_CARCASA = {
     encabezado: /<header class="header">[\s\S]*?<\/header>/,

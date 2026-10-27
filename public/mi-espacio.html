@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi espacio - RPAD</title>
+    <meta name="description" content="Tus licencias, tus horas extras y lo que te queda">
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- CSS Global -->
+    <link rel="stylesheet" href="css/main.css?v=20261109">
+    <style>
+        /* Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 8): los tokens y las piezas del Seguimiento y de Proyectos, con
+           los tres fondos que faltaban (ámbar, gris y violeta) */
+        :root {
+            --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA;
+            --sg-borde-control: #76879F; --sg-cielo: #DCEEF5;
+            --sg-sol: #FCE8A8; --sg-ambar: #7A5200; --sg-ambar-fondo: #FFF4D6;
+            --sg-verde: #2E6B4C; --sg-verde-fondo: #DDF1E6;
+            --sg-azul: #24507A; --sg-azul-fondo: #DCEAF7;
+            --sg-rojo: #8A3434; --sg-rojo-fondo: #F8E1E1;
+            --sg-violeta: #5B4691; --sg-violeta-fondo: #ECE7F6;
+            --sg-gris: #8A97A8; --sg-gris-fondo: #EEF1F5;
+        }
+
+        /* Lo oculto con el atributo hidden no vuelve por una regla de display más específica */
+        [hidden] { display: none !important; }
+        .visualmente-oculto { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+        .main-content { min-width: 0; background: var(--gray-100); }
+        .me-pagina { width: 100%; max-width: 1180px; margin: 0 auto; }
+        .me-bajada { margin: -14px 0 20px; color: var(--sg-suave); max-width: 76ch; line-height: 1.5; }
+        .me-acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+        /* Botones */
+        .sg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 999px; font: inherit; font-weight: 600; font-size: 0.9rem; border: 1px solid transparent; white-space: nowrap; cursor: pointer; text-decoration: none; }
+        .sg-btn svg { flex: none; }
+        .sg-btn-tinta { background: var(--sg-tinta); color: #fff; }
+        .sg-btn-borde { background: #fff; color: var(--sg-tinta); border-color: var(--sg-borde-control); }
+        .sg-btn-chico { height: 34px; padding: 0 14px; font-size: 0.86rem; }
+        .sg-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+        /* Pestañas (las de Proyectos), con la marca ámbar del Resumen cuando algo vence pronto */
+        .me-pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--sg-linea); margin-bottom: 18px; overflow-x: auto; scrollbar-width: none; }
+        .me-pestana { padding: 10px 18px; background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; font: inherit; font-weight: 600; color: var(--sg-suave); cursor: pointer; white-space: nowrap; }
+        .me-pestana:hover { color: var(--sg-tinta); }
+        .me-pestana[aria-selected="true"] { color: var(--sg-tinta); border-bottom-color: var(--sg-tinta); }
+        .me-pestana .me-marca { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #C98A00; margin-left: 6px; vertical-align: middle; }
+
+        /* Estados de una pestaña: cargando y sin JavaScript */
+        .me-estado { margin: 0; background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 28px 24px; color: var(--sg-suave); }
+
+        /* Tarjetas */
+        .me-tarjeta { background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 20px 24px; }
+        .me-tarjeta + .me-tarjeta { margin-top: 16px; }
+        .me-tarjeta h2, .me-tarjeta h3 { margin: 0; font-family: var(--f-titulo); font-weight: 650; letter-spacing: -0.01em; font-size: 1.12rem; color: var(--sg-tinta); }
+        .me-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 14px; }
+        .me-cabeza > span, .me-nota { color: var(--sg-suave); font-size: 0.88rem; }
+        .me-nota { margin: 12px 0 0; line-height: 1.5; }
+        .me-vacio { margin: 4px 0 0; color: var(--sg-suave); }
+
+        /* Avisos */
+        .me-aviso { display: flex; gap: 12px 16px; align-items: center; flex-wrap: wrap; padding: 12px 16px; border-radius: 12px; margin: 0 0 16px; font-size: 0.92rem; line-height: 1.45; border: 1px solid; }
+        .me-aviso p { margin: 0; }
+        .me-aviso-gris { background: var(--sg-sutil); border-color: var(--sg-linea); color: var(--sg-texto); }
+        .me-aviso-azul { background: #EEF5FC; border-color: #C9DCEF; color: var(--sg-azul); }
+        .me-aviso-error { background: #FBEEEE; border-color: #EFCACA; color: var(--sg-rojo); }
+
+        /* Insignias */
+        .me-insignia { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+        .me-insignia.azul { background: var(--sg-azul-fondo); color: var(--sg-azul); }
+        .me-insignia.verde { background: var(--sg-verde-fondo); color: var(--sg-verde); }
+        .me-insignia.ambar { background: var(--sg-ambar-fondo); color: var(--sg-ambar); }
+        .me-insignia.violeta { background: var(--sg-violeta-fondo); color: var(--sg-violeta); }
+        .me-insignia.gris { background: var(--sg-gris-fondo); color: var(--sg-suave); }
+        .me-insignia.rojo { background: var(--sg-rojo-fondo); color: var(--sg-rojo); }
+        .me-insignia.borde { background: #fff; border: 1px solid var(--sg-linea); color: var(--sg-suave); font-weight: 500; }
+
+        /* Chips de filtro, con su cantidad */
+        .sg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+        .sg-chip { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--sg-borde-control); background: #fff; font: inherit; font-size: 0.86rem; font-weight: 500; color: var(--sg-texto); cursor: pointer; white-space: nowrap; }
+        .sg-chip[aria-pressed="true"] { background: var(--sg-tinta); border-color: var(--sg-tinta); color: #fff; }
+        .sg-chip b { font-variant-numeric: tabular-nums; }
+
+        /* El selector del año */
+        .me-segmento { display: inline-flex; border: 1px solid var(--sg-borde-control); border-radius: 999px; padding: 3px; background: #fff; }
+        .me-segmento button { white-space: nowrap; height: 30px; padding: 0 14px; border-radius: 999px; border: 0; background: none; font: inherit; font-size: 0.86rem; font-weight: 600; color: var(--sg-suave); cursor: pointer; font-variant-numeric: tabular-nums; }
+        .me-segmento button[aria-pressed="true"] { background: var(--sg-tinta); color: #fff; }
+
+        /* Listas (filas): la fecha, el cuerpo y «Editar». En gris, lo que no cuenta */
+        .me-lista { list-style: none; margin: 0; padding: 0; }
+        .me-fila { display: grid; grid-template-columns: 190px minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; padding: 12px 0; border-top: 1px solid var(--sg-linea); }
+        .me-fila:first-child { border-top: 0; padding-top: 2px; }
+        .me-fila.me-fila-dos { grid-template-columns: 190px minmax(0, 1fr); }
+        .me-fila-fecha { font-weight: 600; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+        .me-fila-fecha small { display: block; font-weight: 400; color: var(--sg-suave); font-size: 0.82rem; }
+        /* Una nota o un motivo largo sin espacios se corta: no ensancha la fila */
+        .me-fila-cuerpo { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; min-width: 0; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .me-fila-cuerpo .me-detalle { color: var(--sg-suave); font-size: 0.88rem; }
+        .me-fila-cuerpo .me-detalle-aviso { color: var(--sg-ambar); font-weight: 600; }
+        .me-fila-cuerpo .me-fila-nota { font-style: italic; }
+        .me-fila.tenue .me-fila-fecha, .me-fila.tenue .me-fila-cuerpo { color: var(--sg-suave); }
+
+        /* Tablas de horas extras: cada mes es un botón que elige el día por día */
+        .me-tabla-marco { overflow-x: auto; }
+        .me-tabla { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+        .me-tabla th { text-align: left; font-size: 0.8rem; font-weight: 600; color: var(--sg-suave); padding: 0 12px 10px 0; border-bottom: 1px solid var(--sg-linea); white-space: nowrap; }
+        .me-tabla td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--sg-linea); vertical-align: top; color: var(--sg-texto); }
+        .me-tabla tr:last-child td { border-bottom: 0; }
+        .me-tabla td small { display: block; color: var(--sg-suave); font-size: 0.82rem; margin-top: 2px; }
+        .me-tabla .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .me-tabla .me-insignia { white-space: normal; }
+        .me-tabla tr.tenue td { color: var(--sg-suave); }
+        .me-mes-boton { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; white-space: nowrap; }
+        .me-mes-boton[aria-pressed="true"] { text-decoration: none; border-bottom: 3px solid var(--sg-tinta); }
+        .me-tabla tr.tenue .me-mes-boton { color: var(--sg-suave); }
+        .me-uso { display: flex; gap: 8px 16px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+        .me-uso .me-nota { margin: 0; }
+
+        /* Foco visible (el de Proyectos: anillo --tinta de 3 px con halo --sol-fuerte) */
+        .me-pagina a:focus-visible, .me-pagina button:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        .me-pagina .me-pestana:focus-visible { outline-offset: -3px; border-radius: 6px 6px 0 0; box-shadow: none; }
+
+        @media (max-width: 980px) {
+            .me-fila { grid-template-columns: 1fr auto; }
+            .me-fila-cuerpo { grid-column: 1 / -1; grid-row: 2; }
+            .me-fila.me-fila-dos { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 640px) {
+            .me-tarjeta { padding: 16px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir el menú" aria-controls="sidebar" aria-expanded="false">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+                </button>
+                <a href="index.html" class="header-marca">
+                    <img src="img/logo.png" alt="Municipalidad de Comodoro Rivadavia" class="header-logo">
+                    <span class="header-marca-texto">
+                        <span class="header-title">RPAD</span>
+                        <span class="header-subtitle">Registro Permanente de Actualización de Datasets</span>
+                    </span>
+                </a>
+            </div>
+            <nav class="header-nav" aria-label="Principal">
+                <a href="index.html">Inicio</a>
+                <a href="datasets.html">Datasets</a>
+                <a href="calendario.html">Calendario</a>
+                <a href="contacto.html">Contacto</a>
+            </nav>
+            <div class="header-right" id="header-actions">
+                <a href="login.html" class="btn btn-primary btn-sm"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg> Ingresar</a>
+            </div>
+        </header>
+
+        <!-- Sidebar Overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar" aria-label="Menú">
+            <div class="sidebar-header">
+                <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="sidebar-logo">
+            </div>
+            <nav class="sidebar-nav">
+                <div class="sidebar-section hidden" id="sidebarPrincipal">
+                    <div class="sidebar-section-title">Principal</div>
+                    <a href="index.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Inicio</span></a>
+                    <a href="datasets.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg><span>Datasets</span></a>
+                    <a href="calendario.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg><span>Calendario</span></a>
+                    <a href="contacto.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Contacto</span></a>
+                </div>
+                <div class="sidebar-section hidden" id="sidebarAdmin">
+                    <div class="sidebar-section-title">Administración</div>
+                    <a href="admin.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>Gestión de Datasets</span></a>
+                    <a href="correos.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Correos</span></a>
+                    <a href="configuracion.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Configuración</span></a>
+                </div>
+                <div class="sidebar-section hidden" id="sidebarTools">
+                    <div class="sidebar-section-title">Herramientas</div>
+                    <a href="reportes.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Métricas y Reportes</span></a>
+                    <a href="notas.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg><span>Notas</span></a>
+                    <a href="proyectos.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M8 10v4"/><path d="M12 10v2"/><path d="M16 10v6"/></svg><span>Proyectos</span></a>
+                    <a href="seguimiento.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span>Seguimiento</span></a>
+                </div>
+                <div class="sidebar-section hidden" id="sidebarAccount">
+                    <div class="sidebar-section-title">Mi cuenta</div>
+                    <a href="perfil.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Mi Perfil</span></a>
+                    <a href="mi-espacio.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg><span>Mi espacio</span></a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="me-pagina">
+                <!-- Page Header -->
+                <div class="page-header">
+                    <h1 class="page-title">
+                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+                        Mi espacio
+                    </h1>
+                    <!-- Solo con la modalidad cargada: mi-espacio.js los muestra -->
+                    <div class="me-acciones">
+                        <button type="button" class="sg-btn sg-btn-borde" id="btn-cargar-horas" hidden>Cargar horas extras</button>
+                        <button type="button" class="sg-btn sg-btn-tinta" id="btn-cargar-licencia" hidden><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Cargar licencia</button>
+                    </div>
+                </div>
+                <p class="me-bajada">Tus licencias y tus horas extras. Lo que cargás acá lo ves solo vos, salvo, si querés, tus ausencias (sin decir de qué son).</p>
+
+                <!-- La región viva de la página: mi-espacio.js anuncia acá el año que se cargó y lo que no se pudo cargar (lo que se vuelve
+                     a dibujar no la toca) -->
+                <p class="visualmente-oculto" id="me-anuncio" role="status"></p>
+                <noscript><p class="me-estado">Para ver Mi espacio hace falta JavaScript.</p></noscript>
+
+                <!-- Las tres pestañas, cada una en la dirección (#resumen, #licencias, #horas) -->
+                <div class="me-pestanas" role="tablist" aria-label="Mi espacio">
+                    <button type="button" class="me-pestana" role="tab" id="tab-resumen" aria-selected="true" aria-controls="vista-resumen" data-pestana="resumen">Resumen<span id="me-marca"></span></button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-licencias" aria-selected="false" aria-controls="vista-licencias" data-pestana="licencias" tabindex="-1">Licencias</button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-horas" aria-selected="false" aria-controls="vista-horas" data-pestana="horas" tabindex="-1">Horas extras</button>
+                </div>
+                <section id="vista-resumen" role="tabpanel" aria-labelledby="tab-resumen"><p class="me-estado">Cargando…</p></section>
+                <section id="vista-licencias" role="tabpanel" aria-labelledby="tab-licencias" hidden><p class="me-estado">Cargando tus licencias…</p></section>
+                <section id="vista-horas" role="tabpanel" aria-labelledby="tab-horas" hidden><p class="me-estado">Cargando tus horas extras…</p></section>
+            </div>
+
+            <!-- Footer -->
+            <footer class="footer">
+                <div class="footer-cuerpo">
+                    <div class="footer-marca">
+                        <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="footer-logo">
+                        <p class="footer-direccion">Dirección de Datos Públicos y Comunicación</p>
+                        <p>D. G. de Modernización e Investigación Territorial<br>Subsecretaría de Modernización y Transparencia</p>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">El registro</h2>
+                        <ul>
+                            <li><a href="index.html">Inicio</a></li>
+                            <li><a href="datasets.html">Datasets</a></li>
+                            <li><a href="calendario.html">Calendario</a></li>
+                            <li><a href="contacto.html">Contacto</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Datos abiertos</h2>
+                        <ul>
+                            <li><a href="https://datos.comodoro.gov.ar" target="_blank" rel="noopener">datos.comodoro.gov.ar</a></li>
+                            <li>Licencia CC BY-SA 4.0</li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Marco legal</h2>
+                        <ul>
+                            <li>Ordenanza N° 17.662/23, artículo 8°</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <span>© <span id="footer-anio">2026</span> Secretaría de Gobierno, Modernización y Transparencia. Municipalidad de Comodoro Rivadavia</span>
+                    <span>RPAD v2.0.0</span>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <!-- Scripts del RPAD -->
+    <script src="js/config.js"></script>
+    <script src="js/auth.js?v=20261204"></script>
+    <script src="js/main.js?v=20261204"></script>
+    <script src="js/api.js?v=20261204"></script>
+    <script src="js/mi-espacio.js?v=20261209"></script>
+</body>
+</html>
