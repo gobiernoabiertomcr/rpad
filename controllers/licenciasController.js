@@ -1,31 +1,30 @@
 // Licencias de quienes reciben avisos (spec 2026-10-15-dias-habiles-licencias-auditoria, sección 5). Las rutas exigen
-// authMiddleware + adminOnly. La autorización para presentar las notas (6.3) la da solo el firmante titular.
+// authMiddleware + adminOnly. La autorización para presentar las notas (6.3) la da solo el firmante titular. El alta, la
+// edición y la anulación con sus reglas están en services/licenciasOficialesService.js (las comparte Mi espacio): acá, lo del
+// pedido (los controles del cuerpo, la transacción, la respuesta y el aviso al superadmin después de confirmarla).
 import pool from '../config/database.js';
-import { registrarAuditoria } from '../services/usuariosAuditoriaService.js';
 import { avisarAlSuperadmin } from '../services/avisosSuperadminService.js';
-import {
-  hoyArgentina, ahoraArgentina, formatoCorto, diaHabilAnterior, esFechaIso, sumarDias, diasEntre, proximoDiaHabil
-} from '../services/notasDigitalesCalendario.js';
-import {
-  ROLES_CON_LICENCIA, puedeTenerLicencia, estadoDeLicencia, validarFechasNuevas, validarEdicion, puedeAnularse, unirAusencias
-} from '../services/licenciasReglas.js';
+import { hoyArgentina, diaHabilAnterior, esFechaIso, sumarDias, diasEntre } from '../services/notasDigitalesCalendario.js';
+import { ROLES_CON_LICENCIA, estadoDeLicencia, validarFechasNuevas } from '../services/licenciasReglas.js';
 import { periodosSinAuditor, DIAS_PERIODOS_SIN_AUDITOR } from '../services/auditoriaService.js';
-import { disponibilidadDelAutorizado } from '../services/notasDigitalesFirmas.js';
+import {
+  MENSAJE_SOLO_TITULAR, COLUMNAS_LICENCIA, DESDE_LICENCIA, periodo, firmanteTitular, autorizables, conSusLicencias,
+  bloquearUsuarios, cargarLicencia, cambiarLicencia, anularLicenciaDe
+} from '../services/licenciasOficialesService.js';
 
 const MENSAJE_ERROR = 'Error interno del servidor';
-const MENSAJE_SOLO_TITULAR = 'La autorización para presentar las notas la da solo el firmante titular.';
 // Rango máximo de la consulta de días sin auditor, contando los dos extremos
 const MAXIMO_DIAS_SIN_AUDITOR = 366;
 
 const responderError = (res, status, error, campo) =>
   res.status(status).json({ success: false, error, ...(campo ? { campo } : {}) });
 
+const responderRechazo = (res, { status, error, campo }) => responderError(res, status, error, campo);
+
 const idDe = (valor) => {
   const id = Number(valor);
   return Number.isInteger(id) && id > 0 ? id : null;
 };
-
-const periodo = ({ desde, hasta }) => `del ${formatoCorto(desde)} al ${formatoCorto(hasta)}`;
 
 // autorizado_id del cuerpo: undefined si no vino, null para "nadie", un id o NaN si es inválido
 const autorizadoDelCuerpo = (cuerpo) => {
@@ -33,22 +32,6 @@ const autorizadoDelCuerpo = (cuerpo) => {
   const valor = cuerpo.autorizado_id;
   if (valor === null || valor === '') return null;
   return idDe(valor) ?? Number.NaN;
-};
-
-const COLUMNAS = `
-  l.id, l.usuario_id, DATE_FORMAT(l.desde, '%Y-%m-%d') AS desde, DATE_FORMAT(l.hasta, '%Y-%m-%d') AS hasta,
-  l.autorizado_id, DATE_FORMAT(l.autorizado_at, '%Y-%m-%d %H:%i') AS autorizado_at, l.anulada, l.creado_por,
-  u.nombre_completo AS usuario_nombre, u.username AS usuario_username, u.rol AS usuario_rol,
-  au.nombre_completo AS autorizado_nombre, cr.nombre_completo AS creado_por_nombre`;
-const DESDE = `
-  FROM usuarios_licencias l
-  JOIN usuarios u ON u.id = l.usuario_id
-  LEFT JOIN usuarios au ON au.id = l.autorizado_id
-  LEFT JOIN usuarios cr ON cr.id = l.creado_por`;
-
-const firmanteTitular = async (conexion = pool) => {
-  const [[config]] = await conexion.query('SELECT firmante_usuario_id FROM notas_digitales_config WHERE id = 1');
-  return config?.firmante_usuario_id ?? null;
 };
 
 const aRespuesta = (fila, hoy, titular) => ({
@@ -59,91 +42,6 @@ const aRespuesta = (fila, hoy, titular) => ({
   vispera: fila.usuario_id === titular ? diaHabilAnterior(fila.desde) : null
 });
 
-const buscarLicencia = async (conexion, id) => {
-  const [filas] = await conexion.query(`SELECT ${COLUMNAS} ${DESDE} WHERE l.id = ?`, [id]);
-  return filas[0] ?? null;
-};
-
-// Admins y editores que el titular puede autorizar (spec 6.3): activos, con contraseña y con la imagen de su firma
-const autorizables = async (conexion, titular) => {
-  const [filas] = await conexion.query(
-    `SELECT u.id, u.nombre_completo FROM usuarios u JOIN usuarios_firmas f ON f.usuario_id = u.id
-     WHERE u.rol IN ('admin', 'editor') AND u.activo = TRUE AND u.password_hash IS NOT NULL AND f.imagen IS NOT NULL
-       AND u.id <> ?
-     ORDER BY u.nombre_completo`,
-    [titular ?? 0]
-  );
-  return filas;
-};
-
-// Las licencias en curso y futuras (no anuladas) de cada persona autorizable, para que el formulario advierta una
-// superposición con la licencia del titular. ausencias: esas licencias unidas como en el Estado (seguidas o separadas solo
-// por días no hábiles, licenciasReglas.unirAusencias), con vuelve, el primer día hábil después de cada una
-const conSusLicencias = async (personas, hoy) => {
-  if (!personas.length) return personas;
-  const [filas] = await pool.query(
-    `SELECT usuario_id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta
-     FROM usuarios_licencias WHERE anulada = 0 AND hasta >= ? AND usuario_id IN (?) ORDER BY desde`,
-    [hoy, personas.map(p => p.id)]
-  );
-  return personas.map((p) => {
-    const licencias = filas.filter(f => f.usuario_id === p.id).map(({ desde, hasta }) => ({ desde, hasta }));
-    const ausencias = unirAusencias(licencias).map(a => ({ ...a, vuelve: proximoDiaHabil(sumarDias(a.hasta, 1)) }));
-    return { ...p, licencias, ausencias };
-  });
-};
-
-/**
- * Reglas que necesitan la base (spec 5.2 y 6.3). autorizadoNuevo: la autorización se está dando o cambiando en este
- * pedido (si no, solo se revisa que a la persona ya autorizada le quede algún día hábil con las fechas nuevas).
- * La persona autorizada y el titular pueden faltar algunos días a la vez: se rechaza solo si a ella no le queda ningún día
- * hábil en toda la licencia del titular (notasDigitalesFirmas.disponibilidadDelAutorizado). Cuentan todos sus días, no
- * solo desde hoy: si no, con ella de licencia hasta el final no se podría ni acortar una licencia en curso.
- * Devuelve [status, mensaje, campo] si no se puede, o null.
- */
-const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, desde, hasta, autorizadoId, autorizadoNuevo }) => {
-  const [[usuario]] = await conexion.query('SELECT rol, activo FROM usuarios WHERE id = ?', [usuarioId]);
-  if (!usuario || !usuario.activo || !puedeTenerLicencia(usuario.rol)) {
-    return [400, 'Solo pueden tener licencia el superadmin, los admins y los editores activos.', 'usuario_id'];
-  }
-  const [[propia]] = await conexion.query(
-    `SELECT DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta FROM usuarios_licencias
-     WHERE usuario_id = ? AND anulada = 0 AND id <> ? AND desde <= ? AND hasta >= ? LIMIT 1`,
-    [usuarioId, licenciaId, hasta, desde]
-  );
-  if (propia) return [409, `Se superpone con otra licencia de la misma persona (${periodo(propia)}).`, 'fechas'];
-  // Las licencias en las que esta persona es la autorizada, superpuestas con la que se guarda (contándola, sin la versión
-  // guardada si se edita)
-  const [autorizaciones] = await conexion.query(
-    `SELECT l.autorizado_id, u.nombre_completo, DATE_FORMAT(l.desde, '%Y-%m-%d') AS desde, DATE_FORMAT(l.hasta, '%Y-%m-%d') AS hasta
-     FROM usuarios_licencias l JOIN usuarios u ON u.id = l.usuario_id
-     WHERE l.autorizado_id = ? AND l.anulada = 0 AND l.id <> ? AND l.desde <= ? AND l.hasta >= ? ORDER BY l.desde`,
-    [usuarioId, licenciaId, hasta, desde]
-  );
-  for (const comoAutorizada of autorizaciones) {
-    const disponible = await disponibilidadDelAutorizado(comoAutorizada, {
-      licenciaExtra: { desde, hasta }, excluirLicenciaId: licenciaId, conexion
-    });
-    if (!disponible) {
-      return [409, `Es la persona autorizada a presentar las notas durante la licencia de ${comoAutorizada.nombre_completo} (${periodo(comoAutorizada)}) y con esta licencia no le quedaría ningún día hábil para hacerlo: primero hay que cambiar esa autorización.`, 'fechas'];
-    }
-  }
-  if (autorizadoId && autorizadoNuevo) {
-    const titular = await firmanteTitular(conexion);
-    if (usuarioId !== titular) return [400, 'Solo la licencia del firmante titular de las notas lleva una persona autorizada.', 'autorizado_id'];
-    if (!(await autorizables(conexion, titular)).some(a => a.id === autorizadoId)) {
-      return [400, 'Solo se puede autorizar a un admin o editor activo, con su firma cargada en Mi Perfil.', 'autorizado_id'];
-    }
-  }
-  if (autorizadoId) {
-    const disponible = await disponibilidadDelAutorizado({ desde, hasta, autorizado_id: autorizadoId }, { conexion });
-    if (!disponible) {
-      return [409, 'La persona autorizada está de licencia todos los días hábiles de tu licencia: no podría presentar ninguna nota.', 'autorizado_id'];
-    }
-  }
-  return null;
-};
-
 // Aviso al superadmin si la licencia es suya y el cambio lo hizo otro (spec 5.2); lo retiene si ya está de licencia
 const avisarSiEsDelSuperadmin = (req, licencia, cambio, auditoriaId, hoy) => (licencia.usuario_rol === 'superadmin'
   ? avisarAlSuperadmin({
@@ -153,17 +51,13 @@ const avisarSiEsDelSuperadmin = (req, licencia, cambio, auditoriaId, hoy) => (li
   })
   : Promise.resolve());
 
-// Bloquea las filas de usuarios (son pocas) hasta el fin de la transacción, como el panel: dos cargas simultáneas para
-// la misma persona se esperan y la segunda ve la primera
-const bloquearUsuarios = (conexion) => conexion.query('SELECT id FROM usuarios ORDER BY id FOR UPDATE');
-
 // GET /usuarios/licencias
 export const listarLicencias = async (req, res) => {
   try {
     const hoy = hoyArgentina();
     const todas = req.query.incluir_pasadas === '1';
     const [filas] = await pool.query(
-      `SELECT ${COLUMNAS} ${DESDE} ${todas ? '' : 'WHERE l.anulada = 0 AND l.hasta >= ?'} ORDER BY l.desde, u.nombre_completo`,
+      `SELECT ${COLUMNAS_LICENCIA} ${DESDE_LICENCIA} ${todas ? '' : 'WHERE l.anulada = 0 AND l.hasta >= ?'} ORDER BY l.desde, u.nombre_completo`,
       todas ? [] : [hoy]
     );
     const titular = await firmanteTitular();
@@ -248,22 +142,14 @@ export const crearLicencia = async (req, res) => {
     conexion = await pool.getConnection();
     await conexion.beginTransaction();
     await bloquearUsuarios(conexion);
-    const rechazo = await rechazoDeLaBase(conexion, {
-      usuarioId, desde: cuerpo.desde, hasta: cuerpo.hasta, autorizadoId, autorizadoNuevo: Boolean(autorizadoId)
+    const resultado = await cargarLicencia(conexion, {
+      usuarioId, desde: cuerpo.desde, hasta: cuerpo.hasta, autorizadoId, actorId: req.user.userId, hoy
     });
-    if (rechazo) {
+    if (resultado.rechazo) {
       await conexion.rollback();
-      return responderError(res, ...rechazo);
+      return responderRechazo(res, resultado.rechazo);
     }
-    const [resultado] = await conexion.query(
-      'INSERT INTO usuarios_licencias (usuario_id, desde, hasta, autorizado_id, autorizado_at, creado_por) VALUES (?, ?, ?, ?, ?, ?)',
-      [usuarioId, cuerpo.desde, cuerpo.hasta, autorizadoId, autorizadoId ? ahoraArgentina() : null, req.user.userId]
-    );
-    licencia = await buscarLicencia(conexion, resultado.insertId);
-    auditoriaId = await registrarAuditoria(conexion, {
-      usuarioId, actorId: req.user.userId, accion: 'licencia_cargada',
-      detalle: { licencia_id: licencia.id, desde: licencia.desde, hasta: licencia.hasta, autorizado_id: licencia.autorizado_id }
-    });
+    ({ licencia, auditoriaId } = resultado);
     await conexion.commit();
   } catch (error) {
     await conexion?.rollback().catch(() => {});
@@ -300,55 +186,16 @@ export const editarLicencia = async (req, res) => {
     conexion = await pool.getConnection();
     await conexion.beginTransaction();
     await bloquearUsuarios(conexion);
-    antes = await buscarLicencia(conexion, id);
-    if (!antes) {
-      await conexion.rollback();
-      return responderError(res, 404, 'Licencia no encontrada');
-    }
-    const { error, codigo, datos } = validarEdicion(antes, { desde: cuerpo.desde, hasta: cuerpo.hasta }, hoy);
-    if (error) {
-      await conexion.rollback();
-      return responderError(res, codigo, error, 'fechas');
-    }
-    const autorizadoCambia = autorizadoPedido !== undefined && autorizadoPedido !== antes.autorizado_id;
-    if (autorizadoCambia && req.user.userId !== antes.usuario_id) {
-      await conexion.rollback();
-      return responderError(res, 403, MENSAJE_SOLO_TITULAR, 'autorizado_id');
-    }
-    const autorizadoId = autorizadoCambia ? autorizadoPedido : antes.autorizado_id;
-    const rechazo = await rechazoDeLaBase(conexion, {
-      licenciaId: id, usuarioId: antes.usuario_id, ...datos, autorizadoId, autorizadoNuevo: autorizadoCambia
+    const resultado = await cambiarLicencia(conexion, {
+      licenciaId: id, desde: cuerpo.desde, hasta: cuerpo.hasta, autorizadoPedido, actorId: req.user.userId, hoy
     });
-    if (rechazo) {
+    if (resultado.rechazo) {
       await conexion.rollback();
-      return responderError(res, ...rechazo);
+      return responderRechazo(res, resultado.rechazo);
     }
-    sinCambios = datos.desde === antes.desde && datos.hasta === antes.hasta && !autorizadoCambia;
-    if (sinCambios) {
-      await conexion.rollback();
-      despues = antes;
-    } else {
-      // Columnas fijas del código; los valores van como parámetros
-      const asignaciones = ['desde = ?', 'hasta = ?'];
-      const valores = [datos.desde, datos.hasta];
-      if (autorizadoCambia) {
-        asignaciones.push('autorizado_id = ?', 'autorizado_at = ?');
-        valores.push(autorizadoId, autorizadoId ? ahoraArgentina() : null);
-      }
-      // La nota de autorización dice a quién y entre qué fechas: si cambia algo, deja de valer y sale otra (spec 6.3)
-      asignaciones.push('nota_autorizacion_id = NULL');
-      await conexion.query(`UPDATE usuarios_licencias SET ${asignaciones.join(', ')} WHERE id = ?`, [...valores, id]);
-      despues = await buscarLicencia(conexion, id);
-      auditoriaId = await registrarAuditoria(conexion, {
-        usuarioId: antes.usuario_id, actorId: req.user.userId, accion: 'licencia_editada',
-        detalle: {
-          licencia_id: id,
-          antes: { desde: antes.desde, hasta: antes.hasta, autorizado_id: antes.autorizado_id },
-          despues: { desde: despues.desde, hasta: despues.hasta, autorizado_id: despues.autorizado_id }
-        }
-      });
-      await conexion.commit();
-    }
+    ({ antes, despues, auditoriaId, sinCambios } = resultado);
+    // Sin cambios no se escribió nada
+    await (sinCambios ? conexion.rollback() : conexion.commit());
   } catch (error) {
     await conexion?.rollback().catch(() => {});
     console.error('Error editando la licencia:', error);
@@ -380,22 +227,12 @@ export const anularLicencia = async (req, res) => {
     conexion = await pool.getConnection();
     await conexion.beginTransaction();
     await bloquearUsuarios(conexion);
-    licencia = await buscarLicencia(conexion, id);
-    let rechazo = null;
-    if (!licencia) rechazo = [404, 'Licencia no encontrada'];
-    else if (!puedeAnularse(licencia, hoy)) {
-      rechazo = [409, 'Solo se puede anular una licencia que todavía no empezó o que empieza hoy. Para cortar una licencia en curso, cambiá la fecha de fin.'];
-    }
-    if (rechazo) {
+    const resultado = await anularLicenciaDe(conexion, { licenciaId: id, actorId: req.user.userId, hoy });
+    if (resultado.rechazo) {
       await conexion.rollback();
-      return responderError(res, ...rechazo);
+      return responderRechazo(res, resultado.rechazo);
     }
-    await conexion.query('UPDATE usuarios_licencias SET anulada = 1 WHERE id = ?', [id]);
-    auditoriaId = await registrarAuditoria(conexion, {
-      usuarioId: licencia.usuario_id, actorId: req.user.userId, accion: 'licencia_anulada',
-      detalle: { licencia_id: id, desde: licencia.desde, hasta: licencia.hasta }
-    });
-    licencia = await buscarLicencia(conexion, id);
+    ({ licencia, auditoriaId } = resultado);
     await conexion.commit();
   } catch (error) {
     await conexion?.rollback().catch(() => {});

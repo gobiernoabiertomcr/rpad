@@ -368,6 +368,65 @@ describe('marca en la lista de usuarios (spec 5.5)', () => {
   });
 });
 
+// El alta, la edición y la anulación de Configuración, en un servicio que comparte con Mi espacio (spec
+// 2026-10-26-mi-espacio-licencias-y-horas, 6): recibe la conexión de una transacción abierta y el actor, y no la abre ni la cierra
+describe('el servicio compartido (services/licenciasOficialesService.js)', () => {
+  let servicio, pool;
+
+  before(async () => {
+    // Usan el pool: se importan después de apuntar DB_NAME a la base de prueba
+    servicio = await import('../services/licenciasOficialesService.js');
+    pool = (await import('../config/database.js')).default;
+  });
+
+  after(async () => {
+    await pool?.end();
+  });
+
+  // Como el controlador: abre la transacción, bloquea los usuarios, corre el trabajo y la confirma
+  const enTransaccion = async (trabajo) => {
+    const conexion = await pool.getConnection();
+    try {
+      await conexion.beginTransaction();
+      await servicio.bloquearUsuarios(conexion);
+      const resultado = await trabajo(conexion);
+      await conexion.commit();
+      return resultado;
+    } catch (error) {
+      await conexion.rollback();
+      throw error;
+    } finally {
+      conexion.release();
+    }
+  };
+  const notaDe = async (id) => (await query('SELECT nota_autorizacion_id AS n FROM usuarios_licencias WHERE id = ?', [id]))[0].n;
+
+  it('cambiarLicencia sin cambios: sinCambios, sin historial y conserva la nota de autorización', async () => {
+    await titular(usuarios.superadmin);
+    await conFirma(usuarios.adminA);
+    const { insertId: id } = await query(
+      `INSERT INTO usuarios_licencias (usuario_id, desde, hasta, autorizado_id, autorizado_at, nota_autorizacion_id, creado_por)
+       VALUES (?, ?, ?, ?, ?, 999, ?)`,
+      [usuarios.superadmin.id, dia(5), dia(10), usuarios.adminA.id, `${hoy} 10:00:00`, usuarios.superadmin.id]
+    );
+    // El historial no se borra entre tests: se cuenta lo que se suma
+    const editadas = (await historial(usuarios.superadmin.id, 'licencia_editada')).length;
+    // Las mismas fechas, con la misma persona autorizada o sin decir nada de ella (Mi espacio, al cambiar el tipo o la nota)
+    for (const autorizadoPedido of [usuarios.adminA.id, undefined]) {
+      const resultado = await enTransaccion(conexion => servicio.cambiarLicencia(conexion, {
+        licenciaId: id, desde: dia(5), hasta: dia(10), autorizadoPedido, actorId: usuarios.superadmin.id, hoy
+      }));
+      assert.equal(resultado.rechazo, undefined, JSON.stringify(resultado.rechazo));
+      assert.equal(resultado.sinCambios, true);
+      assert.equal(resultado.auditoriaId, null);
+      assert.deepEqual([resultado.antes.id, resultado.despues.desde, resultado.despues.hasta, resultado.despues.autorizado_id],
+        [id, dia(5), dia(10), usuarios.adminA.id]);
+    }
+    assert.equal(await notaDe(id), 999);
+    assert.equal((await historial(usuarios.superadmin.id, 'licencia_editada')).length, editadas);
+  });
+});
+
 describe('días sin auditor (GET /usuarios/licencias/sin-auditor)', () => {
   const ruta = (consulta = '') => `/usuarios/licencias/sin-auditor${consulta}`;
   const guardar = (usuario, desde, hasta) =>
