@@ -693,15 +693,37 @@ describe('páginas', () => {
     });
 
     // Los tokens del Seguimiento van en el <style> de la página, con los tres que faltaban (spec 8), y toda var() que usa se define
-    // en main.css o en este <style>
+    // en main.css o en este <style>, salvo --alto: el alto de cada tanque, que mi-espacio.js escribe en el nivel de su SVG
     it('el <style> define los tokens --sg-* con --sg-ambar-fondo, --sg-gris-fondo y --sg-violeta-fondo, y toda var() que usa', () => {
       const estilo = bloque(/<style>[\s\S]*?<\/style>/);
       for (const token of ['--sg-tinta', '--sg-suave', '--sg-linea', '--sg-ambar-fondo', '--sg-gris-fondo', '--sg-violeta-fondo']) {
         assert.match(estilo, new RegExp(`${token}:`), token);
       }
       const css = fs.readFileSync(new URL('../public/css/main.css', import.meta.url), 'utf8') + estilo;
-      for (const [, variable] of estilo.matchAll(/var\((--[\w-]+)\)/g)) assert.ok(new RegExp(`${variable}\\s*:`).test(css), `${variable} definida`);
+      for (const [, variable] of estilo.matchAll(/var\((--[\w-]+)\)/g)) {
+        if (variable !== '--alto') assert.ok(new RegExp(`${variable}\\s*:`).test(css), `${variable} definida`);
+      }
+      assert.ok(leer('js/mi-espacio.js').includes('<g class="me-tanque-nivel" style="--alto:${alto}px">'), '--alto, en el SVG de cada tanque');
       assert.doesNotMatch(estilo, /text-transform:\s*uppercase/);
+    });
+
+    // El Resumen «Niveles» (spec 8): el único movimiento de la página es el de los tanques, que se llenan una vez con una transición
+    // de transform (mientras tienen data-llenar, vacíos) y no se mueven con prefers-reduced-motion; los tokens del Resumen de la
+    // maqueta (--rs-* y .op-*) pasaron a --sg-* y .me-*, en el <style> de la página y nunca en main.css
+    it('el Resumen: la transición de los tanques, quieta con prefers-reduced-motion, y sin los tokens de la maqueta', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      assert.match(estilo, /\.me-tanque-nivel \{ transition: transform [^}]+\}/);
+      assert.match(estilo, /\[data-llenar\] \.me-tanque-nivel \{ transform: translateY\(var\(--alto\)\); \}/);
+      // Quietos y llenos desde el principio (sin el parpadeo de los dos cuadros vacíos)
+      assert.ok(estilo.includes('@media (prefers-reduced-motion: reduce) { .me-tanque-nivel, [data-llenar] .me-tanque-nivel { transition: none; transform: none; } }'));
+      // Ninguna otra animación ni transición
+      assert.doesNotMatch(estilo, /animation|@keyframes/);
+      assert.equal(estilo.match(/transition: transform/g).length, 1);
+      assert.doesNotMatch(estilo, /--rs-|\.op-|\.rs-/);
+      const main = fs.readFileSync(new URL('../public/css/main.css', import.meta.url), 'utf8');
+      assert.doesNotMatch(main, /--sg-|\.me-tanque/);
+      // Las clases de las capas de los tanques que dibuja mi-espacio.js
+      for (const clase of ['c-vence', 'c-tinta', 'c-medio', 'c-cargadas', 'c-por-habilitar']) assert.ok(estilo.includes(`.${clase}`), clase);
     });
   });
 

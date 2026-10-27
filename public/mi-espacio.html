@@ -17,7 +17,7 @@
         :root {
             --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA;
             --sg-borde-control: #76879F; --sg-cielo: #DCEEF5;
-            --sg-sol: #FCE8A8; --sg-ambar: #7A5200; --sg-ambar-fondo: #FFF4D6;
+            --sg-sol: #FCE8A8; --sg-sol-borde: #E3B63C; --sg-ambar: #7A5200; --sg-ambar-fondo: #FFF4D6;
             --sg-verde: #2E6B4C; --sg-verde-fondo: #DDF1E6;
             --sg-azul: #24507A; --sg-azul-fondo: #DCEAF7;
             --sg-rojo: #8A3434; --sg-rojo-fondo: #F8E1E1;
@@ -118,14 +118,132 @@
         .me-uso { display: flex; gap: 8px 16px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
         .me-uso .me-nota { margin: 0; }
 
+        /* El Resumen «Niveles» (maqueta 1, con sus tokens y sus clases pasados a --sg-* y .me-*): la modalidad y el año, «Vence
+           pronto», los faltantes, «Lo que te queda» (los tanques y las pastillas) y, al costado, «Hoy y mañana». El sol marca solo lo
+           que vence */
+        .me-contexto { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; margin: 0 0 14px; color: var(--sg-suave); font-size: 0.92rem; }
+        .me-contexto b { color: var(--sg-texto); }
+        .me-titulo { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.02em; color: var(--sg-tinta); }
+        .me-subtitulo { margin: 20px 0 8px; font-family: var(--f-titulo); font-weight: 700; font-size: 0.98rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+        .me-aviso-ambar { background: var(--sg-ambar-fondo); border-color: #F0D78C; color: var(--sg-ambar); }
+        .me-faltantes { margin: 0; padding-left: 18px; }
+
+        /* Vence pronto: la fecha en un bloque amarillo, qué vence y el botón que lo resuelve */
+        .me-vence { background: #fff; border: 1px solid var(--sg-linea); border-radius: 20px; padding: 18px 24px 8px; margin: 0 0 20px; }
+        .me-vence-lista { list-style: none; margin: 10px 0 0; padding: 0; }
+        .me-vence-item { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 12px 0; border-top: 1px solid var(--sg-linea); }
+        .me-vence-item:first-child { border-top: 0; }
+        .me-fecha { width: 58px; height: 62px; border-radius: 14px; background: var(--sg-sol); border: 1px solid var(--sg-sol-borde); display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--sg-ambar); font-size: 0.8rem; font-weight: 600; line-height: 1.1; }
+        .me-fecha b { font-family: var(--f-titulo); font-size: 1.65rem; font-weight: 750; color: var(--sg-tinta); letter-spacing: -0.03em; }
+        .me-vence-texto { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
+        .me-vence-cuando { font-size: 0.8rem; font-weight: 600; color: var(--sg-ambar); }
+        .me-vence-texto b { font-size: 1.02rem; color: var(--sg-texto); }
+        .me-vence-texto > span:last-child { font-size: 0.88rem; color: var(--sg-suave); }
+
+        /* La grilla: «Lo que te queda» y, al costado, «Hoy y mañana» (en una pantalla angosta, debajo) */
+        .me-resumen-grilla { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 280px); gap: 20px; align-items: start; }
+        .me-panel { background: #fff; border: 1px solid var(--sg-linea); border-radius: 20px; padding: 22px 28px 20px; min-width: 0; }
+        .me-panel-cabeza { display: flex; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; margin-bottom: 16px; }
+        .me-panel-cabeza .me-titulo { margin-right: auto; }
+        .me-panel-al, .me-panel-cabeza .sg-link { font-size: 0.88rem; }
+        .me-panel-al { color: var(--sg-suave); }
+
+        /* Los tanques apoyan sobre la misma línea: el número arriba, el tanque y el nombre con su total debajo. Cada uno es un link a
+           su pestaña (con el foco visible de la página) */
+        .me-niveles-fila { display: flex; gap: 20px 26px; align-items: flex-end; flex-wrap: wrap; }
+        .me-nivel-vac { display: flex; gap: 14px; align-items: flex-end; min-width: 0; }
+        .me-nivel-vac .me-leyenda-vac { width: 184px; padding-bottom: 46px; }
+        .me-niveles-resto { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+        .me-nivel { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 100px; padding: 8px 4px 6px; border-radius: 14px; color: inherit; text-decoration: none; }
+        .me-nivel-vac > .me-nivel { min-width: 104px; }
+        .me-nivel:hover { background: var(--sg-sutil); }
+        .me-nivel-num { display: flex; align-items: baseline; gap: 5px; color: var(--sg-suave); font-size: 0.84rem; }
+        .me-nivel-num b { font-family: var(--f-titulo); font-size: 2.9rem; font-weight: 750; letter-spacing: -0.04em; color: var(--sg-tinta); line-height: 1; font-variant-numeric: tabular-nums; }
+        .me-nivel-num.chico { flex-direction: column; align-items: center; gap: 0; }
+        .me-nivel-num.chico b { font-size: 1.9rem; }
+        .me-nivel-pie { display: flex; flex-direction: column; align-items: center; text-align: center; line-height: 1.3; }
+        .me-nivel-pie b { font-size: 0.86rem; color: var(--sg-texto); font-weight: 600; white-space: nowrap; }
+        .me-nivel-pie span { font-size: 0.76rem; color: var(--sg-suave); white-space: nowrap; }
+        .me-nivel.vence .me-nivel-num b, .me-nivel.vence .me-nivel-pie b { color: var(--sg-ambar); }
+        .me-tanque { display: block; flex: none; }
+        .me-tanque .t-fondo { fill: #F1F5F9; }
+        .me-tanque .t-borde { fill: none; stroke: #C6D2E0; stroke-width: 2; }
+
+        /* Las capas, en el tanque y en su lista: la licencia que vence en el sol, las demás en tinta y en azul medio, lo cargado a
+           futuro rayado (el patrón del SVG) y lo que todavía no se habilita, punteado */
+        .me-tanque .c-tinta { fill: var(--sg-tinta); }
+        .me-tanque .c-medio { fill: #4C7AB0; }
+        .me-tanque .c-vence { fill: var(--sg-sol-borde); }
+        .me-tanque .c-por-habilitar { fill: #fff; stroke: #9AA8BA; stroke-width: 2; stroke-dasharray: 4 3; }
+        .me-muestra { display: inline-block; width: 14px; height: 14px; border-radius: 4px; box-sizing: border-box; }
+        .me-muestra.c-tinta { background: var(--sg-tinta); }
+        .me-muestra.c-medio { background: #4C7AB0; }
+        .me-muestra.c-vence { background: var(--sg-sol-borde); }
+        .me-muestra.c-cargadas { background: repeating-linear-gradient(135deg, var(--sg-tinta) 0 2px, #fff 2px 5px); box-shadow: inset 0 0 0 1.5px var(--sg-tinta); }
+        .me-muestra.c-por-habilitar { background: #fff; border: 2px dashed #9AA8BA; }
+        .me-leyenda-vac { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+        .me-leyenda-vac li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 0.8rem; color: var(--sg-suave); line-height: 1.3; overflow-wrap: anywhere; }
+        .me-leyenda-vac li b { display: block; font-size: 0.9rem; color: var(--sg-texto); font-weight: 600; }
+        .me-leyenda-vac .me-n { font-family: var(--f-titulo); font-size: 1.25rem; font-weight: 700; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
+        .me-leyenda-vac li.vence, .me-leyenda-vac li.vence b { color: var(--sg-ambar); }
+        .me-leyenda-vac li.tenue b, .me-leyenda-vac li.tenue .me-n { color: var(--sg-suave); }
+
+        /* El único movimiento de la página: al abrir, los tanques se llenan desde abajo una sola vez (mi-espacio.js les saca
+           data-llenar dos cuadros después de que se ven), uno detrás del otro */
+        .me-tanque-nivel { transition: transform 0.85s cubic-bezier(0.2, 0.75, 0.25, 1); }
+        [data-llenar] .me-tanque-nivel { transform: translateY(var(--alto)); }
+        .me-niveles-resto .me-nivel:nth-child(1) .me-tanque-nivel { transition-delay: 0.12s; }
+        .me-niveles-resto .me-nivel:nth-child(2) .me-tanque-nivel { transition-delay: 0.18s; }
+        .me-niveles-resto .me-nivel:nth-child(3) .me-tanque-nivel { transition-delay: 0.24s; }
+        .me-niveles-resto .me-nivel:nth-child(4) .me-tanque-nivel { transition-delay: 0.3s; }
+        /* Quietos y llenos desde el principio (sin el parpadeo de los dos cuadros vacíos) */
+        @media (prefers-reduced-motion: reduce) { .me-tanque-nivel, [data-llenar] .me-tanque-nivel { transition: none; transform: none; } }
+
+        /* Debajo de los tanques, los francos o las horas a favor mes por mes: el que vence en el sol, el que todavía suma punteado y lo
+           no utilizado previamente en gris */
+        .me-niveles-pie { margin-top: 18px; padding-top: 4px; border-top: 1px solid var(--sg-linea); }
+        .me-pastillas { list-style: none; margin: 0; padding: 0; display: flex; gap: 10px; flex-wrap: wrap; }
+        .me-pastilla { display: flex; align-items: center; gap: 12px; padding: 8px 16px 8px 12px; border-radius: 14px; border: 1px solid var(--sg-linea); background: #fff; }
+        .me-pastilla > b { font-family: var(--f-titulo); font-size: 1.6rem; font-weight: 750; color: var(--sg-tinta); line-height: 1; min-width: 26px; text-align: center; }
+        .me-pastilla span { font-size: 0.78rem; color: var(--sg-suave); line-height: 1.3; }
+        .me-pastilla span b { display: block; font-size: 0.88rem; color: var(--sg-texto); }
+        .me-pastilla.vence { background: var(--sg-sol); border-color: var(--sg-sol-borde); }
+        .me-pastilla.vence span, .me-pastilla.vence span b { color: var(--sg-ambar); }
+        .me-pastilla.pendiente { border-style: dashed; border-color: #9AA8BA; }
+        .me-pastilla.pendiente > b { color: var(--sg-suave); }
+        .me-pastilla.previo { background: var(--sg-gris-fondo); border-color: #D3DBE5; }
+        .me-pastilla.previo > b, .me-pastilla.previo span b { color: var(--sg-suave); }
+        .me-previos { margin: 12px 0 0; font-size: 0.82rem; color: var(--sg-suave); max-width: 75ch; }
+
+        /* Hoy y mañana: quién no está y el próximo feriado */
+        .me-hoy { background: var(--sg-sutil); border: 1px solid var(--sg-linea); border-radius: 20px; padding: 20px 22px; min-width: 0; }
+        .me-hoy .me-vacio { font-size: 0.9rem; }
+        .me-ausentes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+        .me-ausente { display: flex; gap: 10px; align-items: center; min-width: 0; overflow-wrap: anywhere; }
+        .me-ausente b { display: block; font-size: 0.92rem; font-weight: 600; color: var(--sg-texto); line-height: 1.3; }
+        .me-ausente small { display: block; font-size: 0.8rem; color: var(--sg-suave); }
+        .me-inicial { width: 34px; height: 34px; border-radius: 50%; background: #fff; border: 1px solid var(--sg-linea); display: inline-flex; align-items: center; justify-content: center; font-size: 0.74rem; font-weight: 700; color: var(--sg-suave); flex: none; }
+        .me-feriado { margin: 0; font-size: 0.9rem; color: var(--sg-texto); display: flex; flex-direction: column; }
+        .me-feriado b { font-weight: 600; }
+
         /* Foco visible (el de Proyectos: anillo --tinta de 3 px con halo --sol-fuerte) */
         .me-pagina a:focus-visible, .me-pagina button:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
         .me-pagina .me-pestana:focus-visible { outline-offset: -3px; border-radius: 6px 6px 0 0; box-shadow: none; }
 
+        @media (max-width: 1100px) {
+            .me-resumen-grilla { grid-template-columns: minmax(0, 1fr); }
+        }
         @media (max-width: 980px) {
             .me-fila { grid-template-columns: 1fr auto; }
             .me-fila-cuerpo { grid-column: 1 / -1; grid-row: 2; }
             .me-fila.me-fila-dos { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 760px) {
+            .me-vence, .me-panel { padding-left: 16px; padding-right: 16px; }
+            .me-vence-item { grid-template-columns: 58px minmax(0, 1fr); }
+            .me-vence-item .sg-btn { grid-column: 2; justify-self: start; }
+            .me-nivel-vac { flex-wrap: wrap; }
+            .me-nivel-vac .me-leyenda-vac { padding-bottom: 0; }
         }
         @media (max-width: 640px) {
             .me-tarjeta { padding: 16px; }

@@ -5,11 +5,17 @@
  * (GET /api/mi-espacio/resumen, /mi-espacio/licencias?anio= y /mi-espacio/horas-extras?anio=, con services/miEspacioResumen.js) y
  * la página los imprime tal cual: no recalcula nada (Ruling 19). Sin la modalidad cargada, cada pestaña muestra el mensaje del
  * servidor y no deja cargar nada.
+ * - Resumen «Niveles»: la modalidad y el año; «Vence pronto» (cada cosa con su fecha en un bloque amarillo y el botón que la
+ *   resuelve), los faltantes en un aviso ámbar, «Lo que te queda» (un tanque SVG por saldo, cada uno un link a su pestaña, y debajo
+ *   las pastillas de los francos o de las horas a favor) y, al costado, «Hoy y mañana» (quién no está, solo para administración, y
+ *   el próximo feriado). La pestaña lleva una marca ámbar si algo vence pronto. Los tanques se llenan una sola vez, la primera vez
+ *   que se ve el Resumen: el único movimiento de la página (quieto con prefers-reduced-motion).
  * - Licencias: la lista del año, con el selector del año y los filtros por tipo (con su cantidad); al final, el saldo inicial con
  *   «Cambiar». Lo anterior al saldo inicial y lo que no corresponde a la modalidad actual se ven en gris, con su motivo.
  * - Horas extras: la tabla por mes (en planta, los francos; en contrato, las horas a favor) y el día por día de un mes (cada mes de
  *   la tabla es un botón; de entrada, el en curso) y, en contrato, las horas no utilizadas previamente.
- * Los botones de carga y de edición solo llevan data-* (data-cargar, data-abrir, data-editar-licencia, data-editar-horas).
+ * Los botones de carga y de edición solo llevan data-* (data-cargar, data-abrir, data-editar-licencia, data-editar-horas, y en
+ * «Vence pronto» data-accion="cargar-licencia" con su data-tipo): los conectan los formularios.
  * Al cargarse el archivo solo declara (tests/mi-espacio-frontend.test.js lo carga en un vm después del api.js de verdad): lo que
  * arma HTML es puro y va primero; lo que toca el DOM o la API va aparte, al final (iniciarMiEspacio, enganchado a
  * DOMContentLoaded), con los eventos delegados en contenedores fijos: volver a dibujar no engancha nada, y el foco vuelve al control
@@ -44,6 +50,20 @@ const NOTA_DE_LAS_HORAS_A_FAVOR = 'Cada hora extra de un mes es una hora menos d
   + 'son el día entero.';
 const NOTA_DE_LAS_NO_UTILIZADAS = 'Quedan a la vista aunque su mes ya pasó. Vuelven a cero el 1/1.';
 
+// El Resumen: la clase de cada capa de un tanque (la `clase` del servidor; una desconocida, en tinta), las que van en gris en la
+// lista del tanque de vacaciones (lo cargado a futuro y lo que todavía no se habilita) y la de cada pastilla (el `estado`; la
+// disponible, sin clase)
+const CLASE_DE_LA_CAPA = Object.freeze({
+  vence: 'c-vence', tinta: 'c-tinta', medio: 'c-medio', cargadas: 'c-cargadas', por_habilitar: 'c-por-habilitar'
+});
+const CAPAS_EN_GRIS = Object.freeze(['cargadas', 'por_habilitar']);
+const CLASE_DE_LA_PASTILLA = Object.freeze({ vence: 'vence', pendiente: 'pendiente' });
+// Las medidas de los tanques (las de la maqueta): el de vacaciones y los demás
+const TANQUE_GRANDE = Object.freeze({ ancho: 88, alto: 176 });
+const TANQUE_CHICO = Object.freeze({ ancho: 52, alto: 112 });
+const TEXTO_DE_LA_MARCA = 'Hay algo que vence pronto';
+const TEXTO_SIN_AUSENTES = 'Hoy y mañana están todos.';
+
 // =====================================================
 // Lo puro: lo que arma el HTML
 // =====================================================
@@ -55,6 +75,9 @@ const esc = (valor) => Utils.escapeHtml(String(valor ?? ''));
 // El valor de un mapa del servidor, o el de reserva (sin heredar nada de Object.prototype)
 const deMapa = (mapa, clave, reserva) => (esObjeto(mapa) && Object.hasOwn(mapa, clave) ? mapa[clave] : reserva);
 const conTexto = (valor) => typeof valor === 'string' && valor.trim() !== '';
+// Un año del servidor en un título o en un vacío («de 2026», «en 2026»); uno que no es un año, nada
+const delAnio = (anio) => (Number.isInteger(anio) ? ` de ${String(anio)}` : '');
+const enElAnio = (anio) => (Number.isInteger(anio) ? ` en ${String(anio)}` : '');
 
 function pestanaDeHash(hash) {
   const nombre = String(hash ?? '').replace(/^#/, '');
@@ -75,6 +98,193 @@ function htmlSinArranque() {
 // Un error de una carga, en la pestaña
 function htmlDeError(texto) {
   return `<p class="me-aviso me-aviso-error">${esc(texto)}</p>`;
+}
+
+// ---- El Resumen «Niveles» ----
+
+// La marca ámbar de la pestaña Resumen cuando algo vence pronto (como la del Estado en Correos: una imagen con su nombre, no un
+// title). Solo con el true literal
+function htmlDeMarca(marca) {
+  return marca === true ? `<span class="me-marca" role="img" aria-label="${TEXTO_DE_LA_MARCA}"></span>` : '';
+}
+
+// «Vence pronto»: cada cosa con su fecha en un bloque amarillo (decorativo: «Viernes 30/10» ya la dice), qué vence y el botón que
+// la resuelve, que abre «Cargar licencia» con su tipo (data-accion y data-tipo) y se describe con lo que vence. Sin nada, ''
+function htmlDeVencePronto(lista) {
+  const cosas = listaDe(lista);
+  if (cosas.length === 0) return '';
+  const filas = cosas.map((cosa, i) => {
+    const accion = esObjeto(cosa.accion) ? cosa.accion : {};
+    return `<li class="me-vence-item"><span class="me-fecha" aria-hidden="true"><b>${esc(cosa.dia)}</b>${esc(cosa.mes)}</span>`
+      + `<span class="me-vence-texto"><span class="me-vence-cuando">${esc(cosa.cuando)}</span><b id="me-vence-${i}">${esc(cosa.titulo)}</b>`
+      + `<span>${esc(cosa.detalle)}</span></span>`
+      + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-accion="cargar-licencia" data-tipo="${esc(accion.tipo)}" `
+      + `aria-describedby="me-vence-${i}">${esc(accion.texto)}</button></li>`;
+  });
+  return '<section class="me-vence" aria-labelledby="me-vence-titulo"><h2 class="me-titulo" id="me-vence-titulo">Vence pronto</h2>'
+    + `<ol class="me-vence-lista">${filas.join('')}</ol></section>`;
+}
+
+// Los faltantes (lo guardado que dejó de cerrar), con su texto neutro, en un aviso ámbar arriba de «Lo que te queda». Sin
+// ninguno, ''
+function htmlDeFaltantes(faltantes) {
+  const textos = (Array.isArray(faltantes) ? faltantes : []).filter(conTexto);
+  if (textos.length === 0) return '';
+  if (textos.length === 1) return `<p class="me-aviso me-aviso-ambar">${esc(textos[0])}</p>`;
+  return `<div class="me-aviso me-aviso-ambar"><ul class="me-faltantes">${textos.map((texto) => `<li>${esc(texto)}</li>`).join('')}</ul></div>`;
+}
+
+// Una cantidad de una capa: un número positivo; lo demás, 0
+const cantidadDeLaCapa = (capa) => (typeof capa.n === 'number' && Number.isFinite(capa.n) && capa.n > 0 ? capa.n : 0);
+
+/**
+ * El SVG de un tanque (decorativo: el link que lo envuelve dice lo que muestra). Las capas van de abajo hacia arriba, cada una de
+ * n / capacidad × alto, en el color de su clase; las cargadas, rayadas (el patrón del tanque), y las por habilitar, punteadas (el
+ * <style>). Lo que pasa la capacidad se corta en el borde de arriba, y una capacidad que no es un número positivo deja el tanque
+ * vacío: nunca un NaN. `id` nombra el recorte y el patrón (uno por tanque; solo letras, números y guiones). El nivel
+ * (.me-tanque-nivel, con su alto en --alto) es lo que se llena al abrir.
+ */
+function svgDeTanque({ capas, capacidad, ancho = TANQUE_CHICO.ancho, alto = TANQUE_CHICO.alto, id } = {}) {
+  const tope = typeof capacidad === 'number' && Number.isFinite(capacidad) && capacidad > 0 ? capacidad : 0;
+  const nombre = String(id ?? '').replace(/[^\w-]/g, '') || 'me-tanque';
+  // La altura (y) a la que llega lo acumulado, redondeada a un decimal: cada capa va de la de la anterior a la suya, así que
+  // ninguna se pisa ni deja un hueco
+  const nivel = (acumulado) => (tope === 0 ? alto : Math.round((alto - (Math.min(acumulado, tope) / tope) * alto) * 10) / 10);
+  let acumulado = 0;
+  const rects = listaDe(capas).map((capa) => {
+    const abajo = nivel(acumulado);
+    acumulado += cantidadDeLaCapa(capa);
+    const arriba = nivel(acumulado);
+    const clase = deMapa(CLASE_DE_LA_CAPA, capa.clase, 'c-tinta');
+    const relleno = clase === 'c-cargadas' ? ` fill="url(#${nombre}-rayas)"` : '';
+    return `<rect class="${clase}"${relleno} x="0" y="${arriba.toFixed(1)}" width="${ancho}" height="${(abajo - arriba).toFixed(1)}"/>`;
+  });
+  return `<svg class="me-tanque" viewBox="0 0 ${ancho} ${alto}" width="${ancho}" height="${alto}" aria-hidden="true" focusable="false">`
+    + `<defs><clipPath id="${nombre}"><rect width="${ancho}" height="${alto}" rx="16"/></clipPath>`
+    + `<pattern id="${nombre}-rayas" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">`
+    + '<rect width="6" height="6" fill="#fff"/><rect width="3" height="6" fill="#1A365D"/></pattern></defs>'
+    + `<rect class="t-fondo" width="${ancho}" height="${alto}" rx="16"/>`
+    + `<g clip-path="url(#${nombre})"><g class="me-tanque-nivel" style="--alto:${alto}px">${rects.join('')}</g></g>`
+    + `<rect class="t-borde" x="1" y="1" width="${ancho - 2}" height="${alto - 2}" rx="15"/></svg>`;
+}
+
+// Un tanque: un link a su pestaña (Horas extras o, si no, Licencias) con el aria-label del servidor; el número arriba, el tanque
+// y, debajo, el nombre con su total
+const htmlDeNivel = (tanque, { nombre, pie, svg, vence = false, chico = false }) => {
+  const pestana = tanque.pestana === 'horas' ? 'horas' : 'licencias';
+  return `<a class="me-nivel${vence ? ' vence' : ''}" href="#${pestana}" data-pestana="${pestana}" aria-label="${esc(tanque.aria)}">`
+    + `<span class="me-nivel-num${chico ? ' chico' : ''}"><b>${esc(tanque.numero)}</b><span>${esc(tanque.unidad)}</span></span>${svg}`
+    + `<span class="me-nivel-pie"><b>${esc(nombre)}</b><span>${esc(pie)}</span></span></a>`;
+};
+
+// Al lado del tanque de vacaciones, cada capa con su número: la licencia que vence en el año, en ámbar; lo cargado a futuro y lo
+// que todavía no se habilita, en gris
+function htmlDeLeyendaDeVacaciones(capas) {
+  if (capas.length === 0) return '';
+  const filas = capas.map((capa) => {
+    let extra = '';
+    if (capa.clase === 'vence') extra = ' vence';
+    else if (CAPAS_EN_GRIS.includes(capa.clase)) extra = ' tenue';
+    return `<li class="me-capa${extra}"><i class="me-muestra ${deMapa(CLASE_DE_LA_CAPA, capa.clase, 'c-tinta')}" aria-hidden="true"></i>`
+      + `<span><b>${esc(capa.nombre)}</b>${esc(capa.nota)}</span><b class="me-n">${esc(capa.n)}</b></li>`;
+  });
+  return `<ul class="me-leyenda-vac">${filas.join('')}</ul>`;
+}
+
+/**
+ * «Lo que te queda» (los `tanques` del Resumen): el de vacaciones, por capas y con su lista al lado, y los demás (franquicias u
+ * horas a favor, estudios, atención médica y grupo familiar), uno que vence este mes en ámbar. Todos apoyan sobre la misma línea.
+ */
+function htmlDeTanques(tanques) {
+  if (!esObjeto(tanques)) return '';
+  const partes = [];
+  if (esObjeto(tanques.vacaciones)) {
+    const { vacaciones } = tanques;
+    const capas = listaDe(vacaciones.capas);
+    const svg = svgDeTanque({ capas, capacidad: vacaciones.capacidad, ...TANQUE_GRANDE, id: 'me-tanque-0' });
+    partes.push(`<div class="me-nivel-vac">${htmlDeNivel(vacaciones, { nombre: 'Vacaciones', pie: vacaciones.pie, svg })}`
+      + `${htmlDeLeyendaDeVacaciones(capas)}</div>`);
+  }
+  const otros = listaDe(tanques.otros).map((tanque, i) => {
+    const vence = tanque.vence === true;
+    const svg = svgDeTanque({
+      capas: [{ clase: vence ? 'vence' : 'tinta', n: tanque.valor }], capacidad: tanque.total, ...TANQUE_CHICO, id: `me-tanque-${i + 1}`
+    });
+    return htmlDeNivel(tanque, { nombre: tanque.nombre, pie: tanque.de, svg, vence, chico: true });
+  });
+  if (otros.length > 0) partes.push(`<div class="me-niveles-resto">${otros.join('')}</div>`);
+  return `<div class="me-niveles-fila">${partes.join('')}</div>`;
+}
+
+// Debajo de los tanques, los francos (o las horas a favor) mes por mes: el del mes que vence en amarillo, el que todavía suma
+// punteado y lo no utilizado previamente en gris. Sin ningún mes ni nada no utilizado, ''
+function htmlDePastillas(pastillas) {
+  if (!esObjeto(pastillas)) return '';
+  const pastilla = (clase, numero, titulo, nota) => `<li class="me-pastilla${clase ? ` ${clase}` : ''}"><b>${esc(numero)}</b>`
+    + `<span><b>${esc(titulo)}</b>${esc(nota)}</span></li>`;
+  const filas = listaDe(pastillas.meses).map((mes) => pastilla(deMapa(CLASE_DE_LA_PASTILLA, mes.estado, ''), mes.numero, mes.mes, mes.nota));
+  const { previo } = pastillas;
+  if (esObjeto(previo)) filas.push(pastilla('previo', previo.numero, previo.titulo, previo.nota));
+  if (filas.length === 0) return '';
+  return `<h3 class="me-subtitulo">${esc(pastillas.titulo)}</h3><ol class="me-pastillas">${filas.join('')}</ol>`;
+}
+
+// «Lo que te queda»: el día, «Mis vacaciones y saldos», los tanques, las pastillas y la médica extraordinaria. Sin tanques (sin un
+// hoy válido), nada
+function htmlDeLoQueTeQueda(resumen) {
+  if (!esObjeto(resumen.tanques)) return '';
+  return '<section class="me-panel me-niveles" aria-labelledby="me-niveles-titulo"><div class="me-panel-cabeza">'
+    + '<h2 class="me-titulo" id="me-niveles-titulo">Lo que te queda</h2>'
+    + `<span class="me-panel-al">${esc(resumen.al_texto)}</span>`
+    + '<button type="button" class="sg-link" data-abrir="saldos">Mis vacaciones y saldos</button></div>'
+    + htmlDeTanques(resumen.tanques)
+    + `<div class="me-niveles-pie">${htmlDePastillas(resumen.pastillas)}`
+    + `${conTexto(resumen.extraordinaria) ? `<p class="me-previos">${esc(resumen.extraordinaria)}</p>` : ''}</div></section>`;
+}
+
+// Las iniciales de un nombre, decorativas: la primera letra del primero y del último
+const iniciales = (nombre) => {
+  const palabras = String(nombre ?? '').trim().split(/\s+/).filter(Boolean);
+  const inicial = (palabra) => Array.from(palabra)[0].toUpperCase();
+  if (palabras.length === 0) return '';
+  return palabras.length === 1 ? inicial(palabras[0]) : inicial(palabras[0]) + inicial(palabras.at(-1));
+};
+
+/**
+ * «Hoy y mañana» (el `hoy_y_manana` del Resumen): «No están», solo para quien ve a sus compañeros (`veCompaneros`, el true
+ * literal: administración), con el texto y la vuelta que manda el servidor, y el próximo feriado.
+ */
+function htmlDeHoyYManana(datos, veCompaneros) {
+  const hoy = esObjeto(datos) ? datos : {};
+  let html = '<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 class="me-titulo" id="me-hoy-titulo">Hoy y mañana</h2>';
+  if (veCompaneros === true) {
+    const ausentes = listaDe(hoy.ausentes).map((ausente) => '<li class="me-ausente">'
+      + `<span class="me-inicial" aria-hidden="true">${esc(iniciales(ausente.nombre))}</span><span><b>${esc(ausente.texto)}</b>`
+      + `${conTexto(ausente.vuelve_texto) ? `<small>${esc(ausente.vuelve_texto)}</small>` : ''}</span></li>`);
+    html += '<h3 class="me-subtitulo">No están</h3>'
+      + (ausentes.length > 0 ? `<ul class="me-ausentes">${ausentes.join('')}</ul>` : `<p class="me-vacio">${TEXTO_SIN_AUSENTES}</p>`);
+  }
+  const feriado = hoy.proximo_feriado;
+  if (esObjeto(feriado)) {
+    html += `<h3 class="me-subtitulo">Próximo feriado</h3><p class="me-feriado"><b>${esc(feriado.cuando)}</b>${esc(feriado.nombre)}</p>`;
+  }
+  return `${html}</section>`;
+}
+
+/**
+ * La pestaña Resumen (lo que manda GET /api/mi-espacio/resumen). Sin modalidad, el mensaje del servidor; sin el saldo inicial,
+ * la invitación a «Mis vacaciones y saldos»; si no, la modalidad y el año, «Vence pronto» (si hay algo), los faltantes y, en la
+ * grilla, «Lo que te queda» y «Hoy y mañana».
+ */
+function htmlDelResumen(resumen) {
+  if (!esObjeto(resumen)) return '';
+  if (!esObjeto(resumen.modalidad)) return htmlDeMensaje(resumen.mensaje);
+  if (resumen.abrir_saldos === true) return htmlSinArranque();
+  const contexto = `<p class="me-contexto"><span><b>${esc(resumen.modalidad.texto)}</b></span>`
+    + `${Number.isInteger(resumen.anio) ? `<span>Año ${String(resumen.anio)}</span>` : ''}</p>`;
+  return contexto + htmlDeVencePronto(resumen.vence_pronto) + htmlDeFaltantes(resumen.faltantes)
+    + `<div class="me-resumen-grilla">${htmlDeLoQueTeQueda(resumen)}`
+    + `${htmlDeHoyYManana(resumen.hoy_y_manana, esObjeto(resumen.persona) ? resumen.persona.ve_companeros : false)}</div>`;
 }
 
 // Los años del selector (los que manda el servidor), con aria-pressed en el elegido
@@ -140,10 +350,10 @@ function htmlDeListaDeLicencias(datos, filtro) {
   const filas = visibles.map(htmlDeFilaDeLicencia);
   if (actual === 'todas' && esObjeto(datos.saldo_inicial)) filas.push(htmlDelSaldoInicial(datos.saldo_inicial));
   return '<div class="me-tarjeta"><div class="me-cabeza">'
-    + `<h2>Mis licencias de ${String(anio ?? '')}</h2><span class="me-acciones">${htmlDelSelectorDeAnio(datos.anios, anio)}`
+    + `<h2>Mis licencias${delAnio(anio)}</h2><span class="me-acciones">${htmlDelSelectorDeAnio(datos.anios, anio)}`
     + '<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" data-cargar="licencia">Cargar licencia</button></span></div>'
     + (licencias.length > 0 ? htmlDeFiltrosDeLicencias(datos.filtros, actual) : '')
-    + (visibles.length === 0 ? `<p class="me-vacio">No hay licencias cargadas en ${String(anio ?? '')}.</p>` : '')
+    + (visibles.length === 0 ? `<p class="me-vacio">No hay licencias cargadas${enElAnio(anio)}.</p>` : '')
     + (filas.length > 0 ? `<ul class="me-lista">${filas.join('')}</ul>` : '')
     + `<p class="me-nota">${NOTA_DE_LAS_LICENCIAS}</p></div>`;
 }
@@ -159,8 +369,8 @@ function mesInicialDe(tabla) {
 const mesDeLaTabla = (tabla, mes) => (listaDe(tabla?.meses).some((fila) => fila.mes === mes) ? mes : mesInicialDe(tabla));
 
 // La cabeza de la tarjeta de las horas extras: el título, el selector del año y «Cargar horas extras»
-const cabezaDeHoras = (titulo, tabla) => `<div class="me-cabeza"><h2>${titulo} de ${String(tabla.anio ?? '')}</h2>`
-  + `<span class="me-acciones">${htmlDelSelectorDeAnio(tabla.anios, tabla.anio)}`
+const cabezaDeHoras = (titulo, tabla) => `<div class="me-cabeza"><h2>${titulo}${delAnio(tabla?.anio)}</h2>`
+  + `<span class="me-acciones">${htmlDelSelectorDeAnio(tabla?.anios, tabla?.anio)}`
   + '<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" data-cargar="horas">Cargar horas extras</button></span></div>';
 
 // El mes trabajado de una fila de la tabla: un botón que elige el día por día de ese mes
@@ -176,7 +386,7 @@ const claseDeLaFila = (fila) => (SITUACIONES_EN_GRIS.includes(fila.estado) ? ' c
 
 // La tabla de una modalidad, o el vacío del año
 function htmlDeTabla(tabla, columnas, filas) {
-  if (filas.length === 0) return `<p class="me-vacio">No hay horas extras cargadas en ${String(tabla.anio ?? '')}.</p>`;
+  if (filas.length === 0) return `<p class="me-vacio">No hay horas extras cargadas${enElAnio(tabla?.anio)}.</p>`;
   return `<div class="me-tabla-marco"><table class="me-tabla"><thead><tr>${columnas.map((columna) => `<th>${columna}</th>`).join('')}`
     + `</tr></thead><tbody>${filas.join('')}</tbody></table></div>`;
 }
@@ -199,7 +409,7 @@ function htmlDeTablaDeFrancos(tabla, mes = mesInicialDe(tabla)) {
     + `<td>${esc(fila.uso_texto)}</td><td>${htmlDeSituacion(fila)}</td></tr>`);
   return `<div class="me-tarjeta">${cabezaDeHoras('Horas extras al 100%', tabla)}`
     + htmlDeTabla(tabla, ['Mes trabajado', 'Horas', 'Francos', 'Para usar en', 'Situación'], filas)
-    + `<p class="me-nota">${NOTA_DE_LOS_FRANCOS}</p>${htmlDelUsoAutorizado(tabla.uso_autorizado)}</div>`;
+    + `<p class="me-nota">${NOTA_DE_LOS_FRANCOS}</p>${htmlDelUsoAutorizado(tabla?.uso_autorizado)}</div>`;
 }
 
 /**
@@ -272,9 +482,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // El estado de la página: el Resumen, la lista de licencias con su filtro y la tabla de horas extras con su mes (null hasta que
-// llegan). `pedidos` numera las cargas de cada pestaña: una respuesta que llega después de otra más nueva se descarta
+// llegan, y después de una carga que falló). `pedidos` numera las cargas de cada pestaña: una respuesta que llega después de otra
+// más nueva se descarta. `tanquesLlenos`: los tanques del Resumen ya se llenaron (pasa una sola vez)
 const pagina = {
-  pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null,
+  pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, tanquesLlenos: false,
   pedidos: { resumen: 0, licencias: 0, horas: 0 }
 };
 
@@ -319,6 +530,7 @@ function conectarEventos() {
     pestana.addEventListener('keydown', teclaEnPestanas);
   }
   window.addEventListener?.('hashchange', () => mostrarPestana(pestanaDeHash(window.location.hash)));
+  porId('vista-resumen').addEventListener('click', alTocarResumen);
   porId('vista-licencias').addEventListener('click', alTocarLicencias);
   porId('vista-horas').addEventListener('click', alTocarHoras);
 }
@@ -337,6 +549,7 @@ function mostrarPestana(nombre) {
     porId(`vista-${otra}`).hidden = !activa;
   }
   window.history?.replaceState?.(null, '', `#${pagina.pestana}`);
+  if (pagina.pestana === 'resumen') llenarTanques();
   if (pagina.pestana === 'licencias' && pagina.licencias === null) return cargarLicencias(null);
   if (pagina.pestana === 'horas' && pagina.horas === null) return cargarHorasExtras(null);
   return Promise.resolve();
@@ -363,7 +576,8 @@ function teclaEnPestanas(evento) {
 // ---- El Resumen ----
 
 // El Resumen dice la modalidad: sin ella, no se carga nada (los botones del encabezado quedan ocultos) y la pestaña muestra el
-// mensaje; con ella y sin el saldo inicial, invita a completar «Mis vacaciones y saldos»
+// mensaje; con ella y sin el saldo inicial, invita a completar «Mis vacaciones y saldos»; si no, «Niveles», con la marca en la
+// pestaña si algo vence pronto
 async function cargarResumen() {
   const pedido = ++pagina.pedidos.resumen;
   try {
@@ -383,16 +597,47 @@ function pintarResumen() {
   const conModalidad = esObjeto(resumen.modalidad);
   porId('btn-cargar-horas').hidden = !conModalidad;
   porId('btn-cargar-licencia').hidden = !conModalidad;
-  let html = '';
-  if (!conModalidad) html = htmlDeMensaje(resumen.mensaje);
-  else if (resumen.abrir_saldos === true) html = htmlSinArranque();
-  porId('vista-resumen').innerHTML = html;
+  const vista = porId('vista-resumen');
+  vista.innerHTML = htmlDelResumen(resumen);
+  porId('me-marca').innerHTML = htmlDeMarca(resumen.marca);
+  // Hasta que se llenan (una sola vez), los tanques se dibujan vacíos
+  const fila = vista.querySelector('.me-niveles-fila');
+  if (fila && !pagina.tanquesLlenos) {
+    fila.setAttribute('data-llenar', '');
+    llenarTanques();
+  }
+}
+
+// El único movimiento de la página: la primera vez que se ve el Resumen con sus tanques, se llenan desde abajo (la transición de
+// .me-tanque-nivel en el <style>, quieta con prefers-reduced-motion). Se les saca data-llenar dos cuadros después: en el primero
+// el navegador los dibuja vacíos y en el segundo empieza la transición. Con el Resumen oculto (se abrió otra pestaña), esperan a
+// que se vea (mostrarPestana); sin requestAnimationFrame, se llenan enseguida
+function llenarTanques() {
+  const vista = porId('vista-resumen');
+  const fila = vista.querySelector('[data-llenar]');
+  if (!fila || vista.hidden) return;
+  pagina.tanquesLlenos = true;
+  const enElProximoCuadro = typeof window.requestAnimationFrame === 'function'
+    ? (funcion) => window.requestAnimationFrame(funcion) : (funcion) => funcion();
+  enElProximoCuadro(() => enElProximoCuadro(() => fila.removeAttribute('data-llenar')));
+}
+
+// Un clic en el Resumen: un tanque abre su pestaña y el foco va a la pestaña (con Ctrl, Cmd, Mayúsculas, Alt o un botón que no
+// es el principal, el link hace lo suyo: otra pestaña del navegador). Los botones de «Vence pronto» (data-accion) y «Mis
+// vacaciones y saldos» (data-abrir) los conectan los formularios
+function alTocarResumen(evento) {
+  const tanque = evento.target?.closest?.('[data-pestana]');
+  if (!tanque || evento.ctrlKey || evento.metaKey || evento.shiftKey || evento.altKey || (evento.button ?? 0) !== 0) return;
+  evento.preventDefault?.();
+  mostrarPestana(tanque.dataset.pestana);
+  porId(`tab-${pagina.pestana}`).focus();
 }
 
 // ---- Licencias ----
 
-// Pide las licencias de un año (null: el en curso). Al elegir un año, se anuncia el título de la tarjeta. Devuelve si dibujó la
-// lista (una respuesta vieja o una falla, no)
+// Pide las licencias de un año (null: el en curso). Al elegir un año, se anuncia el título de la tarjeta. Si falla, la pestaña lo
+// dice y queda sin lista: volver a ella la pide otra vez (la del año en curso). Devuelve si dibujó la lista (una respuesta vieja o
+// una falla, no)
 async function cargarLicencias(anio) {
   const pedido = ++pagina.pedidos.licencias;
   try {
@@ -405,7 +650,10 @@ async function cargarLicencias(anio) {
   } catch (error) {
     if (pedido !== pagina.pedidos.licencias) return false;
     if (error?.status === 401) irAlLogin();
-    else mostrarFalla('vista-licencias', 'No se pudieron cargar tus licencias. Probá de nuevo en unos minutos.');
+    else {
+      pagina.licencias = null;
+      mostrarFalla('vista-licencias', 'No se pudieron cargar tus licencias. Probá de nuevo en unos minutos.');
+    }
     return false;
   }
 }
@@ -432,7 +680,8 @@ async function alTocarLicencias(evento) {
 
 // ---- Horas extras ----
 
-// Pide las horas extras de un año (null: el en curso); el día por día vuelve al mes de entrada. Devuelve si dibujó la pestaña
+// Pide las horas extras de un año (null: el en curso); el día por día vuelve al mes de entrada. Si falla, como las licencias:
+// volver a la pestaña la pide otra vez. Devuelve si dibujó la pestaña
 async function cargarHorasExtras(anio) {
   const pedido = ++pagina.pedidos.horas;
   try {
@@ -446,7 +695,11 @@ async function cargarHorasExtras(anio) {
   } catch (error) {
     if (pedido !== pagina.pedidos.horas) return false;
     if (error?.status === 401) irAlLogin();
-    else mostrarFalla('vista-horas', 'No se pudieron cargar tus horas extras. Probá de nuevo en unos minutos.');
+    else {
+      pagina.horas = null;
+      pagina.mes = null;
+      mostrarFalla('vista-horas', 'No se pudieron cargar tus horas extras. Probá de nuevo en unos minutos.');
+    }
     return false;
   }
 }

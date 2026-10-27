@@ -1,15 +1,16 @@
 // Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 8 y 11), ejecutado en Node: lo puro de public/js/mi-espacio.js
-// (las pestañas, la lista de licencias con su selector del año y sus filtros, las tablas de horas extras, el día por día y las horas
-// no utilizadas previamente) con los datos que arma el servidor (services/miEspacioResumen.js) sobre los casos de
-// tests/fixtures/mi-espacio-casos.js, pasados por JSON como los manda la API; y, con un DOM falso y un fetch falso, la carga de las
-// pestañas. Como proyectos.js, el script al cargarse solo declara: se carga en un vm después del api.js de verdad (Utils.escapeHtml).
-// Las personas son las inventadas de la maqueta.
+// (las pestañas; el Resumen «Niveles», con Vence pronto, los faltantes, los tanques, las pastillas y Hoy y mañana; la lista de
+// licencias con su selector del año y sus filtros, las tablas de horas extras, el día por día y las horas no utilizadas previamente)
+// con los datos que arma el servidor (services/miEspacioResumen.js) sobre los casos de tests/fixtures/mi-espacio-casos.js, pasados
+// por JSON como los manda la API; y, con un DOM falso y un fetch falso, la carga de las pestañas. Como proyectos.js, el script al
+// cargarse solo declara: se carga en un vm después del api.js de verdad (Utils.escapeHtml). Las personas son las inventadas de la
+// maqueta.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
-import { filasDeLicencias, tablaDeHorasExtras } from '../services/miEspacioResumen.js';
-import { calcular, vinculosDeLaLista, MENSAJES_MI_ESPACIO } from '../services/miEspacioReglas.js';
+import { filasDeLicencias, tablaDeHorasExtras, resumenDe, proximoFeriadoDe } from '../services/miEspacioResumen.js';
+import { calcular, vinculosDeLaLista, MENSAJES_MI_ESPACIO, ausenciasUnidas, ausentesDelRango } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
@@ -51,6 +52,27 @@ const licenciasDe = (caso, { estado = caso.estado, anio = 2026, vinculos } = {})
 const horasDe = (caso, { estado = caso.estado, anio = 2026 } = {}) =>
   comoLlega(tablaDeHorasExtras(estado, calculoDe(estado), { anio, hoy: HOY, feriados: SIN_FERIADOS }));
 const SIN_MODALIDAD = Object.freeze({ modalidad: null, mensaje: MENSAJES_MI_ESPACIO.sinModalidad });
+
+// «Hoy y mañana» como lo arma el controlador: las ausencias unidas de los compañeros entre hoy y mañana (a quien no es de
+// administración, ninguna: se pasan solo cuando hacen falta) y el próximo feriado, el de la maqueta
+const MANANA = '2026-10-27';
+const FERIADO_SOBERANIA = Object.freeze({
+  id: 1, fecha: '2026-11-23', nombre: 'Día de la Soberanía Nacional', tipo: 'nacional', trasladado_de: null,
+  se_repite: 0, hasta_anio: null, activo: 1, no_rige: []
+});
+const AUSENCIA_DE_MARTIN = Object.freeze({ usuario_id: 3, nombre: 'Martín Ríos', desde: '2026-10-26', hasta: '2026-10-30' });
+const resumenDel = (caso, { estado = caso.estado, persona = caso.persona, ausencias = [] } = {}) => comoLlega(resumenDe({
+  persona, estado, calculo: calculoDe(estado), hoy: HOY, feriados: SIN_FERIADOS,
+  hoyYManana: {
+    ausentes: ausentesDelRango(ausenciasUnidas(ausencias, SIN_FERIADOS), HOY, MANANA),
+    proximo_feriado: proximoFeriadoDe([FERIADO_SOBERANIA], HOY)
+  }
+}));
+const conLicencias = (estado, ...licencias) => ({ ...estado, licencias: [...estado.licencias, ...licencias] });
+const licencia = (id, tipo, desde, hasta = desde, horas = null) => ({ id, tipo, desde, hasta, horas });
+// PLANTA con el franco de octubre ya cargado y los tres días de la licencia 2024 usados en diciembre: nada vence pronto
+const SIN_NADA_QUE_VENZA = conLicencias(PLANTA.estado, licencia(100, 'franco', '2026-10-27'),
+  licencia(101, 'vacaciones', '2026-12-14', '2026-12-16'));
 
 // El texto que se ve de un pedazo de HTML (sin las etiquetas, con las entidades de escapeHtml resueltas)
 const textoDe = (html) => html.replace(/<[^>]*>/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
@@ -143,6 +165,280 @@ describe('sin modalidad y sin arranque', () => {
 
   it('la copia de sinArranque es la del servidor', () => {
     assert.equal(M.TEXTO_SIN_ARRANQUE, MENSAJES_MI_ESPACIO.sinArranque);
+  });
+});
+
+// Los links de un HTML: { atributos, adentro, texto }
+const linksDe = (html) => [...html.matchAll(/<a ([^>]*)>([\s\S]*?)<\/a>/g)]
+  .map(([, atributos, adentro]) => ({ atributos: atributosDe(atributos), adentro, texto: textoDe(adentro) }));
+// Las capas de un tanque (los rect con la clase de una capa), con sus números: { clase, y, alto }
+const capasDelSvg = (svg) => [...svg.matchAll(/<rect class="(c-[\w-]+)"([^>]*)\/>/g)].map(([, clase, atributos]) => {
+  const leidos = atributosDe(atributos);
+  return { clase, y: Number(leidos.y), alto: Number(leidos.height) };
+});
+const casi = (a, b, tolerancia = 0.11) => Math.abs(a - b) <= tolerancia;
+
+describe('el Resumen «Niveles»', () => {
+  const planta = resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_MARTIN] });
+  const contrato = resumenDel(CONTRATO);
+
+  it('PLANTA: arriba la modalidad y el año; después Vence pronto, Lo que te queda y Hoy y mañana, en ese orden', () => {
+    const html = M.htmlDelResumen(planta);
+    assert.ok(html.startsWith('<p class="me-contexto"><span><b>Planta permanente</b></span><span>Año 2026</span></p>'));
+    assert.deepEqual([...html.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map(([, titulo]) => titulo), ['Vence pronto', 'Lo que te queda', 'Hoy y mañana']);
+    // «Lo que te queda» dice el día y abre «Mis vacaciones y saldos»
+    const cabeza = html.match(/<div class="me-panel-cabeza">[\s\S]*?<\/div>/)[0];
+    assert.ok(textoDe(cabeza).startsWith('Lo que te queda Al lunes 26/10/2026'));
+    assert.deepEqual(botonesDe(cabeza).map(({ atributos, texto }) => [atributos['data-abrir'], texto]), [['saldos', 'Mis vacaciones y saldos']]);
+    // Las pastillas y la médica extraordinaria, dentro de «Lo que te queda»
+    assert.ok(html.includes(M.htmlDePastillas(planta.pastillas)));
+    assert.ok(html.includes('<p class="me-previos">Atención médica extraordinaria: sin tope y aparte de los 25 días. No usaste en 2026.</p>'));
+    assert.ok(html.indexOf('me-previos') < html.indexOf('Hoy y mañana'));
+  });
+
+  it('Vence pronto: cada cosa con su fecha en el bloque amarillo, qué vence y el botón que la resuelve, con su tipo', () => {
+    const html = M.htmlDeVencePronto(planta.vence_pronto);
+    assert.match(html, /^<section class="me-vence" aria-labelledby="me-vence-titulo"><h2 class="me-titulo" id="me-vence-titulo">Vence pronto<\/h2>/);
+    assert.deepEqual(filasDe(html).map(({ clases, texto }) => [clases.join(' '), texto]), [
+      ['me-vence-item', '30 oct Viernes 30/10 1 franco compensatorio de octubre Es el último día hábil del mes. Si no lo usás, queda como '
+        + 'no utilizado previamente. Cargarlo'],
+      ['me-vence-item', '31 dic Jueves 31/12 3 días de la licencia 2024 Ese día vence la licencia 2024. Cargar vacaciones']
+    ]);
+    // El bloque de la fecha es decorativo: «Viernes 30/10» ya la dice
+    assert.ok(html.includes('<span class="me-fecha" aria-hidden="true"><b>30</b>oct</span>'));
+    assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [texto, atributos['data-accion'], atributos['data-tipo'], atributos['aria-describedby']]), [
+      ['Cargarlo', 'cargar-licencia', 'franco', 'me-vence-0'], ['Cargar vacaciones', 'cargar-licencia', 'vacaciones', 'me-vence-1']
+    ]);
+    assert.ok(html.includes('<b id="me-vence-0">1 franco compensatorio de octubre</b>'));
+    assert.equal(M.htmlDeVencePronto([]), '');
+    assert.equal(M.htmlDeVencePronto(null), '');
+  });
+
+  it('el tanque de vacaciones es un link a #licencias con el aria-label del servidor, y su SVG es decorativo', () => {
+    const [vacaciones] = linksDe(M.htmlDeTanques(planta.tanques));
+    assert.equal(vacaciones.atributos.href, '#licencias');
+    assert.equal(vacaciones.atributos['data-pestana'], 'licencias');
+    assert.equal(vacaciones.atributos['aria-label'], 'Vacaciones: 33 días hábiles disponibles. Ver tus licencias');
+    assert.match(vacaciones.adentro, /<svg class="me-tanque" [^>]*aria-hidden="true"/);
+    assert.equal(vacaciones.texto, '33 días Vacaciones de 3 licencias');
+  });
+
+  it('el tanque de vacaciones: cinco capas de abajo hacia arriba, cada una n / capacidad × alto, que suman el tanque y ninguna sale', () => {
+    const { vacaciones } = planta.tanques;
+    assert.equal(vacaciones.capacidad, 48);
+    const svg = M.svgDeTanque({ capas: vacaciones.capas, capacidad: vacaciones.capacidad, ancho: 88, alto: 176, id: 'me-tanque-0' });
+    assert.match(svg, /^<svg class="me-tanque" viewBox="0 0 88 176" width="88" height="176" aria-hidden="true" focusable="false">/);
+    const capas = capasDelSvg(svg);
+    assert.deepEqual(capas.map(({ clase }) => clase), ['c-vence', 'c-tinta', 'c-medio', 'c-cargadas', 'c-por-habilitar']);
+    capas.forEach(({ alto }, i) => assert.ok(casi(alto, (vacaciones.capas[i].n / 48) * 176), `capa ${i}: ${alto}`));
+    // La primera apoya en el fondo, cada una sobre la anterior, y la última llega arriba de todo
+    assert.ok(casi(capas[0].y + capas[0].alto, 176));
+    for (let i = 1; i < capas.length; i += 1) assert.ok(casi(capas[i].y + capas[i].alto, capas[i - 1].y), `capa ${i} sobre la anterior`);
+    assert.ok(casi(capas.at(-1).y, 0));
+    assert.ok(casi(capas.reduce((suma, { alto }) => suma + alto, 0), 176));
+    assert.ok(capas.every(({ y, alto }) => y >= 0 && alto >= 0 && y + alto <= 176.0001));
+    // Las cargadas, rayadas (el patrón del propio tanque); las por habilitar, con su clase (punteadas en el <style>)
+    assert.ok(svg.includes('<pattern id="me-tanque-0-rayas"'));
+    assert.match(svg, /<rect class="c-cargadas" fill="url\(#me-tanque-0-rayas\)"/);
+    assert.ok(svg.includes('<clipPath id="me-tanque-0">') && svg.includes('clip-path="url(#me-tanque-0)"'));
+    // El nivel que se llena al abrir
+    assert.ok(svg.includes('<g class="me-tanque-nivel" style="--alto:176px">'));
+  });
+
+  it('al lado del tanque de vacaciones, la lista de cada capa con su número: lo que vence en ámbar; lo cargado y lo que no se habilita, en gris', () => {
+    const html = M.htmlDeTanques(planta.tanques);
+    const leyenda = html.match(/<ul class="me-leyenda-vac">[\s\S]*?<\/ul>/)[0];
+    assert.deepEqual(filasDe(leyenda).map(({ clases, texto }) => [clases.join(' '), texto]), [
+      ['me-capa vence', 'Licencia 2024 Vence el 31/12/2026 3'],
+      ['me-capa', 'Licencia 2025 Vence el 31/12/2027 20'],
+      ['me-capa', 'Licencia 2026 La primera mitad 10'],
+      ['me-capa tenue', 'Cargados Cargados para noviembre 5'],
+      ['me-capa tenue', 'Todavía no Se habilitan el 1/1/2027 10']
+    ]);
+    assert.deepEqual([...leyenda.matchAll(/<i class="me-muestra (c-[\w-]+)" aria-hidden="true"><\/i>/g)].map(([, clase]) => clase),
+      ['c-vence', 'c-tinta', 'c-medio', 'c-cargadas', 'c-por-habilitar']);
+  });
+
+  it('los demás tanques: cada uno un link a su pestaña, con el número arriba y el nombre con su total debajo', () => {
+    const [, ...otros] = linksDe(M.htmlDeTanques(planta.tanques));
+    assert.deepEqual(otros.map(({ atributos, texto }) => [atributos.href, atributos['aria-label'], texto]), [
+      ['#licencias', 'Franquicias: quedan 25 de 42 horas. Ver tus licencias', '25 horas Franquicias de 42 horas'],
+      ['#licencias', 'Estudios: quedan 9 de 15 días. Ver tus licencias', '9 días Estudios de 15 días'],
+      ['#licencias', 'Atención médica: quedan 22 de 25 días. Ver tus licencias', '22 días Atención médica de 25 días'],
+      ['#licencias', 'Grupo familiar: quedan 23 de 25 días. Ver tus licencias', '23 días Grupo familiar de 25 días']
+    ]);
+    // Ninguno vence: tinta, sin ámbar; el de franquicias, 25 de 42 del alto
+    assert.ok(otros.every(({ atributos }) => atributos.class === 'me-nivel'));
+    const [franquicias] = capasDelSvg(otros[0].adentro);
+    assert.equal(franquicias.clase, 'c-tinta');
+    assert.ok(casi(franquicias.alto, (25 / 42) * 112));
+  });
+
+  it('CONTRATO: el tanque de horas a favor, que vence este mes, en ámbar y con su link a #horas', () => {
+    const [vacaciones, horas, ...resto] = linksDe(M.htmlDeTanques(contrato.tanques));
+    assert.equal(vacaciones.atributos['aria-label'], 'Vacaciones: 13 días hábiles disponibles. Ver tus licencias');
+    assert.equal(horas.atributos.href, '#horas');
+    assert.equal(horas.atributos['data-pestana'], 'horas');
+    assert.equal(horas.atributos.class, 'me-nivel vence');
+    assert.equal(horas.atributos['aria-label'], 'Horas a favor: quedan 1,5 de 10,5 horas en octubre. Ver tus horas extras');
+    assert.equal(horas.texto, '1,5 horas Horas a favor de 10,5 en octubre');
+    assert.deepEqual(capasDelSvg(horas.adentro).map(({ clase }) => clase), ['c-vence']);
+    assert.ok(resto.every(({ atributos }) => atributos.href === '#licencias' && atributos.class === 'me-nivel'));
+    // Sin la licencia que vence, tres capas: las dos licencias y lo que no se habilita
+    assert.deepEqual(capasDelSvg(vacaciones.adentro).map(({ clase }) => clase), ['c-tinta', 'c-medio', 'c-por-habilitar']);
+  });
+
+  it('las pastillas: el mes que vence, el disponible, el que todavía suma y lo no utilizado previamente', () => {
+    const html = M.htmlDePastillas(planta.pastillas);
+    assert.match(html, /^<h3 class="me-subtitulo">Francos compensatorios<\/h3><ol class="me-pastillas">/);
+    assert.deepEqual(filasDe(html).map(({ clases, texto }) => [clases.join(' '), texto]), [
+      ['me-pastilla vence', '1 Octubre Hasta el viernes 30/10'],
+      ['me-pastilla', '1 Noviembre Por las horas de septiembre'],
+      ['me-pastilla pendiente', '1 Diciembre Octubre sigue sumando'],
+      ['me-pastilla previo', '1 Agosto No utilizado previamente']
+    ]);
+    assert.deepEqual(filasDe(M.htmlDePastillas(contrato.pastillas)).map(({ clases, texto }) => [clases.join(' '), texto]), [
+      ['me-pastilla vence', '1,5 Octubre De 10,5, hasta el viernes 30/10'],
+      ['me-pastilla pendiente', '4 Noviembre Octubre sigue sumando'],
+      ['me-pastilla previo', '6,5 Horas de 2026 No utilizadas previamente']
+    ]);
+    // Sin ningún mes ni nada no utilizado, nada
+    assert.equal(M.htmlDePastillas({ titulo: 'Francos compensatorios', meses: [], previo: null }), '');
+    assert.equal(M.htmlDePastillas(null), '');
+  });
+
+  it('sin nada que venza: sin «Vence pronto» y sin marca', () => {
+    const resumen = resumenDel(PLANTA, { estado: SIN_NADA_QUE_VENZA });
+    assert.deepEqual(resumen.vence_pronto, []);
+    assert.equal(resumen.marca, false);
+    const html = M.htmlDelResumen(resumen);
+    assert.ok(!html.includes('Vence pronto'));
+    assert.doesNotMatch(html, /data-accion/);
+    assert.equal(M.htmlDeMarca(resumen.marca), '');
+  });
+
+  it('la marca de la pestaña: con algo que vence pronto, una imagen con su nombre (no un title); si no, nada', () => {
+    assert.equal(planta.marca, true);
+    assert.equal(M.htmlDeMarca(planta.marca), '<span class="me-marca" role="img" aria-label="Hay algo que vence pronto"></span>');
+    for (const otro of [false, 1, 'true', null, undefined, {}]) assert.equal(M.htmlDeMarca(otro), '', String(otro));
+  });
+
+  it('los faltantes: un aviso ámbar arriba de «Lo que te queda»', () => {
+    const resumen = resumenDel(PLANTA, { estado: conLicencias(PLANTA.estado, licencia(100, 'franco', '2027-02-01')) });
+    const texto = 'Revisá tus francos de febrero de 2027: cargaste 1 y no corresponde ninguno.';
+    assert.deepEqual(resumen.faltantes, [texto]);
+    const html = M.htmlDelResumen(resumen);
+    assert.ok(html.includes(`<p class="me-aviso me-aviso-ambar">${texto}</p>`));
+    assert.ok(html.indexOf('Vence pronto') < html.indexOf('me-aviso-ambar'));
+    assert.ok(html.indexOf('me-aviso-ambar') < html.indexOf('Lo que te queda'));
+    // Varios, en una lista; ninguno, nada
+    const dos = M.htmlDeFaltantes([texto, 'Revisá tus vacaciones: para el 15/06/2027 faltan 2 días habilitados.']);
+    assert.match(dos, /^<div class="me-aviso me-aviso-ambar"><ul class="me-faltantes"><li>Revisá tus francos/);
+    assert.equal(filasDe(dos.replace(/<li>/g, '<li class="">')).length, 2);
+    assert.equal(M.htmlDeFaltantes([]), '');
+    assert.equal(M.htmlDeFaltantes(undefined), '');
+    assert.equal(M.htmlDelResumen(planta).includes('me-aviso-ambar'), false);
+  });
+
+  it('Hoy y mañana: los compañeros que no están, con su vuelta, y el próximo feriado «Lunes 23/11»', () => {
+    const html = M.htmlDeHoyYManana(planta.hoy_y_manana, planta.persona.ve_companeros);
+    assert.match(html, /^<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 class="me-titulo" id="me-hoy-titulo">Hoy y mañana<\/h2>/);
+    assert.equal(textoDe(html), 'Hoy y mañana No están MR Martín Ríos no está Vuelve el lunes 02/11 Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
+    // Las iniciales son decorativas
+    assert.ok(html.includes('<span class="me-inicial" aria-hidden="true">MR</span>'));
+    assert.ok(html.includes('<p class="me-feriado"><b>Lunes 23/11</b>Día de la Soberanía Nacional</p>'));
+  });
+
+  // Review Focus 5
+  it('Hoy y mañana: un ausente con HTML en el nombre se ve escapado', () => {
+    const resumen = resumenDel(PLANTA, { ausencias: [{ ...AUSENCIA_DE_MARTIN, nombre: '<b>x</b>' }] });
+    const html = M.htmlDeHoyYManana(resumen.hoy_y_manana, true);
+    assert.ok(!html.includes('<b>x</b>'));
+    assert.ok(html.includes('<b>&lt;b&gt;x&lt;/b&gt; no está</b>'));
+    assert.ok(M.htmlDelResumen(resumen).includes('&lt;b&gt;x&lt;/b&gt; no está'));
+  });
+
+  it('Hoy y mañana: quien no ve a sus compañeros no tiene «No están»; sin ausentes, lo dice; sin feriado, no va', () => {
+    const lectora = M.htmlDeHoyYManana(contrato.hoy_y_manana, contrato.persona.ve_companeros);
+    assert.equal(textoDe(lectora), 'Hoy y mañana Próximo feriado Lunes 23/11 Día de la Soberanía Nacional');
+    // Solo el true literal
+    assert.ok(!M.htmlDeHoyYManana(planta.hoy_y_manana, 'true').includes('No están'));
+    const sinAusentes = M.htmlDeHoyYManana({ ausentes: [], proximo_feriado: null }, true);
+    assert.equal(textoDe(sinAusentes), 'Hoy y mañana No están Hoy y mañana están todos.');
+    assert.doesNotThrow(() => M.htmlDeHoyYManana(undefined, true));
+  });
+
+  it('sin modalidad, el mensaje; sin arranque, la invitación a «Mis vacaciones y saldos»', () => {
+    const sinModalidad = resumenDel(PLANTA, { estado: { ...PLANTA.estado, modalidad: null } });
+    assert.equal(M.htmlDelResumen(sinModalidad), M.htmlDeMensaje(MENSAJES_MI_ESPACIO.sinModalidad));
+    const sinArranque = resumenDel(PLANTA, { estado: { ...PLANTA.estado, arranque: null } });
+    assert.equal(sinArranque.abrir_saldos, true);
+    assert.equal(M.htmlDelResumen(sinArranque), M.htmlSinArranque());
+    assert.equal(M.htmlDelResumen(null), '');
+  });
+
+  it('un Resumen sin tanques ni pastillas (sin un hoy válido) no se rompe: sin «Lo que te queda»', () => {
+    const html = M.htmlDelResumen({ ...planta, tanques: null, pastillas: null, extraordinaria: null, vence_pronto: [] });
+    assert.ok(!html.includes('Lo que te queda'));
+    assert.ok(html.includes('Hoy y mañana'));
+  });
+
+  it('svgDeTanque: con la capacidad en 0 o rara, o con capas raras, ningún NaN ni Infinity, y nada sale del tanque', () => {
+    const sinNumeros = (svg) => assert.doesNotMatch(svg, /NaN|Infinity|undefined|null/);
+    for (const capacidad of [0, -3, NaN, Infinity, undefined, null, '48', {}]) {
+      const svg = M.svgDeTanque({ capas: [{ clase: 'tinta', n: 3 }], capacidad, ancho: 52, alto: 112, id: 'me-tanque-1' });
+      sinNumeros(svg);
+      assert.deepEqual(capasDelSvg(svg).map(({ y, alto }) => [y, alto]), [[112, 0]], String(capacidad));
+    }
+    // Capas que pasan la capacidad se cortan en el borde de arriba; una n negativa, rara o que no es un número cuenta 0
+    const desbordado = capasDelSvg(M.svgDeTanque({
+      capas: [{ clase: 'tinta', n: 30 }, { clase: 'medio', n: -5 }, { clase: 'vence', n: '7' }, { clase: 'otra', n: 30 }, null],
+      capacidad: 40, ancho: 52, alto: 112, id: 'x'
+    }));
+    assert.deepEqual(desbordado.map(({ clase }) => clase), ['c-tinta', 'c-medio', 'c-vence', 'c-tinta']);
+    assert.ok(casi(desbordado[0].alto, 84));
+    assert.deepEqual(desbordado.slice(1, 3).map(({ alto }) => alto), [0, 0]);
+    assert.ok(casi(desbordado[3].alto, 28) && casi(desbordado[3].y, 0));
+    // Sin capas, el tanque vacío; sin medidas, las de los tanques chicos
+    sinNumeros(M.svgDeTanque({ capas: undefined, capacidad: 10, id: 'y' }));
+    assert.match(M.svgDeTanque({ capas: [], capacidad: 10, id: 'y' }), /viewBox="0 0 52 112"/);
+    // El id va solo con letras, números y guiones
+    assert.ok(M.svgDeTanque({ capas: [], capacidad: 1, id: '"><img src=x>' }).includes('<clipPath id="imgsrcx">'));
+  });
+
+  it('un tanque de horas a favor sin horas (el total en 0) se dibuja vacío, sin NaN', () => {
+    const resumen = resumenDel(CONTRATO, { estado: { ...CONTRATO.estado, horasExtras: [], licencias: [] } });
+    const horas = resumen.tanques.otros.find(({ clave }) => clave === 'horas_a_favor');
+    assert.equal(horas.total, 0);
+    const html = M.htmlDeTanques(resumen.tanques);
+    assert.doesNotMatch(html, /NaN|Infinity/);
+    assert.ok(capasDelSvg(linksDe(html)[1].adentro).every(({ alto }) => alto === 0));
+  });
+
+  // Review Focus 5
+  it('todo texto del servidor del Resumen se escapa: Vence pronto, los tanques, la lista, las pastillas y la modalidad', () => {
+    const conHtml = comoLlega(planta);
+    conHtml.modalidad.texto = MALICIOSO;
+    Object.assign(conHtml.vence_pronto[0], { dia: MALICIOSO, mes: MALICIOSO, cuando: MALICIOSO, titulo: MALICIOSO, detalle: MALICIOSO });
+    conHtml.vence_pronto[0].accion = { texto: MALICIOSO, tipo: MALICIOSO };
+    Object.assign(conHtml.tanques.vacaciones, { numero: MALICIOSO, unidad: MALICIOSO, pie: MALICIOSO, aria: MALICIOSO });
+    Object.assign(conHtml.tanques.vacaciones.capas[0], { nombre: MALICIOSO, nota: MALICIOSO, clase: MALICIOSO });
+    Object.assign(conHtml.tanques.otros[0], { nombre: MALICIOSO, numero: MALICIOSO, unidad: MALICIOSO, de: MALICIOSO, aria: MALICIOSO, pestana: MALICIOSO });
+    conHtml.pastillas.titulo = MALICIOSO;
+    Object.assign(conHtml.pastillas.meses[0], { numero: MALICIOSO, mes: MALICIOSO, nota: MALICIOSO, estado: MALICIOSO });
+    Object.assign(conHtml.pastillas.previo, { numero: MALICIOSO, titulo: MALICIOSO, nota: MALICIOSO });
+    conHtml.extraordinaria = MALICIOSO;
+    conHtml.al_texto = MALICIOSO;
+    conHtml.faltantes = [MALICIOSO];
+    conHtml.hoy_y_manana.proximo_feriado = { fecha: '2026-11-23', cuando: MALICIOSO, nombre: MALICIOSO };
+    const html = M.htmlDelResumen(conHtml);
+    assert.ok(!html.includes('<img'), 'ningún <img> de verdad');
+    assert.ok(html.split(ESCAPADO).length - 1 >= 30);
+    // Un aria-label del servidor, escapado; una pestaña desconocida, a Licencias; una clase desconocida, en tinta
+    assert.equal(linksDe(html)[0].atributos['aria-label'], ESCAPADO);
+    assert.equal(linksDe(html)[1].atributos.href, '#licencias');
+    assert.equal(capasDelSvg(linksDe(html)[0].adentro)[0].clase, 'c-tinta');
+    assert.equal(botonesDe(html).find(({ atributos }) => atributos['data-accion']).atributos['data-tipo'], ESCAPADO);
   });
 });
 
@@ -404,6 +700,23 @@ describe('las horas extras', () => {
     assert.equal(M.mesInicialDe({ ...planta, meses: [] }), null);
   });
 
+  it('las tablas toleran una tabla que no llegó, y un año que no es un año no se escribe', () => {
+    for (const tabla of [undefined, null, {}]) {
+      assert.doesNotThrow(() => M.htmlDeTablaDeFrancos(tabla));
+      assert.doesNotThrow(() => M.htmlDeTablaDeHorasAFavor(tabla));
+    }
+    assert.match(M.htmlDeTablaDeFrancos(undefined), /<h2>Horas extras al 100%<\/h2>/);
+    for (const [funcion, titulo] of [['htmlDeTablaDeFrancos', 'Horas extras al 100%'], ['htmlDeTablaDeHorasAFavor', 'Horas extras y horas a favor']]) {
+      const html = M[funcion]({ ...planta, anio: MALICIOSO, meses: [] });
+      assert.ok(!html.includes('<img'), funcion);
+      assert.ok(html.includes(`<h2>${titulo}</h2>`), funcion);
+      assert.ok(html.includes('<p class="me-vacio">No hay horas extras cargadas.</p>'), funcion);
+    }
+    // Y la lista de licencias, igual
+    const lista = M.htmlDeListaDeLicencias({ ...licenciasDe(PLANTA, { anio: 2025 }), anio: MALICIOSO }, 'todas');
+    assert.ok(lista.includes('<h2>Mis licencias</h2>') && lista.includes('<p class="me-vacio">No hay licencias cargadas.</p>'));
+  });
+
   // Review Focus 5
   it('una nota de unas horas extras con HTML se ve escapada', () => {
     const conNota = comoLlega(planta);
@@ -531,10 +844,11 @@ const crearDom = () => {
 // Una respuesta del fetch falso
 const respuesta = (status, body) => ({ status, body });
 const ok = (data) => respuesta(200, { success: true, data });
-const RESUMEN_CON_MODALIDAD = Object.freeze({ modalidad: { clave: 'planta', texto: 'Planta permanente' }, mensaje: null, abrir_saldos: false, marca: true });
+// El Resumen de la persona de planta, el de verdad (resumenDe), con un compañero que no está
+const RESUMEN_DE_PLANTA = resumenDel(PLANTA, { ausencias: [AUSENCIA_DE_MARTIN] });
 // Lo que contesta el servidor falso, de entrada (la persona de planta)
 const RESPUESTAS_DE_ENTRADA = (metodo, ruta) => {
-  if (ruta === '/api/mi-espacio/resumen') return ok(RESUMEN_CON_MODALIDAD);
+  if (ruta === '/api/mi-espacio/resumen') return ok(RESUMEN_DE_PLANTA);
   if (ruta === '/api/mi-espacio/licencias') return ok(licenciasDe(PLANTA));
   if (ruta === '/api/mi-espacio/licencias?anio=2025') return ok(licenciasDe(PLANTA, { anio: 2025 }));
   if (ruta === '/api/mi-espacio/horas-extras') return ok(horasDe(PLANTA));
@@ -542,9 +856,11 @@ const RESPUESTAS_DE_ENTRADA = (metodo, ruta) => {
   return respuesta(404, { success: false, error: `Sin respuesta para ${metodo} ${ruta}` });
 };
 
-const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA } = {}) => {
+// `cuadros`: con true, la ventana tiene un requestAnimationFrame que anota las funciones en estado.cuadros (las corre el test);
+// sin él, la página no anima
+const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false } = {}) => {
   const { dom, documento } = crearDom();
-  const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder };
+  const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [] };
   const ventana = {
     location: { search: '', hash, pathname: '/mi-espacio.html', href: `/mi-espacio.html${hash}` },
     history: {
@@ -553,7 +869,8 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA } = {}) => 
         ventana.location.hash = url.slice(url.indexOf('#'));
       }
     },
-    addEventListener() {}
+    addEventListener() {},
+    ...(cuadros ? { requestAnimationFrame: (funcion) => { estado.cuadros.push(funcion); return estado.cuadros.length; } } : {})
   };
   const contexto = vm.createContext({
     CONFIG: { API_URL: '/api' },
@@ -580,7 +897,9 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA } = {}) => 
   const iniciar = async () => { await contexto.iniciarMiEspacio(); await esperar(); };
   // Un clic en un elemento (burbujea hasta el contenedor que lo escucha) y lo que pida después
   const tocar = async (elemento) => { assert.ok(elemento, 'el elemento existe'); elemento.disparar('click'); await esperar(); };
-  return { contexto, dom, documento, ventana, estado, el, rutas, iniciar, tocar, esperar };
+  // Un cuadro del navegador: corre lo que se pidió con requestAnimationFrame hasta ahora (lo que se pida adentro, en el próximo)
+  const cuadro = () => { for (const funcion of estado.cuadros.splice(0)) funcion(0); };
+  return { contexto, dom, documento, ventana, estado, el, rutas, iniciar, tocar, esperar, cuadro };
 };
 
 describe('mi-espacio.js: la página (DOM falso)', () => {
@@ -596,6 +915,80 @@ describe('mi-espacio.js: la página (DOM falso)', () => {
     assert.equal(pagina.el('vista-horas').hidden, true);
     assert.equal(pagina.el('btn-cargar-horas').hidden, false);
     assert.equal(pagina.el('btn-cargar-licencia').hidden, false);
+  });
+
+  it('el Resumen se dibuja con lo que manda el servidor, y la marca ámbar va en la pestaña', async () => {
+    const pagina = montarPagina();
+    await pagina.iniciar();
+    assert.equal(pagina.el('vista-resumen').innerHTML, M.htmlDelResumen(RESUMEN_DE_PLANTA));
+    assert.equal(pagina.el('me-marca').innerHTML, M.htmlDeMarca(true));
+    const marca = pagina.el('tab-resumen').querySelector('.me-marca');
+    assert.equal(marca.getAttribute('role'), 'img');
+    assert.equal(marca.getAttribute('aria-label'), 'Hay algo que vence pronto');
+    assert.equal(marca.getAttribute('title'), null);
+  });
+
+  it('sin nada que venza, la pestaña no tiene marca y el Resumen no tiene «Vence pronto»', async () => {
+    const resumen = resumenDel(PLANTA, { estado: SIN_NADA_QUE_VENZA });
+    const pagina = montarPagina({ responder: (metodo, ruta) => (ruta === '/api/mi-espacio/resumen' ? ok(resumen) : RESPUESTAS_DE_ENTRADA(metodo, ruta)) });
+    await pagina.iniciar();
+    assert.equal(pagina.el('me-marca').innerHTML, '');
+    assert.equal(pagina.el('vista-resumen').querySelector('.me-vence'), null);
+  });
+
+  it('un tanque lleva a su pestaña: la abre (la pide la primera vez), escribe el fragmento y el foco va a la pestaña', async () => {
+    const pagina = montarPagina();
+    await pagina.iniciar();
+    const tanque = pagina.el('vista-resumen').querySelectorAll('[data-pestana]').find((link) => link.getAttribute('href') === '#licencias');
+    const evento = tanque.disparar('click');
+    await pagina.esperar();
+    assert.equal(evento.defaultPrevented, true);
+    assert.equal(pagina.el('tab-licencias').getAttribute('aria-selected'), 'true');
+    assert.equal(pagina.el('vista-licencias').hidden, false);
+    assert.equal(pagina.ventana.location.hash, '#licencias');
+    assert.equal(pagina.documento.activeElement, pagina.el('tab-licencias'));
+    assert.ok(pagina.rutas().includes('/api/mi-espacio/licencias'));
+    // Con Ctrl (abrir en otra pestaña del navegador), el link hace lo suyo
+    await pagina.tocar(pagina.el('tab-resumen'));
+    const conCtrl = tanque.disparar('click', { ctrlKey: true });
+    assert.equal(conCtrl.defaultPrevented, false);
+    assert.equal(pagina.el('tab-resumen').getAttribute('aria-selected'), 'true');
+  });
+
+  it('los tanques se llenan una sola vez, dos cuadros después de verse el Resumen; un Resumen que se vuelve a dibujar ya no se mueve', async () => {
+    const pagina = montarPagina({ cuadros: true });
+    await pagina.iniciar();
+    const fila = pagina.el('vista-resumen').querySelector('.me-niveles-fila');
+    assert.equal(fila.getAttribute('data-llenar'), '');
+    pagina.cuadro();
+    assert.equal(fila.getAttribute('data-llenar'), '', 'el primer cuadro los dibuja vacíos');
+    pagina.cuadro();
+    assert.equal(fila.getAttribute('data-llenar'), null, 'el segundo los llena');
+    await pagina.contexto.cargarResumen();
+    assert.equal(pagina.el('vista-resumen').querySelector('.me-niveles-fila').getAttribute('data-llenar'), null);
+    assert.equal(pagina.estado.cuadros.length, 0);
+  });
+
+  it('con el Resumen oculto (#licencias), los tanques esperan vacíos a que se vea la pestaña', async () => {
+    const pagina = montarPagina({ hash: '#licencias', cuadros: true });
+    await pagina.iniciar();
+    const fila = pagina.el('vista-resumen').querySelector('.me-niveles-fila');
+    assert.equal(fila.getAttribute('data-llenar'), '');
+    assert.equal(pagina.estado.cuadros.length, 0);
+    await pagina.tocar(pagina.el('tab-resumen'));
+    pagina.cuadro();
+    pagina.cuadro();
+    assert.equal(fila.getAttribute('data-llenar'), null);
+    // Volver a la pestaña no los vuelve a llenar
+    await pagina.tocar(pagina.el('tab-horas'));
+    await pagina.tocar(pagina.el('tab-resumen'));
+    assert.equal(pagina.estado.cuadros.length, 0);
+  });
+
+  it('sin requestAnimationFrame, los tanques se ven llenos enseguida', async () => {
+    const pagina = montarPagina();
+    await pagina.iniciar();
+    assert.equal(pagina.el('vista-resumen').querySelector('.me-niveles-fila').getAttribute('data-llenar'), null);
   });
 
   it('#licencias: pide el Resumen y las licencias del año en curso, y dibuja la lista', async () => {
@@ -677,20 +1070,21 @@ describe('mi-espacio.js: la página (DOM falso)', () => {
     assert.equal(pagina.documento.activeElement, pagina.el('tab-resumen'));
   });
 
-  it('sin modalidad: el mensaje en el Resumen y en la pestaña, y los botones de carga ocultos', async () => {
-    // Las tres rutas responden lo mismo: { modalidad: null, mensaje } (el Resumen trae además lo demás vacío)
-    const pagina = montarPagina({ hash: '#licencias', responder: () => ok({ ...SIN_MODALIDAD, abrir_saldos: false, marca: false }) });
+  it('sin modalidad: el mensaje en el Resumen y en la pestaña, sin marca, y los botones de carga ocultos', async () => {
+    // El Resumen de verdad sin modalidad, y la lista como la manda la API sin modalidad: { modalidad: null, mensaje }
+    const resumen = resumenDel(PLANTA, { estado: { ...PLANTA.estado, modalidad: null } });
+    const pagina = montarPagina({ hash: '#licencias', responder: (metodo, ruta) => ok(ruta === '/api/mi-espacio/resumen' ? resumen : SIN_MODALIDAD) });
     await pagina.iniciar();
     assert.equal(pagina.el('vista-resumen').innerHTML, M.htmlDeMensaje(MENSAJES_MI_ESPACIO.sinModalidad));
     assert.equal(pagina.el('vista-licencias').innerHTML, M.htmlDeMensaje(MENSAJES_MI_ESPACIO.sinModalidad));
+    assert.equal(pagina.el('me-marca').innerHTML, '');
     assert.equal(pagina.el('btn-cargar-horas').hidden, true);
     assert.equal(pagina.el('btn-cargar-licencia').hidden, true);
   });
 
   it('con modalidad y sin arranque, el Resumen invita a completar «Mis vacaciones y saldos»', async () => {
-    const pagina = montarPagina({
-      responder: (metodo, ruta) => ok({ ...RESUMEN_CON_MODALIDAD, mensaje: MENSAJES_MI_ESPACIO.sinArranque, abrir_saldos: true })
-    });
+    const resumen = resumenDel(PLANTA, { estado: { ...PLANTA.estado, arranque: null } });
+    const pagina = montarPagina({ responder: (metodo, ruta) => (ruta === '/api/mi-espacio/resumen' ? ok(resumen) : RESPUESTAS_DE_ENTRADA(metodo, ruta)) });
     await pagina.iniciar();
     assert.equal(pagina.el('vista-resumen').innerHTML, M.htmlSinArranque());
     assert.equal(pagina.el('btn-cargar-licencia').hidden, false);
@@ -711,6 +1105,28 @@ describe('mi-espacio.js: la página (DOM falso)', () => {
     await pagina.tocar(pagina.el('tab-resumen'));
     await pagina.tocar(pagina.el('tab-licencias'));
     assert.equal(filasDeLicenciaDe(pagina.el('vista-licencias').innerHTML).length, 6);
+  });
+
+  it('un año que no se pudo cargar lo dice, y volver a la pestaña la pide otra vez (Licencias y Horas extras)', async () => {
+    for (const [pestana, ruta, texto] of [
+      ['licencias', '/api/mi-espacio/licencias', 'No se pudieron cargar tus licencias. Probá de nuevo en unos minutos.'],
+      ['horas', '/api/mi-espacio/horas-extras', 'No se pudieron cargar tus horas extras. Probá de nuevo en unos minutos.']
+    ]) {
+      const pagina = montarPagina({
+        hash: `#${pestana}`,
+        responder: (metodo, pedida) => (pedida === `${ruta}?anio=2025` ? respuesta(500, { success: false, error: 'Error' }) : RESPUESTAS_DE_ENTRADA(metodo, pedida))
+      });
+      await pagina.iniciar();
+      const vista = pagina.el(`vista-${pestana}`);
+      await pagina.tocar(vista.querySelector('[data-anio="2025"]'));
+      assert.equal(textoDe(vista.innerHTML), texto, pestana);
+      assert.equal(pagina.el('me-anuncio').textContent, texto);
+      const antes = pagina.rutas().length;
+      await pagina.tocar(pagina.el('tab-resumen'));
+      await pagina.tocar(pagina.el(`tab-${pestana}`));
+      assert.deepEqual(pagina.rutas().slice(antes), [ruta], `${pestana}: la vuelve a pedir`);
+      assert.match(vista.innerHTML, /data-anio="2026" aria-pressed="true"/);
+    }
   });
 
   it('con la sesión vencida (401), cierra la sesión y va al login', async () => {
