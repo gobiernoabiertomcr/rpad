@@ -38,6 +38,23 @@
 
 Esta función va en la cola después del Resumen «Titular», que cambia `public/mi-espacio.html` y `public/js/mi-espacio.js`. El plan se escribió sobre main 780e39b.
 
+**Ajustes del 27/10/2026 (main d5d8dd5, con el Resumen «Titular»).** Rama de código `claude/mi-espacio-licencia-word-codigo`: sale de d5d8dd5 y tiene el merge de la rama de docs (ae7811f). Los nombres que usa el plan no cambiaron; solo se corrieron las líneas:
+- `public/js/mi-espacio.js`:
+  - `CLASE_DEL_TIPO` :65 y `htmlDeFilaDeLicencia` :411;
+  - `avisarMiEspacio` :1548, `irAlLogin` :1559 y `alTocarLicencias` :1820;
+  - `FORMULARIOS` :2065 y `cerrarModal` :2169;
+  - `respaldoDelFoco` :2324, `devolverElFoco` :2360, `volverAPedirTodo` :2377 y `avisarLaRespuesta` :2406;
+  - `abrirLicencia` :2432 y `guardarLicencia` :2729.
+- `public/mi-espacio.html`: `#modal-licencia` :613.
+- `services/miEspacioResumen.js`: `filaDeLicencia` :522 y `filasDeLicencias` :617.
+- `tests/paginas.test.js`: `VERSION_MI_ESPACIO` = '20261211' (:86).
+- Los tests del frontend que esperan que el modal se cierre al guardar una licencia (`tests/mi-espacio-frontend.test.js`):
+  - :2499, «un guardado con un fetch que tarda… después, el Resumen y el aviso»;
+  - :2553, «la persona autorizada del firmante…»;
+  - :2881, «después de guardar desde la lista, el foco va al «Editar» nuevo…»;
+  - :3565, «después de guardar o de borrar: con la agenda a la vista…».
+- Ningún cambio del Resumen choca con una decisión de la spec.
+
 **Files:**
 - Modify: este plan (solo las referencias que cambiaron)
 
