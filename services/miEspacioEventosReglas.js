@@ -20,7 +20,7 @@ import { esDiaHabilCon, restarDiasHabilesCon, diaDeLaSemana } from './feriadosRe
 import { esFechaIso, sumarDias, formatoCorto } from './notasDigitalesCalendario.js';
 import { diaLargo } from './miEspacioResumen.js';
 import { textoRango, enLista } from './miEspacioReglas.js';
-import { idPositivo } from './proyectosReglas.js';
+import { idsPositivos } from './proyectosReglas.js';
 
 // Los recordatorios, en el orden del formulario (el enum de mi_espacio_eventos.recordatorio), y el de entrada. Sin «15
 // minutos antes»: la corrida es cada media hora
@@ -115,22 +115,6 @@ export const textoRangoEvento = (hasta) => textoRango(FECHA_MINIMA_EVENTO, hasta
 
 const rechazo = (campo, mensaje) => ({ datos: null, error: { campo, mensaje } });
 
-// Los ids de las personas con quienes se comparte, sin repetidos y en el orden recibido (idPositivo: un número o un texto
-// de solo dígitos). null si alguno no es un id (no se descartan en silencio). Los vistos van en un Set: tiempo lineal
-const idsDePersonas = (personas) => {
-  const ids = [];
-  const vistos = new Set();
-  for (const valor of personas) {
-    const id = idPositivo(valor);
-    if (id === null) return null;
-    if (!vistos.has(id)) {
-      vistos.add(id);
-      ids.push(id);
-    }
-  }
-  return ids;
-};
-
 /**
  * Valida un evento, el cuerpo de un alta o de un cambio (el formulario entero), contra hoy ('AAAA-MM-DD'). Devuelve
  * `{ datos, error }`: `error` es null, o `{ campo, mensaje }` del primero que no sirve, y entonces `datos` es null; si no,
@@ -178,7 +162,8 @@ export const validarEvento = (entrada, hoy) => {
     if (!Array.isArray(fuente.personas) || fuente.personas.length === 0) {
       return rechazo('personas', MENSAJES_EVENTO.personas);
     }
-    personas = idsDePersonas(fuente.personas);
+    // Ya es una lista con algo: idsPositivos da los ids sin repetidos, o null si alguno no es un id
+    personas = idsPositivos(fuente.personas);
     if (personas === null) return rechazo('personas', MENSAJES_EVENTO.personasInvalidas);
   }
 
