@@ -1,0 +1,98 @@
+/* Opción 3 · Horizonte: arriba, lo de ahora (lo que vence pronto y hoy y mañana); abajo, todo lo que tenés dibujado hasta la
+   fecha en que vence, en una línea de tiempo de octubre de 2026 a diciembre de 2027, con hoy marcado y la pared del 31/12, el
+   día en que vence la licencia 2024 y los topes vuelven a cero. */
+.o3 { --o3-rotulo: 214px; --o3-alto: 40px; }
+
+.o3-ahora { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; margin: 0 0 18px; }
+.o3-ahora.solo { grid-template-columns: minmax(0, 1fr); }
+.o3-tarjeta { background: #fff; border: 1px solid var(--sg-linea); border-radius: 20px; padding: 18px 22px; min-width: 0; }
+.o3-tarjeta h2, .o3-horizonte h2 { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.15rem; letter-spacing: -0.015em; color: var(--sg-tinta); }
+
+/* Vence pronto: una fila por cosa, la fecha como una etiqueta */
+.o3-vence { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; }
+.o3-vence li { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; padding: 10px 0; border-top: 1px solid var(--sg-linea); }
+.o3-vence li:first-child { border-top: 0; padding-top: 4px; }
+.o3-chip { display: flex; flex-direction: column; align-items: center; padding: 6px 0; border-radius: 12px; background: var(--sg-sol); color: var(--sg-ambar); font-size: 0.72rem; font-weight: 700; line-height: 1.1; }
+.o3-chip b { font-family: var(--f-titulo); font-size: 1.15rem; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
+.o3-vence-texto { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; line-height: 1.35; }
+.o3-vence-texto b { color: var(--sg-texto); font-size: 0.98rem; }
+.o3-vence-texto span { color: var(--sg-suave); font-size: 0.84rem; }
+
+/* Hoy y mañana: dos columnas, cada una con su agenda y quién no está, y el feriado debajo */
+.o3-dias { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; margin-top: 12px; }
+.o3-dia h3 { margin: 0 0 6px; font-size: 0.84rem; font-weight: 700; color: var(--sg-suave); }
+.o3-dia ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.o3-dia li { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; font-size: 0.88rem; line-height: 1.3; color: var(--sg-texto); overflow-wrap: anywhere; }
+.o3-dia li small { display: block; color: var(--sg-suave); font-size: 0.78rem; }
+.o3-dia time { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--sg-tinta); }
+.o3-dia .o3-fuera { width: 26px; height: 26px; border-radius: 50%; background: var(--sg-gris-fondo); color: var(--sg-suave); font-size: 0.66rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.o3-dia .nada { color: var(--sg-suave); font-size: 0.86rem; }
+.o3-feriado { margin: 14px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--sg-sutil); font-size: 0.86rem; color: var(--sg-texto); line-height: 1.4; }
+.o3-feriado b { color: var(--sg-tinta); }
+.o3-tarjeta .sg-link { font-size: 0.86rem; display: inline-block; margin-top: 10px; }
+
+/* El horizonte */
+.o3-horizonte { background: #fff; border: 1px solid var(--sg-linea); border-radius: 24px; padding: 20px 24px 18px; }
+.o3-cabeza { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin-bottom: 4px; }
+.o3-cabeza h2 { margin-right: auto; }
+.o3-cabeza span, .o3-cabeza .sg-link { font-size: 0.88rem; color: var(--sg-suave); }
+.o3-cabeza .sg-link { color: var(--sg-tinta); }
+.o3-bajada { margin: 0 0 14px; color: var(--sg-suave); font-size: 0.9rem; }
+
+/* En el teléfono el gráfico conserva su ancho y se desplaza de costado (como la cinta del Seguimiento), con los nombres quietos */
+.o3-marco { overflow-x: auto; overflow-y: hidden; padding-bottom: 6px; }
+.o3-grafico { position: relative; min-width: 760px; }
+.o3-eje, .o3-carril, .o3-grupo { display: grid; grid-template-columns: var(--o3-rotulo) minmax(0, 1fr); }
+.o3-eje { height: 44px; align-items: end; }
+.o3-eje-pista { position: relative; height: 44px; margin-right: 40px; }
+.o3-mes { position: absolute; bottom: 6px; transform: translateX(4px); font-size: 0.76rem; color: var(--sg-suave); white-space: nowrap; }
+.o3-mes.anio { font-weight: 700; color: var(--sg-texto); }
+.o3-marca-hoy { position: absolute; top: 0; transform: translateX(-50%); padding: 2px 8px; border-radius: 999px; background: var(--sg-tinta); color: #fff; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+.o3-pin { position: absolute; bottom: 4px; width: 10px; height: 10px; transform: translateX(-50%) rotate(45deg); background: var(--sg-sol-borde); border-radius: 2px; }
+
+/* El fondo: las líneas de los meses, la de hoy y la pared del 31/12, detrás de los carriles */
+.o3-fondo { position: absolute; top: 44px; bottom: 0; left: var(--o3-rotulo); right: 40px; pointer-events: none; }
+.o3-linea-mes { position: absolute; top: 0; bottom: 0; width: 1px; background: #EEF2F7; }
+.o3-linea-mes.anio { background: #D5DEE9; }
+.o3-linea-hoy { position: absolute; top: -10px; bottom: 0; width: 2px; margin-left: -1px; background: var(--sg-tinta); transform-origin: 50% 0; }
+.o3-pared { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px dashed var(--sg-sol-borde); }
+
+.o3-grupo { height: 30px; align-items: end; padding: 0 0 4px 8px; font-size: 0.78rem; font-weight: 700; color: var(--sg-suave); }
+.o3-carril { position: relative; min-height: var(--o3-alto); align-items: center; color: inherit; text-decoration: none; border-radius: 10px; }
+.o3-carril:hover { background: rgba(220, 238, 245, 0.45); }
+.o3-carril:focus-visible { outline-offset: 0; }
+.o3-nombre { display: flex; flex-direction: column; padding: 0 12px 0 8px; line-height: 1.2; min-width: 0; position: sticky; left: 0; background: inherit; }
+.o3-nombre b { font-size: 0.9rem; color: var(--sg-texto); font-weight: 600; }
+.o3-nombre small { font-size: 0.76rem; color: var(--sg-suave); }
+.o3-carril.vence .o3-nombre b { color: var(--sg-ambar); }
+.o3-pista { position: relative; height: 26px; margin-right: 40px; }
+.o3-barra { position: absolute; top: 0; height: 26px; border-radius: 7px; display: flex; align-items: center; padding: 0 9px; font-size: 0.8rem; font-weight: 700; white-space: nowrap; transform-origin: 0 50%; min-width: 4px; box-sizing: border-box; }
+.o3-barra.vence { background: var(--sg-sol-borde); color: var(--sg-tinta); }
+.o3-barra.tinta { background: var(--sg-tinta); color: #fff; }
+.o3-barra.medio { background: var(--sg-medio); color: #fff; }
+.o3-barra.tope { background: #C8D9EA; color: var(--sg-tinta); }
+.o3-barra.cargadas { background: repeating-linear-gradient(135deg, var(--sg-tinta) 0 2px, #fff 2px 5px); box-shadow: inset 0 0 0 1.5px var(--sg-tinta); }
+.o3-barra.por_habilitar { background: #fff; color: var(--sg-suave); box-shadow: inset 0 0 0 2px #9AA8BA; border: 0; background-image: repeating-linear-gradient(90deg, #fff 0 6px, #F1F4F8 6px 9px); }
+.o3-barra.pendiente { background: #fff; color: var(--sg-suave); box-shadow: inset 0 0 0 2px #9AA8BA; }
+.o3-barra.disponible { background: var(--sg-tinta); color: #fff; }
+.o3-barra.sigue::after { content: ''; position: absolute; right: -9px; top: 50%; margin-top: -6px; border: 6px solid transparent; border-left: 7px solid currentColor; }
+.o3-barra.tinta.sigue::after, .o3-barra.medio.sigue::after { color: inherit; }
+.o3-barra.tinta.sigue::after { border-left-color: var(--sg-tinta); }
+.o3-barra.medio.sigue::after { border-left-color: var(--sg-medio); }
+.o3-barra.por_habilitar.sigue::after { border-left-color: #9AA8BA; }
+.o3-barra .afuera { position: absolute; left: calc(100% + 8px); color: var(--sg-texto); font-weight: 600; }
+.o3-barra.sigue .afuera { left: calc(100% + 14px); }
+.o3-extra { margin: 14px 0 0; font-size: 0.82rem; color: var(--sg-suave); line-height: 1.5; }
+.o3-muestra-pared { display: inline-block; width: 0; height: 12px; border-left: 2px dashed var(--sg-sol-borde); margin-right: 8px; vertical-align: -1px; }
+
+@media (max-width: 900px) {
+    .o3-ahora { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+    .o3 { --o3-rotulo: 150px; }
+    .o3-tarjeta, .o3-horizonte { padding: 16px; }
+    .o3-vence li { grid-template-columns: 56px minmax(0, 1fr); }
+    .o3-vence li .sg-btn { grid-column: 2; justify-self: start; }
+    .o3-dias { grid-template-columns: minmax(0, 1fr); }
+    .o3-nombre { background: #fff; z-index: 2; }
+}

@@ -1,0 +1,115 @@
+/* Opción 2 · Titular: la cuenta dicha en una frase. Arriba, en la banda celeste de las páginas públicas (con su ola), «Te
+   quedan 45 días de vacaciones» en letra grande y, debajo, la regla: una barra con un casillero por día, partida por licencia.
+   Al costado, lo que vence, como entradas amarillas con su talón. Abajo, en silencio, el resto en números y una línea. */
+.o2 { --o2-ancho-vence: 340px; }
+
+.o2-banda { position: relative; background: var(--sg-cielo); border-radius: 28px 28px 0 0; margin: 0 0 30px; }
+.o2-banda-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) var(--o2-ancho-vence); gap: 28px 40px; padding: 30px 34px 18px; align-items: start; }
+.o2-banda-cuerpo.sin-vence { grid-template-columns: minmax(0, 1fr); }
+.o2-ola { position: absolute; left: 0; right: 0; bottom: -27px; width: 100%; height: 28px; color: var(--sg-cielo); display: block; }
+
+/* La frase */
+.o2-dia { margin: 0 0 6px; color: var(--sg-azul); font-size: 0.92rem; font-weight: 600; }
+.o2-frase { margin: 0; font-family: var(--f-titulo); font-weight: 750; font-size: clamp(2rem, 4.4vw, 3.4rem); line-height: 1.02; letter-spacing: -0.035em; color: var(--sg-tinta); text-wrap: balance; }
+.o2-frase .o2-cifra { font-weight: 800; font-variant-numeric: tabular-nums; display: inline-block; min-width: 1.15ch; text-align: right; }
+.o2-bajada { margin: 12px 0 0; font-size: 1.05rem; line-height: 1.5; color: var(--sg-texto); max-width: 52ch; }
+.o2-bajada b { font-weight: 700; }
+.o2-bajada .vence { color: var(--sg-ambar); }
+
+/* La regla: la barra y sus rótulos comparten las columnas, así cada rótulo cae debajo de su tramo. Cada tramo tiene un
+   casillero por día (--n), con una línea blanca entre día y día */
+.o2-regla { margin: 26px 0 0; }
+.o2-barra { display: grid; grid-template-columns: var(--o2-columnas); column-gap: 4px; }
+.o2-barra { height: 46px; }
+.o2-tramo { container-type: inline-size; position: relative; border-radius: 10px; transform-origin: 0 50%; display: flex; align-items: center; padding: 0 10px; font-family: var(--f-titulo); font-weight: 800; font-size: 1.15rem; font-variant-numeric: tabular-nums; overflow: hidden;
+    background-image: repeating-linear-gradient(90deg, transparent 0 calc(100% / var(--n) - 1.5px), rgba(255, 255, 255, 0.4) calc(100% / var(--n) - 1.5px) calc(100% / var(--n))); }
+.o2-tramo.vence { background-color: var(--sg-sol-borde); color: var(--sg-tinta); }
+.o2-tramo.tinta { background-color: var(--sg-tinta); color: #fff; }
+.o2-tramo.medio { background-color: var(--sg-medio); color: #fff; }
+.o2-tramo.cargadas { background-color: #fff; color: var(--sg-tinta); background-image: repeating-linear-gradient(135deg, rgba(26, 54, 93, 0.85) 0 3px, transparent 3px 7px); box-shadow: inset 0 0 0 2px var(--sg-tinta); }
+.o2-tramo.cargadas span { background: #fff; border-radius: 6px; padding: 0 5px; }
+.o2-tramo.por_habilitar { background-color: rgba(255, 255, 255, 0.55); color: var(--sg-suave); box-shadow: inset 0 0 0 2px #8FA3BA; background-image: repeating-linear-gradient(90deg, transparent 0 calc(100% / var(--n) - 1.5px), rgba(143, 163, 186, 0.55) calc(100% / var(--n) - 1.5px) calc(100% / var(--n))); }
+.o2-rotulos { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 26px; }
+.o2-rotulos li { display: flex; gap: 9px; min-width: 0; font-size: 0.8rem; line-height: 1.3; color: var(--sg-suave); overflow-wrap: anywhere; }
+.o2-rotulos li b { display: block; font-size: 0.88rem; color: var(--sg-texto); }
+.o2-rotulos li.vence, .o2-rotulos li.vence b { color: var(--sg-ambar); }
+.o2-muestra { display: inline-block; width: 14px; height: 14px; border-radius: 4px; flex: none; margin-top: 2px; }
+
+/* Vence pronto: entradas amarillas con el talón de la fecha, separado por una línea de puntos y dos muescas */
+.o2-vence h2 { margin: 0 0 12px; font-family: var(--f-titulo); font-weight: 700; font-size: 1.12rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+.o2-entradas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.o2-entrada { --muesca: 9px; position: relative; display: grid; grid-template-columns: 72px minmax(0, 1fr); background: var(--sg-sol); border-radius: 16px; color: var(--sg-ambar);
+    -webkit-mask: radial-gradient(circle var(--muesca) at 72px 0, #0000 98%, #000) top / 100% 51% no-repeat, radial-gradient(circle var(--muesca) at 72px 100%, #0000 98%, #000) bottom / 100% 51% no-repeat;
+    mask: radial-gradient(circle var(--muesca) at 72px 0, #0000 98%, #000) top / 100% 51% no-repeat, radial-gradient(circle var(--muesca) at 72px 100%, #0000 98%, #000) bottom / 100% 51% no-repeat; }
+.o2-talon { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 0; border-right: 2px dashed rgba(122, 82, 0, 0.35); font-size: 0.8rem; font-weight: 700; line-height: 1.1; }
+.o2-talon b { font-family: var(--f-titulo); font-size: 1.9rem; font-weight: 800; letter-spacing: -0.04em; color: var(--sg-tinta); }
+.o2-entrada-cuerpo { padding: 12px 14px 14px 16px; display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.o2-entrada-cuerpo .cuando { font-size: 0.8rem; font-weight: 700; }
+.o2-entrada-cuerpo b { font-size: 1rem; color: var(--sg-tinta); line-height: 1.3; }
+.o2-entrada-cuerpo .detalle { font-size: 0.84rem; color: var(--sg-ambar); line-height: 1.35; }
+.o2-entrada-cuerpo .sg-btn { align-self: flex-start; margin-top: 8px; background: #fff; border-color: rgba(122, 82, 0, 0.45); color: var(--sg-tinta); }
+
+/* El resto: los números en fila, cada uno con su línea, que se llena al abrir */
+.o2-resto { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: baseline; margin: 0 0 6px; padding: 0 4px; }
+.o2-resto h2, .o2-hoy h2 { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.12rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+.o2-resto-al { color: var(--sg-suave); font-size: 0.88rem; display: flex; gap: 16px; flex-wrap: wrap; }
+.o2-resto-al .sg-link { font-size: 0.88rem; }
+.o2-numeros { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px 0; }
+.o2-numeros li + li { border-left: 1px solid var(--sg-linea); }
+.o2-numero { display: flex; flex-direction: column; gap: 3px; padding: 4px 22px 6px; margin: 0 6px; border-radius: 14px; color: inherit; text-decoration: none; }
+.o2-numeros li:first-child .o2-numero { padding-left: 4px; margin-left: 0; }
+.o2-numero:hover .nombre { text-decoration: underline; text-underline-offset: 3px; }
+.o2-numero .grande { font-family: var(--f-titulo); font-weight: 800; font-size: 2.6rem; letter-spacing: -0.045em; line-height: 1; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
+.o2-numero .grande small { font-family: var(--f-texto); font-size: 0.9rem; font-weight: 600; letter-spacing: 0; color: var(--sg-suave); margin-left: 5px; }
+.o2-numero .nombre { font-weight: 700; color: var(--sg-texto); font-size: 0.95rem; margin-top: 4px; }
+.o2-numero .de { font-size: 0.82rem; color: var(--sg-suave); }
+.o2-linea { position: relative; height: 6px; border-radius: 999px; background: #DFE6EE; margin-top: 10px; overflow: hidden; }
+.o2-linea i { position: absolute; inset: 0 auto 0 0; width: var(--p); border-radius: 999px; background: var(--sg-tinta); transform-origin: 0 50%; }
+.o2-numero.vence .grande, .o2-numero.vence .nombre { color: var(--sg-ambar); }
+.o2-numero.vence .o2-linea i { background: var(--sg-sol-borde); }
+
+.o2-meses { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 16px 0 0; padding: 0 4px; font-size: 0.9rem; color: var(--sg-texto); }
+.o2-meses > b { font-weight: 700; margin-right: 4px; }
+.o2-mes { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--sg-linea); background: #fff; font-size: 0.86rem; }
+.o2-mes strong { font-family: var(--f-titulo); font-size: 1.05rem; color: var(--sg-tinta); }
+.o2-mes span { color: var(--sg-suave); }
+.o2-mes.vence { background: var(--sg-sol); border-color: var(--sg-sol-borde); }
+.o2-mes.vence span { color: var(--sg-ambar); }
+.o2-mes.pendiente { border-style: dashed; border-color: #9AA8BA; }
+.o2-mes.previo { background: var(--sg-gris-fondo); }
+.o2-mes.previo strong { color: var(--sg-suave); }
+.o2-extra { margin: 10px 0 0; padding: 0 4px; font-size: 0.82rem; color: var(--sg-suave); }
+
+/* Hoy y mañana: columnas separadas por una línea, sin tarjetas */
+.o2-hoy { margin: 28px 0 0; padding: 22px 4px 0; border-top: 1px solid var(--sg-linea); }
+.o2-columnas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px 0; margin-top: 14px; }
+.o2-columna { padding: 0 22px; border-left: 1px solid var(--sg-linea); min-width: 0; }
+.o2-columna:first-child { padding-left: 0; border-left: 0; }
+.o2-columna h3 { margin: 0 0 10px; font-size: 0.86rem; font-weight: 700; color: var(--sg-suave); }
+.o2-columna ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.o2-columna li { font-size: 0.92rem; line-height: 1.35; color: var(--sg-texto); overflow-wrap: anywhere; }
+.o2-columna li small { display: block; color: var(--sg-suave); font-size: 0.8rem; }
+.o2-columna time { font-weight: 700; font-variant-numeric: tabular-nums; margin-right: 6px; color: var(--sg-tinta); }
+.o2-columna .ausente::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #9AA8BA; margin-right: 8px; vertical-align: 1px; }
+.o2-columna .sg-link { font-size: 0.86rem; display: inline-block; margin-top: 10px; }
+
+@media (max-width: 1000px) {
+    .o2-banda-cuerpo { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+    .o2-banda { border-radius: 22px 22px 0 0; }
+    .o2-banda-cuerpo { padding: 22px 16px 14px; }
+    .o2-barra { height: 38px; }
+    .o2-tramo { font-size: 0.95rem; padding: 0 6px; }
+    .o2-rotulos { flex-direction: column; gap: 8px; }
+    .o2-resto { grid-template-columns: minmax(0, 1fr); }
+    .o2-numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .o2-numero { padding: 4px 12px; }
+    .o2-numeros li:nth-child(odd) { border-left: 0; }
+    .o2-numeros li:nth-child(odd) .o2-numero { padding-left: 4px; margin-left: 0; }
+    .o2-numero .grande { font-size: 2.1rem; }
+    .o2-columna { padding: 0; border-left: 0; }
+}
+
+/* Un tramo angosto no muestra su número (está en la lista de abajo) */
+@container (max-width: 26px) { .o2-tramo > span { visibility: hidden; } }
