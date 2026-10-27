@@ -124,16 +124,16 @@ const fechaDe = (anio, mesYDia) => `${String(anio).padStart(4, '0')}-${mesYDia}`
 const esMes = (mes) => typeof mes === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(mes);
 
 // Lo que va en un texto (la raya si no sirve): '05/11/2026', '05/11', 'octubre', 'febrero de 2027', '2026' y los números con
-// coma ('10,5')
+// coma ('10,5'). Los exportados los usa también el panel (services/miEspacioResumen.js), sin copiarlos
 const fechaCorta = (fecha) => (esFechaIso(fecha) ? formatoCorto(fecha) : '—');
-const diaYMes = (fecha) => (esFechaIso(fecha) ? `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}` : '—');
-const nombreDelMes = (mes) => (esMes(mes) ? MESES[Number(mes.slice(5, 7)) - 1] : '—');
-const mesEnFrase = (mes) => (esMes(mes) ? `${nombreDelMes(mes)} de ${mes.slice(0, 4)}` : '—');
+export const diaYMes = (fecha) => (esFechaIso(fecha) ? `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}` : '—');
+export const nombreDelMes = (mes) => (esMes(mes) ? MESES[Number(mes.slice(5, 7)) - 1] : '—');
+export const mesEnFrase = (mes) => (esMes(mes) ? `${nombreDelMes(mes)} de ${mes.slice(0, 4)}` : '—');
 const anioTexto = (anio) => {
   const valido = anioValido(anio);
   return valido === null ? '—' : String(valido);
 };
-const numeroTexto = (valor) => {
+export const numeroTexto = (valor) => {
   const numero = Math.round(Number(valor) * 10) / 10;
   return Number.isFinite(numero) ? String(numero).replace('.', ',') : '—';
 };
@@ -145,7 +145,8 @@ const diasTexto = (dias) => `${numeroTexto(dias)} ${Number(dias) === 1 ? 'día' 
 // Una cantidad de horas: '1 hora', '1,5 horas'
 const textoDeHoras = (horas) => `${numeroTexto(horas)} ${esUna(horas) ? 'hora' : 'horas'}`;
 // 'a', 'a y b' o 'a, b y c'
-const enLista = (partes) => (partes.length <= 1 ? partes.join('') : `${partes.slice(0, -1).join(', ')} y ${partes.at(-1)}`);
+export const enLista = (partes) =>
+  (partes.length <= 1 ? partes.join('') : `${partes.slice(0, -1).join(', ')} y ${partes.at(-1)}`);
 
 // Los textos de las cargas (los que dependen de una fecha, un año o una cantidad)
 export const textoRango = (desde, hasta) => `La fecha tiene que ser del ${fechaCorta(desde)} al ${fechaCorta(hasta)}.`;
@@ -305,7 +306,7 @@ export const ordinariasDe = (estado, hoy) => {
 // Los tipos con saldo inicial: lo anterior al arranque ya está en el saldo (en contrato, también el uso autorizado, que sale
 // de las horas no utilizadas previamente)
 const TIPOS_CON_SALDO = Object.freeze(['vacaciones', 'franquicia', 'estudios', 'medica', 'familiar']);
-const tieneSaldoInicial = (tipo, modalidad) =>
+export const tieneSaldoInicial = (tipo, modalidad) =>
   TIPOS_CON_SALDO.includes(tipo) || (tipo === 'uso_autorizado' && modalidad === 'contrato');
 
 /**
