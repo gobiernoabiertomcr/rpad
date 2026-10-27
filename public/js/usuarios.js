@@ -1,6 +1,7 @@
 // Panel de usuarios (spec 2026-10-15-usuarios-superadmin, sección 12.2):
 // lista agrupada por rol, alta, edición, acceso (links y activación) e historial. Lo carga configuracion.html, con las pestañas
-// Usuarios, Licencias y Áreas (spec 2026-10-24-configuracion, 6; la de Áreas la arma areas.js, que va después)
+// Usuarios, Licencias, Áreas y Feriados (spec 2026-10-24-configuracion, 6; la de Áreas la arma areas.js y la de Feriados,
+// feriados.js, spec 2026-10-26-feriados, 4, que van después)
 let usuarios = [];
 let resumen = { aprobadores_activos: 0, minimo: 2 };
 let abierto = null;          // usuario del modal; null = alta
@@ -249,8 +250,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('modal-licencia-cerrar').addEventListener('click', cerrarModalLicencia);
 
   cargarUsuarios();
-  // La pestaña del fragmento de la dirección (configuracion.html#licencias, o recargar en #areas); sin fragmento, o con uno
-  // desconocido, queda Usuarios, como viene en el HTML (spec 2026-10-24-configuracion, 1)
+  // La pestaña del fragmento de la dirección (configuracion.html#licencias, o recargar en #areas o en #feriados); sin fragmento, o
+  // con uno desconocido, queda Usuarios, como viene en el HTML (spec 2026-10-24-configuracion, 1)
   const inicial = vistaDeLaDireccion(window.location.hash);
   if (inicial !== 'usuarios') mostrarVista(inicial);
 });
@@ -663,21 +664,23 @@ function renderHistorial(historial) {
 }
 
 // =====================================================
-// PESTAÑAS DE CONFIGURACIÓN (spec 2026-10-24-configuracion, 1 y 6) Y LICENCIAS (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)
+// PESTAÑAS DE CONFIGURACIÓN (spec 2026-10-24-configuracion, 1 y 6; Feriados, spec 2026-10-26-feriados, 4) Y LICENCIAS (spec
+// 2026-10-15-dias-habiles-licencias-auditoria, 5.5)
 // =====================================================
 // Las pestañas de la página, en su orden; cada una tiene su vista (#vista-<nombre>) y viaja en la dirección (#<nombre>)
-const VISTAS = ['usuarios', 'licencias', 'areas'];
+const VISTAS = ['usuarios', 'licencias', 'areas', 'feriados'];
 
-// La pestaña que pide el fragmento de la dirección (window.location.hash): '#licencias' o '#areas'; uno desconocido, o ninguno, es
-// Usuarios
+// La pestaña que pide el fragmento de la dirección (window.location.hash): '#licencias', '#areas' o '#feriados'; uno desconocido, o
+// ninguno, es Usuarios
 function vistaDeLaDireccion(hash) {
   const nombre = String(hash ?? '').replace(/^#/, '');
   return VISTAS.includes(nombre) ? nombre : 'usuarios';
 }
 
-// Muestra una pestaña con su vista y el botón del encabezado que le toca ("Nuevo usuario" en Usuarios, "Nueva área" en Áreas;
-// Licencias no tiene: "Nueva licencia" va en su tarjeta). Licencias se pide cada vez; Áreas, con cargarAreas (areas.js), que la
-// pide una sola vez hasta que se guarda o se borra. La pestaña se escribe en la dirección con replaceState, que no suma pasos al
+// Muestra una pestaña con su vista y el botón del encabezado que le toca ("Nuevo usuario" en Usuarios, "Nueva área" en Áreas,
+// "Nuevo feriado" en Feriados; Licencias no tiene: "Nueva licencia" va en su tarjeta). Licencias se pide cada vez; Áreas, con
+// cargarAreas (areas.js), que la pide una sola vez hasta que se guarda o se borra; Feriados, con cargarFeriados (feriados.js), que
+// pide cada año una sola vez hasta que se guarda. La pestaña se escribe en la dirección con replaceState, que no suma pasos al
 // botón Atrás (en el vm de los tests no hay history)
 function mostrarVista(nombre) {
   document.querySelectorAll('#pagina-pestanas [data-vista]').forEach(boton => {
@@ -688,8 +691,10 @@ function mostrarVista(nombre) {
   for (const vista of VISTAS) document.getElementById(`vista-${vista}`).hidden = nombre !== vista;
   document.getElementById('btn-nuevo-usuario').hidden = nombre !== 'usuarios';
   document.getElementById('btn-nueva-area').hidden = nombre !== 'areas';
+  document.getElementById('btn-nuevo-feriado').hidden = nombre !== 'feriados';
   if (nombre === 'licencias') cargarLicencias();
   if (nombre === 'areas' && typeof cargarAreas === 'function') cargarAreas();
+  if (nombre === 'feriados' && typeof cargarFeriados === 'function') cargarFeriados();
   window.history?.replaceState?.(null, '', `#${nombre}`);
 }
 
