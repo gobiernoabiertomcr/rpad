@@ -72,7 +72,7 @@ En la pestaña **Áreas** están los organismos responsables de los datasets:
 
 En la pestaña **Feriados** están los días no hábiles que no son los 9 feriados nacionales fijos: los nacionales que cambian de fecha (Carnaval, Semana Santa, los trasladables y los extraordinarios), los de Chubut, los de Comodoro y los días no laborables (el Jueves Santo, los días con fines turísticos y los asuetos):
 
-- **Por ahora cuentan solo para [Mi espacio](#mi-espacio):** los días hábiles de las licencias y los francos, y su aviso de vencimiento. Las Notas Digitales, la auditoría, los recordatorios, las licencias de Configuración, Métricas y el Ciclo de vida del dato siguen con los 9 fijos, como lo dice el aviso azul de arriba.
+- **Por ahora cuentan solo para [Mi espacio](#mi-espacio):** los días hábiles de las licencias y los francos, su aviso de vencimiento y los recordatorios de la agenda. Las Notas Digitales, la auditoría, los recordatorios de cambios pendientes, las licencias de Configuración, Métricas y el Ciclo de vida del dato siguen con los 9 fijos, como lo dice el aviso azul de arriba.
 - **La lista de un año:** el selector del año (el en curso, el siguiente y los anteriores con feriados cargados), los filtros Todos, Nacionales, De Chubut, De Comodoro, No laborables y Fijos del sistema, con su cantidad, y una tabla con la fecha y su día de la semana, el nombre, el tipo y si se repite. Los 9 fijos se ven en gris y no se editan. Debajo del nombre, las aclaraciones: de qué fecha se trasladó, si cae en fin de semana o si cae el mismo día que otro feriado.
 - **Nuevo feriado y Editar:** la fecha (con su día de la semana), el nombre, el tipo (Nacional, De Chubut, De Comodoro o No laborable), "Trasladado del" (opcional) y "Se repite todos los años, el mismo día", para los de fecha fija, como el aniversario de la ciudad; los móviles se cargan año por año. Siempre el día entero. Al guardar, avisa si ese día cae en fin de semana o ya es feriado, sin frenar el guardado. Debajo de la fecha dice cuántas licencias cargadas en Mi espacio lo incluyen ("sus días hábiles se recalculan"), solo si el feriado cambia de verdad un día hábil (no un sábado, un domingo, uno de los 9 fijos ni un día que ya es feriado) y, en uno que se repite, en todos los años en que rige.
 - **Uno que se repite:** si un año se corre, ese año se marca "no rige" y se carga el día al que se pasó ("Se pasó al"); los demás años no cambian. Darlo de baja vale desde el año que se elija: los anteriores tampoco cambian. Corregir su fecha o su nombre corrige todos los años (es para los errores de carga).
@@ -214,18 +214,24 @@ En gestión externa, el RPAD avisa a la DGMIT y a la Dirección Administrativa, 
 
 ## Mi espacio
 
-**Mi cuenta → Mi espacio** (`mi-espacio.html`) es el panel personal de cada usuario, para cualquier rol con sesión: ahí carga sus licencias y sus horas extras y ve lo que le queda y lo que vence pronto. Lo que carga lo ve solo esa persona (ni administración ni el superadmin), salvo, si quiere, que no está. No es un sistema de Recursos Humanos: no hay aprobaciones ni certificados, es un registro para llevar la cuenta.
+**Mi cuenta → Mi espacio** (`mi-espacio.html`) es el panel personal de cada usuario, para cualquier rol con sesión: ahí carga sus licencias y sus horas extras, ve lo que le queda y lo que vence pronto y lleva su agenda. Lo que carga lo ve solo esa persona (ni administración ni el superadmin), salvo los eventos que comparte y, si quiere, que no está. No es un sistema de Recursos Humanos: no hay aprobaciones ni certificados, es un registro para llevar la cuenta.
 
 - **La modalidad** sale del vínculo que carga administración en Configuración → Usuarios: planta permanente y planta política tienen las mismas licencias, y contrato, las suyas. Sin vínculo cargado, Mi espacio lo dice y no deja cargar nada.
 - **Todo se cuenta en días hábiles,** de lunes a viernes, sin los 9 feriados fijos ni los de la pestaña Feriados de Configuración. No se guardan: un feriado nuevo corrige lo ya cargado.
 - **Las licencias:** vacaciones (los días de cada año, de 10 a 30, se habilitan en dos mitades, el 1/7 y el 1/1 siguiente, vencen el 31/12 de dos años después y se descuenta siempre la más vieja), franquicias (solo planta: 42 horas por año, por hora entera), estudios (15 o 10 días por año, de 1 a 3 por examen), atención médica y del grupo familiar (25 días por año cada una), médica extraordinaria (sin tope), francos compensatorios (planta) y horas a favor (contrato). Dos licencias no comparten un día.
 - **Las horas extras,** con el día y el horario, de a media hora. En planta, solo las del 100%: cada 7 horas de un mes dan un franco que se usa dos meses después, en ese mes. En contrato, cada hora es una hora a favor del mes siguiente. Lo que no se usó a tiempo queda como "no utilizado previamente" y se puede usar con un "uso autorizado".
 - **Para arrancar,** la primera vez se abre solo "Mis vacaciones y saldos": los días de vacaciones y los estudios del año, y lo que quedaba de cada licencia y lo ya usado en el año. Lo cargado con fechas anteriores a ese día queda como historia y no descuenta (ya está en el saldo).
-- **Tres pestañas:** **Resumen** ("Vence pronto", "Lo que te queda" con un tanque por saldo, y "Hoy y mañana"), **Licencias** (la lista del año, con filtros por tipo y el saldo inicial) y **Horas extras** (la tabla por mes y el día por día).
+- **Cuatro pestañas:** **Resumen** ("Vence pronto", "Lo que te queda" con un tanque por saldo, y "Hoy y mañana", con los eventos de hoy y de mañana), **Licencias** (la lista del año, con filtros por tipo y el saldo inicial), **Horas extras** (la tabla por mes y el día por día) y **Agenda** (ver abajo).
 - **Pasan solas a Configuración → Licencias** las ausencias de día entero de quien puede tener licencia (superadmin, admin y editor): solo las fechas, nunca el tipo, y el formulario avisa antes qué efecto tiene (mientras dura, esa persona no cuenta como disponible para auditar). Si es el firmante de las Notas Digitales, solo sus vacaciones dejan a alguien a cargo de presentar las notas. Si es la persona autorizada del firmante y su licencia se pisa con la de él, el formulario le avisa, sin frenarla: "Sos la persona autorizada del firmante del 01/12/2026 al 18/12/2026: los días que no estés, no se presentan Notas Digitales." En Configuración llevan la insignia **Cargada desde Mi espacio**. Al lector y al colaborador no les cambia nada del sistema.
 - **"Hoy no están":** los de administración que eligen "Mostrar a mis compañeros" se ven en el Resumen de los demás de administración como "(nombre) no está" y cuándo vuelven, sin decir de qué es la ausencia ("Hoy no están" y "Mañana no están").
 - **El aviso de vencimiento:** un email, una sola vez por cosa, cuando un franco o unas horas a favor del mes están por vencer (desde 5 días hábiles antes del último día hábil del mes) o quedan días de la licencia que vence el 31/12 (desde el primer día hábil de diciembre). Sale en la corrida de las 8:15, solo en días hábiles y nunca a quien está de licencia ese día.
-- **Detalle de diseño:** `docs/superpowers/specs/2026-10-26-mi-espacio-licencias-y-horas-design.md` (las maquetas, en `docs/superpowers/specs/2026-10-26-mi-espacio-mockups/`).
+- **La agenda** (pestaña Agenda): el mes, de lunes a domingo, y al costado los próximos 30 días (en el teléfono, primero los próximos). Junto con los eventos aparecen las licencias y los francos propios de Mi espacio (con el tipo, porque son de cada uno), los feriados y, para administración, los compañeros que no están (sin decir de qué). Cada color dice qué es: lo propio, lo compartido, las licencias, los feriados y los compañeros.
+  - **Eventos personales**, que ve solo quien los crea, y **compartidos** con las personas que se elijan o con **"Todos"** (una marca: quien se suma después a la administración también lo ve). Comparte, aparece en la lista para invitar y ve los de "Todos" solo administración (superadmin, admin y editor); el lector y el colaborador tienen solo eventos personales.
+  - **Solo quien creó un evento lo cambia o lo borra.** Cada invitada puede apagar su propio recordatorio ("Mi recordatorio") sin cambiar el evento.
+  - **Un recordatorio por email** que elige cada evento: "1 hora antes", "2 horas antes" (de entrada), "El día hábil anterior" (a la misma hora) o "Sin aviso". Nunca sale en un día que no es hábil: si la hora cae en un sábado, un domingo o un feriado (también los de la pestaña Feriados), sale el día hábil anterior a esa misma hora. El formulario dice cuándo sale. Lo manda una Tarea Cron cada media hora (ver [Configurar Cron Job](#configurar-cron-job-notificaciones-automáticas)), una sola vez por persona.
+  - **Los emails** van a quien lo creó y a cada invitado: la invitación al sumar a alguien, el aviso de cambio si cambia la fecha, la hora o el título, la cancelación al borrarlo y el recordatorio. A quien se saca de un evento no le llega nada. **Llegan aunque la persona esté de licencia** (van al mail laboral), y la invitación, el cambio y la cancelación salen en el momento, también en un día que no es hábil.
+  - **La "Agenda de pedidos"** de Métricas y Reportes es otra cosa (el PDF de los vencimientos de los datasets de los próximos meses) y no cambió. En el código, esta agenda se llama `evento` o `mi_espacio_`, nunca "agenda" a secas, para que no se confundan.
+- **Detalle de diseño:** `docs/superpowers/specs/2026-10-26-mi-espacio-licencias-y-horas-design.md` y, la agenda, `docs/superpowers/specs/2026-10-26-mi-espacio-agenda-design.md` (las maquetas, en `docs/superpowers/specs/2026-10-26-mi-espacio-mockups/`).
 
 ## Estructura del proyecto
 
@@ -247,7 +253,7 @@ rpad/
 │   ├── andinoController.js        # Integración con portal de datos
 │   ├── cambiosPendientesController.js  # Sistema de doble verificación
 │   ├── contactoController.js      # Formulario de contacto público
-│   ├── notificacionesController.js  # Cron diario: aviso a áreas y Notas Digitales
+│   ├── notificacionesController.js  # Crons: aviso a áreas y Notas Digitales (8:15), cambios pendientes (14:00) y recordatorios de la agenda (cada media hora)
 │   ├── notasDigitalesController.js  # API de Notas Digitales (libro, prueba, configuración)
 │   ├── notasController.js         # Generador de Notas: las áreas, la vista previa y el Word (administración y el colaborador)
 │   ├── seguimientoController.js   # Seguimiento del dataset: lista, ficha y PDF (solo lectura)
@@ -257,6 +263,7 @@ rpad/
 │   ├── gestionController.js       # Las métricas de /api/gestion/metricas, su CSV y las métricas manuales (las usa Métricas y Reportes)
 │   ├── feriadosController.js      # Feriados: los de un año (cualquier rol con sesión) y cargar, corregir, «no rige» y dar de baja (administración)
 │   ├── miEspacioController.js     # Mi espacio: el Resumen, las licencias (con el paso a Configuración), las horas extras, los saldos y «Hoy no están» (cada uno, lo suyo)
+│   ├── miEspacioEventosController.js  # La agenda de Mi espacio: los eventos (lo cambia y lo borra solo quien lo creó), el aviso, las personas para compartir y «Mi recordatorio»
 │   └── reportesController.js      # Los reportes PDF de la pestaña Reportes (las consultas; los dibuja services/reportes*.js)
 ├── services/
 │   ├── emailService.js            # Configuración SMTP, envío y remitente único ("Dir. de Datos Públicos y Comunicación")
@@ -272,6 +279,7 @@ rpad/
 │   ├── feriadosDatos.js           # Las consultas de los feriados (solo lectura)
 │   ├── licenciasOficialesService.js  # Alta, edición y anulación de una licencia de Configuración → Licencias (las comparten Configuración y Mi espacio)
 │   ├── miEspacio*.js              # Mi espacio: reglas (licencias, horas extras, saldo inicial, el paso a Configuración), el panel como datos, consultas, el paso y el email de vencimiento
+│   ├── miEspacioEventos*.js       # La agenda de Mi espacio: reglas (el evento, el momento del aviso, quién recibe qué), consultas, los emails del guardado y la corrida de los recordatorios
 │   ├── metricas*.js               # Métricas: reglas (casos, circuito, resultados, contexto, trabajo, áreas y las etapas del Ciclo de vida del dato), cinta, opciones y la foto del 31/12
 │   ├── reportes*.js               # Reportes PDF: la base (diseño del anexo) y un archivo por reporte, la agenda de pedidos y los nombres de los archivos
 │   ├── seguimiento*.js            # Seguimiento del dataset: reglas (movimientos, ciclos y avisos), cinta, consultas y PDF (de una hoja, o de N para un anexo)
@@ -306,7 +314,9 @@ rpad/
 │       ├── migracion-feriados-datos.sql          # Feriados: la precarga de 2026 y 2027, 28 filas con su fuente (después de la anterior y antes del código; repetible)
 │       ├── rollback-feriados.sql                 # Deshace las dos anteriores (después de volver a los archivos anteriores; se pierden los feriados cargados)
 │       ├── migracion-mi-espacio.sql              # Mi espacio: las seis tablas mi_espacio_* (después de las de feriados y antes del código, obligatoria; repetible)
-│       └── rollback-mi-espacio.sql               # Deshace la anterior (después de volver a los archivos anteriores; se pierde lo cargado en Mi espacio)
+│       ├── rollback-mi-espacio.sql               # Deshace la anterior (después de volver a los archivos anteriores; se pierde lo cargado en Mi espacio)
+│       ├── migracion-mi-espacio-agenda.sql       # La agenda de Mi espacio: las cuatro tablas de los eventos (después de migracion-mi-espacio.sql y antes del código; repetible)
+│       └── rollback-mi-espacio-agenda.sql        # Deshace la anterior (después de volver a los archivos anteriores; se pierden los eventos)
 ├── middleware/
 │   └── auth.js                    # JWT middleware (authMiddleware y sesionOpcional, para las rutas públicas que muestran más con sesión)
 ├── routes/
@@ -329,7 +339,7 @@ rpad/
     ├── proyectos.html             # Proyectos: pestañas Proyectos (carriles), Línea de tiempo y Logros del área, y un proyecto (?id=N) con su cinta (reemplaza a gestion.html, que redirige acá)
     ├── seguimiento.html           # Seguimiento del dataset: lista "Sin elegir" o un dataset (?id=N), con su cinta, movimientos y PDF
     ├── perfil.html                # Mi Perfil en pestañas: Para revisar, Mis cambios, Mis datos y Mi firma
-    ├── mi-espacio.html            # Mi espacio: pestañas Resumen, Licencias y Horas extras (el panel personal de cada usuario)
+    ├── mi-espacio.html            # Mi espacio: pestañas Resumen, Licencias, Horas extras y Agenda (el panel personal de cada usuario)
     ├── robots.txt                 # Cerrado a todos, salvo a los robots de vista previa de un link
     ├── css/
     │   ├── main.css               # Carcasa (encabezado, menú lateral, footer), fuentes, tokens y administración: las 14 páginas con carcasa
@@ -356,7 +366,7 @@ rpad/
     │   ├── proyectos.js           # Proyectos: carriles, detalle con la cinta (SVG), formularios, subidas y descargas
     │   ├── seguimiento.js         # Seguimiento del dataset: lista, ficha, circuito, cinta (SVG) y movimientos
     │   ├── perfil.js              # Mi Perfil: gestión de cambios (aprobar y rechazar en la fila), datos y firma
-    │   ├── mi-espacio.js          # Mi espacio: el Resumen (tanques en SVG), las licencias, las horas extras y los formularios
+    │   ├── mi-espacio.js          # Mi espacio: el Resumen (tanques en SVG), las licencias, las horas extras, la agenda (el mes y los próximos) y los formularios
     │   └── establecer-contrasena.js  # Elegir la contraseña, o pedir un link nuevo
     └── img/
         ├── icon.png
@@ -411,6 +421,10 @@ Desde **phpMyAdmin** en cPanel:
 | `mi_espacio_licencias` | Mi espacio: las licencias y los usos de horas de cada persona, con su tipo, «Mostrar a mis compañeros», una nota y, si pasó a Configuración → Licencias, a cuál (`creada` o `unida`) o por qué no pasó; baja lógica (`activo`) |
 | `mi_espacio_horas_extras` | Mi espacio: las horas extras de cada persona, por día, de qué hora a qué hora; baja lógica (`activo`) |
 | `mi_espacio_avisos` | Mi espacio: los emails de vencimiento ya enviados (una vez por persona y por cosa) |
+| `mi_espacio_eventos` | La agenda de Mi espacio: los eventos, con quién los creó, el título, el detalle, la fecha y las horas (hora argentina), si es compartido o para todos, el recordatorio y la baja lógica (`activo`) |
+| `mi_espacio_evento_personas` | La agenda: con quién se compartió cada evento y si esa persona apagó su recordatorio (en uno para todos, solo quienes lo apagaron) |
+| `mi_espacio_evento_envios` | La agenda: cada email que salió de un evento (recordatorio, invitación, cambio o cancelación), a quién, para qué momento del evento, cuándo y si salió; una clave única que vale solo para los recordatorios hace que no salgan dos veces |
+| `mi_espacio_eventos_corridas` | La agenda: una sola fila con la última corrida de los recordatorios, para Correos → Estado |
 
 ### Migración: Usuarios (superadmin y panel de usuarios)
 
@@ -722,6 +736,23 @@ En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin �
 
 **Si algo sale mal:** subir de nuevo los archivos del backup → Restart. Las tablas nuevas pueden quedar (son aditivas y el código anterior no las usa). Para sacarlas, phpMyAdmin → pegar `database/updates/rollback-mi-espacio.sql` **después** del Restart: borra las seis tablas y **se pierde todo lo cargado en Mi espacio** (exportarlas antes si hace falta conservarlo); las licencias que ya pasaron a Configuración → Licencias quedan allí, sin la insignia (si alguna no tiene que seguir, se anula desde Configuración). Los usuarios y el resto de los datos no se tocan. Si también se deshacen las licencias y las firmas, `rollback-mi-espacio.sql` va **antes** que `rollback-licencias-firmas.sql`. Para volver a la versión nueva, se corre otra vez la migración.
 
+### Migración: La agenda de Mi espacio
+
+⚠️ Requisito: las migraciones anteriores aplicadas y el código desplegado hasta **Mi espacio** (licencias y horas extras), con `migracion-mi-espacio.sql` ya corrida: los archivos de esta entrega se armaron sobre ese código. No hay dependencias nuevas de npm y no cambian las variables de entorno, pero **hace falta una Tarea Cron nueva, cada media hora**, para los recordatorios (ver [Configurar Cron Job](#configurar-cron-job-notificaciones-automáticas)). Backup de la base y de los archivos antes de empezar, y fuera del horario de los crons (8:15, 14:00 y, cuando ya esté la tarea nueva, las medias horas: por ejemplo, a las 10:10). El SQL se corre en phpMyAdmin (pestaña **SQL**, con la base del RPAD seleccionada). El orden es: **SQL → subir los archivos → Restart → probar la URL del cron → crear la Tarea Cron**. La migración va **después** de `migracion-mi-espacio.sql` y **antes** del código: sin las tablas, la pestaña Agenda no carga, la corrida de los recordatorios termina con errores y Correos → Estado avisa que no la pudo leer (lo demás, también el resto de Mi espacio, sigue funcionando).
+
+1. **SQL:** pegar `database/updates/migracion-mi-espacio-agenda.sql` → **Continuar**. Crea las cuatro tablas de la agenda, vacías: `mi_espacio_eventos`, `mi_espacio_evento_personas`, `mi_espacio_evento_envios` (con la columna generada `recordatorio_unico` y una clave única que vale solo para los recordatorios: así un recordatorio no sale dos veces, y una invitación, un cambio o una cancelación sí se pueden repetir) y `mi_espacio_eventos_corridas`. No cambia datos, el código anterior sigue funcionando con la estructura nueva (no las lee) y se puede volver a correr. **Si da error, no subir el código.** Después, esta consulta tiene que dar **4**:
+   ```sql
+   SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('mi_espacio_eventos', 'mi_espacio_evento_personas', 'mi_espacio_evento_envios', 'mi_espacio_eventos_corridas');
+   ```
+2. **Subir los archivos** (zip con los archivos que cambian y sus carpetas → Cargar → Extraer en la carpeta de la app): los nuevos (`controllers/miEspacioEventosController.js`, `services/miEspacioEventosReglas.js`, `services/miEspacioEventosDatos.js`, `services/miEspacioEventosEmails.js` y `services/miEspacioEventosCorrida.js`) y los que cambian (`routes/index.js`, `controllers/miEspacioController.js`, `controllers/notificacionesController.js`, `controllers/notasDigitalesController.js`, `services/emailTemplates.js`, `services/notasDigitales.js`, `services/proyectosReglas.js`, `public/mi-espacio.html`, `public/js/mi-espacio.js`, `public/correos.html` y `public/js/correos.js`). `database/schema.sql` también cambia, pero no se corre: es la estructura completa de una instalación nueva. Si falta cualquiera de los archivos nuevos del servidor, la app no arranca. Enseguida, **Restart** (Setup Node.js App). No hace falta Run NPM Install.
+3. **Probar la URL del cron** en el navegador: `https://tu-dominio.com/api/cron/eventos?secret=TU_CRON_SECRET` responde un JSON con `"success":true` («Recordatorios enviados: 0.» en un día hábil; «Hoy no es día hábil: no se mandan recordatorios.» un sábado, un domingo o un feriado). Un 403 quiere decir que la clave no es la de `CRON_SECRET`.
+4. **Crear la Tarea Cron** (WHM o cPanel → Tareas Cron): Minuto `*/30`, Hora `*`, Día `*`, Mes `*`, Día semana `*` y el comando `curl -s "https://tu-dominio.com/api/cron/eventos?secret=TU_CRON_SECRET" > /dev/null`. Las de las 8:15 y las 14:00 no se tocan.
+5. **Verificar** (Ctrl+F5; solo mirar: un evento compartido de prueba mandaría invitaciones de verdad):
+   - Mi espacio abre con cuatro pestañas; **Agenda** muestra el mes y los próximos, con las licencias propias, los feriados y, para administración, los compañeros que no están, y "Nuevo evento" se ve también a quien no tiene la modalidad cargada.
+   - **Correos → Estado**, pasada la media hora siguiente: «Recordatorios de la agenda: última corrida hoy a las …», sin alertas de la agenda. Si en un día hábil no hay ninguna corrida, o la última fue hace más de una hora, una alerta roja dice que los recordatorios no corren: hay que revisar la Tarea Cron.
+
+**Si algo sale mal:** borrar la Tarea Cron de `/api/cron/eventos` (el código anterior no tiene esa ruta) y subir de nuevo los archivos del backup → Restart. Las tablas nuevas pueden quedar (son aditivas y el código anterior no las usa). Para sacarlas, phpMyAdmin → pegar `database/updates/rollback-mi-espacio-agenda.sql` **después** del Restart: borra las cuatro tablas, en el orden inverso, y **se pierden los eventos, con quién se compartió cada uno, los recordatorios apagados, el registro de los emails enviados y la última corrida** (exportarlas antes si hace falta conservarlos). Lo demás de Mi espacio (licencias, horas extras y saldo inicial), los usuarios y el resto de los datos no se tocan. Si también se deshace Mi espacio (licencias y horas extras), `rollback-mi-espacio-agenda.sql` va **antes** que `rollback-mi-espacio.sql`. Para volver a la versión nueva, se corre otra vez la migración.
+
 ### Migración desde v1.4.0 a v1.5.0
 
 ⚠️ Requisito: Ejecutar esto si su sistema está en la versión 1.4.0.
@@ -850,7 +881,10 @@ Respuesta esperada:
 ```
 https://tu-dominio.com/api/cron/notificaciones?secret=TU_CRON_SECRET
 https://tu-dominio.com/api/cron/cambios-pendientes?secret=TU_CRON_SECRET
+https://tu-dominio.com/api/cron/eventos?secret=TU_CRON_SECRET
 ```
+
+Cada una responde un JSON. La de los recordatorios de la agenda (`/api/cron/eventos`) dice `"success":true` con «Recordatorios enviados: N.» en un día hábil o «Hoy no es día hábil: no se mandan recordatorios.».
 
 ### 2. Configurar en cPanel → Tareas Cron
 
@@ -858,10 +892,11 @@ https://tu-dominio.com/api/cron/cambios-pendientes?secret=TU_CRON_SECRET
 |--------|------|-----|-----|------------|---------|
 | 15 | 8 | * | * | * | `curl -s "https://tu-dominio.com/api/cron/notificaciones?secret=TU_CRON_SECRET" > /dev/null` |
 | 0 | 14 | * | * | * | `curl -s "https://tu-dominio.com/api/cron/cambios-pendientes?secret=TU_CRON_SECRET" > /dev/null` |
+| */30 | * | * | * | * | `curl -s "https://tu-dominio.com/api/cron/eventos?secret=TU_CRON_SECRET" > /dev/null` |
 
-Los dos corren todos los días: cPanel no conoce los feriados y el sistema decide. **Todos los recordatorios automáticos salen solo en días hábiles**: de lunes a viernes, sin los feriados nacionales de fecha fija (01/01, 24/03, 02/04, 01/05, 25/05, 20/06, 09/07, 08/12 y 25/12). Los feriados trasladables cuentan como hábiles.
+Las tres corren todos los días: cPanel no conoce los feriados y el sistema decide. **Todos los recordatorios automáticos salen solo en días hábiles**: de lunes a viernes, sin los feriados nacionales de fecha fija (01/01, 24/03, 02/04, 01/05, 25/05, 20/06, 09/07, 08/12 y 25/12). Los feriados trasladables cuentan como hábiles, salvo para Mi espacio (el aviso de vencimiento y los recordatorios de la agenda), que tampoco sale en los feriados de la pestaña Feriados.
 
-Si se cambia el horario de una tarea existente, hacerlo fuera de las 8:00–8:15 y de las 13:00–14:00: editada en ese intervalo, la tarea puede correr dos veces ese día y repetir los emails.
+Si se cambia el horario de una tarea existente, hacerlo fuera de las 8:00–8:15 y de las 13:00–14:00: editada en ese intervalo, la tarea puede correr dos veces ese día y repetir los emails. La de los recordatorios de la agenda se puede editar a cualquier hora: un recordatorio nunca sale dos veces.
 
 El de las **8:15** envía el aviso directo a las áreas y las **Notas Digitales**:
 
@@ -878,6 +913,8 @@ El de las **8:15** envía el aviso directo a las áreas y las **Notas Digitales*
 El de las **14:00** envía el **recordatorio** de cambios pendientes: a cada persona que puede auditar un cambio (los auditores disponibles o, si no hay ninguno, los editores, de respaldo), los cambios propuestos hace una hora o más que no van por nota de auditoría (nunca los propios; con el envío automático apagado o sin Para de auditoría, ningún cambio va por nota y todos llegan por acá). Quien está de licencia no lo recibe.
 
 En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en el recordatorio no tiene a nadie que pueda auditarlo (ningún auditor ni editor de respaldo disponible que no sea quien lo propuso), quien lo propuso recibe un solo email con todos sus cambios en esa situación: hasta cuándo no hay auditor disponible y que el conjunto de datos sigue bloqueado. Sale una vez por cambio (queda registrado en `cambios_pendientes.aviso_sin_auditores_at`); si quien propuso está de licencia, sale a su vuelta, mientras siga sin auditor. Apenas vuelve a haber un auditor disponible, llega el recordatorio de siempre.
+
+La de **cada media hora** manda los **recordatorios de la agenda de [Mi espacio](#mi-espacio)**: los de los eventos cuya hora de aviso ya pasó y que todavía no empezaron, a quien creó cada evento y a sus invitados (salvo a quien apagó el suyo), uno por persona y por evento. Le llegan también a quien está de licencia (van al mail laboral). Solo manda en días hábiles, contando también los feriados de la pestaña Feriados; si la hora del aviso cae en un día que no es hábil, el aviso pasa al día hábil anterior, a la misma hora. Un recordatorio que no salió a tiempo (el evento se creó después, o la corrida o el envío fallaron) sale en la corrida siguiente, mientras el evento no haya empezado; si ya pasó más de media hora desde su hora de aviso, sale solo entre las 7:00 y las 20:00, nunca de noche ni de madrugada (uno creado a las 22:00 para las 8:00 del día siguiente avisa a las 7:00). Nunca sale dos veces: cada recordatorio se reserva antes de mandarlo, y si dos corridas se pisan, la segunda termina "ocupada" sin mandar nada (tiene su propio candado, distinto del de las Notas Digitales, así la de las 8:30 no frena a la de las 8:15). El resultado de cada corrida queda en Correos → Estado ("Recordatorios de la agenda: última corrida hoy a las …"), con una alerta si terminó con errores, si se interrumpió o si en un día hábil no corrió en la última hora. Esa última también sale si una corrida quedó "en curso" más de una hora: en ese caso, además de la Tarea Cron, hay que mirar el servidor (un proceso colgado). La invitación, el cambio y la cancelación de un evento no los manda esta tarea: salen en el momento en que alguien guarda el evento, también en un día que no es hábil.
 
 ---
 
@@ -966,6 +1003,13 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 | PUT | `/api/mi-espacio/saldo-inicial` | Mi espacio: guardar el saldo inicial (`{ saldos }`; la primera vez fija el día de arranque) |
 | GET | `/api/mi-espacio/ausentes` | Mi espacio: «Hoy no están» de un rango de hasta 93 días (`?desde=&hasta=`; solo administración ve a los demás, y nunca el tipo) |
 | GET | `/api/mi-espacio/firmante` | Mi espacio: lo que necesita el campo de la persona a cargo del firmante titular (a cualquier otra persona, `{ soy_titular: false }`) |
+| GET | `/api/mi-espacio/eventos` | La agenda: lo que ve la persona en un rango de hasta 93 días (`?desde=&hasta=`): sus eventos, los compartidos con ella y, a administración, los de "Todos", con cuándo sale cada aviso; además, sus licencias de Mi espacio, los feriados y, a administración, los compañeros que no están (sin el tipo) |
+| GET | `/api/mi-espacio/eventos/aviso` | La agenda: cuándo saldría el recordatorio (`?fecha=&desde=&recordatorio=`), sin guardar nada |
+| GET | `/api/mi-espacio/personas` | La agenda: la administración activa con la que se puede compartir (id, nombre e iniciales); al lector y al colaborador, 403 |
+| POST | `/api/mi-espacio/eventos` | La agenda: crear un evento (`{ titulo, fecha, desde, hasta, detalle, compartido, para_todos, personas, recordatorio }`; compartir, solo administración) |
+| PUT | `/api/mi-espacio/eventos/:id` | La agenda: cambiar un evento (solo quien lo creó; a cualquier otra persona, 404) |
+| DELETE | `/api/mi-espacio/eventos/:id` | La agenda: borrar un evento (baja lógica; solo quien lo creó) |
+| PUT | `/api/mi-espacio/eventos/:id/mi-recordatorio` | La agenda: una invitada apaga o prende su recordatorio (`{ sin_aviso: true \| false }`) |
 
 ### Cron (requiere secret)
 
@@ -973,6 +1017,7 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 |--------|------|-------------|
 | GET | `/api/cron/notificaciones?secret=...` | Ejecutar notificaciones (para cron) |
 | GET | `/api/cron/cambios-pendientes?secret=...` | Recordatorio de cambios pendientes (para cron) |
+| GET | `/api/cron/eventos?secret=...` | Recordatorios de la agenda de Mi espacio (para cron, cada media hora) |
 
 ### Filtros disponibles en `/api/datasets`
 
@@ -1015,6 +1060,13 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Mi espacio: la agenda (2026-10)
+- **La pestaña Agenda de Mi espacio** (`mi-espacio.html#agenda`), para todos los roles con sesión, también sin la modalidad cargada: el mes y los próximos 30 días, con los eventos, las licencias y los francos propios, los feriados y, para administración, los compañeros que no están. "Hoy y mañana" del Resumen suma los eventos de hoy y de mañana
+- Eventos personales y compartidos con las personas que se elijan o con "Todos"; comparte solo administración. Solo quien creó un evento lo cambia o lo borra, y cada invitada puede apagar su recordatorio
+- Un recordatorio por email que elige cada evento (1 hora antes, 2 horas antes, el día hábil anterior o sin aviso), nunca en un día que no es hábil; los atrasados, solo de 7:00 a 20:00. Emails de invitación, cambio y cancelación. Llegan aunque la persona esté de licencia
+- Correos → Estado suma la línea de la última corrida de los recordatorios, con sus alertas
+- Cuatro tablas nuevas (`mi_espacio_eventos`, `mi_espacio_evento_personas`, `mi_espacio_evento_envios` y `mi_espacio_eventos_corridas`: pasan a 41). Requiere Mi espacio (licencias y horas extras) ya desplegado. Un SQL **antes** del código, los archivos y Restart, sin Run NPM Install, y **una Tarea Cron nueva cada media hora** (`/api/cron/eventos`). Ver [Migración: La agenda de Mi espacio](#migración-la-agenda-de-mi-espacio)
 
 ### Mi espacio: licencias y horas extras (2026-10)
 - **Mi cuenta → Mi espacio** (`mi-espacio.html`), para todos los roles con sesión: el panel personal en el que cada usuario carga sus licencias (vacaciones, franquicias, estudios, atención médica y del grupo familiar, médica extraordinaria, francos y horas a favor) y sus horas extras, con las reglas de su modalidad (planta permanente y política, o contrato) y en días hábiles con los feriados. Lo cargado lo ve solo esa persona
