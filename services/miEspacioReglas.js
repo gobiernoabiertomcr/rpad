@@ -20,11 +20,14 @@
  * (`validarHorasExtras`), los francos compensatorios de planta (`francosDe`), las horas a favor de contrato
  * (`horasAFavorDe`) y lo no utilizado previamente de cada año (`noUtilizadasDe`). Al final, «Mis vacaciones y saldos» (los
  * campos del saldo inicial y el año, sección 4), el cálculo completo (`calcular`), lo guardado que dejó de cerrar
- * (`faltantesDe`, 3.10) y la evaluación de una carga (`evaluarLicencia`: una carga nueva que no cierra no se guarda). Los
+ * (`faltantesDe`, 3.10) y la evaluación de una carga (`evaluarLicencia`: una carga nueva que no cierra no se guarda). Y el
+ * paso de las ausencias de día entero a Configuración → Licencias (sección 6): qué se hace al cargar, corregir y borrar, y
+ * lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`, `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`). Los
  * textos son planos: escaparlos le toca a quien los dibuja.
  */
 import { diasHabilesDe, ultimoDiaHabilDelMesCon } from './feriadosReglas.js';
-import { diasEntre, esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
+import { diasEntre, esFechaIso, formatoCorto, sumarDias, diaHabilAnterior } from './notasDigitalesCalendario.js';
+import { puedeTenerLicencia, puedeAnularse } from './licenciasReglas.js';
 
 // La modalidad sale del vínculo de la persona (spec, sección 1): las dos plantas tienen las mismas licencias
 export const MODALIDADES = Object.freeze(['planta', 'contrato']);
@@ -1333,4 +1336,256 @@ export const evaluarLicencia = (estado, entrada, opciones) => {
   const despues = calcular(conLaFila, { hoy, feriados });
   const problema = problemaDeLaCarga(calcular(datosDelEstado, { hoy, feriados }), despues, editadaId);
   return { datos: problema === null ? datos : null, error: problema, vista: vistaDe(fila, conLaFila, despues, feriados) };
+};
+
+// El paso a Configuración → Licencias (spec, sección 6). Las ausencias de día entero (`esDiaEntero`) de quien puede tener
+// licencia (`puedeTenerLicencia`: superadmin, admin y editor) pasan a `usuarios_licencias`, solo con las fechas, si terminan
+// hoy o después. Una licencia de Configuración llega como `{ id, desde, hasta, anulada, autorizado_id }`. La fila de Mi
+// espacio guarda cómo quedó (`licencia_oficial_id`, `oficial`: 'creada' o 'unida', y `sin_pasar`, el motivo por el que no
+// pasó). Acá se decide qué hacer; lo hace services/miEspacioPaso.js, con el servicio de Configuración.
+
+const esOficial = (oficial) => esObjeto(oficial) && esFechaIso(oficial.desde) && esFechaIso(oficial.hasta);
+const estaAnulada = (oficial) => Boolean(Number(oficial.anulada));
+const conFechas = (fila) => esObjeto(fila) && esFechaIso(fila.desde) && esFechaIso(fila.hasta) && fila.desde <= fila.hasta;
+// La licencia de Configuración, sin anular, cubre todas las fechas de la fila
+const cubre = (oficial, fila) => !estaAnulada(oficial) && oficial.desde <= fila.desde && fila.hasta <= oficial.hasta;
+
+// El primer y el último día de la fila que la licencia de Configuración no cubre: toda la fila si está anulada o no tienen
+// ningún día en común
+const sinCubrirDe = (fila, oficial) => {
+  if (estaAnulada(oficial) || oficial.hasta < fila.desde || oficial.desde > fila.hasta) {
+    return { desde: fila.desde, hasta: fila.hasta };
+  }
+  return {
+    desde: fila.desde < oficial.desde ? fila.desde : sumarDias(oficial.hasta, 1),
+    hasta: fila.hasta > oficial.hasta ? fila.hasta : sumarDias(oficial.desde, -1)
+  };
+};
+
+/**
+ * Cómo está una fila de Mi espacio con su licencia de Configuración (la de `fila.licencia_oficial_id`, o nada):
+ * `{ estado, oficial, sin_cubrir? }`. `tocadaPorOtros`: otra persona editó o anuló esa licencia en Configuración (true).
+ * - `'ninguno'` (con `oficial: null`): no tiene, o no es la suya;
+ * - una creada (Mi espacio la creó): `'creada'`, la maneja Mi espacio; `'creada_cambiada'`, administración la editó;
+ *   `'creada_anulada'`, está anulada (la haya anulado quien la haya anulado);
+ * - una unida (ya había una de administración que la cubría): `'unida'`, si todavía la cubre; si no, `'unida_sin_cubrir'`,
+ *   con `sin_cubrir: { desde, hasta }`, el primer y el último día de la fila fuera de ella (toda la fila, si está anulada).
+ */
+export const vinculoDe = (fila, oficial, tocadaPorOtros) => {
+  if (!esObjeto(fila) || !['creada', 'unida'].includes(fila.oficial) || !esOficial(oficial)
+    || idDe(fila.licencia_oficial_id) !== idDe(oficial.id)) {
+    return { estado: 'ninguno', oficial: null };
+  }
+  if (fila.oficial === 'creada') {
+    if (estaAnulada(oficial)) return { estado: 'creada_anulada', oficial };
+    return { estado: tocadaPorOtros === true ? 'creada_cambiada' : 'creada', oficial };
+  }
+  if (!conFechas(fila) || cubre(oficial, fila)) return { estado: 'unida', oficial };
+  return { estado: 'unida_sin_cubrir', oficial, sin_cubrir: sinCubrirDe(fila, oficial) };
+};
+
+// El motivo por el que no pasó, sin su punto final (los de Configuración a veces lo llevan; los textos del paso, no), o null
+const motivoDe = (sinPasar) => {
+  if (typeof sinPasar !== 'string' || sinPasar.trim() === '') return null;
+  return sinPasar.trim().replace(/\.$/, '');
+};
+
+/**
+ * Lo que dice una fila de la lista sobre Configuración (`vinculo`, el de `vinculoDe`): `{ texto, insignia }` o null. La
+ * insignia es 'creada' o 'unida' si está en Configuración como corresponde, y 'aviso' si no está o hay algo para revisar.
+ * Las opciones son `{ sinPasar, puedeTener }`: el motivo guardado y si la persona puede tener licencia hoy.
+ * - creada: `TEXTO_TAMBIEN_EN_CONFIGURACION`; si dejó de ser de día entero, `textoSigueEnConfiguracion`; si una corrección
+ *   no se pudo copiar (`sinPasar`), dónde quedó en Configuración y por qué no pasó;
+ * - creada que administración cambió, `textoEnConfiguracion` y `TEXTO_NO_SE_COPIA`; que anuló,
+ *   `TEXTO_ANULADA_POR_ADMINISTRACION`;
+ * - unida, `textoUnida`; sin cubrir, `textoYaNoCubierta`;
+ * - sin vínculo: `textoNoPaso` con el motivo; una de horas que no llega a la jornada, de quien puede tener licencia,
+ *   `TEXTO_NO_DIA_ENTERO`; si no, null.
+ */
+export const textoDelVinculo = (vinculo, fila, opciones) => {
+  const { sinPasar, puedeTener } = esObjeto(opciones) ? opciones : {};
+  const motivo = motivoDe(sinPasar);
+  const { estado, oficial } = esObjeto(vinculo) ? vinculo : {};
+  const aviso = (texto) => ({ texto, insignia: 'aviso' });
+  if (esOficial(oficial)) {
+    const enConfiguracion = textoEnConfiguracion(oficial.desde, oficial.hasta);
+    if (estado === 'creada') {
+      if (motivo !== null) return aviso(`${enConfiguracion} ${textoNoPaso(motivo)}`);
+      return esDiaEntero(fila) ? { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' }
+        : aviso(textoSigueEnConfiguracion(oficial.desde, oficial.hasta));
+    }
+    if (estado === 'creada_cambiada') return aviso(`${enConfiguracion} ${TEXTO_NO_SE_COPIA}`);
+    if (estado === 'creada_anulada') return aviso(TEXTO_ANULADA_POR_ADMINISTRACION);
+    if (estado === 'unida') return { texto: textoUnida(oficial.desde, oficial.hasta), insignia: 'unida' };
+    if (estado === 'unida_sin_cubrir' && conFechas(vinculo.sin_cubrir)) {
+      return aviso(textoYaNoCubierta(vinculo.sin_cubrir.desde, vinculo.sin_cubrir.hasta));
+    }
+  }
+  if (motivo !== null) return aviso(textoNoPaso(motivo));
+  if (puedeTener === true && esObjeto(fila) && TIPOS_POR_HORAS.includes(fila.tipo) && !esDiaEntero(fila)) {
+    return aviso(TEXTO_NO_DIA_ENTERO);
+  }
+  return null;
+};
+
+/**
+ * El último día en que el firmante titular puede cambiar el tipo de unas vacaciones con persona a cargo: 2 días hábiles
+ * antes de que empiecen, inclusive (respuesta del usuario, 26/10/2026), con el calendario de las Notas Digitales (los 9
+ * feriados fijos): el día hábil anterior sale la nota que adelanta los datasets e informa quién queda a cargo. null si
+ * `desde` no es una fecha.
+ */
+export const limiteParaCambiarTipo = (desde) => (esFechaIso(desde) ? diaHabilAnterior(diaHabilAnterior(desde)) : null);
+
+/**
+ * Qué pasa con una fila nueva (o con una corregida que se trata como nueva), con el rol de este momento y las licencias de
+ * Configuración de la persona que se cruzan con sus fechas (`cruzadas`; las anuladas no cuentan):
+ * - `{ accion: 'nada' }`: el rol no puede tener licencia, no es de día entero o terminó antes de hoy;
+ * - `{ accion: 'unir', oficial }`: una la cubre entera (no se crea otra);
+ * - `{ accion: 'avisar', sin_pasar }`: se superpone en parte, con `textoSuperpuestaConConfiguracion` de la primera;
+ * - `{ accion: 'crear' }`.
+ */
+export const pasoDeLaCarga = (entrada) => {
+  const { fila, rol, hoy, cruzadas } = esObjeto(entrada) ? entrada : {};
+  if (!puedeTenerLicencia(rol) || !esDiaEntero(fila) || !conFechas(fila) || !esFechaIso(hoy) || fila.hasta < hoy) {
+    return { accion: 'nada' };
+  }
+  const otras = listaDe(cruzadas)
+    .filter((oficial) => esOficial(oficial) && !estaAnulada(oficial) && oficial.desde <= fila.hasta
+      && oficial.hasta >= fila.desde)
+    .sort((a, b) => compararTexto(a.desde, b.desde) || compararTexto(a.hasta, b.hasta));
+  const queLaCubre = otras.find((oficial) => cubre(oficial, fila));
+  if (queLaCubre) return { accion: 'unir', oficial: queLaCubre };
+  if (otras.length > 0) {
+    return { accion: 'avisar', sin_pasar: textoSuperpuestaConConfiguracion(otras[0].desde, otras[0].hasta) };
+  }
+  return { accion: 'crear' };
+};
+
+const ESTADOS_CON_OFICIAL = Object.freeze(['creada', 'creada_cambiada', 'creada_anulada', 'unida', 'unida_sin_cubrir']);
+
+/**
+ * Qué pasa con Configuración al corregir una fila (`anterior`, la guardada; `fila`, la corregida, ya validada; `vinculo`, el
+ * de `vinculoDe`). `autorizadoCambia`: el pedido cambia la persona a cargo; `personaACargo`: la persona es el firmante
+ * titular y su licencia de Configuración deja a alguien a cargo. Devuelve `{ accion }`, o `{ error: { campo, mensaje } }`:
+ * - sin vínculo, lo de `pasoDeLaCarga`; un rol que no puede tener licencia, siempre `'nada'`;
+ * - una creada sigue a la de Configuración (sus fechas son las de la fila; si una copia no pasó, mandan las de
+ *   Configuración):
+ *   - unas vacaciones con persona a cargo que pasan a otro tipo: después de `limiteParaCambiarTipo`, el error `tipoFijo` en
+ *     `tipo`; hasta ese día, el cambio le saca la persona a cargo (`sin_persona_a_cargo: true` en `'cambiar'`);
+ *   - si no es de día entero, `'anular'` si todavía se puede anular (`puedeAnularse`: empieza hoy o después); si no,
+ *     `'quedar'`;
+ *   - con otras fechas: si terminó antes de hoy, `fechasFijas` (en el campo que cambia); si empezó antes de hoy y cambia el
+ *     desde, `soloHasta` en `desde`; si no, `'cambiar'`;
+ *   - si solo cambia la persona a cargo (o la pierde), `'cambiar'`; si no, `'nada'` (el tipo, la nota y «Mostrar» no tocan
+ *     Configuración);
+ * - una creada que administración cambió o anuló: `'nada'`;
+ * - una unida que sigue cubierta y de día entero: `'nada'`; si no, `{ accion: 'soltar', luego }`, con `luego` el
+ *   `pasoDeLaCarga` de la corregida.
+ */
+export const pasoDeLaCorreccion = (entrada) => {
+  const { anterior, fila, vinculo, rol, hoy, cruzadas, autorizadoCambia, personaACargo } = esObjeto(entrada) ? entrada : {};
+  const { estado, oficial } = esObjeto(vinculo) ? vinculo : {};
+  if (!esOficial(oficial) || !ESTADOS_CON_OFICIAL.includes(estado)) return pasoDeLaCarga({ fila, rol, hoy, cruzadas });
+  if (!puedeTenerLicencia(rol) || !conFechas(fila) || !esFechaIso(hoy)) return { accion: 'nada' };
+  if (estado === 'unida' || estado === 'unida_sin_cubrir') {
+    if (esDiaEntero(fila) && cubre(oficial, fila)) return { accion: 'nada' };
+    return { accion: 'soltar', luego: pasoDeLaCarga({ fila, rol, hoy, cruzadas }) };
+  }
+  if (estado !== 'creada') return { accion: 'nada' };
+
+  const pierdeLaPersona = personaACargo === true && esObjeto(anterior) && anterior.tipo === 'vacaciones'
+    && fila.tipo !== 'vacaciones';
+  if (pierdeLaPersona && hoy > limiteParaCambiarTipo(oficial.desde)) {
+    return { error: { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipoFijo } };
+  }
+  if (!esDiaEntero(fila)) return { accion: puedeAnularse(oficial, hoy) ? 'anular' : 'quedar' };
+  const cambiar = pierdeLaPersona ? { accion: 'cambiar', sin_persona_a_cargo: true } : { accion: 'cambiar' };
+  const otroDesde = fila.desde !== oficial.desde;
+  if (otroDesde || fila.hasta !== oficial.hasta) {
+    if (oficial.hasta < hoy) {
+      return { error: { campo: otroDesde ? 'desde' : 'hasta', mensaje: MENSAJES_MI_ESPACIO.fechasFijas } };
+    }
+    if (oficial.desde < hoy && otroDesde) return { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.soloHasta } };
+    return cambiar;
+  }
+  return pierdeLaPersona || autorizadoCambia === true ? cambiar : { accion: 'nada' };
+};
+
+/**
+ * Qué pasa con Configuración al borrar una fila: una creada se anula si todavía se puede (`puedeAnularse`: empieza hoy o
+ * después); si empezó antes de hoy, no se borra (`{ error: { status: 409, campo: null, mensaje: yaEmpezo } }`). Lo demás
+ * (una unida, una que administración cambió o anuló, sin vínculo) se borra sin tocar Configuración: `{ accion: 'nada' }`.
+ */
+export const pasoDeLaBaja = (entrada) => {
+  const { vinculo, hoy } = esObjeto(entrada) ? entrada : {};
+  if (!esObjeto(vinculo) || vinculo.estado !== 'creada' || !esOficial(vinculo.oficial)) return { accion: 'nada' };
+  if (puedeAnularse(vinculo.oficial, hoy)) return { accion: 'anular' };
+  return { error: { status: 409, campo: null, mensaje: MENSAJES_MI_ESPACIO.yaEmpezo } };
+};
+
+/**
+ * Los vínculos de la lista (`filasDeLicencias`): un Map del id de cada fila (número) a `{ configuracion, puede_borrar,
+ * solo_hasta, fechas_fijas }`, solo de las que tienen algo para decir o son creadas. `configuracion` es el de
+ * `textoDelVinculo`; `puede_borrar`, `solo_hasta` y `fechas_fijas` son los de una creada (de día entero, las fechas), con las
+ * fechas de Configuración, como `pasoDeLaBaja` y `pasoDeLaCorreccion`: las demás se borran y se corrigen libres. Las
+ * opciones son `{ oficiales, tocadas, hoy, puedeTener }`: las licencias de Configuración por id (Map), los ids que otra
+ * persona editó o anuló (Set) y si la persona puede tener licencia hoy.
+ */
+export const vinculosDeLaLista = (licencias, opciones) => {
+  const { oficiales, tocadas, hoy, puedeTener } = esObjeto(opciones) ? opciones : {};
+  const vinculos = new Map();
+  for (const fila of listaDe(licencias)) {
+    if (!esObjeto(fila) || !Number.isInteger(idDe(fila.id))) continue;
+    const oficialId = idDe(fila.licencia_oficial_id);
+    const vinculo = vinculoDe(fila, oficiales instanceof Map ? oficiales.get(oficialId) : undefined,
+      tocadas instanceof Set && tocadas.has(oficialId));
+    const configuracion = textoDelVinculo(vinculo, fila, { sinPasar: fila.sin_pasar, puedeTener });
+    const creada = vinculo.estado === 'creada';
+    if (configuracion === null && !creada) continue;
+    const fechasDeLaCreada = creada && esDiaEntero(fila) && esFechaIso(hoy);
+    vinculos.set(idDe(fila.id), {
+      configuracion,
+      puede_borrar: pasoDeLaBaja({ vinculo, hoy }).error === undefined,
+      solo_hasta: fechasDeLaCreada && vinculo.oficial.desde < hoy && vinculo.oficial.hasta >= hoy,
+      fechas_fijas: fechasDeLaCreada && vinculo.oficial.hasta < hoy
+    });
+  }
+  return vinculos;
+};
+
+/**
+ * Lo que el cálculo previo de «Cargar licencia» dice del paso (`data.paso`), con el `paso` de `pasoDeLaCarga` o de
+ * `pasoDeLaCorreccion`, el `vinculo` de la fila guardada (en una carga, ninguno) y la fila validada:
+ * `{ pasa, avisos, firmante, sin_pasar_previsto }`.
+ * - `pasa`: las fechas quedan en Configuración como creada: se crea o se cambia la licencia, o una creada sigue igual;
+ * - `avisos` (solo si pasa): `AVISO_DEL_PASO`; al superadmin, `AVISO_DEL_PASO_SUPERADMIN`; al titular, `AVISO_NOTAS_DE_HOY`
+ *   si empieza hoy o antes, y `AVISO_SIN_PERSONA_A_CARGO` si no son vacaciones (solo las vacaciones dejan persona a cargo);
+ * - `firmante` (solo al titular, y si pasa): `{ soy_titular, puede_autorizar (las vacaciones), vispera (el día hábil anterior
+ *   al desde, con los 9 fijos, como Configuración), notas_de_hoy }`; si no, null;
+ * - `sin_pasar_previsto`: si se une, `textoUnida`; si se superpone en parte, el motivo; si no, null.
+ */
+export const pasoPrevistoDe = (entrada) => {
+  const { paso, vinculo, fila, rol, hoy, soyTitular } = esObjeto(entrada) ? entrada : {};
+  const delPaso = esObjeto(paso) ? paso : {};
+  const efectivo = delPaso.accion === 'soltar' && esObjeto(delPaso.luego) ? delPaso.luego : delPaso;
+  const sigueCreada = esObjeto(vinculo) && vinculo.estado === 'creada' && efectivo.accion === 'nada';
+  const pasa = puedeTenerLicencia(rol) && esDiaEntero(fila) && conFechas(fila) && esFechaIso(hoy)
+    && (efectivo.accion === 'crear' || efectivo.accion === 'cambiar' || sigueCreada);
+  let sinPasarPrevisto = null;
+  if (efectivo.accion === 'unir' && esOficial(efectivo.oficial)) {
+    sinPasarPrevisto = textoUnida(efectivo.oficial.desde, efectivo.oficial.hasta);
+  } else if (efectivo.accion === 'avisar' && typeof efectivo.sin_pasar === 'string') {
+    sinPasarPrevisto = efectivo.sin_pasar;
+  }
+  if (!pasa) return { pasa: false, avisos: [], firmante: null, sin_pasar_previsto: sinPasarPrevisto };
+  const titular = soyTitular === true;
+  const deHoy = fila.desde <= hoy;
+  const avisos = [AVISO_DEL_PASO];
+  if (rol === 'superadmin') avisos.push(AVISO_DEL_PASO_SUPERADMIN);
+  if (titular && deHoy) avisos.push(AVISO_NOTAS_DE_HOY);
+  if (titular && fila.tipo !== 'vacaciones') avisos.push(AVISO_SIN_PERSONA_A_CARGO);
+  const firmante = titular ? {
+    soy_titular: true, puede_autorizar: fila.tipo === 'vacaciones', vispera: diaHabilAnterior(fila.desde), notas_de_hoy: deHoy
+  } : null;
+  return { pasa: true, avisos, firmante, sin_pasar_previsto: sinPasarPrevisto };
 };

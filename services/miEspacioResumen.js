@@ -448,7 +448,7 @@ const filaDeLicencia = (fila, { datos, cuenta, hoy, persona, vinculos, feriados 
     && diasQueDescuentan(fila, datos, feriados).length === 0;
   const horas = typeof fila.horas === 'number' || typeof fila.horas === 'string' ? cantidadDe(fila.horas) : null;
   const mostrar = ![0, '0', false].includes(fila.mostrar);
-  const vinculo = vinculos.get(fila.id);
+  const vinculo = vinculos.get(idDe(fila.id));
   const conVinculo = esObjeto(vinculo);
   const configuracion = conVinculo && esObjeto(vinculo.configuracion) ? vinculo.configuracion : null;
   return {

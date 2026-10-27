@@ -1,7 +1,7 @@
 /**
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 5 y 10): las consultas de lo que cargó cada persona, de
  * solo lectura y parametrizadas. Devuelven el `Estado` de las reglas (services/miEspacioReglas.js), solo con las filas
- * activas. Lo que llega de la base como texto se convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las
+ * activas, y lo que el paso a Configuración (sección 6) lee de las licencias de Configuración. Lo que llega de la base como texto se convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las
  * fechas se leen con DATE_FORMAT ('AAAA-MM-DD'), los DECIMAL, tinyint y smallint pasan por Number() (el '7.5' de unas
  * horas, el '8.0' de un saldo) y los TIME ('19:00:00') se cortan a 'HH:MM'.
  * Sin consultas N+1: las tablas se leen una vez para todas las personas (`estadosDe`). `conexion`: el pool, o la de una
@@ -20,6 +20,15 @@ const horaDe = (valor) => String(valor).slice(0, 5);
 
 const estadoVacio = (modalidad = null) =>
   ({ modalidad, arranque: null, anios: [], saldos: [], licencias: [], horasExtras: [] });
+
+// Una licencia de Mi espacio, de la base a lo que leen las reglas
+const COLUMNAS_LICENCIA_MIA = `id, usuario_id, tipo, DATE_FORMAT(desde, '%Y-%m-%d') AS desde,
+  DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, horas, mostrar, nota, licencia_oficial_id, oficial, sin_pasar`;
+const aLicencia = (fila) => ({
+  id: Number(fila.id), tipo: fila.tipo, desde: fila.desde, hasta: fila.hasta, horas: numeroONulo(fila.horas),
+  mostrar: Number(fila.mostrar), nota: fila.nota ?? null, licencia_oficial_id: numeroONulo(fila.licencia_oficial_id),
+  oficial: fila.oficial ?? null, sin_pasar: fila.sin_pasar ?? null
+});
 
 /**
  * La persona: `{ id, nombre_completo, rol, vinculo, email, activo }`, o null (un id que no es un entero positivo o que no
@@ -88,20 +97,13 @@ export const estadosDe = async (usuarioIds, conexion = pool) => {
   }
 
   const [licencias] = await conexion.query(
-    `SELECT id, usuario_id, tipo, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, horas,
-       mostrar, nota, licencia_oficial_id, oficial, sin_pasar
+    `SELECT ${COLUMNAS_LICENCIA_MIA}
      FROM mi_espacio_licencias
      WHERE usuario_id IN (?) AND activo = 1
      ORDER BY usuario_id, desde, hasta, id`,
     [encontrados]
   );
-  for (const fila of licencias) {
-    deLaPersona(fila.usuario_id).licencias.push({
-      id: Number(fila.id), tipo: fila.tipo, desde: fila.desde, hasta: fila.hasta, horas: numeroONulo(fila.horas),
-      mostrar: Number(fila.mostrar), nota: fila.nota ?? null, licencia_oficial_id: numeroONulo(fila.licencia_oficial_id),
-      oficial: fila.oficial ?? null, sin_pasar: fila.sin_pasar ?? null
-    });
-  }
+  for (const fila of licencias) deLaPersona(fila.usuario_id).licencias.push(aLicencia(fila));
 
   const [horasExtras] = await conexion.query(
     `SELECT id, usuario_id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, desde, hasta, nota
@@ -169,4 +171,72 @@ export const contextoDe = async (usuarioId, hoy, conexion = pool) => {
   const filasFeriados = await filasDeFeriados(conexion);
   const feriados = await feriadosPara([estado], hoy, filasFeriados);
   return { persona, estado, feriados, filasFeriados, calculo: calcular(estado, { hoy, feriados }) };
+};
+
+/**
+ * Una licencia activa de la persona (como las de `estadosDe`), o null: un id que no sirve, de otra persona, que no existe o
+ * dado de baja.
+ * @returns {Promise<object | null>}
+ */
+export const licenciaDe = async (usuarioId, licenciaId, conexion = pool) => {
+  const persona = idPositivo(usuarioId);
+  const id = idPositivo(licenciaId);
+  if (persona === null || id === null) return null;
+  const [[fila]] = await conexion.query(
+    `SELECT ${COLUMNAS_LICENCIA_MIA} FROM mi_espacio_licencias WHERE id = ? AND usuario_id = ? AND activo = 1`, [id, persona]
+  );
+  return fila ? aLicencia(fila) : null;
+};
+
+// El paso a Configuración → Licencias (spec, sección 6): las licencias de Configuración, como las leen las reglas
+// (`{ id, desde, hasta, anulada, autorizado_id }`, con los números como números)
+const COLUMNAS_OFICIAL = `id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, anulada,
+  autorizado_id`;
+const aOficial = (fila) => ({
+  id: Number(fila.id), desde: fila.desde, hasta: fila.hasta, anulada: Number(fila.anulada),
+  autorizado_id: numeroONulo(fila.autorizado_id)
+});
+
+/**
+ * Las licencias de Configuración de esos ids (las de `licencia_oficial_id`, anuladas también): un Map de cada id (número)
+ * que existe a `{ id, desde, hasta, anulada, autorizado_id }`. Sin ningún id que sirva, un Map vacío (sin consultar).
+ * @returns {Promise<Map<number, object>>}
+ */
+export const oficialesDe = async (ids, conexion = pool) => {
+  const unicos = [...new Set((Array.isArray(ids) ? ids : []).map(idPositivo).filter((id) => id !== null))];
+  const oficiales = new Map();
+  if (unicos.length === 0) return oficiales;
+  const [filas] = await conexion.query(`SELECT ${COLUMNAS_OFICIAL} FROM usuarios_licencias WHERE id IN (?)`, [unicos]);
+  for (const fila of filas) oficiales.set(Number(fila.id), aOficial(fila));
+  return oficiales;
+};
+
+/**
+ * Los ids de las licencias de Configuración de la persona que otra persona editó o anuló (`licencia_editada` o
+ * `licencia_anulada` en `usuarios_auditoria`, con un actor que no es ella, o sin actor): las que administración cambió.
+ * @returns {Promise<Set<number>>}
+ */
+export const tocadasPorOtros = async (usuarioId, conexion = pool) => {
+  const id = idPositivo(usuarioId);
+  if (id === null) return new Set();
+  const [filas] = await conexion.query(
+    `SELECT DISTINCT JSON_VALUE(detalle, '$.licencia_id') AS licencia_id FROM usuarios_auditoria
+     WHERE usuario_id = ? AND accion IN ('licencia_editada', 'licencia_anulada') AND (actor_id IS NULL OR actor_id <> ?)`,
+    [id, id]
+  );
+  return new Set(filas.map((fila) => idPositivo(fila.licencia_id)).filter((licencia) => licencia !== null));
+};
+
+/**
+ * Las licencias de Configuración sin anular de la persona que comparten algún día con [desde, hasta], por fecha.
+ * @returns {Promise<object[]>}
+ */
+export const oficialesQueSeCruzan = async (conexion, usuarioId, desde, hasta) => {
+  const [filas] = await conexion.query(
+    `SELECT ${COLUMNAS_OFICIAL} FROM usuarios_licencias
+     WHERE usuario_id = ? AND anulada = 0 AND desde <= ? AND hasta >= ?
+     ORDER BY desde, hasta, id`,
+    [usuarioId, hasta, desde]
+  );
+  return filas.map(aOficial);
 };

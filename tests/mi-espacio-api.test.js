@@ -5,15 +5,22 @@
 // prueba también directo. La API usa la fecha real: las fechas de los tests se arman desde hoy.
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query } from './helpers.js';
+import {
+  crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit
+} from './helpers.js';
 import { asegurarBaseDePrueba } from './notas-fixtures.js';
-import { hoyArgentina, sumarDias, esDiaHabil, FERIADOS_FIJOS } from '../services/notasDigitalesCalendario.js';
+import {
+  hoyArgentina, sumarDias, esDiaHabil, FERIADOS_FIJOS, proximoDiaHabil, diaHabilAnterior
+} from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, camposDelSaldoInicial, textoDeLasMitades, textoSuperpuesta, textoTope,
-  textoSinNoUtilizadas
+  textoSinNoUtilizadas, textoAutorizadaSinDias, AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN, AVISO_NOTAS_DE_HOY,
+  AVISO_SIN_PERSONA_A_CARGO, textoSuperpuestaConConfiguracion, textoNoPaso, textoYaNoCubierta, textoEnConfiguracion,
+  textoUnida, textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA,
+  TEXTO_ANULADA_POR_ADMINISTRACION, TEXTO_NO_DIA_ENTERO
 } from '../services/miEspacioReglas.js';
 
-let base, servidor, api, usuarios, dbReal, datos, pool;
+let base, servidor, api, usuarios, dbReal, emailSoloA, datos, pool, firmas;
 const hoy = hoyArgentina();
 const ANIO = Number(hoy.slice(0, 4));
 const dia = (n) => sumarDias(hoy, n);
@@ -50,8 +57,12 @@ before(async () => {
   for (const [clave, [, nombre, vinculo]] of Object.entries(PERSONAS)) {
     await query('UPDATE usuarios SET nombre_completo = ?, vinculo = ? WHERE id = ?', [nombre, vinculo, usuarios[clave].id]);
   }
-  // Usan el pool: se importan después de apuntar DB_NAME a la base de prueba
+  // Usan el pool: se importan después de apuntar DB_NAME a la base de prueba (firmaParaFecha, el de las Notas Digitales, para
+  // ver cómo salen las notas con las licencias que pasaron a Configuración). Nada de acá manda emails: igual, sin barrera
+  emailSoloA = process.env.EMAIL_SOLO_A;
+  process.env.EMAIL_SOLO_A = '';
   datos = await import('../services/miEspacioDatos.js');
+  firmas = await import('../services/notasDigitalesFirmas.js');
   pool = (await import('../config/database.js')).default;
 });
 
@@ -60,6 +71,8 @@ after(async () => {
   await pool?.end();
   await cerrarDb();
   await servidor?.detener();
+  if (emailSoloA === undefined) delete process.env.EMAIL_SOLO_A;
+  else process.env.EMAIL_SOLO_A = emailSoloA;
   // borrar() rechaza la base que está en DB_NAME: se restaura la real antes de borrar la de prueba
   if (dbReal === undefined) delete process.env.DB_NAME;
   else process.env.DB_NAME = dbReal;
@@ -581,7 +594,7 @@ describe('el cálculo previo', () => {
     const res = await api.post('/mi-espacio/licencias/calculo', { tipo: 'otro', desde: q(0) }, como('adminA'));
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.deepEqual(res.body, {
-      success: true, data: { error: { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipo }, vista: null }
+      success: true, data: { error: { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipo }, vista: null, paso: null }
     });
     const sinArranque = await api.post('/mi-espacio/licencias/calculo', { tipo: 'medica', desde: q(0) }, como('adminB'));
     assert.deepEqual(sinArranque.body.data.error, { campo: null, mensaje: MENSAJES_MI_ESPACIO.sinArranque });
@@ -677,6 +690,509 @@ describe('corregir y borrar una licencia', () => {
     assert.equal((await api.delete(`/mi-espacio/licencias/${id}`, como('adminA'))).status, 404);
     const otra = await api.post('/mi-espacio/licencias', { tipo: 'familiar', desde: q(0), hasta: q(2) }, como('adminA'));
     assert.equal(otra.status, 201, JSON.stringify(otra.body));
+  });
+});
+
+// El paso a Configuración → Licencias (spec, sección 6): las ausencias de día entero de quien puede tener licencia pasan a
+// usuarios_licencias en la misma transacción, solo con las fechas, con la persona como actor y sin el aviso al superadmin
+describe('el paso a Configuración', () => {
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    'base64');
+
+  beforeEach(async () => {
+    await query("DELETE FROM usuarios_auditoria WHERE accion IN ('licencia_cargada', 'licencia_editada', 'licencia_anulada')");
+    await query('DELETE FROM usuarios_firmas');
+    await query('UPDATE notas_digitales_config SET firmante_usuario_id = NULL');
+  });
+
+  // La firma con imagen (sin ella no se puede autorizar a nadie: autorizables) y el firmante titular de las Notas Digitales
+  const conFirma = (clave) => query(
+    "INSERT INTO usuarios_firmas (usuario_id, nombre, cargo, imagen, mime) VALUES (?, 'Firma', 'Cargo', ?, 'image/png')",
+    [usuarios[clave].id, PNG]
+  );
+  const comoTitular = (clave) => query('UPDATE notas_digitales_config SET firmante_usuario_id = ?', [usuarios[clave].id]);
+  // Para cargar vacaciones: el arranque, el año y 20 días de la licencia del año anterior
+  const listoParaVacaciones = async (clave) => {
+    await listoParaCargar(clave);
+    await conSaldo(clave, 'vacaciones', ANIO - 1, '20.0');
+  };
+  // Las licencias de Configuración de una persona, y sus filas de Mi espacio con el vínculo
+  const deConfiguracion = (clave) => query(
+    `SELECT id, usuario_id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, autorizado_id,
+       autorizado_at, nota_autorizacion_id, anulada, creado_por, DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at
+     FROM usuarios_licencias WHERE usuario_id = ? ORDER BY desde, id`,
+    [usuarios[clave].id]
+  );
+  const vinculosDe = (clave) => query(
+    `SELECT id, tipo, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, licencia_oficial_id,
+       oficial, sin_pasar, activo
+     FROM mi_espacio_licencias WHERE usuario_id = ? ORDER BY id`,
+    [usuarios[clave].id]
+  );
+  const vinculoDe = ({ licencia_oficial_id: oficialId, oficial, sin_pasar: sinPasar }) => [oficialId, oficial, sinPasar];
+  const historialDe = (clave, accion) => query(
+    'SELECT actor_id, detalle FROM usuarios_auditoria WHERE usuario_id = ? AND accion = ? ORDER BY id', [usuarios[clave].id, accion]
+  );
+  // Una licencia que cargó administración en Configuración
+  const deAdministracion = async (clave, desde, hasta) => (await query(
+    'INSERT INTO usuarios_licencias (usuario_id, desde, hasta, creado_por) VALUES (?, ?, ?, ?)',
+    [usuarios[clave].id, desde, hasta, usuarios.adminB.id]
+  )).insertId;
+  const cargarMia = (clave, cuerpo) => api.post('/mi-espacio/licencias', cuerpo, como(clave));
+  const corregirMia = (clave, id, cuerpo) => api.put(`/mi-espacio/licencias/${id}`, cuerpo, como(clave));
+  const calcularMia = (clave, cuerpo) => api.post('/mi-espacio/licencias/calculo', cuerpo, como(clave));
+  // La fila de la lista de un año (sin año, el de las fechas de los tests)
+  const filaDeLaLista = async (clave, id, anio = ANIO_Q) => {
+    const res = await api.get(`/mi-espacio/licencias?anio=${anio}`, como(clave));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return res.body.data.licencias.find((fila) => fila.id === id);
+  };
+  // El lector, con vínculo para poder cargar (sin él, todo da sinModalidad)
+  const conLectorConVinculo = async (prueba) => {
+    await query('UPDATE usuarios SET vinculo = ? WHERE id = ?', ['contrato', usuarios.lector.id]);
+    try {
+      await prueba();
+    } finally {
+      await query("UPDATE usuarios SET vinculo = NULL, rol = 'lector' WHERE id = ?", [usuarios.lector.id]);
+    }
+  };
+
+  it('alta: unas vacaciones pasan a Configuración, cargadas por la misma persona, con su historial y sin ningún email', async () => {
+    await mailpit.vaciar();
+    await listoParaVacaciones('adminA');
+    const res = await cargarMia('adminA', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(Object.keys(res.body).sort(), ['data', 'message', 'success']);
+
+    const oficiales = await deConfiguracion('adminA');
+    assert.equal(oficiales.length, 1);
+    const [oficial] = oficiales;
+    assert.deepEqual([oficial.usuario_id, oficial.creado_por, oficial.desde, oficial.hasta, oficial.autorizado_id, oficial.anulada],
+      [usuarios.adminA.id, usuarios.adminA.id, q(0), q(4), null, 0]);
+    const [mia] = await vinculosDe('adminA');
+    assert.deepEqual(vinculoDe(mia), [oficial.id, 'creada', null]);
+    const [cargada] = await historialDe('adminA', 'licencia_cargada');
+    assert.equal(cargada.actor_id, usuarios.adminA.id);
+
+    const fila = await filaDeLaLista('adminA', res.body.data.id);
+    assert.deepEqual(fila.configuracion, { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' });
+    assert.deepEqual([fila.puede_borrar, fila.solo_hasta, fila.fechas_fijas], [true, false, false]);
+
+    // La del superadmin también pasa, y tampoco sale el aviso al superadmin (el cambio es suyo)
+    await listoParaVacaciones('superadmin');
+    const delSuperadmin = await cargarMia('superadmin', { tipo: 'vacaciones', desde: q(7), hasta: q(8) });
+    assert.equal(delSuperadmin.status, 201, JSON.stringify(delSuperadmin.body));
+    assert.deepEqual((await deConfiguracion('superadmin')).map((l) => [l.desde, l.hasta, l.creado_por]),
+      [[q(7), q(8), usuarios.superadmin.id]]);
+    await new Promise((listo) => setTimeout(listo, 500));
+    assert.deepEqual(await mailpit.mensajes(), []);
+  });
+
+  it('no pasa: lo del lector, una franquicia de menos de 7 horas y lo ya terminado', async () => {
+    await conLectorConVinculo(async () => {
+      await listoParaCargar('lector');
+      const delLector = await cargarMia('lector', { tipo: 'medica', desde: q(0), hasta: q(1) });
+      assert.equal(delLector.status, 201, JSON.stringify(delLector.body));
+      assert.deepEqual(await deConfiguracion('lector'), []);
+      assert.equal((await filaDeLaLista('lector', delLector.body.data.id)).configuracion, null);
+    });
+
+    await listoParaCargar('adminA');
+    const tres = await cargarMia('adminA', { tipo: 'franquicia', desde: q(1), horas: 3 });
+    const siete = await cargarMia('adminA', { tipo: 'franquicia', desde: q(2), horas: 7 });
+    const terminada = await cargarMia('adminA', { tipo: 'medica', desde: dia(-10), hasta: dia(-6) });
+    assert.deepEqual([tres.status, siete.status, terminada.status], [201, 201, 201]);
+    assert.deepEqual((await deConfiguracion('adminA')).map((l) => [l.desde, l.hasta]), [[q(2), q(2)]]);
+    assert.deepEqual((await filaDeLaLista('adminA', tres.body.data.id)).configuracion,
+      { texto: TEXTO_NO_DIA_ENTERO, insignia: 'aviso' });
+    assert.deepEqual((await filaDeLaLista('adminA', siete.body.data.id)).configuracion,
+      { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' });
+    assert.equal((await filaDeLaLista('adminA', terminada.body.data.id, ANIO)).configuracion, null);
+  });
+
+  it('cubierta por una de administración queda unida; superpuesta en parte, se guarda sin pasar', async () => {
+    await listoParaCargar('adminA');
+    const deAdmin = await deAdministracion('adminA', q(0), q(9));
+    const unida = await cargarMia('adminA', { tipo: 'medica', desde: q(2), hasta: q(3) });
+    assert.equal(unida.status, 201, JSON.stringify(unida.body));
+    assert.equal((await deConfiguracion('adminA')).length, 1);
+    assert.deepEqual(vinculoDe((await vinculosDe('adminA'))[0]), [deAdmin, 'unida', null]);
+    assert.deepEqual((await filaDeLaLista('adminA', unida.body.data.id)).configuracion,
+      { texto: textoUnida(q(0), q(9)), insignia: 'unida' });
+
+    const superpuesta = await cargarMia('adminA', { tipo: 'medica', desde: q(8), hasta: q(11) });
+    assert.equal(superpuesta.status, 201, JSON.stringify(superpuesta.body));
+    const guardada = (await vinculosDe('adminA')).find((fila) => fila.id === superpuesta.body.data.id);
+    assert.deepEqual(vinculoDe(guardada), [null, null, textoSuperpuestaConConfiguracion(q(0), q(9))]);
+    assert.match(guardada.sin_pasar,
+      /^Se superpone con una licencia de Configuración del \d{2}\/\d{2} al \d{2}\/\d{2}: revisala con administración$/);
+    assert.deepEqual((await filaDeLaLista('adminA', superpuesta.body.data.id)).configuracion,
+      { texto: textoNoPaso(guardada.sin_pasar), insignia: 'aviso' });
+    // Ninguna de las dos creó otra licencia en Configuración
+    assert.equal((await deConfiguracion('adminA')).length, 1);
+    assert.deepEqual(await historialDe('adminA', 'licencia_cargada'), []);
+  });
+
+  it('corregir antes de empezar: las fechas mueven la de Configuración; el tipo, la nota o «Mostrar», no', async () => {
+    await listoParaCargar('adminA');
+    const { body } = await cargarMia('adminA', { tipo: 'medica', desde: q(0), hasta: q(2) });
+    const { id } = body.data;
+    const [antes] = await deConfiguracion('adminA');
+    // Como si ya hubiera salido la nota de autorización, y con una fecha vieja para ver si se escribe
+    await query("UPDATE usuarios_licencias SET nota_autorizacion_id = 999, updated_at = '2020-01-01 00:00:00' WHERE id = ?",
+      [antes.id]);
+
+    const sinFechas = await corregirMia('adminA', id, { tipo: 'familiar', desde: q(0), hasta: q(2), nota: 'Turno', mostrar: false });
+    assert.equal(sinFechas.status, 200, JSON.stringify(sinFechas.body));
+    assert.deepEqual(sinFechas.body.avisos, []);
+    const [igual] = await deConfiguracion('adminA');
+    assert.deepEqual([igual.updated_at, igual.nota_autorizacion_id, igual.desde, igual.hasta],
+      ['2020-01-01 00:00:00', 999, q(0), q(2)]);
+    assert.deepEqual(await historialDe('adminA', 'licencia_editada'), []);
+
+    const conFechas = await corregirMia('adminA', id, { tipo: 'familiar', desde: q(1), hasta: q(3) });
+    assert.equal(conFechas.status, 200, JSON.stringify(conFechas.body));
+    const [movida] = await deConfiguracion('adminA');
+    assert.deepEqual([movida.id, movida.desde, movida.hasta, movida.nota_autorizacion_id], [antes.id, q(1), q(3), null]);
+    const [editada] = await historialDe('adminA', 'licencia_editada');
+    assert.equal(editada.actor_id, usuarios.adminA.id);
+    assert.deepEqual((await filaDeLaLista('adminA', id)).configuracion,
+      { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' });
+  });
+
+  it('cruza el arranque y ya empezó: pasa; el desde queda fijo, el hasta se copia y no se puede borrar (Review Focus 4)',
+    async () => {
+      await listoParaCargar('adminA');
+      const res = await cargarMia('adminA', { tipo: 'medica', desde: dia(-3), hasta: dia(3) });
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      assert.deepEqual((await deConfiguracion('adminA')).map((l) => [l.desde, l.hasta]), [[dia(-3), dia(3)]]);
+      const { id } = res.body.data;
+      const fila = await filaDeLaLista('adminA', id, ANIO);
+      assert.deepEqual([fila.puede_borrar, fila.solo_hasta, fila.fechas_fijas], [false, true, false]);
+
+      const otroDesde = await corregirMia('adminA', id, { tipo: 'medica', desde: dia(-2), hasta: dia(3) });
+      assert.equal(otroDesde.status, 400);
+      assert.deepEqual(otroDesde.body, { success: false, error: MENSAJES_MI_ESPACIO.soloHasta, campo: 'desde' });
+      assert.deepEqual((await vinculosDe('adminA')).map((l) => [l.desde, l.hasta]), [[dia(-3), dia(3)]]);
+
+      const otroHasta = await corregirMia('adminA', id, { tipo: 'medica', desde: dia(-3), hasta: dia(5) });
+      assert.equal(otroHasta.status, 200, JSON.stringify(otroHasta.body));
+      assert.deepEqual((await deConfiguracion('adminA')).map((l) => [l.desde, l.hasta]), [[dia(-3), dia(5)]]);
+
+      const borrar = await api.delete(`/mi-espacio/licencias/${id}`, como('adminA'));
+      assert.equal(borrar.status, 409);
+      assert.deepEqual(borrar.body, { success: false, error: 'Ya empezó: no se puede borrar', campo: null });
+      assert.equal(Number((await vinculosDe('adminA'))[0].activo), 1);
+      assert.equal((await deConfiguracion('adminA'))[0].anulada, 0);
+    });
+
+  it('borrar una que todavía no empezó anula la de Configuración', async () => {
+    await listoParaCargar('adminA');
+    const { body } = await cargarMia('adminA', { tipo: 'medica', desde: q(0), hasta: q(1) });
+    const res = await api.delete(`/mi-espacio/licencias/${body.data.id}`, como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, { success: true, message: 'Licencia borrada.' });
+    assert.equal((await deConfiguracion('adminA'))[0].anulada, 1);
+    const [anulada] = await historialDe('adminA', 'licencia_anulada');
+    assert.equal(anulada.actor_id, usuarios.adminA.id);
+    assert.equal(Number((await vinculosDe('adminA'))[0].activo), 0);
+  });
+
+  it('administración la anula en Configuración: la fila lo dice y una corrección no la toca', async () => {
+    await listoParaCargar('adminA');
+    const { body } = await cargarMia('adminA', { tipo: 'medica', desde: q(0), hasta: q(2) });
+    const [oficial] = await deConfiguracion('adminA');
+    const anular = await api.post(`/usuarios/licencias/${oficial.id}/anular`, {}, como('adminB'));
+    assert.equal(anular.status, 200, JSON.stringify(anular.body));
+    assert.deepEqual((await filaDeLaLista('adminA', body.data.id)).configuracion,
+      { texto: TEXTO_ANULADA_POR_ADMINISTRACION, insignia: 'aviso' });
+
+    const antes = await deConfiguracion('adminA');
+    const res = await corregirMia('adminA', body.data.id, { tipo: 'medica', desde: q(1), hasta: q(3) });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(await deConfiguracion('adminA'), antes);
+    assert.deepEqual((await filaDeLaLista('adminA', body.data.id)).configuracion,
+      { texto: TEXTO_ANULADA_POR_ADMINISTRACION, insignia: 'aviso' });
+    // Y se borra sin tocarla
+    assert.equal((await api.delete(`/mi-espacio/licencias/${body.data.id}`, como('adminA'))).status, 200);
+    assert.deepEqual(await deConfiguracion('adminA'), antes);
+  });
+
+  it('administración le cambia las fechas: la fila dice dónde quedó y lo que se corrige acá ya no se copia', async () => {
+    await listoParaCargar('adminA');
+    const { body } = await cargarMia('adminA', { tipo: 'medica', desde: q(0), hasta: q(2) });
+    const [oficial] = await deConfiguracion('adminA');
+    const cambio = await api.put(`/usuarios/licencias/${oficial.id}`, { desde: q(1), hasta: q(4) }, como('adminB'));
+    assert.equal(cambio.status, 200, JSON.stringify(cambio.body));
+    const { configuracion } = await filaDeLaLista('adminA', body.data.id);
+    assert.ok(configuracion.texto.startsWith(textoEnConfiguracion(q(1), q(4))), configuracion.texto);
+    assert.deepEqual(configuracion, { texto: `${textoEnConfiguracion(q(1), q(4))} ${TEXTO_NO_SE_COPIA}`, insignia: 'aviso' });
+
+    const res = await corregirMia('adminA', body.data.id, { tipo: 'medica', desde: q(0), hasta: q(1) });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.avisos, [TEXTO_NO_SE_COPIA]);
+    assert.deepEqual((await deConfiguracion('adminA')).map((l) => [l.desde, l.hasta]), [[q(1), q(4)]]);
+  });
+
+  it('administración acorta la que cubría una unida: ya no está cubierta', async () => {
+    await listoParaCargar('adminA');
+    const deAdmin = await deAdministracion('adminA', q(0), q(9));
+    const { body } = await cargarMia('adminA', { tipo: 'medica', desde: q(2), hasta: q(3) });
+    const cambio = await api.put(`/usuarios/licencias/${deAdmin}`, { desde: q(0), hasta: q(2) }, como('adminB'));
+    assert.equal(cambio.status, 200, JSON.stringify(cambio.body));
+    assert.deepEqual((await filaDeLaLista('adminA', body.data.id)).configuracion,
+      { texto: textoYaNoCubierta(q(3), q(3)), insignia: 'aviso' });
+  });
+
+  it('la franquicia de 7 horas que pasa a 3, antes de empezar: la de Configuración se anula y el vínculo queda vacío', async () => {
+    await listoParaCargar('adminA');
+    const { body } = await cargarMia('adminA', { tipo: 'franquicia', desde: q(1), horas: 7 });
+    const res = await corregirMia('adminA', body.data.id, { tipo: 'franquicia', desde: q(1), horas: 3 });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal((await deConfiguracion('adminA'))[0].anulada, 1);
+    assert.deepEqual(vinculoDe((await vinculosDe('adminA'))[0]), [null, null, null]);
+    assert.deepEqual((await filaDeLaLista('adminA', body.data.id)).configuracion,
+      { texto: TEXTO_NO_DIA_ENTERO, insignia: 'aviso' });
+  });
+
+  it('la franquicia de 7 horas que pasa a 3, si ya empezó: la de Configuración queda y la fila lo dice', async () => {
+    // Las dos filas por SQL: el paso solo crea las que terminan hoy o después
+    await listoParaCargar('adminA');
+    const ayer = diaHabilAnterior(hoy);
+    const oficial = await deAdministracion('adminA', ayer, ayer);
+    const { insertId: id } = await query(
+      `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, horas, licencia_oficial_id, oficial)
+       VALUES (?, 'franquicia', ?, ?, '7.0', ?, 'creada')`,
+      [usuarios.adminA.id, ayer, ayer, oficial]
+    );
+    const res = await corregirMia('adminA', id, { tipo: 'franquicia', desde: ayer, horas: 3 });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal((await deConfiguracion('adminA'))[0].anulada, 0);
+    assert.deepEqual(vinculoDe((await vinculosDe('adminA'))[0]), [oficial, 'creada', null]);
+    assert.deepEqual((await filaDeLaLista('adminA', id, Number(ayer.slice(0, 4)))).configuracion,
+      { texto: textoSigueEnConfiguracion(ayer, ayer), insignia: 'aviso' });
+  });
+
+  it('el rol del momento: lo del lector no pasa; si pasa a admin, aparece en Configuración recién al corregirla', async () => {
+    await conLectorConVinculo(async () => {
+      await listoParaCargar('lector');
+      const { body } = await cargarMia('lector', { tipo: 'medica', desde: q(0), hasta: q(1) });
+      assert.deepEqual(await deConfiguracion('lector'), []);
+      await query("UPDATE usuarios SET rol = 'admin' WHERE id = ?", [usuarios.lector.id]);
+      // Cambiar el rol no mueve nada solo
+      assert.deepEqual(await deConfiguracion('lector'), []);
+      const res = await corregirMia('lector', body.data.id, { tipo: 'medica', desde: q(0), hasta: q(1), nota: 'Ahora sí' });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.deepEqual((await deConfiguracion('lector')).map((l) => [l.desde, l.hasta, l.creado_por]),
+        [[q(0), q(1), usuarios.lector.id]]);
+      assert.equal((await vinculosDe('lector'))[0].oficial, 'creada');
+    });
+  });
+
+  it('el firmante titular deja a alguien a cargo de sus vacaciones: la de Configuración lo lleva, con la hora', async () => {
+    await comoTitular('adminB');
+    await conFirma('adminA');
+    await listoParaVacaciones('adminB');
+    const res = await cargarMia('adminB', { tipo: 'vacaciones', desde: q(0), hasta: q(4), autorizado_id: usuarios.adminA.id });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const [oficial] = await deConfiguracion('adminB');
+    assert.equal(oficial.autorizado_id, usuarios.adminA.id);
+    assert.notEqual(oficial.autorizado_at, null);
+    // Una persona que no es el titular no puede dejar a nadie a cargo (lo controla Configuración), y no se guarda nada
+    await listoParaVacaciones('adminA');
+    await conFirma('editor');
+    const deOtra = await cargarMia('adminA', { tipo: 'vacaciones', desde: q(7), hasta: q(8), autorizado_id: usuarios.editor.id });
+    assert.equal(deOtra.status, 400, JSON.stringify(deOtra.body));
+    assert.deepEqual(deOtra.body, {
+      success: false, error: 'Solo la licencia del firmante titular de las notas lleva una persona autorizada.', campo: 'autorizado_id'
+    });
+    assert.deepEqual([await vinculosDe('adminA'), await deConfiguracion('adminA')], [[], []]);
+  });
+
+  it('el caso del usuario: vacaciones con persona a cargo y una médica sin nadie dan dos licencias, y así salen las notas',
+    async () => {
+      await comoTitular('adminB');
+      await conFirma('adminA');
+      await listoParaVacaciones('adminB');
+      const vacaciones = await cargarMia('adminB',
+        { tipo: 'vacaciones', desde: q(0), hasta: q(8), autorizado_id: usuarios.adminA.id });
+      const medica = await cargarMia('adminB', { tipo: 'medica', desde: q(9), hasta: q(10) });
+      assert.deepEqual([vacaciones.status, medica.status], [201, 201], JSON.stringify([vacaciones.body, medica.body]));
+      assert.deepEqual((await deConfiguracion('adminB')).map((l) => [l.desde, l.hasta, l.autorizado_id]),
+        [[q(0), q(8), usuarios.adminA.id], [q(9), q(10), null]]);
+      const config = { firmante_usuario_id: usuarios.adminB.id };
+      assert.equal((await firmas.firmaParaFecha(config, q(3))).modo, 'autorizado');
+      assert.equal((await firmas.firmaParaFecha(config, q(9))).modo, 'sin_autorizado');
+    });
+
+  it('solo las vacaciones dejan persona a cargo: en otro tipo, 400 en autorizado_id; sin el campo, pasa sin nadie', async () => {
+    await comoTitular('adminB');
+    await conFirma('adminA');
+    await listoParaCargar('adminB');
+    const sinVacaciones = { success: false, error: MENSAJES_MI_ESPACIO.autorizadoSoloVacaciones, campo: 'autorizado_id' };
+    for (const cuerpo of [{ tipo: 'medica', desde: q(0), hasta: q(1) }, { tipo: 'franquicia', desde: q(2), horas: 7 }]) {
+      const conPersona = await cargarMia('adminB', { ...cuerpo, autorizado_id: usuarios.adminA.id });
+      assert.equal(conPersona.status, 400, JSON.stringify(cuerpo));
+      assert.deepEqual(conPersona.body, sinVacaciones);
+      assert.deepEqual([await vinculosDe('adminB'), await deConfiguracion('adminB')], [[], []]);
+    }
+    const medica = await cargarMia('adminB', { tipo: 'medica', desde: q(0), hasta: q(1) });
+    const franquicia = await cargarMia('adminB', { tipo: 'franquicia', desde: q(2), horas: 7 });
+    assert.deepEqual([medica.status, franquicia.status], [201, 201]);
+    assert.deepEqual((await deConfiguracion('adminB')).map((l) => [l.desde, l.hasta, l.autorizado_id]),
+      [[q(0), q(1), null], [q(2), q(2), null]]);
+    // Al corregir, igual; null (nadie) sí se acepta
+    const corregida = await corregirMia('adminB', medica.body.data.id,
+      { tipo: 'medica', desde: q(0), hasta: q(1), autorizado_id: usuarios.adminA.id });
+    assert.equal(corregida.status, 400);
+    assert.deepEqual(corregida.body, sinVacaciones);
+    const sinNadie = await corregirMia('adminB', medica.body.data.id, { tipo: 'medica', desde: q(0), hasta: q(1), autorizado_id: null });
+    assert.equal(sinNadie.status, 200, JSON.stringify(sinNadie.body));
+  });
+
+  it('el cálculo previo dice qué pasa: al titular, las notas de hoy, la víspera y si queda alguien a cargo', async () => {
+    await comoTitular('adminB');
+    await listoParaVacaciones('adminB');
+    const deHoy = await calcularMia('adminB', { tipo: 'vacaciones', desde: hoy, hasta: dia(4) });
+    assert.equal(deHoy.status, 200, JSON.stringify(deHoy.body));
+    assert.equal(deHoy.body.data.error, null);
+    assert.deepEqual(deHoy.body.data.paso, {
+      pasa: true, avisos: [AVISO_DEL_PASO, AVISO_NOTAS_DE_HOY],
+      firmante: { soy_titular: true, puede_autorizar: true, vispera: diaHabilAnterior(hoy), notas_de_hoy: true },
+      sin_pasar_previsto: null
+    });
+    const medica = await calcularMia('adminB', { tipo: 'medica', desde: q(0), hasta: q(1) });
+    assert.deepEqual(medica.body.data.paso.avisos, [AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO]);
+    assert.equal(medica.body.data.paso.firmante.puede_autorizar, false);
+    const vacaciones = await calcularMia('adminB', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
+    assert.deepEqual(vacaciones.body.data.paso.avisos, [AVISO_DEL_PASO]);
+    assert.deepEqual(vacaciones.body.data.paso.firmante,
+      { soy_titular: true, puede_autorizar: true, vispera: diaHabilAnterior(q(0)), notas_de_hoy: false });
+
+    await listoParaVacaciones('superadmin');
+    const delSuperadmin = await calcularMia('superadmin', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
+    assert.deepEqual(delSuperadmin.body.data.paso,
+      { pasa: true, avisos: [AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN], firmante: null, sin_pasar_previsto: null });
+
+    await conLectorConVinculo(async () => {
+      await listoParaCargar('lector');
+      const delLector = await calcularMia('lector', { tipo: 'medica', desde: q(0), hasta: q(1) });
+      assert.deepEqual(delLector.body.data.paso, { pasa: false, avisos: [], firmante: null, sin_pasar_previsto: null });
+    });
+
+    // Una de administración que la cubre: no pasa, y dice dónde está
+    await listoParaCargar('adminA');
+    await deAdministracion('adminA', q(0), q(9));
+    const cubierta = await calcularMia('adminA', { tipo: 'medica', desde: q(2), hasta: q(3) });
+    assert.deepEqual(cubierta.body.data.paso,
+      { pasa: false, avisos: [], firmante: null, sin_pasar_previsto: textoUnida(q(0), q(9)) });
+    // Nada se guardó
+    assert.deepEqual([await vinculosDe('adminB'), await deConfiguracion('adminB')], [[], []]);
+  });
+
+  it('las vacaciones del titular con persona a cargo, lejos: cambiar el tipo le saca la persona a cargo', async () => {
+    await comoTitular('adminB');
+    await conFirma('adminA');
+    await listoParaVacaciones('adminB');
+    const { body } = await cargarMia('adminB', { tipo: 'vacaciones', desde: q(0), hasta: q(4), autorizado_id: usuarios.adminA.id });
+    const aMedica = { tipo: 'medica', desde: q(0), hasta: q(4) };
+    const calculo = await calcularMia('adminB', { ...aMedica, id: body.data.id });
+    assert.equal(calculo.body.data.error, null);
+    assert.ok(calculo.body.data.paso.avisos.includes(AVISO_SIN_PERSONA_A_CARGO), JSON.stringify(calculo.body.data.paso));
+
+    const res = await corregirMia('adminB', body.data.id, aMedica);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const [oficial] = await deConfiguracion('adminB');
+    assert.deepEqual([oficial.desde, oficial.hasta, oficial.autorizado_id, oficial.autorizado_at], [q(0), q(4), null, null]);
+    assert.equal((await historialDe('adminB', 'licencia_editada')).length, 1);
+  });
+
+  it('las vacaciones del titular con persona a cargo que empiezan el próximo día hábil: el tipo queda fijo', async () => {
+    await comoTitular('adminB');
+    await conFirma('adminA');
+    await listoParaVacaciones('adminB');
+    const pronto = proximoDiaHabil(sumarDias(hoy, 1));
+    const fechas = { desde: pronto, hasta: sumarDias(pronto, 2) };
+    const { body } = await cargarMia('adminB', { tipo: 'vacaciones', ...fechas, autorizado_id: usuarios.adminA.id });
+    assert.ok(body.success, JSON.stringify(body));
+    const antes = [await vinculosDe('adminB'), await deConfiguracion('adminB')];
+
+    const res = await corregirMia('adminB', body.data.id, { tipo: 'medica', ...fechas });
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, { success: false, error: MENSAJES_MI_ESPACIO.tipoFijo, campo: 'tipo' });
+    assert.deepEqual([await vinculosDe('adminB'), await deConfiguracion('adminB')], antes);
+    const calculo = await calcularMia('adminB', { tipo: 'medica', ...fechas, id: body.data.id });
+    assert.deepEqual(calculo.body.data.error, { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipoFijo });
+    // Siguen siendo vacaciones: se corrigen
+    const nota = await corregirMia('adminB', body.data.id, { tipo: 'vacaciones', ...fechas, nota: 'Viaje' });
+    assert.equal(nota.status, 200, JSON.stringify(nota.body));
+  });
+
+  it('sin persona a cargo, o de otra persona, unas vacaciones cambian de tipo cualquier día, sin tocar Configuración', async () => {
+    await comoTitular('adminB');
+    const pronto = proximoDiaHabil(sumarDias(hoy, 1));
+    const fechas = { desde: pronto, hasta: sumarDias(pronto, 2) };
+    for (const clave of ['adminB', 'adminA']) {
+      await listoParaVacaciones(clave);
+      const { body } = await cargarMia(clave, { tipo: 'vacaciones', ...fechas });
+      assert.ok(body.success, JSON.stringify(body));
+      const antes = await deConfiguracion(clave);
+      const res = await corregirMia(clave, body.data.id, { tipo: 'medica', ...fechas });
+      assert.equal(res.status, 200, `${clave}: ${JSON.stringify(res.body)}`);
+      assert.deepEqual(await deConfiguracion(clave), antes);
+      assert.deepEqual(await historialDe(clave, 'licencia_editada'), []);
+    }
+  });
+
+  it('la persona autorizada que se queda sin días: no se guarda nada; con algún día libre, pasa', async () => {
+    await comoTitular('adminB');
+    await conFirma('adminA');
+    await listoParaVacaciones('adminB');
+    await listoParaCargar('adminA');
+    const delTitular = await cargarMia('adminB',
+      { tipo: 'vacaciones', desde: q(0), hasta: q(4), autorizado_id: usuarios.adminA.id });
+    assert.equal(delTitular.status, 201, JSON.stringify(delTitular.body));
+
+    const sinDias = await cargarMia('adminA', { tipo: 'medica', desde: q(0), hasta: q(4) });
+    assert.equal(sinDias.status, 409);
+    assert.deepEqual(sinDias.body, { success: false, error: textoAutorizadaSinDias(q(0), q(4)), campo: 'fechas' });
+    assert.deepEqual([await vinculosDe('adminA'), await deConfiguracion('adminA')], [[], []]);
+
+    const algunos = await cargarMia('adminA', { tipo: 'medica', desde: q(1), hasta: q(2) });
+    assert.equal(algunos.status, 201, JSON.stringify(algunos.body));
+    assert.deepEqual((await deConfiguracion('adminA')).map((l) => [l.desde, l.hasta]), [[q(1), q(2)]]);
+    // Corregirla para cubrir todos los días también se frena, sin cambiar nada
+    const antes = [await vinculosDe('adminA'), await deConfiguracion('adminA')];
+    const corregida = await corregirMia('adminA', algunos.body.data.id, { tipo: 'medica', desde: q(0), hasta: q(4) });
+    assert.equal(corregida.status, 409);
+    assert.equal(corregida.body.campo, 'fechas');
+    assert.deepEqual([await vinculosDe('adminA'), await deConfiguracion('adminA')], antes);
+  });
+
+  it('otro rechazo de Configuración se guarda igual, sin pasar y con el motivo', async () => {
+    await listoParaCargar('adminA');
+    const desde = sumarDias(hoy, -300);
+    const res = await cargarMia('adminA', { tipo: 'medica_extraordinaria', desde, hasta: sumarDias(desde, 365) });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(vinculoDe((await vinculosDe('adminA'))[0]), [null, null, 'La licencia puede durar como máximo 365 días']);
+    assert.deepEqual(await deConfiguracion('adminA'), []);
+    assert.deepEqual((await filaDeLaLista('adminA', res.body.data.id, ANIO)).configuracion,
+      { texto: textoNoPaso('La licencia puede durar como máximo 365 días'), insignia: 'aviso' });
+  });
+
+  it('el doble envío: dos POST simultáneos iguales dejan una sola fila en cada tabla (Review Focus 3)', async () => {
+    await listoParaVacaciones('adminA');
+    for (let vuelta = 0; vuelta < 3; vuelta++) {
+      await query('DELETE FROM mi_espacio_licencias');
+      await query('DELETE FROM usuarios_licencias');
+      const cuerpo = { tipo: 'vacaciones', desde: q(0), hasta: q(4) };
+      const respuestas = await Promise.all([cargarMia('adminA', cuerpo), cargarMia('adminA', cuerpo)]);
+      assert.deepEqual(respuestas.map((res) => res.status).sort(), [201, 400], JSON.stringify(respuestas.map((res) => res.body)));
+      const mias = await vinculosDe('adminA');
+      const oficiales = await deConfiguracion('adminA');
+      assert.deepEqual([mias.length, oficiales.length], [1, 1], `vuelta ${vuelta}`);
+      assert.equal(mias[0].licencia_oficial_id, oficiales[0].id);
+    }
   });
 });
 

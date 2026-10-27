@@ -19,7 +19,9 @@ import {
   textoDelReparto, rangoDeFechas, esDiaEntero, topeDe, usoDeLosTopes, validarLicencia,
   horasDe, mesMas, horasPorMes, validarHorasExtras, francosDe, horasAFavorDe, noUtilizadasDe,
   TEXTO_ANTES_DEL_ARRANQUE, camposDelSaldoInicial, validarSaldoInicial, validarAnio, fueraDeLaModalidad, calcular,
-  faltantesDe, problemaDeLaCarga, evaluarLicencia
+  faltantesDe, problemaDeLaCarga, evaluarLicencia,
+  vinculoDe, textoDelVinculo, limiteParaCambiarTipo, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja, vinculosDeLaLista,
+  pasoPrevistoDe
 } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
@@ -1884,5 +1886,419 @@ describe('nada tira', () => {
     }
     assert.deepEqual(validarSaldoInicial(null, null), { datos: [], error: null });
     assert.equal(problemaDeLaCarga(null, null), null);
+  });
+});
+
+// El paso a Configuración → Licencias (spec, sección 6). Hoy es el lunes 26/10/2026; «ya empezó» quiere decir antes de hoy
+describe('el paso a Configuración', () => {
+  // Una licencia de Configuración y una fila de Mi espacio (por defecto, unas vacaciones del 02/11 al 06/11, sin vínculo)
+  const oficialDe = (id, desde, hasta, extra = {}) => ({ id, desde, hasta, anulada: 0, autorizado_id: null, ...extra });
+  const filaDe = (extra = {}) => ({
+    id: 100, tipo: 'vacaciones', desde: '2026-11-02', hasta: '2026-11-06', horas: null, nota: null, mostrar: 1,
+    licencia_oficial_id: null, oficial: null, sin_pasar: null, ...extra
+  });
+  const creadaDe = (oficial, extra = {}) =>
+    filaDe({ desde: oficial.desde, hasta: oficial.hasta, licencia_oficial_id: oficial.id, oficial: 'creada', ...extra });
+  const unidaDe = (oficial, extra = {}) => filaDe({ licencia_oficial_id: oficial.id, oficial: 'unida', ...extra });
+  const franquicia = (fecha, horas, extra = {}) => filaDe({ tipo: 'franquicia', desde: fecha, hasta: fecha, horas, ...extra });
+
+  describe('vinculoDe', () => {
+    it('sin licencia de Configuración, o con otra que no es la suya, ninguno', () => {
+      const oficial = oficialDe(7, '2026-11-02', '2026-11-06');
+      assert.deepEqual(vinculoDe(filaDe(), null, false), { estado: 'ninguno', oficial: null });
+      assert.deepEqual(vinculoDe(creadaDe(oficial), undefined, false), { estado: 'ninguno', oficial: null });
+      assert.deepEqual(vinculoDe(creadaDe(oficial), oficialDe(8, '2026-11-02', '2026-11-06'), false),
+        { estado: 'ninguno', oficial: null });
+      assert.deepEqual(vinculoDe(creadaDe(oficial, { oficial: null }), oficial, false), { estado: 'ninguno', oficial: null });
+    });
+
+    it('una creada: la maneja Mi espacio, la cambió administración o la anuló', () => {
+      const oficial = oficialDe(7, '2026-11-02', '2026-11-06');
+      assert.deepEqual(vinculoDe(creadaDe(oficial), oficial, false), { estado: 'creada', oficial });
+      assert.deepEqual(vinculoDe(creadaDe(oficial), oficial, true), { estado: 'creada_cambiada', oficial });
+      // La anulación manda, la haya hecho quien la haya hecho
+      const anulada = { ...oficial, anulada: 1 };
+      assert.deepEqual(vinculoDe(creadaDe(oficial), anulada, true), { estado: 'creada_anulada', oficial: anulada });
+      assert.deepEqual(vinculoDe(creadaDe(oficial), anulada, false), { estado: 'creada_anulada', oficial: anulada });
+      // El id de la base como texto también sirve
+      assert.equal(vinculoDe(creadaDe(oficial, { licencia_oficial_id: '7' }), oficial, false).estado, 'creada');
+    });
+
+    it('una unida: cubierta, o sin cubrir del primer al último día de la fila fuera de la de Configuración', () => {
+      const oficial = oficialDe(7, '2026-11-02', '2026-11-13');
+      assert.deepEqual(vinculoDe(unidaDe(oficial), oficial, false), { estado: 'unida', oficial });
+      // Acortada: le falta el final
+      const acortada = oficialDe(7, '2026-11-02', '2026-11-04');
+      assert.deepEqual(vinculoDe(unidaDe(oficial), acortada, false),
+        { estado: 'unida_sin_cubrir', oficial: acortada, sin_cubrir: { desde: '2026-11-05', hasta: '2026-11-06' } });
+      // Corrida hacia adelante: le falta el principio
+      const corrida = oficialDe(7, '2026-11-04', '2026-11-13');
+      assert.deepEqual(vinculoDe(unidaDe(oficial), corrida, false).sin_cubrir, { desde: '2026-11-02', hasta: '2026-11-03' });
+      // Más corta de los dos lados: del primero al último día fuera
+      const adentro = oficialDe(7, '2026-11-03', '2026-11-04');
+      assert.deepEqual(vinculoDe(unidaDe(oficial), adentro, false).sin_cubrir, { desde: '2026-11-02', hasta: '2026-11-06' });
+      // Anulada, o sin ningún día en común: toda la fila
+      assert.deepEqual(vinculoDe(unidaDe(oficial), { ...oficial, anulada: 1 }, false).sin_cubrir,
+        { desde: '2026-11-02', hasta: '2026-11-06' });
+      assert.deepEqual(vinculoDe(unidaDe(oficial), oficialDe(7, '2026-11-09', '2026-11-13'), false).sin_cubrir,
+        { desde: '2026-11-02', hasta: '2026-11-06' });
+      // Una unida no la cambia nadie de Mi espacio: que otros la hayan tocado no importa
+      assert.equal(vinculoDe(unidaDe(oficial), oficial, true).estado, 'unida');
+    });
+  });
+
+  describe('textoDelVinculo', () => {
+    const opciones = { hoy: HOY, sinPasar: null, puedeTener: true };
+    const oficial = oficialDe(7, '2026-11-03', '2026-11-05');
+
+    it('una creada: también en Configuración; si dejó de ser de día entero, sigue; si no se copió, en Configuración y por qué', () => {
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial), opciones),
+        { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' });
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, franquicia('2026-11-03', 3), opciones),
+        { texto: textoSigueEnConfiguracion('2026-11-03', '2026-11-05'), insignia: 'aviso' });
+      // El motivo pierde su punto final: los textos del paso no lo llevan
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial),
+        { ...opciones, sinPasar: 'La fecha de fin tiene que ser ayer o posterior, y no anterior al inicio.' }), {
+        texto: 'En Configuración: del 03/11 al 05/11. No pasó a Configuración: La fecha de fin tiene que ser ayer o posterior, '
+          + 'y no anterior al inicio',
+        insignia: 'aviso'
+      });
+    });
+
+    it('administración la cambió o la anuló', () => {
+      assert.deepEqual(textoDelVinculo({ estado: 'creada_cambiada', oficial }, filaDe(), opciones),
+        { texto: `${textoEnConfiguracion('2026-11-03', '2026-11-05')} ${TEXTO_NO_SE_COPIA}`, insignia: 'aviso' });
+      assert.deepEqual(textoDelVinculo({ estado: 'creada_anulada', oficial: { ...oficial, anulada: 1 } }, filaDe(), opciones),
+        { texto: TEXTO_ANULADA_POR_ADMINISTRACION, insignia: 'aviso' });
+    });
+
+    it('una unida, cubierta o no', () => {
+      assert.deepEqual(textoDelVinculo({ estado: 'unida', oficial }, filaDe(), opciones),
+        { texto: textoUnida('2026-11-03', '2026-11-05'), insignia: 'unida' });
+      assert.deepEqual(textoDelVinculo({
+        estado: 'unida_sin_cubrir', oficial, sin_cubrir: { desde: '2026-11-02', hasta: '2026-11-02' }
+      }, filaDe(), opciones), { texto: textoYaNoCubierta('2026-11-02', '2026-11-02'), insignia: 'aviso' });
+    });
+
+    it('sin vínculo: el motivo por el que no pasó; menos de 7 horas, de quien puede tener licencia, que no es el día entero', () => {
+      const ninguno = { estado: 'ninguno', oficial: null };
+      const superpuesta = textoSuperpuestaConConfiguracion('2026-11-03', '2026-11-05');
+      assert.deepEqual(textoDelVinculo(ninguno, filaDe(), { ...opciones, sinPasar: superpuesta }),
+        { texto: textoNoPaso(superpuesta), insignia: 'aviso' });
+      assert.deepEqual(textoDelVinculo(ninguno, filaDe(),
+        { ...opciones, sinPasar: 'Se superpone con otra licencia (del 03/11/2026 al 05/11/2026).' }),
+      { texto: 'No pasó a Configuración: Se superpone con otra licencia (del 03/11/2026 al 05/11/2026)', insignia: 'aviso' });
+      assert.deepEqual(textoDelVinculo(ninguno, franquicia('2026-11-03', 3), opciones),
+        { texto: TEXTO_NO_DIA_ENTERO, insignia: 'aviso' });
+      assert.deepEqual(textoDelVinculo(ninguno,
+        filaDe({ tipo: 'horas_a_favor', desde: '2026-10-15', hasta: '2026-10-15', horas: 2 }), opciones),
+      { texto: TEXTO_NO_DIA_ENTERO, insignia: 'aviso' });
+      // De un lector, una franquicia no dice nada; ni unas vacaciones sin vínculo ni motivo, ni una franquicia de 7 horas
+      assert.equal(textoDelVinculo(ninguno, franquicia('2026-11-03', 3), { ...opciones, puedeTener: false }), null);
+      assert.equal(textoDelVinculo(ninguno, filaDe(), opciones), null);
+      assert.equal(textoDelVinculo(ninguno, franquicia('2026-11-03', 7), opciones), null);
+    });
+  });
+
+  describe('limiteParaCambiarTipo', () => {
+    it('dos días hábiles antes de empezar, con los 9 feriados fijos', () => {
+      // Desde un lunes, el jueves anterior
+      assert.equal(limiteParaCambiarTipo('2026-11-02'), '2026-10-29');
+      // El lunes de Carnaval (08/02/2027) no es un feriado fijo: cuenta como hábil
+      assert.equal(limiteParaCambiarTipo('2027-02-10'), '2027-02-08');
+      assert.equal(limiteParaCambiarTipo('2027-02-09'), '2027-02-05');
+      // El 08/12 sí lo es
+      assert.equal(limiteParaCambiarTipo('2026-12-09'), '2026-12-04');
+      for (const raro of [null, undefined, '', '2026-02-30', 3, {}]) assert.equal(limiteParaCambiarTipo(raro), null);
+    });
+  });
+
+  describe('pasoDeLaCarga', () => {
+    const carga = (fila, extra = {}) => pasoDeLaCarga({ fila, rol: 'admin', hoy: HOY, cruzadas: [], ...extra });
+
+    it('pasa lo de día entero que termina hoy o después, de quien puede tener licencia', () => {
+      assert.deepEqual(carga(filaDe()), { accion: 'crear' });
+      assert.deepEqual(carga(franquicia('2026-11-03', 7)), { accion: 'crear' });
+      assert.deepEqual(carga(filaDe({ tipo: 'medica', desde: HOY, hasta: HOY })), { accion: 'crear' });
+      // Cruza el arranque (o el día de hoy): pasa si termina hoy o después (Review Focus 4)
+      assert.deepEqual(carga(filaDe({ tipo: 'medica', desde: '2026-10-23', hasta: '2026-10-29' })), { accion: 'crear' });
+      for (const rol of ['superadmin', 'editor']) assert.deepEqual(carga(filaDe(), { rol }), { accion: 'crear' });
+    });
+
+    it('no pasa: un lector o un colaborador, menos de 7 horas, o lo que ya terminó', () => {
+      for (const rol of ['lector', 'colaborador', null]) assert.deepEqual(carga(filaDe(), { rol }), { accion: 'nada' });
+      assert.deepEqual(carga(franquicia('2026-11-03', 3)), { accion: 'nada' });
+      assert.deepEqual(carga(filaDe({ tipo: 'medica', desde: '2026-10-19', hasta: '2026-10-23' })), { accion: 'nada' });
+    });
+
+    it('cubierta por una de Configuración, se une; superpuesta en parte, avisa con la primera', () => {
+      const larga = oficialDe(7, '2026-11-02', '2026-11-13');
+      assert.deepEqual(carga(filaDe({ desde: '2026-11-04', hasta: '2026-11-05' }), { cruzadas: [larga] }),
+        { accion: 'unir', oficial: larga });
+      const despues = oficialDe(8, '2026-11-05', '2026-11-13');
+      const antes = oficialDe(9, '2026-10-28', '2026-11-03');
+      assert.deepEqual(carga(filaDe(), { cruzadas: [despues, antes] }),
+        { accion: 'avisar', sin_pasar: textoSuperpuestaConConfiguracion('2026-10-28', '2026-11-03') });
+      // Una anulada no cuenta
+      assert.deepEqual(carga(filaDe(), { cruzadas: [{ ...larga, anulada: 1 }] }), { accion: 'crear' });
+      // Una que cubre gana a una que se superpone
+      assert.deepEqual(carga(filaDe(), { cruzadas: [antes, larga] }), { accion: 'unir', oficial: larga });
+    });
+  });
+
+  describe('pasoDeLaCorreccion', () => {
+    const correccion = (anterior, fila, vinculo, extra = {}) => pasoDeLaCorreccion({
+      anterior, fila, vinculo, rol: 'admin', hoy: HOY, cruzadas: [], autorizadoCambia: false, personaACargo: false, ...extra
+    });
+
+    it('una creada que todavía no empezó sigue a Configuración', () => {
+      const oficial = oficialDe(7, '2026-11-02', '2026-11-06');
+      const anterior = creadaDe(oficial);
+      const vinculo = { estado: 'creada', oficial };
+      assert.deepEqual(correccion(anterior, { ...anterior, desde: '2026-11-03' }, vinculo), { accion: 'cambiar' });
+      // El tipo, la nota y «Mostrar» no tocan Configuración
+      assert.deepEqual(correccion(anterior, { ...anterior, tipo: 'medica', nota: 'x', mostrar: 0 }, vinculo), { accion: 'nada' });
+      // La persona autorizada sí
+      assert.deepEqual(correccion(anterior, anterior, vinculo, { autorizadoCambia: true }), { accion: 'cambiar' });
+    });
+
+    it('«ya empezó» quiere decir antes de hoy: la de hoy se corrige entera; la de ayer, solo hasta; la terminada, nada', () => {
+      const deHoy = oficialDe(7, HOY, '2026-10-30');
+      assert.deepEqual(correccion(creadaDe(deHoy), filaDe({ desde: '2026-10-27', hasta: '2026-10-30' }),
+        { estado: 'creada', oficial: deHoy }), { accion: 'cambiar' });
+      const enCurso = oficialDe(7, '2026-10-23', '2026-10-29');
+      const vinculo = { estado: 'creada', oficial: enCurso };
+      assert.deepEqual(correccion(creadaDe(enCurso), filaDe({ desde: '2026-10-22', hasta: '2026-10-29' }), vinculo),
+        { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.soloHasta } });
+      assert.deepEqual(correccion(creadaDe(enCurso), filaDe({ desde: '2026-10-23', hasta: '2026-11-04' }), vinculo),
+        { accion: 'cambiar' });
+      const terminada = oficialDe(7, '2026-10-19', '2026-10-23');
+      const fija = { estado: 'creada', oficial: terminada };
+      assert.deepEqual(correccion(creadaDe(terminada), filaDe({ desde: '2026-10-19', hasta: '2026-10-22' }), fija),
+        { error: { campo: 'hasta', mensaje: MENSAJES_MI_ESPACIO.fechasFijas } });
+      assert.deepEqual(correccion(creadaDe(terminada), filaDe({ desde: '2026-10-20', hasta: '2026-10-23' }), fija),
+        { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.fechasFijas } });
+      // Sin cambiar las fechas, una terminada se corrige igual (el tipo, la nota)
+      assert.deepEqual(correccion(creadaDe(terminada), creadaDe(terminada, { tipo: 'medica' }), fija), { accion: 'nada' });
+    });
+
+    it('la franquicia de 7 horas que pasa a 3: se anula antes de empezar (también si empieza hoy) y queda después', () => {
+      const deManana = oficialDe(7, '2026-10-27', '2026-10-27');
+      assert.deepEqual(correccion(franquicia('2026-10-27', 7), franquicia('2026-10-27', 3),
+        { estado: 'creada', oficial: deManana }), { accion: 'anular' });
+      const deHoy = oficialDe(7, HOY, HOY);
+      assert.deepEqual(correccion(franquicia(HOY, 7), franquicia(HOY, 3), { estado: 'creada', oficial: deHoy }),
+        { accion: 'anular' });
+      const deAyer = oficialDe(7, '2026-10-23', '2026-10-23');
+      assert.deepEqual(correccion(franquicia('2026-10-23', 7), franquicia('2026-10-23', 3),
+        { estado: 'creada', oficial: deAyer }), { accion: 'quedar' });
+      // Y si ya no es de día entero, una nueva corrección no la mueve: queda
+      assert.deepEqual(correccion(franquicia('2026-10-23', 3), franquicia('2026-10-22', 3),
+        { estado: 'creada', oficial: deAyer }), { accion: 'quedar' });
+    });
+
+    it('administración la cambió o la anuló: nada', () => {
+      const oficial = oficialDe(7, '2026-11-02', '2026-11-06');
+      for (const estado of ['creada_cambiada', 'creada_anulada']) {
+        assert.deepEqual(correccion(creadaDe(oficial), filaDe({ desde: '2026-11-09', hasta: '2026-11-10' }),
+          { estado, oficial }), { accion: 'nada' }, estado);
+        assert.deepEqual(correccion(creadaDe(oficial), franquicia('2026-11-03', 3), { estado, oficial }), { accion: 'nada' });
+      }
+    });
+
+    it('una unida: cubierta y de día entero, nada; corrida fuera de la de administración, se suelta y pasa como nueva', () => {
+      const larga = oficialDe(7, '2026-11-02', '2026-11-13');
+      const anterior = unidaDe(larga, { desde: '2026-11-04', hasta: '2026-11-05' });
+      const vinculo = { estado: 'unida', oficial: larga };
+      assert.deepEqual(correccion(anterior, { ...anterior, desde: '2026-11-03', tipo: 'medica' }, vinculo,
+        { cruzadas: [larga] }), { accion: 'nada' });
+      assert.deepEqual(correccion(anterior, filaDe({ desde: '2026-11-16', hasta: '2026-11-17' }), vinculo),
+        { accion: 'soltar', luego: { accion: 'crear' } });
+      assert.deepEqual(correccion(anterior, filaDe({ desde: '2026-11-12', hasta: '2026-11-17' }), vinculo,
+        { cruzadas: [larga] }),
+      { accion: 'soltar', luego: { accion: 'avisar', sin_pasar: textoSuperpuestaConConfiguracion('2026-11-02', '2026-11-13') } });
+      assert.deepEqual(correccion(anterior, franquicia('2026-11-04', 3), vinculo, { cruzadas: [larga] }),
+        { accion: 'soltar', luego: { accion: 'nada' } });
+      // Si administración la acortó y la corrección la deja adentro, vuelve a estar cubierta
+      const acortada = oficialDe(7, '2026-11-02', '2026-11-04');
+      assert.deepEqual(correccion(anterior, { ...anterior, hasta: '2026-11-04' },
+        { estado: 'unida_sin_cubrir', oficial: acortada, sin_cubrir: { desde: '2026-11-05', hasta: '2026-11-05' } }),
+      { accion: 'nada' });
+    });
+
+    it('sin vínculo, como una carga', () => {
+      const ninguno = { estado: 'ninguno', oficial: null };
+      assert.deepEqual(correccion(filaDe(), filaDe({ hasta: '2026-11-09' }), ninguno), { accion: 'crear' });
+      assert.deepEqual(correccion(franquicia('2026-11-03', 3), franquicia('2026-11-03', 7), ninguno), { accion: 'crear' });
+      assert.deepEqual(correccion(filaDe(), filaDe(), ninguno, { rol: 'lector' }), { accion: 'nada' });
+    });
+
+    it('un lector, siempre nada: también con una creada de cuando era admin', () => {
+      const oficial = oficialDe(7, '2026-11-02', '2026-11-06');
+      for (const estado of ['creada', 'unida']) {
+        const vinculo = { estado, oficial };
+        assert.deepEqual(correccion(creadaDe(oficial), filaDe({ hasta: '2026-11-09' }), vinculo, { rol: 'lector' }),
+          { accion: 'nada' });
+        assert.deepEqual(correccion(creadaDe(oficial), franquicia('2026-11-03', 3), vinculo, { rol: 'lector' }),
+          { accion: 'nada' });
+      }
+    });
+
+    it('las vacaciones del titular con persona a cargo cambian de tipo hasta 2 días hábiles antes, y pierden la persona a cargo',
+      () => {
+        // Desde el lunes 02/11: el límite es el jueves 29/10, inclusive
+        const oficial = oficialDe(7, '2026-11-02', '2026-11-06', { autorizado_id: 3 });
+        const anterior = creadaDe(oficial);
+        const vinculo = { estado: 'creada', oficial };
+        const aMedica = { ...anterior, tipo: 'medica' };
+        const conPersona = { personaACargo: true };
+        assert.deepEqual(correccion(anterior, aMedica, vinculo, { ...conPersona, hoy: '2026-10-29' }),
+          { accion: 'cambiar', sin_persona_a_cargo: true });
+        assert.deepEqual(correccion(anterior, aMedica, vinculo, { ...conPersona, hoy: '2026-10-30' }),
+          { error: { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipoFijo } });
+        // Con otras fechas también, hasta el límite
+        assert.deepEqual(correccion(anterior, { ...aMedica, hasta: '2026-11-04' }, vinculo, { ...conPersona, hoy: '2026-10-28' }),
+          { accion: 'cambiar', sin_persona_a_cargo: true });
+        // A un tipo que no es de día entero, antes del límite: se anula
+        assert.deepEqual(correccion(anterior, franquicia('2026-11-02', 3), vinculo, { ...conPersona, hoy: '2026-10-29' }),
+          { accion: 'anular' });
+        // El Carnaval cuenta como día hábil: desde el miércoles 10/02/2027, el límite es el lunes 08/02
+        const enCarnaval = oficialDe(7, '2027-02-10', '2027-02-12', { autorizado_id: 3 });
+        const deCarnaval = creadaDe(enCarnaval);
+        const vinculoCarnaval = { estado: 'creada', oficial: enCarnaval };
+        const deCarnavalAMedica = { ...deCarnaval, tipo: 'medica' };
+        assert.deepEqual(correccion(deCarnaval, deCarnavalAMedica, vinculoCarnaval, { ...conPersona, hoy: '2027-02-08' }),
+          { accion: 'cambiar', sin_persona_a_cargo: true });
+        assert.deepEqual(correccion(deCarnaval, deCarnavalAMedica, vinculoCarnaval, { ...conPersona, hoy: '2027-02-09' }),
+          { error: { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipoFijo } });
+        // Sin persona a cargo (u otra persona), el tipo cambia cualquier día sin tocar Configuración
+        assert.deepEqual(correccion(anterior, aMedica, vinculo, { hoy: '2026-10-30' }), { accion: 'nada' });
+        // Vacaciones que siguen siendo vacaciones, cualquier día
+        assert.deepEqual(correccion(anterior, { ...anterior, nota: 'x' }, vinculo, { ...conPersona, hoy: '2026-10-30' }),
+          { accion: 'nada' });
+      });
+  });
+
+  describe('pasoDeLaBaja', () => {
+    const baja = (oficial) => pasoDeLaBaja({ vinculo: { estado: 'creada', oficial }, hoy: HOY });
+
+    it('una creada se anula si todavía no empezó o empieza hoy; si empezó antes, no se borra', () => {
+      assert.deepEqual(baja(oficialDe(7, '2026-11-02', '2026-11-06')), { accion: 'anular' });
+      assert.deepEqual(baja(oficialDe(7, HOY, '2026-11-06')), { accion: 'anular' });
+      assert.deepEqual(baja(oficialDe(7, '2026-10-25', '2026-11-06')),
+        { error: { status: 409, campo: null, mensaje: MENSAJES_MI_ESPACIO.yaEmpezo } });
+    });
+
+    it('lo demás se borra sin tocar Configuración', () => {
+      const oficial = oficialDe(7, '2026-10-19', '2026-11-06');
+      for (const estado of ['ninguno', 'creada_cambiada', 'creada_anulada', 'unida', 'unida_sin_cubrir']) {
+        assert.deepEqual(pasoDeLaBaja({ vinculo: { estado, oficial }, hoy: HOY }), { accion: 'nada' }, estado);
+      }
+    });
+  });
+
+  describe('vinculosDeLaLista', () => {
+    it('cada fila con su texto y, una creada, lo que se puede hacer con sus fechas', () => {
+      const futura = oficialDe(7, '2026-11-02', '2026-11-06');
+      const enCurso = oficialDe(8, '2026-10-23', '2026-10-29');
+      const terminada = oficialDe(9, '2026-10-19', '2026-10-21');
+      const filas = [
+        creadaDe(futura, { id: 1 }),
+        creadaDe(enCurso, { id: '2' }),
+        creadaDe(terminada, { id: 3 }),
+        franquicia('2026-11-10', 3, { id: 4 }),
+        filaDe({ id: 5, desde: '2026-11-16', hasta: '2026-11-16' }),
+        creadaDe(futura, { id: 6, licencia_oficial_id: 10, desde: '2026-11-23', hasta: '2026-11-24' })
+      ];
+      const oficiales = new Map([[7, futura], [8, enCurso], [9, terminada], [10, oficialDe(10, '2026-11-23', '2026-11-25')]]);
+      const vinculos = vinculosDeLaLista(filas, { oficiales, tocadas: new Set([10]), hoy: HOY, puedeTener: true });
+      const creada = { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' };
+      assert.deepEqual(vinculos.get(1), { configuracion: creada, puede_borrar: true, solo_hasta: false, fechas_fijas: false });
+      assert.deepEqual(vinculos.get(2), { configuracion: creada, puede_borrar: false, solo_hasta: true, fechas_fijas: false });
+      assert.deepEqual(vinculos.get(3), { configuracion: creada, puede_borrar: false, solo_hasta: false, fechas_fijas: true });
+      assert.deepEqual(vinculos.get(4), {
+        configuracion: { texto: TEXTO_NO_DIA_ENTERO, insignia: 'aviso' }, puede_borrar: true, solo_hasta: false,
+        fechas_fijas: false
+      });
+      // Sin nada para decir, no está
+      assert.equal(vinculos.has(5), false);
+      assert.deepEqual(vinculos.get(6), {
+        configuracion: { texto: `${textoEnConfiguracion('2026-11-23', '2026-11-25')} ${TEXTO_NO_SE_COPIA}`, insignia: 'aviso' },
+        puede_borrar: true, solo_hasta: false, fechas_fijas: false
+      });
+      assert.deepEqual([...vinculos.keys()].sort(), [1, 2, 3, 4, 6]);
+    });
+  });
+
+  describe('pasoPrevistoDe', () => {
+    const previsto = (extra = {}) => pasoPrevistoDe({
+      paso: { accion: 'crear' }, vinculo: { estado: 'ninguno', oficial: null }, fila: filaDe(), rol: 'admin', hoy: HOY,
+      soyTitular: false, ...extra
+    });
+
+    it('lo que pasa avisa antes de guardar; al superadmin le suma lo suyo', () => {
+      assert.deepEqual(previsto(), { pasa: true, avisos: [AVISO_DEL_PASO], firmante: null, sin_pasar_previsto: null });
+      assert.deepEqual(previsto({ rol: 'superadmin' }).avisos, [AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN]);
+      // Una creada que sigue igual, o que cambia, sigue en Configuración
+      const oficial = oficialDe(7, '2026-11-02', '2026-11-06');
+      assert.equal(previsto({ paso: { accion: 'nada' }, vinculo: { estado: 'creada', oficial } }).pasa, true);
+      assert.equal(previsto({ paso: { accion: 'cambiar' }, vinculo: { estado: 'creada', oficial } }).pasa, true);
+      assert.equal(previsto({ paso: { accion: 'soltar', luego: { accion: 'crear' } }, vinculo: { estado: 'unida', oficial } })
+        .pasa, true);
+    });
+
+    it('lo que no pasa no avisa; unida o superpuesta, dice qué va a quedar', () => {
+      const vacio = { pasa: false, avisos: [], firmante: null, sin_pasar_previsto: null };
+      assert.deepEqual(previsto({ paso: { accion: 'nada' } }), vacio);
+      assert.deepEqual(previsto({ paso: { accion: 'nada' }, rol: 'lector' }), vacio);
+      assert.deepEqual(previsto({ paso: { accion: 'anular' }, vinculo: { estado: 'creada', oficial: oficialDe(7, HOY, HOY) } }),
+        vacio);
+      const larga = oficialDe(7, '2026-11-02', '2026-11-13');
+      assert.deepEqual(previsto({ paso: { accion: 'unir', oficial: larga } }),
+        { ...vacio, sin_pasar_previsto: textoUnida('2026-11-02', '2026-11-13') });
+      const superpuesta = textoSuperpuestaConConfiguracion('2026-11-02', '2026-11-13');
+      assert.deepEqual(previsto({ paso: { accion: 'soltar', luego: { accion: 'avisar', sin_pasar: superpuesta } } }),
+        { ...vacio, sin_pasar_previsto: superpuesta });
+    });
+
+    it('al firmante titular: la víspera, las notas de hoy y, fuera de las vacaciones, que no queda nadie a cargo', () => {
+      assert.deepEqual(previsto({ soyTitular: true }), {
+        pasa: true, avisos: [AVISO_DEL_PASO],
+        firmante: { soy_titular: true, puede_autorizar: true, vispera: '2026-10-30', notas_de_hoy: false },
+        sin_pasar_previsto: null
+      });
+      const hoyMismo = previsto({ soyTitular: true, fila: filaDe({ tipo: 'medica', desde: HOY, hasta: '2026-10-28' }) });
+      assert.deepEqual(hoyMismo.avisos, [AVISO_DEL_PASO, AVISO_NOTAS_DE_HOY, AVISO_SIN_PERSONA_A_CARGO]);
+      assert.deepEqual(hoyMismo.firmante, { soy_titular: true, puede_autorizar: false, vispera: '2026-10-23', notas_de_hoy: true });
+    });
+  });
+
+  it('nada tira', () => {
+    const raros = [undefined, null, '', 'x', 0, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
+    for (const valor of raros) {
+      assert.doesNotThrow(() => {
+        vinculoDe(valor, valor, valor);
+        vinculoDe({ oficial: 'unida', licencia_oficial_id: 1, desde: valor }, { id: 1, desde: valor, hasta: valor }, valor);
+        textoDelVinculo(valor, valor, valor);
+        textoDelVinculo({ estado: 'creada', oficial: valor }, valor, { sinPasar: valor });
+        textoDelVinculo({ estado: 'unida_sin_cubrir', oficial: oficialDe(1, HOY, HOY), sin_cubrir: valor }, valor, valor);
+        limiteParaCambiarTipo(valor);
+        pasoDeLaCarga(valor);
+        pasoDeLaCarga({ fila: valor, rol: 'admin', hoy: valor, cruzadas: [valor] });
+        pasoDeLaCorreccion(valor);
+        pasoDeLaCorreccion({ anterior: valor, fila: filaDe(), vinculo: { estado: 'creada', oficial: valor }, rol: 'admin', hoy: HOY });
+        pasoDeLaCorreccion({ anterior: valor, fila: valor, vinculo: { estado: 'unida', oficial: oficialDe(1, HOY, HOY) },
+          rol: 'admin', hoy: valor, cruzadas: valor, personaACargo: true });
+        pasoDeLaBaja(valor);
+        pasoDeLaBaja({ vinculo: { estado: 'creada', oficial: valor }, hoy: valor });
+        vinculosDeLaLista(valor, valor);
+        vinculosDeLaLista([valor, filaDe({ id: valor })], { oficiales: valor, tocadas: valor, hoy: valor });
+        pasoPrevistoDe(valor);
+        pasoPrevistoDe({ paso: valor, vinculo: valor, fila: valor, rol: valor, hoy: valor, soyTitular: valor });
+      }, String(valor));
+    }
+    assert.deepEqual(pasoDeLaCarga(null), { accion: 'nada' });
+    assert.deepEqual(pasoDeLaBaja(null), { accion: 'nada' });
+    assert.equal(vinculosDeLaLista(null).size, 0);
   });
 });
