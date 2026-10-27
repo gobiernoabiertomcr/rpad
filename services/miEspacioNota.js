@@ -3,7 +3,7 @@
  * persona le presenta al Director General de Modernización e Investigación Territorial para pedir una licencia, armada con lo
  * que la licencia tiene al pedirla. Pura (sin pool ni Date local: las fechas son texto 'AAAA-MM-DD' y la fecha de la nota
  * llega por parámetro, el día de la última vez que se guardó la licencia). Ninguna función tira error: una entrada rara da
- * `{ error }`, '' o una lista vacía.
+ * `{ error }` (`notaDeLicencia`) o '' (los textos y la hoja).
  *
  * La nota se arma una sola vez como estructura (`notaDeLicencia`) y de ahí salen la vista del segundo paso (`htmlDeLaNota`,
  * escapada acá mismo) y el Word (`services/miEspacioNotaWord.js`): la vista y el Word no pueden decir cosas distintas.
@@ -17,7 +17,7 @@
 import { diasHabilesDe, diaDeLaSemana } from './feriadosReglas.js';
 import { esFechaIso, formatoCorto, formatoLargo } from './notasDigitalesCalendario.js';
 import { RENGLON_FIRMA_CONTRATADO, escapeHtml } from './notasDigitalesContenido.js';
-import { TIPOS_LICENCIA, mesMas, mesEnFrase } from './miEspacioReglas.js';
+import { TIPOS_LICENCIA, MESES_HASTA_EL_FRANCO, MESES_HASTA_LAS_HORAS, mesMas, mesEnFrase } from './miEspacioReglas.js';
 
 // Los tipos que tienen nota: todos menos el uso autorizado (decisión del usuario, «por ahora»), en el orden de TIPOS_LICENCIA
 export const TIPOS_CON_NOTA = Object.freeze(TIPOS_LICENCIA.filter((tipo) => tipo !== 'uso_autorizado'));
@@ -43,13 +43,8 @@ const SD = `S${' '.repeat(15)}/${' '.repeat(15)}D`;
 const SALUDO = 'De mi mayor consideración:';
 const PIDO = 'Me dirijo a Ud. a fin de solicitarle tenga a bien autorizar ';
 const CIERRE = 'Sin otro particular, saludo a Ud. atentamente.';
-// La línea sobre la que se firma, en la vista (el Word escribe la suya)
+// La línea sobre la que se firma: la misma en la vista y en el Word (services/miEspacioNotaWord.js la importa de acá)
 export const LINEA_DE_LA_FIRMA = '_'.repeat(30);
-
-// Cuántos meses antes se hicieron las horas extras que se usan: el franco, dos (el de diciembre sale de las de octubre); las
-// horas a favor, uno. Los mismos que MESES_HASTA_EL_FRANCO y MESES_HASTA_LAS_HORAS de miEspacioReglas.js
-const MESES_ANTES_DEL_FRANCO = 2;
-const MESES_ANTES_DE_LAS_HORAS = 1;
 
 const esObjeto = (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
 const listaDe = (valor) => (Array.isArray(valor) ? valor : []);
@@ -120,7 +115,9 @@ const conElDia = (fecha) => `${diaDeLaSemana(fecha)} ${formatoLargo(fecha)}`;
 const cuandoEmpieza = (dias) =>
   (dias.length === 1 ? `el día ${conElDia(dias[0])}` : `a partir del día ${conElDia(dias[0])}`);
 
-// El mes de las horas extras, `meses` antes del de la fecha, cruzando el año: «octubre de 2026»; null si no se puede armar
+// El mes de las horas extras, `meses` antes del de la fecha, cruzando el año: «octubre de 2026»; null si no se puede armar.
+// Los meses son los de miEspacioReglas.js: el franco, MESES_HASTA_EL_FRANCO (dos: el de diciembre sale de las de octubre); las
+// horas a favor, MESES_HASTA_LAS_HORAS (uno)
 const mesDeLasHorasExtras = (fecha, meses) => {
   const mes = mesMas(fecha.slice(0, 7), -meses);
   return mes === null ? null : mesEnFrase(mes);
@@ -150,13 +147,13 @@ const CUERPOS = Object.freeze({
   familiar: ({ dias }) => porDias('licencia por atención del grupo familiar', dias),
   medica_extraordinaria: ({ dias }) => porDias('licencia médica extraordinaria', dias),
   franco: ({ desde }) => {
-    const mes = mesDeLasHorasExtras(desde, MESES_ANTES_DEL_FRANCO);
+    const mes = mesDeLasHorasExtras(desde, MESES_HASTA_EL_FRANCO);
     return mes ? 'el usufructo del franco compensatorio correspondiente a las horas extras realizadas en '
       + `${mes}, el día ${conElDia(desde)}.` : null;
   },
   horas_a_favor: ({ desde, horas }) => {
     const texto = textoDeHoras(horas);
-    const mes = mesDeLasHorasExtras(desde, MESES_ANTES_DE_LAS_HORAS);
+    const mes = mesDeLasHorasExtras(desde, MESES_HASTA_LAS_HORAS);
     if (!texto || !mes) return null;
     return `el usufructo de ${texto} a favor, ${correspondientesALasHoras(horas)} a las horas extras realizadas en ${mes}, `
       + `el día ${conElDia(desde)}.`;

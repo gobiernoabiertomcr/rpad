@@ -2989,7 +2989,8 @@ function mostrarSegundoPaso({ id, corregida, avisos }) {
 }
 
 // GET …/nota: con la respuesta, la licencia y la hoja (htmlDelSegundoPaso); si no llega (o llega sin hoja), MENSAJE_SIN_VISTA,
-// también anunciado: la licencia ya se guardó y «Descargar Word» sigue andando. Con un 401, al login. Una respuesta de otro segundo
+// también anunciado, con los avisos del guardado detrás (el anuncio pisa el anterior, que los decía): la licencia ya se guardó y
+// «Descargar Word» sigue andando. Con un 401, al login. Una respuesta de otro segundo
 // paso, o que llega con el modal cerrado (`pedido` ya no es el último), no toca nada
 async function pedirLaNotaDelSegundoPaso(id, pedido) {
   let data = null;
@@ -3010,7 +3011,7 @@ async function pedirLaNotaDelSegundoPaso(id, pedido) {
     return;
   }
   porId('ml-paso-dos').innerHTML = htmlDelSegundoPasoSinVista(avisos);
-  anunciar(MENSAJE_SIN_VISTA);
+  anunciar([MENSAJE_SIN_VISTA, ...avisos].join(' '));
 }
 
 // Al cerrar el modal: el segundo paso se va (una respuesta de GET …/nota que llegue después se descarta) y vuelven el cuerpo y el

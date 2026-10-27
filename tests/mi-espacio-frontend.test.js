@@ -5206,7 +5206,8 @@ describe('el segundo paso de «Cargar licencia» (DOM falso)', () => {
         ['Nota de licencia - Licencia anual ordinaria - 2026-11-16.docx'], String(falla));
     }
 
-    // Una corrección con avisos: los avisos siguen arriba
+    // Una corrección con avisos: los avisos siguen arriba y se anuncian después de MENSAJE_SIN_VISTA (quien usa un lector de
+    // pantalla no los pierde)
     const corregida = montarPagina({
       hash: '#licencias',
       responder: conFormularios({
@@ -5221,6 +5222,7 @@ describe('el segundo paso de «Cargar licencia» (DOM falso)', () => {
     await corregida.correr();
     await corregida.tocar(corregida.el('ml-guardar'));
     assert.equal(corregida.el('ml-paso-dos').innerHTML, sinVista(`<div class="me-recuadro ambar"><p>${TEXTO_NO_SE_COPIA}</p></div>`));
+    assert.equal(corregida.el('me-anuncio').textContent, `${MENSAJE_SIN_VISTA} ${TEXTO_NO_SE_COPIA}`);
 
     const vencida = montarPagina({ responder: conElAlta({ nota: () => respuesta(401, { success: false, error: 'Token expirado' }) }) });
     await vencida.iniciar();
@@ -5369,7 +5371,8 @@ describe('mi-espacio.html: los estilos del segundo paso', () => {
   it('la mesa, gris y sin alto máximo ni su propia barra: el que se desplaza es el cuerpo del modal', () => {
     const mesa = reglaDe('.me-mesa');
     assert.match(mesa, /background: var\(--sg-gris-fondo\);/);
-    assert.doesNotMatch(estiloDeLaPagina(), /\.me-(?:mesa|hoja)[^{]*\{[^}]*(?:max-height|overflow)/);
+    // Solo lo que desplaza (overflow, overflow-x y overflow-y): overflow-wrap no da una barra
+    assert.doesNotMatch(estiloDeLaPagina(), /\.me-(?:mesa|hoja)[^{]*\{[^}]*(?:max-height|overflow(?:-[xy])?\s*:)/);
   });
 
   it('«Word» deshabilitado mientras baja: el cursor de espera y el gris de los textos secundarios, con 4,5:1 o más sobre blanco', () => {

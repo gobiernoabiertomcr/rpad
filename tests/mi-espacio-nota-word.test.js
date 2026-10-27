@@ -282,7 +282,7 @@ describe('renderNotaDocx: los mismos renglones que la vista (htmlDeLaNota)', () 
 
 describe('renderNotaDocx: los caracteres que el XML no admite', () => {
   // Lo que el XML de Word no admite: los caracteres de control (salvo el tab y los saltos), U+FFFE, U+FFFF y los surrogates solos
-  const NO_ADMITIDOS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/;
+  const NO_ADMITIDOS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/;
 
   it('una persona con un carácter de control y un surrogate solo da un Word que se abre, sin ellos en el XML', async () => {
     const nota = notaDe(LICENCIAS.vacaciones, { nombre: 'Ana\u0001 Luz\uD800', cargo: 'Cargo\u0007 raro\uDC00', vinculo: 'contrato' });
@@ -291,20 +291,20 @@ describe('renderNotaDocx: los caracteres que el XML no admite', () => {
     assert.ok(!NO_ADMITIDOS.test(documento));
     assert.ok(documento.isWellFormed());
     const textos = parrafosDelWord(documento).map((p) => p.texto);
-    assert.ok(textos.includes('Ana Luz�'), textos.join(' | '));
-    assert.ok(textos.includes('Cargo raro�'), textos.join(' | '));
+    assert.ok(textos.includes('Ana Luz\uFFFD'), textos.join(' | '));
+    assert.ok(textos.includes('Cargo raro\uFFFD'), textos.join(' | '));
   });
 
   it('el texto de cualquier campo de la nota pasa por el mismo filtro', async () => {
     const nota = {
       ...notaDe(),
       fecha: 'Comodoro\u0002 Rivadavia',
-      destinatario: ['Al\u0003 Señor', 'Director￾'],
+      destinatario: ['Al\u0003 Señor', 'Director\uFFFE'],
       sd: 'S\u0004 / D',
       saludo: 'De mi\u0005 mayor consideración:',
       cuerpo: 'Me dirijo\u0006 a Ud.',
       cierre: 'Sin otro\u000B particular.',
-      firma: [{ texto: 'Nombre\u000C', chico: false }, { texto: 'Chico\u001F', chico: true }, { texto: 'Cargo￿', chico: false }]
+      firma: [{ texto: 'Nombre\u000C', chico: false }, { texto: 'Chico\u001F', chico: true }, { texto: 'Cargo\uFFFF', chico: false }]
     };
     const { documento } = await wordDe(nota);
     assert.ok(!NO_ADMITIDOS.test(documento));
