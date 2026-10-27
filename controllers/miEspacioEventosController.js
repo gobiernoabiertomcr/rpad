@@ -7,23 +7,28 @@
 // administración activa o con quien ya estaba en el evento (Review Focus 4: una invitada que dejó de ser administración o se
 // desactivó sigue, pero nadie la suma de nuevo). Cuándo sale cada aviso se calcula en cada pedido con los feriados de ese
 // momento, nunca se guarda (Review Focus 3). Las reglas y los textos son puros (services/miEspacioEventosReglas.js): la
-// página los imprime tal cual. Respuestas { success, data?, error?, campo?, message? }; un error de validación, 400 con su
-// campo. Cada guardado es una transacción; el cambio y la baja empiezan bloqueando la fila del evento.
+// página los imprime tal cual. El listado suma lo demás de la agenda: tus licencias de Mi espacio (con el tipo), los
+// feriados y los compañeros que no están (sin el tipo, como «Hoy no están»). Respuestas { success, data?, error?, campo?,
+// message? }; un error de validación, 400 con su campo. Cada guardado es una transacción; el cambio y la baja empiezan
+// bloqueando la fila del evento.
 import pool from '../config/database.js';
 import { ahoraArgentina, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import {
-  MENSAJES_EVENTO, validarEvento, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento
+  MENSAJES_EVENTO, validarEvento, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento, itemDeLicencia,
+  itemDeAusencia, itemsDeFeriados
 } from '../services/miEspacioEventosReglas.js';
 import {
-  eventosVisibles, eventoVisible, eventoPropio, personasParaCompartir
+  eventosVisibles, eventoVisible, eventoPropio, personasParaCompartir, licenciasPropiasEntre
 } from '../services/miEspacioEventosDatos.js';
-import { feriadosEntre } from '../services/feriadosDatos.js';
+import { feriadosEntre, filasDeFeriados } from '../services/feriadosDatos.js';
+import { feriadosDelRango } from '../services/feriadosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
-import { rangoDelPedido } from './miEspacioController.js';
+import { rangoDelPedido, ausentesPara } from './miEspacioController.js';
 
 // Cuántos días antes de un evento se leen los feriados: su aviso sale antes que él («El día hábil anterior» de un lunes) y
 // cada día que no es hábil lo corre uno más
 const DIAS_DE_FERIADOS_ANTES = 31;
+const desdeDeLosFeriados = (desde) => sumarDias(desde, -DIAS_DE_FERIADOS_ANTES);
 // Cuántas veces se intenta una transacción que MariaDB cortó por un bloqueo mutuo
 const INTENTOS = 3;
 
@@ -85,7 +90,7 @@ const cuerpoDe = (req) => {
 const quienPide = (req) => ({ id: req.user.userId, rol: req.user.rol });
 
 // Los feriados que mueven el aviso de los eventos de desde a hasta (un Set, el de feriadosEntre)
-const feriadosParaLosAvisos = (desde, hasta) => feriadosEntre(sumarDias(desde, -DIAS_DE_FERIADOS_ANTES), hasta);
+const feriadosParaLosAvisos = (desde, hasta) => feriadosEntre(desdeDeLosFeriados(desde), hasta);
 
 /**
  * Lo que se guarda de un alta o un cambio (`entrada`, el formulario entero), o lo que lo frena, en este orden:
@@ -136,18 +141,36 @@ const guardarPersonas = async (conexion, eventoId, datos, antes) => {
   }
 };
 
-// GET /api/mi-espacio/eventos?desde=AAAA-MM-DD&hasta=AAAA-MM-DD: lo que ve la persona en un rango de hasta 93 días (las
-// fechas, como «Hoy no están»: 400 en `fechas`), por fecha, hora y título, cada uno como itemDeEvento. `puede_compartir`:
-// si el formulario ofrece «Compartido»
+/**
+ * GET /api/mi-espacio/eventos?desde=AAAA-MM-DD&hasta=AAAA-MM-DD: lo que ve la persona en un rango de hasta 93 días (las
+ * fechas, como «Hoy no están»: 400 en `fechas`, antes de leer nada). `puede_compartir`: si el formulario ofrece
+ * «Compartido». Además de los eventos (por fecha, hora y título, cada uno como itemDeEvento), lo demás de la agenda (spec,
+ * secciones 6 y 7), cada cosa entera y con sus días hábiles del rango:
+ * - `licencias`: las suyas de Mi espacio (`licenciasPropiasEntre`), con el tipo (itemDeLicencia);
+ * - `feriados`: los del rango, «Feriado: <nombre>» (itemsDeFeriados);
+ * - `ausentes`: los compañeros que no están, como en «Hoy no están» (`ausentesPara`: leídas con margen y unidas, así la que
+ *   empezó antes se ve entera), sin el tipo ni la nota (itemDeAusencia); a quien no es administración, [].
+ * Las filas de los feriados se leen una vez: dan el Set (el de los avisos, que cubre también los días del rango), la lista y
+ * los feriados de `ausentesPara`.
+ */
 export const listarEventos = (req, res) => responder(res, 'Error al obtener los eventos', async () => {
   const { desde, hasta, rechazo: rechazoDelRango } = rangoDelPedido(req.query);
   if (rechazoDelRango) return rechazoDelRango;
   const usuario = quienPide(req);
-  const [eventos, feriados] = await Promise.all([eventosVisibles(usuario, desde, hasta), feriadosParaLosAvisos(desde, hasta)]);
   const ahora = ahoraArgentina();
+  const hoy = ahora.slice(0, 10);
+  const [eventos, licencias, filasFeriados] = await Promise.all([
+    eventosVisibles(usuario, desde, hasta), licenciasPropiasEntre(usuario.id, desde, hasta), filasDeFeriados()
+  ]);
+  const { ausentes } = await ausentesPara(usuario, { desde, hasta, hoy, filasFeriados });
+  const feriados = feriadosDelRango(filasFeriados, desdeDeLosFeriados(desde), hasta);
+  const rango = { desde, hasta, feriados };
   return conDatos({
-    desde, hasta, hoy: ahora.slice(0, 10), puede_compartir: esAdmin(usuario.rol),
-    eventos: eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados }))
+    desde, hasta, hoy, puede_compartir: esAdmin(usuario.rol),
+    eventos: eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados })),
+    licencias: licencias.map((licencia) => itemDeLicencia(licencia, rango)),
+    feriados: itemsDeFeriados(filasFeriados, desde, hasta),
+    ausentes: ausentes.map((ausente) => itemDeAusencia(ausente, rango))
   });
 });
 

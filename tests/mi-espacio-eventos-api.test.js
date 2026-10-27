@@ -3,8 +3,9 @@
 // borra solo quien lo creó (el resto recibe 404: no se revela que existe); comparte solo administración, y solo con
 // administración; una invitada apaga o prende su recordatorio, y cuándo sale se calcula en cada pedido con los feriados de
 // ese momento (Review Focus 3). Las lecturas de services/miEspacioEventosDatos.js que la API todavía no usa (audienciaDe, la de
-// los emails) se prueban directo. La API usa la fecha real: las fechas de los tests se arman desde hoy. Las personas son
-// «Test <clave>».
+// los emails) se prueban directo. También lo demás de la agenda (tus licencias de Mi espacio, los feriados y los compañeros
+// que no están, sin el tipo) y los eventos de «Hoy y mañana» del Resumen. La API usa la fecha real: las fechas de los tests se
+// arman desde hoy. Las personas son «Test <clave>».
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -37,7 +38,7 @@ const ROLES = Object.freeze({
   superadmin: 'superadmin', adminA: 'admin', adminB: 'admin', editor: 'editor', lector: 'lector', colab: 'colaborador'
 });
 const TABLAS = ['mi_espacio_evento_envios', 'mi_espacio_evento_personas', 'mi_espacio_eventos', 'mi_espacio_eventos_corridas',
-  'feriados', 'usuarios_licencias'];
+  'feriados', 'mi_espacio_licencias', 'usuarios_licencias'];
 
 before(async () => {
   dbReal = process.env.DB_NAME;
@@ -144,7 +145,8 @@ describe('un evento personal', () => {
     assert.ok(Number.isInteger(id) && id > 0);
 
     const data = await listado('adminA');
-    assert.deepEqual(Object.keys(data), ['desde', 'hasta', 'hoy', 'puede_compartir', 'eventos']);
+    assert.deepEqual(Object.keys(data),
+      ['desde', 'hasta', 'hoy', 'puede_compartir', 'eventos', 'licencias', 'feriados', 'ausentes']);
     assert.equal(data.desde, q(0));
     assert.equal(data.hasta, q(20));
     assert.equal(data.hoy, hoyArgentina());
@@ -465,15 +467,19 @@ describe('los 400', () => {
     es404(await cambiar('adminA', 'abc', { titulo: '' }));
   });
 
-  it('GET /eventos: las fechas que faltan o no sirven y un rango de más de 93 días, 400 en fechas', async () => {
-    for (const ruta of ['/mi-espacio/eventos', `/mi-espacio/eventos?desde=${q(0)}`, `/mi-espacio/eventos?desde=abc&hasta=${q(0)}`,
-      `/mi-espacio/eventos?desde=${q(1)}&hasta=${q(0)}`, `/mi-espacio/eventos?desde=1999-12-31&hasta=2000-01-01`]) {
-      es400(await api.get(ruta, como('adminA')), 'fechas', MENSAJES_MI_ESPACIO.fecha);
-    }
-    es400(await api.get(`/mi-espacio/eventos?desde=${q(0)}&hasta=${q(93)}`, como('adminA')), 'fechas',
-      'Elegí un rango de hasta 93 días.');
-    assert.equal((await api.get(`/mi-espacio/eventos?desde=${q(0)}&hasta=${q(92)}`, como('adminA'))).status, 200);
-  });
+  it('GET /eventos: las fechas que faltan o no sirven y un rango de más de 93 días, 400 en fechas, también para el lector',
+    async () => {
+      for (const clave of ['adminA', 'lector']) {
+        for (const ruta of ['/mi-espacio/eventos', `/mi-espacio/eventos?desde=${q(0)}`,
+          `/mi-espacio/eventos?desde=abc&hasta=${q(0)}`, `/mi-espacio/eventos?desde=${q(1)}&hasta=${q(0)}`,
+          `/mi-espacio/eventos?desde=${q(0)}&hasta=2026-02-30`, `/mi-espacio/eventos?desde=1999-12-31&hasta=2000-01-01`]) {
+          es400(await api.get(ruta, como(clave)), 'fechas', MENSAJES_MI_ESPACIO.fecha);
+        }
+        es400(await api.get(`/mi-espacio/eventos?desde=${q(0)}&hasta=${q(93)}`, como(clave)), 'fechas',
+          'Elegí un rango de hasta 93 días.');
+        assert.equal((await api.get(`/mi-espacio/eventos?desde=${q(0)}&hasta=${q(92)}`, como(clave))).status, 200);
+      }
+    });
 });
 
 describe('«mi recordatorio»', () => {
@@ -680,5 +686,162 @@ describe('los datos (services/miEspacioEventosDatos.js)', () => {
     const personal = await crear('adminA');
     assert.deepEqual(await datos.audienciaDe(await datos.eventoPropio(personal, idDe('adminA'))), []);
     for (const raro of [null, undefined, 42, {}]) assert.deepEqual(await datos.audienciaDe(raro), []);
+  });
+});
+
+// Lo demás de la agenda (spec, secciones 6 y 7): tus licencias de Mi espacio (con el tipo), los feriados y los compañeros que
+// no están (sin el tipo: antiobjetivo), y los eventos de hoy y de mañana en «Hoy y mañana» del Resumen
+describe('lo demás de la agenda', () => {
+  const conLicencia = async (clave, { tipo, desde, hasta = desde, horas = null, nota = null, activo = 1, mostrar = 1 }) =>
+    (await query(
+      `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, horas, nota, activo, mostrar)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [idDe(clave), tipo, desde, hasta, horas, nota, activo, mostrar]
+    )).insertId;
+  const SEMANA = [q(0), q(1), q(2), q(3), q(4)];
+  const CLAVES_DE_LA_LICENCIA = ['id', 'tipo', 'desde', 'hasta', 'texto', 'hasta_texto', 'dias'];
+  const CLAVES_DEL_COMPANERO = ['nombre', 'desde', 'hasta', 'texto', 'hasta_texto', 'dias'];
+
+  it('tus licencias de Mi espacio salen con su tipo, enteras y con sus días hábiles del rango; las de otra persona, no',
+    async () => {
+      // Del viernes anterior al rango al viernes q(4), con una nota (que no sale)
+      const vacaciones = await conLicencia('adminA', { tipo: 'vacaciones', desde: q(-3), hasta: q(4), nota: 'Viaje familiar' });
+      // Las horas llegan de la base como '2.0'
+      const franquicia = await conLicencia('adminA', { tipo: 'franquicia', desde: q(8), horas: 2 });
+      // Ni una dada de baja ni una fuera del rango
+      await conLicencia('adminA', { tipo: 'medica', desde: q(9), activo: 0 });
+      await conLicencia('adminA', { tipo: 'familiar', desde: q(30) });
+      const deAdminB = await conLicencia('adminB', { tipo: 'medica', desde: q(2), mostrar: 0 });
+
+      const { licencias } = await listado('adminA');
+      assert.deepEqual(licencias, [
+        {
+          id: vacaciones, tipo: 'vacaciones', desde: q(-3), hasta: q(4), texto: 'Vacaciones',
+          hasta_texto: `Hasta el viernes ${ddmm(q(4))}`, dias: SEMANA
+        },
+        { id: franquicia, tipo: 'franquicia', desde: q(8), hasta: q(8), texto: 'Franquicia, 2 h', hasta_texto: '', dias: [q(8)] }
+      ]);
+      for (const licencia of licencias) assert.deepEqual(Object.keys(licencia), CLAVES_DE_LA_LICENCIA);
+      assert.ok(!JSON.stringify(licencias).includes('Viaje'));
+
+      // adminB ve la suya, aunque no la muestre a los compañeros; y no la de adminA
+      const deB = await listado('adminB');
+      assert.deepEqual(deB.licencias.map((licencia) => [licencia.id, licencia.texto]), [[deAdminB, 'Atención médica']]);
+      // El lector también tiene las suyas
+      const delLector = await conLicencia('lector', { tipo: 'estudios', desde: q(3) });
+      assert.deepEqual((await listado('lector')).licencias.map((licencia) => licencia.id), [delLector]);
+    });
+
+  it('licenciasPropiasEntre: las activas de la persona que tocan el rango, con las horas como número; sin un rango, []',
+    async () => {
+      const vacaciones = await conLicencia('adminA', { tipo: 'vacaciones', desde: q(-3), hasta: q(4) });
+      const franquicia = await conLicencia('adminA', { tipo: 'franquicia', desde: q(4), horas: '7.5' });
+      await conLicencia('adminA', { tipo: 'medica', desde: q(2), activo: 0 });
+      await conLicencia('adminA', { tipo: 'familiar', desde: q(7) });
+      await conLicencia('adminB', { tipo: 'medica', desde: q(2) });
+      assert.deepEqual(await datos.licenciasPropiasEntre(idDe('adminA'), q(0), q(4)), [
+        { id: vacaciones, tipo: 'vacaciones', desde: q(-3), hasta: q(4), horas: null },
+        { id: franquicia, tipo: 'franquicia', desde: q(4), hasta: q(4), horas: 7.5 }
+      ]);
+      // Los dos días incluidos
+      assert.deepEqual((await datos.licenciasPropiasEntre(idDe('adminA'), q(7), q(7))).length, 1);
+      for (const [usuario, desde, hasta] of [['abc', q(0), q(4)], [idDe('adminA'), 'abc', q(4)], [idDe('adminA'), q(4), q(0)]]) {
+        assert.deepEqual(await datos.licenciasPropiasEntre(usuario, desde, hasta), []);
+      }
+    });
+
+  it('los compañeros que no están, sin el tipo ni la nota: con «Mostrar» sí, sin él no; unidos con lo de antes del rango',
+    async () => {
+      // adminB: una atención médica antes del rango, separada solo por el fin de semana, y unas vacaciones: una sola ausencia
+      await conLicencia('adminB', { tipo: 'medica', desde: q(-7), hasta: q(-3), nota: 'Turno con la doctora' });
+      await conLicencia('adminB', { tipo: 'vacaciones', desde: q(0), hasta: q(4), nota: 'Viaje a la costa' });
+      // El editor no la muestra
+      await conLicencia('editor', { tipo: 'vacaciones', desde: q(1), hasta: q(2), mostrar: 0 });
+      // La de adminA no sale en la suya (sale en sus licencias)
+      await conLicencia('adminA', { tipo: 'familiar', desde: q(2) });
+
+      const { ausentes } = await listado('adminA');
+      assert.deepEqual(ausentes, [{
+        nombre: 'Test adminB', desde: q(-7), hasta: q(4), texto: 'Test adminB no está',
+        hasta_texto: `Hasta el viernes ${ddmm(q(4))}`, dias: SEMANA
+      }]);
+      assert.deepEqual(Object.keys(ausentes[0]), CLAVES_DEL_COMPANERO);
+      const texto = JSON.stringify(ausentes);
+      for (const nada of ['medica', 'vacaciones', 'Turno', 'Viaje', 'usuario_id', 'vuelve']) {
+        assert.ok(!texto.includes(nada), nada);
+      }
+
+      // adminB ve a adminA (de un día), no a sí misma
+      assert.deepEqual((await listado('adminB')).ausentes, [{
+        nombre: 'Test adminA', desde: q(2), hasta: q(2), texto: 'Test adminA no está', hasta_texto: '', dias: [q(2)]
+      }]);
+      // El lector y el colaborador no ven a los compañeros
+      for (const clave of ['lector', 'colab']) assert.deepEqual((await listado(clave)).ausentes, [], clave);
+    });
+
+  it('los feriados del rango: «Feriado: <nombre>», también en un fin de semana, y sacan el día de una licencia', async () => {
+    await conFeriado(q(2), 'Feriado de prueba');
+    await conFeriado(q(5), 'Feriado de un sábado');
+    await conLicencia('adminA', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
+    // q(0) a q(4) son días de semana hábiles: ningún fijo
+    const data = await listado('adminA', q(0), q(4));
+    assert.deepEqual(data.feriados, [{ fecha: q(2), nombre: 'Feriado de prueba', texto: 'Feriado: Feriado de prueba' }]);
+    assert.deepEqual(data.licencias[0].dias, [q(0), q(1), q(3), q(4)]);
+    const conElSabado = (await listado('adminA', q(0), q(6))).feriados;
+    assert.ok(conElSabado.some((feriado) => feriado.fecha === q(5) && feriado.texto === 'Feriado: Feriado de un sábado'));
+  });
+
+  it('un fijo con el mismo nombre en la tabla va una vez; con otro nombre, los dos; los fijos sin cargar nada', async () => {
+    const anio = Number(hoy.slice(0, 4)) + 1;
+    await conFeriado(`${anio}-12-25`, 'Navidad');
+    await conFeriado(`${anio}-12-08`, 'Otro feriado de prueba');
+    const { feriados } = await listado('adminA', `${anio}-12-01`, `${anio}-12-31`);
+    assert.deepEqual(feriados, [
+      { fecha: `${anio}-12-08`, nombre: 'Inmaculada Concepción de María', texto: 'Feriado: Inmaculada Concepción de María' },
+      { fecha: `${anio}-12-08`, nombre: 'Otro feriado de prueba', texto: 'Feriado: Otro feriado de prueba' },
+      { fecha: `${anio}-12-25`, nombre: 'Navidad', texto: 'Feriado: Navidad' }
+    ]);
+  });
+});
+
+describe('«Hoy y mañana» del Resumen: los eventos', () => {
+  it('uno de hoy y uno compartido de mañana salen; uno de pasado mañana, uno de ayer y uno que no ve, no', async () => {
+    const deHoy = await crear('adminA', { titulo: 'Llamar a Vialidad por el TMDA', fecha: dia(0), desde: '12:00', hasta: '' });
+    const deManana = await crear('adminB', { fecha: dia(1), desde: '10:00', ...compartidoCon('adminA') });
+    await crear('adminA', { titulo: 'Pasado mañana', fecha: dia(2) });
+    await crear('adminA', { titulo: 'Ayer', fecha: dia(-1) });
+    await crear('adminB', { titulo: 'De adminB, personal', fecha: dia(0) });
+
+    const res = await api.get('/mi-espacio/resumen', como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const { hoy_y_manana: hoyYManana } = res.body.data;
+    assert.deepEqual(Object.keys(hoyYManana), ['ausentes_hoy', 'ausentes_manana', 'proximo_feriado', 'eventos']);
+    assert.deepEqual(hoyYManana.eventos, [
+      { id: deHoy, hora: '12:00', titulo: 'Llamar a Vialidad por el TMDA', compartido: false, detalle: 'Hoy · solo vos' },
+      { id: deManana, hora: '10:00', titulo: 'Reunión de equipo', compartido: true, detalle: 'Mañana · de Test adminB' }
+    ]);
+
+    // Quien lo creó lo ve con sus personas
+    const deB = (await api.get('/mi-espacio/resumen', como('adminB'))).body.data.hoy_y_manana.eventos;
+    assert.deepEqual(deB.map((evento) => evento.detalle), ['Hoy · solo vos', 'Mañana · con 1 persona']);
+    // Sin modalidad ni eventos, la lista vacía (la página decide qué mostrar)
+    const delLector = await api.get('/mi-espacio/resumen', como('lector'));
+    assert.equal(delLector.status, 200, JSON.stringify(delLector.body));
+    assert.deepEqual(delLector.body.data.hoy_y_manana.eventos, []);
+  });
+
+  it('aislado: si leer los eventos falla, el Resumen sale igual, con la lista vacía', async () => {
+    await crear('adminA', { fecha: dia(0) });
+    await query('RENAME TABLE mi_espacio_eventos TO mi_espacio_eventos_falla_simulada');
+    try {
+      const res = await api.get('/mi-espacio/resumen', como('adminA'));
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.deepEqual(res.body.data.hoy_y_manana.eventos, []);
+      assert.deepEqual(Object.keys(res.body.data.hoy_y_manana),
+        ['ausentes_hoy', 'ausentes_manana', 'proximo_feriado', 'eventos']);
+    } finally {
+      await query('RENAME TABLE mi_espacio_eventos_falla_simulada TO mi_espacio_eventos');
+    }
+    assert.equal((await api.get('/mi-espacio/resumen', como('adminA'))).body.data.hoy_y_manana.eventos.length, 1);
   });
 });

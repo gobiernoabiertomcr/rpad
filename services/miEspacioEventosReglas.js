@@ -11,18 +11,20 @@
  * hábil), los textos de cuándo es un evento y cuándo sale su aviso, y quién recibe qué: los recordatorios de una corrida
  * (`recordatoriosQueTocan`, con los atrasados) y los emails de un guardado (`emailsDelGuardado` y `cambioQueAvisa`). Al
  * final, lo que dice la API: el pedido de cuándo sale un aviso (`validarAvisoDelEvento`), las personas de un guardado
- * (`personasDelPedido`), cuándo sale el aviso (`avisoDe`) y cada evento como lo ve quien lo pide (`itemDeEvento`). Los
- * textos son planos: escaparlos le toca a quien los dibuja.
+ * (`personasDelPedido`), cuándo sale el aviso (`avisoDe`) y cada evento como lo ve quien lo pide (`itemDeEvento`); lo demás
+ * de la agenda (tus licencias, los compañeros que no están y los feriados: `itemDeLicencia`, `itemDeAusencia` e
+ * `itemsDeFeriados`) y los eventos de «Hoy y mañana» del Resumen (`eventosDeHoyYManana`). Los textos son planos: escaparlos
+ * le toca a quien los dibuja.
  *
  * La usan la API de los eventos, sus emails, la corrida de los recordatorios y Correos → Estado. La página
  * (`public/js/mi-espacio.js`) tiene copias de los mensajes, los largos, las fechas y los recordatorios, atadas por tests de
  * paridad: si cambia uno acá, cambia allá. El navegador no recalcula días hábiles: cuándo sale el aviso lo dice el servidor.
  * En el código, la agenda es `evento` o `mi_espacio_`, nunca «agenda» a secas: la Agenda de pedidos de Reportes es otra cosa.
  */
-import { esDiaHabilCon, restarDiasHabilesCon, diaDeLaSemana } from './feriadosReglas.js';
+import { esDiaHabilCon, restarDiasHabilesCon, diaDeLaSemana, diasHabilesDe, feriadosDelAnio } from './feriadosReglas.js';
 import { esFechaIso, sumarDias, diasEntre, formatoCorto } from './notasDigitalesCalendario.js';
 import { diaLargo } from './miEspacioResumen.js';
-import { textoRango, enLista } from './miEspacioReglas.js';
+import { textoRango, enLista, NOMBRES_TIPO, numeroTexto, textoNoEsta } from './miEspacioReglas.js';
 import { idPositivo, idsPositivos } from './proyectosReglas.js';
 import { emailValido } from './usuariosReglas.js';
 
@@ -587,4 +589,134 @@ export const itemDeEvento = (evento, contexto) => {
     else item.quien_largo = `Lo creó ${nombreDelCreador}.`;
   }
   return item;
+};
+
+// Lo demás de la agenda (spec, secciones 6 y 7): lo que se ve en el mes y en Próximos además de los eventos. Cada cosa de
+// varios días va entera (su desde y su hasta, aunque pasen del rango pedido) y con `dias`, sus días hábiles dentro del rango
+// (con los feriados): los que pinta el mes
+
+const compararTexto = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+// Las fechas de una licencia o una ausencia (o del rango), si las dos son fechas y en orden: `{ desde, hasta }`; si no, null
+const fechasDe = (fuente) => (esObjeto(fuente) && esFechaIso(fuente.desde) && esFechaIso(fuente.hasta)
+  && fuente.desde <= fuente.hasta ? { desde: fuente.desde, hasta: fuente.hasta } : null);
+
+// Los días hábiles de `fechas` dentro del rango `{ desde, hasta, feriados }` (los dos días incluidos; `feriados`, el Set de
+// feriadosDelRango): [] sin unas fechas o un rango que sirvan, o si no se tocan
+const diasEnElRango = (fechas, rango) => {
+  const delRango = fechasDe(rango);
+  if (fechas === null || delRango === null) return [];
+  const desde = fechas.desde > delRango.desde ? fechas.desde : delRango.desde;
+  const hasta = fechas.hasta < delRango.hasta ? fechas.hasta : delRango.hasta;
+  return diasHabilesDe(desde, hasta, rango.feriados);
+};
+
+// «Hasta el viernes 06/11» de lo que dura más de un día; '' si dura uno, o sin fechas
+const hastaTextoDe = (fechas) => (fechas !== null && fechas.hasta > fechas.desde ? `Hasta el ${diaLargo(fechas.hasta)}` : '');
+
+// Las horas de una licencia por horas como número positivo (el DECIMAL de la base llega como '2.0'); si no, null
+const horasDeLaLicencia = (valor) => {
+  const horas = typeof valor === 'number' || (typeof valor === 'string' && valor.trim() !== '') ? Number(valor) : NaN;
+  return Number.isFinite(horas) && horas > 0 ? horas : null;
+};
+
+/**
+ * Una licencia de Mi espacio en la agenda de quien la cargó (la de `licenciasPropiasEntre`, services/miEspacioEventosDatos.js:
+ * `{ id, tipo, desde, hasta, horas }`), con el rango pedido `{ desde, hasta, feriados }`: `{ id, tipo, desde, hasta, texto,
+ * hasta_texto, dias }`. `texto` es el nombre del tipo (`NOMBRES_TIPO`: es suya, va con el tipo) y, con horas, «, 2 h»
+ * («Franquicia, 2 h», «Franquicia, 7,5 h»); `hasta_texto`, «Hasta el viernes 06/11», o '' si dura un día; `dias`, sus días
+ * hábiles dentro del rango. Va entera: su desde y su hasta, aunque pasen del rango. Nunca la nota. Nada tira: un tipo que no es
+ * de la lista da null y el texto vacío; unas fechas que no sirven, null y sin días.
+ */
+export const itemDeLicencia = (fila, rango) => {
+  const fuente = esObjeto(fila) ? fila : {};
+  const fechas = fechasDe(fuente);
+  const tipo = typeof fuente.tipo === 'string' && Object.hasOwn(NOMBRES_TIPO, fuente.tipo) ? fuente.tipo : null;
+  const nombre = tipo === null ? '' : NOMBRES_TIPO[tipo];
+  const horas = horasDeLaLicencia(fuente.horas);
+  return {
+    id: idPositivo(fuente.id),
+    tipo,
+    desde: fechas?.desde ?? null,
+    hasta: fechas?.hasta ?? null,
+    texto: nombre === '' || horas === null ? nombre : `${nombre}, ${numeroTexto(horas)} h`,
+    hasta_texto: hastaTextoDe(fechas),
+    dias: diasEnElRango(fechas, rango)
+  };
+};
+
+/**
+ * Un compañero que no está, en la agenda de quien mira (las ausencias de `ausentesPara`, controllers/miEspacioController.js:
+ * unidas con las seguidas y enteras), con el rango pedido `{ desde, hasta, feriados }`: exactamente `{ nombre, desde, hasta,
+ * texto, hasta_texto, dias }`, con «<nombre> no está» (`textoNoEsta`), «Hasta el viernes 30/10» (o '' si es un día) y sus
+ * días hábiles dentro del rango. Nunca el tipo, la nota ni un id (antiobjetivo de la spec: aunque vengan, no pasan). Nada
+ * tira.
+ */
+export const itemDeAusencia = (ausencia, rango) => {
+  const fuente = esObjeto(ausencia) ? ausencia : {};
+  const fechas = fechasDe(fuente);
+  const nombre = typeof fuente.nombre === 'string' ? fuente.nombre : '';
+  return {
+    nombre,
+    desde: fechas?.desde ?? null,
+    hasta: fechas?.hasta ?? null,
+    texto: textoNoEsta(nombre),
+    hasta_texto: hastaTextoDe(fechas),
+    dias: diasEnElRango(fechas, rango)
+  };
+};
+
+/**
+ * Los feriados de desde a hasta ('AAAA-MM-DD', los dos incluidos) en la agenda: `[{ fecha, nombre, texto }]`, con «Feriado:
+ * <nombre>», por fecha. `lista` son las filas de `filasDeFeriados` (services/feriadosDatos.js), recorridas con
+ * `feriadosDelAnio` de cada año del rango: los 9 fijos y los de la tabla que ese año rigen (los de `rige: false` no van),
+ * también en un fin de semana. Un día lleva un ítem por cada nombre distinto (decisión del controlador, riesgo 21 del
+ * preflight): un fijo y una fila de la tabla con el mismo nombre ese día son uno; con otro nombre, los dos, en el orden de la
+ * lista del año (el fijo primero). Sin filas, los fijos; con un rango que no es un rango, [].
+ */
+export const itemsDeFeriados = (lista, desde, hasta) => {
+  if (!esFechaIso(desde) || !esFechaIso(hasta) || hasta < desde) return [];
+  const items = [];
+  const vistos = new Set();
+  for (let anio = Number(desde.slice(0, 4)); anio <= Number(hasta.slice(0, 4)); anio++) {
+    for (const { fecha, nombre, rige } of feriadosDelAnio(lista, anio)) {
+      // La fecha tiene siempre diez caracteres: con ella delante, la clave no confunde dos nombres
+      const clave = `${fecha} ${nombre}`;
+      if (!rige || fecha < desde || fecha > hasta || vistos.has(clave)) continue;
+      vistos.add(clave);
+      items.push({ fecha, nombre, texto: `Feriado: ${nombre}` });
+    }
+  }
+  return items;
+};
+
+// En «Hoy y mañana», quién está va en minúscula: «solo vos», «con 4 personas», «de Laura Gómez»
+const minuscula = (texto) => texto.charAt(0).toLowerCase() + texto.slice(1);
+
+/**
+ * Los eventos de «Hoy y mañana» del Resumen (spec, sección 6), de los ítems de `itemDeEvento` (los que ve la persona) y hoy
+ * ('AAAA-MM-DD'): los de hoy y los de mañana (el día siguiente corrido), por día y hora (los de la misma hora, en el orden
+ * recibido), cada uno `{ id, hora, titulo, compartido, detalle }`. `detalle` es «Hoy · solo vos», «Mañana · con 4 personas» o
+ * «Hoy · de <creador>» (el `quien_texto` del ítem, en minúscula; sin él, «Hoy» o «Mañana»); `compartido`, si el evento es
+ * compartido (el violeta de la página). Ni los de antes ni los de pasado mañana. Nada tira: sin una lista o un hoy válido,
+ * []; lo que no es un evento de esos dos días no cuenta.
+ */
+export const eventosDeHoyYManana = (items, hoy) => {
+  if (!Array.isArray(items) || !esFechaIso(hoy)) return [];
+  const manana = sumarDias(hoy, 1);
+  const hora = (item) => (esHora(item.desde) ? item.desde : '');
+  return items
+    .filter((item) => esObjeto(item) && (item.fecha === hoy || item.fecha === manana))
+    .sort((a, b) => compararTexto(a.fecha, b.fecha) || compararTexto(hora(a), hora(b)))
+    .map((item) => {
+      const dia = item.fecha === hoy ? 'Hoy' : 'Mañana';
+      const quien = typeof item.quien_texto === 'string' ? item.quien_texto.trim() : '';
+      return {
+        id: idPositivo(item.id),
+        hora: hora(item),
+        titulo: typeof item.titulo === 'string' ? item.titulo : '',
+        compartido: esSi(item.compartido),
+        detalle: quien === '' ? dia : `${dia} · ${minuscula(quien)}`
+      };
+    });
 };

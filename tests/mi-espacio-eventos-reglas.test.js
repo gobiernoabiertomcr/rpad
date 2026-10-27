@@ -1,6 +1,7 @@
 // La agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, secciones 1, 4, 5 y 7): la validación de un evento, el
 // momento en que sale su recordatorio con los feriados (nunca en un día que no es hábil), los textos de cuándo es y cuándo
-// sale, y quién recibe qué: los recordatorios de una corrida (con los atrasados) y los emails de un guardado. Puras, sin
+// sale, y quién recibe qué: los recordatorios de una corrida (con los atrasados) y los emails de un guardado. También lo
+// demás de la agenda (tus licencias, los compañeros que no están y los feriados) y los eventos de «Hoy y mañana». Puras, sin
 // base. Hoy es el lunes 26/10/2026.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +11,8 @@ import {
   MINUTOS_A_TIEMPO, HORA_DE_LOS_ATRASADOS, HORA_DE_CIERRE_DE_LOS_ATRASADOS, MENSAJES_EVENTO,
   fechaMaximaEvento, textoRangoEvento, validarEvento, momentoDelAviso, textoDelAviso, cuandoDelEvento,
   cuandoCortoDelEvento, cuandoEsElEvento, cuandoFue, textoDelEvento, listaConY, inicialesDe,
-  recordatoriosQueTocan, cambioQueAvisa, emailsDelGuardado, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento
+  recordatoriosQueTocan, cambioQueAvisa, emailsDelGuardado, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento,
+  itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana
 } from '../services/miEspacioEventosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
 
@@ -1014,5 +1016,181 @@ describe('itemDeEvento', () => {
     // Personas raras no cuentan
     assert.deepEqual(item({ compartido: true, personas: [null, 'x', { id: 'abc' }, persona(3, 'Sofía Paz')] }).personas_ids,
       [3]);
+  });
+});
+
+// Lo demás de la agenda (spec, secciones 6 y 7): lo que se ve en el mes y en Próximos además de los eventos
+describe('itemDeLicencia', () => {
+  const NOVIEMBRE = { desde: '2026-11-01', hasta: '2026-11-30', feriados: new Set() };
+  const licencia = (datos) => ({ id: 7, tipo: 'vacaciones', desde: '2026-10-26', hasta: '2026-11-06', horas: null, ...datos });
+  const CLAVES = ['id', 'tipo', 'desde', 'hasta', 'texto', 'hasta_texto', 'dias'];
+
+  it('«Franquicia, 2 h», de un día, sin hasta_texto y con su día', () => {
+    const franquicia = itemDeLicencia(licencia({ tipo: 'franquicia', desde: '2026-11-04', hasta: '2026-11-04', horas: 2 }),
+      NOVIEMBRE);
+    assert.deepEqual(franquicia, {
+      id: 7, tipo: 'franquicia', desde: '2026-11-04', hasta: '2026-11-04', texto: 'Franquicia, 2 h', hasta_texto: '',
+      dias: ['2026-11-04']
+    });
+    assert.deepEqual(Object.keys(franquicia), CLAVES);
+    // Las horas con coma; las de la base llegan como texto ('7.5') o ya convertidas
+    assert.equal(itemDeLicencia(licencia({ tipo: 'franquicia', desde: '2026-11-04', hasta: '2026-11-04', horas: '7.5' }),
+      NOVIEMBRE).texto, 'Franquicia, 7,5 h');
+    assert.equal(itemDeLicencia(licencia({ tipo: 'horas_a_favor', desde: '2026-11-04', hasta: '2026-11-04', horas: 3 }),
+      NOVIEMBRE).texto, 'Horas a favor, 3 h');
+    // Sin horas, solo el nombre del tipo
+    assert.equal(itemDeLicencia(licencia({ tipo: 'franco', desde: '2026-11-04', hasta: '2026-11-04' }), NOVIEMBRE).texto,
+      'Franco compensatorio');
+  });
+
+  it('vacaciones del 26/10 al 06/11 pedidas de noviembre: sus hábiles de noviembre, sin el feriado; «Hasta el viernes 06/11»',
+    () => {
+      const sinFeriado = itemDeLicencia(licencia({}), NOVIEMBRE);
+      assert.deepEqual(sinFeriado, {
+        id: 7, tipo: 'vacaciones', desde: '2026-10-26', hasta: '2026-11-06', texto: 'Vacaciones',
+        hasta_texto: 'Hasta el viernes 06/11', dias: ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06']
+      });
+      const conFeriado = itemDeLicencia(licencia({}), { ...NOVIEMBRE, feriados: new Set(['2026-11-03']) });
+      assert.deepEqual(conFeriado.dias, ['2026-11-02', '2026-11-04', '2026-11-05', '2026-11-06']);
+      // Entera: el desde y el hasta son los suyos, aunque pasen del rango
+      assert.deepEqual([conFeriado.desde, conFeriado.hasta], ['2026-10-26', '2026-11-06']);
+      // Pedidas de octubre: sus días hábiles de octubre
+      assert.deepEqual(itemDeLicencia(licencia({}), { desde: '2026-10-01', hasta: '2026-10-31', feriados: new Set() }).dias,
+        ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30']);
+    });
+
+  it('nada tira: con algo que no sirve, sin id, sin tipo, sin textos y sin días', () => {
+    for (const entrada of [null, undefined, 42, 'licencia', []]) {
+      assert.deepEqual(itemDeLicencia(entrada, NOVIEMBRE),
+        { id: null, tipo: null, desde: null, hasta: null, texto: '', hasta_texto: '', dias: [] });
+    }
+    // Un rango que no es un rango: sin días
+    for (const opciones of [null, undefined, {}, { desde: 'abc', hasta: '2026-11-30' },
+      { desde: '2026-11-30', hasta: '2026-11-01' }]) {
+      assert.deepEqual(itemDeLicencia(licencia({}), opciones).dias, []);
+    }
+    // Un tipo que no es de la lista: sin texto; unas horas que no son un número, sin las horas
+    assert.equal(itemDeLicencia(licencia({ tipo: 'otro' }), NOVIEMBRE).texto, '');
+    assert.equal(itemDeLicencia(licencia({ tipo: 'otro' }), NOVIEMBRE).tipo, null);
+    assert.equal(itemDeLicencia(licencia({ tipo: 'franquicia', horas: 'x' }), NOVIEMBRE).texto, 'Franquicia');
+  });
+});
+
+describe('itemDeAusencia', () => {
+  const NOVIEMBRE = { desde: '2026-11-01', hasta: '2026-11-30', feriados: new Set(['2026-11-03']) };
+  // Como la da ausentesPara (ausentesDelRango), con lo que nunca tiene que pasar
+  const ausencia = (datos) => ({
+    usuario_id: 9, nombre: 'Martín Ríos', desde: '2026-10-26', hasta: '2026-11-06', vuelve: '2026-11-09',
+    texto: 'Martín Ríos no está', vuelve_texto: 'Vuelve el lunes 09/11', tipo: 'medica', nota: 'Turno', id: 4, ...datos
+  });
+
+  it('exactamente sus seis claves: nunca el tipo, la nota ni un id', () => {
+    const item = itemDeAusencia(ausencia({}), NOVIEMBRE);
+    assert.deepEqual(item, {
+      nombre: 'Martín Ríos', desde: '2026-10-26', hasta: '2026-11-06', texto: 'Martín Ríos no está',
+      hasta_texto: 'Hasta el viernes 06/11', dias: ['2026-11-02', '2026-11-04', '2026-11-05', '2026-11-06']
+    });
+    assert.deepEqual(Object.keys(item), ['nombre', 'desde', 'hasta', 'texto', 'hasta_texto', 'dias']);
+    const texto = JSON.stringify(item);
+    for (const nada of ['medica', 'Turno', 'usuario_id', 'vuelve']) assert.ok(!texto.includes(nada), nada);
+  });
+
+  it('de un día, sin hasta_texto', () => {
+    const item = itemDeAusencia(ausencia({ desde: '2026-11-04', hasta: '2026-11-04' }), NOVIEMBRE);
+    assert.equal(item.hasta_texto, '');
+    assert.deepEqual(item.dias, ['2026-11-04']);
+  });
+
+  it('nada tira', () => {
+    for (const entrada of [null, undefined, 42, 'x', []]) {
+      assert.deepEqual(itemDeAusencia(entrada, NOVIEMBRE),
+        { nombre: '', desde: null, hasta: null, texto: ' no está', hasta_texto: '', dias: [] });
+    }
+    assert.deepEqual(itemDeAusencia(ausencia({}), null).dias, []);
+  });
+});
+
+describe('itemsDeFeriados', () => {
+  // Las filas de filasDeFeriados (services/feriadosDatos.js)
+  const fila = (datos) => ({
+    id: 1, fecha: '2026-12-13', nombre: 'Feriado de prueba', tipo: 'municipal', trasladado_de: null, se_repite: 0,
+    hasta_anio: null, activo: 1, no_rige: [], ...datos
+  });
+  const FILAS = [
+    // Un domingo: va igual
+    fila({ id: 1, fecha: '2026-12-13', nombre: 'Aniversario de prueba' }),
+    // Se repite y en 2026 no rige
+    fila({ id: 2, fecha: '2025-12-24', nombre: 'Nochebuena de prueba', se_repite: 1, no_rige: [2026] }),
+    // El mismo nombre que el fijo, el mismo día: uno solo
+    fila({ id: 3, fecha: '2026-12-25', nombre: 'Navidad', tipo: 'nacional' }),
+    // Otro nombre el mismo día que un fijo: los dos
+    fila({ id: 4, fecha: '2026-12-08', nombre: 'Día de prueba' }),
+    fila({ id: 5, fecha: '2026-11-23', nombre: 'Fuera del rango' }),
+    fila({ id: 6, fecha: '2026-12-31', nombre: 'Dado de baja', activo: 0 })
+  ];
+  const feriado = (fecha, nombre) => ({ fecha, nombre, texto: `Feriado: ${nombre}` });
+
+  it('de diciembre a enero: el 08/12, el 25/12 y el 01/01, los de la tabla que rigen y ninguno que no rige', () => {
+    assert.deepEqual(itemsDeFeriados(FILAS, '2026-12-01', '2027-01-31'), [
+      feriado('2026-12-08', 'Inmaculada Concepción de María'),
+      feriado('2026-12-08', 'Día de prueba'),
+      feriado('2026-12-13', 'Aniversario de prueba'),
+      feriado('2026-12-25', 'Navidad'),
+      feriado('2027-01-01', 'Año Nuevo')
+    ]);
+  });
+
+  it('uno que se repite va los años en que rige; solo los del rango, los dos días incluidos', () => {
+    const lista = itemsDeFeriados(FILAS, '2025-12-24', '2026-12-24');
+    assert.deepEqual(lista.filter((item) => item.nombre === 'Nochebuena de prueba'),
+      [feriado('2025-12-24', 'Nochebuena de prueba')]);
+    assert.deepEqual(lista.at(0), feriado('2025-12-24', 'Nochebuena de prueba'));
+    assert.deepEqual(lista.at(-1), feriado('2026-12-13', 'Aniversario de prueba'));
+    assert.deepEqual(itemsDeFeriados(FILAS, '2026-12-08', '2026-12-08'),
+      [feriado('2026-12-08', 'Inmaculada Concepción de María'), feriado('2026-12-08', 'Día de prueba')]);
+  });
+
+  it('sin filas, los fijos; nada tira', () => {
+    assert.deepEqual(itemsDeFeriados(null, '2026-12-01', '2026-12-31'),
+      [feriado('2026-12-08', 'Inmaculada Concepción de María'), feriado('2026-12-25', 'Navidad')]);
+    for (const [desde, hasta] of [['abc', '2026-12-31'], ['2026-12-31', '2026-12-01'], [undefined, undefined],
+      ['2026-02-30', '2026-03-31']]) {
+      assert.deepEqual(itemsDeFeriados(FILAS, desde, hasta), []);
+    }
+  });
+});
+
+describe('eventosDeHoyYManana', () => {
+  // Como los da itemDeEvento
+  const item = (datos) => ({
+    id: 1, titulo: 'Evento', fecha: HOY, desde: '10:00', hasta: null, es_mio: true, compartido: false, quien_texto: 'Solo vos',
+    ...datos
+  });
+  const ITEMS = [
+    item({ id: 1, titulo: 'De ayer', fecha: '2026-10-25' }),
+    item({ id: 2, titulo: 'Reunión de equipo', fecha: '2026-10-27', compartido: true, quien_texto: 'Con 4 personas' }),
+    item({ id: 3, titulo: 'Llamar a Vialidad por el TMDA', desde: '12:00' }),
+    item({ id: 4, titulo: 'Entrega del informe trimestral', fecha: '2026-10-28', es_mio: false, compartido: true,
+      quien_texto: 'De Martín Ríos' }),
+    item({ id: 5, titulo: 'Capacitación', desde: '09:00', es_mio: false, compartido: true, quien_texto: 'De Laura Gómez' }),
+    item({ id: 6, titulo: 'Mesa con Catastro', fecha: '2026-10-27', desde: '09:30', compartido: true, quien_texto: 'Con todos' })
+  ];
+
+  it('los de hoy y los de mañana, por día y hora, con «Hoy · …» y «Mañana · …»; ni ayer ni pasado mañana', () => {
+    const eventos = eventosDeHoyYManana(ITEMS, HOY);
+    assert.deepEqual(eventos, [
+      { id: 5, hora: '09:00', titulo: 'Capacitación', compartido: true, detalle: 'Hoy · de Laura Gómez' },
+      { id: 3, hora: '12:00', titulo: 'Llamar a Vialidad por el TMDA', compartido: false, detalle: 'Hoy · solo vos' },
+      { id: 6, hora: '09:30', titulo: 'Mesa con Catastro', compartido: true, detalle: 'Mañana · con todos' },
+      { id: 2, hora: '10:00', titulo: 'Reunión de equipo', compartido: true, detalle: 'Mañana · con 4 personas' }
+    ]);
+    for (const evento of eventos) assert.deepEqual(Object.keys(evento), ['id', 'hora', 'titulo', 'compartido', 'detalle']);
+  });
+
+  it('nada tira: sin una lista o sin un hoy, ninguno; lo que no es un evento no cuenta', () => {
+    for (const items of [null, undefined, 42, 'x', {}]) assert.deepEqual(eventosDeHoyYManana(items, HOY), []);
+    for (const hoy of [null, undefined, 'abc', '2026-02-30']) assert.deepEqual(eventosDeHoyYManana(ITEMS, hoy), []);
+    assert.deepEqual(eventosDeHoyYManana([null, 'x', 42, [], item({ id: 3, quien_texto: undefined })], HOY),
+      [{ id: 3, hora: '10:00', titulo: 'Evento', compartido: false, detalle: 'Hoy' }]);
   });
 });

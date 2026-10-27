@@ -17,6 +17,9 @@
  * Así el evento de antes de un cambio, leído de acá, tiene la misma forma que el validado (`validarEvento`): cambioQueAvisa
  * los compara con `!==`.
  *
+ * Para lo demás de la agenda, las licencias de Mi espacio de quien la mira (`licenciasPropiasEntre`); los compañeros que no
+ * están y los feriados se leen con lo de la entrega 2 y de la entrega 1 (`ausentesPara` y `filasDeFeriados`).
+ *
  * Sin consultas N+1: los eventos en una consulta y las personas de todos en otra. `conexion`: el pool, o la de una
  * transacción (lee lo que ella ve). Con `{ bloquear: true }` (en una transacción), la fila del evento queda bloqueada hasta
  * el final (`SELECT … FOR UPDATE`, sola y antes de leerlo: con REPEATABLE READ, la primera lectura común fija lo que ve la
@@ -180,4 +183,27 @@ export const personasParaCompartir = async (excluirId, conexion = pool) => {
     [ROLES_QUE_COMPARTEN, idPositivo(excluirId) ?? 0]
   );
   return filas.map((fila) => ({ id: Number(fila.id), nombre: fila.nombre_completo, iniciales: inicialesDe(fila.nombre_completo) }));
+};
+
+/**
+ * Las licencias de Mi espacio activas de una persona que tocan el rango (desde y hasta 'AAAA-MM-DD', los dos incluidos), para
+ * su agenda: `[{ id, tipo, desde, hasta, horas }]`, por fecha, enteras (su desde y su hasta, aunque pasen del rango). `horas`,
+ * un número (el DECIMAL llega como '2.0'), o null en las que no son por horas. Ni la nota, ni «Mostrar», ni lo del paso a
+ * Configuración: la agenda no los muestra. Sin un id o un rango que sirvan, [] (sin consultar).
+ * @returns {Promise<{ id: number, tipo: string, desde: string, hasta: string, horas: number | null }[]>}
+ */
+export const licenciasPropiasEntre = async (usuarioId, desde, hasta, conexion = pool) => {
+  const id = idPositivo(usuarioId);
+  if (id === null || !esFechaIso(desde) || !esFechaIso(hasta) || hasta < desde) return [];
+  const [filas] = await conexion.query(
+    `SELECT id, tipo, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, horas
+     FROM mi_espacio_licencias
+     WHERE usuario_id = ? AND activo = 1 AND desde <= ? AND hasta >= ?
+     ORDER BY desde, hasta, id`,
+    [id, hasta, desde]
+  );
+  return filas.map((fila) => ({
+    id: Number(fila.id), tipo: fila.tipo, desde: fila.desde, hasta: fila.hasta,
+    horas: fila.horas === null ? null : Number(fila.horas)
+  }));
 };
