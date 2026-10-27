@@ -110,8 +110,12 @@ Al final, después de una línea, con su título. El usuario lo eligió abajo y 
   - **Hoy:** los eventos de la agenda de hoy (`dia: 'hoy'`: la hora en negrita, el título y debajo `quien`, «con todos», «solo vos»…; ver 4.4) y, para quien ve a los compañeros, los que hoy no están («Julieta Arce no está» y debajo «Vuelve el martes 03/11»);
   - **Mañana:** lo mismo de mañana (`dia: 'manana'`);
   - **Próximo feriado:** el día en negrita y el nombre debajo.
-- **«Ver la agenda»** va al final de la última columna, si hay eventos.
-- **Una columna sin nada no va.** Sin ninguna, la sección tampoco, como hoy.
+- **Una columna sin nada no va.**
+- **Con la agenda** (el Resumen trae la lista `eventos`, aunque esté vacía), la sección está siempre, como la dejó la agenda (decisión del usuario, 27/10/2026):
+  - sin ningún evento hoy ni mañana, «No tenés eventos hoy ni mañana.» debajo del título, antes de las columnas;
+  - «Ver la agenda» va al final de la última columna o, sin columnas, debajo de esa frase.
+- **Sin la lista `eventos`,** como antes de la agenda: sin ninguna columna, la sección no va, y sin «Ver la agenda».
+- **Los eventos de hoy que ya terminaron no van** (decisión del usuario, 27/10/2026): los saca el servidor al armar el Resumen (4.4). En la pestaña Agenda siguen.
 - **En el teléfono,** una columna debajo de la otra, sin la línea.
 
 ### 2.4 El teléfono
@@ -175,9 +179,11 @@ Decisión del usuario (27/10/2026): «Vence el…» para todo, para unificar. La
 
 ### 4.4 Los eventos de «Hoy y mañana»
 
-La agenda arma cada evento con `eventosDeHoyYManana` (`services/miEspacioEventosReglas.js`, en su rama): `{ id, hora, titulo, compartido, detalle }`, donde `detalle` junta el día y con quién («Hoy · solo vos»). Para las columnas de 2.3, cada evento suma dos campos, sin sacar ninguno (los tests de la agenda siguen valiendo):
+La agenda arma cada evento con `eventosDeHoyYManana` (`services/miEspacioEventosReglas.js`): `{ id, hora, titulo, compartido, detalle }`, donde `detalle` junta el día y con quién («Hoy · solo vos»). Para las columnas de 2.3, cada evento suma dos campos, sin sacar ninguno (los tests de la agenda siguen valiendo):
 - **`dia`:** `'hoy'` o `'manana'`;
 - **`quien`:** el `quien_texto` del ítem en minúscula («solo vos», «con 4 personas», «de Laura Gómez»), o '' sin él. Es lo que hoy va después de « · » en `detalle`.
+
+Además, `eventosDeHoyYManana(items, hoy, ahora)` recibe el momento del pedido (`ahoraArgentina()`, `'AAAA-MM-DD HH:MM:SS'`) y saca los de hoy que ya terminaron: los que tienen su fin (`hasta` o, sin él, `desde`) antes de la hora y el minuto de `ahora` (a las 10:00, una reunión de 9:00 a 10:00 todavía va; a las 10:01, ya no). Sin `ahora`, o con un `ahora` que no es de `hoy`, no saca ninguno. La página no lo recalcula: si queda abierta, se actualiza al volver a pedir el Resumen.
 
 La página no corta `detalle`: usa `dia` y `quien` (Ruling 19).
 
@@ -230,6 +236,7 @@ Titular usa esos eventos como dice 2.3, con los dos campos de 4.4. La Task 1 de 
 - **Textos más cortos y entendibles** en lo que vence, unificados con «Vence el…» / «Vencen el…».
 - **El resto,** en números con una línea, no en tanques chicos.
 - **«Hoy y mañana»,** abajo y en columnas.
+- **Al implementar, con la agenda ya en main:** los eventos de hoy que ya terminaron no van en «Hoy y mañana», y la sección sigue estando siempre con la agenda, con «No tenés eventos hoy ni mañana.» y «Ver la agenda» (2.3 y 4.4).
 
 **De Claude, a revisar al leer:**
 - **La frase siempre habla de las vacaciones,** también en contrato. Lo urgente (las horas a favor que vencen) está en «Vence pronto», al lado.

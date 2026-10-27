@@ -21,7 +21,7 @@
 
 ## Global Constraints
 
-- **Antes de la Task 1, la agenda tiene que estar en main** (`git log main --oneline` muestra el merge de `feat/mi-espacio-agenda`). Si no, parar y avisar a la sesión coordinadora.
+- **La agenda ya está en main** (merge 780e39b, 27/10/2026) y main ya está traído a esta rama (merge 3ab4607). Se trabaja en esta misma rama, `claude/mi-espacio-resumen-mockups-8c1942`, en su worktree (`mi-espacio-licencias-fc16d6`): no hay worktree nuevo (pedido de la sesión coordinadora).
 - **No romper nada:** `npm test` completo antes y después de cada tarea, con el candado `C:\Users\Mariano\.rpad-suite.lock`; nunca dos suites a la vez.
 - **Todos los subagentes van con Opus.**
 - **Ningún email real** (en local, Mailpit). **Nunca `/api/cron/*`.**
@@ -52,7 +52,10 @@
     - «5 ya están cargados para noviembre.» («1 ya está cargado para …»), con los meses de la nota de la capa;
     - «Otros 10 se habilitan el 1/1/2027.» («Otro 1 se habilita el …»; con la cifra en 0, sin «Otros»: «10 se habilitan el 1/1/2027.»), con las fechas de la nota de la capa.
   - **`extraordinaria`:** «Atención médica extraordinaria: sin tope. No usaste en 2026.» («Usaste 1 día en 2026.», «Usaste 3 días en 2026.»).
-  - **La página:** «Vence pronto», «El resto de 2026» (con el `anio`), «Hoy y mañana», «Hoy», «Mañana», «Próximo feriado» y «Ver la agenda».
+  - **La página:** «Vence pronto», «El resto de 2026» (con el `anio`), «Hoy y mañana», «Hoy», «Mañana», «Próximo feriado», «No tenés eventos hoy ni mañana.» y «Ver la agenda».
+- **Decisiones del usuario al implementar (27/10/2026; spec 2.3 y 4.4):**
+  - los eventos de hoy que ya terminaron no van en «Hoy y mañana» (los saca el servidor);
+  - con la agenda (`hoy_y_manana.eventos` es una lista), la sección está siempre, con «No tenés eventos hoy ni mañana.» si no hay eventos y «Ver la agenda».
 - **El movimiento** (spec, sección 3):
   - tramos: empiezan a los 250 ms, la regla dura en total 1300 ms y cada tramo dura `max(160, n / capacidad × 1300)` ms, uno detrás del otro;
   - líneas del resto: a los 900 ms + 90 ms por línea, de 700 ms cada una;
@@ -74,15 +77,21 @@
 **Files:**
 - Modify: este plan (si hace falta, en su propio commit)
 
-- [ ] **Step 1:** Comprobar que la agenda está en main; si no, parar y avisar a la sesión coordinadora.
-- [ ] **Step 2: Leer el main nuevo** (`git log` y `git diff` desde el commit de este plan) y **ajustar este plan en la rama,** en su propio commit, si cambió algo. En particular:
+Hecha por el controlador el 27/10/2026: los Steps 1 a 3, con este ajuste del plan y de la spec en su propio commit. Lo que se encontró:
+- `eventosDeHoyYManana(items, hoy)` da `{ id, hora, titulo, compartido, detalle }`; la llama `eventosDelResumen` de `controllers/miEspacioController.js`, que ya tiene `ahora` (`ahoraArgentina()`). Su test es `tests/mi-espacio-eventos-reglas.test.js` (`describe('eventosDeHoyYManana')`).
+- `htmlDeHoyYManana` de `mi-espacio.js` dibuja los eventos con `htmlDeEventosDeHoy` («No tenés eventos hoy ni mañana.» y «Ver la agenda», `data-pestana="agenda"`), solo si `eventos` es una lista; los ausentes, con `htmlDeAusente`.
+- **`iniciales` la usa la agenda** (el selector de personas de un evento compartido): se queda.
+- `VERSION_MI_ESPACIO` es `'20261210'`.
+
+- [x] **Step 1:** Comprobar que la agenda está en main; si no, parar y avisar a la sesión coordinadora.
+- [x] **Step 2: Leer el main nuevo** (`git log` y `git diff` desde el commit de este plan) y **ajustar este plan en la rama,** en su propio commit, si cambió algo. En particular:
   - qué dejó la agenda en `public/js/mi-espacio.js`: `htmlDeHoyYManana` con los eventos y «Ver la agenda», las pestañas, la bajada de la página y si usa `.me-titulo`, `.me-subtitulo` u otra clase del Resumen fuera de él;
   - la forma real de `eventosDeHoyYManana` y sus tests;
   - `VERSION_MI_ESPACIO`;
   - los tests de `tests/mi-espacio-frontend.test.js` y `tests/mi-espacio-resumen.test.js` que miran el Resumen.
-- [ ] **Step 3: Si un cambio es una decisión del usuario, preguntársela a la sesión coordinadora,** sin decidirla.
+- [x] **Step 3: Si un cambio es una decisión del usuario, preguntársela,** sin decidirla (se le preguntaron las dos de «Hoy y mañana»).
 - [ ] **Step 4: Preparar el trabajo:**
-  - un worktree en `feat/mi-espacio-resumen-titular`, desde `main`;
+  - esta rama, con main ya traído;
   - el junction de `node_modules`;
   - `rpad_rama_resumen` como copia de `datospublicos_mcr_rpad`, en el `.env` del worktree.
 - [ ] **Step 5:** `npm test` con el candado: anotar el total y 0 fallas.
@@ -90,15 +99,15 @@
 ### Task 2: Los textos del servidor
 
 **Files:**
-- Modify: `services/miEspacioResumen.js`, `services/miEspacioEventosReglas.js`
-- Test: `tests/mi-espacio-resumen.test.js`, `tests/mi-espacio-eventos-reglas.test.js` (el de las reglas de la agenda; la Task 1 confirma el nombre)
+- Modify: `services/miEspacioResumen.js`, `services/miEspacioEventosReglas.js`, `controllers/miEspacioController.js`
+- Test: `tests/mi-espacio-resumen.test.js`, `tests/mi-espacio-eventos-reglas.test.js`
 
 **Interfaces:**
 - Produces:
   - **`resumenDe(entrada)`:** suma `titular` después de `tanques`. Es `{ encabezado: string, antes: string, cifra: string, despues: string, bajada: { texto: string, vence: boolean }[] }`, o `null` sin tanques. Las claves quedan así: `modalidad, anio, al_texto, mensaje, abrir_saldos, persona, marca, vence_pronto, faltantes, tanques, titular, pastillas, extraordinaria, tipos, hoy_y_manana`.
   - **Cada cosa de `vence_pronto`** es `{ fecha, dia, mes, titulo, texto, accion }`, sin `cuando` ni `detalle`.
   - **`extraordinaria`,** la corta.
-  - **`eventosDeHoyYManana(items, hoy)`:** cada evento suma `dia: 'hoy' | 'manana'` y `quien: string` (el `quien_texto` en minúscula, o ''). Los demás campos no cambian, `detalle` incluido.
+  - **`eventosDeHoyYManana(items, hoy, ahora)`:** cada evento suma `dia: 'hoy' | 'manana'` y `quien: string` (el `quien_texto` en minúscula, o ''). Los demás campos no cambian, `detalle` incluido. Con `ahora` (`'AAAA-MM-DD HH:MM:SS'`, del mismo día que `hoy`), saca los de hoy cuyo fin (`hasta` si es una hora; si no, `desde`) es anterior a `ahora.slice(11, 16)`; sin `ahora`, o si no sirve o es de otro día, no saca ninguno. `eventosDelResumen` del controlador le pasa el `ahora` que ya calcula.
 
 - [ ] **Step 1: Escribir los tests que fallan,** con `PLANTA` y `CONTRATO` de los casos congelados (hoy, el lunes 26/10/2026):
   - **las claves de `resumenDel(PLANTA)`,** con `titular` entre `tanques` y `pastillas`;
@@ -124,7 +133,8 @@
   - **con 1 día que vence o 1 cargado:** «1 vence el jueves 31/12.» y «1 ya está cargado para noviembre.»;
   - **sin modalidad o sin arranque:** `titular` `null`;
   - **`extraordinaria`:** los tres textos cortos (no usaste, 3 días y 1 día);
-  - **los eventos:** cada uno con su `dia` y su `quien`, por ejemplo `{ …, detalle: 'Hoy · solo vos', dia: 'hoy', quien: 'solo vos' }`; sin `quien_texto`, `quien: ''`. Los tests de la agenda que comparan un evento entero suman las dos claves: es el único cambio permitido a sus aserciones.
+  - **los eventos:** cada uno con su `dia` y su `quien`, por ejemplo `{ …, detalle: 'Hoy · solo vos', dia: 'hoy', quien: 'solo vos' }`; sin `quien_texto`, `quien: ''`. Los tests de la agenda que comparan un evento entero suman las dos claves: es el único cambio permitido a sus aserciones;
+  - **los que ya terminaron,** con `ITEMS` y `ahora` el `HOY` a las 10:00:00: el de las 09:00 sin `hasta` no va y el de las 12:00 sí; uno de 09:00 a 10:00 todavía va y a las 10:01 ya no; uno de 09:00 a 11:00, sí; los de mañana van todos aunque sea más tarde que su hora; con `ahora` de otro día, `null`, `'x'` o sin él, van todos.
 
   Los tests que comparaban `cuando`, `detalle` o la extraordinaria larga se reescriben con los textos nuevos.
 - [ ] **Step 2:** `node --test tests/mi-espacio-resumen.test.js` y el de la agenda: FAIL.
@@ -167,9 +177,11 @@
     - **«Mañana»,** igual;
     - **«Próximo feriado».**
 
-    Una columna sin nada no va. Con eventos, «Ver la agenda» (`href="#agenda"`, y lo que haya dejado la agenda para abrir la pestaña) al final de la última. Sin nada, ''.
+    Una columna sin nada no va (sin columnas, sin `div.me-columnas`).
+    - **Con `eventos` como lista** (aunque vacía), la sección va siempre: sin ningún evento, `p.me-vacio` «No tenés eventos hoy ni mañana.» debajo del `h2`; y «Ver la agenda» (`<a class="sg-link" href="#agenda" data-pestana="agenda">`, como la dejó la agenda) al final de la última columna o, sin columnas, después de esa frase.
+    - **Sin `eventos`** (no es una lista): sin columnas, ''; con columnas, sin «Ver la agenda».
   - `htmlDelResumen(resumen)`: como hoy hasta los mensajes. Después, los faltantes, la banda, el resto y «Hoy y mañana». Sin `.me-contexto`.
-  - Se van `svgDeTanque`, `htmlDeNivel`, `htmlDeLeyendaDeVacaciones`, `htmlDeTanques`, `htmlDePastillas`, `htmlDeLoQueTeQueda`, `iniciales`, `htmlDeAusente`, `TANQUE_GRANDE`, `TANQUE_CHICO` y `CAPAS_EN_GRIS` (si la agenda no los usa).
+  - Se van `svgDeTanque`, `htmlDeNivel`, `htmlDeLeyendaDeVacaciones`, `htmlDeTanques`, `htmlDePastillas`, `htmlDeLoQueTeQueda`, `htmlDeAusente`, `htmlDeEventosDeHoy`, `TANQUE_GRANDE`, `TANQUE_CHICO` y `CAPAS_EN_GRIS` (antes de sacar cada una, un `grep` comprueba que nada más la use). **`iniciales` se queda:** la usa la agenda.
 
 - [ ] **Step 1: Escribir los tests que fallan,** en un `describe('el Resumen «Titular»')` que reemplaza al de «Niveles». Los casos se arman con el Resumen de `PLANTA` y de `CONTRATO`, como los de hoy:
   - **El orden:** la banda (frase, «Vence pronto» y regla), el resto y «Hoy y mañana»; sin `.me-contexto`.
@@ -194,8 +206,10 @@
   - **«Hoy y mañana»:**
     - las tres columnas, con los eventos por `dia`, `quien` debajo y los ausentes solo con `veCompaneros === true`;
     - una columna vacía no va;
-    - «Ver la agenda» solo con eventos;
-    - sin nada, ''.
+    - con `eventos: []` y nada más: la sección, «No tenés eventos hoy ni mañana.» y «Ver la agenda», sin `div.me-columnas`;
+    - con `eventos: []` y un feriado: la frase, la columna del feriado y «Ver la agenda» al final de esa columna;
+    - con eventos: sin la frase, y «Ver la agenda» al final de la última columna;
+    - sin la clave `eventos` y sin nada más, ''; sin `eventos` y con un feriado, la columna sin «Ver la agenda».
   - **Review Focus 1:** el `antes`, una oración de la bajada, un `texto`, un `titulo`, el `quien` y el `titulo` de un evento, y el nombre de un ausente, cada uno con `<img src=x onerror=alert(1)>`, se ven escapados, también en los `aria-label`.
   - **Review Focus 4:** capas con `n` 0, `null` o `'x'`, la capacidad en 0 y un total 0: ningún `NaN` ni `Infinity` en el HTML.
   - **`tests/paginas.test.js`:** la versión nueva.
@@ -276,7 +290,7 @@
   Capturas para el usuario.
 - [ ] **Step 4: Revisión final de toda la rama** con Opus; se corrigen los hallazgos críticos e importantes.
 - [ ] **Step 5:** `npm test` completo con el candado: 0 fallas, con el total de la Task 1 más los nuevos y menos los de «Niveles» que se fueron.
-- [ ] **Step 6: Kit `RPAD-deploy-mi-espacio-resumen` en el Escritorio:** los archivos en su ruta, la lista contra `git diff --name-only main...feat/mi-espacio-resumen-titular` y `PASOS.txt`:
+- [ ] **Step 6: Kit `RPAD-deploy-mi-espacio-resumen` en el Escritorio:** los archivos en su ruta, la lista contra `git diff --name-only 780e39b HEAD` (sin `docs/`) y `PASOS.txt`, comparados byte a byte con git (también lo que va dentro de los zip), y `vuelta-atras/` con los mismos archivos de 780e39b:
   1. con la agenda desplegada, respaldo de los archivos;
   2. subir los archivos con el Administrador de archivos;
   3. Setup Node.js App → Restart;
@@ -287,5 +301,5 @@
   - traer main con merge, no rebase, y volver a correr la suite;
   - merge en main y push;
   - comprobar que main y origin coinciden.
-- [ ] **Step 8: Limpieza:** quitar el junction de `node_modules` antes de `git worktree remove` y borrar `rpad_rama_resumen`.
-- [ ] **Step 9: Avisar a la sesión coordinadora:** el hash del merge, el kit, los tests antes (Task 1) y después, y lo que el usuario despliega: los archivos y el Restart.
+- [ ] **Step 8: Limpieza:** quitar el junction de `node_modules` (el worktree queda para que lo limpie la app) y borrar `rpad_rama_resumen`.
+- [ ] **Step 9: Traspaso** en la carpeta de notas de la coordinadora y **aviso con SendMessage:** el hash del merge, el kit, los tests antes (Task 1) y después, y lo que el usuario despliega: los archivos y el Restart, después del kit de la agenda.
