@@ -1,6 +1,6 @@
 # Mi espacio: el Resumen «Titular»
 
-Fecha: 27/10/2026. **Estado: borrador, para que lo apruebe el usuario.** Salió de la exploración del 27/10/2026. El usuario vio el Resumen «Niveles» en producción (desplegado ese mismo día, main 71a301c) y pidió una versión «más moderna, con más animaciones o no sé: TU mirá». Se compararon cuatro maquetas y eligió **Titular**.
+Fecha: 27/10/2026. **Estado: aprobado por el usuario el 27/10/2026.** Salió de la exploración del 27/10/2026. El usuario vio el Resumen «Niveles» en producción (desplegado ese mismo día, main 71a301c) y pidió una versión «más moderna, con más animaciones o no sé: TU mirá». Se compararon cuatro maquetas y eligió **Titular**.
 
 **Va después de la agenda** (la entrega 3, `2026-10-26-mi-espacio-agenda-design.md`), en una sesión nueva y con la misma metodología de siempre:
 - la Task 1 del plan lee el main nuevo, con la agenda ya mergeada, y ajusta el plan;
