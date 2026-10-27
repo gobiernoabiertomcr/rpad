@@ -100,6 +100,8 @@ const DURACION_DE_LA_LINEA = 700;
 const OLA_DE_LA_BANDA = '<svg class="me-ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
   + '<path d="M0 0 H1200 V14 C 1100 26, 1000 26, 900 14 S 700 2, 600 12 S 400 28, 300 16 S 100 4, 0 18 Z" fill="currentColor"/></svg>';
 const TEXTO_DE_LA_MARCA = 'Hay algo que vence pronto';
+// El nombre de la lista de la regla (la de la maqueta aprobada): la barra es decorativa y la lista dice lo mismo en texto
+const TEXTO_DE_LA_REGLA = 'Tus vacaciones, por licencia';
 
 // =====================================================
 // Lo puro: lo que arma el HTML
@@ -161,16 +163,18 @@ const textoDeLaCifra = (cifra) => {
 
 /**
  * La frase de la banda (el `titular` del Resumen: `{ encabezado, antes, cifra, despues, bajada: [{ texto, vence }] }`): arriba, el día
- * y la modalidad; el título de la pestaña, «Te quedan 33 días de vacaciones», con el número dos veces: el que se ve, decorativo
- * (aria-hidden, y data-contar: el que sube al abrir), y el oculto a la vista, que un lector de pantalla lee siempre con su valor
- * final; y la bajada, las oraciones unidas con un espacio, la que vence en negrita. Sin `cifra` (con 0 días), la frase sin el número;
- * sin oraciones, sin bajada. Sin titular, ''
+ * y la modalidad; el título de la pestaña, «Te quedan 33 días de vacaciones», con el número tres veces: el final, invisible, que le
+ * da al número su ancho desde el primer cuadro; el que se ve, encima (el que sube al abrir, data-contar); los dos, decorativos
+ * (aria-hidden); y el oculto a la vista, que un lector de pantalla lee siempre con su valor final. Debajo, la bajada, las oraciones
+ * unidas con un espacio, la que vence en negrita. Sin `cifra` (con 0 días), la frase sin el número; sin oraciones, sin bajada. Sin
+ * titular, ''
  */
 function htmlDeLaFrase(titular) {
   if (!esObjeto(titular)) return '';
   const cifra = textoDeLaCifra(titular.cifra);
   const numero = cifra === '' ? ''
-    : `<span class="me-cifra"><span aria-hidden="true" data-contar>${esc(cifra)}</span><span class="visualmente-oculto">${esc(cifra)}</span></span>`;
+    : `<span class="me-cifra"><span class="me-cifra-final" aria-hidden="true">${esc(cifra)}</span>`
+      + `<span aria-hidden="true" data-contar>${esc(cifra)}</span><span class="visualmente-oculto">${esc(cifra)}</span></span>`;
   const frase = [conTexto(titular.antes) ? esc(titular.antes) : '', numero, conTexto(titular.despues) ? esc(titular.despues) : '']
     .filter((parte) => parte !== '').join(' ');
   const oraciones = listaDe(titular.bajada).filter((oracion) => conTexto(oracion.texto))
@@ -221,8 +225,8 @@ function tiemposDeLaRegla(cantidades, capacidad) {
  * La regla (el tanque de vacaciones: `{ capacidad, capas: [{ clase, n, nombre, nota }] }`): la barra, decorativa (la lista de debajo
  * dice lo mismo en texto), partida en un tramo por capa, cada uno en su columna de n fracciones (minmax(0, nfr): uno de 1 día entre
  * 40 se ve igual, y su número, si no entra, lo oculta el <style>), en el color de su clase, con un casillero por día (--n) y lo que
- * necesita el movimiento (--demora y --duracion); debajo, cada capa con su muestra, «Licencia 2024: 3» y su nota, la que vence en
- * ámbar. Una n que no es un número positivo cuenta 0. Sin capas, ''
+ * necesita el movimiento (--demora y --duracion); debajo, la lista («Tus vacaciones, por licencia»): cada capa con su muestra,
+ * «Licencia 2024: 3» y su nota, la que vence en ámbar. Una n que no es un número positivo cuenta 0. Sin capas, ''
  */
 function htmlDeLaRegla(vacaciones) {
   if (!esObjeto(vacaciones)) return '';
@@ -243,16 +247,16 @@ function htmlDeLaRegla(vacaciones) {
       + `<span><b>${esc(capa.nombre)}: ${String(cantidades[i])}</b>${esc(capa.nota)}</span></li>`;
   });
   return `<div class="me-regla"><div class="me-barra" aria-hidden="true" style="grid-template-columns: ${columnas}">${tramos.join('')}</div>`
-    + `<ul class="me-regla-lista">${lista.join('')}</ul></div>`;
+    + `<ul class="me-regla-lista" aria-label="${TEXTO_DE_LA_REGLA}">${lista.join('')}</ul></div>`;
 }
 
 /**
  * La banda celeste, arriba del Resumen: una section que se nombra con la frase; adentro, la frase, «Vence pronto» (a la derecha en la
  * compu; sin nada por vencer, la frase y la regla a todo el ancho: sin-vence) y la regla, y debajo la ola. Sin la frase o sin los
- * tanques (sin un hoy válido), ''
+ * tanques (sin un hoy válido), o sin el Resumen, ''
  */
 function htmlDeLaBanda(resumen) {
-  if (!esObjeto(resumen.titular) || !esObjeto(resumen.tanques)) return '';
+  if (!esObjeto(resumen) || !esObjeto(resumen.titular) || !esObjeto(resumen.tanques)) return '';
   const vence = htmlDeVencePronto(resumen.vence_pronto);
   return `<section class="me-banda" aria-labelledby="me-frase"><div class="me-banda-cuerpo${vence === '' ? ' sin-vence' : ''}">`
     + `${htmlDeLaFrase(resumen.titular)}${vence}${htmlDeLaRegla(resumen.tanques.vacaciones)}</div>${OLA_DE_LA_BANDA}</section>`;
@@ -286,10 +290,11 @@ function htmlDeLosMeses(pastillas) {
  * uno de los demás tanques (franquicias u horas a favor, estudios, atención médica y grupo familiar), cada uno un link a su pestaña
  * (Horas extras o, si no, Licencias) con el aria-label del servidor, con el número que sube al abrir (data-contar) y su unidad, el
  * nombre, su total y una línea decorativa que se llena en la proporción valor / total (--p, con su --demora: 900 ms y 90 más por
- * línea); el que vence, en ámbar. Después, los meses y la médica extraordinaria. Sin tanques (sin un hoy válido), ''
+ * línea); el que vence, en ámbar. Después, los meses y la médica extraordinaria. Sin tanques (sin un hoy válido), o sin el Resumen,
+ * ''
  */
 function htmlDelResto(resumen) {
-  if (!esObjeto(resumen.tanques)) return '';
+  if (!esObjeto(resumen) || !esObjeto(resumen.tanques)) return '';
   const numeros = listaDe(resumen.tanques.otros).map((tanque, i) => {
     const pestana = tanque.pestana === 'horas' ? 'horas' : 'licencias';
     const linea = `--p:${String(llenoDe(tanque.valor, tanque.total))}%;--demora:${String(DEMORA_DEL_RESTO + ENTRE_LINEAS * i)}ms`;
@@ -343,7 +348,8 @@ function htmlDeHoyYManana(datos, veCompaneros) {
   const hoy = esObjeto(datos) ? datos : {};
   const conEventos = Array.isArray(hoy.eventos);
   const eventos = listaDe(hoy.eventos);
-  const filaDeEvento = (evento) => `<li>${conTexto(evento.hora) ? `<time>${esc(evento.hora)}</time>` : ''}${esc(evento.titulo)}`
+  // La hora y el título, con un espacio entre los dos (sin él, un lector de pantalla y lo copiado dirían «09:00Título»)
+  const filaDeEvento = (evento) => `<li>${conTexto(evento.hora) ? `<time>${esc(evento.hora)}</time> ` : ''}${esc(evento.titulo)}`
     + `${conTexto(evento.quien) ? `<small>${esc(evento.quien)}</small>` : ''}</li>`;
   const filaDeAusente = (ausente) => `<li class="ausente">${esc(ausente.texto)}`
     + `${conTexto(ausente.vuelve_texto) ? `<small>${esc(ausente.vuelve_texto)}</small>` : ''}</li>`;

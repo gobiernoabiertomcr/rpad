@@ -1,12 +1,12 @@
 // Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 8 y 11), ejecutado en Node: lo puro de public/js/mi-espacio.js
-// (las pestañas; el Resumen «Titular», con los faltantes, la banda —la frase, Vence pronto y la regla—, el resto y Hoy y mañana en
-// columnas, spec 2026-10-27-mi-espacio-resumen; la lista de
-// licencias con su selector del año y sus filtros, las tablas de horas extras, el día por día y las horas no utilizadas previamente)
-// con los datos que arma el servidor (services/miEspacioResumen.js) sobre los casos de tests/fixtures/mi-espacio-casos.js, pasados
-// por JSON como los manda la API; y, con un DOM falso y un fetch falso, la carga de las pestañas. Los formularios (Task 17): lo puro,
-// las copias atadas por tests de paridad (con services/miEspacioReglas.js y con usuarios.js, en su propio vm) y, con el DOM falso,
-// los modales. Como proyectos.js, el script al cargarse solo declara: se carga en un vm después del api.js de verdad
-// (Utils.escapeHtml). Las personas son las inventadas de la maqueta.
+// (las pestañas; el Resumen «Titular» de la spec 2026-10-27-mi-espacio-resumen, con los faltantes, la banda —la frase, Vence pronto y
+// la regla—, el resto y Hoy y mañana en columnas; la lista de licencias con su selector del año y sus filtros, las tablas de horas
+// extras, el día por día y las horas no utilizadas previamente) con los datos que arma el servidor (services/miEspacioResumen.js)
+// sobre los casos de tests/fixtures/mi-espacio-casos.js, pasados por JSON como los manda la API; y, con un DOM falso y un fetch
+// falso, la carga de las pestañas. Los formularios (Task 17): lo puro, las copias atadas por tests de paridad (con
+// services/miEspacioReglas.js y con usuarios.js, en su propio vm) y, con el DOM falso, los modales. Como proyectos.js, el script al
+// cargarse solo declara: se carga en un vm después del api.js de verdad (Utils.escapeHtml). Las personas son las inventadas de la
+// maqueta.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
@@ -115,6 +115,9 @@ const MALICIOSO = '<img src=x onerror=alert(1)>';
 // Lo que dice la página cuando un pedido no llega al servidor
 const MENSAJE_SIN_CONEXION = 'No se pudo conectar con el servidor. Probá de nuevo en unos minutos.';
 const ESCAPADO = '&lt;img src=x onerror=alert(1)&gt;';
+// Con una comilla doble adelante: en un atributo, intenta cerrarlo y abrir una etiqueta
+const CON_COMILLAS = '"><img src=x onerror=alert(1)>';
+const CON_COMILLAS_ESCAPADO = '&quot;&gt;&lt;img src=x onerror=alert(1)&gt;';
 
 describe('mi-espacio.js: al cargarse', () => {
   it('no toca el DOM: solo declara y espera el DOMContentLoaded', () => {
@@ -203,8 +206,10 @@ const itemsDe = (html) => [...html.matchAll(/<li(?: class="([^"]*)")?>([\s\S]*?)
   .map(([, clases = '', adentro]) => ({ clases: clases.split(' ').filter(Boolean), html: adentro, texto: textoDe(adentro) }));
 const columnasDe = (html) => [...html.matchAll(/<div class="me-columna"><h3>([^<]*)<\/h3>([\s\S]*?)<\/div>/g)]
   .map(([, titulo, adentro]) => ({ titulo, html: adentro, texto: textoDe(adentro) }));
-// Los títulos (h2) de un HTML, como se leen (el de la frase, con el número dos veces: el que se ve y el oculto)
-const titulosDe = (html) => [...html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/g)].map(([, adentro]) => textoDe(adentro));
+// Los títulos (h2) de un HTML, como los lee un lector de pantalla: sin lo que va con aria-hidden (el de la frase, con el número una
+// sola vez, el oculto a la vista)
+const sinLoDecorativo = (html) => html.replace(/<(\w+)\b[^>]*\baria-hidden="true"[^>]*>[^<]*<\/\1>/g, '');
+const titulosDe = (html) => [...html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/g)].map(([, adentro]) => textoDe(sinLoDecorativo(adentro)));
 // La línea de cada número del resto: [--p, --demora]
 const lineasDe = (html) => [...html.matchAll(/<span class="me-linea" aria-hidden="true"><i style="--p:([^;"]*)%;--demora:([^;"]*)ms"><\/i><\/span>/g)]
   .map(([, p, demora]) => [p, demora]);
@@ -224,7 +229,7 @@ describe('el Resumen «Titular»', () => {
   it('PLANTA: la banda (la frase, «Vence pronto» y la regla, y la ola), «El resto de 2026» y «Hoy y mañana», en ese orden; sin el renglón de la modalidad', () => {
     const html = M.htmlDelResumen(planta);
     assert.ok(html.startsWith('<section class="me-banda" aria-labelledby="me-frase"><div class="me-banda-cuerpo">'));
-    assert.deepEqual(titulosDe(html), ['Te quedan 33 33 días de vacaciones', 'Vence pronto', 'El resto de 2026', 'Hoy y mañana']);
+    assert.deepEqual(titulosDe(html), ['Te quedan 33 días de vacaciones', 'Vence pronto', 'El resto de 2026', 'Hoy y mañana']);
     const lugares = ['class="me-titular"', 'class="me-vence"', 'class="me-regla"', 'class="me-ola"', 'class="me-resto"', 'class="me-hoy"']
       .map((clase) => html.indexOf(clase));
     assert.ok(lugares.every((lugar) => lugar > 0), String(lugares));
@@ -246,18 +251,27 @@ describe('el Resumen «Titular»', () => {
     assert.equal(M.htmlDeLaBanda({ ...planta, tanques: null }), '');
   });
 
-  it('la frase: el día y la modalidad, «Te quedan 33 días de vacaciones» con el número dos veces (el que se ve, decorativo, y el oculto) y la bajada', () => {
+  it('la banda y el resto, sin un Resumen (null, undefined, un número o un texto): nada, sin romperse', () => {
+    for (const raro of [null, undefined, 42, 'x']) {
+      assert.equal(M.htmlDeLaBanda(raro), '', String(raro));
+      assert.equal(M.htmlDelResto(raro), '', String(raro));
+    }
+  });
+
+  it('la frase: el día y la modalidad, «Te quedan 33 días de vacaciones» con el número tres veces (el final invisible, el que se ve y el oculto) y la bajada', () => {
     assert.equal(M.htmlDeLaFrase(planta.titular), '<div class="me-titular"><p class="me-banda-dia">Lunes 26 de octubre, planta permanente</p>'
-      + '<h2 class="me-frase" id="me-frase">Te quedan <span class="me-cifra"><span aria-hidden="true" data-contar>33</span>'
-      + '<span class="visualmente-oculto">33</span></span> días de vacaciones</h2>'
+      + '<h2 class="me-frase" id="me-frase">Te quedan <span class="me-cifra"><span class="me-cifra-final" aria-hidden="true">33</span>'
+      + '<span aria-hidden="true" data-contar>33</span><span class="visualmente-oculto">33</span></span> días de vacaciones</h2>'
       + '<p class="me-frase-bajada"><b class="vence">3 vencen el jueves 31/12.</b> 5 ya están cargados para noviembre. '
       + 'Otros 10 se habilitan el 1/1/2027.</p></div>');
     // CONTRATO: una sola oración, que no vence
     assert.ok(M.htmlDeLaFrase(contrato.titular).startsWith('<div class="me-titular"><p class="me-banda-dia">Lunes 26 de octubre, contrato</p>'));
     assert.ok(M.htmlDeLaFrase(contrato.titular).endsWith('</h2><p class="me-frase-bajada">Otros 7 se habilitan el 1/1/2027.</p></div>'));
-    // Con 1 día: «Te queda 1 día de vacaciones»
+    // Con 1 día: «Te queda 1 día de vacaciones», y el número, también tres veces
     const uno = M.htmlDeLaFrase({ ...planta.titular, antes: 'Te queda', cifra: '1', despues: 'día de vacaciones' });
-    assert.equal(titulosDe(uno)[0], 'Te queda 1 1 día de vacaciones');
+    assert.equal(titulosDe(uno)[0], 'Te queda 1 día de vacaciones');
+    assert.ok(uno.includes('<span class="me-cifra"><span class="me-cifra-final" aria-hidden="true">1</span><span aria-hidden="true" data-contar>1</span>'
+      + '<span class="visualmente-oculto">1</span></span>'));
     // Con 0: la frase sin el número (sin cifra, sin .me-cifra); sin oraciones, sin bajada
     const sinDias = M.htmlDeLaFrase({ ...planta.titular, antes: 'No te quedan días de vacaciones', cifra: '', despues: '', bajada: [] });
     assert.ok(sinDias.includes('<h2 class="me-frase" id="me-frase">No te quedan días de vacaciones</h2>'));
@@ -325,8 +339,9 @@ describe('el Resumen «Titular»', () => {
     for (let i = 1; i < tramos.length; i += 1) {
       assert.equal(parseInt(tramos[i].demora, 10), parseInt(tramos[i - 1].demora, 10) + parseInt(tramos[i - 1].duracion, 10), `tramo ${i}`);
     }
-    // La lista: cada capa con su muestra (decorativa), «Licencia 2024: 3» y su nota; la que vence, en ámbar
-    const lista = html.match(/<ul class="me-regla-lista">([\s\S]*?)<\/ul>/)[1];
+    // La lista, con su nombre (el de la maqueta aprobada): cada capa con su muestra (decorativa), «Licencia 2024: 3» y su nota; la
+    // que vence, en ámbar
+    const lista = html.match(/<ul class="me-regla-lista" aria-label="Tus vacaciones, por licencia">([\s\S]*?)<\/ul>/)[1];
     assert.deepEqual(itemsDe(lista).map(({ clases, texto }) => [clases.join(' '), texto]), [
       ['vence', 'Licencia 2024: 3 Vence el 31/12/2026'],
       ['', 'Licencia 2025: 20 Vence el 31/12/2027'],
@@ -489,9 +504,10 @@ describe('el Resumen «Titular»', () => {
     ]);
     // La hora, el título y debajo quién (sin el día de `detalle`); quien no está, con su vuelta debajo (nunca el tipo)
     const [hoy, manana, feriado] = columnasDe(html);
-    assert.equal(hoy.html, '<ul><li><time>12:00</time>Llamar a Vialidad por el TMDA<small>solo vos</small></li>'
+    // (con un espacio después de la hora: sin él, un lector de pantalla y lo copiado dirían «12:00Llamar…»)
+    assert.equal(hoy.html, '<ul><li><time>12:00</time> Llamar a Vialidad por el TMDA<small>solo vos</small></li>'
       + '<li class="ausente">Martín Ríos no está<small>Vuelve el lunes 02/11</small></li></ul>');
-    assert.equal(manana.html, '<ul><li><time>10:00</time>Reunión de equipo<small>con 4 personas</small></li></ul>');
+    assert.equal(manana.html, '<ul><li><time>10:00</time> Reunión de equipo<small>con 4 personas</small></li></ul>');
     assert.equal(feriado.html, `<ul><li><b>Lunes 23/11</b><small>Día de la Soberanía Nacional</small></li></ul>${VER_LA_AGENDA}`);
     assert.ok(!html.includes('Hoy · '));
     // Con eventos, sin «No tenés eventos…», y «Ver la agenda» una sola vez
@@ -504,7 +520,7 @@ describe('el Resumen «Titular»', () => {
   it('«Hoy y mañana»: un evento sin quién, sin el renglón de debajo', () => {
     const [primero] = eventosDeHoy();
     const html = M.htmlDeHoyYManana({ ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null, eventos: [{ ...primero, quien: '' }] }, true);
-    assert.equal(columnasDe(html)[0].html, '<ul><li><time>12:00</time>Llamar a Vialidad por el TMDA</li></ul>' + VER_LA_AGENDA);
+    assert.equal(columnasDe(html)[0].html, '<ul><li><time>12:00</time> Llamar a Vialidad por el TMDA</li></ul>' + VER_LA_AGENDA);
   });
 
   it('«Hoy y mañana»: los que no están, solo para quien ve a sus compañeros (el true literal); los que empiezan mañana, en Mañana', () => {
@@ -601,7 +617,8 @@ describe('el Resumen «Titular»', () => {
     assert.ok(html.split(ESCAPADO).length - 1 >= 30, String(html.split(ESCAPADO).length - 1));
     // La frase (el número, en los dos lugares) y su bajada
     assert.ok(html.includes(`<p class="me-banda-dia">${ESCAPADO}</p><h2 class="me-frase" id="me-frase">${ESCAPADO} <span class="me-cifra">`
-      + `<span aria-hidden="true" data-contar>${ESCAPADO}</span><span class="visualmente-oculto">${ESCAPADO}</span></span> ${ESCAPADO}</h2>`));
+      + `<span class="me-cifra-final" aria-hidden="true">${ESCAPADO}</span><span aria-hidden="true" data-contar>${ESCAPADO}</span>`
+      + `<span class="visualmente-oculto">${ESCAPADO}</span></span> ${ESCAPADO}</h2>`));
     assert.ok(html.includes(`<p class="me-frase-bajada"><b class="vence">${ESCAPADO}</b> ${ESCAPADO} `));
     // Lo que vence: el título, su línea, el botón y su tipo
     assert.ok(html.includes(`<b id="me-vence-0">${ESCAPADO}</b><span class="me-entrada-texto">${ESCAPADO}</span>`));
@@ -615,10 +632,36 @@ describe('el Resumen «Titular»', () => {
     assert.equal(numero.atributos.href, '#licencias');
     assert.ok(numero.adentro.includes(`<b data-contar>${ESCAPADO}</b><small>${ESCAPADO}</small>`));
     // Los eventos (el título y quién) y quien no está
-    assert.ok(html.includes(`<li><time>12:00</time>${ESCAPADO}<small>solo vos</small></li>`));
+    assert.ok(html.includes(`<li><time>12:00</time> ${ESCAPADO}<small>solo vos</small></li>`));
     assert.ok(html.includes(`<small>de ${ESCAPADO}</small>`));
     assert.ok(html.includes(`<li class="ausente">${ESCAPADO} no está<small>`));
     assert.ok(html.includes('<li class="ausente">&lt;b&gt;x&lt;/b&gt; no está<small>'));
+  });
+
+  // Review Focus 1: con una comilla doble, un texto del servidor en un atributo no lo puede cerrar
+  it('una comilla doble del servidor no sale de su atributo: el aria-label de los números del resto y el data-tipo de «Vence pronto»', () => {
+    const conComillas = comoLlega(planta);
+    conComillas.tanques.otros = conComillas.tanques.otros.map((tanque) => ({ ...tanque, aria: CON_COMILLAS }));
+    conComillas.vence_pronto = conComillas.vence_pronto.map((cosa) => ({ ...cosa, accion: { ...cosa.accion, tipo: CON_COMILLAS } }));
+    const html = M.htmlDelResumen(conComillas);
+    assert.ok(!html.includes('<img'), 'ningún <img> de verdad');
+    assert.ok(!html.includes(CON_COMILLAS));
+    // Cada link del resto conserva sus cuatro atributos, y el aria-label tiene el texto entero, escapado
+    const numeros = linksDe(html).filter(({ atributos }) => atributos.class?.startsWith('me-numero'));
+    assert.equal(numeros.length, 4);
+    for (const { atributos, adentro } of numeros) {
+      assert.deepEqual(Object.keys(atributos), ['class', 'href', 'data-pestana', 'aria-label']);
+      assert.equal(atributos['aria-label'], CON_COMILLAS_ESCAPADO);
+      assert.ok(adentro.startsWith('<span class="grande">'));
+    }
+    // Cada botón de «Vence pronto», con sus cinco atributos: el data-tipo escapado y el aria-describedby a su título
+    const botones = botonesDe(html).filter(({ atributos }) => atributos['data-accion'] === 'cargar-licencia');
+    assert.equal(botones.length, 2);
+    botones.forEach(({ atributos }, i) => {
+      assert.deepEqual(Object.keys(atributos), ['type', 'class', 'data-accion', 'data-tipo', 'aria-describedby']);
+      assert.equal(atributos['data-tipo'], CON_COMILLAS_ESCAPADO);
+      assert.equal(atributos['aria-describedby'], `me-vence-${String(i)}`);
+    });
   });
 });
 
@@ -910,10 +953,9 @@ describe('las horas extras', () => {
 });
 
 // =====================================================================================================================================
-// La agenda (spec 2026-10-26-mi-espacio-agenda, 6; Task 9): el mes, los próximos y los colores (los eventos de «Hoy y mañana», en
-// columnas, se prueban con el Resumen «Titular», más arriba), con lo que manda GET /api/mi-espacio/eventos armado por el servidor (itemDeEvento, itemDeLicencia, itemDeAusencia e itemsDeFeriados de
-// services/miEspacioEventosReglas.js), pasado por JSON. Hoy es el lunes 26/10/2026 y quien mira es Laura Gómez (1); las personas son
-// las inventadas de la maqueta
+// La agenda (spec 2026-10-26-mi-espacio-agenda, 6; Task 9): el mes, los próximos y los colores (los eventos de «Hoy y mañana», con
+// el Resumen «Titular», más arriba), con lo que manda GET /api/mi-espacio/eventos (los ítems de services/miEspacioEventosReglas.js),
+// pasado por JSON. Hoy es el lunes 26/10/2026 y quien mira es Laura Gómez (1); las personas son las inventadas de la maqueta
 // =====================================================================================================================================
 
 const AHORA = `${HOY} 09:00:00`;
@@ -1722,8 +1764,10 @@ describe('mi-espacio.js: la página (DOM falso)', () => {
 // Reemplazan los tres de los tanques de «Niveles»
 // =====================================================================================================================================
 
-// El número de la frase que sube (el que se ve, decorativo) y el oculto a la vista, y los números del resto, en su orden
+// El número de la frase que sube (el que se ve, decorativo), el final invisible que le da su ancho y el oculto a la vista, y los
+// números del resto, en su orden
 const cifraDe = (pagina) => pagina.el('me-frase')?.querySelector('[data-contar]') ?? null;
+const cifraFinalDe = (pagina) => pagina.el('me-frase')?.querySelector('.me-cifra-final') ?? null;
 const cifraOcultaDe = (pagina) => pagina.el('me-frase')?.querySelector('.visualmente-oculto') ?? null;
 const numerosDelRestoDe = (pagina) => pagina.el('vista-resumen').querySelectorAll('.me-numero [data-contar]');
 const textosDe = (elementos) => elementos.map((elemento) => elemento.textContent);
@@ -1823,6 +1867,7 @@ describe('el movimiento del Resumen «Titular» (DOM falso)', () => {
       assert.ok(vista.querySelector('.me-banda'), momento);
       assert.equal(vista.getAttribute('data-animar'), null, momento);
       assert.equal(cifraDe(pagina).textContent, '33', momento);
+      assert.equal(cifraFinalDe(pagina).textContent, '33', momento);
       assert.equal(cifraOcultaDe(pagina).textContent, '33', momento);
       assert.deepEqual(textosDe(numerosDelRestoDe(pagina)), PLANTA_EN_SU_VALOR, momento);
       await pagina.tocar(pagina.el('tab-horas'));
@@ -1873,20 +1918,36 @@ describe('el movimiento del Resumen «Titular» (DOM falso)', () => {
     const pagina = montarPagina({ cuadros: true });
     await pagina.iniciar();
     const visible = cifraDe(pagina);
+    const final = cifraFinalDe(pagina);
     const oculto = cifraOcultaDe(pagina);
     assert.equal(visible.getAttribute('aria-hidden'), 'true');
+    assert.equal(final.getAttribute('aria-hidden'), 'true');
     assert.ok(oculto.classList.contains('visualmente-oculto'));
     assert.equal(oculto.getAttribute('aria-hidden'), null);
     assert.equal(visible.textContent, '0');
+    assert.equal(final.textContent, '33');
     assert.equal(oculto.textContent, '33');
-    // El título de la pestaña, como lo lee un lector de pantalla, en cada cuadro
+    // El título de la pestaña, como lo lee un lector de pantalla, en cada cuadro: el número una sola vez, el final
     const frase = pagina.el('me-frase');
     assert.equal(textoParaLectores(frase), 'Te quedan 33 días de vacaciones');
     const titulo = { get textContent() { return textoParaLectores(frase); } };
-    const [vistos, ocultos, leidos] = cuadrosConTiempo(pagina, [visible, oculto, titulo]);
+    const [vistos, finales, ocultos, leidos] = cuadrosConTiempo(pagina, [visible, final, oculto, titulo]);
     assert.ok(vistos.some(([, texto]) => texto !== '0' && texto !== '33'), 'el que se ve pasa por números intermedios');
+    assert.ok(finales.every(([, texto]) => texto === '33'), 'el final invisible (el ancho del número) dice siempre 33');
     assert.ok(ocultos.every(([, texto]) => texto === '33'), 'el oculto dice siempre 33');
     assert.ok(leidos.every(([, texto]) => texto === 'Te quedan 33 días de vacaciones'), 'el título se lee siempre entero');
+  });
+
+  // El número de la frase mide desde el primer cuadro lo que el valor final (sin hueco antes de un final de una cifra ni un salto de
+  // ancho al pasar de 9 a 10): el final invisible y el que sube, en la misma celda de una grilla, el que sube a la derecha
+  it('el <style>: el número de la frase, una grilla con el final invisible y el que sube en la misma celda, sin un ancho mínimo fijo', () => {
+    const estilo = leer('mi-espacio.html').match(/<style>([\s\S]*?)<\/style>/)[1];
+    assert.ok(estilo.includes('.me-cifra { display: inline-grid; justify-items: end; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }'));
+    assert.ok(estilo.includes('.me-cifra-final, .me-cifra [data-contar] { grid-area: 1 / 1; }'));
+    assert.ok(estilo.includes('.me-cifra-final { visibility: hidden; }'));
+    assert.doesNotMatch(estilo, /\.me-cifra \{[^}]*min-width/);
+    // El oculto a la vista es absoluto: no ocupa lugar en la grilla
+    assert.match(estilo, /\.visualmente-oculto \{ position: absolute !important;/);
   });
 
   // Review Focus 3
@@ -1969,8 +2030,8 @@ describe('el movimiento del Resumen «Titular» (DOM falso)', () => {
   it('con prefers-reduced-motion: reduce, los números no cuentan: están en su valor desde el principio, sin pasar por 0', async () => {
     const pagina = montarPagina({ cuadros: true, reducido: true });
     await pagina.iniciar();
-    const elementos = [cifraDe(pagina), ...numerosDelRestoDe(pagina)];
-    const finales = ['33', ...PLANTA_EN_SU_VALOR];
+    const elementos = [cifraDe(pagina), cifraFinalDe(pagina), ...numerosDelRestoDe(pagina)];
+    const finales = ['33', '33', ...PLANTA_EN_SU_VALOR];
     assert.deepEqual(textosDe(elementos), finales);
     const vistos = cuadrosConTiempo(pagina, elementos);
     vistos.forEach((deUno, i) => assert.ok(deUno.every(([, texto]) => texto === finales[i]), finales[i]));
@@ -1980,11 +2041,13 @@ describe('el movimiento del Resumen «Titular» (DOM falso)', () => {
   it('el <style>: la regla y las líneas, vacías y sin transición con data-animar; después, cada una con su --demora y su --duracion; quietas con prefers-reduced-motion', () => {
     const estilo = leer('mi-espacio.html').match(/<style>([\s\S]*?)<\/style>/)[1];
     // Los tramos, uno detrás del otro con su demora y su duración (las del style que escribe mi-espacio.js); el número de cada
-    // uno, cuando su tramo casi terminó; las líneas, de 700 ms (los mismos que cuenta el número de cada una)
+    // uno, cuando su tramo casi terminó; las líneas, de 700 ms (los mismos que cuenta el número de cada una) y con su curva: la de
+    // contarHasta, 1 − (1 − x)³, que en CSS es cubic-bezier(0.33, 1, 0.68, 1) (el número sube con su línea, no se le adelanta)
     assert.ok(estilo.includes('.me-tramo { transition: transform var(--duracion) cubic-bezier(0.4, 0, 0.3, 1) var(--demora); }'));
     assert.ok(estilo.includes('.me-tramo > span { transition: opacity 200ms ease calc(var(--demora) + var(--duracion) * 0.7); }'));
-    assert.ok(estilo.includes(`.me-linea i { transition: transform ${String(M.DURACION_DE_LA_LINEA)}ms cubic-bezier(0.4, 0, 0.3, 1) var(--demora); }`));
+    assert.ok(estilo.includes(`.me-linea i { transition: transform ${String(M.DURACION_DE_LA_LINEA)}ms cubic-bezier(0.33, 1, 0.68, 1) var(--demora); }`));
     assert.equal(M.DURACION_DE_LA_LINEA, 700);
+    assert.match(leer('js/mi-espacio.js'), /Math\.floor\(hasta \* \(1 - \(1 - avance\) \*\* 3\)\)/);
     // Con data-animar, vacías y sin transición: si ya se habían dibujado llenas, se vacían de golpe
     assert.ok(estilo.includes('#vista-resumen[data-animar] .me-tramo, #vista-resumen[data-animar] .me-linea i { transform: scaleX(0); transition: none; }'));
     assert.ok(estilo.includes('#vista-resumen[data-animar] .me-tramo > span { opacity: 0; transition: none; }'));

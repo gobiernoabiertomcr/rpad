@@ -936,6 +936,60 @@ describe('páginas', () => {
       const main = fs.readFileSync(new URL('../public/css/main.css', import.meta.url), 'utf8');
       assert.doesNotMatch(main, /--sg-|\.me-banda|\.me-tramo|\.me-tanque/);
     });
+
+    // En ningún ancho (de 320 a 1600 px) una fila de los números del resto o de las columnas de «Hoy y mañana» empieza con la línea
+    // que los separa ni con el relleno de esa línea: más de 760 px, cada uno en una sola fila (una columna por número, sin pasar a
+    // otra fila, en lugar de auto-fit, que a unos 641–711 px dejaba 3 + 1 con la línea al principio de la segunda); de 760 px para
+    // abajo, los números de a dos por fila, sin la línea en el primero de cada una (el impar), y las columnas una debajo de la otra,
+    // sin la línea
+    it('el Resumen a media anchura: más de 760 px, en una sola fila; de 760 para abajo, ninguna fila empieza con la línea', () => {
+      // El <style>, sin los comentarios (nombran las clases)
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/).replace(/\/\*[\s\S]*?\*\//g, '');
+      // Un @media del <style>, con sus llaves anidadas
+      const media = (condicion) => {
+        const inicio = estilo.indexOf(`@media ${condicion} {`);
+        assert.ok(inicio >= 0, condicion);
+        let nivel = 0;
+        for (let i = estilo.indexOf('{', inicio); i < estilo.length; i += 1) {
+          if (estilo[i] === '{') nivel += 1;
+          if (estilo[i] === '}' && (nivel -= 1) === 0) return estilo.slice(inicio, i + 1);
+        }
+        return '';
+      };
+      // Más ancho: una sola fila
+      assert.ok(estilo.includes('.me-resto .me-numeros { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 16px 0; }'));
+      assert.ok(estilo.includes('.me-columnas { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 18px 0; margin-top: 14px; }'));
+      assert.ok(estilo.includes('.me-resto .me-numeros li + li { border-left: 1px solid var(--sg-linea); }'));
+      assert.ok(estilo.includes('.me-columna:first-child { padding-left: 0; border-left: 0; }'));
+      // Nada de auto-fit ni auto-fill en lo que lleva la línea (pasaría a otra fila según el ancho)
+      for (const [, selector, cuerpo] of estilo.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+        if (/\.me-numeros|\.me-columna/.test(selector) && !selector.includes('.me-modal')) {
+          assert.doesNotMatch(cuerpo, /auto-fit|auto-fill/, selector.trim());
+        }
+      }
+      // De 760 px para abajo
+      const mediaAnchura = media('(max-width: 760px)');
+      for (const regla of [
+        '.me-resto .me-numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: row; }',
+        '.me-resto .me-numero { padding: 4px 12px; }',
+        '.me-resto .me-numeros li:nth-child(odd) { border-left: 0; }',
+        '.me-resto .me-numeros li:nth-child(odd) .me-numero { padding-left: 4px; margin-left: 0; }',
+        '.me-columnas { grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; }',
+        '.me-columna { padding: 0; border-left: 0; }'
+      ]) {
+        assert.ok(mediaAnchura.includes(regla), regla);
+      }
+      // Va después de las reglas de arriba (las pisa) y antes del teléfono, que ya no las repite
+      assert.ok(estilo.indexOf('@media (max-width: 760px) {') > estilo.indexOf('.me-columna:first-child {'));
+      const telefono = media('(max-width: 640px)');
+      assert.ok(estilo.indexOf('@media (max-width: 760px) {') < estilo.indexOf('@media (max-width: 640px) {'));
+      assert.doesNotMatch(telefono, /\.me-numeros|\.me-columna/);
+      // Ningún otro @media cambia las columnas de los números ni de «Hoy y mañana»
+      for (const [condicion] of estilo.matchAll(/@media [^{]+(?=\{)/g)) {
+        if (condicion.trim() === '@media (max-width: 760px)') continue;
+        assert.doesNotMatch(media(condicion.trim().slice('@media '.length)), /\.me-resto \.me-numeros \{|\.me-columnas \{/, condicion);
+      }
+    });
   });
 
   // Si no hay a quién autorizar, la lista solo dice "Nadie": la aclaración explica quiénes pueden aparecer
