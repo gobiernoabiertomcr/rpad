@@ -368,6 +368,54 @@ describe('marca en la lista de usuarios (spec 5.5)', () => {
   });
 });
 
+// Configuración muestra la insignia «Cargada desde Mi espacio» en las licencias que creó Mi espacio (spec
+// 2026-10-26-mi-espacio-licencias-y-horas, 6): las que apunta una fila creada y activa de mi_espacio_licencias
+describe('la insignia «Cargada desde Mi espacio»', () => {
+  const guardar = async (desde, hasta) => (await query(
+    'INSERT INTO usuarios_licencias (usuario_id, desde, hasta, creado_por) VALUES (?, ?, ?, ?)',
+    [usuarios.adminB.id, desde, hasta, usuarios.adminB.id]
+  )).insertId;
+  // Una fila de Mi espacio con las fechas de la licencia de Configuración a la que apunta
+  const deMiEspacio = (licenciaId, oficial, activo = 1) => query(
+    `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, licencia_oficial_id, oficial, activo)
+     SELECT usuario_id, 'vacaciones', desde, hasta, id, ?, ? FROM usuarios_licencias WHERE id = ?`,
+    [oficial, activo, licenciaId]
+  );
+
+  it('la trae la que creó Mi espacio, mientras esa fila esté activa; no una unida ni una cargada en Configuración', async () => {
+    await query('DELETE FROM mi_espacio_licencias');
+    const creada = await guardar(dia(5), dia(6));
+    const unida = await guardar(dia(10), dia(12));
+    const dadaDeBaja = await guardar(dia(15), dia(16));
+    const deConfiguracion = await guardar(dia(20), dia(21));
+    const varias = await guardar(dia(25), dia(26));
+    await deMiEspacio(creada, 'creada');
+    await deMiEspacio(unida, 'unida');
+    await deMiEspacio(dadaDeBaja, 'creada', 0);
+    // Varias filas pueden apuntar a la misma licencia (la creada y las unidas): sigue siendo una sola en la lista
+    for (const oficial of ['unida', 'creada', 'unida']) await deMiEspacio(varias, oficial);
+
+    const { body } = await api.get('/usuarios/licencias', comoA());
+    assert.deepEqual(body.data.licencias.map(l => [l.id, l.desde_mi_espacio]), [
+      [creada, true], [unida, false], [dadaDeBaja, false], [deConfiguracion, false], [varias, true]
+    ]);
+    // Configuración la edita y la anula como siempre, y la insignia sigue
+    const editada = await api.put(`/usuarios/licencias/${creada}`, { desde: dia(5), hasta: dia(7) }, comoA());
+    assert.equal(editada.status, 200, JSON.stringify(editada.body));
+    assert.equal(editada.body.data.desde_mi_espacio, true);
+    const anulada = await api.post(`/usuarios/licencias/${creada}/anular`, {}, comoA());
+    assert.equal(anulada.status, 200, JSON.stringify(anulada.body));
+    assert.equal(anulada.body.data.desde_mi_espacio, true);
+    const pasadas = await api.get('/usuarios/licencias?incluir_pasadas=1', comoA());
+    assert.equal(pasadas.body.data.licencias.find(l => l.id === creada).desde_mi_espacio, true);
+    // Una cargada en Configuración, no
+    const nueva = await cargar({ usuario_id: usuarios.adminA.id, desde: dia(30), hasta: dia(31) });
+    assert.equal(nueva.status, 201, JSON.stringify(nueva.body));
+    assert.equal(nueva.body.data.desde_mi_espacio, false);
+    await query('DELETE FROM mi_espacio_licencias');
+  });
+});
+
 // El alta, la edición y la anulación de Configuración, en un servicio que comparte con Mi espacio (spec
 // 2026-10-26-mi-espacio-licencias-y-horas, 6): recibe la conexión de una transacción abierta y el actor, y no la abre ni la cierra
 describe('el servicio compartido (services/licenciasOficialesService.js)', () => {
@@ -424,6 +472,73 @@ describe('el servicio compartido (services/licenciasOficialesService.js)', () =>
     }
     assert.equal(await notaDe(id), 999);
     assert.equal((await historial(usuarios.superadmin.id, 'licencia_editada')).length, editadas);
+  });
+
+  it('cargarLicencia con una superposición: el rechazo, con su motivo, y no escribe nada', async () => {
+    assert.equal((await cargar({ usuario_id: usuarios.adminB.id, desde: dia(1), hasta: dia(5) })).status, 201);
+    const cargadas = (await historial(usuarios.adminB.id, 'licencia_cargada')).length;
+    const resultado = await enTransaccion(conexion => servicio.cargarLicencia(conexion, {
+      usuarioId: usuarios.adminB.id, desde: dia(5), hasta: dia(8), actorId: usuarios.adminB.id, hoy
+    }));
+    assert.deepEqual(resultado, {
+      rechazo: {
+        status: 409, campo: 'fechas', motivo: 'superpuesta',
+        error: `Se superpone con otra licencia de la misma persona (del ${formatoCorto(dia(1))} al ${formatoCorto(dia(5))}).`
+      }
+    });
+    assert.equal((await query('SELECT COUNT(*) AS n FROM usuarios_licencias WHERE usuario_id = ?', [usuarios.adminB.id]))[0].n, 1);
+    assert.equal((await historial(usuarios.adminB.id, 'licencia_cargada')).length, cargadas);
+  });
+
+  it('siendo la persona autorizada sin días hábiles: el motivo trae la licencia del titular', async () => {
+    await titular(usuarios.superadmin);
+    await conFirma(usuarios.adminA);
+    const delTitular = await cargar({ usuario_id: usuarios.superadmin.id, desde: q(0), hasta: q(4), autorizado_id: usuarios.adminA.id }, comoSuper());
+    assert.equal(delTitular.status, 201, JSON.stringify(delTitular.body));
+    const resultado = await enTransaccion(conexion => servicio.cargarLicencia(conexion, {
+      usuarioId: usuarios.adminA.id, desde: q(-1), hasta: q(4), actorId: usuarios.adminA.id, hoy
+    }));
+    assert.deepEqual(resultado, {
+      rechazo: {
+        status: 409, error: sinDiasComoAutorizada(q(0), q(4)), campo: 'fechas', motivo: 'autorizada_sin_dias',
+        licencia: { desde: q(0), hasta: q(4), nombre: 'Test superadmin' }
+      }
+    });
+    assert.equal((await query('SELECT COUNT(*) AS n FROM usuarios_licencias WHERE usuario_id = ?', [usuarios.adminA.id]))[0].n, 0);
+  });
+
+  it('cada rechazo, con su status, su campo y su motivo', async () => {
+    await titular(usuarios.superadmin);
+    await conFirma(usuarios.adminA);
+    const motivoDe = async (promesa) => {
+      const { rechazo } = await promesa;
+      return [rechazo?.status, rechazo?.campo, rechazo?.motivo];
+    };
+    // El alta (el actor no cuenta: que la autorización la dé el titular lo controla Configuración antes)
+    const cargarCon = (datos) => enTransaccion(conexion => servicio.cargarLicencia(conexion, { actorId: usuarios.superadmin.id, hoy, ...datos }));
+    assert.deepEqual(await motivoDe(cargarCon({ usuarioId: usuarios.adminB.id, desde: dia(5), hasta: dia(2) })), [400, 'fechas', 'fechas']);
+    assert.deepEqual(await motivoDe(cargarCon({ usuarioId: usuarios.lector.id, desde: dia(1), hasta: dia(2) })), [400, 'usuario_id', 'rol']);
+    assert.deepEqual(await motivoDe(cargarCon({ usuarioId: usuarios.adminB.id, desde: dia(5), hasta: dia(10), autorizadoId: usuarios.adminA.id })),
+      [400, 'autorizado_id', 'no_es_titular']);
+    assert.deepEqual(await motivoDe(cargarCon({ usuarioId: usuarios.superadmin.id, desde: dia(5), hasta: dia(10), autorizadoId: usuarios.adminB.id })),
+      [400, 'autorizado_id', 'no_autorizable']);
+    // adminA, de licencia del domingo anterior al viernes: no le queda ningún día hábil de la del titular
+    assert.equal((await cargar({ usuario_id: usuarios.adminA.id, desde: q(-1), hasta: q(4) })).status, 201);
+    assert.deepEqual(await motivoDe(cargarCon({ usuarioId: usuarios.superadmin.id, desde: q(0), hasta: q(4), autorizadoId: usuarios.adminA.id })),
+      [409, 'autorizado_id', 'autorizado_sin_dias']);
+    // La edición y la anulación, de una licencia en curso
+    const { insertId: id } = await query(
+      'INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [usuarios.adminB.id, dia(-3), dia(5)]
+    );
+    const cambiarCon = (datos) => enTransaccion(conexion => servicio.cambiarLicencia(conexion, {
+      licenciaId: id, desde: dia(-3), hasta: dia(5), actorId: usuarios.adminA.id, hoy, ...datos
+    }));
+    assert.deepEqual(await motivoDe(cambiarCon({ licenciaId: 999999 })), [404, null, 'no_encontrada']);
+    assert.deepEqual(await motivoDe(cambiarCon({ desde: dia(-2) })), [400, 'fechas', 'edicion']);
+    assert.deepEqual(await motivoDe(cambiarCon({ autorizadoPedido: usuarios.adminA.id })), [403, 'autorizado_id', 'solo_titular']);
+    const anularCon = (licenciaId) => enTransaccion(conexion => servicio.anularLicenciaDe(conexion, { licenciaId, actorId: usuarios.adminA.id, hoy }));
+    assert.deepEqual(await motivoDe(anularCon(999999)), [404, null, 'no_encontrada']);
+    assert.deepEqual(await motivoDe(anularCon(id)), [409, null, 'no_se_anula']);
   });
 });
 

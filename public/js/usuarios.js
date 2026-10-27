@@ -737,6 +737,7 @@ async function cargarLicenciasPasadas() {
   }
 }
 
+// desde_mi_espacio: la licencia la creó Mi espacio, y lleva la insignia (spec 2026-10-26-mi-espacio-licencias-y-horas, 6)
 const filaLicencia = (l) => {
   const esTitular = l.usuario_id === datosLicencias.firmante_titular_id;
   const vigente = l.estado === 'futura' || l.estado === 'en_curso';
@@ -745,7 +746,7 @@ const filaLicencia = (l) => {
     <article class="fila-usuario${vigente ? '' : ' fila-desactivada'}">
       <div class="usuario-avatar" aria-hidden="true">${esc(getInitials(l.usuario_nombre))}</div>
       <div class="usuario-datos">
-        <div class="usuario-nombre"><strong>${esc(l.usuario_nombre)}</strong>${esTitular ? '<span class="etiqueta rol-superadmin">Firma las notas</span>' : ''}</div>
+        <div class="usuario-nombre"><strong>${esc(l.usuario_nombre)}</strong>${esTitular ? '<span class="etiqueta rol-superadmin">Firma las notas</span>' : ''}${l.desde_mi_espacio === true ? '<span class="etiqueta etiqueta-mi-espacio">Cargada desde Mi espacio</span>' : ''}</div>
         <div class="usuario-detalle">${detalle.map(d => `<span>${esc(d)}</span>`).join('')}</div>
         ${esTitular && vigente ? `<div class="usuario-ingreso text-muted">${esc(efectoEnNotas(l, l.autorizado_nombre))}</div>` : ''}
       </div>

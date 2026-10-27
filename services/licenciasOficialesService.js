@@ -2,7 +2,12 @@
 // edición y la anulación, con sus reglas. Las usan Configuración (controllers/licenciasController.js) y Mi espacio (spec
 // 2026-10-26-mi-espacio-licencias-y-horas, 6). Reciben la conexión de una transacción abierta y a quien hace el cambio (el actor),
 // nunca el pedido: no abren ni cierran la transacción, y quien llama bloquea antes (bloquearUsuarios). Si algo no se puede,
-// devuelven { rechazo: { status, error, campo } } sin escribir nada.
+// devuelven { rechazo } sin escribir nada: un Rechazo es { status, error, campo, motivo }, con el status, el mensaje y el campo
+// que responde Configuración y el motivo, para que Mi espacio decida qué hacer:
+// - 'fechas' (fechas inválidas en un alta), 'edicion' (las que no admite la edición, con el status de validarEdicion),
+//   'no_encontrada', 'solo_titular' y 'no_se_anula';
+// - los de rechazoDeLaBase: 'rol', 'superpuesta', 'autorizada_sin_dias' (suma licencia: { desde, hasta, nombre }, la del titular
+//   en la que es la persona autorizada), 'no_es_titular', 'no_autorizable' y 'autorizado_sin_dias'.
 import pool from '../config/database.js';
 import { registrarAuditoria } from './usuariosAuditoriaService.js';
 import { ahoraArgentina, formatoCorto, sumarDias, proximoDiaHabil } from './notasDigitalesCalendario.js';
@@ -14,13 +19,17 @@ const MENSAJE_NO_ENCONTRADA = 'Licencia no encontrada';
 
 export const periodo = ({ desde, hasta }) => `del ${formatoCorto(desde)} al ${formatoCorto(hasta)}`;
 
-const rechazar = (status, error, campo = null) => ({ status, error, campo });
+const rechazar = (motivo, status, error, campo = null) => ({ status, error, campo, motivo });
 
+// Las columnas de una licencia. desde_mi_espacio: la creó Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 6), con
+// EXISTS y no con un JOIN: varias filas unidas pueden apuntar a la misma licencia, y una unida no la hace de Mi espacio
 export const COLUMNAS_LICENCIA = `
   l.id, l.usuario_id, DATE_FORMAT(l.desde, '%Y-%m-%d') AS desde, DATE_FORMAT(l.hasta, '%Y-%m-%d') AS hasta,
   l.autorizado_id, DATE_FORMAT(l.autorizado_at, '%Y-%m-%d %H:%i') AS autorizado_at, l.anulada, l.creado_por,
   u.nombre_completo AS usuario_nombre, u.username AS usuario_username, u.rol AS usuario_rol,
-  au.nombre_completo AS autorizado_nombre, cr.nombre_completo AS creado_por_nombre`;
+  au.nombre_completo AS autorizado_nombre, cr.nombre_completo AS creado_por_nombre,
+  EXISTS (SELECT 1 FROM mi_espacio_licencias m WHERE m.licencia_oficial_id = l.id AND m.oficial = 'creada' AND m.activo = 1)
+    AS desde_mi_espacio`;
 export const DESDE_LICENCIA = `
   FROM usuarios_licencias l
   JOIN usuarios u ON u.id = l.usuario_id
@@ -72,19 +81,19 @@ export const conSusLicencias = async (personas, hoy) => {
  * La persona autorizada y el titular pueden faltar algunos días a la vez: se rechaza solo si a ella no le queda ningún día
  * hábil en toda la licencia del titular (notasDigitalesFirmas.disponibilidadDelAutorizado). Cuentan todos sus días, no
  * solo desde hoy: si no, con ella de licencia hasta el final no se podría ni acortar una licencia en curso.
- * Devuelve { status, error, campo } si no se puede, o null.
+ * Devuelve el Rechazo si no se puede, o null.
  */
 export const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, desde, hasta, autorizadoId, autorizadoNuevo }) => {
   const [[usuario]] = await conexion.query('SELECT rol, activo FROM usuarios WHERE id = ?', [usuarioId]);
   if (!usuario || !usuario.activo || !puedeTenerLicencia(usuario.rol)) {
-    return rechazar(400, 'Solo pueden tener licencia el superadmin, los admins y los editores activos.', 'usuario_id');
+    return rechazar('rol', 400, 'Solo pueden tener licencia el superadmin, los admins y los editores activos.', 'usuario_id');
   }
   const [[propia]] = await conexion.query(
     `SELECT DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta FROM usuarios_licencias
      WHERE usuario_id = ? AND anulada = 0 AND id <> ? AND desde <= ? AND hasta >= ? LIMIT 1`,
     [usuarioId, licenciaId, hasta, desde]
   );
-  if (propia) return rechazar(409, `Se superpone con otra licencia de la misma persona (${periodo(propia)}).`, 'fechas');
+  if (propia) return rechazar('superpuesta', 409, `Se superpone con otra licencia de la misma persona (${periodo(propia)}).`, 'fechas');
   // Las licencias en las que esta persona es la autorizada, superpuestas con la que se guarda (contándola, sin la versión
   // guardada si se edita)
   const [autorizaciones] = await conexion.query(
@@ -98,20 +107,23 @@ export const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, des
       licenciaExtra: { desde, hasta }, excluirLicenciaId: licenciaId, conexion
     });
     if (!disponible) {
-      return rechazar(409, `Es la persona autorizada a presentar las notas durante la licencia de ${comoAutorizada.nombre_completo} (${periodo(comoAutorizada)}) y con esta licencia no le quedaría ningún día hábil para hacerlo: primero hay que cambiar esa autorización.`, 'fechas');
+      return {
+        ...rechazar('autorizada_sin_dias', 409, `Es la persona autorizada a presentar las notas durante la licencia de ${comoAutorizada.nombre_completo} (${periodo(comoAutorizada)}) y con esta licencia no le quedaría ningún día hábil para hacerlo: primero hay que cambiar esa autorización.`, 'fechas'),
+        licencia: { desde: comoAutorizada.desde, hasta: comoAutorizada.hasta, nombre: comoAutorizada.nombre_completo }
+      };
     }
   }
   if (autorizadoId && autorizadoNuevo) {
     const titular = await firmanteTitular(conexion);
-    if (usuarioId !== titular) return rechazar(400, 'Solo la licencia del firmante titular de las notas lleva una persona autorizada.', 'autorizado_id');
+    if (usuarioId !== titular) return rechazar('no_es_titular', 400, 'Solo la licencia del firmante titular de las notas lleva una persona autorizada.', 'autorizado_id');
     if (!(await autorizables(conexion, titular)).some(a => a.id === autorizadoId)) {
-      return rechazar(400, 'Solo se puede autorizar a un admin o editor activo, con su firma cargada en Mi Perfil.', 'autorizado_id');
+      return rechazar('no_autorizable', 400, 'Solo se puede autorizar a un admin o editor activo, con su firma cargada en Mi Perfil.', 'autorizado_id');
     }
   }
   if (autorizadoId) {
     const disponible = await disponibilidadDelAutorizado({ desde, hasta, autorizado_id: autorizadoId }, { conexion });
     if (!disponible) {
-      return rechazar(409, 'La persona autorizada está de licencia todos los días hábiles de tu licencia: no podría presentar ninguna nota.', 'autorizado_id');
+      return rechazar('autorizado_sin_dias', 409, 'La persona autorizada está de licencia todos los días hábiles de tu licencia: no podría presentar ninguna nota.', 'autorizado_id');
     }
   }
   return null;
@@ -128,7 +140,7 @@ export const bloquearUsuarios = (conexion) => conexion.query('SELECT id FROM usu
  */
 export const cargarLicencia = async (conexion, { usuarioId, desde, hasta, autorizadoId = null, actorId, hoy }) => {
   const errorFechas = validarFechasNuevas({ desde, hasta }, hoy);
-  if (errorFechas) return { rechazo: rechazar(400, errorFechas, 'fechas') };
+  if (errorFechas) return { rechazo: rechazar('fechas', 400, errorFechas, 'fechas') };
   const rechazo = await rechazoDeLaBase(conexion, { usuarioId, desde, hasta, autorizadoId, autorizadoNuevo: Boolean(autorizadoId) });
   if (rechazo) return { rechazo };
   const [resultado] = await conexion.query(
@@ -150,11 +162,11 @@ export const cargarLicencia = async (conexion, { usuarioId, desde, hasta, autori
  */
 export const cambiarLicencia = async (conexion, { licenciaId, desde, hasta, autorizadoPedido, actorId, hoy }) => {
   const antes = await buscarLicenciaOficial(conexion, licenciaId);
-  if (!antes) return { rechazo: rechazar(404, MENSAJE_NO_ENCONTRADA) };
+  if (!antes) return { rechazo: rechazar('no_encontrada', 404, MENSAJE_NO_ENCONTRADA) };
   const { error, codigo, datos } = validarEdicion(antes, { desde, hasta }, hoy);
-  if (error) return { rechazo: rechazar(codigo, error, 'fechas') };
+  if (error) return { rechazo: rechazar('edicion', codigo, error, 'fechas') };
   const autorizadoCambia = autorizadoPedido !== undefined && autorizadoPedido !== antes.autorizado_id;
-  if (autorizadoCambia && actorId !== antes.usuario_id) return { rechazo: rechazar(403, MENSAJE_SOLO_TITULAR, 'autorizado_id') };
+  if (autorizadoCambia && actorId !== antes.usuario_id) return { rechazo: rechazar('solo_titular', 403, MENSAJE_SOLO_TITULAR, 'autorizado_id') };
   const autorizadoId = autorizadoCambia ? autorizadoPedido : antes.autorizado_id;
   const rechazo = await rechazoDeLaBase(conexion, {
     licenciaId, usuarioId: antes.usuario_id, ...datos, autorizadoId, autorizadoNuevo: autorizadoCambia
@@ -191,9 +203,9 @@ export const cambiarLicencia = async (conexion, { licenciaId, desde, hasta, auto
  */
 export const anularLicenciaDe = async (conexion, { licenciaId, actorId, hoy }) => {
   const licencia = await buscarLicenciaOficial(conexion, licenciaId);
-  if (!licencia) return { rechazo: rechazar(404, MENSAJE_NO_ENCONTRADA) };
+  if (!licencia) return { rechazo: rechazar('no_encontrada', 404, MENSAJE_NO_ENCONTRADA) };
   if (!puedeAnularse(licencia, hoy)) {
-    return { rechazo: rechazar(409, 'Solo se puede anular una licencia que todavía no empezó o que empieza hoy. Para cortar una licencia en curso, cambiá la fecha de fin.') };
+    return { rechazo: rechazar('no_se_anula', 409, 'Solo se puede anular una licencia que todavía no empezó o que empieza hoy. Para cortar una licencia en curso, cambiá la fecha de fin.') };
   }
   await conexion.query('UPDATE usuarios_licencias SET anulada = 1 WHERE id = ?', [licenciaId]);
   const auditoriaId = await registrarAuditoria(conexion, {

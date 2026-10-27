@@ -20,9 +20,10 @@ const VERSION = '20261204';
 // spec 2026-10-24-generador-de-notas, 1; Configuración reemplaza a Usuarios y Áreas: la tercera pestaña, Áreas, y la pestaña en la
 // dirección, spec 2026-10-24-configuracion, 1 y 6; la ayuda del lector nombra Proyectos en lugar de Gestión, spec
 // 2026-10-25-proyectos, 11; la cuarta pestaña, Feriados, con su vista y «Nuevo feriado», y al mostrarla llama a cargarFeriados de
-// feriados.js, spec 2026-10-26-feriados, 4): su versión es propia (solo la usa configuracion.html; subió al mismo número que
-// VERSION_FERIADOS, y siguen siendo independientes)
-const VERSION_PANTALLAS = '20261208';
+// feriados.js, spec 2026-10-26-feriados, 4; la insignia «Cargada desde Mi espacio» en la lista de Licencias, spec
+// 2026-10-26-mi-espacio-licencias-y-horas, 6): su versión es propia (solo la usa configuracion.html; es independiente de
+// VERSION_FERIADOS)
+const VERSION_PANTALLAS = '20261209';
 // areas.js (reescrito para la pestaña Áreas de Configuración, spec 2026-10-24-configuracion, 4 y 6), que en areas.html cargaba
 // ?v=20261204: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
 // configuracion.html)
@@ -94,8 +95,8 @@ describe('páginas', () => {
 
   // El script propio de esta pantalla cambió con los días sin auditor, después con la superposición parcial, con el aviso en su
   // fecha (el texto del efecto de la licencia en las notas, con persona autorizada), con Configuración (la tercera pestaña y la
-  // pestaña en la dirección), con el renombre de Gestión a Proyectos (la ayuda del lector) y, por último, con la cuarta pestaña,
-  // Feriados
+  // pestaña en la dirección), con el renombre de Gestión a Proyectos (la ayuda del lector), con la cuarta pestaña, Feriados, y,
+  // por último, con la insignia «Cargada desde Mi espacio» en la lista de Licencias
   for (const [pagina, script] of [['configuracion.html', 'usuarios']]) {
     it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
       assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));

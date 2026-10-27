@@ -19,6 +19,7 @@ const MAXIMO_DIAS_SIN_AUDITOR = 366;
 const responderError = (res, status, error, campo) =>
   res.status(status).json({ success: false, error, ...(campo ? { campo } : {}) });
 
+// El rechazo del servicio, con el status, el mensaje y el campo de siempre (el motivo es para Mi espacio)
 const responderRechazo = (res, { status, error, campo }) => responderError(res, status, error, campo);
 
 const idDe = (valor) => {
@@ -37,6 +38,8 @@ const autorizadoDelCuerpo = (cuerpo) => {
 const aRespuesta = (fila, hoy, titular) => ({
   ...fila,
   anulada: Boolean(fila.anulada),
+  // La insignia «Cargada desde Mi espacio» (spec 2026-10-26-mi-espacio-licencias-y-horas, 6)
+  desde_mi_espacio: Boolean(Number(fila.desde_mi_espacio)),
   estado: estadoDeLicencia(fila, hoy),
   // Del firmante titular: el día en que saldrían los avisos anticipados si no hay autorizado (spec 7.3)
   vispera: fila.usuario_id === titular ? diaHabilAnterior(fila.desde) : null
