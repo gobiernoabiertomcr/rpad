@@ -2,8 +2,9 @@
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 5 y 10): las consultas de lo que cargó cada persona, de
  * solo lectura y parametrizadas. Devuelven el `Estado` de las reglas (services/miEspacioReglas.js), solo con las filas
  * activas, lo que el paso a Configuración (sección 6) lee de las licencias de Configuración, las ausencias que ven los
- * compañeros («Hoy no están», sección 7), quiénes están de licencia el día del email de vencimiento (sección 9) y cuántas
- * licencias incluye un feriado (Configuración → Feriados, `licenciasQueIncluyen`). Lo que llega de la base como texto se
+ * compañeros («Hoy no están», sección 7), quiénes están de licencia el día del email de vencimiento (sección 9), cuántas
+ * licencias incluye un feriado (Configuración → Feriados, `licenciasQueIncluyen`) y la fecha y la firma de la nota de una
+ * licencia (spec 2026-10-27-mi-espacio-licencia-word, `datosDeLaNota`). Lo que llega de la base como texto se
  * convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las fechas se leen con DATE_FORMAT ('AAAA-MM-DD'), los
  * DECIMAL, tinyint y smallint pasan por Number() (el '7.5' de unas horas, el '8.0' de un saldo) y los TIME ('19:00:00') se
  * cortan a 'HH:MM'.
@@ -16,7 +17,7 @@ import { filasDeFeriados } from './feriadosDatos.js';
 import { feriadosDelRango, fechasQueCambianDiasHabiles } from './feriadosReglas.js';
 import { idPositivo } from './proyectosReglas.js';
 import { esAdmin } from './usuariosReglas.js';
-import { esFechaIso } from './notasDigitalesCalendario.js';
+import { esFechaIso, hoyArgentina } from './notasDigitalesCalendario.js';
 
 // Un número de la base que puede faltar (las horas de una licencia que no es por horas): NULL sigue siendo null, no 0
 const numeroONulo = (valor) => (valor === null || valor === undefined ? null : Number(valor));
@@ -191,6 +192,35 @@ export const licenciaDe = async (usuarioId, licenciaId, conexion = pool) => {
     `SELECT ${COLUMNAS_LICENCIA_MIA} FROM mi_espacio_licencias WHERE id = ? AND usuario_id = ? AND activo = 1`, [id, persona]
   );
   return fila ? aLicencia(fila) : null;
+};
+
+/**
+ * Lo que la nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word, secciones 2 y 4) lee de la base además de la
+ * licencia: `{ guardada, nombre, cargo, vinculo }`, o null (un id que no sirve, de otra persona, que no existe o dado de
+ * baja). `guardada` es la fecha de la nota, el día en Argentina ('AAAA-MM-DD') de la última vez que se guardó la licencia:
+ * `updated_at`, que la base pone al día solo cuando un guardado cambia algo. Es un TIMESTAMP que la base guarda en UTC: se lee
+ * con UNIX_TIMESTAMP y se pasa a hora argentina (como `subido_el` de Proyectos), así un guardado a las 22:00 no sale con el día
+ * siguiente; sin `updated_at`, null. La firma (el nombre, el cargo y el vínculo de la persona) se lee al armar la nota, en la
+ * misma consulta (`personaDe` no lee el cargo).
+ * @returns {Promise<{ guardada: string | null, nombre: string, cargo: string | null, vinculo: string | null } | null>}
+ */
+export const datosDeLaNota = async (usuarioId, licenciaId, conexion = pool) => {
+  const persona = idPositivo(usuarioId);
+  const id = idPositivo(licenciaId);
+  if (persona === null || id === null) return null;
+  const [[fila]] = await conexion.query(
+    `SELECT UNIX_TIMESTAMP(l.updated_at) AS guardada_ts, u.nombre_completo, u.cargo, u.vinculo
+     FROM mi_espacio_licencias l JOIN usuarios u ON u.id = l.usuario_id
+     WHERE l.id = ? AND l.usuario_id = ? AND l.activo = 1`,
+    [id, persona]
+  );
+  if (!fila) return null;
+  return {
+    guardada: fila.guardada_ts === null ? null : hoyArgentina(new Date(Number(fila.guardada_ts) * 1000)),
+    nombre: fila.nombre_completo,
+    cargo: fila.cargo ?? null,
+    vinculo: fila.vinculo ?? null
+  };
 };
 
 // El paso a Configuración → Licencias (spec, sección 6): las licencias de Configuración, como las leen las reglas
