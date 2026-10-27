@@ -8,6 +8,7 @@
 import { TEXTO_ROL } from './usuariosReglas.js';
 import { formatoCorto } from './notasDigitalesCalendario.js';
 import { frecuenciaEnNota } from './fechasDatasetReglas.js';
+import { cuandoDelEvento, cuandoCortoDelEvento, cuandoEsElEvento, textoDelEvento } from './miEspacioEventosReglas.js';
 
 // Paleta de los emails
 const COLORES = {
@@ -507,4 +508,119 @@ export const vencimientoMiEspacioTemplate = ({ nombre_completo, avisos }) => {
       NOTA_VENCIMIENTO_MI_ESPACIO
     ].join('\n')
   };
+};
+
+// =====================================================
+// MI ESPACIO: los emails de los eventos de la agenda (spec 2026-10-26-mi-espacio-agenda, 4)
+// =====================================================
+
+// Los cuatro abren la pestaña Agenda de Mi espacio
+const URL_DE_LOS_EVENTOS = `${RPAD_URL}/mi-espacio.html#agenda`;
+const NOTA_DE_LA_INVITACION = 'Solo quien lo creó lo puede cambiar. Si cambia o se cancela, te llega otro email.';
+const NOTA_DEL_RECORDATORIO =
+  'Te llega porque el evento tiene un recordatorio por email. Lo podés apagar desde el evento, en la Agenda de Mi espacio.';
+
+// Un texto de un evento, recortado ('' si el evento o el campo no lo son: nada tira con un evento raro)
+const campoDelEvento = (evento, campo) =>
+  (evento !== null && typeof evento === 'object' && typeof evento[campo] === 'string' ? evento[campo].trim() : '');
+// Quien lo creó; sin un nombre, la raya (como en la agenda)
+const nombreDelCreador = (creador) => (typeof creador === 'string' && creador.trim() !== '' ? creador.trim() : '—');
+
+/**
+ * Un párrafo de los emails de un evento, armado por partes: un texto, `{ negrita }` o `{ tachado }`. Cada parte se escapa una
+ * sola vez, acá (plantillaSimple no escapa sus párrafos), y las marcas (<strong> y <s>) las pone el código, nunca lo que
+ * escribió una persona (Review Focus 2). Devuelve `{ html, texto }`: el texto plano dice lo mismo, sin las marcas.
+ */
+const parrafoDelEvento = (...partes) => ({
+  html: partes.map((parte) => {
+    if (typeof parte === 'string') return escapeHtml(parte);
+    if ('negrita' in parte) return `<strong>${escapeHtml(parte.negrita)}</strong>`;
+    return `<s>${escapeHtml(parte.tachado)}</s>`;
+  }).join(''),
+  texto: partes.map((parte) => (typeof parte === 'string' ? parte : parte.negrita ?? parte.tachado)).join('')
+});
+
+// El detalle de un evento en su párrafo: escapado y con sus saltos de línea como <br>; sin detalle, null (no va)
+const parrafoDelDetalle = (evento) => {
+  const detalle = campoDelEvento(evento, 'detalle');
+  return detalle === '' ? null : { html: escapeHtml(detalle).replace(/\r\n|\r|\n/g, '<br>'), texto: detalle };
+};
+
+// Uno de los emails de un evento: el título, los párrafos (los null no van; el detalle, después de la línea del evento), el
+// botón «Ver en Mi espacio» y, si hay, una nota. El texto alternativo dice lo mismo, con un renglón en blanco entre los párrafos
+const emailDelEvento = ({ asunto, titulo, parrafos, nota = null }) => {
+  const lista = parrafos.filter(Boolean);
+  const notas = nota === null ? [] : [nota];
+  return {
+    subject: asunto,
+    html: plantillaSimple({
+      titulo,
+      parrafos: lista.map((p) => p.html),
+      boton: { texto: 'Ver en Mi espacio', url: URL_DE_LOS_EVENTOS },
+      notas: notas.map(escapeHtml)
+    }),
+    text: [...lista.map((p) => p.texto), `Ver en Mi espacio: ${URL_DE_LOS_EVENTOS}`, ...notas].join('\n\n')
+  };
+};
+
+/**
+ * La invitación, a quien quien lo creó suma a un evento (al guardarlo; services/miEspacioEventosEmails.js). `creador`: su
+ * nombre; `evento`: `{ titulo, fecha, desde, hasta, detalle }`, como queda guardado. «Laura Gómez te sumó a un evento: Reunión
+ * de equipo, martes 27/10/2026 de 10:00 a 11:00.», con el detalle.
+ */
+export const eventoInvitacionTemplate = ({ creador, evento }) => emailDelEvento({
+  asunto: 'RPAD: te sumaron a un evento',
+  titulo: 'Te sumaron a un evento',
+  parrafos: [
+    parrafoDelEvento({ negrita: nombreDelCreador(creador) }, ' te sumó a un evento: ',
+      { negrita: campoDelEvento(evento, 'titulo') }, `, ${cuandoDelEvento(evento)}.`),
+    parrafoDelDetalle(evento)
+  ],
+  nota: NOTA_DE_LA_INVITACION
+});
+
+/**
+ * El cambio, a los que siguen en un evento cuando quien lo creó le cambia el título, la fecha o la hora (cambioQueAvisa).
+ * `antes` y `despues`: el evento antes y después de guardar. «Cambió un evento: Reunión de equipo, miércoles 28/10/2026 de 10:00
+ * a 11:00.», el detalle de ahora, lo de antes tachado («Antes: …», con <s> dentro del párrafo) y quién lo cambió.
+ */
+export const eventoCambioTemplate = ({ creador, antes, despues }) => emailDelEvento({
+  asunto: 'RPAD: cambió un evento',
+  titulo: 'Cambió un evento',
+  parrafos: [
+    parrafoDelEvento('Cambió un evento: ', { negrita: campoDelEvento(despues, 'titulo') }, `, ${cuandoDelEvento(despues)}.`),
+    parrafoDelDetalle(despues),
+    parrafoDelEvento('Antes: ', { tachado: textoDelEvento(antes) }),
+    parrafoDelEvento(`Lo cambió ${nombreDelCreador(creador)}.`)
+  ]
+});
+
+/**
+ * La cancelación, a los que estaban en un evento cuando quien lo creó lo borra. «Se canceló: Reunión de equipo, martes
+ * 27/10/2026 a las 10:00.» (cuándo empezaba, sin la hora de fin), el detalle y quién lo canceló.
+ */
+export const eventoCancelacionTemplate = ({ creador, evento }) => emailDelEvento({
+  asunto: 'RPAD: se canceló un evento',
+  titulo: 'Se canceló un evento',
+  parrafos: [
+    parrafoDelEvento('Se canceló: ', { negrita: campoDelEvento(evento, 'titulo') }, `, ${cuandoCortoDelEvento(evento)}.`),
+    parrafoDelDetalle(evento),
+    parrafoDelEvento(`Lo canceló ${nombreDelCreador(creador)}.`)
+  ]
+});
+
+/**
+ * El recordatorio de un evento (la corrida de los recordatorios), contado desde `hoy` ('AAAA-MM-DD', el día real del envío):
+ * «Hoy a las 10:00: Reunión de equipo», «Mañana a las 10:00: …» o «El lunes 02/11 a las 10:00: …» (cuandoEsElEvento), con el
+ * detalle. El asunto lo dice en minúscula: «RPAD: Reunión de equipo, hoy a las 10:00».
+ */
+export const eventoRecordatorioTemplate = ({ evento, hoy }) => {
+  const titulo = campoDelEvento(evento, 'titulo');
+  const cuando = cuandoEsElEvento(evento, hoy);
+  return emailDelEvento({
+    asunto: `RPAD: ${titulo}, ${conMinusculaInicial(cuando)}`,
+    titulo: 'Recordatorio',
+    parrafos: [parrafoDelEvento(`${cuando}: `, { negrita: titulo }), parrafoDelDetalle(evento)],
+    nota: NOTA_DEL_RECORDATORIO
+  });
 };

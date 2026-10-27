@@ -2,17 +2,21 @@
 // de prueba propia. Lo ve quien lo creó, las personas invitadas y, si es para todos, la administración activa; lo cambia y lo
 // borra solo quien lo creó (el resto recibe 404: no se revela que existe); comparte solo administración, y solo con
 // administración; una invitada apaga o prende su recordatorio, y cuándo sale se calcula en cada pedido con los feriados de
-// ese momento (Review Focus 3). Las lecturas de services/miEspacioEventosDatos.js que la API todavía no usa (audienciaDe, la de
-// los emails) se prueban directo. También lo demás de la agenda (tus licencias de Mi espacio, los feriados y los compañeros
-// que no están, sin el tipo) y los eventos de «Hoy y mañana» del Resumen. La API usa la fecha real: las fechas de los tests se
-// arman desde hoy. Las personas son «Test <clave>».
-import { describe, it, before, after, beforeEach } from 'node:test';
+// ese momento (Review Focus 3). Las lecturas de services/miEspacioEventosDatos.js se prueban también directo (audienciaDe, la de
+// los emails). También lo demás de la agenda (tus licencias de Mi espacio, los feriados y los compañeros que no están, sin el
+// tipo), los eventos de «Hoy y mañana» del Resumen y los emails que salen al guardar (la invitación, el cambio y la
+// cancelación, en Mailpit, después de responder). La API usa la fecha real: las fechas de los tests se arman desde hoy. Las
+// personas son «Test <clave>».
+import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'crypto';
 import {
-  crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit
+  crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit,
+  paraCasilla
 } from './helpers.js';
 import { asegurarBaseDePrueba } from './notas-fixtures.js';
-import { hoyArgentina, sumarDias, esDiaHabil } from '../services/notasDigitalesCalendario.js';
+import { textoVisible } from './emails-fixtures.js';
+import { hoyArgentina, ahoraArgentina, sumarDias, esDiaHabil } from '../services/notasDigitalesCalendario.js';
 import { MENSAJES_EVENTO, textoRangoEvento, fechaMaximaEvento } from '../services/miEspacioEventosReglas.js';
 import { MENSAJES_MI_ESPACIO } from '../services/miEspacioReglas.js';
 
@@ -47,7 +51,8 @@ before(async () => {
   servidor = await iniciarServidor({ env: { DB_NAME: base.nombre } });
   api = crearCliente(servidor.url);
   usuarios = await crearUsuariosPrueba(api, ROLES);
-  // Usa el pool: se importa después de apuntar DB_NAME a la base de prueba. Nada de acá manda emails: igual, sin barrera
+  // Usan el pool: se importan después de apuntar DB_NAME a la base de prueba. El servidor arranca sin la barrera; el proceso
+  // del test (que manda emails en «los emails del guardado») lee el .env, que puede tenerla: sin barrera, salvo donde se pide
   emailSoloA = process.env.EMAIL_SOLO_A;
   process.env.EMAIL_SOLO_A = '';
   datos = await import('../services/miEspacioEventosDatos.js');
@@ -843,5 +848,253 @@ describe('«Hoy y mañana» del Resumen: los eventos', () => {
       await query('RENAME TABLE mi_espacio_eventos_falla_simulada TO mi_espacio_eventos');
     }
     assert.equal((await api.get('/mi-espacio/resumen', como('adminA'))).body.data.hoy_y_manana.eventos.length, 1);
+  });
+});
+
+// Los emails que salen al guardar un evento (spec, sección 4; services/miEspacioEventosEmails.js): la invitación, el cambio y
+// la cancelación, después de responder y aunque la persona esté de licencia. Cada envío deja su fila en
+// mi_espacio_evento_envios, que se anota después de mandar: con las filas, los emails ya están en Mailpit. El título de cada
+// evento lleva una marca propia del test, y de Mailpit cuentan solo los emails con ella (su Snippet trae el comienzo del cuerpo,
+// con el título): Mailpit puede tener los de otras sesiones, o uno de un test anterior que salió después de que se vació
+describe('los emails del guardado', () => {
+  const ASUNTOS = Object.freeze({
+    invitacion: 'RPAD: te sumaron a un evento', cambio: 'RPAD: cambió un evento', cancelacion: 'RPAD: se canceló un evento'
+  });
+  // Las casillas por defecto de sendEmail (services/emailService.js): las de la DGMIT. Nunca les llega nada de acá
+  const CASILLAS_POR_DEFECTO = [
+    'datospublicos@comodoro.gov.ar', 'mit@comodoro.gov.ar', 'investigacionterritorial@comodoro.gov.ar'
+  ];
+  // 'dd/mm/aaaa' de una fecha, escrito a mano
+  const fechaLarga = (fecha) => `${ddmm(fecha)}/${fecha.slice(0, 4)}`;
+  const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  let marca;
+  beforeEach(() => {
+    marca = crypto.randomBytes(4).toString('hex');
+  });
+  const titulo = () => `Reunión ${marca}`;
+  // El formulario de este test: el título con la marca y lo que cambia cada caso
+  const conMarca = (cambios = {}) => ({ titulo: titulo(), ...cambios });
+
+  // Los envíos anotados de un evento, en el orden en que se anotaron
+  const enviosDe = async (eventoId) => (await query(
+    `SELECT usuario_id, tipo, DATE_FORMAT(para, '%Y-%m-%d %H:%i') AS para,
+       DATE_FORMAT(enviado_at, '%Y-%m-%d %H:%i:%s') AS enviado_at, success
+     FROM mi_espacio_evento_envios WHERE evento_id = ? ORDER BY id`, [eventoId]
+  )).map((fila) => ({ ...fila, usuario_id: Number(fila.usuario_id), success: Number(fila.success) }));
+  // Espera a que el evento tenga al menos `cantidad` envíos anotados (hasta unos 5 s) y un rato más, por si llega uno de más:
+  // los emails salen después de responder
+  const esperarEnvios = async (eventoId, cantidad) => {
+    for (let intento = 0; intento < 100 && (await enviosDe(eventoId)).length < cantidad; intento++) await esperar(50);
+    await esperar(300);
+    return enviosDe(eventoId);
+  };
+  const claveDe = (id) => Object.keys(usuarios).find((clave) => usuarios[clave].id === id);
+  // [tipo, clave] de cada envío, para compararlos sin depender del orden de los ids
+  const quienes = (envios) => envios.map((envio) => [envio.tipo, claveDe(envio.usuario_id)]).sort();
+
+  // Los emails de este test en Mailpit (con la marca), con su texto visible; a una persona, o a cualquiera
+  const emailsDelTest = async (clave = null) => {
+    const delTest = (await mailpit.mensajes()).filter((mensaje) => (mensaje.Snippet ?? '').includes(marca))
+      .filter((mensaje) => clave === null || paraCasilla(usuarios[clave].email)(mensaje));
+    return Promise.all(delTest.map(async (mensaje) => ({
+      asunto: mensaje.Subject, casillas: mensaje.To.map((to) => to.Address), texto: textoVisible(await mailpit.html(mensaje.ID))
+    })));
+  };
+  // Espera a que Mailpit tenga `cantidad` emails de este test (hasta unos 5 s) y los devuelve
+  const esperarEmails = async (cantidad) => {
+    let emails = await emailsDelTest();
+    for (let intento = 0; intento < 100 && emails.length < cantidad; intento++) {
+      await esperar(50);
+      emails = await emailsDelTest();
+    }
+    return emails;
+  };
+  const casillasDe = (emails) => emails.flatMap((email) => email.casillas).sort();
+  const casillasDeLas = (...claves) => claves.map((clave) => usuarios[clave].email).sort();
+
+  it('el alta compartida le llega a adminB y no a adminA, después de responder, con su fila (success = 1)', async () => {
+    const desde = ahoraArgentina();
+    const id = await crear('adminA', conMarca(compartidoCon('adminB')));
+    const envios = await esperarEnvios(id, 1);
+    const hasta = ahoraArgentina();
+    assert.equal(envios.length, 1, JSON.stringify(envios));
+    const [envio] = envios;
+    assert.deepEqual({ ...envio, enviado_at: undefined },
+      { usuario_id: idDe('adminB'), tipo: 'invitacion', para: `${q(1)} 10:00`, enviado_at: undefined, success: 1 });
+    // enviado_at, con ahoraArgentina(): entre antes de guardar y después de anotar
+    assert.ok(envio.enviado_at >= desde && envio.enviado_at <= hasta, `${desde} <= ${envio.enviado_at} <= ${hasta}`);
+
+    const emails = await esperarEmails(1);
+    assert.deepEqual(casillasDe(emails), casillasDeLas('adminB'));
+    assert.equal(emails[0].asunto, ASUNTOS.invitacion);
+    const invitacion = `Test adminA te sumó a un evento: ${titulo()}, martes ${fechaLarga(q(1))} de 10:00 a 11:00. `
+      + 'Ver en Mi espacio';
+    assert.ok(emails[0].texto.includes(invitacion), emails[0].texto);
+    assert.deepEqual(await emailsDelTest('adminA'), []);
+  });
+
+  it('con todos, a toda la administración activa menos adminA, y a nadie más (ni al lector, ni al colaborador)', async () => {
+    const id = await crear('adminA', conMarca(PARA_TODOS));
+    const envios = await esperarEnvios(id, 3);
+    assert.deepEqual(quienes(envios), [['invitacion', 'adminB'], ['invitacion', 'editor'], ['invitacion', 'superadmin']]);
+    assert.ok(envios.every((envio) => envio.success === 1 && envio.para === `${q(1)} 10:00`), JSON.stringify(envios));
+    const emails = await esperarEmails(3);
+    assert.deepEqual(casillasDe(emails), casillasDeLas('adminB', 'editor', 'superadmin'));
+    assert.ok(emails.every((email) => email.asunto === ASUNTOS.invitacion));
+    for (const casilla of CASILLAS_POR_DEFECTO) assert.ok(!casillasDe(emails).includes(casilla), casilla);
+  });
+
+  it('cambiar la hora le avisa a adminB; el detalle o el recordatorio, no; sumar al editor lo invita solo a él', async () => {
+    const id = await crear('adminA', conMarca(compartidoCon('adminB')));
+    await esperarEnvios(id, 1);
+    // Solo el detalle y el recordatorio: nada
+    const soloDetalle = await cambiar('adminA', id,
+      conMarca({ ...compartidoCon('adminB'), detalle: 'Otro detalle', recordatorio: '1h' }));
+    assert.equal(soloDetalle.status, 200, JSON.stringify(soloDetalle.body));
+    // La hora: el cambio, a adminB (si el detalle hubiera mandado otro, serían dos)
+    const otraHora = { ...compartidoCon('adminB'), detalle: 'Otro detalle', recordatorio: '1h', desde: '11:00', hasta: '12:00' };
+    assert.equal((await cambiar('adminA', id, conMarca(otraHora))).status, 200);
+    let envios = await esperarEnvios(id, 2);
+    assert.deepEqual(envios.map((envio) => [envio.tipo, claveDe(envio.usuario_id), envio.para]),
+      [['invitacion', 'adminB', `${q(1)} 10:00`], ['cambio', 'adminB', `${q(1)} 11:00`]]);
+
+    // Sumar al editor sin cambiar nada más: la invitación, solo a él
+    assert.equal((await cambiar('adminA', id, conMarca({ ...otraHora, ...compartidoCon('adminB', 'editor') }))).status, 200);
+    envios = await esperarEnvios(id, 3);
+    assert.deepEqual(quienes(envios.slice(2)), [['invitacion', 'editor']]);
+
+    // Cambiar la fecha y sumar al superadmin: el cambio a los que estaban y la invitación, con lo nuevo, al que entra
+    const otroDia = { ...otraHora, ...compartidoCon('adminB', 'editor', 'superadmin'), fecha: q(2) };
+    assert.equal((await cambiar('adminA', id, conMarca(otroDia))).status, 200);
+    envios = await esperarEnvios(id, 6);
+    assert.equal(envios.length, 6, JSON.stringify(envios));
+    assert.deepEqual(quienes(envios.slice(3)), [['cambio', 'adminB'], ['cambio', 'editor'], ['invitacion', 'superadmin']]);
+    assert.ok(envios.slice(3).every((envio) => envio.para === `${q(2)} 11:00` && envio.success === 1));
+
+    const emails = await esperarEmails(6);
+    const deB = emails.filter((email) => email.casillas.includes(usuarios.adminB.email));
+    assert.deepEqual(deB.map((email) => email.asunto).sort(), [ASUNTOS.cambio, ASUNTOS.cambio, ASUNTOS.invitacion].sort());
+    const elUltimo = deB.find((email) => email.texto.includes('miércoles'));
+    const cambio = `Cambió un evento: ${titulo()}, miércoles ${fechaLarga(q(2))} de 11:00 a 12:00. Otro detalle `
+      + `Antes: ${titulo()}, martes ${fechaLarga(q(1))} de 11:00 a 12:00 Lo cambió Test adminA. Ver en Mi espacio`;
+    assert.ok(elUltimo.texto.includes(cambio), elUltimo.texto);
+    const delSuperadmin = emails.filter((email) => email.casillas.includes(usuarios.superadmin.email));
+    assert.equal(delSuperadmin.length, 1);
+    assert.equal(delSuperadmin[0].asunto, ASUNTOS.invitacion);
+    const nueva = `te sumó a un evento: ${titulo()}, miércoles ${fechaLarga(q(2))} de 11:00 a 12:00.`;
+    assert.ok(delSuperadmin[0].texto.includes(nueva), delSuperadmin[0].texto);
+  });
+
+  it('borrarlo les avisa a los dos que se canceló, con la fecha y la hora que tenía', async () => {
+    const id = await crear('adminA', conMarca(compartidoCon('adminB', 'editor')));
+    await esperarEnvios(id, 2);
+    assert.equal((await borrar('adminA', id)).status, 200);
+    const envios = await esperarEnvios(id, 4);
+    assert.equal(envios.length, 4, JSON.stringify(envios));
+    assert.deepEqual(quienes(envios.slice(2)), [['cancelacion', 'adminB'], ['cancelacion', 'editor']]);
+    assert.ok(envios.slice(2).every((envio) => envio.para === `${q(1)} 10:00` && envio.success === 1));
+    const emails = (await esperarEmails(4)).filter((email) => email.asunto === ASUNTOS.cancelacion);
+    assert.deepEqual(casillasDe(emails), casillasDeLas('adminB', 'editor'));
+    const cancelacion = `Se canceló: ${titulo()}, martes ${fechaLarga(q(1))} a las 10:00. Lo canceló Test adminA. `
+      + 'Ver en Mi espacio';
+    assert.ok(emails[0].texto.includes(cancelacion), emails[0].texto);
+  });
+
+  it('a quien se saca, o si pasa a «Solo yo», no le llega nada; si se lo vuelve a sumar, otra invitación', async () => {
+    const id = await crear('adminA', conMarca(compartidoCon('adminB', 'editor')));
+    await esperarEnvios(id, 2);
+    // Sale el editor y cambia la hora: el cambio, solo a adminB
+    assert.equal((await cambiar('adminA', id, conMarca({ ...compartidoCon('adminB'), desde: '09:00' }))).status, 200);
+    let envios = await esperarEnvios(id, 3);
+    assert.deepEqual(quienes(envios.slice(2)), [['cambio', 'adminB']]);
+    // Pasa a «Solo yo» y cambia la hora otra vez: nada. Vuelve adminB: otra invitación (si «Solo yo» hubiera mandado algo,
+    // serían dos)
+    assert.equal((await cambiar('adminA', id, conMarca({ compartido: false, desde: '08:00' }))).status, 200);
+    assert.equal((await cambiar('adminA', id, conMarca({ ...compartidoCon('adminB'), desde: '08:00' }))).status, 200);
+    envios = await esperarEnvios(id, 4);
+    assert.equal(envios.length, 4, JSON.stringify(envios));
+    assert.deepEqual(quienes(envios.slice(3)), [['invitacion', 'adminB']]);
+    assert.deepEqual(quienes(envios.filter((envio) => envio.usuario_id === idDe('editor'))), [['invitacion', 'editor']]);
+  });
+
+  it('Review Focus 4: la invitada desactivada no recibe nada; la que dejó de ser administración, sí', async () => {
+    const conLasTres = compartidoCon('adminB', 'editor', 'superadmin');
+    const id = await crear('adminA', conMarca(conLasTres));
+    await esperarEnvios(id, 3);
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [idDe('editor')]);
+    await query("UPDATE usuarios SET rol = 'lector' WHERE id = ?", [idDe('superadmin')]);
+    assert.equal((await cambiar('adminA', id, conMarca({ ...conLasTres, desde: '09:00' }))).status, 200);
+    let envios = await esperarEnvios(id, 5);
+    assert.deepEqual(quienes(envios.slice(3)), [['cambio', 'adminB'], ['cambio', 'superadmin']]);
+    assert.equal((await borrar('adminA', id)).status, 200);
+    envios = await esperarEnvios(id, 7);
+    assert.equal(envios.length, 7, JSON.stringify(envios));
+    assert.deepEqual(quienes(envios.slice(5)), [['cancelacion', 'adminB'], ['cancelacion', 'superadmin']]);
+    // Al editor, solo la invitación de cuando estaba activo
+    assert.deepEqual(quienes(envios.filter((envio) => envio.usuario_id === idDe('editor'))), [['invitacion', 'editor']]);
+    const emails = await esperarEmails(7);
+    assert.equal(emails.filter((email) => email.casillas.includes(usuarios.editor.email)).length, 1);
+  });
+
+  it('adminB, con una licencia de Configuración hoy, lo recibe igual: van al mail laboral', async () => {
+    await query('INSERT INTO usuarios_licencias (usuario_id, desde, hasta) VALUES (?, ?, ?)', [idDe('adminB'), hoy, dia(2)]);
+    const id = await crear('adminA', conMarca(compartidoCon('adminB')));
+    const envios = await esperarEnvios(id, 1);
+    assert.deepEqual(quienes(envios), [['invitacion', 'adminB']]);
+    assert.equal(envios[0].success, 1);
+    assert.deepEqual(casillasDe(await esperarEmails(1)), casillasDeLas('adminB'));
+  });
+
+  it('con un email que no pasa emailValido: ni mensaje ni fila (nunca a las casillas por defecto)', async () => {
+    await query("UPDATE usuarios SET email = 'sin-arroba' WHERE id = ?", [idDe('adminB')]);
+    try {
+      const id = await crear('adminA', conMarca(compartidoCon('adminB', 'editor')));
+      const envios = await esperarEnvios(id, 1);
+      assert.deepEqual(quienes(envios), [['invitacion', 'editor']]);
+      assert.deepEqual(casillasDe(await esperarEmails(1)), casillasDeLas('editor'));
+    } finally {
+      await query('UPDATE usuarios SET email = ? WHERE id = ?', [usuarios.adminB.email, idDe('adminB')]);
+    }
+  });
+
+  // El servicio, llamado en el proceso del test (el pool ya apunta a la base de prueba): con la barrera EMAIL_SOLO_A, que
+  // filtra todo, sendEmail no manda y el envío queda anotado con success = 0. Nunca tira
+  it('en el proceso: con EMAIL_SOLO_A = nadie@rpad.test, success = 0, y nunca tira', async () => {
+    const servicio = await import('../services/miEspacioEventosEmails.js');
+    const id = await crear('adminA', conMarca());
+    const evento = await datos.eventoPropio(id, idDe('adminA'));
+    const audiencia = new Map([[idDe('adminB'), { email: usuarios.adminB.email }], [idDe('editor'), { email: 'sin-arroba' }]]);
+    const avisos = mock.method(console, 'warn', () => {});
+    const errores = mock.method(console, 'error', () => {});
+    process.env.EMAIL_SOLO_A = 'nadie@rpad.test';
+    try {
+      const resultado = await servicio.enviarEmailsDelGuardado({
+        plan: { invitacion: [idDe('adminB'), idDe('editor')], cambio: [], cancelacion: [] },
+        antes: null, despues: evento, creador: 'Test adminA', audiencia
+      });
+      assert.deepEqual(resultado, { enviados: 0, fallidos: 1 });
+      const envios = await enviosDe(id);
+      assert.deepEqual(envios.map((envio) => ({ ...envio, enviado_at: undefined })),
+        [{ usuario_id: idDe('adminB'), tipo: 'invitacion', para: `${q(1)} 10:00`, enviado_at: undefined, success: 0 }]);
+      assert.match(envios[0].enviado_at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+
+      // Lo que no sirve no tira: sin entrada, sin un plan, sin un Map
+      for (const raro of [undefined, null, 42, {}, { plan: null }, { plan: { invitacion: [idDe('adminB')] }, despues: evento }]) {
+        assert.deepEqual(await servicio.enviarEmailsDelGuardado(raro), { enviados: 0, fallidos: 0 }, JSON.stringify(raro));
+      }
+      // Un evento que ya no existe: anotarlo falla (la clave foránea) y va a la consola, sin tirar
+      const fantasma = await servicio.enviarEmailsDelGuardado({
+        plan: { invitacion: [idDe('adminB')], cambio: [], cancelacion: [] }, antes: null, despues: { ...evento, id: 999999 },
+        creador: 'Test adminA', audiencia
+      });
+      assert.deepEqual(fantasma, { enviados: 0, fallidos: 1 });
+      assert.ok(errores.mock.callCount() >= 1);
+      assert.equal((await enviosDe(id)).length, 1);
+    } finally {
+      process.env.EMAIL_SOLO_A = '';
+      avisos.mock.restore();
+      errores.mock.restore();
+    }
   });
 });

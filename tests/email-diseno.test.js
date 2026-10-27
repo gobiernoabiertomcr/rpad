@@ -318,7 +318,12 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     'recuperación': 'Restablecé tu contraseña del RPAD',
     'aviso al superadmin': 'RPAD: cambio en los usuarios',
     'resumen de avisos retenidos': 'RPAD: cambios en los usuarios durante tu licencia',
-    'vencimiento de Mi espacio': 'RPAD: lo que vence pronto en Mi espacio'
+    'vencimiento de Mi espacio': 'RPAD: lo que vence pronto en Mi espacio',
+    // Nuevos con la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, 4)
+    'evento: invitación': 'RPAD: te sumaron a un evento',
+    'evento: cambio': 'RPAD: cambió un evento',
+    'evento: cancelación': 'RPAD: se canceló un evento',
+    'evento: recordatorio': 'RPAD: Reunión de equipo, hoy a las 10:00'
   };
 
   it('el asunto de cada plantilla es el de antes', () => {
@@ -342,7 +347,13 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     'aviso al superadmin': `${RPAD} Cambio en los usuarios del RPAD Persona Admin (padmin) hizo este cambio: Persona Lectora (plectora): Lector → Administrador Fecha: 16 de octubre de 2026 a las 10:30 h Ver el panel de usuarios Este aviso te llega porque sos superadmin y el cambio lo hizo otro administrador. ${PIE}`,
     'resumen de avisos retenidos': `${RPAD} Cambios en los usuarios durante tu licencia Mientras estabas de licencia hubo 2 cambios que te habrían llegado como aviso: 10 de noviembre de 2026 a las 10:00 h – Persona Admin (padmin): Persona Lectora (plectora): Desactivado 10 de noviembre de 2026 a las 12:30 h – Persona Admin (padmin): Persona Lectora (plectora): Lector → Administrador Ver el panel de usuarios Este resumen te llega porque sos superadmin y estos avisos no se enviaron durante tu licencia. ${PIE}`,
     // Nuevo con Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 9): sin el tipo de ninguna licencia médica
-    'vencimiento de Mi espacio': `${RPAD} Lo que vence pronto Hola, Persona de Prueba. Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el viernes 30/10. Tenés 3 días de la licencia 2024: vence el 31/12/2026. Ver en Mi espacio Este aviso te llega una sola vez por cada cosa. Lo que cargás en Mi espacio lo ves solo vos. ${PIE}`
+    'vencimiento de Mi espacio': `${RPAD} Lo que vence pronto Hola, Persona de Prueba. Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el viernes 30/10. Tenés 3 días de la licencia 2024: vence el 31/12/2026. Ver en Mi espacio Este aviso te llega una sola vez por cada cosa. Lo que cargás en Mi espacio lo ves solo vos. ${PIE}`,
+    // Nuevos con la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, 4): el detalle va en su párrafo, después de la
+    // línea del evento
+    'evento: invitación': `${RPAD} Te sumaron a un evento Persona de Prueba te sumó a un evento: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00. Sala de reuniones del 2.º piso. Ver en Mi espacio Solo quien lo creó lo puede cambiar. Si cambia o se cancela, te llega otro email. ${PIE}`,
+    'evento: cambio': `${RPAD} Cambió un evento Cambió un evento: Reunión de equipo, miércoles 28/10/2026 de 10:00 a 11:00. Sala de reuniones del 2.º piso. Antes: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00 Lo cambió Persona de Prueba. Ver en Mi espacio ${PIE}`,
+    'evento: cancelación': `${RPAD} Se canceló un evento Se canceló: Reunión de equipo, martes 27/10/2026 a las 10:00. Sala de reuniones del 2.º piso. Lo canceló Persona de Prueba. Ver en Mi espacio ${PIE}`,
+    'evento: recordatorio': `${RPAD} Recordatorio Hoy a las 10:00: Reunión de equipo Sala de reuniones del 2.º piso. Ver en Mi espacio Te llega porque el evento tiene un recordatorio por email. Lo podés apagar desde el evento, en la Agenda de Mi espacio. ${PIE}`
   };
 
   for (const { nombre, email } of casos) {
@@ -402,6 +413,136 @@ describe('El aviso de vencimiento de Mi espacio', () => {
     assert.ok(!html.includes('<img'));
     assert.equal(html.split('&lt;img src=x onerror=alert(1)&gt; &amp; más').length - 1, 2);
     assert.equal(text.split(raro).length - 1, 2);
+  });
+});
+
+// Los cuatro emails de los eventos de la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, 4): la invitación, el cambio
+// y la cancelación salen al guardar un evento (services/miEspacioEventosEmails.js) y el recordatorio, de la corrida. Todos con
+// el botón «Ver en Mi espacio» a la pestaña Agenda y el detalle en su párrafo; lo que escribió una persona (el título, el
+// detalle y el nombre de quien lo creó) va escapado (Review Focus 2)
+describe('Los emails de los eventos de la agenda', () => {
+  const EVENTOS = ['evento: invitación', 'evento: cambio', 'evento: cancelación', 'evento: recordatorio'];
+  const URL_DE_LA_PESTANA = `${plantillas.RPAD_URL}/mi-espacio.html#agenda`;
+  const EVENTO = Object.freeze({
+    titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:00', hasta: '11:00', detalle: 'Sala de reuniones del 2.º piso.'
+  });
+  const caso = (nombre) => casos.find(c => c.nombre === nombre).email;
+  // Los cuatro con un mismo evento (el cambio lo pasa al miércoles 28/10) y un mismo nombre de quien lo creó
+  const losCuatro = (evento, creador = 'Persona de Prueba') => ({
+    invitacion: plantillas.eventoInvitacionTemplate({ creador, evento }),
+    cambio: plantillas.eventoCambioTemplate({ creador, antes: evento, despues: { ...evento, fecha: '2026-10-28' } }),
+    cancelacion: plantillas.eventoCancelacionTemplate({ creador, evento }),
+    recordatorio: plantillas.eventoRecordatorioTemplate({ evento, hoy: '2026-10-27' })
+  });
+  // Los párrafos del cuerpo (los de plantillaSimple, en el color del texto)
+  const parrafos = (html) => html.split('color: #2B3A4A; font-size: 14px; line-height: 1.6;').length - 1;
+
+  it('los cuatro: el botón «Ver en Mi espacio» abre mi-espacio.html#agenda, y el texto alternativo lleva el link', () => {
+    for (const nombre of EVENTOS) {
+      const { html, text } = caso(nombre);
+      assert.match(html, /<a href="[^"]*\/mi-espacio\.html#agenda" [^>]*>Ver en Mi espacio<\/a>/, nombre);
+      assert.ok(text.includes(`Ver en Mi espacio: ${URL_DE_LA_PESTANA}`), nombre);
+    }
+  });
+
+  it('la invitación: quien lo creó y el título en negrita, cuándo es con la hora de fin y la nota', () => {
+    const { html } = caso('evento: invitación');
+    assert.ok(html.includes('><strong>Persona de Prueba</strong> te sumó a un evento: <strong>Reunión de equipo</strong>, martes 27/10/2026 de 10:00 a 11:00.</p>'));
+    assert.match(html, /<p [^>]*>Sala de reuniones del 2\.º piso\.<\/p>/);
+    assert.match(html, /<p [^>]*color: #6B7A8C; font-size: 12px;[^>]*>Solo quien lo creó lo puede cambiar\. Si cambia o se cancela, te llega otro email\.<\/p>/);
+  });
+
+  it('el cambio: el evento nuevo en negrita y lo de antes tachado, con <s> dentro de un párrafo', () => {
+    const { html } = caso('evento: cambio');
+    assert.ok(html.includes('>Cambió un evento: <strong>Reunión de equipo</strong>, miércoles 28/10/2026 de 10:00 a 11:00.</p>'));
+    assert.match(html, /<p [^>]*>Antes: <s>Reunión de equipo, martes 27\/10\/2026 de 10:00 a 11:00<\/s><\/p>/);
+    assert.match(html, /<p [^>]*>Lo cambió Persona de Prueba\.<\/p>/);
+    assert.equal(html.split('<s>').length - 1, 1);
+  });
+
+  it('la cancelación: cuándo empieza, sin la hora de fin, y quién la canceló', () => {
+    const { html } = caso('evento: cancelación');
+    assert.ok(html.includes('>Se canceló: <strong>Reunión de equipo</strong>, martes 27/10/2026 a las 10:00.</p>'));
+    assert.match(html, /<p [^>]*>Lo canceló Persona de Prueba\.<\/p>/);
+  });
+
+  it('el recordatorio dice hoy, mañana o el día, en el asunto (en minúscula) y en el párrafo, con la nota', () => {
+    for (const [evento, hoy, asunto, comienzo] of [
+      [EVENTO, '2026-10-27', 'RPAD: Reunión de equipo, hoy a las 10:00', 'Hoy a las 10:00'],
+      [EVENTO, '2026-10-26', 'RPAD: Reunión de equipo, mañana a las 10:00', 'Mañana a las 10:00'],
+      [{ ...EVENTO, fecha: '2026-11-02' }, '2026-10-27', 'RPAD: Reunión de equipo, el lunes 02/11 a las 10:00', 'El lunes 02/11 a las 10:00']
+    ]) {
+      const { subject, html, text } = plantillas.eventoRecordatorioTemplate({ evento, hoy });
+      assert.equal(subject, asunto);
+      assert.ok(html.includes(`>${comienzo}: <strong>Reunión de equipo</strong></p>`), comienzo);
+      assert.ok(text.startsWith(`${comienzo}: Reunión de equipo\n`), comienzo);
+    }
+    assert.match(caso('evento: recordatorio').html,
+      /<p [^>]*>Te llega porque el evento tiene un recordatorio por email\. Lo podés apagar desde el evento, en la Agenda de Mi espacio\.<\/p>/);
+  });
+
+  it('sin hora de fin, la invitación y lo de antes dicen «a las 10:00»', () => {
+    const sinFin = { ...EVENTO, hasta: null };
+    assert.ok(textoVisible(plantillas.eventoInvitacionTemplate({ creador: 'Persona de Prueba', evento: sinFin }).html)
+      .includes('Persona de Prueba te sumó a un evento: Reunión de equipo, martes 27/10/2026 a las 10:00.'));
+    assert.ok(textoVisible(plantillas.eventoCambioTemplate({ creador: 'Persona de Prueba', antes: sinFin, despues: EVENTO }).html)
+      .includes('Antes: Reunión de equipo, martes 27/10/2026 a las 10:00 Lo cambió'));
+  });
+
+  it('los textos alternativos: los párrafos separados por un renglón en blanco, el link y la nota', () => {
+    const link = `Ver en Mi espacio: ${URL_DE_LA_PESTANA}`;
+    const detalle = 'Sala de reuniones del 2.º piso.';
+    assert.equal(caso('evento: invitación').text, [
+      'Persona de Prueba te sumó a un evento: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00.', detalle, link,
+      'Solo quien lo creó lo puede cambiar. Si cambia o se cancela, te llega otro email.'
+    ].join('\n\n'));
+    assert.equal(caso('evento: cambio').text, [
+      'Cambió un evento: Reunión de equipo, miércoles 28/10/2026 de 10:00 a 11:00.', detalle,
+      'Antes: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00', 'Lo cambió Persona de Prueba.', link
+    ].join('\n\n'));
+    assert.equal(caso('evento: cancelación').text, [
+      'Se canceló: Reunión de equipo, martes 27/10/2026 a las 10:00.', detalle, 'Lo canceló Persona de Prueba.', link
+    ].join('\n\n'));
+    assert.equal(caso('evento: recordatorio').text, [
+      'Hoy a las 10:00: Reunión de equipo', detalle, link,
+      'Te llega porque el evento tiene un recordatorio por email. Lo podés apagar desde el evento, en la Agenda de Mi espacio.'
+    ].join('\n\n'));
+  });
+
+  it('el detalle: sus saltos de línea son <br> en el HTML y quedan en el texto; sin detalle, no hay párrafo', () => {
+    const conRenglones = losCuatro({ ...EVENTO, detalle: 'Sala 2.\nTraer la notebook.\r\nCon café.' });
+    for (const [nombre, { html, text }] of Object.entries(conRenglones)) {
+      assert.ok(html.includes('>Sala 2.<br>Traer la notebook.<br>Con café.</p>'), nombre);
+      assert.ok(text.includes('Sala 2.\nTraer la notebook.\r\nCon café.'), nombre);
+    }
+    const conDetalle = losCuatro(EVENTO);
+    for (const detalle of [null, undefined, '', '   ']) {
+      for (const [nombre, { html, text }] of Object.entries(losCuatro({ ...EVENTO, detalle }))) {
+        assert.equal(parrafos(html), parrafos(conDetalle[nombre].html) - 1, `${nombre} ${detalle}`);
+        assert.ok(!text.includes('\n\n\n'), `${nombre} ${detalle}`);
+        assert.ok(!/null|undefined/.test(html + text), `${nombre} ${detalle}`);
+      }
+    }
+  });
+
+  // Review Focus 2: lo que escribió una persona nunca entra como HTML. En el HTML, escapado una sola vez (plantillaSimple no
+  // escapa sus párrafos: lo hace cada plantilla); en el texto alternativo y en el asunto, tal cual
+  it('Review Focus 2: un título, un detalle y un nombre con HTML van escapados en los cuatro, y tal cual en el texto', () => {
+    const raro = '<img src=x onerror=alert(1)> & más';
+    const escapado = '&lt;img src=x onerror=alert(1)&gt; &amp; más';
+    const emails = losCuatro({ ...EVENTO, titulo: raro, detalle: raro }, raro);
+    // Cuántas veces aparece cada uno: el título (dos en el cambio, con lo de antes), el detalle y el nombre (no en el recordatorio)
+    const veces = { invitacion: 3, cambio: 4, cancelacion: 3, recordatorio: 2 };
+    for (const [nombre, { subject, html, text }] of Object.entries(emails)) {
+      assert.ok(!html.includes('<img'), nombre);
+      assert.ok(!html.includes('&amp;lt;'), `${nombre}: escapado dos veces`);
+      assert.equal(html.split(escapado).length - 1, veces[nombre], nombre);
+      assert.equal(text.split(raro).length - 1, veces[nombre], nombre);
+      assert.ok(!subject.includes('&lt;'), nombre);
+    }
+    assert.equal(emails.recordatorio.subject, `RPAD: ${raro}, hoy a las 10:00`);
+    assert.ok(emails.cambio.html.includes(`>Antes: <s>${escapado}, martes 27/10/2026 de 10:00 a 11:00</s></p>`));
+    assert.ok(emails.invitacion.html.includes(`><strong>${escapado}</strong> te sumó a un evento: <strong>${escapado}</strong>,`));
   });
 });
 

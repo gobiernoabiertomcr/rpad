@@ -34,6 +34,10 @@ export const casosDeEmail = (t) => {
     created_at: `2026-11-10T${hora}:00Z`, actor_nombre: 'Persona Admin', actor_username: 'padmin',
     afectado_nombre: 'Persona Lectora', afectado_username: 'plectora', cambio
   });
+  // Un evento de la agenda de Mi espacio, como lo leen la API y la corrida (el martes 27/10/2026); el cambio lo pasa al miércoles
+  const evento = {
+    titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:00', hasta: '11:00', detalle: 'Sala de reuniones del 2.º piso.'
+  };
 
   return [
     { nombre: 'cambios pendientes', email: t.cambiosPendientesTemplate(cambios), boton: true },
@@ -65,7 +69,15 @@ export const casosDeEmail = (t) => {
         ]
       }),
       boton: true
-    }
+    },
+    { nombre: 'evento: invitación', email: t.eventoInvitacionTemplate({ creador: 'Persona de Prueba', evento }), boton: true },
+    {
+      nombre: 'evento: cambio',
+      email: t.eventoCambioTemplate({ creador: 'Persona de Prueba', antes: evento, despues: { ...evento, fecha: '2026-10-28' } }),
+      boton: true
+    },
+    { nombre: 'evento: cancelación', email: t.eventoCancelacionTemplate({ creador: 'Persona de Prueba', evento }), boton: true },
+    { nombre: 'evento: recordatorio', email: t.eventoRecordatorioTemplate({ evento, hoy: '2026-10-27' }), boton: true }
   ];
 };
 

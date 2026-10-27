@@ -10,16 +10,18 @@
 // página los imprime tal cual. El listado suma lo demás de la agenda: tus licencias de Mi espacio (con el tipo), los
 // feriados y los compañeros que no están (sin el tipo, como «Hoy no están»). Respuestas { success, data?, error?, campo?,
 // message? }; un error de validación, 400 con su campo. Cada guardado es una transacción; el cambio y la baja empiezan
-// bloqueando la fila del evento.
+// bloqueando la fila del evento. Al guardar salen los emails de la invitación, el cambio y la cancelación (spec, sección 4):
+// quién recibe qué se decide en la transacción y se manda después de responder (services/miEspacioEventosEmails.js).
 import pool from '../config/database.js';
 import { ahoraArgentina, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_EVENTO, validarEvento, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento, itemDeLicencia,
-  itemDeAusencia, itemsDeFeriados
+  itemDeAusencia, itemsDeFeriados, emailsDelGuardado
 } from '../services/miEspacioEventosReglas.js';
 import {
-  eventosVisibles, eventoVisible, eventoPropio, personasParaCompartir, licenciasPropiasEntre
+  eventosVisibles, eventoVisible, eventoPropio, personasParaCompartir, licenciasPropiasEntre, audienciaDe
 } from '../services/miEspacioEventosDatos.js';
+import { enviarEmailsDelGuardado } from '../services/miEspacioEventosEmails.js';
 import { feriadosEntre, filasDeFeriados } from '../services/feriadosDatos.js';
 import { feriadosDelRango } from '../services/feriadosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
@@ -75,10 +77,38 @@ const enTransaccion = async (trabajo) => {
 
 /**
  * El único lugar donde se guarda un evento (el alta, el cambio y la baja) y se responde: `trabajo(conexion)` corre en una
- * transacción y su `[status, cuerpo]` es la respuesta. Lo que tenga que salir después de responder (los emails de la
- * invitación, el cambio y la cancelación, spec sección 4) se suma acá, una sola vez para las tres rutas.
+ * transacción y devuelve `[status, cuerpo, emails]`: `[status, cuerpo]` es la respuesta y `emails`, lo que sale después (los
+ * de la invitación, el cambio y la cancelación, spec sección 4: lo de `emailsDelEvento`, o nada en un error). Primero se
+ * confirma la transacción y se responde; recién después se mandan, fuera de ella: quien guarda un evento «para todos» no
+ * espera los emails, y si uno falla el evento ya quedó guardado. Nadie espera esa promesa: lleva su `.catch`, aunque
+ * `enviarEmailsDelGuardado` no tira, para que nunca quede una promesa rechazada sin manejar.
  */
-const guardarEvento = (res, mensaje, trabajo) => responder(res, mensaje, () => enTransaccion(trabajo));
+const guardarEvento = async (res, mensaje, trabajo) => {
+  let emails = null;
+  await responder(res, mensaje, async () => {
+    const [status, cuerpo, despuesDeResponder = null] = await enTransaccion(trabajo);
+    if (status < 300) emails = despuesDeResponder;
+    return [status, cuerpo];
+  });
+  if (emails === null) return;
+  enviarEmailsDelGuardado(emails).catch((error) => {
+    console.error('Error al mandar los emails de un evento:', error?.stack ?? error);
+  });
+};
+
+/**
+ * Lo que sale después de guardar un evento, para guardarEvento, dentro de la transacción y después de escribir: la audiencia
+ * de después (`audienciaDe`, que lee las filas nuevas; en una baja, `despues` es null y no hay), quién recibe qué
+ * (`emailsDelGuardado`, con la audiencia de antes, que se lee antes de escribir: después ya no están las filas de quien salió
+ * o de un evento que pasó a «Solo yo») y el email de cada uno. `antes` y `despues` son los de `eventoPropio` (la misma forma:
+ * cambioQueAvisa los compara con `!==`, y los dos traen `creado_por` y el nombre de quien lo creó, `creador`).
+ */
+const emailsDelEvento = async (conexion, { antes = null, audienciaAntes = [], despues = null }) => {
+  const audienciaDespues = despues === null ? [] : await audienciaDe(despues, conexion);
+  const plan = emailsDelGuardado({ antes, despues, audienciaAntes, audienciaDespues, ahora: ahoraArgentina() });
+  const audiencia = new Map([...audienciaAntes, ...audienciaDespues].map((persona) => [persona.id, { email: persona.email }]));
+  return { plan, antes, despues, creador: (despues ?? antes)?.creador ?? null, audiencia };
+};
 
 // El cuerpo del pedido como objeto (sin cuerpo, o con algo que no es un objeto, {})
 const cuerpoDe = (req) => {
@@ -191,7 +221,8 @@ export const listarPersonasParaCompartir = (req, res) => responder(res, 'Error a
   return conDatos(await personasParaCompartir(req.user.userId));
 });
 
-// POST /api/mi-espacio/eventos: un evento nuevo de la persona, con sus personas
+// POST /api/mi-espacio/eventos: un evento nuevo de la persona, con sus personas. Después de responder, la invitación a su
+// audiencia (el evento se vuelve a leer, ya guardado: el de los emails)
 export const crearEvento = (req, res) => guardarEvento(res, 'Error al guardar el evento', async (conexion) => {
   const usuario = quienPide(req);
   const { datos, error } = await datosDelGuardado(cuerpoDe(req), { usuario }, conexion);
@@ -202,16 +233,21 @@ export const crearEvento = (req, res) => guardarEvento(res, 'Error al guardar el
     [...valoresDelEvento(datos), usuario.id]
   );
   await guardarPersonas(conexion, resultado.insertId, datos, []);
-  return [201, { success: true, data: { id: resultado.insertId }, message: 'Evento guardado.' }];
+  const despues = await eventoPropio(resultado.insertId, usuario.id, conexion);
+  return [201, { success: true, data: { id: resultado.insertId }, message: 'Evento guardado.' },
+    await emailsDelEvento(conexion, { despues })];
 });
 
-// PUT /api/mi-espacio/eventos/:id: cambia un evento de la persona con el formulario entero (solo quien lo creó)
+// PUT /api/mi-espacio/eventos/:id: cambia un evento de la persona con el formulario entero (solo quien lo creó). La audiencia
+// de antes se lee antes de escribir; después de responder, la invitación a los que entran y, si cambió el título, la fecha o
+// la hora, el cambio a los que siguen
 export const cambiarEvento = (req, res) => guardarEvento(res, 'Error al cambiar el evento', async (conexion) => {
   const usuario = quienPide(req);
   const antes = await eventoPropio(req.params.id, usuario.id, conexion, { bloquear: true });
   if (antes === null) return noEncontrado();
   const { datos, error } = await datosDelGuardado(cuerpoDe(req), { usuario, anterior: antes }, conexion);
   if (error) return rechazo(error);
+  const audienciaAntes = await audienciaDe(antes, conexion);
   await conexion.query(
     `UPDATE mi_espacio_eventos
      SET titulo = ?, detalle = ?, fecha = ?, desde = ?, hasta = ?, compartido = ?, para_todos = ?, recordatorio = ?
@@ -219,15 +255,19 @@ export const cambiarEvento = (req, res) => guardarEvento(res, 'Error al cambiar 
     [...valoresDelEvento(datos), antes.id]
   );
   await guardarPersonas(conexion, antes.id, datos, antes.personas);
-  return [200, { success: true, data: { id: antes.id }, message: 'Evento cambiado.' }];
+  const despues = await eventoPropio(antes.id, usuario.id, conexion);
+  return [200, { success: true, data: { id: antes.id }, message: 'Evento cambiado.' },
+    await emailsDelEvento(conexion, { antes, audienciaAntes, despues })];
 });
 
-// DELETE /api/mi-espacio/eventos/:id: baja lógica de un evento de la persona (solo quien lo creó)
+// DELETE /api/mi-espacio/eventos/:id: baja lógica de un evento de la persona (solo quien lo creó). Después de responder, la
+// cancelación a su audiencia (leída antes de darlo de baja)
 export const borrarEvento = (req, res) => guardarEvento(res, 'Error al borrar el evento', async (conexion) => {
   const antes = await eventoPropio(req.params.id, req.user.userId, conexion, { bloquear: true });
   if (antes === null) return noEncontrado();
+  const audienciaAntes = await audienciaDe(antes, conexion);
   await conexion.query('UPDATE mi_espacio_eventos SET activo = 0 WHERE id = ?', [antes.id]);
-  return [200, { success: true, message: 'Evento borrado.' }];
+  return [200, { success: true, message: 'Evento borrado.' }, await emailsDelEvento(conexion, { antes, audienciaAntes })];
 });
 
 /**
