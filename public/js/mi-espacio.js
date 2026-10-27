@@ -1,10 +1,11 @@
 /**
  * Mi espacio - RPAD (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 8 y 11)
- * El panel personal de cada usuario: sus licencias, sus horas extras y lo que le queda, en tres pestañas que viajan en la dirección
- * (#resumen, #licencias y #horas). Lo que se carga acá lo ve solo su dueño. Los números y los textos los arma el servidor
- * (GET /api/mi-espacio/resumen, /mi-espacio/licencias?anio= y /mi-espacio/horas-extras?anio=, con services/miEspacioResumen.js) y
- * la página los imprime tal cual: no recalcula nada (Ruling 19). Sin la modalidad cargada, cada pestaña muestra el mensaje del
- * servidor y no deja cargar nada.
+ * El panel personal de cada usuario: sus licencias, sus horas extras, lo que le queda y su agenda, en cuatro pestañas que viajan en
+ * la dirección (#resumen, #licencias, #horas y #agenda). Lo que se carga acá lo ve solo su dueño, salvo los eventos que comparte. Los
+ * números y los textos los arma el servidor (GET /api/mi-espacio/resumen, /mi-espacio/licencias?anio=, /mi-espacio/horas-extras?anio=
+ * y /mi-espacio/eventos?desde=&hasta=, con services/miEspacioResumen.js y services/miEspacioEventosReglas.js) y la página los imprime
+ * tal cual: no recalcula nada (Ruling 19). Sin la modalidad cargada, las tres primeras pestañas muestran el mensaje del servidor y no
+ * dejan cargar nada; la agenda se ve igual (decisión del usuario, 27/10/2026).
  * - Resumen «Niveles»: la modalidad y el año; «Vence pronto» (cada cosa con su fecha en un bloque amarillo y el botón que la
  *   resuelve), los faltantes en un aviso ámbar, «Lo que te queda» (un tanque SVG por saldo, cada uno un link a su pestaña, y debajo
  *   las pastillas de los francos o de las horas a favor) y, al costado, «Hoy y mañana» (quién no está, solo para administración, y
@@ -14,6 +15,10 @@
  *   «Cambiar». Lo anterior al saldo inicial y lo que no corresponde a la modalidad actual se ven en gris, con su motivo.
  * - Horas extras: la tabla por mes (en planta, los francos; en contrato, las horas a favor) y el día por día de un mes (cada mes de
  *   la tabla es un botón; de entrada, el en curso) y, en contrato, las horas no utilizadas previamente.
+ * - Agenda (spec 2026-10-26-mi-espacio-agenda, 6): el mes de lunes a domingo, con «‹», «›», «Hoy» y hasta 3 cosas por día («y N
+ *   más» muestra el resto), en sus colores (lo tuyo, lo compartido, tus licencias y francos, los feriados y los compañeros que no
+ *   están) con su leyenda, y al costado los próximos 30 días (Hoy, Mañana, Esta semana y Más adelante). El mes no va en la
+ *   dirección. «Hoy y mañana» del Resumen suma los eventos de hoy y de mañana.
  * Los formularios (secciones 4, 6 y 8; maqueta 2), modales que un clic en el velo no cierra: «Cargar licencia» (los tipos de la
  * modalidad con lo que queda de cada uno, el cálculo del servidor 300 ms después del último cambio, «Mostrar a mis compañeros»,
  * el aviso del paso a Configuración, la persona a cargo del firmante en sus vacaciones y los días sin auditor), «Cargar horas
@@ -21,8 +26,11 @@
  * autorizado» y la confirmación de un borrado, que se abre sobre el formulario. Los abren los botones del encabezado y los data-*
  * de las pestañas (data-cargar, data-abrir, data-editar-licencia, data-editar-horas y, en «Vence pronto», data-accion con su
  * data-tipo). Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad: los mensajes y
- * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), camposConLoElegido (camposDelSaldoInicial) y las de
- * Configuración (efectoEnNotas, textoSinAuditor, textoAusenciasAutorizado y parametrosSinAuditor, de usuarios.js).
+ * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), camposConLoElegido (camposDelSaldoInicial), las de
+ * Configuración (efectoEnNotas, textoSinAuditor, textoAusenciasAutorizado y parametrosSinAuditor, de usuarios.js) y, en la agenda,
+ * DIAS_DE_PROXIMOS (services/miEspacioEventosReglas.js), diaLargoDe (diaLargo) y tituloDelMes (mesTitulo, los dos de
+ * services/miEspacioResumen.js). La agenda no recalcula días hábiles ni textos: los días que pinta una licencia o un compañero, el
+ * aviso, quién está y «Hasta el …» los manda el servidor; acá solo se cuentan los días de la grilla, con Date.UTC.
  * Al cargarse el archivo solo declara (tests/mi-espacio-frontend.test.js lo carga en un vm después del api.js de verdad): lo que
  * arma HTML es puro y va primero; lo que toca el DOM o la API va aparte, al final (iniciarMiEspacio, enganchado a
  * DOMContentLoaded), con los eventos delegados en contenedores fijos: volver a dibujar no engancha nada, y el foco vuelve al control
@@ -38,7 +46,7 @@
 // =====================================================
 
 // Las pestañas, en su orden: el fragmento de la dirección. Uno desconocido, o ninguno, abre el Resumen
-const PESTANAS = Object.freeze(['resumen', 'licencias', 'horas']);
+const PESTANAS = Object.freeze(['resumen', 'licencias', 'horas', 'agenda']);
 
 // Copia de MENSAJES_MI_ESPACIO.sinArranque (services/miEspacioReglas.js), atada por un test de paridad
 const TEXTO_SIN_ARRANQUE = 'Para empezar, completá «Mis vacaciones y saldos».';
@@ -264,11 +272,23 @@ const htmlDeAusente = (ausente) => '<li class="me-ausente">'
   + `<span class="me-inicial" aria-hidden="true">${esc(iniciales(ausente.nombre))}</span><span><b>${esc(ausente.texto)}</b>`
   + `${conTexto(ausente.vuelve_texto) ? `<small>${esc(ausente.vuelve_texto)}</small>` : ''}</span></li>`;
 
+// Los eventos de hoy y de mañana (los `eventos` de «Hoy y mañana»: `{ id, hora, titulo, compartido, detalle }`, con «Hoy · solo vos»
+// o «Mañana · con 4 personas» del servidor): la hora (en violeta, la de un compartido), el título y quién; sin ninguno, «No tenés
+// eventos hoy ni mañana.». Después, «Ver la agenda», que abre su pestaña (data-pestana, como los tanques)
+function htmlDeEventosDeHoy(eventos) {
+  const filas = listaDe(eventos).map((evento) => `<li${evento.compartido === true ? ' class="compartido"' : ''}>`
+    + `<span class="me-evento-hora">${esc(evento.hora)}</span><span><b>${esc(evento.titulo)}</b><small>${esc(evento.detalle)}</small></span></li>`);
+  return (filas.length > 0 ? `<ol class="me-eventos-hoy">${filas.join('')}</ol>` : '<p class="me-vacio">No tenés eventos hoy ni mañana.</p>')
+    + '<a class="sg-link" href="#agenda" data-pestana="agenda">Ver la agenda</a>';
+}
+
 /**
- * «Hoy y mañana» (el `hoy_y_manana` del Resumen): «Hoy no están» y, aparte, «Mañana no están» (los que empiezan mañana: decisión
- * del usuario, 27/10/2026), solo para quien ve a sus compañeros (`veCompaneros`, el true literal: administración), con el texto y
- * la vuelta que manda el servidor, y el próximo feriado. Un grupo vacío no va (como «Vence pronto»): solo se ven los de
- * administración que eligieron mostrarse, así que «están todos» podría no ser cierto. Sin ninguno de los tres, no hay sección.
+ * «Hoy y mañana» (el `hoy_y_manana` del Resumen): desde la agenda, los eventos de hoy y de mañana con «Ver la agenda» (solo si
+ * `eventos` es una lista: un Resumen sin la clave se dibuja como antes); «Hoy no están» y, aparte, «Mañana no están» (los que
+ * empiezan mañana: decisión del usuario, 27/10/2026), solo para quien ve a sus compañeros (`veCompaneros`, el true literal:
+ * administración), con el texto y la vuelta que manda el servidor, y el próximo feriado. Un grupo vacío no va (como «Vence
+ * pronto»): solo se ven los de administración que eligieron mostrarse, así que «están todos» podría no ser cierto. Con los eventos,
+ * la sección está siempre (sin ninguno, lo dice); sin ellos y sin ninguno de los otros tres, no hay sección.
  */
 function htmlDeHoyYManana(datos, veCompaneros) {
   const hoy = esObjeto(datos) ? datos : {};
@@ -277,13 +297,14 @@ function htmlDeHoyYManana(datos, veCompaneros) {
     return filas.length > 0 ? `<h3 class="me-subtitulo">${titulo}</h3><ul class="me-ausentes">${filas.join('')}</ul>` : '';
   };
   const feriado = hoy.proximo_feriado;
+  const conEventos = Array.isArray(hoy.eventos);
   const cuerpo = grupo('Hoy no están', hoy.ausentes_hoy) + grupo('Mañana no están', hoy.ausentes_manana)
     + (esObjeto(feriado)
       ? `<h3 class="me-subtitulo">Próximo feriado</h3><p class="me-feriado"><b>${esc(feriado.cuando)}</b>${esc(feriado.nombre)}</p>`
       : '');
-  if (cuerpo === '') return '';
+  if (cuerpo === '' && !conEventos) return '';
   return '<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 class="me-titulo" id="me-hoy-titulo">Hoy y mañana</h2>'
-    + `${cuerpo}</section>`;
+    + `${conEventos ? htmlDeEventosDeHoy(hoy.eventos) : ''}${cuerpo}</section>`;
 }
 
 /**
@@ -923,6 +944,225 @@ function htmlDeCamposDelSaldo(campos, valores) {
 }
 
 // =====================================================
+// Lo puro: la agenda (spec 2026-10-26-mi-espacio-agenda, 6)
+// =====================================================
+
+// Los próximos van de hoy a hoy + 30 (copia de DIAS_DE_PROXIMOS de services/miEspacioEventosReglas.js, atada por un test de paridad).
+// En un día del mes se ven hasta 3 cosas; el resto, con «y N más»
+const DIAS_DE_PROXIMOS = 30;
+const COSAS_POR_DIA = 3;
+// Los días de la semana, de lunes a domingo: el nombre («lunes 26/10») y el corto (la cabeza del mes y «Mié 28»)
+const NOMBRES_DE_LOS_DIAS = Object.freeze(['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']);
+const DIAS_CORTOS = Object.freeze(['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']);
+
+// 'AAAA-MM' de un mes que se puede pedir (de 2000 a 2100, los años de las fechas de GET /mi-espacio/eventos)
+const esMesDeTexto = (mes) => typeof mes === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(mes)
+  && Number(mes.slice(0, 4)) >= 2000 && Number(mes.slice(0, 4)) <= 2100;
+// Los días se cuentan con Date.UTC sobre las partes de la fecha (diaUtc), nunca con la hora local: la fecha de un momento UTC y la
+// fecha de `dias` días después (o antes)
+const fechaDeUtc = (ms) => new Date(ms).toISOString().slice(0, 10);
+const sumarDiasA = (fecha, dias) => fechaDeUtc(diaUtc(fecha) + dias * 86400000);
+// El lugar de una fecha en la semana: 0 el lunes … 6 el domingo
+const lugarEnLaSemana = (fecha) => (new Date(diaUtc(fecha)).getUTCDay() + 6) % 7;
+// «lunes 26/10» (como diaLargo de services/miEspacioResumen.js, atada por un test de paridad), «Mié 28» y «Mar 03/11»
+const diaLargoDe = (fecha) => `${NOMBRES_DE_LOS_DIAS[lugarEnLaSemana(fecha)]} ${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`;
+const diaDeEstaSemana = (fecha) => `${DIAS_CORTOS[lugarEnLaSemana(fecha)]} ${String(Number(fecha.slice(8, 10)))}`;
+const diaMasAdelante = (fecha) => `${DIAS_CORTOS[lugarEnLaSemana(fecha)]} ${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`;
+
+/**
+ * Los días de la grilla de un mes ('AAAA-MM'), de lunes a domingo: del lunes de la semana del 1 al domingo de la del último, cada
+ * uno `{ fecha, dia, del_mes, finde }` (`dia`, el número del día; `del_mes`, si es del mes y no de un vecino; `finde`, sábado o
+ * domingo). Un mes que no sirve, [].
+ */
+function diasDeLaGrilla(mes) {
+  if (!esMesDeTexto(mes)) return [];
+  const primero = `${mes}-01`;
+  const ultimo = fechaDeUtc(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0));
+  const hasta = sumarDiasA(ultimo, 6 - lugarEnLaSemana(ultimo));
+  const dias = [];
+  for (let fecha = sumarDiasA(primero, -lugarEnLaSemana(primero)); fecha <= hasta; fecha = sumarDiasA(fecha, 1)) {
+    dias.push({ fecha, dia: Number(fecha.slice(8, 10)), del_mes: fecha.slice(0, 7) === mes, finde: lugarEnLaSemana(fecha) >= 5 });
+  }
+  return dias;
+}
+
+// El mes `n` meses después (con `n` negativo, antes): 'AAAA-MM', o null si el mes o `n` no sirven o se sale de los que se piden
+function mesVecino(mes, n) {
+  if (!esMesDeTexto(mes) || !Number.isInteger(n)) return null;
+  const indice = Number(mes.slice(0, 4)) * 12 + Number(mes.slice(5, 7)) - 1 + n;
+  const vecino = `${String(Math.floor(indice / 12))}-${String((indice % 12) + 1).padStart(2, '0')}`;
+  return esMesDeTexto(vecino) ? vecino : null;
+}
+
+// 'Octubre 2026' (como mesTitulo de services/miEspacioResumen.js, atada por un test de paridad); un mes que no sirve, ''
+function tituloDelMes(mes) {
+  if (!esMesDeTexto(mes)) return '';
+  const nombre = nombreDelMes(mes);
+  return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${mes.slice(0, 4)}`;
+}
+
+// Lo que se pide para un mes (`{ desde, hasta }`: toda su grilla, con los días de los meses vecinos) y para los próximos (de hoy a
+// hoy + DIAS_DE_PROXIMOS); con un mes o un hoy que no sirven, null
+function rangoDeLaGrilla(mes) {
+  const dias = diasDeLaGrilla(mes);
+  return dias.length > 0 ? { desde: dias[0].fecha, hasta: dias.at(-1).fecha } : null;
+}
+const rangoDeProximos = (hoy) => (esFechaDeTexto(hoy) ? { desde: hoy, hasta: sumarDiasA(hoy, DIAS_DE_PROXIMOS) } : null);
+
+// La hora de un evento ('HH:MM'), o ''
+const horaDelEvento = (evento) => (typeof evento.desde === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(evento.desde) ? evento.desde : '');
+// El color de un evento: violeta si es compartido (también uno de otra persona, que se ve solo porque te lo compartieron); si no,
+// tinta
+const claseDelEvento = (evento) => (evento.compartido === true || evento.es_mio !== true ? 'compartido' : 'propio');
+// Los eventos (los ítems de GET /mi-espacio/eventos) con una fecha, por fecha, hora y título
+const eventosEnOrden = (eventos) => listaDe(eventos).filter((evento) => esFechaDeTexto(evento.fecha))
+  .sort((a, b) => a.fecha.localeCompare(b.fecha) || horaDelEvento(a).localeCompare(horaDelEvento(b))
+    || comoTexto(a.titulo).localeCompare(comoTexto(b.titulo), 'es'));
+// Los días en que se pinta una licencia o un compañero: los hábiles dentro del rango (`dias`, del servidor)
+const diasPintados = (fila) => (Array.isArray(fila.dias) ? fila.dias.filter(esFechaDeTexto) : []);
+
+/**
+ * Lo que va en cada día del mes (lo que manda GET /mi-espacio/eventos para la grilla): `Map<fecha, [{ clase, texto, evento_id? }]>`.
+ * En un día, en este orden: los feriados («Feriado: …»), tus licencias («Franquicia, 2 h»), los compañeros que no están («Laura
+ * Gómez no está») y los eventos por hora y título («10:00 Reunión de equipo», con su `evento_id`). Las licencias y los compañeros,
+ * en sus `dias`. `clase` es el color: 'feriado', 'licencia', 'ausente', 'propio' o 'compartido'.
+ */
+function cosasPorDia(datos) {
+  const fuente = esObjeto(datos) ? datos : {};
+  const porDia = new Map();
+  const sumar = (fecha, cosa) => {
+    if (!esFechaDeTexto(fecha)) return;
+    if (!porDia.has(fecha)) porDia.set(fecha, []);
+    porDia.get(fecha).push(cosa);
+  };
+  for (const feriado of listaDe(fuente.feriados)) sumar(feriado.fecha, { clase: 'feriado', texto: comoTexto(feriado.texto) });
+  for (const licencia of listaDe(fuente.licencias)) {
+    for (const dia of diasPintados(licencia)) sumar(dia, { clase: 'licencia', texto: comoTexto(licencia.texto) });
+  }
+  for (const ausente of listaDe(fuente.ausentes)) {
+    for (const dia of diasPintados(ausente)) sumar(dia, { clase: 'ausente', texto: comoTexto(ausente.texto) });
+  }
+  for (const evento of eventosEnOrden(fuente.eventos)) {
+    const texto = [horaDelEvento(evento), comoTexto(evento.titulo)].filter(conTexto).join(' ');
+    sumar(evento.fecha, { clase: claseDelEvento(evento), texto, evento_id: evento.id ?? null });
+  }
+  return porDia;
+}
+
+// Una cosa de un día: un evento es un botón (lo abre, con su id); lo demás, un texto. Los dos con su title: en la celda se corta
+const htmlDeCosa = (cosa) => {
+  const texto = esc(cosa.texto);
+  return Object.hasOwn(cosa, 'evento_id')
+    ? `<button type="button" class="me-ev ${cosa.clase}" data-evento="${esc(cosa.evento_id)}" title="${texto}">${texto}</button>`
+    : `<span class="me-ev ${cosa.clase}" title="${texto}">${texto}</span>`;
+};
+
+// Un día de la grilla: su número y hasta 3 cosas; el resto, oculto, y «y N más», que lo muestra (data-ver-mas). Hoy, con
+// aria-current; los fines de semana, los feriados y los días de los meses vecinos, con otro fondo
+function htmlDeLaCelda(dia, cosas, hoy) {
+  const clases = ['me-celda', !dia.del_mes && 'otro-mes', dia.finde && 'finde', cosas.some((cosa) => cosa.clase === 'feriado') && 'feriado',
+    dia.fecha === hoy && 'hoy'].filter(Boolean).join(' ');
+  const resto = cosas.slice(COSAS_POR_DIA);
+  const mas = resto.length > 0 ? `<div class="me-resto" hidden>${resto.map(htmlDeCosa).join('')}</div>`
+    + `<button type="button" class="me-mas" data-ver-mas="${dia.fecha}">y ${String(resto.length)} más</button>` : '';
+  return `<td class="${clases}"${dia.fecha === hoy ? ' aria-current="date"' : ''}><div class="me-celda-cuerpo">`
+    + `<span class="me-num">${String(dia.dia)}</span>${cosas.slice(0, COSAS_POR_DIA).map(htmlDeCosa).join('')}${mas}</div></td>`;
+}
+
+/**
+ * El mes ('AAAA-MM') con lo que manda GET /mi-espacio/eventos para su grilla (`datos`; sin ellos, mientras se piden, la grilla
+ * vacía) y `hoy`: una tabla de lunes a domingo, nombrada por el título del mes (#ag-mes-titulo), con la cabeza de los días (el corto
+ * a la vista y el nombre para el lector de pantalla) y una celda por día. Un mes que no sirve, ''.
+ */
+function htmlDelMes(mes, datos, hoy) {
+  const dias = diasDeLaGrilla(mes);
+  if (dias.length === 0) return '';
+  const cosas = cosasPorDia(datos);
+  const cabeza = DIAS_CORTOS.map((corto, i) => `<th scope="col"><span aria-hidden="true">${corto}</span>`
+    + `<span class="visualmente-oculto">${NOMBRES_DE_LOS_DIAS[i]}</span></th>`).join('');
+  const semanas = [];
+  for (let i = 0; i < dias.length; i += 7) {
+    semanas.push(`<tr>${dias.slice(i, i + 7).map((dia) => htmlDeLaCelda(dia, cosas.get(dia.fecha) ?? [], hoy)).join('')}</tr>`);
+  }
+  return `<table class="me-mes" aria-labelledby="ag-mes-titulo"><thead><tr>${cabeza}</tr></thead><tbody>${semanas.join('')}</tbody></table>`;
+}
+
+/**
+ * Los próximos (lo que manda GET /mi-espacio/eventos de hoy a hoy + 30), agrupados en «Hoy, lunes 26/10», «Mañana, martes 27/10»,
+ * «Esta semana» (hasta el domingo) y «Más adelante», sin grupos vacíos: `[{ titulo, items }]`. Cada ítem, `{ hora, titulo, detalle,
+ * clase }` y, si es un evento, `quien` y `evento_id`. En un día, primero lo de todo el día (los feriados, tus licencias y los
+ * compañeros, en ese orden) y después los eventos por hora y título. Hoy y mañana dicen la hora (o «Todo el día»); esta semana,
+ * «Mié 28», y más adelante, «Mar 03/11», con la hora del evento en el título. Lo de varios días va una vez, el día en que empieza o
+ * hoy, si ya empezó, con su «Hasta el …»; lo que terminó antes de hoy o es de después del rango no va. El detalle de un evento es su
+ * aviso corto («Aviso 2 h antes») y `quien`, el «Solo vos», «Con 4 personas» o «De …» del servidor. Con un hoy que no sirve, [].
+ */
+function gruposDeProximos(datos, hoy) {
+  const rango = rangoDeProximos(hoy);
+  if (rango === null) return [];
+  const fuente = esObjeto(datos) ? datos : {};
+  const enRango = (fecha) => esFechaDeTexto(fecha) && fecha >= hoy && fecha <= rango.hasta;
+  const cosas = [];
+  const deTodoElDia = (fecha, clase, texto, detalle) => {
+    if (enRango(fecha)) cosas.push({ fecha, clase, texto: comoTexto(texto), detalle: comoTexto(detalle) });
+  };
+  const deVariosDias = (fila, clase) => {
+    if (!esFechaDeTexto(fila.desde) || !esFechaDeTexto(fila.hasta) || fila.hasta < hoy) return;
+    deTodoElDia(fila.desde > hoy ? fila.desde : hoy, clase, fila.texto, fila.hasta_texto);
+  };
+  for (const feriado of listaDe(fuente.feriados)) deTodoElDia(feriado.fecha, 'feriado', feriado.texto, '');
+  for (const licencia of listaDe(fuente.licencias)) deVariosDias(licencia, 'licencia');
+  for (const ausente of listaDe(fuente.ausentes)) deVariosDias(ausente, 'ausente');
+  for (const evento of eventosEnOrden(fuente.eventos)) {
+    if (!enRango(evento.fecha)) continue;
+    cosas.push({
+      fecha: evento.fecha, clase: claseDelEvento(evento), hora: horaDelEvento(evento), texto: comoTexto(evento.titulo),
+      detalle: comoTexto(esObjeto(evento.aviso) ? evento.aviso.corto : ''), quien: comoTexto(evento.quien_texto), evento_id: evento.id ?? null
+    });
+  }
+  // Por fecha; en un día, en el orden en que se sumaron (sort es estable)
+  cosas.sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+  const manana = sumarDiasA(hoy, 1);
+  const domingo = sumarDiasA(hoy, 6 - lugarEnLaSemana(hoy));
+  const grupos = [
+    { titulo: `Hoy, ${diaLargoDe(hoy)}`, es: (fecha) => fecha === hoy, dia: null },
+    { titulo: `Mañana, ${diaLargoDe(manana)}`, es: (fecha) => fecha === manana, dia: null },
+    { titulo: 'Esta semana', es: (fecha) => fecha <= domingo, dia: diaDeEstaSemana },
+    { titulo: 'Más adelante', es: () => true, dia: diaMasAdelante }
+  ].map((grupo) => ({ ...grupo, items: [] }));
+  for (const cosa of cosas) {
+    const grupo = grupos.find((uno) => uno.es(cosa.fecha));
+    const esEvento = Object.hasOwn(cosa, 'evento_id');
+    const item = grupo.dia === null
+      ? { hora: esEvento ? cosa.hora : 'Todo el día', titulo: cosa.texto }
+      : { hora: grupo.dia(cosa.fecha), titulo: esEvento && cosa.hora ? `${cosa.hora} ${cosa.texto}` : cosa.texto };
+    Object.assign(item, { detalle: cosa.detalle, clase: cosa.clase });
+    if (esEvento) Object.assign(item, { quien: cosa.quien, evento_id: cosa.evento_id });
+    grupo.items.push(item);
+  }
+  return grupos.filter((grupo) => grupo.items.length > 0).map(({ titulo, items }) => ({ titulo, items }));
+}
+
+// Una cosa de los próximos: la hora, el título (un evento es un botón con su id: lo abre) y el detalle (de un evento, quién está, en
+// su color, y su aviso)
+const htmlDeProximo = (item) => {
+  const titulo = Object.hasOwn(item, 'evento_id')
+    ? `<button type="button" class="me-prox-titulo" data-evento="${esc(item.evento_id)}">${esc(item.titulo)}</button>`
+    : `<span class="me-prox-titulo">${esc(item.titulo)}</span>`;
+  const quien = conTexto(item.quien) ? `<span class="me-insignia ${item.clase === 'propio' ? 'azul' : 'violeta'}">${esc(item.quien)}</span>` : '';
+  const detalle = quien !== '' || conTexto(item.detalle) ? `<span class="me-prox-detalle">${quien}${esc(item.detalle)}</span>` : '';
+  return `<li class="me-prox ${esc(item.clase)}"><span class="me-prox-hora">${esc(item.hora)}</span>${titulo}${detalle}</li>`;
+};
+
+// Los próximos, cada grupo con su título; sin nada, «No hay nada en los próximos 30 días.»
+function htmlDeProximos(grupos) {
+  const conAlgo = listaDe(grupos).filter((grupo) => listaDe(grupo.items).length > 0);
+  if (conAlgo.length === 0) return `<p class="me-vacio">No hay nada en los próximos ${String(DIAS_DE_PROXIMOS)} días.</p>`;
+  return conAlgo.map((grupo) => `<h3>${esc(grupo.titulo)}</h3><ul class="me-prox-lista">${listaDe(grupo.items).map(htmlDeProximo).join('')}</ul>`)
+    .join('');
+}
+
+// =====================================================
 // La página (DOM y API)
 // =====================================================
 
@@ -935,16 +1175,19 @@ document.addEventListener('DOMContentLoaded', () => {
   iniciarMiEspacio();
 });
 
-// El estado de la página: el Resumen, la lista de licencias con su filtro y la tabla de horas extras con su mes (null hasta que
-// llegan, y después de una carga que falló). `pedidos` numera las cargas de cada pestaña: una respuesta que llega después de otra
-// más nueva se descarta. `cargandoResumen`: hay un pedido del Resumen en vuelo. `tanquesLlenos`: los tanques del Resumen ya se
-// llenaron (pasa una sola vez). Los formularios: `modales`, los abiertos, del de abajo al de arriba (la confirmación se abre
-// sobre el formulario); `formulario`, el de «Cargar licencia» o del uso autorizado abierto; `horasExtras`, el de las horas extras;
-// `saldos`, el de «Mis vacaciones y saldos» (`saldosAbiertosSolos`: ya se abrió solo una vez); `confirmacion`, el borrado que se
-// confirma; y `firmante`, el pedido de GET /mi-espacio/firmante (una sola vez)
+// El estado de la página: el Resumen, la lista de licencias con su filtro, la tabla de horas extras con su mes y, en la agenda, el
+// mes que se ve (`mesDeEventos`, 'AAAA-MM': de entrada, el de hoy; no va en la dirección), lo de su grilla (`delMes`) y los próximos
+// (`proximos`) (null hasta que llegan, y después de una carga que falló). `pedidos` numera las cargas de cada pestaña (en la agenda,
+// las del mes y las de los próximos): una respuesta que llega después de otra más nueva se descarta. `cargandoResumen`: hay un
+// pedido del Resumen en vuelo. `tanquesLlenos`: los tanques del Resumen ya se llenaron (pasa una sola vez). Los formularios:
+// `modales`, los abiertos, del de abajo al de arriba (la confirmación se abre sobre el formulario); `formulario`, el de «Cargar
+// licencia» o del uso autorizado abierto; `horasExtras`, el de las horas extras; `saldos`, el de «Mis vacaciones y saldos»
+// (`saldosAbiertosSolos`: ya se abrió solo una vez); `confirmacion`, el borrado que se confirma; y `firmante`, el pedido de
+// GET /mi-espacio/firmante (una sola vez)
 const pagina = {
   pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, tanquesLlenos: false,
-  cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0 },
+  mesDeEventos: null, delMes: null, proximos: null,
+  cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0 },
   modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null
 };
 
@@ -996,7 +1239,10 @@ function enfocar(vista, atributo, valor) {
 function iniciarMiEspacio() {
   conectarEventos();
   const resumen = cargarResumen();
-  return Promise.all([mostrarPestana(pestanaDeHash(window.location.hash)), resumen]);
+  const cargas = Promise.all([mostrarPestana(pestanaDeHash(window.location.hash)), resumen]);
+  // Las fuentes llegan después y ensanchan las pestañas: la elegida se vuelve a llevar a la vista
+  document.fonts?.ready?.then?.(() => llevarALaVista(porId(`tab-${pagina.pestana}`)));
+  return cargas;
 }
 
 function conectarEventos() {
@@ -1009,6 +1255,7 @@ function conectarEventos() {
   porId('vista-resumen').addEventListener('click', alTocarResumen);
   porId('vista-licencias').addEventListener('click', alTocarLicencias);
   porId('vista-horas').addEventListener('click', alTocarHoras);
+  porId('vista-agenda').addEventListener('click', alTocarEventos);
   porId('btn-cargar-licencia').addEventListener('click', (evento) => abrirLicencia({ volverA: evento.currentTarget }));
   porId('btn-cargar-horas').addEventListener('click', (evento) => abrirHorasExtras({ volverA: evento.currentTarget }));
   conectarFormularios();
@@ -1027,6 +1274,7 @@ function mostrarPestana(nombre) {
     pestana.tabIndex = activa ? 0 : -1;
     porId(`vista-${otra}`).hidden = !activa;
   }
+  llevarALaVista(porId(`tab-${pagina.pestana}`));
   window.history?.replaceState?.(null, '', `#${pagina.pestana}`);
   if (pagina.pestana === 'resumen') {
     if (pagina.resumen === null && !pagina.cargandoResumen) return cargarResumen();
@@ -1034,7 +1282,19 @@ function mostrarPestana(nombre) {
   }
   if (pagina.pestana === 'licencias' && pagina.licencias === null) return cargarLicencias(null);
   if (pagina.pestana === 'horas' && pagina.horas === null) return cargarHorasExtras(null);
+  if (pagina.pestana === 'agenda' && (pagina.delMes === null || pagina.proximos === null)) return cargarEventos();
   return Promise.resolve();
+}
+
+// En el teléfono no entran las cuatro pestañas y la barra se desplaza de costado: la elegida se lleva a la vista (al abrir con
+// #agenda, por ejemplo desde un email), moviendo solo la barra, nunca la página
+function llevarALaVista(pestana) {
+  const barra = pestana?.parentNode;
+  const caja = pestana?.getBoundingClientRect?.();
+  const marco = barra?.getBoundingClientRect?.();
+  if (!caja || !marco || typeof barra.scrollLeft !== 'number') return;
+  if (caja.right > marco.right) barra.scrollLeft += caja.right - marco.right;
+  else if (caja.left < marco.left) barra.scrollLeft -= marco.left - caja.left;
 }
 
 // Teclado en la barra: flechas (con vuelta), Inicio y Fin. Mueven el foco y activan la pestaña. Con Alt, Ctrl o Cmd son atajos del
@@ -1263,6 +1523,122 @@ async function alTocarHoras(evento) {
   }
 }
 
+// ---- La agenda ----
+
+// Lo que se dice cuando no llega el mes o los próximos (en su lugar de la pestaña y en #me-anuncio)
+const MENSAJE_SIN_MES = 'No se pudo cargar el mes. Probá de nuevo en unos minutos.';
+const MENSAJE_SIN_PROXIMOS = 'No se pudieron cargar los próximos. Probá de nuevo en unos minutos.';
+
+// GET /mi-espacio/eventos de un rango `{ desde, hasta }`
+const rutaDeEventos = ({ desde, hasta }) => `/mi-espacio/eventos?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`;
+
+// La pestaña Agenda: pide lo de la grilla del mes que se ve (de entrada, el de hoy) y los próximos, dos GET /mi-espacio/eventos, los
+// que todavía no llegaron o, con `forzar` (después de guardar o de borrar), los dos, sin borrar lo que se ve mientras. `conAnuncio`:
+// una falla se anuncia (después de guardar, no). Devuelve las cargas
+function cargarEventos({ forzar = false, conAnuncio = true } = {}) {
+  if (!esMesDeTexto(pagina.mesDeEventos)) pagina.mesDeEventos = Utils.hoyEnArgentina().slice(0, 7);
+  const cargas = [];
+  if (forzar || pagina.delMes === null) cargas.push(cargarMesDeEventos(pagina.mesDeEventos, { conAnuncio }));
+  if (forzar || pagina.proximos === null) cargas.push(cargarProximos({ conAnuncio }));
+  return Promise.all(cargas);
+}
+
+// Pide lo de la grilla de un mes y lo dibuja; mientras, sin nada de antes, la grilla vacía con su título. Una respuesta vieja (de otro
+// mes o de un pedido anterior) se descarta. `anunciarElMes`: al cambiar de mes, su título se anuncia cuando llega. Si falla, la
+// grilla lo dice y queda sin datos: volver a la pestaña lo pide otra vez
+async function cargarMesDeEventos(mes, { conAnuncio = true, anunciarElMes = false } = {}) {
+  const rango = rangoDeLaGrilla(mes);
+  if (rango === null) return;
+  const pedido = ++pagina.pedidos.mes;
+  if (pagina.delMes === null) pintarMesDeEventos();
+  try {
+    const { data } = await API.pedirJson('GET', rutaDeEventos(rango));
+    if (pedido !== pagina.pedidos.mes) return;
+    pagina.delMes = esObjeto(data) ? data : {};
+    pintarMesDeEventos();
+    if (anunciarElMes) anunciar(tituloDelMes(mes));
+  } catch (error) {
+    if (pedido !== pagina.pedidos.mes) return;
+    if (error?.status === 401) irAlLogin();
+    else {
+      pagina.delMes = null;
+      mostrarFalla('ag-mes', MENSAJE_SIN_MES, conAnuncio);
+    }
+  }
+}
+
+// El título y la grilla del mes que se ve. «Compañeros que no están», en la leyenda, solo para quien los ve (decisión del usuario,
+// 27/10/2026): lo dice el servidor (`puede_compartir`, administración) y, hasta que llega, queda oculto
+function pintarMesDeEventos() {
+  porId('ag-mes-titulo').textContent = tituloDelMes(pagina.mesDeEventos);
+  porId('ag-mes').innerHTML = htmlDelMes(pagina.mesDeEventos, pagina.delMes, Utils.hoyEnArgentina());
+  if (esObjeto(pagina.delMes)) porId('ag-leyenda-ausentes').hidden = pagina.delMes.puede_compartir !== true;
+}
+
+// Muestra otro mes («‹», «›» y «Hoy»): el título y la grilla vacía enseguida, y lo de la grilla cuando llega
+function mostrarMesDeEventos(mes) {
+  if (!esMesDeTexto(mes)) return Promise.resolve();
+  pagina.mesDeEventos = mes;
+  pagina.delMes = null;
+  return cargarMesDeEventos(mes, { anunciarElMes: true });
+}
+
+// Pide los próximos (de hoy a hoy + 30) y los dibuja; si falla, como el mes
+async function cargarProximos({ conAnuncio = true } = {}) {
+  const rango = rangoDeProximos(Utils.hoyEnArgentina());
+  if (rango === null) return;
+  const pedido = ++pagina.pedidos.proximos;
+  try {
+    const { data } = await API.pedirJson('GET', rutaDeEventos(rango));
+    if (pedido !== pagina.pedidos.proximos) return;
+    pagina.proximos = esObjeto(data) ? data : {};
+    pintarProximos();
+  } catch (error) {
+    if (pedido !== pagina.pedidos.proximos) return;
+    if (error?.status === 401) irAlLogin();
+    else {
+      pagina.proximos = null;
+      mostrarFalla('ag-proximos', MENSAJE_SIN_PROXIMOS, conAnuncio);
+    }
+  }
+}
+
+function pintarProximos() {
+  porId('ag-proximos').innerHTML = htmlDeProximos(gruposDeProximos(pagina.proximos, Utils.hoyEnArgentina()));
+}
+
+// «y N más»: muestra el resto en su celda, se va y el foco pasa a lo primero que apareció (un texto lo recibe con tabindex="-1")
+function verElResto(boton) {
+  const resto = boton.closest('.me-celda')?.querySelector('.me-resto');
+  if (!resto) return;
+  resto.hidden = false;
+  const primero = resto.querySelector('.me-ev');
+  if (primero && String(primero.tagName).toLowerCase() !== 'button') primero.setAttribute('tabindex', '-1');
+  primero?.focus?.();
+  boton.hidden = true;
+}
+
+// Un clic en la pestaña: «‹» y «›» (el mes anterior o el siguiente), «Hoy» (el mes de hoy; si ya se ve y llegó, nada) y «y N más».
+// Un evento y «Nuevo evento» abren su formulario desde la Task 10: todavía no hacen nada
+function alTocarEventos(evento) {
+  const objetivo = evento.target;
+  if (objetivo?.closest?.('#ag-anterior')) {
+    mostrarMesDeEventos(mesVecino(pagina.mesDeEventos, -1));
+    return;
+  }
+  if (objetivo?.closest?.('#ag-siguiente')) {
+    mostrarMesDeEventos(mesVecino(pagina.mesDeEventos, 1));
+    return;
+  }
+  if (objetivo?.closest?.('#ag-hoy')) {
+    const deHoy = Utils.hoyEnArgentina().slice(0, 7);
+    if (deHoy !== pagina.mesDeEventos || pagina.delMes === null) mostrarMesDeEventos(deHoy);
+    return;
+  }
+  const verMas = objetivo?.closest?.('[data-ver-mas]');
+  if (verMas) verElResto(verMas);
+}
+
 // =====================================================
 // Los formularios (DOM y API)
 // =====================================================
@@ -1476,9 +1852,10 @@ function mostrarFallaDelServidor(nombre, falla, boton) {
 
 // Las pestañas que se vuelven a dibujar después de guardar o de borrar, y lo que identifica a un control que abre un modal, en este
 // orden: el «Editar» de una fila (por su id), «Mis vacaciones y saldos», «Cambiar» o «Registrar un uso autorizado», «Cargar
-// licencia» o «Cargar horas extras» de una tarjeta y un botón de «Vence pronto» (por su tipo)
-const VISTAS_QUE_SE_DIBUJAN = Object.freeze(['vista-resumen', 'vista-licencias', 'vista-horas']);
-const IDENTIDADES_DEL_FOCO = Object.freeze(['data-editar-licencia', 'data-editar-horas', 'data-abrir', 'data-cargar', 'data-tipo']);
+// licencia» o «Cargar horas extras» de una tarjeta, un botón de «Vence pronto» (por su tipo) y un evento de la agenda (por su id)
+const VISTAS_QUE_SE_DIBUJAN = Object.freeze(['vista-resumen', 'vista-licencias', 'vista-horas', 'vista-agenda']);
+const IDENTIDADES_DEL_FOCO = Object.freeze(['data-editar-licencia', 'data-editar-horas', 'data-abrir', 'data-cargar', 'data-tipo',
+  'data-evento']);
 
 const identidadDe = (control) => {
   const atributo = IDENTIDADES_DEL_FOCO.find((uno) => typeof control?.getAttribute?.(uno) === 'string');
@@ -1537,9 +1914,9 @@ function devolverElFoco(respaldo) {
 }
 
 // Después de guardar o de borrar: el Resumen y las pestañas que ya se cargaron (la que se ve, enseguida y con el año que tenía
-// y, en Horas extras, el mes del día por día, sin anunciarlo: se anuncia lo que se guardó; las otras, cuando se vuelvan a abrir).
-// El foco, que cerrarModal devolvió al botón que abrió el modal, va a su equivalente cuando terminan (respaldoDelFoco: la recarga
-// reemplazó el botón)
+// y, en Horas extras, el mes del día por día, y en la agenda, el mes que se ve, sin anunciarlo: se anuncia lo que se guardó; las
+// otras, cuando se vuelvan a abrir). La agenda se vuelve a pedir siempre: también muestra las licencias. El foco, que cerrarModal
+// devolvió al botón que abrió el modal, va a su equivalente cuando terminan (respaldoDelFoco: la recarga reemplazó el botón)
 async function volverAPedirTodo() {
   const respaldo = respaldoDelFoco(document.activeElement);
   const cargas = [cargarResumen()];
@@ -1552,6 +1929,14 @@ async function volverAPedirTodo() {
     if (pagina.pestana === 'horas') {
       cargas.push(cargarHorasExtras(anioQueTenia(pagina.horas), { conAnuncio: false, mes: pagina.mes }));
     } else pagina.horas = null;
+  }
+  if (pagina.pestana === 'agenda') cargas.push(cargarEventos({ forzar: true, conAnuncio: false }));
+  else {
+    // Lo que se estaba pidiendo ya es viejo: se descarta
+    pagina.delMes = null;
+    pagina.proximos = null;
+    pagina.pedidos.mes += 1;
+    pagina.pedidos.proximos += 1;
   }
   await Promise.all(cargas);
   devolverElFoco(respaldo);

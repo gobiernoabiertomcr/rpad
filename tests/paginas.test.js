@@ -80,8 +80,9 @@ const VERSION_NOTAS = '20261204';
 const VERSION_PROYECTOS = '20261206';
 // mi-espacio.js (la página nueva de Mi espacio, con las pestañas Resumen, Licencias y Horas extras, spec
 // 2026-10-26-mi-espacio-licencias-y-horas, 8 y 11): el mismo número que VERSION_PANTALLAS y VERSION_FERIADOS, que subieron con esta
-// entrega (siguen siendo independientes). Su versión es propia
-const VERSION_MI_ESPACIO = '20261209';
+// entrega (siguen siendo independientes). Cambió después (la cuarta pestaña, la agenda, con el mes, los próximos y los eventos en
+// «Hoy y mañana», spec 2026-10-26-mi-espacio-agenda, 6). Su versión es propia
+const VERSION_MI_ESPACIO = '20261210';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -654,9 +655,10 @@ describe('páginas', () => {
     const html = () => leer('mi-espacio.html');
     const bloque = (patron) => html().match(patron)?.[0] ?? '';
 
+    // La descripción, con la agenda (decisión del usuario, 27/10/2026)
     it('el título, la descripción y el h1 «Mi espacio» con el calendario con la tilde, decorativo', () => {
       assert.ok(html().includes('<title>Mi espacio - RPAD</title>'));
-      assert.ok(html().includes('<meta name="description" content="Tus licencias, tus horas extras y lo que te queda">'));
+      assert.ok(html().includes('<meta name="description" content="Tus licencias, tus horas extras, tu agenda y lo que te queda">'));
       const h1 = bloque(/<h1 class="page-title">[\s\S]*?<\/h1>/);
       assert.match(h1, /<svg aria-hidden="true"[^>]*><path d="M8 2v4"\/><path d="M16 2v4"\/><rect width="18" height="18" x="3" y="4" rx="2"\/><path d="M3 10h18"\/><path d="m9 16 2 2 4-4"\/><\/svg>/);
       assert.equal(h1.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(), 'Mi espacio');
@@ -667,17 +669,75 @@ describe('páginas', () => {
       assert.match(html(), /<button type="button" class="sg-btn sg-btn-tinta" id="btn-cargar-licencia" hidden><svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>Cargar licencia<\/button>/);
     });
 
-    it('las pestañas Resumen (con la marca), Licencias y Horas extras, cada una con su panel; de entrada, el Resumen', () => {
+    // La cuarta, la agenda (spec 2026-10-26-mi-espacio-agenda, 6), con su panel después del de las horas extras
+    it('las pestañas Resumen (con la marca), Licencias, Horas extras y Agenda, cada una con su panel; de entrada, el Resumen', () => {
       const lista = bloque(/<div class="me-pestanas" role="tablist" aria-label="Mi espacio">[\s\S]*?<\/div>/);
       const pestanas = [...lista.matchAll(/<button type="button" class="me-pestana" role="tab" id="tab-(\w+)" aria-selected="(true|false)" aria-controls="vista-(\w+)" data-pestana="(\w+)"(?: tabindex="-1")?>([\s\S]*?)<\/button>/g)]
         .map(([, id, elegida, panel, pestana, texto]) => [id, elegida, panel, pestana, texto]);
       assert.deepEqual(pestanas, [
         ['resumen', 'true', 'resumen', 'resumen', 'Resumen<span id="me-marca"></span>'],
         ['licencias', 'false', 'licencias', 'licencias', 'Licencias'],
-        ['horas', 'false', 'horas', 'horas', 'Horas extras']
+        ['horas', 'false', 'horas', 'horas', 'Horas extras'],
+        ['agenda', 'false', 'agenda', 'agenda', 'Agenda']
       ]);
-      for (const [nombre, oculto] of [['resumen', ''], ['licencias', ' hidden'], ['horas', ' hidden']]) {
+      assert.equal([...lista.matchAll(/role="tab"/g)].length, 4);
+      assert.ok(lista.includes('id="tab-agenda" aria-selected="false" aria-controls="vista-agenda" data-pestana="agenda" tabindex="-1">'));
+      for (const [nombre, oculto] of [['resumen', ''], ['licencias', ' hidden'], ['horas', ' hidden'], ['agenda', ' hidden']]) {
         assert.match(html(), new RegExp(`<section id="vista-${nombre}" role="tabpanel" aria-labelledby="tab-${nombre}"${oculto}>`), nombre);
+      }
+      const posicion = (texto) => html().indexOf(texto);
+      assert.ok(posicion('<section id="vista-horas"') < posicion('<section id="vista-agenda"'), 'la agenda, después de las horas extras');
+    });
+
+    // La agenda (spec 2026-10-26-mi-espacio-agenda, 6; maqueta 1, #agenda). Decisión del usuario (27/10/2026): sin modalidad, la
+    // agenda y «Nuevo evento» se ven igual, así que el botón del encabezado no está oculto
+    it('«Nuevo evento» va en el encabezado antes de «Cargar horas extras», a la vista, y la bajada nombra la agenda', () => {
+      const acciones = bloque(/<div class="me-acciones">[\s\S]*?<\/div>/);
+      assert.match(acciones, /<button type="button" class="sg-btn sg-btn-borde" id="btn-nuevo-evento">Nuevo evento<\/button>/);
+      assert.ok(acciones.indexOf('id="btn-nuevo-evento"') < acciones.indexOf('id="btn-cargar-horas"'));
+      assert.ok(html().includes('<p class="me-bajada">Tus licencias, tus horas extras y tu agenda. Lo que cargás acá lo ves solo vos, salvo los '
+        + 'eventos que compartís y, si querés, tus ausencias (sin decir de qué son).</p>'));
+    });
+
+    it('la pestaña Agenda: el mes con ‹, el título, ›, «Hoy» y «Nuevo evento», la grilla, la leyenda y los próximos', () => {
+      const vista = bloque(/<section id="vista-agenda"[\s\S]*?<\/section>\s*<\/div>\s*<\/section>/);
+      assert.ok(vista, 'la vista');
+      const ids = [...vista.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+      assert.deepEqual(ids, ['vista-agenda', 'ag-anterior', 'ag-mes-titulo', 'ag-siguiente', 'ag-hoy', 'ag-nuevo-evento', 'ag-mes',
+        'ag-leyenda-ausentes', 'ag-proximos-titulo', 'ag-proximos']);
+      assert.match(vista, /<button type="button" class="me-flecha" id="ag-anterior" aria-label="Mes anterior"><svg aria-hidden="true"/);
+      assert.match(vista, /<h2 id="ag-mes-titulo">[^<]*<\/h2>/);
+      assert.match(vista, /<button type="button" class="me-flecha" id="ag-siguiente" aria-label="Mes siguiente"><svg aria-hidden="true"/);
+      assert.match(vista, /<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" id="ag-hoy">Hoy<\/button>/);
+      assert.match(vista, /<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" id="ag-nuevo-evento">Nuevo evento<\/button>/);
+      // La leyenda: los cinco colores; «Compañeros que no están», oculto hasta saber que quien mira los ve
+      const leyenda = vista.match(/<ul class="me-leyenda"[^>]*>([\s\S]*?)<\/ul>/)?.[1] ?? '';
+      assert.deepEqual([...leyenda.matchAll(/<li( id="ag-leyenda-ausentes" hidden)?><i class="(\w+)" aria-hidden="true"><\/i>([^<]+)<\/li>/g)]
+        .map(([, oculto, clase, texto]) => [clase, texto, Boolean(oculto)]), [
+        ['propio', 'Solo vos', false], ['compartido', 'Compartidos', false], ['licencia', 'Tus licencias y francos', false],
+        ['feriado', 'Feriados', false], ['ausente', 'Compañeros que no están', true]
+      ]);
+      assert.match(vista, /<h2 id="ag-proximos-titulo">Próximos<\/h2>/);
+      // Lo que se vuelve a dibujar no es una región viva (#me-anuncio es la única)
+      assert.match(vista, /<div class="me-proximos" id="ag-proximos">/);
+      assert.doesNotMatch(vista, /aria-live|role="status"|role="alert"/);
+      // El mes primero y los próximos al costado
+      assert.ok(vista.indexOf('id="ag-mes"') < vista.indexOf('id="ag-proximos"'));
+    });
+
+    // En 980 px, el mes y los próximos en una columna (el mes primero); en el teléfono, los próximos primero y el mes como puntos de
+    // colores (maqueta 1)
+    it('la agenda en una pantalla angosta: una columna en 980 px y, en el teléfono, los próximos primero y los eventos como puntos', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      // El bloque de un @media: hasta la llave que cierra sola en su renglón (con CRLF o LF)
+      const media = (ancho) => estilo.match(new RegExp(`@media \\(max-width: ${ancho}px\\) \\{([\\s\\S]*?)\\n\\s*\\}(?=\\r?\\n)`))?.[1] ?? '';
+      assert.match(media(980), /\.me-mes-y-proximos \{ grid-template-columns: minmax\(0, 1fr\); \}/);
+      assert.match(media(640), /\.me-proximos-tarjeta \{ order: -1; \}/);
+      assert.match(media(640), /\.me-ev \{ font-size: 0;[^}]*\}/);
+      assert.doesNotMatch(estilo.replace(media(640), ''), /\.me-ev \{ font-size: 0/);
+      // Los cinco colores, en el mes y en la leyenda
+      for (const clase of ['propio', 'compartido', 'licencia', 'feriado', 'ausente']) {
+        assert.ok(estilo.includes(`.me-ev.${clase}, .me-leyenda .${clase} {`), clase);
       }
     });
 
