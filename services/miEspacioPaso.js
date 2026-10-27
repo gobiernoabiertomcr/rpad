@@ -148,7 +148,9 @@ export const aplicarBaja = async (conexion, { persona, fila, hoy }) => {
 export const pasoPrevisto = async ({ persona, anterior, fila, hoy }, conexion = pool) => {
   const titular = await firmanteTitular(conexion);
   const soyTitular = titular === persona.id;
-  const comoAutorizada = await delFirmanteComoAutorizada(conexion, titular, persona.id, fila.desde, fila.hasta);
+  // Quien no puede tener licencia nunca pasa: no hace falta leerlas
+  const comoAutorizada = puedeTenerLicencia(persona.rol)
+    ? await delFirmanteComoAutorizada(conexion, titular, persona.id, fila.desde, fila.hasta) : [];
   const comun = { fila, rol: persona.rol, hoy, soyTitular, comoAutorizada };
   if (!anterior) {
     const cruzadas = await oficialesQueSeCruzan(conexion, persona.id, fila.desde, fila.hasta);

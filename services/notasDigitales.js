@@ -22,7 +22,7 @@ import {
 import { sumarMeses, tipoSugerido, vencimientoDelMes } from './fechasDatasetReglas.js';
 import {
   firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoParaLicencia,
-  disponibilidadDelAutorizado
+  autorizadoHabilitado, disponibilidadDelAutorizado
 } from './notasDigitalesFirmas.js';
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
 import { unirAusencias, diasHabilesLibres } from './licenciasReglas.js';
@@ -948,9 +948,11 @@ export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuari
 };
 
 // Licencia del firmante titular en curso o la próxima, con lo que hace falta para mostrar su efecto (spec 2026-10-15, 7.5).
-// { publica, titular, ausencias } o null. publica: el objeto de estado.licencia_firmante (su forma no cambia); titular: la
-// licencia tal como la guarda la base (para el aviso en su fecha, 7.6); ausencias: las licencias de la persona autorizada
-// durante la del titular ([{ desde, hasta }], vacías sin autorizado).
+// { publica, titular, ausencias, deLicenciaTodosLosDias } o null. publica: el objeto de estado.licencia_firmante (su forma no
+// cambia); titular: la licencia tal como la guarda la base (para el aviso en su fecha, 7.6); ausencias: las licencias de la
+// persona autorizada durante la del titular ([{ desde, hasta }], vacías sin autorizado); deLicenciaTodosLosDias: la persona
+// autorizada no está vigente solo porque está de licencia todos los días hábiles de la del titular (sigue activa, con su rol
+// y su firma): la alerta es una advertencia, no un error (decisión del usuario, 27/10/2026).
 const licenciaDelFirmante = async (config, hoy) => {
   if (!config.firmante_usuario_id) return null;
   const licencia = (await licenciaEnFecha(config.firmante_usuario_id, hoy)) ?? (await proximaLicencia(config.firmante_usuario_id, hoy));
@@ -970,6 +972,7 @@ const licenciaDelFirmante = async (config, hoy) => {
     ? await pool.query('SELECT numero, anio FROM notas_digitales WHERE id = ?', [licencia.nota_autorizacion_id])
     : [[null]];
   const ultimoHabil = ultimoDiaHabilHasta(licencia.hasta);
+  const noVigente = Boolean(licencia.autorizado_id) && !autorizado;
   return {
     publica: {
       desde: licencia.desde,
@@ -977,7 +980,7 @@ const licenciaDelFirmante = async (config, hoy) => {
       en_curso: licencia.desde <= hoy,
       autorizado: autorizado ? autorizado.nombre : null,
       nota_autorizacion: nota ? { numero: nota.numero, anio: nota.anio } : null,
-      autorizado_no_vigente: Boolean(licencia.autorizado_id) && !autorizado,
+      autorizado_no_vigente: noVigente,
       autorizado_de_licencia_hasta: ausente?.hasta ?? null,
       sin_dias_habiles: ultimoHabil < licencia.desde,
       vispera: diaHabilAnterior(licencia.desde),
@@ -985,7 +988,8 @@ const licenciaDelFirmante = async (config, hoy) => {
       vuelta: proximoDiaHabil(sumarDias(licencia.hasta, 1))
     },
     titular: licencia,
-    ausencias: autorizado?.ausencias ?? []
+    ausencias: autorizado?.ausencias ?? [],
+    deLicenciaTodosLosDias: noVigente && Boolean(await autorizadoHabilitado(licencia))
   };
 };
 
@@ -1112,11 +1116,11 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
         tipo: 'autorizado-de-licencia', nivel: 'advertencia',
         mensaje: `La persona autorizada está de licencia hasta el ${formatoCorto(licencia.autorizado_de_licencia_hasta)}: hasta entonces no se generan notas.`
       }] : []),
-      // También una advertencia (decisión del usuario, 27/10/2026): la persona autorizada puede tomarse licencia aunque no le
-      // quede ningún día de la del titular, y esos días no se presentan notas. Junta las tres causas (desactivada, sin firma o de
-      // licencia todos los días), que tienen el mismo efecto y no frenan el envío
+      // Desactivada, sin su rol o sin firma, un error (hay que arreglarlo); de licencia todos los días hábiles de la del titular,
+      // una advertencia (decisión del usuario, 27/10/2026: puede tomarse licencia aunque no le quede ninguno, y esos días no se
+      // presentan notas). El mismo tipo y el mismo mensaje
       ...(licencia?.autorizado_no_vigente ? [{
-        tipo: 'autorizado-no-vigente', nivel: 'advertencia',
+        tipo: 'autorizado-no-vigente', nivel: delFirmante.deLicenciaTodosLosDias ? 'advertencia' : 'error',
         mensaje: `La persona autorizada para la licencia del firmante (del ${formatoCorto(licencia.desde)} al ${formatoCorto(licencia.hasta)}) ya no está activa, no tiene su firma cargada o está de licencia todos los días hábiles de esa licencia: esos días no se generan notas.`
       }] : []),
       ...(config.membrete_imagen ? [] : [{

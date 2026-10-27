@@ -853,12 +853,13 @@ describe('persona autorizada contratada (pedido del usuario el 16/10/2026)', () 
 
 describe('persona autorizada con una licencia que se superpone en parte (del 22/02 al 03/03/2027; el titular, del 01/03 al 31/03/2027)', () => {
   const PARRAFO_MARZO = 'Asimismo, por medio de la presente autorizo expresamente a Firma admin, Cargo admin, a presentar en mi nombre las Notas Digitales durante mi licencia, del 01/03/2027 al 31/03/2027, con el objetivo de mantener el correcto flujo de trabajo.';
-  // Una advertencia, no un error (decisión del usuario, 27/10/2026): la persona autorizada puede tomarse licencia aunque no le
-  // quede ningún día de la del titular, y esos días no se presentan notas
-  const NO_VIGENTE = {
-    tipo: 'autorizado-no-vigente', nivel: 'advertencia',
+  const ERROR_NO_VIGENTE = {
+    tipo: 'autorizado-no-vigente', nivel: 'error',
     mensaje: 'La persona autorizada para la licencia del firmante (del 01/03/2027 al 31/03/2027) ya no está activa, no tiene su firma cargada o está de licencia todos los días hábiles de esa licencia: esos días no se generan notas.'
   };
+  // De licencia todos los días hábiles (y activa, con su rol y su firma), la misma alerta como advertencia (decisión del
+  // usuario, 27/10/2026: puede tomarse licencia aunque no le quede ninguno, y esos días no se presentan notas)
+  const ADVERTENCIA_NO_VIGENTE = { ...ERROR_NO_VIGENTE, nivel: 'advertencia' };
   const advertencia = (hasta) => ({
     tipo: 'autorizado-de-licencia', nivel: 'advertencia',
     mensaje: `La persona autorizada está de licencia hasta el ${hasta}: hasta entonces no se generan notas.`
@@ -968,7 +969,7 @@ describe('persona autorizada con una licencia que se superpone en parte (del 22/
     assert.equal(reiteracion.presentada_por_id, autorizado.id);
   });
 
-  it('Estado: mientras la persona autorizada está de licencia, una advertencia con la fecha en que vuelve, sin la de no vigente', async () => {
+  it('Estado: mientras la persona autorizada está de licencia, una advertencia con la fecha en que vuelve, sin el error', async () => {
     for (const hoy of ['2027-02-24', '2027-03-02']) {
       const estado = await motor.estadoNotas({ hoy });
       assert.equal(estado.licencia_firmante.autorizado, 'Firma admin', hoy);
@@ -985,7 +986,7 @@ describe('persona autorizada con una licencia que se superpone en parte (del 22/
     assert.deepEqual(alertasDelAutorizado(deVuelta), []);
   });
 
-  it('Estado: con la persona autorizada de licencia hasta el final de la del titular, la advertencia con la fecha y no la de no vigente', async () => {
+  it('Estado: con la persona autorizada de licencia hasta el final de la del titular, la advertencia y no el error', async () => {
     // Del 15/03 al 31/03 otra vez de licencia: le quedan del 04/03 al 12/03
     await licencia(autorizado, '2027-03-15', '2027-03-31');
     for (const hoy of ['2027-03-15', '2027-03-22']) {
@@ -1060,22 +1061,35 @@ describe('persona autorizada con una licencia que se superpone en parte (del 22/
     assert.ok(nombre.base > renglon.base && renglon.base > cargo.base);
   });
 
-  it('Estado: desactivada, sin firma o de licencia todos los días hábiles, la advertencia de no vigente', async () => {
-    const conAlerta = async (motivo) => {
-      const estado = await motor.estadoNotas({ hoy: '2027-02-24' });
-      assert.equal(estado.licencia_firmante.autorizado, null, motivo);
-      assert.equal(estado.licencia_firmante.autorizado_no_vigente, true, motivo);
-      assert.equal(estado.licencia_firmante.autorizado_de_licencia_hasta, null, motivo);
-      assert.deepEqual(alertasDelAutorizado(estado), [NO_VIGENTE], motivo);
-    };
+  // La alerta de no vigente, con su motivo
+  const conAlerta = async (alerta, motivo) => {
+    const estado = await motor.estadoNotas({ hoy: '2027-02-24' });
+    assert.equal(estado.licencia_firmante.autorizado, null, motivo);
+    assert.equal(estado.licencia_firmante.autorizado_no_vigente, true, motivo);
+    assert.equal(estado.licencia_firmante.autorizado_de_licencia_hasta, null, motivo);
+    assert.deepEqual(alertasDelAutorizado(estado), [alerta], motivo);
+  };
+
+  it('Estado: desactivada, sin firma o sin su rol, el error de siempre', async () => {
     await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [autorizado.id]);
-    await conAlerta('desactivada');
+    await conAlerta(ERROR_NO_VIGENTE, 'desactivada');
     await query('UPDATE usuarios SET activo = 1 WHERE id = ?', [autorizado.id]);
     await query('UPDATE usuarios_firmas SET imagen = NULL WHERE usuario_id = ?', [autorizado.id]);
-    await conAlerta('sin firma');
+    await conAlerta(ERROR_NO_VIGENTE, 'sin firma');
     await query('UPDATE usuarios_firmas SET imagen = ? WHERE usuario_id = ?', [FIRMA, autorizado.id]);
+    await query("UPDATE usuarios SET rol = 'lector' WHERE id = ?", [autorizado.id]);
+    await conAlerta(ERROR_NO_VIGENTE, 'sin su rol');
+  });
+
+  it('Estado: de licencia todos los días hábiles, la misma alerta como advertencia (decisión del usuario, 27/10/2026)', async () => {
     await query("UPDATE usuarios_licencias SET hasta = '2027-04-02' WHERE id = ?", [licenciaDelAutorizado]);
-    await conAlerta('de licencia todos los días hábiles');
+    await conAlerta(ADVERTENCIA_NO_VIGENTE, 'de licencia todos los días hábiles');
+    // Si además está desactivada o sin firma, el error: eso sí hay que arreglarlo
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [autorizado.id]);
+    await conAlerta(ERROR_NO_VIGENTE, 'desactivada y de licencia');
+    await query('UPDATE usuarios SET activo = 1 WHERE id = ?', [autorizado.id]);
+    await query('UPDATE usuarios_firmas SET imagen = NULL WHERE usuario_id = ?', [autorizado.id]);
+    await conAlerta(ERROR_NO_VIGENTE, 'sin firma y de licencia');
   });
 });
 
@@ -1622,12 +1636,12 @@ describe('Estado de Correos (spec 7.5)', () => {
     assert.equal(estado.proximas.interna.reiteracion.fecha, '2026-12-02');
   });
 
-  it('autorizado que ya no cumple las condiciones: alerta de advertencia (decisión del usuario, 27/10/2026)', async () => {
+  it('autorizado que ya no cumple las condiciones: alerta de error', async () => {
     await licencia(titular, '2026-11-26', '2027-01-14', autorizado);
     await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [autorizado.id]);
     const estado = await motor.estadoNotas({ hoy: '2026-11-10' });
     assert.equal(estado.licencia_firmante.autorizado_no_vigente, true);
-    assert.ok(estado.alertas.some(a => a.tipo === 'autorizado-no-vigente' && a.nivel === 'advertencia'));
+    assert.ok(estado.alertas.some(a => a.tipo === 'autorizado-no-vigente' && a.nivel === 'error'));
   });
 
   it('licencia futura con la persona autorizada de licencia hoy (sin superposición): se la evalúa desde el inicio, sin alerta', async () => {

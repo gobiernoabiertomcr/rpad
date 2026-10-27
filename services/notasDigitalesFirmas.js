@@ -20,7 +20,7 @@ export const firmaTitularDe = (config) => firmaDeUsuario(config.firmante_usuario
 
 // La firma de la persona autorizada de una licencia, con su email, si cumple las condiciones que no dependen de las
 // fechas (spec 6.3): admin o editor activo, con la imagen de su firma. null si no hay autorizado o no las cumple.
-const autorizadoHabilitado = async (licencia) => {
+export const autorizadoHabilitado = async (licencia) => {
   if (!licencia?.autorizado_id) return null;
   const [[usuario]] = await pool.query('SELECT rol, activo, email FROM usuarios WHERE id = ?', [licencia.autorizado_id]);
   if (!usuario || !usuario.activo || !ROLES_AUTORIZABLES.includes(usuario.rol)) return null;
