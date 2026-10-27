@@ -29,9 +29,10 @@ const VERSION_PANTALLAS = '20261209';
 // configuracion.html)
 const VERSION_AREAS = '20261205';
 // feriados.js (la pestaña Feriados de Configuración, la cuarta: el selector del año, los filtros y la tabla, spec
-// 2026-10-26-feriados, 4): el número siguiente al más alto de este archivo cuando se creó (VERSION_REPORTES). Su versión es propia
-// (solo la usa configuracion.html)
-const VERSION_FERIADOS = '20261208';
+// 2026-10-26-feriados, 4): el número siguiente al más alto de este archivo cuando se creó (VERSION_REPORTES). Cambió después (cuántas
+// licencias de Mi espacio incluye la fecha, en el modal del feriado, spec 2026-10-26-mi-espacio-licencias-y-horas). Su versión es
+// propia (solo la usa configuracion.html)
+const VERSION_FERIADOS = '20261209';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
 // reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6):
@@ -257,12 +258,13 @@ describe('páginas', () => {
       }
     });
 
-    it('el aviso azul dice, tal cual, que estos feriados todavía no cambian los días hábiles del sistema', () => {
+    // Desde la entrega 2 (spec 2026-10-26-feriados, 4): cuentan para Mi espacio y nada más
+    it('el aviso azul dice, tal cual, que estos feriados cuentan solo para Mi espacio', () => {
       const aviso = bloque(/<p class="fe-aviso" id="feriados-aviso">[\s\S]*?<\/p>/);
       assert.ok(aviso, 'el aviso');
       assert.match(aviso, /<svg aria-hidden="true"/);
       assert.equal(aviso.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(),
-        'Por ahora, estos feriados no cambian los días hábiles del sistema: las Notas Digitales, la auditoría y Métricas siguen con los 9 feriados fijos.');
+        'Por ahora, estos feriados cuentan solo para Mi espacio: los días hábiles de las licencias y los francos. Las Notas Digitales, la auditoría y Métricas siguen con los 9 feriados fijos.');
     });
 
     it('la tarjeta: el título, el selector del año y los filtros como grupos con su nombre, la lista y el vacío', () => {
@@ -313,7 +315,7 @@ describe('páginas', () => {
     const modalFeriado = () => bloque(/<div class="modal-overlay" id="modal-feriado">[\s\S]*?(?=<div class="modal-overlay" id="modal-baja-feriado">)/);
     const modalBaja = () => bloque(/<div class="modal-overlay" id="modal-baja-feriado">[\s\S]*?(?=<script )/);
     const IDS_DEL_MODAL = ['modal-feriado', 'modal-feriado-titulo', 'feriado-error', 'fe-fecha', 'fe-fecha-dia', 'fe-fecha-ayuda',
-      'fe-fecha-error', 'fe-nombre', 'fe-nombre-error', 'fe-tipo', 'fe-tipo-opciones', 'fe-tipo-error', 'fe-trasladado', 'fe-trasladado-ayuda',
+      'fe-fecha-afectadas', 'fe-fecha-error', 'fe-nombre', 'fe-nombre-error', 'fe-tipo', 'fe-tipo-opciones', 'fe-tipo-error', 'fe-trasladado', 'fe-trasladado-ayuda',
       'fe-trasladado-error', 'fe-se-repite', 'fe-se-repite-error', 'fe-anio', 'fe-no-rige', 'fe-no-rige-texto', 'fe-pasa-al-grupo',
       'fe-pasa-al', 'fe-pasa-al-ayuda', 'fe-pasa-al-error', 'fe-baja', 'fe-guardar'];
     const IDS_DE_LA_BAJA = ['modal-baja-feriado', 'modal-baja-feriado-titulo', 'baja-feriado-texto', 'baja-feriado-desde-grupo',
@@ -377,8 +379,9 @@ describe('páginas', () => {
       const modal = modalFeriado();
       assert.match(modal, /<input type="date" id="fe-fecha" class="form-input" min="2025-01-01" aria-required="true" aria-describedby="fe-fecha-dia fe-fecha-error">\s*<span class="fe-dia" id="fe-fecha-dia"><\/span>/);
       // La ayuda de la fecha (revisión final, 1): vacía y oculta; feriados.js la escribe al corregir uno que se repite y la suma al
-      // aria-describedby de la fecha mientras se ve
-      assert.match(modal, /<span class="fe-dia" id="fe-fecha-dia"><\/span>\s*<\/div>\s*<p class="form-hint" id="fe-fecha-ayuda" hidden><\/p>\s*<p class="form-error" id="fe-fecha-error" hidden><\/p>/);
+      // aria-describedby de la fecha mientras se ve. Debajo, igual, cuántas licencias de Mi espacio incluye la fecha (desde la entrega
+      // 2): feriados.js la escribe después de un cambio de la fecha o de «Se repite»
+      assert.match(modal, /<span class="fe-dia" id="fe-fecha-dia"><\/span>\s*<\/div>\s*<p class="form-hint" id="fe-fecha-ayuda" hidden><\/p>\s*<p class="form-hint" id="fe-fecha-afectadas" hidden><\/p>\s*<p class="form-error" id="fe-fecha-error" hidden><\/p>/);
       assert.match(modal, /<label class="form-label" for="fe-fecha">Fecha <span class="requerido" aria-hidden="true">\*<\/span><\/label>/);
       assert.match(modal, /<input type="date" id="fe-trasladado" class="form-input" min="2025-01-01" aria-describedby="fe-trasladado-ayuda fe-trasladado-error">/);
       assert.match(modal, /<label class="form-label" for="fe-trasladado">Trasladado del <span class="fe-opcional">\(opcional\)<\/span><\/label>/);

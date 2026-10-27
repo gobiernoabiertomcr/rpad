@@ -28,7 +28,7 @@ import {
   deleteArea
 } from '../controllers/areasController.js';
 import {
-  listarFeriados, crearFeriado, corregirFeriado, cambiarRige, darDeBajaFeriado
+  listarFeriados, afectadasPorFeriado, crearFeriado, corregirFeriado, cambiarRige, darDeBajaFeriado
 } from '../controllers/feriadosController.js';
 import {
   ejecutarNotificacionesDiarias,
@@ -221,8 +221,9 @@ router.put('/areas/:id', authMiddleware, adminOnly, updateArea);
 router.delete('/areas/:id', authMiddleware, adminOnly, deleteArea);
 
 // Feriados (spec 2026-10-26-feriados, 3): los lee cualquier rol con sesión; cargan, corrigen, marcan «no rige» y dan de baja
-// solo administración. …/rige va antes que /:id
+// solo administración, que también pide cuántas licencias de Mi espacio incluye uno (…/afectadas, el modal). …/rige va antes que /:id
 router.get('/feriados', authMiddleware, listarFeriados);
+router.get('/feriados/afectadas', authMiddleware, adminOnly, afectadasPorFeriado);
 router.post('/feriados', authMiddleware, adminOnly, crearFeriado);
 router.put('/feriados/:id/rige', authMiddleware, adminOnly, cambiarRige);
 router.put('/feriados/:id', authMiddleware, adminOnly, corregirFeriado);

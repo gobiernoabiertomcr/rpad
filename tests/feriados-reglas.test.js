@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   TIPOS_FERIADO, NOMBRES_TIPO_FERIADO, NOMBRES_DE_LOS_FIJOS,
   diaDeLaSemana, fechaEnElAnio, feriadosDelRango, esDiaHabilCon, diasHabilesDe, diasHabilesEntre,
-  proximoDiaHabilCon, restarDiasHabilesCon, ultimoDiaHabilDelMesCon,
+  proximoDiaHabilCon, restarDiasHabilesCon, ultimoDiaHabilDelMesCon, fechasDelFeriado,
   MENSAJES_FERIADO, FECHA_MINIMA_FERIADO, LARGO_NOMBRE_FERIADO,
   validarFeriado, validarRige, bajaDesde, errorDeLaCorreccion, feriadosDelAnio, avisosDeLaFecha, aniosDelSelector
 } from '../services/feriadosReglas.js';
@@ -168,6 +168,55 @@ describe('fechaEnElAnio', () => {
     for (const anio of ['2026', 2026.5, NaN, null, undefined, -2026, 20260]) {
       assert.equal(fechaEnElAnio(QUE_SE_REPITE, anio), null, String(anio));
     }
+  });
+});
+
+// Las fechas en que rige un feriado en un rango de años, para contar las licencias de Mi espacio que lo incluyen (decisión del
+// usuario, 26/10/2026: uno que se repite cuenta todos los años en que rige)
+describe('fechasDelFeriado', () => {
+  const DESDE_2026 = fila({ fecha: '2026-12-13', se_repite: 1 });
+
+  it('uno que se repite desde 2026, de 2024 a 2027: las de 2026 y 2027 (no hacia atrás)', () => {
+    assert.deepEqual(fechasDelFeriado(DESDE_2026, 2024, 2027), ['2026-12-13', '2027-12-13']);
+    assert.deepEqual(fechasDelFeriado(DESDE_2026, 2027, 2029), ['2027-12-13', '2028-12-13', '2029-12-13']);
+    assert.deepEqual(fechasDelFeriado(DESDE_2026, 2024, 2025), []);
+  });
+
+  it('con hasta_anio 2026, solo la de 2026; con no_rige [2027], tampoco la de 2027', () => {
+    assert.deepEqual(fechasDelFeriado({ ...DESDE_2026, hasta_anio: 2026 }, 2024, 2027), ['2026-12-13']);
+    assert.deepEqual(fechasDelFeriado({ ...DESDE_2026, no_rige: [2027] }, 2024, 2027), ['2026-12-13']);
+    assert.deepEqual(fechasDelFeriado({ ...DESDE_2026, no_rige: [2027] }, 2024, 2028), ['2026-12-13', '2028-12-13']);
+  });
+
+  it('uno que no se repite: su fecha, si cae en el rango', () => {
+    const deUnAnio = { ...DESDE_2026, se_repite: 0 };
+    assert.deepEqual(fechasDelFeriado(deUnAnio, 2024, 2027), ['2026-12-13']);
+    assert.deepEqual(fechasDelFeriado(deUnAnio, 2026, 2026), ['2026-12-13']);
+    assert.deepEqual(fechasDelFeriado(deUnAnio, 2027, 2028), []);
+    assert.deepEqual(fechasDelFeriado(deUnAnio, 2024, 2025), []);
+  });
+
+  it('un 29/02 que se repite saltea los años sin 29/02', () => {
+    assert.deepEqual(fechasDelFeriado(fila({ fecha: '2028-02-29', se_repite: 1 }), 2027, 2033), ['2028-02-29', '2032-02-29']);
+  });
+
+  it('una dada de baja no rige ningún año', () => {
+    assert.deepEqual(fechasDelFeriado({ ...DESDE_2026, activo: 0 }, 2024, 2027), []);
+  });
+
+  it('con una entrada inválida, []', () => {
+    for (const mala of [null, undefined, 'hola', 3, [], {}, fila({ fecha: '2026-02-30' })]) {
+      assert.deepEqual(fechasDelFeriado(mala, 2024, 2027), [], JSON.stringify(mala));
+    }
+    for (const [desde, hasta] of [[2027, 2026], ['2024', 2027], [2024, '2027'], [2024.5, 2027], [null, 2027], [2024, NaN],
+      [undefined, undefined]]) {
+      assert.deepEqual(fechasDelFeriado(DESDE_2026, desde, hasta), [], `${desde} ${hasta}`);
+    }
+  });
+
+  it('un rango enorme no se recorre fuera de los años que existen', () => {
+    assert.deepEqual(fechasDelFeriado({ ...DESDE_2026, se_repite: 0 }, -1e9, 1e9), ['2026-12-13']);
+    assert.deepEqual(fechasDelFeriado(fila({ fecha: '9998-12-13', se_repite: 1 }), 9990, 1e9), ['9998-12-13', '9999-12-13']);
   });
 });
 
@@ -860,6 +909,8 @@ describe('ninguna función tira', () => {
           avisosDeLaFecha('2026-04-02', [a, b], b);
           aniosDelSelector(a, b);
           aniosDelSelector([a, b], HOY);
+          fechasDelFeriado(a, b, b);
+          fechasDelFeriado(a, 2026, 2027);
         }, `${JSON.stringify(a)} ${JSON.stringify(b)}`);
       }
     }

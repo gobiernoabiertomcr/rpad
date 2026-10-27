@@ -93,11 +93,13 @@ const RUTAS_SOLO_ADMIN = [
   ['DELETE', '/gestion/proyectos/1/documentos/1'],
   ['POST', '/gestion/hitos/1/archivos'],
   ['DELETE', '/gestion/hitos/1/archivos/1'],
-  // Feriados (spec 2026-10-26-feriados, 3): los lee cualquier rol con sesión; cargan, corrigen y dan de baja solo administración
+  // Feriados (spec 2026-10-26-feriados, 3): los lee cualquier rol con sesión; cargan, corrigen y dan de baja solo administración, que
+  // también es la única que pide cuántas licencias de Mi espacio incluye una fecha (el modal del feriado)
   ['POST', '/feriados'],
   ['PUT', '/feriados/1'],
   ['PUT', '/feriados/1/rige'],
-  ['DELETE', '/feriados/1']
+  ['DELETE', '/feriados/1'],
+  ['GET', '/feriados/afectadas?fecha=2026-02-16']
 ];
 
 const pedir = (metodo, ruta, token) => {

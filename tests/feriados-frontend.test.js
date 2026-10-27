@@ -509,6 +509,47 @@ describe('feriados.js: el modal, la ayuda de la fecha (ayudaDeLaFechaFeriado)', 
     assert.equal(F.describedbyDeLaFechaFeriado(null, true), 'fe-fecha-ayuda');
     assert.equal(F.describedbyDeLaFechaFeriado(null, false), '');
   });
+
+  // Las licencias afectadas van debajo de la ayuda (fe-fecha-afectadas): en el orden en que se ven, antes del error. Sin el tercer
+  // parámetro, quedan como estaban (la ayuda cambia sin tocarlas)
+  it('describedbyDeLaFechaFeriado: con el tercer parámetro, suma o saca fe-fecha-afectadas, después de la ayuda y antes del error', () => {
+    const TODO = 'fe-fecha-dia fe-fecha-ayuda fe-fecha-afectadas fe-fecha-error';
+    assert.equal(F.describedbyDeLaFechaFeriado('fe-fecha-dia fe-fecha-error', false, true), 'fe-fecha-dia fe-fecha-afectadas fe-fecha-error');
+    assert.equal(F.describedbyDeLaFechaFeriado('fe-fecha-dia fe-fecha-error', true, true), TODO);
+    assert.equal(F.describedbyDeLaFechaFeriado(TODO, true, true), TODO, 'sin repetirlos');
+    assert.equal(F.describedbyDeLaFechaFeriado(TODO, true, false), 'fe-fecha-dia fe-fecha-ayuda fe-fecha-error');
+    assert.equal(F.describedbyDeLaFechaFeriado(TODO, false, false), 'fe-fecha-dia fe-fecha-error');
+    // Sin el tercero, las afectadas quedan: la ayuda va antes que ellas. Y con la ayuda undefined, la ayuda queda
+    assert.equal(F.describedbyDeLaFechaFeriado('fe-fecha-dia fe-fecha-afectadas fe-fecha-error', true), TODO);
+    assert.equal(F.describedbyDeLaFechaFeriado(TODO, false), 'fe-fecha-dia fe-fecha-afectadas fe-fecha-error');
+    assert.equal(F.describedbyDeLaFechaFeriado('fe-fecha-dia fe-fecha-ayuda fe-fecha-error', undefined, true), TODO);
+    assert.equal(F.describedbyDeLaFechaFeriado(TODO, undefined, false), 'fe-fecha-dia fe-fecha-ayuda fe-fecha-error');
+    assert.equal(F.describedbyDeLaFechaFeriado('otro', false, true), 'otro fe-fecha-afectadas', 'sin el error, al final');
+  });
+});
+
+describe('feriados.js: el modal, las licencias de Mi espacio que incluye la fecha', () => {
+  it('textoDeAfectadasFeriado: con 0, nada; con 1, en singular; con 2 o más, en plural', () => {
+    assert.equal(F.textoDeAfectadasFeriado(0), '');
+    assert.equal(F.textoDeAfectadasFeriado(1), '1 licencia cargada lo incluye: sus días hábiles se recalculan.');
+    assert.equal(F.textoDeAfectadasFeriado(2), '2 licencias cargadas lo incluyen: sus días hábiles se recalculan.');
+    assert.equal(F.textoDeAfectadasFeriado(15), '15 licencias cargadas lo incluyen: sus días hábiles se recalculan.');
+    // Lo que no es una cantidad (null: la cuenta falló), nada
+    for (const raro of [null, undefined, -1, 1.5, NaN, '2', {}, []]) assert.equal(F.textoDeAfectadasFeriado(raro), '', String(raro));
+  });
+
+  it('rutaDeAfectadasFeriado: la fecha y «se repite» (1 o 0) y, al corregir, el id; sin una fecha, null', () => {
+    assert.equal(F.rutaDeAfectadasFeriado('2026-12-13', true, null), '/feriados/afectadas?fecha=2026-12-13&se_repite=1');
+    assert.equal(F.rutaDeAfectadasFeriado('2026-12-13', false, null), '/feriados/afectadas?fecha=2026-12-13&se_repite=0');
+    assert.equal(F.rutaDeAfectadasFeriado('2026-12-13', true, 12), '/feriados/afectadas?fecha=2026-12-13&se_repite=1&id=12');
+    assert.equal(F.rutaDeAfectadasFeriado('2026-12-13', false, '12'), '/feriados/afectadas?fecha=2026-12-13&se_repite=0&id=12');
+    // Un id que no sirve no va
+    for (const id of [undefined, 0, -3, 'abc', 1.5]) {
+      assert.equal(F.rutaDeAfectadasFeriado('2026-12-13', true, id), '/feriados/afectadas?fecha=2026-12-13&se_repite=1', String(id));
+    }
+    // Una fecha a medias, vacía o que no existe: no se pide nada
+    for (const fecha of ['', '2026-12', '2026-02-30', null, undefined]) assert.equal(F.rutaDeAfectadasFeriado(fecha, true, 12), null, String(fecha));
+  });
 });
 
 describe('feriados.js: el modal, erroresDelFeriado (solo los obligatorios)', () => {
@@ -746,8 +787,11 @@ describe('feriados.js: el modal, los textos y el tipo', () => {
 // HTML de algún elemento (uno por valor). `responder(metodo, ruta)` contesta cada API.pedirJson (si tira, el pedido falla); con
 // `servidor(metodo, ruta, cuerpo)`, en cambio, va el API.pedirJson de verdad sobre un fetch falso que contesta { status, body } (así
 // los errores llegan como los arma api.js: el mensaje, status y campo). `pedidos` los registra; `toasts`, cada showToast. «Hoy» es
-// `hoy` (Utils.hoyEnArgentina)
-const crearPagina = ({ responder = async () => RESPUESTA_2026, servidor = null, admin = true, hoy = '2026-10-26' } = {}) => {
+// `hoy` (Utils.hoyEnArgentina). Cada setTimeout corre enseguida; con `temporizadores`, en cambio, queda pendiente (en el Map
+// `temporizadores`, id → { fn, ms }) hasta que el test llama a `vencer()`, y clearTimeout lo saca
+const crearPagina = ({
+  responder = async () => RESPUESTA_2026, servidor = null, admin = true, hoy = '2026-10-26', temporizadores: aMano = false
+} = {}) => {
   const pagina = { foco: null };
   const nuevo = (id) => {
     const clases = new Set();
@@ -820,12 +864,25 @@ const crearPagina = ({ responder = async () => RESPUESTA_2026, servidor = null, 
   };
   const pedidos = [];
   const toasts = [];
+  const temporizadores = new Map();
+  let ultimoTemporizador = 0;
+  // Corre los pendientes, en el orden en que se programaron (uno que otro sacó mientras tanto ya no corre)
+  const vencer = () => {
+    for (const id of [...temporizadores.keys()]) {
+      const temporizador = temporizadores.get(id);
+      if (!temporizador) continue;
+      temporizadores.delete(id);
+      temporizador.fn();
+    }
+  };
   const contexto = vm.createContext({
     CONFIG: { API_URL: '/api' }, console, document, window: { location: {} },
     Auth: { isAuthenticated: () => true, isAdmin: () => admin, getAuthHeaders: () => ({ 'Content-Type': 'application/json' }) },
     showToast(mensaje, tipo) { toasts.push([mensaje, tipo]); },
-    setTimeout: (fn) => { fn(); return 0; },
-    clearTimeout() {}
+    setTimeout: aMano
+      ? (fn, ms) => { temporizadores.set(++ultimoTemporizador, { fn, ms }); return ultimoTemporizador; }
+      : (fn) => { fn(); return 0; },
+    clearTimeout: aMano ? (id) => { temporizadores.delete(id); } : () => {}
   });
   vm.runInContext(leer('js/api.js'), contexto);
   vm.runInContext(leer('js/feriados.js'), contexto);
@@ -862,7 +919,7 @@ const crearPagina = ({ responder = async () => RESPUESTA_2026, servidor = null, 
   // Los elementos con oyentes: [id, [tipos]], en el orden en que se pidieron
   const conOyentes = () => [...elementos.values()].filter((cada) => Object.keys(cada.oyentes).length > 0)
     .map((cada) => [cada.id, Object.keys(cada.oyentes)]);
-  return { contexto, elemento, pedidos, toasts, pagina, alCargar, clic, oyentesDelDocumento, radios, conOyentes };
+  return { contexto, elemento, pedidos, toasts, pagina, alCargar, clic, oyentesDelDocumento, radios, conOyentes, temporizadores, vencer };
 };
 
 // Una respuesta que llega cuando el test quiere: `soltar(valor)` la contesta
@@ -2024,5 +2081,117 @@ describe('feriados.js con un DOM: lo que llega mientras tanto', () => {
     assert.match(caja.innerHTML, /<a href="login\.html">Volvé a ingresar\.<\/a>/);
     assert.equal(pagina.pagina.foco, pagina.elemento('fe-guardar'));
     assert.equal(abierto(pagina, 'modal-feriado'), true);
+  });
+});
+
+// Cuántas licencias de Mi espacio incluye la fecha (spec 2026-10-26-feriados, 4: desde la entrega 2, antes de guardar): solo un
+// cambio de la fecha o de «Se repite» hecho por quien usa el modal la pide, 300 ms después del último, con temporizadores que vence
+// el test; abrir el modal no pide nada
+describe('feriados.js con un DOM: las licencias que incluye la fecha', () => {
+  const DEL_HTML = 'fe-fecha-dia fe-fecha-error';
+  // La pestaña cargada con 2026 y temporizadores a mano. `afectadas(ruta)` contesta GET /feriados/afectadas (un número, o una
+  // promesa de uno)
+  const conAfectadas = async (afectadas) => {
+    const pagina = crearPagina({
+      temporizadores: true,
+      servidor: async (metodo, ruta) => (ruta.startsWith('/feriados/afectadas?')
+        ? { status: 200, body: { success: true, data: { licencias_afectadas: await afectadas(ruta) } } }
+        : { status: 200, body: RESPUESTA_2026 })
+    });
+    pagina.alCargar();
+    await pagina.contexto.cargarFeriados();
+    pagina.elemento('fe-fecha').setAttribute('aria-describedby', DEL_HTML);
+    return pagina;
+  };
+  const pedidasDe = (pagina) => pagina.pedidos.filter((p) => p.ruta.startsWith('/feriados/afectadas')).map((p) => p.ruta);
+  const leyenda = (pagina) => [pagina.elemento('fe-fecha-afectadas').hidden, pagina.elemento('fe-fecha-afectadas').textContent,
+    pagina.elemento('fe-fecha').getAttribute('aria-describedby')];
+  const cambiarFecha = (pagina, valor, tipo = 'input') => {
+    pagina.elemento('fe-fecha').value = valor;
+    disparar(pagina, 'fe-fecha', tipo);
+  };
+  const DOS = '2 licencias cargadas lo incluyen: sus días hábiles se recalculan.';
+  const UNA = '1 licencia cargada lo incluye: sus días hábiles se recalculan.';
+
+  it('dos cambios seguidos de la fecha: un solo pedido, 300 ms después del último, y la cantidad debajo de la fecha', async () => {
+    const pagina = await conAfectadas(() => 2);
+    apretar(pagina, 'btn-nuevo-feriado');
+    pagina.vencer();
+    assert.equal(pagina.pagina.foco, pagina.elemento('fe-fecha'));
+    assert.deepEqual(pedidasDe(pagina), [], 'abrir el modal no pide nada');
+    assert.deepEqual(leyenda(pagina), [true, '', DEL_HTML]);
+
+    cambiarFecha(pagina, '2026-12-12');
+    cambiarFecha(pagina, '2026-12-13', 'change');
+    assert.deepEqual(pedidasDe(pagina), [], 'todavía no');
+    assert.deepEqual([...pagina.temporizadores.values()].map((t) => t.ms), [300], 'un solo temporizador, el del último cambio');
+    pagina.vencer();
+    await esperar();
+    assert.deepEqual(pedidasDe(pagina), ['/feriados/afectadas?fecha=2026-12-13&se_repite=0'], 'una sola vez, con la última fecha');
+    assert.deepEqual(leyenda(pagina), [false, DOS, 'fe-fecha-dia fe-fecha-afectadas fe-fecha-error']);
+    assert.equal(pagina.elemento('fe-fecha-afectadas').escrituras, 0, 'texto plano: nunca como HTML');
+
+    // «Se repite» también la pide, con se_repite=1
+    pagina.elemento('fe-se-repite').checked = true;
+    disparar(pagina, 'fe-se-repite', 'change');
+    pagina.vencer();
+    await esperar();
+    assert.deepEqual(pedidasDe(pagina).at(-1), '/feriados/afectadas?fecha=2026-12-13&se_repite=1');
+    assert.equal(pedidasDe(pagina).length, 2);
+  });
+
+  it('al corregir, con el id; con 0, nada; una fecha a medias no pide nada', async () => {
+    const pagina = await conAfectadas((ruta) => (ruta.includes('fecha=2026-11-09') ? 1 : 0));
+    // Uno que se repite: la ayuda de la fecha también está, y va antes que las licencias
+    const CON_AYUDA = 'fe-fecha-dia fe-fecha-ayuda fe-fecha-error';
+    editarFeriado(pagina, 12);
+    pagina.vencer();
+    assert.deepEqual(pedidasDe(pagina), [], 'abrir el modal no pide nada');
+    assert.deepEqual(leyenda(pagina), [true, '', CON_AYUDA]);
+    cambiarFecha(pagina, '2026-11-09');
+    pagina.vencer();
+    await esperar();
+    assert.deepEqual(pedidasDe(pagina), ['/feriados/afectadas?fecha=2026-11-09&se_repite=1&id=12']);
+    assert.deepEqual(leyenda(pagina), [false, UNA, 'fe-fecha-dia fe-fecha-ayuda fe-fecha-afectadas fe-fecha-error']);
+
+    cambiarFecha(pagina, '2026-11-10');
+    assert.deepEqual(leyenda(pagina), [true, '', CON_AYUDA], 'al cambiar la fecha, la cantidad vieja se va');
+    pagina.vencer();
+    await esperar();
+    assert.equal(pedidasDe(pagina).length, 2);
+    assert.deepEqual(leyenda(pagina), [true, '', CON_AYUDA], 'con 0, nada');
+
+    cambiarFecha(pagina, '', 'change');
+    pagina.vencer();
+    await esperar();
+    assert.equal(pedidasDe(pagina).length, 2, 'sin una fecha, no se pide');
+    assert.deepEqual(leyenda(pagina), [true, '', CON_AYUDA]);
+  });
+
+  it('la respuesta vieja se descarta, y cerrar el modal descarta lo pendiente', async () => {
+    const respuestas = new Map([['2026-12-13', demorada()], ['2026-12-14', demorada()]]);
+    const pagina = await conAfectadas((ruta) => respuestas.get(ruta.match(/fecha=([\d-]+)/)[1]).promesa);
+    apretar(pagina, 'btn-nuevo-feriado');
+    pagina.vencer();
+    cambiarFecha(pagina, '2026-12-13');
+    pagina.vencer();
+    cambiarFecha(pagina, '2026-12-14');
+    pagina.vencer();
+    assert.equal(pedidasDe(pagina).length, 2);
+    respuestas.get('2026-12-14').soltar(1);
+    await esperar();
+    assert.deepEqual(leyenda(pagina), [false, UNA, 'fe-fecha-dia fe-fecha-afectadas fe-fecha-error']);
+    respuestas.get('2026-12-13').soltar(2);
+    await esperar();
+    assert.deepEqual(leyenda(pagina), [false, UNA, 'fe-fecha-dia fe-fecha-afectadas fe-fecha-error'], 'la vieja no pisa la nueva');
+
+    // Cerrar con un cambio sin vencer: no se pide; abrir otra vez, sin la cantidad
+    cambiarFecha(pagina, '2026-12-15');
+    clicEnModal(pagina, 'modal-feriado', 'data-cerrar-feriado');
+    assert.equal(pagina.temporizadores.size, 0, 'el pendiente se cancela al cerrar');
+    apretar(pagina, 'btn-nuevo-feriado');
+    pagina.vencer();
+    assert.equal(pedidasDe(pagina).length, 2);
+    assert.deepEqual(leyenda(pagina), [true, '', DEL_HTML]);
   });
 });

@@ -2,17 +2,18 @@
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 5 y 10): las consultas de lo que cargó cada persona, de
  * solo lectura y parametrizadas. Devuelven el `Estado` de las reglas (services/miEspacioReglas.js), solo con las filas
  * activas, lo que el paso a Configuración (sección 6) lee de las licencias de Configuración, las ausencias que ven los
- * compañeros («Hoy no están», sección 7) y quiénes están de licencia el día del email de vencimiento (sección 9). Lo que
- * llega de la base como texto se convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las fechas se leen con
- * DATE_FORMAT ('AAAA-MM-DD'), los DECIMAL, tinyint y smallint pasan por Number() (el '7.5' de unas horas, el '8.0' de un
- * saldo) y los TIME ('19:00:00') se cortan a 'HH:MM'.
+ * compañeros («Hoy no están», sección 7), quiénes están de licencia el día del email de vencimiento (sección 9) y cuántas
+ * licencias incluye un feriado (Configuración → Feriados, `licenciasQueIncluyen`). Lo que llega de la base como texto se
+ * convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las fechas se leen con DATE_FORMAT ('AAAA-MM-DD'), los
+ * DECIMAL, tinyint y smallint pasan por Number() (el '7.5' de unas horas, el '8.0' de un saldo) y los TIME ('19:00:00') se
+ * cortan a 'HH:MM'.
  * Sin consultas N+1: las tablas se leen una vez para todas las personas (`estadosDe`). `conexion`: el pool, o la de una
  * transacción (lee lo que ella ve).
  */
 import pool from '../config/database.js';
 import { calcular, modalidadDe, esDiaEntero } from './miEspacioReglas.js';
 import { filasDeFeriados } from './feriadosDatos.js';
-import { feriadosDelRango } from './feriadosReglas.js';
+import { feriadosDelRango, fechasDelFeriado } from './feriadosReglas.js';
 import { idPositivo } from './proyectosReglas.js';
 import { esAdmin } from './usuariosReglas.js';
 import { esFechaIso } from './notasDigitalesCalendario.js';
@@ -290,4 +291,28 @@ export const ausentesEn = async (fecha, usuarioIds, conexion = pool) => {
   );
   for (const fila of mias) if (esDiaEntero(fila)) ausentes.add(Number(fila.usuario_id));
   return ausentes;
+};
+
+/**
+ * Cuántas licencias de Mi espacio activas, de cualquier persona, incluyen alguno de los días de un feriado (spec
+ * 2026-10-26-feriados, 3 y 6: sus días hábiles se recalculan), para el modal del feriado y la respuesta del alta y de la
+ * corrección. `fila` tiene la forma de las de `filasDeFeriados` (`{ fecha, se_repite, hasta_anio, no_rige, activo }`): uno que se
+ * repite cuenta todos los años en que rige (`fechasDelFeriado`, del primer año de las licencias activas al último), y cada
+ * licencia cuenta una vez aunque lo incluya dos años. Solo el número: ni personas ni tipos. Sin licencias activas, o sin ninguna
+ * fecha en ese rango, 0 (sin contar).
+ * @returns {Promise<number>}
+ */
+export const licenciasQueIncluyen = async (fila, conexion = pool) => {
+  const [[rango]] = await conexion.query(
+    'SELECT YEAR(MIN(desde)) AS primero, YEAR(MAX(hasta)) AS ultimo FROM mi_espacio_licencias WHERE activo = 1'
+  );
+  if (rango.primero === null || rango.ultimo === null) return 0;
+  const fechas = fechasDelFeriado(fila, Number(rango.primero), Number(rango.ultimo));
+  if (fechas.length === 0) return 0;
+  const [[{ cantidad }]] = await conexion.query(
+    `SELECT COUNT(*) AS cantidad FROM mi_espacio_licencias
+     WHERE activo = 1 AND (${fechas.map(() => '? BETWEEN desde AND hasta').join(' OR ')})`,
+    fechas
+  );
+  return Number(cantidad);
 };

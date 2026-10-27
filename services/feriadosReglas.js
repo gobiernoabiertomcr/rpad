@@ -12,8 +12,9 @@
  *   `esDiaHabil` y los 9 fijos.
  * - Para la API de los feriados y la pestaña Feriados de Configuración: los tipos y sus nombres, los mensajes, la validación
  *   de un feriado (`validarFeriado`, y `errorDeLaCorreccion` en una corrección), de «no rige» (`validarRige`) y de la baja
- *   desde un año (`bajaDesde`), la lista de un año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`) y los
- *   años del selector (`aniosDelSelector`). Los textos son planos: escaparlos le toca a quien los dibuja.
+ *   desde un año (`bajaDesde`), la lista de un año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`), los
+ *   años del selector (`aniosDelSelector`) y las fechas en que rige uno en un rango de años (`fechasDelFeriado`: con ellas se
+ *   cuentan las licencias de Mi espacio que lo incluyen). Los textos son planos: escaparlos le toca a quien los dibuja.
  * `FERIADOS_FIJOS` es un array que se puede modificar: acá nunca se le escribe y se recorre una copia.
  *
  * Una fila es la de `services/feriadosDatos.js`: `{ id, fecha, nombre, tipo, trasladado_de, se_repite, hasta_anio, activo,
@@ -141,6 +142,22 @@ const proyeccionEnElAnio = (fila, anio) => {
 export const fechaEnElAnio = (fila, anio) => {
   const proyeccion = proyeccionEnElAnio(fila, anio);
   return proyeccion !== null && proyeccion.rige ? proyeccion.fecha : null;
+};
+
+/**
+ * Las fechas en que rige la fila de desdeAnio a hastaAnio (los dos incluidos, enteros), de la más vieja a la más nueva:
+ * `fechaEnElAnio` de cada año del rango, sin los null. Para contar las licencias de Mi espacio que incluye un feriado: uno que
+ * se repite cuenta todos los años en que rige (decisión del usuario, 26/10/2026). Uno que no se repite da solo su fecha, si cae
+ * en el rango. Con una fila o un rango que no sirven, []. Solo recorre los años que existen (de 1 a 9999).
+ */
+export const fechasDelFeriado = (fila, desdeAnio, hastaAnio) => {
+  if (!Number.isInteger(desdeAnio) || !Number.isInteger(hastaAnio)) return [];
+  const fechas = [];
+  for (let anio = Math.max(desdeAnio, 1); anio <= Math.min(hastaAnio, 9999); anio++) {
+    const fecha = fechaEnElAnio(fila, anio);
+    if (fecha !== null) fechas.push(fecha);
+  }
+  return fechas;
 };
 
 // El Set de los días no hábiles por feriado del rango, los dos días incluidos: los 9 fijos de cada año del rango y las filas

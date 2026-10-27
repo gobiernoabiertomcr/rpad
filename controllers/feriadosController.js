@@ -1,6 +1,7 @@
 // Feriados (spec 2026-10-26-feriados, sección 3): los días no hábiles que no son los 9 fijos, para la pestaña Feriados de
 // Configuración y para Mi espacio. GET /api/feriados lo lee cualquier rol con sesión (authMiddleware); cargar, corregir, «no
-// rige» y la baja, solo administración (authMiddleware + adminOnly).
+// rige», la baja y GET /api/feriados/afectadas (cuántas licencias de Mi espacio incluye un feriado), solo administración
+// (authMiddleware + adminOnly).
 // Las reglas son puras (services/feriadosReglas.js) y las consultas de lectura están en services/feriadosDatos.js; acá se
 // escribe. Hoy es hoyArgentina(). Respuestas { success, data?, error?, campo?, message?, avisos? }.
 // Orden de los controles en las que reciben un id: un id que no es un entero positivo, que no existe o dado de baja da 404
@@ -8,12 +9,13 @@
 // con filaDeFeriado dentro de su transacción, como primera lectura (la bloquea con FOR UPDATE: dos escrituras del mismo feriado
 // se esperan y la segunda ve lo que dejó la primera). La baja es lógica (activo, o hasta_anio en uno que se repite).
 import pool from '../config/database.js';
-import { hoyArgentina, formatoCorto } from '../services/notasDigitalesCalendario.js';
+import { hoyArgentina, formatoCorto, esFechaIso } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_FERIADO, feriadosDelAnio, aniosDelSelector, validarFeriado, errorDeLaCorreccion, validarRige, bajaDesde,
   avisosDeLaFecha
 } from '../services/feriadosReglas.js';
 import { filasDeFeriados, filaDeFeriado } from '../services/feriadosDatos.js';
+import { licenciasQueIncluyen } from '../services/miEspacioDatos.js';
 import { idPositivo } from '../services/proyectosReglas.js';
 
 // Los años que se pueden pedir en GET /api/feriados
@@ -41,6 +43,39 @@ export const listarFeriados = async (req, res) => {
   } catch (error) {
     console.error('Error obteniendo los feriados:', error);
     res.status(500).json({ success: false, error: 'Error al obtener los feriados' });
+  }
+};
+
+// GET /api/feriados/afectadas?fecha=&se_repite=&id=: cuántas licencias de Mi espacio incluye el feriado del modal, antes de guardar
+// (licenciasQueIncluyen). La fecha y «se repite» ('1'; cualquier otro valor es '0') son los del modal; con el id de uno guardado (al
+// corregir), sus años que no rigen y su baja desde un año; sin id, o con uno que no sirve, no existe o está dado de baja, ninguno.
+// Una fecha que no es una fecha da 400 en `fecha`
+export const afectadasPorFeriado = async (req, res) => {
+  const { fecha, se_repite: seRepite, id } = req.query;
+  if (!esFechaIso(fecha)) return res.status(400).json({ success: false, error: MENSAJES_FERIADO.fecha, campo: 'fecha' });
+  try {
+    const guardada = await filaDeFeriado(id);
+    const fila = {
+      fecha, se_repite: seRepite === '1' ? 1 : 0, hasta_anio: guardada?.hasta_anio ?? null, no_rige: guardada?.no_rige ?? [],
+      activo: 1
+    };
+    res.json({ success: true, data: { licencias_afectadas: await licenciasQueIncluyen(fila) } });
+  } catch (error) {
+    console.error('Error contando las licencias que incluyen el feriado:', error);
+    res.status(500).json({ success: false, error: 'Error al contar las licencias que incluyen el feriado' });
+  }
+};
+
+// Cuántas licencias de Mi espacio incluyen el feriado `id` tal como quedó guardado (filaDeFeriado, con el pool: después del commit),
+// para la respuesta del alta y de la corrección. Aislado: el feriado ya se guardó, así que si la cuenta falla va null y el error,
+// a la consola, sin cambiar el resto de la respuesta. Uno que mientras tanto se dio de baja no incluye ninguna
+const licenciasAfectadasDe = async (id) => {
+  try {
+    const fila = await filaDeFeriado(id);
+    return fila ? await licenciasQueIncluyen(fila) : 0;
+  } catch (error) {
+    console.error('Error contando las licencias que incluyen el feriado guardado:', error);
+    return null;
   }
 };
 
@@ -81,7 +116,8 @@ const responder = async (res, mensaje, operacion) => {
 };
 
 // POST /api/feriados: carga uno. Los avisos (fin de semana, ya hay uno ese día) no frenan nada: se calculan antes de guardar,
-// con lo que ya está cargado, así una falla al leerlos no deja un feriado cargado con un 500
+// con lo que ya está cargado, así una falla al leerlos no deja un feriado cargado con un 500. data.licencias_afectadas: cuántas
+// licencias de Mi espacio incluye, ya guardado (null si no se pudo contar)
 export const crearFeriado = (req, res) => responder(res, 'Error al cargar el feriado', async () => {
   const { datos, error } = validarFeriado(req.body, hoyArgentina());
   if (error) return rechazoDeValidacion(error);
@@ -90,7 +126,10 @@ export const crearFeriado = (req, res) => responder(res, 'Error al cargar el fer
     'INSERT INTO feriados (fecha, nombre, tipo, trasladado_de, se_repite, creado_por) VALUES (?, ?, ?, ?, ?, ?)',
     [datos.fecha, datos.nombre, datos.tipo, datos.trasladado_de, datos.se_repite, req.user.userId]
   );
-  return [201, { success: true, data: { id: resultado.insertId }, message: 'Feriado cargado.', avisos }];
+  const id = resultado.insertId;
+  return [201, {
+    success: true, data: { id, licencias_afectadas: await licenciasAfectadasDe(id) }, message: 'Feriado cargado.', avisos
+  }];
 });
 
 // PUT /api/feriados/:id: lo corrige con el formulario entero (en uno que se repite, la fecha y el nombre corrigen todos los años).
@@ -98,11 +137,12 @@ export const crearFeriado = (req, res) => responder(res, 'Error al cargar el fer
 // no cuentan al que se corrige.
 // Sacarle «se repite» no borra su hasta_anio ni sus años de feriados_no_rige (sin «se repite» las reglas no los miran): si se lo
 // vuelven a marcar, vuelve lo que se había decidido. Borrarlos haría que un año que no rige contara dos veces, junto al día de
-// su «se pasó al»
+// su «se pasó al». Ya confirmada, data.licencias_afectadas: cuántas licencias de Mi espacio incluye, con lo guardado (también sus
+// años que no rigen y su baja desde un año; null si no se pudo contar)
 export const corregirFeriado = (req, res) => responder(res, 'Error al corregir el feriado', async () => {
   const id = idPositivo(req.params.id);
   if (id === null) return noEncontrado();
-  return enTransaccion(async (conexion) => {
+  const [status, cuerpo] = await enTransaccion(async (conexion) => {
     const fila = await filaDeFeriado(id, conexion);
     if (!fila) return noEncontrado();
     const { datos, error } = validarFeriado(req.body, hoyArgentina());
@@ -116,6 +156,8 @@ export const corregirFeriado = (req, res) => responder(res, 'Error al corregir e
     const avisos = avisosDeLaFecha(datos.fecha, await filasDeFeriados(conexion), id);
     return [200, { success: true, message: 'Feriado corregido.', avisos }];
   });
+  if (status !== 200) return [status, cuerpo];
+  return [status, { ...cuerpo, data: { licencias_afectadas: await licenciasAfectadasDe(id) } }];
 });
 
 // El día al que se pasó uno que se repite: el que ya hay activo con esa fecha y ese nombre (repetir el pedido no lo duplica) o
