@@ -48,13 +48,14 @@ const rechazoDelAnio = () => [400, { success: false, error: MENSAJES_MI_ESPACIO.
 const sinModalidad = () => [200, { success: true, data: { modalidad: null, mensaje: MENSAJES_MI_ESPACIO.sinModalidad } }];
 const conDatos = (data) => [200, { success: true, data }];
 
-// Responde lo que devolvió la operación, o 500 con `mensaje` si algo inesperado falló (el error completo, solo en la consola)
+// Responde lo que devolvió la operación, o 500 con `mensaje` si algo inesperado falló (la pila del error, solo en la consola).
+// Solo la pila: los errores de mysql2 traen la consulta armada con sus valores, y en una licencia son el tipo y la nota
 const responder = async (res, mensaje, operacion) => {
   try {
     const [status, cuerpo] = await operacion();
     res.status(status).json(cuerpo);
   } catch (error) {
-    console.error(`${mensaje}:`, error);
+    console.error(`${mensaje}:`, error?.stack ?? error);
     res.status(500).json({ success: false, error: mensaje });
   }
 };

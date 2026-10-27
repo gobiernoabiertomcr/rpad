@@ -127,13 +127,14 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
     // Digitales (registrarInicio borra lo anotado en la última corrida) y de la foto, con su propio control de día hábil (con
     // los feriados de la tabla; resultados.dia_habil sigue con los 9 fijos). Aislado: un error acá (también si falta una
     // tabla) no frena la respuesta, queda en la última corrida y lo que no salió sale en la próxima corrida de su tramo. Un
-    // email que no salió va a los errores con su persona; en la última corrida, solo el motivo
+    // email que no salió va a los errores con su persona y el texto del envío; en la última corrida, solo el motivo fijo
+    // (el texto de nodemailer puede traer la dirección de email)
     try {
       resultados.miEspacio = await enviarAvisosDeVencimiento({ hoy });
       const fallidos = resultados.miEspacio.errores;
       if (fallidos.length > 0) {
         resultados.errores.push(...fallidos.map((fallo) => ({ tipo: 'mi-espacio', ...fallo })));
-        const motivos = [...new Set(fallidos.map(({ error }) => error))].join('; ');
+        const motivos = [...new Set(fallidos.map(({ motivo }) => motivo))].join('; ');
         await anotarEnLaUltimaCorrida(textoFallaDeMiEspacio(motivos)).catch(() => {});
       }
     } catch (error) {

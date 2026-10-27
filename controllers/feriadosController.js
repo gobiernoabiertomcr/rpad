@@ -63,7 +63,7 @@ export const afectadasPorFeriado = async (req, res) => {
     const licencias = await licenciasQueIncluyen(fila, { excluir: guardada?.id ?? null });
     res.json({ success: true, data: { licencias_afectadas: licencias } });
   } catch (error) {
-    console.error('Error contando las licencias que incluyen el feriado:', error);
+    console.error('Error contando las licencias que incluyen el feriado:', error?.stack ?? error);
     res.status(500).json({ success: false, error: 'Error al contar las licencias que incluyen el feriado' });
   }
 };
@@ -71,13 +71,14 @@ export const afectadasPorFeriado = async (req, res) => {
 // Cuántas licencias de Mi espacio incluyen el feriado `id` tal como quedó guardado (filaDeFeriado, con el pool: después del commit),
 // para la respuesta del alta y de la corrección, sin contarlo a él como otro feriado ese día. Aislado: el feriado ya se guardó, así
 // que si la cuenta falla va null y el error, a la consola, sin cambiar el resto de la respuesta. Uno que mientras tanto se dio de
-// baja no incluye ninguna
+// baja no incluye ninguna. En la consola de las dos cuentas va solo la pila: los errores de mysql2 traen la consulta armada, y
+// esta lee las licencias de Mi espacio
 const licenciasAfectadasDe = async (id) => {
   try {
     const fila = await filaDeFeriado(id);
     return fila ? await licenciasQueIncluyen(fila, { excluir: id }) : 0;
   } catch (error) {
-    console.error('Error contando las licencias que incluyen el feriado guardado:', error);
+    console.error('Error contando las licencias que incluyen el feriado guardado:', error?.stack ?? error);
     return null;
   }
 };

@@ -4,7 +4,7 @@
 // lecturas responden 200 con `modalidad: null` y el mensaje que lo dice. Lo que llega de la base como texto (los DECIMAL, los
 // TIME y las fechas) sale como número, 'HH:MM' y 'AAAA-MM-DD' (Review Focus 2). La lectura (services/miEspacioDatos.js) se
 // prueba también directo. La API usa la fecha real: las fechas de los tests se arman desde hoy.
-import { describe, it, before, after, beforeEach } from 'node:test';
+import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit
@@ -541,6 +541,34 @@ describe('cargar una licencia', () => {
     const desde = await api.post('/mi-espacio/licencias', { tipo: 'medica', desde: q(7), hasta: q(7) }, como('adminA'));
     assert.equal(desde.status, 201, JSON.stringify(desde.body));
     assert.equal(await tanqueMedico(), ANIO_Q === ANIO ? 24 : 25);
+  });
+
+  it('un error inesperado al guardar: 500 con su mensaje, y en la consola solo la pila (ni el tipo ni la nota)', async () => {
+    // mysql2 le agrega al error la consulta armada con sus valores: el tipo y la nota de la licencia no pueden ir al log
+    await listoParaCargar('colab');
+    await query('DROP TRIGGER IF EXISTS falla_simulada_mi_espacio');
+    await query(`CREATE TRIGGER falla_simulada_mi_espacio BEFORE INSERT ON mi_espacio_licencias FOR EACH ROW
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Falla simulada'`);
+    const log = mock.method(console, 'error', () => {});
+    const respuesta = { status(codigo) { this.codigo = codigo; return this; }, json(cuerpo) { this.cuerpo = cuerpo; } };
+    try {
+      const pedido = {
+        user: { userId: usuarios.colab.id }, body: { tipo: 'medica', desde: q(0), hasta: q(1), nota: 'Turno con el cardiólogo' }
+      };
+      await controlador.cargarLicenciaMia(pedido, respuesta);
+    } finally {
+      log.mock.restore();
+      await query('DROP TRIGGER IF EXISTS falla_simulada_mi_espacio');
+    }
+    assert.equal(respuesta.codigo, 500);
+    assert.deepEqual(respuesta.cuerpo, { success: false, error: 'Error al cargar la licencia' });
+    assert.equal(log.mock.callCount(), 1);
+    const [mensaje, detalle] = log.mock.calls[0].arguments;
+    assert.equal(mensaje, 'Error al cargar la licencia:');
+    assert.equal(typeof detalle, 'string');
+    assert.match(detalle, /Falla simulada/);
+    assert.ok(!/cardi[oó]logo|medica|INSERT/i.test(detalle), detalle);
+    assert.deepEqual(await query('SELECT id FROM mi_espacio_licencias WHERE usuario_id = ?', [usuarios.colab.id]), []);
   });
 });
 

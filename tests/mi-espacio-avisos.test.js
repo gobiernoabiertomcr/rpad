@@ -7,7 +7,7 @@
 import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
-import { crearBaseDePrueba, cerrarDb, query, mailpit, paraCasilla } from './helpers.js';
+import { crearBaseDePrueba, cerrarDb, query, db, mailpit, paraCasilla } from './helpers.js';
 import { limpiarBase } from './notas-fixtures.js';
 import { textoVisible } from './emails-fixtures.js';
 
@@ -53,14 +53,14 @@ beforeEach(async () => {
 
 const sufijo = () => crypto.randomBytes(3).toString('hex');
 
-// Una persona inventada: activa, de planta y con una casilla propia, salvo lo que se pida
-const persona = async ({ vinculo = 'planta_permanente', activo = 1, email = null } = {}) => {
+// Una persona inventada: activa, de planta, «Laura Gómez» y con una casilla propia, salvo lo que se pida
+const persona = async ({ vinculo = 'planta_permanente', activo = 1, email = null, nombre = 'Laura Gómez' } = {}) => {
   const username = `t_me_${sufijo()}`;
   const casilla = email ?? `${username}@rpad.test`;
   const { insertId: id } = await query(
     `INSERT INTO usuarios (username, password_hash, nombre_completo, email, rol, vinculo, activo)
-     VALUES (?, 'x', 'Laura Gómez', ?, 'admin', ?, ?)`,
-    [username, casilla, vinculo, activo]
+     VALUES (?, 'x', ?, ?, 'admin', ?, ?)`,
+    [username, nombre, casilla, vinculo, activo]
   );
   return { id, email: casilla };
 };
@@ -123,6 +123,31 @@ const anotados = (usuarioId) => query(
 );
 // Los emails de Mailpit a una casilla (solo los suyos: Mailpit puede tener los de otras sesiones)
 const recibidos = async (email) => (await mailpit.mensajes()).filter(paraCasilla(email));
+
+// El bloqueo del paso (GET_LOCK, de toda la base): si está libre
+const BLOQUEO = 'rpad_mi_espacio_avisos';
+const bloqueoLibre = async () => Number((await query('SELECT IS_FREE_LOCK(?) AS libre', [BLOQUEO]))[0].libre) === 1;
+
+// Corre fn con la anotación de una persona en mi_espacio_avisos rota (un trigger la rechaza: el email sale y no se anota) y la
+// consola de errores callada. Devuelve lo que devolvió fn y lo que se escribió en la consola
+const conAnotacionQueFalla = async (usuarioId, fn) => {
+  await query('DROP TRIGGER IF EXISTS falla_simulada_mi_espacio_avisos');
+  await query(`CREATE TRIGGER falla_simulada_mi_espacio_avisos BEFORE INSERT ON mi_espacio_avisos FOR EACH ROW
+    BEGIN
+      IF NEW.usuario_id = ${Number(usuarioId)} THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Falla simulada'; END IF;
+    END`);
+  const log = mock.method(console, 'error', () => {});
+  try {
+    const resultado = await fn();
+    return { resultado, consola: log.mock.calls.map((llamada) => llamada.arguments) };
+  } finally {
+    log.mock.restore();
+    await query('DROP TRIGGER IF EXISTS falla_simulada_mi_espacio_avisos');
+  }
+};
+
+// El nombre de una persona con la que armar su email falla (un error inesperado simulado: ver «una persona que falla»)
+const NOMBRE_QUE_FALLA = 'Persona de Prueba Que Falla';
 
 describe('ausentesEn: quién está de licencia ese día', () => {
   it('una licencia de Configuración sin anular, o una de Mi espacio activa de día entero; solo de los ids pedidos', async () => {
@@ -210,8 +235,10 @@ describe('enviarAvisosDeVencimiento', () => {
       aviso.mock.restore();
       process.env.EMAIL_SOLO_A = '';
     }
-    assert.deepEqual(resultado,
-      { dia_habil: true, enviados: 0, errores: [{ usuario_id: laura.id, error: 'Bloqueado por EMAIL_SOLO_A' }] });
+    assert.deepEqual(resultado, {
+      dia_habil: true, enviados: 0,
+      errores: [{ usuario_id: laura.id, error: 'Bloqueado por EMAIL_SOLO_A', motivo: 'el email no se pudo enviar' }]
+    });
     assert.deepEqual(await anotados(laura.id), []);
     assert.deepEqual(await recibidos(laura.email), []);
 
@@ -245,6 +272,77 @@ describe('enviarAvisosDeVencimiento', () => {
       && m.To.some((t) => CASILLAS_POR_DEFECTO.includes(t.Address)));
     assert.deepEqual(aLasDeFabrica, []);
   });
+
+  it('una persona que falla no frena a las demás: va a los errores, con la pila en la consola, y las otras reciben el suyo',
+    async () => {
+      // La primera de la lista (por id) es la que falla: armar su email tira un error inesperado (escapar su nombre, simulado)
+      const rota = await conFrancoDeOctubre({ nombre: NOMBRE_QUE_FALLA });
+      const laura = await conFrancoDeOctubre();
+      const reemplazar = String.prototype.replace;
+      const roto = mock.method(String.prototype, 'replace', function reemplazo(...argumentos) {
+        if (String(this) === NOMBRE_QUE_FALLA) throw new Error('Falla simulada');
+        return reemplazar.apply(this, argumentos);
+      });
+      const log = mock.method(console, 'error', () => {});
+      let resultado;
+      try {
+        resultado = await pasoDel('2026-10-23');
+      } finally {
+        roto.mock.restore();
+        log.mock.restore();
+      }
+      assert.deepEqual(resultado, {
+        dia_habil: true, enviados: 1,
+        errores: [{ usuario_id: rota.id, error: 'No se pudo preparar el email', motivo: 'no se pudo preparar el email' }]
+      });
+      assert.equal(log.mock.callCount(), 1);
+      const [mensaje, detalle] = log.mock.calls[0].arguments;
+      assert.equal(mensaje, 'Error al preparar el aviso de Mi espacio:');
+      assert.equal(typeof detalle, 'string');
+      assert.match(detalle, /Falla simulada/);
+      assert.deepEqual(await recibidos(rota.email), []);
+      assert.deepEqual(await anotados(rota.id), []);
+      assert.equal((await mailpit.esperar(paraCasilla(laura.email))).length, 1);
+      assert.deepEqual((await anotados(laura.id)).map((fila) => fila.clave), ['franco-2026-10']);
+    });
+
+  it('si el email salió y no se pudo anotar: cuenta como enviado, va a los errores y a la consola solo la pila', async () => {
+    const laura = await conFrancoDeOctubre();
+    const { resultado, consola } = await conAnotacionQueFalla(laura.id, () => pasoDel('2026-10-23'));
+    assert.deepEqual(resultado, {
+      dia_habil: true, enviados: 1,
+      errores: [{ usuario_id: laura.id, error: 'Falla simulada', motivo: 'el email salió, pero no se pudo anotar' }]
+    });
+    assert.equal(consola.length, 1);
+    assert.equal(consola[0][0], 'Error al anotar el aviso de Mi espacio:');
+    assert.equal(typeof consola[0][1], 'string');
+    assert.match(consola[0][1], /Falla simulada/);
+    assert.ok(!consola[0][1].includes('INSERT'), consola[0][1]);
+    assert.equal((await mailpit.esperar(paraCasilla(laura.email))).length, 1);
+    assert.deepEqual(await anotados(laura.id), []);
+  });
+
+  it('con otra corrida en curso (el bloqueo tomado) no manda nada y lo dice; la siguiente manda y deja el bloqueo libre',
+    async () => {
+      const laura = await conFrancoDeOctubre();
+      const otra = await db().getConnection();
+      try {
+        const [[{ tomado }]] = await otra.query('SELECT GET_LOCK(?, 0) AS tomado', [BLOQUEO]);
+        assert.equal(Number(tomado), 1);
+        assert.deepEqual(await pasoDel('2026-10-23'),
+          { dia_habil: true, enviados: 0, errores: [], motivo: 'Otra corrida en curso' });
+      } finally {
+        await otra.query('SELECT RELEASE_LOCK(?)', [BLOQUEO]);
+        otra.release();
+      }
+      assert.deepEqual(await anotados(laura.id), []);
+      assert.deepEqual(await recibidos(laura.email), []);
+
+      assert.equal(await bloqueoLibre(), true);
+      assert.deepEqual(await pasoDel('2026-10-23'), { dia_habil: true, enviados: 1, errores: [] });
+      assert.equal(await bloqueoLibre(), true);
+      assert.deepEqual((await anotados(laura.id)).map((fila) => fila.clave), ['franco-2026-10']);
+    });
 });
 
 describe('en la corrida de las 8:15', () => {
@@ -286,6 +384,8 @@ describe('en la corrida de las 8:15', () => {
     assert.equal(conErrores, 1);
     assert.deepEqual(await recibidos(laura.email), []);
     assert.deepEqual(await anotados(laura.id), []);
+    // El bloqueo del paso se liberó igual
+    assert.equal(await bloqueoLibre(), true);
   });
 
   it('un email que no sale queda en los errores de la corrida y en la última corrida', async () => {
@@ -300,10 +400,31 @@ describe('en la corrida de las 8:15', () => {
       process.env.EMAIL_SOLO_A = '';
     }
     assert.equal(res.statusCode, 207);
-    assert.deepEqual(res.body.data.errores.filter((error) => error.tipo === 'mi-espacio'),
-      [{ tipo: 'mi-espacio', usuario_id: laura.id, error: 'Bloqueado por EMAIL_SOLO_A' }]);
+    // El texto del envío (el de nodemailer puede traer la dirección) queda solo en los errores de la corrida
+    assert.deepEqual(res.body.data.errores.filter((error) => error.tipo === 'mi-espacio'), [
+      { tipo: 'mi-espacio', usuario_id: laura.id, error: 'Bloqueado por EMAIL_SOLO_A', motivo: 'el email no se pudo enviar' }
+    ]);
     const { resultado } = await ultimaCorrida();
-    assert.ok(resultado.includes('No se pudieron enviar los avisos de Mi espacio: Bloqueado por EMAIL_SOLO_A'), resultado);
+    assert.ok(resultado.includes('No se pudieron enviar los avisos de Mi espacio: el email no se pudo enviar'), resultado);
+    assert.ok(!resultado.includes('Bloqueado por EMAIL_SOLO_A'), resultado);
     assert.deepEqual(await anotados(laura.id), []);
+  });
+
+  it('dos que fallan por motivos distintos: la última corrida dice cada motivo una vez', async () => {
+    const [ana, beto, carla] = [await conFrancoDeOctubre(), await conFrancoDeOctubre(), await conFrancoDeOctubre()];
+    process.env.EMAIL_SOLO_A = carla.email;
+    const aviso = mock.method(console, 'warn', () => {});
+    let res;
+    try {
+      ({ resultado: res } = await conAnotacionQueFalla(carla.id, () => corridaDiaria('2026-10-23T11:15:00Z')));
+    } finally {
+      aviso.mock.restore();
+      process.env.EMAIL_SOLO_A = '';
+    }
+    assert.deepEqual(res.body.data.errores.filter((error) => error.tipo === 'mi-espacio').map((error) => error.usuario_id),
+      [ana.id, beto.id, carla.id]);
+    const { resultado } = await ultimaCorrida();
+    assert.ok(resultado.includes('No se pudieron enviar los avisos de Mi espacio: el email no se pudo enviar; el email salió, '
+      + 'pero no se pudo anotar'), resultado);
   });
 });
