@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import mysql from 'mysql2/promise';
 import { query, cerrarDb } from './helpers.js';
+import { feriadosDelAnio, validarFeriado, TIPOS_FERIADO } from '../services/feriadosReglas.js';
 
 const BASE_TEMPORAL = 'rpad_schema_test';
 let root;
@@ -59,6 +60,10 @@ const indicesDgmit = (conexion, base) => indicesDe(conexion, base, TABLAS_DGMIT)
 // Las dos tablas de Métricas y Reportes (spec 2026-10-24-metricas-y-reportes, 3 y 4): la foto anual y los «Recibido el»
 // importados
 const TABLAS_METRICAS = ['metricas_fotos', 'actualizaciones_recibido'];
+
+// Las dos tablas de los feriados (spec 2026-10-26-feriados, 1): los que no son los 9 fijos y los años en que uno que se
+// repite no rige
+const TABLAS_FERIADOS = ['feriados', 'feriados_no_rige'];
 
 const contar = async (tabla) => {
   const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_TEMPORAL}\`.\`${tabla}\``);
@@ -304,6 +309,41 @@ describe('database/schema.sql', () => {
     ]);
   });
 
+  it('feriados: los que no son los 9 fijos y los años en que uno que se repite no rige, con sus columnas, claves y FK (spec 2026-10-26-feriados, 1)', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => TABLAS_FERIADOS.some(tabla => c.startsWith(`${tabla}.`)));
+    assert.deepEqual(lista, [
+      'feriados.id int(11) null=NO default=null key=PRI',
+      // En uno que se repite, la fecha de su primer año
+      'feriados.fecha date null=NO default=null key=MUL',
+      'feriados.nombre varchar(150) null=NO default=null key=',
+      "feriados.tipo enum('nacional','provincial','municipal','no_laborable') null=NO default=null key=",
+      // La fecha original de un trasladable
+      'feriados.trasladado_de date null=YES default=NULL key=',
+      'feriados.se_repite tinyint(1) null=NO default=0 key=',
+      // En uno que se repite, el último año en que rige (NULL: sigue)
+      'feriados.hasta_anio smallint(6) null=YES default=NULL key=',
+      'feriados.activo tinyint(1) null=NO default=1 key=',
+      'feriados.creado_por int(11) null=YES default=NULL key=MUL',
+      'feriados.created_at timestamp null=YES default=current_timestamp() key=',
+      'feriados.updated_at timestamp null=YES default=current_timestamp() key=',
+      // Un año por feriado: la clave es compuesta
+      'feriados_no_rige.feriado_id int(11) null=NO default=null key=PRI',
+      'feriados_no_rige.anio smallint(6) null=NO default=null key=PRI'
+    ]);
+    // Borrar el feriado borra sus años que no rigen; borrar a la persona deja el feriado sin autor
+    assert.deepEqual(await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_FERIADOS), [
+      'feriados.creado_por -> usuarios.id (fk_feriados_creado_por) borrado=SET NULL',
+      'feriados_no_rige.feriado_id -> feriados.id (fk_feriados_no_rige_feriado) borrado=CASCADE'
+    ]);
+    // Sin índice único en la fecha: el mismo día puede tener dos feriados
+    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_FERIADOS), [
+      'feriados.fk_feriados_creado_por (creado_por) repetible=1',
+      'feriados.idx_feriados_fecha (fecha) repetible=1',
+      'feriados.PRIMARY (id) repetible=0',
+      'feriados_no_rige.PRIMARY (feriado_id,anio) repetible=0'
+    ]);
+  });
+
   // Generador de Notas (spec 2026-10-24-generador-de-notas, 2 y 8): el ámbito del área decide qué nota de la DGMIT le toca
   it('areas tiene ambito (municipal o externo, municipal por defecto) después de articulo_superior', async () => {
     const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('areas.'));
@@ -324,7 +364,7 @@ describe('database/schema.sql', () => {
     assert.deepEqual({ ...fk }, { tabla: 'cambios_pendientes', columna: 'id', borrado: 'SET NULL' });
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido']) {
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige']) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
@@ -1299,5 +1339,340 @@ describe('migración del generador de notas', () => {
     assert.deepEqual(await columnas(root, BASE_GENERADOR), original);
     assert.deepEqual(await columnas(root, BASE_GENERADOR), await columnas(root, BASE_TEMPORAL));
     assert.deepEqual(await ambitos(), { 2: 'externo', 6: 'externo', 18: 'municipal', 25: 'municipal', 27: 'externo', 35: 'externo' });
+  });
+});
+
+// Feriados (spec 2026-10-26-feriados, 1): los feriados que no son los 9 fijos y los años en que uno que se repite no rige.
+// La migración y su vuelta atrás, sobre una base descartable creada con schema.sql
+describe('migracion-feriados.sql', () => {
+  const BASE_FERIADOS = 'rpad_schema_feriados_test';
+  const MIGRACION = 'migracion-feriados.sql';
+  const ROLLBACK = 'rollback-feriados.sql';
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const esDeLasTablas = (c) => TABLAS_FERIADOS.some(tabla => c.startsWith(`${tabla}.`));
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main)
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_FERIADOS}\``);
+    await root.query(`CREATE DATABASE \`${BASE_FERIADOS}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_FERIADOS}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) {
+      await root.query(`
+        DROP TABLE feriados_no_rige;
+        DROP TABLE feriados;`);
+    }
+  };
+  // Un feriado que se repite, cargado por un usuario, y un año en que no rige: lo que la vuelta atrás tiene que poder
+  // borrar con las FK puestas
+  const cargarDatos = async () => {
+    const [{ insertId: usuario }] = await root.query(
+      `INSERT INTO \`${BASE_FERIADOS}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES ('t_admin', 'x', 't_admin', 't_admin@rpad.test', 'admin')`);
+    const [{ insertId: feriado }] = await root.query(
+      `INSERT INTO \`${BASE_FERIADOS}\`.feriados (fecha, nombre, tipo, se_repite, creado_por) VALUES ('2026-12-13', 'Feriado de prueba', 'municipal', 1, ?)`, [usuario]);
+    await root.query(`INSERT INTO \`${BASE_FERIADOS}\`.feriados_no_rige (feriado_id, anio) VALUES (?, 2027)`, [feriado]);
+  };
+  const contarEn = async (tabla) => {
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_FERIADOS}\`.\`${tabla}\``);
+    return total;
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_FERIADOS}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega (nada de DROP, RENAME ni CHECK)', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+  });
+
+  it('las cabeceras dicen la spec, el orden, que se puede repetir y cómo se deshace; el rollback, que se pierden los feriados', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-10-26-feriados-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-feriados\.sql/);
+    assert.match(cabecera(ROLLBACK), /migracion-feriados\.sql/);
+    assert.match(cabecera(ROLLBACK), /primero volver a subir los archivos anteriores/);
+    assert.match(cabecera(ROLLBACK), /se pierden/i);
+    // Lo que se pierde, dicho con su nombre (no alcanza con el del archivo)
+    assert.match(cabecera(ROLLBACK), /los feriados cargados/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('el rollback borra primero los años que no rigen y después los feriados: así no choca con la FK', () => {
+    const borrados = [...codigo(ROLLBACK).matchAll(/DROP TABLE IF EXISTS `(\w+)`/gi)].map(m => m[1]);
+    assert.deepEqual(borrados, ['feriados_no_rige', 'feriados']);
+  });
+
+  it('desde la estructura de main deja la de schema.sql y se puede repetir', async () => {
+    await crearBase({ conLoNuevo: false });
+    const anterior = await columnas(root, BASE_FERIADOS);
+    assert.ok(!anterior.some(esDeLasTablas), 'la base de partida ya tiene las tablas');
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_FERIADOS), await columnas(root, BASE_TEMPORAL));
+    // Y también las claves foráneas y los índices, que las columnas no muestran del todo
+    assert.deepEqual(await clavesAjenasDe(root, BASE_FERIADOS, TABLAS_FERIADOS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_FERIADOS));
+    assert.deepEqual(await indicesDe(root, BASE_FERIADOS, TABLAS_FERIADOS), await indicesDe(root, BASE_TEMPORAL, TABLAS_FERIADOS));
+  });
+
+  it('el rollback se puede repetir, deja la estructura de main sin borrar al usuario que cargó el feriado, y la migración la recupera', async () => {
+    await crearBase({ conLoNuevo: true });
+    await cargarDatos();
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin las dos tablas
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
+    assert.deepEqual(await columnas(root, BASE_FERIADOS), deMain);
+    // El usuario que había cargado el feriado sigue ahí
+    assert.equal(await contarEn('usuarios'), 1);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_FERIADOS), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_FERIADOS, TABLAS_FERIADOS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_FERIADOS));
+    assert.deepEqual(await indicesDe(root, BASE_FERIADOS, TABLAS_FERIADOS), await indicesDe(root, BASE_TEMPORAL, TABLAS_FERIADOS));
+  });
+});
+
+// La precarga de los feriados de 2026 y 2027 (spec 2026-10-26-feriados, 5), con las fechas verificadas de
+// docs/superpowers/specs/2026-10-26-feriados-fuentes.md (sección «Respuestas del usuario y lista para la precarga»). Sobre una
+// base descartable creada con schema.sql: la forma, la fuente de cada fila, que se puede repetir y que deja exactamente esa lista
+describe('migracion-feriados-datos.sql', () => {
+  const BASE_DATOS = 'rpad_schema_feriados_datos_test';
+  const RUTA = new URL('../database/updates/migracion-feriados-datos.sql', import.meta.url);
+  // Se lee en cada test: si el archivo falta, falla cada uno y no el archivo de tests entero
+  const archivo = () => fs.readFileSync(RUTA, 'utf8');
+  const lineas = () => archivo().split(/\r?\n/);
+  const esComentario = (linea) => linea.trim().startsWith('--');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const sentencias = () => lineas().filter(l => l.trim() && !esComentario(l));
+  // La cabecera: los comentarios de antes de la primera sentencia (los renglones de las fuentes van más abajo)
+  const cabecera = () => {
+    const todas = lineas();
+    const primera = todas.findIndex(l => l.trim() && !esComentario(l));
+    return todas.slice(0, primera < 0 ? todas.length : primera).filter(l => l.startsWith('--')).join('\n');
+  };
+  const esInsert = (linea) => /^\s*INSERT\b/i.test(linea);
+  const FORMA = /^INSERT INTO feriados \(fecha, nombre, tipo, trasladado_de, se_repite, creado_por\) SELECT '(\d{4}-\d{2}-\d{2})', '([^']+)', '(\w+)', (?:NULL|'(\d{4}-\d{2}-\d{2})'), ([01]), NULL FROM DUAL WHERE NOT EXISTS \(SELECT 1 FROM feriados WHERE fecha = '(\d{4}-\d{2}-\d{2})' AND nombre = '([^']+)'\);$/;
+  // Uno por INSERT, en el orden del archivo: { fecha, nombre, tipo, trasladado_de, se_repite } y la fecha y el nombre del WHERE
+  const inserts = () => sentencias().filter(esInsert).map((linea) => {
+    const m = FORMA.exec(linea);
+    assert.ok(m, `INSERT con una forma distinta de la acordada: ${linea}`);
+    return {
+      fecha: m[1], nombre: m[2], tipo: m[3], trasladado_de: m[4] ?? null, se_repite: Number(m[5]),
+      dondeFecha: m[6], dondeNombre: m[7]
+    };
+  });
+  // La consulta de verificación va comentada, en un solo renglón: -- SELECT … ;
+  const verificacion = () => lineas().map(l => /^-- (SELECT .+;)$/.exec(l)?.[1]).filter(Boolean);
+
+  // La lista para la precarga del archivo de fuentes, copiada a mano: [fecha, nombre, tipo, trasladado_de, se_repite]. Las que se
+  // repiten (el 23/2, el 28/7 y el 8/11) van una sola vez, con la fecha de 2026
+  const LISTA = [
+    ['2026-01-02', 'Asueto administrativo municipal', 'no_laborable', null, 0],
+    ['2026-02-16', 'Carnaval', 'nacional', null, 0],
+    ['2026-02-17', 'Carnaval', 'nacional', null, 0],
+    ['2026-02-23', 'Aniversario de Comodoro Rivadavia', 'municipal', null, 1],
+    ['2026-03-23', 'Día no laborable con fines turísticos', 'no_laborable', null, 0],
+    ['2026-04-02', 'Jueves Santo', 'no_laborable', null, 0],
+    ['2026-04-03', 'Viernes Santo', 'nacional', null, 0],
+    ['2026-04-30', 'Plebiscito de 1902', 'provincial', null, 0],
+    ['2026-06-15', 'Paso a la Inmortalidad del General Don Martín Miguel de Güemes', 'nacional', '2026-06-17', 0],
+    ['2026-07-10', 'Día no laborable con fines turísticos', 'no_laborable', null, 0],
+    ['2026-07-28', 'Desembarco de los colonos galeses (Gesta galesa)', 'provincial', null, 1],
+    ['2026-08-17', 'Paso a la Inmortalidad del General José de San Martín', 'nacional', null, 0],
+    ['2026-10-12', 'Día del Respeto a la Diversidad Cultural', 'nacional', null, 0],
+    ['2026-11-02', 'Jura de fidelidad a la Bandera Argentina de los pueblos tehuelches y mapuches', 'provincial', '2026-11-03', 0],
+    ['2026-11-08', 'Día del Empleado Municipal', 'municipal', null, 1],
+    ['2026-11-09', 'Visita de Su Santidad el Papa León XIV', 'nacional', null, 0],
+    ['2026-11-23', 'Día de la Soberanía Nacional', 'nacional', '2026-11-20', 0],
+    ['2026-12-07', 'Día no laborable con fines turísticos', 'no_laborable', null, 0],
+    ['2026-12-13', 'Día del Petróleo Nacional', 'provincial', null, 0],
+    ['2027-02-08', 'Carnaval', 'nacional', null, 0],
+    ['2027-02-09', 'Carnaval', 'nacional', null, 0],
+    ['2027-03-25', 'Jueves Santo', 'no_laborable', null, 0],
+    ['2027-03-26', 'Viernes Santo', 'nacional', null, 0],
+    ['2027-06-21', 'Paso a la Inmortalidad del General Don Martín Miguel de Güemes', 'nacional', '2027-06-17', 0],
+    ['2027-08-16', 'Paso a la Inmortalidad del General José de San Martín', 'nacional', '2027-08-17', 0],
+    ['2027-10-11', 'Día del Respeto a la Diversidad Cultural', 'nacional', '2027-10-12', 0],
+    ['2027-11-01', 'Jura de fidelidad a la Bandera Argentina de los pueblos tehuelches y mapuches', 'provincial', '2027-11-03', 0],
+    ['2027-12-13', 'Día del Petróleo Nacional', 'provincial', null, 0]
+  ];
+  const porFecha = (a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+  const comoLista = (filas) => filas.map(f => [f.fecha, f.nombre, f.tipo, f.trasladado_de, f.se_repite]).sort(porFecha);
+
+  // Una base con la estructura de schema.sql y un administrador, el que carga desde la pestaña; devuelve su id
+  const crearBase = async () => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_DATOS}\``);
+    await root.query(`CREATE DATABASE \`${BASE_DATOS}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_DATOS}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    const [{ insertId }] = await root.query(
+      `INSERT INTO \`${BASE_DATOS}\`.usuarios (username, password_hash, nombre_completo, email, rol) VALUES ('t_admin', 'x', 't_admin', 't_admin@rpad.test', 'admin')`);
+    return insertId;
+  };
+  const correr = async () => {
+    await root.query(`USE \`${BASE_DATOS}\``);
+    await root.query(archivo());
+  };
+  // Las filas de la base, con la forma de las reglas (la de services/feriadosDatos.js) más quién la cargó
+  const filas = async () => {
+    const [lista] = await root.query(
+      `SELECT id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, nombre, tipo, DATE_FORMAT(trasladado_de, '%Y-%m-%d') AS trasladado_de,
+              se_repite, hasta_anio, activo, creado_por
+         FROM \`${BASE_DATOS}\`.feriados ORDER BY fecha, id`);
+    return lista.map(f => ({
+      id: Number(f.id), fecha: f.fecha, nombre: f.nombre, tipo: f.tipo, trasladado_de: f.trasladado_de ?? null,
+      se_repite: Number(f.se_repite), hasta_anio: f.hasta_anio === null ? null : Number(f.hasta_anio), activo: Number(f.activo),
+      creado_por: f.creado_por === null ? null : Number(f.creado_por), no_rige: []
+    }));
+  };
+  const cargarDesdeLaPestana = async (usuario, fecha, nombre, tipo) => {
+    await root.query(`INSERT INTO \`${BASE_DATOS}\`.feriados (fecha, nombre, tipo, creado_por) VALUES (?, ?, ?, ?)`,
+      [fecha, nombre, tipo, usuario]);
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_DATOS}\``);
+  });
+
+  it('existe y se pega tal cual en phpMyAdmin: empieza con SET NAMES utf8mb4 y solo escribe INSERT con la forma acordada (sin DELIMITER, USE, DROP, RENAME, CHECK, DELETE ni UPDATE)', () => {
+    assert.ok(fs.existsSync(RUTA), 'falta database/updates/migracion-feriados-datos.sql');
+    const [primera, ...resto] = sentencias();
+    assert.equal(primera, 'SET NAMES utf8mb4;');
+    assert.ok(resto.length > 0, 'no hay ningún INSERT');
+    for (const linea of resto) assert.match(linea, FORMA, `sentencia inesperada: ${linea}`);
+    assert.doesNotMatch(sentencias().join('\n'), /\b(DELIMITER|USE|DROP|RENAME|CHECK|DELETE|UPDATE)\b/i);
+  });
+
+  it('la cabecera dice la spec y el archivo de las fuentes, el orden, cómo se corre, que se puede repetir, que las que se repiten van una vez con la fecha de 2026, que lo no decretado se carga desde la pestaña y cómo se verifica', () => {
+    const texto = cabecera();
+    assert.match(texto, /docs\/superpowers\/specs\/2026-10-26-feriados-design\.md/);
+    assert.match(texto, /docs\/superpowers\/specs\/2026-10-26-feriados-fuentes\.md/);
+    assert.match(texto, /ORDEN: correr DESPUÉS de migracion-feriados\.sql/);
+    assert.match(texto, /phpMyAdmin > base del RPAD > pestaña SQL/);
+    assert.match(texto, /Se puede volver a correr/);
+    assert.match(texto, /9 feriados nacionales fijos/);
+    assert.match(texto, /una sola vez, con la fecha de 2026/);
+    // Lo que todavía no está decretado no se inventa: se carga desde la pestaña cuando salga
+    assert.match(texto, /desde Configuración → Feriados/);
+    assert.match(texto, /fines turísticos de 2027/);
+    assert.match(texto, /30\/04\/2027/);
+    assert.match(texto, /13\/12\/2026/);
+    assert.match(texto, /VERIFICACIÓN/);
+    assert.match(texto, /Para deshacer: rollback-feriados\.sql/);
+  });
+
+  it('cada INSERT lleva arriba, en su propio renglón, «-- Fuente:» con la norma y un link, y cada fuente es la de un INSERT', () => {
+    const todas = lineas();
+    const posiciones = todas.map((l, i) => (esInsert(l) ? i : -1)).filter(i => i >= 0);
+    assert.ok(posiciones.length > 0, 'no hay ningún INSERT');
+    for (const i of posiciones) {
+      assert.match(todas[i - 1] ?? '', /^-- Fuente: \S.*\(https:\/\/\S+\)/, `el INSERT del renglón ${i + 1} no tiene arriba su fuente`);
+    }
+    const fuentes = todas.map((l, i) => (/^\s*-- Fuente:/.test(l) ? i : -1)).filter(i => i >= 0);
+    assert.deepEqual(fuentes.map(i => i + 1), posiciones, 'hay una fuente que no va justo arriba de un INSERT');
+  });
+
+  it('son las 28 filas de la lista de las fuentes (19 de 2026 y 9 de 2027), cada una con la misma fecha y el mismo nombre en el SELECT y en el NOT EXISTS, y todas pasan la validación de la pestaña', () => {
+    const lista = inserts();
+    assert.equal(lista.length, 28);
+    for (const ins of lista) {
+      assert.equal(ins.dondeFecha, ins.fecha, `el NOT EXISTS de ${ins.fecha} mira otra fecha: ${ins.dondeFecha}`);
+      assert.equal(ins.dondeNombre, ins.nombre, `el NOT EXISTS de ${ins.fecha} mira otro nombre: ${ins.dondeNombre}`);
+      // Lo que la API exigiría si se cargara desde la pestaña (un hoy de 2026: las fechas van hasta el 31/12/2027)
+      const { datos, error } = validarFeriado(ins, '2026-10-26');
+      assert.equal(error, null, `${ins.fecha} ${ins.nombre}: ${error?.mensaje}`);
+      assert.deepEqual(datos, { fecha: ins.fecha, nombre: ins.nombre, tipo: ins.tipo, trasladado_de: ins.trasladado_de, se_repite: ins.se_repite });
+    }
+    assert.deepEqual(comoLista(lista), [...LISTA].sort(porFecha));
+  });
+
+  it('corrida dos veces sobre una base nueva deja exactamente las 28 filas, activas, sin quién las cargó y sin años que no rigen: la segunda no agrega ninguna', async () => {
+    await crearBase();
+    await correr();
+    const primera = await filas();
+    assert.equal(primera.length, 28);
+    await correr();
+    const segunda = await filas();
+    assert.equal(segunda.length, primera.length);
+    assert.deepEqual(segunda, primera);
+    assert.deepEqual(comoLista(segunda), [...LISTA].sort(porFecha));
+    for (const fila of segunda) {
+      assert.equal(fila.activo, 1, `${fila.fecha} no quedó activa`);
+      assert.equal(fila.creado_por, null, `${fila.fecha} quedó con quién la cargó`);
+      assert.equal(fila.hasta_anio, null, `${fila.fecha} quedó con un hasta_anio`);
+    }
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM \`${BASE_DATOS}\`.feriados_no_rige`);
+    assert.equal(total, 0);
+  });
+
+  it('las fechas son todas de 2026 o 2027 (19 y 9); se repiten exactamente tres, el 23/2, el 28/7 y el 8/11, con la fecha de 2026; están los cuatro tipos, y el Jueves Santo de los dos años es no laborable', async () => {
+    await crearBase();
+    await correr();
+    const lista = await filas();
+    assert.ok(lista.every(f => /^202[67]-/.test(f.fecha)), 'hay una fecha que no es de 2026 ni de 2027');
+    assert.equal(lista.filter(f => f.fecha.startsWith('2026-')).length, 19);
+    assert.equal(lista.filter(f => f.fecha.startsWith('2027-')).length, 9);
+    assert.deepEqual(lista.filter(f => f.se_repite === 1).map(f => f.fecha), ['2026-02-23', '2026-07-28', '2026-11-08']);
+    assert.deepEqual([...new Set(lista.map(f => f.tipo))].sort(), [...TIPOS_FERIADO].sort());
+    const juevesSanto = lista.filter(f => f.nombre === 'Jueves Santo');
+    assert.deepEqual(juevesSanto.map(f => [f.fecha, f.tipo]), [['2026-04-02', 'no_laborable'], ['2027-03-25', 'no_laborable']]);
+  });
+
+  it('en la lista de 2027 de la pestaña, las 9 filas de 2027 más las tres que se repiten, proyectadas: el 23/2, el 28/7 y el 8/11', async () => {
+    await crearBase();
+    await correr();
+    const lista = await filas();
+    const deLaTabla = (anio) => feriadosDelAnio(lista, anio).filter(f => !f.fijo);
+    assert.equal(deLaTabla(2026).length, 19);
+    const de2027 = deLaTabla(2027);
+    assert.equal(de2027.length, 12);
+    assert.deepEqual(de2027.filter(f => f.se_repite === 1).map(f => [f.fecha, f.nombre]), [
+      ['2027-02-23', 'Aniversario de Comodoro Rivadavia'],
+      ['2027-07-28', 'Desembarco de los colonos galeses (Gesta galesa)'],
+      ['2027-11-08', 'Día del Empleado Municipal']
+    ]);
+    assert.ok(de2027.every(f => f.rige), 'hay uno que en 2027 no rige');
+  });
+
+  it('no duplica lo que ya se cargó desde la pestaña con la misma fecha y el mismo nombre, sí carga el de otro nombre el mismo día, y una fila que se dio de baja no vuelve', async () => {
+    const usuario = await crearBase();
+    // Desde la pestaña, antes de correrla: uno igual a una fila de la precarga y otro distinto el mismo día que otra
+    await cargarDesdeLaPestana(usuario, '2026-03-23', 'Día no laborable con fines turísticos', 'no_laborable');
+    await cargarDesdeLaPestana(usuario, '2026-12-13', 'Otro feriado de prueba', 'municipal');
+    await correr();
+    let lista = await filas();
+    assert.equal(lista.length, 28 + 1);
+    const del23 = lista.filter(f => f.fecha === '2026-03-23');
+    assert.equal(del23.length, 1);
+    assert.equal(del23[0].creado_por, usuario, 'la del 23/3 no es la que se cargó desde la pestaña');
+    assert.deepEqual(lista.filter(f => f.fecha === '2026-12-13').map(f => f.nombre).sort(), ['Día del Petróleo Nacional', 'Otro feriado de prueba']);
+    // Una de la precarga se da de baja desde la pestaña: volver a correrla no la resucita ni carga otra
+    const carnaval = lista.find(f => f.fecha === '2026-02-16');
+    await root.query(`UPDATE \`${BASE_DATOS}\`.feriados SET activo = 0 WHERE id = ?`, [carnaval.id]);
+    await correr();
+    lista = await filas();
+    assert.equal(lista.length, 28 + 1);
+    assert.deepEqual(lista.filter(f => f.fecha === '2026-02-16').map(f => [f.id, f.activo]), [[carnaval.id, 0]]);
+  });
+
+  it('la consulta de verificación, comentada en un solo renglón al final: 28 filas, 19 de 2026, 9 de 2027 y 3 que se repiten, sin contar lo cargado desde la pestaña', async () => {
+    const todas = lineas();
+    const consultas = verificacion();
+    assert.equal(consultas.length, 1);
+    const ultimoInsert = todas.map((l, i) => (esInsert(l) ? i : -1)).filter(i => i >= 0).at(-1);
+    assert.ok(todas.findIndex(l => l === `-- ${consultas[0]}`) > ultimoInsert, 'la verificación no está al final');
+    const usuario = await crearBase();
+    await cargarDesdeLaPestana(usuario, '2026-12-24', 'Asueto de prueba', 'no_laborable');
+    await correr();
+    await root.query(`USE \`${BASE_DATOS}\``);
+    const [[fila]] = await root.query(consultas[0]);
+    assert.deepEqual(Object.fromEntries(Object.entries(fila).map(([clave, valor]) => [clave, Number(valor)])),
+      { filas: 28, de_2026: 19, de_2027: 9, se_repiten: 3 });
   });
 });

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi espacio, formularios - RPAD (maqueta)</title>
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="maqueta.css">
+</head>
+<!-- MAQUETA de Mi espacio (26/10/2026): los modales, dibujados en la página para verlos juntos. Datos inventados. -->
+<body data-pagina="formularios" data-persona="permanente">
+<div class="app-container">
+    <header id="m-header"></header>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <aside class="sidebar" id="sidebar" aria-label="Menú"></aside>
+
+    <main class="main-content">
+        <div class="me-pagina">
+            <div class="page-header"><h1 class="page-title">Mi espacio: los formularios</h1></div>
+            <p class="me-bajada">En el RPAD cada uno se abre como un modal sobre la página. Acá están dibujados juntos. Los botones de opciones se pueden tocar, y «Ver como» (abajo) cambia lo que corresponde a cada modalidad.</p>
+
+            <div class="me-dialogos">
+                <!-- ===================== Cargar licencia ===================== -->
+                <div id="licencia">
+                    <p class="me-maqueta-titulo">«Cargar licencia» (tocá los tipos)</p>
+                    <div class="me-dialogo" role="dialog" aria-labelledby="t-licencia">
+                        <div class="me-dialogo-cabeza"><h2 id="t-licencia">Cargar licencia</h2><button class="me-cerrar" type="button" aria-label="Cerrar">&times;</button></div>
+                        <div class="me-dialogo-cuerpo">
+                            <div class="me-campo">
+                                <span class="me-rotulo">Tipo</span>
+                                <div class="me-opciones solo-permanente" data-segmento="tipo-p">
+                                    <button type="button" class="me-opcion" data-valor="vacaciones" aria-pressed="true"><b>Vacaciones</b><small>38 disponibles</small></button>
+                                    <button type="button" class="me-opcion" data-valor="franquicia"><b>Franquicia</b><small>Quedan 25 h de 42</small></button>
+                                    <button type="button" class="me-opcion" data-valor="estudios"><b>Estudios</b><small>Quedan 9 de 15</small></button>
+                                    <button type="button" class="me-opcion" data-valor="medica"><b>Atención médica</b><small>Quedan 22 de 25</small></button>
+                                    <button type="button" class="me-opcion" data-valor="familiar"><b>Grupo familiar</b><small>Quedan 23 de 25</small></button>
+                                    <button type="button" class="me-opcion" data-valor="extraordinaria"><b>Médica extraordinaria</b><small>Sin tope</small></button>
+                                    <button type="button" class="me-opcion" data-valor="franco"><b>Franco compensatorio</b><small>1 para octubre</small></button>
+                                </div>
+                                <div class="me-opciones solo-contrato" data-segmento="tipo-c">
+                                    <button type="button" class="me-opcion" data-valor="vacaciones" aria-pressed="true"><b>Vacaciones</b><small>13 disponibles</small></button>
+                                    <button type="button" class="me-opcion" data-valor="estudios"><b>Estudios</b><small>Quedan 7 de 10</small></button>
+                                    <button type="button" class="me-opcion" data-valor="medica"><b>Atención médica</b><small>Quedan 25 de 25</small></button>
+                                    <button type="button" class="me-opcion" data-valor="familiar"><b>Grupo familiar</b><small>Quedan 21 de 25</small></button>
+                                    <button type="button" class="me-opcion" data-valor="extraordinaria"><b>Médica extraordinaria</b><small>Sin tope</small></button>
+                                    <button type="button" class="me-opcion" data-valor="horas"><b>Horas a favor</b><small>Quedan 1,5 h en octubre</small></button>
+                                </div>
+                            </div>
+
+                            <!-- Días: vacaciones -->
+                            <div data-panel="tipo-p:vacaciones tipo-c:vacaciones" class="me-dialogo-cuerpo" style="padding:0">
+                                <div class="me-fila-campos"><div class="me-campo"><label>Desde</label><input type="text" value="03/11/2026"></div><div class="me-campo"><label>Hasta, inclusive</label><input type="text" value="09/11/2026"></div></div>
+                                <div class="me-calculo solo-permanente"><b>5 días hábiles</b> (del martes 3 al lunes 9: el sábado y el domingo no cuentan). Salen de la licencia 2024, la más vieja. Te quedan <b>33 días</b>: 3 de la 2024 (vencen el 31/12/2026), 20 de la 2025 y 10 de la 2026.</div>
+                                <div class="me-calculo solo-contrato"><b>5 días hábiles</b> (del martes 3 al lunes 9: el sábado y el domingo no cuentan). Salen de la licencia 2025, la más vieja. Te quedan <b>8 días</b>, todos de la 2026.</div>
+                            </div>
+                            <!-- Días: atención médica, grupo familiar, extraordinaria -->
+                            <div data-panel="tipo-p:medica tipo-p:familiar tipo-p:extraordinaria tipo-c:medica tipo-c:familiar tipo-c:extraordinaria" class="me-dialogo-cuerpo" style="padding:0" hidden>
+                                <div class="me-fila-campos"><div class="me-campo"><label>Desde</label><input type="text" value="21/09/2026"></div><div class="me-campo"><label>Hasta, inclusive</label><input type="text" value="23/09/2026"></div></div>
+                                <div class="me-calculo"><b>3 días hábiles.</b> El tipo de licencia lo ves solo vos: si lo mostrás a tus compañeros, ven solo que no estás.</div>
+                            </div>
+                            <!-- Estudios -->
+                            <div data-panel="tipo-p:estudios tipo-c:estudios" class="me-dialogo-cuerpo" style="padding:0" hidden>
+                                <div class="me-fila-campos"><div class="me-campo"><label>Desde</label><input type="text" value="01/12/2026"></div><div class="me-campo"><label>Hasta, inclusive</label><input type="text" value="03/12/2026"></div></div>
+                                <div class="me-calculo"><b>3 días hábiles</b>, el máximo por examen. <span class="solo-permanente">Te quedan <b>6 de 15</b>.</span><span class="solo-contrato">Te quedan <b>4 de 10</b>.</span></div>
+                            </div>
+                            <!-- Franquicia (por hora entera) -->
+                            <div data-panel="tipo-p:franquicia" class="me-dialogo-cuerpo" style="padding:0" hidden>
+                                <div class="me-campo"><label>Fecha</label><input type="text" value="15/10/2026"></div>
+                                <div class="me-campo"><span class="me-rotulo">Horas</span>
+                                    <div class="me-numeros" data-segmento="horas-fq"><button type="button" data-valor="1">1</button><button type="button" data-valor="2" aria-pressed="true">2</button><button type="button" data-valor="3">3</button><button type="button" data-valor="4">4</button><button type="button" data-valor="5">5</button><button type="button" data-valor="6">6</button><button type="button" data-valor="7">7, el día entero</button></div>
+                                </div>
+                                <div class="me-calculo">Te quedan <b>23 de 42</b> horas de franquicia. Con 7 horas es el día entero y pasa a Configuración, como cualquier ausencia.</div>
+                            </div>
+                            <!-- Franco compensatorio -->
+                            <div data-panel="tipo-p:franco" class="me-dialogo-cuerpo" style="padding:0" hidden>
+                                <div class="me-campo"><label>Fecha</label><input type="text" value="30/10/2026"></div>
+                                <div class="me-calculo">Usás el franco de <b>octubre</b>, por las horas extras de agosto. Es el día entero.</div>
+                            </div>
+                            <!-- Horas a favor (contrato, de a media hora) -->
+                            <div data-panel="tipo-c:horas" class="me-dialogo-cuerpo" style="padding:0" hidden>
+                                <div class="me-fila-campos"><div class="me-campo"><label>Fecha</label><input type="text" value="28/10/2026"></div><div class="me-campo"><label>Horas</label><select><option>0,5</option><option selected>1,5</option><option>7 (el día entero)</option></select></div></div>
+                                <div class="me-calculo">Usás <b>1,5 horas</b> a favor de octubre. Te quedan <b>0</b>.</div>
+                            </div>
+
+                            <label class="me-check"><input type="checkbox" checked><span>Mostrar a mis compañeros que no estoy<small>Ven «<span class="solo-permanente">Laura Gómez</span><span class="solo-contrato">Sofía Paz</span> no está» en su agenda, sin el tipo de licencia.</small></span></label>
+                            <div class="me-aviso me-aviso-azul solo-permanente" style="margin:0">
+                                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                                <span>Las fechas pasan a <b>Configuración → Licencias</b>: mientras dure, no recibís emails del sistema ni auditás cambios. El tipo no pasa.</span>
+                            </div>
+                        </div>
+                        <div class="me-dialogo-pie"><button class="sg-btn sg-btn-borde" type="button">Cancelar</button><button class="sg-btn sg-btn-tinta" type="button">Guardar</button></div>
+                    </div>
+                </div>
+
+                <!-- ===================== Cargar horas extras ===================== -->
+                <div id="horas">
+                    <p class="me-maqueta-titulo">«Cargar horas extras»</p>
+                    <div class="me-dialogo" role="dialog" aria-labelledby="t-horas">
+                        <div class="me-dialogo-cabeza"><h2 id="t-horas"><span class="solo-permanente">Cargar horas extras al 100%</span><span class="solo-contrato">Cargar horas extras</span></h2><button class="me-cerrar" type="button" aria-label="Cerrar">&times;</button></div>
+                        <div class="me-dialogo-cuerpo">
+                            <div class="me-fila-campos tres"><div class="me-campo"><label>Fecha</label><input type="text" value="29/10/2026"></div><div class="me-campo"><label>De</label><input type="text" value="19:00"></div><div class="me-campo"><label>A</label><input type="text" value="22:30"></div></div>
+                            <div class="me-calculo solo-permanente"><b>3,5 horas.</b> En octubre llevás <b>14 horas</b>: <b>2 francos compensatorios</b> para usar en diciembre.</div>
+                            <div class="me-calculo solo-contrato"><b>3,5 horas.</b> En octubre llevás <b>7,5 horas</b>: en noviembre vas a tener <b>7,5 horas a favor</b>.</div>
+                            <div class="me-campo"><label>Nota <span style="font-weight:400;color:var(--sg-suave)">(opcional)</span></label><input type="text" value="Carga del dataset de Tránsito"></div>
+                            <p class="me-nota" style="margin:0">Si pasa la medianoche, se carga en el día en que empezó.</p>
+                        </div>
+                        <div class="me-dialogo-pie"><button class="sg-btn sg-btn-borde" type="button">Cancelar</button><button class="sg-btn sg-btn-tinta" type="button">Guardar</button></div>
+                    </div>
+                </div>
+
+                <!-- ===================== Nuevo evento ===================== -->
+                <div id="evento">
+                    <p class="me-maqueta-titulo">«Nuevo evento» (tocá «Solo yo» y «Compartido», y las personas)</p>
+                    <div class="me-dialogo" role="dialog" aria-labelledby="t-evento">
+                        <div class="me-dialogo-cabeza"><h2 id="t-evento">Nuevo evento</h2><button class="me-cerrar" type="button" aria-label="Cerrar">&times;</button></div>
+                        <div class="me-dialogo-cuerpo">
+                            <div class="me-campo"><label>Qué</label><input type="text" value="Reunión de equipo"></div>
+                            <div class="me-fila-campos tres"><div class="me-campo"><label>Fecha</label><input type="text" value="27/10/2026"></div><div class="me-campo"><label>De</label><input type="text" value="10:00"></div><div class="me-campo"><label>A</label><input type="text" value="11:00"></div></div>
+                            <div class="me-campo"><label>Detalle <span style="font-weight:400;color:var(--sg-suave)">(opcional)</span></label><textarea>Sala de reuniones del 2.º piso. Traer el avance de Métricas.</textarea></div>
+                            <div class="me-campo">
+                                <span class="me-rotulo">¿Quién lo ve?</span>
+                                <div class="me-opciones dos" data-segmento="quien">
+                                    <button type="button" class="me-opcion" data-valor="yo"><b>Solo yo</b><small>Nadie más lo ve</small></button>
+                                    <button type="button" class="me-opcion" data-valor="compartido" aria-pressed="true"><b>Compartido</b><small>Con las personas que elijas</small></button>
+                                </div>
+                            </div>
+                            <div class="me-campo" data-panel="quien:compartido">
+                                <span class="me-rotulo">Con quién <span style="font-weight:400;color:var(--sg-suave)">(4 personas)</span></span>
+                                <div class="me-personas" data-varios>
+                                    <button type="button" class="me-persona" aria-pressed="false"><i>★</i>Todos</button>
+                                    <button type="button" class="me-persona" aria-pressed="true"><i>MR</i>Martín Ríos</button>
+                                    <button type="button" class="me-persona" aria-pressed="true"><i>SP</i>Sofía Paz</button>
+                                    <button type="button" class="me-persona" aria-pressed="true"><i>CB</i>Carla Benítez</button>
+                                    <button type="button" class="me-persona" aria-pressed="false"><i>JO</i>Julián Ortiz</button>
+                                    <button type="button" class="me-persona" aria-pressed="true"><i>DF</i>Diego Fernández</button>
+                                </div>
+                                <span class="me-ayuda">Les llega un email cuando los sumás, y otro si cambiás o borrás el evento. Solo vos lo podés cambiar.</span>
+                            </div>
+                            <div class="me-campo">
+                                <label>Recordatorio por email</label>
+                                <select><option>Sin aviso</option><option>15 minutos antes</option><option>1 hora antes</option><option selected>2 horas antes (a las 08:00)</option><option>1 día antes</option></select>
+                                <span class="me-ayuda" data-panel="quien:compartido">Les llega a todas las personas del evento.</span>
+                            </div>
+                        </div>
+                        <div class="me-dialogo-pie"><button class="sg-btn sg-btn-borde" type="button">Cancelar</button><button class="sg-btn sg-btn-tinta" type="button">Guardar</button></div>
+                    </div>
+                </div>
+
+                <!-- ===================== Ver un evento de otra persona ===================== -->
+                <div id="evento-ajeno">
+                    <p class="me-maqueta-titulo">Un evento que compartió otra persona</p>
+                    <div class="me-dialogo" role="dialog" aria-labelledby="t-ajeno">
+                        <div class="me-dialogo-cabeza"><h2 id="t-ajeno">Entrega del informe trimestral</h2><button class="me-cerrar" type="button" aria-label="Cerrar">&times;</button></div>
+                        <div class="me-dialogo-cuerpo">
+                            <p style="margin:0;font-size:1rem"><b>Jueves 29/10/2026, de 09:00 a 10:00</b></p>
+                            <p style="margin:0;color:var(--sg-texto)">Revisamos el informe antes de mandarlo a la Subsecretaría.</p>
+                            <p style="margin:0" class="me-prox-detalle"><span class="me-insignia violeta">Compartido</span>Lo creó Martín Ríos. Están: vos, Sofía Paz y Carla Benítez.</p>
+                            <div class="me-campo"><label>Mi recordatorio</label><select><option>Sin aviso</option><option selected>2 horas antes (el que eligió Martín)</option></select><span class="me-ayuda">Solo quien lo creó puede cambiar el evento.</span></div>
+                        </div>
+                        <div class="me-dialogo-pie"><button class="sg-btn sg-btn-tinta" type="button">Cerrar</button></div>
+                    </div>
+                </div>
+
+                <!-- ===================== Configurar mi año ===================== -->
+                <div id="anio">
+                    <p class="me-maqueta-titulo">«Configurar mi año» (la primera vez, se abre solo)</p>
+                    <div class="me-dialogo" role="dialog" aria-labelledby="t-anio">
+                        <div class="me-dialogo-cabeza"><h2 id="t-anio">Mis vacaciones y saldos</h2><button class="me-cerrar" type="button" aria-label="Cerrar">&times;</button></div>
+                        <div class="me-dialogo-cuerpo">
+                            <div class="me-campo"><span class="me-rotulo">Modalidad</span><span><b class="solo-permanente">Planta permanente</b><b class="solo-contrato">Contrato</b> <span class="me-ayuda">(la carga administración en Configuración → Usuarios)</span></span></div>
+                            <div class="me-campo">
+                                <span class="me-rotulo">Días de la licencia 2026</span>
+                                <div class="me-numeros" data-segmento="vac"><button type="button" data-valor="10">10</button><button type="button" data-valor="15">15</button><button type="button" data-valor="20" aria-pressed="true">20</button><button type="button" data-valor="25">25</button><button type="button" data-valor="30">30</button></div>
+                                <span class="me-ayuda">Según tu antigüedad, se elige cada año. Se habilitan en dos mitades: 10 el 1/7/2026 y 10 el 1/1/2027 (con 15, 8 y 7; con 25, 13 y 12). Cada licencia vence el 31/12 de dos años después.</span>
+                            </div>
+                            <div class="me-campo">
+                                <span class="me-rotulo">Licencia por estudios</span>
+                                <div class="me-opciones" data-segmento="estudio">
+                                    <button type="button" class="me-opcion" data-valor="uni" aria-pressed="true"><b>Universitaria</b><small>15 días por año</small></button>
+                                    <button type="button" class="me-opcion" data-valor="sec"><b>Secundaria</b><small>10 días por año</small></button>
+                                    <button type="button" class="me-opcion" data-valor="no"><b>No estudio</b><small>Sin licencia por estudios</small></button>
+                                </div>
+                            </div>
+                            <div class="me-campo">
+                                <span class="me-rotulo">Para arrancar</span>
+                                <span class="me-ayuda">Lo que tenías antes de empezar con Mi espacio. Se carga una vez, para que los saldos den bien.</span>
+                                <div class="me-fila-campos tres">
+                                    <div class="me-campo"><label>Sin usar de la licencia 2024</label><input type="text" value="8"></div>
+                                    <div class="me-campo"><label>De la 2025</label><input type="text" value="20"></div>
+                                    <div class="me-campo"><label>De la 2026</label><input type="text" value="10"></div>
+                                </div>
+                                <span class="me-ayuda">Y lo que ya usaste en 2026:</span>
+                                <div class="me-fila-campos">
+                                    <div class="me-campo solo-permanente"><label>Horas de franquicia</label><input type="text" value="8"></div>
+                                    <div class="me-campo"><label>Días de estudios</label><input type="text" value="4"></div>
+                                    <div class="me-campo"><label>Días de atención médica</label><input type="text" value="0"></div>
+                                    <div class="me-campo"><label>Días de grupo familiar</label><input type="text" value="2"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="me-dialogo-pie"><button class="sg-btn sg-btn-borde" type="button">Cancelar</button><button class="sg-btn sg-btn-tinta" type="button">Guardar</button></div>
+                    </div>
+                </div>
+
+                <!-- ===================== Uso autorizado (contrato) ===================== -->
+                <div id="autorizadas">
+                    <p class="me-maqueta-titulo">«Registrar un uso autorizado» (contrato)</p>
+                    <div class="me-dialogo" role="dialog" aria-labelledby="t-autorizadas">
+                        <div class="me-dialogo-cabeza"><h2 id="t-autorizadas">Usar horas no utilizadas previamente</h2><button class="me-cerrar" type="button" aria-label="Cerrar">&times;</button></div>
+                        <div class="me-dialogo-cuerpo">
+                            <p style="margin:0;color:var(--sg-texto)">Para cuando te autorizan a tomar horas de meses anteriores. Tenés <b>6,5 horas</b> en 2026.</p>
+                            <div class="me-fila-campos"><div class="me-campo"><label>Fecha</label><input type="text" value="06/11/2026"></div><div class="me-campo"><label>Horas</label><select><option>0,5</option><option selected>3</option><option>6,5</option></select></div></div>
+                            <div class="me-calculo">Quedan <b>3,5 horas</b> no utilizadas previamente. Se descuentan primero las más viejas.</div>
+                            <div class="me-campo"><label>Nota <span style="font-weight:400;color:var(--sg-suave)">(opcional)</span></label><input type="text" value="Autorizado por la Dirección General"></div>
+                        </div>
+                        <div class="me-dialogo-pie"><button class="sg-btn sg-btn-borde" type="button">Cancelar</button><button class="sg-btn sg-btn-tinta" type="button">Guardar</button></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer id="m-footer"></footer>
+    </main>
+</div>
+<script src="maqueta.js"></script>
+</body>
+</html>

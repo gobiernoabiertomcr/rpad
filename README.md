@@ -35,7 +35,7 @@ El sistema cuenta con cinco roles de usuario:
 | Rol | Descripción | Permisos |
 |-----|-------------|----------|
 | `superadmin` | Administrador con la cuenta protegida | Todo lo de `admin`. Su cuenta solo la modifica su titular. Recibe un email cuando otro usuario crea un admin o un editor, cambia un rol, cambia el email de un admin o un editor, reactiva a uno de ellos o desactiva a alguien. Se asigna por SQL, no desde la aplicación. |
-| `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otra persona. Gestionar usuarios, licencias y áreas en Configuración. Configurar notificaciones SMTP. Generar reportes y armar notas con el Generador de Notas. Cargar las métricas manuales de Métricas y Reportes. Cargar, editar y borrar proyectos, hitos, logros y sus archivos en Herramientas → Proyectos. |
+| `admin` | Administrador completo | Proponer creación, edición y eliminación de datasets. Aprobar o rechazar cambios propuestos por otra persona. Gestionar usuarios, licencias, áreas y feriados en Configuración. Configurar notificaciones SMTP. Generar reportes y armar notas con el Generador de Notas. Cargar las métricas manuales de Métricas y Reportes. Cargar, editar y borrar proyectos, hitos, logros y sus archivos en Herramientas → Proyectos. |
 | `editor` | Administrador sin la responsabilidad formal de auditar | Todo lo de `admin`, con tres diferencias: audita cambios de otros **de respaldo** (si ese día no hay ningún auditor disponible) o, los que propuso un auditor, **sin responsabilidad por la auditoría** (si hay auditores disponibles), en el panel de usuarios solo crea y modifica lectores y colaboradores (y solo pasa a alguien de lector a colaborador o al revés) y no puede ser firmante titular de las Notas Digitales. Puede tener licencia, cargar su firma y ser la persona autorizada del firmante. |
 | `colaborador` | Lector que carga notas DGMIT | Todo lo de `lector` y, además, carga las notas DGMIT en Herramientas → Seguimiento (y corrige o anula las que cargó) y arma las notas de la DGMIT con el Generador de Notas (Herramientas → Notas). No modifica datasets, no audita cambios y no entra a la administración. Pensado para el personal de la DGMIT (ver [Notas DGMIT](#notas-dgmit) y [Generador de Notas](#generador-de-notas)). |
 | `lector` | Solo lectura | Ver la portada, el calendario, los datasets, Métricas y Reportes, Proyectos (también bajar y previsualizar sus documentos y archivos) y Seguimiento sin poder modificar datos. No usa el Generador de Notas (Herramientas → Notas). |
@@ -44,9 +44,9 @@ Los cambios sobre datasets requieren doble verificación: alguien propone y otra
 
 **Días sin auditor:** un día hábil en el que ningún superadmin ni admin está disponible (activo, con contraseña y sin licencia; los editores no cuentan, se informan como respaldo). Los días hábiles seguidos forman un período (un fin de semana o un feriado en el medio no lo cortan) y cada período dice cuándo vuelve a haber un auditor. El sistema lo avisa en tres lugares: el formulario de licencias advierte los días sin auditor que dejaría esa licencia (sin bloquear el guardado); a quien propone un cambio que hoy no tiene a nadie que lo audite le llega, en el recordatorio de las 14:00, un único aviso por cambio con la fecha de vuelta; y Correos → Estado muestra cuántos cambios no tienen a quién pedirle la auditoría y los próximos períodos.
 
-### Configuración: Usuarios, Licencias y Áreas
+### Configuración: Usuarios, Licencias, Áreas y Feriados
 
-**Administración → Configuración** (`configuracion.html`) junta en una sola página, con tres pestañas, lo que antes eran Usuarios y Áreas: **Usuarios**, **Licencias** y **Áreas**. La pestaña queda en la dirección (`configuracion.html#licencias`, `configuracion.html#areas`) y recargar la página la conserva. Entran superadmin, admin y editor. Los links viejos siguen andando: `usuarios.html` lleva a Usuarios (con `#licencias`, a Licencias) y `areas.html`, a Áreas; los emails al superadmin abren Configuración.
+**Administración → Configuración** (`configuracion.html`) junta en una sola página, con cuatro pestañas, lo que antes eran Usuarios y Áreas, y los feriados: **Usuarios**, **Licencias**, **Áreas** y **Feriados**. La pestaña queda en la dirección (`configuracion.html#licencias`, `configuracion.html#areas`, `configuracion.html#feriados`) y recargar la página la conserva. Entran superadmin, admin y editor. Los links viejos siguen andando: `usuarios.html` lleva a Usuarios (con `#licencias`, a Licencias) y `areas.html`, a Áreas; los emails al superadmin abren Configuración.
 
 En la pestaña **Usuarios**, admin y superadmin pueden (el editor, solo sobre lectores y colaboradores, y como cambio de rol solo de lector a colaborador o al revés):
 
@@ -69,6 +69,16 @@ En la pestaña **Áreas** están los organismos responsables de los datasets:
 - **Borrar:** solo un área sin ningún dataset, activo o dado de baja, y sin cambios pendientes que la elijan. Pide confirmación y no se puede deshacer.
 - **Los datos de contacto** de las áreas (emails, teléfonos y persona de contacto) solo los ve administración: sin esa sesión, las APIs públicas de áreas y de datasets ya no los devuelven.
 - **Detalle de diseño:** `docs/superpowers/specs/2026-10-24-configuracion-design.md`.
+
+En la pestaña **Feriados** están los días no hábiles que no son los 9 feriados nacionales fijos: los nacionales que cambian de fecha (Carnaval, Semana Santa, los trasladables y los extraordinarios), los de Chubut, los de Comodoro y los días no laborables (el Jueves Santo, los días con fines turísticos y los asuetos):
+
+- **Por ahora no cambian ningún día hábil del sistema:** las Notas Digitales, la auditoría, los recordatorios, las licencias, Métricas y el Ciclo de vida del dato siguen con los 9 fijos, como lo dice el aviso azul de arriba. Los va a usar Mi espacio, para contar en días hábiles las licencias y los francos.
+- **La lista de un año:** el selector del año (el en curso, el siguiente y los anteriores con feriados cargados), los filtros Todos, Nacionales, De Chubut, De Comodoro, No laborables y Fijos del sistema, con su cantidad, y una tabla con la fecha y su día de la semana, el nombre, el tipo y si se repite. Los 9 fijos se ven en gris y no se editan. Debajo del nombre, las aclaraciones: de qué fecha se trasladó, si cae en fin de semana o si cae el mismo día que otro feriado.
+- **Nuevo feriado y Editar:** la fecha (con su día de la semana), el nombre, el tipo (Nacional, De Chubut, De Comodoro o No laborable), "Trasladado del" (opcional) y "Se repite todos los años, el mismo día", para los de fecha fija, como el aniversario de la ciudad; los móviles se cargan año por año. Siempre el día entero. Al guardar, avisa si ese día cae en fin de semana o ya es feriado, sin frenar el guardado.
+- **Uno que se repite:** si un año se corre, ese año se marca "no rige" y se carga el día al que se pasó ("Se pasó al"); los demás años no cambian. Darlo de baja vale desde el año que se elija: los anteriores tampoco cambian. Corregir su fecha o su nombre corrige todos los años (es para los errores de carga).
+- **Arranca precargada** con los de 2026 y 2027, cada uno con su fuente (ver [Migración: Feriados](#migración-feriados)). Lo que todavía no está decretado se carga desde la pestaña cuando salga.
+- **Quién:** cargan, corrigen y dan de baja los que entran a Configuración; cualquier usuario con sesión puede leerlos por la API (`GET /api/feriados`).
+- **Detalle de diseño:** `docs/superpowers/specs/2026-10-26-feriados-design.md` (las fuentes de cada fecha, en `docs/superpowers/specs/2026-10-26-feriados-fuentes.md`).
 
 ## Campo "Qué se solicita" de los datasets
 
@@ -230,6 +240,7 @@ rpad/
 │   ├── metricasController.js      # Métricas: GET /api/metricas y su PDF (solo lectura, cualquier rol con sesión)
 │   ├── proyectosController.js     # Proyectos: proyectos, hitos, logros, línea de tiempo y archivos (leen y bajan todos; escribe administración)
 │   ├── gestionController.js       # Las métricas de /api/gestion/metricas, su CSV y las métricas manuales (las usa Métricas y Reportes)
+│   ├── feriadosController.js      # Feriados: los de un año (cualquier rol con sesión) y cargar, corregir, «no rige» y dar de baja (administración)
 │   └── reportesController.js      # Los reportes PDF de la pestaña Reportes (las consultas; los dibuja services/reportes*.js)
 ├── services/
 │   ├── emailService.js            # Configuración SMTP, envío y remitente único ("Dir. de Datos Públicos y Comunicación")
@@ -241,6 +252,8 @@ rpad/
 │   ├── registroReglas.js          # Reglas puras de "Registrar actualización": el origen de los datos y los mensajes de lo que falta
 │   ├── areasReglas.js             # Reglas puras de un área: validación, mensajes, los datos de contacto y por qué no se puede borrar
 │   ├── proyectosReglas.js         # Reglas puras de Proyectos: validación de un proyecto, un hito y un logro, mensajes, evidencia y nombres de archivo
+│   ├── feriadosReglas.js          # Reglas puras de los feriados: contar días hábiles con ellos, la validación, «no rige», la baja desde un año y la lista de un año
+│   ├── feriadosDatos.js           # Las consultas de los feriados (solo lectura)
 │   ├── metricas*.js               # Métricas: reglas (casos, circuito, resultados, contexto, trabajo, áreas y las etapas del Ciclo de vida del dato), cinta, opciones y la foto del 31/12
 │   ├── reportes*.js               # Reportes PDF: la base (diseño del anexo) y un archivo por reporte, la agenda de pedidos y los nombres de los archivos
 │   ├── seguimiento*.js            # Seguimiento del dataset: reglas (movimientos, ciclos y avisos), cinta, consultas y PDF (de una hoja, o de N para un anexo)
@@ -270,7 +283,10 @@ rpad/
 │       ├── migracion-metricas-recibido-datos.sql # Métricas y Reportes: los «Recibido el» y orígenes viejos, del Excel (después de la anterior; antes del 10/01/2027; repetible)
 │       ├── rollback-metricas.sql                 # Deshace las dos anteriores (después de volver a los archivos anteriores; se pierden la foto y lo importado)
 │       ├── migracion-generador-notas.sql         # Generador de Notas: la columna areas.ambito y las 13 áreas fuera del municipio (después de la de Métricas y antes del código; repetible)
-│       └── rollback-generador-notas.sql          # Deshace la anterior (después de volver a los archivos anteriores; se pierde el ámbito)
+│       ├── rollback-generador-notas.sql          # Deshace la anterior (después de volver a los archivos anteriores; se pierde el ámbito)
+│       ├── migracion-feriados.sql                # Feriados: las tablas feriados y feriados_no_rige (va antes del código; repetible)
+│       ├── migracion-feriados-datos.sql          # Feriados: la precarga de 2026 y 2027, 28 filas con su fuente (después de la anterior y antes del código; repetible)
+│       └── rollback-feriados.sql                 # Deshace las dos anteriores (después de volver a los archivos anteriores; se pierden los feriados cargados)
 ├── middleware/
 │   └── auth.js                    # JWT middleware (authMiddleware y sesionOpcional, para las rutas públicas que muestran más con sesión)
 ├── routes/
@@ -287,7 +303,7 @@ rpad/
     ├── establecer-contrasena.html # Elegir la contraseña con un link de acceso
     ├── admin.html                 # Panel de administración de datasets
     ├── correos.html               # Correos: Libro de Notas Digitales, Estado, Vista previa y pruebas, Configuración (pestañas)
-    ├── configuracion.html         # Configuración: pestañas Usuarios, Licencias y Áreas (reemplaza a usuarios.html y areas.html, que redirigen acá)
+    ├── configuracion.html         # Configuración: pestañas Usuarios, Licencias, Áreas y Feriados (reemplaza a usuarios.html y areas.html, que redirigen acá)
     ├── reportes.html              # Métricas y Reportes: pestañas Métricas (circuito, resultados, contexto, trabajo, áreas y "Para completar") y Reportes (ocho PDF)
     ├── notas.html                 # Generador de Notas de la DGMIT: área, datasets y nota, revisar y descargar el Word
     ├── proyectos.html             # Proyectos: pestañas Proyectos (carriles), Línea de tiempo y Logros del área, y un proyecto (?id=N) con su cinta (reemplaza a gestion.html, que redirige acá)
@@ -312,6 +328,7 @@ rpad/
     │   ├── admin.js               # Panel de administración
     │   ├── usuarios.js            # Configuración: las pestañas, Usuarios y Licencias
     │   ├── areas.js               # Configuración: la pestaña Áreas (aviso, filtros, tabla y modales)
+    │   ├── feriados.js            # Configuración: la pestaña Feriados (selector del año, filtros, tabla y modales)
     │   ├── correos.js             # Correos: pestañas, Libro, Estado, vista previa y configuración
     │   ├── reportes.js            # Métricas y Reportes: dibuja lo que manda GET /api/metricas (SVG y HTML) y descarga los PDF
     │   ├── notas.js               # Generador de Notas: los tres pasos, la vista previa y la descarga del Word
@@ -364,6 +381,8 @@ Desde **phpMyAdmin** en cPanel:
 | `notas_dgmit_historial` | Correcciones y anulación de cada nota DGMIT: motivo, quién, cuándo y los datos de antes |
 | `metricas_fotos` | La foto de las métricas de cada año, al 31/12: se saca sola el 10/01 del año siguiente y no se modifica nunca |
 | `actualizaciones_recibido` | El "Recibido el" y el origen de los datos de las actualizaciones aprobadas que no los traían, importados una vez por cambio |
+| `feriados` | Los feriados y días no laborables que no son los 9 nacionales fijos (esos salen del código): fecha, nombre, tipo (nacional, de Chubut, de Comodoro o no laborable), de qué fecha se trasladó, si se repite todos los años y hasta qué año, y la baja lógica (`activo`) |
+| `feriados_no_rige` | Los años en que un feriado que se repite no rige (por ejemplo, porque ese año se pasó a otro día) |
 
 ### Migración: Usuarios (superadmin y panel de usuarios)
 
@@ -636,6 +655,28 @@ En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin �
 
 **Si algo sale mal:** subir de nuevo los archivos del backup → Restart. La columna nueva puede quedar (es aditiva y el código anterior no la usa). Para sacarla, phpMyAdmin → pegar `database/updates/rollback-generador-notas.sql` **después** del Restart: borra la columna y **se pierde el ámbito de cada área**, también lo que se haya cambiado a mano en Áreas (si después se vuelve a correr la migración, las 13 quedan otra vez fuera del municipio y el resto, municipales).
 
+### Migración: Feriados
+
+⚠️ Requisito: las migraciones anteriores aplicadas y el código desplegado hasta el **Ciclo de vida del dato**: los archivos de esta entrega se armaron sobre ese código (`routes/index.js` trae las rutas de Proyectos y del Ciclo de vida del dato, y `configuracion.html`, las pestañas de Configuración). No hay dependencias nuevas de npm, no cambian las variables de entorno y no hace falta ninguna Tarea Cron: los feriados no los lee ningún proceso automático. Backup de la base y de los archivos antes de empezar, y fuera del horario de los crons (8:15 y 14:00). Los SQL se corren en phpMyAdmin (pestaña **SQL**, con la base del RPAD seleccionada). El orden es: **SQL de estructura → SQL de datos → subir los archivos → Restart**. La estructura va **antes** del código: sin las dos tablas, la pestaña Feriados dice que no se pudieron cargar (el resto sigue funcionando: nada más las lee).
+
+1. **SQL de estructura:** pegar `database/updates/migracion-feriados.sql` → **Continuar**. Crea las tablas `feriados` y `feriados_no_rige`, vacías. No cambia datos, el código anterior sigue funcionando con la estructura nueva (no las lee) y se puede volver a correr. Después, esta consulta tiene que dar **2**:
+   ```sql
+   SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('feriados', 'feriados_no_rige');
+   ```
+2. **SQL de datos:** pegar `database/updates/migracion-feriados-datos.sql` → **Continuar**. Carga los feriados de 2026 y 2027 que no son de los 9 fijos: **28 filas**, 19 de 2026 y 9 de 2027, cada una con su fuente en el comentario de arriba (la ley de feriados nacionales, la resolución de los días no laborables con fines turísticos de 2026, el decreto del feriado del 9/11/2026, las leyes de Chubut y las resoluciones del municipio). Tres se repiten todos los años y van una sola vez, con la fecha de 2026: el aniversario de Comodoro Rivadavia (23/2), la gesta galesa (28/7) y el Día del Empleado Municipal (8/11). Lo que todavía no está decretado (los días no laborables de 2027, el 20/11/2027, el 30/4/2027 de Chubut, un posible traslado del 13/12/2026 y los asuetos municipales de fin de año) se carga desde la pestaña cuando salga. Se puede volver a correr: no vuelve a cargar un feriado con la misma fecha y el mismo nombre, aunque se haya dado de baja desde la pestaña, **salvo que desde la pestaña se haya corregido la fecha o el nombre de uno de estos**: lo carga de nuevo con los de acá. Después, la consulta comentada del final del archivo (pegarla sola, sin el `-- ` del principio) tiene que dar una fila con **28** filas, **19** de 2026, **9** de 2027 y **3** que se repiten (cuenta solo las de la precarga: las que se cargan desde la pestaña llevan quién las cargó):
+   ```sql
+   SELECT COUNT(*) AS filas, SUM(YEAR(fecha) = 2026) AS de_2026, SUM(YEAR(fecha) = 2027) AS de_2027, SUM(se_repite) AS se_repiten FROM feriados WHERE creado_por IS NULL;
+   ```
+   Puede ir también después de subir el código (el código anterior no lee la tabla), pero así la pestaña arranca con la precarga.
+3. **Subir los archivos** (zip con los archivos que cambian y sus carpetas → Cargar → Extraer en la carpeta de la app). Agrega `controllers/feriadosController.js`, `services/feriadosReglas.js`, `services/feriadosDatos.js` y `public/js/feriados.js`, y reemplaza `routes/index.js`, `public/configuracion.html` y `public/js/usuarios.js`. Si falta cualquiera de los tres archivos nuevos del servidor, la app no arranca. Enseguida, **Restart** (Setup Node.js App). No hace falta Run NPM Install.
+4. **Verificar** (Ctrl+F5; solo mirar: no cargar feriados de prueba):
+   - **Administración → Configuración → Feriados** (con administración; también `configuracion.html#feriados`): arriba, el aviso azul que dice que estos feriados todavía no cambian los días hábiles del sistema. La tarjeta «Feriados y días no laborables de 2026» muestra «Todos» con **28** (los 9 fijos, en gris y sin «Editar», y los 19 de la precarga), Nacionales 8, De Chubut 4, De Comodoro 2 y No laborables 5. El Jueves Santo (2/4) dice «Cae el mismo día que un feriado fijo: no cambia nada»; el 15/6, «Trasladado del miércoles 17/06», y el Día del Empleado Municipal (8/11), «Cae domingo: no cambia ningún día hábil».
+   - **2027** en el selector: «Todos» con **21** (los 9 fijos, los 9 de 2027 y los tres que se repiten).
+   - «Editar» de uno y **Cancelar**, sin guardar: el modal trae su fecha con el día de la semana, el nombre, el tipo y el pie «Siempre el día entero»; en uno que se repite (por ejemplo, el aniversario), además, «En 2026 no rige» y, debajo de la fecha, «Es la fecha de su primer año (2026): corregirla cambia todos los años. Si solo en 2026 se corrió, marcá «En 2026 no rige».»; mirando 2027, el primer año sigue siendo 2026 y lo demás dice 2027.
+   - Nada más cambia: las Notas Digitales, la auditoría y Métricas siguen con los 9 feriados fijos.
+
+**Si algo sale mal:** subir de nuevo los archivos del backup → Restart. Las tablas nuevas pueden quedar (son aditivas y el código anterior no las usa). Para sacarlas, phpMyAdmin → pegar `database/updates/rollback-feriados.sql` **después** del Restart: borra `feriados_no_rige` y después `feriados`, y **se pierden la precarga y los feriados cargados desde la pestaña** (exportar las dos tablas antes si hace falta conservarlos). Los usuarios y el resto de los datos no se tocan. Para volver a la versión nueva, se corren otra vez las dos migraciones, en su orden.
+
 ### Migración desde v1.4.0 a v1.5.0
 
 ⚠️ Requisito: Ejecutar esto si su sistema está en la versión 1.4.0.
@@ -857,6 +898,11 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 | POST | `/api/notas/vista-previa` | Generador de Notas: el HTML de la nota y el nombre del Word (`{ fecha, numero, tipo, pedido, anteriores, area_id, datasets }`) |
 | POST | `/api/notas/generar` | Generador de Notas: el Word (lo mismo que la vista previa) |
 | GET | `/api/notificaciones/notas-digitales/:id/word` | Una Nota Digital en Word, en la hoja membretada y sin firma (administración; 422 si no se reconoce la nota) |
+| GET | `/api/feriados` | Los feriados de un año (`?anio=AAAA`, por defecto el en curso), con los 9 fijos, y los años del selector (cualquier rol con sesión) |
+| POST | `/api/feriados` | Cargar un feriado (`{ fecha, nombre, tipo, trasladado_de, se_repite }`; administración); trae `avisos` que no frenan nada |
+| PUT | `/api/feriados/:id` | Corregir un feriado (el formulario entero; administración) |
+| PUT | `/api/feriados/:id/rige` | En uno que se repite, marcar o desmarcar que un año no rige (`{ anio, rige, pasa_al }`; con `pasa_al`, carga el día al que se pasó y trae sus `avisos`; administración) |
+| DELETE | `/api/feriados/:id` | Dar de baja un feriado (en uno que se repite, `?desde=AAAA`: deja de regir desde ese año; administración) |
 
 ### Cron (requiere secret)
 
@@ -906,6 +952,13 @@ En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en
 ---
 
 ## Changelog
+
+### Feriados (2026-10)
+- **Administración → Configuración** suma una cuarta pestaña, **Feriados** (`configuracion.html#feriados`): los feriados y días no laborables que no son los 9 nacionales fijos, los nacionales que cambian de fecha (Carnaval, Semana Santa, los trasladables y los extraordinarios, como el del 9/11/2026), los de Chubut, los de Comodoro y los no laborables (el Jueves Santo, los días con fines turísticos y los asuetos municipales). Los 9 fijos se ven en la lista, en gris y sin editar
+- Un selector del año, filtros por tipo con su cantidad y una tabla con el día de la semana de cada fecha y sus aclaraciones (de qué fecha se trasladó, si cae en fin de semana o el mismo día que otro feriado). Se cargan, corrigen y dan de baja en un modal, siempre por el día entero; al guardar, avisa si ese día cae en fin de semana o ya es feriado, sin frenarlo. Uno que se repite todos los años puede no regir un año (y pasarse a otro día) o dejar de regir desde un año, sin tocar los anteriores
+- Arranca con los de 2026 y 2027 precargados: 28, cada uno con la norma que lo fija. Lo que todavía no está decretado se carga desde la pestaña
+- **Todavía no cambia ningún día hábil del sistema:** las Notas Digitales, la auditoría, los recordatorios, las licencias, Métricas y el Ciclo de vida del dato siguen con los 9 fijos. Los va a usar Mi espacio, la próxima entrega
+- Dos tablas nuevas (`feriados` y `feriados_no_rige`: pasan a 31). Requiere el Ciclo de vida del dato ya desplegado. Dos SQL antes del código (la estructura y después la precarga), los archivos y Restart, sin Run NPM Install ni Tarea Cron. Ver [Migración: Feriados](#migración-feriados)
 
 ### Ciclo de vida del dato (2026-10)
 - **Métricas y Reportes → Reportes** suma un PDF en «Para presentar», segundo después de Métricas del año: **Ciclo de vida del dato**, cuánto tarda el dato en cada etapa del circuito, del aviso del RPAD a la carga en el portal, para presentarlo. Son dos hojas A4, una por gestión: la externa (aviso anticipado, trámite y entrega de la nota, respuesta del área y preparación y carga) y la interna (aviso anticipado, producción del relevamiento y preparación y carga). Arriba va el circuito en chico, con la mediana de cada etapa

@@ -681,3 +681,32 @@ CREATE TABLE `actualizaciones_recibido` (
   PRIMARY KEY (`cambio_id`),
   CONSTRAINT `fk_actualizaciones_recibido_cambio` FOREIGN KEY (`cambio_id`) REFERENCES `cambios_pendientes` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- Feriados (database/updates/migracion-feriados.sql): los que no son los 9 fijos (esos salen del código) y los años en
+-- que uno que se repite no rige. Sin índice único en la fecha: el mismo día puede tener dos feriados
+-- =====================================================
+CREATE TABLE `feriados` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `fecha` date NOT NULL,
+  `nombre` varchar(150) NOT NULL,
+  `tipo` enum('nacional','provincial','municipal','no_laborable') NOT NULL,
+  `trasladado_de` date DEFAULT NULL,
+  `se_repite` tinyint(1) NOT NULL DEFAULT 0,
+  `hasta_anio` smallint(6) DEFAULT NULL,
+  `activo` tinyint(1) NOT NULL DEFAULT 1,
+  `creado_por` int(11) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_feriados_fecha` (`fecha`),
+  KEY `fk_feriados_creado_por` (`creado_por`),
+  CONSTRAINT `fk_feriados_creado_por` FOREIGN KEY (`creado_por`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `feriados_no_rige` (
+  `feriado_id` int(11) NOT NULL,
+  `anio` smallint(6) NOT NULL,
+  PRIMARY KEY (`feriado_id`,`anio`),
+  CONSTRAINT `fk_feriados_no_rige_feriado` FOREIGN KEY (`feriado_id`) REFERENCES `feriados` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

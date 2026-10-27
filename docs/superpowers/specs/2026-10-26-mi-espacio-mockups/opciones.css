@@ -1,0 +1,151 @@
+/* MAQUETA de Mi espacio (26/10/2026): las tres opciones gráficas del Resumen (Niveles, Mosaico y Tu año).
+   Mismos colores del RPAD: tinta para lo disponible, un azul medio para la licencia más nueva, el sol para lo que vence y
+   el punteado para lo que todavía no se habilita. Las piezas de «Vence pronto» y «Hoy» están en resumen.css. */
+.op-panel { background: #fff; border: 1px solid var(--rs-linea); border-radius: 20px; padding: 22px 28px 20px; }
+.op-cabeza { display: flex; justify-content: space-between; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.op-cabeza > span { color: var(--rs-suave); font-size: 0.88rem; }
+.op-previos { margin: 12px 0 0; font-size: 0.82rem; color: var(--rs-suave); max-width: 75ch; }
+
+/* Muestras de color (leyendas y barra) */
+.op-muestra { display: inline-block; width: 14px; height: 14px; border-radius: 4px; flex: none; }
+.c-25 { --c: #1A365D; }
+.c-26 { --c: #4C7AB0; }
+.c-vence { --c: #E3B63C; }
+.op-muestra.c-25, .op-muestra.c-26, .op-muestra.c-vence, .op-barra .c-25, .op-barra .c-26, .op-barra .c-vence { background: var(--c); }
+.op-muestra.c-reservado, .op-barra .c-reservado { background: repeating-linear-gradient(135deg, #1A365D 0 2px, #fff 2px 5px); box-shadow: inset 0 0 0 1.5px #1A365D; }
+.op-muestra.c-por-venir { background: #fff; border: 2px dashed #9AA8BA; }
+.op-barra .c-por-venir { background: repeating-linear-gradient(90deg, #C5D0DC 0 5px, #fff 5px 9px); box-shadow: inset 0 0 0 1px #C5D0DC; }
+
+.op-leyenda-vac { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.op-leyenda-vac li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 0.8rem; color: var(--rs-suave); line-height: 1.3; }
+.op-leyenda-vac li b { display: block; font-size: 0.9rem; color: var(--rs-texto); font-weight: 600; }
+.op-leyenda-vac .op-n { font-family: var(--f-titulo); font-size: 1.25rem; font-weight: 700; color: var(--rs-tinta); font-variant-numeric: tabular-nums; }
+.op-leyenda-vac li.vence, .op-leyenda-vac li.vence b { color: var(--rs-ambar); }
+.op-leyenda-vac li.tenue b, .op-leyenda-vac li.tenue .op-n { color: var(--rs-suave); }
+
+/* ---------- 1 · Niveles ----------
+   Cada saldo es un tanque. Todos terminan en la misma línea: el número arriba, el tanque y, debajo, el nombre con su total.
+   Cada tanque es un link a su pestaña. Al abrir, los tanques se llenan una vez desde abajo (el único movimiento). */
+.op-niveles-fila { display: flex; gap: 20px 26px; align-items: flex-end; flex-wrap: wrap; }
+.op-nivel-vac { display: flex; gap: 14px; align-items: flex-end; }
+.op-nivel-vac .op-leyenda-vac { width: 172px; padding-bottom: 46px; }
+.op-niveles-resto { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.op-nivel { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100px; padding: 8px 4px 6px; border-radius: 14px; color: inherit; text-decoration: none; }
+.op-nivel-vac > .op-nivel { width: 104px; }
+.op-nivel:hover { background: var(--rs-bruma); }
+.op-nivel:focus-visible { outline: 3px solid #1A365D; outline-offset: 2px; box-shadow: 0 0 0 7px #F2B705; }
+.op-nivel-num { display: flex; align-items: baseline; gap: 5px; color: var(--rs-suave); font-size: 0.84rem; }
+.op-nivel-num b { font-family: var(--f-titulo); font-size: 2.9rem; font-weight: 750; letter-spacing: -0.04em; color: var(--rs-tinta); line-height: 1; font-variant-numeric: tabular-nums; }
+.op-nivel-num.chico { flex-direction: column; align-items: center; gap: 0; }
+.op-nivel-num.chico b { font-size: 1.9rem; }
+.op-nivel-pie { display: flex; flex-direction: column; align-items: center; text-align: center; line-height: 1.3; }
+.op-nivel-pie b { font-size: 0.86rem; color: var(--rs-texto); font-weight: 600; white-space: nowrap; }
+.op-nivel-pie span { font-size: 0.76rem; color: var(--rs-suave); white-space: nowrap; }
+.op-nivel.vence .op-nivel-num b, .op-nivel.vence .op-nivel-pie b { color: var(--rs-ambar); }
+.op-tanque { display: block; }
+.op-tanque .t-fondo { fill: #F1F5F9; }
+.op-tanque .t-borde { fill: none; stroke: #C6D2E0; stroke-width: 2; }
+.op-tanque .c-25 { fill: #1A365D; }
+.op-tanque .c-26 { fill: #4C7AB0; }
+.op-tanque .c-vence { fill: #E3B63C; }
+.op-tanque .c-por-venir { fill: #fff; stroke: #9AA8BA; stroke-width: 2; stroke-dasharray: 4 3; }
+@media (prefers-reduced-motion: no-preference) {
+    .op-niveles .t-nivel { animation: op-subir 0.85s cubic-bezier(0.2, 0.75, 0.25, 1) both; }
+    .op-niveles-resto .op-nivel:nth-child(1) .t-nivel { animation-delay: 0.12s; }
+    .op-niveles-resto .op-nivel:nth-child(2) .t-nivel { animation-delay: 0.18s; }
+    .op-niveles-resto .op-nivel:nth-child(3) .t-nivel { animation-delay: 0.24s; }
+    .op-niveles-resto .op-nivel:nth-child(4) .t-nivel { animation-delay: 0.3s; }
+}
+@keyframes op-subir { from { transform: translateY(var(--alto)); } }
+.op-niveles-pie { margin-top: 18px; padding-top: 4px; border-top: 1px solid var(--rs-linea); }
+.op-pastillas { list-style: none; margin: 0; padding: 0; display: flex; gap: 10px; flex-wrap: wrap; }
+.op-pastillas li { display: flex; align-items: center; gap: 12px; padding: 8px 16px 8px 12px; border-radius: 14px; border: 1px solid var(--rs-linea); background: #fff; }
+.op-pastillas li > b { font-family: var(--f-titulo); font-size: 1.6rem; font-weight: 750; color: var(--rs-tinta); line-height: 1; min-width: 26px; text-align: center; }
+.op-pastillas li span { font-size: 0.78rem; color: var(--rs-suave); line-height: 1.3; }
+.op-pastillas li span b { display: block; font-size: 0.88rem; color: var(--rs-texto); }
+.op-pastillas li.vence { background: var(--rs-sol); border-color: var(--rs-sol-borde); }
+.op-pastillas li.vence span, .op-pastillas li.vence span b { color: var(--rs-ambar); }
+.op-pastillas li.pendiente { border-style: dashed; border-color: #9AA8BA; }
+.op-pastillas li.pendiente > b { color: var(--rs-suave); }
+.op-pastillas li.previo { background: #EEF1F5; border-color: #D3DBE5; }
+.op-pastillas li.previo > b, .op-pastillas li.previo span b { color: var(--rs-suave); }
+
+/* ---------- 2 · Mosaico ---------- */
+.op-mosaico { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-content: start; }
+.op-tesela { background: #fff; border: 1px solid var(--rs-linea); border-radius: 18px; padding: 18px 20px; min-width: 0; }
+.op-tesela-titulo { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.05rem; letter-spacing: -0.015em; color: var(--rs-tinta); }
+.op-t-vac { grid-column: span 2; grid-row: span 2; display: flex; flex-direction: column; gap: 16px; }
+.op-gigante { display: flex; align-items: flex-end; gap: 12px; }
+.op-gigante b { font-family: var(--f-titulo); font-size: 4.6rem; font-weight: 750; letter-spacing: -0.05em; color: var(--rs-tinta); line-height: 0.85; font-variant-numeric: tabular-nums; }
+.op-gigante span { font-size: 0.92rem; color: var(--rs-suave); line-height: 1.25; padding-bottom: 4px; }
+.op-barra { display: flex; gap: 3px; height: 22px; border-radius: 999px; overflow: hidden; }
+.op-barra span { height: 100%; }
+.op-t-anillo { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.op-anillo-marco { position: relative; width: 112px; height: 112px; }
+.op-anillo { width: 100%; height: 100%; display: block; }
+.op-anillo .a-pista { fill: none; stroke: #E6EDF5; stroke-width: 11; }
+.op-anillo .a-valor { fill: none; stroke: #1A365D; stroke-width: 11; stroke-linecap: round; }
+.op-anillo.vence .a-valor { stroke: #D9A21B; }
+.op-anillo-num { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.74rem; color: var(--rs-suave); line-height: 1.1; }
+.op-anillo-num b { font-family: var(--f-titulo); font-size: 1.95rem; font-weight: 750; letter-spacing: -0.03em; color: var(--rs-tinta); font-variant-numeric: tabular-nums; }
+.op-t-anillo.vence .op-anillo-num b, .op-t-anillo.vence .op-tesela-pie b { color: var(--rs-ambar); }
+.op-tesela-pie { text-align: center; line-height: 1.3; }
+.op-tesela-pie b { display: block; font-size: 0.9rem; color: var(--rs-texto); font-weight: 600; }
+.op-tesela-pie span { font-size: 0.78rem; color: var(--rs-suave); }
+.op-t-meses { grid-column: span 2; }
+.op-meses-grandes { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
+.op-meses-grandes li { display: flex; flex-direction: column; padding: 12px 14px; border-radius: 14px; background: var(--rs-bruma); }
+.op-meses-grandes .op-mes { font-size: 0.8rem; font-weight: 600; color: var(--rs-suave); }
+.op-meses-grandes li > b { font-family: var(--f-titulo); font-size: 2.2rem; font-weight: 750; color: var(--rs-tinta); line-height: 1.05; letter-spacing: -0.03em; }
+.op-meses-grandes .op-unidad { font-size: 0.82rem; color: var(--rs-texto); }
+.op-meses-grandes small { font-size: 0.74rem; color: var(--rs-suave); margin-top: 4px; line-height: 1.3; }
+.op-meses-grandes li.vence { background: var(--rs-sol); }
+.op-meses-grandes li.vence .op-mes, .op-meses-grandes li.vence small { color: var(--rs-ambar); }
+.op-meses-grandes li.pendiente { background: #fff; box-shadow: inset 0 0 0 1.5px #C5D0DC; }
+.op-meses-grandes li.pendiente > b { color: var(--rs-suave); }
+.op-t-nota { grid-column: span 2; display: flex; flex-direction: column; gap: 12px; justify-content: center; }
+.op-t-nota p { margin: 0; font-size: 0.84rem; color: var(--rs-suave); line-height: 1.4; }
+.op-t-nota p b { display: block; font-size: 0.9rem; color: var(--rs-texto); }
+
+/* ---------- 3 · Tu año ---------- */
+.op-tira { display: grid; grid-template-columns: 1.3fr repeat(4, minmax(0, 1fr)); margin: 0 0 24px; padding-bottom: 20px; border-bottom: 1px solid var(--rs-linea); }
+.op-tira > div { padding: 2px 16px; border-left: 1px solid var(--rs-linea); min-width: 0; }
+.op-tira > div:first-child { border-left: 0; padding-left: 0; }
+.op-tira dt { font-size: 0.8rem; font-weight: 600; color: var(--rs-suave); }
+.op-tira dd { margin: 0; color: var(--rs-texto); font-size: 0.86rem; }
+.op-tira dd b { font-family: var(--f-titulo); font-size: 2.1rem; font-weight: 750; letter-spacing: -0.03em; color: var(--rs-tinta); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.op-tira .destacado dd b { font-size: 3.2rem; letter-spacing: -0.045em; }
+.op-tira .op-de { font-size: 0.76rem; color: var(--rs-suave); }
+.op-tira .vence dt, .op-tira .vence dd b { color: var(--rs-ambar); }
+.op-grafico { display: block; width: 100%; height: auto; font-family: var(--f-texto); }
+.op-grafico .g-mes { stroke: #EEF2F6; }
+.op-grafico .g-eje { fill: var(--rs-suave); font-size: 11px; }
+.op-grafico .g-base { stroke: #C6D2E0; }
+.op-grafico .g-linea { fill: none; stroke: #1A365D; stroke-width: 2.5; stroke-linejoin: round; }
+.op-grafico .g-linea.futuro { stroke-dasharray: 6 5; }
+.op-grafico .g-hoy { stroke: #B98500; stroke-width: 1.5; stroke-dasharray: 3 3; }
+.op-grafico .g-hoy-texto { fill: var(--rs-ambar); font-size: 11px; font-weight: 700; }
+.op-grafico .g-nivel { fill: #1A365D; font-family: var(--f-titulo); font-size: 16px; font-weight: 700; text-anchor: middle; }
+.op-grafico .g-cambio circle { fill: #fff; stroke: #1A365D; stroke-width: 2.5; }
+.op-grafico .g-cambio.vence circle { stroke: #B98500; }
+.op-grafico .g-delta { fill: #1A365D; font-family: var(--f-titulo); font-size: 14px; font-weight: 700; }
+.op-grafico .g-cambio.vence .g-delta { fill: var(--rs-ambar); }
+.op-grafico .g-texto { fill: var(--rs-suave); font-size: 11px; }
+.op-grafico .g-carril { fill: var(--rs-suave); font-size: 11px; font-weight: 600; }
+.op-grafico .g-pastilla rect { fill: #EEF2F7; stroke: #C6D2E0; }
+.op-grafico .g-pastilla text { fill: var(--rs-texto); font-size: 11px; font-weight: 600; }
+.op-grafico .g-pastilla.vence rect { fill: var(--rs-sol); stroke: var(--rs-sol-borde); }
+.op-grafico .g-pastilla.vence text { fill: var(--rs-ambar); }
+.op-grafico .g-pastilla.pendiente rect { fill: #fff; stroke-dasharray: 3 3; }
+
+@media (max-width: 900px) {
+    .op-mosaico { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .op-tira { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 0; }
+    .op-tira > div:nth-child(odd) { border-left: 0; padding-left: 0; }
+    .op-tira .destacado { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+    .op-panel { padding: 18px 16px; }
+    .op-nivel-vac { flex-wrap: wrap; }
+    .op-nivel-vac .op-leyenda-vac { padding-bottom: 0; }
+}
