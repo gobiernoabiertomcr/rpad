@@ -11,7 +11,7 @@ import {
   MODALIDADES, modalidadDe, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, NOMBRES_TIPO, DIAS_VACACIONES,
   DIAS_ESTUDIOS, DIAS_POR_EXAMEN, TOPES, JORNADA, LARGO_NOTA, MENSAJES_MI_ESPACIO,
   textoRango, textoNoEstudia, textoSuperpuesta, textoSinHabilitados, textoTope, textoSinFranco, textoSinHorasAFavor,
-  textoSinNoUtilizadas, textoHorarioSuperpuesto, textoSaldo, textoAutorizadaSinDias,
+  textoSinNoUtilizadas, textoHorarioSuperpuesto, textoSaldo, textoAutorizadaDelFirmante,
   AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN, AVISO_NOTAS_DE_HOY, AVISO_SIN_PERSONA_A_CARGO,
   textoSuperpuestaConConfiguracion, textoNoPaso, textoYaNoCubierta, textoEnConfiguracion, textoUnida,
   textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA, TEXTO_ANULADA_POR_ADMINISTRACION,
@@ -140,9 +140,10 @@ describe('los textos', () => {
     assert.equal(textoHorarioSuperpuesto('19:00', '22:00', 'x'), textoHorarioSuperpuesto('19:00', '22:00'));
     assert.equal(textoHorarioSuperpuesto('19:00', '22:00', 'toString'), textoHorarioSuperpuesto('19:00', '22:00'));
     assert.equal(textoSaldo(30), 'Escribí un número de 0 a 30.');
-    assert.equal(textoAutorizadaSinDias('2026-10-26', '2026-11-10'),
-      'Sos la persona autorizada del firmante del 26/10/2026 al 10/11/2026, y con esta licencia no te quedaría ningún día '
-      + 'hábil para presentar las notas. Hablalo con el firmante antes de cargarla.');
+    // Decisión del usuario (27/10/2026): el aviso que no frena a la persona autorizada del firmante
+    assert.equal(textoAutorizadaDelFirmante('2026-12-01', '2026-12-18'),
+      'Sos la persona autorizada del firmante del 01/12/2026 al 18/12/2026: los días que no estés, no se presentan Notas '
+      + 'Digitales.');
   });
 
   it('textoTope: con el tope de cada tipo, y el de estudios, el de ese año', () => {
@@ -1821,7 +1822,7 @@ describe('nada tira', () => {
         textoSinNoUtilizadas(valor, valor, valor);
         textoHorarioSuperpuesto(valor, valor, valor);
         textoSaldo(valor);
-        textoAutorizadaSinDias(valor, valor);
+        textoAutorizadaDelFirmante(valor, valor);
         textoSuperpuestaConConfiguracion(valor, valor);
         textoNoPaso(valor);
         textoYaNoCubierta(valor, valor);
@@ -2408,6 +2409,34 @@ describe('el paso a Configuración', () => {
       assert.deepEqual(hoyMismo.avisos, [AVISO_DEL_PASO, AVISO_NOTAS_DE_HOY, AVISO_SIN_PERSONA_A_CARGO]);
       assert.deepEqual(hoyMismo.firmante, { soy_titular: true, puede_autorizar: false, vispera: '2026-10-23', notas_de_hoy: true });
     });
+
+    // Decisión del usuario (27/10/2026): la persona autorizada del firmante no se frena; se le avisa, una línea por cada
+    // licencia del firmante que se pisa con la suya y que todavía no terminó, por fecha
+    it('a la persona autorizada del firmante, una línea por cada licencia del firmante que se pisa, sin frenarla', () => {
+      // La fila, del 02/11 al 06/11
+      const comoAutorizada = [
+        { desde: '2026-11-06', hasta: '2026-11-20' }, { desde: '2026-10-19', hasta: '2026-11-02' },
+        { desde: '2026-11-09', hasta: '2026-11-13' }, { desde: '2026-10-01', hasta: '2026-10-23' }
+      ];
+      assert.deepEqual(previsto({ comoAutorizada }), {
+        pasa: true, firmante: null, sin_pasar_previsto: null,
+        avisos: [AVISO_DEL_PASO, textoAutorizadaDelFirmante('2026-10-19', '2026-11-02'),
+          textoAutorizadaDelFirmante('2026-11-06', '2026-11-20')]
+      });
+      assert.deepEqual(previsto({ rol: 'superadmin', comoAutorizada }).avisos.slice(0, 2), [AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN]);
+      // Una que ya terminó no (una corrección que arranca antes de hoy); sin ninguna, ni la lista, nada
+      const enCurso = filaDe({ tipo: 'medica', desde: '2026-10-20', hasta: '2026-10-30' });
+      assert.deepEqual(previsto({ fila: enCurso, comoAutorizada: [{ desde: '2026-10-19', hasta: '2026-10-23' }] }).avisos,
+        [AVISO_DEL_PASO]);
+      assert.deepEqual(previsto({ fila: enCurso, comoAutorizada: [{ desde: '2026-10-19', hasta: HOY }] }).avisos,
+        [AVISO_DEL_PASO, textoAutorizadaDelFirmante('2026-10-19', HOY)]);
+      assert.deepEqual(previsto({ comoAutorizada: [] }).avisos, [AVISO_DEL_PASO]);
+      assert.deepEqual(previsto({ comoAutorizada: 'x' }).avisos, [AVISO_DEL_PASO]);
+      assert.deepEqual(previsto({ comoAutorizada: [null, { desde: 'x', hasta: '2026-11-03' }, { desde: '2026-11-03' }] }).avisos,
+        [AVISO_DEL_PASO]);
+      // Lo que no pasa no avisa
+      assert.deepEqual(previsto({ paso: { accion: 'nada' }, comoAutorizada }).avisos, []);
+    });
   });
 
   it('nada tira', () => {
@@ -2431,7 +2460,8 @@ describe('el paso a Configuración', () => {
         vinculosDeLaLista(valor, valor);
         vinculosDeLaLista([valor, filaDe({ id: valor })], { oficiales: valor, tocadas: valor, hoy: valor });
         pasoPrevistoDe(valor);
-        pasoPrevistoDe({ paso: valor, vinculo: valor, fila: valor, rol: valor, hoy: valor, soyTitular: valor });
+        pasoPrevistoDe({ paso: valor, vinculo: valor, fila: valor, rol: valor, hoy: valor, soyTitular: valor, comoAutorizada: valor });
+        pasoPrevistoDe({ paso: { accion: 'crear' }, fila: filaDe(), rol: 'admin', hoy: HOY, comoAutorizada: [valor] });
       }, String(valor));
     }
     assert.deepEqual(pasoDeLaCarga(null), { accion: 'nada' });

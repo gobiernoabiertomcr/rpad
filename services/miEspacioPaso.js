@@ -9,18 +9,17 @@
  * `aplicarCarga`, `aplicarCorreccion` y `aplicarBaja` devuelven lo que se guarda en la fila de Mi espacio,
  * `{ licencia_oficial_id, oficial, sin_pasar, avisos }`, o `{ error: { status, campo, mensaje } }`, que deshace todo. Un
  * rechazo de Configuración se lee así:
- * - 'autorizada_sin_dias' (la persona es la autorizada del firmante y se quedaría sin ningún día hábil): 409 en `fechas`, con
- *   `textoAutorizadaSinDias`; no se guarda nada;
  * - uno en `autorizado_id` (la persona a cargo no sirve): su status y su mensaje; no se guarda nada;
  * - cualquier otro: la fila se guarda igual, sin pasar, con el mensaje en `sin_pasar` (cortado a 200 caracteres).
+ * La licencia de la persona autorizada del firmante pasa como cualquier otra, aunque no le quede ningún día hábil de la del
+ * firmante (decisión del usuario, 27/10/2026): el cálculo previo se lo avisa (`textoAutorizadaDelFirmante`), sin frenarla.
  */
 import pool from '../config/database.js';
 import { cargarLicencia, cambiarLicencia, anularLicenciaDe, firmanteTitular } from './licenciasOficialesService.js';
 import { puedeTenerLicencia } from './licenciasReglas.js';
-import { oficialesDe, tocadasPorOtros, oficialesQueSeCruzan } from './miEspacioDatos.js';
+import { oficialesDe, tocadasPorOtros, oficialesQueSeCruzan, delFirmanteComoAutorizada } from './miEspacioDatos.js';
 import {
-  TEXTO_NO_SE_COPIA, textoAutorizadaSinDias, vinculoDe, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja,
-  vinculosDeLaLista, pasoPrevistoDe
+  TEXTO_NO_SE_COPIA, vinculoDe, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja, vinculosDeLaLista, pasoPrevistoDe
 } from './miEspacioReglas.js';
 
 // sin_pasar es un varchar(200): se corta contando caracteres (Array.from), no unidades de UTF-16
@@ -31,10 +30,6 @@ const sinVinculo = (sinPasar = null) => ({ licencia_oficial_id: null, oficial: n
 
 // Un rechazo de Configuración: { error } si frena todo, o { sin_pasar } si la fila se guarda igual, sin pasar
 const segunElRechazo = (rechazo) => {
-  if (rechazo.motivo === 'autorizada_sin_dias') {
-    const { desde, hasta } = rechazo.licencia ?? {};
-    return { error: { status: 409, campo: 'fechas', mensaje: textoAutorizadaSinDias(desde, hasta) } };
-  }
   if (rechazo.campo === 'autorizado_id') {
     return { error: { status: rechazo.status, campo: 'autorizado_id', mensaje: rechazo.error } };
   }
@@ -147,20 +142,21 @@ export const aplicarBaja = async (conexion, { persona, fila, hoy }) => {
 /**
  * Lo que el cálculo previo de «Cargar licencia» dice del paso, sin escribir nada: `{ paso, error }`, con el `paso` de
  * `pasoPrevistoDe` y el error de la corrección (`tipoFijo`, `soloHasta`, `fechasFijas`: `{ campo, mensaje }`) o null.
- * `anterior`: la fila guardada que se corrige, o null en una carga. Lee del pool (o de la conexión que se pase).
+ * `anterior`: la fila guardada que se corrige, o null en una carga. Lee del pool (o de la conexión que se pase), también
+ * las licencias del firmante en las que la persona es la autorizada y que se pisan con la fila (`comoAutorizada`).
  */
 export const pasoPrevisto = async ({ persona, anterior, fila, hoy }, conexion = pool) => {
-  const soyTitular = (await firmanteTitular(conexion)) === persona.id;
+  const titular = await firmanteTitular(conexion);
+  const soyTitular = titular === persona.id;
+  const comoAutorizada = await delFirmanteComoAutorizada(conexion, titular, persona.id, fila.desde, fila.hasta);
+  const comun = { fila, rol: persona.rol, hoy, soyTitular, comoAutorizada };
   if (!anterior) {
     const cruzadas = await oficialesQueSeCruzan(conexion, persona.id, fila.desde, fila.hasta);
     const paso = pasoDeLaCarga({ fila, rol: persona.rol, hoy, cruzadas });
-    return { paso: pasoPrevistoDe({ paso, vinculo: null, fila, rol: persona.rol, hoy, soyTitular }), error: null };
+    return { paso: pasoPrevistoDe({ ...comun, paso, vinculo: null }), error: null };
   }
   const { vinculo, paso } = await planDeLaCorreccion(conexion, { persona, anterior, fila, hoy, autorizadoPedido: undefined });
-  return {
-    paso: pasoPrevistoDe({ paso: paso.error ? {} : paso, vinculo, fila, rol: persona.rol, hoy, soyTitular }),
-    error: paso.error ?? null
-  };
+  return { paso: pasoPrevistoDe({ ...comun, paso: paso.error ? {} : paso, vinculo }), error: paso.error ?? null };
 };
 
 /**

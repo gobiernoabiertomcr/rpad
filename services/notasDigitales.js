@@ -1112,8 +1112,11 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
         tipo: 'autorizado-de-licencia', nivel: 'advertencia',
         mensaje: `La persona autorizada está de licencia hasta el ${formatoCorto(licencia.autorizado_de_licencia_hasta)}: hasta entonces no se generan notas.`
       }] : []),
+      // También una advertencia (decisión del usuario, 27/10/2026): la persona autorizada puede tomarse licencia aunque no le
+      // quede ningún día de la del titular, y esos días no se presentan notas. Junta las tres causas (desactivada, sin firma o de
+      // licencia todos los días), que tienen el mismo efecto y no frenan el envío
       ...(licencia?.autorizado_no_vigente ? [{
-        tipo: 'autorizado-no-vigente', nivel: 'error',
+        tipo: 'autorizado-no-vigente', nivel: 'advertencia',
         mensaje: `La persona autorizada para la licencia del firmante (del ${formatoCorto(licencia.desde)} al ${formatoCorto(licencia.hasta)}) ya no está activa, no tiene su firma cargada o está de licencia todos los días hábiles de esa licencia: esos días no se generan notas.`
       }] : []),
       ...(config.membrete_imagen ? [] : [{

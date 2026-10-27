@@ -6,8 +6,7 @@
 // que responde Configuración y el motivo, para que Mi espacio decida qué hacer:
 // - 'fechas' (fechas inválidas en un alta), 'edicion' (las que no admite la edición, con el status de validarEdicion),
 //   'no_encontrada', 'solo_titular' y 'no_se_anula';
-// - los de rechazoDeLaBase: 'rol', 'superpuesta', 'autorizada_sin_dias' (suma licencia: { desde, hasta, nombre }, la del titular
-//   en la que es la persona autorizada), 'no_es_titular', 'no_autorizable' y 'autorizado_sin_dias'.
+// - los de rechazoDeLaBase: 'rol', 'superpuesta', 'no_es_titular', 'no_autorizable' y 'autorizado_sin_dias'.
 import pool from '../config/database.js';
 import { registrarAuditoria } from './usuariosAuditoriaService.js';
 import { ahoraArgentina, formatoCorto, sumarDias, proximoDiaHabil } from './notasDigitalesCalendario.js';
@@ -77,10 +76,13 @@ export const conSusLicencias = async (personas, hoy) => {
 
 /**
  * Reglas que necesitan la base (spec 5.2 y 6.3). autorizadoNuevo: la autorización se está dando o cambiando en este
- * pedido (si no, solo se revisa que a la persona ya autorizada le quede algún día hábil con las fechas nuevas).
- * La persona autorizada y el titular pueden faltar algunos días a la vez: se rechaza solo si a ella no le queda ningún día
- * hábil en toda la licencia del titular (notasDigitalesFirmas.disponibilidadDelAutorizado). Cuentan todos sus días, no
- * solo desde hoy: si no, con ella de licencia hasta el final no se podría ni acortar una licencia en curso.
+ * pedido. Solo entonces se controla a la persona elegida: que sea la licencia del titular, que se la pueda autorizar y que
+ * le quede algún día hábil en toda la licencia (notasDigitalesFirmas.disponibilidadDelAutorizado; el titular y ella pueden
+ * faltar algunos días a la vez). Cambiar solo las fechas no la vuelve a controlar: con ella de licencia todos los días, ni el
+ * titular ni administración (que no puede cambiar a la persona autorizada) podrían corregir la licencia.
+ * La licencia propia de la persona autorizada no se controla (decisión del usuario, 27/10/2026): se guarda aunque no le
+ * quede ningún día hábil de la del titular, y esos días son «sin autorizado» (firmaParaFecha mira cada día: no se presenta
+ * ninguna nota y lo pendiente sale a la vuelta).
  * Devuelve el Rechazo si no se puede, o null.
  */
 export const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, desde, hasta, autorizadoId, autorizadoNuevo }) => {
@@ -94,33 +96,12 @@ export const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, des
     [usuarioId, licenciaId, hasta, desde]
   );
   if (propia) return rechazar('superpuesta', 409, `Se superpone con otra licencia de la misma persona (${periodo(propia)}).`, 'fechas');
-  // Las licencias en las que esta persona es la autorizada, superpuestas con la que se guarda (contándola, sin la versión
-  // guardada si se edita)
-  const [autorizaciones] = await conexion.query(
-    `SELECT l.autorizado_id, u.nombre_completo, DATE_FORMAT(l.desde, '%Y-%m-%d') AS desde, DATE_FORMAT(l.hasta, '%Y-%m-%d') AS hasta
-     FROM usuarios_licencias l JOIN usuarios u ON u.id = l.usuario_id
-     WHERE l.autorizado_id = ? AND l.anulada = 0 AND l.id <> ? AND l.desde <= ? AND l.hasta >= ? ORDER BY l.desde`,
-    [usuarioId, licenciaId, hasta, desde]
-  );
-  for (const comoAutorizada of autorizaciones) {
-    const disponible = await disponibilidadDelAutorizado(comoAutorizada, {
-      licenciaExtra: { desde, hasta }, excluirLicenciaId: licenciaId, conexion
-    });
-    if (!disponible) {
-      return {
-        ...rechazar('autorizada_sin_dias', 409, `Es la persona autorizada a presentar las notas durante la licencia de ${comoAutorizada.nombre_completo} (${periodo(comoAutorizada)}) y con esta licencia no le quedaría ningún día hábil para hacerlo: primero hay que cambiar esa autorización.`, 'fechas'),
-        licencia: { desde: comoAutorizada.desde, hasta: comoAutorizada.hasta, nombre: comoAutorizada.nombre_completo }
-      };
-    }
-  }
   if (autorizadoId && autorizadoNuevo) {
     const titular = await firmanteTitular(conexion);
     if (usuarioId !== titular) return rechazar('no_es_titular', 400, 'Solo la licencia del firmante titular de las notas lleva una persona autorizada.', 'autorizado_id');
     if (!(await autorizables(conexion, titular)).some(a => a.id === autorizadoId)) {
       return rechazar('no_autorizable', 400, 'Solo se puede autorizar a un admin o editor activo, con su firma cargada en Mi Perfil.', 'autorizado_id');
     }
-  }
-  if (autorizadoId) {
     const disponible = await disponibilidadDelAutorizado({ desde, hasta, autorizado_id: autorizadoId }, { conexion });
     if (!disponible) {
       return rechazar('autorizado_sin_dias', 409, 'La persona autorizada está de licencia todos los días hábiles de tu licencia: no podría presentar ninguna nota.', 'autorizado_id');

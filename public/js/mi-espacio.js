@@ -1273,18 +1273,17 @@ const ESPERA_DEL_CALCULO = 300;
 const ESPERA_DEL_VELO = 100;
 
 // Cada formulario: su modal, el prefijo de sus ids (el error sin campo es <prefijo>-error) y el control de cada campo de los errores
-// del servidor. `fechas` (el 409 de la persona autorizada que se queda sin días) no es un campo: va a la fecha de inicio
+// del servidor
 const FORMULARIOS = Object.freeze({
   licencia: {
     modal: 'modal-licencia', prefijo: 'ml',
     campos: {
-      tipo: 'ml-tipos', desde: 'ml-desde', hasta: 'ml-hasta', horas: 'ml-horas', nota: 'ml-nota', fechas: 'ml-desde',
-      autorizado_id: 'ml-autorizado'
+      tipo: 'ml-tipos', desde: 'ml-desde', hasta: 'ml-hasta', horas: 'ml-horas', nota: 'ml-nota', autorizado_id: 'ml-autorizado'
     }
   },
   uso: {
     modal: 'modal-uso', prefijo: 'mu',
-    campos: { desde: 'mu-fecha', hasta: 'mu-fecha', horas: 'mu-horas', nota: 'mu-nota', fechas: 'mu-fecha' }
+    campos: { desde: 'mu-fecha', hasta: 'mu-fecha', horas: 'mu-horas', nota: 'mu-nota' }
   },
   horasExtras: {
     modal: 'modal-horas', prefijo: 'mh', campos: { fecha: 'mh-fecha', desde: 'mh-desde', hasta: 'mh-hasta', nota: 'mh-nota' }

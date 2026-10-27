@@ -406,9 +406,12 @@ describe('correos.js: días sin auditor en el Estado (spec 2026-10-15-dias-habil
       }
     });
 
-    it('la alerta de la persona autorizada de licencia se dibuja como advertencia, y el error de siempre como error', async () => {
+    // La de no vigente es una advertencia desde la decisión del usuario del 27/10/2026 (la persona autorizada puede tomarse
+    // licencia aunque no le quede ningún día); un error se sigue dibujando como error
+    it('las alertas de la persona autorizada (de licencia y no vigente) se dibujan como advertencia, y un error como error', async () => {
       const ADVERTENCIA = 'La persona autorizada está de licencia hasta el 03/03/2027: hasta entonces no se generan notas.';
-      const ERROR = 'La persona autorizada para la licencia del firmante (del 01/03/2027 al 31/03/2027) ya no está activa, no tiene su firma cargada o está de licencia todos los días hábiles de esa licencia: esos días no se generan notas.';
+      const NO_VIGENTE = 'La persona autorizada para la licencia del firmante (del 01/03/2027 al 31/03/2027) ya no está activa, no tiene su firma cargada o está de licencia todos los días hábiles de esa licencia: esos días no se generan notas.';
+      const ERROR = 'La última corrida terminó con errores.';
       const dibujar = async (alerta) => {
         const panel = cargarCorreos({ getEstadoNotas: async () => ({ ...ESTADO, alertas: [alerta] }) });
         await panel.contexto.cargarEstado();
@@ -416,7 +419,9 @@ describe('correos.js: días sin auditor en el Estado (spec 2026-10-15-dias-habil
       };
       assert.equal(await dibujar({ tipo: 'autorizado-de-licencia', nivel: 'advertencia', mensaje: ADVERTENCIA }),
         `<div class="nd-alerta nd-advertencia">${ADVERTENCIA}</div>`);
-      assert.equal(await dibujar({ tipo: 'autorizado-no-vigente', nivel: 'error', mensaje: ERROR }),
+      assert.equal(await dibujar({ tipo: 'autorizado-no-vigente', nivel: 'advertencia', mensaje: NO_VIGENTE }),
+        `<div class="nd-alerta nd-advertencia">${NO_VIGENTE}</div>`);
+      assert.equal(await dibujar({ tipo: 'corrida-con-errores', nivel: 'error', mensaje: ERROR }),
         `<div class="nd-alerta">${ERROR}</div>`);
     });
 

@@ -247,6 +247,23 @@ export const oficialesQueSeCruzan = async (conexion, usuarioId, desde, hasta) =>
 };
 
 /**
+ * Las licencias sin anular del firmante titular (`titularId`) en las que la persona es la autorizada y que comparten algún día
+ * con [desde, hasta], por fecha: `[{ desde, hasta }]`. Sin titular, o si la persona es el titular, ninguna (decisión del
+ * usuario, 27/10/2026: el cálculo previo se lo avisa a la persona autorizada, sin frenarla).
+ * @returns {Promise<{ desde: string, hasta: string }[]>}
+ */
+export const delFirmanteComoAutorizada = async (conexion, titularId, usuarioId, desde, hasta) => {
+  if (!titularId || titularId === usuarioId) return [];
+  const [filas] = await conexion.query(
+    `SELECT DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta FROM usuarios_licencias
+     WHERE usuario_id = ? AND autorizado_id = ? AND anulada = 0 AND desde <= ? AND hasta >= ?
+     ORDER BY desde, hasta, id`,
+    [titularId, usuarioId, hasta, desde]
+  );
+  return filas.map((fila) => ({ desde: fila.desde, hasta: fila.hasta }));
+};
+
+/**
  * «Hoy no están» (spec, sección 7): las ausencias que se muestran a los compañeros y tocan [desde, hasta] ('AAAA-MM-DD'):
  * las filas activas, de día entero (`esDiaEntero`: una franquicia o unas horas a favor de menos de 7 horas no) y con
  * `mostrar = 1`, de las personas activas de administración (`esAdmin`: «los compañeros»), sin las de `excluir` (quien

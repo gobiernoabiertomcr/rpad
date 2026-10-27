@@ -16,7 +16,7 @@ Fecha: 26/10/2026. **Estado: aprobado por el usuario el 26/10/2026.** Salió de 
 
 **Revisión del 26/10/2026 (segunda sesión).** Cuatro agentes leyeron el código y el usuario contestó otra ronda de preguntas. Lo que cambió:
 - **Solo las vacaciones dejan persona a cargo,** y la elige quien carga la licencia, sin una regla nueva. Las demás licencias del firmante pasan sin persona a cargo, y cada licencia lleva su propia autorización, por sus fechas. Por ejemplo, la médica que sigue a las vacaciones va sin persona a cargo (sección 6).
-- **Se frena solo el rechazo peligroso de Configuración:** el de la persona autorizada que se quedaría sin días hábiles. Los demás se guardan con el motivo a la vista (sección 6).
+- **Se frena solo el rechazo peligroso de Configuración:** el de la persona autorizada que se quedaría sin días hábiles. Los demás se guardan con el motivo a la vista (sección 6). *Revertido por el usuario el 27/10/2026: la persona autorizada ya no se frena (sección 6 y «Decisiones»).*
 - **El email de vencimiento sale desde la fecha de la regla hasta el vencimiento,** una sola vez (sección 9).
 - **La franquicia guarda solo el día y las horas** (sección 3.2).
 - **«Mostrar a mis compañeros» queda como estaba,** aunque administración ya ve las fechas en Configuración (sección 7).
@@ -236,13 +236,13 @@ Lo propuse yo y el usuario lo aprobó: «Está perfecta tu sugerencia».
 - Solo pasa lo que termina hoy o después, porque `validarFechasNuevas` no acepta licencias terminadas. Lo ya pasado queda solo en Mi espacio.
 
 **Con qué reglas.** Las de siempre, sin copiarlas: `validarFechasNuevas`, `validarEdicion`, `puedeAnularse` y `rechazoDeLaBase` (superposición, persona autorizada y días hábiles libres).
-- **Una función de servicio para los dos lados.** Se saca de `licenciasController.js`, por ejemplo `cargarLicencia`, `cambiarLicencia` y `anularLicenciaDe`. Reciben la conexión de la transacción y al actor, nunca `req`. No abren ni cierran la transacción, y devuelven el rechazo o la licencia: Mi espacio guarda su fila aunque Configuración rechace (salvo el caso de la persona autorizada, más abajo). `rechazoDeLaBase` y `bloquearUsuarios` hoy son privados: pasan a ese servicio.
+- **Una función de servicio para los dos lados.** Se saca de `licenciasController.js`, por ejemplo `cargarLicencia`, `cambiarLicencia` y `anularLicenciaDe`. Reciben la conexión de la transacción y al actor, nunca `req`. No abren ni cierran la transacción, y devuelven el rechazo o la licencia: Mi espacio guarda su fila aunque Configuración rechace (salvo un rechazo en la persona a cargo que elige el titular, más abajo). `rechazoDeLaBase` y `bloquearUsuarios` hoy son privados: pasan a ese servicio.
 - **La regla de `sinCambios` se conserva.** Cambiar el tipo, la nota o «Mostrar» no toca Configuración. Así no se borra `nota_autorizacion_id` y no sale otra nota de autorización.
 - **Cada alta, edición y anulación** queda en `usuarios_auditoria`, como hoy.
 - **No sale aviso al superadmin:** el actor es la misma persona de la licencia.
 - **Configuración sigue con los 9 feriados fijos** (`esDiaHabil`): los días hábiles libres de la persona autorizada y «vuelve el…» se cuentan como hoy.
 
-**El formulario avisa antes de guardar,** en azul: «Las fechas pasan a Configuración → Licencias. Mientras dure, no contás como disponible para auditar y no te llegan los recordatorios de cambios para auditar ni los avisos de cambios sin auditor. El tipo no pasa.» Al superadmin le suma: «Los avisos al superadmin se guardan y te llegan en un resumen a la vuelta.» Para quien audita, muestra también el aviso de días sin auditor de `GET /usuarios/licencias/sin-auditor`, como en Configuración.
+**El formulario avisa antes de guardar,** en azul: «Las fechas pasan a Configuración → Licencias. Mientras dure, no contás como disponible para auditar y no te llegan los recordatorios de cambios para auditar ni los avisos de cambios sin auditor. El tipo no pasa.» Al superadmin le suma: «Los avisos al superadmin se guardan y te llegan en un resumen a la vuelta.» Para quien audita, muestra también el aviso de días sin auditor de `GET /usuarios/licencias/sin-auditor`, como en Configuración. A la persona autorizada del firmante, si su licencia se pisa con una de él, le suma una línea por cada una, sin frenarla (decisión del usuario, 27/10/2026): «Sos la persona autorizada del firmante del 01/12/2026 al 18/12/2026: los días que no estés, no se presentan Notas Digitales.»
 
 **El firmante titular.** Si la persona es el firmante titular de las Notas Digitales, el formulario suma el mismo campo de Configuración, «Autorizo a presentar las notas en mi nombre a:», con sus reglas y el aviso del efecto en las notas.
 - **Solo las vacaciones dejan persona a cargo** (corrección del usuario, 26/10/2026). El campo aparece solo cuando el firmante carga vacaciones; lo elige la persona al cargar, sin una regla nueva. Es opcional y viene vacío.
@@ -280,7 +280,8 @@ Lo propuse yo y el usuario lo aprobó: «Está perfecta tu sugerencia».
 - **Si administración acorta o anula la licencia que cubría una «unida»,** el panel lo avisa: «Ya no está cubierta en Configuración del … al …: revisala con administración.». Mi espacio lee `anulada` y las fechas de la de Configuración. La FK `ON DELETE SET NULL` nunca se dispara, porque las licencias se anulan, no se borran.
 
 **Si Configuración la rechaza:**
-- **Si sos la persona autorizada del firmante y te quedarías sin ningún día hábil** para presentar las notas, no se guarda (decisión del usuario): las notas saldrían presentadas por alguien que no está. El formulario lo dice: «Sos la persona autorizada del firmante del … al …, y con esta licencia no te quedaría ningún día hábil para presentar las notas. Hablalo con el firmante antes de cargarla.»
+- **Si sos la persona autorizada del firmante y te quedarías sin ningún día hábil** para presentar las notas, se guarda y pasa a Configuración como cualquier otra (decisión del usuario, 27/10/2026, que reemplaza a la de la segunda sesión: «Que no frene en ningún lado. Si no está, no se presentarán notas»; a la persona autorizada le puede pasar algo después de que el firmante cargó su licencia, y no se la puede perjudicar). Las notas nunca salen presentadas por alguien que no está: el motor mira cada día si ella está y, si no, ese día no se presenta ninguna nota y lo pendiente sale a la vuelta, como sin persona autorizada. El formulario se lo avisa en azul, sin frenarla (arriba). Configuración → Licencias tampoco la frena. Lo que sí se controla es la elección: el titular no puede elegir a quien ya está de licencia todos los días de la suya, pero corregir solo las fechas no la vuelve a controlar (si no, con ella de licencia todos los días, nadie podría corregir la licencia del titular). Correos → Estado lo muestra como advertencia.
+- **Si el rechazo es de la persona a cargo** que elige el titular (`autorizado_id`), no se guarda nada y el error va en ese campo.
 - **Por otro motivo** (se superpone en parte con una de administración, pasa de 365 días o tu rol ya no puede tener licencia): se guarda igual en Mi espacio, sin pasar, con el motivo a la vista («No pasó a Configuración: …»). Una ausencia real siempre se puede registrar en el panel propio.
 
 **Si cambia el rol.** Si pasa o no a Configuración se decide cada vez que se guarda o se corrige una licencia, con el rol de ese momento. Cambiar el rol no mueve nada solo:
@@ -418,7 +419,7 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
   - el paso a Configuración: alta, superposición, edición antes y después de empezar, anulación, el firmante titular, el lector que no pasa y el registro en `usuarios_auditoria`.
 - **`tests/mi-espacio-frontend.test.js`:** la página en un `vm`, el Resumen con los datos de las dos maquetas, los formularios y las paridades.
 - **El aviso de vencimiento,** con un hoy fijo (`mock.timers` y el paso llamado directo, como `tests/metricas-foto.test.js`) y Mailpit, sin llamar a `/api/cron/*`: el tramo de días, la persona de licencia, el que falló un día y sale al siguiente, y una sola vez.
-- **El paso a Configuración, con el firmante titular:** la licencia sin persona a cargo, el caso del usuario (vacaciones y la médica pegada), el aviso de las 8:15 y el rechazo de la persona autorizada que no se guarda.
+- **El paso a Configuración, con el firmante titular:** la licencia sin persona a cargo, el caso del usuario (vacaciones y la médica pegada), el aviso de las 8:15 y la persona autorizada que se queda sin días (desde el 27/10/2026, se guarda y pasa, con su aviso en el cálculo; el motor, en `tests/notas-licencias.test.js`).
 - **Los tests existentes que cambian:**
   - `permisos.test.js`: las rutas nuevas, con una lista nueva de «con sesión, sin ella 401»;
   - `paginas.test.js`: 14 páginas, el menú «Mi cuenta» y las versiones;
@@ -464,7 +465,7 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
 **Del usuario, en la segunda sesión (26/10/2026):**
 - La persona a cargo del firmante la elige quien carga la licencia, sin una regla nueva. Cada licencia lleva su propia autorización, por sus fechas.
 - Solo las vacaciones dejan persona a cargo; las demás licencias, nunca (corrección del usuario, después de aprobar la spec).
-- Si Configuración rechaza el paso, se frena solo el caso de la persona autorizada que se quedaría sin días hábiles; el resto se guarda con el motivo.
+- Si Configuración rechaza el paso, se frena solo el caso de la persona autorizada que se quedaría sin días hábiles; el resto se guarda con el motivo. *Revertido el 27/10/2026 (abajo).*
 - El email de vencimiento sale desde la fecha de la regla hasta el vencimiento, una sola vez.
 - La franquicia guarda solo el día y las horas.
 - «Mostrar a mis compañeros» queda como estaba.
@@ -501,6 +502,7 @@ Es un paso nuevo y aislado de la corrida de las 8:15 (`ejecutarNotificacionesDia
 - «Hoy y mañana» separa a los que no están hoy («Hoy no están») de los que empiezan mañana («Mañana no están»), cada uno con su vuelta (sección 7).
 - El modal del feriado cuenta solo las licencias en las que el feriado cambia de verdad un día hábil: no los sábados, los domingos, los 9 fijos ni un día en que ya rige otro feriado; con uno que se repite, cada año por separado (sección 2).
 - Unas horas extras que pasan la medianoche no se superponen con las del día siguiente, ni las de un día con las del anterior que pasan la medianoche: la misma hora no se cuenta dos veces (sección 3.7).
+- La persona autorizada del firmante puede tomarse licencia aunque no le quede ningún día hábil de la del firmante, en Mi espacio y en Configuración → Licencias: «Que no frene en ningún lado. Si no está, no se presentarán notas.» El sistema no frena ningún tipo de licencia y las Notas Digitales se arman con lo que haya cargado en la base ese día. Mi espacio se lo avisa en el cálculo, sin frenarla, y la alerta de Correos → Estado de la persona autorizada que no está pasa de error a advertencia (sección 6). Reemplaza a la decisión de la segunda sesión.
 
 **Respuestas del usuario a la revisión (26/10/2026):**
 - «Los compañeros» son administración: superadmin, admin y editor.

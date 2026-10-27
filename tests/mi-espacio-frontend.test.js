@@ -15,7 +15,7 @@ import {
   calcular, vinculosDeLaLista, MENSAJES_MI_ESPACIO, ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, DIAS_VACACIONES,
   DIAS_ESTUDIOS,
   DIAS_POR_EXAMEN, JORNADA, LARGO_NOTA, horasDe as horasDelServidor, camposDelSaldoInicial, validarSaldoInicial, textoSaldo,
-  textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaSinDias,
+  textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaDelFirmante,
   TIPOS_DE_UN_DIA, TIPOS_POR_HORAS, esDiaEntero
 } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
@@ -1307,11 +1307,14 @@ const usuariosJs = (() => {
 })();
 
 // El cálculo previo como lo arma el servidor (calcularLicencia): la vista de evaluarLicencia y el paso de pasoPrevistoDe, para
-// una carga nueva de la persona de planta (admin) que pasa a Configuración. `soyTitular`: es el firmante titular
-const respuestaDelCalculo = (entrada, { soyTitular = false, estado = PLANTA.estado, rol = 'admin', editadaId = null } = {}) => {
+// una carga nueva de la persona de planta (admin) que pasa a Configuración. `soyTitular`: es el firmante titular;
+// `comoAutorizada`: las licencias del firmante en las que es la persona autorizada
+const respuestaDelCalculo = (entrada, {
+  soyTitular = false, estado = PLANTA.estado, rol = 'admin', editadaId = null, comoAutorizada = []
+} = {}) => {
   const { datos, error, vista } = evaluarLicencia(estado, entrada, { hoy: HOY, feriados: SIN_FERIADOS, editadaId });
   if (datos === null) return comoLlega({ error, vista, paso: null });
-  const paso = pasoPrevistoDe({ paso: { accion: 'crear' }, vinculo: null, fila: datos, rol, hoy: HOY, soyTitular });
+  const paso = pasoPrevistoDe({ paso: { accion: 'crear' }, vinculo: null, fila: datos, rol, hoy: HOY, soyTitular, comoAutorizada });
   return comoLlega({ error: null, vista, paso });
 };
 const VACACIONES = Object.freeze({ tipo: 'vacaciones', desde: '2026-11-16', hasta: '2026-11-20' });
@@ -1602,12 +1605,12 @@ describe('los formularios: lo puro', () => {
 
 // Lo que contesta el servidor falso en los formularios, además de lo de entrada: el cálculo (de la persona de planta, con
 // `soyTitular`), el firmante y lo que se pase en `extra` (que gana)
-const conFormularios = ({ soyTitular = false, extra = () => undefined } = {}) => (metodo, ruta, cuerpo) => {
+const conFormularios = ({ soyTitular = false, comoAutorizada = [], extra = () => undefined } = {}) => (metodo, ruta, cuerpo) => {
   const propia = extra(metodo, ruta, cuerpo);
   if (propia !== undefined) return propia;
   if (metodo === 'POST' && ruta === '/api/mi-espacio/licencias/calculo') {
     const { id, ...entrada } = cuerpo;
-    return ok(respuestaDelCalculo(entrada, { soyTitular, editadaId: id ?? null }));
+    return ok(respuestaDelCalculo(entrada, { soyTitular, editadaId: id ?? null, comoAutorizada }));
   }
   if (ruta === '/api/mi-espacio/firmante') return ok(soyTitular ? FIRMANTE : { soy_titular: false });
   return RESPUESTAS_DE_ENTRADA(metodo, ruta);
@@ -1755,20 +1758,26 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.equal(pagina.el('ml-horas').getAttribute('aria-invalid'), null);
   });
 
-  it('el 409 de la persona autorizada (en fechas) se ve debajo de ml-desde', async () => {
-    const mensaje = textoAutorizadaSinDias('2026-10-26', '2026-11-10');
+  // Decisión del usuario (27/10/2026): a la persona autorizada del firmante no se la frena. El aviso del servidor va en el
+  // recuadro azul del paso, con los demás, y la licencia se guarda
+  it('la persona autorizada del firmante: el aviso del cálculo va en el recuadro del paso y la licencia se guarda', async () => {
+    const comoAutorizada = [{ desde: '2026-11-16', hasta: '2026-11-27' }];
     const pagina = montarPagina({
       responder: conFormularios({
+        comoAutorizada,
         extra: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/mi-espacio/licencias'
-          ? respuesta(409, { success: false, error: mensaje, campo: 'fechas' }) : undefined)
+          ? respuesta(201, { success: true, data: { id: 9 }, message: 'Licencia cargada.' }) : undefined)
       })
     });
     await pagina.iniciar();
     await cargarLicencia(pagina, { tipo: 'medica', desde: MEDICA.desde, hasta: MEDICA.hasta });
+    assert.equal(pagina.el('ml-paso').hidden, false);
+    assert.deepEqual([...pagina.el('ml-paso').innerHTML.matchAll(/<p>([\s\S]*?)<\/p>/g)].map(([, texto]) => texto),
+      [AVISO_DEL_PASO, textoAutorizadaDelFirmante('2026-11-16', '2026-11-27')]);
     await pagina.tocar(pagina.el('ml-guardar'));
-    assert.equal(pagina.el('ml-desde-error').textContent, mensaje);
-    assert.equal(pagina.el('ml-desde').getAttribute('aria-invalid'), 'true');
-    assert.equal(pagina.documento.activeElement, pagina.el('ml-desde'));
+    await pagina.esperar();
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').length, 1);
+    assert.equal(pagina.abierto('modal-licencia'), false);
   });
 
   it('los errores del formulario, antes de pedir nada: todos juntos y el foco al primero', async () => {

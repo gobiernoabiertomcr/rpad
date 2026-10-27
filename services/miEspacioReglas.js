@@ -210,9 +210,6 @@ export const textoHorarioSuperpuesto = (desde, hasta, dia) =>
   `Se superpone con las horas extras de ${horaTexto(desde)} a ${horaTexto(hasta)} `
   + `${typeof dia === 'string' && Object.hasOwn(DIA_DEL_HORARIO, dia) ? DIA_DEL_HORARIO[dia] : 'de ese día'}.`;
 export const textoSaldo = (maximo) => `Escribí un número de 0 a ${numeroTexto(maximo)}.`;
-export const textoAutorizadaSinDias = (desde, hasta) =>
-  `Sos la persona autorizada del firmante del ${fechaCorta(desde)} al ${fechaCorta(hasta)}, y con esta licencia no te `
-  + 'quedaría ningún día hábil para presentar las notas. Hablalo con el firmante antes de cargarla.';
 
 // Los textos del paso a Configuración → Licencias (spec, sección 6), tal cual: textoSuperpuestaConConfiguracion,
 // textoNoPaso y TEXTO_NO_DIA_ENTERO no terminan en punto
@@ -222,6 +219,11 @@ export const AVISO_DEL_PASO_SUPERADMIN = 'Los avisos al superadmin se guardan y 
 export const AVISO_NOTAS_DE_HOY = 'Las notas de hoy ya salieron a las 8:15 con tu firma.';
 export const AVISO_SIN_PERSONA_A_CARGO =
   'Sin persona a cargo: esos días no se generan Notas Digitales y lo que venza se reitera cuando vuelvas.';
+// A la persona autorizada del firmante, por cada licencia de él con la que se pisa la suya: no la frena (decisión del usuario,
+// 27/10/2026)
+export const textoAutorizadaDelFirmante = (desde, hasta) =>
+  `Sos la persona autorizada del firmante del ${fechaCorta(desde)} al ${fechaCorta(hasta)}: los días que no estés, no se `
+  + 'presentan Notas Digitales.';
 export const textoSuperpuestaConConfiguracion = (desde, hasta) =>
   `Se superpone con una licencia de Configuración del ${diaYMes(desde)} al ${diaYMes(hasta)}: revisala con administración`;
 export const textoNoPaso = (motivo) => `No pasó a Configuración: ${typeof motivo === 'string' ? motivo : ''}`;
@@ -1595,12 +1597,15 @@ export const vinculosDeLaLista = (licencias, opciones) => {
  * - `pasa`: las fechas quedan en Configuración como creada: se crea o se cambia la licencia, o una creada sigue igual;
  * - `avisos` (solo si pasa): `AVISO_DEL_PASO`; al superadmin, `AVISO_DEL_PASO_SUPERADMIN`; al titular, `AVISO_NOTAS_DE_HOY`
  *   si empieza hoy o antes, y `AVISO_SIN_PERSONA_A_CARGO` si no son vacaciones (solo las vacaciones dejan persona a cargo);
+ *   a la persona autorizada del firmante, `textoAutorizadaDelFirmante` por cada una de `comoAutorizada` (las licencias del
+ *   firmante en las que es la autorizada, `[{ desde, hasta }]`) que se pisa con la fila y no terminó antes de hoy, por fecha
+ *   (decisión del usuario, 27/10/2026: no la frena);
  * - `firmante` (solo al titular, y si pasa): `{ soy_titular, puede_autorizar (las vacaciones), vispera (el día hábil anterior
  *   al desde, con los 9 fijos, como Configuración), notas_de_hoy }`; si no, null;
  * - `sin_pasar_previsto`: si se une, `textoUnida`; si se superpone en parte, el motivo; si no, null.
  */
 export const pasoPrevistoDe = (entrada) => {
-  const { paso, vinculo, fila, rol, hoy, soyTitular } = esObjeto(entrada) ? entrada : {};
+  const { paso, vinculo, fila, rol, hoy, soyTitular, comoAutorizada } = esObjeto(entrada) ? entrada : {};
   const delPaso = esObjeto(paso) ? paso : {};
   const efectivo = delPaso.accion === 'soltar' && esObjeto(delPaso.luego) ? delPaso.luego : delPaso;
   const sigueCreada = esObjeto(vinculo) && vinculo.estado === 'creada' && efectivo.accion === 'nada';
@@ -1619,6 +1624,11 @@ export const pasoPrevistoDe = (entrada) => {
   if (rol === 'superadmin') avisos.push(AVISO_DEL_PASO_SUPERADMIN);
   if (titular && deHoy) avisos.push(AVISO_NOTAS_DE_HOY);
   if (titular && fila.tipo !== 'vacaciones') avisos.push(AVISO_SIN_PERSONA_A_CARGO);
+  listaDe(comoAutorizada)
+    .filter((delFirmante) => esOficial(delFirmante) && delFirmante.desde <= fila.hasta && delFirmante.hasta >= fila.desde
+      && delFirmante.hasta >= hoy)
+    .sort((a, b) => compararTexto(a.desde, b.desde) || compararTexto(a.hasta, b.hasta))
+    .forEach((delFirmante) => avisos.push(textoAutorizadaDelFirmante(delFirmante.desde, delFirmante.hasta)));
   const firmante = titular ? {
     soy_titular: true, puede_autorizar: fila.tipo === 'vacaciones', vispera: diaHabilAnterior(fila.desde), notas_de_hoy: deHoy
   } : null;
