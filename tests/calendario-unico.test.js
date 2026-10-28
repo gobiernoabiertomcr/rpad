@@ -21,14 +21,11 @@ const SIEMPRE = Object.freeze(['services/notasDigitalesCalendario.js', 'services
 const HASTA_LA_TANDA_2 = Object.freeze(['services/metricasReglas.js', 'services/reportesAgenda.js']);
 // Los que todavía no reciben el calendario: cada tarea de la tanda 1 que arregla un archivo lo saca de acá
 const PENDIENTES_DE_LA_TANDA_1 = Object.freeze([
-  'services/auditoriaReglas.js',
-  'services/auditoriaService.js',
   'services/avisosDiariosService.js',
   'services/avisosSuperadminService.js',
   'services/licenciasOficialesService.js',
   'services/miEspacioReglas.js',
   'services/notasDigitales.js',
-  'services/notasDigitalesContenido.js',
   'controllers/licenciasController.js',
   'controllers/notificacionesController.js'
 ]);

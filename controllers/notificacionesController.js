@@ -8,6 +8,8 @@ import { textoDelResultadoDeEventos } from '../services/miEspacioEventosReglas.j
 import { obtenerConfig, conPedido } from '../services/notasDigitalesDatos.js';
 import { hoyArgentina, proximoDiaHabil, esDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
+import { leerCalendario } from '../services/feriadosDatos.js';
+import { MENSAJE_CORRIDA_SIN_FERIADOS } from '../services/feriadosReglas.js';
 import {
   datasetsExternosPorArea, enviarAvisoAreas, cambiosPendientesParaAdmin, enviarCambiosPendientes, DIAS_AVISO_AREAS
 } from '../services/avisosDiariosService.js';
@@ -218,23 +220,34 @@ export const previewEmail = async (req, res) => {
 
 /**
  * Ejecuta el recordatorio de cambios pendientes
- * Llamado por cron (14:00); solo envía en días hábiles (spec 4.1)
+ * Llamado por cron (14:00); solo envía en días hábiles (spec 4.1), con el calendario de los feriados de la tabla, leído una
+ * vez (spec 2026-10-27-feriados-en-notas, 2 y 3): el mismo cuenta el día, el canal de cada cambio y el aviso a quien propone.
  * Envía un email a cada persona que puede auditar cambios con los que le corresponden (excluye los propios y los que van
  * por nota de auditoría, spec 2026-10-15, 9.2)
+ * data suma calendario: de dónde salió ('tabla' o 'fijos'). Si la tabla no se pudo leer (calendario.error), la corrida sigue
+ * con los 9 fijos, lo anota en la última corrida de las Notas Digitales (esta corrida no tiene registro propio: Correos >
+ * Estado lo muestra en rojo hasta la corrida siguiente) y responde 207 con success false, también un día que no es hábil.
+ * El mensaje no cambia: dice lo enviado o los errores del envío
  */
 export const ejecutarNotificacionCambiosPendientes = async (req, res) => {
   try {
-    const resultados = await enviarCambiosPendientes({ hoy: hoyArgentina() });
+    const calendario = await leerCalendario();
+    const sinFeriados = calendario.error !== null;
+    if (sinFeriados) await anotarEnLaUltimaCorrida(MENSAJE_CORRIDA_SIN_FERIADOS).catch(() => {});
+    const resultados = await enviarCambiosPendientes({ hoy: hoyArgentina(), calendario });
+    const data = { ...resultados, calendario: calendario.origen };
     if (!resultados.dia_habil) {
-      return res.json({ success: true, message: 'Hoy no es día hábil: no se envían recordatorios.', data: resultados });
+      return res.status(sinFeriados ? 207 : 200)
+        .json({ success: !sinFeriados, message: 'Hoy no es día hábil: no se envían recordatorios.', data });
     }
-    const success = resultados.errores.length === 0;
+    const sinErrores = resultados.errores.length === 0;
+    const success = sinErrores && !sinFeriados;
     res.status(success ? 200 : 207).json({
       success,
-      message: success
+      message: sinErrores
         ? `Recordatorios enviados a ${resultados.enviados.length} ${resultados.enviados.length === 1 ? 'persona' : 'personas'}.`
         : `Proceso completado con ${resultados.errores.length} errores.`,
-      data: resultados
+      data
     });
   } catch (error) {
     console.error('Error en notificación de cambios pendientes:', error);

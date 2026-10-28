@@ -1,7 +1,7 @@
 // Contenido de las Notas Digitales: textos fijos, estructura de la nota y versiones HTML y texto plano.
 // Spec: docs/superpowers/specs/2026-10-12-notas-digitales-design.md (sección 6)
 import {
-  formatoCorto, formatoLargo, mesYAnio, diasEntre, esFechaIso, textoRangoMeses, diasHabilesTranscurridos
+  formatoCorto, formatoLargo, mesYAnio, diasEntre, esFechaIso, textoRangoMeses, CALENDARIO_FIJO
 } from './notasDigitalesCalendario.js';
 import { RPAD_URL } from './emailTemplates.js';
 import { NOMBRES_TIPO_PEDIDO, frecuenciaEnNota } from './fechasDatasetReglas.js';
@@ -466,14 +466,17 @@ const tituloDelCambio = (cambio) =>
 const filaSimple = (valores) => ({ valores, url: null, antecedente: null, informadoAnterior: null });
 
 // Fila de las tablas de nuevos y reiterados (spec 10.3, punto 3). "Propuesto por": el nombre y, si tiene, el cargo (con
-// "personal contratado, cumpliendo funciones de" si quien propuso es contratado)
+// "personal contratado, cumpliendo funciones de" si quien propuso es contratado). "Días hábiles pendiente": el que trae el
+// cambio, calculado con el calendario de la corrida (auditoriaService.seleccionarParaAuditoria), así el contenido sigue puro;
+// sin él (los cambios de ejemplo), con los 9 fijos
 const filaDeCambio = (cambio, fecha, conSolicitud) => {
   const proponente = cambio.usuario_cargo
     ? `${cambio.usuario_nombre}, ${cargoEnTexto({ cargo: cambio.usuario_cargo, contratado: cambio.usuario_contratado })}`
     : cambio.usuario_nombre;
+  const diasPendiente = cambio.dias_habiles_pendiente ?? CALENDARIO_FIJO.diasHabilesTranscurridos(cambio.fecha_propuesta, fecha);
   const valores = [
     tituloDelCambio(cambio), tipoDelCambio(cambio), proponente,
-    formatoCorto(cambio.fecha_propuesta), String(diasHabilesTranscurridos(cambio.fecha_propuesta, fecha))
+    formatoCorto(cambio.fecha_propuesta), String(diasPendiente)
   ];
   // "Solicitado en": "Nota Digital N° 12/26 (09/10/2026)" y, si ya se reiteró, " – reiterado N veces" (Decisiones del plan 5): el
   // mismo formato que "Informado en" de las reiteraciones de datasets

@@ -1,11 +1,14 @@
 // Lecturas de la auditoría de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 3, 8, 9 y 10): quiénes
 // están disponibles cada día, el canal de cada cambio pendiente y los cambios de la nota de auditoría. Las reglas están
-// en auditoriaReglas.js; "disponible" se calcula solo acá, con la única definición (auditoriaReglas.disponibilidad).
+// en auditoriaReglas.js; "disponible" se calcula solo acá, con la única definición (auditoriaReglas.disponibilidad). Los días
+// hábiles, con el calendario de quien llama (spec 2026-10-27-feriados-en-notas, 1); sin él, lo leen las funciones exportadas
+// (leerCalendario, con los feriados de la tabla).
 import pool from '../config/database.js';
 import { obtenerConfig, configuracionCompleta } from './notasDigitalesDatos.js';
 import { firmaParaFecha, firmaTitularDe } from './notasDigitalesFirmas.js';
 import { listaDeCorreos } from './emailService.js';
-import { hoyArgentina, esDiaHabil, sumarDias } from './notasDigitalesCalendario.js';
+import { hoyArgentina, sumarDias } from './notasDigitalesCalendario.js';
+import { leerCalendario } from './feriadosDatos.js';
 import { canalDelCambio, seccionDeAuditoria, disponibilidad, agruparDiasSinAuditor, quienesAuditan } from './auditoriaReglas.js';
 
 // Hasta cuántos días hacia adelante se busca el día en que vuelve a haber un auditor (o alguien que audite un cambio)
@@ -59,14 +62,16 @@ export const personasDeAuditoria = async (fecha, conexion = pool) =>
   personasEn(fecha, await leerPersonasYLicencias(fecha, fecha, { conexion }));
 
 /**
- * Lo mismo que personasDeAuditoria para cada día hábil de [desde, hasta], sin una consulta por día: Map fecha → personas,
- * en orden. licenciaSimulada y excluirLicenciaId: los de leerPersonasYLicencias (para simular una licencia en el formulario).
+ * Lo mismo que personasDeAuditoria para cada día hábil del calendario de [desde, hasta], sin una consulta por día: Map
+ * fecha → personas, en orden. licenciaSimulada, excluirLicenciaId y conexion: los de leerPersonasYLicencias (para simular
+ * una licencia en el formulario). calendario: el de quien llama; sin él, se lee (leerCalendario, con la misma conexión).
  */
-export const personasPorDia = async (desde, hasta, opciones = {}) => {
+export const personasPorDia = async (desde, hasta, { calendario = null, ...opciones } = {}) => {
+  const conElCalendario = calendario ?? await leerCalendario(opciones.conexion);
   const datos = await leerPersonasYLicencias(desde, hasta, opciones);
   const porDia = new Map();
   for (let fecha = desde; fecha <= hasta; fecha = sumarDias(fecha, 1)) {
-    if (esDiaHabil(fecha)) porDia.set(fecha, personasEn(fecha, datos));
+    if (conElCalendario.esDiaHabil(fecha)) porDia.set(fecha, personasEn(fecha, datos));
   }
   return porDia;
 };
@@ -74,21 +79,27 @@ export const personasPorDia = async (desde, hasta, opciones = {}) => {
 /**
  * Períodos sin auditor de [desde, hasta]: días hábiles seguidos en que ningún auditor (superadmin o admin) está disponible
  * (auditoriaReglas.agruparDiasSinAuditor). Un período que sigue después de hasta se corta en hasta; vuelve se busca hasta
- * DIAS_BUSQUEDA_AUDITOR días después. licenciaSimulada y excluirLicenciaId: los de leerPersonasYLicencias.
+ * DIAS_BUSQUEDA_AUDITOR días después. licenciaSimulada y excluirLicenciaId: los de leerPersonasYLicencias. calendario: el de
+ * quien llama; sin él, se lee una vez, y el mismo cuenta los días de personasPorDia y los de agruparDiasSinAuditor.
  * [{ desde, hasta, vuelve: 'AAAA-MM-DD' | null, respaldo: [nombre_completo] }]
  */
-export const periodosSinAuditor = async (desde, hasta, { licenciaSimulada = null, excluirLicenciaId = null } = {}) => {
-  const porDia = await personasPorDia(desde, sumarDias(hasta, DIAS_BUSQUEDA_AUDITOR), { licenciaSimulada, excluirLicenciaId });
-  return agruparDiasSinAuditor([...porDia].map(([fecha, personas]) => ({ fecha, personas })), hasta);
+export const periodosSinAuditor = async (
+  desde, hasta, { licenciaSimulada = null, excluirLicenciaId = null, calendario = null } = {}
+) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const porDia = await personasPorDia(desde, sumarDias(hasta, DIAS_BUSQUEDA_AUDITOR),
+    { licenciaSimulada, excluirLicenciaId, calendario: conElCalendario });
+  return agruparDiasSinAuditor([...porDia].map(([fecha, personas]) => ({ fecha, personas })), hasta, conElCalendario);
 };
 
 /**
- * El primer día hábil desde `desde` (incluido) en que alguien que no propuso el cambio puede auditarlo (un auditor
- * disponible o, de respaldo, un editor disponible: auditoriaReglas.quienesAuditan). null si no hay ninguno en
- * DIAS_BUSQUEDA_AUDITOR días.
+ * El primer día hábil del calendario desde `desde` (incluido) en que alguien que no propuso el cambio puede auditarlo (un
+ * auditor disponible o, de respaldo, un editor disponible: auditoriaReglas.quienesAuditan). null si no hay ninguno en
+ * DIAS_BUSQUEDA_AUDITOR días. calendario: el de quien llama; sin él, se lee.
  */
-export const proximoDiaConQuienAudite = async (proponenteId, desde) => {
-  const porDia = await personasPorDia(desde, sumarDias(desde, DIAS_BUSQUEDA_AUDITOR));
+export const proximoDiaConQuienAudite = async (proponenteId, desde, calendario = null) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const porDia = await personasPorDia(desde, sumarDias(desde, DIAS_BUSQUEDA_AUDITOR), { calendario: conElCalendario });
   for (const [fecha, personas] of porDia) {
     if (quienesAuditan(personas, proponenteId).personas.length > 0) return fecha;
   }
@@ -96,15 +107,18 @@ export const proximoDiaConQuienAudite = async (proponenteId, desde) => {
 };
 
 /**
- * Lo que necesita canalDelCambio en la fecha (spec 9.1): { personas, titulares, hayQuienFirme }.
+ * Lo que necesita canalDelCambio en la fecha (spec 9.1): { personas, titulares, hayQuienFirme, calendario }.
  * titulares: el firmante titular o, sin titular elegido, los superadmins (Decisiones del plan 6).
  * hayQuienFirme (condición 4): la nota de auditoría puede salir ese día. Se cumple si el envío automático está activo, la
  * configuración de las notas está completa, hay un Para de auditoría y hay quién firme (firmaParaFecha no está en modo
  * 'sin_autorizado'; sin titular elegido firma la configuración de Correos). Si no, el cambio sigue por recordatorio:
  * el interruptor y la configuración no pueden dejar a un cambio sin recordatorio y sin nota.
- * config: la de Notas Digitales (se lee si no viene).
+ * config: la de Notas Digitales (se lee si no viene). calendario: el de la corrida (se lee si no viene); va en el contexto, y
+ * así la corrida de las 8:15 (la nota de auditoría) y la de las 14:00 (el recordatorio) cuentan los días hábiles del canal con
+ * el mismo calendario (spec 2026-10-27-feriados-en-notas, 1 y 3).
  */
-export const contextoDeCanal = async (fecha, config = null) => {
+export const contextoDeCanal = async (fecha, config = null, calendario = null) => {
+  const conElCalendario = calendario ?? await leerCalendario();
   const configuracion = config ?? await obtenerConfig();
   const personas = await personasDeAuditoria(fecha);
   const titulares = configuracion.firmante_usuario_id
@@ -115,7 +129,7 @@ export const contextoDeCanal = async (fecha, config = null) => {
     && listaDeCorreos(configuracion.para_auditoria).length > 0
     && modo !== 'sin_autorizado'
     && configuracionCompleta(configuracion, await firmaTitularDe(configuracion)).length === 0;
-  return { personas, titulares, hayQuienFirme };
+  return { personas, titulares, hayQuienFirme, calendario: conElCalendario };
 };
 
 const jsonDe = (valor) => (typeof valor === 'string' ? JSON.parse(valor) : valor ?? null);
@@ -183,18 +197,22 @@ export const notasDeAuditoriaDe = async (ids) => {
  * Cambios de la nota de auditoría de la fecha (spec 9.3): los del canal nota que nunca estuvieron en una nota de auditoría
  * (nuevos) y aquellos cuya última nota es de hace 5 días hábiles o más (reiterados). Cada reiterado suma solicitado:
  * { numero, anio, fecha } de la primera nota que lo incluyó y reiteraciones, cuántas lo incluyeron después de esa
- * (Decisiones del plan 5). Devuelve { nuevos, reiterados }.
+ * (Decisiones del plan 5). Cada uno suma también dias_habiles_pendiente, los días hábiles desde la propuesta hasta la fecha
+ * (la columna «Días hábiles pendiente» de la nota: llega calculada, así el contenido sigue puro). Todo con el calendario del
+ * contexto (el de contextoDeCanal; se lee si no viene). Devuelve { nuevos, reiterados }.
  */
 export const seleccionarParaAuditoria = async (fecha, contexto = null) => {
-  const delCanal = (await cambiosConCanal(fecha, contexto)).filter(c => c.canal === 'nota');
+  const ctx = contexto ?? await contextoDeCanal(fecha);
+  const delCanal = (await cambiosConCanal(fecha, ctx)).filter(c => c.canal === 'nota');
   const previas = await notasDeAuditoriaDe(delCanal.map(c => c.id));
   const nuevos = [];
   const reiterados = [];
   for (const cambio of delCanal) {
     const notas = previas.get(cambio.id) ?? [];
-    const seccion = seccionDeAuditoria(notas.at(-1)?.fecha ?? null, fecha);
-    if (seccion === 'nuevo') nuevos.push(cambio);
-    else if (seccion === 'reiterado') reiterados.push({ ...cambio, solicitado: { ...notas[0], reiteraciones: notas.length - 1 } });
+    const seccion = seccionDeAuditoria(notas.at(-1)?.fecha ?? null, fecha, ctx.calendario);
+    const conDias = { ...cambio, dias_habiles_pendiente: ctx.calendario.diasHabilesTranscurridos(cambio.fecha_propuesta, fecha) };
+    if (seccion === 'nuevo') nuevos.push(conDias);
+    else if (seccion === 'reiterado') reiterados.push({ ...conDias, solicitado: { ...notas[0], reiteraciones: notas.length - 1 } });
   }
   return { nuevos, reiterados };
 };

@@ -10,6 +10,7 @@ import { conPedido } from './notasDigitalesDatos.js';
 import { contextoDeCanal, cambiosConCanal, proximoDiaConQuienAudite } from './auditoriaService.js';
 import { quienesAuditan, entraEnRecordatorio } from './auditoriaReglas.js';
 import { emailValido } from './usuariosReglas.js';
+import { leerCalendario } from './feriadosDatos.js';
 
 export const DIAS_AVISO_AREAS = 40;
 
@@ -172,7 +173,10 @@ export const tiempoPendiente = (segundos) => {
 };
 
 /**
- * Recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.2), solo en días hábiles.
+ * Recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.2), solo en días hábiles del
+ * calendario (spec 2026-10-27-feriados-en-notas, 3: el de la corrida, con los feriados de la tabla; sin él, se lee). El mismo
+ * calendario cuenta el canal de cada cambio (contextoDeCanal), como la nota de auditoría de las 8:15, y el «hasta» del aviso
+ * a quien propone.
  * Incluye los cambios del canal recordatorio (9.1) propuestos hace una hora o más. Cada persona que puede auditarlos
  * (8.2) y está disponible recibe un email con los suyos; si los recibe de respaldo (no hay auditores disponibles), el
  * email lo dice. Quien está de licencia no lo recibe (5.3). La primera vez que un cambio va en un email enviado se
@@ -182,14 +186,15 @@ export const tiempoPendiente = (segundos) => {
  * { fecha, dia_habil, enviados: [{ admin, email, cantidadPendientes, respaldo }], sinPendientes: [username],
  *   deLicencia: [username], canal_nota, sin_auditor: [{ usuario, cambios, hasta }], errores: [{ admin, error }] }
  */
-export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina() }) => {
+export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina(), calendario = null }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
   const resultados = {
-    fecha: new Date().toISOString(), dia_habil: esDiaHabil(hoy), enviados: [], sinPendientes: [], deLicencia: [],
-    canal_nota: 0, sin_auditor: [], errores: []
+    fecha: new Date().toISOString(), dia_habil: conElCalendario.esDiaHabil(hoy), enviados: [], sinPendientes: [],
+    deLicencia: [], canal_nota: 0, sin_auditor: [], errores: []
   };
   if (!resultados.dia_habil) return resultados;
 
-  const contexto = await contextoDeCanal(hoy);
+  const contexto = await contextoDeCanal(hoy, null, conElCalendario);
   const cambios = await cambiosConCanal(hoy, contexto);
   resultados.canal_nota = cambios.filter(c => c.canal === 'nota').length;
   // Los cambios de cada persona que los audita hoy (spec 8.2): un auditor los recibe como tal; un editor, de respaldo
@@ -239,7 +244,7 @@ export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina() })
       resultados.errores.push({ admin: persona.username, error: `No se pudo guardar la fecha del primer recordatorio: ${error.message}` });
     }
   }
-  await avisarSinAuditor({ hoy, ahora, contexto, cambios, resultados });
+  await avisarSinAuditor({ hoy, ahora, contexto, cambios, resultados, calendario: conElCalendario });
   return resultados;
 };
 
@@ -247,11 +252,11 @@ export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina() })
  * Aviso a quien propone cuando nadie puede auditar sus cambios: los del recordatorio de hoy que no tienen a nadie que los
  * audite (quienesAuditan vacío: ni auditores ni editores de respaldo disponibles) y que nunca tuvieron este aviso. Un email
  * por persona con todos sus cambios en esa situación, solo si está disponible: de licencia no se manda (le llega a su
- * vuelta, si sigue sin auditor); inactiva o sin rol de auditoría o edición, tampoco. hasta: el primer día hábil desde
- * mañana en que alguien puede auditarlos. Si el email salió, se guarda aviso_sin_auditores_at = ahora, para no repetirlo.
- * Suma a resultados.sin_auditor [{ usuario, cambios, hasta }] y los errores a resultados.errores.
+ * vuelta, si sigue sin auditor); inactiva o sin rol de auditoría o edición, tampoco. hasta: el primer día hábil del
+ * calendario desde mañana en que alguien puede auditarlos. Si el email salió, se guarda aviso_sin_auditores_at = ahora, para
+ * no repetirlo. Suma a resultados.sin_auditor [{ usuario, cambios, hasta }] y los errores a resultados.errores.
  */
-const avisarSinAuditor = async ({ hoy, ahora, contexto, cambios, resultados }) => {
+const avisarSinAuditor = async ({ hoy, ahora, contexto, cambios, resultados, calendario }) => {
   const porProponente = new Map();
   for (const cambio of cambios.filter(c => entraEnRecordatorio(c))) {
     if (cambio.aviso_sin_auditores_at) continue;
@@ -270,7 +275,7 @@ const avisarSinAuditor = async ({ hoy, ahora, contexto, cambios, resultados }) =
     // Los recordatorios ya salieron: si algo falla con el aviso de esta persona, se anota el error y siguen las demás.
     // Sin la fecha guardada, el aviso se reintenta el próximo día hábil
     try {
-      await enviarAvisoSinAuditor({ persona, suyos, hoy, ahora, resultados });
+      await enviarAvisoSinAuditor({ persona, suyos, hoy, ahora, resultados, calendario });
     } catch (error) {
       console.error(`Error enviando el aviso sin auditor (${persona.username}):`, error);
       resultados.errores.push({ admin: persona.username, error: `No se pudo enviar el aviso sin auditor: ${error.message}` });
@@ -278,9 +283,10 @@ const avisarSinAuditor = async ({ hoy, ahora, contexto, cambios, resultados }) =
   }
 };
 
-// El aviso de una persona (avisarSinAuditor): calcula hasta cuándo, envía el email y guarda la fecha
-const enviarAvisoSinAuditor = async ({ persona, suyos, hoy, ahora, resultados }) => {
-  const hasta = await proximoDiaConQuienAudite(persona.id, sumarDias(hoy, 1));
+// El aviso de una persona (avisarSinAuditor): calcula hasta cuándo (con el calendario de la corrida), envía el email y guarda
+// la fecha
+const enviarAvisoSinAuditor = async ({ persona, suyos, hoy, ahora, resultados, calendario }) => {
+  const hasta = await proximoDiaConQuienAudite(persona.id, sumarDias(hoy, 1), calendario);
   const { subject, html } = templates.sinAuditorTemplate(suyos, { hasta });
   const envio = await sendEmail({ subject, html, to: [persona.email] });
   if (!envio.success) {
