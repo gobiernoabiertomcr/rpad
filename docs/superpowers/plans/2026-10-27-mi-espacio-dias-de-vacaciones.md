@@ -340,16 +340,12 @@ Lo hace el controlador.
 - [ ] **Step 1: La revisión final de la rama**, con un revisor Opus sobre `git diff <main de la Task 1>..HEAD`, con la spec y este plan. Se corrige lo que encuentre, con su revisión.
 - [ ] **Step 2: La suite completa**, con el candado. Expected: 0 fallas, y los tests de antes más los nuevos.
 - [ ] **Step 3: Merge en main y push**, solo si todo dio bien: `git merge --no-ff` de la rama, con un mensaje que resuma la regla, y `git push origin main`.
-- [ ] **Step 4: El kit `C:\Users\Mariano\Desktop\RPAD-deploy-dias-de-vacaciones`**, como el de `RPAD-deploy-mi-espacio-resumen`:
-  - `archivos-dias-de-vacaciones/` con `services/miEspacioReglas.js` y `services/miEspacioResumen.js` del main nuevo, y su `.zip`;
-  - `vuelta-atras/archivos-anteriores/` con los mismos dos archivos del main de la Task 1, y su `.zip`;
-  - `PASOS.txt`: sin SQL, sin cron ni npm, subir los dos archivos y Restart, fuera del horario de los crons (8:15, 14:00 y las medias horas). Va después del kit de horas extras;
-  - todo comparado byte a byte con `git show <commit>:<ruta>`, también lo que va dentro de los zip.
+- [ ] **Step 4: Sin kit propio** (pedido del usuario: «Creo que es mejor incluir todo con feriados»). Estos cambios viajan en el kit de «Feriados en las Notas Digitales», que sale después. En el traspaso va la lista exacta de los archivos cambiados, sin `docs/` ni `tests/` (`services/miEspacioReglas.js` y `services/miEspacioResumen.js`, o los que hayan quedado), y la aclaración de que no llevan SQL.
 - [ ] **Step 5: La limpieza**:
   - borrar la base `rpad_rama_dias_vacaciones` y su permiso;
   - borrar el `.env` del worktree;
   - sacar el junction de `node_modules` con `cmd /c rmdir` y verificar que ya no está antes de cualquier `git worktree remove`.
 - [ ] **Step 6: El traspaso y el aviso**:
   - el traspaso, en `mi-espacio-dias-de-vacaciones-cierre.md` de la carpeta de notas;
-  - el aviso a la coordinadora con SendMessage: el merge, los tests de antes y de después, y el kit;
+  - el aviso a la coordinadora con SendMessage: el hash, los tests de antes y de después, y que no hay kit;
   - la memoria del proyecto, actualizada.
