@@ -1,0 +1,121 @@
+/* MAQUETA (27/10/2026): la planilla de «Cargar horas extras» para las personas de contrato y el día por día nuevo de la pestaña.
+   Va después de pagina.css (el <style> de public/mi-espacio.html, copiado tal cual) y usa sus tokens --sg-*. Las clases nuevas
+   llevan el prefijo .mp- (la planilla) y .me-dia- (el día por día). */
+
+/* ---------------------------------------------------------------- El modal: más ancho que los otros, con la cabeza fija */
+.modal.me-modal.me-modal-planilla { max-width: 900px; height: min(880px, calc(100vh - 40px)); max-height: none; }
+.me-modal-planilla .modal-body { padding: 0 24px 8px; }
+
+/* Arriba, fijo: el mes con sus flechas y lo que lleva sumado (la banda celeste de Mi espacio, en chico) */
+.mp-arriba { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 22px; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--sg-linea); }
+.mp-mes { display: flex; align-items: center; gap: 8px; }
+.mp-mes h3 { margin: 0; min-width: 158px; text-align: center; font-family: var(--f-titulo); font-weight: 700; font-size: 1.15rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+.me-flecha:disabled { opacity: 0.4; cursor: default; }
+.mp-suma { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 10px 16px; border-radius: 16px; background: var(--sg-cielo); }
+.mp-suma-cifra { font-family: var(--f-titulo); font-weight: 800; font-size: 2rem; line-height: 1; letter-spacing: -0.04em; color: var(--sg-tinta); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mp-suma-cifra small { font-family: var(--f-texto); font-size: 0.85rem; font-weight: 700; letter-spacing: 0; margin-left: 3px; color: var(--sg-azul); }
+.mp-suma-texto { margin: 0; font-size: 0.9rem; line-height: 1.4; color: var(--sg-texto); overflow-wrap: anywhere; }
+.mp-suma-texto b { color: var(--sg-tinta); }
+
+/* Cómo se cuentan: cerrado de entrada */
+.mp-como { margin: 14px 0 6px; font-size: 0.88rem; color: var(--sg-texto); }
+.mp-como summary { cursor: pointer; font-weight: 600; color: var(--sg-tinta); width: fit-content; text-decoration: underline; text-underline-offset: 3px; }
+.mp-como ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.5; }
+.mp-como li + li { margin-top: 4px; }
+.mp-como b { color: var(--sg-tinta); }
+
+/* ---------------------------------------------------------------- La planilla: una fila por día */
+.mp-dias { list-style: none; margin: 8px 0 0; padding: 0; }
+.mp-dia, .mp-columnas { display: grid; grid-template-columns: 176px 118px 118px minmax(96px, 1fr) auto; gap: 6px 12px; align-items: center; }
+.mp-columnas { position: sticky; top: 0; z-index: 2; padding: 10px 12px 8px 15px; background: #fff; border-bottom: 1px solid var(--sg-linea); font-size: 0.78rem; font-weight: 600; color: var(--sg-suave); }
+.mp-columnas span:nth-child(4) { padding-left: 2px; }
+.mp-dia { position: relative; padding: 7px 12px 7px 15px; border-radius: 12px; margin-top: 2px; }
+.mp-dia:hover { background: var(--sg-sutil); }
+
+/* El día: la fecha y, debajo, lo que lo marca */
+.mp-fecha { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mp-fecha b { font-weight: 700; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+.mp-marcas { display: flex; flex-wrap: wrap; gap: 4px; }
+.mp-marcas .me-insignia { font-size: 0.72rem; padding: 1px 8px; white-space: normal; line-height: 1.35; }
+
+/* Los campos de hora: el control de siempre, un poco más bajo. La entrada de un día hábil, opcional, en gris hasta que se usa */
+.mp-campo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mp-rotulo { display: none; font-size: 0.76rem; font-weight: 600; color: var(--sg-suave); }
+.mp-dia input[type="time"] { width: 100%; height: 40px; padding: 0 10px; border: 1px solid var(--sg-borde-control); border-radius: 10px; background: #fff; font: inherit; font-size: 0.95rem; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+.mp-dia input.opcional:placeholder-shown, .mp-dia input.opcional[data-vacio="1"] { background: var(--sg-sutil); color: var(--sg-suave); }
+.mp-dia input[aria-invalid="true"] { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+
+/* Las horas que da el día: se calculan mientras se escribe */
+.mp-horas { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mp-horas b { display: inline-flex; align-items: center; justify-content: center; min-width: 58px; height: 30px; padding: 0 10px; border-radius: 999px; background: var(--sg-azul-fondo); color: var(--sg-azul); font-weight: 700; font-size: 0.9rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mp-horas b.cero { background: var(--sg-gris-fondo); color: var(--sg-suave); font-weight: 600; }
+.mp-horas b.nada { background: none; color: var(--sg-suave); font-weight: 500; min-width: 0; padding: 0; }
+.mp-horas small { font-size: 0.76rem; color: var(--sg-suave); line-height: 1.25; }
+
+/* La nota: un link que la abre debajo de la fila; con nota, se ve en cursiva y se corrige ahí */
+.mp-acciones { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.mp-acciones .sg-link { font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
+.mp-nota-campo { grid-column: 2 / -1; }
+.mp-nota-campo input { width: 100%; height: 38px; padding: 0 12px; border: 1px solid var(--sg-borde-control); border-radius: 10px; font: inherit; font-size: 0.9rem; color: var(--sg-texto); }
+.mp-nota-vista { grid-column: 2 / -1; margin: -2px 0 0; font-size: 0.86rem; font-style: italic; color: var(--sg-suave); overflow-wrap: anywhere; }
+
+/* Los días que no se cargan: lo que dice ocupa el lugar de los campos */
+.mp-lugar { grid-column: 2 / 5; font-size: 0.88rem; color: var(--sg-suave); }
+.mp-lugar .me-insignia { white-space: normal; }
+
+/* Los tipos de día: el feriado en el sol y la licencia en verde (los de la agenda); el sábado o domingo, punteado; hoy, marcado */
+.mp-dia.feriado { background: #FFFBEB; }
+.mp-dia.finde { background: #fff; box-shadow: inset 0 0 0 1px #C9D3DF; }
+.mp-dia.finde:hover { background: var(--sg-sutil); }
+.mp-dia.licencia { background: #F1F8F4; }
+.mp-dia.futuro .mp-fecha b { color: var(--sg-suave); font-weight: 600; }
+.mp-dia.hoy .mp-fecha b::after { content: 'Hoy'; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--sg-tinta); color: #fff; font-size: 0.72rem; font-weight: 700; vertical-align: 1px; }
+
+/* Lo que cambió y todavía no se guardó: la raya de tinta a la izquierda */
+.mp-dia.cambiado::before { content: ''; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 4px; border-radius: 999px; background: var(--sg-tinta); }
+.mp-error { grid-column: 2 / -1; margin: 0; color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; }
+
+/* Las semanas: un renglón chico con el total de la semana */
+.mp-semana { display: flex; justify-content: space-between; gap: 12px; margin: 14px 0 4px; padding: 0 12px 4px 15px; border-bottom: 1px dashed var(--sg-linea); font-size: 0.78rem; font-weight: 700; color: var(--sg-suave); }
+.mp-semana:first-child { margin-top: 6px; }
+.mp-semana span:last-child { font-variant-numeric: tabular-nums; }
+
+/* Sumar un sábado o domingo */
+.mp-sumar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 16px 0 10px; padding: 12px 15px; border: 1px dashed var(--sg-borde-control); border-radius: 12px; }
+.mp-sumar .form-select { height: 38px; width: auto; min-width: 190px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; font-size: 0.9rem; color: var(--sg-texto); }
+.mp-sumar p { margin: 0; font-size: 0.86rem; color: var(--sg-suave); }
+
+/* El pie: cuántos días cambiaron */
+.mp-pendientes { font-size: 0.86rem; color: var(--sg-suave); }
+.mp-pendientes b { color: var(--sg-tinta); }
+
+/* ---------------------------------------------------------------- El día por día nuevo de la pestaña */
+.me-dia-horas { display: inline-flex; align-items: center; justify-content: center; min-width: 52px; height: 26px; padding: 0 9px; border-radius: 999px; background: var(--sg-azul-fondo); color: var(--sg-azul); font-weight: 700; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.me-fila.tenue .me-dia-horas { background: var(--sg-gris-fondo); color: var(--sg-suave); font-weight: 600; }
+
+/* ---------------------------------------------------------------- Teléfono: cada día es una tarjeta */
+@media (max-width: 720px) {
+    .modal-overlay { padding: 8px; }
+    .modal.me-modal.me-modal-planilla { height: calc(100vh - 16px); border-radius: 16px; }
+    .mp-arriba { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; gap: 10px; }
+    .mp-mes { justify-content: space-between; }
+    .mp-mes h3 { min-width: 0; }
+    .mp-suma { padding: 8px 12px; gap: 10px; }
+    .mp-suma-cifra { font-size: 1.6rem; }
+    .me-modal-planilla .modal-body { padding: 0 12px 8px; }
+    .mp-columnas { display: none; }
+    .mp-dia { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'fecha horas' 'entrada salida' 'acciones acciones'; gap: 8px 10px; padding: 12px 12px 10px 15px; margin-top: 8px; border: 1px solid var(--sg-linea); }
+    .mp-dia.feriado { border-color: #F0D78C; }
+    .mp-dia.licencia { border-color: #BFE0CC; }
+    .mp-fecha { grid-area: fecha; }
+    .mp-horas { grid-area: horas; justify-content: flex-end; text-align: right; }
+    .mp-campo.entrada { grid-area: entrada; }
+    .mp-campo.salida { grid-area: salida; }
+    .mp-acciones { grid-area: acciones; justify-content: flex-start; }
+    .mp-rotulo { display: block; }
+    .mp-dia input[type="time"] { height: 44px; }
+    .mp-lugar { grid-column: 1 / -1; grid-row: 2; }
+    .mp-nota-campo, .mp-nota-vista, .mp-error { grid-column: 1 / -1; }
+    .mp-semana { padding: 0 4px 4px; margin-top: 18px; }
+    .mp-sumar .form-select { min-width: 0; width: 100%; }
+}

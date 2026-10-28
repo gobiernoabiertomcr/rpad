@@ -2,22 +2,26 @@
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 3.9, 7 y 8): el panel como datos. De lo cargado (el
  * `Estado`), su `Calculo` (`calcular` de services/miEspacioReglas.js), hoy y los feriados salen el Resumen «Titular»
  * (`resumenDe`; spec 2026-10-27-mi-espacio-resumen, sección 4: la frase de la banda, lo que vence en una línea y la médica
- * extraordinaria corta), la lista de licencias de un año (`filasDeLicencias`) y las tablas de horas extras
- * (`tablaDeHorasExtras`), con todos sus números y sus textos: la página los imprime tal cual y no recalcula nada (Ruling 19).
- * También el próximo feriado de «Hoy y mañana» (`proximoFeriadoDe`).
+ * extraordinaria corta), la lista de licencias de un año (`filasDeLicencias`; la fila de una sola, `filaDeUnaLicencia`, para
+ * la nota de una licencia: spec 2026-10-27-mi-espacio-licencia-word, sección 5), las tablas de horas extras
+ * (`tablaDeHorasExtras`; en contrato, el día por día sale de las salidas) y la planilla de un mes de contrato
+ * (`planillaDelMes`; spec 2026-10-27-mi-espacio-horas, sección 8), con todos sus números y sus textos: la página los imprime
+ * tal cual y no recalcula nada (Ruling 19). También el próximo feriado de «Hoy y mañana» (`proximoFeriadoDe`).
  *
  * Puras (sin pool ni Date local: las fechas son texto 'AAAA-MM-DD' y los meses, 'AAAA-MM'). Ninguna función tira: una
  * entrada rara da null, '', '—', una lista vacía o un objeto vacío. Todo número va como número y todo texto, como texto
  * plano: escaparlo le toca a quien lo dibuja. Nada dice «perdiste»: lo que no se usó a tiempo es «no utilizado
- * previamente» (spec, antiobjetivos).
+ * previamente» (spec, antiobjetivos), salvo «Perdés …» de las vacaciones al final de la bajada (decisión del usuario,
+ * 27/10/2026: spec 2026-10-27-mi-espacio-dias-de-vacaciones, 2.6).
  */
-import { diaDeLaSemana, diasHabilesDe, feriadosDelAnio, proximoDiaHabilCon } from './feriadosReglas.js';
-import { diasEntre, esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
+import { diaDeLaSemana, diasHabilesDe, feriadosDelAnio, proximoDiaHabilCon, esDiaHabilCon } from './feriadosReglas.js';
+import { diasEntre, esFechaIso, formatoCorto, sumarDias } from './notasDigitalesCalendario.js';
 import { esAdmin, esAuditor } from './usuariosReglas.js';
 import {
   MENSAJES_MI_ESPACIO, MODALIDADES, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, NOMBRES_TIPO, JORNADA,
   numeroTexto, mesEnFrase, nombreDelMes, diaYMes, enLista, modalidadDe, mesMas, topeDe, diasQueDescuentan, esDiaEntero,
-  fueraDeLaModalidad, tieneSaldoInicial, horasDe, textoSinNoUtilizadas
+  fueraDeLaModalidad, tieneSaldoInicial, horasDe, textoSinNoUtilizadas, rangoDeFechas, horaSalidaValida, tipoDeDia,
+  horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos
 } from './miEspacioReglas.js';
 
 // Los dos formatos que ya estaban en las reglas: el panel los usa sin copiarlos
@@ -226,9 +230,11 @@ const tanqueDeVacaciones = (panel) => {
  * cargado a futuro («5 ya están cargados para noviembre.») y lo que todavía no se habilita («Otros 10 se habilitan el
  * 1/1/2027.»; sin «Otros» si la frase no tiene días). Los días son los de cada capa y los meses y las fechas, los de su nota,
  * que dice lo mismo con mayúscula («Cargados para noviembre», «Se habilitan el 1/1/2027»): no se vuelven a calcular. La capa
- * `vence` es la de la licencia que vence el 31/12 de este año. En singular solo con 1. Sin ninguna, [].
+ * `vence` es la de la licencia que vence el 31/12 de este año. En singular solo con 1. Al final, si algo se pierde, el texto
+ * de `textoDePerdidos` («Perdés 2 de la 2024 (vencen el 31/12/2026).», `vence`: spec 2026-10-27-mi-espacio-dias-de-vacaciones,
+ * 2.6), que no es una capa: esos días ya no se pueden usar. Sin ninguna, [].
  */
-const bajadaDe = ({ numero, capas }, hoy) => {
+const bajadaDe = ({ numero, capas }, hoy, perdidos) => {
   const capa = (clase) => capas.find((una) => una.clase === clase);
   const bajada = [];
   const vence = capa('vence');
@@ -247,6 +253,7 @@ const bajadaDe = ({ numero, capas }, hoy) => {
     if (numero > 0) otros = porHabilitar.n === 1 ? 'Otro ' : 'Otros ';
     bajada.push({ texto: `${otros}${numeroTexto(porHabilitar.n)} ${minuscula(porHabilitar.nota)}.`, vence: false });
   }
+  if (perdidos !== '') bajada.push({ texto: perdidos, vence: true });
   return bajada;
 };
 
@@ -254,9 +261,10 @@ const bajadaDe = ({ numero, capas }, hoy) => {
  * La frase de la banda: `{ encabezado, antes, cifra, despues, bajada }`. `encabezado` es el día de hoy sin el año y la
  * modalidad en minúscula («Lunes 26 de octubre, planta permanente»); `antes`, `cifra` y `despues`, la frase partida alrededor
  * de los días de vacaciones disponibles (los del tanque): «Te quedan», '33' y «días de vacaciones»; con 1, «Te queda», '1' y
- * «día de vacaciones»; con 0, «No te quedan días de vacaciones», '' y '' (la página no dibuja el número).
+ * «día de vacaciones»; con 0, «No te quedan días de vacaciones», '' y '' (la página no dibuja el número). La bajada suma al
+ * final lo que se pierde de las ordinarias del reparto (`textoDePerdidos`).
  */
-const titularDe = ({ hoy }, modalidad, vacaciones) => {
+const titularDe = ({ hoy, cuenta }, modalidad, vacaciones) => {
   const { numero } = vacaciones;
   let frase = ['No te quedan días de vacaciones', '', ''];
   if (numero === 1) frase = ['Te queda', '1', 'día de vacaciones'];
@@ -268,7 +276,7 @@ const titularDe = ({ hoy }, modalidad, vacaciones) => {
     antes,
     cifra,
     despues,
-    bajada: bajadaDe(vacaciones, hoy)
+    bajada: bajadaDe(vacaciones, hoy, textoDePerdidos(ordinariasDel(cuenta)))
   };
 };
 
@@ -406,7 +414,8 @@ const tiposDe = (panel, tanques) => TIPOS_POR_MODALIDAD[panel.modalidad]
  * - sin modalidad, `mensaje` es `sinModalidad` y no hay nada que mostrar ni cargar;
  * - con modalidad y sin arranque, `mensaje` es `sinArranque` y `abrir_saldos` es true (se abre «Mis vacaciones y saldos»);
  * - si no, `marca` dice si hay algo en `vence_pronto` (cada cosa `{ fecha, dia, mes, titulo, texto, accion }`, con su línea en
- *   `texto`: «Vence el viernes 30/10, en 4 días.»), `faltantes` son los textos de `faltantesDe`, `titular` es la frase de la
+ *   `texto`: «Vence el viernes 30/10, en 4 días.»), `faltantes` son los textos de `faltantesDe` y, al final, los de
+ *   `avisosDeSalidas` (las salidas de la planilla de contrato que dejaron de cerrar), `titular` es la frase de la
  *   banda (`{ encabezado, antes, cifra, despues, bajada: [{ texto, vence }] }`; null sin tanques), `extraordinaria` la línea
  *   corta de la médica extraordinaria y `tipos`, las opciones de «Cargar licencia» con lo que queda de cada una.
  * `ve_companeros` es `esAdmin` (los compañeros son administración: spec, sección 7) y `audita`, `esAuditor`.
@@ -452,7 +461,7 @@ export const resumenDe = (entrada) => {
     ...resumen,
     marca: vencePronto.length > 0,
     vence_pronto: vencePronto,
-    faltantes: listaDe(panel.cuenta.faltantes)
+    faltantes: [...listaDe(panel.cuenta.faltantes), ...listaDe(panel.cuenta.avisosDeSalidas)]
       .filter((faltante) => esObjeto(faltante) && typeof faltante.texto === 'string').map((faltante) => faltante.texto),
     tanques,
     titular: titularDe(panel, resumen.modalidad, tanques.vacaciones),
@@ -603,6 +612,16 @@ const saldoInicialDe = ({ arranque, modalidad, saldos }, anio) => {
   return { fecha: arranque, titulo: `Saldo inicial ${anio}`, cargado_texto: `Cargado el ${formatoCorto(arranque)}`, texto };
 };
 
+// Una licencia que la lista puede mostrar: de un tipo conocido y con sus fechas en orden
+const esFilaDeLaLista = (fila) => esObjeto(fila) && TIPOS_LICENCIA.includes(fila.tipo) && esFechaIso(fila.desde)
+  && esFechaIso(fila.hasta) && fila.desde <= fila.hasta;
+
+// Lo que necesita filaDeLicencia, igual para la lista y para una sola licencia (`hoy`, ya validado: una fecha o null)
+const contextoDeLasFilas = (datos, calculo, { hoy, persona, vinculos, feriados }) => ({
+  datos, cuenta: esObjeto(calculo) ? calculo : {}, hoy, persona: esObjeto(persona) ? persona : {},
+  vinculos: vinculos instanceof Map ? vinculos : new Map(), feriados
+});
+
 /**
  * La pestaña Licencias de un año (`GET /api/mi-espacio/licencias?anio=`): `{ anio, anios, filtros, licencias,
  * saldo_inicial }`. Las opciones son `{ anio, hoy, persona, vinculos, feriados }` (`anio`, un entero o un texto de cuatro
@@ -629,15 +648,11 @@ export const filasDeLicencias = (estado, calculo, opciones) => {
   const primero = `${elAnio}-01-01`;
   const ultimo = `${elAnio}-12-31`;
   const delAnio = listaDe(datos.licencias)
-    .filter((fila) => esObjeto(fila) && TIPOS_LICENCIA.includes(fila.tipo) && esFechaIso(fila.desde)
-      && esFechaIso(fila.hasta) && fila.desde <= fila.hasta && fila.desde <= ultimo && fila.hasta >= primero)
+    .filter((fila) => esFilaDeLaLista(fila) && fila.desde <= ultimo && fila.hasta >= primero)
     .sort((a, b) => compararTexto(b.desde, a.desde) || compararTexto(b.hasta, a.hasta)
       || cantidadDe(idDe(b.id)) - cantidadDe(idDe(a.id)));
 
-  const contexto = {
-    datos, cuenta: esObjeto(calculo) ? calculo : {}, hoy: deHoy, persona: esObjeto(persona) ? persona : {},
-    vinculos: vinculos instanceof Map ? vinculos : new Map(), feriados
-  };
+  const contexto = contextoDeLasFilas(datos, calculo, { hoy: deHoy, persona, vinculos, feriados });
   const filtros = TIPOS_LICENCIA
     .map((tipo) => ({
       tipo, nombre: NOMBRES_DE_LOS_FILTROS[tipo], cantidad: delAnio.filter((fila) => fila.tipo === tipo).length
@@ -650,6 +665,23 @@ export const filasDeLicencias = (estado, calculo, opciones) => {
     licencias: delAnio.map((fila) => filaDeLicencia(fila, contexto)),
     saldo_inicial: saldoInicialDe(datos, elAnio)
   };
+};
+
+/**
+ * La fila de la lista de una sola licencia, la de `id` (spec 2026-10-27-mi-espacio-licencia-word, sección 5: el segundo paso
+ * de «Cargar licencia» la muestra con `GET …/licencias/:id/nota`, sin depender del año que muestra la lista). Es la misma de
+ * `filasDeLicencias`, con el mismo contexto: las opciones son `{ id, hoy, persona, vinculos, feriados }`, sin el año (la fila
+ * no depende de él). Con una persona sin modalidad, la fila sale igual (la lista no la muestra, pero la nota se arma). null si
+ * el estado no tiene esa licencia, o si es una que la lista no mostraría (un tipo o unas fechas que no sirven).
+ */
+export const filaDeUnaLicencia = (estado, calculo, opciones) => {
+  const datos = esObjeto(estado) ? estado : {};
+  const { id, hoy, persona, vinculos, feriados } = esObjeto(opciones) ? opciones : {};
+  const buscado = idDe(id);
+  const fila = listaDe(datos.licencias).find((licencia) => esFilaDeLaLista(licencia) && idDe(licencia.id) === buscado);
+  if (fila === undefined) return null;
+  return filaDeLicencia(fila,
+    contextoDeLasFilas(datos, calculo, { hoy: esFechaIso(hoy) ? hoy : null, persona, vinculos, feriados }));
 };
 
 // Las tablas de horas extras (spec, sección 8)
@@ -725,18 +757,106 @@ const noUtilizadasDeLaTabla = (anio, cuenta) => {
   };
 };
 
+// Lo que comparten el día por día de contrato y la planilla (spec 2026-10-27-mi-espacio-horas, secciones 4, 5 y 8)
+
+// Una salida que cuenta como cargada: con una fecha y una salida válidas (lo demás no es una salida)
+const esSalida = (fila) => esObjeto(fila) && esFechaIso(fila.fecha) && horaSalidaValida(fila.salida);
+// Las horas de un día: '1,5 h', '0' (no llega a media hora) o '' (sin horas que contar: sin salida, o un día que no es hábil
+// sin la entrada)
+const textoDeLasHorasDelDia = (horas) => {
+  if (horas === null) return '';
+  return horas === 0 ? '0' : `${numeroTexto(horas)} h`;
+};
+// La nota de una fila, o null si no tiene
+const notaDe = (fila) => (typeof fila.nota === 'string' && fila.nota.trim() !== '' ? fila.nota : null);
+// 'Sábado' o 'Domingo' (también si ese día además es feriado), o null
+const nombreDelFinde = (fecha) => {
+  const dia = diaDeLaSemana(fecha);
+  if (dia === 'sábado') return 'Sábado';
+  return dia === 'domingo' ? 'Domingo' : null;
+};
+// El aviso de cada salida que dejó de cerrar, por fecha: el `aviso` de los `avisosDeSalidas` del cálculo
+const avisosPorFecha = (cuenta) => new Map(listaDe(cuenta.avisosDeSalidas)
+  .filter((aviso) => esObjeto(aviso) && esFechaIso(aviso.fecha) && typeof aviso.aviso === 'string')
+  .map((aviso) => [aviso.fecha, aviso.aviso]));
+
+// El día por día de planta: las horas extras del año, de la más nueva a la más vieja, con desde y hasta para corregirlas, y
+// lo que suma cada mes
+const diasDeLasHorasExtras = (datos, delAnio) => {
+  const diasPorMes = {};
+  const totales = {};
+  const horasExtras = listaDe(datos.horasExtras)
+    .filter((fila) => esObjeto(fila) && esFechaIso(fila.fecha) && fila.fecha.startsWith(delAnio)
+      && horasDe(fila.desde, fila.hasta) !== null)
+    .sort((a, b) => compararTexto(b.fecha, a.fecha) || compararTexto(b.desde, a.desde)
+      || cantidadDe(idDe(b.id)) - cantidadDe(idDe(a.id)));
+  const horasDelMes = new Map();
+  for (const fila of horasExtras) {
+    const mes = fila.fecha.slice(0, 7);
+    const horas = horasDe(fila.desde, fila.hasta);
+    if (!Object.hasOwn(diasPorMes, mes)) diasPorMes[mes] = [];
+    diasPorMes[mes].push({
+      id: fila.id ?? null, fecha: fila.fecha, fecha_texto: diaCortoSinAnio(fila.fecha), desde: fila.desde, hasta: fila.hasta,
+      horario: `${fila.desde} a ${fila.hasta}`, horas_texto: conUnidad(horas, 'hora', 'horas'), nota: notaDe(fila)
+    });
+    horasDelMes.set(mes, (horasDelMes.get(mes) ?? 0) + horas);
+  }
+  for (const [mes, horas] of horasDelMes) totales[mes] = conUnidad(horas, 'hora', 'horas');
+  return { diasPorMes, totales };
+};
+
+/**
+ * El día por día de contrato (spec 2026-10-27-mi-espacio-horas, sección 5): las salidas del año, de la más nueva a la más
+ * vieja, cada una `{ id, fecha, fecha_texto, tipo_texto, horario, entrada_texto, horas, horas_texto, cero, nota, aviso }`:
+ * - `tipo_texto`: 'Feriado', 'Sábado', 'Domingo' o '' (un día hábil); `horario`: en un día hábil, 'Salida 16:20' (y la
+ *   entrada, que no cuenta, en `entrada_texto`: 'Entrada 08:02'); en uno que no lo es, 'De 09:21 a 12:10' (sin la entrada,
+ *   'Salida 19:00': la que pasó a ser feriado, que no suma);
+ * - `horas` (`horasDeLaSalida`, o null) con su texto (`textoDeLasHorasDelDia`) y `cero` si dan 0 (en gris);
+ * - `aviso`: el de la salida que dejó de cerrar (`avisosDeSalidas` del cálculo), o null.
+ * Y lo que suma cada mes ('16 horas'; lo que no suma, como 0).
+ */
+const diasDeLasSalidas = (datos, delAnio, feriados, avisos) => {
+  const diasPorMes = {};
+  const totales = {};
+  const salidas = listaDe(datos.salidas).filter((fila) => esSalida(fila) && fila.fecha.startsWith(delAnio))
+    .sort((a, b) => compararTexto(b.fecha, a.fecha) || cantidadDe(idDe(b.id)) - cantidadDe(idDe(a.id)));
+  const horasDelMes = new Map();
+  for (const fila of salidas) {
+    const { fecha, salida } = fila;
+    const mes = fecha.slice(0, 7);
+    const tipo = tipoDeDia(fecha, feriados);
+    const entrada = horaSalidaValida(fila.entrada) ? fila.entrada : null;
+    const horas = horasDeLaSalida(fila, feriados);
+    let tipoTexto = '';
+    if (tipo === 'feriado') tipoTexto = 'Feriado';
+    else if (tipo === 'finde') tipoTexto = nombreDelFinde(fecha);
+    if (!Object.hasOwn(diasPorMes, mes)) diasPorMes[mes] = [];
+    diasPorMes[mes].push({
+      id: fila.id ?? null, fecha, fecha_texto: diaCortoSinAnio(fecha), tipo_texto: tipoTexto,
+      horario: tipo !== 'habil' && entrada !== null ? `De ${entrada} a ${salida}` : `Salida ${salida}`,
+      entrada_texto: tipo === 'habil' && entrada !== null ? `Entrada ${entrada}` : '',
+      horas, horas_texto: textoDeLasHorasDelDia(horas), cero: horas === 0, nota: notaDe(fila), aviso: avisos.get(fecha) ?? null
+    });
+    horasDelMes.set(mes, (horasDelMes.get(mes) ?? 0) + (horas ?? 0));
+  }
+  for (const [mes, horas] of horasDelMes) totales[mes] = conUnidad(horas, 'hora', 'horas');
+  return { diasPorMes, totales };
+};
+
 /**
  * La pestaña Horas extras de un año (`GET /api/mi-espacio/horas-extras?anio=`). Las opciones son `{ anio, hoy, feriados }`
  * (`anio`, como en `filasDeLicencias`). Todas llevan `{ modalidad, anio, anios, meses, dias_por_mes, totales_por_mes,
  * mes_en_curso }`: `meses` son los meses trabajados del año con horas (uno sin horas, que está en el cálculo solo porque su
  * mes de uso tiene usos, no va: ese uso de más ya es un faltante), del más nuevo al más viejo, cada uno con `estado` (para
- * el color de su situación) y `situacion`; `dias_por_mes`, las horas extras de cada mes, de la más nueva a la más vieja
- * (`{ id, fecha, fecha_texto, desde, hasta, horario, horas_texto, nota }`: desde y hasta, para corregirlas);
+ * el color de su situación) y `situacion`; `dias_por_mes`, los días de cada mes, del más nuevo al más viejo;
  * `totales_por_mes`, las horas de cada mes ('10,5 horas'); y `mes_en_curso`, el de hoy si es de ese año (si no, null).
  * - En planta, cada mes es `{ mes, mes_texto, horas_texto, dias_texto, francos, uso_texto, estado, situacion }`, más
- *   `uso_autorizado: { puede, texto }`.
- * - En contrato, `{ mes, mes_texto, horas_texto, a_favor_texto, usadas_texto, usadas_detalle, estado, situacion }`, más
- *   `no_utilizadas: { total_texto, filas: [{ titulo, texto, detalle }], uso_autorizado }`.
+ *   `uso_autorizado: { puede, texto }`; los días son sus horas extras (`{ id, fecha, fecha_texto, desde, hasta, horario,
+ *   horas_texto, nota }`: desde y hasta, para corregirlas).
+ * - En contrato, `{ mes, mes_texto, horas_texto, a_favor_texto, a_favor_detalle, usadas_texto, usadas_detalle, estado,
+ *   situacion }` (`a_favor_detalle`: las horas del mes en días de franco, «2 días de franco y 4 horas», `enDiasDeFranco`), más
+ *   `no_utilizadas: { total_texto, filas: [{ titulo, texto, detalle }], uso_autorizado }`; los días son sus salidas de la
+ *   planilla (`diasDeLasSalidas`: contrato no lee las horas extras de planta).
  * Sin modalidad, `modalidad` es null y lo demás va vacío.
  */
 export const tablaDeHorasExtras = (estado, calculo, opciones) => {
@@ -758,24 +878,10 @@ export const tablaDeHorasExtras = (estado, calculo, opciones) => {
   if (modalidad === null) return tabla;
 
   const delAnio = `${elAnio}-`;
-  const horasExtras = listaDe(datos.horasExtras)
-    .filter((fila) => esObjeto(fila) && esFechaIso(fila.fecha) && fila.fecha.startsWith(delAnio)
-      && horasDe(fila.desde, fila.hasta) !== null)
-    .sort((a, b) => compararTexto(b.fecha, a.fecha) || compararTexto(b.desde, a.desde)
-      || cantidadDe(idDe(b.id)) - cantidadDe(idDe(a.id)));
-  const horasDelMes = new Map();
-  for (const fila of horasExtras) {
-    const mes = fila.fecha.slice(0, 7);
-    const horas = horasDe(fila.desde, fila.hasta);
-    if (!Object.hasOwn(tabla.dias_por_mes, mes)) tabla.dias_por_mes[mes] = [];
-    tabla.dias_por_mes[mes].push({
-      id: fila.id ?? null, fecha: fila.fecha, fecha_texto: diaCortoSinAnio(fila.fecha), desde: fila.desde, hasta: fila.hasta,
-      horario: `${fila.desde} a ${fila.hasta}`, horas_texto: conUnidad(horas, 'hora', 'horas'),
-      nota: typeof fila.nota === 'string' && fila.nota.trim() !== '' ? fila.nota : null
-    });
-    horasDelMes.set(mes, (horasDelMes.get(mes) ?? 0) + horas);
-  }
-  for (const [mes, horas] of horasDelMes) tabla.totales_por_mes[mes] = conUnidad(horas, 'hora', 'horas');
+  const { diasPorMes, totales } = modalidad === 'planta'
+    ? diasDeLasHorasExtras(datos, delAnio) : diasDeLasSalidas(datos, delAnio, feriados, avisosPorFecha(cuenta));
+  tabla.dias_por_mes = diasPorMes;
+  tabla.totales_por_mes = totales;
   const diasDelMes = (mes) => new Set(listaDe(tabla.dias_por_mes[mes]).map((dia) => dia.fecha)).size;
 
   const mesDeHoy = deHoy.slice(0, 7);
@@ -805,12 +911,134 @@ export const tablaDeHorasExtras = (estado, calculo, opciones) => {
     return {
       mes: fila.mes_trabajado, mes_texto: mesTitulo(fila.mes_trabajado),
       horas_texto: `${numeroTexto(cantidadDe(fila.horas))} h`, a_favor_texto: mesTitulo(fila.mes_de_uso),
+      a_favor_detalle: enDiasDeFranco(cantidadDe(fila.horas)),
       usadas_texto: usadas > 0 ? `${numeroTexto(usadas)} h` : '—',
       usadas_detalle: usos.map((uso) => `${diaYMes(uso.fecha)}: ${numeroTexto(cantidadDe(uso.horas))} h`).join(' · '),
       estado: estadoDelMes, situacion
     };
   });
   return { ...tabla, no_utilizadas: noUtilizadasDeLaTabla(elAnio, cuenta) };
+};
+
+// La planilla de contrato (spec 2026-10-27-mi-espacio-horas, secciones 3, 4 y 8)
+
+// Las licencias por horas que, sin ser el día entero, se ven en el día (y se carga igual): las horas a favor y el uso
+// autorizado de contrato
+const POR_HORAS_EN_LA_PLANILLA = Object.freeze(['horas_a_favor', 'uso_autorizado']);
+// Un feriado del que no llegó el nombre (el Set y las filas salen de la misma tabla: no debería pasar)
+const FERIADO_SIN_NOMBRE = 'Feriado';
+
+// Lo que dice el día de una licencia: el día entero con el nombre de su tipo, el mismo de la insignia de la fila en la lista
+// de licencias de la persona (`NOMBRES_TIPO`: es su panel, el tipo se ve; «Estudios», «Atención del grupo familiar»), o, en
+// las de horas, «Horas a favor, el día entero» y «Uso autorizado, el día entero»; o unas horas («2 h a favor», «Uso
+// autorizado, 3 h»)
+const textoDeLaLicenciaDelDia = (fila, entera) => {
+  const horas = numeroTexto(cantidadDe(fila.horas));
+  if (fila.tipo === 'horas_a_favor') return entera ? 'Horas a favor, el día entero' : `${horas} h a favor`;
+  if (fila.tipo === 'uso_autorizado') return entera ? 'Uso autorizado, el día entero' : `Uso autorizado, ${horas} h`;
+  return NOMBRES_TIPO[fila.tipo] ?? '';
+};
+
+/**
+ * La licencia de Mi espacio de un día de la planilla, `{ texto, entera }`, o null: la de día entero (`licenciaDeDiaEnteroEn`:
+ * de la modalidad y en un día hábil; también una anterior al arranque), con `entera: true` (no se cargan horas), o, en un día
+ * hábil, unas horas a favor o un uso autorizado de menos de 7 horas de la modalidad, con `entera: false` (se carga normal).
+ */
+const licenciaDelDia = (datos, fecha, feriados) => {
+  const entera = licenciaDeDiaEnteroEn(datos, fecha, feriados);
+  if (entera !== null) return { texto: textoDeLaLicenciaDelDia(entera, true), entera: true };
+  if (!esDiaHabilCon(fecha, feriados)) return null;
+  const deHoras = listaDe(datos.licencias).find((fila) => esObjeto(fila) && POR_HORAS_EN_LA_PLANILLA.includes(fila.tipo)
+    && esFechaIso(fila.desde) && esFechaIso(fila.hasta) && fila.desde <= fecha && fecha <= fila.hasta
+    && cantidadDe(fila.horas) > 0 && !fueraDeLaModalidad(fila, datos.modalidad));
+  return deHoras === undefined ? null : { texto: textoDeLaLicenciaDelDia(deHoras, false), entera: false };
+};
+
+// El nombre de cada feriado del año que rige, por fecha: los 9 fijos y los de la tabla (`feriadosDelAnio`). Con dos el mismo
+// día, el primero de esa lista (el fijo antes que los de la tabla y, entre ellos, por nombre)
+const nombresDeLosFeriados = (filas, anio) => {
+  const nombres = new Map();
+  for (const feriado of feriadosDelAnio(filas, anio)) {
+    if (feriado.rige && !nombres.has(feriado.fecha)) nombres.set(feriado.fecha, feriado.nombre);
+  }
+  return nombres;
+};
+
+// Un día de la planilla, con la forma de la spec (sección 8)
+const diaDeLaPlanilla = (fecha, { datos, hoy, feriados, salidas, avisos, nombres }) => {
+  const tipo = tipoDeDia(fecha, feriados);
+  const fila = salidas.get(fecha) ?? null;
+  const horas = fila === null ? null : horasDeLaSalida(fila, feriados);
+  return {
+    fecha,
+    fecha_texto: diaCortoSinAnio(fecha),
+    fecha_larga: diaLargo(fecha),
+    tipo,
+    feriado: tipo === 'feriado' ? (nombres.get(fecha) || FERIADO_SIN_NOMBRE) : null,
+    finde_texto: nombreDelFinde(fecha),
+    licencia: licenciaDelDia(datos, fecha, feriados),
+    futuro: fecha > hoy,
+    hoy: fecha === hoy,
+    entrada: fila !== null && horaSalidaValida(fila.entrada) ? fila.entrada : null,
+    salida: fila === null ? null : fila.salida,
+    nota: fila === null ? null : notaDe(fila),
+    horas,
+    horas_texto: textoDeLasHorasDelDia(horas),
+    aviso: fila === null ? null : (avisos.get(fecha) ?? null)
+  };
+};
+
+/**
+ * La planilla de un mes de contrato (`GET /api/mi-espacio/salidas?mes=`; spec 2026-10-27-mi-espacio-horas, sección 8). Las
+ * opciones son `{ mes, hoy, feriados, filasFeriados }`: el mes, como lo lee `mesDeLaPlanilla` (sin mes, el de hoy); los
+ * feriados, el Set del cálculo, y sus filas, para los nombres. Devuelve `{ modalidad: 'contrato', mes, mes_texto, hoy,
+ * anterior, siguiente, dias, fines_de_semana, suma }`:
+ * - `anterior` y `siguiente`, los meses vecinos, o null en el primer mes de `rangoDeFechas` y en el de hoy (no se va a un mes
+ *   que todavía no llegó);
+ * - `dias`: los días de lunes a viernes del mes (los hábiles y los feriados, también los que todavía no llegaron) y los
+ *   sábados y domingos con una salida, por fecha; `fines_de_semana`: los demás sábados y domingos hasta hoy, para «Sumar el
+ *   día». Un sábado o un domingo que además es feriado va con `tipo: 'feriado'` y su nombre. Cada día es `{ fecha,
+ *   fecha_texto, fecha_larga, tipo: 'habil' | 'feriado' | 'finde', feriado, finde_texto, licencia: { texto, entera } | null,
+ *   futuro, hoy, entrada, salida, nota, horas, horas_texto, aviso }` (`horas`, las de `horasDeLaSalida`, o null;
+ *   `horas_texto`, '1,5 h', '0' o ''; `aviso`, el de `avisosDeSalidas` del cálculo, o null);
+ * - `suma`: `{ horas, cifra, texto }`, lo que suman las horas del mes (las mismas de `horasPorMesDeSalidas`, que dan las
+ *   horas a favor), su número ('18', '10,5') y la frase de la banda (`textoDeLaSumaDelMes`).
+ * Fuera de contrato, con un mes que no sirve o sin un hoy válido, null.
+ */
+export const planillaDelMes = (estado, calculo, opciones) => {
+  const datos = esObjeto(estado) ? estado : {};
+  const { mes, hoy, feriados, filasFeriados } = esObjeto(opciones) ? opciones : {};
+  if (datos.modalidad !== 'contrato') return null;
+  const elMes = mesDeLaPlanilla(mes, hoy);
+  if (elMes === null) return null;
+
+  const salidas = new Map();
+  for (const fila of listaDe(datos.salidas)) {
+    if (esSalida(fila) && fila.fecha.startsWith(`${elMes}-`) && !salidas.has(fila.fecha)) salidas.set(fila.fecha, fila);
+  }
+  const contexto = {
+    datos, hoy, feriados, salidas, avisos: avisosPorFecha(esObjeto(calculo) ? calculo : {}),
+    nombres: nombresDeLosFeriados(filasFeriados, anioDe(elMes))
+  };
+  const dias = [];
+  const finesDeSemana = [];
+  for (let fecha = `${elMes}-01`; esFechaIso(fecha) && fecha.startsWith(`${elMes}-`); fecha = sumarDias(fecha, 1)) {
+    if (nombreDelFinde(fecha) === null || salidas.has(fecha)) dias.push(diaDeLaPlanilla(fecha, contexto));
+    else if (fecha <= hoy) finesDeSemana.push(diaDeLaPlanilla(fecha, contexto));
+  }
+
+  const horas = dias.reduce((suma, dia) => suma + (dia.horas ?? 0), 0);
+  return {
+    modalidad: 'contrato',
+    mes: elMes,
+    mes_texto: mesTitulo(elMes),
+    hoy,
+    anterior: elMes === rangoDeFechas(hoy).desde.slice(0, 7) ? null : mesMas(elMes, -1),
+    siguiente: elMes === hoy.slice(0, 7) ? null : mesMas(elMes, 1),
+    dias,
+    fines_de_semana: finesDeSemana,
+    suma: { horas, cifra: numeroTexto(horas), texto: textoDeLaSumaDelMes(elMes, horas, hoy) }
+  };
 };
 
 /**

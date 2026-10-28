@@ -2,8 +2,9 @@
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 5 y 10): las consultas de lo que cargó cada persona, de
  * solo lectura y parametrizadas. Devuelven el `Estado` de las reglas (services/miEspacioReglas.js), solo con las filas
  * activas, lo que el paso a Configuración (sección 6) lee de las licencias de Configuración, las ausencias que ven los
- * compañeros («Hoy no están», sección 7), quiénes están de licencia el día del email de vencimiento (sección 9) y cuántas
- * licencias incluye un feriado (Configuración → Feriados, `licenciasQueIncluyen`). Lo que llega de la base como texto se
+ * compañeros («Hoy no están», sección 7), quiénes están de licencia el día del email de vencimiento (sección 9), cuántas
+ * licencias incluye un feriado (Configuración → Feriados, `licenciasQueIncluyen`) y la fecha y la firma de la nota de una
+ * licencia (spec 2026-10-27-mi-espacio-licencia-word, `datosDeLaNota`). Lo que llega de la base como texto se
  * convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las fechas se leen con DATE_FORMAT ('AAAA-MM-DD'), los
  * DECIMAL, tinyint y smallint pasan por Number() (el '7.5' de unas horas, el '8.0' de un saldo) y los TIME ('19:00:00') se
  * cortan a 'HH:MM'.
@@ -16,7 +17,7 @@ import { filasDeFeriados } from './feriadosDatos.js';
 import { feriadosDelRango, fechasQueCambianDiasHabiles } from './feriadosReglas.js';
 import { idPositivo } from './proyectosReglas.js';
 import { esAdmin } from './usuariosReglas.js';
-import { esFechaIso } from './notasDigitalesCalendario.js';
+import { esFechaIso, hoyArgentina } from './notasDigitalesCalendario.js';
 
 // Un número de la base que puede faltar (las horas de una licencia que no es por horas): NULL sigue siendo null, no 0
 const numeroONulo = (valor) => (valor === null || valor === undefined ? null : Number(valor));
@@ -24,7 +25,7 @@ const numeroONulo = (valor) => (valor === null || valor === undefined ? null : N
 const horaDe = (valor) => String(valor).slice(0, 5);
 
 const estadoVacio = (modalidad = null) =>
-  ({ modalidad, arranque: null, anios: [], saldos: [], licencias: [], horasExtras: [] });
+  ({ modalidad, arranque: null, anios: [], saldos: [], licencias: [], horasExtras: [], salidas: [] });
 
 // Una licencia de Mi espacio, de la base a lo que leen las reglas
 const COLUMNAS_LICENCIA_MIA = `id, usuario_id, tipo, DATE_FORMAT(desde, '%Y-%m-%d') AS desde,
@@ -54,13 +55,16 @@ export const personaDe = async (usuarioId, conexion = pool) => {
 };
 
 /**
- * El `Estado` de varias personas: un Map de cada id (número) que existe en `usuarios` a lo que cargó, con seis consultas para
+ * El `Estado` de varias personas: un Map de cada id (número) que existe en `usuarios` a lo que cargó, con siete consultas para
  * todas. La modalidad sale del vínculo (`modalidadDe`); de cada tabla, solo lo activo:
  * - `anios`: `[{ anio, dias_vacaciones, estudios }]`, por año;
  * - `saldos`: `[{ concepto, anio, cantidad }]`, por año y concepto;
  * - `licencias`: `[{ id, tipo, desde, hasta, horas, mostrar, nota, licencia_oficial_id, oficial, sin_pasar }]`, por fecha
  *   (`horas` es null en las que no son por horas);
- * - `horasExtras`: `[{ id, fecha, desde, hasta, nota }]`, por fecha y horario.
+ * - `horasExtras`: `[{ id, fecha, desde, hasta, nota }]`, por fecha y horario;
+ * - `salidas`: `[{ id, fecha, entrada, salida, nota }]`, la planilla de contrato (spec 2026-10-27-mi-espacio-horas, 6), por
+ *   fecha (una por día); `entrada` es null si no se cargó. Se leen para cualquier modalidad: las reglas eligen cuáles cuentan
+ *   (planta, `horasExtras`; contrato, `salidas`).
  * Los ids que no sirven o que no existen no están; sin ninguno, un Map vacío (sin consultar).
  * @returns {Promise<Map<number, object>>}
  */
@@ -122,6 +126,21 @@ export const estadosDe = async (usuarioIds, conexion = pool) => {
       id: Number(fila.id), fecha: fila.fecha, desde: horaDe(fila.desde), hasta: horaDe(fila.hasta), nota: fila.nota ?? null
     });
   }
+
+  // Las horas, ya cortadas a 'HH:MM' en la consulta: una entrada NULL sigue siendo null
+  const [salidas] = await conexion.query(
+    `SELECT id, usuario_id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, TIME_FORMAT(entrada, '%H:%i') AS entrada,
+            TIME_FORMAT(salida, '%H:%i') AS salida, nota
+     FROM mi_espacio_salidas
+     WHERE usuario_id IN (?) AND activo = 1
+     ORDER BY usuario_id, fecha, id`,
+    [encontrados]
+  );
+  for (const fila of salidas) {
+    deLaPersona(fila.usuario_id).salidas.push({
+      id: Number(fila.id), fecha: fila.fecha, entrada: fila.entrada ?? null, salida: fila.salida, nota: fila.nota ?? null
+    });
+  }
   return estados;
 };
 
@@ -138,10 +157,10 @@ const anioDe = (fecha) => (typeof fecha === 'string' && /^\d{4}-/.test(fecha) ? 
 /**
  * El Set de los días no hábiles por feriado (`feriadosDelRango`: los 9 fijos y los de la tabla que rigen) que necesitan las
  * reglas para los estados (el Map de `estadosDe` o cualquier iterable de `Estado`): del 01/01 del año más viejo entre hoy − 3
- * y lo cargado (el arranque, las licencias y las horas extras) al 31/12 del más nuevo entre hoy + 2 y lo cargado. El margen
- * cubre lo que se camina fuera de las fechas cargadas (el último día hábil del mes de uso de un franco, la vuelta, el próximo
- * feriado del año siguiente). `filas`: las filas de los feriados si ya se leyeron (`filasDeFeriados`); si no, se leen. Sin un
- * hoy válido ni nada cargado, un Set vacío.
+ * y lo cargado (el arranque, las licencias, las horas extras y las salidas) al 31/12 del más nuevo entre hoy + 2 y lo
+ * cargado. El margen cubre lo que se camina fuera de las fechas cargadas (el último día hábil del mes de uso de un franco, la
+ * vuelta, el próximo feriado del año siguiente). `filas`: las filas de los feriados si ya se leyeron (`filasDeFeriados`); si
+ * no, se leen. Sin un hoy válido ni nada cargado, un Set vacío.
  * @returns {Promise<Set<string>>}
  */
 export const feriadosPara = async (estados, hoy, filas = null) => {
@@ -152,7 +171,8 @@ export const feriadosPara = async (estados, hoy, filas = null) => {
     const fechas = [
       estado?.arranque,
       ...(estado?.licencias ?? []).flatMap((fila) => [fila.desde, fila.hasta]),
-      ...(estado?.horasExtras ?? []).map((fila) => fila.fecha)
+      ...(estado?.horasExtras ?? []).map((fila) => fila.fecha),
+      ...(estado?.salidas ?? []).map((fila) => fila.fecha)
     ];
     for (const anio of fechas.map(anioDe)) {
       if (anio === null) continue;
@@ -191,6 +211,35 @@ export const licenciaDe = async (usuarioId, licenciaId, conexion = pool) => {
     `SELECT ${COLUMNAS_LICENCIA_MIA} FROM mi_espacio_licencias WHERE id = ? AND usuario_id = ? AND activo = 1`, [id, persona]
   );
   return fila ? aLicencia(fila) : null;
+};
+
+/**
+ * Lo que la nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word, secciones 2 y 4) lee de la base además de la
+ * licencia: `{ guardada, nombre, cargo, vinculo }`, o null (un id que no sirve, de otra persona, que no existe o dado de
+ * baja). `guardada` es la fecha de la nota, el día en Argentina ('AAAA-MM-DD') de la última vez que se guardó la licencia:
+ * `updated_at`, que la base pone al día solo cuando un guardado cambia algo. Es un TIMESTAMP que la base guarda en UTC: se lee
+ * con UNIX_TIMESTAMP y se pasa a hora argentina (como `subido_el` de Proyectos), así un guardado a las 22:00 no sale con el día
+ * siguiente; sin `updated_at`, null. La firma (el nombre, el cargo y el vínculo de la persona) se lee al armar la nota, en la
+ * misma consulta (`personaDe` no lee el cargo).
+ * @returns {Promise<{ guardada: string | null, nombre: string, cargo: string | null, vinculo: string | null } | null>}
+ */
+export const datosDeLaNota = async (usuarioId, licenciaId, conexion = pool) => {
+  const persona = idPositivo(usuarioId);
+  const id = idPositivo(licenciaId);
+  if (persona === null || id === null) return null;
+  const [[fila]] = await conexion.query(
+    `SELECT UNIX_TIMESTAMP(l.updated_at) AS guardada_ts, u.nombre_completo, u.cargo, u.vinculo
+     FROM mi_espacio_licencias l JOIN usuarios u ON u.id = l.usuario_id
+     WHERE l.id = ? AND l.usuario_id = ? AND l.activo = 1`,
+    [id, persona]
+  );
+  if (!fila) return null;
+  return {
+    guardada: fila.guardada_ts === null ? null : hoyArgentina(new Date(Number(fila.guardada_ts) * 1000)),
+    nombre: fila.nombre_completo,
+    cargo: fila.cargo ?? null,
+    vinculo: fila.vinculo ?? null
+  };
 };
 
 // El paso a Configuración → Licencias (spec, sección 6): las licencias de Configuración, como las leen las reglas

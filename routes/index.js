@@ -63,8 +63,8 @@ import {
 import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/firmasController.js';
 import {
   verResumen, listarLicenciasMias, listarHorasExtras, verAnio, verSaldoInicial, calcularLicencia, cargarLicenciaMia,
-  corregirLicenciaMia, borrarLicenciaMia, cargarHorasExtras, corregirHorasExtras, borrarHorasExtras, guardarAnio,
-  guardarSaldoInicial, listarAusentes, verFirmante
+  corregirLicenciaMia, borrarLicenciaMia, verNotaDeLicencia, bajarWordDeLicencia, cargarHorasExtras, corregirHorasExtras,
+  borrarHorasExtras, verPlanilla, guardarSalidas, guardarAnio, guardarSaldoInicial, listarAusentes, verFirmante
 } from '../controllers/miEspacioController.js';
 import {
   listarEventos, verAvisoDelEvento, listarPersonasParaCompartir, crearEvento, cambiarEvento, borrarEvento, cambiarMiRecordatorio
@@ -200,10 +200,16 @@ router.post('/mi-espacio/licencias/calculo', authMiddleware, calcularLicencia);
 router.post('/mi-espacio/licencias', authMiddleware, cargarLicenciaMia);
 router.put('/mi-espacio/licencias/:id', authMiddleware, corregirLicenciaMia);
 router.delete('/mi-espacio/licencias/:id', authMiddleware, borrarLicenciaMia);
+// La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word, sección 5): la vista del segundo paso y el Word
+router.get('/mi-espacio/licencias/:id/nota', authMiddleware, verNotaDeLicencia);
+router.get('/mi-espacio/licencias/:id/word', authMiddleware, bajarWordDeLicencia);
 router.get('/mi-espacio/horas-extras', authMiddleware, listarHorasExtras);
 router.post('/mi-espacio/horas-extras', authMiddleware, cargarHorasExtras);
 router.put('/mi-espacio/horas-extras/:id', authMiddleware, corregirHorasExtras);
 router.delete('/mi-espacio/horas-extras/:id', authMiddleware, borrarHorasExtras);
+// La planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, sección 8): un mes y el guardado de sus días
+router.get('/mi-espacio/salidas', authMiddleware, verPlanilla);
+router.put('/mi-espacio/salidas', authMiddleware, guardarSalidas);
 router.get('/mi-espacio/anio/:anio', authMiddleware, verAnio);
 router.put('/mi-espacio/anio/:anio', authMiddleware, guardarAnio);
 router.get('/mi-espacio/saldo-inicial', authMiddleware, verSaldoInicial);

@@ -80,7 +80,7 @@ const leerMarcaDeAgua = () => {
 // reemplazo) y los demás se quitan; el tab y los saltos de línea quedan, porque el XML los admite. Pasa por acá todo texto
 // variable del Word: las partes de los bloques y el pie
 const NO_ADMITIDOS_EN_EL_XML = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\ufffe\uffff]/g;
-const textoParaWord = (texto) => String(texto ?? '').toWellFormed().replace(NO_ADMITIDOS_EN_EL_XML, '');
+export const textoParaWord = (texto) => String(texto ?? '').toWellFormed().replace(NO_ADMITIDOS_EN_EL_XML, '');
 
 // Una parte, en la letra `base` (medios puntos) si no trae la suya
 const run = (parte, base) => new TextRun({

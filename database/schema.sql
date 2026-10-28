@@ -782,6 +782,24 @@ CREATE TABLE `mi_espacio_horas_extras` (
   CONSTRAINT `fk_mi_espacio_horas_extras_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- La planilla de horas extras de contrato (database/updates/migracion-mi-espacio-horas.sql): una fila por persona y día, con
+-- la salida y, opcional en un día hábil, la entrada (la valida la API). Las horas no se guardan: las calculan las reglas con
+-- los feriados del momento. mi_espacio_horas_extras queda para planta
+CREATE TABLE `mi_espacio_salidas` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `usuario_id` int(11) NOT NULL,
+  `fecha` date NOT NULL,
+  `entrada` time DEFAULT NULL,
+  `salida` time NOT NULL,
+  `nota` varchar(200) DEFAULT NULL,
+  `activo` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mi_espacio_salidas_dia` (`usuario_id`,`fecha`),
+  CONSTRAINT `fk_mi_espacio_salidas_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `mi_espacio_avisos` (
   `usuario_id` int(11) NOT NULL,
   `clave` varchar(40) NOT NULL,
