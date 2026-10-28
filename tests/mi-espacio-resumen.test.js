@@ -736,6 +736,10 @@ describe('la lista de licencias', () => {
     assert.equal(de(100).nota, 'Control');
     assert.equal(de(101).mostrar_texto, '');
     assert.equal(de(102).mostrar_texto, 'Tus compañeros ven «Laura Gómez no está».');
+    // Con el nombre corto de contextoDe (spec 2026-10-28-mi-espacio-agenda-onda, 5.1), el nombre como lo ven los demás; sin
+    // él, el completo (como arriba)
+    const conCorto = filasDel(PLANTA, { estado, persona: { ...PLANTA.persona, nombre_corto: 'Laura' } }).licencias;
+    assert.equal(conCorto.find((fila) => fila.id === 102).mostrar_texto, 'Tus compañeros ven «Laura no está».');
     // La del 23/10 ya pasó
     assert.equal(de(5).mostrar_texto, '');
     // La lectora no tiene la casilla
