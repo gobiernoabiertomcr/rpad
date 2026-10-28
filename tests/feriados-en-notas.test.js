@@ -694,6 +694,43 @@ describe('Correos → Estado con las fechas reales', () => {
     });
   });
 
+  it('una licencia del titular desde el 09/12: la víspera y el aviso que cae en la licencia, el viernes 04/12', async () => {
+    // El externo vence el 31/01/2027: su fecha normal de aviso es el 22/12. El lunes 07/12 no es laborable y el martes 08/12 es
+    // feriado: la víspera es el viernes 04/12 (con los 9 fijos, el 07/12)
+    const { titular, autorizado } = await conFirmante();
+    await licencia(titular, '2026-12-09', '2027-01-08', autorizado);
+    await crearDataset({ titulo: 'Externo de enero', gestion: 'externa', vencimiento: '2027-01-31' });
+
+    const { licencia_firmante: delFirmante, proximas } = await estado('2026-11-20');
+    assert.equal(delFirmante.vispera, '2026-12-04');
+    assert.deepEqual(proximas.externa.aviso, { fecha: '2026-12-04', cantidad: 1 });
+    const conLosFijos = await estado('2026-11-20', CALENDARIO_FIJO);
+    assert.deepEqual([conLosFijos.licencia_firmante.vispera, conLosFijos.proximas.externa.aviso.fecha], ['2026-12-07', '2026-12-07']);
+  });
+
+  it('el anticipo de una licencia posterior del titular: vacaciones del 09/12 al 18/12 y una médica del 04/01 al 08/01, el externo del 06/01 se anuncia y sale el 31/12', async () => {
+    const { titular } = await conFirmante();
+    await licencia(titular, '2026-12-09', '2026-12-18');
+    await licencia(titular, '2027-01-04', '2027-01-08');
+    const externo = await crearDataset({ titulo: 'Externo de febrero', gestion: 'externa', vencimiento: '2027-02-15' });
+
+    // Antes de las vacaciones y durante: la licencia del Estado son las vacaciones, pero el aviso del externo cae en la médica, que
+    // se anticipa en su víspera, el jueves 31/12 (el 01/01 es feriado y el 02 y el 03, fin de semana)
+    for (const hoy of ['2026-12-01', '2026-12-14']) {
+      assert.deepEqual((await estado(hoy)).proximas.externa.aviso, { fecha: '2026-12-31', cantidad: 1 }, hoy);
+    }
+    // La corrida del 31/12 lo anticipa, con su fecha normal de aviso
+    const del31 = await correr('2026-12-31');
+    assert.deepEqual(del31.errores, []);
+    assert.deepEqual(del31.generadas.map((g) => [g.tipo, g.gestion]), [['aviso', 'externa']]);
+    assert.deepEqual(await query(
+      "SELECT dataset_id, DATE_FORMAT(cuenta_desde, '%Y-%m-%d') AS cuenta_desde FROM notas_digitales_datasets WHERE nota_id = ?",
+      [del31.generadas[0].id]
+    ), [{ dataset_id: externo, cuenta_desde: '2027-01-06' }]);
+    // Ya anticipado, no queda ningún aviso externo por anunciar
+    assert.equal((await estado('2027-01-02')).proximas.externa.aviso, null);
+  });
+
   it('la próxima nota de auditoría, 5 días hábiles después de la del 04/11, es el 12/11', async () => {
     // Como en «auditoría: un solo calendario a las 8:15 y a las 14:00»: el titular propone un alta el 30/10 con su primer
     // recordatorio ese día, y la nota de auditoría del 04/11 lo incluye

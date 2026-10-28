@@ -1107,14 +1107,32 @@ const estadoAuditoria = async (config, hoy, calendario) => {
 };
 
 /**
+ * El anticipo que va a hacer la corrida con un aviso cuyo candidato (apertura − ventana) cae en una licencia del titular, con la
+ * misma regla que la corrida (spec 2026-10-15, 7.3, y 2026-10-27-feriados-en-notas, 4): la licencia que incluye el primer día
+ * hábil del candidato, cualquiera (la del Estado o una posterior); su víspera, el día hábil anterior a su inicio, si es la próxima
+ * corrida o después; ese día firma el titular (contextoDelDia: solo entonces hay anticipo) y anticipoPorLicencia de ese día lo
+ * alcanza (el candidato no pasa de su último día hábil). { vispera, hasta } o null: la licencia empieza a continuación de otra (su
+ * víspera cae en la otra y no firma el titular), no tiene días hábiles, la víspera ya pasó, o el candidato no cae en ninguna.
+ */
+const anticipoQueIncluye = async (config, candidato, corrida, calendario) => {
+  if (!config.firmante_usuario_id) return null;
+  const licencia = await licenciaEnFecha(config.firmante_usuario_id, calendario.proximoDiaHabil(candidato));
+  if (!licencia) return null;
+  const vispera = calendario.diaHabilAnterior(licencia.desde);
+  if (vispera < corrida || (await modoDelDia(config, vispera)).modo !== 'titular') return null;
+  const anticipo = await anticipoPorLicencia(config, vispera, calendario);
+  return anticipo && candidato <= anticipo.hasta ? { vispera, hasta: anticipo.hasta } : null;
+};
+
+/**
  * Las fechas que anuncia Correos → Estado, en un solo lugar, con el calendario de quien llama y la regla de la corrida, el primer
  * día con notas (primerDiaConNotas; spec 2026-10-27-feriados-en-notas, 4). Solo lee. corrida: la próxima corrida posible (hoy si
  * es hábil). Devuelve { corrida, delFirmante, proximas: { interna, externa }, auditoria }:
  * - delFirmante: lo de licenciaDelFirmante, o null;
  * - el aviso de cada gestión, { fecha, cantidad } o null: el candidato es el día en que se abre el mes del próximo vencimiento
- *   sin aviso (apertura − ventana), o la próxima corrida si ya pasó. Si su primer día hábil cae en la licencia del firmante (con
- *   días hábiles) y la víspera es la próxima corrida o después, la víspera, con lo que anticipa; si no, el primer día con notas
- *   desde el candidato (null: sin aviso), con lo que se seleccionaría ese día. Con persona autorizada, el aviso en su fecha
+ *   sin aviso (apertura − ventana), o la próxima corrida si ya pasó. Si la víspera de alguna licencia del titular (no solo la del
+ *   Estado: también una posterior) lo anticipa (anticipoQueIncluye), la víspera, con lo que anticipa; si no, el primer día con
+ *   notas desde el candidato (null: sin aviso), con lo que se seleccionaría ese día. Con persona autorizada, el aviso en su fecha
  *   (proximoAvisoEnSuFecha) si es antes o el mismo día (su cantidad ya suma los dos);
  * - la reiteración, { fecha, cantidad }: evaluada este mes, el primer día con notas desde el 1° del mes siguiente; si no, desde
  *   hoy. Sin fecha, { fecha: null, cantidad: 0 };
@@ -1125,7 +1143,6 @@ const proximasFechas = async ({ config, hoy, calendario }) => {
   const corrida = calendario.proximoDiaHabil(hoy);
   const delFirmante = await licenciaDelFirmante(config, hoy, calendario);
   const licencia = delFirmante?.publica ?? null;
-  const dentro = (fecha) => Boolean(licencia) && !licencia.sin_dias_habiles && fecha >= licencia.desde && fecha <= licencia.hasta;
   const periodoActual = periodoDe(hoy);
   const proximas = {};
   for (const gestion of GESTIONES) {
@@ -1136,11 +1153,12 @@ const proximasFechas = async ({ config, hoy, calendario }) => {
     if (apertura) {
       const desde = sumarDias(apertura, -VENTANA_DIAS[gestion]);
       const candidato = desde > corrida ? desde : corrida;
-      // Un aviso que caería dentro de una licencia del firmante se anticipa a la víspera, si todavía no pasó. Sin víspera (ya
-      // pasó, o la licencia empieza a continuación de otra) sale el primer día con notas: con la persona autorizada en su día,
-      // sin ella a la vuelta
-      if (dentro(calendario.proximoDiaHabil(candidato)) && licencia.vispera !== null && licencia.vispera >= corrida) {
-        aviso = { fecha: licencia.vispera, cantidad: (await seleccionarParaAviso(gestion, licencia.vispera, licencia.ultimo_habil)).length };
+      // Un aviso que caería dentro de una licencia del firmante se anticipa a la víspera, si todavía no pasó. Sin anticipo (la
+      // víspera ya pasó, o la licencia empieza a continuación de otra) sale el primer día con notas: con la persona autorizada en
+      // su día, sin ella a la vuelta
+      const anticipo = await anticipoQueIncluye(config, candidato, corrida, calendario);
+      if (anticipo) {
+        aviso = { fecha: anticipo.vispera, cantidad: (await seleccionarParaAviso(gestion, anticipo.vispera, anticipo.hasta)).length };
       } else {
         const fecha = await primerDiaConNotas(config, candidato, calendario);
         if (fecha !== null) aviso = { fecha, cantidad: (await seleccionarParaAviso(gestion, fecha)).length };
