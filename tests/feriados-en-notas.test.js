@@ -5,14 +5,14 @@ import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { crearBaseDePrueba, correrSqlEnBaseDePrueba, cerrarDb, query, mailpit, paraCasilla, db } from './helpers.js';
-import { limpiarBase, configurarNotas, asegurarBaseDePrueba, crearDataset, crearNota } from './notas-fixtures.js';
+import { limpiarBase, configurarNotas, asegurarBaseDePrueba, crearArea, crearDataset, crearNota } from './notas-fixtures.js';
 import { pngRgba } from './firma-fixtures.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
-import { MENSAJE_CORRIDA_SIN_FERIADOS } from '../services/feriadosReglas.js';
+import { MENSAJE_CORRIDA_SIN_FERIADOS, calendarioCon } from '../services/feriadosReglas.js';
 import { CALENDARIO_FIJO } from '../services/notasDigitalesCalendario.js';
 
 const FIRMA = pngRgba({ ancho: 40, alto: 20 });
-let base, dbReal, feriadosDatos, motor, avisos, auditoria, controlador;
+let base, dbReal, feriadosDatos, motor, avisos, avisosSuperadmin, auditoria, controlador;
 
 before(async () => {
   dbReal = process.env.DB_NAME;
@@ -24,6 +24,7 @@ before(async () => {
   feriadosDatos = await import('../services/feriadosDatos.js');
   motor = await import('../services/notasDigitales.js');
   avisos = await import('../services/avisosDiariosService.js');
+  avisosSuperadmin = await import('../services/avisosSuperadminService.js');
   auditoria = await import('../services/auditoriaService.js');
   controlador = await import('../controllers/notificacionesController.js');
 });
@@ -101,6 +102,10 @@ const conLaTablaRenombrada = async (fn) => {
     await query('RENAME TABLE feriados_sin_leer TO feriados');
   }
 };
+
+// Lo que dice leerCalendario en la consola cuando no puede leer la tabla: una vez por lectura
+const lecturasFallidas = (consola) => consola.mock.calls
+  .filter((llamada) => String(llamada.arguments[0]).startsWith('No se pudieron leer los feriados')).length;
 
 describe('la precarga de las fixtures es la de migracion-feriados-datos.sql', () => {
   it('las 28 filas, en orden, con id de 1 a 28, activas, sin baja desde un año y sin años que no rigen', async () => {
@@ -330,9 +335,6 @@ describe('la corrida de las Notas Digitales con la precarga', () => {
     await query('UPDATE notas_digitales_config SET firmante_usuario_id = ? WHERE id = 1', [titular.id]);
     return { titular, autorizado };
   };
-  // Lo que dice leerCalendario en la consola cuando no puede leer la tabla: una vez por lectura
-  const lecturasFallidas = (consola) => consola.mock.calls
-    .filter((llamada) => String(llamada.arguments[0]).startsWith('No se pudieron leer los feriados')).length;
 
   it('el lunes 02/11/2026 es «Día no hábil» y el martes 03/11 salen el aviso interno del 31/12 y la reiteración de noviembre', async () => {
     await crearDataset({ titulo: 'Vence en diciembre', vencimiento: '2026-12-31' });
@@ -473,5 +475,91 @@ describe('la corrida de las Notas Digitales con la precarga', () => {
     // La última corrida (la de la otra) no cambia y no se generó nada
     assert.deepEqual(await ultimaCorrida(), antes);
     assert.deepEqual(await notas(), []);
+  });
+});
+
+describe('la corrida de las 8:15: el email de los 40 días y el resumen al superadmin', () => {
+  // El controlador de la corrida de las 8:15 (nunca /api/cron/*) con el reloj en un momento fijo, como en
+  // tests/mi-espacio-avisos.test.js; devuelve la respuesta
+  const corridaDeLas815 = async (momento) => {
+    const res = respuestaFalsa();
+    mock.timers.enable({ apis: ['Date'], now: new Date(momento) });
+    try {
+      await controlador.ejecutarNotificacionesDiarias({}, res);
+    } finally {
+      mock.timers.reset();
+    }
+    return res;
+  };
+
+  it('el viernes 06/11 avisa también lo que vence el 19/12 (el lunes 09/11 es feriado), el 09/11 no sale y el 10/11 no lo repite', async () => {
+    const email = `area_${crypto.randomBytes(3).toString('hex')}@rpad.test`;
+    const areaId = await crearArea({ email_principal: email });
+    await crearDataset({ titulo: 'Externo del 19/12', gestion: 'externa', vencimiento: '2026-12-19', areaId });
+
+    // El 06/11 avisa del 16/12 al 19/12: el día hábil siguiente es el martes 10/11 (con los 9 fijos, el lunes 09/11, y avisaría
+    // hasta el 18/12)
+    const del06 = await avisos.enviarAvisoAreas({ hoy: '2026-11-06' });
+    assert.deepEqual(del06.errores, []);
+    assert.deepEqual(del06.enviados.map((e) => e.cantidad), [1]);
+    assert.equal((await mailpit.esperar(paraCasilla(email))).length, 1);
+
+    assert.deepEqual(await avisos.enviarAvisoAreas({ hoy: '2026-11-09' }),
+      { dia_habil: false, enviados: [], errores: [], sin_datasets: true });
+    // El 10/11 avisa desde el 20/12
+    const del10 = await avisos.enviarAvisoAreas({ hoy: '2026-11-10' });
+    assert.equal(del10.dia_habil, true);
+    assert.deepEqual(del10.enviados, []);
+  });
+
+  it('el resumen de avisos retenidos no sale el 02/11 y sale el 03/11', async () => {
+    const jefa = await crearUsuario('superadmin', { conFirma: false });
+    const actor = await crearUsuario('admin', { conFirma: false });
+    const afectado = await crearUsuario('lector', { conFirma: false });
+    await query(
+      "INSERT INTO usuarios_auditoria (usuario_id, actor_id, accion, detalle, aviso_retenido) VALUES (?, ?, 'desactivacion', NULL, 'Desactivado')",
+      [afectado.id, actor.id]
+    );
+
+    // Con los 9 fijos, el 02/11 saldría
+    assert.deepEqual(await avisosSuperadmin.enviarResumenAvisosRetenidos({ hoy: '2026-11-02' }), { enviado: false, cantidad: 0 });
+    assert.deepEqual(await avisosSuperadmin.enviarResumenAvisosRetenidos({ hoy: '2026-11-03' }), { enviado: true, cantidad: 1 });
+    assert.equal((await mailpit.esperar(paraCasilla(jefa.email))).length, 1);
+  });
+
+  it('fechaDelProximoAviso: el próximo día hábil con el calendario que recibe', () => {
+    assert.equal(controlador.fechaDelProximoAviso('2026-11-07', calendarioCon(FILAS_PRECARGA)), '2026-11-10');
+    assert.equal(controlador.fechaDelProximoAviso('2026-11-07', CALENDARIO_FIJO), '2026-11-09');
+    // Sin el calendario, tira: no hay valor por defecto
+    assert.throws(() => controlador.fechaDelProximoAviso('2026-11-07'), TypeError);
+  });
+
+  it('la corrida de las 8:15 dice qué calendario usó', async () => {
+    const res = await corridaDeLas815('2026-11-02T11:15:00Z');
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    assert.equal(res.body.data.calendario, 'tabla');
+    assert.equal(res.body.data.dia_habil, false);
+    assert.equal(res.body.data.notasDigitales.motivo, 'Día no hábil');
+  });
+
+  it('con la tabla renombrada usa los 9 fijos en toda la corrida, con una sola lectura, y responde 207', async () => {
+    const consola = mock.method(console, 'error', () => {});
+    let res;
+    try {
+      res = await conLaTablaRenombrada(() => corridaDeLas815('2026-11-02T11:15:00Z'));
+      // Una sola lectura del calendario en toda la corrida: la del controlador, que reciben el email de los 40 días, el resumen
+      // al superadmin y las Notas Digitales (el email de vencimiento de Mi espacio lee los feriados por su cuenta)
+      assert.equal(lecturasFallidas(consola), 1);
+    } finally {
+      consola.mock.restore();
+    }
+    assert.equal(res.statusCode, 207);
+    assert.equal(res.body.success, false);
+    assert.equal(res.body.data.calendario, 'fijos');
+    // Con los 9 fijos, el 02/11 es hábil
+    assert.equal(res.body.data.dia_habil, true);
+    assert.equal(res.body.data.notasDigitales.calendario, 'fijos');
+    assert.ok(res.body.data.errores.some((e) => e.tipo === 'notas-digitales' && e.paso === 'feriados'
+      && e.error === MENSAJE_CORRIDA_SIN_FERIADOS), JSON.stringify(res.body.data.errores));
   });
 });

@@ -1,11 +1,12 @@
 // Avisos diarios por email que no son Notas Digitales: el aviso directo a las áreas (40 días antes), el recordatorio de
 // cambios pendientes a quienes pueden auditarlos y el aviso a quien propuso cambios que nadie puede auditar. Salen solo en
-// días hábiles y la fecha se recibe como parámetro, para poder probarlos con cualquier día.
+// días hábiles del calendario de la corrida (con los feriados de la tabla: spec 2026-10-27-feriados-en-notas, 3) y la fecha se
+// recibe como parámetro, para poder probarlos con cualquier día.
 // Spec: docs/superpowers/specs/2026-10-15-dias-habiles-licencias-auditoria-design.md (secciones 4 y 9.2)
 import pool from '../config/database.js';
 import { sendEmail, sendEmailToArea } from './emailService.js';
 import * as templates from './emailTemplates.js';
-import { ahoraArgentina, esDiaHabil, rangoDeAviso, sumarDias } from './notasDigitalesCalendario.js';
+import { ahoraArgentina, sumarDias } from './notasDigitalesCalendario.js';
 import { conPedido } from './notasDigitalesDatos.js';
 import { contextoDeCanal, cambiosConCanal, proximoDiaConQuienAudite } from './auditoriaService.js';
 import { quienesAuditan, entraEnRecordatorio } from './auditoriaReglas.js';
@@ -17,7 +18,9 @@ export const DIAS_AVISO_AREAS = 40;
 /**
  * Datasets externos que avisa en esa fecha el aviso a las áreas, agrupados por área (solo áreas con email).
  * Un día hábil avisa los vencimientos de fecha + 40 y los de los días no hábiles que siguen (spec 4.2).
- * Fuera de un día hábil no hay nada que avisar.
+ * Fuera de un día hábil no hay nada que avisar. El día hábil y los que siguen salen del calendario (sin él, se lee): el de
+ * enviarAvisoAreas, que con el mismo objeto decide si hoy es hábil (spec 2026-10-27-feriados-en-notas, 3: si uno usara la tabla
+ * y el otro no, se perderían o se duplicarían vencimientos), o el de la vista previa y la prueba.
  * Un dataset que no requiere nota DGMIT (requiere_nota = 0) queda afuera: este email anticipa la nota formal, que a ese
  * dataset no le llega; el Sí (1) y el sin dato (NULL) siguen como hasta ahora (spec 2026-10-20-requiere-nota, 1.6). La vista
  * previa y la prueba del email en Correos usan esta misma función, así que quedan coherentes con el envío.
@@ -27,8 +30,9 @@ export const DIAS_AVISO_AREAS = 40;
  * "Datos que se solicitarán" (spec 2026-10-17-fechas-datasets, 9) y la frecuencia con "(Acumulado)" cuando corresponde; desde
  * el 18/10/2026 no lleva la fecha sugerida de envío (spec 18).
  */
-export const datasetsExternosPorArea = async (fecha) => {
-  const rango = rangoDeAviso(fecha, DIAS_AVISO_AREAS);
+export const datasetsExternosPorArea = async (fecha, calendario) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const rango = conElCalendario.rangoDeAviso(fecha, DIAS_AVISO_AREAS);
   if (!rango) return [];
   const [rows] = await pool.execute(
     `SELECT d.id, d.titulo, d.url_dataset, d.area_id,
@@ -98,14 +102,16 @@ const logNotificacion = async (tipo, areaId, destinatarios, datasetsIds, success
 };
 
 /**
- * Aviso directo a las áreas de gestión externa (spec 4.2). Devuelve qué se envió:
+ * Aviso directo a las áreas de gestión externa (spec 4.2), con el calendario de la corrida de las 8:15 (sin él, se lee): el
+ * mismo objeto dice si hoy es hábil y qué vencimientos avisa. Devuelve qué se envió:
  * { dia_habil, enviados: [{ tipo, area, cantidad }], errores: [{ tipo, area, error }], sin_datasets }
  */
-export const enviarAvisoAreas = async ({ hoy }) => {
-  const resultado = { dia_habil: esDiaHabil(hoy), enviados: [], errores: [], sin_datasets: true };
+export const enviarAvisoAreas = async ({ hoy, calendario = null }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const resultado = { dia_habil: conElCalendario.esDiaHabil(hoy), enviados: [], errores: [], sin_datasets: true };
   if (!resultado.dia_habil) return resultado;
 
-  const areas = await datasetsExternosPorArea(hoy);
+  const areas = await datasetsExternosPorArea(hoy, conElCalendario);
   resultado.sin_datasets = areas.length === 0;
   for (const areaData of areas) {
     const { subject, html } = templates.areaAviso40dias(areaData);

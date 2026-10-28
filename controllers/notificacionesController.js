@@ -6,7 +6,7 @@ import { enviarAvisosDeVencimiento } from '../services/miEspacioAvisos.js';
 import { ejecutarRecordatoriosDeEventos as correrLosRecordatorios } from '../services/miEspacioEventosCorrida.js';
 import { textoDelResultadoDeEventos } from '../services/miEspacioEventosReglas.js';
 import { obtenerConfig, conPedido } from '../services/notasDigitalesDatos.js';
-import { hoyArgentina, proximoDiaHabil, esDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
 import { leerCalendario } from '../services/feriadosDatos.js';
 import { MENSAJE_CORRIDA_SIN_FERIADOS } from '../services/feriadosReglas.js';
@@ -53,28 +53,38 @@ const areaDeEjemplo = (fecha) => {
 };
 
 // La vista previa y la prueba del aviso a las áreas muestran lo que saldría en la próxima corrida posible (hoy, si es
-// día hábil): un sábado, lo del lunes en lugar de nada
-const fechaDelProximoAviso = () => proximoDiaHabil(hoyArgentina());
+// día hábil): un sábado, lo del lunes en lugar de nada (o lo del martes, si el lunes es feriado). El día hábil, con el
+// calendario que lee el pedido, el mismo que después recibe datasetsExternosPorArea (spec 2026-10-27-feriados-en-notas, 4).
+// Sin valor por defecto: un olvido tira. Se exporta solo para el test
+export const fechaDelProximoAviso = (hoy, calendario) => calendario.proximoDiaHabil(hoy);
 
 // Lo que la corrida anota en la última corrida que muestra Correos > Estado cuando fallan los avisos de Mi espacio
 const textoFallaDeMiEspacio = (mensaje) => `No se pudieron enviar los avisos de Mi espacio: ${mensaje}`;
 
 /**
  * Proceso diario (cron de las 8:15): aviso directo a las áreas, Notas Digitales, desde el 10/01 la foto del año anterior y
- * los avisos de vencimiento de Mi espacio
+ * los avisos de vencimiento de Mi espacio.
+ * El calendario de días hábiles (con los feriados de la tabla) se lee una vez, al principio, y el mismo objeto va al aviso a
+ * las áreas, al resumen al superadmin, a las Notas Digitales y a dia_habil (spec 2026-10-27-feriados-en-notas, 2 y 3); data
+ * suma calendario: de dónde salió ('tabla' o 'fijos'). Si la tabla no se pudo leer, la corrida sigue con los 9 fijos y las
+ * Notas Digitales anotan el error entre los suyos (paso 'feriados'): la corrida queda con errores y responde 207
  */
 export const ejecutarNotificacionesDiarias = async (req, res) => {
   const hoy = hoyArgentina();
   const resultados = {
-    fecha: new Date().toISOString(), enviados: [], errores: [], sinDatasets: [], notasDigitales: null, dia_habil: null,
-    avisos_retenidos: null, foto: null, miEspacio: null
+    fecha: new Date().toISOString(), calendario: null, enviados: [], errores: [], sinDatasets: [], notasDigitales: null,
+    dia_habil: null, avisos_retenidos: null, foto: null, miEspacio: null
   };
 
   try {
+    // Nunca tira: si la tabla no se puede leer, devuelve el de los 9 fijos con su error
+    const calendario = await leerCalendario();
+    resultados.calendario = calendario.origen;
+
     // Aviso directo a las áreas de gestión externa (40 días antes, solo en días hábiles). Va aislado: un error acá
     // no saltea las Notas Digitales
     try {
-      const aviso = await enviarAvisoAreas({ hoy });
+      const aviso = await enviarAvisoAreas({ hoy, calendario });
       resultados.dia_habil = aviso.dia_habil;
       resultados.enviados.push(...aviso.enviados);
       resultados.errores.push(...aviso.errores);
@@ -83,21 +93,22 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
       console.error('Error en el aviso a las áreas:', error);
       resultados.errores.push({ tipo: 'area-aviso-40', error: 'Error ejecutando el aviso a las áreas' });
     }
-    resultados.dia_habil ??= esDiaHabil(hoy);
+    resultados.dia_habil ??= calendario.esDiaHabil(hoy);
 
     // Resumen de los avisos al superadmin retenidos durante su licencia (spec 2026-10-15, 5.4). Aislado: un error acá no
     // saltea las Notas Digitales y los avisos quedan retenidos para el día hábil siguiente
     try {
-      resultados.avisos_retenidos = await enviarResumenAvisosRetenidos({ hoy });
+      resultados.avisos_retenidos = await enviarResumenAvisosRetenidos({ hoy, calendario });
     } catch (error) {
       console.error('Error en el resumen de avisos retenidos:', error);
       resultados.errores.push({ tipo: 'avisos-retenidos', error: error.message });
     }
 
-    // Notas Digitales (reemplazan los avisos de gestión interna y externa). Deciden solas si hoy es día hábil.
-    // creado_por: el admin que pidió la corrida; el cron no tiene req.user y queda en NULL
+    // Notas Digitales (reemplazan los avisos de gestión interna y externa). Deciden solas si hoy es día hábil, con el
+    // calendario de la corrida; si cayó a los 9 fijos, el error vuelve entre los suyos (paso 'feriados') y lo anotan en la
+    // última corrida. creado_por: el admin que pidió la corrida; el cron no tiene req.user y queda en NULL
     try {
-      resultados.notasDigitales = await ejecutarNotasDigitales({ hoy, usuarioId: req.user?.userId ?? null });
+      resultados.notasDigitales = await ejecutarNotasDigitales({ hoy, usuarioId: req.user?.userId ?? null, calendario });
       if (resultados.notasDigitales.fallidas > 0) {
         resultados.errores.push({ tipo: 'notas-digitales', error: `${resultados.notasDigitales.fallidas} nota(s) no se pudieron enviar` });
       }
@@ -128,8 +139,8 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
     }
 
     // El email de lo que vence pronto en Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 9): después de las Notas
-    // Digitales (registrarInicio borra lo anotado en la última corrida) y de la foto, con su propio control de día hábil (con
-    // los feriados de la tabla; resultados.dia_habil sigue con los 9 fijos). Aislado: un error acá (también si falta una
+    // Digitales (registrarInicio borra lo anotado en la última corrida) y de la foto, con su propio control de día hábil (lee
+    // los feriados de la tabla por su cuenta: si no puede, no manda nada). Aislado: un error acá (también si falta una
     // tabla) no frena la respuesta, queda en la última corrida y lo que no salió sale en la próxima corrida de su tramo. Un
     // email que no salió va a los errores con su persona y el texto del envío; en la última corrida, solo el motivo fijo
     // (el texto de nodemailer puede traer la dirección de email)
@@ -169,8 +180,9 @@ export const pruebaAvisoArea = async (req, res) => {
     if (casillas.length === 0) {
       return res.status(400).json({ success: false, error: 'No hay casillas de prueba configuradas (Correos > Configuración)' });
     }
-    const fecha = fechaDelProximoAviso();
-    const [area] = await datasetsExternosPorArea(fecha);
+    const calendario = await leerCalendario();
+    const fecha = fechaDelProximoAviso(hoyArgentina(), calendario);
+    const [area] = await datasetsExternosPorArea(fecha, calendario);
     const datosArea = area ?? areaDeEjemplo(fecha);
     const { subject, html } = templates.areaAviso40dias(datosArea);
     const result = await sendEmailToArea({ subject: `[PRUEBA] ${subject}`, html, to: casillas });
@@ -207,8 +219,9 @@ export const previewEmail = async (req, res) => {
     return res.status(400).json({ success: false, error: 'Tipo no válido', tiposDisponibles: ['area-aviso-40'] });
   }
   try {
-    const fecha = fechaDelProximoAviso();
-    const [area] = await datasetsExternosPorArea(fecha);
+    const calendario = await leerCalendario();
+    const fecha = fechaDelProximoAviso(hoyArgentina(), calendario);
+    const [area] = await datasetsExternosPorArea(fecha, calendario);
     const { html } = templates.areaAviso40dias(area ?? areaDeEjemplo(fecha));
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
