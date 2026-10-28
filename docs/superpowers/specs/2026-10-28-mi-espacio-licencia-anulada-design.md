@@ -108,6 +108,9 @@ falta SQL.**
    hoy («En Configuración: del … al …. Administración la cambió …»), que ya dice las fechas, y el Resumen suma el aviso si las
    fechas difieren; en una que cambió la dueña (`'creada'`), el texto nuevo («En Configuración quedó del … al …: revisala.»)
    reemplaza a «También en Configuración → Licencias.».
+   **El Resumen solo avisa lo que todavía se puede resolver:** una fecha cambiada, mientras la licencia de Configuración no
+   terminó (después, las fechas de una creada quedan fijas: ni Mi espacio ni Configuración las cambian); una unida sin cubrir
+   o una creada anulada de antes, mientras la de Mi espacio no terminó. La fila de la lista lo sigue diciendo siempre.
 3b. **Una anulación de Configuración no borra una fila de Mi espacio que ya empezó antes de hoy.** Puede pasar si en
    Configuración se corrió el inicio para más adelante: Configuración la deja anular (mira sus propias fechas), pero en Mi
    espacio ya pasaron días, y Mi espacio nunca borra sola una licencia que ya empezó (su propio borrado responde «Ya empezó: no
