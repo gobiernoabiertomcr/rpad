@@ -51,9 +51,9 @@
 
 ## Cuidados globales
 
-- **El repo es público:** no puede aparecer ningún nombre real de personas. Antes de cada commit, revisar el diff contra la tabla `usuarios` del dump (`C:\Users\Mariano\Desktop\datospublicos_mcr_rpad.sql`): primer nombre, apellidos y username.
+- **El repo es público:** no puede aparecer ningún nombre real de personas. Antes de cada commit, revisar el diff contra la tabla `usuarios` del dump de consulta (el que está en el Escritorio, fuera del repo): primer nombre, apellidos y username.
 - **Base, emails y crons:** la base local `datospublicos_mcr_rpad` no se escribe. No se mandan emails reales ni se llama a `/api/cron/*`.
-- **Suite:** `npm test` completo antes y después de la tarea, con el candado `C:\Users\Mariano\.rpad-suite.lock`.
+- **Suite:** `npm test` completo antes y después de la tarea, con el candado compartido de la suite (`.rpad-suite.lock`, en la carpeta del usuario).
 
 ## A revisar
 
@@ -112,7 +112,7 @@
 - [ ] **Paso 2: comprobar que fallan.** Correr `node --test tests/metricas-reglas.test.js tests/metricas-cinta.test.js tests/reportes-frontend.test.js tests/reportes-pdf.test.js`. Lo esperado es que FALLEN los literales nuevos.
 - [ ] **Paso 3: cambiar el código.** Primero el `nombre` en `TRAMOS` y la descripción en `TEXTOS_DEL_CICLO`; después los comentarios.
 - [ ] **Paso 4: volver a tomar la referencia.**
-  - Antes de tomarla, comparar con `bash <scratchpad>/simular.sh HEAD`, sin commitear. El scratchpad es `C:\Users\Mariano\AppData\Local\Temp\claude\C--git-rpad--claude-worktrees-funny-mahavira-3f16dc\590a8eca-8e39-440d-a51e-a90d554d3679\scratchpad\`.
+  - Antes de tomarla, comparar con `bash <scratchpad>/simular.sh HEAD`, sin commitear. Es el script de la sesión, fuera del repo: arma el código de `HEAD` y el del árbol de trabajo, vuelca los cinco PDF de la referencia y los del Ciclo de vida, y los compara hoja por hoja (texto, letra, tamaño, x y línea de base).
   - El diff tiene que mostrar solo lo del punto 1 de «A revisar». En el Ciclo de vida, solo el nombre, su letra, la x de la insignia y la línea con «redactan».
   - Después, correr `node --test --test-name-pattern="no cambian" tests/reportes-pdf.test.js` y pegar los hashes del mensaje en `REFERENCIA_DE_LOS_PDF`.
   - Sumar al comentario de `REFERENCIA_DE_LOS_PDF` que la hoja 1 de los cinco PDF y la hoja 3 de «con una nota DGMIT» se volvieron a tomar por el nombre de la etapa (28/10/2026), comprobado con el diff.
