@@ -17,8 +17,11 @@
  *   licencia, menos el uso autorizado, tiene «Word» al lado de «Editar» (spec 2026-10-27-mi-espacio-licencia-word, 6): la nota de
  *   licencia, de GET /mi-espacio/licencias/:id/word con un fetch propio (el token en el encabezado; API.pedirArchivo no da los
  *   encabezados), con el nombre del Content-Disposition (nombreDelAdjunto) y bajada con descargarBlob (bajarWordDeLicencia).
- * - Horas extras: la tabla por mes (en planta, los francos; en contrato, las horas a favor) y el día por día de un mes (cada mes de
- *   la tabla es un botón; de entrada, el en curso) y, en contrato, las horas no utilizadas previamente.
+ * - Horas extras: la tabla por mes (en planta, los francos; en contrato, las horas a favor, con lo mismo en días de franco debajo)
+ *   y el día por día de un mes (cada mes de la tabla es un botón; de entrada, el en curso; en contrato, las salidas de la planilla,
+ *   cada una con «Editar», data-editar-salida) y, en contrato, las horas no utilizadas previamente. La planilla de contrato (spec
+ *   2026-10-27-mi-espacio-horas, secciones 4 y 9): lo puro arma las semanas y las filas de un mes con los cambios de la página
+ *   encima, la banda, el pie, los errores y el cuerpo de PUT /mi-espacio/salidas.
  * - Agenda (spec 2026-10-26-mi-espacio-agenda, 6): el mes de lunes a domingo, con «‹», «›», «Hoy» y hasta 3 cosas por día («y N
  *   más» muestra el resto), en sus colores (lo tuyo, lo compartido, tus licencias y francos, los feriados y los compañeros que no
  *   están) con su leyenda, y al costado los próximos 30 días (Hoy, Mañana, Esta semana y Más adelante). El mes no va en la
@@ -39,7 +42,9 @@
  * /mi-espacio/licencias/:id/nota, la hoja armada y escapada por el servidor, que va tal cual), «Listo» y «Descargar Word»; lo
  * guardado se anuncia en #me-anuncio, sin aviso flotante, y al cerrar el foco va adonde va después de cualquier guardado.
  * Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad: los mensajes y
- * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), camposConLoElegido (camposDelSaldoInicial), las de
+ * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), en la planilla horasDelDiaDeLaPlanilla (horasDeLaSalida,
+ * con el tipo del día que manda el servidor), enDiasDeFranco, textoDeLaSumaDelMes y erroresDeLaPlanilla (los pasos 3 a 7 de
+ * validarSalida), camposConLoElegido (camposDelSaldoInicial), las de
  * Configuración (efectoEnNotas, textoSinAuditor, textoAusenciasAutorizado y parametrosSinAuditor, de usuarios.js) y, en la agenda,
  * DIAS_DE_PROXIMOS (services/miEspacioEventosReglas.js), diaLargoDe (diaLargo) y tituloDelMes (mesTitulo, los dos de
  * services/miEspacioResumen.js), y en el evento, las de services/miEspacioEventosReglas.js: MENSAJES_EVENTO, LARGO_TITULO_EVENTO,
@@ -548,12 +553,14 @@ function htmlDeTablaDeFrancos(tabla, mes = mesInicialDe(tabla)) {
 }
 
 /**
- * Contrato: las horas extras de cada mes trabajado, el mes en que quedan a favor, lo que se usó (con cada uso debajo) y su
- * situación. `mes`, como en la de francos.
+ * Contrato: las horas extras de cada mes trabajado, el mes en que quedan a favor (con lo mismo en días de franco debajo, en chico:
+ * `a_favor_detalle`, «2 días de franco y 4 horas»; spec 2026-10-27-mi-espacio-horas, sección 5), lo que se usó (con cada uso
+ * debajo) y su situación. `mes`, como en la de francos.
  */
 function htmlDeTablaDeHorasAFavor(tabla, mes = mesInicialDe(tabla)) {
   const filas = listaDe(tabla?.meses).map((fila) => `<tr${claseDeLaFila(fila)}><td>${botonDelMes(fila, mes)}</td>`
-    + `<td class="num">${esc(fila.horas_texto)}</td><td>${esc(fila.a_favor_texto)}</td>`
+    + `<td class="num">${esc(fila.horas_texto)}</td>`
+    + `<td>${esc(fila.a_favor_texto)}${conTexto(fila.a_favor_detalle) ? `<small>${esc(fila.a_favor_detalle)}</small>` : ''}</td>`
     + `<td class="num">${esc(fila.usadas_texto)}${conTexto(fila.usadas_detalle) ? `<small>${esc(fila.usadas_detalle)}</small>` : ''}</td>`
     + `<td>${htmlDeSituacion(fila)}</td></tr>`);
   return `<div class="me-tarjeta">${cabezaDeHoras('Horas extras y horas a favor', tabla)}`
@@ -575,6 +582,32 @@ function htmlDeDiaPorDia(tabla, mes) {
     + `<span>${esc(deMapa(tabla.totales_por_mes, mes, ''))}</span></div><ul class="me-lista">${filas.join('')}</ul></div>`;
 }
 
+/**
+ * Contrato: las salidas de un mes de la tabla, día por día (spec 2026-10-27-mi-espacio-horas, sección 5; la maqueta,
+ * `filaDelDiaPorDia`), con lo que manda el servidor: la fecha con la marca del día (Feriado, Sábado o Domingo), el horario («Salida
+ * 16:20», o «De 09:21 a 12:10» en un día que no es hábil), la entrada de un día hábil, las horas en una pastilla (los que dan 0, en
+ * gris con «No llega a media hora»), el aviso de una salida que dejó de cerrar, la nota y «Editar», que abre la planilla en ese día
+ * (`data-editar-salida` con la fecha, y el día en su nombre: «Editar el lunes 05/10»). Un mes que no está en la tabla, nada.
+ */
+function htmlDeDiaPorDiaDeSalidas(tabla, mes) {
+  const fila = listaDe(tabla?.meses).find((uno) => uno.mes === mes);
+  const dias = listaDe(deMapa(tabla?.dias_por_mes, mes, []));
+  if (fila === undefined || dias.length === 0) return '';
+  const detalle = (texto, clase = 'me-detalle') => (conTexto(texto) ? `<span class="${clase}">${esc(texto)}</span>` : '');
+  const filas = dias.map((dia) => {
+    const largo = esFechaDeTexto(dia.fecha) ? diaLargoDe(dia.fecha) : dia.fecha_texto;
+    const cero = dia.cero === true;
+    return `<li class="me-fila${cero ? ' tenue' : ''}"><span class="me-fila-fecha">${esc(dia.fecha_texto)}`
+      + `${conTexto(dia.tipo_texto) ? `<small>${esc(dia.tipo_texto)}</small>` : ''}</span>`
+      + `<span class="me-fila-cuerpo">${esc(dia.horario)}${detalle(dia.entrada_texto)}${detalle(dia.horas_texto, 'me-dia-horas')}`
+      + `${cero ? '<span class="me-detalle">No llega a media hora</span>' : ''}${detalle(dia.aviso, 'me-detalle me-fila-aviso')}`
+      + `${detalle(dia.nota, 'me-detalle me-fila-nota')}</span>`
+      + `<button type="button" class="sg-link" data-editar-salida="${esc(dia.fecha)}" aria-label="Editar el ${esc(largo)}">Editar</button></li>`;
+  });
+  return `<div class="me-tarjeta"><div class="me-cabeza"><h3>${esc(fila.mes_texto)}, día por día</h3>`
+    + `<span>${esc(deMapa(tabla.totales_por_mes, mes, ''))}</span></div><ul class="me-lista">${filas.join('')}</ul></div>`;
+}
+
 // Contrato: «Horas no utilizadas previamente», cada mes con su origen (y lo del saldo inicial), con el uso autorizado debajo
 function htmlDeNoUtilizadas(tabla) {
   const noUtilizadas = tabla?.no_utilizadas;
@@ -590,15 +623,15 @@ function htmlDeNoUtilizadas(tabla) {
 
 /**
  * La pestaña Horas extras (lo que manda GET /api/mi-espacio/horas-extras): en planta, la tabla de francos y el día por día; en
- * contrato, la de horas a favor, el día por día y las horas no utilizadas previamente. `mes` es el del día por día (uno que no está
- * en la tabla, el de entrada). Sin modalidad, solo el mensaje del servidor.
+ * contrato, la de horas a favor, el día por día de las salidas de la planilla y las horas no utilizadas previamente. `mes` es el
+ * del día por día (uno que no está en la tabla, el de entrada). Sin modalidad, solo el mensaje del servidor.
  */
 function htmlDeHorasExtras(tabla, mes) {
   if (!esObjeto(tabla)) return '';
   const elegido = mesDeLaTabla(tabla, mes);
   if (tabla.modalidad === 'planta') return htmlDeTablaDeFrancos(tabla, elegido) + htmlDeDiaPorDia(tabla, elegido);
   if (tabla.modalidad === 'contrato') {
-    return htmlDeTablaDeHorasAFavor(tabla, elegido) + htmlDeDiaPorDia(tabla, elegido) + htmlDeNoUtilizadas(tabla);
+    return htmlDeTablaDeHorasAFavor(tabla, elegido) + htmlDeDiaPorDiaDeSalidas(tabla, elegido) + htmlDeNoUtilizadas(tabla);
   }
   return htmlDeMensaje(tabla.mensaje);
 }
@@ -623,7 +656,15 @@ const MENSAJES_FORMULARIOS = Object.freeze({
   saldoMedias: 'Escribí las horas de a media hora.',
   yaEmpezo: 'Ya empezó: no se puede borrar',
   soloHasta: 'Ya empezó: solo podés cambiar hasta cuándo.',
-  fechasFijas: 'Ya terminó: las fechas quedan fijas.'
+  fechasFijas: 'Ya terminó: las fechas quedan fijas.',
+  // Los de la planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, secciones 7 y 8)
+  horaSalida: 'Escribí la hora como 16:45.',
+  salidaQueCuenta: 'Falta la salida: es la que cuenta.',
+  salidaFalta: 'Falta la salida.',
+  entradaFeriado: 'En un feriado, poné también la entrada.',
+  entradaFinde: 'En un sábado o domingo, poné también la entrada.',
+  salidaAntes: 'La salida tiene que ser después de la entrada.',
+  muchosDias: 'Guardá de a 100 días como mucho.'
 });
 // Los días de vacaciones que se eligen por año, los de estudios según la carrera y los de cada examen, las horas de un día entero y
 // el largo de una nota (en caracteres contados con Array.from): los de services/miEspacioReglas.js
@@ -653,6 +694,79 @@ const horasDelHorario = (desde, hasta) => {
   if (inicio === null || fin === null || inicio === fin) return null;
   return ((fin > inicio ? fin : fin + 24 * 60) - inicio) / 60;
 };
+
+// La planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, secciones 3 y 9), para decir las horas de cada día y
+// lo que suma el mes mientras se escribe: la jornada termina a las 15:00; una media hora vale aunque falten hasta 14 minutos en un
+// día hábil y hasta 10 en uno que no lo es; se guardan de a 100 días como mucho. Copias de las de services/miEspacioReglas.js
+const SALIDA_DE_LA_JORNADA = '15:00';
+const TOLERANCIA_DIA_HABIL = 14;
+const TOLERANCIA_DIA_INHABIL = 10;
+const MAXIMO_DIAS_POR_GUARDADO = 100;
+// Los tipos de día de la planilla (los de tipoDeDia del servidor)
+const TIPOS_DE_DIA = Object.freeze(['habil', 'feriado', 'finde']);
+// Copia de horaSalidaValida: una hora 'HH:MM' de un día, con cualquier minuto (de 00:00 a 23:59), en minutos desde las 00:00; lo que
+// no lo es («16:46:00», «9:05», «25:00»), null
+const minutosDeLaSalida = (hora) => (typeof hora === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(hora)
+  ? Number(hora.slice(0, 2)) * 60 + Number(hora.slice(3)) : null);
+
+/**
+ * Copia de horasDeLaSalida (spec, sección 3), con el `tipo` del día que manda el servidor ('habil', 'feriado' o 'finde': el de
+ * tipoDeDia con los feriados de ese momento) en lugar de la fecha y los feriados. Las horas extras de un día, de a 0,5, o null:
+ * - en un día hábil, los minutos después de las 15:00 (antes, 0), con una media hora desde su minuto 16; la entrada no cuenta;
+ * - en un feriado, un sábado o un domingo, los minutos de la entrada a la salida, con 10 de tolerancia.
+ * null sin una salida válida, en un día que no es hábil sin una entrada válida, con una entrada válida y la salida antes o igual
+ * que ella (también en un día hábil) o con un tipo que no es de la planilla. Nunca tira.
+ */
+function horasDelDiaDeLaPlanilla(dia) {
+  if (!esObjeto(dia) || !TIPOS_DE_DIA.includes(dia.tipo)) return null;
+  const salida = minutosDeLaSalida(dia.salida);
+  if (salida === null) return null;
+  const entrada = minutosDeLaSalida(dia.entrada);
+  if (entrada !== null && salida <= entrada) return null;
+  if (dia.tipo === 'habil') {
+    const minutos = Math.max(0, salida - minutosDeLaSalida(SALIDA_DE_LA_JORNADA));
+    return Math.floor((minutos + TOLERANCIA_DIA_HABIL) / 30) / 2;
+  }
+  if (entrada === null) return null;
+  return Math.floor((salida - entrada + TOLERANCIA_DIA_INHABIL) / 30) / 2;
+}
+
+// Copia de diasYHorasDe: unas horas en días de franco (cada 7, JORNADA) y las que sobran, con un decimal; con lo que no es un
+// número positivo, ninguno
+const diasYHorasDeLaPlanilla = (horas) => {
+  if (typeof horas !== 'number' || !Number.isFinite(horas) || horas <= 0) return { dias: 0, resto: 0 };
+  const total = Math.round(horas * 10) / 10;
+  const dias = Math.floor(total / JORNADA);
+  return { dias, resto: Math.round((total - dias * JORNADA) * 10) / 10 };
+};
+// Las partes de enDiasDeFranco: ['2 días de franco', '4,5 horas'], ['3 días de franco'], ['4,5 horas'] o []
+const partesEnDiasDeFranco = (horas) => {
+  const { dias, resto } = diasYHorasDeLaPlanilla(horas);
+  return [dias > 0 ? `${dias} ${dias === 1 ? 'día' : 'días'} de franco` : '', resto > 0 ? textoDeHoras(resto) : '']
+    .filter((parte) => parte !== '');
+};
+// Copia de enDiasDeFranco: «2 días de franco y 4,5 horas», «3 días de franco», «4,5 horas», «1 hora»; '' sin horas
+const enDiasDeFranco = (horas) => partesEnDiasDeFranco(horas).join(' y ');
+
+// La frase de la banda de la planilla, con cada parte de lo que se suma («2 días de franco», «4 horas a favor») pasada por
+// `marcar`: en el texto plano, tal cual; en la banda, en negrita. «a favor» va con las horas sueltas, la última parte
+const fraseDeLaSumaDelMes = (mes, horas, hoy, marcar) => {
+  if (typeof mes !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes) || !esFechaDeTexto(hoy)) return '';
+  const paso = mes < hoy.slice(0, 7);
+  const partes = partesEnDiasDeFranco(horas);
+  if (partes.length === 0) {
+    return paso ? `En ${nombreDelMes(mes)} no hiciste horas extras.` : `Todavía no sumaste horas extras en ${nombreDelMes(mes)}.`;
+  }
+  // El mes siguiente tiene que existir, como en mesMas del servidor: del año 1 al 9999
+  const anioSiguiente = Number(mes.slice(0, 4)) + (mes.endsWith('-12') ? 1 : 0);
+  if (anioSiguiente < 1 || anioSiguiente > 9999) return '';
+  const aFavor = diasYHorasDeLaPlanilla(horas).resto > 0 ? ' a favor' : '';
+  const marcadas = partes.map((parte, indice) => marcar(indice === partes.length - 1 ? `${parte}${aFavor}` : parte));
+  return `En ${nombreDelMes(mes, 1)} ${paso ? 'tuviste' : 'vas a tener'} ${marcadas.join(' y ')}.`;
+};
+// Copia de textoDeLaSumaDelMes: «En noviembre vas a tener 2 días de franco y 4,5 horas a favor.», «En octubre tuviste 1 día de
+// franco.», «Todavía no sumaste horas extras en octubre.», «En septiembre no hiciste horas extras.»; sin un mes o un hoy válidos, ''
+const textoDeLaSumaDelMes = (mes, horas, hoy) => fraseDeLaSumaDelMes(mes, horas, hoy, (parte) => parte);
 
 // Copias de usuarios.js (Configuración → Licencias): el efecto de la licencia del firmante en las notas, los días sin auditor y
 // las ausencias de la persona autorizada, con los mismos textos. efectoEnNotas recibe «hoy» por parámetro
@@ -953,11 +1067,12 @@ const nombreDelMes = (mes, mas = 0) => NOMBRES_DE_LOS_MESES[(Number(mes.slice(5,
 const textoDeHoras = (horas) => `${numeroConComa(horas)} ${horas === 1 ? 'hora' : 'horas'}`;
 
 /**
- * Lo que suman unas horas extras mientras se cargan: «3,5 horas.» y, si la fecha es del año de la tabla cargada (la de la
- * pestaña), lo que lleva el mes con ellas (sin contar dos veces las que se corrigen, `valores.id`; un mes sin fila en la tabla,
- * la primera carga del mes, llevaba 0) y lo que da: en planta, los francos compensatorios para usar dos meses después («… En
- * octubre llevás 14 horas: 2 francos compensatorios para usar en diciembre.»; sin llegar a 7 horas, solo lo que lleva); en
- * contrato, las horas a favor del mes siguiente. Un horario que no sirve, ''.
+ * Lo que suman unas horas extras mientras se cargan en el modal de planta: «3,5 horas.» y, si la fecha es del año de la tabla
+ * cargada (la de la pestaña), lo que lleva el mes con ellas (sin contar dos veces las que se corrigen, `valores.id`; un mes sin fila
+ * en la tabla, la primera carga del mes, llevaba 0) y los francos compensatorios que da para usar dos meses después («… En octubre
+ * llevás 14 horas: 2 francos compensatorios para usar en diciembre.»; sin llegar a 7 horas, solo lo que lleva). Contrato carga en
+ * la planilla, que dice su propia suma (htmlDeLaBandaDeLaPlanilla; spec 2026-10-27-mi-espacio-horas, sección 9): con otra
+ * modalidad, solo las horas. Un horario que no sirve, ''.
  */
 function textoDeLaSuma(valores, tabla, modalidad) {
   const datos = esObjeto(valores) ? valores : {};
@@ -965,20 +1080,16 @@ function textoDeLaSuma(valores, tabla, modalidad) {
   if (horas === null) return '';
   const base = `${textoDeHoras(horas)}.`;
   const mes = esFechaDeTexto(datos.fecha) ? datos.fecha.slice(0, 7) : null;
-  if (mes === null || !esObjeto(tabla) || tabla.anio !== Number(mes.slice(0, 4))) return base;
+  if (modalidad !== 'planta' || mes === null || !esObjeto(tabla) || tabla.anio !== Number(mes.slice(0, 4))) return base;
   const otras = listaDe(deMapa(tabla.dias_por_mes, mes, []))
     .filter((dia) => datos.id === null || datos.id === undefined || String(dia.id) !== String(datos.id))
     .reduce((suma, dia) => suma + (horasDelHorario(dia.desde, dia.hasta) ?? 0), 0);
   const total = otras + horas;
   const lleva = `En ${nombreDelMes(mes)} llevás ${textoDeHoras(total)}`;
-  if (modalidad === 'planta') {
-    const francos = Math.floor(total / JORNADA);
-    if (francos === 0) return `${base} ${lleva}.`;
-    return `${base} ${lleva}: ${francos} ${francos === 1 ? 'franco compensatorio' : 'francos compensatorios'} para usar en `
-      + `${nombreDelMes(mes, 2)}.`;
-  }
-  if (modalidad === 'contrato') return `${base} ${lleva}: en ${nombreDelMes(mes, 1)} vas a tener ${textoDeHoras(total)} a favor.`;
-  return base;
+  const francos = Math.floor(total / JORNADA);
+  if (francos === 0) return `${base} ${lleva}.`;
+  return `${base} ${lleva}: ${francos} ${francos === 1 ? 'franco compensatorio' : 'francos compensatorios'} para usar en `
+    + `${nombreDelMes(mes, 2)}.`;
 }
 
 // Los valores de «Cargar horas extras»: los de un día del día por día que se corrige, o vacíos
@@ -1004,6 +1115,327 @@ function erroresDeHoras(valores) {
 const cuerpoDeHoras = (valores) => ({
   fecha: valores.fecha, desde: valores.desde, hasta: valores.hasta, nota: comoTexto(valores.nota).trim()
 });
+
+// ---- La planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, secciones 4 y 9; la maqueta aprobada) ----
+//
+// La planilla de un mes es la que manda GET /mi-espacio/salidas?mes= (planillaDelMes de services/miEspacioResumen.js): sus `dias`
+// (los de lunes a viernes, también los feriados y los que todavía no llegaron, y los sábados y domingos con una salida) y sus
+// `fines_de_semana` (los demás sábados y domingos hasta hoy, para «Sumar el día»), cada uno con lo guardado y su `tipo`. Encima van
+// los cambios de la página: `cambios`, un Map de cada fecha tocada a su estado completo `{ entrada, salida, nota }` (lo que se
+// manda; todo vacío es un borrado) o `{ quitar: true }` («Quitar»: también un borrado, y un sábado o domingo guardado deja de
+// verse); `agregados`, un Set de los sábados y domingos sumados; `errores`, un Map de cada fecha a su `{ campo, mensaje }`;
+// `notasAbiertas`, un Set de las fechas con la nota abierta. Los Map y los Set se reconocen por lo que saben hacer, no por su clase
+// (los tests los arman fuera del vm). Las semanas y sus totales son de presentación, como diasDeLaGrilla de la agenda.
+
+const esMapa = (valor) => valor !== null && typeof valor === 'object' && typeof valor.get === 'function'
+  && typeof valor.has === 'function' && typeof valor[Symbol.iterator] === 'function';
+const esConjunto = (valor) => valor !== null && typeof valor === 'object' && typeof valor.has === 'function';
+const cambioDe = (cambios, fecha) => (esMapa(cambios) ? cambios.get(fecha) : undefined);
+const tieneEn = (conjunto, fecha) => esConjunto(conjunto) && conjunto.has(fecha) === true;
+// Un sábado o un domingo (también uno que además es feriado: se suma y se quita como los demás)
+const esFinDeSemana = (fecha) => lugarEnLaSemana(fecha) >= 5;
+
+// Una hora como se manda: la de un <input type="time"> ('16:46', o con segundos, '16:46:00' o '16:46:00.000'), cortada a 'HH:MM'
+// (Review Focus 1); otro texto, recortado (el servidor lo rechaza con su mensaje, y la página también); lo que no es un texto, ''
+const horaDelCampo = (valor) => {
+  if (typeof valor !== 'string') return '';
+  const limpio = valor.trim();
+  return /^\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(limpio) ? limpio.slice(0, 5) : limpio;
+};
+// Lo de un día como se manda y como se compara con lo guardado: `{ entrada, salida, nota }`, con las horas cortadas, la nota
+// recortada y lo vacío como ''. Un «Quitar», o lo que no es un objeto, todo vacío
+const valoresDeLaSalida = (fuente) => {
+  const datos = esObjeto(fuente) && fuente.quitar !== true ? fuente : {};
+  return { entrada: horaDelCampo(datos.entrada), salida: horaDelCampo(datos.salida), nota: comoTexto(datos.nota).trim() };
+};
+// Lo que muestra un día en sus campos, como se escribió: el cambio de la página (un «Quitar», vacío) o lo guardado
+const valorDelDia = (dia, cambio) => {
+  const fuente = esObjeto(cambio) ? cambio : (esObjeto(dia) ? dia : {});
+  if (fuente.quitar === true) return { entrada: '', salida: '', nota: '' };
+  return { entrada: comoTexto(fuente.entrada), salida: comoTexto(fuente.salida), nota: comoTexto(fuente.nota) };
+};
+
+/**
+ * Los días del servidor por fecha (los del mes y los sábados y domingos para sumar), de una lista de planillas o de lo que se pueda
+ * recorrer (los meses ya pedidos: `pagina.planilla.meses.values()`): un Map de la fecha al día, con lo guardado y su `tipo`.
+ */
+function diasPorFechaDe(planillas) {
+  const lista = Array.isArray(planillas) ? planillas
+    : (planillas !== null && typeof planillas === 'object' && typeof planillas[Symbol.iterator] === 'function' ? [...planillas] : []);
+  const porFecha = new Map();
+  for (const planilla of lista.filter(esObjeto)) {
+    for (const dia of [...listaDe(planilla.dias), ...listaDe(planilla.fines_de_semana)]) {
+      if (esFechaDeTexto(dia.fecha) && !porFecha.has(dia.fecha)) porFecha.set(dia.fecha, dia);
+    }
+  }
+  return porFecha;
+}
+
+/**
+ * Las fechas con cambios sin guardar, en orden: las de `cambios` cuyo `{ entrada, salida, nota }` (como se manda) es distinto de lo
+ * guardado (el día de `diasPorFecha`; uno que no está ahí, vacío). Un día que se cambió y volvió a quedar como estaba no cuenta
+ * (Review Focus 5: el pie vuelve a «Todo guardado.» y no se manda), ni un sábado o domingo sumado sin nada.
+ */
+function fechasCambiadas(cambios, diasPorFecha) {
+  if (!esMapa(cambios)) return [];
+  const fechas = [];
+  for (const [fecha, cambio] of cambios) {
+    if (!esFechaDeTexto(fecha)) continue;
+    const ahora = valoresDeLaSalida(cambio);
+    const antes = valoresDeLaSalida(esMapa(diasPorFecha) ? diasPorFecha.get(fecha) : null);
+    if (ahora.entrada !== antes.entrada || ahora.salida !== antes.salida || ahora.nota !== antes.nota) fechas.push(fecha);
+  }
+  return fechas.sort();
+}
+
+// Los pasos 3 a 7 de validarSalida (services/miEspacioReglas.js) sobre lo que se manda (`valoresDeLaSalida`) y el tipo del día, con
+// los mismos campos y los mismos mensajes: `{ campo, mensaje }`, o null. Todo vacío es un borrado y pasa. Los pasos 1 y 2 (un día
+// que no llegó o uno de licencia) no hacen falta: la página no deja escribir en esos días (el servidor los controla igual)
+const errorDeLaSalida = (tipo, { entrada, salida, nota }) => {
+  if (entrada === '' && salida === '' && nota === '') return null;
+  if (entrada !== '' && minutosDeLaSalida(entrada) === null) return { campo: 'entrada', mensaje: MENSAJES_FORMULARIOS.horaSalida };
+  if (salida !== '' && minutosDeLaSalida(salida) === null) return { campo: 'salida', mensaje: MENSAJES_FORMULARIOS.horaSalida };
+  if (salida === '') {
+    return { campo: 'salida', mensaje: tipo === 'habil' ? MENSAJES_FORMULARIOS.salidaQueCuenta : MENSAJES_FORMULARIOS.salidaFalta };
+  }
+  if (tipo !== 'habil' && entrada === '') {
+    return { campo: 'entrada', mensaje: tipo === 'feriado' ? MENSAJES_FORMULARIOS.entradaFeriado : MENSAJES_FORMULARIOS.entradaFinde };
+  }
+  if (entrada !== '' && minutosDeLaSalida(salida) <= minutosDeLaSalida(entrada)) {
+    return { campo: 'salida', mensaje: MENSAJES_FORMULARIOS.salidaAntes };
+  }
+  if (largoDeLaNota(nota) > LARGO_NOTA) return { campo: 'nota', mensaje: MENSAJES_FORMULARIOS.nota };
+  return null;
+};
+
+/**
+ * Los errores de la planilla antes de pedir nada: un Map de cada fecha con cambios (`fechasCambiadas`) al primer error de su día
+ * (los pasos 3 a 7 de validarSalida: el formato de las horas, la salida que falta, la entrada que falta, el orden y la nota), con
+ * el tipo de día que mandó el servidor. Un día que no está en `diasPorFecha` (sin su tipo) no se controla: lo controla el servidor.
+ */
+function erroresDeLaPlanilla(cambios, diasPorFecha) {
+  const errores = new Map();
+  for (const fecha of fechasCambiadas(cambios, diasPorFecha)) {
+    const dia = esMapa(diasPorFecha) ? diasPorFecha.get(fecha) : null;
+    if (!esObjeto(dia) || !TIPOS_DE_DIA.includes(dia.tipo)) continue;
+    const error = errorDeLaSalida(dia.tipo, valoresDeLaSalida(cambioDe(cambios, fecha)));
+    if (error !== null) errores.set(fecha, error);
+  }
+  return errores;
+}
+
+// El cuerpo de PUT /mi-espacio/salidas: cada fecha pedida con su estado completo, como se manda (las horas cortadas a 'HH:MM', la
+// nota recortada y lo vacío como ''; un «Quitar», todo vacío: un borrado)
+const cuerpoDeLaPlanilla = (cambios, fechas) => ({
+  dias: (Array.isArray(fechas) ? fechas : []).map((fecha) => ({ fecha, ...valoresDeLaSalida(cambioDe(cambios, fecha)) }))
+});
+
+/**
+ * Los días que se ven en la planilla de un mes, por fecha: los del servidor (`dias`), salvo un sábado o domingo guardado que se
+ * quitó, y los sábados y domingos sumados (`agregados`, de los `fines_de_semana` o uno quitado que se vuelve a sumar).
+ */
+function diasVisiblesDeLaPlanilla(planilla, estado) {
+  const { cambios = null, agregados = null } = esObjeto(estado) ? estado : {};
+  if (!esObjeto(planilla)) return [];
+  const visibles = new Map();
+  for (const dia of listaDe(planilla.dias)) {
+    if (!esFechaDeTexto(dia.fecha) || visibles.has(dia.fecha)) continue;
+    const quitado = cambioDe(cambios, dia.fecha)?.quitar === true;
+    if (!esFinDeSemana(dia.fecha) || !quitado || tieneEn(agregados, dia.fecha)) visibles.set(dia.fecha, dia);
+  }
+  for (const dia of listaDe(planilla.fines_de_semana)) {
+    if (esFechaDeTexto(dia.fecha) && !visibles.has(dia.fecha) && tieneEn(agregados, dia.fecha)) visibles.set(dia.fecha, dia);
+  }
+  return [...visibles.values()].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+}
+
+// Los sábados y domingos del mes que se pueden sumar («¿Trabajaste un sábado o un domingo?»): los que no se ven, de los
+// `fines_de_semana` del servidor (hasta hoy) y uno guardado que se quitó, por fecha
+function finesDeSemanaParaSumar(planilla, estado) {
+  if (!esObjeto(planilla)) return [];
+  const visibles = new Set(diasVisiblesDeLaPlanilla(planilla, estado).map((dia) => dia.fecha));
+  const libres = new Map();
+  for (const dia of [...listaDe(planilla.dias), ...listaDe(planilla.fines_de_semana)]) {
+    if (esFechaDeTexto(dia.fecha) && esFinDeSemana(dia.fecha) && !visibles.has(dia.fecha)) libres.set(dia.fecha, dia);
+  }
+  return [...libres.values()].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+}
+
+// Lo que suman unos días de la planilla, con los cambios encima (con horasDelDiaDeLaPlanilla): la banda y el total de cada semana
+const horasDeLosDias = (dias, cambios) => listaDe(dias).reduce((suma, dia) => suma
+  + (horasDelDiaDeLaPlanilla({ tipo: dia.tipo, ...valoresDeLaSalida(valorDelDia(dia, cambioDe(cambios, dia.fecha))) }) ?? 0), 0);
+
+/**
+ * La banda de arriba de la planilla (spec, sección 4): el total del mes en grande («18 h») y la frase de textoDeLaSumaDelMes, con lo
+ * que se suma en negrita («En noviembre vas a tener <b>2 días de franco</b> y <b>4 horas a favor</b>.»). No es una región viva.
+ */
+function htmlDeLaBandaDeLaPlanilla(mes, horas, hoy) {
+  return `<span class="mp-suma-cifra">${esc(numeroConComa(horas))}<small>h</small></span>`
+    + `<p class="mp-suma-texto">${fraseDeLaSumaDelMes(mes, horas, hoy, (parte) => `<b>${esc(parte)}</b>`)}</p>`;
+}
+
+/**
+ * El pie de la planilla: «Todo guardado.» o cuántos días tienen cambios sin guardar, con sus meses si son más de uno («3 días con
+ * cambios sin guardar (septiembre y octubre).»; el mismo mes de dos años, con el año). Texto plano.
+ */
+function textoDelPieDeLaPlanilla(fechas) {
+  const validas = [...new Set((Array.isArray(fechas) ? fechas : []).filter(esFechaDeTexto))];
+  if (validas.length === 0) return 'Todo guardado.';
+  const meses = [...new Set(validas.map((fecha) => fecha.slice(0, 7)))].sort();
+  const nombres = meses.map((mes) => nombreDelMes(mes));
+  const conAnio = new Set(nombres).size < nombres.length;
+  const enMeses = meses.length > 1
+    ? ` (${listaConY(meses.map((mes, indice) => (conAnio ? `${nombres[indice]} de ${mes.slice(0, 4)}` : nombres[indice])))})` : '';
+  return `${validas.length} ${validas.length === 1 ? 'día' : 'días'} con cambios sin guardar${enMeses}.`;
+}
+
+// El renglón de una semana de la planilla: «5 al 9 de octubre», «1 y 2 de octubre» (dos días seguidos), «30 de octubre»; sin
+// fechas, ''. Los días son los del mes de la primera
+function textoDeLaSemana(fechas) {
+  const validas = (Array.isArray(fechas) ? fechas : []).filter(esFechaDeTexto).sort();
+  if (validas.length === 0) return '';
+  const dias = validas.map((fecha) => Number(fecha.slice(8, 10)));
+  const delMes = ` de ${nombreDelMes(validas[0])}`;
+  if (dias.length === 1) return `${dias[0]}${delMes}`;
+  if (dias.length === 2 && dias[1] - dias[0] === 1) return `${dias[0]} y ${dias[1]}${delMes}`;
+  return `${dias[0]} al ${dias.at(-1)}${delMes}`;
+}
+// Lo que suma una semana: «3 h», o la raya si no suma nada
+const textoDelTotalDeLaSemana = (horas) => (horas > 0 ? `${numeroConComa(horas)} h` : '—');
+
+/**
+ * Las horas de una fila de la planilla mientras se escribe (lo que va en su #mp-h-AAAA-MM-DD), con el tipo del día y lo que tienen
+ * sus campos: la pastilla con las horas («1,5 h»), «0» con «No llega a media hora», o la raya, sola (sin salida, o con una hora que
+ * no se puede leer) o con lo que falta («Falta la salida» o «Poné la entrada» en un día que no es hábil, «La salida va después»).
+ */
+function htmlDeLasHorasDeLaFila(dia, valor) {
+  const tipo = esObjeto(dia) ? dia.tipo : null;
+  const { entrada, salida } = valoresDeLaSalida(valor);
+  const nada = '<b class="nada">—</b>';
+  if (salida === '') return tipo !== 'habil' && entrada !== '' ? `${nada}<small>Falta la salida</small>` : nada;
+  const horas = horasDelDiaDeLaPlanilla({ tipo, entrada, salida });
+  if (horas === null) {
+    if (minutosDeLaSalida(salida) === null || (entrada !== '' && minutosDeLaSalida(entrada) === null)) return nada;
+    if (tipo !== 'habil' && entrada === '') return `${nada}<small>Poné la entrada</small>`;
+    return `${nada}<small>La salida va después</small>`;
+  }
+  if (horas === 0) return '<b class="cero">0</b><small>No llega a media hora</small>';
+  return `<b>${esc(numeroConComa(horas))} h</b>`;
+}
+
+// Las marcas debajo de la fecha de una fila: el feriado en ámbar con su nombre (también un sábado o domingo que lo es), o el
+// sábado o el domingo con un borde, y la licencia de unas horas («2 h a favor»; con `conEntera`, también la del día entero)
+const htmlDeLasMarcasDelDia = (dia, { conEntera = false } = {}) => {
+  const marcas = [];
+  if (dia.tipo === 'feriado') marcas.push(`<span class="me-insignia ambar">Feriado: ${esc(dia.feriado)}</span>`);
+  else if (dia.tipo === 'finde' && conTexto(dia.finde_texto)) marcas.push(`<span class="me-insignia borde">${esc(dia.finde_texto)}</span>`);
+  if (esObjeto(dia.licencia) && (dia.licencia.entera !== true || conEntera)) {
+    marcas.push(`<span class="me-insignia verde">${esc(dia.licencia.texto)}</span>`);
+  }
+  return marcas.length > 0 ? `<span class="mp-marcas">${marcas.join('')}</span>` : '';
+};
+
+/**
+ * Una fila de la planilla (un día; la maqueta, `htmlDelDia`), con sus clases (`feriado` o `finde`, `licencia`, `futuro`, `hoy` y
+ * `cambiado`, la raya de lo que no se guardó):
+ * - un día que todavía no llegó: «Todavía no llegó.», sin campos;
+ * - un día de licencia de día entero: su tipo y «Es un día de licencia: no se cargan horas.», sin campos; con una salida guardada de
+ *   antes, la salida (y la entrada) como texto, sus horas, el aviso del servidor y «Quitar»;
+ * - los demás, un grupo con el nombre de su fecha (`role="group"` y `aria-labelledby`): la entrada (opcional en un día hábil), la
+ *   salida, las horas, «Quitar» en un sábado o domingo, «Nota» (abre su campo debajo; con nota, la nota en cursiva y «Cambiar
+ *   nota») y, mientras el día no cambió, el aviso del servidor («Ahora es feriado: falta la entrada.»). Un error va debajo, con
+ *   `aria-invalid` y `aria-describedby` en su campo (uno en la nota la abre; uno sin campo de la fila, del servidor, va a la salida).
+ */
+function htmlDeLaFilaDeLaPlanilla(dia, { cambios, errores, notasAbiertas, cambiadas }) {
+  const { fecha } = dia;
+  const id = esc(fecha);
+  const largo = conTexto(dia.fecha_larga) ? dia.fecha_larga : diaLargoDe(fecha);
+  const valor = valorDelDia(dia, cambioDe(cambios, fecha));
+  const entera = esObjeto(dia.licencia) && dia.licencia.entera === true;
+  const cambiado = cambiadas.has(fecha);
+  const error = esMapa(errores) && esObjeto(errores.get(fecha)) ? errores.get(fecha) : null;
+  const clases = ['mp-dia'];
+  if (dia.tipo === 'feriado') clases.push('feriado');
+  else if (dia.tipo === 'finde') clases.push('finde');
+  if (entera) clases.push('licencia');
+  if (dia.futuro === true) clases.push('futuro');
+  if (dia.hoy === true) clases.push('hoy');
+  if (cambiado) clases.push('cambiado');
+  const abre = `<li class="${clases.join(' ')}" id="mp-dia-${id}"`;
+  const nombre = `<b id="mp-f-${id}">${esc(dia.fecha_texto)}${dia.hoy === true ? ' <span class="mp-hoy">Hoy</span>' : ''}</b>`;
+  const htmlDelError = error === null ? '' : `<p class="mp-error" id="mp-e-${id}">${esc(error.mensaje)}</p>`;
+  const insigniaEntera = entera ? `<span class="me-insignia verde">${esc(dia.licencia.texto)}</span> ` : '';
+  const conSalida = valor.salida.trim() !== '';
+
+  if (dia.futuro === true || (entera && !conSalida)) {
+    const texto = dia.futuro === true ? 'Todavía no llegó.' : 'Es un día de licencia: no se cargan horas.';
+    return `${abre}><span class="mp-fecha">${nombre}${htmlDeLasMarcasDelDia(dia)}</span>`
+      + `<span class="mp-lugar">${insigniaEntera}${texto}</span>${htmlDelError}</li>`;
+  }
+
+  const aviso = !cambiado && conTexto(dia.aviso) ? `<p class="mp-aviso" id="mp-a-${id}">${esc(dia.aviso)}</p>` : '';
+  const grupo = `${abre} role="group" aria-labelledby="mp-f-${id}">`;
+  const nota = conTexto(valor.nota) ? `<p class="mp-nota-vista">${esc(valor.nota)}</p>` : '';
+
+  if (entera) {
+    // Una licencia de día entero con una salida guardada de antes: sigue sumando, como texto, hasta que se la quita
+    const entrada = valor.entrada.trim() !== '' ? `<small>Entrada ${esc(valor.entrada)}</small>` : '';
+    const describe = aviso === '' ? '' : ` aria-describedby="mp-a-${id}"`;
+    return `${grupo}<span class="mp-fecha">${nombre}${htmlDeLasMarcasDelDia(dia, { conEntera: true })}</span>`
+      + `<span class="mp-guardada">Salida ${esc(valor.salida)}${entrada}</span>`
+      + `<span class="mp-horas" id="mp-h-${id}">${htmlDeLasHorasDeLaFila(dia, valor)}</span>`
+      + `<span class="mp-acciones"><button type="button" class="sg-link me-link-rojo" data-quitar="${id}" `
+      + `aria-label="Quitar la salida del ${esc(largo)}"${describe}>Quitar</button></span>${nota}${aviso}${htmlDelError}</li>`;
+  }
+
+  // El campo del error: el suyo (entrada, salida o nota) o, uno sin campo de la fila, la salida
+  const campoDelError = error === null ? null : (['entrada', 'salida', 'nota'].includes(error.campo) ? error.campo : 'salida');
+  const describir = (campo) => {
+    const ids = [...(campoDelError === campo ? [`mp-e-${id}`] : []), ...(campo === 'salida' && aviso !== '' ? [`mp-a-${id}`] : [])];
+    return (campoDelError === campo ? ' aria-invalid="true"' : '') + (ids.length > 0 ? ` aria-describedby="${ids.join(' ')}"` : '');
+  };
+  const habil = dia.tipo === 'habil';
+  const rotulo = habil ? 'Entrada (opcional)' : 'Entrada';
+  const tieneNota = valor.nota.trim() !== '';
+  const abierta = tieneEn(notasAbiertas, fecha) || campoDelError === 'nota';
+  const quitar = esFinDeSemana(fecha) ? `<button type="button" class="sg-link me-link-rojo" data-quitar="${id}" `
+    + `aria-label="Quitar el ${esc(largo)}">Quitar</button>` : '';
+  const campoDeLaNota = `<span class="mp-nota-campo"><input type="text" data-campo="nota" data-fecha="${id}" value="${esc(valor.nota)}" `
+    + `placeholder="Por ejemplo: cierre del informe mensual" aria-label="Nota del ${esc(largo)}"${describir('nota')}></span>`;
+  return `${grupo}<span class="mp-fecha">${nombre}${htmlDeLasMarcasDelDia(dia)}</span>`
+    + `<label class="mp-campo entrada"><span class="mp-rotulo">${rotulo}</span><input type="time"${habil ? ' class="opcional"' : ''} `
+    + `data-campo="entrada" data-fecha="${id}" value="${esc(valor.entrada)}" data-vacio="${valor.entrada.trim() === '' ? '1' : '0'}" `
+    + `aria-label="${rotulo} del ${esc(largo)}"${describir('entrada')}></label>`
+    + '<label class="mp-campo salida"><span class="mp-rotulo">Salida</span><input type="time" '
+    + `data-campo="salida" data-fecha="${id}" value="${esc(valor.salida)}" aria-label="Salida del ${esc(largo)}"${describir('salida')}></label>`
+    + `<span class="mp-horas" id="mp-h-${id}">${htmlDeLasHorasDeLaFila(dia, valor)}</span>`
+    + `<span class="mp-acciones">${quitar}<button type="button" class="sg-link" data-nota="${id}" aria-expanded="${String(abierta)}" `
+    + `aria-label="${tieneNota ? 'Cambiar la nota' : 'Agregar una nota'} del ${esc(largo)}">${tieneNota ? 'Cambiar nota' : 'Nota'}</button></span>`
+    + `${abierta ? campoDeLaNota : nota}${aviso}${htmlDelError}</li>`;
+}
+
+/**
+ * La planilla de un mes (lo que va en #mp-dias, un <ol>): los días que se ven (`diasVisiblesDeLaPlanilla`), agrupados por semana
+ * (de lunes a domingo), cada semana con su renglón («5 al 9 de octubre» y lo que suma, con los cambios) y después sus filas
+ * (`htmlDeLaFilaDeLaPlanilla`). Nada de esto es una región viva. Una planilla que no llegó, ''.
+ */
+function htmlDeLaPlanilla(planilla, estado) {
+  const { cambios = null, agregados = null, errores = null, notasAbiertas = null } = esObjeto(estado) ? estado : {};
+  const dias = diasVisiblesDeLaPlanilla(planilla, { cambios, agregados });
+  const contexto = { cambios, errores, notasAbiertas, cambiadas: new Set(fechasCambiadas(cambios, diasPorFechaDe([planilla]))) };
+  const semanas = [];
+  for (const dia of dias) {
+    const lunes = sumarDiasA(dia.fecha, -lugarEnLaSemana(dia.fecha));
+    if (semanas.length === 0 || semanas.at(-1).lunes !== lunes) semanas.push({ lunes, dias: [] });
+    semanas.at(-1).dias.push(dia);
+  }
+  return semanas.map(({ dias: deLaSemana }) => {
+    const fechas = deLaSemana.map((dia) => dia.fecha);
+    return `<li class="mp-semana" data-fechas="${esc(fechas.join(','))}"><span>${esc(textoDeLaSemana(fechas))}</span>`
+      + `<span>${esc(textoDelTotalDeLaSemana(horasDeLosDias(deLaSemana, cambios)))}</span></li>`
+      + deLaSemana.map((dia) => htmlDeLaFilaDeLaPlanilla(dia, contexto)).join('');
+  }).join('');
+}
 
 // ---- «Mis vacaciones y saldos» ----
 

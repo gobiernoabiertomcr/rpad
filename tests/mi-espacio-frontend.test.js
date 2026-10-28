@@ -4,7 +4,8 @@
 // extras, el día por día y las horas no utilizadas previamente) con los datos que arma el servidor (services/miEspacioResumen.js)
 // sobre los casos de tests/fixtures/mi-espacio-casos.js, pasados por JSON como los manda la API; y, con un DOM falso y un fetch
 // falso, la carga de las pestañas. Los formularios (Task 17): lo puro, las copias atadas por tests de paridad (con
-// services/miEspacioReglas.js y con usuarios.js, en su propio vm) y, con el DOM falso, los modales. Como proyectos.js, el script al
+// services/miEspacioReglas.js y con usuarios.js, en su propio vm) y, con el DOM falso, los modales. La planilla de horas extras de
+// contrato (spec 2026-10-27-mi-espacio-horas): lo puro, con la planilla de planillaDelMes, y sus copias. Como proyectos.js, el script al
 // cargarse solo declara: se carga en un vm después del api.js de verdad (Utils.escapeHtml). Las personas son las inventadas de la
 // maqueta.
 import { describe, it } from 'node:test';
@@ -12,8 +13,9 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
 import {
-  filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, resumenDe, proximoFeriadoDe, diaLargo, mesTitulo
+  filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, resumenDe, proximoFeriadoDe, diaLargo, mesTitulo, planillaDelMes
 } from '../services/miEspacioResumen.js';
+import { feriadosDelRango } from '../services/feriadosReglas.js';
 import { notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota } from '../services/miEspacioNota.js';
 import {
   DIAS_DE_PROXIMOS, itemDeEvento, itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, MENSAJES_EVENTO,
@@ -27,7 +29,8 @@ import {
   DIAS_ESTUDIOS,
   DIAS_POR_EXAMEN, JORNADA, LARGO_NOTA, horasDe as horasDelServidor, camposDelSaldoInicial, validarSaldoInicial, textoSaldo,
   textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaDelFirmante,
-  TIPOS_DE_UN_DIA, TIPOS_POR_HORAS, esDiaEntero, TEXTO_NO_SE_COPIA
+  TIPOS_DE_UN_DIA, TIPOS_POR_HORAS, esDiaEntero, TEXTO_NO_SE_COPIA, SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL,
+  TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, tipoDeDia, horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, validarSalida
 } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
@@ -971,11 +974,19 @@ describe('las horas extras', () => {
     const tabla = M.htmlDeTablaDeHorasAFavor(contrato);
     assert.match(tabla, /<h2>Horas extras y horas a favor de 2026<\/h2>/);
     assert.deepEqual([...tabla.matchAll(/<th>([^<]*)<\/th>/g)].map(([, th]) => th), ['Mes trabajado', 'Horas extras', 'A favor en', 'Usadas', 'Situación']);
+    // «A favor en» dice debajo, en chico, lo mismo en días de franco (spec 2026-10-27-mi-espacio-horas, sección 5: a_favor_detalle)
     assert.deepEqual(filasDeTablaDe(tabla).map(({ celdas }) => celdas), [
-      ['Octubre 2026', '4 h', 'Noviembre 2026', '—', 'El mes sigue sumando'],
-      ['Septiembre 2026', '10,5 h', 'Octubre 2026', '9 h 09/10: 7 h · 20/10: 2 h', '1,5 h para usar hasta el 30/10']
+      ['Octubre 2026', '4 h', 'Noviembre 2026 4 horas', '—', 'El mes sigue sumando'],
+      ['Septiembre 2026', '10,5 h', 'Octubre 2026 1 día de franco y 3,5 horas', '9 h 09/10: 7 h · 20/10: 2 h', '1,5 h para usar hasta el 30/10']
     ]);
+    assert.deepEqual(filasDeTablaDe(tabla).map(({ html }) => html.match(/<td>[^<]*<small>([^<]*)<\/small><\/td>/)?.[1]),
+      ['4 horas', '1 día de franco y 3,5 horas']);
     assert.deepEqual(botonesDe(tabla).filter(({ atributos }) => atributos['data-cargar']).map(({ texto }) => texto), ['Cargar horas extras']);
+    // Sin el detalle (un mes de una respuesta de antes), sin el <small>; con HTML, escapado
+    const sinDetalle = M.htmlDeTablaDeHorasAFavor({ ...contrato, meses: contrato.meses.map((fila) => ({ ...fila, a_favor_detalle: '' })) });
+    assert.deepEqual(filasDeTablaDe(sinDetalle).map(({ celdas }) => celdas[2]), ['Noviembre 2026', 'Octubre 2026']);
+    const conHtml = M.htmlDeTablaDeHorasAFavor({ ...contrato, meses: [{ ...contrato.meses[0], a_favor_detalle: MALICIOSO }] });
+    assert.ok(!conHtml.includes('<img') && conHtml.includes(`<small>${ESCAPADO}</small>`));
   });
 
   it('contrato: «Horas no utilizadas previamente», con su total, cada fila y «Registrar un uso autorizado»', () => {
@@ -990,11 +1001,17 @@ describe('las horas extras', () => {
     assert.equal(M.htmlDeNoUtilizadas(planta), '');
   });
 
-  it('htmlDeHorasExtras: en planta, los francos y el día por día; en contrato, además, las no utilizadas', () => {
+  it('htmlDeHorasExtras: en planta, los francos y el día por día; en contrato, el día por día de las salidas y las no utilizadas', () => {
     assert.equal(M.htmlDeHorasExtras(planta), M.htmlDeTablaDeFrancos(planta, '2026-10') + M.htmlDeDiaPorDia(planta, '2026-10'));
     assert.equal(M.htmlDeHorasExtras(planta, '2026-08'), M.htmlDeTablaDeFrancos(planta, '2026-08') + M.htmlDeDiaPorDia(planta, '2026-08'));
+    // Contrato carga en la planilla (spec 2026-10-27-mi-espacio-horas, sección 5): su día por día es el de las salidas, con
+    // «Editar» de cada día (data-editar-salida), nunca el de planta (data-editar-horas)
     assert.equal(M.htmlDeHorasExtras(contrato),
-      M.htmlDeTablaDeHorasAFavor(contrato, '2026-10') + M.htmlDeDiaPorDia(contrato, '2026-10') + M.htmlDeNoUtilizadas(contrato));
+      M.htmlDeTablaDeHorasAFavor(contrato, '2026-10') + M.htmlDeDiaPorDiaDeSalidas(contrato, '2026-10') + M.htmlDeNoUtilizadas(contrato));
+    assert.equal(M.htmlDeHorasExtras(contrato, '2026-09'),
+      M.htmlDeTablaDeHorasAFavor(contrato, '2026-09') + M.htmlDeDiaPorDiaDeSalidas(contrato, '2026-09') + M.htmlDeNoUtilizadas(contrato));
+    assert.match(M.htmlDeHorasExtras(contrato), /data-editar-salida="2026-10-21"/);
+    assert.doesNotMatch(M.htmlDeHorasExtras(contrato), /data-editar-horas/);
     // Un mes que no está en la tabla: el en curso
     assert.equal(M.htmlDeHorasExtras(planta, '2026-01'), M.htmlDeHorasExtras(planta));
   });
@@ -2466,18 +2483,15 @@ describe('los formularios: lo puro', () => {
     // Sin llegar a 7 horas, sin francos
     assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-07-20', desde: '18:00', hasta: '19:00' }, planta, 'planta'),
       '1 hora. En julio llevás 6 horas.');
-    // Contrato: las horas a favor del mes siguiente. Desde la planilla (spec 2026-10-27-mi-espacio-horas, sección 5), el día por
-    // día de contrato son sus salidas, sin «desde» ni «hasta»: el modal de horas de planta ya no suma las demás del mes (el 21/10,
-    // 4 h). Contrato carga en la planilla, que dice su propia suma
-    const contrato = horasDe(CONTRATO);
-    assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-10-28', desde: '19:00', hasta: '22:30' }, contrato, 'contrato'),
-      '3,5 horas. En octubre llevás 3,5 horas: en noviembre vas a tener 3,5 horas a favor.');
+    // El modal de horas es solo de planta: contrato carga en la planilla (spec 2026-10-27-mi-espacio-horas, secciones 4 y 9), que
+    // dice su propia suma (htmlDeLaBandaDeLaPlanilla), así que textoDeLaSuma ya no tiene la rama de contrato (Ruling 8)
     // La primera del mes (un mes sin fila en la tabla cuenta 0 horas antes de esta carga): también dice lo que lleva y lo que da
     assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-05-15', desde: '09:00', hasta: '17:00' }, planta, 'planta'),
       '8 horas. En mayo llevás 8 horas: 1 franco compensatorio para usar en julio.');
     assert.equal(M.textoDeLaSuma({ ...valores, fecha: '2026-11-03' }, planta, 'planta'), '3,5 horas. En noviembre llevás 3,5 horas.');
-    assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-08-15', desde: '09:00', hasta: '17:00' }, contrato, 'contrato'),
-      '8 horas. En agosto llevás 8 horas: en septiembre vas a tener 8 horas a favor.');
+    // Un mes que ya tiene horas en la tabla: las 14 de agosto, más estas 8
+    assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-08-15', desde: '09:00', hasta: '17:00' }, planta, 'planta'),
+      '8 horas. En agosto llevás 22 horas: 3 francos compensatorios para usar en octubre.');
     // Con la tabla vacía del año (ninguna cargada), igual
     const vacia = { ...planta, meses: [], dias_por_mes: {} };
     assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-08-15', desde: '09:00', hasta: '17:00' }, vacia, 'planta'),
@@ -2510,6 +2524,624 @@ describe('los formularios: lo puro', () => {
       `Vacaciones del 03/11 al 09/11/2026 («${MALICIOSO}»). También se anula en Configuración → Licencias.`);
     const [dia] = horasDe(PLANTA).dias_por_mes['2026-10'];
     assert.equal(M.textoDeConfirmacion({ ...dia, nota: 'Cierre' }), 'Horas extras del Jue 22/10, de 19:00 a 22:00 («Cierre»).');
+  });
+});
+
+// =====================================================================================================================================
+// La planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, secciones 4, 5 y 9; Task 7): lo puro, con la planilla
+// que arma el servidor (planillaDelMes) pasada por JSON, como la manda GET /api/mi-espacio/salidas. Hoy es el martes 27/10/2026,
+// como en la maqueta: el lunes 12/10 es feriado (de la tabla) y el sábado 17/10, uno inventado para los tests (un sábado que además
+// es feriado). Las salidas de octubre son las de la maqueta, con las de CONTRATO (el 21/10, a las 19:00): octubre suma 16 horas
+// =====================================================================================================================================
+
+const HOY_PLANILLA = '2026-10-27';
+const FERIADO_EN_SABADO = Object.freeze({
+  ...FERIADO_SOBERANIA, id: 3, fecha: '2026-10-17', nombre: 'Feriado de prueba en sábado', tipo: 'municipal'
+});
+const FILAS_PLANILLA = Object.freeze([FERIADO_DIVERSIDAD, FERIADO_EN_SABADO]);
+const feriadosDeLaPlanilla = (filas) => feriadosDelRango(filas, '2024-01-01', '2027-12-31');
+const FERIADOS_PLANILLA = feriadosDeLaPlanilla(FILAS_PLANILLA);
+const salidaDe = (id, fecha, salida, entrada = null, nota = null) => ({ id, fecha, entrada, salida, nota });
+const SALIDAS_DE_OCTUBRE = Object.freeze([
+  salidaDe(10, '2026-10-05', '16:20', '08:02'), // 1,5 h: la entrada no cuenta
+  salidaDe(11, '2026-10-09', '17:16'), // 2,5 h, en un día de licencia de día entero: sigue sumando, con su aviso
+  salidaDe(12, '2026-10-12', '12:10', '09:21', 'Guardia de la mesa de datos'), // feriado, de la entrada a la salida: 2,5 h
+  salidaDe(13, '2026-10-16', '15:05', '07:58'), // 0: no llega a media hora
+  salidaDe(14, '2026-10-20', '13:02'), // 0, un día con 2 h a favor
+  salidaDe(15, '2026-10-24', '13:20', '09:00', 'Relevamiento en el barrio'), // sábado, de la entrada a la salida: 4,5 h
+  salidaDe(16, '2026-10-26', '15:47') // 1 h
+]);
+const ESTADO_PLANILLA = Object.freeze({ ...CONTRATO.estado, salidas: [...CONTRATO.estado.salidas, ...SALIDAS_DE_OCTUBRE] });
+// La planilla de un mes como la manda la API (con otro estado, otro mes u otros feriados si hace falta)
+const planillaDel = (estado = ESTADO_PLANILLA, { mes = '2026-10', filas = FILAS_PLANILLA } = {}) => {
+  const feriados = feriadosDeLaPlanilla(filas);
+  return comoLlega(planillaDelMes(estado, calcular(estado, { hoy: HOY_PLANILLA, feriados }),
+    { mes, hoy: HOY_PLANILLA, feriados, filasFeriados: filas }));
+};
+const OCTUBRE = planillaDel();
+// Los días que manda el servidor, por fecha (los del mes y los sábados y domingos para sumar): lo guardado y el tipo de cada uno
+const porFechaDe = (...planillas) => new Map(planillas.flatMap((planilla) => [...planilla.dias, ...planilla.fines_de_semana])
+  .map((dia) => [dia.fecha, dia]));
+const POR_FECHA = porFechaDe(OCTUBRE);
+const VACIO = Object.freeze({ cambios: new Map(), agregados: new Set(), errores: new Map(), notasAbiertas: new Set() });
+// Las filas de la planilla (los días y los renglones de las semanas): { atributos, clases, html, texto }
+const filasDeLaPlanilla = (html) => [...html.matchAll(/<li([^>]*)>([\s\S]*?)<\/li>/g)].map(([, atributos, adentro]) => ({
+  atributos: atributosDe(atributos), clases: (atributosDe(atributos).class ?? '').split(' '), html: adentro, texto: textoDe(adentro)
+}));
+const filaDel = (html, fecha) => filasDeLaPlanilla(html).find(({ atributos }) => atributos.id === `mp-dia-${fecha}`);
+const semanasDe = (html) => filasDeLaPlanilla(html).filter(({ clases }) => clases.includes('mp-semana'))
+  .map(({ atributos, texto }) => [atributos['data-fechas'], texto]);
+const camposDe = (html) => [...html.matchAll(/<input([^>]*)>/g)].map(([, atributos]) => atributosDe(atributos));
+const planillaCon = (estado = {}) => M.htmlDeLaPlanilla(OCTUBRE, { ...VACIO, ...estado });
+// Los errores de la página, como lista de acá
+const erroresDe = (cambios, porFecha = POR_FECHA) => plano([...M.erroresDeLaPlanilla(cambios, porFecha)]);
+
+describe('la planilla de horas extras: las paridades', () => {
+  it('las constantes y los mensajes de la planilla son los del servidor', () => {
+    assert.equal(M.SALIDA_DE_LA_JORNADA, SALIDA_DE_LA_JORNADA);
+    assert.equal(M.TOLERANCIA_DIA_HABIL, TOLERANCIA_DIA_HABIL);
+    assert.equal(M.TOLERANCIA_DIA_INHABIL, TOLERANCIA_DIA_INHABIL);
+    assert.equal(M.MAXIMO_DIAS_POR_GUARDADO, MAXIMO_DIAS_POR_GUARDADO);
+    for (const clave of ['horaSalida', 'salidaQueCuenta', 'salidaFalta', 'entradaFeriado', 'entradaFinde', 'salidaAntes', 'nota', 'muchosDias']) {
+      assert.equal(M.MENSAJES_FORMULARIOS[clave], MENSAJES_MI_ESPACIO[clave], clave);
+    }
+  });
+
+  it('enDiasDeFranco es la del servidor: 7 horas son un día', () => {
+    for (const horas of [0, 0.5, 1, 4.5, 7, 8, 14, 18, 18.5, 20.5, 21, 22.5, 70, -3, NaN, Infinity, '18.5', null, undefined, {}]) {
+      assert.equal(M.enDiasDeFranco(horas), enDiasDeFranco(horas), String(horas));
+    }
+    assert.equal(M.enDiasDeFranco(18.5), '2 días de franco y 4,5 horas');
+    assert.equal(M.enDiasDeFranco(1), '1 hora');
+  });
+
+  it('textoDeLaSumaDelMes es la del servidor: el mes en curso y uno que pasó, con horas y sin horas', () => {
+    const casos = [
+      ['2026-10', 18, HOY_PLANILLA], ['2026-10', 18.5, HOY_PLANILLA], ['2026-10', 21, HOY_PLANILLA], ['2026-10', 4.5, HOY_PLANILLA],
+      ['2026-10', 1, HOY_PLANILLA], ['2026-10', 0, HOY_PLANILLA], ['2026-09', 10.5, HOY_PLANILLA], ['2026-09', 7, HOY_PLANILLA],
+      ['2026-09', 0, HOY_PLANILLA], ['2026-12', 21, '2026-12-10'], ['2026-12', 0.5, '2026-12-10'], ['2025-12', 3, HOY_PLANILLA],
+      ['2026-10', null, HOY_PLANILLA], ['2026-10', NaN, HOY_PLANILLA], ['2026-10', -2, HOY_PLANILLA],
+      // Los bordes de los años: el mes siguiente tiene que existir
+      ['9999-12', 4, HOY_PLANILLA], ['9999-12', 0, HOY_PLANILLA], ['0000-05', 4, HOY_PLANILLA], ['0000-12', 4, HOY_PLANILLA],
+      // Sin un mes o un hoy válidos
+      [undefined, 4, HOY_PLANILLA], ['2026-13', 4, HOY_PLANILLA], ['2026-1', 4, HOY_PLANILLA], ['2026-10-01', 4, HOY_PLANILLA],
+      [202610, 4, HOY_PLANILLA], ['2026-10', 4, undefined], ['2026-10', 4, '2026-02-30'], ['2026-10', 4, '2026-10'], ['2026-10', 4, 20261027]
+    ];
+    for (const [mes, horas, hoy] of casos) {
+      assert.equal(M.textoDeLaSumaDelMes(mes, horas, hoy), textoDeLaSumaDelMes(mes, horas, hoy), `${mes} ${horas} ${hoy}`);
+    }
+    assert.equal(M.textoDeLaSumaDelMes('2026-10', 18, HOY_PLANILLA), 'En noviembre vas a tener 2 días de franco y 4 horas a favor.');
+    assert.equal(M.textoDeLaSumaDelMes('2026-09', 0, HOY_PLANILLA), 'En septiembre no hiciste horas extras.');
+  });
+
+  it('horasDelDiaDeLaPlanilla es horasDeLaSalida con el tipo del día: los 19 renglones del CSV, los ejemplos del feriado y los bordes', () => {
+    const conFeriado = new Set(['2026-10-12']);
+    const conFijos = feriadosDelRango([], '2026-01-01', '2026-12-31');
+    // Los 19 renglones del CSV del usuario (mayo de 2026: todos días hábiles), más el 15:14
+    const csv = [['2026-05-04', '15:15'], ['2026-05-05', '15:16'], ['2026-05-06', '15:27'], ['2026-05-07', '15:28'],
+      ['2026-05-08', '15:29'], ['2026-05-11', '15:44'], ['2026-05-12', '15:45'], ['2026-05-13', '15:46'], ['2026-05-14', '15:47'],
+      ['2026-05-15', '16:00'], ['2026-05-18', '16:14'], ['2026-05-19', '16:15'], ['2026-05-20', '16:16'], ['2026-05-21', '16:45'],
+      ['2026-05-22', '16:46'], ['2026-05-26', '16:47'], ['2026-05-27', '17:01'], ['2026-05-28', '17:15'], ['2026-05-29', '17:16'],
+      ['2026-05-04', '15:14']].map(([fecha, salida]) => [fecha, null, salida, SIN_FERIADOS]);
+    // Los del feriado, sábado y domingo (de la entrada a la salida, con 10 minutos de tolerancia)
+    const noHabiles = [['09:19', '12:10'], ['09:20', '12:10'], ['09:21', '12:10'], ['08:09', '15:00'], ['08:10', '15:00'],
+      ['08:11', '15:00'], ['10:00', '11:19'], ['10:00', '11:20'], ['10:00', '11:49'], ['10:00', '11:50'], ['10:00', '11:21'],
+      ['10:00', '11:51'], ['10:00', '10:19'], ['10:00', '10:20']].map(([entrada, salida]) => ['2026-10-24', entrada, salida, SIN_FERIADOS]);
+    const bordes = [
+      ['2026-10-25', '09:00', '13:20', SIN_FERIADOS], ['2026-10-12', '07:40', '09:10', conFeriado],
+      ['2026-10-12', null, '16:46', conFeriado], ['2026-10-12', '', '16:46', conFeriado], ['2026-10-12', '9:05', '16:46', conFeriado],
+      ['2026-10-24', '12:00', '11:00', SIN_FERIADOS], ['2026-10-24', '12:00', '12:00', SIN_FERIADOS],
+      ['2026-05-25', '09:00', '10:00', conFijos], ['2026-10-12', null, '16:46', SIN_FERIADOS],
+      ['2026-05-04', '07:00', '15:16', SIN_FERIADOS], ['2026-05-04', null, '13:02', SIN_FERIADOS],
+      ['2026-05-04', '16:00', '16:00', SIN_FERIADOS], ['2026-05-04', '16:30', '16:20', SIN_FERIADOS],
+      ['2026-05-04', '9:05', '16:46', SIN_FERIADOS], ['2026-05-04', null, '23:59', SIN_FERIADOS], ['2026-10-24', '00:00', '23:59', SIN_FERIADOS],
+      ...[undefined, null, '', '16:46:00', '9:05', '25:00', '24:00', '16:60', 1646].flatMap((salida) =>
+        [['2026-05-04', null, salida, SIN_FERIADOS], ['2026-10-24', '09:00', salida, SIN_FERIADOS]])
+    ];
+    for (const [fecha, entrada, salida, feriados] of [...csv, ...noHabiles, ...bordes]) {
+      const caso = `${fecha} ${entrada} ${salida}`;
+      assert.equal(M.horasDelDiaDeLaPlanilla({ tipo: tipoDeDia(fecha, feriados), entrada, salida }),
+        horasDeLaSalida({ fecha, entrada, salida }, feriados), caso);
+    }
+    // Un tipo que no es de la planilla, o un día que no es un objeto: null
+    for (const raro of [{ tipo: null, salida: '16:46' }, { tipo: 'otro', salida: '16:46' }, null, undefined, 'habil', []]) {
+      assert.equal(M.horasDelDiaDeLaPlanilla(raro), null, JSON.stringify(raro));
+    }
+  });
+
+  it('erroresDeLaPlanilla da el error de validarSalida (pasos 3 a 7) sobre lo que se manda: el mismo campo y el mismo mensaje', () => {
+    const contexto = { hoy: HOY_PLANILLA, estado: ESTADO_PLANILLA, feriados: FERIADOS_PLANILLA };
+    // El jueves 22/10 (hábil, sin nada), el feriado del 12/10 (con una salida guardada), el domingo 25/10 y el sábado 17/10, que
+    // además es feriado (los dos, de los sábados y domingos para sumar)
+    const dias = ['2026-10-22', '2026-10-12', '2026-10-25', '2026-10-17'];
+    const casos = [
+      // 3. las horas, 'HH:MM': la entrada primero (lo que da el <input type="time"> con segundos se corta y pasa)
+      ['', '9:05'], ['', '25:00'], ['', '24:00'], ['', '16:60'], ['', '1646'], ['', 'x'], ['9:05', '16:46'], ['9:05', '25:00'],
+      ['08:00', '16:46:00'], ['08:00:00', '16:46'], ['08:00:00.000', '16:46:00.000'], [' 08:00', ' 16:46 '],
+      // 4. la salida, obligatoria si hay entrada o nota
+      ['08:00', ''], ['', '', 'Cierre de mes'], ['08:00', '  '],
+      // 5. la entrada, obligatoria en un día que no es hábil
+      ['', '12:10'], ['', '12:10', 'Guardia'],
+      // 6. la salida, después de la entrada (también en un día hábil)
+      ['16:00', '15:59'], ['16:00', '16:00'], ['12:00', '11:00'], ['23:59', '00:00'],
+      // 7. la nota: recortada, hasta 200 caracteres contados con Array.from
+      ['09:00', '16:46', 'x'.repeat(201)], ['09:00', '16:46', '😀'.repeat(200)], ['09:00', '16:46', `  ${'x'.repeat(200)}  `],
+      ['09:00', '16:46', '😀'.repeat(201)],
+      // Los que están bien, y un borrado (todo vacío)
+      ['', '16:46'], ['09:21', '12:10'], ['09:00', '13:20', 'Mudanza'], ['', ''], ['', '', '   ']
+    ];
+    let conError = 0;
+    for (const fecha of dias) {
+      for (const [entrada, salida, nota = ''] of casos) {
+        const cambios = new Map([[fecha, { entrada, salida, nota }]]);
+        const caso = `${fecha} ${JSON.stringify([entrada, salida, nota])}`;
+        const [dia] = plano(M.cuerpoDeLaPlanilla(cambios, [fecha])).dias;
+        const delServidor = validarSalida(dia, contexto).error;
+        const [deLaPagina] = erroresDe(cambios);
+        // Un día que queda como estaba no se manda (fechasCambiadas): no tiene error, ni para la página ni para el servidor
+        if (deLaPagina === undefined) assert.equal(delServidor, null, caso);
+        else assert.deepEqual(deLaPagina, [fecha, delServidor], caso);
+        if (delServidor !== null) conError += 1;
+      }
+    }
+    // Cada paso tiene sus casos con error
+    assert.ok(conError >= 50, String(conError));
+    // Los mensajes de cada paso, escritos a mano
+    const errorDel = (fecha, valor) => erroresDe(new Map([[fecha, { entrada: '', salida: '', nota: '', ...valor }]]))[0]?.[1] ?? null;
+    assert.deepEqual(errorDel('2026-10-22', { salida: '9:05' }), { campo: 'salida', mensaje: 'Escribí la hora como 16:45.' });
+    assert.deepEqual(errorDel('2026-10-22', { entrada: '9:05', salida: '25:00' }), { campo: 'entrada', mensaje: 'Escribí la hora como 16:45.' });
+    assert.deepEqual(errorDel('2026-10-22', { entrada: '08:00' }), { campo: 'salida', mensaje: 'Falta la salida: es la que cuenta.' });
+    assert.deepEqual(errorDel('2026-10-25', { nota: 'Mudanza' }), { campo: 'salida', mensaje: 'Falta la salida.' });
+    assert.deepEqual(errorDel('2026-10-12', { salida: '12:10' }), { campo: 'entrada', mensaje: 'En un feriado, poné también la entrada.' });
+    assert.deepEqual(errorDel('2026-10-17', { salida: '12:10' }), { campo: 'entrada', mensaje: 'En un feriado, poné también la entrada.' });
+    assert.deepEqual(errorDel('2026-10-25', { salida: '12:10' }), { campo: 'entrada', mensaje: 'En un sábado o domingo, poné también la entrada.' });
+    assert.deepEqual(errorDel('2026-10-22', { entrada: '16:00', salida: '16:00' }), { campo: 'salida', mensaje: 'La salida tiene que ser después de la entrada.' });
+    assert.deepEqual(errorDel('2026-10-22', { salida: '16:46', nota: 'x'.repeat(201) }), { campo: 'nota', mensaje: 'La nota puede tener hasta 200 caracteres.' });
+    // Con segundos se corta y pasa (Review Focus 1)
+    assert.equal(errorDel('2026-10-22', { salida: '16:46:00' }), null);
+  });
+});
+
+describe('la planilla de horas extras: lo puro', () => {
+  it('fechasCambiadas: las que cambiaron; una que volvió a como estaba no cuenta (Review Focus 5), ni un sábado sumado sin nada', () => {
+    const cambiadas = (entradas, porFecha = POR_FECHA) => plano(M.fechasCambiadas(new Map(entradas), porFecha));
+    assert.deepEqual(cambiadas([['2026-10-22', { entrada: '', salida: '17:00', nota: '' }]]), ['2026-10-22']);
+    // Vuelta a como estaba: lo guardado (la nota null es ''), también con los segundos del <input type="time"> o con espacios en la nota
+    assert.deepEqual(cambiadas([['2026-10-05', { entrada: '08:02', salida: '16:20', nota: '' }]]), []);
+    assert.deepEqual(cambiadas([['2026-10-05', { entrada: '08:02:00', salida: '16:20:00', nota: '   ' }]]), []);
+    assert.deepEqual(cambiadas([['2026-10-12', { entrada: '09:21', salida: '12:10', nota: ' Guardia de la mesa de datos ' }]]), []);
+    assert.deepEqual(cambiadas([['2026-10-22', { entrada: '', salida: '', nota: '' }]]), []);
+    // Un cambio en cada campo cuenta
+    assert.deepEqual(cambiadas([['2026-10-05', { entrada: '', salida: '16:20', nota: '' }], ['2026-10-12', { entrada: '09:21', salida: '12:10', nota: 'Otra' }],
+      ['2026-10-26', { entrada: '', salida: '15:48', nota: '' }]]), ['2026-10-05', '2026-10-12', '2026-10-26']);
+    // Un sábado o domingo sumado sin nada (o quitado sin haber guardado nada) no cuenta; uno guardado que se quita, sí
+    assert.deepEqual(cambiadas([['2026-10-25', { entrada: '', salida: '', nota: '' }], ['2026-10-17', { quitar: true }]]), []);
+    assert.deepEqual(cambiadas([['2026-10-24', { quitar: true }]]), ['2026-10-24']);
+    assert.deepEqual(cambiadas([['2026-10-24', { entrada: '', salida: '', nota: '' }]]), ['2026-10-24']);
+    // De varios meses, en orden (uno de un mes que no se pidió se compara con nada)
+    assert.deepEqual(cambiadas([['2026-10-22', { entrada: '', salida: '17:00', nota: '' }], ['2026-09-30', { entrada: '', salida: '18:00', nota: '' }],
+      ['2026-09-29', { entrada: '', salida: '', nota: '' }]]), ['2026-09-30', '2026-10-22']);
+    // Lo que no sirve no tira
+    assert.deepEqual(plano(M.fechasCambiadas(null, POR_FECHA)), []);
+    assert.deepEqual(plano(M.fechasCambiadas(new Map([['2026-10-22', { entrada: '', salida: '17:00', nota: '' }]]), null)), ['2026-10-22']);
+    assert.deepEqual(cambiadas([['x', { salida: '17:00' }], ['2026-10-22', null]]), []);
+  });
+
+  it('cuerpoDeLaPlanilla: cada día con su estado completo, las horas cortadas a HH:MM y lo vacío como \'\' (Review Focus 1)', () => {
+    const cambios = new Map([
+      ['2026-10-22', { entrada: '08:02:00', salida: '16:46:00', nota: '  Cierre del informe  ' }],
+      ['2026-10-23', { entrada: '', salida: '16:46:00.000', nota: '' }],
+      ['2026-10-24', { quitar: true }],
+      ['2026-10-26', { salida: '17:00' }]
+    ]);
+    assert.deepEqual(plano(M.cuerpoDeLaPlanilla(cambios, ['2026-10-22', '2026-10-23', '2026-10-24', '2026-10-26'])), { dias: [
+      { fecha: '2026-10-22', entrada: '08:02', salida: '16:46', nota: 'Cierre del informe' },
+      { fecha: '2026-10-23', entrada: '', salida: '16:46', nota: '' },
+      { fecha: '2026-10-24', entrada: '', salida: '', nota: '' },
+      { fecha: '2026-10-26', entrada: '', salida: '17:00', nota: '' }
+    ] });
+    // Solo las fechas pedidas, en su orden; sin fechas, ninguno
+    assert.deepEqual(plano(M.cuerpoDeLaPlanilla(cambios, ['2026-10-23'])), { dias: [{ fecha: '2026-10-23', entrada: '', salida: '16:46', nota: '' }] });
+    assert.deepEqual(plano(M.cuerpoDeLaPlanilla(cambios, [])), { dias: [] });
+    assert.deepEqual(plano(M.cuerpoDeLaPlanilla(null, null)), { dias: [] });
+  });
+
+  it('textoDeLaSemana: «5 al 9 de octubre», «1 y 2 de octubre», «30 de octubre»', () => {
+    assert.equal(M.textoDeLaSemana(['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09']), '5 al 9 de octubre');
+    assert.equal(M.textoDeLaSemana(['2026-10-01', '2026-10-02']), '1 y 2 de octubre');
+    assert.equal(M.textoDeLaSemana(['2026-10-30']), '30 de octubre');
+    assert.equal(M.textoDeLaSemana(['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-25']), '19 al 25 de octubre');
+    assert.equal(M.textoDeLaSemana(['2026-05-01', '2026-05-03']), '1 al 3 de mayo');
+    assert.equal(M.textoDeLaSemana([]), '');
+    assert.equal(M.textoDeLaSemana(null), '');
+  });
+
+  it('textoDelPieDeLaPlanilla: «Todo guardado.» o cuántos días tienen cambios, con los meses si son más de uno', () => {
+    assert.equal(M.textoDelPieDeLaPlanilla([]), 'Todo guardado.');
+    assert.equal(M.textoDelPieDeLaPlanilla(['2026-10-05']), '1 día con cambios sin guardar.');
+    assert.equal(M.textoDelPieDeLaPlanilla(['2026-10-05', '2026-10-06', '2026-10-22']), '3 días con cambios sin guardar.');
+    assert.equal(M.textoDelPieDeLaPlanilla(['2026-10-05', '2026-09-30', '2026-10-22']), '3 días con cambios sin guardar (septiembre y octubre).');
+    assert.equal(M.textoDelPieDeLaPlanilla(['2026-10-05', '2026-09-30', '2026-08-03', '2026-10-22']),
+      '4 días con cambios sin guardar (agosto, septiembre y octubre).');
+    // El mismo mes de dos años: con el año
+    assert.equal(M.textoDelPieDeLaPlanilla(['2025-10-06', '2026-10-05']), '2 días con cambios sin guardar (octubre de 2025 y octubre de 2026).');
+    assert.equal(M.textoDelPieDeLaPlanilla(null), 'Todo guardado.');
+  });
+
+  it('htmlDeLaBandaDeLaPlanilla: el total en grande y la frase, con lo que se suma en negrita; el texto es el del servidor', () => {
+    const banda = M.htmlDeLaBandaDeLaPlanilla('2026-10', 18, HOY_PLANILLA);
+    assert.equal(banda, '<span class="mp-suma-cifra">18<small>h</small></span><p class="mp-suma-texto">En noviembre vas a tener '
+      + '<b>2 días de franco</b> y <b>4 horas a favor</b>.</p>');
+    assert.match(M.htmlDeLaBandaDeLaPlanilla('2026-10', 21, HOY_PLANILLA), /vas a tener <b>3 días de franco<\/b>\.<\/p>$/);
+    assert.match(M.htmlDeLaBandaDeLaPlanilla('2026-10', 4.5, HOY_PLANILLA), /^<span class="mp-suma-cifra">4,5<small>h<\/small><\/span>.*<b>4,5 horas a favor<\/b>\.<\/p>$/);
+    assert.match(M.htmlDeLaBandaDeLaPlanilla('2026-09', 10.5, HOY_PLANILLA), /En octubre tuviste <b>1 día de franco<\/b> y <b>3,5 horas a favor<\/b>\./);
+    assert.equal(M.htmlDeLaBandaDeLaPlanilla('2026-10', 0, HOY_PLANILLA),
+      '<span class="mp-suma-cifra">0<small>h</small></span><p class="mp-suma-texto">Todavía no sumaste horas extras en octubre.</p>');
+    // El texto de la frase es siempre el de textoDeLaSumaDelMes del servidor (sin las negritas, que no separan palabras)
+    const sinNegritas = (html) => textoDe(html.replace(/<\/?b>/g, ''));
+    for (const [mes, horas] of [['2026-10', 18], ['2026-10', 18.5], ['2026-10', 21], ['2026-10', 4.5], ['2026-10', 1], ['2026-10', 0],
+      ['2026-09', 10.5], ['2026-09', 7], ['2026-09', 0]]) {
+      const frase = M.htmlDeLaBandaDeLaPlanilla(mes, horas, HOY_PLANILLA).match(/<p class="mp-suma-texto">([\s\S]*)<\/p>/)[1];
+      assert.equal(sinNegritas(frase), textoDeLaSumaDelMes(mes, horas, HOY_PLANILLA), `${mes} ${horas}`);
+    }
+    // La de la planilla del servidor, con su suma
+    assert.equal(sinNegritas(M.htmlDeLaBandaDeLaPlanilla(OCTUBRE.mes, OCTUBRE.suma.horas, OCTUBRE.hoy)),
+      `${OCTUBRE.suma.cifra} h ${OCTUBRE.suma.texto}`);
+    // Lo que no es un número: la raya, sin frase de horas
+    assert.equal(M.htmlDeLaBandaDeLaPlanilla('2026-10', NaN, HOY_PLANILLA),
+      '<span class="mp-suma-cifra">—<small>h</small></span><p class="mp-suma-texto">Todavía no sumaste horas extras en octubre.</p>');
+  });
+
+  it('diasPorFechaDe, diasVisiblesDeLaPlanilla y horasDeLosDias: sin cambios, la suma es la del servidor', () => {
+    const porFecha = M.diasPorFechaDe([OCTUBRE]);
+    assert.equal(porFecha.size, 30);
+    assert.equal(porFecha.get('2026-10-17').tipo, 'feriado');
+    assert.equal(porFecha.get('2026-10-05').salida, '16:20');
+    assert.equal(M.diasPorFechaDe([OCTUBRE, planillaDel(ESTADO_PLANILLA, { mes: '2026-09' })]).size, 30 + 30);
+    assert.equal(M.diasPorFechaDe(new Map([['2026-10', OCTUBRE]]).values()).size, 30);
+    assert.equal(M.diasPorFechaDe(null).size, 0);
+    // Los días que se ven: los del servidor (los de lunes a viernes y el sábado 24/10, que tiene una salida)
+    const visibles = M.diasVisiblesDeLaPlanilla(OCTUBRE, VACIO);
+    assert.deepEqual(plano(visibles.map((dia) => dia.fecha)), OCTUBRE.dias.map((dia) => dia.fecha));
+    assert.equal(M.horasDeLosDias(visibles, new Map()), OCTUBRE.suma.horas);
+    assert.equal(M.horasDeLosDias(visibles, new Map()), 16);
+    // Con los cambios: una salida nueva, una quitada y un domingo sumado
+    const cambios = new Map([['2026-10-22', { entrada: '', salida: '16:46', nota: '' }], ['2026-10-09', { quitar: true }],
+      ['2026-10-25', { entrada: '09:00', salida: '10:00', nota: '' }]]);
+    const conDomingo = M.diasVisiblesDeLaPlanilla(OCTUBRE, { cambios, agregados: new Set(['2026-10-25']) });
+    assert.ok(plano(conDomingo.map((dia) => dia.fecha)).includes('2026-10-25'));
+    assert.equal(M.horasDeLosDias(conDomingo, cambios), 16 + 2 - 2.5 + 1);
+    // Un sábado guardado que se quita no se ve, salvo que se lo vuelva a sumar
+    const quitado = new Map([['2026-10-24', { quitar: true }]]);
+    assert.ok(!plano(M.diasVisiblesDeLaPlanilla(OCTUBRE, { cambios: quitado }).map((dia) => dia.fecha)).includes('2026-10-24'));
+    assert.ok(plano(M.diasVisiblesDeLaPlanilla(OCTUBRE, { cambios: quitado, agregados: new Set(['2026-10-24']) })
+      .map((dia) => dia.fecha)).includes('2026-10-24'));
+    assert.deepEqual(plano(M.diasVisiblesDeLaPlanilla(null, VACIO)), []);
+  });
+
+  it('htmlDeLasHorasDeLaFila: las horas del día mientras se escribe, o por qué todavía no hay', () => {
+    const habil = { tipo: 'habil' };
+    const feriado = { tipo: 'feriado' };
+    const nada = '<b class="nada">—</b>';
+    assert.equal(M.htmlDeLasHorasDeLaFila(habil, { entrada: '', salida: '', nota: '' }), nada);
+    assert.equal(M.htmlDeLasHorasDeLaFila(habil, { entrada: '08:00', salida: '', nota: '' }), nada);
+    assert.equal(M.htmlDeLasHorasDeLaFila(feriado, { entrada: '09:00', salida: '', nota: '' }), `${nada}<small>Falta la salida</small>`);
+    assert.equal(M.htmlDeLasHorasDeLaFila(feriado, { entrada: '', salida: '12:10', nota: '' }), `${nada}<small>Poné la entrada</small>`);
+    assert.equal(M.htmlDeLasHorasDeLaFila({ tipo: 'finde' }, { entrada: '12:00', salida: '11:00', nota: '' }), `${nada}<small>La salida va después</small>`);
+    assert.equal(M.htmlDeLasHorasDeLaFila(habil, { entrada: '16:30', salida: '16:20', nota: '' }), `${nada}<small>La salida va después</small>`);
+    assert.equal(M.htmlDeLasHorasDeLaFila(habil, { entrada: '', salida: '15:10', nota: '' }), '<b class="cero">0</b><small>No llega a media hora</small>');
+    assert.equal(M.htmlDeLasHorasDeLaFila(habil, { entrada: '', salida: '16:46', nota: '' }), '<b>2 h</b>');
+    assert.equal(M.htmlDeLasHorasDeLaFila(habil, { entrada: '', salida: '16:46:00', nota: '' }), '<b>2 h</b>');
+    assert.equal(M.htmlDeLasHorasDeLaFila(feriado, { entrada: '09:21', salida: '12:10', nota: '' }), '<b>2,5 h</b>');
+    // Una hora que no se puede leer: sin horas
+    assert.equal(M.htmlDeLasHorasDeLaFila(habil, { entrada: '', salida: '9:05', nota: '' }), nada);
+    assert.equal(M.htmlDeLasHorasDeLaFila(feriado, { entrada: '9:05', salida: '12:10', nota: '' }), nada);
+    assert.equal(M.htmlDeLasHorasDeLaFila(null, null), nada);
+  });
+});
+
+describe('la planilla de horas extras: htmlDeLaPlanilla', () => {
+  const html = planillaCon();
+
+  it('las semanas: un renglón con sus días y lo que suman, y después sus filas, en orden', () => {
+    assert.deepEqual(semanasDe(html), [
+      ['2026-10-01,2026-10-02', '1 y 2 de octubre —'],
+      ['2026-10-05,2026-10-06,2026-10-07,2026-10-08,2026-10-09', '5 al 9 de octubre 4 h'],
+      ['2026-10-12,2026-10-13,2026-10-14,2026-10-15,2026-10-16', '12 al 16 de octubre 2,5 h'],
+      ['2026-10-19,2026-10-20,2026-10-21,2026-10-22,2026-10-23,2026-10-24', '19 al 24 de octubre 8,5 h'],
+      ['2026-10-26,2026-10-27,2026-10-28,2026-10-29,2026-10-30', '26 al 30 de octubre 1 h']
+    ]);
+    const orden = filasDeLaPlanilla(html).map(({ atributos }) => atributos.id ?? 'semana');
+    assert.deepEqual(orden.slice(0, 4), ['semana', 'mp-dia-2026-10-01', 'mp-dia-2026-10-02', 'semana']);
+    assert.equal(orden.filter((uno) => uno !== 'semana').length, OCTUBRE.dias.length);
+    assert.deepEqual(orden.filter((uno) => uno !== 'semana'), OCTUBRE.dias.map((dia) => `mp-dia-${dia.fecha}`));
+  });
+
+  it('un día hábil: un grupo con el nombre de su fecha, la entrada opcional, la salida, las horas y «Nota»', () => {
+    const fila = filaDel(html, '2026-10-05');
+    assert.deepEqual(fila.clases, ['mp-dia']);
+    assert.equal(fila.atributos.role, 'group');
+    assert.equal(fila.atributos['aria-labelledby'], 'mp-f-2026-10-05');
+    assert.ok(fila.html.includes('<b id="mp-f-2026-10-05">Lun 05/10</b>'));
+    assert.equal(fila.texto, 'Lun 05/10 Entrada (opcional) Salida 1,5 h Nota');
+    assert.deepEqual(camposDe(fila.html), [
+      { type: 'time', class: 'opcional', 'data-campo': 'entrada', 'data-fecha': '2026-10-05', value: '08:02', 'data-vacio': '0',
+        'aria-label': 'Entrada (opcional) del lunes 05/10' },
+      { type: 'time', 'data-campo': 'salida', 'data-fecha': '2026-10-05', value: '16:20', 'aria-label': 'Salida del lunes 05/10' }
+    ]);
+    assert.ok(fila.html.includes('<span class="mp-horas" id="mp-h-2026-10-05"><b>1,5 h</b></span>'));
+    assert.deepEqual(botonesDe(fila.html).map(({ atributos, texto }) => [texto, atributos['data-nota'], atributos['aria-expanded'], atributos['aria-label']]),
+      [['Nota', '2026-10-05', 'false', 'Agregar una nota del lunes 05/10']]);
+    // Las horas son de la página, no regiones vivas
+    assert.doesNotMatch(html, /aria-live|role="status"|role="alert"/);
+    // Sin salida, la raya; la entrada vacía, en gris (data-vacio)
+    const vacio = filaDel(html, '2026-10-06');
+    assert.equal(vacio.texto, 'Mar 06/10 Entrada (opcional) Salida — Nota');
+    assert.deepEqual(camposDe(vacio.html).map((campo) => [campo.value, campo['data-vacio']]), [['', '1'], ['', undefined]]);
+    // Los que dan 0
+    assert.equal(filaDel(html, '2026-10-16').texto, 'Vie 16/10 Entrada (opcional) Salida 0 No llega a media hora Nota');
+  });
+
+  it('el feriado, con su nombre en ámbar y la entrada obligatoria; el sábado con salida, con «Quitar»; las notas', () => {
+    const feriado = filaDel(html, '2026-10-12');
+    assert.deepEqual(feriado.clases, ['mp-dia', 'feriado']);
+    assert.ok(feriado.html.includes('<span class="mp-marcas"><span class="me-insignia ambar">Feriado: Día del Respeto a la Diversidad Cultural</span></span>'));
+    assert.equal(feriado.texto, 'Lun 12/10 Feriado: Día del Respeto a la Diversidad Cultural Entrada Salida 2,5 h Cambiar nota Guardia de la mesa de datos');
+    const [entrada] = camposDe(feriado.html);
+    assert.equal(entrada.class, undefined);
+    assert.equal(entrada['aria-label'], 'Entrada del lunes 12/10');
+    // Con nota y cerrada: la nota en cursiva y «Cambiar nota»
+    assert.ok(feriado.html.includes('<p class="mp-nota-vista">Guardia de la mesa de datos</p>'));
+    assert.deepEqual(botonesDe(feriado.html).map(({ atributos, texto }) => [texto, atributos['aria-expanded'], atributos['aria-label']]),
+      [['Cambiar nota', 'false', 'Cambiar la nota del lunes 12/10']]);
+
+    const sabado = filaDel(html, '2026-10-24');
+    assert.deepEqual(sabado.clases, ['mp-dia', 'finde']);
+    assert.equal(sabado.texto, 'Sáb 24/10 Sábado Entrada Salida 4,5 h Quitar Cambiar nota Relevamiento en el barrio');
+    assert.ok(sabado.html.includes('<span class="me-insignia borde">Sábado</span>'));
+    assert.deepEqual(botonesDe(sabado.html).map(({ atributos, texto }) => [texto, atributos['data-quitar'], atributos['aria-label']]),
+      [['Quitar', '2026-10-24', 'Quitar el sábado 24/10'], ['Cambiar nota', undefined, 'Cambiar la nota del sábado 24/10']]);
+
+    // La nota abierta: su campo debajo de la fila, sin la nota en cursiva
+    const abierta = filaDel(planillaCon({ notasAbiertas: new Set(['2026-10-12']) }), '2026-10-12');
+    assert.ok(!abierta.html.includes('mp-nota-vista'));
+    assert.deepEqual(camposDe(abierta.html)[2], {
+      type: 'text', 'data-campo': 'nota', 'data-fecha': '2026-10-12', value: 'Guardia de la mesa de datos',
+      placeholder: 'Por ejemplo: cierre del informe mensual', 'aria-label': 'Nota del lunes 12/10'
+    });
+    assert.equal(botonesDe(abierta.html)[0].atributos['aria-expanded'], 'true');
+    assert.ok(!abierta.html.includes('maxlength'));
+  });
+
+  it('las licencias: la de unas horas, con su etiqueta; la de día entero, sin campos; con una salida de antes, su aviso y «Quitar»', () => {
+    // Las 2 horas a favor del 20/10 se cargan normal, con su etiqueta verde
+    const del20 = filaDel(html, '2026-10-20');
+    assert.deepEqual(del20.clases, ['mp-dia']);
+    assert.equal(del20.texto, 'Mar 20/10 2 h a favor Entrada (opcional) Salida 0 No llega a media hora Nota');
+    assert.ok(del20.html.includes('<span class="me-insignia verde">2 h a favor</span>'));
+    assert.equal(camposDe(del20.html).length, 2);
+    // Los estudios del 13/10: el día entero, sin campos ni grupo
+    const del13 = filaDel(html, '2026-10-13');
+    assert.deepEqual(del13.clases, ['mp-dia', 'licencia']);
+    assert.equal(del13.texto, 'Mar 13/10 Estudios Es un día de licencia: no se cargan horas.');
+    assert.equal(del13.atributos.role, undefined);
+    assert.deepEqual(camposDe(del13.html), []);
+    assert.deepEqual(botonesDe(del13.html), []);
+    // Las horas a favor del 9/10, el día entero, con la salida guardada de antes: como texto, sus horas, el aviso y «Quitar»
+    const del9 = filaDel(html, '2026-10-09');
+    assert.deepEqual(del9.clases, ['mp-dia', 'licencia']);
+    assert.equal(del9.atributos.role, 'group');
+    assert.equal(del9.texto, 'Vie 09/10 Horas a favor, el día entero Salida 17:16 2,5 h Quitar Ese día tenés una licencia de día entero: revisá esta salida.');
+    assert.deepEqual(camposDe(del9.html), []);
+    assert.ok(del9.html.includes('<p class="mp-aviso" id="mp-a-2026-10-09">Ese día tenés una licencia de día entero: revisá esta salida.</p>'));
+    assert.deepEqual(botonesDe(del9.html).map(({ atributos, texto }) => [texto, atributos['data-quitar'], atributos['aria-label'], atributos['aria-describedby']]),
+      [['Quitar', '2026-10-09', 'Quitar la salida del viernes 09/10', 'mp-a-2026-10-09']]);
+    // Quitada: el día de licencia, con la raya de lo cambiado; ya no suma en su semana
+    const quitada = planillaCon({ cambios: new Map([['2026-10-09', { quitar: true }]]) });
+    assert.deepEqual(filaDel(quitada, '2026-10-09').clases, ['mp-dia', 'licencia', 'cambiado']);
+    assert.equal(filaDel(quitada, '2026-10-09').texto, 'Vie 09/10 Horas a favor, el día entero Es un día de licencia: no se cargan horas.');
+    assert.equal(semanasDe(quitada)[1][1], '5 al 9 de octubre 1,5 h');
+    // Con la entrada guardada, también como texto
+    const conEntrada = planillaDel({ ...ESTADO_PLANILLA, salidas: [...CONTRATO.estado.salidas, salidaDe(11, '2026-10-09', '17:16', '08:05')] });
+    assert.equal(filaDel(M.htmlDeLaPlanilla(conEntrada, VACIO), '2026-10-09').texto,
+      'Vie 09/10 Horas a favor, el día entero Salida 17:16 Entrada 08:05 2,5 h Quitar Ese día tenés una licencia de día entero: revisá esta salida.');
+  });
+
+  it('hoy lleva «Hoy» y se carga; los días que todavía no llegaron, en gris y sin campos', () => {
+    const hoy = filaDel(html, '2026-10-27');
+    assert.deepEqual(hoy.clases, ['mp-dia', 'hoy']);
+    assert.ok(hoy.html.includes('<b id="mp-f-2026-10-27">Mar 27/10 <span class="mp-hoy">Hoy</span></b>'));
+    assert.equal(camposDe(hoy.html).length, 2);
+    const futuro = filaDel(html, '2026-10-28');
+    assert.deepEqual(futuro.clases, ['mp-dia', 'futuro']);
+    assert.equal(futuro.texto, 'Mié 28/10 Todavía no llegó.');
+    assert.deepEqual(camposDe(futuro.html), []);
+    assert.equal(futuro.atributos.role, undefined);
+    // El grupo familiar del 30/10, que todavía no llegó: los dos
+    const del30 = filaDel(html, '2026-10-30');
+    assert.deepEqual(del30.clases, ['mp-dia', 'licencia', 'futuro']);
+    assert.equal(del30.texto, 'Vie 30/10 Atención del grupo familiar Todavía no llegó.');
+    // Ninguno de los demás días es hoy
+    assert.equal(filasDeLaPlanilla(html).filter(({ clases }) => clases.includes('hoy')).length, 1);
+  });
+
+  it('los cambios: lo cambiado lleva la raya; un error, en su fila y en su campo (aria-invalid y aria-describedby)', () => {
+    const cambios = new Map([['2026-10-22', { entrada: '08:00', salida: '', nota: '' }], ['2026-10-26', { entrada: '', salida: '15:47', nota: '' }],
+      ['2026-10-23', { entrada: '', salida: '17:16', nota: '' }]]);
+    const errores = new Map([['2026-10-22', { campo: 'salida', mensaje: MENSAJES_MI_ESPACIO.salidaQueCuenta }]]);
+    const conError = planillaCon({ cambios, errores });
+    const fila = filaDel(conError, '2026-10-22');
+    assert.deepEqual(fila.clases, ['mp-dia', 'cambiado']);
+    assert.ok(fila.html.includes('<p class="mp-error" id="mp-e-2026-10-22">Falta la salida: es la que cuenta.</p>'));
+    const [entrada, salida] = camposDe(fila.html);
+    assert.deepEqual([entrada.value, entrada['data-vacio'], entrada['aria-invalid'], entrada['aria-describedby']], ['08:00', '0', undefined, undefined]);
+    assert.deepEqual([salida.value, salida['aria-invalid'], salida['aria-describedby']], ['', 'true', 'mp-e-2026-10-22']);
+    // Vuelto a como estaba (el 26/10), sin raya; uno nuevo con sus horas (el 23/10), con raya y en el total de su semana
+    assert.deepEqual(filaDel(conError, '2026-10-26').clases, ['mp-dia']);
+    assert.deepEqual(filaDel(conError, '2026-10-23').clases, ['mp-dia', 'cambiado']);
+    assert.ok(filaDel(conError, '2026-10-23').html.includes('<b>2,5 h</b>'));
+    assert.equal(semanasDe(conError)[3][1], '19 al 24 de octubre 11 h');
+    // Un error en la entrada, en la entrada; uno en la nota abre la nota; uno sin campo de la fila (del servidor), en la salida
+    const enLaEntrada = filaDel(planillaCon({ cambios: new Map([['2026-10-12', { entrada: '', salida: '12:10', nota: '' }]]),
+      errores: new Map([['2026-10-12', { campo: 'entrada', mensaje: MENSAJES_MI_ESPACIO.entradaFeriado }]]) }), '2026-10-12');
+    assert.deepEqual(camposDe(enLaEntrada.html).map((campo) => [campo['data-campo'], campo['aria-invalid'], campo['aria-describedby']]),
+      [['entrada', 'true', 'mp-e-2026-10-12'], ['salida', undefined, undefined]]);
+    const enLaNota = filaDel(planillaCon({ cambios: new Map([['2026-10-22', { entrada: '', salida: '16:46', nota: 'x'.repeat(201) }]]),
+      errores: new Map([['2026-10-22', { campo: 'nota', mensaje: MENSAJES_MI_ESPACIO.nota }]]) }), '2026-10-22');
+    assert.deepEqual(camposDe(enLaNota.html).map((campo) => [campo['data-campo'], campo['aria-invalid'], campo['aria-describedby']]),
+      [['entrada', undefined, undefined], ['salida', undefined, undefined], ['nota', 'true', 'mp-e-2026-10-22']]);
+    const sinCampo = filaDel(planillaCon({ cambios: new Map([['2026-10-22', { entrada: '', salida: '16:46', nota: '' }]]),
+      errores: new Map([['2026-10-22', { campo: 'fecha', mensaje: MENSAJES_MI_ESPACIO.diaDeLicencia }]]) }), '2026-10-22');
+    assert.deepEqual(camposDe(sinCampo.html).map((campo) => [campo['data-campo'], campo['aria-invalid'], campo['aria-describedby']]),
+      [['entrada', undefined, undefined], ['salida', 'true', 'mp-e-2026-10-22']]);
+    assert.ok(sinCampo.html.includes(`<p class="mp-error" id="mp-e-2026-10-22">${MENSAJES_MI_ESPACIO.diaDeLicencia}</p>`));
+  });
+
+  it('un día que pasó a ser feriado: su aviso, mientras no se cambie, y «Poné la entrada»', () => {
+    const filas = [...FILAS_PLANILLA, { ...FERIADO_DIVERSIDAD, id: 4, fecha: '2026-10-21', nombre: 'Feriado cargado después' }];
+    const conFeriado = planillaDel(ESTADO_PLANILLA, { filas });
+    const fila = filaDel(M.htmlDeLaPlanilla(conFeriado, VACIO), '2026-10-21');
+    assert.deepEqual(fila.clases, ['mp-dia', 'feriado']);
+    assert.equal(fila.texto, 'Mié 21/10 Feriado: Feriado cargado después Entrada Salida — Poné la entrada Nota Ahora es feriado: falta la entrada.');
+    assert.equal(camposDe(fila.html)[1]['aria-describedby'], 'mp-a-2026-10-21');
+    // Con la entrada, ya no
+    const arreglada = filaDel(M.htmlDeLaPlanilla(conFeriado, { ...VACIO, cambios: new Map([['2026-10-21', { entrada: '18:00', salida: '19:00', nota: '' }]]) }), '2026-10-21');
+    assert.equal(arreglada.texto, 'Mié 21/10 Feriado: Feriado cargado después Entrada Salida 1 h Nota');
+    assert.equal(camposDe(arreglada.html)[1]['aria-describedby'], undefined);
+  });
+
+  it('los sábados y domingos: uno sumado aparece en su semana, con «Quitar»; uno guardado que se quita, no', () => {
+    const conDomingo = planillaCon({ agregados: new Set(['2026-10-25', '2026-10-17']) });
+    const domingo = filaDel(conDomingo, '2026-10-25');
+    assert.deepEqual(domingo.clases, ['mp-dia', 'finde']);
+    assert.equal(domingo.texto, 'Dom 25/10 Domingo Entrada Salida — Quitar Nota');
+    assert.equal(camposDe(domingo.html)[0]['aria-label'], 'Entrada del domingo 25/10');
+    assert.deepEqual(semanasDe(conDomingo).map(([, texto]) => texto), ['1 y 2 de octubre —', '5 al 9 de octubre 4 h',
+      '12 al 17 de octubre 2,5 h', '19 al 25 de octubre 8,5 h', '26 al 30 de octubre 1 h']);
+    // El sábado 17/10, que además es feriado: con su nombre y «Quitar»
+    const sabado = filaDel(conDomingo, '2026-10-17');
+    assert.deepEqual(sabado.clases, ['mp-dia', 'feriado']);
+    assert.equal(sabado.texto, 'Sáb 17/10 Feriado: Feriado de prueba en sábado Entrada Salida — Quitar Nota');
+    // El sábado 24/10 guardado y quitado no se ve; vuelto a sumar, sí, vacío y cambiado
+    const quitado = planillaCon({ cambios: new Map([['2026-10-24', { quitar: true }]]) });
+    assert.equal(filaDel(quitado, '2026-10-24'), undefined);
+    assert.equal(semanasDe(quitado)[3][1], '19 al 23 de octubre 4 h');
+    const deVuelta = filaDel(planillaCon({ cambios: new Map([['2026-10-24', { quitar: true }]]), agregados: new Set(['2026-10-24']) }), '2026-10-24');
+    assert.deepEqual(deVuelta.clases, ['mp-dia', 'finde', 'cambiado']);
+    assert.deepEqual(camposDe(deVuelta.html).map((campo) => campo.value), ['', '']);
+    // Un día de los sábados y domingos que no está sumado no se ve
+    assert.equal(filaDel(html, '2026-10-25'), undefined);
+    // Los que se pueden sumar: los que no se ven (hasta hoy: el 31/10 todavía no llegó), también el sábado guardado que se quitó
+    const paraSumar = (estado) => plano(M.finesDeSemanaParaSumar(OCTUBRE, { ...VACIO, ...estado }).map((dia) => dia.fecha));
+    assert.deepEqual(paraSumar({}), ['2026-10-03', '2026-10-04', '2026-10-10', '2026-10-11', '2026-10-17', '2026-10-18', '2026-10-25']);
+    assert.deepEqual(paraSumar({ agregados: new Set(['2026-10-25', '2026-10-17']) }),
+      ['2026-10-03', '2026-10-04', '2026-10-10', '2026-10-11', '2026-10-18']);
+    assert.deepEqual(paraSumar({ cambios: new Map([['2026-10-24', { quitar: true }]]) }),
+      ['2026-10-03', '2026-10-04', '2026-10-10', '2026-10-11', '2026-10-17', '2026-10-18', '2026-10-24', '2026-10-25']);
+    assert.equal(M.finesDeSemanaParaSumar(OCTUBRE, VACIO)[4].tipo, 'feriado');
+    assert.deepEqual(plano(M.finesDeSemanaParaSumar(null, VACIO)), []);
+  });
+
+  it('todo texto pasa por escapeHtml, también en los atributos: un feriado con <b> en el nombre, una nota, una licencia y un aviso', () => {
+    const conHtml = planillaDel(ESTADO_PLANILLA, { filas: [{ ...FERIADO_DIVERSIDAD, nombre: 'Día del <b>Respeto</b>' }, FERIADO_EN_SABADO] });
+    const salida = M.htmlDeLaPlanilla(conHtml, VACIO);
+    assert.ok(!salida.includes('<b>Respeto'));
+    assert.ok(filaDel(salida, '2026-10-12').html.includes('Feriado: Día del &lt;b&gt;Respeto&lt;/b&gt;'));
+    // Lo que llega raro del servidor y lo que se escribe en la página
+    const rara = comoLlega(OCTUBRE);
+    const delDia = (fecha) => rara.dias.find((dia) => dia.fecha === fecha);
+    delDia('2026-10-13').licencia.texto = MALICIOSO;
+    delDia('2026-10-09').aviso = MALICIOSO;
+    delDia('2026-10-05').fecha_larga = CON_COMILLAS;
+    delDia('2026-10-05').fecha_texto = MALICIOSO;
+    const cambios = new Map([['2026-10-22', { entrada: CON_COMILLAS, salida: '16:46', nota: MALICIOSO }]]);
+    const todo = M.htmlDeLaPlanilla(rara, { ...VACIO, cambios, notasAbiertas: new Set(['2026-10-22']),
+      errores: new Map([['2026-10-22', { campo: 'entrada', mensaje: MALICIOSO }]]) });
+    assert.ok(!todo.includes('<img'));
+    assert.ok(filaDel(todo, '2026-10-13').html.includes(`<span class="me-insignia verde">${ESCAPADO}</span>`));
+    assert.ok(filaDel(todo, '2026-10-09').html.includes(`>${ESCAPADO}</p>`));
+    assert.ok(filaDel(todo, '2026-10-05').html.includes(`aria-label="Salida del ${CON_COMILLAS_ESCAPADO}"`));
+    assert.ok(filaDel(todo, '2026-10-05').html.includes(`<b id="mp-f-2026-10-05">${ESCAPADO}</b>`));
+    const del22 = filaDel(todo, '2026-10-22');
+    assert.ok(del22.html.includes(`value="${CON_COMILLAS_ESCAPADO}"`));
+    assert.ok(del22.html.includes(`value="${ESCAPADO}"`));
+    assert.ok(del22.html.includes(`<p class="mp-error" id="mp-e-2026-10-22">${ESCAPADO}</p>`));
+  });
+
+  it('lo que no sirve no tira: una planilla que no llegó, o un estado sin lo que hace falta', () => {
+    for (const planilla of [undefined, null, {}, [], 'x', { dias: null }, { dias: [null, 3, { fecha: 'x' }] }]) {
+      assert.equal(M.htmlDeLaPlanilla(planilla, VACIO), '', JSON.stringify(planilla));
+      assert.equal(M.htmlDeLaPlanilla(planilla), '', JSON.stringify(planilla));
+    }
+    assert.equal(M.htmlDeLaPlanilla(OCTUBRE), html);
+    assert.equal(M.htmlDeLaPlanilla(OCTUBRE, { cambios: null, agregados: [], errores: 'x', notasAbiertas: {} }), html);
+    for (const funcion of ['erroresDeLaPlanilla', 'fechasCambiadas', 'cuerpoDeLaPlanilla', 'diasVisiblesDeLaPlanilla', 'horasDeLosDias',
+      'textoDeLaSemana', 'textoDelPieDeLaPlanilla', 'htmlDeLaBandaDeLaPlanilla', 'htmlDeLasHorasDeLaFila', 'diasPorFechaDe',
+      'finesDeSemanaParaSumar', 'htmlDeDiaPorDiaDeSalidas']) {
+      for (const valor of [undefined, null, {}, [], 'x', 3, new Map([['x', 'y']])]) {
+        assert.doesNotThrow(() => M[funcion](valor, valor, valor), `${funcion}(${String(valor)})`);
+      }
+    }
+  });
+});
+
+describe('el día por día de contrato: las salidas', () => {
+  const tabla = comoLlega(tablaDeHorasExtras(ESTADO_PLANILLA, calcular(ESTADO_PLANILLA, { hoy: HOY_PLANILLA, feriados: FERIADOS_PLANILLA }),
+    { anio: 2026, hoy: HOY_PLANILLA, feriados: FERIADOS_PLANILLA }));
+
+  it('cada día con su horario, la entrada de un día hábil, sus horas, la marca del día, el aviso, la nota y «Editar»', () => {
+    const html = M.htmlDeDiaPorDiaDeSalidas(tabla, '2026-10');
+    assert.match(html, /<h3>Octubre 2026, día por día<\/h3><span>16 horas<\/span>/);
+    assert.deepEqual(filasDe(html).map(({ texto }) => texto), [
+      'Lun 26/10 Salida 15:47 1 h Editar',
+      'Sáb 24/10 Sábado De 09:00 a 13:20 4,5 h Relevamiento en el barrio Editar',
+      'Mié 21/10 Salida 19:00 4 h Editar',
+      'Mar 20/10 Salida 13:02 0 No llega a media hora Editar',
+      'Vie 16/10 Salida 15:05 Entrada 07:58 0 No llega a media hora Editar',
+      'Lun 12/10 Feriado De 09:21 a 12:10 2,5 h Guardia de la mesa de datos Editar',
+      'Vie 09/10 Salida 17:16 2,5 h Ese día tenés una licencia de día entero: revisá esta salida. Editar',
+      'Lun 05/10 Salida 16:20 Entrada 08:02 1,5 h Editar'
+    ]);
+    // Los que dan 0, en gris
+    assert.deepEqual(filasDe(html).map(({ clases }) => clases.includes('tenue')), [false, false, false, true, true, false, false, false]);
+    // «Editar» abre la planilla en ese día: la fecha, y el nombre largo del día
+    assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [texto, atributos['data-editar-salida'], atributos['aria-label']]), [
+      ['Editar', '2026-10-26', 'Editar el lunes 26/10'], ['Editar', '2026-10-24', 'Editar el sábado 24/10'],
+      ['Editar', '2026-10-21', 'Editar el miércoles 21/10'], ['Editar', '2026-10-20', 'Editar el martes 20/10'],
+      ['Editar', '2026-10-16', 'Editar el viernes 16/10'], ['Editar', '2026-10-12', 'Editar el lunes 12/10'],
+      ['Editar', '2026-10-09', 'Editar el viernes 09/10'], ['Editar', '2026-10-05', 'Editar el lunes 05/10']
+    ]);
+    assert.doesNotMatch(html, /data-editar-horas/);
+    assert.ok(html.includes('<span class="me-dia-horas">1,5 h</span>'));
+    assert.ok(html.includes('<span class="me-fila-fecha">Lun 12/10<small>Feriado</small></span>'));
+    assert.ok(html.includes('<span class="me-detalle me-fila-aviso">Ese día tenés una licencia de día entero: revisá esta salida.</span>'));
+    assert.ok(html.includes('<span class="me-detalle me-fila-nota">Guardia de la mesa de datos</span>'));
+    // Septiembre (de CONTRATO); un mes que no está en la tabla, nada
+    assert.equal(filasDe(M.htmlDeDiaPorDiaDeSalidas(tabla, '2026-09')).length, 3);
+    assert.equal(M.htmlDeDiaPorDiaDeSalidas(tabla, '2026-05'), '');
+    assert.equal(M.htmlDeDiaPorDiaDeSalidas(tabla, null), '');
+    for (const raro of [undefined, null, {}]) assert.equal(M.htmlDeDiaPorDiaDeSalidas(raro, '2026-10'), '');
+  });
+
+  it('un día que pasó a ser feriado, sin horas y con su aviso; todo texto escapado', () => {
+    const filas = [...FILAS_PLANILLA, { ...FERIADO_DIVERSIDAD, id: 4, fecha: '2026-10-21', nombre: 'Feriado cargado después' }];
+    const feriados = feriadosDeLaPlanilla(filas);
+    const conFeriado = comoLlega(tablaDeHorasExtras(ESTADO_PLANILLA, calcular(ESTADO_PLANILLA, { hoy: HOY_PLANILLA, feriados }),
+      { anio: 2026, hoy: HOY_PLANILLA, feriados }));
+    const del21 = filasDe(M.htmlDeDiaPorDiaDeSalidas(conFeriado, '2026-10')).find(({ texto }) => texto.startsWith('Mié 21/10'));
+    assert.equal(del21.texto, 'Mié 21/10 Feriado Salida 19:00 Ahora es feriado: falta la entrada. Editar');
+    assert.ok(!del21.html.includes('me-dia-horas'));
+
+    const rara = comoLlega(tabla);
+    Object.assign(rara.dias_por_mes['2026-10'][0], { nota: MALICIOSO, fecha_texto: MALICIOSO, tipo_texto: MALICIOSO, horario: MALICIOSO,
+      entrada_texto: MALICIOSO, horas_texto: MALICIOSO, aviso: MALICIOSO, fecha: '" onclick="alerta()' });
+    const html = M.htmlDeDiaPorDiaDeSalidas(rara, '2026-10');
+    assert.ok(!html.includes('<img') && !html.includes('" onclick'));
+    // La fecha corta (dos veces: en la fila y en el nombre del botón), la marca, el horario, la entrada, las horas, el aviso y la nota
+    assert.equal(html.split(ESCAPADO).length - 1, 8);
+    // Sin una fecha que sirva, el texto corto del día en el nombre del botón
+    assert.deepEqual(Object.entries(botonesDe(html)[0].atributos).filter(([clave]) => clave !== 'type' && clave !== 'class'),
+      [['data-editar-salida', '&quot; onclick=&quot;alerta()'], ['aria-label', `Editar el ${ESCAPADO}`]]);
   });
 });
 
