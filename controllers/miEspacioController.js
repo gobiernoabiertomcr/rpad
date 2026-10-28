@@ -81,14 +81,16 @@ const responder = async (res, mensaje, operacion) => {
  * los que la persona (`{ id, rol }`) ve hoy y mañana, como en la agenda (`eventosVisibles` e `itemDeEvento`), en
  * `eventosDeHoyYManana`, cada uno con su `dia` y su `quien`. El mismo `ahora` (`ahoraArgentina()`) da el aviso de cada evento
  * y saca los de hoy que ya terminaron (decisión del usuario, 27/10/2026). `feriados`: el Set del cálculo (cubre el aviso de
- * cada evento). Aislado: si leerlos falla, el Resumen sale igual, con [], y el error queda en la consola.
+ * cada evento); `administracion`: la del contexto (`administracionActiva`, sin leerla otra vez), que da el nombre corto de
+ * quien lo creó y de quién está («de Julián», «con Carla»; spec 2026-10-28-mi-espacio-agenda-onda, 5.1). Aislado: si
+ * leerlos falla, el Resumen sale igual, con [], y el error queda en la consola.
  */
-const eventosDelResumen = async (usuario, hoy, feriados) => {
+const eventosDelResumen = async (usuario, hoy, { feriados, administracion }) => {
   try {
     const eventos = await eventosVisibles(usuario, hoy, sumarDias(hoy, 1));
     const ahora = ahoraArgentina();
-    return eventosDeHoyYManana(eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados })), hoy,
-      ahora);
+    const contexto = { usuarioId: usuario.id, ahora, feriados, administracion };
+    return eventosDeHoyYManana(eventos.map((evento) => itemDeEvento(evento, contexto)), hoy, ahora);
   } catch (error) {
     console.error('Error al obtener los eventos de hoy y mañana:', error?.stack ?? error);
     return [];
@@ -122,7 +124,7 @@ export const verResumen = (req, res) => responder(res, 'Error al obtener el Resu
   const { persona, estado, feriados, filasFeriados, administracion, calculo } = await contextoDe(req.user.userId, hoy);
   const [{ ausentes }, eventos, vinculos] = await Promise.all([
     ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados, administracion }),
-    eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, feriados),
+    eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, { feriados, administracion }),
     vinculosDelResumen(persona, estado, hoy)
   ]);
   const hoyYManana = {

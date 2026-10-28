@@ -25,7 +25,7 @@
 import { esDiaHabilCon, restarDiasHabilesCon, diaDeLaSemana, diasHabilesDe, feriadosDelAnio } from './feriadosReglas.js';
 import { esFechaIso, sumarDias, diasEntre, formatoCorto } from './notasDigitalesCalendario.js';
 import { diaLargo } from './miEspacioResumen.js';
-import { textoRango, enLista, NOMBRES_TIPO, numeroTexto, textoNoEsta } from './miEspacioReglas.js';
+import { textoRango, enLista, NOMBRES_TIPO, numeroTexto, textoNoEsta, nombreCorto } from './miEspacioReglas.js';
 import { idPositivo, idsPositivos } from './proyectosReglas.js';
 import { emailValido } from './usuariosReglas.js';
 
@@ -645,37 +645,48 @@ export const avisoDe = (evento, contexto) => {
   };
 };
 
-// «Con 1 persona», «Con 4 personas»
-const conPersonas = (cantidad) => `Con ${cantidad} ${cantidad === 1 ? 'persona' : 'personas'}`;
+// «Con Carla» (una sola persona, con su nombre corto; sin nombre, «Con 1 persona»), «Con 4 personas»
+const conPersonas = (nombres) => (nombres.length === 1 && nombres[0] !== ''
+  ? `Con ${nombres[0]}`
+  : `Con ${nombres.length} ${nombres.length === 1 ? 'persona' : 'personas'}`);
+// Una oración con su punto al final: si termina en una inicial («Carla R.»), ese punto ya la cierra
+const conPunto = (texto) => (texto.endsWith('.') ? texto : `${texto}.`);
 
 /**
  * Un evento como lo ve quien lo pide (`GET /api/mi-espacio/eventos`), del `Evento` de services/miEspacioEventosDatos.js, con
- * el contexto `{ usuarioId, ahora, feriados }` (`ahora`, el de `ahoraArgentina()`; `feriados`, el Set de `feriadosEntre`):
+ * el contexto `{ usuarioId, ahora, feriados, administracion }` (`ahora`, el de `ahoraArgentina()`; `feriados`, el Set de
+ * `feriadosEntre`; `administracion`, la administración activa de `administracionActiva`, services/miEspacioDatos.js, contra
+ * la que se arma el nombre corto: sin ella, el primer nombre de cada uno):
  * `{ id, titulo, detalle, fecha, desde, hasta, es_mio, compartido, para_todos, creador, personas, personas_ids, recordatorio,
  * recordatorio_texto, mi_recordatorio, aviso, quien_texto, quien_largo }`, donde:
  * - `es_mio`: lo creó quien lo pide;
- * - `personas`: los nombres de las elegidas, en el orden de los datos (por nombre); con «Todos» o sin compartir, [] (con
- *   «Todos», las filas son solo las de quienes apagaron su recordatorio). `personas_ids`, sus ids, solo si es suyo (el
- *   formulario);
+ * - `creador`: el nombre corto de quien lo creó, como lo ven los compañeros (`nombreCorto`: «Julián», o «Carla B.» si hay
+ *   otra Carla; spec 2026-10-28-mi-espacio-agenda-onda, 5.1), o null sin un nombre;
+ * - `personas`: los nombres completos de las elegidas (el formulario los muestra al lado de los de la lista para compartir:
+ *   spec, decisión 9.13), en el orden de los datos (por nombre); con «Todos» o sin compartir, [] (con «Todos», las filas son
+ *   solo las de quienes apagaron su recordatorio). `personas_ids`, sus ids, solo si es suyo (el formulario);
  * - `recordatorio` y `recordatorio_texto`: los del evento, los que eligió quien lo creó; `mi_recordatorio`: 'ninguno' si quien
  *   lo pide (y no lo creó) lo apagó en su fila, y si no, el del evento; `aviso` (`avisoDe`) va sobre `mi_recordatorio`;
- * - `quien_texto`: «Solo vos», «Con todos», «Con 1 persona» o «Con 4 personas» si es suyo, y «De <creador>» si no;
- *   `quien_largo`, solo si no es suyo: «Lo creó <creador>. Están: vos, Sofía Paz y Carla Benítez.» (vos primero, si está) o
- *   «Lo creó <creador>. Es para todos.». Sin quien lo creó (un creado_por en NULL), la raya en su lugar.
+ * - `quien_texto`: «Solo vos», «Con todos», «Con Carla» (una sola persona: spec, decisión 9.4) o «Con 4 personas» si es
+ *   suyo, y «De <creador>» si no; `quien_largo`, solo si no es suyo: «Lo creó Julián. Están: vos, Carla B. y Carla R.» (vos
+ *   primero, si está) o «Lo creó Julián. Es para todos.». Los nombres de los dos, cortos (el punto de una inicial cierra
+ *   también la oración: «Lo creó Carla R. Es para todos.»). Sin quien lo creó (un creado_por en NULL, o sin nombre), la raya
+ *   en su lugar.
  * Nada tira: lo que no es un objeto cuenta como `{}`, y una persona sin un id que sirva no cuenta.
  */
 export const itemDeEvento = (evento, contexto) => {
   const fuente = esObjeto(evento) ? evento : {};
-  const { usuarioId, ahora, feriados } = esObjeto(contexto) ? contexto : {};
+  const { usuarioId, ahora, feriados, administracion = [] } = esObjeto(contexto) ? contexto : {};
   const yo = idPositivo(usuarioId);
   const esMio = yo !== null && idPositivo(fuente.creado_por) === yo;
   const compartido = esSi(fuente.compartido);
   const paraTodos = compartido && esSi(fuente.para_todos);
   const filas = listaDe(fuente.personas).filter((persona) => esObjeto(persona) && idPositivo(persona.id) !== null);
   const elegidas = compartido && !paraTodos ? filas : [];
-  const creador = typeof fuente.creador === 'string' && fuente.creador.trim() !== '' ? fuente.creador : null;
+  const creador = nombreCorto({ id: fuente.creado_por, nombre: fuente.creador }, administracion) || null;
   const nombreDelCreador = creador ?? '—';
   const nombre = (persona) => (typeof persona.nombre === 'string' ? persona.nombre : '');
+  const corto = (persona) => nombreCorto({ id: persona.id, nombre: persona.nombre }, administracion);
   const esYo = (persona) => idPositivo(persona.id) === yo;
 
   const recordatorio = esRecordatorio(fuente.recordatorio) ? fuente.recordatorio : null;
@@ -685,7 +696,7 @@ export const itemDeEvento = (evento, contexto) => {
   let quienTexto = `De ${nombreDelCreador}`;
   if (esMio && !compartido) quienTexto = 'Solo vos';
   else if (esMio && paraTodos) quienTexto = 'Con todos';
-  else if (esMio) quienTexto = conPersonas(elegidas.length);
+  else if (esMio) quienTexto = conPersonas(elegidas.map(corto));
 
   const item = {
     id: idPositivo(fuente.id),
@@ -709,10 +720,11 @@ export const itemDeEvento = (evento, contexto) => {
     quien_texto: quienTexto
   });
   if (!esMio) {
-    const nombres = [...(elegidas.some(esYo) ? ['vos'] : []), ...elegidas.filter((persona) => !esYo(persona)).map(nombre)];
-    if (paraTodos) item.quien_largo = `Lo creó ${nombreDelCreador}. Es para todos.`;
-    else if (nombres.length > 0) item.quien_largo = `Lo creó ${nombreDelCreador}. Están: ${listaConY(nombres)}.`;
-    else item.quien_largo = `Lo creó ${nombreDelCreador}.`;
+    const nombres = [...(elegidas.some(esYo) ? ['vos'] : []), ...elegidas.filter((persona) => !esYo(persona)).map(corto)];
+    const loCreo = conPunto(`Lo creó ${nombreDelCreador}`);
+    if (paraTodos) item.quien_largo = `${loCreo} Es para todos.`;
+    else if (nombres.length > 0) item.quien_largo = `${loCreo} Están: ${conPunto(listaConY(nombres))}`;
+    else item.quien_largo = loCreo;
   }
   return item;
 };
@@ -816,7 +828,7 @@ export const itemsDeFeriados = (lista, desde, hasta) => {
   return items;
 };
 
-// En «Hoy y mañana», quién está va en minúscula: «solo vos», «con 4 personas», «de Laura Gómez»
+// En «Hoy y mañana», quién está va con minúscula al principio: «solo vos», «con 4 personas», «de Julián»
 const minuscula = (texto) => texto.charAt(0).toLowerCase() + texto.slice(1);
 
 /**

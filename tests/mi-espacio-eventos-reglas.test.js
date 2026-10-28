@@ -1135,10 +1135,11 @@ describe('itemDeEvento', () => {
   const CLAVES_DEL_AJENO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos', 'creador',
     'personas', 'recordatorio', 'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto', 'quien_largo'];
 
+  // Sin la administración (como acá: `item` no la pasa), el nombre corto de cada uno es su primer nombre
   it('uno personal: «Solo vos», con su recordatorio y cuándo sale', () => {
     assert.deepEqual(item({}), {
       id: 5, titulo: 'Reunión de equipo', detalle: null, fecha: '2026-10-27', desde: '10:00', hasta: '11:00', es_mio: true,
-      compartido: false, para_todos: false, creador: 'Laura Gómez', personas: [], personas_ids: [], recordatorio: '2h',
+      compartido: false, para_todos: false, creador: 'Laura', personas: [], personas_ids: [], recordatorio: '2h',
       recordatorio_texto: '2 horas antes', mi_recordatorio: '2h',
       aviso: { momento: '2026-10-27 08:00', texto: '2 horas antes (mañana a las 08:00)', corto: 'Aviso 2 h antes' },
       quien_texto: 'Solo vos'
@@ -1146,9 +1147,9 @@ describe('itemDeEvento', () => {
     assert.deepEqual(Object.keys(item({})), CLAVES_DEL_MIO);
   });
 
-  it('uno propio compartido: «Con 1 persona», «Con 4 personas» o «Con todos», con los nombres y los ids', () => {
+  it('uno propio compartido: «Con <nombre>», «Con 4 personas» o «Con todos», con los nombres completos y los ids', () => {
     const uno = item({ compartido: true, personas: [persona(2, 'Martín Ríos')] });
-    assert.equal(uno.quien_texto, 'Con 1 persona');
+    assert.equal(uno.quien_texto, 'Con Martín');
     assert.deepEqual(uno.personas, ['Martín Ríos']);
     assert.deepEqual(uno.personas_ids, [2]);
     const cuatro = item({ compartido: true, personas: CUATRO });
@@ -1170,17 +1171,118 @@ describe('itemDeEvento', () => {
     const ajeno = item({ compartido: true, personas: [persona(3, 'Sofía Paz'), persona(2, 'Martín Ríos'),
       persona(4, 'Carla Benítez')] }, 2);
     assert.equal(ajeno.es_mio, false);
-    assert.equal(ajeno.quien_texto, 'De Laura Gómez');
-    assert.equal(ajeno.quien_largo, 'Lo creó Laura Gómez. Están: vos, Sofía Paz y Carla Benítez.');
+    assert.equal(ajeno.creador, 'Laura');
+    assert.equal(ajeno.quien_texto, 'De Laura');
+    assert.equal(ajeno.quien_largo, 'Lo creó Laura. Están: vos, Sofía y Carla.');
     assert.deepEqual(ajeno.personas, ['Sofía Paz', 'Martín Ríos', 'Carla Benítez']);
     assert.deepEqual(Object.keys(ajeno), CLAVES_DEL_AJENO);
     assert.equal(item({ compartido: true, personas: [persona(2, 'Martín Ríos')] }, 2).quien_largo,
-      'Lo creó Laura Gómez. Están: vos.');
+      'Lo creó Laura. Están: vos.');
     // Para todos
     const todos = item({ compartido: true, para_todos: true, personas: [persona(6, 'Diego Fernández', true)] }, 2);
-    assert.equal(todos.quien_largo, 'Lo creó Laura Gómez. Es para todos.');
-    assert.equal(todos.quien_texto, 'De Laura Gómez');
+    assert.equal(todos.quien_largo, 'Lo creó Laura. Es para todos.');
+    assert.equal(todos.quien_texto, 'De Laura');
     assert.deepEqual(todos.personas, []);
+  });
+
+  // El nombre corto (spec 2026-10-28-mi-espacio-agenda-onda, 5.1 y decisiones 9.3, 9.4 y 9.13): quien lo creó y quién está,
+  // como los ven los compañeros (nombreCorto, contra toda la administración activa, no solo la del evento); `personas`
+  // sigue con los nombres completos (el formulario los usa al lado de los de la lista para compartir). Quien mira es Andrea
+  describe('con la administración: el nombre corto', () => {
+    const ANDREA = Object.freeze({ id: 1, nombre: 'Andrea Paula Molina' });
+    const CARLA_B = Object.freeze({ id: 2, nombre: 'Carla Inés Benítez' });
+    const JULIAN = Object.freeze({ id: 4, nombre: 'Julián Esteban Ferreyra' });
+    const CARLA_R = Object.freeze({ id: 9, nombre: 'Carla Ríos' });
+    const ADMINISTRACION = Object.freeze([ANDREA, CARLA_B, JULIAN]);
+    const CON_CARLA_RIOS = Object.freeze([...ADMINISTRACION, CARLA_R]);
+    const invitada = ({ id, nombre }) => persona(id, nombre);
+    // Un evento de `quien` (`{ id, nombre }`), compartido con `invitadas`, como lo ve Andrea con esa administración
+    const comoLoVeAndrea = (quien, invitadas, administracion = ADMINISTRACION, cambios = {}) => itemDeEvento(
+      evento({ creado_por: quien.id, creador: quien.nombre, compartido: true, personas: invitadas.map(invitada), ...cambios }),
+      { usuarioId: ANDREA.id, ahora: AHORA, feriados: new Set(), administracion }
+    );
+
+    it('uno ajeno de Julián: «Julián», «De Julián» y «Lo creó Julián. Están: vos y Carla.»; personas, completos', () => {
+      const ajeno = comoLoVeAndrea(JULIAN, [ANDREA, CARLA_B]);
+      assert.equal(ajeno.creador, 'Julián');
+      assert.equal(ajeno.quien_texto, 'De Julián');
+      assert.equal(ajeno.quien_largo, 'Lo creó Julián. Están: vos y Carla.');
+      assert.deepEqual(ajeno.personas, ['Andrea Paula Molina', 'Carla Inés Benítez']);
+      assert.deepEqual(Object.keys(ajeno), CLAVES_DEL_AJENO);
+      const paraTodos = comoLoVeAndrea(JULIAN, [], ADMINISTRACION, { para_todos: true });
+      assert.equal(paraTodos.quien_texto, 'De Julián');
+      assert.equal(paraTodos.quien_largo, 'Lo creó Julián. Es para todos.');
+    });
+
+    it('uno propio con una persona: «Con Carla»; con dos, «Con 2 personas»; personas, completos', () => {
+      const conCarla = comoLoVeAndrea(ANDREA, [CARLA_B]);
+      assert.equal(conCarla.es_mio, true);
+      assert.equal(conCarla.quien_texto, 'Con Carla');
+      assert.equal(conCarla.creador, 'Andrea');
+      assert.deepEqual(conCarla.personas, ['Carla Inés Benítez']);
+      assert.deepEqual(conCarla.personas_ids, [2]);
+      assert.deepEqual(Object.keys(conCarla), CLAVES_DEL_MIO);
+      const conDos = comoLoVeAndrea(ANDREA, [CARLA_B, JULIAN]);
+      assert.equal(conDos.quien_texto, 'Con 2 personas');
+      assert.deepEqual(conDos.personas, ['Carla Inés Benítez', 'Julián Esteban Ferreyra']);
+      assert.equal(comoLoVeAndrea(ANDREA, [], ADMINISTRACION, { para_todos: true }).quien_texto, 'Con todos');
+    });
+
+    it('con Carla Ríos en la administración: «Carla B.» y «Carla R.», también si no está en el evento', () => {
+      assert.equal(comoLoVeAndrea(JULIAN, [ANDREA, CARLA_B, CARLA_R], CON_CARLA_RIOS).quien_largo,
+        'Lo creó Julián. Están: vos, Carla B. y Carla R.');
+      // La lista es la de toda la administración: Carla Ríos no está en el evento y Carla Benítez sigue siendo «Carla B.»
+      assert.equal(comoLoVeAndrea(JULIAN, [ANDREA, CARLA_B], CON_CARLA_RIOS).quien_largo,
+        'Lo creó Julián. Están: vos y Carla B.');
+      assert.equal(comoLoVeAndrea(ANDREA, [CARLA_B], CON_CARLA_RIOS).quien_texto, 'Con Carla B.');
+      // Quien lo creó, también
+      const deCarlaRios = comoLoVeAndrea(CARLA_R, [ANDREA, CARLA_B, JULIAN], CON_CARLA_RIOS);
+      assert.equal(deCarlaRios.creador, 'Carla R.');
+      assert.equal(deCarlaRios.quien_texto, 'De Carla R.');
+      assert.equal(deCarlaRios.quien_largo, 'Lo creó Carla R. Están: vos, Carla B. y Julián.');
+    });
+
+    it('quien ya no es de administración se compara igual contra la lista: Carla Bustos, Tomás', () => {
+      // Carla Bustos tiene la inicial de Carla Benítez: el nombre completo
+      const deCarlaBustos = comoLoVeAndrea({ id: 7, nombre: 'Carla Bustos' }, [ANDREA, { id: 8, nombre: 'Tomás Quiroga' }]);
+      assert.equal(deCarlaBustos.creador, 'Carla Bustos');
+      assert.equal(deCarlaBustos.quien_largo, 'Lo creó Carla Bustos. Están: vos y Tomás.');
+    });
+
+    it('sin la administración (una llamada de antes), o con algo que no es una lista: el primer nombre, sin tirar', () => {
+      const deJulian = evento({ creado_por: JULIAN.id, creador: JULIAN.nombre, compartido: true,
+        personas: [ANDREA, CARLA_B, CARLA_R].map(invitada) });
+      const deAndrea = evento({ creado_por: ANDREA.id, creador: ANDREA.nombre, compartido: true, personas: [invitada(CARLA_R)] });
+      const contextos = [{ usuarioId: ANDREA.id, ahora: AHORA },
+        ...[null, undefined, 'x', 42, {}].map((administracion) => ({ usuarioId: ANDREA.id, ahora: AHORA, administracion }))];
+      for (const contexto of contextos) {
+        const ajeno = itemDeEvento(deJulian, contexto);
+        assert.equal(ajeno.creador, 'Julián', String(contexto.administracion));
+        assert.equal(ajeno.quien_texto, 'De Julián', String(contexto.administracion));
+        assert.equal(ajeno.quien_largo, 'Lo creó Julián. Están: vos, Carla y Carla.', String(contexto.administracion));
+        assert.equal(itemDeEvento(deAndrea, contexto).quien_texto, 'Con Carla', String(contexto.administracion));
+      }
+    });
+
+    it('el punto de una inicial cierra la oración: «Lo creó Carla R.», sin dos puntos', () => {
+      assert.equal(comoLoVeAndrea(CARLA_R, [ANDREA], CON_CARLA_RIOS).quien_largo, 'Lo creó Carla R. Están: vos.');
+      assert.equal(comoLoVeAndrea(CARLA_R, [], CON_CARLA_RIOS, { para_todos: true }).quien_largo,
+        'Lo creó Carla R. Es para todos.');
+      // Sin ninguna persona (la API no lo da: es la última rama del texto), solo quien lo creó
+      assert.equal(comoLoVeAndrea(CARLA_R, [], CON_CARLA_RIOS).quien_largo, 'Lo creó Carla R.');
+      // Y la lista que termina en una inicial
+      assert.equal(comoLoVeAndrea(JULIAN, [ANDREA, CARLA_R], CON_CARLA_RIOS).quien_largo, 'Lo creó Julián. Están: vos y Carla R.');
+    });
+
+    it('sin nombre: quien lo creó es null y la raya en los textos; una sola persona sin nombre, «Con 1 persona»', () => {
+      for (const creador of [null, '', '   ', 42]) {
+        const ajeno = comoLoVeAndrea({ id: JULIAN.id, nombre: creador }, [ANDREA]);
+        assert.equal(ajeno.creador, null, String(creador));
+        assert.equal(ajeno.quien_texto, 'De —', String(creador));
+        assert.equal(ajeno.quien_largo, 'Lo creó —. Están: vos.', String(creador));
+      }
+      assert.equal(comoLoVeAndrea(ANDREA, [{ id: 2, nombre: null }]).quien_texto, 'Con 1 persona');
+    });
   });
 
   it('mi recordatorio: ninguno si lo apagué, y el aviso va sobre él; el recordatorio del evento no cambia', () => {
@@ -1217,7 +1319,7 @@ describe('itemDeEvento', () => {
       assert.deepEqual(resultado.personas, []);
     }
     assert.equal(itemDeEvento(evento({})).es_mio, false);
-    assert.equal(itemDeEvento(evento({}), null).quien_texto, 'De Laura Gómez');
+    assert.equal(itemDeEvento(evento({}), null).quien_texto, 'De Laura');
     // Sin quien lo creó (un creado_por en NULL): la raya
     assert.equal(item({ creado_por: null, creador: null, compartido: true, personas: [persona(2, 'Martín Ríos')] }, 2)
       .quien_largo, 'Lo creó —. Están: vos.');

@@ -125,6 +125,9 @@ const MALICIOSO = '<img src=x onerror=alert(1)>';
 // Lo que dice la página cuando un pedido no llega al servidor
 const MENSAJE_SIN_CONEXION = 'No se pudo conectar con el servidor. Probá de nuevo en unos minutos.';
 const ESCAPADO = '&lt;img src=x onerror=alert(1)&gt;';
+// En una sola palabra: pasa entera por el nombre corto del servidor (nombreCorto se queda con la primera palabra de un nombre)
+const MALICIOSO_EN_UNA_PALABRA = '<img/src=x/onerror=alert(1)>';
+const ESCAPADO_EN_UNA_PALABRA = '&lt;img/src=x/onerror=alert(1)&gt;';
 // Con una comilla doble adelante: en un atributo, intenta cerrarlo y abrir una etiqueta
 const CON_COMILLAS = '"><img src=x onerror=alert(1)>';
 const CON_COMILLAS_ESCAPADO = '&quot;&gt;&lt;img src=x onerror=alert(1)&gt;';
@@ -620,9 +623,10 @@ describe('el Resumen «Titular»', () => {
     conHtml.para_revisar = [{ licencia_id: 20, anio: 2027, texto: MALICIOSO, enlace: MALICIOSO }];
     conHtml.hoy_y_manana.proximo_feriado = { fecha: '2026-11-23', cuando: MALICIOSO, nombre: MALICIOSO };
     conHtml.hoy_y_manana.eventos = comoLlega(eventosDeHoyYManana(respuestaDeEventos({ desde: HOY, hasta: MANANA }, {
-      eventos: [eventoDe(71, MALICIOSO, HOY, '12:00'), eventoDe(72, 'Otro', MANANA, '10:00', { ...DE_MARTIN, creador: MALICIOSO })]
+      eventos: [eventoDe(71, MALICIOSO, HOY, '12:00'),
+        eventoDe(72, 'Otro', MANANA, '10:00', { ...DE_MARTIN, creador: MALICIOSO_EN_UNA_PALABRA })]
     }).eventos, HOY));
-    assert.equal(conHtml.hoy_y_manana.eventos[1].quien, `de ${MALICIOSO}`);
+    assert.equal(conHtml.hoy_y_manana.eventos[1].quien, `de ${MALICIOSO_EN_UNA_PALABRA}`);
     const html = M.htmlDelResumen(conHtml);
     assert.ok(!html.includes('<img'), 'ningún <img> de verdad');
     assert.ok(!html.includes('<b>x</b>'));
@@ -649,7 +653,7 @@ describe('el Resumen «Titular»', () => {
     assert.ok(numero.adentro.includes(`<b data-contar>${ESCAPADO}</b><small>${ESCAPADO}</small>`));
     // Los eventos (el título y quién) y quien no está
     assert.ok(html.includes(`<li><time>12:00</time> ${ESCAPADO}<small>solo vos</small></li>`));
-    assert.ok(html.includes(`<small>de ${ESCAPADO}</small>`));
+    assert.ok(html.includes(`<small>de ${ESCAPADO_EN_UNA_PALABRA}</small>`));
     assert.ok(html.includes(`<li class="ausente">${ESCAPADO} no está<small>`));
     assert.ok(html.includes('<li class="ausente">&lt;b&gt;x&lt;/b&gt; no está<small>'));
   });
@@ -1309,7 +1313,7 @@ describe('la agenda: los próximos', () => {
     ] },
     { titulo: 'Esta semana', items: [
       { hora: 'Mié 28', titulo: '15:30 Turno médico', detalle: 'Aviso el día hábil anterior', clase: 'propio', quien: 'Solo vos', evento_id: 13 },
-      { hora: 'Jue 29', titulo: '09:00 Entrega del informe trimestral', detalle: 'Aviso 2 h antes', clase: 'compartido', quien: 'De Martín Ríos',
+      { hora: 'Jue 29', titulo: '09:00 Entrega del informe trimestral', detalle: 'Aviso 2 h antes', clase: 'compartido', quien: 'De Martín',
         evento_id: 14 },
       { hora: 'Vie 30', titulo: 'Sofía Paz no está', detalle: '', clase: 'ausente' }
     ] },
@@ -1360,13 +1364,13 @@ describe('la agenda: los próximos', () => {
       + '12:00 Llamar a Vialidad por el TMDA Solo vos Aviso 2 h antes '
       + 'Mañana, martes 27/10 10:00 Reunión de equipo Con 4 personas Aviso 2 h antes '
       + 'Esta semana Mié 28 15:30 Turno médico Solo vos Aviso el día hábil anterior '
-      + 'Jue 29 09:00 Entrega del informe trimestral De Martín Ríos Aviso 2 h antes Vie 30 Sofía Paz no está '
+      + 'Jue 29 09:00 Entrega del informe trimestral De Martín Aviso 2 h antes Vie 30 Sofía Paz no está '
       + 'Más adelante Lun 02/11 10:00 Reunión de equipo Con todos Aviso 2 h antes Mar 03/11 Vacaciones Hasta el lunes 09/11 '
       + 'Lun 23/11 Feriado: Día de la Soberanía Nacional');
     assert.ok(html.includes('<li class="me-prox propio"><span class="me-prox-hora">12:00</span>'
       + '<button type="button" class="me-prox-titulo" data-evento="11">Llamar a Vialidad por el TMDA</button>'
       + '<span class="me-prox-detalle"><span class="me-insignia azul">Solo vos</span>Aviso 2 h antes</span></li>'));
-    assert.ok(html.includes('<span class="me-prox-detalle"><span class="me-insignia violeta">De Martín Ríos</span>Aviso 2 h antes</span>'));
+    assert.ok(html.includes('<span class="me-prox-detalle"><span class="me-insignia violeta">De Martín</span>Aviso 2 h antes</span>'));
     assert.ok(html.includes('<li class="me-prox ausente"><span class="me-prox-hora">Vie 30</span><span class="me-prox-titulo">Sofía Paz no está</span></li>'));
     assert.deepEqual(botonesDe(html).map(({ atributos }) => atributos['data-evento']), ['11', '12', '13', '14', '15']);
     assert.doesNotMatch(html, /aria-live|role="/);
@@ -1381,13 +1385,14 @@ describe('la agenda: los próximos', () => {
   // Review Focus 2
   it('htmlDeProximos: un título y un nombre con HTML se ven escapados', () => {
     const datos = respuestaDeEventos({ desde: '2026-10-26', hasta: '2026-11-25' }, {
-      eventos: [eventoDe(61, MALICIOSO, '2026-10-26', '12:00'), eventoDe(62, 'Otro', '2026-10-28', '10:00', { ...DE_MARTIN, creador: MALICIOSO })],
+      eventos: [eventoDe(61, MALICIOSO, '2026-10-26', '12:00'),
+        eventoDe(62, 'Otro', '2026-10-28', '10:00', { ...DE_MARTIN, creador: MALICIOSO_EN_UNA_PALABRA })],
       ausencias: [{ nombre: MALICIOSO, desde: '2026-10-29', hasta: '2026-10-29' }], licencias: [], feriados: []
     });
     const html = M.htmlDeProximos(M.gruposDeProximos(datos, HOY));
     assert.ok(!html.includes('<img'));
     assert.ok(html.includes(`data-evento="61">${ESCAPADO}</button>`));
-    assert.ok(html.includes(`<span class="me-insignia violeta">De ${ESCAPADO}</span>`));
+    assert.ok(html.includes(`<span class="me-insignia violeta">De ${ESCAPADO_EN_UNA_PALABRA}</span>`));
     assert.ok(html.includes(`<span class="me-prox-titulo">${ESCAPADO} no está</span>`));
   });
 });
@@ -4794,10 +4799,10 @@ describe('el formulario del evento: lo puro', () => {
     const partes = plano(M.htmlDelEventoAjeno({ ...item, detalle: 'Revisamos el informe.\nAntes de mandarlo.' }));
     assert.equal(textoDe(partes.cuando), 'Jueves 29/10/2026 a las 09:00');
     assert.equal(partes.detalle, 'Revisamos el informe.\nAntes de mandarlo.');
-    assert.equal(textoDe(partes.quien), 'Compartido Lo creó Martín Ríos. Están: vos.');
+    assert.equal(textoDe(partes.quien), 'Compartido Lo creó Martín. Están: vos.');
     assert.ok(partes.quien.includes('<span class="me-insignia violeta">Compartido</span>'));
     assert.deepEqual([...partes.opciones.matchAll(/<option value="(\w+)"( selected)?>([^<]+)<\/option>/g)].map(([, valor, elegido, texto]) =>
-      [valor, Boolean(elegido), texto]), [['evento', true, '2 horas antes (el que eligió Martín Ríos)'], ['ninguno', false, 'Sin aviso']]);
+      [valor, Boolean(elegido), texto]), [['evento', true, '2 horas antes (el que eligió Martín)'], ['ninguno', false, 'Sin aviso']]);
     assert.equal(M.miRecordatorioDe(item), 'evento');
     assert.equal(M.miRecordatorioDe({ ...item, mi_recordatorio: 'ninguno' }), 'ninguno');
     // Con el recordatorio apagado, «Sin aviso» elegido; si quien lo creó eligió «Sin aviso», solo ese texto
@@ -4806,9 +4811,9 @@ describe('el formulario del evento: lo puro', () => {
     assert.equal(M.htmlDelEventoAjeno(sinRecordatorio).opciones, '<option value="ninguno" selected>Sin aviso</option>');
     assert.equal(M.miRecordatorioDe(sinRecordatorio), 'ninguno');
     // Para todos: «Es para todos»; con la hora de fin, «de … a …»
-    const deOtroParaTodos = { ...item, fecha: '2026-11-02', desde: '10:00', hasta: '11:00', quien_largo: 'Lo creó Martín Ríos. Es para todos.' };
+    const deOtroParaTodos = { ...item, fecha: '2026-11-02', desde: '10:00', hasta: '11:00', quien_largo: 'Lo creó Martín. Es para todos.' };
     assert.equal(textoDe(M.htmlDelEventoAjeno(deOtroParaTodos).cuando), 'Lunes 02/11/2026 de 10:00 a 11:00');
-    assert.equal(textoDe(M.htmlDelEventoAjeno(deOtroParaTodos).quien), 'Compartido Lo creó Martín Ríos. Es para todos.');
+    assert.equal(textoDe(M.htmlDelEventoAjeno(deOtroParaTodos).quien), 'Compartido Lo creó Martín. Es para todos.');
   });
 
   // Review Focus 2

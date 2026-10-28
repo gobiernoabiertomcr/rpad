@@ -218,7 +218,9 @@ describe('un evento personal', () => {
 });
 
 describe('compartido con personas', () => {
-  it('adminB lo ve como ajeno, «De Test adminA», y el editor no; adminA, «Con 1 persona» y sus ids', async () => {
+  // Las personas del archivo empiezan todas con «Test»: el nombre corto (nombreCorto) suma la inicial del último apellido
+  // («Test e.»), salvo adminA y adminB, que también la comparten y quedan con el nombre completo
+  it('adminB lo ve como ajeno, «De Test adminA», y el editor no; adminA, «Con Test adminB» y sus ids', async () => {
     const id = await crear('adminA', compartidoCon('adminB'));
     const deB = await elDe('adminB', id);
     assert.equal(deB.es_mio, false);
@@ -235,7 +237,7 @@ describe('compartido con personas', () => {
 
     const deA = await elDe('adminA', id);
     assert.equal(deA.es_mio, true);
-    assert.equal(deA.quien_texto, 'Con 1 persona');
+    assert.equal(deA.quien_texto, 'Con Test adminB');
     assert.deepEqual(deA.personas, ['Test adminB']);
     assert.deepEqual(deA.personas_ids, [idDe('adminB')]);
     assert.deepEqual(Object.keys(deA), CLAVES_DEL_MIO);
@@ -246,7 +248,7 @@ describe('compartido con personas', () => {
     const id = await crear('adminA', compartidoCon('editor', 'adminB'));
     assert.equal((await elDe('adminA', id)).quien_texto, 'Con 2 personas');
     assert.deepEqual((await elDe('adminA', id)).personas, ['Test adminB', 'Test editor']);
-    assert.equal((await elDe('adminB', id)).quien_largo, 'Lo creó Test adminA. Están: vos y Test editor.');
+    assert.equal((await elDe('adminB', id)).quien_largo, 'Lo creó Test adminA. Están: vos y Test e.');
     assert.equal((await elDe('editor', id)).quien_largo, 'Lo creó Test adminA. Están: vos y Test adminB.');
   });
 
@@ -843,7 +845,7 @@ describe('«Hoy y mañana» del Resumen: los eventos', () => {
 
     // Quien lo creó lo ve con sus personas
     const deB = (await api.get('/mi-espacio/resumen', como('adminB'))).body.data.hoy_y_manana.eventos;
-    assert.deepEqual(deB.map((evento) => evento.detalle), ['Hoy · solo vos', 'Mañana · con 1 persona']);
+    assert.deepEqual(deB.map((evento) => evento.detalle), ['Hoy · solo vos', 'Mañana · con Test adminA']);
     // Sin modalidad ni eventos, la lista vacía (la página decide qué mostrar)
     const delLector = await api.get('/mi-espacio/resumen', como('lector'));
     assert.equal(delLector.status, 200, JSON.stringify(delLector.body));
@@ -875,6 +877,115 @@ describe('«Hoy y mañana» del Resumen: los eventos', () => {
       await query('RENAME TABLE mi_espacio_eventos_falla_simulada TO mi_espacio_eventos');
     }
     assert.equal((await api.get('/mi-espacio/resumen', como('adminA'))).body.data.hoy_y_manana.eventos.length, 1);
+  });
+});
+
+// El nombre corto (spec 2026-10-28-mi-espacio-agenda-onda, 5.1 y decisiones 9.3, 9.4 y 9.13): en la agenda y en el Resumen,
+// los compañeros que no están, quien creó un evento y quién está van con el primer nombre (y la inicial del último apellido si
+// otra persona de la administración activa tiene el mismo); `personas`, con los nombres completos. Con personas inventadas
+// (las del archivo empiezan todas con «Test»), y los eventos y las ausencias cargados por SQL: no sale ningún email
+describe('el nombre corto en la agenda y en el Resumen', () => {
+  const NOMBRES = Object.freeze({
+    andrea: ['admin', 'Andrea Paula Molina'],
+    julian: ['admin', 'Julián Esteban Ferreyra'],
+    carlaB: ['editor', 'Carla Inés Benítez'],
+    carlaR: ['editor', 'Carla Ríos']
+  });
+  let companeros;
+  const de = (clave) => ({ token: companeros[clave].token });
+  const activa = (clave, activo) => query('UPDATE usuarios SET activo = ? WHERE id = ?', [activo, companeros[clave].id]);
+  // Un evento de `clave` (de 10:00 a 11:00) compartido con `invitadas`
+  const compartidoPor = async (clave, invitadas, fecha = q(1)) => {
+    const { insertId } = await query(
+      `INSERT INTO mi_espacio_eventos (creado_por, titulo, fecha, desde, hasta, compartido, para_todos)
+       VALUES (?, 'Reunión de equipo', ?, '10:00', '11:00', 1, 0)`, [companeros[clave].id, fecha]
+    );
+    for (const invitada of invitadas) {
+      await query('INSERT INTO mi_espacio_evento_personas (evento_id, usuario_id) VALUES (?, ?)',
+        [insertId, companeros[invitada].id]);
+    }
+    return insertId;
+  };
+  const ausenciaDe = (clave, desde, hasta = desde) => query(
+    "INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, mostrar) VALUES (?, 'medica', ?, ?, 1)",
+    [companeros[clave].id, desde, hasta]
+  );
+  // GET /mi-espacio/eventos de q(0) a q(20), como lo ve `clave`
+  const agendaDe = async (clave) => {
+    const res = await api.get(`/mi-espacio/eventos?desde=${q(0)}&hasta=${q(20)}`, de(clave));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return res.body.data;
+  };
+  const elEventoDe = async (clave, id) => (await agendaDe(clave)).eventos.find((evento) => evento.id === id);
+
+  before(async () => {
+    companeros = await crearUsuariosPrueba(api, Object.fromEntries(Object.entries(NOMBRES).map(([clave, [rol]]) => [clave, rol])));
+    for (const [clave, [, nombre]] of Object.entries(NOMBRES)) {
+      await query('UPDATE usuarios SET nombre_completo = ? WHERE id = ?', [nombre, companeros[clave].id]);
+    }
+  });
+
+  after(async () => {
+    if (companeros) await limpiarDatosPrueba(companeros);
+  });
+
+  it('GET /eventos: el de Julián, «De Julián» y «Lo creó Julián. Están: vos y Carla B.»; personas, con los nombres completos',
+    async () => {
+      const deJulian = await compartidoPor('julian', ['andrea', 'carlaB']);
+      const comoLoVeAndrea = await elEventoDe('andrea', deJulian);
+      assert.equal(comoLoVeAndrea.es_mio, false);
+      assert.equal(comoLoVeAndrea.creador, 'Julián');
+      assert.equal(comoLoVeAndrea.quien_texto, 'De Julián');
+      assert.equal(comoLoVeAndrea.quien_largo, 'Lo creó Julián. Están: vos y Carla B.');
+      assert.deepEqual(comoLoVeAndrea.personas, ['Andrea Paula Molina', 'Carla Inés Benítez']);
+      assert.deepEqual(Object.keys(comoLoVeAndrea), CLAVES_DEL_AJENO);
+      // Julián lo ve como suyo, con dos personas
+      const comoLoVeJulian = await elEventoDe('julian', deJulian);
+      assert.equal(comoLoVeJulian.quien_texto, 'Con 2 personas');
+      assert.deepEqual(comoLoVeJulian.personas, ['Andrea Paula Molina', 'Carla Inés Benítez']);
+      // Uno de Andrea con una sola persona la nombra: «Con Carla B.»
+      const deAndrea = await compartidoPor('andrea', ['carlaB'], q(2));
+      assert.equal((await elEventoDe('andrea', deAndrea)).quien_texto, 'Con Carla B.');
+      assert.equal((await elEventoDe('carlaB', deAndrea)).quien_largo, 'Lo creó Andrea. Están: vos.');
+      // La administración se lee en cada pedido: con Carla Ríos desactivada, Carla Benítez es «Carla»
+      try {
+        await activa('carlaR', 0);
+        assert.equal((await elEventoDe('andrea', deJulian)).quien_largo, 'Lo creó Julián. Están: vos y Carla.');
+        assert.equal((await elEventoDe('andrea', deAndrea)).quien_texto, 'Con Carla');
+      } finally {
+        await activa('carlaR', 1);
+      }
+    });
+
+  it('GET /eventos: los compañeros que no están, «Carla B. no está» y «Carla R. no está»; sin Carla Ríos, «Carla no está»',
+    async () => {
+      await ausenciaDe('carlaB', q(1), q(2));
+      await ausenciaDe('carlaR', q(3));
+      assert.deepEqual((await agendaDe('andrea')).ausentes, [
+        {
+          nombre: 'Carla B.', desde: q(1), hasta: q(2), texto: 'Carla B. no está', hasta_texto: `Hasta el miércoles ${ddmm(q(2))}`,
+          dias: [q(1), q(2)]
+        },
+        { nombre: 'Carla R.', desde: q(3), hasta: q(3), texto: 'Carla R. no está', hasta_texto: '', dias: [q(3)] }
+      ]);
+      try {
+        await activa('carlaR', 0);
+        assert.deepEqual((await agendaDe('andrea')).ausentes.map(({ nombre, texto }) => [nombre, texto]),
+          [['Carla', 'Carla no está']]);
+      } finally {
+        await activa('carlaR', 1);
+      }
+    });
+
+  it('el Resumen: «Hoy y mañana» dice «de Julián» y, a Julián, «con Andrea»', async () => {
+    const id = await compartidoPor('julian', ['andrea'], dia(1));
+    const res = await api.get('/mi-espacio/resumen', de('andrea'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data.hoy_y_manana.eventos.map(({ id: cada, quien, detalle }) => [cada, quien, detalle]),
+      [[id, 'de Julián', 'Mañana · de Julián']]);
+    const deJulian = await api.get('/mi-espacio/resumen', de('julian'));
+    assert.equal(deJulian.status, 200, JSON.stringify(deJulian.body));
+    assert.deepEqual(deJulian.body.data.hoy_y_manana.eventos.map(({ id: cada, quien }) => [cada, quien]), [[id, 'con Andrea']]);
   });
 });
 
