@@ -11,7 +11,7 @@
 
 **Tech Stack:** Node 22, ES Modules, Express 4 y mysql2/promise sobre MariaDB. Tests con `node:test`: puros, de la página en un `vm` y de integración sobre Docker con una base propia.
 
-**Estado:** aprobado por el usuario el 28/10/2026. Se implementa con subagentes de Opus después de traer el main con «licencia anulada» y «Mi espacio: una agenda con más onda» (Task 0; orden de la coordinadora del 28/10).
+**Estado:** aprobado por el usuario el 28/10/2026. Se implementa con subagentes de Opus después de traer el main con «licencia anulada» (main 65a79f8, ya en producción), «Mi espacio: una agenda con más onda» y «Mi espacio: los días de vacaciones al cargar la licencia» (Task 0; orden de la coordinadora del 28/10).
 
 **Spec:** `docs/superpowers/specs/2026-10-27-feriados-en-notas-design.md`, aprobada el 27/10/2026. Este plan es su **tanda 2**: secciones 2 (lo de la tanda 2), 5, 6 (los textos de Métricas, el Ciclo de vida y el aviso azul), 7 (los tests de la tanda 2) y 9. La tanda 1 está en main desde ad0de02 (plan `docs/superpowers/plans/2026-10-27-feriados-en-notas-tanda-1.md`).
 - El mapa del código, con archivo y línea de ad0de02, está en los informes de los tres agentes del 28/10/2026, resumidos acá en cada tarea. Las líneas pueden correrse con lo que traiga main en la Task 0: buscar por el nombre.
@@ -62,7 +62,7 @@
 
 Sin código.
 
-- [ ] **Step 1: Traer main.** `git merge main` en la rama `claude/feriados-en-metricas` (creada el 28/10/2026 desde main ad0de02), con el main que indique la coordinadora (el hash del merge de la agenda): antes tienen que estar mergeadas «Mi espacio: licencia anulada» (rama `claude/mi-espacio-licencia-anulada-84cd6e`) y «Mi espacio: una agenda con más onda». Tocan Mi espacio y Configuración → Licencias, no Métricas; pueden chocar en `CLAUDE.md`, `README.md` y las versiones de `tests/paginas.test.js`. Si cambió algún nombre que usa este plan, ajustar el plan en su propio commit antes de seguir.
+- [ ] **Step 1: Traer main.** `git merge main` en la rama `claude/feriados-en-metricas` (creada el 28/10/2026 desde main ad0de02), con el main que indique la coordinadora (el hash del merge de los días de vacaciones): antes tienen que estar mergeadas «Mi espacio: licencia anulada» (main 65a79f8), «Mi espacio: una agenda con más onda» y «Mi espacio: los días de vacaciones al cargar la licencia». Tocan Mi espacio y Configuración → Licencias, no Métricas; pueden chocar en `CLAUDE.md`, `README.md` y las versiones de `tests/paginas.test.js`. Si cambió algún nombre que usa este plan, ajustar el plan en su propio commit antes de seguir.
 - [ ] **Step 2: La línea de base.** Docker arriba (`docker ps`: `rpad-db` y Mailpit). `npm test` completo con el candado: anotar cuántos pasan, cuántos fallan y cuáles.
 - [ ] **Step 3: Confirmar los nombres.** Que existan con esta forma:
   - en `services/metricasReglas.js`: `duracion(desde, hasta, dias)`, `diaDelAvisoDe`, `esperabaElAviso`, `casoDelCiclo`, `casosDelDataset(fuentes, hoy)`, `casosDe`, `contextoDe`, `hechosDe`, `medir`, `resultadosDe`, `filaDe`, `vistaDe`, `casosQueTocanElAnio` y `etapasDe` (con su `contexto = (dias) => contextoDe({ … })`);
@@ -244,18 +244,20 @@ Sin código.
 
 No es una tarea de código ni va al repo. La corre la sesión que coordina la implementación, antes de la revisión final. Los números reales no van en tests versionados (Ruling 3 de Métricas).
 
-- [ ] **Step 1: El script,** en el scratchpad de la sesión: importa los servicios de la rama con el `.env` local (la base `datospublicos_mcr_rpad`, el volcado de producción con la precarga y lo que cargó el usuario). Solo lecturas: `fuentesDe(null)`, `leerCalendario()` y nada que escriba.
+- [ ] **Step 1: La base y el script.**
+  - La base: el volcado más nuevo de producción (el del 28/10/2026 a las 16:14 está en `C:\Users\Mariano\Desktop\datospublicos_mcr_rpad.sql`, solo de consulta: no se mueve ni se cambia), cargado en una base propia, `rpad_rama_feriados_metricas`, que se borra al cerrar. Si no se puede, la base local `datospublicos_mcr_rpad`, solo leyendo.
+  - El script, en el scratchpad de la sesión: importa los servicios de la rama apuntando a esa base. Solo lecturas: `fuentesDe(null)`, `leerCalendario()` y nada que escriba.
 - [ ] **Step 2: Comparar los 9 fijos con la tabla,** al día de hoy y al 31/12/2026:
   - Métricas 2026 (las cuatro combinaciones de la vista): qué cifras y qué textos cambian;
   - el Ciclo de vida de 2026: la mediana y el promedio de cada etapa;
   - la Agenda de pedidos (12 meses, las dos gestiones): qué «Aviso aprox.» se mueven (tienen que aparecer el 31/12 externo, del 23/11 al 24/11, y el 31/12 interno, del 02/11 al 03/11, si todavía están en la ventana);
   - una foto en seco: `datosDeLaFoto(fuentes, { anio: 2026, generada, calendario })` con los datos de hoy, su tamaño en bytes, `feriados` (las fechas de la tabla real) y que tenga `etapas`.
-- [ ] **Step 3: El informe,** en `C:\Users\Mariano\Desktop\RPAD-verificacion-feriados-en-metricas\LEEME.html`: lo que cambia y lo que no, con los dos lados. Avisar a la sesión que hace la revisión final si algo no coincide con la spec (sección 5: «No cambian la cobertura del aviso, las reiteraciones, el índice, …»).
+- [ ] **Step 3: El informe y el cierre.** El informe, en `C:\Users\Mariano\Desktop\RPAD-verificacion-feriados-en-metricas\LEEME.html`: lo que cambia y lo que no, con los dos lados. Después, borrar `rpad_rama_feriados_metricas` (si se creó). Avisar a la sesión que hace la revisión final si algo no coincide con la spec (sección 5: «No cambian la cobertura del aviso, las reiteraciones, el índice, …»).
 
 ### Después del merge: el kit (no es una tarea de este plan)
 
 Lo arma la sesión que coordina la implementación, después del merge en main (spec, sección 9):
-- `RPAD-deploy-feriados-en-metricas`, en el Escritorio, con su vuelta atrás, comparado byte a byte con git contra el merge de «una agenda con más onda» (lo indica la coordinadora: no contra ad0de02);
+- `RPAD-deploy-feriados-en-metricas`, en el Escritorio, con su vuelta atrás, comparado byte a byte con git contra el merge de «los días de vacaciones al cargar la licencia» (lo indica la coordinadora: no contra ad0de02);
 - sin SQL, sin cron nuevo y sin Run NPM Install: subir los archivos y Restart, fuera del horario de los crons (8:15, 14:00 y las medias horas), **antes del 10/01/2027**;
 - después de desplegar: en Métricas, la bajada dice «sin feriados ni días no laborables»; la Agenda de pedidos dice el 24/11 (no el 23/11) para los externos que vencen el 31/12/2026 y el 03/11 (no el 02/11) para los internos, si todavía se ven;
 - el 10 o el 11/01/2027 (el 10 es domingo: Correos → Estado dice «Día no hábil» y muestra la foto solo si falló): en Métricas y Reportes, 2026 ya no dice «La foto de 2026 se saca el 10/01/2027» ni «… todavía no se sacó», y el Informe anual de 2026 se puede bajar; la última corrida de Correos → Estado no dice «No se pudo sacar la foto del año».
