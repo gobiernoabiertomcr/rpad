@@ -107,7 +107,8 @@ export const diaDelAvisoEnSuFecha = ({ cuentaDesde, licencia, ausencias = [], ca
   return null;
 };
 
-const SIN_VISPERA = Object.freeze({ vispera: null, sin_anticipo: false, sin_dias_habiles: false });
+// Sin víspera ni marcas: lo de una licencia que no es del firmante titular (Configuración → Licencias) o de la que no se sabe
+export const SIN_VISPERA = Object.freeze({ vispera: null, sin_anticipo: false, sin_dias_habiles: false });
 
 // Una licencia de otras que no está anulada y tiene ese día entre sus fechas (lo que no es una licencia no incluye ninguno)
 const incluyeElDia = (otra, dia) => otra !== null && typeof otra === 'object' && !Number(otra.anulada)

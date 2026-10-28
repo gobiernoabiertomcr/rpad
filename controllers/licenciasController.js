@@ -8,7 +8,9 @@
 import pool from '../config/database.js';
 import { avisarAlSuperadmin } from '../services/avisosSuperadminService.js';
 import { hoyArgentina, esFechaIso, sumarDias, diasEntre } from '../services/notasDigitalesCalendario.js';
-import { ROLES_CON_LICENCIA, estadoDeLicencia, validarFechasNuevas, visperaDeLaLicencia } from '../services/licenciasReglas.js';
+import {
+  ROLES_CON_LICENCIA, estadoDeLicencia, validarFechasNuevas, visperaDeLaLicencia, SIN_VISPERA
+} from '../services/licenciasReglas.js';
 import { periodosSinAuditor, DIAS_PERIODOS_SIN_AUDITOR } from '../services/auditoriaService.js';
 import { leerCalendario } from '../services/feriadosDatos.js';
 import {
@@ -50,8 +52,6 @@ const licenciasDelTitular = async (titular) => {
   );
   return filas;
 };
-
-const SIN_VISPERA = Object.freeze({ vispera: null, sin_anticipo: false, sin_dias_habiles: false });
 
 /**
  * Una licencia como la responde la API. En una del firmante titular, la víspera (spec 7.3 y spec 2026-10-27-feriados-en-notas,

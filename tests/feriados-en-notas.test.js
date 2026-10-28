@@ -962,10 +962,22 @@ describe('Configuración → Licencias con la precarga', () => {
       conexion.release();
     }
   };
-  // Un controlador de Configuración con una respuesta falsa, como el titular (superadmin: no hay aviso al superadmin)
+  // Los controladores toman hoy de hoyArgentina(): el reloj, fijo el martes 20/10/2026 a las 10:00 (las altas, las ediciones y
+  // las anulaciones de diciembre y enero de estos tests no dependen del día en que corre la suite)
+  const AHORA = new Date('2026-10-20T13:00:00Z');
+  const conElReloj = async (fn) => {
+    mock.timers.enable({ apis: ['Date'], now: AHORA });
+    try {
+      return await fn();
+    } finally {
+      mock.timers.reset();
+    }
+  };
+  // Un controlador de Configuración con una respuesta falsa, como el titular (superadmin: no hay aviso al superadmin), con el reloj
+  // del 20/10
   const pedir = async (controlador, titular, pedido = {}) => {
     const res = respuestaFalsa();
-    await controlador({ query: {}, params: {}, body: {}, ...pedido, user: { userId: titular.id, rol: 'superadmin' } }, res);
+    await conElReloj(() => controlador({ query: {}, params: {}, body: {}, ...pedido, user: { userId: titular.id, rol: 'superadmin' } }, res));
     return res;
   };
   const listar = async (titular) => {
@@ -1108,12 +1120,7 @@ describe('Configuración → Licencias con la precarga', () => {
     // Las ausencias de la persona autorizada que ve el titular el 20/10
     const ausencias = async () => {
       const res = respuestaFalsa();
-      mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-20T13:00:00Z') });
-      try {
-        await miEspacio.verFirmante({ user: { userId: titular.id } }, res);
-      } finally {
-        mock.timers.reset();
-      }
+      await conElReloj(() => miEspacio.verFirmante({ user: { userId: titular.id } }, res));
       assert.equal(res.statusCode, 200, JSON.stringify(res.body));
       assert.equal(res.body.data.soy_titular, true);
       return res.body.data.autorizables.find((a) => a.id === autorizado.id).ausencias;
