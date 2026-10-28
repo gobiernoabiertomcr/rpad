@@ -13,7 +13,8 @@ import {
   cuandoCortoDelEvento, cuandoEsElEvento, cuandoFue, textoDelEvento, listaConY, inicialesDe,
   recordatoriosQueTocan, cambioQueAvisa, emailsDelGuardado, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento,
   itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, textoDelResultadoDeEventos,
-  textoDeLaCorridaDeEventos, alertasDeLaCorridaDeEventos, alertaSinEstadoDeEventos
+  textoDeLaCorridaDeEventos, alertasDeLaCorridaDeEventos, alertaSinEstadoDeEventos, companerosPorDia, FRASE_DE_LA_LICENCIA,
+  mesDeLaFrase, fraseDelMes
 } from '../services/miEspacioEventosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
 
@@ -1467,6 +1468,186 @@ describe('itemsDeFeriados', () => {
       ['2026-02-30', '2026-03-31']]) {
       assert.deepEqual(itemsDeFeriados(FILAS, desde, hasta), []);
     }
+  });
+});
+
+// Lo nuevo de GET /mi-espacio/eventos (spec 2026-10-28-mi-espacio-agenda-onda, 5.2): los compañeros de cada día, para la
+// barra agrupada, y la frase de la banda del mes
+describe('companerosPorDia', () => {
+  // Un ítem de itemDeAusencia, con el nombre corto
+  const A = (nombre, dias) =>
+    ({ nombre, desde: dias[0], hasta: dias.at(-1), texto: `${nombre} no está`, hasta_texto: '', dias });
+
+  it('un día por cada fecha de algún `dias`, por fecha; los nombres por orden alfabético, con «no está» o «no están»', () => {
+    const ausentes = [A('Julián', ['2026-11-03', '2026-11-04', '2026-11-05']), A('Carla', ['2026-11-05', '2026-11-06'])];
+    assert.deepEqual(companerosPorDia(ausentes), [
+      { fecha: '2026-11-03', texto: 'Julián no está' }, { fecha: '2026-11-04', texto: 'Julián no está' },
+      { fecha: '2026-11-05', texto: 'Carla y Julián no están' }, { fecha: '2026-11-06', texto: 'Carla no está' }
+    ]);
+  });
+
+  it('cuatro el mismo día (enero), «A, B, C y D no están»; dos con la inicial, por orden', () => {
+    assert.equal(companerosPorDia(['Tomás', 'Carla', 'Julián', 'Andrea'].map((n) => A(n, ['2027-01-05'])))[0].texto,
+      'Andrea, Carla, Julián y Tomás no están');
+    assert.deepEqual(companerosPorDia([A('Carla R.', ['2027-01-05']), A('Carla B.', ['2027-01-05'])]),
+      [{ fecha: '2027-01-05', texto: 'Carla B. y Carla R. no están' }]);
+  });
+
+  it('las fechas, por fecha aunque lleguen desordenadas (también de diciembre a enero)', () => {
+    const dias = companerosPorDia([A('Tomás', ['2027-01-04']), A('Andrea', ['2026-12-31', '2026-12-30'])]);
+    assert.deepEqual(dias.map((dia) => dia.fecha), ['2026-12-30', '2026-12-31', '2027-01-04']);
+  });
+
+  it('sin ausentes, []; nada tira: lo que no es un ítem, un `dias` que no es una lista o lo que no es una fecha no cuentan',
+    () => {
+    for (const entrada of [null, undefined, 42, 'x', {}, []]) assert.deepEqual(companerosPorDia(entrada), [], String(entrada));
+    assert.deepEqual(companerosPorDia([
+      null, 42, 'Carla', { nombre: 'Julián', dias: null }, { nombre: 'Andrea', dias: 'x' },
+      A('Tomás', ['abc', '2026-02-30', 7, null, '2026-11-09', '2026-11-09'])
+    ]), [{ fecha: '2026-11-09', texto: 'Tomás no está' }]);
+    // Sin un nombre que sea un texto, '' (como itemDeAusencia)
+    assert.deepEqual(companerosPorDia([{ nombre: 42, dias: ['2026-11-09'] }]), [{ fecha: '2026-11-09', texto: ' no está' }]);
+  });
+
+  it('no cambia lo que recibe', () => {
+    const ausentes = [A('Julián', ['2026-11-04', '2026-11-03']), A('Carla', ['2026-11-04'])];
+    const copia = structuredClone(ausentes);
+    companerosPorDia(ausentes);
+    assert.deepEqual(ausentes, copia);
+  });
+});
+
+describe('mesDeLaFrase', () => {
+  // La grilla de noviembre de 2026: del lunes 26/10 al domingo 06/12
+  const GRILLA = { desde: '2026-10-26', hasta: '2026-12-06' };
+
+  it('un mes \'AAAA-MM\' que cae entero en el rango (su primer y su último día incluidos)', () => {
+    assert.equal(mesDeLaFrase('2026-11', GRILLA), '2026-11');
+    assert.equal(mesDeLaFrase('2026-11', { desde: '2026-11-01', hasta: '2026-11-30' }), '2026-11');
+    // Febrero de un año bisiesto termina el 29
+    assert.equal(mesDeLaFrase('2028-02', { desde: '2028-01-31', hasta: '2028-02-29' }), '2028-02');
+    assert.equal(mesDeLaFrase('2028-02', { desde: '2028-02-01', hasta: '2028-02-28' }), null);
+  });
+
+  it('un mes que no cae entero en el rango, null', () => {
+    assert.equal(mesDeLaFrase('2026-11', { desde: '2026-11-02', hasta: '2026-12-06' }), null);
+    assert.equal(mesDeLaFrase('2026-11', { desde: '2026-10-26', hasta: '2026-11-29' }), null);
+    assert.equal(mesDeLaFrase('2026-10', GRILLA), null);
+    assert.equal(mesDeLaFrase('2026-12', GRILLA), null);
+  });
+
+  it('nada tira: lo que no es un texto \'AAAA-MM\' (una lista de un parámetro repetido, también) o sin un rango, null', () => {
+    for (const valor of [undefined, null, '', 42, 'raro', '2026-13', '2026-00', '2026-1', '2026-11-01', ' 2026-11',
+      ['2026-11', '2026-12'], ['2026-11'], { mes: '2026-11' }]) {
+      assert.equal(mesDeLaFrase(valor, GRILLA), null, JSON.stringify(valor));
+    }
+    for (const rango of [undefined, null, 42, {}, { desde: '2026-10-26' }, { desde: 'x', hasta: '2026-12-06' }]) {
+      assert.equal(mesDeLaFrase('2026-11', rango), null, JSON.stringify(rango));
+    }
+  });
+});
+
+describe('fraseDelMes', () => {
+  // Los ítems de la respuesta: de itemDeEvento (solo cuenta su fecha), itemsDeFeriados e itemDeLicencia
+  const unoDel = (fecha, id = 1) => ({ id, titulo: 'Reunión de equipo', fecha, desde: '10:00', hasta: null });
+  const feriado = (fecha, nombre = 'Feriado de prueba') => ({ fecha, nombre, texto: `Feriado: ${nombre}` });
+  const licencia = (tipo, desde, hasta = desde, id = 1) => ({ id, tipo, desde, hasta, texto: '', hasta_texto: '', dias: [] });
+
+  // Noviembre de 2026, los datos de la maqueta: 8 eventos del mes (dos el mismo día cuentan dos) y dos de los meses vecinos de
+  // la grilla, que no cuentan
+  const EVENTOS = ['2026-11-03', '2026-11-05', '2026-11-05', '2026-11-10', '2026-11-12', '2026-11-18', '2026-11-24', '2026-11-30']
+    .map((fecha, i) => unoDel(fecha, i + 1)).concat([unoDel('2026-10-26', 20), unoDel('2026-12-01', 21)]);
+  // Los feriados del 2, el 8 (un domingo: cuenta igual), el 9 (con dos nombres: cuenta una vez) y el 23, y uno de diciembre
+  const FERIADOS = [feriado('2026-11-02'), feriado('2026-11-08', 'Feriado de un domingo'), feriado('2026-11-09'),
+    feriado('2026-11-09', 'Otro feriado de prueba'), feriado('2026-11-23'), feriado('2026-12-01')];
+  // Las vacaciones antes que la franquicia en la lista: van por desde. Una de diciembre y una de un tipo desconocido no van
+  const LICENCIAS = [licencia('vacaciones', '2026-11-16', '2026-11-27', 2), licencia('franquicia', '2026-11-04', '2026-11-04', 1),
+    licencia('medica', '2026-12-02', '2026-12-02', 3), licencia(null, '2026-11-20', '2026-11-20', 4),
+    licencia('desconocido', '2026-11-25', '2026-11-25', 5)];
+
+  it('la frase de la maqueta: los eventos, los feriados (las fechas) y tus licencias por fecha', () => {
+    assert.equal(fraseDelMes({ mes: '2026-11', eventos: EVENTOS, feriados: FERIADOS, licencias: LICENCIAS }),
+      '8 eventos, 4 feriados, tu franquicia el 4 y tus vacaciones del 16 al 27.');
+  });
+
+  it('en singular con uno; solo lo que hay', () => {
+    assert.equal(fraseDelMes({ mes: '2026-11', eventos: [unoDel('2026-11-10')], feriados: [], licencias: [] }), '1 evento.');
+    assert.equal(fraseDelMes({ mes: '2026-11', eventos: [], feriados: [feriado('2026-11-09'), feriado('2026-11-09', 'Otro')],
+      licencias: [] }), '1 feriado.');
+    assert.equal(fraseDelMes({ mes: '2026-11', eventos: [unoDel('2026-11-10'), unoDel('2026-11-11')], feriados: [],
+      licencias: [licencia('franco', '2026-11-13')] }), '2 eventos y tu franco compensatorio el 13.');
+    assert.equal(fraseDelMes({ mes: '2026-11', eventos: [], feriados: [],
+      licencias: [licencia('horas_a_favor', '2026-11-13')] }), 'Tus horas a favor el 13.');
+  });
+
+  it('recortada al mes: unas vacaciones del 21/12 al 08/01, en enero; una que termina el 1 y otra que empieza el último día',
+    () => {
+      assert.equal(fraseDelMes({
+        mes: '2027-01', eventos: [], feriados: [{ fecha: '2027-01-01', nombre: 'Año Nuevo', texto: 'Feriado: Año Nuevo' }],
+        licencias: [{
+          id: 3, tipo: 'vacaciones', desde: '2026-12-21', hasta: '2027-01-08', texto: 'Vacaciones', hasta_texto: '…', dias: []
+        }]
+      }), '1 feriado y tus vacaciones del 1 al 8.');
+      assert.equal(fraseDelMes({ mes: '2026-11', eventos: [], feriados: [],
+        licencias: [licencia('medica', '2026-11-30', '2026-12-04', 2), licencia('estudios', '2026-10-28', '2026-11-01', 1)] }),
+      'Tu licencia por estudios el 1 y tu licencia médica el 30.');
+      // Una que tapa el mes entero; febrero de un año bisiesto termina el 29
+      assert.equal(fraseDelMes({ mes: '2028-02', eventos: [], feriados: [],
+        licencias: [licencia('familiar', '2028-01-20', '2028-03-05')] }), 'Tu licencia por el grupo familiar del 1 al 29.');
+    });
+
+  it('cada tipo con su nombre y su artículo (FRASE_DE_LA_LICENCIA, congelada)', () => {
+    assert.deepEqual(FRASE_DE_LA_LICENCIA, {
+      vacaciones: 'tus vacaciones', horas_a_favor: 'tus horas a favor', franquicia: 'tu franquicia',
+      estudios: 'tu licencia por estudios', medica: 'tu licencia médica',
+      medica_extraordinaria: 'tu licencia médica extraordinaria', familiar: 'tu licencia por el grupo familiar',
+      franco: 'tu franco compensatorio', uso_autorizado: 'tu uso autorizado'
+    });
+    assert.ok(Object.isFrozen(FRASE_DE_LA_LICENCIA));
+    for (const [tipo, frase] of Object.entries(FRASE_DE_LA_LICENCIA)) {
+      const esperada = `${frase.charAt(0).toUpperCase()}${frase.slice(1)} el 13.`;
+      const licencias = [licencia(tipo, '2026-11-13')];
+      assert.equal(fraseDelMes({ mes: '2026-11', eventos: [], feriados: [], licencias }), esperada, tipo);
+    }
+  });
+
+  it('sin nada en el mes: «Nada cargado en diciembre. Tocá un día para agendar algo.»', () => {
+    assert.equal(fraseDelMes({ mes: '2026-12', eventos: [], feriados: [], licencias: [] }),
+      'Nada cargado en diciembre. Tocá un día para agendar algo.');
+    // Lo de los meses vecinos no cuenta
+    assert.equal(fraseDelMes({ mes: '2026-12', eventos: [unoDel('2026-11-30')], feriados: [feriado('2027-01-01')],
+      licencias: [licencia('vacaciones', '2026-11-16', '2026-11-30')] }),
+    'Nada cargado en diciembre. Tocá un día para agendar algo.');
+    assert.equal(fraseDelMes({ mes: '2027-01' }), 'Nada cargado en enero. Tocá un día para agendar algo.');
+  });
+
+  it('los compañeros no van', () => {
+    const ausentes = [{ nombre: 'Carla', desde: '2026-11-03', hasta: '2026-11-03', texto: 'Carla no está', hasta_texto: '',
+      dias: ['2026-11-03'] }];
+    assert.equal(fraseDelMes({ mes: '2026-11', eventos: [], feriados: [], licencias: [], ausentes }),
+      'Nada cargado en noviembre. Tocá un día para agendar algo.');
+  });
+
+  it('un mes que no es \'AAAA-MM\', null', () => {
+    for (const mes of [undefined, null, '', 42, 'raro', '2026-13', '2026-1', '2026-11-01', ['2026-11']]) {
+      assert.equal(fraseDelMes({ mes, eventos: [], feriados: [], licencias: [] }), null, JSON.stringify(mes));
+    }
+  });
+
+  it('nada tira: lo que no es una lista o un ítem no cuenta, y no cambia lo que recibe', () => {
+    for (const entrada of [undefined, null, 42, 'x', []]) assert.equal(fraseDelMes(entrada), null);
+    assert.equal(fraseDelMes({ mes: '2026-11', eventos: 'x', feriados: 42, licencias: {} }),
+      'Nada cargado en noviembre. Tocá un día para agendar algo.');
+    assert.equal(fraseDelMes({
+      mes: '2026-11',
+      eventos: [null, 42, {}, { fecha: 'abc' }, { fecha: '2026-11-31' }, unoDel('2026-11-10')],
+      feriados: [null, { fecha: null }, { fecha: '2026-02-30' }],
+      licencias: [null, 'x', licencia('vacaciones', 'abc', '2026-11-10'), licencia('vacaciones', '2026-11-20', '2026-11-10'),
+        { tipo: 'franquicia', desde: '2026-11-04' }]
+    }), '1 evento.');
+    const licencias = structuredClone(LICENCIAS);
+    fraseDelMes({ mes: '2026-11', eventos: EVENTOS, feriados: FERIADOS, licencias });
+    assert.deepEqual(licencias, LICENCIAS);
   });
 });
 

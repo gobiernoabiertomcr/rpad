@@ -157,8 +157,11 @@ describe('un evento personal', () => {
     assert.ok(Number.isInteger(id) && id > 0);
 
     const data = await listado('adminA');
-    assert.deepEqual(Object.keys(data),
-      ['desde', 'hasta', 'hoy', 'puede_compartir', 'eventos', 'licencias', 'feriados', 'ausentes']);
+    assert.deepEqual(Object.keys(data), ['desde', 'hasta', 'hoy', 'puede_compartir', 'eventos', 'licencias', 'feriados',
+      'ausentes', 'companeros_por_dia', 'frase_del_mes']);
+    // Sin `mes`, sin frase; sin compañeros que no están, ningún día
+    assert.equal(data.frase_del_mes, null);
+    assert.deepEqual(data.companeros_por_dia, []);
     assert.equal(data.desde, q(0));
     assert.equal(data.hasta, q(20));
     assert.equal(data.hoy, hoyArgentina());
@@ -815,6 +818,112 @@ describe('lo demás de la agenda', () => {
       { fecha: `${anio}-12-08`, nombre: 'Otro feriado de prueba', texto: 'Feriado: Otro feriado de prueba' },
       { fecha: `${anio}-12-25`, nombre: 'Navidad', texto: 'Feriado: Navidad' }
     ]);
+  });
+
+  // Lo nuevo de la agenda con más onda (spec 2026-10-28-mi-espacio-agenda-onda, 5.2): los compañeros de cada día y la frase
+  // del mes, de lo mismo que ya trae la respuesta
+  it('companeros_por_dia: los de `ausentes`, día por día y por orden alfabético; al lector y al colaborador, []', async () => {
+    // adminB, toda la semana; el editor («Test e.»: comparte el primer nombre con todos y es el único con la e), el martes y el
+    // miércoles; el lector no es de los compañeros, y el editor no se ve a sí mismo
+    await conLicencia('adminB', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
+    await conLicencia('editor', { tipo: 'medica', desde: q(1), hasta: q(2), nota: 'Turno' });
+    await conLicencia('lector', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
+
+    const data = await listado('adminA', q(0), q(6));
+    const unoSolo = 'Test adminB no está';
+    const losDos = 'Test adminB y Test e. no están';
+    assert.deepEqual(data.companeros_por_dia, [
+      { fecha: q(0), texto: unoSolo }, { fecha: q(1), texto: losDos }, { fecha: q(2), texto: losDos },
+      { fecha: q(3), texto: unoSolo }, { fecha: q(4), texto: unoSolo }
+    ]);
+    // Los mismos días que `ausentes`, sin el tipo ni la nota
+    assert.deepEqual(data.companeros_por_dia.map((dia) => dia.fecha), [...new Set(data.ausentes.flatMap((a) => a.dias))].sort());
+    assert.ok(!/medica|Turno|vacaciones/.test(JSON.stringify(data.companeros_por_dia)));
+    assert.deepEqual((await listado('editor', q(0), q(6))).companeros_por_dia.map((dia) => dia.texto),
+      ['Test adminB no está', 'Test adminB no está', 'Test adminB no está', 'Test adminB no está', 'Test adminB no está']);
+    for (const clave of ['lector', 'colab']) {
+      const delLector = await listado(clave, q(0), q(6));
+      assert.deepEqual(delLector.ausentes, [], clave);
+      assert.deepEqual(delLector.companeros_por_dia, [], clave);
+    }
+  });
+
+  describe('frase_del_mes', () => {
+    // El noviembre del año que viene (sin ningún feriado fijo) y su grilla, del lunes anterior al 1 (o el 1, si es lunes) al
+    // domingo después del 30 (o el 30, si es domingo), como la pide la página; los días de la grilla de los meses vecinos
+    // (siempre hay: 30 días no son semanas justas)
+    const anio = Number(hoy.slice(0, 4)) + 1;
+    const MES = `${anio}-11`;
+    const del = (n) => `${MES}-${String(n).padStart(2, '0')}`;
+    const diaDeLaSemana = (fecha) => new Date(`${fecha}T12:00:00Z`).getUTCDay();
+    const GRILLA = (() => {
+      let desde = del(1);
+      while (diaDeLaSemana(desde) !== 1) desde = sumarDias(desde, -1);
+      let hasta = del(30);
+      while (diaDeLaSemana(hasta) !== 0) hasta = sumarDias(hasta, 1);
+      return { desde, hasta };
+    })();
+    const VECINO = [GRILLA.desde, GRILLA.hasta].find((fecha) => !fecha.startsWith(MES));
+    // El primer sábado del mes
+    const SABADO = [1, 2, 3, 4, 5, 6, 7].map(del).find((fecha) => diaDeLaSemana(fecha) === 6);
+
+    const conMes = async (clave, consulta, rango = GRILLA) => {
+      const res = await api.get(`/mi-espacio/eventos?desde=${rango.desde}&hasta=${rango.hasta}${consulta}`, como(clave));
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      return res.body.data;
+    };
+
+    // Lo de adminA en el mes: dos eventos suyos y uno que le compartió adminB (cuentan); uno personal de adminB y uno de un
+    // día vecino de la grilla (no cuentan). Dos feriados el 9 (cuentan una vez), uno en un sábado (cuenta) y uno en un día
+    // vecino (no cuenta). Sus vacaciones del 28/10 al 3 y su franquicia del 16 (van por desde, recortadas al mes); las de
+    // adminB (una compañera) y una de adminA en un día vecino, no
+    const cargarElMes = async () => {
+      await crear('adminA', { titulo: 'Reunión de equipo', fecha: del(3) });
+      await crear('adminA', { titulo: 'Revisión del catálogo', fecha: del(10) });
+      await crear('adminB', { titulo: 'Taller', fecha: del(18), ...compartidoCon('adminA') });
+      await crear('adminB', { titulo: 'De adminB, personal', fecha: del(20) });
+      await crear('adminA', { titulo: 'En un día vecino', fecha: VECINO });
+      await conFeriado(del(9), 'Feriado de prueba');
+      await conFeriado(del(9), 'Otro feriado de prueba');
+      await conFeriado(SABADO, 'Feriado de un sábado');
+      await conFeriado(VECINO, 'Feriado vecino');
+      await conLicencia('adminA', { tipo: 'franquicia', desde: del(16), horas: 2 });
+      await conLicencia('adminA', { tipo: 'vacaciones', desde: `${anio}-10-28`, hasta: del(3) });
+      await conLicencia('adminA', { tipo: 'medica', desde: VECINO });
+      await conLicencia('adminB', { tipo: 'vacaciones', desde: del(23), hasta: del(27) });
+    };
+    const LA_FRASE = '3 eventos, 2 feriados, tus vacaciones del 1 al 3 y tu franquicia el 16.';
+
+    it('con `mes` y el rango de la grilla, la frase de lo que ve quien pide (sin los compañeros)', async () => {
+      await cargarElMes();
+      const data = await conMes('adminA', `&mes=${MES}`);
+      assert.equal(data.frase_del_mes, LA_FRASE);
+      // adminB está en companeros_por_dia, pero no en la frase
+      assert.ok(data.companeros_por_dia.some((dia) => dia.texto === 'Test adminB no está'));
+      // Con el rango justo del mes, la misma
+      assert.equal((await conMes('adminA', `&mes=${MES}`, { desde: del(1), hasta: del(30) })).frase_del_mes, LA_FRASE);
+      // adminB ve lo suyo: sus dos eventos, los feriados y sus vacaciones
+      assert.equal((await conMes('adminB', `&mes=${MES}`)).frase_del_mes, '2 eventos, 2 feriados y tus vacaciones del 23 al 27.');
+      // El lector, solo los feriados; y sin nada, «Nada cargado en noviembre…»
+      assert.equal((await conMes('lector', `&mes=${MES}`)).frase_del_mes, '2 feriados.');
+      await query('DELETE FROM feriados');
+      assert.equal((await conMes('lector', `&mes=${MES}`)).frase_del_mes,
+        'Nada cargado en noviembre. Tocá un día para agendar algo.');
+    });
+
+    it('sin `mes`, con uno que no sirve, repetido o que no cae entero en el rango: null, nunca un 400', async () => {
+      await cargarElMes();
+      const siguiente = `${anio}-12`;
+      for (const consulta of ['', '&mes=', '&mes=raro', `&mes=${anio}-13`, `&mes=${del(1)}`, `&mes=${MES}&mes=${siguiente}`,
+        `&mes=${MES}&mes=${MES}`, `&mes[a]=${MES}`, `&mes=${siguiente}`, `&mes=${anio}-10`]) {
+        const data = await conMes('adminA', consulta);
+        assert.equal(data.frase_del_mes, null, consulta);
+        assert.equal(data.eventos.length, 4, consulta);
+      }
+      // Un rango que deja afuera el 1 o el 30
+      assert.equal((await conMes('adminA', `&mes=${MES}`, { desde: del(2), hasta: GRILLA.hasta })).frase_del_mes, null);
+      assert.equal((await conMes('adminA', `&mes=${MES}`, { desde: GRILLA.desde, hasta: del(29) })).frase_del_mes, null);
+    });
   });
 });
 

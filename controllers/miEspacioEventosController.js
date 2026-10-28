@@ -16,7 +16,7 @@ import pool from '../config/database.js';
 import { ahoraArgentina, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_EVENTO, validarEvento, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento, itemDeLicencia,
-  itemDeAusencia, itemsDeFeriados, emailsDelGuardado
+  itemDeAusencia, itemsDeFeriados, emailsDelGuardado, companerosPorDia, mesDeLaFrase, fraseDelMes
 } from '../services/miEspacioEventosReglas.js';
 import {
   eventosVisibles, eventoVisible, eventoPropio, personasParaCompartir, licenciasPropiasEntre, audienciaDe
@@ -185,6 +185,11 @@ const guardarPersonas = async (conexion, eventoId, datos, antes) => {
  * los feriados de `ausentesPara`. La administración activa (`administracionActiva`), también: da el nombre corto de los
  * compañeros que no están y, en los eventos, el de quien lo creó y el de quién está («De Julián», «Lo creó Julián. Están: vos
  * y Carla.»; spec 2026-10-28-mi-espacio-agenda-onda, 5.1).
+ * Al final, de lo mismo que ya se armó, sin leer nada más (spec 2026-10-28-mi-espacio-agenda-onda, 5.2):
+ * - `companeros_por_dia`: los compañeros de `ausentes`, día por día (companerosPorDia): a quien no los ve, [];
+ * - `frase_del_mes`: con `mes=AAAA-MM` (el mes que muestra la página), la frase de su banda (fraseDelMes, con los eventos,
+ *   los feriados y las licencias de la respuesta). Un `mes` que no es un texto 'AAAA-MM' (también repetido, que llega como
+ *   lista) o que no cae entero en el rango pedido no es un error: es como si no viniera, y la frase es null.
  */
 export const listarEventos = (req, res) => responder(res, 'Error al obtener los eventos', async () => {
   const { desde, hasta, rechazo: rechazoDelRango } = rangoDelPedido(req.query);
@@ -199,12 +204,18 @@ export const listarEventos = (req, res) => responder(res, 'Error al obtener los 
   const { ausentes } = await ausentesPara(usuario, { desde, hasta, hoy, filasFeriados, administracion });
   const feriados = feriadosDelRango(filasFeriados, desdeDeLosFeriados(desde), hasta);
   const rango = { desde, hasta, feriados };
-  return conDatos({
-    desde, hasta, hoy, puede_compartir: esAdmin(usuario.rol),
+  const items = {
     eventos: eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados, administracion })),
     licencias: licencias.map((licencia) => itemDeLicencia(licencia, rango)),
     feriados: itemsDeFeriados(filasFeriados, desde, hasta),
     ausentes: ausentes.map((ausente) => itemDeAusencia(ausente, rango))
+  };
+  const mes = mesDeLaFrase(req.query?.mes, { desde, hasta });
+  return conDatos({
+    desde, hasta, hoy, puede_compartir: esAdmin(usuario.rol),
+    ...items,
+    companeros_por_dia: companerosPorDia(items.ausentes),
+    frase_del_mes: mes === null ? null : fraseDelMes({ mes, ...items })
   });
 });
 
