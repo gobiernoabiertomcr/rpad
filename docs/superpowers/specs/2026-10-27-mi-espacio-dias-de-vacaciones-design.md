@@ -108,6 +108,11 @@ Los agentes que relevaron el código encontraron otras cosas. Ninguna es la que 
    en la lista.
 5. Configuración → Licencias cuenta con los 9 fijos y Mi espacio, con la tabla de feriados. Lo trata la sesión «Feriados en las
    Notas Digitales».
+6. «Perdés» supone que una carga que empieza en el día libre puede usar todo lo que queda. Si después de ese día ya hay otra
+   licencia cargada, no puede seguir sin superponerse, y lo disponible se ve de más hasta que se carga. Por ejemplo, con una
+   médica del 01/12 al 30/12 y unas vacaciones desde el 04/01 ya cargadas, el email del 01/12 avisa los 15 días de la 2024.
+7. El modal de una licencia que no es de vacaciones no dice «Perdés» aunque ocupe los últimos días libres antes del
+   vencimiento. Recién se ve en el Resumen.
 
 ## 6. Tests
 
