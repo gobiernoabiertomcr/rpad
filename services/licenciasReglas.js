@@ -121,9 +121,10 @@ const incluyeElDia = (otra, dia) => otra !== null && typeof otra === 'object' &&
  * - si alguna de otras, sin anular, incluye el día hábil anterior (empieza a continuación de otra licencia): ese día el
  *   titular ya está de licencia y no hay anticipo, { vispera: null, sin_anticipo: true };
  * - si no, { vispera: el día hábil anterior }.
- * Nunca tira: otras que no es una lista vale []; con fechas que no sirven (también invertidas) o si el calendario tira (el
- * RangeError del tope, sin ningún día hábil en 366 días), { vispera: null, sin_anticipo: false, sin_dias_habiles: false }:
- * no se sabe, y quien lo muestra la nombra en general.
+ * No tira con lo que llega de los datos: otras que no es una lista vale []; con fechas que no sirven (también invertidas) o si
+ * el calendario tira el RangeError del tope (sin ningún día hábil en 366 días), { vispera: null, sin_anticipo: false,
+ * sin_dias_habiles: false }: no se sabe, y quien lo muestra la nombra en general. Un calendario null o mal armado es un
+ * error de programación y tira.
  */
 export const visperaDeLaLicencia = (licencia, otras, calendario = CALENDARIO_FIJO) => {
   const { desde, hasta } = licencia !== null && typeof licencia === 'object' ? licencia : {};
@@ -134,7 +135,8 @@ export const visperaDeLaLicencia = (licencia, otras, calendario = CALENDARIO_FIJ
     const delTitular = Array.isArray(otras) ? otras : [];
     if (delTitular.some((otra) => incluyeElDia(otra, vispera))) return { ...SIN_VISPERA, sin_anticipo: true };
     return { ...SIN_VISPERA, vispera };
-  } catch {
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
     return { ...SIN_VISPERA };
   }
 };

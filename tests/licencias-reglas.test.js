@@ -170,8 +170,15 @@ describe('con el calendario de la tabla (spec 2026-10-27-feriados-en-notas, 3)',
     const lic = { desde: '2027-01-04', hasta: '2027-01-08' };
     const otra = { desde: '2026-12-09', hasta: '2026-12-31' };
     assert.deepEqual(visperaDeLaLicencia(lic, [otra], CAL), { vispera: null, sin_anticipo: true, sin_dias_habiles: false });
-    assert.deepEqual(visperaDeLaLicencia(lic, [{ ...otra, anulada: 1 }], CAL),
-      { vispera: '2026-12-31', sin_anticipo: false, sin_dias_habiles: false });
+    // anulada como la trae la base (1 o 0) o como texto o booleano: la anulada no cuenta, la que no lo está sí
+    for (const anulada of [1, true, '1']) {
+      assert.deepEqual(visperaDeLaLicencia(lic, [{ ...otra, anulada }], CAL),
+        { vispera: '2026-12-31', sin_anticipo: false, sin_dias_habiles: false }, `anulada: ${JSON.stringify(anulada)}`);
+    }
+    for (const anulada of [0, false, '0', null]) {
+      assert.deepEqual(visperaDeLaLicencia(lic, [{ ...otra, anulada }], CAL),
+        { vispera: null, sin_anticipo: true, sin_dias_habiles: false }, `anulada: ${JSON.stringify(anulada)}`);
+    }
     // Una que termina antes de la víspera no la incluye
     assert.deepEqual(visperaDeLaLicencia(lic, [{ desde: '2026-12-09', hasta: '2026-12-30' }], CAL),
       { vispera: '2026-12-31', sin_anticipo: false, sin_dias_habiles: false });
@@ -233,6 +240,9 @@ describe('con el calendario de la tabla (spec 2026-10-27-feriados-en-notas, 3)',
     const sinHabiles = { ...CALENDARIO_FIJO, ...derivadasDe(() => false) };
     assert.throws(() => sinHabiles.diaHabilAnterior(lic.desde), RangeError);
     assert.deepEqual(visperaDeLaLicencia(lic, [], sinHabiles), SIN_VISPERA);
+    // Un calendario null o mal armado es un error de programación (un olvido tira): no se vuelve «no se sabe»
+    assert.throws(() => visperaDeLaLicencia(lic, [], null), TypeError);
+    assert.throws(() => visperaDeLaLicencia(lic, [], {}), TypeError);
   });
 });
 
