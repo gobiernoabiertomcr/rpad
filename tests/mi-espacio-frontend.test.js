@@ -1209,99 +1209,30 @@ describe('la agenda: el mes', () => {
     }
   });
 
-  it('cosasPorDia: el feriado, tus licencias, los compañeros y los eventos por hora y título; licencias y compañeros, en sus días', () => {
+  // spec 2026-10-28-mi-espacio-agenda-onda, 3.5: lo de cada día que no es una barra (tus licencias y los compañeros van en las
+  // barras: barrasDelMes)
+  it('cosasPorDia: los feriados y los eventos por hora y título; tus licencias y los compañeros no (van en las barras)', () => {
     assert.deepEqual(cosasDe(DEL_MES), {
       '2026-10-12': [{ clase: 'feriado', texto: 'Feriado: Día del Respeto a la Diversidad Cultural' }],
-      '2026-10-15': [{ clase: 'licencia', texto: 'Franquicia, 2 h' }],
-      '2026-10-23': [{ clase: 'ausente', texto: 'Martín Ríos no está' }],
-      '2026-10-26': [{ clase: 'ausente', texto: 'Martín Ríos no está' },
-        { clase: 'propio', texto: '12:00 Llamar a Vialidad por el TMDA', evento_id: 11 }],
-      '2026-10-27': [{ clase: 'ausente', texto: 'Martín Ríos no está' }, { clase: 'compartido', texto: '10:00 Reunión de equipo', evento_id: 12 }],
-      '2026-10-28': [{ clase: 'ausente', texto: 'Martín Ríos no está' }, { clase: 'propio', texto: '15:30 Turno médico', evento_id: 13 }],
-      '2026-10-29': [{ clase: 'ausente', texto: 'Martín Ríos no está' },
-        { clase: 'compartido', texto: '09:00 Entrega del informe trimestral', evento_id: 14 }],
-      '2026-10-30': [{ clase: 'ausente', texto: 'Martín Ríos no está' }, { clase: 'ausente', texto: 'Sofía Paz no está' }]
+      '2026-10-26': [{ clase: 'propio', texto: '12:00 Llamar a Vialidad por el TMDA', evento_id: 11 }],
+      '2026-10-27': [{ clase: 'compartido', texto: '10:00 Reunión de equipo', evento_id: 12 }],
+      '2026-10-28': [{ clase: 'propio', texto: '15:30 Turno médico', evento_id: 13 }],
+      '2026-10-29': [{ clase: 'compartido', texto: '09:00 Entrega del informe trimestral', evento_id: 14 }]
     });
-    // Los eventos de un día, por hora (el de las 09:00 primero, aunque llegue después)
+    // Los eventos de un día, por hora (el de las 09:00 primero, aunque llegue después), después del feriado; la franquicia y Martín
+    // de ese día, no
     assert.deepEqual(cosasDe(UN_DIA_LLENO)['2026-10-15'], [
-      { clase: 'feriado', texto: 'Feriado: Feriado de prueba' }, { clase: 'licencia', texto: 'Franquicia, 2 h' },
-      { clase: 'ausente', texto: 'Martín Ríos no está' }, { clase: 'compartido', texto: '09:00 Café con Catastro', evento_id: 32 },
+      { clase: 'feriado', texto: 'Feriado: Feriado de prueba' }, { clase: 'compartido', texto: '09:00 Café con Catastro', evento_id: 32 },
       { clase: 'propio', texto: '16:00 Revisar el informe', evento_id: 31 }
     ]);
+    // Ningún día con una licencia o un compañero, aunque lleguen (en los próximos, las vacaciones del 03/11, Martín y Sofía)
+    for (const datos of [DEL_MES, UN_DIA_LLENO, PROXIMOS]) {
+      assert.ok(Object.values(cosasDe(datos)).flat().every((cosa) => !['licencia', 'ausente'].includes(cosa.clase)));
+    }
+    assert.deepEqual(Object.keys(cosasDe(PROXIMOS)).sort(), ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-11-02', '2026-11-23']);
     for (const raro of [null, undefined, {}, 'x', { eventos: 'x', licencias: [null], feriados: [{ fecha: 'raro' }] }]) {
       assert.deepEqual(cosasDe(raro), {}, JSON.stringify(raro));
     }
-  });
-
-  it('htmlDelMes: la cabeza de lunes a domingo y una celda por día; hoy marcado, los fines de semana, los feriados y los otros meses', () => {
-    const html = M.htmlDelMes('2026-10', DEL_MES, HOY);
-    assert.match(html, /^<table class="me-mes" aria-labelledby="ag-mes-titulo"><thead><tr>/);
-    assert.deepEqual([...html.matchAll(/<th scope="col">([\s\S]*?)<\/th>/g)].map(([, th]) => th), [
-      ['Lun', 'lunes'], ['Mar', 'martes'], ['Mié', 'miércoles'], ['Jue', 'jueves'], ['Vie', 'viernes'], ['Sáb', 'sábado'], ['Dom', 'domingo']
-    ].map(([corto, largo]) => `<span aria-hidden="true">${corto}</span><span class="visualmente-oculto">${largo}</span>`));
-    const celdas = celdasDe(html);
-    assert.equal(celdas.length, 35);
-    assert.equal([...html.matchAll(/<tr>/g)].length, 6, 'la cabeza y cinco semanas');
-    const dias = plano(M.diasDeLaGrilla('2026-10'));
-    celdas.forEach((celda, i) => {
-      assert.ok(celda.html.startsWith(`<div class="me-celda-cuerpo"><span class="me-num">${dias[i].dia}</span>`), dias[i].fecha);
-      assert.equal(celda.clases.includes('finde'), dias[i].finde, dias[i].fecha);
-      assert.equal(celda.clases.includes('otro-mes'), !dias[i].del_mes, dias[i].fecha);
-      assert.equal(celda.clases.includes('hoy'), dias[i].fecha === HOY, dias[i].fecha);
-      assert.equal(celda.clases.includes('feriado'), dias[i].fecha === '2026-10-12', dias[i].fecha);
-      assert.equal(celda.atributos['aria-current'], dias[i].fecha === HOY ? 'date' : undefined, dias[i].fecha);
-    });
-    assert.deepEqual(celdaDel(html, '2026-10', HOY).clases, ['me-celda', 'hoy']);
-    assert.deepEqual(celdaDel(html, '2026-10', '2026-10-03').clases, ['me-celda', 'finde']);
-    assert.equal([...html.matchAll(/aria-current="date"/g)].length, 1);
-    // Sin datos (mientras se piden), la grilla sin nada adentro
-    assert.equal(celdasDe(M.htmlDelMes('2026-10', null, HOY)).filter((celda) => celda.html.includes('me-ev')).length, 0);
-    assert.equal(M.htmlDelMes('raro', DEL_MES, HOY), '');
-  });
-
-  it('htmlDelMes: los colores; un evento es un botón con su id y su title, y lo demás un span con su title', () => {
-    const html = M.htmlDelMes('2026-10', DEL_MES, HOY);
-    assert.ok(celdaDel(html, '2026-10', HOY).html.endsWith('<span class="me-ev ausente" title="Martín Ríos no está">Martín Ríos no está</span>'
-      + '<button type="button" class="me-ev propio" data-evento="11" title="12:00 Llamar a Vialidad por el TMDA">12:00 Llamar a Vialidad por el TMDA</button></div>'));
-    // Uno compartido por vos y uno de otra persona, en violeta
-    assert.ok(celdaDel(html, '2026-10', '2026-10-27').html.includes('<button type="button" class="me-ev compartido" data-evento="12" title="10:00 Reunión de equipo">'));
-    assert.ok(celdaDel(html, '2026-10', '2026-10-29').html.includes('<button type="button" class="me-ev compartido" data-evento="14" '));
-    assert.ok(celdaDel(html, '2026-10', '2026-10-15').html.includes('<span class="me-ev licencia" title="Franquicia, 2 h">Franquicia, 2 h</span>'));
-    assert.ok(celdaDel(html, '2026-10', '2026-10-12').html.includes(
-      '<span class="me-ev feriado" title="Feriado: Día del Respeto a la Diversidad Cultural">Feriado: Día del Respeto a la Diversidad Cultural</span>'));
-    // Un evento de otra persona que no dice compartido (no debería pasar) va igual en violeta
-    const ajeno = { ...DEL_MES, eventos: [{ ...DEL_MES.eventos.find((evento) => evento.id === 14), compartido: false }] };
-    assert.ok(M.htmlDelMes('2026-10', ajeno, HOY).includes('class="me-ev compartido" data-evento="14"'));
-    assert.doesNotMatch(html, /aria-live|role="status"/);
-  });
-
-  it('htmlDelMes: con más de tres cosas, las tres primeras y «y 2 más», que muestra el resto en la celda', () => {
-    const celda = celdaDel(M.htmlDelMes('2026-10', UN_DIA_LLENO, HOY), '2026-10', '2026-10-15');
-    assert.deepEqual(celda.clases, ['me-celda', 'feriado']);
-    assert.equal(celda.html, '<div class="me-celda-cuerpo"><span class="me-num">15</span>'
-      + '<span class="me-ev feriado" title="Feriado: Feriado de prueba">Feriado: Feriado de prueba</span>'
-      + '<span class="me-ev licencia" title="Franquicia, 2 h">Franquicia, 2 h</span>'
-      + '<span class="me-ev ausente" title="Martín Ríos no está">Martín Ríos no está</span>'
-      + '<div class="me-resto" hidden>'
-      + '<button type="button" class="me-ev compartido" data-evento="32" title="09:00 Café con Catastro">09:00 Café con Catastro</button>'
-      + '<button type="button" class="me-ev propio" data-evento="31" title="16:00 Revisar el informe">16:00 Revisar el informe</button></div>'
-      + '<button type="button" class="me-mas" data-ver-mas="2026-10-15">y 2 más</button></div>');
-    // Con tres justas, ningún «más»
-    assert.ok(!celdaDel(M.htmlDelMes('2026-10', UN_DIA_LLENO, HOY), '2026-10', '2026-10-14').html.includes('me-mas'));
-  });
-
-  // Review Focus 2: el HTML de un título o de un nombre es texto, también en el title
-  it('htmlDelMes: un título y un nombre con HTML se ven escapados, en el texto y en el title', () => {
-    const titulo = `${MALICIOSO} "comillas"`;
-    const datos = respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' }, {
-      eventos: [eventoDe(41, titulo, '2026-10-26', '12:00')], ausencias: [{ nombre: MALICIOSO, desde: '2026-10-26', hasta: '2026-10-26' }],
-      licencias: [], feriados: [{ ...FERIADO_SOBERANIA, fecha: '2026-10-27', nombre: MALICIOSO }]
-    });
-    const html = M.htmlDelMes('2026-10', datos, HOY);
-    assert.ok(!html.includes('<img'));
-    assert.ok(html.includes(`<button type="button" class="me-ev propio" data-evento="41" title="12:00 ${ESCAPADO} &quot;comillas&quot;">12:00 ${ESCAPADO} &quot;comillas&quot;</button>`));
-    assert.ok(html.includes(`<span class="me-ev ausente" title="${ESCAPADO} no está">${ESCAPADO} no está</span>`));
-    assert.ok(html.includes(`<span class="me-ev feriado" title="Feriado: ${ESCAPADO}">Feriado: ${ESCAPADO}</span>`));
   });
 });
 
@@ -1574,6 +1505,379 @@ describe('la agenda: el modelo del mes', () => {
   });
 });
 
+// El HTML del mes (spec 2026-10-28-mi-espacio-agenda-onda, 3.3 a 3.8 y 6): una tabla con una celda por día visible, y en cada día su
+// número (un botón), su pedazo de cada barra, lo suyo con sus renglones y sus puntos (los del teléfono). Noviembre, con lo de
+// DE_NOVIEMBRE; el jueves 5, con cuatro eventos (uno de Julián)
+const DE_JULIAN = Object.freeze({
+  creado_por: 2, creador: 'Julián Esteban Ferreyra', compartido: 1,
+  personas: [{ id: 1, nombre: 'Andrea Paula Molina', sin_recordatorio: 0 }]
+});
+const CUATRO_EL_5 = Object.freeze([
+  eventoDe(71, 'Primera', '2026-11-05', '08:00'), eventoDe(72, 'Segunda', '2026-11-05', '09:00'),
+  eventoDe(73, 'Tercera', '2026-11-05', '10:00', DE_JULIAN), eventoDe(74, 'Cuarta', '2026-11-05', '11:00')
+]);
+const NOVIEMBRE_LLENO = deNoviembre({ eventos: [...EVENTOS_DE_PRUEBA, ...CUATRO_EL_5] });
+// Un nombre y un título con HTML, en una sola palabra (el servidor deja la primera palabra del nombre)
+const CON_HTML = '<b>&"';
+const CON_HTML_ESCAPADO = '&lt;b&gt;&amp;&quot;';
+// La celda de una fecha (por su data-fecha)
+const celdaConFecha = (html, fecha) => celdasDe(html).find((celda) => celda.atributos['data-fecha'] === fecha);
+// Las cabezas de las columnas: { hoy, texto }
+const cabezasDe = (html) => [...html.matchAll(/<th scope="col"( class="hoy")?>([\s\S]*?)<\/th>/g)]
+  .map(([, hoy, adentro]) => ({ hoy: hoy !== undefined, texto: textoDe(adentro) }));
+// Los números de los días (sus botones): { fecha, tabindex, etiqueta, texto }
+const numerosDe = (html) => [...html.matchAll(/<button type="button" class="me-num" data-dia="([^"]*)" tabindex="([^"]*)" aria-label="([^"]*)">([^<]*)<\/button>/g)]
+  .map(([, fecha, tabindex, etiqueta, texto]) => ({ fecha, tabindex, etiqueta, texto }));
+// La fecha del único número con tabindex="0"
+const enFocoDe = (html) => numerosDe(html).filter((numero) => numero.tabindex === '0').map((numero) => numero.fecha);
+// Los pedazos de barra de un HTML (la etiqueta que abre cada uno): { clases, atributos }
+const barrasDelHtml = (html) => [...html.matchAll(/<span class="me-barra((?: [^"]*)?)"([^>]*)>/g)]
+  .map(([, clases, atributos]) => ({ clases: `me-barra${clases}`.split(' '), atributos: atributosDe(atributos) }));
+// Los renglones de lo que se ve en una celda (sin lo de «y N más»)
+const renglonesDeLaCelda = (celda) => [...celda.html.replace(/<div class="me-resto" hidden>[\s\S]*?<\/div>/, '').matchAll(/data-lineas="([^"]*)"/g)]
+  .map(([, lineas]) => lineas);
+const ICONO = (clase) => M.ICONOS_DEL_MES[clase];
+
+describe('la agenda: el HTML del mes', () => {
+  it('ICONOS_DEL_MES: la bandera, el sol, la persona y las dos personas, decorativos; lo que es solo tuyo, sin ícono', () => {
+    assert.ok(Object.isFrozen(M.ICONOS_DEL_MES));
+    assert.deepEqual(Object.keys(M.ICONOS_DEL_MES).sort(), ['ausente', 'compartido', 'feriado', 'licencia', 'propio']);
+    assert.equal(M.ICONOS_DEL_MES.propio, '');
+    for (const clase of ['feriado', 'licencia', 'ausente', 'compartido']) {
+      const icono = M.ICONOS_DEL_MES[clase];
+      assert.match(icono, /^<svg [^>]*>[\s\S]*<\/svg>$/, clase);
+      const atributos = atributosDe(icono.match(/^<svg([^>]*)>/)[1]);
+      assert.equal(atributos['aria-hidden'], 'true', clase);
+      assert.equal(atributos.class, 'me-icono', clase);
+      assert.equal(atributos.viewBox, '0 0 24 24', clase);
+    }
+    // Los de Lucide: flag, sun, user y users (el de «Todos» del formulario)
+    assert.ok(M.ICONOS_DEL_MES.feriado.includes('<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>'));
+    assert.ok(M.ICONOS_DEL_MES.licencia.includes('<circle cx="12" cy="12" r="4"/>'));
+    assert.ok(M.ICONOS_DEL_MES.ausente.includes('<circle cx="12" cy="7" r="4"/>'));
+    assert.ok(M.ICONOS_DEL_MES.compartido.includes('<path d="M16 3.13a4 4 0 0 1 0 7.75"/>'));
+    assert.equal(new Set(['feriado', 'licencia', 'ausente', 'compartido'].map(ICONO)).size, 4);
+  });
+
+  it('htmlDelMes: de entrada, de lunes a viernes (5 columnas); con sábado y domingo, 7; la cabeza de hoy, solo si hoy se ve', () => {
+    const octubre = M.htmlDelMes('2026-10', DEL_MES, HOY);
+    assert.match(octubre, /^<table class="me-mes" aria-labelledby="ag-mes-titulo"><thead><tr><th scope="col"/);
+    assert.ok(octubre.endsWith('</tr></tbody></table>'));
+    const largos = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+    const cortos = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    const cabezas = (cuantas, deHoy) => cortos.slice(0, cuantas).map((corto, i) => ({ hoy: i === deHoy, texto: `${corto} ${largos[i]}` }));
+    assert.deepEqual(cabezasDe(octubre), cabezas(5, 0));
+    assert.ok(octubre.includes('<th scope="col" class="hoy"><span aria-hidden="true">Lun</span><span class="visualmente-oculto">lunes</span></th>'));
+    // Las filas: las de semanasDelMes, cada una con sus días
+    const semanas = (mes, finde) => fechasDeLasSemanas(M.semanasDelMes(mes, { finde }));
+    const filas = (html) => [...html.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].slice(1)
+      .map(([, fila]) => celdasDe(fila).map((celda) => celda.atributos['data-fecha']));
+    assert.deepEqual(filas(octubre), semanas('2026-10', false));
+    const conFinde = M.htmlDelMes('2026-10', DEL_MES, HOY, { finde: true });
+    assert.deepEqual(cabezasDe(conFinde), cabezas(7, 0));
+    assert.deepEqual(filas(conFinde), semanas('2026-10', true));
+    assert.equal(celdasDe(conFinde).length, 35);
+    // En noviembre, hoy (el lunes 26/10) no se ve sin sábado y domingo; con ellos, la primera fila es la suya
+    assert.deepEqual(cabezasDe(M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY)), cabezas(5, null));
+    assert.deepEqual(filas(M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY)), semanas('2026-11', false));
+    assert.deepEqual(cabezasDe(M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, { finde: true })), cabezas(7, 0));
+    // Hoy un sábado, con sábado y domingo ocultos: ninguna cabeza; a la vista, la del sábado
+    assert.deepEqual(cabezasDe(M.htmlDelMes('2026-10', DEL_MES, '2026-10-31')), cabezas(5, null));
+    assert.deepEqual(cabezasDe(M.htmlDelMes('2026-10', DEL_MES, '2026-10-31', { finde: true })), cabezas(7, 5));
+    // Sin datos (mientras se piden), la grilla sin nada adentro; un mes que no sirve, ''
+    const vacio = M.htmlDelMes('2026-10', null, HOY);
+    assert.equal(celdasDe(vacio).length, 25);
+    assert.doesNotMatch(vacio, /me-ev|me-barra|me-carriles|me-mas/);
+    for (const raro of ['raro', '2026-13', '', null, undefined]) assert.equal(M.htmlDelMes(raro, DEL_MES, HOY), '', String(raro));
+  });
+
+  it('htmlDelMes: cada celda con su fecha, su número y sus marcas: otro mes, finde, feriado, hoy, los días del mes que pasaron y el elegido', () => {
+    const html = M.htmlDelMes('2026-10', DEL_MES, HOY, { finde: true, elegido: '2026-10-22' });
+    const dias = plano(M.diasDeLaGrilla('2026-10'));
+    const celdas = celdasDe(html);
+    assert.equal(celdas.length, dias.length);
+    celdas.forEach((celda, i) => {
+      const dia = dias[i];
+      assert.equal(celda.atributos['data-fecha'], dia.fecha);
+      assert.ok(celda.html.startsWith(`<div class="me-celda-cuerpo"><button type="button" class="me-num" data-dia="${dia.fecha}" tabindex="`), dia.fecha);
+      assert.match(celda.html, /<div class="me-cosas">[\s\S]*<\/div><span class="me-puntos" aria-hidden="true">[^]*<\/span><\/div>$/, dia.fecha);
+      const marcas = ['me-celda', !dia.del_mes && 'otro-mes', dia.finde && 'finde', dia.fecha === '2026-10-12' && 'feriado', dia.fecha === HOY && 'hoy',
+        dia.del_mes && dia.fecha < HOY && 'paso', dia.fecha === '2026-10-22' && 'elegido'].filter(Boolean);
+      assert.deepEqual(celda.clases, marcas, dia.fecha);
+      assert.equal(celda.atributos['aria-current'], dia.fecha === HOY ? 'date' : undefined, dia.fecha);
+    });
+    assert.deepEqual(celdaConFecha(html, HOY).clases, ['me-celda', 'hoy']);
+    assert.deepEqual(celdaConFecha(html, '2026-10-12').clases, ['me-celda', 'feriado', 'paso']);
+    assert.deepEqual(celdaConFecha(html, '2026-10-22').clases, ['me-celda', 'paso', 'elegido']);
+    assert.deepEqual(celdaConFecha(html, '2026-09-30').clases, ['me-celda', 'otro-mes']);
+    assert.deepEqual(celdaConFecha(html, '2026-10-31').clases, ['me-celda', 'finde']);
+    assert.deepEqual(celdaConFecha(html, '2026-11-01').clases, ['me-celda', 'otro-mes', 'finde']);
+    assert.equal([...html.matchAll(/aria-current="date"/g)].length, 1);
+    // El número: un botón por día, con el día a la vista y «Nuevo evento el jueves 22/10» (diaLargo del servidor)
+    const numeros = numerosDe(html);
+    assert.deepEqual(numeros.map((numero) => numero.fecha), dias.map((dia) => dia.fecha));
+    for (const numero of numeros) {
+      assert.equal(numero.texto, String(Number(numero.fecha.slice(8, 10))), numero.fecha);
+      assert.equal(numero.etiqueta, `Nuevo evento el ${diaLargo(numero.fecha)}`, numero.fecha);
+    }
+    assert.ok(html.includes('<button type="button" class="me-num" data-dia="2026-10-22" tabindex="-1" aria-label="Nuevo evento el jueves 22/10">22</button>'));
+    // Un elegido que no se ve no marca nada; uno que no es una fecha, tampoco
+    for (const elegido of ['2026-10-31', 'raro', 22]) assert.ok(!M.htmlDelMes('2026-10', DEL_MES, HOY, { elegido }).includes('elegido'), String(elegido));
+    // Con un hoy que no sirve, ningún día pasó ni es hoy
+    const sinHoy = M.htmlDelMes('2026-10', DEL_MES, 'raro');
+    assert.doesNotMatch(sinHoy, / paso"| hoy"|aria-current|class="hoy"/);
+  });
+
+  // Ruling 4 del plan: el mes es una sola parada del tabulador
+  it('htmlDelMes: un solo tabindex="0" en el mes: el del foco si se ve; si no, hoy si es del mes, o el 1 (el día visible más cercano)', () => {
+    const cuantos = (html) => [...html.matchAll(/tabindex="0"/g)].length;
+    const octubre = M.htmlDelMes('2026-10', DEL_MES, HOY);
+    assert.deepEqual(enFocoDe(octubre), [HOY]);
+    assert.equal(cuantos(octubre), 1);
+    assert.ok(numerosDe(octubre).every((numero) => ['0', '-1'].includes(numero.tabindex)));
+    assert.equal(numerosDe(octubre).length, celdasDe(octubre).length);
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-10', DEL_MES, HOY, { foco: '2026-10-22' })), ['2026-10-22']);
+    // Un foco que no se ve (el sábado 31 con sábado y domingo ocultos, un día de otra grilla) o que no es una fecha: hoy
+    for (const foco of ['2026-10-31', '2026-12-15', 'raro', 22, null]) {
+      const html = M.htmlDelMes('2026-10', DEL_MES, HOY, { foco });
+      assert.deepEqual(enFocoDe(html), [HOY], String(foco));
+      assert.equal(cuantos(html), 1, String(foco));
+    }
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-10', DEL_MES, HOY, { finde: true, foco: '2026-10-31' })), ['2026-10-31']);
+    // Un foco del mes vecino que se ve en la grilla, también
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-10', DEL_MES, HOY, { foco: '2026-09-29' })), ['2026-09-29']);
+    // En noviembre, hoy no es del mes: el 1, un domingo, que sin sábado y domingo no se ve: el lunes 2
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY)), ['2026-11-02']);
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, { finde: true })), ['2026-11-01']);
+    // Hoy un sábado, con sábado y domingo ocultos: el viernes 30 (no hay un día visible después en la grilla)
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-10', DEL_MES, '2026-10-31')), ['2026-10-30']);
+    // Sin un hoy que sirva, el 1
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-10', DEL_MES, 'raro')), ['2026-10-01']);
+  });
+
+  it('htmlDelMes: las barras, un pedazo en cada día; el texto a la vista al principio del tramo, con su ícono y --n, y oculto en los demás', () => {
+    const html = M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY);
+    const carrilesDel = (fecha) => celdaConFecha(html, fecha).html.match(/<div class="me-carriles">[\s\S]*?<\/span><\/div>/)?.[0];
+    const oculto = (clases, titulo, texto) => `<span class="me-barra ${clases}" title="${titulo}"><span class="visualmente-oculto">${texto}</span></span>`;
+    const aLaVista = (clases, titulo, texto, largo, icono) => `<span class="me-barra ${clases}" title="${titulo}" style="--n:${largo}">`
+      + `${ICONO(icono)}<span class="me-barra-texto">${texto}</span></span>`;
+    const vacia = '<span class="me-barra vacia"></span>';
+    // La semana del 2: dos carriles (tus vacaciones y los compañeros); el lunes 2, los dos vacíos
+    assert.equal(carrilesDel('2026-11-02'), `<div class="me-carriles">${vacia}${vacia}</div>`);
+    assert.equal(carrilesDel('2026-11-03'), `<div class="me-carriles">${aLaVista('licencia inicio', VACACIONES_DEL_3, 'Vacaciones', 4, 'licencia')}`
+      + `${aLaVista('ausente inicio', JULIAN_HASTA_EL_6, 'Julián no está', 2, 'ausente')}</div>`);
+    assert.equal(carrilesDel('2026-11-04'), `<div class="me-carriles">${oculto('licencia', VACACIONES_DEL_3, 'Vacaciones')}`
+      + `${oculto('ausente fin', JULIAN_HASTA_EL_6, 'Julián no está')}</div>`);
+    // El 5, «Carla y Julián no están» a la vista; el 6, el mismo texto para el lector de pantalla
+    assert.equal(carrilesDel('2026-11-05'), `<div class="me-carriles">${oculto('licencia', VACACIONES_DEL_3, 'Vacaciones')}`
+      + `${aLaVista('ausente inicio', CARLA_Y_JULIAN, 'Carla y Julián no están', 2, 'ausente')}</div>`);
+    assert.equal(carrilesDel('2026-11-06'), `<div class="me-carriles">${oculto('licencia fin sigue-despues', VACACIONES_DEL_3, 'Vacaciones')}`
+      + `${oculto('ausente fin', CARLA_Y_JULIAN, 'Carla y Julián no están')}</div>`);
+    // El 9, las vacaciones que vienen del viernes (un día) y Carla, que empieza
+    assert.equal(carrilesDel('2026-11-09'), `<div class="me-carriles">${aLaVista('licencia inicio fin sigue-antes', VACACIONES_DEL_3, 'Vacaciones', 1, 'licencia')}`
+      + `${aLaVista('ausente inicio', CARLA_HASTA_EL_13, 'Carla no está', 5, 'ausente')}</div>`);
+    // El 16, las vacaciones del 16 al 20 (5 días); el lunes 23 (feriado), su lugar vacío
+    assert.equal(carrilesDel('2026-11-16'), `<div class="me-carriles">${aLaVista('licencia inicio', VACACIONES_DEL_16, 'Vacaciones', 5, 'licencia')}</div>`);
+    assert.equal(carrilesDel('2026-11-23'), `<div class="me-carriles">${vacia}</div>`);
+    // Cada día de una barra dice lo suyo: el texto, una vez en cada día de cada tramo
+    for (const fecha of ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13']) {
+      assert.equal([...celdaConFecha(html, fecha).html.matchAll(/Carla no está</g)].length, 1, fecha);
+    }
+    // Una semana sin licencias ni compañeros no tiene carriles; sin nada en el mes, ninguna barra
+    assert.ok(!celdaConFecha(M.htmlDelMes('2026-10', DEL_MES, HOY), '2026-10-05').html.includes('me-carriles'));
+    const sinNada = M.htmlDelMes('2026-11', deNoviembre({ licencias: [], ausencias: [] }), HOY);
+    assert.doesNotMatch(sinNada, /me-carriles|me-barra/);
+  });
+
+  it('htmlDelMes: los renglones de cada cosa (data-lineas) con los lugares que dejan los carriles, y «y N más»', () => {
+    const datos = respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' }, {
+      eventos: [
+        eventoDe(81, 'Uno', '2026-10-07', '09:00'),
+        eventoDe(82, 'Dos', '2026-10-08', '09:00'), eventoDe(83, 'Dos más', '2026-10-08', '10:00'),
+        eventoDe(84, 'Tres', '2026-10-09', '09:00'), eventoDe(85, 'Tres más', '2026-10-09', '10:00'), eventoDe(86, 'Tres y más', '2026-10-09', '11:00'),
+        eventoDe(87, 'Con Martín afuera', '2026-10-26', '09:00')
+      ],
+      licencias: [], ausencias: [AUSENCIAS_DE_PRUEBA[0]]
+    });
+    const html = M.htmlDelMes('2026-10', datos, HOY);
+    // Sin carriles (cuatro lugares): una cosa, 3 renglones; dos, 2 y 2; tres, uno cada una
+    assert.deepEqual(renglonesDeLaCelda(celdaConFecha(html, '2026-10-07')), ['3']);
+    assert.deepEqual(renglonesDeLaCelda(celdaConFecha(html, '2026-10-08')), ['2', '2']);
+    assert.deepEqual(renglonesDeLaCelda(celdaConFecha(html, '2026-10-09')), ['1', '1', '1']);
+    // Un carril (Martín, la semana del 26): una cosa, 3 renglones
+    assert.deepEqual(renglonesDeLaCelda(celdaConFecha(html, '2026-10-26')), ['3']);
+    assert.ok(celdaConFecha(html, '2026-10-07').html.includes('<div class="me-cosas"><button type="button" class="me-ev propio" data-lineas="3" '
+      + 'data-evento="81" title="09:00 Uno"><b>09:00</b> Uno</button></div>'));
+    // Dos carriles (la semana del 2 de noviembre): una cosa, 2 renglones
+    assert.deepEqual(renglonesDeLaCelda(celdaConFecha(M.htmlDelMes('2026-11', NOVIEMBRE_LLENO, HOY), '2026-11-02')), ['2']);
+    // El jueves 5, dos carriles y cuatro eventos: uno a la vista, de un renglón, y «y 3 más» con el resto
+    const el5 = celdaConFecha(M.htmlDelMes('2026-11', NOVIEMBRE_LLENO, HOY), '2026-11-05');
+    assert.deepEqual(el5.clases, ['me-celda']);
+    assert.deepEqual(renglonesDeLaCelda(el5), ['1']);
+    assert.equal(el5.html, '<div class="me-celda-cuerpo">'
+      + '<button type="button" class="me-num" data-dia="2026-11-05" tabindex="-1" aria-label="Nuevo evento el jueves 05/11">5</button>'
+      + '<div class="me-carriles"><span class="me-barra licencia" title="Vacaciones. Hasta el lunes 09/11"><span class="visualmente-oculto">Vacaciones</span></span>'
+      + `<span class="me-barra ausente inicio" title="${CARLA_Y_JULIAN}" style="--n:2">${ICONO('ausente')}<span class="me-barra-texto">Carla y Julián no están</span></span></div>`
+      + '<div class="me-cosas"><button type="button" class="me-ev propio" data-lineas="1" data-evento="71" title="08:00 Primera"><b>08:00</b> Primera</button>'
+      + '<div class="me-resto" hidden>'
+      + '<button type="button" class="me-ev propio" data-lineas="1" data-evento="72" title="09:00 Segunda"><b>09:00</b> Segunda</button>'
+      + `<button type="button" class="me-ev compartido" data-lineas="1" data-evento="73" title="10:00 Tercera">${ICONO('compartido')}<b>10:00</b> Tercera</button>`
+      + '<button type="button" class="me-ev propio" data-lineas="1" data-evento="74" title="11:00 Cuarta"><b>11:00</b> Cuarta</button></div>'
+      + '<button type="button" class="me-mas" data-ver-mas="2026-11-05">y 3 más</button></div>'
+      + '<span class="me-puntos" aria-hidden="true"><i class="propio"></i><i class="propio"></i><i class="compartido"></i><i class="propio"></i></span></div>');
+    // El feriado, con la bandera; el 15 de UN_DIA_LLENO (dos carriles: la franquicia y Martín), el feriado a la vista y «y 2 más»
+    const el15 = celdaConFecha(M.htmlDelMes('2026-10', UN_DIA_LLENO, HOY), '2026-10-15');
+    assert.deepEqual(el15.clases, ['me-celda', 'feriado', 'paso']);
+    assert.ok(el15.html.includes('<div class="me-cosas">'
+      + `<span class="me-ev feriado" data-lineas="1" title="Feriado: Feriado de prueba">${ICONO('feriado')}Feriado: Feriado de prueba</span>`
+      + '<div class="me-resto" hidden><button type="button" class="me-ev compartido" data-lineas="1" data-evento="32" title="09:00 Café con Catastro">'));
+    assert.ok(el15.html.endsWith('<button type="button" class="me-mas" data-ver-mas="2026-10-15">y 2 más</button></div>'
+      + '<span class="me-puntos" aria-hidden="true"><i class="feriado"></i><i class="compartido"></i><i class="propio"></i></span></div>'));
+    // Con tres justas y lugar para ellas, ningún «más»; un día sin nada, sus cosas y sus puntos vacíos
+    assert.ok(!celdaConFecha(html, '2026-10-09').html.includes('me-mas'));
+    assert.ok(celdaConFecha(html, '2026-10-05').html.endsWith('<div class="me-cosas"></div><span class="me-puntos" aria-hidden="true"></span></div>'));
+  });
+
+  // Ruling 2 del plan: --n siempre en el principio de un tramo; --demora, solo con el movimiento
+  it('htmlDelMes: con animar, cada pedazo de barra (salvo los vacíos) con su --demora (semana × 0,16 s + columna × 0,05 s); sin animar, ninguna', () => {
+    const animado = M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, { animar: true });
+    const piezas = barrasDelHtml(animado);
+    assert.ok(piezas.length > 0);
+    for (const pieza of piezas) {
+      if (pieza.clases.includes('vacia')) assert.equal(pieza.atributos.style, undefined);
+      else {
+        const conLargo = pieza.clases.includes('inicio') ? '--n:\\d+;' : '';
+        assert.match(pieza.atributos.style, new RegExp(`^${conLargo}--demora:\\d\\.\\d\\ds$`), JSON.stringify(pieza));
+      }
+    }
+    // El 5 (semana 0, columna 3), el 9 (1, 0), el 16 (2, 0) y el 24 (3, 1)
+    const estilos = (fecha) => barrasDelHtml(celdaConFecha(animado, fecha).html).map((pieza) => pieza.atributos.style);
+    assert.deepEqual(estilos('2026-11-05'), ['--demora:0.15s', '--n:2;--demora:0.15s']);
+    assert.deepEqual(estilos('2026-11-09'), ['--n:1;--demora:0.16s', '--n:5;--demora:0.16s']);
+    assert.deepEqual(estilos('2026-11-16'), ['--n:5;--demora:0.32s']);
+    assert.deepEqual(estilos('2026-11-24'), ['--n:4;--demora:0.53s']);
+    assert.deepEqual(estilos('2026-11-23'), [undefined]);
+    // Sin animar (o con algo que no es el true literal): ningún --demora, y --n en cada principio de tramo y en ningún otro
+    for (const opciones of [{}, { animar: false }, { animar: 'si' }, { animar: 1 }]) {
+      const quieto = M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, opciones);
+      assert.ok(!quieto.includes('--demora'), JSON.stringify(opciones));
+      for (const pieza of barrasDelHtml(quieto)) {
+        if (pieza.clases.includes('inicio')) assert.match(pieza.atributos.style, /^--n:\d+$/);
+        else assert.equal(pieza.atributos.style, undefined);
+      }
+      assert.equal([...quieto.matchAll(/--n:/g)].length, barrasDelHtml(quieto).filter((pieza) => pieza.clases.includes('inicio')).length);
+    }
+  });
+
+  it('htmlDelMes: en el teléfono, el número dice «Ver el lunes 02/11»', () => {
+    const html = M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, { telefono: true });
+    assert.ok(html.includes('<button type="button" class="me-num" data-dia="2026-11-02" tabindex="0" aria-label="Ver el lunes 02/11">2</button>'));
+    for (const numero of numerosDe(html)) assert.equal(numero.etiqueta, `Ver el ${diaLargo(numero.fecha)}`, numero.fecha);
+    // Solo el true literal
+    for (const telefono of ['si', 1]) assert.ok(!M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, { telefono }).includes('aria-label="Ver el'), String(telefono));
+  });
+
+  it('htmlDelMes: con tres argumentos, lo de entrada (sin sábado y domingo, sin elegido ni foco, en la compu y quieto)', () => {
+    const tres = M.htmlDelMes('2026-10', DEL_MES, HOY);
+    for (const opciones of [undefined, {}, null, 'x', 5, { finde: false, elegido: null, foco: null, telefono: false, animar: false }]) {
+      assert.equal(M.htmlDelMes('2026-10', DEL_MES, HOY, opciones), tres, JSON.stringify(opciones));
+    }
+  });
+
+  // Review Focus 2: el HTML de un título o de un nombre es texto, también en el title y en lo oculto
+  it('htmlDelMes: un título, un feriado y un nombre con HTML se ven escapados, en el texto, en el title y en lo oculto', () => {
+    const datos = deNoviembre({
+      eventos: [eventoDe(91, `${CON_HTML} y más`, '2026-11-04', '10:00'), eventoDe(92, MALICIOSO, '2026-11-11', '10:00')],
+      licencias: [],
+      ausencias: [{ nombre: CON_HTML, desde: '2026-11-03', hasta: '2026-11-04' }, { nombre: MALICIOSO_EN_UNA_PALABRA, desde: '2026-11-10', hasta: '2026-11-10' }],
+      feriados: [{ ...FERIADO_DEL_EMPLEADO, fecha: '2026-11-12', nombre: CON_HTML }]
+    });
+    const html = M.htmlDelMes('2026-11', datos, HOY);
+    assert.ok(!html.includes('<img') && !html.includes('<b>&'));
+    const titulo = `title="${CON_HTML_ESCAPADO} no está. Hasta el miércoles 04/11."`;
+    assert.ok(celdaConFecha(html, '2026-11-03').html.includes(`<span class="me-barra ausente inicio" ${titulo} style="--n:2">${ICONO('ausente')}`
+      + `<span class="me-barra-texto">${CON_HTML_ESCAPADO} no está</span></span>`));
+    assert.ok(celdaConFecha(html, '2026-11-04').html.includes(`<span class="me-barra ausente fin" ${titulo}>`
+      + `<span class="visualmente-oculto">${CON_HTML_ESCAPADO} no está</span></span>`));
+    assert.ok(html.includes(`<button type="button" class="me-ev propio" data-lineas="3" data-evento="91" title="10:00 ${CON_HTML_ESCAPADO} y más">`
+      + `<b>10:00</b> ${CON_HTML_ESCAPADO} y más</button>`));
+    assert.ok(html.includes(`data-evento="92" title="10:00 ${ESCAPADO}"><b>10:00</b> ${ESCAPADO}</button>`));
+    assert.ok(html.includes(`<span class="me-ev feriado" data-lineas="3" title="Feriado: ${CON_HTML_ESCAPADO}">${ICONO('feriado')}Feriado: ${CON_HTML_ESCAPADO}</span>`));
+    assert.ok(html.includes(`<span class="me-barra-texto">${ESCAPADO_EN_UNA_PALABRA} no está</span>`));
+  });
+
+  it('htmlDelMes: nada que se vuelve a dibujar es una región viva', () => {
+    for (const html of [M.htmlDelMes('2026-10', DEL_MES, HOY), M.htmlDelMes('2026-11', NOVIEMBRE_LLENO, HOY, { finde: true, animar: true, telefono: true }),
+      M.htmlDelDiaElegido('2026-11-05', NOVIEMBRE_LLENO, HOY)]) {
+      assert.doesNotMatch(html, /aria-live|role="status"|role="alert"/);
+    }
+  });
+
+  it('htmlDelDiaElegido: la fecha (hoy), «Nuevo evento» con esa fecha y la lista de ese día, con los eventos como botones', () => {
+    assert.match(M.ICONO_DE_MAS, /^<svg [^>]*aria-hidden="true"[^>]*>[\s\S]*<\/svg>$/);
+    assert.equal(M.htmlDelDiaElegido('2026-10-28', DE_NOVIEMBRE, '2026-10-28'),
+      '<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">Miércoles 28 de octubre (hoy)</h3>'
+      + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-el="2026-10-28">${M.ICONO_DE_MAS}Nuevo evento</button></div>`
+      + '<ul class="me-elegido-lista"><li class="me-fila-del-dia propio"><button type="button" class="me-elegido-cosa" data-evento="13">'
+      + '<span class="me-elegido-icono" aria-hidden="true"><i></i></span><span class="me-elegido-hora">15:30</span> '
+      + '<span class="me-elegido-texto">Turno médico <small>Solo vos</small></span></button></li></ul>');
+    // Otro día, sin «(hoy)»; sin nada, «No hay nada este día.»
+    assert.equal(M.htmlDelDiaElegido('2026-11-02', deNoviembre({ eventos: [] }), HOY),
+      '<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">Lunes 2 de noviembre</h3>'
+      + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-el="2026-11-02">${M.ICONO_DE_MAS}Nuevo evento</button></div>`
+      + '<p class="me-vacio">No hay nada este día.</p>');
+  });
+
+  it('htmlDelDiaElegido: los feriados, tu licencia y los compañeros, «Todo el día», y después los eventos por hora', () => {
+    const datos = respuestaDeEventos(RANGO_DE_NOVIEMBRE, {
+      eventos: [eventoDe(75, 'Revisar el informe', '2026-11-05', '16:00'), eventoDe(76, 'Café con Catastro', '2026-11-05', '09:00', DE_JULIAN)],
+      licencias: [LICENCIAS_DE_PRUEBA[1]],
+      ausencias: [{ nombre: 'Julián', desde: '2026-11-03', hasta: '2026-11-06' }, { nombre: 'Carla', desde: '2026-11-05', hasta: '2026-11-13' }],
+      feriados: [{ ...FERIADO_DEL_EMPLEADO, fecha: '2026-11-05', nombre: 'Feriado de prueba' }]
+    });
+    const html = M.htmlDelDiaElegido('2026-11-05', datos, HOY);
+    assert.ok(html.startsWith('<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">Jueves 5 de noviembre</h3>'));
+    assert.deepEqual(filasDe(html).map(({ clases, texto }) => ({ clases, texto })), [
+      { clases: ['me-fila-del-dia', 'feriado'], texto: 'Todo el día Feriado: Feriado de prueba' },
+      { clases: ['me-fila-del-dia', 'licencia'], texto: 'Todo el día Vacaciones' },
+      { clases: ['me-fila-del-dia', 'ausente'], texto: 'Todo el día Carla y Julián no están' },
+      { clases: ['me-fila-del-dia', 'compartido'], texto: '09:00 Café con Catastro De Julián' },
+      { clases: ['me-fila-del-dia', 'propio'], texto: '16:00 Revisar el informe Solo vos' }
+    ]);
+    // Cada fila con su ícono (lo que es solo tuyo, un punto); lo de todo el día no es un botón
+    const filas = filasDe(html);
+    assert.ok(filas[0].html.startsWith(`<div class="me-elegido-cosa"><span class="me-elegido-icono" aria-hidden="true">${ICONO('feriado')}</span>`
+      + '<span class="me-elegido-hora">Todo el día</span> <span class="me-elegido-texto">Feriado: Feriado de prueba</span></div>'));
+    assert.ok(filas[1].html.includes(`<span class="me-elegido-icono" aria-hidden="true">${ICONO('licencia')}</span>`));
+    assert.ok(filas[2].html.includes(`<span class="me-elegido-icono" aria-hidden="true">${ICONO('ausente')}</span>`));
+    assert.ok(filas[3].html.startsWith('<button type="button" class="me-elegido-cosa" data-evento="76">'
+      + `<span class="me-elegido-icono" aria-hidden="true">${ICONO('compartido')}</span>`));
+    assert.deepEqual(botonesDe(html).map(({ atributos }) => atributos['data-evento'] ?? atributos['data-nuevo-el']), ['2026-11-05', '76', '75']);
+    // Los compañeros, el texto del servidor de ese día; un día de feriado sin licencia ni compañeros (el domingo 8)
+    assert.deepEqual(filasDe(M.htmlDelDiaElegido('2026-11-08', DE_NOVIEMBRE, HOY)).map((fila) => fila.texto),
+      ['Todo el día Feriado: Día del Empleado Municipal']);
+    assert.deepEqual(filasDe(M.htmlDelDiaElegido('2026-11-09', DE_NOVIEMBRE, HOY)).map((fila) => fila.texto),
+      ['Todo el día Vacaciones', 'Todo el día Carla no está']);
+  });
+
+  it('htmlDelDiaElegido: lo del servidor, escapado; una fecha que no sirve, nada; sin datos, el día vacío', () => {
+    const datos = deNoviembre({
+      eventos: [eventoDe(93, MALICIOSO, '2026-11-04', '10:00', { ...DE_JULIAN, creador: MALICIOSO_EN_UNA_PALABRA })],
+      ausencias: [{ nombre: CON_HTML, desde: '2026-11-04', hasta: '2026-11-04' }],
+      feriados: [{ ...FERIADO_DEL_EMPLEADO, fecha: '2026-11-04', nombre: CON_HTML }], conFeriados: false
+    });
+    const html = M.htmlDelDiaElegido('2026-11-04', datos, HOY);
+    assert.ok(!html.includes('<img') && !html.includes('<b>&'));
+    assert.ok(html.includes(`<span class="me-elegido-texto">Feriado: ${CON_HTML_ESCAPADO}</span>`));
+    assert.ok(html.includes(`<span class="me-elegido-texto">${CON_HTML_ESCAPADO} no está</span>`));
+    assert.ok(html.includes(`<span class="me-elegido-texto">${ESCAPADO} <small>De ${ESCAPADO_EN_UNA_PALABRA}</small></span>`));
+    for (const raro of ['raro', '2026-02-30', '', null, undefined, 20261104]) assert.equal(M.htmlDelDiaElegido(raro, datos, HOY), '', String(raro));
+    for (const raro of [null, undefined, 'x', {}, { eventos: 'x', companeros_por_dia: [null] }]) {
+      assert.ok(M.htmlDelDiaElegido('2026-11-04', raro, HOY).endsWith('<p class="me-vacio">No hay nada este día.</p>'), JSON.stringify(raro));
+    }
+  });
+});
+
 describe('la agenda: los próximos', () => {
   const GRUPOS = [
     { titulo: 'Hoy, lunes 26/10', items: [
@@ -1628,7 +1932,7 @@ describe('la agenda: los próximos', () => {
     ]);
   });
 
-  it('htmlDeProximos: cada grupo con su título y cada cosa con la hora, el título y el detalle; un evento es un botón con su id', () => {
+  it('htmlDeProximos: cada grupo con su título y cada cosa con la hora, el ícono, el título y el detalle; un evento es un botón con su id', () => {
     const html = M.htmlDeProximos(M.gruposDeProximos(PROXIMOS, HOY));
     assert.deepEqual([...html.matchAll(/<h3>([^<]*)<\/h3>/g)].map(([, titulo]) => titulo),
       ['Hoy, lunes 26/10', 'Mañana, martes 27/10', 'Esta semana', 'Más adelante']);
@@ -1639,11 +1943,22 @@ describe('la agenda: los próximos', () => {
       + 'Jue 29 09:00 Entrega del informe trimestral De Martín Aviso 2 h antes Vie 30 Sofía Paz no está '
       + 'Más adelante Lun 02/11 10:00 Reunión de equipo Con todos Aviso 2 h antes Mar 03/11 Vacaciones Hasta el lunes 09/11 '
       + 'Lun 23/11 Feriado: Día de la Soberanía Nacional');
+    // El ícono de cada cosa, decorativo, adentro del título y antes del texto (lo que es solo tuyo, un punto)
     assert.ok(html.includes('<li class="me-prox propio"><span class="me-prox-hora">12:00</span>'
-      + '<button type="button" class="me-prox-titulo" data-evento="11">Llamar a Vialidad por el TMDA</button>'
+      + '<button type="button" class="me-prox-titulo" data-evento="11"><span class="me-prox-icono propio" aria-hidden="true"><i></i></span>'
+      + 'Llamar a Vialidad por el TMDA</button>'
       + '<span class="me-prox-detalle"><span class="me-insignia azul">Solo vos</span>Aviso 2 h antes</span></li>'));
     assert.ok(html.includes('<span class="me-prox-detalle"><span class="me-insignia violeta">De Martín</span>Aviso 2 h antes</span>'));
-    assert.ok(html.includes('<li class="me-prox ausente"><span class="me-prox-hora">Vie 30</span><span class="me-prox-titulo">Sofía Paz no está</span></li>'));
+    assert.ok(html.includes('<li class="me-prox ausente"><span class="me-prox-hora">Vie 30</span><span class="me-prox-titulo">'
+      + `<span class="me-prox-icono ausente" aria-hidden="true">${ICONO('ausente')}</span>Sofía Paz no está</span></li>`));
+    assert.ok(html.includes('data-evento="14"><span class="me-prox-icono compartido" aria-hidden="true">'
+      + `${ICONO('compartido')}</span>09:00 Entrega del informe trimestral</button>`));
+    assert.ok(html.includes(`<span class="me-prox-titulo"><span class="me-prox-icono licencia" aria-hidden="true">${ICONO('licencia')}</span>Vacaciones</span>`));
+    assert.ok(html.includes('<span class="me-prox-titulo"><span class="me-prox-icono feriado" aria-hidden="true">'
+      + `${ICONO('feriado')}</span>Feriado: Día de la Soberanía Nacional</span>`));
+    // Uno en cada cosa, de su color
+    assert.deepEqual(filasDe(html).map((fila) => [...fila.html.matchAll(/<span class="me-prox-icono ([^"]*)"/g)].map(([, clase]) => clase)),
+      filasDe(html).map((fila) => [fila.clases[1]]));
     assert.deepEqual(botonesDe(html).map(({ atributos }) => atributos['data-evento']), ['11', '12', '13', '14', '15']);
     assert.doesNotMatch(html, /aria-live|role="/);
   });
@@ -1663,9 +1978,10 @@ describe('la agenda: los próximos', () => {
     });
     const html = M.htmlDeProximos(M.gruposDeProximos(datos, HOY));
     assert.ok(!html.includes('<img'));
-    assert.ok(html.includes(`data-evento="61">${ESCAPADO}</button>`));
+    assert.ok(html.includes(`data-evento="61"><span class="me-prox-icono propio" aria-hidden="true"><i></i></span>${ESCAPADO}</button>`));
     assert.ok(html.includes(`<span class="me-insignia violeta">De ${ESCAPADO_EN_UNA_PALABRA}</span>`));
-    assert.ok(html.includes(`<span class="me-prox-titulo">${ESCAPADO} no está</span>`));
+    assert.ok(html.includes(`<span class="me-prox-titulo"><span class="me-prox-icono ausente" aria-hidden="true">${ICONO('ausente')}</span>`
+      + `${ESCAPADO} no está</span>`));
   });
 });
 
