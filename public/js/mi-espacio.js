@@ -1928,13 +1928,13 @@ const ICONO_DE_MAS = '<svg aria-hidden="true" focusable="false" xmlns="http://ww
 // ícono y el texto a la vista, y en su style los días del tramo (--n: el texto ocupa todo el tramo); los demás, el texto solo para
 // el lector de pantalla (cada día dice lo suyo). Con `demora` (el movimiento, en segundos), cuándo se dibuja (--demora)
 const htmlDePieza = (pieza, demora) => {
-  if (!esObjeto(pieza)) return '<span class="me-barra vacia"></span>';
-  const clases = ['me-barra', pieza.clase, pieza.inicio === true && 'inicio', pieza.fin === true && 'fin', pieza.sigue_antes === true && 'sigue-antes',
+  if (!esObjeto(pieza)) return '<span class="me-tira vacia"></span>';
+  const clases = ['me-tira', pieza.clase, pieza.inicio === true && 'inicio', pieza.fin === true && 'fin', pieza.sigue_antes === true && 'sigue-antes',
     pieza.sigue_despues === true && 'sigue-despues'].filter(Boolean).join(' ');
   const largo = pieza.inicio === true && Number.isInteger(pieza.largo) && pieza.largo > 0 ? `--n:${String(pieza.largo)}` : '';
   const estilo = [largo, demora === null ? '' : `--demora:${demora}s`].filter(conTexto).join(';');
   const adentro = pieza.inicio === true
-    ? `${iconoDe(pieza.clase)}<span class="me-barra-texto">${esc(pieza.texto)}</span>`
+    ? `${iconoDe(pieza.clase)}<span class="me-tira-texto">${esc(pieza.texto)}</span>`
     : `<span class="visualmente-oculto">${esc(pieza.texto)}</span>`;
   return `<span class="${clases}" title="${esc(pieza.titulo)}"${estilo === '' ? '' : ` style="${estilo}"`}>${adentro}</span>`;
 };
