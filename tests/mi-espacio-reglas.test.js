@@ -351,7 +351,7 @@ describe('el reparto de las vacaciones', () => {
     assert.equal(reparto.sinCubrir.has(101), false);
   });
 
-  it('la más vieja, día por día', () => {
+  it('la más vieja primero', () => {
     const junio = vacaciones(100, '2026-06-10', '2026-06-16');
     const reparto = repartoDeVacaciones(soloVacaciones('2026-01-02', { 2025: 3 }, junio), { hoy: HOY, feriados: SIN_FERIADOS });
     // El 10, el 11 y el 12 salen de la 2025; la primera mitad de la 2026 se habilita el 1/7
@@ -387,11 +387,51 @@ describe('el reparto de las vacaciones', () => {
     assert.equal(disponibles(reparto), 34);
   });
 
-  it('una carga que cruza un vencimiento: el 01/01 es feriado fijo y la 2024 vence el 31/12', () => {
+  it('una carga que cruza un vencimiento sigue con la que empezó: la 2024 se termina el 04/01', () => {
+    // El 01/01 es feriado fijo: la 2024 da el 30/12, el 31/12 y el 04/01, aunque vence el 31/12; el 05/01, la 2026
     const fiestas = vacaciones(100, '2026-12-30', '2027-01-05');
     const reparto = repartoDeVacaciones(soloVacaciones('2026-10-26', { 2024: 3, 2025: 0, 2026: 10 }, fiestas),
       { hoy: HOY, feriados: SIN_FERIADOS });
-    assert.deepEqual(reparto.porFila.get(100), [{ anio: 2024, dias: 2 }, { anio: 2026, dias: 2 }]);
+    assert.deepEqual(reparto.porFila.get(100), [{ anio: 2024, dias: 3 }, { anio: 2026, dias: 1 }]);
+  });
+
+  it('una carga que empieza en diciembre sigue con la 2024 en enero (spec 2026-10-27, punto 3)', () => {
+    const casos = [
+      ['2026-12-16', '2027-01-10', [{ anio: 2024, dias: 15 }, { anio: 2025, dias: 1 }]],
+      ['2026-12-21', '2027-01-10', [{ anio: 2024, dias: 13 }]],
+      ['2026-12-23', '2027-01-05', [{ anio: 2024, dias: 8 }]],
+      ['2026-12-26', '2027-01-08', [{ anio: 2024, dias: 9 }]] // empieza un sábado: usa la 2024 desde el lunes 28/12
+    ];
+    for (const [desde, hasta, esperado] of casos) {
+      const reparto = repartoDeVacaciones(soloVacaciones('2026-10-26', { 2024: 15, 2025: 20, 2026: 10 },
+        vacaciones(100, desde, hasta)), { hoy: HOY, feriados: SIN_FERIADOS });
+      assert.deepEqual(reparto.porFila.get(100), esperado, `${desde} al ${hasta}`);
+      assert.equal(reparto.sinCubrir.size, 0);
+    }
+  });
+
+  it('dos cargas seguidas no se juntan: la que empieza en enero ya no usa la 2024', () => {
+    const reparto = repartoDeVacaciones(soloVacaciones('2026-10-26', { 2024: 15, 2025: 20, 2026: 10 },
+      vacaciones(100, '2026-12-21', '2026-12-31'), vacaciones(101, '2027-01-04', '2027-01-10')),
+    { hoy: HOY, feriados: SIN_FERIADOS });
+    assert.deepEqual(reparto.porFila.get(100), [{ anio: 2024, dias: 8 }]);
+    assert.deepEqual(reparto.porFila.get(101), [{ anio: 2025, dias: 5 }]);
+  });
+
+  it('las cargas se reparten en el orden de sus fechas, no del id', () => {
+    const reparto = repartoDeVacaciones(soloVacaciones('2026-10-26', { 2024: 15, 2025: 20, 2026: 10 },
+      vacaciones(100, '2026-12-21', '2027-01-10'), vacaciones(101, '2026-12-01', '2026-12-02')),
+    { hoy: HOY, feriados: SIN_FERIADOS });
+    assert.deepEqual(reparto.porFila.get(101), [{ anio: 2024, dias: 2 }]);
+    assert.deepEqual(reparto.porFila.get(100), [{ anio: 2024, dias: 13 }]);
+  });
+
+  it('sin días de la que venía usando ni otra habilitada, el día queda sin cubrir y la carga sigue después', () => {
+    // La 2024 con 3: 28, 29 y 30/12. El 31/12 no hay ninguna. Desde el 1/1/2027, la segunda mitad de la 2026
+    const reparto = repartoDeVacaciones(soloVacaciones('2026-10-26', { 2024: 3, 2025: 0, 2026: 0 },
+      vacaciones(100, '2026-12-28', '2027-01-08')), { hoy: HOY, feriados: SIN_FERIADOS });
+    assert.deepEqual(reparto.porFila.get(100), [{ anio: 2024, dias: 3 }, { anio: 2026, dias: 5 }]);
+    assert.deepEqual(reparto.sinCubrir.get(100), ['2026-12-31']);
   });
 
   it('lo cargado a futuro de la mitad que todavía no se habilitó sale de lo que falta habilitar', () => {

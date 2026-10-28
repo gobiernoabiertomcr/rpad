@@ -15,16 +15,17 @@
  *
  * Acá están las constantes y los textos de todo Mi espacio (los mensajes, los de las cargas y los del paso a
  * Configuración) y las vacaciones (spec, 3.1): cada año tiene su licencia, que se habilita en dos mitades (el 1/7 y el 1/1
- * del año siguiente) y vence el 31/12 de dos años después; cada día hábil de unas vacaciones sale de la licencia más vieja
- * que ese día esté habilitada, no vencida y con días libres (`repartoDeVacaciones`). Después, las demás licencias (3.2 a
- * 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`) y la validación de una carga (`validarLicencia`, con
- * la regla de 3.8: dos licencias no comparten un día). Por último, las horas extras (3.5 a 3.7): la validación de una carga
- * (`validarHorasExtras`), la planilla de contrato (spec 2026-10-27-mi-espacio-horas: las horas de una salida,
- * `horasDeLaSalida`, el mes que se pide, `mesDeLaPlanilla`, la validación de un día, `validarSalida`, y las salidas guardadas
- * que dejaron de cerrar, `avisosDeSalidas`, que nunca frenan una carga), los francos compensatorios de planta (`francosDe`),
- * las horas a favor de contrato (`horasAFavorDe`, desde las salidas) y lo no utilizado previamente de cada año
- * (`noUtilizadasDe`). Al final, «Mis vacaciones y saldos» (los campos del saldo inicial y el año, sección 4), el cálculo
- * completo (`calcular`), lo guardado que dejó de cerrar (`faltantesDe`, 3.10) y la evaluación de una carga
+ * del año siguiente) y vence el 31/12 de dos años después; cada carga de vacaciones sigue con la licencia que empezó a usar,
+ * aunque pase su vencimiento, y después toma la más vieja que ese día esté habilitada, no vencida y con días libres, con las
+ * cargas en el orden de sus fechas (`repartoDeVacaciones`, spec 2026-10-27-mi-espacio-dias-de-vacaciones). Después, las
+ * demás licencias (3.2 a 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`) y la validación de una carga
+ * (`validarLicencia`, con la regla de 3.8: dos licencias no comparten un día). Por último, las horas extras (3.5 a 3.7): la
+ * validación de una carga (`validarHorasExtras`), la planilla de contrato (spec 2026-10-27-mi-espacio-horas: las horas de
+ * una salida, `horasDeLaSalida`, el mes que se pide, `mesDeLaPlanilla`, la validación de un día, `validarSalida`, y las
+ * salidas guardadas que dejaron de cerrar, `avisosDeSalidas`, que nunca frenan una carga), los francos compensatorios de
+ * planta (`francosDe`), las horas a favor de contrato (`horasAFavorDe`, desde las salidas) y lo no utilizado previamente de
+ * cada año (`noUtilizadasDe`). Al final, «Mis vacaciones y saldos» (los campos del saldo inicial y el año, sección 4), el
+ * cálculo completo (`calcular`), lo guardado que dejó de cerrar (`faltantesDe`, 3.10) y la evaluación de una carga
  * (`evaluarLicencia`: una carga nueva que no cierra no se guarda). Y el paso de las ausencias de día entero a Configuración →
  * Licencias (sección 6): qué se hace al cargar, corregir y borrar, y lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`,
  * `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`). Por último, lo que ven los compañeros, «Hoy no están» (sección 7:
@@ -392,9 +393,14 @@ const habilitadoAl = (ordinaria, fecha) =>
   ordinaria.mitades.reduce((suma, mitad) => suma + (mitad.habilita <= fecha ? mitad.dias : 0), 0);
 
 /**
- * El reparto de las vacaciones (spec, 3.1): cada día hábil que descuenta, en el orden de las fechas (y del id), sale de la
- * licencia más vieja que ese día esté habilitada (la suma de sus mitades habilitadas hasta ese día menos lo ya asignado), no
- * vencida y con días libres; si no hay ninguna, queda sin cubrir. Devuelve `{ hoy, ordinarias, porFila, sinCubrir }`:
+ * El reparto de las vacaciones (spec 2026-10-27-mi-espacio-dias-de-vacaciones, que cambia la de 3.1): por carga. Cada fila
+ * de vacaciones es una licencia aparte, y las filas se reparten en el orden de su primer día que descuenta (y del id): la
+ * primera que empieza toma primero. Dentro de una fila, cada día hábil sale de la licencia que la fila ya empezó a usar,
+ * aunque haya pasado su vencimiento, mientras le queden días habilitados ese día (la suma de sus mitades habilitadas hasta
+ * ese día menos lo ya asignado); cuando no le quedan, o en el primer día, de la más vieja que ese día esté habilitada, no
+ * vencida y con días libres; si no hay ninguna, el día queda sin cubrir y el siguiente vuelve a buscar. Así, una carga que
+ * empieza a usar la 2024 a más tardar el 31/12/2026 la sigue usando en enero, y una que empieza el 04/01/2027, ya no.
+ * Devuelve `{ hoy, ordinarias, porFila, sinCubrir }`:
  * - `ordinarias`: las de `ordinariasDe`, cada una con lo de hoy: `habilitado` (sus mitades habilitadas hasta hoy),
  *   `por_habilitar` (el resto, menos lo cargado a futuro de lo que todavía no se habilitó), `usados` (asignados hasta hoy),
  *   `cargados` (asignados después de hoy) y `disponibles` (lo habilitado que no se asignó; 0 si ya venció).
@@ -411,26 +417,38 @@ export const repartoDeVacaciones = (estado, opciones) => {
   const contadosPorFila = new Map();
   const sinCubrir = new Map();
 
-  const dias = [];
+  // Las filas con sus días, en el orden de su primer día (y del id); las que no tienen días no asignan nada
+  const filas = [];
   for (const fila of listaDe(datos.licencias)) {
     if (!esObjeto(fila) || fila.tipo !== 'vacaciones') continue;
     const id = idDe(fila.id);
     contadosPorFila.set(id, new Map());
-    for (const fecha of diasQueDescuentan(fila, datos, feriados)) dias.push({ fecha, id });
+    const dias = diasQueDescuentan(fila, datos, feriados);
+    if (dias.length > 0) filas.push({ id, hasta: fila.hasta, dias });
   }
-  dias.sort((a, b) => compararTexto(a.fecha, b.fecha) || (a.id || 0) - (b.id || 0));
+  filas.sort((a, b) => compararTexto(a.dias[0], b.dias[0]) || (a.id || 0) - (b.id || 0));
 
-  for (const { fecha, id } of dias) {
-    const elegida = ordinarias.find((ordinaria) =>
-      fecha <= ordinaria.vence && habilitadoAl(ordinaria, fecha) - asignados.get(ordinaria.anio).length > 0);
-    if (elegida === undefined) {
-      if (!sinCubrir.has(id)) sinCubrir.set(id, []);
-      sinCubrir.get(id).push(fecha);
-      continue;
+  // Lo que le queda habilitado a una licencia un día; y, por año, el hasta más tardío de las filas que la usaron
+  const libresAl = (ordinaria, fecha) => habilitadoAl(ordinaria, fecha) - asignados.get(ordinaria.anio).length;
+  const ultimoUso = new Map();
+  for (const { id, hasta, dias } of filas) {
+    let actual = null;
+    for (const fecha of dias) {
+      // Sigue con la que ya empezó aunque haya vencido; si no le quedan, la más vieja vigente ese día
+      if (actual === null || libresAl(actual, fecha) <= 0) {
+        actual = ordinarias.find((ordinaria) => fecha <= ordinaria.vence && libresAl(ordinaria, fecha) > 0) ?? null;
+      }
+      if (actual === null) {
+        if (!sinCubrir.has(id)) sinCubrir.set(id, []);
+        sinCubrir.get(id).push(fecha);
+        continue;
+      }
+      asignados.get(actual.anio).push(fecha);
+      const deLaFila = contadosPorFila.get(id);
+      deLaFila.set(actual.anio, (deLaFila.get(actual.anio) ?? 0) + 1);
+      const previo = ultimoUso.get(actual.anio);
+      if (previo === undefined || hasta > previo) ultimoUso.set(actual.anio, hasta);
     }
-    asignados.get(elegida.anio).push(fecha);
-    const deLaFila = contadosPorFila.get(id);
-    deLaFila.set(elegida.anio, (deLaFila.get(elegida.anio) ?? 0) + 1);
   }
 
   const porFila = new Map([...contadosPorFila].map(([id, deLaFila]) =>
