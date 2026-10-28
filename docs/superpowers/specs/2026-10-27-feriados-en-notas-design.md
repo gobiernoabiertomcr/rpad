@@ -266,6 +266,10 @@ Borrar la Tarea Cron ese día es peor: la alerta «sin corrida» y el riesgo de 
 - **Lo ya enviado no cambia:** las notas, sus anexos y los `cuenta_desde` guardados quedan como están. Un `cuenta_desde` que cae en un feriado de la tabla solo cambia el día en que se vuelve a presentar el aviso en su fecha (el hábil anterior dentro de la licencia), no la cuenta de la reiteración. Si no queda ningún día hábil anterior dentro de la licencia (el feriado es el primer día), ese dataset no se vuelve a presentar en su fecha, como pasa hoy cuando no queda ningún día: lo toma la reiteración.
 - **El formulario de Configuración → Licencias, antes de guardar,** sigue diciendo «el último día hábil anterior» cuando cambia la fecha de inicio (no le pide nada al servidor, como hoy): en una licencia que sigue a otra, ese texto anuncia un adelanto que no va a pasar. Al guardar, la fila dice lo real. Mi espacio sí lo dice antes de guardar (su cálculo previo).
 
+**Agregados en la implementación** (tanda 1, 27 y 28/10/2026):
+- **Un `cuenta_desde` en un feriado que es el primer día de la licencia** (solo pasa con un feriado cargado después del anticipo) lo toma la reiteración solo si el aviso anticipado se envió: si quedó fallido para siempre, no lo toma nadie. Es lo mismo que pasa hoy cuando la persona autorizada falta desde el primer día.
+- **Una licencia del titular sin días hábiles justo antes de otra** (por ejemplo, una del 07/12 al 08/12 y otra desde el 09/12): la corrida no adelanta los avisos de la segunda (`anticipoPorLicencia` toma la primera, que no tiene días hábiles) y Configuración → Licencias anuncia igual la víspera de la segunda. Pasaba también con los 9 fijos con una licencia de fin de semana, y Mi espacio no deja cargar una licencia sin días hábiles. Decidido por la sesión, para que lo revise el usuario.
+
 ## Lo que queda para quien lo construye
 
 - Los nombres exactos de las funciones, de las claves y de los mensajes que no están escritos acá.

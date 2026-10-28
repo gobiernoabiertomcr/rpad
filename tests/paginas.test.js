@@ -269,13 +269,14 @@ describe('páginas', () => {
       }
     });
 
-    // Desde la entrega 2 (spec 2026-10-26-feriados, 4): cuentan para Mi espacio y nada más
-    it('el aviso azul dice, tal cual, que estos feriados cuentan solo para Mi espacio', () => {
+    // Desde la tanda 1 de los feriados en todo el sistema (spec 2026-10-27-feriados-en-notas, 6): cuentan para las Notas
+    // Digitales, los emails automáticos, las licencias y Mi espacio; Métricas, el Ciclo de vida y la Agenda de pedidos, todavía no
+    it('el aviso azul dice, tal cual, para qué cuentan estos feriados y qué sigue con los 9 fijos', () => {
       const aviso = bloque(/<p class="fe-aviso" id="feriados-aviso">[\s\S]*?<\/p>/);
       assert.ok(aviso, 'el aviso');
       assert.match(aviso, /<svg aria-hidden="true"/);
       assert.equal(aviso.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(),
-        'Por ahora, estos feriados cuentan solo para Mi espacio: los días hábiles de las licencias y los francos. Las Notas Digitales, la auditoría y Métricas siguen con los 9 feriados fijos.');
+        'Estos feriados, junto con los 9 fijos, son los días no hábiles de las Notas Digitales, los emails automáticos, las licencias y Mi espacio: esos días no sale ninguna nota ni ningún email automático. Métricas, el Ciclo de vida del dato y la Agenda de pedidos todavía cuentan solo los 9 fijos.');
     });
 
     it('la tarjeta: el título, el selector del año y los filtros como grupos con su nombre, la lista y el vacío', () => {
