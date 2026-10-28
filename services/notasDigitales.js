@@ -32,6 +32,8 @@ import {
   DIAS_PERIODOS_SIN_AUDITOR
 } from './auditoriaService.js';
 import { DIAS_HABILES_PARA_REITERAR_AUDITORIA, quienesAuditan } from './auditoriaReglas.js';
+import { leerCalendario } from './feriadosDatos.js';
+import { MENSAJE_CORRIDA_SIN_FERIADOS } from './feriadosReglas.js';
 
 export const MAX_INTENTOS = 5;
 const BLOQUEO = 'rpad_notas_digitales';
@@ -392,13 +394,14 @@ const textoSinAutorizado = (licencia) =>
 
 // Datasets del aviso de hoy. En la víspera de una licencia del firmante (anticipo), la selección mira hasta el último día
 // hábil de la licencia y cada dataset que hoy no habría entrado guarda su fecha normal de aviso (cuenta_desde): el primer
-// día hábil desde que su mes entra en la ventana (spec 2026-10-15, 7.3)
-const prepararAviso = async (gestion, hoy, anticipo) => {
+// día hábil desde que su mes entra en la ventana (spec 2026-10-15, 7.3), con el calendario de la corrida (spec
+// 2026-10-27-feriados-en-notas, 3)
+const prepararAviso = async (gestion, hoy, anticipo, calendario) => {
   if (!anticipo) return seleccionarParaAviso(gestion, hoy);
   const normales = new Set((await seleccionarParaAviso(gestion, hoy)).map(d => d.id));
   return (await seleccionarParaAviso(gestion, hoy, anticipo.hasta)).map(d => (normales.has(d.id)
     ? d
-    : { ...d, cuenta_desde: proximoDiaHabil(sumarDias(d.apertura_mes, -VENTANA_DIAS[gestion])) }));
+    : { ...d, cuenta_desde: calendario.proximoDiaHabil(sumarDias(d.apertura_mes, -VENTANA_DIAS[gestion])) }));
 };
 
 // El orden de los datasets en un aviso: por vencimiento y por título, como la selección; el id desempata
@@ -408,13 +411,15 @@ const porVencimientoYTitulo = (a, b) =>
 // Lo que decide cómo sale el día, solo lectura, en el orden de la corrida: la firma de la fecha (modo, firma y licencia del
 // firmante) y, salvo en un día sin autorizado (en que no se genera ninguna nota), la autorización todavía no comunicada
 // (pendiente, y sus datos en autorizacion) y el anticipo de la víspera de una licencia (solo con el titular firmando).
-const contextoDelDia = async (config, fecha) => {
+// calendario: el de quien llama (la corrida, o la vista previa), que va a autorizacionPendiente y a anticipoPorLicencia y vuelve
+// en el contexto, así lo que sigue (avisoDelDia) cuenta los días hábiles con el mismo, sin volver a leer la tabla.
+const contextoDelDia = async (config, fecha, calendario) => {
   const { modo, firma, licencia } = await firmaParaFecha(config, fecha);
-  if (modo === 'sin_autorizado') return { modo, firma, licencia };
-  const pendiente = await autorizacionPendiente(config, fecha);
+  if (modo === 'sin_autorizado') return { modo, firma, licencia, calendario };
+  const pendiente = await autorizacionPendiente(config, fecha, calendario);
   const autorizacion = pendiente ? datosDeAutorizacion(pendiente) : null;
-  const anticipo = modo === 'titular' ? await anticipoPorLicencia(config, fecha) : null;
-  return { modo, firma, licencia, pendiente, autorizacion, anticipo };
+  const anticipo = modo === 'titular' ? await anticipoPorLicencia(config, fecha, calendario) : null;
+  return { modo, firma, licencia, pendiente, autorizacion, anticipo, calendario };
 };
 
 /**
@@ -432,15 +437,19 @@ const contextoDelDia = async (config, fecha) => {
  * - autorizacion: la que comunica este aviso (solo la víspera, o sea con anticipo), si no null;
  * - errorEnSuFecha: el error de buscar lo que sale en su fecha, o null. Si falla, datasets es la selección normal del día:
  *   lo adelantado sale en la corrida siguiente.
+ * calendario: el de quien llama (la corrida se lo pasa siempre); sin él, se lee (leerCalendario). Con él se cuentan el
+ * cuenta_desde de lo anticipado, los días libres de la persona autorizada y el día del aviso en su fecha (spec
+ * 2026-10-27-feriados-en-notas, 3).
  */
-export const avisoDelDia = async ({ gestion, fecha, modo, licencia = null, anticipo = null, autorizacion = null }) => {
-  let datasets = await prepararAviso(gestion, fecha, anticipo);
+export const avisoDelDia = async ({ gestion, fecha, modo, licencia = null, anticipo = null, autorizacion = null, calendario }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  let datasets = await prepararAviso(gestion, fecha, anticipo, conElCalendario);
   let errorEnSuFecha = null;
   if (modo === 'autorizado') {
     try {
       // Las licencias de la persona autorizada durante la del titular
-      const ausencias = (await disponibilidadDelAutorizado(licencia))?.ausencias ?? [];
-      const enSuFecha = (await pendientesEnSuFecha(gestion, fecha, licencia, ausencias))
+      const ausencias = (await disponibilidadDelAutorizado(licencia, { calendario: conElCalendario }))?.ausencias ?? [];
+      const enSuFecha = (await pendientesEnSuFecha(gestion, fecha, licencia, ausencias, conElCalendario))
         .filter(d => d.dia_en_su_fecha <= fecha && !yaTocaReiterar(d, fecha))
         .map(d => (cumplioDiasParaReiterar(d, fecha) ? { ...d, cuenta_desde: null } : d));
       if (enSuFecha.length) datasets = [...datasets, ...enSuFecha].sort(porVencimientoYTitulo);
@@ -464,7 +473,9 @@ const hayNotaDeAuditoria = async (fecha) => {
 
 // Los pasos de una corrida (spec 8.1): reintentos, avisos, reiteraciones y la nota de auditoría de los cambios pendientes
 // (spec 2026-10-15, 9.3). Cada reintento, cada aviso, cada reiteración y la nota de auditoría van aislados.
-const correrPasos = async (resumen, hoy, usuarioId) => {
+// calendario: el de la corrida (spec 2026-10-27-feriados-en-notas, 3), con el que se cuentan todos los días hábiles: la puerta
+// del día, la víspera y el anticipo, el aviso en su fecha y el canal de la nota de auditoría.
+const correrPasos = async (resumen, hoy, usuarioId, calendario) => {
   // Con una fecha en otro formato las consultas no seleccionarían nada, en silencio: se registra como error
   if (!esFechaIso(hoy)) {
     resumen.motivo = 'Fecha de corrida inválida';
@@ -481,7 +492,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
     resumen.motivo = `Configuración incompleta: ${faltan.join(', ')}`;
     return;
   }
-  if (!esDiaHabil(hoy)) {
+  if (!calendario.esDiaHabil(hoy)) {
     resumen.motivo = 'Día no hábil';
     return;
   }
@@ -510,7 +521,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   }
   for (const { id } of pendientes) await enviar(id, { tipo: 'reintento' });
 
-  const delDia = await contextoDelDia(config, hoy);
+  const delDia = await contextoDelDia(config, hoy, calendario);
   let { modo, firma, licencia } = delDia;
   // Licencia del firmante sin autorizado: ese día no se genera ninguna nota (spec 2026-10-15, 7.3). Los reintentos de
   // arriba siguen: su contenido ya está congelado.
@@ -583,7 +594,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
       // Con persona autorizada, lo que se adelantó en la víspera sale también en su fecha, presentado por ella; si buscarlo
       // falla, se informa y el aviso del día sale con la selección normal (avisoDelDia).
       const aviso = await avisoDelDia({
-        gestion, fecha: hoy, modo, licencia, anticipo, autorizacion: autorizacionDesactualizada ? null : autorizacion
+        gestion, fecha: hoy, modo, licencia, anticipo, autorizacion: autorizacionDesactualizada ? null : autorizacion, calendario
       });
       if (aviso.errorEnSuFecha) anotarError(resumen, { tipo: 'aviso', gestion }, aviso.errorEnSuFecha);
       const { datasets, rangoVencimientos } = aviso;
@@ -636,10 +647,10 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   // por día (Decisiones del plan 12), con la firma del día. Si hoy no hay quién firme (licencia sin autorizado) o la nota
   // de autorización no se pudo generar, la corrida ya terminó arriba, como para las demás notas. Los cambios que entran
   // son los del canal nota, que ya exige el envío activo, la configuración completa y un Para de auditoría (spec 9.1):
-  // sin eso siguen por recordatorio y esta nota no se genera.
+  // sin eso siguen por recordatorio y esta nota no se genera. El canal, con el calendario de la corrida.
   try {
     if (!(await hayNotaDeAuditoria(hoy))) {
-      const { nuevos, reiterados } = await seleccionarParaAuditoria(hoy, await contextoDeCanal(hoy, config));
+      const { nuevos, reiterados } = await seleccionarParaAuditoria(hoy, await contextoDeCanal(hoy, config, calendario));
       if (nuevos.length || reiterados.length) {
         const id = await generarNota({
           tipo: 'auditoria', gestion: null, fecha: hoy, datasets: [], config, usuarioId, firma,
@@ -654,13 +665,26 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   }
 };
 
-export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId = null } = {}) => {
-  const resumen = { fecha: hoy, ejecutado: false, motivo: null, licencia: null, generadas: [], enviadas: 0, fallidas: 0, errores: [] };
+/**
+ * La corrida de las Notas Digitales de hoy. calendario: el de la corrida de las 8:15, que lee los feriados una sola vez y lo
+ * pasa a todos sus pasos (spec 2026-10-27-feriados-en-notas, 1 y 2); sin él, se lee acá (leerCalendario). El resumen dice con
+ * cuál contó los días hábiles (calendario: 'tabla' o 'fijos'). Si la tabla no se pudo leer (calendario.error, nunca por el
+ * origen: un test puede pasar CALENDARIO_FIJO sin que sea un error), la corrida sigue con los 9 fijos y lo anota como un error
+ * antes de tomar el bloqueo: así queda también con el envío apagado o un día no hábil, lo escribe registrarFin en la última
+ * corrida y, si la corrida termina «ocupada», queda solo en lo que devuelve (y en la consola).
+ */
+export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId = null, calendario } = {}) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const resumen = {
+    fecha: hoy, calendario: conElCalendario.origen, ejecutado: false, motivo: null, licencia: null, generadas: [], enviadas: 0,
+    fallidas: 0, errores: []
+  };
+  if (conElCalendario.error !== null) anotarError(resumen, { tipo: 'feriados' }, new Error(MENSAJE_CORRIDA_SIN_FERIADOS));
   // Con el bloqueo ocupado no se registra nada: la corrida que lo tiene es la que registra
   const corrida = await conBloqueo(async () => {
     await registrarInicio(hoy);
     try {
-      await correrPasos(resumen, hoy, usuarioId);
+      await correrPasos(resumen, hoy, usuarioId, conElCalendario);
     } catch (error) {
       // Lo que falla fuera de los pasos aislados (por ejemplo, leer la configuración)
       anotarError(resumen, { tipo: 'corrida' }, error);

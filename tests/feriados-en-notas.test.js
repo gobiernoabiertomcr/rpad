@@ -4,8 +4,8 @@
 import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
-import { crearBaseDePrueba, correrSqlEnBaseDePrueba, cerrarDb, query, mailpit, paraCasilla } from './helpers.js';
-import { limpiarBase, configurarNotas, asegurarBaseDePrueba } from './notas-fixtures.js';
+import { crearBaseDePrueba, correrSqlEnBaseDePrueba, cerrarDb, query, mailpit, paraCasilla, db } from './helpers.js';
+import { limpiarBase, configurarNotas, asegurarBaseDePrueba, crearDataset, crearNota } from './notas-fixtures.js';
 import { pngRgba } from './firma-fixtures.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 import { MENSAJE_CORRIDA_SIN_FERIADOS } from '../services/feriadosReglas.js';
@@ -291,5 +291,187 @@ describe('auditoría: un solo calendario a las 8:15 y a las 14:00', () => {
     const [config] = await query('SELECT ultima_corrida_resultado, ultima_corrida_con_errores FROM notas_digitales_config WHERE id = 1');
     assert.ok(String(config.ultima_corrida_resultado).includes(MENSAJE_CORRIDA_SIN_FERIADOS), config.ultima_corrida_resultado);
     assert.equal(config.ultima_corrida_con_errores, 1);
+  });
+});
+
+describe('la corrida de las Notas Digitales con la precarga', () => {
+  const correr = (hoy) => motor.ejecutarNotasDigitales({ hoy });
+  // Como en tests/notas-licencias.test.js y tests/notas-motor.test.js
+  const notas = () => query(
+    `SELECT id, numero, anio, tipo, gestion, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, firmante_id, presentada_por_id
+     FROM notas_digitales WHERE es_prueba = 0 ORDER BY id`
+  );
+  const datasetsDe = (notaId) => query(
+    "SELECT dataset_id, DATE_FORMAT(cuenta_desde, '%Y-%m-%d') AS cuenta_desde FROM notas_digitales_datasets WHERE nota_id = ? ORDER BY dataset_id",
+    [notaId]
+  );
+  const notaDeAutorizacionDe = async (licenciaId) => (await query('SELECT nota_autorizacion_id AS id FROM usuarios_licencias WHERE id = ?', [licenciaId]))[0].id;
+  const ultimaCorrida = async () => (await query(
+    `SELECT DATE_FORMAT(ultima_corrida_fecha, '%Y-%m-%d') AS fecha, DATE_FORMAT(ultima_corrida_inicio, '%Y-%m-%d %H:%i:%s') AS inicio,
+            DATE_FORMAT(ultima_corrida_fin, '%Y-%m-%d %H:%i:%s') AS fin, ultima_corrida_resultado AS resultado,
+            ultima_corrida_con_errores AS con_errores
+     FROM notas_digitales_config WHERE id = 1`
+  ))[0];
+  // Simula otra corrida (otro proceso), como en tests/notas-motor.test.js: una conexión propia que tiene tomado el bloqueo de las
+  // Notas Digitales hasta liberarlo
+  const tomarBloqueoAjeno = async () => {
+    const conexion = await db().getConnection();
+    const [[{ tomado }]] = await conexion.query('SELECT GET_LOCK(?, 0) AS tomado', ['rpad_notas_digitales']);
+    assert.equal(Number(tomado), 1);
+    return async () => {
+      await conexion.query('SELECT RELEASE_LOCK(?)', ['rpad_notas_digitales']);
+      conexion.release();
+    };
+  };
+  // El titular firmante (superadmin) y la persona autorizada (admin), los dos con su firma
+  const conFirmante = async () => {
+    const titular = await crearUsuario('superadmin');
+    const autorizado = await crearUsuario('admin');
+    await query('UPDATE notas_digitales_config SET firmante_usuario_id = ? WHERE id = 1', [titular.id]);
+    return { titular, autorizado };
+  };
+  // Lo que dice leerCalendario en la consola cuando no puede leer la tabla: una vez por lectura
+  const lecturasFallidas = (consola) => consola.mock.calls
+    .filter((llamada) => String(llamada.arguments[0]).startsWith('No se pudieron leer los feriados')).length;
+
+  it('el lunes 02/11/2026 es «Día no hábil» y el martes 03/11 salen el aviso interno del 31/12 y la reiteración de noviembre', async () => {
+    await crearDataset({ titulo: 'Vence en diciembre', vencimiento: '2026-12-31' });
+    await crearDataset({ titulo: 'Venció en octubre', vencimiento: '2026-10-31' });
+
+    const del02 = await correr('2026-11-02');
+    assert.equal(del02.motivo, 'Día no hábil');
+    assert.equal(del02.calendario, 'tabla');
+    assert.equal(del02.ejecutado, false);
+    assert.deepEqual(del02.errores, []);
+    assert.deepEqual(await notas(), []);
+
+    const del03 = await correr('2026-11-03');
+    assert.deepEqual(del03.errores, []);
+    assert.equal(del03.calendario, 'tabla');
+    assert.deepEqual(del03.generadas.map((g) => [g.tipo, g.gestion]), [['aviso', 'interna'], ['reiteracion', 'interna']]);
+  });
+
+  it('el 09/11 no genera nada', async () => {
+    // El 08/01/2027 entra en la ventana de 60 días de la interna el 09/11: con los 9 fijos, su aviso saldría ese día
+    const id = await crearDataset({ vencimiento: '2027-01-08' });
+    const del09 = await correr('2026-11-09');
+    assert.equal(del09.motivo, 'Día no hábil');
+    assert.deepEqual(await notas(), []);
+
+    const del10 = await correr('2026-11-10');
+    assert.deepEqual(del10.errores, []);
+    const [aviso, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.deepEqual([aviso.tipo, aviso.gestion, aviso.fecha], ['aviso', 'interna', '2026-11-10']);
+    assert.deepEqual(await datasetsDe(aviso.id), [{ dataset_id: id, cuenta_desde: null }]);
+  });
+
+  it('la víspera de una licencia del firmante desde el 09/12, con persona autorizada, es el viernes 04/12, y el 07/12 no genera nada', async () => {
+    // El lunes 07/12 es un día no laborable de la tabla y el martes 08/12, uno de los 9 fijos: la víspera es el viernes 04/12 (con
+    // los 9 fijos sería el 07/12). El externo vence el 31/01/2027 y su fecha normal de aviso es el 22/12 (40 días antes)
+    const { titular, autorizado } = await conFirmante();
+    const licenciaId = await licencia(titular, '2026-12-09', '2027-01-08', autorizado);
+    const externo = await crearDataset({ titulo: 'Externo de enero', gestion: 'externa', vencimiento: '2027-01-31' });
+
+    const del04 = await correr('2026-12-04');
+    assert.deepEqual(del04.errores, []);
+    const [aviso, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.deepEqual([aviso.tipo, aviso.gestion, aviso.fecha], ['aviso', 'externa', '2026-12-04']);
+    assert.equal(aviso.firmante_id, titular.id);
+    assert.deepEqual(await datasetsDe(aviso.id), [{ dataset_id: externo, cuenta_desde: '2026-12-22' }]);
+    assert.equal(await notaDeAutorizacionDe(licenciaId), aviso.id);
+
+    const del07 = await correr('2026-12-07');
+    assert.equal(del07.motivo, 'Día no hábil');
+    assert.equal((await notas()).length, 1);
+  });
+
+  it('un cuenta_desde guardado en un feriado de la tabla se presenta el hábil anterior dentro de la licencia', async () => {
+    // Un aviso anticipado del 02/12 (la víspera de la licencia del 03/12 al 18/12), ya enviado y que comunicó la autorización, con
+    // el cuenta_desde de su externo en el lunes 07/12: un día no laborable de la tabla (anticipado con los 9 fijos, o con el
+    // feriado cargado después de la víspera). Ese día no hay corrida: el aviso en su fecha sale el viernes 04/12, presentado por
+    // la persona autorizada
+    const { titular, autorizado } = await conFirmante();
+    const licenciaId = await licencia(titular, '2026-12-03', '2026-12-18', autorizado);
+    const externo = await crearDataset({ titulo: 'Externo adelantado', gestion: 'externa', vencimiento: '2027-01-31' });
+    const anticipado = await crearNota({
+      gestion: 'externa', fecha: '2026-12-02', numero: 1,
+      datasets: [{ id: externo, vencimiento: '2027-01-31', cuentaDesde: '2026-12-07' }]
+    });
+    await query('UPDATE usuarios_licencias SET nota_autorizacion_id = ? WHERE id = ?', [anticipado, licenciaId]);
+
+    const resumen = await correr('2026-12-04');
+    assert.deepEqual(resumen.errores, []);
+    const [, enSuFecha, ...otras] = await notas();
+    assert.equal(otras.length, 0);
+    assert.ok(enSuFecha, 'el 04/12 sale el aviso en su fecha');
+    assert.deepEqual([enSuFecha.tipo, enSuFecha.gestion, enSuFecha.fecha], ['aviso', 'externa', '2026-12-04']);
+    assert.equal(enSuFecha.firmante_id, titular.id);
+    assert.equal(enSuFecha.presentada_por_id, autorizado.id);
+    // El cuenta_desde guardado no cambia, en el anticipado ni en el de su fecha: los 20 días de la reiteración se cuentan desde él
+    assert.deepEqual(await datasetsDe(enSuFecha.id), [{ dataset_id: externo, cuenta_desde: '2026-12-07' }]);
+    assert.deepEqual(await datasetsDe(anticipado), [{ dataset_id: externo, cuenta_desde: '2026-12-07' }]);
+  });
+
+  it('con la tabla renombrada usa los 9 fijos, queda con errores y dice qué calendario usó', async () => {
+    await crearDataset({ vencimiento: '2026-12-31' });
+    const consola = mock.method(console, 'error', () => {});
+    try {
+      const resumen = await conLaTablaRenombrada(() => correr('2026-11-02'));
+      // Una sola lectura de la tabla en toda la corrida
+      assert.equal(lecturasFallidas(consola), 1);
+      assert.equal(resumen.calendario, 'fijos');
+      assert.deepEqual(resumen.errores.map((e) => e.tipo), ['feriados']);
+      assert.equal(resumen.errores[0].mensaje, MENSAJE_CORRIDA_SIN_FERIADOS);
+      // Con los 9 fijos, el 02/11 es hábil: sale el aviso interno
+      assert.equal(resumen.ejecutado, true);
+      assert.deepEqual(resumen.generadas.map((g) => [g.tipo, g.gestion]), [['aviso', 'interna']]);
+      const corrida = await ultimaCorrida();
+      assert.equal(corrida.con_errores, 1);
+      assert.ok(corrida.resultado.includes(MENSAJE_CORRIDA_SIN_FERIADOS), corrida.resultado);
+
+      // Con el envío apagado, el error queda igual: se anota antes de mirar si el envío está activo
+      await configurarNotas({ envio_activo: 0 });
+      const apagado = await conLaTablaRenombrada(() => correr('2026-11-02'));
+      assert.equal(apagado.motivo, 'Envío automático desactivado');
+      assert.equal(apagado.calendario, 'fijos');
+      assert.deepEqual(apagado.errores.map((e) => [e.tipo, e.mensaje]), [['feriados', MENSAJE_CORRIDA_SIN_FERIADOS]]);
+      const desactivada = await ultimaCorrida();
+      assert.equal(desactivada.con_errores, 1);
+      assert.ok(desactivada.resultado.includes(MENSAJE_CORRIDA_SIN_FERIADOS), desactivada.resultado);
+    } finally {
+      consola.mock.restore();
+    }
+  });
+
+  it('ocupada, con la tabla sin leer, el error queda solo en lo que devuelve', async () => {
+    await crearDataset({ vencimiento: '2026-12-31' });
+    // La corrida que queda registrada: la del 02/11, con la tabla
+    await correr('2026-11-02');
+    const antes = await ultimaCorrida();
+    assert.equal(antes.resultado, 'Día no hábil');
+
+    const consola = mock.method(console, 'error', () => {});
+    let resumen;
+    try {
+      const liberar = await tomarBloqueoAjeno();
+      try {
+        resumen = await conLaTablaRenombrada(() => correr('2026-11-03'));
+      } finally {
+        await liberar();
+      }
+      // El error queda en la consola
+      assert.ok(consola.mock.calls.some((llamada) => llamada.arguments.map(String).join(' ').includes(MENSAJE_CORRIDA_SIN_FERIADOS)));
+    } finally {
+      consola.mock.restore();
+    }
+    assert.equal(resumen.motivo, 'Otra corrida en curso');
+    assert.equal(resumen.ejecutado, false);
+    assert.equal(resumen.calendario, 'fijos');
+    assert.deepEqual(resumen.errores.map((e) => [e.tipo, e.mensaje]), [['feriados', MENSAJE_CORRIDA_SIN_FERIADOS]]);
+    // La última corrida (la de la otra) no cambia y no se generó nada
+    assert.deepEqual(await ultimaCorrida(), antes);
+    assert.deepEqual(await notas(), []);
   });
 });
