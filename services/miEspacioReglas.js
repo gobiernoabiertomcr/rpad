@@ -31,8 +31,9 @@
  * Licencias (sección 6): qué se hace al cargar, corregir y borrar, lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`,
  * `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`) y lo que el Resumen avisa para revisar (`revisionDelVinculo`, spec
  * 2026-10-28-mi-espacio-licencia-anulada). Por último, lo que ven los compañeros, «Hoy no están» (sección 7:
- * `ausenciasUnidas` y `ausentesDelRango`, sin el tipo, y los dos grupos de «Hoy y mañana», `ausentesDeHoyYManana`), y lo que
- * dice el email de vencimiento (sección 9: `avisosDeVencimiento`).
+ * `ausenciasUnidas` y `ausentesDelRango`, sin el tipo, y los dos grupos de «Hoy y mañana», `ausentesDeHoyYManana`), con el
+ * nombre de cada uno como lo ven los demás (`nombreCorto`: «Carla», o «Carla B.» si hay otra Carla; spec
+ * 2026-10-28-mi-espacio-agenda-onda, 5.1), y lo que dice el email de vencimiento (sección 9: `avisosDeVencimiento`).
  * Los textos son planos: escaparlos le toca a quien los dibuja.
  */
 import {
@@ -2051,9 +2052,43 @@ export const pasoPrevistoDe = (entrada) => {
 };
 
 // «Hoy no están» (spec, sección 7): lo que ven los compañeros de las ausencias de día entero de cada uno, sin el tipo ni la
-// nota: «Laura Gómez no está» y «Vuelve el lunes 02/11»
+// nota: «Laura no está» (con el nombre corto, `nombreCorto`) y «Vuelve el lunes 02/11»
 export const textoNoEsta = (nombre) => `${typeof nombre === 'string' ? nombre : ''} no está`;
 export const textoDeLaVuelta = (fecha) => (esFechaIso(fecha) ? `Vuelve el ${diaDeLaSemana(fecha)} ${diaYMes(fecha)}` : null);
+
+// Las palabras de un nombre, sin los espacios de más; lo que no es un texto, ninguna
+const palabrasDe = (nombre) => (typeof nombre === 'string' ? nombre.trim().split(/\s+/).filter(Boolean) : []);
+// Una palabra para comparar: sin tildes (ni otras marcas) y en minúscula, «Matías» y «matias» son la misma
+const paraComparar = (palabra) => palabra.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+// La primera letra de una palabra (Array.from: una letra fuera del plano básico es una sola)
+const inicialDe = (palabra) => Array.from(palabra)[0] ?? '';
+
+/**
+ * El nombre de una persona como la ven sus compañeros (spec 2026-10-28-mi-espacio-agenda-onda, 5.1): `persona` es
+ * `{ id, nombre }` (el nombre completo) y `administracion`, la administración activa (`[{ id, nombre }]`, la de
+ * `administracionActiva` de services/miEspacioDatos.js), contra la que se compara: la de todo el sistema, no la del mes, así
+ * el nombre de alguien no cambia de un mes a otro. El primer nombre («Carla»); si otra persona de la lista (otro id: la
+ * persona misma no cuenta, y quien no está en la lista se compara igual) tiene el mismo primer nombre, sin mayúsculas ni
+ * tildes, con la inicial del último apellido y un punto («Carla B.»); si alguna de esas tiene además la misma inicial, el
+ * nombre completo. Los espacios de más no cuentan, y un nombre de una sola palabra es esa palabra. Sin un nombre, ''. Pura;
+ * nunca tira.
+ */
+export const nombreCorto = (persona, administracion) => {
+  const palabras = palabrasDe(esObjeto(persona) ? persona.nombre : null);
+  if (palabras.length === 0) return '';
+  const [primera] = palabras;
+  if (palabras.length === 1) return primera;
+  const ultima = palabras[palabras.length - 1];
+  const id = idDe(persona.id);
+  const mismoNombre = listaDe(administracion)
+    .filter((otra) => esObjeto(otra) && idDe(otra.id) !== id)
+    .map((otra) => palabrasDe(otra.nombre))
+    .filter((otras) => otras.length > 0 && paraComparar(otras[0]) === paraComparar(primera));
+  if (mismoNombre.length === 0) return primera;
+  const inicial = inicialDe(paraComparar(ultima));
+  if (mismoNombre.some((otras) => inicialDe(paraComparar(otras[otras.length - 1])) === inicial)) return palabras.join(' ');
+  return `${primera} ${inicialDe(ultima)}.`;
+};
 
 /**
  * Las ausencias de cada persona (`filas`: `[{ usuario_id, nombre, desde, hasta }]`), con las seguidas o separadas solo por

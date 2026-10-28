@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi espacio, la agenda con más onda - RPAD (maqueta)</title>
+    <!-- MAQUETA (28/10/2026): la agenda de Mi espacio con más onda, con la carcasa real (copiada de public/mi-espacio.html), el
+         main.css real y datos inventados (los feriados son los de Configuración). Hoy es el miércoles 28/10/2026. La barra oscura
+         de abajo es de la maqueta. No guarda nada. Se ve con un servidor (python -m http.server) en esta carpeta. -->
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="pagina.css">
+    <link rel="stylesheet" href="agenda.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header (con sesión: lo que pone main.js) -->
+        <header class="header header--con-sesion">
+            <div class="header-left">
+                <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir el menú" aria-controls="sidebar" aria-expanded="false">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+                </button>
+                <a href="index.html" class="header-marca">
+                    <img src="img/logo.png" alt="Municipalidad de Comodoro Rivadavia" class="header-logo">
+                    <span class="header-marca-texto">
+                        <span class="header-title">RPAD</span>
+                        <span class="header-subtitle">Registro Permanente de Actualización de Datasets</span>
+                    </span>
+                </a>
+            </div>
+            <nav class="header-nav" aria-label="Principal">
+                <a href="#">Inicio</a>
+                <a href="#">Datasets</a>
+                <a href="#">Calendario</a>
+                <a href="#">Contacto</a>
+            </nav>
+            <div class="header-right" id="header-actions">
+                <a href="#" class="header-notification" id="header-campana" title="Cambios pendientes">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                </a>
+                <a href="#" class="header-user" title="Mi Perfil">
+                    <div class="header-user-info">
+                        <div class="header-user-name" id="header-nombre">Andrea Paula Molina</div>
+                        <div class="header-user-role" id="header-rol">Administrador</div>
+                    </div>
+                    <div class="header-user-avatar" id="header-iniciales">AM</div>
+                </a>
+                <button class="btn btn-secondary btn-sm" type="button">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                    Salir
+                </button>
+            </div>
+        </header>
+
+        <!-- Sidebar Overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <!-- Sidebar (el de las 14 páginas; la maqueta muestra Administración solo a administración) -->
+        <aside class="sidebar" id="sidebar" aria-label="Menú">
+            <div class="sidebar-header">
+                <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="sidebar-logo">
+            </div>
+            <nav class="sidebar-nav">
+                <div class="sidebar-section" id="sidebarAdmin">
+                    <div class="sidebar-section-title">Administración</div>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>Gestión de Datasets</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Correos</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Configuración</span></a>
+                </div>
+                <div class="sidebar-section" id="sidebarTools">
+                    <div class="sidebar-section-title">Herramientas</div>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Métricas y Reportes</span></a>
+                    <a href="#" class="sidebar-link" id="sidebarNotas"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg><span>Notas</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M8 10v4"/><path d="M12 10v2"/><path d="M16 10v6"/></svg><span>Proyectos</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span>Seguimiento</span></a>
+                </div>
+                <div class="sidebar-section" id="sidebarAccount">
+                    <div class="sidebar-section-title">Mi cuenta</div>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Mi Perfil</span></a>
+                    <a href="index.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg><span>Mi espacio</span></a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="me-pagina">
+                <div class="page-header">
+                    <h1 class="page-title">
+                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+                        Mi espacio
+                    </h1>
+                    <!-- Con la agenda (entrega 3) se suma «Nuevo evento» -->
+                    <div class="me-acciones">
+                        <button type="button" class="sg-btn sg-btn-borde" data-maqueta-accion="Nuevo evento">Nuevo evento</button>
+                        <button type="button" class="sg-btn sg-btn-borde" data-maqueta-accion="Cargar horas extras">Cargar horas extras</button>
+                        <button type="button" class="sg-btn sg-btn-tinta" data-maqueta-accion="Cargar licencia"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Cargar licencia</button>
+                    </div>
+                </div>
+                <p class="me-bajada">Tus licencias, tus horas extras y tu agenda. Lo que cargás acá lo ves solo vos, salvo los eventos que compartís y, si querés, tus ausencias (sin decir de qué son).</p>
+
+                <p class="visualmente-oculto" id="me-anuncio" role="status"></p>
+
+                <div class="me-pestanas" role="tablist" aria-label="Mi espacio">
+                    <button type="button" class="me-pestana" role="tab" id="tab-resumen" aria-selected="false" aria-controls="vista-resumen" data-pestana="resumen" tabindex="-1">Resumen</button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-licencias" aria-selected="false" aria-controls="vista-licencias" data-pestana="licencias" tabindex="-1">Licencias</button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-horas" aria-selected="false" aria-controls="vista-horas" data-pestana="horas" tabindex="-1">Horas extras</button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-agenda" aria-selected="true" aria-controls="vista-agenda" data-pestana="agenda">Agenda</button>
+                </div>
+                <section id="vista-resumen" role="tabpanel" aria-labelledby="tab-resumen" hidden><p class="me-estado">La maqueta muestra solo la Agenda: el Resumen queda como está (salvo «Hoy y mañana», que usa el primer nombre de los compañeros).</p></section>
+                <section id="vista-licencias" role="tabpanel" aria-labelledby="tab-licencias" hidden><p class="me-estado">La maqueta muestra solo la Agenda: la pestaña Licencias queda como está.</p></section>
+                <section id="vista-horas" role="tabpanel" aria-labelledby="tab-horas" hidden><p class="me-estado">La maqueta muestra solo la Agenda: la pestaña Horas extras queda como está.</p></section>
+                <!-- La agenda con más onda: la banda celeste con el mes, la frase y los botones; el mes con las barras continuas (tus
+                     licencias en verde y los compañeros en una sola franja gris), los íconos y los renglones que se adaptan; «Próximos» al
+                     costado y, en el teléfono, el día elegido debajo del mes -->
+                <section id="vista-agenda" role="tabpanel" aria-labelledby="tab-agenda">
+                    <div class="ag-banda">
+                        <div class="ag-banda-cuerpo">
+                            <div class="ag-banda-mes">
+                                <h2 id="ag-mes-titulo">Octubre 2026</h2>
+                                <button type="button" class="me-flecha" id="ag-anterior" aria-label="Mes anterior"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+                                <button type="button" class="me-flecha" id="ag-siguiente" aria-label="Mes siguiente"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+                            </div>
+                            <div class="ag-banda-acciones">
+                                <button type="button" class="ag-finde" id="ag-finde" aria-pressed="false"><span class="ag-finde-llave" aria-hidden="true"></span>Sábado y domingo<span class="ag-finde-cuenta" id="ag-finde-cuenta" hidden></span></button>
+                                <button type="button" class="sg-btn sg-btn-borde sg-btn-chico" id="ag-hoy">Hoy</button>
+                                <button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" id="ag-nuevo-evento"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Nuevo evento</button>
+                            </div>
+                            <p class="ag-frase" id="ag-frase"></p>
+                        </div>
+                        <svg class="me-ola" aria-hidden="true" viewBox="0 0 1200 28" preserveAspectRatio="none"><path fill="currentColor" d="M0 0 H1200 V14 C 1100 26, 1000 26, 900 14 S 700 2, 600 12 S 400 28, 300 16 S 100 4, 0 18 Z"/></svg>
+                    </div>
+
+                    <div class="me-mes-y-proximos ag-cuerpo">
+                        <div class="me-tarjeta ag-tarjeta-mes">
+                            <div id="ag-mes"></div>
+                            <ul class="me-leyenda ag-leyenda" aria-label="Los colores del mes" id="ag-leyenda"></ul>
+                            <section class="ag-elegido" id="ag-elegido" aria-labelledby="ag-elegido-titulo"></section>
+                        </div>
+                        <section class="me-tarjeta me-proximos-tarjeta" aria-labelledby="ag-proximos-titulo">
+                            <div class="me-cabeza"><h2 id="ag-proximos-titulo">Próximos</h2></div>
+                            <div class="me-proximos" id="ag-proximos"></div>
+                        </section>
+                    </div>
+                </section>
+
+            </div>
+
+            <!-- Footer -->
+            <footer class="footer">
+                <div class="footer-cuerpo">
+                    <div class="footer-marca">
+                        <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="footer-logo">
+                        <p class="footer-direccion">Dirección de Datos Públicos y Comunicación</p>
+                        <p>D. G. de Modernización e Investigación Territorial<br>Subsecretaría de Modernización y Transparencia</p>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">El registro</h2>
+                        <ul>
+                            <li><a href="#">Inicio</a></li>
+                            <li><a href="#">Datasets</a></li>
+                            <li><a href="#">Calendario</a></li>
+                            <li><a href="#">Contacto</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Datos abiertos</h2>
+                        <ul>
+                            <li><a href="#">datos.comodoro.gov.ar</a></li>
+                            <li>Licencia CC BY-SA 4.0</li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Marco legal</h2>
+                        <ul>
+                            <li>Ordenanza N° 17.662/23, artículo 8°</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <span>© <span id="footer-anio">2026</span> Secretaría de Gobierno, Modernización y Transparencia. Municipalidad de Comodoro Rivadavia</span>
+                    <span>RPAD v2.0.0</span>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <div class="modal-overlay" id="modal-evento">
+        <div class="modal me-modal" role="dialog" aria-modal="true" aria-labelledby="modal-evento-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-evento-titulo">Nuevo evento</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="ev-error" role="alert" hidden></p>
+                <div class="form-group">
+                    <label class="form-label" for="ev-titulo">Qué</label>
+                    <input type="text" class="form-input" id="ev-titulo" autocomplete="off" aria-describedby="ev-titulo-error">
+                    <p class="form-error" id="ev-titulo-error" hidden></p>
+                </div>
+                <div class="me-fila-campos">
+                    <div class="form-group">
+                        <label class="form-label" for="ev-fecha">Fecha</label>
+                        <input type="date" class="form-input" id="ev-fecha" aria-describedby="ev-fecha-error">
+                        <p class="form-error" id="ev-fecha-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="ev-desde">De</label>
+                        <input type="time" class="form-input" id="ev-desde" aria-describedby="ev-desde-error">
+                        <p class="form-error" id="ev-desde-error" hidden></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="ev-hasta">A <span class="me-opcional">(opcional)</span></label>
+                        <input type="time" class="form-input" id="ev-hasta" aria-describedby="ev-hasta-error">
+                        <p class="form-error" id="ev-hasta-error" hidden></p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="ev-detalle">Detalle <span class="me-opcional">(opcional)</span></label>
+                    <textarea class="form-textarea" id="ev-detalle" rows="3" aria-describedby="ev-detalle-error"></textarea>
+                    <p class="form-error" id="ev-detalle-error" hidden></p>
+                </div>
+                <div class="me-grupo" id="ev-grupo-quien" role="group" aria-labelledby="ev-quien-rotulo" hidden>
+                    <span class="form-label" id="ev-quien-rotulo">¿Quién lo ve?</span>
+                    <div class="me-opciones dos">
+                        <button type="button" class="me-opcion" id="ev-solo" aria-pressed="true"><span><b>Solo yo</b><small>Nadie más lo ve</small></span></button>
+                        <button type="button" class="me-opcion" id="ev-compartido" aria-pressed="false"><span><b>Compartido</b><small>Con las personas que elijas</small></span></button>
+                    </div>
+                </div>
+                <fieldset class="me-grupo" id="ev-grupo-personas" aria-describedby="ev-personas-ayuda ev-personas-error" hidden>
+                    <legend class="form-label">Con quién <span class="me-opcional" id="ev-personas-cuantas"></span></legend>
+                    <div class="me-personas" id="ev-personas"></div>
+                    <p class="form-hint" id="ev-personas-ayuda">Les llega un email cuando los sumás, y otro si cambiás o borrás el evento. Solo vos lo podés cambiar.</p>
+                    <p class="form-error" id="ev-personas-error" hidden></p>
+                </fieldset>
+                <div class="form-group">
+                    <label class="form-label" for="ev-recordatorio">Recordatorio por email</label>
+                    <select class="form-select" id="ev-recordatorio" aria-describedby="ev-aviso ev-recordatorio-ayuda ev-recordatorio-error"></select>
+                    <p class="form-hint" id="ev-aviso" hidden></p>
+                    <p class="form-hint" id="ev-recordatorio-ayuda" hidden></p>
+                    <p class="form-error" id="ev-recordatorio-error" hidden></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="me-pie-izquierda">
+                    <button type="button" class="sg-link me-link-rojo" id="ev-borrar" hidden>Borrar el evento</button>
+                </div>
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="ev-guardar">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Un evento que compartió otra persona (spec, sección 2; maqueta 2, #evento-ajeno): el título del evento es el del modal, cuándo
+         es, el detalle, quién lo creó y quiénes están, y «Mi recordatorio», que se guarda al elegirlo (el evento no cambia). No tiene
+         nada que cancelar: se cierra con «Cerrar» -->
+    <div class="modal-overlay" id="modal-evento-ajeno">
+        <div class="modal me-modal me-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-evento-ajeno-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-evento-ajeno-titulo">Evento</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="me-modal-error" id="mea-error" role="alert" hidden></p>
+                <p class="me-ajeno-cuando" id="mea-cuando"></p>
+                <p class="me-ajeno-detalle" id="mea-detalle" hidden></p>
+                <p class="me-ajeno-quien" id="mea-quien"></p>
+                <div class="form-group">
+                    <label class="form-label" for="mea-recordatorio">Mi recordatorio</label>
+                    <select class="form-select" id="mea-recordatorio" aria-describedby="mea-aviso mea-ayuda"></select>
+                    <p class="form-hint" id="mea-aviso" hidden></p>
+                    <p class="form-hint" id="mea-ayuda">Solo quien lo creó puede cambiar el evento.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-tinta" id="mea-cerrar" data-cerrar>Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmar un borrado (un modal chico, no confirm()), sobre el formulario: Escape lo cierra primero. El texto lo arma
+         textoDeConfirmacion, en texto plano -->
+
+    <!-- Solo de la maqueta -->
+    <div class="mq-barra" role="region" aria-label="Controles de la maqueta">
+        <div class="mq-grupo">
+            <span class="mq-rotulo" id="mq-rotulo-quien">Ver como</span>
+            <div class="mq-botones" role="group" aria-labelledby="mq-rotulo-quien" id="mq-quien"></div>
+        </div>
+        <div class="mq-grupo">
+            <span class="mq-rotulo" id="mq-rotulo-repetidos">Dos compañeras con el mismo nombre</span>
+            <div class="mq-botones" role="group" aria-labelledby="mq-rotulo-repetidos" id="mq-repetidos"></div>
+        </div>
+        <div class="mq-grupo">
+            <span class="mq-rotulo" id="mq-rotulo-franja">Franja de los compañeros</span>
+            <div class="mq-botones" role="group" aria-labelledby="mq-rotulo-franja" id="mq-franja"></div>
+        </div>
+        <button type="button" class="mq-repetir" id="mq-telefono">Ver en un teléfono</button>
+        <button type="button" class="mq-repetir mq-segundo" id="mq-repetir">Repetir el movimiento</button>
+        <p class="mq-idea">Datos inventados. Los feriados son los cargados en Configuración → Feriados. «Franja de los compañeros»: la pizarra es la que eligió el usuario el 28/10/2026; las otras quedan como registro.</p>
+    </div>
+    <div class="mq-aviso" id="mq-aviso" role="status" aria-live="polite"></div>
+    <div class="mq-marco" id="mq-marco" hidden>
+        <div class="mq-marco-caja">
+            <button type="button" class="mq-repetir" id="mq-marco-cerrar">Cerrar el teléfono</button>
+            <iframe id="mq-marco-iframe" title="La agenda en un teléfono de 390 px"></iframe>
+        </div>
+    </div>
+
+    <script src="datos.js"></script>
+    <script src="agenda.js"></script>
+</body>
+</html>

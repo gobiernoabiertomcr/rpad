@@ -14,8 +14,9 @@
  * (`emailsDelGuardado` y `cambioQueAvisa`). Al final, lo que dice la API: el pedido de cuándo sale un aviso
  * (`validarAvisoDelEvento`), las personas de un guardado (`personasDelPedido`), cuándo sale el aviso (`avisoDe`) y cada evento
  * como lo ve quien lo pide (`itemDeEvento`); lo demás de la agenda (tus licencias, los compañeros que no están y los feriados:
- * `itemDeLicencia`, `itemDeAusencia` e `itemsDeFeriados`) y los eventos de «Hoy y mañana» del Resumen
- * (`eventosDeHoyYManana`). Los textos son planos: escaparlos le toca a quien los dibuja.
+ * `itemDeLicencia`, `itemDeAusencia` e `itemsDeFeriados`), los compañeros de cada día y la frase del mes (`companerosPorDia`,
+ * `mesDeLaFrase` y `fraseDelMes`) y los eventos de «Hoy y mañana» del Resumen (`eventosDeHoyYManana`). Los textos son planos:
+ * escaparlos le toca a quien los dibuja.
  *
  * La usan la API de los eventos, sus emails, la corrida de los recordatorios y Correos → Estado. La página
  * (`public/js/mi-espacio.js`) tiene copias de los mensajes, los largos, las fechas y los recordatorios, atadas por tests de
@@ -25,7 +26,9 @@
 import { esDiaHabilCon, restarDiasHabilesCon, diaDeLaSemana, diasHabilesDe, feriadosDelAnio } from './feriadosReglas.js';
 import { esFechaIso, sumarDias, diasEntre, formatoCorto } from './notasDigitalesCalendario.js';
 import { diaLargo } from './miEspacioResumen.js';
-import { textoRango, enLista, NOMBRES_TIPO, numeroTexto, textoNoEsta } from './miEspacioReglas.js';
+import {
+  textoRango, enLista, NOMBRES_TIPO, numeroTexto, textoNoEsta, nombreCorto, nombreDelMes
+} from './miEspacioReglas.js';
 import { idPositivo, idsPositivos } from './proyectosReglas.js';
 import { emailValido } from './usuariosReglas.js';
 
@@ -645,37 +648,48 @@ export const avisoDe = (evento, contexto) => {
   };
 };
 
-// «Con 1 persona», «Con 4 personas»
-const conPersonas = (cantidad) => `Con ${cantidad} ${cantidad === 1 ? 'persona' : 'personas'}`;
+// «Con Carla» (una sola persona, con su nombre corto; sin nombre, «Con 1 persona»), «Con 4 personas»
+const conPersonas = (nombres) => (nombres.length === 1 && nombres[0] !== ''
+  ? `Con ${nombres[0]}`
+  : `Con ${nombres.length} ${nombres.length === 1 ? 'persona' : 'personas'}`);
+// Una oración con su punto al final: si termina en una inicial («Carla R.»), ese punto ya la cierra
+const conPunto = (texto) => (texto.endsWith('.') ? texto : `${texto}.`);
 
 /**
  * Un evento como lo ve quien lo pide (`GET /api/mi-espacio/eventos`), del `Evento` de services/miEspacioEventosDatos.js, con
- * el contexto `{ usuarioId, ahora, feriados }` (`ahora`, el de `ahoraArgentina()`; `feriados`, el Set de `feriadosEntre`):
+ * el contexto `{ usuarioId, ahora, feriados, administracion }` (`ahora`, el de `ahoraArgentina()`; `feriados`, el Set de
+ * `feriadosEntre`; `administracion`, la administración activa de `administracionActiva`, services/miEspacioDatos.js, contra
+ * la que se arma el nombre corto: sin ella, el primer nombre de cada uno):
  * `{ id, titulo, detalle, fecha, desde, hasta, es_mio, compartido, para_todos, creador, personas, personas_ids, recordatorio,
  * recordatorio_texto, mi_recordatorio, aviso, quien_texto, quien_largo }`, donde:
  * - `es_mio`: lo creó quien lo pide;
- * - `personas`: los nombres de las elegidas, en el orden de los datos (por nombre); con «Todos» o sin compartir, [] (con
- *   «Todos», las filas son solo las de quienes apagaron su recordatorio). `personas_ids`, sus ids, solo si es suyo (el
- *   formulario);
+ * - `creador`: el nombre corto de quien lo creó, como lo ven los compañeros (`nombreCorto`: «Julián», o «Carla B.» si hay
+ *   otra Carla; spec 2026-10-28-mi-espacio-agenda-onda, 5.1), o null sin un nombre;
+ * - `personas`: los nombres completos de las elegidas (el formulario los muestra al lado de los de la lista para compartir:
+ *   spec, decisión 9.13), en el orden de los datos (por nombre); con «Todos» o sin compartir, [] (con «Todos», las filas son
+ *   solo las de quienes apagaron su recordatorio). `personas_ids`, sus ids, solo si es suyo (el formulario);
  * - `recordatorio` y `recordatorio_texto`: los del evento, los que eligió quien lo creó; `mi_recordatorio`: 'ninguno' si quien
  *   lo pide (y no lo creó) lo apagó en su fila, y si no, el del evento; `aviso` (`avisoDe`) va sobre `mi_recordatorio`;
- * - `quien_texto`: «Solo vos», «Con todos», «Con 1 persona» o «Con 4 personas» si es suyo, y «De <creador>» si no;
- *   `quien_largo`, solo si no es suyo: «Lo creó <creador>. Están: vos, Sofía Paz y Carla Benítez.» (vos primero, si está) o
- *   «Lo creó <creador>. Es para todos.». Sin quien lo creó (un creado_por en NULL), la raya en su lugar.
+ * - `quien_texto`: «Solo vos», «Con todos», «Con Carla» (una sola persona: spec, decisión 9.4) o «Con 4 personas» si es
+ *   suyo, y «De <creador>» si no; `quien_largo`, solo si no es suyo: «Lo creó Julián. Están: vos, Carla B. y Carla R.» (vos
+ *   primero, si está) o «Lo creó Julián. Es para todos.». Los nombres de los dos, cortos (el punto de una inicial cierra
+ *   también la oración: «Lo creó Carla R. Es para todos.»). Sin quien lo creó (un creado_por en NULL, o sin nombre), la raya
+ *   en su lugar.
  * Nada tira: lo que no es un objeto cuenta como `{}`, y una persona sin un id que sirva no cuenta.
  */
 export const itemDeEvento = (evento, contexto) => {
   const fuente = esObjeto(evento) ? evento : {};
-  const { usuarioId, ahora, feriados } = esObjeto(contexto) ? contexto : {};
+  const { usuarioId, ahora, feriados, administracion = [] } = esObjeto(contexto) ? contexto : {};
   const yo = idPositivo(usuarioId);
   const esMio = yo !== null && idPositivo(fuente.creado_por) === yo;
   const compartido = esSi(fuente.compartido);
   const paraTodos = compartido && esSi(fuente.para_todos);
   const filas = listaDe(fuente.personas).filter((persona) => esObjeto(persona) && idPositivo(persona.id) !== null);
   const elegidas = compartido && !paraTodos ? filas : [];
-  const creador = typeof fuente.creador === 'string' && fuente.creador.trim() !== '' ? fuente.creador : null;
+  const creador = nombreCorto({ id: fuente.creado_por, nombre: fuente.creador }, administracion) || null;
   const nombreDelCreador = creador ?? '—';
   const nombre = (persona) => (typeof persona.nombre === 'string' ? persona.nombre : '');
+  const corto = (persona) => nombreCorto({ id: persona.id, nombre: persona.nombre }, administracion);
   const esYo = (persona) => idPositivo(persona.id) === yo;
 
   const recordatorio = esRecordatorio(fuente.recordatorio) ? fuente.recordatorio : null;
@@ -685,7 +699,7 @@ export const itemDeEvento = (evento, contexto) => {
   let quienTexto = `De ${nombreDelCreador}`;
   if (esMio && !compartido) quienTexto = 'Solo vos';
   else if (esMio && paraTodos) quienTexto = 'Con todos';
-  else if (esMio) quienTexto = conPersonas(elegidas.length);
+  else if (esMio) quienTexto = conPersonas(elegidas.map(corto));
 
   const item = {
     id: idPositivo(fuente.id),
@@ -709,10 +723,11 @@ export const itemDeEvento = (evento, contexto) => {
     quien_texto: quienTexto
   });
   if (!esMio) {
-    const nombres = [...(elegidas.some(esYo) ? ['vos'] : []), ...elegidas.filter((persona) => !esYo(persona)).map(nombre)];
-    if (paraTodos) item.quien_largo = `Lo creó ${nombreDelCreador}. Es para todos.`;
-    else if (nombres.length > 0) item.quien_largo = `Lo creó ${nombreDelCreador}. Están: ${listaConY(nombres)}.`;
-    else item.quien_largo = `Lo creó ${nombreDelCreador}.`;
+    const nombres = [...(elegidas.some(esYo) ? ['vos'] : []), ...elegidas.filter((persona) => !esYo(persona)).map(corto)];
+    const loCreo = conPunto(`Lo creó ${nombreDelCreador}`);
+    if (paraTodos) item.quien_largo = `${loCreo} Es para todos.`;
+    else if (nombres.length > 0) item.quien_largo = `${loCreo} Están: ${conPunto(listaConY(nombres))}`;
+    else item.quien_largo = loCreo;
   }
   return item;
 };
@@ -816,7 +831,118 @@ export const itemsDeFeriados = (lista, desde, hasta) => {
   return items;
 };
 
-// En «Hoy y mañana», quién está va en minúscula: «solo vos», «con 4 personas», «de Laura Gómez»
+// Lo nuevo de GET /mi-espacio/eventos (spec 2026-10-28-mi-espacio-agenda-onda, 5.2): los compañeros de cada día, para la
+// barra agrupada del mes, y la frase de la banda del mes
+
+/**
+ * Los compañeros que no están, día por día, de los ítems de `itemDeAusencia` (los de `ausentes`, con el nombre corto y sus
+ * `dias`, los días hábiles del rango): `[{ fecha, texto }]`, por fecha, uno por cada fecha que aparece en algún `dias`, con
+ * los nombres de ese día por orden alfabético en castellano (`localeCompare(…, 'es')`) y «Carla no está» o «Carla y Julián no
+ * están» («A, B y C no están»). La página arma los tramos de la barra comparando el `texto` de días seguidos. Sale solo de
+ * `ausentes`: a quien no ve a los compañeros (que recibe []), []. Nada tira: lo que no es un ítem, un `dias` que no es una
+ * lista y lo que no es una fecha no cuentan; un nombre que no es un texto cuenta como '' (como en `itemDeAusencia`).
+ */
+export const companerosPorDia = (ausentes) => {
+  const porFecha = new Map();
+  for (const ausente of listaDe(ausentes)) {
+    if (!esObjeto(ausente)) continue;
+    const nombre = typeof ausente.nombre === 'string' ? ausente.nombre : '';
+    // Cada fecha una vez por compañero, aunque su `dias` la repita
+    for (const fecha of new Set(listaDe(ausente.dias))) {
+      if (!esFechaIso(fecha)) continue;
+      if (!porFecha.has(fecha)) porFecha.set(fecha, []);
+      porFecha.get(fecha).push(nombre);
+    }
+  }
+  return [...porFecha.keys()].sort(compararTexto).map((fecha) => {
+    const nombres = porFecha.get(fecha).sort((a, b) => a.localeCompare(b, 'es'));
+    return { fecha, texto: `${listaConY(nombres)} ${nombres.length === 1 ? 'no está' : 'no están'}` };
+  });
+};
+
+// Cómo nombra la frase del mes cada licencia de Mi espacio, por tipo (los de `TIPOS_LICENCIA`), con su artículo: las
+// vacaciones y las horas a favor, «tus»; las demás, «tu»
+export const FRASE_DE_LA_LICENCIA = Object.freeze({
+  vacaciones: 'tus vacaciones',
+  horas_a_favor: 'tus horas a favor',
+  franquicia: 'tu franquicia',
+  estudios: 'tu licencia por estudios',
+  medica: 'tu licencia médica',
+  medica_extraordinaria: 'tu licencia médica extraordinaria',
+  familiar: 'tu licencia por el grupo familiar',
+  franco: 'tu franco compensatorio',
+  uso_autorizado: 'tu uso autorizado'
+});
+
+// Un mes 'AAAA-MM' (el mes del 01 al 12)
+const MES = /^\d{4}-(0[1-9]|1[0-2])$/;
+// El primer y el último día de un mes 'AAAA-MM' (`{ primero, ultimo }`), o null si no es un mes. El último, el primero de
+// 31, 30, 29 y 28 que existe (el 28 existe siempre): febrero de un año bisiesto termina el 29
+const diasDelMes = (mes) => {
+  if (typeof mes !== 'string' || !MES.test(mes) || !esFechaIso(`${mes}-01`)) return null;
+  return { primero: `${mes}-01`, ultimo: ['31', '30', '29', '28'].map((dia) => `${mes}-${dia}`).find(esFechaIso) };
+};
+
+/**
+ * El mes de la frase de un pedido (`mes` de `GET /mi-espacio/eventos`, el que muestra la página) con el rango pedido
+ * `{ desde, hasta }`: el mes, si es un texto 'AAAA-MM' y cae entero en el rango (su primer y su último día incluidos); si no
+ * (una lista, de un parámetro repetido; un texto que no es un mes; un mes que no es del rango, o sin un rango que sirva), null:
+ * el pedido sigue igual, sin la frase. Nada tira.
+ */
+export const mesDeLaFrase = (valor, rango) => {
+  const dias = diasDelMes(valor);
+  const delRango = fechasDe(rango);
+  if (dias === null || delRango === null) return null;
+  return dias.primero >= delRango.desde && dias.ultimo <= delRango.hasta ? valor : null;
+};
+
+// 'tus vacaciones del 16 al 27' o 'tu franquicia el 4': la licencia con sus fechas recortadas al mes `{ primero, ultimo }`
+const licenciaEnLaFrase = ({ tipo, desde, hasta }, { primero, ultimo }) => {
+  const delDia = (fecha) => String(Number(fecha.slice(8, 10)));
+  const inicio = desde > primero ? desde : primero;
+  const fin = hasta < ultimo ? hasta : ultimo;
+  return inicio === fin
+    ? `${FRASE_DE_LA_LICENCIA[tipo]} el ${delDia(inicio)}`
+    : `${FRASE_DE_LA_LICENCIA[tipo]} del ${delDia(inicio)} al ${delDia(fin)}`;
+};
+
+/**
+ * La frase de la banda del mes de la agenda, con lo que ve quien pide (los ítems de la respuesta): `mes` ('AAAA-MM'),
+ * `eventos` (los de `itemDeEvento`: cuenta su `fecha`), `feriados` (los de `itemsDeFeriados`) y `licencias` (las de
+ * `itemDeLicencia`). Dice, en este orden y solo lo que hay: «N eventos» (los eventos con fecha del mes, cualquier día; «1
+ * evento»), «N feriados» (las fechas distintas del mes con algún feriado, también en un fin de semana; «1 feriado») y cada una
+ * de tus licencias que toca el mes, por desde, con su nombre y su artículo (`FRASE_DE_LA_LICENCIA`) y sus fechas recortadas
+ * al mes: «tu franquicia el 4», «tus vacaciones del 16 al 27». Todo junto con comas y «y», con mayúscula al principio y punto
+ * al final: «8 eventos, 4 feriados, tu franquicia el 4 y tus vacaciones del 16 al 27.». Sin nada, «Nada cargado en
+ * noviembre. Tocá un día para agendar algo.». Los compañeros no van. null si `mes` no es un mes 'AAAA-MM'. Nada tira: lo que
+ * no es una lista o un ítem, una licencia de un tipo que no es de la lista o sin unas fechas en orden, no cuentan.
+ */
+export const fraseDelMes = (entrada) => {
+  const { mes, eventos, feriados, licencias } = esObjeto(entrada) ? entrada : {};
+  const dias = diasDelMes(mes);
+  if (dias === null) return null;
+  const delMes = (fecha) => esFechaIso(fecha) && fecha >= dias.primero && fecha <= dias.ultimo;
+  const fechaDe = (item) => (esObjeto(item) ? item.fecha : null);
+
+  const cuantosEventos = listaDe(eventos).filter((item) => delMes(fechaDe(item))).length;
+  const cuantosFeriados = new Set(listaDe(feriados).map(fechaDe).filter(delMes)).size;
+  const deLicencias = listaDe(licencias)
+    .map((item) => ({ item, fechas: fechasDe(item) }))
+    .filter(({ item, fechas }) => fechas !== null && typeof item.tipo === 'string'
+      && Object.hasOwn(FRASE_DE_LA_LICENCIA, item.tipo) && fechas.desde <= dias.ultimo && fechas.hasta >= dias.primero)
+    .sort((a, b) => compararTexto(a.fechas.desde, b.fechas.desde) || compararTexto(a.fechas.hasta, b.fechas.hasta))
+    .map(({ item, fechas }) => licenciaEnLaFrase({ tipo: item.tipo, ...fechas }, dias));
+
+  const partes = [
+    ...(cuantosEventos > 0 ? [`${cuantosEventos} ${cuantosEventos === 1 ? 'evento' : 'eventos'}`] : []),
+    ...(cuantosFeriados > 0 ? [`${cuantosFeriados} ${cuantosFeriados === 1 ? 'feriado' : 'feriados'}`] : []),
+    ...deLicencias
+  ];
+  if (partes.length === 0) return `Nada cargado en ${nombreDelMes(mes)}. Tocá un día para agendar algo.`;
+  return `${mayuscula(listaConY(partes))}.`;
+};
+
+// En «Hoy y mañana», quién está va con minúscula al principio: «solo vos», «con 4 personas», «de Julián»
 const minuscula = (texto) => texto.charAt(0).toLowerCase() + texto.slice(1);
 
 /**

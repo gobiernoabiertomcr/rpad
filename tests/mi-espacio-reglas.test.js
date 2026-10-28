@@ -23,7 +23,8 @@ import {
   faltantesDe, problemaDeLaCarga, evaluarLicencia,
   vinculoDe, textoDelVinculo, revisionDelVinculo, limiteParaCambiarTipo, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja,
   vinculosDeLaLista,
-  pasoPrevistoDe, ausenciasUnidas, textoNoEsta, textoDeLaVuelta, ausentesDelRango, ausentesDeHoyYManana, avisosDeVencimiento,
+  pasoPrevistoDe, ausenciasUnidas, textoNoEsta, nombreCorto, textoDeLaVuelta, ausentesDelRango, ausentesDeHoyYManana,
+  avisosDeVencimiento,
   SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL, TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, horaSalidaValida, tipoDeDia,
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
   avisosDeSalidas, mesDeLaPlanilla
@@ -3738,6 +3739,65 @@ describe('«Hoy no están»', () => {
     // Sin un día hábil después (el fin del calendario), la vuelta es null
     assert.deepEqual(ausenciasUnidas([fila(7, 'Laura Gómez', '9999-12-30', '9999-12-31')], SIN_FERIADOS),
       [unida(7, 'Laura Gómez', '9999-12-30', '9999-12-31', null)]);
+  });
+});
+
+// El nombre de los compañeros (spec 2026-10-28-mi-espacio-agenda-onda, 5.1): el primer nombre; si otra persona de la
+// administración activa tiene el mismo, con la inicial del último apellido; si aun así se repite, el nombre completo
+describe('nombreCorto', () => {
+  const ADMIN = [
+    { id: 1, nombre: 'Andrea Paula Molina' }, { id: 4, nombre: 'Julián Esteban Ferreyra' },
+    { id: 2, nombre: 'Carla Inés Benítez' }
+  ];
+  const CON_OTRA = [...ADMIN, { id: 9, nombre: 'Carla Ríos' }];
+  const MISMA_INICIAL = [...ADMIN, { id: 9, nombre: 'Carla Bustos' }];
+
+  it('el primer nombre, si nadie más de la administración lo tiene (ella misma no cuenta)', () => {
+    assert.equal(nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, ADMIN), 'Carla');
+    assert.equal(nombreCorto({ id: 1, nombre: 'Andrea Paula Molina' }, CON_OTRA), 'Andrea');
+  });
+
+  it('con otra del mismo nombre, la inicial del último apellido; con la misma inicial, el nombre completo', () => {
+    assert.equal(nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, CON_OTRA), 'Carla B.');
+    assert.equal(nombreCorto({ id: 9, nombre: 'Carla Ríos' }, CON_OTRA), 'Carla R.');
+    assert.equal(nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, MISMA_INICIAL), 'Carla Inés Benítez');
+    assert.equal(nombreCorto({ id: 9, nombre: 'Carla Bustos' }, MISMA_INICIAL), 'Carla Bustos');
+  });
+
+  it('sin tildes ni mayúsculas: «Matías» y «matias» son el mismo primer nombre, y «Benítez» y «benitez», la misma inicial',
+    () => {
+      assert.equal(nombreCorto({ id: 5, nombre: 'Matías Paz' }, [{ id: 5, nombre: 'Matías Paz' }, { id: 6, nombre: 'matias Sosa' }]),
+        'Matías P.');
+      assert.equal(nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, [...ADMIN, { id: 9, nombre: 'carla benitez' }]),
+        'Carla Inés Benítez');
+    });
+
+  it('quien no está en la lista (dejó de ser administración) se compara contra la lista', () => {
+    assert.equal(nombreCorto({ id: 7, nombre: 'Carla Vera' }, CON_OTRA), 'Carla V.');
+    assert.equal(nombreCorto({ id: 7, nombre: 'Tomás Quiroga' }, ADMIN), 'Tomás');
+  });
+
+  it('los espacios de más no cuentan; sin un nombre, \'\'; sin una lista, el primer nombre', () => {
+    assert.equal(nombreCorto({ id: 2, nombre: '  Carla   Inés  Benítez ' }, ADMIN), 'Carla');
+    assert.equal(nombreCorto({ id: 2, nombre: '  Carla   Inés  Benítez ' }, MISMA_INICIAL), 'Carla Inés Benítez');
+    assert.equal(nombreCorto({ id: 2, nombre: null }, ADMIN), '');
+    assert.equal(nombreCorto({ id: 2, nombre: '   ' }, ADMIN), '');
+    assert.equal(nombreCorto(null, ADMIN), '');
+    assert.equal(nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, null), 'Carla');
+    // Una sola palabra es todo el nombre: no hay un apellido del que sacar la inicial
+    assert.equal(nombreCorto({ id: 7, nombre: 'Carla' }, CON_OTRA), 'Carla');
+  });
+
+  it('nada tira, tampoco con personas raras en la lista', () => {
+    const raros = [undefined, null, '', 'x', 0, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
+    for (const valor of raros) {
+      assert.doesNotThrow(() => {
+        nombreCorto(valor, valor);
+        nombreCorto({ id: valor, nombre: valor }, [valor, { id: valor, nombre: valor }, ...ADMIN]);
+        nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, [valor, { id: 9, nombre: valor }]);
+      }, String(valor));
+    }
+    assert.equal(nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, [null, 'x', { id: 9, nombre: 3 }, ...ADMIN]), 'Carla');
   });
 });
 

@@ -1029,7 +1029,7 @@ describe('el paso a Configuración', () => {
       const { id } = body.data;
       assert.notEqual(await cifra(), antes, 'cargadas a futuro, ya descuentan');
       assert.deepEqual(await enLaAgenda(), [id]);
-      assert.deepEqual(await comoCompanera(), ['Laura Gómez']);
+      assert.deepEqual(await comoCompanera(), ['Laura']);
       assert.equal(await conUnFeriado(), 1);
       const [oficial] = await deConfiguracion('adminA');
 
@@ -2169,7 +2169,7 @@ describe('«Hoy no están»', () => {
     const res = await ausentes('adminA', q(0), q(4));
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.deepEqual(res.body, {
-      success: true, data: { puede_ver: true, ausentes: [ausente('Martín Ríos', q(0), q(8), q(9))] }
+      success: true, data: { puede_ver: true, ausentes: [ausente('Martín', q(0), q(8), q(9))] }
     });
     for (const cada of res.body.data.ausentes) assert.deepEqual(Object.keys(cada), CLAVES_DEL_AUSENTE);
     const texto = JSON.stringify(res.body);
@@ -2177,7 +2177,7 @@ describe('«Hoy no están»', () => {
 
     // Pedida solo por el último día, se ve entera: desde el primer día y con su vuelta
     const delFinal = await ausentes('adminA', q(8), q(8));
-    assert.deepEqual(delFinal.body.data.ausentes, [ausente('Martín Ríos', q(0), q(8), q(9))]);
+    assert.deepEqual(delFinal.body.data.ausentes, [ausente('Martín', q(0), q(8), q(9))]);
     // Y fuera de ella, nadie
     const despues = await ausentes('adminA', q(9), q(11));
     assert.deepEqual(despues.body.data, { puede_ver: true, ausentes: [] });
@@ -2202,12 +2202,12 @@ describe('«Hoy no están»', () => {
       const deA = await ausentes('adminA', q(0), q(4));
       assert.equal(deA.status, 200, JSON.stringify(deA.body));
       assert.deepEqual(deA.body.data, { puede_ver: true, ausentes: [
-        ausente('Martín Ríos', q(1), q(1), q(2)), ausente('Diego Fernández', q(2), q(2), q(3))
+        ausente('Martín', q(1), q(1), q(2)), ausente('Diego', q(2), q(2), q(3))
       ] });
       const delEditor = await ausentes('editor', q(0), q(4));
       assert.deepEqual(delEditor.body.data.ausentes, [
-        ausente('Laura Gómez', q(1), q(1), q(2)), ausente('Martín Ríos', q(1), q(1), q(2)),
-        ausente('Diego Fernández', q(2), q(2), q(3))
+        ausente('Laura', q(1), q(1), q(2)), ausente('Martín', q(1), q(1), q(2)),
+        ausente('Diego', q(2), q(2), q(3))
       ]);
       for (const clave of ['lector', 'colab']) {
         const res = await ausentes(clave, q(0), q(4));
@@ -2230,16 +2230,16 @@ describe('«Hoy no están»', () => {
   it('la vuelta saltea un feriado de la tabla, y dos ausencias separadas solo por él son una', async () => {
     await conLicencia('adminB', { tipo: 'medica', desde: q(0), hasta: q(1) });
     const sinFeriado = await ausentes('adminA', q(0), q(1));
-    assert.deepEqual(sinFeriado.body.data.ausentes, [ausente('Martín Ríos', q(0), q(1), q(2))]);
+    assert.deepEqual(sinFeriado.body.data.ausentes, [ausente('Martín', q(0), q(1), q(2))]);
 
     await conFeriado({ fecha: q(2), nombre: 'Feriado de prueba' });
     const conElFeriado = await ausentes('adminA', q(0), q(1));
-    assert.deepEqual(conElFeriado.body.data.ausentes, [ausente('Martín Ríos', q(0), q(1), q(3))]);
+    assert.deepEqual(conElFeriado.body.data.ausentes, [ausente('Martín', q(0), q(1), q(3))]);
     assert.equal(conElFeriado.body.data.ausentes[0].vuelve_texto, `Vuelve el jueves ${diaYMes(q(3))}`);
 
     await conLicencia('adminB', { tipo: 'familiar', desde: q(3) });
     const unidas = await ausentes('adminA', q(0), q(1));
-    assert.deepEqual(unidas.body.data.ausentes, [ausente('Martín Ríos', q(0), q(3), q(4))]);
+    assert.deepEqual(unidas.body.data.ausentes, [ausente('Martín', q(0), q(3), q(4))]);
   });
 
   it('el rango: hasta 93 días; con más, o con fechas que no sirven, 400 en fechas, también para el lector', async () => {
@@ -2279,8 +2279,8 @@ describe('«Hoy no están»', () => {
       assert.equal(res.status, 200, JSON.stringify(res.body));
       const { hoy_y_manana: hoyYManana } = res.body.data;
       assert.deepEqual(Object.keys(hoyYManana), ['ausentes_hoy', 'ausentes_manana', 'proximo_feriado', 'eventos']);
-      assert.deepEqual(hoyYManana.ausentes_hoy, [ausente('Martín Ríos', hoy, dia(2), proximoDiaHabil(dia(3)))]);
-      assert.deepEqual(hoyYManana.ausentes_manana, [ausente('Diego Fernández', dia(1), dia(1), proximoDiaHabil(dia(2)))]);
+      assert.deepEqual(hoyYManana.ausentes_hoy, [ausente('Martín', hoy, dia(2), proximoDiaHabil(dia(3)))]);
+      assert.deepEqual(hoyYManana.ausentes_manana, [ausente('Diego', dia(1), dia(1), proximoDiaHabil(dia(2)))]);
       for (const cada of [...hoyYManana.ausentes_hoy, ...hoyYManana.ausentes_manana]) {
         assert.deepEqual(Object.keys(cada), CLAVES_DEL_AUSENTE);
       }
@@ -2291,6 +2291,107 @@ describe('«Hoy no están»', () => {
       assert.deepEqual(delLector.body.data.hoy_y_manana.ausentes_hoy, []);
       assert.deepEqual(delLector.body.data.hoy_y_manana.ausentes_manana, []);
     });
+});
+
+// El nombre de los compañeros (spec 2026-10-28-mi-espacio-agenda-onda, 5.1): el primer nombre, con la inicial del último
+// apellido si otra persona de la administración activa tiene el mismo. Con su propia administración (inventada): las
+// personas de administración del archivo se desactivan mientras tanto (la editora del archivo también es una Carla B.)
+describe('el nombre corto de los compañeros', () => {
+  const NOMBRES = Object.freeze({
+    andrea: ['admin', 'Andrea Paula Molina'],
+    carlaB: ['editor', 'Carla Inés Benítez'],
+    carlaR: ['editor', 'Carla Ríos'],
+    julian: ['admin', 'Julián Esteban Ferreyra']
+  });
+  const DEL_ARCHIVO = ['superadmin', 'adminA', 'adminB', 'editor'];
+  let companeros;
+  const de = (clave) => ({ token: companeros[clave].token });
+  const ausenciaDe = (clave, desde, hasta = desde) => query(
+    "INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, mostrar) VALUES (?, 'medica', ?, ?, 1)",
+    [companeros[clave].id, desde, hasta]
+  );
+  const activa = (clave, activo) => query('UPDATE usuarios SET activo = ? WHERE id = ?', [activo, companeros[clave].id]);
+
+  before(async () => {
+    companeros = await crearUsuariosPrueba(api, Object.fromEntries(Object.entries(NOMBRES).map(([clave, [rol]]) => [clave, rol])));
+    for (const [clave, [, nombre]] of Object.entries(NOMBRES)) {
+      await query("UPDATE usuarios SET nombre_completo = ?, vinculo = 'planta_permanente' WHERE id = ?",
+        [nombre, companeros[clave].id]);
+    }
+    await query('UPDATE usuarios SET activo = 0 WHERE id IN (?)', [DEL_ARCHIVO.map(clave => usuarios[clave].id)]);
+  });
+
+  after(async () => {
+    await query('UPDATE usuarios SET activo = 1 WHERE id IN (?)', [DEL_ARCHIVO.map(clave => usuarios[clave].id)]);
+    if (companeros) await limpiarDatosPrueba(companeros);
+  });
+
+  it('administracionActiva: solo las personas activas de superadmin, admin y editor, con el id y el nombre, por id', async () => {
+    // El lector y el colaborador del archivo están activos, y las personas de administración del archivo, desactivadas
+    const esperada = Object.keys(NOMBRES).map(clave => ({ id: companeros[clave].id, nombre: NOMBRES[clave][1] }))
+      .sort((a, b) => a.id - b.id);
+    assert.deepEqual(await datos.administracionActiva(), esperada);
+    try {
+      await activa('carlaR', 0);
+      assert.deepEqual(await datos.administracionActiva(), esperada.filter(persona => persona.id !== companeros.carlaR.id));
+    } finally {
+      await activa('carlaR', 1);
+    }
+  });
+
+  it('contextoDe suma la administración activa y el nombre corto de la persona; sin persona, null', async () => {
+    const contexto = await datos.contextoDe(companeros.carlaB.id, hoy);
+    assert.equal(contexto.persona.nombre_completo, 'Carla Inés Benítez');
+    assert.equal(contexto.persona.nombre_corto, 'Carla B.');
+    assert.deepEqual(contexto.administracion, await datos.administracionActiva());
+    assert.equal((await datos.contextoDe(companeros.andrea.id, hoy)).persona.nombre_corto, 'Andrea');
+    assert.equal((await datos.contextoDe(999999, hoy)).persona, null);
+  });
+
+  it('«Hoy no están»: «Carla B.» y «Carla R.»; con Carla Ríos desactivada, «Carla»', async () => {
+    await ausenciaDe('carlaB', q(0), q(1));
+    await ausenciaDe('carlaR', q(2));
+    const res = await api.get(`/mi-espacio/ausentes?desde=${q(0)}&hasta=${q(4)}`, de('andrea'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data, {
+      puede_ver: true, ausentes: [ausente('Carla B.', q(0), q(1), q(2)), ausente('Carla R.', q(2), q(2), q(3))]
+    });
+    assert.equal(res.body.data.ausentes[0].texto, 'Carla B. no está');
+    try {
+      await activa('carlaR', 0);
+      const sinElla = await api.get(`/mi-espacio/ausentes?desde=${q(0)}&hasta=${q(4)}`, de('andrea'));
+      assert.deepEqual(sinElla.body.data, { puede_ver: true, ausentes: [ausente('Carla', q(0), q(1), q(2))] });
+      assert.equal(sinElla.body.data.ausentes[0].texto, 'Carla no está');
+    } finally {
+      await activa('carlaR', 1);
+    }
+  });
+
+  it('el Resumen: «Hoy y mañana» con el nombre corto; el encabezado sigue con el nombre completo', async () => {
+    await ausenciaDe('carlaB', hoy);
+    await ausenciaDe('carlaR', dia(1));
+    const res = await api.get('/mi-espacio/resumen', de('andrea'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const { hoy_y_manana: hoyYManana, persona } = res.body.data;
+    assert.equal(hoyYManana.ausentes_hoy[0].texto, 'Carla B. no está');
+    assert.deepEqual(hoyYManana.ausentes_hoy.map(cada => cada.nombre), ['Carla B.']);
+    assert.deepEqual(hoyYManana.ausentes_manana.map(cada => cada.texto), ['Carla R. no está']);
+    assert.equal(persona.nombre, 'Andrea Paula Molina');
+  });
+
+  it('la fila de una licencia: «Tus compañeros ven «Julián no está».», y la de una Carla, con su inicial', async () => {
+    const deJulian = await ausenciaDe('julian', q(0), q(1));
+    const res = await api.get(`/mi-espacio/licencias?anio=${ANIO_Q}`, de('julian'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const fila = res.body.data.licencias.find(cada => cada.id === deJulian.insertId);
+    assert.equal(fila.mostrar_texto, 'Tus compañeros ven «Julián no está».');
+
+    const deCarla = await ausenciaDe('carlaB', q(0), q(1));
+    const deElla = await api.get(`/mi-espacio/licencias?anio=${ANIO_Q}`, de('carlaB'));
+    assert.equal(deElla.status, 200, JSON.stringify(deElla.body));
+    assert.equal(deElla.body.data.licencias.find(cada => cada.id === deCarla.insertId).mostrar_texto,
+      'Tus compañeros ven «Carla B. no está».');
+  });
 });
 
 // Lo que necesita el campo «Autorizo a presentar las notas en mi nombre a:» (spec, sección 6): al firmante titular, lo mismo

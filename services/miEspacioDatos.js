@@ -2,8 +2,9 @@
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 5 y 10): las consultas de lo que cargó cada persona, de
  * solo lectura y parametrizadas. Devuelven el `Estado` de las reglas (services/miEspacioReglas.js), solo con las filas
  * activas, lo que el paso a Configuración (sección 6) lee de las licencias de Configuración (y si hoy ya salieron notas con la
- * firma del titular, `notasDeHoyDelTitular`), las ausencias que ven los
- * compañeros («Hoy no están», sección 7), quiénes están de licencia el día del email de vencimiento (sección 9), cuántas
+ * firma del titular, `notasDeHoyDelTitular`), las ausencias que ven los compañeros («Hoy no están», sección 7) y la
+ * administración activa con la que se arma el nombre corto de cada uno (`administracionActiva`, spec
+ * 2026-10-28-mi-espacio-agenda-onda, 5.1), quiénes están de licencia el día del email de vencimiento (sección 9), cuántas
  * licencias incluye un feriado (Configuración → Feriados, `licenciasQueIncluyen`) y la fecha y la firma de la nota de una
  * licencia (spec 2026-10-27-mi-espacio-licencia-word, `datosDeLaNota`). Lo que llega de la base como texto se
  * convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las fechas se leen con DATE_FORMAT ('AAAA-MM-DD'), los
@@ -13,7 +14,8 @@
  * transacción (lee lo que ella ve).
  */
 import pool from '../config/database.js';
-import { calcular, modalidadDe, esDiaEntero } from './miEspacioReglas.js';
+import { calcular, modalidadDe, esDiaEntero, nombreCorto } from './miEspacioReglas.js';
+import { ROLES_QUE_COMPARTEN } from './miEspacioEventosReglas.js';
 import { filasDeFeriados } from './feriadosDatos.js';
 import { feriadosDelRango, fechasQueCambianDiasHabiles } from './feriadosReglas.js';
 import { idPositivo } from './proyectosReglas.js';
@@ -186,17 +188,35 @@ export const feriadosPara = async (estados, hoy, filas = null) => {
 };
 
 /**
- * Todo lo de una persona para una lectura o una carga: `{ persona, estado, feriados, filasFeriados, calculo }`. Las filas de
- * los feriados se leen una vez: arman el Set del cálculo (`feriadosPara`) y quedan en `filasFeriados` para el próximo
- * feriado del Resumen. El cálculo es el de `calcular`, con ese hoy y esos feriados.
+ * La administración activa (superadmin, admin y editor con `activo = 1`: ROLES_QUE_COMPARTEN, la regla de «los compañeros»),
+ * contra la que se arma el nombre corto de cada uno (`nombreCorto`, spec 2026-10-28-mi-espacio-agenda-onda, 5.1):
+ * `[{ id, nombre }]`, por id. Solo el id y el nombre completo: ni el email ni el rol.
+ * @returns {Promise<{ id: number, nombre: string }[]>}
+ */
+export const administracionActiva = async (conexion = pool) => {
+  const [filas] = await conexion.query(
+    'SELECT id, nombre_completo FROM usuarios WHERE activo = 1 AND rol IN (?) ORDER BY id', [ROLES_QUE_COMPARTEN]
+  );
+  return filas.map((fila) => ({ id: Number(fila.id), nombre: fila.nombre_completo }));
+};
+
+/**
+ * Todo lo de una persona para una lectura o una carga: `{ persona, estado, feriados, filasFeriados, administracion,
+ * calculo }`. Las filas de los feriados se leen una vez: arman el Set del cálculo (`feriadosPara`) y quedan en
+ * `filasFeriados` para el próximo feriado del Resumen. `administracion` es la de `administracionActiva`, y con ella la
+ * persona suma `nombre_corto`, su nombre como la ven los compañeros (`nombreCorto`: «Tus compañeros ven «Carla no está».»);
+ * sin persona (un id que no existe), null. El cálculo es el de `calcular`, con ese hoy y esos feriados.
  * @returns {Promise<object>}
  */
 export const contextoDe = async (usuarioId, hoy, conexion = pool) => {
-  const persona = await personaDe(usuarioId, conexion);
+  const leida = await personaDe(usuarioId, conexion);
   const estado = await estadoDe(usuarioId, conexion);
   const filasFeriados = await filasDeFeriados(conexion);
+  const administracion = await administracionActiva(conexion);
   const feriados = await feriadosPara([estado], hoy, filasFeriados);
-  return { persona, estado, feriados, filasFeriados, calculo: calcular(estado, { hoy, feriados }) };
+  const persona = leida === null ? null
+    : { ...leida, nombre_corto: nombreCorto({ id: leida.id, nombre: leida.nombre_completo }, administracion) };
+  return { persona, estado, feriados, filasFeriados, administracion, calculo: calcular(estado, { hoy, feriados }) };
 };
 
 /**

@@ -16,7 +16,7 @@ import pool from '../config/database.js';
 import { ahoraArgentina, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_EVENTO, validarEvento, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento, itemDeLicencia,
-  itemDeAusencia, itemsDeFeriados, emailsDelGuardado
+  itemDeAusencia, itemsDeFeriados, emailsDelGuardado, companerosPorDia, mesDeLaFrase, fraseDelMes
 } from '../services/miEspacioEventosReglas.js';
 import {
   eventosVisibles, eventoVisible, eventoPropio, personasParaCompartir, licenciasPropiasEntre, audienciaDe
@@ -25,6 +25,7 @@ import { enviarEmailsDelGuardado } from '../services/miEspacioEventosEmails.js';
 import { feriadosEntre, filasDeFeriados } from '../services/feriadosDatos.js';
 import { feriadosDelRango } from '../services/feriadosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
+import { administracionActiva } from '../services/miEspacioDatos.js';
 import { rangoDelPedido, ausentesPara } from './miEspacioController.js';
 
 // Cuántos días antes de un evento se leen los feriados: su aviso sale antes que él («El día hábil anterior» de un lunes) y
@@ -181,7 +182,14 @@ const guardarPersonas = async (conexion, eventoId, datos, antes) => {
  * - `ausentes`: los compañeros que no están, como en «Hoy no están» (`ausentesPara`: leídas con margen y unidas, así la que
  *   empezó antes se ve entera), sin el tipo ni la nota (itemDeAusencia); a quien no es administración, [].
  * Las filas de los feriados se leen una vez: dan el Set (el de los avisos, que cubre también los días del rango), la lista y
- * los feriados de `ausentesPara`.
+ * los feriados de `ausentesPara`. La administración activa (`administracionActiva`), también: da el nombre corto de los
+ * compañeros que no están y, en los eventos, el de quien lo creó y el de quién está («De Julián», «Lo creó Julián. Están: vos
+ * y Carla.»; spec 2026-10-28-mi-espacio-agenda-onda, 5.1).
+ * Al final, de lo mismo que ya se armó, sin leer nada más (spec 2026-10-28-mi-espacio-agenda-onda, 5.2):
+ * - `companeros_por_dia`: los compañeros de `ausentes`, día por día (companerosPorDia): a quien no los ve, [];
+ * - `frase_del_mes`: con `mes=AAAA-MM` (el mes que muestra la página), la frase de su banda (fraseDelMes, con los eventos,
+ *   los feriados y las licencias de la respuesta). Un `mes` que no es un texto 'AAAA-MM' (también repetido, que llega como
+ *   lista) o que no cae entero en el rango pedido no es un error: es como si no viniera, y la frase es null.
  */
 export const listarEventos = (req, res) => responder(res, 'Error al obtener los eventos', async () => {
   const { desde, hasta, rechazo: rechazoDelRango } = rangoDelPedido(req.query);
@@ -189,18 +197,25 @@ export const listarEventos = (req, res) => responder(res, 'Error al obtener los 
   const usuario = quienPide(req);
   const ahora = ahoraArgentina();
   const hoy = ahora.slice(0, 10);
-  const [eventos, licencias, filasFeriados] = await Promise.all([
-    eventosVisibles(usuario, desde, hasta), licenciasPropiasEntre(usuario.id, desde, hasta), filasDeFeriados()
+  const [eventos, licencias, filasFeriados, administracion] = await Promise.all([
+    eventosVisibles(usuario, desde, hasta), licenciasPropiasEntre(usuario.id, desde, hasta), filasDeFeriados(),
+    administracionActiva()
   ]);
-  const { ausentes } = await ausentesPara(usuario, { desde, hasta, hoy, filasFeriados });
+  const { ausentes } = await ausentesPara(usuario, { desde, hasta, hoy, filasFeriados, administracion });
   const feriados = feriadosDelRango(filasFeriados, desdeDeLosFeriados(desde), hasta);
   const rango = { desde, hasta, feriados };
-  return conDatos({
-    desde, hasta, hoy, puede_compartir: esAdmin(usuario.rol),
-    eventos: eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados })),
+  const items = {
+    eventos: eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados, administracion })),
     licencias: licencias.map((licencia) => itemDeLicencia(licencia, rango)),
     feriados: itemsDeFeriados(filasFeriados, desde, hasta),
     ausentes: ausentes.map((ausente) => itemDeAusencia(ausente, rango))
+  };
+  const mes = mesDeLaFrase(req.query?.mes, { desde, hasta });
+  return conDatos({
+    desde, hasta, hoy, puede_compartir: esAdmin(usuario.rol),
+    ...items,
+    companeros_por_dia: companerosPorDia(items.ausentes),
+    frase_del_mes: mes === null ? null : fraseDelMes({ mes, ...items })
   });
 });
 
@@ -291,8 +306,9 @@ const guardarMiFila = async (conexion, evento, usuarioId, sinAviso) => {
 };
 
 // PUT /api/mi-espacio/eventos/:id/mi-recordatorio (`{ sin_aviso: true | false }`): una invitada apaga o prende su
-// recordatorio; el evento no cambia. Responde su recordatorio y cuándo sale, como los da itemDeEvento. Los feriados se leen
-// antes de abrir la transacción: adentro, el pool tomaría una segunda conexión mientras la fila del evento está bloqueada
+// recordatorio; el evento no cambia. Responde su recordatorio y cuándo sale, como los da itemDeEvento (sin la administración:
+// los nombres no van en la respuesta). Los feriados se leen antes de abrir la transacción: adentro, el pool tomaría una
+// segunda conexión mientras la fila del evento está bloqueada
 export const cambiarMiRecordatorio = (req, res) => responder(res, 'Error al cambiar tu recordatorio', async () => {
   const filasFeriados = await filasDeFeriados();
   return enTransaccion(async (conexion) => {
