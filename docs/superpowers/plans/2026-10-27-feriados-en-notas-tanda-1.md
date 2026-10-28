@@ -33,19 +33,22 @@
 
   `{ esDiaHabil, proximoDiaHabil, diaHabilAnterior, ultimoDiaHabilHasta, primerDiaHabilDelMes, rangoDeAviso, diasHabilesTranscurridos, sumarDiasHabiles, origen: 'tabla' | 'fijos', error: string | null }`.
 
-  En los objetos que ya pasan por las capas va como clave; en las funciones posicionales, al final.
+  En los objetos que ya pasan por las capas va como clave; en las funciones posicionales, siempre como último parámetro, también después de un objeto de opciones (`fechaDelProximoAviso(hoy, calendario)`, `diaDeVistaPrevia(config, hoy, { tipo, gestion }, calendario)`).
+- **Una sola lectura de la tabla por corrida o por pedido:** el punto de entrada lee el calendario y las funciones que llama lo reciben. Una función interna que tiene el calendario se lo pasa a todo lo que llama y lo acepta (también a las que tienen valor por defecto, como `autorizadoParaLicencia`, `avisoDelDia`, `contextoDeCanal` y `periodosSinAuditor`), así ninguna vuelve a leer la tabla.
 - **Valores por defecto:**
   - las reglas puras: `calendario = CALENDARIO_FIJO`;
   - las funciones exportadas que leen la base: `calendario ?? await leerCalendario(conexion)`;
   - las internas no exportadas de `services/notasDigitales.js` y de `services/avisosDiariosService.js`: sin valor por defecto (un olvido tira).
 - **La caída a los 9 fijos se detecta por `calendario.error !== null`, nunca por `origen`:** así un test puede pasar `CALENDARIO_FIJO` sin que la corrida anote un error.
-- **Tope de 366 vueltas:** en cada búsqueda de un día hábil (`proximoDiaHabil`, `diaHabilAnterior` y las que las usan), la búsqueda mira la fecha y los 365 días siguientes (o los 366 anteriores). Sin ninguno, tira `RangeError` con «366» en el mensaje. Con los 9 fijos nunca pasa.
+- **Tope de 366 vueltas:** en cada búsqueda de un día hábil (`proximoDiaHabil`, `diaHabilAnterior` y las que las usan), la búsqueda mira la fecha y los 365 días siguientes (o los 366 anteriores). Sin ninguno, tira `RangeError` con «366» en el mensaje. Con los 9 fijos nunca pasa, salvo donde la copia de hoy no termina (después del `'9999-12-31'`: ver la Task 1).
+  - Son dos convenciones, a propósito: las `…Con` de `feriadosReglas.js` que usa Mi espacio (`proximoDiaHabilCon`, `restarDiasHabilesCon`, …) devuelven null; las del calendario tiran. `TOPE_DE_VUELTAS` es uno solo, el del calendario.
 - **Textos, al pie de la letra** (spec, sección 6):
   - `MENSAJE_CORRIDA_SIN_FERIADOS`: «No se pudieron leer los feriados de Configuración → Feriados: la corrida usó solo los 9 fijos.»
   - `MENSAJE_ESTADO_SIN_FERIADOS`: «No se pudieron leer los feriados de Configuración → Feriados: las fechas de esta pantalla cuentan solo los 9 feriados fijos.» Va en la alerta `feriados-sin-leer`, de nivel `error`.
   - `efectoEnNotas` (Configuración y su copia en Mi espacio), en una licencia sin anticipo:
     - sin persona autorizada: «Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.»;
     - con ella: «Empieza a continuación de otra licencia: los avisos no se adelantan. Desde el primer día, {nombre} presenta las notas con las dos firmas, después de la nota que comunica la autorización.»
+  - `efectoEnNotas`, en una licencia del firmante sin días hábiles: «No tiene días hábiles: las notas no cambian.», la frase que ya usa Correos → Estado en ese caso (la spec aprobada la trae, sección 6: no hace falta mostrarla aparte al usuario).
   - `textoLicenciaFirmante` (Correos → Estado), en una licencia futura sin anticipo:
     - sin persona autorizada: «Licencia del firmante del {desde} al {hasta}, sin autorizado: empieza a continuación de otra licencia, así que los avisos no se adelantan, y las reiteraciones se postergan al {vuelta}.»;
     - con ella: «Licencia del firmante del {desde} al {hasta}: empieza a continuación de otra licencia, así que los avisos no se adelantan. {nombre} presenta las notas por autorización, con las dos firmas, desde el primer día.»
@@ -54,7 +57,6 @@
     - la segunda, la de siempre con motivo: «Con los datos de hoy, ese día esta nota incluiría N dataset(s). Asunto: …» o «Ese día no saldría ninguna nota de este tipo: se muestran datos de ejemplo.».
   - La prueba: «Prueba enviada a … (como saldría el {fecha})».
   - El aviso azul de la pestaña Feriados (tanda 1): «Estos feriados, junto con los 9 fijos, son los días no hábiles de las Notas Digitales, los emails automáticos, las licencias y Mi espacio: esos días no sale ninguna nota ni ningún email automático. Métricas, el Ciclo de vida del dato y la Agenda de pedidos todavía cuentan solo los 9 fijos.»
-  - **Un texto que la spec no trae (a mostrar al usuario antes del merge):** en Configuración, una licencia del firmante sin días hábiles dice «No tiene días hábiles: las notas no cambian.». Es la frase que ya usa Correos → Estado en ese caso.
 - **No romper nada:** `npm test` completo antes y después de cada tarea, con el candado `C:\Users\Mariano\.rpad-suite.lock`; nunca dos suites a la vez.
   - Todo test que use Docker, también uno suelto, se corre con el candado tomado: las bases `rpad_test_<archivo>` y el `GET_LOCK` de las Notas son del servidor entero.
 - **Todos los subagentes van con Opus.**
@@ -69,7 +71,10 @@
   - `usuarios.js` → `VERSION_PANTALLAS`, en la Task 8;
   - `mi-espacio.js` → `VERSION_MI_ESPACIO`, en la Task 9.
 
-  El valor nuevo es el de main más un día; la Task 0 confirma los de partida (al 27/10: `'20261210'`, `'20261209'` y `'20261211'`).
+  El valor nuevo es el de main más un día. Confirmados en la Task 0 (main 9c653ec):
+  - `VERSION_CORREOS`: de `'20261210'` a `'20261211'`;
+  - `VERSION_PANTALLAS`: de `'20261209'` a `'20261210'`;
+  - `VERSION_MI_ESPACIO`: de `'20261213'` a `'20261214'`.
 - **Sin SQL, sin tablas, sin cron nuevo y sin Run NPM Install.**
 
 ## Review Focus
@@ -87,13 +92,15 @@
 
 ### Task 0: Preparación
 
-Sin código.
+Sin código. Hecha el 28/10/2026 (los resultados, en cada paso).
 
-- [ ] **Step 1: Traer main.**
+- [x] **Step 1: Traer main.**
   - `git merge main`, con el main que indique la coordinadora (no rebase; la herramienta del host no puede hacer fetch en este repo).
   - Para esta tanda tienen que estar en main la sesión «confirmación y Word de la licencia» (toca el modal de licencia de `mi-espacio.js`) y la de «mejoras en la carga de horas extras».
-- [ ] **Step 2: La línea de base.** Docker arriba (`docker ps`: `rpad-db` y Mailpit). `npm test` completo con el candado: anotar cuántos pasan, cuántos fallan y cuáles.
-- [ ] **Step 3: Confirmar los nombres que usa el plan.** Mirar que existan, con esta forma:
+  - **Hecho:** main 9c653ec, traído en el merge 145f62e. Las dos sesiones están (`miEspacioNota.js`, `miEspacioNotaWord.js` y la tabla `mi_espacio_salidas`), y también la de «días de vacaciones». Ninguna función que nombra el plan cambió de nombre ni de lugar.
+- [x] **Step 2: La línea de base.** Docker arriba (`docker ps`: `rpad-db` y Mailpit). `npm test` completo con el candado: anotar cuántos pasan, cuántos fallan y cuáles.
+  - **Hecho (145f62e):** 6493 tests, 6492 pasan, 0 fallan, 1 omitido (el de siempre); 356 s.
+- [x] **Step 3: Confirmar los nombres que usa el plan.** **Hecho:** todos existen con esta forma (también los internos). Mirar que existan, con esta forma:
   - en `services/notasDigitalesCalendario.js`: `esDiaHabil`, `proximoDiaHabil`, `diaHabilAnterior`, `ultimoDiaHabilHasta`, `primerDiaHabilDelMes`, `rangoDeAviso`, `diasHabilesTranscurridos` y `sumarDiasHabiles`;
   - en `services/feriadosReglas.js` y `services/feriadosDatos.js`: `feriadosDelRango` y `filasDeFeriados(conexion = pool)`;
   - en `services/licenciasReglas.js`: `diasHabilesLibres`, `unirAusencias` y `diaDelAvisoEnSuFecha`;
@@ -118,13 +125,15 @@ Sin código.
   - `oficialesQueSeCruzan` (`services/miEspacioDatos.js`);
   - en el navegador: `efectoEnNotas` (`public/js/usuarios.js` y `public/js/mi-espacio.js`) y `textoLicenciaFirmante` y `textoDeVistaPrevia` (`public/js/correos.js`).
   - Si algo cambió de nombre o de lugar, ajustar este plan en la rama, en su propio commit, antes de seguir.
-- [ ] **Step 4: La lista de los pendientes del test estático.**
+- [x] **Step 4: La lista de los pendientes del test estático.**
   - Listar los archivos de `services/` y `controllers/` que importan alguna de las ocho funciones de arriba desde `notasDigitalesCalendario.js`. Con `grep -rn "notasDigitalesCalendario.js'" services controllers` se ven; los imports de varias líneas se leen en el archivo.
-  - Al 27/10 son 16:
-    - los 4 de las excepciones: el calendario, `feriadosReglas.js`, `metricasReglas.js` y `reportesAgenda.js`;
-    - y 12 pendientes: `auditoriaReglas.js`, `auditoriaService.js`, `avisosDiariosService.js`, `avisosSuperadminService.js`, `licenciasOficialesService.js`, `licenciasReglas.js`, `miEspacioReglas.js`, `notasDigitales.js`, `notasDigitalesContenido.js` y `notasDigitalesFirmas.js` (en `services/`), y `licenciasController.js` y `notificacionesController.js` (en `controllers/`).
-  - Si main sumó otro, va a `PENDIENTES_DE_LA_TANDA_1` de la Task 1 y a la tarea que corresponda.
-- [ ] **Step 5: Las versiones de partida.** Anotar las versiones de partida (`VERSION_CORREOS`, `VERSION_PANTALLAS` y `VERSION_MI_ESPACIO` en `tests/paginas.test.js`) y fijar las nuevas, cada una un día más.
+  - **Hecho (main 9c653ec):** son 15 archivos que importan, y el calendario mismo, que es una excepción pero no se importa a sí mismo:
+    - las 3 excepciones que importan: `feriadosReglas.js`, `metricasReglas.js` y `reportesAgenda.js`;
+    - y los 12 pendientes, confirmados: `auditoriaReglas.js`, `auditoriaService.js`, `avisosDiariosService.js`, `avisosSuperadminService.js`, `licenciasOficialesService.js`, `licenciasReglas.js`, `miEspacioReglas.js`, `notasDigitales.js`, `notasDigitalesContenido.js` y `notasDigitalesFirmas.js` (en `services/`), y `licenciasController.js` y `notificacionesController.js` (en `controllers/`).
+  - Main no sumó ninguno (lo nuevo de main cuenta con `feriadosReglas` y la tabla). Si al traer otro main aparece uno, va a `PENDIENTES_DE_LA_TANDA_1` de la Task 1 y a la tarea que corresponda.
+- [x] **Step 5: Las versiones de partida.** Anotar las versiones de partida (`VERSION_CORREOS`, `VERSION_PANTALLAS` y `VERSION_MI_ESPACIO` en `tests/paginas.test.js`) y fijar las nuevas, cada una un día más.
+  - **Hecho:** `VERSION_CORREOS` `'20261210'` → `'20261211'`; `VERSION_PANTALLAS` `'20261209'` → `'20261210'`; `VERSION_MI_ESPACIO` `'20261213'` → `'20261214'` (Global Constraints).
+- [x] **Step 6: El pre-flight.** Un agente revisó el plan contra el código de 145f62e (`.superpowers/sdd/2026-10-27-feriados-en-notas-tanda-1/preflight.md`: 23 hallazgos). Las decisiones están en `progress.md` y ya están en este plan; los que no se aplicaron, al final.
 
 ### Task 1: El calendario único
 
@@ -141,19 +150,22 @@ Sin código.
     - `derivadasDe(esHabil: (fecha) => boolean) → { esDiaHabil, proximoDiaHabil(iso), diaHabilAnterior(iso), ultimoDiaHabilHasta(iso), primerDiaHabilDelMes(periodo), rangoDeAviso(hoy, dias) → { desde, hasta } | null, diasHabilesTranscurridos(desde, hasta) → number, sumarDiasHabiles(iso, n) }`, con el tope;
     - `CALENDARIO_FIJO`, congelado: `{ ...derivadasDe(esDiaHabil), origen: 'fijos', error: null }`.
     - Los nombres de hoy salen de él (`export const proximoDiaHabil = CALENDARIO_FIJO.proximoDiaHabil`, …). `esDiaHabil` y `FERIADOS_FIJOS` no cambian.
-    - `diasHabilesTranscurridos` hace lo mismo que hoy en toda entrada en la que hoy termina. Con un `hasta` texto mayor que `'9999-12-31'` (por ejemplo, `'abc'`), en el que hoy no termina, tira `RangeError`.
+    - Hacen lo mismo que hoy en toda entrada en la que hoy terminan. Donde hoy no terminan, tiran `RangeError`:
+      - después del `'9999-12-31'`, `sumarDias` da `'+010000-01'` y desde ahí devuelve siempre lo mismo (el 01/01/10000 es sábado). Por eso `rangoDeAviso('9999-12-31', d)` y `sumarDiasHabiles('9999-12-31', n ≥ 1)` hoy no terminan; con el tope, el `proximoDiaHabil` de adentro tira `RangeError`.
+      - `diasHabilesTranscurridos` tira `RangeError` antes de recorrer si `hasta` es un texto mayor que `'9999-12-31'` (por ejemplo, `'abc'`), y en cada vuelta, antes de llamar al predicado, si la fecha ya no tiene la forma `'AAAA-MM-DD'` (con `desde` `'9999-12-31'`, la primera es `'+010000-01'`, que como texto es menor que toda fecha). Se mira la forma, no el largo: `'+010000-01'` tiene 10 caracteres.
   - **En `services/feriadosReglas.js`:**
-    - `calendarioCon(filas, { origen = 'tabla', error = null } = {})` → el mismo objeto, congelado. Copia las filas al armarse.
+    - `calendarioCon(filas, { origen = 'tabla', error = null } = {})` → el mismo objeto, congelado. Copia las filas al armarse con `Array.isArray(filas) ? [...filas] : []` (`calendarioCon(null)` no tira: `[...null]` tiraría; `feriadosDelRango` ya tolera `[null]` y `[{}]`).
     - Su predicado es `esDiaHabil(fecha) && !delAnio(fecha.slice(0, 4)).has(fecha)`, sin `esFechaIso`. `delAnio` arma con `feriadosDelRango` el Set de un año la primera vez que se lo pide y lo guarda.
     - `MENSAJE_CORRIDA_SIN_FERIADOS` y `MENSAJE_ESTADO_SIN_FERIADOS` (Global Constraints).
+    - Deja su `const TOPE_DE_VUELTAS = 366` local e importa el del calendario (el mismo valor: `proximoDiaHabilCon` y `restarDiasHabilesCon` no cambian).
   - **En `services/feriadosDatos.js`:** `leerCalendario(conexion = pool) → Promise<calendario>`.
     - Es `calendarioCon(await filasDeFeriados(conexion))`.
     - Si la lectura falla: `Object.freeze({ ...CALENDARIO_FIJO, origen: 'fijos', error: String(error?.message ?? error) })`, con el error en `console.error`. Nunca tira.
   - **En `tests/helpers.js`:** `correrSqlEnBaseDePrueba(nombre, rutaDesdeLaRaiz)`.
     - Valida el nombre con `validarDestinoBasePrueba`, abre la conexión de root (`multipleStatements`), hace `USE` y corre el archivo tal cual.
-  - **`tests/fixtures/feriados-precarga.js`:** `FILAS_PRECARGA`, las 28 filas de `database/updates/migracion-feriados-datos.sql`, en el orden del archivo.
+  - **`tests/fixtures/feriados-precarga.js`:** `FILAS_PRECARGA`, las 28 filas de `database/updates/migracion-feriados-datos.sql`, en el orden del archivo (que es el de las fechas: el mismo de `filasDeFeriados`, `ORDER BY fecha, id`).
     - Con la forma de `filasDeFeriados`: `{ id: 1…28, fecha, nombre, tipo, trasladado_de, se_repite, hasta_anio: null, activo: 1, no_rige: [] }`.
-    - Congeladas.
+    - Congeladas. Las ata a la migración `tests/feriados-en-notas.test.js` (abajo), comparándolas con lo que lee `filasDeFeriados` después de correr el SQL: sin copiar la `FORMA` de `tests/schema.test.js`.
   - **`tests/fixtures/calendario-fijo-de-antes.js`:** la copia literal, sin imports, de `aFecha`, `aIso`, `sumarDias`, `FERIADOS_FIJOS`, `esDiaHabil` y las siete derivadas de hoy.
   - **`tests/calendario-unico.test.js`:**
     - `PROHIBIDOS`: las ocho funciones de la Task 0, Step 3, primera línea.
@@ -165,22 +177,28 @@ Sin código.
 - [ ] **Step 1: Escribir los tests que fallan.**
   - **`tests/notas-calendario.test.js`,** `describe('las derivadas sobre un predicado (spec 2026-10-27-feriados-en-notas, 1)')`. Con `const resultado = (fn) => { try { return { valor: fn() }; } catch (e) { return { tira: e.constructor.name }; } };`:
     - **«los nombres de siempre y CALENDARIO_FIJO dan lo mismo que la copia de antes, del 2025 al 2028 y con entradas raras».**
-      - Para cada día del `'2024-12-25'` al `'2029-01-07'` y para `RAROS = ['abc', '', '2026-02-30', '2026-13-01', null, undefined, 3, '2026-2-3', '9999-12-31']`: `assert.deepEqual(resultado(() => cal.X(e)), resultado(() => antes.X(e)))` y lo mismo con `cal.CALENDARIO_FIJO.X`.
-      - Con `X` en `esDiaHabil`, `proximoDiaHabil`, `diaHabilAnterior` y `ultimoDiaHabilHasta`.
-      - `rangoDeAviso(e, d)`, con `d` en `0`, `40` y `60`.
-      - `sumarDiasHabiles(e, n)`, con `n` en `0`, `1`, `2` y `5`.
-      - `primerDiaHabilDelMes(p)`, para cada `'AAAA-MM'` de 2025-01 a 2028-12 y para los raros.
+      - `RAROS = ['abc', '', '2026-02-30', '2026-13-01', null, undefined, 3, '2026-2-3', '9999-12-31']` y `RAROS_QUE_TERMINAN = RAROS.filter((r) => r !== '9999-12-31')`: con `'9999-12-31'`, la copia de antes no termina en `rangoDeAviso`, en `sumarDiasHabiles` con `n ≥ 1` ni en `diasHabilesTranscurridos(r, '2026-01-10')` (un test que cuelga no prueba nada; ese borde lo fija el test siguiente).
+      - Para cada día `e` del `'2024-12-25'` al `'2029-01-07'` y para los raros que se indican: `assert.deepEqual(resultado(() => cal.X(e)), resultado(() => antes.X(e)))` y lo mismo con `cal.CALENDARIO_FIJO.X`.
+      - Con `X` en `esDiaHabil`, `proximoDiaHabil`, `diaHabilAnterior` y `ultimoDiaHabilHasta`, con `RAROS`.
+      - `rangoDeAviso(e, d)`, con `d` en `0`, `40` y `60`, con `RAROS_QUE_TERMINAN`.
+      - `sumarDiasHabiles(e, 0)` con `RAROS`, y `sumarDiasHabiles(e, n)`, con `n` en `1`, `2` y `5`, con `RAROS_QUE_TERMINAN`.
+      - `primerDiaHabilDelMes(p)`, para cada `'AAAA-MM'` de 2025-01 a 2028-12 y para `RAROS`.
       - `diasHabilesTranscurridos(d, sumarDias(d, k))`, con `k` en `-1`, `0`, `1`, `7`, `30` y `400`.
-      - `diasHabilesTranscurridos(r, '2026-01-10')` con cada raro, y `diasHabilesTranscurridos('2026-01-01', h)` con `h` en `''`, `null`, `undefined`, `3`, `'2026-02-30'` y `'2026-2-3'` (no con `'abc'`: la copia de antes no termina).
+      - `diasHabilesTranscurridos(r, '2026-01-10')` con cada uno de `RAROS_QUE_TERMINAN`, y `diasHabilesTranscurridos('2026-01-01', h)` con `h` en `''`, `null`, `undefined`, `3`, `'2026-02-30'` y `'2026-2-3'` (no con `'abc'`: la copia de antes no termina).
     - **«CALENDARIO_FIJO»:** `assert.equal(cal.CALENDARIO_FIJO.esDiaHabil, cal.esDiaHabil)`; `origen` `'fijos'`, `error` null y `Object.isFrozen(cal.CALENDARIO_FIJO)`.
-    - **«diasHabilesTranscurridos con un hasta mayor que toda fecha tira»:** `assert.throws(() => cal.diasHabilesTranscurridos('2026-01-01', 'abc'), RangeError)`.
+    - **«donde la copia de antes no termina, tira RangeError»,** con `cal.X` y con `cal.CALENDARIO_FIJO.X` (sin llamar nunca a la copia de antes):
+      - `assert.throws(() => cal.rangoDeAviso('9999-12-31', d), RangeError)`, con `d` en `0`, `40` y `60`;
+      - `cal.sumarDiasHabiles('9999-12-31', n)`, con `n` en `1`, `2` y `5`;
+      - `cal.diasHabilesTranscurridos('9999-12-31', '2026-01-10')` y `cal.diasHabilesTranscurridos('9999-12-31', '9999-12-31')` (la fecha deja de ser `'AAAA-MM-DD'`);
+      - `cal.diasHabilesTranscurridos('2026-01-01', 'abc')` (un `hasta` mayor que toda fecha).
     - **«el tope de 366 vueltas»,** con `todo` = un Set con cada día del `'2026-01-01'` al `'2027-01-31'` y `const t = cal.derivadasDe((f) => cal.esDiaHabil(f) && !todo.has(f))`:
       - `assert.throws(() => t.proximoDiaHabil('2026-01-01'), (e) => e instanceof RangeError && /366/.test(e.message))`;
       - lo mismo con `t.diaHabilAnterior('2027-02-01')`, `t.primerDiaHabilDelMes('2026-01')` y `t.sumarDiasHabiles('2025-12-31', 1)`;
       - con el Set hasta el `'2026-12-30'`, `t.proximoDiaHabil('2026-01-01')` es `'2026-12-31'`.
   - **`tests/feriados-reglas.test.js`:**
     - **`describe('calendarioCon (spec 2026-10-27-feriados-en-notas, 1)')`:**
-      - **«sin filas da lo mismo que CALENDARIO_FIJO»:** los mismos recorridos de arriba, `calendarioCon([])` contra `CALENDARIO_FIJO`; también con `null`, `[null]` y `[{}]`.
+      - **«sin filas da lo mismo que CALENDARIO_FIJO»:** los mismos recorridos de arriba (con `RAROS` y `RAROS_QUE_TERMINAN` donde van), `calendarioCon([])` contra `CALENDARIO_FIJO`; también con `null`, `[null]` y `[{}]`.
+      - **«donde los fijos tiran RangeError, también»:** los cinco casos del test de arriba con `calendarioCon([])` y con `calendarioCon(FILAS_PRECARGA)`.
       - **«con la precarga»,** con `const c = calendarioCon(FILAS_PRECARGA)`:
         - `c.esDiaHabil(f)` es false en `'2026-11-02'`, `'2026-11-09'`, `'2026-11-23'`, `'2026-12-07'`, `'2027-02-08'`, `'2027-02-09'`, `'2027-02-23'`, `'2027-03-25'` y `'2027-03-26'`, y true en `'2026-11-03'`, `'2026-11-10'`, `'2026-11-24'` y `'2026-12-04'`;
         - `c.diaHabilAnterior('2026-12-09')` es `'2026-12-04'`;
@@ -193,22 +211,40 @@ Sin código.
         - `c.origen` es `'tabla'`, `c.error` null y `Object.isFrozen(c)` true.
       - **«las filas que cambian después no lo cambian»:** con una copia de la precarga, borrar la fila del 02/11 después de `calendarioCon(copia)`: el 02/11 sigue sin ser hábil.
       - **«origen y error se pasan»:** `calendarioCon([], { origen: 'fijos', error: 'x' })` tiene `origen` `'fijos'` y `error` `'x'`.
-    - **`describe('la precarga de las fixtures es la de migracion-feriados-datos.sql')`:** las 28 filas de `FILAS_PRECARGA`, comparadas con el SQL leído con la misma `FORMA` de `tests/schema.test.js` (fecha, nombre, tipo, trasladado_de y se_repite, en el orden del archivo), con `id` de 1 a 28, `hasta_anio` null, `activo` 1 y `no_rige` vacío.
     - **`describe('los mensajes de la caída a los 9 fijos')`:** los dos textos, escritos a mano.
   - **`tests/calendario-unico.test.js`:**
     - **«ningún archivo de services/ ni controllers/ importa del calendario una derivada fija ni esDiaHabil, salvo las excepciones»:** el mensaje nombra el archivo y la función. También falla con `import * as … from` o `import(…)` del calendario.
     - **«las excepciones de la tanda 2 y las pendientes todavía las importan»:** la lista no tiene de más. Cada tarea que arregla un archivo lo saca de `PENDIENTES_DE_LA_TANDA_1`.
   - **`tests/feriados-en-notas.test.js`** (Docker, base `rpad_test_feriados_en_notas`):
-    - **El `before`:**
-      - `crearBaseDePrueba` y `correrSqlEnBaseDePrueba(base.nombre, 'database/updates/migracion-feriados-datos.sql')`;
+    - **El `before`,** como `tests/notas-motor.test.js`:
+      - `dbReal = process.env.DB_NAME`, antes de nada;
+      - `crearBaseDePrueba('rpad_test_feriados_en_notas')` y `correrSqlEnBaseDePrueba(base.nombre, 'database/updates/migracion-feriados-datos.sql')`;
       - `process.env.DB_NAME = base.nombre` y `EMAIL_SOLO_A = ''`;
-      - los `import()` dinámicos, como `tests/notas-motor.test.js`.
-    - **El `after`:** cierra el pool de `config/database.js` y `cerrarDb`, y borra la base.
+      - los `import()` dinámicos.
+    - **El `after`,** en este orden (`base.borrar()` rechaza la base que está en `DB_NAME`):
+      - cierra el pool de `config/database.js` y `cerrarDb`;
+      - restaura `DB_NAME`: `if (dbReal === undefined) delete process.env.DB_NAME; else process.env.DB_NAME = dbReal;`;
+      - `await base?.borrar()`.
     - **Los ayudantes del archivo,** copiados de los de hoy:
       - `crearUsuario` y `licencia`, de `tests/notas-licencias.test.js`;
       - `proponerCambio`, de `tests/avisos-diarios.test.js`, con un `creado` opcional que fija `created_at`;
       - `conLaTablaRenombrada(fn)`: `RENAME TABLE feriados TO feriados_sin_leer`, y de vuelta en un `finally`.
-    - **El `beforeEach`:** limpia como `tests/notas-licencias.test.js`, sin tocar nunca `feriados`.
+    - **El `beforeEach`,** sin tocar nunca `feriados`. `usuarios_auditoria` va antes que `usuarios`: su clave foránea a `usuarios` no tiene `ON DELETE`, y la escriben las Tasks 5, 8 y 9 (los avisos retenidos y `registrarAuditoria`):
+
+      ```js
+      beforeEach(async () => {
+        process.env.EMAIL_SOLO_A = '';
+        await limpiarBase();
+        await configurarNotas();
+        await query('DELETE FROM usuarios_auditoria');
+        await query('DELETE FROM cambios_pendientes');
+        await query('DELETE FROM usuarios_licencias');
+        await query('DELETE FROM usuarios_firmas');
+        await query('DELETE FROM usuarios');
+        await mailpit.vaciar();
+      });
+      ```
+    - **`describe('la precarga de las fixtures es la de migracion-feriados-datos.sql')`:** `assert.deepEqual(await filasDeFeriados(), FILAS_PRECARGA)`: las 28 filas, en orden, con `id` de 1 a 28, `hasta_anio` null, `activo` 1 y `no_rige` vacío. Es la base recién creada con el SQL tal cual, antes de que ningún test la toque (ninguno escribe en `feriados`; `conLaTablaRenombrada` la devuelve igual).
     - **`describe('leerCalendario con la precarga')`:**
       - **«lee la tabla: el 02/11/2026 no es hábil y el 03/11 sí»:** `origen` `'tabla'`, `error` null.
       - **«con la tabla renombrada cae a los 9 fijos, con el error, sin tirar»:** `origen` `'fijos'`, `error` que menciona `feriados`, y el 02/11 hábil.
@@ -217,7 +253,7 @@ Sin código.
   - Con el candado, `node --test tests/feriados-en-notas.test.js`: FAIL, porque `leerCalendario` no existe.
 - [ ] **Step 3: Implementar.**
   - Las firmas de arriba. El encabezado de `feriadosReglas.js` deja de decir que «el resto del sistema sigue con esDiaHabil».
-- [ ] **Step 4: Correr los tests y ver que pasan.** Los mismos comandos: PASS.
+- [ ] **Step 4: Correr los tests y ver que pasan.** Los mismos comandos: PASS. Los tests de hoy de `proximoDiaHabilCon` y `restarDiasHabilesCon` (el tope, ahora importado), sin tocarlos.
 - [ ] **Step 5: Commit.**
 
   `git add services/notasDigitalesCalendario.js services/feriadosReglas.js services/feriadosDatos.js tests/helpers.js tests/notas-calendario.test.js tests/feriados-reglas.test.js tests/fixtures/calendario-fijo-de-antes.js tests/fixtures/feriados-precarga.js tests/calendario-unico.test.js tests/feriados-en-notas.test.js && git commit -m "feat(feriados): el calendario único de días hábiles, los 9 fijos con la tabla, y su lectura que nunca tira" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`
@@ -228,7 +264,7 @@ Sin código.
 - Modify: `services/licenciasReglas.js`, `services/notasDigitalesFirmas.js`, `tests/licencias-reglas.test.js`, `tests/calendario-unico.test.js`
 
 **Interfaces:**
-- Consumes: `CALENDARIO_FIJO`, `calendarioCon` y `leerCalendario` (Task 1).
+- Consumes: `CALENDARIO_FIJO`, `derivadasDe`, `calendarioCon` y `leerCalendario`, y en los tests `FILAS_PRECARGA` (`tests/fixtures/feriados-precarga.js`) (Task 1).
 - Produces, puras (en `services/licenciasReglas.js`, con `CALENDARIO_FIJO` por defecto):
   - `diasHabilesLibres(desde, hasta, licencias, calendario)` y `unirAusencias(ausencias, calendario)`: la regla de siempre, con el calendario.
   - `diaDelAvisoEnSuFecha({ cuentaDesde, licencia, ausencias = [], calendario })`: si `cuentaDesde` es hábil con el calendario y ella no falta ese día, `cuentaDesde`. Si no, el primer día que cumple las dos, de `ultimoDiaHabilHasta(cuentaDesde)` hacia atrás, sin bajar de `licencia.desde`; si no hay, null.
@@ -236,7 +272,7 @@ Sin código.
     - Sin días hábiles (`ultimoDiaHabilHasta(hasta) < desde`): `{ vispera: null, sin_anticipo: false, sin_dias_habiles: true }`.
     - Si alguna de `otras` sin anular incluye el `diaHabilAnterior(desde)`: `{ vispera: null, sin_anticipo: true, sin_dias_habiles: false }`.
     - Si no: `{ vispera: diaHabilAnterior(desde), sin_anticipo: false, sin_dias_habiles: false }`.
-    - Nunca tira: con fechas que no sirven, `{ vispera: null, sin_anticipo: false, sin_dias_habiles: false }`.
+    - Nunca tira: `otras` que no es una lista vale `[]` (los tests de hoy de `pasoPrevistoDe` no la pasan), y con fechas que no sirven, o si el calendario tira el `RangeError` del tope, `{ vispera: null, sin_anticipo: false, sin_dias_habiles: false }`.
 - Produces, en `services/notasDigitalesFirmas.js` (leen la base: `calendario ?? await leerCalendario(conexion)`):
   - `autorizacionPendiente(config, hoy, calendario)` y `anticipoPorLicencia(config, hoy, calendario)`, con `diaHabilAnterior` y `ultimoDiaHabilHasta` del calendario;
   - `disponibilidadDelAutorizado(licencia, { desde, licenciaExtra, excluirLicenciaId, conexion, calendario })`;
@@ -260,9 +296,13 @@ Sin código.
     - sin `CAL`, dos.
   - **«el aviso en su fecha que cae en un feriado de la tabla va al hábil anterior, dentro de la licencia»,** con `cuentaDesde: '2026-12-07'`:
     - con la licencia del 03/12 al 18/12 y `CAL`, `'2026-12-04'`; sin `CAL`, `'2026-12-07'`;
-    - con la licencia desde el 07/12, null;
-    - con la licencia desde el 01/12 y `ausencias: [tramo('2026-12-04', '2026-12-04')]`, `'2026-12-03'`.
-  - **«nada tira»:** `visperaDeLaLicencia` con `null`, `{}` y fechas raras.
+    - con la licencia desde el 07/12 y `CAL`, null;
+    - con la licencia desde el 01/12, `ausencias: [tramo('2026-12-04', '2026-12-04')]` y `CAL`, `'2026-12-03'` (sin `CAL`, `'2026-12-07'`).
+  - **«nada tira»:**
+    - `visperaDeLaLicencia` con `null`, `{}` y fechas raras: `{ vispera: null, sin_anticipo: false, sin_dias_habiles: false }`;
+    - con `otras` `undefined`, `null` o `'x'`, lo mismo que con `[]` (`vispera: '2026-12-04'` con `CAL`);
+    - con un calendario sin ningún día hábil (`{ ...CALENDARIO_FIJO, ...derivadasDe(() => false) }`, cuyo `diaHabilAnterior` tira el `RangeError` del tope): `{ vispera: null, sin_anticipo: false, sin_dias_habiles: false }`.
+  - El `tramo` es local a dos `describe` del archivo: el nuevo `describe` define el suyo, igual.
 - [ ] **Step 2: Correr los tests y ver que fallan.** `node --test tests/licencias-reglas.test.js`: FAIL, porque `visperaDeLaLicencia` no existe y `diasHabilesLibres` ignora el cuarto parámetro.
 - [ ] **Step 3: Implementar.**
   - Sacar `services/licenciasReglas.js` y `services/notasDigitalesFirmas.js` de `PENDIENTES_DE_LA_TANDA_1`.
@@ -283,7 +323,7 @@ Sin código.
   - los tests: `tests/auditoria-reglas.test.js`, `tests/feriados-en-notas.test.js` y `tests/calendario-unico.test.js`.
 
 **Interfaces:**
-- Consumes: `leerCalendario`, `MENSAJE_CORRIDA_SIN_FERIADOS` (Task 1) y `anotarEnLaUltimaCorrida` (`services/notasDigitales.js`).
+- Consumes: `CALENDARIO_FIJO`, `calendarioCon`, `leerCalendario` y `MENSAJE_CORRIDA_SIN_FERIADOS`, y en los tests `FILAS_PRECARGA` y `conLaTablaRenombrada` (Task 1); `anotarEnLaUltimaCorrida` (`services/notasDigitales.js`).
 - Produces, puras (en `services/auditoriaReglas.js`):
   - `agruparDiasSinAuditor(dias, hasta, calendario)`;
   - `canalDelCambio({ cambio, hoy, personas, titulares, hayQuienFirme, calendario })`;
@@ -293,15 +333,15 @@ Sin código.
   - `periodosSinAuditor(desde, hasta, { licenciaSimulada, excluirLicenciaId, calendario })`: lee el calendario una vez y lo pasa a las dos;
   - `proximoDiaConQuienAudite(proponenteId, desde, calendario)`.
   - `contextoDeCanal(fecha, config = null, calendario = null) → { personas, titulares, hayQuienFirme, calendario }` (sin calendario, `leerCalendario()`): así llega a `canalDelCambio` desde las dos corridas.
-  - `seleccionarParaAuditoria(fecha, contexto)`: pone `dias_habiles_pendiente: calendario.diasHabilesTranscurridos(cambio.fecha_propuesta, fecha)` en cada nuevo y cada reiterado.
+  - `seleccionarParaAuditoria(fecha, contexto = null)`: arma primero `const ctx = contexto ?? await contextoDeCanal(fecha)` (así siempre tiene `ctx.calendario`), llama a `cambiosConCanal(fecha, ctx)`, usa `seccionDeAuditoria(…, fecha, ctx.calendario)` y pone `dias_habiles_pendiente: ctx.calendario.diasHabilesTranscurridos(cambio.fecha_propuesta, fecha)` en cada nuevo y cada reiterado.
 - Produces, en el contenido: `filaDeCambio` (`services/notasDigitalesContenido.js`) usa `cambio.dias_habiles_pendiente ?? CALENDARIO_FIJO.diasHabilesTranscurridos(cambio.fecha_propuesta, fecha)`, así sigue puro.
 - Produces, en la corrida de las 14:00:
   - `enviarCambiosPendientes({ hoy, ahora, calendario })`:
     - `dia_habil` es `calendario.esDiaHabil(hoy)`;
     - pasa el calendario a `contextoDeCanal` y a `proximoDiaConQuienAudite`, a través de `avisarSinAuditor` y `enviarAvisoSinAuditor`, que lo reciben sin valor por defecto;
     - el resultado no cambia de forma.
-  - `ejecutarNotificacionCambiosPendientes` lee `leerCalendario()` una vez y lo pasa. La respuesta suma `data.calendario` (`origen`).
-    - Con `error`: `await anotarEnLaUltimaCorrida(MENSAJE_CORRIDA_SIN_FERIADOS).catch(() => {})` y 207 con `success: false`, también en un día no hábil (con el mismo mensaje «Hoy no es día hábil: no se envían recordatorios.»).
+  - `ejecutarNotificacionCambiosPendientes` lee `leerCalendario()` una vez y lo pasa. La respuesta suma `data.calendario` (`origen`), también en un día no hábil.
+    - Con `calendario.error !== null` (nunca por `origen`): `await anotarEnLaUltimaCorrida(MENSAJE_CORRIDA_SIN_FERIADOS).catch(() => {})` y 207 con `success: false`, también en un día no hábil (con el mismo mensaje «Hoy no es día hábil: no se envían recordatorios.»).
 
 - [ ] **Step 1: Escribir los tests que fallan.**
   - **`tests/auditoria-reglas.test.js`,** `describe('con el calendario de la tabla')`, con `CAL`, `personas = [{ id: 1, rol: 'superadmin', disponible: true }, { id: 2, rol: 'admin', disponible: true }]` y `cambio = { usuario_id: 1, primer_recordatorio_fecha: '2026-10-30' }`:
@@ -322,11 +362,12 @@ Sin código.
     - **«el 04/11 va por nota en las dos»:** la corrida genera la nota de auditoría con ese cambio en «nuevos», y a las 14:00 `canal_nota` es 1 y `enviados` está vacío.
     - **«la nota del 04/11 dice 2 días hábiles pendiente» (Review Focus 3):** en el HTML de la nota, la celda de ese cambio es `2`; con los 9 fijos sería 3.
     - **«el 02/11 la corrida de las 14:00 no es día hábil»:** `dia_habil` false y Mailpit sin mensajes.
+    - **«la de las 14:00 dice qué calendario usó»,** con `mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-02T17:00:00Z') })` (las 14:00 del 02/11 en Argentina), como `tests/mi-espacio-avisos.test.js`, y `ejecutarNotificacionCambiosPendientes({}, res)`: 200, `success` true, `data.calendario` `'tabla'` y `data.dia_habil` false. `mock.timers.reset()` en un `finally`.
     - **«proximoDiaConQuienAudite desde el sábado 07/11 es el 10/11».**
     - **«periodosSinAuditor: con los dos auditores de licencia del 03/11 al 06/11, la vuelta es el 10/11».**
     - **«con la tabla renombrada, la de las 14:00 responde 207 y lo anota en la última corrida»:**
       - `ejecutarNotificacionCambiosPendientes({}, res)`, con un `res` falso que guarda `status` y `json`;
-      - 207, `data.calendario` `'fijos'`;
+      - 207, `success` false, `data.calendario` `'fijos'`;
       - `ultima_corrida_resultado` incluye `MENSAJE_CORRIDA_SIN_FERIADOS`, con `con_errores` 1.
 - [ ] **Step 2: Correr los tests y ver que fallan.**
   - `node --test tests/auditoria-reglas.test.js`: FAIL (el canal con `CAL` todavía da `'nota'`).
@@ -345,7 +386,7 @@ Sin código.
 - Modify: `services/notasDigitales.js`, `services/notasDigitalesDatos.js`, `tests/feriados-en-notas.test.js`
 
 **Interfaces:**
-- Consumes: Tasks 1 a 3.
+- Consumes: Tasks 1 a 3: `leerCalendario`, `MENSAJE_CORRIDA_SIN_FERIADOS`, `conLaTablaRenombrada` y `FILAS_PRECARGA` (Task 1); `autorizacionPendiente`, `anticipoPorLicencia`, `disponibilidadDelAutorizado` y `diaDelAvisoEnSuFecha` con el calendario (Task 2); `contextoDeCanal(fecha, config, calendario)` y `seleccionarParaAuditoria` (Task 3).
 - Produces:
   - **`ejecutarNotasDigitales({ hoy, usuarioId, calendario })`:**
     - sin calendario, `await leerCalendario()`;
@@ -354,8 +395,8 @@ Sin código.
   - **Internas, sin valor por defecto:**
     - `correrPasos(resumen, hoy, usuarioId, calendario)`, con la puerta del día en `calendario.esDiaHabil(hoy)`;
     - `prepararAviso(gestion, hoy, anticipo, calendario)`, con `cuenta_desde: calendario.proximoDiaHabil(sumarDias(d.apertura_mes, -VENTANA_DIAS[gestion]))`;
-    - `contextoDelDia(config, fecha, calendario)`, que lo pasa a `autorizacionPendiente` y a `anticipoPorLicencia`.
-  - **`avisoDelDia({ gestion, fecha, modo, licencia, anticipo, autorizacion, calendario })`** (exportada: `calendario ?? await leerCalendario()`). Lo pasa a `disponibilidadDelAutorizado` y a `pendientesEnSuFecha`.
+    - `contextoDelDia(config, fecha, calendario)`, que lo pasa a `autorizacionPendiente` y a `anticipoPorLicencia` y lo devuelve dentro del contexto, en sus dos salidas: `{ modo, firma, licencia, calendario }` en un día `'sin_autorizado'` y `{ modo, firma, licencia, pendiente, autorizacion, anticipo, calendario }` en los demás. Así lo tienen `correrPasos` y, en la Task 7, la vista previa.
+  - **`avisoDelDia({ gestion, fecha, modo, licencia, anticipo, autorizacion, calendario })`** (exportada: `calendario ?? await leerCalendario()`). Lo pasa a `prepararAviso`, a `disponibilidadDelAutorizado` (`{ calendario }`) y a `pendientesEnSuFecha`. `correrPasos` se lo pasa siempre.
   - **`pendientesEnSuFecha(gestion, hoy, licencia, ausencias = [], calendario)`** (`services/notasDigitalesDatos.js`; `calendario ?? await leerCalendario()`), con `diaDelAvisoEnSuFecha({ …, calendario })`.
   - **Lo demás:** la reiteración y la auditoría usan el calendario de la corrida, con `contextoDeCanal(hoy, config, calendario)`.
 
@@ -395,7 +436,7 @@ Sin código.
   - los tests: `tests/notificaciones.test.js`, `tests/feriados-en-notas.test.js` y `tests/calendario-unico.test.js`.
 
 **Interfaces:**
-- Consumes: Tasks 1 a 4.
+- Consumes: Tasks 1 a 4: `leerCalendario`, `calendarioCon`, `CALENDARIO_FIJO`, `FILAS_PRECARGA` y `conLaTablaRenombrada` (Task 1); `ejecutarNotasDigitales({ hoy, usuarioId, calendario })` y su error `{ tipo: 'feriados' }` (Task 4), que el controlador ya transforma en `{ tipo: 'notas-digitales', paso: 'feriados' }`.
 - Produces:
   - **El email de los 40 días:**
     - `datasetsExternosPorArea(fecha, calendario)` (`calendario ?? await leerCalendario()`) usa `calendario.rangoDeAviso`;
@@ -405,7 +446,7 @@ Sin código.
     - lee `const calendario = await leerCalendario()` una vez, al principio;
     - lo pasa a `enviarAvisoAreas`, a `enviarResumenAvisosRetenidos` y a `ejecutarNotasDigitales`;
     - `resultados.dia_habil ??= calendario.esDiaHabil(hoy)` y `resultados.calendario = calendario.origen`.
-  - **`export const fechaDelProximoAviso = (calendario, hoy = hoyArgentina()) => calendario.proximoDiaHabil(hoy)`:** `previewEmail` y `pruebaAvisoArea` leen `leerCalendario()` y le pasan el mismo objeto a `datasetsExternosPorArea`.
+  - **`export const fechaDelProximoAviso = (hoy, calendario) => calendario.proximoDiaHabil(hoy)`:** el calendario al final y los dos parámetros obligatorios (se exporta solo para el test; sin valor por defecto, un olvido tira). `previewEmail` y `pruebaAvisoArea` leen `const calendario = await leerCalendario()`, toman `fechaDelProximoAviso(hoyArgentina(), calendario)` y le pasan el mismo objeto a `datasetsExternosPorArea(fecha, calendario)`.
   - **`tests/notificaciones.test.js`:** `const HOY_ES_HABIL = (await leerCalendario(db())).esDiaHabil(hoyArgentina())`, con el pool de `helpers.js`. Si `error` no es null, tira: falla en lugar de decidir con los fijos.
 
 - [ ] **Step 1: Escribir los tests que fallan.** En `tests/feriados-en-notas.test.js`, `describe('la corrida de las 8:15: el email de los 40 días y el resumen al superadmin')`:
@@ -417,7 +458,7 @@ Sin código.
   - **«el resumen de avisos retenidos no sale el 02/11 y sale el 03/11»:**
     - un superadmin disponible y un aviso retenido en `usuarios_auditoria`;
     - `{ enviado: false, cantidad: 0 }` el 02/11 y `{ enviado: true, cantidad: 1 }` el 03/11.
-  - **«fechaDelProximoAviso»:** con `calendarioCon(FILAS_PRECARGA)`, el `'2026-11-07'` da `'2026-11-10'`.
+  - **«fechaDelProximoAviso»:** `fechaDelProximoAviso('2026-11-07', calendarioCon(FILAS_PRECARGA))` da `'2026-11-10'`; con `CALENDARIO_FIJO`, `'2026-11-09'`.
   - **«la corrida de las 8:15 dice qué calendario usó»,** con `mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-02T11:15:00Z') })`, como `tests/mi-espacio-avisos.test.js`, y `ejecutarNotificacionesDiarias({}, res)`:
     - con la tabla: `data.calendario` `'tabla'`, `data.dia_habil` false y `data.notasDigitales.motivo` `'Día no hábil'`;
     - con la tabla renombrada: 207, `data.calendario` `'fijos'`, `data.dia_habil` true y algún error `{ tipo: 'notas-digitales', paso: 'feriados' }`.
@@ -437,21 +478,28 @@ Sin código.
   - los tests: `tests/correos-frontend.test.js`, `tests/paginas.test.js`, `tests/notas-licencias.test.js` y `tests/feriados-en-notas.test.js`.
 
 **Interfaces:**
-- Consumes: `visperaDeLaLicencia` (Task 2), `MENSAJE_ESTADO_SIN_FERIADOS` (Task 1).
+- Consumes:
+  - `leerCalendario`, `MENSAJE_ESTADO_SIN_FERIADOS` y, en los tests, `conLaTablaRenombrada` (Task 1);
+  - `visperaDeLaLicencia`, `unirAusencias(…, calendario)` y `autorizadoParaLicencia(licencia, { desde, calendario })` (Task 2);
+  - `contextoDeCanal(fecha, config, calendario)`, `cambiosConCanal` y `periodosSinAuditor(desde, hasta, { calendario })` (Task 3);
+  - `contextoDelDia(config, fecha, calendario)`, `pendientesEnSuFecha(…, ausencias, calendario)` y la corrida con el calendario (Task 4).
 - Produces:
   - **`modoDelDia(config, fecha) → Promise<{ modo, licencia }>`** (`notasDigitalesFirmas.js`):
     - el mismo modo que `firmaParaFecha`, sin leer las imágenes de las firmas (que la persona autorizada tenga la suya se mira con `imagen IS NOT NULL`);
     - `firmaParaFecha` la usa primero y lee las firmas solo para el modo que da. Si al leerlas la persona autorizada ya no sirve, `'sin_autorizado'`.
   - **`primerDiaConNotas(config, desde, calendario) → Promise<string | null>`** (exportada; `calendario ?? await leerCalendario()`):
     - el primer día desde `desde`, hasta `desde` + 366 inclusive, que es hábil con el calendario y cuyo `modoDelDia` no es `'sin_autorizado'`; null si no hay;
-    - salta los no hábiles con el predicado, de a uno (nunca con `proximoDiaHabil`: no tira) y, en una licencia sin autorizado, como hoy `fechaDeVistaPrevia`.
+    - salta los no hábiles con el predicado, de a uno (nunca con `proximoDiaHabil`: no tira) y, en una licencia sin autorizado, como hoy `fechaDeVistaPrevia`, con `autorizadoParaLicencia(licencia, { desde: sumarDias(dia, 1), calendario })`.
   - **`fechaDeVistaPrevia(config, hoy, calendario)`:** `{ fecha: (await primerDiaConNotas(…)) ?? hoy, motivo }`, con el motivo de siempre, mirado con el calendario.
   - **`licenciaDelFirmante(config, hoy, calendario)`.** `publica` suma `sin_anticipo` al final, después de `vuelta`:
     - `vispera`, `sin_anticipo` y `sin_dias_habiles` salen de `visperaDeLaLicencia(licencia, otras, calendario)`, con `otras` = `[licenciaEnFecha(titular, calendario.diaHabilAnterior(desde))]` si la hay;
     - `ultimo_habil = calendario.ultimoDiaHabilHasta(hasta)`;
     - `vuelta = (await primerDiaConNotas(config, sumarDias(hasta, 1), calendario)) ?? calendario.proximoDiaHabil(sumarDias(hasta, 1))`;
-    - el día que se mira, con `calendario.proximoDiaHabil`, y `unirAusencias(…, calendario)`.
-  - **`proximoAvisoEnSuFecha(gestion, corrida, delFirmante, config, calendario)`:** el día de cada pendiente es `primerDiaConNotas(config, max(dia_en_su_fecha, corrida))`, solo si no pasa de `titular.hasta`. Pasada la licencia no hay aviso en su fecha.
+    - el día que se mira, con `calendario.proximoDiaHabil`, `autorizadoParaLicencia(licencia, { calendario })` y `unirAusencias(…, calendario)`.
+  - **`proximoAvisoEnSuFecha(gestion, corrida, delFirmante, config, calendario)`:**
+    - lee los pendientes con `pendientesEnSuFecha(gestion, corrida, titular, ausencias, calendario)`;
+    - el día de cada pendiente (`efectiva`) es `primerDiaConNotas(config, max(dia_en_su_fecha, corrida), calendario)`, solo si no pasa de `titular.hasta`. Pasada la licencia no hay aviso en su fecha;
+    - se mantiene el filtro de hoy, `.filter(({ dataset, efectiva }) => efectiva && !yaTocaReiterar(dataset, efectiva))`: al que ese día ya le toca la reiteración lo informa la reiteración, como en la corrida.
   - **`proximasFechas({ config, hoy, calendario }) → Promise<{ corrida, delFirmante, proximas: { interna, externa }, auditoria }>`** (interna): la única fuente de las fechas del Estado y de la vista previa. Con `corrida = calendario.proximoDiaHabil(hoy)`:
     - **El aviso de cada gestión:**
       - el candidato es `max(apertura − ventana, corrida)`;
@@ -465,12 +513,13 @@ Sin código.
       - el canal, en `primerDiaConNotas(hoy) ?? corrida`;
       - la primera libre: ese día o, si ya salió la de ese día, `primerDiaConNotas` del siguiente;
       - cada reiteración: `primerDiaConNotas(calendario.sumarDiasHabiles(ultima, 5))`;
-      - de los candidatos, de menor a mayor, el primero en que `contextoDeCanal` de esa fecha deja algún cambio en `'nota'`.
-      - `periodos_sin_auditor` con el calendario.
+      - de los candidatos, de menor a mayor, el primero en que `contextoDeCanal(fecha, config, calendario)` de esa fecha deja algún cambio en `'nota'` (`cambiosConCanal(fecha, contexto)`);
+      - `periodos_sin_auditor`: `periodosSinAuditor(corrida, sumarDias(hoy, DIAS_PERIODOS_SIN_AUDITOR), { calendario })`.
   - **`estadoNotas({ hoy, calendario })`:**
     - sin calendario, `leerCalendario()`;
     - usa `proximasFechas` y `alertasDeCorrida(config, corrida, hoy, calendario)` (`debioCorrer = calendario.diaHabilAnterior(hoy)`);
-    - con `calendario.error`, suma `{ tipo: 'feriados-sin-leer', nivel: 'error', mensaje: MENSAJE_ESTADO_SIN_FERIADOS }`.
+    - con `calendario.error !== null` (nunca por `origen`), suma `{ tipo: 'feriados-sin-leer', nivel: 'error', mensaje: MENSAJE_ESTADO_SIN_FERIADOS }`;
+    - el mismo objeto llega a todo lo que llama (`licenciaDelFirmante`, `proximasFechas`, `estadoAuditoria`, `alertasDeCorrida`): ninguna vuelve a leer la tabla.
   - **`verEstado`:** `estadoNotas({ calendario: await leerCalendario() })`, una lectura por pedido.
   - **`textoLicenciaFirmante(l)` (`correos.js`):**
     - después de `sin_dias_habiles`, con `!l.en_curso && l.sin_anticipo === true`, los dos textos nuevos;
@@ -504,7 +553,13 @@ Sin código.
     - **«sin-corrida: el martes 03/11 debía haber corrido el viernes 30/10»:** con la última corrida del 30/10 y el envío activo, `estadoNotas({ hoy: '2026-11-03' }).alertas` no tiene `'sin-corrida'`.
     - **«con la tabla renombrada, la alerta feriados-sin-leer»,** con su nivel y su texto.
   - **`tests/notas-licencias.test.js`:**
-    - «modoDelDia da el mismo modo que firmaParaFecha» en los casos del archivo: sin licencia, sin autorizado, con autorizado, ella de licencia, sin firma, inactiva y sin su rol;
+    - «modoDelDia da el modo de cada caso», con el modo esperado escrito a mano (no comparado con `firmaParaFecha`, que después del cambio lo usa):
+      - sin firmante titular elegido, `'configuracion'`;
+      - el titular sin licencia ese día, `'titular'` (con `licencia == null`);
+      - de licencia sin persona autorizada, `'sin_autorizado'`;
+      - de licencia con ella, `'autorizado'`;
+      - con ella de licencia ese día, sin la imagen de su firma, inactiva o sin su rol (lector), `'sin_autorizado'`;
+      - en cada caso con licencia, `licencia.id` es el de la licencia del titular;
     - «primerDiaConNotas da lo mismo que probar día por día», con los casos de la prueba de `fechaDeVistaPrevia` que ya existe, y null con dos licencias seguidas sin autorizado que cubren 400 días;
     - en los dos tests que fijan la forma de `licencia_firmante` (la lista de claves y el `deepEqual`), `sin_anticipo` al final, con `false`.
   - **`tests/correos-frontend.test.js`:**
@@ -529,20 +584,21 @@ Sin código.
   - los tests: `tests/correos-frontend.test.js`, `tests/feriados-en-notas.test.js` y `tests/calendario-unico.test.js`.
 
 **Interfaces:**
-- Consumes: `proximasFechas`, `fechaDeVistaPrevia` y `primerDiaConNotas` (Task 6).
+- Consumes: `proximasFechas`, `fechaDeVistaPrevia` y `primerDiaConNotas` (Task 6); `contextoDelDia`, que devuelve el `calendario` en el contexto, y `avisoDelDia({ …, calendario })` (Task 4); `seleccionarParaAuditoria(fecha, contexto)` (Task 3).
 - Produces:
-  - **`diaDeVistaPrevia(config, hoy, calendario, { tipo, gestion }) → { fecha, motivo, otro_dia, contexto, firma }`** (interna):
+  - **`diaDeVistaPrevia(config, hoy, { tipo, gestion }, calendario) → { fecha, motivo, otro_dia, contexto, firma }`** (interna, sin valor por defecto; el calendario al final):
     - `motivo` es el de `fechaDeVistaPrevia`, que dice por qué hoy no hay notas;
     - la fecha, según el tipo:
       - el aviso, la de `fechaDeVistaPrevia`;
       - la reiteración, `proximas[gestion].reiteracion.fecha` de `proximasFechas`, o la de `fechaDeVistaPrevia` si es null;
       - la auditoría, `auditoria.proxima`, o la de `fechaDeVistaPrevia` si es null;
     - `otro_dia: fecha !== hoy`;
-    - `contexto = contextoDelDia(config, fecha, calendario)`.
+    - `contexto = contextoDelDia(config, fecha, calendario)` (con el `calendario` adentro).
+  - **`contenidoParaMostrar(tipo, gestion, fecha, contexto)`** (interna): en el aviso, `avisoDelDia({ gestion, fecha, modo, licencia, anticipo, autorizacion, calendario: contexto.calendario })`: no vuelve a leer la tabla.
   - **Las de la vista previa:**
-    - `previewNota`, `previewPdf`, `previewAnexo` y `enviarPrueba` reciben `calendario`, con `leerCalendario()` por defecto;
+    - `previewNota`, `previewPdf`, `previewAnexo` y `enviarPrueba` reciben `calendario`, con `leerCalendario()` por defecto, una lectura por pedido que llega a todo lo de adentro;
     - `previewNota` devuelve también `otro_dia`, y `enviarPrueba` también;
-    - `contenidoDeAuditoriaParaMostrar(config, fecha, calendario)`;
+    - `contenidoDeAuditoriaParaMostrar(config, fecha, calendario)`, con `seleccionarParaAuditoria(fecha, await contextoDeCanal(fecha, config, calendario))`;
     - `ejemploAuditoria(hoy, calendario)`: el ejemplo pone `dias_habiles_pendiente`.
   - **`mensajeDePrueba({ destinatarios, ejemplo, motivo, fecha, otro_dia })`:** aclara «como saldría el {fecha}» con `motivo || otro_dia === true`. `enviarPrueba` del controlador manda `otro_dia` en `data`.
   - **`textoDeVistaPrevia({ ejemplo, tipo, cantidad, asunto, fecha, motivo, otro_dia })` (`correos.js`):**
@@ -584,10 +640,17 @@ Sin código.
   - los tests: `tests/usuarios-frontend.test.js`, `tests/paginas.test.js`, `tests/feriados-en-notas.test.js` y `tests/calendario-unico.test.js`.
 
 **Interfaces:**
-- Consumes: `visperaDeLaLicencia` y `unirAusencias` con el calendario (Task 2), `periodosSinAuditor` (Task 3) y `leerCalendario` (Task 1).
+- Consumes: `leerCalendario` y, en los tests, `conLaTablaRenombrada` (Task 1); `visperaDeLaLicencia`, `unirAusencias` y `disponibilidadDelAutorizado` con el calendario (Task 2); `periodosSinAuditor` (Task 3).
 - Produces:
   - **`aRespuesta(fila, hoy, titular, { calendario, delTitular })`:** en una licencia del titular suma `vispera`, `sin_anticipo` y `sin_dias_habiles`, de `visperaDeLaLicencia(fila, delTitular sin la fila, calendario)`; en las demás, `null`, `false` y `false`.
-    - `listarLicencias`, `crearLicencia`, `editarLicencia` y `anularLicencia` leen `leerCalendario()` y las licencias sin anular del titular en una consulta (`SELECT id, desde, hasta FROM usuarios_licencias WHERE usuario_id = ? AND anulada = 0`) para armarla.
+    - `listarLicencias`, `crearLicencia`, `editarLicencia` y `anularLicencia` leen `leerCalendario()` y las licencias sin anular del titular en una consulta para armarla, con las fechas como texto:
+
+      ```sql
+      SELECT id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta
+      FROM usuarios_licencias WHERE usuario_id = ? AND anulada = 0
+      ```
+
+      El pool no tiene `dateStrings`: sin el `DATE_FORMAT` llegan `Date`, `visperaDeLaLicencia` (que compara textos) nunca encuentra la otra licencia y `sin_anticipo` nunca da true. «Sin la fila» se compara por `id` con `Number`.
     - Si el calendario cayó a los fijos, sigue con ellos (`leerCalendario` ya lo anota en la consola).
   - **`conSusLicencias(personas, hoy, calendario)`:** `calendario ?? await leerCalendario()`, con `unirAusencias(…, calendario)` y `vuelve: calendario.proximoDiaHabil(sumarDias(a.hasta, 1))`.
   - **`rechazoDeLaBase(conexion, { …, calendario })`:** solo cuando controla a la persona autorizada, `calendario ?? await leerCalendario(conexion)`, dentro de la transacción y después de `bloquearUsuarios`; lo pasa a `disponibilidadDelAutorizado`.
@@ -598,7 +661,7 @@ Sin código.
 - [ ] **Step 1: Escribir los tests que fallan.**
   - **`tests/feriados-en-notas.test.js`,** `describe('Configuración → Licencias con la precarga')`, con los controladores llamados con un `res` falso:
     - **«la víspera de la licencia del firmante desde el 09/12 es el 04/12»:** `listarLicencias({ query: { incluir_pasadas: '1' }, user: { userId: titular.id } }, res)` da `vispera` `'2026-12-04'` y `sin_anticipo` false.
-    - **«licencias seguidas: la segunda, sin víspera»:** `vispera` null y `sin_anticipo` true.
+    - **«licencias seguidas: la segunda, sin víspera»:** las vacaciones del titular del 09/12 al 31/12 y una médica del 04/01 al 08/01, las dos en `usuarios_licencias`: la segunda da `vispera` null y `sin_anticipo` true (sin el `DATE_FORMAT` de la consulta del titular, `sin_anticipo` daría false), y la primera, `vispera` `'2026-12-04'` y `sin_anticipo` false.
     - **«el 409 de la persona autorizada sin días, con la tabla»:**
       - en una transacción, después de `bloquearUsuarios`, con la autorizada de licencia el 09/12;
       - `rechazoDeLaBase(conexion, { usuarioId: titular.id, desde: '2026-12-07', hasta: '2026-12-09', autorizadoId: autorizado.id, autorizadoNuevo: true })` da `motivo` `'autorizado_sin_dias'`, porque el 07/12 y el 08/12 no son hábiles;
@@ -609,6 +672,9 @@ Sin código.
     - **«conSusLicencias con el 02/11 y el 09/11»:**
       - la autorizada del 26/10 al 30/10 y del 03/11 al 06/11, con `hoy` `'2026-10-20'`;
       - una ausencia unida `{ desde: '2026-10-26', hasta: '2026-11-06', vuelve: '2026-11-10' }`.
+    - **«GET /mi-espacio/firmante usa el mismo arreglo y, con la tabla sin leer, cae a los 9 fijos, como Configuración»:** con `mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-20T13:00:00Z') })` (`mock.timers.reset()` en un `finally`), el titular firmante y la misma autorizada (admin), `verFirmante({ user: { userId: titular.id } }, res)` de `controllers/miEspacioController.js`:
+      - con la tabla: 200 y, en la autorizada, la ausencia unida con `vuelve` `'2026-11-10'`;
+      - con `conLaTablaRenombrada`: 200 (no 500) y dos ausencias, con `vuelve` `'2026-11-02'` y `'2026-11-09'`.
     - **«los días sin auditor vuelven el 10/11»:** `listarDiasSinAuditor({ query: { desde: '2026-11-02', hasta: '2026-11-10' } }, res)`, con los dos auditores de licencia del 03/11 al 06/11, da un período con `vuelve` `'2026-11-10'`.
   - **`tests/usuarios-frontend.test.js`:**
     - `efectoEnNotas({ desde: '2027-01-04', vispera: null, sin_anticipo: true }, null, '2026-12-21')` y lo mismo con `'Persona Autorizada'`: los dos textos, enteros;
@@ -631,12 +697,13 @@ Sin código.
   - los tests: `tests/mi-espacio-reglas.test.js`, `tests/mi-espacio-api.test.js`, `tests/mi-espacio-frontend.test.js`, `tests/paginas.test.js`, `tests/feriados-en-notas.test.js` y `tests/calendario-unico.test.js`.
 
 **Interfaces:**
-- Consumes: `calendarioCon` (Task 1), `visperaDeLaLicencia` (Task 2), `conSusLicencias` y `cargarLicencia`/`cambiarLicencia` con `calendario` (Task 8). La otra sesión ya dejó en main el modal de licencia de `mi-espacio.js`: la Task 0 lo vio.
+- Consumes: `calendarioCon` y, en los tests, `FILAS_PRECARGA` (Task 1), `visperaDeLaLicencia` (Task 2), `conSusLicencias` y `cargarLicencia`/`cambiarLicencia` con `calendario`, y `efectoEnNotas` de `usuarios.js` con `sin_anticipo` y `sin_dias_habiles` (Task 8). La otra sesión ya dejó en main el modal de licencia de `mi-espacio.js`: la Task 0 lo vio.
 - Produces, puras (`services/miEspacioReglas.js`, con `CALENDARIO_FIJO` por defecto):
   - `limiteParaCambiarTipo(desde, calendario)`;
   - `pasoDeLaCorreccion({ …, calendario })`, que se lo pasa a `limiteParaCambiarTipo`;
   - `pasoPrevistoDe({ paso, vinculo, fila, rol, hoy, soyTitular, comoAutorizada, delTitular, notasDeHoy, calendario })`:
-    - `firmante` es `{ soy_titular, puede_autorizar, vispera, sin_anticipo, notas_de_hoy }`, con `vispera` y `sin_anticipo` de `visperaDeLaLicencia(fila, delTitular, calendario)`;
+    - `firmante` es `{ soy_titular, puede_autorizar, vispera, sin_anticipo, sin_dias_habiles, notas_de_hoy }`, con `vispera`, `sin_anticipo` y `sin_dias_habiles` de `visperaDeLaLicencia(fila, delTitular, calendario)`, como Configuración (los tests de hoy no pasan `delTitular`: `visperaDeLaLicencia` lo toma como `[]`);
+    - `sin_dias_habiles` no se alcanza desde Mi espacio (no se carga una licencia sin días hábiles con la tabla, y la tabla es el mismo calendario), pero va igual: la respuesta tiene la forma de la de Configuración y `efectoEnNotas` es la misma;
     - `AVISO_NOTAS_DE_HOY` y `notas_de_hoy` solo con `fila.desde <= hoy && notasDeHoy === true`.
 - Produces, en la base:
   - `notasDeHoyDelTitular(titularId, hoy, conexion = pool) → Promise<boolean>` (`services/miEspacioDatos.js`): hay alguna nota de hoy, no de prueba, en cualquier estado, firmada por el titular (`fecha = ? AND es_prueba = 0 AND firmante_id = ?`, `LIMIT 1`).
@@ -646,28 +713,28 @@ Sin código.
   - `aplicarCarga(conexion, { …, calendario })` y `aplicarCorreccion(conexion, { …, calendario })`, que lo pasan a `cargarLicencia`/`cambiarLicencia` y a `pasoDeLaCorreccion`.
   - En el controlador:
     - `calcularLicencia`, `cargarLicenciaMia` y `corregirLicenciaMia` arman `calendarioCon(filasFeriados)` con lo que ya lee `contextoDe`. Si no se pueden leer, Mi espacio falla como hoy;
-    - `verFirmante` le pasa a `conSusLicencias` `calendarioCon(await filasDeFeriados())`.
-- Produces, en la página: `efectoEnNotas` de `mi-espacio.js`, la copia exacta de la de `usuarios.js`. `htmlDelPaso` le pasa `{ desde, vispera: paso.firmante.vispera, sin_anticipo: paso.firmante.sin_anticipo }`.
+    - `verFirmante` no cambia: `conSusLicencias(await autorizables(pool, titular), hoy)`, sin calendario, lo lee con `leerCalendario()` y, si la tabla no se puede leer, cae a los 9 fijos como Configuración (spec, sección 4: «el mismo arreglo que Configuración»). No da 500: la spec deja «sin mandar nada» solo para los envíos de Mi espacio y de la agenda. Lo prueba la Task 8, que es la que cambia `conSusLicencias`.
+- Produces, en la página: `efectoEnNotas` de `mi-espacio.js`, la copia exacta de la de `usuarios.js`. `htmlDelPaso` le pasa `{ desde, vispera: paso.firmante.vispera, sin_anticipo: paso.firmante.sin_anticipo, sin_dias_habiles: paso.firmante.sin_dias_habiles }`.
 
 - [ ] **Step 1: Escribir los tests que fallan.**
   - **`tests/mi-espacio-reglas.test.js`:**
     - **«limiteParaCambiarTipo con la tabla»:** con `CAL`, `'2026-12-09'` da `'2026-12-03'` y `'2027-02-10'` da `'2027-02-04'`. Los tests de hoy, sin el calendario, no cambian.
     - **«pasoDeLaCorreccion con la tabla»:** unas vacaciones del 09/12 con persona a cargo que pasan a otro tipo:
       - el 04/12, con `CAL`, `{ error: { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipoFijo } }`;
-      - sin `CAL`, `'cambiar'`.
+      - sin `CAL`, `{ accion: 'cambiar', sin_persona_a_cargo: true }`.
     - **«pasoPrevistoDe: la víspera con la tabla, sin anticipo y las notas de hoy»:**
-      - unas vacaciones del 09/12 con `CAL`: `vispera` `'2026-12-04'` y `sin_anticipo` false;
+      - unas vacaciones del 09/12 con `CAL`: `vispera` `'2026-12-04'`, `sin_anticipo` false y `sin_dias_habiles` false;
       - con `delTitular` que incluye el 04/12: `vispera` null y `sin_anticipo` true;
       - con `desde` = hoy, `AVISO_NOTAS_DE_HOY` está en `avisos` solo con `notasDeHoy: true`, y `notas_de_hoy` lo sigue.
-    - En los dos `deepEqual` de hoy con `firmante` (el de las vacaciones y el de «hoy mismo»), `sin_anticipo: false` después de `vispera`, y en «hoy mismo», `notasDeHoy: true` en la entrada.
+    - En los dos `deepEqual` de hoy con `firmante` (el de las vacaciones y el de «hoy mismo»), `sin_anticipo: false` y `sin_dias_habiles: false` después de `vispera`, y en «hoy mismo», `notasDeHoy: true` en la entrada.
   - **`tests/mi-espacio-api.test.js`:**
-    - en los dos `deepEqual` de `firmante`, `sin_anticipo: false`;
+    - en los dos `deepEqual` de `firmante`, `sin_anticipo: false` y `sin_dias_habiles: false`;
     - en el de hoy, `notas_de_hoy` false y sin `AVISO_NOTAS_DE_HOY`;
     - nuevo, **«AVISO_NOTAS_DE_HOY solo si hoy salieron notas con tu firma»:** con una nota de hoy con `firmante_id` del titular, `notas_de_hoy` true y el aviso.
   - **`tests/feriados-en-notas.test.js`,** `describe('Mi espacio con la precarga')`:
     - `pasoPrevisto({ persona: titular, anterior: null, fila: <vacaciones del 09/12/2026 al 08/01/2027>, hoy: '2026-11-05', calendario: calendarioCon(FILAS_PRECARGA) })` da `paso.firmante.vispera` `'2026-12-04'`;
     - con una licencia de Configuración del titular que incluye el 31/12 y la fila desde el 04/01: `sin_anticipo` true.
-  - **`tests/mi-espacio-frontend.test.js`:** la paridad de `efectoEnNotas` con `usuarios.js` suma `{ desde: '2027-01-04', vispera: null, sin_anticipo: true }` con y sin nombre, y `{ sin_dias_habiles: true }`. `htmlDelPaso` con `firmante.sin_anticipo: true` muestra el texto sin anticipo.
+  - **`tests/mi-espacio-frontend.test.js`:** la paridad de `efectoEnNotas` con `usuarios.js` suma `{ desde: '2027-01-04', vispera: null, sin_anticipo: true }` con y sin nombre, y `{ sin_dias_habiles: true }`. `htmlDelPaso` con `firmante.sin_anticipo: true` muestra el texto sin anticipo, y con `firmante.sin_dias_habiles: true`, «No tiene días hábiles: las notas no cambian.».
   - **`tests/paginas.test.js`:** `VERSION_MI_ESPACIO` nuevo.
 - [ ] **Step 2: Correr los tests y ver que fallan.** `node --test tests/mi-espacio-reglas.test.js tests/mi-espacio-frontend.test.js tests/paginas.test.js` y, con el candado, `node --test tests/mi-espacio-api.test.js tests/feriados-en-notas.test.js`: FAIL.
 - [ ] **Step 3: Implementar.** Sacar `services/miEspacioReglas.js` de `PENDIENTES_DE_LA_TANDA_1`, que queda vacía.
@@ -694,6 +761,7 @@ Sin código.
     - «Feriados»: deja de decir que el resto del sistema no cambia; hasta la tanda 2, Métricas, el Ciclo de vida, la foto y la Agenda de pedidos siguen con los 9 fijos;
     - «Firma de las Notas Digitales y licencia del firmante» y «Auditoría de cambios pendientes»: el calendario, la víspera sin anticipo y «el primer día con notas»;
     - la Estructura: `CALENDARIO_FIJO`, `derivadasDe`, `calendarioCon` y `leerCalendario`;
+    - el tope de 366 vueltas, con sus dos convenciones: las `…Con` de `feriadosReglas.js` (Mi espacio) devuelven null y las del calendario tiran `RangeError` (también donde la copia de antes no terminaba, después del `'9999-12-31'`); `TOPE_DE_VUELTAS` es uno solo, el del calendario;
     - el test estático;
     - las convenciones de `usuarios.js` y `mi-espacio.js` (`efectoEnNotas` lee `sin_anticipo` y `sin_dias_habiles`) y de `correos.js` (`otro_dia` y `sin_anticipo`);
     - las versiones;
@@ -739,3 +807,15 @@ No es una tarea de código. La corre la sesión que coordina la implementación 
   - Ojo con «el Estado lo anuncia desde el 20/11»: hasta la corrida del 01/12, el Estado muestra la reiteración de diciembre (el 01/12). La de enero aparece desde el 01/12, ya con el 11/01. Que el informe diga cuándo aparece.
 - [ ] **Step 8: La variante de producción** muestra las diferencias de la sección 3 de la spec (el 02/11, el 07/12 como víspera, el Estado con el 04/01): el informe las pone lado a lado.
 - [ ] **Step 9: Cerrar.** Borrar `rpad_rama_feriados_notas`; dejar el informe en `C:\Users\Mariano\Desktop\RPAD-simulacion-feriados-en-notas\` y avisar a la sesión que hace la revisión final (lo que se vio y cualquier diferencia).
+
+### Después del merge: el kit (no es una tarea de este plan)
+
+Es despliegue, no código. Lo arma la sesión que coordina la implementación, después del merge en main (spec, sección 9):
+- `RPAD-deploy-feriados-en-notas`, en el Escritorio, comparado byte a byte con git contra **b597d81** (el merge de horas extras; lo indicó la coordinadora), así que lleva también lo de «días de vacaciones» (main 9c653ec);
+- sin SQL, sin cron nuevo y sin Run NPM Install: subir los archivos y Restart, fuera del horario de los crons (8:15, 14:00 y las medias horas), **antes del jueves 03/12/2026**;
+- después de desplegar, mirar en Correos → Estado que las fechas anunciadas sean las de la sección 3 de la spec y que no haya alertas nuevas.
+
+## Hallazgos del pre-flight que no se aplicaron
+
+- **B21** (los ayudantes de `feriados-en-notas.test.js` copiados de `notas-licencias`, `notas-motor` y `avisos-diarios`): es la costumbre del repo; moverlos a `tests/notas-fixtures.js` es un refactor de tres archivos de test que no pide la spec.
+- **Unificar «la licencia del titular que contiene la víspera» en `licenciaEnFecha`** (observación de la sección 4 del pre-flight, junto a H3): Configuración usa una consulta propia con `DATE_FORMAT` (la decisión admitía las dos); `licenciaEnFecha` por cada licencia del titular sumaría una consulta por fila y volvería asíncrona a `aRespuesta`.
