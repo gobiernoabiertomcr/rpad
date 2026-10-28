@@ -1,12 +1,14 @@
 // Cómo se firman las Notas Digitales de una fecha: el firmante titular, su autorizado durante una licencia o la firma
 // de Correos sin titular elegido; y la autorización que todavía falta comunicar
-// (spec 2026-10-15-dias-habiles-licencias-auditoria, 6 y 7)
+// (spec 2026-10-15-dias-habiles-licencias-auditoria, 6 y 7). Los días hábiles, con el calendario (spec
+// 2026-10-27-feriados-en-notas, 1 y 3): quien lo tiene lo pasa; si no, cada función que lee la base lo lee una vez
+// (leerCalendario) y lo pasa a lo que llama.
 import pool from '../config/database.js';
 import { firmaDeUsuario } from './firmasService.js';
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
 import { textoLeyendaAutorizacion } from './notasDigitalesContenido.js';
-import { diaHabilAnterior, ultimoDiaHabilHasta } from './notasDigitalesCalendario.js';
 import { diasHabilesLibres } from './licenciasReglas.js';
+import { leerCalendario } from './feriadosDatos.js';
 
 const ROLES_AUTORIZABLES = ['admin', 'editor'];
 
@@ -45,13 +47,14 @@ const menor = (a, b) => (a < b ? a : b);
  * La parte de autorizadoParaLicencia que depende de las fechas (spec 6.3): si a la persona autorizada (licencia.autorizado_id)
  * le queda algún día hábil de la licencia del titular, desde max(desde, licencia.desde), sin licencia propia (no anulada).
  * licenciaExtra ({ desde, hasta }) suma una licencia suya todavía sin guardar y excluirLicenciaId saca una guardada (la que
- * se edita), para validar antes de guardar. conexion: el pool o una conexión con transacción.
+ * se edita), para validar antes de guardar. conexion: el pool o una conexión con transacción. calendario: el de quien
+ * llama; sin él, se lee con conexion.
  * Devuelve { primer_dia_disponible, ausencias: sus licencias que se superponen con la del titular, recortadas a ella } o
  * null si sus licencias cubren todos esos días hábiles. Un tramo sin días hábiles no tiene notas que presentar: no la
  * descarta (primer_dia_disponible es null).
  */
 export const disponibilidadDelAutorizado = async (
-  licencia, { desde = licencia.desde, licenciaExtra = null, excluirLicenciaId = null, conexion = pool } = {}
+  licencia, { desde = licencia.desde, licenciaExtra = null, excluirLicenciaId = null, conexion = pool, calendario = null } = {}
 ) => {
   const [guardadas] = await conexion.query(
     `SELECT DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta FROM usuarios_licencias
@@ -62,7 +65,8 @@ export const disponibilidadDelAutorizado = async (
     .filter(a => a.desde <= licencia.hasta && a.hasta >= licencia.desde)
     .map(a => ({ desde: mayor(a.desde, licencia.desde), hasta: menor(a.hasta, licencia.hasta) }))
     .sort((a, b) => a.desde.localeCompare(b.desde));
-  const { primerDia, cubiertos } = diasHabilesLibres(mayor(desde, licencia.desde), licencia.hasta, ausencias);
+  const conElCalendario = calendario ?? (await leerCalendario(conexion));
+  const { primerDia, cubiertos } = diasHabilesLibres(mayor(desde, licencia.desde), licencia.hasta, ausencias, conElCalendario);
   return cubiertos ? null : { primer_dia_disponible: primerDia, ausencias };
 };
 
@@ -70,12 +74,13 @@ export const disponibilidadDelAutorizado = async (
  * La persona autorizada sirve para la licencia del titular (spec 6.3) si es admin o editor activo, con la imagen de su
  * firma, y le queda al menos un día hábil de la licencia, desde max(desde, licencia.desde), sin licencia propia: puede
  * faltar algunos días a la vez que el titular (esos días no se generan notas, 7.3). Las opciones son las de
- * disponibilidadDelAutorizado. Devuelve { ...firma, email, primer_dia_disponible, ausencias } o null.
+ * disponibilidadDelAutorizado (calendario: el de quien llama; sin él, lo lee disponibilidadDelAutorizado). Devuelve
+ * { ...firma, email, primer_dia_disponible, ausencias } o null.
  */
-export const autorizadoParaLicencia = async (licencia, { desde, licenciaExtra, excluirLicenciaId } = {}) => {
+export const autorizadoParaLicencia = async (licencia, { desde, licenciaExtra, excluirLicenciaId, calendario } = {}) => {
   const autorizado = await autorizadoHabilitado(licencia);
   if (!autorizado) return null;
-  const disponibilidad = await disponibilidadDelAutorizado(licencia, { desde, licenciaExtra, excluirLicenciaId });
+  const disponibilidad = await disponibilidadDelAutorizado(licencia, { desde, licenciaExtra, excluirLicenciaId, calendario });
   return disponibilidad ? { ...autorizado, ...disponibilidad } : null;
 };
 
@@ -134,26 +139,31 @@ export const firmaParaFecha = async (config, fecha) => {
  * días hábiles, desde su víspera hasta su fin, con una persona autorizada que sirve para la licencia desde hoy y sin nota
  * de autorización. La persona autorizada puede estar de licencia hoy: la víspera la autorización se comunica igual (la
  * firma el titular, que todavía no está de licencia). Durante la licencia del titular, un día en que ella también falta
- * es sin autorizado (firmaParaFecha) y la corrida termina antes de llegar acá. Devuelve { licencia, autorizado } o null.
+ * es sin autorizado (firmaParaFecha) y la corrida termina antes de llegar acá. La víspera y los días hábiles, con el
+ * calendario (sin él, lo lee una vez y lo pasa a autorizadoParaLicencia). Devuelve { licencia, autorizado } o null.
  */
-export const autorizacionPendiente = async (config, hoy) => {
+export const autorizacionPendiente = async (config, hoy, calendario) => {
   if (!config.firmante_usuario_id) return null;
   const licencia = (await licenciaEnFecha(config.firmante_usuario_id, hoy)) ?? (await proximaLicencia(config.firmante_usuario_id, hoy));
   if (!licencia || licencia.nota_autorizacion_id) return null;
+  const conElCalendario = calendario ?? (await leerCalendario());
+  const { diaHabilAnterior, ultimoDiaHabilHasta } = conElCalendario;
   if (hoy < diaHabilAnterior(licencia.desde) || ultimoDiaHabilHasta(licencia.hasta) < licencia.desde) return null;
-  const autorizado = await autorizadoParaLicencia(licencia, { desde: hoy });
+  const autorizado = await autorizadoParaLicencia(licencia, { desde: hoy, calendario: conElCalendario });
   return autorizado ? { licencia, autorizado } : null;
 };
 
 /**
  * Si hoy es la víspera (el último día hábil antes) de una licencia del firmante titular con días hábiles, devuelve
  * { hasta: último día hábil de la licencia, licencia }: hasta ahí se anticipan los avisos, con o sin autorizado
- * (spec 7.2 y 7.3). null en cualquier otro caso.
+ * (spec 7.2 y 7.3). null en cualquier otro caso. La víspera y los días hábiles, con el calendario (sin él, lo lee).
  */
-export const anticipoPorLicencia = async (config, hoy) => {
+export const anticipoPorLicencia = async (config, hoy, calendario) => {
   if (!config.firmante_usuario_id) return null;
   const licencia = await proximaLicencia(config.firmante_usuario_id, hoy);
-  if (!licencia || diaHabilAnterior(licencia.desde) !== hoy) return null;
+  if (!licencia) return null;
+  const { diaHabilAnterior, ultimoDiaHabilHasta } = calendario ?? (await leerCalendario());
+  if (diaHabilAnterior(licencia.desde) !== hoy) return null;
   const hasta = ultimoDiaHabilHasta(licencia.hasta);
   return hasta < licencia.desde ? null : { hasta, licencia };
 };

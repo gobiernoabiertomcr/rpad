@@ -26,11 +26,9 @@ const PENDIENTES_DE_LA_TANDA_1 = Object.freeze([
   'services/avisosDiariosService.js',
   'services/avisosSuperadminService.js',
   'services/licenciasOficialesService.js',
-  'services/licenciasReglas.js',
   'services/miEspacioReglas.js',
   'services/notasDigitales.js',
   'services/notasDigitalesContenido.js',
-  'services/notasDigitalesFirmas.js',
   'controllers/licenciasController.js',
   'controllers/notificacionesController.js'
 ]);
