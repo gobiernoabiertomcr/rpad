@@ -153,6 +153,30 @@ export const aplicarBaja = async (conexion, { persona, fila, hoy }) => {
   return { licencia_oficial_id: fila.licencia_oficial_id, oficial: fila.oficial, sin_pasar: fila.sin_pasar, avisos: [] };
 };
 
+/**
+ * Lo que pasa en Mi espacio cuando Configuración → Licencias anula una licencia (spec 2026-10-28-mi-espacio-licencia-anulada,
+ * 2.1 y 3b), en la transacción de la anulación (después de bloquearUsuarios): las filas creadas activas que la apuntan y no
+ * empezaron antes de hoy se dan de baja con ella (activo = 0), la anule quien la anule. Las unidas no se tocan, y una creada
+ * que en Mi espacio ya empezó tampoco (Mi espacio nunca borra solo una licencia que empezó): queda para que la persona la
+ * revise. Devuelve `{ borradas, quedan }`: las que se dieron de baja y las creadas activas que siguen apuntándola.
+ * No va dentro de `anularLicenciaDe` (services/licenciasOficialesService.js): la usan también `aplicarCorreccion` y
+ * `aplicarBaja`, y en una corrección que anula la de Configuración (una franquicia de 7 horas que pasa a 3) la fila de Mi
+ * espacio tiene que quedar activa.
+ */
+export const bajaPorLaAnulacion = async (conexion, { licenciaOficialId, hoy }) => {
+  const [baja] = await conexion.query(
+    `UPDATE mi_espacio_licencias SET activo = 0
+     WHERE licencia_oficial_id = ? AND oficial = 'creada' AND activo = 1 AND desde >= ?`,
+    [licenciaOficialId, hoy]
+  );
+  const [[{ quedan }]] = await conexion.query(
+    `SELECT COUNT(*) AS quedan FROM mi_espacio_licencias
+     WHERE licencia_oficial_id = ? AND oficial = 'creada' AND activo = 1`,
+    [licenciaOficialId]
+  );
+  return { borradas: baja.affectedRows, quedan: Number(quedan) };
+};
+
 // Las licencias de Configuración del titular que incluyen la víspera de la fila (el día hábil anterior a su desde, con el
 // calendario), para `visperaDeLaLicencia`: sin `propia`, el id de la de Configuración que sigue a la fila que se corrige (una
 // creada: se mueve con ella). Si el calendario no encuentra el día hábil (el RangeError del tope), ninguna: la víspera tampoco

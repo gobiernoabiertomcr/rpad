@@ -22,9 +22,10 @@ const VERSION = '20261204';
 // 2026-10-25-proyectos, 11; la cuarta pestaña, Feriados, con su vista y «Nuevo feriado», y al mostrarla llama a cargarFeriados de
 // feriados.js, spec 2026-10-26-feriados, 4; la insignia «Cargada desde Mi espacio» en la lista de Licencias, spec
 // 2026-10-26-mi-espacio-licencias-y-horas, 6; el efecto en las notas de una licencia del firmante sin anticipo o sin días
-// hábiles, spec 2026-10-27-feriados-en-notas, 6): su versión es propia (solo la usa configuracion.html; es independiente de
-// VERSION_FERIADOS)
-const VERSION_PANTALLAS = '20261210';
+// hábiles, spec 2026-10-27-feriados-en-notas, 6; la confirmación de «Anular» que avisa que una licencia cargada desde Mi espacio
+// también se borra de ahí, spec 2026-10-28-mi-espacio-licencia-anulada, 2.1): su versión es propia (solo la usa
+// configuracion.html; es independiente de VERSION_FERIADOS)
+const VERSION_PANTALLAS = '20261211';
 // areas.js (reescrito para la pestaña Áreas de Configuración, spec 2026-10-24-configuracion, 4 y 6), que en areas.html cargaba
 // ?v=20261204: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
 // configuracion.html)
@@ -86,8 +87,10 @@ const VERSION_PROYECTOS = '20261206';
 // «Hoy y mañana», spec 2026-10-26-mi-espacio-agenda, 6; el Resumen «Titular», spec 2026-10-27-mi-espacio-resumen, 6; y «Word» en
 // cada licencia de la lista, spec 2026-10-27-mi-espacio-licencia-word, 6; y la planilla de horas extras de contrato, spec
 // 2026-10-27-mi-espacio-horas, 9; y el efecto en las notas sin anticipo o sin días hábiles, como Configuración, spec
-// 2026-10-27-feriados-en-notas, 6). Su versión es propia
-const VERSION_MI_ESPACIO = '20261214';
+// 2026-10-27-feriados-en-notas, 6; y lo que quedó distinto en Configuración, para revisar en el Resumen, y las licencias de
+// otro año —la lista pasa al año de lo guardado, «Ver 2027» y los links a la lista de un año—, spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.2 y 2.3). Su versión es propia
+const VERSION_MI_ESPACIO = '20261215';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -107,8 +110,8 @@ describe('páginas', () => {
   // El script propio de esta pantalla cambió con los días sin auditor, después con la superposición parcial, con el aviso en su
   // fecha (el texto del efecto de la licencia en las notas, con persona autorizada), con Configuración (la tercera pestaña y la
   // pestaña en la dirección), con el renombre de Gestión a Proyectos (la ayuda del lector), con la cuarta pestaña, Feriados, con
-  // la insignia «Cargada desde Mi espacio» en la lista de Licencias y, por último, con el efecto en las notas de una licencia del
-  // firmante sin anticipo o sin días hábiles
+  // la insignia «Cargada desde Mi espacio» en la lista de Licencias, con el efecto en las notas de una licencia del firmante sin
+  // anticipo o sin días hábiles y, por último, con la confirmación de «Anular» de una licencia cargada desde Mi espacio
   for (const [pagina, script] of [['configuracion.html', 'usuarios']]) {
     it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
       assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));

@@ -120,6 +120,8 @@ describe('edición y anulación (spec 5.2)', () => {
     const anulada = await api.post(`/usuarios/licencias/${body.data.id}/anular`, {}, comoA());
     assert.equal(anulada.status, 200);
     assert.equal(anulada.body.data.estado, 'anulada');
+    // Sin fila de Mi espacio, el mensaje de siempre
+    assert.equal(anulada.body.message, 'Licencia anulada');
     assert.equal((await historial(usuarios.adminB.id, 'licencia_editada')).length, 1);
     assert.equal((await historial(usuarios.adminB.id, 'licencia_anulada')).length, 1);
   });
@@ -428,15 +430,23 @@ describe('la insignia «Cargada desde Mi espacio»', () => {
     assert.deepEqual(body.data.licencias.map(l => [l.id, l.desde_mi_espacio]), [
       [creada, true], [unida, false], [dadaDeBaja, false], [deConfiguracion, false], [varias, true]
     ]);
-    // Configuración la edita y la anula como siempre, y la insignia sigue
+    // Configuración la edita como siempre, y la insignia sigue
     const editada = await api.put(`/usuarios/licencias/${creada}`, { desde: dia(5), hasta: dia(7) }, comoA());
     assert.equal(editada.status, 200, JSON.stringify(editada.body));
     assert.equal(editada.body.data.desde_mi_espacio, true);
+    // Al anularla, la fila de Mi espacio que la creó (todavía no empezó) se da de baja con ella y la insignia se apaga (spec
+    // 2026-10-28-mi-espacio-licencia-anulada, 2.1)
     const anulada = await api.post(`/usuarios/licencias/${creada}/anular`, {}, comoA());
     assert.equal(anulada.status, 200, JSON.stringify(anulada.body));
-    assert.equal(anulada.body.data.desde_mi_espacio, true);
+    assert.equal(anulada.body.message, 'Licencia anulada. También se borró de Mi espacio.');
+    assert.equal(anulada.body.data.desde_mi_espacio, false);
     const pasadas = await api.get('/usuarios/licencias?incluir_pasadas=1', comoA());
-    assert.equal(pasadas.body.data.licencias.find(l => l.id === creada).desde_mi_espacio, true);
+    assert.equal(pasadas.body.data.licencias.find(l => l.id === creada).desde_mi_espacio, false);
+    assert.deepEqual(
+      (await query('SELECT oficial, activo FROM mi_espacio_licencias WHERE licencia_oficial_id = ?', [creada]))
+        .map(f => [f.oficial, Number(f.activo)]),
+      [['creada', 0]]
+    );
     // Una cargada en Configuración, no
     const nueva = await cargar({ usuario_id: usuarios.adminA.id, desde: dia(30), hasta: dia(31) });
     assert.equal(nueva.status, 201, JSON.stringify(nueva.body));

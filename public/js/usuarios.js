@@ -48,6 +48,9 @@ let temporizadorSinAuditor = null; // espera del formulario después del último
 const ESPERA_SIN_AUDITOR_MS = 300;
 const MAXIMO_DIAS_SIN_AUDITOR = 366; // el rango más largo que acepta la API
 const TEXTO_ESTADO_LICENCIA = { futura: 'Próxima', en_curso: 'En curso', pasada: 'Terminada', anulada: 'Anulada' };
+// Lo que suma la confirmación de «Anular» si la licencia se cargó desde Mi espacio (spec 2026-10-28-mi-espacio-licencia-anulada,
+// 2.1): copia de la de services/licenciasReglas.js, atada por un test de paridad
+const TEXTO_SE_BORRA_DE_MI_ESPACIO = 'Se cargó desde Mi espacio: también se borra de ahí.';
 
 // 'AAAA-MM-DD' → 'dd/mm/aaaa' sin pasar por Date (evita corrimientos de zona horaria)
 const fechaCorta = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
@@ -903,9 +906,16 @@ async function guardarLicencia(evento) {
   }
 }
 
+// La pregunta de «Anular», texto plano para confirm (nada se escapa). Si la licencia se cargó desde Mi espacio
+// (desde_mi_espacio: true o 1), avisa que también se borra de ahí; nunca dice el tipo
+const textoDeLaAnulacion = (l) => {
+  const pregunta = `¿Anular la licencia de ${l.usuario_nombre} (${textoPeriodo(l).toLowerCase()})?`;
+  return l.desde_mi_espacio === true || l.desde_mi_espacio === 1 ? `${pregunta} ${TEXTO_SE_BORRA_DE_MI_ESPACIO}` : pregunta;
+};
+
 async function anularLicencia() {
   const l = licenciaAbierta;
-  if (!l || !confirm(`¿Anular la licencia de ${l.usuario_nombre} (${textoPeriodo(l).toLowerCase()})?`)) return;
+  if (!l || !confirm(textoDeLaAnulacion(l))) return;
   try {
     const res = await API.anularLicencia(l.id);
     avisar(res.message, 'success');

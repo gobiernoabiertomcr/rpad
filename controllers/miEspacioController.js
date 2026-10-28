@@ -26,7 +26,7 @@ import {
   ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana
 } from '../services/miEspacioReglas.js';
 import {
-  resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe
+  resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe, textoDeLaListaDe
 } from '../services/miEspacioResumen.js';
 import {
   estadoDe, contextoDe, personaDe, licenciaDe, datosDeLaNota, ausenciasVisibles, feriadosPara
@@ -95,26 +95,45 @@ const eventosDelResumen = async (usuario, hoy, feriados) => {
   }
 };
 
+/**
+ * Los vínculos de las licencias con Configuración para `para_revisar` del Resumen (`vinculosDe`, como la lista; spec
+ * 2026-10-28-mi-espacio-licencia-anulada, 2.2). Aislados, como los eventos: antes de `para_revisar` el Resumen no leía las
+ * tablas de Configuración, así que si leerlos falla sale igual, sin nada para revisar (un Map vacío), y el error queda en la
+ * consola.
+ */
+const vinculosDelResumen = async (persona, estado, hoy) => {
+  try {
+    return await vinculosDe(persona, estado, hoy);
+  } catch (error) {
+    console.error('Error al obtener lo que hay para revisar en el Resumen:', error?.stack ?? error);
+    return new Map();
+  }
+};
+
 // GET /api/mi-espacio/resumen: el Resumen «Titular», ya calculado. «Hoy y mañana» lleva los compañeros que no están hoy y, aparte,
 // los que empiezan mañana (`ausentesPara` de hoy a mañana, en dos grupos con `ausentesDeHoyYManana`: decisión del usuario,
 // 27/10/2026; a quien no es de administración, ninguno), el próximo feriado, con las mismas filas de los feriados del cálculo
-// (sin leerlas otra vez), y, al final, los eventos de hoy y de mañana (`eventos`, aislados: ver eventosDelResumen). Van también
-// sin modalidad: la página decide qué mostrar
+// (sin leerlas otra vez), y, al final, los eventos de hoy y de mañana (`eventos`, aislados: ver eventosDelResumen). Con los
+// vínculos de sus licencias con Configuración (`vinculosDe`, como la lista, también aislados: ver vinculosDelResumen),
+// `para_revisar` dice lo que en Configuración quedó distinto (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1 y 3.2).
+// Van también sin modalidad: la página decide qué mostrar
 export const verResumen = (req, res) => responder(res, 'Error al obtener el Resumen', async () => {
   const hoy = hoyArgentina();
   const { persona, estado, feriados, filasFeriados, calculo } = await contextoDe(req.user.userId, hoy);
-  const [{ ausentes }, eventos] = await Promise.all([
+  const [{ ausentes }, eventos, vinculos] = await Promise.all([
     ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados }),
-    eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, feriados)
+    eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, feriados),
+    vinculosDelResumen(persona, estado, hoy)
   ]);
   const hoyYManana = {
     ...ausentesDeHoyYManana(ausentes, hoy), proximo_feriado: proximoFeriadoDe(filasFeriados, hoy), eventos
   };
-  return conDatos(resumenDe({ persona, estado, calculo, hoy, feriados, hoyYManana }));
+  return conDatos(resumenDe({ persona, estado, calculo, hoy, feriados, hoyYManana, vinculos }));
 });
 
 // GET /api/mi-espacio/licencias?anio=AAAA: la pestaña Licencias de un año (sin `anio`, el en curso). Cada fila dice cómo
-// está en Configuración (`configuracion`) y, una creada, qué se puede hacer con sus fechas (`vinculosDe`)
+// está en Configuración (`configuracion`) y, una creada, qué se puede hacer con sus fechas (`vinculosDe`); `otros_anios`, las
+// licencias de otros años del selector que todavía no terminaron (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3)
 export const listarLicenciasMias = (req, res) => responder(res, 'Error al obtener las licencias', async () => {
   const hoy = hoyArgentina();
   const anio = anioDelPedido(req.query.anio, hoy);
@@ -410,7 +429,9 @@ const leerLaNota = async (usuarioId, licenciaId, hoy) => {
 
 // GET /api/mi-espacio/licencias/:id/nota: lo que necesita el segundo paso de «Cargar licencia», en una sola respuesta: la
 // licencia como la arma la lista (`fila`, aunque la lista muestre otro año o no muestre nada, sin modalidad), la hoja de la
-// nota (`html`, armada y escapada acá), su fecha y el renglón que va arriba (`aclaracion`)
+// nota (`html`, armada y escapada acá), su fecha, el renglón que va arriba (`aclaracion`) y en qué lista de Licencias quedó
+// (`lista`, «Está en la lista de 2027.», solo si no es la del año de hoy; si no, null: spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.3)
 export const verNotaDeLicencia = (req, res) => responder(res, MENSAJES_NOTA.error, async () => {
   const hoy = hoyArgentina();
   const { rechazo, nota, guardada, licencia, contexto } = await leerLaNota(req.user.userId, req.params.id, hoy);
@@ -421,7 +442,8 @@ export const verNotaDeLicencia = (req, res) => responder(res, MENSAJES_NOTA.erro
     fila: filaDeUnaLicencia(estado, calculo, { id: licencia.id, hoy, persona, vinculos, feriados }),
     html: htmlDeLaNota(nota),
     fecha: guardada,
-    aclaracion: aclaracionDeLaNota(guardada)
+    aclaracion: aclaracionDeLaNota(guardada),
+    lista: textoDeLaListaDe(licencia.desde, hoy)
   });
 });
 
