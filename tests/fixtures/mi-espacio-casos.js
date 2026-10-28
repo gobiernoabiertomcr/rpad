@@ -94,17 +94,9 @@ export const CONTRATO = congelado({
       { id: 2, tipo: 'estudios', desde: '2026-10-13', hasta: '2026-10-15', horas: null },
       { id: 1, tipo: 'horas_a_favor', desde: '2026-10-09', hasta: '2026-10-09', horas: 7 }
     ],
-    horasExtras: [
-      // Septiembre: 10,5 h
-      { id: 1, fecha: '2026-09-10', desde: '18:00', hasta: '22:00' },
-      { id: 2, fecha: '2026-09-17', desde: '18:00', hasta: '22:00' },
-      { id: 3, fecha: '2026-09-24', desde: '18:00', hasta: '20:30' },
-      // Octubre: 4 h
-      { id: 4, fecha: '2026-10-21', desde: '18:00', hasta: '22:00' }
-    ],
-    // La planilla de contrato (spec 2026-10-27-mi-espacio-horas): de ahí salen sus horas a favor. Los mismos días y los mismos
-    // totales que sus horas extras, que quedan hasta que la tabla de contrato pase a las salidas. En un día hábil cuenta la
-    // salida desde las 15:00
+    // La planilla de contrato (spec 2026-10-27-mi-espacio-horas): de ahí salen sus horas a favor y su tabla de horas extras
+    // (contrato no tiene horas extras de planta). Los mismos días y los mismos totales que tenían sus horas extras de antes de
+    // la planilla. En un día hábil cuenta la salida desde las 15:00
     salidas: [
       // Septiembre: 10,5 h
       { id: 1, fecha: '2026-09-10', entrada: null, salida: '19:00', nota: null },

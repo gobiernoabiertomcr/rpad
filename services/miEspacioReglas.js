@@ -20,9 +20,10 @@
  * 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`) y la validación de una carga (`validarLicencia`, con
  * la regla de 3.8: dos licencias no comparten un día). Por último, las horas extras (3.5 a 3.7): la validación de una carga
  * (`validarHorasExtras`), la planilla de contrato (spec 2026-10-27-mi-espacio-horas: las horas de una salida,
- * `horasDeLaSalida`, la validación de un día, `validarSalida`, y las salidas guardadas que dejaron de cerrar,
- * `avisosDeSalidas`, que nunca frenan una carga), los francos compensatorios de planta (`francosDe`), las horas a favor de
- * contrato (`horasAFavorDe`, desde las salidas) y lo no utilizado previamente de cada año (`noUtilizadasDe`). Al final, «Mis
+ * `horasDeLaSalida`, el mes que se pide, `mesDeLaPlanilla`, la validación de un día, `validarSalida`, y las salidas guardadas
+ * que dejaron de cerrar, `avisosDeSalidas`, que nunca frenan una carga), los francos compensatorios de planta (`francosDe`),
+ * las horas a favor de contrato (`horasAFavorDe`, desde las salidas) y lo no utilizado previamente de cada año
+ * (`noUtilizadasDe`). Al final, «Mis
  * vacaciones y saldos» (los campos del saldo inicial y el año, sección 4), el cálculo completo (`calcular`), lo guardado que
  * dejó de cerrar (`faltantesDe`, 3.10) y la evaluación de una carga (`evaluarLicencia`: una carga nueva que no cierra no se
  * guarda). Y el paso de las ausencias de día entero a Configuración → Licencias (sección 6): qué se hace al cargar, corregir
@@ -878,6 +879,20 @@ export const textoDeLaSumaDelMes = (mes, horas, hoy) => {
   if (siguiente === null) return '';
   const aFavor = diasYHorasDe(horas).resto > 0 ? ' a favor' : '';
   return `En ${nombreDelMes(siguiente)} ${paso ? 'tuviste' : 'vas a tener'} ${enDias}${aFavor}.`;
+};
+
+/**
+ * El mes de la planilla que se pide (`GET /api/mi-espacio/salidas?mes=`; spec 2026-10-27-mi-espacio-horas, sección 8), como
+ * 'AAAA-MM', o null: sin valor (no vino, null o ''), el mes de hoy; un mes 'AAAA-MM' del primero de `rangoDeFechas` (enero de
+ * hace dos años) al de hoy, ese. Cualquier otra cosa (otro formato, un mes que todavía no llegó o anterior al rango, una lista
+ * —el parámetro repetido, como lo da Express—), null. Sin un hoy válido, null.
+ */
+export const mesDeLaPlanilla = (valor, hoy) => {
+  const rango = rangoDeFechas(hoy);
+  if (rango === null) return null;
+  const deHoy = hoy.slice(0, 7);
+  if (valor === undefined || valor === null || valor === '') return deHoy;
+  return esMes(valor) && valor >= rango.desde.slice(0, 7) && valor <= deHoy ? valor : null;
 };
 
 /**

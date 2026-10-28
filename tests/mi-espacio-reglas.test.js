@@ -25,7 +25,7 @@ import {
   pasoPrevistoDe, ausenciasUnidas, textoNoEsta, textoDeLaVuelta, ausentesDelRango, ausentesDeHoyYManana, avisosDeVencimiento,
   SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL, TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, horaSalidaValida, tipoDeDia,
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
-  avisosDeSalidas
+  avisosDeSalidas, mesDeLaPlanilla
 } from '../services/miEspacioReglas.js';
 import { feriadosDelRango } from '../services/feriadosReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
@@ -759,6 +759,14 @@ const SALIDAS_DEL_USUARIO = [
   salida(105, '2026-12-03', '19:00'), salida(106, '2026-12-10', '17:30')
 ];
 
+// Las horas extras que tenía el caso CONTRATO antes de la planilla (los mismos días y los mismos totales que sus salidas: 10,5
+// en septiembre y 4 en octubre). Desde la planilla, CONTRATO tiene solo sus salidas: estas sirven para ver que en planta (una
+// persona de contrato que pasó a planta) sus horas extras dan francos, y que en contrato no cuentan
+const HORAS_EXTRAS_DE_CONTRATO = [
+  extra(1, '2026-09-10', '18:00', '22:00'), extra(2, '2026-09-17', '18:00', '22:00'), extra(3, '2026-09-24', '18:00', '20:30'),
+  extra(4, '2026-10-21', '18:00', '22:00')
+];
+
 const delMes = (meses, mesTrabajado) => meses.find((mes) => mes.mes_trabajado === mesTrabajado);
 const A_HOY = { hoy: HOY, feriados: SIN_FERIADOS };
 
@@ -1084,6 +1092,35 @@ describe('las salidas de contrato', () => {
     }
   });
 
+  it('mesDeLaPlanilla: sin mes, el de hoy; uno del primero del rango al de hoy, ese; lo demás, null', () => {
+    const hoy = '2026-10-27';
+    // Sin valor, el mes de hoy
+    for (const sinValor of [undefined, null, '']) assert.equal(mesDeLaPlanilla(sinValor, hoy), '2026-10', String(sinValor));
+    // Del primer mes de rangoDeFechas (enero de hace dos años) al de hoy
+    assert.equal(mesDeLaPlanilla('2026-10', hoy), '2026-10');
+    assert.equal(mesDeLaPlanilla('2026-09', hoy), '2026-09');
+    assert.equal(mesDeLaPlanilla('2024-01', hoy), '2024-01');
+    assert.equal(rangoDeFechas(hoy).desde.slice(0, 7), '2024-01');
+    // El mes que viene, el anterior al rango y uno de hace tres años
+    assert.equal(mesDeLaPlanilla('2026-11', hoy), null);
+    assert.equal(mesDeLaPlanilla('2023-12', hoy), null);
+    assert.equal(mesDeLaPlanilla('2023-10', hoy), null);
+    // Lo que no es un mes 'AAAA-MM' (también una lista: el parámetro repetido, como lo da Express)
+    for (const raro of ['2026-13', '2026-00', '2026-1', '2026-10-01', ' 2026-10', '2026-10 ', ['2026-10'], 202610, {}, true,
+      'x']) {
+      assert.equal(mesDeLaPlanilla(raro, hoy), null, JSON.stringify(raro));
+    }
+    // Sin un hoy válido, null (también sin mes)
+    for (const raro of [undefined, null, '', '2026-10', '2026-02-30']) {
+      assert.equal(mesDeLaPlanilla('2026-10', raro), null, String(raro));
+      assert.equal(mesDeLaPlanilla(undefined, raro), null, String(raro));
+    }
+    // El 1/1, el mes en curso es enero y el rango arranca dos años antes
+    assert.equal(mesDeLaPlanilla(undefined, '2027-01-01'), '2027-01');
+    assert.equal(mesDeLaPlanilla('2025-01', '2027-01-01'), '2025-01');
+    assert.equal(mesDeLaPlanilla('2024-12', '2027-01-01'), null);
+  });
+
   it('licenciaDeDiaEnteroEn: una licencia de día entero de la modalidad, en un día hábil', () => {
     const feriados = new Set(['2026-10-12']);
     const vacaciones = { id: 1, tipo: 'vacaciones', desde: '2026-10-09', hasta: '2026-10-13', horas: null };
@@ -1285,6 +1322,8 @@ describe('las salidas de contrato', () => {
         enDiasDeFranco(valor);
         textoDeLaSumaDelMes(valor, valor, valor);
         textoDeLaSumaDelMes('2026-10', valor, '2026-10-27');
+        mesDeLaPlanilla(valor, valor);
+        mesDeLaPlanilla(valor, '2026-10-27');
         licenciaDeDiaEnteroEn(valor, valor, valor);
         licenciaDeDiaEnteroEn({ modalidad: valor, licencias: [valor, { tipo: 'vacaciones', desde: valor, hasta: valor }] },
           '2026-10-26', valor);
@@ -1465,10 +1504,12 @@ describe('las horas a favor (contrato)', () => {
   });
 
   it('los ejemplos del usuario en salidas dan lo mismo que en horas extras; las horas extras de planta no cuentan', () => {
-    // Los mismos totales por mes, también en el caso CONTRATO (que conserva sus horas extras de antes)
+    // Los mismos totales por mes, también en el caso CONTRATO (contra las horas extras que tenía antes de la planilla)
     assert.deepEqual([...horasPorMesDeSalidas(SALIDAS_DEL_USUARIO, SIN_FERIADOS)], [...horasPorMes(EJEMPLOS_DEL_USUARIO)]);
     assert.deepEqual([...horasPorMesDeSalidas(CONTRATO.estado.salidas, SIN_FERIADOS)],
-      [...horasPorMes(CONTRATO.estado.horasExtras)]);
+      [...horasPorMes(HORAS_EXTRAS_DE_CONTRATO)]);
+    // Desde la planilla, el caso CONTRATO tiene solo sus salidas
+    assert.ok(!('horasExtras' in CONTRATO.estado));
     const usos = [uso(100, 'horas_a_favor', '2026-11-03', 7), uso(101, 'horas_a_favor', '2026-11-10', 2)];
     assert.deepEqual(horasAFavorDe(conSalidas(SALIDAS_DEL_USUARIO, usos), A_HOY).map(({ mes_trabajado, a_favor, usadas }) =>
       [mes_trabajado, a_favor, usadas]), [['2026-10', 10.5, 9], ['2026-11', 7.5, 0], ['2026-12', 6.5, 0]]);
@@ -1669,8 +1710,9 @@ describe('lo no utilizado previamente', () => {
   });
 
   it('las filas de otra modalidad no cuentan', () => {
-    // CONTRATO que pasó a planta: sus horas a favor y su saldo de horas no cuentan; sus horas extras dan francos
-    const aPlanta = { ...CONTRATO.estado, modalidad: 'planta' };
+    // CONTRATO que pasó a planta: sus horas a favor y su saldo de horas no cuentan; sus horas extras (las de antes de la
+    // planilla) dan francos
+    const aPlanta = { ...CONTRATO.estado, modalidad: 'planta', horasExtras: HORAS_EXTRAS_DE_CONTRATO };
     assert.deepEqual(noUtilizadasDe(aPlanta, 2026, A_HOY), {
       anio: 2026, unidad: 'francos', saldo: { cantidad: 0, quedan: 0 }, meses: [], usos: [], quedan: 0
     });
@@ -1920,7 +1962,8 @@ describe('calcular', () => {
   });
 
   it('una modalidad que cambia (Review Focus 1): las horas a favor de CONTRATO, en planta, no cuentan en nada', () => {
-    const aPlanta = { ...CONTRATO.estado, modalidad: 'planta' };
+    // Con las horas extras que tenía antes de la planilla (las salidas no cuentan en planta)
+    const aPlanta = { ...CONTRATO.estado, modalidad: 'planta', horasExtras: HORAS_EXTRAS_DE_CONTRATO };
     let calculo;
     assert.doesNotThrow(() => { calculo = calcular(aPlanta, A_HOY); });
     const aFavor = CONTRATO.estado.licencias.filter((fila) => fila.tipo === 'horas_a_favor');

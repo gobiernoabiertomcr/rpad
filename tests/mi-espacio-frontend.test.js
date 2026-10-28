@@ -2466,10 +2466,12 @@ describe('los formularios: lo puro', () => {
     // Sin llegar a 7 horas, sin francos
     assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-07-20', desde: '18:00', hasta: '19:00' }, planta, 'planta'),
       '1 hora. En julio llevás 6 horas.');
-    // Contrato: las horas a favor del mes siguiente
+    // Contrato: las horas a favor del mes siguiente. Desde la planilla (spec 2026-10-27-mi-espacio-horas, sección 5), el día por
+    // día de contrato son sus salidas, sin «desde» ni «hasta»: el modal de horas de planta ya no suma las demás del mes (el 21/10,
+    // 4 h). Contrato carga en la planilla, que dice su propia suma
     const contrato = horasDe(CONTRATO);
     assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-10-28', desde: '19:00', hasta: '22:30' }, contrato, 'contrato'),
-      '3,5 horas. En octubre llevás 7,5 horas: en noviembre vas a tener 7,5 horas a favor.');
+      '3,5 horas. En octubre llevás 3,5 horas: en noviembre vas a tener 3,5 horas a favor.');
     // La primera del mes (un mes sin fila en la tabla cuenta 0 horas antes de esta carga): también dice lo que lleva y lo que da
     assert.equal(M.textoDeLaSuma({ id: null, fecha: '2026-05-15', desde: '09:00', hasta: '17:00' }, planta, 'planta'),
       '8 horas. En mayo llevás 8 horas: 1 franco compensatorio para usar en julio.');
