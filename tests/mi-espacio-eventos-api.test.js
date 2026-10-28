@@ -157,8 +157,11 @@ describe('un evento personal', () => {
     assert.ok(Number.isInteger(id) && id > 0);
 
     const data = await listado('adminA');
-    assert.deepEqual(Object.keys(data),
-      ['desde', 'hasta', 'hoy', 'puede_compartir', 'eventos', 'licencias', 'feriados', 'ausentes']);
+    assert.deepEqual(Object.keys(data), ['desde', 'hasta', 'hoy', 'puede_compartir', 'eventos', 'licencias', 'feriados',
+      'ausentes', 'companeros_por_dia', 'frase_del_mes']);
+    // Sin `mes`, sin frase; sin compañeros que no están, ningún día
+    assert.equal(data.frase_del_mes, null);
+    assert.deepEqual(data.companeros_por_dia, []);
     assert.equal(data.desde, q(0));
     assert.equal(data.hasta, q(20));
     assert.equal(data.hoy, hoyArgentina());
@@ -218,7 +221,9 @@ describe('un evento personal', () => {
 });
 
 describe('compartido con personas', () => {
-  it('adminB lo ve como ajeno, «De Test adminA», y el editor no; adminA, «Con 1 persona» y sus ids', async () => {
+  // Las personas del archivo empiezan todas con «Test»: el nombre corto (nombreCorto) suma la inicial del último apellido
+  // («Test e.»), salvo adminA y adminB, que también la comparten y quedan con el nombre completo
+  it('adminB lo ve como ajeno, «De Test adminA», y el editor no; adminA, «Con Test adminB» y sus ids', async () => {
     const id = await crear('adminA', compartidoCon('adminB'));
     const deB = await elDe('adminB', id);
     assert.equal(deB.es_mio, false);
@@ -235,7 +240,7 @@ describe('compartido con personas', () => {
 
     const deA = await elDe('adminA', id);
     assert.equal(deA.es_mio, true);
-    assert.equal(deA.quien_texto, 'Con 1 persona');
+    assert.equal(deA.quien_texto, 'Con Test adminB');
     assert.deepEqual(deA.personas, ['Test adminB']);
     assert.deepEqual(deA.personas_ids, [idDe('adminB')]);
     assert.deepEqual(Object.keys(deA), CLAVES_DEL_MIO);
@@ -246,7 +251,7 @@ describe('compartido con personas', () => {
     const id = await crear('adminA', compartidoCon('editor', 'adminB'));
     assert.equal((await elDe('adminA', id)).quien_texto, 'Con 2 personas');
     assert.deepEqual((await elDe('adminA', id)).personas, ['Test adminB', 'Test editor']);
-    assert.equal((await elDe('adminB', id)).quien_largo, 'Lo creó Test adminA. Están: vos y Test editor.');
+    assert.equal((await elDe('adminB', id)).quien_largo, 'Lo creó Test adminA. Están: vos y Test e.');
     assert.equal((await elDe('editor', id)).quien_largo, 'Lo creó Test adminA. Están: vos y Test adminB.');
   });
 
@@ -814,6 +819,112 @@ describe('lo demás de la agenda', () => {
       { fecha: `${anio}-12-25`, nombre: 'Navidad', texto: 'Feriado: Navidad' }
     ]);
   });
+
+  // Lo nuevo de la agenda con más onda (spec 2026-10-28-mi-espacio-agenda-onda, 5.2): los compañeros de cada día y la frase
+  // del mes, de lo mismo que ya trae la respuesta
+  it('companeros_por_dia: los de `ausentes`, día por día y por orden alfabético; al lector y al colaborador, []', async () => {
+    // adminB, toda la semana; el editor («Test e.»: comparte el primer nombre con todos y es el único con la e), el martes y el
+    // miércoles; el lector no es de los compañeros, y el editor no se ve a sí mismo
+    await conLicencia('adminB', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
+    await conLicencia('editor', { tipo: 'medica', desde: q(1), hasta: q(2), nota: 'Turno' });
+    await conLicencia('lector', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
+
+    const data = await listado('adminA', q(0), q(6));
+    const unoSolo = 'Test adminB no está';
+    const losDos = 'Test adminB y Test e. no están';
+    assert.deepEqual(data.companeros_por_dia, [
+      { fecha: q(0), texto: unoSolo }, { fecha: q(1), texto: losDos }, { fecha: q(2), texto: losDos },
+      { fecha: q(3), texto: unoSolo }, { fecha: q(4), texto: unoSolo }
+    ]);
+    // Los mismos días que `ausentes`, sin el tipo ni la nota
+    assert.deepEqual(data.companeros_por_dia.map((dia) => dia.fecha), [...new Set(data.ausentes.flatMap((a) => a.dias))].sort());
+    assert.ok(!/medica|Turno|vacaciones/.test(JSON.stringify(data.companeros_por_dia)));
+    assert.deepEqual((await listado('editor', q(0), q(6))).companeros_por_dia.map((dia) => dia.texto),
+      ['Test adminB no está', 'Test adminB no está', 'Test adminB no está', 'Test adminB no está', 'Test adminB no está']);
+    for (const clave of ['lector', 'colab']) {
+      const delLector = await listado(clave, q(0), q(6));
+      assert.deepEqual(delLector.ausentes, [], clave);
+      assert.deepEqual(delLector.companeros_por_dia, [], clave);
+    }
+  });
+
+  describe('frase_del_mes', () => {
+    // El noviembre del año que viene (sin ningún feriado fijo) y su grilla, del lunes anterior al 1 (o el 1, si es lunes) al
+    // domingo después del 30 (o el 30, si es domingo), como la pide la página; los días de la grilla de los meses vecinos
+    // (siempre hay: 30 días no son semanas justas)
+    const anio = Number(hoy.slice(0, 4)) + 1;
+    const MES = `${anio}-11`;
+    const del = (n) => `${MES}-${String(n).padStart(2, '0')}`;
+    const diaDeLaSemana = (fecha) => new Date(`${fecha}T12:00:00Z`).getUTCDay();
+    const GRILLA = (() => {
+      let desde = del(1);
+      while (diaDeLaSemana(desde) !== 1) desde = sumarDias(desde, -1);
+      let hasta = del(30);
+      while (diaDeLaSemana(hasta) !== 0) hasta = sumarDias(hasta, 1);
+      return { desde, hasta };
+    })();
+    const VECINO = [GRILLA.desde, GRILLA.hasta].find((fecha) => !fecha.startsWith(MES));
+    // El primer sábado del mes
+    const SABADO = [1, 2, 3, 4, 5, 6, 7].map(del).find((fecha) => diaDeLaSemana(fecha) === 6);
+
+    const conMes = async (clave, consulta, rango = GRILLA) => {
+      const res = await api.get(`/mi-espacio/eventos?desde=${rango.desde}&hasta=${rango.hasta}${consulta}`, como(clave));
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      return res.body.data;
+    };
+
+    // Lo de adminA en el mes: dos eventos suyos y uno que le compartió adminB (cuentan); uno personal de adminB y uno de un
+    // día vecino de la grilla (no cuentan). Dos feriados el 9 (cuentan una vez), uno en un sábado (cuenta) y uno en un día
+    // vecino (no cuenta). Sus vacaciones del 28/10 al 3 y su franquicia del 16 (van por desde, recortadas al mes); las de
+    // adminB (una compañera) y una de adminA en un día vecino, no
+    const cargarElMes = async () => {
+      await crear('adminA', { titulo: 'Reunión de equipo', fecha: del(3) });
+      await crear('adminA', { titulo: 'Revisión del catálogo', fecha: del(10) });
+      await crear('adminB', { titulo: 'Taller', fecha: del(18), ...compartidoCon('adminA') });
+      await crear('adminB', { titulo: 'De adminB, personal', fecha: del(20) });
+      await crear('adminA', { titulo: 'En un día vecino', fecha: VECINO });
+      await conFeriado(del(9), 'Feriado de prueba');
+      await conFeriado(del(9), 'Otro feriado de prueba');
+      await conFeriado(SABADO, 'Feriado de un sábado');
+      await conFeriado(VECINO, 'Feriado vecino');
+      await conLicencia('adminA', { tipo: 'franquicia', desde: del(16), horas: 2 });
+      await conLicencia('adminA', { tipo: 'vacaciones', desde: `${anio}-10-28`, hasta: del(3) });
+      await conLicencia('adminA', { tipo: 'medica', desde: VECINO });
+      await conLicencia('adminB', { tipo: 'vacaciones', desde: del(23), hasta: del(27) });
+    };
+    const LA_FRASE = '3 eventos, 2 feriados, tus vacaciones del 1 al 3 y tu franquicia el 16.';
+
+    it('con `mes` y el rango de la grilla, la frase de lo que ve quien pide (sin los compañeros)', async () => {
+      await cargarElMes();
+      const data = await conMes('adminA', `&mes=${MES}`);
+      assert.equal(data.frase_del_mes, LA_FRASE);
+      // adminB está en companeros_por_dia, pero no en la frase
+      assert.ok(data.companeros_por_dia.some((dia) => dia.texto === 'Test adminB no está'));
+      // Con el rango justo del mes, la misma
+      assert.equal((await conMes('adminA', `&mes=${MES}`, { desde: del(1), hasta: del(30) })).frase_del_mes, LA_FRASE);
+      // adminB ve lo suyo: sus dos eventos, los feriados y sus vacaciones
+      assert.equal((await conMes('adminB', `&mes=${MES}`)).frase_del_mes, '2 eventos, 2 feriados y tus vacaciones del 23 al 27.');
+      // El lector, solo los feriados; y sin nada, «Nada cargado en noviembre…»
+      assert.equal((await conMes('lector', `&mes=${MES}`)).frase_del_mes, '2 feriados.');
+      await query('DELETE FROM feriados');
+      assert.equal((await conMes('lector', `&mes=${MES}`)).frase_del_mes,
+        'Nada cargado en noviembre. Tocá un día para agendar algo.');
+    });
+
+    it('sin `mes`, con uno que no sirve, repetido o que no cae entero en el rango: null, nunca un 400', async () => {
+      await cargarElMes();
+      const siguiente = `${anio}-12`;
+      for (const consulta of ['', '&mes=', '&mes=raro', `&mes=${anio}-13`, `&mes=${del(1)}`, `&mes=${MES}&mes=${siguiente}`,
+        `&mes=${MES}&mes=${MES}`, `&mes[a]=${MES}`, `&mes=${siguiente}`, `&mes=${anio}-10`]) {
+        const data = await conMes('adminA', consulta);
+        assert.equal(data.frase_del_mes, null, consulta);
+        assert.equal(data.eventos.length, 4, consulta);
+      }
+      // Un rango que deja afuera el 1 o el 30
+      assert.equal((await conMes('adminA', `&mes=${MES}`, { desde: del(2), hasta: GRILLA.hasta })).frase_del_mes, null);
+      assert.equal((await conMes('adminA', `&mes=${MES}`, { desde: GRILLA.desde, hasta: del(29) })).frase_del_mes, null);
+    });
+  });
 });
 
 describe('«Hoy y mañana» del Resumen: los eventos', () => {
@@ -843,7 +954,7 @@ describe('«Hoy y mañana» del Resumen: los eventos', () => {
 
     // Quien lo creó lo ve con sus personas
     const deB = (await api.get('/mi-espacio/resumen', como('adminB'))).body.data.hoy_y_manana.eventos;
-    assert.deepEqual(deB.map((evento) => evento.detalle), ['Hoy · solo vos', 'Mañana · con 1 persona']);
+    assert.deepEqual(deB.map((evento) => evento.detalle), ['Hoy · solo vos', 'Mañana · con Test adminA']);
     // Sin modalidad ni eventos, la lista vacía (la página decide qué mostrar)
     const delLector = await api.get('/mi-espacio/resumen', como('lector'));
     assert.equal(delLector.status, 200, JSON.stringify(delLector.body));
@@ -875,6 +986,115 @@ describe('«Hoy y mañana» del Resumen: los eventos', () => {
       await query('RENAME TABLE mi_espacio_eventos_falla_simulada TO mi_espacio_eventos');
     }
     assert.equal((await api.get('/mi-espacio/resumen', como('adminA'))).body.data.hoy_y_manana.eventos.length, 1);
+  });
+});
+
+// El nombre corto (spec 2026-10-28-mi-espacio-agenda-onda, 5.1 y decisiones 9.3, 9.4 y 9.13): en la agenda y en el Resumen,
+// los compañeros que no están, quien creó un evento y quién está van con el primer nombre (y la inicial del último apellido si
+// otra persona de la administración activa tiene el mismo); `personas`, con los nombres completos. Con personas inventadas
+// (las del archivo empiezan todas con «Test»), y los eventos y las ausencias cargados por SQL: no sale ningún email
+describe('el nombre corto en la agenda y en el Resumen', () => {
+  const NOMBRES = Object.freeze({
+    andrea: ['admin', 'Andrea Paula Molina'],
+    julian: ['admin', 'Julián Esteban Ferreyra'],
+    carlaB: ['editor', 'Carla Inés Benítez'],
+    carlaR: ['editor', 'Carla Ríos']
+  });
+  let companeros;
+  const de = (clave) => ({ token: companeros[clave].token });
+  const activa = (clave, activo) => query('UPDATE usuarios SET activo = ? WHERE id = ?', [activo, companeros[clave].id]);
+  // Un evento de `clave` (de 10:00 a 11:00) compartido con `invitadas`
+  const compartidoPor = async (clave, invitadas, fecha = q(1)) => {
+    const { insertId } = await query(
+      `INSERT INTO mi_espacio_eventos (creado_por, titulo, fecha, desde, hasta, compartido, para_todos)
+       VALUES (?, 'Reunión de equipo', ?, '10:00', '11:00', 1, 0)`, [companeros[clave].id, fecha]
+    );
+    for (const invitada of invitadas) {
+      await query('INSERT INTO mi_espacio_evento_personas (evento_id, usuario_id) VALUES (?, ?)',
+        [insertId, companeros[invitada].id]);
+    }
+    return insertId;
+  };
+  const ausenciaDe = (clave, desde, hasta = desde) => query(
+    "INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, mostrar) VALUES (?, 'medica', ?, ?, 1)",
+    [companeros[clave].id, desde, hasta]
+  );
+  // GET /mi-espacio/eventos de q(0) a q(20), como lo ve `clave`
+  const agendaDe = async (clave) => {
+    const res = await api.get(`/mi-espacio/eventos?desde=${q(0)}&hasta=${q(20)}`, de(clave));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return res.body.data;
+  };
+  const elEventoDe = async (clave, id) => (await agendaDe(clave)).eventos.find((evento) => evento.id === id);
+
+  before(async () => {
+    companeros = await crearUsuariosPrueba(api, Object.fromEntries(Object.entries(NOMBRES).map(([clave, [rol]]) => [clave, rol])));
+    for (const [clave, [, nombre]] of Object.entries(NOMBRES)) {
+      await query('UPDATE usuarios SET nombre_completo = ? WHERE id = ?', [nombre, companeros[clave].id]);
+    }
+  });
+
+  after(async () => {
+    if (companeros) await limpiarDatosPrueba(companeros);
+  });
+
+  it('GET /eventos: el de Julián, «De Julián» y «Lo creó Julián. Están: vos y Carla B.»; personas, con los nombres completos',
+    async () => {
+      const deJulian = await compartidoPor('julian', ['andrea', 'carlaB']);
+      const comoLoVeAndrea = await elEventoDe('andrea', deJulian);
+      assert.equal(comoLoVeAndrea.es_mio, false);
+      assert.equal(comoLoVeAndrea.creador, 'Julián');
+      assert.equal(comoLoVeAndrea.quien_texto, 'De Julián');
+      assert.equal(comoLoVeAndrea.quien_largo, 'Lo creó Julián. Están: vos y Carla B.');
+      assert.deepEqual(comoLoVeAndrea.personas, ['Andrea Paula Molina', 'Carla Inés Benítez']);
+      assert.deepEqual(Object.keys(comoLoVeAndrea), CLAVES_DEL_AJENO);
+      // Julián lo ve como suyo, con dos personas
+      const comoLoVeJulian = await elEventoDe('julian', deJulian);
+      assert.equal(comoLoVeJulian.quien_texto, 'Con 2 personas');
+      assert.deepEqual(comoLoVeJulian.personas, ['Andrea Paula Molina', 'Carla Inés Benítez']);
+      // Uno de Andrea con una sola persona la nombra: «Con Carla B.»
+      const deAndrea = await compartidoPor('andrea', ['carlaB'], q(2));
+      assert.equal((await elEventoDe('andrea', deAndrea)).quien_texto, 'Con Carla B.');
+      assert.equal((await elEventoDe('carlaB', deAndrea)).quien_largo, 'Lo creó Andrea. Están: vos.');
+      // La administración se lee en cada pedido: con Carla Ríos desactivada, Carla Benítez es «Carla»
+      try {
+        await activa('carlaR', 0);
+        assert.equal((await elEventoDe('andrea', deJulian)).quien_largo, 'Lo creó Julián. Están: vos y Carla.');
+        assert.equal((await elEventoDe('andrea', deAndrea)).quien_texto, 'Con Carla');
+      } finally {
+        await activa('carlaR', 1);
+      }
+    });
+
+  it('GET /eventos: los compañeros que no están, «Carla B. no está» y «Carla R. no está»; sin Carla Ríos, «Carla no está»',
+    async () => {
+      await ausenciaDe('carlaB', q(1), q(2));
+      await ausenciaDe('carlaR', q(3));
+      assert.deepEqual((await agendaDe('andrea')).ausentes, [
+        {
+          nombre: 'Carla B.', desde: q(1), hasta: q(2), texto: 'Carla B. no está', hasta_texto: `Hasta el miércoles ${ddmm(q(2))}`,
+          dias: [q(1), q(2)]
+        },
+        { nombre: 'Carla R.', desde: q(3), hasta: q(3), texto: 'Carla R. no está', hasta_texto: '', dias: [q(3)] }
+      ]);
+      try {
+        await activa('carlaR', 0);
+        assert.deepEqual((await agendaDe('andrea')).ausentes.map(({ nombre, texto }) => [nombre, texto]),
+          [['Carla', 'Carla no está']]);
+      } finally {
+        await activa('carlaR', 1);
+      }
+    });
+
+  it('el Resumen: «Hoy y mañana» dice «de Julián» y, a Julián, «con Andrea»', async () => {
+    const id = await compartidoPor('julian', ['andrea'], dia(1));
+    const res = await api.get('/mi-espacio/resumen', de('andrea'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data.hoy_y_manana.eventos.map(({ id: cada, quien, detalle }) => [cada, quien, detalle]),
+      [[id, 'de Julián', 'Mañana · de Julián']]);
+    const deJulian = await api.get('/mi-espacio/resumen', de('julian'));
+    assert.equal(deJulian.status, 200, JSON.stringify(deJulian.body));
+    assert.deepEqual(deJulian.body.data.hoy_y_manana.eventos.map(({ id: cada, quien }) => [cada, quien]), [[id, 'con Andrea']]);
   });
 });
 
