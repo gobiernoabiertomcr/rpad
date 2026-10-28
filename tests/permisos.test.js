@@ -217,6 +217,9 @@ const RUTAS_MI_ESPACIO = [
   ['POST', '/mi-espacio/licencias/calculo'],
   ['PUT', '/mi-espacio/licencias/1'],
   ['DELETE', '/mi-espacio/licencias/1'],
+  // La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word, sección 5)
+  ['GET', '/mi-espacio/licencias/1/nota'],
+  ['GET', '/mi-espacio/licencias/1/word'],
   ['POST', '/mi-espacio/horas-extras'],
   ['PUT', '/mi-espacio/horas-extras/1'],
   ['DELETE', '/mi-espacio/horas-extras/1'],

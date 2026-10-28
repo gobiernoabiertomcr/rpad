@@ -81,9 +81,9 @@ const VERSION_PROYECTOS = '20261206';
 // mi-espacio.js (la página nueva de Mi espacio, con las pestañas Resumen, Licencias y Horas extras, spec
 // 2026-10-26-mi-espacio-licencias-y-horas, 8 y 11): el mismo número que VERSION_PANTALLAS y VERSION_FERIADOS, que subieron con esta
 // entrega (siguen siendo independientes). Cambió después (la cuarta pestaña, la agenda, con el mes, los próximos y los eventos en
-// «Hoy y mañana», spec 2026-10-26-mi-espacio-agenda, 6; y el Resumen «Titular», spec 2026-10-27-mi-espacio-resumen, 6). Su versión
-// es propia
-const VERSION_MI_ESPACIO = '20261211';
+// «Hoy y mañana», spec 2026-10-26-mi-espacio-agenda, 6; el Resumen «Titular», spec 2026-10-27-mi-espacio-resumen, 6; y «Word» en
+// cada licencia de la lista, spec 2026-10-27-mi-espacio-licencia-word, 6). Su versión es propia
+const VERSION_MI_ESPACIO = '20261212';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -768,11 +768,13 @@ describe('páginas', () => {
     // del contenido, con los ids que usa mi-espacio.js, una sola vez y ninguno de la carcasa
     describe('los modales', () => {
       const MODALES = {
-        'modal-licencia': ['modal-licencia-titulo', 'ml-error', 'ml-tipos', 'ml-tipos-opciones', 'ml-tipos-error', 'ml-desde-rotulo',
-          'ml-desde', 'ml-desde-error', 'ml-grupo-hasta', 'ml-hasta', 'ml-hasta-error', 'ml-grupo-horas', 'ml-horas', 'ml-horas-error',
-          'ml-fechas-ayuda', 'ml-calculo', 'ml-nota', 'ml-nota-error', 'ml-grupo-mostrar', 'ml-mostrar', 'ml-mostrar-ayuda',
-          'ml-grupo-autorizado', 'ml-autorizado', 'ml-autorizado-ayuda', 'ml-autorizado-error', 'ml-paso', 'ml-sin-auditor', 'ml-borrar',
-          'ml-pie', 'ml-guardar'],
+        // Con el segundo paso (spec 2026-10-27-mi-espacio-licencia-word, 6): el cuerpo y el pie del formulario y los del segundo paso
+        'modal-licencia': ['modal-licencia-titulo', 'ml-cuerpo', 'ml-error', 'ml-tipos', 'ml-tipos-opciones', 'ml-tipos-error',
+          'ml-desde-rotulo', 'ml-desde', 'ml-desde-error', 'ml-grupo-hasta', 'ml-hasta', 'ml-hasta-error', 'ml-grupo-horas', 'ml-horas',
+          'ml-horas-error', 'ml-fechas-ayuda', 'ml-calculo', 'ml-nota', 'ml-nota-error', 'ml-grupo-mostrar', 'ml-mostrar',
+          'ml-mostrar-ayuda', 'ml-grupo-autorizado', 'ml-autorizado', 'ml-autorizado-ayuda', 'ml-autorizado-error', 'ml-paso',
+          'ml-sin-auditor', 'ml-pie-del-formulario', 'ml-borrar', 'ml-pie', 'ml-guardar', 'ml-paso-dos', 'ml-paso-dos-pie',
+          'ml-descargar-word'],
         'modal-horas': ['modal-horas-titulo', 'mh-error', 'mh-fecha', 'mh-fecha-error', 'mh-desde', 'mh-desde-error', 'mh-hasta',
           'mh-hasta-error', 'mh-suma', 'mh-nota', 'mh-nota-error', 'mh-borrar', 'mh-guardar'],
         'modal-saldos': ['modal-saldos-titulo', 'ms-error', 'ms-modalidad', 'ms-dias', 'ms-dias-rotulo', 'ms-dias-opciones', 'ms-dias-ayuda',
@@ -837,6 +839,23 @@ describe('páginas', () => {
           assert.doesNotMatch(html, /<form\b|maxlength|onclick=/, id);
         }
         assert.match(modal('modal-confirmar'), /aria-describedby="modal-confirmar-texto"/);
+      });
+
+      // El segundo paso de «Cargar licencia» (spec 2026-10-27-mi-espacio-licencia-word, 6; maqueta, versión C): al guardar una
+      // licencia, mi-espacio.js oculta el cuerpo y el pie del formulario y muestra los del segundo paso, con «Listo» (cierra) y
+      // «Descargar Word»
+      it('«Cargar licencia»: el cuerpo y el pie del formulario y, después, los del segundo paso, ocultos, con «Listo» y «Descargar Word»', () => {
+        const html = modal('modal-licencia');
+        assert.match(html, /<div class="modal-header">[\s\S]*?<\/div>\s*<div class="modal-body" id="ml-cuerpo">/);
+        assert.match(html, /<div class="modal-footer" id="ml-pie-del-formulario">/);
+        assert.match(html, new RegExp('<div class="modal-body me-paso-dos" id="ml-paso-dos" hidden></div>\\s*'
+          + '<div class="modal-footer" id="ml-paso-dos-pie" hidden>\\s*<div class="botones">\\s*'
+          + '<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Listo</button>\\s*'
+          + '<button type="button" class="sg-btn sg-btn-tinta" id="ml-descargar-word">Descargar Word</button>\\s*</div>\\s*</div>'));
+        assert.ok(html.indexOf('id="ml-pie-del-formulario"') < html.indexOf('id="ml-paso-dos"'));
+        // Las cuatro partes son hijas del .modal: el cuerpo es el que se desplaza y el pie queda a la vista
+        assert.equal((html.match(/<div class="modal-body[" ]/g) ?? []).length, 2);
+        assert.equal((html.match(/<div class="modal-footer[" ]/g) ?? []).length, 2);
       });
 
       // La agenda (spec 2026-10-26-mi-espacio-agenda, 1 y 6; maqueta 2, #evento y #evento-ajeno)

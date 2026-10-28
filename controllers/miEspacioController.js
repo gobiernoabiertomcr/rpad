@@ -9,20 +9,27 @@
 // (`evaluarLicencia`) no se guarda. Las ausencias de día entero de quien puede tener licencia pasan a Configuración →
 // Licencias en la misma transacción (sección 6, services/miEspacioPaso.js). Las horas extras, los días de cada año y el saldo
 // inicial («Mis vacaciones y saldos», sección 4) se guardan también cada uno en una transacción, sin tocar Configuración, y
-// ningún faltante los frena (3.10). Un id de otra persona responde 404, como uno que no existe: no se revela que existe
-// (sección 10). Lo único de otras personas que se ve es «Hoy no están» (sección 7: quién de administración no está, nunca de
-// qué), los eventos que le compartieron, en «Hoy y mañana» (los de la agenda: controllers/miEspacioEventosController.js) y,
-// solo el firmante titular, las personas que puede autorizar con sus licencias (sección 6), como en Configuración.
+// ningún faltante los frena (3.10). La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word) se arma en el
+// momento, para la vista y para el Word, y no se guarda. Un id de otra persona responde 404, como uno que no existe: no se
+// revela que existe (sección 10). Lo único de otras personas que se ve es «Hoy no están» (sección 7: quién de administración
+// no está, nunca de qué), los eventos que le compartieron, en «Hoy y mañana» (los de la agenda:
+// controllers/miEspacioEventosController.js) y, solo el firmante titular, las personas que puede autorizar con sus licencias
+// (sección 6), como en Configuración.
 import pool from '../config/database.js';
 import { hoyArgentina, ahoraArgentina, sumarDias, diasEntre, esFechaIso } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, anioVigente, camposDelSaldoInicial, textoDeLasMitades, evaluarLicencia,
   validarHorasExtras, validarAnio, validarSaldoInicial, modalidadDe, ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana
 } from '../services/miEspacioReglas.js';
-import { resumenDe, filasDeLicencias, tablaDeHorasExtras, proximoFeriadoDe } from '../services/miEspacioResumen.js';
 import {
-  estadoDe, contextoDe, personaDe, licenciaDe, ausenciasVisibles, feriadosPara
+  resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, proximoFeriadoDe
+} from '../services/miEspacioResumen.js';
+import {
+  estadoDe, contextoDe, personaDe, licenciaDe, datosDeLaNota, ausenciasVisibles, feriadosPara
 } from '../services/miEspacioDatos.js';
+import { notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota, MENSAJES_NOTA } from '../services/miEspacioNota.js';
+import { renderNotaDocx, TIPO_WORD } from '../services/miEspacioNotaWord.js';
+import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { aplicarCarga, aplicarCorreccion, aplicarBaja, pasoPrevisto, vinculosDe } from '../services/miEspacioPaso.js';
 import {
   bloquearUsuarios, firmanteTitular, autorizables, conSusLicencias
@@ -352,6 +359,77 @@ export const borrarLicenciaMia = (req, res) => responder(res, 'Error al borrar l
     return [200, { success: true, message: 'Licencia borrada.' }];
   });
 });
+
+// La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word, secciones 4 y 5): la nota en papel para pedir la
+// licencia, armada en el momento con lo que hay en la base (nunca se guarda). Solo lectura
+
+// Los rechazos de notaDeLicencia, por su clave: el uso autorizado no tiene nota (404) y una licencia de días sin ningún día
+// hábil, por un feriado cargado después, no tiene qué pedir (409). Cualquier otra clave ('error': una licencia o una persona
+// que no arman una nota) no está acá: es un 500
+const RECHAZOS_DE_LA_NOTA = Object.freeze({ sinNota: 404, sinDiasHabiles: 409 });
+
+/**
+ * Lo que comparten las dos rutas de la nota: `{ rechazo }` con el [status, cuerpo] de un 404 o un 409, o `{ nota, guardada,
+ * licencia, contexto }`. La licencia tiene que ser activa y de la persona (`datosDeLaNota`, que trae también la fecha de la
+ * nota y la firma); un id que no es un entero positivo, de otra persona, que no existe o dado de baja da el mismo 404. La
+ * licencia sale del `estado` de `contextoDe` (con sus horas como número) y los días hábiles se cuentan con sus feriados, como
+ * la lista. Sin modalidad, la nota se arma igual: el texto no depende de ella. Una nota que no se puede armar (la clave
+ * 'error') tira, y la ruta responde 500 con el mensaje fijo (el detalle, solo en la consola).
+ */
+const leerLaNota = async (usuarioId, licenciaId, hoy) => {
+  const id = idPositivo(licenciaId);
+  if (id === null) return { rechazo: noEncontrada() };
+  const datos = await datosDeLaNota(usuarioId, id);
+  if (datos === null) return { rechazo: noEncontrada() };
+  const contexto = await contextoDe(usuarioId, hoy);
+  // Borrada entre las dos lecturas: tampoco está
+  const licencia = contexto.estado.licencias.find((fila) => fila.id === id);
+  if (!licencia) return { rechazo: noEncontrada() };
+  const { guardada, nombre, cargo, vinculo } = datos;
+  const { nota, error } = notaDeLicencia(licencia,
+    { fecha: guardada, persona: { nombre, cargo, vinculo }, feriados: contexto.feriados });
+  if (error !== undefined) {
+    if (!Object.hasOwn(RECHAZOS_DE_LA_NOTA, error)) throw new Error(`La licencia ${id} no arma una nota (${error})`);
+    return { rechazo: [RECHAZOS_DE_LA_NOTA[error], { success: false, error: MENSAJES_NOTA[error] }] };
+  }
+  return { nota, guardada, licencia, contexto };
+};
+
+// GET /api/mi-espacio/licencias/:id/nota: lo que necesita el segundo paso de «Cargar licencia», en una sola respuesta: la
+// licencia como la arma la lista (`fila`, aunque la lista muestre otro año o no muestre nada, sin modalidad), la hoja de la
+// nota (`html`, armada y escapada acá), su fecha y el renglón que va arriba (`aclaracion`)
+export const verNotaDeLicencia = (req, res) => responder(res, MENSAJES_NOTA.error, async () => {
+  const hoy = hoyArgentina();
+  const { rechazo, nota, guardada, licencia, contexto } = await leerLaNota(req.user.userId, req.params.id, hoy);
+  if (rechazo) return rechazo;
+  const { persona, estado, feriados, calculo } = contexto;
+  const vinculos = await vinculosDe(persona, estado, hoy);
+  return conDatos({
+    fila: filaDeUnaLicencia(estado, calculo, { id: licencia.id, hoy, persona, vinculos, feriados }),
+    html: htmlDeLaNota(nota),
+    fecha: guardada,
+    aclaracion: aclaracionDeLaNota(guardada)
+  });
+});
+
+// GET /api/mi-espacio/licencias/:id/word: la nota en Word, con el nombre del archivo en el Content-Disposition. Los errores
+// van en JSON, como en las demás rutas; el 500, con el mensaje fijo y la pila solo en la consola, como `responder`
+export const bajarWordDeLicencia = async (req, res) => {
+  try {
+    const { rechazo, nota } = await leerLaNota(req.user.userId, req.params.id, hoyArgentina());
+    if (rechazo) {
+      const [status, cuerpo] = rechazo;
+      res.status(status).json(cuerpo);
+      return;
+    }
+    const word = await renderNotaDocx(nota);
+    res.set({ 'Content-Type': TIPO_WORD, 'Content-Disposition': disposicionDeAdjunto(nota.nombre) });
+    res.send(word);
+  } catch (error) {
+    console.error(`${MENSAJES_NOTA.error}:`, error?.stack ?? error);
+    res.status(500).json({ success: false, error: MENSAJES_NOTA.error });
+  }
+};
 
 // Las horas extras: cargar, corregir y borrar (spec, 3.7 y sección 10). Nunca tocan Configuración: la transacción bloquea
 // solo la fila de la persona, así dos cargas a la vez se ordenan y la segunda ve lo que guardó la primera

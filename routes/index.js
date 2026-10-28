@@ -63,8 +63,8 @@ import {
 import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/firmasController.js';
 import {
   verResumen, listarLicenciasMias, listarHorasExtras, verAnio, verSaldoInicial, calcularLicencia, cargarLicenciaMia,
-  corregirLicenciaMia, borrarLicenciaMia, cargarHorasExtras, corregirHorasExtras, borrarHorasExtras, guardarAnio,
-  guardarSaldoInicial, listarAusentes, verFirmante
+  corregirLicenciaMia, borrarLicenciaMia, verNotaDeLicencia, bajarWordDeLicencia, cargarHorasExtras, corregirHorasExtras,
+  borrarHorasExtras, guardarAnio, guardarSaldoInicial, listarAusentes, verFirmante
 } from '../controllers/miEspacioController.js';
 import {
   listarEventos, verAvisoDelEvento, listarPersonasParaCompartir, crearEvento, cambiarEvento, borrarEvento, cambiarMiRecordatorio
@@ -200,6 +200,9 @@ router.post('/mi-espacio/licencias/calculo', authMiddleware, calcularLicencia);
 router.post('/mi-espacio/licencias', authMiddleware, cargarLicenciaMia);
 router.put('/mi-espacio/licencias/:id', authMiddleware, corregirLicenciaMia);
 router.delete('/mi-espacio/licencias/:id', authMiddleware, borrarLicenciaMia);
+// La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word, sección 5): la vista del segundo paso y el Word
+router.get('/mi-espacio/licencias/:id/nota', authMiddleware, verNotaDeLicencia);
+router.get('/mi-espacio/licencias/:id/word', authMiddleware, bajarWordDeLicencia);
 router.get('/mi-espacio/horas-extras', authMiddleware, listarHorasExtras);
 router.post('/mi-espacio/horas-extras', authMiddleware, cargarHorasExtras);
 router.put('/mi-espacio/horas-extras/:id', authMiddleware, corregirHorasExtras);

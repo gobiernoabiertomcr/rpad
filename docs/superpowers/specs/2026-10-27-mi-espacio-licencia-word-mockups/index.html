@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nota de licencia - maqueta</title>
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css?v=20261109">
+    <style>
+        :root { --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA; }
+        body { background: var(--sg-sutil); color: var(--sg-texto); }
+        .ix { max-width: 960px; margin: 0 auto; padding: 32px 16px 48px; }
+        .ix h1 { font-family: var(--f-titulo); font-weight: 750; letter-spacing: -0.02em; color: var(--sg-tinta); margin: 0 0 8px; font-size: 1.9rem; }
+        .ix h2 { font-family: var(--f-titulo); font-weight: 700; letter-spacing: -0.01em; color: var(--sg-tinta); margin: 36px 0 12px; font-size: 1.25rem; }
+        .ix p, .ix li { line-height: 1.55; max-width: 72ch; }
+        .ix .bajada { color: var(--sg-suave); margin: 0 0 8px; }
+        .ix-opciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; padding: 0; list-style: none; }
+        .ix-opciones a { display: block; height: 100%; padding: 16px 18px; background: #fff; border: 1px solid var(--sg-linea); border-radius: 14px; color: var(--sg-texto); text-decoration: none; }
+        .ix-opciones a:hover { border-color: var(--sg-tinta); }
+        .ix-opciones b { display: block; color: var(--sg-tinta); font-size: 1.02rem; margin-bottom: 4px; }
+        .ix-opciones span { color: var(--sg-suave); font-size: 0.9rem; }
+        .ix-words { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+        .ix-words figure { margin: 0; background: #fff; border: 1px solid var(--sg-linea); border-radius: 14px; padding: 12px; }
+        .ix-words img { width: 100%; height: auto; display: block; border: 1px solid var(--sg-linea); }
+        .ix-words figcaption { margin-top: 8px; font-size: 0.88rem; color: var(--sg-suave); }
+        .ix-lista { columns: 2 260px; padding-left: 18px; }
+        .ix a:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+    </style>
+</head>
+<body>
+<main class="ix">
+    <h1>La nota de licencia en Word</h1>
+    <p class="bajada">Maqueta del 27/10/2026. Es la página real de Mi espacio, con los datos de una copia de la base con personas y licencias inventadas: no hay servidor y nada se guarda.</p>
+
+    <h2>El segundo paso de «Cargar licencia»: tres versiones</h2>
+    <p>Abrí una y probá: tocá «Cargar licencia», elegí un tipo (las fechas vienen puestas para el ejemplo) y «Guardar». También «Editar» en una fila y «Guardar», o «Word» en una fila. Abajo a la derecha se cambia de versión sin cerrar el modal.</p>
+    <ul class="ix-opciones">
+        <li><a href="mi-espacio.html?opcion=a#licencias"><b>A. Resumen y la nota en chico</b><span>La licencia guardada arriba y, debajo, la nota en miniatura con su botón «Descargar Word».</span></a></li>
+        <li><a href="mi-espacio.html?opcion=b#licencias"><b>B. Compacta</b><span>Un recuadro verde con la licencia y una fila con el archivo y su botón. Lo más corto.</span></a></li>
+        <li><a href="mi-espacio.html?opcion=c#licencias"><b>C. La nota a la vista</b><span>La nota entera, para leerla antes de bajarla; «Descargar Word» en el pie.</span></a></li>
+    </ul>
+
+    <h2>Así se ve el Word</h2>
+    <p>Hoja A4 blanca, Arial 11, interlineado 1,15, márgenes de 2,5 cm arriba y abajo y 3 cm a los costados.</p>
+    <div class="ix-words">
+        <figure><img src="img/nueva-vacaciones.png" alt="La nota de una licencia anual ordinaria de 3 días hábiles, firmada por Lucía Fernández"><figcaption>Licencia anual ordinaria (planta permanente).</figcaption></figure>
+        <figure><img src="img/contrato-horas-a-favor.png" alt="La nota de dos horas y media a favor, firmada por Paula Benítez, personal contratado"><figcaption>Horas a favor (contrato): la firma suma «Personal contratado, cumpliendo funciones de».</figcaption></figure>
+    </div>
+
+    <h2>Todos los Word de muestra</h2>
+    <ul class="ix-lista">
+        <li><a href="word/nueva-vacaciones.docx">Licencia anual ordinaria</a></li>
+        <li><a href="word/nueva-franquicia.docx">Franquicia</a></li>
+        <li><a href="word/nueva-estudios.docx">Estudios</a></li>
+        <li><a href="word/nueva-medica.docx">Atención médica</a></li>
+        <li><a href="word/nueva-familiar.docx">Atención del grupo familiar (un día)</a></li>
+        <li><a href="word/nueva-medica_extraordinaria.docx">Médica extraordinaria</a></li>
+        <li><a href="word/nueva-franco.docx">Franco compensatorio</a></li>
+        <li><a href="word/contrato-horas-a-favor.docx">Horas a favor (contrato)</a></li>
+        <li><a href="word/contrato-vacaciones.docx">Licencia anual ordinaria (contrato)</a></li>
+    </ul>
+</main>
+</body>
+</html>

@@ -2,7 +2,8 @@
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 3.9, 7 y 8): el panel como datos. De lo cargado (el
  * `Estado`), su `Calculo` (`calcular` de services/miEspacioReglas.js), hoy y los feriados salen el Resumen «Titular»
  * (`resumenDe`; spec 2026-10-27-mi-espacio-resumen, sección 4: la frase de la banda, lo que vence en una línea y la médica
- * extraordinaria corta), la lista de licencias de un año (`filasDeLicencias`) y las tablas de horas extras
+ * extraordinaria corta), la lista de licencias de un año (`filasDeLicencias`; la fila de una sola, `filaDeUnaLicencia`, para
+ * la nota de una licencia: spec 2026-10-27-mi-espacio-licencia-word, sección 5) y las tablas de horas extras
  * (`tablaDeHorasExtras`), con todos sus números y sus textos: la página los imprime tal cual y no recalcula nada (Ruling 19).
  * También el próximo feriado de «Hoy y mañana» (`proximoFeriadoDe`).
  *
@@ -603,6 +604,16 @@ const saldoInicialDe = ({ arranque, modalidad, saldos }, anio) => {
   return { fecha: arranque, titulo: `Saldo inicial ${anio}`, cargado_texto: `Cargado el ${formatoCorto(arranque)}`, texto };
 };
 
+// Una licencia que la lista puede mostrar: de un tipo conocido y con sus fechas en orden
+const esFilaDeLaLista = (fila) => esObjeto(fila) && TIPOS_LICENCIA.includes(fila.tipo) && esFechaIso(fila.desde)
+  && esFechaIso(fila.hasta) && fila.desde <= fila.hasta;
+
+// Lo que necesita filaDeLicencia, igual para la lista y para una sola licencia (`hoy`, ya validado: una fecha o null)
+const contextoDeLasFilas = (datos, calculo, { hoy, persona, vinculos, feriados }) => ({
+  datos, cuenta: esObjeto(calculo) ? calculo : {}, hoy, persona: esObjeto(persona) ? persona : {},
+  vinculos: vinculos instanceof Map ? vinculos : new Map(), feriados
+});
+
 /**
  * La pestaña Licencias de un año (`GET /api/mi-espacio/licencias?anio=`): `{ anio, anios, filtros, licencias,
  * saldo_inicial }`. Las opciones son `{ anio, hoy, persona, vinculos, feriados }` (`anio`, un entero o un texto de cuatro
@@ -629,15 +640,11 @@ export const filasDeLicencias = (estado, calculo, opciones) => {
   const primero = `${elAnio}-01-01`;
   const ultimo = `${elAnio}-12-31`;
   const delAnio = listaDe(datos.licencias)
-    .filter((fila) => esObjeto(fila) && TIPOS_LICENCIA.includes(fila.tipo) && esFechaIso(fila.desde)
-      && esFechaIso(fila.hasta) && fila.desde <= fila.hasta && fila.desde <= ultimo && fila.hasta >= primero)
+    .filter((fila) => esFilaDeLaLista(fila) && fila.desde <= ultimo && fila.hasta >= primero)
     .sort((a, b) => compararTexto(b.desde, a.desde) || compararTexto(b.hasta, a.hasta)
       || cantidadDe(idDe(b.id)) - cantidadDe(idDe(a.id)));
 
-  const contexto = {
-    datos, cuenta: esObjeto(calculo) ? calculo : {}, hoy: deHoy, persona: esObjeto(persona) ? persona : {},
-    vinculos: vinculos instanceof Map ? vinculos : new Map(), feriados
-  };
+  const contexto = contextoDeLasFilas(datos, calculo, { hoy: deHoy, persona, vinculos, feriados });
   const filtros = TIPOS_LICENCIA
     .map((tipo) => ({
       tipo, nombre: NOMBRES_DE_LOS_FILTROS[tipo], cantidad: delAnio.filter((fila) => fila.tipo === tipo).length
@@ -650,6 +657,23 @@ export const filasDeLicencias = (estado, calculo, opciones) => {
     licencias: delAnio.map((fila) => filaDeLicencia(fila, contexto)),
     saldo_inicial: saldoInicialDe(datos, elAnio)
   };
+};
+
+/**
+ * La fila de la lista de una sola licencia, la de `id` (spec 2026-10-27-mi-espacio-licencia-word, sección 5: el segundo paso
+ * de «Cargar licencia» la muestra con `GET …/licencias/:id/nota`, sin depender del año que muestra la lista). Es la misma de
+ * `filasDeLicencias`, con el mismo contexto: las opciones son `{ id, hoy, persona, vinculos, feriados }`, sin el año (la fila
+ * no depende de él). Con una persona sin modalidad, la fila sale igual (la lista no la muestra, pero la nota se arma). null si
+ * el estado no tiene esa licencia, o si es una que la lista no mostraría (un tipo o unas fechas que no sirven).
+ */
+export const filaDeUnaLicencia = (estado, calculo, opciones) => {
+  const datos = esObjeto(estado) ? estado : {};
+  const { id, hoy, persona, vinculos, feriados } = esObjeto(opciones) ? opciones : {};
+  const buscado = idDe(id);
+  const fila = listaDe(datos.licencias).find((licencia) => esFilaDeLaLista(licencia) && idDe(licencia.id) === buscado);
+  if (fila === undefined) return null;
+  return filaDeLicencia(fila,
+    contextoDeLasFilas(datos, calculo, { hoy: esFechaIso(hoy) ? hoy : null, persona, vinculos, feriados }));
 };
 
 // Las tablas de horas extras (spec, sección 8)
