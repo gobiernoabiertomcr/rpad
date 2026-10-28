@@ -70,7 +70,7 @@ const POR_DEFECTO = { anio: null, estadistico: 'mediana', dias: 'habiles', gesti
 // y si es de la DGMIT
 const DE_LA_CLAVE = {
   aviso: { nombre: 'Aviso anticipado', desde_hasta: 'Del aviso al vencimiento', responsable: 'DDPC', dgmit: false },
-  tramite: { nombre: 'Trámite y entrega de la nota', desde_hasta: 'Del aviso a la nota en el área', responsable: 'DGMIT y DA', dgmit: true },
+  tramite: { nombre: 'Redacción y entrega de nota', desde_hasta: 'Del aviso a la nota en el área', responsable: 'DGMIT y DA', dgmit: true },
   respuesta: { nombre: 'Respuesta del área', desde_hasta: 'De la nota a la entrega', responsable: 'Área', dgmit: false },
   produccion: { nombre: 'Producción del relevamiento', desde_hasta: 'Del aviso a la entrega', responsable: 'DGMIT y DIT', dgmit: true },
   carga: { nombre: 'Preparación y carga', desde_hasta: 'De la entrega a la carga', responsable: 'DDPC', dgmit: false }
@@ -364,7 +364,8 @@ describe('reportes.js: el circuito', () => {
     const sinTramite = ctx.htmlDeCircuito({ circuito: { externa: VISTA.circuito.externa.filter((t) => t.clave !== 'tramite') } }, 'externa');
     assert.equal(cuantas(sinTramite, /<div class="mt-flecha/g), 4);
     assert.ok(sinTramite.indexOf('Mandan la nota formal') < sinTramite.indexOf('Respuesta del área'));
-    assert.doesNotMatch(sinTramite, /Trámite y entrega de la nota/);
+    assert.match(externa, /Redacción y entrega de nota/);
+    assert.doesNotMatch(sinTramite, /Redacción y entrega de nota/);
     assert.equal(ctx.htmlDeCircuito(null, 'externa'), '');
     assert.equal(ctx.htmlDeCircuito({}, 'externa'), '');
   });
