@@ -17,20 +17,24 @@
  * que ese día esté habilitada, no vencida y con días libres (`repartoDeVacaciones`). Después, las demás licencias (3.2 a
  * 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`) y la validación de una carga (`validarLicencia`, con
  * la regla de 3.8: dos licencias no comparten un día). Por último, las horas extras (3.5 a 3.7): la validación de una carga
- * (`validarHorasExtras`), los francos compensatorios de planta (`francosDe`), las horas a favor de contrato
- * (`horasAFavorDe`) y lo no utilizado previamente de cada año (`noUtilizadasDe`). Al final, «Mis vacaciones y saldos» (los
- * campos del saldo inicial y el año, sección 4), el cálculo completo (`calcular`), lo guardado que dejó de cerrar
- * (`faltantesDe`, 3.10) y la evaluación de una carga (`evaluarLicencia`: una carga nueva que no cierra no se guarda). Y el
- * paso de las ausencias de día entero a Configuración → Licencias (sección 6): qué se hace al cargar, corregir y borrar, y
- * lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`, `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`). Por
- * último, lo que ven los compañeros, «Hoy no están» (sección 7: `ausenciasUnidas` y `ausentesDelRango`, sin el tipo, y los dos
- * grupos de «Hoy y mañana», `ausentesDeHoyYManana`), y lo que dice el email de vencimiento (sección 9: `avisosDeVencimiento`).
+ * (`validarHorasExtras`), la planilla de contrato (spec 2026-10-27-mi-espacio-horas: las horas de una salida,
+ * `horasDeLaSalida`, y la validación de un día, `validarSalida`), los francos compensatorios de planta (`francosDe`), las
+ * horas a favor de contrato (`horasAFavorDe`) y lo no utilizado previamente de cada año (`noUtilizadasDe`). Al final, «Mis
+ * vacaciones y saldos» (los campos del saldo inicial y el año, sección 4), el cálculo completo (`calcular`), lo guardado que
+ * dejó de cerrar (`faltantesDe`, 3.10) y la evaluación de una carga (`evaluarLicencia`: una carga nueva que no cierra no se
+ * guarda). Y el paso de las ausencias de día entero a Configuración → Licencias (sección 6): qué se hace al cargar, corregir
+ * y borrar, y lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`, `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`).
+ * Por último, lo que ven los compañeros, «Hoy no están» (sección 7: `ausenciasUnidas` y `ausentesDelRango`, sin el tipo, y
+ * los dos grupos de «Hoy y mañana», `ausentesDeHoyYManana`), y lo que dice el email de vencimiento (sección 9:
+ * `avisosDeVencimiento`).
  * Los textos son planos: escaparlos le toca a quien los dibuja.
  */
 import {
-  diasHabilesDe, ultimoDiaHabilDelMesCon, proximoDiaHabilCon, restarDiasHabilesCon, diaDeLaSemana
+  diasHabilesDe, ultimoDiaHabilDelMesCon, proximoDiaHabilCon, restarDiasHabilesCon, diaDeLaSemana, esDiaHabilCon
 } from './feriadosReglas.js';
-import { diasEntre, esFechaIso, formatoCorto, sumarDias, diaHabilAnterior } from './notasDigitalesCalendario.js';
+import {
+  diasEntre, esFechaIso, formatoCorto, sumarDias, diaHabilAnterior, FERIADOS_FIJOS
+} from './notasDigitalesCalendario.js';
 import { puedeTenerLicencia, puedeAnularse } from './licenciasReglas.js';
 
 // La modalidad sale del vínculo de la persona (spec, sección 1): las dos plantas tienen las mismas licencias
@@ -77,6 +81,13 @@ export const TOPES = Object.freeze({ franquicia: 42, medica: 25, familiar: 25 })
 export const JORNADA = 7;
 // El largo de una nota, en caracteres contados con Array.from (el varchar(200) de la base)
 export const LARGO_NOTA = 200;
+// La planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, sección 3): la jornada termina a las 15:00 (la
+// misma para todas las personas de contrato); en un día hábil una media hora vale desde su minuto 16 (pueden faltar hasta 14
+// minutos) y en uno que no lo es, aunque falten hasta 10. Se guardan de a 100 días como mucho
+export const SALIDA_DE_LA_JORNADA = '15:00';
+export const TOLERANCIA_DIA_HABIL = 14;
+export const TOLERANCIA_DIA_INHABIL = 10;
+export const MAXIMO_DIAS_POR_GUARDADO = 100;
 
 // Los mensajes de cada error, los mismos en el servidor y en la página
 export const MENSAJES_MI_ESPACIO = Object.freeze({
@@ -103,7 +114,21 @@ export const MENSAJES_MI_ESPACIO = Object.freeze({
   soloHasta: 'Ya empezó: solo podés cambiar hasta cuándo.',
   fechasFijas: 'Ya terminó: las fechas quedan fijas.',
   autorizadoSoloVacaciones: 'Solo las vacaciones dejan persona a cargo.',
-  tipoFijo: 'Ya sale la nota que informa quién queda a cargo: el tipo no se puede cambiar.'
+  tipoFijo: 'Ya sale la nota que informa quién queda a cargo: el tipo no se puede cambiar.',
+  // Los de la planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, secciones 7 y 8)
+  horaSalida: 'Escribí la hora como 16:45.',
+  salidaQueCuenta: 'Falta la salida: es la que cuenta.',
+  salidaFalta: 'Falta la salida.',
+  entradaFeriado: 'En un feriado, poné también la entrada.',
+  entradaFinde: 'En un sábado o domingo, poné también la entrada.',
+  salidaAntes: 'La salida tiene que ser después de la entrada.',
+  diaQueNoLlego: 'Ese día todavía no llegó.',
+  diaDeLicencia: 'Ese día tenés una licencia de día entero: no se cargan horas.',
+  sinDias: 'No hay cambios para guardar.',
+  muchosDias: 'Guardá de a 100 días como mucho.',
+  diaRepetido: 'Ese día está dos veces.',
+  planillaSoloContrato: 'La planilla es para las personas de contrato.',
+  contratoEnLaPlanilla: 'Las personas de contrato cargan sus horas en la planilla.'
 });
 
 const MESES = Object.freeze([
@@ -748,6 +773,179 @@ export const horasPorMes = (horasExtras) => {
     porMes.set(mes, (porMes.get(mes) ?? 0) + horas);
   }
   return new Map([...porMes].sort(([a], [b]) => compararTexto(a, b)));
+};
+
+// La planilla de contrato (spec 2026-10-27-mi-espacio-horas, secciones 3 y 7): cada día, una salida y, si se quiere, la
+// entrada. En un día hábil cuenta solo la salida, desde las 15:00; en un feriado, un sábado o un domingo, la entrada es
+// obligatoria y cuenta de la entrada a la salida. Las horas no se guardan: se calculan con los feriados del momento.
+
+const PATRON_HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+// Una hora 'HH:MM' de un día, con cualquier minuto (de 00:00 a 23:59): «16:46:00», «9:05» o «25:00» no lo son
+export const horaSalidaValida = (hora) => typeof hora === 'string' && PATRON_HORA.test(hora);
+// La hora en minutos desde las 00:00, o null si no es una hora de `horaSalidaValida` (minutosDe acepta solo :00 y :30)
+const minutosDeLaHora = (hora) => (horaSalidaValida(hora) ? Number(hora.slice(0, 2)) * 60 + Number(hora.slice(3)) : null);
+
+/**
+ * El tipo de un día para la planilla: 'habil' (de lunes a viernes, que no es feriado: `esDiaHabilCon`), 'feriado' (uno del
+ * Set o de los 9 fijos, aunque caiga sábado o domingo) o 'finde' (un sábado o un domingo que no es feriado). null si no es
+ * una fecha. Un segundo parámetro que no es un Set no suma feriados (los fijos siguen siéndolo).
+ */
+export const tipoDeDia = (fecha, feriados) => {
+  if (!esFechaIso(fecha)) return null;
+  if (esDiaHabilCon(fecha, feriados)) return 'habil';
+  const enElSet = feriados instanceof Set && feriados.has(fecha);
+  // No es hábil: o es feriado (del Set o fijo) o es sábado o domingo
+  return enElSet || FERIADOS_FIJOS.includes(fecha.slice(5)) ? 'feriado' : 'finde';
+};
+
+/**
+ * Las horas extras de un día de la planilla (spec, sección 3), de a 0,5, o null:
+ * - en un día hábil, los minutos después de las 15:00 (`SALIDA_DE_LA_JORNADA`; antes, 0), con una media hora desde su minuto
+ *   16: `floor((minutos + 14) / 30) / 2`. La entrada no cuenta;
+ * - en un feriado, un sábado o un domingo, los minutos de la entrada a la salida, con 10 de tolerancia:
+ *   `floor((minutos + 10) / 30) / 2`.
+ * null sin una fecha o una salida válidas (`horaSalidaValida`), en un día que no es hábil sin una entrada válida, o con una
+ * entrada válida y la salida antes o igual que ella (también en un día hábil). Nunca tira.
+ */
+export const horasDeLaSalida = (dia, feriados) => {
+  if (!esObjeto(dia)) return null;
+  const tipo = tipoDeDia(dia.fecha, feriados);
+  const salida = minutosDeLaHora(dia.salida);
+  if (tipo === null || salida === null) return null;
+  const entrada = minutosDeLaHora(dia.entrada);
+  if (entrada !== null && salida <= entrada) return null;
+  if (tipo === 'habil') {
+    const minutos = Math.max(0, salida - minutosDeLaHora(SALIDA_DE_LA_JORNADA));
+    return Math.floor((minutos + TOLERANCIA_DIA_HABIL) / 30) / 2;
+  }
+  if (entrada === null) return null;
+  return Math.floor((salida - entrada + TOLERANCIA_DIA_INHABIL) / 30) / 2;
+};
+
+// Las horas extras de cada mes de la planilla ('AAAA-MM' → horas), de los meses más viejos a los más nuevos, como
+// `horasPorMes`: cada día en el mes de su fecha. Lo que da null no suma (un día que da 0 deja su mes, con 0)
+export const horasPorMesDeSalidas = (salidas, feriados) => {
+  const porMes = new Map();
+  for (const fila of listaDe(salidas)) {
+    const horas = horasDeLaSalida(fila, feriados);
+    if (horas === null) continue;
+    const mes = fila.fecha.slice(0, 7);
+    porMes.set(mes, (porMes.get(mes) ?? 0) + horas);
+  }
+  return new Map([...porMes].sort(([a], [b]) => compararTexto(a, b)));
+};
+
+// Unas horas en días de franco (cada 7, `JORNADA`) y las horas que sobran, con un decimal: `{ dias, resto }`; con lo que no
+// es un número positivo, `{ dias: 0, resto: 0 }`
+const diasYHorasDe = (horas) => {
+  if (typeof horas !== 'number' || !Number.isFinite(horas) || horas <= 0) return { dias: 0, resto: 0 };
+  const total = Math.round(horas * 10) / 10;
+  const dias = Math.floor(total / JORNADA);
+  return { dias, resto: Math.round((total - dias * JORNADA) * 10) / 10 };
+};
+
+/**
+ * Unas horas dichas en días de franco (spec, sección 3): cada 7 horas (`JORNADA`) son un día y lo que sobra, horas: «2 días
+ * de franco y 4,5 horas», «3 días de franco», «4,5 horas», «1 día de franco», «1 hora» (singular solo con 1). '' con 0 o con
+ * lo que no es un número positivo.
+ */
+export const enDiasDeFranco = (horas) => {
+  const { dias, resto } = diasYHorasDe(horas);
+  const enDias = dias > 0 ? `${dias} ${dias === 1 ? 'día' : 'días'} de franco` : '';
+  const enHoras = resto > 0 ? textoDeHoras(resto) : '';
+  return [enDias, enHoras].filter((parte) => parte !== '').join(' y ');
+};
+
+/**
+ * La frase de la banda de la planilla (spec, sección 4), plana: lo que suman las horas de `mes` ('AAAA-MM') en el mes
+ * siguiente, en minúscula y sin año. En el mes de hoy (o uno posterior), «En noviembre vas a tener 2 días de franco y 4,5
+ * horas a favor.»; en uno que ya pasó, «En octubre tuviste 1 día de franco y 3,5 horas a favor.»; «a favor» va solo con
+ * horas sueltas («En enero vas a tener 3 días de franco.»). Sin horas, con el mes de las horas: «Todavía no sumaste horas
+ * extras en octubre.» o «En septiembre no hiciste horas extras.». Sin un mes o un hoy válidos, ''.
+ */
+export const textoDeLaSumaDelMes = (mes, horas, hoy) => {
+  if (!esMes(mes) || !esFechaIso(hoy)) return '';
+  const paso = mes < hoy.slice(0, 7);
+  const enDias = enDiasDeFranco(horas);
+  if (enDias === '') {
+    return paso ? `En ${nombreDelMes(mes)} no hiciste horas extras.`
+      : `Todavía no sumaste horas extras en ${nombreDelMes(mes)}.`;
+  }
+  const siguiente = mesMas(mes, MESES_HASTA_LAS_HORAS);
+  if (siguiente === null) return '';
+  const aFavor = diasYHorasDe(horas).resto > 0 ? ' a favor' : '';
+  return `En ${nombreDelMes(siguiente)} ${paso ? 'tuviste' : 'vas a tener'} ${enDias}${aFavor}.`;
+};
+
+/**
+ * La licencia de día entero de Mi espacio que tiene la persona ese día, o null: una del estado (solo las activas) que cubre la
+ * fecha (`desde ≤ fecha ≤ hasta`), de día entero (`esDiaEntero`: también las horas a favor o el uso autorizado de 7 horas), de
+ * la modalidad de hoy (no `fueraDeLaModalidad`) y con la fecha hábil (`esDiaHabilCon`: el sábado, el domingo o el feriado del
+ * medio de unas vacaciones no son de licencia). Cuenta también una anterior al arranque: ese día no estuvo. Sin un estado o
+ * una fecha válidos, null.
+ */
+export const licenciaDeDiaEnteroEn = (estado, fecha, feriados) => {
+  if (!esObjeto(estado) || !esDiaHabilCon(fecha, feriados)) return null;
+  return listaDe(estado.licencias).find((fila) => esObjeto(fila) && esFechaIso(fila.desde) && esFechaIso(fila.hasta)
+    && fila.desde <= fecha && fecha <= fila.hasta && esDiaEntero(fila) && !fueraDeLaModalidad(fila, estado.modalidad))
+    ?? null;
+};
+
+/**
+ * Valida un día de la planilla, `{ fecha, entrada, salida, nota }`. El contexto es `{ hoy, estado, feriados }`. Devuelve
+ * `{ datos, error }`, como `validarLicencia`: `datos` es `{ fecha, entrada, salida, nota, borrar }` (la entrada y la nota
+ * vacías, null). Primero, el formato de la fecha (`fecha`); después, un día con la entrada, la salida y la nota vacías es un
+ * borrado (`borrar: true`, con todo en null) y pasa siempre (también un día que no llegó, uno de licencia o uno fuera del
+ * rango: así se puede quitar cualquier salida guardada). Si no, en este orden (spec, sección 7):
+ * 1. la fecha, del 01/01 de dos años antes (`rangoDeFechas`) a hoy: antes, `textoRango` hasta hoy; después,
+ *    `diaQueNoLlego`, los dos en `fecha`;
+ * 2. que no sea un día de licencia de día entero (`licenciaDeDiaEnteroEn`): `diaDeLicencia`, en `fecha`;
+ * 3. las horas, 'HH:MM' (`horaSalidaValida`): `horaSalida` en `entrada` o en `salida`, la entrada primero;
+ * 4. la salida, obligatoria (hay entrada o nota): en un día hábil `salidaQueCuenta` y en uno que no lo es `salidaFalta`;
+ * 5. la entrada, obligatoria en un día que no es hábil: `entradaFeriado` o `entradaFinde`;
+ * 6. si hay entrada, la salida después de ella (también en un día hábil): `salidaAntes`, en `salida`;
+ * 7. la nota: recortada, de hasta 200 caracteres contados con Array.from (lo que no es un texto es vacío).
+ * Vacía es no venir, null o un texto de espacios. Las horas no se recortan. Sin un hoy válido no pasa ninguna fecha (salvo un
+ * borrado); un día o un contexto que no son objetos cuentan como `{}`. La modalidad y el arranque los controla quien la llama.
+ */
+export const validarSalida = (dia, contexto) => {
+  const fuente = esObjeto(dia) ? dia : {};
+  const { hoy, estado, feriados } = esObjeto(contexto) ? contexto : {};
+  const { fecha, entrada, salida } = fuente;
+  if (!esFechaIso(fecha)) return rechazo('fecha', MENSAJES_MI_ESPACIO.fecha);
+
+  const nota = typeof fuente.nota === 'string' ? fuente.nota.trim() : '';
+  const sinEntrada = esVacio(entrada);
+  const sinSalida = esVacio(salida);
+  if (sinEntrada && sinSalida && nota === '') {
+    return { datos: { fecha, entrada: null, salida: null, nota: null, borrar: true }, error: null };
+  }
+
+  const rango = rangoDeFechas(hoy);
+  if (rango === null) return rechazo('fecha', MENSAJES_MI_ESPACIO.fecha);
+  if (fecha < rango.desde) return rechazo('fecha', textoRango(rango.desde, hoy));
+  if (fecha > hoy) return rechazo('fecha', MENSAJES_MI_ESPACIO.diaQueNoLlego);
+  if (licenciaDeDiaEnteroEn(estado, fecha, feriados) !== null) return rechazo('fecha', MENSAJES_MI_ESPACIO.diaDeLicencia);
+
+  if (!sinEntrada && !horaSalidaValida(entrada)) return rechazo('entrada', MENSAJES_MI_ESPACIO.horaSalida);
+  if (!sinSalida && !horaSalidaValida(salida)) return rechazo('salida', MENSAJES_MI_ESPACIO.horaSalida);
+
+  const tipo = tipoDeDia(fecha, feriados);
+  if (sinSalida) {
+    return rechazo('salida', tipo === 'habil' ? MENSAJES_MI_ESPACIO.salidaQueCuenta : MENSAJES_MI_ESPACIO.salidaFalta);
+  }
+  if (tipo !== 'habil' && sinEntrada) {
+    return rechazo('entrada', tipo === 'feriado' ? MENSAJES_MI_ESPACIO.entradaFeriado : MENSAJES_MI_ESPACIO.entradaFinde);
+  }
+  if (!sinEntrada && minutosDeLaHora(salida) <= minutosDeLaHora(entrada)) {
+    return rechazo('salida', MENSAJES_MI_ESPACIO.salidaAntes);
+  }
+  if (Array.from(nota).length > LARGO_NOTA) return rechazo('nota', MENSAJES_MI_ESPACIO.nota);
+
+  return {
+    datos: { fecha, entrada: sinEntrada ? null : entrada, salida, nota: nota === '' ? null : nota, borrar: false },
+    error: null
+  };
 };
 
 // Si el mes 'AAAA-MM' ya terminó: hoy es posterior a su último día
