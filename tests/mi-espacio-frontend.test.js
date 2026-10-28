@@ -8048,3 +8048,98 @@ describe('mi-espacio.html: los estilos de otro año y para revisar', () => {
     assert.match(reglaDe('.me-pagina a:focus-visible, .me-pagina button:focus-visible'), /outline: 3px solid var\(--tinta\);/);
   });
 });
+
+// Los estilos de la agenda con más onda (spec 2026-10-28-mi-espacio-agenda-onda, 3.3, 3.4, 3.8 y 6), leídos del <style> de
+// mi-espacio.html: el texto con 4,5:1 o más sobre su fondo (también en los días que ya pasaron, en los de otro mes y en hoy), los
+// puntos y las líneas del teléfono con 3:1 o más sobre la celda más oscura (hoy, --sg-cielo) y sobre el blanco, y la leyenda con
+// los íconos del mes
+describe('mi-espacio.html: los estilos de la agenda', () => {
+  const estilo = estiloDeLaPagina();
+  const token = (nombre) => new RegExp(`${nombre}: (#[0-9A-Fa-f]{6});`).exec(estilo)?.[1];
+  // Un color de un valor: un token --sg-* (su #RRGGBB de :root) o un #RGB / #RRGGBB
+  const color = (valor) => {
+    const nombre = /var\((--sg-[\w-]+)\)/.exec(valor)?.[1];
+    const hex = nombre ? token(nombre) : /#[0-9A-Fa-f]{3,6}\b/.exec(valor)?.[0];
+    assert.ok(hex, `el color de ${valor}`);
+    return (hex.length === 4 ? `#${[...hex.slice(1)].map((c) => c + c).join('')}` : hex).toUpperCase();
+  };
+  // El valor de una propiedad en la regla de un selector, del <style> entero o de un pedazo (el bloque del teléfono)
+  const de = (selector, propiedad, texto = estilo) => {
+    const regla = new RegExp(`(?:^|\\n)\\s*${escaparRegex(selector)}\\s*\\{([^}]*)\\}`).exec(texto)?.[1];
+    assert.ok(regla, selector);
+    const valor = new RegExp(`(?:^|[;{\\s])${propiedad}: ([^;]+);`).exec(regla)?.[1];
+    assert.ok(valor, `${selector} { ${propiedad} }`);
+    return color(valor);
+  };
+  // El bloque del teléfono, con sus llaves
+  const telefono = (() => {
+    const inicio = estilo.indexOf('@media (max-width: 640px) {');
+    let nivel = 0;
+    for (let i = estilo.indexOf('{', inicio); i < estilo.length; i += 1) {
+      if (estilo[i] === '{') nivel += 1;
+      if (estilo[i] === '}' && (nivel -= 1) === 0) return estilo.slice(inicio, i + 1);
+    }
+    return '';
+  })();
+  const BLANCO = '#FFFFFF';
+  const CIELO = token('--sg-cielo');
+
+  it('el texto, con 4,5:1 o más sobre su fondo: la pizarra, los números, las barras, el día elegido, la banda y la cuenta', () => {
+    const pares = [
+      ['la pizarra de los compañeros', de('.me-tira.ausente', 'color'), de('.me-tira.ausente', 'background')],
+      ['tu licencia en la barra', de('.me-tira.licencia', 'color'), de('.me-tira.licencia', 'background')],
+      ['el número de otro mes', de('.me-celda.otro-mes .me-num', 'color'), de('.me-celda.otro-mes', 'background')],
+      ['el número de un día que pasó', de('.me-celda.paso .me-num', 'color'), BLANCO],
+      ['el número de un día que pasó, feriado', de('.me-celda.paso .me-num', 'color'), de('.me-celda.feriado', 'background')],
+      ['el número de un día', de('.me-num', 'color'), de('.me-celda.finde', 'background')],
+      ['el número de hoy', de('.me-celda.hoy .me-num', 'color'), de('.me-celda.hoy .me-num', 'background')],
+      ['«y N más», hoy', de('.me-mas', 'color'), de('.me-celda.hoy', 'background')],
+      ['la cabeza de los días', de('.me-mes th', 'color'), BLANCO],
+      ['la cabeza de hoy', de('.me-mes th.hoy', 'color'), BLANCO],
+      ['la frase del mes', de('.me-frase-del-mes', 'color'), de('.me-banda-del-mes', 'background')],
+      ['el mes', de('.me-titulo-del-mes h2', 'color'), de('.me-banda-del-mes', 'background')],
+      ['«Sábado y domingo»', de('.me-finde', 'color'), de('.me-finde', 'background')],
+      ['lo escondido el fin de semana', de('.me-finde-cuenta', 'color'), de('.me-finde-cuenta', 'background')],
+      ['la leyenda', de('.me-leyenda', 'color'), BLANCO]
+    ];
+    for (const clase of ['propio', 'compartido', 'licencia', 'feriado', 'ausente']) {
+      const selector = `.me-fila-del-dia.${clase} .me-elegido-cosa`;
+      pares.push([`el día elegido: ${clase}`, de(selector, 'color'), de(selector, 'background')]);
+    }
+    assert.equal(de('.me-tira.ausente', 'background'), token('--sg-suave'));
+    assert.equal(de('.me-tira.ausente', 'color'), BLANCO);
+    for (const [nombre, texto, fondo] of pares) {
+      assert.ok(contraste(texto, fondo) >= 4.5, `${nombre}: ${texto} sobre ${fondo}, ${contraste(texto, fondo).toFixed(2)}:1`);
+    }
+    // La muestra de los compañeros en la leyenda es la pizarra, como su barra
+    assert.equal(de('.me-leyenda .me-color.ausente', 'background'), token('--sg-suave'));
+    assert.equal(de('.me-leyenda .me-color.ausente', 'color'), BLANCO);
+  });
+
+  it('en el teléfono, los puntos (tinta, violeta y el ámbar del feriado) y las líneas (verde y pizarra), con 3:1 o más sobre la celda', () => {
+    const puntos = [['propio', de('.me-puntos .propio', 'background', telefono)], ['compartido', de('.me-puntos .compartido', 'background', telefono)],
+      ['feriado', de('.me-puntos .feriado', 'background', telefono)]];
+    assert.deepEqual(puntos.slice(0, 2).map(([, hex]) => hex), [token('--sg-tinta'), token('--sg-violeta')]);
+    const lineas = [['tu licencia', de('.me-tira.licencia', 'background', telefono)], ['los compañeros', de('.me-tira.ausente', 'background')]];
+    assert.deepEqual(lineas.map(([, hex]) => hex), [token('--sg-verde'), token('--sg-suave')]);
+    // En el teléfono, la de los compañeros no cambia: la de la compu
+    assert.doesNotMatch(telefono, /\n\s*\.me-tira\.ausente \{/);
+    // La celda más oscura es la de hoy (--sg-cielo): los otros fondos (otro mes, sábado y domingo, feriado) son más claros
+    for (const fondo of [de('.me-celda.otro-mes', 'background'), de('.me-celda.finde', 'background'), de('.me-celda.feriado', 'background')]) {
+      assert.ok(contraste(fondo, BLANCO) < contraste(CIELO, BLANCO), fondo);
+    }
+    for (const [nombre, hex] of [...puntos, ...lineas]) {
+      for (const fondo of [BLANCO, CIELO]) {
+        assert.ok(contraste(hex, fondo) >= 3, `${nombre}: ${hex} sobre ${fondo}, ${contraste(hex, fondo).toFixed(2)}:1`);
+      }
+    }
+  });
+
+  it('la leyenda lleva el ícono del mes de cada cosa (ICONOS_DEL_MES): el de lo que es solo tuyo, vacío', () => {
+    const leyenda = leer('mi-espacio.html').match(/<ul class="me-leyenda"[^>]*>([\s\S]*?)<\/ul>/)[1];
+    const muestras = Object.fromEntries([...leyenda.matchAll(/<span class="me-color (\w+)" aria-hidden="true">([\s\S]*?)<\/span>/g)]
+      .map(([, clase, icono]) => [clase, icono]));
+    assert.deepEqual(Object.keys(muestras), ['propio', 'compartido', 'licencia', 'feriado', 'ausente']);
+    for (const [clase, icono] of Object.entries(muestras)) assert.equal(icono, M.ICONOS_DEL_MES[clase], clase);
+  });
+});
