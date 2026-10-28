@@ -11,7 +11,7 @@
 
 **Tech Stack:** Node 22, ES Modules, Express 4 y mysql2/promise sobre MariaDB. Tests con `node:test`: puros, de la página en un `vm` y de integración sobre Docker con una base propia.
 
-**Estado:** aprobado por el usuario el 28/10/2026. Se implementa con subagentes de Opus después de traer el main con «licencia anulada» (Task 0).
+**Estado:** aprobado por el usuario el 28/10/2026. Se implementa con subagentes de Opus después de traer el main con «licencia anulada» y «Mi espacio: una agenda con más onda» (Task 0; orden de la coordinadora del 28/10).
 
 **Spec:** `docs/superpowers/specs/2026-10-27-feriados-en-notas-design.md`, aprobada el 27/10/2026. Este plan es su **tanda 2**: secciones 2 (lo de la tanda 2), 5, 6 (los textos de Métricas, el Ciclo de vida y el aviso azul), 7 (los tests de la tanda 2) y 9. La tanda 1 está en main desde ad0de02 (plan `docs/superpowers/plans/2026-10-27-feriados-en-notas-tanda-1.md`).
 - El mapa del código, con archivo y línea de ad0de02, está en los informes de los tres agentes del 28/10/2026, resumidos acá en cada tarea. Las líneas pueden correrse con lo que traiga main en la Task 0: buscar por el nombre.
@@ -62,7 +62,7 @@
 
 Sin código.
 
-- [ ] **Step 1: Traer main.** `git merge main` en la rama `claude/feriados-en-metricas` (creada el 28/10/2026 desde main ad0de02), con el main que indique la coordinadora: antes, la sesión «Mi espacio: licencia anulada» (rama `claude/mi-espacio-licencia-anulada-84cd6e`) tiene que estar mergeada. Toca Mi espacio y Configuración → Licencias, no Métricas; puede chocar en `CLAUDE.md` y `README.md`. Si cambió algún nombre que usa este plan, ajustar el plan en su propio commit antes de seguir.
+- [ ] **Step 1: Traer main.** `git merge main` en la rama `claude/feriados-en-metricas` (creada el 28/10/2026 desde main ad0de02), con el main que indique la coordinadora (el hash del merge de la agenda): antes tienen que estar mergeadas «Mi espacio: licencia anulada» (rama `claude/mi-espacio-licencia-anulada-84cd6e`) y «Mi espacio: una agenda con más onda». Tocan Mi espacio y Configuración → Licencias, no Métricas; pueden chocar en `CLAUDE.md`, `README.md` y las versiones de `tests/paginas.test.js`. Si cambió algún nombre que usa este plan, ajustar el plan en su propio commit antes de seguir.
 - [ ] **Step 2: La línea de base.** Docker arriba (`docker ps`: `rpad-db` y Mailpit). `npm test` completo con el candado: anotar cuántos pasan, cuántos fallan y cuáles.
 - [ ] **Step 3: Confirmar los nombres.** Que existan con esta forma:
   - en `services/metricasReglas.js`: `duracion(desde, hasta, dias)`, `diaDelAvisoDe`, `esperabaElAviso`, `casoDelCiclo`, `casosDelDataset(fuentes, hoy)`, `casosDe`, `contextoDe`, `hechosDe`, `medir`, `resultadosDe`, `filaDe`, `vistaDe`, `casosQueTocanElAnio` y `etapasDe` (con su `contexto = (dias) => contextoDe({ … })`);
@@ -255,7 +255,7 @@ No es una tarea de código ni va al repo. La corre la sesión que coordina la im
 ### Después del merge: el kit (no es una tarea de este plan)
 
 Lo arma la sesión que coordina la implementación, después del merge en main (spec, sección 9):
-- `RPAD-deploy-feriados-en-metricas`, en el Escritorio, con su vuelta atrás, comparado byte a byte con git contra el merge de «licencia anulada» (lo indica la coordinadora: no contra ad0de02);
+- `RPAD-deploy-feriados-en-metricas`, en el Escritorio, con su vuelta atrás, comparado byte a byte con git contra el merge de «una agenda con más onda» (lo indica la coordinadora: no contra ad0de02);
 - sin SQL, sin cron nuevo y sin Run NPM Install: subir los archivos y Restart, fuera del horario de los crons (8:15, 14:00 y las medias horas), **antes del 10/01/2027**;
 - después de desplegar: en Métricas, la bajada dice «sin feriados ni días no laborables»; la Agenda de pedidos dice el 24/11 (no el 23/11) para los externos que vencen el 31/12/2026 y el 03/11 (no el 02/11) para los internos, si todavía se ven;
 - el 10 o el 11/01/2027 (el 10 es domingo: Correos → Estado dice «Día no hábil» y muestra la foto solo si falló): en Métricas y Reportes, 2026 ya no dice «La foto de 2026 se saca el 10/01/2027» ni «… todavía no se sacó», y el Informe anual de 2026 se puede bajar; la última corrida de Correos → Estado no dice «No se pudo sacar la foto del año».
