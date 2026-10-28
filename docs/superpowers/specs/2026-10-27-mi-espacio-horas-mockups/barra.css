@@ -1,0 +1,16 @@
+/* MAQUETA (27/10/2026): la barra oscura de abajo y el aviso (no son parte del diseño; los de la maqueta del Resumen) */
+.me-pagina { padding-bottom: 130px; }
+.mq-barra { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 900; width: min(1120px, calc(100% - 20px)); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 14px; border-radius: 16px; background: #0F1B2D; color: #E6EDF6; font-size: 0.82rem; box-shadow: 0 10px 30px rgba(15, 27, 45, 0.35); }
+.mq-rotulo { color: #9FB2C8; font-weight: 600; }
+.mq-botones { display: flex; gap: 4px; flex-wrap: wrap; }
+.mq-botones button { height: 30px; padding: 0 11px; border-radius: 999px; border: 1px solid #34465F; background: transparent; color: #E6EDF6; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.mq-botones button:hover { border-color: #F2B705; }
+.mq-idea { flex-basis: 100%; margin: 0; color: #BFD0E3; line-height: 1.4; }
+.mq-barra button:focus-visible { outline: 3px solid #F2B705; outline-offset: 2px; }
+.mq-aviso { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 1100; background: var(--sg-tinta); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 0.88rem; opacity: 0; pointer-events: none; transition: opacity 0.2s; max-width: calc(100% - 32px); }
+.mq-aviso.visible { opacity: 1; }
+@media (max-width: 640px) {
+    .mq-barra { bottom: 8px; padding: 8px 10px; gap: 6px 10px; }
+    .mq-idea { display: none; }
+    .me-pagina { padding-bottom: 170px; }
+}

@@ -82,8 +82,9 @@ const VERSION_PROYECTOS = '20261206';
 // 2026-10-26-mi-espacio-licencias-y-horas, 8 y 11): el mismo número que VERSION_PANTALLAS y VERSION_FERIADOS, que subieron con esta
 // entrega (siguen siendo independientes). Cambió después (la cuarta pestaña, la agenda, con el mes, los próximos y los eventos en
 // «Hoy y mañana», spec 2026-10-26-mi-espacio-agenda, 6; el Resumen «Titular», spec 2026-10-27-mi-espacio-resumen, 6; y «Word» en
-// cada licencia de la lista, spec 2026-10-27-mi-espacio-licencia-word, 6). Su versión es propia
-const VERSION_MI_ESPACIO = '20261212';
+// cada licencia de la lista, spec 2026-10-27-mi-espacio-licencia-word, 6; y la planilla de horas extras de contrato, spec
+// 2026-10-27-mi-espacio-horas, 9). Su versión es propia
+const VERSION_MI_ESPACIO = '20261213';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -745,8 +746,9 @@ describe('páginas', () => {
     });
 
     // Fuera de los modales, #me-anuncio es la única región viva; dentro de cada modal, solo su error sin campo (role="alert", como en
-    // Configuración y Proyectos: el formulario está detrás del velo de los demás). Lo que se vuelve a dibujar (el cálculo, el paso,
-    // la suma) no es una región viva
+    // Configuración y Proyectos: el formulario está detrás del velo de los demás) y, en la planilla de contrato, además su propia
+    // región viva, #mp-anuncio (spec 2026-10-27-mi-espacio-horas, 9: con aria-modal, la de la página puede no leerse; dice el mes que
+    // se elige). Lo que se vuelve a dibujar (el cálculo, el paso, la suma, las horas de cada día) no es una región viva
     it('#me-anuncio es la única región viva de la página, fuera de las pestañas y de sus paneles; en los modales, solo su error', () => {
       assert.match(html(), /<p class="visualmente-oculto" id="me-anuncio" role="status"><\/p>/);
       const pagina = html().slice(0, html().indexOf('<div class="modal-overlay"'));
@@ -755,8 +757,11 @@ describe('páginas', () => {
       assert.ok(html().indexOf('id="me-anuncio"') < html().indexOf('role="tablist"'), 'antes de las pestañas');
       const enLosModales = [...html().slice(pagina.length).matchAll(/<[^>]*role="(status|alert|log)"[^>]*>/g)].map(([etiqueta]) => etiqueta);
       assert.deepEqual(enLosModales.map((etiqueta) => etiqueta.match(/id="([^"]+)"/)[1]),
-        ['ml-error', 'mh-error', 'ms-error', 'mu-error', 'ev-error', 'mea-error', 'mc-error']);
-      assert.ok(enLosModales.every((etiqueta) => etiqueta.includes('role="alert"') && etiqueta.includes(' hidden')));
+        ['ml-error', 'mh-error', 'mp-anuncio', 'mp-error', 'ms-error', 'mu-error', 'ev-error', 'mea-error', 'mc-error']);
+      const errores = enLosModales.filter((etiqueta) => !etiqueta.includes('id="mp-anuncio"'));
+      assert.ok(errores.every((etiqueta) => etiqueta.includes('role="alert"') && etiqueta.includes(' hidden')));
+      assert.deepEqual(enLosModales.filter((etiqueta) => etiqueta.includes('id="mp-anuncio"')),
+        ['<p class="visualmente-oculto" id="mp-anuncio" role="status">']);
     });
 
     it('ningún id se repite', () => {
@@ -777,6 +782,11 @@ describe('páginas', () => {
           'ml-descargar-word'],
         'modal-horas': ['modal-horas-titulo', 'mh-error', 'mh-fecha', 'mh-fecha-error', 'mh-desde', 'mh-desde-error', 'mh-hasta',
           'mh-hasta-error', 'mh-suma', 'mh-nota', 'mh-nota-error', 'mh-borrar', 'mh-guardar'],
+        // La planilla de contrato (spec 2026-10-27-mi-espacio-horas, sección 4; la maqueta aprobada), después del modal de planta y
+        // antes de la confirmación (que se abre sobre ella): los días, el selector de «Sumar el día» y sus errores los dibuja
+        // mi-espacio.js. Su título es #mp-titulo
+        'modal-planilla': ['mp-titulo', 'mp-anuncio', 'mp-anterior', 'mp-mes-titulo', 'mp-siguiente', 'mp-suma', 'mp-cuerpo', 'mp-error',
+          'mp-como-mes', 'mp-dias', 'mp-sumar', 'mp-pendientes', 'mp-guardar'],
         'modal-saldos': ['modal-saldos-titulo', 'ms-error', 'ms-modalidad', 'ms-dias', 'ms-dias-rotulo', 'ms-dias-opciones', 'ms-dias-ayuda',
           'ms-dias-mitades', 'ms-dias-error', 'ms-estudios', 'ms-estudios-opciones', 'ms-estudios-error', 'ms-campos', 'ms-guardar'],
         'modal-uso': ['modal-uso-titulo', 'mu-error', 'mu-fecha', 'mu-fecha-error', 'mu-grupo-horas', 'mu-horas', 'mu-horas-error',
@@ -829,7 +839,8 @@ describe('páginas', () => {
       it('los de administración: role="dialog", aria-modal y su título; la × y «Cancelar» con data-cerrar, y sin <form>', () => {
         for (const id of nombres) {
           const html = modal(id);
-          assert.match(html, new RegExp(`<div class="modal me-modal(?: me-modal-chico)?" role="dialog" aria-modal="true" aria-labelledby="${id}-titulo"`), id);
+          const titulo = id === 'modal-planilla' ? 'mp-titulo' : `${id}-titulo`;
+          assert.match(html, new RegExp(`<div class="modal me-modal(?: me-modal-chico| me-modal-planilla)?" role="dialog" aria-modal="true" aria-labelledby="${titulo}"`), id);
           assert.match(html, /<button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;<\/button>/, id);
           // El detalle de un evento ajeno no tiene nada que cancelar: se cierra con «Cerrar»
           if (id === 'modal-evento-ajeno') {
@@ -879,6 +890,33 @@ describe('páginas', () => {
         assert.match(html, /<p class="form-hint" id="ev-recordatorio-ayuda" hidden><\/p>/);
         assert.match(html, /<button type="button" class="sg-link me-link-rojo" id="ev-borrar" hidden>Borrar el evento<\/button>/);
         assert.match(html, /<button type="button" class="sg-btn sg-btn-tinta" id="ev-guardar">Guardar<\/button>/);
+      });
+
+      // La planilla de contrato (spec 2026-10-27-mi-espacio-horas, sección 4; la maqueta aprobada, sin su barra oscura)
+      it('la planilla de contrato: el mes con sus flechas y la banda fijos arriba, «Cómo se cuentan», las columnas, los días y el pie', () => {
+        const html = modal('modal-planilla');
+        assert.match(html, /<div class="modal me-modal me-modal-planilla" role="dialog" aria-modal="true" aria-labelledby="mp-titulo">/);
+        assert.match(html, /<h2 class="modal-title" id="mp-titulo">Cargar horas extras<\/h2>/);
+        // Su región viva, dentro del diálogo (con aria-modal, la de la página puede no leerse): el mes que se elige
+        assert.match(html, /<p class="visualmente-oculto" id="mp-anuncio" role="status"><\/p>/);
+        assert.match(html, /<button type="button" class="me-flecha" id="mp-anterior" aria-label="Mes anterior">/);
+        assert.match(html, /<button type="button" class="me-flecha" id="mp-siguiente" aria-label="Mes siguiente">/);
+        assert.match(html, /<h3 id="mp-mes-titulo"><\/h3>/);
+        // Lo de arriba no se desplaza: va antes del cuerpo, que es el que se desplaza
+        assert.match(html, /<div class="mp-arriba">[\s\S]*<div class="mp-suma" id="mp-suma"><\/div>\s*<\/div>\s*<div class="modal-body" id="mp-cuerpo">/);
+        assert.match(html, /<div class="modal-body" id="mp-cuerpo">\s*<p class="me-modal-error" id="mp-error" role="alert" hidden><\/p>/);
+        assert.match(html, /<details class="mp-como">\s*<summary>Cómo se cuentan las horas<\/summary>/);
+        assert.ok(html.includes('<li><b>Un día hábil</b>: tu jornada es de 8:00 a 15:00 y cuenta la salida.'));
+        assert.ok(html.includes('<li><b>Un feriado, sábado o domingo</b>: cuenta todo el tiempo de la entrada a la salida, de a media hora.'));
+        assert.match(html, /<li id="mp-como-mes"><\/li>/);
+        assert.match(html, /<div class="mp-columnas" aria-hidden="true">/);
+        // Los días, sin semántica de lista (cada uno es un grupo con el nombre de su fecha)
+        assert.match(html, /<div class="mp-dias" id="mp-dias"><\/div>/);
+        assert.match(html, /<div class="mp-sumar" id="mp-sumar"><\/div>/);
+        assert.match(html, /<span class="mp-pendientes" id="mp-pendientes">Todo guardado\.<\/span>/);
+        assert.match(html, /<button type="button" class="sg-btn sg-btn-tinta" id="mp-guardar">Guardar<\/button>/);
+        // Sin lo de la maqueta: ni su barra ni su parámetro para abrirla
+        assert.doesNotMatch(html, /<ol\b|mq-|data-mq|abrir=/);
       });
 
       it('el detalle de un evento ajeno: cuándo, el detalle, quién, «Mi recordatorio» y quién lo puede cambiar', () => {
@@ -1008,6 +1046,66 @@ describe('páginas', () => {
         if (condicion.trim() === '@media (max-width: 760px)') continue;
         assert.doesNotMatch(media(condicion.trim().slice('@media '.length)), /\.me-resto \.me-numeros \{|\.me-columnas \{/, condicion);
       }
+    });
+
+    // La planilla de contrato (spec 2026-10-27-mi-espacio-horas, sección 9; la maqueta, planilla.css): sus estilos, con el prefijo
+    // .mp- (y el día por día de la pestaña, .me-dia-horas y .me-fila-aviso), en el <style> de la página; sus var() son los tokens
+    // --sg-* de ese <style> (y las dos letras de main.css, --f-titulo y --f-texto). En 720 px o menos, el modal casi a pantalla
+    // completa (sin tocar el velo de los otros modales) y cada día una tarjeta, con los rótulos visibles y los campos de 44 px
+    it('la planilla de contrato: los estilos .mp- con los tokens --sg-* y, en 720 px o menos, cada día una tarjeta', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/).replace(/\/\*[\s\S]*?\*\//g, '');
+      const definidas = new Set([...estilo.matchAll(/(--sg-[\w-]+):/g)].map(m => m[1]));
+      const media = (condicion) => {
+        const inicio = estilo.indexOf(`@media ${condicion} {`);
+        assert.ok(inicio >= 0, condicion);
+        let nivel = 0;
+        for (let i = estilo.indexOf('{', inicio); i < estilo.length; i += 1) {
+          if (estilo[i] === '{') nivel += 1;
+          if (estilo[i] === '}' && (nivel -= 1) === 0) return estilo.slice(inicio, i + 1);
+        }
+        return '';
+      };
+      for (const clase of ['.me-modal-planilla', '.mp-arriba', '.mp-mes', '.mp-suma', '.mp-suma-cifra', '.mp-suma-texto', '.mp-como',
+        '.mp-dias', '.mp-columnas', '.mp-dia', '.mp-fecha', '.mp-marcas', '.mp-campo', '.mp-rotulo', '.mp-horas', '.mp-acciones',
+        '.mp-nota-campo', '.mp-nota-vista', '.mp-lugar', '.mp-guardada', '.mp-aviso', '.mp-error', '.mp-semana', '.mp-semana-total',
+        '.mp-sumar', '.mp-pendientes', '.mp-hoy', '.me-dia-horas', '.me-fila-aviso']) {
+        assert.ok(estilo.includes(`${clase} {`) || estilo.includes(`${clase},`) || estilo.includes(`${clase}.`) || estilo.includes(`${clase} `), clase);
+      }
+      // Cada var() de lo de la planilla es un token --sg-* definido en el <style> (o una de las dos letras de main.css)
+      let reglas = 0;
+      for (const [, selector, cuerpo] of estilo.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+        if (!/\.mp-|me-modal-planilla|#modal-planilla|me-dia-horas|me-fila-aviso/.test(selector)) continue;
+        reglas += 1;
+        for (const [, variable] of cuerpo.matchAll(/var\((--[\w-]+)\)/g)) {
+          assert.ok(definidas.has(variable) || ['--f-titulo', '--f-texto'].includes(variable), `${selector.trim()}: ${variable}`);
+        }
+      }
+      assert.ok(reglas > 30, `${reglas} reglas`);
+      // «Hoy» es texto (un <span class="mp-hoy"> que dibuja mi-espacio.js), no el ::after de la maqueta; sin la barra de la maqueta
+      assert.doesNotMatch(estilo, /content:\s*'Hoy'|\.mq-/);
+      // El cuerpo deja lugar arriba para las columnas pegadas (un día con el foco no queda debajo de ellas) y el aviso de arriba del
+      // cuerpo no queda pegado a la cabeza fija
+      assert.ok(estilo.includes('.me-modal-planilla .modal-body { padding: 0 24px 8px; scroll-padding-top: 44px; }'));
+      assert.ok(estilo.includes('.me-modal-planilla .me-modal-error { margin-top: 14px; }'));
+      // En 720 px o menos
+      const telefono = media('(max-width: 720px)');
+      for (const regla of ['#modal-planilla { padding: 8px; }', '.mp-columnas { display: none; }', '.mp-rotulo { display: block; }',
+        '.mp-dia input[type="time"] { height: 44px; }', '.mp-arriba { grid-template-columns: minmax(0, 1fr);',
+        "grid-template-areas: 'fecha horas' 'entrada salida' 'acciones acciones';", '.mp-sumar .form-select { min-width: 0; width: 100%; }',
+        // Sin las columnas, sin su lugar arriba; el sábado o domingo, con el borde de la tarjeta y sin el de la computadora (no dos)
+        '.me-modal-planilla .modal-body { padding: 0 12px 8px; scroll-padding-top: 0; }',
+        '.mp-dia.finde { box-shadow: none; border-color: #C9D3DF; }']) {
+        assert.ok(telefono.includes(regla), regla);
+      }
+      assert.match(telefono, /\.modal\.me-modal\.me-modal-planilla \{ height: calc\(100vh - 16px\); height: calc\(100dvh - 16px\);/);
+      // El velo de los otros modales no cambia
+      assert.doesNotMatch(telefono, /(?:^|[\s}])\.modal-overlay\s*\{/);
+      // Después de las reglas de la planilla (las pisa), entre el corte de 760 px y el del teléfono
+      assert.ok(estilo.indexOf('@media (max-width: 720px) {') > estilo.indexOf('.mp-dia.licencia {'));
+      assert.ok(estilo.indexOf('@media (max-width: 760px) {') < estilo.indexOf('@media (max-width: 720px) {'));
+      assert.ok(estilo.indexOf('@media (max-width: 720px) {') < estilo.indexOf('@media (max-width: 640px) {'));
+      // Las flechas deshabilitadas (el mes en curso, el primero) se ven apagadas
+      assert.ok(estilo.includes('.me-flecha:disabled { opacity: 0.4; cursor: default; }'));
     });
   });
 

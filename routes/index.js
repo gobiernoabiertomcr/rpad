@@ -64,7 +64,7 @@ import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/fir
 import {
   verResumen, listarLicenciasMias, listarHorasExtras, verAnio, verSaldoInicial, calcularLicencia, cargarLicenciaMia,
   corregirLicenciaMia, borrarLicenciaMia, verNotaDeLicencia, bajarWordDeLicencia, cargarHorasExtras, corregirHorasExtras,
-  borrarHorasExtras, guardarAnio, guardarSaldoInicial, listarAusentes, verFirmante
+  borrarHorasExtras, verPlanilla, guardarSalidas, guardarAnio, guardarSaldoInicial, listarAusentes, verFirmante
 } from '../controllers/miEspacioController.js';
 import {
   listarEventos, verAvisoDelEvento, listarPersonasParaCompartir, crearEvento, cambiarEvento, borrarEvento, cambiarMiRecordatorio
@@ -207,6 +207,9 @@ router.get('/mi-espacio/horas-extras', authMiddleware, listarHorasExtras);
 router.post('/mi-espacio/horas-extras', authMiddleware, cargarHorasExtras);
 router.put('/mi-espacio/horas-extras/:id', authMiddleware, corregirHorasExtras);
 router.delete('/mi-espacio/horas-extras/:id', authMiddleware, borrarHorasExtras);
+// La planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, sección 8): un mes y el guardado de sus días
+router.get('/mi-espacio/salidas', authMiddleware, verPlanilla);
+router.put('/mi-espacio/salidas', authMiddleware, guardarSalidas);
 router.get('/mi-espacio/anio/:anio', authMiddleware, verAnio);
 router.put('/mi-espacio/anio/:anio', authMiddleware, guardarAnio);
 router.get('/mi-espacio/saldo-inicial', authMiddleware, verSaldoInicial);

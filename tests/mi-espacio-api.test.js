@@ -87,8 +87,8 @@ after(async () => {
 beforeEach(async () => {
   await asegurarBaseDePrueba();
   for (const tabla of [
-    'mi_espacio_licencias', 'mi_espacio_horas_extras', 'mi_espacio_saldos', 'mi_espacio_anios', 'mi_espacio_arranque',
-    'mi_espacio_avisos', 'usuarios_licencias', 'feriados'
+    'mi_espacio_licencias', 'mi_espacio_horas_extras', 'mi_espacio_salidas', 'mi_espacio_saldos', 'mi_espacio_anios',
+    'mi_espacio_arranque', 'mi_espacio_avisos', 'usuarios_licencias', 'feriados'
   ]) {
     await query(`DELETE FROM ${tabla}`);
   }
@@ -116,6 +116,11 @@ const conLicencia = async (clave, { tipo, desde, hasta = desde, horas = null, no
 const conHorasExtras = async (clave, { fecha, desde, hasta, nota = null, activo = 1 }) => (await query(
   'INSERT INTO mi_espacio_horas_extras (usuario_id, fecha, desde, hasta, nota, activo) VALUES (?, ?, ?, ?, ?, ?)',
   [usuarios[clave].id, fecha, desde, hasta, nota, activo]
+)).insertId;
+// Una salida de la planilla de contrato (spec 2026-10-27-mi-espacio-horas, 6): la entrada puede faltar (NULL)
+const conSalida = async (clave, { fecha, entrada = null, salida, nota = null, activo = 1 }) => (await query(
+  'INSERT INTO mi_espacio_salidas (usuario_id, fecha, entrada, salida, nota, activo) VALUES (?, ?, ?, ?, ?, ?)',
+  [usuarios[clave].id, fecha, entrada, salida, nota, activo]
 )).insertId;
 const conFeriado = async ({ fecha, nombre, se_repite = 0 }) => (await query(
   "INSERT INTO feriados (fecha, nombre, tipo, se_repite) VALUES (?, ?, 'nacional', ?)", [fecha, nombre, se_repite]
@@ -184,6 +189,28 @@ describe('lo que llega de la base (Review Focus 2)', () => {
     for (const res of [lista, tabla, saldo, resumen]) sinFechasConHora(res.body.data);
     for (const licencia of lista.body.data.licencias) assert.match(licencia.desde, FECHA);
   });
+});
+
+describe('lo que llega de la base: las salidas de la planilla (spec 2026-10-27-mi-espacio-horas, 6 y 7)', () => {
+  it('una salida sin entrada llega como { entrada: null, salida: HH:MM }, la fecha como AAAA-MM-DD, y la dada de baja no llega',
+    async () => {
+      // Cargadas fuera de orden: salen por fecha, no por id
+      const conEntrada = await conSalida('editor', { fecha: q(5), entrada: '09:21:00', salida: '12:10:00', nota: 'Inventario' });
+      const id = await conSalida('editor', { fecha: q(1), salida: '16:46:00' });
+      await conSalida('editor', { fecha: q(2), entrada: '08:00:00', salida: '17:00:00', activo: 0 });
+
+      const estado = (await datos.estadosDe([usuarios.editor.id])).get(usuarios.editor.id);
+      // Los ids, números; la nota que falta, null
+      assert.deepEqual(estado.salidas, [
+        { id, fecha: q(1), entrada: null, salida: '16:46', nota: null },
+        { id: conEntrada, fecha: q(5), entrada: '09:21', salida: '12:10', nota: 'Inventario' }
+      ]);
+      for (const fila of estado.salidas) {
+        assert.strictEqual(typeof fila.id, 'number');
+        assert.match(fila.fecha, FECHA);
+      }
+      sinFechasConHora(estado.salidas, 'salidas');
+    });
 });
 
 describe('lo ajeno no se ve', () => {
@@ -2014,6 +2041,10 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
     await conLicencia('adminB', { tipo: 'familiar', desde: q(8) });
     const extra = await conHorasExtras('adminA', { fecha: q(2), desde: '19:00:00', hasta: '22:30:00' });
     await conHorasExtras('adminA', { fecha: q(3), desde: '19:00:00', hasta: '22:00:00', activo: 0 });
+    // Las salidas de la planilla se leen para cualquier modalidad: las reglas eligen cuáles cuentan
+    const salida = await conSalida('adminA', { fecha: q(0), entrada: '08:02:00', salida: '16:20:00', nota: 'Cierre' });
+    await conSalida('adminA', { fecha: q(1), salida: '17:00:00', activo: 0 });
+    await conSalida('adminB', { fecha: q(0), salida: '16:00:00' });
 
     const estado = await datos.estadoDe(usuarios.adminA.id);
     const licencia = (id, tipo, desde, hasta, horas, nota = null) => ({
@@ -2028,12 +2059,13 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
         { concepto: 'franquicias', anio: ANIO, cantidad: 8 }
       ],
       licencias: [licencia(franquicia, 'franquicia', q(1), q(1), 7.5, 'Trámite'), licencia(medica, 'medica', q(2), q(3), null)],
-      horasExtras: [{ id: extra, fecha: q(2), desde: '19:00', hasta: '22:30', nota: null }]
+      horasExtras: [{ id: extra, fecha: q(2), desde: '19:00', hasta: '22:30', nota: null }],
+      salidas: [{ id: salida, fecha: q(0), entrada: '08:02', salida: '16:20', nota: 'Cierre' }]
     });
   });
 
   it('estadoDe: sin nada cargado ni vínculo, un estado vacío; de un id que no existe, también', async () => {
-    const vacio = { modalidad: null, arranque: null, anios: [], saldos: [], licencias: [], horasExtras: [] };
+    const vacio = { modalidad: null, arranque: null, anios: [], saldos: [], licencias: [], horasExtras: [], salidas: [] };
     assert.deepEqual(await datos.estadoDe(usuarios.lector.id), vacio);
     assert.deepEqual(await datos.estadoDe(999999), vacio);
   });
@@ -2043,6 +2075,8 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
     await conLicencia('adminA', { tipo: 'medica', desde: q(0) });
     await conLicencia('adminB', { tipo: 'familiar', desde: q(1) });
     await conHorasExtras('editor', { fecha: q(2), desde: '08:00:00', hasta: '10:00:00' });
+    await conSalida('editor', { fecha: q(3), salida: '16:46:00' });
+    await conSalida('colab', { fecha: q(3), salida: '17:30:00' });
 
     const estados = await datos.estadosDe([usuarios.adminA.id, usuarios.adminB.id, usuarios.editor.id, 999999]);
     assert.deepEqual([...estados.keys()].sort((a, b) => a - b),
@@ -2052,6 +2086,10 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
       [hoy, ['familiar']]);
     assert.equal(estados.get(usuarios.editor.id).modalidad, 'contrato');
     assert.deepEqual(estados.get(usuarios.editor.id).horasExtras.map(fila => [fila.desde, fila.hasta]), [['08:00', '10:00']]);
+    // Las salidas de cada persona, solo las suyas (las del colaborador, que no se pidió, no están en ninguna)
+    assert.deepEqual(estados.get(usuarios.editor.id).salidas.map(fila => [fila.fecha, fila.salida]), [[q(3), '16:46']]);
+    assert.deepEqual(estados.get(usuarios.adminA.id).salidas, []);
+    assert.deepEqual(estados.get(usuarios.adminB.id).salidas, []);
     assert.equal((await datos.estadosDe([])).size, 0);
   });
 
@@ -2084,6 +2122,19 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
     const sinLaTabla = await datos.feriadosPara([], hoy, []);
     assert.ok(sinLaTabla.has(`${ANIO}-12-25`) && !sinLaTabla.has(enElAnio(ANIO)));
   });
+
+  it('feriadosPara: las salidas de la planilla de contrato también estiran el rango (spec 2026-10-27-mi-espacio-horas, 7)',
+    async () => {
+      await conFeriado({ fecha: '2001-03-10', nombre: 'Feriado de prueba', se_repite: 1 });
+      const enElAnio = (anio) => `${anio}-03-10`;
+      await conSalida('editor', { fecha: `${ANIO - 6}-05-04`, salida: '16:46:00' });
+      await conSalida('editor', { fecha: `${ANIO + 5}-05-04`, entrada: '09:00:00', salida: '13:00:00' });
+      // Una dada de baja no cuenta: no está en el estado
+      await conSalida('editor', { fecha: `${ANIO + 8}-05-04`, salida: '16:00:00', activo: 0 });
+      const feriados = await datos.feriadosPara([await datos.estadoDe(usuarios.editor.id)], hoy);
+      assert.ok(feriados.has(enElAnio(ANIO - 6)) && feriados.has(enElAnio(ANIO + 5)));
+      assert.ok(!feriados.has(enElAnio(ANIO - 7)) && !feriados.has(enElAnio(ANIO + 6)));
+    });
 
   it('ausenciasVisibles: las filas de día entero que se muestran, de administración activa, sin quien mira y sin el tipo',
     async () => {
