@@ -88,7 +88,7 @@ const VERSION_PROYECTOS = '20261206';
 // cada licencia de la lista, spec 2026-10-27-mi-espacio-licencia-word, 6; y la planilla de horas extras de contrato, spec
 // 2026-10-27-mi-espacio-horas, 9; y el efecto en las notas sin anticipo o sin días hábiles, como Configuración, spec
 // 2026-10-27-feriados-en-notas, 6). Su versión es propia
-const VERSION_MI_ESPACIO = '20261214';
+const VERSION_MI_ESPACIO = '20261215';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');

@@ -91,6 +91,10 @@
         .me-segmento { display: inline-flex; border: 1px solid var(--sg-borde-control); border-radius: 999px; padding: 3px; background: #fff; }
         .me-segmento button { white-space: nowrap; height: 30px; padding: 0 14px; border-radius: 999px; border: 0; background: none; font: inherit; font-size: 0.86rem; font-weight: 600; color: var(--sg-suave); cursor: pointer; font-variant-numeric: tabular-nums; }
         .me-segmento button[aria-pressed="true"] { background: var(--sg-tinta); color: #fff; }
+        /* Las licencias de otros años que la lista no tiene (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3), debajo de la cabeza,
+           con «Ver 2027» como los links de la página */
+        .me-otros-anios { margin: 0 0 12px; color: var(--sg-texto); font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .me-otros-anios button { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 
         /* Listas (filas): la fecha, el cuerpo y «Editar». En gris, lo que no cuenta */
         .me-lista { list-style: none; margin: 0; padding: 0; }
@@ -129,6 +133,9 @@
            sol marca solo lo que vence */
         .me-aviso-ambar { background: var(--sg-ambar-fondo); border-color: #F0D78C; color: var(--sg-ambar); }
         .me-faltantes { margin: 0; padding-left: 18px; }
+        /* Lo que hay que revisar va con los faltantes, con su link a Licencias de su año (spec 2026-10-28-mi-espacio-licencia-anulada,
+           2.2), como los demás links de la página */
+        .me-faltantes a { color: var(--sg-tinta); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 
         /* La banda: el celeste de las páginas públicas, con las esquinas de arriba redondeadas y, abajo, la ola en el mismo celeste, que
            cae sobre el fondo de la página. En la compu, la frase con la regla debajo y, a la derecha, «Vence pronto»; sin nada que venza,
@@ -156,6 +163,10 @@
         .me-frase-bajada { margin: 12px 0 0; font-size: 1.05rem; line-height: 1.5; color: var(--sg-texto); max-width: 52ch; overflow-wrap: anywhere; }
         .me-frase-bajada b { font-weight: 700; }
         .me-frase-bajada .vence { color: var(--sg-ambar); }
+        /* La oración de lo cargado lleva a Licencias de su año (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3): con el color de la
+           frase, subrayada */
+        .me-frase-link { color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; }
+        .me-frase-link:hover { text-decoration-thickness: 2px; }
 
         /* La regla: la barra (decorativa) partida en un tramo por capa, cada uno con un casillero por día (--n, que escribe
            mi-espacio.js: una línea blanca entre día y día) y su número, si entra; debajo, la lista de cada licencia. Los colores: la
@@ -399,6 +410,10 @@
         .me-paso-dos-fechas { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
         .me-paso-dos-cantidad { color: var(--sg-suave); font-size: 0.88rem; }
         .me-paso-dos-detalle { margin: 6px 0 0; color: var(--sg-suave); font-size: 0.86rem; line-height: 1.45; overflow-wrap: anywhere; }
+        /* En qué lista de Licencias quedó, si no es la del año en curso (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3); debajo de la
+           licencia guardada, alineada con ella (a la derecha de la tilde: sus 30 px y los 14 del espacio) */
+        .me-paso-dos-lista { margin: 8px 0 0; color: var(--sg-texto); font-size: 0.9rem; font-weight: 600; overflow-wrap: anywhere; }
+        .me-paso-dos-hecho + .me-paso-dos-lista { margin-left: 44px; }
         .me-paso-dos-titulo { margin: 18px 0 2px; font-family: var(--f-titulo); font-weight: 650; font-size: 1.02rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
         .me-paso-dos-ayuda { margin: 0 0 10px; color: var(--sg-suave); font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
         .me-mesa { padding: 16px; border-radius: 14px; background: var(--sg-gris-fondo); }
@@ -1132,6 +1147,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/mi-espacio.js?v=20261214"></script>
+    <script src="js/mi-espacio.js?v=20261215"></script>
 </body>
 </html>
