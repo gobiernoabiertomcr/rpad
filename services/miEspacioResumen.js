@@ -11,7 +11,8 @@
  * Puras (sin pool ni Date local: las fechas son texto 'AAAA-MM-DD' y los meses, 'AAAA-MM'). Ninguna función tira: una
  * entrada rara da null, '', '—', una lista vacía o un objeto vacío. Todo número va como número y todo texto, como texto
  * plano: escaparlo le toca a quien lo dibuja. Nada dice «perdiste»: lo que no se usó a tiempo es «no utilizado
- * previamente» (spec, antiobjetivos).
+ * previamente» (spec, antiobjetivos), salvo «Perdés …» de las vacaciones al final de la bajada (decisión del usuario,
+ * 27/10/2026: spec 2026-10-27-mi-espacio-dias-de-vacaciones, 2.6).
  */
 import { diaDeLaSemana, diasHabilesDe, feriadosDelAnio, proximoDiaHabilCon, esDiaHabilCon } from './feriadosReglas.js';
 import { diasEntre, esFechaIso, formatoCorto, sumarDias } from './notasDigitalesCalendario.js';
@@ -20,7 +21,7 @@ import {
   MENSAJES_MI_ESPACIO, MODALIDADES, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, NOMBRES_TIPO, JORNADA,
   numeroTexto, mesEnFrase, nombreDelMes, diaYMes, enLista, modalidadDe, mesMas, topeDe, diasQueDescuentan, esDiaEntero,
   fueraDeLaModalidad, tieneSaldoInicial, horasDe, textoSinNoUtilizadas, rangoDeFechas, horaSalidaValida, tipoDeDia,
-  horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla
+  horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos
 } from './miEspacioReglas.js';
 
 // Los dos formatos que ya estaban en las reglas: el panel los usa sin copiarlos
@@ -229,9 +230,11 @@ const tanqueDeVacaciones = (panel) => {
  * cargado a futuro («5 ya están cargados para noviembre.») y lo que todavía no se habilita («Otros 10 se habilitan el
  * 1/1/2027.»; sin «Otros» si la frase no tiene días). Los días son los de cada capa y los meses y las fechas, los de su nota,
  * que dice lo mismo con mayúscula («Cargados para noviembre», «Se habilitan el 1/1/2027»): no se vuelven a calcular. La capa
- * `vence` es la de la licencia que vence el 31/12 de este año. En singular solo con 1. Sin ninguna, [].
+ * `vence` es la de la licencia que vence el 31/12 de este año. En singular solo con 1. Al final, si algo se pierde, el texto
+ * de `textoDePerdidos` («Perdés 2 de la 2024 (vencen el 31/12/2026).», `vence`: spec 2026-10-27-mi-espacio-dias-de-vacaciones,
+ * 2.6), que no es una capa: esos días ya no se pueden usar. Sin ninguna, [].
  */
-const bajadaDe = ({ numero, capas }, hoy) => {
+const bajadaDe = ({ numero, capas }, hoy, perdidos) => {
   const capa = (clase) => capas.find((una) => una.clase === clase);
   const bajada = [];
   const vence = capa('vence');
@@ -250,6 +253,7 @@ const bajadaDe = ({ numero, capas }, hoy) => {
     if (numero > 0) otros = porHabilitar.n === 1 ? 'Otro ' : 'Otros ';
     bajada.push({ texto: `${otros}${numeroTexto(porHabilitar.n)} ${minuscula(porHabilitar.nota)}.`, vence: false });
   }
+  if (perdidos !== '') bajada.push({ texto: perdidos, vence: true });
   return bajada;
 };
 
@@ -257,9 +261,10 @@ const bajadaDe = ({ numero, capas }, hoy) => {
  * La frase de la banda: `{ encabezado, antes, cifra, despues, bajada }`. `encabezado` es el día de hoy sin el año y la
  * modalidad en minúscula («Lunes 26 de octubre, planta permanente»); `antes`, `cifra` y `despues`, la frase partida alrededor
  * de los días de vacaciones disponibles (los del tanque): «Te quedan», '33' y «días de vacaciones»; con 1, «Te queda», '1' y
- * «día de vacaciones»; con 0, «No te quedan días de vacaciones», '' y '' (la página no dibuja el número).
+ * «día de vacaciones»; con 0, «No te quedan días de vacaciones», '' y '' (la página no dibuja el número). La bajada suma al
+ * final lo que se pierde de las ordinarias del reparto (`textoDePerdidos`).
  */
-const titularDe = ({ hoy }, modalidad, vacaciones) => {
+const titularDe = ({ hoy, cuenta }, modalidad, vacaciones) => {
   const { numero } = vacaciones;
   let frase = ['No te quedan días de vacaciones', '', ''];
   if (numero === 1) frase = ['Te queda', '1', 'día de vacaciones'];
@@ -271,7 +276,7 @@ const titularDe = ({ hoy }, modalidad, vacaciones) => {
     antes,
     cifra,
     despues,
-    bajada: bajadaDe(vacaciones, hoy)
+    bajada: bajadaDe(vacaciones, hoy, textoDePerdidos(ordinariasDel(cuenta)))
   };
 };
 

@@ -559,6 +559,36 @@ describe('la banda «Titular»', () => {
     assert.equal(nada.antes, 'No te quedan días de vacaciones');
   });
 
+  it('«Perdés …» al final de la bajada, en ámbar, y fuera de lo disponible (spec 2026-10-27-mi-espacio-dias-de-vacaciones)', () => {
+    // La persona de la spec: 15 de la 2024, 20 de la 2025 y 10 de la 2026, con 20 días en 2026. Las vacaciones del 21/12 al
+    // 10/01 usan 13 de la 2024 y los 2 que quedan ya no se pueden empezar a usar antes del 31/12
+    const conCarga = (desde, hasta) => ({ ...PLANTA.estado, saldos: saldosDeVacaciones({ 2024: 15, 2025: 20, 2026: 10 }),
+      licencias: [...sinVacaciones, licencia(100, 'vacaciones', desde, hasta)] });
+    const cruza = conCarga('2026-12-21', '2027-01-10');
+    const resumen = resumenDel(PLANTA, { estado: cruza });
+    assert.deepEqual([resumen.titular.antes, resumen.titular.cifra, resumen.titular.despues],
+      ['Te quedan', '30', 'días de vacaciones']);
+    assert.deepEqual(resumen.titular.bajada, [
+      { texto: '13 ya están cargados para diciembre y enero de 2027.', vence: false },
+      { texto: 'Otros 10 se habilitan el 1/1/2027.', vence: false },
+      { texto: 'Perdés 2 de la 2024 (vencen el 31/12/2026).', vence: true }
+    ]);
+    // No es una capa de la regla: esos días no se pueden usar
+    assert.equal(resumen.tanques.vacaciones.capas.some((capa) => capa.clase === 'vence'), false);
+    assert.equal(resumen.tipos.find((opcion) => opcion.tipo === 'vacaciones').queda_texto, '30 disponibles');
+    // Desde el 1/10 «Vence pronto» avisa la licencia que vence en el año, pero no los días que se pierden
+    const diciembre = resumenDel(PLANTA, { estado: cruza, hoy: '2026-12-01' });
+    assert.equal(diciembre.vence_pronto.some((cosa) => cosa.titulo.includes('licencia 2024')), false);
+
+    // Con las del 14/12 al 18/12, el 21/12 queda libre: los 10 que quedan vencen, y no se pierde nada
+    const semana = resumenDel(PLANTA, { estado: conCarga('2026-12-14', '2026-12-18') });
+    assert.deepEqual(semana.titular.bajada[0], { texto: '10 vencen el jueves 31/12.', vence: true });
+    assert.equal(semana.titular.bajada.some((oracion) => oracion.texto.includes('Perdés')), false);
+    // Y el 01/12 «Vence pronto» sí los avisa
+    const semanaDiciembre = resumenDel(PLANTA, { estado: conCarga('2026-12-14', '2026-12-18'), hoy: '2026-12-01' });
+    assert.equal(semanaDiciembre.vence_pronto.some((cosa) => cosa.titulo === '10 días de la licencia 2024'), true);
+  });
+
   it('sin modalidad, sin arranque o sin un hoy válido, no hay banda', () => {
     const sinModalidad = { ...PLANTA.estado, modalidad: null };
     assert.equal(resumenDel(PLANTA, { estado: sinModalidad, persona: { ...PLANTA.persona, vinculo: null } }).titular, null);
