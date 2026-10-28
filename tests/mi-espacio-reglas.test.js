@@ -24,7 +24,8 @@ import {
   vinculoDe, textoDelVinculo, limiteParaCambiarTipo, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja, vinculosDeLaLista,
   pasoPrevistoDe, ausenciasUnidas, textoNoEsta, textoDeLaVuelta, ausentesDelRango, ausentesDeHoyYManana, avisosDeVencimiento,
   SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL, TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, horaSalidaValida, tipoDeDia,
-  horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida
+  horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
+  avisosDeSalidas
 } from '../services/miEspacioReglas.js';
 import { feriadosDelRango } from '../services/feriadosReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
@@ -741,6 +742,23 @@ const EJEMPLOS_DEL_USUARIO = [
   extra(105, '2026-12-03', '18:00', '22:00'), extra(106, '2026-12-10', '18:00', '20:30')
 ];
 
+// Una salida de la planilla de contrato (spec 2026-10-27-mi-espacio-horas; las de los casos tienen ids del 1 al 4: las de
+// los tests, desde el 100). En un día hábil cuenta la salida desde las 15:00
+const salida = (id, fecha, hora, entrada = null) => ({ id, fecha, entrada, salida: hora, nota: null });
+
+// Un estado de contrato solo con salidas y sus usos, con el arranque de los casos: contrato lee solo las salidas
+const conSalidas = (salidas, licencias = [], cambios = {}) => ({
+  modalidad: 'contrato', arranque: HOY, anios: [], saldos: [], licencias, horasExtras: [], salidas, ...cambios
+});
+
+// Las salidas con los totales de los ejemplos del usuario: 10,5 en octubre (3,5 + 4 + 3), 7,5 en noviembre (4 + 3,5) y
+// 6,5 en diciembre de 2026 (4 + 2,5)
+const SALIDAS_DEL_USUARIO = [
+  salida(100, '2026-10-06', '18:30'), salida(101, '2026-10-14', '19:00'), salida(102, '2026-10-22', '18:00'),
+  salida(103, '2026-11-05', '19:00'), salida(104, '2026-11-12', '18:30'),
+  salida(105, '2026-12-03', '19:00'), salida(106, '2026-12-10', '17:30')
+];
+
 const delMes = (meses, mesTrabajado) => meses.find((mes) => mes.mes_trabajado === mesTrabajado);
 const A_HOY = { hoy: HOY, feriados: SIN_FERIADOS };
 
@@ -1349,13 +1367,20 @@ describe('los francos compensatorios (planta)', () => {
     // Sin un hoy válido no se sabe qué mes terminó
     assert.deepEqual(francosDe(PLANTA.estado, { feriados: SIN_FERIADOS }), []);
   });
+
+  it('no miran las salidas de la planilla de contrato: planta sigue con sus horas extras', () => {
+    // Con salidas y sin horas extras, ningún franco
+    assert.deepEqual(francosDe({ ...conHoras('planta', []), salidas: SALIDAS_DEL_USUARIO }, A_HOY), []);
+    // Con sus horas extras, las salidas no suman nada
+    assert.deepEqual(francosDe({ ...PLANTA.estado, salidas: SALIDAS_DEL_USUARIO }, A_HOY), francosDe(PLANTA.estado, A_HOY));
+  });
 });
 
 describe('las horas a favor (contrato)', () => {
   it('los ejemplos del usuario', () => {
     const usos = [uso(100, 'horas_a_favor', '2026-11-03', 7), uso(101, 'horas_a_favor', '2026-11-10', 2),
       uso(102, 'horas_a_favor', '2026-11-17', 1.5)];
-    const horas = horasAFavorDe(conHoras('contrato', EJEMPLOS_DEL_USUARIO, usos), A_HOY);
+    const horas = horasAFavorDe(conSalidas(SALIDAS_DEL_USUARIO, usos), A_HOY);
     assert.deepEqual(horas.map(({ mes_trabajado, horas: extras, mes_de_uso, a_favor, usadas, disponibles }) =>
       ({ mes_trabajado, horas: extras, mes_de_uso, a_favor, usadas, disponibles })), [
       { mes_trabajado: '2026-10', horas: 10.5, mes_de_uso: '2026-11', a_favor: 10.5, usadas: 10.5, disponibles: 0 },
@@ -1399,7 +1424,7 @@ describe('las horas a favor (contrato)', () => {
 
   it('antes del arranque: el mes de uso terminó antes, y lo que quedó ya está en el saldo inicial', () => {
     const estado = conLicencias({
-      ...CONTRATO.estado, horasExtras: [...CONTRATO.estado.horasExtras, extra(100, '2026-08-20', '18:00', '21:00')]
+      ...CONTRATO.estado, salidas: [...CONTRATO.estado.salidas, salida(100, '2026-08-20', '18:00')]
     }, uso(100, 'horas_a_favor', '2026-09-15', 1.5));
     const horas = horasAFavorDe(estado, A_HOY);
     assert.deepEqual(delMes(horas, '2026-08'), {
@@ -1416,15 +1441,139 @@ describe('las horas a favor (contrato)', () => {
     assert.deepEqual(horasAFavorDe(estado, A_HOY), horasAFavorDe(CONTRATO.estado, A_HOY));
     assert.deepEqual(horasAFavorDe(CONTRATO.estado, { feriados: SIN_FERIADOS }), []);
   });
+
+  it('salen de las salidas (spec 2026-10-27-mi-espacio-horas): octubre, con un feriado, da 5 horas a favor en noviembre', () => {
+    const feriados = new Set(['2026-10-12', '2026-10-16']);
+    const salidas = [
+      salida(100, '2026-10-05', '16:20', '08:02'), // hábil: 1,5 (la entrada no cuenta)
+      salida(101, '2026-10-07', '15:46'), // hábil: 1
+      salida(102, '2026-10-12', '12:10', '09:21') // feriado: de la entrada a la salida, 169 minutos, 2,5
+    ];
+    const octubre = (estado, opciones = { hoy: HOY, feriados }) => delMes(horasAFavorDe(estado, opciones), '2026-10');
+    assert.deepEqual(octubre(conSalidas(salidas)), {
+      mes_trabajado: '2026-10', horas: 5, mes_de_uso: '2026-11', a_favor: 5, usos: [], usadas: 0, disponibles: 5,
+      no_utilizadas: 0, antes_del_arranque: false, ultimo_dia_habil: '2026-11-30', termino: false
+    });
+    // Un feriado sin entrada no suma (no se puede contar: lo dice su aviso)
+    assert.equal(octubre(conSalidas([...salidas, salida(103, '2026-10-16', '19:00')])).a_favor, 5);
+    // Una salida en un día de vacaciones sí suma (sigue sumando hasta que se la quita: lo dice su aviso)
+    const enVacaciones = conSalidas([...salidas, salida(104, '2026-10-08', '19:00')],
+      [vacaciones(200, '2026-10-08', '2026-10-08')]);
+    assert.equal(octubre(enVacaciones).a_favor, 9);
+    // Sin los feriados (dados de baja), el 12/10 es hábil y cuenta la salida desde las 15:00: 12:10 da 0
+    assert.equal(octubre(conSalidas(salidas), A_HOY).a_favor, 2.5);
+  });
+
+  it('los ejemplos del usuario en salidas dan lo mismo que en horas extras; las horas extras de planta no cuentan', () => {
+    // Los mismos totales por mes, también en el caso CONTRATO (que conserva sus horas extras de antes)
+    assert.deepEqual([...horasPorMesDeSalidas(SALIDAS_DEL_USUARIO, SIN_FERIADOS)], [...horasPorMes(EJEMPLOS_DEL_USUARIO)]);
+    assert.deepEqual([...horasPorMesDeSalidas(CONTRATO.estado.salidas, SIN_FERIADOS)],
+      [...horasPorMes(CONTRATO.estado.horasExtras)]);
+    const usos = [uso(100, 'horas_a_favor', '2026-11-03', 7), uso(101, 'horas_a_favor', '2026-11-10', 2)];
+    assert.deepEqual(horasAFavorDe(conSalidas(SALIDAS_DEL_USUARIO, usos), A_HOY).map(({ mes_trabajado, a_favor, usadas }) =>
+      [mes_trabajado, a_favor, usadas]), [['2026-10', 10.5, 9], ['2026-11', 7.5, 0], ['2026-12', 6.5, 0]]);
+    // En contrato, unas horas extras de la tabla de planta (de cuando era de planta) no son horas a favor
+    assert.deepEqual(horasAFavorDe(conHoras('contrato', EJEMPLOS_DEL_USUARIO), A_HOY), []);
+    // Un estado sin la clave cuenta como sin salidas
+    const { salidas: _sinSalidas, ...sinLaClave } = conSalidas(SALIDAS_DEL_USUARIO);
+    assert.deepEqual(horasAFavorDe(sinLaClave, A_HOY), []);
+  });
+
+  it('un mes cuyas salidas suman 0 no deja fila; con un uso en su mes de uso, sí, con 0 a favor (Ruling 5)', () => {
+    // Septiembre: salidas antes de las 15:16, que dan 0
+    const septiembre = conSalidas([salida(100, '2026-09-08', '15:10'), salida(101, '2026-09-09', '15:15')]);
+    assert.deepEqual(horasAFavorDe(septiembre, A_HOY), []);
+    const conUso = conSalidas(septiembre.salidas, [uso(200, 'horas_a_favor', '2026-10-27', 1)]);
+    assert.deepEqual(horasAFavorDe(conUso, A_HOY), [{
+      mes_trabajado: '2026-09', horas: 0, mes_de_uso: '2026-10', a_favor: 0, usos: [{ id: 200, fecha: '2026-10-27', horas: 1 }],
+      usadas: 1, disponibles: 0, no_utilizadas: 0, antes_del_arranque: false, ultimo_dia_habil: '2026-10-30', termino: false
+    }]);
+  });
+});
+
+// Las salidas guardadas que dejaron de cerrar porque cambió algo después (spec 2026-10-27-mi-espacio-horas, sección 7):
+// avisos que nunca frenan una carga. El lunes 12/10/2026 pasó a ser feriado; el viernes 09/10 tiene unas vacaciones
+describe('los avisos de las salidas', () => {
+  const FERIADOS = new Set(['2026-10-12']);
+  const SALIDAS = [
+    salida(100, '2026-10-12', '19:00'), // pasó a ser feriado y no tiene entrada: no suma
+    salida(101, '2026-10-09', '19:00'), // con vacaciones cargadas después: sigue sumando
+    salida(102, '2026-10-24', '13:00'), // sábado sin entrada (cargada por fuera de la planilla)
+    salida(103, '2026-10-25', '13:00', '09:00'), // domingo con entrada: bien
+    salida(104, '2026-10-21', '19:00') // hábil: bien
+  ];
+  const ESTADO = conSalidas(SALIDAS, [vacaciones(200, '2026-10-09', '2026-10-09')]);
+  const LICENCIA = {
+    clave: 'salida:2026-10-09', fecha: '2026-10-09',
+    texto: 'Revisá tus horas extras del viernes 09/10: ese día tenés una licencia de día entero.',
+    aviso: 'Ese día tenés una licencia de día entero: revisá esta salida.'
+  };
+  const FERIADO = {
+    clave: 'salida:2026-10-12', fecha: '2026-10-12',
+    texto: 'Revisá tus horas extras del lunes 12/10: ahora es feriado y falta la entrada.',
+    aviso: 'Ahora es feriado: falta la entrada.'
+  };
+  const SABADO = {
+    clave: 'salida:2026-10-24', fecha: '2026-10-24',
+    texto: 'Revisá tus horas extras del sábado 24/10: es sábado y falta la entrada.',
+    aviso: 'Es sábado: falta la entrada.'
+  };
+
+  it('un día que pasó a ser feriado sin entrada, un sábado sin entrada y un día con licencia de día entero, por fecha', () => {
+    assert.deepEqual(avisosDeSalidas(ESTADO, FERIADOS), [LICENCIA, FERIADO, SABADO]);
+    // La de la licencia sigue sumando y la del feriado, no: octubre da 4 (09/10) + 4 (21/10) + 4 (el domingo, de 09:00 a 13:00)
+    assert.equal(delMes(horasAFavorDe(ESTADO, { hoy: HOY, feriados: FERIADOS }), '2026-10').a_favor, 12);
+  });
+
+  it('un domingo sin entrada', () => {
+    assert.deepEqual(avisosDeSalidas(conSalidas([salida(100, '2026-10-18', '13:00')]), FERIADOS), [{
+      clave: 'salida:2026-10-18', fecha: '2026-10-18',
+      texto: 'Revisá tus horas extras del domingo 18/10: es domingo y falta la entrada.', aviso: 'Es domingo: falta la entrada.'
+    }]);
+  });
+
+  it('un feriado dado de baja no deja aviso: el día pasa a ser hábil y cuenta la salida desde las 15:00', () => {
+    assert.deepEqual(avisosDeSalidas(ESTADO, SIN_FERIADOS), [LICENCIA, SABADO]);
+    // El 12/10 suma 4 (19:00): 16 en octubre
+    assert.equal(delMes(horasAFavorDe(ESTADO, A_HOY), '2026-10').a_favor, 16);
+  });
+
+  it('una licencia que no es de día entero o de la otra modalidad no deja aviso; las 7 horas a favor, sí', () => {
+    const delDia = [salida(104, '2026-10-21', '19:00')];
+    assert.deepEqual(avisosDeSalidas(conSalidas(delDia, [uso(200, 'horas_a_favor', '2026-10-21', 2)]), FERIADOS), []);
+    // Un franco es de planta: en contrato no es un día de licencia
+    assert.deepEqual(avisosDeSalidas(conSalidas(delDia, [uso(200, 'franco', '2026-10-21')]), FERIADOS), []);
+    // Las 7 horas a favor son el día entero
+    assert.deepEqual(avisosDeSalidas(conSalidas(delDia, [uso(200, 'horas_a_favor', '2026-10-21', 7)]), FERIADOS)
+      .map((aviso) => aviso.clave), ['salida:2026-10-21']);
+  });
+
+  it('solo en contrato; sin salidas, nada', () => {
+    assert.deepEqual(avisosDeSalidas({ ...ESTADO, modalidad: 'planta' }, FERIADOS), []);
+    assert.deepEqual(avisosDeSalidas({ ...ESTADO, modalidad: null }, FERIADOS), []);
+    assert.deepEqual(avisosDeSalidas(CONTRATO.estado, SIN_FERIADOS), []);
+    assert.deepEqual(avisosDeSalidas(conSalidas([]), FERIADOS), []);
+    const { salidas: _sinSalidas, ...sinLaClave } = ESTADO;
+    assert.deepEqual(avisosDeSalidas(sinLaClave, FERIADOS), []);
+  });
+
+  it('nada tira: lo que no es una salida no deja aviso', () => {
+    for (const valor of [undefined, null, '', 'x', 0, NaN, {}, [], new Date('2026-10-26T12:00:00Z')]) {
+      assert.deepEqual(avisosDeSalidas(valor, valor), [], String(valor));
+      assert.deepEqual(avisosDeSalidas(conSalidas([valor, { fecha: valor, salida: valor, entrada: valor }]), FERIADOS), [],
+        String(valor));
+      assert.doesNotThrow(() => avisosDeSalidas({ ...ESTADO, licencias: [valor], salidas: valor }, valor), String(valor));
+    }
+  });
 });
 
 describe('lo no utilizado previamente', () => {
   // Un estado de contrato con el arranque del 02/03/2026 y el saldo de horas no utilizadas de 2026
-  const contratoDesdeMarzo = (saldo, horasExtras, licencias = []) => conHoras('contrato', horasExtras, licencias, {
+  const contratoDesdeMarzo = (saldo, salidas, licencias = []) => conSalidas(salidas, licencias, {
     arranque: '2026-03-02', saldos: [{ concepto: 'horas_no_utilizadas', anio: 2026, cantidad: saldo }]
   });
-  // 3 horas extras en mayo: 3 a favor en junio, que nadie usó
-  const MAYO = extra(100, '2026-05-12', '18:00', '21:00');
+  // 3 horas extras en mayo (la salida a las 18:00): 3 a favor en junio, que nadie usó
+  const MAYO = salida(100, '2026-05-12', '18:00');
 
   it('PLANTA: el franco de junio, sin usar en agosto', () => {
     assert.deepEqual(noUtilizadasDe(PLANTA.estado, 2026, A_HOY), {
@@ -1442,7 +1591,7 @@ describe('lo no utilizado previamente', () => {
   });
 
   it('vuelve a cero el 1/1: lo de diciembre sin usar en enero es de 2027', () => {
-    const estado = conHoras('contrato', [extra(100, '2026-12-10', '18:00', '21:00')]);
+    const estado = conSalidas([salida(100, '2026-12-10', '18:00')]);
     const enFebrero = { hoy: '2027-02-15', feriados: SIN_FERIADOS };
     assert.deepEqual(noUtilizadasDe(estado, 2026, enFebrero).meses, []);
     assert.equal(noUtilizadasDe(estado, 2026, enFebrero).quedan, 0);
@@ -1455,7 +1604,7 @@ describe('lo no utilizado previamente', () => {
 
   it('antes del arranque: septiembre no suma, el saldo sí', () => {
     const estado = conLicencias({
-      ...CONTRATO.estado, horasExtras: [...CONTRATO.estado.horasExtras, extra(100, '2026-08-20', '18:00', '21:00')]
+      ...CONTRATO.estado, salidas: [...CONTRATO.estado.salidas, salida(100, '2026-08-20', '18:00')]
     }, uso(100, 'horas_a_favor', '2026-09-15', 1.5));
     const resultado = noUtilizadasDe(estado, 2026, A_HOY);
     assert.deepEqual(resultado.meses,
@@ -1480,7 +1629,7 @@ describe('lo no utilizado previamente', () => {
   });
 
   it('de los meses, también el más viejo primero', () => {
-    const estado = contratoDesdeMarzo(1, [extra(101, '2026-03-10', '18:00', '20:00'), MAYO],
+    const estado = contratoDesdeMarzo(1, [salida(101, '2026-03-10', '17:00'), MAYO],
       [uso(200, 'uso_autorizado', '2026-10-27', 4)]);
     const resultado = noUtilizadasDe(estado, 2026, A_HOY);
     assert.deepEqual(resultado.meses.map(({ mes_de_uso, cantidad, quedan }) => ({ mes_de_uso, cantidad, quedan })),
@@ -1723,13 +1872,15 @@ describe('fueraDeLaModalidad', () => {
 describe('calcular', () => {
   it('PLANTA a hoy: el reparto, los topes, los francos y lo no utilizado, sin faltantes', () => {
     const calculo = calcular(PLANTA.estado, A_HOY);
-    assert.deepEqual(Object.keys(calculo), ['reparto', 'topes', 'francos', 'horasAFavor', 'noUtilizadas', 'faltantes']);
+    assert.deepEqual(Object.keys(calculo),
+      ['reparto', 'topes', 'francos', 'horasAFavor', 'noUtilizadas', 'faltantes', 'avisosDeSalidas']);
     assert.deepEqual(calculo.reparto, repartoDeVacaciones(PLANTA.estado, A_HOY));
     assert.deepEqual(calculo.topes, usoDeLosTopes(PLANTA.estado, { feriados: SIN_FERIADOS }));
     assert.deepEqual(calculo.francos, francosDe(PLANTA.estado, A_HOY));
     assert.deepEqual(calculo.horasAFavor, []);
     assert.deepEqual(calculo.noUtilizadas, { 2026: noUtilizadasDe(PLANTA.estado, 2026, A_HOY) });
     assert.deepEqual(calculo.faltantes, []);
+    assert.deepEqual(calculo.avisosDeSalidas, []);
   });
 
   it('CONTRATO a hoy: las horas a favor y las horas no utilizadas', () => {
@@ -1739,11 +1890,26 @@ describe('calcular', () => {
     assert.deepEqual(calculo.horasAFavor, horasAFavorDe(CONTRATO.estado, A_HOY));
     assert.equal(calculo.noUtilizadas[2026].quedan, 6.5);
     assert.deepEqual(calculo.faltantes, []);
+    assert.deepEqual(calculo.avisosDeSalidas, []);
+  });
+
+  it('los avisos de las salidas van aparte, nunca en los faltantes (así no frenan ninguna carga)', () => {
+    // El 12/10 pasó a ser feriado y su salida no tiene entrada; el 21/10, unas vacaciones cargadas después
+    const feriados = new Set(['2026-10-12']);
+    const estado = {
+      ...CONTRATO.estado,
+      licencias: [...CONTRATO.estado.licencias, vacaciones(100, '2026-10-21', '2026-10-21')],
+      salidas: [...CONTRATO.estado.salidas, salida(100, '2026-10-12', '19:00')]
+    };
+    const calculo = calcular(estado, { hoy: HOY, feriados });
+    assert.equal(calculo.faltantes.some((faltante) => faltante.clave.startsWith('salida:')), false);
+    assert.deepEqual(calculo.avisosDeSalidas.map((aviso) => aviso.clave), ['salida:2026-10-12', 'salida:2026-10-21']);
+    assert.deepEqual(calculo.avisosDeSalidas, avisosDeSalidas(estado, feriados));
   });
 
   it('lo no utilizado de cada año con algo: hoy, el arranque, los meses de uso y los usos autorizados', () => {
     // Las horas de diciembre se usan en enero de 2027
-    const diciembre = conHoras('contrato', [extra(100, '2026-12-10', '18:00', '21:00')]);
+    const diciembre = conSalidas([salida(100, '2026-12-10', '18:00')]);
     assert.deepEqual(Object.keys(calcular(diciembre, { hoy: '2027-02-15', feriados: SIN_FERIADOS }).noUtilizadas),
       ['2026', '2027']);
     // Un uso autorizado de 2025, en planta (cuenta también antes del arranque)
@@ -1786,8 +1952,8 @@ describe('calcular', () => {
     const calculo = calcular(PLANTA.estado, { feriados: SIN_FERIADOS });
     assert.deepEqual(calculo.reparto.ordinarias, []);
     assert.equal(calculo.reparto.sinCubrir.size, 0);
-    assert.deepEqual([calculo.topes, calculo.francos, calculo.horasAFavor, calculo.noUtilizadas, calculo.faltantes],
-      [[], [], [], {}, []]);
+    assert.deepEqual([calculo.topes, calculo.francos, calculo.horasAFavor, calculo.noUtilizadas, calculo.faltantes,
+      calculo.avisosDeSalidas], [[], [], [], {}, [], []]);
   });
 });
 
@@ -1861,7 +2027,7 @@ describe('los faltantes', () => {
   });
 
   it('las horas a favor de más, en su mes de uso', () => {
-    const diciembre = conHoras('contrato', EJEMPLOS_DEL_USUARIO, [
+    const diciembre = conSalidas(SALIDAS_DEL_USUARIO, [
       uso(100, 'horas_a_favor', '2026-12-01', 7), uso(101, 'horas_a_favor', '2026-12-02', 2)
     ]);
     assert.deepEqual(faltantesDelEstado(diciembre), [{
@@ -2033,6 +2199,22 @@ describe('evaluarLicencia', () => {
     const noEstudia = { ...PLANTA.estado, arranque: null, anios: [{ anio: 2026, dias_vacaciones: 20, estudios: null }] };
     assert.deepEqual(evaluar(noEstudia, { tipo: 'estudios', desde: '2026-11-16', hasta: '2026-11-17' }),
       frenada(MENSAJES_MI_ESPACIO.sinArranque));
+  });
+
+  it('unas vacaciones en un día con una salida guardada no se frenan: la salida queda como aviso (spec horas, 7)', () => {
+    // Hoy, el lunes 26/10, CONTRATO ya cargó su salida de las 19:00; después carga vacaciones para ese mismo día
+    const estado = { ...CONTRATO.estado, salidas: [...CONTRATO.estado.salidas, salida(100, '2026-10-26', '19:00')] };
+    const entrada = { tipo: 'vacaciones', desde: '2026-10-26', hasta: '2026-10-26' };
+    const { datos, error } = evaluar(estado, entrada);
+    assert.equal(error, null);
+    assert.deepEqual([datos.tipo, datos.desde, datos.hasta], ['vacaciones', '2026-10-26', '2026-10-26']);
+    // Con la licencia, la salida da un aviso (y sigue sumando), sin ningún faltante
+    const conLaLicencia = conLicencias(estado, { id: 100, ...datos });
+    const calculo = calcular(conLaLicencia, A_HOY);
+    assert.deepEqual(calculo.avisosDeSalidas.map((aviso) => aviso.clave), ['salida:2026-10-26']);
+    assert.deepEqual(calculo.faltantes, []);
+    // Una corrección de una licencia que ya tenía el aviso tampoco se frena
+    assert.equal(evaluar(conLaLicencia, { ...entrada, nota: 'Trámite' }, { editadaId: 100 }).error, null);
   });
 
   it('los errores de validarLicencia pasan tal cual, sin vista', () => {
@@ -2306,6 +2488,8 @@ describe('nada tira', () => {
         calcular(PLANTA.estado, { hoy: valor, feriados: valor });
         calcular({ ...PLANTA.estado, modalidad: valor }, A_HOY);
         calcular({ ...CONTRATO.estado, licencias: [valor, ...CONTRATO.estado.licencias], saldos: [valor] }, A_HOY);
+        calcular({ ...CONTRATO.estado, salidas: valor }, A_HOY);
+        calcular({ ...CONTRATO.estado, salidas: [valor, { id: valor, fecha: valor, entrada: valor, salida: valor }] }, A_HOY);
         faltantesDe(valor);
         faltantesDe({
           reparto: valor, topes: [valor, { tipo: 'medica', anio: valor, usados: valor, tope: valor },

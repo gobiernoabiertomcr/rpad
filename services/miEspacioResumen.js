@@ -407,7 +407,8 @@ const tiposDe = (panel, tanques) => TIPOS_POR_MODALIDAD[panel.modalidad]
  * - sin modalidad, `mensaje` es `sinModalidad` y no hay nada que mostrar ni cargar;
  * - con modalidad y sin arranque, `mensaje` es `sinArranque` y `abrir_saldos` es true (se abre «Mis vacaciones y saldos»);
  * - si no, `marca` dice si hay algo en `vence_pronto` (cada cosa `{ fecha, dia, mes, titulo, texto, accion }`, con su línea en
- *   `texto`: «Vence el viernes 30/10, en 4 días.»), `faltantes` son los textos de `faltantesDe`, `titular` es la frase de la
+ *   `texto`: «Vence el viernes 30/10, en 4 días.»), `faltantes` son los textos de `faltantesDe` y, al final, los de
+ *   `avisosDeSalidas` (las salidas de la planilla de contrato que dejaron de cerrar), `titular` es la frase de la
  *   banda (`{ encabezado, antes, cifra, despues, bajada: [{ texto, vence }] }`; null sin tanques), `extraordinaria` la línea
  *   corta de la médica extraordinaria y `tipos`, las opciones de «Cargar licencia» con lo que queda de cada una.
  * `ve_companeros` es `esAdmin` (los compañeros son administración: spec, sección 7) y `audita`, `esAuditor`.
@@ -453,7 +454,7 @@ export const resumenDe = (entrada) => {
     ...resumen,
     marca: vencePronto.length > 0,
     vence_pronto: vencePronto,
-    faltantes: listaDe(panel.cuenta.faltantes)
+    faltantes: [...listaDe(panel.cuenta.faltantes), ...listaDe(panel.cuenta.avisosDeSalidas)]
       .filter((faltante) => esObjeto(faltante) && typeof faltante.texto === 'string').map((faltante) => faltante.texto),
     tanques,
     titular: titularDe(panel, resumen.modalidad, tanques.vacaciones),

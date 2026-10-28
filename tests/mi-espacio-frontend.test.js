@@ -388,7 +388,7 @@ describe('el Resumen «Titular»', () => {
     assert.equal(M.htmlDeLaRegla({ capacidad: 10, capas: [] }), '');
     assert.equal(M.htmlDeLaRegla(null), '');
     // Un total en 0 (las horas a favor sin horas): la línea vacía
-    const sinHoras = resumenDel(CONTRATO, { estado: { ...CONTRATO.estado, horasExtras: [], licencias: [] } });
+    const sinHoras = resumenDel(CONTRATO, { estado: { ...CONTRATO.estado, horasExtras: [], salidas: [], licencias: [] } });
     assert.equal(sinHoras.tanques.otros.find(({ clave }) => clave === 'horas_a_favor').total, 0);
     const resto = M.htmlDelResto(sinHoras);
     sinNumerosRaros(resto);
@@ -2088,7 +2088,7 @@ describe('el movimiento del Resumen «Titular» (DOM falso)', () => {
     comprobarConteo(horas, { final: '1,5', demora: 900, duracion: 700 }, 'las horas a favor');
     assert.deepEqual([...new Set(horas.map(([, texto]) => texto))], ['0', '1', '1,5']);
     // Uno en 0 (CONTRATO sin horas extras: las horas a favor) sigue en 0 en todos los cuadros
-    const sinHorasExtras = resumenDel(CONTRATO, { estado: { ...CONTRATO.estado, horasExtras: [], licencias: [] } });
+    const sinHorasExtras = resumenDel(CONTRATO, { estado: { ...CONTRATO.estado, horasExtras: [], salidas: [], licencias: [] } });
     const sinHoras = montarPagina({ cuadros: true, responder: conResumen(sinHorasExtras) });
     await sinHoras.iniciar();
     const [cero] = numerosDelRestoDe(sinHoras);

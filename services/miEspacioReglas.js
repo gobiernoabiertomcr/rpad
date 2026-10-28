@@ -8,8 +8,10 @@
  * El `Estado` es lo que cargó la persona, solo las filas activas:
  * `{ modalidad: 'planta' | 'contrato' | null, arranque: 'AAAA-MM-DD' | null, anios: [{ anio, dias_vacaciones, estudios }],
  * saldos: [{ concepto, anio, cantidad }], licencias: [{ id, tipo, desde, hasta, horas }], horasExtras: [{ id, fecha, desde,
- * hasta }] }`. `arranque` es el día en que cargó su saldo inicial: en los tipos con saldo inicial, lo anterior no descuenta
- * (ya está en el saldo; spec, sección 4).
+ * hasta }], salidas: [{ id, fecha, entrada, salida, nota }] }`. `arranque` es el día en que cargó su saldo inicial: en los
+ * tipos con saldo inicial, lo anterior no descuenta (ya está en el saldo; spec, sección 4). Las horas extras son las de planta
+ * (`francosDe`) y las salidas, las de la planilla de contrato (`horasAFavorDe`; spec 2026-10-27-mi-espacio-horas, sección 6):
+ * cada modalidad lee solo las suyas. Un estado sin `salidas` cuenta como sin ninguna.
  *
  * Acá están las constantes y los textos de todo Mi espacio (los mensajes, los de las cargas y los del paso a
  * Configuración) y las vacaciones (spec, 3.1): cada año tiene su licencia, que se habilita en dos mitades (el 1/7 y el 1/1
@@ -18,8 +20,9 @@
  * 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`) y la validación de una carga (`validarLicencia`, con
  * la regla de 3.8: dos licencias no comparten un día). Por último, las horas extras (3.5 a 3.7): la validación de una carga
  * (`validarHorasExtras`), la planilla de contrato (spec 2026-10-27-mi-espacio-horas: las horas de una salida,
- * `horasDeLaSalida`, y la validación de un día, `validarSalida`), los francos compensatorios de planta (`francosDe`), las
- * horas a favor de contrato (`horasAFavorDe`) y lo no utilizado previamente de cada año (`noUtilizadasDe`). Al final, «Mis
+ * `horasDeLaSalida`, la validación de un día, `validarSalida`, y las salidas guardadas que dejaron de cerrar,
+ * `avisosDeSalidas`, que nunca frenan una carga), los francos compensatorios de planta (`francosDe`), las horas a favor de
+ * contrato (`horasAFavorDe`, desde las salidas) y lo no utilizado previamente de cada año (`noUtilizadasDe`). Al final, «Mis
  * vacaciones y saldos» (los campos del saldo inicial y el año, sección 4), el cálculo completo (`calcular`), lo guardado que
  * dejó de cerrar (`faltantesDe`, 3.10) y la evaluación de una carga (`evaluarLicencia`: una carga nueva que no cierra no se
  * guarda). Y el paso de las ausencias de día entero a Configuración → Licencias (sección 6): qué se hace al cargar, corregir
@@ -948,6 +951,52 @@ export const validarSalida = (dia, contexto) => {
   };
 };
 
+// Lo que dice cada aviso de una salida que dejó de cerrar: el día de la semana del día que no es hábil
+const NO_HABIL_EN_TEXTO = Object.freeze({ feriado: 'ahora es feriado', sabado: 'es sábado', domingo: 'es domingo' });
+const NO_HABIL_EN_AVISO = Object.freeze({ feriado: 'Ahora es feriado', sabado: 'Es sábado', domingo: 'Es domingo' });
+const AVISO_SALIDA_EN_LICENCIA = 'Ese día tenés una licencia de día entero: revisá esta salida.';
+// «del lunes 12/10»
+const delDia = (fecha) => `del ${diaDeLaSemana(fecha)} ${diaYMes(fecha)}`;
+
+/**
+ * Las salidas guardadas que dejaron de cerrar porque cambió algo después (spec 2026-10-27-mi-espacio-horas, sección 7 y
+ * decisión 2): `[{ clave: 'salida:AAAA-MM-DD', fecha, texto, aviso }]`, por fecha, a lo sumo uno por día. `texto` va al
+ * final de los faltantes del Resumen y `aviso`, en la fila de la planilla. **Nunca frenan una carga**: `calcular` los
+ * devuelve aparte (`avisosDeSalidas`), no en los faltantes, así `problemaDeLaCarga` no los ve y una licencia nunca se rechaza
+ * por una salida. Dos casos:
+ * - un día que no es hábil (`tipoDeDia`: pasó a ser feriado, o un sábado o un domingo cargado por fuera de la planilla) sin
+ *   una entrada válida: «Revisá tus horas extras del lunes 12/10: ahora es feriado y falta la entrada.» («es sábado», «es
+ *   domingo»). Esa salida no suma (`horasDeLaSalida` da null) hasta que se pone la entrada;
+ * - un día con una licencia de día entero (`licenciaDeDiaEnteroEn`, cargada después): «Revisá tus horas extras del viernes
+ *   09/10: ese día tenés una licencia de día entero.». Esa salida sigue sumando hasta que se la quita.
+ * La baja de un feriado no deja aviso: el día pasa a ser hábil y cuenta la salida desde las 15:00. Solo en contrato, y solo
+ * con una fecha y una salida válidas (lo demás no es una salida). Fuera de contrato o sin un estado, [].
+ */
+export const avisosDeSalidas = (estado, feriados) => {
+  if (!esObjeto(estado) || estado.modalidad !== 'contrato') return [];
+  const avisos = new Map();
+  for (const fila of listaDe(estado.salidas)) {
+    if (!esObjeto(fila) || !esFechaIso(fila.fecha) || !horaSalidaValida(fila.salida) || avisos.has(fila.fecha)) continue;
+    const { fecha } = fila;
+    const tipo = tipoDeDia(fecha, feriados);
+    if (tipo !== 'habil' && !horaSalidaValida(fila.entrada)) {
+      const cual = tipo === 'feriado' ? 'feriado' : diaDeLaSemana(fecha) === 'sábado' ? 'sabado' : 'domingo';
+      avisos.set(fecha, {
+        clave: `salida:${fecha}`, fecha,
+        texto: `Revisá tus horas extras ${delDia(fecha)}: ${NO_HABIL_EN_TEXTO[cual]} y falta la entrada.`,
+        aviso: `${NO_HABIL_EN_AVISO[cual]}: falta la entrada.`
+      });
+    } else if (licenciaDeDiaEnteroEn(estado, fecha, feriados) !== null) {
+      avisos.set(fecha, {
+        clave: `salida:${fecha}`, fecha,
+        texto: `Revisá tus horas extras ${delDia(fecha)}: ese día tenés una licencia de día entero.`,
+        aviso: AVISO_SALIDA_EN_LICENCIA
+      });
+    }
+  }
+  return [...avisos.values()].sort((a, b) => compararTexto(a.fecha, b.fecha));
+};
+
 // Si el mes 'AAAA-MM' ya terminó: hoy es posterior a su último día
 const terminoElMes = (mes, hoy) => hoy.slice(0, 7) > mes;
 const compararUsos = (a, b) => compararTexto(a.fecha, b.fecha) || (idDe(a.id) || 0) - (idDe(b.id) || 0);
@@ -970,11 +1019,10 @@ const usosPorMes = (estado, tipo, feriados, uso) => {
   return porMes;
 };
 
-// Los meses trabajados, de los más viejos a los más nuevos: los que tienen horas extras y los que corresponden a un mes de
-// uso con usos (así se ve también un uso de más), cada uno con sus horas, su mes de uso (`distancia` meses después) y los
-// usos de ese mes
-const mesesTrabajados = (horasExtras, usos, distancia) => {
-  const horas = horasPorMes(horasExtras);
+// Los meses trabajados, de los más viejos a los más nuevos: los que tienen horas (`horas`, un Map 'AAAA-MM' → horas, el de
+// `horasPorMes` o el de `horasPorMesDeSalidas`) y los que corresponden a un mes de uso con usos (así se ve también un uso de
+// más), cada uno con sus horas, su mes de uso (`distancia` meses después) y los usos de ese mes
+const mesesTrabajados = (horas, usos, distancia) => {
   const meses = new Set(horas.keys());
   for (const mesDeUso of usos.keys()) {
     const trabajado = mesMas(mesDeUso, -distancia);
@@ -1004,7 +1052,7 @@ export const francosDe = (estado, opciones) => {
   const { hoy, feriados } = esObjeto(opciones) ? opciones : {};
   if (!esObjeto(estado) || estado.modalidad !== 'planta' || !esFechaIso(hoy)) return [];
   const usos = usosPorMes(estado, 'franco', feriados, (fila, fecha) => ({ id: fila.id, fecha }));
-  return mesesTrabajados(estado.horasExtras, usos, MESES_HASTA_EL_FRANCO).map((mes) => {
+  return mesesTrabajados(horasPorMes(estado.horasExtras), usos, MESES_HASTA_EL_FRANCO).map((mes) => {
     const francos = Math.floor(mes.horas / JORNADA);
     const termino = terminoElMes(mes.mes_de_uso, hoy);
     const quedan = Math.max(0, francos - mes.usos.length);
@@ -1020,8 +1068,10 @@ export const francosDe = (estado, opciones) => {
  * Las horas a favor de contrato (spec, 3.6), una fila por mes trabajado (`mesesTrabajados`): `[{ mes_trabajado, horas,
  * mes_de_uso, a_favor, usos: [{ id, fecha, horas }], usadas, disponibles, no_utilizadas, antes_del_arranque,
  * ultimo_dia_habil, termino }]`.
- * - `a_favor`: las horas extras del mes trabajado, para usar el mes siguiente (`mes_de_uso`). `usos`: las filas
- *   `horas_a_favor` de ese mes, con cualquier fecha (no tienen saldo inicial), y `usadas`, su suma.
+ * - `a_favor`: las horas extras del mes trabajado, para usar el mes siguiente (`mes_de_uso`). Salen de las salidas de la
+ *   planilla (`horasPorMesDeSalidas`, con los feriados; spec 2026-10-27-mi-espacio-horas), no de las horas extras de planta.
+ *   Un mes cuyas salidas suman 0 es como un mes sin horas extras: queda una fila solo si su mes de uso tiene usos. `usos`:
+ *   las filas `horas_a_favor` de ese mes, con cualquier fecha (no tienen saldo inicial), y `usadas`, su suma.
  * - `termino`, `ultimo_dia_habil`, `disponibles` y `no_utilizadas`, como en los francos.
  * - `antes_del_arranque`: el mes de uso terminó antes del arranque, así que lo que quedó sin usar ya está en el saldo
  *   inicial de horas no utilizadas (`noUtilizadasDe` no lo suma).
@@ -1035,7 +1085,8 @@ export const horasAFavorDe = (estado, opciones) => {
     const horas = numeroDe(fila.horas);
     return Number.isFinite(horas) && horas > 0 ? { id: fila.id, fecha, horas } : null;
   });
-  return mesesTrabajados(estado.horasExtras, usos, MESES_HASTA_LAS_HORAS).map((mes) => {
+  const horas = new Map([...horasPorMesDeSalidas(estado.salidas, feriados)].filter(([, delMes]) => delMes > 0));
+  return mesesTrabajados(horas, usos, MESES_HASTA_LAS_HORAS).map((mes) => {
     const usadas = mes.usos.reduce((suma, uso) => suma + uso.horas, 0);
     const termino = terminoElMes(mes.mes_de_uso, hoy);
     const quedan = Math.max(0, mes.horas - usadas);
@@ -1226,19 +1277,24 @@ export const fueraDeLaModalidad = (fila, modalidad) => {
 
 /**
  * Todo lo que sale de lo cargado, sin las filas que no corresponden a la modalidad (`fueraDeLaModalidad`): el `Calculo`,
- * `{ reparto, topes, francos, horasAFavor, noUtilizadas, faltantes }`.
+ * `{ reparto, topes, francos, horasAFavor, noUtilizadas, faltantes, avisosDeSalidas }`.
  * - `reparto`: el de `repartoDeVacaciones`.
  * - `topes`: el de `usoDeLosTopes`, solo con los tipos de la modalidad (el saldo de franquicias no cuenta en contrato).
  * - `francos` y `horasAFavor`: los de `francosDe` y `horasAFavorDe` (cada uno, [] en la otra modalidad).
  * - `noUtilizadas`: `{ [anio]: noUtilizadasDe }` de cada año con algo que mirar: el de hoy, el del arranque, el de cada mes
  *   de uso y el de cada uso autorizado. Sin modalidad, {}.
  * - `faltantes`: los de `faltantesDe`.
+ * - `avisosDeSalidas`: los de `avisosDeSalidas` (solo en contrato). Van aparte y nunca en `faltantes`: así
+ *   `problemaDeLaCarga` no los ve y una licencia nunca se frena por una salida.
  * Sin un hoy válido, todo vacío: sin hoy no hay ninguna licencia habilitada, y todas las vacaciones quedarían sin cubrir.
  */
 export const calcular = (estado, opciones) => {
   const { hoy, feriados } = esObjeto(opciones) ? opciones : {};
   if (!esFechaIso(hoy)) {
-    return { reparto: repartoDeVacaciones(null), topes: [], francos: [], horasAFavor: [], noUtilizadas: {}, faltantes: [] };
+    return {
+      reparto: repartoDeVacaciones(null), topes: [], francos: [], horasAFavor: [], noUtilizadas: {}, faltantes: [],
+      avisosDeSalidas: []
+    };
   }
   const datos = esObjeto(estado) ? estado : {};
   const { modalidad } = datos;
@@ -1269,7 +1325,7 @@ export const calcular = (estado, opciones) => {
     noUtilizadas: Object.fromEntries([...anios].sort((a, b) => a - b)
       .map((anio) => [anio, noUtilizadasDe(deLaModalidad, anio, conHoy)]))
   };
-  return { ...calculo, faltantes: faltantesDe(calculo) };
+  return { ...calculo, faltantes: faltantesDe(calculo), avisosDeSalidas: avisosDeSalidas(deLaModalidad, feriados) };
 };
 
 // Los textos de los faltantes del Resumen, neutros: «Revisá …»

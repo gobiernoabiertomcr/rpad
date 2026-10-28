@@ -373,6 +373,25 @@ describe('el Resumen de CONTRATO', () => {
     ]);
   });
 
+  it('los avisos de las salidas, al final de los faltantes (spec 2026-10-27-mi-espacio-horas, sección 7)', () => {
+    // Una salida del 21/10 con vacaciones cargadas después, y una de más de horas a favor en enero de 2027
+    const estado = conLicencias(CONTRATO.estado, licencia(100, 'vacaciones', '2026-10-21'),
+      licencia(101, 'horas_a_favor', '2027-01-04', '2027-01-04', 1));
+    assert.deepEqual(resumenDel(CONTRATO, { estado }).faltantes, [
+      'Revisá tus horas a favor de enero de 2027: cargaste 1 hora y no corresponde ninguna.',
+      'Revisá tus horas extras del miércoles 21/10: ese día tenés una licencia de día entero.'
+    ]);
+    // Sin avisos (un cálculo de antes, sin la clave), solo los faltantes
+    const calculo = calculoDe(estado);
+    const { avisosDeSalidas: _sinAvisos, ...sinLaClave } = calculo;
+    assert.deepEqual(resumenDe({ persona: CONTRATO.persona, estado, calculo: sinLaClave, hoy: HOY, feriados: SIN_FERIADOS })
+      .faltantes, ['Revisá tus horas a favor de enero de 2027: cargaste 1 hora y no corresponde ninguna.']);
+    // Lo que no es un aviso con su texto no va
+    const raros = { ...calculo, avisosDeSalidas: [null, 3, { texto: 5 }, ...calculo.avisosDeSalidas] };
+    assert.deepEqual(resumenDe({ persona: CONTRATO.persona, estado, calculo: raros, hoy: HOY, feriados: SIN_FERIADOS })
+      .faltantes, resumenDel(CONTRATO, { estado }).faltantes);
+  });
+
   it('sin horas a favor que queden: ni Vence pronto ni el ámbar', () => {
     const estado = conLicencias(CONTRATO.estado, licencia(100, 'horas_a_favor', '2026-10-28', '2026-10-28', 1.5));
     const resumen = resumenDel(CONTRATO, { estado });
@@ -888,8 +907,11 @@ describe('la tabla de horas extras de contrato', () => {
     const septiembre = tablaDel(CONTRATO, { estado: usadas }).meses.find((mes) => mes.mes === '2026-09');
     assert.deepEqual([septiembre.estado, septiembre.situacion], ['usadas', 'Todas usadas']);
     // 3 horas en agosto, para usar en septiembre, antes del arranque del 26/10: lo que quedó ya está en el saldo
-    const agosto = { ...CONTRATO.estado, horasExtras: [...CONTRATO.estado.horasExtras,
-      { id: 10, fecha: '2026-08-05', desde: '18:00', hasta: '21:00' }] };
+    const agosto = {
+      ...CONTRATO.estado,
+      horasExtras: [...CONTRATO.estado.horasExtras, { id: 10, fecha: '2026-08-05', desde: '18:00', hasta: '21:00' }],
+      salidas: [...CONTRATO.estado.salidas, { id: 10, fecha: '2026-08-05', entrada: null, salida: '18:00', nota: null }]
+    };
     const tabla = tablaDel(CONTRATO, { estado: agosto });
     const fila = tabla.meses.find((mes) => mes.mes === '2026-08');
     assert.deepEqual([fila.estado, fila.situacion], ['antes_del_arranque', 'Antes del saldo inicial: está en el saldo']);
