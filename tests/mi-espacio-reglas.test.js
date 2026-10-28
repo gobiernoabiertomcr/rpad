@@ -17,7 +17,7 @@ import {
   textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA, TEXTO_ANULADA_POR_ADMINISTRACION,
   TEXTO_NO_DIA_ENTERO,
   mitadesDe, habilitaciones, venceLaLicencia, textoDeLasMitades, anioVigente, ordinariasDe, diasQueDescuentan, repartoDeVacaciones,
-  textoDelReparto, rangoDeFechas, esDiaEntero, topeDe, usoDeLosTopes, validarLicencia,
+  textoDelReparto, textoDePerdidos, rangoDeFechas, esDiaEntero, topeDe, usoDeLosTopes, validarLicencia,
   horasDe, mesMas, horasPorMes, validarHorasExtras, francosDe, horasAFavorDe, noUtilizadasDe,
   TEXTO_ANTES_DEL_ARRANQUE, camposDelSaldoInicial, validarSaldoInicial, validarAnio, fueraDeLaModalidad, calcular,
   faltantesDe, problemaDeLaCarga, evaluarLicencia,
@@ -46,6 +46,15 @@ const soloVacaciones = (arranque, porAnio, ...licencias) => ({
 });
 
 const ordinaria = (reparto, anio) => reparto.ordinarias.find((o) => o.anio === anio);
+
+// La persona de la spec 2026-10-27-mi-espacio-dias-de-vacaciones (punto 1): 15 días de la 2024, 20 de la 2025 y 10 de la
+// 2026, más los 10 de la 2026 que se habilitan el 1/1/2027
+const PERSONA = Object.freeze({ 2024: 15, 2025: 20, 2026: 10 });
+
+// El texto del reparto de una carga, con el arranque y hoy el 26/10/2026 y sin feriados de la tabla
+const textoDeLaCarga = (saldos, filas, id) =>
+  textoDelReparto(repartoDeVacaciones(soloVacaciones('2026-10-26', saldos, ...filas),
+    { hoy: HOY, feriados: SIN_FERIADOS }), id);
 
 // Lo que cuenta cada ordinaria a hoy
 const aHoy = (reparto) => reparto.ordinarias.map(({ anio, habilitado, por_habilitar, usados, cargados, disponibles }) =>
@@ -424,6 +433,25 @@ describe('el reparto de las vacaciones', () => {
     { hoy: HOY, feriados: SIN_FERIADOS });
     assert.deepEqual(reparto.porFila.get(101), [{ anio: 2024, dias: 2 }]);
     assert.deepEqual(reparto.porFila.get(100), [{ anio: 2024, dias: 13 }]);
+    // Con 14 en la 2024, la de diciembre (primera por fecha) toma 2 y a la otra le quedan 12: el 08/01 sale de la 2025.
+    // Por id, la del 21/12 tomaría 13 y la de diciembre partiría el 02/12 en la 2025
+    const justos = repartoDeVacaciones(soloVacaciones('2026-10-26', { 2024: 14, 2025: 20, 2026: 10 },
+      vacaciones(100, '2026-12-21', '2027-01-10'), vacaciones(101, '2026-12-01', '2026-12-02')),
+    { hoy: HOY, feriados: SIN_FERIADOS });
+    assert.deepEqual(justos.porFila.get(101), [{ anio: 2024, dias: 2 }]);
+    assert.deepEqual(justos.porFila.get(100), [{ anio: 2024, dias: 12 }, { anio: 2025, dias: 1 }]);
+  });
+
+  it('el vencimiento se mira en el primer día que descuenta, no en el desde', () => {
+    // Del 31/12/2026 al 08/01/2027: el 31/12 y del 4 al 8/1 (el 1/1 es feriado fijo), todos de la 2024
+    const fiestas = vacaciones(100, '2026-12-31', '2027-01-08');
+    const conElUltimo = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA, fiestas),
+      { hoy: HOY, feriados: SIN_FERIADOS });
+    assert.deepEqual(conElUltimo.porFila.get(100), [{ anio: 2024, dias: 6 }]);
+    // Con el 31/12 feriado, el primer día que descuenta es el 04/01, ya vencida la 2024: salen de la 2025
+    const sinElUltimo = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA, fiestas),
+      { hoy: HOY, feriados: new Set(['2026-12-31']) });
+    assert.deepEqual(sinElUltimo.porFila.get(100), [{ anio: 2025, dias: 5 }]);
   });
 
   it('sin días de la que venía usando ni otra habilitada, el día queda sin cubrir y la carga sigue después', () => {
@@ -432,6 +460,75 @@ describe('el reparto de las vacaciones', () => {
       vacaciones(100, '2026-12-28', '2027-01-08')), { hoy: HOY, feriados: SIN_FERIADOS });
     assert.deepEqual(reparto.porFila.get(100), [{ anio: 2024, dias: 3 }, { anio: 2026, dias: 5 }]);
     assert.deepEqual(reparto.sinCubrir.get(100), ['2026-12-31']);
+  });
+
+  it('los textos de la spec 2026-10-27 (punto 3)', () => {
+    const casos = [
+      [[vacaciones(100, '2026-12-16', '2027-01-10')], 100, 'Salen de las licencias 2024 (15 días) y 2025 (1 día), las más '
+        + 'viejas. Te quedan 29 días: 19 de la 2025 y 10 de la 2026.'],
+      [[vacaciones(100, '2026-12-21', '2027-01-10')], 100, 'Salen de la licencia 2024, la más vieja. Te quedan 30 días: 20 de '
+        + 'la 2025 y 10 de la 2026. Perdés 2 de la 2024 (vencen el 31/12/2026).'],
+      [[vacaciones(100, '2026-12-23', '2027-01-05')], 100, 'Salen de la licencia 2024, la más vieja. Te quedan 30 días: 20 de '
+        + 'la 2025 y 10 de la 2026. Perdés 7 de la 2024 (vencen el 31/12/2026).'],
+      [[vacaciones(100, '2026-12-14', '2026-12-18')], 100, 'Salen de la licencia 2024, la más vieja. Te quedan 40 días: 10 de '
+        + 'la 2024 (vencen el 31/12/2026), 20 de la 2025 y 10 de la 2026.'],
+      [[vacaciones(100, '2026-12-21', '2026-12-31'), vacaciones(101, '2027-01-04', '2027-01-10')], 101, 'Salen de la licencia '
+        + '2025, la más vieja. Te quedan 25 días: 15 de la 2025 y 10 de la 2026. Perdés 7 de la 2024 (vencen el 31/12/2026).'],
+      [[vacaciones(100, '2026-12-21', '2027-01-10'), vacaciones(101, '2026-12-01', '2026-12-02')], 101, 'Salen de la licencia '
+        + '2024, la más vieja. Te quedan 30 días: 20 de la 2025 y 10 de la 2026.'],
+      [[vacaciones(100, '2026-12-14', '2026-12-18'), { id: 102, tipo: 'medica', desde: '2026-12-21', hasta: '2026-12-31',
+        horas: null }], 100, 'Salen de la licencia 2024, la más vieja. Te quedan 30 días: 20 de la 2025 y 10 de la 2026. '
+        + 'Perdés 10 de la 2024 (vencen el 31/12/2026).']
+    ];
+    for (const [filas, id, esperado] of casos) assert.equal(textoDeLaCarga(PERSONA, filas, id), esperado);
+  });
+
+  it('los perdidos salen de lo disponible; con un día libre antes del vencimiento, no se pierden', () => {
+    const cruza = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA, vacaciones(100, '2026-12-21', '2027-01-10')),
+      { hoy: HOY, feriados: SIN_FERIADOS });
+    assert.deepEqual([ordinaria(cruza, 2024).disponibles, ordinaria(cruza, 2024).perdidos], [0, 2]);
+    assert.equal(ordinaria(cruza, 2025).perdidos, 0);
+    assert.equal(disponibles(cruza), 30);
+    // Termina el miércoles 30/12: el 31/12 todavía se puede empezar otra carga con lo que queda de la 2024
+    const antes = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA, vacaciones(100, '2026-12-21', '2026-12-30')),
+      { hoy: HOY, feriados: SIN_FERIADOS });
+    assert.deepEqual([ordinaria(antes, 2024).disponibles, ordinaria(antes, 2024).perdidos], [8, 0]);
+    // Con el 31/12 feriado, ya no queda ningún día libre: se pierden los 8
+    const conFeriado = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA, vacaciones(100, '2026-12-21', '2026-12-30')),
+      { hoy: HOY, feriados: new Set(['2026-12-31']) });
+    assert.deepEqual([ordinaria(conFeriado, 2024).disponibles, ordinaria(conFeriado, 2024).perdidos], [0, 8]);
+  });
+
+  it('sin ninguna carga que la use, el día libre se busca desde hoy', () => {
+    // Hoy el 31/12/2026, un jueves libre: la 2024 sigue disponible; con una atención médica ese día, se pierde entera
+    const libre = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA), { hoy: '2026-12-31', feriados: SIN_FERIADOS });
+    assert.deepEqual([ordinaria(libre, 2024).disponibles, ordinaria(libre, 2024).perdidos], [15, 0]);
+    const ocupado = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA,
+      { id: 102, tipo: 'medica', desde: '2026-12-31', hasta: '2026-12-31', horas: null }),
+    { hoy: '2026-12-31', feriados: SIN_FERIADOS });
+    assert.deepEqual([ordinaria(ocupado, 2024).disponibles, ordinaria(ocupado, 2024).perdidos], [0, 15]);
+  });
+
+  it('una carga anterior cargada después le saca días a la que cruza el año, y ya no se pierde nada', () => {
+    const sola = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA, vacaciones(100, '2026-12-21', '2027-01-10')),
+      { hoy: HOY, feriados: SIN_FERIADOS });
+    assert.equal(ordinaria(sola, 2024).perdidos, 2);
+    const conLaAnterior = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA,
+      vacaciones(100, '2026-12-21', '2027-01-10'), vacaciones(101, '2026-12-01', '2026-12-02')),
+    { hoy: HOY, feriados: SIN_FERIADOS });
+    assert.deepEqual([ordinaria(conLaAnterior, 2024).disponibles, ordinaria(conLaAnterior, 2024).perdidos], [0, 0]);
+  });
+
+  it('una licencia ya vencida a hoy no tiene perdidos, y la carga que cruzó el año no cambia', () => {
+    const reparto = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA, vacaciones(100, '2026-12-21', '2027-01-10')),
+      { hoy: '2027-01-04', feriados: SIN_FERIADOS });
+    assert.deepEqual(reparto.porFila.get(100), [{ anio: 2024, dias: 13 }]);
+    assert.deepEqual([ordinaria(reparto, 2024).disponibles, ordinaria(reparto, 2024).perdidos], [0, 0]);
+  });
+
+  it('sin nada disponible: «No te quedan días disponibles.» y después lo que se pierde', () => {
+    assert.equal(textoDeLaCarga({ 2024: 15, 2025: 0, 2026: 0 }, [vacaciones(100, '2026-12-23', '2027-01-05')], 100),
+      'Salen de la licencia 2024, la más vieja. No te quedan días disponibles. Perdés 7 de la 2024 (vencen el 31/12/2026).');
   });
 
   it('lo cargado a futuro de la mitad que todavía no se habilitó sale de lo que falta habilitar', () => {
@@ -496,6 +593,18 @@ describe('textoDelReparto', () => {
     assert.deepEqual(conTexto.porFila.get(101), [{ anio: 2024, dias: 3 }]);
     assert.deepEqual(conTexto.sinCubrir.get(101), ['2026-11-13', '2026-11-16']);
     assert.equal(conTexto.porFila.has('100'), false);
+  });
+
+  it('textoDePerdidos: «vence» con 1, varias en una lista y nada sin perdidos', () => {
+    assert.equal(textoDePerdidos([{ anio: 2024, perdidos: 1, vence: '2026-12-31' }]),
+      'Perdés 1 de la 2024 (vence el 31/12/2026).');
+    assert.equal(textoDePerdidos([
+      { anio: 2024, perdidos: 2, vence: '2026-12-31' }, { anio: 2025, perdidos: 1, vence: '2027-12-31' },
+      { anio: 2026, perdidos: 0, vence: '2028-12-31' }, null
+    ]), 'Perdés 2 de la 2024 (vencen el 31/12/2026) y 1 de la 2025 (vence el 31/12/2027).');
+    for (const sinNada of [[], null, undefined, 'x', [{ anio: 2024, perdidos: 0 }], [{ anio: 2024 }], [7, 'x', []]]) {
+      assert.equal(textoDePerdidos(sinNada), '', String(sinNada));
+    }
   });
 
   it('sin días que salgan de una licencia, no hay texto', () => {
@@ -3350,6 +3459,17 @@ describe('avisosDeVencimiento', () => {
     const hoy = '2026-10-26';
     assert.deepEqual(avisosDeVencimiento(calcular(PLANTA.estado, { hoy, feriados: SIN_FERIADOS }),
       { hoy, feriados: SIN_FERIADOS, modalidad: 'contrato' }), []);
+  });
+
+  it('los días de la licencia 2024 que se pierden no se avisan (spec 2026-10-27, punto 2.5)', () => {
+    const hoy = '2026-12-01';
+    const delDia = (...filas) => avisosDeVencimiento(calcular(soloVacaciones('2026-10-26', PERSONA, ...filas),
+      { hoy, feriados: SIN_FERIADOS }), { hoy, feriados: SIN_FERIADOS, modalidad: 'planta' });
+    // La que cruza el año deja 2 de la 2024 sin ningún día libre antes del 31/12
+    assert.equal(delDia(vacaciones(100, '2026-12-21', '2027-01-10')).some((aviso) => aviso.clave === 'licencia-2024'), false);
+    // Del 14/12 al 18/12 quedan 10, con días libres para usarlos
+    assert.deepEqual(delDia(vacaciones(100, '2026-12-14', '2026-12-18')).filter((aviso) => aviso.clave === 'licencia-2024'),
+      [{ clave: 'licencia-2024', texto: 'Tenés 10 días de la licencia 2024: vence el 31/12/2026.' }]);
   });
 
   it('nada tira', () => {
