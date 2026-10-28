@@ -1565,8 +1565,8 @@ const celdaConFecha = (html, fecha) => celdasDe(html).find((celda) => celda.atri
 // Las cabezas de las columnas: { hoy, texto }
 const cabezasDe = (html) => [...html.matchAll(/<th scope="col"( class="hoy")?>([\s\S]*?)<\/th>/g)]
   .map(([, hoy, adentro]) => ({ hoy: hoy !== undefined, texto: textoDe(adentro) }));
-// Los números de los días (sus botones): { fecha, tabindex, etiqueta, texto }
-const numerosDe = (html) => [...html.matchAll(/<button type="button" class="me-num" data-dia="([^"]*)" tabindex="([^"]*)" aria-label="([^"]*)">([^<]*)<\/button>/g)]
+// Los números de los días (sus botones; el elegido en el teléfono, con aria-current="true"): { fecha, tabindex, etiqueta, texto }
+const numerosDe = (html) => [...html.matchAll(/<button type="button" class="me-num" data-dia="([^"]*)" tabindex="([^"]*)" aria-label="([^"]*)"(?: aria-current="true")?>([^<]*)<\/button>/g)]
   .map(([, fecha, tabindex, etiqueta, texto]) => ({ fecha, tabindex, etiqueta, texto }));
 // La fecha del único número con tabindex="0"
 const enFocoDe = (html) => numerosDe(html).filter((numero) => numero.tabindex === '0').map((numero) => numero.fecha);
@@ -1823,6 +1823,30 @@ describe('la agenda: el HTML del mes', () => {
     for (const telefono of ['si', 1]) assert.ok(!M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, { telefono }).includes('aria-label="Ver el'), String(telefono));
   });
 
+  // Revisión final, 3: en el teléfono, lo de cada día (.me-cosas) no se ve y los puntos van con aria-hidden: el día elegido es lo único
+  // que un lector de pantalla tiene de un día, y el anillo del elegido es solo visual. Su número lo dice con aria-current="true"
+  it('htmlDelMes: en el teléfono, el número del día elegido (solo ese) con aria-current="true"; en la compu, ninguno; hoy sigue con aria-current="date"', () => {
+    const actuales = (html) => [...html.matchAll(/<button type="button" class="me-num" data-dia="([^"]*)"[^>]*aria-current="true"[^>]*>/g)].map(([, fecha]) => fecha);
+    const telefono = M.htmlDelMes('2026-10', DEL_MES, HOY, { telefono: true, elegido: '2026-10-22' });
+    assert.deepEqual(actuales(telefono), ['2026-10-22']);
+    assert.equal([...telefono.matchAll(/aria-current="true"/g)].length, 1);
+    assert.ok(telefono.includes('<button type="button" class="me-num" data-dia="2026-10-22" tabindex="-1" aria-label="Ver el jueves 22/10" aria-current="true">22</button>'));
+    // La celda de hoy conserva el suyo (y su número no lleva el del elegido)
+    assert.equal(celdaConFecha(telefono, HOY).atributos['aria-current'], 'date');
+    assert.equal([...telefono.matchAll(/aria-current="date"/g)].length, 1);
+    // Elegido hoy: la celda con «date» y su número con «true»
+    const elegidoHoy = M.htmlDelMes('2026-10', DEL_MES, HOY, { telefono: true, elegido: HOY });
+    assert.deepEqual(actuales(elegidoHoy), [HOY]);
+    assert.equal(celdaConFecha(elegidoHoy, HOY).atributos['aria-current'], 'date');
+    // En la compu (o con algo que no es el true literal), ninguno; sin elegido, o con uno que no se ve, tampoco
+    for (const opciones of [{ elegido: '2026-10-22' }, { telefono: false, elegido: '2026-10-22' }, { telefono: 'si', elegido: '2026-10-22' },
+      { telefono: true }, { telefono: true, elegido: '2026-10-31' }, { telefono: true, elegido: 'raro' }]) {
+      assert.doesNotMatch(M.htmlDelMes('2026-10', DEL_MES, HOY, opciones), /aria-current="true"/, JSON.stringify(opciones));
+    }
+    // numerosDe los lee igual
+    assert.equal(numerosDe(telefono).length, celdasDe(telefono).length);
+  });
+
   it('htmlDelMes: con tres argumentos, lo de entrada (sin sábado y domingo, sin elegido ni foco, en la compu y quieto)', () => {
     const tres = M.htmlDelMes('2026-10', DEL_MES, HOY);
     for (const opciones of [undefined, {}, null, 'x', 5, { finde: false, elegido: null, foco: null, telefono: false, animar: false }]) {
@@ -1918,8 +1942,32 @@ describe('la agenda: el HTML del mes', () => {
     assert.ok(html.includes(`<span class="me-elegido-texto">${CON_HTML_ESCAPADO} no está</span>`));
     assert.ok(html.includes(`<span class="me-elegido-texto">${ESCAPADO} <small>De ${ESCAPADO_EN_UNA_PALABRA}</small></span>`));
     for (const raro of ['raro', '2026-02-30', '', null, undefined, 20261104]) assert.equal(M.htmlDelDiaElegido(raro, datos, HOY), '', String(raro));
-    for (const raro of [null, undefined, 'x', {}, { eventos: 'x', companeros_por_dia: [null] }]) {
+    // Con lo del mes, aunque venga raro, el día vacío
+    for (const raro of [{}, { eventos: 'x', companeros_por_dia: [null] }]) {
       assert.ok(M.htmlDelDiaElegido('2026-11-04', raro, HOY).endsWith('<p class="me-vacio">No hay nada este día.</p>'), JSON.stringify(raro));
+    }
+  });
+
+  // Revisión final, 2: sin lo del mes (mientras se pide, o si no se pudo cargar) no se sabe qué hay ese día: «No hay nada este día.»
+  // aparecía un momento en cada cambio de mes y, si el mes fallaba, quedaba debajo de «No se pudo cargar el mes»
+  it('htmlDelDiaElegido: sin lo del mes, solo el título (siempre: nombra la sección) y «Nuevo evento», sin lista ni «No hay nada este día.»', () => {
+    const cabeza = '<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">Miércoles 4 de noviembre</h3>'
+      + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-el="2026-11-04">${M.ICONO_DE_MAS}Nuevo evento</button></div>`;
+    for (const sinDatos of [null, undefined, 'x', 5, true, ['eventos']]) {
+      assert.equal(M.htmlDelDiaElegido('2026-11-04', sinDatos, HOY), cabeza, JSON.stringify(sinDatos));
+    }
+    assert.equal(M.htmlDelDiaElegido(HOY, null, HOY), '<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">Lunes 26 de octubre (hoy)</h3>'
+      + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-el="${HOY}">${M.ICONO_DE_MAS}Nuevo evento</button></div>`);
+  });
+
+  // Revisión final, 3: el título del día elegido, solo (lo que se anuncia al elegir un día en el teléfono)
+  it('tituloDelDiaElegido: «Jueves 22 de octubre», con « (hoy)» si es hoy; es el título del día elegido', () => {
+    assert.equal(M.tituloDelDiaElegido('2026-10-22', HOY), 'Jueves 22 de octubre');
+    assert.equal(M.tituloDelDiaElegido(HOY, HOY), 'Lunes 26 de octubre (hoy)');
+    assert.equal(M.tituloDelDiaElegido('2026-11-01', HOY), 'Domingo 1 de noviembre');
+    for (const raro of ['raro', '2026-02-30', '', null, undefined]) assert.equal(M.tituloDelDiaElegido(raro, HOY), '', String(raro));
+    for (const fecha of ['2026-10-22', HOY, '2026-11-01']) {
+      assert.ok(M.htmlDelDiaElegido(fecha, DE_NOVIEMBRE, HOY).startsWith(`<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">${M.tituloDelDiaElegido(fecha, HOY)}</h3>`), fecha);
     }
   });
 });
@@ -6288,6 +6336,9 @@ describe('la agenda con más onda en la página (DOM falso)', () => {
     assert.equal(pagina.el('ag-finde-cuenta').hidden, true);
     assert.equal(pagina.el('ag-elegido').innerHTML, M.htmlDelDiaElegido('2026-11-02', null, HOY));
     assert.equal(tituloDelElegido(pagina), 'Lunes 2 de noviembre');
+    // Todavía no se sabe qué hay ese día: sin «No hay nada este día.» (Revisión final, 2)
+    assert.doesNotMatch(pagina.el('ag-elegido').innerHTML, /me-vacio|No hay nada/);
+    assert.ok(pagina.el('ag-elegido').querySelector('[data-nuevo-el="2026-11-02"]'));
     soltar();
     await pagina.esperar();
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Noviembre 2026');
@@ -6351,6 +6402,9 @@ describe('la agenda con más onda en la página (DOM falso)', () => {
     });
     await pagina.iniciar();
     assert.equal(textoDe(pagina.el('ag-mes').innerHTML), 'No se pudo cargar el mes. Probá de nuevo en unos minutos.');
+    // Debajo, el día elegido con su título (nombra la sección) y sin «No hay nada este día.»: no se sabe (Revisión final, 2)
+    assert.equal(tituloDelElegido(pagina), 'Lunes 26 de octubre (hoy)');
+    assert.doesNotMatch(pagina.el('ag-elegido').innerHTML, /me-vacio|No hay nada/);
     const pedidosDelMes = () => rangosPedidos(pagina).filter((ruta) => ruta === RUTA_DEL_MES).length;
     await pagina.tocar(pagina.el('ag-finde'));
     assert.equal(pedidosDelMes(), 2);
@@ -6385,6 +6439,9 @@ describe('la agenda con más onda en la página (DOM falso)', () => {
       assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, fecha), fecha);
       // Su número queda como la parada del teclado del mes
       assert.deepEqual(conTabindexCero(pagina), [fecha], fecha);
+      // En la compu no se elige: ningún número con aria-current="true" y nada que anunciar (Revisión final, 3)
+      assert.equal(pagina.el('ag-mes').querySelectorAll('[aria-current="true"]').length, 0, fecha);
+      assert.doesNotMatch(pagina.el('me-anuncio').textContent, /de octubre/, fecha);
     }
     // Un evento de la celda abre el suyo; el día elegido no cambia (en la compu no se ve)
     await pagina.tocar(celdaDelDia(pagina, HOY).querySelector('[data-evento="11"]'));
@@ -6424,6 +6481,8 @@ describe('la agenda con más onda en la página (DOM falso)', () => {
     assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY, { telefono: true }));
     assert.equal(pagina.el('ag-elegido').innerHTML, M.htmlDelDiaElegido(HOY, DEL_MES, HOY));
     assert.equal(numeroDelDia(pagina, '2026-10-22').getAttribute('aria-label'), 'Ver el jueves 22/10');
+    assert.equal(numeroDelDia(pagina, HOY).getAttribute('aria-current'), 'true');
+    assert.equal(celdaDelDia(pagina, HOY).getAttribute('aria-current'), 'date');
     // El jueves 29, en su cuerpo: lo elige, sin abrir nada ni pedir nada
     const antes = pagina.rutas().length;
     await pagina.tocar(celdaDelDia(pagina, '2026-10-29').querySelector('.me-celda-cuerpo'));
@@ -6433,11 +6492,17 @@ describe('la agenda con más onda en la página (DOM falso)', () => {
     assert.ok(!celdaDelDia(pagina, HOY).classList.contains('elegido'));
     assert.equal(pagina.el('ag-elegido').innerHTML, M.htmlDelDiaElegido('2026-10-29', DEL_MES, HOY));
     assert.deepEqual(conTabindexCero(pagina), ['2026-10-29']);
+    // Para el lector de pantalla (Revisión final, 3): su número con aria-current="true" (solo ese) y el título del día, anunciado
+    assert.deepEqual(pagina.el('ag-mes').querySelectorAll('[aria-current="true"]').map((numero) => numero.getAttribute('data-dia')), ['2026-10-29']);
+    assert.equal(pagina.el('me-anuncio').textContent, 'Jueves 29 de octubre');
     // Con el teclado (Enter o Espacio en el número son su clic): lo elige y el foco queda en su número, que se volvió a dibujar
     const numero = numeroDelDia(pagina, '2026-10-22');
     numero.focus();
     await pagina.tocar(numero);
     assert.equal(tituloDelElegido(pagina), 'Jueves 22 de octubre');
+    assert.equal(pagina.el('me-anuncio').textContent, 'Jueves 22 de octubre');
+    assert.equal(numeroDelDia(pagina, '2026-10-22').getAttribute('aria-current'), 'true');
+    assert.equal(numeroDelDia(pagina, '2026-10-29').getAttribute('aria-current'), null);
     assert.notEqual(numeroDelDia(pagina, '2026-10-22'), numero);
     assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-10-22'));
     assert.deepEqual(conTabindexCero(pagina), ['2026-10-22']);
@@ -8680,5 +8745,25 @@ describe('mi-espacio.html: los estilos de la agenda', () => {
       .map(([, clase, icono]) => [clase, icono]));
     assert.deepEqual(Object.keys(muestras), ['propio', 'compartido', 'licencia', 'feriado', 'ausente']);
     for (const [clase, icono] of Object.entries(muestras)) assert.equal(icono, M.ICONOS_DEL_MES[clase], clase);
+  });
+
+  // Revisión final, 1: el texto de un tramo va en el pedazo de su primer día, a lo ancho de todo el tramo y arriba de los pedazos de
+  // los días que siguen (.me-tira.inicio, z-index 2). Si tomara los clics, tocar la barra en el tercer día caería en el texto, cuyo
+  // día es el primero: «Nuevo evento» con la fecha del primero (y el «+» del primero). Ni el texto ni el ícono los toman: el clic cae
+  // en el pedazo de ese día, que es suyo (con su title)
+  it('el texto y el ícono de una barra no toman clics (pointer-events: none): tocar un día de la barra es tocar ese día', () => {
+    const valor = (selector, propiedad) => {
+      const regla = reglaDe(selector);
+      assert.ok(regla, selector);
+      return new RegExp(`(?:^|[;{\\s])${propiedad}: ([^;]+);`).exec(regla)?.[1] ?? null;
+    };
+    assert.equal(valor('.me-tira-texto', 'pointer-events'), 'none');
+    assert.equal(valor('.me-tira .me-icono', 'pointer-events'), 'none');
+    // El pedazo sí los toma: es el que dice de qué día es
+    assert.equal(valor('.me-tira', 'pointer-events'), null);
+    assert.equal(valor('.me-tira.inicio', 'pointer-events'), null);
+    // Ninguna regla se los devuelve, tampoco las del teléfono (ahí el texto y el ícono son de 1 px, ocultos a la vista)
+    for (const [, otro] of estilo.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/pointer-events: ([^;]+);/g)) assert.equal(otro, 'none');
+    assert.match(telefono, /\.me-tira-texto, \.me-tira \.me-icono \{ position: absolute; width: 1px; height: 1px;/);
   });
 });

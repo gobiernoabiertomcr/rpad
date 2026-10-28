@@ -1986,17 +1986,20 @@ const htmlDeCosa = (cosa, lineas) => {
 
 /**
  * Un día de la grilla (spec 3.3 a 3.5 y 3.8): su número (un botón: en la compu, «Nuevo evento el jueves 22/10»; en el teléfono,
- * «Ver el jueves 22/10»; con tabindex="0" solo el del foco), su pedazo de cada carril de la semana, lo suyo (los feriados y los
- * eventos, cosasPorDia) con los renglones de renglonesDelDia —el resto, oculto, y «y N más», que lo muestra (data-ver-mas)— y sus
- * puntos (los del teléfono, uno por cosa). Hoy, con aria-current; los días del mes que ya pasaron, los de los meses vecinos, los
- * fines de semana, los feriados y el elegido, con su clase.
+ * «Ver el jueves 22/10» y, el del día elegido, con aria-current="true": ahí lo de cada día no se ve y los puntos van con
+ * aria-hidden, así que el anillo es lo único que lo marca a la vista y el lector de pantalla lo sabe por este atributo; con
+ * tabindex="0" solo el del foco), su pedazo de cada carril de la semana, lo suyo (los feriados y los eventos, cosasPorDia) con los
+ * renglones de renglonesDelDia —el resto, oculto, y «y N más», que lo muestra (data-ver-mas)— y sus puntos (los del teléfono, uno
+ * por cosa). Hoy, con aria-current="date" en su celda; los días del mes que ya pasaron, los de los meses vecinos, los fines de
+ * semana, los feriados y el elegido, con su clase.
  */
 const htmlDeLaCelda = (dia, { cosas, piezas, lugares, hoy, foco, elegido, telefono, demora }) => {
   const { lineas, mas } = renglonesDelDia(cosas.length, lugares);
   const clases = ['me-celda', !dia.del_mes && 'otro-mes', dia.finde && 'finde', cosas.some((cosa) => cosa.clase === 'feriado') && 'feriado',
     dia.fecha === hoy && 'hoy', dia.del_mes && hoy !== null && dia.fecha < hoy && 'paso', dia.fecha === elegido && 'elegido'].filter(Boolean).join(' ');
   const numero = `<button type="button" class="me-num" data-dia="${dia.fecha}" tabindex="${dia.fecha === foco ? '0' : '-1'}" `
-    + `aria-label="${telefono ? 'Ver' : 'Nuevo evento'} el ${diaLargoDe(dia.fecha)}">${String(dia.dia)}</button>`;
+    + `aria-label="${telefono ? 'Ver' : 'Nuevo evento'} el ${diaLargoDe(dia.fecha)}"${telefono && dia.fecha === elegido ? ' aria-current="true"' : ''}>`
+    + `${String(dia.dia)}</button>`;
   const carriles = piezas.length > 0 ? `<div class="me-carriles">${piezas.map((pieza) => htmlDePieza(pieza, demora)).join('')}</div>` : '';
   const aLaVista = cosas.slice(0, lineas.length).map((cosa, i) => htmlDeCosa(cosa, lineas[i])).join('');
   const resto = mas > 0 ? `<div class="me-resto" hidden>${cosas.slice(lineas.length).map((cosa) => htmlDeCosa(cosa, 1)).join('')}</div>`
@@ -2013,8 +2016,8 @@ const htmlDeLaCelda = (dia, { cosas, piezas, lugares, hoy, foco, elegido, telefo
  * celda por día (htmlDeLaCelda). Las opciones (de entrada, las de la compu sin movimiento): `finde` (solo el true literal: con
  * sábado y domingo), `elegido` (el día elegido del teléfono), `foco` (el número con tabindex="0": el mes es una sola parada del
  * tabulador; si no se ve o no es una fecha, hoy si es del mes y si no el 1, o el día visible más cercano: diaVisibleCercano),
- * `telefono` (el número dice «Ver el …») y `animar` (cada pedazo de barra con su --demora: semana × 0,16 s + columna × 0,05 s).
- * Un mes que no sirve, ''.
+ * `telefono` (el número dice «Ver el …» y el del elegido lleva aria-current="true") y `animar` (cada pedazo de barra con su
+ * --demora: semana × 0,16 s + columna × 0,05 s). Un mes que no sirve, ''.
  */
 function htmlDelMes(mes, datos, hoy, opciones) {
   const elegidas = esObjeto(opciones) ? opciones : {};
@@ -2059,15 +2062,24 @@ const htmlDeFilaDelDia = (fila) => {
     : `<div class="me-elegido-cosa">${cuerpo}</div>`}</li>`;
 };
 
+// El título del día elegido: «Jueves 22 de octubre», con « (hoy)» si es hoy (lo que se anuncia al elegirlo en el teléfono). Una
+// fecha que no sirve, ''
+const tituloDelDiaElegido = (fecha, hoy) => (esFechaDeTexto(fecha) ? `${conMayuscula(diaConElMes(fecha))}${fecha === hoy ? ' (hoy)' : ''}` : '');
+
 /**
- * El día elegido del teléfono (spec 3.8), con lo que manda GET /mi-espacio/eventos para la grilla (`datos`): su fecha («Miércoles 28
- * de octubre», con « (hoy)» si es hoy), «Nuevo evento» con esa fecha (data-nuevo-el) y lo de ese día, de todo el día primero (los
- * feriados, tu licencia y los compañeros que no están, con el texto del día de `companeros_por_dia`) y después los eventos por
- * hora, con quién está; sin nada, «No hay nada este día.». Una fecha que no sirve, ''.
+ * El día elegido del teléfono (spec 3.8), con lo que manda GET /mi-espacio/eventos para la grilla (`datos`): su fecha
+ * (tituloDelDiaElegido; el título está siempre: nombra la sección, #ag-elegido), «Nuevo evento» con esa fecha (data-nuevo-el) y lo
+ * de ese día, de todo el día primero (los feriados, tu licencia y los compañeros que no están, con el texto del día de
+ * `companeros_por_dia`) y después los eventos por hora, con quién está; sin nada, «No hay nada este día.». Sin lo del mes (`datos`
+ * no es un objeto: mientras se pide, o si no se pudo cargar), no se sabe qué hay ese día: solo el título y «Nuevo evento», sin
+ * lista ni «No hay nada este día.». Una fecha que no sirve, ''.
  */
 function htmlDelDiaElegido(fecha, datos, hoy) {
   if (!esFechaDeTexto(fecha)) return '';
-  const fuente = esObjeto(datos) ? datos : {};
+  const cabeza = `<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">${esc(tituloDelDiaElegido(fecha, hoy))}</h3>`
+    + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-el="${fecha}">${ICONO_DE_MAS}Nuevo evento</button></div>`;
+  if (!esObjeto(datos)) return cabeza;
+  const fuente = datos;
   const filas = [];
   const deTodoElDia = (clase, texto) => filas.push({ clase, hora: 'Todo el día', texto: comoTexto(texto) });
   for (const feriado of listaDe(fuente.feriados)) if (feriado.fecha === fecha) deTodoElDia('feriado', feriado.texto);
@@ -2081,11 +2093,9 @@ function htmlDelDiaElegido(fecha, datos, hoy) {
       evento_id: evento.id ?? null
     });
   }
-  const titulo = `${conMayuscula(diaConElMes(fecha))}${fecha === hoy ? ' (hoy)' : ''}`;
   const lista = filas.length === 0 ? '<p class="me-vacio">No hay nada este día.</p>'
     : `<ul class="me-elegido-lista">${filas.map(htmlDeFilaDelDia).join('')}</ul>`;
-  return `<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">${esc(titulo)}</h3>`
-    + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-el="${fecha}">${ICONO_DE_MAS}Nuevo evento</button></div>${lista}`;
+  return `${cabeza}${lista}`;
 }
 
 /**
@@ -3071,7 +3081,8 @@ const numeroDelDia = (fecha) => (esFechaDeTexto(fecha) ? porId('ag-mes').querySe
 
 // El mes que se ve (spec 3.1 a 3.8): el título, la grilla (htmlDelMes, con «Sábado y domingo», el día elegido, el número del foco y
 // lo que hace cada número en esta pantalla), la frase de la banda (la del servidor, como texto; sin ella o mientras se pide el mes,
-// vacía), «Sábado y domingo» y, siempre, el día elegido (en la compu no se ve, pero su título nombra la sección; sin datos, igual).
+// vacía), «Sábado y domingo» y, siempre, el día elegido (en la compu no se ve, pero su título nombra la sección; sin datos, solo el
+// título y «Nuevo evento»).
 // «Compañeros que no están», en la leyenda, solo para quien los ve (decisión del usuario, 27/10/2026): lo dice el servidor
 // (`puede_compartir`, administración) y, hasta que llega, queda oculto. Un mes que se vuelve a dibujar llega quieto (sin data-animar);
 // la primera vez que se ve con sus datos, se mueve (moverElMes). Si el foco estaba en un número del mes, pasa al número del foco del
@@ -3163,12 +3174,14 @@ function marcarElFoco(fecha) {
 
 // Tocar un día (spec 4.1 y 3.8; su número, su espacio libre, un feriado o el pedazo de una barra): en la compu, «Nuevo evento» con
 // esa fecha (al cerrarlo, el foco vuelve a su número, que queda como la parada del mes); en el teléfono, lo elige: el mes se vuelve
-// a dibujar con el anillo en su número y, debajo, lo de ese día
+// a dibujar con el anillo en su número (y aria-current="true") y, debajo, lo de ese día, y se anuncia su título en #me-anuncio (ahí
+// lo de cada día no se ve: el día elegido es lo único que un lector de pantalla tiene de un día)
 function tocarUnDia(fecha) {
   if (enElTelefono()) {
     pagina.semana.elegido = fecha;
     pagina.semana.foco = fecha;
     pintarMesDeEventos();
+    anunciar(tituloDelDiaElegido(fecha, Utils.hoyEnArgentina()));
     return;
   }
   marcarElFoco(fecha);

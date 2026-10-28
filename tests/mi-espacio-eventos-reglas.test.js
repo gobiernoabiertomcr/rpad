@@ -17,6 +17,7 @@ import {
   mesDeLaFrase, fraseDelMes
 } from '../services/miEspacioEventosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
+import { TIPOS_LICENCIA } from '../services/miEspacioReglas.js';
 
 const HOY = '2026-10-26';
 const RANGO = 'La fecha tiene que ser del 01/01/2025 al 26/10/2028.';
@@ -1609,6 +1610,11 @@ describe('fraseDelMes', () => {
       const licencias = [licencia(tipo, '2026-11-13')];
       assert.equal(fraseDelMes({ mes: '2026-11', eventos: [], feriados: [], licencias }), esperada, tipo);
     }
+  });
+
+  // Revisión final, 4: un tipo de licencia nuevo no se cae de la frase del mes sin que se note
+  it('FRASE_DE_LA_LICENCIA tiene exactamente los tipos de licencia de Mi espacio (TIPOS_LICENCIA)', () => {
+    assert.deepEqual(Object.keys(FRASE_DE_LA_LICENCIA).sort(), [...TIPOS_LICENCIA].sort());
   });
 
   it('sin nada en el mes: «Nada cargado en diciembre. Tocá un día para agendar algo.»', () => {

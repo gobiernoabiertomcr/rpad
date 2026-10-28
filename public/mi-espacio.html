@@ -345,7 +345,9 @@
            sus días, que escribe mi-espacio.js; la cuenta deja afuera el relleno, el ícono y las puntas), en una línea con «…» y arriba
            de los pedazos que siguen; en los demás va oculto a la vista: el lector de pantalla lo lee en cada día. El carril tiene una
            sola columna del ancho del día (minmax(0, 1fr)) y la barra puede achicarse (min-width: 0): si no, el navegador mide la
-           columna con el ancho natural del texto (nowrap) y no con su calc(), y la barra se pinta sobre los días que siguen */
+           columna con el ancho natural del texto (nowrap) y no con su calc(), y la barra se pinta sobre los días que siguen. El texto
+           y el ícono no toman clics (pointer-events: none): el texto se pinta arriba de los pedazos de los días que siguen, y su día
+           es el primero; así, tocar la barra en otro día cae en el pedazo de ese día (con su title) y abre «Nuevo evento» con su fecha */
         .me-carriles { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: 22px; align-items: center; }
         .me-tira { position: relative; z-index: 1; display: flex; align-items: center; gap: 4px; min-width: 0; height: 19px; margin: 0 -6px; padding: 0 6px; font-size: 0.74rem; font-weight: 600; line-height: 1; white-space: nowrap; transform-origin: 0 50%; transition: transform 0.5s cubic-bezier(0.22, 0.8, 0.3, 1) var(--demora); }
         .me-tira.inicio { z-index: 2; margin-left: -2px; border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
@@ -355,8 +357,8 @@
         .me-tira.licencia { background: var(--sg-verde-fondo); color: var(--sg-verde); }
         .me-tira.licencia.inicio:not(.sigue-antes) { box-shadow: inset 3px 0 0 var(--sg-verde); }
         .me-tira.ausente { background: var(--sg-suave); color: #fff; }
-        .me-tira .me-icono { flex: none; margin: 0; }
-        .me-tira-texto { flex: none; width: calc(var(--n) * 100% + var(--n) * 11px - 32px); overflow: hidden; text-overflow: ellipsis; }
+        .me-tira .me-icono { flex: none; margin: 0; pointer-events: none; }
+        .me-tira-texto { flex: none; width: calc(var(--n) * 100% + var(--n) * 11px - 32px); overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
         /* El movimiento (spec 3.7), una sola vez por carga: mi-espacio.js le pone data-animar a #ag-mes la primera vez que el mes se
            ve y se lo saca dos cuadros después. Con data-animar, las barras sin dibujar y sin transición; al sacarlo se dibujan de
            izquierda a derecha, cada pedazo con su --demora (la del style que escribe mi-espacio.js), y el texto de cada tramo aparece
