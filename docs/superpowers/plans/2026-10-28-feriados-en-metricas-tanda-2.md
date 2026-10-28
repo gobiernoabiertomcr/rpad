@@ -11,6 +11,8 @@
 
 **Tech Stack:** Node 22, ES Modules, Express 4 y mysql2/promise sobre MariaDB. Tests con `node:test`: puros, de la página en un `vm` y de integración sobre Docker con una base propia.
 
+**Estado:** aprobado por el usuario el 28/10/2026. Se implementa con subagentes de Opus después de traer el main con «licencia anulada» (Task 0).
+
 **Spec:** `docs/superpowers/specs/2026-10-27-feriados-en-notas-design.md`, aprobada el 27/10/2026. Este plan es su **tanda 2**: secciones 2 (lo de la tanda 2), 5, 6 (los textos de Métricas, el Ciclo de vida y el aviso azul), 7 (los tests de la tanda 2) y 9. La tanda 1 está en main desde ad0de02 (plan `docs/superpowers/plans/2026-10-27-feriados-en-notas-tanda-1.md`).
 - El mapa del código, con archivo y línea de ad0de02, está en los informes de los tres agentes del 28/10/2026, resumidos acá en cada tarea. Las líneas pueden correrse con lo que traiga main en la Task 0: buscar por el nombre.
 
