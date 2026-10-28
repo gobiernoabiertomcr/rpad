@@ -343,9 +343,11 @@
            (.inicio y .fin), redondeada y con 3 px de aire; la que sigue en la semana de al lado (.sigue-antes y .sigue-despues), recta
            y, en una licencia, sin el borde de color. El texto va una vez, en el pedazo de .inicio, a lo ancho de todo el tramo (--n,
            sus días, que escribe mi-espacio.js; la cuenta deja afuera el relleno, el ícono y las puntas), en una línea con «…» y arriba
-           de los pedazos que siguen; en los demás va oculto a la vista: el lector de pantalla lo lee en cada día */
-        .me-carriles { display: grid; grid-auto-rows: 22px; align-items: center; }
-        .me-tira { position: relative; z-index: 1; display: flex; align-items: center; gap: 4px; height: 19px; margin: 0 -6px; padding: 0 6px; font-size: 0.74rem; font-weight: 600; line-height: 1; white-space: nowrap; transform-origin: 0 50%; transition: transform 0.5s cubic-bezier(0.22, 0.8, 0.3, 1) var(--demora); }
+           de los pedazos que siguen; en los demás va oculto a la vista: el lector de pantalla lo lee en cada día. El carril tiene una
+           sola columna del ancho del día (minmax(0, 1fr)) y la barra puede achicarse (min-width: 0): si no, el navegador mide la
+           columna con el ancho natural del texto (nowrap) y no con su calc(), y la barra se pinta sobre los días que siguen */
+        .me-carriles { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: 22px; align-items: center; }
+        .me-tira { position: relative; z-index: 1; display: flex; align-items: center; gap: 4px; min-width: 0; height: 19px; margin: 0 -6px; padding: 0 6px; font-size: 0.74rem; font-weight: 600; line-height: 1; white-space: nowrap; transform-origin: 0 50%; transition: transform 0.5s cubic-bezier(0.22, 0.8, 0.3, 1) var(--demora); }
         .me-tira.inicio { z-index: 2; margin-left: -2px; border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
         .me-tira.fin { margin-right: -2px; border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
         .me-tira.sigue-antes { margin-left: -6px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
@@ -409,19 +411,6 @@
         .me-fila-del-dia.feriado .me-elegido-cosa { background: var(--sg-sol); border-color: #C98A00; color: var(--sg-ambar); }
         .me-fila-del-dia.ausente .me-elegido-cosa { background: var(--sg-gris-fondo); border-color: var(--sg-gris); color: var(--sg-suave); }
 
-        /* En alto contraste (forced-colors), el fondo no alcanza: las barras llevan su borde, los puntos y las marcas, CanvasText, y el
-           número de hoy, un borde; la ola no se dibuja (más arriba) */
-        @media (forced-colors: active) {
-            .me-tira:not(.vacia) { border-top: 1px solid CanvasText; border-bottom: 1px solid CanvasText; }
-            .me-tira.inicio:not(.sigue-antes) { border-left: 1px solid CanvasText; }
-            .me-tira.fin:not(.sigue-despues) { border-right: 1px solid CanvasText; }
-            .me-puntos i { forced-color-adjust: none; background: CanvasText; }
-            .me-color { border: 1px solid CanvasText; }
-            .me-celda.hoy .me-num { border: 2px solid CanvasText; }
-            .me-finde-llave { border: 1px solid CanvasText; }
-            .me-finde-llave::after { forced-color-adjust: none; background: CanvasText; }
-            .me-elegido-icono i, .me-prox-icono.propio i { forced-color-adjust: none; background: CanvasText; }
-        }
         /* Con prefers-reduced-motion, nada se mueve: las barras, su texto, el «+» y la llave, sin transición, y quietas aunque
            tuvieran data-animar */
         @media (prefers-reduced-motion: reduce) {
@@ -731,12 +720,13 @@
             .me-celda.hoy.elegido .me-num::before { inset: -5px; }
             .me-cosas { display: none; }
             .me-carriles { grid-auto-rows: 7px; }
-            .me-tira { height: 5px; margin: 0 -3px; padding: 0; box-shadow: none; }
+            .me-tira { height: 5px; margin: 0 -3px; padding: 0; }
             .me-tira.inicio { margin-left: -1px; border-top-left-radius: 3px; border-bottom-left-radius: 3px; }
             .me-tira.fin { margin-right: -1px; border-top-right-radius: 3px; border-bottom-right-radius: 3px; }
             .me-tira.sigue-antes { margin-left: -3px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
             .me-tira.sigue-despues { margin-right: -3px; border-top-right-radius: 0; border-bottom-right-radius: 0; }
             .me-tira.licencia { background: var(--sg-verde); }
+            .me-tira.licencia.inicio:not(.sigue-antes) { box-shadow: none; }
             .me-tira-texto, .me-tira .me-icono { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
             .me-puntos { display: flex; justify-content: center; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
             .me-puntos i { width: 7px; height: 7px; border-radius: 50%; }
@@ -754,6 +744,24 @@
             .me-resto-cabeza { grid-template-columns: minmax(0, 1fr); }
             .me-resto .me-numero .grande { font-size: 2.1rem; }
             .me-mesa { padding: 8px; }
+        }
+        /* La agenda en alto contraste (forced-colors; spec 2026-10-28-mi-espacio-agenda-onda, 6): el fondo no alcanza, así que las
+           barras llevan su borde (arriba y abajo, y en sus puntas: se ve continua), los puntos (los del teléfono, el de los próximos y
+           el del día elegido) y la perilla de la llave van en CanvasText, la muestra de la leyenda y la llave con un borde, y el número
+           de hoy, con un borde. Va al final del <style> y cada selector es al menos tan específico como el que le da su color (los
+           puntos del teléfono, los próximos, la llave prendida): si no, esos ganan y el punto queda en Canvas, invisible. La ola del
+           Resumen y de la banda del mes no se dibuja (más arriba) */
+        @media (forced-colors: active) {
+            .me-tira:not(.vacia) { border-top: 1px solid CanvasText; border-bottom: 1px solid CanvasText; }
+            .me-tira.inicio:not(.sigue-antes) { border-left: 1px solid CanvasText; }
+            .me-tira.fin:not(.sigue-despues) { border-right: 1px solid CanvasText; }
+            .me-puntos i[class] { forced-color-adjust: none; background: CanvasText; }
+            .me-proximos .me-prox-icono.propio i { forced-color-adjust: none; background: CanvasText; }
+            .me-elegido .me-elegido-icono i { forced-color-adjust: none; background: CanvasText; }
+            .me-leyenda .me-color[aria-hidden] { border: 1px solid CanvasText; }
+            .me-celda.hoy .me-num { border: 2px solid CanvasText; }
+            .me-finde-llave { border: 1px solid CanvasText; }
+            .me-acciones-del-mes .me-finde[aria-pressed] .me-finde-llave::after { forced-color-adjust: none; background: CanvasText; }
         }
     </style>
 </head>

@@ -814,6 +814,86 @@ describe('páginas', () => {
       assert.doesNotMatch(sinComentarios, /\.me-(?:mes|celda|carriles|leyenda|tira)[^{,]*\.me-(?:barra|muestra)\b/);
     });
 
+    // Revisión de la Task 7 (Chrome 152): con la columna implícita del carril (auto) y el min-width: auto de la barra, Chrome medía el
+    // carril con el ancho natural del texto (nowrap) y no con el calc() de .me-tira-texto, así que una barra de un día se pintaba
+    // sobre los días siguientes (277,7 px en una celda de 79,8). El carril tiene una sola columna del ancho de la celda y la barra
+    // puede achicarse: el texto queda en su tramo
+    it('la agenda: el carril es del ancho de su día (una columna minmax(0, 1fr)) y la barra puede achicarse (min-width: 0)', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      const regla = (selector) => {
+        const escapado = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return estilo.match(new RegExp(`\\n\\s*${escapado} \\{([^}]*)\\}`))?.[1] ?? '';
+      };
+      assert.match(regla('.me-carriles'), /(?:^|; | )grid-template-columns: minmax\(0, 1fr\);/);
+      assert.match(regla('.me-tira'), /(?:^|; | )min-width: 0;/);
+      // Ningún otro lado le vuelve a dar al carril columnas que crezcan con el texto
+      for (const [, selector, cuerpo] of estilo.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+        if (/\.me-carriles\b/.test(selector) && /grid-template-columns/.test(cuerpo)) {
+          assert.match(cuerpo, /grid-template-columns: minmax\(0, 1fr\);/, selector.trim());
+        }
+      }
+    });
+
+    // Revisión de la Task 7 (spec 2026-10-28-mi-espacio-agenda-onda, 6): en alto contraste, los puntos y la llave tienen que salir en
+    // CanvasText, y la regla que lo dice pierde si va antes que las que les dan su color o si es menos específica. El bloque va al
+    // final del <style> (después del teléfono y de los próximos) y cada selector es al menos tan específico como el que pisa
+    it('la agenda en alto contraste: el bloque va al final y pisa los colores de los puntos y de la llave', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/).replace(/\/\*[\s\S]*?\*\//g, '');
+      // La especificidad de un selector simple de los de esta hoja: [ids, clases + atributos + pseudoclases, elementos + pseudoelementos]
+      // (:not() cuenta lo de adentro)
+      const especificidad = (selector) => {
+        const sinNot = selector.replace(/:not\(([^)]*)\)/g, ' $1');
+        const ids = (sinNot.match(/#[\w-]+/g) ?? []).length;
+        const clases = (sinNot.match(/\.[\w-]+|\[[^\]]*\]|(?<!:):(?!:)[\w-]+/g) ?? []).length;
+        const elementos = (sinNot.replace(/\[[^\]]*\]/g, '').match(/(?:^|[\s>+~])[a-z][\w-]*|::[\w-]+/g) ?? []).length;
+        return [ids, clases, elementos];
+      };
+      const noMenos = (uno, otro) => {
+        for (let i = 0; i < 3; i++) if (uno[i] !== otro[i]) return uno[i] > otro[i];
+        return true;
+      };
+      assert.deepEqual(especificidad('.me-puntos .propio'), [0, 2, 0]);
+      assert.deepEqual(especificidad('.me-finde[aria-pressed="true"] .me-finde-llave::after'), [0, 3, 1]);
+      assert.deepEqual(especificidad('.me-tira.licencia.inicio:not(.sigue-antes)'), [0, 4, 0]);
+      // El bloque multirrenglón (el de una sola línea, el de la ola del Resumen, va más arriba)
+      const inicio = estilo.search(/@media \(forced-colors: active\) \{\r?\n/);
+      assert.ok(inicio >= 0, 'el bloque de alto contraste de la agenda');
+      const fin = estilo.indexOf('\n        }', inicio);
+      const bloqueAlto = estilo.slice(inicio, fin);
+      const reglasDelBloque = [...bloqueAlto.matchAll(/\n\s*([^{}\n]+?) \{([^}]*)\}/g)].map(([, selector, cuerpo]) => ({ selector, cuerpo }));
+      // Después de todo lo que pisa: el teléfono, los colores de los puntos, los próximos, la llave y el día elegido
+      for (const pisada of ['@media (max-width: 640px) {', '.me-puntos .propio {', '.me-puntos .feriado {', '.me-prox-icono.propio i {',
+        '.me-finde[aria-pressed="true"] .me-finde-llave::after {', '.me-elegido-icono i {']) {
+        assert.ok(estilo.indexOf(pisada) >= 0 && estilo.indexOf(pisada) < inicio, `después de ${pisada}`);
+      }
+      // Cada regla que pisa un color con CanvasText, al menos tan específica como la que lo da
+      const PISADAS = [
+        ['puntos del teléfono', /\.me-puntos/, ['.me-puntos .propio', '.me-puntos .compartido', '.me-puntos .feriado', '.me-puntos i']],
+        ['punto de los próximos', /\.me-prox-icono/, ['.me-prox-icono.propio i']],
+        ['punto del día elegido', /\.me-elegido-icono/, ['.me-elegido-icono i']],
+        ['la perilla de la llave', /\.me-finde-llave::after/, ['.me-finde-llave::after', '.me-finde[aria-pressed="true"] .me-finde-llave::after']]
+      ];
+      for (const [nombre, patron, contra] of PISADAS) {
+        const selectores = reglasDelBloque.filter(({ cuerpo }) => /CanvasText/.test(cuerpo))
+          .flatMap(({ selector }) => selector.split(',').map((parte) => parte.trim())).filter((parte) => patron.test(parte));
+        assert.ok(selectores.length > 0, nombre);
+        for (const selector of selectores) {
+          for (const otro of contra) assert.ok(noMenos(especificidad(selector), especificidad(otro)), `${selector} contra ${otro}`);
+        }
+      }
+      // Las barras siguen en el bloque, con su borde
+      assert.ok(reglasDelBloque.some(({ selector, cuerpo }) => selector.includes('.me-tira') && /CanvasText/.test(cuerpo)));
+    });
+
+    // Revisión de la Task 7: en el teléfono, la línea de una licencia va sin el borde de color del principio; la regla tiene que poder
+    // con .me-tira.licencia.inicio:not(.sigue-antes) (0,4,0), así que no alcanza con ponerlo en .me-tira
+    it('la agenda en el teléfono: la licencia sin el borde de color del principio, con una regla que gana', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      const telefono = estilo.match(/@media \(max-width: 640px\) \{([\s\S]*?)\n\s*\}(?=\r?\n)/)?.[1] ?? '';
+      assert.match(telefono, /\n\s*\.me-tira\.licencia\.inicio:not\(\.sigue-antes\) \{ box-shadow: none; \}/);
+      assert.doesNotMatch(telefono.match(/\n\s*\.me-tira \{([^}]*)\}/)?.[1] ?? '', /box-shadow/);
+    });
+
     // Fuera de los modales, #me-anuncio es la única región viva; dentro de cada modal, solo su error sin campo (role="alert", como en
     // Configuración y Proyectos: el formulario está detrás del velo de los demás) y, en la planilla de contrato, además su propia
     // región viva, #mp-anuncio (spec 2026-10-27-mi-espacio-horas, 9: con aria-modal, la de la página puede no leerse; dice el mes que
