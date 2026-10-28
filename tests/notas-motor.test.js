@@ -1508,11 +1508,34 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
     assert.equal((await notas()).filter(n => n.tipo === 'reiteracion').length, 1, 'solo la de la corrida');
   });
 
-  it('previewAnexo abierto después de la reiteración real del mismo día no la muestra dos veces: la «XX» en su lugar', async () => {
+  // Desde los feriados en las notas (spec 2026-10-27-feriados-en-notas, 4), la vista previa de la reiteración es la que anuncia el
+  // Estado: con la del mes ya evaluada, la del mes siguiente. La del mismo día solo se ve si la marca del mes no quedó escrita
+  it('previewAnexo abierto después de la reiteración real del mismo día muestra la del mes siguiente, con la real una vez y la «XX»', async () => {
     await reiteracionDel0211();
     await ejecutar('2026-11-02');
     const [reiteracion] = await laReiteracion();
     assert.equal(reiteracion.estado, 'enviada');
+    const hojas = lineasPorHoja(await motor.previewAnexo({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-02' }));
+    assert.equal(hojas.length, 2);
+    for (const lineas of hojas) {
+      assert.ok(lineas.includes('1 de diciembre de 2026'), lineas.join(' | '));
+      assert.equal(vecesDelTitulo(lineas, 'XX'), 1, lineas.join(' | '));
+      assert.equal(vecesDelTitulo(lineas, '2/26'), 1, lineas.join(' | '));
+    }
+    // El 01/12 los dos están vencidos: van por vencimiento, primero el del 31/10 (la lista de los avisos puede ocupar dos renglones)
+    const conAvisos = (lineas, titulo, cantidad, lista) =>
+      lineas.includes(titulo) && lineas.includes(cantidad) && lineas.join(' ').includes(lista);
+    assert.ok(conAvisos(hojas[0], 'Vencido sin aviso', '2 avisos', 'Las Notas Digitales N° 2/26 y XX'), hojas[0].join(' | '));
+    assert.ok(conAvisos(hojas[1], 'Próximo avisado', '3 avisos', 'Las Notas Digitales N° 1/26, 2/26 y XX'), hojas[1].join(' | '));
+  });
+
+  it('previewAnexo del mismo día que la reiteración real (la marca del mes no quedó escrita) no la muestra dos veces: la «XX» en su lugar', async () => {
+    await reiteracionDel0211();
+    await ejecutar('2026-11-02');
+    const [reiteracion] = await laReiteracion();
+    assert.equal(reiteracion.estado, 'enviada');
+    // Como si el UPDATE de la marca hubiera fallado después del envío: el Estado sigue anunciando la del 02/11
+    await query('UPDATE notas_digitales_config SET reiteracion_evaluada_interna = NULL WHERE id = 1');
     const hojas = lineasPorHoja(await motor.previewAnexo({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-02' }));
     assert.equal(hojas.length, 2);
     for (const lineas of hojas) {

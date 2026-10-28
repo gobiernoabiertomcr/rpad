@@ -326,12 +326,14 @@ export const enviarPrueba = async (req, res) => {
     if (!pedida) return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
     const resultado = await notas.enviarPrueba({ ...pedida, usuarioId: req.user?.userId ?? null });
     if (!resultado.success) return res.status(502).json({ success: false, error: `No se pudo enviar la prueba: ${resultado.error}` });
-    // Si hoy no se generan notas, la prueba muestra la de la próxima corrida con notas (spec 2026-10-15, 7.7): lo dice
+    // Si hoy no se generan notas (motivo), o si esta nota sale otro día (otro_dia: por ejemplo, la reiteración del mes ya salió), la
+    // prueba muestra la de ese día (spec 2026-10-15, 7.7, y 2026-10-27-feriados-en-notas, 4): lo dice
     res.json({
       success: true,
       message: notas.mensajeDePrueba(resultado),
       data: {
-        id: resultado.id, ejemplo: resultado.ejemplo, destinatarios: resultado.destinatarios, fecha: resultado.fecha, motivo: resultado.motivo
+        id: resultado.id, ejemplo: resultado.ejemplo, destinatarios: resultado.destinatarios, fecha: resultado.fecha, motivo: resultado.motivo,
+        otro_dia: resultado.otro_dia
       }
     });
   } catch (error) {

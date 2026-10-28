@@ -468,7 +468,7 @@ const filaSimple = (valores) => ({ valores, url: null, antecedente: null, inform
 // Fila de las tablas de nuevos y reiterados (spec 10.3, punto 3). "Propuesto por": el nombre y, si tiene, el cargo (con
 // "personal contratado, cumpliendo funciones de" si quien propuso es contratado). "Días hábiles pendiente": el que trae el
 // cambio, calculado con el calendario de la corrida (auditoriaService.seleccionarParaAuditoria), así el contenido sigue puro;
-// sin él (los cambios de ejemplo), con los 9 fijos
+// sin él, con los 9 fijos (los cambios de ejemplo de la vista previa y la prueba también lo traen: ejemploAuditoria)
 const filaDeCambio = (cambio, fecha, conSolicitud) => {
   const proponente = cambio.usuario_cargo
     ? `${cambio.usuario_nombre}, ${cargoEnTexto({ cargo: cambio.usuario_cargo, contratado: cambio.usuario_contratado })}`

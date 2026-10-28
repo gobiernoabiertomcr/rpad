@@ -23,7 +23,6 @@ const HASTA_LA_TANDA_2 = Object.freeze(['services/metricasReglas.js', 'services/
 const PENDIENTES_DE_LA_TANDA_1 = Object.freeze([
   'services/licenciasOficialesService.js',
   'services/miEspacioReglas.js',
-  'services/notasDigitales.js',
   'controllers/licenciasController.js'
 ]);
 

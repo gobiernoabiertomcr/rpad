@@ -12,7 +12,7 @@ import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
 import { fuentesDeLaNota, seguimientosDeLaNota, renderAnexoDeReiteracion } from './notasDigitalesSeguimiento.js';
 import {
-  hoyArgentina, ahoraArgentina, esFechaIso, diaHabilAnterior, periodoDe, periodoSiguiente, sumarDias, formatoCorto, diasEntre
+  hoyArgentina, ahoraArgentina, esFechaIso, periodoDe, periodoSiguiente, sumarDias, formatoCorto, diasEntre
 } from './notasDigitalesCalendario.js';
 import {
   GESTIONES, VENTANA_DIAS, obtenerConfig, configuracionCompleta, seleccionarParaAviso, seleccionarParaReiteracion,
@@ -411,8 +411,10 @@ const porVencimientoYTitulo = (a, b) =>
 // firmante) y, salvo en un día sin autorizado (en que no se genera ninguna nota), la autorización todavía no comunicada
 // (pendiente, y sus datos en autorizacion) y el anticipo de la víspera de una licencia (solo con el titular firmando).
 // calendario: el de quien llama (la corrida, o la vista previa), que va a autorizacionPendiente y a anticipoPorLicencia y vuelve
-// en el contexto, así lo que sigue (avisoDelDia) cuenta los días hábiles con el mismo, sin volver a leer la tabla.
+// en el contexto, así lo que sigue (avisoDelDia) cuenta los días hábiles con el mismo, sin volver a leer la tabla. Es obligatorio:
+// un olvido tira (si no, autorizacionPendiente y anticipoPorLicencia leerían la tabla de nuevo, en silencio).
 const contextoDelDia = async (config, fecha, calendario) => {
+  if (!calendario) throw new TypeError('contextoDelDia necesita el calendario');
   const { modo, firma, licencia } = await firmaParaFecha(config, fecha);
   if (modo === 'sin_autorizado') return { modo, firma, licencia, calendario };
   const pendiente = await autorizacionPendiente(config, fecha, calendario);
@@ -765,9 +767,15 @@ export const fuentesDeEjemplo = (datasets, fecha) => {
 // Ejemplo de la nota de auditoría para la vista previa y la prueba cuando hoy no hay cambios para pedir (spec 10.4):
 // una actualización y un alta nuevas, y una baja ya solicitada. La actualización es un registro de actualización de un
 // anual (spec 2026-10-17-fechas-datasets, 9): venció a fin del mes pasado, llegaron los datos al corte y la próxima es
-// dentro de un año, a fin de mes
-const ejemploAuditoria = (hoy) => {
-  const comun = { usuario_nombre: 'Persona de ejemplo', usuario_cargo: 'Cargo de ejemplo', fecha_propuesta: diaHabilAnterior(diaHabilAnterior(hoy)) };
+// dentro de un año, a fin de mes. hoy: el día de la nota. calendario: el de la vista previa o la prueba (spec
+// 2026-10-27-feriados-en-notas, 4): con él se cuentan los días hábiles de las fechas y la columna «Días hábiles pendiente» de cada
+// cambio (dias_habiles_pendiente, como los que trae seleccionarParaAuditoria: sin él, la nota los contaría con los 9 fijos)
+const ejemploAuditoria = (hoy, calendario) => {
+  const conDias = (cambio) => ({ ...cambio, dias_habiles_pendiente: calendario.diasHabilesTranscurridos(cambio.fecha_propuesta, hoy) });
+  const comun = {
+    usuario_nombre: 'Persona de ejemplo', usuario_cargo: 'Cargo de ejemplo',
+    fecha_propuesta: calendario.diaHabilAnterior(calendario.diaHabilAnterior(hoy))
+  };
   const vencio = sumarMeses(hoy, -1);
   return {
     nuevos: [
@@ -775,8 +783,9 @@ const ejemploAuditoria = (hoy) => {
         ...comun, id: 0, tipo_cambio: 'editar', dataset_titulo: 'Dataset de ejemplo',
         datos_anteriores: { ultima_actualizacion: sumarDias(hoy, -380), datos_al: sumarMeses(vencio, -13), proxima_actualizacion: vencio },
         datos_nuevos: {
-          ultima_actualizacion: comun.fecha_propuesta, datos_al: sumarMeses(vencio, -1), recibido_el: diaHabilAnterior(comun.fecha_propuesta),
-          proxima_actualizacion: sumarMeses(vencio, 12), notas: null, registro_actualizacion: true
+          ultima_actualizacion: comun.fecha_propuesta, datos_al: sumarMeses(vencio, -1),
+          recibido_el: calendario.diaHabilAnterior(comun.fecha_propuesta), proxima_actualizacion: sumarMeses(vencio, 12), notas: null,
+          registro_actualizacion: true
         }
       },
       {
@@ -786,21 +795,22 @@ const ejemploAuditoria = (hoy) => {
           tipo_gestion: 'interna', url_dataset: 'https://datos.comodoro.gov.ar/dataset/nuevo'
         }
       }
-    ],
+    ].map(conDias),
     reiterados: [{
       ...comun, id: -2, tipo_cambio: 'eliminar', dataset_titulo: 'Dataset de ejemplo a dar de baja', fecha_propuesta: sumarDias(hoy, -14),
       datos_nuevos: { eliminado: true }, datos_anteriores: { titulo: 'Dataset de ejemplo a dar de baja', tipo_gestion: 'externa' },
-      solicitado: { numero: 1, anio: Number(hoy.slice(0, 4)), fecha: diaHabilAnterior(sumarDias(hoy, -6)), reiteraciones: 0 }
-    }],
+      solicitado: { numero: 1, anio: Number(hoy.slice(0, 4)), fecha: calendario.diaHabilAnterior(sumarDias(hoy, -6)), reiteraciones: 0 }
+    }].map(conDias),
     catalogos: { areas: {}, frecuencias: {}, temas: {}, formatos: {} }
   };
 };
 
-// Lo que llevaría la nota de auditoría ese día (spec 9.3) o, si no lleva nada, el ejemplo
-const contenidoDeAuditoriaParaMostrar = async (config, fecha) => {
-  const { nuevos, reiterados } = await seleccionarParaAuditoria(fecha, await contextoDeCanal(fecha, config));
+// Lo que llevaría la nota de auditoría ese día (spec 9.3) o, si no lleva nada, el ejemplo. calendario: el de la vista previa o la
+// prueba, para el canal y la selección de ese día (contextoDeCanal no vuelve a leer la tabla) y para el ejemplo
+const contenidoDeAuditoriaParaMostrar = async (config, fecha, calendario) => {
+  const { nuevos, reiterados } = await seleccionarParaAuditoria(fecha, await contextoDeCanal(fecha, config, calendario));
   if (nuevos.length || reiterados.length) return { nuevos, reiterados, catalogos: await catalogosParaAuditoria(), ejemplo: false };
-  return { ...ejemploAuditoria(fecha), ejemplo: true };
+  return { ...ejemploAuditoria(fecha, calendario), ejemplo: true };
 };
 
 const MOTIVO_DIA_NO_HABIL = 'día no hábil';
@@ -844,25 +854,40 @@ const firmaDeVistaPrevia = ({ modo, firma, licencia, pendiente }) => {
   };
 };
 
-// El día de la vista previa o la prueba con lo que decide cómo sale ese día (el mismo contextoDelDia de la corrida) y su firma.
-// Una sola vez por pedido: el HTML, el PDF, el anexo y la prueba se arman con lo mismo.
-const diaDeVistaPrevia = async (config, hoy) => {
-  const { fecha, motivo } = await fechaDeVistaPrevia(config, hoy);
-  const contexto = await contextoDelDia(config, fecha);
-  return { fecha, motivo, contexto, firma: firmaDeVistaPrevia(contexto) };
+/**
+ * El día de la vista previa o la prueba con lo que decide cómo sale ese día (el mismo contextoDelDia de la corrida) y su firma.
+ * Una sola vez por pedido: el HTML, el PDF, el anexo y la prueba se arman con lo mismo. La fecha es la que anuncia Correos → Estado
+ * para ese tipo y esa gestión (spec 2026-10-27-feriados-en-notas, 4: una sola función da las fechas al Estado y a la vista previa):
+ * - el aviso, la de fechaDeVistaPrevia (el primer día con notas desde hoy);
+ * - la reiteración, la de proximasFechas (si la del mes ya salió, la del mes siguiente) o, si no tiene, la de fechaDeVistaPrevia;
+ * - la nota de auditoría, la próxima de proximasFechas o, si no hay ninguna, la de fechaDeVistaPrevia.
+ * motivo: el de fechaDeVistaPrevia (por qué hoy no se generan notas, o null). otro_dia: la fecha no es hoy (también si hoy hay notas
+ * pero esta sale otro día). calendario: el del pedido, obligatorio; llega a todo lo de adentro y vuelve en el contexto.
+ * { fecha, motivo, otro_dia, contexto, firma }
+ */
+const diaDeVistaPrevia = async (config, hoy, { tipo, gestion }, calendario) => {
+  const { fecha: primera, motivo } = await fechaDeVistaPrevia(config, hoy, calendario);
+  let fecha = primera;
+  if (tipo === 'reiteracion' || tipo === 'auditoria') {
+    const { proximas, auditoria } = await proximasFechas({ config, hoy, calendario });
+    fecha = (tipo === 'reiteracion' ? proximas[gestion].reiteracion.fecha : auditoria.proxima) ?? primera;
+  }
+  const contexto = await contextoDelDia(config, fecha, calendario);
+  return { fecha, motivo, otro_dia: fecha !== hoy, contexto, firma: firmaDeVistaPrevia(contexto) };
 };
 
 // Los datasets de la vista previa o la prueba de ese día, o el ejemplo si no hay. El aviso sale de avisoDelDia con el contexto
-// del día, igual que en la corrida (víspera de una licencia, aviso en su fecha); si buscar lo que sale en su fecha falla,
-// falla también la vista previa: no muestra una nota distinta a la que saldría. La reiteración sigue su selección de siempre.
+// del día, igual que en la corrida (víspera de una licencia, aviso en su fecha), con el calendario del contexto (no vuelve a leer
+// la tabla); si buscar lo que sale en su fecha falla, falla también la vista previa: no muestra una nota distinta a la que
+// saldría. La reiteración sigue su selección de siempre.
 // Devuelve { datasets, areas, fichas, rangoVencimientos, autorizacion, ejemplo } y, con datos de ejemplo, fuentesPorId: las fuentes
 // del Seguimiento de esos datasets, que el anexo de la reiteración no puede leer de la base (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5).
 const contenidoParaMostrar = async (tipo, gestion, fecha, contexto) => {
   let reales;
   let aviso = { rangoVencimientos: null, autorizacion: null };
   if (tipo === 'aviso') {
-    const { modo, licencia, anticipo, autorizacion } = contexto;
-    aviso = await avisoDelDia({ gestion, fecha, modo, licencia, anticipo, autorizacion });
+    const { modo, licencia, anticipo, autorizacion, calendario } = contexto;
+    aviso = await avisoDelDia({ gestion, fecha, modo, licencia, anticipo, autorizacion, calendario });
     if (aviso.errorEnSuFecha) throw aviso.errorEnSuFecha;
     reales = aviso.datasets;
   } else {
@@ -878,31 +903,38 @@ const contenidoParaMostrar = async (tipo, gestion, fecha, contexto) => {
   };
 };
 
-// La nota de la vista previa: los datos de la fecha de la próxima corrida con notas (o de ejemplo) con N° XX, firmada como
-// saldría (spec 2026-10-15, 7.7). La de auditoría no tiene gestión (spec 2026-10-15, 10.4).
-const notaDeVistaPrevia = async ({ tipo, gestion, hoy }) => {
+// La nota de la vista previa: los datos del día de diaDeVistaPrevia (o de ejemplo) con N° XX, firmada como saldría (spec
+// 2026-10-15, 7.7). La de auditoría no tiene gestión (spec 2026-10-15, 10.4). calendario: el del pedido.
+const notaDeVistaPrevia = async ({ tipo, gestion, hoy, calendario }) => {
   const config = await obtenerConfig();
-  const { fecha, motivo, contexto, firma } = await diaDeVistaPrevia(config, hoy);
+  const { fecha, motivo, otro_dia: otroDia, contexto, firma } = await diaDeVistaPrevia(config, hoy, { tipo, gestion }, calendario);
+  const delDia = { config, firma, fecha, motivo, otro_dia: otroDia };
   if (tipo === 'auditoria') {
-    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, fecha);
+    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, fecha, calendario);
     const nota = construirNotaDeAuditoria({ numero: null, anio: null, esPrueba: false, fecha, ...auditoria, firma, config });
-    return { nota, config, firma, fecha, motivo, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : auditoria.nuevos.length + auditoria.reiterados.length };
+    return { nota, ...delDia, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : auditoria.nuevos.length + auditoria.reiterados.length };
   }
   const { datasets, areas, rangoVencimientos, autorizacion, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, fecha, contexto);
   const nota = construirNota({
     tipo, gestion, numero: null, anio: null, esPrueba: false, fecha, datasets, areas, config, firma, rangoVencimientos, autorizacion
   });
-  return { nota, config, firma, fecha, motivo, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : datasets.length };
+  return { nota, ...delDia, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : datasets.length };
 };
 
-export const previewNota = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
-  const { nota, ejemplo: esEjemplo, cantidad, fecha, motivo } = await notaDeVistaPrevia({ tipo, gestion, hoy });
-  return { html: renderHtml(nota), asunto: nota.asunto, ejemplo: esEjemplo, cantidad, fecha, motivo };
+// La vista previa (Correos → Vista previa y pruebas). calendario: el del pedido; sin él, se lee una vez acá (leerCalendario) y
+// llega a todo lo de adentro. fecha, motivo y otro_dia dicen qué día muestra (textoDeVistaPrevia de correos.js).
+export const previewNota = async ({ tipo, gestion, hoy = hoyArgentina(), calendario }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const { nota, ejemplo: esEjemplo, cantidad, fecha, motivo, otro_dia: otroDia } = await notaDeVistaPrevia({
+    tipo, gestion, hoy, calendario: conElCalendario
+  });
+  return { html: renderHtml(nota), asunto: nota.asunto, ejemplo: esEjemplo, cantidad, fecha, motivo, otro_dia: otroDia };
 };
 
-// PDF de la vista previa, con el membrete y la firma cargados: no se guarda ni se envía
-export const previewPdf = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
-  const { nota, config, firma } = await notaDeVistaPrevia({ tipo, gestion, hoy });
+// PDF de la vista previa, con el membrete y la firma cargados: no se guarda ni se envía. calendario: como en previewNota
+export const previewPdf = async ({ tipo, gestion, hoy = hoyArgentina(), calendario }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const { nota, config, firma } = await notaDeVistaPrevia({ tipo, gestion, hoy, calendario: conElCalendario });
   return renderPdf(nota, opcionesPdf(config, firma));
 };
 
@@ -914,11 +946,13 @@ const TIPOS_CON_ANEXO = ['aviso', 'reiteracion'];
 // siempre) o 'reiteracion' (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5): una hoja del Seguimiento por dataset, con las
 // fuentes de la base o, con datos de ejemplo, las de ejemplo. Cada hoja suma la reiteración de la vista previa, «XX», con los
 // destinatarios de la gestión y quien la firmaría (spec 2026-10-24-reiteracion-en-su-anexo); si la real de ese día ya salió, la
-// reemplaza: nunca van las dos.
-export const previewAnexo = async ({ tipo = 'aviso', gestion, hoy = hoyArgentina() }) => {
+// reemplaza: nunca van las dos (con la del mes ya evaluada, el día es el del mes siguiente: diaDeVistaPrevia). calendario: como en
+// previewNota.
+export const previewAnexo = async ({ tipo = 'aviso', gestion, hoy = hoyArgentina(), calendario }) => {
   if (!TIPOS_CON_ANEXO.includes(tipo)) throw new ErrorDeUso(`La nota de tipo ${tipo} no lleva anexo`);
+  const conElCalendario = calendario ?? await leerCalendario();
   const config = await obtenerConfig();
-  const { fecha, contexto, firma } = await diaDeVistaPrevia(config, hoy);
+  const { fecha, contexto, firma } = await diaDeVistaPrevia(config, hoy, { tipo, gestion }, conElCalendario);
   const contenido = await contenidoParaMostrar(tipo, gestion, fecha, contexto);
   if (tipo === 'reiteracion') {
     const nombres = await nombresDeLaReiteracion({ usuarioId: null, firmanteId: firma.firmanteId });
@@ -932,25 +966,31 @@ export const previewAnexo = async ({ tipo = 'aviso', gestion, hoy = hoyArgentina
   return renderAnexo(construirAnexo({ numero: null, anio: null, fecha, fichas: contenido.fichas }));
 };
 
-// "Prueba enviada a …", con lo que aclara en un solo paréntesis: que son datos de ejemplo y/o que es la nota de otro día
-// (spec 2026-10-15, 7.7)
-export const mensajeDePrueba = ({ destinatarios, ejemplo, motivo, fecha }) => {
-  const aclaraciones = [ejemplo && 'con datos de ejemplo', motivo && `como saldría el ${formatoCorto(fecha)}`].filter(Boolean);
+// "Prueba enviada a …", con lo que aclara en un solo paréntesis: que son datos de ejemplo y/o que es la nota de otro día, porque
+// hoy no se generan notas (motivo, spec 2026-10-15, 7.7) o porque esta sale otro día (otro_dia, solo con el true literal: spec
+// 2026-10-27-feriados-en-notas, 6)
+export const mensajeDePrueba = ({ destinatarios, ejemplo, motivo, fecha, otro_dia: otroDia }) => {
+  const aclaraciones = [
+    ejemplo && 'con datos de ejemplo', (motivo || otroDia === true) && `como saldría el ${formatoCorto(fecha)}`
+  ].filter(Boolean);
   return `Prueba enviada a ${destinatarios.join(', ')}${aclaraciones.length > 0 ? ` (${aclaraciones.join(', ')})` : ''}`;
 };
 
 // La prueba se genera como una nota de prueba (sin número, sin registrar datasets ni cambios incluidos ni la autorización) y va
-// solo a las casillas de prueba. Muestra el mismo día y el mismo contenido que la vista previa: fecha y motivo dicen cuál.
-export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuarioId = null }) => {
+// solo a las casillas de prueba. Muestra el mismo día y el mismo contenido que la vista previa: fecha, motivo y otro_dia dicen cuál.
+// calendario: como en previewNota.
+export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuarioId = null, calendario }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
   const config = await obtenerConfig();
   const casillas = listaDeCorreos(config.casillas_prueba);
   if (casillas.length === 0) throw new ErrorDeUso('No hay casillas de prueba configuradas');
-  const { fecha, motivo, contexto, firma } = await diaDeVistaPrevia(config, hoy);
+  const { fecha, motivo, otro_dia: otroDia, contexto, firma } = await diaDeVistaPrevia(config, hoy, { tipo, gestion }, conElCalendario);
+  const delDia = { fecha, motivo, otro_dia: otroDia, destinatarios: casillas };
   // La prueba de la nota de auditoría: los cambios de ese día o el ejemplo, sin registrar cambios incluidos (spec 2026-10-15, 11.2)
   if (tipo === 'auditoria') {
-    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, fecha);
+    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, fecha, conElCalendario);
     const id = await generarNota({ tipo, gestion: null, fecha, datasets: [], config, esPrueba: true, usuarioId, firma, auditoria });
-    return { id, ejemplo: esEjemplo, fecha, motivo, destinatarios: casillas, ...(await enviarNota(id)) };
+    return { id, ejemplo: esEjemplo, ...delDia, ...(await enviarNota(id)) };
   }
   const { datasets, areas, fichas, fuentesPorId, rangoVencimientos, autorizacion, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, fecha, contexto);
   // fuentesPorId solo viene con datos de ejemplo: el anexo de la reiteración de prueba dibuja sus hojas con ellas (sin ellas, de la base)
@@ -959,7 +999,7 @@ export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuari
     rangoVencimientos, autorizacion
   });
   const resultado = await enviarNota(id);
-  return { id, ejemplo: esEjemplo, fecha, motivo, destinatarios: casillas, ...resultado };
+  return { id, ejemplo: esEjemplo, ...delDia, ...resultado };
 };
 
 // Licencia del firmante titular en curso o la próxima, con lo que hace falta para mostrar su efecto (spec 2026-10-15, 7.5).
@@ -1126,7 +1166,8 @@ const anticipoQueIncluye = async (config, candidato, corrida, calendario) => {
 
 /**
  * Las fechas que anuncia Correos → Estado, en un solo lugar, con el calendario de quien llama y la regla de la corrida, el primer
- * día con notas (primerDiaConNotas; spec 2026-10-27-feriados-en-notas, 4). Solo lee. corrida: la próxima corrida posible (hoy si
+ * día con notas (primerDiaConNotas; spec 2026-10-27-feriados-en-notas, 4). La vista previa y la prueba de la reiteración y de la
+ * nota de auditoría muestran las mismas (diaDeVistaPrevia). Solo lee. corrida: la próxima corrida posible (hoy si
  * es hábil). Devuelve { corrida, delFirmante, proximas: { interna, externa }, auditoria }:
  * - delFirmante: lo de licenciaDelFirmante, o null;
  * - el aviso de cada gestión, { fecha, cantidad } o null: el candidato es el día en que se abre el mes del próximo vencimiento

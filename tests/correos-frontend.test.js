@@ -182,6 +182,33 @@ describe('correos.js: texto de la vista previa (spec 2026-10-15, 7.7)', () => {
     }
   });
 
+  // Hoy hay notas, pero esta sale otro día (por ejemplo, la reiteración del mes ya salió): lo dice con su propia primera línea, y la
+  // segunda habla de ese día (spec 2026-10-27-feriados-en-notas, 6)
+  it('sin motivo y con otro_dia, antepone que esta nota no sale hoy y qué día saldría', () => {
+    const { contexto } = cargarCorreos();
+    const aviso = 'Esta nota no sale hoy: así saldría el 01/12/2026.';
+    const datos = { ejemplo: false, tipo: 'reiteracion', cantidad: 3, asunto: 'Reiteración', fecha: '2026-12-01', motivo: null, otro_dia: true };
+    assert.equal(texto(contexto, datos), `${aviso}\nCon los datos de hoy, ese día esta nota incluiría 3 dataset(s). Asunto: Reiteración`);
+    assert.equal(texto(contexto, { ...datos, ejemplo: true }), `${aviso}\n${TEXTO_EJEMPLO_ESE_DIA}`);
+    assert.equal(texto(contexto, { ...datos, tipo: 'auditoria', cantidad: 1, asunto: 'Cambios pendientes' }),
+      `${aviso}\nCon los datos de hoy, ese día esta nota incluiría 1 cambio(s). Asunto: Cambios pendientes`);
+    // Con motivo, el texto de siempre (hoy no se generan notas), aunque otro_dia sea true
+    assert.equal(texto(contexto, { ...datos, motivo: 'día no hábil' }),
+      'Hoy no se generan notas (día no hábil): así saldría el 01/12/2026.\nCon los datos de hoy, ese día esta nota incluiría 3 dataset(s). Asunto: Reiteración');
+    // Solo con el true literal; con false, el de hoy
+    for (const otroDia of [false, 'true', 1, null]) {
+      assert.equal(texto(contexto, { ...datos, otro_dia: otroDia }), 'Con los datos de hoy esta nota incluiría 3 dataset(s). Asunto: Reiteración',
+        String(otroDia));
+    }
+  });
+
+  it('verVistaPrevia lo muestra con el otro_dia que manda el servidor', async () => {
+    const vista = { html: '<p>nota</p>', asunto: 'Reiteración', ejemplo: true, cantidad: 0, fecha: '2026-12-01', motivo: null, otro_dia: true };
+    const { contexto, elemento } = cargarCorreos({ previewNota: async () => vista });
+    await contexto.verVistaPrevia();
+    assert.equal(elemento('preview-aviso').textContent, `Esta nota no sale hoy: así saldría el 01/12/2026.\n${TEXTO_EJEMPLO_ESE_DIA}`);
+  });
+
   it('verVistaPrevia muestra ese texto arriba del marco', async () => {
     const vistas = [
       { html: '<p>nota</p>', asunto: 'Aviso', ejemplo: true, cantidad: 0, fecha: '2026-12-21', motivo: 'día no hábil' },

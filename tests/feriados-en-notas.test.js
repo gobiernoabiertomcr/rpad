@@ -789,3 +789,139 @@ describe('Correos → Estado con las fechas reales', () => {
     assert.deepEqual(deFeriados((await estado('2026-12-14', CALENDARIO_FIJO)).alertas), []);
   });
 });
+
+// La vista previa y la prueba de Correos muestran la nota del día que anuncia el Estado (spec 2026-10-27-feriados-en-notas, 4 y 6):
+// el aviso, el primer día con notas; la reiteración y la nota de auditoría, la fecha de proximasFechas. otro_dia dice si no es hoy
+describe('vista previa y prueba con la fecha real', () => {
+  const correr = (hoy) => motor.ejecutarNotasDigitales({ hoy });
+  const evaluadas = (periodo) => configurarNotas({ reiteracion_evaluada_interna: periodo, reiteracion_evaluada_externa: periodo });
+  const loQueMuestra = ({ fecha, motivo, otro_dia: otroDia }) => [fecha, motivo, otroDia];
+  // El titular firmante (superadmin) y la persona autorizada (admin), los dos con su firma
+  const conFirmante = async () => {
+    const titular = await crearUsuario('superadmin');
+    const autorizado = await crearUsuario('admin');
+    await query('UPDATE notas_digitales_config SET firmante_usuario_id = ? WHERE id = 1', [titular.id]);
+    return { titular, autorizado };
+  };
+  // Como en «auditoría: un solo calendario a las 8:15 y a las 14:00»: el titular propone un alta el 30/10 con su primer
+  // recordatorio ese día, y la nota de auditoría del 04/11 lo incluye
+  const conNotaDeAuditoriaDel04 = async () => {
+    await configurarNotas({ para_auditoria: 'auditoria@rpad.test' });
+    const { titular } = await conFirmante();
+    const cambioId = await proponerCambio(titular.id, 'Dataset nuevo del titular', { creado: '2026-10-30 12:00:00' });
+    await query("UPDATE cambios_pendientes SET primer_recordatorio_at = '2026-10-30 14:00:00' WHERE id = ?", [cambioId]);
+    const del04 = await correr('2026-11-04');
+    assert.deepEqual(del04.errores, []);
+    assert.equal(del04.generadas.filter((g) => g.tipo === 'auditoria').length, 1);
+  };
+
+  it('la reiteración muestra la del 01/12 si la de noviembre ya salió', async () => {
+    await crearDataset({ titulo: 'Venció en octubre', vencimiento: '2026-10-31' });
+    await evaluadas('2026-11');
+    const vista = await motor.previewNota({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-04' });
+    assert.deepEqual(loQueMuestra(vista), ['2026-12-01', null, true]);
+    // Es la que anuncia el Estado, con lo que se seleccionaría ese día
+    const { reiteracion } = (await motor.estadoNotas({ hoy: '2026-11-04' })).proximas.interna;
+    assert.deepEqual([vista.fecha, vista.ejemplo, vista.cantidad], [reiteracion.fecha, false, reiteracion.cantidad]);
+    assert.ok(vista.html.includes('Venció en octubre'));
+    // Sin evaluar en noviembre, la de hoy
+    await evaluadas('2026-10');
+    assert.deepEqual(loQueMuestra(await motor.previewNota({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-04' })),
+      ['2026-11-04', null, false]);
+  });
+
+  it('el aviso, el primer día con notas', async () => {
+    assert.deepEqual(loQueMuestra(await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-11-02' })),
+      ['2026-11-03', 'día no hábil', true]);
+    assert.deepEqual(loQueMuestra(await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-11-03' })),
+      ['2026-11-03', null, false]);
+  });
+
+  it('la auditoría, la que anuncia el Estado; sin ninguna, el primer día con notas', async () => {
+    // Sin cambios, la de hoy (con datos de ejemplo)
+    const sinCambios = await motor.previewNota({ tipo: 'auditoria', hoy: '2026-11-05' });
+    assert.deepEqual([...loQueMuestra(sinCambios), sinCambios.ejemplo], ['2026-11-05', null, false, true]);
+
+    // Con la nota del 04/11, la próxima es el 12/11: 5 días hábiles después (el 09/11 es feriado), como anuncia el Estado
+    await conNotaDeAuditoriaDel04();
+    const vista = await motor.previewNota({ tipo: 'auditoria', hoy: '2026-11-05' });
+    assert.deepEqual(loQueMuestra(vista), ['2026-11-12', null, true]);
+    assert.equal((await motor.estadoNotas({ hoy: '2026-11-05' })).auditoria.proxima, vista.fecha);
+    // Con el cambio reiterado y sus días hábiles a esa fecha: el 03, 04, 05, 06, 10, 11 y 12/11 (el 02 y el 09/11 son feriados)
+    assert.deepEqual([vista.ejemplo, vista.cantidad], [false, 1]);
+    assert.ok(vista.html.includes('Dataset nuevo del titular'));
+    const fila = vista.html.match(/>30\/10\/2026<\/td><td style="[^"]*">(\d+)<\/td>/);
+    assert.ok(fila, vista.html);
+    assert.equal(fila[1], '7');
+  });
+
+  it('el ejemplo de la nota de auditoría cuenta los días hábiles con la tabla', async () => {
+    // El 03/11: el día hábil anterior es el 30/10 (el 02/11 es feriado), así que los dos cambios nuevos de ejemplo son del 29/10, con
+    // 2 días hábiles pendiente (el 30/10 y el 03/11); el reiterado es del 20/10, con 9
+    const vista = await motor.previewNota({ tipo: 'auditoria', hoy: '2026-11-03' });
+    assert.deepEqual([...loQueMuestra(vista), vista.ejemplo], ['2026-11-03', null, false, true]);
+    const dias = (fecha) => [...vista.html.matchAll(new RegExp(`>${fecha}</td><td style="[^"]*">(\\d+)</td>`, 'g'))].map((m) => m[1]);
+    assert.deepEqual(dias('29/10/2026'), ['2', '2']);
+    assert.deepEqual(dias('20/10/2026'), ['9']);
+  });
+
+  it('la prueba de la reiteración dice qué día muestra', async () => {
+    await evaluadas('2026-11');
+    const prueba = await motor.enviarPrueba({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-04' });
+    assert.equal(prueba.success, true);
+    assert.deepEqual(loQueMuestra(prueba), ['2026-12-01', null, true]);
+    assert.ok(motor.mensajeDePrueba(prueba).endsWith('como saldría el 01/12/2026)'), motor.mensajeDePrueba(prueba));
+
+    // El controlador (con el reloj del 04/11 a las 09:00) lo manda en data y lo dice en el mensaje
+    const res = respuestaFalsa();
+    mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-04T12:00:00Z') });
+    try {
+      await correos.enviarPrueba({ body: { tipo: 'reiteracion', gestion: 'interna' } }, res);
+    } finally {
+      mock.timers.reset();
+    }
+    assert.equal(res.body.success, true, JSON.stringify(res.body));
+    assert.deepEqual([res.body.data.fecha, res.body.data.motivo, res.body.data.otro_dia], ['2026-12-01', null, true]);
+    assert.ok(res.body.message.endsWith('como saldría el 01/12/2026)'), res.body.message);
+  });
+
+  it('mensajeDePrueba', () => {
+    const base = { destinatarios: ['prueba@rpad.test'], ejemplo: false, motivo: null, fecha: '2026-12-01' };
+    assert.equal(motor.mensajeDePrueba({ ...base, otro_dia: true }), 'Prueba enviada a prueba@rpad.test (como saldría el 01/12/2026)');
+    assert.equal(motor.mensajeDePrueba({ ...base, otro_dia: false }), 'Prueba enviada a prueba@rpad.test');
+  });
+
+  it('con la tabla renombrada, una sola lectura por pedido: la vista previa, su PDF, el anexo y la prueba', async () => {
+    // Para que pasen por todo: la licencia del titular desde el 09/12 con la persona autorizada (el 04/12 firma el titular: la
+    // autorización pendiente y el anticipo; el 14/12, ella: sus días libres y lo que sale en su fecha), un dataset a vencer y otro
+    // vencido, y un cambio del titular en el canal nota
+    await configurarNotas({ para_auditoria: 'auditoria@rpad.test' });
+    const { titular, autorizado } = await conFirmante();
+    await licencia(titular, '2026-12-09', '2027-01-08', autorizado);
+    await crearDataset({ titulo: 'Externo de enero', gestion: 'externa', vencimiento: '2027-01-31' });
+    await crearDataset({ titulo: 'Interno vencido', vencimiento: '2026-11-30' });
+    const cambioId = await proponerCambio(titular.id, 'Dataset nuevo del titular', { creado: '2026-12-01 10:00:00' });
+    await query("UPDATE cambios_pendientes SET primer_recordatorio_at = '2026-12-01 14:00:00' WHERE id = ?", [cambioId]);
+
+    const pedidos = (hoy) => [
+      ['previewNota aviso', () => motor.previewNota({ tipo: 'aviso', gestion: 'externa', hoy })],
+      ['previewNota reiteracion', () => motor.previewNota({ tipo: 'reiteracion', gestion: 'interna', hoy })],
+      ['previewNota auditoria', () => motor.previewNota({ tipo: 'auditoria', hoy })],
+      ['previewPdf aviso', () => motor.previewPdf({ tipo: 'aviso', gestion: 'externa', hoy })],
+      ['previewAnexo reiteracion', () => motor.previewAnexo({ tipo: 'reiteracion', gestion: 'interna', hoy })],
+      ['enviarPrueba auditoria', () => motor.enviarPrueba({ tipo: 'auditoria', hoy })]
+    ];
+    const consola = mock.method(console, 'error', () => {});
+    try {
+      for (const hoy of ['2026-12-04', '2026-12-14']) {
+        for (const [nombre, pedir] of pedidos(hoy)) {
+          const antes = lecturasFallidas(consola);
+          await conLaTablaRenombrada(pedir);
+          assert.equal(lecturasFallidas(consola) - antes, 1, `${nombre} del ${hoy}`);
+        }
+      }
+    } finally {
+      consola.mock.restore();
+    }
+  });
+});
