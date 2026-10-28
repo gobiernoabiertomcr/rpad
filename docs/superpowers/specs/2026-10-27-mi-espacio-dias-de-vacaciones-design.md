@@ -42,9 +42,13 @@ de enero. Lo que cambia es la regla.
    ninguna, desde hoy), ya no queda ningún día hábil libre hasta su vencimiento. Un día libre es un día hábil, con los
    feriados de la tabla, que no está dentro de ninguna licencia de Mi espacio, de cualquier tipo. Esos días ya no están
    disponibles: no cuentan en «Te quedan», ni en «N disponibles» de la opción de «Cargar licencia», ni en la frase y la regla
-   del Resumen, ni en «Vence pronto», ni en el email de vencimiento. Mientras quede un día libre antes del vencimiento, siguen
-   disponibles, porque una carga que empiece ese día los puede usar todos («Si me quedan 10 días de licencia 2024, puedo
-   usarlos desde el 30/12/2026 hasta enero»).
+   del Resumen, ni en «Vence pronto», ni en el email de vencimiento. Mientras quede un día libre antes del vencimiento después
+   de la última carga que la usa, siguen disponibles, porque una carga que empiece ese día los puede usar todos («Si me quedan
+   10 días de licencia 2024, puedo usarlos desde el 30/12/2026 hasta enero»). Los días libres de antes de esa carga no
+   cuentan: con unas vacaciones del 21/12 al 10/01, «Perdés 2» aunque noviembre esté libre (el usuario lo eligió así para el
+   modal y el Resumen; si después carga unos días en noviembre, esos toman primero de la 2024 y «Perdés» se achica o
+   desaparece). Por eso, con unas vacaciones de fin de año cargadas por adelantado, «Vence pronto» y el email dejan de avisar
+   los días que quedan de esa licencia.
 6. **El texto de «Perdés», el mismo en el modal y en el Resumen.** El usuario lo eligió así, a sabiendas de que la spec
    anterior pedía que nada dijera «perdiste» (esta decisión la reemplaza solo para esto):
    - en el aviso del modal, después de «Te quedan …»: «Perdés 2 de la 2024 (vencen el 31/12/2026).»; con 1, «Perdés 1 de la
