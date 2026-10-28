@@ -1889,6 +1889,12 @@ function cuantasEnElFinde(mes, datos) {
   return listaDe(fuente.feriados).filter(escondida).length + listaDe(fuente.eventos).filter(escondida).length;
 }
 
+// El nombre del botón «Sábado y domingo» cuando quedó algo escondido (spec 3.2; la cantidad de cuantasEnElFinde): «Sábado y
+// domingo: 1 cosa escondida», «Sábado y domingo: 3 cosas escondidas». Sin nada escondido (o con una cantidad que no es un entero
+// positivo), '': el nombre del botón es su texto
+const etiquetaDelFinDeSemana = (cantidad) => (Number.isInteger(cantidad) && cantidad > 0
+  ? `Sábado y domingo: ${cantidad === 1 ? '1 cosa escondida' : `${String(cantidad)} cosas escondidas`}` : '');
+
 // El día de la grilla más cercano a una fecha que se ve (spec 3.8 y decisión 9.12: el día elegido del teléfono y el foco del
 // teclado): la fecha si se ve; si no, el primer día visible que la sigue en `semanas` (las de semanasDelMes) y, si no hay, el
 // último que la precede (hoy sábado 31/10 → el viernes 30; el 1/11, domingo → el lunes 2). Sin días o con una fecha que no sirve,
@@ -1897,6 +1903,31 @@ function diaVisibleCercano(fecha, semanas) {
   if (!esFechaDeTexto(fecha)) return null;
   const visibles = filasDeLasSemanas(semanas).flat().map((dia) => dia.fecha);
   return visibles.find((visible) => visible >= fecha) ?? visibles.at(-1) ?? null;
+}
+
+/**
+ * Adónde va el foco del mes con una tecla (spec 4.1 y decisión 9.5: el número de cada día es un botón y el mes, una sola parada del
+ * tabulador), desde `fecha` en las filas de `semanas` (las de semanasDelMes, con los días que se ven): ArrowRight y ArrowLeft, al
+ * día visible siguiente o anterior (del viernes al lunes, con sábado y domingo ocultos); ArrowDown y ArrowUp, al de la misma columna
+ * en la fila de abajo o de arriba; Home y End, al primero y al último de su fila. En el borde de la grilla, la misma fecha: no se
+ * mueve. Otra tecla, o una fecha que no se ve, null.
+ */
+function diaConLaTecla(fecha, tecla, semanas) {
+  const filas = filasDeLasSemanas(semanas).map((dias) => dias.map((dia) => dia.fecha));
+  const fila = esFechaDeTexto(fecha) ? filas.findIndex((dias) => dias.includes(fecha)) : -1;
+  if (fila === -1) return null;
+  const columna = filas[fila].indexOf(fecha);
+  const todas = filas.flat();
+  const lugar = todas.indexOf(fecha);
+  const destinos = {
+    ArrowRight: () => todas[lugar + 1],
+    ArrowLeft: () => (lugar > 0 ? todas[lugar - 1] : undefined),
+    ArrowDown: () => filas[fila + 1]?.[columna],
+    ArrowUp: () => (fila > 0 ? filas[fila - 1][columna] : undefined),
+    Home: () => filas[fila][0],
+    End: () => filas[fila].at(-1)
+  };
+  return Object.hasOwn(destinos, tecla) ? (destinos[tecla]() ?? fecha) : null;
 }
 
 // El HTML del mes (spec 2026-10-28-mi-espacio-agenda-onda, 3.3 a 3.8 y 6): lo de dibujo, con el modelo de arriba. Los textos y los
@@ -2438,10 +2469,15 @@ document.addEventListener('DOMContentLoaded', () => {
 // administración). La planilla de horas extras de contrato: `planilla`, su propio estado mientras está abierta (ver abrirPlanilla;
 // si no, null). `anioDeLicencias` (un año o null): el que la lista de Licencias tiene que mostrar la próxima vez que se pida (el de
 // la licencia que se acaba de guardar o el de un link del Resumen: spec 2026-10-28-mi-espacio-licencia-anulada, 2.3); lo usa una
-// sola vez quien la pide (tomarElAnioDeLicencias)
+// sola vez quien la pide (tomarElAnioDeLicencias). El mes de la agenda (spec 2026-10-28-mi-espacio-agenda-onda, 3.2, 3.7, 3.8 y
+// 4.1): `semana`, con `finde` («Sábado y domingo» prendido: de entrada, lo que recuerda este navegador), `elegido` (el día elegido
+// del teléfono) y `foco` (el número con tabindex="0": el mes es una sola parada del tabulador), dos días que se ven en la grilla
+// (al abrir un mes, hoy si es de ese mes y si no el 1, o el visible más cercano: empezarElMes), y `animado` (las barras ya se
+// dibujaron de izquierda a derecha: pasa una sola vez por carga)
 const pagina = {
   pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, bandaAnimada: false,
   anioDeLicencias: null, mesDeEventos: null, delMes: null, proximos: null,
+  semana: { finde: false, elegido: null, foco: null, animado: false },
   cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0, nota: 0 },
   modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null,
   segundoPaso: null, evento: null, eventoAjeno: null, personas: null, planilla: null
@@ -2492,9 +2528,10 @@ function enfocar(vista, atributo, valor) {
   controlCon(vista, atributo, valor)?.focus();
 }
 
-// Abre la pestaña de la dirección y pide el Resumen (primero: la pestaña Resumen no lo pide dos veces). Devuelve las cargas, para
-// quien quiera esperarlas
+// Abre la pestaña de la dirección y pide el Resumen (primero: la pestaña Resumen no lo pide dos veces). «Sábado y domingo», como lo
+// dejó la persona en este navegador. Devuelve las cargas, para quien quiera esperarlas
 function iniciarMiEspacio() {
+  pagina.semana.finde = finDeSemanaGuardado();
   conectarEventos();
   const resumen = cargarResumen();
   const cargas = Promise.all([mostrarPestana(pestanaDeHash(window.location.hash)), resumen]);
@@ -2514,6 +2551,8 @@ function conectarEventos() {
   porId('vista-licencias').addEventListener('click', alTocarLicencias);
   porId('vista-horas').addEventListener('click', alTocarHoras);
   porId('vista-agenda').addEventListener('click', alTocarEventos);
+  porId('ag-mes').addEventListener('keydown', teclaEnElMes);
+  escucharElAncho();
   porId('btn-cargar-licencia').addEventListener('click', (evento) => abrirLicencia({ volverA: evento.currentTarget }));
   porId('btn-cargar-horas').addEventListener('click', (evento) => abrirCargaDeHoras({ volverA: evento.currentTarget }));
   porId('btn-nuevo-evento').addEventListener('click', (evento) => abrirEvento({ volverA: evento.currentTarget }));
@@ -2544,7 +2583,11 @@ function mostrarPestana(nombre) {
     return cargarLicencias(tomarElAnioDeLicencias());
   }
   if (pagina.pestana === 'horas' && pagina.horas === null) return cargarHorasExtras(null);
-  if (pagina.pestana === 'agenda' && (pagina.delMes === null || pagina.proximos === null)) return cargarEventos();
+  if (pagina.pestana === 'agenda') {
+    // El mes llegó con otra pestaña a la vista: se mueve ahora, la primera vez que se ve
+    if (tocaMoverElMes()) pintarMesDeEventos();
+    if (pagina.delMes === null || pagina.proximos === null) return cargarEventos();
+  }
   return Promise.resolve();
 }
 
@@ -2937,14 +2980,62 @@ async function alTocarHoras(evento) {
 const MENSAJE_SIN_MES = 'No se pudo cargar el mes. Probá de nuevo en unos minutos.';
 const MENSAJE_SIN_PROXIMOS = 'No se pudieron cargar los próximos. Probá de nuevo en unos minutos.';
 
-// GET /mi-espacio/eventos de un rango `{ desde, hasta }`
-const rutaDeEventos = ({ desde, hasta }) => `/mi-espacio/eventos?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`;
+// GET /mi-espacio/eventos de un rango `{ desde, hasta }`; el de la grilla, con su `mes` ('AAAA-MM'), para que el servidor mande la
+// frase de la banda (frase_del_mes: solo si el mes entero cae en el rango, y la grilla siempre lo tiene, de lunes a domingo,
+// también con sábado y domingo ocultos); el de los próximos, sin
+const rutaDeEventos = ({ desde, hasta }, mes = null) => `/mi-espacio/eventos?desde=${encodeURIComponent(desde)}`
+  + `&hasta=${encodeURIComponent(hasta)}${mes === null ? '' : `&mes=${encodeURIComponent(mes)}`}`;
 
-// La pestaña Agenda: pide lo de la grilla del mes que se ve (de entrada, el de hoy) y los próximos, dos GET /mi-espacio/eventos, los
-// que todavía no llegaron o, con `forzar` (después de guardar o de borrar), los dos, sin borrar lo que se ve mientras. `conAnuncio`:
-// una falla se anuncia (después de guardar, no). Devuelve las cargas
+// «Sábado y domingo» prendido o apagado, recordado en cada navegador (spec 3.2 y decisión 9.1): '1' prendido, '0' apagado. Sin
+// almacenamiento (una ventana privada, uno bloqueado o lleno), apagado y sin error: la elección vale hasta que se cierra la página
+const CLAVE_DEL_FIN_DE_SEMANA = 'rpad-mi-espacio-fin-de-semana';
+function finDeSemanaGuardado() {
+  try {
+    return window.localStorage?.getItem(CLAVE_DEL_FIN_DE_SEMANA) === '1';
+  } catch {
+    return false;
+  }
+}
+function guardarElFinDeSemana(finde) {
+  try {
+    window.localStorage?.setItem(CLAVE_DEL_FIN_DE_SEMANA, finde ? '1' : '0');
+  } catch {
+    // Sin almacenamiento: no se recuerda
+  }
+}
+
+// La pantalla del teléfono (spec 3.8, 640 px o menos, como el <style>): tocar un día lo elige y su número dice «Ver el …»; en la
+// compu, «Nuevo evento el …». Sin matchMedia, la compu
+const CONSULTA_DEL_TELEFONO = '(max-width: 640px)';
+const enElTelefono = () => typeof window.matchMedia === 'function' && window.matchMedia(CONSULTA_DEL_TELEFONO)?.matches === true;
+
+// Si cambia el ancho (girar el teléfono, achicar la ventana), el mes se vuelve a dibujar con lo que hace cada número (si llegó: un
+// mes que no se pudo cargar sigue diciéndolo; uno que se está pidiendo se dibuja cuando llega)
+function escucharElAncho() {
+  const consulta = typeof window.matchMedia === 'function' ? window.matchMedia(CONSULTA_DEL_TELEFONO) : null;
+  consulta?.addEventListener?.('change', () => {
+    if (esMesDeTexto(pagina.mesDeEventos) && pagina.delMes !== null) pintarMesDeEventos();
+  });
+}
+
+// El día elegido y el del foco al abrir un mes (spec 3.8 y decisión 9.12): hoy si es de ese mes y si no el 1, o el día visible más
+// cercano (con sábado y domingo ocultos, hoy sábado 31/10 → el viernes 30; el 1/11, domingo → el lunes 2)
+function empezarElMes(mes) {
+  const hoy = Utils.hoyEnArgentina();
+  const dia = diaVisibleCercano(hoy.slice(0, 7) === mes ? hoy : `${mes}-01`, semanasDelMes(mes, { finde: pagina.semana.finde }));
+  pagina.semana.elegido = dia;
+  pagina.semana.foco = dia;
+}
+
+// La pestaña Agenda: pide lo de la grilla del mes que se ve (de entrada, el de hoy, con hoy elegido) y los próximos, dos
+// GET /mi-espacio/eventos, los que todavía no llegaron o, con `forzar` (después de guardar o de borrar), los dos, sin borrar lo que
+// se ve mientras (el día elegido y el del foco no cambian). `conAnuncio`: una falla se anuncia (después de guardar, no). Devuelve
+// las cargas
 function cargarEventos({ forzar = false, conAnuncio = true } = {}) {
-  if (!esMesDeTexto(pagina.mesDeEventos)) pagina.mesDeEventos = Utils.hoyEnArgentina().slice(0, 7);
+  if (!esMesDeTexto(pagina.mesDeEventos)) {
+    pagina.mesDeEventos = Utils.hoyEnArgentina().slice(0, 7);
+    empezarElMes(pagina.mesDeEventos);
+  }
   const cargas = [];
   if (forzar || pagina.delMes === null) cargas.push(cargarMesDeEventos(pagina.mesDeEventos, { conAnuncio }));
   if (forzar || pagina.proximos === null) cargas.push(cargarProximos({ conAnuncio }));
@@ -2960,7 +3051,7 @@ async function cargarMesDeEventos(mes, { conAnuncio = true, anunciarElMes = fals
   const pedido = ++pagina.pedidos.mes;
   if (pagina.delMes === null) pintarMesDeEventos();
   try {
-    const { data } = await API.pedirJson('GET', rutaDeEventos(rango));
+    const { data } = await API.pedirJson('GET', rutaDeEventos(rango, mes));
     if (pedido !== pagina.pedidos.mes) return;
     pagina.delMes = esObjeto(data) ? data : {};
     pintarMesDeEventos();
@@ -2975,20 +3066,128 @@ async function cargarMesDeEventos(mes, { conAnuncio = true, anunciarElMes = fals
   }
 }
 
-// El título y la grilla del mes que se ve. «Compañeros que no están», en la leyenda, solo para quien los ve (decisión del usuario,
-// 27/10/2026): lo dice el servidor (`puede_compartir`, administración) y, hasta que llega, queda oculto
+// El número de un día en la grilla (su botón), o null
+const numeroDelDia = (fecha) => (esFechaDeTexto(fecha) ? porId('ag-mes').querySelector(`[data-dia="${fecha}"]`) : null);
+
+// El mes que se ve (spec 3.1 a 3.8): el título, la grilla (htmlDelMes, con «Sábado y domingo», el día elegido, el número del foco y
+// lo que hace cada número en esta pantalla), la frase de la banda (la del servidor, como texto; sin ella o mientras se pide el mes,
+// vacía), «Sábado y domingo» y, siempre, el día elegido (en la compu no se ve, pero su título nombra la sección; sin datos, igual).
+// «Compañeros que no están», en la leyenda, solo para quien los ve (decisión del usuario, 27/10/2026): lo dice el servidor
+// (`puede_compartir`, administración) y, hasta que llega, queda oculto. Un mes que se vuelve a dibujar llega quieto (sin data-animar);
+// la primera vez que se ve con sus datos, se mueve (moverElMes). Si el foco estaba en un número del mes, pasa al número del foco del
+// mes nuevo (el botón viejo ya no está)
 function pintarMesDeEventos() {
-  porId('ag-mes-titulo').textContent = tituloDelMes(pagina.mesDeEventos);
-  porId('ag-mes').innerHTML = htmlDelMes(pagina.mesDeEventos, pagina.delMes, Utils.hoyEnArgentina());
-  if (esObjeto(pagina.delMes)) porId('ag-leyenda-ausentes').hidden = pagina.delMes.puede_compartir !== true;
+  const { semana, delMes } = pagina;
+  const mes = pagina.mesDeEventos;
+  const hoy = Utils.hoyEnArgentina();
+  const lugar = porId('ag-mes');
+  const activo = document.activeElement;
+  const conFoco = Boolean(activo) && lugar.contains(activo) && typeof activo.getAttribute?.('data-dia') === 'string';
+  const animar = tocaMoverElMes();
+  lugar.removeAttribute('data-animar');
+  porId('ag-mes-titulo').textContent = tituloDelMes(mes);
+  lugar.innerHTML = htmlDelMes(mes, delMes, hoy, {
+    finde: semana.finde, elegido: semana.elegido, foco: semana.foco, telefono: enElTelefono(), animar
+  });
+  if (animar) moverElMes(lugar);
+  porId('ag-frase').textContent = comoTexto(delMes?.frase_del_mes);
+  pintarElFinDeSemana();
+  porId('ag-elegido').innerHTML = htmlDelDiaElegido(semana.elegido, delMes, hoy);
+  if (esObjeto(delMes)) porId('ag-leyenda-ausentes').hidden = delMes.puede_compartir !== true;
+  if (conFoco) numeroDelDia(semana.foco)?.focus?.();
 }
 
-// Muestra otro mes («‹», «›» y «Hoy»): el título y la grilla vacía enseguida, y lo de la grilla cuando llega
+// «Sábado y domingo» (aria-pressed) y, apagado, cuántas cosas quedaron escondidas el fin de semana del mes: en su pastilla y en su
+// nombre («Sábado y domingo: 1 cosa escondida»); prendido, o sin nada escondido (también mientras se pide el mes), nada
+function pintarElFinDeSemana() {
+  const { finde } = pagina.semana;
+  const boton = porId('ag-finde');
+  const cuenta = porId('ag-finde-cuenta');
+  const escondidas = finde ? 0 : cuantasEnElFinde(pagina.mesDeEventos, pagina.delMes);
+  const etiqueta = etiquetaDelFinDeSemana(escondidas);
+  boton.setAttribute('aria-pressed', String(finde));
+  if (etiqueta === '') boton.removeAttribute('aria-label');
+  else boton.setAttribute('aria-label', etiqueta);
+  cuenta.textContent = escondidas > 0 ? String(escondidas) : '';
+  cuenta.hidden = escondidas === 0;
+}
+
+// «Sábado y domingo»: lo prende o lo apaga, lo recuerda en este navegador y vuelve a dibujar el mes sin pedir nada (la grilla ya
+// trae de lunes a domingo). El día elegido y el del foco pasan al visible más cercano (apagado, un sábado elegido va al lunes que
+// sigue o, al final de la grilla, al viernes). Sin lo del mes (no se pudo cargar, o todavía se está pidiendo), lo vuelve a pedir: una
+// grilla vacía no tapa el aviso de que el mes no llegó. El foco queda en el botón
+function cambiarElFinDeSemana() {
+  const { semana } = pagina;
+  semana.finde = !semana.finde;
+  guardarElFinDeSemana(semana.finde);
+  if (!esMesDeTexto(pagina.mesDeEventos)) return;
+  const semanas = semanasDelMes(pagina.mesDeEventos, { finde: semana.finde });
+  if (semana.elegido === null || semana.foco === null) empezarElMes(pagina.mesDeEventos);
+  semana.elegido = diaVisibleCercano(semana.elegido, semanas);
+  semana.foco = diaVisibleCercano(semana.foco, semanas);
+  if (pagina.delMes === null) cargarMesDeEventos(pagina.mesDeEventos);
+  else pintarMesDeEventos();
+}
+
+// El movimiento (spec 3.7), una sola vez por carga, como la banda del Resumen (animarLaBanda): la primera vez que el mes se dibuja
+// con sus datos y se ve (si la pestaña abre en otra, al entrar a la Agenda: mostrarPestana). Sin requestAnimationFrame o con
+// prefers-reduced-motion, nunca
+const tocaMoverElMes = () => !pagina.semana.animado && esObjeto(pagina.delMes) && porId('vista-agenda').hidden !== true
+  && typeof window.requestAnimationFrame === 'function' && !menosMovimiento();
+// Le pone data-animar a #ag-mes (en el <style>, las barras sin dibujar y sin transición) y se lo saca dos cuadros después: en el
+// primero el navegador las dibuja vacías y en el segundo empiezan las transiciones, cada pedazo con su --demora (htmlDelMes con
+// `animar`)
+function moverElMes(lugar) {
+  pagina.semana.animado = true;
+  lugar.setAttribute('data-animar', '');
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => lugar.removeAttribute('data-animar')));
+}
+
+// Muestra otro mes («‹», «›» y «Hoy»): el título y la grilla vacía enseguida, con su día elegido (hoy si es de ese mes; si no, el 1),
+// y lo de la grilla cuando llega
 function mostrarMesDeEventos(mes) {
   if (!esMesDeTexto(mes)) return Promise.resolve();
   pagina.mesDeEventos = mes;
   pagina.delMes = null;
+  empezarElMes(mes);
   return cargarMesDeEventos(mes, { anunciarElMes: true });
+}
+
+// El número de un día pasa a ser la parada del tabulador del mes (tabindex="0"; los demás, "-1"), sin volver a dibujar
+function marcarElFoco(fecha) {
+  pagina.semana.foco = fecha;
+  for (const numero of porId('ag-mes').querySelectorAll('[data-dia]')) {
+    numero.setAttribute('tabindex', numero.getAttribute('data-dia') === fecha ? '0' : '-1');
+  }
+}
+
+// Tocar un día (spec 4.1 y 3.8; su número, su espacio libre, un feriado o el pedazo de una barra): en la compu, «Nuevo evento» con
+// esa fecha (al cerrarlo, el foco vuelve a su número, que queda como la parada del mes); en el teléfono, lo elige: el mes se vuelve
+// a dibujar con el anillo en su número y, debajo, lo de ese día
+function tocarUnDia(fecha) {
+  if (enElTelefono()) {
+    pagina.semana.elegido = fecha;
+    pagina.semana.foco = fecha;
+    pintarMesDeEventos();
+    return;
+  }
+  marcarElFoco(fecha);
+  abrirEvento({ fecha, volverA: numeroDelDia(fecha) });
+}
+
+// El teclado en el mes (spec 4.1, decisión 9.5): en un número, las flechas, Inicio y Fin llevan el foco y la parada del tabulador
+// a otro día (diaConLaTecla; en el borde no se mueve, pero la flecha igual no desplaza la página). Enter y Espacio son el clic del
+// botón (tocarUnDia). Con Alt, Ctrl o Cmd son atajos del navegador: no se tocan
+function teclaEnElMes(evento) {
+  if (evento.altKey || evento.ctrlKey || evento.metaKey) return;
+  const numero = evento.target?.closest?.('[data-dia]');
+  if (!numero || !esMesDeTexto(pagina.mesDeEventos)) return;
+  const destino = diaConLaTecla(numero.getAttribute('data-dia'), evento.key,
+    semanasDelMes(pagina.mesDeEventos, { finde: pagina.semana.finde }));
+  if (destino === null) return;
+  evento.preventDefault?.();
+  marcarElFoco(destino);
+  numeroDelDia(destino)?.focus?.();
 }
 
 // Pide los próximos (de hoy a hoy + 30) y los dibuja; si falla, como el mes
@@ -3036,8 +3235,10 @@ function eventoDelBoton(boton) {
   return enOrden.find((item) => String(item.id) === id) ?? null;
 }
 
-// Un clic en la pestaña: «‹» y «›» (el mes anterior o el siguiente), «Hoy» (el mes de hoy; si ya se ve y llegó, nada), «Nuevo
-// evento», un evento (el propio abre su formulario; el de otra persona, su detalle) y «y N más»
+// Un clic en la pestaña: «‹» y «›» (el mes anterior o el siguiente), «Hoy» (el mes de hoy; si ya se ve y llegó, vuelve a elegir hoy,
+// sin pedir nada), «Sábado y domingo», «Nuevo evento», un evento (el propio abre su formulario; el de otra persona, su detalle; en la
+// grilla, en el día elegido o en los próximos), «y N más», «Nuevo evento» del día elegido (con esa fecha) y, en la grilla, cualquier
+// otro lugar de un día: su número, su espacio libre, un feriado o el pedazo de una barra (tocarUnDia)
 function alTocarEventos(evento) {
   const objetivo = evento.target;
   const nuevo = objetivo?.closest?.('#ag-nuevo-evento');
@@ -3063,10 +3264,28 @@ function alTocarEventos(evento) {
   if (objetivo?.closest?.('#ag-hoy')) {
     const deHoy = Utils.hoyEnArgentina().slice(0, 7);
     if (deHoy !== pagina.mesDeEventos || pagina.delMes === null) mostrarMesDeEventos(deHoy);
+    else {
+      empezarElMes(deHoy);
+      pintarMesDeEventos();
+    }
+    return;
+  }
+  if (objetivo?.closest?.('#ag-finde')) {
+    cambiarElFinDeSemana();
     return;
   }
   const verMas = objetivo?.closest?.('[data-ver-mas]');
-  if (verMas) verElResto(verMas);
+  if (verMas) {
+    verElResto(verMas);
+    return;
+  }
+  const nuevoElDia = objetivo?.closest?.('[data-nuevo-el]');
+  if (nuevoElDia) {
+    abrirEvento({ fecha: nuevoElDia.getAttribute('data-nuevo-el'), volverA: nuevoElDia });
+    return;
+  }
+  const dia = objetivo?.closest?.('.me-celda')?.getAttribute('data-fecha');
+  if (esFechaDeTexto(dia)) tocarUnDia(dia);
 }
 
 // =====================================================
@@ -3337,11 +3556,12 @@ function mostrarFallaDelServidor(nombre, falla, boton) {
 
 // Las pestañas que se vuelven a dibujar después de guardar o de borrar, y lo que identifica a un control que abre un modal, en este
 // orden: el «Editar» de una fila (por su id; en el día por día de contrato, por su fecha), «Mis vacaciones y saldos», «Cambiar» o
-// «Registrar un uso autorizado», «Cargar licencia» o «Cargar horas extras» de una tarjeta, un botón de «Vence pronto» (por su tipo)
-// y un evento de la agenda (por su id)
+// «Registrar un uso autorizado», «Cargar licencia» o «Cargar horas extras» de una tarjeta, un botón de «Vence pronto» (por su tipo),
+// un evento de la agenda (por su id) y, desde la agenda con más onda, el número de un día del mes y «Nuevo evento» del día elegido
+// (por su fecha: un «Nuevo evento» abierto desde ahí vuelve a él)
 const VISTAS_QUE_SE_DIBUJAN = Object.freeze(['vista-resumen', 'vista-licencias', 'vista-horas', 'vista-agenda']);
 const IDENTIDADES_DEL_FOCO = Object.freeze(['data-editar-licencia', 'data-editar-horas', 'data-editar-salida', 'data-abrir',
-  'data-cargar', 'data-tipo', 'data-evento']);
+  'data-cargar', 'data-tipo', 'data-evento', 'data-dia', 'data-nuevo-el']);
 
 // El id del lugar de la pestaña donde está un control (el primer antepasado con id, antes de la pestaña: en la agenda, 'ag-mes' o
 // 'ag-proximos'), o null
@@ -4717,15 +4937,15 @@ function personasParaCompartir() {
 }
 
 /**
- * Abre el formulario del evento: «Nuevo evento» (hoy y «2 horas antes») o «Editar evento» con uno propio (`item`, de lo que llegó de
- * GET /mi-espacio/eventos). Sin modalidad se abre igual (decisión del usuario, 27/10/2026). «¿Quién lo ve?» y las personas, solo
- * con Auth.isAdmin() (el true literal): el lector y el colaborador tienen solo eventos personales, y no piden la lista. El foco va
- * a «Qué» y, al cerrar, vuelve a `volverA`
+ * Abre el formulario del evento: «Nuevo evento» (hoy, o la `fecha` del día que se tocó en el mes, y «2 horas antes») o «Editar
+ * evento» con uno propio (`item`, de lo que llegó de GET /mi-espacio/eventos). Sin modalidad se abre igual (decisión del usuario,
+ * 27/10/2026). «¿Quién lo ve?» y las personas, solo con Auth.isAdmin() (el true literal): el lector y el colaborador tienen solo
+ * eventos personales, y no piden la lista. El foco va a «Qué» y, al cerrar, vuelve a `volverA`
  */
-function abrirEvento({ item = null, volverA = null } = {}) {
+function abrirEvento({ item = null, volverA = null, fecha = null } = {}) {
   if (pagina.evento !== null) return;
   const puedeCompartir = Auth.isAdmin?.() === true;
-  const valores = valoresDelEvento(item, { fecha: Utils.hoyEnArgentina() });
+  const valores = valoresDelEvento(item, { fecha: esFechaDeTexto(fecha) ? fecha : Utils.hoyEnArgentina() });
   const formulario = {
     item, valores, puedeCompartir, guardando: false, temporizador: null, pedidoDelAviso: 0, lista: null,
     sinLista: puedeCompartir ? 'cargando' : null, motivoSinLista: ''

@@ -21,7 +21,8 @@ import { notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota } from '../services/mi
 import {
   DIAS_DE_PROXIMOS, itemDeEvento, itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, MENSAJES_EVENTO,
   LARGO_TITULO_EVENTO, LARGO_DETALLE_EVENTO, FECHA_MINIMA_EVENTO, fechaMaximaEvento, textoRangoEvento, RECORDATORIOS,
-  RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, validarEvento, inicialesDe, cuandoDelEvento, avisoDe, companerosPorDia
+  RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, validarEvento, inicialesDe, cuandoDelEvento, avisoDe, companerosPorDia, fraseDelMes,
+  mesDeLaFrase
 } from '../services/miEspacioEventosReglas.js';
 import { idPositivo } from '../services/proyectosReglas.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
@@ -1503,6 +1504,45 @@ describe('la agenda: el modelo del mes', () => {
     for (const raro of ['2026-02-30', '', null, 'hoy']) assert.equal(M.diaVisibleCercano(raro, noviembre), null, String(raro));
     for (const raro of [[], null, 'x', [[]], [null]]) assert.equal(M.diaVisibleCercano('2026-11-01', raro), null, JSON.stringify(raro));
   });
+
+  // spec 3.2: apagado, el botón dice cuántas cosas quedaron escondidas el fin de semana; sin ninguna, su nombre es su texto
+  it('etiquetaDelFinDeSemana: «Sábado y domingo: 1 cosa escondida», «… 3 cosas escondidas»; sin ninguna, ""', () => {
+    assert.equal(M.etiquetaDelFinDeSemana(1), 'Sábado y domingo: 1 cosa escondida');
+    assert.equal(M.etiquetaDelFinDeSemana(3), 'Sábado y domingo: 3 cosas escondidas');
+    for (const raro of [0, -1, 1.5, '2', null, undefined, NaN]) assert.equal(M.etiquetaDelFinDeSemana(raro), '', String(raro));
+  });
+
+  // spec 4.1 y decisión 9.5: el tabindex móvil de los números (las flechas, Inicio y Fin)
+  it('diaConLaTecla: las flechas de día en día y de semana en semana, Inicio y Fin en la fila; en el borde, la misma fecha', () => {
+    const octubre = M.semanasDelMes('2026-10', { finde: false });
+    const tecla = (fecha, nombre, semanas = octubre) => M.diaConLaTecla(fecha, nombre, semanas);
+    // De día en día: del viernes al lunes (sábado y domingo ocultos), y al revés
+    assert.equal(tecla('2026-10-28', 'ArrowRight'), '2026-10-29');
+    assert.equal(tecla('2026-10-02', 'ArrowRight'), '2026-10-05');
+    assert.equal(tecla('2026-10-05', 'ArrowLeft'), '2026-10-02');
+    // De semana en semana, en la misma columna
+    assert.equal(tecla('2026-10-21', 'ArrowDown'), '2026-10-28');
+    assert.equal(tecla('2026-10-07', 'ArrowUp'), '2026-09-30');
+    // Inicio y Fin: el primero y el último de la fila
+    assert.equal(tecla('2026-10-28', 'Home'), '2026-10-26');
+    assert.equal(tecla('2026-10-28', 'End'), '2026-10-30');
+    assert.equal(tecla('2026-10-26', 'Home'), '2026-10-26');
+    // En el borde de la grilla, no se mueve
+    assert.equal(tecla('2026-10-30', 'ArrowRight'), '2026-10-30');
+    assert.equal(tecla('2026-09-28', 'ArrowLeft'), '2026-09-28');
+    assert.equal(tecla('2026-10-28', 'ArrowDown'), '2026-10-28');
+    assert.equal(tecla('2026-09-30', 'ArrowUp'), '2026-09-30');
+    // Con sábado y domingo: el viernes 30 sigue en el sábado 31 y Fin va al domingo 1/11; en noviembre, el 28/10 es de la primera
+    // fila y abajo está el 04/11
+    const conFinde = M.semanasDelMes('2026-10', { finde: true });
+    assert.equal(tecla('2026-10-30', 'ArrowRight', conFinde), '2026-10-31');
+    assert.equal(tecla('2026-10-26', 'End', conFinde), '2026-11-01');
+    assert.equal(tecla('2026-10-28', 'ArrowDown', M.semanasDelMes('2026-11', { finde: true })), '2026-11-04');
+    // Otra tecla, una fecha que no se ve o que no es una fecha, o unas semanas que no sirven: null
+    for (const otra of ['Enter', ' ', 'a', 'PageDown', undefined]) assert.equal(tecla('2026-10-28', otra), null, String(otra));
+    for (const fecha of ['2026-10-31', '2026-12-15', 'raro', null]) assert.equal(tecla(fecha, 'ArrowRight'), null, String(fecha));
+    for (const raro of [[], null, 'x']) assert.equal(tecla('2026-10-28', 'ArrowRight', raro), null, JSON.stringify(raro));
+  });
 });
 
 // El HTML del mes (spec 2026-10-28-mi-espacio-agenda-onda, 3.3 a 3.8 y 6): una tabla con una celda por día visible, y en cada día su
@@ -2151,17 +2191,57 @@ const RESPUESTAS_DE_ENTRADA = (metodo, ruta) => {
   return respuesta(404, { success: false, error: `Sin respuesta para ${metodo} ${ruta}` });
 };
 
+// La consulta del teléfono (la de mi-espacio.js) y la de menos movimiento
+const CONSULTA_DEL_TELEFONO = '(max-width: 640px)';
+const CONSULTA_DE_MENOS_MOVIMIENTO = '(prefers-reduced-motion: reduce)';
+// El localStorage del navegador, falso, sobre un Map (lo comparten dos montajes que reciben el mismo); con 'tira', uno que tira en
+// cada lectura y escritura (el de una ventana privada o con el almacenamiento bloqueado)
+const almacenamientoDe = (almacen) => (almacen === 'tira'
+  ? {
+    getItem: () => { throw new Error('SecurityError: el almacenamiento está bloqueado'); },
+    setItem: () => { throw new Error('QuotaExceededError: no entra'); },
+    removeItem: () => { throw new Error('SecurityError: el almacenamiento está bloqueado'); }
+  }
+  : {
+    getItem: (clave) => (almacen.has(clave) ? almacen.get(clave) : null),
+    setItem: (clave, valor) => { almacen.set(clave, String(valor)); },
+    removeItem: (clave) => { almacen.delete(clave); }
+  });
+
 // `cuadros`: con true, la ventana tiene un requestAnimationFrame que anota las funciones en estado.cuadros (las corre el test);
 // sin él, la página no anima. `reducido`: con true, la ventana tiene un matchMedia que dice que la persona pidió menos movimiento
-// (prefers-reduced-motion: reduce); sin él, no hay matchMedia. Los temporizadores no corren solos: `correr` corre los que hay (el
+// (prefers-reduced-motion: reduce). `telefono`: con true o false, la ventana tiene un matchMedia que dice si la pantalla es la del
+// teléfono (CONSULTA_DEL_TELEFONO, 640 px o menos), y `cambiarElAncho(true|false)` la cambia y avisa a quien escucha su 'change';
+// sin `reducido` ni `telefono`, no hay matchMedia. `almacen`: el Map del localStorage de la ventana (de entrada, uno nuevo; dos
+// montajes con el mismo comparten lo guardado), 'tira' para uno que tira, o null para una ventana sin localStorage. Los
+// temporizadores no corren solos: `correr` corre los que hay (el
 // foco de los modales y la espera del cálculo). `auditor`: lo que contesta Auth.isAuditor(); `admin`, Auth.isAdmin() (la página lo
 // pregunta solo al abrir el formulario del evento: compartir es de administración). Hoy es HOY. `estado.toasts`: cada showToast (el
 // de main.js), [mensaje, tipo]. Cada pedido anota sus encabezados (`encabezados`). Las descargas: `estado.urls`, cada
 // URL.createObjectURL (['crear', blob]) y revokeObjectURL (['soltar', url]), y `estado.descargas`, cada clic en un elemento creado
 // con document.createElement (el <a download> de descargarBlob): { etiqueta, href, download }
-const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, reducido = false, auditor = false, admin = false } = {}) => {
+const montarPagina = ({
+  hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, reducido = false, telefono = null, almacen = new Map(), auditor = false,
+  admin = false
+} = {}) => {
   const { dom, documento } = crearDom();
-  const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [], toasts: [], urls: [], descargas: [] };
+  const estado = {
+    pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [], toasts: [], urls: [], descargas: [],
+    telefono: telefono === true, medidas: []
+  };
+  // Cada MediaQueryList que pide la página, con sus oyentes de 'change'; `matches` se lee en el momento
+  const matchMedia = (consulta) => {
+    const medida = {
+      consulta, oyentes: [],
+      get matches() {
+        if (consulta === CONSULTA_DE_MENOS_MOVIMIENTO) return reducido;
+        return consulta === CONSULTA_DEL_TELEFONO ? estado.telefono : false;
+      },
+      addEventListener: (tipo, funcion) => { if (tipo === 'change') medida.oyentes.push(funcion); }
+    };
+    estado.medidas.push(medida);
+    return medida;
+  };
   const crearElemento = documento.createElement;
   documento.createElement = (etiqueta) => {
     const nuevo = crearElemento(etiqueta);
@@ -2181,7 +2261,8 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
     },
     addEventListener() {},
     ...(cuadros ? { requestAnimationFrame: (funcion) => { estado.cuadros.push(funcion); return estado.cuadros.length; } } : {}),
-    ...(reducido ? { matchMedia: (consulta) => ({ matches: consulta === '(prefers-reduced-motion: reduce)' }) } : {})
+    ...(reducido || telefono !== null ? { matchMedia } : {}),
+    ...(almacen === null ? {} : { localStorage: almacenamientoDe(almacen) })
   };
   const contexto = vm.createContext({
     CONFIG: { API_URL: '/api' },
@@ -2268,9 +2349,17 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
   // con `tiempo`, el momento del cuadro en ms (el que da requestAnimationFrame); sin él, un cuadro sin tiempo
   const cuadro = (tiempo) => { for (const funcion of estado.cuadros.splice(0)) funcion(tiempo); };
   const abierto = (id) => el(id).classList.contains('active');
+  // La pantalla pasa a ser la del teléfono (true) o la de la compu (false): avisa a quien escucha el 'change' de su consulta
+  const cambiarElAncho = async (enElTelefono) => {
+    estado.telefono = enElTelefono;
+    for (const medida of estado.medidas.filter((una) => una.consulta === CONSULTA_DEL_TELEFONO)) {
+      for (const funcion of medida.oyentes) funcion({ matches: enElTelefono, media: CONSULTA_DEL_TELEFONO });
+    }
+    await esperar();
+  };
   return {
     contexto, dom, documento, ventana, estado, el, rutas, pedidosA, iniciar, tocar, esperar, correr, escribir, elegir, tecla,
-    cuadro, abierto
+    cuadro, abierto, cambiarElAncho
   };
 };
 
@@ -4860,31 +4949,41 @@ describe('mi-espacio.html: los estilos de los errores', () => {
 
 // =====================================================================================================================================
 // La agenda en la página (DOM falso; spec 2026-10-26-mi-espacio-agenda, 6; Task 9): la pestaña, el mes con ‹ › y «Hoy», «y N más»,
-// los próximos, la leyenda, «Ver la agenda» y lo que se vuelve a pedir después de guardar. El formulario del evento llega con la
-// Task 10: un clic en un evento o en «Nuevo evento» todavía no abre nada
+// los próximos, la leyenda, «Ver la agenda» y lo que se vuelve a pedir después de guardar. Desde la agenda con más onda (spec
+// 2026-10-28-mi-espacio-agenda-onda), la página dibuja el mes con su día elegido (hoy, o el 1 de otro mes, el visible más cercano:
+// en la compu no se ve) y pide el mes con su mes (mes=AAAA-MM); lo nuevo, más abajo, después del formulario del evento
 // =====================================================================================================================================
 
-const RUTA_DEL_MES = '/api/mi-espacio/eventos?desde=2026-09-28&hasta=2026-11-01';
+// El pedido del mes lleva su mes (para la frase de la banda, spec 2026-10-28-mi-espacio-agenda-onda, 5.2); el de los próximos, no
+const RUTA_DEL_MES = '/api/mi-espacio/eventos?desde=2026-09-28&hasta=2026-11-01&mes=2026-10';
 const RUTA_DE_PROXIMOS = '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-11-25';
-// El servidor falso con la agenda: el mes de octubre, los próximos y cualquier otro rango (armado igual); `cambios`, las respuestas
-// de algunas rutas (una función o una respuesta)
+// Lo que contesta el servidor con la frase del mes, como listarEventos: con `mes` (el mes entero dentro del rango), fraseDelMes con los
+// eventos, los feriados y las licencias de la respuesta; si no, null
+const conLaFrase = (datos, mes) => {
+  const delMes = mesDeLaFrase(mes, datos);
+  return { ...datos, frase_del_mes: delMes === null ? null : fraseDelMes({ mes: delMes, ...datos }) };
+};
+// El servidor falso con la agenda: el mes de octubre, los próximos y cualquier otro rango (armado igual, con la frase si el pedido
+// trae el mes); `cambios`, las respuestas de algunas rutas (una función o una respuesta)
 const conEventos = (cambios = {}) => async (metodo, ruta, cuerpo) => {
   if (Object.hasOwn(cambios, ruta)) return typeof cambios[ruta] === 'function' ? cambios[ruta](metodo, ruta, cuerpo) : cambios[ruta];
-  if (ruta === RUTA_DEL_MES) return ok(DEL_MES);
+  if (ruta === RUTA_DEL_MES) return ok(conLaFrase(DEL_MES, '2026-10'));
   if (ruta === RUTA_DE_PROXIMOS) return ok(PROXIMOS);
   if (ruta.startsWith('/api/mi-espacio/eventos?')) {
     const parametros = new URL(ruta, 'http://rpad.test').searchParams;
-    return ok(respuestaDeEventos({ desde: parametros.get('desde'), hasta: parametros.get('hasta') }));
+    return ok(conLaFrase(respuestaDeEventos({ desde: parametros.get('desde'), hasta: parametros.get('hasta') }), parametros.get('mes')));
   }
   return RESPUESTAS_DE_ENTRADA(metodo, ruta, cuerpo);
 };
 const pedidosDeEventos = (pagina) => pagina.rutas().filter((ruta) => ruta.startsWith('/api/mi-espacio/eventos'));
+// El mes como lo dibuja la página en la compu, con sábado y domingo ocultos: su día elegido (y el del foco), el de `elegido`
+const mesEnLaPagina = (mes, datos, elegido, opciones = {}) => M.htmlDelMes(mes, datos, HOY, { elegido, foco: elegido, ...opciones });
 
 describe('la agenda en la página (DOM falso)', () => {
   it('#agenda: pide el Resumen, la grilla del mes de hoy y los próximos, y los dibuja con el título del mes y la leyenda', async () => {
     const pagina = montarPagina({ hash: '#agenda', responder: conEventos() });
     await pagina.iniciar();
-    assert.deepEqual(pagina.rutas().sort(), ['/api/mi-espacio/eventos?desde=2026-09-28&hasta=2026-11-01',
+    assert.deepEqual(pagina.rutas().sort(), ['/api/mi-espacio/eventos?desde=2026-09-28&hasta=2026-11-01&mes=2026-10',
       '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-11-25', '/api/mi-espacio/resumen']);
     assert.deepEqual(pagina.estado.direcciones, ['#agenda']);
     assert.equal(pagina.el('tab-agenda').getAttribute('aria-selected'), 'true');
@@ -4892,7 +4991,7 @@ describe('la agenda en la página (DOM falso)', () => {
     for (const otra of ['resumen', 'licencias', 'horas']) assert.equal(pagina.el(`vista-${otra}`).hidden, true, otra);
     assert.equal(pagina.el('vista-agenda').hidden, false);
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Octubre 2026');
-    assert.equal(pagina.el('ag-mes').innerHTML, M.htmlDelMes('2026-10', DEL_MES, HOY));
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY));
     assert.equal(pagina.el('ag-proximos').innerHTML, M.htmlDeProximos(M.gruposDeProximos(PROXIMOS, HOY)));
     // Quien ve a sus compañeros tiene su color en la leyenda
     assert.equal(pagina.el('ag-leyenda-ausentes').hidden, false);
@@ -4915,9 +5014,10 @@ describe('la agenda en la página (DOM falso)', () => {
     await pagina.iniciar();
     await pagina.tocar(pagina.el('ag-siguiente'));
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Noviembre 2026');
-    assert.equal(pedidosDeEventos(pagina).at(-1), '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06');
+    assert.equal(pedidosDeEventos(pagina).at(-1), '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06&mes=2026-11');
     const noviembre = respuestaDeEventos({ desde: '2026-10-26', hasta: '2026-12-06' });
-    assert.equal(pagina.el('ag-mes').innerHTML, M.htmlDelMes('2026-11', noviembre, HOY));
+    // El 1 es domingo: con sábado y domingo ocultos, el elegido es el lunes 2
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-11', noviembre, '2026-11-02'));
     assert.equal(pagina.el('me-anuncio').textContent, 'Noviembre 2026');
     // Los próximos no se vuelven a pedir, y el mes no va en la dirección
     assert.equal(pedidosDeEventos(pagina).filter((ruta) => ruta === RUTA_DE_PROXIMOS).length, 1);
@@ -4925,17 +5025,17 @@ describe('la agenda en la página (DOM falso)', () => {
     await pagina.tocar(pagina.el('ag-anterior'));
     await pagina.tocar(pagina.el('ag-anterior'));
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Septiembre 2026');
-    assert.equal(pedidosDeEventos(pagina).at(-1), '/api/mi-espacio/eventos?desde=2026-08-31&hasta=2026-10-04');
+    assert.equal(pedidosDeEventos(pagina).at(-1), '/api/mi-espacio/eventos?desde=2026-08-31&hasta=2026-10-04&mes=2026-09');
     await pagina.tocar(pagina.el('ag-hoy'));
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Octubre 2026');
-    assert.equal(pagina.el('ag-mes').innerHTML, M.htmlDelMes('2026-10', DEL_MES, HOY));
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY));
     // «Hoy» en el mes de hoy no pide nada
     const antes = pagina.rutas().length;
     await pagina.tocar(pagina.el('ag-hoy'));
     assert.equal(pagina.rutas().length, antes);
     for (let i = 0; i < 3; i += 1) await pagina.tocar(pagina.el('ag-siguiente'));
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Enero 2027');
-    assert.equal(pedidosDeEventos(pagina).at(-1), '/api/mi-espacio/eventos?desde=2026-12-28&hasta=2027-01-31');
+    assert.equal(pedidosDeEventos(pagina).at(-1), '/api/mi-espacio/eventos?desde=2026-12-28&hasta=2027-01-31&mes=2027-01');
   });
 
   it('un mes que llega tarde no pisa el que se eligió después', async () => {
@@ -4944,7 +5044,7 @@ describe('la agenda en la página (DOM falso)', () => {
     const pagina = montarPagina({
       hash: '#agenda',
       responder: conEventos({
-        '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06': async () => {
+        '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06&mes=2026-11': async () => {
           await noviembreTarda;
           return ok(respuestaDeEventos({ desde: '2026-10-26', hasta: '2026-12-06' }));
         }
@@ -4955,10 +5055,15 @@ describe('la agenda en la página (DOM falso)', () => {
     await pagina.tocar(pagina.el('ag-siguiente'));
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Diciembre 2026');
     const diciembre = pagina.el('ag-mes').innerHTML;
+    const fraseDeDiciembre = pagina.el('ag-frase').textContent;
+    const elegidoDeDiciembre = pagina.el('ag-elegido').innerHTML;
+    assert.ok(fraseDeDiciembre.length > 0);
     soltarNoviembre();
     await pagina.esperar();
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Diciembre 2026');
     assert.equal(pagina.el('ag-mes').innerHTML, diciembre);
+    assert.equal(pagina.el('ag-frase').textContent, fraseDeDiciembre);
+    assert.equal(pagina.el('ag-elegido').innerHTML, elegidoDeDiciembre);
     assert.equal(pagina.el('me-anuncio').textContent, 'Diciembre 2026');
   });
 
@@ -4974,6 +5079,8 @@ describe('la agenda en la página (DOM falso)', () => {
     assert.equal(boton.hidden, true);
     assert.equal(pagina.documento.activeElement, celda.querySelector('[data-evento="32"]'));
     assert.equal(pagina.rutas().length, antes);
+    // «y N más» es parte del día, pero no abre «Nuevo evento»
+    assert.equal(pagina.abierto('modal-evento'), false);
   });
 
   // Decisión del usuario (27/10/2026): a quien no ve a los compañeros (el lector y el colaborador), la leyenda no le muestra su color
@@ -5005,7 +5112,7 @@ describe('la agenda en la página (DOM falso)', () => {
     const texto = 'No se pudieron cargar los próximos. Probá de nuevo en unos minutos.';
     assert.equal(textoDe(pagina.el('ag-proximos').innerHTML), texto);
     assert.equal(pagina.el('me-anuncio').textContent, texto);
-    assert.equal(pagina.el('ag-mes').innerHTML, M.htmlDelMes('2026-10', DEL_MES, HOY));
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY));
     falla = false;
     const antes = pedidosDeEventos(pagina).length;
     await pagina.tocar(pagina.el('tab-resumen'));
@@ -5040,7 +5147,7 @@ describe('la agenda en la página (DOM falso)', () => {
     assert.equal(pagina.el('btn-nuevo-evento').hidden, false);
     assert.equal(pagina.el('ag-nuevo-evento').hidden, false);
     assert.equal(pagina.el('tab-agenda').hidden, false);
-    assert.equal(pagina.el('ag-mes').innerHTML, M.htmlDelMes('2026-10', DEL_MES, HOY));
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY));
   });
 
   it('«Ver la agenda» de «Hoy y mañana» abre la pestaña Agenda (la pide) y el foco va a la pestaña', async () => {
@@ -5067,7 +5174,7 @@ describe('la agenda en la página (DOM falso)', () => {
     await pagina.contexto.volverAPedirTodo();
     await pagina.esperar();
     assert.deepEqual(pedidosDeEventos(pagina).slice(antes).sort(), ['/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-11-25',
-      '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06']);
+      '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06&mes=2026-11']);
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Noviembre 2026');
     // Con otra pestaña a la vista, nada; al volver a la agenda, se pide otra vez
     await pagina.tocar(pagina.el('tab-licencias'));
@@ -6098,6 +6205,438 @@ describe('el foco después de guardar un evento (DOM falso)', () => {
     pagina.el('ag-mes').querySelector('[data-evento="12"]').focus = () => {};
     pagina.contexto.devolverElFoco(respaldo);
     assert.equal(pagina.documento.activeElement, pagina.el('ag-proximos-titulo'));
+  });
+});
+
+// =====================================================================================================================================
+// La agenda con más onda en la página (DOM falso; spec 2026-10-28-mi-espacio-agenda-onda, 3.2, 3.7, 3.8, 4.1 y 6): «Sábado y
+// domingo» (apagado de entrada y recordado en este navegador), la frase del mes, tocar un día (en la compu, «Nuevo evento» con esa
+// fecha; en el teléfono, elegirlo y ver lo de ese día debajo de la grilla), el teclado (el tabindex móvil de los números) y el
+// movimiento de una sola vez. Hoy es el lunes 26/10/2026; los datos, los de la agenda de más arriba (noviembre, el de DE_NOVIEMBRE,
+// con el feriado del domingo 8)
+// =====================================================================================================================================
+
+const RUTA_DE_NOVIEMBRE = '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06&mes=2026-11';
+// El servidor falso del formulario, con noviembre de DE_NOVIEMBRE y su frase; `eventos`, otros cambios
+const conNoviembre = (eventos = {}) => conElFormulario({
+  eventos: { [RUTA_DE_NOVIEMBRE]: ok(conLaFrase(DE_NOVIEMBRE, '2026-11')), ...eventos }
+});
+// Las columnas de la grilla que se ve, el número y la celda de un día, los números con tabindex="0" y el título del día elegido
+const columnasDelMes = (pagina) => pagina.el('ag-mes').querySelectorAll('th').length;
+const numeroDelDia = (pagina, fecha) => pagina.el('ag-mes').querySelector(`[data-dia="${fecha}"]`);
+const celdaDelDia = (pagina, fecha) => pagina.el('ag-mes').querySelector(`[data-fecha="${fecha}"]`);
+const conTabindexCero = (pagina) => pagina.el('ag-mes').querySelectorAll('[data-dia]')
+  .filter((numero) => numero.getAttribute('tabindex') === '0').map((numero) => numero.getAttribute('data-dia'));
+const tituloDelElegido = (pagina) => pagina.el('ag-elegido-titulo')?.textContent ?? null;
+// Una tecla en lo que tiene el foco (un número del mes), con sus modificadores: devuelve el evento, para mirar si se frenó
+const teclaConEvento = async (pagina, key, extra = {}) => {
+  const evento = pagina.documento.activeElement.disparar('keydown', { key, ...extra });
+  await pagina.esperar();
+  return evento;
+};
+
+describe('la agenda con más onda en la página (DOM falso)', () => {
+  it('CLAVE_DEL_FIN_DE_SEMANA, y el foco vuelve al número de un día y al «Nuevo evento» del día elegido (IDENTIDADES_DEL_FOCO)', () => {
+    assert.equal(M.CLAVE_DEL_FIN_DE_SEMANA, 'rpad-mi-espacio-fin-de-semana');
+    assert.ok(M.IDENTIDADES_DEL_FOCO.includes('data-dia'));
+    assert.ok(M.IDENTIDADES_DEL_FOCO.includes('data-nuevo-el'));
+  });
+
+  it('al abrir: «Sábado y domingo» apagado (5 columnas), la frase del servidor y el mes pedido con su mes; en noviembre, la cuenta', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conNoviembre() });
+    await pagina.iniciar();
+    // El pedido del mes lleva su mes; el de los próximos, no
+    assert.deepEqual(rangosPedidos(pagina).sort(), [RUTA_DEL_MES, RUTA_DE_PROXIMOS]);
+    assert.ok(RUTA_DEL_MES.endsWith('&mes=2026-10'));
+    assert.equal(pagina.el('ag-finde').getAttribute('aria-pressed'), 'false');
+    assert.equal(columnasDelMes(pagina), 5);
+    // Octubre no tiene nada el fin de semana: sin la cuenta, y el nombre del botón es su texto
+    assert.equal(pagina.el('ag-finde-cuenta').hidden, true);
+    assert.equal(pagina.el('ag-finde').getAttribute('aria-label'), null);
+    assert.equal(pagina.el('ag-frase').textContent, '4 eventos, 1 feriado y tu franquicia el 15.');
+    // El día elegido (en la compu no se ve, pero está, con su título): hoy
+    assert.equal(pagina.el('ag-elegido').innerHTML, M.htmlDelDiaElegido(HOY, DEL_MES, HOY));
+    // Noviembre: el feriado del domingo 8 queda escondido
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    assert.equal(pedidosDeEventos(pagina).at(-1), RUTA_DE_NOVIEMBRE);
+    assert.equal(pagina.el('ag-finde-cuenta').hidden, false);
+    assert.equal(pagina.el('ag-finde-cuenta').textContent, '1');
+    assert.equal(pagina.el('ag-finde').getAttribute('aria-label'), 'Sábado y domingo: 1 cosa escondida');
+    assert.equal(pagina.el('ag-frase').textContent, fraseDelMes({ mes: '2026-11', ...DE_NOVIEMBRE }));
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-11', DE_NOVIEMBRE, '2026-11-02'));
+    assert.equal(tituloDelElegido(pagina), 'Lunes 2 de noviembre');
+  });
+
+  it('la frase del mes va como texto (con HTML, tal cual); sin frase o mientras se pide el mes, vacía; el día elegido, siempre con su título', async () => {
+    let soltar;
+    const tarda = new Promise((resolver) => { soltar = resolver; });
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        eventos: {
+          [RUTA_DEL_MES]: ok({ ...DEL_MES, frase_del_mes: MALICIOSO }),
+          [RUTA_DE_NOVIEMBRE]: async () => { await tarda; return ok({ ...DE_NOVIEMBRE, frase_del_mes: null }); }
+        }
+      })
+    });
+    await pagina.iniciar();
+    assert.equal(pagina.el('ag-frase').textContent, MALICIOSO);
+    assert.equal(pagina.el('ag-frase').querySelector('img'), null);
+    // Mientras se pide noviembre: sin frase, sin la cuenta, y el día elegido con su título (sin datos)
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    assert.equal(pagina.el('ag-frase').textContent, '');
+    assert.equal(pagina.el('ag-finde-cuenta').hidden, true);
+    assert.equal(pagina.el('ag-elegido').innerHTML, M.htmlDelDiaElegido('2026-11-02', null, HOY));
+    assert.equal(tituloDelElegido(pagina), 'Lunes 2 de noviembre');
+    soltar();
+    await pagina.esperar();
+    assert.equal(pagina.el('ag-mes-titulo').textContent, 'Noviembre 2026');
+    assert.equal(pagina.el('ag-frase').textContent, '');
+    assert.equal(pagina.el('ag-finde-cuenta').textContent, '1');
+  });
+
+  it('«Sábado y domingo»: prendido, 7 columnas, sin la cuenta y recordado en este navegador; apagado, otra vez 5 y la cuenta', async () => {
+    const almacen = new Map();
+    const pagina = montarPagina({ hash: '#agenda', almacen, responder: conNoviembre() });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    const boton = pagina.el('ag-finde');
+    boton.focus();
+    const antes = pagina.rutas().length;
+    await pagina.tocar(boton);
+    assert.equal(boton.getAttribute('aria-pressed'), 'true');
+    assert.equal(columnasDelMes(pagina), 7);
+    assert.equal(pagina.el('ag-finde-cuenta').hidden, true);
+    assert.equal(boton.getAttribute('aria-label'), null);
+    assert.equal(almacen.get('rpad-mi-espacio-fin-de-semana'), '1');
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-11', DE_NOVIEMBRE, '2026-11-02', { finde: true }));
+    // No pide nada (el mes ya se pidió entero, de lunes a domingo) y el foco queda en el botón
+    assert.equal(pagina.rutas().length, antes);
+    assert.equal(pagina.documento.activeElement, boton);
+    // Apagado otra vez
+    await pagina.tocar(boton);
+    assert.equal(boton.getAttribute('aria-pressed'), 'false');
+    assert.equal(columnasDelMes(pagina), 5);
+    assert.equal(pagina.el('ag-finde-cuenta').hidden, false);
+    assert.equal(pagina.el('ag-finde-cuenta').textContent, '1');
+    assert.equal(almacen.get('rpad-mi-espacio-fin-de-semana'), '0');
+    // Prendido, y la página otra vez en el mismo navegador: arranca prendido
+    await pagina.tocar(boton);
+    const otra = montarPagina({ hash: '#agenda', almacen, responder: conNoviembre() });
+    await otra.iniciar();
+    assert.equal(otra.el('ag-finde').getAttribute('aria-pressed'), 'true');
+    assert.equal(columnasDelMes(otra), 7);
+    assert.equal(otra.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY, { finde: true }));
+  });
+
+  it('sin almacenamiento (uno que tira o una ventana sin localStorage), «Sábado y domingo» arranca apagado, sin error, y anda igual', async () => {
+    for (const almacen of ['tira', null]) {
+      const pagina = montarPagina({ hash: '#agenda', almacen, responder: conElFormulario() });
+      await pagina.iniciar();
+      assert.equal(pagina.el('ag-finde').getAttribute('aria-pressed'), 'false', String(almacen));
+      assert.equal(columnasDelMes(pagina), 5, String(almacen));
+      await pagina.tocar(pagina.el('ag-finde'));
+      assert.equal(pagina.el('ag-finde').getAttribute('aria-pressed'), 'true', String(almacen));
+      assert.equal(columnasDelMes(pagina), 7, String(almacen));
+    }
+  });
+
+  it('si el mes no se pudo cargar, «Sábado y domingo» lo vuelve a pedir (una grilla vacía no tapa el aviso); si vuelve a fallar, lo dice', async () => {
+    let falla = true;
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        eventos: { [RUTA_DEL_MES]: () => (falla ? respuesta(500, { success: false, error: 'Error' }) : ok(conLaFrase(DEL_MES, '2026-10'))) }
+      })
+    });
+    await pagina.iniciar();
+    assert.equal(textoDe(pagina.el('ag-mes').innerHTML), 'No se pudo cargar el mes. Probá de nuevo en unos minutos.');
+    const pedidosDelMes = () => rangosPedidos(pagina).filter((ruta) => ruta === RUTA_DEL_MES).length;
+    await pagina.tocar(pagina.el('ag-finde'));
+    assert.equal(pedidosDelMes(), 2);
+    assert.equal(textoDe(pagina.el('ag-mes').innerHTML), 'No se pudo cargar el mes. Probá de nuevo en unos minutos.');
+    falla = false;
+    await pagina.tocar(pagina.el('ag-finde'));
+    assert.equal(pedidosDelMes(), 3);
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY));
+    // Con el mes a la vista, cambiar «Sábado y domingo» no pide nada
+    await pagina.tocar(pagina.el('ag-finde'));
+    assert.equal(pedidosDelMes(), 3);
+    assert.equal(columnasDelMes(pagina), 7);
+  });
+
+  it('en la compu, tocar un día abre «Nuevo evento» con esa fecha (su cuerpo, una barra, un feriado o su número); al cerrar, el foco va a su número', async () => {
+    const pagina = montarPagina({ hash: '#agenda', telefono: false, responder: conElFormulario() });
+    await pagina.iniciar();
+    assert.equal(numeroDelDia(pagina, '2026-10-22').getAttribute('aria-label'), 'Nuevo evento el jueves 22/10');
+    // El jueves 22, en su cuerpo; el martes 27, en el pedazo de la barra del compañero que no está; el jueves 15, en el de tu
+    // franquicia; el lunes 12, en su feriado; y el miércoles 28, en su número
+    const casos = [['2026-10-22', '.me-celda-cuerpo'], ['2026-10-27', '.me-tira'], ['2026-10-15', '.me-tira'], ['2026-10-12', '.me-ev'],
+      ['2026-10-28', '[data-dia]']];
+    for (const [fecha, selector] of casos) {
+      const blanco = celdaDelDia(pagina, fecha).querySelector(selector);
+      assert.ok(blanco, `${fecha} ${selector}`);
+      await pagina.tocar(blanco);
+      assert.deepEqual(abiertos(pagina), ['modal-evento'], fecha);
+      assert.equal(pagina.el('modal-evento-titulo').textContent, 'Nuevo evento', fecha);
+      assert.equal(pagina.el('ev-fecha').value, fecha, fecha);
+      await pagina.tecla('Escape');
+      assert.deepEqual(abiertos(pagina), [], fecha);
+      assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, fecha), fecha);
+      // Su número queda como la parada del teclado del mes
+      assert.deepEqual(conTabindexCero(pagina), [fecha], fecha);
+    }
+    // Un evento de la celda abre el suyo; el día elegido no cambia (en la compu no se ve)
+    await pagina.tocar(celdaDelDia(pagina, HOY).querySelector('[data-evento="11"]'));
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    assert.equal(pagina.el('modal-evento-titulo').textContent, 'Editar evento');
+    await pagina.tecla('Escape');
+    assert.equal(tituloDelElegido(pagina), 'Lunes 26 de octubre (hoy)');
+    // Fuera de las celdas (la leyenda, la cabeza de la tabla), nada
+    await pagina.tocar(pagina.el('vista-agenda').querySelector('.me-leyenda'));
+    await pagina.tocar(pagina.el('ag-mes').querySelector('th'));
+    assert.deepEqual(abiertos(pagina), []);
+  });
+
+  it('en la compu, después de guardar un evento abierto desde un número, el foco vuelve al número de esa fecha', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    await pagina.iniciar();
+    const numero = numeroDelDia(pagina, '2026-10-28');
+    numero.focus();
+    await pagina.tocar(numero);
+    await pagina.correr();
+    assert.equal(pagina.documento.activeElement, pagina.el('ev-titulo'));
+    await pagina.escribir('ev-titulo', 'Revisión del informe');
+    await pagina.escribir('ev-desde', '10:00');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    await pagina.esperar();
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos').map((pedido) => pedido.cuerpo.fecha), ['2026-10-28']);
+    const nuevo = numeroDelDia(pagina, '2026-10-28');
+    assert.notEqual(nuevo, numero, 'el mes se volvió a dibujar');
+    assert.equal(pagina.documento.activeElement, nuevo);
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-28']);
+  });
+
+  it('en el teléfono, tocar un día lo elige: su celda marcada y, debajo de la grilla, lo de ese día; no abre nada; «Hoy» vuelve a hoy', async () => {
+    const pagina = montarPagina({ hash: '#agenda', telefono: true, responder: conElFormulario() });
+    await pagina.iniciar();
+    // Al abrir, el elegido es hoy, y los números dicen «Ver el …»
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY, { telefono: true }));
+    assert.equal(pagina.el('ag-elegido').innerHTML, M.htmlDelDiaElegido(HOY, DEL_MES, HOY));
+    assert.equal(numeroDelDia(pagina, '2026-10-22').getAttribute('aria-label'), 'Ver el jueves 22/10');
+    // El jueves 29, en su cuerpo: lo elige, sin abrir nada ni pedir nada
+    const antes = pagina.rutas().length;
+    await pagina.tocar(celdaDelDia(pagina, '2026-10-29').querySelector('.me-celda-cuerpo'));
+    assert.deepEqual(abiertos(pagina), []);
+    assert.equal(pagina.rutas().length, antes);
+    assert.ok(celdaDelDia(pagina, '2026-10-29').classList.contains('elegido'));
+    assert.ok(!celdaDelDia(pagina, HOY).classList.contains('elegido'));
+    assert.equal(pagina.el('ag-elegido').innerHTML, M.htmlDelDiaElegido('2026-10-29', DEL_MES, HOY));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-29']);
+    // Con el teclado (Enter o Espacio en el número son su clic): lo elige y el foco queda en su número, que se volvió a dibujar
+    const numero = numeroDelDia(pagina, '2026-10-22');
+    numero.focus();
+    await pagina.tocar(numero);
+    assert.equal(tituloDelElegido(pagina), 'Jueves 22 de octubre');
+    assert.notEqual(numeroDelDia(pagina, '2026-10-22'), numero);
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-10-22'));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-22']);
+    // Un evento de la lista del día elegido se abre como en la grilla: el del 29, de otra persona, su detalle
+    await pagina.tocar(celdaDelDia(pagina, '2026-10-29').querySelector('.me-celda-cuerpo'));
+    await pagina.tocar(pagina.el('ag-elegido').querySelector('[data-evento="14"]'));
+    assert.deepEqual(abiertos(pagina), ['modal-evento-ajeno']);
+    await pagina.tecla('Escape');
+    // «Hoy», en el mes de hoy, vuelve a elegir hoy, sin pedir nada
+    await pagina.tocar(pagina.el('ag-hoy'));
+    assert.equal(tituloDelElegido(pagina), 'Lunes 26 de octubre (hoy)');
+    assert.deepEqual(conTabindexCero(pagina), [HOY]);
+    assert.equal(pagina.rutas().length, antes);
+  });
+
+  it('en el teléfono, «Nuevo evento» del día elegido lo abre con esa fecha; al guardar, el foco vuelve a ese botón', async () => {
+    const pagina = montarPagina({ hash: '#agenda', telefono: true, responder: conElFormulario() });
+    await pagina.iniciar();
+    await pagina.tocar(celdaDelDia(pagina, '2026-10-30').querySelector('.me-celda-cuerpo'));
+    const boton = pagina.el('ag-elegido').querySelector('[data-nuevo-el]');
+    assert.equal(boton.getAttribute('data-nuevo-el'), '2026-10-30');
+    boton.focus();
+    await pagina.tocar(boton);
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    assert.equal(pagina.el('modal-evento-titulo').textContent, 'Nuevo evento');
+    assert.equal(pagina.el('ev-fecha').value, '2026-10-30');
+    await pagina.correr();
+    await pagina.escribir('ev-titulo', 'Cierre del mes');
+    await pagina.escribir('ev-desde', '12:00');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    await pagina.esperar();
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos').map((pedido) => pedido.cuerpo.fecha), ['2026-10-30']);
+    const nuevo = pagina.el('ag-elegido').querySelector('[data-nuevo-el="2026-10-30"]');
+    assert.notEqual(nuevo, boton, 'el día elegido se volvió a dibujar');
+    assert.equal(pagina.documento.activeElement, nuevo);
+  });
+
+  it('en el teléfono, con hoy sábado 31/10 y sábado y domingo ocultos, el elegido es el viernes 30; al prender y apagar, el más cercano que se ve', async () => {
+    const pagina = montarPagina({ hash: '#agenda', telefono: true, responder: conNoviembre() });
+    pagina.contexto.Utils.hoyEnArgentina = () => '2026-10-31';
+    await pagina.iniciar();
+    assert.equal(tituloDelElegido(pagina), 'Viernes 30 de octubre');
+    assert.ok(celdaDelDia(pagina, '2026-10-30').classList.contains('elegido'));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-30']);
+    // Con sábado y domingo, sigue el viernes 30; tocar el sábado lo elige
+    await pagina.tocar(pagina.el('ag-finde'));
+    assert.equal(tituloDelElegido(pagina), 'Viernes 30 de octubre');
+    await pagina.tocar(celdaDelDia(pagina, '2026-10-31').querySelector('.me-celda-cuerpo'));
+    assert.equal(tituloDelElegido(pagina), 'Sábado 31 de octubre (hoy)');
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-31']);
+    // Apagado: el sábado no se ve y no hay un día después en la grilla: el viernes 30, también el foco
+    await pagina.tocar(pagina.el('ag-finde'));
+    assert.equal(tituloDelElegido(pagina), 'Viernes 30 de octubre');
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-30']);
+    // Otro mes: el 1 (domingo, oculto): el lunes 2
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    assert.equal(tituloDelElegido(pagina), 'Lunes 2 de noviembre');
+    assert.deepEqual(conTabindexCero(pagina), ['2026-11-02']);
+  });
+
+  it('al pasar de la compu al teléfono (y al revés), el mes se vuelve a dibujar: los números dicen lo que hacen y el foco queda en el suyo', async () => {
+    const pagina = montarPagina({ hash: '#agenda', telefono: false, responder: conElFormulario() });
+    await pagina.iniciar();
+    assert.equal(numeroDelDia(pagina, HOY).getAttribute('aria-label'), 'Nuevo evento el lunes 26/10');
+    numeroDelDia(pagina, HOY).focus();
+    await pagina.cambiarElAncho(true);
+    assert.equal(numeroDelDia(pagina, HOY).getAttribute('aria-label'), 'Ver el lunes 26/10');
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, HOY));
+    // Tocar el martes 27 lo elige (y el foco, que estaba en el mes, va a su número)
+    await pagina.tocar(numeroDelDia(pagina, '2026-10-27'));
+    assert.deepEqual(abiertos(pagina), []);
+    assert.equal(tituloDelElegido(pagina), 'Martes 27 de octubre');
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-10-27'));
+    await pagina.cambiarElAncho(false);
+    assert.equal(numeroDelDia(pagina, '2026-10-27').getAttribute('aria-label'), 'Nuevo evento el martes 27/10');
+    await pagina.tocar(numeroDelDia(pagina, '2026-10-27'));
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    assert.equal(pagina.el('ev-fecha').value, '2026-10-27');
+  });
+
+  it('el teclado: el mes es una sola parada (hoy); las flechas, Inicio y Fin mueven el tabindex="0" y el foco; en el borde, no se mueve', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conNoviembre() });
+    await pagina.iniciar();
+    assert.deepEqual(conTabindexCero(pagina), [HOY]);
+    numeroDelDia(pagina, '2026-10-28').focus();
+    let evento = await teclaConEvento(pagina, 'ArrowRight');
+    assert.equal(evento.defaultPrevented, true);
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-29']);
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-10-29'));
+    // Abajo no hay otra fila: no se mueve (y la flecha no desplaza la página)
+    evento = await teclaConEvento(pagina, 'ArrowDown');
+    assert.equal(evento.defaultPrevented, true);
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-10-29'));
+    const pasos = [['ArrowUp', '2026-10-22'], ['Home', '2026-10-19'], ['End', '2026-10-23'], ['ArrowRight', '2026-10-26'],
+      ['ArrowLeft', '2026-10-23']];
+    for (const [tecla, fecha] of pasos) {
+      await teclaConEvento(pagina, tecla);
+      assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, fecha), tecla);
+      assert.deepEqual(conTabindexCero(pagina), [fecha], tecla);
+    }
+    // El primero de la grilla: a la izquierda no hay nada (la parada pasa a él, que tiene el foco)
+    numeroDelDia(pagina, '2026-09-28').focus();
+    await teclaConEvento(pagina, 'ArrowLeft');
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-09-28'));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-09-28']);
+    // Con Alt, Ctrl o Cmd, u otra tecla, nada
+    for (const extra of [{ altKey: true }, { ctrlKey: true }, { metaKey: true }]) {
+      evento = await teclaConEvento(pagina, 'ArrowRight', extra);
+      assert.equal(evento.defaultPrevented, false, JSON.stringify(extra));
+      assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-09-28'));
+    }
+    evento = await teclaConEvento(pagina, 'a');
+    assert.equal(evento.defaultPrevented, false);
+    assert.deepEqual(conTabindexCero(pagina), ['2026-09-28']);
+    // La parada sigue donde quedó cuando el mes se vuelve a dibujar (con sábado y domingo)
+    await teclaConEvento(pagina, 'ArrowDown');
+    await pagina.tocar(pagina.el('ag-finde'));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-05']);
+    // En noviembre, con sábado y domingo, el 28/10 está en la primera fila y abajo, el 04/11
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-11-01']);
+    numeroDelDia(pagina, '2026-10-28').focus();
+    await teclaConEvento(pagina, 'ArrowDown');
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-11-04'));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-11-04']);
+    // Una tecla en un evento de la celda no mueve nada
+    const otro = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    await otro.iniciar();
+    otro.el('ag-mes').querySelector('[data-evento="11"]').focus();
+    evento = await teclaConEvento(otro, 'ArrowRight');
+    assert.equal(evento.defaultPrevented, false);
+    assert.deepEqual(conTabindexCero(otro), [HOY]);
+  });
+
+  it('el movimiento: la primera vez que el mes se dibuja y se ve, las barras con su --demora y data-animar, que se va dos cuadros después; una sola vez', async () => {
+    const pagina = montarPagina({ hash: '#agenda', cuadros: true, responder: conNoviembre() });
+    await pagina.iniciar();
+    const mes = pagina.el('ag-mes');
+    assert.equal(mes.getAttribute('data-animar'), '');
+    assert.equal(mes.innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY, { animar: true }));
+    assert.match(mes.innerHTML, /--demora:/);
+    pagina.cuadro();
+    assert.equal(mes.getAttribute('data-animar'), '');
+    pagina.cuadro();
+    assert.equal(mes.getAttribute('data-animar'), null);
+    assert.equal(pagina.estado.cuadros.length, 0);
+    // Otro mes, sábado y domingo, volver a pedir el mes (después de guardar) y volver a la pestaña: quietos
+    const quieto = (paso) => {
+      assert.equal(mes.getAttribute('data-animar'), null, paso);
+      assert.doesNotMatch(mes.innerHTML, /--demora/, paso);
+      assert.equal(pagina.estado.cuadros.length, 0, paso);
+    };
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    quieto('otro mes');
+    await pagina.tocar(pagina.el('ag-finde'));
+    quieto('sábado y domingo');
+    await pagina.contexto.volverAPedirTodo();
+    await pagina.esperar();
+    quieto('después de guardar');
+    await pagina.tocar(pagina.el('tab-licencias'));
+    await pagina.tocar(pagina.el('tab-agenda'));
+    quieto('de vuelta en la pestaña');
+  });
+
+  it('el movimiento espera a que el mes se vea: si llega con otra pestaña a la vista, se mueve al volver a la Agenda', async () => {
+    let soltar;
+    const tarda = new Promise((resolver) => { soltar = resolver; });
+    const pagina = montarPagina({
+      hash: '#agenda',
+      cuadros: true,
+      responder: conElFormulario({ eventos: { [RUTA_DEL_MES]: async () => { await tarda; return ok(conLaFrase(DEL_MES, '2026-10')); } } })
+    });
+    const inicio = pagina.contexto.iniciarMiEspacio();
+    await pagina.esperar();
+    await pagina.tocar(pagina.el('tab-licencias'));
+    soltar();
+    await inicio;
+    await pagina.esperar();
+    const mes = pagina.el('ag-mes');
+    assert.equal(mes.getAttribute('data-animar'), null);
+    assert.doesNotMatch(mes.innerHTML, /--demora/);
+    assert.equal(pagina.estado.cuadros.length, 0);
+    await pagina.tocar(pagina.el('tab-agenda'));
+    assert.equal(mes.getAttribute('data-animar'), '');
+    assert.match(mes.innerHTML, /--demora:/);
+    pagina.cuadro();
+    pagina.cuadro();
+    assert.equal(mes.getAttribute('data-animar'), null);
+  });
+
+  it('sin movimiento con prefers-reduced-motion o sin requestAnimationFrame: el mes llega quieto', async () => {
+    for (const opciones of [{ cuadros: true, reducido: true }, { cuadros: false }, { cuadros: true, reducido: true, telefono: true }]) {
+      const pagina = montarPagina({ hash: '#agenda', ...opciones, responder: conElFormulario() });
+      await pagina.iniciar();
+      const mes = pagina.el('ag-mes');
+      assert.equal(mes.getAttribute('data-animar'), null, JSON.stringify(opciones));
+      assert.doesNotMatch(mes.innerHTML, /--demora/, JSON.stringify(opciones));
+      assert.equal(pagina.estado.cuadros.length, 0, JSON.stringify(opciones));
+    }
   });
 });
 
