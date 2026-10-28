@@ -20,7 +20,7 @@ import {
   textoSinNoUtilizadas, textoAutorizadaDelFirmante, AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN, AVISO_NOTAS_DE_HOY,
   AVISO_SIN_PERSONA_A_CARGO, textoSuperpuestaConConfiguracion, textoNoPaso, textoYaNoCubierta, textoEnConfiguracion,
   textoUnida, textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA,
-  TEXTO_ANULADA_POR_ADMINISTRACION, TEXTO_NO_DIA_ENTERO
+  TEXTO_ANULADA_EN_CONFIGURACION, TEXTO_NO_DIA_ENTERO
 } from '../services/miEspacioReglas.js';
 import { MENSAJES_NOTA } from '../services/miEspacioNota.js';
 
@@ -1072,9 +1072,8 @@ describe('el paso a Configuración', () => {
     assert.equal(anular.body.message, ANULADA_Y_QUEDA);
     assert.equal(anular.body.data.desde_mi_espacio, true);
     assert.equal(Number((await vinculosDe('adminA'))[0].activo), 1);
-    // La tarea 2 cambia este texto por TEXTO_ANULADA_EN_CONFIGURACION
     assert.deepEqual((await filaDeLaLista('adminA', id, Number(dia(-3).slice(0, 4)))).configuracion,
-      { texto: TEXTO_ANULADA_POR_ADMINISTRACION, insignia: 'aviso' });
+      { texto: TEXTO_ANULADA_EN_CONFIGURACION, insignia: 'aviso' });
 
     // La persona decide: la corrige o la borra, sin tocar Configuración
     const enConfiguracion = await deConfiguracion('adminA');

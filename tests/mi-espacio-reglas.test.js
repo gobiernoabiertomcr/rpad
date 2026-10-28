@@ -14,14 +14,15 @@ import {
   textoSinNoUtilizadas, textoHorarioSuperpuesto, textoSaldo, textoAutorizadaDelFirmante,
   AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN, AVISO_NOTAS_DE_HOY, AVISO_SIN_PERSONA_A_CARGO,
   textoSuperpuestaConConfiguracion, textoNoPaso, textoYaNoCubierta, textoEnConfiguracion, textoUnida,
-  textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA, TEXTO_ANULADA_POR_ADMINISTRACION,
-  TEXTO_NO_DIA_ENTERO,
+  textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA, TEXTO_ANULADA_EN_CONFIGURACION,
+  textoRevisalaEnConfiguracion, TEXTO_NO_DIA_ENTERO,
   mitadesDe, habilitaciones, venceLaLicencia, textoDeLasMitades, anioVigente, ordinariasDe, diasQueDescuentan, repartoDeVacaciones,
   textoDelReparto, textoDePerdidos, rangoDeFechas, esDiaEntero, topeDe, usoDeLosTopes, validarLicencia,
   horasDe, mesMas, horasPorMes, validarHorasExtras, francosDe, horasAFavorDe, noUtilizadasDe,
   TEXTO_ANTES_DEL_ARRANQUE, camposDelSaldoInicial, validarSaldoInicial, validarAnio, fueraDeLaModalidad, calcular,
   faltantesDe, problemaDeLaCarga, evaluarLicencia,
-  vinculoDe, textoDelVinculo, limiteParaCambiarTipo, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja, vinculosDeLaLista,
+  vinculoDe, textoDelVinculo, revisionDelVinculo, limiteParaCambiarTipo, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja,
+  vinculosDeLaLista,
   pasoPrevistoDe, ausenciasUnidas, textoNoEsta, textoDeLaVuelta, ausentesDelRango, ausentesDeHoyYManana, avisosDeVencimiento,
   SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL, TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, horaSalidaValida, tipoDeDia,
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
@@ -221,8 +222,18 @@ describe('los textos', () => {
       'Sigue en Configuración del 03/11 al 03/11: ya empezó y no se pudo anular.');
     assert.equal(TEXTO_TAMBIEN_EN_CONFIGURACION, 'También en Configuración → Licencias.');
     assert.equal(TEXTO_NO_SE_COPIA, 'Administración la cambió en Configuración: lo que corrijas acá ya no se copia.');
-    assert.equal(TEXTO_ANULADA_POR_ADMINISTRACION, 'Administración la anuló en Configuración: queda solo acá.');
     assert.equal(TEXTO_NO_DIA_ENTERO, 'No es el día entero: no pasa a Configuración');
+  });
+
+  // Spec 2026-10-28-mi-espacio-licencia-anulada (2.2 y 3.2): sin «Administración», porque pudo haber sido la misma persona
+  it('los textos de lo que quedó distinto en Configuración', () => {
+    assert.equal(TEXTO_ANULADA_EN_CONFIGURACION, 'Se anuló en Configuración: acá sigue contando. Si ya no va, borrala.');
+    assert.equal(textoRevisalaEnConfiguracion('2027-01-04', '2027-01-08'),
+      'En Configuración quedó del 04/01 al 08/01: revisala.');
+    assert.equal(textoRevisalaEnConfiguracion('2026-12-28', '2027-01-08'),
+      'En Configuración quedó del 28/12 al 08/01: revisala.');
+    // Lo que no es una fecha, la raya (como el resto de los textos del paso)
+    assert.equal(textoRevisalaEnConfiguracion(null, 'x'), 'En Configuración quedó del — al —: revisala.');
   });
 });
 
@@ -2822,11 +2833,42 @@ describe('el paso a Configuración', () => {
       });
     });
 
-    it('administración la cambió o la anuló', () => {
+    // Spec 2026-10-28-mi-espacio-licencia-anulada, 2.2 y 3.3: comparando las fechas de la fila con las de Configuración, también
+    // si las cambió la misma persona (la que cambió otra persona sigue con su texto: ya dice las fechas)
+    it('una creada con otras fechas en Configuración: para revisar, salvo que otro aviso ya lo explique', () => {
+      // La fila, del 02/11 al 06/11; la de Configuración, del 03/11 al 05/11
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial, { desde: '2026-11-02', hasta: '2026-11-06' }),
+        opciones), { texto: textoRevisalaEnConfiguracion('2026-11-03', '2026-11-05'), insignia: 'aviso' });
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial, { hasta: '2026-11-04' }), opciones),
+        { texto: 'En Configuración quedó del 03/11 al 05/11: revisala.', insignia: 'aviso' });
+      // Que terminó en Configuración: la fila lo sigue diciendo
+      const terminada = oficialDe(7, '2026-10-19', '2026-10-21');
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial: terminada }, creadaDe(terminada, { hasta: '2026-10-23' }),
+        opciones), { texto: textoRevisalaEnConfiguracion('2026-10-19', '2026-10-21'), insignia: 'aviso' });
+      // De quien hoy no puede tener licencia, como siempre (lo de Configuración ya no tiene efecto)
+      for (const puedeTener of [false, undefined, 'true', 1]) {
+        assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial, { hasta: '2026-11-06' }),
+          { ...opciones, puedeTener }), { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' }, String(puedeTener));
+      }
+      // Una corrección que no se pudo copiar ya dice dónde quedó y por qué
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial, { hasta: '2026-11-06' }),
+        { ...opciones, sinPasar: 'Se superpone con otra licencia' }), {
+        texto: `${textoEnConfiguracion('2026-11-03', '2026-11-05')} ${textoNoPaso('Se superpone con otra licencia')}`,
+        insignia: 'aviso'
+      });
+      // Una que dejó de ser de día entero ya dice que sigue en Configuración
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, franquicia('2026-11-04', 3), opciones),
+        { texto: textoSigueEnConfiguracion('2026-11-03', '2026-11-05'), insignia: 'aviso' });
+      // Unas fechas de la fila que no sirven no se comparan
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial, { desde: 'x' }), opciones),
+        { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' });
+    });
+
+    it('administración la cambió; anulada en Configuración, sin decir quién', () => {
       assert.deepEqual(textoDelVinculo({ estado: 'creada_cambiada', oficial }, filaDe(), opciones),
         { texto: `${textoEnConfiguracion('2026-11-03', '2026-11-05')} ${TEXTO_NO_SE_COPIA}`, insignia: 'aviso' });
       assert.deepEqual(textoDelVinculo({ estado: 'creada_anulada', oficial: { ...oficial, anulada: 1 } }, filaDe(), opciones),
-        { texto: TEXTO_ANULADA_POR_ADMINISTRACION, insignia: 'aviso' });
+        { texto: TEXTO_ANULADA_EN_CONFIGURACION, insignia: 'aviso' });
     });
 
     it('una unida, cubierta o no', () => {
@@ -2854,6 +2896,125 @@ describe('el paso a Configuración', () => {
       assert.equal(textoDelVinculo(ninguno, franquicia('2026-11-03', 3), { ...opciones, puedeTener: false }), null);
       assert.equal(textoDelVinculo(ninguno, filaDe(), opciones), null);
       assert.equal(textoDelVinculo(ninguno, franquicia('2026-11-03', 7), opciones), null);
+    });
+  });
+
+  // Lo que el Resumen avisa para revisar (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1, 3.2 y 3.3): solo lo que
+  // todavía se puede resolver. Hoy es el lunes 26/10/2026
+  describe('revisionDelVinculo', () => {
+    const opciones = { hoy: HOY, sinPasar: null, puedeTener: true };
+    // La de Configuración, del 02/11 al 04/11; la fila, del 02/11 al 06/11
+    const oficial = oficialDe(7, '2026-11-02', '2026-11-04');
+    const conOtroHasta = creadaDe(oficial, { hasta: '2026-11-06' });
+
+    it('una creada con otras fechas en Configuración: con las de Configuración, la cambie quien la cambie', () => {
+      const fechas = { motivo: 'fechas', desde: '2026-11-02', hasta: '2026-11-04' };
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada', oficial }, conOtroHasta, opciones), fechas);
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada_cambiada', oficial }, conOtroHasta, opciones), fechas);
+      // Otro desde
+      const corrida = oficialDe(7, '2026-11-03', '2026-11-06');
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada', oficial: corrida }, creadaDe(corrida, { desde: '2026-11-02' }),
+        opciones), { motivo: 'fechas', desde: '2026-11-03', hasta: '2026-11-06' });
+      // La de Configuración termina hoy: todavía se resuelve
+      const terminaHoy = oficialDe(7, '2026-10-20', HOY);
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada', oficial: terminaHoy }, creadaDe(terminaHoy, { hasta: '2026-10-28' }),
+        opciones), { motivo: 'fechas', desde: '2026-10-20', hasta: HOY });
+      // La de Mi espacio ya terminó, pero la de Configuración no: corregir la fila a sus fechas lo resuelve
+      const sigue = oficialDe(7, '2026-10-19', '2026-10-28');
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada', oficial: sigue }, creadaDe(sigue, { hasta: '2026-10-23' }), opciones),
+        { motivo: 'fechas', desde: '2026-10-19', hasta: '2026-10-28' });
+      // Una franquicia de 7 horas es de día entero
+      const unDia = oficialDe(7, '2026-11-03', '2026-11-03');
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada', oficial: unDia }, franquicia('2026-11-04', 7,
+        { licencia_oficial_id: 7, oficial: 'creada' }), opciones), { motivo: 'fechas', desde: '2026-11-03', hasta: '2026-11-03' });
+    });
+
+    it('una creada: nada, con las mismas fechas o si otro aviso de la fila ya lo explica', () => {
+      assert.equal(revisionDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial), opciones), null);
+      assert.equal(revisionDelVinculo({ estado: 'creada_cambiada', oficial }, creadaDe(oficial), opciones), null);
+      // Con el motivo de una corrección que no se pudo copiar
+      assert.equal(revisionDelVinculo({ estado: 'creada', oficial }, conOtroHasta,
+        { ...opciones, sinPasar: 'Se superpone con otra licencia' }), null);
+      // Uno que es solo espacios no es un motivo
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada', oficial }, conOtroHasta, { ...opciones, sinPasar: '  ' }),
+        { motivo: 'fechas', desde: '2026-11-02', hasta: '2026-11-04' });
+      // Una que dejó de ser de día entero (queda en Configuración con sus fechas: no se podría resolver)
+      assert.equal(revisionDelVinculo({ estado: 'creada', oficial }, franquicia('2026-11-03', 3), opciones), null);
+      // De quien hoy no puede tener licencia
+      for (const puedeTener of [false, undefined, 'true', 1]) {
+        assert.equal(revisionDelVinculo({ estado: 'creada', oficial }, conOtroHasta, { ...opciones, puedeTener }), null,
+          String(puedeTener));
+      }
+      // La de Configuración ya terminó: las fechas de una creada quedan fijas (Review Focus 4)
+      const terminada = oficialDe(7, '2026-10-19', '2026-10-23');
+      assert.equal(revisionDelVinculo({ estado: 'creada', oficial: terminada }, creadaDe(terminada, { hasta: '2026-10-28' }),
+        opciones), null);
+      assert.equal(revisionDelVinculo({ estado: 'creada_cambiada', oficial: terminada },
+        creadaDe(terminada, { hasta: '2026-10-21' }), opciones), null);
+    });
+
+    it('una creada anulada de antes, mientras la de Mi espacio no terminó', () => {
+      const anulada = { ...oficial, anulada: 1 };
+      const vinculo = vinculoDe(creadaDe(oficial), anulada, false);
+      assert.equal(vinculo.estado, 'creada_anulada');
+      const paraRevisar = { motivo: 'anulada', desde: null, hasta: null };
+      assert.deepEqual(revisionDelVinculo(vinculo, creadaDe(oficial), opciones), paraRevisar);
+      // La que termina hoy, también
+      assert.deepEqual(revisionDelVinculo(vinculo, creadaDe(oficial, { desde: '2026-10-19', hasta: HOY }), opciones), paraRevisar);
+      // Ni el motivo ni el rol la cambian: sigue contando hasta que la persona la borre
+      assert.deepEqual(revisionDelVinculo(vinculo, creadaDe(oficial), { ...opciones, sinPasar: 'Otro motivo', puedeTener: false }),
+        paraRevisar);
+      // La que ya terminó, no (Review Focus 4)
+      assert.equal(revisionDelVinculo(vinculo, creadaDe(oficial, { desde: '2026-10-19', hasta: '2026-10-23' }), opciones), null);
+    });
+
+    it('una unida sin cubrir, mientras la de Mi espacio no terminó, con los días fuera', () => {
+      const larga = oficialDe(12, '2026-11-02', '2026-11-13');
+      const acortada = oficialDe(12, '2026-11-02', '2026-11-04');
+      const fila = unidaDe(larga);
+      const vinculo = vinculoDe(fila, acortada, false);
+      assert.equal(vinculo.estado, 'unida_sin_cubrir');
+      assert.deepEqual(revisionDelVinculo(vinculo, fila, opciones), { motivo: 'sin_cubrir', desde: '2026-11-05', hasta: '2026-11-06' });
+      // Anulada: toda la fila
+      assert.deepEqual(revisionDelVinculo(vinculoDe(fila, { ...larga, anulada: 1 }, true), fila, opciones),
+        { motivo: 'sin_cubrir', desde: '2026-11-02', hasta: '2026-11-06' });
+      // La que termina hoy, sí; la que ya terminó, no
+      const deHoy = unidaDe(larga, { desde: '2026-10-22', hasta: HOY });
+      const sinCubrirHoy = vinculoDe(deHoy, oficialDe(12, '2026-10-19', '2026-10-23'), false);
+      assert.deepEqual(revisionDelVinculo(sinCubrirHoy, deHoy, opciones), { motivo: 'sin_cubrir', desde: '2026-10-24', hasta: HOY });
+      const pasada = unidaDe(larga, { desde: '2026-10-19', hasta: '2026-10-23' });
+      assert.equal(revisionDelVinculo(vinculoDe(pasada, oficialDe(12, '2026-10-19', '2026-10-20'), false), pasada, opciones), null);
+      // Sin los días fuera, no
+      assert.equal(revisionDelVinculo({ ...vinculo, sin_cubrir: null }, fila, opciones), null);
+    });
+
+    it('una unida cubierta y sin vínculo, nada', () => {
+      const larga = oficialDe(12, '2026-11-02', '2026-11-13');
+      assert.equal(revisionDelVinculo(vinculoDe(unidaDe(larga), larga, false), unidaDe(larga), opciones), null);
+      assert.equal(revisionDelVinculo({ estado: 'ninguno', oficial: null }, filaDe(), opciones), null);
+      assert.equal(revisionDelVinculo({ estado: 'ninguno', oficial: null }, filaDe(),
+        { ...opciones, sinPasar: textoSuperpuestaConConfiguracion('2026-11-03', '2026-11-05') }), null);
+      assert.equal(revisionDelVinculo({ estado: 'otro', oficial }, conOtroHasta, opciones), null);
+    });
+
+    it('sin un hoy que sirva, nada; y nunca tira', () => {
+      const anulada = { ...oficial, anulada: 1 };
+      for (const hoy of [undefined, null, '', '2026-02-30', 20261026, new Date('2026-10-26T12:00:00Z')]) {
+        assert.equal(revisionDelVinculo({ estado: 'creada', oficial }, conOtroHasta, { ...opciones, hoy }), null, String(hoy));
+        assert.equal(revisionDelVinculo({ estado: 'creada_anulada', oficial: anulada }, creadaDe(oficial), { ...opciones, hoy }),
+          null, String(hoy));
+      }
+      const raros = [undefined, null, '', 'x', 0, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
+      for (const valor of raros) {
+        assert.doesNotThrow(() => {
+          assert.equal(revisionDelVinculo(valor, valor, valor), null);
+          assert.equal(revisionDelVinculo({ estado: 'creada', oficial: valor }, conOtroHasta, opciones), null);
+          assert.equal(revisionDelVinculo({ estado: 'creada', oficial }, valor, opciones), null);
+          assert.equal(revisionDelVinculo({ estado: 'creada_anulada', oficial: anulada }, valor, opciones), null);
+          assert.equal(revisionDelVinculo({ estado: 'unida_sin_cubrir', oficial, sin_cubrir: valor }, filaDe(), opciones), null);
+          revisionDelVinculo({ estado: 'creada', oficial }, conOtroHasta, valor);
+        }, String(valor));
+      }
     });
   });
 
@@ -2973,7 +3134,8 @@ describe('el paso a Configuración', () => {
           texto: `${textoEnConfiguracion('2026-10-19', '2026-10-23')} ${textoNoPaso('La fecha de fin tiene que ser ayer o posterior')}`,
           insignia: 'aviso'
         },
-        puede_borrar: false, solo_hasta: false, fechas_fijas: true, en_configuracion: { licencia_id: 7, autorizado_id: null }
+        puede_borrar: false, solo_hasta: false, fechas_fijas: true, en_configuracion: { licencia_id: 7, autorizado_id: null },
+        revision: null
       });
 
       // En curso en Configuración desde el 23/10; la fila quedó desde el 21/10
@@ -3154,28 +3316,34 @@ describe('el paso a Configuración', () => {
       const creada = { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' };
       const enConfiguracion = (licenciaId) => ({ licencia_id: licenciaId, autorizado_id: null });
       assert.deepEqual(vinculos.get(1), {
-        configuracion: creada, puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: enConfiguracion(7)
+        configuracion: creada, puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: enConfiguracion(7),
+        revision: null
       });
       assert.deepEqual(vinculos.get(2), {
-        configuracion: creada, puede_borrar: false, solo_hasta: true, fechas_fijas: false, en_configuracion: enConfiguracion(8)
+        configuracion: creada, puede_borrar: false, solo_hasta: true, fechas_fijas: false, en_configuracion: enConfiguracion(8),
+        revision: null
       });
       assert.deepEqual(vinculos.get(3), {
-        configuracion: creada, puede_borrar: false, solo_hasta: false, fechas_fijas: true, en_configuracion: enConfiguracion(9)
+        configuracion: creada, puede_borrar: false, solo_hasta: false, fechas_fijas: true, en_configuracion: enConfiguracion(9),
+        revision: null
       });
       assert.deepEqual(vinculos.get(4), {
         configuracion: { texto: TEXTO_NO_DIA_ENTERO, insignia: 'aviso' }, puede_borrar: true, solo_hasta: false,
-        fechas_fijas: false, en_configuracion: null
+        fechas_fijas: false, en_configuracion: null, revision: null
       });
       // Sin nada para decir, no está
       assert.equal(vinculos.has(5), false);
-      // Una que administración cambió: ya no se corrige en Configuración desde acá, sin en_configuracion
+      // Una que administración cambió: ya no se corrige en Configuración desde acá, sin en_configuracion; quedó con otro hasta,
+      // así que el Resumen avisa para revisar
       assert.deepEqual(vinculos.get(6), {
         configuracion: { texto: `${textoEnConfiguracion('2026-11-23', '2026-11-25')} ${TEXTO_NO_SE_COPIA}`, insignia: 'aviso' },
-        puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: null
+        puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: null,
+        revision: { motivo: 'fechas', desde: '2026-11-23', hasta: '2026-11-25' }
       });
       // La que empieza hoy: el desde queda fijo, pero todavía se borra
       assert.deepEqual(vinculos.get(7), {
-        configuracion: creada, puede_borrar: true, solo_hasta: true, fechas_fijas: false, en_configuracion: enConfiguracion(11)
+        configuracion: creada, puede_borrar: true, solo_hasta: true, fechas_fijas: false, en_configuracion: enConfiguracion(11),
+        revision: null
       });
       assert.deepEqual([...vinculos.keys()].sort(), [1, 2, 3, 4, 6, 7]);
     });
@@ -3190,6 +3358,57 @@ describe('el paso a Configuración', () => {
       );
       assert.deepEqual(vinculos.get(1).en_configuracion, { licencia_id: 7, autorizado_id: 3 });
       assert.equal(vinculos.get(2).en_configuracion, null);
+    });
+
+    // Spec 2026-10-28-mi-espacio-licencia-anulada (2.2, 3.1, 3.2 y 3.3): lo que la fila dice siempre y lo que el Resumen avisa
+    // mientras se pueda resolver (Review Focus 4)
+    it('cada una con lo que hay para revisar, con el hoy de las opciones', () => {
+      const cambiada = oficialDe(7, '2026-11-02', '2026-11-04');
+      const deOtro = oficialDe(8, '2026-11-09', '2026-11-12');
+      const anulada = oficialDe(9, '2026-11-16', '2026-11-20', { anulada: 1 });
+      const anuladaTerminada = oficialDe(10, '2026-10-19', '2026-10-23', { anulada: 1 });
+      const acortada = oficialDe(11, '2026-11-23', '2026-11-24');
+      const terminada = oficialDe(12, '2026-10-12', '2026-10-14');
+      const acortadaTerminada = oficialDe(13, '2026-10-05', '2026-10-06');
+      const filas = [
+        creadaDe(cambiada, { id: 1, hasta: '2026-11-06' }),
+        creadaDe(deOtro, { id: 2, hasta: '2026-11-13' }),
+        creadaDe(anulada, { id: 3 }),
+        creadaDe(anuladaTerminada, { id: 4 }),
+        unidaDe(acortada, { id: 5, desde: '2026-11-23', hasta: '2026-11-26' }),
+        creadaDe(terminada, { id: 6, hasta: '2026-10-16' }),
+        unidaDe(acortadaTerminada, { id: 7, desde: '2026-10-05', hasta: '2026-10-09' }),
+        creadaDe(oficialDe(14, '2026-11-30', '2026-12-04'), { id: 8 })
+      ];
+      const oficiales = new Map([cambiada, deOtro, anulada, anuladaTerminada, acortada, terminada, acortadaTerminada,
+        oficialDe(14, '2026-11-30', '2026-12-04')].map((oficial) => [oficial.id, oficial]));
+      const opciones = { oficiales, tocadas: new Set([8]), hoy: HOY, puedeTener: true };
+      const vinculos = vinculosDeLaLista(filas, opciones);
+      const deCada = (id) => [vinculos.get(id).configuracion, vinculos.get(id).revision];
+      const aviso = (texto) => ({ texto, insignia: 'aviso' });
+
+      assert.deepEqual(deCada(1), [aviso(textoRevisalaEnConfiguracion('2026-11-02', '2026-11-04')),
+        { motivo: 'fechas', desde: '2026-11-02', hasta: '2026-11-04' }]);
+      assert.deepEqual(deCada(2), [aviso(`${textoEnConfiguracion('2026-11-09', '2026-11-12')} ${TEXTO_NO_SE_COPIA}`),
+        { motivo: 'fechas', desde: '2026-11-09', hasta: '2026-11-12' }]);
+      assert.deepEqual(deCada(3), [aviso(TEXTO_ANULADA_EN_CONFIGURACION), { motivo: 'anulada', desde: null, hasta: null }]);
+      assert.deepEqual(deCada(5), [aviso(textoYaNoCubierta('2026-11-25', '2026-11-26')),
+        { motivo: 'sin_cubrir', desde: '2026-11-25', hasta: '2026-11-26' }]);
+      // Lo que ya no se puede resolver: la fila lo dice, el Resumen no
+      assert.deepEqual(deCada(4), [aviso(TEXTO_ANULADA_EN_CONFIGURACION), null]);
+      assert.deepEqual(deCada(6), [aviso(textoRevisalaEnConfiguracion('2026-10-12', '2026-10-14')), null]);
+      assert.deepEqual(deCada(7), [aviso(textoYaNoCubierta('2026-10-07', '2026-10-09')), null]);
+      // Con las mismas fechas, nada para revisar
+      assert.deepEqual(deCada(8), [{ texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' }, null]);
+
+      // Sin un hoy que sirva, nada para revisar (los textos de la fila no dependen de hoy)
+      const sinHoy = vinculosDeLaLista(filas, { ...opciones, hoy: undefined });
+      assert.deepEqual([...sinHoy.values()].map((vinculo) => vinculo.revision), filas.map(() => null));
+      assert.deepEqual([...sinHoy.values()].map((vinculo) => vinculo.configuracion),
+        [...vinculos.values()].map((vinculo) => vinculo.configuracion));
+      // De quien hoy no puede tener licencia, las fechas cambiadas no se avisan; lo anulado y lo sin cubrir, sí
+      const sinRol = vinculosDeLaLista(filas, { ...opciones, puedeTener: false });
+      assert.deepEqual([1, 2, 3, 5].map((id) => sinRol.get(id).revision?.motivo ?? null), [null, null, 'anulada', 'sin_cubrir']);
     });
   });
 
