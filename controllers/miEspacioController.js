@@ -23,13 +23,13 @@ import { hoyArgentina, ahoraArgentina, sumarDias, diasEntre, esFechaIso } from '
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, MAXIMO_DIAS_POR_GUARDADO, anioVigente, camposDelSaldoInicial, textoDeLasMitades,
   evaluarLicencia, validarHorasExtras, validarSalida, mesDeLaPlanilla, validarAnio, validarSaldoInicial, modalidadDe,
-  ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana
+  ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, nombreCorto
 } from '../services/miEspacioReglas.js';
 import {
   resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe, textoDeLaListaDe
 } from '../services/miEspacioResumen.js';
 import {
-  estadoDe, contextoDe, personaDe, licenciaDe, datosDeLaNota, ausenciasVisibles, feriadosPara
+  estadoDe, contextoDe, personaDe, licenciaDe, datosDeLaNota, ausenciasVisibles, feriadosPara, administracionActiva
 } from '../services/miEspacioDatos.js';
 import { filasDeFeriados } from '../services/feriadosDatos.js';
 import { calendarioCon } from '../services/feriadosReglas.js';
@@ -112,16 +112,16 @@ const vinculosDelResumen = async (persona, estado, hoy) => {
 
 // GET /api/mi-espacio/resumen: el Resumen «Titular», ya calculado. «Hoy y mañana» lleva los compañeros que no están hoy y, aparte,
 // los que empiezan mañana (`ausentesPara` de hoy a mañana, en dos grupos con `ausentesDeHoyYManana`: decisión del usuario,
-// 27/10/2026; a quien no es de administración, ninguno), el próximo feriado, con las mismas filas de los feriados del cálculo
-// (sin leerlas otra vez), y, al final, los eventos de hoy y de mañana (`eventos`, aislados: ver eventosDelResumen). Con los
-// vínculos de sus licencias con Configuración (`vinculosDe`, como la lista, también aislados: ver vinculosDelResumen),
-// `para_revisar` dice lo que en Configuración quedó distinto (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1 y 3.2).
-// Van también sin modalidad: la página decide qué mostrar
+// 27/10/2026; a quien no es de administración, ninguno; con la administración del contexto, sin leerla otra vez), el próximo
+// feriado, con las mismas filas de los feriados del cálculo (sin leerlas otra vez), y, al final, los eventos de hoy y de
+// mañana (`eventos`, aislados: ver eventosDelResumen). Con los vínculos de sus licencias con Configuración (`vinculosDe`,
+// como la lista, también aislados: ver vinculosDelResumen), `para_revisar` dice lo que en Configuración quedó distinto (spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1 y 3.2). Van también sin modalidad: la página decide qué mostrar
 export const verResumen = (req, res) => responder(res, 'Error al obtener el Resumen', async () => {
   const hoy = hoyArgentina();
-  const { persona, estado, feriados, filasFeriados, calculo } = await contextoDe(req.user.userId, hoy);
+  const { persona, estado, feriados, filasFeriados, administracion, calculo } = await contextoDe(req.user.userId, hoy);
   const [{ ausentes }, eventos, vinculos] = await Promise.all([
-    ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados }),
+    ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados, administracion }),
     eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, feriados),
     vinculosDelResumen(persona, estado, hoy)
   ]);
@@ -750,18 +750,26 @@ export const rangoDelPedido = (query) => {
 /**
  * Los compañeros que no están entre desde y hasta, como los ve `persona` (`{ id, rol }`): `{ puede_ver, ausentes }`. Sin
  * `esAdmin`, `{ puede_ver: false, ausentes: [] }`, sin consultar. Si no, las ausencias que se muestran de los demás
- * (`ausenciasVisibles`, sin las de la persona), leídas con margen, unidas con los feriados que necesitan (`feriadosPara` con
- * hoy: cubre los años de las filas, que se cargan hasta el año que viene, y la vuelta que pasa al siguiente) y cortadas al
- * rango (`ausentesDelRango`: `{ nombre, desde, hasta, vuelve, texto, vuelve_texto }`). `filasFeriados`: las filas de los
- * feriados, si ya se leyeron. La usan «Hoy no están», el Resumen y la agenda (GET /api/mi-espacio/eventos, en
- * controllers/miEspacioEventosController.js): leer las ausencias solo dentro del rango cortaría las que empezaron antes.
+ * (`ausenciasVisibles`, sin las de la persona), leídas con margen, cada una con el nombre corto de su persona (`nombreCorto`
+ * contra la administración activa: «Carla», o «Carla B.» si hay otra Carla; spec 2026-10-28-mi-espacio-agenda-onda, 5.1),
+ * unidas con los feriados que necesitan (`feriadosPara` con hoy: cubre los años de las filas, que se cargan hasta el año que
+ * viene, y la vuelta que pasa al siguiente) y cortadas al rango (`ausentesDelRango`: `{ nombre, desde, hasta, vuelve, texto,
+ * vuelve_texto }`, con «Carla no está»). `filasFeriados` y `administracion` (la de `administracionActiva`): las filas de los
+ * feriados y la administración, si ya se leyeron. La usan «Hoy no están», el Resumen y la agenda (GET
+ * /api/mi-espacio/eventos, en controllers/miEspacioEventosController.js): leer las ausencias solo dentro del rango cortaría
+ * las que empezaron antes.
  */
-export const ausentesPara = async (persona, { desde, hasta, hoy, filasFeriados = null }) => {
+export const ausentesPara = async (persona, { desde, hasta, hoy, filasFeriados = null, administracion = null }) => {
   if (!esAdmin(persona?.rol)) return { puede_ver: false, ausentes: [] };
-  const filas = await ausenciasVisibles(sumarDias(desde, -MARGEN_DE_LAS_AUSENCIAS), sumarDias(hasta, MARGEN_DE_LAS_AUSENCIAS),
-    { excluir: persona.id });
+  const [filas, deAdministracion] = await Promise.all([
+    ausenciasVisibles(sumarDias(desde, -MARGEN_DE_LAS_AUSENCIAS), sumarDias(hasta, MARGEN_DE_LAS_AUSENCIAS),
+      { excluir: persona.id }),
+    administracion ?? administracionActiva()
+  ]);
+  const conNombreCorto = filas.map((fila) =>
+    ({ ...fila, nombre: nombreCorto({ id: fila.usuario_id, nombre: fila.nombre }, deAdministracion) }));
   const feriados = await feriadosPara([{ licencias: filas }], hoy, filasFeriados);
-  return { puede_ver: true, ausentes: ausentesDelRango(ausenciasUnidas(filas, feriados), desde, hasta) };
+  return { puede_ver: true, ausentes: ausentesDelRango(ausenciasUnidas(conNombreCorto, feriados), desde, hasta) };
 };
 
 // GET /api/mi-espacio/ausentes?desde=AAAA-MM-DD&hasta=AAAA-MM-DD: «Hoy no están» de un rango de hasta 93 días. Las fechas se

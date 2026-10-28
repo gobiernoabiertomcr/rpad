@@ -542,7 +542,8 @@ const textoDeLasLicencias = (reparto, id) => {
  * `en_configuracion` (`{ licencia_id, autorizado_id }`, solo de una creada) es lo que necesita el formulario para corregirla:
  * la persona a cargo que ya tiene y el id de su licencia de Configuración (la lista es siempre la de su dueño). «Tus
  * compañeros ven…» va solo para administración (`esAdmin`: los únicos que tienen la casilla), con «Mostrar», en una ausencia
- * de día entero que todavía no terminó.
+ * de día entero que todavía no terminó, con el nombre como lo ven los demás (`persona.nombre_corto`, el de `contextoDe`;
+ * sin él, el nombre completo).
  */
 const filaDeLicencia = (fila, { datos, cuenta, hoy, persona, vinculos, feriados }) => {
   const { tipo, desde, hasta } = fila;
@@ -572,7 +573,7 @@ const filaDeLicencia = (fila, { datos, cuenta, hoy, persona, vinculos, feriados 
     nota: typeof fila.nota === 'string' && fila.nota.trim() !== '' ? fila.nota : null,
     mostrar,
     mostrar_texto: esAdmin(persona.rol) && mostrar && esDiaEntero(fila) && hoy !== null && hasta >= hoy
-      ? `Tus compañeros ven «${textoDe(persona.nombre_completo)} no está».` : '',
+      ? `Tus compañeros ven «${textoDe(persona.nombre_corto ?? persona.nombre_completo)} no está».` : '',
     configuracion: configuracion === null ? null : {
       texto: textoDe(configuracion.texto),
       insignia: typeof configuracion.insignia === 'string' ? configuracion.insignia : null
