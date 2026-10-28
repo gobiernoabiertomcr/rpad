@@ -227,7 +227,7 @@ Antes del merge de la tanda 1 se simulan las corridas de las 8:15 y de las 14:00
 - **Plazos:** tanda 1 antes del jueves 03/12/2026; tanda 2 antes del 10/01/2027.
 
 **Plan B, si la tanda 1 no está en producción para el lunes 02/11/2026:**
-1. El domingo 01/11 a la noche o el lunes 02/11 antes de las 8:15, apagar el «Envío automático» en Correos → Configuración.
+1. El domingo 01/11 a la noche o el lunes 02/11 antes de las 8:15, apagar el «Envío automático» en Correos → Estado.
 2. El lunes 02/11 entre las 8:20 y las 14:00, volverlo a prender. Tiene que estar prendido a las 14:00: apagado, el recordatorio de esa hora manda por email lo que iba por nota.
 3. El martes 03/11 a las 8:15 salen solos el aviso interno de diciembre (con fecha 03/11) y la reiteración de noviembre. No se pierde nada.
 4. Lo que no cubre: el 02/11 a las 14:00 el recordatorio de cambios pendientes sale igual si hay alguno sin auditar.
