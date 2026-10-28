@@ -9,6 +9,7 @@ import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
 import { textoLeyendaAutorizacion } from './notasDigitalesContenido.js';
 import { diasHabilesLibres } from './licenciasReglas.js';
 import { leerCalendario } from './feriadosDatos.js';
+import { sumarDias } from './notasDigitalesCalendario.js';
 
 const ROLES_AUTORIZABLES = ['admin', 'editor'];
 
@@ -28,16 +29,6 @@ export const autorizadoHabilitado = async (licencia) => {
   if (!usuario || !usuario.activo || !ROLES_AUTORIZABLES.includes(usuario.rol)) return null;
   const firma = await firmaDeUsuario(licencia.autorizado_id);
   return firma?.imagen ? { ...firma, email: usuario.email } : null;
-};
-
-/**
- * La firma de la persona autorizada de una licencia, con su email, si en esa fecha sigue cumpliendo las condiciones
- * (spec 6.3): admin o editor activo, con la imagen de su firma y sin licencia. null si no hay autorizado o ya no las cumple.
- */
-export const autorizadoVigente = async (licencia, fecha) => {
-  const autorizado = await autorizadoHabilitado(licencia);
-  if (!autorizado || (await licenciaEnFecha(licencia.autorizado_id, fecha))) return null;
-  return autorizado;
 };
 
 const mayor = (a, b) => (a > b ? a : b);
@@ -92,21 +83,80 @@ const notaDeAutorizacion = async (licencia) => {
 };
 
 /**
- * Cómo se firman las notas de esa fecha:
- * - 'configuracion': sin firmante titular elegido, la firma de Correos, como siempre;
- * - 'titular': el titular no está de licencia;
- * - 'autorizado': está de licencia con un autorizado vigente: las dos firmas y la leyenda, que cita la nota de
- *   autorización (null si todavía no salió: la corrida la genera primero, con autorizacionPendiente);
- * - 'sin_autorizado': está de licencia sin autorizado vigente: ese día no se generan notas (la firma que se devuelve es
- *   la del titular). La vista previa no muestra ese día: busca el próximo día con notas, hasta 366 días desde hoy (spec
- *   2026-10-15, 7.7); solo si no hay ninguno muestra hoy, con la firma del titular.
+ * Cómo se firman las notas de esa fecha, sin leer las imágenes de las firmas: lo que necesitan Correos → Estado y la vista
+ * previa para saber qué días hay notas (spec 2026-10-27-feriados-en-notas, 4), y lo primero que mira firmaParaFecha. modo:
+ * - 'configuracion': sin firmante titular elegido (licencia null);
+ * - 'titular': el titular no está de licencia (licencia null);
+ * - 'autorizado': está de licencia con una persona autorizada vigente ese día (spec 6.3): admin o editor activo, con la imagen
+ *   de su firma (se mira que esté, con imagen IS NOT NULL, sin traerla) y sin licencia propia;
+ * - 'sin_autorizado': está de licencia sin persona autorizada vigente: ese día no se generan notas.
+ * licencia: la del titular ese día (la de licenciaEnFecha), o null. Devuelve { modo, licencia }.
+ */
+export const modoDelDia = async (config, fecha) => {
+  if (!config.firmante_usuario_id) return { modo: 'configuracion', licencia: null };
+  const licencia = await licenciaEnFecha(config.firmante_usuario_id, fecha);
+  if (!licencia) return { modo: 'titular', licencia: null };
+  if (!licencia.autorizado_id) return { modo: 'sin_autorizado', licencia };
+  const [[usuario]] = await pool.query(
+    `SELECT u.rol, u.activo, (f.imagen IS NOT NULL) AS con_imagen
+     FROM usuarios u LEFT JOIN usuarios_firmas f ON f.usuario_id = u.id WHERE u.id = ?`,
+    [licencia.autorizado_id]
+  );
+  const habilitado = Boolean(usuario) && Boolean(Number(usuario.activo)) && ROLES_AUTORIZABLES.includes(usuario.rol)
+    && Number(usuario.con_imagen) === 1;
+  if (!habilitado || (await licenciaEnFecha(licencia.autorizado_id, fecha))) return { modo: 'sin_autorizado', licencia };
+  return { modo: 'autorizado', licencia };
+};
+
+// Días hacia adelante en que se busca el primer día con notas (spec 2026-10-15, 7.7): la fecha y los 366 siguientes
+const DIAS_PARA_BUSCAR_NOTAS = 366;
+
+/**
+ * El primer día con notas desde `desde` (incluido) hasta `desde` + 366 inclusive: hábil con el calendario y con un modo que no es
+ * 'sin_autorizado' (modoDelDia: firma el titular, o su persona autorizada). Es la regla de la corrida, con la que Correos → Estado
+ * y la vista previa anuncian el día real en que sale cada cosa (spec 2026-10-27-feriados-en-notas, 4). null si no hay ninguno.
+ * calendario: el de quien llama; sin él, se lee (leerCalendario).
+ * Solo lee. Salta los días no hábiles de a uno, con el predicado del calendario (nunca con proximoDiaHabil, que tira si no hay
+ * ninguno en 366 días) y, en una licencia sin persona autorizada vigente, salta hasta el primer día hábil, desde el día
+ * siguiente, en que ella no falta o, si no le queda ninguno (o ya no sirve), hasta el fin de la licencia
+ * (primer_dia_disponible de autorizadoParaLicencia): es lo mismo que probar día por día, sin recorrer la licencia.
+ */
+export const primerDiaConNotas = async (config, desde, calendario) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const limite = sumarDias(desde, DIAS_PARA_BUSCAR_NOTAS);
+  let dia = desde;
+  while (dia <= limite) {
+    if (!conElCalendario.esDiaHabil(dia)) {
+      dia = sumarDias(dia, 1);
+      continue;
+    }
+    const { modo, licencia } = await modoDelDia(config, dia);
+    if (modo !== 'sin_autorizado') return dia;
+    // Desde el día siguiente, no desde el comienzo de la licencia: así los días libres que quedaron atrás no obligan a
+    // recorrerla día por día
+    dia = (await autorizadoParaLicencia(licencia, { desde: sumarDias(dia, 1), calendario: conElCalendario }))?.primer_dia_disponible
+      ?? sumarDias(licencia.hasta, 1);
+  }
+  return null;
+};
+
+/**
+ * Cómo se firman las notas de esa fecha: el modo de modoDelDia y, solo para ese modo, las firmas (con sus imágenes):
+ * - 'configuracion': la firma de Correos, como siempre;
+ * - 'titular': la del titular;
+ * - 'autorizado': las dos firmas y la leyenda, que cita la nota de autorización (null si todavía no salió: la corrida la genera
+ *   primero, con autorizacionPendiente). Si al leer su firma la persona autorizada ya no sirve, 'sin_autorizado';
+ * - 'sin_autorizado': ese día no se generan notas (la firma que se devuelve es la del titular). La vista previa no muestra ese
+ *   día: busca el primer día con notas (primerDiaConNotas), hasta 366 días desde hoy (spec 2026-10-15, 7.7); solo si no hay
+ *   ninguno muestra hoy, con la firma del titular.
  * firma: { titular: { nombre, cargo, contratado, imagen }, presentante: {...} | null, leyenda, firmanteId, presentanteId }
  * (la firma de Correos no es de una persona: nunca es de personal contratado)
  */
 export const firmaParaFecha = async (config, fecha) => {
-  if (!config.firmante_usuario_id) {
+  const { modo, licencia } = await modoDelDia(config, fecha);
+  if (modo === 'configuracion') {
     return {
-      modo: 'configuracion',
+      modo,
       firma: {
         titular: { nombre: config.firma_nombre ?? '', cargo: config.firma_cargo ?? '', contratado: false, imagen: config.firma_imagen ?? null },
         presentante: null, leyenda: null, firmanteId: null, presentanteId: null
@@ -115,9 +165,10 @@ export const firmaParaFecha = async (config, fecha) => {
   }
   const titular = firmaParaNota(await firmaDeUsuario(config.firmante_usuario_id));
   const delTitular = { titular, presentante: null, leyenda: null, firmanteId: config.firmante_usuario_id, presentanteId: null };
-  const licencia = await licenciaEnFecha(config.firmante_usuario_id, fecha);
-  if (!licencia) return { modo: 'titular', firma: delTitular };
-  const autorizado = await autorizadoVigente(licencia, fecha);
+  if (modo === 'titular') return { modo, firma: delTitular };
+  if (modo === 'sin_autorizado') return { modo, firma: delTitular, licencia };
+  // modoDelDia ya miró que ese día no falta: con la firma completa se vuelven a mirar las condiciones que no dependen de las fechas
+  const autorizado = await autorizadoHabilitado(licencia);
   if (!autorizado) return { modo: 'sin_autorizado', firma: delTitular, licencia };
   const presentante = firmaParaNota(autorizado);
   const nota = await notaDeAutorizacion(licencia);

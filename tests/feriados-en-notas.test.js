@@ -8,11 +8,11 @@ import { crearBaseDePrueba, correrSqlEnBaseDePrueba, cerrarDb, query, mailpit, p
 import { limpiarBase, configurarNotas, asegurarBaseDePrueba, crearArea, crearDataset, crearNota } from './notas-fixtures.js';
 import { pngRgba } from './firma-fixtures.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
-import { MENSAJE_CORRIDA_SIN_FERIADOS, calendarioCon } from '../services/feriadosReglas.js';
+import { MENSAJE_CORRIDA_SIN_FERIADOS, MENSAJE_ESTADO_SIN_FERIADOS, calendarioCon } from '../services/feriadosReglas.js';
 import { CALENDARIO_FIJO } from '../services/notasDigitalesCalendario.js';
 
 const FIRMA = pngRgba({ ancho: 40, alto: 20 });
-let base, dbReal, feriadosDatos, motor, avisos, avisosSuperadmin, auditoria, controlador;
+let base, dbReal, feriadosDatos, motor, avisos, avisosSuperadmin, auditoria, controlador, correos;
 
 before(async () => {
   dbReal = process.env.DB_NAME;
@@ -27,6 +27,7 @@ before(async () => {
   avisosSuperadmin = await import('../services/avisosSuperadminService.js');
   auditoria = await import('../services/auditoriaService.js');
   controlador = await import('../controllers/notificacionesController.js');
+  correos = await import('../controllers/notasDigitalesController.js');
 });
 
 after(async () => {
@@ -561,5 +562,193 @@ describe('la corrida de las 8:15: el email de los 40 días y el resumen al super
     assert.equal(res.body.data.notasDigitales.calendario, 'fijos');
     assert.ok(res.body.data.errores.some((e) => e.tipo === 'notas-digitales' && e.paso === 'feriados'
       && e.error === MENSAJE_CORRIDA_SIN_FERIADOS), JSON.stringify(res.body.data.errores));
+  });
+});
+
+// Correos → Estado anuncia lo que la corrida hace, con el calendario y con la regla de la corrida: el primer día con notas (spec
+// 2026-10-27-feriados-en-notas, 4)
+describe('Correos → Estado con las fechas reales', () => {
+  const correr = (hoy) => motor.ejecutarNotasDigitales({ hoy });
+  const estado = (hoy, calendario) => motor.estadoNotas({ hoy, calendario });
+  const notasDe = (ids) => query(
+    'SELECT id, tipo, gestion, firmante_id, presentada_por_id FROM notas_digitales WHERE id IN (?) ORDER BY id', [ids]
+  );
+  const datasetsDe = async (notaId) => (await query('SELECT dataset_id FROM notas_digitales_datasets WHERE nota_id = ?', [notaId]))
+    .map((fila) => fila.dataset_id);
+  const notaDeAutorizacionDe = async (licenciaId) =>
+    (await query('SELECT nota_autorizacion_id AS id FROM usuarios_licencias WHERE id = ?', [licenciaId]))[0].id;
+  // El titular firmante (superadmin) y la persona autorizada (admin), los dos con su firma
+  const conFirmante = async () => {
+    const titular = await crearUsuario('superadmin');
+    const autorizado = await crearUsuario('admin');
+    await query('UPDATE notas_digitales_config SET firmante_usuario_id = ? WHERE id = 1', [titular.id]);
+    return { titular, autorizado };
+  };
+  const evaluadas = (periodo) => configurarNotas({ reiteracion_evaluada_interna: periodo, reiteracion_evaluada_externa: periodo });
+
+  it('el 30/10 anuncia el aviso interno del 31/12 y las reiteraciones de noviembre para el 03/11, y la corrida del 03/11 lo cumple', async () => {
+    await crearDataset({ titulo: 'Vence en diciembre', vencimiento: '2026-12-31' });
+    await evaluadas('2026-10');
+
+    const { proximas } = await estado('2026-10-30');
+    assert.deepEqual(proximas.interna.aviso, { fecha: '2026-11-03', cantidad: 1 });
+    assert.equal(proximas.interna.reiteracion.fecha, '2026-11-03');
+    assert.equal(proximas.externa.reiteracion.fecha, '2026-11-03');
+    // Con los 9 fijos, el lunes 02/11
+    const conLosFijos = (await estado('2026-10-30', CALENDARIO_FIJO)).proximas;
+    assert.deepEqual([conLosFijos.interna.aviso.fecha, conLosFijos.interna.reiteracion.fecha], ['2026-11-02', '2026-11-02']);
+
+    const del03 = await correr('2026-11-03');
+    assert.deepEqual(del03.errores, []);
+    assert.deepEqual(del03.generadas.map((g) => [g.tipo, g.gestion]), [['aviso', 'interna']]);
+  });
+
+  it('el caso de la simulación: el firmante del 09/12 al 08/01 con la persona autorizada, y ella del 04/01 al 15/01: las reiteraciones de enero, el 11/01', async () => {
+    const { titular, autorizado } = await conFirmante();
+    await licencia(titular, '2026-12-09', '2027-01-08', autorizado);
+    await licencia(autorizado, '2027-01-04', '2027-01-15');
+    await crearDataset({ titulo: 'Interno vencido sin aviso', vencimiento: '2026-11-30' });
+    await evaluadas('2026-12');
+
+    const { proximas } = await estado('2026-12-21');
+    assert.deepEqual(proximas.interna.reiteracion, { fecha: '2027-01-11', cantidad: 1 });
+    assert.deepEqual(proximas.externa.reiteracion, { fecha: '2027-01-11', cantidad: 0 });
+
+    // El 04/01 faltan los dos: la corrida no genera notas; el 11/01, de vuelta el titular, sale la reiteración interna
+    const del04 = await correr('2027-01-04');
+    assert.deepEqual(del04.errores, []);
+    assert.deepEqual(del04.generadas, []);
+    assert.match(del04.licencia, /sin autorizado/);
+    const del11 = await correr('2027-01-11');
+    assert.deepEqual(del11.errores, []);
+    assert.deepEqual(del11.generadas.map((g) => [g.tipo, g.gestion]), [['reiteracion', 'interna']]);
+  });
+
+  describe('licencias seguidas: vacaciones del 09/12 al 31/12 con la persona autorizada y una médica del 04/01 al 08/01', () => {
+    let titular, autorizado, vacaciones;
+
+    beforeEach(async () => {
+      ({ titular, autorizado } = await conFirmante());
+      vacaciones = await licencia(titular, '2026-12-09', '2026-12-31', autorizado);
+    });
+
+    it('sin ella en la médica: la vuelta es el 11/01 y la médica no tiene víspera', async () => {
+      await licencia(titular, '2027-01-04', '2027-01-08');
+      // La víspera de las vacaciones (el 07/12 no es laborable y el 08/12 es feriado) comunica la autorización
+      const del04 = await correr('2026-12-04');
+      assert.deepEqual(del04.errores, []);
+      assert.deepEqual(del04.generadas.map((g) => g.tipo), ['autorizacion']);
+      assert.equal(await notaDeAutorizacionDe(vacaciones), del04.generadas[0].id);
+
+      // Durante las vacaciones, la vuelta es la del titular después de la médica (el próximo día hábil después de las vacaciones
+      // sería el 04/01)
+      assert.equal((await estado('2026-12-21')).licencia_firmante.vuelta, '2027-01-11');
+      // El sábado 02/01 mira la médica: su día hábil anterior (el 31/12) está dentro de las vacaciones, así que no hay anticipo
+      assert.deepEqual((await estado('2027-01-02')).licencia_firmante, {
+        desde: '2027-01-04', hasta: '2027-01-08', en_curso: false, autorizado: null, nota_autorizacion: null,
+        autorizado_no_vigente: false, autorizado_de_licencia_hasta: null, sin_dias_habiles: false, vispera: null,
+        ultimo_habil: '2027-01-08', vuelta: '2027-01-11', sin_anticipo: true
+      });
+    });
+
+    it('un externo cuyo aviso caería el 06/01, en la médica, se anuncia y sale el 11/01 (Review Focus 4)', async () => {
+      await licencia(titular, '2027-01-04', '2027-01-08');
+      const externo = await crearDataset({ titulo: 'Externo de febrero', gestion: 'externa', vencimiento: '2027-02-15' });
+      await correr('2026-12-04');
+
+      assert.deepEqual((await estado('2026-12-21')).proximas.externa.aviso, { fecha: '2027-01-11', cantidad: 1 });
+      // El 31/12, último día de las vacaciones, no lo anticipa: la médica no tiene víspera
+      const del31 = await correr('2026-12-31');
+      assert.deepEqual(del31.errores, []);
+      assert.deepEqual(del31.generadas.filter((g) => g.tipo === 'aviso'), []);
+      // El 06/01, en la médica sin persona autorizada, no se genera nada
+      const del06 = await correr('2027-01-06');
+      assert.deepEqual(del06.generadas, []);
+      assert.match(del06.licencia, /sin autorizado/);
+      // El 11/01 sale su aviso
+      const del11 = await correr('2027-01-11');
+      assert.deepEqual(del11.errores, []);
+      assert.deepEqual(del11.generadas.map((g) => [g.tipo, g.gestion]), [['aviso', 'externa']]);
+      assert.deepEqual(await datasetsDe(del11.generadas[0].id), [externo]);
+    });
+
+    it('lo mismo con una médica con persona autorizada (cargada en Configuración): sin anticipo, y el 04/01 primero la nota de autorización', async () => {
+      const medica = await licencia(titular, '2027-01-04', '2027-01-08', autorizado);
+      await crearDataset({ titulo: 'Interno vencido sin aviso', vencimiento: '2026-11-30' });
+      await correr('2026-12-04');
+
+      const delSabado = (await estado('2027-01-02')).licencia_firmante;
+      assert.deepEqual([delSabado.desde, delSabado.vispera, delSabado.sin_anticipo, delSabado.autorizado],
+        ['2027-01-04', null, true, 'Firma admin']);
+
+      // La víspera de la médica cae en las vacaciones: no hay anticipo, y el primer día de la médica sale primero la nota que
+      // comunica la autorización (firmada por el titular) y después las demás, con las dos firmas
+      const del04 = await correr('2027-01-04');
+      assert.deepEqual(del04.errores, []);
+      assert.equal(del04.generadas[0].tipo, 'autorizacion');
+      assert.equal(await notaDeAutorizacionDe(medica), del04.generadas[0].id);
+      const [deAutorizacion, ...demas] = await notasDe(del04.generadas.map((g) => g.id));
+      assert.deepEqual([deAutorizacion.firmante_id, deAutorizacion.presentada_por_id], [titular.id, null]);
+      assert.deepEqual(demas.map((n) => [n.tipo, n.gestion, n.firmante_id, n.presentada_por_id]),
+        [['reiteracion', 'interna', titular.id, autorizado.id]]);
+    });
+  });
+
+  it('la próxima nota de auditoría, 5 días hábiles después de la del 04/11, es el 12/11', async () => {
+    // Como en «auditoría: un solo calendario a las 8:15 y a las 14:00»: el titular propone un alta el 30/10 con su primer
+    // recordatorio ese día, y la nota de auditoría del 04/11 lo incluye
+    await configurarNotas({ para_auditoria: 'auditoria@rpad.test' });
+    const { titular } = await conFirmante();
+    const cambioId = await proponerCambio(titular.id, 'Dataset nuevo del titular', { creado: '2026-10-30 12:00:00' });
+    await query("UPDATE cambios_pendientes SET primer_recordatorio_at = '2026-10-30 14:00:00' WHERE id = ?", [cambioId]);
+    const del04 = await correr('2026-11-04');
+    const [nota] = del04.generadas.filter((g) => g.tipo === 'auditoria');
+    assert.deepEqual(await query('SELECT cambio_id FROM notas_digitales_cambios WHERE nota_id = ?', [nota.id]), [{ cambio_id: cambioId }]);
+
+    // Desde el 04/11: el 05, el 06, el 10 (el 09/11 es feriado), el 11 y el 12 (con los 9 fijos, el 11/11)
+    assert.deepEqual((await estado('2026-11-05')).auditoria,
+      { canal_nota: 1, proxima: '2026-11-12', sin_quien_audite: 0, periodos_sin_auditor: [] });
+    assert.equal((await estado('2026-11-05', CALENDARIO_FIJO)).auditoria.proxima, '2026-11-11');
+  });
+
+  it('sin-corrida: el martes 03/11 debía haber corrido el viernes 30/10', async () => {
+    await correr('2026-10-30');
+    const sinCorrida = async (calendario) => (await estado('2026-11-03', calendario)).alertas.some((a) => a.tipo === 'sin-corrida');
+    assert.equal(await sinCorrida(), false);
+    // Con los 9 fijos tenía que correr el lunes 02/11
+    assert.equal(await sinCorrida(CALENDARIO_FIJO), true);
+  });
+
+  it('con la tabla renombrada, la alerta feriados-sin-leer, con una sola lectura por pedido', async () => {
+    // Para que el Estado pase por todo: la licencia del titular con la persona autorizada, un dataset a vencer y un cambio del
+    // titular en el canal nota (de licencia, no puede auditarlo; la persona autorizada sí)
+    await configurarNotas({ para_auditoria: 'auditoria@rpad.test' });
+    const { titular, autorizado } = await conFirmante();
+    await licencia(titular, '2026-12-09', '2027-01-08', autorizado);
+    await crearDataset({ titulo: 'Externo de enero', gestion: 'externa', vencimiento: '2027-01-31' });
+    const cambioId = await proponerCambio(titular.id, 'Dataset nuevo del titular', { creado: '2026-12-01 10:00:00' });
+    await query("UPDATE cambios_pendientes SET primer_recordatorio_at = '2026-12-01 14:00:00' WHERE id = ?", [cambioId]);
+
+    const alerta = { tipo: 'feriados-sin-leer', nivel: 'error', mensaje: MENSAJE_ESTADO_SIN_FERIADOS };
+    const deFeriados = (alertas) => alertas.filter((a) => a.tipo === 'feriados-sin-leer');
+    const consola = mock.method(console, 'error', () => {});
+    try {
+      const sinLaTabla = await conLaTablaRenombrada(() => estado('2026-12-14'));
+      assert.equal(lecturasFallidas(consola), 1);
+      assert.deepEqual(deFeriados(sinLaTabla.alertas), [alerta]);
+      assert.equal(sinLaTabla.auditoria.canal_nota, 1);
+
+      // verEstado (Correos → Estado) lee el calendario una sola vez por pedido
+      const res = respuestaFalsa();
+      await conLaTablaRenombrada(() => correos.verEstado({}, res));
+      assert.equal(res.body.success, true, JSON.stringify(res.body));
+      assert.deepEqual(deFeriados(res.body.data.alertas), [alerta]);
+      assert.equal(lecturasFallidas(consola), 2);
+    } finally {
+      consola.mock.restore();
+    }
+    // Con la tabla, sin la alerta; con el de los 9 fijos que pasa un test (sin error), tampoco: se mira el error, no el origen
+    assert.deepEqual(deFeriados((await estado('2026-12-14')).alertas), []);
+    assert.deepEqual(deFeriados((await estado('2026-12-14', CALENDARIO_FIJO)).alertas), []);
   });
 });

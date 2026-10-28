@@ -8,6 +8,8 @@ import { crearDataset, crearNota, limpiarBase, configurarNotas, conFallaSimulada
 import { pngRgba } from './firma-fixtures.js';
 import { lineasPorHoja, textosPorHoja } from './pdf-lector.js';
 import { esDiaHabil as esDiaHabilIso, sumarDias as sumarDiasIso } from '../services/notasDigitalesCalendario.js';
+import { calendarioCon } from '../services/feriadosReglas.js';
+import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
 const FIRMA = pngRgba({ ancho: 40, alto: 20 });
 const PARRAFO = 'Asimismo, por medio de la presente autorizo expresamente a Firma admin, Cargo admin, a presentar en mi nombre las Notas Digitales durante mi licencia, del 26/11/2026 al 14/01/2027, con el objetivo de mantener el correcto flujo de trabajo.';
@@ -463,10 +465,10 @@ describe('aviso en su fecha con persona autorizada (spec 7.6), licencia del 10/1
     const estado = await motor.estadoNotas({ hoy: '2026-12-14' });
     assert.deepEqual(estado.proximas.externa.aviso, { fecha: '2026-12-22', cantidad: 1 });
     assert.equal(estado.licencia_firmante.en_curso, true);
-    // El objeto público de la licencia no cambia de forma
+    // El objeto público de la licencia: las claves de siempre y, al final, sin_anticipo (spec 2026-10-27-feriados-en-notas, 4)
     assert.deepEqual(Object.keys(estado.licencia_firmante), [
       'desde', 'hasta', 'en_curso', 'autorizado', 'nota_autorizacion', 'autorizado_no_vigente', 'autorizado_de_licencia_hasta',
-      'sin_dias_habiles', 'vispera', 'ultimo_habil', 'vuelta'
+      'sin_dias_habiles', 'vispera', 'ultimo_habil', 'vuelta', 'sin_anticipo'
     ]);
     // El mismo día de la víspera, ya corrida, también
     assert.deepEqual((await motor.estadoNotas({ hoy: '2026-12-09' })).proximas.externa.aviso, { fecha: '2026-12-22', cantidad: 1 });
@@ -1602,6 +1604,118 @@ describe('vista previa y prueba de Correos: la nota como saldría (spec 7.7)', (
   });
 });
 
+// El modo del día sin leer las imágenes de las firmas y el primer día con notas desde una fecha, la regla con la que Correos → Estado
+// anuncia lo que hace la corrida (spec 2026-10-27-feriados-en-notas, 4)
+describe('modoDelDia y primerDiaConNotas (spec 2026-10-27-feriados-en-notas, 4)', () => {
+  // El primer día hábil desde `desde`, hasta 366 días después, en que alguien presenta las notas, probando todos los días con
+  // firmaParaFecha; null si no hay
+  const primerDiaProbando = async (conf, desde) => {
+    for (let dia = desde, i = 0; i <= 366; dia = sumarDiasIso(dia, 1), i++) {
+      if (esDiaHabilIso(dia) && (await firmas.firmaParaFecha(conf, dia)).modo !== 'sin_autorizado') return dia;
+    }
+    return null;
+  };
+
+  it('modoDelDia da el modo de cada caso', async () => {
+    const conf = await config();
+    // Sin firmante titular elegido
+    assert.deepEqual(await firmas.modoDelDia({ ...conf, firmante_usuario_id: null }, '2026-12-14'), { modo: 'configuracion', licencia: null });
+    // El titular sin licencia ese día
+    assert.deepEqual(await firmas.modoDelDia(conf, '2026-12-14'), { modo: 'titular', licencia: null });
+
+    // De licencia sin persona autorizada
+    const sinElla = await licencia(titular, '2026-12-10', '2026-12-18');
+    const delDia = await firmas.modoDelDia(conf, '2026-12-14');
+    assert.equal(delDia.modo, 'sin_autorizado');
+    assert.equal(delDia.licencia.id, sinElla);
+
+    // De licencia con ella
+    const conElla = await licencia(titular, '2027-01-11', '2027-01-29', autorizado);
+    const modo = async (fecha) => {
+      const { modo: elModo, licencia: laLicencia } = await firmas.modoDelDia(conf, fecha);
+      assert.equal(laLicencia.id, conElla, fecha);
+      return elModo;
+    };
+    assert.equal(await modo('2027-01-12'), 'autorizado');
+    // Con ella de licencia ese día
+    await licencia(autorizado, '2027-01-18', '2027-01-19');
+    assert.equal(await modo('2027-01-18'), 'sin_autorizado');
+    assert.equal(await modo('2027-01-20'), 'autorizado');
+    // Sin la imagen de su firma
+    await query('UPDATE usuarios_firmas SET imagen = NULL WHERE usuario_id = ?', [autorizado.id]);
+    assert.equal(await modo('2027-01-12'), 'sin_autorizado');
+    await query('UPDATE usuarios_firmas SET imagen = ? WHERE usuario_id = ?', [FIRMA, autorizado.id]);
+    assert.equal(await modo('2027-01-12'), 'autorizado');
+    // Sin su firma cargada
+    await query('DELETE FROM usuarios_firmas WHERE usuario_id = ?', [autorizado.id]);
+    assert.equal(await modo('2027-01-12'), 'sin_autorizado');
+    await query("INSERT INTO usuarios_firmas (usuario_id, nombre, cargo, imagen, mime) VALUES (?, 'Firma admin', 'Cargo admin', ?, 'image/png')",
+      [autorizado.id, FIRMA]);
+    // Inactiva
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [autorizado.id]);
+    assert.equal(await modo('2027-01-12'), 'sin_autorizado');
+    await query('UPDATE usuarios SET activo = 1 WHERE id = ?', [autorizado.id]);
+    // Sin su rol
+    await query("UPDATE usuarios SET rol = 'lector' WHERE id = ?", [autorizado.id]);
+    assert.equal(await modo('2027-01-12'), 'sin_autorizado');
+    await query("UPDATE usuarios SET rol = 'editor' WHERE id = ?", [autorizado.id]);
+    assert.equal(await modo('2027-01-12'), 'autorizado');
+  });
+
+  it('primerDiaConNotas da lo mismo que probar día por día', async () => {
+    const conf = await config();
+    // Los escenarios de la prueba de fechaDeVistaPrevia
+    const escenarios = {
+      'ausente algunos días': async () => {
+        await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
+        await licencia(autorizado, '2026-12-14', '2026-12-16');
+        await licencia(autorizado, '2026-12-21', '2026-12-31');
+      },
+      'ausente todos los días': async () => {
+        await licencia(titular, '2026-12-10', '2027-01-08', autorizado);
+        await licencia(autorizado, '2026-12-01', '2027-01-20');
+      },
+      'sin persona autorizada': async () => {
+        await licencia(titular, '2026-12-10', '2027-01-08');
+      },
+      'dos licencias seguidas del titular, la segunda con persona autorizada': async () => {
+        await licencia(titular, '2026-12-10', '2026-12-18');
+        await licencia(titular, '2026-12-19', '2027-01-08', autorizado);
+        await licencia(autorizado, '2026-12-21', '2026-12-23');
+      }
+    };
+    for (const [nombre, preparar] of Object.entries(escenarios)) {
+      await query('DELETE FROM usuarios_licencias');
+      await preparar();
+      // De a 3 días: recorre todos los días de la semana sin probar cada fecha
+      for (let desde = '2026-12-01'; desde <= '2027-01-15'; desde = sumarDiasIso(desde, 3)) {
+        assert.equal(await firmas.primerDiaConNotas(conf, desde), await primerDiaProbando(conf, desde), `${nombre}, desde ${desde}`);
+      }
+    }
+  });
+
+  it('primerDiaConNotas: null sin ningún día con notas en 366 días, y los días hábiles con el calendario que recibe', async () => {
+    const conf = await config();
+    // Dos licencias seguidas sin persona autorizada que cubren 400 días
+    await licencia(titular, '2026-11-01', '2027-05-31');
+    await licencia(titular, '2027-06-01', '2027-12-05');
+    assert.equal(await firmas.primerDiaConNotas(conf, '2026-11-02'), null);
+    // La vista previa sigue mostrando hoy, sin motivo
+    assert.deepEqual(await motor.fechaDeVistaPrevia(conf, '2026-11-02'), { fecha: '2026-11-02', motivo: null });
+    // Hasta 366 días inclusive: con la segunda hasta el martes 02/11/2027, el miércoles 03/11/2027 se encuentra
+    await query("UPDATE usuarios_licencias SET hasta = '2027-11-02' WHERE desde = '2027-06-01'");
+    assert.equal(await firmas.primerDiaConNotas(conf, '2026-11-02'), '2027-11-03');
+
+    // Los días hábiles, con el calendario: con la precarga, el lunes 02/11/2026 es feriado y el 09/11, también
+    await query('DELETE FROM usuarios_licencias');
+    const conLaTabla = calendarioCon(FILAS_PRECARGA);
+    assert.equal(await firmas.primerDiaConNotas(conf, '2026-10-31', conLaTabla), '2026-11-03');
+    assert.equal(await firmas.primerDiaConNotas(conf, '2026-11-07', conLaTabla), '2026-11-10');
+    // Sin el calendario, lo lee: esta base no tiene feriados cargados
+    assert.equal(await firmas.primerDiaConNotas(conf, '2026-10-31'), '2026-11-02');
+  });
+});
+
 describe('Estado de Correos (spec 7.5)', () => {
   it('sin licencia: licencia_firmante es null', async () => {
     assert.equal((await motor.estadoNotas({ hoy: '2026-11-02' })).licencia_firmante, null);
@@ -1614,7 +1728,7 @@ describe('Estado de Correos (spec 7.5)', () => {
     assert.deepEqual(estado.licencia_firmante, {
       desde: '2026-11-26', hasta: '2027-01-14', en_curso: false, autorizado: null, nota_autorizacion: null,
       autorizado_no_vigente: false, autorizado_de_licencia_hasta: null, sin_dias_habiles: false, vispera: '2026-11-25',
-      ultimo_habil: '2027-01-14', vuelta: '2027-01-15'
+      ultimo_habil: '2027-01-14', vuelta: '2027-01-15', sin_anticipo: false
     });
     assert.equal(estado.proximas.interna.aviso.fecha, '2026-11-25');
   });

@@ -249,6 +249,41 @@ describe('correos.js: firmante titular (spec 2026-10-15-dias-habiles-licencias-a
       + 'por autorización, con las dos firmas (autorización comunicada en la Nota Digital N° 15/27).');
   });
 
+  // Una licencia futura que empieza a continuación de otra del firmante: su víspera cae en la otra y no hay anticipo (spec
+  // 2026-10-27-feriados-en-notas, 6)
+  it('licencia futura sin anticipo: los avisos no se adelantan', () => {
+    const { contexto } = cargarCorreos();
+    const texto = (l) => vm.runInContext(`textoLicenciaFirmante(${JSON.stringify(l)})`, contexto);
+    const base = {
+      desde: '2027-01-04', hasta: '2027-01-08', en_curso: false, autorizado: null, sin_dias_habiles: false, sin_anticipo: true,
+      vispera: null, vuelta: '2027-01-11'
+    };
+    assert.equal(texto(base),
+      'Licencia del firmante del 04/01/2027 al 08/01/2027, sin autorizado: empieza a continuación de otra licencia, así que los '
+      + 'avisos no se adelantan, y las reiteraciones se postergan al 11/01/2027.');
+    assert.equal(texto({ ...base, autorizado: 'Persona Autorizada' }),
+      'Licencia del firmante del 04/01/2027 al 08/01/2027: empieza a continuación de otra licencia, así que los avisos no se '
+      + 'adelantan. Persona Autorizada presenta las notas por autorización, con las dos firmas, desde el primer día.');
+
+    // Con sin_anticipo false, los de siempre
+    const conAnticipo = { ...base, sin_anticipo: false, vispera: '2026-12-31' };
+    assert.equal(texto(conAnticipo),
+      'Licencia del firmante del 04/01/2027 al 08/01/2027, sin autorizado: los avisos se anticipan el 31/12/2026 y las '
+      + 'reiteraciones se postergan al 11/01/2027.');
+    assert.equal(texto({ ...conAnticipo, autorizado: 'Persona Autorizada' }),
+      'Licencia del firmante del 04/01/2027 al 08/01/2027: los avisos se anticipan el 31/12/2026 con la autorización a Persona '
+      + 'Autorizada, que durante la licencia presenta las demás notas y vuelve a presentar cada aviso en su fecha.');
+    // Solo con el true literal
+    assert.equal(texto({ ...conAnticipo, sin_anticipo: 'true' }), texto(conAnticipo));
+    // En curso, los de siempre
+    assert.equal(texto({ ...base, en_curso: true }),
+      'Licencia del firmante del 04/01/2027 al 08/01/2027, sin autorizado: no se generan notas hasta la vuelta y las reiteraciones '
+      + 'se postergan al 11/01/2027.');
+    // Sin días hábiles, lo de siempre
+    assert.equal(texto({ ...base, sin_dias_habiles: true }),
+      'Licencia del firmante del 04/01/2027 al 08/01/2027: no tiene días hábiles, las notas no cambian.');
+  });
+
   it('sin autorizado_de_licencia_hasta (null o ausente), el texto no cambia', () => {
     const { contexto } = cargarCorreos();
     const texto = (l) => vm.runInContext(`textoLicenciaFirmante(${JSON.stringify(l)})`, contexto);
