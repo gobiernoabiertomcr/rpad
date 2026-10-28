@@ -1017,12 +1017,20 @@ describe('el paso a Configuración', () => {
         assert.equal(res.status, 200, JSON.stringify(res.body));
         return res.body.data.ausentes.map((ausente) => ausente.nombre);
       };
+      // Cuántas licencias de Mi espacio incluiría un feriado el miércoles de esas fechas (Configuración → Feriados,
+      // `licenciasQueIncluyen`): la tabla `feriados` está vacía, así que ese día es hábil
+      const conUnFeriado = async () => {
+        const res = await api.get(`/feriados/afectadas?fecha=${q(2)}`, como('adminB'));
+        assert.equal(res.status, 200, JSON.stringify(res.body));
+        return res.body.data.licencias_afectadas;
+      };
       const antes = await cifra();
       const { body } = await cargarMia('adminA', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
       const { id } = body.data;
       assert.notEqual(await cifra(), antes, 'cargadas a futuro, ya descuentan');
       assert.deepEqual(await enLaAgenda(), [id]);
       assert.deepEqual(await comoCompanera(), ['Laura Gómez']);
+      assert.equal(await conUnFeriado(), 1);
       const [oficial] = await deConfiguracion('adminA');
 
       const anular = await anularEnConfiguracion(oficial.id, quien);
@@ -1035,6 +1043,7 @@ describe('el paso a Configuración', () => {
       assert.equal(await filaDeLaLista('adminA', id), undefined);
       assert.deepEqual(await enLaAgenda(), []);
       assert.deepEqual(await comoCompanera(), []);
+      assert.equal(await conUnFeriado(), 0);
       assert.equal(await cifra(), antes);
     });
   }

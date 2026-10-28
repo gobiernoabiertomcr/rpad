@@ -2914,6 +2914,8 @@ describe('el paso a Configuración', () => {
   // todavía se puede resolver. Hoy es el lunes 26/10/2026
   describe('revisionDelVinculo', () => {
     const opciones = { hoy: HOY, sinPasar: null, puedeTener: true };
+    // El día anterior a HOY: el borde de «termina hoy», que todavía se resuelve
+    const AYER = '2026-10-25';
     // La de Configuración, del 02/11 al 04/11; la fila, del 02/11 al 06/11
     const oficial = oficialDe(7, '2026-11-02', '2026-11-04');
     const conOtroHasta = creadaDe(oficial, { hasta: '2026-11-06' });
@@ -2962,6 +2964,12 @@ describe('el paso a Configuración', () => {
         opciones), null);
       assert.equal(revisionDelVinculo({ estado: 'creada_cambiada', oficial: terminada },
         creadaDe(terminada, { hasta: '2026-10-21' }), opciones), null);
+      // La de Configuración terminó ayer, aunque la de Mi espacio siga: tampoco
+      const terminoAyer = oficialDe(7, '2026-10-19', AYER);
+      for (const estado of ['creada', 'creada_cambiada']) {
+        assert.equal(revisionDelVinculo({ estado, oficial: terminoAyer }, creadaDe(terminoAyer, { hasta: '2026-10-28' }),
+          opciones), null, estado);
+      }
     });
 
     it('una creada anulada de antes, mientras la de Mi espacio no terminó', () => {
@@ -2975,8 +2983,9 @@ describe('el paso a Configuración', () => {
       // Ni el motivo ni el rol la cambian: sigue contando hasta que la persona la borre
       assert.deepEqual(revisionDelVinculo(vinculo, creadaDe(oficial), { ...opciones, sinPasar: 'Otro motivo', puedeTener: false }),
         paraRevisar);
-      // La que ya terminó, no (Review Focus 4)
+      // La que ya terminó, no (Review Focus 4), tampoco la que terminó ayer
       assert.equal(revisionDelVinculo(vinculo, creadaDe(oficial, { desde: '2026-10-19', hasta: '2026-10-23' }), opciones), null);
+      assert.equal(revisionDelVinculo(vinculo, creadaDe(oficial, { desde: '2026-10-19', hasta: AYER }), opciones), null);
     });
 
     it('una unida sin cubrir, mientras la de Mi espacio no terminó, con los días fuera', () => {
@@ -2995,6 +3004,11 @@ describe('el paso a Configuración', () => {
       assert.deepEqual(revisionDelVinculo(sinCubrirHoy, deHoy, opciones), { motivo: 'sin_cubrir', desde: '2026-10-24', hasta: HOY });
       const pasada = unidaDe(larga, { desde: '2026-10-19', hasta: '2026-10-23' });
       assert.equal(revisionDelVinculo(vinculoDe(pasada, oficialDe(12, '2026-10-19', '2026-10-20'), false), pasada, opciones), null);
+      // La que terminó ayer, tampoco (sigue sin cubrir: es por la fecha)
+      const deAyer = unidaDe(larga, { desde: '2026-10-19', hasta: AYER });
+      const sinCubrirAyer = vinculoDe(deAyer, oficialDe(12, '2026-10-19', '2026-10-20'), false);
+      assert.deepEqual(sinCubrirAyer.sin_cubrir, { desde: '2026-10-21', hasta: AYER });
+      assert.equal(revisionDelVinculo(sinCubrirAyer, deAyer, opciones), null);
       // Sin los días fuera, no
       assert.equal(revisionDelVinculo({ ...vinculo, sin_cubrir: null }, fila, opciones), null);
     });
