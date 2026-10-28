@@ -634,6 +634,18 @@ describe('mostrar a mis compañeros', () => {
 });
 
 describe('el cálculo previo', () => {
+  // Lo que el cálculo de unas vacaciones dice que se habilita después de hoy y hasta su «Hasta» (spec
+  // 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.1), en las de este describe, que no tocan la licencia del año: con los 20
+  // días por año de `listoParaCargar`, sus mitades son de 10, el 1/7 (si todavía no llegó: si no, la primera mitad es el saldo
+  // del arranque) y el 1/1 del año siguiente. Sin ninguna en el medio, ''
+  const habilitacionesHasta = (hasta) => {
+    const fechas = [`${ANIO}-07-01`, `${ANIO + 1}-01-01`].filter((fecha) => hoy < fecha && fecha <= hasta);
+    const sinCeros = (fecha) => `${Number(fecha.slice(8, 10))}/${Number(fecha.slice(5, 7))}/${fecha.slice(0, 4)}`;
+    if (fechas.length === 0) return '';
+    const despues = fechas.length > 1 ? ` y el ${sinCeros(fechas[1])}, 10 de la ${ANIO}` : '';
+    return ` El ${sinCeros(fechas[0])} se habilitan 10 más de la ${ANIO}${despues}.`;
+  };
+
   it('el cálculo no guarda: unas vacaciones dan de qué licencia salen y lo que queda', async () => {
     await listoParaCargar('adminA');
     await conSaldo('adminA', 'vacaciones', ANIO - 1, '10.0');
@@ -646,8 +658,8 @@ describe('el cálculo previo', () => {
     const { vista } = res.body.data;
     assert.equal(vista.dias_habiles, 5);
     assert.equal(vista.texto_dias, '5 días hábiles');
-    assert.equal(vista.texto_reparto,
-      `Salen de la licencia ${ANIO - 1}, la más vieja. Te quedan 5 días, todos de la ${ANIO - 1}.`);
+    assert.equal(vista.texto_reparto, `Salen de la licencia ${ANIO - 1}, la más vieja. Te quedan 5 días, todos de la `
+      + `${ANIO - 1}.${habilitacionesHasta(q(4))}`);
     assert.equal(vista.antes_del_arranque, false);
     assert.equal((await guardadasDe('adminA')).length, 0);
   });
@@ -669,8 +681,11 @@ describe('el cálculo previo', () => {
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.data.error, null);
     assert.equal(res.body.data.vista.dias_habiles, 5);
+    // Cruza el 1/1: la segunda mitad de la licencia del año, que esta carga no usa, se nombra (spec
+    // 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.1)
     assert.equal(res.body.data.vista.texto_reparto, `Salen de las licencias ${ANIO - 2} (3 días) y ${ANIO - 1} (2 días), las `
-      + `más viejas. Te quedan 8 días, todos de la ${ANIO - 1}.`);
+      + `más viejas. Te quedan 8 días, todos de la ${ANIO - 1}.${habilitacionesHasta(hasta)}`);
+    assert.ok(res.body.data.vista.texto_reparto.includes(`1/1/${ANIO + 1}`));
   });
 
   it('con un error, 200 y el error en data, con su campo', async () => {

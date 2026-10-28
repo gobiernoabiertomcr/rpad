@@ -27,9 +27,10 @@ import {
   avisosDeVencimiento,
   SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL, TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, horaSalidaValida, tipoDeDia,
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
-  avisosDeSalidas, mesDeLaPlanilla
+  avisosDeSalidas, mesDeLaPlanilla, porHabilitarDe, alcanceDeLaCarga
 } from '../services/miEspacioReglas.js';
 import { feriadosDelRango, calendarioCon } from '../services/feriadosReglas.js';
+import { sumarDias } from '../services/notasDigitalesCalendario.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
@@ -2541,6 +2542,223 @@ describe('evaluarLicencia', () => {
     // Los francos no tienen saldo inicial: nunca son historia
     assert.equal(vistaDe(conHoras('planta', [extra(100, '2026-08-04', '18:00', '01:00')]),
       { tipo: 'franco', desde: '2026-10-19' }).antes_del_arranque, false);
+  });
+});
+
+describe('lo por habilitar y el alcance (spec 2026-10-28, 3.1)', () => {
+  // La persona de planta de la spec 2026-10-28-mi-espacio-vacaciones-en-la-carga (punto 1): 15 días de la 2024, 20 de la 2025
+  // y 10 de la 2026 en el saldo, 20 días por año, el arranque el 27/10/2026 y hoy el 28/10/2026, con la precarga de los
+  // feriados (el 07/12/2026 no es laborable, el 08 y el 09/02/2027 son Carnaval y el 23/02/2027, el aniversario de la ciudad)
+  const HOY_DE_LA_CARGA = '2026-10-28';
+  const A_LA_CARGA = Object.freeze({
+    hoy: HOY_DE_LA_CARGA, feriados: feriadosDelRango(FILAS_PRECARGA, '2024-01-01', '2028-12-31')
+  });
+  const persona = (...licencias) => soloVacaciones('2026-10-27', PERSONA, ...licencias);
+  const pedido = (desde, hasta) => ({ tipo: 'vacaciones', desde, hasta });
+  const evaluar = (estado, entrada, editadaId) => evaluarLicencia(estado, entrada, { ...A_LA_CARGA, editadaId });
+
+  // El «Hasta» más lejano que se guarda, probando uno por uno desde el desde hasta el último día del rango
+  const fuerzaBruta = (estado, entrada, editadaId) => {
+    const tope = rangoDeFechas(HOY_DE_LA_CARGA).hasta;
+    let ultimo = null;
+    for (let hasta = entrada.desde; hasta <= tope; hasta = sumarDias(hasta, 1)) {
+      if (evaluar(estado, { ...entrada, hasta }, editadaId).error === null) ultimo = hasta;
+    }
+    return ultimo;
+  };
+
+  it('porHabilitarDe sin cargas: el 1/1/2027 de la 2026 y las dos mitades de la 2027', () => {
+    const reparto = repartoDeVacaciones(persona(), A_LA_CARGA);
+    assert.deepEqual(porHabilitarDe(reparto.ordinarias, HOY_DE_LA_CARGA), [
+      { fecha: '2027-01-01', anio: 2026, dias: 10 },
+      { fecha: '2027-07-01', anio: 2027, dias: 10 },
+      { fecha: '2028-01-01', anio: 2027, dias: 10 }
+    ]);
+  });
+
+  it('porHabilitarDe: lo ya asignado de más consume primero la mitad más temprana', () => {
+    // Sin saldo: del 05/07 al 30/07/2027 son 18 días hábiles (el 09/07 es fijo y el 28/07, la Gesta galesa), 10 de la
+    // segunda mitad de la 2026 y 8 de la primera de la 2027
+    const julio = vacaciones(100, '2027-07-05', '2027-07-30');
+    const reparto = repartoDeVacaciones(soloVacaciones('2026-10-27', { 2024: 0, 2025: 0, 2026: 0 }, julio), A_LA_CARGA);
+    assert.deepEqual(reparto.porFila.get(100), [{ anio: 2026, dias: 10 }, { anio: 2027, dias: 8 }]);
+    assert.deepEqual(porHabilitarDe(reparto.ordinarias, HOY_DE_LA_CARGA), [
+      { fecha: '2027-07-01', anio: 2027, dias: 2 },
+      { fecha: '2028-01-01', anio: 2027, dias: 10 }
+    ]);
+    // Con 13 asignados de más, la primera mitad queda en 0 (no va) y a la segunda le quedan 7
+    const mitades = [{ dias: 10, habilita: '2027-07-01' }, { dias: 10, habilita: '2028-01-01' }];
+    assert.deepEqual(porHabilitarDe([{ anio: 2027, mitades, por_habilitar: 7 }], HOY_DE_LA_CARGA),
+      [{ fecha: '2028-01-01', anio: 2027, dias: 7 }]);
+    // Una mitad ya habilitada a hoy no cuenta: el 01/07/2027, la del 1/7 ya está
+    assert.deepEqual(porHabilitarDe([{ anio: 2027, mitades, por_habilitar: 10 }], '2027-07-01'),
+      [{ fecha: '2028-01-01', anio: 2027, dias: 10 }]);
+  });
+
+  it('porHabilitarDe: por fecha y después por año', () => {
+    const ordinarias = [
+      { anio: 2027, mitades: [{ dias: 4, habilita: '2027-01-01' }], por_habilitar: 4 },
+      { anio: 2026, mitades: [{ dias: 5, habilita: '2027-01-01' }, { dias: 3, habilita: '2026-12-01' }], por_habilitar: 8 }
+    ];
+    assert.deepEqual(porHabilitarDe(ordinarias, HOY_DE_LA_CARGA), [
+      { fecha: '2026-12-01', anio: 2026, dias: 3 },
+      { fecha: '2027-01-01', anio: 2026, dias: 5 },
+      { fecha: '2027-01-01', anio: 2027, dias: 4 }
+    ]);
+  });
+
+  it('del 01/12/2026 al 05/02/2027: no quedan días hoy, el 1/1 se habilitan 10 más y puede llegar hasta el 24/02/2027', () => {
+    const { datos, error, vista } = evaluar(persona(), pedido('2026-12-01', '2027-02-05'));
+    assert.equal(error, null);
+    assert.equal(datos.hasta, '2027-02-05');
+    assert.equal(vista.texto_dias, '45 días hábiles de 67 corridos');
+    assert.equal(vista.texto_reparto, 'Salen de las licencias 2024 (15 días), 2025 (20 días) y 2026 (10 días), las más '
+      + 'viejas. No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026: esta licencia puede llegar '
+      + 'hasta el 24/02/2027.');
+  });
+
+  it('del 01/12/2026 al 24/02/2027: ya no hay nada por habilitar hasta su hasta, ni alcance', () => {
+    const { error, vista } = evaluar(persona(), pedido('2026-12-01', '2027-02-24'));
+    assert.equal(error, null);
+    assert.equal(vista.texto_reparto, 'Salen de las licencias 2024 (15 días), 2025 (20 días) y 2026 (20 días), las más '
+      + 'viejas. No te quedan días disponibles.');
+  });
+
+  it('del 16/11 al 30/11/2026: lo que se habilita después de su hasta no se nombra', () => {
+    const { error, vista } = evaluar(persona(), pedido('2026-11-16', '2026-11-30'));
+    assert.equal(error, null);
+    assert.equal(vista.texto_reparto, 'Salen de la licencia 2024, la más vieja. Te quedan 35 días: 5 de la 2024 (vencen el '
+      + '31/12/2026), 20 de la 2025 y 10 de la 2026.');
+  });
+
+  it('una carga que llega al 1/7/2027 nombra las dos fechas', () => {
+    // La de diciembre (guardada) usa los 15 de la 2024; esta, 5 de la 2025: la mitad del 1/1/2027 de la 2026 sigue sin
+    // asignar, y el 1/7/2027 se habilita la primera de la 2027
+    const { error, vista } = evaluar(persona(vacaciones(100, '2026-12-01', '2026-12-23')), pedido('2027-06-28', '2027-07-02'));
+    assert.equal(error, null);
+    assert.equal(vista.texto_reparto, 'Salen de la licencia 2025, la más vieja. Te quedan 25 días: 15 de la 2025 y 10 de la '
+      + '2026. El 1/1/2027 se habilitan 10 más de la 2026 y el 1/7/2027, 10 de la 2027.');
+  });
+
+  it('alcanceDeLaCarga, como la fuerza bruta: sin cargas, desde el 01/12/2026 llega al 24/02/2027', () => {
+    const entrada = pedido('2026-12-01', '2026-12-01');
+    assert.equal(alcanceDeLaCarga(persona(), entrada, A_LA_CARGA), '2027-02-24');
+    assert.equal(fuerzaBruta(persona(), entrada), '2027-02-24');
+    // Un desde en sábado: se busca desde el primer día hábil, el lunes 30/11. El último día con licencia es el lunes
+    // 22/02/2027, y el martes 23 es feriado: el «Hasta» más lejano que se guarda es el 23
+    const sabado = pedido('2026-11-28', '2026-11-28');
+    assert.equal(alcanceDeLaCarga(persona(), sabado, A_LA_CARGA), fuerzaBruta(persona(), sabado));
+    assert.equal(alcanceDeLaCarga(persona(), sabado, A_LA_CARGA), '2027-02-23');
+  });
+
+  it('alcanceDeLaCarga, como la fuerza bruta: otra carga guardada en marzo de 2027 deja menos', () => {
+    // Las de marzo (10 días hábiles) ya no pueden usar la 2024: esta tiene que dejarles 10 de la 2025 y la 2026, y llega a
+    // 45 días hábiles, hasta el viernes 05/02/2027. Después vienen el fin de semana y Carnaval: el «Hasta» más lejano que se
+    // guarda es el martes 09/02
+    const estado = persona(vacaciones(100, '2027-03-01', '2027-03-12'));
+    const entrada = pedido('2026-12-01', '2026-12-01');
+    assert.equal(alcanceDeLaCarga(estado, entrada, A_LA_CARGA), '2027-02-09');
+    assert.equal(fuerzaBruta(estado, entrada), '2027-02-09');
+    // Sin la de marzo llegaba al 24/02/2027. Con ella, del 01/12 al 05/02 los 20 de la 2026 ya están asignados (10 a esta y
+    // 10 a la de marzo): no queda nada que se habilite para nombrar, y un alcance solo de fin de semana y feriados no se dice
+    assert.equal(evaluar(estado, pedido('2026-12-01', '2027-02-05')).vista.texto_reparto, 'Salen de las licencias 2024 '
+      + '(15 días), 2025 (20 días) y 2026 (10 días), las más viejas. No te quedan días disponibles.');
+  });
+
+  it('alcanceDeLaCarga, como la fuerza bruta: una corrección no choca consigo misma', () => {
+    const estado = persona(vacaciones(101, '2026-12-01', '2027-01-15'));
+    const entrada = pedido('2026-12-01', '2027-01-15');
+    assert.equal(alcanceDeLaCarga(estado, entrada, { ...A_LA_CARGA, editadaId: 101 }), '2027-02-24');
+    assert.equal(fuerzaBruta(estado, entrada, 101), '2027-02-24');
+    // El id como texto, como llega en un pedido
+    assert.equal(alcanceDeLaCarga(estado, entrada, { ...A_LA_CARGA, editadaId: '101' }), '2027-02-24');
+    // Como carga nueva, se superpone con la guardada desde el primer día
+    assert.equal(alcanceDeLaCarga(estado, entrada, A_LA_CARGA), null);
+    assert.equal(fuerzaBruta(estado, entrada), null);
+  });
+
+  it('alcanceDeLaCarga, como la fuerza bruta: un desde sin ningún día habilitado da null', () => {
+    // La guardada usa todo hasta el 24/02/2027: el 01/06/2027 la 2025 y la 2026 no tienen días y la 2027 todavía no se habilita
+    const estado = persona(vacaciones(100, '2026-12-01', '2027-02-24'));
+    const entrada = pedido('2027-06-01', '2027-06-01');
+    assert.equal(alcanceDeLaCarga(estado, entrada, A_LA_CARGA), null);
+    assert.equal(fuerzaBruta(estado, entrada), null);
+  });
+
+  it('alcanceDeLaCarga no pasa del último día del rango', () => {
+    // Con mucho saldo, todo el rango entra: el 31/12/2027
+    const holgado = soloVacaciones('2026-10-27', { 2024: 0, 2025: 0, 2026: 300 });
+    assert.equal(alcanceDeLaCarga(holgado, pedido('2027-11-01', '2027-11-01'), A_LA_CARGA), rangoDeFechas(HOY_DE_LA_CARGA).hasta);
+  });
+
+  it('textoDelReparto sin extras da lo de antes; con extras vacíos, también', () => {
+    const reparto = repartoDeVacaciones(persona(vacaciones(100, '2026-12-01', '2027-02-05')), A_LA_CARGA);
+    const antes = 'Salen de las licencias 2024 (15 días), 2025 (20 días) y 2026 (10 días), las más viejas. No te quedan días '
+      + 'disponibles.';
+    assert.equal(textoDelReparto(reparto, 100), antes);
+    for (const extras of [undefined, null, {}, { habilitaciones: [] }, 'x', 3]) {
+      assert.equal(textoDelReparto(reparto, 100, extras), antes, String(extras));
+    }
+    // Un alcance sin nada que se habilite no se nombra (la oración del alcance es la de las habilitaciones)
+    assert.equal(textoDelReparto(reparto, 100, { habilitaciones: [], alcance: '2027-02-24', hasta: '2027-02-05' }), antes);
+  });
+
+  it('textoDelReparto con extras: una, dos o tres fechas, el singular, el alcance y lo que pasa de la fecha tope', () => {
+    const reparto = repartoDeVacaciones(persona(vacaciones(100, '2026-12-01', '2027-02-05')), A_LA_CARGA);
+    const salen = 'Salen de las licencias 2024 (15 días), 2025 (20 días) y 2026 (10 días), las más viejas. ';
+    const enero = { fecha: '2027-01-01', anio: 2026, dias: 10 };
+    const julio = { fecha: '2027-07-01', anio: 2027, dias: 10 };
+    const proximoEnero = { fecha: '2028-01-01', anio: 2027, dias: 10 };
+    const texto = (extras) => textoDelReparto(reparto, 100, extras);
+    assert.equal(texto({ habilitaciones: [enero], alcance: null, hasta: null }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026.`);
+    assert.equal(texto({ habilitaciones: [enero, julio], alcance: null, hasta: null }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026 y el 1/7/2027, 10 de la 2027.`);
+    assert.equal(texto({ habilitaciones: [enero, julio, proximoEnero], alcance: null, hasta: null }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026, el 1/7/2027, 10 de la 2027 y `
+      + 'el 1/1/2028, 10 de la 2027.');
+    // Con 1, «se habilita»
+    assert.equal(texto({ habilitaciones: [{ ...enero, dias: 1 }, julio], alcance: null, hasta: null }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilita 1 más de la 2026 y el 1/7/2027, 10 de la 2027.`);
+    // El alcance, solo si es posterior al hasta; y lo que se habilita después del hasta o del alcance no se nombra
+    assert.equal(texto({ habilitaciones: [enero, julio], alcance: '2027-02-24', hasta: '2027-02-05' }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026: esta licencia puede llegar hasta `
+      + 'el 24/02/2027.');
+    assert.equal(texto({ habilitaciones: [enero, julio], alcance: '2027-02-05', hasta: '2027-02-05' }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026.`);
+    assert.equal(texto({ habilitaciones: [enero], alcance: null, hasta: '2026-12-31' }),
+      `${salen}No te quedan días disponibles.`);
+    // Las que no sirven se saltean
+    assert.equal(texto({ habilitaciones: [null, { fecha: 'x', anio: 2026, dias: 3 }, { ...julio, dias: 0 }, enero] }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026.`);
+  });
+
+  it('con días disponibles, lo que se habilita va después de «Te quedan …» y antes de «Perdés …»', () => {
+    // Del 21/12/2026 al 10/01/2027: «Perdés 2 de la 2024» (spec 2026-10-27, punto 3); el 1/1/2027 cae adentro
+    const { error, vista } = evaluar(persona(), pedido('2026-12-21', '2027-01-10'));
+    assert.equal(error, null);
+    assert.equal(vista.texto_reparto, 'Salen de la licencia 2024, la más vieja. Te quedan 30 días: 20 de la 2025 y 10 de la '
+      + '2026. El 1/1/2027 se habilitan 10 más de la 2026. Perdés 2 de la 2024 (vencen el 31/12/2026).');
+  });
+
+  it('nada tira con entradas raras', () => {
+    const raros = [undefined, null, '', 'x', 0, -3, 2.5, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
+    for (const valor of raros) {
+      assert.doesNotThrow(() => {
+        porHabilitarDe(valor, HOY_DE_LA_CARGA);
+        porHabilitarDe([valor, { anio: valor, mitades: valor, por_habilitar: valor }, { mitades: [valor] }], valor);
+        alcanceDeLaCarga(valor, valor, valor);
+        alcanceDeLaCarga(persona(), { tipo: 'vacaciones', desde: valor }, A_LA_CARGA);
+        alcanceDeLaCarga(persona(), pedido('2026-12-01', '2026-12-01'), { hoy: valor, feriados: valor, editadaId: valor });
+        textoDelReparto(repartoDeVacaciones(persona(vacaciones(100, '2026-12-01', '2027-02-05')), A_LA_CARGA), 100,
+          { habilitaciones: valor, alcance: valor, hasta: valor });
+      });
+      assert.deepEqual(porHabilitarDe(valor, HOY_DE_LA_CARGA), []);
+      assert.deepEqual(porHabilitarDe([{ anio: 2027, mitades: [{ dias: 10, habilita: '2027-07-01' }], por_habilitar: 10 }],
+        valor), []);
+      assert.equal(alcanceDeLaCarga(valor, pedido('2026-12-01', '2026-12-01'), A_LA_CARGA), null);
+      assert.equal(alcanceDeLaCarga(persona(), pedido('2026-12-01', '2026-12-01'), { hoy: valor }), null);
+    }
   });
 });
 
