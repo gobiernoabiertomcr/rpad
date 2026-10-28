@@ -73,6 +73,13 @@ const TABLAS_MI_ESPACIO = ['mi_espacio_anios', 'mi_espacio_arranque', 'mi_espaci
 // eventos, con quién se comparte cada uno, los emails enviados y la última corrida de los recordatorios
 const TABLAS_MI_ESPACIO_AGENDA = ['mi_espacio_eventos', 'mi_espacio_evento_personas', 'mi_espacio_evento_envios', 'mi_espacio_eventos_corridas'];
 
+// La tabla de la planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, 6): una fila por persona y día, con
+// la salida y, opcional en un día hábil, la entrada
+const TABLAS_MI_ESPACIO_HORAS = ['mi_espacio_salidas'];
+
+// Las tablas que crea schema.sql: 41 hasta la agenda de Mi espacio y 42 con la planilla de contrato
+const TOTAL_DE_TABLAS = 42;
+
 // Las columnas generadas de unas tablas, con cómo se guardan y su expresión: `columnas` no lee EXTRA
 const generadasDe = async (conexion, base, tablas) => {
   const [filas] = await conexion.query(
@@ -524,6 +531,44 @@ describe('database/schema.sql', () => {
         .map(tabla => `${tabla} InnoDB utf8mb4_unicode_ci`));
   });
 
+  it('la planilla de contrato de Mi espacio: mi_espacio_salidas con sus columnas, la clave única y la FK (spec 2026-10-27-mi-espacio-horas, 6)', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => TABLAS_MI_ESPACIO_HORAS.some(tabla => c.startsWith(`${tabla}.`)));
+    assert.deepEqual(lista, [
+      'mi_espacio_salidas.id int(11) null=NO default=null key=PRI',
+      // El primer campo de la clave única de dos: un mismo valor se repite (otro día)
+      'mi_espacio_salidas.usuario_id int(11) null=NO default=null key=MUL',
+      'mi_espacio_salidas.fecha date null=NO default=null key=',
+      // Opcional en un día hábil; obligatoria en uno que no lo es (lo valida la API)
+      'mi_espacio_salidas.entrada time null=YES default=NULL key=',
+      'mi_espacio_salidas.salida time null=NO default=null key=',
+      'mi_espacio_salidas.nota varchar(200) null=YES default=NULL key=',
+      'mi_espacio_salidas.activo tinyint(1) null=NO default=1 key=',
+      'mi_espacio_salidas.created_at timestamp null=NO default=current_timestamp() key=',
+      'mi_espacio_salidas.updated_at timestamp null=NO default=current_timestamp() key='
+    ]);
+    // Borrar a la persona borra sus salidas (los usuarios no se borran: se desactivan)
+    assert.deepEqual(await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_HORAS), [
+      'mi_espacio_salidas.usuario_id -> usuarios.id (fk_mi_espacio_salidas_usuario) borrado=CASCADE'
+    ]);
+    // Una fila por persona y día: el guardado es un INSERT … ON DUPLICATE KEY UPDATE. La clave única es también el índice de
+    // la FK
+    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_HORAS), [
+      'mi_espacio_salidas.PRIMARY (id) repetible=0',
+      'mi_espacio_salidas.uq_mi_espacio_salidas_dia (usuario_id,fecha) repetible=0'
+    ]);
+    assert.deepEqual(await motoresDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_HORAS), ['mi_espacio_salidas InnoDB utf8mb4_unicode_ci']);
+    // Sin columnas generadas
+    assert.deepEqual(await generadasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_HORAS), []);
+  });
+
+  it(`crea ${TOTAL_DE_TABLAS} tablas`, async () => {
+    const [[{ total }]] = await root.query(
+      "SELECT COUNT(*) AS total FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'",
+      [BASE_TEMPORAL]
+    );
+    assert.equal(Number(total), TOTAL_DE_TABLAS);
+  });
+
   // Generador de Notas (spec 2026-10-24-generador-de-notas, 2 y 8): el ámbito del área decide qué nota de la DGMIT le toca
   it('areas tiene ambito (municipal o externo, municipal por defecto) después de articulo_superior', async () => {
     const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => c.startsWith('areas.'));
@@ -544,7 +589,7 @@ describe('database/schema.sql', () => {
     assert.deepEqual({ ...fk }, { tabla: 'cambios_pendientes', columna: 'id', borrado: 'SET NULL' });
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO, ...TABLAS_MI_ESPACIO_AGENDA]) {
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO, ...TABLAS_MI_ESPACIO_AGENDA, ...TABLAS_MI_ESPACIO_HORAS]) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
@@ -2123,6 +2168,150 @@ describe('migracion-mi-espacio-agenda.sql', () => {
         'cancelacion null 0 null',
         'cancelacion null 0 null'
       ]);
+    });
+  }
+});
+
+// La planilla de horas extras de contrato de Mi espacio (spec 2026-10-27-mi-espacio-horas, 6 y 11): una fila por persona y
+// día, con la salida y la entrada. La migración y su vuelta atrás, sobre una base descartable creada con schema.sql
+describe('migracion-mi-espacio-horas.sql', () => {
+  const BASE_MI_ESPACIO_HORAS = 'rpad_schema_mi_espacio_horas_test';
+  const MIGRACION = 'migracion-mi-espacio-horas.sql';
+  const ROLLBACK = 'rollback-mi-espacio-horas.sql';
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const esDeLasTablas = (c) => TABLAS_MI_ESPACIO_HORAS.some(tabla => c.startsWith(`${tabla}.`));
+  const enLaBase = (tabla) => `\`${BASE_MI_ESPACIO_HORAS}\`.\`${tabla}\``;
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main)
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_MI_ESPACIO_HORAS}\``);
+    await root.query(`CREATE DATABASE \`${BASE_MI_ESPACIO_HORAS}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_MI_ESPACIO_HORAS}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) {
+      await root.query([...TABLAS_MI_ESPACIO_HORAS].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
+    }
+  };
+  // Una persona de contrato (inventada) con unas horas extras de planta de antes y una salida de la planilla, sin entrada
+  const cargarDatos = async () => {
+    const [{ insertId: usuario }] = await root.query(
+      `INSERT INTO ${enLaBase('usuarios')} (username, password_hash, nombre_completo, email, rol, vinculo) VALUES ('t_editor', 'x', 'Carla Benítez', 't_editor@rpad.test', 'editor', 'contrato')`);
+    await root.query(`INSERT INTO ${enLaBase('mi_espacio_horas_extras')} (usuario_id, fecha, desde, hasta) VALUES (?, '2026-09-14', '19:00', '22:00')`, [usuario]);
+    await root.query(`INSERT INTO ${enLaBase('mi_espacio_salidas')} (usuario_id, fecha, salida, nota) VALUES (?, '2026-10-05', '16:20', 'Cierre del mes')`, [usuario]);
+    return { usuario };
+  };
+  const contarEn = async (tabla) => {
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM ${enLaBase(tabla)}`);
+    return total;
+  };
+  // La misma estructura que schema.sql: las columnas y también las claves foráneas, los índices, el motor y la colación, que
+  // las columnas no muestran
+  const comoSchema = async () => {
+    assert.deepEqual(await columnas(root, BASE_MI_ESPACIO_HORAS), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_MI_ESPACIO_HORAS, TABLAS_MI_ESPACIO_HORAS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_HORAS));
+    assert.deepEqual(await indicesDe(root, BASE_MI_ESPACIO_HORAS, TABLAS_MI_ESPACIO_HORAS), await indicesDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_HORAS));
+    assert.deepEqual(await motoresDe(root, BASE_MI_ESPACIO_HORAS, TABLAS_MI_ESPACIO_HORAS), await motoresDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_HORAS));
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_MI_ESPACIO_HORAS}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega (nada de DROP, RENAME ni CHECK)', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+    // Los acentos de los comentarios llegan bien desde phpMyAdmin
+    assert.match(codigo(MIGRACION), /^SET NAMES utf8mb4;/);
+    assert.match(codigo(ROLLBACK), /^SET NAMES utf8mb4;/);
+    // Lo único que se ejecuta, además de SET NAMES: la tabla, si todavía no está
+    const sentencias = codigo(MIGRACION).split(';').map(s => s.trim()).filter(Boolean);
+    assert.equal(sentencias.length, 2, sentencias.join('\n---\n'));
+    assert.match(sentencias[1], /^CREATE TABLE IF NOT EXISTS `mi_espacio_salidas`/);
+  });
+
+  it('las cabeceras dicen la spec, la consulta previa, el orden, que se puede repetir y cómo se deshace; el rollback, que se pierde lo cargado en la planilla', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-10-27-mi-espacio-horas-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    // La consulta de antes (spec, sección 11): ninguna persona de contrato con horas extras de planta activas
+    assert.match(cabecera(MIGRACION),
+      /SELECT COUNT\(\*\) FROM mi_espacio_horas_extras h JOIN usuarios u ON u\.id = h\.usuario_id WHERE h\.activo = 1 AND u\.vinculo = 'contrato';/);
+    assert.match(cabecera(MIGRACION), /tiene que dar 0/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código/);
+    assert.match(cabecera(MIGRACION), /después de migracion-mi-espacio-agenda\.sql/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-mi-espacio-horas\.sql/);
+    assert.match(cabecera(ROLLBACK), /migracion-mi-espacio-horas\.sql/);
+    assert.match(cabecera(ROLLBACK), /primero volver a subir los archivos anteriores/);
+    assert.match(cabecera(ROLLBACK), /se pierde/i);
+    // Lo que se pierde, dicho con su nombre (no alcanza con el del archivo), y lo que queda
+    assert.match(cabecera(ROLLBACK), /lo cargado en la planilla/);
+    assert.match(cabecera(ROLLBACK), /mi_espacio_horas_extras/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('el rollback solo borra mi_espacio_salidas: no toca las horas extras de planta, usuarios ni ninguna otra', () => {
+    const borrados = [...codigo(ROLLBACK).matchAll(/DROP TABLE IF EXISTS `(\w+)`/gi)].map(m => m[1]);
+    assert.deepEqual(borrados, ['mi_espacio_salidas']);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELETE|UPDATE|ALTER|TRUNCATE|INSERT)\b/i);
+  });
+
+  it('desde la estructura de main deja la de schema.sql y se puede repetir', async () => {
+    await crearBase({ conLoNuevo: false });
+    const anterior = await columnas(root, BASE_MI_ESPACIO_HORAS);
+    assert.ok(!anterior.some(esDeLasTablas), 'la base de partida ya tiene la tabla');
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+  });
+
+  it('el rollback se puede repetir, deja la estructura de main sin borrar a la persona ni sus horas extras de planta, y la migración la recupera', async () => {
+    await crearBase({ conLoNuevo: true });
+    await cargarDatos();
+    assert.equal(await contarEn('mi_espacio_salidas'), 1);
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin la tabla
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
+    assert.deepEqual(await columnas(root, BASE_MI_ESPACIO_HORAS), deMain);
+    assert.equal(await contarEn('usuarios'), 1);
+    assert.equal(await contarEn('mi_espacio_horas_extras'), 1);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+  });
+
+  // Una fila por persona y día (spec, sección 6): el guardado de la planilla es un INSERT … ON DUPLICATE KEY UPDATE, que
+  // vuelve a activar una fila dada de baja; borrar a la persona borra sus salidas. Con la estructura de schema.sql y con la
+  // de la migración
+  for (const origen of ['schema.sql', 'la migración']) {
+    it(`una fila por persona y día, y borrar a la persona borra sus salidas (${origen})`, async () => {
+      await crearBase({ conLoNuevo: origen === 'schema.sql' });
+      if (origen === 'la migración') await root.query(sql(MIGRACION));
+      const { usuario } = await cargarDatos();
+      // El mismo día otra vez, con un INSERT a secas: la clave única lo frena
+      await assert.rejects(
+        root.query(`INSERT INTO ${enLaBase('mi_espacio_salidas')} (usuario_id, fecha, salida) VALUES (?, '2026-10-05', '17:00')`, [usuario]),
+        { code: 'ER_DUP_ENTRY' });
+      // Dado de baja y vuelto a guardar: la misma fila, activa otra vez y con lo nuevo
+      await root.query(`UPDATE ${enLaBase('mi_espacio_salidas')} SET activo = 0 WHERE usuario_id = ?`, [usuario]);
+      await root.query(
+        `INSERT INTO ${enLaBase('mi_espacio_salidas')} (usuario_id, fecha, entrada, salida, nota) VALUES (?, '2026-10-05', '08:02', '17:00', NULL)
+         ON DUPLICATE KEY UPDATE entrada = VALUES(entrada), salida = VALUES(salida), nota = VALUES(nota), activo = 1`, [usuario]);
+      // Otro día de la misma persona entra
+      await root.query(`INSERT INTO ${enLaBase('mi_espacio_salidas')} (usuario_id, fecha, salida) VALUES (?, '2026-10-06', '15:46')`, [usuario]);
+      const [filas] = await root.query(
+        `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, TIME_FORMAT(entrada, '%H:%i') AS entrada,
+                TIME_FORMAT(salida, '%H:%i') AS salida, nota, activo
+         FROM ${enLaBase('mi_espacio_salidas')} ORDER BY fecha`);
+      assert.deepEqual(filas.map(f => ({ ...f })), [
+        { fecha: '2026-10-05', entrada: '08:02', salida: '17:00', nota: null, activo: 1 },
+        { fecha: '2026-10-06', entrada: null, salida: '15:46', nota: null, activo: 1 }
+      ]);
+      await root.query(`DELETE FROM ${enLaBase('usuarios')} WHERE id = ?`, [usuario]);
+      assert.equal(await contarEn('mi_espacio_salidas'), 0);
     });
   }
 });
