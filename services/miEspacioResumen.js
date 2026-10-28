@@ -917,24 +917,21 @@ export const tablaDeHorasExtras = (estado, calculo, opciones) => {
 
 // La planilla de contrato (spec 2026-10-27-mi-espacio-horas, secciones 3, 4 y 8)
 
-// El nombre de una licencia de día entero en la planilla, el de la lista de licencias de la persona (es su panel: el tipo se
-// ve), con el grupo familiar como en sus filtros y la médica extraordinaria con su nombre largo
-const NOMBRES_EN_LA_PLANILLA = Object.freeze({
-  ...NOMBRES_TIPO, medica_extraordinaria: 'Atención médica extraordinaria', familiar: 'Grupo familiar'
-});
 // Las licencias por horas que, sin ser el día entero, se ven en el día (y se carga igual): las horas a favor y el uso
 // autorizado de contrato
 const POR_HORAS_EN_LA_PLANILLA = Object.freeze(['horas_a_favor', 'uso_autorizado']);
 // Un feriado del que no llegó el nombre (el Set y las filas salen de la misma tabla: no debería pasar)
 const FERIADO_SIN_NOMBRE = 'Feriado';
 
-// Lo que dice el día de una licencia: el día entero con su tipo («Estudios», «Horas a favor, el día entero», «Uso autorizado,
-// el día entero») o unas horas («2 h a favor», «Uso autorizado, 3 h»)
+// Lo que dice el día de una licencia: el día entero con el nombre de su tipo, el mismo de la insignia de la fila en la lista
+// de licencias de la persona (`NOMBRES_TIPO`: es su panel, el tipo se ve; «Estudios», «Atención del grupo familiar»), o, en
+// las de horas, «Horas a favor, el día entero» y «Uso autorizado, el día entero»; o unas horas («2 h a favor», «Uso
+// autorizado, 3 h»)
 const textoDeLaLicenciaDelDia = (fila, entera) => {
   const horas = numeroTexto(cantidadDe(fila.horas));
   if (fila.tipo === 'horas_a_favor') return entera ? 'Horas a favor, el día entero' : `${horas} h a favor`;
   if (fila.tipo === 'uso_autorizado') return entera ? 'Uso autorizado, el día entero' : `Uso autorizado, ${horas} h`;
-  return NOMBRES_EN_LA_PLANILLA[fila.tipo] ?? '';
+  return NOMBRES_TIPO[fila.tipo] ?? '';
 };
 
 /**

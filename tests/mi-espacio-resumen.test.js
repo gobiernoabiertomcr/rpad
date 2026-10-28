@@ -13,7 +13,7 @@ import * as reglas from '../services/miEspacioReglas.js';
 import { NOMBRES_DE_LOS_FIJOS, feriadosDelRango } from '../services/feriadosReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
-const { calcular, MENSAJES_MI_ESPACIO, horasPorMesDeSalidas } = reglas;
+const { calcular, MENSAJES_MI_ESPACIO, horasPorMesDeSalidas, NOMBRES_TIPO } = reglas;
 
 const HOY_Y_MANANA = Object.freeze({ ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null });
 
@@ -1113,6 +1113,7 @@ describe('la planilla de un mes (spec 2026-10-27-mi-espacio-horas, secciones 3, 
   });
 
   it('las licencias: la de día entero con su tipo (y una salida de antes, con su aviso); la de unas horas, con su etiqueta', () => {
+    // El tipo de una de día entero es el de la insignia de su fila en la lista de licencias (NOMBRES_TIPO); las de horas, su texto
     const planilla = planillaDel();
     // Las horas a favor de 7 horas del 9/10: el día entero, con la salida guardada de antes, que sigue sumando
     const del9 = diaDe(planilla, '2026-10-09');
@@ -1121,14 +1122,18 @@ describe('la planilla de un mes (spec 2026-10-27-mi-espacio-horas, secciones 3, 
       ['17:16', 2.5, '2,5 h', 'Ese día tenés una licencia de día entero: revisá esta salida.']);
     // Los estudios del 13 al 15/10 (anteriores al arranque: igual son días de licencia)
     for (const fecha of ['2026-10-13', '2026-10-14', '2026-10-15']) {
-      assert.deepEqual(diaDe(planilla, fecha).licencia, { texto: 'Estudios', entera: true }, fecha);
+      assert.deepEqual(diaDe(planilla, fecha).licencia, { texto: NOMBRES_TIPO.estudios, entera: true }, fecha);
     }
     // Las 2 horas a favor del 20/10: se carga normal
     const del20 = diaDe(planilla, '2026-10-20');
     assert.deepEqual([del20.licencia, del20.horas_texto, del20.aviso], [{ texto: '2 h a favor', entera: false }, '0', null]);
     // El grupo familiar del 30/10, que todavía no llegó
     assert.deepEqual([diaDe(planilla, '2026-10-30').licencia, diaDe(planilla, '2026-10-30').futuro],
-      [{ texto: 'Grupo familiar', entera: true }, true]);
+      [{ texto: NOMBRES_TIPO.familiar, entera: true }, true]);
+    assert.equal(NOMBRES_TIPO.familiar, 'Atención del grupo familiar');
+    // El mismo texto que la insignia de esa licencia en la lista de licencias
+    assert.equal(diaDe(planilla, '2026-10-30').licencia.texto,
+      filasDel(CONTRATO, { estado: ESTADO_PLANILLA }).licencias.find((fila) => fila.id === 4).tipo_nombre);
     // Sin licencia, null
     assert.equal(diaDe(planilla, '2026-10-21').licencia, null);
 
@@ -1144,15 +1149,16 @@ describe('la planilla de un mes (spec 2026-10-27-mi-espacio-horas, secciones 3, 
       licencia(107, 'vacaciones', '2026-09-11', '2026-09-14'));
     const septiembre = planillaDel(estado, { mes: '2026-09' });
     const licenciaDel = (fecha) => diaDe(septiembre, fecha).licencia;
-    assert.deepEqual(licenciaDel('2026-09-01'), { texto: 'Atención médica', entera: true });
-    assert.deepEqual(licenciaDel('2026-09-02'), { texto: 'Atención médica extraordinaria', entera: true });
+    assert.deepEqual(licenciaDel('2026-09-01'), { texto: NOMBRES_TIPO.medica, entera: true });
+    assert.deepEqual(licenciaDel('2026-09-02'), { texto: NOMBRES_TIPO.medica_extraordinaria, entera: true });
+    assert.equal(NOMBRES_TIPO.medica_extraordinaria, 'Médica extraordinaria');
     assert.deepEqual(licenciaDel('2026-09-03'), { texto: 'Uso autorizado, el día entero', entera: true });
     assert.deepEqual(licenciaDel('2026-09-04'), { texto: 'Uso autorizado, 3 h', entera: false });
     assert.deepEqual(licenciaDel('2026-09-07'), { texto: '1,5 h a favor', entera: false });
     assert.equal(licenciaDel('2026-09-08'), null);
     assert.equal(licenciaDel('2026-09-09'), null);
-    assert.deepEqual(licenciaDel('2026-09-11'), { texto: 'Vacaciones', entera: true });
-    assert.deepEqual(licenciaDel('2026-09-14'), { texto: 'Vacaciones', entera: true });
+    assert.deepEqual(licenciaDel('2026-09-11'), { texto: NOMBRES_TIPO.vacaciones, entera: true });
+    assert.deepEqual(licenciaDel('2026-09-14'), { texto: NOMBRES_TIPO.vacaciones, entera: true });
     // El sábado y el domingo del medio de las vacaciones no son días de licencia
     assert.equal(licenciaDel('2026-09-12'), null);
     assert.equal(licenciaDel('2026-09-13'), null);
