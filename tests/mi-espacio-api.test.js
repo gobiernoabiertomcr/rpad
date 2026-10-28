@@ -653,13 +653,16 @@ describe('el cálculo previo', () => {
   });
 
   it('unas vacaciones desde el último día hábil del año siguen en enero con la licencia que vence ese año (spec '
-    + '2026-10-27-mi-espacio-dias-de-vacaciones)', async () => {
-    await listoParaCargar('adminA');
-    await conSaldo('adminA', 'vacaciones', ANIO - 2, '3.0');
-    await conSaldo('adminA', 'vacaciones', ANIO - 1, '10.0');
+    + '2026-10-27-mi-espacio-dias-de-vacaciones)', async (t) => {
     // 5 días hábiles, 1 en diciembre y 4 en enero (sin feriados de la tabla: el beforeEach la vacía). La más vieja vence el
     // 31/12 y se empezó a usar ese año: da sus 3 días, también los de enero, y los otros 2 salen de la siguiente
     const desde = diaHabilAnterior(`${ANIO + 1}-01-01`);
+    // Después del último día hábil del año (un 30 o 31/12 de fin de semana, como en 2028), ese día sería anterior al arranque,
+    // que es hoy, y no descontaría
+    if (desde < hoy) return t.skip('hoy es posterior al último día hábil del año');
+    await listoParaCargar('adminA');
+    await conSaldo('adminA', 'vacaciones', ANIO - 2, '3.0');
+    await conSaldo('adminA', 'vacaciones', ANIO - 1, '10.0');
     let hasta = proximoDiaHabil(`${ANIO + 1}-01-01`);
     for (let n = 1; n < 4; n++) hasta = proximoDiaHabil(sumarDias(hasta, 1));
     const res = await api.post('/mi-espacio/licencias/calculo', { tipo: 'vacaciones', desde, hasta }, como('adminA'));

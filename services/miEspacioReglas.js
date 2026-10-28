@@ -417,7 +417,7 @@ const habilitadoAl = (ordinaria, fecha) =>
  * - `hoy`: el de las opciones, o null (`textoDelReparto` lo usa para saber qué licencia vence este año).
  */
 export const repartoDeVacaciones = (estado, opciones) => {
-  const { hoy, feriados } = esObjeto(opciones) ? opciones : {};
+  const { hoy, feriados, ocupadas: todas } = esObjeto(opciones) ? opciones : {};
   const datos = esObjeto(estado) ? estado : {};
   const ordinarias = ordinariasDe(datos, hoy);
   const asignados = new Map(ordinarias.map((ordinaria) => [ordinaria.anio, []]));
@@ -464,7 +464,6 @@ export const repartoDeVacaciones = (estado, opciones) => {
   // Si queda un día libre de la fecha al tope: el primer día hábil fuera de toda licencia de Mi espacio (de cualquier tipo y
   // de cualquier modalidad: las de `opciones.ocupadas`, si llegan, o las del estado); los días dentro de una se saltean de una
   // vez, hasta el día después de su hasta
-  const { ocupadas: todas } = esObjeto(opciones) ? opciones : {};
   const ocupadas = listaDe(Array.isArray(todas) ? todas : datos.licencias).filter((fila) =>
     esObjeto(fila) && esFechaIso(fila.desde) && esFechaIso(fila.hasta));
   const hayDiaLibre = (desde, tope) => {

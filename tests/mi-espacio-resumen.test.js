@@ -584,6 +584,9 @@ describe('la banda «Titular»', () => {
     const semana = resumenDel(PLANTA, { estado: conCarga('2026-12-14', '2026-12-18') });
     assert.deepEqual(semana.titular.bajada[0], { texto: '10 vencen el jueves 31/12.', vence: true });
     assert.equal(semana.titular.bajada.some((oracion) => oracion.texto.includes('Perdés')), false);
+    // Y el 01/12 «Vence pronto» sí los avisa
+    const semanaDiciembre = resumenDel(PLANTA, { estado: conCarga('2026-12-14', '2026-12-18'), hoy: '2026-12-01' });
+    assert.equal(semanaDiciembre.vence_pronto.some((cosa) => cosa.titulo === '10 días de la licencia 2024'), true);
   });
 
   it('sin modalidad, sin arranque o sin un hoy válido, no hay banda', () => {

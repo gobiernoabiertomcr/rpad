@@ -514,7 +514,7 @@ describe('el reparto de las vacaciones', () => {
     assert.deepEqual(conLaSemana(medica('2026-12-21', '2026-12-23'), familiar('2026-12-28', '2026-12-31')), [10, 0]);
     // Dos que se pisan
     assert.deepEqual(conLaSemana(medica('2026-12-21', '2026-12-29'), familiar('2026-12-28', '2026-12-31')), [0, 10]);
-    // Una dentro de la otra, la de adentro primero en la lista: el salto llega al hasta más tardío
+    // Una dentro de la otra, en los dos órdenes de la lista: después de un salto, la búsqueda vuelve a mirar
     assert.deepEqual(conLaSemana(familiar('2026-12-21', '2026-12-23'), medica('2026-12-21', '2026-12-31')), [0, 10]);
     assert.deepEqual(conLaSemana(medica('2026-12-21', '2026-12-31'), familiar('2026-12-22', '2026-12-23')), [0, 10]);
   });
