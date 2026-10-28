@@ -286,6 +286,9 @@ describe('auditoría: un solo calendario a las 8:15 y a las 14:00', () => {
     let res;
     try {
       res = await conLaTablaRenombrada(() => corridaDeLas14('2026-11-02T17:00:00Z'));
+      // Una sola lectura del calendario en toda la corrida: la del controlador, que reciben el recordatorio y el aviso a quien
+      // propone
+      assert.equal(lecturasFallidas(consola), 1);
     } finally {
       consola.mock.restore();
     }
