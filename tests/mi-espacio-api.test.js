@@ -20,7 +20,7 @@ import {
   textoSinNoUtilizadas, textoAutorizadaDelFirmante, AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN, AVISO_NOTAS_DE_HOY,
   AVISO_SIN_PERSONA_A_CARGO, textoSuperpuestaConConfiguracion, textoNoPaso, textoYaNoCubierta, textoEnConfiguracion,
   textoUnida, textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA,
-  TEXTO_ANULADA_EN_CONFIGURACION, TEXTO_NO_DIA_ENTERO
+  TEXTO_ANULADA_EN_CONFIGURACION, TEXTO_NO_DIA_ENTERO, textoRevisalaEnConfiguracion
 } from '../services/miEspacioReglas.js';
 import { MENSAJES_NOTA } from '../services/miEspacioNota.js';
 
@@ -831,6 +831,16 @@ describe('el paso a Configuración', () => {
     assert.equal(res.status, 200, JSON.stringify(res.body));
     return res.body.data.licencias.find((fila) => fila.id === id);
   };
+  // El Resumen de una persona
+  const elResumen = async (clave) => {
+    const res = await api.get('/mi-espacio/resumen', como(clave));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return res.body.data;
+  };
+  // Lo que el Resumen avisa para revisar de una licencia (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1 y 3.2), con
+  // las fechas de su fila en la lista (las de q(), del mismo año: «03/11 al 09/11/2026»)
+  const paraRevisar = (id, texto, anio = ANIO_Q) => ({ licencia_id: id, anio, texto, enlace: `Ver en Licencias de ${anio}` });
+  const fechasDeQ = (desde, hasta) => `${diaYMes(desde)} al ${formatoCorto(hasta)}`;
   // El lector, con vínculo para poder cargar (sin él, todo da sinModalidad)
   const conLectorConVinculo = async (prueba) => {
     await query('UPDATE usuarios SET vinculo = ? WHERE id = ?', ['contrato', usuarios.lector.id]);
@@ -1072,8 +1082,12 @@ describe('el paso a Configuración', () => {
     assert.equal(anular.body.message, ANULADA_Y_QUEDA);
     assert.equal(anular.body.data.desde_mi_espacio, true);
     assert.equal(Number((await vinculosDe('adminA'))[0].activo), 1);
-    assert.deepEqual((await filaDeLaLista('adminA', id, Number(dia(-3).slice(0, 4)))).configuracion,
-      { texto: TEXTO_ANULADA_EN_CONFIGURACION, insignia: 'aviso' });
+    const anioDeLaFila = Number(dia(-3).slice(0, 4));
+    const fila = await filaDeLaLista('adminA', id, anioDeLaFila);
+    assert.deepEqual(fila.configuracion, { texto: TEXTO_ANULADA_EN_CONFIGURACION, insignia: 'aviso' });
+    // El Resumen la avisa para revisar, con el año de la fila
+    assert.deepEqual((await elResumen('adminA')).para_revisar, [paraRevisar(id,
+      `Revisá tu licencia del ${fila.fechas_texto}: se anuló en Configuración y acá sigue contando.`, anioDeLaFila)]);
 
     // La persona decide: la corrige o la borra, sin tocar Configuración
     const enConfiguracion = await deConfiguracion('adminA');
@@ -1171,11 +1185,48 @@ describe('el paso a Configuración', () => {
     const { configuracion } = await filaDeLaLista('adminA', body.data.id);
     assert.ok(configuracion.texto.startsWith(textoEnConfiguracion(q(1), q(4))), configuracion.texto);
     assert.deepEqual(configuracion, { texto: `${textoEnConfiguracion(q(1), q(4))} ${TEXTO_NO_SE_COPIA}`, insignia: 'aviso' });
+    // El Resumen también lo avisa, con las fechas de Configuración
+    const enConfiguracion = `en Configuración quedó del ${diaYMes(q(1))} al ${diaYMes(q(4))}.`;
+    assert.deepEqual((await elResumen('adminA')).para_revisar,
+      [paraRevisar(body.data.id, `Revisá tu licencia del ${fechasDeQ(q(0), q(2))}: ${enConfiguracion}`)]);
 
     const res = await corregirMia('adminA', body.data.id, { tipo: 'medica', desde: q(0), hasta: q(1) });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.deepEqual(res.body.avisos, [TEXTO_NO_SE_COPIA]);
     assert.deepEqual((await deConfiguracion('adminA')).map((l) => [l.desde, l.hasta]), [[q(1), q(4)]]);
+    // Lo corregido acá no se copió: sigue para revisar, con las fechas nuevas de Mi espacio
+    assert.deepEqual((await elResumen('adminA')).para_revisar,
+      [paraRevisar(body.data.id, `Revisá tu licencia del ${fechasDeQ(q(0), q(1))}: ${enConfiguracion}`)]);
+  });
+
+  it('la licencia de Configuración quedó con otras fechas sin que la cambie otra persona: la fila y el Resumen lo avisan, sin '
+    + 'frenar nada, hasta que vuelven a coincidir (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2 y 3.3)', async () => {
+    await listoParaCargar('adminA');
+    const { body } = await cargarMia('adminA', { tipo: 'medica', desde: q(0), hasta: q(4) });
+    const { id } = body.data;
+    const [oficial] = await deConfiguracion('adminA');
+    // Como si la misma persona la hubiera acortado en Configuración: sin un historial de otra persona
+    await query('UPDATE usuarios_licencias SET hasta = ? WHERE id = ?', [q(2), oficial.id]);
+    assert.deepEqual(await historialDe('adminA', 'licencia_editada'), []);
+    assert.deepEqual((await filaDeLaLista('adminA', id)).configuracion,
+      { texto: textoRevisalaEnConfiguracion(q(0), q(2)), insignia: 'aviso' });
+    const resumen = await elResumen('adminA');
+    assert.deepEqual(resumen.para_revisar, [paraRevisar(id,
+      `Revisá tu licencia del ${fechasDeQ(q(0), q(4))}: en Configuración quedó del ${diaYMes(q(0))} al ${diaYMes(q(2))}.`)]);
+    // No es un faltante: no frena una carga ni una corrección
+    assert.deepEqual(resumen.faltantes, []);
+    const otra = await cargarMia('adminA', { tipo: 'familiar', desde: q(7), hasta: q(8) });
+    assert.equal(otra.status, 201, JSON.stringify(otra.body));
+
+    // Se arregla corrigiendo la de Mi espacio a las fechas de Configuración, que no cambia
+    const corregir = await corregirMia('adminA', id, { tipo: 'medica', desde: q(0), hasta: q(2) });
+    assert.equal(corregir.status, 200, JSON.stringify(corregir.body));
+    assert.deepEqual((await elResumen('adminA')).para_revisar, []);
+    assert.deepEqual((await filaDeLaLista('adminA', id)).configuracion,
+      { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' });
+    const despues = await deConfiguracion('adminA');
+    assert.deepEqual(despues.map((l) => [l.desde, l.hasta, l.anulada]), [[q(0), q(2), 0], [q(7), q(8), 0]]);
+    assert.equal(despues[0].id, oficial.id);
   });
 
   it('administración acorta la que cubría una unida: ya no está cubierta', async () => {
@@ -1186,6 +1237,9 @@ describe('el paso a Configuración', () => {
     assert.equal(cambio.status, 200, JSON.stringify(cambio.body));
     assert.deepEqual((await filaDeLaLista('adminA', body.data.id)).configuracion,
       { texto: textoYaNoCubierta(q(3), q(3)), insignia: 'aviso' });
+    assert.deepEqual((await elResumen('adminA')).para_revisar, [paraRevisar(body.data.id,
+      `Revisá tu licencia del ${fechasDeQ(q(2), q(3))}: ya no está cubierta en Configuración del ${diaYMes(q(3))} al `
+      + `${diaYMes(q(3))}.`)]);
   });
 
   it('la franquicia de 7 horas que pasa a 3, antes de empezar: la de Configuración se anula y el vínculo queda vacío', async () => {
@@ -2448,9 +2502,11 @@ describe('la nota de una licencia', () => {
     const res = await verNota('adminA', id);
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.success, true);
-    assert.deepEqual(Object.keys(res.body.data).sort(), ['aclaracion', 'fecha', 'fila', 'html']);
-    const { fila, html, fecha, aclaracion } = res.body.data;
+    assert.deepEqual(Object.keys(res.body.data).sort(), ['aclaracion', 'fecha', 'fila', 'html', 'lista']);
+    const { fila, html, fecha, aclaracion, lista: enLaLista } = res.body.data;
     assert.equal(fila.id, id);
+    // En qué lista quedó: solo si no es la del año de hoy
+    assert.equal(enLaLista, ANIO_Q === ANIO ? null : `Está en la lista de ${ANIO_Q}.`);
     // La fila es la de la lista: el mismo armado, con Configuración y todo
     const lista = await api.get(`/mi-espacio/licencias?anio=${ANIO_Q}`, como('adminA'));
     assert.deepEqual(fila, lista.body.data.licencias.find((otra) => otra.id === id));
@@ -2460,6 +2516,37 @@ describe('la nota de una licencia', () => {
     assert.ok(!html.includes('dentista'), html);
     assert.ok(aclaracion.startsWith(`Lleva la fecha del ${formatoCorto(hoy)}`), aclaracion);
     sinFechasConHora(res.body.data);
+  });
+
+  it('GET …/nota dice en qué lista quedó una del año que viene; de una del año en curso, null (spec '
+    + '2026-10-28-mi-espacio-licencia-anulada, 2.3)', async () => {
+    await listoParaCargar('adminA');
+    const delAnioQueViene = await conLicencia('adminA', { tipo: 'medica', desde: proximoDiaHabil(`${ANIO + 1}-03-01`) });
+    const deEsteAnio = await conLicencia('adminA', { tipo: 'medica', desde: proximoDiaHabil(`${ANIO}-01-02`) });
+    const queViene = await verNota('adminA', delAnioQueViene);
+    assert.equal(queViene.status, 200, JSON.stringify(queViene.body));
+    assert.equal(queViene.body.data.lista, `Está en la lista de ${ANIO + 1}.`);
+    const deEste = await verNota('adminA', deEsteAnio);
+    assert.equal(deEste.status, 200, JSON.stringify(deEste.body));
+    assert.equal(deEste.body.data.lista, null);
+  });
+
+  it('GET /mi-espacio/licencias sin año: la lista del año en curso dice las de otros años que no terminaron (spec '
+    + '2026-10-28-mi-espacio-licencia-anulada, 2.3 y 3.4)', async () => {
+    await listoParaCargar('adminA');
+    await conLicencia('adminA', { tipo: 'medica', desde: proximoDiaHabil(`${ANIO + 1}-03-01`) });
+    // Una de otro año que ya terminó es historia, y una dada de baja no está
+    await conLicencia('adminA', { tipo: 'medica', desde: proximoDiaHabil(`${ANIO - 1}-03-01`) });
+    await conLicencia('adminA', { tipo: 'familiar', desde: proximoDiaHabil(`${ANIO + 1}-04-01`), activo: 0 });
+    const res = await api.get('/mi-espacio/licencias', como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.data.anio, ANIO);
+    assert.deepEqual(res.body.data.otros_anios,
+      [{ anio: ANIO + 1, cantidad: 1, texto: `También tenés 1 licencia cargada en ${ANIO + 1}.` }]);
+    // Desde el año que viene, la del año que pasó ya terminó: no se anuncia
+    const delQueViene = await api.get(`/mi-espacio/licencias?anio=${ANIO + 1}`, como('adminA'));
+    assert.equal(delQueViene.status, 200, JSON.stringify(delQueViene.body));
+    assert.deepEqual(delQueViene.body.data.otros_anios, []);
   });
 
   it('GET …/word: el .docx de Word con su nombre, que se abre y dice lo mismo, sin la nota de la licencia', async () => {
