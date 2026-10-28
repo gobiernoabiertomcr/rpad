@@ -137,7 +137,8 @@ describe('los textos', () => {
       muchosDias: 'Guardá de a 100 días como mucho.',
       diaRepetido: 'Ese día está dos veces.',
       planillaSoloContrato: 'La planilla es para las personas de contrato.',
-      contratoEnLaPlanilla: 'Las personas de contrato cargan sus horas en la planilla.'
+      contratoEnLaPlanilla: 'Las personas de contrato cargan sus horas en la planilla.',
+      mes: 'Elegí un mes válido.'
     });
   });
 

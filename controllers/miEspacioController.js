@@ -9,7 +9,9 @@
 // (`evaluarLicencia`) no se guarda. Las ausencias de día entero de quien puede tener licencia pasan a Configuración →
 // Licencias en la misma transacción (sección 6, services/miEspacioPaso.js). Las horas extras, los días de cada año y el saldo
 // inicial («Mis vacaciones y saldos», sección 4) se guardan también cada uno en una transacción, sin tocar Configuración, y
-// ningún faltante los frena (3.10). La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word) se arma en el
+// ningún faltante los frena (3.10). Las personas de contrato cargan sus horas en la planilla (spec 2026-10-27-mi-espacio-horas,
+// sección 8: GET y PUT /mi-espacio/salidas, todos los días de un guardado o ninguno), y las de planta, en sus horas extras:
+// cada una rechaza a la otra modalidad. La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word) se arma en el
 // momento, para la vista y para el Word, y no se guarda. Un id de otra persona responde 404, como uno que no existe: no se
 // revela que existe (sección 10). Lo único de otras personas que se ve es «Hoy no están» (sección 7: quién de administración
 // no está, nunca de qué), los eventos que le compartieron, en «Hoy y mañana» (los de la agenda:
@@ -18,15 +20,17 @@
 import pool from '../config/database.js';
 import { hoyArgentina, ahoraArgentina, sumarDias, diasEntre, esFechaIso } from '../services/notasDigitalesCalendario.js';
 import {
-  MENSAJES_MI_ESPACIO, DIAS_VACACIONES, anioVigente, camposDelSaldoInicial, textoDeLasMitades, evaluarLicencia,
-  validarHorasExtras, validarAnio, validarSaldoInicial, modalidadDe, ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana
+  MENSAJES_MI_ESPACIO, DIAS_VACACIONES, MAXIMO_DIAS_POR_GUARDADO, anioVigente, camposDelSaldoInicial, textoDeLasMitades,
+  evaluarLicencia, validarHorasExtras, validarSalida, mesDeLaPlanilla, validarAnio, validarSaldoInicial, modalidadDe,
+  ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana
 } from '../services/miEspacioReglas.js';
 import {
-  resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, proximoFeriadoDe
+  resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe
 } from '../services/miEspacioResumen.js';
 import {
   estadoDe, contextoDe, personaDe, licenciaDe, datosDeLaNota, ausenciasVisibles, feriadosPara
 } from '../services/miEspacioDatos.js';
+import { filasDeFeriados } from '../services/feriadosDatos.js';
 import { notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota, MENSAJES_NOTA } from '../services/miEspacioNota.js';
 import { renderNotaDocx, TIPO_WORD } from '../services/miEspacioNotaWord.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
@@ -432,7 +436,9 @@ export const bajarWordDeLicencia = async (req, res) => {
 };
 
 // Las horas extras: cargar, corregir y borrar (spec, 3.7 y sección 10). Nunca tocan Configuración: la transacción bloquea
-// solo la fila de la persona, así dos cargas a la vez se ordenan y la segunda ve lo que guardó la primera
+// solo la fila de la persona, así dos cargas a la vez se ordenan y la segunda ve lo que guardó la primera. Desde la planilla
+// de contrato (spec 2026-10-27-mi-espacio-horas, sección 8) son solo de planta: cargarlas o corregirlas a una persona de
+// contrato da 400 (`contratoEnLaPlanilla`), así nadie de contrato crea horarios que ya no cuentan; borrarlas no se frena
 
 // Un id que no es un entero positivo, de otra persona, que no existe o dado de baja: el mismo 404
 const noEncontradas = () => [404, { success: false, error: MENSAJES_MI_ESPACIO.noEncontradas }];
@@ -446,6 +452,9 @@ const frenoDeLasHorasExtras = (estado) => {
   return null;
 };
 
+// Contrato carga sus horas en la planilla: las horas extras de antes le dan 400 con campo null (después del freno)
+const contratoEnLaPlanilla = () => rechazoDeLaCarga({ campo: null, mensaje: MENSAJES_MI_ESPACIO.contratoEnLaPlanilla });
+
 // POST /api/mi-espacio/horas-extras: carga unas horas extras de la persona (`{ fecha, desde, hasta, nota }`, las horas
 // 'HH:MM'; un horario que pasa la medianoche cuenta entero en `fecha`)
 export const cargarHorasExtras = (req, res) => responder(res, 'Error al cargar las horas extras', async () => {
@@ -456,6 +465,7 @@ export const cargarHorasExtras = (req, res) => responder(res, 'Error al cargar l
     const estado = await estadoDe(usuarioId, conexion);
     const freno = frenoDeLasHorasExtras(estado);
     if (freno) return rechazoDeLaCarga(freno);
+    if (estado.modalidad === 'contrato') return contratoEnLaPlanilla();
     const { datos, error } = validarHorasExtras(entrada, { hoy, estado });
     if (error) return rechazoDeLaCarga(error);
     const [resultado] = await conexion.query(
@@ -467,7 +477,7 @@ export const cargarHorasExtras = (req, res) => responder(res, 'Error al cargar l
 });
 
 // PUT /api/mi-espacio/horas-extras/:id: corrige unas horas extras activas de la persona (las corregidas no chocan consigo
-// mismas)
+// mismas). El 404 va antes que los frenos y que el de contrato
 export const corregirHorasExtras = (req, res) => responder(res, 'Error al corregir las horas extras', async () => {
   const id = idPositivo(req.params.id);
   if (id === null) return noEncontradas();
@@ -479,6 +489,7 @@ export const corregirHorasExtras = (req, res) => responder(res, 'Error al correg
     if (!estado.horasExtras.some((fila) => fila.id === id)) return noEncontradas();
     const freno = frenoDeLasHorasExtras(estado);
     if (freno) return rechazoDeLaCarga(freno);
+    if (estado.modalidad === 'contrato') return contratoEnLaPlanilla();
     const { datos, error } = validarHorasExtras(entrada, { hoy, estado, editadaId: id });
     if (error) return rechazoDeLaCarga(error);
     await conexion.query(
@@ -502,6 +513,118 @@ export const borrarHorasExtras = (req, res) => responder(res, 'Error al borrar l
     );
     if (resultado.affectedRows === 0) return noEncontradas();
     return [200, { success: true, message: 'Horas extras borradas.' }];
+  });
+});
+
+// La planilla de contrato (spec 2026-10-27-mi-espacio-horas, sección 8): un mes y el guardado de sus días. Contrato lee y
+// guarda solo `mi_espacio_salidas` (planta, solo sus horas extras): la planilla rechaza a planta. Las horas no se guardan: las
+// calculan las reglas con los feriados del momento (sección 6). Nunca toca Configuración ni manda emails
+
+// Un mes que no sirve (`mesDeLaPlanilla`), y la planilla a una persona de planta
+const rechazoDelMes = () => [400, { success: false, error: MENSAJES_MI_ESPACIO.mes, campo: 'mes' }];
+const planillaSoloContrato = () => rechazoDeLaCarga({ campo: null, mensaje: MENSAJES_MI_ESPACIO.planillaSoloContrato });
+
+/**
+ * GET /api/mi-espacio/salidas?mes=AAAA-MM: la planilla de un mes (`planillaDelMes`), con los feriados y el cálculo de
+ * `contextoDe` (los avisos de las salidas que dejaron de cerrar salen del cálculo). Sin `mes` (o vacío), el de hoy; un mes que
+ * no es 'AAAA-MM', anterior al primero de `rangoDeFechas` o posterior al de hoy (también un `mes` repetido, que Express da
+ * como lista) da 400 en `mes`, antes de leer nada. Sin modalidad, `{ modalidad: null, mensaje }`, como las otras lecturas;
+ * en planta, 400 con campo null. Leer no pide el arranque.
+ */
+export const verPlanilla = (req, res) => responder(res, 'Error al obtener la planilla', async () => {
+  const hoy = hoyArgentina();
+  const mes = mesDeLaPlanilla(req.query.mes, hoy);
+  if (mes === null) return rechazoDelMes();
+  const { estado, feriados, filasFeriados, calculo } = await contextoDe(req.user.userId, hoy);
+  if (estado.modalidad === null) return sinModalidad();
+  if (estado.modalidad !== 'contrato') return planillaSoloContrato();
+  return conDatos(planillaDelMes(estado, calculo, { mes, hoy, feriados, filasFeriados }));
+});
+
+// La fecha de un día del pedido para su error: la que trae, si es una fecha; si no (o si el día no es un objeto), null
+const fechaDelDia = (dia) => (dia !== null && typeof dia === 'object' && esFechaIso(dia.fecha) ? dia.fecha : null);
+
+// Las fechas que están más de una vez en el pedido, cada una una vez (solo las fechas válidas: las otras las rechaza
+// validarSalida)
+const fechasRepetidas = (dias) => {
+  const vistas = new Set();
+  const repetidas = new Set();
+  for (const fecha of dias.map(fechaDelDia)) {
+    if (fecha === null) continue;
+    if (vistas.has(fecha)) repetidas.add(fecha);
+    vistas.add(fecha);
+  }
+  return [...repetidas];
+};
+
+/**
+ * El 400 de los días de un guardado (`errores`: `[{ fecha, campo, mensaje }]`): todos, por fecha (los sin fecha válida,
+ * primero; los demás, en el orden del pedido), con el primero también en `error`, `campo` y `fecha`, para el aviso de arriba.
+ */
+const rechazoDeLosDias = (errores) => {
+  const ordenados = [...errores].sort((a, b) => {
+    if (a.fecha === b.fecha) return 0;
+    if (a.fecha === null) return -1;
+    if (b.fecha === null) return 1;
+    return a.fecha < b.fecha ? -1 : 1;
+  });
+  const [primero] = ordenados;
+  return [400, { success: false, error: primero.mensaje, campo: primero.campo, fecha: primero.fecha, errores: ordenados }];
+};
+
+// «Horas extras guardadas: 3 días.» («1 día»)
+const textoDeLoGuardado = (cantidad) => `Horas extras guardadas: ${cantidad} ${cantidad === 1 ? 'día' : 'días'}.`;
+
+// Guardar un día: un upsert por la clave (usuario_id, fecha), que vuelve a activar la fila de un día borrado; borrarlo, la
+// baja lógica de su fila activa (si no la hay, no hace nada)
+const UPSERT_DE_LA_SALIDA = `INSERT INTO mi_espacio_salidas (usuario_id, fecha, entrada, salida, nota) VALUES (?, ?, ?, ?, ?)
+  ON DUPLICATE KEY UPDATE entrada = VALUES(entrada), salida = VALUES(salida), nota = VALUES(nota), activo = 1`;
+const BAJA_DE_LA_SALIDA = 'UPDATE mi_espacio_salidas SET activo = 0 WHERE usuario_id = ? AND fecha = ? AND activo = 1';
+
+/**
+ * PUT /api/mi-espacio/salidas: guarda los días de la planilla (`{ dias: [{ fecha, entrada, salida, nota }] }`, cada día con
+ * su estado completo: todo vacío es borrarlo), todos o ninguno, en una transacción que bloquea solo la fila de la persona
+ * (dos guardados a la vez se ordenan, y el segundo ve lo que dejó el primero: un doble envío deja una sola fila por día).
+ * Los controles, en este orden, con el estado leído bajo el bloqueo:
+ * 1. la modalidad y el arranque (`frenoDeLasHorasExtras`), y planta (`planillaSoloContrato`), los dos con campo null;
+ * 2. `dias`, una lista de 1 a MAXIMO_DIAS_POR_GUARDADO días (`sinDias` o `muchosDias`, en `dias`);
+ * 3. sin fechas repetidas (`diaRepetido`, en `fecha`, con la forma de los errores de los días);
+ * 4. `validarSalida` de todos: si alguno falla, no se guarda ninguno (`rechazoDeLosDias`).
+ * Responde `{ guardados }`, los días del pedido (también los borrados que no tenían nada).
+ */
+export const guardarSalidas = (req, res) => responder(res, 'Error al guardar las horas extras', async () => {
+  const hoy = hoyArgentina();
+  const usuarioId = req.user.userId;
+  const { dias } = cuerpoDe(req);
+  return enTransaccion(usuarioId, false, async (conexion) => {
+    const estado = await estadoDe(usuarioId, conexion);
+    const freno = frenoDeLasHorasExtras(estado);
+    if (freno) return rechazoDeLaCarga(freno);
+    if (estado.modalidad !== 'contrato') return planillaSoloContrato();
+    if (!Array.isArray(dias) || dias.length === 0) {
+      return rechazoDeLaCarga({ campo: 'dias', mensaje: MENSAJES_MI_ESPACIO.sinDias });
+    }
+    if (dias.length > MAXIMO_DIAS_POR_GUARDADO) {
+      return rechazoDeLaCarga({ campo: 'dias', mensaje: MENSAJES_MI_ESPACIO.muchosDias });
+    }
+    const repetidas = fechasRepetidas(dias);
+    if (repetidas.length > 0) {
+      return rechazoDeLosDias(repetidas.map((fecha) => ({ fecha, campo: 'fecha', mensaje: MENSAJES_MI_ESPACIO.diaRepetido })));
+    }
+    // El Set de los feriados del estado (`feriadosPara`: de hoy − 3 años a hoy + 2, estirado a lo cargado) cubre todo día que
+    // validarSalida mira con los feriados: los consulta solo después de comprobar que la fecha está entre el primer día de
+    // `rangoDeFechas` (el 01/01 de hace dos años) y hoy, y un borrado no los consulta. Las filas se leen con la conexión de la
+    // transacción (no se toma una segunda del pool con la fila bloqueada)
+    const feriados = await feriadosPara([estado], hoy, await filasDeFeriados(conexion));
+    const validados = dias.map((dia) => ({ dia, ...validarSalida(dia, { hoy, estado, feriados }) }));
+    const errores = validados.filter(({ error }) => error !== null)
+      .map(({ dia, error }) => ({ fecha: fechaDelDia(dia), campo: error.campo, mensaje: error.mensaje }));
+    if (errores.length > 0) return rechazoDeLosDias(errores);
+    for (const { datos } of validados) {
+      if (datos.borrar) await conexion.query(BAJA_DE_LA_SALIDA, [usuarioId, datos.fecha]);
+      else await conexion.query(UPSERT_DE_LA_SALIDA, [usuarioId, datos.fecha, datos.entrada, datos.salida, datos.nota]);
+    }
+    return [200, { success: true, data: { guardados: dias.length }, message: textoDeLoGuardado(dias.length) }];
   });
 });
 
