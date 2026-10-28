@@ -118,6 +118,21 @@ export const crearBaseDePrueba = async (nombre) => {
   };
 };
 
+// Corre un archivo SQL del repositorio tal cual (por ejemplo, una migración de datos) en una base de prueba creada con
+// crearBaseDePrueba. El nombre se valida como al crearla o borrarla, antes de abrir la conexión; la ruta va desde la raíz del
+// repositorio ('database/updates/migracion-feriados-datos.sql').
+export const correrSqlEnBaseDePrueba = async (nombre, rutaDesdeLaRaiz) => {
+  validarDestinoBasePrueba(nombre);
+  const sql = fs.readFileSync(path.join(ROOT, rutaDesdeLaRaiz), 'utf8');
+  const root = await conexionRoot();
+  try {
+    await root.query(`USE \`${nombre}\``);
+    await root.query(sql);
+  } finally {
+    await root.end();
+  }
+};
+
 // =====================================================
 // Servidor
 // =====================================================

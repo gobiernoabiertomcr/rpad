@@ -7,9 +7,11 @@ import {
   diaDeLaSemana, fechaEnElAnio, feriadosDelRango, esDiaHabilCon, diasHabilesDe, diasHabilesEntre,
   proximoDiaHabilCon, restarDiasHabilesCon, ultimoDiaHabilDelMesCon, fechasDelFeriado, fechasQueCambianDiasHabiles,
   MENSAJES_FERIADO, FECHA_MINIMA_FERIADO, LARGO_NOMBRE_FERIADO,
-  validarFeriado, validarRige, bajaDesde, errorDeLaCorreccion, feriadosDelAnio, avisosDeLaFecha, aniosDelSelector
+  validarFeriado, validarRige, bajaDesde, errorDeLaCorreccion, feriadosDelAnio, avisosDeLaFecha, aniosDelSelector,
+  calendarioCon, MENSAJE_CORRIDA_SIN_FERIADOS, MENSAJE_ESTADO_SIN_FERIADOS
 } from '../services/feriadosReglas.js';
-import { FERIADOS_FIJOS, esDiaHabil } from '../services/notasDigitalesCalendario.js';
+import { FERIADOS_FIJOS, esDiaHabil, CALENDARIO_FIJO, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
 // Los 9 fijos de hoy, escritos a mano: el oráculo no lee FERIADOS_FIJOS
 const FIJOS_LITERALES = ['01-01', '03-24', '04-02', '05-01', '05-25', '06-20', '07-09', '12-08', '12-25'];
@@ -1084,5 +1086,114 @@ describe('proximoDiaHabilCon, restarDiasHabilesCon y ultimoDiaHabilDelMesCon', (
     ultimoDiaHabilDelMesCon('2026-10', feriados);
     assert.deepEqual([...feriados], ['2026-10-30']);
     assert.deepEqual(FERIADOS_FIJOS, FIJOS_LITERALES);
+  });
+});
+
+// El calendario con la tabla (spec 2026-10-27-feriados-en-notas, 1): las mismas derivadas que CALENDARIO_FIJO, sobre un
+// predicado que además saca los feriados de la tabla. Sin filas da lo mismo que los 9 fijos
+describe('calendarioCon (spec 2026-10-27-feriados-en-notas, 1)', () => {
+  // El valor, o la clase del error que tira
+  const resultado = (fn) => { try { return { valor: fn() }; } catch (e) { return { tira: e.constructor.name }; } };
+  const RAROS = ['abc', '', '2026-02-30', '2026-13-01', null, undefined, 3, '2026-2-3', '9999-12-31'];
+  // Con '9999-12-31' tiran RangeError (lo fija «donde los fijos tiran RangeError, también»)
+  const RAROS_QUE_TERMINAN = RAROS.filter((r) => r !== '9999-12-31');
+  const DIAS = [];
+  for (let dia = '2024-12-25'; dia <= '2029-01-07'; dia = sumarDias(dia, 1)) DIAS.push(dia);
+  const PERIODOS = [];
+  for (let anio = 2025; anio <= 2028; anio++) {
+    for (let mes = 1; mes <= 12; mes++) PERIODOS.push(`${anio}-${String(mes).padStart(2, '0')}`);
+  }
+
+  // Los recorridos de tests/notas-calendario.test.js: [nombre de la función, argumentos]
+  const LLAMADAS = [];
+  for (const nombre of ['esDiaHabil', 'proximoDiaHabil', 'diaHabilAnterior', 'ultimoDiaHabilHasta']) {
+    for (const e of [...DIAS, ...RAROS]) LLAMADAS.push([nombre, [e]]);
+  }
+  for (const e of [...DIAS, ...RAROS_QUE_TERMINAN]) {
+    for (const d of [0, 40, 60]) LLAMADAS.push(['rangoDeAviso', [e, d]]);
+    for (const n of [1, 2, 5]) LLAMADAS.push(['sumarDiasHabiles', [e, n]]);
+  }
+  for (const e of [...DIAS, ...RAROS]) LLAMADAS.push(['sumarDiasHabiles', [e, 0]]);
+  for (const p of [...PERIODOS, ...RAROS]) LLAMADAS.push(['primerDiaHabilDelMes', [p]]);
+  for (const d of DIAS) {
+    for (const k of [-1, 0, 1, 7, 30, 400]) LLAMADAS.push(['diasHabilesTranscurridos', [d, sumarDias(d, k)]]);
+  }
+  for (const r of RAROS_QUE_TERMINAN) LLAMADAS.push(['diasHabilesTranscurridos', [r, '2026-01-10']]);
+  for (const h of ['', null, undefined, 3, '2026-02-30', '2026-2-3']) LLAMADAS.push(['diasHabilesTranscurridos', ['2026-01-01', h]]);
+
+  const textoDe = (nombre, argumentos) => `${nombre}(${argumentos.map((a) => JSON.stringify(a) ?? 'undefined').join(', ')})`;
+
+  it('sin filas da lo mismo que CALENDARIO_FIJO', () => {
+    const esperados = LLAMADAS.map(([nombre, argumentos]) => resultado(() => CALENDARIO_FIJO[nombre](...argumentos)));
+    for (const filas of [[], null, [null], [{}]]) {
+      const calendario = calendarioCon(filas);
+      LLAMADAS.forEach(([nombre, argumentos], i) => {
+        assert.deepEqual(resultado(() => calendario[nombre](...argumentos)), esperados[i],
+          `calendarioCon(${JSON.stringify(filas)}).${textoDe(nombre, argumentos)}`);
+      });
+    }
+  });
+
+  it('donde los fijos tiran RangeError, también', () => {
+    for (const calendario of [calendarioCon([]), calendarioCon(FILAS_PRECARGA)]) {
+      for (const d of [0, 40, 60]) assert.throws(() => calendario.rangoDeAviso('9999-12-31', d), RangeError);
+      for (const n of [1, 2, 5]) assert.throws(() => calendario.sumarDiasHabiles('9999-12-31', n), RangeError);
+      assert.throws(() => calendario.diasHabilesTranscurridos('9999-12-31', '2026-01-10'), RangeError);
+      assert.throws(() => calendario.diasHabilesTranscurridos('9999-12-31', '9999-12-31'), RangeError);
+      assert.throws(() => calendario.diasHabilesTranscurridos('2026-01-01', 'abc'), RangeError);
+    }
+  });
+
+  it('con la precarga', () => {
+    const c = calendarioCon(FILAS_PRECARGA);
+    // La Jura de la Bandera (trasladada al lunes 02/11), la visita del Papa, la Soberanía, el no laborable del 07/12, Carnaval
+    // de 2027, el aniversario de 2027 (se repite) y la Semana Santa de 2027
+    for (const fecha of ['2026-11-02', '2026-11-09', '2026-11-23', '2026-12-07', '2027-02-08', '2027-02-09', '2027-02-23',
+      '2027-03-25', '2027-03-26']) {
+      assert.equal(c.esDiaHabil(fecha), false, fecha);
+    }
+    for (const fecha of ['2026-11-03', '2026-11-10', '2026-11-24', '2026-12-04']) assert.equal(c.esDiaHabil(fecha), true, fecha);
+    // El 07/12 es no laborable y el 08/12, fijo
+    assert.equal(c.diaHabilAnterior('2026-12-09'), '2026-12-04');
+    assert.equal(c.primerDiaHabilDelMes('2026-11'), '2026-11-03');
+    // El sábado 21/11: el lunes 23/11 es la Soberanía
+    assert.equal(c.proximoDiaHabil('2026-11-21'), '2026-11-24');
+    // El viernes 06/11 avisa también lo del sábado, el domingo y el lunes 09/11: el siguiente hábil es el martes 10/11
+    assert.deepEqual(c.rangoDeAviso('2026-11-06', 40), { desde: '2026-12-16', hasta: '2026-12-19' });
+    assert.equal(c.rangoDeAviso('2026-11-02', 40), null);
+    assert.equal(c.diasHabilesTranscurridos('2026-10-30', '2026-11-03'), 1);
+    // 05, 06, 10, 11 y 12/11
+    assert.equal(c.sumarDiasHabiles('2026-11-04', 5), '2026-11-12');
+    let habilesDe2026 = 0;
+    for (let dia = '2026-01-01'; dia <= '2026-12-31'; dia = sumarDias(dia, 1)) if (c.esDiaHabil(dia)) habilesDe2026++;
+    // Los 253 de los 9 fijos, menos los 16 de la precarga que caen de lunes a viernes
+    assert.equal(habilesDe2026, 237);
+    assert.equal(c.origen, 'tabla');
+    assert.equal(c.error, null);
+    assert.ok(Object.isFrozen(c));
+  });
+
+  it('las filas que cambian después no lo cambian', () => {
+    const copia = [...FILAS_PRECARGA];
+    const c = calendarioCon(copia);
+    copia.splice(copia.findIndex((f) => f.fecha === '2026-11-02'), 1);
+    assert.equal(c.esDiaHabil('2026-11-02'), false);
+    // La copia sin el 02/11 sí lo tiene hábil
+    assert.equal(calendarioCon(copia).esDiaHabil('2026-11-02'), true);
+  });
+
+  it('origen y error se pasan', () => {
+    const c = calendarioCon([], { origen: 'fijos', error: 'x' });
+    assert.equal(c.origen, 'fijos');
+    assert.equal(c.error, 'x');
+  });
+});
+
+describe('los mensajes de la caída a los 9 fijos', () => {
+  it('los de la corrida y de Correos → Estado (spec 2026-10-27-feriados-en-notas, 6)', () => {
+    assert.equal(MENSAJE_CORRIDA_SIN_FERIADOS,
+      'No se pudieron leer los feriados de Configuración → Feriados: la corrida usó solo los 9 fijos.');
+    assert.equal(MENSAJE_ESTADO_SIN_FERIADOS,
+      'No se pudieron leer los feriados de Configuración → Feriados: las fechas de esta pantalla cuentan solo los 9 feriados fijos.');
   });
 });
