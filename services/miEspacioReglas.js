@@ -408,8 +408,9 @@ const habilitadoAl = (ordinaria, fecha) =>
  *   `cargados` (asignados después de hoy), `perdidos` y `disponibles` (lo habilitado que no se asignó, menos los perdidos;
  *   0 si ya venció). `perdidos` (spec 2026-10-27, 2.5) es todo lo que queda sin asignar de una licencia no vencida cuando,
  *   desde hoy y después del hasta de la última fila que la usó (sin ninguna, desde hoy), ya no queda ningún día libre hasta
- *   su vencimiento: un día hábil, con los feriados, fuera de toda licencia de Mi espacio, de cualquier tipo. Mientras quede
- *   uno, nada se pierde: una carga que empiece ese día la sigue usando después del vencimiento.
+ *   su vencimiento: un día hábil, con los feriados, fuera de toda licencia de Mi espacio, de cualquier tipo y de cualquier
+ *   modalidad (`opciones.ocupadas`, la lista entera que le pasa `calcular`; sin ella, las del estado). Mientras quede uno,
+ *   nada se pierde: una carga que empiece ese día la sigue usando después del vencimiento.
  * - `porFila`: un Map de cada id de vacaciones a `[{ anio, dias }]`, por año (una sin días que descuenten, []). El id va
  *   como número (`idDe`): así se busca también con el de un pedido, que llega como texto.
  * - `sinCubrir`: un Map del id (también como número) a sus días sin cubrir, solo de las que tienen alguno.
@@ -460,9 +461,11 @@ export const repartoDeVacaciones = (estado, opciones) => {
   const porFila = new Map([...contadosPorFila].map(([id, deLaFila]) =>
     [id, [...deLaFila].sort(([a], [b]) => a - b).map(([anio, cantidad]) => ({ anio, dias: cantidad }))]));
 
-  // Si queda un día libre de la fecha al tope: el primer día hábil fuera de toda licencia de Mi espacio (de cualquier tipo);
-  // los días dentro de una se saltean de una vez, hasta el día después de su hasta
-  const ocupadas = listaDe(datos.licencias).filter((fila) =>
+  // Si queda un día libre de la fecha al tope: el primer día hábil fuera de toda licencia de Mi espacio (de cualquier tipo y
+  // de cualquier modalidad: las de `opciones.ocupadas`, si llegan, o las del estado); los días dentro de una se saltean de una
+  // vez, hasta el día después de su hasta
+  const { ocupadas: todas } = esObjeto(opciones) ? opciones : {};
+  const ocupadas = listaDe(Array.isArray(todas) ? todas : datos.licencias).filter((fila) =>
     esObjeto(fila) && esFechaIso(fila.desde) && esFechaIso(fila.hasta));
   const hayDiaLibre = (desde, tope) => {
     let dia = proximoDiaHabilCon(desde, feriados);
@@ -1354,7 +1357,8 @@ export const fueraDeLaModalidad = (fila, modalidad) => {
 /**
  * Todo lo que sale de lo cargado, sin las filas que no corresponden a la modalidad (`fueraDeLaModalidad`): el `Calculo`,
  * `{ reparto, topes, francos, horasAFavor, noUtilizadas, faltantes, avisosDeSalidas }`.
- * - `reparto`: el de `repartoDeVacaciones`.
+ * - `reparto`: el de `repartoDeVacaciones`, con todas las licencias como ocupadas (`ocupadas`): una de la otra modalidad no
+ *   cuenta, pero ocupa su día y no deja cargar nada ahí, así que no es un día libre para «Perdés».
  * - `topes`: el de `usoDeLosTopes`, solo con los tipos de la modalidad (el saldo de franquicias no cuenta en contrato).
  * - `francos` y `horasAFavor`: los de `francosDe` y `horasAFavorDe` (cada uno, [] en la otra modalidad).
  * - `noUtilizadas`: `{ [anio]: noUtilizadasDe }` de cada año con algo que mirar: el de hoy, el del arranque, el de cada mes
@@ -1394,7 +1398,8 @@ export const calcular = (estado, opciones) => {
   }
 
   const calculo = {
-    reparto: repartoDeVacaciones(deLaModalidad, conHoy),
+    // Las licencias de la otra modalidad no cuentan, pero ocupan sus días: no son un día libre para «Perdés»
+    reparto: repartoDeVacaciones(deLaModalidad, { ...conHoy, ocupadas: listaDe(datos.licencias) }),
     topes: usoDeLosTopes(deLaModalidad, { feriados }).filter((uso) => tipos.includes(uso.tipo)),
     francos,
     horasAFavor,

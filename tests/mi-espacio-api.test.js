@@ -652,6 +652,24 @@ describe('el cálculo previo', () => {
     assert.equal((await guardadasDe('adminA')).length, 0);
   });
 
+  it('unas vacaciones desde el último día hábil del año siguen en enero con la licencia que vence ese año (spec '
+    + '2026-10-27-mi-espacio-dias-de-vacaciones)', async () => {
+    await listoParaCargar('adminA');
+    await conSaldo('adminA', 'vacaciones', ANIO - 2, '3.0');
+    await conSaldo('adminA', 'vacaciones', ANIO - 1, '10.0');
+    // 5 días hábiles, 1 en diciembre y 4 en enero (sin feriados de la tabla: el beforeEach la vacía). La más vieja vence el
+    // 31/12 y se empezó a usar ese año: da sus 3 días, también los de enero, y los otros 2 salen de la siguiente
+    const desde = diaHabilAnterior(`${ANIO + 1}-01-01`);
+    let hasta = proximoDiaHabil(`${ANIO + 1}-01-01`);
+    for (let n = 1; n < 4; n++) hasta = proximoDiaHabil(sumarDias(hasta, 1));
+    const res = await api.post('/mi-espacio/licencias/calculo', { tipo: 'vacaciones', desde, hasta }, como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.data.error, null);
+    assert.equal(res.body.data.vista.dias_habiles, 5);
+    assert.equal(res.body.data.vista.texto_reparto, `Salen de las licencias ${ANIO - 2} (3 días) y ${ANIO - 1} (2 días), las `
+      + `más viejas. Te quedan 8 días, todos de la ${ANIO - 1}.`);
+  });
+
   it('con un error, 200 y el error en data, con su campo', async () => {
     await listoParaCargar('adminA');
     const res = await api.post('/mi-espacio/licencias/calculo', { tipo: 'otro', desde: q(0) }, como('adminA'));

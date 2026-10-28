@@ -499,6 +499,26 @@ describe('el reparto de las vacaciones', () => {
     assert.deepEqual([ordinaria(conFeriado, 2024).disponibles, ordinaria(conFeriado, 2024).perdidos], [0, 8]);
   });
 
+  it('el día libre se busca saltando de licencia en licencia: encadenadas, con un hueco, que se pisan o una dentro de otra', () => {
+    // Las vacaciones del 14/12 al 18/12 usan 5 de la 2024 y le quedan 10; después, otras licencias del 21/12 en adelante
+    const conLaSemana = (...otras) => {
+      const reparto = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA, vacaciones(100, '2026-12-14', '2026-12-18'),
+        ...otras), { hoy: HOY, feriados: SIN_FERIADOS });
+      return [ordinaria(reparto, 2024).disponibles, ordinaria(reparto, 2024).perdidos];
+    };
+    const medica = (desde, hasta) => ({ id: 102, tipo: 'medica', desde, hasta, horas: null });
+    const familiar = (desde, hasta) => ({ id: 103, tipo: 'familiar', desde, hasta, horas: null });
+    // Encadenadas sin un día hábil libre entre las dos (el 25/12 es feriado fijo; el 26 y el 27, fin de semana)
+    assert.deepEqual(conLaSemana(medica('2026-12-21', '2026-12-24'), familiar('2026-12-28', '2026-12-31')), [0, 10]);
+    // Con un hueco hábil, el jueves 24/12 libre: una carga que empiece ese día usa los 10
+    assert.deepEqual(conLaSemana(medica('2026-12-21', '2026-12-23'), familiar('2026-12-28', '2026-12-31')), [10, 0]);
+    // Dos que se pisan
+    assert.deepEqual(conLaSemana(medica('2026-12-21', '2026-12-29'), familiar('2026-12-28', '2026-12-31')), [0, 10]);
+    // Una dentro de la otra, la de adentro primero en la lista: el salto llega al hasta más tardío
+    assert.deepEqual(conLaSemana(familiar('2026-12-21', '2026-12-23'), medica('2026-12-21', '2026-12-31')), [0, 10]);
+    assert.deepEqual(conLaSemana(medica('2026-12-21', '2026-12-31'), familiar('2026-12-22', '2026-12-23')), [0, 10]);
+  });
+
   it('sin ninguna carga que la use, el día libre se busca desde hoy', () => {
     // Hoy el 31/12/2026, un jueves libre: la 2024 sigue disponible; con una atención médica ese día, se pierde entera
     const libre = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA), { hoy: '2026-12-31', feriados: SIN_FERIADOS });
@@ -2139,6 +2159,21 @@ describe('calcular', () => {
     assert.deepEqual(aContrato.francos, []);
     assert.equal(aContrato.topes.some((tope) => tope.tipo === 'franquicia'), false);
     assert.deepEqual(aContrato.faltantes, []);
+  });
+
+  it('una licencia de la otra modalidad no cuenta, pero ocupa su día: no es un día libre para no perder los días', () => {
+    // Planta, con 15 de la 2024: las vacaciones del 21/12 al 30/12 usan 7 y el 31/12 tiene unas horas a favor de contrato,
+    // que no cuentan en planta pero no dejan cargar nada ese día (`validarLicencia`): los 8 que quedan se pierden
+    const aFavor = { id: 103, tipo: 'horas_a_favor', desde: '2026-12-31', hasta: '2026-12-31', horas: 2 };
+    const estado = soloVacaciones('2026-10-26', PERSONA, vacaciones(100, '2026-12-21', '2026-12-30'), aFavor);
+    assert.equal(fueraDeLaModalidad(aFavor, 'planta'), true);
+    const { reparto } = calcular(estado, A_HOY);
+    assert.deepEqual([ordinaria(reparto, 2024).disponibles, ordinaria(reparto, 2024).perdidos], [0, 8]);
+    // El reparto usa las ocupadas que le llegan; sin ellas, las licencias del estado
+    const deLaModalidad = { ...estado, licencias: [vacaciones(100, '2026-12-21', '2026-12-30')] };
+    const conOcupadas = repartoDeVacaciones(deLaModalidad, { ...A_HOY, ocupadas: estado.licencias });
+    assert.equal(ordinaria(conOcupadas, 2024).perdidos, 8);
+    assert.equal(ordinaria(repartoDeVacaciones(deLaModalidad, A_HOY), 2024).perdidos, 0);
   });
 
   it('sin un hoy válido, nada', () => {
