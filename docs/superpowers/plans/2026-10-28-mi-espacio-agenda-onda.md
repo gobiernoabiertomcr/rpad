@@ -30,6 +30,14 @@
 4. **Nombres que chocan**: dos «Carla» (→ «Carla B.» y «Carla R.»), dos «Carla B.» (→ nombre completo), una tilde distinta («Matías»/«Matias»), quien creó un evento y ya no es de administración. Test en Task 2.
 5. **Un teléfono de 320 px con el fin de semana visible** y alto contraste: sin desplazamiento de costado; las líneas y los puntos se siguen viendo en `forced-colors`. Test en Task 7 (estático) y verificación en Task 9.
 
+## Pre-flight (28/10/2026, sobre main 65a79f8)
+
+- La licencia anulada no tocó nada de la agenda (ni `htmlDelMes`, ni `cosasPorDia`, ni `gruposDeProximos`, ni `#vista-agenda`): tocó el Resumen (`htmlDeFaltantes` con `para_revisar`, `vinculosDelResumen` en `verResumen`), la lista de Licencias (`otros_anios`) y `volverAPedirTodo`. `contextoDe`, `ausentesPara`, `filaDeLicencia` (con `persona` en las opciones) y `mostrar_texto` siguen como los describe Task 2. Clases nuevas del Resumen que la agenda no tiene que pisar: `.me-frase-link`, `.me-faltantes a`, `.me-otros-anios`.
+- `VERSION_MI_ESPACIO` está en '20261215': Task 7 la sube a **'20261216'** (y el `?v=` de `mi-espacio.js`).
+- **Cada tarea deja la suite completa en verde** (también Task 7: los tests de DOM de la agenda no se rompen al sumar los ids nuevos).
+- `cosasPorDia` cambia en **Task 6** (junto con `htmlDelMes` y sus tests), no en Task 5: si cambiara antes, el `htmlDelMes` de hoy perdería las licencias y los compañeros entre las dos tareas.
+- `--n` va siempre en la pieza de `inicio` (el ancho del texto); `--demora`, solo con `animar`.
+
 ---
 
 ### Task 1: Ponerse al día con main y ajustar el plan
@@ -250,7 +258,6 @@ git commit -am "feat(mi-espacio): la agenda recibe los compañeros de cada día 
 - Consumes: la respuesta de Task 4 (`companeros_por_dia` además de lo de antes).
 - Produces (puras, globales del script):
   - `semanasDelMes(mes, { finde }) => Array<Array<{ fecha, dia, del_mes, finde }>>`: las semanas de `diasDeLaGrilla(mes)` (que no cambia); sin `finde`, cada semana sin sábado ni domingo y sin las semanas cuyos días visibles no son del mes. Mes que no sirve, `[]`.
-  - `cosasPorDia(datos)`: **solo feriados y eventos** (las licencias y los compañeros pasan a las barras); misma forma `{ clase, texto, evento_id? }`.
   - `barrasDelMes(semanas, datos) => Array<{ carriles: 0|1|2, piezas: Map<fecha, Array<Pieza|null>> }>`, una por semana, con `Pieza = { clase: 'licencia'|'ausente', texto, titulo, inicio, fin, largo, sigue_antes, sigue_despues }`: el carril 1 es tuyo si la semana tiene algún día de licencia (de `licencias[].dias`), si no los compañeros van en el 1; un **tramo** son días visibles contiguos de la fila con la misma licencia (por `id`) o el mismo `texto` de `companeros_por_dia`; `inicio` y `fin` marcan sus puntas; `largo` es la cantidad de días del tramo (solo en la pieza de `inicio`, para que el texto ocupe el tramo con `--n`); `sigue_despues` si la pieza es la última columna de la fila y la primera columna de la fila siguiente tiene la misma licencia o el mismo texto; `sigue_antes`, al revés. `titulo`: en una licencia, `texto` + «. » + `hasta_texto` (sin `hasta_texto`, solo `texto`); en los compañeros, cada ausente de ese día (los de `ausentes` cuyos `dias` lo incluyen, en el orden del texto) con su `texto` y, si tiene, su `hasta_texto`: «Carla no está. Hasta el viernes 13/11. Julián no está. Hasta el viernes 06/11.».
   - `renglonesDelDia(cantidad, lugares) => { lineas: number[], mas: number }` (spec 3.5).
   - `cuantasEnElFinde(mes, datos) => number`: las cosas de `cosasPorDia` en sábados y domingos del mes.
@@ -260,7 +267,6 @@ git commit -am "feat(mi-espacio): la agenda recibe los compañeros de cada día 
 
 Con los fixtures de siempre (armados con los `itemDe*` reales) más `companeros_por_dia` de `companerosPorDia`:
 - `semanasDelMes('2026-11', { finde: false })`: la primera semana es del lunes 02/11 (la del domingo 1 no va), 5 días por semana; con `finde: true`, la primera empieza el lunes 26/10 y trae el domingo 1. `semanasDelMes('2026-08', { finde: false })[0][0].fecha === '2026-08-03'`.
-- `cosasPorDia`: el 12/10 `[{ clase: 'feriado', texto: 'Feriado: Día del Respeto a la Diversidad Cultural' }]`; ningún día con `clase` 'licencia' ni 'ausente'.
 - `renglonesDelDia`: `(1, 4) → { lineas: [3], mas: 0 }`, `(2, 4) → [2, 2]`, `(3, 4) → [1, 1, 1]`, `(4, 4) → { lineas: [1, 1, 1], mas: 1 }`, `(1, 2) → [2]`, `(2, 3) → [2, 1]`, `(3, 2) → { lineas: [1], mas: 2 }`, `(0, 4) → { lineas: [], mas: 0 }`.
 - `barrasDelMes` en noviembre (fin de semana oculto): la semana del 02/11 tiene 2 carriles; el 03/11 tiene en el carril 2 `{ clase: 'ausente', texto: 'Julián no está', inicio: true }`, el 05/11 `{ texto: 'Carla y Julián no están', inicio: true }` y el 04/11 `inicio: false`; las vacaciones del 16 al 20 son un tramo de `largo` 5 con `sigue_despues: false` (el lunes 23 es feriado: la fila siguiente no empieza igual) y el 24 empieza otro (`inicio: true`, `sigue_antes: false`). Una licencia del jueves 01/10 al martes 06/10 (sin feriados): la pieza del viernes 02 tiene `sigue_despues: true` y la del lunes 05, `sigue_antes: true`.
 - `cuantasEnElFinde('2026-11', datos)`: 1 (el feriado del domingo 8) con los fixtures; con un evento el sábado 14, 2.
@@ -272,7 +278,6 @@ Run: `node --test tests/mi-espacio-frontend.test.js` → FAIL.
 
 - [ ] **Step 3: Suite completa y commit**
 
-Actualizar el test de `cosasPorDia` (ya no trae licencias ni compañeros).
 ```bash
 git commit -am "feat(mi-espacio): el modelo del mes con las barras, los renglones y el fin de semana"
 ```
@@ -288,20 +293,21 @@ git commit -am "feat(mi-espacio): el modelo del mes con las barras, los renglone
 **Interfaces:**
 - Consumes: Task 5.
 - Produces:
+  - `cosasPorDia(datos)`: **solo feriados y eventos** (las licencias y los compañeros pasan a las barras); misma forma `{ clase, texto, evento_id? }`. Test: el 12/10 `[{ clase: 'feriado', texto: 'Feriado: Día del Respeto a la Diversidad Cultural' }]`; ningún día con `clase` 'licencia' ni 'ausente'.
   - `ICONOS_DEL_MES` (congelado): SVG de Lucide para `feriado` (bandera), `licencia` (sol), `ausente` (persona) y `compartido` (dos personas), `aria-hidden="true"`, `class="me-icono"`; `propio`, ''.
   - `htmlDelMes(mes, datos, hoy, { finde = false, elegido = null, foco = null, telefono = false, animar = false } = {})`: la tabla (spec 3.3–3.5, sección 6). Estructura de cada día:
     ```html
     <td class="me-celda[ otro-mes][ finde][ feriado][ hoy][ paso][ elegido]" data-fecha="…"[ aria-current="date"]><div class="me-celda-cuerpo">
       <button type="button" class="me-num" data-dia="…" tabindex="0|-1" aria-label="Nuevo evento el jueves 22/10">22</button>
       <div class="me-carriles">  <!-- solo si la semana tiene carriles; un hijo por carril -->
-        <span class="me-barra licencia inicio fin sigue-antes sigue-despues" title="…"[ style="--n:3;--demora:0.21s"]>…ícono…<span class="me-barra-texto">Vacaciones</span></span>
+        <span class="me-barra licencia inicio fin sigue-antes sigue-despues" title="…"[ style="--n:3[;--demora:0.21s]"]>…ícono…<span class="me-barra-texto">Vacaciones</span></span>
         <span class="me-barra vacia"></span>
       </div>
       <div class="me-cosas"> …cosas… [<div class="me-resto" hidden>…</div><button type="button" class="me-mas" data-ver-mas="…">y N más</button>] </div>
       <span class="me-puntos" aria-hidden="true"><i class="propio"></i>…</span>
     </div></td>
     ```
-    La pieza que no es `inicio` lleva su texto en `<span class="visualmente-oculto">` (el lector de pantalla lo lee en cada día). Cada cosa: `<button|span class="me-ev <clase>" data-lineas="1|2|3"[ data-evento]` title="…">` con el ícono y, en un evento, `<b>HH:MM</b> título`. `--demora` solo con `animar` (semana × 0,16 s + columna × 0,05 s, dos decimales). El `aria-label` del número: «Nuevo evento el <diaLargoDe>» o, con `telefono`, «Ver el <diaLargoDe>». `tabindex="0"` solo en `foco`.
+    La pieza que no es `inicio` lleva su texto en `<span class="visualmente-oculto">` (el lector de pantalla lo lee en cada día). Cada cosa: `<button|span class="me-ev <clase>" data-lineas="1|2|3"[ data-evento]` title="…">` con el ícono y, en un evento, `<b>HH:MM</b> título`. `--n` (los días del tramo) siempre en la pieza de `inicio`; `--demora` solo con `animar` (semana × 0,16 s + columna × 0,05 s, dos decimales), en todas las piezas que no son `vacia`. El `aria-label` del número: «Nuevo evento el <diaLargoDe>» o, con `telefono`, «Ver el <diaLargoDe>». `tabindex="0"` solo en `foco`.
   - `htmlDelDiaElegido(fecha, datos, hoy)`: `<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">Miércoles 28 de octubre (hoy)</h3><button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-el="…">…Nuevo evento</button></div>` y la lista (`<ul class="me-elegido-lista">`, una `<li class="me-fila-del-dia <clase>">` por cosa: feriados, tu licencia, los compañeros —el `texto` de `companeros_por_dia`—, con «Todo el día», y los eventos con su hora, como botón `data-evento`); sin nada, `<p class="me-vacio">No hay nada este día.</p>`. La fecha larga con `diaLargoDe` + el mes (sin año).
   - `htmlDeProximo(item)`: suma `<span class="me-prox-icono <clase>" aria-hidden="true">…</span>` dentro del título, antes del texto.
 
@@ -312,7 +318,7 @@ Reemplazar los de `htmlDelMes` (1220, 1246, 1262, 1278 de hoy) y sumar:
 - cada celda empieza con `<div class="me-celda-cuerpo"><button type="button" class="me-num" data-dia="AAAA-MM-DD"`; exactamente un `tabindex="0"` en todo el mes (el de `foco`);
 - 05/11 (noviembre): `<span class="me-barra ausente inicio"` con «Carla y Julián no están» visible y, el 06/11, el mismo texto dentro de `visualmente-oculto`; el 16/11, `licencia inicio` con `--n:5`;
 - un evento solo en el día y sin carriles → `data-lineas="3"`; el 05/11 (2 carriles, 4 eventos) → un `data-lineas="1"` y `y 3 más`;
-- con `animar`, cada `me-barra` que no es `vacia` tiene `--demora:`; sin `animar`, ningún `style=`;
+- con `animar`, cada `me-barra` que no es `vacia` tiene `--demora:`; sin `animar`, ningún `--demora` (sí el `--n` de cada `inicio`);
 - `aria-label="Ver el lunes 02/11"` con `telefono: true`;
 - el escapado: un título y un nombre con `<b>&"` salen escapados en el texto, en el `title` y en el oculto;
 - ningún `aria-live`, `role="status"` ni `role="alert"`.
@@ -331,7 +337,7 @@ git commit -am "feat(mi-espacio): el HTML del mes con las barras por día, el d�
 
 **Files:**
 - Modify: `public/mi-espacio.html` (la sección `#vista-agenda` y el `<style>`; `?v=` de `mi-espacio.js`)
-- Modify: `tests/paginas.test.js` (`VERSION_MI_ESPACIO` al valor siguiente al de Task 1; las aserciones de la pestaña)
+- Modify: `tests/paginas.test.js` (`VERSION_MI_ESPACIO` a '20261216'; las aserciones de la pestaña)
 - Test: `tests/paginas.test.js`, `tests/mi-espacio-frontend.test.js` (contrastes)
 
 **Interfaces:**
@@ -352,7 +358,7 @@ Run: `node --test tests/paginas.test.js` → FAIL.
 
 Los estilos, con la maqueta como guía (`agenda.css`, «pizarra» = `.franja-fuerte`), con las clases `me-` de la interfaz de arriba y las de Task 6: la banda (como `.me-banda` del Resumen, sin pisar sus clases), la llave, la cuenta en el sol, la tabla de filas de al menos 122 px, hoy en `--sg-cielo`, `paso` (el número en `--sg-suave` y `.me-cosas` con `filter: saturate(0.55)`), otro mes, fin de semana, el «+» con `.me-celda:hover .me-num::after` (sin control aparte), los carriles de 22 px, `.me-barra` que cruza el borde de la celda (márgenes negativos del relleno y el borde de la celda; `inicio` y `fin` redondeados con 3 px de aire, `sigue-*` rectos), el texto de `inicio` a lo ancho del tramo (`width: calc(var(--n) * 100% …)`, una línea con «…»), `[data-lineas]` con `-webkit-line-clamp`, `#ag-mes[data-animar] .me-barra { transform: scaleX(0); transition: none; }` y la transición con `var(--demora)`. 640 px: el número centrado, sin `.me-cosas` ni «+», las barras de 5 px sin texto, `.me-puntos` visibles, `.me-elegido { display: block; … }`, «Próximos» en su orden natural. Subir `VERSION_MI_ESPACIO` y el `?v=`.
 
-Run: `node --test tests/paginas.test.js tests/mi-espacio-frontend.test.js` → PASS (los tests de DOM de la agenda pueden fallar hasta Task 8: anotarlo y no tocarlos acá).
+Run: `node --test tests/paginas.test.js tests/mi-espacio-frontend.test.js` → PASS, también los de DOM de la agenda (los ids de antes siguen; Task 8 recién usa los nuevos). Después, la suite completa en verde.
 
 - [ ] **Step 3: Commit**
 ```bash
