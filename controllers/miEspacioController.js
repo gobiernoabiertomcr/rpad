@@ -95,20 +95,35 @@ const eventosDelResumen = async (usuario, hoy, feriados) => {
   }
 };
 
+/**
+ * Los vínculos de las licencias con Configuración para `para_revisar` del Resumen (`vinculosDe`, como la lista; spec
+ * 2026-10-28-mi-espacio-licencia-anulada, 2.2). Aislados, como los eventos: antes de `para_revisar` el Resumen no leía las
+ * tablas de Configuración, así que si leerlos falla sale igual, sin nada para revisar (un Map vacío), y el error queda en la
+ * consola.
+ */
+const vinculosDelResumen = async (persona, estado, hoy) => {
+  try {
+    return await vinculosDe(persona, estado, hoy);
+  } catch (error) {
+    console.error('Error al obtener lo que hay para revisar en el Resumen:', error?.stack ?? error);
+    return new Map();
+  }
+};
+
 // GET /api/mi-espacio/resumen: el Resumen «Titular», ya calculado. «Hoy y mañana» lleva los compañeros que no están hoy y, aparte,
 // los que empiezan mañana (`ausentesPara` de hoy a mañana, en dos grupos con `ausentesDeHoyYManana`: decisión del usuario,
 // 27/10/2026; a quien no es de administración, ninguno), el próximo feriado, con las mismas filas de los feriados del cálculo
 // (sin leerlas otra vez), y, al final, los eventos de hoy y de mañana (`eventos`, aislados: ver eventosDelResumen). Con los
-// vínculos de sus licencias con Configuración (`vinculosDe`, como la lista), `para_revisar` dice lo que en Configuración quedó
-// distinto (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1 y 3.2). Van también sin modalidad: la página decide qué
-// mostrar
+// vínculos de sus licencias con Configuración (`vinculosDe`, como la lista, también aislados: ver vinculosDelResumen),
+// `para_revisar` dice lo que en Configuración quedó distinto (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1 y 3.2).
+// Van también sin modalidad: la página decide qué mostrar
 export const verResumen = (req, res) => responder(res, 'Error al obtener el Resumen', async () => {
   const hoy = hoyArgentina();
   const { persona, estado, feriados, filasFeriados, calculo } = await contextoDe(req.user.userId, hoy);
   const [{ ausentes }, eventos, vinculos] = await Promise.all([
     ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados }),
     eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, feriados),
-    vinculosDe(persona, estado, hoy)
+    vinculosDelResumen(persona, estado, hoy)
   ]);
   const hoyYManana = {
     ...ausentesDeHoyYManana(ausentes, hoy), proximo_feriado: proximoFeriadoDe(filasFeriados, hoy), eventos

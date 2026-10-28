@@ -1229,6 +1229,28 @@ describe('el paso a Configuración', () => {
     assert.equal(despues[0].id, oficial.id);
   });
 
+  // Antes de `para_revisar`, el Resumen no leía las tablas de Configuración: leer los vínculos va aislado, como los eventos de
+  // «Hoy y mañana». La tabla se renombra en la base de prueba, como en el test de los eventos
+  it('aislado: si leer los vínculos con Configuración falla, el Resumen sale igual, sin nada para revisar', async () => {
+    await listoParaCargar('adminA');
+    const { body } = await cargarMia('adminA', { tipo: 'medica', desde: q(0), hasta: q(4) });
+    const [oficial] = await deConfiguracion('adminA');
+    await query('UPDATE usuarios_licencias SET hasta = ? WHERE id = ?', [q(2), oficial.id]);
+    const conTodo = await elResumen('adminA');
+    assert.deepEqual(conTodo.para_revisar.map((cada) => cada.licencia_id), [body.data.id]);
+    await query('RENAME TABLE usuarios_licencias TO usuarios_licencias_falla_simulada');
+    try {
+      const res = await api.get('/mi-espacio/resumen', como('adminA'));
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.deepEqual(res.body.data.para_revisar, []);
+      // Lo demás sale igual
+      assert.deepEqual({ ...res.body.data, para_revisar: conTodo.para_revisar }, conTodo);
+    } finally {
+      await query('RENAME TABLE usuarios_licencias_falla_simulada TO usuarios_licencias');
+    }
+    assert.deepEqual((await elResumen('adminA')).para_revisar, conTodo.para_revisar);
+  });
+
   it('administración acorta la que cubría una unida: ya no está cubierta', async () => {
     await listoParaCargar('adminA');
     const deAdmin = await deAdministracion('adminA', q(0), q(9));
