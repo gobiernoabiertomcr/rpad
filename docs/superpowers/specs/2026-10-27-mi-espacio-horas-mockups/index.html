@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi espacio, cargar horas extras - RPAD (maqueta)</title>
+    <!-- MAQUETA (27/10/2026): la planilla de «Cargar horas extras» para las personas de contrato, sobre la página real (la carcasa
+         y el <style> de public/mi-espacio.html, el main.css real) y la pestaña Horas extras como la dibuja hoy mi-espacio.js
+         (pestana-real.js, generado con las funciones de verdad). Datos inventados (datos.js). Hoy es el martes 27/10/2026. La barra
+         oscura de abajo es de la maqueta. No guarda nada. -->
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="pagina.css">
+    <link rel="stylesheet" href="planilla.css">
+    <link rel="stylesheet" href="barra.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header (con sesión: lo que pone main.js) -->
+        <header class="header header--con-sesion">
+            <div class="header-left">
+                <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir el menú" aria-controls="sidebar" aria-expanded="false">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+                </button>
+                <a href="#" class="header-marca">
+                    <img src="img/logo.png" alt="Municipalidad de Comodoro Rivadavia" class="header-logo">
+                    <span class="header-marca-texto">
+                        <span class="header-title">RPAD</span>
+                        <span class="header-subtitle">Registro Permanente de Actualización de Datasets</span>
+                    </span>
+                </a>
+            </div>
+            <nav class="header-nav" aria-label="Principal">
+                <a href="#">Inicio</a>
+                <a href="#">Datasets</a>
+                <a href="#">Calendario</a>
+                <a href="#">Contacto</a>
+            </nav>
+            <div class="header-right" id="header-actions">
+                <a href="#" class="header-user" title="Mi Perfil">
+                    <div class="header-user-info">
+                        <div class="header-user-name">Sofía Paz</div>
+                        <div class="header-user-role">Lector</div>
+                    </div>
+                    <div class="header-user-avatar">SP</div>
+                </a>
+                <button class="btn btn-secondary btn-sm" type="button">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                    Salir
+                </button>
+            </div>
+        </header>
+
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <!-- Sidebar (lo que ve un lector: Herramientas sin Notas y Mi cuenta) -->
+        <aside class="sidebar" id="sidebar" aria-label="Menú">
+            <div class="sidebar-header">
+                <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="sidebar-logo">
+            </div>
+            <nav class="sidebar-nav">
+                <div class="sidebar-section" id="sidebarTools">
+                    <div class="sidebar-section-title">Herramientas</div>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Métricas y Reportes</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M8 10v4"/><path d="M12 10v2"/><path d="M16 10v6"/></svg><span>Proyectos</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span>Seguimiento</span></a>
+                </div>
+                <div class="sidebar-section" id="sidebarAccount">
+                    <div class="sidebar-section-title">Mi cuenta</div>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Mi Perfil</span></a>
+                    <a href="#" class="sidebar-link active"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg><span>Mi espacio</span></a>
+                </div>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <div class="me-pagina">
+                <div class="page-header">
+                    <h1 class="page-title">
+                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+                        Mi espacio
+                    </h1>
+                    <div class="me-acciones">
+                        <button type="button" class="sg-btn sg-btn-borde" data-maqueta-accion="Nuevo evento">Nuevo evento</button>
+                        <button type="button" class="sg-btn sg-btn-borde" data-abrir-planilla>Cargar horas extras</button>
+                        <button type="button" class="sg-btn sg-btn-tinta" data-maqueta-accion="Cargar licencia"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Cargar licencia</button>
+                    </div>
+                </div>
+                <p class="me-bajada">Tus licencias, tus horas extras y tu agenda. Lo que cargás acá lo ves solo vos, salvo los eventos que compartís y, si querés, tus ausencias (sin decir de qué son).</p>
+
+                <p class="visualmente-oculto" id="me-anuncio" role="status"></p>
+
+                <div class="me-pestanas" role="tablist" aria-label="Mi espacio">
+                    <button type="button" class="me-pestana" role="tab" id="tab-resumen" aria-selected="false" aria-controls="vista-resumen" data-pestana="resumen" tabindex="-1">Resumen</button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-licencias" aria-selected="false" aria-controls="vista-licencias" data-pestana="licencias" tabindex="-1">Licencias</button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-horas" aria-selected="true" aria-controls="vista-horas" data-pestana="horas">Horas extras</button>
+                    <button type="button" class="me-pestana" role="tab" id="tab-agenda" aria-selected="false" aria-controls="vista-agenda" data-pestana="agenda" tabindex="-1">Agenda</button>
+                </div>
+                <section id="vista-resumen" role="tabpanel" aria-labelledby="tab-resumen" hidden><p class="me-estado">La maqueta muestra solo la pestaña Horas extras: el Resumen queda como está en la página real.</p></section>
+                <section id="vista-licencias" role="tabpanel" aria-labelledby="tab-licencias" hidden><p class="me-estado">La maqueta muestra solo la pestaña Horas extras: Licencias queda como está en la página real.</p></section>
+                <section id="vista-horas" role="tabpanel" aria-labelledby="tab-horas"></section>
+                <section id="vista-agenda" role="tabpanel" aria-labelledby="tab-agenda" hidden><p class="me-estado">La maqueta muestra solo la pestaña Horas extras: la Agenda queda como está en la página real.</p></section>
+            </div>
+
+            <footer class="footer">
+                <div class="footer-cuerpo">
+                    <div class="footer-marca">
+                        <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="footer-logo">
+                        <p class="footer-direccion">Dirección de Datos Públicos y Comunicación</p>
+                        <p>D. G. de Modernización e Investigación Territorial<br>Subsecretaría de Modernización y Transparencia</p>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">El registro</h2>
+                        <ul>
+                            <li><a href="#">Inicio</a></li>
+                            <li><a href="#">Datasets</a></li>
+                            <li><a href="#">Calendario</a></li>
+                            <li><a href="#">Contacto</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Datos abiertos</h2>
+                        <ul>
+                            <li><a href="#">datos.comodoro.gov.ar</a></li>
+                            <li>Licencia CC BY-SA 4.0</li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Marco legal</h2>
+                        <ul>
+                            <li>Ordenanza N° 17.662/23, artículo 8°</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <span>© <span>2026</span> Secretaría de Gobierno, Modernización y Transparencia. Municipalidad de Comodoro Rivadavia</span>
+                    <span>RPAD v2.0.0</span>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <!-- LA PLANILLA: «Cargar horas extras» de una persona de contrato. Arriba, fijo, el mes con sus flechas y lo que lleva sumado;
+         en el cuerpo, que se desplaza, «Cómo se cuentan», las columnas y una fila por día; en el pie, cuántos días cambiaron y los
+         botones. Un clic en el velo no lo cierra -->
+    <div class="modal-overlay" id="modal-planilla">
+        <div class="modal me-modal me-modal-planilla" role="dialog" aria-modal="true" aria-labelledby="mp-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="mp-titulo">Cargar horas extras</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="mp-arriba">
+                <div class="mp-mes">
+                    <button type="button" class="me-flecha" id="mp-anterior" aria-label="Mes anterior"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+                    <h3 id="mp-mes-titulo">Octubre 2026</h3>
+                    <button type="button" class="me-flecha" id="mp-siguiente" aria-label="Mes siguiente"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+                </div>
+                <div class="mp-suma" id="mp-suma"></div>
+            </div>
+            <div class="modal-body" id="mp-cuerpo">
+                <p class="me-modal-error" id="mp-error" role="alert" hidden></p>
+                <details class="mp-como">
+                    <summary>Cómo se cuentan las horas</summary>
+                    <ul>
+                        <li><b>Un día hábil</b>: tu jornada es de 8:00 a 15:00 y cuenta la salida. Desde las 15:16 suma media hora, desde las 15:46 una hora, y así cada media hora. La entrada es opcional.</li>
+                        <li><b>Un feriado, sábado o domingo</b>: cuenta todo el tiempo de la entrada a la salida, de a media hora. Si te faltan 10 minutos o menos para completar una, se suma.</li>
+                        <li>Las horas de octubre son horas a favor en noviembre.</li>
+                    </ul>
+                </details>
+                <div class="mp-columnas" aria-hidden="true">
+                    <span>Día</span><span>Entrada <span class="me-opcional">(opcional)</span></span><span>Salida</span><span>Horas extras</span><span></span>
+                </div>
+                <ol class="mp-dias" id="mp-dias"></ol>
+                <div class="mp-sumar" id="mp-sumar"></div>
+            </div>
+            <div class="modal-footer">
+                <div class="me-pie-izquierda"><span class="mp-pendientes" id="mp-pendientes">Todo guardado.</span></div>
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="mp-guardar">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Salir sin guardar -->
+    <div class="modal-overlay" id="modal-confirmar">
+        <div class="modal me-modal me-modal-chico" role="dialog" aria-modal="true" aria-labelledby="mc-titulo" aria-describedby="mc-texto">
+            <div class="modal-header">
+                <h2 class="modal-title" id="mc-titulo">¿Salir sin guardar?</h2>
+                <button type="button" class="modal-close" data-cerrar-confirmar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body"><p id="mc-texto" style="margin:0 0 12px"></p></div>
+            <div class="modal-footer">
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar-confirmar>Seguir cargando</button>
+                    <button type="button" class="sg-btn sg-btn-rojo" id="mc-salir">Salir sin guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mq-barra" role="region" aria-label="Controles de la maqueta">
+        <span class="mq-rotulo">Maqueta</span>
+        <div class="mq-botones">
+            <button type="button" data-mq="abrir">Abrir «Cargar horas extras»</button>
+            <button type="button" data-mq="septiembre">Abrir en septiembre</button>
+            <button type="button" data-mq="reiniciar">Volver a los datos de entrada</button>
+        </div>
+        <p class="mq-idea">Sofía Paz (contrato, inventada). Hoy es el martes 27/10/2026. Probá cambiar una salida, el feriado del 12/10, «Sumar un sábado o domingo», una nota, cambiar de mes y «Guardar».</p>
+    </div>
+    <div class="mq-aviso" id="mq-aviso" role="status" aria-live="polite"></div>
+
+    <script src="datos.js"></script>
+    <script src="pestana-real.js"></script>
+    <script src="maqueta.js"></script>
+</body>
+</html>

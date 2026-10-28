@@ -6,13 +6,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  numeroTexto, diaCorto, diaLargo, mesEnFrase, mesTitulo, resumenDe, filasDeLicencias, tablaDeHorasExtras, proximoFeriadoDe
+  numeroTexto, diaCorto, diaLargo, mesEnFrase, mesTitulo, resumenDe, filasDeLicencias, tablaDeHorasExtras, proximoFeriadoDe,
+  planillaDelMes
 } from '../services/miEspacioResumen.js';
 import * as reglas from '../services/miEspacioReglas.js';
-import { NOMBRES_DE_LOS_FIJOS } from '../services/feriadosReglas.js';
+import { NOMBRES_DE_LOS_FIJOS, feriadosDelRango } from '../services/feriadosReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
-const { calcular, MENSAJES_MI_ESPACIO } = reglas;
+const { calcular, MENSAJES_MI_ESPACIO, horasPorMesDeSalidas, NOMBRES_TIPO } = reglas;
 
 const HOY_Y_MANANA = Object.freeze({ ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null });
 
@@ -31,6 +32,13 @@ const tablaDel = (caso, { estado = caso.estado, hoy = HOY, anio = 2026 } = {}) =
 const conLicencias = (estado, ...licencias) => ({ ...estado, licencias: [...estado.licencias, ...licencias] });
 const licencia = (id, tipo, desde, hasta = desde, horas = null) => ({ id, tipo, desde, hasta, horas });
 
+// Las horas extras que tenía CONTRATO antes de la planilla (los mismos días y totales que sus salidas: 10,5 en septiembre y 4
+// en octubre). Desde la planilla, CONTRATO tiene solo sus salidas: estas sirven para la persona de contrato que pasó a planta
+const HORAS_EXTRAS_DE_CONTRATO = Object.freeze([
+  { id: 1, fecha: '2026-09-10', desde: '18:00', hasta: '22:00' }, { id: 2, fecha: '2026-09-17', desde: '18:00', hasta: '22:00' },
+  { id: 3, fecha: '2026-09-24', desde: '18:00', hasta: '20:30' }, { id: 4, fecha: '2026-10-21', desde: '18:00', hasta: '22:00' }
+]);
+
 // Ningún undefined ni NaN, en ningún nivel: todo número es un número y todo texto, un texto
 const sinHuecos = (valor, camino = 'raíz') => {
   assert.notEqual(valor, undefined, `${camino} es undefined`);
@@ -44,6 +52,43 @@ const FERIADO_SOBERANIA = Object.freeze({
   id: 1, fecha: '2026-11-23', nombre: 'Día de la Soberanía Nacional', tipo: 'nacional', trasladado_de: null,
   se_repite: 0, hasta_anio: null, activo: 1, no_rige: []
 });
+
+// La planilla de contrato (spec 2026-10-27-mi-espacio-horas, secciones 3, 4, 5 y 8). Hoy es el martes 27/10/2026, como en la
+// maqueta. El lunes 12/10 es feriado (de la tabla) y el sábado 17/10, uno inventado para los tests: un sábado que además es
+// feriado (Review Focus 2). Los feriados, con los 9 fijos, del rango entero de la planilla
+const HOY_PLANILLA = '2026-10-27';
+const FERIADO_DIVERSIDAD = Object.freeze({
+  ...FERIADO_SOBERANIA, id: 2, fecha: '2026-10-12', nombre: 'Día del Respeto a la Diversidad Cultural'
+});
+const FERIADO_EN_SABADO = Object.freeze({
+  ...FERIADO_SOBERANIA, id: 3, fecha: '2026-10-17', nombre: 'Feriado de prueba en sábado', tipo: 'municipal'
+});
+const FILAS_PLANILLA = Object.freeze([FERIADO_DIVERSIDAD, FERIADO_EN_SABADO]);
+const feriadosDe = (filas) => feriadosDelRango(filas, '2024-01-01', '2027-12-31');
+const FERIADOS_PLANILLA = feriadosDe(FILAS_PLANILLA);
+
+// Una salida de la planilla (las de CONTRATO tienen ids del 1 al 4: las de los tests, desde el 10)
+const salidaDe = (id, fecha, salida, entrada = null, nota = null) => ({ id, fecha, entrada, salida, nota });
+// Las de octubre de la maqueta, con las de CONTRATO (el 21/10, salida a las 19:00: 4 h). Octubre suma 16 horas
+const SALIDAS_DE_OCTUBRE = Object.freeze([
+  salidaDe(10, '2026-10-05', '16:20', '08:02'), // 1,5 h: la entrada no cuenta
+  salidaDe(11, '2026-10-09', '17:16'), // 2,5 h, en un día de licencia de día entero: sigue sumando, con su aviso
+  salidaDe(12, '2026-10-12', '12:10', '09:21', 'Guardia de la mesa de datos'), // feriado, de la entrada a la salida: 2,5 h
+  salidaDe(13, '2026-10-16', '15:05', '07:58'), // 0: no llega a media hora
+  salidaDe(14, '2026-10-20', '13:02'), // 0, un día con 2 h a favor
+  salidaDe(15, '2026-10-24', '13:20', '09:00', 'Relevamiento en el barrio'), // sábado, de la entrada a la salida: 4,5 h
+  salidaDe(16, '2026-10-26', '15:47') // 1 h
+]);
+const ESTADO_PLANILLA = Object.freeze({ ...CONTRATO.estado, salidas: [...CONTRATO.estado.salidas, ...SALIDAS_DE_OCTUBRE] });
+
+const planillaDel = (estado = ESTADO_PLANILLA,
+  { mes = '2026-10', hoy = HOY_PLANILLA, feriados = FERIADOS_PLANILLA, filas = FILAS_PLANILLA } = {}) =>
+  planillaDelMes(estado, calcular(estado, { hoy, feriados }), { mes, hoy, feriados, filasFeriados: filas });
+// Un día de la planilla, de los días o de los sábados y domingos para sumar
+const diaDe = (planilla, fecha) => [...planilla.dias, ...planilla.fines_de_semana].find((dia) => dia.fecha === fecha);
+// La tabla de horas extras con feriados
+const tablaConFeriados = (estado, { hoy = HOY_PLANILLA, feriados = FERIADOS_PLANILLA } = {}) =>
+  tablaDeHorasExtras(estado, calcular(estado, { hoy, feriados }), { anio: 2026, hoy, feriados });
 
 describe('los formatos', () => {
   it('numeroTexto y mesEnFrase son los de las reglas, no una copia', () => {
@@ -371,6 +416,25 @@ describe('el Resumen de CONTRATO', () => {
       ['vacaciones', '13 disponibles'], ['estudios', 'Quedan 7 de 10'], ['medica', 'Quedan 25 de 25'],
       ['familiar', 'Quedan 21 de 25'], ['medica_extraordinaria', 'Sin tope'], ['horas_a_favor', 'Quedan 1,5 h en octubre']
     ]);
+  });
+
+  it('los avisos de las salidas, al final de los faltantes (spec 2026-10-27-mi-espacio-horas, sección 7)', () => {
+    // Una salida del 21/10 con vacaciones cargadas después, y una de más de horas a favor en enero de 2027
+    const estado = conLicencias(CONTRATO.estado, licencia(100, 'vacaciones', '2026-10-21'),
+      licencia(101, 'horas_a_favor', '2027-01-04', '2027-01-04', 1));
+    assert.deepEqual(resumenDel(CONTRATO, { estado }).faltantes, [
+      'Revisá tus horas a favor de enero de 2027: cargaste 1 hora y no corresponde ninguna.',
+      'Revisá tus horas extras del miércoles 21/10: ese día tenés una licencia de día entero.'
+    ]);
+    // Sin avisos (un cálculo de antes, sin la clave), solo los faltantes
+    const calculo = calculoDe(estado);
+    const { avisosDeSalidas: _sinAvisos, ...sinLaClave } = calculo;
+    assert.deepEqual(resumenDe({ persona: CONTRATO.persona, estado, calculo: sinLaClave, hoy: HOY, feriados: SIN_FERIADOS })
+      .faltantes, ['Revisá tus horas a favor de enero de 2027: cargaste 1 hora y no corresponde ninguna.']);
+    // Lo que no es un aviso con su texto no va
+    const raros = { ...calculo, avisosDeSalidas: [null, 3, { texto: 5 }, ...calculo.avisosDeSalidas] };
+    assert.deepEqual(resumenDe({ persona: CONTRATO.persona, estado, calculo: raros, hoy: HOY, feriados: SIN_FERIADOS })
+      .faltantes, resumenDel(CONTRATO, { estado }).faltantes);
   });
 
   it('sin horas a favor que queden: ni Vence pronto ni el ámbar', () => {
@@ -714,7 +778,8 @@ describe('la lista de licencias', () => {
   });
 
   it('fuera de la modalidad (Review Focus 1): CONTRATO pasado a planta lista sus horas a favor en gris', () => {
-    const estado = { ...CONTRATO.estado, modalidad: 'planta' };
+    // Con las horas extras que tenía CONTRATO antes de la planilla (en planta, las salidas no cuentan)
+    const estado = { ...CONTRATO.estado, modalidad: 'planta', horasExtras: HORAS_EXTRAS_DE_CONTRATO };
     const filas = filasDel(CONTRATO, { estado }).licencias;
     const horas = filas.filter((fila) => fila.tipo === 'horas_a_favor');
     assert.equal(horas.length, 2);
@@ -850,13 +915,13 @@ describe('la tabla de horas extras de contrato', () => {
     assert.equal(tabla.modalidad, 'contrato');
     assert.deepEqual(tabla.meses, [
       {
-        mes: '2026-10', mes_texto: 'Octubre 2026', horas_texto: '4 h', a_favor_texto: 'Noviembre 2026', usadas_texto: '—',
-        usadas_detalle: '', estado: 'sumando', situacion: 'El mes sigue sumando'
+        mes: '2026-10', mes_texto: 'Octubre 2026', horas_texto: '4 h', a_favor_texto: 'Noviembre 2026',
+        a_favor_detalle: '4 horas', usadas_texto: '—', usadas_detalle: '', estado: 'sumando', situacion: 'El mes sigue sumando'
       },
       {
         mes: '2026-09', mes_texto: 'Septiembre 2026', horas_texto: '10,5 h', a_favor_texto: 'Octubre 2026',
-        usadas_texto: '9 h', usadas_detalle: '09/10: 7 h · 20/10: 2 h', estado: 'en_uso',
-        situacion: '1,5 h para usar hasta el 30/10'
+        a_favor_detalle: '1 día de franco y 3,5 horas', usadas_texto: '9 h', usadas_detalle: '09/10: 7 h · 20/10: 2 h',
+        estado: 'en_uso', situacion: '1,5 h para usar hasta el 30/10'
       }
     ]);
     assert.ok(!('uso_autorizado' in tabla));
@@ -888,8 +953,10 @@ describe('la tabla de horas extras de contrato', () => {
     const septiembre = tablaDel(CONTRATO, { estado: usadas }).meses.find((mes) => mes.mes === '2026-09');
     assert.deepEqual([septiembre.estado, septiembre.situacion], ['usadas', 'Todas usadas']);
     // 3 horas en agosto, para usar en septiembre, antes del arranque del 26/10: lo que quedó ya está en el saldo
-    const agosto = { ...CONTRATO.estado, horasExtras: [...CONTRATO.estado.horasExtras,
-      { id: 10, fecha: '2026-08-05', desde: '18:00', hasta: '21:00' }] };
+    const agosto = {
+      ...CONTRATO.estado,
+      salidas: [...CONTRATO.estado.salidas, { id: 10, fecha: '2026-08-05', entrada: null, salida: '18:00', nota: null }]
+    };
     const tabla = tablaDel(CONTRATO, { estado: agosto });
     const fila = tabla.meses.find((mes) => mes.mes === '2026-08');
     assert.deepEqual([fila.estado, fila.situacion], ['antes_del_arranque', 'Antes del saldo inicial: está en el saldo']);
@@ -909,6 +976,312 @@ describe('la tabla de horas extras de contrato', () => {
     assert.equal(tabla.modalidad, null);
     assert.deepEqual(tabla.meses, []);
     assert.deepEqual(tabla.dias_por_mes, {});
+  });
+
+  // Spec 2026-10-27-mi-espacio-horas, sección 5: el día por día sale de las salidas de la planilla
+  it('el día por día sale de las salidas, de la más nueva a la más vieja, con el total de cada mes', () => {
+    const tabla = tablaDel(CONTRATO);
+    assert.deepEqual(Object.keys(tabla.dias_por_mes), ['2026-10', '2026-09']);
+    assert.deepEqual(tabla.dias_por_mes['2026-10'], [{
+      id: 4, fecha: '2026-10-21', fecha_texto: 'Mié 21/10', tipo_texto: '', horario: 'Salida 19:00', entrada_texto: '', horas: 4,
+      horas_texto: '4 h', cero: false, nota: null, aviso: null
+    }]);
+    assert.deepEqual(tabla.dias_por_mes['2026-09'].map(({ id, fecha, horario, horas, horas_texto }) =>
+      [id, fecha, horario, horas, horas_texto]), [
+      [3, '2026-09-24', 'Salida 17:30', 2.5, '2,5 h'], [2, '2026-09-17', 'Salida 19:00', 4, '4 h'],
+      [1, '2026-09-10', 'Salida 19:00', 4, '4 h']
+    ]);
+    assert.deepEqual(tabla.totales_por_mes, { '2026-10': '4 horas', '2026-09': '10,5 horas' });
+    // Otro año, sin salidas: nada
+    assert.deepEqual(tablaDel(CONTRATO, { anio: 2025 }).dias_por_mes, {});
+  });
+
+  it('el día por día: el feriado y el sábado de la entrada a la salida, la entrada de un día hábil, los que dan 0 y los avisos', () => {
+    const tabla = tablaConFeriados(ESTADO_PLANILLA);
+    const octubre = tabla.dias_por_mes['2026-10'];
+    assert.deepEqual(octubre.map((dia) => dia.fecha), [
+      '2026-10-26', '2026-10-24', '2026-10-21', '2026-10-20', '2026-10-16', '2026-10-12', '2026-10-09', '2026-10-05'
+    ]);
+    const delDia = (fecha) => octubre.find((dia) => dia.fecha === fecha);
+    assert.deepEqual(delDia('2026-10-05'), {
+      id: 10, fecha: '2026-10-05', fecha_texto: 'Lun 05/10', tipo_texto: '', horario: 'Salida 16:20',
+      entrada_texto: 'Entrada 08:02', horas: 1.5, horas_texto: '1,5 h', cero: false, nota: null, aviso: null
+    });
+    assert.deepEqual(delDia('2026-10-12'), {
+      id: 12, fecha: '2026-10-12', fecha_texto: 'Lun 12/10', tipo_texto: 'Feriado', horario: 'De 09:21 a 12:10',
+      entrada_texto: '', horas: 2.5, horas_texto: '2,5 h', cero: false, nota: 'Guardia de la mesa de datos', aviso: null
+    });
+    assert.deepEqual(delDia('2026-10-24'), {
+      id: 15, fecha: '2026-10-24', fecha_texto: 'Sáb 24/10', tipo_texto: 'Sábado', horario: 'De 09:00 a 13:20',
+      entrada_texto: '', horas: 4.5, horas_texto: '4,5 h', cero: false, nota: 'Relevamiento en el barrio', aviso: null
+    });
+    // Los que dan 0, en gris: «0» y `cero` (también con la entrada de un día hábil, que no cuenta)
+    assert.deepEqual([delDia('2026-10-16'), delDia('2026-10-20')].map(({ entrada_texto, horas, horas_texto, cero }) =>
+      [entrada_texto, horas, horas_texto, cero]), [['Entrada 07:58', 0, '0', true], ['', 0, '0', true]]);
+    // Un día de licencia de día entero: la salida sigue sumando, con su aviso
+    assert.deepEqual([delDia('2026-10-09').horas, delDia('2026-10-09').aviso],
+      [2.5, 'Ese día tenés una licencia de día entero: revisá esta salida.']);
+    assert.equal(tabla.totales_por_mes['2026-10'], '16 horas');
+    const mes = tabla.meses.find((uno) => uno.mes === '2026-10');
+    assert.deepEqual([mes.horas_texto, mes.a_favor_texto, mes.a_favor_detalle], ['16 h', 'Noviembre 2026', '2 días de franco y 2 horas']);
+
+    // El 21/10 pasa a ser feriado (cargado después): sin entrada no suma, y lo dice su aviso; un domingo, de la entrada a la salida
+    const filas = [...FILAS_PLANILLA, { ...FERIADO_DIVERSIDAD, id: 4, fecha: '2026-10-21', nombre: 'Feriado cargado después' }];
+    const domingo = { ...ESTADO_PLANILLA, salidas: [...ESTADO_PLANILLA.salidas, salidaDe(17, '2026-10-25', '11:00', '10:00')] };
+    const conFeriado = tablaConFeriados(domingo, { feriados: feriadosDe(filas) });
+    const del21 = conFeriado.dias_por_mes['2026-10'].find((dia) => dia.fecha === '2026-10-21');
+    assert.deepEqual(del21, {
+      id: 4, fecha: '2026-10-21', fecha_texto: 'Mié 21/10', tipo_texto: 'Feriado', horario: 'Salida 19:00', entrada_texto: '',
+      horas: null, horas_texto: '', cero: false, nota: null, aviso: 'Ahora es feriado: falta la entrada.'
+    });
+    const del25 = conFeriado.dias_por_mes['2026-10'].find((dia) => dia.fecha === '2026-10-25');
+    assert.deepEqual([del25.tipo_texto, del25.horario, del25.horas_texto], ['Domingo', 'De 10:00 a 11:00', '1 h']);
+    assert.equal(conFeriado.totales_por_mes['2026-10'], '13 horas');
+  });
+
+  it('cada mes dice debajo de «A favor en» lo mismo en días de franco; las horas extras de planta no cuentan en contrato', () => {
+    // 21 horas (4 + 3 + 7 + 7) son 3 días de franco, sin horas sueltas
+    const estado = { ...CONTRATO.estado, salidas: [...CONTRATO.estado.salidas, salidaDe(10, '2026-10-22', '18:00'),
+      salidaDe(11, '2026-10-23', '22:00'), salidaDe(12, '2026-10-26', '22:00')] };
+    assert.equal(tablaDel(CONTRATO, { estado }).meses.find((mes) => mes.mes === '2026-10').a_favor_detalle,
+      '3 días de franco');
+    // Unas horas extras de la tabla de planta (de cuando era de planta) no van en el día por día ni en los totales
+    const conHorasExtras = { ...CONTRATO.estado, horasExtras: [{ id: 1, fecha: '2026-10-06', desde: '18:00', hasta: '21:30' }] };
+    assert.deepEqual(tablaDel(CONTRATO, { estado: conHorasExtras }), tablaDel(CONTRATO));
+  });
+
+  it('planta no cambia: sus horas extras, sin a_favor_detalle, y las salidas no cuentan', () => {
+    const conSalidas = { ...PLANTA.estado, salidas: SALIDAS_DE_OCTUBRE };
+    assert.deepEqual(tablaDel(PLANTA, { estado: conSalidas }), tablaDel(PLANTA));
+    assert.ok(tablaDel(PLANTA).meses.every((mes) => !('a_favor_detalle' in mes)));
+    assert.deepEqual(Object.keys(tablaDel(PLANTA).dias_por_mes['2026-10'][0]),
+      ['id', 'fecha', 'fecha_texto', 'desde', 'hasta', 'horario', 'horas_texto', 'nota']);
+  });
+});
+
+describe('la planilla de un mes (spec 2026-10-27-mi-espacio-horas, secciones 3, 4 y 8)', () => {
+  const CLAVES_DEL_DIA = ['fecha', 'fecha_texto', 'fecha_larga', 'tipo', 'feriado', 'finde_texto', 'licencia', 'futuro', 'hoy',
+    'entrada', 'salida', 'nota', 'horas', 'horas_texto', 'aviso'];
+
+  it('octubre: la cabeza, los días hábiles con los feriados de lunes a viernes, los sábados y domingos y la suma', () => {
+    const planilla = planillaDel();
+    assert.deepEqual(Object.keys(planilla),
+      ['modalidad', 'mes', 'mes_texto', 'hoy', 'anterior', 'siguiente', 'dias', 'fines_de_semana', 'suma']);
+    assert.deepEqual([planilla.modalidad, planilla.mes, planilla.mes_texto, planilla.hoy],
+      ['contrato', '2026-10', 'Octubre 2026', '2026-10-27']);
+    // Los días hábiles de octubre, el feriado del 12/10 y el sábado 24/10, que tiene una salida
+    assert.deepEqual(planilla.dias.map((dia) => dia.fecha), [
+      '2026-10-01', '2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09', '2026-10-12',
+      '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16', '2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22',
+      '2026-10-23', '2026-10-24', '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30'
+    ]);
+    // Los demás sábados y domingos hasta hoy, para «Sumar el día» (el 31/10 todavía no llegó)
+    assert.deepEqual(planilla.fines_de_semana.map((dia) => dia.fecha), [
+      '2026-10-03', '2026-10-04', '2026-10-10', '2026-10-11', '2026-10-17', '2026-10-18', '2026-10-25'
+    ]);
+    for (const dia of [...planilla.dias, ...planilla.fines_de_semana]) assert.deepEqual(Object.keys(dia), CLAVES_DEL_DIA, dia.fecha);
+    // La suma: 1,5 + 2,5 + 2,5 + 0 + 0 + 4 + 4,5 + 1, la misma de las horas a favor
+    assert.deepEqual(planilla.suma,
+      { horas: 16, cifra: '16', texto: 'En noviembre vas a tener 2 días de franco y 2 horas a favor.' });
+    assert.equal(planilla.suma.horas, horasPorMesDeSalidas(ESTADO_PLANILLA.salidas, FERIADOS_PLANILLA).get('2026-10'));
+    assert.equal(planilla.suma.horas, planilla.dias.reduce((suma, dia) => suma + (dia.horas ?? 0), 0));
+  });
+
+  it('un día hábil: la salida cuenta desde las 15:00 y la entrada no cuenta; sin salida, sin horas', () => {
+    const planilla = planillaDel();
+    assert.deepEqual(diaDe(planilla, '2026-10-05'), {
+      fecha: '2026-10-05', fecha_texto: 'Lun 05/10', fecha_larga: 'lunes 05/10', tipo: 'habil', feriado: null,
+      finde_texto: null, licencia: null, futuro: false, hoy: false, entrada: '08:02', salida: '16:20', nota: null, horas: 1.5,
+      horas_texto: '1,5 h', aviso: null
+    });
+    assert.deepEqual(diaDe(planilla, '2026-10-06'), {
+      fecha: '2026-10-06', fecha_texto: 'Mar 06/10', fecha_larga: 'martes 06/10', tipo: 'habil', feriado: null,
+      finde_texto: null, licencia: null, futuro: false, hoy: false, entrada: null, salida: null, nota: null, horas: null,
+      horas_texto: '', aviso: null
+    });
+    // No llega a media hora: «0»; una hora, «1 h»
+    assert.deepEqual([diaDe(planilla, '2026-10-16').horas, diaDe(planilla, '2026-10-16').horas_texto], [0, '0']);
+    assert.deepEqual([diaDe(planilla, '2026-10-26').horas, diaDe(planilla, '2026-10-26').horas_texto], [1, '1 h']);
+  });
+
+  it('el feriado del 12/10, con su nombre, cuenta de la entrada a la salida', () => {
+    assert.deepEqual(diaDe(planillaDel(), '2026-10-12'), {
+      fecha: '2026-10-12', fecha_texto: 'Lun 12/10', fecha_larga: 'lunes 12/10', tipo: 'feriado',
+      feriado: 'Día del Respeto a la Diversidad Cultural', finde_texto: null, licencia: null, futuro: false, hoy: false,
+      entrada: '09:21', salida: '12:10', nota: 'Guardia de la mesa de datos', horas: 2.5, horas_texto: '2,5 h', aviso: null
+    });
+  });
+
+  it('las licencias: la de día entero con su tipo (y una salida de antes, con su aviso); la de unas horas, con su etiqueta', () => {
+    // El tipo de una de día entero es el de la insignia de su fila en la lista de licencias (NOMBRES_TIPO); las de horas, su texto
+    const planilla = planillaDel();
+    // Las horas a favor de 7 horas del 9/10: el día entero, con la salida guardada de antes, que sigue sumando
+    const del9 = diaDe(planilla, '2026-10-09');
+    assert.deepEqual(del9.licencia, { texto: 'Horas a favor, el día entero', entera: true });
+    assert.deepEqual([del9.salida, del9.horas, del9.horas_texto, del9.aviso],
+      ['17:16', 2.5, '2,5 h', 'Ese día tenés una licencia de día entero: revisá esta salida.']);
+    // Los estudios del 13 al 15/10 (anteriores al arranque: igual son días de licencia)
+    for (const fecha of ['2026-10-13', '2026-10-14', '2026-10-15']) {
+      assert.deepEqual(diaDe(planilla, fecha).licencia, { texto: NOMBRES_TIPO.estudios, entera: true }, fecha);
+    }
+    // Las 2 horas a favor del 20/10: se carga normal
+    const del20 = diaDe(planilla, '2026-10-20');
+    assert.deepEqual([del20.licencia, del20.horas_texto, del20.aviso], [{ texto: '2 h a favor', entera: false }, '0', null]);
+    // El grupo familiar del 30/10, que todavía no llegó
+    assert.deepEqual([diaDe(planilla, '2026-10-30').licencia, diaDe(planilla, '2026-10-30').futuro],
+      [{ texto: NOMBRES_TIPO.familiar, entera: true }, true]);
+    assert.equal(NOMBRES_TIPO.familiar, 'Atención del grupo familiar');
+    // El mismo texto que la insignia de esa licencia en la lista de licencias
+    assert.equal(diaDe(planilla, '2026-10-30').licencia.texto,
+      filasDel(CONTRATO, { estado: ESTADO_PLANILLA }).licencias.find((fila) => fila.id === 4).tipo_nombre);
+    // Sin licencia, null
+    assert.equal(diaDe(planilla, '2026-10-21').licencia, null);
+
+    // Los demás tipos, en septiembre (el 1/9 es martes): vacaciones que cruzan un fin de semana, la médica, la
+    // extraordinaria, un uso autorizado de 7 horas (con las horas como texto, el DECIMAL de la base) y uno de 3, y 1,5 h a
+    // favor. La franquicia y el franco no son de contrato: no se muestran
+    const estado = conLicencias(CONTRATO.estado,
+      licencia(100, 'medica', '2026-09-01'), licencia(101, 'medica_extraordinaria', '2026-09-02'),
+      licencia(102, 'uso_autorizado', '2026-09-03', '2026-09-03', '7.0'),
+      licencia(103, 'uso_autorizado', '2026-09-04', '2026-09-04', 3),
+      licencia(104, 'horas_a_favor', '2026-09-07', '2026-09-07', 1.5),
+      licencia(105, 'franquicia', '2026-09-08', '2026-09-08', 7), licencia(106, 'franco', '2026-09-09'),
+      licencia(107, 'vacaciones', '2026-09-11', '2026-09-14'));
+    const septiembre = planillaDel(estado, { mes: '2026-09' });
+    const licenciaDel = (fecha) => diaDe(septiembre, fecha).licencia;
+    assert.deepEqual(licenciaDel('2026-09-01'), { texto: NOMBRES_TIPO.medica, entera: true });
+    assert.deepEqual(licenciaDel('2026-09-02'), { texto: NOMBRES_TIPO.medica_extraordinaria, entera: true });
+    assert.equal(NOMBRES_TIPO.medica_extraordinaria, 'Médica extraordinaria');
+    assert.deepEqual(licenciaDel('2026-09-03'), { texto: 'Uso autorizado, el día entero', entera: true });
+    assert.deepEqual(licenciaDel('2026-09-04'), { texto: 'Uso autorizado, 3 h', entera: false });
+    assert.deepEqual(licenciaDel('2026-09-07'), { texto: '1,5 h a favor', entera: false });
+    assert.equal(licenciaDel('2026-09-08'), null);
+    assert.equal(licenciaDel('2026-09-09'), null);
+    assert.deepEqual(licenciaDel('2026-09-11'), { texto: NOMBRES_TIPO.vacaciones, entera: true });
+    assert.deepEqual(licenciaDel('2026-09-14'), { texto: NOMBRES_TIPO.vacaciones, entera: true });
+    // El sábado y el domingo del medio de las vacaciones no son días de licencia
+    assert.equal(licenciaDel('2026-09-12'), null);
+    assert.equal(licenciaDel('2026-09-13'), null);
+  });
+
+  it('hoy lleva su marca y se carga; los días que todavía no llegaron, futuro', () => {
+    const planilla = planillaDel();
+    const marcas = (fecha) => [diaDe(planilla, fecha).hoy, diaDe(planilla, fecha).futuro];
+    assert.deepEqual(marcas('2026-10-26'), [false, false]);
+    assert.deepEqual(marcas('2026-10-27'), [true, false]);
+    for (const fecha of ['2026-10-28', '2026-10-29', '2026-10-30']) assert.deepEqual(marcas(fecha), [false, true], fecha);
+    assert.equal(planilla.dias.filter((dia) => dia.futuro).length, 3);
+    // En un mes que ya pasó, ninguno
+    assert.ok(planillaDel(ESTADO_PLANILLA, { mes: '2026-09' }).dias.every((dia) => !dia.futuro && !dia.hoy));
+  });
+
+  it('los sábados y domingos: con una salida, en los días; sin nada y hasta hoy, para sumar; un sábado feriado, con su nombre (Review Focus 2)', () => {
+    const planilla = planillaDel();
+    assert.deepEqual(diaDe(planilla, '2026-10-24'), {
+      fecha: '2026-10-24', fecha_texto: 'Sáb 24/10', fecha_larga: 'sábado 24/10', tipo: 'finde', feriado: null,
+      finde_texto: 'Sábado', licencia: null, futuro: false, hoy: false, entrada: '09:00', salida: '13:20',
+      nota: 'Relevamiento en el barrio', horas: 4.5, horas_texto: '4,5 h', aviso: null
+    });
+    // El sábado 17/10 es feriado: va con los sábados y domingos para sumar, con `tipo: 'feriado'` y su nombre
+    assert.deepEqual(planilla.fines_de_semana.find((dia) => dia.fecha === '2026-10-17'), {
+      fecha: '2026-10-17', fecha_texto: 'Sáb 17/10', fecha_larga: 'sábado 17/10', tipo: 'feriado',
+      feriado: 'Feriado de prueba en sábado', finde_texto: 'Sábado', licencia: null, futuro: false, hoy: false, entrada: null,
+      salida: null, nota: null, horas: null, horas_texto: '', aviso: null
+    });
+    const del18 = planilla.fines_de_semana.find((dia) => dia.fecha === '2026-10-18');
+    assert.deepEqual([del18.tipo, del18.feriado, del18.finde_texto], ['finde', null, 'Domingo']);
+
+    // Con una salida, el sábado feriado pasa a los días y cuenta de la entrada a la salida: 3 horas más
+    const conSabado = { ...ESTADO_PLANILLA, salidas: [...ESTADO_PLANILLA.salidas, salidaDe(17, '2026-10-17', '12:00', '09:00')] };
+    const otra = planillaDel(conSabado);
+    const sabado = otra.dias.find((dia) => dia.fecha === '2026-10-17');
+    assert.deepEqual([sabado.tipo, sabado.feriado, sabado.finde_texto, sabado.horas, sabado.horas_texto],
+      ['feriado', 'Feriado de prueba en sábado', 'Sábado', 3, '3 h']);
+    assert.ok(!otra.fines_de_semana.some((dia) => dia.fecha === '2026-10-17'));
+    assert.equal(otra.suma.horas, 19);
+
+    // En un mes que ya pasó, todos los sábados y domingos sin nada; si hoy es sábado, ese sábado también
+    assert.deepEqual(planillaDel(ESTADO_PLANILLA, { mes: '2026-09' }).fines_de_semana.map((dia) => dia.fecha), [
+      '2026-09-05', '2026-09-06', '2026-09-12', '2026-09-13', '2026-09-19', '2026-09-20', '2026-09-26', '2026-09-27'
+    ]);
+    const unSabado = planillaDel(CONTRATO.estado, { hoy: '2026-10-24' });
+    assert.deepEqual(unSabado.fines_de_semana.map((dia) => dia.fecha).slice(-2), ['2026-10-18', '2026-10-24']);
+    assert.equal(diaDe(unSabado, '2026-10-24').hoy, true);
+    assert.equal(unSabado.dias.at(-1).fecha, '2026-10-30');
+  });
+
+  it('una salida que dejó de cerrar: el día que pasó a ser feriado sin entrada no suma y lleva su aviso', () => {
+    const filas = [...FILAS_PLANILLA, { ...FERIADO_DIVERSIDAD, id: 4, fecha: '2026-10-21', nombre: 'Feriado cargado después' }];
+    const planilla = planillaDel(ESTADO_PLANILLA, { feriados: feriadosDe(filas), filas });
+    assert.deepEqual(diaDe(planilla, '2026-10-21'), {
+      fecha: '2026-10-21', fecha_texto: 'Mié 21/10', fecha_larga: 'miércoles 21/10', tipo: 'feriado',
+      feriado: 'Feriado cargado después', finde_texto: null, licencia: null, futuro: false, hoy: false, entrada: null,
+      salida: '19:00', nota: null, horas: null, horas_texto: '', aviso: 'Ahora es feriado: falta la entrada.'
+    });
+    assert.equal(planilla.suma.horas, 12);
+  });
+
+  it('los nombres de los feriados: los 9 fijos, el primero de la lista si hay dos el mismo día y, sin nombre, «Feriado»', () => {
+    // Mayo de 2026: el 1/5 (viernes) y el 25/5 (lunes), fijos, también sin feriados en la tabla
+    const mayo = planillaDel(CONTRATO.estado, { mes: '2026-05', feriados: SIN_FERIADOS, filas: [] });
+    for (const fecha of ['2026-05-01', '2026-05-25']) {
+      assert.deepEqual([diaDe(mayo, fecha).tipo, diaDe(mayo, fecha).feriado], ['feriado', NOMBRES_DE_LOS_FIJOS[fecha.slice(5)]]);
+    }
+    // Uno de la tabla el mismo día que un fijo: el fijo va primero
+    const otro = { ...FERIADO_DIVERSIDAD, id: 5, fecha: '2026-05-25', nombre: 'Otro feriado el mismo día' };
+    assert.equal(diaDe(planillaDel(CONTRATO.estado, { mes: '2026-05', feriados: feriadosDe([otro]), filas: [otro] }),
+      '2026-05-25').feriado, NOMBRES_DE_LOS_FIJOS['05-25']);
+    // Un feriado del Set del que no llegó la fila (los dos salen de la misma tabla: no debería pasar)
+    const sinFila = planillaDel(ESTADO_PLANILLA, { feriados: new Set([...FERIADOS_PLANILLA, '2026-10-22']) });
+    assert.deepEqual([diaDe(sinFila, '2026-10-22').tipo, diaDe(sinFila, '2026-10-22').feriado], ['feriado', 'Feriado']);
+    // Un día hábil no tiene nombre de feriado
+    assert.equal(diaDe(planillaDel(), '2026-10-22').feriado, null);
+  });
+
+  it('anterior y siguiente: null en el primer mes del rango y en el de hoy; sin mes, el de hoy', () => {
+    const navegacion = (mes) => {
+      const planilla = planillaDel(ESTADO_PLANILLA, { mes });
+      return [planilla.mes, planilla.anterior, planilla.siguiente];
+    };
+    assert.deepEqual(navegacion('2026-10'), ['2026-10', '2026-09', null]);
+    assert.deepEqual(navegacion('2026-09'), ['2026-09', '2026-08', '2026-10']);
+    assert.deepEqual(navegacion('2026-01'), ['2026-01', '2025-12', '2026-02']);
+    assert.deepEqual(navegacion('2024-01'), ['2024-01', null, '2024-02']);
+    assert.deepEqual(navegacion(undefined), ['2026-10', '2026-09', null]);
+    assert.deepEqual(navegacion(''), ['2026-10', '2026-09', null]);
+  });
+
+  it('la suma: un mes que ya pasó, uno sin horas y el en curso sin horas', () => {
+    assert.deepEqual(planillaDel(ESTADO_PLANILLA, { mes: '2026-09' }).suma,
+      { horas: 10.5, cifra: '10,5', texto: 'En octubre tuviste 1 día de franco y 3,5 horas a favor.' });
+    assert.deepEqual(planillaDel(ESTADO_PLANILLA, { mes: '2026-08' }).suma,
+      { horas: 0, cifra: '0', texto: 'En agosto no hiciste horas extras.' });
+    const sinHoras = { horas: 0, cifra: '0', texto: 'Todavía no sumaste horas extras en octubre.' };
+    assert.deepEqual(planillaDel({ ...CONTRATO.estado, salidas: [] }).suma, sinHoras);
+    // Un estado sin la clave de las salidas, igual
+    const sinSalidas = { ...CONTRATO.estado };
+    delete sinSalidas.salidas;
+    assert.deepEqual(planillaDel(sinSalidas).suma, sinHoras);
+  });
+
+  it('fuera de contrato, con un mes que no sirve o sin un hoy válido, null', () => {
+    assert.equal(planillaDel(PLANTA.estado), null);
+    assert.equal(planillaDel({ ...CONTRATO.estado, modalidad: null }), null);
+    for (const mes of ['2026-11', '2023-12', '2026-13', '2026-1', '2026-10-01', ['2026-10'], 202610]) {
+      assert.equal(planillaDel(ESTADO_PLANILLA, { mes }), null, JSON.stringify(mes));
+    }
+    for (const hoy of [undefined, null, '', 'x', '2026-02-30']) {
+      assert.equal(planillaDelMes(ESTADO_PLANILLA, calculoDe(ESTADO_PLANILLA), { mes: '2026-10', hoy }), null, String(hoy));
+    }
+    for (const raro of [undefined, null, '', 'x', 3, []]) assert.equal(planillaDelMes(raro, null, { hoy: HOY_PLANILLA }), null);
+    assert.equal(planillaDelMes(ESTADO_PLANILLA, null, undefined), null);
+  });
+
+  it('pasada por JSON queda igual: todo número es un número y todo texto, un texto', () => {
+    const planilla = planillaDel();
+    sinHuecos(planilla);
+    assert.deepEqual(JSON.parse(JSON.stringify(planilla)), planilla);
+    sinHuecos(planillaDel(ESTADO_PLANILLA, { mes: '2024-01' }));
   });
 });
 
@@ -976,6 +1349,14 @@ describe('nada tira', () => {
         tablaDeHorasExtras(PLANTA.estado, valor, { anio: valor, hoy: HOY, feriados: valor });
         tablaDeHorasExtras({ ...CONTRATO.estado, horasExtras: [valor, { id: valor, fecha: '2026-10-01', desde: valor }] },
           calculoDe(CONTRATO.estado), { hoy: HOY });
+        tablaDeHorasExtras({ ...CONTRATO.estado, salidas: [valor, { id: valor, fecha: '2026-10-01', salida: valor, entrada: valor,
+          nota: valor }, { fecha: valor, salida: '16:00' }] }, calculoDe(CONTRATO.estado), { hoy: HOY, feriados: valor });
+        planillaDelMes(valor, valor, valor);
+        planillaDelMes(CONTRATO.estado, valor, { mes: valor, hoy: HOY_PLANILLA, feriados: valor, filasFeriados: valor });
+        planillaDelMes({ ...CONTRATO.estado, salidas: [valor, { fecha: '2026-10-05', salida: valor, entrada: valor, nota: valor }],
+          licencias: [valor, { tipo: 'horas_a_favor', desde: valor, hasta: valor, horas: valor },
+            { tipo: 'uso_autorizado', desde: '2026-10-05', hasta: '2026-10-05', horas: valor }] },
+        calculoDe(CONTRATO.estado), { hoy: HOY_PLANILLA, filasFeriados: [valor, { fecha: valor, activo: 1 }] });
         proximoFeriadoDe(valor, valor);
         proximoFeriadoDe([valor, { fecha: valor, activo: 1 }], HOY);
       });
@@ -999,6 +1380,10 @@ describe('nada tira', () => {
       sinHuecos(filasDeLicencias(caso.estado, roto, { anio: 2026, hoy: HOY, persona: caso.persona, feriados: SIN_FERIADOS }));
       sinHuecos(tablaDeHorasExtras(caso.estado, roto, { anio: 2026, hoy: HOY, feriados: SIN_FERIADOS }));
     }
+    const planilla = planillaDelMes(ESTADO_PLANILLA, roto, { hoy: HOY_PLANILLA, feriados: FERIADOS_PLANILLA, filasFeriados: [] });
+    sinHuecos(planilla);
+    // Sin los avisos del cálculo, ningún día lleva aviso
+    assert.ok(planilla.dias.every((dia) => dia.aviso === null));
   });
 
   it('sin un hoy válido, un Resumen sin nada que calcular', () => {

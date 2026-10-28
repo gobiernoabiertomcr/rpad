@@ -25,7 +25,7 @@ const numeroONulo = (valor) => (valor === null || valor === undefined ? null : N
 const horaDe = (valor) => String(valor).slice(0, 5);
 
 const estadoVacio = (modalidad = null) =>
-  ({ modalidad, arranque: null, anios: [], saldos: [], licencias: [], horasExtras: [] });
+  ({ modalidad, arranque: null, anios: [], saldos: [], licencias: [], horasExtras: [], salidas: [] });
 
 // Una licencia de Mi espacio, de la base a lo que leen las reglas
 const COLUMNAS_LICENCIA_MIA = `id, usuario_id, tipo, DATE_FORMAT(desde, '%Y-%m-%d') AS desde,
@@ -55,13 +55,16 @@ export const personaDe = async (usuarioId, conexion = pool) => {
 };
 
 /**
- * El `Estado` de varias personas: un Map de cada id (número) que existe en `usuarios` a lo que cargó, con seis consultas para
+ * El `Estado` de varias personas: un Map de cada id (número) que existe en `usuarios` a lo que cargó, con siete consultas para
  * todas. La modalidad sale del vínculo (`modalidadDe`); de cada tabla, solo lo activo:
  * - `anios`: `[{ anio, dias_vacaciones, estudios }]`, por año;
  * - `saldos`: `[{ concepto, anio, cantidad }]`, por año y concepto;
  * - `licencias`: `[{ id, tipo, desde, hasta, horas, mostrar, nota, licencia_oficial_id, oficial, sin_pasar }]`, por fecha
  *   (`horas` es null en las que no son por horas);
- * - `horasExtras`: `[{ id, fecha, desde, hasta, nota }]`, por fecha y horario.
+ * - `horasExtras`: `[{ id, fecha, desde, hasta, nota }]`, por fecha y horario;
+ * - `salidas`: `[{ id, fecha, entrada, salida, nota }]`, la planilla de contrato (spec 2026-10-27-mi-espacio-horas, 6), por
+ *   fecha (una por día); `entrada` es null si no se cargó. Se leen para cualquier modalidad: las reglas eligen cuáles cuentan
+ *   (planta, `horasExtras`; contrato, `salidas`).
  * Los ids que no sirven o que no existen no están; sin ninguno, un Map vacío (sin consultar).
  * @returns {Promise<Map<number, object>>}
  */
@@ -123,6 +126,21 @@ export const estadosDe = async (usuarioIds, conexion = pool) => {
       id: Number(fila.id), fecha: fila.fecha, desde: horaDe(fila.desde), hasta: horaDe(fila.hasta), nota: fila.nota ?? null
     });
   }
+
+  // Las horas, ya cortadas a 'HH:MM' en la consulta: una entrada NULL sigue siendo null
+  const [salidas] = await conexion.query(
+    `SELECT id, usuario_id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, TIME_FORMAT(entrada, '%H:%i') AS entrada,
+            TIME_FORMAT(salida, '%H:%i') AS salida, nota
+     FROM mi_espacio_salidas
+     WHERE usuario_id IN (?) AND activo = 1
+     ORDER BY usuario_id, fecha, id`,
+    [encontrados]
+  );
+  for (const fila of salidas) {
+    deLaPersona(fila.usuario_id).salidas.push({
+      id: Number(fila.id), fecha: fila.fecha, entrada: fila.entrada ?? null, salida: fila.salida, nota: fila.nota ?? null
+    });
+  }
   return estados;
 };
 
@@ -139,10 +157,10 @@ const anioDe = (fecha) => (typeof fecha === 'string' && /^\d{4}-/.test(fecha) ? 
 /**
  * El Set de los días no hábiles por feriado (`feriadosDelRango`: los 9 fijos y los de la tabla que rigen) que necesitan las
  * reglas para los estados (el Map de `estadosDe` o cualquier iterable de `Estado`): del 01/01 del año más viejo entre hoy − 3
- * y lo cargado (el arranque, las licencias y las horas extras) al 31/12 del más nuevo entre hoy + 2 y lo cargado. El margen
- * cubre lo que se camina fuera de las fechas cargadas (el último día hábil del mes de uso de un franco, la vuelta, el próximo
- * feriado del año siguiente). `filas`: las filas de los feriados si ya se leyeron (`filasDeFeriados`); si no, se leen. Sin un
- * hoy válido ni nada cargado, un Set vacío.
+ * y lo cargado (el arranque, las licencias, las horas extras y las salidas) al 31/12 del más nuevo entre hoy + 2 y lo
+ * cargado. El margen cubre lo que se camina fuera de las fechas cargadas (el último día hábil del mes de uso de un franco, la
+ * vuelta, el próximo feriado del año siguiente). `filas`: las filas de los feriados si ya se leyeron (`filasDeFeriados`); si
+ * no, se leen. Sin un hoy válido ni nada cargado, un Set vacío.
  * @returns {Promise<Set<string>>}
  */
 export const feriadosPara = async (estados, hoy, filas = null) => {
@@ -153,7 +171,8 @@ export const feriadosPara = async (estados, hoy, filas = null) => {
     const fechas = [
       estado?.arranque,
       ...(estado?.licencias ?? []).flatMap((fila) => [fila.desde, fila.hasta]),
-      ...(estado?.horasExtras ?? []).map((fila) => fila.fecha)
+      ...(estado?.horasExtras ?? []).map((fila) => fila.fecha),
+      ...(estado?.salidas ?? []).map((fila) => fila.fecha)
     ];
     for (const anio of fechas.map(anioDe)) {
       if (anio === null) continue;
