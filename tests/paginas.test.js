@@ -1083,11 +1083,18 @@ describe('páginas', () => {
       assert.ok(reglas > 30, `${reglas} reglas`);
       // «Hoy» es texto (un <span class="mp-hoy"> que dibuja mi-espacio.js), no el ::after de la maqueta; sin la barra de la maqueta
       assert.doesNotMatch(estilo, /content:\s*'Hoy'|\.mq-/);
+      // El cuerpo deja lugar arriba para las columnas pegadas (un día con el foco no queda debajo de ellas) y el aviso de arriba del
+      // cuerpo no queda pegado a la cabeza fija
+      assert.ok(estilo.includes('.me-modal-planilla .modal-body { padding: 0 24px 8px; scroll-padding-top: 44px; }'));
+      assert.ok(estilo.includes('.me-modal-planilla .me-modal-error { margin-top: 14px; }'));
       // En 720 px o menos
       const telefono = media('(max-width: 720px)');
       for (const regla of ['#modal-planilla { padding: 8px; }', '.mp-columnas { display: none; }', '.mp-rotulo { display: block; }',
         '.mp-dia input[type="time"] { height: 44px; }', '.mp-arriba { grid-template-columns: minmax(0, 1fr);',
-        "grid-template-areas: 'fecha horas' 'entrada salida' 'acciones acciones';", '.mp-sumar .form-select { min-width: 0; width: 100%; }']) {
+        "grid-template-areas: 'fecha horas' 'entrada salida' 'acciones acciones';", '.mp-sumar .form-select { min-width: 0; width: 100%; }',
+        // Sin las columnas, sin su lugar arriba; el sábado o domingo, con el borde de la tarjeta y sin el de la computadora (no dos)
+        '.me-modal-planilla .modal-body { padding: 0 12px 8px; scroll-padding-top: 0; }',
+        '.mp-dia.finde { box-shadow: none; border-color: #C9D3DF; }']) {
         assert.ok(telefono.includes(regla), regla);
       }
       assert.match(telefono, /\.modal\.me-modal\.me-modal-planilla \{ height: calc\(100vh - 16px\); height: calc\(100dvh - 16px\);/);

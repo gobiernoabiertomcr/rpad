@@ -423,7 +423,10 @@
            «Cómo se cuentan» (cerrado), las columnas (pegadas arriba al desplazar) y un día por fila, en semanas. Las dos primeras
            columnas ceden un poco antes de los 720 px, así la fila entra sin desplazar de costado */
         .modal.me-modal.me-modal-planilla { max-width: 900px; height: min(880px, calc(100vh - 40px)); max-height: none; }
-        .me-modal-planilla .modal-body { padding: 0 24px 8px; }
+        /* El cuerpo deja lugar arriba para las columnas pegadas (un día que recibe el foco no queda debajo de ellas), y el aviso de
+           arriba del cuerpo no queda pegado a la cabeza fija */
+        .me-modal-planilla .modal-body { padding: 0 24px 8px; scroll-padding-top: 44px; }
+        .me-modal-planilla .me-modal-error { margin-top: 14px; }
         .me-flecha:disabled { opacity: 0.4; cursor: default; }
         .mp-arriba { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 22px; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--sg-linea); }
         .mp-mes { display: flex; align-items: center; gap: 8px; }
@@ -539,11 +542,12 @@
             .mp-mes h3 { min-width: 0; }
             .mp-suma { padding: 8px 12px; gap: 10px; }
             .mp-suma-cifra { font-size: 1.6rem; }
-            .me-modal-planilla .modal-body { padding: 0 12px 8px; }
+            .me-modal-planilla .modal-body { padding: 0 12px 8px; scroll-padding-top: 0; }
             .mp-columnas { display: none; }
             .mp-dia { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'fecha horas' 'entrada salida' 'acciones acciones'; gap: 8px 10px; padding: 12px 12px 10px 15px; margin-top: 8px; border: 1px solid var(--sg-linea); }
             .mp-dia.feriado { border-color: #F0D78C; }
             .mp-dia.licencia { border-color: #BFE0CC; }
+            .mp-dia.finde { box-shadow: none; border-color: #C9D3DF; }
             .mp-fecha { grid-area: fecha; }
             .mp-horas { grid-area: horas; justify-content: flex-end; flex-wrap: wrap; text-align: right; }
             .mp-campo.entrada { grid-area: entrada; }

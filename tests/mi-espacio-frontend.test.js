@@ -1479,13 +1479,15 @@ const crearDom = () => {
       },
       contains(otro) { for (let nodo = otro; nodo; nodo = nodo.parentNode) if (nodo === el) return true; return false; },
       scrollIntoView() {},
-      focus() { if (!el.disabled && el.isConnected) dom.activo = el; },
+      // Como en el navegador: uno deshabilitado, suelto o dentro de algo inerte (`inert`) no recibe el foco
+      focus() { if (!el.disabled && el.isConnected && !dentroDeUnInerte(el)) dom.activo = el; },
       // Como en el navegador: el que tiene el foco lo suelta (queda en ningún lado, el <body>)
       blur() { if (dom.activo === el) dom.activo = null; }
     };
     return el;
   };
   const soltar = (el) => { for (const hijo of el.hijos) if (typeof hijo !== 'string') hijo.parentNode = null; };
+  const dentroDeUnInerte = (el) => { for (let nodo = el; nodo; nodo = nodo.parentNode) if (nodo.inert === true) return true; return false; };
   const parsear = (html, padre) => {
     const pila = [padre];
     for (const [, cierre, etiqueta, atributos, solo, texto] of html.matchAll(TOKEN_HTML)) {
@@ -6090,6 +6092,10 @@ const TABLA_DE_CONTRATO = comoLlega(tablaDeHorasExtras(ESTADO_PLANILLA,
 const RUTA_DE_OCTUBRE = '/api/mi-espacio/salidas?mes=2026-10';
 const RUTA_DE_SEPTIEMBRE = '/api/mi-espacio/salidas?mes=2026-09';
 const RUTA_DEL_GUARDADO = '/api/mi-espacio/salidas';
+// El GET del mes en curso, sin `mes` (el del encabezado y el de la tarjeta: el servidor da el de hoy, octubre)
+const RUTA_DEL_MES_EN_CURSO = '/api/mi-espacio/salidas';
+// Un GET de octubre: con su mes (el de «Editar») o el del mes en curso
+const esDeOctubre = (metodo, ruta) => metodo === 'GET' && (ruta === RUTA_DE_OCTUBRE || ruta === RUTA_DEL_MES_EN_CURSO);
 // Lo que contesta el servidor falso a la persona de contrato: el Resumen, la pestaña, octubre y septiembre, y lo que se pase en
 // `extra` (que gana)
 const conLaPlanilla = ({ extra = () => undefined, resumen = RESUMEN_DE_CONTRATO } = {}) => (metodo, ruta, cuerpo) => {
@@ -6097,7 +6103,7 @@ const conLaPlanilla = ({ extra = () => undefined, resumen = RESUMEN_DE_CONTRATO 
   if (propia !== undefined) return propia;
   if (ruta === '/api/mi-espacio/resumen') return ok(resumen);
   if (ruta === '/api/mi-espacio/horas-extras') return ok(TABLA_DE_CONTRATO);
-  if (metodo === 'GET' && ruta === RUTA_DE_OCTUBRE) return ok(OCTUBRE);
+  if (esDeOctubre(metodo, ruta)) return ok(OCTUBRE);
   if (metodo === 'GET' && ruta === RUTA_DE_SEPTIEMBRE) return ok(SEPTIEMBRE);
   return RESPUESTAS_DE_ENTRADA(metodo, ruta);
 };
@@ -6124,7 +6130,7 @@ const cancelarDeLaPlanilla = (pagina) => pagina.el('modal-planilla').querySelect
 const noDeLaConfirmacion = (pagina) => pagina.el('modal-confirmar').querySelector('.modal-footer [data-cerrar]');
 
 describe('la planilla de horas extras en la página (DOM falso)', () => {
-  it('«Cargar horas extras» del encabezado abre la planilla del mes en curso: un GET, el foco en la salida de hoy; sin cambios, cierra sin preguntar', async () => {
+  it('«Cargar horas extras» del encabezado abre la planilla del mes en curso: un GET (sin el mes: lo da el servidor), el foco en la salida de hoy; sin cambios, cierra sin preguntar', async () => {
     const pagina = montarPagina({ responder: conLaPlanilla() });
     await pagina.iniciar();
     const boton = pagina.el('btn-cargar-horas');
@@ -6132,7 +6138,8 @@ describe('la planilla de horas extras en la página (DOM falso)', () => {
     await abrirLaPlanilla(pagina, boton);
     assert.equal(pagina.abierto('modal-planilla'), true);
     assert.equal(pagina.abierto('modal-horas'), false);
-    assert.equal(pagina.pedidosA('GET', RUTA_DE_OCTUBRE).length, 1);
+    assert.equal(pagina.pedidosA('GET', RUTA_DEL_MES_EN_CURSO).length, 1);
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_OCTUBRE).length, 0);
     assert.equal(pagina.el('mp-mes-titulo').textContent, 'Octubre 2026');
     assert.equal(pagina.el('mp-anterior').disabled, false);
     assert.equal(pagina.el('mp-siguiente').disabled, true);
@@ -6161,10 +6168,12 @@ describe('la planilla de horas extras en la página (DOM falso)', () => {
     assert.equal(pagina.documento.activeElement, campoDel(pagina, '2026-10-27'));
     await pagina.tecla('Escape');
     assert.equal(pagina.abierto('modal-planilla'), false);
-    // «Editar» del 21/10: octubre otra vez (cada apertura pide su mes), con el foco en su salida; al cerrar, de vuelta a «Editar»
+    // «Editar» del 21/10: octubre otra vez, ahora con su mes (cada apertura pide su mes), con el foco en su salida; al cerrar, de
+    // vuelta a «Editar»
     const editar = pagina.el('vista-horas').querySelector('[data-editar-salida="2026-10-21"]');
     await abrirLaPlanilla(pagina, editar);
-    assert.equal(pagina.pedidosA('GET', RUTA_DE_OCTUBRE).length, 2);
+    assert.equal(pagina.pedidosA('GET', RUTA_DEL_MES_EN_CURSO).length, 1);
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_OCTUBRE).length, 1);
     assert.equal(pagina.documento.activeElement, campoDel(pagina, '2026-10-21'));
     await pagina.tecla('Escape');
     assert.equal(pagina.documento.activeElement, editar);
@@ -6221,7 +6230,7 @@ describe('la planilla de horas extras en la página (DOM falso)', () => {
   it('un día con el aviso del servidor: al cambiarlo, el aviso se va de la vista y de la descripción de su salida', async () => {
     const filas = [...FILAS_PLANILLA, { ...FERIADO_DIVERSIDAD, id: 4, fecha: '2026-10-21', nombre: 'Feriado cargado después' }];
     const conFeriado = planillaDel(ESTADO_PLANILLA, { filas });
-    const pagina = montarPagina({ responder: conLaPlanilla({ extra: (metodo, ruta) => (ruta === RUTA_DE_OCTUBRE ? ok(conFeriado) : undefined) }) });
+    const pagina = montarPagina({ responder: conLaPlanilla({ extra: (metodo, ruta) => (esDeOctubre(metodo, ruta) ? ok(conFeriado) : undefined) }) });
     await pagina.iniciar();
     await abrirLaPlanilla(pagina);
     assert.equal(campoDel(pagina, '2026-10-21').getAttribute('aria-describedby'), 'mp-a-2026-10-21');
@@ -6260,7 +6269,8 @@ describe('la planilla de horas extras en la página (DOM falso)', () => {
     // De vuelta a octubre: sin otro GET y con lo escrito; la flecha de adelante se deshabilita y el foco pasa a la otra
     siguiente.focus();
     await pagina.tocar(siguiente);
-    assert.equal(pagina.pedidosA('GET', RUTA_DE_OCTUBRE).length, 1);
+    assert.equal(pagina.pedidosA('GET', RUTA_DEL_MES_EN_CURSO).length, 1);
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_OCTUBRE).length, 0);
     assert.equal(pagina.el('mp-mes-titulo').textContent, 'Octubre 2026');
     assert.equal(pagina.el('mp-anuncio').textContent, 'Octubre 2026');
     assert.equal(campoDel(pagina, '2026-10-22').value, '16:46');
@@ -6310,7 +6320,7 @@ describe('la planilla de horas extras en la página (DOM falso)', () => {
   it('si el mes no llega, lo dice arriba del cuerpo (role="alert") y la planilla queda vacía, con el foco dentro del diálogo', async () => {
     const pagina = montarPagina({
       responder: conLaPlanilla({
-        extra: (metodo, ruta) => (ruta === RUTA_DE_OCTUBRE ? respuesta(500, { success: false, error: 'Error al leer la planilla' }) : undefined)
+        extra: (metodo, ruta) => (esDeOctubre(metodo, ruta) ? respuesta(500, { success: false, error: 'Error al leer la planilla' }) : undefined)
       })
     });
     await pagina.iniciar();
@@ -6542,7 +6552,7 @@ describe('la planilla de horas extras en la página (DOM falso)', () => {
     assert.equal(pagina.documento.activeElement, pagina.el('vista-horas').querySelector('[data-cargar="horas"]'));
     // Se cerró: abrirla de nuevo pide otra vez el mes y arranca sin cambios
     await abrirLaPlanilla(pagina, pagina.el('vista-horas').querySelector('[data-cargar="horas"]'));
-    assert.equal(pagina.pedidosA('GET', RUTA_DE_OCTUBRE).length, 2);
+    assert.equal(pagina.pedidosA('GET', RUTA_DEL_MES_EN_CURSO).length, 2);
     assert.equal(pagina.el('mp-pendientes').innerHTML, 'Todo guardado.');
   });
 
@@ -6620,6 +6630,11 @@ describe('la planilla de horas extras en la página (DOM falso)', () => {
     await escribirEnLaPlanilla(pagina, '2026-10-22', 'salida', '16:46');
     await pagina.tocar(pagina.el('mp-guardar'));
     assert.equal(pagina.el('mp-guardar').disabled, true);
+    // La planilla no acepta cambios: el cuerpo inerte, las flechas apagadas, y lo que se escribiera no cuenta
+    assert.equal(pagina.el('mp-cuerpo').inert, true);
+    assert.equal(pagina.el('mp-anterior').disabled, true);
+    await escribirEnLaPlanilla(pagina, '2026-10-23', 'salida', '18:00');
+    assert.equal(pagina.el('mp-pendientes').innerHTML, '<b>1 día</b> con cambios sin guardar.');
     await pagina.tecla('Escape');
     await pagina.tocar(cancelarDeLaPlanilla(pagina));
     assert.equal(pagina.abierto('modal-planilla'), true);
@@ -6633,6 +6648,178 @@ describe('la planilla de horas extras en la página (DOM falso)', () => {
     assert.equal(pagina.abierto('modal-planilla'), false);
     assert.equal(pagina.el('me-anuncio').textContent, 'Horas extras guardadas: 1 día.');
     assert.equal(pagina.pedidosA('PUT', RUTA_DEL_GUARDADO).length, 1);
+    // Se cerró y el cuerpo ya no está inerte: la próxima apertura arranca como siempre
+    assert.equal(pagina.el('mp-cuerpo').inert, false);
+    await abrirLaPlanilla(pagina);
+    assert.equal(pagina.el('mp-cuerpo').inert, false);
+    assert.equal(pagina.el('mp-anterior').disabled, false);
+    assert.equal(pagina.el('mp-guardar').disabled, false);
+    assert.equal(pagina.documento.activeElement, campoDel(pagina, '2026-10-27'));
+  });
+
+  // Que no se pierda lo cargado sin aviso (spec, sección 2): lo que se escribiera mientras va el PUT no iría en él
+  it('mientras guarda, la planilla no acepta cambios: escribir, «Quitar», «Sumar el día», «Nota» y las flechas no cambian ni piden nada; si falla, todo vuelve a andar', async () => {
+    let soltar;
+    const demorado = new Promise((resolver) => { soltar = resolver; });
+    const pagina = montarPagina({
+      responder: conLaPlanilla({
+        extra: (metodo, ruta) => (metodo === 'PUT' && ruta === RUTA_DEL_GUARDADO
+          ? demorado.then(() => respuesta(400, { success: false, error: MENSAJES_MI_ESPACIO.sinArranque, campo: null })) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await abrirLaPlanilla(pagina);
+    await escribirEnLaPlanilla(pagina, '2026-10-22', 'salida', '16:46');
+    const cuerpo = pagina.el('mp-cuerpo');
+    const anterior = pagina.el('mp-anterior');
+    const siguiente = pagina.el('mp-siguiente');
+    assert.notEqual(cuerpo.inert, true);
+    assert.equal(anterior.disabled, false);
+    await pagina.tocar(pagina.el('mp-guardar'));
+    assert.equal(pagina.pedidosA('PUT', RUTA_DEL_GUARDADO).length, 1);
+    // Mientras tanto: el cuerpo inerte (el foco no entra), las flechas y «Guardar» apagados
+    assert.equal(cuerpo.inert, true);
+    assert.equal(anterior.disabled, true);
+    assert.equal(siguiente.disabled, true);
+    assert.equal(pagina.el('mp-guardar').disabled, true);
+    campoDel(pagina, '2026-10-23').focus();
+    assert.notEqual(pagina.documento.activeElement, campoDel(pagina, '2026-10-23'));
+    // Lo que igual llegara a la planilla (un navegador sin inert) no cambia nada. Escribir en otro día:
+    const dias = pagina.el('mp-dias').innerHTML;
+    const banda = pagina.el('mp-suma').innerHTML;
+    const horasDel23 = pagina.el('mp-h-2026-10-23').innerHTML;
+    await escribirEnLaPlanilla(pagina, '2026-10-23', 'salida', '18:00');
+    assert.equal(pagina.el('mp-h-2026-10-23').innerHTML, horasDel23);
+    assert.equal(filaDeLaPagina(pagina, '2026-10-23').classList.contains('cambiado'), false);
+    assert.equal(pagina.el('mp-suma').innerHTML, banda);
+    assert.equal(pagina.el('mp-pendientes').innerHTML, '<b>1 día</b> con cambios sin guardar.');
+    // «Quitar» el sábado guardado, «Sumar el día» un domingo y «Nota»
+    await pagina.tocar(filaDeLaPagina(pagina, '2026-10-24').querySelector('[data-quitar]'));
+    assert.ok(filaDeLaPagina(pagina, '2026-10-24'));
+    pagina.el('mp-finde').value = '2026-10-25';
+    await pagina.tocar(pagina.el('mp-sumar-boton'));
+    assert.equal(filaDeLaPagina(pagina, '2026-10-25'), null);
+    await pagina.tocar(filaDeLaPagina(pagina, '2026-10-22').querySelector('[data-nota]'));
+    assert.equal(filaDeLaPagina(pagina, '2026-10-22').querySelector('[data-nota]').getAttribute('aria-expanded'), 'false');
+    assert.equal(campoDel(pagina, '2026-10-22', 'nota'), null);
+    assert.equal(pagina.el('mp-dias').innerHTML, dias);
+    assert.equal(pagina.el('mp-pendientes').innerHTML, '<b>1 día</b> con cambios sin guardar.');
+    // Las flechas, aunque se las encendiera: no piden septiembre
+    anterior.disabled = false;
+    await pagina.tocar(anterior);
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_SEPTIEMBRE).length, 0);
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Octubre 2026');
+    assert.equal(pagina.pedidosA('PUT', RUTA_DEL_GUARDADO).length, 1);
+    // Falla: todo vuelve (las flechas, como las deja el mes), el aviso arriba del cuerpo y el foco en «Guardar»
+    soltar();
+    await pagina.esperar();
+    assert.equal(pagina.abierto('modal-planilla'), true);
+    assert.equal(cuerpo.inert, false);
+    assert.equal(anterior.disabled, false);
+    assert.equal(siguiente.disabled, true);
+    assert.equal(pagina.el('mp-guardar').disabled, false);
+    assert.equal(pagina.el('mp-error').textContent, MENSAJES_MI_ESPACIO.sinArranque);
+    assert.equal(pagina.documento.activeElement, pagina.el('mp-guardar'));
+    // Lo que se escribió mientras tanto no quedó: la planilla se volvió a dibujar con lo que hay
+    assert.equal(pagina.el('mp-pendientes').innerHTML, '<b>1 día</b> con cambios sin guardar.');
+    assert.equal(pagina.el('mp-h-2026-10-23').innerHTML, horasDel23);
+    // Y ahora sí acepta cambios: escribir, y el próximo PUT los lleva
+    await escribirEnLaPlanilla(pagina, '2026-10-23', 'salida', '18:00');
+    assert.equal(pagina.el('mp-pendientes').innerHTML, '<b>2 días</b> con cambios sin guardar.');
+    await pagina.tocar(pagina.el('mp-guardar'));
+    assert.deepEqual(pagina.pedidosA('PUT', RUTA_DEL_GUARDADO).map((pedido) => pedido.cuerpo.dias.map((dia) => dia.fecha)),
+      [['2026-10-22'], ['2026-10-22', '2026-10-23']]);
+    // Las flechas también andan
+    await pagina.tocar(anterior);
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_SEPTIEMBRE).length, 1);
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Septiembre 2026');
+  });
+
+  it('un mes que se estaba pidiendo cuando «Guardar» marcó los errores se descarta: al llegar no cambia el mes ni se lleva el foco, y las flechas vuelven a andar', async () => {
+    let soltar;
+    const demorado = new Promise((resolver) => { soltar = resolver; });
+    const pagina = montarPagina({
+      responder: conLaPlanilla({ extra: (metodo, ruta) => (ruta === RUTA_DE_SEPTIEMBRE ? demorado.then(() => ok(SEPTIEMBRE)) : undefined) })
+    });
+    await pagina.iniciar();
+    await abrirLaPlanilla(pagina);
+    await escribirEnLaPlanilla(pagina, '2026-10-22', 'entrada', '08:00');
+    await pagina.tocar(pagina.el('mp-anterior'));
+    assert.equal(pagina.el('mp-dias').getAttribute('aria-busy'), 'true');
+    await pagina.tocar(pagina.el('mp-guardar'));
+    const salida = campoDel(pagina, '2026-10-22');
+    assert.equal(pagina.documento.activeElement, salida);
+    assert.equal(pagina.el('mp-error').textContent, 'Revisá el día marcado.');
+    assert.equal(pagina.el('mp-dias').getAttribute('aria-busy'), null);
+    // Llega septiembre, tarde: no se dibuja
+    soltar();
+    await pagina.esperar();
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Octubre 2026');
+    assert.equal(salida.isConnected, true);
+    assert.equal(pagina.documento.activeElement, salida);
+    assert.equal(salida.getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('mp-error').textContent, 'Revisá el día marcado.');
+    // Las flechas vuelven a andar: septiembre se pide otra vez y se muestra
+    await pagina.tocar(pagina.el('mp-anterior'));
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_SEPTIEMBRE).length, 2);
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Septiembre 2026');
+    assert.equal(pagina.pedidosA('PUT', RUTA_DEL_GUARDADO).length, 0);
+  });
+
+  it('un «Guardar» que vuelve a fallar igual se vuelve a anunciar (con un espacio al final, como anunciar); volver a dibujar no lo repite', async () => {
+    const pagina = montarPagina({
+      responder: conLaPlanilla({
+        extra: (metodo, ruta) => (metodo === 'PUT' && ruta === RUTA_DEL_GUARDADO
+          ? respuesta(400, { success: false, error: MENSAJES_MI_ESPACIO.sinArranque, campo: null }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await abrirLaPlanilla(pagina);
+    await escribirEnLaPlanilla(pagina, '2026-10-22', 'salida', '16:46');
+    const aviso = pagina.el('mp-error');
+    await pagina.tocar(pagina.el('mp-guardar'));
+    assert.equal(aviso.textContent, MENSAJES_MI_ESPACIO.sinArranque);
+    await pagina.tocar(pagina.el('mp-guardar'));
+    assert.equal(aviso.textContent, `${MENSAJES_MI_ESPACIO.sinArranque} `);
+    assert.equal(aviso.hidden, false);
+    // Volver a dibujar la planilla (abrir una nota) no lo vuelve a escribir
+    await pagina.tocar(filaDeLaPagina(pagina, '2026-10-22').querySelector('[data-nota]'));
+    assert.equal(aviso.textContent, `${MENSAJES_MI_ESPACIO.sinArranque} `);
+    // Una tercera vez, sin el espacio: se anuncia otra vez
+    await pagina.tocar(pagina.el('mp-guardar'));
+    assert.equal(aviso.textContent, MENSAJES_MI_ESPACIO.sinArranque);
+    // Lo mismo con los días marcados de la página: «Revisá el día marcado.» dos veces
+    await escribirEnLaPlanilla(pagina, '2026-10-22', 'salida', '');
+    await escribirEnLaPlanilla(pagina, '2026-10-22', 'entrada', '08:00');
+    await pagina.tocar(pagina.el('mp-guardar'));
+    assert.equal(aviso.textContent, 'Revisá el día marcado.');
+    await pagina.tocar(pagina.el('mp-guardar'));
+    assert.equal(aviso.textContent, 'Revisá el día marcado. ');
+    assert.equal(pagina.documento.activeElement, campoDel(pagina, '2026-10-22'));
+    assert.equal(pagina.pedidosA('PUT', RUTA_DEL_GUARDADO).length, 3);
+  });
+
+  it('con el reloj del teléfono adelantado (ya es noviembre), la planilla pide el mes en curso sin el mes y muestra el que dice el servidor', async () => {
+    const pagina = montarPagina({ responder: conLaPlanilla() });
+    await pagina.iniciar();
+    pagina.contexto.Utils.hoyEnArgentina = () => '2026-11-01';
+    await abrirLaPlanilla(pagina);
+    assert.equal(pagina.pedidosA('GET', RUTA_DEL_MES_EN_CURSO).length, 1);
+    assert.ok(!pagina.rutas().some((ruta) => ruta.includes('mes=2026-11')));
+    assert.equal(pagina.el('mp-error').hidden, true);
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Octubre 2026');
+    assert.equal(pagina.el('mp-como-mes').textContent, 'Las horas de octubre son horas a favor en noviembre.');
+    assert.equal(pagina.el('mp-dias').innerHTML, M.htmlDeLaPlanilla(OCTUBRE, VACIO));
+    assert.equal(pagina.el('mp-siguiente').disabled, true);
+    assert.equal(pagina.documento.activeElement, campoDel(pagina, '2026-10-27'));
+    // Las flechas van con los meses del servidor: septiembre, con su mes; de vuelta a octubre, sin volver a pedirlo
+    await pagina.tocar(pagina.el('mp-anterior'));
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_SEPTIEMBRE).length, 1);
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Septiembre 2026');
+    await pagina.tocar(pagina.el('mp-siguiente'));
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Octubre 2026');
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_OCTUBRE).length, 0);
+    assert.equal(pagina.pedidosA('GET', RUTA_DEL_MES_EN_CURSO).length, 1);
   });
 
   it('cerrar con cambios pregunta: «Seguir cargando» vuelve sin perder nada; «Salir sin guardar» cierra y descarta', async () => {
@@ -6671,7 +6858,7 @@ describe('la planilla de horas extras en la página (DOM falso)', () => {
     assert.equal(pagina.pedidosA('PUT', RUTA_DEL_GUARDADO).length, 0);
     // Al volver a abrirla, viene de nuevo (otro GET) y sin lo que no se guardó
     await abrirLaPlanilla(pagina, boton);
-    assert.equal(pagina.pedidosA('GET', RUTA_DE_OCTUBRE).length, 2);
+    assert.equal(pagina.pedidosA('GET', RUTA_DEL_MES_EN_CURSO).length, 2);
     assert.equal(campoDel(pagina, '2026-10-22').value, '');
     assert.equal(pagina.el('mp-pendientes').innerHTML, 'Todo guardado.');
     // La confirmación de un borrado vuelve a sus textos de siempre

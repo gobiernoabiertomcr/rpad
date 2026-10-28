@@ -23,9 +23,10 @@
  *   2026-10-27-mi-espacio-horas, secciones 4 y 9): lo puro arma las semanas y las filas de un mes con los cambios de la página
  *   encima, la banda, el pie, «Sumar el día», los errores y el cuerpo de PUT /mi-espacio/salidas; la página (#modal-planilla, que
  *   abren en contrato «Cargar horas extras» y «Editar» del día por día; en planta, todo sigue con #modal-horas) pide cada mes una
- *   vez por apertura (GET /mi-espacio/salidas?mes=), actualiza la fila, la semana, la banda y el pie mientras se escribe (sin volver
- *   a dibujar la fila), guarda los días cambiados de todos los meses juntos (con un fetch propio: API.pedirJson no da los errores de
- *   cada día) y, al cerrar con cambios, pregunta en la confirmación de la página.
+ *   vez por apertura (GET /mi-espacio/salidas?mes=; el en curso, sin él), actualiza la fila, la semana, la banda y el pie mientras
+ *   se escribe (sin volver a dibujar la fila), guarda los días cambiados de todos los meses juntos (con un fetch propio:
+ *   API.pedirJson no da los errores de cada día; mientras tanto, la planilla no acepta cambios) y, al cerrar con cambios, pregunta
+ *   en la confirmación de la página.
  * - Agenda (spec 2026-10-26-mi-espacio-agenda, 6): el mes de lunes a domingo, con «‹», «›», «Hoy» y hasta 3 cosas por día («y N
  *   más» muestra el resto), en sus colores (lo tuyo, lo compartido, tus licencias y francos, los feriados y los compañeros que no
  *   están) con su leyenda, y al costado los próximos 30 días (Hoy, Mañana, Esta semana y Más adelante). El mes no va en la
@@ -3643,12 +3644,15 @@ async function abrirCargaDeHoras({ volverA = null } = {}) {
  *   vez: cambiar de mes no pierde lo cargado);
  * - `cambios`, `agregados`, `errores` y `notasAbiertas`, encima de lo que mandó el servidor (ver «La planilla de horas extras de
  *   contrato», en lo puro);
- * - `guardando` (mientras tanto, no se cierra), `pedido` (el número del último GET: una respuesta vieja se descarta) y `cargando`
- *   (el mes que se está pidiendo: mientras tanto, las flechas no hacen nada);
+ * - `guardando` (mientras tanto, no se cierra ni acepta cambios: pintarElGuardadoDeLaPlanilla), `pedido` (el número del último
+ *   GET: una respuesta vieja se descarta) y `cargando` (el mes que se está pidiendo, o 'en curso': mientras tanto, las flechas no
+ *   hacen nada);
  * - `aviso`, lo que dice #mp-error, y `avisoDeLosDias`, si es el de los días marcados (se va cuando no queda ninguno);
  * - `foco`, adónde va el foco al abrir: la salida de `fecha` (la de «Editar») o, en el mes en curso, la de hoy, o la primera; un día
  *   sin salida para escribir (uno de licencia con una salida de antes), su «Quitar».
- * Sin el saldo inicial abre «Mis vacaciones y saldos», como los demás formularios.
+ * Sin el saldo inicial abre «Mis vacaciones y saldos», como los demás formularios. Sin `mes`, el primer GET va sin él (el servidor
+ * da el de hoy: con el reloj del teléfono adelantado un mes, pedir el de su fecha daría 400) y el mes es el que llega; mientras
+ * tanto, el título dice el de la fecha del teléfono.
  */
 async function abrirPlanilla({ mes = null, fecha = null, volverA = null } = {}) {
   if (pagina.resumen === null && !(await hayResumen())) return;
@@ -3663,8 +3667,10 @@ async function abrirPlanilla({ mes = null, fecha = null, volverA = null } = {}) 
     foco: { fecha: esFechaDeTexto(fecha) ? fecha : null, pendiente: true, velo: false }
   };
   pagina.planilla = planilla;
-  const elMes = esMesDeTexto(mes) ? mes : Utils.hoyEnArgentina().slice(0, 7);
+  const mesPedido = esMesDeTexto(mes) ? mes : null;
+  const elMes = mesPedido ?? Utils.hoyEnArgentina().slice(0, 7);
   // Lo de la apertura anterior se va; mientras llega el mes, su título y las flechas apagadas
+  porId('mp-cuerpo').inert = false;
   porId('mp-mes-titulo').textContent = tituloDelMes(elMes);
   porId('mp-anterior').disabled = true;
   porId('mp-siguiente').disabled = true;
@@ -3680,7 +3686,7 @@ async function abrirPlanilla({ mes = null, fecha = null, volverA = null } = {}) 
     volverA, foco: () => focoAlAbrirLaPlanilla(planilla),
     alCerrar: () => { if (pagina.planilla === planilla) pagina.planilla = null; }
   });
-  await cargarMesDeLaPlanilla(elMes);
+  await cargarMesDeLaPlanilla(mesPedido);
 }
 
 // El primer foco (abrirModal lo pide después del velo): el día de `foco`, si su mes ya llegó; si no, la × (nunca detrás del velo), y
@@ -3712,22 +3718,25 @@ function controlDelFocoInicial(planilla) {
  * Muestra un mes en la planilla: uno ya pedido en esta apertura, enseguida; si no, lo pide (GET /mi-espacio/salidas?mes=) y,
  * mientras tanto, el que se veía sigue a la vista, ocupado (aria-busy), y las flechas no hacen nada. Una respuesta vieja (de un
  * pedido anterior, o de otra apertura) se descarta. Si no llega, lo dice arriba del cuerpo (con un 401, al login) y el mes que se
- * veía sigue. Devuelve si lo mostró
+ * veía sigue. Con `mes` null, el en curso: el GET va sin `mes` y el mes es el que dice el servidor (abrirPlanilla). Devuelve si lo
+ * mostró
  */
 async function cargarMesDeLaPlanilla(mes) {
   const planilla = pagina.planilla;
-  if (!planilla || !esMesDeTexto(mes)) return false;
-  if (planilla.meses.has(mes)) {
+  const enCurso = mes === null;
+  if (!planilla || (!enCurso && !esMesDeTexto(mes))) return false;
+  if (!enCurso && planilla.meses.has(mes)) {
     mostrarMesYaPedido(planilla, mes);
     return true;
   }
   const pedido = ++planilla.pedido;
-  planilla.cargando = mes;
+  planilla.cargando = enCurso ? 'en curso' : mes;
   porId('mp-dias').setAttribute('aria-busy', 'true');
   let datos = null;
   let falla = null;
   try {
-    ({ data: datos } = await API.pedirJson('GET', `/mi-espacio/salidas?mes=${encodeURIComponent(mes)}`));
+    const ruta = enCurso ? '/mi-espacio/salidas' : `/mi-espacio/salidas?mes=${encodeURIComponent(mes)}`;
+    ({ data: datos } = await API.pedirJson('GET', ruta));
   } catch (error) {
     falla = error ?? new Error('');
   }
@@ -3738,22 +3747,28 @@ async function cargarMesDeLaPlanilla(mes) {
     irAlLogin();
     return false;
   }
-  if (falla || !esObjeto(datos) || !Array.isArray(datos.dias) || datos.mes !== mes) {
+  const llego = esObjeto(datos) && Array.isArray(datos.dias) && esMesDeTexto(datos.mes) && (enCurso || datos.mes === mes);
+  if (falla || !llego) {
     planilla.aviso = falla ? motivoDeLaFalla(falla, MENSAJE_SIN_LA_PLANILLA) : (conTexto(datos?.mensaje) ? datos.mensaje : MENSAJE_SIN_LA_PLANILLA);
     planilla.avisoDeLosDias = false;
     pintarElAvisoDeLaPlanilla(planilla);
     return false;
   }
-  planilla.meses.set(mes, datos);
-  mostrarMesDeLaPlanilla(planilla, mes);
+  planilla.meses.set(datos.mes, datos);
+  mostrarMesDeLaPlanilla(planilla, datos.mes);
   return true;
 }
 
-// Un mes ya pedido: lo que se estaba pidiendo pasa a ser viejo (se descarta al llegar) y se muestra enseguida
-function mostrarMesYaPedido(planilla, mes) {
+// El mes que se estaba pidiendo pasa a ser viejo (se descarta al llegar: no cambia el mes que se ve) y las flechas vuelven a andar
+function soltarElMesPedido(planilla) {
   planilla.pedido += 1;
   planilla.cargando = null;
   porId('mp-dias').removeAttribute('aria-busy');
+}
+
+// Un mes ya pedido: lo que se estaba pidiendo pasa a ser viejo y se muestra enseguida
+function mostrarMesYaPedido(planilla, mes) {
+  soltarElMesPedido(planilla);
   mostrarMesDeLaPlanilla(planilla, mes);
 }
 
@@ -3780,13 +3795,30 @@ function pintarLaPlanilla() {
   const datos = planilla?.meses.get(planilla.mes);
   if (!datos) return;
   porId('mp-mes-titulo').textContent = conTexto(datos.mes_texto) ? datos.mes_texto : tituloDelMes(planilla.mes);
-  porId('mp-anterior').disabled = !esMesDeTexto(datos.anterior);
-  porId('mp-siguiente').disabled = !esMesDeTexto(datos.siguiente);
+  pintarLasFlechasDeLaPlanilla(planilla);
   porId('mp-como-mes').textContent = textoDeComoSeCuentan(planilla.mes);
   porId('mp-dias').innerHTML = htmlDeLaPlanilla(datos, planilla);
   porId('mp-sumar').innerHTML = htmlDelSumarDeLaPlanilla(datos, planilla);
   pintarLaSumaDeLaPlanilla();
   pintarElAvisoDeLaPlanilla(planilla);
+}
+
+// Las flechas del mes: al anterior y al siguiente que dice el servidor (nunca a uno que todavía no llegó ni antes del primero) y,
+// mientras se guarda, apagadas
+function pintarLasFlechasDeLaPlanilla(planilla) {
+  const datos = planilla.meses.get(planilla.mes);
+  porId('mp-anterior').disabled = planilla.guardando || !esMesDeTexto(datos?.anterior);
+  porId('mp-siguiente').disabled = planilla.guardando || !esMesDeTexto(datos?.siguiente);
+}
+
+// Mientras se guarda, la planilla no acepta cambios (spec, sección 2: que no se pierda lo cargado sin aviso; lo que se escribiera
+// mientras tanto no iría en el PUT y, al cerrar, se perdería): el cuerpo inerte (ni el foco, ni los clics, ni el lector de pantalla
+// llegan a los días ni a «Sumar el día»), las flechas y «Guardar» apagados (y los que cambian algo no hacen nada: `guardando`). Al
+// responder, todo vuelve. El cuerpo es de la página: vuelve siempre; las flechas, solo si la planilla sigue abierta
+function pintarElGuardadoDeLaPlanilla(planilla) {
+  porId('mp-cuerpo').inert = planilla.guardando;
+  porId('mp-guardar').disabled = planilla.guardando;
+  if (pagina.planilla === planilla) pintarLasFlechasDeLaPlanilla(planilla);
 }
 
 // Las fechas con cambios sin guardar, de todos los meses pedidos
@@ -3817,6 +3849,12 @@ function pintarElAvisoDeLaPlanilla(planilla) {
   aviso.hidden = planilla.aviso === '';
 }
 
+// El aviso de un «Guardar» que no salió: se anuncia aunque diga lo mismo que el que ya está (un guardado que vuelve a fallar igual),
+// con un espacio al final, como anunciar. Queda así en `aviso`: volver a dibujar la planilla no lo repite
+function avisoQueSeAnuncia(planilla, texto) {
+  planilla.aviso = porId('mp-error').textContent === texto ? `${texto} ` : texto;
+}
+
 // La región viva de la planilla (#mp-anuncio, dentro del diálogo: con aria-modal, #me-anuncio puede no leerse), como anunciar
 function anunciarEnLaPlanilla(texto) {
   const region = porId('mp-anuncio');
@@ -3829,11 +3867,11 @@ const diaDeLaPlanilla = (planilla, fecha) => diasPorFechaDe(planilla.meses.value
 
 // Lo que se escribe en un día (la entrada, la salida o la nota): su estado completo pasa a `cambios` y se actualizan, sin volver a
 // dibujar nada (el campo que se usa sigue siendo el mismo: no pierde el foco ni lo que se está escribiendo), su fila, la banda, las
-// semanas y el pie. Escribir en un día con error lo saca (y, sin ninguno, el aviso de arriba)
+// semanas y el pie. Escribir en un día con error lo saca (y, sin ninguno, el aviso de arriba). Mientras guarda, nada
 function alEscribirEnLaPlanilla(evento) {
   const planilla = pagina.planilla;
   const campo = evento.target?.closest?.('[data-campo]');
-  if (!planilla || !campo) return;
+  if (!planilla || planilla.guardando || !campo) return;
   const fecha = campo.getAttribute('data-fecha');
   const nombre = campo.getAttribute('data-campo');
   const dia = diaDeLaPlanilla(planilla, fecha);
@@ -3894,9 +3932,9 @@ function alApretarEnLaPlanilla(evento) {
   (siguiente ?? porId('mp-guardar')).focus?.();
 }
 
-// Un clic en los días: «Nota» o «Quitar»
+// Un clic en los días: «Nota» o «Quitar» (mientras guarda, nada)
 function alTocarLaPlanilla(evento) {
-  if (!pagina.planilla) return;
+  if (!pagina.planilla || pagina.planilla.guardando) return;
   const nota = evento.target?.closest?.('[data-nota]');
   if (nota) {
     alternarLaNota(nota.getAttribute('data-nota'));
@@ -3907,9 +3945,10 @@ function alTocarLaPlanilla(evento) {
 }
 
 // «Nota» abre el campo de la nota debajo de la fila, con el foco; otra vez, lo cierra (la nota escrita queda a la vista) y el foco
-// vuelve al botón
+// vuelve al botón. Mientras guarda, nada
 function alternarLaNota(fecha) {
   const planilla = pagina.planilla;
+  if (!planilla || planilla.guardando) return;
   const abrir = !planilla.notasAbiertas.has(fecha);
   if (abrir) planilla.notasAbiertas.add(fecha);
   else planilla.notasAbiertas.delete(fecha);
@@ -3919,9 +3958,10 @@ function alternarLaNota(fecha) {
 }
 
 // «Quitar» un día (un sábado o domingo, o la salida de antes de un día de licencia): lo saca de los sumados y, si tenía algo
-// guardado, se borra al guardar (`{ quitar: true }`); si no, su cambio se va. El foco va a «Guardar»
+// guardado, se borra al guardar (`{ quitar: true }`); si no, su cambio se va. El foco va a «Guardar». Mientras guarda, nada
 function quitarElDia(fecha) {
   const planilla = pagina.planilla;
+  if (!planilla || planilla.guardando) return;
   const guardado = valoresDeLaSalida(diaDeLaPlanilla(planilla, fecha));
   planilla.agregados.delete(fecha);
   if (guardado.entrada !== '' || guardado.salida !== '' || guardado.nota !== '') planilla.cambios.set(fecha, { quitar: true });
@@ -3933,12 +3973,12 @@ function quitarElDia(fecha) {
 }
 
 // «Sumar el día»: el sábado o domingo elegido (sin elegir, el primero) aparece en su semana, con el foco en su entrada; uno guardado
-// que se había quitado vuelve con lo guardado
+// que se había quitado vuelve con lo guardado. Mientras guarda, nada
 function sumarElDia() {
   const planilla = pagina.planilla;
   const datos = planilla?.meses.get(planilla.mes);
   const selector = porId('mp-finde');
-  if (!datos || !selector) return;
+  if (!datos || !selector || planilla.guardando) return;
   const fecha = comoTexto(selector.value) || comoTexto(selector.querySelector('option')?.getAttribute('value'));
   if (!finesDeSemanaParaSumar(datos, planilla).some((dia) => dia.fecha === fecha)) return;
   planilla.agregados.add(fecha);
@@ -3950,13 +3990,14 @@ function sumarElDia() {
 }
 
 // Las flechas del mes («anterior» o «siguiente»: los meses que dice el servidor; mientras llega uno, nada). El mes que se elige se
-// anuncia en la planilla; si la flecha que se usó se apagó (el primer mes o el en curso), el foco pasa a la otra
+// anuncia en la planilla; si la flecha que se usó se apagó (el primer mes o el en curso), el foco pasa a la otra. Mientras guarda,
+// nada
 async function irAlMesDeLaPlanilla(cual) {
   const planilla = pagina.planilla;
   const boton = porId(cual === 'anterior' ? 'mp-anterior' : 'mp-siguiente');
   const otra = porId(cual === 'anterior' ? 'mp-siguiente' : 'mp-anterior');
   const destino = planilla?.meses.get(planilla.mes)?.[cual];
-  if (!planilla || planilla.cargando !== null || boton.disabled || !esMesDeTexto(destino)) return;
+  if (!planilla || planilla.guardando || planilla.cargando !== null || boton.disabled || !esMesDeTexto(destino)) return;
   if (!(await cargarMesDeLaPlanilla(destino)) || pagina.planilla !== planilla) return;
   anunciarEnLaPlanilla(porId('mp-mes-titulo').textContent);
   const activo = document.activeElement;
@@ -3984,12 +4025,13 @@ async function pedirGuardarLaPlanilla(cuerpo) {
  * «Guardar» (spec, sección 4): sin cambios, cierra; con más de MAXIMO_DIAS_POR_GUARDADO días, lo dice arriba del cuerpo. Controla
  * los días cambiados con las copias (erroresDeLaPlanilla) y, si alguno falla, no pide nada: los marca (marcarLosDias). Si no, manda
  * todos los días cambiados de todos los meses juntos; al responder bien cierra, avisa (aviso y #me-anuncio, como los demás) y vuelve
- * a pedir el Resumen y la pestaña. Mientras guarda, «Guardar» queda deshabilitado y el modal no se cierra: un doble clic manda un
- * solo pedido. Un error del servidor con días va a esos días; sin días, arriba del cuerpo, con el foco en «Guardar»
+ * a pedir el Resumen y la pestaña. Mientras guarda, «Guardar» queda deshabilitado, el modal no se cierra (un doble clic manda un
+ * solo pedido) y la planilla no acepta cambios (pintarElGuardadoDeLaPlanilla: lo que se escribiera no iría en el PUT); al responder,
+ * todo vuelve, antes de mostrar el error (el foco tiene que poder ir al día). Un error del servidor con días va a esos días; sin
+ * días, arriba del cuerpo, con el foco en «Guardar»
  */
 async function guardarPlanilla() {
   const planilla = pagina.planilla;
-  const boton = porId('mp-guardar');
   if (!planilla || planilla.guardando) return;
   const porFecha = diasPorFechaDe(planilla.meses.values());
   const fechas = fechasCambiadas(planilla.cambios, porFecha);
@@ -4007,21 +4049,23 @@ async function guardarPlanilla() {
     return;
   }
   planilla.guardando = true;
-  boton.disabled = true;
+  pintarElGuardadoDeLaPlanilla(planilla);
+  let respuesta = null;
+  let falla = null;
   try {
-    const respuesta = await pedirGuardarLaPlanilla(cuerpoDeLaPlanilla(planilla.cambios, fechas));
+    respuesta = await pedirGuardarLaPlanilla(cuerpoDeLaPlanilla(planilla.cambios, fechas));
+  } catch (error) {
+    falla = error ?? new Error('');
+  } finally {
     planilla.guardando = false;
+    pintarElGuardadoDeLaPlanilla(planilla);
+  }
+  if (falla === null) {
     cerrarModal('modal-planilla');
     avisarLaRespuesta(respuesta);
     volverAPedirTodo();
-  } catch (error) {
-    planilla.guardando = false;
-    boton.disabled = false;
-    if (error?.status === 401) irAlLogin();
-    else if (pagina.planilla === planilla) mostrarFallaDeLaPlanilla(planilla, error, porFecha);
-  } finally {
-    boton.disabled = false;
-  }
+  } else if (falla.status === 401) irAlLogin();
+  else if (pagina.planilla === planilla) mostrarFallaDeLaPlanilla(planilla, falla, porFecha);
 }
 
 // Un error del servidor al guardar: los días de `errores` que están en la planilla, en sus filas; sin ninguno, el mensaje arriba
@@ -4037,10 +4081,11 @@ function mostrarFallaDeLaPlanilla(planilla, falla, porFecha) {
   else avisarSinLosDias(planilla, motivoDeLaFalla(falla, MENSAJE_NO_SE_GUARDO));
 }
 
-// Un aviso de la planilla sin días marcados (los que había se van), arriba del cuerpo, con el foco en «Guardar»
+// Un aviso de la planilla sin días marcados (los que había se van), arriba del cuerpo, con el foco en «Guardar» (se anuncia aunque
+// sea el mismo de antes: avisoQueSeAnuncia)
 function avisarSinLosDias(planilla, mensaje) {
   planilla.errores = new Map();
-  planilla.aviso = mensaje;
+  avisoQueSeAnuncia(planilla, mensaje);
   planilla.avisoDeLosDias = false;
   pintarLaPlanilla();
   pintarElAvisoDeLaPlanilla(planilla);
@@ -4048,10 +4093,12 @@ function avisarSinLosDias(planilla, mensaje) {
 }
 
 // Los días con error (de la página o del servidor), cada uno en su fila, con «Revisá el día marcado.» arriba del cuerpo y el foco en
-// el primero por fecha; si es de otro mes, la planilla pasa a ese mes (Review Focus 4), y se anuncia
+// el primero por fecha; si es de otro mes, la planilla pasa a ese mes (Review Focus 4), y se anuncia. Un mes que se estaba pidiendo
+// se descarta (al llegar, no cambia el mes ni se lleva el foco del error) y el aviso se anuncia aunque sea el mismo de antes
 function marcarLosDias(planilla, errores) {
+  soltarElMesPedido(planilla);
   planilla.errores = errores;
-  planilla.aviso = textoDeLosErroresDeLaPlanilla(errores.size);
+  avisoQueSeAnuncia(planilla, textoDeLosErroresDeLaPlanilla(errores.size));
   planilla.avisoDeLosDias = true;
   const [primero] = [...errores.keys()].sort();
   const mes = primero.slice(0, 7);

@@ -23,14 +23,13 @@
  * `horasDeLaSalida`, el mes que se pide, `mesDeLaPlanilla`, la validación de un día, `validarSalida`, y las salidas guardadas
  * que dejaron de cerrar, `avisosDeSalidas`, que nunca frenan una carga), los francos compensatorios de planta (`francosDe`),
  * las horas a favor de contrato (`horasAFavorDe`, desde las salidas) y lo no utilizado previamente de cada año
- * (`noUtilizadasDe`). Al final, «Mis
- * vacaciones y saldos» (los campos del saldo inicial y el año, sección 4), el cálculo completo (`calcular`), lo guardado que
- * dejó de cerrar (`faltantesDe`, 3.10) y la evaluación de una carga (`evaluarLicencia`: una carga nueva que no cierra no se
- * guarda). Y el paso de las ausencias de día entero a Configuración → Licencias (sección 6): qué se hace al cargar, corregir
- * y borrar, y lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`, `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`).
- * Por último, lo que ven los compañeros, «Hoy no están» (sección 7: `ausenciasUnidas` y `ausentesDelRango`, sin el tipo, y
- * los dos grupos de «Hoy y mañana», `ausentesDeHoyYManana`), y lo que dice el email de vencimiento (sección 9:
- * `avisosDeVencimiento`).
+ * (`noUtilizadasDe`). Al final, «Mis vacaciones y saldos» (los campos del saldo inicial y el año, sección 4), el cálculo
+ * completo (`calcular`), lo guardado que dejó de cerrar (`faltantesDe`, 3.10) y la evaluación de una carga
+ * (`evaluarLicencia`: una carga nueva que no cierra no se guarda). Y el paso de las ausencias de día entero a Configuración →
+ * Licencias (sección 6): qué se hace al cargar, corregir y borrar, y lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`,
+ * `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`). Por último, lo que ven los compañeros, «Hoy no están» (sección 7:
+ * `ausenciasUnidas` y `ausentesDelRango`, sin el tipo, y los dos grupos de «Hoy y mañana», `ausentesDeHoyYManana`), y lo que
+ * dice el email de vencimiento (sección 9: `avisosDeVencimiento`).
  * Los textos son planos: escaparlos le toca a quien los dibuja.
  */
 import {
