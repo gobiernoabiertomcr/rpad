@@ -1741,6 +1741,172 @@ function cosasPorDia(datos) {
   return porDia;
 }
 
+// El modelo del mes (spec 2026-10-28-mi-espacio-agenda-onda, 3.2, 3.4, 3.5 y 3.8): las semanas que se ven, las barras de cada
+// semana, los renglones de lo de cada día, lo que queda escondido el fin de semana y el día visible más cercano. Es solo lo de dibujo:
+// los días hábiles, los textos y los nombres los manda el servidor (Ruling 19)
+
+/**
+ * Las semanas de la grilla de un mes ('AAAA-MM'), cada una con sus días de `diasDeLaGrilla` (`{ fecha, dia, del_mes, finde }`, en
+ * orden): con `finde` (solo el true literal: «Sábado y domingo» prendido), las semanas enteras, de lunes a domingo; si no (de
+ * entrada), de lunes a viernes y sin las semanas cuyos lunes a viernes son todos de otro mes (noviembre de 2026 empieza un domingo:
+ * su primera fila es la del lunes 2). Un mes que no sirve, [].
+ */
+function semanasDelMes(mes, opciones) {
+  const conFinde = esObjeto(opciones) && opciones.finde === true;
+  const dias = diasDeLaGrilla(mes);
+  const semanas = [];
+  for (let i = 0; i < dias.length; i += 7) {
+    const visibles = dias.slice(i, i + 7).filter((dia) => conFinde || !dia.finde);
+    if (visibles.some((dia) => dia.del_mes)) semanas.push(visibles);
+  }
+  return semanas;
+}
+
+// Las filas de la grilla (las de semanasDelMes), cada una con sus días que tienen fecha; lo que no es una lista no es una fila
+const filasDeLasSemanas = (semanas) => (Array.isArray(semanas)
+  ? semanas.filter(Array.isArray).map((semana) => listaDe(semana).filter((dia) => esFechaDeTexto(dia.fecha)))
+  : []);
+
+// Los tramos de una fila: los días de columnas seguidas con la misma clave (`claveDe(fecha)`; null es nada), `[{ clave, desde,
+// hasta }]` con las columnas de sus puntas
+const tramosDeLaFila = (dias, claveDe) => {
+  const tramos = [];
+  dias.forEach((dia, columna) => {
+    const clave = claveDe(dia.fecha);
+    if (clave === null) return;
+    const ultimo = tramos.at(-1);
+    if (ultimo !== undefined && ultimo.clave === clave && ultimo.hasta === columna - 1) ultimo.hasta = columna;
+    else tramos.push({ clave, desde: columna, hasta: columna });
+  });
+  return tramos;
+};
+
+/**
+ * Las barras del mes (spec 3.4), una por fila de `semanas` (las de semanasDelMes), con lo que manda GET /mi-espacio/eventos
+ * (`datos`): `{ carriles, piezas }`. `carriles` es 0, 1 o 2: el 1 es de tus licencias si la semana tiene algún día de licencia
+ * (los `dias` de cada una), y los compañeros (los días de `companeros_por_dia`) van en el siguiente (sin licencias, el 1). `piezas` es un
+ * Map de cada fecha de la fila a sus carriles (`[Pieza|null]`, uno por carril; sin carriles, []). Un tramo son los días de
+ * columnas seguidas de la fila con la misma licencia (por su id) o con el mismo texto de compañeros, y cada día suyo es una
+ * Pieza: `{ clase, texto, titulo, inicio, fin, largo, sigue_antes, sigue_despues }`, con `clase` 'licencia' o 'ausente',
+ * `texto` el de la licencia («Vacaciones») o el del día («Carla y Julián no están»), `inicio` y `fin` en sus puntas, `largo`
+ * (los días del tramo) solo en la de `inicio` (en las demás, null), `sigue_despues` en la última columna de la fila si la
+ * primera de la fila siguiente tiene lo mismo (un viernes que sigue el lunes, con el fin de semana oculto) y `sigue_antes` al
+ * revés; las filas de las puntas de la grilla no siguen. `titulo`: en una licencia, «Vacaciones. Hasta el viernes 27/11» (sin
+ * `hasta_texto`, el texto); en los compañeros, cada uno de los que no están ese día (los de `ausentes` que lo tienen en sus
+ * `dias`), en el orden del texto, con su texto y su `hasta_texto`: «Carla no está. Hasta el viernes 13/11. Julián no está.».
+ */
+function barrasDelMes(semanas, datos) {
+  const filas = filasDeLasSemanas(semanas);
+  const fuente = esObjeto(datos) ? datos : {};
+  // Tus licencias: la de cada día (la primera que lo pinta) con su clave, el id (sin un id que sirva, su lugar en la lista)
+  const licencias = new Map();
+  listaDe(fuente.licencias).forEach((licencia, lugar) => {
+    const clave = Number.isInteger(licencia.id) && licencia.id > 0 ? `id ${String(licencia.id)}` : `lugar ${String(lugar)}`;
+    for (const fecha of diasPintados(licencia)) if (!licencias.has(fecha)) licencias.set(fecha, { clave, licencia });
+  });
+  // Los compañeros de cada día: el texto del servidor y quiénes son (para el title)
+  const companeros = new Map();
+  for (const dia of listaDe(fuente.companeros_por_dia)) {
+    if (esFechaDeTexto(dia.fecha) && conTexto(dia.texto) && !companeros.has(dia.fecha)) companeros.set(dia.fecha, dia.texto);
+  }
+  const ausentesDelDia = new Map();
+  for (const ausente of listaDe(fuente.ausentes).filter((uno) => conTexto(uno.texto))) {
+    for (const fecha of new Set(diasPintados(ausente))) {
+      if (!ausentesDelDia.has(fecha)) ausentesDelDia.set(fecha, []);
+      ausentesDelDia.get(fecha).push(ausente);
+    }
+  }
+  const tituloDeLaLicencia = (fecha) => {
+    const { licencia } = licencias.get(fecha);
+    const texto = comoTexto(licencia.texto);
+    return conTexto(licencia.hasta_texto) ? `${texto}. ${licencia.hasta_texto}` : texto;
+  };
+  // En el orden del texto del día: el servidor ordena los nombres con localeCompare en castellano (companerosPorDia)
+  const tituloDeLosCompaneros = (fecha) => {
+    const delDia = [...(ausentesDelDia.get(fecha) ?? [])].sort((a, b) => comoTexto(a.nombre).localeCompare(comoTexto(b.nombre), 'es'));
+    if (delDia.length === 0) return companeros.get(fecha);
+    return delDia.map((ausente) => (conTexto(ausente.hasta_texto) ? `${ausente.texto}. ${ausente.hasta_texto}.` : `${ausente.texto}.`))
+      .join(' ');
+  };
+  const tipos = [
+    { clase: 'licencia', clave: (fecha) => licencias.get(fecha)?.clave ?? null,
+      texto: (fecha) => comoTexto(licencias.get(fecha).licencia.texto), titulo: tituloDeLaLicencia },
+    { clase: 'ausente', clave: (fecha) => companeros.get(fecha) ?? null, texto: (fecha) => companeros.get(fecha),
+      titulo: tituloDeLosCompaneros }
+  ];
+  return filas.map((dias, fila) => {
+    const carriles = tipos.map((tipo) => ({ tipo, tramos: tramosDeLaFila(dias, tipo.clave) })).filter((carril) => carril.tramos.length > 0);
+    const piezas = new Map(dias.map((dia) => [dia.fecha, carriles.map(() => null)]));
+    // El último día de la fila anterior y el primero de la siguiente (las filas de las puntas no tienen)
+    const anterior = filas[fila - 1]?.at(-1)?.fecha ?? null;
+    const siguiente = filas[fila + 1]?.[0]?.fecha ?? null;
+    carriles.forEach(({ tipo, tramos }, carril) => {
+      for (const tramo of tramos) {
+        for (let columna = tramo.desde; columna <= tramo.hasta; columna++) {
+          const fecha = dias[columna].fecha;
+          piezas.get(fecha)[carril] = {
+            clase: tipo.clase,
+            texto: tipo.texto(fecha),
+            titulo: tipo.titulo(fecha),
+            inicio: columna === tramo.desde,
+            fin: columna === tramo.hasta,
+            largo: columna === tramo.desde ? tramo.hasta - tramo.desde + 1 : null,
+            sigue_antes: columna === 0 && anterior !== null && tipo.clave(anterior) === tramo.clave,
+            sigue_despues: columna === dias.length - 1 && siguiente !== null && tipo.clave(siguiente) === tramo.clave
+          };
+        }
+      }
+    });
+    return { carriles: carriles.length, piezas };
+  });
+}
+
+/**
+ * Los renglones de lo de cada día (spec 3.5): con `cantidad` cosas (los feriados y los eventos) y `lugares` (4 menos los carriles
+ * de su semana), `{ lineas, mas }`. Con 3 cosas o menos y lugar para todas, se ven todas, con un renglón cada una, y los lugares que
+ * sobran se reparten en orden hasta el tope (3 renglones con una cosa, 2 con dos y 1 con tres): `lineas` tiene los renglones de
+ * cada una y `mas` es 0. Si no, se ven las que entran menos una (al menos una), de un renglón, y `mas` cuenta las demás («y N más»).
+ * Una cantidad que no es un entero positivo es ninguna cosa; unos lugares que no son un entero positivo, ninguno.
+ */
+function renglonesDelDia(cantidad, lugares) {
+  const cosas = Number.isInteger(cantidad) && cantidad > 0 ? cantidad : 0;
+  const lugar = Number.isInteger(lugares) && lugares > 0 ? lugares : 0;
+  if (cosas === 0) return { lineas: [], mas: 0 };
+  if (cosas <= 3 && cosas <= lugar) {
+    const tope = cosas === 1 ? 3 : cosas === 2 ? 2 : 1;
+    const lineas = Array(cosas).fill(1);
+    let sobran = lugar - cosas;
+    for (let i = 0; i < cosas && sobran > 0; i++) {
+      const extra = Math.min(tope - 1, sobran);
+      lineas[i] += extra;
+      sobran -= extra;
+    }
+    return { lineas, mas: 0 };
+  }
+  const aLaVista = Math.min(cosas, Math.max(1, lugar - 1));
+  return { lineas: Array(aLaVista).fill(1), mas: cosas - aLaVista };
+}
+
+// Lo que queda escondido el fin de semana con «Sábado y domingo» apagado (spec 3.2): los feriados y los eventos de los sábados y
+// domingos del mes ('AAAA-MM'; las licencias y los compañeros se pintan solo en días hábiles), cada uno una cosa, como en la
+// grilla. Un mes que no sirve, 0
+function cuantasEnElFinde(mes, datos) {
+  if (!esMesDeTexto(mes)) return 0;
+  const fuente = esObjeto(datos) ? datos : {};
+  const escondida = (fila) => esFechaDeTexto(fila.fecha) && fila.fecha.slice(0, 7) === mes && lugarEnLaSemana(fila.fecha) >= 5;
+  return listaDe(fuente.feriados).filter(escondida).length + listaDe(fuente.eventos).filter(escondida).length;
+}
+
+// El día de la grilla más cercano a una fecha que se ve (spec 3.8 y decisión 9.12: el día elegido del teléfono y el foco del
+// teclado): la fecha si se ve; si no, el primer día visible que la sigue en `semanas` (las de semanasDelMes) y, si no hay, el
+// último que la precede (hoy sábado 31/10 → el viernes 30; el 1/11, domingo → el lunes 2). Sin días o con una fecha que no sirve,
+// null
+function diaVisibleCercano(fecha, semanas) {
+  if (!esFechaDeTexto(fecha)) return null;
+  const visibles = filasDeLasSemanas(semanas).flat().map((dia) => dia.fecha);
+  return visibles.find((visible) => visible >= fecha) ?? visibles.at(-1) ?? null;
+}
+
 // Una cosa de un día: un evento es un botón (lo abre, con su id); lo demás, un texto. Los dos con su title: en la celda se corta
 const htmlDeCosa = (cosa) => {
   const texto = esc(cosa.texto);

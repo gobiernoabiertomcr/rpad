@@ -21,7 +21,7 @@ import { notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota } from '../services/mi
 import {
   DIAS_DE_PROXIMOS, itemDeEvento, itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, MENSAJES_EVENTO,
   LARGO_TITULO_EVENTO, LARGO_DETALLE_EVENTO, FECHA_MINIMA_EVENTO, fechaMaximaEvento, textoRangoEvento, RECORDATORIOS,
-  RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, validarEvento, inicialesDe, cuandoDelEvento, avisoDe
+  RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, validarEvento, inicialesDe, cuandoDelEvento, avisoDe, companerosPorDia
 } from '../services/miEspacioEventosReglas.js';
 import { idPositivo } from '../services/proyectosReglas.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
@@ -1110,20 +1110,23 @@ const AUSENCIAS_DE_PRUEBA = Object.freeze([
 const FERIADO_DIVERSIDAD = Object.freeze({ ...FERIADO_SOBERANIA, id: 2, fecha: '2026-10-12', nombre: 'Día del Respeto a la Diversidad Cultural' });
 
 // Lo que contesta GET /api/mi-espacio/eventos para un rango: lo de ese rango, armado por el servidor (los compañeros, solo a quien
-// los ve: `puedeCompartir`)
+// los ve: `puedeCompartir`, y por día, `companeros_por_dia`). Los días hábiles de las licencias y de los compañeros, sin feriados de
+// la tabla salvo con `conFeriados`, que les saca los de `feriados` (como hace el servidor con los suyos)
 const respuestaDeEventos = ({ desde, hasta }, {
   eventos = EVENTOS_DE_PRUEBA, licencias = LICENCIAS_DE_PRUEBA, ausencias = AUSENCIAS_DE_PRUEBA,
-  feriados = [FERIADO_DIVERSIDAD, FERIADO_SOBERANIA], puedeCompartir = true
+  feriados = [FERIADO_DIVERSIDAD, FERIADO_SOBERANIA], puedeCompartir = true, conFeriados = false
 } = {}) => {
-  const rango = { desde, hasta, feriados: SIN_FERIADOS };
+  const rango = { desde, hasta, feriados: conFeriados ? feriadosDelRango(feriados, desde, hasta) : SIN_FERIADOS };
   const seTocan = (fila) => fila.desde <= hasta && fila.hasta >= desde;
+  const ausentes = puedeCompartir ? ausencias.filter(seTocan).map((ausencia) => itemDeAusencia(ausencia, rango)) : [];
   return comoLlega({
     desde, hasta, hoy: HOY, puede_compartir: puedeCompartir,
     eventos: eventos.filter((evento) => evento.fecha >= desde && evento.fecha <= hasta)
       .map((evento) => itemDeEvento(evento, { usuarioId: 1, ahora: AHORA, feriados: SIN_FERIADOS })),
     licencias: licencias.filter(seTocan).map((fila) => itemDeLicencia(fila, rango)),
     feriados: itemsDeFeriados(feriados, desde, hasta),
-    ausentes: puedeCompartir ? ausencias.filter(seTocan).map((ausencia) => itemDeAusencia(ausencia, rango)) : []
+    ausentes,
+    companeros_por_dia: companerosPorDia(ausentes)
   });
 };
 // La grilla de octubre (del lunes 28/09 al domingo 01/11) y los próximos 30 días (del 26/10 al 25/11)
@@ -1299,6 +1302,275 @@ describe('la agenda: el mes', () => {
     assert.ok(html.includes(`<button type="button" class="me-ev propio" data-evento="41" title="12:00 ${ESCAPADO} &quot;comillas&quot;">12:00 ${ESCAPADO} &quot;comillas&quot;</button>`));
     assert.ok(html.includes(`<span class="me-ev ausente" title="${ESCAPADO} no está">${ESCAPADO} no está</span>`));
     assert.ok(html.includes(`<span class="me-ev feriado" title="Feriado: ${ESCAPADO}">Feriado: ${ESCAPADO}</span>`));
+  });
+});
+
+// El modelo del mes (spec 2026-10-28-mi-espacio-agenda-onda, 3.2, 3.4, 3.5 y 3.8): noviembre de 2026 empieza un domingo, con lo que
+// manda el servidor para su grilla (del lunes 26/10 al domingo 06/12): tus vacaciones de siempre (del 03/11 al 09/11) y otras del
+// 16/11 al 27/11, con el lunes 23 feriado; Julián, del 03/11 al 06/11 y del 01/12 al 02/12, y Carla, del 05/11 al 13/11 (llegan en
+// ese orden: el texto del día los ordena por nombre); el feriado del domingo 8 y el del lunes 23. Los días hábiles, con esos feriados
+const FERIADO_DEL_EMPLEADO = Object.freeze({ ...FERIADO_SOBERANIA, id: 4, fecha: '2026-11-08', nombre: 'Día del Empleado Municipal' });
+const RANGO_DE_NOVIEMBRE = Object.freeze({ desde: '2026-10-26', hasta: '2026-12-06' });
+const deNoviembre = (cambios = {}) => respuestaDeEventos(RANGO_DE_NOVIEMBRE, {
+  licencias: [LICENCIAS_DE_PRUEBA[1], { id: 24, tipo: 'vacaciones', desde: '2026-11-16', hasta: '2026-11-27', horas: null }],
+  ausencias: [
+    { nombre: 'Julián', desde: '2026-11-03', hasta: '2026-11-06' }, { nombre: 'Carla', desde: '2026-11-05', hasta: '2026-11-13' },
+    { nombre: 'Julián', desde: '2026-12-01', hasta: '2026-12-02' }
+  ],
+  feriados: [FERIADO_DEL_EMPLEADO, FERIADO_SOBERANIA], conFeriados: true, ...cambios
+});
+const DE_NOVIEMBRE = deNoviembre();
+// Las fechas de las semanas, como listas de acá
+const fechasDeLasSemanas = (semanas) => plano(semanas).map((semana) => semana.map((dia) => dia.fecha));
+// Las barras de cada semana, como objetos de acá: { carriles, piezas: { fecha: [Pieza|null] } }
+const barrasDe = (semanas, datos) => [...M.barrasDelMes(semanas, datos)]
+  .map((semana) => plano({ carriles: semana.carriles, piezas: Object.fromEntries([...semana.piezas]) }));
+// Las piezas de un día, de la semana que lo tiene
+const piezasDel = (barras, fecha) => barras.find((semana) => Object.hasOwn(semana.piezas, fecha))?.piezas[fecha];
+const pieza = (clase, texto, titulo, cambios = {}) => ({
+  clase, texto, titulo, inicio: false, fin: false, largo: null, sigue_antes: false, sigue_despues: false, ...cambios
+});
+const VACACIONES_DEL_3 = 'Vacaciones. Hasta el lunes 09/11';
+const VACACIONES_DEL_16 = 'Vacaciones. Hasta el viernes 27/11';
+const JULIAN_HASTA_EL_6 = 'Julián no está. Hasta el viernes 06/11.';
+const CARLA_Y_JULIAN = 'Carla no está. Hasta el viernes 13/11. Julián no está. Hasta el viernes 06/11.';
+const CARLA_HASTA_EL_13 = 'Carla no está. Hasta el viernes 13/11.';
+
+describe('la agenda: el modelo del mes', () => {
+  it('el servidor manda los compañeros de cada día con el texto que ordena los nombres', () => {
+    assert.deepEqual(DE_NOVIEMBRE.ausentes.map((ausente) => ausente.texto), ['Julián no está', 'Carla no está', 'Julián no está']);
+    assert.deepEqual(DE_NOVIEMBRE.companeros_por_dia.filter((dia) => dia.fecha <= '2026-11-09'), [
+      { fecha: '2026-11-03', texto: 'Julián no está' }, { fecha: '2026-11-04', texto: 'Julián no está' },
+      { fecha: '2026-11-05', texto: 'Carla y Julián no están' }, { fecha: '2026-11-06', texto: 'Carla y Julián no están' },
+      { fecha: '2026-11-09', texto: 'Carla no está' }
+    ]);
+    // El lunes 23 es feriado: las vacaciones del 16 no lo pintan
+    assert.ok(!DE_NOVIEMBRE.licencias[1].dias.includes('2026-11-23'));
+    assert.equal(DE_NOVIEMBRE.licencias[1].dias.length, 9);
+  });
+
+  it('semanasDelMes: sin sábado y domingo, de lunes a viernes y sin las semanas que no tienen días del mes', () => {
+    const noviembre = M.semanasDelMes('2026-11', { finde: false });
+    assert.deepEqual(fechasDeLasSemanas(noviembre), [
+      ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06'],
+      ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'],
+      ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20'],
+      ['2026-11-23', '2026-11-24', '2026-11-25', '2026-11-26', '2026-11-27'],
+      ['2026-11-30', '2026-12-01', '2026-12-02', '2026-12-03', '2026-12-04']
+    ]);
+    // Los días son los de diasDeLaGrilla, tal cual
+    const grilla = new Map(plano(M.diasDeLaGrilla('2026-11')).map((dia) => [dia.fecha, dia]));
+    for (const dia of plano(noviembre).flat()) assert.deepEqual(dia, grilla.get(dia.fecha), dia.fecha);
+    assert.deepEqual(plano(noviembre)[4].map((dia) => dia.del_mes), [true, false, false, false, false]);
+    // Agosto de 2026 empieza un sábado: la primera fila es la del lunes 3
+    assert.equal(M.semanasDelMes('2026-08', { finde: false })[0][0].fecha, '2026-08-03');
+    assert.equal(M.semanasDelMes('2026-08', { finde: false }).at(-1)[0].fecha, '2026-08-31');
+    // Octubre termina un sábado: la última fila termina el viernes 30, y la primera trae el 1 y el 2
+    assert.deepEqual(fechasDeLasSemanas(M.semanasDelMes('2026-10', { finde: false })).at(-1),
+      ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30']);
+    assert.equal(M.semanasDelMes('2026-10', { finde: false })[0][0].fecha, '2026-09-28');
+    assert.equal(M.semanasDelMes('2027-02', { finde: false }).length, 4);
+    // Sin decir nada, o con algo que no es el true literal, ocultos (como de entrada)
+    for (const opciones of [undefined, null, {}, { finde: 'si' }, { finde: 1 }]) {
+      assert.deepEqual(fechasDeLasSemanas(M.semanasDelMes('2026-11', opciones)), fechasDeLasSemanas(noviembre), JSON.stringify(opciones));
+    }
+  });
+
+  it('semanasDelMes: con sábado y domingo, las semanas enteras de diasDeLaGrilla', () => {
+    const noviembre = M.semanasDelMes('2026-11', { finde: true });
+    assert.equal(noviembre.length, 6);
+    assert.ok(plano(noviembre).every((semana) => semana.length === 7));
+    assert.deepEqual(fechasDeLasSemanas(noviembre)[0],
+      ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01']);
+    assert.deepEqual(plano(noviembre).flat(), plano(M.diasDeLaGrilla('2026-11')));
+    assert.equal(M.semanasDelMes('2026-08', { finde: true })[0][0].fecha, '2026-07-27');
+    for (const raro of ['2026-13', '', null, undefined, 'noviembre', '1999-12']) {
+      assert.deepEqual(plano(M.semanasDelMes(raro, { finde: true })), [], String(raro));
+      assert.deepEqual(plano(M.semanasDelMes(raro, { finde: false })), [], String(raro));
+    }
+  });
+
+  it('renglonesDelDia: con lugar, una cosa hasta 3 renglones, dos hasta 2 y tres uno; si no, «y N más»', () => {
+    const casos = [
+      [1, 4, [3], 0], [2, 4, [2, 2], 0], [3, 4, [1, 1, 1], 0], [4, 4, [1, 1, 1], 1], [7, 4, [1, 1, 1], 4],
+      [1, 3, [3], 0], [2, 3, [2, 1], 0], [3, 3, [1, 1, 1], 0], [4, 3, [1, 1], 2],
+      [1, 2, [2], 0], [2, 2, [1, 1], 0], [3, 2, [1], 2], [0, 4, [], 0], [0, 2, [], 0]
+    ];
+    for (const [cantidad, lugares, lineas, mas] of casos) {
+      assert.deepEqual(plano(M.renglonesDelDia(cantidad, lugares)), { lineas, mas }, `${cantidad} en ${lugares}`);
+    }
+    // Nunca menos de una a la vista, ni un «más» negativo, ni NaN
+    assert.deepEqual(plano(M.renglonesDelDia(2, 1)), { lineas: [1], mas: 1 });
+    assert.deepEqual(plano(M.renglonesDelDia(1, 0)), { lineas: [1], mas: 0 });
+    for (const [cantidad, lugares] of [[null, 4], ['2', 4], [-1, 4], [1.5, 4], [Number.NaN, 4]]) {
+      assert.deepEqual(plano(M.renglonesDelDia(cantidad, lugares)), { lineas: [], mas: 0 }, String(cantidad));
+    }
+    for (const lugares of [null, 'x', -2, Number.NaN]) {
+      assert.deepEqual(plano(M.renglonesDelDia(2, lugares)), { lineas: [1], mas: 1 }, String(lugares));
+    }
+  });
+
+  it('barrasDelMes: tus licencias en el carril 1 y los compañeros en el 2; un tramo por días seguidos con lo mismo', () => {
+    const barras = barrasDe(M.semanasDelMes('2026-11', { finde: false }), DE_NOVIEMBRE);
+    assert.deepEqual(barras.map((semana) => semana.carriles), [2, 2, 1, 1, 1]);
+    assert.deepEqual(barras[0].piezas, {
+      '2026-11-02': [null, null],
+      '2026-11-03': [
+        pieza('licencia', 'Vacaciones', VACACIONES_DEL_3, { inicio: true, largo: 4 }),
+        pieza('ausente', 'Julián no está', JULIAN_HASTA_EL_6, { inicio: true, largo: 2 })
+      ],
+      '2026-11-04': [
+        pieza('licencia', 'Vacaciones', VACACIONES_DEL_3),
+        pieza('ausente', 'Julián no está', JULIAN_HASTA_EL_6, { fin: true })
+      ],
+      '2026-11-05': [
+        pieza('licencia', 'Vacaciones', VACACIONES_DEL_3),
+        pieza('ausente', 'Carla y Julián no están', CARLA_Y_JULIAN, { inicio: true, largo: 2 })
+      ],
+      // El viernes, la última columna: las vacaciones siguen el lunes 9, los compañeros no (ese día está solo Carla)
+      '2026-11-06': [
+        pieza('licencia', 'Vacaciones', VACACIONES_DEL_3, { fin: true, sigue_despues: true }),
+        pieza('ausente', 'Carla y Julián no están', CARLA_Y_JULIAN, { fin: true })
+      ]
+    });
+    assert.deepEqual(piezasDel(barras, '2026-11-09'), [
+      pieza('licencia', 'Vacaciones', VACACIONES_DEL_3, { inicio: true, fin: true, largo: 1, sigue_antes: true }),
+      pieza('ausente', 'Carla no está', CARLA_HASTA_EL_13, { inicio: true, largo: 5 })
+    ]);
+    assert.deepEqual(piezasDel(barras, '2026-11-10'), [null, pieza('ausente', 'Carla no está', CARLA_HASTA_EL_13)]);
+    assert.deepEqual(piezasDel(barras, '2026-11-13'), [null, pieza('ausente', 'Carla no está', CARLA_HASTA_EL_13, { fin: true })]);
+  });
+
+  it('barrasDelMes: un feriado corta la barra, y la fila siguiente que no empieza igual no la sigue', () => {
+    const barras = barrasDe(M.semanasDelMes('2026-11', { finde: false }), DE_NOVIEMBRE);
+    // Las vacaciones del 16 al 20: un tramo de 5 que no sigue (el lunes 23 es feriado)
+    assert.deepEqual(barras[2].piezas['2026-11-16'], [pieza('licencia', 'Vacaciones', VACACIONES_DEL_16, { inicio: true, largo: 5 })]);
+    assert.deepEqual(barras[2].piezas['2026-11-20'], [pieza('licencia', 'Vacaciones', VACACIONES_DEL_16, { fin: true })]);
+    // El lunes 23, nada; el 24 empieza otro tramo, que no viene de antes
+    assert.deepEqual(barras[3].piezas['2026-11-23'], [null]);
+    assert.deepEqual(barras[3].piezas['2026-11-24'], [pieza('licencia', 'Vacaciones', VACACIONES_DEL_16, { inicio: true, largo: 4 })]);
+    assert.deepEqual(barras[3].piezas['2026-11-27'], [pieza('licencia', 'Vacaciones', VACACIONES_DEL_16, { fin: true })]);
+    // Sin ninguna licencia en la semana, los compañeros van en el carril 1
+    assert.deepEqual(barras[4].piezas, {
+      '2026-11-30': [null],
+      '2026-12-01': [pieza('ausente', 'Julián no está', 'Julián no está. Hasta el miércoles 02/12.', { inicio: true, largo: 2 })],
+      '2026-12-02': [pieza('ausente', 'Julián no está', 'Julián no está. Hasta el miércoles 02/12.', { fin: true })],
+      '2026-12-03': [null],
+      '2026-12-04': [null]
+    });
+  });
+
+  it('barrasDelMes: una licencia del jueves 01/10 al martes 06/10 sigue del viernes al lunes; con el fin de semana a la vista, no', () => {
+    const datos = respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' }, {
+      licencias: [{ id: 23, tipo: 'vacaciones', desde: '2026-10-01', hasta: '2026-10-06', horas: null }], ausencias: []
+    });
+    const titulo = 'Vacaciones. Hasta el martes 06/10';
+    const ocultos = barrasDe(M.semanasDelMes('2026-10', { finde: false }), datos);
+    assert.deepEqual(ocultos.map((semana) => semana.carriles), [1, 1, 0, 0, 0]);
+    assert.deepEqual(piezasDel(ocultos, '2026-10-01'), [pieza('licencia', 'Vacaciones', titulo, { inicio: true, largo: 2 })]);
+    assert.deepEqual(piezasDel(ocultos, '2026-10-02'), [pieza('licencia', 'Vacaciones', titulo, { fin: true, sigue_despues: true })]);
+    assert.deepEqual(piezasDel(ocultos, '2026-10-05'), [pieza('licencia', 'Vacaciones', titulo, { inicio: true, largo: 2, sigue_antes: true })]);
+    assert.deepEqual(piezasDel(ocultos, '2026-10-06'), [pieza('licencia', 'Vacaciones', titulo, { fin: true })]);
+    // Con sábado y domingo, el sábado y el domingo (sin licencia) la cortan: ninguna punta sigue
+    const visibles = barrasDe(M.semanasDelMes('2026-10', { finde: true }), datos);
+    assert.deepEqual(piezasDel(visibles, '2026-10-02'), [pieza('licencia', 'Vacaciones', titulo, { fin: true })]);
+    assert.deepEqual(piezasDel(visibles, '2026-10-03'), [null]);
+    assert.deepEqual(piezasDel(visibles, '2026-10-05'), [pieza('licencia', 'Vacaciones', titulo, { inicio: true, largo: 2 })]);
+    // En noviembre, con sábado y domingo, las vacaciones del 03 terminan el viernes 6 sin seguir
+    const noviembre = barrasDe(M.semanasDelMes('2026-11', { finde: true }), DE_NOVIEMBRE);
+    assert.deepEqual(piezasDel(noviembre, '2026-11-06')[0], pieza('licencia', 'Vacaciones', VACACIONES_DEL_3, { fin: true }));
+    assert.deepEqual(piezasDel(noviembre, '2026-11-08'), [null, null]);
+    assert.deepEqual(piezasDel(noviembre, '2026-11-09')[0], pieza('licencia', 'Vacaciones', VACACIONES_DEL_3, { inicio: true, fin: true, largo: 1 }));
+  });
+
+  it('barrasDelMes: dos licencias seguidas con el mismo texto son dos tramos (por id); las filas de las puntas de la grilla no siguen', () => {
+    const datos = deNoviembre({
+      licencias: [{ id: 25, tipo: 'vacaciones', desde: '2026-11-02', hasta: '2026-11-03', horas: null },
+        { id: 26, tipo: 'vacaciones', desde: '2026-11-04', hasta: '2026-11-04', horas: null },
+        { id: 27, tipo: 'vacaciones', desde: '2026-11-30', hasta: '2026-12-11', horas: null }],
+      ausencias: []
+    });
+    const barras = barrasDe(M.semanasDelMes('2026-11', { finde: false }), datos);
+    assert.deepEqual(barras[0].piezas['2026-11-02'], [pieza('licencia', 'Vacaciones', 'Vacaciones. Hasta el martes 03/11', { inicio: true, largo: 2 })]);
+    assert.deepEqual(barras[0].piezas['2026-11-03'], [pieza('licencia', 'Vacaciones', 'Vacaciones. Hasta el martes 03/11', { fin: true })]);
+    assert.deepEqual(barras[0].piezas['2026-11-04'], [pieza('licencia', 'Vacaciones', 'Vacaciones', { inicio: true, fin: true, largo: 1 })]);
+    // La última fila: el viernes 4/12 no sigue, aunque las vacaciones sigan la semana siguiente
+    assert.deepEqual(barras[4].piezas['2026-12-04'], [pieza('licencia', 'Vacaciones', 'Vacaciones. Hasta el viernes 11/12', { fin: true })]);
+    // Sin un id que sirva, cada licencia es la suya (por su lugar en la lista): no se juntan
+    const sinId = { ...datos, licencias: datos.licencias.map((una) => ({ ...una, id: null })) };
+    const deSinId = barrasDe(M.semanasDelMes('2026-11', { finde: false }), sinId);
+    assert.deepEqual(['2026-11-02', '2026-11-03', '2026-11-04'].map((fecha) => [deSinId[0].piezas[fecha][0].inicio, deSinId[0].piezas[fecha][0].largo]),
+      [[true, 2], [false, null], [true, 1]]);
+  });
+
+  it('barrasDelMes: sin compañeros ni licencias, ningún carril; lo que no sirve, sin barras', () => {
+    const semanas = M.semanasDelMes('2026-11', { finde: false });
+    const vacio = barrasDe(semanas, deNoviembre({ licencias: [], ausencias: [] }));
+    assert.deepEqual(vacio.map((semana) => semana.carriles), [0, 0, 0, 0, 0]);
+    assert.deepEqual(vacio[0].piezas, { '2026-11-02': [], '2026-11-03': [], '2026-11-04': [], '2026-11-05': [], '2026-11-06': [] });
+    // Quien no ve a los compañeros recibe [] en los dos: solo sus licencias
+    assert.deepEqual(barrasDe(semanas, deNoviembre({ puedeCompartir: false })).map((semana) => semana.carriles), [1, 1, 1, 1, 0]);
+    for (const raro of [null, undefined, 'x', {}, { licencias: 'x', companeros_por_dia: [null, { fecha: 'raro', texto: 'x' }] }]) {
+      assert.deepEqual(barrasDe(semanas, raro).map((semana) => semana.carriles), [0, 0, 0, 0, 0], JSON.stringify(raro));
+    }
+    for (const raro of [null, undefined, 'x', {}, [null, 'x']]) assert.deepEqual(barrasDe(raro, DE_NOVIEMBRE), [], JSON.stringify(raro));
+  });
+
+  it('barrasDelMes: el texto de los compañeros es el del servidor, y el title nombra a cada uno en el orden del texto', () => {
+    const datos = { ...DE_NOVIEMBRE, companeros_por_dia: DE_NOVIEMBRE.companeros_por_dia.map((dia) => ({ ...dia, texto: `${dia.texto} ${MALICIOSO}` })) };
+    const barras = barrasDe(M.semanasDelMes('2026-11', { finde: false }), datos);
+    // Lo que no se escapa acá: lo escapa el HTML (Task 6)
+    assert.equal(piezasDel(barras, '2026-11-05')[1].texto, `Carla y Julián no están ${MALICIOSO}`);
+    assert.equal(piezasDel(barras, '2026-11-05')[1].titulo, CARLA_Y_JULIAN);
+    // Sin `hasta_texto` (un día), solo el texto
+    const deUnDia = deNoviembre({ ausencias: [{ nombre: 'Julián', desde: '2026-11-04', hasta: '2026-11-04' },
+      { nombre: 'Carla', desde: '2026-11-04', hasta: '2026-11-05' }] });
+    assert.deepEqual(piezasDel(barrasDe(M.semanasDelMes('2026-11', { finde: false }), deUnDia), '2026-11-04')[1],
+      pieza('ausente', 'Carla y Julián no están', 'Carla no está. Hasta el jueves 05/11. Julián no está.', { inicio: true, fin: true, largo: 1 }));
+    // Si el día no tiene a nadie en `ausentes` (no debería pasar), el title es el texto del día
+    const sinAusentes = { ...DE_NOVIEMBRE, ausentes: [] };
+    assert.equal(piezasDel(barrasDe(M.semanasDelMes('2026-11', { finde: false }), sinAusentes), '2026-11-05')[1].titulo, 'Carla y Julián no están');
+  });
+
+  it('cuantasEnElFinde: los feriados y los eventos de los sábados y domingos del mes', () => {
+    assert.equal(M.cuantasEnElFinde('2026-11', DE_NOVIEMBRE), 1);
+    const conGuardias = deNoviembre({
+      eventos: [...EVENTOS_DE_PRUEBA, eventoDe(16, 'Guardia', '2026-11-14', '09:00'),
+        // De la grilla, pero de otro mes: no cuentan
+        eventoDe(17, 'Guardia', '2026-10-31', '09:00'), eventoDe(18, 'Guardia', '2026-12-06', '09:00')]
+    });
+    assert.equal(M.cuantasEnElFinde('2026-11', conGuardias), 2);
+    assert.equal(M.cuantasEnElFinde('2026-10', conGuardias), 1);
+    // Son las cosas de cosasPorDia que quedan en sábados y domingos del mes
+    const delFinde = Object.entries(cosasDe(conGuardias))
+      .filter(([fecha]) => fecha.startsWith('2026-11') && [0, 6].includes(new Date(`${fecha}T12:00:00Z`).getUTCDay()));
+    assert.equal(delFinde.flatMap(([, cosas]) => cosas).length, 2);
+    // Dos feriados el mismo domingo son dos cosas
+    const dosFeriados = deNoviembre({ feriados: [FERIADO_DEL_EMPLEADO, { ...FERIADO_DEL_EMPLEADO, id: 5, nombre: 'Otro feriado' }] });
+    assert.equal(M.cuantasEnElFinde('2026-11', dosFeriados), 2);
+    assert.equal(M.cuantasEnElFinde('2026-11', deNoviembre({ feriados: [FERIADO_SOBERANIA] })), 0);
+    for (const raro of [null, undefined, 'x', {}, { eventos: 'x', feriados: [null, { fecha: 'raro' }] }]) {
+      assert.equal(M.cuantasEnElFinde('2026-11', raro), 0, JSON.stringify(raro));
+    }
+    for (const raro of ['2026-13', '', null, 'noviembre']) assert.equal(M.cuantasEnElFinde(raro, conGuardias), 0, String(raro));
+  });
+
+  it('diaVisibleCercano: la fecha si se ve; si no, el primer día visible que la sigue o, si no hay, el último que la precede', () => {
+    const noviembre = M.semanasDelMes('2026-11', { finde: false });
+    const octubre = M.semanasDelMes('2026-10', { finde: false });
+    assert.equal(M.diaVisibleCercano('2026-11-01', noviembre), '2026-11-02');
+    assert.equal(M.diaVisibleCercano('2026-10-31', octubre), '2026-10-30');
+    assert.equal(M.diaVisibleCercano('2026-11-07', noviembre), '2026-11-09');
+    assert.equal(M.diaVisibleCercano('2026-11-04', noviembre), '2026-11-04');
+    assert.equal(M.diaVisibleCercano('2026-08-01', M.semanasDelMes('2026-08', { finde: false })), '2026-08-03');
+    // Con sábado y domingo, la misma fecha
+    assert.equal(M.diaVisibleCercano('2026-11-01', M.semanasDelMes('2026-11', { finde: true })), '2026-11-01');
+    assert.equal(M.diaVisibleCercano('2026-10-31', M.semanasDelMes('2026-10', { finde: true })), '2026-10-31');
+    // Fuera de la grilla, el primero o el último
+    assert.equal(M.diaVisibleCercano('2026-09-15', noviembre), '2026-11-02');
+    assert.equal(M.diaVisibleCercano('2027-01-01', noviembre), '2026-12-04');
+    for (const raro of ['2026-02-30', '', null, 'hoy']) assert.equal(M.diaVisibleCercano(raro, noviembre), null, String(raro));
+    for (const raro of [[], null, 'x', [[]], [null]]) assert.equal(M.diaVisibleCercano('2026-11-01', raro), null, JSON.stringify(raro));
   });
 });
 
