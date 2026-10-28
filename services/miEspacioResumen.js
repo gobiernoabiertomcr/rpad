@@ -24,7 +24,7 @@ import {
   MENSAJES_MI_ESPACIO, MODALIDADES, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, NOMBRES_TIPO, JORNADA,
   numeroTexto, mesEnFrase, nombreDelMes, diaYMes, enLista, modalidadDe, mesMas, topeDe, diasQueDescuentan, esDiaEntero,
   fueraDeLaModalidad, tieneSaldoInicial, horasDe, textoSinNoUtilizadas, rangoDeFechas, horaSalidaValida, tipoDeDia,
-  horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos
+  horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos, fechasEnLaFrase
 } from './miEspacioReglas.js';
 
 // Los dos formatos que ya estaban en las reglas: el panel los usa sin copiarlos
@@ -635,16 +635,19 @@ const esFilaDeLaLista = (fila) => esObjeto(fila) && TIPOS_LICENCIA.includes(fila
 // Lo que quedó distinto en Configuración, para revisar (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1, 3.2 y 3.5)
 
 // El texto de una, con las fechas de su fila en la lista («04/01 al 15/01/2027») y, en una fecha cambiada o una unida sin
-// cubrir, las de la `revision` (sin decir quién la cambió: pudo ser la misma persona). Un motivo desconocido, null
+// cubrir, las de la `revision` (sin decir quién la cambió: pudo ser la misma persona). De un día (ruling de la revisión
+// final: a mitad de frase, «Lun 16/11/2026» y «del 18/11 al 18/11» se leen mal), la licencia con el día de la semana en
+// minúscula («del lunes 16/11/2026») y las de Configuración con «el» («el 18/11», `fechasEnLaFrase`). Un motivo desconocido,
+// null
 const textoParaRevisar = (fila, { motivo, desde, hasta }) => {
-  const fechas = textoDeLasFechas(fila.desde, fila.hasta);
+  const fechas = fila.desde === fila.hasta
+    ? `${diaDeLaSemana(fila.desde)} ${formatoCorto(fila.desde)}` : textoDeLasFechas(fila.desde, fila.hasta);
   if (motivo === 'fechas') {
-    return `Revisá tu licencia del ${fechas}: en Configuración quedó del ${diaYMes(desde)} al ${diaYMes(hasta)}.`;
+    return `Revisá tu licencia del ${fechas}: en Configuración quedó ${fechasEnLaFrase(desde, hasta)}.`;
   }
   if (motivo === 'anulada') return `Revisá tu licencia del ${fechas}: se anuló en Configuración y acá sigue contando.`;
   if (motivo === 'sin_cubrir') {
-    return `Revisá tu licencia del ${fechas}: ya no está cubierta en Configuración del ${diaYMes(desde)} al `
-      + `${diaYMes(hasta)}.`;
+    return `Revisá tu licencia del ${fechas}: ya no está cubierta en Configuración ${fechasEnLaFrase(desde, hasta)}.`;
   }
   return null;
 };

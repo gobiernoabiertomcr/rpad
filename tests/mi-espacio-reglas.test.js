@@ -232,8 +232,15 @@ describe('los textos', () => {
       'En Configuración quedó del 04/01 al 08/01: revisala.');
     assert.equal(textoRevisalaEnConfiguracion('2026-12-28', '2027-01-08'),
       'En Configuración quedó del 28/12 al 08/01: revisala.');
-    // Lo que no es una fecha, la raya (como el resto de los textos del paso)
+    // De un día, «el 17/11», no «del 17/11 al 17/11» (ruling de la revisión final de la spec); los textos de siempre no cambian
+    assert.equal(textoRevisalaEnConfiguracion('2026-11-17', '2026-11-17'), 'En Configuración quedó el 17/11: revisala.');
+    assert.equal(textoYaNoCubierta('2026-11-18', '2026-11-18'),
+      'Ya no está cubierta en Configuración del 18/11 al 18/11: revisala con administración.');
+    assert.equal(textoEnConfiguracion('2026-11-17', '2026-11-17'), 'En Configuración: del 17/11 al 17/11.');
+    // Lo que no es una fecha, la raya (como el resto de los textos del paso), también si las dos son iguales
     assert.equal(textoRevisalaEnConfiguracion(null, 'x'), 'En Configuración quedó del — al —: revisala.');
+    assert.equal(textoRevisalaEnConfiguracion(null, null), 'En Configuración quedó del — al —: revisala.');
+    assert.equal(textoRevisalaEnConfiguracion('x', 'x'), 'En Configuración quedó del — al —: revisala.');
   });
 });
 
@@ -2841,6 +2848,10 @@ describe('el paso a Configuración', () => {
         opciones), { texto: textoRevisalaEnConfiguracion('2026-11-03', '2026-11-05'), insignia: 'aviso' });
       assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial, { hasta: '2026-11-04' }), opciones),
         { texto: 'En Configuración quedó del 03/11 al 05/11: revisala.', insignia: 'aviso' });
+      // La de Configuración, de un día: «el 03/11» (una franquicia de 7 horas es de día entero)
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial: oficialDe(7, '2026-11-03', '2026-11-03') },
+        franquicia('2026-11-04', 7, { licencia_oficial_id: 7, oficial: 'creada' }), opciones),
+      { texto: 'En Configuración quedó el 03/11: revisala.', insignia: 'aviso' });
       // Que terminó en Configuración: la fila lo sigue diciendo
       const terminada = oficialDe(7, '2026-10-19', '2026-10-21');
       assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial: terminada }, creadaDe(terminada, { hasta: '2026-10-23' }),

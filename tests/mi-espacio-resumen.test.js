@@ -866,11 +866,12 @@ describe('para revisar (spec 2026-10-28-mi-espacio-licencia-anulada)', () => {
   const ESPERADO = Object.freeze([
     {
       licencia_id: 102, anio: 2026,
-      texto: 'Revisá tu licencia del 16/11 al 18/11/2026: ya no está cubierta en Configuración del 18/11 al 18/11.',
+      texto: 'Revisá tu licencia del 16/11 al 18/11/2026: ya no está cubierta en Configuración el 18/11.',
       enlace: 'Ver en Licencias de 2026'
     },
     {
-      licencia_id: 103, anio: 2026, texto: 'Revisá tu licencia del Lun 16/11/2026: se anuló en Configuración y acá sigue contando.',
+      licencia_id: 103, anio: 2026,
+      texto: 'Revisá tu licencia del lunes 16/11/2026: se anuló en Configuración y acá sigue contando.',
       enlace: 'Ver en Licencias de 2026'
     },
     {
@@ -889,12 +890,40 @@ describe('para revisar (spec 2026-10-28-mi-espacio-licencia-anulada)', () => {
     assert.deepEqual(paraRevisarDe(ESTADO, VINCULOS), ESPERADO);
   });
 
-  it('las fechas de cada una son las de su fila en la lista', () => {
+  it('las fechas de cada una son las de su fila en la lista; las de un día, con el día de la semana en minúscula', () => {
     const lista = [2026, 2027].flatMap((anio) => filasDel(PLANTA, { estado: ESTADO, anio }).licencias);
     for (const { licencia_id: id, texto } of paraRevisarDe(ESTADO, VINCULOS)) {
       const fila = lista.find((otra) => otra.id === id);
-      assert.ok(texto.startsWith(`Revisá tu licencia del ${fila.fechas_texto}: `), texto);
+      if (fila.desde === fila.hasta) {
+        // La lista sigue diciendo «Lun 16/11/2026»; en la frase, la abreviatura en mayúscula se leería mal
+        assert.equal(fila.fechas_texto, 'Lun 16/11/2026');
+        assert.ok(texto.startsWith('Revisá tu licencia del lunes 16/11/2026: '), texto);
+      } else {
+        assert.ok(texto.startsWith(`Revisá tu licencia del ${fila.fechas_texto}: `), texto);
+      }
     }
+  });
+
+  // Ruling de la revisión final: de un día, la licencia de Mi espacio va con el día de la semana en minúscula («del lunes
+  // 16/11/2026») y las fechas de Configuración, «el 17/11» (no «del 17/11 al 17/11»); con un rango, como siempre
+  it('de un día: la licencia con el día de la semana y las fechas de Configuración con «el»', () => {
+    const estado = conLicencias(PLANTA.estado,
+      licencia(110, 'medica', '2026-11-16'),
+      licencia(111, 'familiar', '2026-11-18'),
+      licencia(112, 'medica', '2026-11-23', '2026-11-25'),
+      licencia(113, 'familiar', '2026-11-30', '2026-12-02'));
+    const vinculos = new Map([
+      [110, revision('fechas', '2026-11-17', '2026-11-17')],
+      [111, revision('sin_cubrir', '2026-11-18', '2026-11-18')],
+      [112, revision('fechas', '2026-11-24', '2026-11-24')],
+      [113, revision('sin_cubrir', '2026-12-01', '2026-12-02')]
+    ]);
+    assert.deepEqual(paraRevisarDe(estado, vinculos).map(({ texto }) => texto), [
+      'Revisá tu licencia del lunes 16/11/2026: en Configuración quedó el 17/11.',
+      'Revisá tu licencia del miércoles 18/11/2026: ya no está cubierta en Configuración el 18/11.',
+      'Revisá tu licencia del 23/11 al 25/11/2026: en Configuración quedó el 24/11.',
+      'Revisá tu licencia del 30/11 al 02/12/2026: ya no está cubierta en Configuración del 01/12 al 02/12.'
+    ]);
   });
 
   it('con los vínculos de verdad (`vinculosDeLaLista`): una creada que en Configuración quedó más corta', () => {

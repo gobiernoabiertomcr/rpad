@@ -1237,9 +1237,9 @@ describe('el paso a Configuración', () => {
     assert.equal(cambio.status, 200, JSON.stringify(cambio.body));
     assert.deepEqual((await filaDeLaLista('adminA', body.data.id)).configuracion,
       { texto: textoYaNoCubierta(q(3), q(3)), insignia: 'aviso' });
+    // Un solo día fuera: «el 13/11», no «del 13/11 al 13/11» (la fila sigue con el texto de siempre)
     assert.deepEqual((await elResumen('adminA')).para_revisar, [paraRevisar(body.data.id,
-      `Revisá tu licencia del ${fechasDeQ(q(2), q(3))}: ya no está cubierta en Configuración del ${diaYMes(q(3))} al `
-      + `${diaYMes(q(3))}.`)]);
+      `Revisá tu licencia del ${fechasDeQ(q(2), q(3))}: ya no está cubierta en Configuración el ${diaYMes(q(3))}.`)]);
   });
 
   it('la franquicia de 7 horas que pasa a 3, antes de empezar: la de Configuración se anula y el vínculo queda vacío', async () => {

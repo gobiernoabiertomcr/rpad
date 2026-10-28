@@ -271,8 +271,14 @@ export const TEXTO_NO_SE_COPIA = 'Administración la cambió en Configuración: 
 // Lo que quedó distinto en Configuración (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2 y 3.2): sin «Administración»,
 // porque pudo haberlo hecho la misma persona
 export const TEXTO_ANULADA_EN_CONFIGURACION = 'Se anuló en Configuración: acá sigue contando. Si ya no va, borrala.';
+// Las fechas de Configuración en una frase de lo que quedó distinto: «del 04/01 al 08/01» o, de un día, «el 17/11» (ruling
+// de la revisión final de la spec 2026-10-28-mi-espacio-licencia-anulada: «del 17/11 al 17/11» se lee mal). Lo que no es una
+// fecha, la raya, como el resto de los textos del paso. Los textos de siempre (`textoYaNoCubierta`, `textoEnConfiguracion`, …)
+// no la usan
+export const fechasEnLaFrase = (desde, hasta) =>
+  (esFechaIso(desde) && desde === hasta ? `el ${diaYMes(desde)}` : `del ${diaYMes(desde)} al ${diaYMes(hasta)}`);
 export const textoRevisalaEnConfiguracion = (desde, hasta) =>
-  `En Configuración quedó del ${diaYMes(desde)} al ${diaYMes(hasta)}: revisala.`;
+  `En Configuración quedó ${fechasEnLaFrase(desde, hasta)}: revisala.`;
 export const TEXTO_NO_DIA_ENTERO = 'No es el día entero: no pasa a Configuración';
 
 // Las dos mitades en que se habilita una licencia ordinaria: con un número impar, la primera es la mayor (15 son 8 y 7).
