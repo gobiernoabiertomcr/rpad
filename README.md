@@ -316,7 +316,9 @@ rpad/
 │       ├── migracion-mi-espacio.sql              # Mi espacio: las seis tablas mi_espacio_* (después de las de feriados y antes del código, obligatoria; repetible)
 │       ├── rollback-mi-espacio.sql               # Deshace la anterior (después de volver a los archivos anteriores; se pierde lo cargado en Mi espacio)
 │       ├── migracion-mi-espacio-agenda.sql       # La agenda de Mi espacio: las cuatro tablas de los eventos (después de migracion-mi-espacio.sql y antes del código; repetible)
-│       └── rollback-mi-espacio-agenda.sql        # Deshace la anterior (después de volver a los archivos anteriores; se pierden los eventos)
+│       ├── rollback-mi-espacio-agenda.sql        # Deshace la anterior (después de volver a los archivos anteriores; se pierden los eventos)
+│       ├── migracion-mi-espacio-horas.sql        # La planilla de horas extras de contrato: la tabla mi_espacio_salidas (después de la de la agenda y antes del código, obligatoria; antes, su consulta previa tiene que dar 0; repetible)
+│       └── rollback-mi-espacio-horas.sql         # Deshace la anterior (después de volver a los archivos anteriores; se pierde lo cargado en la planilla)
 ├── middleware/
 │   └── auth.js                    # JWT middleware (authMiddleware y sesionOpcional, para las rutas públicas que muestran más con sesión)
 ├── routes/
@@ -419,7 +421,8 @@ Desde **phpMyAdmin** en cPanel:
 | `mi_espacio_arranque` | Mi espacio: el día en que cada persona cargó su saldo inicial (lo anterior no descuenta) |
 | `mi_espacio_saldos` | Mi espacio: el saldo inicial de cada persona, por concepto y año |
 | `mi_espacio_licencias` | Mi espacio: las licencias y los usos de horas de cada persona, con su tipo, «Mostrar a mis compañeros», una nota y, si pasó a Configuración → Licencias, a cuál (`creada` o `unida`) o por qué no pasó; baja lógica (`activo`) |
-| `mi_espacio_horas_extras` | Mi espacio: las horas extras de cada persona, por día, de qué hora a qué hora; baja lógica (`activo`) |
+| `mi_espacio_horas_extras` | Mi espacio: las horas extras de cada persona de planta, por día, de qué hora a qué hora; baja lógica (`activo`) |
+| `mi_espacio_salidas` | Mi espacio: la planilla de horas extras de cada persona de contrato, una fila por día, con la hora de salida y, si se cargó, la de entrada (las horas no se guardan: se calculan); baja lógica (`activo`) |
 | `mi_espacio_avisos` | Mi espacio: los emails de vencimiento ya enviados (una vez por persona y por cosa) |
 | `mi_espacio_eventos` | La agenda de Mi espacio: los eventos, con quién los creó, el título, el detalle, la fecha y las horas (hora argentina), si es compartido o para todos, el recordatorio y la baja lógica (`activo`) |
 | `mi_espacio_evento_personas` | La agenda: con quién se compartió cada evento y si esa persona apagó su recordatorio (en uno para todos, solo quienes lo apagaron) |

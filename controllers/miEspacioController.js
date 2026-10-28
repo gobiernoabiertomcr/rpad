@@ -2,7 +2,8 @@
 // sus horas extras. Todas las rutas llevan authMiddleware y trabajan siempre sobre req.user.userId: nadie ve lo de otra persona.
 // Lo cargado se lee con services/miEspacioDatos.js, se calcula con las reglas puras (services/miEspacioReglas.js) y se arma
 // como datos con services/miEspacioResumen.js: la página imprime los números y los textos tal cual (Ruling 19). Hoy es
-// hoyArgentina(). Respuestas { success, data?, error?, campo? }; un año que no sirve da 400 en `anio`, antes que nada.
+// hoyArgentina(). Respuestas { success, data?, error?, campo?, message? } (el 400 de los días de PUT /mi-espacio/salidas suma
+// `fecha` y `errores`); un año que no sirve da 400 en `anio`, antes que nada.
 // Sin modalidad (sin vínculo cargado en Configuración → Usuarios), las licencias, las horas extras, el año y el saldo inicial
 // responden { modalidad: null, mensaje } y no muestran nada; el Resumen lo dice en su `mensaje` (sección 1).
 // Las licencias se cargan, se corrigen y se borran (baja lógica) acá, cada una en una transacción; una carga que no cierra
