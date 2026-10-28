@@ -6,12 +6,13 @@
 // prueba también directo. La API usa la fecha real: las fechas de los tests se arman desde hoy.
 import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
+import JSZip from 'jszip';
 import {
   crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, mailpit
 } from './helpers.js';
 import { asegurarBaseDePrueba } from './notas-fixtures.js';
 import {
-  hoyArgentina, sumarDias, esDiaHabil, FERIADOS_FIJOS, proximoDiaHabil, diaHabilAnterior, formatoCorto
+  hoyArgentina, sumarDias, esDiaHabil, FERIADOS_FIJOS, proximoDiaHabil, diaHabilAnterior, formatoCorto, formatoLargo
 } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, camposDelSaldoInicial, textoDeLasMitades, textoSuperpuesta, textoTope,
@@ -21,6 +22,7 @@ import {
   textoUnida, textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA,
   TEXTO_ANULADA_POR_ADMINISTRACION, TEXTO_NO_DIA_ENTERO
 } from '../services/miEspacioReglas.js';
+import { MENSAJES_NOTA } from '../services/miEspacioNota.js';
 
 let base, servidor, api, usuarios, dbReal, emailSoloA, datos, pool, firmas, controlador;
 const hoy = hoyArgentina();
@@ -2116,4 +2118,244 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
     const medica = contexto.calculo.topes.find(uso => uso.tipo === 'medica');
     assert.deepEqual([medica.anio, medica.usados], [Number(q(7).slice(0, 4)), 4]);
   });
+});
+
+// La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word, secciones 2, 4 y 5): GET …/licencias/:id/nota (la fila
+// de la lista, la hoja de la vista, la fecha y la aclaración) y GET …/licencias/:id/word (el .docx). Se arma en el momento,
+// con lo que hay en la base al pedirla; la fecha es el día argentino de la última vez que se guardó la licencia
+// (`updated_at`, un TIMESTAMP que la base guarda en UTC: Review Focus 1). Los errores, por la clave de notaDeLicencia: el uso
+// autorizado, 404; una licencia de días sin ningún día hábil, 409; una que no arma una nota, 500 con el mensaje fijo
+const TIPO_WORD = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const SIN_NOTA = { success: false, error: MENSAJES_NOTA.sinNota };
+const SIN_DIAS_HABILES = { success: false, error: MENSAJES_NOTA.sinDiasHabiles };
+const ERROR_DE_LA_NOTA = { success: false, error: MENSAJES_NOTA.error };
+const RENGLON_DEL_CONTRATADO = 'Personal contratado, cumpliendo funciones de';
+
+describe('la nota de una licencia', () => {
+  beforeEach(async () => {
+    await query("DELETE FROM usuarios_auditoria WHERE accion IN ('licencia_cargada', 'licencia_editada', 'licencia_anulada')");
+    await query('DELETE FROM usuarios_firmas');
+    await query('UPDATE notas_digitales_config SET firmante_usuario_id = NULL');
+  });
+
+  // Para cargar vacaciones: el arranque, el año y 20 días de la licencia del año anterior
+  const listoParaVacaciones = async (clave) => {
+    await listoParaCargar(clave);
+    await conSaldo(clave, 'vacaciones', ANIO - 1, '20.0');
+  };
+  const cargarMia = (clave, cuerpo) => api.post('/mi-espacio/licencias', cuerpo, como(clave));
+  const verNota = (clave, id) => api.get(`/mi-espacio/licencias/${id}/nota`, como(clave));
+  const bajarWord = (clave, id) => api.get(`/mi-espacio/licencias/${id}/word`, como(clave));
+  const lasDos = async (clave, id) => [await verNota(clave, id), await bajarWord(clave, id)];
+  // El XML del cuerpo del Word (cada renglón de la nota es un solo run: los textos se leen enteros)
+  const textoDelWord = async (buffer) => (await JSZip.loadAsync(buffer)).file('word/document.xml').async('string');
+  // El updated_at de una licencia, puesto en un instante ('2026-10-28T01:30:00Z'), por SQL
+  const guardadaEl = (id, instante) =>
+    query('UPDATE mi_espacio_licencias SET updated_at = FROM_UNIXTIME(?) WHERE id = ?', [Date.parse(instante) / 1000, id]);
+  // El cargo de una persona por SQL, mientras corre la prueba (los usuarios de prueba no tienen)
+  const conCargo = async (clave, cargo, prueba) => {
+    await query('UPDATE usuarios SET cargo = ? WHERE id = ?', [cargo, usuarios[clave].id]);
+    try {
+      await prueba();
+    } finally {
+      await query('UPDATE usuarios SET cargo = NULL WHERE id = ?', [usuarios[clave].id]);
+    }
+  };
+
+  it('GET …/nota: la fila de la lista, la hoja, la fecha de hoy y la aclaración; la nota de la licencia no va', async () => {
+    await listoParaVacaciones('adminA');
+    const carga = await cargarMia('adminA', { tipo: 'vacaciones', desde: q(0), hasta: q(4), nota: 'Turno con el dentista' });
+    assert.equal(carga.status, 201, JSON.stringify(carga.body));
+    const { id } = carga.body.data;
+
+    const res = await verNota('adminA', id);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.success, true);
+    assert.deepEqual(Object.keys(res.body.data).sort(), ['aclaracion', 'fecha', 'fila', 'html']);
+    const { fila, html, fecha, aclaracion } = res.body.data;
+    assert.equal(fila.id, id);
+    // La fila es la de la lista: el mismo armado, con Configuración y todo
+    const lista = await api.get(`/mi-espacio/licencias?anio=${ANIO_Q}`, como('adminA'));
+    assert.deepEqual(fila, lista.body.data.licencias.find((otra) => otra.id === id));
+    assert.equal(fecha, hoy);
+    assert.ok(html.includes('cinco (5) días hábiles'), html);
+    assert.ok(html.includes('Laura Gómez'), html);
+    assert.ok(!html.includes('dentista'), html);
+    assert.ok(aclaracion.startsWith(`Lleva la fecha del ${formatoCorto(hoy)}`), aclaracion);
+    sinFechasConHora(res.body.data);
+  });
+
+  it('GET …/word: el .docx de Word con su nombre, que se abre y dice lo mismo, sin la nota de la licencia', async () => {
+    await listoParaVacaciones('adminA');
+    const carga = await cargarMia('adminA', { tipo: 'vacaciones', desde: q(0), hasta: q(4), nota: 'Turno con el dentista' });
+    assert.equal(carga.status, 201, JSON.stringify(carga.body));
+
+    const res = await bajarWord('adminA', carga.body.data.id);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), TIPO_WORD);
+    assert.equal(res.headers.get('content-disposition'),
+      `attachment; filename="Nota de licencia - Licencia anual ordinaria - ${q(0)}.docx"; `
+      + `filename*=UTF-8''Nota%20de%20licencia%20-%20Licencia%20anual%20ordinaria%20-%20${q(0)}.docx`);
+    assert.ok(Buffer.isBuffer(res.body));
+    const xml = await textoDelWord(res.body);
+    assert.ok(xml.includes('cinco (5) días hábiles'));
+    assert.ok(xml.includes('Laura Gómez'));
+    assert.ok(!xml.includes('dentista'));
+  });
+
+  it('la fecha es el día argentino del último guardado (a las 22:30, ese día); una corrección sin cambios no la mueve',
+    async () => {
+      await listoParaVacaciones('adminA');
+      const cuerpo = { tipo: 'vacaciones', desde: q(0), hasta: q(4) };
+      const carga = await cargarMia('adminA', cuerpo);
+      assert.equal(carga.status, 201, JSON.stringify(carga.body));
+      const { id } = carga.body.data;
+
+      // El 28/10/2026 a la 01:30 en UTC son las 22:30 del 27/10 en Argentina: la nota no sale con el día siguiente
+      await guardadaEl(id, '2026-10-28T01:30:00Z');
+      const tarde = await verNota('adminA', id);
+      assert.equal(tarde.status, 200, JSON.stringify(tarde.body));
+      assert.equal(tarde.body.data.fecha, '2026-10-27');
+      assert.ok(tarde.body.data.aclaracion.startsWith('Lleva la fecha del 27/10/2026,'), tarde.body.data.aclaracion);
+      assert.ok(tarde.body.data.html.includes('Comodoro Rivadavia, 27 de octubre de 2026'), tarde.body.data.html);
+
+      // Una corrección con los mismos datos no es una corrección: la fecha sigue
+      await guardadaEl(id, '2025-06-10T15:00:00Z');
+      const igual = await api.put(`/mi-espacio/licencias/${id}`, cuerpo, como('adminA'));
+      assert.equal(igual.status, 200, JSON.stringify(igual.body));
+      assert.equal((await verNota('adminA', id)).body.data.fecha, '2025-06-10');
+
+      // Una con cambios la lleva a hoy, y la nota sale con lo nuevo
+      const corregida = await api.put(`/mi-espacio/licencias/${id}`, { ...cuerpo, hasta: q(3) }, como('adminA'));
+      assert.equal(corregida.status, 200, JSON.stringify(corregida.body));
+      const nueva = await verNota('adminA', id);
+      assert.equal(nueva.body.data.fecha, hoy);
+      assert.ok(nueva.body.data.html.includes('cuatro (4) días hábiles'), nueva.body.data.html);
+    });
+
+  it('lo ajeno es 404 en las dos: de otra persona, dada de baja, un id que no sirve y uno que no existe', async () => {
+    await listoParaVacaciones('adminA');
+    const carga = await cargarMia('adminA', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
+    assert.equal(carga.status, 201, JSON.stringify(carga.body));
+    const { id } = carga.body.data;
+    const otra = await cargarMia('adminA', { tipo: 'medica', desde: q(7), hasta: q(7) });
+    assert.equal(otra.status, 201, JSON.stringify(otra.body));
+    const borrada = otra.body.data.id;
+    assert.equal((await api.delete(`/mi-espacio/licencias/${borrada}`, como('adminA'))).status, 200);
+
+    for (const [clave, pedida] of [
+      ['adminB', id], ['adminA', borrada], ['adminA', 'abc'], ['adminA', '0'], ['adminA', '-3'], ['adminA', '1.5'],
+      ['adminA', '1e3'], ['adminA', 999999]
+    ]) {
+      for (const res of await lasDos(clave, pedida)) {
+        assert.equal(res.status, 404, `${clave} ${pedida}`);
+        assert.deepEqual(res.body, NO_ENCONTRADA, `${clave} ${pedida}`);
+      }
+    }
+    // La suya, adminA la sigue bajando
+    assert.deepEqual((await lasDos('adminA', id)).map((res) => res.status), [200, 200]);
+  });
+
+  it('el uso autorizado no tiene nota: 404 con su mensaje en las dos', async () => {
+    const id = await conLicencia('editor', { tipo: 'uso_autorizado', desde: q(1), horas: '7.0' });
+    for (const res of await lasDos('editor', id)) {
+      assert.equal(res.status, 404);
+      assert.deepEqual(res.body, SIN_NOTA);
+    }
+  });
+
+  it('una licencia de días sin ningún día hábil (el fin de semana, por SQL, o un feriado cargado después): 409 en las dos',
+    async () => {
+      const finDeSemana = await conLicencia('adminA', { tipo: 'estudios', desde: q(5), hasta: q(6) });
+      const enUnFeriado = await conLicencia('adminA', { tipo: 'medica', desde: q(2), hasta: q(2) });
+      await conFeriado({ fecha: q(2), nombre: 'Feriado de prueba' });
+      for (const id of [finDeSemana, enUnFeriado]) {
+        for (const res of await lasDos('adminA', id)) {
+          assert.equal(res.status, 409, `${id}`);
+          assert.deepEqual(res.body, SIN_DIAS_HABILES);
+        }
+      }
+    });
+
+  it('los feriados cuentan: unas vacaciones que empiezan en un feriado dicen sus días hábiles y el primero', async () => {
+    const id = await conLicencia('adminA', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
+    await conFeriado({ fecha: q(0), nombre: 'Feriado de prueba' });
+    const res = await verNota('adminA', id);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    // q(1) es el martes
+    const desde = `a partir del día martes ${formatoLargo(q(1))}.`;
+    assert.ok(res.body.data.html.includes(`cuatro (4) días hábiles correspondientes a mi licencia anual ordinaria, ${desde}`),
+      res.body.data.html);
+  });
+
+  it('una licencia que no arma una nota (una persona sin nombre, por SQL): 500 con el mensaje fijo en las dos', async () => {
+    const id = await conLicencia('colab', { tipo: 'medica', desde: q(0), hasta: q(1) });
+    await query("UPDATE usuarios SET nombre_completo = '' WHERE id = ?", [usuarios.colab.id]);
+    try {
+      for (const res of await lasDos('colab', id)) {
+        assert.equal(res.status, 500);
+        assert.deepEqual(res.body, ERROR_DE_LA_NOTA);
+      }
+    } finally {
+      await query('UPDATE usuarios SET nombre_completo = ? WHERE id = ?', [PERSONAS.colab[1], usuarios.colab.id]);
+    }
+  });
+
+  it('sin modalidad, el lector arma la nota igual (la lista no la muestra); su firma no lleva el renglón del contratado',
+    async () => {
+      await conCargo('lector', 'Asistente de prueba', async () => {
+        const id = await conLicencia('lector', { tipo: 'medica', desde: q(0), hasta: q(1) });
+        const lista = await api.get(`/mi-espacio/licencias?anio=${ANIO_Q}`, como('lector'));
+        assert.equal(lista.body.data.modalidad, null);
+
+        const res = await verNota('lector', id);
+        assert.equal(res.status, 200, JSON.stringify(res.body));
+        assert.equal(res.body.data.fila.id, id);
+        const { html } = res.body.data;
+        assert.ok(html.includes('licencia por atención médica por dos (2) días hábiles'), html);
+        assert.ok(html.includes('Sofía Paz') && html.includes('Asistente de prueba'), html);
+        assert.ok(!html.includes(RENGLON_DEL_CONTRATADO), html);
+      });
+    });
+
+  it('un lector baja la suya en Word', async () => {
+    const id = await conLicencia('lector', { tipo: 'familiar', desde: q(2) });
+    const res = await bajarWord('lector', id);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), TIPO_WORD);
+    assert.ok((await textoDelWord(res.body)).includes('Sofía Paz'));
+  });
+
+  it('un contratado firma con el renglón del personal contratado; sin cargo, solo el nombre (leídos al armar la nota)',
+    async () => {
+      const id = await conLicencia('editor', { tipo: 'familiar', desde: q(2) });
+      const sinCargo = await verNota('editor', id);
+      assert.equal(sinCargo.status, 200, JSON.stringify(sinCargo.body));
+      assert.ok(sinCargo.body.data.html.includes('Carla Benítez'), sinCargo.body.data.html);
+      assert.ok(!sinCargo.body.data.html.includes(RENGLON_DEL_CONTRATADO), sinCargo.body.data.html);
+
+      await conCargo('editor', 'Analista de prueba', async () => {
+        const res = await verNota('editor', id);
+        assert.equal(res.status, 200, JSON.stringify(res.body));
+        assert.ok(res.body.data.html.includes(RENGLON_DEL_CONTRATADO), res.body.data.html);
+        assert.ok(res.body.data.html.includes('Analista de prueba'), res.body.data.html);
+        const xml = await textoDelWord((await bajarWord('editor', id)).body);
+        assert.ok(xml.includes(RENGLON_DEL_CONTRATADO) && xml.includes('Analista de prueba'));
+      });
+    });
+
+  it('datosDeLaNota: el día argentino del guardado y la firma; de otra persona, dada de baja o con un id que no sirve, null',
+    async () => {
+      const id = await conLicencia('editor', { tipo: 'medica', desde: q(0) });
+      await guardadaEl(id, '2026-10-28T01:30:00Z');
+      assert.deepEqual(await datos.datosDeLaNota(usuarios.editor.id, id),
+        { guardada: '2026-10-27', nombre: 'Carla Benítez', cargo: null, vinculo: 'contrato' });
+      const dadaDeBaja = await conLicencia('editor', { tipo: 'medica', desde: q(1), activo: 0 });
+      for (const [usuario, licencia] of [
+        [usuarios.adminA.id, id], [usuarios.editor.id, dadaDeBaja], [usuarios.editor.id, 'abc'], ['abc', id],
+        [usuarios.editor.id, 999999]
+      ]) {
+        assert.equal(await datos.datosDeLaNota(usuario, licencia), null, `${usuario} ${licencia}`);
+      }
+    });
 });

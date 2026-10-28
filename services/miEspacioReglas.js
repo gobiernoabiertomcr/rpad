@@ -646,8 +646,8 @@ export const validarLicencia = (entrada, contexto) => {
 // descuenta, con cualquier fecha.
 
 // Cuántos meses después se usa lo de un mes trabajado: el franco, dos; las horas a favor, el siguiente
-const MESES_HASTA_EL_FRANCO = 2;
-const MESES_HASTA_LAS_HORAS = 1;
+export const MESES_HASTA_EL_FRANCO = 2;
+export const MESES_HASTA_LAS_HORAS = 1;
 // En qué se cuenta lo no utilizado de cada modalidad
 const UNIDAD_NO_UTILIZADA = Object.freeze({ planta: 'francos', contrato: 'horas' });
 
