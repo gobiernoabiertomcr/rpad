@@ -982,25 +982,186 @@ describe('el paso a Configuración', () => {
     assert.equal(Number((await vinculosDe('adminA'))[0].activo), 0);
   });
 
-  it('administración la anula en Configuración: la fila lo dice y una corrección no la toca', async () => {
+  // Anular en Configuración una licencia que creó Mi espacio da de baja también esa fila, en la misma transacción, la anule
+  // quien la anule (spec 2026-10-28-mi-espacio-licencia-anulada, 2.1): después nadie la ve
+  const ANULADA = 'Licencia anulada';
+  const ANULADA_Y_BORRADA = 'Licencia anulada. También se borró de Mi espacio.';
+  const ANULADA_Y_QUEDA = 'Licencia anulada. En Mi espacio ya había empezado: queda allá para que la persona la revise.';
+  const anularEnConfiguracion = (oficialId, clave) => api.post(`/usuarios/licencias/${oficialId}/anular`, {}, como(clave));
+
+  for (const [quien, cual] of [['adminB', 'otra persona'], ['adminA', 'la misma']]) {
+    it(`anularla en Configuración la borra de Mi espacio (la anula ${cual})`, async () => {
+      await listoParaVacaciones('adminA');
+      const cifra = async () => {
+        const res = await api.get('/mi-espacio/resumen', como('adminA'));
+        assert.equal(res.status, 200, JSON.stringify(res.body));
+        return res.body.data.titular.cifra;
+      };
+      const enLaAgenda = async () => {
+        const res = await api.get(`/mi-espacio/eventos?desde=${q(0)}&hasta=${q(4)}`, como('adminA'));
+        assert.equal(res.status, 200, JSON.stringify(res.body));
+        return res.body.data.licencias.map((licencia) => licencia.id);
+      };
+      const comoCompanera = async () => {
+        const res = await api.get(`/mi-espacio/ausentes?desde=${q(0)}&hasta=${q(4)}`, como('adminB'));
+        assert.equal(res.status, 200, JSON.stringify(res.body));
+        return res.body.data.ausentes.map((ausente) => ausente.nombre);
+      };
+      const antes = await cifra();
+      const { body } = await cargarMia('adminA', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
+      const { id } = body.data;
+      assert.notEqual(await cifra(), antes, 'cargadas a futuro, ya descuentan');
+      assert.deepEqual(await enLaAgenda(), [id]);
+      assert.deepEqual(await comoCompanera(), ['Laura Gómez']);
+      const [oficial] = await deConfiguracion('adminA');
+
+      const anular = await anularEnConfiguracion(oficial.id, quien);
+      assert.equal(anular.status, 200, JSON.stringify(anular.body));
+      assert.equal(anular.body.message, ANULADA_Y_BORRADA);
+      // La insignia «Cargada desde Mi espacio» se apaga con la baja
+      assert.equal(anular.body.data.desde_mi_espacio, false);
+      assert.equal((await deConfiguracion('adminA'))[0].anulada, 1);
+      assert.equal(Number((await vinculosDe('adminA'))[0].activo), 0);
+      assert.equal(await filaDeLaLista('adminA', id), undefined);
+      assert.deepEqual(await enLaAgenda(), []);
+      assert.deepEqual(await comoCompanera(), []);
+      assert.equal(await cifra(), antes);
+    });
+  }
+
+  it('una corrección o un borrado de Mi espacio después de la anulación da 404 (Review Focus 1)', async () => {
     await listoParaCargar('adminA');
     const { body } = await cargarMia('adminA', { tipo: 'medica', desde: q(0), hasta: q(2) });
     const [oficial] = await deConfiguracion('adminA');
-    const anular = await api.post(`/usuarios/licencias/${oficial.id}/anular`, {}, como('adminB'));
+    assert.equal((await anularEnConfiguracion(oficial.id, 'adminB')).status, 200);
+
+    // Como con la pestaña de Mi espacio abierta desde antes de la anulación
+    const corregir = await corregirMia('adminA', body.data.id, { tipo: 'medica', desde: q(1), hasta: q(3) });
+    assert.equal(corregir.status, 404, JSON.stringify(corregir.body));
+    assert.deepEqual(corregir.body, NO_ENCONTRADA);
+    const borrar = await api.delete(`/mi-espacio/licencias/${body.data.id}`, como('adminA'));
+    assert.equal(borrar.status, 404, JSON.stringify(borrar.body));
+    assert.deepEqual(borrar.body, NO_ENCONTRADA);
+    // Nada revivió: ni la fila de Mi espacio ni la de Configuración
+    assert.deepEqual((await vinculosDe('adminA')).map((fila) => [fila.desde, fila.hasta, Number(fila.activo)]),
+      [[q(0), q(2), 0]]);
+    assert.deepEqual((await deConfiguracion('adminA')).map((l) => [l.id, l.desde, l.hasta, l.anulada]),
+      [[oficial.id, q(0), q(2), 1]]);
+  });
+
+  it('la anulación que no se puede no toca Mi espacio (Review Focus 3)', async () => {
+    await listoParaCargar('adminA');
+    const { body } = await cargarMia('adminA', { tipo: 'medica', desde: dia(-3), hasta: dia(3) });
+    assert.equal(body.success, true, JSON.stringify(body));
+    const [oficial] = await deConfiguracion('adminA');
+    const anular = await anularEnConfiguracion(oficial.id, 'adminB');
+    assert.equal(anular.status, 409, JSON.stringify(anular.body));
+    assert.equal((await deConfiguracion('adminA'))[0].anulada, 0);
+    assert.equal(Number((await vinculosDe('adminA'))[0].activo), 1);
+  });
+
+  it('si en Mi espacio ya empezó, queda para que la persona la revise (spec, 3b)', async () => {
+    await listoParaCargar('adminA');
+    const { body } = await cargarMia('adminA', { tipo: 'medica', desde: dia(-3), hasta: dia(3) });
+    const { id } = body.data;
+    const [oficial] = await deConfiguracion('adminA');
+    // En Configuración se corrió el inicio para más adelante: Configuración la deja anular, pero en Mi espacio ya pasaron días
+    await query('UPDATE usuarios_licencias SET desde = ? WHERE id = ?', [dia(1), oficial.id]);
+    const anular = await anularEnConfiguracion(oficial.id, 'adminB');
     assert.equal(anular.status, 200, JSON.stringify(anular.body));
-    assert.deepEqual((await filaDeLaLista('adminA', body.data.id)).configuracion,
+    assert.equal(anular.body.message, ANULADA_Y_QUEDA);
+    assert.equal(anular.body.data.desde_mi_espacio, true);
+    assert.equal(Number((await vinculosDe('adminA'))[0].activo), 1);
+    // La tarea 2 cambia este texto por TEXTO_ANULADA_EN_CONFIGURACION
+    assert.deepEqual((await filaDeLaLista('adminA', id, Number(dia(-3).slice(0, 4)))).configuracion,
       { texto: TEXTO_ANULADA_POR_ADMINISTRACION, insignia: 'aviso' });
 
-    const antes = await deConfiguracion('adminA');
-    const res = await corregirMia('adminA', body.data.id, { tipo: 'medica', desde: q(1), hasta: q(3) });
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.deepEqual(await deConfiguracion('adminA'), antes);
-    assert.deepEqual((await filaDeLaLista('adminA', body.data.id)).configuracion,
-      { texto: TEXTO_ANULADA_POR_ADMINISTRACION, insignia: 'aviso' });
-    // Y se borra sin tocarla
-    assert.equal((await api.delete(`/mi-espacio/licencias/${body.data.id}`, como('adminA'))).status, 200);
-    assert.deepEqual(await deConfiguracion('adminA'), antes);
+    // La persona decide: la corrige o la borra, sin tocar Configuración
+    const enConfiguracion = await deConfiguracion('adminA');
+    const corregir = await corregirMia('adminA', id, { tipo: 'medica', desde: dia(-3), hasta: dia(4) });
+    assert.equal(corregir.status, 200, JSON.stringify(corregir.body));
+    assert.deepEqual(await deConfiguracion('adminA'), enConfiguracion);
+    const borrar = await api.delete(`/mi-espacio/licencias/${id}`, como('adminA'));
+    assert.equal(borrar.status, 200, JSON.stringify(borrar.body));
+    assert.deepEqual(await deConfiguracion('adminA'), enConfiguracion);
   });
+
+  it('una unida no se toca: se anula la de Configuración y la fila de Mi espacio sigue (Review Focus 2)', async () => {
+    await listoParaCargar('adminB');
+    const deAdmin = await deAdministracion('adminB', q(0), q(9));
+    const unida = await cargarMia('adminB', { tipo: 'medica', desde: q(2), hasta: q(3) });
+    assert.equal(unida.status, 201, JSON.stringify(unida.body));
+    const anular = await anularEnConfiguracion(deAdmin, 'adminA');
+    assert.equal(anular.status, 200, JSON.stringify(anular.body));
+    assert.equal(anular.body.message, ANULADA);
+    assert.equal(anular.body.data.desde_mi_espacio, false);
+    const [fila] = await vinculosDe('adminB');
+    assert.deepEqual([...vinculoDe(fila), Number(fila.activo)], [deAdmin, 'unida', null, 1]);
+  });
+
+  it('con una creada y una unida que la apuntan, solo se da de baja la creada (Review Focus 2)', async () => {
+    await listoParaCargar('adminA');
+    const creada = await cargarMia('adminA', { tipo: 'medica', desde: q(0), hasta: q(2) });
+    const [oficial] = await deConfiguracion('adminA');
+    // Otra persona la estira en Configuración, y una licencia cargada después dentro de esas fechas queda unida a ella
+    const estirar = await api.put(`/usuarios/licencias/${oficial.id}`, { desde: q(0), hasta: q(9) }, como('adminB'));
+    assert.equal(estirar.status, 200, JSON.stringify(estirar.body));
+    const unida = await cargarMia('adminA', { tipo: 'familiar', desde: q(7), hasta: q(8) });
+    assert.equal(unida.status, 201, JSON.stringify(unida.body));
+    assert.deepEqual((await vinculosDe('adminA')).map((fila) => [fila.id, fila.licencia_oficial_id, fila.oficial]),
+      [[creada.body.data.id, oficial.id, 'creada'], [unida.body.data.id, oficial.id, 'unida']]);
+
+    const anular = await anularEnConfiguracion(oficial.id, 'adminB');
+    assert.equal(anular.status, 200, JSON.stringify(anular.body));
+    assert.equal(anular.body.message, ANULADA_Y_BORRADA);
+    assert.equal(anular.body.data.desde_mi_espacio, false);
+    assert.deepEqual((await vinculosDe('adminA')).map((fila) => [fila.id, Number(fila.activo)]),
+      [[creada.body.data.id, 0], [unida.body.data.id, 1]]);
+  });
+
+  it('bajaPorLaAnulacion: solo las creadas activas de esa licencia que no empezaron, en la transacción de quien llama',
+    async () => {
+      const { bajaPorLaAnulacion } = await import('../services/miEspacioPaso.js');
+      const licencia = await deAdministracion('adminA', dia(-1), q(4));
+      const otra = await deAdministracion('adminA', q(7), q(8));
+      const fila = async (desde, licenciaOficialId, oficial, activo = 1) => (await query(
+        `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, licencia_oficial_id, oficial, activo)
+         VALUES (?, 'medica', ?, ?, ?, ?, ?)`,
+        [usuarios.adminA.id, desde, desde, licenciaOficialId, oficial, activo]
+      )).insertId;
+      const futura = await fila(q(0), licencia, 'creada');
+      const deHoy = await fila(hoy, licencia, 'creada');
+      const empezada = await fila(dia(-1), licencia, 'creada');
+      const unida = await fila(q(1), licencia, 'unida');
+      const dadaDeBaja = await fila(q(2), licencia, 'creada', 0);
+      const deOtra = await fila(q(7), otra, 'creada');
+      const activas = async () => (await vinculosDe('adminA')).map((cada) => [cada.id, Number(cada.activo)]);
+      const comoEstaban = [[futura, 1], [deHoy, 1], [empezada, 1], [unida, 1], [dadaDeBaja, 0], [deOtra, 1]];
+      // Como el controlador: la baja en una transacción abierta, que después se confirma o se deshace (si algo tira, se
+      // deshace: una conexión que vuelve al pool con la transacción abierta les daría datos viejos a los tests que siguen)
+      const enTransaccion = async (alTerminar) => {
+        const conexion = await pool.getConnection();
+        try {
+          await conexion.beginTransaction();
+          const resultado = await bajaPorLaAnulacion(conexion, { licenciaOficialId: licencia, hoy });
+          await conexion[alTerminar]();
+          return resultado;
+        } catch (error) {
+          await conexion.rollback();
+          throw error;
+        } finally {
+          conexion.release();
+        }
+      };
+
+      // Si la anulación se deshace, Mi espacio queda como estaba
+      assert.deepEqual(await enTransaccion('rollback'), { borradas: 2, quedan: 1 });
+      assert.deepEqual(await activas(), comoEstaban);
+      assert.deepEqual(await enTransaccion('commit'), { borradas: 2, quedan: 1 });
+      assert.deepEqual(await activas(), [[futura, 0], [deHoy, 0], [empezada, 1], [unida, 1], [dadaDeBaja, 0], [deOtra, 1]]);
+      // Otra vez no da de baja nada más
+      assert.deepEqual(await enTransaccion('commit'), { borradas: 0, quedan: 1 });
+    });
 
   it('administración le cambia las fechas: la fila dice dónde quedó y lo que se corrige acá ya no se copia', async () => {
     await listoParaCargar('adminA');
@@ -1035,6 +1196,9 @@ describe('el paso a Configuración', () => {
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal((await deConfiguracion('adminA'))[0].anulada, 1);
     assert.deepEqual(vinculoDe((await vinculosDe('adminA'))[0]), [null, null, null]);
+    // Anular la de Configuración desde una corrección de Mi espacio no borra la fila (spec 2026-10-28-mi-espacio-licencia-anulada,
+    // 2.1: la baja va solo en la anulación de Configuración)
+    assert.equal(Number((await vinculosDe('adminA'))[0].activo), 1);
     assert.deepEqual((await filaDeLaLista('adminA', body.data.id)).configuracion,
       { texto: TEXTO_NO_DIA_ENTERO, insignia: 'aviso' });
   });

@@ -343,6 +343,39 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
     }
   });
 
+  // spec 2026-10-28-mi-espacio-licencia-anulada, 2.1: anular una licencia que creó Mi espacio la borra también de ahí, y la
+  // confirmación lo dice (nunca el tipo). Es texto plano para confirm: el nombre va tal cual, sin escapar
+  it('la confirmación de la anulación avisa que también se borra de Mi espacio, solo con desde_mi_espacio', async () => {
+    const { TEXTO_SE_BORRA_DE_MI_ESPACIO } = await import('../services/licenciasReglas.js');
+    const panel = cargarPanel();
+    assert.equal(evaluar(panel.contexto, 'TEXTO_SE_BORRA_DE_MI_ESPACIO'), TEXTO_SE_BORRA_DE_MI_ESPACIO,
+      'copia de la del servidor');
+    const texto = (cambios) => {
+      panel.contexto.__l = { id: 9, usuario_nombre: 'Persona de Prueba', desde: '2027-01-04', hasta: '2027-01-15', ...cambios };
+      return evaluar(panel.contexto, 'textoDeLaAnulacion(__l)');
+    };
+    const PREGUNTA = '¿Anular la licencia de Persona de Prueba (del 04/01/2027 al 15/01/2027)?';
+    for (const valor of [true, 1]) {
+      assert.equal(texto({ desde_mi_espacio: valor }), `${PREGUNTA} Se cargó desde Mi espacio: también se borra de ahí.`,
+        String(valor));
+    }
+    for (const cambios of [{ desde_mi_espacio: false }, { desde_mi_espacio: 0 }, {}, { desde_mi_espacio: 'true' }]) {
+      assert.equal(texto(cambios), PREGUNTA, JSON.stringify(cambios));
+    }
+    assert.equal(texto({ usuario_nombre: 'Persona <b>de</b> Prueba' }),
+      '¿Anular la licencia de Persona <b>de</b> Prueba (del 04/01/2027 al 15/01/2027)?');
+
+    // anularLicencia pregunta con ese texto
+    const preguntas = [];
+    panel.contexto.confirm = (pregunta) => { preguntas.push(pregunta); return false; };
+    panel.contexto.__licencia = { id: 9, usuario_nombre: 'Persona de Prueba', desde: '2027-01-04', hasta: '2027-01-15',
+      desde_mi_espacio: true };
+    evaluar(panel.contexto, 'licenciaAbierta = __licencia');
+    await panel.contexto.anularLicencia();
+    assert.deepEqual(preguntas, [`${PREGUNTA} Se cargó desde Mi espacio: también se borra de ahí.`]);
+    assert.ok(!panel.pedidos.some(p => p.nombre === 'anularLicencia'), 'sin confirmar no anula');
+  });
+
   describe('persona autorizada con licencia propia dentro de la del titular (spec 6.3)', () => {
     const NOMBRE = 'Persona Autorizada';
     // El titular tiene licencia del 01/03/2027 al 31/03/2027
