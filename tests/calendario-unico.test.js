@@ -21,9 +21,7 @@ const SIEMPRE = Object.freeze(['services/notasDigitalesCalendario.js', 'services
 const HASTA_LA_TANDA_2 = Object.freeze(['services/metricasReglas.js', 'services/reportesAgenda.js']);
 // Los que todavía no reciben el calendario: cada tarea de la tanda 1 que arregla un archivo lo saca de acá
 const PENDIENTES_DE_LA_TANDA_1 = Object.freeze([
-  'services/licenciasOficialesService.js',
-  'services/miEspacioReglas.js',
-  'controllers/licenciasController.js'
+  'services/miEspacioReglas.js'
 ]);
 
 // El calendario, como lo nombra un archivo de services/ ('./') o de controllers/ ('../services/'), entre comillas simples o dobles

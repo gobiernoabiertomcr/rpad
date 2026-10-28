@@ -58,14 +58,21 @@ const etiquetaLicencia = (l) => {
     ? `<span class="etiqueta etiqueta-licencia">De licencia hasta ${esc(fechaCorta(l.hasta).slice(0, 5))}</span>`
     : `<span class="etiqueta etiqueta-licencia-proxima">Licencia desde ${esc(fechaCorta(l.desde).slice(0, 5))}</span>`;
 };
-// Efecto de la licencia del firmante titular en las notas (spec 7.2 y 7.3). licencia: { desde, vispera } (la víspera la
-// calcula el servidor; sin ella se nombra en general). Una licencia en curso ya no tiene anticipo: se describe lo que
-// pasa ahora.
+// Efecto de la licencia del firmante titular en las notas (spec 7.2 y 7.3). licencia: { desde, vispera, sin_anticipo,
+// sin_dias_habiles } (las calcula el servidor, con el calendario; sin la víspera se nombra en general). Una licencia en curso ya
+// no tiene anticipo: se describe lo que pasa ahora. Una sin días hábiles no cambia nada, y una que empieza a continuación de otra
+// licencia del firmante (su víspera cae dentro de la otra) no adelanta los avisos (spec 2026-10-27-feriados-en-notas, 6)
 const efectoEnNotas = (licencia, autorizadoNombre, hoy = datosLicencias.hoy) => {
   if (hoy && licencia?.desde && licencia.desde <= hoy) {
     return autorizadoNombre
       ? `Licencia en curso: ${autorizadoNombre} presenta las notas con las dos firmas, citando la nota que comunica la autorización (si todavía no salió, la próxima corrida la genera primero), y vuelve a presentar en su fecha cada aviso que se adelantó.`
       : 'Licencia en curso sin persona autorizada: no se generan notas hasta la vuelta. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.';
+  }
+  if (licencia?.sin_dias_habiles === true) return 'No tiene días hábiles: las notas no cambian.';
+  if (licencia?.sin_anticipo === true) {
+    return autorizadoNombre
+      ? `Empieza a continuación de otra licencia: los avisos no se adelantan. Desde el primer día, ${autorizadoNombre} presenta las notas con las dos firmas, después de la nota que comunica la autorización.`
+      : 'Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.';
   }
   const cuando = licencia?.vispera ? `el ${fechaCorta(licencia.vispera)}` : 'el último día hábil anterior';
   return autorizadoNombre
@@ -238,6 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('form-licencia').addEventListener('submit', guardarLicencia);
   document.getElementById('l-usuario').addEventListener('change', prepararAutorizado);
   document.getElementById('l-desde').addEventListener('input', actualizarEfecto);
+  document.getElementById('l-hasta').addEventListener('input', actualizarEfecto);
   document.getElementById('l-autorizado').addEventListener('change', actualizarEfecto);
   document.getElementById('l-autorizado').addEventListener('change', actualizarAusenciasAutorizado);
   document.getElementById('l-desde').addEventListener('input', actualizarAusenciasAutorizado);
@@ -856,10 +864,17 @@ function actualizarEfecto() {
   const elegido = document.getElementById('grupo-autorizado').hidden
     ? licenciaAbierta?.autorizado_nombre
     : datosLicencias.autorizables.find(a => String(a.id) === document.getElementById('l-autorizado').value)?.nombre_completo;
-  // La víspera es la de la licencia guardada; con otra fecha de inicio se nombra en general
+  // La víspera y «sin anticipo» son los de la licencia guardada, y «sin días hábiles» también si no cambió el fin; con otras
+  // fechas se nombra en general (el formulario no le pregunta al servidor antes de guardar: la fila guardada dice lo real)
   const desde = document.getElementById('l-desde').value;
-  const vispera = licenciaAbierta && desde === licenciaAbierta.desde ? licenciaAbierta.vispera : null;
-  efecto.textContent = efectoEnNotas({ desde, vispera }, elegido ?? null);
+  const hasta = document.getElementById('l-hasta').value;
+  const guardada = licenciaAbierta && desde === licenciaAbierta.desde ? licenciaAbierta : null;
+  efecto.textContent = efectoEnNotas({
+    desde,
+    vispera: guardada?.vispera ?? null,
+    sin_anticipo: guardada?.sin_anticipo === true,
+    sin_dias_habiles: guardada?.sin_dias_habiles === true && hasta === guardada.hasta
+  }, elegido ?? null);
 }
 
 async function guardarLicencia(evento) {

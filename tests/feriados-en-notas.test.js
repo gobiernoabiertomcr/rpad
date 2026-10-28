@@ -925,3 +925,219 @@ describe('vista previa y prueba con la fecha real', () => {
     }
   });
 });
+
+// Configuración → Licencias con el calendario (spec 2026-10-27-feriados-en-notas, 4): la víspera de cada licencia del firmante, sin
+// anticipo cuando cae dentro de otra licencia suya, la vuelta de la persona autorizada y el 409 de la persona autorizada sin días.
+// Los controladores, con una respuesta falsa
+describe('Configuración → Licencias con la precarga', () => {
+  let configuracion, oficiales, miEspacio, pool;
+
+  before(async () => {
+    configuracion = await import('../controllers/licenciasController.js');
+    oficiales = await import('../services/licenciasOficialesService.js');
+    miEspacio = await import('../controllers/miEspacioController.js');
+    pool = (await import('../config/database.js')).default;
+  });
+
+  // El titular firmante (superadmin) y la persona autorizada (admin), los dos con su firma: son también los dos auditores
+  const conFirmante = async () => {
+    const titular = await crearUsuario('superadmin');
+    const autorizado = await crearUsuario('admin');
+    await query('UPDATE notas_digitales_config SET firmante_usuario_id = ? WHERE id = 1', [titular.id]);
+    return { titular, autorizado };
+  };
+  // Una transacción como la de Configuración: bloquea los usuarios, corre el trabajo y confirma (si tira, deshace)
+  const enTransaccion = async (trabajo) => {
+    const conexion = await pool.getConnection();
+    try {
+      await conexion.beginTransaction();
+      await oficiales.bloquearUsuarios(conexion);
+      const resultado = await trabajo(conexion);
+      await conexion.commit();
+      return resultado;
+    } catch (error) {
+      await conexion.rollback();
+      throw error;
+    } finally {
+      conexion.release();
+    }
+  };
+  // Un controlador de Configuración con una respuesta falsa, como el titular (superadmin: no hay aviso al superadmin)
+  const pedir = async (controlador, titular, pedido = {}) => {
+    const res = respuestaFalsa();
+    await controlador({ query: {}, params: {}, body: {}, ...pedido, user: { userId: titular.id, rol: 'superadmin' } }, res);
+    return res;
+  };
+  const listar = async (titular) => {
+    const res = await pedir(configuracion.listarLicencias, titular, { query: { incluir_pasadas: '1' } });
+    assert.equal(res.body?.success, true, JSON.stringify(res.body));
+    return res.body.data;
+  };
+  const laQueEmpieza = (datos, desde) => datos.licencias.find((l) => l.desde === desde);
+  const marcas = ({ vispera, sin_anticipo: sinAnticipo, sin_dias_habiles: sinDiasHabiles }) => [vispera, sinAnticipo, sinDiasHabiles];
+  const deLaBase = (usuario) => query(
+    `SELECT DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, autorizado_id, anulada
+     FROM usuarios_licencias WHERE usuario_id = ? ORDER BY desde`,
+    [usuario.id]
+  );
+
+  it('la víspera de la licencia del firmante desde el 09/12 es el 04/12', async () => {
+    const { titular, autorizado } = await conFirmante();
+    await licencia(titular, '2026-12-09', '2027-01-08', autorizado);
+    // El lunes 07/12 no es laborable y el martes 08/12 es feriado (con los 9 fijos, el 07/12)
+    assert.deepEqual(marcas(laQueEmpieza(await listar(titular), '2026-12-09')), ['2026-12-04', false, false]);
+    // Una licencia de otra persona no tiene víspera
+    await licencia(autorizado, '2026-12-14', '2026-12-18');
+    assert.deepEqual(marcas(laQueEmpieza(await listar(titular), '2026-12-14')), [null, false, false]);
+  });
+
+  it('licencias seguidas: la segunda, sin víspera', async () => {
+    const { titular } = await conFirmante();
+    await licencia(titular, '2026-12-09', '2026-12-31');
+    await licencia(titular, '2027-01-04', '2027-01-08');
+    const datos = await listar(titular);
+    assert.deepEqual(marcas(laQueEmpieza(datos, '2026-12-09')), ['2026-12-04', false, false]);
+    // Su día hábil anterior, el jueves 31/12 (el 01/01 es feriado y el 02 y el 03, fin de semana), está en las vacaciones
+    assert.deepEqual(marcas(laQueEmpieza(datos, '2027-01-04')), [null, true, false]);
+  });
+
+  it('crear, editar y anular responden con la misma víspera, y una anulada no cuenta', async () => {
+    const { titular } = await conFirmante();
+    const vacaciones = await licencia(titular, '2026-12-09', '2026-12-31');
+    const medica = await pedir(configuracion.crearLicencia, titular,
+      { body: { usuario_id: titular.id, desde: '2027-01-04', hasta: '2027-01-08' } });
+    assert.equal(medica.statusCode, 201, JSON.stringify(medica.body));
+    assert.deepEqual(marcas(medica.body.data), [null, true, false]);
+
+    const editada = await pedir(configuracion.editarLicencia, titular,
+      { params: { id: String(medica.body.data.id) }, body: { hasta: '2027-01-15' } });
+    assert.equal(editada.body.success, true, JSON.stringify(editada.body));
+    assert.deepEqual([editada.body.data.hasta, ...marcas(editada.body.data)], ['2027-01-15', null, true, false]);
+
+    const anulada = await pedir(configuracion.anularLicencia, titular, { params: { id: String(vacaciones) } });
+    assert.equal(anulada.body.success, true, JSON.stringify(anulada.body));
+    assert.deepEqual([anulada.body.data.anulada, ...marcas(anulada.body.data)], [true, '2026-12-04', false, false]);
+    // Sin las vacaciones, la médica vuelve a tener víspera: el 31/12
+    assert.deepEqual(marcas(laQueEmpieza(await listar(titular), '2027-01-04')), ['2026-12-31', false, false]);
+  });
+
+  it('una licencia del firmante sin días hábiles: sin víspera', async () => {
+    // El lunes 07/12 no es laborable y el martes 08/12 es feriado
+    const { titular } = await conFirmante();
+    await licencia(titular, '2026-12-07', '2026-12-08');
+    assert.deepEqual(marcas(laQueEmpieza(await listar(titular), '2026-12-07')), [null, false, true]);
+  });
+
+  it('el 409 de la persona autorizada sin días, con la tabla', async () => {
+    const { titular, autorizado } = await conFirmante();
+    await licencia(autorizado, '2026-12-09', '2026-12-09');
+    // El 07/12 y el 08/12 no son hábiles, y el 09/12 la persona autorizada está de licencia
+    const pedido = { usuarioId: titular.id, desde: '2026-12-07', hasta: '2026-12-09', autorizadoId: autorizado.id, autorizadoNuevo: true };
+    const rechazo = await enTransaccion((conexion) => oficiales.rechazoDeLaBase(conexion, pedido));
+    assert.deepEqual([rechazo?.status, rechazo?.campo, rechazo?.motivo], [409, 'autorizado_id', 'autorizado_sin_dias']);
+    // Con los 9 fijos, el lunes 07/12 es hábil y la persona autorizada está
+    assert.equal(await enTransaccion((conexion) => oficiales.rechazoDeLaBase(conexion, { ...pedido, calendario: CALENDARIO_FIJO })), null);
+
+    // Por Configuración, el 409 y nada guardado
+    const res = await pedir(configuracion.crearLicencia, titular,
+      { body: { usuario_id: titular.id, desde: '2026-12-07', hasta: '2026-12-09', autorizado_id: autorizado.id } });
+    assert.deepEqual([res.statusCode, res.body.campo, res.body.error],
+      [409, 'autorizado_id', 'La persona autorizada está de licencia todos los días hábiles de tu licencia: no podría presentar ninguna nota.']);
+    assert.deepEqual(await deLaBase(titular), []);
+  });
+
+  it('la lectura que falla dentro de la transacción no la rompe (Review Focus 5)', async () => {
+    const { titular, autorizado } = await conFirmante();
+    await licencia(autorizado, '2026-12-09', '2026-12-09');
+    const consola = mock.method(console, 'error', () => {});
+    let resultado;
+    try {
+      resultado = await conLaTablaRenombrada(() => enTransaccion((conexion) => oficiales.cargarLicencia(conexion, {
+        usuarioId: titular.id, desde: '2026-12-07', hasta: '2026-12-09', autorizadoId: autorizado.id, actorId: titular.id,
+        hoy: '2026-11-20'
+      })));
+      assert.equal(lecturasFallidas(consola), 1);
+    } finally {
+      consola.mock.restore();
+    }
+    // Con los 9 fijos, el 07/12 es hábil: no se rechaza, y el COMMIT la confirma
+    assert.equal(resultado.rechazo, undefined, JSON.stringify(resultado.rechazo));
+    assert.deepEqual(await deLaBase(titular), [{ desde: '2026-12-07', hasta: '2026-12-09', autorizado_id: autorizado.id, anulada: 0 }]);
+  });
+
+  it('una sola lectura del calendario por pedido y, si no se puede leer, los 9 fijos', async () => {
+    const { titular, autorizado } = await conFirmante();
+    const consola = mock.method(console, 'error', () => {});
+    let creada, datos;
+    try {
+      creada = await conLaTablaRenombrada(() => pedir(configuracion.crearLicencia, titular,
+        { body: { usuario_id: titular.id, desde: '2026-12-09', hasta: '2026-12-11', autorizado_id: autorizado.id } }));
+      assert.equal(lecturasFallidas(consola), 1);
+      datos = await conLaTablaRenombrada(() => listar(titular));
+      assert.equal(lecturasFallidas(consola), 2);
+    } finally {
+      consola.mock.restore();
+    }
+    // Con los 9 fijos, la víspera es el lunes 07/12
+    assert.equal(creada.statusCode, 201, JSON.stringify(creada.body));
+    assert.deepEqual(marcas(creada.body.data), ['2026-12-07', false, false]);
+    assert.deepEqual(marcas(laQueEmpieza(datos, '2026-12-09')), ['2026-12-07', false, false]);
+    assert.deepEqual(await deLaBase(titular), [{ desde: '2026-12-09', hasta: '2026-12-11', autorizado_id: autorizado.id, anulada: 0 }]);
+  });
+
+  it('conSusLicencias con el 02/11 y el 09/11', async () => {
+    const { autorizado } = await conFirmante();
+    await licencia(autorizado, '2026-10-26', '2026-10-30');
+    await licencia(autorizado, '2026-11-03', '2026-11-06');
+    const personas = [{ id: autorizado.id, nombre_completo: 'Persona admin' }];
+    const licencias = [{ desde: '2026-10-26', hasta: '2026-10-30' }, { desde: '2026-11-03', hasta: '2026-11-06' }];
+    // El lunes 02/11 y el lunes 09/11 son feriados: una sola ausencia, y vuelve el martes 10/11
+    assert.deepEqual(await oficiales.conSusLicencias(personas, '2026-10-20'),
+      [{ ...personas[0], licencias, ausencias: [{ desde: '2026-10-26', hasta: '2026-11-06', vuelve: '2026-11-10' }] }]);
+    // Con los 9 fijos, dos ausencias
+    assert.deepEqual((await oficiales.conSusLicencias(personas, '2026-10-20', CALENDARIO_FIJO))[0].ausencias, [
+      { desde: '2026-10-26', hasta: '2026-10-30', vuelve: '2026-11-02' },
+      { desde: '2026-11-03', hasta: '2026-11-06', vuelve: '2026-11-09' }
+    ]);
+  });
+
+  it('GET /mi-espacio/firmante usa el mismo arreglo y, con la tabla sin leer, cae a los 9 fijos, como Configuración', async () => {
+    const { titular, autorizado } = await conFirmante();
+    await licencia(autorizado, '2026-10-26', '2026-10-30');
+    await licencia(autorizado, '2026-11-03', '2026-11-06');
+    // Las ausencias de la persona autorizada que ve el titular el 20/10
+    const ausencias = async () => {
+      const res = respuestaFalsa();
+      mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-20T13:00:00Z') });
+      try {
+        await miEspacio.verFirmante({ user: { userId: titular.id } }, res);
+      } finally {
+        mock.timers.reset();
+      }
+      assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+      assert.equal(res.body.data.soy_titular, true);
+      return res.body.data.autorizables.find((a) => a.id === autorizado.id).ausencias;
+    };
+    assert.deepEqual(await ausencias(), [{ desde: '2026-10-26', hasta: '2026-11-06', vuelve: '2026-11-10' }]);
+    const consola = mock.method(console, 'error', () => {});
+    try {
+      assert.deepEqual(await conLaTablaRenombrada(ausencias), [
+        { desde: '2026-10-26', hasta: '2026-10-30', vuelve: '2026-11-02' },
+        { desde: '2026-11-03', hasta: '2026-11-06', vuelve: '2026-11-09' }
+      ]);
+      assert.equal(lecturasFallidas(consola), 1);
+    } finally {
+      consola.mock.restore();
+    }
+  });
+
+  it('los días sin auditor vuelven el 10/11', async () => {
+    // Los dos auditores, de licencia del 03/11 al 06/11; el 02/11 y el 09/11 son feriados
+    const { titular, autorizado } = await conFirmante();
+    await licencia(titular, '2026-11-03', '2026-11-06');
+    await licencia(autorizado, '2026-11-03', '2026-11-06');
+    const res = await pedir(configuracion.listarDiasSinAuditor, titular, { query: { desde: '2026-11-02', hasta: '2026-11-10' } });
+    assert.deepEqual(res.body,
+      { success: true, data: { periodos: [{ desde: '2026-11-03', hasta: '2026-11-06', vuelve: '2026-11-10', respaldo: [] }] } });
+  });
+});

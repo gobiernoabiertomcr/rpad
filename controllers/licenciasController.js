@@ -2,11 +2,15 @@
 // authMiddleware + adminOnly. La autorización para presentar las notas (6.3) la da solo el firmante titular. El alta, la
 // edición y la anulación con sus reglas están en services/licenciasOficialesService.js (las comparte Mi espacio): acá, lo del
 // pedido (los controles del cuerpo, la transacción, la respuesta y el aviso al superadmin después de confirmarla).
+// Los días hábiles, con el calendario (spec 2026-10-27-feriados-en-notas, 4): cada pedido lo lee una vez (leerCalendario) y lo
+// pasa a lo que llama; si la tabla de feriados no se puede leer, sigue con los 9 fijos (lo que anuncia coincide con lo que haría
+// la corrida ese día).
 import pool from '../config/database.js';
 import { avisarAlSuperadmin } from '../services/avisosSuperadminService.js';
-import { hoyArgentina, diaHabilAnterior, esFechaIso, sumarDias, diasEntre } from '../services/notasDigitalesCalendario.js';
-import { ROLES_CON_LICENCIA, estadoDeLicencia, validarFechasNuevas } from '../services/licenciasReglas.js';
+import { hoyArgentina, esFechaIso, sumarDias, diasEntre } from '../services/notasDigitalesCalendario.js';
+import { ROLES_CON_LICENCIA, estadoDeLicencia, validarFechasNuevas, visperaDeLaLicencia } from '../services/licenciasReglas.js';
 import { periodosSinAuditor, DIAS_PERIODOS_SIN_AUDITOR } from '../services/auditoriaService.js';
+import { leerCalendario } from '../services/feriadosDatos.js';
 import {
   MENSAJE_SOLO_TITULAR, COLUMNAS_LICENCIA, DESDE_LICENCIA, periodo, firmanteTitular, autorizables, conSusLicencias,
   bloquearUsuarios, cargarLicencia, cambiarLicencia, anularLicenciaDe
@@ -35,15 +39,45 @@ const autorizadoDelCuerpo = (cuerpo) => {
   return idDe(valor) ?? Number.NaN;
 };
 
-const aRespuesta = (fila, hoy, titular) => ({
+// Las licencias sin anular del firmante titular, para la víspera de cada una. Las fechas, como texto: el pool no tiene
+// dateStrings, y con Date visperaDeLaLicencia (que compara textos) no encontraría la otra licencia. Sin titular, ninguna
+const licenciasDelTitular = async (titular) => {
+  if (titular === null) return [];
+  const [filas] = await pool.query(
+    `SELECT id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta
+     FROM usuarios_licencias WHERE usuario_id = ? AND anulada = 0`,
+    [titular]
+  );
+  return filas;
+};
+
+const SIN_VISPERA = Object.freeze({ vispera: null, sin_anticipo: false, sin_dias_habiles: false });
+
+/**
+ * Una licencia como la responde la API. En una del firmante titular, la víspera (spec 7.3 y spec 2026-10-27-feriados-en-notas,
+ * 4: el día hábil anterior, con el calendario, en que salen los avisos anticipados), sin_anticipo (esa víspera cae dentro de
+ * otra licencia suya: no hay anticipo) y sin_dias_habiles (la licencia no tiene días hábiles), de visperaDeLaLicencia con las
+ * demás licencias sin anular del titular (delTitular, sin la misma: se compara el id con Number); en las demás, null, false y
+ * false.
+ */
+const aRespuesta = (fila, hoy, titular, { calendario, delTitular }) => ({
   ...fila,
   anulada: Boolean(fila.anulada),
   // La insignia «Cargada desde Mi espacio» (spec 2026-10-26-mi-espacio-licencias-y-horas, 6)
   desde_mi_espacio: Boolean(Number(fila.desde_mi_espacio)),
   estado: estadoDeLicencia(fila, hoy),
-  // Del firmante titular: el día en que saldrían los avisos anticipados si no hay autorizado (spec 7.3)
-  vispera: fila.usuario_id === titular ? diaHabilAnterior(fila.desde) : null
+  ...(fila.usuario_id === titular
+    ? visperaDeLaLicencia(fila, delTitular.filter((otra) => Number(otra.id) !== Number(fila.id)), calendario)
+    : SIN_VISPERA)
 });
+
+// Una licencia recién cargada, cambiada o anulada, como la responde la API (después de confirmar la transacción): con el
+// titular y, si es suya, sus demás licencias
+const respuestaDe = async (licencia, hoy, calendario) => {
+  const titular = await firmanteTitular();
+  const delTitular = licencia.usuario_id === titular ? await licenciasDelTitular(titular) : [];
+  return aRespuesta(licencia, hoy, titular, { calendario, delTitular });
+};
 
 // Aviso al superadmin si la licencia es suya y el cambio lo hizo otro (spec 5.2); lo retiene si ya está de licencia
 const avisarSiEsDelSuperadmin = (req, licencia, cambio, auditoriaId, hoy) => (licencia.usuario_rol === 'superadmin'
@@ -68,15 +102,17 @@ export const listarLicencias = async (req, res) => {
       'SELECT id, nombre_completo, rol FROM usuarios WHERE activo = TRUE AND rol IN (?) ORDER BY nombre_completo', [ROLES_CON_LICENCIA]
     );
     const soyTitular = titular !== null && titular === req.user.userId;
+    const calendario = await leerCalendario();
+    const delTitular = await licenciasDelTitular(titular);
     res.json({
       success: true,
       data: {
         hoy,
         firmante_titular_id: titular,
         soy_titular: soyTitular,
-        licencias: filas.map(f => aRespuesta(f, hoy, titular)),
+        licencias: filas.map(f => aRespuesta(f, hoy, titular, { calendario, delTitular })),
         usuarios: conLicencia,
-        autorizables: soyTitular ? await conSusLicencias(await autorizables(pool, titular), hoy) : []
+        autorizables: soyTitular ? await conSusLicencias(await autorizables(pool, titular), hoy, calendario) : []
       }
     });
   } catch (error) {
@@ -141,12 +177,16 @@ export const crearLicencia = async (req, res) => {
   let conexion;
   let licencia;
   let auditoriaId;
+  let calendario;
   try {
     conexion = await pool.getConnection();
     await conexion.beginTransaction();
     await bloquearUsuarios(conexion);
+    // Una vez por pedido, dentro de la transacción y después del bloqueo (una lectura común, sin bloqueos): para la persona
+    // autorizada (rechazoDeLaBase) y para la víspera de la respuesta
+    calendario = await leerCalendario(conexion);
     const resultado = await cargarLicencia(conexion, {
-      usuarioId, desde: cuerpo.desde, hasta: cuerpo.hasta, autorizadoId, actorId: req.user.userId, hoy
+      usuarioId, desde: cuerpo.desde, hasta: cuerpo.hasta, autorizadoId, actorId: req.user.userId, hoy, calendario
     });
     if (resultado.rechazo) {
       await conexion.rollback();
@@ -164,7 +204,7 @@ export const crearLicencia = async (req, res) => {
 
   try {
     await avisarSiEsDelSuperadmin(req, licencia, `Licencia cargada ${periodo(licencia)}`, auditoriaId, hoy);
-    res.status(201).json({ success: true, data: aRespuesta(licencia, hoy, await firmanteTitular()), message: 'Licencia cargada' });
+    res.status(201).json({ success: true, data: await respuestaDe(licencia, hoy, calendario), message: 'Licencia cargada' });
   } catch (error) {
     console.error('Error respondiendo la carga de la licencia:', error);
     responderError(res, 500, MENSAJE_ERROR);
@@ -185,12 +225,15 @@ export const editarLicencia = async (req, res) => {
   let despues;
   let auditoriaId = null;
   let sinCambios = false;
+  let calendario;
   try {
     conexion = await pool.getConnection();
     await conexion.beginTransaction();
     await bloquearUsuarios(conexion);
+    // Una vez por pedido, como en el alta
+    calendario = await leerCalendario(conexion);
     const resultado = await cambiarLicencia(conexion, {
-      licenciaId: id, desde: cuerpo.desde, hasta: cuerpo.hasta, autorizadoPedido, actorId: req.user.userId, hoy
+      licenciaId: id, desde: cuerpo.desde, hasta: cuerpo.hasta, autorizadoPedido, actorId: req.user.userId, hoy, calendario
     });
     if (resultado.rechazo) {
       await conexion.rollback();
@@ -211,7 +254,7 @@ export const editarLicencia = async (req, res) => {
     if (!sinCambios) {
       await avisarSiEsDelSuperadmin(req, despues, `Licencia modificada: ${periodo(despues)} (antes: ${periodo(antes)})`, auditoriaId, hoy);
     }
-    res.json({ success: true, data: aRespuesta(despues, hoy, await firmanteTitular()), message: sinCambios ? 'Sin cambios' : 'Licencia modificada' });
+    res.json({ success: true, data: await respuestaDe(despues, hoy, calendario), message: sinCambios ? 'Sin cambios' : 'Licencia modificada' });
   } catch (error) {
     console.error('Error respondiendo la edición de la licencia:', error);
     responderError(res, 500, MENSAJE_ERROR);
@@ -247,7 +290,8 @@ export const anularLicencia = async (req, res) => {
 
   try {
     await avisarSiEsDelSuperadmin(req, licencia, `Licencia anulada (${periodo(licencia)})`, auditoriaId, hoy);
-    res.json({ success: true, data: aRespuesta(licencia, hoy, await firmanteTitular()), message: 'Licencia anulada' });
+    // La anulación no cuenta días hábiles: el calendario se lee solo para la víspera de la respuesta
+    res.json({ success: true, data: await respuestaDe(licencia, hoy, await leerCalendario()), message: 'Licencia anulada' });
   } catch (error) {
     console.error('Error respondiendo la anulación de la licencia:', error);
     responderError(res, 500, MENSAJE_ERROR);
