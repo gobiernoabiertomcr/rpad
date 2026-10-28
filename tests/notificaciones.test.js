@@ -3,7 +3,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb,
-  catalogos, mailpit, query, db, PREFIJO_TEST
+  catalogos, mailpit, query, db, PREFIJO_TEST, verificarEntornoLocal
 } from './helpers.js';
 import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
 import { leerCalendario } from '../services/feriadosDatos.js';
@@ -11,7 +11,9 @@ import { leerCalendario } from '../services/feriadosDatos.js';
 // El cron usa la fecha real: los tests de envío corren solo en días hábiles (los de fechas fijas están en
 // tests/avisos-diarios.test.js) y el de día no hábil, solo los fines de semana y feriados. Hábil con el calendario del cron:
 // los feriados de la tabla de la base del .env (spec 2026-10-27-feriados-en-notas). Si no se puede leer, falla en lugar de
-// decidir con los 9 fijos
+// decidir con los 9 fijos. Se lee al importar el archivo, antes del before: primero se verifica que el .env apunte a la base
+// local, así nunca consulta otra
+await verificarEntornoLocal();
 const calendarioDeHoy = await leerCalendario(db());
 if (calendarioDeHoy.error !== null) {
   throw new Error(`No se pudieron leer los feriados de la base del .env: ${calendarioDeHoy.error}`);
