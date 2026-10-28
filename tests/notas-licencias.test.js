@@ -1644,6 +1644,12 @@ describe('modoDelDia y primerDiaConNotas (spec 2026-10-27-feriados-en-notas, 4)'
     // Sin la imagen de su firma
     await query('UPDATE usuarios_firmas SET imagen = NULL WHERE usuario_id = ?', [autorizado.id]);
     assert.equal(await modo('2027-01-12'), 'sin_autorizado');
+    // Con la imagen vacía (cargada por SQL: Mi Perfil no la acepta): tampoco es una firma, para modoDelDia ni para la corrida
+    // (autorizadoHabilitado y firmaParaFecha)
+    await query("UPDATE usuarios_firmas SET imagen = '' WHERE usuario_id = ?", [autorizado.id]);
+    assert.equal(await modo('2027-01-12'), 'sin_autorizado');
+    assert.equal(await firmas.autorizadoHabilitado({ autorizado_id: autorizado.id }), null);
+    assert.equal((await firmas.firmaParaFecha(conf, '2027-01-12')).modo, 'sin_autorizado');
     await query('UPDATE usuarios_firmas SET imagen = ? WHERE usuario_id = ?', [FIRMA, autorizado.id]);
     assert.equal(await modo('2027-01-12'), 'autorizado');
     // Sin su firma cargada

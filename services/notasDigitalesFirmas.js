@@ -23,12 +23,14 @@ export const firmaTitularDe = (config) => firmaDeUsuario(config.firmante_usuario
 
 // La firma de la persona autorizada de una licencia, con su email, si cumple las condiciones que no dependen de las
 // fechas (spec 6.3): admin o editor activo, con la imagen de su firma. null si no hay autorizado o no las cumple.
+// La imagen tiene que tener bytes: una vacía (solo por SQL: Mi Perfil no la acepta) llega como un Buffer de largo 0, que
+// en JS es verdadero, y el PDF la rechazaría. Es la misma regla de modoDelDia (LENGTH(f.imagen) > 0).
 export const autorizadoHabilitado = async (licencia) => {
   if (!licencia?.autorizado_id) return null;
   const [[usuario]] = await pool.query('SELECT rol, activo, email FROM usuarios WHERE id = ?', [licencia.autorizado_id]);
   if (!usuario || !usuario.activo || !ROLES_AUTORIZABLES.includes(usuario.rol)) return null;
   const firma = await firmaDeUsuario(licencia.autorizado_id);
-  return firma?.imagen ? { ...firma, email: usuario.email } : null;
+  return firma?.imagen?.length > 0 ? { ...firma, email: usuario.email } : null;
 };
 
 const mayor = (a, b) => (a > b ? a : b);
@@ -88,7 +90,8 @@ const notaDeAutorizacion = async (licencia) => {
  * - 'configuracion': sin firmante titular elegido (licencia null);
  * - 'titular': el titular no está de licencia (licencia null);
  * - 'autorizado': está de licencia con una persona autorizada vigente ese día (spec 6.3): admin o editor activo, con la imagen
- *   de su firma (se mira que esté, con imagen IS NOT NULL, sin traerla) y sin licencia propia;
+ *   de su firma (se mira que tenga bytes, con LENGTH(f.imagen) > 0, sin traerla: la regla de autorizadoHabilitado) y sin
+ *   licencia propia;
  * - 'sin_autorizado': está de licencia sin persona autorizada vigente: ese día no se generan notas.
  * licencia: la del titular ese día (la de licenciaEnFecha), o null. Devuelve { modo, licencia }.
  */
@@ -98,7 +101,7 @@ export const modoDelDia = async (config, fecha) => {
   if (!licencia) return { modo: 'titular', licencia: null };
   if (!licencia.autorizado_id) return { modo: 'sin_autorizado', licencia };
   const [[usuario]] = await pool.query(
-    `SELECT u.rol, u.activo, (f.imagen IS NOT NULL) AS con_imagen
+    `SELECT u.rol, u.activo, COALESCE(LENGTH(f.imagen) > 0, 0) AS con_imagen
      FROM usuarios u LEFT JOIN usuarios_firmas f ON f.usuario_id = u.id WHERE u.id = ?`,
     [licencia.autorizado_id]
   );
