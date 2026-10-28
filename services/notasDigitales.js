@@ -12,8 +12,7 @@ import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
 import { fuentesDeLaNota, seguimientosDeLaNota, renderAnexoDeReiteracion } from './notasDigitalesSeguimiento.js';
 import {
-  hoyArgentina, ahoraArgentina, esFechaIso, esDiaHabil, proximoDiaHabil, diaHabilAnterior, primerDiaHabilDelMes, periodoDe,
-  periodoSiguiente, sumarDias, sumarDiasHabiles, formatoCorto, ultimoDiaHabilHasta, diasEntre
+  hoyArgentina, ahoraArgentina, esFechaIso, periodoDe, periodoSiguiente, sumarDias, formatoCorto, diasEntre
 } from './notasDigitalesCalendario.js';
 import {
   GESTIONES, VENTANA_DIAS, obtenerConfig, configuracionCompleta, seleccionarParaAviso, seleccionarParaReiteracion,
@@ -22,16 +21,18 @@ import {
 import { sumarMeses, tipoSugerido, vencimientoDelMes } from './fechasDatasetReglas.js';
 import {
   firmaParaFecha, anticipoPorLicencia, autorizacionPendiente, registrarNotaDeAutorizacion, firmaTitularDe, autorizadoParaLicencia,
-  autorizadoHabilitado, disponibilidadDelAutorizado
+  autorizadoHabilitado, disponibilidadDelAutorizado, modoDelDia, primerDiaConNotas
 } from './notasDigitalesFirmas.js';
 import { licenciaEnFecha, proximaLicencia } from './licenciasService.js';
-import { unirAusencias, diasHabilesLibres } from './licenciasReglas.js';
+import { unirAusencias, visperaDeLaLicencia } from './licenciasReglas.js';
 import { emailValido } from './usuariosReglas.js';
 import {
   contextoDeCanal, seleccionarParaAuditoria, catalogosParaAuditoria, cambiosConCanal, notasDeAuditoriaDe, periodosSinAuditor,
   DIAS_PERIODOS_SIN_AUDITOR
 } from './auditoriaService.js';
 import { DIAS_HABILES_PARA_REITERAR_AUDITORIA, quienesAuditan } from './auditoriaReglas.js';
+import { leerCalendario } from './feriadosDatos.js';
+import { MENSAJE_CORRIDA_SIN_FERIADOS, MENSAJE_ESTADO_SIN_FERIADOS } from './feriadosReglas.js';
 
 export const MAX_INTENTOS = 5;
 const BLOQUEO = 'rpad_notas_digitales';
@@ -392,13 +393,14 @@ const textoSinAutorizado = (licencia) =>
 
 // Datasets del aviso de hoy. En la víspera de una licencia del firmante (anticipo), la selección mira hasta el último día
 // hábil de la licencia y cada dataset que hoy no habría entrado guarda su fecha normal de aviso (cuenta_desde): el primer
-// día hábil desde que su mes entra en la ventana (spec 2026-10-15, 7.3)
-const prepararAviso = async (gestion, hoy, anticipo) => {
+// día hábil desde que su mes entra en la ventana (spec 2026-10-15, 7.3), con el calendario de la corrida (spec
+// 2026-10-27-feriados-en-notas, 3)
+const prepararAviso = async (gestion, hoy, anticipo, calendario) => {
   if (!anticipo) return seleccionarParaAviso(gestion, hoy);
   const normales = new Set((await seleccionarParaAviso(gestion, hoy)).map(d => d.id));
   return (await seleccionarParaAviso(gestion, hoy, anticipo.hasta)).map(d => (normales.has(d.id)
     ? d
-    : { ...d, cuenta_desde: proximoDiaHabil(sumarDias(d.apertura_mes, -VENTANA_DIAS[gestion])) }));
+    : { ...d, cuenta_desde: calendario.proximoDiaHabil(sumarDias(d.apertura_mes, -VENTANA_DIAS[gestion])) }));
 };
 
 // El orden de los datasets en un aviso: por vencimiento y por título, como la selección; el id desempata
@@ -408,13 +410,17 @@ const porVencimientoYTitulo = (a, b) =>
 // Lo que decide cómo sale el día, solo lectura, en el orden de la corrida: la firma de la fecha (modo, firma y licencia del
 // firmante) y, salvo en un día sin autorizado (en que no se genera ninguna nota), la autorización todavía no comunicada
 // (pendiente, y sus datos en autorizacion) y el anticipo de la víspera de una licencia (solo con el titular firmando).
-const contextoDelDia = async (config, fecha) => {
+// calendario: el de quien llama (la corrida, o la vista previa), que va a autorizacionPendiente y a anticipoPorLicencia y vuelve
+// en el contexto, así lo que sigue (avisoDelDia) cuenta los días hábiles con el mismo, sin volver a leer la tabla. Es obligatorio:
+// un olvido tira (si no, autorizacionPendiente y anticipoPorLicencia leerían la tabla de nuevo, en silencio).
+const contextoDelDia = async (config, fecha, calendario) => {
+  if (!calendario) throw new TypeError('contextoDelDia necesita el calendario');
   const { modo, firma, licencia } = await firmaParaFecha(config, fecha);
-  if (modo === 'sin_autorizado') return { modo, firma, licencia };
-  const pendiente = await autorizacionPendiente(config, fecha);
+  if (modo === 'sin_autorizado') return { modo, firma, licencia, calendario };
+  const pendiente = await autorizacionPendiente(config, fecha, calendario);
   const autorizacion = pendiente ? datosDeAutorizacion(pendiente) : null;
-  const anticipo = modo === 'titular' ? await anticipoPorLicencia(config, fecha) : null;
-  return { modo, firma, licencia, pendiente, autorizacion, anticipo };
+  const anticipo = modo === 'titular' ? await anticipoPorLicencia(config, fecha, calendario) : null;
+  return { modo, firma, licencia, pendiente, autorizacion, anticipo, calendario };
 };
 
 /**
@@ -432,15 +438,19 @@ const contextoDelDia = async (config, fecha) => {
  * - autorizacion: la que comunica este aviso (solo la víspera, o sea con anticipo), si no null;
  * - errorEnSuFecha: el error de buscar lo que sale en su fecha, o null. Si falla, datasets es la selección normal del día:
  *   lo adelantado sale en la corrida siguiente.
+ * calendario: el de quien llama (la corrida se lo pasa siempre); sin él, se lee (leerCalendario). Con él se cuentan el
+ * cuenta_desde de lo anticipado, los días libres de la persona autorizada y el día del aviso en su fecha (spec
+ * 2026-10-27-feriados-en-notas, 3).
  */
-export const avisoDelDia = async ({ gestion, fecha, modo, licencia = null, anticipo = null, autorizacion = null }) => {
-  let datasets = await prepararAviso(gestion, fecha, anticipo);
+export const avisoDelDia = async ({ gestion, fecha, modo, licencia = null, anticipo = null, autorizacion = null, calendario }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  let datasets = await prepararAviso(gestion, fecha, anticipo, conElCalendario);
   let errorEnSuFecha = null;
   if (modo === 'autorizado') {
     try {
       // Las licencias de la persona autorizada durante la del titular
-      const ausencias = (await disponibilidadDelAutorizado(licencia))?.ausencias ?? [];
-      const enSuFecha = (await pendientesEnSuFecha(gestion, fecha, licencia, ausencias))
+      const ausencias = (await disponibilidadDelAutorizado(licencia, { calendario: conElCalendario }))?.ausencias ?? [];
+      const enSuFecha = (await pendientesEnSuFecha(gestion, fecha, licencia, ausencias, conElCalendario))
         .filter(d => d.dia_en_su_fecha <= fecha && !yaTocaReiterar(d, fecha))
         .map(d => (cumplioDiasParaReiterar(d, fecha) ? { ...d, cuenta_desde: null } : d));
       if (enSuFecha.length) datasets = [...datasets, ...enSuFecha].sort(porVencimientoYTitulo);
@@ -464,7 +474,9 @@ const hayNotaDeAuditoria = async (fecha) => {
 
 // Los pasos de una corrida (spec 8.1): reintentos, avisos, reiteraciones y la nota de auditoría de los cambios pendientes
 // (spec 2026-10-15, 9.3). Cada reintento, cada aviso, cada reiteración y la nota de auditoría van aislados.
-const correrPasos = async (resumen, hoy, usuarioId) => {
+// calendario: el de la corrida (spec 2026-10-27-feriados-en-notas, 3), con el que se cuentan todos los días hábiles: la puerta
+// del día, la víspera y el anticipo, el aviso en su fecha y el canal de la nota de auditoría.
+const correrPasos = async (resumen, hoy, usuarioId, calendario) => {
   // Con una fecha en otro formato las consultas no seleccionarían nada, en silencio: se registra como error
   if (!esFechaIso(hoy)) {
     resumen.motivo = 'Fecha de corrida inválida';
@@ -481,7 +493,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
     resumen.motivo = `Configuración incompleta: ${faltan.join(', ')}`;
     return;
   }
-  if (!esDiaHabil(hoy)) {
+  if (!calendario.esDiaHabil(hoy)) {
     resumen.motivo = 'Día no hábil';
     return;
   }
@@ -510,7 +522,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   }
   for (const { id } of pendientes) await enviar(id, { tipo: 'reintento' });
 
-  const delDia = await contextoDelDia(config, hoy);
+  const delDia = await contextoDelDia(config, hoy, calendario);
   let { modo, firma, licencia } = delDia;
   // Licencia del firmante sin autorizado: ese día no se genera ninguna nota (spec 2026-10-15, 7.3). Los reintentos de
   // arriba siguen: su contenido ya está congelado.
@@ -583,7 +595,7 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
       // Con persona autorizada, lo que se adelantó en la víspera sale también en su fecha, presentado por ella; si buscarlo
       // falla, se informa y el aviso del día sale con la selección normal (avisoDelDia).
       const aviso = await avisoDelDia({
-        gestion, fecha: hoy, modo, licencia, anticipo, autorizacion: autorizacionDesactualizada ? null : autorizacion
+        gestion, fecha: hoy, modo, licencia, anticipo, autorizacion: autorizacionDesactualizada ? null : autorizacion, calendario
       });
       if (aviso.errorEnSuFecha) anotarError(resumen, { tipo: 'aviso', gestion }, aviso.errorEnSuFecha);
       const { datasets, rangoVencimientos } = aviso;
@@ -636,10 +648,10 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   // por día (Decisiones del plan 12), con la firma del día. Si hoy no hay quién firme (licencia sin autorizado) o la nota
   // de autorización no se pudo generar, la corrida ya terminó arriba, como para las demás notas. Los cambios que entran
   // son los del canal nota, que ya exige el envío activo, la configuración completa y un Para de auditoría (spec 9.1):
-  // sin eso siguen por recordatorio y esta nota no se genera.
+  // sin eso siguen por recordatorio y esta nota no se genera. El canal, con el calendario de la corrida.
   try {
     if (!(await hayNotaDeAuditoria(hoy))) {
-      const { nuevos, reiterados } = await seleccionarParaAuditoria(hoy, await contextoDeCanal(hoy, config));
+      const { nuevos, reiterados } = await seleccionarParaAuditoria(hoy, await contextoDeCanal(hoy, config, calendario));
       if (nuevos.length || reiterados.length) {
         const id = await generarNota({
           tipo: 'auditoria', gestion: null, fecha: hoy, datasets: [], config, usuarioId, firma,
@@ -654,13 +666,26 @@ const correrPasos = async (resumen, hoy, usuarioId) => {
   }
 };
 
-export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId = null } = {}) => {
-  const resumen = { fecha: hoy, ejecutado: false, motivo: null, licencia: null, generadas: [], enviadas: 0, fallidas: 0, errores: [] };
+/**
+ * La corrida de las Notas Digitales de hoy. calendario: el de la corrida de las 8:15, que lee los feriados una sola vez y lo
+ * pasa a todos sus pasos (spec 2026-10-27-feriados-en-notas, 1 y 2); sin él, se lee acá (leerCalendario). El resumen dice con
+ * cuál contó los días hábiles (calendario: 'tabla' o 'fijos'). Si la tabla no se pudo leer (calendario.error, nunca por el
+ * origen: un test puede pasar CALENDARIO_FIJO sin que sea un error), la corrida sigue con los 9 fijos y lo anota como un error
+ * antes de tomar el bloqueo: así queda también con el envío apagado o un día no hábil, lo escribe registrarFin en la última
+ * corrida y, si la corrida termina «ocupada», queda solo en lo que devuelve (y en la consola).
+ */
+export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId = null, calendario } = {}) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const resumen = {
+    fecha: hoy, calendario: conElCalendario.origen, ejecutado: false, motivo: null, licencia: null, generadas: [], enviadas: 0,
+    fallidas: 0, errores: []
+  };
+  if (conElCalendario.error !== null) anotarError(resumen, { tipo: 'feriados' }, new Error(MENSAJE_CORRIDA_SIN_FERIADOS));
   // Con el bloqueo ocupado no se registra nada: la corrida que lo tiene es la que registra
   const corrida = await conBloqueo(async () => {
     await registrarInicio(hoy);
     try {
-      await correrPasos(resumen, hoy, usuarioId);
+      await correrPasos(resumen, hoy, usuarioId, conElCalendario);
     } catch (error) {
       // Lo que falla fuera de los pasos aislados (por ejemplo, leer la configuración)
       anotarError(resumen, { tipo: 'corrida' }, error);
@@ -742,9 +767,15 @@ export const fuentesDeEjemplo = (datasets, fecha) => {
 // Ejemplo de la nota de auditoría para la vista previa y la prueba cuando hoy no hay cambios para pedir (spec 10.4):
 // una actualización y un alta nuevas, y una baja ya solicitada. La actualización es un registro de actualización de un
 // anual (spec 2026-10-17-fechas-datasets, 9): venció a fin del mes pasado, llegaron los datos al corte y la próxima es
-// dentro de un año, a fin de mes
-const ejemploAuditoria = (hoy) => {
-  const comun = { usuario_nombre: 'Persona de ejemplo', usuario_cargo: 'Cargo de ejemplo', fecha_propuesta: diaHabilAnterior(diaHabilAnterior(hoy)) };
+// dentro de un año, a fin de mes. hoy: el día de la nota. calendario: el de la vista previa o la prueba (spec
+// 2026-10-27-feriados-en-notas, 4): con él se cuentan los días hábiles de las fechas y la columna «Días hábiles pendiente» de cada
+// cambio (dias_habiles_pendiente, como los que trae seleccionarParaAuditoria: sin él, la nota los contaría con los 9 fijos)
+const ejemploAuditoria = (hoy, calendario) => {
+  const conDias = (cambio) => ({ ...cambio, dias_habiles_pendiente: calendario.diasHabilesTranscurridos(cambio.fecha_propuesta, hoy) });
+  const comun = {
+    usuario_nombre: 'Persona de ejemplo', usuario_cargo: 'Cargo de ejemplo',
+    fecha_propuesta: calendario.diaHabilAnterior(calendario.diaHabilAnterior(hoy))
+  };
   const vencio = sumarMeses(hoy, -1);
   return {
     nuevos: [
@@ -752,8 +783,9 @@ const ejemploAuditoria = (hoy) => {
         ...comun, id: 0, tipo_cambio: 'editar', dataset_titulo: 'Dataset de ejemplo',
         datos_anteriores: { ultima_actualizacion: sumarDias(hoy, -380), datos_al: sumarMeses(vencio, -13), proxima_actualizacion: vencio },
         datos_nuevos: {
-          ultima_actualizacion: comun.fecha_propuesta, datos_al: sumarMeses(vencio, -1), recibido_el: diaHabilAnterior(comun.fecha_propuesta),
-          proxima_actualizacion: sumarMeses(vencio, 12), notas: null, registro_actualizacion: true
+          ultima_actualizacion: comun.fecha_propuesta, datos_al: sumarMeses(vencio, -1),
+          recibido_el: calendario.diaHabilAnterior(comun.fecha_propuesta), proxima_actualizacion: sumarMeses(vencio, 12), notas: null,
+          registro_actualizacion: true
         }
       },
       {
@@ -763,63 +795,52 @@ const ejemploAuditoria = (hoy) => {
           tipo_gestion: 'interna', url_dataset: 'https://datos.comodoro.gov.ar/dataset/nuevo'
         }
       }
-    ],
+    ].map(conDias),
     reiterados: [{
       ...comun, id: -2, tipo_cambio: 'eliminar', dataset_titulo: 'Dataset de ejemplo a dar de baja', fecha_propuesta: sumarDias(hoy, -14),
       datos_nuevos: { eliminado: true }, datos_anteriores: { titulo: 'Dataset de ejemplo a dar de baja', tipo_gestion: 'externa' },
-      solicitado: { numero: 1, anio: Number(hoy.slice(0, 4)), fecha: diaHabilAnterior(sumarDias(hoy, -6)), reiteraciones: 0 }
-    }],
+      solicitado: { numero: 1, anio: Number(hoy.slice(0, 4)), fecha: calendario.diaHabilAnterior(sumarDias(hoy, -6)), reiteraciones: 0 }
+    }].map(conDias),
     catalogos: { areas: {}, frecuencias: {}, temas: {}, formatos: {} }
   };
 };
 
-// Lo que llevaría la nota de auditoría ese día (spec 9.3) o, si no lleva nada, el ejemplo
-const contenidoDeAuditoriaParaMostrar = async (config, fecha) => {
-  const { nuevos, reiterados } = await seleccionarParaAuditoria(fecha, await contextoDeCanal(fecha, config));
+// Lo que llevaría la nota de auditoría ese día (spec 9.3) o, si no lleva nada, el ejemplo. calendario: el de la vista previa o la
+// prueba, para el canal y la selección de ese día (contextoDeCanal no vuelve a leer la tabla) y para el ejemplo
+const contenidoDeAuditoriaParaMostrar = async (config, fecha, calendario) => {
+  const { nuevos, reiterados } = await seleccionarParaAuditoria(fecha, await contextoDeCanal(fecha, config, calendario));
   if (nuevos.length || reiterados.length) return { nuevos, reiterados, catalogos: await catalogosParaAuditoria(), ejemplo: false };
-  return { ...ejemploAuditoria(fecha), ejemplo: true };
+  return { ...ejemploAuditoria(fecha, calendario), ejemplo: true };
 };
 
-// Días hacia adelante en que se busca la próxima corrida que genera notas (spec 2026-10-15, 7.7)
-const DIAS_PARA_BUSCAR_VISTA_PREVIA = 366;
 const MOTIVO_DIA_NO_HABIL = 'día no hábil';
 const MOTIVO_SIN_AUTORIZADO = 'licencia del firmante sin persona autorizada';
 const MOTIVO_AUTORIZADO_DE_LICENCIA = 'la persona autorizada está de licencia';
 
+// Por qué hoy no se generan notas (hoy no es el primer día con notas): no es hábil con el calendario, o el firmante titular está
+// de licencia sin una persona autorizada que pueda presentarlas (porque ella está de licencia, o por otra cosa)
+const motivoDeHoy = async (config, hoy, calendario) => {
+  if (!calendario.esDiaHabil(hoy)) return MOTIVO_DIA_NO_HABIL;
+  const { licencia } = await modoDelDia(config, hoy);
+  return licencia?.autorizado_id && await licenciaEnFecha(licencia.autorizado_id, hoy)
+    ? MOTIVO_AUTORIZADO_DE_LICENCIA
+    : MOTIVO_SIN_AUTORIZADO;
+};
+
 /**
- * El día que muestran la vista previa y la prueba: el de la próxima corrida que genera notas (spec 2026-10-15, 7.7). Hoy, si
- * es día hábil y ese día se generan notas; si no, el primer día hábil siguiente en que sí. Un día hábil no genera notas si el
- * firmante titular está de licencia sin una persona autorizada que pueda presentarlas (sin ninguna, o con licencia propia
- * ese día): firmaParaFecha da 'sin_autorizado'. Se busca hasta 366 días después de hoy; sin ninguno, hoy.
+ * El día que muestran la vista previa y la prueba: el de la próxima corrida que genera notas (spec 2026-10-15, 7.7), el primer
+ * día con notas desde hoy (primerDiaConNotas, con el calendario: spec 2026-10-27-feriados-en-notas, 4). Un día hábil no genera
+ * notas si el firmante titular está de licencia sin una persona autorizada que pueda presentarlas (sin ninguna, o con licencia
+ * propia ese día). Se busca hasta 366 días después de hoy; sin ninguno, hoy.
  * Devuelve { fecha, motivo }. motivo: null si la fecha es hoy; si no, por qué hoy no se generan notas ('día no hábil', 'la
- * persona autorizada está de licencia' o 'licencia del firmante sin persona autorizada').
- * Solo lee. Salta los días no hábiles sin mirarlos y, en una licencia sin autorizado vigente, salta hasta el primer día hábil
- * en que la persona autorizada no falta o, si no le queda ninguno desde mañana (o ya no sirve), hasta el fin de la licencia
- * (primer_dia_disponible de autorizadoParaLicencia desde mañana): es lo mismo que probar día por día, sin recorrer la licencia.
+ * persona autorizada está de licencia' o 'licencia del firmante sin persona autorizada'). Solo lee. calendario: el de quien
+ * llama; sin él, se lee (leerCalendario).
  */
-export const fechaDeVistaPrevia = async (config, hoy) => {
-  const limite = sumarDias(hoy, DIAS_PARA_BUSCAR_VISTA_PREVIA);
-  let motivo = null;
-  let dia = hoy;
-  while (dia <= limite) {
-    if (!esDiaHabil(dia)) {
-      if (dia === hoy) motivo = MOTIVO_DIA_NO_HABIL;
-      dia = proximoDiaHabil(dia);
-      continue;
-    }
-    const { modo, licencia } = await firmaParaFecha(config, dia);
-    if (modo !== 'sin_autorizado') return { fecha: dia, motivo };
-    if (dia === hoy) {
-      motivo = licencia.autorizado_id && await licenciaEnFecha(licencia.autorizado_id, hoy)
-        ? MOTIVO_AUTORIZADO_DE_LICENCIA
-        : MOTIVO_SIN_AUTORIZADO;
-    }
-    // Hoy ese día es sin autorizado: el próximo candidato es el primer día hábil, desde mañana, en que la persona autorizada no
-    // falta; si no le queda ninguno (o ya no sirve), la vuelta del titular. Desde mañana, no desde el comienzo de la licencia:
-    // así los días libres que quedaron atrás no obligan a recorrerla día por día
-    dia = (await autorizadoParaLicencia(licencia, { desde: sumarDias(dia, 1) }))?.primer_dia_disponible ?? sumarDias(licencia.hasta, 1);
-  }
-  return { fecha: hoy, motivo: null };
+export const fechaDeVistaPrevia = async (config, hoy, calendario) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const fecha = await primerDiaConNotas(config, hoy, conElCalendario);
+  if (fecha === null || fecha === hoy) return { fecha: hoy, motivo: null };
+  return { fecha, motivo: await motivoDeHoy(config, hoy, conElCalendario) };
 };
 
 // La firma de la vista previa. Si la autorización de la persona autorizada todavía no se comunicó (autorización tardía o
@@ -833,25 +854,40 @@ const firmaDeVistaPrevia = ({ modo, firma, licencia, pendiente }) => {
   };
 };
 
-// El día de la vista previa o la prueba con lo que decide cómo sale ese día (el mismo contextoDelDia de la corrida) y su firma.
-// Una sola vez por pedido: el HTML, el PDF, el anexo y la prueba se arman con lo mismo.
-const diaDeVistaPrevia = async (config, hoy) => {
-  const { fecha, motivo } = await fechaDeVistaPrevia(config, hoy);
-  const contexto = await contextoDelDia(config, fecha);
-  return { fecha, motivo, contexto, firma: firmaDeVistaPrevia(contexto) };
+/**
+ * El día de la vista previa o la prueba con lo que decide cómo sale ese día (el mismo contextoDelDia de la corrida) y su firma.
+ * Una sola vez por pedido: el HTML, el PDF, el anexo y la prueba se arman con lo mismo. La fecha es la que anuncia Correos → Estado
+ * para ese tipo y esa gestión (spec 2026-10-27-feriados-en-notas, 4: una sola función da las fechas al Estado y a la vista previa):
+ * - el aviso, la de fechaDeVistaPrevia (el primer día con notas desde hoy);
+ * - la reiteración, la de proximasFechas (si la del mes ya salió, la del mes siguiente) o, si no tiene, la de fechaDeVistaPrevia;
+ * - la nota de auditoría, la próxima de proximasFechas o, si no hay ninguna, la de fechaDeVistaPrevia.
+ * motivo: el de fechaDeVistaPrevia (por qué hoy no se generan notas, o null). otro_dia: la fecha no es hoy (también si hoy hay notas
+ * pero esta sale otro día). calendario: el del pedido, obligatorio; llega a todo lo de adentro y vuelve en el contexto.
+ * { fecha, motivo, otro_dia, contexto, firma }
+ */
+const diaDeVistaPrevia = async (config, hoy, { tipo, gestion }, calendario) => {
+  const { fecha: primera, motivo } = await fechaDeVistaPrevia(config, hoy, calendario);
+  let fecha = primera;
+  if (tipo === 'reiteracion' || tipo === 'auditoria') {
+    const { proximas, auditoria } = await proximasFechas({ config, hoy, calendario });
+    fecha = (tipo === 'reiteracion' ? proximas[gestion].reiteracion.fecha : auditoria.proxima) ?? primera;
+  }
+  const contexto = await contextoDelDia(config, fecha, calendario);
+  return { fecha, motivo, otro_dia: fecha !== hoy, contexto, firma: firmaDeVistaPrevia(contexto) };
 };
 
 // Los datasets de la vista previa o la prueba de ese día, o el ejemplo si no hay. El aviso sale de avisoDelDia con el contexto
-// del día, igual que en la corrida (víspera de una licencia, aviso en su fecha); si buscar lo que sale en su fecha falla,
-// falla también la vista previa: no muestra una nota distinta a la que saldría. La reiteración sigue su selección de siempre.
+// del día, igual que en la corrida (víspera de una licencia, aviso en su fecha), con el calendario del contexto (no vuelve a leer
+// la tabla); si buscar lo que sale en su fecha falla, falla también la vista previa: no muestra una nota distinta a la que
+// saldría. La reiteración sigue su selección de siempre.
 // Devuelve { datasets, areas, fichas, rangoVencimientos, autorizacion, ejemplo } y, con datos de ejemplo, fuentesPorId: las fuentes
 // del Seguimiento de esos datasets, que el anexo de la reiteración no puede leer de la base (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5).
 const contenidoParaMostrar = async (tipo, gestion, fecha, contexto) => {
   let reales;
   let aviso = { rangoVencimientos: null, autorizacion: null };
   if (tipo === 'aviso') {
-    const { modo, licencia, anticipo, autorizacion } = contexto;
-    aviso = await avisoDelDia({ gestion, fecha, modo, licencia, anticipo, autorizacion });
+    const { modo, licencia, anticipo, autorizacion, calendario } = contexto;
+    aviso = await avisoDelDia({ gestion, fecha, modo, licencia, anticipo, autorizacion, calendario });
     if (aviso.errorEnSuFecha) throw aviso.errorEnSuFecha;
     reales = aviso.datasets;
   } else {
@@ -867,31 +903,38 @@ const contenidoParaMostrar = async (tipo, gestion, fecha, contexto) => {
   };
 };
 
-// La nota de la vista previa: los datos de la fecha de la próxima corrida con notas (o de ejemplo) con N° XX, firmada como
-// saldría (spec 2026-10-15, 7.7). La de auditoría no tiene gestión (spec 2026-10-15, 10.4).
-const notaDeVistaPrevia = async ({ tipo, gestion, hoy }) => {
+// La nota de la vista previa: los datos del día de diaDeVistaPrevia (o de ejemplo) con N° XX, firmada como saldría (spec
+// 2026-10-15, 7.7). La de auditoría no tiene gestión (spec 2026-10-15, 10.4). calendario: el del pedido.
+const notaDeVistaPrevia = async ({ tipo, gestion, hoy, calendario }) => {
   const config = await obtenerConfig();
-  const { fecha, motivo, contexto, firma } = await diaDeVistaPrevia(config, hoy);
+  const { fecha, motivo, otro_dia: otroDia, contexto, firma } = await diaDeVistaPrevia(config, hoy, { tipo, gestion }, calendario);
+  const delDia = { config, firma, fecha, motivo, otro_dia: otroDia };
   if (tipo === 'auditoria') {
-    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, fecha);
+    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, fecha, calendario);
     const nota = construirNotaDeAuditoria({ numero: null, anio: null, esPrueba: false, fecha, ...auditoria, firma, config });
-    return { nota, config, firma, fecha, motivo, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : auditoria.nuevos.length + auditoria.reiterados.length };
+    return { nota, ...delDia, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : auditoria.nuevos.length + auditoria.reiterados.length };
   }
   const { datasets, areas, rangoVencimientos, autorizacion, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, fecha, contexto);
   const nota = construirNota({
     tipo, gestion, numero: null, anio: null, esPrueba: false, fecha, datasets, areas, config, firma, rangoVencimientos, autorizacion
   });
-  return { nota, config, firma, fecha, motivo, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : datasets.length };
+  return { nota, ...delDia, ejemplo: esEjemplo, cantidad: esEjemplo ? 0 : datasets.length };
 };
 
-export const previewNota = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
-  const { nota, ejemplo: esEjemplo, cantidad, fecha, motivo } = await notaDeVistaPrevia({ tipo, gestion, hoy });
-  return { html: renderHtml(nota), asunto: nota.asunto, ejemplo: esEjemplo, cantidad, fecha, motivo };
+// La vista previa (Correos → Vista previa y pruebas). calendario: el del pedido; sin él, se lee una vez acá (leerCalendario) y
+// llega a todo lo de adentro. fecha, motivo y otro_dia dicen qué día muestra (textoDeVistaPrevia de correos.js).
+export const previewNota = async ({ tipo, gestion, hoy = hoyArgentina(), calendario }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const { nota, ejemplo: esEjemplo, cantidad, fecha, motivo, otro_dia: otroDia } = await notaDeVistaPrevia({
+    tipo, gestion, hoy, calendario: conElCalendario
+  });
+  return { html: renderHtml(nota), asunto: nota.asunto, ejemplo: esEjemplo, cantidad, fecha, motivo, otro_dia: otroDia };
 };
 
-// PDF de la vista previa, con el membrete y la firma cargados: no se guarda ni se envía
-export const previewPdf = async ({ tipo, gestion, hoy = hoyArgentina() }) => {
-  const { nota, config, firma } = await notaDeVistaPrevia({ tipo, gestion, hoy });
+// PDF de la vista previa, con el membrete y la firma cargados: no se guarda ni se envía. calendario: como en previewNota
+export const previewPdf = async ({ tipo, gestion, hoy = hoyArgentina(), calendario }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const { nota, config, firma } = await notaDeVistaPrevia({ tipo, gestion, hoy, calendario: conElCalendario });
   return renderPdf(nota, opcionesPdf(config, firma));
 };
 
@@ -903,11 +946,13 @@ const TIPOS_CON_ANEXO = ['aviso', 'reiteracion'];
 // siempre) o 'reiteracion' (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5): una hoja del Seguimiento por dataset, con las
 // fuentes de la base o, con datos de ejemplo, las de ejemplo. Cada hoja suma la reiteración de la vista previa, «XX», con los
 // destinatarios de la gestión y quien la firmaría (spec 2026-10-24-reiteracion-en-su-anexo); si la real de ese día ya salió, la
-// reemplaza: nunca van las dos.
-export const previewAnexo = async ({ tipo = 'aviso', gestion, hoy = hoyArgentina() }) => {
+// reemplaza: nunca van las dos (con la del mes ya evaluada, el día es el del mes siguiente: diaDeVistaPrevia). calendario: como en
+// previewNota.
+export const previewAnexo = async ({ tipo = 'aviso', gestion, hoy = hoyArgentina(), calendario }) => {
   if (!TIPOS_CON_ANEXO.includes(tipo)) throw new ErrorDeUso(`La nota de tipo ${tipo} no lleva anexo`);
+  const conElCalendario = calendario ?? await leerCalendario();
   const config = await obtenerConfig();
-  const { fecha, contexto, firma } = await diaDeVistaPrevia(config, hoy);
+  const { fecha, contexto, firma } = await diaDeVistaPrevia(config, hoy, { tipo, gestion }, conElCalendario);
   const contenido = await contenidoParaMostrar(tipo, gestion, fecha, contexto);
   if (tipo === 'reiteracion') {
     const nombres = await nombresDeLaReiteracion({ usuarioId: null, firmanteId: firma.firmanteId });
@@ -921,25 +966,31 @@ export const previewAnexo = async ({ tipo = 'aviso', gestion, hoy = hoyArgentina
   return renderAnexo(construirAnexo({ numero: null, anio: null, fecha, fichas: contenido.fichas }));
 };
 
-// "Prueba enviada a …", con lo que aclara en un solo paréntesis: que son datos de ejemplo y/o que es la nota de otro día
-// (spec 2026-10-15, 7.7)
-export const mensajeDePrueba = ({ destinatarios, ejemplo, motivo, fecha }) => {
-  const aclaraciones = [ejemplo && 'con datos de ejemplo', motivo && `como saldría el ${formatoCorto(fecha)}`].filter(Boolean);
+// "Prueba enviada a …", con lo que aclara en un solo paréntesis: que son datos de ejemplo y/o que es la nota de otro día, porque
+// hoy no se generan notas (motivo, spec 2026-10-15, 7.7) o porque esta sale otro día (otro_dia, solo con el true literal: spec
+// 2026-10-27-feriados-en-notas, 6)
+export const mensajeDePrueba = ({ destinatarios, ejemplo, motivo, fecha, otro_dia: otroDia }) => {
+  const aclaraciones = [
+    ejemplo && 'con datos de ejemplo', (motivo || otroDia === true) && `como saldría el ${formatoCorto(fecha)}`
+  ].filter(Boolean);
   return `Prueba enviada a ${destinatarios.join(', ')}${aclaraciones.length > 0 ? ` (${aclaraciones.join(', ')})` : ''}`;
 };
 
 // La prueba se genera como una nota de prueba (sin número, sin registrar datasets ni cambios incluidos ni la autorización) y va
-// solo a las casillas de prueba. Muestra el mismo día y el mismo contenido que la vista previa: fecha y motivo dicen cuál.
-export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuarioId = null }) => {
+// solo a las casillas de prueba. Muestra el mismo día y el mismo contenido que la vista previa: fecha, motivo y otro_dia dicen cuál.
+// calendario: como en previewNota.
+export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuarioId = null, calendario }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
   const config = await obtenerConfig();
   const casillas = listaDeCorreos(config.casillas_prueba);
   if (casillas.length === 0) throw new ErrorDeUso('No hay casillas de prueba configuradas');
-  const { fecha, motivo, contexto, firma } = await diaDeVistaPrevia(config, hoy);
+  const { fecha, motivo, otro_dia: otroDia, contexto, firma } = await diaDeVistaPrevia(config, hoy, { tipo, gestion }, conElCalendario);
+  const delDia = { fecha, motivo, otro_dia: otroDia, destinatarios: casillas };
   // La prueba de la nota de auditoría: los cambios de ese día o el ejemplo, sin registrar cambios incluidos (spec 2026-10-15, 11.2)
   if (tipo === 'auditoria') {
-    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, fecha);
+    const { ejemplo: esEjemplo, ...auditoria } = await contenidoDeAuditoriaParaMostrar(config, fecha, conElCalendario);
     const id = await generarNota({ tipo, gestion: null, fecha, datasets: [], config, esPrueba: true, usuarioId, firma, auditoria });
-    return { id, ejemplo: esEjemplo, fecha, motivo, destinatarios: casillas, ...(await enviarNota(id)) };
+    return { id, ejemplo: esEjemplo, ...delDia, ...(await enviarNota(id)) };
   }
   const { datasets, areas, fichas, fuentesPorId, rangoVencimientos, autorizacion, ejemplo: esEjemplo } = await contenidoParaMostrar(tipo, gestion, fecha, contexto);
   // fuentesPorId solo viene con datos de ejemplo: el anexo de la reiteración de prueba dibuja sus hojas con ellas (sin ellas, de la base)
@@ -948,16 +999,22 @@ export const enviarPrueba = async ({ tipo, gestion, hoy = hoyArgentina(), usuari
     rangoVencimientos, autorizacion
   });
   const resultado = await enviarNota(id);
-  return { id, ejemplo: esEjemplo, fecha, motivo, destinatarios: casillas, ...resultado };
+  return { id, ejemplo: esEjemplo, ...delDia, ...resultado };
 };
 
 // Licencia del firmante titular en curso o la próxima, con lo que hace falta para mostrar su efecto (spec 2026-10-15, 7.5).
-// { publica, titular, ausencias, deLicenciaTodosLosDias } o null. publica: el objeto de estado.licencia_firmante (su forma no
-// cambia); titular: la licencia tal como la guarda la base (para el aviso en su fecha, 7.6); ausencias: las licencias de la
-// persona autorizada durante la del titular ([{ desde, hasta }], vacías sin autorizado); deLicenciaTodosLosDias: la persona
-// autorizada no está vigente solo porque está de licencia todos los días hábiles de la del titular (sigue activa, con su rol
-// y su firma): la alerta es una advertencia, no un error (decisión del usuario, 27/10/2026).
-const licenciaDelFirmante = async (config, hoy) => {
+// { publica, titular, ausencias, deLicenciaTodosLosDias } o null. publica: el objeto de estado.licencia_firmante, con
+// sin_anticipo al final (spec 2026-10-27-feriados-en-notas, 4); titular: la licencia tal como la guarda la base (para el aviso
+// en su fecha, 7.6); ausencias: las licencias de la persona autorizada durante la del titular ([{ desde, hasta }], vacías sin
+// autorizado); deLicenciaTodosLosDias: la persona autorizada no está vigente solo porque está de licencia todos los días
+// hábiles de la del titular (sigue activa, con su rol y su firma): la alerta es una advertencia, no un error (decisión del
+// usuario, 27/10/2026). Los días hábiles, con el calendario de quien llama:
+// - vispera, sin_anticipo y sin_dias_habiles, de visperaDeLaLicencia: si el día hábil anterior al inicio cae en otra licencia
+//   del titular (empieza a continuación de otra), no hay anticipo y la víspera es null;
+// - ultimo_habil, el último día hábil de la licencia;
+// - vuelta, el primer día con notas después de la licencia (así ve una licencia que sigue a otra); sin ninguno en 366 días, el
+//   primer día hábil.
+const licenciaDelFirmante = async (config, hoy, calendario) => {
   if (!config.firmante_usuario_id) return null;
   const licencia = (await licenciaEnFecha(config.firmante_usuario_id, hoy)) ?? (await proximaLicencia(config.firmante_usuario_id, hoy));
   if (!licencia) return null;
@@ -966,16 +1023,21 @@ const licenciaDelFirmante = async (config, hoy) => {
   // licencia, o desde hoy si ya empezó; sin ninguno hasta el fin, ese mismo día) está de licencia, hasta cuándo, con sus
   // licencias seguidas unidas: esos días no se generan notas
   const desdeHoy = licencia.desde > hoy ? licencia.desde : hoy;
-  const habil = proximoDiaHabil(desdeHoy);
+  const habil = calendario.proximoDiaHabil(desdeHoy);
   const evaluado = habil <= licencia.hasta ? habil : desdeHoy;
-  const autorizado = await autorizadoParaLicencia(licencia);
+  const autorizado = await autorizadoParaLicencia(licencia, { calendario });
   const ausente = autorizado?.primer_dia_disponible
-    ? unirAusencias(autorizado.ausencias).find(a => a.desde <= evaluado && evaluado <= a.hasta)
+    ? unirAusencias(autorizado.ausencias, calendario).find(a => a.desde <= evaluado && evaluado <= a.hasta)
     : null;
   const [[nota]] = licencia.nota_autorizacion_id
     ? await pool.query('SELECT numero, anio FROM notas_digitales WHERE id = ?', [licencia.nota_autorizacion_id])
     : [[null]];
-  const ultimoHabil = ultimoDiaHabilHasta(licencia.hasta);
+  // La licencia del titular que incluye el día hábil anterior a esta, si la hay: con ella no hay anticipo
+  const anterior = await licenciaEnFecha(config.firmante_usuario_id, calendario.diaHabilAnterior(licencia.desde));
+  const { vispera, sin_anticipo: sinAnticipo, sin_dias_habiles: sinDiasHabiles } = visperaDeLaLicencia(
+    licencia, anterior ? [anterior] : [], calendario
+  );
+  const despues = sumarDias(licencia.hasta, 1);
   const noVigente = Boolean(licencia.autorizado_id) && !autorizado;
   return {
     publica: {
@@ -986,10 +1048,11 @@ const licenciaDelFirmante = async (config, hoy) => {
       nota_autorizacion: nota ? { numero: nota.numero, anio: nota.anio } : null,
       autorizado_no_vigente: noVigente,
       autorizado_de_licencia_hasta: ausente?.hasta ?? null,
-      sin_dias_habiles: ultimoHabil < licencia.desde,
-      vispera: diaHabilAnterior(licencia.desde),
-      ultimo_habil: ultimoHabil,
-      vuelta: proximoDiaHabil(sumarDias(licencia.hasta, 1))
+      sin_dias_habiles: sinDiasHabiles,
+      vispera,
+      ultimo_habil: calendario.ultimoDiaHabilHasta(licencia.hasta),
+      vuelta: (await primerDiaConNotas(config, despues, calendario)) ?? calendario.proximoDiaHabil(despues),
+      sin_anticipo: sinAnticipo
     },
     titular: licencia,
     ausencias: autorizado?.ausencias ?? [],
@@ -999,20 +1062,30 @@ const licenciaDelFirmante = async (config, hoy) => {
 
 /**
  * El próximo aviso en su fecha de la gestión (spec 2026-10-15, 7.6), con persona autorizada: de los datasets que la víspera
- * adelantó, el día en que la persona autorizada los vuelve a presentar. Un día que ya pasó (la corrida no se hizo, o ella
- * faltaba) pasa al primer día hábil, desde la próxima corrida, en que no falta. Un dataset al que ese día ya le toca la
- * reiteración (yaTocaReiterar) no cuenta: lo informa la reiteración, como en la corrida. { fecha, cantidad } o null: la
- * cantidad es lo que sale ese día, sumando a los que vuelven a presentarse lo que seleccionarParaAviso elige para esa fecha.
+ * adelantó, el día en que la persona autorizada los vuelve a presentar. Cada uno sale el primer día con notas (primerDiaConNotas,
+ * con el calendario: spec 2026-10-27-feriados-en-notas, 4) desde su día, o desde la próxima corrida si su día ya pasó (la corrida
+ * no se hizo, o ella faltaba), solo dentro de la licencia del titular: pasada la licencia no hay aviso en su fecha (lo toma la
+ * reiteración). Un dataset al que ese día ya le toca la reiteración (yaTocaReiterar) no cuenta: lo informa la reiteración, como
+ * en la corrida. { fecha, cantidad } o null: la cantidad es lo que sale ese día, sumando a los que vuelven a presentarse lo que
+ * seleccionarParaAviso elige para esa fecha.
  * corrida: el día de la próxima corrida posible. { titular, ausencias }: lo que devuelve licenciaDelFirmante (la licencia del
  * titular y las ausencias de la persona autorizada).
  */
-const proximoAvisoEnSuFecha = async (gestion, corrida, { titular, ausencias }) => {
-  const pendientes = await pendientesEnSuFecha(gestion, corrida, titular, ausencias);
+const proximoAvisoEnSuFecha = async (gestion, corrida, { titular, ausencias }, config, calendario) => {
+  const pendientes = await pendientesEnSuFecha(gestion, corrida, titular, ausencias, calendario);
   if (pendientes.length === 0) return null;
-  // El primer día hábil desde la próxima corrida en que la persona autorizada no falta: el mismo para todos los atrasados
-  const primerDiaLibre = diasHabilesLibres(corrida, titular.hasta, ausencias).primerDia;
-  const fechas = pendientes
-    .map(dataset => ({ dataset, efectiva: dataset.dia_en_su_fecha >= corrida ? dataset.dia_en_su_fecha : primerDiaLibre }))
+  // El primer día con notas desde cada día, una vez por día: varios datasets comparten el suyo
+  const porDia = new Map();
+  const conNotasDesde = (dia) => {
+    if (!porDia.has(dia)) porDia.set(dia, primerDiaConNotas(config, dia, calendario));
+    return porDia.get(dia);
+  };
+  const conFecha = [];
+  for (const dataset of pendientes) {
+    const conNotas = await conNotasDesde(dataset.dia_en_su_fecha >= corrida ? dataset.dia_en_su_fecha : corrida);
+    conFecha.push({ dataset, efectiva: conNotas !== null && conNotas <= titular.hasta ? conNotas : null });
+  }
+  const fechas = conFecha
     .filter(({ dataset, efectiva }) => efectiva && !yaTocaReiterar(dataset, efectiva))
     .map(({ efectiva }) => efectiva)
     .sort();
@@ -1022,83 +1095,151 @@ const proximoAvisoEnSuFecha = async (gestion, corrida, { titular, ausencias }) =
 };
 
 /**
- * Nota de auditoría en el Estado (spec 2026-10-15, 10.4): cuántos cambios están en el canal nota en la próxima corrida
- * posible (hoy si es hábil) y la fecha de la próxima nota: la de esa corrida si alguno todavía no estuvo en una nota (o el
- * día hábil siguiente si la de esa fecha ya salió), y si no, 5 días hábiles después de la última nota de cada uno.
- * Días sin auditor: sin_quien_audite, cuántos cambios pendientes no tienen en esa corrida a nadie que pueda auditarlos
- * (quienesAuditan vacío), y periodos_sin_auditor, los de esa corrida a hoy + 60 días (auditoriaService.periodosSinAuditor).
+ * Nota de auditoría en el Estado (spec 2026-10-15, 10.4), con el calendario de quien llama y la regla de la corrida (spec
+ * 2026-10-27-feriados-en-notas, 4):
+ * - canal_nota: cuántos cambios están en el canal nota el primer día con notas desde hoy (sin ninguno en 366 días, la próxima
+ *   corrida posible);
+ * - proxima: la fecha de la próxima nota. Los candidatos: ese día si alguno de esos cambios todavía no estuvo en una nota (o el
+ *   primer día con notas siguiente si la de ese día ya salió) y, para los demás, el primer día con notas desde 5 días hábiles
+ *   después de su última nota (nunca antes que el primero). De menor a mayor, el primero en que la nota sale de verdad: ese día
+ *   la selección de la corrida (seleccionarParaAuditoria, con el canal de esa fecha) trae algún cambio. null si ninguno;
+ * - sin_quien_audite: cuántos cambios pendientes no tienen en la próxima corrida posible (hoy si es hábil) a nadie que pueda
+ *   auditarlos (quienesAuditan vacío): es lo de hoy, haya notas o no;
+ * - periodos_sin_auditor: los de esa corrida a hoy + 60 días (auditoriaService.periodosSinAuditor).
  * { canal_nota, proxima: 'AAAA-MM-DD' | null, sin_quien_audite, periodos_sin_auditor }
  */
-const estadoAuditoria = async (config, hoy) => {
-  const corrida = proximoDiaHabil(hoy);
-  const contexto = await contextoDeCanal(corrida, config);
-  const cambios = await cambiosConCanal(corrida, contexto);
+const estadoAuditoria = async (config, hoy, calendario) => {
+  const corrida = calendario.proximoDiaHabil(hoy);
+  const conNotas = (await primerDiaConNotas(config, hoy, calendario)) ?? corrida;
+  const deLaCorrida = await contextoDeCanal(corrida, config, calendario);
+  const contexto = conNotas === corrida ? deLaCorrida : await contextoDeCanal(conNotas, config, calendario);
+  const cambios = await cambiosConCanal(conNotas, contexto);
   const sinAuditor = {
-    sin_quien_audite: cambios.filter(c => quienesAuditan(contexto.personas, c.usuario_id).personas.length === 0).length,
-    periodos_sin_auditor: await periodosSinAuditor(corrida, sumarDias(hoy, DIAS_PERIODOS_SIN_AUDITOR))
+    sin_quien_audite: cambios.filter(c => quienesAuditan(deLaCorrida.personas, c.usuario_id).personas.length === 0).length,
+    periodos_sin_auditor: await periodosSinAuditor(corrida, sumarDias(hoy, DIAS_PERIODOS_SIN_AUDITOR), { calendario })
   };
   const delCanal = cambios.filter(c => c.canal === 'nota');
   if (delCanal.length === 0) return { canal_nota: 0, proxima: null, ...sinAuditor };
   const previas = await notasDeAuditoriaDe(delCanal.map(c => c.id));
-  const primeraLibre = (await hayNotaDeAuditoria(corrida)) ? proximoDiaHabil(sumarDias(corrida, 1)) : corrida;
-  const fechas = delCanal.map((cambio) => {
+  const primeraLibre = (await hayNotaDeAuditoria(conNotas))
+    ? await primerDiaConNotas(config, sumarDias(conNotas, 1), calendario)
+    : conNotas;
+  const candidatos = new Set();
+  for (const cambio of delCanal) {
     const ultima = previas.get(cambio.id)?.at(-1)?.fecha;
-    const fecha = ultima ? sumarDiasHabiles(ultima, DIAS_HABILES_PARA_REITERAR_AUDITORIA) : primeraLibre;
-    return fecha < primeraLibre ? primeraLibre : fecha;
-  });
-  return { canal_nota: delCanal.length, proxima: fechas.sort()[0], ...sinAuditor };
+    const fecha = ultima
+      ? await primerDiaConNotas(config, calendario.sumarDiasHabiles(ultima, DIAS_HABILES_PARA_REITERAR_AUDITORIA), calendario)
+      : primeraLibre;
+    if (fecha !== null) candidatos.add(primeraLibre !== null && fecha < primeraLibre ? primeraLibre : fecha);
+  }
+  // Se vuelve a confirmar el canal en cada fecha: el titular puede estar de licencia, o volver, y la nota no sale si ese día
+  // ningún cambio entra
+  let proxima = null;
+  for (const fecha of [...candidatos].sort()) {
+    const delDia = fecha === conNotas ? contexto : await contextoDeCanal(fecha, config, calendario);
+    const { nuevos, reiterados } = await seleccionarParaAuditoria(fecha, delDia);
+    if (nuevos.length || reiterados.length) {
+      proxima = fecha;
+      break;
+    }
+  }
+  return { canal_nota: delCanal.length, proxima, ...sinAuditor };
 };
 
-export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
-  const config = await obtenerConfig();
-  const firmaTitular = await firmaTitularDe(config);
-  const delFirmante = await licenciaDelFirmante(config, hoy);
+/**
+ * El anticipo que va a hacer la corrida con un aviso cuyo candidato (apertura − ventana) cae en una licencia del titular, con la
+ * misma regla que la corrida (spec 2026-10-15, 7.3, y 2026-10-27-feriados-en-notas, 4): la licencia que incluye el primer día
+ * hábil del candidato, cualquiera (la del Estado o una posterior); su víspera, el día hábil anterior a su inicio, si es la próxima
+ * corrida o después; ese día firma el titular (contextoDelDia: solo entonces hay anticipo) y anticipoPorLicencia de ese día lo
+ * alcanza (el candidato no pasa de su último día hábil). { vispera, hasta } o null: la licencia empieza a continuación de otra (su
+ * víspera cae en la otra y no firma el titular), no tiene días hábiles, la víspera ya pasó, o el candidato no cae en ninguna.
+ */
+const anticipoQueIncluye = async (config, candidato, corrida, calendario) => {
+  if (!config.firmante_usuario_id) return null;
+  const licencia = await licenciaEnFecha(config.firmante_usuario_id, calendario.proximoDiaHabil(candidato));
+  if (!licencia) return null;
+  const vispera = calendario.diaHabilAnterior(licencia.desde);
+  if (vispera < corrida || (await modoDelDia(config, vispera)).modo !== 'titular') return null;
+  const anticipo = await anticipoPorLicencia(config, vispera, calendario);
+  return anticipo && candidato <= anticipo.hasta ? { vispera, hasta: anticipo.hasta } : null;
+};
+
+/**
+ * Las fechas que anuncia Correos → Estado, en un solo lugar, con el calendario de quien llama y la regla de la corrida, el primer
+ * día con notas (primerDiaConNotas; spec 2026-10-27-feriados-en-notas, 4). La vista previa y la prueba de la reiteración y de la
+ * nota de auditoría muestran las mismas (diaDeVistaPrevia). Solo lee. corrida: la próxima corrida posible (hoy si
+ * es hábil). Devuelve { corrida, delFirmante, proximas: { interna, externa }, auditoria }:
+ * - delFirmante: lo de licenciaDelFirmante, o null;
+ * - el aviso de cada gestión, { fecha, cantidad } o null: el candidato es el día en que se abre el mes del próximo vencimiento
+ *   sin aviso (apertura − ventana), o la próxima corrida si ya pasó. Si la víspera de alguna licencia del titular (no solo la del
+ *   Estado: también una posterior) lo anticipa (anticipoQueIncluye), la víspera, con lo que anticipa; si no, el primer día con
+ *   notas desde el candidato (null: sin aviso), con lo que se seleccionaría ese día. Con persona autorizada, el aviso en su fecha
+ *   (proximoAvisoEnSuFecha) si es antes o el mismo día (su cantidad ya suma los dos);
+ * - la reiteración, { fecha, cantidad }: evaluada este mes, el primer día con notas desde el 1° del mes siguiente; si no, desde
+ *   hoy. Sin fecha, { fecha: null, cantidad: 0 };
+ * - auditoria: estadoAuditoria.
+ */
+const proximasFechas = async ({ config, hoy, calendario }) => {
+  // Se cuenta desde la próxima corrida posible: un sábado, lo que vence ese fin de semana el lunes ya está vencido
+  const corrida = calendario.proximoDiaHabil(hoy);
+  const delFirmante = await licenciaDelFirmante(config, hoy, calendario);
   const licencia = delFirmante?.publica ?? null;
-  const dentro = (fecha) => Boolean(licencia) && !licencia.sin_dias_habiles && fecha >= licencia.desde && fecha <= licencia.hasta;
-  const [[{ fallidas }]] = await pool.query(
-    "SELECT COUNT(*) AS fallidas FROM notas_digitales WHERE estado = 'fallida' AND es_prueba = 0"
-  );
   const periodoActual = periodoDe(hoy);
   const proximas = {};
   for (const gestion of GESTIONES) {
-    // Primer día hábil desde hoy en que se abre un mes con datasets a vencer sin aviso (los vencidos van a la
-    // reiteración); la cantidad es lo que se seleccionaría ese día (todo el mes, más lo que ya esté en la ventana).
-    // Se cuenta desde la próxima corrida posible: un sábado, lo que vence ese fin de semana el lunes ya está vencido.
-    const corrida = proximoDiaHabil(hoy);
+    // El mes más próximo con datasets a vencer sin aviso (los vencidos van a la reiteración); la cantidad es lo que se
+    // seleccionaría ese día (todo el mes, más lo que ya esté en la ventana)
     const apertura = await aperturaDelProximoAviso(gestion, corrida);
     let aviso = null;
     if (apertura) {
       const desde = sumarDias(apertura, -VENTANA_DIAS[gestion]);
-      const fecha = proximoDiaHabil(desde > corrida ? desde : corrida);
-      aviso = { fecha, cantidad: (await seleccionarParaAviso(gestion, fecha)).length };
-    }
-    // Un aviso que caería dentro de una licencia del firmante se anticipa a la víspera, si todavía no pasó; si ya pasó,
-    // sin autorizado sale a la vuelta (con autorizado, en su fecha)
-    if (aviso && dentro(aviso.fecha)) {
-      if (licencia.vispera >= corrida) {
-        aviso = { fecha: licencia.vispera, cantidad: (await seleccionarParaAviso(gestion, licencia.vispera, licencia.ultimo_habil)).length };
-      } else if (!licencia.autorizado) {
-        aviso = { fecha: licencia.vuelta, cantidad: (await seleccionarParaAviso(gestion, licencia.vuelta)).length };
+      const candidato = desde > corrida ? desde : corrida;
+      // Un aviso que caería dentro de una licencia del firmante se anticipa a la víspera, si todavía no pasó. Sin anticipo (la
+      // víspera ya pasó, o la licencia empieza a continuación de otra) sale el primer día con notas: con la persona autorizada en
+      // su día, sin ella a la vuelta
+      const anticipo = await anticipoQueIncluye(config, candidato, corrida, calendario);
+      if (anticipo) {
+        aviso = { fecha: anticipo.vispera, cantidad: (await seleccionarParaAviso(gestion, anticipo.vispera, anticipo.hasta)).length };
+      } else {
+        const fecha = await primerDiaConNotas(config, candidato, calendario);
+        if (fecha !== null) aviso = { fecha, cantidad: (await seleccionarParaAviso(gestion, fecha)).length };
       }
     }
     // Con persona autorizada, lo que adelantó la víspera sale otra vez en su fecha, también con la licencia ya en curso
     // (spec 7.6): si es antes que el aviso de arriba, o el mismo día (su cantidad ya suma los dos), ese es el próximo
     if (licencia?.autorizado && !licencia.sin_dias_habiles) {
-      const enSuFecha = await proximoAvisoEnSuFecha(gestion, corrida, delFirmante);
+      const enSuFecha = await proximoAvisoEnSuFecha(gestion, corrida, delFirmante, config, calendario);
       if (enSuFecha && (!aviso || enSuFecha.fecha <= aviso.fecha)) aviso = enSuFecha;
     }
 
+    // Una evaluación por mes: el primer día con notas del mes que corresponde
     const evaluado = config[`reiteracion_evaluada_${gestion}`] === periodoActual;
-    let fechaReiteracion = evaluado
-      ? primerDiaHabilDelMes(periodoSiguiente(periodoActual))
-      : proximoDiaHabil(primerDiaHabilDelMes(periodoActual) > hoy ? primerDiaHabilDelMes(periodoActual) : hoy);
-    if (!licencia?.autorizado && dentro(fechaReiteracion)) fechaReiteracion = licencia.vuelta;
-
+    const fechaReiteracion = await primerDiaConNotas(config, evaluado ? `${periodoSiguiente(periodoActual)}-01` : hoy, calendario);
     proximas[gestion] = {
       aviso,
-      reiteracion: { fecha: fechaReiteracion, cantidad: (await seleccionarParaReiteracion(gestion, fechaReiteracion)).length }
+      reiteracion: fechaReiteracion === null
+        ? { fecha: null, cantidad: 0 }
+        : { fecha: fechaReiteracion, cantidad: (await seleccionarParaReiteracion(gestion, fechaReiteracion)).length }
     };
   }
+  return { corrida, delFirmante, proximas, auditoria: await estadoAuditoria(config, hoy, calendario) };
+};
+
+/**
+ * El estado de las Notas Digitales para Correos → Estado. calendario: el de quien llama (verEstado lo lee una vez por pedido); sin
+ * él, se lee (leerCalendario). El mismo objeto llega a todo lo que se calcula (las fechas y las alertas), así ninguna parte vuelve a
+ * leer la tabla. Si la tabla no se pudo leer (calendario.error, nunca por el origen: un test puede pasar CALENDARIO_FIJO), las
+ * fechas cuentan solo los 9 fijos y suma la alerta feriados-sin-leer (spec 2026-10-27-feriados-en-notas, 2).
+ */
+export const estadoNotas = async ({ hoy = hoyArgentina(), calendario } = {}) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const config = await obtenerConfig();
+  const firmaTitular = await firmaTitularDe(config);
+  const { delFirmante, proximas, auditoria } = await proximasFechas({ config, hoy, calendario: conElCalendario });
+  const licencia = delFirmante?.publica ?? null;
+  const [[{ fallidas }]] = await pool.query(
+    "SELECT COUNT(*) AS fallidas FROM notas_digitales WHERE estado = 'fallida' AND es_prueba = 0"
+  );
   const ultimaCorrida = await leerUltimaCorrida();
   return {
     envio_activo: Boolean(config.envio_activo),
@@ -1106,10 +1247,12 @@ export const estadoNotas = async ({ hoy = hoyArgentina() } = {}) => {
     fallidas: Number(fallidas),
     proximas,
     licencia_firmante: licencia,
-    auditoria: await estadoAuditoria(config, hoy),
+    auditoria,
     ultima_corrida: ultimaCorrida,
     alertas: [
-      ...alertasDeCorrida(config, ultimaCorrida, hoy),
+      // Las fechas de esta pantalla cuentan solo los 9 fijos
+      ...(conElCalendario.error !== null ? [{ tipo: 'feriados-sin-leer', nivel: 'error', mensaje: MENSAJE_ESTADO_SIN_FERIADOS }] : []),
+      ...alertasDeCorrida(config, ultimaCorrida, hoy, conElCalendario),
       // Advertencias que no bloquean el envío (las imágenes no están en configuracionCompleta)
       // La imagen de la firma que usan las notas: la del titular, si hay uno elegido
       ...((config.firmante_usuario_id ? firmaTitular?.imagen : config.firma_imagen) ? [] : [{
@@ -1152,8 +1295,9 @@ const leerUltimaCorrida = async () => {
 
 const fechaHora = (texto) => `${formatoCorto(texto.slice(0, 10))} ${texto.slice(11, 16)}`;
 
-// Alertas de la corrida diaria para la pantalla de Estado (spec: "nunca dejar de enviar en silencio")
-const alertasDeCorrida = (config, corrida, hoy) => {
+// Alertas de la corrida diaria para la pantalla de Estado (spec: "nunca dejar de enviar en silencio"). El día en que tenía que
+// correr, el hábil anterior a hoy, con el calendario de quien llama (spec 2026-10-27-feriados-en-notas, 4)
+const alertasDeCorrida = (config, corrida, hoy, calendario) => {
   const alertas = [];
   if (corrida?.con_errores) {
     alertas.push({
@@ -1168,7 +1312,7 @@ const alertasDeCorrida = (config, corrida, hoy) => {
     });
   }
   if (config.envio_activo) {
-    const debioCorrer = diaHabilAnterior(hoy);
+    const debioCorrer = calendario.diaHabilAnterior(hoy);
     if (!corrida) {
       alertas.push({
         tipo: 'sin-corrida', nivel: 'error',

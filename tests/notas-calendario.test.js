@@ -2,6 +2,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as cal from '../services/notasDigitalesCalendario.js';
+import * as antes from './fixtures/calendario-fijo-de-antes.js';
 
 describe('hoyArgentina', () => {
   it('usa la fecha de Argentina aunque en UTC ya sea el día siguiente', () => {
@@ -204,5 +205,90 @@ describe('sumarDiasHabiles', () => {
         assert.equal(cal.diasHabilesTranscurridos(desde, cal.sumarDiasHabiles(desde, n)), n, `${desde} + ${n}`);
       }
     }
+  });
+});
+
+// Las derivadas se escriben una sola vez, sobre un predicado (derivadasDe), con un tope de 366 vueltas en cada búsqueda de un
+// día hábil. Los nombres de siempre salen de CALENDARIO_FIJO, el calendario de los 9 fijos, y tienen que dar lo mismo que la
+// copia de antes (tests/fixtures/calendario-fijo-de-antes.js) en toda entrada en la que esa copia termina
+describe('las derivadas sobre un predicado (spec 2026-10-27-feriados-en-notas, 1)', () => {
+  // El valor, o la clase del error que tira
+  const resultado = (fn) => { try { return { valor: fn() }; } catch (e) { return { tira: e.constructor.name }; } };
+  const RAROS = ['abc', '', '2026-02-30', '2026-13-01', null, undefined, 3, '2026-2-3', '9999-12-31'];
+  // Con '9999-12-31', la copia de antes no termina en rangoDeAviso, en sumarDiasHabiles con n ≥ 1 ni en
+  // diasHabilesTranscurridos(r, '2026-01-10'): ese borde lo fija «donde la copia de antes no termina, tira RangeError»
+  const RAROS_QUE_TERMINAN = RAROS.filter((r) => r !== '9999-12-31');
+  const DIAS = [];
+  for (let dia = '2024-12-25'; dia <= '2029-01-07'; dia = antes.sumarDias(dia, 1)) DIAS.push(dia);
+  const PERIODOS = [];
+  for (let anio = 2025; anio <= 2028; anio++) {
+    for (let mes = 1; mes <= 12; mes++) PERIODOS.push(`${anio}-${String(mes).padStart(2, '0')}`);
+  }
+
+  // Cada llamada de los recorridos: [nombre de la función, argumentos]
+  const LLAMADAS = [];
+  for (const nombre of ['esDiaHabil', 'proximoDiaHabil', 'diaHabilAnterior', 'ultimoDiaHabilHasta']) {
+    for (const e of [...DIAS, ...RAROS]) LLAMADAS.push([nombre, [e]]);
+  }
+  for (const e of [...DIAS, ...RAROS_QUE_TERMINAN]) {
+    for (const d of [0, 40, 60]) LLAMADAS.push(['rangoDeAviso', [e, d]]);
+    for (const n of [1, 2, 5]) LLAMADAS.push(['sumarDiasHabiles', [e, n]]);
+  }
+  for (const e of [...DIAS, ...RAROS]) LLAMADAS.push(['sumarDiasHabiles', [e, 0]]);
+  for (const p of [...PERIODOS, ...RAROS]) LLAMADAS.push(['primerDiaHabilDelMes', [p]]);
+  for (const d of DIAS) {
+    for (const k of [-1, 0, 1, 7, 30, 400]) LLAMADAS.push(['diasHabilesTranscurridos', [d, antes.sumarDias(d, k)]]);
+  }
+  for (const r of RAROS_QUE_TERMINAN) LLAMADAS.push(['diasHabilesTranscurridos', [r, '2026-01-10']]);
+  // No con 'abc': la copia de antes no termina (un hasta mayor que toda fecha)
+  for (const h of ['', null, undefined, 3, '2026-02-30', '2026-2-3']) LLAMADAS.push(['diasHabilesTranscurridos', ['2026-01-01', h]]);
+
+  const textoDe = (nombre, argumentos) => `${nombre}(${argumentos.map((a) => JSON.stringify(a) ?? 'undefined').join(', ')})`;
+
+  it('los nombres de siempre y CALENDARIO_FIJO dan lo mismo que la copia de antes, del 2025 al 2028 y con entradas raras', () => {
+    for (const [nombre, argumentos] of LLAMADAS) {
+      const esperado = resultado(() => antes[nombre](...argumentos));
+      assert.deepEqual(resultado(() => cal[nombre](...argumentos)), esperado, textoDe(nombre, argumentos));
+      assert.deepEqual(resultado(() => cal.CALENDARIO_FIJO[nombre](...argumentos)), esperado, `CALENDARIO_FIJO.${textoDe(nombre, argumentos)}`);
+    }
+  });
+
+  it('CALENDARIO_FIJO', () => {
+    assert.equal(cal.CALENDARIO_FIJO.esDiaHabil, cal.esDiaHabil);
+    assert.equal(cal.CALENDARIO_FIJO.origen, 'fijos');
+    assert.equal(cal.CALENDARIO_FIJO.error, null);
+    assert.ok(Object.isFrozen(cal.CALENDARIO_FIJO));
+    assert.equal(cal.TOPE_DE_VUELTAS, 366);
+  });
+
+  it('donde la copia de antes no termina, tira RangeError', () => {
+    // Después del 31/12/9999, sumarDias da '+010000-01' y desde ahí siempre lo mismo (el 01/01/10000 es sábado)
+    for (const calendario of [cal, cal.CALENDARIO_FIJO]) {
+      for (const d of [0, 40, 60]) assert.throws(() => calendario.rangoDeAviso('9999-12-31', d), RangeError);
+      for (const n of [1, 2, 5]) assert.throws(() => calendario.sumarDiasHabiles('9999-12-31', n), RangeError);
+      // La fecha deja de ser 'AAAA-MM-DD'
+      assert.throws(() => calendario.diasHabilesTranscurridos('9999-12-31', '2026-01-10'), RangeError);
+      assert.throws(() => calendario.diasHabilesTranscurridos('9999-12-31', '9999-12-31'), RangeError);
+      // Un hasta mayor que toda fecha
+      assert.throws(() => calendario.diasHabilesTranscurridos('2026-01-01', 'abc'), RangeError);
+    }
+  });
+
+  it('el tope de 366 vueltas', () => {
+    const conTodo = (hasta) => {
+      const todo = new Set();
+      for (let dia = '2026-01-01'; dia <= hasta; dia = cal.sumarDias(dia, 1)) todo.add(dia);
+      return cal.derivadasDe((f) => cal.esDiaHabil(f) && !todo.has(f));
+    };
+    const t = conTodo('2027-01-31');
+    const delTope = (e) => e instanceof RangeError && /366/.test(e.message);
+    // Del 01/01/2026, la fecha y los 365 días que siguen llegan al 01/01/2027: ninguno es hábil
+    assert.throws(() => t.proximoDiaHabil('2026-01-01'), delTope);
+    // Los 366 anteriores al 01/02/2027 llegan al 31/01/2026
+    assert.throws(() => t.diaHabilAnterior('2027-02-01'), delTope);
+    assert.throws(() => t.primerDiaHabilDelMes('2026-01'), delTope);
+    assert.throws(() => t.sumarDiasHabiles('2025-12-31', 1), delTope);
+    // Con todo hasta el 30/12/2026, el jueves 31/12 está a 364 días: se encuentra
+    assert.equal(conTodo('2026-12-30').proximoDiaHabil('2026-01-01'), '2026-12-31');
   });
 });

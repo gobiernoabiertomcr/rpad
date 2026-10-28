@@ -267,6 +267,60 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
     assert.match(cambiarDesde('2026-12-20'), /por adelantado el último día hábil anterior/);
   });
 
+  // spec 2026-10-27-feriados-en-notas, 6: el servidor manda sin_anticipo (la víspera cae dentro de otra licencia del firmante) y
+  // sin_dias_habiles; solo cuenta el true literal
+  it('efecto de una licencia del firmante sin anticipo o sin días hábiles', () => {
+    const { contexto } = cargarPanel();
+    const seguida = "{ desde: '2027-01-04', vispera: null, sin_anticipo: true }";
+    assert.equal(evaluar(contexto, `efectoEnNotas(${seguida}, null, '2026-12-21')`),
+      'Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.');
+    assert.equal(evaluar(contexto, `efectoEnNotas(${seguida}, 'Persona Autorizada', '2026-12-21')`),
+      'Empieza a continuación de otra licencia: los avisos no se adelantan. Desde el primer día, Persona Autorizada presenta las notas con las dos firmas, después de la nota que comunica la autorización.');
+    const sinDias = "{ desde: '2026-11-07', vispera: null, sin_dias_habiles: true }";
+    for (const nombre of ['null', "'Persona Autorizada'"]) {
+      assert.equal(evaluar(contexto, `efectoEnNotas(${sinDias}, ${nombre}, '2026-10-20')`), 'No tiene días hábiles: las notas no cambian.');
+    }
+    // En curso, el de siempre
+    for (const [licencia, hoy] of [[seguida, '2027-01-04'], [seguida, '2027-01-06'], [sinDias, '2026-11-07']]) {
+      for (const nombre of ['null', "'Persona Autorizada'"]) {
+        assert.equal(evaluar(contexto, `efectoEnNotas(${licencia}, ${nombre}, '${hoy}')`),
+          evaluar(contexto, `efectoEnNotas({ desde: ${licencia}.desde }, ${nombre}, '${hoy}')`), `${licencia} ${nombre} ${hoy}`);
+      }
+    }
+    // Lo que no es el true literal no cuenta
+    for (const marca of ['sin_anticipo: 1', "sin_anticipo: 'true'", 'sin_dias_habiles: 1', 'sin_anticipo: false']) {
+      assert.match(evaluar(contexto, `efectoEnNotas({ desde: '2027-01-04', vispera: null, ${marca} }, null, '2026-12-21')`),
+        /por adelantado el último día hábil anterior/, marca);
+    }
+  });
+
+  it('el formulario muestra lo de la licencia guardada mientras no cambian sus fechas', () => {
+    const panel = cargarPanel();
+    panel.alCargar();
+    const efecto = () => panel.elemento('licencia-efecto').textContent;
+    const cambiar = (id, valor) => {
+      const campo = panel.elemento(id);
+      campo.value = valor;
+      for (const oyente of campo.oyentes.input ?? []) oyente({ target: campo });
+      return efecto();
+    };
+    const sinAutorizado = { autorizado_id: null, autorizado_nombre: null };
+    // Sin anticipo: depende solo del inicio (la víspera cae dentro de otra licencia)
+    prepararLicencias(panel, { ...LICENCIA, ...sinAutorizado, desde: '2027-01-04', hasta: '2027-01-08', vispera: null, sin_anticipo: true });
+    panel.contexto.prepararAutorizado();
+    assert.match(efecto(), /^Empieza a continuación de otra licencia/);
+    assert.match(cambiar('l-hasta', '2027-01-15'), /^Empieza a continuación de otra licencia/);
+    assert.match(cambiar('l-desde', '2027-01-05'), /por adelantado el último día hábil anterior/);
+    assert.match(cambiar('l-desde', '2027-01-04'), /^Empieza a continuación de otra licencia/);
+    // Sin días hábiles: depende del inicio y del fin
+    prepararLicencias(panel, { ...LICENCIA, ...sinAutorizado, desde: '2026-12-07', hasta: '2026-12-08', vispera: null, sin_dias_habiles: true });
+    panel.contexto.prepararAutorizado();
+    assert.equal(efecto(), 'No tiene días hábiles: las notas no cambian.');
+    assert.match(cambiar('l-hasta', '2026-12-15'), /por adelantado el último día hábil anterior/);
+    assert.equal(cambiar('l-hasta', '2026-12-08'), 'No tiene días hábiles: las notas no cambian.');
+    assert.match(cambiar('l-desde', '2026-12-04'), /por adelantado el último día hábil anterior/);
+  });
+
   // spec 2026-10-26-mi-espacio-licencias-y-horas, 6: la licencia que creó Mi espacio lleva la insignia, al lado del nombre
   it('la insignia «Cargada desde Mi espacio», solo con desde_mi_espacio en true', () => {
     const panel = cargarPanel();

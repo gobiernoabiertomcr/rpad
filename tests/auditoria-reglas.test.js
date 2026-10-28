@@ -6,6 +6,8 @@ import {
   quienesAuditan, permisoParaAuditar, mensajeNoCorresponde, avisoSinResponsabilidad, MENSAJE_SITUACION_CAMBIADA, canalDelCambio, entraEnRecordatorio, seccionDeAuditoria,
   ANTIGUEDAD_MINIMA_RECORDATORIO, RECORDATORIOS_ANTES_DE_LA_NOTA, disponibilidad, agruparDiasSinAuditor
 } from '../services/auditoriaReglas.js';
+import { calendarioCon } from '../services/feriadosReglas.js';
+import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
 // El firmante titular (1), otro auditor (2) y dos editores (3 y 4), todos disponibles salvo que se diga otra cosa
 const persona = (id, rol, nombre) => ({ id, rol, nombre_completo: nombre, disponible: true });
@@ -240,5 +242,43 @@ describe('períodos sin auditor: días hábiles seguidos sin ningún auditor dis
 
   it('con un auditor disponible todos los días hábiles no hay períodos', () => {
     assert.deepEqual(agruparDiasSinAuditor([dia('2027-01-04', { auditor: true }), dia('2027-01-09'), dia('2027-01-11', { auditor: true })], '2027-01-11'), []);
+  });
+});
+
+describe('con el calendario de la tabla (spec 2026-10-27-feriados-en-notas, 3)', () => {
+  // La precarga de producción: el lunes 02/11/2026 y el lunes 09/11 son feriados de la tabla (el 08/11, domingo, también). Sin
+  // el calendario, las reglas cuentan solo los 9 fijos, como siempre
+  const CAL = calendarioCon(FILAS_PRECARGA);
+  const personas = [{ id: 1, rol: 'superadmin', disponible: true }, { id: 2, rol: 'admin', disponible: true }];
+  const cambio = { usuario_id: 1, primer_recordatorio_fecha: '2026-10-30' };
+
+  it('con el primer recordatorio el viernes 30/10, el 03/11 sigue por recordatorio y el 04/11 pasa a la nota', () => {
+    const canal = (hoy, calendario) => canalDelCambio({ cambio, hoy, personas, titulares: [1], hayQuienFirme: true, calendario });
+    // Con la tabla, el 02/11 no cuenta: el 03/11 es el segundo recordatorio y el 04/11, la nota
+    assert.equal(canal('2026-11-03', CAL), 'recordatorio');
+    assert.equal(canal('2026-11-04', CAL), 'nota');
+    // Con los 9 fijos, el 02/11 es el segundo recordatorio y el 03/11 ya es la nota
+    assert.equal(canal('2026-11-03'), 'nota');
+  });
+
+  it('la nota de auditoría se reitera a los 5 días hábiles, sin el 09/11', () => {
+    assert.equal(seccionDeAuditoria('2026-11-04', '2026-11-11', CAL), null);
+    assert.equal(seccionDeAuditoria('2026-11-04', '2026-11-12', CAL), 'reiterado');
+    assert.equal(seccionDeAuditoria('2026-11-04', '2026-11-11'), 'reiterado');
+  });
+
+  it('el 09/11 no corta el período y la vuelta es el 10/11', () => {
+    const dia = (fecha, conAuditor) => ({
+      fecha,
+      personas: [
+        { id: 1, rol: 'superadmin', nombre_completo: 'Persona Titular', disponible: false },
+        { id: 2, rol: 'admin', nombre_completo: 'Persona Auditora', disponible: conAuditor }
+      ]
+    });
+    const dias = [dia('2026-11-06', false), dia('2026-11-09', true), dia('2026-11-10', true)];
+    assert.deepEqual(agruparDiasSinAuditor(dias, '2026-11-06', CAL),
+      [{ desde: '2026-11-06', hasta: '2026-11-06', vuelve: '2026-11-10', respaldo: [] }]);
+    assert.deepEqual(agruparDiasSinAuditor(dias, '2026-11-06'),
+      [{ desde: '2026-11-06', hasta: '2026-11-06', vuelve: '2026-11-09', respaldo: [] }]);
   });
 });

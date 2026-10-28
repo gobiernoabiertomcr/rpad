@@ -2,14 +2,19 @@
  * Los feriados (spec 2026-10-26-feriados, secciones 1 a 4): las reglas de la tabla `feriados`, puras (sin pool ni Date
  * local: las fechas son texto 'AAAA-MM-DD' y se comparan como texto, y hoy llega por parámetro, `hoyArgentina()` en el
  * servidor). Ninguna función tira error: una entrada rara da null, false, 0, una lista vacía, un Set vacío o el error de su
- * campo.
+ * campo. La excepción son las derivadas del calendario que arma `calendarioCon`, que tiran como las de `CALENDARIO_FIJO`
+ * (calendarioCon mismo no tira).
  *
- * Dos partes:
- * - Contar días hábiles con los feriados (`feriadosDelRango`, `esDiaHabilCon`, `diasHabilesDe`, `diasHabilesEntre`,
- *   `proximoDiaHabilCon`, `restarDiasHabilesCon`, `ultimoDiaHabilDelMesCon`), para Mi espacio (la entrega 2). Envuelven a
- *   `esDiaHabil` (`services/notasDigitalesCalendario.js`) sin cambiarlo: los feriados solo sacan días hábiles, nunca los
- *   agregan, y con un Set vacío se cuenta exactamente lo mismo que con `esDiaHabil`. El resto del sistema sigue con
- *   `esDiaHabil` y los 9 fijos.
+ * Tres partes:
+ * - El calendario con la tabla (spec 2026-10-27-feriados-en-notas, 1): `calendarioCon(filas)` arma el mismo objeto que
+ *   `CALENDARIO_FIJO` (`services/notasDigitalesCalendario.js`), con las derivadas sobre un predicado que además saca los
+ *   feriados de la tabla. Lo leen las corridas de las 8:15 y de las 14:00 y lo que las anuncia (`leerCalendario`, en
+ *   `services/feriadosDatos.js`); si la tabla no se puede leer, caen a los 9 fijos y lo dicen con `MENSAJE_CORRIDA_SIN_FERIADOS`
+ *   y `MENSAJE_ESTADO_SIN_FERIADOS`. Métricas, el Ciclo de vida del dato y la Agenda de pedidos todavía cuentan con los 9 fijos.
+ * - Contar días hábiles con los feriados en Mi espacio (`feriadosDelRango`, `esDiaHabilCon`, `diasHabilesDe`,
+ *   `diasHabilesEntre`, `proximoDiaHabilCon`, `restarDiasHabilesCon`, `ultimoDiaHabilDelMesCon`). Envuelven a `esDiaHabil` sin
+ *   cambiarlo: los feriados solo sacan días hábiles, nunca los agregan, y con un Set vacío se cuenta exactamente lo mismo que
+ *   con `esDiaHabil`. Sin un día hábil dentro del tope, devuelven null (las derivadas del calendario, en cambio, tiran).
  * - Para la API de los feriados y la pestaña Feriados de Configuración: los tipos y sus nombres, los mensajes, la validación
  *   de un feriado (`validarFeriado`, y `errorDeLaCorreccion` en una corrección), de «no rige» (`validarRige`) y de la baja
  *   desde un año (`bajaDesde`), la lista de un año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`), los
@@ -22,7 +27,9 @@
  * no_rige }`, con las fechas como texto, el resto como números y `no_rige`, la lista de los años en que uno que se repite
  * no rige.
  */
-import { FERIADOS_FIJOS, esFechaIso, sumarDias, diasEntre, esDiaHabil } from './notasDigitalesCalendario.js';
+import {
+  FERIADOS_FIJOS, esFechaIso, sumarDias, diasEntre, esDiaHabil, derivadasDe, TOPE_DE_VUELTAS
+} from './notasDigitalesCalendario.js';
 
 export const TIPOS_FERIADO = Object.freeze(['nacional', 'provincial', 'municipal', 'no_laborable']);
 
@@ -216,11 +223,8 @@ export const diasHabilesDe = (desde, hasta, feriados) => {
 // Cuántos días hábiles hay de desde a hasta, los dos incluidos
 export const diasHabilesEntre = (desde, hasta, feriados) => diasHabilesDe(desde, hasta, feriados).length;
 
-// Lo más lejos que se busca un día hábil, en días: un año bisiesto entero
-const TOPE_DE_VUELTAS = 366;
-
 // La fecha, si es un día hábil con los feriados, o el primero que la sigue. null si no es una fecha o si en 366 días (la
-// fecha y los 365 que siguen) no hay ninguno, y nunca pasa del 31/12/9999
+// fecha y los 365 que siguen; TOPE_DE_VUELTAS, el del calendario) no hay ninguno, y nunca pasa del 31/12/9999
 export const proximoDiaHabilCon = (fecha, feriados) => {
   let dia = fecha;
   for (let vuelta = 0; vuelta < TOPE_DE_VUELTAS && esFechaIso(dia); vuelta++, dia = sumarDias(dia, 1)) {
@@ -252,6 +256,35 @@ export const ultimoDiaHabilDelMesCon = (mes, feriados) => {
     if (esFechaIso(fecha) && esDiaHabilCon(fecha, feriados)) return fecha;
   }
   return null;
+};
+
+// Lo que dicen la corrida y Correos → Estado cuando la tabla no se pudo leer y el calendario cayó a los 9 fijos (spec
+// 2026-10-27-feriados-en-notas, 2 y 6). Esa caída se detecta con `calendario.error !== null`, nunca por `origen`
+export const MENSAJE_CORRIDA_SIN_FERIADOS =
+  'No se pudieron leer los feriados de Configuración → Feriados: la corrida usó solo los 9 fijos.';
+export const MENSAJE_ESTADO_SIN_FERIADOS =
+  'No se pudieron leer los feriados de Configuración → Feriados: las fechas de esta pantalla cuentan solo los 9 feriados fijos.';
+
+/**
+ * El calendario con los feriados de la tabla (spec 2026-10-27-feriados-en-notas, 1): el mismo objeto que `CALENDARIO_FIJO`,
+ * `{ esDiaHabil, proximoDiaHabil, diaHabilAnterior, ultimoDiaHabilHasta, primerDiaHabilDelMes, rangoDeAviso,
+ * diasHabilesTranscurridos, sumarDiasHabiles, origen, error }`, congelado, con las derivadas sobre un predicado que es
+ * `esDiaHabil` y que la fecha no esté entre los feriados de su año (`feriadosDelRango` de ese año, armado la primera vez que se
+ * pide y guardado: los recorridos no tienen un rango de antemano). El predicado no llama a esFechaIso (es mucho más lento): con
+ * un texto que no es una fecha da lo mismo que esDiaHabil. Sin filas da lo mismo que CALENDARIO_FIJO.
+ * Las filas se copian al armarlo: sacar o agregar filas después no lo cambia. Una que no es una lista cuenta como ninguna.
+ * @param {object[]} filas las de `filasDeFeriados`
+ * @param {{ origen?: 'tabla' | 'fijos', error?: string | null }} [opciones] de dónde salió: leerCalendario, al caer a los 9 fijos
+ */
+export const calendarioCon = (filas, { origen = 'tabla', error = null } = {}) => {
+  const lista = Array.isArray(filas) ? [...filas] : [];
+  const porAnio = new Map();
+  const delAnio = (anio) => {
+    if (!porAnio.has(anio)) porAnio.set(anio, feriadosDelRango(lista, `${anio}-01-01`, `${anio}-12-31`));
+    return porAnio.get(anio);
+  };
+  const esHabil = (fecha) => esDiaHabil(fecha) && !delAnio(fecha.slice(0, 4)).has(fecha);
+  return Object.freeze({ ...derivadasDe(esHabil), origen, error });
 };
 
 const rechazo = (campo, mensaje) => ({ datos: null, error: { campo, mensaje } });

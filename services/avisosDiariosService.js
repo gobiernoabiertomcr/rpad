@@ -1,22 +1,26 @@
 // Avisos diarios por email que no son Notas Digitales: el aviso directo a las áreas (40 días antes), el recordatorio de
 // cambios pendientes a quienes pueden auditarlos y el aviso a quien propuso cambios que nadie puede auditar. Salen solo en
-// días hábiles y la fecha se recibe como parámetro, para poder probarlos con cualquier día.
+// días hábiles del calendario de la corrida (con los feriados de la tabla: spec 2026-10-27-feriados-en-notas, 3) y la fecha se
+// recibe como parámetro, para poder probarlos con cualquier día.
 // Spec: docs/superpowers/specs/2026-10-15-dias-habiles-licencias-auditoria-design.md (secciones 4 y 9.2)
 import pool from '../config/database.js';
 import { sendEmail, sendEmailToArea } from './emailService.js';
 import * as templates from './emailTemplates.js';
-import { ahoraArgentina, esDiaHabil, rangoDeAviso, sumarDias } from './notasDigitalesCalendario.js';
+import { ahoraArgentina, sumarDias } from './notasDigitalesCalendario.js';
 import { conPedido } from './notasDigitalesDatos.js';
 import { contextoDeCanal, cambiosConCanal, proximoDiaConQuienAudite } from './auditoriaService.js';
 import { quienesAuditan, entraEnRecordatorio } from './auditoriaReglas.js';
 import { emailValido } from './usuariosReglas.js';
+import { leerCalendario } from './feriadosDatos.js';
 
 export const DIAS_AVISO_AREAS = 40;
 
 /**
  * Datasets externos que avisa en esa fecha el aviso a las áreas, agrupados por área (solo áreas con email).
  * Un día hábil avisa los vencimientos de fecha + 40 y los de los días no hábiles que siguen (spec 4.2).
- * Fuera de un día hábil no hay nada que avisar.
+ * Fuera de un día hábil no hay nada que avisar. El día hábil y los que siguen salen del calendario (sin él, se lee): el de
+ * enviarAvisoAreas, que con el mismo objeto decide si hoy es hábil (spec 2026-10-27-feriados-en-notas, 3: si uno usara la tabla
+ * y el otro no, se perderían o se duplicarían vencimientos), o el de la vista previa y la prueba.
  * Un dataset que no requiere nota DGMIT (requiere_nota = 0) queda afuera: este email anticipa la nota formal, que a ese
  * dataset no le llega; el Sí (1) y el sin dato (NULL) siguen como hasta ahora (spec 2026-10-20-requiere-nota, 1.6). La vista
  * previa y la prueba del email en Correos usan esta misma función, así que quedan coherentes con el envío.
@@ -26,8 +30,9 @@ export const DIAS_AVISO_AREAS = 40;
  * "Datos que se solicitarán" (spec 2026-10-17-fechas-datasets, 9) y la frecuencia con "(Acumulado)" cuando corresponde; desde
  * el 18/10/2026 no lleva la fecha sugerida de envío (spec 18).
  */
-export const datasetsExternosPorArea = async (fecha) => {
-  const rango = rangoDeAviso(fecha, DIAS_AVISO_AREAS);
+export const datasetsExternosPorArea = async (fecha, calendario) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const rango = conElCalendario.rangoDeAviso(fecha, DIAS_AVISO_AREAS);
   if (!rango) return [];
   const [rows] = await pool.execute(
     `SELECT d.id, d.titulo, d.url_dataset, d.area_id,
@@ -97,14 +102,16 @@ const logNotificacion = async (tipo, areaId, destinatarios, datasetsIds, success
 };
 
 /**
- * Aviso directo a las áreas de gestión externa (spec 4.2). Devuelve qué se envió:
+ * Aviso directo a las áreas de gestión externa (spec 4.2), con el calendario de la corrida de las 8:15 (sin él, se lee): el
+ * mismo objeto dice si hoy es hábil y qué vencimientos avisa. Devuelve qué se envió:
  * { dia_habil, enviados: [{ tipo, area, cantidad }], errores: [{ tipo, area, error }], sin_datasets }
  */
-export const enviarAvisoAreas = async ({ hoy }) => {
-  const resultado = { dia_habil: esDiaHabil(hoy), enviados: [], errores: [], sin_datasets: true };
+export const enviarAvisoAreas = async ({ hoy, calendario = null }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  const resultado = { dia_habil: conElCalendario.esDiaHabil(hoy), enviados: [], errores: [], sin_datasets: true };
   if (!resultado.dia_habil) return resultado;
 
-  const areas = await datasetsExternosPorArea(hoy);
+  const areas = await datasetsExternosPorArea(hoy, conElCalendario);
   resultado.sin_datasets = areas.length === 0;
   for (const areaData of areas) {
     const { subject, html } = templates.areaAviso40dias(areaData);
@@ -172,7 +179,10 @@ export const tiempoPendiente = (segundos) => {
 };
 
 /**
- * Recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.2), solo en días hábiles.
+ * Recordatorio de cambios pendientes (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.2), solo en días hábiles del
+ * calendario (spec 2026-10-27-feriados-en-notas, 3: el de la corrida, con los feriados de la tabla; sin él, se lee). El mismo
+ * calendario cuenta el canal de cada cambio (contextoDeCanal), como la nota de auditoría de las 8:15, y el «hasta» del aviso
+ * a quien propone.
  * Incluye los cambios del canal recordatorio (9.1) propuestos hace una hora o más. Cada persona que puede auditarlos
  * (8.2) y está disponible recibe un email con los suyos; si los recibe de respaldo (no hay auditores disponibles), el
  * email lo dice. Quien está de licencia no lo recibe (5.3). La primera vez que un cambio va en un email enviado se
@@ -182,14 +192,15 @@ export const tiempoPendiente = (segundos) => {
  * { fecha, dia_habil, enviados: [{ admin, email, cantidadPendientes, respaldo }], sinPendientes: [username],
  *   deLicencia: [username], canal_nota, sin_auditor: [{ usuario, cambios, hasta }], errores: [{ admin, error }] }
  */
-export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina() }) => {
+export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina(), calendario = null }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
   const resultados = {
-    fecha: new Date().toISOString(), dia_habil: esDiaHabil(hoy), enviados: [], sinPendientes: [], deLicencia: [],
-    canal_nota: 0, sin_auditor: [], errores: []
+    fecha: new Date().toISOString(), dia_habil: conElCalendario.esDiaHabil(hoy), enviados: [], sinPendientes: [],
+    deLicencia: [], canal_nota: 0, sin_auditor: [], errores: []
   };
   if (!resultados.dia_habil) return resultados;
 
-  const contexto = await contextoDeCanal(hoy);
+  const contexto = await contextoDeCanal(hoy, null, conElCalendario);
   const cambios = await cambiosConCanal(hoy, contexto);
   resultados.canal_nota = cambios.filter(c => c.canal === 'nota').length;
   // Los cambios de cada persona que los audita hoy (spec 8.2): un auditor los recibe como tal; un editor, de respaldo
@@ -239,7 +250,7 @@ export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina() })
       resultados.errores.push({ admin: persona.username, error: `No se pudo guardar la fecha del primer recordatorio: ${error.message}` });
     }
   }
-  await avisarSinAuditor({ hoy, ahora, contexto, cambios, resultados });
+  await avisarSinAuditor({ hoy, ahora, contexto, cambios, resultados, calendario: conElCalendario });
   return resultados;
 };
 
@@ -247,11 +258,11 @@ export const enviarCambiosPendientes = async ({ hoy, ahora = ahoraArgentina() })
  * Aviso a quien propone cuando nadie puede auditar sus cambios: los del recordatorio de hoy que no tienen a nadie que los
  * audite (quienesAuditan vacío: ni auditores ni editores de respaldo disponibles) y que nunca tuvieron este aviso. Un email
  * por persona con todos sus cambios en esa situación, solo si está disponible: de licencia no se manda (le llega a su
- * vuelta, si sigue sin auditor); inactiva o sin rol de auditoría o edición, tampoco. hasta: el primer día hábil desde
- * mañana en que alguien puede auditarlos. Si el email salió, se guarda aviso_sin_auditores_at = ahora, para no repetirlo.
- * Suma a resultados.sin_auditor [{ usuario, cambios, hasta }] y los errores a resultados.errores.
+ * vuelta, si sigue sin auditor); inactiva o sin rol de auditoría o edición, tampoco. hasta: el primer día hábil del
+ * calendario desde mañana en que alguien puede auditarlos. Si el email salió, se guarda aviso_sin_auditores_at = ahora, para
+ * no repetirlo. Suma a resultados.sin_auditor [{ usuario, cambios, hasta }] y los errores a resultados.errores.
  */
-const avisarSinAuditor = async ({ hoy, ahora, contexto, cambios, resultados }) => {
+const avisarSinAuditor = async ({ hoy, ahora, contexto, cambios, resultados, calendario }) => {
   const porProponente = new Map();
   for (const cambio of cambios.filter(c => entraEnRecordatorio(c))) {
     if (cambio.aviso_sin_auditores_at) continue;
@@ -270,7 +281,7 @@ const avisarSinAuditor = async ({ hoy, ahora, contexto, cambios, resultados }) =
     // Los recordatorios ya salieron: si algo falla con el aviso de esta persona, se anota el error y siguen las demás.
     // Sin la fecha guardada, el aviso se reintenta el próximo día hábil
     try {
-      await enviarAvisoSinAuditor({ persona, suyos, hoy, ahora, resultados });
+      await enviarAvisoSinAuditor({ persona, suyos, hoy, ahora, resultados, calendario });
     } catch (error) {
       console.error(`Error enviando el aviso sin auditor (${persona.username}):`, error);
       resultados.errores.push({ admin: persona.username, error: `No se pudo enviar el aviso sin auditor: ${error.message}` });
@@ -278,9 +289,10 @@ const avisarSinAuditor = async ({ hoy, ahora, contexto, cambios, resultados }) =
   }
 };
 
-// El aviso de una persona (avisarSinAuditor): calcula hasta cuándo, envía el email y guarda la fecha
-const enviarAvisoSinAuditor = async ({ persona, suyos, hoy, ahora, resultados }) => {
-  const hasta = await proximoDiaConQuienAudite(persona.id, sumarDias(hoy, 1));
+// El aviso de una persona (avisarSinAuditor): calcula hasta cuándo (con el calendario de la corrida), envía el email y guarda
+// la fecha
+const enviarAvisoSinAuditor = async ({ persona, suyos, hoy, ahora, resultados, calendario }) => {
+  const hasta = await proximoDiaConQuienAudite(persona.id, sumarDias(hoy, 1), calendario);
   const { subject, html } = templates.sinAuditorTemplate(suyos, { hasta });
   const envio = await sendEmail({ subject, html, to: [persona.email] });
   if (!envio.success) {

@@ -446,14 +446,18 @@ function ocultarVistaPrevia() {
 }
 
 // Lo que dice arriba de la vista previa. Con `motivo`, hoy no se generan notas y lo que se muestra es la nota de la próxima
-// corrida con notas (spec 2026-10-15, 7.7): lo avisa en su propia línea y la segunda línea habla de ese día, no de hoy
-function textoDeVistaPrevia({ ejemplo, tipo, cantidad, asunto, fecha: f, motivo }) {
+// corrida con notas (spec 2026-10-15, 7.7); sin él y con `otro_dia` (el true literal), hoy hay notas pero esta sale otro día, por
+// ejemplo la reiteración del mes que ya salió (spec 2026-10-27-feriados-en-notas, 6). En los dos casos lo avisa en su propia línea y
+// la segunda línea habla de ese día, no de hoy
+function textoDeVistaPrevia({ ejemplo, tipo, cantidad, asunto, fecha: f, motivo, otro_dia: otroDia }) {
   const unidad = tipo === 'auditoria' ? 'cambio(s)' : 'dataset(s)';
+  const primera = motivo
+    ? `Hoy no se generan notas (${motivo}): así saldría el ${fecha(f)}.`
+    : otroDia === true ? `Esta nota no sale hoy: así saldría el ${fecha(f)}.` : null;
   const texto = ejemplo
-    ? `${motivo ? 'Ese día no saldría' : 'Hoy no saldría'} ninguna nota de este tipo: se muestran datos de ejemplo.`
-    : `Con los datos de hoy${motivo ? ', ese día' : ''} esta nota incluiría ${cantidad} ${unidad}. Asunto: ${asunto}`;
-  return motivo ? `Hoy no se generan notas (${motivo}): así saldría el ${fecha(f)}.
-${texto}` : texto;
+    ? `${primera ? 'Ese día no saldría' : 'Hoy no saldría'} ninguna nota de este tipo: se muestran datos de ejemplo.`
+    : `Con los datos de hoy${primera ? ', ese día' : ''} esta nota incluiría ${cantidad} ${unidad}. Asunto: ${asunto}`;
+  return primera ? `${primera}\n${texto}` : texto;
 }
 
 function verVistaPrevia() {
@@ -601,11 +605,17 @@ async function elegirFirmante(evento) {
   await cargarConfiguracion();
 }
 
-// Licencia del firmante para el Estado (spec 7.5)
+// Licencia del firmante para el Estado (spec 7.5). Una futura que empieza a continuación de otra (sin_anticipo: su víspera cae
+// en la otra) no adelanta los avisos (spec 2026-10-27-feriados-en-notas, 6)
 function textoLicenciaFirmante(l) {
   if (!l) return '';
   const periodo = `del ${fecha(l.desde)} al ${fecha(l.hasta)}`;
   if (l.sin_dias_habiles) return `Licencia del firmante ${periodo}: no tiene días hábiles, las notas no cambian.`;
+  if (!l.en_curso && l.sin_anticipo === true) {
+    return l.autorizado
+      ? `Licencia del firmante ${periodo}: empieza a continuación de otra licencia, así que los avisos no se adelantan. ${l.autorizado} presenta las notas por autorización, con las dos firmas, desde el primer día.`
+      : `Licencia del firmante ${periodo}, sin autorizado: empieza a continuación de otra licencia, así que los avisos no se adelantan, y las reiteraciones se postergan al ${fecha(l.vuelta)}.`;
+  }
   if (l.autorizado) {
     const nota = l.nota_autorizacion ? ` (autorización comunicada en la Nota Digital N° ${l.nota_autorizacion.numero}/${String(l.nota_autorizacion.anio).slice(-2)})` : '';
     // Si la persona autorizada falta el día que se mira (cualquier día de la licencia, también hasta el final), hasta

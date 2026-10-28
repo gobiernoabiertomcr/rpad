@@ -1,8 +1,9 @@
 // Quién audita cada cambio pendiente y por qué canal se le pide (spec 2026-10-15-dias-habiles-licencias-auditoria, 8.2,
 // 9.1 y 9.3): funciones puras, sin base de datos. Las personas, con su disponibilidad del día (activa, con contraseña y
-// sin licencia), las lee auditoriaService.personasDeAuditoria.
+// sin licencia), las lee auditoriaService.personasDeAuditoria. Los días hábiles, con el calendario que reciben (spec
+// 2026-10-27-feriados-en-notas, 1: el de la corrida, con los feriados de la tabla); sin él, el de los 9 fijos.
 import { esAuditor } from './usuariosReglas.js';
-import { diasHabilesTranscurridos, esDiaHabil } from './notasDigitalesCalendario.js';
+import { CALENDARIO_FIJO } from './notasDigitalesCalendario.js';
 
 // El recordatorio incluye los cambios propuestos hace una hora o más (spec 9.2), en segundos
 export const ANTIGUEDAD_MINIMA_RECORDATORIO = 3600;
@@ -31,18 +32,18 @@ export const disponibilidad = (usuario, licencias, fecha) => {
 const sinAuditorDisponible = (personas) => !personas.some(p => p.disponible && esAuditor(p.rol));
 
 /**
- * Períodos sin auditor: los días hábiles sin auditor seguidos. Solo cuentan los días hábiles: un fin de semana o un feriado
- * en el medio no cortan el período (ni lo alargan). dias: en orden, [{ fecha, personas }], cada persona con rol,
+ * Períodos sin auditor: los días hábiles sin auditor seguidos. Solo cuentan los días hábiles del calendario: un fin de semana
+ * o un feriado en el medio no cortan el período (ni lo alargan). dias: en orden, [{ fecha, personas }], cada persona con rol,
  * nombre_completo y disponible de ese día. Forman períodos los días hasta `hasta` inclusive; los que siguen solo sirven
  * para encontrar vuelve: el primer día hábil después del período con algún auditor disponible (null si no está en dias).
  * respaldo: los editores disponibles en al menos un día del período, del nombre a la Z, sin repetir.
  * [{ desde, hasta, vuelve, respaldo: [nombre_completo] }]
  */
-export const agruparDiasSinAuditor = (dias, hasta) => {
+export const agruparDiasSinAuditor = (dias, hasta, calendario = CALENDARIO_FIJO) => {
   const periodos = [];
   let abierto = null;
   for (const { fecha, personas } of dias) {
-    if (!esDiaHabil(fecha)) continue;
+    if (!calendario.esDiaHabil(fecha)) continue;
     const sinAuditor = sinAuditorDisponible(personas);
     if (!sinAuditor && abierto) {
       abierto.vuelve = fecha;
@@ -113,20 +114,22 @@ export const RECORDATORIOS_ANTES_DE_LA_NOTA = 2;
 
 /**
  * Canal de un cambio pendiente en la corrida de un día hábil (spec 9.1). 'nota' si se cumplen las cuatro condiciones:
- * 1. ya tuvo sus recordatorios: el primero fue hace RECORDATORIOS_ANTES_DE_LA_NOTA días hábiles o más
+ * 1. ya tuvo sus recordatorios: el primero fue hace RECORDATORIOS_ANTES_DE_LA_NOTA días hábiles del calendario o más
  *    (diasHabilesTranscurridos(primer_recordatorio_fecha, hoy) >= 2: recordatorio el día 1 y el día 2, nota el día 3);
  * 2. ninguno de los titulares puede auditarlo hoy (lo propuso o no está disponible);
  * 3. hay auditores disponibles para el cambio (no es de respaldo);
  * 4. la nota de auditoría puede salir (hayQuienFirme): envío automático activo, configuración completa, Para de auditoría
  *    y quién firme. Con el envío apagado o la configuración incompleta no hay nota posible, y el cambio sigue con
  *    recordatorios en lugar de quedar sin canal.
- * 'recordatorio' en cualquier otro caso. La misma función decide para el recordatorio de las 14:00 y la nota de las 8:15.
+ * 'recordatorio' en cualquier otro caso. La misma función decide para el recordatorio de las 14:00 y la nota de las 8:15, con
+ * el mismo calendario (spec 2026-10-27-feriados-en-notas: si contaran distinto, un cambio podría quedarse un día sin
+ * recordatorio y sin nota).
  * cambio: { usuario_id, primer_recordatorio_fecha ('AAAA-MM-DD' en hora de Argentina, o null) }
- * personas, titulares (ids) y hayQuienFirme: los de auditoriaService.contextoDeCanal
+ * personas, titulares (ids), hayQuienFirme y calendario: los de auditoriaService.contextoDeCanal
  */
-export const canalDelCambio = ({ cambio, hoy, personas, titulares, hayQuienFirme }) => {
+export const canalDelCambio = ({ cambio, hoy, personas, titulares, hayQuienFirme, calendario = CALENDARIO_FIJO }) => {
   const yaTuvoRecordatorio = Boolean(cambio.primer_recordatorio_fecha)
-    && diasHabilesTranscurridos(cambio.primer_recordatorio_fecha, hoy) >= RECORDATORIOS_ANTES_DE_LA_NOTA;
+    && calendario.diasHabilesTranscurridos(cambio.primer_recordatorio_fecha, hoy) >= RECORDATORIOS_ANTES_DE_LA_NOTA;
   const disponibles = new Set(personas.filter(p => p.disponible).map(p => p.id));
   const algunTitularPuede = titulares.some(id => id !== cambio.usuario_id && disponibles.has(id));
   const hayAuditores = !quienesAuditan(personas, cambio.usuario_id).respaldo;
@@ -140,9 +143,10 @@ export const entraEnRecordatorio = (cambio) =>
 
 /**
  * Sección de la nota de auditoría de hoy para un cambio del canal nota (spec 9.3): 'nuevo' si nunca estuvo en una nota de
- * auditoría (ultima: null), 'reiterado' si la última que lo incluyó es de hace 5 días hábiles o más; si no, null.
+ * auditoría (ultima: null), 'reiterado' si la última que lo incluyó es de hace 5 días hábiles del calendario o más; si no,
+ * null.
  */
-export const seccionDeAuditoria = (ultima, hoy) => {
+export const seccionDeAuditoria = (ultima, hoy, calendario = CALENDARIO_FIJO) => {
   if (!ultima) return 'nuevo';
-  return diasHabilesTranscurridos(ultima, hoy) >= DIAS_HABILES_PARA_REITERAR_AUDITORIA ? 'reiterado' : null;
+  return calendario.diasHabilesTranscurridos(ultima, hoy) >= DIAS_HABILES_PARA_REITERAR_AUDITORIA ? 'reiterado' : null;
 };

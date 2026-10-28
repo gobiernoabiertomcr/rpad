@@ -3,8 +3,11 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ROLES_CON_LICENCIA, MAXIMO_DIAS_LICENCIA, puedeTenerLicencia, estadoDeLicencia, validarFechasNuevas, validarEdicion,
-  puedeAnularse, diasHabilesLibres, unirAusencias, diaDelAvisoEnSuFecha
+  puedeAnularse, diasHabilesLibres, unirAusencias, diaDelAvisoEnSuFecha, visperaDeLaLicencia
 } from '../services/licenciasReglas.js';
+import { CALENDARIO_FIJO, derivadasDe } from '../services/notasDigitalesCalendario.js';
+import { calendarioCon } from '../services/feriadosReglas.js';
+import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
 const HOY = '2026-11-10';
 const licencia = (desde, hasta, anulada = 0) => ({ desde, hasta, anulada });
@@ -146,6 +149,100 @@ describe('diaDelAvisoEnSuFecha (spec 7.6)', () => {
     assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde: '2026-12-09', licencia: lic }), null);
     assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde: null, licencia: lic }), null);
     assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde: '2026-02-30', licencia: lic }), null);
+  });
+});
+
+describe('con el calendario de la tabla (spec 2026-10-27-feriados-en-notas, 3)', () => {
+  // La precarga de producción: el lunes 02/11/2026, el lunes 09/11 y el lunes 07/12 son feriados de la tabla (el 08/11, domingo,
+  // también); el martes 08/12 es feriado fijo. Sin el calendario, las reglas cuentan solo los 9 fijos, como siempre
+  const CAL = calendarioCon(FILAS_PRECARGA);
+  const tramo = (desde, hasta) => ({ desde, hasta });
+  const SIN_VISPERA = { vispera: null, sin_anticipo: false, sin_dias_habiles: false };
+
+  it('la víspera de una licencia desde el 09/12/2026 es el viernes 04/12', () => {
+    const lic = { desde: '2026-12-09', hasta: '2027-01-08' };
+    assert.deepEqual(visperaDeLaLicencia(lic, [], CAL), { vispera: '2026-12-04', sin_anticipo: false, sin_dias_habiles: false });
+    assert.deepEqual(visperaDeLaLicencia(lic, []), { vispera: '2026-12-07', sin_anticipo: false, sin_dias_habiles: false });
+  });
+
+  it('a continuación de otra licencia: sin víspera', () => {
+    // El 04/01/2027 es lunes: el día hábil anterior es el jueves 31/12/2026 (el 01/01 es feriado fijo)
+    const lic = { desde: '2027-01-04', hasta: '2027-01-08' };
+    const otra = { desde: '2026-12-09', hasta: '2026-12-31' };
+    assert.deepEqual(visperaDeLaLicencia(lic, [otra], CAL), { vispera: null, sin_anticipo: true, sin_dias_habiles: false });
+    // anulada como la trae la base (1 o 0) o como texto o booleano: la anulada no cuenta, la que no lo está sí
+    for (const anulada of [1, true, '1']) {
+      assert.deepEqual(visperaDeLaLicencia(lic, [{ ...otra, anulada }], CAL),
+        { vispera: '2026-12-31', sin_anticipo: false, sin_dias_habiles: false }, `anulada: ${JSON.stringify(anulada)}`);
+    }
+    for (const anulada of [0, false, '0', null]) {
+      assert.deepEqual(visperaDeLaLicencia(lic, [{ ...otra, anulada }], CAL),
+        { vispera: null, sin_anticipo: true, sin_dias_habiles: false }, `anulada: ${JSON.stringify(anulada)}`);
+    }
+    // Una que termina antes de la víspera no la incluye
+    assert.deepEqual(visperaDeLaLicencia(lic, [{ desde: '2026-12-09', hasta: '2026-12-30' }], CAL),
+      { vispera: '2026-12-31', sin_anticipo: false, sin_dias_habiles: false });
+  });
+
+  it('sin días hábiles: sin víspera', () => {
+    // Del sábado 07/11 al lunes 09/11/2026: con la tabla, el 08 y el 09 son feriados
+    const lic = { desde: '2026-11-07', hasta: '2026-11-09' };
+    assert.deepEqual(visperaDeLaLicencia(lic, [], CAL), { vispera: null, sin_anticipo: false, sin_dias_habiles: true });
+    assert.deepEqual(visperaDeLaLicencia(lic, []), { vispera: '2026-11-06', sin_anticipo: false, sin_dias_habiles: false });
+    // Sin días hábiles manda, aunque otra licencia incluya el día hábil anterior
+    assert.deepEqual(visperaDeLaLicencia(lic, [{ desde: '2026-11-02', hasta: '2026-11-06' }], CAL),
+      { vispera: null, sin_anticipo: false, sin_dias_habiles: true });
+  });
+
+  it('diasHabilesLibres con el 02/11', () => {
+    const licencias = [tramo('2026-11-03', '2026-11-03')];
+    assert.deepEqual(diasHabilesLibres('2026-11-02', '2026-11-03', licencias, CAL), { primerDia: null, cubiertos: true });
+    assert.deepEqual(diasHabilesLibres('2026-11-02', '2026-11-03', licencias), { primerDia: '2026-11-02', cubiertos: false });
+  });
+
+  it('unirAusencias con el 02/11', () => {
+    // Del lunes 26/10 al viernes 30/10 y del martes 03/11 al viernes 06/11: con la tabla no hay ningún día hábil entre las dos
+    const ausencias = [tramo('2026-10-26', '2026-10-30'), tramo('2026-11-03', '2026-11-06')];
+    assert.deepEqual(unirAusencias(ausencias, CAL), [tramo('2026-10-26', '2026-11-06')]);
+    assert.deepEqual(unirAusencias(ausencias), [tramo('2026-10-26', '2026-10-30'), tramo('2026-11-03', '2026-11-06')]);
+  });
+
+  it('el aviso en su fecha que cae en un feriado de la tabla va al hábil anterior, dentro de la licencia', () => {
+    const cuentaDesde = '2026-12-07';
+    const delTres = tramo('2026-12-03', '2026-12-18');
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde, licencia: delTres, calendario: CAL }), '2026-12-04');
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde, licencia: delTres }), '2026-12-07');
+    // No baja del primer día de la licencia
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde, licencia: tramo('2026-12-07', '2026-12-18'), calendario: CAL }), null);
+    // Si la persona autorizada falta el hábil anterior, el que sigue hacia atrás
+    const delUno = tramo('2026-12-01', '2026-12-18');
+    const ausencias = [tramo('2026-12-04', '2026-12-04')];
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde, licencia: delUno, ausencias, calendario: CAL }), '2026-12-03');
+    assert.equal(diaDelAvisoEnSuFecha({ cuentaDesde, licencia: delUno, ausencias }), '2026-12-07');
+  });
+
+  it('nada tira', () => {
+    const lic = { desde: '2026-12-09', hasta: '2027-01-08' };
+    const raras = [
+      null, undefined, {}, 'x', { desde: '2026-12-09' }, { desde: '2026-02-30', hasta: '2026-03-10' },
+      { desde: 20261209, hasta: 20270108 }, { desde: '2027-01-08', hasta: '2026-12-09' }
+    ];
+    for (const rara of raras) {
+      assert.deepEqual(visperaDeLaLicencia(rara, [], CAL), SIN_VISPERA, JSON.stringify(rara));
+      assert.deepEqual(visperaDeLaLicencia(rara), SIN_VISPERA, JSON.stringify(rara));
+    }
+    // otras que no es una lista vale []; lo que no es una licencia dentro de ella no incluye ningún día
+    for (const otras of [undefined, null, 'x', [null, 'x', { desde: 5, hasta: 9 }]]) {
+      assert.deepEqual(visperaDeLaLicencia(lic, otras, CAL), { vispera: '2026-12-04', sin_anticipo: false, sin_dias_habiles: false },
+        JSON.stringify(otras));
+    }
+    // Un calendario sin ningún día hábil: sus búsquedas tiran el RangeError del tope
+    const sinHabiles = { ...CALENDARIO_FIJO, ...derivadasDe(() => false) };
+    assert.throws(() => sinHabiles.diaHabilAnterior(lic.desde), RangeError);
+    assert.deepEqual(visperaDeLaLicencia(lic, [], sinHabiles), SIN_VISPERA);
+    // Un calendario null o mal armado es un error de programación (un olvido tira): no se vuelve «no se sabe»
+    assert.throws(() => visperaDeLaLicencia(lic, [], null), TypeError);
+    assert.throws(() => visperaDeLaLicencia(lic, [], {}), TypeError);
   });
 });
 

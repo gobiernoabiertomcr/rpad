@@ -7,11 +7,14 @@
 // - 'fechas' (fechas inválidas en un alta), 'edicion' (las que no admite la edición, con el status de validarEdicion),
 //   'no_encontrada', 'solo_titular' y 'no_se_anula';
 // - los de rechazoDeLaBase: 'rol', 'superpuesta', 'no_es_titular', 'no_autorizable' y 'autorizado_sin_dias'.
+// Los días hábiles, con el calendario (spec 2026-10-27-feriados-en-notas, 1 y 4): quien lo tiene lo pasa (la clave calendario);
+// si no, se lee con leerCalendario, que si la tabla de feriados no se puede leer sigue con los 9 fijos.
 import pool from '../config/database.js';
 import { registrarAuditoria } from './usuariosAuditoriaService.js';
-import { ahoraArgentina, formatoCorto, sumarDias, proximoDiaHabil } from './notasDigitalesCalendario.js';
+import { ahoraArgentina, formatoCorto, sumarDias } from './notasDigitalesCalendario.js';
 import { puedeTenerLicencia, validarFechasNuevas, validarEdicion, puedeAnularse, unirAusencias } from './licenciasReglas.js';
 import { disponibilidadDelAutorizado } from './notasDigitalesFirmas.js';
+import { leerCalendario } from './feriadosDatos.js';
 
 export const MENSAJE_SOLO_TITULAR = 'La autorización para presentar las notas la da solo el firmante titular.';
 const MENSAJE_NO_ENCONTRADA = 'Licencia no encontrada';
@@ -59,9 +62,11 @@ export const autorizables = async (conexion, titular) => {
 
 // Las licencias en curso y futuras (no anuladas) de cada persona autorizable, para que el formulario advierta una
 // superposición con la licencia del titular. ausencias: esas licencias unidas como en el Estado (seguidas o separadas solo
-// por días no hábiles, licenciasReglas.unirAusencias), con vuelve, el primer día hábil después de cada una
-export const conSusLicencias = async (personas, hoy) => {
+// por días no hábiles, licenciasReglas.unirAusencias), con vuelve, el primer día hábil después de cada una. Los días hábiles,
+// con el calendario de quien llama; sin él, se lee (lo usan Configuración y GET /mi-espacio/firmante)
+export const conSusLicencias = async (personas, hoy, calendario) => {
   if (!personas.length) return personas;
+  const conElCalendario = calendario ?? await leerCalendario();
   const [filas] = await pool.query(
     `SELECT usuario_id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta
      FROM usuarios_licencias WHERE anulada = 0 AND hasta >= ? AND usuario_id IN (?) ORDER BY desde`,
@@ -69,7 +74,8 @@ export const conSusLicencias = async (personas, hoy) => {
   );
   return personas.map((p) => {
     const licencias = filas.filter(f => f.usuario_id === p.id).map(({ desde, hasta }) => ({ desde, hasta }));
-    const ausencias = unirAusencias(licencias).map(a => ({ ...a, vuelve: proximoDiaHabil(sumarDias(a.hasta, 1)) }));
+    const ausencias = unirAusencias(licencias, conElCalendario)
+      .map(a => ({ ...a, vuelve: conElCalendario.proximoDiaHabil(sumarDias(a.hasta, 1)) }));
     return { ...p, licencias, ausencias };
   });
 };
@@ -83,9 +89,14 @@ export const conSusLicencias = async (personas, hoy) => {
  * La licencia propia de la persona autorizada no se controla (decisión del usuario, 27/10/2026): se guarda aunque no le
  * quede ningún día hábil de la del titular, y esos días son «sin autorizado» (firmaParaFecha mira cada día: no se presenta
  * ninguna nota y lo pendiente sale a la vuelta).
+ * calendario: el de quien llama. Sin él, y solo cuando controla a la persona autorizada, se lee con la conexión de la transacción
+ * (después de bloquearUsuarios: es una lectura común, sin bloqueos; si la tabla no se puede leer, los 9 fijos y la transacción
+ * sigue).
  * Devuelve el Rechazo si no se puede, o null.
  */
-export const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, desde, hasta, autorizadoId, autorizadoNuevo }) => {
+export const rechazoDeLaBase = async (
+  conexion, { licenciaId = 0, usuarioId, desde, hasta, autorizadoId, autorizadoNuevo, calendario }
+) => {
   const [[usuario]] = await conexion.query('SELECT rol, activo FROM usuarios WHERE id = ?', [usuarioId]);
   if (!usuario || !usuario.activo || !puedeTenerLicencia(usuario.rol)) {
     return rechazar('rol', 400, 'Solo pueden tener licencia el superadmin, los admins y los editores activos.', 'usuario_id');
@@ -102,7 +113,10 @@ export const rechazoDeLaBase = async (conexion, { licenciaId = 0, usuarioId, des
     if (!(await autorizables(conexion, titular)).some(a => a.id === autorizadoId)) {
       return rechazar('no_autorizable', 400, 'Solo se puede autorizar a un admin o editor activo, con su firma cargada en Mi Perfil.', 'autorizado_id');
     }
-    const disponible = await disponibilidadDelAutorizado({ desde, hasta, autorizado_id: autorizadoId }, { conexion });
+    const conElCalendario = calendario ?? await leerCalendario(conexion);
+    const disponible = await disponibilidadDelAutorizado(
+      { desde, hasta, autorizado_id: autorizadoId }, { conexion, calendario: conElCalendario }
+    );
     if (!disponible) {
       return rechazar('autorizado_sin_dias', 409, 'La persona autorizada está de licencia todos los días hábiles de tu licencia: no podría presentar ninguna nota.', 'autorizado_id');
     }
@@ -117,12 +131,15 @@ export const bloquearUsuarios = (conexion) => conexion.query('SELECT id FROM usu
 /**
  * El alta: las fechas, las reglas de la base, la licencia y su historial (licencia_cargada). autorizadoId: la persona
  * autorizada (solo en la licencia del titular, cargada por él: Configuración lo controla antes). La licencia la carga el actor.
+ * calendario: el de quien llama, para rechazoDeLaBase (sin él, lo lee rechazoDeLaBase si lo necesita).
  * Devuelve { licencia, auditoriaId } o { rechazo }.
  */
-export const cargarLicencia = async (conexion, { usuarioId, desde, hasta, autorizadoId = null, actorId, hoy }) => {
+export const cargarLicencia = async (conexion, { usuarioId, desde, hasta, autorizadoId = null, actorId, hoy, calendario }) => {
   const errorFechas = validarFechasNuevas({ desde, hasta }, hoy);
   if (errorFechas) return { rechazo: rechazar('fechas', 400, errorFechas, 'fechas') };
-  const rechazo = await rechazoDeLaBase(conexion, { usuarioId, desde, hasta, autorizadoId, autorizadoNuevo: Boolean(autorizadoId) });
+  const rechazo = await rechazoDeLaBase(conexion, {
+    usuarioId, desde, hasta, autorizadoId, autorizadoNuevo: Boolean(autorizadoId), calendario
+  });
   if (rechazo) return { rechazo };
   const [resultado] = await conexion.query(
     'INSERT INTO usuarios_licencias (usuario_id, desde, hasta, autorizado_id, autorizado_at, creado_por) VALUES (?, ?, ?, ?, ?, ?)',
@@ -139,9 +156,10 @@ export const cargarLicencia = async (conexion, { usuarioId, desde, hasta, autori
 /**
  * La edición: fechas según el estado (spec 5.2) y, solo el titular, la persona autorizada (6.3). autorizadoPedido: undefined si
  * no se dice nada de ella, null para "nadie" o un id. Si no cambia nada (las mismas fechas y la misma persona autorizada), no
- * escribe: así no se pierde la nota de autorización. Devuelve { antes, despues, auditoriaId, sinCambios } o { rechazo }.
+ * escribe: así no se pierde la nota de autorización. calendario: el de quien llama, para rechazoDeLaBase (sin él, lo lee
+ * rechazoDeLaBase si lo necesita). Devuelve { antes, despues, auditoriaId, sinCambios } o { rechazo }.
  */
-export const cambiarLicencia = async (conexion, { licenciaId, desde, hasta, autorizadoPedido, actorId, hoy }) => {
+export const cambiarLicencia = async (conexion, { licenciaId, desde, hasta, autorizadoPedido, actorId, hoy, calendario }) => {
   const antes = await buscarLicenciaOficial(conexion, licenciaId);
   if (!antes) return { rechazo: rechazar('no_encontrada', 404, MENSAJE_NO_ENCONTRADA) };
   const { error, codigo, datos } = validarEdicion(antes, { desde, hasta }, hoy);
@@ -150,7 +168,7 @@ export const cambiarLicencia = async (conexion, { licenciaId, desde, hasta, auto
   if (autorizadoCambia && actorId !== antes.usuario_id) return { rechazo: rechazar('solo_titular', 403, MENSAJE_SOLO_TITULAR, 'autorizado_id') };
   const autorizadoId = autorizadoCambia ? autorizadoPedido : antes.autorizado_id;
   const rechazo = await rechazoDeLaBase(conexion, {
-    licenciaId, usuarioId: antes.usuario_id, ...datos, autorizadoId, autorizadoNuevo: autorizadoCambia
+    licenciaId, usuarioId: antes.usuario_id, ...datos, autorizadoId, autorizadoNuevo: autorizadoCambia, calendario
   });
   if (rechazo) return { rechazo };
   if (datos.desde === antes.desde && datos.hasta === antes.hasta && !autorizadoCambia) {

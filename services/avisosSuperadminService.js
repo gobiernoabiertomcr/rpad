@@ -4,7 +4,8 @@ import pool from '../config/database.js';
 import { sendEmail } from './emailService.js';
 import { avisoSuperadminTemplate, resumenAvisosRetenidosTemplate } from './emailTemplates.js';
 import { emailValido } from './usuariosReglas.js';
-import { esDiaHabil, hoyArgentina } from './notasDigitalesCalendario.js';
+import { hoyArgentina } from './notasDigitalesCalendario.js';
+import { leerCalendario } from './feriadosDatos.js';
 
 const LARGO_AVISO = 300;
 
@@ -49,9 +50,12 @@ export const avisarAlSuperadmin = async ({ actor, afectado, cambio, auditoriaId 
  * En un día hábil, si hay avisos retenidos y algún superadmin disponible, un solo email con todos; al enviarse dejan de
  * estar retenidos. Devuelve { enviado, cantidad }. Si el envío falla lanza un error (la corrida diaria lo registra y los
  * avisos siguen retenidos para el día hábil siguiente).
+ * El día hábil, con el calendario de la corrida de las 8:15 (sin él, se lee): en un feriado de la tabla no sale y sale el
+ * próximo día hábil (spec 2026-10-27-feriados-en-notas, 3).
  */
-export const enviarResumenAvisosRetenidos = async ({ hoy }) => {
-  if (!esDiaHabil(hoy)) return { enviado: false, cantidad: 0 };
+export const enviarResumenAvisosRetenidos = async ({ hoy, calendario = null }) => {
+  const conElCalendario = calendario ?? await leerCalendario();
+  if (!conElCalendario.esDiaHabil(hoy)) return { enviado: false, cantidad: 0 };
   const [retenidos] = await pool.query(
     `SELECT a.id, a.aviso_retenido AS cambio, a.created_at,
             af.nombre_completo AS afectado_nombre, af.username AS afectado_username,

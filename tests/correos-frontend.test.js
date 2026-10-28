@@ -182,6 +182,33 @@ describe('correos.js: texto de la vista previa (spec 2026-10-15, 7.7)', () => {
     }
   });
 
+  // Hoy hay notas, pero esta sale otro día (por ejemplo, la reiteración del mes ya salió): lo dice con su propia primera línea, y la
+  // segunda habla de ese día (spec 2026-10-27-feriados-en-notas, 6)
+  it('sin motivo y con otro_dia, antepone que esta nota no sale hoy y qué día saldría', () => {
+    const { contexto } = cargarCorreos();
+    const aviso = 'Esta nota no sale hoy: así saldría el 01/12/2026.';
+    const datos = { ejemplo: false, tipo: 'reiteracion', cantidad: 3, asunto: 'Reiteración', fecha: '2026-12-01', motivo: null, otro_dia: true };
+    assert.equal(texto(contexto, datos), `${aviso}\nCon los datos de hoy, ese día esta nota incluiría 3 dataset(s). Asunto: Reiteración`);
+    assert.equal(texto(contexto, { ...datos, ejemplo: true }), `${aviso}\n${TEXTO_EJEMPLO_ESE_DIA}`);
+    assert.equal(texto(contexto, { ...datos, tipo: 'auditoria', cantidad: 1, asunto: 'Cambios pendientes' }),
+      `${aviso}\nCon los datos de hoy, ese día esta nota incluiría 1 cambio(s). Asunto: Cambios pendientes`);
+    // Con motivo, el texto de siempre (hoy no se generan notas), aunque otro_dia sea true
+    assert.equal(texto(contexto, { ...datos, motivo: 'día no hábil' }),
+      'Hoy no se generan notas (día no hábil): así saldría el 01/12/2026.\nCon los datos de hoy, ese día esta nota incluiría 3 dataset(s). Asunto: Reiteración');
+    // Solo con el true literal; con false, el de hoy
+    for (const otroDia of [false, 'true', 1, null]) {
+      assert.equal(texto(contexto, { ...datos, otro_dia: otroDia }), 'Con los datos de hoy esta nota incluiría 3 dataset(s). Asunto: Reiteración',
+        String(otroDia));
+    }
+  });
+
+  it('verVistaPrevia lo muestra con el otro_dia que manda el servidor', async () => {
+    const vista = { html: '<p>nota</p>', asunto: 'Reiteración', ejemplo: true, cantidad: 0, fecha: '2026-12-01', motivo: null, otro_dia: true };
+    const { contexto, elemento } = cargarCorreos({ previewNota: async () => vista });
+    await contexto.verVistaPrevia();
+    assert.equal(elemento('preview-aviso').textContent, `Esta nota no sale hoy: así saldría el 01/12/2026.\n${TEXTO_EJEMPLO_ESE_DIA}`);
+  });
+
   it('verVistaPrevia muestra ese texto arriba del marco', async () => {
     const vistas = [
       { html: '<p>nota</p>', asunto: 'Aviso', ejemplo: true, cantidad: 0, fecha: '2026-12-21', motivo: 'día no hábil' },
@@ -247,6 +274,41 @@ describe('correos.js: firmante titular (spec 2026-10-15-dias-habiles-licencias-a
     assert.equal(texto({ ...base, en_curso: true, nota_autorizacion: { numero: 15, anio: 2027 } }),
       'Licencia del firmante del 01/03/2027 al 31/03/2027: Persona Autorizada (de licencia hasta el 03/03/2027) presenta las notas '
       + 'por autorización, con las dos firmas (autorización comunicada en la Nota Digital N° 15/27).');
+  });
+
+  // Una licencia futura que empieza a continuación de otra del firmante: su víspera cae en la otra y no hay anticipo (spec
+  // 2026-10-27-feriados-en-notas, 6)
+  it('licencia futura sin anticipo: los avisos no se adelantan', () => {
+    const { contexto } = cargarCorreos();
+    const texto = (l) => vm.runInContext(`textoLicenciaFirmante(${JSON.stringify(l)})`, contexto);
+    const base = {
+      desde: '2027-01-04', hasta: '2027-01-08', en_curso: false, autorizado: null, sin_dias_habiles: false, sin_anticipo: true,
+      vispera: null, vuelta: '2027-01-11'
+    };
+    assert.equal(texto(base),
+      'Licencia del firmante del 04/01/2027 al 08/01/2027, sin autorizado: empieza a continuación de otra licencia, así que los '
+      + 'avisos no se adelantan, y las reiteraciones se postergan al 11/01/2027.');
+    assert.equal(texto({ ...base, autorizado: 'Persona Autorizada' }),
+      'Licencia del firmante del 04/01/2027 al 08/01/2027: empieza a continuación de otra licencia, así que los avisos no se '
+      + 'adelantan. Persona Autorizada presenta las notas por autorización, con las dos firmas, desde el primer día.');
+
+    // Con sin_anticipo false, los de siempre
+    const conAnticipo = { ...base, sin_anticipo: false, vispera: '2026-12-31' };
+    assert.equal(texto(conAnticipo),
+      'Licencia del firmante del 04/01/2027 al 08/01/2027, sin autorizado: los avisos se anticipan el 31/12/2026 y las '
+      + 'reiteraciones se postergan al 11/01/2027.');
+    assert.equal(texto({ ...conAnticipo, autorizado: 'Persona Autorizada' }),
+      'Licencia del firmante del 04/01/2027 al 08/01/2027: los avisos se anticipan el 31/12/2026 con la autorización a Persona '
+      + 'Autorizada, que durante la licencia presenta las demás notas y vuelve a presentar cada aviso en su fecha.');
+    // Solo con el true literal
+    assert.equal(texto({ ...conAnticipo, sin_anticipo: 'true' }), texto(conAnticipo));
+    // En curso, los de siempre
+    assert.equal(texto({ ...base, en_curso: true }),
+      'Licencia del firmante del 04/01/2027 al 08/01/2027, sin autorizado: no se generan notas hasta la vuelta y las reiteraciones '
+      + 'se postergan al 11/01/2027.');
+    // Sin días hábiles, lo de siempre
+    assert.equal(texto({ ...base, sin_dias_habiles: true }),
+      'Licencia del firmante del 04/01/2027 al 08/01/2027: no tiene días hábiles, las notas no cambian.');
   });
 
   it('sin autorizado_de_licencia_hasta (null o ausente), el texto no cambia', () => {

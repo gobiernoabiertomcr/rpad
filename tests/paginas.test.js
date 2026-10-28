@@ -21,9 +21,10 @@ const VERSION = '20261204';
 // dirección, spec 2026-10-24-configuracion, 1 y 6; la ayuda del lector nombra Proyectos en lugar de Gestión, spec
 // 2026-10-25-proyectos, 11; la cuarta pestaña, Feriados, con su vista y «Nuevo feriado», y al mostrarla llama a cargarFeriados de
 // feriados.js, spec 2026-10-26-feriados, 4; la insignia «Cargada desde Mi espacio» en la lista de Licencias, spec
-// 2026-10-26-mi-espacio-licencias-y-horas, 6): su versión es propia (solo la usa configuracion.html; es independiente de
+// 2026-10-26-mi-espacio-licencias-y-horas, 6; el efecto en las notas de una licencia del firmante sin anticipo o sin días
+// hábiles, spec 2026-10-27-feriados-en-notas, 6): su versión es propia (solo la usa configuracion.html; es independiente de
 // VERSION_FERIADOS)
-const VERSION_PANTALLAS = '20261209';
+const VERSION_PANTALLAS = '20261210';
 // areas.js (reescrito para la pestaña Áreas de Configuración, spec 2026-10-24-configuracion, 4 y 6), que en areas.html cargaba
 // ?v=20261204: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
 // configuracion.html)
@@ -36,8 +37,9 @@ const VERSION_FERIADOS = '20261209';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
 // reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6;
-// la línea de los recordatorios de la agenda en el Estado, spec 2026-10-26-mi-espacio-agenda, 5): su versión es propia
-const VERSION_CORREOS = '20261210';
+// la línea de los recordatorios de la agenda en el Estado, spec 2026-10-26-mi-espacio-agenda, 5; la licencia del firmante sin
+// anticipo y la vista previa de otro día, spec 2026-10-27-feriados-en-notas, 6): su versión es propia
+const VERSION_CORREOS = '20261211';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas; "Requiere nota DGMIT" en la
 // comparación, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; el editor que audita sin responsabilidad, spec
 // 2026-10-20-editor-sin-responsabilidad; la vista previa de la firma con el nombre en negrita y el cargo un punto menos; el
@@ -83,8 +85,9 @@ const VERSION_PROYECTOS = '20261206';
 // entrega (siguen siendo independientes). Cambió después (la cuarta pestaña, la agenda, con el mes, los próximos y los eventos en
 // «Hoy y mañana», spec 2026-10-26-mi-espacio-agenda, 6; el Resumen «Titular», spec 2026-10-27-mi-espacio-resumen, 6; y «Word» en
 // cada licencia de la lista, spec 2026-10-27-mi-espacio-licencia-word, 6; y la planilla de horas extras de contrato, spec
-// 2026-10-27-mi-espacio-horas, 9). Su versión es propia
-const VERSION_MI_ESPACIO = '20261213';
+// 2026-10-27-mi-espacio-horas, 9; y el efecto en las notas sin anticipo o sin días hábiles, como Configuración, spec
+// 2026-10-27-feriados-en-notas, 6). Su versión es propia
+const VERSION_MI_ESPACIO = '20261214';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -103,8 +106,9 @@ describe('páginas', () => {
 
   // El script propio de esta pantalla cambió con los días sin auditor, después con la superposición parcial, con el aviso en su
   // fecha (el texto del efecto de la licencia en las notas, con persona autorizada), con Configuración (la tercera pestaña y la
-  // pestaña en la dirección), con el renombre de Gestión a Proyectos (la ayuda del lector), con la cuarta pestaña, Feriados, y,
-  // por último, con la insignia «Cargada desde Mi espacio» en la lista de Licencias
+  // pestaña en la dirección), con el renombre de Gestión a Proyectos (la ayuda del lector), con la cuarta pestaña, Feriados, con
+  // la insignia «Cargada desde Mi espacio» en la lista de Licencias y, por último, con el efecto en las notas de una licencia del
+  // firmante sin anticipo o sin días hábiles
   for (const [pagina, script] of [['configuracion.html', 'usuarios']]) {
     it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
       assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));
@@ -265,13 +269,14 @@ describe('páginas', () => {
       }
     });
 
-    // Desde la entrega 2 (spec 2026-10-26-feriados, 4): cuentan para Mi espacio y nada más
-    it('el aviso azul dice, tal cual, que estos feriados cuentan solo para Mi espacio', () => {
+    // Desde la tanda 1 de los feriados en todo el sistema (spec 2026-10-27-feriados-en-notas, 6): cuentan para las Notas
+    // Digitales, los emails automáticos, las licencias y Mi espacio; Métricas, el Ciclo de vida y la Agenda de pedidos, todavía no
+    it('el aviso azul dice, tal cual, para qué cuentan estos feriados y qué sigue con los 9 fijos', () => {
       const aviso = bloque(/<p class="fe-aviso" id="feriados-aviso">[\s\S]*?<\/p>/);
       assert.ok(aviso, 'el aviso');
       assert.match(aviso, /<svg aria-hidden="true"/);
       assert.equal(aviso.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(),
-        'Por ahora, estos feriados cuentan solo para Mi espacio: los días hábiles de las licencias y los francos. Las Notas Digitales, la auditoría y Métricas siguen con los 9 feriados fijos.');
+        'Estos feriados, junto con los 9 fijos, son los días no hábiles de las Notas Digitales, los emails automáticos, las licencias y Mi espacio: esos días no sale ninguna nota ni ningún email automático. Métricas, el Ciclo de vida del dato y la Agenda de pedidos todavía cuentan solo los 9 fijos.');
     });
 
     it('la tarjeta: el título, el selector del año y los filtros como grupos con su nombre, la lista y el vacío', () => {

@@ -13,11 +13,18 @@
  * - cualquier otro: la fila se guarda igual, sin pasar, con el mensaje en `sin_pasar` (cortado a 200 caracteres).
  * La licencia de la persona autorizada del firmante pasa como cualquier otra, aunque no le quede ningún día hábil de la del
  * firmante (decisión del usuario, 27/10/2026): el cálculo previo se lo avisa (`textoAutorizadaDelFirmante`), sin frenarla.
+ * Los días hábiles se cuentan con el calendario de las Notas Digitales (spec 2026-10-27-feriados-en-notas, 1 y 4: los 9 fijos y
+ * los de la tabla), el que arma quien llama con las filas de los feriados que ya leyó (la clave `calendario`): se lo pasa a
+ * Configuración (`cargarLicencia` y `cambiarLicencia`) y a las reglas (`pasoDeLaCorreccion` y `pasoPrevistoDe`). Sin él, se lee
+ * con la conexión.
  */
 import pool from '../config/database.js';
 import { cargarLicencia, cambiarLicencia, anularLicenciaDe, firmanteTitular } from './licenciasOficialesService.js';
 import { puedeTenerLicencia } from './licenciasReglas.js';
-import { oficialesDe, tocadasPorOtros, oficialesQueSeCruzan, delFirmanteComoAutorizada } from './miEspacioDatos.js';
+import { leerCalendario } from './feriadosDatos.js';
+import {
+  oficialesDe, tocadasPorOtros, oficialesQueSeCruzan, delFirmanteComoAutorizada, notasDeHoyDelTitular
+} from './miEspacioDatos.js';
 import {
   TEXTO_NO_SE_COPIA, vinculoDe, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja, vinculosDeLaLista, pasoPrevistoDe
 } from './miEspacioReglas.js';
@@ -37,12 +44,13 @@ const segunElRechazo = (rechazo) => {
 };
 
 // Lo que hace el paso de una fila nueva, o de una corregida que se trata como nueva (el de `pasoDeLaCarga`)
-const aplicarPaso = async (conexion, paso, { persona, fila, hoy, autorizadoId }) => {
+const aplicarPaso = async (conexion, paso, { persona, fila, hoy, autorizadoId, calendario }) => {
   if (paso.accion === 'unir') return { licencia_oficial_id: paso.oficial.id, oficial: 'unida', sin_pasar: null, avisos: [] };
   if (paso.accion === 'avisar') return sinVinculo(cortado(paso.sin_pasar));
   if (paso.accion !== 'crear') return sinVinculo();
   const { licencia, rechazo } = await cargarLicencia(conexion, {
-    usuarioId: persona.id, desde: fila.desde, hasta: fila.hasta, autorizadoId: autorizadoId ?? null, actorId: persona.id, hoy
+    usuarioId: persona.id, desde: fila.desde, hasta: fila.hasta, autorizadoId: autorizadoId ?? null, actorId: persona.id, hoy,
+    calendario
   });
   if (!rechazo) return { licencia_oficial_id: licencia.id, oficial: 'creada', sin_pasar: null, avisos: [] };
   const { error, sin_pasar: sinPasar } = segunElRechazo(rechazo);
@@ -52,10 +60,13 @@ const aplicarPaso = async (conexion, paso, { persona, fila, hoy, autorizadoId })
 /**
  * El paso de una licencia nueva (`fila`, ya validada, todavía sin guardar), con la persona leída bajo el bloqueo (su rol de
  * este momento). `autorizadoId`: la persona a cargo (solo en las vacaciones del titular: Configuración lo controla).
+ * `calendario`: el de quien llama (sin él, se lee con la conexión).
  */
-export const aplicarCarga = async (conexion, { persona, fila, hoy, autorizadoId = null }) => {
+export const aplicarCarga = async (conexion, { persona, fila, hoy, autorizadoId = null, calendario }) => {
+  const conElCalendario = calendario ?? await leerCalendario(conexion);
   const cruzadas = await oficialesQueSeCruzan(conexion, persona.id, fila.desde, fila.hasta);
-  return aplicarPaso(conexion, pasoDeLaCarga({ fila, rol: persona.rol, hoy, cruzadas }), { persona, fila, hoy, autorizadoId });
+  return aplicarPaso(conexion, pasoDeLaCarga({ fila, rol: persona.rol, hoy, cruzadas }),
+    { persona, fila, hoy, autorizadoId, calendario: conElCalendario });
 };
 
 // El vínculo de una fila guardada con su licencia de Configuración, leído con la conexión
@@ -67,8 +78,9 @@ const vinculoGuardado = async (conexion, persona, guardada) => {
 };
 
 // Lo que hace falta para corregir (y para el cálculo previo de una corrección): el vínculo y el paso. autorizadoPedido:
-// undefined si el pedido no dice nada de la persona a cargo, null para «nadie» o un id
-const planDeLaCorreccion = async (conexion, { persona, anterior, fila, hoy, autorizadoPedido }) => {
+// undefined si el pedido no dice nada de la persona a cargo, null para «nadie» o un id. calendario: el de quien llama, para el
+// límite para cambiar el tipo
+const planDeLaCorreccion = async (conexion, { persona, anterior, fila, hoy, autorizadoPedido, calendario }) => {
   const vinculo = await vinculoGuardado(conexion, persona, anterior);
   const cruzadas = await oficialesQueSeCruzan(conexion, persona.id, fila.desde, fila.hasta);
   const { oficial } = vinculo;
@@ -76,7 +88,7 @@ const planDeLaCorreccion = async (conexion, { persona, anterior, fila, hoy, auto
     && (await firmanteTitular(conexion)) === persona.id;
   const autorizadoCambia = oficial !== null && autorizadoPedido !== undefined && autorizadoPedido !== oficial.autorizado_id;
   const paso = pasoDeLaCorreccion({
-    anterior, fila, vinculo, rol: persona.rol, hoy, cruzadas, autorizadoCambia, personaACargo
+    anterior, fila, vinculo, rol: persona.rol, hoy, cruzadas, autorizadoCambia, personaACargo, calendario
   });
   return { vinculo, paso };
 };
@@ -86,19 +98,21 @@ const planDeLaCorreccion = async (conexion, { persona, anterior, fila, hoy, auto
  * `autorizadoPedido`: undefined si el pedido no dice nada de la persona a cargo, null para «nadie» o un id. Una creada que
  * administración cambió responde además `avisos: [TEXTO_NO_SE_COPIA]`. Lo que queda como estaba (nada, o una creada que ya
  * empezó y no se pudo anular) conserva el vínculo; una creada que no se pudo copiar lo conserva con el motivo, hasta que una
- * corrección se copia o la deja con las fechas de Configuración.
+ * corrección se copia o la deja con las fechas de Configuración. `calendario`: el de quien llama (sin él, se lee con la
+ * conexión).
  */
-export const aplicarCorreccion = async (conexion, { persona, anterior, fila, hoy, autorizadoPedido }) => {
-  const { vinculo, paso } = await planDeLaCorreccion(conexion, { persona, anterior, fila, hoy, autorizadoPedido });
+export const aplicarCorreccion = async (conexion, { persona, anterior, fila, hoy, autorizadoPedido, calendario }) => {
+  const conElCalendario = calendario ?? await leerCalendario(conexion);
+  const { vinculo, paso } = await planDeLaCorreccion(conexion,
+    { persona, anterior, fila, hoy, autorizadoPedido, calendario: conElCalendario });
   if (paso.error) return { error: { status: 400, ...paso.error } };
-  if (vinculo.estado === 'ninguno') return aplicarPaso(conexion, paso, { persona, fila, hoy, autorizadoId: autorizadoPedido });
+  const comoNueva = { persona, fila, hoy, autorizadoId: autorizadoPedido, calendario: conElCalendario };
+  if (vinculo.estado === 'ninguno') return aplicarPaso(conexion, paso, comoNueva);
   const queda = {
     licencia_oficial_id: anterior.licencia_oficial_id, oficial: anterior.oficial, sin_pasar: anterior.sin_pasar,
     avisos: vinculo.estado === 'creada_cambiada' ? [TEXTO_NO_SE_COPIA] : []
   };
-  if (paso.accion === 'soltar') {
-    return aplicarPaso(conexion, paso.luego, { persona, fila, hoy, autorizadoId: autorizadoPedido });
-  }
+  if (paso.accion === 'soltar') return aplicarPaso(conexion, paso.luego, comoNueva);
   if (paso.accion === 'anular') {
     const { rechazo } = await anularLicenciaDe(conexion, { licenciaId: vinculo.oficial.id, actorId: persona.id, hoy });
     // No pasa: la regla pura ya miró que se puede, con todos los usuarios bloqueados
@@ -108,7 +122,7 @@ export const aplicarCorreccion = async (conexion, { persona, anterior, fila, hoy
   if (paso.accion === 'cambiar') {
     const { rechazo } = await cambiarLicencia(conexion, {
       licenciaId: vinculo.oficial.id, desde: fila.desde, hasta: fila.hasta, actorId: persona.id, hoy,
-      autorizadoPedido: paso.sin_persona_a_cargo ? null : autorizadoPedido
+      autorizadoPedido: paso.sin_persona_a_cargo ? null : autorizadoPedido, calendario: conElCalendario
     });
     if (!rechazo) return { ...queda, sin_pasar: null };
     const { error, sin_pasar: sinPasar } = segunElRechazo(rechazo);
@@ -139,26 +153,56 @@ export const aplicarBaja = async (conexion, { persona, fila, hoy }) => {
   return { licencia_oficial_id: fila.licencia_oficial_id, oficial: fila.oficial, sin_pasar: fila.sin_pasar, avisos: [] };
 };
 
+// Las licencias de Configuración del titular que incluyen la víspera de la fila (el día hábil anterior a su desde, con el
+// calendario), para `visperaDeLaLicencia`: sin `propia`, el id de la de Configuración que sigue a la fila que se corrige (una
+// creada: se mueve con ella). Si el calendario no encuentra el día hábil (el RangeError del tope), ninguna: la víspera tampoco
+const delTitularEnLaVispera = async (conexion, persona, fila, calendario, propia) => {
+  let vispera;
+  try {
+    vispera = calendario.diaHabilAnterior(fila.desde);
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return [];
+  }
+  const enLaVispera = await oficialesQueSeCruzan(conexion, persona.id, vispera, vispera);
+  return enLaVispera.filter((oficial) => oficial.id !== propia);
+};
+
 /**
  * Lo que el cálculo previo de «Cargar licencia» dice del paso, sin escribir nada: `{ paso, error }`, con el `paso` de
  * `pasoPrevistoDe` y el error de la corrección (`tipoFijo`, `soloHasta`, `fechasFijas`: `{ campo, mensaje }`) o null.
  * `anterior`: la fila guardada que se corrige, o null en una carga. Lee del pool (o de la conexión que se pase), también
- * las licencias del firmante en las que la persona es la autorizada y que se pisan con la fila (`comoAutorizada`).
+ * las licencias del firmante en las que la persona es la autorizada y que se pisan con la fila (`comoAutorizada`). Al firmante
+ * titular le lee además, para lo que dice el formulario (spec 2026-10-27-feriados-en-notas, 4), sus licencias de Configuración
+ * que incluyen la víspera (`delTitular`: sin la creada de la fila que se corrige, que se mueve con ella) y, si la fila empieza
+ * hoy o antes, si hoy ya salió alguna nota con su firma (`notasDeHoy`). `calendario`: el de quien llama (sin él, se lee con
+ * la conexión).
  */
-export const pasoPrevisto = async ({ persona, anterior, fila, hoy }, conexion = pool) => {
+export const pasoPrevisto = async ({ persona, anterior, fila, hoy, calendario }, conexion = pool) => {
+  const conElCalendario = calendario ?? await leerCalendario(conexion);
   const titular = await firmanteTitular(conexion);
   const soyTitular = titular === persona.id;
   // Quien no puede tener licencia nunca pasa: no hace falta leerlas
   const comoAutorizada = puedeTenerLicencia(persona.rol)
     ? await delFirmanteComoAutorizada(conexion, titular, persona.id, fila.desde, fila.hasta) : [];
-  const comun = { fila, rol: persona.rol, hoy, soyTitular, comoAutorizada };
+  // Lo del firmante titular; a cualquier otra persona, nada (no se lee)
+  const delFirmante = async (propia) => (soyTitular ? {
+    delTitular: await delTitularEnLaVispera(conexion, persona, fila, conElCalendario, propia),
+    notasDeHoy: fila.desde <= hoy && await notasDeHoyDelTitular(titular, hoy, conexion)
+  } : {});
+  const comun = { fila, rol: persona.rol, hoy, soyTitular, comoAutorizada, calendario: conElCalendario };
   if (!anterior) {
     const cruzadas = await oficialesQueSeCruzan(conexion, persona.id, fila.desde, fila.hasta);
     const paso = pasoDeLaCarga({ fila, rol: persona.rol, hoy, cruzadas });
-    return { paso: pasoPrevistoDe({ ...comun, paso, vinculo: null }), error: null };
+    return { paso: pasoPrevistoDe({ ...comun, ...(await delFirmante(null)), paso, vinculo: null }), error: null };
   }
-  const { vinculo, paso } = await planDeLaCorreccion(conexion, { persona, anterior, fila, hoy, autorizadoPedido: undefined });
-  return { paso: pasoPrevistoDe({ ...comun, paso: paso.error ? {} : paso, vinculo }), error: paso.error ?? null };
+  const { vinculo, paso } = await planDeLaCorreccion(conexion,
+    { persona, anterior, fila, hoy, autorizadoPedido: undefined, calendario: conElCalendario });
+  const propia = vinculo.estado === 'creada' ? vinculo.oficial.id : null;
+  return {
+    paso: pasoPrevistoDe({ ...comun, ...(await delFirmante(propia)), paso: paso.error ? {} : paso, vinculo }),
+    error: paso.error ?? null
+  };
 };
 
 /**

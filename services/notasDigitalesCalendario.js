@@ -49,25 +49,111 @@ export const sumarDias = (iso, dias) => {
 
 export const diasEntre = (desde, hasta) => Math.round((aFecha(hasta) - aFecha(desde)) / 86400000);
 
+// Lunes a viernes sin los 9 feriados fijos. Es la base de todos los calendarios: calendarioCon (services/feriadosReglas.js) le
+// saca además los feriados de la tabla
 export const esDiaHabil = (iso) => {
   const diaSemana = aFecha(iso).getUTCDay();
   return diaSemana !== 0 && diaSemana !== 6 && !FERIADOS_FIJOS.includes(iso.slice(5));
 };
 
-export const proximoDiaHabil = (iso) => {
-  let fecha = iso;
-  while (!esDiaHabil(fecha)) fecha = sumarDias(fecha, 1);
-  return fecha;
+// Lo más lejos que se busca un día hábil: la fecha y los 365 días que siguen, o los 366 anteriores (un año bisiesto entero).
+// Con la tabla de feriados, un año entero cargado como feriado daría un bucle infinito
+export const TOPE_DE_VUELTAS = 366;
+const ULTIMA_FECHA = '9999-12-31';
+const FORMA_DE_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+
+const sinDiaHabil = (iso, cuando) =>
+  new RangeError(`No hay ningún día hábil en los ${TOPE_DE_VUELTAS} días ${cuando} ${iso}.`);
+
+/**
+ * Las derivadas de días hábiles, escritas una sola vez sobre un predicado «¿es hábil?» (spec 2026-10-27-feriados-en-notas, 1):
+ * `{ esDiaHabil, proximoDiaHabil, diaHabilAnterior, ultimoDiaHabilHasta, primerDiaHabilDelMes, rangoDeAviso,
+ * diasHabilesTranscurridos, sumarDiasHabiles }`, con `esDiaHabil` = el predicado. Con `esDiaHabil` (los 9 fijos) son las de
+ * siempre: dan lo mismo en toda entrada en la que antes terminaban. Las búsquedas de un día hábil tienen un tope de
+ * TOPE_DE_VUELTAS: sin ninguno, tiran RangeError (con los 9 fijos solo pasa después del 31/12/9999, donde antes no terminaban).
+ * @param {(fecha: string) => boolean} esHabil
+ */
+export const derivadasDe = (esHabil) => {
+  // La fecha, si es hábil, o la primera hábil que la sigue
+  const proximoDiaHabil = (iso) => {
+    let fecha = iso;
+    for (let vuelta = 1; !esHabil(fecha); vuelta++) {
+      if (vuelta === TOPE_DE_VUELTAS) throw sinDiaHabil(iso, 'desde el');
+      fecha = sumarDias(fecha, 1);
+    }
+    return fecha;
+  };
+
+  // Último día hábil antes de iso (sin contarlo)
+  const diaHabilAnterior = (iso) => {
+    let fecha = sumarDias(iso, -1);
+    for (let vuelta = 1; !esHabil(fecha); vuelta++) {
+      if (vuelta === TOPE_DE_VUELTAS) throw sinDiaHabil(iso, 'anteriores al');
+      fecha = sumarDias(fecha, -1);
+    }
+    return fecha;
+  };
+
+  // Último día hábil que no pasa de iso (iso mismo si es hábil)
+  const ultimoDiaHabilHasta = (iso) => (esHabil(iso) ? iso : diaHabilAnterior(iso));
+
+  const primerDiaHabilDelMes = (periodo) => proximoDiaHabil(`${periodo}-01`);
+
+  // Vencimientos que avisa hoy un aviso que sale `dias` días antes y solo en días hábiles (spec
+  // 2026-10-15-dias-habiles-licencias-auditoria, 4.2): desde hoy + dias hasta el día anterior a (siguiente día hábil + dias).
+  // Así cada día hábil avisa también lo que habría caído en los días no hábiles que siguen: se anticipa, nunca se atrasa.
+  // null si hoy no es día hábil.
+  const rangoDeAviso = (hoy, dias) => {
+    if (!esHabil(hoy)) return null;
+    const siguiente = proximoDiaHabil(sumarDias(hoy, 1));
+    return { desde: sumarDias(hoy, dias), hasta: sumarDias(siguiente, dias - 1) };
+  };
+
+  // Días hábiles después de desde y hasta hasta inclusive (desde no se cuenta): la columna "días hábiles pendiente" de la
+  // nota de auditoría y el plazo de sus reiteraciones (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.3 y 10.3).
+  // 0 si hasta no es posterior a desde. Tira RangeError donde el recorrido no terminaría: con un hasta mayor que toda fecha
+  // (un texto mayor que el 31/12/9999) o si la fecha deja de ser 'AAAA-MM-DD' (después del 31/12/9999 sumarDias da
+  // '+010000-01', que como texto es menor que toda fecha, y desde ahí siempre lo mismo)
+  const diasHabilesTranscurridos = (desde, hasta) => {
+    if (typeof hasta === 'string' && hasta > ULTIMA_FECHA) {
+      throw new RangeError(`No se pueden contar los días hábiles hasta ${hasta}: no es una fecha.`);
+    }
+    let cantidad = 0;
+    for (let fecha = sumarDias(desde, 1); fecha <= hasta; fecha = sumarDias(fecha, 1)) {
+      if (!FORMA_DE_FECHA.test(fecha)) throw new RangeError(`No se pueden contar los días hábiles después del ${ULTIMA_FECHA}.`);
+      if (esHabil(fecha)) cantidad++;
+    }
+    return cantidad;
+  };
+
+  // El n-ésimo día hábil después de iso, sin contarlo (iso si n es 0): la próxima reiteración de una nota de auditoría
+  const sumarDiasHabiles = (iso, n) => {
+    let fecha = iso;
+    for (let i = 0; i < n; i++) fecha = proximoDiaHabil(sumarDias(fecha, 1));
+    return fecha;
+  };
+
+  return {
+    esDiaHabil: esHabil, proximoDiaHabil, diaHabilAnterior, ultimoDiaHabilHasta, primerDiaHabilDelMes, rangoDeAviso,
+    diasHabilesTranscurridos, sumarDiasHabiles
+  };
 };
 
-// Último día hábil antes de iso (sin contarlo)
-export const diaHabilAnterior = (iso) => {
-  let fecha = sumarDias(iso, -1);
-  while (!esDiaHabil(fecha)) fecha = sumarDias(fecha, -1);
-  return fecha;
-};
+/**
+ * El calendario de los 9 feriados fijos: las derivadas sobre esDiaHabil, con `origen: 'fijos'` y `error: null`. Es el valor por
+ * defecto de las reglas puras; con la tabla de feriados, calendarioCon (services/feriadosReglas.js) arma el mismo objeto y
+ * leerCalendario (services/feriadosDatos.js) lo lee de la base.
+ */
+export const CALENDARIO_FIJO = Object.freeze({ ...derivadasDe(esDiaHabil), origen: 'fijos', error: null });
 
-export const primerDiaHabilDelMes = (periodo) => proximoDiaHabil(`${periodo}-01`);
+// Los nombres de siempre, del calendario de los 9 fijos
+export const proximoDiaHabil = CALENDARIO_FIJO.proximoDiaHabil;
+export const diaHabilAnterior = CALENDARIO_FIJO.diaHabilAnterior;
+export const ultimoDiaHabilHasta = CALENDARIO_FIJO.ultimoDiaHabilHasta;
+export const primerDiaHabilDelMes = CALENDARIO_FIJO.primerDiaHabilDelMes;
+export const rangoDeAviso = CALENDARIO_FIJO.rangoDeAviso;
+export const diasHabilesTranscurridos = CALENDARIO_FIJO.diasHabilesTranscurridos;
+export const sumarDiasHabiles = CALENDARIO_FIJO.sumarDiasHabiles;
 
 export const periodoDe = (iso) => iso.slice(0, 7);
 
@@ -88,41 +174,10 @@ export const mesYAnio = (iso) => {
   return `${MESES[mes - 1]} ${anio}`;
 };
 
-// Vencimientos que avisa hoy un aviso que sale `dias` días antes y solo en días hábiles (spec
-// 2026-10-15-dias-habiles-licencias-auditoria, 4.2): desde hoy + dias hasta el día anterior a (siguiente día hábil + dias).
-// Así cada día hábil avisa también lo que habría caído en los días no hábiles que siguen: se anticipa, nunca se atrasa.
-// null si hoy no es día hábil.
-export const rangoDeAviso = (hoy, dias) => {
-  if (!esDiaHabil(hoy)) return null;
-  const siguiente = proximoDiaHabil(sumarDias(hoy, 1));
-  return { desde: sumarDias(hoy, dias), hasta: sumarDias(siguiente, dias - 1) };
-};
-
-// Último día hábil que no pasa de iso (iso mismo si es hábil)
-export const ultimoDiaHabilHasta = (iso) => (esDiaHabil(iso) ? iso : diaHabilAnterior(iso));
-
 // Rango de meses en minúsculas, como en el asunto de los avisos anticipados (spec 2026-10-15, 7.3):
 // 'enero 2027', 'enero a marzo 2027' o 'diciembre 2026 a febrero 2027'
 export const textoRangoMeses = (desde, hasta) => {
   if (periodoDe(desde) === periodoDe(hasta)) return mesYAnio(desde);
   if (desde.slice(0, 4) === hasta.slice(0, 4)) return `${MESES[Number(desde.slice(5, 7)) - 1]} a ${mesYAnio(hasta)}`;
   return `${mesYAnio(desde)} a ${mesYAnio(hasta)}`;
-};
-
-// Días hábiles después de desde y hasta hasta inclusive (desde no se cuenta): la columna "días hábiles pendiente" de la
-// nota de auditoría y el plazo de sus reiteraciones (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.3 y 10.3).
-// 0 si hasta no es posterior a desde.
-export const diasHabilesTranscurridos = (desde, hasta) => {
-  let cantidad = 0;
-  for (let fecha = sumarDias(desde, 1); fecha <= hasta; fecha = sumarDias(fecha, 1)) {
-    if (esDiaHabil(fecha)) cantidad++;
-  }
-  return cantidad;
-};
-
-// El n-ésimo día hábil después de iso, sin contarlo (iso si n es 0): la próxima reiteración de una nota de auditoría
-export const sumarDiasHabiles = (iso, n) => {
-  let fecha = iso;
-  for (let i = 0; i < n; i++) fecha = proximoDiaHabil(sumarDias(fecha, 1));
-  return fecha;
 };

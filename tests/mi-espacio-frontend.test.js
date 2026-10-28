@@ -2282,7 +2282,16 @@ describe('los formularios: las paridades', () => {
     const licencia = { desde: '2026-11-26', vispera: '2026-11-25' };
     for (const [lic, nombre, hoy] of [[{ vispera: '2026-11-25' }, 'Persona Autorizada', ''], [{ vispera: '2026-11-25' }, null, ''],
       [null, null, ''], [licencia, 'Persona Autorizada', '2026-12-02'], [licencia, null, '2026-12-02'], [licencia, null, '2026-11-26'],
-      [licencia, null, '2026-11-10'], [licencia, 'Persona Autorizada', '2026-11-10']]) {
+      [licencia, null, '2026-11-10'], [licencia, 'Persona Autorizada', '2026-11-10'],
+      // A continuación de otra licencia (sin anticipo) y sin días hábiles (spec 2026-10-27-feriados-en-notas, 6): solo el true
+      // literal
+      [{ desde: '2027-01-04', vispera: null, sin_anticipo: true }, 'Persona Autorizada', '2026-12-21'],
+      [{ desde: '2027-01-04', vispera: null, sin_anticipo: true }, null, '2026-12-21'],
+      [{ desde: '2027-01-04', vispera: null, sin_anticipo: true }, null, '2027-01-04'],
+      [{ desde: '2027-01-04', vispera: '2026-12-31', sin_anticipo: 'true' }, null, '2026-12-21'],
+      [{ sin_dias_habiles: true }, 'Persona Autorizada', '2026-10-20'], [{ sin_dias_habiles: true }, null, '2026-10-20'],
+      [{ desde: '2026-12-07', vispera: null, sin_dias_habiles: true, sin_anticipo: true }, null, '2026-10-20'],
+      [{ desde: '2026-12-07', vispera: '2026-12-04', sin_dias_habiles: 1 }, null, '2026-10-20']]) {
       const argumentos = `${JSON.stringify(lic)}, ${JSON.stringify(nombre)}, ${JSON.stringify(hoy)}`;
       assert.equal(en(`efectoEnNotas(${argumentos})`), usuariosJs(`efectoEnNotas(${argumentos})`), argumentos);
     }
@@ -2453,7 +2462,7 @@ describe('los formularios: lo puro', () => {
     const textos = [...M.htmlDelPaso(paso, opciones).matchAll(/<p>([\s\S]*?)<\/p>/g)].map(([, texto]) => textoDe(texto));
     assert.deepEqual(textos, [
       AVISO_DEL_PASO,
-      en(`efectoEnNotas(${JSON.stringify({ desde: VACACIONES.desde, vispera: paso.firmante.vispera })}, 'Martín Ríos', '${HOY}')`),
+      en(`efectoEnNotas(${JSON.stringify({ desde: VACACIONES.desde, vispera: paso.firmante.vispera, sin_anticipo: false, sin_dias_habiles: false })}, 'Martín Ríos', '${HOY}')`),
       'Martín Ríos va a estar de licencia el 18/11/2026: ese día no se generan notas. Desde el 19/11/2026 las presenta en tu nombre.'
     ]);
     // Sin nadie elegido, el efecto sin persona autorizada; una médica, solo los avisos del servidor (con el de sin persona a cargo)
@@ -2462,6 +2471,18 @@ describe('los formularios: lo puro', () => {
     for (const autorizado of [null, 'Martín Ríos']) {
       assert.deepEqual([...M.htmlDelPaso(paso, { ...opciones, autorizado, conEfecto: false }).matchAll(/<p>([\s\S]*?)<\/p>/g)]
         .map(([, texto]) => texto), [AVISO_DEL_PASO], String(autorizado));
+    }
+    // A continuación de otra licencia (sin anticipo) o sin días hábiles: lo que dice Configuración (spec 2026-10-27-feriados-en-notas, 6)
+    const sinAnticipo = { ...paso, firmante: { ...paso.firmante, vispera: null, sin_anticipo: true } };
+    assert.ok(textoDe(M.htmlDelPaso(sinAnticipo, { ...opciones, autorizado: null })).includes(
+      'Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.'));
+    assert.ok(textoDe(M.htmlDelPaso(sinAnticipo, opciones)).includes(
+      'Empieza a continuación de otra licencia: los avisos no se adelantan. Desde el primer día, Martín Ríos presenta las notas con las dos firmas, después de la nota que comunica la autorización.'));
+    const sinDias = { ...paso, firmante: { ...paso.firmante, vispera: null, sin_dias_habiles: true } };
+    for (const autorizado of [null, 'Martín Ríos']) {
+      const textosSinDias = [...M.htmlDelPaso(sinDias, { ...opciones, autorizado, ausencias: [] }).matchAll(/<p>([\s\S]*?)<\/p>/g)]
+        .map(([, texto]) => textoDe(texto));
+      assert.deepEqual(textosSinDias, [AVISO_DEL_PASO, 'No tiene días hábiles: las notas no cambian.'], String(autorizado));
     }
     const medica = respuestaDelCalculo(MEDICA, { soyTitular: true }).paso;
     assert.deepEqual([...M.htmlDelPaso(medica, opciones).matchAll(/<p>([\s\S]*?)<\/p>/g)].map(([, texto]) => texto),

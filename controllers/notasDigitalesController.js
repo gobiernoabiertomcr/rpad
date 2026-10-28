@@ -14,6 +14,7 @@ import { renderDocx, membreteParaWord } from '../services/notasWord.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { estadoDeLosRecordatorios } from '../services/miEspacioEventosCorrida.js';
 import { alertaSinEstadoDeEventos } from '../services/miEspacioEventosReglas.js';
+import { leerCalendario } from '../services/feriadosDatos.js';
 
 const TIPOS = ['aviso', 'reiteracion'];
 // El libro también filtra las notas de autorización y las de auditoría (spec 2026-10-15, 7.2 y 10.4)
@@ -255,11 +256,13 @@ const estadoDeLosEventos = async () => {
   }
 };
 
-// El estado de las Notas Digitales (estadoNotas, que no cambia) con los recordatorios de la agenda: `eventos` y sus alertas al
-// final de las de siempre (cargarEstado de correos.js las dibuja todas y prende el punto de la pestaña con ellas)
+// El estado de las Notas Digitales (estadoNotas) con los recordatorios de la agenda: `eventos` y sus alertas al final de las de
+// siempre (cargarEstado de correos.js las dibuja todas y prende el punto de la pestaña con ellas). El calendario se lee una vez por
+// pedido y llega a todo lo que calcula estadoNotas (spec 2026-10-27-feriados-en-notas, 2 y 4); leerCalendario nunca tira
 export const verEstado = async (req, res) => {
   try {
-    const [estado, deLosEventos] = await Promise.all([notas.estadoNotas(), estadoDeLosEventos()]);
+    const calendario = await leerCalendario();
+    const [estado, deLosEventos] = await Promise.all([notas.estadoNotas({ calendario }), estadoDeLosEventos()]);
     res.json({
       success: true,
       data: { ...estado, eventos: deLosEventos.eventos, alertas: [...estado.alertas, ...deLosEventos.alertas] }
@@ -323,12 +326,14 @@ export const enviarPrueba = async (req, res) => {
     if (!pedida) return res.status(400).json({ success: false, error: 'Tipo o gestión inválidos' });
     const resultado = await notas.enviarPrueba({ ...pedida, usuarioId: req.user?.userId ?? null });
     if (!resultado.success) return res.status(502).json({ success: false, error: `No se pudo enviar la prueba: ${resultado.error}` });
-    // Si hoy no se generan notas, la prueba muestra la de la próxima corrida con notas (spec 2026-10-15, 7.7): lo dice
+    // Si hoy no se generan notas (motivo), o si esta nota sale otro día (otro_dia: por ejemplo, la reiteración del mes ya salió), la
+    // prueba muestra la de ese día (spec 2026-10-15, 7.7, y 2026-10-27-feriados-en-notas, 4): lo dice
     res.json({
       success: true,
       message: notas.mensajeDePrueba(resultado),
       data: {
-        id: resultado.id, ejemplo: resultado.ejemplo, destinatarios: resultado.destinatarios, fecha: resultado.fecha, motivo: resultado.motivo
+        id: resultado.id, ejemplo: resultado.ejemplo, destinatarios: resultado.destinatarios, fecha: resultado.fecha, motivo: resultado.motivo,
+        otro_dia: resultado.otro_dia
       }
     });
   } catch (error) {

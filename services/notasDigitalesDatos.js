@@ -6,6 +6,7 @@ import { listaDeCorreos } from './emailService.js';
 import { esFechaIso, VENTANA_DIAS } from './notasDigitalesCalendario.js';
 import { pedido, tipoEfectivo } from './fechasDatasetReglas.js';
 import { diaDelAvisoEnSuFecha } from './licenciasReglas.js';
+import { leerCalendario } from './feriadosDatos.js';
 
 export const GESTIONES = ['interna', 'externa'];
 // Días de anticipación del aviso, por gestión (40 en externa y 60 en interna): vive en el calendario, puro (Ruling 30), y se reexporta
@@ -158,7 +159,11 @@ export const seleccionarParaReiteracion = async (gestion, hoy) => {
 // adelantado: la corrida y el Estado lo usan para saber si a ese dataset ya le toca la reiteración (que solo toma avisos enviados).
 // adelantado es null si el aviso anticipado no se envió: el dataset entra igual, pero el aviso en su fecha no cita una nota
 // que el área nunca recibió (spec 2026-10-15, 7.6).
-export const pendientesEnSuFecha = async (gestion, hoy, licencia, ausencias = []) => {
+// dia_en_su_fecha se cuenta con el calendario (spec 2026-10-27-feriados-en-notas, 3): un cuenta_desde que cae en un feriado de
+// la tabla va al hábil anterior dentro de la licencia, y el cuenta_desde que se devuelve (el guardado) no cambia. calendario: el de
+// quien llama; sin él, se lee (leerCalendario).
+export const pendientesEnSuFecha = async (gestion, hoy, licencia, ausencias = [], calendario) => {
+  const conElCalendario = calendario ?? await leerCalendario();
   const [filas] = await pool.query(
     `SELECT ${COLUMNAS_DATASET}, DATE_FORMAT(avd.cuenta_desde, '%Y-%m-%d') AS cuenta_desde,
             av.numero AS aviso_numero, av.anio AS aviso_anio, DATE_FORMAT(av.fecha, '%Y-%m-%d') AS aviso_fecha,
@@ -180,7 +185,7 @@ export const pendientesEnSuFecha = async (gestion, hoy, licencia, ausencias = []
       ...conPedido(dataset, hoy),
       adelantado: aviso_estado === 'enviada' ? { numero: aviso_numero, anio: aviso_anio, fecha: aviso_fecha } : null,
       aviso_estado,
-      dia_en_su_fecha: diaDelAvisoEnSuFecha({ cuentaDesde: dataset.cuenta_desde, licencia, ausencias })
+      dia_en_su_fecha: diaDelAvisoEnSuFecha({ cuentaDesde: dataset.cuenta_desde, licencia, ausencias, calendario: conElCalendario })
     }))
     .filter(dataset => dataset.dia_en_su_fecha !== null);
 };

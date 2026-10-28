@@ -8,7 +8,8 @@
  * Sin consultas N+1: una consulta para las filas y otra para todos sus `no_rige`.
  */
 import pool from '../config/database.js';
-import { feriadosDelRango } from './feriadosReglas.js';
+import { feriadosDelRango, calendarioCon } from './feriadosReglas.js';
+import { CALENDARIO_FIJO } from './notasDigitalesCalendario.js';
 import { idPositivo } from './proyectosReglas.js';
 
 const SELECT_FERIADOS = `SELECT id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, nombre, tipo,
@@ -76,3 +77,20 @@ export const filaDeFeriado = async (id, conexion = pool) => {
  * @returns {Promise<Set<string>>}
  */
 export const feriadosEntre = async (desde, hasta) => feriadosDelRango(await filasDeFeriados(), desde, hasta);
+
+/**
+ * El calendario de días hábiles con los feriados de la tabla (spec 2026-10-27-feriados-en-notas, 1 y 2): `calendarioCon` de las
+ * filas activas. Se lee una vez por corrida o por pedido, y lo reciben las funciones que llama ese punto de entrada.
+ * Nunca tira: si la tabla no se puede leer, anota el error en la consola y devuelve el calendario de los 9 fijos con
+ * `origen: 'fijos'` y el motivo en `error` (quien lo usa lo detecta con `error !== null`). `conexion`: el pool, o la de una
+ * transacción (lee lo que ella ve).
+ * @returns {Promise<object>} el calendario, congelado
+ */
+export const leerCalendario = async (conexion = pool) => {
+  try {
+    return calendarioCon(await filasDeFeriados(conexion));
+  } catch (error) {
+    console.error('No se pudieron leer los feriados: el calendario cuenta solo los 9 fijos.', error);
+    return Object.freeze({ ...CALENDARIO_FIJO, origen: 'fijos', error: String(error?.message ?? error) });
+  }
+};
