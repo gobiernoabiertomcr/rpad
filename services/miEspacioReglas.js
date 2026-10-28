@@ -1763,6 +1763,12 @@ const motivoDe = (sinPasar) => {
 const conOtrasFechas = (fila, oficial) =>
   conFechas(fila) && (fila.desde !== oficial.desde || fila.hasta !== oficial.hasta);
 
+// Una creada con otras fechas en Configuración que ningún otro aviso de la fila explica: sin un motivo guardado (`sinPasar`),
+// de día entero y de quien hoy puede tener licencia (`puedeTener`, solo el `true` literal). La regla de `textoDelVinculo` (la
+// fila) y de `revisionDelVinculo` (el Resumen, que además pide que la de Configuración no haya terminado)
+const otrasFechasParaRevisar = (fila, oficial, { sinPasar, puedeTener }) =>
+  motivoDe(sinPasar) === null && esDiaEntero(fila) && puedeTener === true && conOtrasFechas(fila, oficial);
+
 /**
  * Lo que dice una fila de la lista sobre Configuración (`vinculo`, el de `vinculoDe`): `{ texto, insignia }` o null. La
  * insignia es 'creada' o 'unida' si está en Configuración como corresponde, y 'aviso' si no está o hay algo para revisar.
@@ -1788,7 +1794,7 @@ export const textoDelVinculo = (vinculo, fila, opciones) => {
     if (estado === 'creada') {
       if (motivo !== null) return aviso(`${enConfiguracion} ${textoNoPaso(motivo)}`);
       if (!esDiaEntero(fila)) return aviso(textoSigueEnConfiguracion(oficial.desde, oficial.hasta));
-      if (puedeTener === true && conOtrasFechas(fila, oficial)) {
+      if (otrasFechasParaRevisar(fila, oficial, { sinPasar, puedeTener })) {
         return aviso(textoRevisalaEnConfiguracion(oficial.desde, oficial.hasta));
       }
       return { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' };
@@ -1825,8 +1831,7 @@ export const revisionDelVinculo = (vinculo, fila, opciones) => {
   if (!esFechaIso(hoy) || !esObjeto(vinculo) || !esOficial(vinculo.oficial)) return null;
   const { estado, oficial } = vinculo;
   if (estado === 'creada' || estado === 'creada_cambiada') {
-    const paraRevisar = motivoDe(sinPasar) === null && esDiaEntero(fila) && puedeTener === true
-      && conOtrasFechas(fila, oficial) && oficial.hasta >= hoy;
+    const paraRevisar = otrasFechasParaRevisar(fila, oficial, { sinPasar, puedeTener }) && oficial.hasta >= hoy;
     return paraRevisar ? { motivo: 'fechas', desde: oficial.desde, hasta: oficial.hasta } : null;
   }
   const sigue = conFechas(fila) && fila.hasta >= hoy;
