@@ -9,14 +9,15 @@ import pool from '../config/database.js';
 import { avisarAlSuperadmin } from '../services/avisosSuperadminService.js';
 import { hoyArgentina, esFechaIso, sumarDias, diasEntre } from '../services/notasDigitalesCalendario.js';
 import {
-  ROLES_CON_LICENCIA, estadoDeLicencia, validarFechasNuevas, visperaDeLaLicencia, SIN_VISPERA
+  ROLES_CON_LICENCIA, estadoDeLicencia, validarFechasNuevas, visperaDeLaLicencia, SIN_VISPERA, mensajeDeLaAnulacion
 } from '../services/licenciasReglas.js';
 import { periodosSinAuditor, DIAS_PERIODOS_SIN_AUDITOR } from '../services/auditoriaService.js';
 import { leerCalendario } from '../services/feriadosDatos.js';
 import {
   MENSAJE_SOLO_TITULAR, COLUMNAS_LICENCIA, DESDE_LICENCIA, periodo, firmanteTitular, autorizables, conSusLicencias,
-  bloquearUsuarios, cargarLicencia, cambiarLicencia, anularLicenciaDe
+  bloquearUsuarios, cargarLicencia, cambiarLicencia, anularLicenciaDe, buscarLicenciaOficial
 } from '../services/licenciasOficialesService.js';
+import { bajaPorLaAnulacion } from '../services/miEspacioPaso.js';
 
 const MENSAJE_ERROR = 'Error interno del servidor';
 // Rango máximo de la consulta de días sin auditor, contando los dos extremos
@@ -261,7 +262,9 @@ export const editarLicencia = async (req, res) => {
   }
 };
 
-// POST /usuarios/licencias/:id/anular: solo si todavía no empezó o empieza hoy (spec 5.2)
+// POST /usuarios/licencias/:id/anular: solo si todavía no empezó o empieza hoy (spec 5.2). Si se cargó desde Mi espacio, la
+// fila de Mi espacio que la creó se da de baja en la misma transacción (spec 2026-10-28-mi-espacio-licencia-anulada, 2.1 y 3b:
+// salvo que en Mi espacio haya empezado antes de hoy), y el mensaje lo dice
 export const anularLicencia = async (req, res) => {
   const id = idDe(req.params.id);
   if (!id) return responderError(res, 404, 'Licencia no encontrada');
@@ -269,6 +272,7 @@ export const anularLicencia = async (req, res) => {
   let conexion;
   let licencia;
   let auditoriaId;
+  let mensaje;
   try {
     conexion = await pool.getConnection();
     await conexion.beginTransaction();
@@ -279,6 +283,10 @@ export const anularLicencia = async (req, res) => {
       return responderRechazo(res, resultado.rechazo);
     }
     ({ licencia, auditoriaId } = resultado);
+    const enMiEspacio = await bajaPorLaAnulacion(conexion, { licenciaOficialId: id, hoy });
+    mensaje = mensajeDeLaAnulacion(enMiEspacio);
+    // Con la fila dada de baja, la insignia «Cargada desde Mi espacio» se apaga: se vuelve a leer
+    if (enMiEspacio.borradas > 0) licencia = await buscarLicenciaOficial(conexion, id);
     await conexion.commit();
   } catch (error) {
     await conexion?.rollback().catch(() => {});
@@ -291,7 +299,7 @@ export const anularLicencia = async (req, res) => {
   try {
     await avisarSiEsDelSuperadmin(req, licencia, `Licencia anulada (${periodo(licencia)})`, auditoriaId, hoy);
     // La anulación no cuenta días hábiles: el calendario se lee solo para la víspera de la respuesta
-    res.json({ success: true, data: await respuestaDe(licencia, hoy, await leerCalendario()), message: 'Licencia anulada' });
+    res.json({ success: true, data: await respuestaDe(licencia, hoy, await leerCalendario()), message: mensaje });
   } catch (error) {
     console.error('Error respondiendo la anulación de la licencia:', error);
     responderError(res, 500, MENSAJE_ERROR);

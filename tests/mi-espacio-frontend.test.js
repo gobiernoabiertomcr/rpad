@@ -13,7 +13,8 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
 import {
-  filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, resumenDe, proximoFeriadoDe, diaLargo, mesTitulo, planillaDelMes
+  filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, resumenDe, proximoFeriadoDe, diaLargo, mesTitulo, planillaDelMes,
+  textoDeLaListaDe
 } from '../services/miEspacioResumen.js';
 import { feriadosDelRango } from '../services/feriadosReglas.js';
 import { notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota } from '../services/miEspacioNota.js';
@@ -85,12 +86,14 @@ const FERIADO_SOBERANIA = Object.freeze({
 const AUSENCIA_DE_MARTIN = Object.freeze({ usuario_id: 3, nombre: 'Martín Ríos', desde: '2026-10-26', hasta: '2026-10-30' });
 // Empieza mañana: va en «Mañana no están»
 const AUSENCIA_DE_DIEGO = Object.freeze({ usuario_id: 4, nombre: 'Diego Fernández', desde: MANANA, hasta: MANANA });
-const resumenDel = (caso, { estado = caso.estado, persona = caso.persona, ausencias = [] } = {}) => comoLlega(resumenDe({
+// `vinculos`: los de vinculosDe (un Map del id de cada fila a lo que dice de Configuración, con su `revision`), para `para_revisar`
+const resumenDel = (caso, { estado = caso.estado, persona = caso.persona, ausencias = [], vinculos } = {}) => comoLlega(resumenDe({
   persona, estado, calculo: calculoDe(estado), hoy: HOY, feriados: SIN_FERIADOS,
   hoyYManana: {
     ...ausentesDeHoyYManana(ausentesDelRango(ausenciasUnidas(ausencias, SIN_FERIADOS), HOY, MANANA), HOY),
     proximo_feriado: proximoFeriadoDe([FERIADO_SOBERANIA], HOY)
-  }
+  },
+  vinculos
 }));
 const conLicencias = (estado, ...licencias) => ({ ...estado, licencias: [...estado.licencias, ...licencias] });
 const licencia = (id, tipo, desde, hasta = desde, horas = null) => ({ id, tipo, desde, hasta, horas });
@@ -269,7 +272,8 @@ describe('el Resumen «Titular»', () => {
     assert.equal(M.htmlDeLaFrase(planta.titular), '<div class="me-titular"><p class="me-banda-dia">Lunes 26 de octubre, planta permanente</p>'
       + '<h2 class="me-frase" id="me-frase">Te quedan <span class="me-cifra"><span class="me-cifra-final" aria-hidden="true">33</span>'
       + '<span aria-hidden="true" data-contar>33</span><span class="visualmente-oculto">33</span></span> días de vacaciones</h2>'
-      + '<p class="me-frase-bajada"><b class="vence">3 vencen el jueves 31/12.</b> 5 ya están cargados para noviembre. '
+      + '<p class="me-frase-bajada"><b class="vence">3 vencen el jueves 31/12.</b> <a href="#licencias" data-pestana="licencias" '
+      + 'data-anio-licencias="2026" class="me-frase-link">5 ya están cargados para noviembre.</a> '
       + 'Otros 10 se habilitan el 1/1/2027.</p></div>');
     // CONTRATO: una sola oración, que no vence
     assert.ok(M.htmlDeLaFrase(contrato.titular).startsWith('<div class="me-titular"><p class="me-banda-dia">Lunes 26 de octubre, contrato</p>'));
@@ -613,6 +617,7 @@ describe('el Resumen «Titular»', () => {
     conHtml.extraordinaria = MALICIOSO;
     conHtml.al_texto = MALICIOSO;
     conHtml.faltantes = [MALICIOSO];
+    conHtml.para_revisar = [{ licencia_id: 20, anio: 2027, texto: MALICIOSO, enlace: MALICIOSO }];
     conHtml.hoy_y_manana.proximo_feriado = { fecha: '2026-11-23', cuando: MALICIOSO, nombre: MALICIOSO };
     conHtml.hoy_y_manana.eventos = comoLlega(eventosDeHoyYManana(respuestaDeEventos({ desde: HOY, hasta: MANANA }, {
       eventos: [eventoDe(71, MALICIOSO, HOY, '12:00'), eventoDe(72, 'Otro', MANANA, '10:00', { ...DE_MARTIN, creador: MALICIOSO })]
@@ -626,7 +631,11 @@ describe('el Resumen «Titular»', () => {
     assert.ok(html.includes(`<p class="me-banda-dia">${ESCAPADO}</p><h2 class="me-frase" id="me-frase">${ESCAPADO} <span class="me-cifra">`
       + `<span class="me-cifra-final" aria-hidden="true">${ESCAPADO}</span><span aria-hidden="true" data-contar>${ESCAPADO}</span>`
       + `<span class="visualmente-oculto">${ESCAPADO}</span></span> ${ESCAPADO}</h2>`));
-    assert.ok(html.includes(`<p class="me-frase-bajada"><b class="vence">${ESCAPADO}</b> ${ESCAPADO} `));
+    assert.ok(html.includes(`<p class="me-frase-bajada"><b class="vence">${ESCAPADO}</b> <a href="#licencias" data-pestana="licencias" `
+      + `data-anio-licencias="2026" class="me-frase-link">${ESCAPADO}</a> `));
+    // Los faltantes y lo que hay que revisar, con el texto de su link
+    assert.ok(html.startsWith(`<div class="me-aviso me-aviso-ambar"><ul class="me-faltantes"><li>${ESCAPADO}</li><li>${ESCAPADO} `
+      + `<a href="#licencias" data-pestana="licencias" data-anio-licencias="2027">${ESCAPADO}</a></li></ul></div>`));
     // Lo que vence: el título, su línea, el botón y su tipo
     assert.ok(html.includes(`<b id="me-vence-0">${ESCAPADO}</b><span class="me-entrada-texto">${ESCAPADO}</span>`));
     assert.equal(botonesDe(html).find(({ atributos }) => atributos['data-accion']).atributos['data-tipo'], ESCAPADO);
@@ -1703,7 +1712,8 @@ describe('mi-espacio.js: la página (DOM falso)', () => {
   it('un número del resto lleva a su pestaña: la abre (la pide la primera vez), escribe el fragmento y el foco va a la pestaña', async () => {
     const pagina = montarPagina();
     await pagina.iniciar();
-    const numero = pagina.el('vista-resumen').querySelectorAll('[data-pestana]').find((link) => link.getAttribute('href') === '#licencias');
+    // El primero del resto que lleva a Licencias (el link de la bajada también va ahí, en su año: está más abajo)
+    const numero = pagina.el('vista-resumen').querySelectorAll('.me-numero[data-pestana]').find((link) => link.getAttribute('href') === '#licencias');
     assert.ok(numero.classList.contains('me-numero'));
     const evento = numero.disparar('click');
     await pagina.esperar();
@@ -3229,15 +3239,17 @@ describe('el día por día de contrato: las salidas', () => {
 // La página con los formularios (DOM falso)
 
 // La respuesta de GET /api/mi-espacio/licencias/:id/nota como la arma el servidor (verNotaDeLicencia), para la licencia `id` de
-// `estado`: su fila de la lista (filaDeUnaLicencia), la hoja (htmlDeLaNota, ya escapada), la fecha y la aclaración. La persona
-// de planta, con un cargo inventado; `fecha`, el día en que se guardó
+// `estado`: su fila de la lista (filaDeUnaLicencia), la hoja (htmlDeLaNota, ya escapada), la fecha, la aclaración y en qué lista
+// quedó (`lista`, textoDeLaListaDe: «Está en la lista de 2027.», o null en la del año en curso). La persona de planta, con un
+// cargo inventado; `fecha`, el día en que se guardó
 const CARGO_DE_PRUEBA = 'Analista de datos';
 const respuestaDeLaNota = (estado, id, { fecha = HOY } = {}) => {
   const persona = { nombre: PLANTA.persona.nombre_completo, cargo: CARGO_DE_PRUEBA, vinculo: PLANTA.persona.vinculo };
-  const { nota } = notaDeLicencia(estado.licencias.find((fila) => fila.id === id), { fecha, persona, feriados: SIN_FERIADOS });
+  const guardada = estado.licencias.find((fila) => fila.id === id);
+  const { nota } = notaDeLicencia(guardada, { fecha, persona, feriados: SIN_FERIADOS });
   return comoLlega({
     fila: filaDeUnaLicencia(estado, calculoDe(estado), { id, hoy: HOY, persona: PLANTA.persona, feriados: SIN_FERIADOS }),
-    html: htmlDeLaNota(nota), fecha, aclaracion: aclaracionDeLaNota(fecha)
+    html: htmlDeLaNota(nota), fecha, aclaracion: aclaracionDeLaNota(fecha), lista: textoDeLaListaDe(guardada.desde, HOY)
   });
 };
 const RUTA_DE_LA_NOTA = /^\/api\/mi-espacio\/licencias\/(\d+)\/nota$/;
@@ -5820,7 +5832,9 @@ describe('el segundo paso de «Cargar licencia» (DOM falso)', () => {
     assert.equal(pagina.pedidosA('GET', '/api/mi-espacio/licencias/6/nota').length, 1);
   });
 
-  it('otro año: una licencia de 2027, que la lista de 2026 no muestra, se ve igual (la fila viene de …/nota)', async () => {
+  // Desde la licencia anulada en Configuración (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3), la lista pasa a 2027 (acá el
+  // servidor falso no la tiene: la lista dice que no se pudo cargar), pero el segundo paso no depende de ella
+  it('otro año: una licencia de 2027 se ve igual aunque la lista no la tenga (la fila viene de …/nota), con «Está en la lista de 2027.»', async () => {
     const pagina = montarPagina({
       hash: '#licencias',
       responder: conFormularios({
@@ -5831,11 +5845,14 @@ describe('el segundo paso de «Cargar licencia» (DOM falso)', () => {
     await pagina.iniciar();
     await cargarLicencia(pagina, { desde: '2027-02-01', hasta: '2027-02-05' });
     await pagina.tocar(pagina.el('ml-guardar'));
-    assert.equal(pagina.el('vista-licencias').querySelector('[data-editar-licencia="10"]'), null, 'la lista de 2026 no la muestra');
+    assert.equal(pagina.pedidosA('GET', '/api/mi-espacio/licencias?anio=2027').length, 1, 'la lista se pide en 2027');
+    assert.equal(pagina.el('vista-licencias').querySelector('[data-editar-licencia="10"]'), null, 'la lista no la tiene');
     const nota = respuestaDeLaNota(conLicencias(PLANTA.estado, licencia(10, 'vacaciones', '2027-02-01', '2027-02-05')), 10);
     assert.equal(nota.fila.fechas_texto, '01/02 al 05/02/2027');
+    assert.equal(nota.lista, 'Está en la lista de 2027.');
     assert.equal(pagina.el('ml-paso-dos').innerHTML, M.htmlDelSegundoPaso({ ...nota, avisos: [] }));
     assert.equal(pagina.el('ml-paso-dos').querySelector('.me-paso-dos-fechas').textContent, '01/02 al 05/02/2027');
+    assert.equal(pagina.el('ml-paso-dos').querySelector('.me-paso-dos-lista').textContent, 'Está en la lista de 2027.');
   });
 
   it('«Listo», la × y Escape cierran; al volver a abrir «Cargar licencia» está el formulario', async () => {
@@ -6999,5 +7016,436 @@ describe('mi-espacio.html: los estilos de la planilla', () => {
       assert.ok(contraste(borde, fondo) >= 3, `${borde} sobre ${fondo}: ${contraste(borde, fondo).toFixed(2)}:1`);
     }
     assert.equal(de('.mp-nota-campo input', 'border'), borde);
+  });
+});
+
+// =====================================================================================================================================
+// Una licencia de otro año y los avisos para revisar (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 2.3 y 3.5): la persona de
+// planta con sus vacaciones de noviembre pasadas a enero de 2027 (la 20, del 04/01 al 15/01/2027), que en Configuración quedaron del
+// 04/01 al 08/01. Los datos, como los arma el servidor: resumenDe con los vínculos (`para_revisar` y la oración de lo cargado con su
+// `anio`), filasDeLicencias (`otros_anios`) y textoDeLaListaDe (`lista` del segundo paso, en respuestaDeLaNota)
+// =====================================================================================================================================
+
+const DE_ENERO = licencia(20, 'vacaciones', '2027-01-04', '2027-01-15');
+const CON_ENERO = Object.freeze({ ...PLANTA.estado, licencias: [...PLANTA.estado.licencias.filter((fila) => fila.id !== 6), DE_ENERO] });
+// El vínculo de una fila con Configuración como lo da vinculosDe, con lo que hay que revisar
+const conRevision = (motivo, desde = null, hasta = null) => ({ configuracion: null, revision: { motivo, desde, hasta } });
+const RESUMEN_CON_ENERO = resumenDel(PLANTA, {
+  estado: CON_ENERO, vinculos: new Map([[20, conRevision('fechas', '2027-01-04', '2027-01-08')]])
+});
+const LISTA_2026_CON_ENERO = licenciasDe(PLANTA, { estado: CON_ENERO });
+const LISTA_2027_CON_ENERO = licenciasDe(PLANTA, { estado: CON_ENERO, anio: 2027 });
+const [PARA_REVISAR_DE_ENERO] = RESUMEN_CON_ENERO.para_revisar;
+const AVISO_AMBAR = (items) => `<div class="me-aviso me-aviso-ambar"><ul class="me-faltantes">${items}</ul></div>`;
+const LINK_A_2027 = '<a href="#licencias" data-pestana="licencias" data-anio-licencias="2027">Ver en Licencias de 2027</a>';
+const FALTANTE_DE_FEBRERO = 'Revisá tus francos de febrero de 2027: cargaste 1 y no corresponde ninguno.';
+const OTROS_DE_2027 = '<p class="me-otros-anios">También tenés 1 licencia cargada en 2027. '
+  + '<button type="button" data-anio="2027">Ver 2027</button></p>';
+const NO_ENTEROS = Object.freeze(['2027', 2027.5, null, undefined, Number.NaN, MALICIOSO, {}]);
+
+describe('otro año y para revisar: lo puro', () => {
+  it('los datos de prueba son los del servidor: el aviso para revisar, la oración de lo cargado con su año y los otros años', () => {
+    assert.deepEqual(RESUMEN_CON_ENERO.para_revisar, [{
+      licencia_id: 20, anio: 2027, texto: 'Revisá tu licencia del 04/01 al 15/01/2027: en Configuración quedó del 04/01 al 08/01.',
+      enlace: 'Ver en Licencias de 2027'
+    }]);
+    assert.deepEqual(RESUMEN_CON_ENERO.faltantes, []);
+    assert.deepEqual(RESUMEN_CON_ENERO.titular.bajada[1], { texto: '10 ya están cargados para enero de 2027.', vence: false, anio: 2027 });
+    assert.deepEqual(LISTA_2026_CON_ENERO.otros_anios, [{ anio: 2027, cantidad: 1, texto: 'También tenés 1 licencia cargada en 2027.' }]);
+    assert.deepEqual(LISTA_2027_CON_ENERO.otros_anios, []);
+  });
+
+  it('htmlDeFaltantes: los faltantes como siempre y después cada aviso para revisar, con su link a Licencias de su año', () => {
+    const { texto } = PARA_REVISAR_DE_ENERO;
+    // Los dos
+    assert.equal(M.htmlDeFaltantes([FALTANTE_DE_FEBRERO], [PARA_REVISAR_DE_ENERO]),
+      AVISO_AMBAR(`<li>${FALTANTE_DE_FEBRERO}</li><li>${texto} ${LINK_A_2027}</li>`));
+    // Solo el aviso para revisar: en la lista igual
+    assert.equal(M.htmlDeFaltantes([], [PARA_REVISAR_DE_ENERO]), AVISO_AMBAR(`<li>${texto} ${LINK_A_2027}</li>`));
+    assert.equal(M.htmlDeFaltantes(undefined, [PARA_REVISAR_DE_ENERO]), AVISO_AMBAR(`<li>${texto} ${LINK_A_2027}</li>`));
+    // Solo los faltantes: como siempre (uno, un párrafo)
+    assert.equal(M.htmlDeFaltantes([FALTANTE_DE_FEBRERO], []), `<p class="me-aviso me-aviso-ambar">${FALTANTE_DE_FEBRERO}</p>`);
+    assert.equal(M.htmlDeFaltantes([FALTANTE_DE_FEBRERO]), `<p class="me-aviso me-aviso-ambar">${FALTANTE_DE_FEBRERO}</p>`);
+    // Ninguno (o lo que no es un aviso con texto): nada
+    for (const raro of [[], undefined, null, 'x', 3, [{}], [{ anio: 2027, enlace: 'Ver' }], [{ texto: '  ', anio: 2027 }], [null]]) {
+      assert.equal(M.htmlDeFaltantes([], raro), '', JSON.stringify(raro));
+    }
+    assert.equal(M.htmlDeFaltantes(), '');
+  });
+
+  it('htmlDeFaltantes: todo texto del servidor escapado, también el del link; un año que no es entero, o sin texto del link, sin link', () => {
+    const malo = M.htmlDeFaltantes([], [{ licencia_id: 20, anio: 2027, texto: '<script>alert(1)</script>', enlace: '<script>ver</script>' }]);
+    assert.equal(malo, AVISO_AMBAR('<li>&lt;script&gt;alert(1)&lt;/script&gt; <a href="#licencias" data-pestana="licencias" '
+      + 'data-anio-licencias="2027">&lt;script&gt;ver&lt;/script&gt;</a></li>'));
+    assert.ok(!malo.includes('<script>'));
+    for (const anio of NO_ENTEROS) {
+      assert.equal(M.htmlDeFaltantes([], [{ ...PARA_REVISAR_DE_ENERO, anio }]), AVISO_AMBAR(`<li>${PARA_REVISAR_DE_ENERO.texto}</li>`),
+        String(anio));
+    }
+    for (const enlace of ['', '  ', null, 3]) {
+      assert.equal(M.htmlDeFaltantes([], [{ ...PARA_REVISAR_DE_ENERO, enlace }]), AVISO_AMBAR(`<li>${PARA_REVISAR_DE_ENERO.texto}</li>`),
+        String(enlace));
+    }
+  });
+
+  it('htmlDelResumen le pasa `para_revisar`: el aviso ámbar va arriba de todo, antes de la banda; sin ninguno, no hay aviso', () => {
+    const html = M.htmlDelResumen(RESUMEN_CON_ENERO);
+    assert.ok(html.startsWith(`${AVISO_AMBAR(`<li>${PARA_REVISAR_DE_ENERO.texto} ${LINK_A_2027}</li>`)}<section class="me-banda"`));
+    assert.ok(!M.htmlDelResumen({ ...RESUMEN_CON_ENERO, para_revisar: [] }).includes('me-aviso-ambar'));
+    // Un Resumen de antes, sin `para_revisar`, como siempre
+    const deAntes = { ...RESUMEN_CON_ENERO };
+    delete deAntes.para_revisar;
+    assert.ok(M.htmlDelResumen(deAntes).startsWith('<section class="me-banda"'));
+  });
+
+  it('htmlDeLaFrase: la oración de lo cargado, con su año, es un link a Licencias de ese año; la que vence sigue en negrita', () => {
+    assert.equal(M.htmlDeLaFrase(RESUMEN_CON_ENERO.titular).match(/<p class="me-frase-bajada">[\s\S]*?<\/p>/)[0],
+      '<p class="me-frase-bajada"><b class="vence">8 vencen el jueves 31/12.</b> <a href="#licencias" data-pestana="licencias" '
+      + 'data-anio-licencias="2027" class="me-frase-link">10 ya están cargados para enero de 2027.</a> '
+      + 'Otros 10 se habilitan el 1/1/2027.</p>');
+    // Sin año, o con uno que no es entero (un null del servidor), el texto solo
+    for (const anio of NO_ENTEROS) {
+      const bajada = RESUMEN_CON_ENERO.titular.bajada.map((oracion) => (Object.hasOwn(oracion, 'anio') ? { ...oracion, anio } : oracion));
+      const html = M.htmlDeLaFrase({ ...RESUMEN_CON_ENERO.titular, bajada });
+      assert.ok(!html.includes('me-frase-link'), String(anio));
+      assert.ok(!html.includes('data-anio-licencias'), String(anio));
+      assert.ok(html.includes('</b> 10 ya están cargados para enero de 2027. Otros 10'), String(anio));
+    }
+    // El texto, escapado también en el link
+    const malo = M.htmlDeLaFrase({ ...RESUMEN_CON_ENERO.titular, bajada: [{ texto: MALICIOSO, vence: false, anio: 2027 }] });
+    assert.ok(malo.includes(`<a href="#licencias" data-pestana="licencias" data-anio-licencias="2027" class="me-frase-link">${ESCAPADO}</a>`));
+    assert.ok(!malo.includes(MALICIOSO));
+  });
+
+  it('la lista: debajo de la cabeza, cada otro año con su texto y «Ver AAAA» (el data-anio del selector)', () => {
+    const lista = M.htmlDeListaDeLicencias(LISTA_2026_CON_ENERO, 'todas');
+    assert.ok(lista.includes(`Cargar licencia</button></span></div>${OTROS_DE_2027}<div class="sg-chips"`));
+    assert.equal(lista.split('me-otros-anios').length - 1, 1);
+    const ver = botonesDe(lista).find((boton) => boton.texto === 'Ver 2027');
+    assert.deepEqual(ver.atributos, { type: 'button', 'data-anio': '2027' });
+    // Sin otros años, nada
+    assert.ok(!M.htmlDeListaDeLicencias(LISTA_2027_CON_ENERO, 'todas').includes('me-otros-anios'));
+    // Varios, en su orden; con otro filtro, también; sin licencias en el año que se ve, también (antes del vacío)
+    const varios = {
+      ...LISTA_2026_CON_ENERO,
+      otros_anios: [{ anio: 2025, cantidad: 2, texto: 'También tenés 2 licencias cargadas en 2025.' }, ...LISTA_2026_CON_ENERO.otros_anios]
+    };
+    const de2025 = '<p class="me-otros-anios">También tenés 2 licencias cargadas en 2025. '
+      + '<button type="button" data-anio="2025">Ver 2025</button></p>';
+    assert.ok(M.htmlDeListaDeLicencias(varios, 'franquicia').includes(`</div>${de2025}${OTROS_DE_2027}<div class="sg-chips"`));
+    const vacia = { ...LISTA_2027_CON_ENERO, licencias: [], filtros: [], otros_anios: LISTA_2026_CON_ENERO.otros_anios };
+    assert.ok(M.htmlDeListaDeLicencias(vacia, 'todas').includes(`</div>${OTROS_DE_2027}<p class="me-vacio">`));
+  });
+
+  it('la lista: el texto de otros años escapado; un año que no es entero, el texto sin el botón; lo que no es un aviso con texto, nada', () => {
+    const malo = M.htmlDeListaDeLicencias({ ...LISTA_2026_CON_ENERO, otros_anios: [{ anio: 2027, cantidad: 1, texto: MALICIOSO }] }, 'todas');
+    assert.ok(malo.includes(`<p class="me-otros-anios">${ESCAPADO} <button type="button" data-anio="2027">Ver 2027</button></p>`));
+    assert.ok(!malo.includes(MALICIOSO));
+    for (const anio of NO_ENTEROS) {
+      const html = M.htmlDeListaDeLicencias({ ...LISTA_2026_CON_ENERO, otros_anios: [{ anio, cantidad: 1, texto: 'También tenés 1.' }] }, 'todas');
+      assert.ok(html.includes('<p class="me-otros-anios">También tenés 1.</p>'), String(anio));
+    }
+    for (const raro of [undefined, null, 'x', [{}], [{ anio: 2027, texto: '' }], [null]]) {
+      assert.ok(!M.htmlDeListaDeLicencias({ ...LISTA_2026_CON_ENERO, otros_anios: raro }, 'todas').includes('me-otros-anios'),
+        JSON.stringify(raro));
+    }
+    // Sin modalidad, solo el mensaje
+    assert.equal(M.htmlDeListaDeLicencias({ ...SIN_MODALIDAD, otros_anios: LISTA_2026_CON_ENERO.otros_anios }, 'todas'),
+      M.htmlDeMensaje(MENSAJES_MI_ESPACIO.sinModalidad));
+  });
+
+  it('htmlDelSegundoPaso: `lista`, escapada, después de la licencia guardada; sin ella (la del año en curso), nada', () => {
+    const nota = respuestaDeLaNota(conLicencias(PLANTA.estado, licencia(10, 'vacaciones', '2027-02-01', '2027-02-05')), 10);
+    assert.equal(nota.lista, 'Está en la lista de 2027.');
+    const html = M.htmlDelSegundoPaso({ ...nota, avisos: [] });
+    assert.ok(html.includes('</div></div><p class="me-paso-dos-lista">Está en la lista de 2027.</p><h3 class="me-paso-dos-titulo">'));
+    // Sin la fila, después de los avisos
+    assert.ok(M.htmlDelSegundoPaso({ lista: nota.lista, avisos: [TEXTO_NO_SE_COPIA] }).startsWith(
+      `<div class="me-recuadro ambar"><p>${TEXTO_NO_SE_COPIA}</p></div><p class="me-paso-dos-lista">Está en la lista de 2027.</p>`));
+    assert.equal(NOTA_DE_LA_NUEVE.lista, null);
+    assert.ok(!M.htmlDelSegundoPaso({ ...NOTA_DE_LA_NUEVE, avisos: [] }).includes('me-paso-dos-lista'));
+    for (const lista of [null, undefined, '', '  ', 3, {}]) {
+      assert.ok(!M.htmlDelSegundoPaso({ ...nota, lista }).includes('me-paso-dos-lista'), String(lista));
+    }
+    const malo = M.htmlDelSegundoPaso({ ...nota, lista: MALICIOSO });
+    assert.ok(malo.includes(`<p class="me-paso-dos-lista">${ESCAPADO}</p>`));
+    assert.ok(!malo.includes(MALICIOSO));
+  });
+
+  it('anioDeLaLicencia: el año de un AAAA-MM-DD; lo demás, null', () => {
+    assert.equal(M.anioDeLaLicencia('2027-01-04'), 2027);
+    assert.equal(M.anioDeLaLicencia('2026-12-31'), 2026);
+    for (const raro of ['2027-1-4', '2027-02-30', '2027-01-04T00:00', '', ' 2027-01-04', null, undefined, 5, 2027, {}, ['2027-01-04']]) {
+      assert.equal(M.anioDeLaLicencia(raro), null, String(raro));
+    }
+  });
+});
+
+// Lo que contesta el servidor falso con las vacaciones de enero: el Resumen con el aviso para revisar, las listas de 2025 a 2027 y,
+// con `alta`, el alta de la 20; `extra`, como en conFormularios
+const ALTA_DE_LA_VEINTE = respuesta(201, { success: true, data: { id: 20 }, message: 'Licencia cargada.' });
+const conEnero = ({ alta = false, extra = () => undefined } = {}) => conFormularios({
+  extra: (metodo, ruta, cuerpo) => {
+    const propia = extra(metodo, ruta, cuerpo);
+    if (propia !== undefined) return propia;
+    if (alta && metodo === 'POST' && ruta === '/api/mi-espacio/licencias') return ALTA_DE_LA_VEINTE;
+    if (ruta === '/api/mi-espacio/resumen') return ok(RESUMEN_CON_ENERO);
+    if (ruta === '/api/mi-espacio/licencias' || ruta === '/api/mi-espacio/licencias?anio=2026') return ok(LISTA_2026_CON_ENERO);
+    if (ruta === '/api/mi-espacio/licencias?anio=2027') return ok(LISTA_2027_CON_ENERO);
+    if (ruta === '/api/mi-espacio/licencias?anio=2025') return ok(licenciasDe(PLANTA, { estado: CON_ENERO, anio: 2025 }));
+    return undefined;
+  }
+});
+// Los pedidos de la lista de licencias (los GET), en orden; el título de la lista que se ve; la pestaña elegida; y el año que la
+// lista tiene que mostrar la próxima vez que se pida
+const pedidosDeLaLista = (pagina) => pagina.estado.pedidos
+  .filter(({ metodo, ruta }) => metodo === 'GET' && /^\/api\/mi-espacio\/licencias(?:\?|$)/.test(ruta)).map(({ ruta }) => ruta);
+const tituloDeLaLista = (pagina) => pagina.el('vista-licencias').querySelector('h2')?.textContent ?? null;
+const pestanaElegida = (pagina) => ['resumen', 'licencias', 'horas', 'agenda']
+  .find((nombre) => pagina.el(`tab-${nombre}`).getAttribute('aria-selected') === 'true');
+const anioPendienteDe = (pagina) => vm.runInContext('pagina.anioDeLicencias', pagina.contexto);
+
+describe('otro año y para revisar en la página (DOM falso)', () => {
+  it('guardar una licencia de 2027 con Licencias abierta en 2026 pide la lista de 2027, y el segundo paso dice en qué lista quedó', async () => {
+    const pagina = montarPagina({ hash: '#licencias', responder: conEnero({ alta: true }) });
+    await pagina.iniciar();
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2026');
+    await cargarLicencia(pagina, { desde: '2027-01-04', hasta: '2027-01-15' });
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias', '/api/mi-espacio/licencias?anio=2027']);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+    assert.ok(pagina.el('vista-licencias').querySelector('[data-editar-licencia="20"]'));
+    assert.equal(pagina.el('ml-paso-dos').querySelector('.me-paso-dos-lista').textContent, 'Está en la lista de 2027.');
+    // Se usó una sola vez: ir y volver de la pestaña no la pide de nuevo
+    assert.equal(anioPendienteDe(pagina), null);
+    await pagina.tocar(listo(pagina));
+    await pagina.tocar(pagina.el('tab-resumen'));
+    await pagina.tocar(pagina.el('tab-licencias'));
+    assert.equal(pedidosDeLaLista(pagina).length, 2);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+  });
+
+  it('guardarla desde el Resumen, con Licencias sin abrir: al abrirla, la lista de 2027 (Review Focus 5); también desde «Vence pronto»', async () => {
+    const abrir = {
+      encabezado: async (pagina) => { await cargarLicencia(pagina, { desde: '2027-01-04', hasta: '2027-01-15' }); },
+      'vence pronto': async (pagina) => {
+        await pagina.tocar(pagina.el('vista-resumen').querySelector('[data-accion="cargar-licencia"][data-tipo="vacaciones"]'));
+        await pagina.correr();
+        await pagina.escribir('ml-desde', '2027-01-04');
+        await pagina.escribir('ml-hasta', '2027-01-15');
+        await pagina.correr();
+      }
+    };
+    for (const [desde, hacer] of Object.entries(abrir)) {
+      const pagina = montarPagina({ responder: conEnero({ alta: true }) });
+      await pagina.iniciar();
+      await hacer(pagina);
+      assert.equal(pagina.el('ml-tipos').querySelector('input:checked')?.getAttribute('value'), 'vacaciones', desde);
+      await pagina.tocar(pagina.el('ml-guardar'));
+      assert.equal(pagina.el('modal-licencia-titulo').textContent, 'Licencia cargada', desde);
+      assert.deepEqual(pedidosDeLaLista(pagina), [], `${desde}: la lista no se pidió`);
+      assert.equal(anioPendienteDe(pagina), 2027, desde);
+      await pagina.tocar(listo(pagina));
+      await pagina.tocar(pagina.el('tab-licencias'));
+      assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias?anio=2027'], desde);
+      assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027', desde);
+      assert.equal(anioPendienteDe(pagina), null, desde);
+    }
+  });
+
+  it('una del año en curso pide la lista sin ?anio=: desde Licencias en 2025 y desde el Resumen', async () => {
+    // Desde Licencias en 2025: la lista pasa al año en curso, sin ?anio=
+    const enLicencias = montarPagina({ hash: '#licencias', responder: conEnero() });
+    await enLicencias.iniciar();
+    await enLicencias.tocar(enLicencias.el('vista-licencias').querySelector('[data-anio="2025"]'));
+    assert.equal(tituloDeLaLista(enLicencias), 'Mis licencias de 2025');
+    await cargarLicencia(enLicencias);
+    await enLicencias.tocar(enLicencias.el('ml-guardar'));
+    assert.deepEqual(pedidosDeLaLista(enLicencias),
+      ['/api/mi-espacio/licencias', '/api/mi-espacio/licencias?anio=2025', '/api/mi-espacio/licencias']);
+    assert.equal(tituloDeLaLista(enLicencias), 'Mis licencias de 2026');
+    assert.equal(enLicencias.el('ml-paso-dos').querySelector('.me-paso-dos-lista'), null);
+
+    // Desde el Resumen: al abrir Licencias, también sin ?anio=
+    const enElResumen = montarPagina({ responder: conEnero() });
+    await enElResumen.iniciar();
+    await cargarLicencia(enElResumen);
+    await enElResumen.tocar(enElResumen.el('ml-guardar'));
+    await enElResumen.tocar(listo(enElResumen));
+    await enElResumen.tocar(enElResumen.el('tab-licencias'));
+    assert.deepEqual(pedidosDeLaLista(enElResumen), ['/api/mi-espacio/licencias']);
+  });
+
+  it('un uso autorizado de 2027 también: al abrir Licencias, la lista de su año', async () => {
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: conEnero({
+        extra: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/mi-espacio/licencias'
+          ? respuesta(201, { success: true, data: { id: 21 }, message: 'Uso autorizado registrado.' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-abrir="uso"]'));
+    await pagina.escribir('mu-fecha', '2027-01-04');
+    await pagina.correr();
+    await pagina.tocar(pagina.el('mu-guardar'));
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').at(-1).cuerpo.desde, '2027-01-04');
+    assert.equal(pagina.abierto('modal-uso'), false);
+    assert.equal(anioPendienteDe(pagina), 2027);
+    await pagina.tocar(pagina.el('tab-licencias'));
+    assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias?anio=2027']);
+  });
+
+  it('el link de la bajada y el del aviso para revisar abren Licencias en su año, con el foco en la pestaña; si ya lo muestra, no la piden', async () => {
+    const pagina = montarPagina({ responder: conEnero() });
+    await pagina.iniciar();
+    const vista = pagina.el('vista-resumen');
+    const bajada = vista.querySelector('.me-frase-link');
+    assert.equal(bajada.getAttribute('data-anio-licencias'), '2027');
+    const clic = bajada.disparar('click');
+    await pagina.esperar();
+    assert.equal(clic.defaultPrevented, true);
+    assert.equal(pestanaElegida(pagina), 'licencias');
+    assert.equal(pagina.documento.activeElement, pagina.el('tab-licencias'));
+    assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias?anio=2027']);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+    assert.equal(pagina.el('me-anuncio').textContent, 'Mis licencias de 2027');
+
+    // El del aviso para revisar: la lista ya muestra 2027, no la pide de nuevo
+    await pagina.tocar(pagina.el('tab-resumen'));
+    const aviso = vista.querySelector('.me-faltantes a');
+    assert.equal(aviso.textContent, 'Ver en Licencias de 2027');
+    await pagina.tocar(aviso);
+    assert.equal(pestanaElegida(pagina), 'licencias');
+    assert.equal(pagina.documento.activeElement, pagina.el('tab-licencias'));
+    assert.equal(pedidosDeLaLista(pagina).length, 1);
+
+    // Con la lista en 2026, la pide en 2027
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-anio="2026"]'));
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2026');
+    await pagina.tocar(pagina.el('tab-resumen'));
+    await pagina.tocar(vista.querySelector('.me-faltantes a'));
+    assert.deepEqual(pedidosDeLaLista(pagina),
+      ['/api/mi-espacio/licencias?anio=2027', '/api/mi-espacio/licencias?anio=2026', '/api/mi-espacio/licencias?anio=2027']);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+    assert.equal(pagina.documento.activeElement, pagina.el('tab-licencias'));
+  });
+
+  it('con Ctrl, Cmd, Mayúsculas, Alt o un botón que no es el principal, el link hace lo suyo: no cambia la pestaña ni pide nada', async () => {
+    for (const modificador of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+      const pagina = montarPagina({ responder: conEnero() });
+      await pagina.iniciar();
+      const clic = pagina.el('vista-resumen').querySelector('.me-frase-link').disparar('click', modificador);
+      await pagina.esperar();
+      assert.equal(clic.defaultPrevented, false, JSON.stringify(modificador));
+      assert.equal(pestanaElegida(pagina), 'resumen', JSON.stringify(modificador));
+      assert.deepEqual(pedidosDeLaLista(pagina), [], JSON.stringify(modificador));
+      assert.equal(anioPendienteDe(pagina), null, JSON.stringify(modificador));
+    }
+  });
+
+  it('«Ver 2027» de otros años pide ese año, el foco va a 2027 en el selector y se anuncia el título', async () => {
+    const pagina = montarPagina({ hash: '#licencias', responder: conEnero() });
+    await pagina.iniciar();
+    const ver = pagina.el('vista-licencias').querySelector('.me-otros-anios button');
+    assert.equal(ver.textContent, 'Ver 2027');
+    ver.focus();
+    await pagina.tocar(ver);
+    assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias', '/api/mi-espacio/licencias?anio=2027']);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+    const elegido = pagina.el('vista-licencias').querySelector('.me-segmento [data-anio="2027"]');
+    assert.equal(elegido.getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.documento.activeElement, elegido);
+    assert.equal(pagina.el('me-anuncio').textContent, 'Mis licencias de 2027');
+  });
+
+  it('con Licencias abierta y sin lista (la carga falló), guardar una de 2027 la pide en 2027', async () => {
+    let falla = true;
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conEnero({
+        alta: true,
+        extra: (metodo, ruta) => (falla && ruta === '/api/mi-espacio/licencias' ? respuesta(500, { success: false, error: 'x' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    falla = false;
+    assert.ok(pagina.el('vista-licencias').textContent.includes('No se pudieron cargar tus licencias.'));
+    await cargarLicencia(pagina, { desde: '2027-01-04', hasta: '2027-01-15' });
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias', '/api/mi-espacio/licencias?anio=2027']);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+    assert.equal(anioPendienteDe(pagina), null);
+  });
+
+  it('una lista vieja que llega después de guardar no tapa el año de lo guardado: al abrir Licencias, la pide en 2027', async () => {
+    const primera = demorada();
+    let pedidas = 0;
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conEnero({
+        alta: true,
+        extra: (metodo, ruta) => {
+          if (ruta !== '/api/mi-espacio/licencias') return undefined;
+          pedidas += 1;
+          return pedidas === 1 ? primera.promesa : undefined;
+        }
+      })
+    });
+    // La lista de entrada tarda: la página se usa mientras tanto (iniciarMiEspacio la espera, así que no se espera)
+    pagina.contexto.iniciarMiEspacio();
+    await pagina.esperar();
+    await pagina.tocar(pagina.el('tab-resumen'));
+    await cargarLicencia(pagina, { desde: '2027-01-04', hasta: '2027-01-15' });
+    await pagina.tocar(pagina.el('ml-guardar'));
+    await pagina.tocar(listo(pagina));
+    assert.equal(anioPendienteDe(pagina), 2027);
+    // Llega la de entrada (la de 2026), ya vieja
+    primera.soltar(ok(LISTA_2026_CON_ENERO));
+    await pagina.esperar();
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2026');
+    await pagina.tocar(pagina.el('tab-licencias'));
+    assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias', '/api/mi-espacio/licencias?anio=2027']);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+    assert.equal(anioPendienteDe(pagina), null);
+  });
+});
+
+// Los estilos del link de la bajada, del aviso para revisar, de otros años y del segundo paso (spec
+// 2026-10-28-mi-espacio-licencia-anulada), leídos del <style> de mi-espacio.html: subrayados, con 4,5:1 o más sobre su fondo, y el
+// foco visible de la página
+describe('mi-espacio.html: los estilos de otro año y para revisar', () => {
+  const estilo = estiloDeLaPagina();
+  const token = (nombre) => new RegExp(`${nombre}: (#[0-9A-Fa-f]{6});`).exec(estilo)?.[1];
+  const colorDe = (selector) => {
+    const regla = reglaDe(selector);
+    assert.ok(regla, selector);
+    const nombre = /(?:^|[;{\s])color: var\((--sg-[\w-]+)\);/.exec(regla)?.[1];
+    assert.ok(nombre, `${selector} { color }`);
+    return token(nombre);
+  };
+  const BLANCO = '#FFFFFF';
+
+  it('los links y el botón, subrayados; los textos, con 4,5:1 o más sobre su fondo', () => {
+    for (const selector of ['.me-frase-link', '.me-faltantes a', '.me-otros-anios button']) {
+      assert.match(reglaDe(selector) ?? '', /text-decoration: underline;/, selector);
+    }
+    const pares = [
+      ['el link de la bajada', colorDe('.me-frase-link'), token('--sg-cielo')],
+      ['el link del aviso para revisar', colorDe('.me-faltantes a'), token('--sg-ambar-fondo')],
+      ['otros años', colorDe('.me-otros-anios'), BLANCO],
+      ['«Ver 2027»', colorDe('.me-otros-anios button'), BLANCO],
+      ['en qué lista quedó', colorDe('.me-paso-dos-lista'), BLANCO]
+    ];
+    for (const [nombre, texto, fondo] of pares) {
+      assert.ok(texto && fondo, nombre);
+      assert.ok(contraste(texto, fondo) >= 4.5, `${nombre}: ${texto} sobre ${fondo}, ${contraste(texto, fondo).toFixed(2)}:1`);
+    }
+    // El de la bajada, con el color de la frase
+    assert.equal(colorDe('.me-frase-link'), colorDe('.me-frase'));
+  });
+
+  it('el foco, visible como en el resto de la página (los links y los botones de .me-pagina)', () => {
+    assert.match(reglaDe('.me-pagina a:focus-visible, .me-pagina button:focus-visible'), /outline: 3px solid var\(--tinta\);/);
   });
 });

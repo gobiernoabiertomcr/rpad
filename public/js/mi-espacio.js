@@ -47,6 +47,12 @@
  * 2026-10-27-mi-espacio-licencia-word, 6; la versión C de la maqueta), con la licencia guardada, la nota a la vista (GET
  * /mi-espacio/licencias/:id/nota, la hoja armada y escapada por el servidor, que va tal cual), «Listo» y «Descargar Word»; lo
  * guardado se anuncia en #me-anuncio, sin aviso flotante, y al cerrar el foco va adonde va después de cualquier guardado.
+ * Una licencia de otro año (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 2.3 y 3.5): al guardar una licencia o un uso
+ * autorizado, la lista de Licencias pasa al año de su `desde` (pagina.anioDeLicencias: enseguida si la pestaña se ve; si no, la
+ * próxima vez que se abra; el año en curso, sin ?anio=) y el segundo paso dice en qué lista quedó (`lista` de GET …/nota); la lista
+ * de un año dice las de otros años que todavía no terminaron (`otros_anios`, con «Ver AAAA», el data-anio del selector); y en el
+ * Resumen, la oración de lo cargado de la bajada (con su `anio`) y cada aviso para revisar (`para_revisar`, lo que en Configuración
+ * quedó distinto, con los faltantes pero sin ser uno) son links a Licencias de su año (irALicencias, con data-anio-licencias).
  * Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad: los mensajes y
  * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), en la planilla horasDelDiaDeLaPlanilla (horasDeLaSalida,
  * con el tipo del día que manda el servidor), enDiasDeFranco, textoDeLaSumaDelMes y erroresDeLaPlanilla (los pasos 3 a 7 de
@@ -171,12 +177,30 @@ function htmlDeMarca(marca) {
   return marca === true ? `<span class="me-marca" role="img" aria-label="${TEXTO_DE_LA_MARCA}"></span>` : '';
 }
 
-// Los faltantes (lo guardado que dejó de cerrar), con su texto neutro, en un aviso ámbar arriba de todo. Sin ninguno, ''
-function htmlDeFaltantes(faltantes) {
+// El link a la lista de Licencias de un año (el de la bajada y el de un aviso para revisar: spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.3 y 3.5): data-pestana, como los demás links del Resumen, y el año en
+// data-anio-licencias (alTocarResumen, con irALicencias). `clase`, la del link, si lleva una
+const atributosDelLinkALicencias = (anio, clase = '') => `href="#licencias" data-pestana="licencias" data-anio-licencias="${String(anio)}"`
+  + `${clase ? ` class="${clase}"` : ''}`;
+
+/**
+ * Los faltantes (lo guardado que dejó de cerrar), con su texto neutro, en un aviso ámbar arriba de todo, y después lo que hay que
+ * revisar (`paraRevisar`, el `para_revisar` del Resumen, `[{ licencia_id, anio, texto, enlace }]`: lo que en Configuración quedó
+ * distinto; va con los faltantes, pero no es uno: spec 2026-10-28-mi-espacio-licencia-anulada, 2.2), cada uno con su texto y el link
+ * a Licencias de su año («Ver en Licencias de 2027»; con un año que no es un entero, o sin el texto del link, solo el texto). Un solo
+ * faltante, sin nada para revisar, es un párrafo, como siempre; si no, una lista. Sin ninguno de los dos, ''
+ */
+function htmlDeFaltantes(faltantes, paraRevisar) {
   const textos = (Array.isArray(faltantes) ? faltantes : []).filter(conTexto);
-  if (textos.length === 0) return '';
-  if (textos.length === 1) return `<p class="me-aviso me-aviso-ambar">${esc(textos[0])}</p>`;
-  return `<div class="me-aviso me-aviso-ambar"><ul class="me-faltantes">${textos.map((texto) => `<li>${esc(texto)}</li>`).join('')}</ul></div>`;
+  const revisar = listaDe(paraRevisar).filter((aviso) => conTexto(aviso.texto)).map((aviso) => {
+    const link = Number.isInteger(aviso.anio) && conTexto(aviso.enlace)
+      ? ` <a ${atributosDelLinkALicencias(aviso.anio)}>${esc(aviso.enlace)}</a>` : '';
+    return `<li>${esc(aviso.texto)}${link}</li>`;
+  });
+  if (textos.length === 0 && revisar.length === 0) return '';
+  if (textos.length === 1 && revisar.length === 0) return `<p class="me-aviso me-aviso-ambar">${esc(textos[0])}</p>`;
+  return `<div class="me-aviso me-aviso-ambar"><ul class="me-faltantes">${textos.map((texto) => `<li>${esc(texto)}</li>`).join('')}`
+    + `${revisar.join('')}</ul></div>`;
 }
 
 // El número de la frase como texto: el del servidor ('33'; uno que es un número, con String). Sin él, ''
@@ -190,8 +214,9 @@ const textoDeLaCifra = (cifra) => {
  * y la modalidad; el título de la pestaña, «Te quedan 33 días de vacaciones», con el número tres veces: el final, invisible, que le
  * da al número su ancho desde el primer cuadro; el que se ve, encima (el que sube al abrir, data-contar); los dos, decorativos
  * (aria-hidden); y el oculto a la vista, que un lector de pantalla lee siempre con su valor final. Debajo, la bajada, las oraciones
- * unidas con un espacio, la que vence en negrita. Sin `cifra` (con 0 días), la frase sin el número; sin oraciones, sin bajada. Sin
- * titular, ''
+ * unidas con un espacio, la que vence en negrita y la que trae un `anio` entero (la de lo cargado, «10 ya están cargados para enero de
+ * 2027.»: spec 2026-10-28-mi-espacio-licencia-anulada, 2.3), un link a Licencias de ese año (.me-frase-link). Sin `cifra` (con 0
+ * días), la frase sin el número; sin oraciones, sin bajada. Sin titular, ''
  */
 function htmlDeLaFrase(titular) {
   if (!esObjeto(titular)) return '';
@@ -201,8 +226,10 @@ function htmlDeLaFrase(titular) {
       + `<span aria-hidden="true" data-contar>${esc(cifra)}</span><span class="visualmente-oculto">${esc(cifra)}</span></span>`;
   const frase = [conTexto(titular.antes) ? esc(titular.antes) : '', numero, conTexto(titular.despues) ? esc(titular.despues) : '']
     .filter((parte) => parte !== '').join(' ');
-  const oraciones = listaDe(titular.bajada).filter((oracion) => conTexto(oracion.texto))
-    .map((oracion) => (oracion.vence === true ? `<b class="vence">${esc(oracion.texto)}</b>` : esc(oracion.texto)));
+  const oraciones = listaDe(titular.bajada).filter((oracion) => conTexto(oracion.texto)).map((oracion) => {
+    const texto = oracion.vence === true ? `<b class="vence">${esc(oracion.texto)}</b>` : esc(oracion.texto);
+    return Number.isInteger(oracion.anio) ? `<a ${atributosDelLinkALicencias(oracion.anio, 'me-frase-link')}>${texto}</a>` : texto;
+  });
   return '<div class="me-titular">'
     + `${conTexto(titular.encabezado) ? `<p class="me-banda-dia">${esc(titular.encabezado)}</p>` : ''}`
     + `<h2 class="me-frase" id="me-frase">${frase}</h2>`
@@ -399,14 +426,14 @@ function htmlDeHoyYManana(datos, veCompaneros) {
 
 /**
  * La pestaña Resumen (lo que manda GET /api/mi-espacio/resumen). Sin modalidad, el mensaje del servidor; sin el saldo inicial,
- * la invitación a «Mis vacaciones y saldos»; si no, los faltantes, la banda (la frase, «Vence pronto» y la regla), «El resto de
- * 2026» y «Hoy y mañana».
+ * la invitación a «Mis vacaciones y saldos»; si no, los faltantes con lo que hay que revisar, la banda (la frase, «Vence pronto» y
+ * la regla), «El resto de 2026» y «Hoy y mañana».
  */
 function htmlDelResumen(resumen) {
   if (!esObjeto(resumen)) return '';
   if (!esObjeto(resumen.modalidad)) return htmlDeMensaje(resumen.mensaje);
   if (resumen.abrir_saldos === true) return htmlSinArranque();
-  return htmlDeFaltantes(resumen.faltantes) + htmlDeLaBanda(resumen) + htmlDelResto(resumen)
+  return htmlDeFaltantes(resumen.faltantes, resumen.para_revisar) + htmlDeLaBanda(resumen) + htmlDelResto(resumen)
     + htmlDeHoyYManana(resumen.hoy_y_manana, esObjeto(resumen.persona) ? resumen.persona.ve_companeros : false);
 }
 
@@ -481,10 +508,20 @@ function htmlDelSaldoInicial(saldo) {
     + '<button type="button" class="sg-link" data-abrir="saldos" aria-label="Cambiar el saldo inicial">Cambiar</button></li>';
 }
 
+// Las licencias de otros años que la lista no tiene y que todavía no terminaron (los `otros_anios` del servidor, `{ anio, cantidad,
+// texto }`: spec 2026-10-28-mi-espacio-licencia-anulada, 2.3), cada una con su texto («También tenés 1 licencia cargada en 2027.») y
+// «Ver 2027», con el data-anio del selector (lo atiende el mismo clic). Con un año que no es un entero, solo el texto. Sin ninguna, ''
+function htmlDeOtrosAnios(otros) {
+  return listaDe(otros).filter((otro) => conTexto(otro.texto)).map((otro) => `<p class="me-otros-anios">${esc(otro.texto)}`
+    + `${Number.isInteger(otro.anio) ? ` <button type="button" data-anio="${String(otro.anio)}">Ver ${String(otro.anio)}</button>` : ''}`
+    + '</p>').join('');
+}
+
 /**
  * La pestaña Licencias (lo que manda GET /api/mi-espacio/licencias): la tarjeta del año, con el selector del año y «Cargar
- * licencia», los filtros, las filas del tipo elegido (`filtro`: 'todas' o un tipo; uno que no está en el año es Todas), el saldo
- * inicial (con Todas) y la nota de los días hábiles. Sin modalidad, solo el mensaje del servidor.
+ * licencia», las de otros años que todavía no terminaron (`otros_anios`), los filtros, las filas del tipo elegido (`filtro`: 'todas'
+ * o un tipo; uno que no está en el año es Todas), el saldo inicial (con Todas) y la nota de los días hábiles. Sin modalidad, solo el
+ * mensaje del servidor.
  */
 function htmlDeListaDeLicencias(datos, filtro) {
   if (!esObjeto(datos)) return '';
@@ -498,6 +535,7 @@ function htmlDeListaDeLicencias(datos, filtro) {
   return '<div class="me-tarjeta"><div class="me-cabeza">'
     + `<h2>Mis licencias${delAnio(anio)}</h2><span class="me-acciones">${htmlDelSelectorDeAnio(datos.anios, anio)}`
     + '<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" data-cargar="licencia">Cargar licencia</button></span></div>'
+    + htmlDeOtrosAnios(datos.otros_anios)
     + (licencias.length > 0 ? htmlDeFiltrosDeLicencias(datos.filtros, actual) : '')
     + (visibles.length === 0 ? `<p class="me-vacio">No hay licencias cargadas${enElAnio(anio)}.</p>` : '')
     + (filas.length > 0 ? `<ul class="me-lista">${filas.join('')}</ul>` : '')
@@ -839,6 +877,9 @@ const parametrosSinAuditor = ({ usuarioId, desde, hasta, excluir = null, hoy = '
 const comoTexto = (valor) => (typeof valor === 'string' ? valor : '');
 // 'AAAA-MM-DD' de un día que existe (como esFechaIso del servidor, sobre el texto: sin Date local)
 const esFechaDeTexto = (valor) => typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor) && Utils.soloFecha(valor) === valor;
+// El año de una licencia, el de su `desde` ('AAAA-MM-DD', cortado como texto): el de la lista de Licencias en que queda al guardarla
+// (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3). Lo que no es una fecha así, null
+const anioDeLaLicencia = (desde) => (esFechaDeTexto(desde) ? Number(desde.slice(0, 4)) : null);
 // Un número escrito en un campo, con coma o con punto: '' es null; lo que no es un número, NaN
 const numeroDelCampo = (texto) => {
   const limpio = String(texto ?? '').trim().replace(',', '.');
@@ -1050,11 +1091,13 @@ const htmlDelSegundoPasoSinVista = (avisos) => htmlDeLosAvisosDelGuardado(avisos
 /**
  * El cuerpo del segundo paso con lo que manda GET …/nota: los avisos del guardado (`avisos`, en ámbar); la licencia guardada, con la
  * tilde, la insignia de su tipo, las fechas y lo que suma y, en gris, de qué licencias sale, lo de Configuración y lo que ven los
- * compañeros (los textos de `fila`, la misma de la lista, aunque la lista muestre otro año); «Así sale la nota», con la
- * `aclaracion` debajo; y la hoja (`html`, armada y escapada por el servidor: va tal cual, como la nota del Generador de Notas) sobre
- * la mesa gris. Todo otro texto del servidor, escapado. Sin fila, sin la licencia; sin hoja, la mesa vacía
+ * compañeros (los textos de `fila`, la misma de la lista, aunque la lista muestre otro año); en qué lista de Licencias quedó
+ * (`lista`, «Está en la lista de 2027.», solo si no es la del año en curso: spec 2026-10-28-mi-espacio-licencia-anulada, 2.3);
+ * «Así sale la nota», con la `aclaracion` debajo; y la hoja (`html`, armada y escapada por el servidor: va tal cual, como la nota del
+ * Generador de Notas) sobre la mesa gris. Todo otro texto del servidor, escapado. Sin fila, sin la licencia; sin lista, nada; sin
+ * hoja, la mesa vacía
  */
-function htmlDelSegundoPaso({ fila = null, html = '', aclaracion = '', avisos = [] } = {}) {
+function htmlDelSegundoPaso({ fila = null, html = '', aclaracion = '', avisos = [], lista = null } = {}) {
   const partes = [htmlDeLosAvisosDelGuardado(avisos)];
   if (esObjeto(fila)) {
     const linea = [`<span class="me-insignia ${deMapa(CLASE_DEL_TIPO, fila.tipo, 'gris')}">${esc(fila.tipo_nombre)}</span>`];
@@ -1066,6 +1109,7 @@ function htmlDelSegundoPaso({ fila = null, html = '', aclaracion = '', avisos = 
       + `<div class="me-paso-dos-licencia"><p class="me-paso-dos-linea">${linea.join('')}</p>`
       + (detalles.length > 0 ? `<p class="me-paso-dos-detalle">${detalles.join(' ')}</p>` : '') + '</div></div>');
   }
+  if (conTexto(lista)) partes.push(`<p class="me-paso-dos-lista">${esc(lista)}</p>`);
   partes.push('<h3 class="me-paso-dos-titulo">Así sale la nota</h3>');
   if (conTexto(aclaracion)) partes.push(`<p class="me-paso-dos-ayuda">${esc(aclaracion)}</p>`);
   partes.push(`<div class="me-mesa">${typeof html === 'string' ? html : ''}</div>`);
@@ -2113,10 +2157,12 @@ document.addEventListener('DOMContentLoaded', () => {
 // del evento abierto (su propio estado: el cálculo de las licencias mira `formulario`, y no se tienen que cruzar); `eventoAjeno`,
 // el detalle de un evento de otra persona; y `personas`, el pedido de GET /mi-espacio/personas (una sola vez, y solo para
 // administración). La planilla de horas extras de contrato: `planilla`, su propio estado mientras está abierta (ver abrirPlanilla;
-// si no, null)
+// si no, null). `anioDeLicencias` (un año o null): el que la lista de Licencias tiene que mostrar la próxima vez que se pida (el de
+// la licencia que se acaba de guardar o el de un link del Resumen: spec 2026-10-28-mi-espacio-licencia-anulada, 2.3); lo usa una
+// sola vez quien la pide (tomarElAnioDeLicencias)
 const pagina = {
   pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, bandaAnimada: false,
-  mesDeEventos: null, delMes: null, proximos: null,
+  anioDeLicencias: null, mesDeEventos: null, delMes: null, proximos: null,
   cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0, nota: 0 },
   modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null,
   segundoPaso: null, evento: null, eventoAjeno: null, personas: null, planilla: null
@@ -2198,7 +2244,8 @@ function conectarEventos() {
 // ---- Las pestañas ----
 
 // Muestra una pestaña, la escribe en la dirección (replaceState: no suma pasos al botón Atrás) y, la primera vez (o después de una
-// carga que falló), pide sus datos. Devuelve la carga
+// carga que falló), pide sus datos. Licencias, también si hay un año pendiente (pagina.anioDeLicencias: el de la licencia que se
+// guardó con la pestaña sin abrir, o el de un link del Resumen), y la pide en ese año. Devuelve la carga
 function mostrarPestana(nombre) {
   pagina.pestana = PESTANAS.includes(nombre) ? nombre : PESTANAS[0];
   for (const otra of PESTANAS) {
@@ -2214,7 +2261,9 @@ function mostrarPestana(nombre) {
     if (pagina.resumen === null && !pagina.cargandoResumen) return cargarResumen();
     animarLaBanda();
   }
-  if (pagina.pestana === 'licencias' && pagina.licencias === null) return cargarLicencias(null);
+  if (pagina.pestana === 'licencias' && (pagina.licencias === null || pagina.anioDeLicencias !== null)) {
+    return cargarLicencias(tomarElAnioDeLicencias());
+  }
   if (pagina.pestana === 'horas' && pagina.horas === null) return cargarHorasExtras(null);
   if (pagina.pestana === 'agenda' && (pagina.delMes === null || pagina.proximos === null)) return cargarEventos();
   return Promise.resolve();
@@ -2355,8 +2404,9 @@ function contarHasta(elemento, demoraMs, duracionMs) {
 }
 
 // Un clic en el Resumen: «Mis vacaciones y saldos» y los botones de «Vence pronto» abren su formulario (el de licencia, con su
-// tipo); un número del resto (y «Ver la agenda») abre su pestaña y el foco va a la pestaña (con Ctrl, Cmd, Mayúsculas, Alt o un
-// botón que no es el principal, el link hace lo suyo: otra pestaña del navegador)
+// tipo); un número del resto (y «Ver la agenda») abre su pestaña y el foco va a la pestaña; el link de la bajada y el de un aviso
+// para revisar (data-anio-licencias), Licencias en ese año (irALicencias). Con Ctrl, Cmd, Mayúsculas, Alt o un botón que no es el
+// principal, el link hace lo suyo: otra pestaña del navegador
 function alTocarResumen(evento) {
   const saldos = evento.target?.closest?.('[data-abrir="saldos"]');
   if (saldos) {
@@ -2371,11 +2421,41 @@ function alTocarResumen(evento) {
   const destino = evento.target?.closest?.('[data-pestana]');
   if (!destino || evento.ctrlKey || evento.metaKey || evento.shiftKey || evento.altKey || (evento.button ?? 0) !== 0) return;
   evento.preventDefault?.();
+  if (destino.dataset.pestana === 'licencias' && destino.dataset.anioLicencias !== undefined) {
+    irALicencias(Number(destino.dataset.anioLicencias));
+    return;
+  }
   mostrarPestana(destino.dataset.pestana);
   porId(`tab-${pagina.pestana}`).focus();
 }
 
 // ---- Licencias ----
+
+// El año pendiente de la lista (pagina.anioDeLicencias), para cargarLicencias, una sola vez: lo vuelve a null. El de hoy, o
+// ninguno, da null: la lista sin ?anio=, la del año en curso que dice el servidor (con el reloj del teléfono adelantado, el año del
+// teléfono daría otra cosa)
+function tomarElAnioDeLicencias() {
+  const anio = pagina.anioDeLicencias;
+  pagina.anioDeLicencias = null;
+  return Number.isInteger(anio) && anio !== anioDeHoy() ? anio : null;
+}
+
+// Abre la pestaña Licencias en el año `anio` (el link de la bajada del Resumen y el de un aviso para revisar: spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.3 y 3.5) y el foco va a la pestaña. Si la lista ya muestra ese año, no pide nada; si
+// muestra otro, o no está, la pide en ese año (mostrarPestana, con pagina.anioDeLicencias). El año del link gana a uno pendiente. Un
+// año que no es un entero abre la pestaña como siempre. Devuelve la carga
+function irALicencias(anio) {
+  if (Number.isInteger(anio)) {
+    if (esObjeto(pagina.licencias) && pagina.licencias.anio === anio) pagina.anioDeLicencias = null;
+    else {
+      pagina.licencias = null;
+      pagina.anioDeLicencias = anio;
+    }
+  }
+  const carga = mostrarPestana('licencias');
+  porId('tab-licencias').focus();
+  return carga;
+}
 
 // Pide las licencias de un año (null: el en curso). Al elegir un año, se anuncia el título de la tarjeta (`conAnuncio`: después de
 // guardar, no; ahí se anuncia lo que se guardó). Si falla, la pestaña lo dice y queda sin lista: volver a ella la pide otra vez (la
@@ -3058,16 +3138,18 @@ function devolverElFoco(respaldo) {
 
 // Después de guardar o de borrar: el Resumen y las pestañas que ya se cargaron (la que se ve, enseguida y con el año que tenía
 // y, en Horas extras, el mes del día por día, y en la agenda, el mes que se ve, sin anunciarlo: se anuncia lo que se guardó; las
-// otras, cuando se vuelvan a abrir). La agenda se vuelve a pedir siempre: también muestra las licencias. El foco, que cerrarModal
-// devolvió al botón que abrió el modal, va a su equivalente cuando terminan (respaldoDelFoco: la recarga reemplazó el botón)
+// otras, cuando se vuelvan a abrir). La lista de Licencias, en el año pendiente si hay uno (pagina.anioDeLicencias: el de la licencia
+// que se acaba de guardar, que lo usa una sola vez; si no se ve la pestaña, queda para cuando se abra), y si no, en el que tenía. La
+// agenda se vuelve a pedir siempre: también muestra las licencias. El foco, que cerrarModal devolvió al botón que abrió el modal, va
+// a su equivalente cuando terminan (respaldoDelFoco: la recarga reemplazó el botón)
 async function volverAPedirTodo() {
   const respaldo = respaldoDelFoco(document.activeElement);
   const cargas = [cargarResumen()];
   const anioQueTenia = (datos) => (Number.isInteger(datos.anio) && datos.anio !== anioDeHoy() ? datos.anio : null);
-  if (pagina.licencias !== null) {
-    if (pagina.pestana === 'licencias') cargas.push(cargarLicencias(anioQueTenia(pagina.licencias), { conAnuncio: false }));
-    else pagina.licencias = null;
-  }
+  if (pagina.pestana === 'licencias' && (pagina.licencias !== null || pagina.anioDeLicencias !== null)) {
+    const anio = pagina.anioDeLicencias !== null ? tomarElAnioDeLicencias() : anioQueTenia(pagina.licencias);
+    cargas.push(cargarLicencias(anio, { conAnuncio: false }));
+  } else if (pagina.pestana !== 'licencias') pagina.licencias = null;
   if (pagina.horas !== null) {
     if (pagina.pestana === 'horas') {
       cargas.push(cargarHorasExtras(anioQueTenia(pagina.horas), { conAnuncio: false, mes: pagina.mes }));
@@ -3413,8 +3495,9 @@ async function actualizarSinAuditor(formulario, valores) {
 
 // «Guardar»: los errores del formulario antes de pedir nada; si el último cálculo no llegó, lo vuelve a pedir y no guarda (sin él
 // no se vio qué pasa con Configuración); si no, POST o PUT. Mientras, «Guardar» queda deshabilitado (un doble clic manda un solo
-// pedido). Guardada una licencia, el modal pasa al segundo paso (pasarAlSegundoPaso); un uso autorizado, que no tiene nota, se
-// cierra, se avisa lo que dijo el servidor y se vuelve a pedir todo
+// pedido). Con un 2xx, la lista de Licencias pasa al año de lo guardado (pagina.anioDeLicencias, el de su `desde`: spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.3). Guardada una licencia, el modal pasa al segundo paso (pasarAlSegundoPaso); un uso
+// autorizado, que no tiene nota, se cierra, se avisa lo que dijo el servidor y se vuelve a pedir todo
 async function guardarLicencia(nombre) {
   const formulario = pagina.formulario;
   const boton = porId(`${FORMULARIOS[nombre].prefijo}-guardar`);
@@ -3435,6 +3518,7 @@ async function guardarLicencia(nombre) {
       ? await API.pedirJson('PUT', `/mi-espacio/licencias/${encodeURIComponent(formulario.fila.id)}`, cuerpo)
       : await API.pedirJson('POST', '/mi-espacio/licencias', cuerpo);
     formulario.guardando = false;
+    pagina.anioDeLicencias = anioDeLaLicencia(cuerpo.desde);
     if (nombre === 'licencia') {
       pasarAlSegundoPaso(formulario, respuesta);
       return;
@@ -3509,10 +3593,10 @@ function mostrarSegundoPaso({ id, corregida, avisos }) {
   pedirLaNotaDelSegundoPaso(id, pedido);
 }
 
-// GET …/nota: con la respuesta, la licencia y la hoja (htmlDelSegundoPaso); si no llega (o llega sin hoja), MENSAJE_SIN_VISTA,
-// también anunciado, con los avisos del guardado detrás (el anuncio pisa el anterior, que los decía): la licencia ya se guardó y
-// «Descargar Word» sigue andando. Con un 401, al login. Una respuesta de otro segundo
-// paso, o que llega con el modal cerrado (`pedido` ya no es el último), no toca nada
+// GET …/nota: con la respuesta, la licencia, en qué lista quedó y la hoja (htmlDelSegundoPaso); si no llega (o llega sin hoja),
+// MENSAJE_SIN_VISTA, también anunciado, con los avisos del guardado detrás (el anuncio pisa el anterior, que los decía): la licencia
+// ya se guardó y «Descargar Word» sigue andando. Con un 401, al login. Una respuesta de otro segundo paso, o que llega con el modal
+// cerrado (`pedido` ya no es el último), no toca nada
 async function pedirLaNotaDelSegundoPaso(id, pedido) {
   let data = null;
   let falla = null;
@@ -3528,7 +3612,9 @@ async function pedirLaNotaDelSegundoPaso(id, pedido) {
   }
   const { avisos } = pagina.segundoPaso;
   if (falla === null && esObjeto(data) && conTexto(data.html)) {
-    porId('ml-paso-dos').innerHTML = htmlDelSegundoPaso({ fila: data.fila, html: data.html, aclaracion: data.aclaracion, avisos });
+    porId('ml-paso-dos').innerHTML = htmlDelSegundoPaso({
+      fila: data.fila, html: data.html, aclaracion: data.aclaracion, avisos, lista: data.lista
+    });
     return;
   }
   porId('ml-paso-dos').innerHTML = htmlDelSegundoPasoSinVista(avisos);

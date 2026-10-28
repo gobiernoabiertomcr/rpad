@@ -28,8 +28,9 @@
  * cada año (`noUtilizadasDe`). Al final, «Mis vacaciones y saldos» (los campos del saldo inicial y el año, sección 4), el
  * cálculo completo (`calcular`), lo guardado que dejó de cerrar (`faltantesDe`, 3.10) y la evaluación de una carga
  * (`evaluarLicencia`: una carga nueva que no cierra no se guarda). Y el paso de las ausencias de día entero a Configuración →
- * Licencias (sección 6): qué se hace al cargar, corregir y borrar, y lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`,
- * `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`). Por último, lo que ven los compañeros, «Hoy no están» (sección 7:
+ * Licencias (sección 6): qué se hace al cargar, corregir y borrar, lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`,
+ * `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`) y lo que el Resumen avisa para revisar (`revisionDelVinculo`, spec
+ * 2026-10-28-mi-espacio-licencia-anulada). Por último, lo que ven los compañeros, «Hoy no están» (sección 7:
  * `ausenciasUnidas` y `ausentesDelRango`, sin el tipo, y los dos grupos de «Hoy y mañana», `ausentesDeHoyYManana`), y lo que
  * dice el email de vencimiento (sección 9: `avisosDeVencimiento`).
  * Los textos son planos: escaparlos le toca a quien los dibuja.
@@ -267,7 +268,17 @@ export const textoSigueEnConfiguracion = (desde, hasta) =>
   `Sigue en Configuración del ${diaYMes(desde)} al ${diaYMes(hasta)}: ya empezó y no se pudo anular.`;
 export const TEXTO_TAMBIEN_EN_CONFIGURACION = 'También en Configuración → Licencias.';
 export const TEXTO_NO_SE_COPIA = 'Administración la cambió en Configuración: lo que corrijas acá ya no se copia.';
-export const TEXTO_ANULADA_POR_ADMINISTRACION = 'Administración la anuló en Configuración: queda solo acá.';
+// Lo que quedó distinto en Configuración (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2 y 3.2): sin «Administración»,
+// porque pudo haberlo hecho la misma persona
+export const TEXTO_ANULADA_EN_CONFIGURACION = 'Se anuló en Configuración: acá sigue contando. Si ya no va, borrala.';
+// Las fechas de Configuración en una frase de lo que quedó distinto: «del 04/01 al 08/01» o, de un día, «el 17/11» (ruling
+// de la revisión final de la spec 2026-10-28-mi-espacio-licencia-anulada: «del 17/11 al 17/11» se lee mal). Lo que no es una
+// fecha, la raya, como el resto de los textos del paso. Los textos de siempre (`textoYaNoCubierta`, `textoEnConfiguracion`, …)
+// no la usan
+export const fechasEnLaFrase = (desde, hasta) =>
+  (esFechaIso(desde) && desde === hasta ? `el ${diaYMes(desde)}` : `del ${diaYMes(desde)} al ${diaYMes(hasta)}`);
+export const textoRevisalaEnConfiguracion = (desde, hasta) =>
+  `En Configuración quedó ${fechasEnLaFrase(desde, hasta)}: revisala.`;
 export const TEXTO_NO_DIA_ENTERO = 'No es el día entero: no pasa a Configuración';
 
 // Las dos mitades en que se habilita una licencia ordinaria: con un número impar, la primera es la mayor (15 son 8 y 7).
@@ -1723,7 +1734,9 @@ const sinCubrirDe = (fila, oficial) => {
  * `{ estado, oficial, sin_cubrir? }`. `tocadaPorOtros`: otra persona editó o anuló esa licencia en Configuración (true).
  * - `'ninguno'` (con `oficial: null`): no tiene, o no es la suya;
  * - una creada (Mi espacio la creó): `'creada'`, la maneja Mi espacio; `'creada_cambiada'`, administración la editó;
- *   `'creada_anulada'`, está anulada (la haya anulado quien la haya anulado);
+ *   `'creada_anulada'`, está anulada. Desde la spec 2026-10-28-mi-espacio-licencia-anulada (2.1 y 3b), anularla en
+ *   Configuración da de baja también la fila creada, salvo la que en Mi espacio ya empezó antes de hoy: las creadas anuladas
+ *   son esa y las que quedaron anuladas antes de ese cambio;
  * - una unida (ya había una de administración que la cubría): `'unida'`, si todavía la cubre; si no, `'unida_sin_cubrir'`,
  *   con `sin_cubrir: { desde, hasta }`, el primer y el último día de la fila fuera de ella (toda la fila, si está anulada).
  */
@@ -1746,14 +1759,27 @@ const motivoDe = (sinPasar) => {
   return sinPasar.trim().replace(/\.$/, '');
 };
 
+// La fila (con fechas que sirven) y su licencia de Configuración no tienen las mismas fechas
+const conOtrasFechas = (fila, oficial) =>
+  conFechas(fila) && (fila.desde !== oficial.desde || fila.hasta !== oficial.hasta);
+
+// Una creada con otras fechas en Configuración que ningún otro aviso de la fila explica: sin un motivo guardado (`sinPasar`),
+// de día entero y de quien hoy puede tener licencia (`puedeTener`, solo el `true` literal). La regla de `textoDelVinculo` (la
+// fila) y de `revisionDelVinculo` (el Resumen, que además pide que la de Configuración no haya terminado)
+const otrasFechasParaRevisar = (fila, oficial, { sinPasar, puedeTener }) =>
+  motivoDe(sinPasar) === null && esDiaEntero(fila) && puedeTener === true && conOtrasFechas(fila, oficial);
+
 /**
  * Lo que dice una fila de la lista sobre Configuración (`vinculo`, el de `vinculoDe`): `{ texto, insignia }` o null. La
  * insignia es 'creada' o 'unida' si está en Configuración como corresponde, y 'aviso' si no está o hay algo para revisar.
- * Las opciones son `{ sinPasar, puedeTener }`: el motivo guardado y si la persona puede tener licencia hoy.
- * - creada: `TEXTO_TAMBIEN_EN_CONFIGURACION`; si dejó de ser de día entero, `textoSigueEnConfiguracion`; si una corrección
- *   no se pudo copiar (`sinPasar`), dónde quedó en Configuración y por qué no pasó;
- * - creada que administración cambió, `textoEnConfiguracion` y `TEXTO_NO_SE_COPIA`; que anuló,
- *   `TEXTO_ANULADA_POR_ADMINISTRACION`;
+ * Las opciones son `{ sinPasar, puedeTener }`: el motivo guardado y si la persona puede tener licencia hoy. La fila lo dice
+ * siempre, también lo que ya no se puede resolver (lo que avisa el Resumen, en cambio, es `revisionDelVinculo`).
+ * - creada: si una corrección no se pudo copiar (`sinPasar`), dónde quedó en Configuración y por qué no pasó; si dejó de ser
+ *   de día entero, `textoSigueEnConfiguracion`; si en Configuración quedó con otras fechas (la cambió la misma persona: spec
+ *   2026-10-28-mi-espacio-licencia-anulada, 2.2 y 3.3), de quien hoy puede tener licencia, `textoRevisalaEnConfiguracion`
+ *   con las de Configuración; si no, `TEXTO_TAMBIEN_EN_CONFIGURACION`;
+ * - creada que administración cambió, `textoEnConfiguracion` y `TEXTO_NO_SE_COPIA` (ya dice las fechas); anulada en
+ *   Configuración, `TEXTO_ANULADA_EN_CONFIGURACION` (sin decir quién: pudo ser la misma persona);
  * - unida, `textoUnida`; sin cubrir, `textoYaNoCubierta`;
  * - sin vínculo: `textoNoPaso` con el motivo; una de horas que no llega a la jornada, de quien puede tener licencia,
  *   `TEXTO_NO_DIA_ENTERO`; si no, null.
@@ -1767,11 +1793,14 @@ export const textoDelVinculo = (vinculo, fila, opciones) => {
     const enConfiguracion = textoEnConfiguracion(oficial.desde, oficial.hasta);
     if (estado === 'creada') {
       if (motivo !== null) return aviso(`${enConfiguracion} ${textoNoPaso(motivo)}`);
-      return esDiaEntero(fila) ? { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' }
-        : aviso(textoSigueEnConfiguracion(oficial.desde, oficial.hasta));
+      if (!esDiaEntero(fila)) return aviso(textoSigueEnConfiguracion(oficial.desde, oficial.hasta));
+      if (otrasFechasParaRevisar(fila, oficial, { sinPasar, puedeTener })) {
+        return aviso(textoRevisalaEnConfiguracion(oficial.desde, oficial.hasta));
+      }
+      return { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' };
     }
     if (estado === 'creada_cambiada') return aviso(`${enConfiguracion} ${TEXTO_NO_SE_COPIA}`);
-    if (estado === 'creada_anulada') return aviso(TEXTO_ANULADA_POR_ADMINISTRACION);
+    if (estado === 'creada_anulada') return aviso(TEXTO_ANULADA_EN_CONFIGURACION);
     if (estado === 'unida') return { texto: textoUnida(oficial.desde, oficial.hasta), insignia: 'unida' };
     if (estado === 'unida_sin_cubrir' && conFechas(vinculo.sin_cubrir)) {
       return aviso(textoYaNoCubierta(vinculo.sin_cubrir.desde, vinculo.sin_cubrir.hasta));
@@ -1780,6 +1809,35 @@ export const textoDelVinculo = (vinculo, fila, opciones) => {
   if (motivo !== null) return aviso(textoNoPaso(motivo));
   if (puedeTener === true && esObjeto(fila) && TIPOS_POR_HORAS.includes(fila.tipo) && !esDiaEntero(fila)) {
     return aviso(TEXTO_NO_DIA_ENTERO);
+  }
+  return null;
+};
+
+/**
+ * Lo que el Resumen avisa para revisar de una fila (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1, 3.2 y 3.3):
+ * `{ motivo, desde, hasta }` o null. Solo lo que todavía se puede resolver (la fila, `textoDelVinculo`, lo dice siempre), y
+ * nunca frena nada: no es un faltante. Las opciones son `{ sinPasar, puedeTener, hoy }`, como las de `textoDelVinculo` más
+ * hoy (sin un hoy que sirva, null).
+ * - `'fechas'`, con las fechas de Configuración: una creada (también la que cambió otra persona) cuya licencia de
+ *   Configuración quedó con otras fechas, mientras esa licencia no terminó (después, las fechas de una creada quedan fijas),
+ *   salvo que otro aviso de la fila ya lo explique: un motivo guardado (`sinPasar`), que haya dejado de ser de día entero o
+ *   de quien hoy no puede tener licencia;
+ * - `'anulada'` (sin fechas): una creada anulada en Configuración, mientras la de Mi espacio no terminó;
+ * - `'sin_cubrir'`, con los días fuera (`vinculo.sin_cubrir`): una unida que ya no está cubierta, mientras la de Mi espacio
+ *   no terminó.
+ */
+export const revisionDelVinculo = (vinculo, fila, opciones) => {
+  const { sinPasar, puedeTener, hoy } = esObjeto(opciones) ? opciones : {};
+  if (!esFechaIso(hoy) || !esObjeto(vinculo) || !esOficial(vinculo.oficial)) return null;
+  const { estado, oficial } = vinculo;
+  if (estado === 'creada' || estado === 'creada_cambiada') {
+    const paraRevisar = otrasFechasParaRevisar(fila, oficial, { sinPasar, puedeTener }) && oficial.hasta >= hoy;
+    return paraRevisar ? { motivo: 'fechas', desde: oficial.desde, hasta: oficial.hasta } : null;
+  }
+  const sigue = conFechas(fila) && fila.hasta >= hoy;
+  if (estado === 'creada_anulada') return sigue ? { motivo: 'anulada', desde: null, hasta: null } : null;
+  if (estado === 'unida_sin_cubrir' && sigue && conFechas(vinculo.sin_cubrir)) {
+    return { motivo: 'sin_cubrir', desde: vinculo.sin_cubrir.desde, hasta: vinculo.sin_cubrir.hasta };
   }
   return null;
 };
@@ -1903,14 +1961,15 @@ export const pasoDeLaBaja = (entrada) => {
 
 /**
  * Los vínculos de la lista (`filasDeLicencias`): un Map del id de cada fila (número) a `{ configuracion, puede_borrar,
- * solo_hasta, fechas_fijas }`, solo de las que tienen algo para decir o son creadas. `configuracion` es el de
- * `textoDelVinculo`; `puede_borrar`, `solo_hasta` y `fechas_fijas` son los de una creada (de día entero, las fechas), con las
- * fechas de Configuración, como `pasoDeLaBaja` y `pasoDeLaCorreccion`: se borra si empieza hoy o después, el desde queda
- * fijo si empieza hoy o antes y las fechas, si terminó antes de hoy. Las demás se borran y se corrigen libres. Las
- * opciones son `{ oficiales, tocadas, hoy, puedeTener }`: las licencias de Configuración por id (Map), los ids que otra
- * persona editó o anuló (Set) y si la persona puede tener licencia hoy. `en_configuracion` es, de una creada, lo que necesita
- * el formulario para corregirla: `{ licencia_id, autorizado_id }`, el id de su licencia de Configuración (el `excluir` del
- * aviso de los días sin auditor) y su persona a cargo (o null); de las demás, null.
+ * solo_hasta, fechas_fijas, en_configuracion, revision }`, solo de las que tienen algo para decir o son creadas.
+ * `configuracion` es el de `textoDelVinculo` y `revision`, el de `revisionDelVinculo` con el `hoy` de las opciones (lo que
+ * el Resumen avisa para revisar, o null); `puede_borrar`, `solo_hasta` y `fechas_fijas` son los de una creada (de día
+ * entero, las fechas), con las fechas de Configuración, como `pasoDeLaBaja` y `pasoDeLaCorreccion`: se borra si empieza
+ * hoy o después, el desde queda fijo si empieza hoy o antes y las fechas, si terminó antes de hoy. Las demás se borran y se
+ * corrigen libres. Las opciones son `{ oficiales, tocadas, hoy, puedeTener }`: las licencias de Configuración por id
+ * (Map), los ids que otra persona editó o anuló (Set) y si la persona puede tener licencia hoy. `en_configuracion` es, de
+ * una creada, lo que necesita el formulario para corregirla: `{ licencia_id, autorizado_id }`, el id de su licencia de
+ * Configuración (el `excluir` del aviso de los días sin auditor) y su persona a cargo (o null); de las demás, null.
  */
 export const vinculosDeLaLista = (licencias, opciones) => {
   const { oficiales, tocadas, hoy, puedeTener } = esObjeto(opciones) ? opciones : {};
@@ -1920,7 +1979,8 @@ export const vinculosDeLaLista = (licencias, opciones) => {
     const oficialId = idDe(fila.licencia_oficial_id);
     const vinculo = vinculoDe(fila, oficiales instanceof Map ? oficiales.get(oficialId) : undefined,
       tocadas instanceof Set && tocadas.has(oficialId));
-    const configuracion = textoDelVinculo(vinculo, fila, { sinPasar: fila.sin_pasar, puedeTener });
+    const delVinculo = { sinPasar: fila.sin_pasar, puedeTener };
+    const configuracion = textoDelVinculo(vinculo, fila, delVinculo);
     const creada = vinculo.estado === 'creada';
     if (configuracion === null && !creada) continue;
     const fechasDeLaCreada = creada && esDiaEntero(fila) && esFechaIso(hoy);
@@ -1930,7 +1990,8 @@ export const vinculosDeLaLista = (licencias, opciones) => {
       solo_hasta: fechasDeLaCreada && vinculo.oficial.desde <= hoy && vinculo.oficial.hasta >= hoy,
       fechas_fijas: fechasDeLaCreada && vinculo.oficial.hasta < hoy,
       en_configuracion: creada
-        ? { licencia_id: idDe(vinculo.oficial.id), autorizado_id: idPositivoONulo(vinculo.oficial.autorizado_id) } : null
+        ? { licencia_id: idDe(vinculo.oficial.id), autorizado_id: idPositivoONulo(vinculo.oficial.autorizado_id) } : null,
+      revision: revisionDelVinculo(vinculo, fila, { ...delVinculo, hoy })
     });
   }
   return vinculos;

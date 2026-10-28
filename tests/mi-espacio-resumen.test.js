@@ -7,7 +7,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   numeroTexto, diaCorto, diaLargo, mesEnFrase, mesTitulo, resumenDe, filasDeLicencias, tablaDeHorasExtras, proximoFeriadoDe,
-  planillaDelMes
+  planillaDelMes, paraRevisarDe, otrosAniosDe, textoDeLaListaDe
 } from '../services/miEspacioResumen.js';
 import * as reglas from '../services/miEspacioReglas.js';
 import { NOMBRES_DE_LOS_FIJOS, feriadosDelRango } from '../services/feriadosReglas.js';
@@ -131,8 +131,8 @@ describe('el Resumen de PLANTA', () => {
   it('arriba: la modalidad, el año, el día y quién mira', () => {
     const resumen = resumenDel(PLANTA);
     assert.deepEqual(Object.keys(resumen), [
-      'modalidad', 'anio', 'al_texto', 'mensaje', 'abrir_saldos', 'persona', 'marca', 'vence_pronto', 'faltantes', 'tanques',
-      'titular', 'pastillas', 'extraordinaria', 'tipos', 'hoy_y_manana'
+      'modalidad', 'anio', 'al_texto', 'mensaje', 'abrir_saldos', 'persona', 'marca', 'vence_pronto', 'faltantes',
+      'para_revisar', 'tanques', 'titular', 'pastillas', 'extraordinaria', 'tipos', 'hoy_y_manana'
     ]);
     assert.deepEqual(resumen.modalidad, { clave: 'planta', texto: 'Planta permanente' });
     assert.equal(resumen.anio, 2026);
@@ -465,7 +465,7 @@ describe('la banda «Titular»', () => {
       encabezado: 'Lunes 26 de octubre, planta permanente', antes: 'Te quedan', cifra: '33', despues: 'días de vacaciones',
       bajada: [
         { texto: '3 vencen el jueves 31/12.', vence: true },
-        { texto: '5 ya están cargados para noviembre.', vence: false },
+        { texto: '5 ya están cargados para noviembre.', vence: false, anio: 2026 },
         { texto: 'Otros 10 se habilitan el 1/1/2027.', vence: false }
       ]
     });
@@ -512,7 +512,7 @@ describe('la banda «Titular»', () => {
       licencias: [...sinVacaciones, licencia(6, 'vacaciones', '2026-11-03')] };
     assert.deepEqual(resumenDel(PLANTA, { estado }).titular.bajada, [
       { texto: '1 vence el jueves 31/12.', vence: true },
-      { texto: '1 ya está cargado para noviembre.', vence: false },
+      { texto: '1 ya está cargado para noviembre.', vence: false, anio: 2026 },
       { texto: 'Otros 10 se habilitan el 1/1/2027.', vence: false }
     ]);
   });
@@ -569,7 +569,7 @@ describe('la banda «Titular»', () => {
     assert.deepEqual([resumen.titular.antes, resumen.titular.cifra, resumen.titular.despues],
       ['Te quedan', '30', 'días de vacaciones']);
     assert.deepEqual(resumen.titular.bajada, [
-      { texto: '13 ya están cargados para diciembre y enero de 2027.', vence: false },
+      { texto: '13 ya están cargados para diciembre y enero de 2027.', vence: false, anio: 2026 },
       { texto: 'Otros 10 se habilitan el 1/1/2027.', vence: false },
       { texto: 'Perdés 2 de la 2024 (vencen el 31/12/2026).', vence: true }
     ]);
@@ -650,7 +650,7 @@ describe('sin modalidad y sin arranque', () => {
 describe('la lista de licencias', () => {
   it('PLANTA en 2026: los años, los filtros y el orden', () => {
     const lista = filasDel(PLANTA);
-    assert.deepEqual(Object.keys(lista), ['anio', 'anios', 'filtros', 'licencias', 'saldo_inicial']);
+    assert.deepEqual(Object.keys(lista), ['anio', 'anios', 'filtros', 'licencias', 'saldo_inicial', 'otros_anios']);
     assert.equal(lista.anio, 2026);
     assert.deepEqual(lista.anios, [2024, 2025, 2026, 2027]);
     assert.deepEqual(lista.filtros.map(({ tipo, cantidad }) => [tipo, cantidad]),
@@ -839,6 +839,257 @@ describe('la lista de licencias', () => {
     const lista = filasDel(PLANTA, { estado: planta });
     assert.deepEqual(lista.filtros.find((filtro) => filtro.tipo === 'uso_autorizado'),
       { tipo: 'uso_autorizado', nombre: 'Usos autorizados', cantidad: 1 });
+  });
+});
+
+// Lo que quedó distinto en Configuración, para revisar en el Resumen (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1,
+// 3.2 y 3.5). Los vínculos son los de `vinculosDeLaLista`: un Map del id de cada fila (número) a su `revision`, o null
+describe('para revisar (spec 2026-10-28-mi-espacio-licencia-anulada)', () => {
+  // Las de la persona de la spec, sumadas a PLANTA (sin pisarse con sus licencias): una creada anulada de antes que cruza el
+  // año, una creada cuya licencia de Configuración quedó más corta y dos que empiezan el mismo día (el orden, por id)
+  const ESTADO = conLicencias(PLANTA.estado,
+    licencia(101, 'medica', '2027-01-18', '2027-01-29'),
+    licencia(100, 'vacaciones', '2026-12-28', '2027-01-08'),
+    licencia(103, 'medica', '2026-11-16'),
+    licencia(102, 'familiar', '2026-11-16', '2026-11-18'));
+  const revision = (motivo, desde = null, hasta = null) => ({ configuracion: null, revision: { motivo, desde, hasta } });
+  // En otro orden que el de las fechas: el que vale es el de las fechas
+  const VINCULOS = new Map([
+    [101, revision('fechas', '2027-01-18', '2027-01-22')],
+    [103, revision('anulada')],
+    [100, revision('anulada')],
+    [102, revision('sin_cubrir', '2026-11-18', '2026-11-18')],
+    // Con vínculo y sin nada para revisar, sin vínculo (la 5) y uno de una fila que no está (dada de baja): no van
+    [6, { configuracion: null, revision: null }],
+    [999, revision('anulada')]
+  ]);
+  const ESPERADO = Object.freeze([
+    {
+      licencia_id: 102, anio: 2026,
+      texto: 'Revisá tu licencia del 16/11 al 18/11/2026: ya no está cubierta en Configuración el 18/11.',
+      enlace: 'Ver en Licencias de 2026'
+    },
+    {
+      licencia_id: 103, anio: 2026,
+      texto: 'Revisá tu licencia del lunes 16/11/2026: se anuló en Configuración y acá sigue contando.',
+      enlace: 'Ver en Licencias de 2026'
+    },
+    {
+      licencia_id: 100, anio: 2026,
+      texto: 'Revisá tu licencia del 28/12/2026 al 08/01/2027: se anuló en Configuración y acá sigue contando.',
+      enlace: 'Ver en Licencias de 2026'
+    },
+    {
+      licencia_id: 101, anio: 2027,
+      texto: 'Revisá tu licencia del 18/01 al 29/01/2027: en Configuración quedó del 18/01 al 22/01.',
+      enlace: 'Ver en Licencias de 2027'
+    }
+  ]);
+
+  it('cada motivo con su texto, ordenadas por desde y después por id; el año es el del desde (la que cruza el año, 2026)', () => {
+    assert.deepEqual(paraRevisarDe(ESTADO, VINCULOS), ESPERADO);
+  });
+
+  it('las fechas de cada una son las de su fila en la lista; las de un día, con el día de la semana en minúscula', () => {
+    const lista = [2026, 2027].flatMap((anio) => filasDel(PLANTA, { estado: ESTADO, anio }).licencias);
+    for (const { licencia_id: id, texto } of paraRevisarDe(ESTADO, VINCULOS)) {
+      const fila = lista.find((otra) => otra.id === id);
+      if (fila.desde === fila.hasta) {
+        // La lista sigue diciendo «Lun 16/11/2026»; en la frase, la abreviatura en mayúscula se leería mal
+        assert.equal(fila.fechas_texto, 'Lun 16/11/2026');
+        assert.ok(texto.startsWith('Revisá tu licencia del lunes 16/11/2026: '), texto);
+      } else {
+        assert.ok(texto.startsWith(`Revisá tu licencia del ${fila.fechas_texto}: `), texto);
+      }
+    }
+  });
+
+  // Ruling de la revisión final: de un día, la licencia de Mi espacio va con el día de la semana en minúscula («del lunes
+  // 16/11/2026») y las fechas de Configuración, «el 17/11» (no «del 17/11 al 17/11»); con un rango, como siempre
+  it('de un día: la licencia con el día de la semana y las fechas de Configuración con «el»', () => {
+    const estado = conLicencias(PLANTA.estado,
+      licencia(110, 'medica', '2026-11-16'),
+      licencia(111, 'familiar', '2026-11-18'),
+      licencia(112, 'medica', '2026-11-23', '2026-11-25'),
+      licencia(113, 'familiar', '2026-11-30', '2026-12-02'));
+    const vinculos = new Map([
+      [110, revision('fechas', '2026-11-17', '2026-11-17')],
+      [111, revision('sin_cubrir', '2026-11-18', '2026-11-18')],
+      [112, revision('fechas', '2026-11-24', '2026-11-24')],
+      [113, revision('sin_cubrir', '2026-12-01', '2026-12-02')]
+    ]);
+    assert.deepEqual(paraRevisarDe(estado, vinculos).map(({ texto }) => texto), [
+      'Revisá tu licencia del lunes 16/11/2026: en Configuración quedó el 17/11.',
+      'Revisá tu licencia del miércoles 18/11/2026: ya no está cubierta en Configuración el 18/11.',
+      'Revisá tu licencia del 23/11 al 25/11/2026: en Configuración quedó el 24/11.',
+      'Revisá tu licencia del 30/11 al 02/12/2026: ya no está cubierta en Configuración del 01/12 al 02/12.'
+    ]);
+  });
+
+  it('con los vínculos de verdad (`vinculosDeLaLista`): una creada que en Configuración quedó más corta', () => {
+    const conVinculo = { ...licencia(100, 'medica', '2027-01-04', '2027-01-15'), licencia_oficial_id: 40, oficial: 'creada' };
+    const estado = conLicencias(PLANTA.estado, conVinculo);
+    const oficiales = new Map([[40, { id: 40, desde: '2027-01-04', hasta: '2027-01-08', anulada: 0, autorizado_id: null }]]);
+    const vinculos = reglas.vinculosDeLaLista(estado.licencias, { oficiales, tocadas: new Set(), hoy: HOY, puedeTener: true });
+    assert.deepEqual(paraRevisarDe(estado, vinculos), [{
+      licencia_id: 100, anio: 2027, texto: 'Revisá tu licencia del 04/01 al 15/01/2027: en Configuración quedó del 04/01 al 08/01.',
+      enlace: 'Ver en Licencias de 2027'
+    }]);
+    // Con las mismas fechas en las dos, nada para revisar
+    const iguales = new Map([[40, { ...oficiales.get(40), hasta: '2027-01-15' }]]);
+    assert.deepEqual(paraRevisarDe(estado,
+      reglas.vinculosDeLaLista(estado.licencias, { oficiales: iguales, tocadas: new Set(), hoy: HOY, puedeTener: true })), []);
+  });
+
+  it('sin vínculos que sean un Map, o sin nada para revisar, []', () => {
+    for (const raro of [undefined, null, {}, [], [[101, revision('anulada')]], 'x', 3]) {
+      assert.deepEqual(paraRevisarDe(ESTADO, raro), [], String(raro));
+    }
+    assert.deepEqual(paraRevisarDe(ESTADO, new Map()), []);
+    assert.deepEqual(paraRevisarDe(PLANTA.estado, new Map([[6, { revision: null }], [5, {}], [4, 'x']])), []);
+    // Un motivo que no es ninguno de los tres no va
+    assert.deepEqual(paraRevisarDe(ESTADO, new Map([[101, revision('otro', '2027-01-18', '2027-01-22')]])), []);
+    for (const raro of [undefined, null, {}, [], 'x']) assert.deepEqual(paraRevisarDe(raro, VINCULOS), []);
+  });
+
+  it('el Resumen las trae en `para_revisar`, que no es un faltante', () => {
+    const resumen = resumenDe({
+      persona: PLANTA.persona, estado: ESTADO, calculo: calculoDe(ESTADO), hoy: HOY, feriados: SIN_FERIADOS,
+      hoyYManana: HOY_Y_MANANA, vinculos: VINCULOS
+    });
+    assert.deepEqual(resumen.para_revisar, ESPERADO);
+    assert.ok(resumen.faltantes.every((faltante) => !faltante.startsWith('Revisá tu licencia')), resumen.faltantes.join(' | '));
+    // La marca de la pestaña es la de «Vence pronto», no la de lo que hay para revisar
+    assert.equal(resumen.marca, resumen.vence_pronto.length > 0);
+    sinHuecos(resumen);
+  });
+
+  it('sin vínculos, sin arranque o sin modalidad, `para_revisar` es []', () => {
+    const resumen = (estado, vinculos, persona = PLANTA.persona) => resumenDe({
+      persona, estado, calculo: calculoDe(estado), hoy: HOY, feriados: SIN_FERIADOS, hoyYManana: HOY_Y_MANANA, vinculos
+    });
+    assert.deepEqual(resumen(ESTADO).para_revisar, []);
+    assert.deepEqual(resumen({ ...ESTADO, arranque: null }, VINCULOS).para_revisar, []);
+    assert.deepEqual(resumen({ ...ESTADO, modalidad: null }, VINCULOS, { ...PLANTA.persona, vinculo: null }).para_revisar, []);
+    assert.deepEqual(resumenDe({ persona: PLANTA.persona, estado: ESTADO, calculo: calculoDe(ESTADO), vinculos: VINCULOS })
+      .para_revisar, []);
+    assert.deepEqual(resumenDe(undefined).para_revisar, []);
+  });
+});
+
+// La oración de lo cargado de la bajada lleva a la lista de Licencias del año de lo primero cargado (spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.3 y 3.5)
+describe('el año de lo cargado en la bajada', () => {
+  const sinVacaciones = PLANTA.estado.licencias.filter((fila) => fila.tipo !== 'vacaciones');
+  const bajadaDe = (estado) => resumenDel(PLANTA, { estado }).titular.bajada;
+
+  it('cargadas en noviembre de 2026 y en enero de 2027: 2026; solo en enero: 2027', () => {
+    const conEnero = conLicencias(PLANTA.estado, licencia(100, 'vacaciones', '2027-01-11', '2027-01-12'));
+    assert.deepEqual(bajadaDe(conEnero)[1], {
+      texto: '7 ya están cargados para noviembre y enero de 2027.', vence: false, anio: 2026
+    });
+    const soloEnero = { ...PLANTA.estado, licencias: [...sinVacaciones, licencia(100, 'vacaciones', '2027-01-11', '2027-01-12')] };
+    assert.deepEqual(bajadaDe(soloEnero)[1], { texto: '2 ya están cargados para enero de 2027.', vence: false, anio: 2027 });
+  });
+
+  it('las demás oraciones no llevan `anio`', () => {
+    for (const oracion of bajadaDe(PLANTA.estado)) {
+      assert.equal(Object.hasOwn(oracion, 'anio'), oracion.texto.includes('cargad'), oracion.texto);
+    }
+    assert.ok(resumenDel(CONTRATO).titular.bajada.every((oracion) => !Object.hasOwn(oracion, 'anio')));
+  });
+});
+
+// Las licencias de otros años que todavía no terminaron, debajo de la lista (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3
+// y 3.4). Con PLANTA (arranque el 26/10/2026), los años del selector son de 2024 a 2027
+describe('otros años de la lista', () => {
+  const ANIOS = [2024, 2025, 2026, 2027];
+  const otros = (licencias, anio = 2026, hoy = HOY, anios = ANIOS) => otrosAniosDe(licencias, { anio, anios, hoy });
+  const ENERO = licencia(100, 'vacaciones', '2027-01-11', '2027-01-12');
+
+  it('viendo 2026, una de enero de 2027', () => {
+    assert.deepEqual(otros([...PLANTA.estado.licencias, ENERO]),
+      [{ anio: 2027, cantidad: 1, texto: 'También tenés 1 licencia cargada en 2027.' }]);
+  });
+
+  it('dos, en plural', () => {
+    assert.deepEqual(otros([ENERO, licencia(101, 'medica', '2027-03-01', '2027-03-02')]),
+      [{ anio: 2027, cantidad: 2, texto: 'También tenés 2 licencias cargadas en 2027.' }]);
+  });
+
+  it('una que cruza el año ya está en la lista que se ve: no se anuncia, ni en 2026 ni en 2027', () => {
+    const cruza = [licencia(100, 'vacaciones', '2026-12-28', '2027-01-05')];
+    assert.deepEqual(otros(cruza, 2026), []);
+    assert.deepEqual(otros(cruza, 2027), []);
+  });
+
+  it('lo terminado de otro año es historia: no se anuncia; lo que termina hoy, sí', () => {
+    assert.deepEqual(otros([licencia(100, 'medica', '2025-03-03', '2025-03-05')]), []);
+    assert.deepEqual(otros([licencia(100, 'medica', '2026-10-20', '2026-10-26')], 2025),
+      [{ anio: 2026, cantidad: 1, texto: 'También tenés 1 licencia cargada en 2026.' }]);
+    assert.deepEqual(otros([licencia(100, 'medica', '2026-10-20', '2026-10-25')], 2025), []);
+  });
+
+  it('una de 2027 a 2028, viendo 2026: solo en 2027, el año de su desde', () => {
+    assert.deepEqual(otros([licencia(100, 'vacaciones', '2027-12-27', '2028-01-04')]),
+      [{ anio: 2027, cantidad: 1, texto: 'También tenés 1 licencia cargada en 2027.' }]);
+  });
+
+  it('un año que no está en el selector no se anuncia', () => {
+    assert.deepEqual(otros([licencia(100, 'medica', '2028-02-01', '2028-02-02')]), []);
+    assert.deepEqual(otros([ENERO], 2026, HOY, [2024, 2025, 2026]), []);
+  });
+
+  it('cuenta lo que mostraría la lista de ese año: también un uso autorizado y lo de la otra modalidad', () => {
+    assert.deepEqual(otros([
+      licencia(100, 'uso_autorizado', '2027-02-01', '2027-02-01', 7), licencia(101, 'horas_a_favor', '2027-02-02', '2027-02-02', 2)
+    ]), [{ anio: 2027, cantidad: 2, texto: 'También tenés 2 licencias cargadas en 2027.' }]);
+  });
+
+  it('por año; viendo 2025 o 2027, lo que viene de 2026', () => {
+    const licencias = [...PLANTA.estado.licencias, ENERO];
+    assert.deepEqual(otros(licencias, 2025), [
+      { anio: 2026, cantidad: 1, texto: 'También tenés 1 licencia cargada en 2026.' },
+      { anio: 2027, cantidad: 1, texto: 'También tenés 1 licencia cargada en 2027.' }
+    ]);
+    assert.deepEqual(otros(licencias, 2027), [{ anio: 2026, cantidad: 1, texto: 'También tenés 1 licencia cargada en 2026.' }]);
+  });
+
+  it('sin año que se muestra, sin hoy o con licencias que no sirven, []', () => {
+    assert.deepEqual(otros([ENERO], null), []);
+    assert.deepEqual(otros([ENERO], 2026, null), []);
+    assert.deepEqual(otros([ENERO], 2026, HOY, null), []);
+    assert.deepEqual(otros([null, 'x', { id: 1, tipo: 'otro', desde: '2027-01-04', hasta: '2027-01-05' },
+      { id: 2, tipo: 'medica', desde: '2027-01-08', hasta: '2027-01-04' }, { id: 3, tipo: 'medica', desde: 'x', hasta: 'y' }]), []);
+    assert.deepEqual(otros(undefined), []);
+  });
+
+  it('la lista los trae en `otros_anios`', () => {
+    const estado = conLicencias(PLANTA.estado, ENERO);
+    assert.deepEqual(filasDel(PLANTA, { estado }).otros_anios,
+      [{ anio: 2027, cantidad: 1, texto: 'También tenés 1 licencia cargada en 2027.' }]);
+    assert.deepEqual(filasDel(PLANTA).otros_anios, []);
+    // El año como texto (el de la dirección)
+    assert.deepEqual(filasDel(PLANTA, { estado, anio: '2027' }).otros_anios,
+      [{ anio: 2026, cantidad: 1, texto: 'También tenés 1 licencia cargada en 2026.' }]);
+    // Sin hoy ni año, la lista vacía: tampoco otros años
+    assert.deepEqual(filasDeLicencias(estado, calculoDe(estado), { anio: 'x', persona: PLANTA.persona }).otros_anios, []);
+  });
+});
+
+// En qué lista quedó una licencia, en el segundo paso de «Cargar licencia» (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3)
+describe('el año de la lista en el segundo paso', () => {
+  it('solo si no es el año de hoy', () => {
+    assert.equal(textoDeLaListaDe('2026-11-03', HOY), null);
+    assert.equal(textoDeLaListaDe('2027-01-04', HOY), 'Está en la lista de 2027.');
+    assert.equal(textoDeLaListaDe('2025-12-29', '2026-01-05'), 'Está en la lista de 2025.');
+  });
+
+  it('con algo que no es una fecha, null', () => {
+    for (const raro of [undefined, null, '', 'x', '2027-1-4', 20270104, {}, []]) {
+      assert.equal(textoDeLaListaDe(raro, HOY), null, String(raro));
+      assert.equal(textoDeLaListaDe('2027-01-04', raro), null, String(raro));
+    }
   });
 });
 
@@ -1389,6 +1640,13 @@ describe('nada tira', () => {
         calculoDe(CONTRATO.estado), { hoy: HOY_PLANILLA, filasFeriados: [valor, { fecha: valor, activo: 1 }] });
         proximoFeriadoDe(valor, valor);
         proximoFeriadoDe([valor, { fecha: valor, activo: 1 }], HOY);
+        resumenDe({ persona: PLANTA.persona, estado: PLANTA.estado, calculo: calculoDe(PLANTA.estado), hoy: HOY, vinculos: valor });
+        paraRevisarDe(valor, valor);
+        paraRevisarDe(PLANTA.estado, new Map([[6, valor], [5, { revision: valor }], [4, { revision: { motivo: valor } }]]));
+        otrosAniosDe(valor, valor);
+        otrosAniosDe([valor, { id: valor, tipo: 'medica', desde: valor, hasta: valor }], { anio: valor, anios: valor, hoy: valor });
+        otrosAniosDe(PLANTA.estado.licencias, { anio: 2025, anios: [valor, 2026], hoy: HOY });
+        textoDeLaListaDe(valor, valor);
       });
     }
   });

@@ -6,7 +6,10 @@
  * la nota de una licencia: spec 2026-10-27-mi-espacio-licencia-word, sección 5), las tablas de horas extras
  * (`tablaDeHorasExtras`; en contrato, el día por día sale de las salidas) y la planilla de un mes de contrato
  * (`planillaDelMes`; spec 2026-10-27-mi-espacio-horas, sección 8), con todos sus números y sus textos: la página los imprime
- * tal cual y no recalcula nada (Ruling 19). También el próximo feriado de «Hoy y mañana» (`proximoFeriadoDe`).
+ * tal cual y no recalcula nada (Ruling 19). También el próximo feriado de «Hoy y mañana» (`proximoFeriadoDe`) y, desde la spec
+ * 2026-10-28-mi-espacio-licencia-anulada (2.2, 2.3 y sección 3), lo que en Configuración quedó distinto, para revisar
+ * (`paraRevisarDe`), las licencias de otros años que la lista no tiene (`otrosAniosDe`) y en qué lista quedó una licencia
+ * (`textoDeLaListaDe`).
  *
  * Puras (sin pool ni Date local: las fechas son texto 'AAAA-MM-DD' y los meses, 'AAAA-MM'). Ninguna función tira: una
  * entrada rara da null, '', '—', una lista vacía o un objeto vacío. Todo número va como número y todo texto, como texto
@@ -21,7 +24,7 @@ import {
   MENSAJES_MI_ESPACIO, MODALIDADES, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, NOMBRES_TIPO, JORNADA,
   numeroTexto, mesEnFrase, nombreDelMes, diaYMes, enLista, modalidadDe, mesMas, topeDe, diasQueDescuentan, esDiaEntero,
   fueraDeLaModalidad, tieneSaldoInicial, horasDe, textoSinNoUtilizadas, rangoDeFechas, horaSalidaValida, tipoDeDia,
-  horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos
+  horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos, fechasEnLaFrase
 } from './miEspacioReglas.js';
 
 // Los dos formatos que ya estaban en las reglas: el panel los usa sin copiarlos
@@ -233,8 +236,11 @@ const tanqueDeVacaciones = (panel) => {
  * `vence` es la de la licencia que vence el 31/12 de este año. En singular solo con 1. Al final, si algo se pierde, el texto
  * de `textoDePerdidos` («Perdés 2 de la 2024 (vencen el 31/12/2026).», `vence`: spec 2026-10-27-mi-espacio-dias-de-vacaciones,
  * 2.6), que no es una capa: esos días ya no se pueden usar. Sin ninguna, [].
+ * La oración de lo cargado suma `anio`, el de la lista de Licencias a la que lleva (spec 2026-10-28-mi-espacio-licencia-anulada,
+ * 2.3 y 3.5): el año del primer mes con días cargados (`anioCargado`, que da quien la llama), o null si no se sabe; las demás
+ * no lo llevan.
  */
-const bajadaDe = ({ numero, capas }, hoy, perdidos) => {
+const bajadaDe = ({ numero, capas }, { hoy, perdidos, anioCargado }) => {
   const capa = (clase) => capas.find((una) => una.clase === clase);
   const bajada = [];
   const vence = capa('vence');
@@ -245,7 +251,7 @@ const bajadaDe = ({ numero, capas }, hoy, perdidos) => {
   const cargadas = capa('cargadas');
   if (cargadas !== undefined) {
     const estan = cargadas.n === 1 ? 'ya está' : 'ya están';
-    bajada.push({ texto: `${numeroTexto(cargadas.n)} ${estan} ${minuscula(cargadas.nota)}.`, vence: false });
+    bajada.push({ texto: `${numeroTexto(cargadas.n)} ${estan} ${minuscula(cargadas.nota)}.`, vence: false, anio: anioCargado });
   }
   const porHabilitar = capa('por_habilitar');
   if (porHabilitar !== undefined) {
@@ -262,10 +268,13 @@ const bajadaDe = ({ numero, capas }, hoy, perdidos) => {
  * modalidad en minúscula («Lunes 26 de octubre, planta permanente»); `antes`, `cifra` y `despues`, la frase partida alrededor
  * de los días de vacaciones disponibles (los del tanque): «Te quedan», '33' y «días de vacaciones»; con 1, «Te queda», '1' y
  * «día de vacaciones»; con 0, «No te quedan días de vacaciones», '' y '' (la página no dibuja el número). La bajada suma al
- * final lo que se pierde de las ordinarias del reparto (`textoDePerdidos`).
+ * final lo que se pierde de las ordinarias del reparto (`textoDePerdidos`) y, en la oración de lo cargado, el año del primer
+ * mes con días cargados (`mesesCargados`, solo si hay algo cargado).
  */
-const titularDe = ({ hoy, cuenta }, modalidad, vacaciones) => {
+const titularDe = (panel, modalidad, vacaciones) => {
+  const { hoy, cuenta } = panel;
   const { numero } = vacaciones;
+  const [primerMes] = vacaciones.capas.some((capa) => capa.clase === 'cargadas') ? mesesCargados(panel) : [];
   let frase = ['No te quedan días de vacaciones', '', ''];
   if (numero === 1) frase = ['Te queda', '1', 'día de vacaciones'];
   else if (numero > 0) frase = ['Te quedan', numeroTexto(numero), 'días de vacaciones'];
@@ -276,7 +285,9 @@ const titularDe = ({ hoy, cuenta }, modalidad, vacaciones) => {
     antes,
     cifra,
     despues,
-    bajada: bajadaDe(vacaciones, hoy, textoDePerdidos(ordinariasDel(cuenta)))
+    bajada: bajadaDe(vacaciones, {
+      hoy, perdidos: textoDePerdidos(ordinariasDel(cuenta)), anioCargado: primerMes === undefined ? null : anioDe(primerMes)
+    })
   };
 };
 
@@ -405,23 +416,26 @@ const tiposDe = (panel, tanques) => TIPOS_POR_MODALIDAD[panel.modalidad]
 
 /**
  * El Resumen «Titular» (spec, secciones 3.9 y 8, y spec 2026-10-27-mi-espacio-resumen, sección 4), todo lo de
- * `GET /api/mi-espacio/resumen`. Recibe `{ persona, estado, calculo, hoy, feriados, hoyYManana }`: `persona` es `{ id,
- * nombre_completo, rol, vinculo }`, `calculo` el de `calcular` con ese hoy y esos feriados, y `hoyYManana` lo que arma quien
- * lo llama (`{ ausentes_hoy, ausentes_manana, proximo_feriado, eventos }`), que va tal cual.
+ * `GET /api/mi-espacio/resumen`. Recibe `{ persona, estado, calculo, hoy, feriados, hoyYManana, vinculos }`: `persona` es
+ * `{ id, nombre_completo, rol, vinculo }`, `calculo` el de `calcular` con ese hoy y esos feriados, `hoyYManana` lo que arma
+ * quien lo llama (`{ ausentes_hoy, ausentes_manana, proximo_feriado, eventos }`), que va tal cual, y `vinculos`, los de
+ * `vinculosDe` (services/miEspacioPaso.js: un Map del id de cada fila a lo que dice de Configuración, con su `revision`).
  * Devuelve `{ modalidad: { clave, texto } | null, anio, al_texto, mensaje, abrir_saldos, persona: { nombre, ve_companeros,
- * audita, es_superadmin }, marca, vence_pronto, faltantes, tanques: { vacaciones, otros } | null, titular, pastillas,
- * extraordinaria, tipos, hoy_y_manana }`:
+ * audita, es_superadmin }, marca, vence_pronto, faltantes, para_revisar, tanques: { vacaciones, otros } | null, titular,
+ * pastillas, extraordinaria, tipos, hoy_y_manana }`:
  * - sin modalidad, `mensaje` es `sinModalidad` y no hay nada que mostrar ni cargar;
  * - con modalidad y sin arranque, `mensaje` es `sinArranque` y `abrir_saldos` es true (se abre «Mis vacaciones y saldos»);
  * - si no, `marca` dice si hay algo en `vence_pronto` (cada cosa `{ fecha, dia, mes, titulo, texto, accion }`, con su línea en
  *   `texto`: «Vence el viernes 30/10, en 4 días.»), `faltantes` son los textos de `faltantesDe` y, al final, los de
- *   `avisosDeSalidas` (las salidas de la planilla de contrato que dejaron de cerrar), `titular` es la frase de la
- *   banda (`{ encabezado, antes, cifra, despues, bajada: [{ texto, vence }] }`; null sin tanques), `extraordinaria` la línea
- *   corta de la médica extraordinaria y `tipos`, las opciones de «Cargar licencia» con lo que queda de cada una.
+ *   `avisosDeSalidas` (las salidas de la planilla de contrato que dejaron de cerrar), `para_revisar` lo que en Configuración
+ *   quedó distinto (`paraRevisarDe`, con los vínculos; [] en los dos casos de arriba o sin vínculos: no es un faltante ni
+ *   prende la marca), `titular` es la frase de la banda (`{ encabezado, antes, cifra, despues, bajada: [{ texto, vence }] }`,
+ *   con `anio` en la oración de lo cargado; null sin tanques), `extraordinaria` la línea corta de la médica extraordinaria y
+ *   `tipos`, las opciones de «Cargar licencia» con lo que queda de cada una.
  * `ve_companeros` es `esAdmin` (los compañeros son administración: spec, sección 7) y `audita`, `esAuditor`.
  */
 export const resumenDe = (entrada) => {
-  const { persona, estado, calculo, hoy, feriados, hoyYManana } = esObjeto(entrada) ? entrada : {};
+  const { persona, estado, calculo, hoy, feriados, hoyYManana, vinculos } = esObjeto(entrada) ? entrada : {};
   const quien = esObjeto(persona) ? persona : {};
   const datos = esObjeto(estado) ? estado : {};
   const modalidad = MODALIDADES.includes(datos.modalidad) ? datos.modalidad : null;
@@ -440,6 +454,7 @@ export const resumenDe = (entrada) => {
     marca: false,
     vence_pronto: [],
     faltantes: [],
+    para_revisar: [],
     tanques: null,
     titular: null,
     pastillas: null,
@@ -463,6 +478,7 @@ export const resumenDe = (entrada) => {
     vence_pronto: vencePronto,
     faltantes: [...listaDe(panel.cuenta.faltantes), ...listaDe(panel.cuenta.avisosDeSalidas)]
       .filter((faltante) => esObjeto(faltante) && typeof faltante.texto === 'string').map((faltante) => faltante.texto),
+    para_revisar: paraRevisarDe(datos, vinculos),
     tanques,
     titular: titularDe(panel, resumen.modalidad, tanques.vacaciones),
     pastillas: pastillasDe(panel),
@@ -616,22 +632,97 @@ const saldoInicialDe = ({ arranque, modalidad, saldos }, anio) => {
 const esFilaDeLaLista = (fila) => esObjeto(fila) && TIPOS_LICENCIA.includes(fila.tipo) && esFechaIso(fila.desde)
   && esFechaIso(fila.hasta) && fila.desde <= fila.hasta;
 
+// Lo que quedó distinto en Configuración, para revisar (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1, 3.2 y 3.5)
+
+// El texto de una, con las fechas de su fila en la lista («04/01 al 15/01/2027») y, en una fecha cambiada o una unida sin
+// cubrir, las de la `revision` (sin decir quién la cambió: pudo ser la misma persona). De un día (ruling de la revisión
+// final: a mitad de frase, «Lun 16/11/2026» y «del 18/11 al 18/11» se leen mal), la licencia con el día de la semana en
+// minúscula («del lunes 16/11/2026») y las de Configuración con «el» («el 18/11», `fechasEnLaFrase`). Un motivo desconocido,
+// null
+const textoParaRevisar = (fila, { motivo, desde, hasta }) => {
+  const fechas = fila.desde === fila.hasta
+    ? `${diaDeLaSemana(fila.desde)} ${formatoCorto(fila.desde)}` : textoDeLasFechas(fila.desde, fila.hasta);
+  if (motivo === 'fechas') {
+    return `Revisá tu licencia del ${fechas}: en Configuración quedó ${fechasEnLaFrase(desde, hasta)}.`;
+  }
+  if (motivo === 'anulada') return `Revisá tu licencia del ${fechas}: se anuló en Configuración y acá sigue contando.`;
+  if (motivo === 'sin_cubrir') {
+    return `Revisá tu licencia del ${fechas}: ya no está cubierta en Configuración ${fechasEnLaFrase(desde, hasta)}.`;
+  }
+  return null;
+};
+
+/**
+ * Lo que el Resumen avisa para revisar, con el aviso ámbar de los faltantes, sin ser uno (nunca frena una carga ni una
+ * corrección): `[{ licencia_id, anio, texto, enlace }]`, una por licencia del estado (las activas) que la lista puede mostrar
+ * y cuya `revision` en `vinculos` (el Map de `vinculosDeLaLista`, del id de cada fila) no es null, por `desde` y después por
+ * id. `anio` es el año de su `desde`, el de la lista de Licencias a la que lleva `enlace` («Ver en Licencias de 2027»).
+ * Con vínculos que no son un Map, [].
+ */
+export const paraRevisarDe = (estado, vinculos) => {
+  if (!(vinculos instanceof Map)) return [];
+  const datos = esObjeto(estado) ? estado : {};
+  return listaDe(datos.licencias)
+    .filter((fila) => esFilaDeLaLista(fila) && Number.isInteger(idDe(fila.id)))
+    .map((fila) => {
+      const vinculo = vinculos.get(idDe(fila.id));
+      const revision = esObjeto(vinculo) && esObjeto(vinculo.revision) ? vinculo.revision : null;
+      return { fila, texto: revision === null ? null : textoParaRevisar(fila, revision) };
+    })
+    .filter(({ texto }) => texto !== null)
+    .sort((a, b) => compararTexto(a.fila.desde, b.fila.desde) || idDe(a.fila.id) - idDe(b.fila.id))
+    .map(({ fila, texto }) => {
+      const anio = anioDe(fila.desde);
+      return { licencia_id: idDe(fila.id), anio, texto, enlace: `Ver en Licencias de ${anio}` };
+    });
+};
+
 // Lo que necesita filaDeLicencia, igual para la lista y para una sola licencia (`hoy`, ya validado: una fecha o null)
 const contextoDeLasFilas = (datos, calculo, { hoy, persona, vinculos, feriados }) => ({
   datos, cuenta: esObjeto(calculo) ? calculo : {}, hoy, persona: esObjeto(persona) ? persona : {},
   vinculos: vinculos instanceof Map ? vinculos : new Map(), feriados
 });
 
+// Si una licencia toca un año (una que cruza el 31/12 toca los dos)
+const tocaElAnio = (fila, anio) => fila.desde <= `${anio}-12-31` && fila.hasta >= `${anio}-01-01`;
+
+/**
+ * Las licencias de otros años que la lista del año que se muestra no tiene (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3
+ * y 3.4): `[{ anio, cantidad, texto }]`, por año («También tenés 1 licencia cargada en 2027.», «… 2 licencias cargadas …»).
+ * Cuenta las que la lista puede mostrar (también un uso autorizado y lo de la otra modalidad: lo que mostraría la lista de
+ * ese año) que no tocan el año que se muestra y que todavía no terminaron (`hasta` hoy o después: lo terminado es historia),
+ * cada una en el año de su `desde`, si ese año está en el selector (`anios`). Una que cruza el año ya está en la lista que se
+ * ve. Las opciones son `{ anio, anios, hoy }`; sin un año que se muestre o sin un hoy que sirva, [].
+ */
+export const otrosAniosDe = (licencias, opciones) => {
+  const { anio, anios, hoy } = esObjeto(opciones) ? opciones : {};
+  const elAnio = anioPedido(anio);
+  if (elAnio === null || !esFechaIso(hoy)) return [];
+  const delSelector = listaDe(anios);
+  const porAnio = new Map();
+  for (const fila of listaDe(licencias)) {
+    if (!esFilaDeLaLista(fila) || tocaElAnio(fila, elAnio) || fila.hasta < hoy) continue;
+    const deSuDesde = anioDe(fila.desde);
+    if (delSelector.includes(deSuDesde)) porAnio.set(deSuDesde, (porAnio.get(deSuDesde) ?? 0) + 1);
+  }
+  return [...porAnio.entries()].sort(([a], [b]) => a - b).map(([otro, cantidad]) => ({
+    anio: otro, cantidad,
+    texto: cantidad === 1
+      ? `También tenés ${cantidad} licencia cargada en ${otro}.` : `También tenés ${cantidad} licencias cargadas en ${otro}.`
+  }));
+};
+
 /**
  * La pestaña Licencias de un año (`GET /api/mi-espacio/licencias?anio=`): `{ anio, anios, filtros, licencias,
- * saldo_inicial }`. Las opciones son `{ anio, hoy, persona, vinculos, feriados }` (`anio`, un entero o un texto de cuatro
- * cifras; si no sirve, el de hoy; `feriados`, el Set del cálculo, para contar los días hábiles de cada fila).
+ * saldo_inicial, otros_anios }`. Las opciones son `{ anio, hoy, persona, vinculos, feriados }` (`anio`, un entero o un texto
+ * de cuatro cifras; si no sirve, el de hoy; `feriados`, el Set del cálculo, para contar los días hábiles de cada fila).
  * - `anios`: los del selector, de dos antes del arranque al siguiente al de hoy.
  * - `filtros`: «Todas» y cada tipo con filas en el año, con su cantidad, en plural donde hace falta (Franquicias, Francos,
  *   Usos autorizados, Grupo familiar).
  * - `licencias`: las que tocan el año (una que cruza el 31/12 va en los dos), de la más nueva a la más vieja. Lo anterior al
  *   arranque en un tipo con saldo inicial va con `antes_del_arranque` y lo que no corresponde a la modalidad, con
  *   `fuera_de_la_modalidad` (Review Focus 1): las dos se ven en gris, con su motivo en `no_cuenta_texto`.
+ * - `otros_anios`: las de otros años del selector que todavía no terminaron (`otrosAniosDe`), para ir a esos años.
  */
 export const filasDeLicencias = (estado, calculo, opciones) => {
   const datos = esObjeto(estado) ? estado : {};
@@ -641,14 +732,13 @@ export const filasDeLicencias = (estado, calculo, opciones) => {
   const anios = aniosDelSelector(datos.arranque, deHoy);
   if (elAnio === null) {
     return {
-      anio: null, anios, filtros: [{ tipo: 'todas', nombre: 'Todas', cantidad: 0 }], licencias: [], saldo_inicial: null
+      anio: null, anios, filtros: [{ tipo: 'todas', nombre: 'Todas', cantidad: 0 }], licencias: [], saldo_inicial: null,
+      otros_anios: []
     };
   }
 
-  const primero = `${elAnio}-01-01`;
-  const ultimo = `${elAnio}-12-31`;
   const delAnio = listaDe(datos.licencias)
-    .filter((fila) => esFilaDeLaLista(fila) && fila.desde <= ultimo && fila.hasta >= primero)
+    .filter((fila) => esFilaDeLaLista(fila) && tocaElAnio(fila, elAnio))
     .sort((a, b) => compararTexto(b.desde, a.desde) || compararTexto(b.hasta, a.hasta)
       || cantidadDe(idDe(b.id)) - cantidadDe(idDe(a.id)));
 
@@ -663,7 +753,8 @@ export const filasDeLicencias = (estado, calculo, opciones) => {
     anios,
     filtros: [{ tipo: 'todas', nombre: 'Todas', cantidad: delAnio.length }, ...filtros],
     licencias: delAnio.map((fila) => filaDeLicencia(fila, contexto)),
-    saldo_inicial: saldoInicialDe(datos, elAnio)
+    saldo_inicial: saldoInicialDe(datos, elAnio),
+    otros_anios: otrosAniosDe(datos.licencias, { anio: elAnio, anios, hoy: deHoy })
   };
 };
 
@@ -682,6 +773,17 @@ export const filaDeUnaLicencia = (estado, calculo, opciones) => {
   if (fila === undefined) return null;
   return filaDeLicencia(fila,
     contextoDeLasFilas(datos, calculo, { hoy: esFechaIso(hoy) ? hoy : null, persona, vinculos, feriados }));
+};
+
+/**
+ * En qué lista de Licencias quedó una licencia, para el segundo paso de «Cargar licencia» (spec
+ * 2026-10-28-mi-espacio-licencia-anulada, 2.3): «Está en la lista de 2027.» si el año de su `desde` no es el de hoy; si es
+ * el mismo (o si algo no es una fecha), null.
+ */
+export const textoDeLaListaDe = (desde, hoy) => {
+  if (!esFechaIso(desde) || !esFechaIso(hoy)) return null;
+  const anio = anioDe(desde);
+  return anio === anioDe(hoy) ? null : `Está en la lista de ${anio}.`;
 };
 
 // Las tablas de horas extras (spec, sección 8)
