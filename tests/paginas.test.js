@@ -85,8 +85,9 @@ const VERSION_PROYECTOS = '20261206';
 // entrega (siguen siendo independientes). Cambió después (la cuarta pestaña, la agenda, con el mes, los próximos y los eventos en
 // «Hoy y mañana», spec 2026-10-26-mi-espacio-agenda, 6; el Resumen «Titular», spec 2026-10-27-mi-espacio-resumen, 6; y «Word» en
 // cada licencia de la lista, spec 2026-10-27-mi-espacio-licencia-word, 6; y la planilla de horas extras de contrato, spec
-// 2026-10-27-mi-espacio-horas, 9). Su versión es propia
-const VERSION_MI_ESPACIO = '20261213';
+// 2026-10-27-mi-espacio-horas, 9; y el efecto en las notas sin anticipo o sin días hábiles, como Configuración, spec
+// 2026-10-27-feriados-en-notas, 6). Su versión es propia
+const VERSION_MI_ESPACIO = '20261214';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');

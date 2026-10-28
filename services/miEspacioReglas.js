@@ -38,9 +38,9 @@ import {
   diasHabilesDe, ultimoDiaHabilDelMesCon, proximoDiaHabilCon, restarDiasHabilesCon, diaDeLaSemana, esDiaHabilCon
 } from './feriadosReglas.js';
 import {
-  diasEntre, esFechaIso, formatoCorto, sumarDias, diaHabilAnterior, FERIADOS_FIJOS
+  diasEntre, esFechaIso, formatoCorto, sumarDias, FERIADOS_FIJOS, CALENDARIO_FIJO
 } from './notasDigitalesCalendario.js';
-import { puedeTenerLicencia, puedeAnularse } from './licenciasReglas.js';
+import { puedeTenerLicencia, puedeAnularse, visperaDeLaLicencia } from './licenciasReglas.js';
 
 // La modalidad sale del vínculo de la persona (spec, sección 1): las dos plantas tienen las mismas licencias
 export const MODALIDADES = Object.freeze(['planta', 'contrato']);
@@ -1786,11 +1786,20 @@ export const textoDelVinculo = (vinculo, fila, opciones) => {
 
 /**
  * El último día en que el firmante titular puede cambiar el tipo de unas vacaciones con persona a cargo: 2 días hábiles
- * antes de que empiecen, inclusive (respuesta del usuario, 26/10/2026), con el calendario de las Notas Digitales (los 9
- * feriados fijos): el día hábil anterior sale la nota que adelanta los datasets e informa quién queda a cargo. null si
- * `desde` no es una fecha.
+ * antes de que empiecen, inclusive (respuesta del usuario, 26/10/2026), con el calendario de las Notas Digitales (spec
+ * 2026-10-27-feriados-en-notas, 4: los 9 fijos y los de la tabla; sin él, los 9 fijos): el día hábil anterior sale la nota
+ * que adelanta los datasets e informa quién queda a cargo. null si `desde` no es una fecha, o si el calendario no encuentra
+ * un día hábil (el RangeError del tope). Un calendario mal armado es un error de programación y tira.
  */
-export const limiteParaCambiarTipo = (desde) => (esFechaIso(desde) ? diaHabilAnterior(diaHabilAnterior(desde)) : null);
+export const limiteParaCambiarTipo = (desde, calendario = CALENDARIO_FIJO) => {
+  if (!esFechaIso(desde)) return null;
+  try {
+    return calendario.diaHabilAnterior(calendario.diaHabilAnterior(desde));
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return null;
+  }
+};
 
 /**
  * Qué pasa con una fila nueva (o con una corregida que se trata como nueva), con el rol de este momento y las licencias de
@@ -1822,7 +1831,8 @@ const ESTADOS_CON_OFICIAL = Object.freeze(['creada', 'creada_cambiada', 'creada_
 /**
  * Qué pasa con Configuración al corregir una fila (`anterior`, la guardada; `fila`, la corregida, ya validada; `vinculo`, el
  * de `vinculoDe`). `autorizadoCambia`: el pedido cambia la persona a cargo; `personaACargo`: la persona es el firmante
- * titular y su licencia de Configuración deja a alguien a cargo. Devuelve `{ accion }`, o `{ error: { campo, mensaje } }`:
+ * titular y su licencia de Configuración deja a alguien a cargo; `calendario`: el de las Notas Digitales, para
+ * `limiteParaCambiarTipo` (sin él, los 9 fijos). Devuelve `{ accion }`, o `{ error: { campo, mensaje } }`:
  * - sin vínculo, lo de `pasoDeLaCarga`; un rol que no puede tener licencia, siempre `'nada'`;
  * - una creada sigue a la de Configuración. Si la corrección cambia las fechas se mira contra la fila guardada (`anterior`);
  *   hasta dónde se pueden cambiar, con las fechas de Configuración (son las mismas, salvo que una copia anterior no haya
@@ -1842,7 +1852,9 @@ const ESTADOS_CON_OFICIAL = Object.freeze(['creada', 'creada_cambiada', 'creada_
  *   `pasoDeLaCarga` de la corregida.
  */
 export const pasoDeLaCorreccion = (entrada) => {
-  const { anterior, fila, vinculo, rol, hoy, cruzadas, autorizadoCambia, personaACargo } = esObjeto(entrada) ? entrada : {};
+  const {
+    anterior, fila, vinculo, rol, hoy, cruzadas, autorizadoCambia, personaACargo, calendario = CALENDARIO_FIJO
+  } = esObjeto(entrada) ? entrada : {};
   const { estado, oficial } = esObjeto(vinculo) ? vinculo : {};
   if (!esOficial(oficial) || !ESTADOS_CON_OFICIAL.includes(estado)) return pasoDeLaCarga({ fila, rol, hoy, cruzadas });
   if (!puedeTenerLicencia(rol) || !conFechas(fila) || !esFechaIso(hoy)) return { accion: 'nada' };
@@ -1854,7 +1866,7 @@ export const pasoDeLaCorreccion = (entrada) => {
 
   const pierdeLaPersona = personaACargo === true && esObjeto(anterior) && anterior.tipo === 'vacaciones'
     && fila.tipo !== 'vacaciones';
-  if (pierdeLaPersona && hoy > limiteParaCambiarTipo(oficial.desde)) {
+  if (pierdeLaPersona && hoy > limiteParaCambiarTipo(oficial.desde, calendario)) {
     return { error: { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipoFijo } };
   }
   if (!esDiaEntero(fila)) return { accion: puedeAnularse(oficial, hoy) ? 'anular' : 'quedar' };
@@ -1930,16 +1942,22 @@ export const vinculosDeLaLista = (licencias, opciones) => {
  * `{ pasa, avisos, firmante, sin_pasar_previsto }`.
  * - `pasa`: las fechas quedan en Configuración como creada: se crea o se cambia la licencia, o una creada sigue igual;
  * - `avisos` (solo si pasa): `AVISO_DEL_PASO`; al superadmin, `AVISO_DEL_PASO_SUPERADMIN`; al titular, `AVISO_NOTAS_DE_HOY`
- *   si empieza hoy o antes, y `AVISO_SIN_PERSONA_A_CARGO` si no son vacaciones (solo las vacaciones dejan persona a cargo);
+ *   si empieza hoy o antes y hoy ya salió alguna nota con su firma (`notasDeHoy`, solo el `true` literal: spec
+ *   2026-10-27-feriados-en-notas, 4), y `AVISO_SIN_PERSONA_A_CARGO` si no son vacaciones (solo las vacaciones dejan persona a
+ *   cargo);
  *   a la persona autorizada del firmante, `textoAutorizadaDelFirmante` por cada una de `comoAutorizada` (las licencias del
  *   firmante en las que es la autorizada, `[{ desde, hasta }]`) que se pisa con la fila y no terminó antes de hoy, por fecha
  *   (decisión del usuario, 27/10/2026: no la frena);
- * - `firmante` (solo al titular, y si pasa): `{ soy_titular, puede_autorizar (las vacaciones), vispera (el día hábil anterior
- *   al desde, con los 9 fijos, como Configuración), notas_de_hoy }`; si no, null;
+ * - `firmante` (solo al titular, y si pasa): `{ soy_titular, puede_autorizar (las vacaciones), vispera, sin_anticipo,
+ *   sin_dias_habiles, notas_de_hoy }`, con `vispera`, `sin_anticipo` y `sin_dias_habiles` de `visperaDeLaLicencia` con las
+ *   demás licencias de Configuración del titular (`delTitular`, sin la que sigue a esta fila) y el `calendario` (sin él, los 9
+ *   fijos), como Configuración, y `notas_de_hoy` cuando va `AVISO_NOTAS_DE_HOY`; si no, null;
  * - `sin_pasar_previsto`: si se une, `textoUnida`; si se superpone en parte, el motivo; si no, null.
  */
 export const pasoPrevistoDe = (entrada) => {
-  const { paso, vinculo, fila, rol, hoy, soyTitular, comoAutorizada } = esObjeto(entrada) ? entrada : {};
+  const {
+    paso, vinculo, fila, rol, hoy, soyTitular, comoAutorizada, delTitular, notasDeHoy, calendario = CALENDARIO_FIJO
+  } = esObjeto(entrada) ? entrada : {};
   const delPaso = esObjeto(paso) ? paso : {};
   const efectivo = delPaso.accion === 'soltar' && esObjeto(delPaso.luego) ? delPaso.luego : delPaso;
   const sigueCreada = esObjeto(vinculo) && vinculo.estado === 'creada' && efectivo.accion === 'nada';
@@ -1953,7 +1971,8 @@ export const pasoPrevistoDe = (entrada) => {
   }
   if (!pasa) return { pasa: false, avisos: [], firmante: null, sin_pasar_previsto: sinPasarPrevisto };
   const titular = soyTitular === true;
-  const deHoy = fila.desde <= hoy;
+  // Las notas de hoy ya salieron con su firma: solo si hoy salió alguna (spec 2026-10-27-feriados-en-notas, 4)
+  const deHoy = fila.desde <= hoy && notasDeHoy === true;
   const avisos = [AVISO_DEL_PASO];
   if (rol === 'superadmin') avisos.push(AVISO_DEL_PASO_SUPERADMIN);
   if (titular && deHoy) avisos.push(AVISO_NOTAS_DE_HOY);
@@ -1964,7 +1983,8 @@ export const pasoPrevistoDe = (entrada) => {
     .sort((a, b) => compararTexto(a.desde, b.desde) || compararTexto(a.hasta, b.hasta))
     .forEach((delFirmante) => avisos.push(textoAutorizadaDelFirmante(delFirmante.desde, delFirmante.hasta)));
   const firmante = titular ? {
-    soy_titular: true, puede_autorizar: fila.tipo === 'vacaciones', vispera: diaHabilAnterior(fila.desde), notas_de_hoy: deHoy
+    soy_titular: true, puede_autorizar: fila.tipo === 'vacaciones', ...visperaDeLaLicencia(fila, delTitular, calendario),
+    notas_de_hoy: deHoy
   } : null;
   return { pasa: true, avisos, firmante, sin_pasar_previsto: sinPasarPrevisto };
 };

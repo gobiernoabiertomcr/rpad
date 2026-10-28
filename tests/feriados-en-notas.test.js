@@ -1148,3 +1148,139 @@ describe('Configuración → Licencias con la precarga', () => {
       { success: true, data: { periodos: [{ desde: '2026-11-03', hasta: '2026-11-06', vuelve: '2026-11-10', respaldo: [] }] } });
   });
 });
+
+// Mi espacio con el calendario (spec 2026-10-27-feriados-en-notas, 4): lo que el cálculo previo de «Cargar licencia» le anuncia al
+// firmante titular (la víspera, sin anticipo a continuación de otra licencia suya) y hasta cuándo cambia el tipo de unas vacaciones
+// con persona a cargo, con los feriados de la tabla. pasoPrevisto se llama directo, y los controladores con una respuesta falsa
+describe('Mi espacio con la precarga', () => {
+  let paso, miEspacio;
+  const CAL = calendarioCon(FILAS_PRECARGA);
+
+  before(async () => {
+    paso = await import('../services/miEspacioPaso.js');
+    miEspacio = await import('../controllers/miEspacioController.js');
+  });
+
+  // El titular firmante (superadmin, de planta) y la persona autorizada (admin), los dos con su firma
+  const conFirmante = async () => {
+    const titular = await crearUsuario('superadmin');
+    const autorizado = await crearUsuario('admin');
+    await query("UPDATE usuarios SET vinculo = 'planta_permanente' WHERE id = ?", [titular.id]);
+    await query('UPDATE notas_digitales_config SET firmante_usuario_id = ? WHERE id = 1', [titular.id]);
+    return { titular: { ...titular, rol: 'superadmin' }, autorizado };
+  };
+  // Unas vacaciones de Mi espacio, como las valida evaluarLicencia
+  const vacaciones = (desde, hasta) => ({ id: null, tipo: 'vacaciones', desde, hasta, horas: null, mostrar: 1, nota: null });
+  // Los controladores toman hoy de hoyArgentina(): el reloj, fijo en ese momento
+  const conElReloj = async (momento, fn) => {
+    mock.timers.enable({ apis: ['Date'], now: new Date(momento) });
+    try {
+      return await fn();
+    } finally {
+      mock.timers.reset();
+    }
+  };
+  // Un controlador de Mi espacio con una respuesta falsa, como el titular, con el reloj en ese momento
+  const pedir = async (controlador, titular, pedido, momento) => {
+    const res = respuestaFalsa();
+    await conElReloj(momento, () => controlador(
+      { query: {}, params: {}, body: {}, ...pedido, user: { userId: titular.id, rol: 'superadmin' } }, res
+    ));
+    return res;
+  };
+  // Lo que necesita para cargar vacaciones el martes 20/10/2026: el saldo inicial de ese día, los 20 días de 2026 y 20 de 2025
+  const listoParaVacaciones = async (persona) => {
+    await query("INSERT INTO mi_espacio_arranque (usuario_id, fecha) VALUES (?, '2026-10-20')", [persona.id]);
+    await query('INSERT INTO mi_espacio_anios (usuario_id, anio, dias_vacaciones) VALUES (?, 2026, 20)', [persona.id]);
+    await query("INSERT INTO mi_espacio_saldos (usuario_id, concepto, anio, cantidad) VALUES (?, 'vacaciones', 2025, 20)",
+      [persona.id]);
+  };
+  const marcas = ({ vispera, sin_anticipo: sinAnticipo, sin_dias_habiles: sinDiasHabiles }) => [vispera, sinAnticipo, sinDiasHabiles];
+  const EL_20_DE_OCTUBRE = '2026-10-20T13:00:00Z';
+
+  it('la víspera de unas vacaciones del titular desde el 09/12 es el 04/12', async () => {
+    const { titular } = await conFirmante();
+    const previsto = await paso.pasoPrevisto({
+      persona: titular, anterior: null, fila: vacaciones('2026-12-09', '2027-01-08'), hoy: '2026-11-05', calendario: CAL
+    });
+    assert.equal(previsto.error, null);
+    // El lunes 07/12 no es laborable y el martes 08/12 es feriado
+    assert.deepEqual(marcas(previsto.paso.firmante), ['2026-12-04', false, false]);
+    // Con los 9 fijos, el lunes 07/12
+    const conLosFijos = await paso.pasoPrevisto({
+      persona: titular, anterior: null, fila: vacaciones('2026-12-09', '2027-01-08'), hoy: '2026-11-05', calendario: CALENDARIO_FIJO
+    });
+    assert.deepEqual(marcas(conLosFijos.paso.firmante), ['2026-12-07', false, false]);
+  });
+
+  it('a continuación de una licencia de Configuración del titular: sin anticipo', async () => {
+    const { titular } = await conFirmante();
+    await licencia(titular, '2026-12-09', '2026-12-31');
+    // Su día hábil anterior, el jueves 31/12 (el 01/01 es feriado y el 02 y el 03, fin de semana), está en la de Configuración
+    const fila = vacaciones('2027-01-04', '2027-01-08');
+    const previsto = await paso.pasoPrevisto({ persona: titular, anterior: null, fila, hoy: '2026-11-05', calendario: CAL });
+    assert.equal(previsto.paso.pasa, true);
+    assert.deepEqual(marcas(previsto.paso.firmante), [null, true, false]);
+    // Una anulada no cuenta
+    await query('UPDATE usuarios_licencias SET anulada = 1 WHERE usuario_id = ?', [titular.id]);
+    const sinLaOtra = await paso.pasoPrevisto({ persona: titular, anterior: null, fila, hoy: '2026-11-05', calendario: CAL });
+    assert.deepEqual(marcas(sinLaOtra.paso.firmante), ['2026-12-31', false, false]);
+  });
+
+  it('al corregir una que pasó a Configuración, su propia licencia de Configuración no cuenta como otra', async () => {
+    const { titular } = await conFirmante();
+    const suya = await licencia(titular, '2026-12-09', '2026-12-31');
+    const anterior = { ...vacaciones('2026-12-09', '2026-12-31'), id: 1, licencia_oficial_id: suya, oficial: 'creada', sin_pasar: null };
+    // Corrida al 04/01: la de Configuración la sigue, así que el 31/12 ya no es de licencia
+    const previsto = await paso.pasoPrevisto({
+      persona: titular, anterior, fila: { ...vacaciones('2027-01-04', '2027-01-08'), id: 1 }, hoy: '2026-11-05', calendario: CAL
+    });
+    assert.equal(previsto.error, null);
+    assert.equal(previsto.paso.pasa, true);
+    assert.deepEqual(marcas(previsto.paso.firmante), ['2026-12-31', false, false]);
+    // Una de administración que la sigue sí cuenta: una unida (cubierta por otra licencia de Configuración del 09/12 al 31/12)
+    // que se corre al 04/01 se suelta, y la de administración sigue
+    const unida = { ...anterior, oficial: 'unida' };
+    const soltada = await paso.pasoPrevisto({
+      persona: titular, anterior: unida, fila: { ...vacaciones('2027-01-04', '2027-01-08'), id: 1 }, hoy: '2026-11-05', calendario: CAL
+    });
+    assert.equal(soltada.paso.pasa, true);
+    assert.deepEqual(marcas(soltada.paso.firmante), [null, true, false]);
+  });
+
+  it('el cálculo de «Cargar licencia» arma el calendario con la tabla', async () => {
+    const { titular } = await conFirmante();
+    await listoParaVacaciones(titular);
+    const pedido = { body: { tipo: 'vacaciones', desde: '2026-12-09', hasta: '2026-12-18' } };
+    const res = await pedir(miEspacio.calcularLicencia, titular, pedido, EL_20_DE_OCTUBRE);
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    assert.equal(res.body.data.error, null, JSON.stringify(res.body.data.error));
+    assert.deepEqual(marcas(res.body.data.paso.firmante), ['2026-12-04', false, false]);
+    // Sin la tabla, Mi espacio no se puede calcular, como siempre
+    const consola = mock.method(console, 'error', () => {});
+    try {
+      const sinTabla = await conLaTablaRenombrada(() => pedir(miEspacio.calcularLicencia, titular, pedido, EL_20_DE_OCTUBRE));
+      assert.deepEqual([sinTabla.statusCode, sinTabla.body], [500, { success: false, error: 'Error al calcular la licencia' }]);
+    } finally {
+      consola.mock.restore();
+    }
+  });
+
+  it('las vacaciones con persona a cargo cambian de tipo hasta el 03/12: el 07/12 no es hábil', async () => {
+    const { titular, autorizado } = await conFirmante();
+    await listoParaVacaciones(titular);
+    const cargada = await pedir(miEspacio.cargarLicenciaMia, titular,
+      { body: { tipo: 'vacaciones', desde: '2026-12-09', hasta: '2026-12-18', autorizado_id: autorizado.id } }, EL_20_DE_OCTUBRE);
+    assert.equal(cargada.statusCode, 201, JSON.stringify(cargada.body));
+    const aMedica = { params: { id: String(cargada.body.data.id) }, body: { tipo: 'medica', desde: '2026-12-09', hasta: '2026-12-18' } };
+    // El viernes 04/12 ya sale la nota de la víspera: el tipo queda fijo (con los 9 fijos, el 04/12 todavía se podía)
+    const elViernes = await pedir(miEspacio.corregirLicenciaMia, titular, aMedica, '2026-12-04T13:00:00Z');
+    assert.deepEqual([elViernes.statusCode, elViernes.body],
+      [400, { success: false, error: 'Ya sale la nota que informa quién queda a cargo: el tipo no se puede cambiar.', campo: 'tipo' }]);
+    // El jueves 03/12 todavía se puede: le saca la persona a cargo en Configuración
+    const elJueves = await pedir(miEspacio.corregirLicenciaMia, titular, aMedica, '2026-12-03T13:00:00Z');
+    assert.equal(elJueves.statusCode, 200, JSON.stringify(elJueves.body));
+    const [deConfiguracion] = await query('SELECT autorizado_id, anulada FROM usuarios_licencias WHERE usuario_id = ?', [titular.id]);
+    assert.deepEqual([deConfiguracion.autorizado_id, Number(deConfiguracion.anulada)], [null, 0]);
+  });
+});

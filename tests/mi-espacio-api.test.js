@@ -1140,9 +1140,13 @@ describe('el paso a Configuración', () => {
     const deHoy = await calcularMia('adminB', { tipo: 'vacaciones', desde: hoy, hasta: dia(4) });
     assert.equal(deHoy.status, 200, JSON.stringify(deHoy.body));
     assert.equal(deHoy.body.data.error, null);
+    // Hoy no salió ninguna nota con su firma: no se le dice que las notas de hoy ya salieron
     assert.deepEqual(deHoy.body.data.paso, {
-      pasa: true, avisos: [AVISO_DEL_PASO, AVISO_NOTAS_DE_HOY],
-      firmante: { soy_titular: true, puede_autorizar: true, vispera: diaHabilAnterior(hoy), notas_de_hoy: true },
+      pasa: true, avisos: [AVISO_DEL_PASO],
+      firmante: {
+        soy_titular: true, puede_autorizar: true, vispera: diaHabilAnterior(hoy), sin_anticipo: false, sin_dias_habiles: false,
+        notas_de_hoy: false
+      },
       sin_pasar_previsto: null
     });
     const medica = await calcularMia('adminB', { tipo: 'medica', desde: q(0), hasta: q(1) });
@@ -1150,8 +1154,10 @@ describe('el paso a Configuración', () => {
     assert.equal(medica.body.data.paso.firmante.puede_autorizar, false);
     const vacaciones = await calcularMia('adminB', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
     assert.deepEqual(vacaciones.body.data.paso.avisos, [AVISO_DEL_PASO]);
-    assert.deepEqual(vacaciones.body.data.paso.firmante,
-      { soy_titular: true, puede_autorizar: true, vispera: diaHabilAnterior(q(0)), notas_de_hoy: false });
+    assert.deepEqual(vacaciones.body.data.paso.firmante, {
+      soy_titular: true, puede_autorizar: true, vispera: diaHabilAnterior(q(0)), sin_anticipo: false, sin_dias_habiles: false,
+      notas_de_hoy: false
+    });
 
     await listoParaVacaciones('superadmin');
     const delSuperadmin = await calcularMia('superadmin', { tipo: 'vacaciones', desde: q(0), hasta: q(4) });
@@ -1172,6 +1178,42 @@ describe('el paso a Configuración', () => {
       { pasa: false, avisos: [], firmante: null, sin_pasar_previsto: textoUnida(q(0), q(9)) });
     // Nada se guardó
     assert.deepEqual([await vinculosDe('adminB'), await deConfiguracion('adminB')], [[], []]);
+  });
+
+  // Spec 2026-10-27-feriados-en-notas, 4: «Las notas de hoy ya salieron a las 8:15 con tu firma.» solo si hoy salió alguna nota
+  // (no de prueba, en cualquier estado) firmada por el titular
+  it('AVISO_NOTAS_DE_HOY solo si hoy salieron notas con tu firma', async () => {
+    await comoTitular('adminB');
+    await listoParaVacaciones('adminB');
+    const nota = (fecha, { firmante = usuarios.adminB.id, esPrueba = 0, estado = 'fallida' } = {}) => query(
+      `INSERT INTO notas_digitales (tipo, gestion, fecha, es_prueba, asunto, para, html, texto, pdf, estado, firmante_id)
+       VALUES ('aviso', 'interna', ?, ?, 'Nota de prueba', 'prueba@rpad.test', '', '', '', ?, ?)`,
+      [fecha, esPrueba, estado, firmante]
+    );
+    const deHoy = async () => (await calcularMia('adminB', { tipo: 'vacaciones', desde: hoy, hasta: dia(4) })).body.data.paso;
+    const conAviso = (paso) => [paso.avisos.includes(AVISO_NOTAS_DE_HOY), paso.firmante.notas_de_hoy];
+    try {
+      // Una de ayer, una de prueba de hoy y una de hoy con otra firma no cuentan
+      await nota(dia(-1));
+      await nota(hoy, { esPrueba: 1 });
+      await nota(hoy, { firmante: usuarios.adminA.id });
+      await nota(hoy, { firmante: null });
+      assert.deepEqual(conAviso(await deHoy()), [false, false]);
+      // Una de hoy con su firma, aunque haya fallado: sí
+      await nota(hoy);
+      const paso = await deHoy();
+      assert.deepEqual(conAviso(paso), [true, true]);
+      assert.deepEqual(paso.avisos, [AVISO_DEL_PASO, AVISO_NOTAS_DE_HOY]);
+      // Una que empieza después de hoy, nunca
+      const futura = (await calcularMia('adminB', { tipo: 'vacaciones', desde: q(0), hasta: q(4) })).body.data.paso;
+      assert.deepEqual(conAviso(futura), [false, false]);
+      // La lectura misma
+      assert.equal(await datos.notasDeHoyDelTitular(usuarios.adminB.id, hoy), true);
+      assert.equal(await datos.notasDeHoyDelTitular(usuarios.adminB.id, dia(-2)), false);
+      assert.equal(await datos.notasDeHoyDelTitular(usuarios.superadmin.id, hoy), false);
+    } finally {
+      await query('DELETE FROM notas_digitales');
+    }
   });
 
   it('las vacaciones del titular con persona a cargo, lejos: cambiar el tipo le saca la persona a cargo', async () => {

@@ -775,7 +775,9 @@ const fraseDeLaSumaDelMes = (mes, horas, hoy, marcar) => {
 const textoDeLaSumaDelMes = (mes, horas, hoy) => fraseDeLaSumaDelMes(mes, horas, hoy, (parte) => parte);
 
 // Copias de usuarios.js (Configuración → Licencias): el efecto de la licencia del firmante en las notas, los días sin auditor y
-// las ausencias de la persona autorizada, con los mismos textos. efectoEnNotas recibe «hoy» por parámetro
+// las ausencias de la persona autorizada, con los mismos textos. efectoEnNotas recibe «hoy» por parámetro, y la licencia con
+// `{ desde, vispera, sin_anticipo, sin_dias_habiles }` (las calcula el servidor, con el calendario: spec
+// 2026-10-27-feriados-en-notas, 6)
 
 // 'AAAA-MM-DD' → 'dd/mm/aaaa' sin pasar por Date
 const fechaCorta = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
@@ -784,6 +786,12 @@ const efectoEnNotas = (licencia, autorizadoNombre, hoy) => {
     return autorizadoNombre
       ? `Licencia en curso: ${autorizadoNombre} presenta las notas con las dos firmas, citando la nota que comunica la autorización (si todavía no salió, la próxima corrida la genera primero), y vuelve a presentar en su fecha cada aviso que se adelantó.`
       : 'Licencia en curso sin persona autorizada: no se generan notas hasta la vuelta. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.';
+  }
+  if (licencia?.sin_dias_habiles === true) return 'No tiene días hábiles: las notas no cambian.';
+  if (licencia?.sin_anticipo === true) {
+    return autorizadoNombre
+      ? `Empieza a continuación de otra licencia: los avisos no se adelantan. Desde el primer día, ${autorizadoNombre} presenta las notas con las dos firmas, después de la nota que comunica la autorización.`
+      : 'Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.';
   }
   const cuando = licencia?.vispera ? `el ${fechaCorta(licencia.vispera)}` : 'el último día hábil anterior';
   return autorizadoNombre
@@ -982,7 +990,8 @@ function htmlDelPaso(paso, { autorizado = null, ausencias = [], hoy = '', desde 
     parrafos.push(...(Array.isArray(paso.avisos) ? paso.avisos : []).filter(conTexto));
     if (conEfecto !== false && esObjeto(paso.firmante) && paso.firmante.puede_autorizar === true) {
       const nombre = conTexto(autorizado) ? autorizado : null;
-      parrafos.push(efectoEnNotas({ desde, vispera: paso.firmante.vispera }, nombre, hoy));
+      const { vispera, sin_anticipo: sinAnticipo, sin_dias_habiles: sinDiasHabiles } = paso.firmante;
+      parrafos.push(efectoEnNotas({ desde, vispera, sin_anticipo: sinAnticipo, sin_dias_habiles: sinDiasHabiles }, nombre, hoy));
       if (nombre !== null) parrafos.push(...textoAusenciasAutorizado(nombre, listaDe(ausencias), desde, hasta));
     }
   } else if (conTexto(paso.sin_pasar_previsto)) parrafos.push(paso.sin_pasar_previsto);

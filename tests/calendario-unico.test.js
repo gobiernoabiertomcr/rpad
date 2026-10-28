@@ -19,10 +19,9 @@ const PROHIBIDOS = Object.freeze([
 const SIEMPRE = Object.freeze(['services/notasDigitalesCalendario.js', 'services/feriadosReglas.js']);
 // Métricas y la Agenda de pedidos siguen con los 9 fijos hasta la tanda 2 (spec, sección 5): la tanda 2 los saca
 const HASTA_LA_TANDA_2 = Object.freeze(['services/metricasReglas.js', 'services/reportesAgenda.js']);
-// Los que todavía no reciben el calendario: cada tarea de la tanda 1 que arregla un archivo lo saca de acá
-const PENDIENTES_DE_LA_TANDA_1 = Object.freeze([
-  'services/miEspacioReglas.js'
-]);
+// Los que todavía no reciben el calendario: cada tarea de la tanda 1 que arregla un archivo lo saca de acá (con Mi espacio, la
+// última, quedó vacía)
+const PENDIENTES_DE_LA_TANDA_1 = Object.freeze([]);
 
 // El calendario, como lo nombra un archivo de services/ ('./') o de controllers/ ('../services/'), entre comillas simples o dobles
 const DEL_CALENDARIO = String.raw`(?<comilla>['"])(?:\./|\.\./services/)notasDigitalesCalendario\.js\k<comilla>`;

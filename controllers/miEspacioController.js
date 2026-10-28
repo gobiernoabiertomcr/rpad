@@ -32,6 +32,7 @@ import {
   estadoDe, contextoDe, personaDe, licenciaDe, datosDeLaNota, ausenciasVisibles, feriadosPara
 } from '../services/miEspacioDatos.js';
 import { filasDeFeriados } from '../services/feriadosDatos.js';
+import { calendarioCon } from '../services/feriadosReglas.js';
 import { notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota, MENSAJES_NOTA } from '../services/miEspacioNota.js';
 import { renderNotaDocx, TIPO_WORD } from '../services/miEspacioNotaWord.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
@@ -275,21 +276,26 @@ const valoresDelPaso = (paso) => [paso.licencia_oficial_id, paso.oficial, paso.s
  * id de la que se corrige), sin guardar nada: `{ error, vista, paso }`. Un error va dentro de `data`, con 200. `paso` es lo
  * que pasaría con Configuración (`pasoPrevisto`: `{ pasa, avisos, firmante, sin_pasar_previsto }`), o null si la licencia
  * no se puede guardar como está; un error del paso (el tipo fijo de unas vacaciones con persona a cargo, «ya empezó», «ya
- * terminó») va en `error` si la licencia no tiene otro
+ * terminó») va en `error` si la licencia no tiene otro. Lo que se anuncia de las Notas Digitales (la víspera, el límite para
+ * cambiar el tipo) se cuenta con el calendario de las filas de los feriados que ya leyó `contextoDe` (spec
+ * 2026-10-27-feriados-en-notas, 4): si no se pueden leer, Mi espacio no se calcula, como siempre
  */
 export const calcularLicencia = (req, res) => responder(res, 'Error al calcular la licencia', async () => {
   const hoy = hoyArgentina();
   const entrada = cuerpoDe(req);
   const editadaId = idPositivo(entrada.id);
-  const { persona, estado, feriados } = await contextoDe(req.user.userId, hoy);
+  const { persona, estado, feriados, filasFeriados } = await contextoDe(req.user.userId, hoy);
   const { datos, error, vista } = evaluar(estado, entrada, { hoy, feriados, editadaId });
   if (datos === null) return conDatos({ error, vista, paso: null });
   const anterior = estado.licencias.find((fila) => fila.id === editadaId) ?? null;
-  const previsto = await pasoPrevisto({ persona, anterior, fila: { id: editadaId, ...datos }, hoy });
+  const previsto = await pasoPrevisto(
+    { persona, anterior, fila: { id: editadaId, ...datos }, hoy, calendario: calendarioCon(filasFeriados) }
+  );
   return conDatos({ error: previsto.error, vista, paso: previsto.paso });
 });
 
-// POST /api/mi-espacio/licencias: carga una licencia de la persona y, si es de día entero, la pasa a Configuración
+// POST /api/mi-espacio/licencias: carga una licencia de la persona y, si es de día entero, la pasa a Configuración (con el
+// calendario de las filas de los feriados que ya leyó contextoDe)
 export const cargarLicenciaMia = (req, res) => responder(res, 'Error al cargar la licencia', async () => {
   const hoy = hoyArgentina();
   const usuarioId = req.user.userId;
@@ -297,11 +303,12 @@ export const cargarLicenciaMia = (req, res) => responder(res, 'Error al cargar l
   const { autorizado, error: errorDelAutorizado } = autorizadoDelPedido(entrada);
   if (errorDelAutorizado) return rechazoDeLaCarga(errorDelAutorizado);
   return enTransaccion(usuarioId, puedePasar(await personaDe(usuarioId)), async (conexion, conTodos) => {
-    const { persona, estado, feriados } = await contextoDe(usuarioId, hoy, conexion);
+    const { persona, estado, feriados, filasFeriados } = await contextoDe(usuarioId, hoy, conexion);
     if (!conTodos && puedePasar(persona)) return CON_TODOS;
     const { datos, error } = evaluar(estado, entrada, { hoy, feriados });
     if (error) return rechazoDeLaCarga(error);
-    const paso = await aplicarCarga(conexion, { persona, fila: datos, hoy, autorizadoId: autorizado ?? null });
+    const paso = await aplicarCarga(conexion,
+      { persona, fila: datos, hoy, autorizadoId: autorizado ?? null, calendario: calendarioCon(filasFeriados) });
     if (paso.error) return rechazoDeLaCarga(paso.error);
     const [resultado] = await conexion.query(
       `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, horas, mostrar, nota, licencia_oficial_id, oficial,
@@ -315,7 +322,7 @@ export const cargarLicenciaMia = (req, res) => responder(res, 'Error al cargar l
 });
 
 // PUT /api/mi-espacio/licencias/:id: corrige una licencia activa de la persona (la corregida no choca consigo misma) y
-// Configuración la sigue, si corresponde
+// Configuración la sigue, si corresponde (con el calendario de las filas de los feriados que ya leyó contextoDe)
 export const corregirLicenciaMia = (req, res) => responder(res, 'Error al corregir la licencia', async () => {
   const id = idPositivo(req.params.id);
   if (id === null) return noEncontrada();
@@ -325,14 +332,15 @@ export const corregirLicenciaMia = (req, res) => responder(res, 'Error al correg
   const { autorizado, error: errorDelAutorizado } = autorizadoDelPedido(entrada);
   if (errorDelAutorizado) return rechazoDeLaCarga(errorDelAutorizado);
   return enTransaccion(usuarioId, puedePasar(await personaDe(usuarioId)), async (conexion, conTodos) => {
-    const { persona, estado, feriados } = await contextoDe(usuarioId, hoy, conexion);
+    const { persona, estado, feriados, filasFeriados } = await contextoDe(usuarioId, hoy, conexion);
     if (!conTodos && puedePasar(persona)) return CON_TODOS;
     const anterior = estado.licencias.find((fila) => fila.id === id);
     if (!anterior) return noEncontrada();
     const { datos, error } = evaluar(estado, entrada, { hoy, feriados, editadaId: id });
     if (error) return rechazoDeLaCarga(error);
-    const paso = await aplicarCorreccion(conexion,
-      { persona, anterior, fila: { id, ...datos }, hoy, autorizadoPedido: autorizado });
+    const paso = await aplicarCorreccion(conexion, {
+      persona, anterior, fila: { id, ...datos }, hoy, autorizadoPedido: autorizado, calendario: calendarioCon(filasFeriados)
+    });
     if (paso.error) return rechazoDeLaCarga(paso.error);
     await conexion.query(
       `UPDATE mi_espacio_licencias SET tipo = ?, desde = ?, hasta = ?, horas = ?, mostrar = ?, nota = ?, ${DEL_PASO}

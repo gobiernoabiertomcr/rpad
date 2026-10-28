@@ -1,7 +1,8 @@
 /**
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 5 y 10): las consultas de lo que cargó cada persona, de
  * solo lectura y parametrizadas. Devuelven el `Estado` de las reglas (services/miEspacioReglas.js), solo con las filas
- * activas, lo que el paso a Configuración (sección 6) lee de las licencias de Configuración, las ausencias que ven los
+ * activas, lo que el paso a Configuración (sección 6) lee de las licencias de Configuración (y si hoy ya salieron notas con la
+ * firma del titular, `notasDeHoyDelTitular`), las ausencias que ven los
  * compañeros («Hoy no están», sección 7), quiénes están de licencia el día del email de vencimiento (sección 9), cuántas
  * licencias incluye un feriado (Configuración → Feriados, `licenciasQueIncluyen`) y la fecha y la firma de la nota de una
  * licencia (spec 2026-10-27-mi-espacio-licencia-word, `datosDeLaNota`). Lo que llega de la base como texto se
@@ -310,6 +311,21 @@ export const delFirmanteComoAutorizada = async (conexion, titularId, usuarioId, 
     [titularId, usuarioId, hasta, desde]
   );
   return filas.map((fila) => ({ desde: fila.desde, hasta: fila.hasta }));
+};
+
+/**
+ * Si hoy ya salió alguna nota con la firma del firmante titular (spec 2026-10-27-feriados-en-notas, 4: «Las notas de hoy ya
+ * salieron a las 8:15 con tu firma.» solo si salieron): alguna Nota Digital de esa fecha, que no es de prueba, en cualquier
+ * estado (la pendiente o la fallida ya lleva su firma), con `firmante_id` del titular. Sin titular, false (sin consultar).
+ * @returns {Promise<boolean>}
+ */
+export const notasDeHoyDelTitular = async (titularId, hoy, conexion = pool) => {
+  const id = idPositivo(titularId);
+  if (id === null || !esFechaIso(hoy)) return false;
+  const [filas] = await conexion.query(
+    'SELECT 1 FROM notas_digitales WHERE fecha = ? AND es_prueba = 0 AND firmante_id = ? LIMIT 1', [hoy, id]
+  );
+  return filas.length > 0;
 };
 
 /**

@@ -27,8 +27,13 @@ import {
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
   avisosDeSalidas, mesDeLaPlanilla
 } from '../services/miEspacioReglas.js';
-import { feriadosDelRango } from '../services/feriadosReglas.js';
+import { feriadosDelRango, calendarioCon } from '../services/feriadosReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
+import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
+
+// El calendario con la precarga de 2026 y 2027 (spec 2026-10-27-feriados-en-notas, 1): el 07/12/2026 no es laborable, y el 08/02
+// y el 09/02/2027 son Carnaval
+const CAL = calendarioCon(FILAS_PRECARGA);
 
 // Unas vacaciones (las de los casos tienen ids del 1 al 6: las de los tests, desde el 100)
 const vacaciones = (id, desde, hasta) => ({ id, tipo: 'vacaciones', desde, hasta, horas: null });
@@ -2863,6 +2868,14 @@ describe('el paso a Configuración', () => {
       assert.equal(limiteParaCambiarTipo('2026-12-09'), '2026-12-04');
       for (const raro of [null, undefined, '', '2026-02-30', 3, {}]) assert.equal(limiteParaCambiarTipo(raro), null);
     });
+
+    it('con la tabla (spec 2026-10-27-feriados-en-notas, 4): los feriados de Configuración → Feriados tampoco son hábiles', () => {
+      // El lunes 07/12 no es laborable y el martes 08/12 es feriado: desde el miércoles 09/12, el jueves 03/12
+      assert.equal(limiteParaCambiarTipo('2026-12-09', CAL), '2026-12-03');
+      // El lunes 08/02 y el martes 09/02/2027 son Carnaval: desde el miércoles 10/02, el jueves 04/02
+      assert.equal(limiteParaCambiarTipo('2027-02-10', CAL), '2027-02-04');
+      for (const raro of [null, undefined, '', '2026-02-30', 3, {}]) assert.equal(limiteParaCambiarTipo(raro, CAL), null);
+    });
   });
 
   describe('pasoDeLaCarga', () => {
@@ -3085,6 +3098,22 @@ describe('el paso a Configuración', () => {
         assert.deepEqual(correccion(anterior, { ...anterior, nota: 'x' }, vinculo, { ...conPersona, hoy: '2026-10-30' }),
           { accion: 'nada' });
       });
+
+    it('con la tabla, el límite cuenta los feriados de Configuración → Feriados (spec 2026-10-27-feriados-en-notas, 4)', () => {
+      // Unas vacaciones desde el miércoles 09/12 con persona a cargo, que pasan a una médica el viernes 04/12
+      const oficial = oficialDe(7, '2026-12-09', '2026-12-18', { autorizado_id: 3 });
+      const anterior = creadaDe(oficial);
+      const vinculo = { estado: 'creada', oficial };
+      const aMedica = { ...anterior, tipo: 'medica' };
+      const elViernes = { personaACargo: true, hoy: '2026-12-04' };
+      // Con la tabla, el lunes 07/12 no es hábil: el límite es el jueves 03/12, y el 04/12 ya sale la nota de la víspera
+      assert.deepEqual(correccion(anterior, aMedica, vinculo, { ...elViernes, calendario: CAL }),
+        { error: { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipoFijo } });
+      assert.deepEqual(correccion(anterior, aMedica, vinculo, { ...elViernes, hoy: '2026-12-03', calendario: CAL }),
+        { accion: 'cambiar', sin_persona_a_cargo: true });
+      // Sin el calendario, los 9 fijos: el límite es el viernes 04/12, inclusive
+      assert.deepEqual(correccion(anterior, aMedica, vinculo, elViernes), { accion: 'cambiar', sin_persona_a_cargo: true });
+    });
   });
 
   describe('pasoDeLaBaja', () => {
@@ -3198,12 +3227,56 @@ describe('el paso a Configuración', () => {
     it('al firmante titular: la víspera, las notas de hoy y, fuera de las vacaciones, que no queda nadie a cargo', () => {
       assert.deepEqual(previsto({ soyTitular: true }), {
         pasa: true, avisos: [AVISO_DEL_PASO],
-        firmante: { soy_titular: true, puede_autorizar: true, vispera: '2026-10-30', notas_de_hoy: false },
+        firmante: {
+          soy_titular: true, puede_autorizar: true, vispera: '2026-10-30', sin_anticipo: false, sin_dias_habiles: false,
+          notas_de_hoy: false
+        },
         sin_pasar_previsto: null
       });
-      const hoyMismo = previsto({ soyTitular: true, fila: filaDe({ tipo: 'medica', desde: HOY, hasta: '2026-10-28' }) });
+      const hoyMismo = previsto({
+        soyTitular: true, notasDeHoy: true, fila: filaDe({ tipo: 'medica', desde: HOY, hasta: '2026-10-28' })
+      });
       assert.deepEqual(hoyMismo.avisos, [AVISO_DEL_PASO, AVISO_NOTAS_DE_HOY, AVISO_SIN_PERSONA_A_CARGO]);
-      assert.deepEqual(hoyMismo.firmante, { soy_titular: true, puede_autorizar: false, vispera: '2026-10-23', notas_de_hoy: true });
+      assert.deepEqual(hoyMismo.firmante, {
+        soy_titular: true, puede_autorizar: false, vispera: '2026-10-23', sin_anticipo: false, sin_dias_habiles: false,
+        notas_de_hoy: true
+      });
+    });
+
+    it('al firmante titular: la víspera con la tabla, sin anticipo y las notas de hoy (spec 2026-10-27-feriados-en-notas, 4)', () => {
+      const marcas = ({ vispera, sin_anticipo: sinAnticipo, sin_dias_habiles: sinDiasHabiles }) => [vispera, sinAnticipo, sinDiasHabiles];
+      const delNueve = filaDe({ desde: '2026-12-09', hasta: '2026-12-18' });
+      // Con la tabla, el lunes 07/12 no es laborable y el martes 08/12 es feriado: la víspera es el viernes 04/12
+      assert.deepEqual(marcas(previsto({ soyTitular: true, fila: delNueve, calendario: CAL }).firmante),
+        ['2026-12-04', false, false]);
+      // Con los 9 fijos (sin el calendario), el lunes 07/12
+      assert.deepEqual(marcas(previsto({ soyTitular: true, fila: delNueve }).firmante), ['2026-12-07', false, false]);
+      // Si otra licencia suya incluye ese viernes, empieza a continuación de ella: sin anticipo
+      const delTitular = [{ id: 9, desde: '2026-11-30', hasta: '2026-12-04', anulada: 0, autorizado_id: null }];
+      assert.deepEqual(marcas(previsto({ soyTitular: true, fila: delNueve, calendario: CAL, delTitular }).firmante),
+        [null, true, false]);
+      // Una anulada no cuenta
+      assert.deepEqual(marcas(previsto({
+        soyTitular: true, fila: delNueve, calendario: CAL, delTitular: [{ ...delTitular[0], anulada: 1 }]
+      }).firmante), ['2026-12-04', false, false]);
+      // Una sin días hábiles (el 07/12 y el 08/12): la forma de Configuración, aunque desde Mi espacio no se pueda cargar
+      assert.deepEqual(marcas(previsto({
+        soyTitular: true, fila: filaDe({ desde: '2026-12-07', hasta: '2026-12-08' }), calendario: CAL
+      }).firmante), [null, false, true]);
+
+      // «Las notas de hoy ya salieron…» solo si hoy salieron notas con su firma, y notas_de_hoy lo sigue
+      const deHoy = filaDe({ desde: HOY, hasta: '2026-10-30' });
+      for (const notasDeHoy of [true, false, undefined, 1, 'true']) {
+        const conNotas = notasDeHoy === true;
+        const resultado = previsto({ soyTitular: true, fila: deHoy, notasDeHoy });
+        assert.equal(resultado.avisos.includes(AVISO_NOTAS_DE_HOY), conNotas, String(notasDeHoy));
+        assert.equal(resultado.firmante.notas_de_hoy, conNotas, String(notasDeHoy));
+      }
+      // Una que empieza después de hoy, nunca
+      const futura = previsto({ soyTitular: true, notasDeHoy: true });
+      assert.deepEqual([futura.avisos.includes(AVISO_NOTAS_DE_HOY), futura.firmante.notas_de_hoy], [false, false]);
+      // A quien no es el titular, tampoco
+      assert.deepEqual(previsto({ fila: deHoy, notasDeHoy: true }).avisos, [AVISO_DEL_PASO]);
     });
 
     // Decisión del usuario (27/10/2026): la persona autorizada del firmante no se frena; se le avisa, una línea por cada
@@ -3258,6 +3331,10 @@ describe('el paso a Configuración', () => {
         pasoPrevistoDe(valor);
         pasoPrevistoDe({ paso: valor, vinculo: valor, fila: valor, rol: valor, hoy: valor, soyTitular: valor, comoAutorizada: valor });
         pasoPrevistoDe({ paso: { accion: 'crear' }, fila: filaDe(), rol: 'admin', hoy: HOY, comoAutorizada: [valor] });
+        pasoPrevistoDe({
+          paso: { accion: 'crear' }, fila: filaDe(), rol: 'admin', hoy: HOY, soyTitular: true, delTitular: valor, notasDeHoy: valor
+        });
+        pasoPrevistoDe({ paso: { accion: 'crear' }, fila: filaDe(), rol: 'admin', hoy: HOY, soyTitular: true, delTitular: [valor] });
       }, String(valor));
     }
     assert.deepEqual(pasoDeLaCarga(null), { accion: 'nada' });
