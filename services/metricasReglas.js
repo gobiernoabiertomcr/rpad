@@ -296,7 +296,7 @@ export const casosDe = (fuentesPorDataset, opciones) => {
 // hasta»), quién está a cargo (la insignia) y si es de la DGMIT (va en violeta)
 const TRAMOS = Object.freeze({
   aviso: Object.freeze({ nombre: 'Aviso anticipado', desde_hasta: 'Del aviso al vencimiento', responsable: 'DDPC', dgmit: false }),
-  tramite: Object.freeze({ nombre: 'Trámite y entrega de la nota', desde_hasta: 'Del aviso a la nota en el área', responsable: 'DGMIT y DA', dgmit: true }),
+  tramite: Object.freeze({ nombre: 'Redacción y entrega de nota', desde_hasta: 'Del aviso a la nota en el área', responsable: 'DGMIT y DA', dgmit: true }),
   respuesta: Object.freeze({ nombre: 'Respuesta del área', desde_hasta: 'De la nota a la entrega', responsable: 'Área', dgmit: false }),
   produccion: Object.freeze({ nombre: 'Producción del relevamiento', desde_hasta: 'Del aviso a la entrega', responsable: 'DGMIT y DIT', dgmit: true }),
   carga: Object.freeze({ nombre: 'Preparación y carga', desde_hasta: 'De la entrega a la carga', responsable: 'DDPC', dgmit: false })
@@ -400,7 +400,7 @@ const medir = (h, ctx) => {
     if (valor !== null) destino[clave] = valor;
   };
   if (h.avisoRegla !== null && h.venc !== null && h.venc >= ctx.inicio && h.venc <= ctx.fin) sumar(terminados, 'aviso', h.avisoRegla, h.venc);
-  // Externa: el trámite va del aviso (el de la regla o el primero, si se avisó ya vencido) a la nota DGMIT; la respuesta, de la
+  // Externa: la redacción va del aviso (el de la regla o el primero, si se avisó ya vencido) a la nota DGMIT; la respuesta, de la
   // primera nota del ciclo a la entrega, salvo que los datos salieran de una fuente pública (no fue el área)
   if (h.aplicaNota && h.nota !== null) {
     if (h.inicioTramos !== null && enElAnio(h.nota.recibida, ctx)) sumar(terminados, 'tramite', h.inicioTramos, h.nota.recibida);
@@ -425,8 +425,8 @@ const entraEnLaLista = (h, m, ctx) => h.avisos.some((dia) => dia >= ctx.inicio) 
 
 // Una nota DGMIT pendiente de carga (spec, 2.2): un externo activo con nota requerida, avisado y sin nota DGMIT, en un ciclo abierto
 // o en uno que se cerró en el año, hasta `al`, por una actualización con los datos del área o sin ese dato (uno resuelto con una fuente
-// pública puede no haber tenido nota) o por una reprogramación (que no tiene origen: el trámite de la nota cuenta igual, spec 1.2).
-// Uno cerrado por la baja, o de un dataset dado de baja, no: la nota DGMIT solo se carga en los datasets activos.
+// pública puede no haber tenido nota) o por una reprogramación (que no tiene origen: la redacción y entrega de nota cuenta igual,
+// spec 1.2). Uno cerrado por la baja, o de un dataset dado de baja, no: la nota DGMIT solo se carga en los datasets activos.
 const CIERRES_CON_NOTA = Object.freeze(['actualizacion', 'reprogramacion']);
 const notaPendiente = (h, ctx) => h.requiereNota && h.activo && h.nota === null && h.avisos.length > 0
   && (h.abierto || (CIERRES_CON_NOTA.includes(h.como) && enElAnio(h.cierre, ctx) && h.origen !== 'fuente_publica'));
@@ -508,7 +508,7 @@ const textoYaVencidos = (n) => {
 };
 
 // La misma aclaración en el bloque del aviso anticipado del Ciclo de vida del dato (spec 2026-10-25-ciclo-de-vida-del-dato, 1.5): dice
-// «en esta etapa» y conserva la segunda parte, que explica desde dónde se miden el trámite y la producción. '' con 0
+// «en esta etapa» y conserva la segunda parte, que explica desde dónde se miden la redacción y la producción. '' con 0
 const textoYaVencidosDeLaEtapa = (n) => {
   if (n === 0) return '';
   const resto = 'y sus etapas siguientes se cuentan desde ese primer aviso.';
@@ -761,7 +761,7 @@ const textoDeNotasPendientes = (abiertas, cerradas, anio) => {
 // válidos). `sin`: los dataset_id destildados, que no cuentan en ningún número (siguen en la lista de casos, con `contar` false, y en
 // «Para completar»). Devuelve null si no hay año (ni `anio` ni `al` sirven) o si `al` es anterior a él. Nunca tira.
 // Un tramo terminó en el año si su hito final cayó entre el 1/1 y `al`: el vencimiento (el aviso anticipado, que se conoce entero
-// cuando sale el aviso, así que cuenta todo el año), la nota DGMIT recibida (el trámite), los datos recibidos (la respuesta y la
+// cuando sale el aviso, así que cuenta todo el año), la nota DGMIT recibida (la redacción), los datos recibidos (la respuesta y la
 // producción) y la carga. Está en curso si empezó y no terminó en un ciclo abierto en `al` (solo la respuesta y la producción).
 // - circuito: { externa: Tramo[4] (aviso, tramite, respuesta, carga), interna: Tramo[3] (aviso, produccion, carga), aclaraciones:
 //   { externa: { ya_vencidos, fuente_publica, no_requieren_nota }, interna: { ya_vencidos } } }, cada aclaración { n, texto } ('' con
@@ -842,7 +842,7 @@ const ROTULOS_DEL_AVISO = Object.freeze({ largo: 'Con más anticipación', corto
 const ROTULOS_DE_LOS_EXTREMOS = Object.freeze({ largo: 'El caso más largo', corto: 'El caso más corto' });
 const EL_UNICO_CASO = 'El único caso';
 const TEXTO_ORIENTATIVO = 'Con tan pocos casos, es orientativo.';
-// El renglón que el trámite de la nota suma debajo de su vacío, sin notas DGMIT (spec, 1.4)
+// El renglón que la redacción y entrega de nota suma debajo de su vacío, sin notas DGMIT (spec, 1.4)
 const PIE_SIN_NOTAS_DGMIT = 'Se empieza a contar cuando se carguen en el Seguimiento.';
 // Un extremo de un caso sin título (no pasa con los datos reales: el texto nunca dice null)
 const SIN_TITULO = 'Sin título';
@@ -880,9 +880,9 @@ const extremoDe = (valores, largo, rotulo) => {
 };
 
 // El vacío de una etapa sin ciclos terminados (spec, 1.4): el del tramo de Métricas (tramoDelCircuito) con los textos del reporte. Sin
-// notas DGMIT, el trámite de la nota suma un renglón debajo (y, sin ninguna nota pendiente, no dice «0 notas pendientes de carga»: el
-// texto queda vacío; Métricas no cambia) y la respuesta del área lleva punto final; si no, «Sin casos en 2026». `tramo`: el de
-// tramoDelCircuito. { titulo, texto, pie }
+// notas DGMIT, la redacción y entrega de nota suma un renglón debajo (y, sin ninguna nota pendiente, no dice «0 notas pendientes de
+// carga»: el texto queda vacío; Métricas no cambia) y la respuesta del área lleva punto final; si no, «Sin casos en 2026». `tramo`: el
+// de tramoDelCircuito. { titulo, texto, pie }
 const vacioDeLaEtapa = (tramo, ctx) => {
   const { titulo, texto } = tramo.vacio ?? { titulo: `Sin casos en ${ctx.anio}`, texto: '' };
   if (titulo === SIN_NOTAS_DGMIT) return { titulo, texto: tramo.pendientes > 0 ? texto : '', pie: PIE_SIN_NOTAS_DGMIT };

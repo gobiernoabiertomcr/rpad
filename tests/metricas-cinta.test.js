@@ -14,7 +14,7 @@ const PASOS = [5, 10, 20, 30, 50, 100];
 // Los tramos de vistaDe (Task 7), armados a mano: el nombre, el texto de la flecha, quién está a cargo y si es de la DGMIT
 const DE_LA_CLAVE = {
   aviso: { nombre: 'Aviso anticipado', desde_hasta: 'Del aviso al vencimiento', responsable: 'DDPC', dgmit: false },
-  tramite: { nombre: 'Trámite y entrega de la nota', desde_hasta: 'Del aviso a la nota en el área', responsable: 'DGMIT y DA', dgmit: true },
+  tramite: { nombre: 'Redacción y entrega de nota', desde_hasta: 'Del aviso a la nota en el área', responsable: 'DGMIT y DA', dgmit: true },
   respuesta: { nombre: 'Respuesta del área', desde_hasta: 'De la nota a la entrega', responsable: 'Área', dgmit: false },
   produccion: { nombre: 'Producción del relevamiento', desde_hasta: 'Del aviso a la entrega', responsable: 'DGMIT y DIT', dgmit: true },
   carga: { nombre: 'Preparación y carga', desde_hasta: 'De la entrega a la carga', responsable: 'DDPC', dgmit: false }
@@ -264,7 +264,7 @@ describe('cintaDeMetricas', () => {
   });
 
   it('externa con notas DGMIT: la cadena entera, con los tramos en violeta, tinta y verde, y el rayado hasta la carga', () => {
-    // La de la maqueta 1: 28 días hábiles de anticipación, 12 de trámite, 35 de respuesta y 2 de carga
+    // La de la maqueta 1: 28 días hábiles de anticipación, 12 de redacción, 35 de respuesta y 2 de carga
     const tramos = [tramo('aviso', 28), tramo('tramite', 12), tramo('respuesta', 35), tramo('carga', 2)];
     const cinta = cintaDeMetricas(tramos, { gestion: 'externa', dias: 'habiles', estadistico: 'mediana' });
     assert.deepEqual(diasDeLosTicks(cinta), [-40, -30, -20, -10, 10, 20, 30]);
@@ -272,7 +272,7 @@ describe('cintaDeMetricas', () => {
     assert.deepEqual(cinta.marcas.map((m) => m.tipo), ['aviso', 'nota', 'datos', 'carga']);
     [-28, -16, 19, 21].forEach((d, i) => casi(cinta.marcas[i].x, x(d), cinta.marcas[i].tipo));
     assert.deepEqual(cinta.segmentos.map((s) => [s.color, s.texto]), [
-      ['violeta', 'Trámite y entrega de la nota · 12 días hábiles'],
+      ['violeta', 'Redacción y entrega de nota · 12 días hábiles'],
       ['tinta', 'Respuesta del área · 35 días hábiles'],
       ['verde', 'Preparación y carga · 2 días hábiles']
     ]);
@@ -280,8 +280,8 @@ describe('cintaDeMetricas', () => {
     casi(cinta.rayado.x1, x(21), 'y termina en la carga');
     assert.equal(cinta.gris, null);
     assert.deepEqual(cinta.rotulos.map((r) => r.texto).sort(), [
-      'Aviso · 28 días hábiles antes', 'Carga · 2 días hábiles después', 'Respuesta del área · 35 días hábiles',
-      'Trámite y entrega de la nota · 12 días hábiles'
+      'Aviso · 28 días hábiles antes', 'Carga · 2 días hábiles después', 'Redacción y entrega de nota · 12 días hábiles',
+      'Respuesta del área · 35 días hábiles'
     ]);
     // La carga no entra a la derecha de su marca: va a la izquierda, con anclaje end
     const carga = cinta.rotulos.find((r) => r.texto.startsWith('Carga'));
@@ -294,7 +294,7 @@ describe('cintaDeMetricas', () => {
   });
 
   it('cortada en otro tramo: dibuja hasta donde se sabe (con el rayado, si ya pasó el vencimiento) y el gris dice qué falta', () => {
-    // Con notas DGMIT, un trámite de 40 días hábiles y la respuesta sin casos en el año
+    // Con notas DGMIT, una redacción de 40 días hábiles y la respuesta sin casos en el año
     const tramos = [tramo('aviso', 27), tramo('tramite', 40), tramo('respuesta', null), tramo('carga', 1)];
     const cinta = cintaDeMetricas(tramos, { gestion: 'externa', dias: 'habiles', estadistico: 'mediana' });
     assert.deepEqual(cinta.marcas.map((m) => m.tipo), ['aviso', 'nota']);
@@ -431,12 +431,12 @@ describe('cintaDeMetricas con la letra del PDF', () => {
 
   it('mide los textos con la letra que le dicen: la de la pantalla no alcanza para el PDF', () => {
     assert.ok(letra > LETRA, `${letra}`);
-    // Cortada en la respuesta, con el trámite que cruza el vencimiento: en la pantalla su rótulo entra al lado de la línea; con la letra
+    // Cortada en la respuesta, con la redacción que cruza el vencimiento: en la pantalla su rótulo entra al lado de la línea; con la letra
     // del PDF no entra en ningún lado y no va (como en la cinta del Seguimiento)
     const tramos = [tramo('aviso', 27), tramo('tramite', 40), tramo('respuesta', null), tramo('carga', 1)];
     const pantalla = cintaDeMetricas(tramos, { gestion: 'externa' });
     const pdf = delPdf(tramos, { gestion: 'externa' });
-    assert.deepEqual(pantalla.rotulos.map((r) => r.texto), ['Aviso · 27 días hábiles antes', 'Trámite y entrega de la nota · 40 días hábiles']);
+    assert.deepEqual(pantalla.rotulos.map((r) => r.texto), ['Aviso · 27 días hábiles antes', 'Redacción y entrega de nota · 40 días hábiles']);
     assert.deepEqual(pdf.rotulos.map((r) => r.texto), ['Aviso · 27 días hábiles antes']);
     // Con la letra del PDF, la cinta de la pantalla se pisaría o se saldría; la del PDF, no
     assert.throws(() => sinPisadas(pantalla, 'la de la pantalla, con la letra del PDF', letra));
