@@ -264,7 +264,7 @@ export const editarLicencia = async (req, res) => {
 
 // POST /usuarios/licencias/:id/anular: solo si todavía no empezó o empieza hoy (spec 5.2). Si se cargó desde Mi espacio, la
 // fila de Mi espacio que la creó se da de baja en la misma transacción (spec 2026-10-28-mi-espacio-licencia-anulada, 2.1 y 3b:
-// salvo que allá ya haya empezado), y el mensaje lo dice
+// salvo que en Mi espacio haya empezado antes de hoy), y el mensaje lo dice
 export const anularLicencia = async (req, res) => {
   const id = idDe(req.params.id);
   if (!id) return responderError(res, 404, 'Licencia no encontrada');
