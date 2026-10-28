@@ -268,7 +268,7 @@ Borrar la Tarea Cron ese día es peor: la alerta «sin corrida» y el riesgo de 
 
 **Agregados en la implementación** (tanda 1, 27 y 28/10/2026):
 - **Un `cuenta_desde` en un feriado que es el primer día de la licencia** (solo pasa con un feriado cargado después del anticipo) lo toma la reiteración solo si el aviso anticipado se envió: si quedó fallido para siempre, no lo toma nadie. Es lo mismo que pasa hoy cuando la persona autorizada falta desde el primer día.
-- **Una licencia del titular sin días hábiles justo antes de otra** (por ejemplo, una del 07/12 al 08/12 y otra desde el 09/12): la corrida no adelanta los avisos de la segunda (`anticipoPorLicencia` toma la primera, que no tiene días hábiles) y Configuración → Licencias anuncia igual la víspera de la segunda. Pasaba también con los 9 fijos con una licencia de fin de semana, y Mi espacio no deja cargar una licencia sin días hábiles. Decidido por la sesión, para que lo revise el usuario.
+- **Una licencia del titular sin días hábiles justo antes de otra** (por ejemplo, una del 07/12 al 08/12 y otra desde el 09/12): la corrida no adelanta los avisos de la segunda (`anticipoPorLicencia` toma la primera, que no tiene días hábiles) y Configuración → Licencias anuncia igual la víspera de la segunda. Pasaba también con los 9 fijos con una licencia de fin de semana, y Mi espacio no deja cargar una licencia sin días hábiles. Decisión del usuario, 28/10/2026.
 
 ## Lo que queda para quien lo construye
 
