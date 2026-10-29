@@ -264,10 +264,9 @@ const tanqueDeVacaciones = (panel) => {
 
   const porHabilitar = hastaEsteAnio.reduce((suma, ordinaria) => suma + Math.max(0, cantidadDe(ordinaria.por_habilitar)), 0);
   if (porHabilitar > 0) {
-    const fechas = [...new Set(hastaEsteAnio.filter((ordinaria) => cantidadDe(ordinaria.por_habilitar) > 0)
-      .flatMap((ordinaria) => listaDe(ordinaria.mitades))
-      .filter((mitad) => esObjeto(mitad) && esFechaIso(mitad.habilita) && mitad.habilita > hoy && cantidadDe(mitad.dias) > 0)
-      .map((mitad) => mitad.habilita))].sort(compararTexto);
+    // Las fechas, de la misma cuenta que la opción del tipo (`porHabilitarDe`; spec
+    // 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.1): una mitad que ya está asignada entera a una carga no se nombra
+    const fechas = [...new Set(porHabilitarDe(hastaEsteAnio, hoy).map(({ fecha }) => fecha))];
     const seHabilitan = porHabilitar === 1 ? 'Se habilita' : 'Se habilitan';
     capas.push({
       clase: 'por_habilitar', n: porHabilitar, nombre: 'Todavía no',

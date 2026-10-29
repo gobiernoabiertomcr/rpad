@@ -1279,6 +1279,25 @@ describe('los textos de las vacaciones (spec 2026-10-28)', () => {
     assert.equal(capaDe(soloLaSiguiente, 'cargadas').nota, 'Cargados para diciembre y para enero y febrero de 2027');
   });
 
+  it('lo que se habilita, con las fechas de porHabilitarDe: una mitad ya asignada entera no se nombra (spec 3.1)', () => {
+    // Con la 2024 y la 2025 en 0 y el arranque el 02/03/2026, la 2026 se habilita el 1/7/2026 y el 1/1/2027. Las vacaciones
+    // del 01/07 al 15/07 (10 días hábiles: el 09/07 es feriado fijo) toman toda la mitad del 1/7: solo queda la del 1/1
+    const estado = {
+      ...PLANTA.estado, arranque: '2026-03-02',
+      saldos: PLANTA.estado.saldos.map((saldo) => (saldo.concepto === 'vacaciones' ? { ...saldo, cantidad: 0 } : saldo)),
+      licencias: [vacacionesDe(100, '2026-07-01', '2026-07-15')]
+    };
+    const resumen = resumenDel(PLANTA, { estado, hoy: '2026-03-10' });
+    assert.deepEqual(capaDe(resumen, 'por_habilitar'),
+      { clase: 'por_habilitar', n: 10, nombre: 'Todavía no', nota: 'Se habilitan el 1/1/2027' });
+    assert.deepEqual(resumen.titular.bajada, [
+      { texto: '10 ya están cargados para julio.', vence: false, anio: 2026 },
+      { texto: '10 se habilitan el 1/1/2027.', vence: false }
+    ]);
+    // La bajada y la opción del tipo dicen la misma fecha
+    assert.equal(quedaDeVacaciones(resumen), '0 disponibles · 10 más el 1/1');
+  });
+
   it('la fila de la lista: «18 días hábiles de 26 corridos», la forma del cálculo', () => {
     const estado = estadoDeLaSpec(vacacionesDe(100, '2026-11-04', '2026-11-29'));
     const filas = filasDeLicencias(estado, calculoDe(estado, '2026-10-28'),
