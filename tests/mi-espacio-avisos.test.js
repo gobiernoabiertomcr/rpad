@@ -247,6 +247,27 @@ describe('enviarAvisosDeVencimiento', () => {
     assert.equal((await mailpit.esperar(paraCasilla(laura.email))).length, 1);
   });
 
+  it('el franco sin ningún día libre en su mes no se nombra (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7)',
+    async () => {
+      // Las dos con todo octubre de vacaciones salvo el viernes 23/10. Ese día, una tiene una franquicia de 2 horas: no es de
+      // día entero (no está de licencia), pero ocupa el día, y su franco ya no tiene ninguno libre. A la otra, el 23/10 le
+      // queda libre
+      const conFranquicia = await conFrancoDeOctubre();
+      const libre = await conFrancoDeOctubre();
+      for (const quien of [conFranquicia, libre]) {
+        await licenciaDeMiEspacio(quien.id, 'vacaciones', '2026-10-01', '2026-10-22');
+        await licenciaDeMiEspacio(quien.id, 'vacaciones', '2026-10-26', '2026-10-30');
+      }
+      await licenciaDeMiEspacio(conFranquicia.id, 'franquicia', '2026-10-23', '2026-10-23', { horas: 2 });
+
+      assert.deepEqual(await pasoDel('2026-10-23'), { dia_habil: true, enviados: 1, errores: [] });
+      assert.deepEqual(await anotados(conFranquicia.id), []);
+      assert.deepEqual(await recibidos(conFranquicia.email), []);
+      assert.deepEqual((await anotados(libre.id)).map((fila) => fila.clave), ['franco-2026-10']);
+      const [mensaje] = await mailpit.esperar(paraCasilla(libre.email));
+      assert.ok(textoVisible(await mailpit.html(mensaje.ID)).includes(FRANCO_DE_OCTUBRE));
+    });
+
   it('un día no hábil: con un feriado cargado el 23/10, ese día no sale nada', async () => {
     const laura = await conFrancoDeOctubre();
     await query("INSERT INTO feriados (fecha, nombre, tipo) VALUES ('2026-10-23', 'Feriado de prueba', 'municipal')");

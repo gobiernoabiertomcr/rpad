@@ -28,7 +28,7 @@ import {
   avisosDeVencimiento,
   SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL, TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, horaSalidaValida, tipoDeDia,
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
-  avisosDeSalidas, mesDeLaPlanilla, porHabilitarDe, alcanceDeLaCarga, diasLibresEntre, franquiciaQueVence,
+  avisosDeSalidas, mesDeLaPlanilla, porHabilitarDe, alcanceDeLaCarga, diasLibresEntre, diasLibresDelMes, franquiciaQueVence,
   textoDePerdidosConLaCarga, textoDelFrancoSinDiasLibres, textoDeLasHorasSinDiasLibres, textoDeLaFranquiciaPerdida,
   textoDelReacomodo
 } from '../services/miEspacioReglas.js';
@@ -3016,6 +3016,25 @@ describe('los días libres y la franquicia que vence (spec 2026-10-28, 3.6)', ()
     }
   });
 
+  it('diasLibresDelMes: el mes entero, también los días que ya pasaron (spec 2026-10-28, 3.7 y 7.2)', () => {
+    // Diciembre de 2026: 21 días hábiles con los 9 fijos (el 08 y el 25) y 20 con la precarga (el 07)
+    assert.equal(diasLibresDelMes('2026-12', [], SIN_FERIADOS), 21);
+    assert.equal(diasLibresDelMes('2026-12', [], CON_LA_PRECARGA), 20);
+    // Unas vacaciones que tapan todo el mes no dejan ninguno; desde el 02/12, queda el martes 01/12
+    assert.equal(diasLibresDelMes('2026-12', [vacaciones(100, '2026-12-01', '2026-12-31')], SIN_FERIADOS), 0);
+    assert.equal(diasLibresDelMes('2026-12', [vacaciones(100, '2026-12-02', '2026-12-31')], SIN_FERIADOS), 1);
+    // Unas horas a favor de contrato o una franquicia de 2 horas también ocupan su día
+    const tapado = [vacaciones(100, '2026-12-02', '2026-12-31')];
+    assert.equal(diasLibresDelMes('2026-12', [...tapado, horasAFavor(101, '2026-12-01')], SIN_FERIADOS), 0);
+    assert.equal(diasLibresDelMes('2026-12', [...tapado, franquicia(101, '2026-12-01', 2)], SIN_FERIADOS), 0);
+    // Hasta el último día del mes: el 29/02 en un año bisiesto
+    assert.equal(diasLibresDelMes('2028-02', [vacaciones(100, '2028-02-01', '2028-02-28')], SIN_FERIADOS), 1);
+    // Lo que no es un mes, 0
+    for (const valor of [undefined, null, '', 'x', '2026-13', '2026-12-01', 2026, {}, []]) {
+      assert.equal(diasLibresDelMes(valor, [], SIN_FERIADOS), 0, String(valor));
+    }
+  });
+
   it('franquiciaQueVence: con 22 horas y 4 días libres hasta el 31/12, no se pierde nada', () => {
     assert.deepEqual(queVence(CON_22), { quedan: 22, perdidas: 0, disponibles: 22 });
   });
@@ -4587,8 +4606,10 @@ describe('nombreCorto', () => {
 // días hábiles antes del último día hábil del mes hasta ese día; los días de la licencia que vence el 31/12, desde el primer
 // día hábil de diciembre. En octubre de 2026 el último día hábil es el viernes 30/10 y el tramo arranca el viernes 23/10
 describe('avisosDeVencimiento', () => {
+  // Como la corrida: con todas las licencias del estado como ocupadas (services/miEspacioAvisos.js)
   const avisos = (caso, hoy, feriados = SIN_FERIADOS, estado = caso.estado) =>
-    avisosDeVencimiento(calcular(estado, { hoy, feriados }), { hoy, feriados, modalidad: estado.modalidad });
+    avisosDeVencimiento(calcular(estado, { hoy, feriados }),
+      { hoy, feriados, modalidad: estado.modalidad, ocupadas: estado.licencias });
   const FRANCO_DE_OCTUBRE = {
     clave: 'franco-2026-10',
     texto: 'Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el viernes 30/10.'
@@ -4712,6 +4733,63 @@ describe('avisosDeVencimiento', () => {
       const hoy = '2026-12-01';
       assert.equal(avisosDeVencimiento(calcular(PLANTA.estado, { hoy, feriados: SIN_FERIADOS }),
         { hoy, feriados: SIN_FERIADOS, modalidad: 'contrato' }).some((aviso) => aviso.clave.startsWith('franquicia-')), false);
+    });
+  });
+
+  describe('el franco o las horas a favor sin ningún día libre en su mes (spec 2026-10-28, 3.7)', () => {
+    const FRANCO_DE_DICIEMBRE = {
+      clave: 'franco-2026-12',
+      texto: 'Tenés 1 franco compensatorio para usar en diciembre: el último día hábil es el jueves 31/12.'
+    };
+    const claves = (lista) => lista.map((aviso) => aviso.clave);
+
+    it('el 23/12, con vacaciones que tapan todo diciembre, el email no nombra el franco', () => {
+      const estado = conLicencias(PLANTA.estado, vacaciones(100, '2026-12-01', '2026-12-31'));
+      assert.equal(claves(avisos(PLANTA, '2026-12-23', SIN_FERIADOS, estado)).includes('franco-2026-12'), false);
+      // Sin esas vacaciones, sí
+      assert.deepEqual(avisos(PLANTA, '2026-12-23')[0], FRANCO_DE_DICIEMBRE);
+    });
+
+    it('un día libre del mes que ya pasó alcanza: un franco tomado se puede registrar después', () => {
+      // El martes 01/12 quedó libre
+      const estado = conLicencias(PLANTA.estado, vacaciones(100, '2026-12-02', '2026-12-31'));
+      assert.deepEqual(avisos(PLANTA, '2026-12-23', SIN_FERIADOS, estado)[0], FRANCO_DE_DICIEMBRE);
+    });
+
+    it('ese día libre no cuenta si es feriado o lo ocupa otra licencia, de cualquier tipo y de cualquier modalidad', () => {
+      const tapado = conLicencias(PLANTA.estado, vacaciones(100, '2026-12-02', '2026-12-31'));
+      assert.equal(claves(avisos(PLANTA, '2026-12-23', new Set(['2026-12-01']), tapado)).includes('franco-2026-12'), false);
+      // Una franquicia de 2 horas
+      const conFranquicia = conLicencias(tapado,
+        { id: 101, tipo: 'franquicia', desde: '2026-12-01', hasta: '2026-12-01', horas: 2 });
+      assert.equal(claves(avisos(PLANTA, '2026-12-23', SIN_FERIADOS, conFranquicia)).includes('franco-2026-12'), false);
+      // Unas horas a favor, que en planta no cuentan pero ocupan su día
+      const deContrato = conLicencias(tapado,
+        { id: 101, tipo: 'horas_a_favor', desde: '2026-12-01', hasta: '2026-12-01', horas: 2 });
+      assert.equal(claves(avisos(PLANTA, '2026-12-23', SIN_FERIADOS, deContrato)).includes('franco-2026-12'), false);
+    });
+
+    it('las horas a favor de contrato, igual', () => {
+      // Las 4 horas de la salida del 21/10, para usar en noviembre. El tramo va del lunes 23/11 al lunes 30/11
+      const HORAS_DE_NOVIEMBRE = {
+        clave: 'horas-2026-11', texto: 'Tenés 4 horas a favor para usar en noviembre: el último día hábil es el lunes 30/11.'
+      };
+      assert.deepEqual(avisos(CONTRATO, '2026-11-23'), [HORAS_DE_NOVIEMBRE]);
+      const tapado = conLicencias(CONTRATO.estado, vacaciones(100, '2026-11-02', '2026-11-30'));
+      assert.deepEqual(avisos(CONTRATO, '2026-11-23', SIN_FERIADOS, tapado), []);
+      // Con el lunes 02/11 libre, sí
+      const conUnDia = conLicencias(CONTRATO.estado, vacaciones(100, '2026-11-03', '2026-11-30'));
+      assert.deepEqual(avisos(CONTRATO, '2026-11-23', SIN_FERIADOS, conUnDia), [HORAS_DE_NOVIEMBRE]);
+    });
+
+    it('sin las ocupadas, ninguna licencia ocupa un día', () => {
+      const estado = conLicencias(PLANTA.estado, vacaciones(100, '2026-12-01', '2026-12-31'));
+      const hoy = '2026-12-23';
+      const calculo = calcular(estado, { hoy, feriados: SIN_FERIADOS });
+      for (const ocupadas of [undefined, null, 'x', {}]) {
+        assert.deepEqual(avisosDeVencimiento(calculo, { hoy, feriados: SIN_FERIADOS, modalidad: 'planta', ocupadas })[0],
+          FRANCO_DE_DICIEMBRE, String(ocupadas));
+      }
     });
   });
 

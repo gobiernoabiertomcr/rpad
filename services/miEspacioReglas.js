@@ -1981,8 +1981,13 @@ const extrasDelReparto = (fila, calculo, { estado, opciones }) => {
   };
 };
 
-// Los días libres de un mes 'AAAA-MM', todo el mes (también los días que ya pasaron), con `diasLibresEntre`
-const diasLibresDelMes = (mes, ocupadas, feriados) =>
+/**
+ * Los días libres de un mes 'AAAA-MM' (los de `diasLibresEntre`), todo el mes, del 1° al último día, también los que ya
+ * pasaron (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.2, 3.7 y 7.2: un franco tomado se puede registrar después).
+ * Es la única cuenta del día libre de un franco o de unas horas a favor: la usan el aviso de la carga (`avisosDeLaCarga`),
+ * «Vence pronto» del Resumen y el email de vencimiento (`avisosDeVencimiento`). Con algo que no es un mes, 0.
+ */
+export const diasLibresDelMes = (mes, ocupadas, feriados) =>
   diasLibresEntre(`${mes}-01`, ultimoDiaDelMes(mes), ocupadas, feriados);
 // Si dos repartos de una fila (los de `porFila`) son el mismo: los mismos años, con los mismos días
 const mismasPartes = (unas, otras) => unas.length === otras.length
@@ -2604,7 +2609,10 @@ const textoDeLaFranquicia = (horas, vence) =>
  * fecha. La clave es la que la corrida anota en `mi_espacio_avisos`, así cada cosa se avisa una sola vez.
  * - `franco-AAAA-MM` en planta y `horas-AAAA-MM` en contrato: lo que queda (`disponibles`) del franco o de las horas a favor
  *   del mes de hoy, desde 5 días hábiles antes del último día hábil del mes (`restarDiasHabilesCon`) hasta ese día
- *   (`ultimoDiaHabilDelMesCon`), con los feriados.
+ *   (`ultimoDiaHabilDelMesCon`), con los feriados. Sin ningún día libre en todo el mes (`diasLibresDelMes`, con
+ *   `opciones.ocupadas`: todas las licencias de Mi espacio, de cualquier tipo y de cualquier modalidad, como el reparto), no
+ *   se nombra: ya no se puede usar (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7). Sin `ocupadas`, ninguna licencia
+ *   ocupa un día.
  * - `franquicia-AAAA`, solo en planta: las horas de franquicia del año que todavía entran en algún día libre (`disponibles` de
  *   `calculo.franquicia`, sin las perdidas; spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), desde el primer día
  *   hábil de diciembre hasta el 31/12: «Tenés 22 horas de franquicia: vencen el 31/12/2026.».
@@ -2614,7 +2622,7 @@ const textoDeLaFranquicia = (horas, vence) =>
  * francos y horas. Sin un cálculo o un hoy válidos, []; sin una modalidad, solo la licencia.
  */
 export const avisosDeVencimiento = (calculo, opciones) => {
-  const { hoy, feriados, modalidad } = esObjeto(opciones) ? opciones : {};
+  const { hoy, feriados, modalidad, ocupadas } = esObjeto(opciones) ? opciones : {};
   if (!esObjeto(calculo) || !esFechaIso(hoy)) return [];
   const avisos = [];
 
@@ -2626,7 +2634,7 @@ export const avisosDeVencimiento = (calculo, opciones) => {
     const delMes = listaDe(planta ? calculo.francos : calculo.horasAFavor)
       .find((fila) => esObjeto(fila) && fila.mes_de_uso === mes);
     const quedan = numeroDe(delMes?.disponibles);
-    if (quedan > 0) {
+    if (quedan > 0 && diasLibresDelMes(mes, listaDe(ocupadas), feriados) > 0) {
       avisos.push(planta
         ? { clave: `franco-${mes}`, texto: textoDelFranco(quedan, mes, ultimo) }
         : { clave: `horas-${mes}`, texto: textoDeLasHorasAFavor(quedan, mes, ultimo) });

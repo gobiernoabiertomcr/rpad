@@ -716,6 +716,86 @@ describe('la franquicia que vence (spec 2026-10-28, 3.6)', () => {
   });
 });
 
+describe('Vence pronto sin días libres en el mes (spec 2026-10-28, 3.7)', () => {
+  // El franco de diciembre de PLANTA sale de las 10,5 horas extras de octubre. Diciembre de 2026 empieza el martes 01/12
+  const FRANCO_SIN_DIAS = Object.freeze({
+    fecha: '2026-12-31', dia: '31', mes: 'dic', titulo: '1 franco compensatorio de diciembre',
+    texto: 'Vence el jueves 31/12, en 30 días.', accion: null,
+    sin_dias_libres: 'No te quedan días libres este mes para usarlo.'
+  });
+  const delMes = (resumen, titulo) => resumen.vence_pronto.find((cosa) => cosa.titulo === titulo);
+  const francoDe = (resumen) => delMes(resumen, '1 franco compensatorio de diciembre');
+  // Con feriados de la tabla: el cálculo y el Resumen con los mismos
+  const resumenConFeriados = (estado, hoy, feriados) => resumenDe({
+    persona: PLANTA.persona, estado, calculo: calcular(estado, { hoy, feriados }), hoy, feriados, hoyYManana: HOY_Y_MANANA
+  });
+
+  it('con vacaciones que tapan todo diciembre, el franco sigue, sin el botón y con por qué', () => {
+    const estado = conLicencias(PLANTA.estado, licencia(100, 'vacaciones', '2026-12-01', '2026-12-31'));
+    const resumen = resumenDel(PLANTA, { estado, hoy: '2026-12-01' });
+    // La franquicia y los días de la licencia 2024 ya no se pueden usar: solo queda el franco, y prende la marca
+    assert.deepEqual(resumen.vence_pronto, [FRANCO_SIN_DIAS]);
+    assert.deepEqual(Object.keys(resumen.vence_pronto[0]),
+      ['fecha', 'dia', 'mes', 'titulo', 'texto', 'accion', 'sin_dias_libres']);
+    assert.equal(resumen.marca, true);
+    sinHuecos(resumen);
+  });
+
+  it('un día libre del mes, aunque ya pasó, alcanza para que siga el botón', () => {
+    // El martes 01/12 quedó libre, y hoy es el 15/12
+    const estado = conLicencias(PLANTA.estado, licencia(100, 'vacaciones', '2026-12-02', '2026-12-31'));
+    const franco = francoDe(resumenDel(PLANTA, { estado, hoy: '2026-12-15' }));
+    assert.deepEqual(franco.accion, { texto: 'Cargarlo', tipo: 'franco' });
+    assert.deepEqual(Object.keys(franco), ['fecha', 'dia', 'mes', 'titulo', 'texto', 'accion']);
+  });
+
+  it('ese día no cuenta si es feriado o lo ocupa otra licencia, de cualquier tipo y de cualquier modalidad', () => {
+    const tapado = conLicencias(PLANTA.estado, licencia(100, 'vacaciones', '2026-12-02', '2026-12-31'));
+    const hoy = '2026-12-15';
+    const conFeriado = francoDe(resumenConFeriados(tapado, hoy, new Set(['2026-12-01'])));
+    assert.deepEqual([conFeriado.accion, conFeriado.sin_dias_libres], [null, FRANCO_SIN_DIAS.sin_dias_libres]);
+    // Una franquicia de 2 horas, y unas horas a favor que en planta no cuentan pero ocupan su día
+    for (const otra of [licencia(101, 'franquicia', '2026-12-01', '2026-12-01', 2),
+      licencia(101, 'horas_a_favor', '2026-12-01', '2026-12-01', 2)]) {
+      const franco = francoDe(resumenDel(PLANTA, { estado: conLicencias(tapado, otra), hoy }));
+      assert.deepEqual([franco.accion, franco.sin_dias_libres], [null, FRANCO_SIN_DIAS.sin_dias_libres], otra.tipo);
+    }
+  });
+
+  it('con dos francos, «usarlos»', () => {
+    // 14 horas extras en octubre: dos francos para diciembre
+    const estado = conLicencias({
+      ...PLANTA.estado,
+      horasExtras: [...PLANTA.estado.horasExtras.filter((fila) => fila.fecha < '2026-10-01'),
+        { id: 20, fecha: '2026-10-06', desde: '14:00', hasta: '21:00' },
+        { id: 21, fecha: '2026-10-13', desde: '14:00', hasta: '21:00' }]
+    }, licencia(100, 'vacaciones', '2026-12-01', '2026-12-31'));
+    const franco = delMes(resumenDel(PLANTA, { estado, hoy: '2026-12-01' }), '2 francos compensatorios de diciembre');
+    assert.deepEqual([franco.texto, franco.accion, franco.sin_dias_libres],
+      ['Vencen el jueves 31/12, en 30 días.', null, 'No te quedan días libres este mes para usarlos.']);
+  });
+
+  it('las horas a favor de contrato: «usarlas», y «usarla» con 1 hora, como el botón', () => {
+    // Todos los días hábiles de octubre tapados, con las licencias de CONTRATO (el 09, del 13 al 15, el 20 y el 30) y otras
+    const tapadoMenos = (...otras) => conLicencias(CONTRATO.estado, licencia(100, 'vacaciones', '2026-10-01', '2026-10-08'),
+      licencia(101, 'vacaciones', '2026-10-12', '2026-10-12'), licencia(102, 'vacaciones', '2026-10-16', '2026-10-19'),
+      licencia(103, 'vacaciones', '2026-10-21', '2026-10-26'), licencia(104, 'vacaciones', '2026-10-28', '2026-10-29'), ...otras);
+    assert.deepEqual(resumenDel(CONTRATO, { estado: tapadoMenos(licencia(105, 'vacaciones', '2026-10-27')) }).vence_pronto, [{
+      fecha: '2026-10-30', dia: '30', mes: 'oct', titulo: '1,5 horas a favor de octubre',
+      texto: 'Vencen el viernes 30/10, en 4 días.', accion: null,
+      sin_dias_libres: 'No te quedan días libres este mes para usarlas.'
+    }]);
+    // Media hora a favor el 27/10: queda 1
+    const conMedia = tapadoMenos(licencia(105, 'horas_a_favor', '2026-10-27', '2026-10-27', 0.5));
+    assert.deepEqual(resumenDel(CONTRATO, { estado: conMedia }).vence_pronto
+      .map(({ titulo, accion, sin_dias_libres: sinDias }) => [titulo, accion, sinDias]),
+    [['1 hora a favor de octubre', null, 'No te quedan días libres este mes para usarla.']]);
+    // Con el martes 27/10 libre, el botón de siempre
+    assert.deepEqual(resumenDel(CONTRATO, { estado: tapadoMenos() }).vence_pronto[0].accion,
+      { texto: 'Usarlas', tipo: 'horas_a_favor' });
+  });
+});
+
 describe('sin modalidad y sin arranque', () => {
   it('sin modalidad: el mensaje, sin tanques ni nada para cargar', () => {
     const estado = { ...PLANTA.estado, modalidad: null };

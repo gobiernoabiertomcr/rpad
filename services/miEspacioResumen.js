@@ -25,7 +25,8 @@ import {
   MENSAJES_MI_ESPACIO, MODALIDADES, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, NOMBRES_TIPO, JORNADA,
   numeroTexto, mesEnFrase, nombreDelMes, diaYMes, enLista, modalidadDe, mesMas, topeDe, diasQueDescuentan, esDiaEntero,
   fueraDeLaModalidad, tieneSaldoInicial, horasDe, textoSinNoUtilizadas, rangoDeFechas, horaSalidaValida, tipoDeDia,
-  horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos, fechasEnLaFrase
+  horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos, fechasEnLaFrase,
+  diasLibresDelMes
 } from './miEspacioReglas.js';
 
 // Los dos formatos que ya estaban en las reglas: el panel los usa sin copiarlos
@@ -114,15 +115,26 @@ const cosaQueVence = ({ fecha, cantidad, titulo, accion }, hoy) => ({
   texto: textoDeLoQueVence(fecha, cantidad, hoy), accion
 });
 
+// Por qué un franco o unas horas a favor del mes no tienen botón: ningún día libre en todo su mes (spec
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7). El pronombre concuerda como el botón: «usarlo» (1 franco), «usarlos»,
+// «usarla» (1 hora) y «usarlas»
+const textoSinDiasLibres = (planta, cantidad) => {
+  const pronombre = planta ? (cantidad === 1 ? 'lo' : 'los') : (cantidad === 1 ? 'la' : 'las');
+  return `No te quedan días libres este mes para usar${pronombre}.`;
+};
+
 /**
  * Lo que vence pronto, por fecha: el franco (en planta) o las horas a favor (en contrato) del mes en curso que siguen sin
  * usar, en su último día hábil (hasta que termina el mes: una licencia ya pasada se puede cargar igual), y, desde el 1/10,
  * en planta, las horas de franquicia del año que todavía entran en algún día libre («22 horas de franquicia», con
  * «Cargar franquicia»: los `disponibles` de `franquiciaQueVence`, sin las perdidas; spec
  * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6) y los días disponibles de la licencia ordinaria que vence el 31/12 de
- * este año, en ese orden.
+ * este año, en ese orden. El franco o las horas a favor sin ningún día libre en todo su mes (`diasLibresDelMes`, también los
+ * días que ya pasaron, con todas las licencias del estado, de cualquier tipo y de cualquier modalidad; spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7 y 7.2) siguen, sin el botón (`accion` null) y con por qué en
+ * `sin_dias_libres`, la única cosa que suma esa clave: «No te quedan días libres este mes para usarlo.».
  */
-const venceProntoDe = ({ modalidad, hoy, mes, cuenta }) => {
+const venceProntoDe = ({ modalidad, hoy, mes, cuenta, datos, feriados }) => {
   const lista = [];
   const planta = modalidad === 'planta';
   const delMes = delMesDeUso(planta ? cuenta.francos : cuenta.horasAFavor, mes);
@@ -131,10 +143,15 @@ const venceProntoDe = ({ modalidad, hoy, mes, cuenta }) => {
     const titulo = planta
       ? `${conUnidad(quedan, 'franco compensatorio', 'francos compensatorios')} de ${nombreDelMes(mes)}`
       : `${conUnidad(quedan, 'hora', 'horas')} a favor de ${nombreDelMes(mes)}`;
-    const accion = planta
-      ? { texto: quedan === 1 ? 'Cargarlo' : 'Cargarlos', tipo: 'franco' }
-      : { texto: quedan === 1 ? 'Usarla' : 'Usarlas', tipo: 'horas_a_favor' };
-    lista.push(cosaQueVence({ fecha: delMes.ultimo_dia_habil, cantidad: quedan, titulo, accion }, hoy));
+    const sinDiasLibres = diasLibresDelMes(mes, listaDe(datos.licencias), feriados) === 0;
+    let accion = null;
+    if (!sinDiasLibres) {
+      accion = planta
+        ? { texto: quedan === 1 ? 'Cargarlo' : 'Cargarlos', tipo: 'franco' }
+        : { texto: quedan === 1 ? 'Usarla' : 'Usarlas', tipo: 'horas_a_favor' };
+    }
+    const cosa = cosaQueVence({ fecha: delMes.ultimo_dia_habil, cantidad: quedan, titulo, accion }, hoy);
+    lista.push(sinDiasLibres ? { ...cosa, sin_dias_libres: textoSinDiasLibres(planta, quedan) } : cosa);
   }
 
   const anio = hoy.slice(0, 4);
@@ -450,7 +467,8 @@ const tiposDe = (panel, tanques) => TIPOS_POR_MODALIDAD[panel.modalidad]
  * - sin modalidad, `mensaje` es `sinModalidad` y no hay nada que mostrar ni cargar;
  * - con modalidad y sin arranque, `mensaje` es `sinArranque` y `abrir_saldos` es true (se abre «Mis vacaciones y saldos»);
  * - si no, `marca` dice si hay algo en `vence_pronto` (cada cosa `{ fecha, dia, mes, titulo, texto, accion }`, con su línea en
- *   `texto`: «Vence el viernes 30/10, en 4 días.»), `faltantes` son los textos de `faltantesDe` y, al final, los de
+ *   `texto`: «Vence el viernes 30/10, en 4 días.»; un franco o unas horas a favor sin ningún día libre en su mes, con
+ *   `accion` null y además `sin_dias_libres`), `faltantes` son los textos de `faltantesDe` y, al final, los de
  *   `avisosDeSalidas` (las salidas de la planilla de contrato que dejaron de cerrar), `para_revisar` lo que en Configuración
  *   quedó distinto (`paraRevisarDe`, con los vínculos; [] en los dos casos de arriba o sin vínculos: no es un faltante ni
  *   prende la marca), `titular` es la frase de la banda (`{ encabezado, antes, cifra, despues, bajada: [{ texto, vence }] }`,
