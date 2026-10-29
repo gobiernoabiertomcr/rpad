@@ -8,6 +8,9 @@ import crypto from 'crypto';
 import { crearBaseDePrueba, correrSqlEnBaseDePrueba, cerrarDb, query, mailpit } from './helpers.js';
 import { crearDataset, limpiarBase, configurarNotas, asegurarBaseDePrueba } from './notas-fixtures.js';
 import { MENSAJE_METRICAS_SIN_FERIADOS, calendarioCon } from '../services/feriadosReglas.js';
+import { casosDe } from '../services/metricasReglas.js';
+import { CALENDARIO_FIJO } from '../services/notasDigitalesCalendario.js';
+import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
 // Los días que la precarga saca de los hábiles de 2025 a 2027 (los de lunes a viernes que no son de los 9 fijos): los que guarda la
 // foto de 2026, hasta el 31/12 del año siguiente
@@ -17,7 +20,7 @@ const FERIADOS_DE_LA_PRECARGA = [
   '2027-02-23', '2027-03-25', '2027-03-26', '2027-06-21', '2027-07-28', '2027-08-16', '2027-10-11', '2027-11-01', '2027-11-08',
   '2027-12-13'
 ];
-let base, dbReal, foto, controlador, usuarioId;
+let base, dbReal, foto, controlador, seguimientoDatos, usuarioId;
 
 // Copiado de tests/metricas-foto.test.js, con la precarga de los feriados (como tests/feriados-en-notas.test.js)
 before(async () => {
@@ -29,6 +32,7 @@ before(async () => {
   // Usan el pool: se importan después de apuntar DB_NAME a la base de prueba
   foto = await import('../services/metricasFoto.js');
   controlador = await import('../controllers/notificacionesController.js');
+  seguimientoDatos = await import('../services/seguimientoDatos.js');
   const username = `t_${crypto.randomBytes(4).toString('hex')}`;
   usuarioId = (await query(
     "INSERT INTO usuarios (username, password_hash, nombre_completo, email, rol, activo) VALUES (?, 'x', 'Persona de Prueba', ?, 'admin', 1)",
@@ -171,6 +175,8 @@ const lecturasFallidas = (consola) => consola.mock.calls
 const avisos = (etapas) => ['externa', 'interna']
   .map((gestion) => etapas[gestion].find((etapa) => etapa.clave === 'aviso').habiles.mediana);
 
+// El 31/12 de la foto de 2026: el hoy de sus casos
+const AL_2026 = '2026-12-31';
 const cuantasFotos = async () => Number((await query('SELECT COUNT(*) n FROM metricas_fotos'))[0].n);
 
 describe('la foto', () => {
@@ -250,5 +256,30 @@ describe('la foto', () => {
     assert.deepEqual(await foto.sacarFotoSiCorresponde({ hoy: '2027-01-10' }), { anio: 2026, sacada: true });
     assert.deepEqual(await foto.sacarFotoSiCorresponde({ hoy: '2027-01-10', calendario: caido }), { anio: 2026, ya: true });
     assert.equal(await cuantasFotos(), 1);
+  });
+
+  // Los casos de la foto también cuentan con la tabla (casosDe recibe el calendario): el día en que sale el aviso de la regla decide
+  // si un ciclo ya lo esperaba y, sin el aviso, con qué motivo figura (motivo_sin_aviso, que la foto guarda en sus casos)
+  it('los casos saben el día del aviso con la tabla: un ciclo que se cerró antes no lo esperaba', async () => {
+    // D, externo, vencía el 31/12/2026: la regla de los 40 días cae el sábado 21/11 y el aviso sale el hábil siguiente, el lunes
+    // 23/11 con los 9 fijos y el martes 24/11 con la tabla (el 23/11 es la Soberanía). No se avisó, y la actualización se aprobó el
+    // 24/11: con la tabla, el ciclo dejó de regir el mismo día del aviso, sin tenerlo, así que no lo esperaba
+    const d = await crearDataset({
+      titulo: 'Dataset D de prueba', gestion: 'externa', requiereNota: 1, vencimiento: '2027-12-31', ultima: '2026-11-24'
+    });
+    await fijarAlta(d, '2026-01-15 10:00:00');
+    await actualizacion({
+      datasetId: d, creado: '2026-11-24 09:00:00', revisado: '2026-11-24 10:00:00', de: '2026-12-31', a: '2027-12-31',
+      cargaAnterior: '2025-12-15', carga: '2026-11-24', recibido: '2026-11-20', origen: 'area'
+    });
+    const delCiclo = (casos) => casos.find((caso) => caso.dataset_id === d && caso.venc === '2026-12-31');
+    const fuentes = await seguimientoDatos.fuentesDe(null);
+    // Con los 9 fijos lo esperaba (el 23/11, antes de la aprobación) y figuraría «sin aviso»
+    assert.equal(delCiclo(casosDe(fuentes, { hoy: AL_2026, calendario: CALENDARIO_FIJO })).motivo_sin_aviso, 'sin-aviso');
+    assert.equal(delCiclo(casosDe(fuentes, { hoy: AL_2026, calendario: calendarioCon(FILAS_PRECARGA) })).motivo_sin_aviso, null);
+
+    assert.deepEqual(await foto.sacarFotoSiCorresponde({ hoy: '2027-01-10' }), { anio: 2026, sacada: true });
+    const { datos } = await foto.leerFoto(2026);
+    assert.equal(delCiclo(datos.casos).motivo_sin_aviso, null);
   });
 });
