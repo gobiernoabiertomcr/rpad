@@ -6,8 +6,13 @@ import assert from 'node:assert/strict';
 import { agendaDe, fechaDeAvisoPorRegla, opcionesDeAgenda, mesesDeLaAgenda } from '../services/reportesAgenda.js';
 import { VENTANA_DIAS, proximoDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { pedido, tipoEfectivo, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
+import { calendarioCon } from '../services/feriadosReglas.js';
+import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
 const HOY = '2026-10-25';
+// El calendario con la precarga de 2026 y 2027 (spec 2026-10-27-feriados-en-notas, 5: la tanda 2): el lunes 02/11/2026 y el lunes
+// 23/11/2026 son feriados de la tabla
+const TABLA = calendarioCon(FILAS_PRECARGA);
 
 // Un dataset activo como lo lee el controlador: el área por su nombre, la frecuencia con sus meses (null es eventual), la próxima
 // actual, «Datos al», el tipo de pedido guardado (null: rige el sugerido) y «Requiere nota DGMIT» (1, 0 o null)
@@ -127,6 +132,18 @@ describe('agendaDe', () => {
     });
   });
 
+  it('con el calendario que recibe, el aviso aproximado cuenta los feriados de la tabla; lo demás no cambia', () => {
+    const filas = (opciones) => agendaDe(TODOS, { hoy: HOY, meses: 6, gestion: 'ambas', ...opciones }).meses.flatMap((m) => m.filas);
+    const fila = (opciones) => filas(opciones).find((f) => f.titulo === 'Dependencias municipales');
+    // Interno del 31/12/2026: la regla cae el domingo 01/11 y el lunes 02/11 es feriado de la tabla, así que el aviso sale el martes 03/11
+    assert.equal(fila({ calendario: TABLA }).aviso_aprox, '2026-11-03');
+    // Sin el calendario (o con null), los 9 fijos, como siempre
+    assert.equal(fila({}).aviso_aprox, '2026-11-02');
+    assert.equal(fila({ calendario: null }).aviso_aprox, '2026-11-02');
+    const sinElAviso = (lista) => lista.map(({ aviso_aprox: _aviso, ...resto }) => resto);
+    assert.deepEqual(sinElAviso(filas({ calendario: TABLA })), sinElAviso(filas({})));
+  });
+
   it('el estado es el de estadoDelDataset: el día del vencimiento todavía es un próximo, no un vencido', () => {
     const agenda = agendaDe([DE_OCTUBRE], { hoy: '2026-10-31', meses: 6, gestion: 'ambas' });
     assert.deepEqual(resumen(agenda), { vencidos: [], meses: [['2026-10', ['Empleados municipales']]] });
@@ -168,12 +185,30 @@ describe('fechaDeAvisoPorRegla', () => {
   });
 
   it('usa la ventana del calendario, la de las Notas Digitales: cada fin de mes de 2027, en las dos gestiones', () => {
-    for (const gestion of ['externa', 'interna']) {
-      for (let mes = 1; mes <= 12; mes += 1) {
-        const vencimiento = vencimientoDelMes(`2027-${String(mes).padStart(2, '0')}-01`);
-        assert.equal(fechaDeAvisoPorRegla(vencimiento, gestion), proximoDiaHabil(sumarDias(vencimiento, -VENTANA_DIAS[gestion])), `${gestion} ${vencimiento}`);
+    // Sin el calendario, con los 9 fijos; con la tabla, el día hábil siguiente de la tabla
+    for (const [calendario, siguienteHabil] of [[undefined, proximoDiaHabil], [TABLA, TABLA.proximoDiaHabil]]) {
+      for (const gestion of ['externa', 'interna']) {
+        for (let mes = 1; mes <= 12; mes += 1) {
+          const vencimiento = vencimientoDelMes(`2027-${String(mes).padStart(2, '0')}-01`);
+          assert.equal(fechaDeAvisoPorRegla(vencimiento, gestion, calendario), siguienteHabil(sumarDias(vencimiento, -VENTANA_DIAS[gestion])),
+            `${calendario?.origen ?? 'fijos'} ${gestion} ${vencimiento}`);
+        }
       }
     }
+  });
+
+  it('con el calendario que recibe: un feriado de la tabla corre el aviso al día hábil siguiente', () => {
+    // Interna: el domingo 01/11/2026 pasa al martes 03/11 (el lunes 02/11 es feriado); externa: el sábado 21/11 pasa al martes 24/11 (el
+    // lunes 23/11 es el Día de la Soberanía Nacional)
+    assert.equal(fechaDeAvisoPorRegla('2026-12-31', 'interna', TABLA), '2026-11-03');
+    assert.equal(fechaDeAvisoPorRegla('2026-12-31', 'externa', TABLA), '2026-11-24');
+    // Sin el calendario, o con null, los 9 fijos
+    assert.equal(fechaDeAvisoPorRegla('2026-12-31', 'interna'), '2026-11-02');
+    assert.equal(fechaDeAvisoPorRegla('2026-12-31', 'externa'), '2026-11-23');
+    assert.equal(fechaDeAvisoPorRegla('2026-12-31', 'interna', null), '2026-11-02');
+    // Con una fecha o una gestión que no sirven, null también con la tabla
+    assert.equal(fechaDeAvisoPorRegla('2026-02-30', 'interna', TABLA), null);
+    assert.equal(fechaDeAvisoPorRegla('2026-12-31', 'otra', TABLA), null);
   });
 
   it('con una fecha o una gestión que no sirven, null', () => {

@@ -9,9 +9,12 @@
 // argentina, como en services/seguimientoReglas.js. De ahí se reutilizan los ciclos (ciclosDe) y a qué ciclo pertenece cada aviso
 // (cicloDelAviso) y cada nota DGMIT (notasDgmitPorCiclo): las métricas y el Seguimiento ubican todo en el mismo ciclo, y cuentan los
 // mismos avisos (esEmailADgmit, esNotaEnviada y momentoDeEnvioDeNota). Las fuentes son las de services/seguimientoDatos.js
-// (fuentesDe). Ninguna función tira error: con datos raros devuelven null o una lista vacía, o ignoran lo que no pueden leer.
+// (fuentesDe). Los días hábiles se cuentan con el calendario que reciben (spec 2026-10-27-feriados-en-notas, 5: el de la tabla de
+// feriados, con los 9 fijos): `calendario` en las opciones de casosDe, vistaDe y etapasDe, y como último parámetro de duracion; sin
+// él, o con null, el de los 9 fijos (CALENDARIO_FIJO). Ninguna función tira error: con datos raros devuelven null o una lista vacía, o
+// ignoran lo que no pueden leer; solo un `calendario` mal armado tira, como sus derivadas.
 import {
-  esFechaIso, diasEntre, diasHabilesTranscurridos, sumarDias, proximoDiaHabil, formatoCorto, VENTANA_DIAS
+  esFechaIso, diasEntre, sumarDias, formatoCorto, VENTANA_DIAS, CALENDARIO_FIJO
 } from './notasDigitalesCalendario.js';
 import {
   REGISTRO_DESDE, FALTABAN, diaDe, momentoDe, segundosDe, ciclosDe, cicloDelAviso, notasDgmitPorCiclo, esEmailADgmit, esNotaEnviada,
@@ -76,14 +79,15 @@ export const textoDeLaFranja = (titulos) => {
 // ---------------------------------------------------------------------------------------------------------------------
 
 // Los días de un tramo, de `desde` a `hasta` (días o momentos, que cuentan por su día). `dias`: 'habiles' (los de entrada; también
-// cualquier valor que no sea 'corridos'), con diasHabilesTranscurridos, que no cuenta el día de inicio y sí el de fin; o 'corridos',
-// con diasEntre. Piso 0: si un hito llegó antes que el anterior, el tramo cuenta 0, nunca negativo (spec, 1.3). Una fecha que no se
-// puede leer da null.
-export const duracion = (desde, hasta, dias) => {
+// cualquier valor que no sea 'corridos'), con diasHabilesTranscurridos del `calendario` (sin él, o con null, el de los 9 fijos), que no
+// cuenta el día de inicio y sí el de fin; o 'corridos', con diasEntre (el calendario no cuenta). Piso 0: si un hito llegó antes que el
+// anterior, el tramo cuenta 0, nunca negativo (spec, 1.3). Una fecha que no se puede leer da null.
+export const duracion = (desde, hasta, dias, calendario) => {
   const inicio = diaDe(desde);
   const fin = diaDe(hasta);
   if (inicio === null || fin === null) return null;
-  return dias === 'corridos' ? Math.max(0, diasEntre(inicio, fin)) : diasHabilesTranscurridos(inicio, fin);
+  if (dias === 'corridos') return Math.max(0, diasEntre(inicio, fin));
+  return (calendario ?? CALENDARIO_FIJO).diasHabilesTranscurridos(inicio, fin);
 };
 
 // La cifra de un tramo: { n, mediana, promedio }, los dos redondeados. Con un n par, la mediana es el promedio de las dos del medio,
@@ -166,9 +170,10 @@ const cambioQueCerro = (ediciones, ciclo) => {
 };
 
 // El día en que sale el aviso de la regla: el de la regla (`fechaRegla`, el vencimiento menos VENTANA_DE_LA_REGLA días corridos) o, si
-// no es hábil, el hábil siguiente (proximoDiaHabil: las Notas Digitales salen solo en días hábiles). Es el día de la Agenda de pedidos
-// (fechaDeAvisoPorRegla, services/reportesAgenda.js; un test los ata) y del envío (cuenta_desde). null sin fecha de la regla
-const diaDelAvisoDe = (fechaRegla) => (esFechaIso(fechaRegla) ? proximoDiaHabil(fechaRegla) : null);
+// no es hábil, el hábil siguiente (proximoDiaHabil), con el calendario que recibe (el de la Agenda y el del envío: las Notas Digitales
+// salen solo en días hábiles). Es el día de la Agenda de pedidos (fechaDeAvisoPorRegla, services/reportesAgenda.js, con el mismo
+// calendario; un test los ata) y del envío (cuenta_desde). null sin fecha de la regla. Sin valor por defecto: quien la llama lo pasa
+const diaDelAvisoDe = (fechaRegla, calendario) => (esFechaIso(fechaRegla) ? calendario.proximoDiaHabil(fechaRegla) : null);
 
 // Si un ciclo ya tenía que haber tenido el aviso de la regla en `al` (revisión final, A-1 y A-2): el día del aviso (`diaDelAviso`) ya
 // pasó y el ciclo regía en el RPAD ese día. El día del aviso cuenta recién al siguiente (la corrida de las 8:15 puede no haber salido),
@@ -192,10 +197,10 @@ const motivoSinAviso = ({ avisos, deLaRegla, fechaRegla, altaDia, primerAviso, v
   return 'sin-aviso';
 };
 
-// El caso de un ciclo (ver casosDe). `avisos`: los del ciclo (avisosPorCiclo); `notasDgmit`: las suyas (notasDgmitPorCiclo);
-// `cerro`: el cambio que lo cerró, o null
+// El caso de un ciclo (ver casosDe). `datos`: los del dataset (casosDelDataset), con el `calendario` del día del aviso; `avisos`: los
+// del ciclo (avisosPorCiclo); `notasDgmit`: las suyas (notasDgmitPorCiclo); `cerro`: el cambio que lo cerró, o null
 const casoDelCiclo = (datos, ciclo, avisos, notasDgmit, cerro, hoy) => {
-  const { dataset, gestion, requiereNota, altaDia } = datos;
+  const { dataset, gestion, requiereNota, altaDia, calendario } = datos;
   const venc = esFechaIso(ciclo.venc) ? ciclo.venc : null;
   const enviados = avisos.filter((a) => a.enviado);
   const avisosRpad = enviados.map((a) => a.dia);
@@ -210,7 +215,7 @@ const casoDelCiclo = (datos, ciclo, avisos, notasDgmit, cerro, hoy) => {
   const heredado = avisoRegla === null && primerAviso !== null && venc !== null && primerAviso > venc && !pudoAvisar;
   const inicioTramos = heredado ? primerAviso : avisoRegla;
   // El motivo, en todo ciclo sin aviso de la regla que ya lo esperaba (esperabaElAviso), se pudiera avisar a tiempo o no (spec, 2.2)
-  const esperaba = esperabaElAviso({ diaDelAviso: diaDelAvisoDe(fechaRegla), aprobado: diaDe(ciclo.hasta), avisoRegla }, hoy);
+  const esperaba = esperabaElAviso({ diaDelAviso: diaDelAvisoDe(fechaRegla, calendario), aprobado: diaDe(ciclo.hasta), avisoRegla }, hoy);
   const motivo = venc !== null && avisoRegla === null && esperaba
     ? motivoSinAviso({ avisos, deLaRegla, fechaRegla, altaDia, primerAviso, venc }) : null;
   // Los datos recibidos y su origen son de la actualización que cerró el ciclo: una reprogramación no recibió nada (spec, 1.2)
@@ -234,8 +239,9 @@ const casoDelCiclo = (datos, ciclo, avisos, notasDgmit, cerro, hoy) => {
   };
 };
 
-// Los casos de un dataset: uno por ciclo, en el orden de ciclosDe (sin ciclos, ninguno)
-const casosDelDataset = (fuentes, hoy) => {
+// Los casos de un dataset: uno por ciclo, en el orden de ciclosDe (sin ciclos, ninguno). `calendario`: el de casosDe, sin valor por
+// defecto (va en `datos`, para el día del aviso de cada ciclo)
+const casosDelDataset = (fuentes, hoy, calendario) => {
   const dataset = objeto(fuentes).dataset;
   if (!dataset || typeof dataset !== 'object' || Array.isArray(dataset)) return [];
   const ciclos = ciclosDe(fuentes, hoy);
@@ -247,15 +253,16 @@ const casosDelDataset = (fuentes, hoy) => {
     .sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
   const datos = {
     dataset, gestion: dataset.tipo_gestion === 'interna' ? 'interna' : 'externa', requiereNota: requiereNotaDe(dataset),
-    altaDia: diaDe(dataset.alta)
+    altaDia: diaDe(dataset.alta), calendario
   };
   return ciclos.map((ciclo, i) => casoDelCiclo(datos, ciclo, avisos[i], notasDgmit[i] ?? [], cambioQueCerro(ediciones, ciclo), hoy));
 };
 
 // Un caso por ciclo de cada dataset (spec, 1.2), también los dados de baja (sus ciclos terminan en la baja) y los ciclos con `venc`
 // null (los que cerró una actualización simple de diciembre de 2025: no cuentan en nada que necesite el vencimiento); nunca los
-// eventuales ni los sin fecha, que no tienen ciclos. `fuentesPorDataset`: el Map<id, Fuentes> de fuentesDe; `hoy`: 'AAAA-MM-DD'. En el
-// orden del Map y, en cada dataset, de sus ciclos. Cada caso:
+// eventuales ni los sin fecha, que no tienen ciclos. `fuentesPorDataset`: el Map<id, Fuentes> de fuentesDe; `opciones`: { hoy, calendario }
+// (`hoy`: 'AAAA-MM-DD'; `calendario`: con el que se sabe el día hábil en que sale el aviso de la regla, para el motivo; sin él, o con
+// null, el de los 9 fijos). En el orden del Map y, en cada dataset, de sus ciclos. Cada caso:
 // - del dataset, como está hoy: dataset_id, titulo, area, gestion ('externa' o 'interna'), requiere_nota (1, 0 o null; null en
 //   interna), activo y tema (el principal);
 // - del ciclo (ciclosDe): venc (null si no se conoce), inicio, cierre, como ('actualizacion', 'reprogramacion', 'baja' o null),
@@ -283,9 +290,9 @@ const casosDelDataset = (fuentes, hoy) => {
 //   emails a la DGMIT, los que salían hasta el 12/10/2026: para la aclaración de las reiteraciones).
 // Con un Map que no es un Map o un `hoy` que no es una fecha, [].
 export const casosDe = (fuentesPorDataset, opciones) => {
-  const hoy = objeto(opciones).hoy;
+  const { hoy, calendario } = objeto(opciones);
   if (!(fuentesPorDataset instanceof Map) || !esFechaIso(hoy)) return [];
-  return [...fuentesPorDataset.values()].flatMap((fuentes) => casosDelDataset(fuentes, hoy));
+  return [...fuentesPorDataset.values()].flatMap((fuentes) => casosDelDataset(fuentes, hoy, calendario ?? CALENDARIO_FIJO));
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -326,7 +333,8 @@ const ALTA_YA_VENCIDO = 'se dio de alta ya vencido';
 
 // Las opciones de vistaDe, leídas. `anio`: el pedido o, si no sirve, el de `al`; `al`: hoy en el año en curso y el 31/12 en uno
 // cerrado (sin `al`, o con uno posterior al año, el 31/12); el estadístico y los días, los de entrada si no son válidos; `sin`: los
-// dataset_id destildados. null si no hay año o si `al` es anterior a él.
+// dataset_id destildados; `calendario`: con el que se cuentan los días hábiles (el de las opciones o, sin él o con null, el de los 9
+// fijos). null si no hay año o si `al` es anterior a él.
 const contextoDe = (opciones) => {
   const o = objeto(opciones);
   const pedido = typeof o.anio === 'number' || (typeof o.anio === 'string' && /^\d{4}$/.test(o.anio)) ? Number(o.anio) : NaN;
@@ -341,7 +349,8 @@ const contextoDe = (opciones) => {
     anio, inicio, fin, al,
     estadistico: ESTADISTICOS.includes(o.estadistico) ? o.estadistico : ESTADISTICOS[0],
     dias: DIAS.includes(o.dias) ? o.dias : DIAS[0],
-    sin: new Set(sin.map(Number).filter(Number.isInteger))
+    sin: new Set(sin.map(Number).filter(Number.isInteger)),
+    calendario: o.calendario ?? CALENDARIO_FIJO
   };
 };
 
@@ -349,7 +358,8 @@ const contextoDe = (opciones) => {
 // al 31/12 se puede calcular con los casos de enero). `abierto`: si el ciclo estaba abierto en `al` (sigue abierto, o se cerró
 // después); `aplicaNota`: si le corresponden los tramos de la DGMIT y del área (un externo con «Requiere nota» Sí o sin dato, o uno
 // con nota DGMIT); `requiereNota`: si la nota se pide («Requiere nota» Sí o sin dato); `como` y `activo`, los del caso; `diaDelAviso`:
-// el día hábil en que sale el aviso de la regla (diaDelAvisoDe); `aprobado`: el día en que el ciclo dejó de regir en el RPAD (o null).
+// el día hábil en que sale el aviso de la regla (diaDelAvisoDe, con el calendario del contexto); `aprobado`: el día en que el ciclo
+// dejó de regir en el RPAD (o null).
 const hechosDe = (caso, ctx) => {
   const yaPaso = (valor) => {
     const dia = diaDe(valor);
@@ -365,7 +375,7 @@ const hechosDe = (caso, ctx) => {
     caso, id: Number(caso.dataset_id), gestion: externa ? 'externa' : 'interna', externa,
     venc: esFechaIso(caso.venc) ? caso.venc : null,
     fechaRegla: diaDe(caso.fecha_regla),
-    diaDelAviso: diaDelAvisoDe(diaDe(caso.fecha_regla)),
+    diaDelAviso: diaDelAvisoDe(diaDe(caso.fecha_regla), ctx.calendario),
     aprobado: diaDe(caso.aprobado),
     avisoRegla: yaPaso(caso.aviso_regla),
     primerAviso: yaPaso(caso.primer_aviso),
@@ -391,12 +401,12 @@ const enElAnio = (dia, ctx) => dia !== null && dia >= ctx.inicio && dia <= ctx.a
 // terminó en un ciclo abierto a esa fecha, por clave; `pendiente`: un ciclo abierto de un externo con nota requerida, con algún aviso
 // y sin nota DGMIT («pendiente de carga», sin días). El aviso anticipado se conoce entero cuando sale el aviso: cuenta en el año de su
 // vencimiento, aunque sea posterior a `al`, y nunca está en curso. La preparación y carga tampoco: el sistema recién sabe que llegaron
-// los datos cuando se registra la actualización. El piso de 0 es el de duracion. No mira lo destildado.
+// los datos cuando se registra la actualización. El piso de 0 es el de duracion, con el calendario del contexto. No mira lo destildado.
 const medir = (h, ctx) => {
   const terminados = {};
   const enCurso = {};
   const sumar = (destino, clave, desde, hasta) => {
-    const valor = duracion(desde, hasta, ctx.dias);
+    const valor = duracion(desde, hasta, ctx.dias, ctx.calendario);
     if (valor !== null) destino[clave] = valor;
   };
   if (h.avisoRegla !== null && h.venc !== null && h.venc >= ctx.inicio && h.venc <= ctx.fin) sumar(terminados, 'aviso', h.avisoRegla, h.venc);
@@ -582,7 +592,8 @@ const resultadosDe = (cuentan, ctx, hayNotas) => {
     const hechos = actualizados.filter((h) => h.gestion === gestion);
     return [aTiempo(hechos), hechos.length];
   };
-  const { n: tarde, ...despues } = cifraDe(actualizados.filter((h) => h.carga > h.venc).map((h) => duracion(h.venc, h.carga, ctx.dias)));
+  const { n: tarde, ...despues } = cifraDe(actualizados.filter((h) => h.carga > h.venc)
+    .map((h) => duracion(h.venc, h.carga, ctx.dias, ctx.calendario)));
   const valor = tarde === 0 ? null : despues[ctx.estadistico];
 
   // Cobertura (Ruling 5): los vencimientos del año que ya esperaban el aviso de la regla en `al` (esperabaElAviso: su día, el hábil
@@ -659,7 +670,7 @@ const textoDeDias = (valor) => (valor === null ? '' : valor === 0 ? 'en el día'
 // Una fila de la lista de casos (spec, 2.2): cada fecha con, debajo, los días del tramo que termina ahí o su estado
 const filaDe = (m, ctx) => {
   const { h } = m;
-  const dias = (desde, hasta) => duracion(desde, hasta, ctx.dias);
+  const dias = (desde, hasta) => duracion(desde, hasta, ctx.dias, ctx.calendario);
   const aviso = avisoMostrado(h);
   let textoDelAviso = '';
   if (h.heredado && h.inicioTramos !== null) textoDelAviso = 'avisado ya vencido';
@@ -756,10 +767,12 @@ const textoDeNotasPendientes = (abiertas, cerradas, anio) => {
 };
 
 // Todo lo que muestra la pestaña Métricas de un año, a partir de los casos de casosDe (o los de la foto del año: la misma función).
-// `opciones`: { anio, al, estadistico, dias, sin }. `al` es hoy en el año en curso y el 31/12 en uno cerrado: lo que pasó después no
-// cuenta. `estadistico` ('mediana' o 'promedio') y `dias` ('habiles' o 'corridos'): los selectores (los de entrada si no son
+// `opciones`: { anio, al, estadistico, dias, sin, calendario }. `al` es hoy en el año en curso y el 31/12 en uno cerrado: lo que pasó
+// después no cuenta. `estadistico` ('mediana' o 'promedio') y `dias` ('habiles' o 'corridos'): los selectores (los de entrada si no son
 // válidos). `sin`: los dataset_id destildados, que no cuentan en ningún número (siguen en la lista de casos, con `contar` false, y en
-// «Para completar»). Devuelve null si no hay año (ni `anio` ni `al` sirven) o si `al` es anterior a él. Nunca tira.
+// «Para completar»). `calendario`: con el que se cuentan los días hábiles y se sabe el día del aviso de la regla (sin él, o con null,
+// el de los 9 fijos). Devuelve null si no hay año (ni `anio` ni `al` sirven) o si `al` es anterior a él. Nunca tira, salvo con un
+// calendario mal armado.
 // Un tramo terminó en el año si su hito final cayó entre el 1/1 y `al`: el vencimiento (el aviso anticipado, que se conoce entero
 // cuando sale el aviso, así que cuenta todo el año), la nota DGMIT recibida (la redacción), los datos recibidos (la respuesta y la
 // producción) y la carga. Está en curso si empezó y no terminó en un ciclo abierto en `al` (solo la respuesta y la producción).
@@ -947,8 +960,9 @@ const etapaDelReporte = (gestion, clave, indice, medidas, ctx, { hayNotas, aclar
 // partir de los casos de casosDe (o los de la foto del año). Las etapas son los tramos del circuito de vistaDe, en su orden, y cuentan
 // exactamente los ciclos de la cifra de cada tramo con todos los ciclos (sin destildados): las cifras salen de hechosDe, medir y cifraDe,
 // una pasada en días hábiles y otra en corridos (hechosDe no depende de los días), y el vacío, el en curso (en días hábiles, con
-// mediana), los pendientes y el orientativo, de tramoDelCircuito. `opciones`: { anio, al }, como en vistaDe (`al`: hoy en el año en
-// curso y el 31/12 en uno cerrado). Devuelve null si no hay año o si `al` es anterior a él. Nunca tira.
+// mediana), los pendientes y el orientativo, de tramoDelCircuito. `opciones`: { anio, al, calendario }, como en vistaDe (`al`: hoy en
+// el año en curso y el 31/12 en uno cerrado; `calendario`: el de los días hábiles, el mismo en las dos pasadas: sin él, o con null, el
+// de los 9 fijos). Devuelve null si no hay año o si `al` es anterior a él. Nunca tira, salvo con un calendario mal armado.
 // { anio, al, externa: Etapa[4] (aviso, tramite, respuesta, carga), interna: Etapa[3] (aviso, produccion, carga),
 //   aclaracion_de_la_hoja: { externa (la de los datasets que no requieren nota DGMIT, '' sin ninguno), interna: '' } }. Etapa:
 // - clave, nombre, desde_hasta, responsable y dgmit (los del tramo); numero: su lugar en la gestión, desde 1; nodos: [desde, hasta],
@@ -964,7 +978,7 @@ const etapaDelReporte = (gestion, clave, indice, medidas, ctx, { hayNotas, aclar
 //   anterior: …» lo suma conAnterior.
 export const etapasDe = (casos, opciones) => {
   const o = objeto(opciones);
-  const contexto = (dias) => contextoDe({ anio: o.anio, al: o.al, dias, estadistico: 'mediana', sin: [] });
+  const contexto = (dias) => contextoDe({ anio: o.anio, al: o.al, dias, estadistico: 'mediana', sin: [], calendario: o.calendario });
   const ctx = { habiles: contexto('habiles'), corridos: contexto('corridos') };
   if (ctx.habiles === null || ctx.corridos === null) return null;
   const medidas = lista(casos).filter((caso) => caso && typeof caso === 'object' && !Array.isArray(caso)).map((caso) => {

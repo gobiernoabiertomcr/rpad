@@ -17,8 +17,6 @@ const PROHIBIDOS = Object.freeze([
 ]);
 // Los que arman los calendarios: el de los 9 fijos y calendarioCon
 const SIEMPRE = Object.freeze(['services/notasDigitalesCalendario.js', 'services/feriadosReglas.js']);
-// Métricas y la Agenda de pedidos siguen con los 9 fijos hasta la tanda 2 (spec, sección 5): la tanda 2 los saca
-const HASTA_LA_TANDA_2 = Object.freeze(['services/metricasReglas.js', 'services/reportesAgenda.js']);
 
 // El calendario, como lo nombra un archivo de services/ ('./') o de controllers/ ('../services/'), entre comillas simples o dobles
 const DEL_CALENDARIO = String.raw`(?<comilla>['"])(?:\./|\.\./services/)notasDigitalesCalendario\.js\k<comilla>`;
@@ -57,20 +55,16 @@ const ARCHIVOS = ['services', 'controllers'].flatMap((carpeta) => fs.readdirSync
 
 describe('el calendario único: nadie cuenta días hábiles con los 9 fijos por su cuenta (spec 2026-10-27-feriados-en-notas, 1)', () => {
   it('ningún archivo de services/ ni controllers/ importa del calendario una derivada fija ni esDiaHabil, salvo las excepciones', () => {
-    const excepciones = new Set([...SIEMPRE, ...HASTA_LA_TANDA_2]);
+    const excepciones = new Set(SIEMPRE);
     const problemas = ARCHIVOS.filter(({ archivo }) => !excepciones.has(archivo))
       .flatMap(({ archivo, fuente }) => problemasDe(archivo, fuente));
     assert.deepEqual(problemas, [], `Importan del calendario fijo (tienen que recibir el calendario): ${problemas.join('; ')}`);
   });
 
-  it('las excepciones existen y las de la tanda 2 todavía importan alguna derivada fija', () => {
+  it('las excepciones existen', () => {
     const porArchivo = new Map(ARCHIVOS.map(({ archivo, fuente }) => [archivo, fuente]));
-    for (const archivo of [...SIEMPRE, ...HASTA_LA_TANDA_2]) {
+    for (const archivo of SIEMPRE) {
       assert.ok(porArchivo.has(archivo), `${archivo} no existe: sacalo de la lista`);
-    }
-    for (const archivo of HASTA_LA_TANDA_2) {
-      assert.notDeepEqual(problemasDe(archivo, porArchivo.get(archivo)), [],
-        `${archivo} ya no importa del calendario ninguna derivada fija ni esDiaHabil: sacalo de la lista`);
     }
   });
 
