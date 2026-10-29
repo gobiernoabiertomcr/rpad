@@ -10,7 +10,8 @@ import assert from 'node:assert/strict';
 import {
   MODALIDADES, modalidadDe, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, NOMBRES_TIPO, DIAS_VACACIONES,
   DIAS_ESTUDIOS, DIAS_POR_EXAMEN, TOPES, JORNADA, LARGO_NOTA, MENSAJES_MI_ESPACIO,
-  textoRango, textoNoEstudia, textoSuperpuesta, textoSinHabilitados, textoTope, textoSinFranco, textoSinHorasAFavor,
+  textoRango, textoNoEstudia, textoSuperpuesta, textoSinHabilitados, textoHastaDondeAlcanza, textoSinNingunDia,
+  textoFaltanEnOtraCarga, textoTope, textoSinFranco, textoSinHorasAFavor,
   textoSinNoUtilizadas, textoHorarioSuperpuesto, textoSaldo, textoAutorizadaDelFirmante,
   AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN, AVISO_NOTAS_DE_HOY, AVISO_SIN_PERSONA_A_CARGO,
   textoSuperpuestaConConfiguracion, textoNoPaso, textoYaNoCubierta, textoEnConfiguracion, textoUnida,
@@ -165,6 +166,28 @@ describe('los textos', () => {
     assert.equal(textoSuperpuesta('2026-11-05'), 'Ya tenés una licencia cargada el 05/11/2026: corregí la que ya está.');
     assert.equal(textoSinHabilitados('2026-06-15'),
       'No te alcanzan los días habilitados: para el 15/06/2026 no te queda ninguno.');
+    // Los errores de días de una carga (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.3)
+    assert.equal(textoHastaDondeAlcanza('2027-02-24'),
+      'No te alcanzan los días habilitados: esta licencia puede llegar hasta el 24/02/2027.');
+    assert.equal(textoSinNingunDia('2027-06-21'), 'No te alcanzan los días habilitados para el 21/06/2027.');
+    assert.equal(textoSinNingunDia('2027-06-21', null), 'No te alcanzan los días habilitados para el 21/06/2027.');
+    assert.equal(textoSinNingunDia('2027-06-21', { fecha: '2027-07-01', anio: 2027, dias: 5 }),
+      'No te alcanzan los días habilitados para el 21/06/2027. El 1/7/2027 se habilitan 5 más de la 2027.');
+    // Con 1, «se habilita»; una habilitación que no sirve no va
+    assert.equal(textoSinNingunDia('2027-06-21', { fecha: '2027-07-01', anio: 2027, dias: 1 }),
+      'No te alcanzan los días habilitados para el 21/06/2027. El 1/7/2027 se habilita 1 más de la 2027.');
+    assert.equal(textoSinNingunDia('2027-06-21', { fecha: 'x', anio: 2027, dias: 5 }),
+      'No te alcanzan los días habilitados para el 21/06/2027.');
+    assert.equal(textoSinNingunDia('2027-06-21', { fecha: '2027-07-01', anio: 2027, dias: 0 }),
+      'No te alcanzan los días habilitados para el 21/06/2027.');
+    // Las fechas de la otra carga como en la lista: el año solo al final si los dos son del mismo; si no, los dos
+    assert.equal(textoFaltanEnOtraCarga('2027-01-04', '2027-01-22', '2027-01-20'),
+      'Con estos días, a tus vacaciones del 04/01 al 22/01/2027 les faltan días desde el 20/01/2027.');
+    assert.equal(textoFaltanEnOtraCarga('2026-12-28', '2027-01-08', '2027-01-04'),
+      'Con estos días, a tus vacaciones del 28/12/2026 al 08/01/2027 les faltan días desde el 04/01/2027.');
+    // De un solo día, sin «desde»: el día que falta es ese mismo
+    assert.equal(textoFaltanEnOtraCarga('2027-01-04', '2027-01-04', '2027-01-04'),
+      'Con estos días, a tus vacaciones del 04/01/2027 les faltan días.');
     assert.equal(textoSinFranco('2027-02'), 'En febrero de 2027 no tenés francos para usar.');
     assert.equal(textoHorarioSuperpuesto('19:00', '22:00'), 'Se superpone con las horas extras de 19:00 a 22:00 de ese día.');
     assert.equal(textoHorarioSuperpuesto('22:00', '02:00', 'anterior'),
@@ -2333,10 +2356,12 @@ describe('lo que frena una carga', () => {
   const JUNIO = vacaciones(100, '2027-06-01', '2027-06-16');
 
   it('unas vacaciones sin días habilitados', () => {
-    // Sin saldo de la 2026, su segunda mitad se habilita el 1/1/2027
+    // Sin saldo de la 2026, su segunda mitad se habilita el 1/1/2027 (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.3:
+    // sin ningún día, el error va en «Desde» y dice lo que se habilita después)
     const estado = soloVacaciones('2026-10-26', { 2024: 0, 2025: 0, 2026: 0 });
     assert.deepEqual(evaluar(estado, { tipo: 'vacaciones', desde: '2026-11-03', hasta: '2026-11-04' }).error,
-      { campo: 'desde', mensaje: 'No te alcanzan los días habilitados: para el 03/11/2026 no te queda ninguno.' });
+      { campo: 'desde', mensaje: 'No te alcanzan los días habilitados para el 03/11/2026. El 1/1/2027 se habilitan 10 más de la '
+        + '2026.' });
     assert.equal(evaluar(estado, { tipo: 'vacaciones', desde: '2027-01-04', hasta: '2027-01-05' }).error, null);
   });
 
@@ -2398,8 +2423,10 @@ describe('lo que frena una carga', () => {
     const { datos, error } = evaluar(estado, entrada, { editadaId: 100 });
     assert.equal(error, null);
     assert.equal(datos.nota, 'Otra nota');
+    // Es la misma carga: el error va en «Hasta» y dice hasta dónde puede llegar (spec 2026-10-28, 3.3), el «Hasta» guardado,
+    // que no agranda el faltante que ya tenía
     assert.deepEqual(evaluar(estado, { ...entrada, hasta: '2027-06-17' }, { editadaId: 100 }).error,
-      { campo: 'desde', mensaje: textoSinHabilitados('2027-06-15') });
+      { campo: 'hasta', mensaje: textoHastaDondeAlcanza('2027-06-16') });
   });
 
   it('un faltante que ya estaba no frena una carga que no lo toca', () => {
@@ -2414,8 +2441,9 @@ describe('lo que frena una carga', () => {
     // el 10/06 queda sin cubrir
     const estado = soloVacaciones('2026-10-26', { 2024: 0, 2025: 0, 2026: 0 }, vacaciones(100, '2027-06-01', '2027-06-14'));
     assert.equal(evaluar(estado, { tipo: 'medica', desde: '2027-05-03', hasta: '2027-05-05' }).error, null);
+    // El error dice cuáles y desde cuándo les faltan, en «Hasta» (spec 2026-10-28, 3.3)
     assert.deepEqual(evaluar(estado, { tipo: 'vacaciones', desde: '2027-05-03', hasta: '2027-05-05' }).error,
-      { campo: 'desde', mensaje: textoSinHabilitados('2027-06-10') });
+      { campo: 'hasta', mensaje: textoFaltanEnOtraCarga('2027-06-01', '2027-06-14', '2027-06-10') });
   });
 });
 
@@ -2762,6 +2790,128 @@ describe('lo por habilitar y el alcance (spec 2026-10-28, 3.1)', () => {
   });
 });
 
+describe('los errores de días dicen hasta dónde alcanza (spec 2026-10-28, 3.3)', () => {
+  // Hoy el 28/10/2026, con la precarga de los feriados (el 07/12/2026 no es laborable, el 08 y el 09/02/2027 son Carnaval y
+  // el 23/02/2027, el aniversario de la ciudad)
+  const HOY_DE_LA_CARGA = '2026-10-28';
+  const A_LA_CARGA = Object.freeze({
+    hoy: HOY_DE_LA_CARGA, feriados: feriadosDelRango(FILAS_PRECARGA, '2024-01-01', '2028-12-31')
+  });
+  const pedido = (desde, hasta) => ({ tipo: 'vacaciones', desde, hasta });
+  const evaluar = (estado, entrada, editadaId) => evaluarLicencia(estado, entrada, { ...A_LA_CARGA, editadaId });
+  // La persona de planta de la spec (punto 1): 15 días de la 2024, 20 de la 2025 y 10 de la 2026, 20 por año
+  const persona = (...licencias) => soloVacaciones('2026-10-27', PERSONA, ...licencias);
+  // Una persona inventada de contrato con 10 días por año: 0 de la 2024, 7 de la 2025 y 5 de la 2026 en el saldo (la otra
+  // mitad de la 2026 se habilita el 1/1/2027), con el arranque hoy
+  const deContrato = (...licencias) => ({
+    ...CONTRATO.estado, arranque: HOY_DE_LA_CARGA, anios: [{ anio: 2026, dias_vacaciones: 10, estudios: null }],
+    saldos: saldosDeVacaciones({ 2024: 0, 2025: 7, 2026: 5 }), licencias
+  });
+  // Las de enero de la persona de contrato: 15 días hábiles, 7 de la 2025 y 8 de la 2026
+  const ENERO = vacaciones(100, '2027-01-04', '2027-01-22');
+
+  it('esta carga se queda corta: el error va en «Hasta» y dice hasta dónde puede llegar', () => {
+    // Del 01/12/2026 al 26/02/2027 son 57 días hábiles y le alcanzan 55: el alcance de 3.1
+    const { datos, error, vista } = evaluar(persona(), pedido('2026-12-01', '2027-02-26'));
+    assert.equal(datos, null);
+    assert.deepEqual(error,
+      { campo: 'hasta', mensaje: 'No te alcanzan los días habilitados: esta licencia puede llegar hasta el 24/02/2027.' });
+    assert.equal(alcanceDeLaCarga(persona(), pedido('2026-12-01', '2027-02-26'), A_LA_CARGA), '2027-02-24');
+    // El recuadro muestra solo los días, sin el reparto: esta carga no se guarda
+    assert.equal(vista.texto_dias, '57 días hábiles de 88 corridos');
+    assert.equal(vista.texto_reparto, '');
+    assert.equal(vista.dias_habiles, 57);
+    // Hasta el alcance, se guarda
+    assert.equal(evaluar(persona(), pedido('2026-12-01', '2027-02-24')).error, null);
+  });
+
+  it('otra carga guardada se queda sin días: sus fechas y desde cuándo le faltan', () => {
+    // Las de diciembre van antes en el orden: se llevan 5 de la 2025, y a las de enero les alcanzan 12 de sus 15 días
+    const { datos, error, vista } = evaluar(deContrato(ENERO), pedido('2026-12-14', '2026-12-18'));
+    assert.equal(datos, null);
+    assert.deepEqual(error, {
+      campo: 'hasta',
+      mensaje: 'Con estos días, a tus vacaciones del 04/01 al 22/01/2027 les faltan días desde el 20/01/2027.'
+    });
+    assert.equal(vista.texto_dias, '5 días hábiles');
+    assert.equal(vista.texto_reparto, '');
+    // Sin las de enero, se guarda
+    assert.equal(evaluar(deContrato(), pedido('2026-12-14', '2026-12-18')).error, null);
+  });
+
+  it('… de dos años, con los dos años; de un día, sin «desde»', () => {
+    // Del 28/12/2026 al 15/01/2027 son 14 días hábiles: con las de diciembre, les alcanzan los 12 primeros
+    const dosAnios = deContrato(vacaciones(101, '2026-12-28', '2027-01-15'));
+    assert.deepEqual(evaluar(dosAnios, pedido('2026-12-14', '2026-12-18')).error,
+      { campo: 'hasta', mensaje: textoFaltanEnOtraCarga('2026-12-28', '2027-01-15', '2027-01-14') });
+    assert.equal(textoFaltanEnOtraCarga('2026-12-28', '2027-01-15', '2027-01-14'),
+      'Con estos días, a tus vacaciones del 28/12/2026 al 15/01/2027 les faltan días desde el 14/01/2027.');
+    // Las de enero se llevan los 17 días hasta el 1/7/2027: al 22/06/2027 no le queda ninguno
+    const unDia = deContrato(vacaciones(102, '2027-06-22', '2027-06-22'));
+    assert.deepEqual(evaluar(unDia, pedido('2027-01-04', '2027-01-26')).error,
+      { campo: 'hasta', mensaje: 'Con estos días, a tus vacaciones del 22/06/2027 les faltan días.' });
+  });
+
+  it('al corregir esa misma carga alargándola, el error es el de esta carga, nunca el de otra', () => {
+    // Las de enero hasta el 29/01/2027 son 20 días hábiles y le alcanzan 17: hasta el 26/01
+    const estado = deContrato(ENERO);
+    const esperado = { campo: 'hasta', mensaje: textoHastaDondeAlcanza('2027-01-26') };
+    assert.deepEqual(evaluar(estado, pedido('2027-01-04', '2027-01-29'), 100).error, esperado);
+    // El id como texto, como llega en un pedido
+    assert.deepEqual(evaluar(estado, pedido('2027-01-04', '2027-01-29'), '100').error, esperado);
+    assert.equal(evaluar(estado, pedido('2027-01-04', '2027-01-26'), 100).error, null);
+    assert.equal(evaluar(estado, pedido('2027-01-04', '2027-01-29'), 100).vista.texto_reparto, '');
+  });
+
+  it('esta carga sin ningún día: en «Desde», con lo que se habilita después', () => {
+    // Las de enero se llevan los 17 días: el 22/06/2027 no queda ninguno, y el 1/7/2027 se habilita la mitad de la 2027
+    const estado = deContrato(vacaciones(100, '2027-01-04', '2027-01-26'));
+    const { datos, error, vista } = evaluar(estado, pedido('2027-06-22', '2027-06-25'));
+    assert.equal(datos, null);
+    assert.deepEqual(error,
+      { campo: 'desde', mensaje: textoSinNingunDia('2027-06-22', { fecha: '2027-07-01', anio: 2027, dias: 5 }) });
+    assert.equal(error.mensaje,
+      'No te alcanzan los días habilitados para el 22/06/2027. El 1/7/2027 se habilitan 5 más de la 2027.');
+    assert.equal(vista.texto_dias, '4 días hábiles');
+    assert.equal(vista.texto_reparto, '');
+    assert.equal(alcanceDeLaCarga(estado, pedido('2027-06-22', '2027-06-25'), A_LA_CARGA), null);
+    // Desde un feriado (el 21/06/2027 es Güemes, trasladado), el día que falta es el primero que descuenta
+    assert.deepEqual(evaluar(estado, pedido('2027-06-21', '2027-06-25')).error, error);
+  });
+
+  it('… lo que se habilita después es lo que queda sin esta carga', () => {
+    // Del 22/06 al 02/07/2027: el 01/07 y el 02/07 ya salen de la mitad de la 2027 que se habilita el 1/7, pero esta carga no
+    // se guarda: se habilitan 5, no los 3 que le dejaría
+    const estado = deContrato(vacaciones(100, '2027-01-04', '2027-01-26'));
+    assert.deepEqual(evaluar(estado, pedido('2027-06-22', '2027-07-02')).error, {
+      campo: 'desde',
+      mensaje: 'No te alcanzan los días habilitados para el 22/06/2027. El 1/7/2027 se habilitan 5 más de la 2027.'
+    });
+  });
+
+  it('los errores que no son de días no cambian', () => {
+    // Se superpone con una guardada: lo de siempre, de validarLicencia, sin vista
+    const { error, vista } = evaluar(deContrato(ENERO), pedido('2027-01-20', '2027-01-27'));
+    assert.deepEqual(error, { campo: 'desde', mensaje: textoSuperpuesta('2027-01-20') });
+    assert.equal(vista, null);
+    // Un tope que se pasa, también como siempre
+    const conMedica = conSaldo(deContrato(), 'medica', 24);
+    assert.deepEqual(evaluar(conMedica, { tipo: 'medica', desde: '2026-11-16', hasta: '2026-11-17' }).error,
+      { campo: 'desde', mensaje: textoTope('medica', 2026) });
+  });
+
+  it('nada tira con entradas raras', () => {
+    const raros = [undefined, null, '', 'x', 0, -3, 2.5, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
+    for (const valor of raros) {
+      assert.doesNotThrow(() => {
+        evaluar(deContrato(ENERO), pedido('2026-12-14', '2026-12-18'), valor);
+        evaluar(deContrato(ENERO), pedido('2027-01-04', '2027-01-29'), valor);
+        evaluarLicencia(deContrato(ENERO), pedido('2026-12-14', '2026-12-18'), { hoy: HOY_DE_LA_CARGA, feriados: valor });
+      });
+    }
+  });
+});
+
 describe('nada tira', () => {
   const raros = [undefined, null, '', 'x', 0, -3, 2.5, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
 
@@ -2852,6 +3002,10 @@ describe('nada tira', () => {
         textoNoEstudia(valor);
         textoSuperpuesta(valor);
         textoSinHabilitados(valor);
+        textoHastaDondeAlcanza(valor);
+        textoSinNingunDia(valor, valor);
+        textoSinNingunDia(valor, { fecha: valor, anio: valor, dias: valor });
+        textoFaltanEnOtraCarga(valor, valor, valor);
         textoTope(valor, valor, valor);
         textoSinFranco(valor);
         textoSinHorasAFavor(valor, valor);
