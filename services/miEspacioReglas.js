@@ -29,7 +29,9 @@
  * planta (`francosDe`), las horas a favor de contrato (`horasAFavorDe`, desde las salidas) y lo no utilizado previamente de
  * cada año (`noUtilizadasDe`). Al final, «Mis vacaciones y saldos» (los campos del saldo inicial y el año, sección 4), el
  * cálculo completo (`calcular`), lo guardado que dejó de cerrar (`faltantesDe`, 3.10) y la evaluación de una carga
- * (`evaluarLicencia`: una carga nueva que no cierra no se guarda). Y el paso de las ausencias de día entero a Configuración →
+ * (`evaluarLicencia`: una carga nueva que no cierra no se guarda, y lo que cierra avisa, sin frenarla, lo que hace perder y
+ * las otras cargas a las que les cambia de dónde salen las vacaciones: `avisosDeLaCarga`, spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.2 y 3.4). Y el paso de las ausencias de día entero a Configuración →
  * Licencias (sección 6): qué se hace al cargar, corregir y borrar, lo que dice cada fila (`vinculoDe`, `pasoDeLaCarga`,
  * `pasoDeLaCorreccion`, `pasoDeLaBaja`, `textoDelVinculo`) y lo que el Resumen avisa para revisar (`revisionDelVinculo`, spec
  * 2026-10-28-mi-espacio-licencia-anulada). Por último, lo que ven los compañeros, «Hoy no están» (sección 7:
@@ -517,6 +519,13 @@ export const repartoDeVacaciones = (estado, opciones) => {
   };
 };
 
+// «2 de la 2024 (vencen el 31/12/2026) y 1 de la 2025 (vence el 31/12/2027)», de las ordinarias con `perdidos` mayor que 0;
+// sin ninguna, ''
+const perdidosEnLista = (ordinarias) => enLista(listaDe(ordinarias)
+  .filter((ordinaria) => esObjeto(ordinaria) && numeroDe(ordinaria.perdidos) > 0)
+  .map(({ anio, perdidos, vence }) =>
+    `${numeroTexto(perdidos)} de la ${anioTexto(anio)} (${esUna(perdidos) ? 'vence' : 'vencen'} el ${fechaCorta(vence)})`));
+
 /**
  * Lo que se pierde de las vacaciones (spec 2026-10-27-mi-espacio-dias-de-vacaciones, 2.6), el mismo texto en el aviso del
  * modal y en la bajada del Resumen: «Perdés 2 de la 2024 (vencen el 31/12/2026) y 1 de la 2025 (vence el 31/12/2027).», de
@@ -524,11 +533,44 @@ export const repartoDeVacaciones = (estado, opciones) => {
  * saltean; sin ninguna con perdidos, ''.
  */
 export const textoDePerdidos = (ordinarias) => {
-  const conPerdidos = listaDe(ordinarias).filter((ordinaria) => esObjeto(ordinaria) && numeroDe(ordinaria.perdidos) > 0);
-  if (conPerdidos.length === 0) return '';
-  return `Perdés ${enLista(conPerdidos.map(({ anio, perdidos, vence }) =>
-    `${numeroTexto(perdidos)} de la ${anioTexto(anio)} (${esUna(perdidos) ? 'vence' : 'vencen'} el ${fechaCorta(vence)})`))}.`;
+  const lista = perdidosEnLista(ordinarias);
+  return lista === '' ? '' : `Perdés ${lista}.`;
 };
+
+// Lo que una carga hace perder (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.2), los avisos del cálculo de
+// «Cargar licencia» (`avisosDeLaCarga`):
+// - los días de vacaciones, con las ordinarias de la diferencia (como `textoDePerdidos`): «Con esta licencia perdés 3 de
+//   la 2024 (vencen el 31/12/2026).»; sin ninguna, '';
+// - el franco o las horas a favor de un mes 'AAAA-MM' que se quedan sin ningún día libre, con el último día del mes (no
+//   el último hábil: un franco tomado se puede registrar después): «Tu franco de diciembre se queda sin días libres: vence
+//   el 31/12/2026.» («Tus 2 francos de diciembre se quedan …: vencen …») y «Tus 3 horas a favor de diciembre se quedan
+//   sin días libres: vencen el 31/12/2026.» («Tu hora a favor …», con 1);
+// - las horas de franquicia: «Con esta licencia perdés 8 horas de franquicia (vencen el 31/12/2026).» (con 1, «1 hora
+//   … vence»).
+export const textoDePerdidosConLaCarga = (ordinarias) => {
+  const lista = perdidosEnLista(ordinarias);
+  return lista === '' ? '' : `Con esta licencia perdés ${lista}.`;
+};
+// El último día de un mes 'AAAA-MM' (el 28 o el 29 de febrero, según el año), o null si no es un mes
+const ultimoDiaDelMes = (mes) => {
+  if (!esMes(mes)) return null;
+  const siguiente = mesMas(mes, 1);
+  return siguiente === null ? `${mes}-31` : sumarDias(`${siguiente}-01`, -1);
+};
+export const textoDelFrancoSinDiasLibres = (cantidad, mes) => {
+  const vence = fechaCorta(ultimoDiaDelMes(mes));
+  return esUna(cantidad)
+    ? `Tu franco de ${nombreDelMes(mes)} se queda sin días libres: vence el ${vence}.`
+    : `Tus ${numeroTexto(cantidad)} francos de ${nombreDelMes(mes)} se quedan sin días libres: vencen el ${vence}.`;
+};
+export const textoDeLasHorasSinDiasLibres = (horas, mes) => {
+  const vence = fechaCorta(ultimoDiaDelMes(mes));
+  return esUna(horas)
+    ? `Tu hora a favor de ${nombreDelMes(mes)} se queda sin días libres: vence el ${vence}.`
+    : `Tus ${numeroTexto(horas)} horas a favor de ${nombreDelMes(mes)} se quedan sin días libres: vencen el ${vence}.`;
+};
+export const textoDeLaFranquiciaPerdida = (horas, vence) => `Con esta licencia perdés ${textoDeHoras(horas)} de franquicia `
+  + `(${esUna(horas) ? 'vence' : 'vencen'} el ${fechaCorta(vence)}).`;
 
 /**
  * Lo que todavía no se habilitó de cada licencia ordinaria y no está asignado a ninguna carga (spec
@@ -617,6 +659,19 @@ export const textoFaltanEnOtraCarga = (desde, hasta, dia) => {
   const deUnDia = esFechaIso(desde) && desde === hasta;
   return `Con estos días, a tus vacaciones ${fechasDeLaCarga(desde, hasta)} les faltan días`
     + `${deUnDia ? '' : ` desde el ${fechaCorta(dia)}`}.`;
+};
+
+// Otra carga de vacaciones guardada a la que esta le cambia de dónde salen los días (spec
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.4), con sus fechas como en la lista y sus partes nuevas (las de `porFila`):
+// «Esta carga cambia de dónde salen tus vacaciones del 04/01 al 22/01/2027: ahora de las licencias 2025 (5 días) y 2026 (10
+// días).» o, de una sola licencia, «… ahora de la licencia 2025.». Sin ninguna parte, ''
+export const textoDelReacomodo = (desde, hasta, partes) => {
+  const suyas = listaDe(partes).filter(esObjeto);
+  if (suyas.length === 0) return '';
+  const deDonde = suyas.length === 1
+    ? `de la licencia ${anioTexto(suyas[0].anio)}`
+    : `de las licencias ${enLista(suyas.map(({ anio, dias }) => `${anioTexto(anio)} (${diasTexto(dias)})`))}`;
+  return `Esta carga cambia de dónde salen tus vacaciones ${fechasDeLaCarga(desde, hasta)}: ahora ${deDonde}.`;
 };
 
 /**
@@ -1808,17 +1863,18 @@ const textoDeLoQueQueda = (fila, modalidad, calculo, descuentan) => {
 };
 
 /**
- * La evaluación de una carga sin la vista (los pasos 1 a 3 de `evaluarLicencia`): `{ datos, error, fila, conLaFila, despues,
- * faltante }`. `fila` es la licencia validada con el id de la que se corrige, `conLaFila`, el estado con ella (reemplaza a la
- * corregida) y `despues`, su `Calculo`; los tres son null si frena en los pasos 1 o 2. `faltante` es el que frena la carga en
- * el paso 3 (el de `problemaDeLaCarga`, con su clave), o null. `antes` es el `Calculo` de lo cargado, si quien llama ya lo
+ * La evaluación de una carga sin la vista (los pasos 1 a 3 de `evaluarLicencia`): `{ datos, error, fila, conLaFila, antes,
+ * despues, faltante }`. `fila` es la licencia validada con el id de la que se corrige, `conLaFila`, el estado con ella
+ * (reemplaza a la corregida), `antes`, el `Calculo` de lo cargado (al corregir, con la versión guardada de la fila), y
+ * `despues`, el de lo cargado con ella; los cuatro son null si frena en los pasos 1 o 2. `faltante` es el que frena la carga
+ * en el paso 3 (el de `problemaDeLaCarga`, con su clave), o null. El parámetro `antes` es ese `Calculo`, si quien llama ya lo
  * tiene (`alcanceDeLaCarga` prueba muchos «Hasta» con el mismo); si no, se calcula. La vista y los errores de días que dicen
  * hasta dónde alcanza no van acá: piden el alcance, que vuelve a evaluar la carga.
  */
 const evaluarLaCarga = (estado, entrada, opciones, antes) => {
   const datosDelEstado = esObjeto(estado) ? estado : {};
   const { hoy, feriados, editadaId, uso_autorizado: usoAutorizado } = esObjeto(opciones) ? opciones : {};
-  const frenada = (error) => ({ datos: null, error, fila: null, conLaFila: null, despues: null, faltante: null });
+  const frenada = (error) => ({ datos: null, error, fila: null, conLaFila: null, antes: null, despues: null, faltante: null });
   if (!MODALIDADES.includes(datosDelEstado.modalidad)) {
     return frenada({ campo: null, mensaje: MENSAJES_MI_ESPACIO.sinModalidad });
   }
@@ -1835,8 +1891,9 @@ const evaluarLaCarga = (estado, entrada, opciones, antes) => {
     licencias: [...listaDe(datosDelEstado.licencias).filter((otra) => !esObjeto(otra) || idDe(otra.id) !== editada), fila]
   };
   const despues = calcular(conLaFila, { hoy, feriados });
-  const { faltante, problema } = loQueFrena(antes ?? calcular(datosDelEstado, { hoy, feriados }), despues, editadaId);
-  return { datos: problema === null ? datos : null, error: problema, fila, conLaFila, despues, faltante };
+  const loCargado = antes ?? calcular(datosDelEstado, { hoy, feriados });
+  const { faltante, problema } = loQueFrena(loCargado, despues, editadaId);
+  return { datos: problema === null ? datos : null, error: problema, fila, conLaFila, antes: loCargado, despues, faltante };
 };
 
 /**
@@ -1924,11 +1981,85 @@ const extrasDelReparto = (fila, calculo, { estado, opciones }) => {
   };
 };
 
+// Los días libres de un mes 'AAAA-MM', todo el mes (también los días que ya pasaron), con `diasLibresEntre`
+const diasLibresDelMes = (mes, ocupadas, feriados) =>
+  diasLibresEntre(`${mes}-01`, ultimoDiaDelMes(mes), ocupadas, feriados);
+// Si dos repartos de una fila (los de `porFila`) son el mismo: los mismos años, con los mismos días
+const mismasPartes = (unas, otras) => unas.length === otras.length
+  && unas.every((parte, i) => esObjeto(parte) && esObjeto(otras[i]) && parte.anio === otras[i].anio
+    && parte.dias === otras[i].dias);
+
+/**
+ * Lo que una carga le hace a lo demás (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.2 y 3.4), los `avisos` de la
+ * vista: una lista de textos planos que nunca frenan el guardado. Compara `antes` (el `Calculo` de lo cargado; al corregir,
+ * con la versión guardada de la fila) con `despues` (el de lo cargado con esta carga), en este orden:
+ * 1. los días de vacaciones que la carga hace perder: la diferencia de los `perdidos` de cada ordinaria
+ *    (`textoDePerdidosConLaCarga`), salvo si la carga es de vacaciones: su reparto ya dice «Perdés …» con el total;
+ * 2. el franco (planta) o las horas a favor (contrato) de cada mes de uso, desde el de hoy, que se quedan sin ningún día
+ *    libre en su mes: tenían disponibles y algún día libre en el mes entero (también los días que ya pasaron: un franco
+ *    tomado se puede registrar después; `diasLibresDelMes`, con todas las licencias, como el reparto) y con la carga ninguno.
+ *    La cantidad es lo que sigue disponible con la carga: un franco que la carga usa no se queda sin días;
+ * 3. las horas de franquicia que la carga hace perder (planta: la diferencia de las `perdidas` de `franquiciaQueVence`);
+ * 4. las otras cargas de vacaciones guardadas a las que les cambia de dónde salen los días (su `porFila`), en el orden de sus
+ *    fechas, con sus partes nuevas (`textoDelReacomodo`). La propia (la nueva o la que se corrige) nunca se nombra.
+ * `contexto` es el de `vistaDe`: `{ estado, antes, opciones }`.
+ */
+const avisosDeLaCarga = (fila, conLaFila, despues, { estado, antes, opciones }) => {
+  const { hoy, feriados } = opciones;
+  const avisos = [];
+
+  if (fila.tipo !== 'vacaciones') {
+    const previos = new Map(antes.reparto.ordinarias.map(({ anio, perdidos }) => [anio, perdidos]));
+    avisos.push(textoDePerdidosConLaCarga(despues.reparto.ordinarias.map((ordinaria) =>
+      ({ ...ordinaria, perdidos: ordinaria.perdidos - (previos.get(ordinaria.anio) ?? 0) }))));
+  }
+
+  if (esFechaIso(hoy)) {
+    const deHoy = hoy.slice(0, 7);
+    const ocupadasAntes = listaDe(esObjeto(estado) ? estado.licencias : []);
+    const meses = [
+      [despues.francos, antes.francos, textoDelFrancoSinDiasLibres],
+      [despues.horasAFavor, antes.horasAFavor, textoDeLasHorasSinDiasLibres]
+    ];
+    for (const [conLaCarga, sinLaCarga, texto] of meses) {
+      for (const { mes_de_uso: mes, disponibles } of conLaCarga) {
+        if (mes < deHoy || !(disponibles > 0)) continue;
+        const previo = sinLaCarga.find((otro) => otro.mes_de_uso === mes);
+        if (previo === undefined || !(previo.disponibles > 0)) continue;
+        const teniaDiasLibres = diasLibresDelMes(mes, ocupadasAntes, feriados) > 0;
+        if (teniaDiasLibres && diasLibresDelMes(mes, conLaFila.licencias, feriados) === 0) avisos.push(texto(disponibles, mes));
+      }
+    }
+
+    const { franquicia: previa } = antes;
+    const { franquicia } = despues;
+    if (esObjeto(previa) && esObjeto(franquicia) && franquicia.perdidas > previa.perdidas) {
+      avisos.push(textoDeLaFranquiciaPerdida(franquicia.perdidas - previa.perdidas, fechaDe(anioDe(hoy), '12-31')));
+    }
+  }
+
+  // Las otras: las vacaciones guardadas (con un id), sin la propia (la nueva no tiene id; la corregida tiene el suyo)
+  const propia = idDe(fila.id);
+  const otras = conLaFila.licencias
+    .filter((otra) => esObjeto(otra) && otra.tipo === 'vacaciones' && idPositivoONulo(otra.id) !== null
+      && idDe(otra.id) !== propia)
+    .sort((a, b) => compararTexto(a.desde, b.desde) || compararTexto(a.hasta, b.hasta) || idDe(a.id) - idDe(b.id));
+  for (const otra of otras) {
+    const id = idDe(otra.id);
+    const ahora = listaDe(despues.reparto.porFila.get(id));
+    if (mismasPartes(listaDe(antes.reparto.porFila.get(id)), ahora)) continue;
+    avisos.push(textoDelReacomodo(otra.desde, otra.hasta, ahora));
+  }
+
+  return avisos.filter((aviso) => aviso !== '');
+};
+
 // Lo que muestra el cálculo de «Cargar licencia» de una fila ya validada, con el estado y el `Calculo` de lo cargado con
-// ella. `contexto` es `{ estado, opciones, conError }`: el estado de antes de la carga y las opciones de `evaluarLicencia`,
-// para lo que se habilita después y el alcance de unas vacaciones (`extrasDelReparto`), y si la carga tiene un error. Con un
-// error la carga no se guarda (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.3): la vista dice solo los días, sin el
-// reparto ni nada de lo que la carga le haría a lo demás
+// ella. `contexto` es `{ estado, antes, opciones, conError }`: el estado de antes de la carga, su `Calculo` y las opciones de
+// `evaluarLicencia`, para lo que se habilita después y el alcance de unas vacaciones (`extrasDelReparto`) y para lo que la
+// carga le hace a lo demás (`avisosDeLaCarga`), y si la carga tiene un error. Con un error la carga no se guarda (spec
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.3): la vista dice solo los días, sin el reparto ni nada de lo que la carga
+// le haría a lo demás (`avisos`, vacía)
 const vistaDe = (fila, conLaFila, calculo, contexto) => {
   const { feriados } = contexto.opciones;
   const habiles = diasHabilesDe(fila.desde, fila.hasta, feriados).length;
@@ -1942,7 +2073,8 @@ const vistaDe = (fila, conLaFila, calculo, contexto) => {
       : '',
     queda_texto: antesDelArranque ? '' : textoDeLoQueQueda(fila, conLaFila.modalidad, calculo, descuentan),
     antes_del_arranque: antesDelArranque,
-    texto_antes_del_arranque: antesDelArranque ? TEXTO_ANTES_DEL_ARRANQUE : ''
+    texto_antes_del_arranque: antesDelArranque ? TEXTO_ANTES_DEL_ARRANQUE : '',
+    avisos: contexto.conError ? [] : avisosDeLaCarga(fila, conLaFila, calculo, contexto)
   };
 };
 
@@ -1961,7 +2093,7 @@ const vistaDe = (fila, conLaFila, calculo, contexto) => {
  *    si a esta no le alcanza ni el primer día, «No te alcanzan los días habilitados para el 21/06/2027. El 1/7/2027 se
  *    habilitan 5 más de la 2027.».
  * Con un error, `datos` es null. `vista` es null en los pasos 1 y 2; si no, `{ dias_habiles, texto_dias, texto_reparto,
- * queda_texto, antes_del_arranque, texto_antes_del_arranque }`, con lo cargado con esta licencia:
+ * queda_texto, antes_del_arranque, texto_antes_del_arranque, avisos }`, con lo cargado con esta licencia:
  * - `texto_dias`: «5 días hábiles» o «5 días hábiles de 7 corridos»; en horas, «2 horas»;
  * - `texto_reparto`: en las vacaciones, el de `textoDelReparto`, con lo que se habilita después hasta su hasta o su alcance
  *   y, si deja los disponibles de hoy en 0, hasta dónde puede llegar (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.1:
@@ -1971,15 +2103,22 @@ const vistaDe = (fila, conLaFila, calculo, contexto) => {
  *   Te quedan 0.», la del franco de su mes o lo no utilizado que queda; '' en las vacaciones, la extraordinaria y lo
  *   anterior al arranque;
  * - `antes_del_arranque`: un tipo con saldo inicial cuyos días son todos anteriores al arranque, con
- *   `texto_antes_del_arranque` (`TEXTO_ANTES_DEL_ARRANQUE`; si no, '').
+ *   `texto_antes_del_arranque` (`TEXTO_ANTES_DEL_ARRANQUE`; si no, '');
+ * - `avisos` (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.2 y 3.4): lo que esta carga le hace a lo demás, comparado
+ *   con lo cargado sin ella (`avisosDeLaCarga`), siempre una lista de textos planos que no frenan el guardado: los días de
+ *   vacaciones que hace perder («Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026).», salvo en unas vacaciones),
+ *   el franco o las horas a favor de un mes que se quedan sin días libres («Tu franco de diciembre se queda sin días libres:
+ *   vence el 31/12/2026.»), las horas de franquicia que hace perder y las otras cargas de vacaciones a las que les cambia de
+ *   dónde salen («Esta carga cambia de dónde salen tus vacaciones del 04/01 al 22/01/2027: ahora de la licencia 2025.»);
+ *   con un error, [].
  */
 export const evaluarLicencia = (estado, entrada, opciones) => {
   const carga = evaluarLaCarga(estado, entrada, opciones);
-  const { datos, fila, conLaFila, despues, faltante } = carga;
+  const { datos, fila, conLaFila, antes, despues, faltante } = carga;
   if (fila === null) return { datos, error: carga.error, vista: null };
   const lasOpciones = esObjeto(opciones) ? opciones : {};
   const error = errorDeDias(faltante, { estado, fila, conLaFila, despues, opciones: lasOpciones }) ?? carga.error;
-  const contexto = { estado, opciones: lasOpciones, conError: error !== null };
+  const contexto = { estado, antes, opciones: lasOpciones, conError: error !== null };
   return { datos, error, vista: vistaDe(fila, conLaFila, despues, contexto) };
 };
 

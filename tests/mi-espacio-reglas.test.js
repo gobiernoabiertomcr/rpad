@@ -28,7 +28,9 @@ import {
   avisosDeVencimiento,
   SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL, TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, horaSalidaValida, tipoDeDia,
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
-  avisosDeSalidas, mesDeLaPlanilla, porHabilitarDe, alcanceDeLaCarga, diasLibresEntre, franquiciaQueVence
+  avisosDeSalidas, mesDeLaPlanilla, porHabilitarDe, alcanceDeLaCarga, diasLibresEntre, franquiciaQueVence,
+  textoDePerdidosConLaCarga, textoDelFrancoSinDiasLibres, textoDeLasHorasSinDiasLibres, textoDeLaFranquiciaPerdida,
+  textoDelReacomodo
 } from '../services/miEspacioReglas.js';
 import { feriadosDelRango, calendarioCon } from '../services/feriadosReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
@@ -266,6 +268,57 @@ describe('los textos', () => {
     assert.equal(textoRevisalaEnConfiguracion(null, 'x'), 'En Configuración quedó del — al —: revisala.');
     assert.equal(textoRevisalaEnConfiguracion(null, null), 'En Configuración quedó del — al —: revisala.');
     assert.equal(textoRevisalaEnConfiguracion('x', 'x'), 'En Configuración quedó del — al —: revisala.');
+  });
+
+  // Spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.2 y 3.4: lo que avisa el cálculo de una carga, sin frenarla
+  it('los avisos de lo que una carga hace perder o reacomoda', () => {
+    const ordinaria2024 = (perdidos) => ({ anio: 2024, perdidos, vence: '2026-12-31' });
+    // Los días de vacaciones: la diferencia, como «Perdés …», con «vence» en singular solo con 1
+    assert.equal(textoDePerdidosConLaCarga([ordinaria2024(3)]),
+      'Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026).');
+    assert.equal(textoDePerdidosConLaCarga([ordinaria2024(1)]),
+      'Con esta licencia perdés 1 de la 2024 (vence el 31/12/2026).');
+    assert.equal(textoDePerdidosConLaCarga([ordinaria2024(3), { anio: 2025, perdidos: 0, vence: '2027-12-31' },
+      { anio: 2026, perdidos: 5, vence: '2028-12-31' }]),
+    'Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026) y 5 de la 2026 (vencen el 31/12/2028).');
+    // Sin ninguna con perdidos, ''; «Perdés …» no cambió
+    assert.equal(textoDePerdidosConLaCarga([ordinaria2024(0)]), '');
+    assert.equal(textoDePerdidosConLaCarga(null), '');
+    assert.equal(textoDePerdidos([ordinaria2024(3)]), 'Perdés 3 de la 2024 (vencen el 31/12/2026).');
+    // El franco y las horas a favor de un mes, con el último día del mes (no el último hábil)
+    assert.equal(textoDelFrancoSinDiasLibres(1, '2026-12'),
+      'Tu franco de diciembre se queda sin días libres: vence el 31/12/2026.');
+    assert.equal(textoDelFrancoSinDiasLibres(2, '2026-12'),
+      'Tus 2 francos de diciembre se quedan sin días libres: vencen el 31/12/2026.');
+    assert.equal(textoDelFrancoSinDiasLibres(1, '2027-02'),
+      'Tu franco de febrero se queda sin días libres: vence el 28/02/2027.');
+    assert.equal(textoDeLasHorasSinDiasLibres(3, '2026-12'),
+      'Tus 3 horas a favor de diciembre se quedan sin días libres: vencen el 31/12/2026.');
+    assert.equal(textoDeLasHorasSinDiasLibres(1.5, '2026-11'),
+      'Tus 1,5 horas a favor de noviembre se quedan sin días libres: vencen el 30/11/2026.');
+    assert.equal(textoDeLasHorasSinDiasLibres(1, '2028-02'),
+      'Tu hora a favor de febrero se queda sin días libres: vence el 29/02/2028.');
+    // Un mes que no es un mes, la raya
+    assert.equal(textoDelFrancoSinDiasLibres(1, 'x'), 'Tu franco de — se queda sin días libres: vence el —.');
+    // La franquicia, como el email de vencimiento
+    assert.equal(textoDeLaFranquiciaPerdida(8, '2026-12-31'),
+      'Con esta licencia perdés 8 horas de franquicia (vencen el 31/12/2026).');
+    assert.equal(textoDeLaFranquiciaPerdida(1, '2026-12-31'),
+      'Con esta licencia perdés 1 hora de franquicia (vence el 31/12/2026).');
+    // Las otras cargas, con sus fechas como en la lista
+    assert.equal(textoDelReacomodo('2027-01-04', '2027-01-22', [{ anio: 2025, dias: 5 }, { anio: 2026, dias: 10 }]),
+      'Esta carga cambia de dónde salen tus vacaciones del 04/01 al 22/01/2027: ahora de las licencias 2025 (5 días) y '
+      + '2026 (10 días).');
+    assert.equal(textoDelReacomodo('2027-01-04', '2027-01-22', [{ anio: 2025, dias: 15 }]),
+      'Esta carga cambia de dónde salen tus vacaciones del 04/01 al 22/01/2027: ahora de la licencia 2025.');
+    assert.equal(textoDelReacomodo('2026-12-28', '2027-01-08', [{ anio: 2025, dias: 1 }, { anio: 2026, dias: 8 }]),
+      'Esta carga cambia de dónde salen tus vacaciones del 28/12/2026 al 08/01/2027: ahora de las licencias 2025 (1 día) y '
+      + '2026 (8 días).');
+    assert.equal(textoDelReacomodo('2027-01-04', '2027-01-04', [{ anio: 2025, dias: 1 }]),
+      'Esta carga cambia de dónde salen tus vacaciones del 04/01/2027: ahora de la licencia 2025.');
+    // Sin ninguna licencia, no hay qué decir
+    assert.equal(textoDelReacomodo('2027-01-04', '2027-01-22', []), '');
+    assert.equal(textoDelReacomodo('2027-01-04', '2027-01-22', null), '');
   });
 });
 
@@ -2463,7 +2516,7 @@ describe('evaluarLicencia', () => {
           dias_habiles: 5, texto_dias: '5 días hábiles de 7 corridos',
           texto_reparto: 'Salen de la licencia 2024, la más vieja. Te quedan 33 días: 3 de la 2024 (vencen el 31/12/2026), '
             + '20 de la 2025 y 10 de la 2026.',
-          queda_texto: '', antes_del_arranque: false, texto_antes_del_arranque: ''
+          queda_texto: '', antes_del_arranque: false, texto_antes_del_arranque: '', avisos: []
         }
       });
     // Unas nuevas, todavía sin id
@@ -2560,7 +2613,7 @@ describe('evaluarLicencia', () => {
     assert.equal(TEXTO_ANTES_DEL_ARRANQUE, 'Es anterior al saldo inicial: queda como historia y no descuenta.');
     assert.deepEqual(vistaDe(PLANTA.estado, { tipo: 'medica', desde: '2026-10-19', hasta: '2026-10-20' }), {
       dias_habiles: 2, texto_dias: '2 días hábiles', texto_reparto: '', queda_texto: '', antes_del_arranque: true,
-      texto_antes_del_arranque: TEXTO_ANTES_DEL_ARRANQUE
+      texto_antes_del_arranque: TEXTO_ANTES_DEL_ARRANQUE, avisos: []
     });
     // Una que cruza el arranque descuenta desde el arranque: no es historia (sin las licencias de PLANTA, que tiene un
     // franco el 23/10)
@@ -3054,6 +3107,218 @@ describe('los días libres y la franquicia que vence (spec 2026-10-28, 3.6)', ()
         diasLibresEntre(valor, valor, valor, valor);
       }, String(valor));
     }
+  });
+});
+
+describe('lo que una carga hace perder o reacomoda (spec 2026-10-28, 3.2 y 3.4)', () => {
+  // Con la precarga de los feriados (el 07/12/2026 no es laborable y el 08/12 y el 25/12 son de los 9 fijos)
+  const FERIADOS = feriadosDelRango(FILAS_PRECARGA, '2024-01-01', '2028-12-31');
+  const evaluar = (estado, entrada, hoy, editadaId) => evaluarLicencia(estado, entrada, { hoy, feriados: FERIADOS, editadaId });
+  const avisosDe = (estado, entrada, hoy, editadaId) => evaluar(estado, entrada, hoy, editadaId).vista.avisos;
+  const pedido = (tipo, desde, hasta) => ({ tipo, desde, hasta });
+  const MEDIADOS_DE_DICIEMBRE = '2026-12-15';
+  // Las 42 horas de franquicia de 2026, ya usadas: así la carga no hace perder horas de franquicia
+  const franquiciaUsada = { concepto: 'franquicias', anio: 2026, cantidad: 42 };
+  // La persona inventada de la spec (3.2), de planta: solo 3 días de la 2024 (la 2026, 20 días: la segunda mitad se habilita
+  // el 1/1/2027), 2 días de atención médica usados en 2026 y, de entrada, la franquicia ya usada y sin horas extras
+  const conTres = (cambios = {}) => ({
+    modalidad: 'planta', arranque: '2026-10-27', anios: [{ anio: 2026, dias_vacaciones: 20, estudios: null }],
+    saldos: [...saldosDeVacaciones({ 2024: 3, 2025: 0, 2026: 0 }), { concepto: 'medica', anio: 2026, cantidad: 2 },
+      franquiciaUsada],
+    licencias: [], horasExtras: [], salidas: [], ...cambios
+  });
+
+  it('una atención médica que tapa los días que quedaban: «Con esta licencia perdés …», y se guarda igual', () => {
+    const { datos, error, vista } = evaluar(conTres(), pedido('medica', '2026-12-15', '2026-12-31'), MEDIADOS_DE_DICIEMBRE);
+    assert.equal(error, null);
+    assert.notEqual(datos, null);
+    assert.equal(vista.texto_dias, '12 días hábiles de 17 corridos');
+    assert.equal(vista.queda_texto, 'Te quedan 11 de 25.');
+    assert.deepEqual(vista.avisos, ['Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026).']);
+    // Con un día libre antes del 31/12 (el jueves 31), nada se pierde
+    assert.deepEqual(avisosDe(conTres(), pedido('medica', '2026-12-15', '2026-12-30'), MEDIADOS_DE_DICIEMBRE), []);
+    // Lo que ya se perdía no se vuelve a decir: solo lo que esta carga hace perder
+    const yaPerdidos = conTres({ licencias: [{ id: 100, ...pedido('medica', '2026-12-15', '2026-12-31'), horas: null }] });
+    assert.deepEqual(avisosDe(yaPerdidos, pedido('familiar', '2027-01-04', '2027-01-05'), MEDIADOS_DE_DICIEMBRE), []);
+  });
+
+  it('dos licencias que se pierden van juntas; con 1, «vence»', () => {
+    // 3 de la 2024 y 5 de la 2025: una extraordinaria hasta el 31/12/2027 tapa los días libres de las dos
+    const conDos = conTres({ saldos: [...saldosDeVacaciones({ 2024: 3, 2025: 5, 2026: 0 }), franquiciaUsada] });
+    assert.deepEqual(avisosDe(conDos, pedido('medica_extraordinaria', '2026-12-15', '2027-12-31'), MEDIADOS_DE_DICIEMBRE), [
+      'Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026) y 5 de la 2025 (vencen el 31/12/2027).'
+    ]);
+    const conUno = conTres({ saldos: [...saldosDeVacaciones({ 2024: 1, 2025: 0, 2026: 0 }), franquiciaUsada] });
+    assert.deepEqual(avisosDe(conUno, pedido('familiar', '2026-12-15', '2026-12-31'), MEDIADOS_DE_DICIEMBRE),
+      ['Con esta licencia perdés 1 de la 2024 (vence el 31/12/2026).']);
+  });
+
+  it('en el modal de vacaciones no va: el reparto ya dice «Perdés …» con el total', () => {
+    // 5 de la 2024 y una atención médica del 18/12 al 31/12: unas vacaciones del 15/12 al 17/12 usan 3 y pierden 2
+    const estado = conTres({
+      saldos: [...saldosDeVacaciones({ 2024: 5, 2025: 0, 2026: 0 }), franquiciaUsada],
+      licencias: [{ id: 100, ...pedido('medica', '2026-12-18', '2026-12-31'), horas: null }]
+    });
+    const { error, vista } = evaluar(estado, pedido('vacaciones', '2026-12-15', '2026-12-17'), MEDIADOS_DE_DICIEMBRE);
+    assert.equal(error, null);
+    assert.ok(vista.texto_reparto.endsWith('Perdés 2 de la 2024 (vencen el 31/12/2026).'), vista.texto_reparto);
+    assert.deepEqual(vista.avisos, []);
+    // Los mismos días como atención del grupo familiar: no usan la 2024, que se pierde entera
+    assert.deepEqual(avisosDe(estado, pedido('familiar', '2026-12-15', '2026-12-17'), MEDIADOS_DE_DICIEMBRE),
+      ['Con esta licencia perdés 5 de la 2024 (vencen el 31/12/2026).']);
+  });
+
+  it('el franco de un mes que se queda sin días libres, con el último día del mes', () => {
+    // La persona de planta de la spec (punto 1), hoy el 28/10/2026: 10,5 horas extras en octubre dan un franco para diciembre
+    const HOY_DE_LA_CARGA = '2026-10-28';
+    const octubre = (horasExtras) => ({ ...soloVacaciones('2026-10-27', PERSONA), horasExtras });
+    const unFranco = octubre([extra(100, '2026-10-06', '18:00', '21:30'), extra(101, '2026-10-14', '17:00', '21:00'),
+      extra(102, '2026-10-22', '19:00', '22:00')]);
+    assert.deepEqual(avisosDe(unFranco, pedido('vacaciones', '2026-12-01', '2026-12-31'), HOY_DE_LA_CARGA),
+      ['Tu franco de diciembre se queda sin días libres: vence el 31/12/2026.']);
+    // Con el 31/12 libre, el franco todavía entra
+    assert.deepEqual(avisosDe(unFranco, pedido('vacaciones', '2026-12-01', '2026-12-30'), HOY_DE_LA_CARGA), []);
+    // 14 horas dan dos francos
+    const dosFrancos = octubre([extra(100, '2026-10-06', '14:00', '21:00'), extra(101, '2026-10-13', '14:00', '21:00')]);
+    assert.deepEqual(avisosDe(dosFrancos, pedido('vacaciones', '2026-12-01', '2026-12-31'), HOY_DE_LA_CARGA),
+      ['Tus 2 francos de diciembre se quedan sin días libres: vencen el 31/12/2026.']);
+  });
+
+  it('… el mes entero cuenta, también los días que ya pasaron; y si ya no tenía días libres, no se dice', () => {
+    // Hoy el 15/12: del 01/12 al 14/12 hay días libres, porque un franco se puede registrar después
+    const estado = conTres({ horasExtras: [extra(100, '2026-10-06', '14:00', '21:00')] });
+    assert.deepEqual(avisosDe(estado, pedido('medica', '2026-12-15', '2026-12-31'), MEDIADOS_DE_DICIEMBRE),
+      ['Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026).']);
+    // Con todo diciembre tapado de antes, el franco ya no tenía días libres: otra carga no lo dice
+    const tapado = conTres({
+      horasExtras: [extra(100, '2026-10-06', '14:00', '21:00')],
+      licencias: [{ id: 101, ...pedido('medica_extraordinaria', '2026-12-01', '2026-12-31'), horas: null }]
+    });
+    assert.deepEqual(avisosDe(tapado, pedido('familiar', '2027-01-04', '2027-01-05'), MEDIADOS_DE_DICIEMBRE), []);
+  });
+
+  it('… y el franco que la carga usa no se queda sin días: lo que queda es lo que avisa', () => {
+    // Dos francos para diciembre y todo el mes tapado menos el 31/12: cargar un franco ese día deja el otro sin días (sin días
+    // de la 2024, que también se perderían)
+    const estado = conTres({
+      saldos: [...saldosDeVacaciones({ 2024: 0, 2025: 0, 2026: 0 }), franquiciaUsada],
+      horasExtras: [extra(100, '2026-10-06', '14:00', '21:00'), extra(101, '2026-10-13', '14:00', '21:00')],
+      licencias: [{ id: 102, ...pedido('medica_extraordinaria', '2026-12-01', '2026-12-30'), horas: null }]
+    });
+    assert.deepEqual(avisosDe(estado, { tipo: 'franco', desde: '2026-12-31' }, MEDIADOS_DE_DICIEMBRE),
+      ['Tu franco de diciembre se queda sin días libres: vence el 31/12/2026.']);
+    // Con un solo franco, cargarlo el 31/12 lo usa: no queda nada sin días
+    const unoSolo = { ...estado, horasExtras: [extra(100, '2026-10-06', '14:00', '21:00')] };
+    assert.deepEqual(avisosDe(unoSolo, { tipo: 'franco', desde: '2026-12-31' }, MEDIADOS_DE_DICIEMBRE), []);
+  });
+
+  it('las horas a favor de un mes que se quedan sin días libres (contrato)', () => {
+    // Una persona inventada de contrato con 3 horas extras en noviembre (dos salidas a las 16:30): 3 horas a favor en diciembre
+    const estado = {
+      ...CONTRATO.estado, arranque: '2026-10-28', anios: [{ anio: 2026, dias_vacaciones: 10, estudios: null }],
+      saldos: saldosDeVacaciones({ 2024: 0, 2025: 7, 2026: 5 }), licencias: [],
+      salidas: [salida(100, '2026-11-03', '16:30'), salida(101, '2026-11-04', '16:30')]
+    };
+    assert.deepEqual(avisosDe(estado, pedido('medica_extraordinaria', '2026-12-01', '2026-12-31'), '2026-12-01'),
+      ['Tus 3 horas a favor de diciembre se quedan sin días libres: vencen el 31/12/2026.']);
+    assert.deepEqual(avisosDe(estado, pedido('medica_extraordinaria', '2026-12-01', '2026-12-30'), '2026-12-01'), []);
+  });
+
+  it('las horas de franquicia que la carga hace perder', () => {
+    // Sin la franquicia usada: quedan las 42 horas, y del 15/12 al 31/12 no queda ningún día libre
+    const estado = conTres({ saldos: saldosDeVacaciones({ 2024: 0, 2025: 0, 2026: 0 }) });
+    assert.deepEqual(avisosDe(estado, pedido('medica', '2026-12-15', '2026-12-31'), MEDIADOS_DE_DICIEMBRE),
+      ['Con esta licencia perdés 42 horas de franquicia (vencen el 31/12/2026).']);
+    // Con tres días libres (21 horas), la diferencia: 21
+    assert.deepEqual(avisosDe(estado, pedido('medica', '2026-12-15', '2026-12-28'), MEDIADOS_DE_DICIEMBRE),
+      ['Con esta licencia perdés 21 horas de franquicia (vencen el 31/12/2026).']);
+  });
+
+  it('cada aviso en su orden: las vacaciones, el franco, la franquicia y las otras cargas', () => {
+    // Planta, hoy el 15/12: 3 de la 2024 y 5 de la 2025, un franco para diciembre (10,5 horas extras en octubre) y las 42
+    // horas de franquicia. Unas vacaciones del 01/12 al 04/12 (3 de la 2024 y 1 de la 2025) y otras del 04/01 al 08/01/2027
+    // (4 de la 2025 y 1 de la 2026) pasan a ser una atención médica de todo diciembre
+    const estado = conTres({
+      saldos: saldosDeVacaciones({ 2024: 3, 2025: 5, 2026: 0 }),
+      horasExtras: [extra(100, '2026-10-06', '18:00', '21:30'), extra(101, '2026-10-14', '17:00', '21:00'),
+        extra(102, '2026-10-22', '19:00', '22:00')],
+      licencias: [vacaciones(200, '2026-12-01', '2026-12-04'), vacaciones(201, '2027-01-04', '2027-01-08')]
+    });
+    const { datos, error, vista } = evaluar(estado, pedido('medica', '2026-12-01', '2026-12-31'), MEDIADOS_DE_DICIEMBRE, 200);
+    assert.equal(error, null);
+    assert.notEqual(datos, null);
+    assert.deepEqual(vista.avisos, [
+      'Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026).',
+      'Tu franco de diciembre se queda sin días libres: vence el 31/12/2026.',
+      'Con esta licencia perdés 42 horas de franquicia (vencen el 31/12/2026).',
+      'Esta carga cambia de dónde salen tus vacaciones del 04/01 al 08/01/2027: ahora de la licencia 2025.'
+    ]);
+  });
+
+  describe('las otras cargas que se reacomodan (3.4)', () => {
+    // La persona inventada de contrato de la spec 3.3, hoy el 28/10/2026: 0 de la 2024, 7 de la 2025 y 5 de la 2026 en el
+    // saldo, 10 días por año (la otra mitad de la 2026 se habilita el 1/1/2027 y la primera de la 2027, el 1/7/2027)
+    const HOY_DE_LA_CARGA = '2026-10-28';
+    const deContrato = (...licencias) => ({
+      ...CONTRATO.estado, arranque: HOY_DE_LA_CARGA, anios: [{ anio: 2026, dias_vacaciones: 10, estudios: null }],
+      saldos: saldosDeVacaciones({ 2024: 0, 2025: 7, 2026: 5 }), licencias
+    });
+    // Enero, 15 días hábiles (7 de la 2025 y 8 de la 2026), y julio, 5 (los 2 que quedan de la 2026 y 3 de la 2027)
+    const ENERO = vacaciones(100, '2027-01-04', '2027-01-22');
+    const JULIO = vacaciones(101, '2027-07-01', '2027-07-07');
+    const ENERO_Y_JULIO = deContrato(JULIO, ENERO);
+
+    it('una carga de diciembre les cambia de dónde salen a enero y a julio: una oración por cada una, en el orden de sus fechas',
+      () => {
+        const { datos, error, vista } = evaluar(ENERO_Y_JULIO, pedido('vacaciones', '2026-12-28', '2026-12-29'),
+          HOY_DE_LA_CARGA);
+        assert.equal(error, null);
+        assert.notEqual(datos, null);
+        assert.deepEqual(vista.avisos, [
+          'Esta carga cambia de dónde salen tus vacaciones del 04/01 al 22/01/2027: ahora de las licencias 2025 (5 días) y '
+            + '2026 (10 días).',
+          'Esta carga cambia de dónde salen tus vacaciones del 01/07 al 07/07/2027: ahora de la licencia 2027.'
+        ]);
+      });
+
+    it('una carga que no les cambia nada no dice nada', () => {
+      // Del 01/12/2027, después de las dos: salen de lo que queda
+      assert.deepEqual(avisosDe(ENERO_Y_JULIO, pedido('vacaciones', '2027-12-01', '2027-12-02'), HOY_DE_LA_CARGA), []);
+      // Al corregir una sin cambiarle nada, tampoco (también con el id como texto, como llega en un pedido)
+      assert.deepEqual(avisosDe(ENERO_Y_JULIO, pedido('vacaciones', '2027-01-04', '2027-01-22'), HOY_DE_LA_CARGA, 100), []);
+      assert.deepEqual(avisosDe(ENERO_Y_JULIO, pedido('vacaciones', '2027-01-04', '2027-01-22'), HOY_DE_LA_CARGA, '100'), []);
+    });
+
+    it('al corregir, la propia nunca se nombra: solo las otras', () => {
+      // Enero un día más corta: le deja un día de la 2026 a julio
+      const esperado = ['Esta carga cambia de dónde salen tus vacaciones del 01/07 al 07/07/2027: ahora de las licencias 2026 '
+        + '(3 días) y 2027 (2 días).'];
+      assert.deepEqual(avisosDe(ENERO_Y_JULIO, pedido('vacaciones', '2027-01-04', '2027-01-21'), HOY_DE_LA_CARGA, 100), esperado);
+      assert.deepEqual(avisosDe(ENERO_Y_JULIO, pedido('vacaciones', '2027-01-04', '2027-01-21'), HOY_DE_LA_CARGA, '100'),
+        esperado);
+    });
+
+    it('con un error de días, ningún aviso: la carga no se guarda', () => {
+      // Las de diciembre van antes en el orden y a las de enero les faltan días (spec 3.3)
+      const { datos, error, vista } = evaluar(deContrato(ENERO), pedido('vacaciones', '2026-12-14', '2026-12-18'),
+        HOY_DE_LA_CARGA);
+      assert.equal(datos, null);
+      assert.equal(error.campo, 'hasta');
+      assert.deepEqual(vista.avisos, []);
+    });
+
+    it('nada tira con entradas raras', () => {
+      for (const valor of [undefined, null, '', 'x', 0, -3, 2.5, NaN, {}, [], new Date('2026-10-26T12:00:00Z')]) {
+        assert.doesNotThrow(() => {
+          const { vista } = evaluar(ENERO_Y_JULIO, pedido('vacaciones', '2026-12-28', '2026-12-29'), HOY_DE_LA_CARGA, valor);
+          assert.ok(vista === null || Array.isArray(vista.avisos), String(valor));
+          evaluarLicencia(ENERO_Y_JULIO, pedido('vacaciones', '2026-12-28', '2026-12-29'),
+            { hoy: HOY_DE_LA_CARGA, feriados: valor });
+          evaluarLicencia({ ...ENERO_Y_JULIO, licencias: [valor, ...ENERO_Y_JULIO.licencias] },
+            pedido('vacaciones', '2026-12-28', '2026-12-29'), { hoy: HOY_DE_LA_CARGA, feriados: FERIADOS });
+        }, String(valor));
+      }
+    });
   });
 });
 
