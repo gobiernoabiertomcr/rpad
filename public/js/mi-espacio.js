@@ -237,20 +237,24 @@ function htmlDeLaFrase(titular) {
 }
 
 /**
- * «Vence pronto» (los `vence_pronto` del Resumen, `{ fecha, dia, mes, titulo, texto, accion }`), al lado de la frase: cada cosa es
- * una entrada amarilla con el talón de la fecha (decorativo: la línea ya la dice), el título, su línea («Vence el viernes 30/10, en 4
- * días.») y el botón que la resuelve, que abre «Cargar licencia» con su tipo (data-accion y data-tipo) y se describe con el título.
- * Sin nada, ''
+ * «Vence pronto» (los `vence_pronto` del Resumen, `{ fecha, dia, mes, titulo, texto, accion, sin_dias_libres? }`), al lado de la
+ * frase: cada cosa es una entrada amarilla con el talón de la fecha (decorativo: la línea ya la dice), el título, su línea («Vence el
+ * viernes 30/10, en 4 días.») y el botón que la resuelve, que abre «Cargar licencia» con su tipo (data-accion y data-tipo) y se
+ * describe con el título. El franco o las horas a favor del mes sin ningún día libre llegan sin acción (`accion` null) y con por qué
+ * en `sin_dias_libres` («No te quedan días libres este mes para usarlo.»: spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7):
+ * sin el botón, que no tendría nombre, y con ese texto en un párrafo. Sin nada, ''
  */
 function htmlDeVencePronto(lista) {
   const cosas = listaDe(lista);
   if (cosas.length === 0) return '';
   const entradas = cosas.map((cosa, i) => {
-    const accion = esObjeto(cosa.accion) ? cosa.accion : {};
+    const boton = esObjeto(cosa.accion) && conTexto(cosa.accion.texto)
+      ? '<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-accion="cargar-licencia" '
+        + `data-tipo="${esc(cosa.accion.tipo)}" aria-describedby="me-vence-${i}">${esc(cosa.accion.texto)}</button>` : '';
+    const sinDias = conTexto(cosa.sin_dias_libres) ? `<p class="me-entrada-sin-dias">${esc(cosa.sin_dias_libres)}</p>` : '';
     return `<li class="me-entrada"><span class="me-talon" aria-hidden="true"><b>${esc(cosa.dia)}</b>${esc(cosa.mes)}</span>`
-      + `<span class="me-entrada-cuerpo"><b id="me-vence-${i}">${esc(cosa.titulo)}</b><span class="me-entrada-texto">${esc(cosa.texto)}</span>`
-      + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-accion="cargar-licencia" data-tipo="${esc(accion.tipo)}" `
-      + `aria-describedby="me-vence-${i}">${esc(accion.texto)}</button></span></li>`;
+      + `<div class="me-entrada-cuerpo"><b id="me-vence-${i}">${esc(cosa.titulo)}</b><span class="me-entrada-texto">${esc(cosa.texto)}</span>`
+      + `${boton}${sinDias}</div></li>`;
   });
   return '<aside class="me-vence" aria-labelledby="me-vence-titulo"><h2 id="me-vence-titulo">Vence pronto</h2>'
     + `<ol class="me-entradas">${entradas.join('')}</ol></aside>`;
@@ -275,9 +279,10 @@ function tiemposDeLaRegla(cantidades, capacidad) {
 /**
  * La regla (el tanque de vacaciones: `{ capacidad, capas: [{ clase, n, nombre, nota }] }`): la barra, decorativa (la lista de debajo
  * dice lo mismo en texto), partida en un tramo por capa, cada uno en su columna de n fracciones (minmax(0, nfr): uno de 1 día entre
- * 40 se ve igual, y su número, si no entra, lo oculta el <style>), en el color de su clase, con un casillero por día (--n) y lo que
- * necesita el movimiento (--demora y --duracion); debajo, la lista («Tus vacaciones, por licencia»): cada capa con su muestra,
- * «Licencia 2024: 3» y su nota, la que vence en ámbar. Una n que no es un número positivo cuenta 0. Sin capas, ''
+ * 40 se ve igual, y su número, si no entra, lo oculta el <style>; el de un solo día lleva además la clase un-dia, y el <style> lo
+ * muestra, más chico si no entra: spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9), en el color de su clase, con un casillero
+ * por día (--n) y lo que necesita el movimiento (--demora y --duracion); debajo, la lista («Tus vacaciones, por licencia»): cada capa
+ * con su muestra, «Licencia 2024: 3» y su nota, la que vence en ámbar. Una n que no es un número positivo cuenta 0. Sin capas, ''
  */
 function htmlDeLaRegla(vacaciones) {
   if (!esObjeto(vacaciones)) return '';
@@ -289,7 +294,7 @@ function htmlDeLaRegla(vacaciones) {
   const tramos = capas.map((capa, i) => {
     const n = String(cantidades[i]);
     const { demora, duracion } = tiempos[i];
-    return `<span class="me-tramo ${deMapa(CLASE_DE_LA_CAPA, capa.clase, 'tinta')}" `
+    return `<span class="me-tramo ${deMapa(CLASE_DE_LA_CAPA, capa.clase, 'tinta')}${cantidades[i] === 1 ? ' un-dia' : ''}" `
       + `style="--n:${n};--demora:${String(demora)}ms;--duracion:${String(duracion)}ms"><span>${n}</span></span>`;
   });
   const lista = capas.map((capa, i) => {
@@ -341,18 +346,20 @@ function htmlDeLosMeses(pastillas) {
  * uno de los demás tanques (franquicias u horas a favor, estudios, atención médica y grupo familiar), cada uno un link a su pestaña
  * (Horas extras o, si no, Licencias) con el aria-label del servidor, con el número que sube al abrir (data-contar) y su unidad, el
  * nombre, su total y una línea decorativa que se llena en la proporción valor / total (--p, con su --demora: 900 ms y 90 más por
- * línea); el que vence, en ámbar. Después, los meses y la médica extraordinaria. Sin tanques (sin un hoy válido), o sin el Resumen,
- * ''
+ * línea); el que vence, en ámbar. Debajo del de las franquicias, en ámbar, las horas que se pierden (`perdidas_texto`, «Perdés 8 horas
+ * (vencen el 31/12/2026).», o '': spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), fuera del link (su aria-label, el del
+ * servidor, no las diría). Después, los meses y la médica extraordinaria. Sin tanques (sin un hoy válido), o sin el Resumen, ''
  */
 function htmlDelResto(resumen) {
   if (!esObjeto(resumen) || !esObjeto(resumen.tanques)) return '';
   const numeros = listaDe(resumen.tanques.otros).map((tanque, i) => {
     const pestana = tanque.pestana === 'horas' ? 'horas' : 'licencias';
     const linea = `--p:${String(llenoDe(tanque.valor, tanque.total))}%;--demora:${String(DEMORA_DEL_RESTO + ENTRE_LINEAS * i)}ms`;
+    const perdidas = conTexto(tanque.perdidas_texto) ? `<p class="me-perdidas">${esc(tanque.perdidas_texto)}</p>` : '';
     return `<li><a class="me-numero${tanque.vence === true ? ' vence' : ''}" href="#${pestana}" data-pestana="${pestana}" aria-label="${esc(tanque.aria)}">`
       + `<span class="grande"><b data-contar>${esc(tanque.numero)}</b><small>${esc(tanque.unidad)}</small></span>`
       + `<span class="nombre">${esc(tanque.nombre)}</span><span class="de">${esc(tanque.de)}</span>`
-      + `<span class="me-linea" aria-hidden="true"><i style="${linea}"></i></span></a></li>`;
+      + `<span class="me-linea" aria-hidden="true"><i style="${linea}"></i></span></a>${perdidas}</li>`;
   });
   return '<section class="me-resto" aria-labelledby="me-resto-titulo"><div class="me-resto-cabeza">'
     + `<h2 id="me-resto-titulo">El resto${delAnio(resumen.anio)}</h2><span class="me-resto-al">`
@@ -1012,13 +1019,17 @@ function htmlDeOpcionesDeHoras(enHoras, elegida) {
 }
 
 // El cálculo del servidor (la `vista` de POST /licencias/calculo): los días hábiles (en los estudios, si es el máximo por
-// examen), de qué licencia salen y lo que queda. Sin vista (la licencia no se puede guardar como está), ''
+// examen), de qué licencia salen y lo que queda; después, cada uno de sus avisos (`avisos`: lo que la carga hace perder o le
+// cambia a otras, que no frena el guardado; spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.2, 3.4 y 3.6) en su párrafo, en
+// ámbar. Sin vista (la licencia no se puede guardar como está), ''
 function htmlDelCalculo(data, tipo) {
   const vista = esObjeto(data) && esObjeto(data.vista) ? data.vista : null;
   if (vista === null || !conTexto(vista.texto_dias)) return '';
   const examen = tipo === 'estudios' && vista.dias_habiles === DIAS_POR_EXAMEN ? ', el máximo por examen' : '';
   const resto = [vista.texto_reparto, vista.queda_texto, vista.texto_antes_del_arranque].filter(conTexto).map(esc);
-  return [`<b>${esc(vista.texto_dias)}${examen}.</b>`, ...resto].join(' ');
+  const avisos = (Array.isArray(vista.avisos) ? vista.avisos : []).filter(conTexto)
+    .map((aviso) => `<p class="me-calculo-aviso">${esc(aviso)}</p>`);
+  return [`<b>${esc(vista.texto_dias)}${examen}.</b>`, ...resto].join(' ') + avisos.join('');
 }
 
 /**

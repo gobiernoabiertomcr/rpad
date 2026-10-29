@@ -90,8 +90,10 @@ const VERSION_PROYECTOS = '20261206';
 // 2026-10-27-feriados-en-notas, 6; y lo que quedó distinto en Configuración, para revisar en el Resumen, y las licencias de
 // otro año —la lista pasa al año de lo guardado, «Ver 2027» y los links a la lista de un año—, spec
 // 2026-10-28-mi-espacio-licencia-anulada, 2.2 y 2.3; y la agenda con más onda —la banda del mes, sábado y domingo, las barras, los
-// íconos y el día elegido del teléfono—, spec 2026-10-28-mi-espacio-agenda-onda, 3). Su versión es propia
-const VERSION_MI_ESPACIO = '20261216';
+// íconos y el día elegido del teléfono—, spec 2026-10-28-mi-espacio-agenda-onda, 3; y las vacaciones al cargar una licencia —los
+// avisos del cálculo, «Vence pronto» sin el botón, las horas de franquicia que se pierden y el número de un tramo de un solo día—,
+// spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3). Su versión es propia
+const VERSION_MI_ESPACIO = '20261217';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
