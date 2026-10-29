@@ -143,13 +143,17 @@ describe('el Resumen de PLANTA', () => {
     assert.deepEqual(resumen.faltantes, []);
   });
 
-  it('Vence pronto: el franco de octubre y los días de la licencia 2024, por fecha, cada uno con su línea', () => {
+  it('Vence pronto: el franco de octubre, las horas de franquicia y los días de la licencia 2024, por fecha, cada uno con su línea', () => {
     const resumen = resumenDel(PLANTA);
     assert.equal(resumen.marca, true);
     assert.deepEqual(resumen.vence_pronto, [
       {
         fecha: '2026-10-30', dia: '30', mes: 'oct', titulo: '1 franco compensatorio de octubre',
         texto: 'Vence el viernes 30/10, en 4 días.', accion: { texto: 'Cargarlo', tipo: 'franco' }
+      },
+      {
+        fecha: '2026-12-31', dia: '31', mes: 'dic', titulo: '25 horas de franquicia',
+        texto: 'Vencen el jueves 31/12, en 66 días.', accion: { texto: 'Cargar franquicia', tipo: 'franquicia' }
       },
       {
         fecha: '2026-12-31', dia: '31', mes: 'dic', titulo: '3 días de la licencia 2024',
@@ -175,6 +179,7 @@ describe('el Resumen de PLANTA', () => {
       resumenDel(PLANTA, { estado, hoy }).vence_pronto.map(({ titulo, texto }) => [titulo, texto]);
     assert.deepEqual(textos('2026-10-29'), [
       ['1 franco compensatorio de octubre', 'Vence mañana.'],
+      ['25 horas de franquicia', 'Vencen el jueves 31/12, en 63 días.'],
       ['3 días de la licencia 2024', 'Vencen el jueves 31/12, en 63 días.']
     ]);
     assert.deepEqual(textos('2026-10-30')[0], ['1 franco compensatorio de octubre', 'Vence hoy.']);
@@ -182,12 +187,15 @@ describe('el Resumen de PLANTA', () => {
     assert.deepEqual(textos('2026-10-31')[0], ['1 franco compensatorio de octubre', 'Venció el viernes 30/10.']);
     const dosFrancos = { ...PLANTA.estado, licencias: PLANTA.estado.licencias.filter((fila) => fila.tipo !== 'franco') };
     assert.deepEqual(textos('2026-10-31', dosFrancos)[0], ['2 francos compensatorios de octubre', 'Vencieron el viernes 30/10.']);
-    // El franco de diciembre y los días de la licencia 2024 vencen el mismo jueves 31/12
+    // El franco de diciembre, la franquicia y los días de la licencia 2024 vencen el mismo jueves 31/12. De las 25 horas de
+    // franquicia, el 30/12 entran 14 (dos días libres) y el 31/12, 7
     assert.deepEqual(textos('2026-12-30'), [
-      ['1 franco compensatorio de diciembre', 'Vence mañana.'], ['3 días de la licencia 2024', 'Vencen mañana.']
+      ['1 franco compensatorio de diciembre', 'Vence mañana.'], ['14 horas de franquicia', 'Vencen mañana.'],
+      ['3 días de la licencia 2024', 'Vencen mañana.']
     ]);
     assert.deepEqual(textos('2026-12-31'), [
-      ['1 franco compensatorio de diciembre', 'Vence hoy.'], ['3 días de la licencia 2024', 'Vencen hoy.']
+      ['1 franco compensatorio de diciembre', 'Vence hoy.'], ['7 horas de franquicia', 'Vencen hoy.'],
+      ['3 días de la licencia 2024', 'Vencen hoy.']
     ]);
   });
 
@@ -202,7 +210,7 @@ describe('el Resumen de PLANTA', () => {
   it('el franco de octubre ya usado no está en Vence pronto', () => {
     const estado = conLicencias(PLANTA.estado, licencia(100, 'franco', '2026-10-27'));
     const resumen = resumenDel(PLANTA, { estado });
-    assert.deepEqual(resumen.vence_pronto.map((cosa) => cosa.titulo), ['3 días de la licencia 2024']);
+    assert.deepEqual(resumen.vence_pronto.map((cosa) => cosa.titulo), ['25 horas de franquicia', '3 días de la licencia 2024']);
   });
 
   it('los tanques: las vacaciones por capas, y los demás', () => {
@@ -221,7 +229,7 @@ describe('el Resumen de PLANTA', () => {
     assert.deepEqual(tanques.otros, [
       {
         clave: 'franquicia', nombre: 'Franquicias', numero: '25', unidad: 'horas', de: 'de 42 horas', valor: 25, total: 42,
-        vence: false, pestana: 'licencias', aria: 'Franquicias: quedan 25 de 42 horas. Ver tus licencias'
+        vence: false, pestana: 'licencias', aria: 'Franquicias: quedan 25 de 42 horas. Ver tus licencias', perdidas_texto: ''
       },
       {
         clave: 'estudios', nombre: 'Estudios', numero: '9', unidad: 'días', de: 'de 15 días', valor: 9, total: 15,
@@ -601,10 +609,12 @@ describe('Vence pronto, desde el 1/10', () => {
   // Con el arranque el 01/09, la licencia 2024 ya tiene días disponibles en septiembre
   const estado = { ...PLANTA.estado, arranque: '2026-09-01' };
 
-  it('el 30/09 no trae la licencia 2024; el 01/10, sí', () => {
+  it('el 30/09 no trae la licencia 2024 ni la franquicia; el 01/10, sí, por fecha (la franquicia antes de la licencia)', () => {
     const titulos = (hoy) => resumenDel(PLANTA, { estado, hoy }).vence_pronto.map((cosa) => cosa.titulo);
-    assert.ok(!titulos('2026-09-30').includes('3 días de la licencia 2024'));
-    assert.deepEqual(titulos('2026-10-01'), ['1 franco compensatorio de octubre', '3 días de la licencia 2024']);
+    assert.deepEqual(titulos('2026-09-30'), []);
+    // Con el arranque el 01/09, las franquicias del 14/09 (7 horas) y del 15/10 (2) descuentan: de las 42 quedan 16
+    assert.deepEqual(titulos('2026-10-01'),
+      ['1 franco compensatorio de octubre', '16 horas de franquicia', '3 días de la licencia 2024']);
   });
 
   it('PLANTA tal cual, el 30/09, tampoco', () => {
@@ -615,6 +625,94 @@ describe('Vence pronto, desde el 1/10', () => {
     const sinDias = { ...PLANTA.estado, saldos: PLANTA.estado.saldos.map((saldo) =>
       (saldo.concepto === 'vacaciones' && saldo.anio === 2024 ? { ...saldo, cantidad: 5 } : saldo)) };
     assert.ok(!resumenDel(PLANTA, { estado: sinDias }).vence_pronto.some((cosa) => cosa.accion.tipo === 'vacaciones'));
+  });
+});
+
+describe('la franquicia que vence (spec 2026-10-28, 3.6)', () => {
+  // PLANTA con otro saldo inicial de franquicias (17 en el caso), y más licencias si hacen falta
+  const conSaldo = (horas, ...licencias) => conLicencias({
+    ...PLANTA.estado,
+    saldos: PLANTA.estado.saldos.map((saldo) => (saldo.concepto === 'franquicias' ? { ...saldo, cantidad: horas } : saldo))
+  }, ...licencias);
+  const deFranquicia = (resumen) => resumen.vence_pronto.filter((cosa) => cosa.accion?.tipo === 'franquicia');
+  const tanqueDe = (resumen) => resumen.tanques.otros.find((tanque) => tanque.clave === 'franquicia');
+  // El lunes 28/12/2026: hasta el jueves 31/12 hay 4 días hábiles
+  const FIN_DE_ANIO = '2026-12-28';
+
+  it('Vence pronto: lo que queda de las 42 horas, con el botón que abre «Cargar licencia» con la franquicia', () => {
+    assert.deepEqual(deFranquicia(resumenDel(PLANTA, { estado: conSaldo(20), hoy: '2026-10-28' })), [{
+      fecha: '2026-12-31', dia: '31', mes: 'dic', titulo: '22 horas de franquicia',
+      texto: 'Vencen el jueves 31/12, en 64 días.', accion: { texto: 'Cargar franquicia', tipo: 'franquicia' }
+    }]);
+    // Con 1, en singular
+    assert.deepEqual(deFranquicia(resumenDel(PLANTA, { estado: conSaldo(41), hoy: '2026-10-28' }))
+      .map(({ titulo, texto }) => [titulo, texto]), [['1 hora de franquicia', 'Vence el jueves 31/12, en 64 días.']]);
+  });
+
+  it('Vence pronto: el 30/09 no; el 01/10 sí, y la marca de la pestaña', () => {
+    // Sin franco ni días de la licencia que vence: solo la franquicia
+    const estado = conSaldo(20, licencia(100, 'franco', '2026-10-27'), licencia(101, 'vacaciones', '2026-12-14', '2026-12-16'));
+    const septiembre = resumenDel(PLANTA, { estado, hoy: '2026-09-30' });
+    assert.deepEqual(deFranquicia(septiembre), []);
+    const octubre = resumenDel(PLANTA, { estado, hoy: '2026-10-01' });
+    assert.deepEqual(octubre.vence_pronto.map((cosa) => cosa.titulo), ['22 horas de franquicia']);
+    assert.equal(octubre.marca, true);
+  });
+
+  it('Vence pronto solo con lo que se puede usar: sin las horas que se pierden, y nada si se pierden todas', () => {
+    // El 28/12 con vacaciones el 28 y el 29: de las 22, entran 14
+    const conDos = resumenDel(PLANTA, { estado: conSaldo(20, licencia(100, 'vacaciones', '2026-12-28', '2026-12-29')),
+      hoy: FIN_DE_ANIO });
+    assert.deepEqual(deFranquicia(conDos).map(({ titulo, texto }) => [titulo, texto]),
+      [['14 horas de franquicia', 'Vencen el jueves 31/12, en 3 días.']]);
+    // Sin ningún día libre, ninguna
+    const sinDias = resumenDel(PLANTA, { estado: conSaldo(20, licencia(100, 'vacaciones', '2026-12-28', '2026-12-31')),
+      hoy: FIN_DE_ANIO });
+    assert.deepEqual(deFranquicia(sinDias), []);
+    // Sin horas que queden, tampoco
+    assert.deepEqual(deFranquicia(resumenDel(PLANTA, { estado: conSaldo(42), hoy: '2026-10-28' })), []);
+  });
+
+  it('en contrato, nunca: ni en Vence pronto ni en «El resto»', () => {
+    for (const hoy of ['2026-10-01', '2026-10-26', '2026-12-01', '2026-12-31']) {
+      const resumen = resumenDel(CONTRATO, { hoy });
+      assert.deepEqual(deFranquicia(resumen), [], hoy);
+      assert.equal(tanqueDe(resumen), undefined, hoy);
+    }
+  });
+
+  it('«El resto»: las horas que se pierden debajo de «Franquicias», y lo que queda es lo de siempre', () => {
+    const conDos = resumenDel(PLANTA, { estado: conSaldo(20, licencia(100, 'vacaciones', '2026-12-28', '2026-12-29')),
+      hoy: FIN_DE_ANIO });
+    assert.equal(tanqueDe(conDos).perdidas_texto, 'Perdés 8 horas (vencen el 31/12/2026).');
+    assert.deepEqual([tanqueDe(conDos).valor, tanqueDe(conDos).numero], [22, '22']);
+    // Con 1, en singular: quedan 15 y entran 14
+    const conUna = resumenDel(PLANTA, { estado: conSaldo(27, licencia(100, 'vacaciones', '2026-12-28', '2026-12-29')),
+      hoy: FIN_DE_ANIO });
+    assert.equal(tanqueDe(conUna).perdidas_texto, 'Perdés 1 hora (vence el 31/12/2026).');
+    // Sin días libres, todas
+    const sinDias = resumenDel(PLANTA, { estado: conSaldo(20, licencia(100, 'vacaciones', '2026-12-28', '2026-12-31')),
+      hoy: FIN_DE_ANIO });
+    assert.equal(tanqueDe(sinDias).perdidas_texto, 'Perdés 22 horas (vencen el 31/12/2026).');
+    // Sin nada que se pierda, ''; los demás tanques no lo llevan
+    const resumen = resumenDel(PLANTA, { estado: conSaldo(20), hoy: FIN_DE_ANIO });
+    assert.equal(tanqueDe(resumen).perdidas_texto, '');
+    for (const tanque of resumen.tanques.otros.filter((otro) => otro.clave !== 'franquicia')) {
+      assert.equal(Object.hasOwn(tanque, 'perdidas_texto'), false, tanque.clave);
+    }
+    sinHuecos(conDos);
+  });
+
+  it('un cálculo sin la franquicia (o de antes) no la muestra ni tira', () => {
+    const estado = conSaldo(20);
+    const { franquicia: _sinLaClave, ...calculo } = calculoDe(estado, '2026-10-28');
+    for (const otro of [calculo, { ...calculo, franquicia: null }, { ...calculo, franquicia: 'x' },
+      { ...calculo, franquicia: { disponibles: 'x', perdidas: NaN } }]) {
+      const resumen = resumenDe({ persona: PLANTA.persona, estado, calculo: otro, hoy: '2026-10-28', feriados: SIN_FERIADOS });
+      assert.deepEqual(deFranquicia(resumen), []);
+      assert.equal(tanqueDe(resumen).perdidas_texto, '');
+      sinHuecos(resumen);
+    }
   });
 });
 

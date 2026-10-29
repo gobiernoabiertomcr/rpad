@@ -15,7 +15,8 @@
  * entrada rara da null, '', '—', una lista vacía o un objeto vacío. Todo número va como número y todo texto, como texto
  * plano: escaparlo le toca a quien lo dibuja. Nada dice «perdiste»: lo que no se usó a tiempo es «no utilizado
  * previamente» (spec, antiobjetivos), salvo «Perdés …» de las vacaciones al final de la bajada (decisión del usuario,
- * 27/10/2026: spec 2026-10-27-mi-espacio-dias-de-vacaciones, 2.6).
+ * 27/10/2026: spec 2026-10-27-mi-espacio-dias-de-vacaciones, 2.6) y el de las horas de franquicia debajo de «Franquicias»
+ * (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6).
  */
 import { diaDeLaSemana, diasHabilesDe, feriadosDelAnio, proximoDiaHabilCon, esDiaHabilCon } from './feriadosReglas.js';
 import { diasEntre, esFechaIso, formatoCorto, sumarDias } from './notasDigitalesCalendario.js';
@@ -89,7 +90,7 @@ const noUtilizadasDel = (cuenta, anio) => (esObjeto(cuenta.noUtilizadas) && Obje
   && esObjeto(cuenta.noUtilizadas[anio]) ? cuenta.noUtilizadas[anio] : null);
 
 // «Vence pronto» (spec, 3.9; la línea de cada cosa, spec 2026-10-27-mi-espacio-resumen, 4.1)
-// Desde qué día del año se avisa la licencia que vence el 31/12
+// Desde qué día del año se avisan la licencia y las horas de franquicia que vencen el 31/12
 const AVISO_DE_LA_LICENCIA = '10-01';
 
 // La línea de lo que vence, según los días corridos de hoy a su fecha: «Vence el viernes 30/10, en 4 días.», «Vence mañana.»,
@@ -116,7 +117,10 @@ const cosaQueVence = ({ fecha, cantidad, titulo, accion }, hoy) => ({
 /**
  * Lo que vence pronto, por fecha: el franco (en planta) o las horas a favor (en contrato) del mes en curso que siguen sin
  * usar, en su último día hábil (hasta que termina el mes: una licencia ya pasada se puede cargar igual), y, desde el 1/10,
- * los días disponibles de la licencia ordinaria que vence el 31/12 de este año.
+ * en planta, las horas de franquicia del año que todavía entran en algún día libre («22 horas de franquicia», con
+ * «Cargar franquicia»: los `disponibles` de `franquiciaQueVence`, sin las perdidas; spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6) y los días disponibles de la licencia ordinaria que vence el 31/12 de
+ * este año, en ese orden.
  */
 const venceProntoDe = ({ modalidad, hoy, mes, cuenta }) => {
   const lista = [];
@@ -136,6 +140,13 @@ const venceProntoDe = ({ modalidad, hoy, mes, cuenta }) => {
   const anio = hoy.slice(0, 4);
   const finDelAnio = `${anio}-12-31`;
   if (hoy >= `${anio}-${AVISO_DE_LA_LICENCIA}`) {
+    const horas = planta && esObjeto(cuenta.franquicia) ? cantidadDe(cuenta.franquicia.disponibles) : 0;
+    if (horas > 0) {
+      lista.push(cosaQueVence({
+        fecha: finDelAnio, cantidad: horas, titulo: `${conUnidad(horas, 'hora', 'horas')} de franquicia`,
+        accion: { texto: 'Cargar franquicia', tipo: 'franquicia' }
+      }, hoy));
+    }
     const vieja = ordinariasDel(cuenta).find((ordinaria) =>
       ordinaria.vence === finDelAnio && cantidadDe(ordinaria.disponibles) > 0);
     if (vieja !== undefined) {
@@ -296,9 +307,21 @@ const NOMBRES_DE_LOS_TANQUES = Object.freeze({
   franquicia: 'Franquicias', estudios: 'Estudios', medica: 'Atención médica', familiar: 'Grupo familiar'
 });
 
+// Las horas de franquicia que ya no entran en los días libres que quedan hasta el 31/12 (las `perdidas` de
+// `franquiciaQueVence`; spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), debajo de «Franquicias» en «El resto», en
+// ámbar: «Perdés 8 horas (vencen el 31/12/2026).» («1 hora … vence»). Sin ninguna, ''
+const textoDeLaFranquiciaPerdida = ({ anio, cuenta }) => {
+  const perdidas = esObjeto(cuenta.franquicia) ? cantidadDe(cuenta.franquicia.perdidas) : 0;
+  if (perdidas <= 0) return '';
+  return `Perdés ${conUnidad(perdidas, 'hora', 'horas')} (${perdidas === 1 ? 'vence' : 'vencen'} el `
+    + `${fechaCorta(`${anio}-12-31`)}).`;
+};
+
 // El de un tipo con tope del año: lo que queda de las 42 horas de franquicia, de los días de estudios de la carrera y de los
-// 25 días de atención médica y de grupo familiar
-const tanqueDeTope = (tipo, { anio, datos, cuenta }) => {
+// 25 días de atención médica y de grupo familiar. El de la franquicia suma `perdidas_texto` (las horas que se pierden, o ''):
+// lo que queda es lo de siempre, con las que se pierden adentro
+const tanqueDeTope = (tipo, panel) => {
+  const { anio, datos, cuenta } = panel;
   const total = cantidadDe(topeDe(tipo, anio, datos.anios));
   const valor = Math.max(0, total - usadosDe(cuenta, tipo, anio));
   const [una, varias] = tipo === 'franquicia' ? ['hora', 'horas'] : ['día', 'días'];
@@ -307,7 +330,8 @@ const tanqueDeTope = (tipo, { anio, datos, cuenta }) => {
     clave: tipo, nombre, numero: numeroTexto(valor), unidad: valor === 1 ? una : varias,
     de: `de ${numeroTexto(total)} ${varias}`, valor, total, vence: false, pestana: 'licencias',
     aria: `${nombre}: ${valor === 1 ? 'queda' : 'quedan'} ${numeroTexto(valor)} de ${numeroTexto(total)} ${varias}. `
-      + 'Ver tus licencias'
+      + 'Ver tus licencias',
+    ...(tipo === 'franquicia' ? { perdidas_texto: textoDeLaFranquiciaPerdida(panel) } : {})
   };
 };
 

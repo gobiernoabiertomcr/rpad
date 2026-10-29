@@ -28,7 +28,7 @@ import {
   avisosDeVencimiento,
   SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL, TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, horaSalidaValida, tipoDeDia,
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
-  avisosDeSalidas, mesDeLaPlanilla, porHabilitarDe, alcanceDeLaCarga
+  avisosDeSalidas, mesDeLaPlanilla, porHabilitarDe, alcanceDeLaCarga, diasLibresEntre, franquiciaQueVence
 } from '../services/miEspacioReglas.js';
 import { feriadosDelRango, calendarioCon } from '../services/feriadosReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
@@ -2133,9 +2133,11 @@ describe('calcular', () => {
   it('PLANTA a hoy: el reparto, los topes, los francos y lo no utilizado, sin faltantes', () => {
     const calculo = calcular(PLANTA.estado, A_HOY);
     assert.deepEqual(Object.keys(calculo),
-      ['reparto', 'topes', 'francos', 'horasAFavor', 'noUtilizadas', 'faltantes', 'avisosDeSalidas']);
+      ['reparto', 'topes', 'franquicia', 'francos', 'horasAFavor', 'noUtilizadas', 'faltantes', 'avisosDeSalidas']);
     assert.deepEqual(calculo.reparto, repartoDeVacaciones(PLANTA.estado, A_HOY));
     assert.deepEqual(calculo.topes, usoDeLosTopes(PLANTA.estado, { feriados: SIN_FERIADOS }));
+    // Las 42 horas de franquicia menos las 17 del saldo inicial (spec 2026-10-28, 3.6)
+    assert.deepEqual(calculo.franquicia, { quedan: 25, perdidas: 0, disponibles: 25 });
     assert.deepEqual(calculo.francos, francosDe(PLANTA.estado, A_HOY));
     assert.deepEqual(calculo.horasAFavor, []);
     assert.deepEqual(calculo.noUtilizadas, { 2026: noUtilizadasDe(PLANTA.estado, 2026, A_HOY) });
@@ -2228,8 +2230,8 @@ describe('calcular', () => {
     const calculo = calcular(PLANTA.estado, { feriados: SIN_FERIADOS });
     assert.deepEqual(calculo.reparto.ordinarias, []);
     assert.equal(calculo.reparto.sinCubrir.size, 0);
-    assert.deepEqual([calculo.topes, calculo.francos, calculo.horasAFavor, calculo.noUtilizadas, calculo.faltantes,
-      calculo.avisosDeSalidas], [[], [], [], {}, [], []]);
+    assert.deepEqual([calculo.topes, calculo.franquicia, calculo.francos, calculo.horasAFavor, calculo.noUtilizadas,
+      calculo.faltantes, calculo.avisosDeSalidas], [[], null, [], [], {}, [], []]);
   });
 });
 
@@ -2908,6 +2910,149 @@ describe('los errores de días dicen hasta dónde alcanza (spec 2026-10-28, 3.3)
         evaluar(deContrato(ENERO), pedido('2027-01-04', '2027-01-29'), valor);
         evaluarLicencia(deContrato(ENERO), pedido('2026-12-14', '2026-12-18'), { hoy: HOY_DE_LA_CARGA, feriados: valor });
       });
+    }
+  });
+});
+
+describe('los días libres y la franquicia que vence (spec 2026-10-28, 3.6)', () => {
+  // La precarga de los feriados de 2026: el lunes 07/12 no es laborable (y el martes 08/12 es uno de los 9 fijos)
+  const CON_LA_PRECARGA = feriadosDelRango(FILAS_PRECARGA, '2026-01-01', '2027-12-31');
+  // Unas horas a favor de contrato: en planta no cuentan, pero ocupan su día
+  const horasAFavor = (id, fecha) => ({ id, tipo: 'horas_a_favor', desde: fecha, hasta: fecha, horas: 2 });
+  const franquicia = (id, fecha, horas) => ({ id, tipo: 'franquicia', desde: fecha, hasta: fecha, horas });
+  // PLANTA con 20 horas de franquicia usadas en 2026 en el saldo inicial (las dos de antes del arranque no descuentan): le
+  // quedan 22
+  const CON_22 = Object.freeze({
+    ...PLANTA.estado,
+    saldos: PLANTA.estado.saldos.map((saldo) => (saldo.concepto === 'franquicias' ? { ...saldo, cantidad: 20 } : saldo))
+  });
+  // El lunes 28/12/2026: hasta el jueves 31/12 hay 4 días hábiles
+  const FIN_DE_ANIO = '2026-12-28';
+  const queVence = (estado, hoy = FIN_DE_ANIO, feriados = SIN_FERIADOS) =>
+    franquiciaQueVence(estado, calcular(estado, { hoy, feriados }), { hoy, feriados, ocupadas: estado.licencias });
+
+  it('diasLibresEntre: los días hábiles con los feriados, fuera de toda licencia, con los dos extremos', () => {
+    // Del jueves 03/12 al viernes 11/12/2026: el sábado, el domingo, el 07 (de la tabla) y el 08 (fijo) no son hábiles
+    assert.equal(diasLibresEntre('2026-12-03', '2026-12-11', [], CON_LA_PRECARGA), 5);
+    // Sin la tabla, el 07 es hábil
+    assert.equal(diasLibresEntre('2026-12-03', '2026-12-11', [], SIN_FERIADOS), 6);
+    // Unas horas a favor de contrato ocupan su día, también en planta: dos licencias no comparten un día
+    assert.equal(diasLibresEntre('2026-12-03', '2026-12-11', [horasAFavor(103, '2026-12-10')], CON_LA_PRECARGA), 4);
+    // Unas vacaciones del 09 al 10 y otra que empieza antes del rango y lo toca el 03: quedan el 04 y el 11
+    assert.equal(diasLibresEntre('2026-12-03', '2026-12-11',
+      [vacaciones(100, '2026-12-09', '2026-12-10'), vacaciones(101, '2026-11-30', '2026-12-03')], CON_LA_PRECARGA), 2);
+    // Una franquicia de 2 horas también ocupa su día
+    assert.equal(diasLibresEntre('2026-12-11', '2026-12-11', [franquicia(104, '2026-12-11', 2)], CON_LA_PRECARGA), 0);
+    // Un día hábil libre, un fin de semana y un feriado de la tabla
+    assert.equal(diasLibresEntre('2026-12-11', '2026-12-11', [], CON_LA_PRECARGA), 1);
+    assert.equal(diasLibresEntre('2026-12-05', '2026-12-06', [], CON_LA_PRECARGA), 0);
+    assert.equal(diasLibresEntre('2026-12-07', '2026-12-07', [], CON_LA_PRECARGA), 0);
+  });
+
+  it('diasLibresEntre: hasta antes que desde, fechas que no son fechas, ocupadas o feriados raros', () => {
+    assert.equal(diasLibresEntre('2026-12-11', '2026-12-03', [], SIN_FERIADOS), 0);
+    for (const valor of [undefined, null, '', 'x', 0, NaN, {}, [], '2026-02-30', new Date('2026-12-03T12:00:00Z')]) {
+      assert.equal(diasLibresEntre(valor, '2026-12-11', [], SIN_FERIADOS), 0, String(valor));
+      assert.equal(diasLibresEntre('2026-12-03', valor, [], SIN_FERIADOS), 0, String(valor));
+      // Unas ocupadas que no son una lista, o filas que no son licencias con fechas, no ocupan nada
+      assert.equal(diasLibresEntre('2026-12-03', '2026-12-11', valor, SIN_FERIADOS), 6, String(valor));
+      const raras = [valor, { desde: valor, hasta: '2026-12-10' }];
+      assert.equal(diasLibresEntre('2026-12-03', '2026-12-11', raras, SIN_FERIADOS), 6, String(valor));
+      // Unos feriados que no son un Set no sacan ningún día
+      assert.equal(diasLibresEntre('2026-12-03', '2026-12-11', [], valor), 6, String(valor));
+    }
+  });
+
+  it('franquiciaQueVence: con 22 horas y 4 días libres hasta el 31/12, no se pierde nada', () => {
+    assert.deepEqual(queVence(CON_22), { quedan: 22, perdidas: 0, disponibles: 22 });
+  });
+
+  it('franquiciaQueVence: con 2 días libres entran 14 horas y se pierden 8', () => {
+    assert.deepEqual(queVence(conLicencias(CON_22, vacaciones(100, '2026-12-28', '2026-12-29'))),
+      { quedan: 22, perdidas: 8, disponibles: 14 });
+  });
+
+  it('franquiciaQueVence: sin ningún día libre se pierden las 22', () => {
+    assert.deepEqual(queVence(conLicencias(CON_22, vacaciones(100, '2026-12-28', '2026-12-31'))),
+      { quedan: 22, perdidas: 22, disponibles: 0 });
+  });
+
+  it('franquiciaQueVence: una franquicia cargada descuenta sus horas y ocupa su día', () => {
+    // 3 horas el 28/12: quedan 19, con 3 días libres (21 horas): no se pierde nada
+    assert.deepEqual(queVence(conLicencias(CON_22, franquicia(100, '2026-12-28', 3))),
+      { quedan: 19, perdidas: 0, disponibles: 19 });
+    // 7 horas el 28/12 y vacaciones el 29 y el 30: quedan 15, con un solo día libre
+    const conSiete = conLicencias(CON_22, franquicia(100, '2026-12-28', 7), vacaciones(101, '2026-12-29', '2026-12-30'));
+    assert.deepEqual(queVence(conSiete), { quedan: 15, perdidas: 8, disponibles: 7 });
+    // Lo que se pasa del tope no da una cantidad negativa
+    const pasada = {
+      ...CON_22, saldos: CON_22.saldos.map((saldo) => (saldo.concepto === 'franquicias' ? { ...saldo, cantidad: 42 } : saldo))
+    };
+    assert.deepEqual(queVence(conLicencias(pasada, franquicia(100, '2026-12-28', 3))),
+      { quedan: 0, perdidas: 0, disponibles: 0 });
+  });
+
+  it('las perdidas son las de la cuenta con todos los días libres hasta el 31/12, día por día', () => {
+    // Quedan 15 (con 7 cargadas el 22/12): hacen falta 3 días libres; el 29/12 hay justo 3, y desde el 30/12, menos
+    const estado = conLicencias(CON_22, vacaciones(100, '2026-12-14', '2026-12-18'), franquicia(101, '2026-12-22', 7));
+    const perdidasPorDia = [];
+    for (let hoy = '2026-11-20'; hoy <= '2026-12-31'; hoy = sumarDias(hoy, 1)) {
+      const { quedan, perdidas, disponibles } = queVence(estado, hoy);
+      const libres = diasLibresEntre(hoy, '2026-12-31', estado.licencias, SIN_FERIADOS);
+      assert.equal(perdidas, Math.max(0, quedan - JORNADA * libres), hoy);
+      assert.equal(disponibles, quedan - perdidas, hoy);
+      if (perdidas > 0) perdidasPorDia.push([hoy, perdidas]);
+    }
+    assert.deepEqual(perdidasPorDia, [['2026-12-30', 1], ['2026-12-31', 8]]);
+  });
+
+  it('calcular suma la franquicia, con las mismas ocupadas que el reparto: una licencia de la otra modalidad ocupa su día', () => {
+    // Las vacaciones del 28 y el 29 y unas horas a favor de contrato el 31: queda libre solo el 30
+    const estado = conLicencias(CON_22, vacaciones(100, '2026-12-28', '2026-12-29'), horasAFavor(103, '2026-12-31'));
+    assert.equal(fueraDeLaModalidad(estado.licencias.at(-1), 'planta'), true);
+    const calculo = calcular(estado, { hoy: FIN_DE_ANIO, feriados: SIN_FERIADOS });
+    assert.deepEqual(calculo.franquicia, { quedan: 22, perdidas: 15, disponibles: 7 });
+    assert.deepEqual(calculo.franquicia, queVence(estado));
+    // Con los feriados de la tabla: desde el viernes 04/12 y con vacaciones del 09/12 al 31/12, quedan libres el 04 y el lunes
+    // 07 (el 08 es fijo); con la precarga, el 07 no es laborable y queda uno solo
+    const diciembre = conLicencias(CON_22, vacaciones(100, '2026-12-09', '2026-12-31'));
+    assert.deepEqual(calcular(diciembre, { hoy: '2026-12-04', feriados: SIN_FERIADOS }).franquicia,
+      { quedan: 22, perdidas: 8, disponibles: 14 });
+    assert.deepEqual(calcular(diciembre, { hoy: '2026-12-04', feriados: CON_LA_PRECARGA }).franquicia,
+      { quedan: 22, perdidas: 15, disponibles: 7 });
+  });
+
+  it('el año de hoy: el 1/1 cuenta la franquicia del año nuevo, entera', () => {
+    assert.deepEqual(queVence(CON_22, '2027-01-04'), { quedan: 42, perdidas: 0, disponibles: 42 });
+    // Lo cargado en 2027 no descuenta de la de 2026
+    assert.deepEqual(queVence(conLicencias(CON_22, franquicia(100, '2027-01-05', 7))),
+      { quedan: 22, perdidas: 0, disponibles: 22 });
+  });
+
+  it('en contrato, sin modalidad o sin un hoy válido, null', () => {
+    assert.equal(queVence(CONTRATO.estado, HOY), null);
+    assert.equal(calcular(CONTRATO.estado, A_HOY).franquicia, null);
+    assert.equal(queVence({ ...CON_22, modalidad: null }), null);
+    assert.equal(calcular({ ...CON_22, modalidad: null }, A_HOY).franquicia, null);
+    assert.equal(franquiciaQueVence(CON_22, calcular(CON_22, A_HOY), { feriados: SIN_FERIADOS }), null);
+    assert.equal(calcular(CON_22, { feriados: SIN_FERIADOS }).franquicia, null);
+  });
+
+  it('sin el cálculo o sin las ocupadas, lo de lo cargado', () => {
+    const estado = conLicencias(CON_22, vacaciones(100, '2026-12-28', '2026-12-29'));
+    const opciones = { hoy: FIN_DE_ANIO, feriados: SIN_FERIADOS };
+    assert.deepEqual(franquiciaQueVence(estado, null, opciones), queVence(estado));
+    assert.deepEqual(franquiciaQueVence(estado, calcular(estado, opciones), opciones), queVence(estado));
+  });
+
+  it('nada tira', () => {
+    for (const valor of [undefined, null, '', 'x', 0, -3, NaN, {}, [], new Date('2026-12-28T12:00:00Z')]) {
+      assert.doesNotThrow(() => {
+        franquiciaQueVence(valor, valor, valor);
+        franquiciaQueVence(CON_22, valor, { hoy: FIN_DE_ANIO, feriados: valor, ocupadas: valor });
+        franquiciaQueVence({ ...CON_22, saldos: valor, licencias: [valor] }, { topes: [valor] }, { hoy: FIN_DE_ANIO });
+        diasLibresEntre(valor, valor, valor, valor);
+      }, String(valor));
     }
   });
 });
@@ -4184,6 +4329,8 @@ describe('avisosDeVencimiento', () => {
     texto: 'Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el viernes 30/10.'
   };
   const LICENCIA_2024 = { clave: 'licencia-2024', texto: 'Tenés 3 días de la licencia 2024: vence el 31/12/2026.' };
+  // Las 42 horas de franquicia de PLANTA menos las 17 del saldo inicial (spec 2026-10-28, 3.6)
+  const FRANQUICIA_2026 = { clave: 'franquicia-2026', texto: 'Tenés 25 horas de franquicia: vencen el 31/12/2026.' };
 
   it('PLANTA: el franco de octubre sale del 23/10 al 30/10, el último día hábil del mes', () => {
     assert.deepEqual(avisos(PLANTA, '2026-10-22'), []);
@@ -4197,13 +4344,16 @@ describe('avisosDeVencimiento', () => {
   it('PLANTA: los días de la licencia 2024 salen desde el primer día hábil de diciembre', () => {
     // El 30/11 la licencia todavía no: solo el franco de noviembre, en su último día hábil
     assert.deepEqual(avisos(PLANTA, '2026-11-30').map((aviso) => aviso.clave), ['franco-2026-11']);
-    assert.deepEqual(avisos(PLANTA, '2026-12-01'), [LICENCIA_2024]);
+    // Con la franquicia antes (spec 2026-10-28, 3.6)
+    assert.deepEqual(avisos(PLANTA, '2026-12-01'), [FRANQUICIA_2026, LICENCIA_2024]);
     // El 23/12 entra también el franco de diciembre (el 25/12 es feriado: el tramo va del 23/12 al jueves 31/12), primero
     assert.deepEqual(avisos(PLANTA, '2026-12-23'), [
       { clave: 'franco-2026-12', texto: 'Tenés 1 franco compensatorio para usar en diciembre: el último día hábil es el jueves 31/12.' },
+      FRANQUICIA_2026,
       LICENCIA_2024
     ]);
-    assert.deepEqual(avisos(PLANTA, '2026-12-31').map((aviso) => aviso.clave), ['franco-2026-12', 'licencia-2024']);
+    assert.deepEqual(avisos(PLANTA, '2026-12-31').map((aviso) => aviso.clave),
+      ['franco-2026-12', 'franquicia-2026', 'licencia-2024']);
     // En enero ya venció: la del año anterior al de hoy − 2 no se avisa
     assert.deepEqual(avisos(PLANTA, '2027-01-04'), []);
   });
@@ -4233,7 +4383,7 @@ describe('avisosDeVencimiento', () => {
     // Dos días más de vacaciones salen de la 2024: le queda 1
     const conMas = conLicencias(PLANTA.estado, vacaciones(100, '2026-11-10', '2026-11-11'));
     assert.deepEqual(avisos(PLANTA, '2026-12-01', SIN_FERIADOS, conMas),
-      [{ clave: 'licencia-2024', texto: 'Tenés 1 día de la licencia 2024: vence el 31/12/2026.' }]);
+      [FRANQUICIA_2026, { clave: 'licencia-2024', texto: 'Tenés 1 día de la licencia 2024: vence el 31/12/2026.' }]);
   });
 
   it('solo lo que queda: sin disponibles, o de la otra modalidad, nada', () => {
@@ -4242,11 +4392,62 @@ describe('avisosDeVencimiento', () => {
     assert.deepEqual(avisos(PLANTA, '2026-10-26', SIN_FERIADOS, usado), []);
     // Las vacaciones de la 2024 cargadas en diciembre ya no se avisan
     const cargadas = conLicencias(PLANTA.estado, vacaciones(100, '2026-12-14', '2026-12-16'));
-    assert.deepEqual(avisos(PLANTA, '2026-12-01', SIN_FERIADOS, cargadas), []);
+    assert.deepEqual(avisos(PLANTA, '2026-12-01', SIN_FERIADOS, cargadas), [FRANQUICIA_2026]);
     // Con otra modalidad, el franco no se avisa
     const hoy = '2026-10-26';
     assert.deepEqual(avisosDeVencimiento(calcular(PLANTA.estado, { hoy, feriados: SIN_FERIADOS }),
       { hoy, feriados: SIN_FERIADOS, modalidad: 'contrato' }), []);
+  });
+
+  describe('las horas de franquicia (spec 2026-10-28, 3.6)', () => {
+    // PLANTA con otro saldo inicial de franquicias (17 en el caso), y más licencias si hacen falta
+    const conSaldo = (horas, ...licencias) => conLicencias({
+      ...PLANTA.estado,
+      saldos: PLANTA.estado.saldos.map((saldo) => (saldo.concepto === 'franquicias' ? { ...saldo, cantidad: horas } : saldo))
+    }, ...licencias);
+    const franquicias = (hoy, estado, feriados = SIN_FERIADOS) => avisos(PLANTA, hoy, feriados, estado)
+      .filter((aviso) => aviso.clave.startsWith('franquicia-'));
+    const conHoras = (horas) => ({
+      clave: 'franquicia-2026', texto: `Tenés ${horas} horas de franquicia: vencen el 31/12/2026.`
+    });
+
+    it('desde el primer día hábil de diciembre hasta el 31/12: el 01/12 sí; el 30/11 y el 01/01, no', () => {
+      assert.deepEqual(franquicias('2026-11-30', conSaldo(20)), []);
+      assert.deepEqual(franquicias('2026-12-01', conSaldo(20)), [conHoras(22)]);
+      assert.deepEqual(franquicias('2026-12-31', conSaldo(20)).map((aviso) => aviso.clave), ['franquicia-2026']);
+      // El 1/1 es la del año nuevo, que todavía no se avisa
+      assert.deepEqual(avisos(PLANTA, '2027-01-01', SIN_FERIADOS, conSaldo(20)), []);
+      // Con el martes 01/12 feriado, el primer día hábil es el miércoles 02/12
+      const conElPrimero = new Set(['2026-12-01']);
+      assert.deepEqual(franquicias('2026-12-01', conSaldo(20), conElPrimero), []);
+      assert.deepEqual(avisos(PLANTA, '2026-12-02', conElPrimero, conSaldo(20)).map((aviso) => aviso.clave),
+        ['franquicia-2026', 'licencia-2024']);
+    });
+
+    it('lo que queda, con «hora» y «vence» en singular solo con 1', () => {
+      assert.deepEqual(franquicias('2026-12-01', conSaldo(41)),
+        [{ clave: 'franquicia-2026', texto: 'Tenés 1 hora de franquicia: vence el 31/12/2026.' }]);
+      assert.deepEqual(franquicias('2026-12-01', conSaldo(41.5)), [conHoras('0,5')]);
+      // Una franquicia cargada en diciembre descuenta sus horas
+      const delCatorce = { id: 100, tipo: 'franquicia', desde: '2026-12-14', hasta: '2026-12-14', horas: 7 };
+      assert.deepEqual(franquicias('2026-12-01', conSaldo(20, delCatorce)), [conHoras(15)]);
+    });
+
+    it('solo lo que todavía se puede usar: sin las horas que se pierden, y nada con disponibles en 0', () => {
+      // El lunes 28/12 con vacaciones el 28 y el 29: de las 22, entran 14 en el 30 y el 31
+      assert.deepEqual(franquicias('2026-12-28', conSaldo(20, vacaciones(100, '2026-12-28', '2026-12-29'))), [conHoras(14)]);
+      // Sin ningún día libre hasta el 31/12, todas se pierden: no se avisa
+      assert.deepEqual(franquicias('2026-12-28', conSaldo(20, vacaciones(100, '2026-12-28', '2026-12-31'))), []);
+      // Sin horas que queden, tampoco
+      assert.deepEqual(franquicias('2026-12-01', conSaldo(42)), []);
+    });
+
+    it('en contrato, o con un cálculo de planta y la modalidad de contrato, nunca', () => {
+      assert.deepEqual(avisos(CONTRATO, '2026-12-01').filter((aviso) => aviso.clave.startsWith('franquicia-')), []);
+      const hoy = '2026-12-01';
+      assert.equal(avisosDeVencimiento(calcular(PLANTA.estado, { hoy, feriados: SIN_FERIADOS }),
+        { hoy, feriados: SIN_FERIADOS, modalidad: 'contrato' }).some((aviso) => aviso.clave.startsWith('franquicia-')), false);
+    });
   });
 
   it('los días de la licencia 2024 que se pierden no se avisan (spec 2026-10-27, punto 2.5)', () => {

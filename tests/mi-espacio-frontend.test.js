@@ -98,9 +98,12 @@ const resumenDel = (caso, { estado = caso.estado, persona = caso.persona, ausenc
 }));
 const conLicencias = (estado, ...licencias) => ({ ...estado, licencias: [...estado.licencias, ...licencias] });
 const licencia = (id, tipo, desde, hasta = desde, horas = null) => ({ id, tipo, desde, hasta, horas });
-// PLANTA con el franco de octubre ya cargado y los tres días de la licencia 2024 usados en diciembre: nada vence pronto
-const SIN_NADA_QUE_VENZA = conLicencias(PLANTA.estado, licencia(100, 'franco', '2026-10-27'),
-  licencia(101, 'vacaciones', '2026-12-14', '2026-12-16'));
+// PLANTA con el franco de octubre ya cargado, los tres días de la licencia 2024 usados en diciembre y las 42 horas de
+// franquicia usadas (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6): nada vence pronto
+const SIN_NADA_QUE_VENZA = {
+  ...conLicencias(PLANTA.estado, licencia(100, 'franco', '2026-10-27'), licencia(101, 'vacaciones', '2026-12-14', '2026-12-16')),
+  saldos: PLANTA.estado.saldos.map((saldo) => (saldo.concepto === 'franquicias' ? { ...saldo, cantidad: 42 } : saldo))
+};
 
 // El texto que se ve de un pedazo de HTML (sin las etiquetas, con las entidades de escapeHtml resueltas)
 const textoDe = (html) => html.replace(/<[^>]*>/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
@@ -302,13 +305,16 @@ describe('el Resumen «Titular»', () => {
     assert.ok(html.endsWith('</ol></aside>'));
     assert.deepEqual(filasDe(html).map(({ clases, texto }) => [clases.join(' '), texto]), [
       ['me-entrada', '30 oct 1 franco compensatorio de octubre Vence el viernes 30/10, en 4 días. Cargarlo'],
+      ['me-entrada', '31 dic 25 horas de franquicia Vencen el jueves 31/12, en 66 días. Cargar franquicia'],
       ['me-entrada', '31 dic 3 días de la licencia 2024 Vencen el jueves 31/12, en 66 días. Cargar vacaciones']
     ]);
     // El talón es decorativo: la línea ya dice la fecha
     assert.ok(html.includes('<span class="me-talon" aria-hidden="true"><b>30</b>oct</span>'));
     assert.ok(html.includes('<b id="me-vence-0">1 franco compensatorio de octubre</b><span class="me-entrada-texto">Vence el viernes 30/10, en 4 días.</span>'));
     assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [texto, atributos['data-accion'], atributos['data-tipo'], atributos['aria-describedby']]), [
-      ['Cargarlo', 'cargar-licencia', 'franco', 'me-vence-0'], ['Cargar vacaciones', 'cargar-licencia', 'vacaciones', 'me-vence-1']
+      ['Cargarlo', 'cargar-licencia', 'franco', 'me-vence-0'],
+      ['Cargar franquicia', 'cargar-licencia', 'franquicia', 'me-vence-1'],
+      ['Cargar vacaciones', 'cargar-licencia', 'vacaciones', 'me-vence-2']
     ]);
     // Los textos largos de «Niveles» se fueron
     assert.ok(!html.includes('Viernes 30/10'));
@@ -677,7 +683,7 @@ describe('el Resumen «Titular»', () => {
     }
     // Cada botón de «Vence pronto», con sus cinco atributos: el data-tipo escapado y el aria-describedby a su título
     const botones = botonesDe(html).filter(({ atributos }) => atributos['data-accion'] === 'cargar-licencia');
-    assert.equal(botones.length, 2);
+    assert.equal(botones.length, 3);
     botones.forEach(({ atributos }, i) => {
       assert.deepEqual(Object.keys(atributos), ['type', 'class', 'data-accion', 'data-tipo', 'aria-describedby']);
       assert.equal(atributos['data-tipo'], CON_COMILLAS_ESCAPADO);

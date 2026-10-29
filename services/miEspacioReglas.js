@@ -19,8 +19,10 @@
  * aunque pase su vencimiento, y después toma la más vieja que ese día esté habilitada, no vencida y con días libres, con las
  * cargas en el orden de sus fechas (`repartoDeVacaciones`, spec 2026-10-27-mi-espacio-dias-de-vacaciones), y lo que ya no
  * se puede empezar a usar antes de su vencimiento se pierde y se dice «Perdés …» (`textoDePerdidos`). Después, las
- * demás licencias (3.2 a 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`) y la validación de una carga
- * (`validarLicencia`, con la regla de 3.8: dos licencias no comparten un día). Por último, las horas extras (3.5 a 3.7): la
+ * demás licencias (3.2 a 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`), las horas de franquicia que
+ * vencen el 31/12 y las que ya no entran en los días libres que quedan (`franquiciaQueVence`, con `diasLibresEntre`; spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6) y la validación de una carga (`validarLicencia`, con la regla de 3.8:
+ * dos licencias no comparten un día). Por último, las horas extras (3.5 a 3.7): la
  * validación de una carga (`validarHorasExtras`), la planilla de contrato (spec 2026-10-27-mi-espacio-horas: las horas de
  * una salida, `horasDeLaSalida`, el mes que se pide, `mesDeLaPlanilla`, la validación de un día, `validarSalida`, y las
  * salidas guardadas que dejaron de cerrar, `avisosDeSalidas`, que nunca frenan una carga), los francos compensatorios de
@@ -734,6 +736,53 @@ export const usoDeLosTopes = (estado, opciones) => {
   return TIPOS_CON_TOPE.flatMap((tipo) => [...usados.get(tipo)]
     .sort(([a], [b]) => a - b)
     .map(([anio, cantidad]) => ({ tipo, anio, usados: cantidad, tope: topeDe(tipo, anio, estado.anios) })));
+};
+
+// Los días libres de desde a hasta (los de `diasLibresEntre`), contados de a uno: con un `tope`, deja de contar al llegar a él
+// (a la franquicia le alcanza con saber si hay los que necesita, y así no recorre el año entero en cada cálculo)
+const contarDiasLibres = (desde, hasta, ocupadas, feriados, tope = Infinity) => {
+  if (!esFechaIso(desde) || !esFechaIso(hasta) || hasta < desde) return 0;
+  // Solo las que tocan el rango
+  const encima = listaDe(ocupadas).filter((fila) => esObjeto(fila) && esFechaIso(fila.desde) && esFechaIso(fila.hasta)
+    && fila.desde <= hasta && desde <= fila.hasta);
+  let libres = 0;
+  // Se cuentan los días, no se compara el texto (como `diasHabilesDe`: después del 9999-12-31, sumarDias da '+010000-01')
+  const total = diasEntre(desde, hasta) + 1;
+  for (let i = 0, dia = desde; i < total && libres < tope; i++, dia = sumarDias(dia, 1)) {
+    if (esDiaHabilCon(dia, feriados) && !encima.some((fila) => fila.desde <= dia && dia <= fila.hasta)) libres += 1;
+  }
+  return libres;
+};
+
+/**
+ * Cuántos días libres hay de `desde` a `hasta`, los dos incluidos (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.2,
+ * 3.6 y 3.7): los días hábiles con los feriados (`esDiaHabilCon`) que no caen dentro de ninguna fila de `ocupadas`
+ * (`{ desde, hasta }`: las licencias de Mi espacio de cualquier tipo y de cualquier modalidad, las mismas que `calcular` le
+ * pasa al reparto). Dos licencias no comparten un día: una franquicia de 2 horas también ocupa el suyo. Una fila sin sus dos
+ * fechas no ocupa nada. Con hasta antes que desde, o alguna que no es una fecha, 0.
+ */
+export const diasLibresEntre = (desde, hasta, ocupadas, feriados) => contarDiasLibres(desde, hasta, ocupadas, feriados);
+
+/**
+ * Las horas de franquicia del año de hoy, que vencen el 31/12 (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), solo
+ * en planta: `{ quedan, perdidas, disponibles }`. `quedan` es lo de siempre: las 42 horas menos lo usado y lo cargado del año
+ * de hoy (lo de `usoDeLosTopes`: `calculo.topes` o, sin él, el de lo cargado), nunca menos de 0. En cada día libre de hoy al
+ * 31/12 (`diasLibresEntre`, con `opciones.ocupadas` o, sin ellas, las licencias del estado) entran hasta 7 horas (`JORNADA`),
+ * y lo que no entra se pierde: `perdidas` = máx(0, quedan − 7 × días libres), y `disponibles` es lo que queda. Las perdidas
+ * no cuentan en «Vence pronto» ni en el email de vencimiento. En contrato, sin modalidad o sin un hoy válido, null.
+ */
+export const franquiciaQueVence = (estado, calculo, opciones) => {
+  const { hoy, feriados, ocupadas } = esObjeto(opciones) ? opciones : {};
+  if (!esObjeto(estado) || estado.modalidad !== 'planta' || !esFechaIso(hoy)) return null;
+  const anio = anioDe(hoy);
+  const topes = esObjeto(calculo) && Array.isArray(calculo.topes) ? calculo.topes : usoDeLosTopes(estado, { feriados });
+  const usados = numeroDe(topes.find((uso) => esObjeto(uso) && uso.tipo === 'franquicia' && uso.anio === anio)?.usados);
+  const quedan = Math.max(0, TOPES.franquicia - (Number.isFinite(usados) ? usados : 0));
+  // Los días libres hacen falta solo hasta que entra todo lo que queda: con esos, no se pierde nada
+  const libres = contarDiasLibres(hoy, fechaDe(anio, '12-31'), Array.isArray(ocupadas) ? ocupadas : estado.licencias, feriados,
+    Math.ceil(quedan / JORNADA));
+  const perdidas = Math.max(0, quedan - JORNADA * libres);
+  return { quedan, perdidas, disponibles: quedan - perdidas };
 };
 
 // Los tipos de un solo día: desde y hasta son el mismo (public/js/mi-espacio.js tiene una copia, atada por un test de paridad)
@@ -1464,10 +1513,12 @@ export const fueraDeLaModalidad = (fila, modalidad) => {
 
 /**
  * Todo lo que sale de lo cargado, sin las filas que no corresponden a la modalidad (`fueraDeLaModalidad`): el `Calculo`,
- * `{ reparto, topes, francos, horasAFavor, noUtilizadas, faltantes, avisosDeSalidas }`.
+ * `{ reparto, topes, franquicia, francos, horasAFavor, noUtilizadas, faltantes, avisosDeSalidas }`.
  * - `reparto`: el de `repartoDeVacaciones`, con todas las licencias como ocupadas (`ocupadas`): una de la otra modalidad no
  *   cuenta, pero ocupa su día y no deja cargar nada ahí, así que no es un día libre para «Perdés».
  * - `topes`: el de `usoDeLosTopes`, solo con los tipos de la modalidad (el saldo de franquicias no cuenta en contrato).
+ * - `franquicia`: el de `franquiciaQueVence` (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), con esos topes y las
+ *   mismas ocupadas que el reparto; null en contrato.
  * - `francos` y `horasAFavor`: los de `francosDe` y `horasAFavorDe` (cada uno, [] en la otra modalidad).
  * - `noUtilizadas`: `{ [anio]: noUtilizadasDe }` de cada año con algo que mirar: el de hoy, el del arranque, el de cada mes
  *   de uso y el de cada uso autorizado. Sin modalidad, {}.
@@ -1480,8 +1531,8 @@ export const calcular = (estado, opciones) => {
   const { hoy, feriados } = esObjeto(opciones) ? opciones : {};
   if (!esFechaIso(hoy)) {
     return {
-      reparto: repartoDeVacaciones(null), topes: [], francos: [], horasAFavor: [], noUtilizadas: {}, faltantes: [],
-      avisosDeSalidas: []
+      reparto: repartoDeVacaciones(null), topes: [], franquicia: null, francos: [], horasAFavor: [], noUtilizadas: {},
+      faltantes: [], avisosDeSalidas: []
     };
   }
   const datos = esObjeto(estado) ? estado : {};
@@ -1505,10 +1556,14 @@ export const calcular = (estado, opciones) => {
     }
   }
 
+  // Las licencias de la otra modalidad no cuentan, pero ocupan sus días: no son un día libre para «Perdés» (ni para las
+  // vacaciones ni para la franquicia)
+  const ocupadas = listaDe(datos.licencias);
+  const topes = usoDeLosTopes(deLaModalidad, { feriados }).filter((uso) => tipos.includes(uso.tipo));
   const calculo = {
-    // Las licencias de la otra modalidad no cuentan, pero ocupan sus días: no son un día libre para «Perdés»
-    reparto: repartoDeVacaciones(deLaModalidad, { ...conHoy, ocupadas: listaDe(datos.licencias) }),
-    topes: usoDeLosTopes(deLaModalidad, { feriados }).filter((uso) => tipos.includes(uso.tipo)),
+    reparto: repartoDeVacaciones(deLaModalidad, { ...conHoy, ocupadas }),
+    topes,
+    franquicia: franquiciaQueVence(datos, { topes }, { ...conHoy, ocupadas }),
     francos,
     horasAFavor,
     noUtilizadas: Object.fromEntries([...anios].sort((a, b) => a - b)
@@ -2388,7 +2443,8 @@ export const ausentesDeHoyYManana = (ausentes, hoy) => {
 };
 
 // El email de vencimiento (spec, sección 9): el franco o las horas a favor del mes de hoy se avisan desde 5 días hábiles antes
-// del último día hábil del mes, y los días de la licencia que vence el 31/12, desde el primer día hábil de diciembre
+// del último día hábil del mes, y las horas de franquicia y los días de la licencia que vencen el 31/12, desde el primer día
+// hábil de diciembre
 const DIAS_HABILES_ANTES_DEL_ULTIMO = 5;
 const DESDE_EL_AVISO_DE_LA_LICENCIA = '12-01';
 
@@ -2400,6 +2456,9 @@ const textoDelFranco = (cantidad, mes, ultimo) => `Tenés ${numeroTexto(cantidad
 const textoDeLasHorasAFavor = (cantidad, mes, ultimo) =>
   `Tenés ${textoDeHoras(cantidad)} a favor para usar en ${nombreDelMes(mes)}: el último día hábil es ${elDia(ultimo)}.`;
 const textoDeLaLicencia = (dias, anio, vence) => `Tenés ${diasTexto(dias)} de la licencia ${anio}: vence el ${fechaCorta(vence)}.`;
+// «Tenés 22 horas de franquicia: vencen el 31/12/2026.» (con 1, «1 hora … vence»)
+const textoDeLaFranquicia = (horas, vence) =>
+  `Tenés ${textoDeHoras(horas)} de franquicia: ${esUna(horas) ? 'vence' : 'vencen'} el ${fechaCorta(vence)}.`;
 
 /**
  * Lo que dice el email de vencimiento (spec, sección 9): lo que vence pronto y hoy está en su tramo, `[{ clave, texto }]`, por
@@ -2407,6 +2466,9 @@ const textoDeLaLicencia = (dias, anio, vence) => `Tenés ${diasTexto(dias)} de l
  * - `franco-AAAA-MM` en planta y `horas-AAAA-MM` en contrato: lo que queda (`disponibles`) del franco o de las horas a favor
  *   del mes de hoy, desde 5 días hábiles antes del último día hábil del mes (`restarDiasHabilesCon`) hasta ese día
  *   (`ultimoDiaHabilDelMesCon`), con los feriados.
+ * - `franquicia-AAAA`, solo en planta: las horas de franquicia del año que todavía entran en algún día libre (`disponibles` de
+ *   `calculo.franquicia`, sin las perdidas; spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), desde el primer día
+ *   hábil de diciembre hasta el 31/12: «Tenés 22 horas de franquicia: vencen el 31/12/2026.».
  * - `licencia-AAAA`: los días disponibles de la licencia ordinaria que vence el 31/12 de este año (la de dos años antes),
  *   desde el primer día hábil de diciembre (`proximoDiaHabilCon`) hasta el 31/12.
  * `calculo` es el de `calcular` con ese hoy y esos feriados. Nunca dice el tipo de una licencia médica: solo vacaciones,
@@ -2435,6 +2497,9 @@ export const avisosDeVencimiento = (calculo, opciones) => {
   const finDelAnio = fechaDe(anioDe(hoy), '12-31');
   const inicio = proximoDiaHabilCon(fechaDe(anioDe(hoy), DESDE_EL_AVISO_DE_LA_LICENCIA), feriados);
   if (inicio !== null && inicio <= hoy && hoy <= finDelAnio) {
+    // Las horas de franquicia que todavía entran en algún día libre (las perdidas no se avisan), solo en planta
+    const horas = planta && esObjeto(calculo.franquicia) ? numeroDe(calculo.franquicia.disponibles) : NaN;
+    if (horas > 0) avisos.push({ clave: `franquicia-${anioDe(hoy)}`, texto: textoDeLaFranquicia(horas, finDelAnio) });
     const vieja = listaDe(esObjeto(calculo.reparto) ? calculo.reparto.ordinarias : []).find((ordinaria) =>
       esObjeto(ordinaria) && Number.isInteger(ordinaria.anio) && ordinaria.vence === finDelAnio);
     const dias = numeroDe(vieja?.disponibles);
