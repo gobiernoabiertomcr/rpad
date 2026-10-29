@@ -706,11 +706,13 @@ const quedaUnaMasVieja = (reparto, anio) => listaDe(reparto.ordinarias).some((or
  * 31/12/2026).» (spec 2026-10-27, 2.6). Sin días de esa fila que salgan de una licencia (antes del arranque, sin cubrir o un
  * id que no está), ''.
  * `extras` (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.1; opcional: sin él, el texto de siempre) es `{
- * habilitaciones, alcance, hasta }`: lo que se habilita después (las entradas de `porHabilitarDe`, en ese orden), el alcance
- * de la carga (`alcanceDeLaCarga`) y su hasta. Se nombran las habilitaciones hasta el hasta o el alcance (lo que sea más
- * tarde), después de lo que queda y antes de lo que se pierde: «… No te quedan días disponibles hoy. El 1/1/2027 se habilitan
- * 10 más de la 2026: esta licencia puede llegar hasta el 24/02/2027.» («hoy», solo si hay alguna que nombrar; el alcance,
- * solo si es posterior al hasta).
+ * habilitaciones, alcance, hasta, hayPorHabilitar }`: lo que se habilita después (las entradas de `porHabilitarDe`, en ese
+ * orden), el alcance de la carga (`alcanceDeLaCarga`), su hasta y si queda algo por habilitar de las licencias hasta el año de
+ * hoy (lo que nombra la opción del tipo). Se nombran las habilitaciones hasta el hasta o el alcance (lo que sea más tarde),
+ * después de lo que queda y antes de lo que se pierde: «… No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más
+ * de la 2026: esta licencia puede llegar hasta el 24/02/2027.» (el alcance, solo si es posterior al hasta). «hoy» va si hay
+ * alguna que nombrar o con `hayPorHabilitar` (solo el `true` literal), aunque su fecha quede después del hasta y no se nombre:
+ * «… No te quedan días disponibles hoy.».
  * «, la más vieja» («, las más viejas») va solo cuando es cierto (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9): si
  * queda una licencia más vieja que la primera de la que salen, no vencida a hoy y con días (disponibles o que se pierden), no
  * va: «Salen de la licencia 2025.» (una carga de enero con días de la 2024 sin usar).
@@ -733,9 +735,10 @@ export const textoDelReparto = (reparto, filaId, extras) => {
   };
   const total = conDias.reduce((suma, ordinaria) => suma + ordinaria.disponibles, 0);
   const { habilitaciones, alcance } = habilitacionesQueSeNombran(extras);
+  const hayPorHabilitar = habilitaciones.length > 0 || (esObjeto(extras) && extras.hayPorHabilitar === true);
   let quedan;
   if (conDias.length === 0) {
-    quedan = habilitaciones.length > 0 ? 'No te quedan días disponibles hoy.' : 'No te quedan días disponibles.';
+    quedan = hayPorHabilitar ? 'No te quedan días disponibles hoy.' : 'No te quedan días disponibles.';
   } else if (conDias.length > 1) {
     quedan = `Te quedan ${diasTexto(total)}: ${enLista(conDias.map((o) => `${numeroTexto(o.disponibles)} ${deLa(o)}`))}.`;
   } else if (total === 1) quedan = `Te queda 1 día ${deLa(conDias[0])}.`;
@@ -2016,9 +2019,11 @@ const errorDeDias = (faltante, { estado, fila, conLaFila, despues, opciones }) =
 };
 
 // Lo que suma el cálculo de unas vacaciones (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.1), los `extras` de
-// `textoDelReparto`: lo que se habilita después de hoy (`porHabilitarDe`) hasta el hasta de la carga o su alcance, y el
-// alcance (`alcanceDeLaCarga`), solo si la carga deja los disponibles de hoy en 0 y puede llegar más allá de su hasta. Sin
-// días que salgan de una licencia, el texto no va: null
+// `textoDelReparto`: lo que se habilita después de hoy (`porHabilitarDe`) hasta el hasta de la carga o su alcance, el
+// alcance (`alcanceDeLaCarga`), solo si la carga deja los disponibles de hoy en 0 y puede llegar más allá de su hasta, y
+// `hayPorHabilitar`: si, con la carga, queda algo por habilitar de las licencias hasta el año de hoy (la misma cuenta que la
+// opción del tipo, «· 10 más el 1/1»), para el «hoy» de «No te quedan días disponibles hoy.» aunque su fecha quede después del
+// hasta. Sin días que salgan de una licencia, el texto no va: null
 const extrasDelReparto = (fila, calculo, { estado, opciones }) => {
   const { ordinarias, porFila } = calculo.reparto;
   if (listaDe(porFila.get(idDe(fila.id))).length === 0) return null;
@@ -2026,10 +2031,13 @@ const extrasDelReparto = (fila, calculo, { estado, opciones }) => {
   const alcance = sinDisponibles ? alcanceDeLaCarga(estado, fila, opciones) : null;
   const llega = alcance !== null && alcance > fila.hasta ? alcance : null;
   const tope = llega ?? fila.hasta;
+  const porHabilitar = porHabilitarDe(ordinarias, opciones.hoy);
+  const anioDeHoy = esFechaIso(opciones.hoy) ? anioDe(opciones.hoy) : null;
   return {
-    habilitaciones: porHabilitarDe(ordinarias, opciones.hoy).filter(({ fecha }) => fecha <= tope),
+    habilitaciones: porHabilitar.filter(({ fecha }) => fecha <= tope),
     alcance: llega,
-    hasta: fila.hasta
+    hasta: fila.hasta,
+    hayPorHabilitar: anioDeHoy !== null && porHabilitar.some(({ anio }) => anio <= anioDeHoy)
   };
 };
 

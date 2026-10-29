@@ -1092,6 +1092,19 @@ describe('páginas', () => {
         // Las horas extras, de a media hora
         for (const control of ['mh-desde', 'mh-hasta']) assert.match(html(), new RegExp(`<input type="time" class="form-input" id="${control}" step="1800"`), control);
       });
+
+      // Spec 2026-10-28-mi-espacio-vacaciones-en-la-carga (la revisión final): «Guardar» de «Cargar licencia» lee el cálculo, el
+      // aviso del paso a Configuración y los días sin auditor (los avisos de la carga van en el cálculo). Uno oculto no se lee, así
+      // que el atributo es fijo; sin región viva
+      it('«Guardar» de «Cargar licencia» se describe con el cálculo, el paso y los días sin auditor, que están en su modal', () => {
+        const licencia = modal('modal-licencia');
+        assert.match(licencia,
+          /<button type="button" class="sg-btn sg-btn-tinta" id="ml-guardar" aria-describedby="ml-calculo ml-paso ml-sin-auditor">Guardar<\/button>/);
+        for (const id of ['ml-calculo', 'ml-paso', 'ml-sin-auditor']) {
+          assert.match(licencia, new RegExp(`<div class="me-recuadro[^"]*" id="${id}" hidden></div>`), id);
+          assert.doesNotMatch(licencia, new RegExp(`id="${id}"[^>]*aria-live`), id);
+        }
+      });
     });
 
     it('los scripts, a secas y en su orden: config, auth, main, api y mi-espacio.js', () => {

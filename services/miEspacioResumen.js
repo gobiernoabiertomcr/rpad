@@ -366,7 +366,7 @@ const NOMBRES_DE_LOS_TANQUES = Object.freeze({
 // Las horas de franquicia que ya no entran en los días libres que quedan hasta el 31/12 (las `perdidas` de
 // `franquiciaQueVence`; spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), debajo de «Franquicias» en «El resto», en
 // ámbar: «Perdés 8 horas (vencen el 31/12/2026).» («1 hora … vence»). Sin ninguna, ''
-const textoDeLaFranquiciaPerdida = ({ anio, cuenta }) => {
+const textoDeLasHorasQuePerdes = ({ anio, cuenta }) => {
   const perdidas = esObjeto(cuenta.franquicia) ? cantidadDe(cuenta.franquicia.perdidas) : 0;
   if (perdidas <= 0) return '';
   return `Perdés ${conUnidad(perdidas, 'hora', 'horas')} (${perdidas === 1 ? 'vence' : 'vencen'} el `
@@ -387,7 +387,7 @@ const tanqueDeTope = (tipo, panel) => {
     de: `de ${numeroTexto(total)} ${varias}`, valor, total, vence: false, pestana: 'licencias',
     aria: `${nombre}: ${valor === 1 ? 'queda' : 'quedan'} ${numeroTexto(valor)} de ${numeroTexto(total)} ${varias}. `
       + 'Ver tus licencias',
-    ...(tipo === 'franquicia' ? { perdidas_texto: textoDeLaFranquiciaPerdida(panel) } : {})
+    ...(tipo === 'franquicia' ? { perdidas_texto: textoDeLasHorasQuePerdes(panel) } : {})
   };
 };
 

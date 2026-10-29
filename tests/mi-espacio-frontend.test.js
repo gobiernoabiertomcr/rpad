@@ -4328,7 +4328,7 @@ describe('los formularios en la página (DOM falso)', () => {
     await saldos.elegir('ms-estudio', '');
     for (const campo of saldos.el('ms-campos').querySelectorAll('input')) campo.value = '0';
     await saldos.tocar(saldos.el('ms-guardar'));
-    assert.equal(saldos.el('ms-error').textContent, `Los días del año se guardaron, pero el saldo inicial no: ${MENSAJE_SIN_CONEXION}`);
+    assert.equal(saldos.el('ms-error').textContent, `Los días del año se guardaron, pero el saldo inicial no. ${MENSAJE_SIN_CONEXION}`);
     assert.equal(saldos.abierto('modal-saldos'), true);
   });
 
@@ -4809,7 +4809,7 @@ describe('los formularios en la página (DOM falso)', () => {
       { 'vacaciones-2024': 8, 'vacaciones-2025': 0, 'vacaciones-2026': 0, franquicias: 0, estudios: 0, medica: 0, familiar: 0 });
     assert.equal(pagina.abierto('modal-saldos'), true);
     assert.equal(pagina.el('ms-error').textContent,
-      'Los días del año se guardaron, pero el saldo inicial no: De 0 a 30, el máximo de una licencia.');
+      'Los días del año se guardaron, pero el saldo inicial no. De 0 a 30, el máximo de una licencia.');
     assert.equal(pagina.el('ms-campo-vacaciones-2024').getAttribute('aria-invalid'), 'true');
     // Al reintentar, sale; el foco vuelve al botón del Resumen que lo abrió, el nuevo (el Resumen se volvió a dibujar)
     saldo = ok({ arranque: HOY }, 'Saldo inicial guardado.');
@@ -4819,6 +4819,35 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.equal(pagina.el('me-anuncio').textContent, 'Saldo inicial guardado.');
     assert.equal(delResumen.isConnected, false);
     assert.equal(pagina.documento.activeElement, pagina.el('vista-resumen').querySelector('[data-abrir="saldos"]'));
+  });
+
+  // El guardado a medias (la revisión final de la spec 2026-10-28-mi-espacio-vacaciones-en-la-carga): la ayuda de un tope ya trae
+  // sus dos puntos («De 0 a 8: …»), así que el aviso de arriba la sigue con un punto, no con otros dos puntos
+  it('«Mis vacaciones y saldos»: si el saldo falla con la ayuda de un tope, el aviso no repite los dos puntos', async () => {
+    const motivo = 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.';
+    const pagina = montarPagina({
+      responder: conSaldosParaArrancar({
+        extra: (metodo, ruta) => {
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/anio/2026') return ok({ anio: 2026 }, 'Días del año guardados.');
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/saldo-inicial') {
+            return respuesta(400, { success: false, error: motivo, campo: 'vacaciones-2026' });
+          }
+          return undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    await pagina.correr();
+    // Con 15 días, la primera mitad de la 2026 es 8: «De 0 a 8»
+    await pagina.elegir('ms-dia', '15');
+    await pagina.elegir('ms-estudio', '');
+    for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
+    await pagina.tocar(pagina.el('ms-guardar'));
+    assert.equal(pagina.abierto('modal-saldos'), true);
+    assert.equal(pagina.el('ms-error').textContent, `Los días del año se guardaron, pero el saldo inicial no. ${motivo}`);
+    assert.doesNotMatch(pagina.el('ms-error').textContent, /:.*:/);
+    // El motivo, también en su campo
+    assert.equal(pagina.el('ms-campo-vacaciones-2026').getAttribute('aria-invalid'), 'true');
   });
 
   // Cada tope dice de dónde sale (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): la ayuda debajo de cada campo, que la

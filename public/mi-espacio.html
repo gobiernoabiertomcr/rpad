@@ -722,8 +722,9 @@
            por cosa (tinta, violeta y un ámbar con 3:1 o más sobre el celeste de hoy); debajo de la grilla, el día elegido; y los
            próximos, después del mes (el día elegido ya muestra hoy). En el evento, «Solo yo» y «Compartido», una debajo de la otra.
            El Resumen: la banda con márgenes de 16 px, la barra de 38 px y la lista de la regla en una columna (el número de un tramo
-           sigue en 1,2 rem: el blanco sobre el azul medio llega a 4,45:1 y solo alcanza como texto grande) y los números del resto, un
-           poco más chicos */
+           sigue en 1,2 rem, salvo el «1» de un tramo de un día, que se achica si no entra: el blanco sobre el azul medio llega a 4,45:1,
+           pero el número es decorativo, la barra va con aria-hidden y la lista de debajo lo dice en texto) y los números del resto,
+           un poco más chicos */
         @media (max-width: 640px) {
             .me-tarjeta { padding: 16px; }
             .me-banda-del-mes { border-radius: 22px 22px 0 0; }
@@ -1033,7 +1034,7 @@
                 </div>
                 <div class="botones">
                     <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
-                    <button type="button" class="sg-btn sg-btn-tinta" id="ml-guardar">Guardar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="ml-guardar" aria-describedby="ml-calculo ml-paso ml-sin-auditor">Guardar</button>
                 </div>
             </div>
             <div class="modal-body me-paso-dos" id="ml-paso-dos" hidden></div>

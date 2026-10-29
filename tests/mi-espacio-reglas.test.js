@@ -2855,6 +2855,41 @@ describe('lo por habilitar y el alcance (spec 2026-10-28, 3.1)', () => {
       + 'viejas. No te quedan días disponibles.');
   });
 
+  // «No te quedan días disponibles hoy.» va cuando hay algo por habilitar de las licencias hasta el año de hoy (lo mismo que nombra
+  // la opción del tipo, «· 10 más el 1/1»), aunque su fecha quede después del «Hasta» y no se nombre (la revisión final de la spec,
+  // 3.1). Del arranque al 31/12/2026 hay 42 días hábiles: para que una carga que termina antes del 1/1/2027 use todo lo
+  // habilitado, otra guardada, del 01/01 al 06/01/2027, usa los otros 3 de la primera mitad de la 2026. La segunda (10 días, el
+  // 1/1/2027) queda sin asignar, y el 1/1 está dentro de la guardada: esta no puede llegar más allá de su hasta
+  it('del 27/10 al 31/12/2026, con lo habilitado usado: «No te quedan días disponibles hoy.», sin nombrar el 1/1/2027', () => {
+    const { error, vista } = evaluar(persona(vacaciones(100, '2027-01-01', '2027-01-06')), pedido('2026-10-27', '2026-12-31'));
+    assert.equal(error, null);
+    assert.equal(alcanceDeLaCarga(persona(vacaciones(100, '2027-01-01', '2027-01-06')), pedido('2026-10-27', '2026-12-31'),
+      A_LA_CARGA), '2026-12-31');
+    assert.equal(vista.texto_reparto, 'Salen de las licencias 2024 (15 días), 2025 (20 días) y 2026 (7 días), las más viejas. '
+      + 'No te quedan días disponibles hoy.');
+    // Del 01/12/2026 al 24/02/2027 los 20 de la 2026 ya están asignados, y la 2027 es del año siguiente: sin «hoy»
+    assert.equal(evaluar(persona(), pedido('2026-12-01', '2027-02-24')).vista.texto_reparto, 'Salen de las licencias 2024 '
+      + '(15 días), 2025 (20 días) y 2026 (20 días), las más viejas. No te quedan días disponibles.');
+  });
+
+  it('textoDelReparto con hayPorHabilitar: «hoy» sin nombrar nada; solo con el true literal', () => {
+    const reparto = repartoDeVacaciones(persona(vacaciones(100, '2026-12-01', '2027-02-05')), A_LA_CARGA);
+    const salen = 'Salen de las licencias 2024 (15 días), 2025 (20 días) y 2026 (10 días), las más viejas. ';
+    const enero = { fecha: '2027-01-01', anio: 2026, dias: 10 };
+    assert.equal(textoDelReparto(reparto, 100, { habilitaciones: [], alcance: null, hasta: '2026-12-31', hayPorHabilitar: true }),
+      `${salen}No te quedan días disponibles hoy.`);
+    // Lo que pasa del hasta sigue sin nombrarse
+    assert.equal(textoDelReparto(reparto, 100,
+      { habilitaciones: [enero], alcance: null, hasta: '2026-12-31', hayPorHabilitar: true }), `${salen}No te quedan días disponibles hoy.`);
+    for (const valor of [false, 1, 'true', null, undefined]) {
+      assert.equal(textoDelReparto(reparto, 100, { habilitaciones: [], alcance: null, hasta: '2026-12-31', hayPorHabilitar: valor }),
+        `${salen}No te quedan días disponibles.`, String(valor));
+    }
+    // Con algo que nombrar, «hoy» va igual
+    assert.equal(textoDelReparto(reparto, 100, { habilitaciones: [enero], alcance: null, hasta: null, hayPorHabilitar: false }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026.`);
+  });
+
   it('del 16/11 al 30/11/2026: lo que se habilita después de su hasta no se nombra', () => {
     const { error, vista } = evaluar(persona(), pedido('2026-11-16', '2026-11-30'));
     assert.equal(error, null);

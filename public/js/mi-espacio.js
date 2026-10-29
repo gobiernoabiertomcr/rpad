@@ -346,9 +346,10 @@ function htmlDeLosMeses(pastillas) {
  * uno de los demás tanques (franquicias u horas a favor, estudios, atención médica y grupo familiar), cada uno un link a su pestaña
  * (Horas extras o, si no, Licencias) con el aria-label del servidor, con el número que sube al abrir (data-contar) y su unidad, el
  * nombre, su total y una línea decorativa que se llena en la proporción valor / total (--p, con su --demora: 900 ms y 90 más por
- * línea); el que vence, en ámbar. Debajo del de las franquicias, en ámbar, las horas que se pierden (`perdidas_texto`, «Perdés 8 horas
- * (vencen el 31/12/2026).», o '': spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), fuera del link (su aria-label, el del
- * servidor, no las diría). Después, los meses y la médica extraordinaria. Sin tanques (sin un hoy válido), o sin el Resumen, ''
+ * línea); el que vence, en ámbar. Debajo de cada número que lo trae, en ámbar, su `perdidas_texto` (el servidor lo manda solo en
+ * el de las franquicias: las horas que se pierden, «Perdés 8 horas (vencen el 31/12/2026).», o '': spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), fuera del link (su aria-label, el del servidor, no lo diría). Después, los
+ * meses y la médica extraordinaria. Sin tanques (sin un hoy válido), o sin el Resumen, ''
  */
 function htmlDelResto(resumen) {
   if (!esObjeto(resumen) || !esObjeto(resumen.tanques)) return '';
@@ -4890,7 +4891,8 @@ async function guardarSaldos() {
       const id = porId(`ms-campo-${error?.campo}`) ? `ms-campo-${error.campo}` : deMapa(FORMULARIOS.saldos.campos, error?.campo, null);
       const motivo = motivoDeLaFalla(error, MENSAJE_NO_SE_GUARDO);
       ponerError(id, motivo);
-      avisoDelModal('saldos', `Los días del año se guardaron, pero el saldo inicial no: ${motivo.replace(/\.$/, '')}.`);
+      // Con un punto, no con dos puntos: la ayuda de un tope ya trae los suyos («De 0 a 8: …»)
+      avisoDelModal('saldos', `Los días del año se guardaron, pero el saldo inicial no. ${motivo.replace(/\.$/, '')}.`);
       (id ? controlDeFoco(id) : boton)?.focus?.();
     }
   } finally {
