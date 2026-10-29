@@ -674,6 +674,13 @@ export const textoDelReacomodo = (desde, hasta, partes) => {
   return `Esta carga cambia de dónde salen tus vacaciones ${fechasDeLaCarga(desde, hasta)}: ahora ${deDonde}.`;
 };
 
+// Si a hoy queda una licencia ordinaria del reparto más vieja que la del año `anio`, no vencida (sin un hoy, no se mira el
+// vencimiento) y con días disponibles o que se pierden: entonces la de `anio` no es «la más vieja»
+const quedaUnaMasVieja = (reparto, anio) => listaDe(reparto.ordinarias).some((ordinaria) => esObjeto(ordinaria)
+  && Number.isInteger(ordinaria.anio) && ordinaria.anio < anio
+  && (!esFechaIso(reparto.hoy) || ordinaria.vence >= reparto.hoy)
+  && (numeroDe(ordinaria.disponibles) || 0) + (numeroDe(ordinaria.perdidos) || 0) > 0);
+
 /**
  * De qué licencia salen los días de unas vacaciones y lo que queda (spec, 3.1): «Salen de la licencia 2024, la más vieja.
  * Te quedan 33 días: 3 de la 2024 (vencen el 31/12/2026), 20 de la 2025 y 10 de la 2026.» Con varias, «Salen de las
@@ -688,14 +695,19 @@ export const textoDelReacomodo = (desde, hasta, partes) => {
  * tarde), después de lo que queda y antes de lo que se pierde: «… No te quedan días disponibles hoy. El 1/1/2027 se habilitan
  * 10 más de la 2026: esta licencia puede llegar hasta el 24/02/2027.» («hoy», solo si hay alguna que nombrar; el alcance,
  * solo si es posterior al hasta).
+ * «, la más vieja» («, las más viejas») va solo cuando es cierto (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9): si
+ * queda una licencia más vieja que la primera de la que salen, no vencida a hoy y con días (disponibles o que se pierden), no
+ * va: «Salen de la licencia 2025.» (una carga de enero con días de la 2024 sin usar).
  */
 export const textoDelReparto = (reparto, filaId, extras) => {
   if (!esObjeto(reparto) || !(reparto.porFila instanceof Map)) return '';
   const partes = listaDe(reparto.porFila.get(idDe(filaId))).filter(esObjeto);
   if (partes.length === 0) return '';
+  let masViejas = partes.length === 1 ? ', la más vieja' : ', las más viejas';
+  if (quedaUnaMasVieja(reparto, partes[0].anio)) masViejas = '';
   const salen = partes.length === 1
-    ? `Salen de la licencia ${partes[0].anio}, la más vieja.`
-    : `Salen de las licencias ${enLista(partes.map(({ anio, dias }) => `${anio} (${diasTexto(dias)})`))}, las más viejas.`;
+    ? `Salen de la licencia ${partes[0].anio}${masViejas}.`
+    : `Salen de las licencias ${enLista(partes.map(({ anio, dias }) => `${anio} (${diasTexto(dias)})`))}${masViejas}.`;
 
   const venceEsteAnio = esFechaIso(reparto.hoy) ? fechaDe(anioDe(reparto.hoy), '12-31') : null;
   const conDias = listaDe(reparto.ordinarias).filter((ordinaria) => esObjeto(ordinaria) && ordinaria.disponibles > 0);
@@ -1812,12 +1824,20 @@ export const problemaDeLaCarga = (antes, despues, filaId) => loQueFrena(antes, d
 const seCuentaEnHoras = (tipo, modalidad) =>
   tipo === 'franquicia' || tipo === 'horas_a_favor' || (tipo === 'uso_autorizado' && modalidad === 'contrato');
 
+/**
+ * Los días de una licencia: «5 días hábiles» o, si los corridos son más, «18 días hábiles de 26 corridos» («1 día hábil de 3
+ * corridos»). Es la forma del cálculo de «Cargar licencia», y también la de la lista y la del segundo paso (spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9: una sola forma para los días).
+ */
+export const textoDeLosDiasHabiles = (habiles, corridos) => {
+  const enHabiles = esUna(habiles) ? '1 día hábil' : `${numeroTexto(habiles)} días hábiles`;
+  return corridos === habiles ? enHabiles : `${enHabiles} de ${numeroTexto(corridos)} corridos`;
+};
+
 // «5 días hábiles», «5 días hábiles de 7 corridos» o, en horas, «2 horas»
 const textoDeLosDias = (fila, modalidad, habiles) => {
   if (seCuentaEnHoras(fila.tipo, modalidad)) return textoDeHoras(fila.horas);
-  const enHabiles = esUna(habiles) ? '1 día hábil' : `${numeroTexto(habiles)} días hábiles`;
-  const corridos = diasEntre(fila.desde, fila.hasta) + 1;
-  return corridos === habiles ? enHabiles : `${enHabiles} de ${numeroTexto(corridos)} corridos`;
+  return textoDeLosDiasHabiles(habiles, diasEntre(fila.desde, fila.hasta) + 1);
 };
 
 // Lo que queda de lo no utilizado previamente después de un uso autorizado

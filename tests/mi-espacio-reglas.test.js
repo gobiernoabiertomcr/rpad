@@ -30,7 +30,7 @@ import {
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
   avisosDeSalidas, mesDeLaPlanilla, porHabilitarDe, alcanceDeLaCarga, diasLibresEntre, diasLibresDelMes, franquiciaQueVence,
   textoDePerdidosConLaCarga, textoDelFrancoSinDiasLibres, textoDeLasHorasSinDiasLibres, textoDeLaFranquiciaPerdida,
-  textoDelReacomodo
+  textoDelReacomodo, textoDeLosDiasHabiles
 } from '../services/miEspacioReglas.js';
 import { feriadosDelRango, calendarioCon } from '../services/feriadosReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
@@ -573,8 +573,9 @@ describe('el reparto de las vacaciones', () => {
         + 'la 2025 y 10 de la 2026. Perdés 7 de la 2024 (vencen el 31/12/2026).'],
       [[vacaciones(100, '2026-12-14', '2026-12-18')], 100, 'Salen de la licencia 2024, la más vieja. Te quedan 40 días: 10 de '
         + 'la 2024 (vencen el 31/12/2026), 20 de la 2025 y 10 de la 2026.'],
+      // Sin «la más vieja»: a la 2024 le quedan 7, aunque se pierdan (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9)
       [[vacaciones(100, '2026-12-21', '2026-12-31'), vacaciones(101, '2027-01-04', '2027-01-10')], 101, 'Salen de la licencia '
-        + '2025, la más vieja. Te quedan 25 días: 15 de la 2025 y 10 de la 2026. Perdés 7 de la 2024 (vencen el 31/12/2026).'],
+        + '2025. Te quedan 25 días: 15 de la 2025 y 10 de la 2026. Perdés 7 de la 2024 (vencen el 31/12/2026).'],
       [[vacaciones(100, '2026-12-21', '2027-01-10'), vacaciones(101, '2026-12-01', '2026-12-02')], 101, 'Salen de la licencia '
         + '2024, la más vieja. Te quedan 30 días: 20 de la 2025 y 10 de la 2026.'],
       [[vacaciones(100, '2026-12-14', '2026-12-18'), { id: 102, tipo: 'medica', desde: '2026-12-21', hasta: '2026-12-31',
@@ -732,6 +733,53 @@ describe('textoDelReparto', () => {
     const reparto = repartoDeVacaciones(PLANTA.estado, { hoy: HOY, feriados: SIN_FERIADOS });
     assert.equal(textoDelReparto(reparto, 999), '');
     assert.equal(textoDe(PLANTA.estado, vacaciones(100, '2026-10-21', '2026-10-23')), '');
+  });
+
+  // «la más vieja» solo cuando es cierto (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9): si queda una licencia
+  // más vieja que la primera que usa la carga, no vencida y con días (disponibles o que se pierden), no va
+  it('«la más vieja»: no va si queda una más vieja con días; una carga de enero no usa la 2024, que sigue con sus 15', () => {
+    assert.equal(textoDeLaCarga(PERSONA, [vacaciones(100, '2027-01-04', '2027-01-08')], 100),
+      'Salen de la licencia 2025. Te quedan 40 días: 15 de la 2024 (vencen el 31/12/2026), 15 de la 2025 y 10 de la 2026.');
+    assert.equal(textoDeLaCarga(PERSONA, [vacaciones(100, '2027-01-04', '2027-02-05')], 100),
+      'Salen de las licencias 2025 (20 días) y 2026 (5 días). Te quedan 20 días: 15 de la 2024 (vencen el 31/12/2026) y 5 '
+      + 'de la 2026.');
+  });
+
+  it('«la más vieja»: tampoco si a la más vieja solo le quedan días que se pierden', () => {
+    // La de diciembre deja 7 de la 2024 sin ningún día libre hasta el 31/12: la de enero ya no puede usarlos, pero quedan
+    assert.equal(textoDeLaCarga(PERSONA, [vacaciones(100, '2026-12-21', '2026-12-31'),
+      vacaciones(101, '2027-01-04', '2027-01-10')], 101),
+    'Salen de la licencia 2025. Te quedan 25 días: 15 de la 2025 y 10 de la 2026. Perdés 7 de la 2024 (vencen el 31/12/2026).');
+  });
+
+  it('«la más vieja»: sí con la más vieja vencida a hoy o sin días', () => {
+    // El 04/01/2027 la 2024 ya venció: la 2025 es la más vieja
+    const enero = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA, vacaciones(100, '2027-01-04', '2027-01-08')),
+      { hoy: '2027-01-04', feriados: SIN_FERIADOS });
+    assert.equal(textoDelReparto(enero, 100),
+      'Salen de la licencia 2025, la más vieja. Te quedan 35 días: 15 de la 2025 (vencen el 31/12/2027) y 20 de la 2026.');
+    // Sin días de la 2024 (CONTRATO la tiene en 0), la 2025 también es la más vieja
+    assert.equal(textoDe(CONTRATO.estado, vacaciones(100, '2026-11-03', '2026-11-09')),
+      'Salen de la licencia 2025, la más vieja. Te quedan 8 días, todos de la 2026.');
+    // Una más vieja ya vencida no cuenta, aunque traiga días (un reparto armado a mano)
+    const aMano = {
+      hoy: '2027-01-04', porFila: new Map([[1, [{ anio: 2025, dias: 2 }]]]), sinCubrir: new Map(),
+      ordinarias: [{ anio: 2024, vence: '2026-12-31', disponibles: 3, perdidos: 1 },
+        { anio: 2025, vence: '2027-12-31', disponibles: 0, perdidos: 0 }]
+    };
+    assert.ok(textoDelReparto(aMano, 1).startsWith('Salen de la licencia 2025, la más vieja.'));
+    // Y una más nueva con días no cambia nada
+    assert.ok(textoDelReparto({ ...aMano, ordinarias: [{ anio: 2026, vence: '2028-12-31', disponibles: 4, perdidos: 0 }] }, 1)
+      .startsWith('Salen de la licencia 2025, la más vieja.'));
+  });
+});
+
+describe('textoDeLosDiasHabiles (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9)', () => {
+  it('los hábiles y, si son menos, de cuántos corridos: la misma forma en el cálculo, la lista y el segundo paso', () => {
+    assert.equal(textoDeLosDiasHabiles(18, 26), '18 días hábiles de 26 corridos');
+    assert.equal(textoDeLosDiasHabiles(1, 3), '1 día hábil de 3 corridos');
+    assert.equal(textoDeLosDiasHabiles(5, 5), '5 días hábiles');
+    assert.equal(textoDeLosDiasHabiles(1, 1), '1 día hábil');
   });
 });
 
