@@ -8,6 +8,8 @@ import { renderEstadoGeneral } from '../services/reportesEstadoGeneralPdf.js';
 import { renderPorArea } from '../services/reportesPorAreaPdf.js';
 import { renderAvisos, avisosDelPeriodo, MENSAJE_PERIODO_INVALIDO } from '../services/reportesAvisosPdf.js';
 import { agendaDe, opcionesDeAgenda } from '../services/reportesAgenda.js';
+import { leerCalendario } from '../services/feriadosDatos.js';
+import { exigirLaTabla } from '../services/feriadosReglas.js';
 import { renderAgenda } from '../services/reportesAgendaPdf.js';
 import { renderParaCompletar } from '../services/reportesParaCompletarPdf.js';
 import { renderInformeAnual, logrosPorProyecto } from '../services/reportesInformeAnualPdf.js';
@@ -244,17 +246,19 @@ export const reportePorArea = async (req, res) => {
 // Qué vence en los próximos 3, 6 o 12 meses, mes por mes, con los vencidos aparte (spec 2026-10-24-metricas-y-reportes, 5, punto 6): la
 // agenda la arma services/reportesAgenda.js (agendaDe) y el PDF lo dibuja services/reportesAgendaPdf.js. Acá van la consulta de los
 // datasets activos (el área y la frecuencia por su nombre, los meses de la frecuencia, la próxima y «Datos al» como 'AAAA-MM-DD', el tipo
-// de pedido guardado y «Requiere nota DGMIT») y el pie, con el nombre corto de quien lo pide y la hora argentina (un solo instante para
-// el pie y para "hoy").
+// de pedido guardado y «Requiere nota DGMIT»), el calendario (los 9 fijos y los feriados de la tabla, leído una vez: el día hábil de
+// «Aviso aprox.», el mismo con que salen los avisos; spec 2026-10-27-feriados-en-notas, 5) y el pie, con el nombre corto de quien lo
+// pide y la hora argentina (un solo instante para el pie y para "hoy").
 
 // GET /reportes/agenda?meses=&gestion= (authMiddleware: todos los roles con sesión). Los valores que no sirven caen a 6 meses y a las dos
-// gestiones (opcionesDeAgenda). El archivo se llama «Agenda-de-pedidos-AAAA-MM-DD.pdf», con la fecha de hoy en Argentina.
+// gestiones (opcionesDeAgenda). El archivo se llama «Agenda-de-pedidos-AAAA-MM-DD.pdf», con la fecha de hoy en Argentina. Si la tabla de
+// los feriados no se puede leer, el 500 de siempre (exigirLaTabla: la agenda no dice un día de aviso contado con los 9 fijos).
 export const reporteAgenda = async (req, res) => {
   try {
     const { meses, gestion } = opcionesDeAgenda(req.query);
     const momento = ahoraArgentina();
     const hoy = momento.slice(0, 10);
-    const [[[usuario]], [datasets]] = await Promise.all([
+    const [[[usuario]], [datasets], leido] = await Promise.all([
       pool.execute('SELECT nombre_completo FROM usuarios WHERE id = ?', [req.user.userId]),
       pool.execute(`
         SELECT d.titulo, d.tipo_gestion, d.tipo_pedido, d.requiere_nota, a.nombre AS area_nombre, f.nombre AS frecuencia_nombre,
@@ -263,8 +267,10 @@ export const reporteAgenda = async (req, res) => {
         JOIN frecuencias f ON d.frecuencia_id = f.id
         JOIN areas a ON d.area_id = a.id
         WHERE d.activo = TRUE
-      `)
+      `),
+      leerCalendario()
     ]);
+    const calendario = exigirLaTabla(leido);
     const agenda = agendaDe(datasets.map(d => ({
       titulo: d.titulo,
       area: d.area_nombre,
@@ -275,7 +281,7 @@ export const reporteAgenda = async (req, res) => {
       datos_al: d.datos_al_iso,
       tipo_pedido: d.tipo_pedido,
       requiere_nota: d.requiere_nota
-    })), { hoy, meses, gestion });
+    })), { hoy, meses, gestion, calendario });
     const pdf = await renderAgenda({ meses, gestion, agenda }, { hoy, generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('agenda', { hoy })));

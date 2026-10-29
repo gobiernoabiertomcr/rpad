@@ -11,6 +11,7 @@ import {
   areasYTemas, etapasDe
 } from '../services/metricasReglas.js';
 import { cintaDeMetricas } from '../services/metricasCinta.js';
+import { calendarioDeFechas } from '../services/feriadosReglas.js';
 
 const MOMENTO = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 const AL = '2026-12-31';
@@ -167,9 +168,11 @@ describe('la foto del 31/12', () => {
     const guardada = await foto.leerFoto(2026);
     assert.deepEqual([guardada.anio, guardada.al], [2026, AL]);
     assert.deepEqual(Object.keys(guardada.datos), [
-      'version', 'casos', 'vistas', 'cintas', 'contexto', 'trabajo', 'areas', 'etapas', 'generada'
+      'version', 'casos', 'vistas', 'cintas', 'contexto', 'trabajo', 'areas', 'etapas', 'feriados', 'generada'
     ]);
     assert.equal(guardada.datos.version, 1);
+    // La tabla de esta base está vacía: la tabla no sacó ningún día hábil
+    assert.deepEqual(guardada.datos.feriados, []);
     assert.match(guardada.datos.generada, MOMENTO);
     assert.deepEqual(await foto.aniosConFoto(), [2026]);
 
@@ -393,8 +396,10 @@ describe('la foto del 31/12', () => {
     // Con la clave, son las guardadas, tal cual: no se recalculan
     assert.equal(foto.etapasDeLaFoto(nueva), nueva.datos.etapas);
 
-    // La misma foto como la dejaba el código anterior: sin etapas. Se sigue leyendo (la versión es la misma)
-    const { etapas, ...sinEtapas } = nueva.datos;
+    // La misma foto como la dejaba el código anterior: sin etapas ni feriados (en esta base, la tabla está vacía). Se sigue leyendo
+    // (la versión es la misma)
+    const { etapas, feriados, ...sinEtapas } = nueva.datos;
+    assert.deepEqual(feriados, []);
     await query('UPDATE metricas_fotos SET datos = ? WHERE anio = 2026', [JSON.stringify(sinEtapas)]);
     const vieja = await foto.leerFoto(2026);
     assert.deepEqual(Object.keys(vieja.datos), ['version', 'casos', 'vistas', 'cintas', 'contexto', 'trabajo', 'areas', 'generada']);
@@ -417,6 +422,50 @@ describe('la foto del 31/12', () => {
       assert.throws(() => foto.etapasDeLaFoto({ anio: 2026, datos: { ...sinEtapas, etapas: roto } }),
         { message: 'La foto de 2026 no se puede leer' }, JSON.stringify(roto));
     }
+  });
+
+  // Los feriados de la foto (spec 2026-10-27-feriados-en-notas, 5): una foto sin etapas se recalcula con el calendario con el que se
+  // sacó, el de sus `feriados` (los días que la tabla sacó de los hábiles); sin ellos, con los 9 fijos, como la sacaba el código
+  // anterior. En esta base la tabla está vacía: los feriados se ponen a mano en la foto
+  it('una foto sin etapas se recalcula con sus feriados', async () => {
+    await prepararElAnio();
+    await sacar('2027-01-10');
+    const { etapas, feriados, ...sinNada } = (await foto.leerFoto(2026)).datos;
+    assert.deepEqual(feriados, []);
+    const opciones = { anio: 2026, al: AL };
+    const avisoExterno = (calculadas) => calculadas.externa.find((etapa) => etapa.clave === 'aviso').habiles.mediana;
+
+    // Sin feriados, con los 9 fijos: A se avisó el 21/10 y vencía el 30/11, 28 días hábiles
+    assert.deepEqual(foto.etapasDeLaFoto({ anio: 2026, datos: sinNada }), etapas);
+    assert.equal(avisoExterno(foto.etapasDeLaFoto({ anio: 2026, datos: sinNada })), 28);
+
+    // Con el 02/11 entre sus feriados, uno menos
+    const conElDosDeNoviembre = { ...sinNada, feriados: ['2026-11-02'] };
+    const recalculadas = foto.etapasDeLaFoto({ anio: 2026, datos: conElDosDeNoviembre });
+    assert.deepEqual(recalculadas,
+      etapasDe(sinNada.casos, { ...opciones, calendario: calendarioDeFechas(['2026-11-02']) }));
+    assert.equal(avisoExterno(recalculadas), 27);
+
+    // Unos feriados que no son una lista de fechas: la foto no se puede leer
+    for (const raros of ['x', ['no es una fecha'], ['2026-11-02', '2026-02-30'], null, {}, [null]]) {
+      assert.throws(() => foto.etapasDeLaFoto({ anio: 2026, datos: { ...sinNada, feriados: raros } }),
+        { message: 'La foto de 2026 no se puede leer' }, JSON.stringify(raros));
+    }
+
+    // Con las etapas guardadas, los feriados no se miran (Ruling 16: no se recalculan)
+    for (const raros of ['x', ['no es una fecha'], ['2026-11-02']]) {
+      const conEtapas = { ...sinNada, etapas, feriados: raros };
+      assert.equal(foto.etapasDeLaFoto({ anio: 2026, datos: conEtapas }), etapas, JSON.stringify(raros));
+    }
+  });
+
+  // datosDeLaFoto se exporta: con el año como texto, los feriados son los mismos que con el número (van hasta el 31/12 del año
+  // siguiente, sumado como número: sumado como texto daría '20261-12-31' y ningún feriado). No toca la base
+  it('los feriados de la foto son los mismos con el año como texto', () => {
+    const opciones = { generada: '2027-01-10 08:15:00', calendario: calendarioDeFechas(['2026-11-02', '2027-03-15']) };
+    const conNumero = foto.datosDeLaFoto(new Map(), { ...opciones, anio: 2026 });
+    assert.deepEqual(conNumero.feriados, ['2026-11-02', '2027-03-15']);
+    assert.deepEqual(foto.datosDeLaFoto(new Map(), { ...opciones, anio: '2026' }).feriados, conNumero.feriados);
   });
 
   // El reporte nuevo nunca frena la foto del 31/12, que no se vuelve a sacar: si calcular las etapas tira, la parte de las etapas
@@ -447,7 +496,8 @@ describe('la foto del 31/12', () => {
     // etapas salen de sus casos y son las que habría guardado
     const { etapas, generada, ...resto } = datos;
     const sinEtapas = { ...resto, ...parte, generada };
-    assert.deepEqual(Object.keys(sinEtapas), ['version', 'casos', 'vistas', 'cintas', 'contexto', 'trabajo', 'areas', 'generada']);
+    assert.deepEqual(Object.keys(sinEtapas),
+      ['version', 'casos', 'vistas', 'cintas', 'contexto', 'trabajo', 'areas', 'feriados', 'generada']);
     await query('INSERT INTO metricas_fotos (anio, al, datos) VALUES (2026, ?, ?)', [AL, JSON.stringify(sinEtapas)]);
     const leida = await foto.leerFoto(2026);
     assert.deepEqual(leida.datos, JSON.parse(JSON.stringify(sinEtapas)));

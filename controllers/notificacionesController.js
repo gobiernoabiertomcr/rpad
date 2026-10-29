@@ -127,9 +127,11 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
     // del año anterior ya está). Aislada: un error acá (también si falta la tabla) no frena la respuesta, queda en la última corrida
     // que muestra Correos > Estado y la corrida del día siguiente la vuelve a intentar. Corre fuera del bloqueo de las Notas Digitales
     // (conBloqueo): con dos corridas a la vez, el registrarFin de la primera puede pisar la anotación de la segunda, que igual queda en
-    // la respuesta y en el log (y la foto se reintenta al día siguiente)
+    // la respuesta y en el log (y la foto se reintenta al día siguiente). Con el calendario de la corrida (spec
+    // 2026-10-27-feriados-en-notas, 2 y 5: una sola lectura de la tabla); si cayó a los 9 fijos, la foto no se saca y se reintenta en
+    // la corrida siguiente
     try {
-      resultados.foto = await sacarFotoSiCorresponde({ hoy });
+      resultados.foto = await sacarFotoSiCorresponde({ hoy, calendario });
     } catch (error) {
       const mensaje = String(error?.message ?? error);
       // Solo la pila: los errores de mysql2 traen la consulta entera, con todos los datos de la foto

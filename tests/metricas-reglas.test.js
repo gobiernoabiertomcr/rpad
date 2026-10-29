@@ -14,6 +14,8 @@ import { ciclosDe, avisosDelCiclo } from '../services/seguimientoReglas.js';
 import { estadoDelDataset, tasaDeActualizacion, cumplimientoPorArea } from '../services/fechasDatasetReglas.js';
 import { diasEntre, diasHabilesTranscurridos, sumarDias, VENTANA_DIAS } from '../services/notasDigitalesCalendario.js';
 import { fechaDeAvisoPorRegla } from '../services/reportesAgenda.js';
+import { calendarioCon } from '../services/feriadosReglas.js';
+import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
 // Las claves de un caso, en el orden de la spec
 const CLAVES = [
@@ -2617,5 +2619,120 @@ describe('el nombre de la etapa de la DGMIT y la Dirección Administrativa', () 
     // Con la mediana en días hábiles, el rótulo también entra en el dibujo
     const cintas = cintasDeLaVista(vista(casosConNotas()), { estadistico: 'mediana', dias: 'habiles' });
     assert.ok(cintas.externa.rotulos.some((r) => r.texto.startsWith(`${NOMBRE} · `)), JSON.stringify(cintas.externa.rotulos));
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Con los feriados de la tabla (spec 2026-10-27-feriados-en-notas, 5: la tanda 2)
+// ---------------------------------------------------------------------------------------------------------------------
+
+// El calendario con la precarga de 2026 y 2027 (tests/fixtures/feriados-precarga.js, la de migracion-feriados-datos.sql): con él, 2026
+// tiene 237 días hábiles en lugar de 253. Las reglas cuentan con el calendario que reciben (casosDe, vistaDe y etapasDe, en sus
+// opciones; duracion, como último parámetro) y, sin él o con null, con los 9 fijos, como hasta la tanda 1
+const TABLA = calendarioCon(FILAS_PRECARGA);
+const casosCon = (calendario, hoy = AL) => casosDe(mapaDeLosCasos(), { hoy, calendario });
+
+describe('con los feriados de la tabla (feriados en todo el sistema, tanda 2)', () => {
+  it('duracion cuenta los días hábiles con el calendario que recibe; los corridos no cambian', () => {
+    // Del 22/12/2025 al 31/01/2026 (el aviso de 40 días del 52): el viernes 02/01/2026 es asueto, un no laborable de la tabla
+    assert.equal(duracion('2025-12-22', '2026-01-31', 'habiles', TABLA), 26);
+    assert.equal(duracion('2025-12-22', '2026-01-31', 'habiles'), 27);
+    assert.equal(duracion('2025-12-22', '2026-01-31', 'habiles', null), 27);
+    for (const calendario of [TABLA, undefined, null]) assert.equal(duracion('2025-12-22', '2026-01-31', 'corridos', calendario), 40);
+  });
+
+  it('al 24/10/2026: el aviso anticipado y «se cargaron … después» cuentan sin los feriados de la tabla', () => {
+    const conTabla = vista(casosCon(TABLA), { calendario: TABLA });
+    assert.equal(cifraDel(conTabla, 'externa', 'aviso').valor, 26);
+    assert.equal(cifraDel(conTabla, 'interna', 'aviso').valor, 40);
+    assert.equal(conTabla.resultados.a_tiempo.despues.texto, 'Los otros 6 se cargaron una mediana de 25 días hábiles después.');
+    // Sin el calendario, con los 9 fijos, como siempre; con null, lo mismo
+    const fijos = vista(casosReales());
+    assert.equal(cifraDel(fijos, 'externa', 'aviso').valor, 27);
+    assert.equal(cifraDel(fijos, 'interna', 'aviso').valor, 42);
+    assert.equal(fijos.resultados.a_tiempo.despues.texto, 'Los otros 6 se cargaron una mediana de 27 días hábiles después.');
+    assert.deepEqual(vista(casosCon(null), { calendario: null }), fijos);
+  });
+
+  it('al 31/12/2026: la producción interna en curso cuenta los 237 días hábiles de 2026 (253 con los 9 fijos)', () => {
+    const al = '2026-12-31';
+    const enCurso = (calendario) => tramoDe(vista(casosCon(calendario, al), { al, calendario }), 'interna', 'produccion').en_curso.texto;
+    assert.equal(enCurso(TABLA), '1 sin datos registrados todavía, hace 237 días hábiles (mediana)');
+    assert.equal(enCurso(undefined), '1 sin datos registrados todavía, hace 253 días hábiles (mediana)');
+  });
+
+  it('lo que no cuenta días hábiles no cambia: los casos, la cobertura, las reiteraciones, «Para completar» y los días corridos', () => {
+    for (const al of [AL, '2026-12-31']) {
+      const casosTabla = casosCon(TABLA, al);
+      const casosFijos = casosCon(undefined, al);
+      assert.deepEqual(casosTabla, casosFijos, al);
+      const conTabla = vista(casosTabla, { al, calendario: TABLA });
+      const fijos = vista(casosFijos, { al });
+      assert.deepEqual(conTabla.resultados.cobertura, fijos.resultados.cobertura, al);
+      assert.deepEqual(conTabla.resultados.reiteraciones, fijos.resultados.reiteraciones, al);
+      assert.deepEqual(conTabla.para_completar, fijos.para_completar, al);
+      assert.deepEqual(vista(casosTabla, { al, dias: 'corridos', calendario: TABLA }), vista(casosFijos, { al, dias: 'corridos' }), al);
+    }
+  });
+
+  // El 31/12/2026 externo: su regla cae el sábado 21/11/2026 y el lunes 23/11 es el Día de la Soberanía Nacional (trasladado del 20/11),
+  // así que el aviso sale el martes 24/11. Con los 9 fijos salía el 23/11 y, sin el aviso, ya faltaba el 24/11 a las 0:00
+  it('la cobertura espera al día hábil del aviso que un feriado de la tabla corrió: el 31/12/2026 externo, del 23/11 al 24/11', () => {
+    const delMes = caso({
+      venc: '2026-12-31', inicio: '2026-01-15', alta: '2026-01-15', fecha_regla: '2026-11-21', aviso_regla: null, primer_aviso: null,
+      inicio_tramos: null, avisos_rpad: [], reiteraciones_rpad: null, motivo_sin_aviso: 'sin-aviso'
+    });
+    const total = (al, calendario) => vistaDe([delMes], { anio: 2026, al, calendario }).resultados.cobertura.total;
+    // El 24/11, el día del aviso con la tabla: todavía no falta; con los 9 fijos, sí
+    assert.deepEqual([total('2026-11-24', TABLA), total('2026-11-24')], [0, 1]);
+    // Desde el 25/11, con los dos
+    assert.deepEqual([total('2026-11-25', TABLA), total('2026-11-25')], [1, 1]);
+  });
+
+  it('casosDe: el motivo sin el aviso de la regla espera al día hábil del aviso con los feriados de la tabla', () => {
+    // Un externo con el vencimiento del 31/12/2026, dado de alta el 15/01/2026 y sin ningún aviso
+    const fuentes = solo({ id: 900, alta: '2026-01-15 09:00:00', proxima: '2026-12-31', ultima: '2026-01-15' });
+    const motivo = (hoy, calendario) => casosDe(mapaDe(fuentes), { hoy, calendario })[0].motivo_sin_aviso;
+    assert.equal(motivo('2026-11-24', TABLA), null);
+    assert.equal(motivo('2026-11-24'), 'sin-aviso');
+    assert.deepEqual([motivo('2026-11-25', TABLA), motivo('2026-11-25')], ['sin-aviso', 'sin-aviso']);
+  });
+
+  // La paridad con la Agenda de pedidos (fechaDeAvisoPorRegla) con el mismo calendario: el día del aviso, sin el aviso, todavía no
+  // falta; el siguiente, sí
+  it('la cobertura cuenta desde el día de la Agenda con el mismo calendario: cada fin de mes de 2026 y 2027, en las dos gestiones', () => {
+    let distintos = 0;
+    for (const anio of [2026, 2027]) {
+      for (const gestion of ['externa', 'interna']) {
+        for (let mes = 1; mes <= 12; mes++) {
+          const vencimiento = sumarDias(mes === 12 ? `${anio + 1}-01-01` : `${anio}-${String(mes + 1).padStart(2, '0')}-01`, -1);
+          const dia = fechaDeAvisoPorRegla(vencimiento, gestion, TABLA);
+          if (!dia.startsWith(`${anio}-`)) continue;
+          if (dia !== fechaDeAvisoPorRegla(vencimiento, gestion)) distintos += 1;
+          const delMes = caso({
+            gestion, requiere_nota: gestion === 'interna' ? null : 1, venc: vencimiento, inicio: `${anio - 1}-12-01`, alta: `${anio - 1}-12-01`,
+            fecha_regla: sumarDias(vencimiento, -VENTANA_DIAS[gestion]), aviso_regla: null, primer_aviso: null, inicio_tramos: null, avisos_rpad: [],
+            reiteraciones_rpad: null, motivo_sin_aviso: 'sin-aviso'
+          });
+          const total = (al) => vistaDe([delMes], { anio, al, calendario: TABLA }).resultados.cobertura.total;
+          assert.equal(total(dia), 0, `${gestion} ${vencimiento}: el día del aviso (${dia})`);
+          assert.equal(total(sumarDias(dia, 1)), 1, `${gestion} ${vencimiento}: el día siguiente`);
+        }
+      }
+    }
+    // Hay fines de mes cuyo aviso la tabla corre (el 31/12/2026, en las dos gestiones): la paridad prueba algo
+    assert.ok(distintos > 0);
+  });
+
+  it('etapasDe: el aviso anticipado externo del Ciclo de vida cuenta con el calendario, como el circuito de Métricas', () => {
+    const casos = casosCon(TABLA);
+    const aviso = etapaDe(etapasDe(casos, { anio: 2026, al: AL, calendario: TABLA }), 'externa', 'aviso');
+    assert.equal(aviso.habiles.mediana, 26);
+    assert.equal(aviso.textos.indice, '26');
+    assert.equal(aviso.habiles.mediana, cifraDel(vista(casos, { calendario: TABLA }), 'externa', 'aviso').valor);
+    // Sin el calendario, con los 9 fijos; los corridos, iguales con los dos
+    const fijo = etapaDe(etapas(casosReales()), 'externa', 'aviso');
+    assert.deepEqual([fijo.habiles.mediana, fijo.textos.indice], [27, '27']);
+    assert.deepEqual(aviso.corridos, fijo.corridos);
   });
 });

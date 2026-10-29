@@ -29,7 +29,7 @@ import {
 
 const SE_MIDE_EL_AVISO = 'Se mide del aviso al vencimiento: cuanto más grande, más anticipación.';
 const SE_MIDE_LA_CARGA = 'Se mide del «Recibido el» al día de la carga en el portal.';
-const COMO_SE_CUENTA = 'Días hábiles: de lunes a viernes, sin los feriados nacionales fijos; entre paréntesis, los corridos. La mediana es el '
+const COMO_SE_CUENTA = 'Días hábiles: de lunes a viernes, sin feriados ni días no laborables; entre paréntesis, los corridos. La mediana es el '
   + 'valor del medio: la mitad de los ciclos tardó eso o menos. El caso más largo y el más corto (en el aviso, el de más y el de menos '
   + 'anticipación) son los ciclos de los extremos de cada etapa. Cada ciclo cuenta en el año en que terminó la etapa; el aviso, en el año '
   + 'de su vencimiento, aunque todavía no haya llegado. Los que todavía no terminaron la respuesta o el relevamiento van aparte, como '

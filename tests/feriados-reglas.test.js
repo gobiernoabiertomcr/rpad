@@ -8,7 +8,8 @@ import {
   proximoDiaHabilCon, restarDiasHabilesCon, ultimoDiaHabilDelMesCon, fechasDelFeriado, fechasQueCambianDiasHabiles,
   MENSAJES_FERIADO, FECHA_MINIMA_FERIADO, LARGO_NOMBRE_FERIADO,
   validarFeriado, validarRige, bajaDesde, errorDeLaCorreccion, feriadosDelAnio, avisosDeLaFecha, aniosDelSelector,
-  calendarioCon, MENSAJE_CORRIDA_SIN_FERIADOS, MENSAJE_ESTADO_SIN_FERIADOS
+  calendarioCon, MENSAJE_CORRIDA_SIN_FERIADOS, MENSAJE_ESTADO_SIN_FERIADOS,
+  MENSAJE_METRICAS_SIN_FERIADOS, exigirLaTabla, feriadosDelCalendario, calendarioDeFechas
 } from '../services/feriadosReglas.js';
 import { FERIADOS_FIJOS, esDiaHabil, CALENDARIO_FIJO, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
@@ -1195,5 +1196,68 @@ describe('los mensajes de la caída a los 9 fijos', () => {
       'No se pudieron leer los feriados de Configuración → Feriados: la corrida usó solo los 9 fijos.');
     assert.equal(MENSAJE_ESTADO_SIN_FERIADOS,
       'No se pudieron leer los feriados de Configuración → Feriados: las fechas de esta pantalla cuentan solo los 9 feriados fijos.');
+  });
+
+  it('el de Métricas va en minúscula: la corrida lo anota detrás de «No se pudo sacar la foto del año: »', () => {
+    assert.equal(MENSAJE_METRICAS_SIN_FERIADOS, 'no se pudieron leer los feriados de Configuración → Feriados');
+  });
+});
+
+// La foto del 31/12 con sus feriados (spec 2026-10-27-feriados-en-notas, 2 y 5): Métricas exige la tabla, la foto guarda los
+// días que la tabla sacó de los hábiles y, al leerla, vuelve a armar el mismo calendario con ellos
+describe('exigirLaTabla, feriadosDelCalendario y calendarioDeFechas', () => {
+  const TABLA = calendarioCon(FILAS_PRECARGA);
+  // Los días que la precarga saca de los hábiles de 2025 a 2027: los de lunes a viernes que no son de los 9 fijos (el Jueves
+  // Santo de 2026, el 02/04, es fijo; el Empleado Municipal de 2026 cae domingo y el de 2027, lunes)
+  const DE_LA_PRECARGA = [
+    '2026-01-02', '2026-02-16', '2026-02-17', '2026-02-23', '2026-03-23', '2026-04-03', '2026-04-30', '2026-06-15', '2026-07-10',
+    '2026-07-28', '2026-08-17', '2026-10-12', '2026-11-02', '2026-11-09', '2026-11-23', '2026-12-07', '2027-02-08', '2027-02-09',
+    '2027-02-23', '2027-03-25', '2027-03-26', '2027-06-21', '2027-07-28', '2027-08-16', '2027-10-11', '2027-11-01', '2027-11-08',
+    '2027-12-13'
+  ];
+  const DIAS = [];
+  for (let dia = '2025-01-01'; dia <= '2027-12-31'; dia = sumarDias(dia, 1)) DIAS.push(dia);
+
+  it('exigirLaTabla devuelve el mismo calendario si se leyó; si cayó a los 9 fijos, tira', () => {
+    assert.equal(exigirLaTabla(CALENDARIO_FIJO), CALENDARIO_FIJO);
+    assert.equal(exigirLaTabla(TABLA), TABLA);
+    assert.equal(exigirLaTabla(calendarioCon([])).origen, 'tabla');
+    assert.throws(() => exigirLaTabla(calendarioCon([], { origen: 'fijos', error: 'falla' })),
+      { message: MENSAJE_METRICAS_SIN_FERIADOS });
+    // La caída se detecta por el error, nunca por el origen
+    assert.throws(() => exigirLaTabla(calendarioCon(FILAS_PRECARGA, { origen: 'tabla', error: 'falla' })),
+      { message: MENSAJE_METRICAS_SIN_FERIADOS });
+  });
+
+  it('feriadosDelCalendario: los días hábiles con los 9 fijos que no lo son con el calendario, en orden', () => {
+    assert.deepEqual(feriadosDelCalendario(CALENDARIO_FIJO, '2025-01-01', '2027-12-31'), []);
+    assert.deepEqual(feriadosDelCalendario(TABLA, '2025-01-01', '2027-12-31'), DE_LA_PRECARGA);
+    // Los dos extremos van incluidos
+    assert.deepEqual(feriadosDelCalendario(TABLA, '2026-11-02', '2026-11-09'), ['2026-11-02', '2026-11-09']);
+    assert.deepEqual(feriadosDelCalendario(TABLA, '2026-11-02', '2026-11-02'), ['2026-11-02']);
+    // Un día de los 9 fijos, un sábado o un domingo no van, aunque la tabla también los tenga
+    assert.deepEqual(feriadosDelCalendario(TABLA, '2026-04-02', '2026-04-02'), []);
+    assert.deepEqual(feriadosDelCalendario(TABLA, '2026-11-07', '2026-11-08'), []);
+    // desde > hasta, o una fecha que no es una fecha, []
+    assert.deepEqual(feriadosDelCalendario(TABLA, '2026-11-09', '2026-11-02'), []);
+    for (const raro of ['abc', '', '2026-02-30', '2026-2-3', null, undefined, 3]) {
+      assert.deepEqual(feriadosDelCalendario(TABLA, raro, '2026-12-31'), [], String(raro));
+      assert.deepEqual(feriadosDelCalendario(TABLA, '2026-01-01', raro), [], String(raro));
+    }
+    // Se cuentan los días, no se compara el texto: termina en el 31/12/9999
+    assert.deepEqual(feriadosDelCalendario(TABLA, '9999-12-25', '9999-12-31'), []);
+  });
+
+  it('calendarioDeFechas con esa lista da lo mismo que el calendario de la tabla en ese rango', () => {
+    const deLasFechas = calendarioDeFechas(DE_LA_PRECARGA);
+    for (const dia of DIAS) assert.equal(deLasFechas.esDiaHabil(dia), TABLA.esDiaHabil(dia), dia);
+    assert.equal(deLasFechas.diasHabilesTranscurridos('2025-12-31', '2026-12-31'), 237);
+    assert.equal(TABLA.diasHabilesTranscurridos('2025-12-31', '2026-12-31'), 237);
+    assert.deepEqual([deLasFechas.origen, deLasFechas.error], ['tabla', null]);
+    assert.ok(Object.isFrozen(deLasFechas));
+    // Sin fechas, lo mismo que los 9 fijos
+    const sinFechas = calendarioDeFechas([]);
+    for (const dia of DIAS) assert.equal(sinFechas.esDiaHabil(dia), CALENDARIO_FIJO.esDiaHabil(dia), dia);
+    assert.equal(sinFechas.diasHabilesTranscurridos('2025-12-31', '2026-12-31'), 253);
   });
 });

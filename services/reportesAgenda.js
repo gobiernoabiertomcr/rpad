@@ -8,9 +8,11 @@
 // (fechaDeAvisoPorRegla; en un vencido, null: el de la regla ya pasó y lo que sigue es la reiteración, Ruling 27).
 // Lo usan el controlador (controllers/reportesController.js, GET /api/reportes/agenda) y el PDF (services/reportesAgendaPdf.js). Puro:
 // sin base de datos ni Date local (las fechas son 'AAAA-MM-DD' y hoy llega por parámetro), y solo importa módulos puros; ninguna
-// función tira. VENTANA_DIAS es la del calendario (Ruling 30), la misma con que las Notas Digitales mandan el aviso: así la agenda dice
-// el día que usa el envío.
-import { esFechaIso, sumarDias, proximoDiaHabil, VENTANA_DIAS } from './notasDigitalesCalendario.js';
+// función tira, salvo con un `calendario` mal armado. VENTANA_DIAS es la del calendario (Ruling 30), la misma con que las Notas
+// Digitales mandan el aviso, y el día hábil sale del calendario que recibe (spec 2026-10-27-feriados-en-notas, 5: `calendario` en las
+// opciones de agendaDe y como último parámetro de fechaDeAvisoPorRegla; sin él, o con null, el de los 9 fijos, CALENDARIO_FIJO): así,
+// con el de la tabla de feriados, la agenda dice el día que usa el envío.
+import { esFechaIso, sumarDias, VENTANA_DIAS, CALENDARIO_FIJO } from './notasDigitalesCalendario.js';
 import { estadoDelDataset, pedido, tipoEfectivo, frecuenciaEnNota, sumarMeses, vencimientoDelMes } from './fechasDatasetReglas.js';
 import { textoRequiereNota } from './requiereNotaReglas.js';
 
@@ -37,12 +39,12 @@ export const opcionesDeAgenda = (query) => {
 };
 
 // El día aproximado del aviso del RPAD para un vencimiento según la regla: VENTANA_DIAS días corridos antes (40 en gestión externa y
-// 60 en interna) o, si ese día no es hábil, el hábil siguiente (proximoDiaHabil: el mismo día si es hábil), como el día desde el que
-// las Notas Digitales cuentan un aviso (cuenta_desde). 'AAAA-MM-DD', o null si el vencimiento no es una fecha o la gestión no es una
-// de las dos.
-export const fechaDeAvisoPorRegla = (vencimiento, gestion) => {
+// 60 en interna) o, si ese día no es hábil, el hábil siguiente con el calendario (su proximoDiaHabil: el mismo día si es hábil; sin
+// calendario, o con null, el de los 9 fijos), como el día desde el que las Notas Digitales cuentan un aviso (cuenta_desde).
+// 'AAAA-MM-DD', o null si el vencimiento no es una fecha o la gestión no es una de las dos.
+export const fechaDeAvisoPorRegla = (vencimiento, gestion, calendario) => {
   if (!esFechaIso(vencimiento) || typeof gestion !== 'string' || !Object.hasOwn(VENTANA_DIAS, gestion)) return null;
-  return proximoDiaHabil(sumarDias(vencimiento, -VENTANA_DIAS[gestion]));
+  return (calendario ?? CALENDARIO_FIJO).proximoDiaHabil(sumarDias(vencimiento, -VENTANA_DIAS[gestion]));
 };
 
 // Los meses de la agenda ('AAAA-MM'): del de hoy a hoy + meses − 1, contando el actual. [] si hoy no es una fecha.
@@ -53,8 +55,8 @@ export const mesesDeLaAgenda = (hoy, meses) => {
 };
 
 // Una fila de la agenda: el dataset (`d`, como lo lee el controlador) con lo que se le va a pedir para su vencimiento. `vencido`: si
-// es de los vencidos (sin fecha de aviso)
-const filaDe = (d, hoy, vencido) => {
+// es de los vencidos (sin fecha de aviso); `calendario`: el de agendaDe, sin valor por defecto (el del día del aviso)
+const filaDe = (d, hoy, vencido, calendario) => {
   const meses = d.frecuencia_meses ?? null;
   const tipo = tipoEfectivo({ tipo_pedido: d.tipo_pedido, tipo_gestion: d.tipo_gestion, meses });
   const datosAl = esFechaIso(d.datos_al) ? d.datos_al : null;
@@ -66,7 +68,7 @@ const filaDe = (d, hoy, vencido) => {
     // «Requiere nota DGMIT» es de los externos: en un interno, vacío (el 0 es un valor: «No»)
     requiere_nota_texto: d.tipo_gestion === 'externa' ? textoRequiereNota(d.requiere_nota) : '',
     datos_solicitados: pedido({ vencimiento: d.proxima, tipo, datosAl, meses, hoy })?.texto ?? null,
-    aviso_aprox: vencido ? null : fechaDeAvisoPorRegla(d.proxima, d.tipo_gestion),
+    aviso_aprox: vencido ? null : fechaDeAvisoPorRegla(d.proxima, d.tipo_gestion, calendario),
     vencimiento: d.proxima
   };
 };
@@ -79,22 +81,24 @@ const porVencimiento = (a, b) => comparar(a.vencimiento, b.vencimiento)
  * La agenda de `datasets` (los activos, cada uno { titulo, area, tipo_gestion, frecuencia, frecuencia_meses, proxima, datos_al,
  * tipo_pedido, requiere_nota }: el área y la frecuencia por su nombre, los meses de la frecuencia (null es eventual), la próxima actual
  * y «Datos al» como 'AAAA-MM-DD' (o null), el tipo de pedido guardado y «Requiere nota DGMIT», 1, 0 o null). `hoy`: 'AAAA-MM-DD';
- * `meses` y `gestion`, los de opcionesDeAgenda (lo que no sirve, 6 y las dos gestiones).
+ * `meses` y `gestion`, los de opcionesDeAgenda (lo que no sirve, 6 y las dos gestiones); `calendario`: el del día hábil del aviso
+ * (fechaDeAvisoPorRegla; sin él, o con null, el de los 9 fijos).
  * Devuelve { vencidos: Fila[], meses: [{ mes: 'AAAA-MM', filas: Fila[] }] }: los vencidos (atrasados y sin respuesta, según
  * estadoDelDataset) y, de los demás, los que vencen en los meses de la agenda, cada mes con al menos uno (un mes sin vencimientos no
  * va), todos por vencimiento, área y título. Fila = { titulo, area, gestion, frecuencia, requiere_nota_texto, datos_solicitados,
  * aviso_aprox ('AAAA-MM-DD' o null), vencimiento }. Con un hoy que no es una fecha, las dos listas vacías.
  */
-export const agendaDe = (datasets, { hoy, meses, gestion } = {}) => {
+export const agendaDe = (datasets, { hoy, meses, gestion, calendario } = {}) => {
   if (!esFechaIso(hoy)) return { vencidos: [], meses: [] };
   const opciones = opcionesDeAgenda({ meses, gestion });
+  const delAviso = calendario ?? CALENDARIO_FIJO;
   const porMes = new Map(mesesDeLaAgenda(hoy, opciones.meses).map((mes) => [mes, []]));
   const vencidos = [];
   for (const d of lista(datasets).filter(objeto)) {
     if (opciones.gestion !== 'ambas' && d.tipo_gestion !== opciones.gestion) continue;
     const { estado } = estadoDelDataset({ proxima: d.proxima, meses: d.frecuencia_meses ?? null, tipoGestion: d.tipo_gestion, hoy });
-    if (estado === 'atrasado' || estado === 'sin-respuesta') vencidos.push(filaDe(d, hoy, true));
-    else if (estado === 'actualizado' || estado === 'proximo') porMes.get(d.proxima.slice(0, 7))?.push(filaDe(d, hoy, false));
+    if (estado === 'atrasado' || estado === 'sin-respuesta') vencidos.push(filaDe(d, hoy, true, delAviso));
+    else if (estado === 'actualizado' || estado === 'proximo') porMes.get(d.proxima.slice(0, 7))?.push(filaDe(d, hoy, false, delAviso));
   }
   return {
     vencidos: vencidos.sort(porVencimiento),
