@@ -159,20 +159,24 @@ export const listarHorasExtras = (req, res) => responder(res, 'Error al obtener 
 // GET /api/mi-espacio/anio/:anio: los días de vacaciones y los estudios que valen ese año, para «Mis vacaciones y saldos». Si no
 // los eligió para ese año, los del anterior más cercano (`anioVigente`), con `heredado`; sin ninguno, null. `texto_mitades` es
 // el de esos días (null sin ninguno) y `textos_mitades`, el de cada valor de DIAS_VACACIONES ('10' a '30'): el modal muestra el
-// del botón elegido sin recalcular
+// del botón elegido sin recalcular. Los dos, con el arranque o, si todavía no hay, con hoy, como los campos del saldo inicial
+// (verSaldoInicial): en el año del arranque, desde el 1/7, la primera mitad es lo que se escribe en «De la AAAA» (spec
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8)
 export const verAnio = (req, res) => responder(res, 'Error al obtener el año', async () => {
-  const anio = anioDelPedido(req.params.anio, hoyArgentina());
+  const hoy = hoyArgentina();
+  const anio = anioDelPedido(req.params.anio, hoy);
   if (anio === null) return rechazoDelAnio();
   const estado = await estadoDe(req.user.userId);
   if (estado.modalidad === null) return sinModalidad();
   const vigente = anioVigente(estado.anios, anio);
+  const opciones = { arranque: estado.arranque ?? hoy };
   return conDatos({
     anio,
     dias_vacaciones: vigente?.dias_vacaciones ?? null,
     estudios: vigente?.estudios ?? null,
     heredado: vigente !== null && vigente.anio !== anio,
-    texto_mitades: textoDeLasMitades(anio, vigente?.dias_vacaciones),
-    textos_mitades: Object.fromEntries(DIAS_VACACIONES.map((dias) => [String(dias), textoDeLasMitades(anio, dias)]))
+    texto_mitades: textoDeLasMitades(anio, vigente?.dias_vacaciones, opciones),
+    textos_mitades: Object.fromEntries(DIAS_VACACIONES.map((dias) => [String(dias), textoDeLasMitades(anio, dias, opciones)]))
   });
 });
 

@@ -30,7 +30,7 @@ import {
   calcular, vinculosDeLaLista, MENSAJES_MI_ESPACIO, ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, DIAS_VACACIONES,
   DIAS_ESTUDIOS,
   DIAS_POR_EXAMEN, JORNADA, LARGO_NOTA, horasDe as horasDelServidor, camposDelSaldoInicial, validarSaldoInicial, textoSaldo,
-  textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaDelFirmante,
+  textoSaldoDelArranque, textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaDelFirmante,
   TIPOS_DE_UN_DIA, TIPOS_POR_HORAS, esDiaEntero, TEXTO_NO_SE_COPIA, SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL,
   TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, tipoDeDia, horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, validarSalida
 } from '../services/miEspacioReglas.js';
@@ -98,9 +98,12 @@ const resumenDel = (caso, { estado = caso.estado, persona = caso.persona, ausenc
 }));
 const conLicencias = (estado, ...licencias) => ({ ...estado, licencias: [...estado.licencias, ...licencias] });
 const licencia = (id, tipo, desde, hasta = desde, horas = null) => ({ id, tipo, desde, hasta, horas });
-// PLANTA con el franco de octubre ya cargado y los tres días de la licencia 2024 usados en diciembre: nada vence pronto
-const SIN_NADA_QUE_VENZA = conLicencias(PLANTA.estado, licencia(100, 'franco', '2026-10-27'),
-  licencia(101, 'vacaciones', '2026-12-14', '2026-12-16'));
+// PLANTA con el franco de octubre ya cargado, los tres días de la licencia 2024 usados en diciembre y las 42 horas de
+// franquicia usadas (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6): nada vence pronto
+const SIN_NADA_QUE_VENZA = {
+  ...conLicencias(PLANTA.estado, licencia(100, 'franco', '2026-10-27'), licencia(101, 'vacaciones', '2026-12-14', '2026-12-16')),
+  saldos: PLANTA.estado.saldos.map((saldo) => (saldo.concepto === 'franquicias' ? { ...saldo, cantidad: 42 } : saldo))
+};
 
 // El texto que se ve de un pedazo de HTML (sin las etiquetas, con las entidades de escapeHtml resueltas)
 const textoDe = (html) => html.replace(/<[^>]*>/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
@@ -213,9 +216,10 @@ const linksDe = (html) => [...html.matchAll(/<a ([^>]*)>([\s\S]*?)<\/a>/g)]
   .map(([, atributos, adentro]) => ({ atributos: atributosDe(atributos), adentro, texto: textoDe(adentro) }));
 // El Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen, 2 y 5), con los textos que arma el servidor: los tramos de la regla
 // ({ clase, n, demora, duracion, numero }), las filas de una lista con o sin clase ({ clases, html, texto }) y las columnas de «Hoy y
-// mañana» ({ titulo, html, texto })
-const tramosDe = (html) => [...html.matchAll(/<span class="me-tramo (\w+)" style="--n:([^;"]*);--demora:([^;"]*);--duracion:([^;"]*)"><span>([^<]*)<\/span><\/span>/g)]
-  .map(([, clase, n, demora, duracion, numero]) => ({ clase, n, demora, duracion, numero }));
+// mañana» ({ titulo, html, texto }). Un tramo de un solo día lleva además la clase un-dia (`unDia`: spec
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9)
+const tramosDe = (html) => [...html.matchAll(/<span class="me-tramo (\w+)( un-dia)?" style="--n:([^;"]*);--demora:([^;"]*);--duracion:([^;"]*)"><span>([^<]*)<\/span><\/span>/g)]
+  .map(([, clase, unDia, n, demora, duracion, numero]) => ({ clase, unDia: unDia !== undefined, n, demora, duracion, numero }));
 const itemsDe = (html) => [...html.matchAll(/<li(?: class="([^"]*)")?>([\s\S]*?)<\/li>/g)]
   .map(([, clases = '', adentro]) => ({ clases: clases.split(' ').filter(Boolean), html: adentro, texto: textoDe(adentro) }));
 const columnasDe = (html) => [...html.matchAll(/<div class="me-columna"><h3>([^<]*)<\/h3>([\s\S]*?)<\/div>/g)]
@@ -302,13 +306,16 @@ describe('el Resumen «Titular»', () => {
     assert.ok(html.endsWith('</ol></aside>'));
     assert.deepEqual(filasDe(html).map(({ clases, texto }) => [clases.join(' '), texto]), [
       ['me-entrada', '30 oct 1 franco compensatorio de octubre Vence el viernes 30/10, en 4 días. Cargarlo'],
+      ['me-entrada', '31 dic 25 horas de franquicia Vencen el jueves 31/12, en 66 días. Cargar franquicia'],
       ['me-entrada', '31 dic 3 días de la licencia 2024 Vencen el jueves 31/12, en 66 días. Cargar vacaciones']
     ]);
     // El talón es decorativo: la línea ya dice la fecha
     assert.ok(html.includes('<span class="me-talon" aria-hidden="true"><b>30</b>oct</span>'));
     assert.ok(html.includes('<b id="me-vence-0">1 franco compensatorio de octubre</b><span class="me-entrada-texto">Vence el viernes 30/10, en 4 días.</span>'));
     assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [texto, atributos['data-accion'], atributos['data-tipo'], atributos['aria-describedby']]), [
-      ['Cargarlo', 'cargar-licencia', 'franco', 'me-vence-0'], ['Cargar vacaciones', 'cargar-licencia', 'vacaciones', 'me-vence-1']
+      ['Cargarlo', 'cargar-licencia', 'franco', 'me-vence-0'],
+      ['Cargar franquicia', 'cargar-licencia', 'franquicia', 'me-vence-1'],
+      ['Cargar vacaciones', 'cargar-licencia', 'vacaciones', 'me-vence-2']
     ]);
     // Los textos largos de «Niveles» se fueron
     assert.ok(!html.includes('Viernes 30/10'));
@@ -383,11 +390,13 @@ describe('el Resumen «Titular»', () => {
     const html = M.htmlDeLaRegla(raras);
     sinNumerosRaros(html);
     assert.ok(html.includes('style="grid-template-columns: minmax(0, 0fr) minmax(0, 0fr) minmax(0, 0fr) minmax(0, 0fr) minmax(0, 1fr) minmax(0, 39fr)"'));
-    // Una clase desconocida, en tinta; el tramo de 1 día entre 40 lleva su número (el <style> lo oculta si no entra) y dura lo mínimo
+    // Una clase desconocida, en tinta; el tramo de 1 día entre 40 lleva su número y la clase un-dia (el <style> lo achica si no entra,
+    // en lugar de ocultarlo: spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9) y dura lo mínimo
     assert.deepEqual(tramosDe(html).map(({ clase, n, numero, duracion }) => [clase, n, numero, duracion]), [
       ['tinta', '0', '0', '160ms'], ['medio', '0', '0', '160ms'], ['vence', '0', '0', '160ms'], ['tinta', '0', '0', '160ms'],
       ['medio', '1', '1', '160ms'], ['tinta', '39', '39', '1268ms']
     ]);
+    assert.deepEqual(tramosDe(html).map(({ unDia }) => unDia), [false, false, false, false, true, false]);
     assert.ok(html.includes('<b>: 0</b>'), 'una capa sin nombre, con su número');
     // La capacidad en 0, o que no es un número positivo: los tramos quietos (0 ms)
     for (const capacidad of [0, -3, NaN, Infinity, undefined, null, '48', {}]) {
@@ -677,7 +686,7 @@ describe('el Resumen «Titular»', () => {
     }
     // Cada botón de «Vence pronto», con sus cinco atributos: el data-tipo escapado y el aria-describedby a su título
     const botones = botonesDe(html).filter(({ atributos }) => atributos['data-accion'] === 'cargar-licencia');
-    assert.equal(botones.length, 2);
+    assert.equal(botones.length, 3);
     botones.forEach(({ atributos }, i) => {
       assert.deepEqual(Object.keys(atributos), ['type', 'class', 'data-accion', 'data-tipo', 'aria-describedby']);
       assert.equal(atributos['data-tipo'], CON_COMILLAS_ESCAPADO);
@@ -761,7 +770,7 @@ describe('la lista de licencias', () => {
     const filas = filasDeLicenciaDe(html);
     assert.equal(filas.length, 6);
     assert.deepEqual(filas.map(({ html: fila }) => textoDe(fila.match(/<span class="me-fila-fecha">([\s\S]*?)<\/span>/)[1])), [
-      '03/11 al 09/11/2026 7 días corridos, 5 hábiles', 'Vie 23/10/2026 1 día', 'Jue 15/10/2026 2 horas', '01/10 al 02/10/2026 2 días hábiles',
+      '03/11 al 09/11/2026 5 días hábiles de 7 corridos', 'Vie 23/10/2026 1 día', 'Jue 15/10/2026 2 horas', '01/10 al 02/10/2026 2 días hábiles',
       '21/09 al 23/09/2026 3 días hábiles', 'Lun 14/09/2026 7 horas, el día entero'
     ]);
     assert.deepEqual(filas.map(({ html: fila }) => textoDe(fila.match(/<span class="me-insignia [^"]+">([^<]*)<\/span>/)[1])),
@@ -3011,6 +3020,11 @@ describe('los formularios: las paridades', () => {
     assert.equal(M.JORNADA, JORNADA);
     assert.equal(M.LARGO_NOTA, LARGO_NOTA);
     for (const maximo of [0, 7, 15, 25, 30, 42, 200]) assert.equal(M.textoSaldo(maximo), textoSaldo(maximo), String(maximo));
+    // La ayuda del campo de la licencia del año del arranque (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): la única
+    // que cambia con los días que se eligen en el modal
+    for (const [maximo, anio] of [[5, 2026], [8, 2026], [10, 2026], [13, 2027], [15, 2025], [0, 2026]]) {
+      assert.equal(M.textoSaldoDelArranque(maximo, anio), textoSaldoDelArranque(maximo, anio), `${maximo} ${anio}`);
+    }
     assert.equal(M.TEXTO_SIN_ARRANQUE, MENSAJES_MI_ESPACIO.sinArranque);
     // Los tipos de un solo día y los que se cargan en horas
     assert.deepEqual(plano(M.TIPOS_DE_UN_DIA), [...TIPOS_DE_UN_DIA]);
@@ -3066,16 +3080,22 @@ describe('los formularios: las paridades', () => {
   });
 
   // «Mis vacaciones y saldos» muestra los campos de «Para arrancar» con lo que se elige en el modal, antes de guardarlo: el máximo
-  // de las vacaciones del año (la primera mitad) y el campo de los estudios dependen de los días y de la carrera del año
+  // de las vacaciones del año (la primera mitad), su ayuda (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8) y el campo de
+  // los estudios dependen de los días y de la carrera del año. Las ayudas de los años anteriores llegan del servidor y no cambian
   it('camposConLoElegido da los campos de camposDelSaldoInicial con los días y los estudios que se eligen', () => {
     const sinValor = (campos) => plano(campos).map(({ valor, ...campo }) => campo);
+    const anteriores = [{ anio: 2024, dias_vacaciones: 25, estudios: null }, { anio: 2025, dias_vacaciones: 15, estudios: 'secundario' }];
     for (const modalidad of ['planta', 'contrato']) {
       for (const arranque of ['2026-10-26', '2026-05-04']) {
-        for (const inicial of [[], [{ anio: 2026, dias_vacaciones: 20, estudios: 'universitario' }]]) {
+        for (const inicial of [[], [{ anio: 2026, dias_vacaciones: 20, estudios: 'universitario' }], anteriores,
+          [...anteriores, { anio: 2026, dias_vacaciones: 30, estudios: null }]]) {
           const delServidor = camposDelSaldoInicial({ modalidad, arranque, anios: inicial }).map((campo) => ({ ...campo, valor: null }));
+          const deAntes = inicial.filter((delAnio) => delAnio.anio !== 2026);
           for (const dias of DIAS_VACACIONES) {
             for (const estudios of ['universitario', 'secundario', null]) {
-              const esperados = camposDelSaldoInicial({ modalidad, arranque, anios: [{ anio: 2026, dias_vacaciones: dias, estudios }] });
+              const esperados = camposDelSaldoInicial({
+                modalidad, arranque, anios: [...deAntes, { anio: 2026, dias_vacaciones: dias, estudios }]
+              });
               const caso = `${modalidad} ${arranque} ${dias} ${estudios} ${inicial.length}`;
               assert.deepEqual(sinValor(M.camposConLoElegido(comoLlega(delServidor), { anio: 2026, dias, estudios })), plano(esperados), caso);
             }
@@ -3083,6 +3103,13 @@ describe('los formularios: las paridades', () => {
         }
       }
     }
+    // Las ayudas, a la vista: con 15 días elegidos, la del año del arranque dice 8; las de antes, sus días
+    const conQuince = M.camposConLoElegido(comoLlega(camposDelSaldoInicial({ modalidad: 'planta', arranque: '2026-10-26',
+      anios: [...anteriores, { anio: 2026, dias_vacaciones: 30, estudios: null }] })), { anio: 2026, dias: 15, estudios: null });
+    assert.deepEqual(plano(conQuince).filter((campo) => campo.concepto === 'vacaciones').map(({ clave, ayuda }) => [clave, ayuda]), [
+      ['vacaciones-2024', 'De 0 a 25: los días de la 2024.'], ['vacaciones-2025', 'De 0 a 15: los días de la 2025.'],
+      ['vacaciones-2026', 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.']
+    ]);
     // Sin días elegidos, como llegaron; un saldo de otro año (el arranque fue el año pasado), tampoco cambia
     const campos = comoLlega(camposDelSaldoInicial({ modalidad: 'planta', arranque: '2026-10-26', anios: [] }));
     assert.deepEqual(plano(M.camposConLoElegido(campos, { anio: 2026, dias: null, estudios: null })), campos);
@@ -3090,19 +3117,42 @@ describe('los formularios: las paridades', () => {
   });
 
   it('erroresDelSaldo: el primer error es el de validarSaldoInicial, en los casos de borde', () => {
-    const campos = comoLlega(camposDelSaldoInicial({ modalidad: 'contrato', arranque: '2026-10-26',
-      anios: [{ anio: 2026, dias_vacaciones: 20, estudios: 'secundario' }] }));
-    const llenos = Object.fromEntries(campos.map(({ clave }) => [clave, '0']));
-    for (const [clave, texto] of [['vacaciones-2024', '31'], ['vacaciones-2024', '-1'], ['vacaciones-2025', '2,5'], ['vacaciones-2026', '11'],
-      ['estudios', '10'], ['estudios', '11'], ['medica', ''], ['medica', 'x'], ['familiar', '25'], ['horas_no_utilizadas', '6,5'],
-      ['horas_no_utilizadas', '6,25'], ['horas_no_utilizadas', '200.5'], ['vacaciones-2024', ' 8 ']]) {
-      const valores = { ...llenos, [clave]: texto };
-      const errores = plano(M.erroresDelSaldo(valores, campos));
-      const { saldos } = plano(M.cuerpoDelSaldo(valores, campos));
-      const delServidor = validarSaldoInicial({ saldos: Object.fromEntries(Object.entries(saldos).filter(([, n]) => n !== null)) }, campos).error;
-      const [primero] = Object.entries(errores);
-      assert.deepEqual(primero ? { campo: primero[0], mensaje: primero[1] } : null, delServidor, `${clave}: ${texto}`);
+    const delAnio = { anio: 2026, dias_vacaciones: 20, estudios: 'secundario' };
+    // Sin los días de los años anteriores (sus campos dicen el máximo de una licencia), con ellos (sus días) y con los días del año
+    // elegidos en el modal (la ayuda que arma camposConLoElegido): el error de un campo con ayuda es su ayuda, como en el servidor
+    const listas = [
+      comoLlega(camposDelSaldoInicial({ modalidad: 'contrato', arranque: '2026-10-26', anios: [delAnio] })),
+      comoLlega(camposDelSaldoInicial({ modalidad: 'planta', arranque: '2026-10-26', anios: [
+        { anio: 2024, dias_vacaciones: 10, estudios: null }, { anio: 2025, dias_vacaciones: 25, estudios: null }, delAnio
+      ] })),
+      plano(M.camposConLoElegido(comoLlega(camposDelSaldoInicial({ modalidad: 'contrato', arranque: '2026-10-26', anios: [] })),
+        { anio: 2026, dias: 15, estudios: 'secundario' }))
+    ];
+    for (const campos of listas) {
+      const llenos = Object.fromEntries(campos.map(({ clave }) => [clave, '0']));
+      for (const [clave, texto] of [['vacaciones-2024', '31'], ['vacaciones-2024', '-1'], ['vacaciones-2025', '2,5'], ['vacaciones-2025', '26'],
+        ['vacaciones-2026', '11'], ['vacaciones-2026', '9'], ['estudios', '10'], ['estudios', '11'], ['medica', ''], ['medica', 'x'],
+        ['familiar', '25'], ['horas_no_utilizadas', '6,5'], ['horas_no_utilizadas', '6,25'], ['horas_no_utilizadas', '200.5'],
+        ['vacaciones-2024', ' 8 ']]) {
+        if (!campos.some((campo) => campo.clave === clave)) continue;
+        const valores = { ...llenos, [clave]: texto };
+        const errores = plano(M.erroresDelSaldo(valores, campos));
+        const { saldos } = plano(M.cuerpoDelSaldo(valores, campos));
+        const delServidor = validarSaldoInicial({ saldos: Object.fromEntries(Object.entries(saldos).filter(([, n]) => n !== null)) }, campos).error;
+        const [primero] = Object.entries(errores);
+        assert.deepEqual(primero ? { campo: primero[0], mensaje: primero[1] } : null, delServidor, `${clave}: ${texto}`);
+      }
     }
+    // Con ayuda, la ayuda; sin ella, textoSaldo
+    const [campos] = listas;
+    const llenos = Object.fromEntries(campos.map(({ clave }) => [clave, '0']));
+    assert.deepEqual(plano(M.erroresDelSaldo({ ...llenos, 'vacaciones-2026': '11' }, campos)),
+      { 'vacaciones-2026': 'De 0 a 10: lo que se habilitó de la 2026 hasta hoy.' });
+    assert.deepEqual(plano(M.erroresDelSaldo({ ...llenos, 'vacaciones-2024': '31' }, campos)),
+      { 'vacaciones-2024': 'De 0 a 30, el máximo de una licencia.' });
+    assert.deepEqual(plano(M.erroresDelSaldo({ ...llenos, medica: '26' }, campos)), { medica: textoSaldo(25) });
+    assert.deepEqual(plano(M.erroresDelSaldo({ ...llenos, 'vacaciones-2024': '31' },
+      campos.map((campo) => ({ ...campo, ayuda: '  ' })))), { 'vacaciones-2024': textoSaldo(30) });
     assert.deepEqual(plano(M.erroresDelSaldo(llenos, campos)), {});
     // Lo guardado, con coma; lo que no hay, vacío
     assert.deepEqual(plano(M.valoresDelSaldo([{ clave: 'a', valor: 6.5 }, { clave: 'b', valor: 0 }, { clave: 'c', valor: null }])),
@@ -3112,6 +3162,32 @@ describe('los formularios: las paridades', () => {
 
 describe('los formularios: lo puro', () => {
   const tiposDePlanta = resumenDel(PLANTA).tipos;
+
+  // Cada tope del saldo inicial dice de dónde sale (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): la ayuda va debajo
+  // del campo, antes de su error, y en su aria-describedby; un campo sin ayuda queda como estaba
+  it('«Para arrancar»: la ayuda de cada campo, debajo y en su aria-describedby, escapada', () => {
+    const campos = comoLlega(camposDelSaldoInicial({ modalidad: 'planta', arranque: '2026-10-26', anios: [
+      { anio: 2025, dias_vacaciones: 20, estudios: null }, { anio: 2026, dias_vacaciones: 15, estudios: null }
+    ] }));
+    const html = M.htmlDeCamposDelSaldo(campos, { 'vacaciones-2025': '4' });
+    assert.ok(html.includes('<input type="text" inputmode="decimal" class="form-input" id="ms-campo-vacaciones-2025" '
+      + 'data-saldo="vacaciones-2025" value="4" autocomplete="off" '
+      + 'aria-describedby="ms-campo-vacaciones-2025-ayuda ms-campo-vacaciones-2025-error">'
+      + '<p class="form-hint" id="ms-campo-vacaciones-2025-ayuda">De 0 a 20: los días de la 2025.</p>'
+      + '<p class="form-error" id="ms-campo-vacaciones-2025-error" hidden></p>'), html);
+    assert.ok(html.includes('<p class="form-hint" id="ms-campo-vacaciones-2024-ayuda">De 0 a 30, el máximo de una licencia.</p>'));
+    assert.ok(html.includes('<p class="form-hint" id="ms-campo-vacaciones-2026-ayuda">De 0 a 8: lo que se habilitó de la 2026 hasta hoy.</p>'));
+    // Sin ayuda (la médica, o una que llega vacía o sin la clave): sin el párrafo, y el aria-describedby solo con el error
+    assert.ok(html.includes('id="ms-campo-medica" data-saldo="medica" value="" autocomplete="off" aria-describedby="ms-campo-medica-error">'
+      + '<p class="form-error" id="ms-campo-medica-error" hidden></p>'));
+    assert.ok(!html.includes('ms-campo-medica-ayuda'));
+    const sinClave = campos.map(({ ayuda, ...campo }) => campo);
+    assert.ok(!M.htmlDeCamposDelSaldo(sinClave, {}).includes('-ayuda'));
+    assert.ok(!M.htmlDeCamposDelSaldo(campos.map((campo) => ({ ...campo, ayuda: '  ' })), {}).includes('-ayuda'));
+    // Todo texto del servidor, escapado
+    const conHtml = M.htmlDeCamposDelSaldo([{ ...campos[1], ayuda: '<b>De 0 a 20</b> & "más"' }], {});
+    assert.ok(conHtml.includes('>&lt;b&gt;De 0 a 20&lt;/b&gt; &amp; &quot;más&quot;</p>'), conHtml);
+  });
 
   it('los tipos: radios grandes con lo que queda de cada uno, sin el uso autorizado', () => {
     const html = M.htmlDeTiposDeLicencia(tiposDePlanta, 'franquicia');
@@ -4032,9 +4108,10 @@ const calculos = (pagina) => pagina.pedidosA('POST', '/api/mi-espacio/licencias/
 const conSaldosParaArrancar = ({ extra = () => undefined } = {}) => {
   const resumen = resumenDel(PLANTA, { estado: { ...PLANTA.estado, arranque: null, anios: [], saldos: [] } });
   const campos = camposDelSaldoInicial({ modalidad: 'planta', arranque: HOY, anios: [] }).map((campo) => ({ ...campo, valor: null }));
+  // Sin arranque, el servidor arma las mitades con hoy, como los campos: el 26/10 la primera mitad de 2026 es el saldo
   const anio = {
     anio: 2026, dias_vacaciones: null, estudios: null, heredado: false, texto_mitades: null,
-    textos_mitades: Object.fromEntries(DIAS_VACACIONES.map((dias) => [String(dias), textoDeLasMitades(2026, dias)]))
+    textos_mitades: Object.fromEntries(DIAS_VACACIONES.map((dias) => [String(dias), textoDeLasMitades(2026, dias, { arranque: HOY })]))
   };
   return conFormularios({
     extra: (metodo, ruta, cuerpo) => {
@@ -4251,7 +4328,7 @@ describe('los formularios en la página (DOM falso)', () => {
     await saldos.elegir('ms-estudio', '');
     for (const campo of saldos.el('ms-campos').querySelectorAll('input')) campo.value = '0';
     await saldos.tocar(saldos.el('ms-guardar'));
-    assert.equal(saldos.el('ms-error').textContent, `Los días del año se guardaron, pero el saldo inicial no: ${MENSAJE_SIN_CONEXION}`);
+    assert.equal(saldos.el('ms-error').textContent, `Los días del año se guardaron, pero el saldo inicial no. ${MENSAJE_SIN_CONEXION}`);
     assert.equal(saldos.abierto('modal-saldos'), true);
   });
 
@@ -4318,11 +4395,12 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.deepEqual(sinAuditor(auditora), ['/api/usuarios/licencias/sin-auditor?desde=2026-11-16&hasta=2026-11-20&usuario_id=1']);
     assert.equal(auditora.el('ml-sin-auditor').hidden, false);
     assert.equal(auditora.el('ml-sin-auditor').innerHTML, `<p>${en(`textoSinAuditor(${JSON.stringify(periodos[0])})`)}</p>`);
-    // Una franquicia de 3 horas, que no pasa: sin aviso
+    // Una franquicia de 3 horas, que no pasa: sin aviso, y vacío (está en el aria-describedby de «Guardar»: oculto, igual se leería)
     await auditora.elegir('ml-tipo', 'franquicia');
     await auditora.escribir('ml-horas', '3', 'change');
     await auditora.correr();
     assert.equal(auditora.el('ml-sin-auditor').hidden, true);
+    assert.equal(auditora.el('ml-sin-auditor').innerHTML, '');
   });
 
   it('al corregir una creada: la fila, la persona a cargo precargada, el excluir de Configuración y autorizado_id solo si cambió', async () => {
@@ -4701,7 +4779,7 @@ describe('los formularios en la página (DOM falso)', () => {
   });
 
   it('«Mis vacaciones y saldos»: se abre solo sin el saldo inicial, guarda el año y después el saldo; si el saldo falla, queda abierto', async () => {
-    let saldo = respuesta(400, { success: false, error: 'Escribí un número de 0 a 30.', campo: 'vacaciones-2024' });
+    let saldo = respuesta(400, { success: false, error: 'De 0 a 30, el máximo de una licencia.', campo: 'vacaciones-2024' });
     const pagina = montarPagina({
       responder: conSaldosParaArrancar({
         extra: (metodo, ruta) => {
@@ -4719,7 +4797,9 @@ describe('los formularios en la página (DOM falso)', () => {
     // Sin estudios elegidos, sin el campo; al elegir la carrera, aparece, y la ayuda dice las mitades de los días elegidos
     assert.equal(pagina.el('ms-campos').querySelector('#ms-campo-estudios'), null);
     await pagina.elegir('ms-dia', '20');
-    assert.equal(pagina.el('ms-dias-mitades').textContent, textoDeLasMitades(2026, 20));
+    // Sin arranque, el de hoy (26/10): la primera mitad es lo que se pone en «De la 2026»
+    assert.equal(pagina.el('ms-dias-mitades').textContent,
+      'La primera mitad es lo que pongas en «De la 2026», más abajo. El 1/1/2027 se habilitan 10.');
     await pagina.elegir('ms-estudio', 'universitario');
     assert.ok(pagina.el('ms-campo-estudios'), 'el campo de los estudios');
     for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
@@ -4729,7 +4809,8 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/saldo-inicial')[0].cuerpo.saldos,
       { 'vacaciones-2024': 8, 'vacaciones-2025': 0, 'vacaciones-2026': 0, franquicias: 0, estudios: 0, medica: 0, familiar: 0 });
     assert.equal(pagina.abierto('modal-saldos'), true);
-    assert.equal(pagina.el('ms-error').textContent, 'Los días del año se guardaron, pero el saldo inicial no: Escribí un número de 0 a 30.');
+    assert.equal(pagina.el('ms-error').textContent,
+      'Los días del año se guardaron, pero el saldo inicial no. De 0 a 30, el máximo de una licencia.');
     assert.equal(pagina.el('ms-campo-vacaciones-2024').getAttribute('aria-invalid'), 'true');
     // Al reintentar, sale; el foco vuelve al botón del Resumen que lo abrió, el nuevo (el Resumen se volvió a dibujar)
     saldo = ok({ arranque: HOY }, 'Saldo inicial guardado.');
@@ -4739,6 +4820,69 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.equal(pagina.el('me-anuncio').textContent, 'Saldo inicial guardado.');
     assert.equal(delResumen.isConnected, false);
     assert.equal(pagina.documento.activeElement, pagina.el('vista-resumen').querySelector('[data-abrir="saldos"]'));
+  });
+
+  // El guardado a medias (la revisión final de la spec 2026-10-28-mi-espacio-vacaciones-en-la-carga): la ayuda de un tope ya trae
+  // sus dos puntos («De 0 a 8: …»), así que el aviso de arriba la sigue con un punto, no con otros dos puntos
+  it('«Mis vacaciones y saldos»: si el saldo falla con la ayuda de un tope, el aviso no repite los dos puntos', async () => {
+    const motivo = 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.';
+    const pagina = montarPagina({
+      responder: conSaldosParaArrancar({
+        extra: (metodo, ruta) => {
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/anio/2026') return ok({ anio: 2026 }, 'Días del año guardados.');
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/saldo-inicial') {
+            return respuesta(400, { success: false, error: motivo, campo: 'vacaciones-2026' });
+          }
+          return undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    await pagina.correr();
+    // Con 15 días, la primera mitad de la 2026 es 8: «De 0 a 8»
+    await pagina.elegir('ms-dia', '15');
+    await pagina.elegir('ms-estudio', '');
+    for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
+    await pagina.tocar(pagina.el('ms-guardar'));
+    assert.equal(pagina.abierto('modal-saldos'), true);
+    assert.equal(pagina.el('ms-error').textContent, `Los días del año se guardaron, pero el saldo inicial no. ${motivo}`);
+    assert.doesNotMatch(pagina.el('ms-error').textContent, /:.*:/);
+    // El motivo, también en su campo
+    assert.equal(pagina.el('ms-campo-vacaciones-2026').getAttribute('aria-invalid'), 'true');
+  });
+
+  // Cada tope dice de dónde sale (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): la ayuda debajo de cada campo, que la
+  // del año del arranque sigue a los días que se eligen, y el error de un campo con ayuda, que es su ayuda, sin pedir nada
+  it('«Mis vacaciones y saldos»: la ayuda de cada tope sigue a los días elegidos, y es el error del campo', async () => {
+    const pagina = montarPagina({ responder: conSaldosParaArrancar() });
+    await pagina.iniciar();
+    await pagina.correr();
+    assert.equal(pagina.abierto('modal-saldos'), true);
+    const ayuda = (clave) => pagina.el(`ms-campo-${clave}-ayuda`)?.textContent ?? null;
+    // Sin días elegidos, los que mandó el servidor (sin ningún año cargado, 30 y la primera mitad de 30)
+    assert.equal(ayuda('vacaciones-2024'), 'De 0 a 30, el máximo de una licencia.');
+    assert.equal(ayuda('vacaciones-2026'), 'De 0 a 15: lo que se habilitó de la 2026 hasta hoy.');
+    assert.equal(ayuda('medica'), null);
+    assert.equal(pagina.el('ms-campo-vacaciones-2026').getAttribute('aria-describedby'),
+      'ms-campo-vacaciones-2026-ayuda ms-campo-vacaciones-2026-error');
+    assert.equal(pagina.el('ms-campo-medica').getAttribute('aria-describedby'), 'ms-campo-medica-error');
+    // Al elegir los días, la del año del arranque cambia con su máximo; las de antes, no
+    await pagina.elegir('ms-dia', '15');
+    assert.equal(ayuda('vacaciones-2026'), 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.');
+    assert.equal(ayuda('vacaciones-2025'), 'De 0 a 30, el máximo de una licencia.');
+    await pagina.elegir('ms-dia', '25');
+    assert.equal(ayuda('vacaciones-2026'), 'De 0 a 13: lo que se habilitó de la 2026 hasta hoy.');
+    await pagina.elegir('ms-dia', '15');
+    await pagina.elegir('ms-estudio', '');
+    for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
+    pagina.el('ms-campo-vacaciones-2026').value = '9';
+    pagina.el('ms-campo-medica').value = '26';
+    await pagina.tocar(pagina.el('ms-guardar'));
+    // No pide nada: los errores, en su campo, con la ayuda o con textoSaldo
+    assert.equal(pagina.pedidosA('PUT', '/api/mi-espacio/anio/2026').length, 0);
+    assert.equal(pagina.el('ms-campo-vacaciones-2026-error').textContent, 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.');
+    assert.equal(pagina.el('ms-campo-vacaciones-2026').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('ms-campo-medica-error').textContent, 'Escribí un número de 0 a 25.');
   });
 
   it('«Registrar un uso autorizado» en contrato: con las horas, de a media hora', async () => {
@@ -8765,5 +8909,206 @@ describe('mi-espacio.html: los estilos de la agenda', () => {
     // Ninguna regla se los devuelve, tampoco las del teléfono (ahí el texto y el ícono son de 1 px, ocultos a la vista)
     for (const [, otro] of estilo.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/pointer-events: ([^;]+);/g)) assert.equal(otro, 'none');
     assert.match(telefono, /\.me-tira-texto, \.me-tira \.me-icono \{ position: absolute; width: 1px; height: 1px;/);
+  });
+});
+
+// =====================================================================================================================================
+// Las vacaciones al cargar una licencia (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga): lo nuevo que manda el servidor, dibujado
+// por la página sin recalcular nada (Ruling 19), con la persona de planta inventada de las maquetas: los avisos del cálculo (3.2, 3.4
+// y 3.6), el error de días debajo de «Hasta» (3.3), «Vence pronto» sin el botón cuando no hay días libres (3.7), las horas de
+// franquicia que se pierden en «El resto» (3.6) y el número de un tramo de un solo día en la regla (3.9)
+
+// Octubre sin ningún día libre: las licencias que faltaban cubren todos sus días hábiles (el franco de octubre se queda sin día)
+const OCTUBRE_SIN_DIAS_LIBRES = conLicencias(PLANTA.estado, licencia(100, 'medica', '2026-10-05', '2026-10-14'),
+  licencia(101, 'medica', '2026-10-16', '2026-10-22'), licencia(102, 'familiar', '2026-10-26', '2026-10-30'),
+  licencia(103, 'familiar', '2026-09-30'));
+// De hoy al 31/12, ningún día libre: las 25 horas de franquicia que quedan no entran en ningún día
+const HASTA_FIN_DE_ANIO_OCUPADO = conLicencias(PLANTA.estado, licencia(110, 'medica', '2026-10-26', '2026-11-02'),
+  licencia(111, 'familiar', '2026-11-10', '2026-12-11'), licencia(112, 'medica', '2026-12-14', '2026-12-31'));
+// Dos días de la licencia 2024 cargados en diciembre: queda 1, un tramo de un solo día entre 48
+const UNO_DE_LA_2024 = conLicencias(PLANTA.estado, licencia(101, 'vacaciones', '2026-12-14', '2026-12-15'));
+// Una médica que ocupa todos los días libres de diciembre: el franco de diciembre se queda sin días (un aviso que no frena)
+const MEDICA_DE_DICIEMBRE = Object.freeze({ tipo: 'medica', desde: '2026-12-01', hasta: '2026-12-31' });
+const FRANCO_SIN_DIAS = 'Tu franco de diciembre se queda sin días libres: vence el 31/12/2026.';
+// Unas vacaciones que van más allá de lo que alcanza: el error es del «Hasta»
+const VACACIONES_DE_MAS = Object.freeze({ tipo: 'vacaciones', desde: '2026-11-23', hasta: '2027-03-31' });
+const NO_ALCANZAN = 'No te alcanzan los días habilitados: esta licencia puede llegar hasta el 25/01/2027.';
+
+describe('las vacaciones al cargar: lo nuevo del servidor, en la página', () => {
+  it('el cálculo: cada aviso del servidor en su párrafo, después del texto de hoy, escapado; sin avisos, como antes', () => {
+    const { error, vista } = respuestaDelCalculo(MEDICA_DE_DICIEMBRE);
+    assert.equal(error, null);
+    assert.deepEqual(vista.avisos, [FRANCO_SIN_DIAS]);
+    assert.equal(M.htmlDelCalculo({ error, vista, paso: null }, 'medica'),
+      `<b>21 días hábiles de 31 corridos.</b> Te quedan 1 de 25.<p class="me-calculo-aviso">${FRANCO_SIN_DIAS}</p>`);
+    // Varios, cada uno en el suyo y en su orden; lo que no es un texto con algo no va
+    const varios = M.htmlDelCalculo({ vista: { ...vista, avisos: [FRANCO_SIN_DIAS, MALICIOSO, '', '  ', 7, null] } }, 'medica');
+    assert.ok(varios.endsWith(`Te quedan 1 de 25.<p class="me-calculo-aviso">${FRANCO_SIN_DIAS}</p><p class="me-calculo-aviso">${ESCAPADO}</p>`));
+    assert.ok(!varios.includes('<img'));
+    // Sin avisos (la lista vacía, sin la clave o algo que no es una lista), lo de antes
+    for (const avisos of [[], undefined, null, 'x', { 0: FRANCO_SIN_DIAS }]) {
+      assert.equal(M.htmlDelCalculo({ vista: { ...vista, avisos } }, 'medica'), '<b>21 días hábiles de 31 corridos.</b> Te quedan 1 de 25.',
+        JSON.stringify(avisos));
+    }
+    // Las vacaciones con su reparto: los avisos van después de todo (el reparto, lo que queda y lo de antes del arranque)
+    const vacaciones = respuestaDelCalculo(VACACIONES).vista;
+    const conAviso = M.htmlDelCalculo({ vista: { ...vacaciones, avisos: [MALICIOSO] } }, 'vacaciones');
+    assert.equal(conAviso, `${M.htmlDelCalculo({ vista: { ...vacaciones, avisos: [] } }, 'vacaciones')}<p class="me-calculo-aviso">${ESCAPADO}</p>`);
+  });
+
+  it('el cálculo con el error de días: solo los días, sin el reparto ni avisos (lo arma así el servidor)', () => {
+    const { error, vista } = respuestaDelCalculo(VACACIONES_DE_MAS);
+    assert.deepEqual(error, { campo: 'hasta', mensaje: NO_ALCANZAN });
+    assert.equal(M.htmlDelCalculo({ error, vista, paso: null }, 'vacaciones'), '<b>89 días hábiles de 129 corridos.</b>');
+  });
+
+  it('«Vence pronto» sin días libres: sin el botón (accion null) y con por qué en un párrafo, escapado; las demás, con el suyo', () => {
+    const resumen = resumenDel(PLANTA, { estado: OCTUBRE_SIN_DIAS_LIBRES });
+    const [franco] = resumen.vence_pronto;
+    assert.equal(franco.accion, null);
+    assert.equal(franco.sin_dias_libres, 'No te quedan días libres este mes para usarlo.');
+    const html = M.htmlDeVencePronto(resumen.vence_pronto);
+    const [primera] = filasDe(html);
+    assert.equal(primera.html, '<span class="me-talon" aria-hidden="true"><b>30</b>oct</span><div class="me-entrada-cuerpo">'
+      + '<b id="me-vence-0">1 franco compensatorio de octubre</b><span class="me-entrada-texto">Vence el viernes 30/10, en 4 días.</span>'
+      + '<p class="me-entrada-sin-dias">No te quedan días libres este mes para usarlo.</p></div>');
+    assert.equal(primera.texto, '30 oct 1 franco compensatorio de octubre Vence el viernes 30/10, en 4 días. No te quedan días libres este mes para usarlo.');
+    // Ningún botón vacío: solo los de las otras dos, cada uno con su título
+    assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [texto, atributos['data-tipo'], atributos['aria-describedby']]),
+      [['Cargar franquicia', 'franquicia', 'me-vence-1'], ['Cargar vacaciones', 'vacaciones', 'me-vence-2']]);
+    assert.equal((html.match(/me-entrada-sin-dias/g) ?? []).length, 1);
+    // Escapado
+    const malicioso = M.htmlDeVencePronto([{ ...franco, sin_dias_libres: MALICIOSO }]);
+    assert.ok(malicioso.includes(`<p class="me-entrada-sin-dias">${ESCAPADO}</p>`));
+    assert.ok(!malicioso.includes('<img'));
+    // Sin una acción con texto, nunca un botón sin nombre; sin por qué (o vacío), sin el párrafo
+    for (const accion of [null, undefined, 'Cargarlo', {}, { tipo: 'franco' }, { texto: '', tipo: 'franco' }, { texto: '  ', tipo: 'franco' }]) {
+      const uno = M.htmlDeVencePronto([{ ...franco, accion, sin_dias_libres: '' }]);
+      assert.ok(!uno.includes('<button'), JSON.stringify(accion));
+      assert.ok(!uno.includes('<p'), JSON.stringify(accion));
+    }
+    // Con la acción, el botón de siempre
+    assert.ok(M.htmlDeVencePronto([{ ...franco, accion: { texto: 'Cargarlo', tipo: 'franco' }, sin_dias_libres: undefined }])
+      .includes('<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-accion="cargar-licencia" data-tipo="franco" '
+        + 'aria-describedby="me-vence-0">Cargarlo</button></div></li>'));
+  });
+
+  it('«El resto»: las horas de franquicia que se pierden, debajo de «Franquicias» y fuera de su link (su aria-label no las diría); sin ellas, nada', () => {
+    const resumen = resumenDel(PLANTA, { estado: HASTA_FIN_DE_ANIO_OCUPADO });
+    const [franquicia, ...otros] = resumen.tanques.otros;
+    assert.equal(franquicia.clave, 'franquicia');
+    assert.equal(franquicia.perdidas_texto, 'Perdés 25 horas (vencen el 31/12/2026).');
+    assert.ok(otros.every((tanque) => !Object.hasOwn(tanque, 'perdidas_texto')));
+    const html = M.htmlDelResto(resumen);
+    const primero = html.match(/<ul class="me-numeros"><li>([\s\S]*?)<\/li>/)[1];
+    assert.ok(primero.startsWith('<a class="me-numero" href="#licencias"'));
+    assert.ok(primero.endsWith('</a><p class="me-perdidas">Perdés 25 horas (vencen el 31/12/2026).</p>'));
+    assert.equal((html.match(/me-perdidas/g) ?? []).length, 1);
+    // El link no cambió: su aria-label es el del servidor
+    assert.equal(linksDe(html)[0].atributos['aria-label'], franquicia.aria);
+    // Sin horas que se pierdan (''), sin la clave o con algo que no es un texto: nada
+    const planta = resumenDel(PLANTA);
+    assert.equal(planta.tanques.otros[0].perdidas_texto, '');
+    assert.ok(!M.htmlDelResto(planta).includes('me-perdidas'));
+    for (const perdidas of [undefined, null, '  ', 8]) {
+      const otro = { ...resumen, tanques: { ...resumen.tanques, otros: [{ ...franquicia, perdidas_texto: perdidas }, ...otros] } };
+      assert.ok(!M.htmlDelResto(otro).includes('me-perdidas'), String(perdidas));
+    }
+    // Escapado
+    const malicioso = M.htmlDelResto({ ...resumen, tanques: { ...resumen.tanques, otros: [{ ...franquicia, perdidas_texto: MALICIOSO }, ...otros] } });
+    assert.ok(malicioso.includes(`<p class="me-perdidas">${ESCAPADO}</p>`));
+    assert.ok(!malicioso.includes('<img'));
+  });
+
+  it('la regla: el tramo de un solo día (1 de la licencia 2024, entre 48) lleva su número y la clase un-dia; los demás, no', () => {
+    const resumen = resumenDel(PLANTA, { estado: UNO_DE_LA_2024 });
+    assert.deepEqual(resumen.tanques.vacaciones.capas.map(({ clase, n }) => [clase, n]),
+      [['vence', 1], ['tinta', 20], ['medio', 10], ['cargadas', 7], ['por_habilitar', 10]]);
+    const html = M.htmlDeLaRegla(resumen.tanques.vacaciones);
+    assert.ok(html.includes('<span class="me-tramo vence un-dia" style="--n:1;--demora:250ms;--duracion:160ms"><span>1</span></span>'));
+    assert.deepEqual(tramosDe(html).map(({ clase, unDia, numero }) => [clase, unDia, numero]), [
+      ['vence', true, '1'], ['tinta', false, '20'], ['medio', false, '10'], ['cargadas', false, '7'], ['por_habilitar', false, '10']
+    ]);
+    // La de PLANTA no tiene ninguno de un solo día
+    assert.ok(!M.htmlDeLaRegla(resumenDel(PLANTA).tanques.vacaciones).includes('un-dia'));
+  });
+});
+
+describe('las vacaciones al cargar: «Cargar licencia» en la página (DOM falso)', () => {
+  it('el error de días va debajo de «Hasta», con aria-invalid, y no debajo de «Desde»; el cálculo muestra solo los días', async () => {
+    const pagina = montarPagina({ responder: conFormularios() });
+    await pagina.iniciar();
+    await cargarLicencia(pagina, VACACIONES_DE_MAS);
+    assert.deepEqual(calculos(pagina).at(-1).cuerpo, { ...VACACIONES_DE_MAS, mostrar: true, nota: '' });
+    assert.equal(pagina.el('ml-hasta-error').textContent, NO_ALCANZAN);
+    assert.equal(pagina.el('ml-hasta-error').hidden, false);
+    assert.equal(pagina.el('ml-hasta').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('ml-desde-error').hidden, true);
+    assert.equal(pagina.el('ml-desde').getAttribute('aria-invalid'), null);
+    // Ni arriba del modal
+    assert.equal(pagina.el('ml-error').hidden, true);
+    assert.equal(pagina.el('ml-calculo').innerHTML, '<b>89 días hábiles de 129 corridos.</b>');
+    assert.equal(pagina.el('ml-calculo').hidden, false);
+  });
+
+  it('con avisos y sin error, el cálculo los muestra y «Guardar» sigue habilitado: un aviso no frena el guardado', async () => {
+    const pagina = montarPagina({ responder: conFormularios() });
+    await pagina.iniciar();
+    await cargarLicencia(pagina, MEDICA_DE_DICIEMBRE);
+    assert.equal(pagina.el('ml-calculo').innerHTML,
+      `<b>21 días hábiles de 31 corridos.</b> Te quedan 1 de 25.<p class="me-calculo-aviso">${FRANCO_SIN_DIAS}</p>`);
+    assert.equal(pagina.el('ml-calculo').hidden, false);
+    assert.equal(pagina.el('ml-guardar').disabled, false);
+    assert.equal(pagina.el('ml-error').hidden, true);
+    for (const id of ['ml-desde', 'ml-hasta']) assert.equal(pagina.el(id).getAttribute('aria-invalid'), null, id);
+    await pagina.tocar(pagina.el('ml-guardar'));
+    await pagina.esperar();
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/licencias').map(({ cuerpo }) => cuerpo),
+      [{ ...MEDICA_DE_DICIEMBRE, mostrar: true, nota: '' }]);
+    assert.equal(pagina.el('modal-licencia-titulo').textContent, 'Licencia cargada');
+  });
+});
+
+// Los estilos de lo nuevo, leídos del <style> de mi-espacio.html: los avisos en ámbar con 4,5:1 o más sobre su fondo, y el tramo de un
+// solo día, que muestra su número
+describe('mi-espacio.html: los estilos de las vacaciones al cargar', () => {
+  const estilo = estiloDeLaPagina();
+  const token = (nombre) => new RegExp(`${nombre}: (#[0-9A-Fa-f]{6});`).exec(estilo)?.[1];
+  // El token --sg-* de una propiedad (color o background) de la regla de un selector
+  const tokenDe = (selector, propiedad) => {
+    const regla = reglaDe(selector);
+    assert.ok(regla, selector);
+    const nombre = new RegExp(`(?:^|[;{\\s])${propiedad}: var\\((--sg-[\\w-]+)\\);`).exec(regla)?.[1];
+    assert.ok(nombre, `${selector} { ${propiedad} }`);
+    return nombre;
+  };
+
+  it('los avisos, en ámbar y con 4,5:1 o más sobre su fondo: el del cálculo sobre el recuadro, el de «Vence pronto» y las horas que se pierden', () => {
+    // «El resto» va sin tarjeta, sobre el fondo de la página (.main-content, con el --gray-100 de main.css)
+    assert.match(reglaDe('.main-content'), /background: var\(--gray-100\);/);
+    const gris = /--gray-100: (#[0-9A-Fa-f]{6});/.exec(leer('css/main.css'))[1];
+    const pares = [
+      ['el aviso del cálculo', '.me-calculo .me-calculo-aviso', token(tokenDe('.me-calculo', 'background'))],
+      ['sin días libres', '.me-entrada-sin-dias', token(tokenDe('.me-entrada', 'background'))],
+      ['las horas que se pierden', '.me-resto .me-perdidas', gris]
+    ];
+    for (const [nombre, selector, fondo] of pares) {
+      assert.equal(tokenDe(selector, 'color'), '--sg-ambar', nombre);
+      const texto = token('--sg-ambar');
+      assert.ok(texto && fondo, nombre);
+      assert.ok(contraste(texto, fondo) >= 4.5, `${nombre}: ${texto} sobre ${fondo}, ${contraste(texto, fondo).toFixed(2)}:1`);
+    }
+    // El del cálculo, sobre el celeste del recuadro (el de siempre)
+    assert.equal(tokenDe('.me-calculo', 'background'), '--sg-azul-fondo');
+  });
+
+  it('el tramo de un solo día muestra su número (el contenedor angosto no lo oculta), centrado y más chico si no entra', () => {
+    assert.match(reglaDe('.me-tramo.un-dia'), /padding: 0;/);
+    assert.match(reglaDe('.me-tramo.un-dia'), /justify-content: center;/);
+    const numero = reglaDe('.me-tramo.un-dia > span');
+    assert.match(numero, /visibility: visible;/);
+    assert.match(numero, /font-size: clamp\(0\.55rem, 150cqw, 1\.2rem\);/);
+    // Los demás tramos angostos siguen sin él (está en la lista de debajo)
+    assert.ok(estilo.includes('@container (max-width: 26px) { .me-tramo > span { visibility: hidden; } }'));
   });
 });

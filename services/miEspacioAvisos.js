@@ -62,11 +62,12 @@ const anotar = (usuarioId, claves) => {
   );
 };
 
-// Lo que vence pronto de una persona y todavía no se le avisó, con su email: `{ avisos, email }`, o null sin nada que mandar
+// Lo que vence pronto de una persona y todavía no se le avisó, con su email: `{ avisos, email }`, o null sin nada que mandar.
+// Todas sus licencias ocupan sus días: un franco o unas horas a favor sin ningún día libre en su mes no se nombran
 const emailDe = ({ nombre_completo: nombreCompleto }, estado, { hoy, feriados, avisadas }) => {
   if (!estado?.modalidad) return null;
   const calculo = calcular(estado, { hoy, feriados });
-  const avisos = avisosDeVencimiento(calculo, { hoy, feriados, modalidad: estado.modalidad })
+  const avisos = avisosDeVencimiento(calculo, { hoy, feriados, modalidad: estado.modalidad, ocupadas: estado.licencias })
     .filter((aviso) => !avisadas.has(aviso.clave));
   if (avisos.length === 0) return null;
   return { avisos, email: vencimientoMiEspacioTemplate({ nombre_completo: nombreCompleto, avisos }) };

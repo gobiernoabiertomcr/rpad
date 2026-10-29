@@ -90,8 +90,10 @@ const VERSION_PROYECTOS = '20261206';
 // 2026-10-27-feriados-en-notas, 6; y lo que quedó distinto en Configuración, para revisar en el Resumen, y las licencias de
 // otro año —la lista pasa al año de lo guardado, «Ver 2027» y los links a la lista de un año—, spec
 // 2026-10-28-mi-espacio-licencia-anulada, 2.2 y 2.3; y la agenda con más onda —la banda del mes, sábado y domingo, las barras, los
-// íconos y el día elegido del teléfono—, spec 2026-10-28-mi-espacio-agenda-onda, 3). Su versión es propia
-const VERSION_MI_ESPACIO = '20261216';
+// íconos y el día elegido del teléfono—, spec 2026-10-28-mi-espacio-agenda-onda, 3; y las vacaciones al cargar una licencia —los
+// avisos del cálculo, «Vence pronto» sin el botón, las horas de franquicia que se pierden y el número de un tramo de un solo día—,
+// spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3). Su versión es propia
+const VERSION_MI_ESPACIO = '20261217';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -1089,6 +1091,19 @@ describe('páginas', () => {
         assert.match(modal('modal-licencia'), /<p class="form-hint" id="ml-autorizado-ayuda">Solo aparecen los admins y editores activos con su firma cargada en Mi Perfil\.<\/p>/);
         // Las horas extras, de a media hora
         for (const control of ['mh-desde', 'mh-hasta']) assert.match(html(), new RegExp(`<input type="time" class="form-input" id="${control}" step="1800"`), control);
+      });
+
+      // Spec 2026-10-28-mi-espacio-vacaciones-en-la-carga (la revisión final): «Guardar» de «Cargar licencia» lee el cálculo, el
+      // aviso del paso a Configuración y los días sin auditor (los avisos de la carga van en el cálculo). Uno oculto no se lee, así
+      // que el atributo es fijo; sin región viva
+      it('«Guardar» de «Cargar licencia» se describe con el cálculo, el paso y los días sin auditor, que están en su modal', () => {
+        const licencia = modal('modal-licencia');
+        assert.match(licencia,
+          /<button type="button" class="sg-btn sg-btn-tinta" id="ml-guardar" aria-describedby="ml-calculo ml-paso ml-sin-auditor">Guardar<\/button>/);
+        for (const id of ['ml-calculo', 'ml-paso', 'ml-sin-auditor']) {
+          assert.match(licencia, new RegExp(`<div class="me-recuadro[^"]*" id="${id}" hidden></div>`), id);
+          assert.doesNotMatch(licencia, new RegExp(`id="${id}"[^>]*aria-live`), id);
+        }
       });
     });
 

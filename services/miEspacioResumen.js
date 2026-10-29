@@ -15,7 +15,8 @@
  * entrada rara da null, '', '—', una lista vacía o un objeto vacío. Todo número va como número y todo texto, como texto
  * plano: escaparlo le toca a quien lo dibuja. Nada dice «perdiste»: lo que no se usó a tiempo es «no utilizado
  * previamente» (spec, antiobjetivos), salvo «Perdés …» de las vacaciones al final de la bajada (decisión del usuario,
- * 27/10/2026: spec 2026-10-27-mi-espacio-dias-de-vacaciones, 2.6).
+ * 27/10/2026: spec 2026-10-27-mi-espacio-dias-de-vacaciones, 2.6) y el de las horas de franquicia debajo de «Franquicias»
+ * (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6).
  */
 import { diaDeLaSemana, diasHabilesDe, feriadosDelAnio, proximoDiaHabilCon, esDiaHabilCon } from './feriadosReglas.js';
 import { diasEntre, esFechaIso, formatoCorto, sumarDias } from './notasDigitalesCalendario.js';
@@ -24,7 +25,8 @@ import {
   MENSAJES_MI_ESPACIO, MODALIDADES, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, NOMBRES_TIPO, JORNADA,
   numeroTexto, mesEnFrase, nombreDelMes, diaYMes, enLista, modalidadDe, mesMas, topeDe, diasQueDescuentan, esDiaEntero,
   fueraDeLaModalidad, tieneSaldoInicial, horasDe, textoSinNoUtilizadas, rangoDeFechas, horaSalidaValida, tipoDeDia,
-  horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos, fechasEnLaFrase
+  horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos, fechasEnLaFrase,
+  diasLibresDelMes, porHabilitarDe, textoDeLosDiasHabiles
 } from './miEspacioReglas.js';
 
 // Los dos formatos que ya estaban en las reglas: el panel los usa sin copiarlos
@@ -89,7 +91,8 @@ const noUtilizadasDel = (cuenta, anio) => (esObjeto(cuenta.noUtilizadas) && Obje
   && esObjeto(cuenta.noUtilizadas[anio]) ? cuenta.noUtilizadas[anio] : null);
 
 // «Vence pronto» (spec, 3.9; la línea de cada cosa, spec 2026-10-27-mi-espacio-resumen, 4.1)
-// Desde qué día del año se avisa la licencia que vence el 31/12
+// Desde qué día del año se avisan la licencia y las horas de franquicia que vencen el 31/12 (en «Vence pronto» y, la
+// licencia, en ámbar en la bajada: spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.5)
 const AVISO_DE_LA_LICENCIA = '10-01';
 
 // La línea de lo que vence, según los días corridos de hoy a su fecha: «Vence el viernes 30/10, en 4 días.», «Vence mañana.»,
@@ -113,12 +116,26 @@ const cosaQueVence = ({ fecha, cantidad, titulo, accion }, hoy) => ({
   texto: textoDeLoQueVence(fecha, cantidad, hoy), accion
 });
 
+// Por qué un franco o unas horas a favor del mes no tienen botón: ningún día libre en todo su mes (spec
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7). El pronombre concuerda como el botón: «usarlo» (1 franco), «usarlos»,
+// «usarla» (1 hora) y «usarlas»
+const textoSinDiasLibres = (planta, cantidad) => {
+  const pronombre = planta ? (cantidad === 1 ? 'lo' : 'los') : (cantidad === 1 ? 'la' : 'las');
+  return `No te quedan días libres este mes para usar${pronombre}.`;
+};
+
 /**
  * Lo que vence pronto, por fecha: el franco (en planta) o las horas a favor (en contrato) del mes en curso que siguen sin
  * usar, en su último día hábil (hasta que termina el mes: una licencia ya pasada se puede cargar igual), y, desde el 1/10,
- * los días disponibles de la licencia ordinaria que vence el 31/12 de este año.
+ * en planta, las horas de franquicia del año que todavía entran en algún día libre («22 horas de franquicia», con
+ * «Cargar franquicia»: los `disponibles` de `franquiciaQueVence`, sin las perdidas; spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6) y los días disponibles de la licencia ordinaria que vence el 31/12 de
+ * este año, en ese orden. El franco o las horas a favor sin ningún día libre en todo su mes (`diasLibresDelMes`, también los
+ * días que ya pasaron, con todas las licencias del estado, de cualquier tipo y de cualquier modalidad; spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7 y 7.2) siguen, sin el botón (`accion` null) y con por qué en
+ * `sin_dias_libres`, la única cosa que suma esa clave: «No te quedan días libres este mes para usarlo.».
  */
-const venceProntoDe = ({ modalidad, hoy, mes, cuenta }) => {
+const venceProntoDe = ({ modalidad, hoy, mes, cuenta, datos, feriados }) => {
   const lista = [];
   const planta = modalidad === 'planta';
   const delMes = delMesDeUso(planta ? cuenta.francos : cuenta.horasAFavor, mes);
@@ -127,15 +144,27 @@ const venceProntoDe = ({ modalidad, hoy, mes, cuenta }) => {
     const titulo = planta
       ? `${conUnidad(quedan, 'franco compensatorio', 'francos compensatorios')} de ${nombreDelMes(mes)}`
       : `${conUnidad(quedan, 'hora', 'horas')} a favor de ${nombreDelMes(mes)}`;
-    const accion = planta
-      ? { texto: quedan === 1 ? 'Cargarlo' : 'Cargarlos', tipo: 'franco' }
-      : { texto: quedan === 1 ? 'Usarla' : 'Usarlas', tipo: 'horas_a_favor' };
-    lista.push(cosaQueVence({ fecha: delMes.ultimo_dia_habil, cantidad: quedan, titulo, accion }, hoy));
+    const sinDiasLibres = diasLibresDelMes(mes, listaDe(datos.licencias), feriados) === 0;
+    let accion = null;
+    if (!sinDiasLibres) {
+      accion = planta
+        ? { texto: quedan === 1 ? 'Cargarlo' : 'Cargarlos', tipo: 'franco' }
+        : { texto: quedan === 1 ? 'Usarla' : 'Usarlas', tipo: 'horas_a_favor' };
+    }
+    const cosa = cosaQueVence({ fecha: delMes.ultimo_dia_habil, cantidad: quedan, titulo, accion }, hoy);
+    lista.push(sinDiasLibres ? { ...cosa, sin_dias_libres: textoSinDiasLibres(planta, quedan) } : cosa);
   }
 
   const anio = hoy.slice(0, 4);
   const finDelAnio = `${anio}-12-31`;
   if (hoy >= `${anio}-${AVISO_DE_LA_LICENCIA}`) {
+    const horas = planta && esObjeto(cuenta.franquicia) ? cantidadDe(cuenta.franquicia.disponibles) : 0;
+    if (horas > 0) {
+      lista.push(cosaQueVence({
+        fecha: finDelAnio, cantidad: horas, titulo: `${conUnidad(horas, 'hora', 'horas')} de franquicia`,
+        accion: { texto: 'Cargar franquicia', tipo: 'franquicia' }
+      }, hoy));
+    }
     const vieja = ordinariasDel(cuenta).find((ordinaria) =>
       ordinaria.vence === finDelAnio && cantidadDe(ordinaria.disponibles) > 0);
     if (vieja !== undefined) {
@@ -149,20 +178,51 @@ const venceProntoDe = ({ modalidad, hoy, mes, cuenta }) => {
   return lista.sort((a, b) => compararTexto(a.fecha, b.fecha));
 };
 
-// Los meses ('AAAA-MM') de los días de vacaciones cargados a futuro: los que descuentan después de hoy y salen de alguna
-// licencia (sin los que quedaron sin cubrir), los mismos que el reparto cuenta como `cargados`
-const mesesCargados = ({ hoy, datos, cuenta, feriados }) => {
+/**
+ * Los meses ('AAAA-MM') de los días de vacaciones cargados a futuro que suma la capa `cargadas`: los que descuentan después
+ * de hoy, salen de alguna licencia (sin los que quedaron sin cubrir) y de una de los años hasta el de hoy, las que muestra la
+ * regla (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9). De qué licencia sale cada día de una carga se lee de su
+ * `porFila`, en orden: dentro de una carga el reparto nunca vuelve a una licencia más vieja (sigue con la que empezó y,
+ * cuando se le terminan, toma la más vieja con días ese día; una más vieja ya no gana días, porque todas sus mitades se
+ * habilitan antes que la primera de una más nueva), así que sus días cubiertos van, en orden, de la licencia más vieja de
+ * `porFila` a la más nueva. Sin `porFila`, ningún mes.
+ */
+const mesesCargados = ({ hoy, anio, datos, cuenta, feriados }) => {
   const reparto = esObjeto(cuenta.reparto) ? cuenta.reparto : {};
   const sinCubrir = reparto.sinCubrir instanceof Map ? reparto.sinCubrir : new Map();
+  const porFila = reparto.porFila instanceof Map ? reparto.porFila : new Map();
   const meses = new Set();
   for (const fila of listaDe(datos.licencias)) {
     if (!esObjeto(fila) || fila.tipo !== 'vacaciones') continue;
     const sinDias = listaDe(sinCubrir.get(idDe(fila.id)));
+    const partes = listaDe(porFila.get(idDe(fila.id)))
+      .filter((parte) => esObjeto(parte) && Number.isInteger(parte.anio))
+      .map((parte) => ({ anio: parte.anio, quedan: cantidadDe(parte.dias) }))
+      .sort((a, b) => a.anio - b.anio);
+    let actual = 0;
     for (const dia of diasQueDescuentan(fila, datos, feriados)) {
-      if (dia > hoy && !sinDias.includes(dia)) meses.add(dia.slice(0, 7));
+      if (sinDias.includes(dia)) continue;
+      while (actual < partes.length && !(partes[actual].quedan > 0)) actual++;
+      if (actual === partes.length) break;
+      partes[actual].quedan -= 1;
+      if (dia > hoy && partes[actual].anio <= anio) meses.add(dia.slice(0, 7));
     }
   }
   return [...meses].sort(compararTexto);
+};
+
+// Los meses de lo cargado, agrupados por año (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9): «para noviembre y
+// diciembre», «para enero y febrero de 2027» o «para diciembre y para enero y febrero de 2027» (el año, solo si no es el de
+// hoy). Recibe los meses en orden
+const paraLosMeses = (meses, anio) => {
+  const porAnio = new Map();
+  for (const mes of meses) {
+    const delAnio = anioDe(mes);
+    if (!porAnio.has(delAnio)) porAnio.set(delAnio, []);
+    porAnio.get(delAnio).push(nombreDelMes(mes));
+  }
+  return enLista([...porAnio].map(([delAnio, nombres]) =>
+    `para ${enLista(nombres)}${delAnio === anio ? '' : ` de ${delAnio}`}`));
 };
 
 /**
@@ -170,8 +230,9 @@ const mesesCargados = ({ hoy, datos, cuenta, feriados }) => {
  * licencias con días disponibles (la que vence este año, `vence`; las demás alternan `tinta` y `medio`; la nota es su
  * vencimiento o «La primera mitad» si la segunda todavía no se habilitó), lo cargado a futuro (`cargadas`) y lo que todavía
  * no se habilita (`por_habilitar`), estas dos si no son 0. Las licencias de los años que vienen (`ordinariasDe` llega hasta
- * la del año siguiente, sin nada habilitado) no están en el tanque; lo cargado de cualquiera, sí. La capacidad es la suma de
- * las capas.
+ * la del año siguiente, sin nada habilitado) no están en el tanque, ni lo cargado de ellas (spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9: «cargados» cuenta solo lo de las licencias que muestra). La capacidad es
+ * la suma de las capas.
  */
 const tanqueDeVacaciones = (panel) => {
   const { hoy, anio } = panel;
@@ -189,23 +250,23 @@ const tanqueDeVacaciones = (panel) => {
     return { clase, n: cantidadDe(ordinaria.disponibles), nombre: `Licencia ${ordinaria.anio}`, nota };
   });
 
-  const cargados = ordinarias.reduce((suma, ordinaria) => suma + Math.max(0, cantidadDe(ordinaria.cargados)), 0);
+  // Solo lo cargado de las licencias que muestra la regla (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9)
+  const cargados = hastaEsteAnio.reduce((suma, ordinaria) => suma + Math.max(0, cantidadDe(ordinaria.cargados)), 0);
   if (cargados > 0) {
-    // El mes con su año si no es el de hoy: «Cargados para diciembre y enero de 2027»
-    const meses = mesesCargados(panel).map((mes) => (anioDe(mes) === anio ? nombreDelMes(mes) : mesEnFrase(mes)));
+    // Los meses agrupados por año: «Cargados para diciembre y para enero y febrero de 2027»
+    const meses = mesesCargados(panel);
     const cargadosPara = cargados === 1 ? 'Cargado' : 'Cargados';
     capas.push({
       clase: 'cargadas', n: cargados, nombre: 'Cargados',
-      nota: meses.length === 0 ? cargadosPara : `${cargadosPara} para ${enLista(meses)}`
+      nota: meses.length === 0 ? cargadosPara : `${cargadosPara} ${paraLosMeses(meses, anio)}`
     });
   }
 
   const porHabilitar = hastaEsteAnio.reduce((suma, ordinaria) => suma + Math.max(0, cantidadDe(ordinaria.por_habilitar)), 0);
   if (porHabilitar > 0) {
-    const fechas = [...new Set(hastaEsteAnio.filter((ordinaria) => cantidadDe(ordinaria.por_habilitar) > 0)
-      .flatMap((ordinaria) => listaDe(ordinaria.mitades))
-      .filter((mitad) => esObjeto(mitad) && esFechaIso(mitad.habilita) && mitad.habilita > hoy && cantidadDe(mitad.dias) > 0)
-      .map((mitad) => mitad.habilita))].sort(compararTexto);
+    // Las fechas, de la misma cuenta que la opción del tipo (`porHabilitarDe`; spec
+    // 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.1): una mitad que ya está asignada entera a una carga no se nombra
+    const fechas = [...new Set(porHabilitarDe(hastaEsteAnio, hoy).map(({ fecha }) => fecha))];
     const seHabilitan = porHabilitar === 1 ? 'Se habilita' : 'Se habilitan';
     capas.push({
       clase: 'por_habilitar', n: porHabilitar, nombre: 'Todavía no',
@@ -229,8 +290,10 @@ const tanqueDeVacaciones = (panel) => {
 
 /**
  * La bajada de la frase: una oración `{ texto, vence }` por cada capa del tanque de vacaciones que explica la regla, en este
- * orden y solo las que hay: la licencia que vence en el año («3 vencen el jueves 31/12.», `vence`: en ámbar en la página), lo
- * cargado a futuro («5 ya están cargados para noviembre.») y lo que todavía no se habilita («Otros 10 se habilitan el
+ * orden y solo las que hay: la licencia que vence en el año (desde el 1/10, como «Vence pronto», «3 vencen el jueves 31/12.»,
+ * con `vence`: en ámbar en la página; antes, «12 vencen el 31/12/2027.», sin `vence`: spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.5), lo cargado a futuro («5 ya están cargados para noviembre.», «34 ya
+ * están cargados para diciembre y para enero y febrero de 2027.») y lo que todavía no se habilita («Otros 10 se habilitan el
  * 1/1/2027.»; sin «Otros» si la frase no tiene días). Los días son los de cada capa y los meses y las fechas, los de su nota,
  * que dice lo mismo con mayúscula («Cargados para noviembre», «Se habilitan el 1/1/2027»): no se vuelven a calcular. La capa
  * `vence` es la de la licencia que vence el 31/12 de este año. En singular solo con 1. Al final, si algo se pierde, el texto
@@ -246,7 +309,11 @@ const bajadaDe = ({ numero, capas }, { hoy, perdidos, anioCargado }) => {
   const vence = capa('vence');
   if (vence !== undefined) {
     const vencen = vence.n === 1 ? 'vence' : 'vencen';
-    bajada.push({ texto: `${numeroTexto(vence.n)} ${vencen} el ${diaLargo(`${hoy.slice(0, 4)}-12-31`)}.`, vence: true });
+    const finDelAnio = `${hoy.slice(0, 4)}-12-31`;
+    // Desde el 1/10, como «Vence pronto»: en ámbar y con el día de la semana; antes, en el color de la frase y con el año
+    const desdeElAviso = hoy >= `${hoy.slice(0, 4)}-${AVISO_DE_LA_LICENCIA}`;
+    const cuando = desdeElAviso ? diaLargo(finDelAnio) : fechaCorta(finDelAnio);
+    bajada.push({ texto: `${numeroTexto(vence.n)} ${vencen} el ${cuando}.`, vence: desdeElAviso });
   }
   const cargadas = capa('cargadas');
   if (cargadas !== undefined) {
@@ -296,9 +363,21 @@ const NOMBRES_DE_LOS_TANQUES = Object.freeze({
   franquicia: 'Franquicias', estudios: 'Estudios', medica: 'Atención médica', familiar: 'Grupo familiar'
 });
 
+// Las horas de franquicia que ya no entran en los días libres que quedan hasta el 31/12 (las `perdidas` de
+// `franquiciaQueVence`; spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), debajo de «Franquicias» en «El resto», en
+// ámbar: «Perdés 8 horas (vencen el 31/12/2026).» («1 hora … vence»). Sin ninguna, ''
+const textoDeLasHorasQuePerdes = ({ anio, cuenta }) => {
+  const perdidas = esObjeto(cuenta.franquicia) ? cantidadDe(cuenta.franquicia.perdidas) : 0;
+  if (perdidas <= 0) return '';
+  return `Perdés ${conUnidad(perdidas, 'hora', 'horas')} (${perdidas === 1 ? 'vence' : 'vencen'} el `
+    + `${fechaCorta(`${anio}-12-31`)}).`;
+};
+
 // El de un tipo con tope del año: lo que queda de las 42 horas de franquicia, de los días de estudios de la carrera y de los
-// 25 días de atención médica y de grupo familiar
-const tanqueDeTope = (tipo, { anio, datos, cuenta }) => {
+// 25 días de atención médica y de grupo familiar. El de la franquicia suma `perdidas_texto` (las horas que se pierden, o ''):
+// lo que queda es lo de siempre, con las que se pierden adentro
+const tanqueDeTope = (tipo, panel) => {
+  const { anio, datos, cuenta } = panel;
   const total = cantidadDe(topeDe(tipo, anio, datos.anios));
   const valor = Math.max(0, total - usadosDe(cuenta, tipo, anio));
   const [una, varias] = tipo === 'franquicia' ? ['hora', 'horas'] : ['día', 'días'];
@@ -307,7 +386,8 @@ const tanqueDeTope = (tipo, { anio, datos, cuenta }) => {
     clave: tipo, nombre, numero: numeroTexto(valor), unidad: valor === 1 ? una : varias,
     de: `de ${numeroTexto(total)} ${varias}`, valor, total, vence: false, pestana: 'licencias',
     aria: `${nombre}: ${valor === 1 ? 'queda' : 'quedan'} ${numeroTexto(valor)} de ${numeroTexto(total)} ${varias}. `
-      + 'Ver tus licencias'
+      + 'Ver tus licencias',
+    ...(tipo === 'franquicia' ? { perdidas_texto: textoDeLasHorasQuePerdes(panel) } : {})
   };
 };
 
@@ -390,10 +470,26 @@ const textoDeLaExtraordinaria = ({ anio, cuenta }) => {
 // Los nombres de las opciones de «Cargar licencia» (los de la maqueta)
 const NOMBRES_DE_LAS_OPCIONES = Object.freeze({ ...NOMBRES_TIPO, familiar: 'Grupo familiar' });
 
-// Lo que queda de cada tipo, debajo de su opción: «33 disponibles», «Quedan 25 h de 42», «Quedan 9 de 15», «Sin tope», «1
-// para octubre» (el primer mes de uso, desde este, con francos para usar) y «Quedan 1,5 h en octubre»
+// Lo primero que se habilita después de hoy de las licencias hasta el año de hoy, las que muestra la regla, y no está
+// asignado a ninguna carga (`porHabilitarDe`; spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.1): «10 más el 1/1», con
+// la fecha corta, sin el año (con dos fechas, la primera). Sin nada por habilitar, ''
+const textoDeLoQueSeHabilita = ({ hoy, anio, cuenta }) => {
+  const entradas = porHabilitarDe(ordinariasDel(cuenta).filter((ordinaria) => ordinaria.anio <= anio), hoy);
+  if (entradas.length === 0) return '';
+  const [{ fecha }] = entradas;
+  const dias = entradas.filter((entrada) => entrada.fecha === fecha).reduce((suma, entrada) => suma + entrada.dias, 0);
+  return `${numeroTexto(dias)} más el ${Number(fecha.slice(8, 10))}/${Number(fecha.slice(5, 7))}`;
+};
+
+// Lo que queda de cada tipo, debajo de su opción: «33 disponibles» (con lo que se habilita después, «45 disponibles · 10
+// más el 1/1»), «Quedan 25 h de 42», «Quedan 9 de 15», «Sin tope», «1 para octubre» (el primer mes de uso, desde este, con
+// francos para usar) y «Quedan 1,5 h en octubre»
 const quedaDelTipo = (tipo, panel, tanques) => {
-  if (tipo === 'vacaciones') return conUnidad(tanques.vacaciones.numero, 'disponible', 'disponibles');
+  if (tipo === 'vacaciones') {
+    const disponibles = conUnidad(tanques.vacaciones.numero, 'disponible', 'disponibles');
+    const despues = textoDeLoQueSeHabilita(panel);
+    return despues === '' ? disponibles : `${disponibles} · ${despues}`;
+  }
   if (tipo === 'medica_extraordinaria') return 'Sin tope';
   if (tipo === 'franco') {
     const conFrancos = listaDe(panel.cuenta.francos).find((fila) => esObjeto(fila)
@@ -426,7 +522,8 @@ const tiposDe = (panel, tanques) => TIPOS_POR_MODALIDAD[panel.modalidad]
  * - sin modalidad, `mensaje` es `sinModalidad` y no hay nada que mostrar ni cargar;
  * - con modalidad y sin arranque, `mensaje` es `sinArranque` y `abrir_saldos` es true (se abre «Mis vacaciones y saldos»);
  * - si no, `marca` dice si hay algo en `vence_pronto` (cada cosa `{ fecha, dia, mes, titulo, texto, accion }`, con su línea en
- *   `texto`: «Vence el viernes 30/10, en 4 días.»), `faltantes` son los textos de `faltantesDe` y, al final, los de
+ *   `texto`: «Vence el viernes 30/10, en 4 días.»; un franco o unas horas a favor sin ningún día libre en su mes, con
+ *   `accion` null y además `sin_dias_libres`), `faltantes` son los textos de `faltantesDe` y, al final, los de
  *   `avisosDeSalidas` (las salidas de la planilla de contrato que dejaron de cerrar), `para_revisar` lo que en Configuración
  *   quedó distinto (`paraRevisarDe`, con los vínculos; [] en los dos casos de arriba o sin vínculos: no es un faltante ni
  *   prende la marca), `titular` es la frase de la banda (`{ encabezado, antes, cifra, despues, bajada: [{ texto, vence }] }`,
@@ -509,8 +606,10 @@ const textoDeLasFechas = (desde, hasta) => {
   return `${desde.slice(0, 4) === hasta.slice(0, 4) ? diaYMes(desde) : formatoCorto(desde)} al ${formatoCorto(hasta)}`;
 };
 
-// '7 días corridos, 5 hábiles', '2 días hábiles', '1 día' (un franco o un uso autorizado de planta, que es un franco), '2
-// horas' o '7 horas, el día entero'
+// '5 días hábiles de 7 corridos' (la forma del cálculo de «Cargar licencia», `textoDeLosDiasHabiles`: spec
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9), '2 días hábiles', '1 día' (un franco o un uso autorizado de planta, que
+// es un franco), '2 horas' o '7 horas, el día entero'. Un solo día que no es hábil (un feriado cargado después), como antes:
+// '1 día corrido, 0 hábiles'
 const textoDeLaCantidad = ({ tipo, desde, hasta }, horas, { modalidad, fuera, feriados }) => {
   const enHoras = tipo === 'franquicia' || tipo === 'horas_a_favor'
     || (tipo === 'uso_autorizado' && (modalidad !== 'planta' || fuera));
@@ -521,8 +620,8 @@ const textoDeLaCantidad = ({ tipo, desde, hasta }, horas, { modalidad, fuera, fe
   if (tipo === 'franco' || tipo === 'uso_autorizado') return '1 día';
   const habiles = diasHabilesDe(desde, hasta, feriados).length;
   const corridos = diasEntre(desde, hasta) + 1;
-  if (corridos === habiles) return conUnidad(habiles, 'día hábil', 'días hábiles');
-  return `${conUnidad(corridos, 'día corrido', 'días corridos')}, ${conUnidad(habiles, 'hábil', 'hábiles')}`;
+  if (corridos === 1 && habiles !== 1) return `1 día corrido, ${conUnidad(habiles, 'hábil', 'hábiles')}`;
+  return textoDeLosDiasHabiles(habiles, corridos);
 };
 
 // De qué licencia salen unas vacaciones: 'De la licencia 2024.' o 'De las licencias 2024 (3 días) y 2025 (2 días).'; sin

@@ -12,7 +12,8 @@ import {
 } from './helpers.js';
 import { asegurarBaseDePrueba } from './notas-fixtures.js';
 import {
-  hoyArgentina, sumarDias, esDiaHabil, FERIADOS_FIJOS, proximoDiaHabil, diaHabilAnterior, formatoCorto, formatoLargo
+  hoyArgentina, sumarDias, esDiaHabil, FERIADOS_FIJOS, proximoDiaHabil, diaHabilAnterior, formatoCorto, formatoLargo,
+  sumarDiasHabiles, ultimoDiaHabilHasta, diasEntre
 } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, camposDelSaldoInicial, textoDeLasMitades, textoSuperpuesta, textoTope,
@@ -310,10 +311,15 @@ describe('el saldo inicial', () => {
 describe('el año', () => {
   const TEXTO_CON_20 = (anio) => `Se habilitan en dos mitades: 10 el 1/7/${anio} y 10 el 1/1/${anio + 1} (con 15, 8 y 7; con 25, `
     + '13 y 12). Cada licencia vence el 31/12 de dos años después.';
-  // Un texto por cada valor de DIAS_VACACIONES, para que el modal muestre el del botón elegido sin recalcular
-  const textosDelAnio = (anio) => Object.fromEntries(DIAS_VACACIONES.map(dias => [String(dias), textoDeLasMitades(anio, dias)]));
+  // Un texto por cada valor de DIAS_VACACIONES, para que el modal muestre el del botón elegido sin recalcular. Con el arranque
+  // de la persona o, sin arranque, con hoy, como los campos del saldo inicial (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga,
+  // 3.8)
+  const textosDelAnio = (anio, arranque = hoy) =>
+    Object.fromEntries(DIAS_VACACIONES.map(dias => [String(dias), textoDeLasMitades(anio, dias, { arranque })]));
 
   it('los días y los estudios del año, con las mitades', async () => {
+    // Con el arranque antes del 1/7, el texto de siempre
+    await conArranque('adminA', '2026-03-10');
     await conAnio('adminA', 2026, 20, 'universitario');
     const res = await api.get('/mi-espacio/anio/2026', como('adminA'));
     assert.equal(res.status, 200, JSON.stringify(res.body));
@@ -321,7 +327,7 @@ describe('el año', () => {
       anio: 2026, dias_vacaciones: 20, estudios: 'universitario', heredado: false,
       texto_mitades: 'Se habilitan en dos mitades: 10 el 1/7/2026 y 10 el 1/1/2027 (con 15, 8 y 7; con 25, 13 y 12). Cada '
         + 'licencia vence el 31/12 de dos años después.',
-      textos_mitades: textosDelAnio(2026)
+      textos_mitades: textosDelAnio(2026, '2026-03-10')
     });
     assert.deepEqual(Object.keys(res.body.data.textos_mitades), ['10', '15', '20', '25', '30']);
     assert.equal(res.body.data.textos_mitades['20'], res.body.data.texto_mitades);
@@ -347,7 +353,26 @@ describe('el año', () => {
       anio: ANIO, dias_vacaciones: null, estudios: null, heredado: false, texto_mitades: null,
       textos_mitades: textosDelAnio(ANIO)
     });
-    assert.equal(res.body.data.textos_mitades['20'], TEXTO_CON_20(ANIO));
+    // Sin arranque, con hoy: desde el 1/7, la primera mitad de este año es lo que se pone en «De la AAAA»
+    assert.equal(res.body.data.textos_mitades['20'], hoy >= `${ANIO}-07-01`
+      ? `La primera mitad es lo que pongas en «De la ${ANIO}», más abajo. El 1/1/${ANIO + 1} se habilitan 10.`
+      : TEXTO_CON_20(ANIO));
+  });
+
+  // En el año del arranque, con el arranque desde el 1/7, la primera mitad es el saldo que se escribe en «De la AAAA» (spec
+  // 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): el texto lo dice sin número; los demás años, como siempre
+  it('en el año del arranque, desde el 1/7, la primera mitad es lo que se pone en «De la AAAA»', async () => {
+    await conArranque('adminA', '2026-10-27');
+    await conAnio('adminA', 2026, 15);
+    const res = await api.get('/mi-espacio/anio/2026', como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.data.texto_mitades,
+      'La primera mitad es lo que pongas en «De la 2026», más abajo. El 1/1/2027 se habilitan 7.');
+    assert.deepEqual(res.body.data.textos_mitades, textosDelAnio(2026, '2026-10-27'));
+    assert.equal(res.body.data.textos_mitades['20'],
+      'La primera mitad es lo que pongas en «De la 2026», más abajo. El 1/1/2027 se habilitan 10.');
+    const siguiente = await api.get('/mi-espacio/anio/2027', como('adminA'));
+    assert.equal(siguiente.body.data.textos_mitades['20'], TEXTO_CON_20(2027));
   });
 });
 
@@ -634,6 +659,18 @@ describe('mostrar a mis compañeros', () => {
 });
 
 describe('el cálculo previo', () => {
+  // Lo que el cálculo de unas vacaciones dice que se habilita después de hoy y hasta su «Hasta» (spec
+  // 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.1), en las de este describe, que no tocan la licencia del año: con los 20
+  // días por año de `listoParaCargar`, sus mitades son de 10, el 1/7 (si todavía no llegó: si no, la primera mitad es el saldo
+  // del arranque) y el 1/1 del año siguiente. Sin ninguna en el medio, ''
+  const habilitacionesHasta = (hasta) => {
+    const fechas = [`${ANIO}-07-01`, `${ANIO + 1}-01-01`].filter((fecha) => hoy < fecha && fecha <= hasta);
+    const sinCeros = (fecha) => `${Number(fecha.slice(8, 10))}/${Number(fecha.slice(5, 7))}/${fecha.slice(0, 4)}`;
+    if (fechas.length === 0) return '';
+    const despues = fechas.length > 1 ? ` y el ${sinCeros(fechas[1])}, 10 de la ${ANIO}` : '';
+    return ` El ${sinCeros(fechas[0])} se habilitan 10 más de la ${ANIO}${despues}.`;
+  };
+
   it('el cálculo no guarda: unas vacaciones dan de qué licencia salen y lo que queda', async () => {
     await listoParaCargar('adminA');
     await conSaldo('adminA', 'vacaciones', ANIO - 1, '10.0');
@@ -646,8 +683,8 @@ describe('el cálculo previo', () => {
     const { vista } = res.body.data;
     assert.equal(vista.dias_habiles, 5);
     assert.equal(vista.texto_dias, '5 días hábiles');
-    assert.equal(vista.texto_reparto,
-      `Salen de la licencia ${ANIO - 1}, la más vieja. Te quedan 5 días, todos de la ${ANIO - 1}.`);
+    assert.equal(vista.texto_reparto, `Salen de la licencia ${ANIO - 1}, la más vieja. Te quedan 5 días, todos de la `
+      + `${ANIO - 1}.${habilitacionesHasta(q(4))}`);
     assert.equal(vista.antes_del_arranque, false);
     assert.equal((await guardadasDe('adminA')).length, 0);
   });
@@ -669,8 +706,11 @@ describe('el cálculo previo', () => {
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.data.error, null);
     assert.equal(res.body.data.vista.dias_habiles, 5);
+    // Cruza el 1/1: la segunda mitad de la licencia del año, que esta carga no usa, se nombra (spec
+    // 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.1)
     assert.equal(res.body.data.vista.texto_reparto, `Salen de las licencias ${ANIO - 2} (3 días) y ${ANIO - 1} (2 días), las `
-      + `más viejas. Te quedan 8 días, todos de la ${ANIO - 1}.`);
+      + `más viejas. Te quedan 8 días, todos de la ${ANIO - 1}.${habilitacionesHasta(hasta)}`);
+    assert.ok(res.body.data.vista.texto_reparto.includes(`1/1/${ANIO + 1}`));
   });
 
   it('con un error, 200 y el error en data, con su campo', async () => {
@@ -707,6 +747,159 @@ describe('el cálculo previo', () => {
       assert.deepEqual(res.body.data.error, { campo: 'desde', mensaje: textoSuperpuesta(q(1)) }, String(id));
     }
   });
+});
+
+// Lo que se ve al cargar una licencia (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga), de punta a punta: el cálculo de
+// «Cargar licencia» y el guardado por HTTP, con la fecha real (los casos se arman desde hoy), y el Resumen de un día fijo,
+// con el controlador llamado directo (mock.timers: el servidor de prueba no tiene el reloj falso). La regla no cambia: solo lo
+// que dicen el cálculo, los errores y el Resumen
+describe('las vacaciones al cargar una licencia (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga)', () => {
+  // «1/1» o «1/7», sin ceros ni año (el de la opción del tipo); con el año, el de las oraciones del cálculo
+  const diaYMesSinCeros = (fecha) => `${Number(fecha.slice(8, 10))}/${Number(fecha.slice(5, 7))}`;
+  // La próxima mitad de 10 días de la licencia del año (con los 20 de `listoParaCargar`): la del 1/7 si todavía no llegó y, si
+  // no, la del 1/1 del año siguiente (desde el 1/7, el arranque es hoy y la primera mitad es la del saldo, que acá es 0)
+  const PROXIMA_MITAD = hoy < `${ANIO}-07-01` ? `${ANIO}-07-01` : `${ANIO + 1}-01-01`;
+
+  it('3.1 y 3.3: el cálculo dice lo que se habilita y hasta dónde llega; con ese «Hasta» guarda y con un día más, 400 en hasta',
+    async () => {
+      // adminA (de planta permanente): 20 días de la licencia del año anterior y ninguno de la de dos años antes. Las 42
+      // horas de franquicia del año, ya usadas: así ninguna carga le hace perder horas (los avisos de la carga quedan vacíos)
+      await listoParaCargar('adminA');
+      await conSaldo('adminA', 'vacaciones', ANIO - 1, '20.0');
+      await conSaldo('adminA', 'franquicias', ANIO, '42.0');
+      // El desde, 10 días hábiles antes de la próxima mitad (si eso ya pasó, el primer día hábil después de hoy): con 20 días,
+      // la carga cruza la mitad sin quedarse sin días. Usa los 20 de la licencia del año anterior hasta su 20° día hábil, y
+      // con los 10 de la mitad llega al 30°: el «Hasta» más lejano es el día antes del 31° (los sábados, domingos y feriados
+      // que siguen al 30° también entran)
+      let desde = PROXIMA_MITAD;
+      for (let n = 0; n < 10; n++) desde = diaHabilAnterior(desde);
+      if (desde <= hoy) desde = proximoDiaHabil(sumarDias(hoy, 1));
+      const hasta = sumarDiasHabiles(desde, 19);
+      const alcance = sumarDias(sumarDiasHabiles(desde, 30), -1);
+      const unDiaMas = sumarDias(alcance, 1);
+      const corridos = (fin) => diasEntre(desde, fin) + 1;
+
+      // La opción «Vacaciones» del tipo (el Resumen): lo de hoy y lo primero que se habilita, sin el año
+      const resumen = await api.get('/mi-espacio/resumen', como('adminA'));
+      assert.equal(resumen.status, 200, JSON.stringify(resumen.body));
+      assert.equal(resumen.body.data.tipos.find(opcion => opcion.tipo === 'vacaciones').queda_texto,
+        `20 disponibles · 10 más el ${diaYMesSinCeros(PROXIMA_MITAD)}`);
+
+      // Hasta el 20° día hábil: hoy no le queda nada, pero puede seguir con lo que se habilita después
+      const calculo = await api.post('/mi-espacio/licencias/calculo', { tipo: 'vacaciones', desde, hasta }, como('adminA'));
+      assert.equal(calculo.status, 200, JSON.stringify(calculo.body));
+      assert.equal(calculo.body.data.error, null);
+      const { vista } = calculo.body.data;
+      assert.equal(vista.texto_dias, `20 días hábiles de ${corridos(hasta)} corridos`);
+      assert.equal(vista.texto_reparto, `Salen de la licencia ${ANIO - 1}, la más vieja. No te quedan días disponibles hoy. `
+        + `El ${diaYMesSinCeros(PROXIMA_MITAD)}/${PROXIMA_MITAD.slice(0, 4)} se habilitan 10 más de la ${ANIO}: esta licencia `
+        + `puede llegar hasta el ${formatoCorto(alcance)}.`);
+      assert.deepEqual(vista.avisos, []);
+
+      // Un día más que el alcance: el error va en «Hasta» y dice hasta dónde llega; el cálculo muestra solo los días
+      const mensaje = `No te alcanzan los días habilitados: esta licencia puede llegar hasta el ${formatoCorto(alcance)}.`;
+      const deMas = await api.post('/mi-espacio/licencias/calculo', { tipo: 'vacaciones', desde, hasta: unDiaMas },
+        como('adminA'));
+      assert.equal(deMas.status, 200, JSON.stringify(deMas.body));
+      assert.deepEqual(deMas.body.data.error, { campo: 'hasta', mensaje });
+      assert.equal(deMas.body.data.paso, null);
+      assert.equal(deMas.body.data.vista.texto_dias, `31 días hábiles de ${corridos(unDiaMas)} corridos`);
+      assert.equal(deMas.body.data.vista.texto_reparto, '');
+      assert.deepEqual(deMas.body.data.vista.avisos, []);
+      const noGuarda = await api.post('/mi-espacio/licencias', { tipo: 'vacaciones', desde, hasta: unDiaMas }, como('adminA'));
+      assert.equal(noGuarda.status, 400, JSON.stringify(noGuarda.body));
+      assert.deepEqual(noGuarda.body, rechazo(mensaje, 'hasta'));
+      assert.equal((await guardadasDe('adminA')).length, 0);
+
+      // Con el alcance como «Hasta», se guarda: el número de la pantalla es exactamente el que se puede guardar
+      const guarda = await api.post('/mi-espacio/licencias', { tipo: 'vacaciones', desde, hasta: alcance }, como('adminA'));
+      assert.equal(guarda.status, 201, JSON.stringify(guarda.body));
+      const guardadas = await guardadasDe('adminA');
+      assert.deepEqual(guardadas.map(fila => [fila.id, fila.tipo, fila.desde, fila.hasta]),
+        [[guarda.body.data.id, 'vacaciones', desde, alcance]]);
+    });
+
+  it('3.2: una atención médica que deja sin días libres hasta el 31/12 dice lo que hace perder, y se guarda igual',
+    async (t) => {
+      // Los dos últimos días hábiles del año: la médica los ocupa. Lo que queda del año antes de ellos ya está ocupado por una
+      // atención médica extraordinaria (sin tope), así que sin la médica quedan dos días libres y con ella, ninguno
+      const ultimo = ultimoDiaHabilHasta(`${ANIO}-12-31`);
+      const anteultimo = diaHabilAnterior(ultimo);
+      if (anteultimo < hoy) return t.skip('hoy es posterior al anteúltimo día hábil del año');
+      await listoParaCargar('adminA');
+      // 3 días de la licencia de dos años antes, que vence el 31/12 de este año, y ninguna hora de franquicia usada
+      await conSaldo('adminA', 'vacaciones', ANIO - 2, '3.0');
+      if (hoy < anteultimo) {
+        await conLicencia('adminA', { tipo: 'medica_extraordinaria', desde: hoy, hasta: sumarDias(anteultimo, -1) });
+      }
+      const cuerpo = { tipo: 'medica', desde: anteultimo, hasta: `${ANIO}-12-31` };
+      const corridos = diasEntre(anteultimo, `${ANIO}-12-31`) + 1;
+
+      const calculo = await api.post('/mi-espacio/licencias/calculo', cuerpo, como('adminA'));
+      assert.equal(calculo.status, 200, JSON.stringify(calculo.body));
+      assert.equal(calculo.body.data.error, null);
+      const { vista } = calculo.body.data;
+      assert.equal(vista.texto_dias, corridos === 2 ? '2 días hábiles' : `2 días hábiles de ${corridos} corridos`);
+      assert.equal(vista.queda_texto, 'Te quedan 23 de 25.');
+      assert.equal(vista.texto_reparto, '');
+      // La diferencia, no el total: los 3 días de vacaciones y las horas de franquicia de esos dos días (2 × 7)
+      assert.deepEqual(vista.avisos, [
+        `Con esta licencia perdés 3 de la ${ANIO - 2} (vencen el 31/12/${ANIO}).`,
+        `Con esta licencia perdés 14 horas de franquicia (vencen el 31/12/${ANIO}).`
+      ]);
+
+      // Un aviso nunca frena: se guarda
+      const res = await api.post('/mi-espacio/licencias', cuerpo, como('adminA'));
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      const medica = (await guardadasDe('adminA')).find(fila => fila.id === res.body.data.id);
+      assert.deepEqual([medica.tipo, medica.desde, medica.hasta], ['medica', anteultimo, `${ANIO}-12-31`]);
+    });
+
+  it('3.6: la franquicia en «Vence pronto» desde el 1/10, con su botón; las que se pierden, debajo de «Franquicias»',
+    async () => {
+      // adminA, con 20 horas de franquicia de 2026 usadas en el saldo inicial: le quedan 22
+      await conArranque('adminA', '2026-08-03');
+      await conAnio('adminA', 2026, 20);
+      await conSaldo('adminA', 'franquicias', 2026, '20.0');
+      // El Resumen de un momento fijo (12:00 de Argentina), del controlador
+      const resumenDel = async (momento) => {
+        const respuesta = { status(codigo) { this.codigo = codigo; return this; }, json(cuerpo) { this.cuerpo = cuerpo; } };
+        mock.timers.enable({ apis: ['Date'], now: new Date(momento) });
+        try {
+          await controlador.verResumen({ user: { userId: usuarios.adminA.id, rol: 'admin' } }, respuesta);
+        } finally {
+          mock.timers.reset();
+        }
+        assert.equal(respuesta.codigo, 200, JSON.stringify(respuesta.cuerpo));
+        return respuesta.cuerpo.data;
+      };
+      const franquicia = (data) => data.tanques.otros.find(otro => otro.clave === 'franquicia');
+      const cargarFranquicia = { texto: 'Cargar franquicia', tipo: 'franquicia' };
+
+      // El 30/09, todavía no
+      const antes = await resumenDel('2026-09-30T15:00:00Z');
+      assert.deepEqual(antes.vence_pronto, []);
+      assert.equal(antes.marca, false);
+
+      // El 1/10, con «Vencen el jueves 31/12, en 91 días.» y «Cargar franquicia»
+      const desde = await resumenDel('2026-10-01T15:00:00Z');
+      assert.deepEqual(desde.vence_pronto, [{
+        fecha: '2026-12-31', dia: '31', mes: 'dic', titulo: '22 horas de franquicia',
+        texto: 'Vencen el jueves 31/12, en 91 días.', accion: cargarFranquicia
+      }]);
+      assert.equal(desde.marca, true);
+      assert.equal(franquicia(desde).perdidas_texto, '');
+
+      // El martes 29/12 quedan tres días libres (29, 30 y 31): entran 21 horas y 1 se pierde. «Vence pronto» y el número
+      // de «El resto» siguen con lo de siempre (22), y debajo, «Perdés 1 hora»
+      const alFinal = await resumenDel('2026-12-29T15:00:00Z');
+      assert.deepEqual(alFinal.vence_pronto, [{
+        fecha: '2026-12-31', dia: '31', mes: 'dic', titulo: '21 horas de franquicia',
+        texto: 'Vencen el jueves 31/12, en 2 días.', accion: cargarFranquicia
+      }]);
+      assert.equal(franquicia(alFinal).valor, 22);
+      assert.equal(franquicia(alFinal).perdidas_texto, 'Perdés 1 hora (vence el 31/12/2026).');
+    });
 });
 
 describe('corregir y borrar una licencia', () => {
@@ -2090,9 +2283,16 @@ describe('guardar el saldo inicial', () => {
     const casos = [
       [{ saldos: sinMedica }, rechazo(textoSaldo(25), 'medica')],
       [{ saldos: { ...completos, franquicias: 43 } }, rechazo(textoSaldo(42), 'franquicias')],
-      [{}, rechazo(textoSaldo(campos[0].maximo), campos[0].clave)]
+      // Un campo con ayuda (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): su error es la ayuda
+      [{}, rechazo(campos[0].ayuda, campos[0].clave)]
     ];
+    // La licencia de este año, desde el 1/7 (antes, su campo no va)
+    if (campos.some(campo => campo.clave === `vacaciones-${ANIO}`)) {
+      casos.push([{ saldos: { ...completos, [`vacaciones-${ANIO}`]: 11 } },
+        rechazo(`De 0 a 10: lo que se habilitó de la ${ANIO} hasta hoy.`, `vacaciones-${ANIO}`)]);
+    }
     assert.equal(casos[0][1].error, 'Escribí un número de 0 a 25.');
+    assert.equal(casos[2][1].error, 'De 0 a 30, el máximo de una licencia.');
     for (const [cuerpo, esperado] of casos) {
       const res = await api.put('/mi-espacio/saldo-inicial', cuerpo, como('adminA'));
       assert.equal(res.status, 400, JSON.stringify(cuerpo));
