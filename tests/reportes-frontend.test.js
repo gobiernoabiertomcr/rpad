@@ -167,10 +167,19 @@ describe('reportes.js: el estado de la URL', () => {
     assert.deepEqual(plano(ctx.conDestildado([12], 'x')), [12], 'un id que no es un id no cambia nada');
   });
 
+  // Desde los feriados en todo el sistema, tanda 2 (spec 2026-10-27-feriados-en-notas, 6): los días hábiles no cuentan los feriados
+  // de Configuración → Feriados, además de los 9 fijos
   it('la bajada dice cómo se cuentan los días', () => {
     const base = 'Cuánto tarda cada paso del circuito, desde el aviso del RPAD hasta la carga en el portal, y los reportes en PDF.';
-    assert.equal(ctx.textoDeLaBajada('habiles'), `${base} Los días son hábiles: de lunes a viernes, sin los feriados nacionales fijos.`);
+    assert.equal(ctx.textoDeLaBajada('habiles'), `${base} Los días son hábiles: de lunes a viernes, sin feriados ni días no laborables.`);
     assert.equal(ctx.textoDeLaBajada('corridos'), `${base} Los días son corridos: todos los días del calendario.`);
+  });
+
+  it('la bajada que trae reportes.html, antes de que reportes.js la cambie, es la de los días hábiles', () => {
+    const bajada = leer('reportes.html').match(/<p class="mt-bajada" id="mt-bajada">([^<]*)<\/p>/);
+    assert.ok(bajada, 'la bajada');
+    assert.equal(bajada[1], ctx.textoDeLaBajada('habiles'));
+    assert.ok(bajada[1].endsWith(' Los días son hábiles: de lunes a viernes, sin feriados ni días no laborables.'));
   });
 });
 

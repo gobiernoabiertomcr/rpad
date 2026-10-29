@@ -10,11 +10,12 @@
  *   `CALENDARIO_FIJO` (`services/notasDigitalesCalendario.js`), con las derivadas sobre un predicado que además saca los
  *   feriados de la tabla. Lo leen las corridas de las 8:15 y de las 14:00 y lo que las anuncia (`leerCalendario`, en
  *   `services/feriadosDatos.js`); si la tabla no se puede leer, caen a los 9 fijos y lo dicen con `MENSAJE_CORRIDA_SIN_FERIADOS`
- *   y `MENSAJE_ESTADO_SIN_FERIADOS`. Métricas, el Ciclo de vida del dato y la Agenda de pedidos todavía cuentan con los 9 fijos.
- *   La foto del 31/12 (spec 2026-10-27-feriados-en-notas, 2 y 5): `exigirLaTabla(calendario)` lo devuelve si se leyó de la
- *   tabla y, si no, tira con `MENSAJE_METRICAS_SIN_FERIADOS` (la foto no se saca con los 9 fijos); `feriadosDelCalendario`, los
- *   días que la tabla sacó de los hábiles, que la foto guarda, y `calendarioDeFechas`, el calendario que se vuelve a armar con
- *   ellos al leerla.
+ *   y `MENSAJE_ESTADO_SIN_FERIADOS`. Desde la tanda 2, todo el sistema cuenta los días hábiles con él: también Métricas, el
+ *   Ciclo de vida del dato, la foto del 31/12 y la Agenda de pedidos (spec 2026-10-27-feriados-en-notas, 2 y 5), que no caen a
+ *   los 9 fijos: `exigirLaTabla(calendario)` lo devuelve si se leyó de la tabla y, si no, tira con
+ *   `MENSAJE_METRICAS_SIN_FERIADOS` (Métricas en vivo, el Ciclo de vida y la Agenda responden su 500, y la foto no se saca con
+ *   los 9 fijos: se reintenta en la corrida siguiente); `feriadosDelCalendario`, los días que la tabla sacó de los hábiles, que
+ *   la foto guarda, y `calendarioDeFechas`, el calendario que se vuelve a armar con ellos al leerla.
  * - Contar días hábiles con los feriados en Mi espacio (`feriadosDelRango`, `esDiaHabilCon`, `diasHabilesDe`,
  *   `diasHabilesEntre`, `proximoDiaHabilCon`, `restarDiasHabilesCon`, `ultimoDiaHabilDelMesCon`). Envuelven a `esDiaHabil` sin
  *   cambiarlo: los feriados solo sacan días hábiles, nunca los agregan, y con un Set vacío se cuenta exactamente lo mismo que

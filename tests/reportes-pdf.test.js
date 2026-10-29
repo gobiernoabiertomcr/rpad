@@ -1879,10 +1879,13 @@ const hashesPorHoja = (pdf) => contenidoPorHoja(pdf).map((contenido) => createHa
 // en Gestión» → «… cargados en Proyectos» (services/reportesInformeAnualPdf.js), comprobado contra el código de antes del merge. La
 // hoja 1 de los cinco PDF y la hoja 3 de «con una nota DGMIT» se volvieron a tomar por el nombre nuevo de la etapa de la DGMIT y la
 // Dirección Administrativa, «Redacción y entrega de nota» (28/10/2026): sus únicos cambios son las líneas del nombre en la flecha del
-// circuito y, en la hoja 3, el rótulo de esa etapa en la cinta, comprobado con el diff de texto hoja por hoja contra el código de antes
+// circuito y, en la hoja 3, el rótulo de esa etapa en la cinta, comprobado con el diff de texto hoja por hoja contra el código de antes.
+// La hoja 1 de los PDF con días hábiles (todos menos el de «promedio en días corridos») se volvió a tomar por la bajada de los días
+// hábiles, «… sin feriados ni días no laborables.» (feriados en todo el sistema, tanda 2; spec 2026-10-27-feriados-en-notas, 6): su
+// único cambio es el párrafo de la bajada, que corre una palabra al renglón siguiente, comprobado con el diff de texto hoja por hoja
 const REFERENCIA_DE_LOS_PDF = {
   'Métricas: los casos, con las métricas manuales': [
-    '824c83d5d7a1e4ed2bced1d750b4aacf75e96813d4b2dfb70dd7be00ae11124a',
+    'd1f0cdde7e355017d56e490b5fbacf977afda45cd4806895e6a1703baa030628',
     '596d156d8dc0c1317dd895d1b762c2b6abae85400ac43c0e1659f89d71651e07',
     'c4bed0f2a9f3e9e868c2e7331572bc3f1d5d23c07f979b094f8c8b477624cb5b',
     'ba74bcbe58b1843ae77d30ec527cf3c0e4faa0a43d119ba71dfa4a99945316b3'
@@ -1895,18 +1898,18 @@ const REFERENCIA_DE_LOS_PDF = {
     '64dfb481191d59fd35d552da99b6432ace0e31e8ee271445cf188e39ba1746ad'
   ],
   'Métricas: un año cerrado sin foto': [
-    '584277295a286131d695f4b3f6e013f2be933a9948b8b2225a1569889bcadc9d',
+    '56d36f9a63b663cb87920a271fae55dec7ce2ed1d08b61edd505e7bcb04b6897',
     '9ba43c0cb18799abffdbe57a60ea6a8e7d05e460d3cd9dd5dfff4090a0d22d32',
     '644352bcf71cba6e2b853d7d5900563625fc059a88403cd946ded88b7e0370f6',
     'b41f65872e8c92ff1ce1dfb7cbf89e4229f663ca2b9c8449b9427b852e6c4168'
   ],
   'Informe anual: el primer año con foto': [
-    '1500b88a3dbd56ecda7c41a916c657498cb9abd014fc5552e1f5c80cd6322fca',
+    '86ecc7055dee102c64af353f37eca24aefeb70b103c7cf3952a554088487b474',
     '4502cbd20b01bae423e78651304946d30368c2368f6accb5ed27d73b66a6e502',
     'e185bd524c985140c2b6a206eea3b2a8a49e57e082d1a391b99b949c056bf53a'
   ],
   'Informe anual: con el año anterior y los logros': [
-    '1500b88a3dbd56ecda7c41a916c657498cb9abd014fc5552e1f5c80cd6322fca',
+    '86ecc7055dee102c64af353f37eca24aefeb70b103c7cf3952a554088487b474',
     '4502cbd20b01bae423e78651304946d30368c2368f6accb5ed27d73b66a6e502',
     '7794fdd5f3bfc3011d0d06ad65ff5bcfc1ef4e89025a7de01e15609639e41c33'
   ]
@@ -2191,7 +2194,7 @@ describe('Ciclo de vida del dato con el diseño del anexo', () => {
     assert.equal(m.interna.produccion, 'Se mide del aviso del RPAD al «Recibido el».');
     assert.equal(d.interna.carga, 'El relevamiento ya llega ordenado: Datos Públicos lo revisa para comprobar que cumpla con los estándares de datos abiertos (estructura, normalización y formatos) y lo publica en el portal en formato abierto.');
     assert.equal(m.interna.carga, 'Se mide del «Recibido el» al día de la carga en el portal.');
-    const sinLaUltima = 'Días hábiles: de lunes a viernes, sin los feriados nacionales fijos; entre paréntesis, los corridos. La mediana es el valor del medio: la mitad de los ciclos tardó eso o menos. El caso más largo y el más corto (en el aviso, el de más y el de menos anticipación) son los ciclos de los extremos de cada etapa. Cada ciclo cuenta en el año en que terminó la etapa; el aviso, en el año de su vencimiento, aunque todavía no haya llegado. Los que todavía no terminaron la respuesta o el relevamiento van aparte, como «en curso».';
+    const sinLaUltima = 'Días hábiles: de lunes a viernes, sin feriados ni días no laborables; entre paréntesis, los corridos. La mediana es el valor del medio: la mitad de los ciclos tardó eso o menos. El caso más largo y el más corto (en el aviso, el de más y el de menos anticipación) son los ciclos de los extremos de cada etapa. Cada ciclo cuenta en el año en que terminó la etapa; el aviso, en el año de su vencimiento, aunque todavía no haya llegado. Los que todavía no terminaron la respuesta o el relevamiento van aparte, como «en curso».';
     assert.equal(`Cómo se cuenta. ${TEXTOS_DEL_CICLO.comoSeCuenta(2026)}`, `Cómo se cuenta. ${sinLaUltima} La comparación con el año anterior empieza en 2027.`);
     for (const anio of [2027, 2030]) assert.equal(TEXTOS_DEL_CICLO.comoSeCuenta(anio), sinLaUltima);
   });

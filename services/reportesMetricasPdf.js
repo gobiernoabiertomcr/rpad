@@ -51,7 +51,7 @@ export const TEXTOS_DE_LA_PESTANA = Object.freeze({
   estadisticos: Object.freeze({ mediana: 'Mediana', promedio: 'Promedio' }),
   dias: Object.freeze({ habiles: 'días hábiles', corridos: 'días corridos' }),
   bajada: Object.freeze({
-    habiles: 'Los días son hábiles: de lunes a viernes, sin los feriados nacionales fijos.',
+    habiles: 'Los días son hábiles: de lunes a viernes, sin feriados ni días no laborables.',
     corridos: 'Los días son corridos: todos los días del calendario.'
   }),
   pieDelCircuito: 'Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio» o «Días corridos», cada cifra lo dice debajo.',

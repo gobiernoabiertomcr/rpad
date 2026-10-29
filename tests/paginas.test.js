@@ -70,9 +70,11 @@ const VERSION_SEGUIMIENTO = '20261129';
 // del RPAD en lugar del Historial y sin la del Cumplimiento; después, la pestaña Reportes con los siete reportes en dos grupos;
 // después, la revisión final (el año de Datos para completar, la franja de lo destildado armada en el servidor y el foco de «Volver a
 // todos»); después, la tarjeta del Informe anual dice «(los hitos de Herramientas → Proyectos)» (spec 2026-10-25-proyectos, 11); después, la
-// tarjeta «Ciclo de vida del dato», la octava, segunda en «Para presentar» (spec 2026-10-25-ciclo-de-vida-del-dato, 4): su versión es
+// tarjeta «Ciclo de vida del dato», la octava, segunda en «Para presentar» (spec 2026-10-25-ciclo-de-vida-del-dato, 4); después, desde
+// los feriados en todo el sistema, tanda 2, la bajada de los días hábiles dice «sin feriados ni días no laborables» (spec
+// 2026-10-27-feriados-en-notas, 6), con el número siguiente (no más: VERSION_FERIADOS tiene que seguir siendo mayor): su versión es
 // propia (mayor que todas las de este archivo cuando se sumó)
-const VERSION_REPORTES = '20261207';
+const VERSION_REPORTES = '20261208';
 // notas.js (el Generador de Notas de la DGMIT en tres pasos, con la vista previa en la hoja membretada y la descarga del Word, spec
 // 2026-10-24-generador-de-notas, 3), que hasta ahora se cargaba sin ?v=: cambió por completo y un notas.js viejo en la caché con el
 // HTML nuevo rompería la página. Su versión es propia
@@ -275,14 +277,14 @@ describe('páginas', () => {
       }
     });
 
-    // Desde la tanda 1 de los feriados en todo el sistema (spec 2026-10-27-feriados-en-notas, 6): cuentan para las Notas
-    // Digitales, los emails automáticos, las licencias y Mi espacio; Métricas, el Ciclo de vida y la Agenda de pedidos, todavía no
-    it('el aviso azul dice, tal cual, para qué cuentan estos feriados y qué sigue con los 9 fijos', () => {
+    // Desde la tanda 2 de los feriados en todo el sistema (spec 2026-10-27-feriados-en-notas, 6): cuentan en todo el sistema, también
+    // en Métricas, el Ciclo de vida del dato, la foto del 31/12 y la Agenda de pedidos (en la tanda 1, todavía no)
+    it('el aviso azul dice, tal cual, que estos feriados cuentan en todo el sistema', () => {
       const aviso = bloque(/<p class="fe-aviso" id="feriados-aviso">[\s\S]*?<\/p>/);
       assert.ok(aviso, 'el aviso');
       assert.match(aviso, /<svg aria-hidden="true"/);
       assert.equal(aviso.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(),
-        'Estos feriados, junto con los 9 fijos, son los días no hábiles de las Notas Digitales, los emails automáticos, las licencias y Mi espacio: esos días no sale ninguna nota ni ningún email automático. Métricas, el Ciclo de vida del dato y la Agenda de pedidos todavía cuentan solo los 9 fijos.');
+        'Estos feriados, junto con los 9 fijos, son los días no hábiles de todo el sistema: esos días no sale ninguna nota ni ningún email automático, y no cuentan como días hábiles en las licencias, Mi espacio ni Métricas.');
     });
 
     it('la tarjeta: el título, el selector del año y los filtros como grupos con su nombre, la lista y el vacío', () => {

@@ -43,7 +43,7 @@ const ESTADO_POR_DEFECTO = Object.freeze({ anio: null, estadistico: 'mediana', d
 
 const BAJADA = 'Cuánto tarda cada paso del circuito, desde el aviso del RPAD hasta la carga en el portal, y los reportes en PDF.';
 const BAJADA_DE_LOS_DIAS = {
-  habiles: 'Los días son hábiles: de lunes a viernes, sin los feriados nacionales fijos.',
+  habiles: 'Los días son hábiles: de lunes a viernes, sin feriados ni días no laborables.',
   corridos: 'Los días son corridos: todos los días del calendario.'
 };
 const NOMBRE_DE_LOS_DIAS = { habiles: 'días hábiles', corridos: 'días corridos' };
