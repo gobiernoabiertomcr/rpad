@@ -355,6 +355,8 @@ describe('Métricas, el Ciclo de vida y la Agenda', () => {
   // Review Focus 5: el 05/01/2027, pidiendo 2027, los dos años van en vivo (2026 todavía no tiene foto) y la tabla se lee una vez
   it('una sola lectura de la tabla por pedido: el Ciclo de vida con los dos años en vivo y Métricas', async () => {
     await prepararElAnio();
+    // Sin ninguna foto: 2026 también va en vivo
+    assert.equal(await cuantasFotos(), 0);
     const ciclo = await lecturasDeLaTabla(() => metricas.cicloDeVidaDe({ anio: '2027' }, { hoy: '2027-01-05' }));
     assert.equal(ciclo.resultado.anio, 2027);
     assert.equal(ciclo.resultado.en_vivo, true);

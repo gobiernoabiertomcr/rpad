@@ -459,6 +459,15 @@ describe('la foto del 31/12', () => {
     }
   });
 
+  // datosDeLaFoto se exporta: con el año como texto, los feriados son los mismos que con el número (van hasta el 31/12 del año
+  // siguiente, sumado como número: sumado como texto daría '20261-12-31' y ningún feriado). No toca la base
+  it('los feriados de la foto son los mismos con el año como texto', () => {
+    const opciones = { generada: '2027-01-10 08:15:00', calendario: calendarioDeFechas(['2026-11-02', '2027-03-15']) };
+    const conNumero = foto.datosDeLaFoto(new Map(), { ...opciones, anio: 2026 });
+    assert.deepEqual(conNumero.feriados, ['2026-11-02', '2027-03-15']);
+    assert.deepEqual(foto.datosDeLaFoto(new Map(), { ...opciones, anio: '2026' }).feriados, conNumero.feriados);
+  });
+
   // El reporte nuevo nunca frena la foto del 31/12, que no se vuelve a sacar: si calcular las etapas tira, la parte de las etapas
   // queda vacía (la foto sale sin la clave) y el error va a console.error; al leerla, etapasDeLaFoto las calcula con sus casos
   it('si calcular las etapas tira, la foto sale igual, sin etapas', async () => {

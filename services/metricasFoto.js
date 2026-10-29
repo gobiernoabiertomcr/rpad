@@ -95,7 +95,7 @@ export const datosDeLaFoto = (fuentesPorDataset, { anio, generada, calendario })
       [estadistico, trabajoDelAnio(fuentesPorDataset, casos, { anio, al, estadistico })])),
     areas: areasYTemas(fuentesPorDataset, { anio, al }),
     ...etapasParaLaFoto(delAnio, { anio, al, calendario: delCalendario }),
-    feriados: feriadosDelCalendario(delCalendario, FECHA_MINIMA_FERIADO, `${anio + 1}-12-31`),
+    feriados: feriadosDelCalendario(delCalendario, FECHA_MINIMA_FERIADO, `${Number(anio) + 1}-12-31`),
     generada
   };
 };
