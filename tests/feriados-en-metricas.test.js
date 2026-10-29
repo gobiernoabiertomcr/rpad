@@ -8,9 +8,10 @@ import crypto from 'crypto';
 import { crearBaseDePrueba, correrSqlEnBaseDePrueba, cerrarDb, query, mailpit } from './helpers.js';
 import { crearDataset, limpiarBase, configurarNotas, asegurarBaseDePrueba } from './notas-fixtures.js';
 import { MENSAJE_METRICAS_SIN_FERIADOS, calendarioCon } from '../services/feriadosReglas.js';
-import { casosDe } from '../services/metricasReglas.js';
+import { casosDe, vistaDe } from '../services/metricasReglas.js';
 import { CALENDARIO_FIJO } from '../services/notasDigitalesCalendario.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
+import { textosPorHoja } from './pdf-lector.js';
 
 // Los días que la precarga saca de los hábiles de 2025 a 2027 (los de lunes a viernes que no son de los 9 fijos): los que guarda la
 // foto de 2026, hasta el 31/12 del año siguiente
@@ -281,5 +282,171 @@ describe('la foto', () => {
     assert.deepEqual(await foto.sacarFotoSiCorresponde({ hoy: '2027-01-10' }), { anio: 2026, sacada: true });
     const { datos } = await foto.leerFoto(2026);
     assert.equal(delCiclo(datos.casos).motivo_sin_aviso, null);
+  });
+});
+
+// Los puntos de entrada de Métricas en vivo, del Ciclo de vida del dato y de la Agenda de pedidos (spec 2026-10-27-feriados-en-notas,
+// 2 y 5): leen el calendario una sola vez por pedido y lo exigen con la tabla (sin ella, el 500 de siempre); un año con foto no la lee.
+// Los controladores se llaman directo, con un `res` falso
+describe('Métricas, el Ciclo de vida y la Agenda', () => {
+  // El calendario de la precarga, el que lee leerCalendario de esta base
+  const TABLA = calendarioCon(FILAS_PRECARGA);
+  let metricas, reportes, pool;
+
+  // Usan el pool: se importan después de apuntar DB_NAME a la base de prueba (el before de arriba corre antes)
+  before(async () => {
+    metricas = await import('../controllers/metricasController.js');
+    reportes = await import('../controllers/reportesController.js');
+    pool = (await import('../config/database.js')).default;
+  });
+
+  // Un `res` falso de Express: lo que respondió el controlador y, si armó un PDF, sus encabezados y sus bytes
+  const respuesta = () => ({
+    statusCode: 200, body: null, headers: {}, enviado: null,
+    status(codigo) { this.statusCode = codigo; return this; },
+    json(cuerpo) { this.body = cuerpo; return this; },
+    setHeader(nombre, valor) { this.headers[nombre] = valor; },
+    send(contenido) { this.enviado = contenido; return this; }
+  });
+  const pedido = (query = {}) => ({ query, user: { userId: usuarioId } });
+
+  // fn con el reloj en `momento` (solo Date: la base sigue andando)
+  const conElReloj = async (momento, fn) => {
+    mock.timers.enable({ apis: ['Date'], now: new Date(momento) });
+    try {
+      return await fn();
+    } finally {
+      mock.timers.reset();
+    }
+  };
+
+  // Cuántas veces fn lee la tabla de los feriados: las consultas con `feriados_no_rige` (pool.query espiado, sin cambiar lo que
+  // hace). filasDeFeriados hace esa consulta solo si hay filas: cuenta porque esta base tiene la precarga
+  const lecturasDeLaTabla = async (fn) => {
+    const espia = mock.method(pool, 'query');
+    try {
+      const resultado = await fn();
+      const lecturas = espia.mock.calls.filter((llamada) => String(llamada.arguments[0]).includes('feriados_no_rige')).length;
+      return { resultado, lecturas };
+    } finally {
+      espia.mock.restore();
+    }
+  };
+
+  // La cifra del aviso anticipado de cada gestión en el circuito de la vista (la mediana en días hábiles)
+  const avisosDeLaVista = (vista) => ['externa', 'interna']
+    .map((gestion) => vista.circuito[gestion].find((tramo) => tramo.clave === 'aviso').cifra.valor);
+
+  it('Métricas en vivo cuenta con la tabla: el aviso anticipado, 25 y 38 días hábiles', async () => {
+    await prepararElAnio();
+    const data = await metricas.metricasDe({ anio: '2026' }, { hoy: AL_2026 });
+    assert.deepEqual(avisosDeLaVista(data.vista), [25, 38]);
+    const casos = casosDe(await seguimientoDatos.fuentesDe(null), { hoy: AL_2026, calendario: TABLA });
+    assert.deepEqual(data.vista, vistaDe(casos, { anio: 2026, al: AL_2026, calendario: TABLA }));
+  });
+
+  it('el Ciclo de vida en vivo cuenta con la tabla: el aviso anticipado, 25 y 38 días hábiles', async () => {
+    await prepararElAnio();
+    const datos = await metricas.cicloDeVidaDe({ anio: '2026' }, { hoy: AL_2026 });
+    assert.equal(datos.etapas.externa[0].habiles.mediana, 25);
+    assert.equal(datos.etapas.interna[0].habiles.mediana, 38);
+  });
+
+  // Review Focus 5: el 05/01/2027, pidiendo 2027, los dos años van en vivo (2026 todavía no tiene foto) y la tabla se lee una vez
+  it('una sola lectura de la tabla por pedido: el Ciclo de vida con los dos años en vivo y Métricas', async () => {
+    await prepararElAnio();
+    const ciclo = await lecturasDeLaTabla(() => metricas.cicloDeVidaDe({ anio: '2027' }, { hoy: '2027-01-05' }));
+    assert.equal(ciclo.resultado.anio, 2027);
+    assert.equal(ciclo.resultado.en_vivo, true);
+    // El año anterior también se contó con la tabla
+    assert.equal(ciclo.resultado.etapas.externa[0].textos.anterior, 'Año anterior: mediana de 25 días hábiles');
+    assert.equal(ciclo.resultado.etapas.interna[0].textos.anterior, 'Año anterior: mediana de 38 días hábiles');
+    assert.equal(ciclo.lecturas, 1);
+
+    const delAnio = await lecturasDeLaTabla(() => metricas.metricasDe({ anio: '2026' }, { hoy: AL_2026 }));
+    assert.equal(delAnio.resultado.en_vivo, true);
+    assert.equal(delAnio.lecturas, 1);
+  });
+
+  // Review Focus 4: un año con foto se lee de la foto, sin la tabla: con ella no la lee y sin ella responde igual
+  it('un año con foto no lee la tabla: Métricas, el Ciclo de vida y el Informe anual responden también sin ella', async () => {
+    await prepararElAnio();
+    assert.deepEqual(await foto.sacarFotoSiCorresponde({ hoy: '2027-01-10' }), { anio: 2026, sacada: true });
+    const hoy = '2027-01-12';
+    const losTres = async () => {
+      const deMetricas = await metricas.metricasDe({ anio: '2026' }, { hoy });
+      const delCiclo = await metricas.cicloDeVidaDe({ anio: '2026' }, { hoy });
+      const res = respuesta();
+      await reportes.reporteInformeAnual(pedido({ anio: '2026' }), res);
+      return { deMetricas, delCiclo, res };
+    };
+    const comprobar = ({ deMetricas, delCiclo, res }) => {
+      assert.equal(deMetricas.en_vivo, false);
+      assert.deepEqual(avisosDeLaVista(deMetricas.vista), [25, 38]);
+      assert.equal(delCiclo.en_vivo, false);
+      assert.equal(delCiclo.etapas.externa[0].habiles.mediana, 25);
+      assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+      assert.equal(res.headers['Content-Type'], 'application/pdf');
+      assert.ok(Buffer.isBuffer(res.enviado) && res.enviado.subarray(0, 5).toString() === '%PDF-');
+    };
+
+    const conLaTabla = await lecturasDeLaTabla(losTres);
+    comprobar(conLaTabla.resultado);
+    assert.equal(conLaTabla.lecturas, 0);
+
+    const consola = mock.method(console, 'error', () => {});
+    try {
+      comprobar(await conLaTablaRenombrada(losTres));
+      assert.equal(lecturasFallidas(consola), 0);
+    } finally {
+      consola.mock.restore();
+    }
+  });
+
+  // Sin la tabla, en vivo: el 500 de siempre, con el mensaje fijo de cada uno (spec, 2), y ningún PDF. Cada pedido la intenta leer una
+  // sola vez
+  it('sin la tabla, Métricas en vivo, el Ciclo de vida, la Agenda y «Datos para completar» responden 500 sin armar un PDF', async () => {
+    await prepararElAnio();
+    const pedidos = [
+      ['verMetricas', metricas.verMetricas, 'Error al obtener las métricas'],
+      ['descargarMetricasPdf', metricas.descargarMetricasPdf, 'Error al generar el PDF de las métricas'],
+      ['reporteCicloDeVida', reportes.reporteCicloDeVida, 'Error al generar el Ciclo de vida del dato'],
+      ['reporteAgenda', reportes.reporteAgenda, 'Error al generar el PDF de la Agenda de pedidos'],
+      ['reporteParaCompletar', reportes.reporteParaCompletar, 'Error al generar el PDF de Datos para completar']
+    ];
+    await conLaTablaRenombrada(() => conElReloj('2026-12-31T15:00:00Z', async () => {
+      for (const [nombre, controlador, mensaje] of pedidos) {
+        const consola = mock.method(console, 'error', () => {});
+        const res = respuesta();
+        try {
+          await controlador(pedido({ anio: '2026' }), res);
+          assert.equal(lecturasFallidas(consola), 1, nombre);
+        } finally {
+          consola.mock.restore();
+        }
+        assert.equal(res.statusCode, 500, `${nombre}: ${JSON.stringify(res.body)}`);
+        assert.deepEqual(res.body, { success: false, error: mensaje }, nombre);
+        assert.equal(res.enviado, null, `${nombre} no arma un PDF`);
+        assert.equal(res.headers['Content-Type'], undefined, nombre);
+      }
+    }));
+  });
+
+  // «Aviso aprox.» de la Agenda con la tabla: un interno que vence el 31/12/2026 se avisa 60 días antes, el domingo 01/11; el hábil
+  // siguiente es el lunes 02/11 con los 9 fijos y el martes 03/11 con la tabla (el 02/11 es feriado)
+  it('la Agenda de pedidos dice el aviso aprox. con la tabla: el 03/11/2026, no el 02/11', async () => {
+    const titulo = 'Dataset E de prueba';
+    await crearDataset({ titulo, gestion: 'interna', vencimiento: '2026-12-31', ultima: '2025-12-15' });
+    const res = respuesta();
+    await conElReloj('2026-10-28T13:00:00Z', () => reportes.reporteAgenda(pedido(), res));
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    // El renglón del dataset: los textos de su misma hoja y su misma línea de base, de izquierda a derecha
+    const textos = textosPorHoja(res.enviado).flatMap((hoja, k) => hoja.map((t) => ({ ...t, hoja: k })));
+    const delTitulo = textos.find((t) => t.texto === titulo);
+    assert.ok(delTitulo, `falta «${titulo}» en el PDF`);
+    const fila = textos.filter((t) => t.hoja === delTitulo.hoja && Math.abs(t.base - delTitulo.base) < 0.5)
+      .sort((a, b) => a.x - b.x).map((t) => t.texto);
+    assert.equal(fila.at(-1), '03/11/2026', fila.join(' | '));
+    assert.ok(!fila.includes('02/11/2026'), fila.join(' | '));
   });
 });
