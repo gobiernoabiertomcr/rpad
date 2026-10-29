@@ -22,9 +22,10 @@ const VERSION = '20261204';
 // 2026-10-25-proyectos, 11; la cuarta pestaña, Feriados, con su vista y «Nuevo feriado», y al mostrarla llama a cargarFeriados de
 // feriados.js, spec 2026-10-26-feriados, 4; la insignia «Cargada desde Mi espacio» en la lista de Licencias, spec
 // 2026-10-26-mi-espacio-licencias-y-horas, 6; el efecto en las notas de una licencia del firmante sin anticipo o sin días
-// hábiles, spec 2026-10-27-feriados-en-notas, 6): su versión es propia (solo la usa configuracion.html; es independiente de
-// VERSION_FERIADOS)
-const VERSION_PANTALLAS = '20261210';
+// hábiles, spec 2026-10-27-feriados-en-notas, 6; la confirmación de «Anular» que avisa que una licencia cargada desde Mi espacio
+// también se borra de ahí, spec 2026-10-28-mi-espacio-licencia-anulada, 2.1): su versión es propia (solo la usa
+// configuracion.html; es independiente de VERSION_FERIADOS)
+const VERSION_PANTALLAS = '20261211';
 // areas.js (reescrito para la pestaña Áreas de Configuración, spec 2026-10-24-configuracion, 4 y 6), que en areas.html cargaba
 // ?v=20261204: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
 // configuracion.html)
@@ -86,8 +87,13 @@ const VERSION_PROYECTOS = '20261206';
 // «Hoy y mañana», spec 2026-10-26-mi-espacio-agenda, 6; el Resumen «Titular», spec 2026-10-27-mi-espacio-resumen, 6; y «Word» en
 // cada licencia de la lista, spec 2026-10-27-mi-espacio-licencia-word, 6; y la planilla de horas extras de contrato, spec
 // 2026-10-27-mi-espacio-horas, 9; y el efecto en las notas sin anticipo o sin días hábiles, como Configuración, spec
-// 2026-10-27-feriados-en-notas, 6). Su versión es propia
-const VERSION_MI_ESPACIO = '20261214';
+// 2026-10-27-feriados-en-notas, 6; y lo que quedó distinto en Configuración, para revisar en el Resumen, y las licencias de
+// otro año —la lista pasa al año de lo guardado, «Ver 2027» y los links a la lista de un año—, spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.2 y 2.3; y la agenda con más onda —la banda del mes, sábado y domingo, las barras, los
+// íconos y el día elegido del teléfono—, spec 2026-10-28-mi-espacio-agenda-onda, 3; y las vacaciones al cargar una licencia —los
+// avisos del cálculo, «Vence pronto» sin el botón, las horas de franquicia que se pierden y el número de un tramo de un solo día—,
+// spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3). Su versión es propia
+const VERSION_MI_ESPACIO = '20261217';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -107,8 +113,8 @@ describe('páginas', () => {
   // El script propio de esta pantalla cambió con los días sin auditor, después con la superposición parcial, con el aviso en su
   // fecha (el texto del efecto de la licencia en las notas, con persona autorizada), con Configuración (la tercera pestaña y la
   // pestaña en la dirección), con el renombre de Gestión a Proyectos (la ayuda del lector), con la cuarta pestaña, Feriados, con
-  // la insignia «Cargada desde Mi espacio» en la lista de Licencias y, por último, con el efecto en las notas de una licencia del
-  // firmante sin anticipo o sin días hábiles
+  // la insignia «Cargada desde Mi espacio» en la lista de Licencias, con el efecto en las notas de una licencia del firmante sin
+  // anticipo o sin días hábiles y, por último, con la confirmación de «Anular» de una licencia cargada desde Mi espacio
   for (const [pagina, script] of [['configuracion.html', 'usuarios']]) {
     it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
       assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));
@@ -706,48 +712,188 @@ describe('páginas', () => {
         + 'eventos que compartís y, si querés, tus ausencias (sin decir de qué son).</p>'));
     });
 
-    it('la pestaña Agenda: el mes con ‹, el título, ›, «Hoy» y «Nuevo evento», la grilla, la leyenda y los próximos', () => {
+    // La agenda con más onda (spec 2026-10-28-mi-espacio-agenda-onda, 3.1, 3.2, 3.6 y 3.8; la maqueta aprobada): arriba, la banda
+    // celeste del Resumen con su ola y, adentro, el mes en grande con ‹ › a su derecha, «Sábado y domingo» (una llave con aria-pressed,
+    // apagada de entrada, y la cuenta de lo escondido, oculta), «Hoy», «Nuevo evento» y la frase del mes; debajo, la tarjeta del mes
+    // con la grilla, la leyenda con el ícono de cada cosa y el día elegido del teléfono (lo dibuja mi-espacio.js), y los próximos
+    it('la pestaña Agenda: la banda del mes, la grilla, la leyenda con sus íconos, el día elegido y los próximos', () => {
       const vista = bloque(/<section id="vista-agenda"[\s\S]*?<\/section>\s*<\/div>\s*<\/section>/);
       assert.ok(vista, 'la vista');
       const ids = [...vista.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
-      assert.deepEqual(ids, ['vista-agenda', 'ag-anterior', 'ag-mes-titulo', 'ag-siguiente', 'ag-hoy', 'ag-nuevo-evento', 'ag-mes',
-        'ag-leyenda-ausentes', 'ag-proximos-titulo', 'ag-proximos']);
-      assert.match(vista, /<button type="button" class="me-flecha" id="ag-anterior" aria-label="Mes anterior"><svg aria-hidden="true"/);
-      assert.match(vista, /<h2 id="ag-mes-titulo">[^<]*<\/h2>/);
-      assert.match(vista, /<button type="button" class="me-flecha" id="ag-siguiente" aria-label="Mes siguiente"><svg aria-hidden="true"/);
-      assert.match(vista, /<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" id="ag-hoy">Hoy<\/button>/);
-      assert.match(vista, /<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" id="ag-nuevo-evento">Nuevo evento<\/button>/);
-      // La leyenda: los cinco colores; «Compañeros que no están», oculto hasta saber que quien mira los ve
+      assert.deepEqual(ids, ['vista-agenda', 'ag-mes-titulo', 'ag-anterior', 'ag-siguiente', 'ag-finde', 'ag-finde-cuenta', 'ag-hoy',
+        'ag-nuevo-evento', 'ag-frase', 'ag-mes', 'ag-leyenda-ausentes', 'ag-elegido', 'ag-proximos-titulo', 'ag-proximos']);
+      // La banda, primero y fuera de las tarjetas, con la ola del Resumen (el mismo dibujo que OLA_DE_LA_BANDA de mi-espacio.js)
+      const banda = vista.match(/<div class="me-banda-del-mes">[\s\S]*?<\/svg>\s*<\/div>/)?.[0] ?? '';
+      assert.ok(banda, 'la banda');
+      assert.ok(vista.indexOf('<div class="me-banda-del-mes">') < vista.indexOf('<div class="me-mes-y-proximos">'));
+      const ola = banda.match(/<svg class="me-ola" aria-hidden="true"[^>]*>([\s\S]*?)<\/svg>\s*<\/div>$/);
+      assert.ok(ola, 'la ola, decorativa, al final de la banda');
+      const dibujo = (texto) => texto.match(/ d="([^"]+)"/)?.[1];
+      assert.equal(dibujo(ola[1]), dibujo(leer('js/mi-espacio.js').match(/const OLA_DE_LA_BANDA = [\s\S]*?<\/svg>/)[0]));
+      assert.match(banda, /<h2 id="ag-mes-titulo">[^<]*<\/h2>/);
+      assert.match(banda, /<button type="button" class="me-flecha" id="ag-anterior" aria-label="Mes anterior"><svg aria-hidden="true"/);
+      assert.match(banda, /<button type="button" class="me-flecha" id="ag-siguiente" aria-label="Mes siguiente"><svg aria-hidden="true"/);
+      assert.ok(banda.includes('<button type="button" class="me-finde" id="ag-finde" aria-pressed="false"><span class="me-finde-llave" '
+        + 'aria-hidden="true"></span>Sábado y domingo<span class="me-finde-cuenta" id="ag-finde-cuenta" hidden></span></button>'));
+      assert.match(banda, /<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" id="ag-hoy">Hoy<\/button>/);
+      assert.match(banda, /<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" id="ag-nuevo-evento"><svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>Nuevo evento<\/button>/);
+      assert.ok(banda.includes('<p class="me-frase-del-mes" id="ag-frase"></p>'));
+      // Ninguna clase nueva lleva la palabra «agenda» (es la Agenda de pedidos de Reportes): solo los ids ag-* y el panel
+      for (const [, clases] of vista.matchAll(/\sclass="([^"]*)"/g)) assert.doesNotMatch(clases, /agenda/, clases);
+      // La leyenda: los cinco colores, cada uno con su muestra y su ícono (el de lo que es solo tuyo, vacío); «Compañeros que no
+      // están», oculto hasta saber que quien mira los ve
       const leyenda = vista.match(/<ul class="me-leyenda"[^>]*>([\s\S]*?)<\/ul>/)?.[1] ?? '';
-      assert.deepEqual([...leyenda.matchAll(/<li( id="ag-leyenda-ausentes" hidden)?><i class="(\w+)" aria-hidden="true"><\/i>([^<]+)<\/li>/g)]
-        .map(([, oculto, clase, texto]) => [clase, texto, Boolean(oculto)]), [
-        ['propio', 'Solo vos', false], ['compartido', 'Compartidos', false], ['licencia', 'Tus licencias y francos', false],
-        ['feriado', 'Feriados', false], ['ausente', 'Compañeros que no están', true]
+      const muestras = [...leyenda.matchAll(/<li( id="ag-leyenda-ausentes" hidden)?><span class="me-color (\w+)" aria-hidden="true">((?:<svg [\s\S]*?<\/svg>)?)<\/span>([^<]+)<\/li>/g)]
+        .map(([, oculto, clase, icono, texto]) => [clase, texto, Boolean(oculto), icono === '' ? '' : 'svg']);
+      assert.deepEqual(muestras, [
+        ['propio', 'Solo vos', false, ''], ['compartido', 'Compartidos', false, 'svg'], ['licencia', 'Tus licencias y francos', false, 'svg'],
+        ['feriado', 'Feriados', false, 'svg'], ['ausente', 'Compañeros que no están', true, 'svg']
       ]);
+      assert.equal(leyenda.match(/<li\b/g)?.length, 5);
+      // El día elegido del teléfono: vacío (lo dibuja mi-espacio.js), en la tarjeta del mes, después de la leyenda
+      assert.ok(vista.includes('<section class="me-elegido" id="ag-elegido" aria-labelledby="ag-elegido-titulo"></section>'));
+      assert.ok(vista.indexOf('<ul class="me-leyenda"') < vista.indexOf('id="ag-elegido"'));
+      assert.ok(vista.indexOf('id="ag-elegido"') < vista.indexOf('<section class="me-tarjeta me-proximos-tarjeta"'));
       assert.match(vista, /<h2 id="ag-proximos-titulo">Próximos<\/h2>/);
       // Lo que se vuelve a dibujar no es una región viva (#me-anuncio es la única)
       assert.match(vista, /<div class="me-proximos" id="ag-proximos">/);
       assert.doesNotMatch(vista, /aria-live|role="status"|role="alert"/);
-      // El mes primero y los próximos al costado
+      // El mes primero y los próximos al costado (en una columna, debajo)
       assert.ok(vista.indexOf('id="ag-mes"') < vista.indexOf('id="ag-proximos"'));
     });
 
-    // En 980 px, el mes y los próximos en una columna (el mes primero); en el teléfono, los próximos primero y el mes como puntos de
-    // colores (maqueta 1)
-    it('la agenda en una pantalla angosta: una columna en 980 px y, en el teléfono, los próximos primero y los eventos como puntos', () => {
+    // La agenda con más onda (spec 2026-10-28-mi-espacio-agenda-onda, 3.1, 3.3, 3.4, 3.7, 3.8 y 6). En 980 px, el mes y los próximos
+    // en una columna (el mes primero) y la banda también; en el teléfono (640 px), el número centrado, sin lo de cada día ni el «+»,
+    // las barras como líneas finas (su texto, oculto a la vista pero no para el lector de pantalla), los puntos y el día elegido; los
+    // próximos, en su orden (después del mes: el día elegido ya muestra hoy)
+    it('la agenda en una pantalla angosta: una columna en 980 px y, en el teléfono, las líneas, los puntos y el día elegido', () => {
       const estilo = bloque(/<style>[\s\S]*?<\/style>/);
       // El bloque de un @media: hasta la llave que cierra sola en su renglón (con CRLF o LF)
       const media = (ancho) => estilo.match(new RegExp(`@media \\(max-width: ${ancho}px\\) \\{([\\s\\S]*?)\\n\\s*\\}(?=\\r?\\n)`))?.[1] ?? '';
       assert.match(media(980), /\.me-mes-y-proximos \{ grid-template-columns: minmax\(0, 1fr\); \}/);
-      assert.match(media(640), /\.me-proximos-tarjeta \{ order: -1; \}/);
-      assert.match(media(640), /\.me-ev \{ font-size: 0;[^}]*\}/);
-      assert.doesNotMatch(estilo.replace(media(640), ''), /\.me-ev \{ font-size: 0/);
-      // Los puntos, en el color fuerte de cada clase (el de su texto): el fondo pastel casi no se ve sobre el blanco de la celda
-      assert.match(media(640), /\.me-ev \{ font-size: 0;[^}]*background: currentColor;[^}]*\}/);
-      // Los cinco colores, en el mes y en la leyenda
+      assert.match(media(980), /\.me-banda-del-mes-cuerpo \{ grid-template-columns: minmax\(0, 1fr\);[^}]*\}/);
+      const telefono = media(640);
+      const afuera = estilo.replace(telefono, '');
+      // Los próximos en su orden natural y, en el mes, nada de las rayitas de antes
+      assert.doesNotMatch(estilo, /\.me-proximos-tarjeta \{ order: -1; \}/);
+      assert.doesNotMatch(estilo, /\.me-ev \{ font-size: 0/);
+      assert.match(telefono, /\.me-elegido \{ display: block;[^}]*\}/);
+      assert.match(telefono, /\.me-puntos \{ display: flex;[^}]*\}/);
+      assert.match(telefono, /\.me-cosas \{ display: none; \}/);
+      assert.match(telefono, /\.me-num::after \{ display: none; \}/);
+      assert.match(telefono, /\.me-num \{ align-self: center; \}/);
+      assert.match(telefono, /\.me-tira \{ height: 5px;[^}]*\}/);
+      // El texto y el ícono de las barras, ocultos a la vista y no para el lector de pantalla (nunca display: none ni visibility)
+      assert.match(telefono, /\.me-tira-texto, \.me-tira \.me-icono \{ position: absolute; width: 1px; height: 1px;[^}]*clip: rect\(0 0 0 0\);[^}]*\}/);
+      assert.doesNotMatch(estilo, /\.me-tira-texto[^{]*\{[^}]*(display: none|visibility: hidden)/);
+      // En la compu, el día elegido y los puntos no se ven
+      assert.ok(afuera.includes('.me-elegido { display: none; }'));
+      assert.ok(afuera.includes('.me-puntos { display: none; }'));
+      // Los cinco colores, en el mes y en la leyenda; los compañeros, la pizarra (gris oscura con letra blanca)
       for (const clase of ['propio', 'compartido', 'licencia', 'feriado', 'ausente']) {
         assert.ok(estilo.includes(`.me-ev.${clase}, .me-leyenda .${clase} {`), clase);
       }
+      assert.match(estilo, /\n\s*\.me-tira\.ausente \{[^}]*background: var\(--sg-suave\);[^}]*color: #fff;[^}]*\}/);
+      // Las barras se dibujan de izquierda a derecha una sola vez (con data-animar, sin dibujar; después, cada una con su --demora),
+      // con transiciones y nunca con animation; quietas con prefers-reduced-motion
+      assert.ok(estilo.includes('#ag-mes[data-animar] .me-tira { transform: scaleX(0); transition: none; }'));
+      assert.match(estilo, /\n\s*\.me-tira \{[^}]*transition: transform [^;]*var\(--demora\);[^}]*\}/);
+      for (const [, selector, cuerpo] of estilo.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+        if (selector.includes('[data-animar]')) assert.doesNotMatch(cuerpo, /animation/, selector.trim());
+      }
+      const bloques = (condicion) => [...estilo.matchAll(new RegExp(`@media \\(${condicion}\\) \\{\\r?\\n([\\s\\S]*?)\\n\\s*\\}(?=\\r?\\n)`, 'g'))]
+        .map(([, cuerpo]) => cuerpo);
+      assert.ok(bloques('prefers-reduced-motion: reduce').some((cuerpo) => /(?:^|\n)\s*\.me-tira \{ transition: none; \}/.test(cuerpo)));
+      // En alto contraste, las barras y los puntos se siguen viendo (con un borde o con CanvasText: el fondo no alcanza)
+      const altoContraste = bloques('forced-colors: active').join('\n');
+      assert.match(altoContraste, /\.me-tira[^{]*\{[^}]*CanvasText[^}]*\}/);
+      assert.match(altoContraste, /\.me-puntos[^{]*\{[^}]*CanvasText[^}]*\}/);
+      // Sin las clases de la maqueta y sin la palabra «agenda» en una clase
+      const sinComentarios = estilo.replace(/\/\*[\s\S]*?\*\//g, '');
+      assert.doesNotMatch(sinComentarios, /\.(ag|mq|franja|o2)-/);
+      assert.doesNotMatch(sinComentarios, /\.[\w-]*agenda/);
+      // Las clases de la regla del Resumen (.me-barra y .me-muestra) no se usan para la agenda
+      assert.doesNotMatch(sinComentarios, /\.me-(?:mes|celda|carriles|leyenda|tira)[^{,]*\.me-(?:barra|muestra)\b/);
+    });
+
+    // Revisión de la Task 7 (Chrome 152): con la columna implícita del carril (auto) y el min-width: auto de la barra, Chrome medía el
+    // carril con el ancho natural del texto (nowrap) y no con el calc() de .me-tira-texto, así que una barra de un día se pintaba
+    // sobre los días siguientes (277,7 px en una celda de 79,8). El carril tiene una sola columna del ancho de la celda y la barra
+    // puede achicarse: el texto queda en su tramo
+    it('la agenda: el carril es del ancho de su día (una columna minmax(0, 1fr)) y la barra puede achicarse (min-width: 0)', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      const regla = (selector) => {
+        const escapado = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return estilo.match(new RegExp(`\\n\\s*${escapado} \\{([^}]*)\\}`))?.[1] ?? '';
+      };
+      assert.match(regla('.me-carriles'), /(?:^|; | )grid-template-columns: minmax\(0, 1fr\);/);
+      assert.match(regla('.me-tira'), /(?:^|; | )min-width: 0;/);
+      // Ningún otro lado le vuelve a dar al carril columnas que crezcan con el texto
+      for (const [, selector, cuerpo] of estilo.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+        if (/\.me-carriles\b/.test(selector) && /grid-template-columns/.test(cuerpo)) {
+          assert.match(cuerpo, /grid-template-columns: minmax\(0, 1fr\);/, selector.trim());
+        }
+      }
+    });
+
+    // Revisión de la Task 7 (spec 2026-10-28-mi-espacio-agenda-onda, 6): en alto contraste, los puntos y la llave tienen que salir en
+    // CanvasText, y la regla que lo dice pierde si va antes que las que les dan su color o si es menos específica. El bloque va al
+    // final del <style> (después del teléfono y de los próximos) y cada selector es al menos tan específico como el que pisa
+    it('la agenda en alto contraste: el bloque va al final y pisa los colores de los puntos y de la llave', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/).replace(/\/\*[\s\S]*?\*\//g, '');
+      // La especificidad de un selector simple de los de esta hoja: [ids, clases + atributos + pseudoclases, elementos + pseudoelementos]
+      // (:not() cuenta lo de adentro)
+      const especificidad = (selector) => {
+        const sinNot = selector.replace(/:not\(([^)]*)\)/g, ' $1');
+        const ids = (sinNot.match(/#[\w-]+/g) ?? []).length;
+        const clases = (sinNot.match(/\.[\w-]+|\[[^\]]*\]|(?<!:):(?!:)[\w-]+/g) ?? []).length;
+        const elementos = (sinNot.replace(/\[[^\]]*\]/g, '').match(/(?:^|[\s>+~])[a-z][\w-]*|::[\w-]+/g) ?? []).length;
+        return [ids, clases, elementos];
+      };
+      const noMenos = (uno, otro) => {
+        for (let i = 0; i < 3; i++) if (uno[i] !== otro[i]) return uno[i] > otro[i];
+        return true;
+      };
+      assert.deepEqual(especificidad('.me-puntos .propio'), [0, 2, 0]);
+      assert.deepEqual(especificidad('.me-finde[aria-pressed="true"] .me-finde-llave::after'), [0, 3, 1]);
+      assert.deepEqual(especificidad('.me-tira.licencia.inicio:not(.sigue-antes)'), [0, 4, 0]);
+      // El bloque multirrenglón (el de una sola línea, el de la ola del Resumen, va más arriba)
+      const inicio = estilo.search(/@media \(forced-colors: active\) \{\r?\n/);
+      assert.ok(inicio >= 0, 'el bloque de alto contraste de la agenda');
+      const fin = estilo.indexOf('\n        }', inicio);
+      const bloqueAlto = estilo.slice(inicio, fin);
+      const reglasDelBloque = [...bloqueAlto.matchAll(/\n\s*([^{}\n]+?) \{([^}]*)\}/g)].map(([, selector, cuerpo]) => ({ selector, cuerpo }));
+      // Después de todo lo que pisa: el teléfono, los colores de los puntos, los próximos, la llave y el día elegido
+      for (const pisada of ['@media (max-width: 640px) {', '.me-puntos .propio {', '.me-puntos .feriado {', '.me-prox-icono.propio i {',
+        '.me-finde[aria-pressed="true"] .me-finde-llave::after {', '.me-elegido-icono i {']) {
+        assert.ok(estilo.indexOf(pisada) >= 0 && estilo.indexOf(pisada) < inicio, `después de ${pisada}`);
+      }
+      // Cada regla que pisa un color con CanvasText, al menos tan específica como la que lo da
+      const PISADAS = [
+        ['puntos del teléfono', /\.me-puntos/, ['.me-puntos .propio', '.me-puntos .compartido', '.me-puntos .feriado', '.me-puntos i']],
+        ['punto de los próximos', /\.me-prox-icono/, ['.me-prox-icono.propio i']],
+        ['punto del día elegido', /\.me-elegido-icono/, ['.me-elegido-icono i']],
+        ['la perilla de la llave', /\.me-finde-llave::after/, ['.me-finde-llave::after', '.me-finde[aria-pressed="true"] .me-finde-llave::after']]
+      ];
+      for (const [nombre, patron, contra] of PISADAS) {
+        const selectores = reglasDelBloque.filter(({ cuerpo }) => /CanvasText/.test(cuerpo))
+          .flatMap(({ selector }) => selector.split(',').map((parte) => parte.trim())).filter((parte) => patron.test(parte));
+        assert.ok(selectores.length > 0, nombre);
+        for (const selector of selectores) {
+          for (const otro of contra) assert.ok(noMenos(especificidad(selector), especificidad(otro)), `${selector} contra ${otro}`);
+        }
+      }
+      // Las barras siguen en el bloque, con su borde
+      assert.ok(reglasDelBloque.some(({ selector, cuerpo }) => selector.includes('.me-tira') && /CanvasText/.test(cuerpo)));
+    });
+
+    // Revisión de la Task 7: en el teléfono, la línea de una licencia va sin el borde de color del principio; la regla tiene que poder
+    // con .me-tira.licencia.inicio:not(.sigue-antes) (0,4,0), así que no alcanza con ponerlo en .me-tira
+    it('la agenda en el teléfono: la licencia sin el borde de color del principio, con una regla que gana', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/);
+      const telefono = estilo.match(/@media \(max-width: 640px\) \{([\s\S]*?)\n\s*\}(?=\r?\n)/)?.[1] ?? '';
+      assert.match(telefono, /\n\s*\.me-tira\.licencia\.inicio:not\(\.sigue-antes\) \{ box-shadow: none; \}/);
+      assert.doesNotMatch(telefono.match(/\n\s*\.me-tira \{([^}]*)\}/)?.[1] ?? '', /box-shadow/);
     });
 
     // Fuera de los modales, #me-anuncio es la única región viva; dentro de cada modal, solo su error sin campo (role="alert", como en
@@ -945,6 +1091,19 @@ describe('páginas', () => {
         assert.match(modal('modal-licencia'), /<p class="form-hint" id="ml-autorizado-ayuda">Solo aparecen los admins y editores activos con su firma cargada en Mi Perfil\.<\/p>/);
         // Las horas extras, de a media hora
         for (const control of ['mh-desde', 'mh-hasta']) assert.match(html(), new RegExp(`<input type="time" class="form-input" id="${control}" step="1800"`), control);
+      });
+
+      // Spec 2026-10-28-mi-espacio-vacaciones-en-la-carga (la revisión final): «Guardar» de «Cargar licencia» lee el cálculo, el
+      // aviso del paso a Configuración y los días sin auditor (los avisos de la carga van en el cálculo). Uno oculto no se lee, así
+      // que el atributo es fijo; sin región viva
+      it('«Guardar» de «Cargar licencia» se describe con el cálculo, el paso y los días sin auditor, que están en su modal', () => {
+        const licencia = modal('modal-licencia');
+        assert.match(licencia,
+          /<button type="button" class="sg-btn sg-btn-tinta" id="ml-guardar" aria-describedby="ml-calculo ml-paso ml-sin-auditor">Guardar<\/button>/);
+        for (const id of ['ml-calculo', 'ml-paso', 'ml-sin-auditor']) {
+          assert.match(licencia, new RegExp(`<div class="me-recuadro[^"]*" id="${id}" hidden></div>`), id);
+          assert.doesNotMatch(licencia, new RegExp(`id="${id}"[^>]*aria-live`), id);
+        }
       });
     });
 

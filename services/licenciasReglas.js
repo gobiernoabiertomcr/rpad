@@ -55,6 +55,29 @@ export const validarEdicion = (actual, cambios, hoy) => {
 // Se anula una licencia que todavía no empezó o que empieza hoy (una cargada por error); una en curso se corta con el fin
 export const puedeAnularse = (licencia, hoy) => !Number(licencia.anulada) && licencia.desde >= hoy;
 
+// Anular en Configuración una licencia que se cargó desde Mi espacio la da de baja también ahí (spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.1). TEXTO_SE_BORRA_DE_MI_ESPACIO lo suma la confirmación de Configuración (su
+// copia está en public/js/usuarios.js); nunca dice el tipo
+export const TEXTO_SE_BORRA_DE_MI_ESPACIO = 'Se cargó desde Mi espacio: también se borra de ahí.';
+const MENSAJE_ANULADA = 'Licencia anulada';
+const MENSAJE_ANULADA_Y_BORRADA = 'Licencia anulada. También se borró de Mi espacio.';
+const MENSAJE_ANULADA_Y_QUEDA = 'Licencia anulada. En Mi espacio ya había empezado: queda allá para que la persona la revise.';
+
+const esCantidad = (valor) => Number.isInteger(valor) && valor > 0;
+
+/**
+ * El mensaje después de anular en Configuración, con lo que pasó en Mi espacio (`bajaPorLaAnulacion` de
+ * services/miEspacioPaso.js): `borradas`, las filas creadas que se dieron de baja con ella, y `quedan`, las que siguen porque
+ * en Mi espacio ya habían empezado (spec, 3b: quedan para que la persona las revise). Si alguna queda, eso; si no, si alguna se
+ * borró, eso; si no (ninguna fila, o lo que llega no son cantidades), el de siempre. Nunca tira.
+ */
+export const mensajeDeLaAnulacion = (resultado) => {
+  const { borradas, quedan } = resultado !== null && typeof resultado === 'object' ? resultado : {};
+  if (esCantidad(quedan)) return MENSAJE_ANULADA_Y_QUEDA;
+  if (esCantidad(borradas)) return MENSAJE_ANULADA_Y_BORRADA;
+  return MENSAJE_ANULADA;
+};
+
 /**
  * Los días hábiles de [desde, hasta] en que una persona no está de licencia (licencias: [{ desde, hasta }]), para la
  * persona autorizada a presentar las notas (spec 6.3). { primerDia: el primero o null, cubiertos: true si el rango tiene

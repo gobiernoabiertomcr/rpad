@@ -3,7 +3,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ROLES_CON_LICENCIA, MAXIMO_DIAS_LICENCIA, puedeTenerLicencia, estadoDeLicencia, validarFechasNuevas, validarEdicion,
-  puedeAnularse, diasHabilesLibres, unirAusencias, diaDelAvisoEnSuFecha, visperaDeLaLicencia
+  puedeAnularse, diasHabilesLibres, unirAusencias, diaDelAvisoEnSuFecha, visperaDeLaLicencia, mensajeDeLaAnulacion,
+  TEXTO_SE_BORRA_DE_MI_ESPACIO
 } from '../services/licenciasReglas.js';
 import { CALENDARIO_FIJO, derivadasDe } from '../services/notasDigitalesCalendario.js';
 import { calendarioCon } from '../services/feriadosReglas.js';
@@ -252,5 +253,33 @@ describe('puedeAnularse', () => {
     assert.equal(puedeAnularse(licencia('2026-11-11', '2026-11-20'), HOY), true);
     assert.equal(puedeAnularse(licencia('2026-11-09', '2026-11-20'), HOY), false);
     assert.equal(puedeAnularse(licencia('2026-11-11', '2026-11-20', 1), HOY), false);
+  });
+});
+
+// Anular en Configuración da de baja también la fila de Mi espacio que la creó (spec 2026-10-28-mi-espacio-licencia-anulada,
+// 2.1 y 3b): el mensaje dice qué pasó con Mi espacio
+describe('mensajeDeLaAnulacion', () => {
+  const SIN_MI_ESPACIO = 'Licencia anulada';
+  const BORRADA = 'Licencia anulada. También se borró de Mi espacio.';
+  const QUEDA = 'Licencia anulada. En Mi espacio ya había empezado: queda allá para que la persona la revise.';
+
+  it('sin fila de Mi espacio, la de siempre; con la creada dada de baja, que se borró; si alguna ya empezó, que queda', () => {
+    assert.equal(mensajeDeLaAnulacion({ borradas: 0, quedan: 0 }), SIN_MI_ESPACIO);
+    assert.equal(mensajeDeLaAnulacion({ borradas: 1, quedan: 0 }), BORRADA);
+    assert.equal(mensajeDeLaAnulacion({ borradas: 2, quedan: 0 }), BORRADA);
+    assert.equal(mensajeDeLaAnulacion({ borradas: 0, quedan: 1 }), QUEDA);
+    assert.equal(mensajeDeLaAnulacion({ borradas: 1, quedan: 1 }), QUEDA);
+  });
+
+  it('sin argumentos o con lo que no son cantidades, la de siempre: nunca tira', () => {
+    for (const valor of [undefined, null, 'x', 3, [], {}, { borradas: '1', quedan: '1' }, { borradas: -1, quedan: Number.NaN },
+      { borradas: 1.5, quedan: Number.POSITIVE_INFINITY }]) {
+      assert.equal(mensajeDeLaAnulacion(valor), SIN_MI_ESPACIO, JSON.stringify(valor));
+    }
+    assert.equal(mensajeDeLaAnulacion(), SIN_MI_ESPACIO);
+  });
+
+  it('la aclaración de la confirmación de Configuración, sin el tipo', () => {
+    assert.equal(TEXTO_SE_BORRA_DE_MI_ESPACIO, 'Se cargó desde Mi espacio: también se borra de ahí.');
   });
 });

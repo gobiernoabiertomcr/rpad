@@ -23,13 +23,13 @@ import { hoyArgentina, ahoraArgentina, sumarDias, diasEntre, esFechaIso } from '
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, MAXIMO_DIAS_POR_GUARDADO, anioVigente, camposDelSaldoInicial, textoDeLasMitades,
   evaluarLicencia, validarHorasExtras, validarSalida, mesDeLaPlanilla, validarAnio, validarSaldoInicial, modalidadDe,
-  ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana
+  ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, nombreCorto
 } from '../services/miEspacioReglas.js';
 import {
-  resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe
+  resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe, textoDeLaListaDe
 } from '../services/miEspacioResumen.js';
 import {
-  estadoDe, contextoDe, personaDe, licenciaDe, datosDeLaNota, ausenciasVisibles, feriadosPara
+  estadoDe, contextoDe, personaDe, licenciaDe, datosDeLaNota, ausenciasVisibles, feriadosPara, administracionActiva
 } from '../services/miEspacioDatos.js';
 import { filasDeFeriados } from '../services/feriadosDatos.js';
 import { calendarioCon } from '../services/feriadosReglas.js';
@@ -81,40 +81,61 @@ const responder = async (res, mensaje, operacion) => {
  * los que la persona (`{ id, rol }`) ve hoy y mañana, como en la agenda (`eventosVisibles` e `itemDeEvento`), en
  * `eventosDeHoyYManana`, cada uno con su `dia` y su `quien`. El mismo `ahora` (`ahoraArgentina()`) da el aviso de cada evento
  * y saca los de hoy que ya terminaron (decisión del usuario, 27/10/2026). `feriados`: el Set del cálculo (cubre el aviso de
- * cada evento). Aislado: si leerlos falla, el Resumen sale igual, con [], y el error queda en la consola.
+ * cada evento); `administracion`: la del contexto (`administracionActiva`, sin leerla otra vez), que da el nombre corto de
+ * quien lo creó y de quién está («de Julián», «con Carla»; spec 2026-10-28-mi-espacio-agenda-onda, 5.1). Aislado: si
+ * leerlos falla, el Resumen sale igual, con [], y el error queda en la consola.
  */
-const eventosDelResumen = async (usuario, hoy, feriados) => {
+const eventosDelResumen = async (usuario, hoy, { feriados, administracion }) => {
   try {
     const eventos = await eventosVisibles(usuario, hoy, sumarDias(hoy, 1));
     const ahora = ahoraArgentina();
-    return eventosDeHoyYManana(eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados })), hoy,
-      ahora);
+    const contexto = { usuarioId: usuario.id, ahora, feriados, administracion };
+    return eventosDeHoyYManana(eventos.map((evento) => itemDeEvento(evento, contexto)), hoy, ahora);
   } catch (error) {
     console.error('Error al obtener los eventos de hoy y mañana:', error?.stack ?? error);
     return [];
   }
 };
 
+/**
+ * Los vínculos de las licencias con Configuración para `para_revisar` del Resumen (`vinculosDe`, como la lista; spec
+ * 2026-10-28-mi-espacio-licencia-anulada, 2.2). Aislados, como los eventos: antes de `para_revisar` el Resumen no leía las
+ * tablas de Configuración, así que si leerlos falla sale igual, sin nada para revisar (un Map vacío), y el error queda en la
+ * consola.
+ */
+const vinculosDelResumen = async (persona, estado, hoy) => {
+  try {
+    return await vinculosDe(persona, estado, hoy);
+  } catch (error) {
+    console.error('Error al obtener lo que hay para revisar en el Resumen:', error?.stack ?? error);
+    return new Map();
+  }
+};
+
 // GET /api/mi-espacio/resumen: el Resumen «Titular», ya calculado. «Hoy y mañana» lleva los compañeros que no están hoy y, aparte,
 // los que empiezan mañana (`ausentesPara` de hoy a mañana, en dos grupos con `ausentesDeHoyYManana`: decisión del usuario,
-// 27/10/2026; a quien no es de administración, ninguno), el próximo feriado, con las mismas filas de los feriados del cálculo
-// (sin leerlas otra vez), y, al final, los eventos de hoy y de mañana (`eventos`, aislados: ver eventosDelResumen). Van también
-// sin modalidad: la página decide qué mostrar
+// 27/10/2026; a quien no es de administración, ninguno; con la administración del contexto, sin leerla otra vez), el próximo
+// feriado, con las mismas filas de los feriados del cálculo (sin leerlas otra vez), y, al final, los eventos de hoy y de
+// mañana (`eventos`, aislados: ver eventosDelResumen). Con los vínculos de sus licencias con Configuración (`vinculosDe`,
+// como la lista, también aislados: ver vinculosDelResumen), `para_revisar` dice lo que en Configuración quedó distinto (spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1 y 3.2). Van también sin modalidad: la página decide qué mostrar
 export const verResumen = (req, res) => responder(res, 'Error al obtener el Resumen', async () => {
   const hoy = hoyArgentina();
-  const { persona, estado, feriados, filasFeriados, calculo } = await contextoDe(req.user.userId, hoy);
-  const [{ ausentes }, eventos] = await Promise.all([
-    ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados }),
-    eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, feriados)
+  const { persona, estado, feriados, filasFeriados, administracion, calculo } = await contextoDe(req.user.userId, hoy);
+  const [{ ausentes }, eventos, vinculos] = await Promise.all([
+    ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados, administracion }),
+    eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, { feriados, administracion }),
+    vinculosDelResumen(persona, estado, hoy)
   ]);
   const hoyYManana = {
     ...ausentesDeHoyYManana(ausentes, hoy), proximo_feriado: proximoFeriadoDe(filasFeriados, hoy), eventos
   };
-  return conDatos(resumenDe({ persona, estado, calculo, hoy, feriados, hoyYManana }));
+  return conDatos(resumenDe({ persona, estado, calculo, hoy, feriados, hoyYManana, vinculos }));
 });
 
 // GET /api/mi-espacio/licencias?anio=AAAA: la pestaña Licencias de un año (sin `anio`, el en curso). Cada fila dice cómo
-// está en Configuración (`configuracion`) y, una creada, qué se puede hacer con sus fechas (`vinculosDe`)
+// está en Configuración (`configuracion`) y, una creada, qué se puede hacer con sus fechas (`vinculosDe`); `otros_anios`, las
+// licencias de otros años del selector que todavía no terminaron (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3)
 export const listarLicenciasMias = (req, res) => responder(res, 'Error al obtener las licencias', async () => {
   const hoy = hoyArgentina();
   const anio = anioDelPedido(req.query.anio, hoy);
@@ -138,20 +159,24 @@ export const listarHorasExtras = (req, res) => responder(res, 'Error al obtener 
 // GET /api/mi-espacio/anio/:anio: los días de vacaciones y los estudios que valen ese año, para «Mis vacaciones y saldos». Si no
 // los eligió para ese año, los del anterior más cercano (`anioVigente`), con `heredado`; sin ninguno, null. `texto_mitades` es
 // el de esos días (null sin ninguno) y `textos_mitades`, el de cada valor de DIAS_VACACIONES ('10' a '30'): el modal muestra el
-// del botón elegido sin recalcular
+// del botón elegido sin recalcular. Los dos, con el arranque o, si todavía no hay, con hoy, como los campos del saldo inicial
+// (verSaldoInicial): en el año del arranque, desde el 1/7, la primera mitad es lo que se escribe en «De la AAAA» (spec
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8)
 export const verAnio = (req, res) => responder(res, 'Error al obtener el año', async () => {
-  const anio = anioDelPedido(req.params.anio, hoyArgentina());
+  const hoy = hoyArgentina();
+  const anio = anioDelPedido(req.params.anio, hoy);
   if (anio === null) return rechazoDelAnio();
   const estado = await estadoDe(req.user.userId);
   if (estado.modalidad === null) return sinModalidad();
   const vigente = anioVigente(estado.anios, anio);
+  const opciones = { arranque: estado.arranque ?? hoy };
   return conDatos({
     anio,
     dias_vacaciones: vigente?.dias_vacaciones ?? null,
     estudios: vigente?.estudios ?? null,
     heredado: vigente !== null && vigente.anio !== anio,
-    texto_mitades: textoDeLasMitades(anio, vigente?.dias_vacaciones),
-    textos_mitades: Object.fromEntries(DIAS_VACACIONES.map((dias) => [String(dias), textoDeLasMitades(anio, dias)]))
+    texto_mitades: textoDeLasMitades(anio, vigente?.dias_vacaciones, opciones),
+    textos_mitades: Object.fromEntries(DIAS_VACACIONES.map((dias) => [String(dias), textoDeLasMitades(anio, dias, opciones)]))
   });
 });
 
@@ -410,7 +435,9 @@ const leerLaNota = async (usuarioId, licenciaId, hoy) => {
 
 // GET /api/mi-espacio/licencias/:id/nota: lo que necesita el segundo paso de «Cargar licencia», en una sola respuesta: la
 // licencia como la arma la lista (`fila`, aunque la lista muestre otro año o no muestre nada, sin modalidad), la hoja de la
-// nota (`html`, armada y escapada acá), su fecha y el renglón que va arriba (`aclaracion`)
+// nota (`html`, armada y escapada acá), su fecha, el renglón que va arriba (`aclaracion`) y en qué lista de Licencias quedó
+// (`lista`, «Está en la lista de 2027.», solo si no es la del año de hoy; si no, null: spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.3)
 export const verNotaDeLicencia = (req, res) => responder(res, MENSAJES_NOTA.error, async () => {
   const hoy = hoyArgentina();
   const { rechazo, nota, guardada, licencia, contexto } = await leerLaNota(req.user.userId, req.params.id, hoy);
@@ -421,7 +448,8 @@ export const verNotaDeLicencia = (req, res) => responder(res, MENSAJES_NOTA.erro
     fila: filaDeUnaLicencia(estado, calculo, { id: licencia.id, hoy, persona, vinculos, feriados }),
     html: htmlDeLaNota(nota),
     fecha: guardada,
-    aclaracion: aclaracionDeLaNota(guardada)
+    aclaracion: aclaracionDeLaNota(guardada),
+    lista: textoDeLaListaDe(licencia.desde, hoy)
   });
 });
 
@@ -728,18 +756,26 @@ export const rangoDelPedido = (query) => {
 /**
  * Los compañeros que no están entre desde y hasta, como los ve `persona` (`{ id, rol }`): `{ puede_ver, ausentes }`. Sin
  * `esAdmin`, `{ puede_ver: false, ausentes: [] }`, sin consultar. Si no, las ausencias que se muestran de los demás
- * (`ausenciasVisibles`, sin las de la persona), leídas con margen, unidas con los feriados que necesitan (`feriadosPara` con
- * hoy: cubre los años de las filas, que se cargan hasta el año que viene, y la vuelta que pasa al siguiente) y cortadas al
- * rango (`ausentesDelRango`: `{ nombre, desde, hasta, vuelve, texto, vuelve_texto }`). `filasFeriados`: las filas de los
- * feriados, si ya se leyeron. La usan «Hoy no están», el Resumen y la agenda (GET /api/mi-espacio/eventos, en
- * controllers/miEspacioEventosController.js): leer las ausencias solo dentro del rango cortaría las que empezaron antes.
+ * (`ausenciasVisibles`, sin las de la persona), leídas con margen, cada una con el nombre corto de su persona (`nombreCorto`
+ * contra la administración activa: «Carla», o «Carla B.» si hay otra Carla; spec 2026-10-28-mi-espacio-agenda-onda, 5.1),
+ * unidas con los feriados que necesitan (`feriadosPara` con hoy: cubre los años de las filas, que se cargan hasta el año que
+ * viene, y la vuelta que pasa al siguiente) y cortadas al rango (`ausentesDelRango`: `{ nombre, desde, hasta, vuelve, texto,
+ * vuelve_texto }`, con «Carla no está»). `filasFeriados` y `administracion` (la de `administracionActiva`): las filas de los
+ * feriados y la administración, si ya se leyeron. La usan «Hoy no están», el Resumen y la agenda (GET
+ * /api/mi-espacio/eventos, en controllers/miEspacioEventosController.js): leer las ausencias solo dentro del rango cortaría
+ * las que empezaron antes.
  */
-export const ausentesPara = async (persona, { desde, hasta, hoy, filasFeriados = null }) => {
+export const ausentesPara = async (persona, { desde, hasta, hoy, filasFeriados = null, administracion = null }) => {
   if (!esAdmin(persona?.rol)) return { puede_ver: false, ausentes: [] };
-  const filas = await ausenciasVisibles(sumarDias(desde, -MARGEN_DE_LAS_AUSENCIAS), sumarDias(hasta, MARGEN_DE_LAS_AUSENCIAS),
-    { excluir: persona.id });
+  const [filas, deAdministracion] = await Promise.all([
+    ausenciasVisibles(sumarDias(desde, -MARGEN_DE_LAS_AUSENCIAS), sumarDias(hasta, MARGEN_DE_LAS_AUSENCIAS),
+      { excluir: persona.id }),
+    administracion ?? administracionActiva()
+  ]);
+  const conNombreCorto = filas.map((fila) =>
+    ({ ...fila, nombre: nombreCorto({ id: fila.usuario_id, nombre: fila.nombre }, deAdministracion) }));
   const feriados = await feriadosPara([{ licencias: filas }], hoy, filasFeriados);
-  return { puede_ver: true, ausentes: ausentesDelRango(ausenciasUnidas(filas, feriados), desde, hasta) };
+  return { puede_ver: true, ausentes: ausentesDelRango(ausenciasUnidas(conNombreCorto, feriados), desde, hasta) };
 };
 
 // GET /api/mi-espacio/ausentes?desde=AAAA-MM-DD&hasta=AAAA-MM-DD: «Hoy no están» de un rango de hasta 93 días. Las fechas se

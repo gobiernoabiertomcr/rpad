@@ -247,6 +247,74 @@ describe('enviarAvisosDeVencimiento', () => {
     assert.equal((await mailpit.esperar(paraCasilla(laura.email))).length, 1);
   });
 
+  it('el franco sin ningún día libre en su mes no se nombra (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7)',
+    async () => {
+      // Las dos con todo octubre de vacaciones salvo el viernes 23/10. Ese día, una tiene una franquicia de 2 horas: no es de
+      // día entero (no está de licencia), pero ocupa el día, y su franco ya no tiene ninguno libre. A la otra, el 23/10 le
+      // queda libre
+      const conFranquicia = await conFrancoDeOctubre();
+      const libre = await conFrancoDeOctubre();
+      for (const quien of [conFranquicia, libre]) {
+        await licenciaDeMiEspacio(quien.id, 'vacaciones', '2026-10-01', '2026-10-22');
+        await licenciaDeMiEspacio(quien.id, 'vacaciones', '2026-10-26', '2026-10-30');
+      }
+      await licenciaDeMiEspacio(conFranquicia.id, 'franquicia', '2026-10-23', '2026-10-23', { horas: 2 });
+
+      assert.deepEqual(await pasoDel('2026-10-23'), { dia_habil: true, enviados: 1, errores: [] });
+      assert.deepEqual(await anotados(conFranquicia.id), []);
+      assert.deepEqual(await recibidos(conFranquicia.email), []);
+      assert.deepEqual((await anotados(libre.id)).map((fila) => fila.clave), ['franco-2026-10']);
+      const [mensaje] = await mailpit.esperar(paraCasilla(libre.email));
+      assert.ok(textoVisible(await mailpit.html(mensaje.ID)).includes(FRANCO_DE_OCTUBRE));
+    });
+
+  it('las horas de franquicia: el primer día hábil de diciembre, una vez, sin las que se pierden (spec '
+    + '2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6)', async () => {
+    // Las dos de planta, con su saldo inicial desde agosto. La primera usó 20 de sus 42 horas: le quedan 22, y entran todas. Carla
+    // no usó ninguna, pero del 03/12 al 31/12 tiene una atención médica extraordinaria: solo le quedan libres el 01/12 y el
+    // 02/12, y en ellos entran 14 horas (7 por día); las otras 28 se pierden y no se avisan
+    const conFranquicia = async (usadas, opciones) => {
+      const quien = await persona(opciones);
+      await query("INSERT INTO mi_espacio_arranque (usuario_id, fecha) VALUES (?, '2026-08-03')", [quien.id]);
+      await query("INSERT INTO mi_espacio_saldos (usuario_id, concepto, anio, cantidad) VALUES (?, 'franquicias', 2026, ?)",
+        [quien.id, usadas]);
+      return quien;
+    };
+    const inventada = await conFranquicia(20, { nombre: 'Persona Inventada' });
+    const carla = await conFranquicia(0, { nombre: 'Carla Ruiz' });
+    await licenciaDeMiEspacio(carla.id, 'medica_extraordinaria', '2026-12-03', '2026-12-31');
+    const textoDe = async (quien) => {
+      const [mensaje] = await mailpit.esperar(paraCasilla(quien.email));
+      assert.equal(mensaje.Subject, ASUNTO);
+      return textoVisible(await mailpit.html(mensaje.ID));
+    };
+
+    // El lunes 30/11, todavía no
+    assert.deepEqual(await pasoDel('2026-11-30'), { dia_habil: true, enviados: 0, errores: [] });
+    assert.deepEqual(await anotados(inventada.id), []);
+
+    // El martes 01/12, el primer día hábil de diciembre: un email a cada una, con su renglón, y la clave anotada
+    assert.deepEqual(await pasoDel('2026-12-01'), { dia_habil: true, enviados: 2, errores: [] });
+    for (const quien of [inventada, carla]) {
+      assert.deepEqual(await anotados(quien.id), [{ clave: 'franquicia-2026', enviado_at: '2026-12-01 08:15:00' }]);
+    }
+    const aInventada = await textoDe(inventada);
+    assert.ok(aInventada.includes('Lo que vence pronto Hola, Persona Inventada. Tenés 22 horas de franquicia: vencen el '
+      + '31/12/2026. Ver en Mi espacio'), aInventada);
+    const aCarla = await textoDe(carla);
+    assert.ok(aCarla.includes('Lo que vence pronto Hola, Carla Ruiz. Tenés 14 horas de franquicia: vencen el 31/12/2026. '
+      + 'Ver en Mi espacio'), aCarla);
+    // El tipo de la licencia de Carla no aparece
+    assert.ok(!/m[eé]dica/i.test(aCarla), aCarla);
+
+    // El miércoles 02/12, nada: ya se les avisó
+    assert.deepEqual(await pasoDel('2026-12-02'), { dia_habil: true, enviados: 0, errores: [] });
+    for (const quien of [inventada, carla]) {
+      assert.equal((await recibidos(quien.email)).length, 1);
+      assert.deepEqual((await anotados(quien.id)).map((fila) => fila.clave), ['franquicia-2026']);
+    }
+  });
+
   it('un día no hábil: con un feriado cargado el 23/10, ese día no sale nada', async () => {
     const laura = await conFrancoDeOctubre();
     await query("INSERT INTO feriados (fecha, nombre, tipo) VALUES ('2026-10-23', 'Feriado de prueba', 'municipal')");

@@ -13,14 +13,16 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import vm from 'vm';
 import {
-  filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, resumenDe, proximoFeriadoDe, diaLargo, mesTitulo, planillaDelMes
+  filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, resumenDe, proximoFeriadoDe, diaLargo, mesTitulo, planillaDelMes,
+  textoDeLaListaDe
 } from '../services/miEspacioResumen.js';
 import { feriadosDelRango } from '../services/feriadosReglas.js';
 import { notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota } from '../services/miEspacioNota.js';
 import {
   DIAS_DE_PROXIMOS, itemDeEvento, itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, MENSAJES_EVENTO,
   LARGO_TITULO_EVENTO, LARGO_DETALLE_EVENTO, FECHA_MINIMA_EVENTO, fechaMaximaEvento, textoRangoEvento, RECORDATORIOS,
-  RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, validarEvento, inicialesDe, cuandoDelEvento, avisoDe
+  RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, validarEvento, inicialesDe, cuandoDelEvento, avisoDe, companerosPorDia, fraseDelMes,
+  mesDeLaFrase
 } from '../services/miEspacioEventosReglas.js';
 import { idPositivo } from '../services/proyectosReglas.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
@@ -28,7 +30,7 @@ import {
   calcular, vinculosDeLaLista, MENSAJES_MI_ESPACIO, ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, DIAS_VACACIONES,
   DIAS_ESTUDIOS,
   DIAS_POR_EXAMEN, JORNADA, LARGO_NOTA, horasDe as horasDelServidor, camposDelSaldoInicial, validarSaldoInicial, textoSaldo,
-  textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaDelFirmante,
+  textoSaldoDelArranque, textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaDelFirmante,
   TIPOS_DE_UN_DIA, TIPOS_POR_HORAS, esDiaEntero, TEXTO_NO_SE_COPIA, SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL,
   TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, tipoDeDia, horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, validarSalida
 } from '../services/miEspacioReglas.js';
@@ -85,18 +87,23 @@ const FERIADO_SOBERANIA = Object.freeze({
 const AUSENCIA_DE_MARTIN = Object.freeze({ usuario_id: 3, nombre: 'Martín Ríos', desde: '2026-10-26', hasta: '2026-10-30' });
 // Empieza mañana: va en «Mañana no están»
 const AUSENCIA_DE_DIEGO = Object.freeze({ usuario_id: 4, nombre: 'Diego Fernández', desde: MANANA, hasta: MANANA });
-const resumenDel = (caso, { estado = caso.estado, persona = caso.persona, ausencias = [] } = {}) => comoLlega(resumenDe({
+// `vinculos`: los de vinculosDe (un Map del id de cada fila a lo que dice de Configuración, con su `revision`), para `para_revisar`
+const resumenDel = (caso, { estado = caso.estado, persona = caso.persona, ausencias = [], vinculos } = {}) => comoLlega(resumenDe({
   persona, estado, calculo: calculoDe(estado), hoy: HOY, feriados: SIN_FERIADOS,
   hoyYManana: {
     ...ausentesDeHoyYManana(ausentesDelRango(ausenciasUnidas(ausencias, SIN_FERIADOS), HOY, MANANA), HOY),
     proximo_feriado: proximoFeriadoDe([FERIADO_SOBERANIA], HOY)
-  }
+  },
+  vinculos
 }));
 const conLicencias = (estado, ...licencias) => ({ ...estado, licencias: [...estado.licencias, ...licencias] });
 const licencia = (id, tipo, desde, hasta = desde, horas = null) => ({ id, tipo, desde, hasta, horas });
-// PLANTA con el franco de octubre ya cargado y los tres días de la licencia 2024 usados en diciembre: nada vence pronto
-const SIN_NADA_QUE_VENZA = conLicencias(PLANTA.estado, licencia(100, 'franco', '2026-10-27'),
-  licencia(101, 'vacaciones', '2026-12-14', '2026-12-16'));
+// PLANTA con el franco de octubre ya cargado, los tres días de la licencia 2024 usados en diciembre y las 42 horas de
+// franquicia usadas (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6): nada vence pronto
+const SIN_NADA_QUE_VENZA = {
+  ...conLicencias(PLANTA.estado, licencia(100, 'franco', '2026-10-27'), licencia(101, 'vacaciones', '2026-12-14', '2026-12-16')),
+  saldos: PLANTA.estado.saldos.map((saldo) => (saldo.concepto === 'franquicias' ? { ...saldo, cantidad: 42 } : saldo))
+};
 
 // El texto que se ve de un pedazo de HTML (sin las etiquetas, con las entidades de escapeHtml resueltas)
 const textoDe = (html) => html.replace(/<[^>]*>/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
@@ -122,6 +129,9 @@ const MALICIOSO = '<img src=x onerror=alert(1)>';
 // Lo que dice la página cuando un pedido no llega al servidor
 const MENSAJE_SIN_CONEXION = 'No se pudo conectar con el servidor. Probá de nuevo en unos minutos.';
 const ESCAPADO = '&lt;img src=x onerror=alert(1)&gt;';
+// En una sola palabra: pasa entera por el nombre corto del servidor (nombreCorto se queda con la primera palabra de un nombre)
+const MALICIOSO_EN_UNA_PALABRA = '<img/src=x/onerror=alert(1)>';
+const ESCAPADO_EN_UNA_PALABRA = '&lt;img/src=x/onerror=alert(1)&gt;';
 // Con una comilla doble adelante: en un atributo, intenta cerrarlo y abrir una etiqueta
 const CON_COMILLAS = '"><img src=x onerror=alert(1)>';
 const CON_COMILLAS_ESCAPADO = '&quot;&gt;&lt;img src=x onerror=alert(1)&gt;';
@@ -206,9 +216,10 @@ const linksDe = (html) => [...html.matchAll(/<a ([^>]*)>([\s\S]*?)<\/a>/g)]
   .map(([, atributos, adentro]) => ({ atributos: atributosDe(atributos), adentro, texto: textoDe(adentro) }));
 // El Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen, 2 y 5), con los textos que arma el servidor: los tramos de la regla
 // ({ clase, n, demora, duracion, numero }), las filas de una lista con o sin clase ({ clases, html, texto }) y las columnas de «Hoy y
-// mañana» ({ titulo, html, texto })
-const tramosDe = (html) => [...html.matchAll(/<span class="me-tramo (\w+)" style="--n:([^;"]*);--demora:([^;"]*);--duracion:([^;"]*)"><span>([^<]*)<\/span><\/span>/g)]
-  .map(([, clase, n, demora, duracion, numero]) => ({ clase, n, demora, duracion, numero }));
+// mañana» ({ titulo, html, texto }). Un tramo de un solo día lleva además la clase un-dia (`unDia`: spec
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9)
+const tramosDe = (html) => [...html.matchAll(/<span class="me-tramo (\w+)( un-dia)?" style="--n:([^;"]*);--demora:([^;"]*);--duracion:([^;"]*)"><span>([^<]*)<\/span><\/span>/g)]
+  .map(([, clase, unDia, n, demora, duracion, numero]) => ({ clase, unDia: unDia !== undefined, n, demora, duracion, numero }));
 const itemsDe = (html) => [...html.matchAll(/<li(?: class="([^"]*)")?>([\s\S]*?)<\/li>/g)]
   .map(([, clases = '', adentro]) => ({ clases: clases.split(' ').filter(Boolean), html: adentro, texto: textoDe(adentro) }));
 const columnasDe = (html) => [...html.matchAll(/<div class="me-columna"><h3>([^<]*)<\/h3>([\s\S]*?)<\/div>/g)]
@@ -269,7 +280,8 @@ describe('el Resumen «Titular»', () => {
     assert.equal(M.htmlDeLaFrase(planta.titular), '<div class="me-titular"><p class="me-banda-dia">Lunes 26 de octubre, planta permanente</p>'
       + '<h2 class="me-frase" id="me-frase">Te quedan <span class="me-cifra"><span class="me-cifra-final" aria-hidden="true">33</span>'
       + '<span aria-hidden="true" data-contar>33</span><span class="visualmente-oculto">33</span></span> días de vacaciones</h2>'
-      + '<p class="me-frase-bajada"><b class="vence">3 vencen el jueves 31/12.</b> 5 ya están cargados para noviembre. '
+      + '<p class="me-frase-bajada"><b class="vence">3 vencen el jueves 31/12.</b> <a href="#licencias" data-pestana="licencias" '
+      + 'data-anio-licencias="2026" class="me-frase-link">5 ya están cargados para noviembre.</a> '
       + 'Otros 10 se habilitan el 1/1/2027.</p></div>');
     // CONTRATO: una sola oración, que no vence
     assert.ok(M.htmlDeLaFrase(contrato.titular).startsWith('<div class="me-titular"><p class="me-banda-dia">Lunes 26 de octubre, contrato</p>'));
@@ -294,13 +306,16 @@ describe('el Resumen «Titular»', () => {
     assert.ok(html.endsWith('</ol></aside>'));
     assert.deepEqual(filasDe(html).map(({ clases, texto }) => [clases.join(' '), texto]), [
       ['me-entrada', '30 oct 1 franco compensatorio de octubre Vence el viernes 30/10, en 4 días. Cargarlo'],
+      ['me-entrada', '31 dic 25 horas de franquicia Vencen el jueves 31/12, en 66 días. Cargar franquicia'],
       ['me-entrada', '31 dic 3 días de la licencia 2024 Vencen el jueves 31/12, en 66 días. Cargar vacaciones']
     ]);
     // El talón es decorativo: la línea ya dice la fecha
     assert.ok(html.includes('<span class="me-talon" aria-hidden="true"><b>30</b>oct</span>'));
     assert.ok(html.includes('<b id="me-vence-0">1 franco compensatorio de octubre</b><span class="me-entrada-texto">Vence el viernes 30/10, en 4 días.</span>'));
     assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [texto, atributos['data-accion'], atributos['data-tipo'], atributos['aria-describedby']]), [
-      ['Cargarlo', 'cargar-licencia', 'franco', 'me-vence-0'], ['Cargar vacaciones', 'cargar-licencia', 'vacaciones', 'me-vence-1']
+      ['Cargarlo', 'cargar-licencia', 'franco', 'me-vence-0'],
+      ['Cargar franquicia', 'cargar-licencia', 'franquicia', 'me-vence-1'],
+      ['Cargar vacaciones', 'cargar-licencia', 'vacaciones', 'me-vence-2']
     ]);
     // Los textos largos de «Niveles» se fueron
     assert.ok(!html.includes('Viernes 30/10'));
@@ -375,11 +390,13 @@ describe('el Resumen «Titular»', () => {
     const html = M.htmlDeLaRegla(raras);
     sinNumerosRaros(html);
     assert.ok(html.includes('style="grid-template-columns: minmax(0, 0fr) minmax(0, 0fr) minmax(0, 0fr) minmax(0, 0fr) minmax(0, 1fr) minmax(0, 39fr)"'));
-    // Una clase desconocida, en tinta; el tramo de 1 día entre 40 lleva su número (el <style> lo oculta si no entra) y dura lo mínimo
+    // Una clase desconocida, en tinta; el tramo de 1 día entre 40 lleva su número y la clase un-dia (el <style> lo achica si no entra,
+    // en lugar de ocultarlo: spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9) y dura lo mínimo
     assert.deepEqual(tramosDe(html).map(({ clase, n, numero, duracion }) => [clase, n, numero, duracion]), [
       ['tinta', '0', '0', '160ms'], ['medio', '0', '0', '160ms'], ['vence', '0', '0', '160ms'], ['tinta', '0', '0', '160ms'],
       ['medio', '1', '1', '160ms'], ['tinta', '39', '39', '1268ms']
     ]);
+    assert.deepEqual(tramosDe(html).map(({ unDia }) => unDia), [false, false, false, false, true, false]);
     assert.ok(html.includes('<b>: 0</b>'), 'una capa sin nombre, con su número');
     // La capacidad en 0, o que no es un número positivo: los tramos quietos (0 ms)
     for (const capacidad of [0, -3, NaN, Infinity, undefined, null, '48', {}]) {
@@ -613,11 +630,13 @@ describe('el Resumen «Titular»', () => {
     conHtml.extraordinaria = MALICIOSO;
     conHtml.al_texto = MALICIOSO;
     conHtml.faltantes = [MALICIOSO];
+    conHtml.para_revisar = [{ licencia_id: 20, anio: 2027, texto: MALICIOSO, enlace: MALICIOSO }];
     conHtml.hoy_y_manana.proximo_feriado = { fecha: '2026-11-23', cuando: MALICIOSO, nombre: MALICIOSO };
     conHtml.hoy_y_manana.eventos = comoLlega(eventosDeHoyYManana(respuestaDeEventos({ desde: HOY, hasta: MANANA }, {
-      eventos: [eventoDe(71, MALICIOSO, HOY, '12:00'), eventoDe(72, 'Otro', MANANA, '10:00', { ...DE_MARTIN, creador: MALICIOSO })]
+      eventos: [eventoDe(71, MALICIOSO, HOY, '12:00'),
+        eventoDe(72, 'Otro', MANANA, '10:00', { ...DE_MARTIN, creador: MALICIOSO_EN_UNA_PALABRA })]
     }).eventos, HOY));
-    assert.equal(conHtml.hoy_y_manana.eventos[1].quien, `de ${MALICIOSO}`);
+    assert.equal(conHtml.hoy_y_manana.eventos[1].quien, `de ${MALICIOSO_EN_UNA_PALABRA}`);
     const html = M.htmlDelResumen(conHtml);
     assert.ok(!html.includes('<img'), 'ningún <img> de verdad');
     assert.ok(!html.includes('<b>x</b>'));
@@ -626,7 +645,11 @@ describe('el Resumen «Titular»', () => {
     assert.ok(html.includes(`<p class="me-banda-dia">${ESCAPADO}</p><h2 class="me-frase" id="me-frase">${ESCAPADO} <span class="me-cifra">`
       + `<span class="me-cifra-final" aria-hidden="true">${ESCAPADO}</span><span aria-hidden="true" data-contar>${ESCAPADO}</span>`
       + `<span class="visualmente-oculto">${ESCAPADO}</span></span> ${ESCAPADO}</h2>`));
-    assert.ok(html.includes(`<p class="me-frase-bajada"><b class="vence">${ESCAPADO}</b> ${ESCAPADO} `));
+    assert.ok(html.includes(`<p class="me-frase-bajada"><b class="vence">${ESCAPADO}</b> <a href="#licencias" data-pestana="licencias" `
+      + `data-anio-licencias="2026" class="me-frase-link">${ESCAPADO}</a> `));
+    // Los faltantes y lo que hay que revisar, con el texto de su link
+    assert.ok(html.startsWith(`<div class="me-aviso me-aviso-ambar"><ul class="me-faltantes"><li>${ESCAPADO}</li><li>${ESCAPADO} `
+      + `<a href="#licencias" data-pestana="licencias" data-anio-licencias="2027">${ESCAPADO}</a></li></ul></div>`));
     // Lo que vence: el título, su línea, el botón y su tipo
     assert.ok(html.includes(`<b id="me-vence-0">${ESCAPADO}</b><span class="me-entrada-texto">${ESCAPADO}</span>`));
     assert.equal(botonesDe(html).find(({ atributos }) => atributos['data-accion']).atributos['data-tipo'], ESCAPADO);
@@ -640,7 +663,7 @@ describe('el Resumen «Titular»', () => {
     assert.ok(numero.adentro.includes(`<b data-contar>${ESCAPADO}</b><small>${ESCAPADO}</small>`));
     // Los eventos (el título y quién) y quien no está
     assert.ok(html.includes(`<li><time>12:00</time> ${ESCAPADO}<small>solo vos</small></li>`));
-    assert.ok(html.includes(`<small>de ${ESCAPADO}</small>`));
+    assert.ok(html.includes(`<small>de ${ESCAPADO_EN_UNA_PALABRA}</small>`));
     assert.ok(html.includes(`<li class="ausente">${ESCAPADO} no está<small>`));
     assert.ok(html.includes('<li class="ausente">&lt;b&gt;x&lt;/b&gt; no está<small>'));
   });
@@ -663,7 +686,7 @@ describe('el Resumen «Titular»', () => {
     }
     // Cada botón de «Vence pronto», con sus cinco atributos: el data-tipo escapado y el aria-describedby a su título
     const botones = botonesDe(html).filter(({ atributos }) => atributos['data-accion'] === 'cargar-licencia');
-    assert.equal(botones.length, 2);
+    assert.equal(botones.length, 3);
     botones.forEach(({ atributos }, i) => {
       assert.deepEqual(Object.keys(atributos), ['type', 'class', 'data-accion', 'data-tipo', 'aria-describedby']);
       assert.equal(atributos['data-tipo'], CON_COMILLAS_ESCAPADO);
@@ -747,7 +770,7 @@ describe('la lista de licencias', () => {
     const filas = filasDeLicenciaDe(html);
     assert.equal(filas.length, 6);
     assert.deepEqual(filas.map(({ html: fila }) => textoDe(fila.match(/<span class="me-fila-fecha">([\s\S]*?)<\/span>/)[1])), [
-      '03/11 al 09/11/2026 7 días corridos, 5 hábiles', 'Vie 23/10/2026 1 día', 'Jue 15/10/2026 2 horas', '01/10 al 02/10/2026 2 días hábiles',
+      '03/11 al 09/11/2026 5 días hábiles de 7 corridos', 'Vie 23/10/2026 1 día', 'Jue 15/10/2026 2 horas', '01/10 al 02/10/2026 2 días hábiles',
       '21/09 al 23/09/2026 3 días hábiles', 'Lun 14/09/2026 7 horas, el día entero'
     ]);
     assert.deepEqual(filas.map(({ html: fila }) => textoDe(fila.match(/<span class="me-insignia [^"]+">([^<]*)<\/span>/)[1])),
@@ -1097,20 +1120,23 @@ const AUSENCIAS_DE_PRUEBA = Object.freeze([
 const FERIADO_DIVERSIDAD = Object.freeze({ ...FERIADO_SOBERANIA, id: 2, fecha: '2026-10-12', nombre: 'Día del Respeto a la Diversidad Cultural' });
 
 // Lo que contesta GET /api/mi-espacio/eventos para un rango: lo de ese rango, armado por el servidor (los compañeros, solo a quien
-// los ve: `puedeCompartir`)
+// los ve: `puedeCompartir`, y por día, `companeros_por_dia`). Los días hábiles de las licencias y de los compañeros, sin feriados de
+// la tabla salvo con `conFeriados`, que les saca los de `feriados` (como hace el servidor con los suyos)
 const respuestaDeEventos = ({ desde, hasta }, {
   eventos = EVENTOS_DE_PRUEBA, licencias = LICENCIAS_DE_PRUEBA, ausencias = AUSENCIAS_DE_PRUEBA,
-  feriados = [FERIADO_DIVERSIDAD, FERIADO_SOBERANIA], puedeCompartir = true
+  feriados = [FERIADO_DIVERSIDAD, FERIADO_SOBERANIA], puedeCompartir = true, conFeriados = false
 } = {}) => {
-  const rango = { desde, hasta, feriados: SIN_FERIADOS };
+  const rango = { desde, hasta, feriados: conFeriados ? feriadosDelRango(feriados, desde, hasta) : SIN_FERIADOS };
   const seTocan = (fila) => fila.desde <= hasta && fila.hasta >= desde;
+  const ausentes = puedeCompartir ? ausencias.filter(seTocan).map((ausencia) => itemDeAusencia(ausencia, rango)) : [];
   return comoLlega({
     desde, hasta, hoy: HOY, puede_compartir: puedeCompartir,
     eventos: eventos.filter((evento) => evento.fecha >= desde && evento.fecha <= hasta)
       .map((evento) => itemDeEvento(evento, { usuarioId: 1, ahora: AHORA, feriados: SIN_FERIADOS })),
     licencias: licencias.filter(seTocan).map((fila) => itemDeLicencia(fila, rango)),
     feriados: itemsDeFeriados(feriados, desde, hasta),
-    ausentes: puedeCompartir ? ausencias.filter(seTocan).map((ausencia) => itemDeAusencia(ausencia, rango)) : []
+    ausentes,
+    companeros_por_dia: companerosPorDia(ausentes)
   });
 };
 // La grilla de octubre (del lunes 28/09 al domingo 01/11) y los próximos 30 días (del 26/10 al 25/11)
@@ -1193,99 +1219,765 @@ describe('la agenda: el mes', () => {
     }
   });
 
-  it('cosasPorDia: el feriado, tus licencias, los compañeros y los eventos por hora y título; licencias y compañeros, en sus días', () => {
+  // spec 2026-10-28-mi-espacio-agenda-onda, 3.5: lo de cada día que no es una barra (tus licencias y los compañeros van en las
+  // barras: barrasDelMes)
+  it('cosasPorDia: los feriados y los eventos por hora y título; tus licencias y los compañeros no (van en las barras)', () => {
     assert.deepEqual(cosasDe(DEL_MES), {
       '2026-10-12': [{ clase: 'feriado', texto: 'Feriado: Día del Respeto a la Diversidad Cultural' }],
-      '2026-10-15': [{ clase: 'licencia', texto: 'Franquicia, 2 h' }],
-      '2026-10-23': [{ clase: 'ausente', texto: 'Martín Ríos no está' }],
-      '2026-10-26': [{ clase: 'ausente', texto: 'Martín Ríos no está' },
-        { clase: 'propio', texto: '12:00 Llamar a Vialidad por el TMDA', evento_id: 11 }],
-      '2026-10-27': [{ clase: 'ausente', texto: 'Martín Ríos no está' }, { clase: 'compartido', texto: '10:00 Reunión de equipo', evento_id: 12 }],
-      '2026-10-28': [{ clase: 'ausente', texto: 'Martín Ríos no está' }, { clase: 'propio', texto: '15:30 Turno médico', evento_id: 13 }],
-      '2026-10-29': [{ clase: 'ausente', texto: 'Martín Ríos no está' },
-        { clase: 'compartido', texto: '09:00 Entrega del informe trimestral', evento_id: 14 }],
-      '2026-10-30': [{ clase: 'ausente', texto: 'Martín Ríos no está' }, { clase: 'ausente', texto: 'Sofía Paz no está' }]
+      '2026-10-26': [{ clase: 'propio', texto: '12:00 Llamar a Vialidad por el TMDA', evento_id: 11 }],
+      '2026-10-27': [{ clase: 'compartido', texto: '10:00 Reunión de equipo', evento_id: 12 }],
+      '2026-10-28': [{ clase: 'propio', texto: '15:30 Turno médico', evento_id: 13 }],
+      '2026-10-29': [{ clase: 'compartido', texto: '09:00 Entrega del informe trimestral', evento_id: 14 }]
     });
-    // Los eventos de un día, por hora (el de las 09:00 primero, aunque llegue después)
+    // Los eventos de un día, por hora (el de las 09:00 primero, aunque llegue después), después del feriado; la franquicia y Martín
+    // de ese día, no
     assert.deepEqual(cosasDe(UN_DIA_LLENO)['2026-10-15'], [
-      { clase: 'feriado', texto: 'Feriado: Feriado de prueba' }, { clase: 'licencia', texto: 'Franquicia, 2 h' },
-      { clase: 'ausente', texto: 'Martín Ríos no está' }, { clase: 'compartido', texto: '09:00 Café con Catastro', evento_id: 32 },
+      { clase: 'feriado', texto: 'Feriado: Feriado de prueba' }, { clase: 'compartido', texto: '09:00 Café con Catastro', evento_id: 32 },
       { clase: 'propio', texto: '16:00 Revisar el informe', evento_id: 31 }
     ]);
+    // Ningún día con una licencia o un compañero, aunque lleguen (en los próximos, las vacaciones del 03/11, Martín y Sofía)
+    for (const datos of [DEL_MES, UN_DIA_LLENO, PROXIMOS]) {
+      assert.ok(Object.values(cosasDe(datos)).flat().every((cosa) => !['licencia', 'ausente'].includes(cosa.clase)));
+    }
+    assert.deepEqual(Object.keys(cosasDe(PROXIMOS)).sort(), ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-11-02', '2026-11-23']);
     for (const raro of [null, undefined, {}, 'x', { eventos: 'x', licencias: [null], feriados: [{ fecha: 'raro' }] }]) {
       assert.deepEqual(cosasDe(raro), {}, JSON.stringify(raro));
     }
   });
+});
 
-  it('htmlDelMes: la cabeza de lunes a domingo y una celda por día; hoy marcado, los fines de semana, los feriados y los otros meses', () => {
-    const html = M.htmlDelMes('2026-10', DEL_MES, HOY);
-    assert.match(html, /^<table class="me-mes" aria-labelledby="ag-mes-titulo"><thead><tr>/);
-    assert.deepEqual([...html.matchAll(/<th scope="col">([\s\S]*?)<\/th>/g)].map(([, th]) => th), [
-      ['Lun', 'lunes'], ['Mar', 'martes'], ['Mié', 'miércoles'], ['Jue', 'jueves'], ['Vie', 'viernes'], ['Sáb', 'sábado'], ['Dom', 'domingo']
-    ].map(([corto, largo]) => `<span aria-hidden="true">${corto}</span><span class="visualmente-oculto">${largo}</span>`));
-    const celdas = celdasDe(html);
-    assert.equal(celdas.length, 35);
-    assert.equal([...html.matchAll(/<tr>/g)].length, 6, 'la cabeza y cinco semanas');
-    const dias = plano(M.diasDeLaGrilla('2026-10'));
-    celdas.forEach((celda, i) => {
-      assert.ok(celda.html.startsWith(`<div class="me-celda-cuerpo"><span class="me-num">${dias[i].dia}</span>`), dias[i].fecha);
-      assert.equal(celda.clases.includes('finde'), dias[i].finde, dias[i].fecha);
-      assert.equal(celda.clases.includes('otro-mes'), !dias[i].del_mes, dias[i].fecha);
-      assert.equal(celda.clases.includes('hoy'), dias[i].fecha === HOY, dias[i].fecha);
-      assert.equal(celda.clases.includes('feriado'), dias[i].fecha === '2026-10-12', dias[i].fecha);
-      assert.equal(celda.atributos['aria-current'], dias[i].fecha === HOY ? 'date' : undefined, dias[i].fecha);
+// El modelo del mes (spec 2026-10-28-mi-espacio-agenda-onda, 3.2, 3.4, 3.5 y 3.8): noviembre de 2026 empieza un domingo, con lo que
+// manda el servidor para su grilla (del lunes 26/10 al domingo 06/12): tus vacaciones de siempre (del 03/11 al 09/11) y otras del
+// 16/11 al 27/11, con el lunes 23 feriado; Julián, del 03/11 al 06/11 y del 01/12 al 02/12, y Carla, del 05/11 al 13/11 (llegan en
+// ese orden: el texto del día los ordena por nombre); el feriado del domingo 8 y el del lunes 23. Los días hábiles, con esos feriados
+const FERIADO_DEL_EMPLEADO = Object.freeze({ ...FERIADO_SOBERANIA, id: 4, fecha: '2026-11-08', nombre: 'Día del Empleado Municipal' });
+const RANGO_DE_NOVIEMBRE = Object.freeze({ desde: '2026-10-26', hasta: '2026-12-06' });
+const deNoviembre = (cambios = {}) => respuestaDeEventos(RANGO_DE_NOVIEMBRE, {
+  licencias: [LICENCIAS_DE_PRUEBA[1], { id: 24, tipo: 'vacaciones', desde: '2026-11-16', hasta: '2026-11-27', horas: null }],
+  ausencias: [
+    { nombre: 'Julián', desde: '2026-11-03', hasta: '2026-11-06' }, { nombre: 'Carla', desde: '2026-11-05', hasta: '2026-11-13' },
+    { nombre: 'Julián', desde: '2026-12-01', hasta: '2026-12-02' }
+  ],
+  feriados: [FERIADO_DEL_EMPLEADO, FERIADO_SOBERANIA], conFeriados: true, ...cambios
+});
+const DE_NOVIEMBRE = deNoviembre();
+// Las fechas de las semanas, como listas de acá
+const fechasDeLasSemanas = (semanas) => plano(semanas).map((semana) => semana.map((dia) => dia.fecha));
+// Las barras de cada semana, como objetos de acá: { carriles, piezas: { fecha: [Pieza|null] } }
+const barrasDe = (semanas, datos) => [...M.barrasDelMes(semanas, datos)]
+  .map((semana) => plano({ carriles: semana.carriles, piezas: Object.fromEntries([...semana.piezas]) }));
+// Las piezas de un día, de la semana que lo tiene
+const piezasDel = (barras, fecha) => barras.find((semana) => Object.hasOwn(semana.piezas, fecha))?.piezas[fecha];
+const pieza = (clase, texto, titulo, cambios = {}) => ({
+  clase, texto, titulo, inicio: false, fin: false, largo: null, sigue_antes: false, sigue_despues: false, ...cambios
+});
+const VACACIONES_DEL_3 = 'Vacaciones. Hasta el lunes 09/11';
+const VACACIONES_DEL_16 = 'Vacaciones. Hasta el viernes 27/11';
+const JULIAN_HASTA_EL_6 = 'Julián no está. Hasta el viernes 06/11.';
+const CARLA_Y_JULIAN = 'Carla no está. Hasta el viernes 13/11. Julián no está. Hasta el viernes 06/11.';
+const CARLA_HASTA_EL_13 = 'Carla no está. Hasta el viernes 13/11.';
+
+describe('la agenda: el modelo del mes', () => {
+  it('el servidor manda los compañeros de cada día con el texto que ordena los nombres', () => {
+    assert.deepEqual(DE_NOVIEMBRE.ausentes.map((ausente) => ausente.texto), ['Julián no está', 'Carla no está', 'Julián no está']);
+    assert.deepEqual(DE_NOVIEMBRE.companeros_por_dia.filter((dia) => dia.fecha <= '2026-11-09'), [
+      { fecha: '2026-11-03', texto: 'Julián no está' }, { fecha: '2026-11-04', texto: 'Julián no está' },
+      { fecha: '2026-11-05', texto: 'Carla y Julián no están' }, { fecha: '2026-11-06', texto: 'Carla y Julián no están' },
+      { fecha: '2026-11-09', texto: 'Carla no está' }
+    ]);
+    // El lunes 23 es feriado: las vacaciones del 16 no lo pintan
+    assert.ok(!DE_NOVIEMBRE.licencias[1].dias.includes('2026-11-23'));
+    assert.equal(DE_NOVIEMBRE.licencias[1].dias.length, 9);
+  });
+
+  it('semanasDelMes: sin sábado y domingo, de lunes a viernes y sin las semanas que no tienen días del mes', () => {
+    const noviembre = M.semanasDelMes('2026-11', { finde: false });
+    assert.deepEqual(fechasDeLasSemanas(noviembre), [
+      ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06'],
+      ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'],
+      ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20'],
+      ['2026-11-23', '2026-11-24', '2026-11-25', '2026-11-26', '2026-11-27'],
+      ['2026-11-30', '2026-12-01', '2026-12-02', '2026-12-03', '2026-12-04']
+    ]);
+    // Los días son los de diasDeLaGrilla, tal cual
+    const grilla = new Map(plano(M.diasDeLaGrilla('2026-11')).map((dia) => [dia.fecha, dia]));
+    for (const dia of plano(noviembre).flat()) assert.deepEqual(dia, grilla.get(dia.fecha), dia.fecha);
+    assert.deepEqual(plano(noviembre)[4].map((dia) => dia.del_mes), [true, false, false, false, false]);
+    // Agosto de 2026 empieza un sábado: la primera fila es la del lunes 3
+    assert.equal(M.semanasDelMes('2026-08', { finde: false })[0][0].fecha, '2026-08-03');
+    assert.equal(M.semanasDelMes('2026-08', { finde: false }).at(-1)[0].fecha, '2026-08-31');
+    // Octubre termina un sábado: la última fila termina el viernes 30, y la primera trae el 1 y el 2
+    assert.deepEqual(fechasDeLasSemanas(M.semanasDelMes('2026-10', { finde: false })).at(-1),
+      ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30']);
+    assert.equal(M.semanasDelMes('2026-10', { finde: false })[0][0].fecha, '2026-09-28');
+    assert.equal(M.semanasDelMes('2027-02', { finde: false }).length, 4);
+    // Sin decir nada, o con algo que no es el true literal, ocultos (como de entrada)
+    for (const opciones of [undefined, null, {}, { finde: 'si' }, { finde: 1 }]) {
+      assert.deepEqual(fechasDeLasSemanas(M.semanasDelMes('2026-11', opciones)), fechasDeLasSemanas(noviembre), JSON.stringify(opciones));
+    }
+  });
+
+  it('semanasDelMes: con sábado y domingo, las semanas enteras de diasDeLaGrilla', () => {
+    const noviembre = M.semanasDelMes('2026-11', { finde: true });
+    assert.equal(noviembre.length, 6);
+    assert.ok(plano(noviembre).every((semana) => semana.length === 7));
+    assert.deepEqual(fechasDeLasSemanas(noviembre)[0],
+      ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01']);
+    assert.deepEqual(plano(noviembre).flat(), plano(M.diasDeLaGrilla('2026-11')));
+    assert.equal(M.semanasDelMes('2026-08', { finde: true })[0][0].fecha, '2026-07-27');
+    for (const raro of ['2026-13', '', null, undefined, 'noviembre', '1999-12']) {
+      assert.deepEqual(plano(M.semanasDelMes(raro, { finde: true })), [], String(raro));
+      assert.deepEqual(plano(M.semanasDelMes(raro, { finde: false })), [], String(raro));
+    }
+  });
+
+  it('renglonesDelDia: con lugar, una cosa hasta 3 renglones, dos hasta 2 y tres uno; si no, «y N más»', () => {
+    const casos = [
+      [1, 4, [3], 0], [2, 4, [2, 2], 0], [3, 4, [1, 1, 1], 0], [4, 4, [1, 1, 1], 1], [7, 4, [1, 1, 1], 4],
+      [1, 3, [3], 0], [2, 3, [2, 1], 0], [3, 3, [1, 1, 1], 0], [4, 3, [1, 1], 2],
+      [1, 2, [2], 0], [2, 2, [1, 1], 0], [3, 2, [1], 2], [0, 4, [], 0], [0, 2, [], 0]
+    ];
+    for (const [cantidad, lugares, lineas, mas] of casos) {
+      assert.deepEqual(plano(M.renglonesDelDia(cantidad, lugares)), { lineas, mas }, `${cantidad} en ${lugares}`);
+    }
+    // Nunca menos de una a la vista, ni un «más» negativo, ni NaN
+    assert.deepEqual(plano(M.renglonesDelDia(2, 1)), { lineas: [1], mas: 1 });
+    assert.deepEqual(plano(M.renglonesDelDia(1, 0)), { lineas: [1], mas: 0 });
+    for (const [cantidad, lugares] of [[null, 4], ['2', 4], [-1, 4], [1.5, 4], [Number.NaN, 4]]) {
+      assert.deepEqual(plano(M.renglonesDelDia(cantidad, lugares)), { lineas: [], mas: 0 }, String(cantidad));
+    }
+    for (const lugares of [null, 'x', -2, Number.NaN]) {
+      assert.deepEqual(plano(M.renglonesDelDia(2, lugares)), { lineas: [1], mas: 1 }, String(lugares));
+    }
+  });
+
+  it('barrasDelMes: tus licencias en el carril 1 y los compañeros en el 2; un tramo por días seguidos con lo mismo', () => {
+    const barras = barrasDe(M.semanasDelMes('2026-11', { finde: false }), DE_NOVIEMBRE);
+    assert.deepEqual(barras.map((semana) => semana.carriles), [2, 2, 1, 1, 1]);
+    assert.deepEqual(barras[0].piezas, {
+      '2026-11-02': [null, null],
+      '2026-11-03': [
+        pieza('licencia', 'Vacaciones', VACACIONES_DEL_3, { inicio: true, largo: 4 }),
+        pieza('ausente', 'Julián no está', JULIAN_HASTA_EL_6, { inicio: true, largo: 2 })
+      ],
+      '2026-11-04': [
+        pieza('licencia', 'Vacaciones', VACACIONES_DEL_3),
+        pieza('ausente', 'Julián no está', JULIAN_HASTA_EL_6, { fin: true })
+      ],
+      '2026-11-05': [
+        pieza('licencia', 'Vacaciones', VACACIONES_DEL_3),
+        pieza('ausente', 'Carla y Julián no están', CARLA_Y_JULIAN, { inicio: true, largo: 2 })
+      ],
+      // El viernes, la última columna: las vacaciones siguen el lunes 9, los compañeros no (ese día está solo Carla)
+      '2026-11-06': [
+        pieza('licencia', 'Vacaciones', VACACIONES_DEL_3, { fin: true, sigue_despues: true }),
+        pieza('ausente', 'Carla y Julián no están', CARLA_Y_JULIAN, { fin: true })
+      ]
     });
-    assert.deepEqual(celdaDel(html, '2026-10', HOY).clases, ['me-celda', 'hoy']);
-    assert.deepEqual(celdaDel(html, '2026-10', '2026-10-03').clases, ['me-celda', 'finde']);
-    assert.equal([...html.matchAll(/aria-current="date"/g)].length, 1);
-    // Sin datos (mientras se piden), la grilla sin nada adentro
-    assert.equal(celdasDe(M.htmlDelMes('2026-10', null, HOY)).filter((celda) => celda.html.includes('me-ev')).length, 0);
-    assert.equal(M.htmlDelMes('raro', DEL_MES, HOY), '');
+    assert.deepEqual(piezasDel(barras, '2026-11-09'), [
+      pieza('licencia', 'Vacaciones', VACACIONES_DEL_3, { inicio: true, fin: true, largo: 1, sigue_antes: true }),
+      pieza('ausente', 'Carla no está', CARLA_HASTA_EL_13, { inicio: true, largo: 5 })
+    ]);
+    assert.deepEqual(piezasDel(barras, '2026-11-10'), [null, pieza('ausente', 'Carla no está', CARLA_HASTA_EL_13)]);
+    assert.deepEqual(piezasDel(barras, '2026-11-13'), [null, pieza('ausente', 'Carla no está', CARLA_HASTA_EL_13, { fin: true })]);
   });
 
-  it('htmlDelMes: los colores; un evento es un botón con su id y su title, y lo demás un span con su title', () => {
-    const html = M.htmlDelMes('2026-10', DEL_MES, HOY);
-    assert.ok(celdaDel(html, '2026-10', HOY).html.endsWith('<span class="me-ev ausente" title="Martín Ríos no está">Martín Ríos no está</span>'
-      + '<button type="button" class="me-ev propio" data-evento="11" title="12:00 Llamar a Vialidad por el TMDA">12:00 Llamar a Vialidad por el TMDA</button></div>'));
-    // Uno compartido por vos y uno de otra persona, en violeta
-    assert.ok(celdaDel(html, '2026-10', '2026-10-27').html.includes('<button type="button" class="me-ev compartido" data-evento="12" title="10:00 Reunión de equipo">'));
-    assert.ok(celdaDel(html, '2026-10', '2026-10-29').html.includes('<button type="button" class="me-ev compartido" data-evento="14" '));
-    assert.ok(celdaDel(html, '2026-10', '2026-10-15').html.includes('<span class="me-ev licencia" title="Franquicia, 2 h">Franquicia, 2 h</span>'));
-    assert.ok(celdaDel(html, '2026-10', '2026-10-12').html.includes(
-      '<span class="me-ev feriado" title="Feriado: Día del Respeto a la Diversidad Cultural">Feriado: Día del Respeto a la Diversidad Cultural</span>'));
-    // Un evento de otra persona que no dice compartido (no debería pasar) va igual en violeta
-    const ajeno = { ...DEL_MES, eventos: [{ ...DEL_MES.eventos.find((evento) => evento.id === 14), compartido: false }] };
-    assert.ok(M.htmlDelMes('2026-10', ajeno, HOY).includes('class="me-ev compartido" data-evento="14"'));
-    assert.doesNotMatch(html, /aria-live|role="status"/);
+  it('barrasDelMes: un feriado corta la barra, y la fila siguiente que no empieza igual no la sigue', () => {
+    const barras = barrasDe(M.semanasDelMes('2026-11', { finde: false }), DE_NOVIEMBRE);
+    // Las vacaciones del 16 al 20: un tramo de 5 que no sigue (el lunes 23 es feriado)
+    assert.deepEqual(barras[2].piezas['2026-11-16'], [pieza('licencia', 'Vacaciones', VACACIONES_DEL_16, { inicio: true, largo: 5 })]);
+    assert.deepEqual(barras[2].piezas['2026-11-20'], [pieza('licencia', 'Vacaciones', VACACIONES_DEL_16, { fin: true })]);
+    // El lunes 23, nada; el 24 empieza otro tramo, que no viene de antes
+    assert.deepEqual(barras[3].piezas['2026-11-23'], [null]);
+    assert.deepEqual(barras[3].piezas['2026-11-24'], [pieza('licencia', 'Vacaciones', VACACIONES_DEL_16, { inicio: true, largo: 4 })]);
+    assert.deepEqual(barras[3].piezas['2026-11-27'], [pieza('licencia', 'Vacaciones', VACACIONES_DEL_16, { fin: true })]);
+    // Sin ninguna licencia en la semana, los compañeros van en el carril 1
+    assert.deepEqual(barras[4].piezas, {
+      '2026-11-30': [null],
+      '2026-12-01': [pieza('ausente', 'Julián no está', 'Julián no está. Hasta el miércoles 02/12.', { inicio: true, largo: 2 })],
+      '2026-12-02': [pieza('ausente', 'Julián no está', 'Julián no está. Hasta el miércoles 02/12.', { fin: true })],
+      '2026-12-03': [null],
+      '2026-12-04': [null]
+    });
   });
 
-  it('htmlDelMes: con más de tres cosas, las tres primeras y «y 2 más», que muestra el resto en la celda', () => {
-    const celda = celdaDel(M.htmlDelMes('2026-10', UN_DIA_LLENO, HOY), '2026-10', '2026-10-15');
-    assert.deepEqual(celda.clases, ['me-celda', 'feriado']);
-    assert.equal(celda.html, '<div class="me-celda-cuerpo"><span class="me-num">15</span>'
-      + '<span class="me-ev feriado" title="Feriado: Feriado de prueba">Feriado: Feriado de prueba</span>'
-      + '<span class="me-ev licencia" title="Franquicia, 2 h">Franquicia, 2 h</span>'
-      + '<span class="me-ev ausente" title="Martín Ríos no está">Martín Ríos no está</span>'
-      + '<div class="me-resto" hidden>'
-      + '<button type="button" class="me-ev compartido" data-evento="32" title="09:00 Café con Catastro">09:00 Café con Catastro</button>'
-      + '<button type="button" class="me-ev propio" data-evento="31" title="16:00 Revisar el informe">16:00 Revisar el informe</button></div>'
-      + '<button type="button" class="me-mas" data-ver-mas="2026-10-15">y 2 más</button></div>');
-    // Con tres justas, ningún «más»
-    assert.ok(!celdaDel(M.htmlDelMes('2026-10', UN_DIA_LLENO, HOY), '2026-10', '2026-10-14').html.includes('me-mas'));
-  });
-
-  // Review Focus 2: el HTML de un título o de un nombre es texto, también en el title
-  it('htmlDelMes: un título y un nombre con HTML se ven escapados, en el texto y en el title', () => {
-    const titulo = `${MALICIOSO} "comillas"`;
+  it('barrasDelMes: una licencia del jueves 01/10 al martes 06/10 sigue del viernes al lunes; con el fin de semana a la vista, no', () => {
     const datos = respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' }, {
-      eventos: [eventoDe(41, titulo, '2026-10-26', '12:00')], ausencias: [{ nombre: MALICIOSO, desde: '2026-10-26', hasta: '2026-10-26' }],
-      licencias: [], feriados: [{ ...FERIADO_SOBERANIA, fecha: '2026-10-27', nombre: MALICIOSO }]
+      licencias: [{ id: 23, tipo: 'vacaciones', desde: '2026-10-01', hasta: '2026-10-06', horas: null }], ausencias: []
+    });
+    const titulo = 'Vacaciones. Hasta el martes 06/10';
+    const ocultos = barrasDe(M.semanasDelMes('2026-10', { finde: false }), datos);
+    assert.deepEqual(ocultos.map((semana) => semana.carriles), [1, 1, 0, 0, 0]);
+    assert.deepEqual(piezasDel(ocultos, '2026-10-01'), [pieza('licencia', 'Vacaciones', titulo, { inicio: true, largo: 2 })]);
+    assert.deepEqual(piezasDel(ocultos, '2026-10-02'), [pieza('licencia', 'Vacaciones', titulo, { fin: true, sigue_despues: true })]);
+    assert.deepEqual(piezasDel(ocultos, '2026-10-05'), [pieza('licencia', 'Vacaciones', titulo, { inicio: true, largo: 2, sigue_antes: true })]);
+    assert.deepEqual(piezasDel(ocultos, '2026-10-06'), [pieza('licencia', 'Vacaciones', titulo, { fin: true })]);
+    // Con sábado y domingo, el sábado y el domingo (sin licencia) la cortan: ninguna punta sigue
+    const visibles = barrasDe(M.semanasDelMes('2026-10', { finde: true }), datos);
+    assert.deepEqual(piezasDel(visibles, '2026-10-02'), [pieza('licencia', 'Vacaciones', titulo, { fin: true })]);
+    assert.deepEqual(piezasDel(visibles, '2026-10-03'), [null]);
+    assert.deepEqual(piezasDel(visibles, '2026-10-05'), [pieza('licencia', 'Vacaciones', titulo, { inicio: true, largo: 2 })]);
+    // En noviembre, con sábado y domingo, las vacaciones del 03 terminan el viernes 6 sin seguir
+    const noviembre = barrasDe(M.semanasDelMes('2026-11', { finde: true }), DE_NOVIEMBRE);
+    assert.deepEqual(piezasDel(noviembre, '2026-11-06')[0], pieza('licencia', 'Vacaciones', VACACIONES_DEL_3, { fin: true }));
+    assert.deepEqual(piezasDel(noviembre, '2026-11-08'), [null, null]);
+    assert.deepEqual(piezasDel(noviembre, '2026-11-09')[0], pieza('licencia', 'Vacaciones', VACACIONES_DEL_3, { inicio: true, fin: true, largo: 1 }));
+  });
+
+  it('barrasDelMes: dos licencias seguidas con el mismo texto son dos tramos (por id); las filas de las puntas de la grilla no siguen', () => {
+    const datos = deNoviembre({
+      licencias: [{ id: 25, tipo: 'vacaciones', desde: '2026-11-02', hasta: '2026-11-03', horas: null },
+        { id: 26, tipo: 'vacaciones', desde: '2026-11-04', hasta: '2026-11-04', horas: null },
+        { id: 27, tipo: 'vacaciones', desde: '2026-11-30', hasta: '2026-12-11', horas: null }],
+      ausencias: []
+    });
+    const barras = barrasDe(M.semanasDelMes('2026-11', { finde: false }), datos);
+    assert.deepEqual(barras[0].piezas['2026-11-02'], [pieza('licencia', 'Vacaciones', 'Vacaciones. Hasta el martes 03/11', { inicio: true, largo: 2 })]);
+    assert.deepEqual(barras[0].piezas['2026-11-03'], [pieza('licencia', 'Vacaciones', 'Vacaciones. Hasta el martes 03/11', { fin: true })]);
+    assert.deepEqual(barras[0].piezas['2026-11-04'], [pieza('licencia', 'Vacaciones', 'Vacaciones', { inicio: true, fin: true, largo: 1 })]);
+    // La última fila: el viernes 4/12 no sigue, aunque las vacaciones sigan la semana siguiente
+    assert.deepEqual(barras[4].piezas['2026-12-04'], [pieza('licencia', 'Vacaciones', 'Vacaciones. Hasta el viernes 11/12', { fin: true })]);
+    // Sin un id que sirva, cada licencia es la suya (por su lugar en la lista): no se juntan
+    const sinId = { ...datos, licencias: datos.licencias.map((una) => ({ ...una, id: null })) };
+    const deSinId = barrasDe(M.semanasDelMes('2026-11', { finde: false }), sinId);
+    assert.deepEqual(['2026-11-02', '2026-11-03', '2026-11-04'].map((fecha) => [deSinId[0].piezas[fecha][0].inicio, deSinId[0].piezas[fecha][0].largo]),
+      [[true, 2], [false, null], [true, 1]]);
+  });
+
+  it('barrasDelMes: sin compañeros ni licencias, ningún carril; lo que no sirve, sin barras', () => {
+    const semanas = M.semanasDelMes('2026-11', { finde: false });
+    const vacio = barrasDe(semanas, deNoviembre({ licencias: [], ausencias: [] }));
+    assert.deepEqual(vacio.map((semana) => semana.carriles), [0, 0, 0, 0, 0]);
+    assert.deepEqual(vacio[0].piezas, { '2026-11-02': [], '2026-11-03': [], '2026-11-04': [], '2026-11-05': [], '2026-11-06': [] });
+    // Quien no ve a los compañeros recibe [] en los dos: solo sus licencias
+    assert.deepEqual(barrasDe(semanas, deNoviembre({ puedeCompartir: false })).map((semana) => semana.carriles), [1, 1, 1, 1, 0]);
+    for (const raro of [null, undefined, 'x', {}, { licencias: 'x', companeros_por_dia: [null, { fecha: 'raro', texto: 'x' }] }]) {
+      assert.deepEqual(barrasDe(semanas, raro).map((semana) => semana.carriles), [0, 0, 0, 0, 0], JSON.stringify(raro));
+    }
+    for (const raro of [null, undefined, 'x', {}, [null, 'x']]) assert.deepEqual(barrasDe(raro, DE_NOVIEMBRE), [], JSON.stringify(raro));
+  });
+
+  it('barrasDelMes: el texto de los compañeros es el del servidor, y el title nombra a cada uno en el orden del texto', () => {
+    const datos = { ...DE_NOVIEMBRE, companeros_por_dia: DE_NOVIEMBRE.companeros_por_dia.map((dia) => ({ ...dia, texto: `${dia.texto} ${MALICIOSO}` })) };
+    const barras = barrasDe(M.semanasDelMes('2026-11', { finde: false }), datos);
+    // Lo que no se escapa acá: lo escapa el HTML (Task 6)
+    assert.equal(piezasDel(barras, '2026-11-05')[1].texto, `Carla y Julián no están ${MALICIOSO}`);
+    assert.equal(piezasDel(barras, '2026-11-05')[1].titulo, CARLA_Y_JULIAN);
+    // Sin `hasta_texto` (un día), solo el texto
+    const deUnDia = deNoviembre({ ausencias: [{ nombre: 'Julián', desde: '2026-11-04', hasta: '2026-11-04' },
+      { nombre: 'Carla', desde: '2026-11-04', hasta: '2026-11-05' }] });
+    assert.deepEqual(piezasDel(barrasDe(M.semanasDelMes('2026-11', { finde: false }), deUnDia), '2026-11-04')[1],
+      pieza('ausente', 'Carla y Julián no están', 'Carla no está. Hasta el jueves 05/11. Julián no está.', { inicio: true, fin: true, largo: 1 }));
+    // Si el día no tiene a nadie en `ausentes` (no debería pasar), el title es el texto del día
+    const sinAusentes = { ...DE_NOVIEMBRE, ausentes: [] };
+    assert.equal(piezasDel(barrasDe(M.semanasDelMes('2026-11', { finde: false }), sinAusentes), '2026-11-05')[1].titulo, 'Carla y Julián no están');
+  });
+
+  it('cuantasEnElFinde: los feriados y los eventos de los sábados y domingos del mes', () => {
+    assert.equal(M.cuantasEnElFinde('2026-11', DE_NOVIEMBRE), 1);
+    const conGuardias = deNoviembre({
+      eventos: [...EVENTOS_DE_PRUEBA, eventoDe(16, 'Guardia', '2026-11-14', '09:00'),
+        // De la grilla, pero de otro mes: no cuentan
+        eventoDe(17, 'Guardia', '2026-10-31', '09:00'), eventoDe(18, 'Guardia', '2026-12-06', '09:00')]
+    });
+    assert.equal(M.cuantasEnElFinde('2026-11', conGuardias), 2);
+    assert.equal(M.cuantasEnElFinde('2026-10', conGuardias), 1);
+    // Son las cosas de cosasPorDia que quedan en sábados y domingos del mes
+    const delFinde = Object.entries(cosasDe(conGuardias))
+      .filter(([fecha]) => fecha.startsWith('2026-11') && [0, 6].includes(new Date(`${fecha}T12:00:00Z`).getUTCDay()));
+    assert.equal(delFinde.flatMap(([, cosas]) => cosas).length, 2);
+    // Dos feriados el mismo domingo son dos cosas
+    const dosFeriados = deNoviembre({ feriados: [FERIADO_DEL_EMPLEADO, { ...FERIADO_DEL_EMPLEADO, id: 5, nombre: 'Otro feriado' }] });
+    assert.equal(M.cuantasEnElFinde('2026-11', dosFeriados), 2);
+    assert.equal(M.cuantasEnElFinde('2026-11', deNoviembre({ feriados: [FERIADO_SOBERANIA] })), 0);
+    for (const raro of [null, undefined, 'x', {}, { eventos: 'x', feriados: [null, { fecha: 'raro' }] }]) {
+      assert.equal(M.cuantasEnElFinde('2026-11', raro), 0, JSON.stringify(raro));
+    }
+    for (const raro of ['2026-13', '', null, 'noviembre']) assert.equal(M.cuantasEnElFinde(raro, conGuardias), 0, String(raro));
+  });
+
+  it('diaVisibleCercano: la fecha si se ve; si no, el primer día visible que la sigue o, si no hay, el último que la precede', () => {
+    const noviembre = M.semanasDelMes('2026-11', { finde: false });
+    const octubre = M.semanasDelMes('2026-10', { finde: false });
+    assert.equal(M.diaVisibleCercano('2026-11-01', noviembre), '2026-11-02');
+    assert.equal(M.diaVisibleCercano('2026-10-31', octubre), '2026-10-30');
+    assert.equal(M.diaVisibleCercano('2026-11-07', noviembre), '2026-11-09');
+    assert.equal(M.diaVisibleCercano('2026-11-04', noviembre), '2026-11-04');
+    assert.equal(M.diaVisibleCercano('2026-08-01', M.semanasDelMes('2026-08', { finde: false })), '2026-08-03');
+    // Con sábado y domingo, la misma fecha
+    assert.equal(M.diaVisibleCercano('2026-11-01', M.semanasDelMes('2026-11', { finde: true })), '2026-11-01');
+    assert.equal(M.diaVisibleCercano('2026-10-31', M.semanasDelMes('2026-10', { finde: true })), '2026-10-31');
+    // Fuera de la grilla, el primero o el último
+    assert.equal(M.diaVisibleCercano('2026-09-15', noviembre), '2026-11-02');
+    assert.equal(M.diaVisibleCercano('2027-01-01', noviembre), '2026-12-04');
+    for (const raro of ['2026-02-30', '', null, 'hoy']) assert.equal(M.diaVisibleCercano(raro, noviembre), null, String(raro));
+    for (const raro of [[], null, 'x', [[]], [null]]) assert.equal(M.diaVisibleCercano('2026-11-01', raro), null, JSON.stringify(raro));
+  });
+
+  // spec 3.2: apagado, el botón dice cuántas cosas quedaron escondidas el fin de semana; sin ninguna, su nombre es su texto
+  it('etiquetaDelFinDeSemana: «Sábado y domingo: 1 cosa escondida», «… 3 cosas escondidas»; sin ninguna, ""', () => {
+    assert.equal(M.etiquetaDelFinDeSemana(1), 'Sábado y domingo: 1 cosa escondida');
+    assert.equal(M.etiquetaDelFinDeSemana(3), 'Sábado y domingo: 3 cosas escondidas');
+    for (const raro of [0, -1, 1.5, '2', null, undefined, NaN]) assert.equal(M.etiquetaDelFinDeSemana(raro), '', String(raro));
+  });
+
+  // spec 4.1 y decisión 9.5: el tabindex móvil de los números (las flechas, Inicio y Fin)
+  it('diaConLaTecla: las flechas de día en día y de semana en semana, Inicio y Fin en la fila; en el borde, la misma fecha', () => {
+    const octubre = M.semanasDelMes('2026-10', { finde: false });
+    const tecla = (fecha, nombre, semanas = octubre) => M.diaConLaTecla(fecha, nombre, semanas);
+    // De día en día: del viernes al lunes (sábado y domingo ocultos), y al revés
+    assert.equal(tecla('2026-10-28', 'ArrowRight'), '2026-10-29');
+    assert.equal(tecla('2026-10-02', 'ArrowRight'), '2026-10-05');
+    assert.equal(tecla('2026-10-05', 'ArrowLeft'), '2026-10-02');
+    // De semana en semana, en la misma columna
+    assert.equal(tecla('2026-10-21', 'ArrowDown'), '2026-10-28');
+    assert.equal(tecla('2026-10-07', 'ArrowUp'), '2026-09-30');
+    // Inicio y Fin: el primero y el último de la fila
+    assert.equal(tecla('2026-10-28', 'Home'), '2026-10-26');
+    assert.equal(tecla('2026-10-28', 'End'), '2026-10-30');
+    assert.equal(tecla('2026-10-26', 'Home'), '2026-10-26');
+    // En el borde de la grilla, no se mueve
+    assert.equal(tecla('2026-10-30', 'ArrowRight'), '2026-10-30');
+    assert.equal(tecla('2026-09-28', 'ArrowLeft'), '2026-09-28');
+    assert.equal(tecla('2026-10-28', 'ArrowDown'), '2026-10-28');
+    assert.equal(tecla('2026-09-30', 'ArrowUp'), '2026-09-30');
+    // Con sábado y domingo: el viernes 30 sigue en el sábado 31 y Fin va al domingo 1/11; en noviembre, el 28/10 es de la primera
+    // fila y abajo está el 04/11
+    const conFinde = M.semanasDelMes('2026-10', { finde: true });
+    assert.equal(tecla('2026-10-30', 'ArrowRight', conFinde), '2026-10-31');
+    assert.equal(tecla('2026-10-26', 'End', conFinde), '2026-11-01');
+    assert.equal(tecla('2026-10-28', 'ArrowDown', M.semanasDelMes('2026-11', { finde: true })), '2026-11-04');
+    // Otra tecla, una fecha que no se ve o que no es una fecha, o unas semanas que no sirven: null
+    for (const otra of ['Enter', ' ', 'a', 'PageDown', undefined]) assert.equal(tecla('2026-10-28', otra), null, String(otra));
+    for (const fecha of ['2026-10-31', '2026-12-15', 'raro', null]) assert.equal(tecla(fecha, 'ArrowRight'), null, String(fecha));
+    for (const raro of [[], null, 'x']) assert.equal(tecla('2026-10-28', 'ArrowRight', raro), null, JSON.stringify(raro));
+  });
+});
+
+// El HTML del mes (spec 2026-10-28-mi-espacio-agenda-onda, 3.3 a 3.8 y 6): una tabla con una celda por día visible, y en cada día su
+// número (un botón), su pedazo de cada barra, lo suyo con sus renglones y sus puntos (los del teléfono). Noviembre, con lo de
+// DE_NOVIEMBRE; el jueves 5, con cuatro eventos (uno de Julián)
+const DE_JULIAN = Object.freeze({
+  creado_por: 2, creador: 'Julián Esteban Ferreyra', compartido: 1,
+  personas: [{ id: 1, nombre: 'Andrea Paula Molina', sin_recordatorio: 0 }]
+});
+const CUATRO_EL_5 = Object.freeze([
+  eventoDe(71, 'Primera', '2026-11-05', '08:00'), eventoDe(72, 'Segunda', '2026-11-05', '09:00'),
+  eventoDe(73, 'Tercera', '2026-11-05', '10:00', DE_JULIAN), eventoDe(74, 'Cuarta', '2026-11-05', '11:00')
+]);
+const NOVIEMBRE_LLENO = deNoviembre({ eventos: [...EVENTOS_DE_PRUEBA, ...CUATRO_EL_5] });
+// Un nombre y un título con HTML, en una sola palabra (el servidor deja la primera palabra del nombre)
+const CON_HTML = '<b>&"';
+const CON_HTML_ESCAPADO = '&lt;b&gt;&amp;&quot;';
+// La celda de una fecha (por su data-fecha)
+const celdaConFecha = (html, fecha) => celdasDe(html).find((celda) => celda.atributos['data-fecha'] === fecha);
+// Las cabezas de las columnas: { hoy, texto }
+const cabezasDe = (html) => [...html.matchAll(/<th scope="col"( class="hoy")?>([\s\S]*?)<\/th>/g)]
+  .map(([, hoy, adentro]) => ({ hoy: hoy !== undefined, texto: textoDe(adentro) }));
+// Los números de los días (sus botones; el elegido en el teléfono, con aria-current="true"): { fecha, tabindex, etiqueta, texto }
+const numerosDe = (html) => [...html.matchAll(/<button type="button" class="me-num" data-dia="([^"]*)" tabindex="([^"]*)" aria-label="([^"]*)"(?: aria-current="true")?>([^<]*)<\/button>/g)]
+  .map(([, fecha, tabindex, etiqueta, texto]) => ({ fecha, tabindex, etiqueta, texto }));
+// La fecha del único número con tabindex="0"
+const enFocoDe = (html) => numerosDe(html).filter((numero) => numero.tabindex === '0').map((numero) => numero.fecha);
+// Los pedazos de barra de un HTML (la etiqueta que abre cada uno): { clases, atributos }
+const barrasDelHtml = (html) => [...html.matchAll(/<span class="me-tira((?: [^"]*)?)"([^>]*)>/g)]
+  .map(([, clases, atributos]) => ({ clases: `me-tira${clases}`.split(' '), atributos: atributosDe(atributos) }));
+// Los renglones de lo que se ve en una celda (sin lo de «y N más»)
+const renglonesDeLaCelda = (celda) => [...celda.html.replace(/<div class="me-resto" hidden>[\s\S]*?<\/div>/, '').matchAll(/data-lineas="([^"]*)"/g)]
+  .map(([, lineas]) => lineas);
+const ICONO = (clase) => M.ICONOS_DEL_MES[clase];
+
+describe('la agenda: el HTML del mes', () => {
+  it('ICONOS_DEL_MES: la bandera, el sol, la persona y las dos personas, decorativos; lo que es solo tuyo, sin ícono', () => {
+    assert.ok(Object.isFrozen(M.ICONOS_DEL_MES));
+    assert.deepEqual(Object.keys(M.ICONOS_DEL_MES).sort(), ['ausente', 'compartido', 'feriado', 'licencia', 'propio']);
+    assert.equal(M.ICONOS_DEL_MES.propio, '');
+    for (const clase of ['feriado', 'licencia', 'ausente', 'compartido']) {
+      const icono = M.ICONOS_DEL_MES[clase];
+      assert.match(icono, /^<svg [^>]*>[\s\S]*<\/svg>$/, clase);
+      const atributos = atributosDe(icono.match(/^<svg([^>]*)>/)[1]);
+      assert.equal(atributos['aria-hidden'], 'true', clase);
+      assert.equal(atributos.class, 'me-icono', clase);
+      assert.equal(atributos.viewBox, '0 0 24 24', clase);
+    }
+    // Los de Lucide: flag, sun, user y users (el de «Todos» del formulario)
+    assert.ok(M.ICONOS_DEL_MES.feriado.includes('<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>'));
+    assert.ok(M.ICONOS_DEL_MES.licencia.includes('<circle cx="12" cy="12" r="4"/>'));
+    assert.ok(M.ICONOS_DEL_MES.ausente.includes('<circle cx="12" cy="7" r="4"/>'));
+    assert.ok(M.ICONOS_DEL_MES.compartido.includes('<path d="M16 3.13a4 4 0 0 1 0 7.75"/>'));
+    assert.equal(new Set(['feriado', 'licencia', 'ausente', 'compartido'].map(ICONO)).size, 4);
+  });
+
+  it('htmlDelMes: de entrada, de lunes a viernes (5 columnas); con sábado y domingo, 7; la cabeza de hoy, solo si hoy se ve', () => {
+    const octubre = M.htmlDelMes('2026-10', DEL_MES, HOY);
+    assert.match(octubre, /^<table class="me-mes" aria-labelledby="ag-mes-titulo"><thead><tr><th scope="col"/);
+    assert.ok(octubre.endsWith('</tr></tbody></table>'));
+    const largos = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+    const cortos = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    const cabezas = (cuantas, deHoy) => cortos.slice(0, cuantas).map((corto, i) => ({ hoy: i === deHoy, texto: `${corto} ${largos[i]}` }));
+    assert.deepEqual(cabezasDe(octubre), cabezas(5, 0));
+    assert.ok(octubre.includes('<th scope="col" class="hoy"><span aria-hidden="true">Lun</span><span class="visualmente-oculto">lunes</span></th>'));
+    // Las filas: las de semanasDelMes, cada una con sus días
+    const semanas = (mes, finde) => fechasDeLasSemanas(M.semanasDelMes(mes, { finde }));
+    const filas = (html) => [...html.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].slice(1)
+      .map(([, fila]) => celdasDe(fila).map((celda) => celda.atributos['data-fecha']));
+    assert.deepEqual(filas(octubre), semanas('2026-10', false));
+    const conFinde = M.htmlDelMes('2026-10', DEL_MES, HOY, { finde: true });
+    assert.deepEqual(cabezasDe(conFinde), cabezas(7, 0));
+    assert.deepEqual(filas(conFinde), semanas('2026-10', true));
+    assert.equal(celdasDe(conFinde).length, 35);
+    // En noviembre, hoy (el lunes 26/10) no se ve sin sábado y domingo; con ellos, la primera fila es la suya
+    assert.deepEqual(cabezasDe(M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY)), cabezas(5, null));
+    assert.deepEqual(filas(M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY)), semanas('2026-11', false));
+    assert.deepEqual(cabezasDe(M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, { finde: true })), cabezas(7, 0));
+    // Hoy un sábado, con sábado y domingo ocultos: ninguna cabeza; a la vista, la del sábado
+    assert.deepEqual(cabezasDe(M.htmlDelMes('2026-10', DEL_MES, '2026-10-31')), cabezas(5, null));
+    assert.deepEqual(cabezasDe(M.htmlDelMes('2026-10', DEL_MES, '2026-10-31', { finde: true })), cabezas(7, 5));
+    // Sin datos (mientras se piden), la grilla sin nada adentro; un mes que no sirve, ''
+    const vacio = M.htmlDelMes('2026-10', null, HOY);
+    assert.equal(celdasDe(vacio).length, 25);
+    assert.doesNotMatch(vacio, /me-ev|me-tira|me-carriles|me-mas/);
+    for (const raro of ['raro', '2026-13', '', null, undefined]) assert.equal(M.htmlDelMes(raro, DEL_MES, HOY), '', String(raro));
+  });
+
+  it('htmlDelMes: cada celda con su fecha, su número y sus marcas: otro mes, finde, feriado, hoy, los días del mes que pasaron y el elegido', () => {
+    const html = M.htmlDelMes('2026-10', DEL_MES, HOY, { finde: true, elegido: '2026-10-22' });
+    const dias = plano(M.diasDeLaGrilla('2026-10'));
+    const celdas = celdasDe(html);
+    assert.equal(celdas.length, dias.length);
+    celdas.forEach((celda, i) => {
+      const dia = dias[i];
+      assert.equal(celda.atributos['data-fecha'], dia.fecha);
+      assert.ok(celda.html.startsWith(`<div class="me-celda-cuerpo"><button type="button" class="me-num" data-dia="${dia.fecha}" tabindex="`), dia.fecha);
+      assert.match(celda.html, /<div class="me-cosas">[\s\S]*<\/div><span class="me-puntos" aria-hidden="true">[^]*<\/span><\/div>$/, dia.fecha);
+      const marcas = ['me-celda', !dia.del_mes && 'otro-mes', dia.finde && 'finde', dia.fecha === '2026-10-12' && 'feriado', dia.fecha === HOY && 'hoy',
+        dia.del_mes && dia.fecha < HOY && 'paso', dia.fecha === '2026-10-22' && 'elegido'].filter(Boolean);
+      assert.deepEqual(celda.clases, marcas, dia.fecha);
+      assert.equal(celda.atributos['aria-current'], dia.fecha === HOY ? 'date' : undefined, dia.fecha);
+    });
+    assert.deepEqual(celdaConFecha(html, HOY).clases, ['me-celda', 'hoy']);
+    assert.deepEqual(celdaConFecha(html, '2026-10-12').clases, ['me-celda', 'feriado', 'paso']);
+    assert.deepEqual(celdaConFecha(html, '2026-10-22').clases, ['me-celda', 'paso', 'elegido']);
+    assert.deepEqual(celdaConFecha(html, '2026-09-30').clases, ['me-celda', 'otro-mes']);
+    assert.deepEqual(celdaConFecha(html, '2026-10-31').clases, ['me-celda', 'finde']);
+    assert.deepEqual(celdaConFecha(html, '2026-11-01').clases, ['me-celda', 'otro-mes', 'finde']);
+    assert.equal([...html.matchAll(/aria-current="date"/g)].length, 1);
+    // El número: un botón por día, con el día a la vista y «Nuevo evento el jueves 22/10» (diaLargo del servidor)
+    const numeros = numerosDe(html);
+    assert.deepEqual(numeros.map((numero) => numero.fecha), dias.map((dia) => dia.fecha));
+    for (const numero of numeros) {
+      assert.equal(numero.texto, String(Number(numero.fecha.slice(8, 10))), numero.fecha);
+      assert.equal(numero.etiqueta, `Nuevo evento el ${diaLargo(numero.fecha)}`, numero.fecha);
+    }
+    assert.ok(html.includes('<button type="button" class="me-num" data-dia="2026-10-22" tabindex="-1" aria-label="Nuevo evento el jueves 22/10">22</button>'));
+    // Un elegido que no se ve no marca nada; uno que no es una fecha, tampoco
+    for (const elegido of ['2026-10-31', 'raro', 22]) assert.ok(!M.htmlDelMes('2026-10', DEL_MES, HOY, { elegido }).includes('elegido'), String(elegido));
+    // Con un hoy que no sirve, ningún día pasó ni es hoy
+    const sinHoy = M.htmlDelMes('2026-10', DEL_MES, 'raro');
+    assert.doesNotMatch(sinHoy, / paso"| hoy"|aria-current|class="hoy"/);
+  });
+
+  // Ruling 4 del plan: el mes es una sola parada del tabulador
+  it('htmlDelMes: un solo tabindex="0" en el mes: el del foco si se ve; si no, hoy si es del mes, o el 1 (el día visible más cercano)', () => {
+    const cuantos = (html) => [...html.matchAll(/tabindex="0"/g)].length;
+    const octubre = M.htmlDelMes('2026-10', DEL_MES, HOY);
+    assert.deepEqual(enFocoDe(octubre), [HOY]);
+    assert.equal(cuantos(octubre), 1);
+    assert.ok(numerosDe(octubre).every((numero) => ['0', '-1'].includes(numero.tabindex)));
+    assert.equal(numerosDe(octubre).length, celdasDe(octubre).length);
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-10', DEL_MES, HOY, { foco: '2026-10-22' })), ['2026-10-22']);
+    // Un foco que no se ve (el sábado 31 con sábado y domingo ocultos, un día de otra grilla) o que no es una fecha: hoy
+    for (const foco of ['2026-10-31', '2026-12-15', 'raro', 22, null]) {
+      const html = M.htmlDelMes('2026-10', DEL_MES, HOY, { foco });
+      assert.deepEqual(enFocoDe(html), [HOY], String(foco));
+      assert.equal(cuantos(html), 1, String(foco));
+    }
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-10', DEL_MES, HOY, { finde: true, foco: '2026-10-31' })), ['2026-10-31']);
+    // Un foco del mes vecino que se ve en la grilla, también
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-10', DEL_MES, HOY, { foco: '2026-09-29' })), ['2026-09-29']);
+    // En noviembre, hoy no es del mes: el 1, un domingo, que sin sábado y domingo no se ve: el lunes 2
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY)), ['2026-11-02']);
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, { finde: true })), ['2026-11-01']);
+    // Hoy un sábado, con sábado y domingo ocultos: el viernes 30 (no hay un día visible después en la grilla)
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-10', DEL_MES, '2026-10-31')), ['2026-10-30']);
+    // Sin un hoy que sirva, el 1
+    assert.deepEqual(enFocoDe(M.htmlDelMes('2026-10', DEL_MES, 'raro')), ['2026-10-01']);
+  });
+
+  it('htmlDelMes: las barras, un pedazo en cada día; el texto a la vista al principio del tramo, con su ícono y --n, y oculto en los demás', () => {
+    const html = M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY);
+    const carrilesDel = (fecha) => celdaConFecha(html, fecha).html.match(/<div class="me-carriles">[\s\S]*?<\/span><\/div>/)?.[0];
+    const oculto = (clases, titulo, texto) => `<span class="me-tira ${clases}" title="${titulo}"><span class="visualmente-oculto">${texto}</span></span>`;
+    const aLaVista = (clases, titulo, texto, largo, icono) => `<span class="me-tira ${clases}" title="${titulo}" style="--n:${largo}">`
+      + `${ICONO(icono)}<span class="me-tira-texto">${texto}</span></span>`;
+    const vacia = '<span class="me-tira vacia"></span>';
+    // La semana del 2: dos carriles (tus vacaciones y los compañeros); el lunes 2, los dos vacíos
+    assert.equal(carrilesDel('2026-11-02'), `<div class="me-carriles">${vacia}${vacia}</div>`);
+    assert.equal(carrilesDel('2026-11-03'), `<div class="me-carriles">${aLaVista('licencia inicio', VACACIONES_DEL_3, 'Vacaciones', 4, 'licencia')}`
+      + `${aLaVista('ausente inicio', JULIAN_HASTA_EL_6, 'Julián no está', 2, 'ausente')}</div>`);
+    assert.equal(carrilesDel('2026-11-04'), `<div class="me-carriles">${oculto('licencia', VACACIONES_DEL_3, 'Vacaciones')}`
+      + `${oculto('ausente fin', JULIAN_HASTA_EL_6, 'Julián no está')}</div>`);
+    // El 5, «Carla y Julián no están» a la vista; el 6, el mismo texto para el lector de pantalla
+    assert.equal(carrilesDel('2026-11-05'), `<div class="me-carriles">${oculto('licencia', VACACIONES_DEL_3, 'Vacaciones')}`
+      + `${aLaVista('ausente inicio', CARLA_Y_JULIAN, 'Carla y Julián no están', 2, 'ausente')}</div>`);
+    assert.equal(carrilesDel('2026-11-06'), `<div class="me-carriles">${oculto('licencia fin sigue-despues', VACACIONES_DEL_3, 'Vacaciones')}`
+      + `${oculto('ausente fin', CARLA_Y_JULIAN, 'Carla y Julián no están')}</div>`);
+    // El 9, las vacaciones que vienen del viernes (un día) y Carla, que empieza
+    assert.equal(carrilesDel('2026-11-09'), `<div class="me-carriles">${aLaVista('licencia inicio fin sigue-antes', VACACIONES_DEL_3, 'Vacaciones', 1, 'licencia')}`
+      + `${aLaVista('ausente inicio', CARLA_HASTA_EL_13, 'Carla no está', 5, 'ausente')}</div>`);
+    // El 16, las vacaciones del 16 al 20 (5 días); el lunes 23 (feriado), su lugar vacío
+    assert.equal(carrilesDel('2026-11-16'), `<div class="me-carriles">${aLaVista('licencia inicio', VACACIONES_DEL_16, 'Vacaciones', 5, 'licencia')}</div>`);
+    assert.equal(carrilesDel('2026-11-23'), `<div class="me-carriles">${vacia}</div>`);
+    // Cada día de una barra dice lo suyo: el texto, una vez en cada día de cada tramo
+    for (const fecha of ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13']) {
+      assert.equal([...celdaConFecha(html, fecha).html.matchAll(/Carla no está</g)].length, 1, fecha);
+    }
+    // Una semana sin licencias ni compañeros no tiene carriles; sin nada en el mes, ninguna barra
+    assert.ok(!celdaConFecha(M.htmlDelMes('2026-10', DEL_MES, HOY), '2026-10-05').html.includes('me-carriles'));
+    const sinNada = M.htmlDelMes('2026-11', deNoviembre({ licencias: [], ausencias: [] }), HOY);
+    assert.doesNotMatch(sinNada, /me-carriles|me-tira/);
+    // Las clases de la regla del Resumen (me-barra y me-muestra, con estilos globales en mi-espacio.html) no van en el mes, en el día
+    // elegido ni en los próximos
+    for (const otro of [html, M.htmlDelMes('2026-11', NOVIEMBRE_LLENO, HOY, { finde: true, animar: true, telefono: true }),
+      M.htmlDelDiaElegido('2026-11-05', NOVIEMBRE_LLENO, HOY), M.htmlDeProximos(M.gruposDeProximos(PROXIMOS, HOY))]) {
+      assert.doesNotMatch(otro, /me-barra|me-muestra/);
+    }
+  });
+
+  it('htmlDelMes: los renglones de cada cosa (data-lineas) con los lugares que dejan los carriles, y «y N más»', () => {
+    const datos = respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' }, {
+      eventos: [
+        eventoDe(81, 'Uno', '2026-10-07', '09:00'),
+        eventoDe(82, 'Dos', '2026-10-08', '09:00'), eventoDe(83, 'Dos más', '2026-10-08', '10:00'),
+        eventoDe(84, 'Tres', '2026-10-09', '09:00'), eventoDe(85, 'Tres más', '2026-10-09', '10:00'), eventoDe(86, 'Tres y más', '2026-10-09', '11:00'),
+        eventoDe(87, 'Con Martín afuera', '2026-10-26', '09:00')
+      ],
+      licencias: [], ausencias: [AUSENCIAS_DE_PRUEBA[0]]
     });
     const html = M.htmlDelMes('2026-10', datos, HOY);
-    assert.ok(!html.includes('<img'));
-    assert.ok(html.includes(`<button type="button" class="me-ev propio" data-evento="41" title="12:00 ${ESCAPADO} &quot;comillas&quot;">12:00 ${ESCAPADO} &quot;comillas&quot;</button>`));
-    assert.ok(html.includes(`<span class="me-ev ausente" title="${ESCAPADO} no está">${ESCAPADO} no está</span>`));
-    assert.ok(html.includes(`<span class="me-ev feriado" title="Feriado: ${ESCAPADO}">Feriado: ${ESCAPADO}</span>`));
+    // Sin carriles (cuatro lugares): una cosa, 3 renglones; dos, 2 y 2; tres, uno cada una
+    assert.deepEqual(renglonesDeLaCelda(celdaConFecha(html, '2026-10-07')), ['3']);
+    assert.deepEqual(renglonesDeLaCelda(celdaConFecha(html, '2026-10-08')), ['2', '2']);
+    assert.deepEqual(renglonesDeLaCelda(celdaConFecha(html, '2026-10-09')), ['1', '1', '1']);
+    // Un carril (Martín, la semana del 26): una cosa, 3 renglones
+    assert.deepEqual(renglonesDeLaCelda(celdaConFecha(html, '2026-10-26')), ['3']);
+    assert.ok(celdaConFecha(html, '2026-10-07').html.includes('<div class="me-cosas"><button type="button" class="me-ev propio" data-lineas="3" '
+      + 'data-evento="81" title="09:00 Uno"><b>09:00</b> Uno</button></div>'));
+    // Dos carriles (la semana del 2 de noviembre): una cosa, 2 renglones
+    assert.deepEqual(renglonesDeLaCelda(celdaConFecha(M.htmlDelMes('2026-11', NOVIEMBRE_LLENO, HOY), '2026-11-02')), ['2']);
+    // El jueves 5, dos carriles y cuatro eventos: uno a la vista, de un renglón, y «y 3 más» con el resto
+    const el5 = celdaConFecha(M.htmlDelMes('2026-11', NOVIEMBRE_LLENO, HOY), '2026-11-05');
+    assert.deepEqual(el5.clases, ['me-celda']);
+    assert.deepEqual(renglonesDeLaCelda(el5), ['1']);
+    assert.equal(el5.html, '<div class="me-celda-cuerpo">'
+      + '<button type="button" class="me-num" data-dia="2026-11-05" tabindex="-1" aria-label="Nuevo evento el jueves 05/11">5</button>'
+      + '<div class="me-carriles"><span class="me-tira licencia" title="Vacaciones. Hasta el lunes 09/11"><span class="visualmente-oculto">Vacaciones</span></span>'
+      + `<span class="me-tira ausente inicio" title="${CARLA_Y_JULIAN}" style="--n:2">${ICONO('ausente')}<span class="me-tira-texto">Carla y Julián no están</span></span></div>`
+      + '<div class="me-cosas"><button type="button" class="me-ev propio" data-lineas="1" data-evento="71" title="08:00 Primera"><b>08:00</b> Primera</button>'
+      + '<div class="me-resto" hidden>'
+      + '<button type="button" class="me-ev propio" data-lineas="1" data-evento="72" title="09:00 Segunda"><b>09:00</b> Segunda</button>'
+      + `<button type="button" class="me-ev compartido" data-lineas="1" data-evento="73" title="10:00 Tercera">${ICONO('compartido')}<b>10:00</b> Tercera</button>`
+      + '<button type="button" class="me-ev propio" data-lineas="1" data-evento="74" title="11:00 Cuarta"><b>11:00</b> Cuarta</button></div>'
+      + '<button type="button" class="me-mas" data-ver-mas="2026-11-05">y 3 más</button></div>'
+      + '<span class="me-puntos" aria-hidden="true"><i class="propio"></i><i class="propio"></i><i class="compartido"></i><i class="propio"></i></span></div>');
+    // El feriado, con la bandera; el 15 de UN_DIA_LLENO (dos carriles: la franquicia y Martín), el feriado a la vista y «y 2 más»
+    const el15 = celdaConFecha(M.htmlDelMes('2026-10', UN_DIA_LLENO, HOY), '2026-10-15');
+    assert.deepEqual(el15.clases, ['me-celda', 'feriado', 'paso']);
+    assert.ok(el15.html.includes('<div class="me-cosas">'
+      + `<span class="me-ev feriado" data-lineas="1" title="Feriado: Feriado de prueba">${ICONO('feriado')}Feriado: Feriado de prueba</span>`
+      + '<div class="me-resto" hidden><button type="button" class="me-ev compartido" data-lineas="1" data-evento="32" title="09:00 Café con Catastro">'));
+    assert.ok(el15.html.endsWith('<button type="button" class="me-mas" data-ver-mas="2026-10-15">y 2 más</button></div>'
+      + '<span class="me-puntos" aria-hidden="true"><i class="feriado"></i><i class="compartido"></i><i class="propio"></i></span></div>'));
+    // Con tres justas y lugar para ellas, ningún «más»; un día sin nada, sus cosas y sus puntos vacíos
+    assert.ok(!celdaConFecha(html, '2026-10-09').html.includes('me-mas'));
+    assert.ok(celdaConFecha(html, '2026-10-05').html.endsWith('<div class="me-cosas"></div><span class="me-puntos" aria-hidden="true"></span></div>'));
+  });
+
+  // Ruling 2 del plan: --n siempre en el principio de un tramo; --demora, solo con el movimiento
+  it('htmlDelMes: con animar, cada pedazo de barra (salvo los vacíos) con su --demora (semana × 0,16 s + columna × 0,05 s); sin animar, ninguna', () => {
+    const animado = M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, { animar: true });
+    const piezas = barrasDelHtml(animado);
+    assert.ok(piezas.length > 0);
+    for (const pieza of piezas) {
+      if (pieza.clases.includes('vacia')) assert.equal(pieza.atributos.style, undefined);
+      else {
+        const conLargo = pieza.clases.includes('inicio') ? '--n:\\d+;' : '';
+        assert.match(pieza.atributos.style, new RegExp(`^${conLargo}--demora:\\d\\.\\d\\ds$`), JSON.stringify(pieza));
+      }
+    }
+    // El 5 (semana 0, columna 3), el 9 (1, 0), el 16 (2, 0) y el 24 (3, 1)
+    const estilos = (fecha) => barrasDelHtml(celdaConFecha(animado, fecha).html).map((pieza) => pieza.atributos.style);
+    assert.deepEqual(estilos('2026-11-05'), ['--demora:0.15s', '--n:2;--demora:0.15s']);
+    assert.deepEqual(estilos('2026-11-09'), ['--n:1;--demora:0.16s', '--n:5;--demora:0.16s']);
+    assert.deepEqual(estilos('2026-11-16'), ['--n:5;--demora:0.32s']);
+    assert.deepEqual(estilos('2026-11-24'), ['--n:4;--demora:0.53s']);
+    assert.deepEqual(estilos('2026-11-23'), [undefined]);
+    // Sin animar (o con algo que no es el true literal): ningún --demora, y --n en cada principio de tramo y en ningún otro
+    for (const opciones of [{}, { animar: false }, { animar: 'si' }, { animar: 1 }]) {
+      const quieto = M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, opciones);
+      assert.ok(!quieto.includes('--demora'), JSON.stringify(opciones));
+      for (const pieza of barrasDelHtml(quieto)) {
+        if (pieza.clases.includes('inicio')) assert.match(pieza.atributos.style, /^--n:\d+$/);
+        else assert.equal(pieza.atributos.style, undefined);
+      }
+      assert.equal([...quieto.matchAll(/--n:/g)].length, barrasDelHtml(quieto).filter((pieza) => pieza.clases.includes('inicio')).length);
+    }
+  });
+
+  it('htmlDelMes: en el teléfono, el número dice «Ver el lunes 02/11»', () => {
+    const html = M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, { telefono: true });
+    assert.ok(html.includes('<button type="button" class="me-num" data-dia="2026-11-02" tabindex="0" aria-label="Ver el lunes 02/11">2</button>'));
+    for (const numero of numerosDe(html)) assert.equal(numero.etiqueta, `Ver el ${diaLargo(numero.fecha)}`, numero.fecha);
+    // Solo el true literal
+    for (const telefono of ['si', 1]) assert.ok(!M.htmlDelMes('2026-11', DE_NOVIEMBRE, HOY, { telefono }).includes('aria-label="Ver el'), String(telefono));
+  });
+
+  // Revisión final, 3: en el teléfono, lo de cada día (.me-cosas) no se ve y los puntos van con aria-hidden: el día elegido es lo único
+  // que un lector de pantalla tiene de un día, y el anillo del elegido es solo visual. Su número lo dice con aria-current="true"
+  it('htmlDelMes: en el teléfono, el número del día elegido (solo ese) con aria-current="true"; en la compu, ninguno; hoy sigue con aria-current="date"', () => {
+    const actuales = (html) => [...html.matchAll(/<button type="button" class="me-num" data-dia="([^"]*)"[^>]*aria-current="true"[^>]*>/g)].map(([, fecha]) => fecha);
+    const telefono = M.htmlDelMes('2026-10', DEL_MES, HOY, { telefono: true, elegido: '2026-10-22' });
+    assert.deepEqual(actuales(telefono), ['2026-10-22']);
+    assert.equal([...telefono.matchAll(/aria-current="true"/g)].length, 1);
+    assert.ok(telefono.includes('<button type="button" class="me-num" data-dia="2026-10-22" tabindex="-1" aria-label="Ver el jueves 22/10" aria-current="true">22</button>'));
+    // La celda de hoy conserva el suyo (y su número no lleva el del elegido)
+    assert.equal(celdaConFecha(telefono, HOY).atributos['aria-current'], 'date');
+    assert.equal([...telefono.matchAll(/aria-current="date"/g)].length, 1);
+    // Elegido hoy: la celda con «date» y su número con «true»
+    const elegidoHoy = M.htmlDelMes('2026-10', DEL_MES, HOY, { telefono: true, elegido: HOY });
+    assert.deepEqual(actuales(elegidoHoy), [HOY]);
+    assert.equal(celdaConFecha(elegidoHoy, HOY).atributos['aria-current'], 'date');
+    // En la compu (o con algo que no es el true literal), ninguno; sin elegido, o con uno que no se ve, tampoco
+    for (const opciones of [{ elegido: '2026-10-22' }, { telefono: false, elegido: '2026-10-22' }, { telefono: 'si', elegido: '2026-10-22' },
+      { telefono: true }, { telefono: true, elegido: '2026-10-31' }, { telefono: true, elegido: 'raro' }]) {
+      assert.doesNotMatch(M.htmlDelMes('2026-10', DEL_MES, HOY, opciones), /aria-current="true"/, JSON.stringify(opciones));
+    }
+    // numerosDe los lee igual
+    assert.equal(numerosDe(telefono).length, celdasDe(telefono).length);
+  });
+
+  it('htmlDelMes: con tres argumentos, lo de entrada (sin sábado y domingo, sin elegido ni foco, en la compu y quieto)', () => {
+    const tres = M.htmlDelMes('2026-10', DEL_MES, HOY);
+    for (const opciones of [undefined, {}, null, 'x', 5, { finde: false, elegido: null, foco: null, telefono: false, animar: false }]) {
+      assert.equal(M.htmlDelMes('2026-10', DEL_MES, HOY, opciones), tres, JSON.stringify(opciones));
+    }
+  });
+
+  // Review Focus 2: el HTML de un título o de un nombre es texto, también en el title y en lo oculto
+  it('htmlDelMes: un título, un feriado y un nombre con HTML se ven escapados, en el texto, en el title y en lo oculto', () => {
+    const datos = deNoviembre({
+      eventos: [eventoDe(91, `${CON_HTML} y más`, '2026-11-04', '10:00'), eventoDe(92, MALICIOSO, '2026-11-11', '10:00')],
+      licencias: [],
+      ausencias: [{ nombre: CON_HTML, desde: '2026-11-03', hasta: '2026-11-04' }, { nombre: MALICIOSO_EN_UNA_PALABRA, desde: '2026-11-10', hasta: '2026-11-10' }],
+      feriados: [{ ...FERIADO_DEL_EMPLEADO, fecha: '2026-11-12', nombre: CON_HTML }]
+    });
+    const html = M.htmlDelMes('2026-11', datos, HOY);
+    assert.ok(!html.includes('<img') && !html.includes('<b>&'));
+    const titulo = `title="${CON_HTML_ESCAPADO} no está. Hasta el miércoles 04/11."`;
+    assert.ok(celdaConFecha(html, '2026-11-03').html.includes(`<span class="me-tira ausente inicio" ${titulo} style="--n:2">${ICONO('ausente')}`
+      + `<span class="me-tira-texto">${CON_HTML_ESCAPADO} no está</span></span>`));
+    assert.ok(celdaConFecha(html, '2026-11-04').html.includes(`<span class="me-tira ausente fin" ${titulo}>`
+      + `<span class="visualmente-oculto">${CON_HTML_ESCAPADO} no está</span></span>`));
+    assert.ok(html.includes(`<button type="button" class="me-ev propio" data-lineas="3" data-evento="91" title="10:00 ${CON_HTML_ESCAPADO} y más">`
+      + `<b>10:00</b> ${CON_HTML_ESCAPADO} y más</button>`));
+    assert.ok(html.includes(`data-evento="92" title="10:00 ${ESCAPADO}"><b>10:00</b> ${ESCAPADO}</button>`));
+    assert.ok(html.includes(`<span class="me-ev feriado" data-lineas="3" title="Feriado: ${CON_HTML_ESCAPADO}">${ICONO('feriado')}Feriado: ${CON_HTML_ESCAPADO}</span>`));
+    assert.ok(html.includes(`<span class="me-tira-texto">${ESCAPADO_EN_UNA_PALABRA} no está</span>`));
+  });
+
+  it('htmlDelMes: nada que se vuelve a dibujar es una región viva', () => {
+    for (const html of [M.htmlDelMes('2026-10', DEL_MES, HOY), M.htmlDelMes('2026-11', NOVIEMBRE_LLENO, HOY, { finde: true, animar: true, telefono: true }),
+      M.htmlDelDiaElegido('2026-11-05', NOVIEMBRE_LLENO, HOY)]) {
+      assert.doesNotMatch(html, /aria-live|role="status"|role="alert"/);
+    }
+  });
+
+  it('htmlDelDiaElegido: la fecha (hoy), «Nuevo evento» con esa fecha y la lista de ese día, con los eventos como botones', () => {
+    assert.match(M.ICONO_DE_MAS, /^<svg [^>]*aria-hidden="true"[^>]*>[\s\S]*<\/svg>$/);
+    assert.equal(M.htmlDelDiaElegido('2026-10-28', DE_NOVIEMBRE, '2026-10-28'),
+      '<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">Miércoles 28 de octubre (hoy)</h3>'
+      + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-el="2026-10-28">${M.ICONO_DE_MAS}Nuevo evento</button></div>`
+      + '<ul class="me-elegido-lista"><li class="me-fila-del-dia propio"><button type="button" class="me-elegido-cosa" data-evento="13">'
+      + '<span class="me-elegido-icono" aria-hidden="true"><i></i></span><span class="me-elegido-hora">15:30</span> '
+      + '<span class="me-elegido-texto">Turno médico <small>Solo vos</small></span></button></li></ul>');
+    // Otro día, sin «(hoy)»; sin nada, «No hay nada este día.»
+    assert.equal(M.htmlDelDiaElegido('2026-11-02', deNoviembre({ eventos: [] }), HOY),
+      '<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">Lunes 2 de noviembre</h3>'
+      + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-el="2026-11-02">${M.ICONO_DE_MAS}Nuevo evento</button></div>`
+      + '<p class="me-vacio">No hay nada este día.</p>');
+  });
+
+  it('htmlDelDiaElegido: los feriados, tu licencia y los compañeros, «Todo el día», y después los eventos por hora', () => {
+    const datos = respuestaDeEventos(RANGO_DE_NOVIEMBRE, {
+      eventos: [eventoDe(75, 'Revisar el informe', '2026-11-05', '16:00'), eventoDe(76, 'Café con Catastro', '2026-11-05', '09:00', DE_JULIAN)],
+      licencias: [LICENCIAS_DE_PRUEBA[1]],
+      ausencias: [{ nombre: 'Julián', desde: '2026-11-03', hasta: '2026-11-06' }, { nombre: 'Carla', desde: '2026-11-05', hasta: '2026-11-13' }],
+      feriados: [{ ...FERIADO_DEL_EMPLEADO, fecha: '2026-11-05', nombre: 'Feriado de prueba' }]
+    });
+    const html = M.htmlDelDiaElegido('2026-11-05', datos, HOY);
+    assert.ok(html.startsWith('<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">Jueves 5 de noviembre</h3>'));
+    assert.deepEqual(filasDe(html).map(({ clases, texto }) => ({ clases, texto })), [
+      { clases: ['me-fila-del-dia', 'feriado'], texto: 'Todo el día Feriado: Feriado de prueba' },
+      { clases: ['me-fila-del-dia', 'licencia'], texto: 'Todo el día Vacaciones' },
+      { clases: ['me-fila-del-dia', 'ausente'], texto: 'Todo el día Carla y Julián no están' },
+      { clases: ['me-fila-del-dia', 'compartido'], texto: '09:00 Café con Catastro De Julián' },
+      { clases: ['me-fila-del-dia', 'propio'], texto: '16:00 Revisar el informe Solo vos' }
+    ]);
+    // Cada fila con su ícono (lo que es solo tuyo, un punto); lo de todo el día no es un botón
+    const filas = filasDe(html);
+    assert.ok(filas[0].html.startsWith(`<div class="me-elegido-cosa"><span class="me-elegido-icono" aria-hidden="true">${ICONO('feriado')}</span>`
+      + '<span class="me-elegido-hora">Todo el día</span> <span class="me-elegido-texto">Feriado: Feriado de prueba</span></div>'));
+    assert.ok(filas[1].html.includes(`<span class="me-elegido-icono" aria-hidden="true">${ICONO('licencia')}</span>`));
+    assert.ok(filas[2].html.includes(`<span class="me-elegido-icono" aria-hidden="true">${ICONO('ausente')}</span>`));
+    assert.ok(filas[3].html.startsWith('<button type="button" class="me-elegido-cosa" data-evento="76">'
+      + `<span class="me-elegido-icono" aria-hidden="true">${ICONO('compartido')}</span>`));
+    assert.deepEqual(botonesDe(html).map(({ atributos }) => atributos['data-evento'] ?? atributos['data-nuevo-el']), ['2026-11-05', '76', '75']);
+    // Los compañeros, el texto del servidor de ese día; un día de feriado sin licencia ni compañeros (el domingo 8)
+    assert.deepEqual(filasDe(M.htmlDelDiaElegido('2026-11-08', DE_NOVIEMBRE, HOY)).map((fila) => fila.texto),
+      ['Todo el día Feriado: Día del Empleado Municipal']);
+    assert.deepEqual(filasDe(M.htmlDelDiaElegido('2026-11-09', DE_NOVIEMBRE, HOY)).map((fila) => fila.texto),
+      ['Todo el día Vacaciones', 'Todo el día Carla no está']);
+  });
+
+  it('htmlDelDiaElegido: lo del servidor, escapado; una fecha que no sirve, nada; sin datos, el día vacío', () => {
+    const datos = deNoviembre({
+      eventos: [eventoDe(93, MALICIOSO, '2026-11-04', '10:00', { ...DE_JULIAN, creador: MALICIOSO_EN_UNA_PALABRA })],
+      ausencias: [{ nombre: CON_HTML, desde: '2026-11-04', hasta: '2026-11-04' }],
+      feriados: [{ ...FERIADO_DEL_EMPLEADO, fecha: '2026-11-04', nombre: CON_HTML }], conFeriados: false
+    });
+    const html = M.htmlDelDiaElegido('2026-11-04', datos, HOY);
+    assert.ok(!html.includes('<img') && !html.includes('<b>&'));
+    assert.ok(html.includes(`<span class="me-elegido-texto">Feriado: ${CON_HTML_ESCAPADO}</span>`));
+    assert.ok(html.includes(`<span class="me-elegido-texto">${CON_HTML_ESCAPADO} no está</span>`));
+    assert.ok(html.includes(`<span class="me-elegido-texto">${ESCAPADO} <small>De ${ESCAPADO_EN_UNA_PALABRA}</small></span>`));
+    for (const raro of ['raro', '2026-02-30', '', null, undefined, 20261104]) assert.equal(M.htmlDelDiaElegido(raro, datos, HOY), '', String(raro));
+    // Con lo del mes, aunque venga raro, el día vacío
+    for (const raro of [{}, { eventos: 'x', companeros_por_dia: [null] }]) {
+      assert.ok(M.htmlDelDiaElegido('2026-11-04', raro, HOY).endsWith('<p class="me-vacio">No hay nada este día.</p>'), JSON.stringify(raro));
+    }
+  });
+
+  // Revisión final, 2: sin lo del mes (mientras se pide, o si no se pudo cargar) no se sabe qué hay ese día: «No hay nada este día.»
+  // aparecía un momento en cada cambio de mes y, si el mes fallaba, quedaba debajo de «No se pudo cargar el mes»
+  it('htmlDelDiaElegido: sin lo del mes, solo el título (siempre: nombra la sección) y «Nuevo evento», sin lista ni «No hay nada este día.»', () => {
+    const cabeza = '<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">Miércoles 4 de noviembre</h3>'
+      + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-el="2026-11-04">${M.ICONO_DE_MAS}Nuevo evento</button></div>`;
+    for (const sinDatos of [null, undefined, 'x', 5, true, ['eventos']]) {
+      assert.equal(M.htmlDelDiaElegido('2026-11-04', sinDatos, HOY), cabeza, JSON.stringify(sinDatos));
+    }
+    assert.equal(M.htmlDelDiaElegido(HOY, null, HOY), '<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">Lunes 26 de octubre (hoy)</h3>'
+      + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-el="${HOY}">${M.ICONO_DE_MAS}Nuevo evento</button></div>`);
+  });
+
+  // Revisión final, 3: el título del día elegido, solo (lo que se anuncia al elegir un día en el teléfono)
+  it('tituloDelDiaElegido: «Jueves 22 de octubre», con « (hoy)» si es hoy; es el título del día elegido', () => {
+    assert.equal(M.tituloDelDiaElegido('2026-10-22', HOY), 'Jueves 22 de octubre');
+    assert.equal(M.tituloDelDiaElegido(HOY, HOY), 'Lunes 26 de octubre (hoy)');
+    assert.equal(M.tituloDelDiaElegido('2026-11-01', HOY), 'Domingo 1 de noviembre');
+    for (const raro of ['raro', '2026-02-30', '', null, undefined]) assert.equal(M.tituloDelDiaElegido(raro, HOY), '', String(raro));
+    for (const fecha of ['2026-10-22', HOY, '2026-11-01']) {
+      assert.ok(M.htmlDelDiaElegido(fecha, DE_NOVIEMBRE, HOY).startsWith(`<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">${M.tituloDelDiaElegido(fecha, HOY)}</h3>`), fecha);
+    }
   });
 });
 
@@ -1300,7 +1992,7 @@ describe('la agenda: los próximos', () => {
     ] },
     { titulo: 'Esta semana', items: [
       { hora: 'Mié 28', titulo: '15:30 Turno médico', detalle: 'Aviso el día hábil anterior', clase: 'propio', quien: 'Solo vos', evento_id: 13 },
-      { hora: 'Jue 29', titulo: '09:00 Entrega del informe trimestral', detalle: 'Aviso 2 h antes', clase: 'compartido', quien: 'De Martín Ríos',
+      { hora: 'Jue 29', titulo: '09:00 Entrega del informe trimestral', detalle: 'Aviso 2 h antes', clase: 'compartido', quien: 'De Martín',
         evento_id: 14 },
       { hora: 'Vie 30', titulo: 'Sofía Paz no está', detalle: '', clase: 'ausente' }
     ] },
@@ -1343,7 +2035,7 @@ describe('la agenda: los próximos', () => {
     ]);
   });
 
-  it('htmlDeProximos: cada grupo con su título y cada cosa con la hora, el título y el detalle; un evento es un botón con su id', () => {
+  it('htmlDeProximos: cada grupo con su título y cada cosa con la hora, el ícono, el título y el detalle; un evento es un botón con su id', () => {
     const html = M.htmlDeProximos(M.gruposDeProximos(PROXIMOS, HOY));
     assert.deepEqual([...html.matchAll(/<h3>([^<]*)<\/h3>/g)].map(([, titulo]) => titulo),
       ['Hoy, lunes 26/10', 'Mañana, martes 27/10', 'Esta semana', 'Más adelante']);
@@ -1351,14 +2043,25 @@ describe('la agenda: los próximos', () => {
       + '12:00 Llamar a Vialidad por el TMDA Solo vos Aviso 2 h antes '
       + 'Mañana, martes 27/10 10:00 Reunión de equipo Con 4 personas Aviso 2 h antes '
       + 'Esta semana Mié 28 15:30 Turno médico Solo vos Aviso el día hábil anterior '
-      + 'Jue 29 09:00 Entrega del informe trimestral De Martín Ríos Aviso 2 h antes Vie 30 Sofía Paz no está '
+      + 'Jue 29 09:00 Entrega del informe trimestral De Martín Aviso 2 h antes Vie 30 Sofía Paz no está '
       + 'Más adelante Lun 02/11 10:00 Reunión de equipo Con todos Aviso 2 h antes Mar 03/11 Vacaciones Hasta el lunes 09/11 '
       + 'Lun 23/11 Feriado: Día de la Soberanía Nacional');
+    // El ícono de cada cosa, decorativo, adentro del título y antes del texto (lo que es solo tuyo, un punto)
     assert.ok(html.includes('<li class="me-prox propio"><span class="me-prox-hora">12:00</span>'
-      + '<button type="button" class="me-prox-titulo" data-evento="11">Llamar a Vialidad por el TMDA</button>'
+      + '<button type="button" class="me-prox-titulo" data-evento="11"><span class="me-prox-icono propio" aria-hidden="true"><i></i></span>'
+      + 'Llamar a Vialidad por el TMDA</button>'
       + '<span class="me-prox-detalle"><span class="me-insignia azul">Solo vos</span>Aviso 2 h antes</span></li>'));
-    assert.ok(html.includes('<span class="me-prox-detalle"><span class="me-insignia violeta">De Martín Ríos</span>Aviso 2 h antes</span>'));
-    assert.ok(html.includes('<li class="me-prox ausente"><span class="me-prox-hora">Vie 30</span><span class="me-prox-titulo">Sofía Paz no está</span></li>'));
+    assert.ok(html.includes('<span class="me-prox-detalle"><span class="me-insignia violeta">De Martín</span>Aviso 2 h antes</span>'));
+    assert.ok(html.includes('<li class="me-prox ausente"><span class="me-prox-hora">Vie 30</span><span class="me-prox-titulo">'
+      + `<span class="me-prox-icono ausente" aria-hidden="true">${ICONO('ausente')}</span>Sofía Paz no está</span></li>`));
+    assert.ok(html.includes('data-evento="14"><span class="me-prox-icono compartido" aria-hidden="true">'
+      + `${ICONO('compartido')}</span>09:00 Entrega del informe trimestral</button>`));
+    assert.ok(html.includes(`<span class="me-prox-titulo"><span class="me-prox-icono licencia" aria-hidden="true">${ICONO('licencia')}</span>Vacaciones</span>`));
+    assert.ok(html.includes('<span class="me-prox-titulo"><span class="me-prox-icono feriado" aria-hidden="true">'
+      + `${ICONO('feriado')}</span>Feriado: Día de la Soberanía Nacional</span>`));
+    // Uno en cada cosa, de su color
+    assert.deepEqual(filasDe(html).map((fila) => [...fila.html.matchAll(/<span class="me-prox-icono ([^"]*)"/g)].map(([, clase]) => clase)),
+      filasDe(html).map((fila) => [fila.clases[1]]));
     assert.deepEqual(botonesDe(html).map(({ atributos }) => atributos['data-evento']), ['11', '12', '13', '14', '15']);
     assert.doesNotMatch(html, /aria-live|role="/);
   });
@@ -1372,14 +2075,16 @@ describe('la agenda: los próximos', () => {
   // Review Focus 2
   it('htmlDeProximos: un título y un nombre con HTML se ven escapados', () => {
     const datos = respuestaDeEventos({ desde: '2026-10-26', hasta: '2026-11-25' }, {
-      eventos: [eventoDe(61, MALICIOSO, '2026-10-26', '12:00'), eventoDe(62, 'Otro', '2026-10-28', '10:00', { ...DE_MARTIN, creador: MALICIOSO })],
+      eventos: [eventoDe(61, MALICIOSO, '2026-10-26', '12:00'),
+        eventoDe(62, 'Otro', '2026-10-28', '10:00', { ...DE_MARTIN, creador: MALICIOSO_EN_UNA_PALABRA })],
       ausencias: [{ nombre: MALICIOSO, desde: '2026-10-29', hasta: '2026-10-29' }], licencias: [], feriados: []
     });
     const html = M.htmlDeProximos(M.gruposDeProximos(datos, HOY));
     assert.ok(!html.includes('<img'));
-    assert.ok(html.includes(`data-evento="61">${ESCAPADO}</button>`));
-    assert.ok(html.includes(`<span class="me-insignia violeta">De ${ESCAPADO}</span>`));
-    assert.ok(html.includes(`<span class="me-prox-titulo">${ESCAPADO} no está</span>`));
+    assert.ok(html.includes(`data-evento="61"><span class="me-prox-icono propio" aria-hidden="true"><i></i></span>${ESCAPADO}</button>`));
+    assert.ok(html.includes(`<span class="me-insignia violeta">De ${ESCAPADO_EN_UNA_PALABRA}</span>`));
+    assert.ok(html.includes(`<span class="me-prox-titulo"><span class="me-prox-icono ausente" aria-hidden="true">${ICONO('ausente')}</span>`
+      + `${ESCAPADO} no está</span>`));
   });
 });
 
@@ -1543,17 +2248,57 @@ const RESPUESTAS_DE_ENTRADA = (metodo, ruta) => {
   return respuesta(404, { success: false, error: `Sin respuesta para ${metodo} ${ruta}` });
 };
 
+// La consulta del teléfono (la de mi-espacio.js) y la de menos movimiento
+const CONSULTA_DEL_TELEFONO = '(max-width: 640px)';
+const CONSULTA_DE_MENOS_MOVIMIENTO = '(prefers-reduced-motion: reduce)';
+// El localStorage del navegador, falso, sobre un Map (lo comparten dos montajes que reciben el mismo); con 'tira', uno que tira en
+// cada lectura y escritura (el de una ventana privada o con el almacenamiento bloqueado)
+const almacenamientoDe = (almacen) => (almacen === 'tira'
+  ? {
+    getItem: () => { throw new Error('SecurityError: el almacenamiento está bloqueado'); },
+    setItem: () => { throw new Error('QuotaExceededError: no entra'); },
+    removeItem: () => { throw new Error('SecurityError: el almacenamiento está bloqueado'); }
+  }
+  : {
+    getItem: (clave) => (almacen.has(clave) ? almacen.get(clave) : null),
+    setItem: (clave, valor) => { almacen.set(clave, String(valor)); },
+    removeItem: (clave) => { almacen.delete(clave); }
+  });
+
 // `cuadros`: con true, la ventana tiene un requestAnimationFrame que anota las funciones en estado.cuadros (las corre el test);
 // sin él, la página no anima. `reducido`: con true, la ventana tiene un matchMedia que dice que la persona pidió menos movimiento
-// (prefers-reduced-motion: reduce); sin él, no hay matchMedia. Los temporizadores no corren solos: `correr` corre los que hay (el
+// (prefers-reduced-motion: reduce). `telefono`: con true o false, la ventana tiene un matchMedia que dice si la pantalla es la del
+// teléfono (CONSULTA_DEL_TELEFONO, 640 px o menos), y `cambiarElAncho(true|false)` la cambia y avisa a quien escucha su 'change';
+// sin `reducido` ni `telefono`, no hay matchMedia. `almacen`: el Map del localStorage de la ventana (de entrada, uno nuevo; dos
+// montajes con el mismo comparten lo guardado), 'tira' para uno que tira, o null para una ventana sin localStorage. Los
+// temporizadores no corren solos: `correr` corre los que hay (el
 // foco de los modales y la espera del cálculo). `auditor`: lo que contesta Auth.isAuditor(); `admin`, Auth.isAdmin() (la página lo
 // pregunta solo al abrir el formulario del evento: compartir es de administración). Hoy es HOY. `estado.toasts`: cada showToast (el
 // de main.js), [mensaje, tipo]. Cada pedido anota sus encabezados (`encabezados`). Las descargas: `estado.urls`, cada
 // URL.createObjectURL (['crear', blob]) y revokeObjectURL (['soltar', url]), y `estado.descargas`, cada clic en un elemento creado
 // con document.createElement (el <a download> de descargarBlob): { etiqueta, href, download }
-const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, reducido = false, auditor = false, admin = false } = {}) => {
+const montarPagina = ({
+  hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = false, reducido = false, telefono = null, almacen = new Map(), auditor = false,
+  admin = false
+} = {}) => {
   const { dom, documento } = crearDom();
-  const estado = { pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [], toasts: [], urls: [], descargas: [] };
+  const estado = {
+    pedidos: [], direcciones: [], sesionCerrada: false, responder, cuadros: [], toasts: [], urls: [], descargas: [],
+    telefono: telefono === true, medidas: []
+  };
+  // Cada MediaQueryList que pide la página, con sus oyentes de 'change'; `matches` se lee en el momento
+  const matchMedia = (consulta) => {
+    const medida = {
+      consulta, oyentes: [],
+      get matches() {
+        if (consulta === CONSULTA_DE_MENOS_MOVIMIENTO) return reducido;
+        return consulta === CONSULTA_DEL_TELEFONO ? estado.telefono : false;
+      },
+      addEventListener: (tipo, funcion) => { if (tipo === 'change') medida.oyentes.push(funcion); }
+    };
+    estado.medidas.push(medida);
+    return medida;
+  };
   const crearElemento = documento.createElement;
   documento.createElement = (etiqueta) => {
     const nuevo = crearElemento(etiqueta);
@@ -1573,7 +2318,8 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
     },
     addEventListener() {},
     ...(cuadros ? { requestAnimationFrame: (funcion) => { estado.cuadros.push(funcion); return estado.cuadros.length; } } : {}),
-    ...(reducido ? { matchMedia: (consulta) => ({ matches: consulta === '(prefers-reduced-motion: reduce)' }) } : {})
+    ...(reducido || telefono !== null ? { matchMedia } : {}),
+    ...(almacen === null ? {} : { localStorage: almacenamientoDe(almacen) })
   };
   const contexto = vm.createContext({
     CONFIG: { API_URL: '/api' },
@@ -1660,9 +2406,17 @@ const montarPagina = ({ hash = '', responder = RESPUESTAS_DE_ENTRADA, cuadros = 
   // con `tiempo`, el momento del cuadro en ms (el que da requestAnimationFrame); sin él, un cuadro sin tiempo
   const cuadro = (tiempo) => { for (const funcion of estado.cuadros.splice(0)) funcion(tiempo); };
   const abierto = (id) => el(id).classList.contains('active');
+  // La pantalla pasa a ser la del teléfono (true) o la de la compu (false): avisa a quien escucha el 'change' de su consulta
+  const cambiarElAncho = async (enElTelefono) => {
+    estado.telefono = enElTelefono;
+    for (const medida of estado.medidas.filter((una) => una.consulta === CONSULTA_DEL_TELEFONO)) {
+      for (const funcion of medida.oyentes) funcion({ matches: enElTelefono, media: CONSULTA_DEL_TELEFONO });
+    }
+    await esperar();
+  };
   return {
     contexto, dom, documento, ventana, estado, el, rutas, pedidosA, iniciar, tocar, esperar, correr, escribir, elegir, tecla,
-    cuadro, abierto
+    cuadro, abierto, cambiarElAncho
   };
 };
 
@@ -1703,7 +2457,8 @@ describe('mi-espacio.js: la página (DOM falso)', () => {
   it('un número del resto lleva a su pestaña: la abre (la pide la primera vez), escribe el fragmento y el foco va a la pestaña', async () => {
     const pagina = montarPagina();
     await pagina.iniciar();
-    const numero = pagina.el('vista-resumen').querySelectorAll('[data-pestana]').find((link) => link.getAttribute('href') === '#licencias');
+    // El primero del resto que lleva a Licencias (el link de la bajada también va ahí, en su año: está más abajo)
+    const numero = pagina.el('vista-resumen').querySelectorAll('.me-numero[data-pestana]').find((link) => link.getAttribute('href') === '#licencias');
     assert.ok(numero.classList.contains('me-numero'));
     const evento = numero.disparar('click');
     await pagina.esperar();
@@ -2265,6 +3020,11 @@ describe('los formularios: las paridades', () => {
     assert.equal(M.JORNADA, JORNADA);
     assert.equal(M.LARGO_NOTA, LARGO_NOTA);
     for (const maximo of [0, 7, 15, 25, 30, 42, 200]) assert.equal(M.textoSaldo(maximo), textoSaldo(maximo), String(maximo));
+    // La ayuda del campo de la licencia del año del arranque (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): la única
+    // que cambia con los días que se eligen en el modal
+    for (const [maximo, anio] of [[5, 2026], [8, 2026], [10, 2026], [13, 2027], [15, 2025], [0, 2026]]) {
+      assert.equal(M.textoSaldoDelArranque(maximo, anio), textoSaldoDelArranque(maximo, anio), `${maximo} ${anio}`);
+    }
     assert.equal(M.TEXTO_SIN_ARRANQUE, MENSAJES_MI_ESPACIO.sinArranque);
     // Los tipos de un solo día y los que se cargan en horas
     assert.deepEqual(plano(M.TIPOS_DE_UN_DIA), [...TIPOS_DE_UN_DIA]);
@@ -2320,16 +3080,22 @@ describe('los formularios: las paridades', () => {
   });
 
   // «Mis vacaciones y saldos» muestra los campos de «Para arrancar» con lo que se elige en el modal, antes de guardarlo: el máximo
-  // de las vacaciones del año (la primera mitad) y el campo de los estudios dependen de los días y de la carrera del año
+  // de las vacaciones del año (la primera mitad), su ayuda (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8) y el campo de
+  // los estudios dependen de los días y de la carrera del año. Las ayudas de los años anteriores llegan del servidor y no cambian
   it('camposConLoElegido da los campos de camposDelSaldoInicial con los días y los estudios que se eligen', () => {
     const sinValor = (campos) => plano(campos).map(({ valor, ...campo }) => campo);
+    const anteriores = [{ anio: 2024, dias_vacaciones: 25, estudios: null }, { anio: 2025, dias_vacaciones: 15, estudios: 'secundario' }];
     for (const modalidad of ['planta', 'contrato']) {
       for (const arranque of ['2026-10-26', '2026-05-04']) {
-        for (const inicial of [[], [{ anio: 2026, dias_vacaciones: 20, estudios: 'universitario' }]]) {
+        for (const inicial of [[], [{ anio: 2026, dias_vacaciones: 20, estudios: 'universitario' }], anteriores,
+          [...anteriores, { anio: 2026, dias_vacaciones: 30, estudios: null }]]) {
           const delServidor = camposDelSaldoInicial({ modalidad, arranque, anios: inicial }).map((campo) => ({ ...campo, valor: null }));
+          const deAntes = inicial.filter((delAnio) => delAnio.anio !== 2026);
           for (const dias of DIAS_VACACIONES) {
             for (const estudios of ['universitario', 'secundario', null]) {
-              const esperados = camposDelSaldoInicial({ modalidad, arranque, anios: [{ anio: 2026, dias_vacaciones: dias, estudios }] });
+              const esperados = camposDelSaldoInicial({
+                modalidad, arranque, anios: [...deAntes, { anio: 2026, dias_vacaciones: dias, estudios }]
+              });
               const caso = `${modalidad} ${arranque} ${dias} ${estudios} ${inicial.length}`;
               assert.deepEqual(sinValor(M.camposConLoElegido(comoLlega(delServidor), { anio: 2026, dias, estudios })), plano(esperados), caso);
             }
@@ -2337,6 +3103,13 @@ describe('los formularios: las paridades', () => {
         }
       }
     }
+    // Las ayudas, a la vista: con 15 días elegidos, la del año del arranque dice 8; las de antes, sus días
+    const conQuince = M.camposConLoElegido(comoLlega(camposDelSaldoInicial({ modalidad: 'planta', arranque: '2026-10-26',
+      anios: [...anteriores, { anio: 2026, dias_vacaciones: 30, estudios: null }] })), { anio: 2026, dias: 15, estudios: null });
+    assert.deepEqual(plano(conQuince).filter((campo) => campo.concepto === 'vacaciones').map(({ clave, ayuda }) => [clave, ayuda]), [
+      ['vacaciones-2024', 'De 0 a 25: los días de la 2024.'], ['vacaciones-2025', 'De 0 a 15: los días de la 2025.'],
+      ['vacaciones-2026', 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.']
+    ]);
     // Sin días elegidos, como llegaron; un saldo de otro año (el arranque fue el año pasado), tampoco cambia
     const campos = comoLlega(camposDelSaldoInicial({ modalidad: 'planta', arranque: '2026-10-26', anios: [] }));
     assert.deepEqual(plano(M.camposConLoElegido(campos, { anio: 2026, dias: null, estudios: null })), campos);
@@ -2344,19 +3117,42 @@ describe('los formularios: las paridades', () => {
   });
 
   it('erroresDelSaldo: el primer error es el de validarSaldoInicial, en los casos de borde', () => {
-    const campos = comoLlega(camposDelSaldoInicial({ modalidad: 'contrato', arranque: '2026-10-26',
-      anios: [{ anio: 2026, dias_vacaciones: 20, estudios: 'secundario' }] }));
-    const llenos = Object.fromEntries(campos.map(({ clave }) => [clave, '0']));
-    for (const [clave, texto] of [['vacaciones-2024', '31'], ['vacaciones-2024', '-1'], ['vacaciones-2025', '2,5'], ['vacaciones-2026', '11'],
-      ['estudios', '10'], ['estudios', '11'], ['medica', ''], ['medica', 'x'], ['familiar', '25'], ['horas_no_utilizadas', '6,5'],
-      ['horas_no_utilizadas', '6,25'], ['horas_no_utilizadas', '200.5'], ['vacaciones-2024', ' 8 ']]) {
-      const valores = { ...llenos, [clave]: texto };
-      const errores = plano(M.erroresDelSaldo(valores, campos));
-      const { saldos } = plano(M.cuerpoDelSaldo(valores, campos));
-      const delServidor = validarSaldoInicial({ saldos: Object.fromEntries(Object.entries(saldos).filter(([, n]) => n !== null)) }, campos).error;
-      const [primero] = Object.entries(errores);
-      assert.deepEqual(primero ? { campo: primero[0], mensaje: primero[1] } : null, delServidor, `${clave}: ${texto}`);
+    const delAnio = { anio: 2026, dias_vacaciones: 20, estudios: 'secundario' };
+    // Sin los días de los años anteriores (sus campos dicen el máximo de una licencia), con ellos (sus días) y con los días del año
+    // elegidos en el modal (la ayuda que arma camposConLoElegido): el error de un campo con ayuda es su ayuda, como en el servidor
+    const listas = [
+      comoLlega(camposDelSaldoInicial({ modalidad: 'contrato', arranque: '2026-10-26', anios: [delAnio] })),
+      comoLlega(camposDelSaldoInicial({ modalidad: 'planta', arranque: '2026-10-26', anios: [
+        { anio: 2024, dias_vacaciones: 10, estudios: null }, { anio: 2025, dias_vacaciones: 25, estudios: null }, delAnio
+      ] })),
+      plano(M.camposConLoElegido(comoLlega(camposDelSaldoInicial({ modalidad: 'contrato', arranque: '2026-10-26', anios: [] })),
+        { anio: 2026, dias: 15, estudios: 'secundario' }))
+    ];
+    for (const campos of listas) {
+      const llenos = Object.fromEntries(campos.map(({ clave }) => [clave, '0']));
+      for (const [clave, texto] of [['vacaciones-2024', '31'], ['vacaciones-2024', '-1'], ['vacaciones-2025', '2,5'], ['vacaciones-2025', '26'],
+        ['vacaciones-2026', '11'], ['vacaciones-2026', '9'], ['estudios', '10'], ['estudios', '11'], ['medica', ''], ['medica', 'x'],
+        ['familiar', '25'], ['horas_no_utilizadas', '6,5'], ['horas_no_utilizadas', '6,25'], ['horas_no_utilizadas', '200.5'],
+        ['vacaciones-2024', ' 8 ']]) {
+        if (!campos.some((campo) => campo.clave === clave)) continue;
+        const valores = { ...llenos, [clave]: texto };
+        const errores = plano(M.erroresDelSaldo(valores, campos));
+        const { saldos } = plano(M.cuerpoDelSaldo(valores, campos));
+        const delServidor = validarSaldoInicial({ saldos: Object.fromEntries(Object.entries(saldos).filter(([, n]) => n !== null)) }, campos).error;
+        const [primero] = Object.entries(errores);
+        assert.deepEqual(primero ? { campo: primero[0], mensaje: primero[1] } : null, delServidor, `${clave}: ${texto}`);
+      }
     }
+    // Con ayuda, la ayuda; sin ella, textoSaldo
+    const [campos] = listas;
+    const llenos = Object.fromEntries(campos.map(({ clave }) => [clave, '0']));
+    assert.deepEqual(plano(M.erroresDelSaldo({ ...llenos, 'vacaciones-2026': '11' }, campos)),
+      { 'vacaciones-2026': 'De 0 a 10: lo que se habilitó de la 2026 hasta hoy.' });
+    assert.deepEqual(plano(M.erroresDelSaldo({ ...llenos, 'vacaciones-2024': '31' }, campos)),
+      { 'vacaciones-2024': 'De 0 a 30, el máximo de una licencia.' });
+    assert.deepEqual(plano(M.erroresDelSaldo({ ...llenos, medica: '26' }, campos)), { medica: textoSaldo(25) });
+    assert.deepEqual(plano(M.erroresDelSaldo({ ...llenos, 'vacaciones-2024': '31' },
+      campos.map((campo) => ({ ...campo, ayuda: '  ' })))), { 'vacaciones-2024': textoSaldo(30) });
     assert.deepEqual(plano(M.erroresDelSaldo(llenos, campos)), {});
     // Lo guardado, con coma; lo que no hay, vacío
     assert.deepEqual(plano(M.valoresDelSaldo([{ clave: 'a', valor: 6.5 }, { clave: 'b', valor: 0 }, { clave: 'c', valor: null }])),
@@ -2366,6 +3162,32 @@ describe('los formularios: las paridades', () => {
 
 describe('los formularios: lo puro', () => {
   const tiposDePlanta = resumenDel(PLANTA).tipos;
+
+  // Cada tope del saldo inicial dice de dónde sale (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): la ayuda va debajo
+  // del campo, antes de su error, y en su aria-describedby; un campo sin ayuda queda como estaba
+  it('«Para arrancar»: la ayuda de cada campo, debajo y en su aria-describedby, escapada', () => {
+    const campos = comoLlega(camposDelSaldoInicial({ modalidad: 'planta', arranque: '2026-10-26', anios: [
+      { anio: 2025, dias_vacaciones: 20, estudios: null }, { anio: 2026, dias_vacaciones: 15, estudios: null }
+    ] }));
+    const html = M.htmlDeCamposDelSaldo(campos, { 'vacaciones-2025': '4' });
+    assert.ok(html.includes('<input type="text" inputmode="decimal" class="form-input" id="ms-campo-vacaciones-2025" '
+      + 'data-saldo="vacaciones-2025" value="4" autocomplete="off" '
+      + 'aria-describedby="ms-campo-vacaciones-2025-ayuda ms-campo-vacaciones-2025-error">'
+      + '<p class="form-hint" id="ms-campo-vacaciones-2025-ayuda">De 0 a 20: los días de la 2025.</p>'
+      + '<p class="form-error" id="ms-campo-vacaciones-2025-error" hidden></p>'), html);
+    assert.ok(html.includes('<p class="form-hint" id="ms-campo-vacaciones-2024-ayuda">De 0 a 30, el máximo de una licencia.</p>'));
+    assert.ok(html.includes('<p class="form-hint" id="ms-campo-vacaciones-2026-ayuda">De 0 a 8: lo que se habilitó de la 2026 hasta hoy.</p>'));
+    // Sin ayuda (la médica, o una que llega vacía o sin la clave): sin el párrafo, y el aria-describedby solo con el error
+    assert.ok(html.includes('id="ms-campo-medica" data-saldo="medica" value="" autocomplete="off" aria-describedby="ms-campo-medica-error">'
+      + '<p class="form-error" id="ms-campo-medica-error" hidden></p>'));
+    assert.ok(!html.includes('ms-campo-medica-ayuda'));
+    const sinClave = campos.map(({ ayuda, ...campo }) => campo);
+    assert.ok(!M.htmlDeCamposDelSaldo(sinClave, {}).includes('-ayuda'));
+    assert.ok(!M.htmlDeCamposDelSaldo(campos.map((campo) => ({ ...campo, ayuda: '  ' })), {}).includes('-ayuda'));
+    // Todo texto del servidor, escapado
+    const conHtml = M.htmlDeCamposDelSaldo([{ ...campos[1], ayuda: '<b>De 0 a 20</b> & "más"' }], {});
+    assert.ok(conHtml.includes('>&lt;b&gt;De 0 a 20&lt;/b&gt; &amp; &quot;más&quot;</p>'), conHtml);
+  });
 
   it('los tipos: radios grandes con lo que queda de cada uno, sin el uso autorizado', () => {
     const html = M.htmlDeTiposDeLicencia(tiposDePlanta, 'franquicia');
@@ -3229,15 +4051,17 @@ describe('el día por día de contrato: las salidas', () => {
 // La página con los formularios (DOM falso)
 
 // La respuesta de GET /api/mi-espacio/licencias/:id/nota como la arma el servidor (verNotaDeLicencia), para la licencia `id` de
-// `estado`: su fila de la lista (filaDeUnaLicencia), la hoja (htmlDeLaNota, ya escapada), la fecha y la aclaración. La persona
-// de planta, con un cargo inventado; `fecha`, el día en que se guardó
+// `estado`: su fila de la lista (filaDeUnaLicencia), la hoja (htmlDeLaNota, ya escapada), la fecha, la aclaración y en qué lista
+// quedó (`lista`, textoDeLaListaDe: «Está en la lista de 2027.», o null en la del año en curso). La persona de planta, con un
+// cargo inventado; `fecha`, el día en que se guardó
 const CARGO_DE_PRUEBA = 'Analista de datos';
 const respuestaDeLaNota = (estado, id, { fecha = HOY } = {}) => {
   const persona = { nombre: PLANTA.persona.nombre_completo, cargo: CARGO_DE_PRUEBA, vinculo: PLANTA.persona.vinculo };
-  const { nota } = notaDeLicencia(estado.licencias.find((fila) => fila.id === id), { fecha, persona, feriados: SIN_FERIADOS });
+  const guardada = estado.licencias.find((fila) => fila.id === id);
+  const { nota } = notaDeLicencia(guardada, { fecha, persona, feriados: SIN_FERIADOS });
   return comoLlega({
     fila: filaDeUnaLicencia(estado, calculoDe(estado), { id, hoy: HOY, persona: PLANTA.persona, feriados: SIN_FERIADOS }),
-    html: htmlDeLaNota(nota), fecha, aclaracion: aclaracionDeLaNota(fecha)
+    html: htmlDeLaNota(nota), fecha, aclaracion: aclaracionDeLaNota(fecha), lista: textoDeLaListaDe(guardada.desde, HOY)
   });
 };
 const RUTA_DE_LA_NOTA = /^\/api\/mi-espacio\/licencias\/(\d+)\/nota$/;
@@ -3284,9 +4108,10 @@ const calculos = (pagina) => pagina.pedidosA('POST', '/api/mi-espacio/licencias/
 const conSaldosParaArrancar = ({ extra = () => undefined } = {}) => {
   const resumen = resumenDel(PLANTA, { estado: { ...PLANTA.estado, arranque: null, anios: [], saldos: [] } });
   const campos = camposDelSaldoInicial({ modalidad: 'planta', arranque: HOY, anios: [] }).map((campo) => ({ ...campo, valor: null }));
+  // Sin arranque, el servidor arma las mitades con hoy, como los campos: el 26/10 la primera mitad de 2026 es el saldo
   const anio = {
     anio: 2026, dias_vacaciones: null, estudios: null, heredado: false, texto_mitades: null,
-    textos_mitades: Object.fromEntries(DIAS_VACACIONES.map((dias) => [String(dias), textoDeLasMitades(2026, dias)]))
+    textos_mitades: Object.fromEntries(DIAS_VACACIONES.map((dias) => [String(dias), textoDeLasMitades(2026, dias, { arranque: HOY })]))
   };
   return conFormularios({
     extra: (metodo, ruta, cuerpo) => {
@@ -3503,7 +4328,7 @@ describe('los formularios en la página (DOM falso)', () => {
     await saldos.elegir('ms-estudio', '');
     for (const campo of saldos.el('ms-campos').querySelectorAll('input')) campo.value = '0';
     await saldos.tocar(saldos.el('ms-guardar'));
-    assert.equal(saldos.el('ms-error').textContent, `Los días del año se guardaron, pero el saldo inicial no: ${MENSAJE_SIN_CONEXION}`);
+    assert.equal(saldos.el('ms-error').textContent, `Los días del año se guardaron, pero el saldo inicial no. ${MENSAJE_SIN_CONEXION}`);
     assert.equal(saldos.abierto('modal-saldos'), true);
   });
 
@@ -3570,11 +4395,12 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.deepEqual(sinAuditor(auditora), ['/api/usuarios/licencias/sin-auditor?desde=2026-11-16&hasta=2026-11-20&usuario_id=1']);
     assert.equal(auditora.el('ml-sin-auditor').hidden, false);
     assert.equal(auditora.el('ml-sin-auditor').innerHTML, `<p>${en(`textoSinAuditor(${JSON.stringify(periodos[0])})`)}</p>`);
-    // Una franquicia de 3 horas, que no pasa: sin aviso
+    // Una franquicia de 3 horas, que no pasa: sin aviso, y vacío (está en el aria-describedby de «Guardar»: oculto, igual se leería)
     await auditora.elegir('ml-tipo', 'franquicia');
     await auditora.escribir('ml-horas', '3', 'change');
     await auditora.correr();
     assert.equal(auditora.el('ml-sin-auditor').hidden, true);
+    assert.equal(auditora.el('ml-sin-auditor').innerHTML, '');
   });
 
   it('al corregir una creada: la fila, la persona a cargo precargada, el excluir de Configuración y autorizado_id solo si cambió', async () => {
@@ -3953,7 +4779,7 @@ describe('los formularios en la página (DOM falso)', () => {
   });
 
   it('«Mis vacaciones y saldos»: se abre solo sin el saldo inicial, guarda el año y después el saldo; si el saldo falla, queda abierto', async () => {
-    let saldo = respuesta(400, { success: false, error: 'Escribí un número de 0 a 30.', campo: 'vacaciones-2024' });
+    let saldo = respuesta(400, { success: false, error: 'De 0 a 30, el máximo de una licencia.', campo: 'vacaciones-2024' });
     const pagina = montarPagina({
       responder: conSaldosParaArrancar({
         extra: (metodo, ruta) => {
@@ -3971,7 +4797,9 @@ describe('los formularios en la página (DOM falso)', () => {
     // Sin estudios elegidos, sin el campo; al elegir la carrera, aparece, y la ayuda dice las mitades de los días elegidos
     assert.equal(pagina.el('ms-campos').querySelector('#ms-campo-estudios'), null);
     await pagina.elegir('ms-dia', '20');
-    assert.equal(pagina.el('ms-dias-mitades').textContent, textoDeLasMitades(2026, 20));
+    // Sin arranque, el de hoy (26/10): la primera mitad es lo que se pone en «De la 2026»
+    assert.equal(pagina.el('ms-dias-mitades').textContent,
+      'La primera mitad es lo que pongas en «De la 2026», más abajo. El 1/1/2027 se habilitan 10.');
     await pagina.elegir('ms-estudio', 'universitario');
     assert.ok(pagina.el('ms-campo-estudios'), 'el campo de los estudios');
     for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
@@ -3981,7 +4809,8 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/saldo-inicial')[0].cuerpo.saldos,
       { 'vacaciones-2024': 8, 'vacaciones-2025': 0, 'vacaciones-2026': 0, franquicias: 0, estudios: 0, medica: 0, familiar: 0 });
     assert.equal(pagina.abierto('modal-saldos'), true);
-    assert.equal(pagina.el('ms-error').textContent, 'Los días del año se guardaron, pero el saldo inicial no: Escribí un número de 0 a 30.');
+    assert.equal(pagina.el('ms-error').textContent,
+      'Los días del año se guardaron, pero el saldo inicial no. De 0 a 30, el máximo de una licencia.');
     assert.equal(pagina.el('ms-campo-vacaciones-2024').getAttribute('aria-invalid'), 'true');
     // Al reintentar, sale; el foco vuelve al botón del Resumen que lo abrió, el nuevo (el Resumen se volvió a dibujar)
     saldo = ok({ arranque: HOY }, 'Saldo inicial guardado.');
@@ -3991,6 +4820,69 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.equal(pagina.el('me-anuncio').textContent, 'Saldo inicial guardado.');
     assert.equal(delResumen.isConnected, false);
     assert.equal(pagina.documento.activeElement, pagina.el('vista-resumen').querySelector('[data-abrir="saldos"]'));
+  });
+
+  // El guardado a medias (la revisión final de la spec 2026-10-28-mi-espacio-vacaciones-en-la-carga): la ayuda de un tope ya trae
+  // sus dos puntos («De 0 a 8: …»), así que el aviso de arriba la sigue con un punto, no con otros dos puntos
+  it('«Mis vacaciones y saldos»: si el saldo falla con la ayuda de un tope, el aviso no repite los dos puntos', async () => {
+    const motivo = 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.';
+    const pagina = montarPagina({
+      responder: conSaldosParaArrancar({
+        extra: (metodo, ruta) => {
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/anio/2026') return ok({ anio: 2026 }, 'Días del año guardados.');
+          if (metodo === 'PUT' && ruta === '/api/mi-espacio/saldo-inicial') {
+            return respuesta(400, { success: false, error: motivo, campo: 'vacaciones-2026' });
+          }
+          return undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    await pagina.correr();
+    // Con 15 días, la primera mitad de la 2026 es 8: «De 0 a 8»
+    await pagina.elegir('ms-dia', '15');
+    await pagina.elegir('ms-estudio', '');
+    for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
+    await pagina.tocar(pagina.el('ms-guardar'));
+    assert.equal(pagina.abierto('modal-saldos'), true);
+    assert.equal(pagina.el('ms-error').textContent, `Los días del año se guardaron, pero el saldo inicial no. ${motivo}`);
+    assert.doesNotMatch(pagina.el('ms-error').textContent, /:.*:/);
+    // El motivo, también en su campo
+    assert.equal(pagina.el('ms-campo-vacaciones-2026').getAttribute('aria-invalid'), 'true');
+  });
+
+  // Cada tope dice de dónde sale (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): la ayuda debajo de cada campo, que la
+  // del año del arranque sigue a los días que se eligen, y el error de un campo con ayuda, que es su ayuda, sin pedir nada
+  it('«Mis vacaciones y saldos»: la ayuda de cada tope sigue a los días elegidos, y es el error del campo', async () => {
+    const pagina = montarPagina({ responder: conSaldosParaArrancar() });
+    await pagina.iniciar();
+    await pagina.correr();
+    assert.equal(pagina.abierto('modal-saldos'), true);
+    const ayuda = (clave) => pagina.el(`ms-campo-${clave}-ayuda`)?.textContent ?? null;
+    // Sin días elegidos, los que mandó el servidor (sin ningún año cargado, 30 y la primera mitad de 30)
+    assert.equal(ayuda('vacaciones-2024'), 'De 0 a 30, el máximo de una licencia.');
+    assert.equal(ayuda('vacaciones-2026'), 'De 0 a 15: lo que se habilitó de la 2026 hasta hoy.');
+    assert.equal(ayuda('medica'), null);
+    assert.equal(pagina.el('ms-campo-vacaciones-2026').getAttribute('aria-describedby'),
+      'ms-campo-vacaciones-2026-ayuda ms-campo-vacaciones-2026-error');
+    assert.equal(pagina.el('ms-campo-medica').getAttribute('aria-describedby'), 'ms-campo-medica-error');
+    // Al elegir los días, la del año del arranque cambia con su máximo; las de antes, no
+    await pagina.elegir('ms-dia', '15');
+    assert.equal(ayuda('vacaciones-2026'), 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.');
+    assert.equal(ayuda('vacaciones-2025'), 'De 0 a 30, el máximo de una licencia.');
+    await pagina.elegir('ms-dia', '25');
+    assert.equal(ayuda('vacaciones-2026'), 'De 0 a 13: lo que se habilitó de la 2026 hasta hoy.');
+    await pagina.elegir('ms-dia', '15');
+    await pagina.elegir('ms-estudio', '');
+    for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
+    pagina.el('ms-campo-vacaciones-2026').value = '9';
+    pagina.el('ms-campo-medica').value = '26';
+    await pagina.tocar(pagina.el('ms-guardar'));
+    // No pide nada: los errores, en su campo, con la ayuda o con textoSaldo
+    assert.equal(pagina.pedidosA('PUT', '/api/mi-espacio/anio/2026').length, 0);
+    assert.equal(pagina.el('ms-campo-vacaciones-2026-error').textContent, 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.');
+    assert.equal(pagina.el('ms-campo-vacaciones-2026').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('ms-campo-medica-error').textContent, 'Escribí un número de 0 a 25.');
   });
 
   it('«Registrar un uso autorizado» en contrato: con las horas, de a media hora', async () => {
@@ -4249,31 +5141,41 @@ describe('mi-espacio.html: los estilos de los errores', () => {
 
 // =====================================================================================================================================
 // La agenda en la página (DOM falso; spec 2026-10-26-mi-espacio-agenda, 6; Task 9): la pestaña, el mes con ‹ › y «Hoy», «y N más»,
-// los próximos, la leyenda, «Ver la agenda» y lo que se vuelve a pedir después de guardar. El formulario del evento llega con la
-// Task 10: un clic en un evento o en «Nuevo evento» todavía no abre nada
+// los próximos, la leyenda, «Ver la agenda» y lo que se vuelve a pedir después de guardar. Desde la agenda con más onda (spec
+// 2026-10-28-mi-espacio-agenda-onda), la página dibuja el mes con su día elegido (hoy, o el 1 de otro mes, el visible más cercano:
+// en la compu no se ve) y pide el mes con su mes (mes=AAAA-MM); lo nuevo, más abajo, después del formulario del evento
 // =====================================================================================================================================
 
-const RUTA_DEL_MES = '/api/mi-espacio/eventos?desde=2026-09-28&hasta=2026-11-01';
+// El pedido del mes lleva su mes (para la frase de la banda, spec 2026-10-28-mi-espacio-agenda-onda, 5.2); el de los próximos, no
+const RUTA_DEL_MES = '/api/mi-espacio/eventos?desde=2026-09-28&hasta=2026-11-01&mes=2026-10';
 const RUTA_DE_PROXIMOS = '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-11-25';
-// El servidor falso con la agenda: el mes de octubre, los próximos y cualquier otro rango (armado igual); `cambios`, las respuestas
-// de algunas rutas (una función o una respuesta)
+// Lo que contesta el servidor con la frase del mes, como listarEventos: con `mes` (el mes entero dentro del rango), fraseDelMes con los
+// eventos, los feriados y las licencias de la respuesta; si no, null
+const conLaFrase = (datos, mes) => {
+  const delMes = mesDeLaFrase(mes, datos);
+  return { ...datos, frase_del_mes: delMes === null ? null : fraseDelMes({ mes: delMes, ...datos }) };
+};
+// El servidor falso con la agenda: el mes de octubre, los próximos y cualquier otro rango (armado igual, con la frase si el pedido
+// trae el mes); `cambios`, las respuestas de algunas rutas (una función o una respuesta)
 const conEventos = (cambios = {}) => async (metodo, ruta, cuerpo) => {
   if (Object.hasOwn(cambios, ruta)) return typeof cambios[ruta] === 'function' ? cambios[ruta](metodo, ruta, cuerpo) : cambios[ruta];
-  if (ruta === RUTA_DEL_MES) return ok(DEL_MES);
+  if (ruta === RUTA_DEL_MES) return ok(conLaFrase(DEL_MES, '2026-10'));
   if (ruta === RUTA_DE_PROXIMOS) return ok(PROXIMOS);
   if (ruta.startsWith('/api/mi-espacio/eventos?')) {
     const parametros = new URL(ruta, 'http://rpad.test').searchParams;
-    return ok(respuestaDeEventos({ desde: parametros.get('desde'), hasta: parametros.get('hasta') }));
+    return ok(conLaFrase(respuestaDeEventos({ desde: parametros.get('desde'), hasta: parametros.get('hasta') }), parametros.get('mes')));
   }
   return RESPUESTAS_DE_ENTRADA(metodo, ruta, cuerpo);
 };
 const pedidosDeEventos = (pagina) => pagina.rutas().filter((ruta) => ruta.startsWith('/api/mi-espacio/eventos'));
+// El mes como lo dibuja la página en la compu, con sábado y domingo ocultos: su día elegido (y el del foco), el de `elegido`
+const mesEnLaPagina = (mes, datos, elegido, opciones = {}) => M.htmlDelMes(mes, datos, HOY, { elegido, foco: elegido, ...opciones });
 
 describe('la agenda en la página (DOM falso)', () => {
   it('#agenda: pide el Resumen, la grilla del mes de hoy y los próximos, y los dibuja con el título del mes y la leyenda', async () => {
     const pagina = montarPagina({ hash: '#agenda', responder: conEventos() });
     await pagina.iniciar();
-    assert.deepEqual(pagina.rutas().sort(), ['/api/mi-espacio/eventos?desde=2026-09-28&hasta=2026-11-01',
+    assert.deepEqual(pagina.rutas().sort(), ['/api/mi-espacio/eventos?desde=2026-09-28&hasta=2026-11-01&mes=2026-10',
       '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-11-25', '/api/mi-espacio/resumen']);
     assert.deepEqual(pagina.estado.direcciones, ['#agenda']);
     assert.equal(pagina.el('tab-agenda').getAttribute('aria-selected'), 'true');
@@ -4281,7 +5183,7 @@ describe('la agenda en la página (DOM falso)', () => {
     for (const otra of ['resumen', 'licencias', 'horas']) assert.equal(pagina.el(`vista-${otra}`).hidden, true, otra);
     assert.equal(pagina.el('vista-agenda').hidden, false);
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Octubre 2026');
-    assert.equal(pagina.el('ag-mes').innerHTML, M.htmlDelMes('2026-10', DEL_MES, HOY));
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY));
     assert.equal(pagina.el('ag-proximos').innerHTML, M.htmlDeProximos(M.gruposDeProximos(PROXIMOS, HOY)));
     // Quien ve a sus compañeros tiene su color en la leyenda
     assert.equal(pagina.el('ag-leyenda-ausentes').hidden, false);
@@ -4304,9 +5206,10 @@ describe('la agenda en la página (DOM falso)', () => {
     await pagina.iniciar();
     await pagina.tocar(pagina.el('ag-siguiente'));
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Noviembre 2026');
-    assert.equal(pedidosDeEventos(pagina).at(-1), '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06');
+    assert.equal(pedidosDeEventos(pagina).at(-1), '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06&mes=2026-11');
     const noviembre = respuestaDeEventos({ desde: '2026-10-26', hasta: '2026-12-06' });
-    assert.equal(pagina.el('ag-mes').innerHTML, M.htmlDelMes('2026-11', noviembre, HOY));
+    // El 1 es domingo: con sábado y domingo ocultos, el elegido es el lunes 2
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-11', noviembre, '2026-11-02'));
     assert.equal(pagina.el('me-anuncio').textContent, 'Noviembre 2026');
     // Los próximos no se vuelven a pedir, y el mes no va en la dirección
     assert.equal(pedidosDeEventos(pagina).filter((ruta) => ruta === RUTA_DE_PROXIMOS).length, 1);
@@ -4314,17 +5217,17 @@ describe('la agenda en la página (DOM falso)', () => {
     await pagina.tocar(pagina.el('ag-anterior'));
     await pagina.tocar(pagina.el('ag-anterior'));
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Septiembre 2026');
-    assert.equal(pedidosDeEventos(pagina).at(-1), '/api/mi-espacio/eventos?desde=2026-08-31&hasta=2026-10-04');
+    assert.equal(pedidosDeEventos(pagina).at(-1), '/api/mi-espacio/eventos?desde=2026-08-31&hasta=2026-10-04&mes=2026-09');
     await pagina.tocar(pagina.el('ag-hoy'));
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Octubre 2026');
-    assert.equal(pagina.el('ag-mes').innerHTML, M.htmlDelMes('2026-10', DEL_MES, HOY));
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY));
     // «Hoy» en el mes de hoy no pide nada
     const antes = pagina.rutas().length;
     await pagina.tocar(pagina.el('ag-hoy'));
     assert.equal(pagina.rutas().length, antes);
     for (let i = 0; i < 3; i += 1) await pagina.tocar(pagina.el('ag-siguiente'));
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Enero 2027');
-    assert.equal(pedidosDeEventos(pagina).at(-1), '/api/mi-espacio/eventos?desde=2026-12-28&hasta=2027-01-31');
+    assert.equal(pedidosDeEventos(pagina).at(-1), '/api/mi-espacio/eventos?desde=2026-12-28&hasta=2027-01-31&mes=2027-01');
   });
 
   it('un mes que llega tarde no pisa el que se eligió después', async () => {
@@ -4333,7 +5236,7 @@ describe('la agenda en la página (DOM falso)', () => {
     const pagina = montarPagina({
       hash: '#agenda',
       responder: conEventos({
-        '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06': async () => {
+        '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06&mes=2026-11': async () => {
           await noviembreTarda;
           return ok(respuestaDeEventos({ desde: '2026-10-26', hasta: '2026-12-06' }));
         }
@@ -4344,10 +5247,15 @@ describe('la agenda en la página (DOM falso)', () => {
     await pagina.tocar(pagina.el('ag-siguiente'));
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Diciembre 2026');
     const diciembre = pagina.el('ag-mes').innerHTML;
+    const fraseDeDiciembre = pagina.el('ag-frase').textContent;
+    const elegidoDeDiciembre = pagina.el('ag-elegido').innerHTML;
+    assert.ok(fraseDeDiciembre.length > 0);
     soltarNoviembre();
     await pagina.esperar();
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Diciembre 2026');
     assert.equal(pagina.el('ag-mes').innerHTML, diciembre);
+    assert.equal(pagina.el('ag-frase').textContent, fraseDeDiciembre);
+    assert.equal(pagina.el('ag-elegido').innerHTML, elegidoDeDiciembre);
     assert.equal(pagina.el('me-anuncio').textContent, 'Diciembre 2026');
   });
 
@@ -4363,6 +5271,8 @@ describe('la agenda en la página (DOM falso)', () => {
     assert.equal(boton.hidden, true);
     assert.equal(pagina.documento.activeElement, celda.querySelector('[data-evento="32"]'));
     assert.equal(pagina.rutas().length, antes);
+    // «y N más» es parte del día, pero no abre «Nuevo evento»
+    assert.equal(pagina.abierto('modal-evento'), false);
   });
 
   // Decisión del usuario (27/10/2026): a quien no ve a los compañeros (el lector y el colaborador), la leyenda no le muestra su color
@@ -4394,7 +5304,7 @@ describe('la agenda en la página (DOM falso)', () => {
     const texto = 'No se pudieron cargar los próximos. Probá de nuevo en unos minutos.';
     assert.equal(textoDe(pagina.el('ag-proximos').innerHTML), texto);
     assert.equal(pagina.el('me-anuncio').textContent, texto);
-    assert.equal(pagina.el('ag-mes').innerHTML, M.htmlDelMes('2026-10', DEL_MES, HOY));
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY));
     falla = false;
     const antes = pedidosDeEventos(pagina).length;
     await pagina.tocar(pagina.el('tab-resumen'));
@@ -4429,7 +5339,7 @@ describe('la agenda en la página (DOM falso)', () => {
     assert.equal(pagina.el('btn-nuevo-evento').hidden, false);
     assert.equal(pagina.el('ag-nuevo-evento').hidden, false);
     assert.equal(pagina.el('tab-agenda').hidden, false);
-    assert.equal(pagina.el('ag-mes').innerHTML, M.htmlDelMes('2026-10', DEL_MES, HOY));
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY));
   });
 
   it('«Ver la agenda» de «Hoy y mañana» abre la pestaña Agenda (la pide) y el foco va a la pestaña', async () => {
@@ -4456,7 +5366,7 @@ describe('la agenda en la página (DOM falso)', () => {
     await pagina.contexto.volverAPedirTodo();
     await pagina.esperar();
     assert.deepEqual(pedidosDeEventos(pagina).slice(antes).sort(), ['/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-11-25',
-      '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06']);
+      '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06&mes=2026-11']);
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Noviembre 2026');
     // Con otra pestaña a la vista, nada; al volver a la agenda, se pide otra vez
     await pagina.tocar(pagina.el('tab-licencias'));
@@ -4782,10 +5692,10 @@ describe('el formulario del evento: lo puro', () => {
     const partes = plano(M.htmlDelEventoAjeno({ ...item, detalle: 'Revisamos el informe.\nAntes de mandarlo.' }));
     assert.equal(textoDe(partes.cuando), 'Jueves 29/10/2026 a las 09:00');
     assert.equal(partes.detalle, 'Revisamos el informe.\nAntes de mandarlo.');
-    assert.equal(textoDe(partes.quien), 'Compartido Lo creó Martín Ríos. Están: vos.');
+    assert.equal(textoDe(partes.quien), 'Compartido Lo creó Martín. Están: vos.');
     assert.ok(partes.quien.includes('<span class="me-insignia violeta">Compartido</span>'));
     assert.deepEqual([...partes.opciones.matchAll(/<option value="(\w+)"( selected)?>([^<]+)<\/option>/g)].map(([, valor, elegido, texto]) =>
-      [valor, Boolean(elegido), texto]), [['evento', true, '2 horas antes (el que eligió Martín Ríos)'], ['ninguno', false, 'Sin aviso']]);
+      [valor, Boolean(elegido), texto]), [['evento', true, '2 horas antes (el que eligió Martín)'], ['ninguno', false, 'Sin aviso']]);
     assert.equal(M.miRecordatorioDe(item), 'evento');
     assert.equal(M.miRecordatorioDe({ ...item, mi_recordatorio: 'ninguno' }), 'ninguno');
     // Con el recordatorio apagado, «Sin aviso» elegido; si quien lo creó eligió «Sin aviso», solo ese texto
@@ -4794,9 +5704,9 @@ describe('el formulario del evento: lo puro', () => {
     assert.equal(M.htmlDelEventoAjeno(sinRecordatorio).opciones, '<option value="ninguno" selected>Sin aviso</option>');
     assert.equal(M.miRecordatorioDe(sinRecordatorio), 'ninguno');
     // Para todos: «Es para todos»; con la hora de fin, «de … a …»
-    const deOtroParaTodos = { ...item, fecha: '2026-11-02', desde: '10:00', hasta: '11:00', quien_largo: 'Lo creó Martín Ríos. Es para todos.' };
+    const deOtroParaTodos = { ...item, fecha: '2026-11-02', desde: '10:00', hasta: '11:00', quien_largo: 'Lo creó Martín. Es para todos.' };
     assert.equal(textoDe(M.htmlDelEventoAjeno(deOtroParaTodos).cuando), 'Lunes 02/11/2026 de 10:00 a 11:00');
-    assert.equal(textoDe(M.htmlDelEventoAjeno(deOtroParaTodos).quien), 'Compartido Lo creó Martín Ríos. Es para todos.');
+    assert.equal(textoDe(M.htmlDelEventoAjeno(deOtroParaTodos).quien), 'Compartido Lo creó Martín. Es para todos.');
   });
 
   // Review Focus 2
@@ -5490,6 +6400,455 @@ describe('el foco después de guardar un evento (DOM falso)', () => {
   });
 });
 
+// =====================================================================================================================================
+// La agenda con más onda en la página (DOM falso; spec 2026-10-28-mi-espacio-agenda-onda, 3.2, 3.7, 3.8, 4.1 y 6): «Sábado y
+// domingo» (apagado de entrada y recordado en este navegador), la frase del mes, tocar un día (en la compu, «Nuevo evento» con esa
+// fecha; en el teléfono, elegirlo y ver lo de ese día debajo de la grilla), el teclado (el tabindex móvil de los números) y el
+// movimiento de una sola vez. Hoy es el lunes 26/10/2026; los datos, los de la agenda de más arriba (noviembre, el de DE_NOVIEMBRE,
+// con el feriado del domingo 8)
+// =====================================================================================================================================
+
+const RUTA_DE_NOVIEMBRE = '/api/mi-espacio/eventos?desde=2026-10-26&hasta=2026-12-06&mes=2026-11';
+// El servidor falso del formulario, con noviembre de DE_NOVIEMBRE y su frase; `eventos`, otros cambios
+const conNoviembre = (eventos = {}) => conElFormulario({
+  eventos: { [RUTA_DE_NOVIEMBRE]: ok(conLaFrase(DE_NOVIEMBRE, '2026-11')), ...eventos }
+});
+// Las columnas de la grilla que se ve, el número y la celda de un día, los números con tabindex="0" y el título del día elegido
+const columnasDelMes = (pagina) => pagina.el('ag-mes').querySelectorAll('th').length;
+const numeroDelDia = (pagina, fecha) => pagina.el('ag-mes').querySelector(`[data-dia="${fecha}"]`);
+const celdaDelDia = (pagina, fecha) => pagina.el('ag-mes').querySelector(`[data-fecha="${fecha}"]`);
+const conTabindexCero = (pagina) => pagina.el('ag-mes').querySelectorAll('[data-dia]')
+  .filter((numero) => numero.getAttribute('tabindex') === '0').map((numero) => numero.getAttribute('data-dia'));
+const tituloDelElegido = (pagina) => pagina.el('ag-elegido-titulo')?.textContent ?? null;
+// Una tecla en lo que tiene el foco (un número del mes), con sus modificadores: devuelve el evento, para mirar si se frenó
+const teclaConEvento = async (pagina, key, extra = {}) => {
+  const evento = pagina.documento.activeElement.disparar('keydown', { key, ...extra });
+  await pagina.esperar();
+  return evento;
+};
+
+describe('la agenda con más onda en la página (DOM falso)', () => {
+  it('CLAVE_DEL_FIN_DE_SEMANA, y el foco vuelve al número de un día y al «Nuevo evento» del día elegido (IDENTIDADES_DEL_FOCO)', () => {
+    assert.equal(M.CLAVE_DEL_FIN_DE_SEMANA, 'rpad-mi-espacio-fin-de-semana');
+    assert.ok(M.IDENTIDADES_DEL_FOCO.includes('data-dia'));
+    assert.ok(M.IDENTIDADES_DEL_FOCO.includes('data-nuevo-el'));
+  });
+
+  it('al abrir: «Sábado y domingo» apagado (5 columnas), la frase del servidor y el mes pedido con su mes; en noviembre, la cuenta', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conNoviembre() });
+    await pagina.iniciar();
+    // El pedido del mes lleva su mes; el de los próximos, no
+    assert.deepEqual(rangosPedidos(pagina).sort(), [RUTA_DEL_MES, RUTA_DE_PROXIMOS]);
+    assert.ok(RUTA_DEL_MES.endsWith('&mes=2026-10'));
+    assert.equal(pagina.el('ag-finde').getAttribute('aria-pressed'), 'false');
+    assert.equal(columnasDelMes(pagina), 5);
+    // Octubre no tiene nada el fin de semana: sin la cuenta, y el nombre del botón es su texto
+    assert.equal(pagina.el('ag-finde-cuenta').hidden, true);
+    assert.equal(pagina.el('ag-finde').getAttribute('aria-label'), null);
+    assert.equal(pagina.el('ag-frase').textContent, '4 eventos, 1 feriado y tu franquicia el 15.');
+    // El día elegido (en la compu no se ve, pero está, con su título): hoy
+    assert.equal(pagina.el('ag-elegido').innerHTML, M.htmlDelDiaElegido(HOY, DEL_MES, HOY));
+    // Noviembre: el feriado del domingo 8 queda escondido
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    assert.equal(pedidosDeEventos(pagina).at(-1), RUTA_DE_NOVIEMBRE);
+    assert.equal(pagina.el('ag-finde-cuenta').hidden, false);
+    assert.equal(pagina.el('ag-finde-cuenta').textContent, '1');
+    assert.equal(pagina.el('ag-finde').getAttribute('aria-label'), 'Sábado y domingo: 1 cosa escondida');
+    assert.equal(pagina.el('ag-frase').textContent, fraseDelMes({ mes: '2026-11', ...DE_NOVIEMBRE }));
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-11', DE_NOVIEMBRE, '2026-11-02'));
+    assert.equal(tituloDelElegido(pagina), 'Lunes 2 de noviembre');
+  });
+
+  it('la frase del mes va como texto (con HTML, tal cual); sin frase o mientras se pide el mes, vacía; el día elegido, siempre con su título', async () => {
+    let soltar;
+    const tarda = new Promise((resolver) => { soltar = resolver; });
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        eventos: {
+          [RUTA_DEL_MES]: ok({ ...DEL_MES, frase_del_mes: MALICIOSO }),
+          [RUTA_DE_NOVIEMBRE]: async () => { await tarda; return ok({ ...DE_NOVIEMBRE, frase_del_mes: null }); }
+        }
+      })
+    });
+    await pagina.iniciar();
+    assert.equal(pagina.el('ag-frase').textContent, MALICIOSO);
+    assert.equal(pagina.el('ag-frase').querySelector('img'), null);
+    // Mientras se pide noviembre: sin frase, sin la cuenta, y el día elegido con su título (sin datos)
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    assert.equal(pagina.el('ag-frase').textContent, '');
+    assert.equal(pagina.el('ag-finde-cuenta').hidden, true);
+    assert.equal(pagina.el('ag-elegido').innerHTML, M.htmlDelDiaElegido('2026-11-02', null, HOY));
+    assert.equal(tituloDelElegido(pagina), 'Lunes 2 de noviembre');
+    // Todavía no se sabe qué hay ese día: sin «No hay nada este día.» (Revisión final, 2)
+    assert.doesNotMatch(pagina.el('ag-elegido').innerHTML, /me-vacio|No hay nada/);
+    assert.ok(pagina.el('ag-elegido').querySelector('[data-nuevo-el="2026-11-02"]'));
+    soltar();
+    await pagina.esperar();
+    assert.equal(pagina.el('ag-mes-titulo').textContent, 'Noviembre 2026');
+    assert.equal(pagina.el('ag-frase').textContent, '');
+    assert.equal(pagina.el('ag-finde-cuenta').textContent, '1');
+  });
+
+  it('«Sábado y domingo»: prendido, 7 columnas, sin la cuenta y recordado en este navegador; apagado, otra vez 5 y la cuenta', async () => {
+    const almacen = new Map();
+    const pagina = montarPagina({ hash: '#agenda', almacen, responder: conNoviembre() });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    const boton = pagina.el('ag-finde');
+    boton.focus();
+    const antes = pagina.rutas().length;
+    await pagina.tocar(boton);
+    assert.equal(boton.getAttribute('aria-pressed'), 'true');
+    assert.equal(columnasDelMes(pagina), 7);
+    assert.equal(pagina.el('ag-finde-cuenta').hidden, true);
+    assert.equal(boton.getAttribute('aria-label'), null);
+    assert.equal(almacen.get('rpad-mi-espacio-fin-de-semana'), '1');
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-11', DE_NOVIEMBRE, '2026-11-02', { finde: true }));
+    // No pide nada (el mes ya se pidió entero, de lunes a domingo) y el foco queda en el botón
+    assert.equal(pagina.rutas().length, antes);
+    assert.equal(pagina.documento.activeElement, boton);
+    // Apagado otra vez
+    await pagina.tocar(boton);
+    assert.equal(boton.getAttribute('aria-pressed'), 'false');
+    assert.equal(columnasDelMes(pagina), 5);
+    assert.equal(pagina.el('ag-finde-cuenta').hidden, false);
+    assert.equal(pagina.el('ag-finde-cuenta').textContent, '1');
+    assert.equal(almacen.get('rpad-mi-espacio-fin-de-semana'), '0');
+    // Prendido, y la página otra vez en el mismo navegador: arranca prendido
+    await pagina.tocar(boton);
+    const otra = montarPagina({ hash: '#agenda', almacen, responder: conNoviembre() });
+    await otra.iniciar();
+    assert.equal(otra.el('ag-finde').getAttribute('aria-pressed'), 'true');
+    assert.equal(columnasDelMes(otra), 7);
+    assert.equal(otra.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY, { finde: true }));
+  });
+
+  it('sin almacenamiento (uno que tira o una ventana sin localStorage), «Sábado y domingo» arranca apagado, sin error, y anda igual', async () => {
+    for (const almacen of ['tira', null]) {
+      const pagina = montarPagina({ hash: '#agenda', almacen, responder: conElFormulario() });
+      await pagina.iniciar();
+      assert.equal(pagina.el('ag-finde').getAttribute('aria-pressed'), 'false', String(almacen));
+      assert.equal(columnasDelMes(pagina), 5, String(almacen));
+      await pagina.tocar(pagina.el('ag-finde'));
+      assert.equal(pagina.el('ag-finde').getAttribute('aria-pressed'), 'true', String(almacen));
+      assert.equal(columnasDelMes(pagina), 7, String(almacen));
+    }
+  });
+
+  it('si el mes no se pudo cargar, «Sábado y domingo» lo vuelve a pedir (una grilla vacía no tapa el aviso); si vuelve a fallar, lo dice', async () => {
+    let falla = true;
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        eventos: { [RUTA_DEL_MES]: () => (falla ? respuesta(500, { success: false, error: 'Error' }) : ok(conLaFrase(DEL_MES, '2026-10'))) }
+      })
+    });
+    await pagina.iniciar();
+    assert.equal(textoDe(pagina.el('ag-mes').innerHTML), 'No se pudo cargar el mes. Probá de nuevo en unos minutos.');
+    // Debajo, el día elegido con su título (nombra la sección) y sin «No hay nada este día.»: no se sabe (Revisión final, 2)
+    assert.equal(tituloDelElegido(pagina), 'Lunes 26 de octubre (hoy)');
+    assert.doesNotMatch(pagina.el('ag-elegido').innerHTML, /me-vacio|No hay nada/);
+    const pedidosDelMes = () => rangosPedidos(pagina).filter((ruta) => ruta === RUTA_DEL_MES).length;
+    await pagina.tocar(pagina.el('ag-finde'));
+    assert.equal(pedidosDelMes(), 2);
+    assert.equal(textoDe(pagina.el('ag-mes').innerHTML), 'No se pudo cargar el mes. Probá de nuevo en unos minutos.');
+    falla = false;
+    await pagina.tocar(pagina.el('ag-finde'));
+    assert.equal(pedidosDelMes(), 3);
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY));
+    // Con el mes a la vista, cambiar «Sábado y domingo» no pide nada
+    await pagina.tocar(pagina.el('ag-finde'));
+    assert.equal(pedidosDelMes(), 3);
+    assert.equal(columnasDelMes(pagina), 7);
+  });
+
+  it('en la compu, tocar un día abre «Nuevo evento» con esa fecha (su cuerpo, una barra, un feriado o su número); al cerrar, el foco va a su número', async () => {
+    const pagina = montarPagina({ hash: '#agenda', telefono: false, responder: conElFormulario() });
+    await pagina.iniciar();
+    assert.equal(numeroDelDia(pagina, '2026-10-22').getAttribute('aria-label'), 'Nuevo evento el jueves 22/10');
+    // El jueves 22, en su cuerpo; el martes 27, en el pedazo de la barra del compañero que no está; el jueves 15, en el de tu
+    // franquicia; el lunes 12, en su feriado; y el miércoles 28, en su número
+    const casos = [['2026-10-22', '.me-celda-cuerpo'], ['2026-10-27', '.me-tira'], ['2026-10-15', '.me-tira'], ['2026-10-12', '.me-ev'],
+      ['2026-10-28', '[data-dia]']];
+    for (const [fecha, selector] of casos) {
+      const blanco = celdaDelDia(pagina, fecha).querySelector(selector);
+      assert.ok(blanco, `${fecha} ${selector}`);
+      await pagina.tocar(blanco);
+      assert.deepEqual(abiertos(pagina), ['modal-evento'], fecha);
+      assert.equal(pagina.el('modal-evento-titulo').textContent, 'Nuevo evento', fecha);
+      assert.equal(pagina.el('ev-fecha').value, fecha, fecha);
+      await pagina.tecla('Escape');
+      assert.deepEqual(abiertos(pagina), [], fecha);
+      assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, fecha), fecha);
+      // Su número queda como la parada del teclado del mes
+      assert.deepEqual(conTabindexCero(pagina), [fecha], fecha);
+      // En la compu no se elige: ningún número con aria-current="true" y nada que anunciar (Revisión final, 3)
+      assert.equal(pagina.el('ag-mes').querySelectorAll('[aria-current="true"]').length, 0, fecha);
+      assert.doesNotMatch(pagina.el('me-anuncio').textContent, /de octubre/, fecha);
+    }
+    // Un evento de la celda abre el suyo; el día elegido no cambia (en la compu no se ve)
+    await pagina.tocar(celdaDelDia(pagina, HOY).querySelector('[data-evento="11"]'));
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    assert.equal(pagina.el('modal-evento-titulo').textContent, 'Editar evento');
+    await pagina.tecla('Escape');
+    assert.equal(tituloDelElegido(pagina), 'Lunes 26 de octubre (hoy)');
+    // Fuera de las celdas (la leyenda, la cabeza de la tabla), nada
+    await pagina.tocar(pagina.el('vista-agenda').querySelector('.me-leyenda'));
+    await pagina.tocar(pagina.el('ag-mes').querySelector('th'));
+    assert.deepEqual(abiertos(pagina), []);
+  });
+
+  it('en la compu, después de guardar un evento abierto desde un número, el foco vuelve al número de esa fecha', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    await pagina.iniciar();
+    const numero = numeroDelDia(pagina, '2026-10-28');
+    numero.focus();
+    await pagina.tocar(numero);
+    await pagina.correr();
+    assert.equal(pagina.documento.activeElement, pagina.el('ev-titulo'));
+    await pagina.escribir('ev-titulo', 'Revisión del informe');
+    await pagina.escribir('ev-desde', '10:00');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    await pagina.esperar();
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos').map((pedido) => pedido.cuerpo.fecha), ['2026-10-28']);
+    const nuevo = numeroDelDia(pagina, '2026-10-28');
+    assert.notEqual(nuevo, numero, 'el mes se volvió a dibujar');
+    assert.equal(pagina.documento.activeElement, nuevo);
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-28']);
+  });
+
+  it('en el teléfono, tocar un día lo elige: su celda marcada y, debajo de la grilla, lo de ese día; no abre nada; «Hoy» vuelve a hoy', async () => {
+    const pagina = montarPagina({ hash: '#agenda', telefono: true, responder: conElFormulario() });
+    await pagina.iniciar();
+    // Al abrir, el elegido es hoy, y los números dicen «Ver el …»
+    assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY, { telefono: true }));
+    assert.equal(pagina.el('ag-elegido').innerHTML, M.htmlDelDiaElegido(HOY, DEL_MES, HOY));
+    assert.equal(numeroDelDia(pagina, '2026-10-22').getAttribute('aria-label'), 'Ver el jueves 22/10');
+    assert.equal(numeroDelDia(pagina, HOY).getAttribute('aria-current'), 'true');
+    assert.equal(celdaDelDia(pagina, HOY).getAttribute('aria-current'), 'date');
+    // El jueves 29, en su cuerpo: lo elige, sin abrir nada ni pedir nada
+    const antes = pagina.rutas().length;
+    await pagina.tocar(celdaDelDia(pagina, '2026-10-29').querySelector('.me-celda-cuerpo'));
+    assert.deepEqual(abiertos(pagina), []);
+    assert.equal(pagina.rutas().length, antes);
+    assert.ok(celdaDelDia(pagina, '2026-10-29').classList.contains('elegido'));
+    assert.ok(!celdaDelDia(pagina, HOY).classList.contains('elegido'));
+    assert.equal(pagina.el('ag-elegido').innerHTML, M.htmlDelDiaElegido('2026-10-29', DEL_MES, HOY));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-29']);
+    // Para el lector de pantalla (Revisión final, 3): su número con aria-current="true" (solo ese) y el título del día, anunciado
+    assert.deepEqual(pagina.el('ag-mes').querySelectorAll('[aria-current="true"]').map((numero) => numero.getAttribute('data-dia')), ['2026-10-29']);
+    assert.equal(pagina.el('me-anuncio').textContent, 'Jueves 29 de octubre');
+    // Con el teclado (Enter o Espacio en el número son su clic): lo elige y el foco queda en su número, que se volvió a dibujar
+    const numero = numeroDelDia(pagina, '2026-10-22');
+    numero.focus();
+    await pagina.tocar(numero);
+    assert.equal(tituloDelElegido(pagina), 'Jueves 22 de octubre');
+    assert.equal(pagina.el('me-anuncio').textContent, 'Jueves 22 de octubre');
+    assert.equal(numeroDelDia(pagina, '2026-10-22').getAttribute('aria-current'), 'true');
+    assert.equal(numeroDelDia(pagina, '2026-10-29').getAttribute('aria-current'), null);
+    assert.notEqual(numeroDelDia(pagina, '2026-10-22'), numero);
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-10-22'));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-22']);
+    // Un evento de la lista del día elegido se abre como en la grilla: el del 29, de otra persona, su detalle
+    await pagina.tocar(celdaDelDia(pagina, '2026-10-29').querySelector('.me-celda-cuerpo'));
+    await pagina.tocar(pagina.el('ag-elegido').querySelector('[data-evento="14"]'));
+    assert.deepEqual(abiertos(pagina), ['modal-evento-ajeno']);
+    await pagina.tecla('Escape');
+    // «Hoy», en el mes de hoy, vuelve a elegir hoy, sin pedir nada
+    await pagina.tocar(pagina.el('ag-hoy'));
+    assert.equal(tituloDelElegido(pagina), 'Lunes 26 de octubre (hoy)');
+    assert.deepEqual(conTabindexCero(pagina), [HOY]);
+    assert.equal(pagina.rutas().length, antes);
+  });
+
+  it('en el teléfono, «Nuevo evento» del día elegido lo abre con esa fecha; al guardar, el foco vuelve a ese botón', async () => {
+    const pagina = montarPagina({ hash: '#agenda', telefono: true, responder: conElFormulario() });
+    await pagina.iniciar();
+    await pagina.tocar(celdaDelDia(pagina, '2026-10-30').querySelector('.me-celda-cuerpo'));
+    const boton = pagina.el('ag-elegido').querySelector('[data-nuevo-el]');
+    assert.equal(boton.getAttribute('data-nuevo-el'), '2026-10-30');
+    boton.focus();
+    await pagina.tocar(boton);
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    assert.equal(pagina.el('modal-evento-titulo').textContent, 'Nuevo evento');
+    assert.equal(pagina.el('ev-fecha').value, '2026-10-30');
+    await pagina.correr();
+    await pagina.escribir('ev-titulo', 'Cierre del mes');
+    await pagina.escribir('ev-desde', '12:00');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    await pagina.esperar();
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos').map((pedido) => pedido.cuerpo.fecha), ['2026-10-30']);
+    const nuevo = pagina.el('ag-elegido').querySelector('[data-nuevo-el="2026-10-30"]');
+    assert.notEqual(nuevo, boton, 'el día elegido se volvió a dibujar');
+    assert.equal(pagina.documento.activeElement, nuevo);
+  });
+
+  it('en el teléfono, con hoy sábado 31/10 y sábado y domingo ocultos, el elegido es el viernes 30; al prender y apagar, el más cercano que se ve', async () => {
+    const pagina = montarPagina({ hash: '#agenda', telefono: true, responder: conNoviembre() });
+    pagina.contexto.Utils.hoyEnArgentina = () => '2026-10-31';
+    await pagina.iniciar();
+    assert.equal(tituloDelElegido(pagina), 'Viernes 30 de octubre');
+    assert.ok(celdaDelDia(pagina, '2026-10-30').classList.contains('elegido'));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-30']);
+    // Con sábado y domingo, sigue el viernes 30; tocar el sábado lo elige
+    await pagina.tocar(pagina.el('ag-finde'));
+    assert.equal(tituloDelElegido(pagina), 'Viernes 30 de octubre');
+    await pagina.tocar(celdaDelDia(pagina, '2026-10-31').querySelector('.me-celda-cuerpo'));
+    assert.equal(tituloDelElegido(pagina), 'Sábado 31 de octubre (hoy)');
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-31']);
+    // Apagado: el sábado no se ve y no hay un día después en la grilla: el viernes 30, también el foco
+    await pagina.tocar(pagina.el('ag-finde'));
+    assert.equal(tituloDelElegido(pagina), 'Viernes 30 de octubre');
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-30']);
+    // Otro mes: el 1 (domingo, oculto): el lunes 2
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    assert.equal(tituloDelElegido(pagina), 'Lunes 2 de noviembre');
+    assert.deepEqual(conTabindexCero(pagina), ['2026-11-02']);
+  });
+
+  it('al pasar de la compu al teléfono (y al revés), el mes se vuelve a dibujar: los números dicen lo que hacen y el foco queda en el suyo', async () => {
+    const pagina = montarPagina({ hash: '#agenda', telefono: false, responder: conElFormulario() });
+    await pagina.iniciar();
+    assert.equal(numeroDelDia(pagina, HOY).getAttribute('aria-label'), 'Nuevo evento el lunes 26/10');
+    numeroDelDia(pagina, HOY).focus();
+    await pagina.cambiarElAncho(true);
+    assert.equal(numeroDelDia(pagina, HOY).getAttribute('aria-label'), 'Ver el lunes 26/10');
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, HOY));
+    // Tocar el martes 27 lo elige (y el foco, que estaba en el mes, va a su número)
+    await pagina.tocar(numeroDelDia(pagina, '2026-10-27'));
+    assert.deepEqual(abiertos(pagina), []);
+    assert.equal(tituloDelElegido(pagina), 'Martes 27 de octubre');
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-10-27'));
+    await pagina.cambiarElAncho(false);
+    assert.equal(numeroDelDia(pagina, '2026-10-27').getAttribute('aria-label'), 'Nuevo evento el martes 27/10');
+    await pagina.tocar(numeroDelDia(pagina, '2026-10-27'));
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    assert.equal(pagina.el('ev-fecha').value, '2026-10-27');
+  });
+
+  it('el teclado: el mes es una sola parada (hoy); las flechas, Inicio y Fin mueven el tabindex="0" y el foco; en el borde, no se mueve', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conNoviembre() });
+    await pagina.iniciar();
+    assert.deepEqual(conTabindexCero(pagina), [HOY]);
+    numeroDelDia(pagina, '2026-10-28').focus();
+    let evento = await teclaConEvento(pagina, 'ArrowRight');
+    assert.equal(evento.defaultPrevented, true);
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-29']);
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-10-29'));
+    // Abajo no hay otra fila: no se mueve (y la flecha no desplaza la página)
+    evento = await teclaConEvento(pagina, 'ArrowDown');
+    assert.equal(evento.defaultPrevented, true);
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-10-29'));
+    const pasos = [['ArrowUp', '2026-10-22'], ['Home', '2026-10-19'], ['End', '2026-10-23'], ['ArrowRight', '2026-10-26'],
+      ['ArrowLeft', '2026-10-23']];
+    for (const [tecla, fecha] of pasos) {
+      await teclaConEvento(pagina, tecla);
+      assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, fecha), tecla);
+      assert.deepEqual(conTabindexCero(pagina), [fecha], tecla);
+    }
+    // El primero de la grilla: a la izquierda no hay nada (la parada pasa a él, que tiene el foco)
+    numeroDelDia(pagina, '2026-09-28').focus();
+    await teclaConEvento(pagina, 'ArrowLeft');
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-09-28'));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-09-28']);
+    // Con Alt, Ctrl o Cmd, u otra tecla, nada
+    for (const extra of [{ altKey: true }, { ctrlKey: true }, { metaKey: true }]) {
+      evento = await teclaConEvento(pagina, 'ArrowRight', extra);
+      assert.equal(evento.defaultPrevented, false, JSON.stringify(extra));
+      assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-09-28'));
+    }
+    evento = await teclaConEvento(pagina, 'a');
+    assert.equal(evento.defaultPrevented, false);
+    assert.deepEqual(conTabindexCero(pagina), ['2026-09-28']);
+    // La parada sigue donde quedó cuando el mes se vuelve a dibujar (con sábado y domingo)
+    await teclaConEvento(pagina, 'ArrowDown');
+    await pagina.tocar(pagina.el('ag-finde'));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-10-05']);
+    // En noviembre, con sábado y domingo, el 28/10 está en la primera fila y abajo, el 04/11
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-11-01']);
+    numeroDelDia(pagina, '2026-10-28').focus();
+    await teclaConEvento(pagina, 'ArrowDown');
+    assert.equal(pagina.documento.activeElement, numeroDelDia(pagina, '2026-11-04'));
+    assert.deepEqual(conTabindexCero(pagina), ['2026-11-04']);
+    // Una tecla en un evento de la celda no mueve nada
+    const otro = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    await otro.iniciar();
+    otro.el('ag-mes').querySelector('[data-evento="11"]').focus();
+    evento = await teclaConEvento(otro, 'ArrowRight');
+    assert.equal(evento.defaultPrevented, false);
+    assert.deepEqual(conTabindexCero(otro), [HOY]);
+  });
+
+  it('el movimiento: la primera vez que el mes se dibuja y se ve, las barras con su --demora y data-animar, que se va dos cuadros después; una sola vez', async () => {
+    const pagina = montarPagina({ hash: '#agenda', cuadros: true, responder: conNoviembre() });
+    await pagina.iniciar();
+    const mes = pagina.el('ag-mes');
+    assert.equal(mes.getAttribute('data-animar'), '');
+    assert.equal(mes.innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY, { animar: true }));
+    assert.match(mes.innerHTML, /--demora:/);
+    pagina.cuadro();
+    assert.equal(mes.getAttribute('data-animar'), '');
+    pagina.cuadro();
+    assert.equal(mes.getAttribute('data-animar'), null);
+    assert.equal(pagina.estado.cuadros.length, 0);
+    // Otro mes, sábado y domingo, volver a pedir el mes (después de guardar) y volver a la pestaña: quietos
+    const quieto = (paso) => {
+      assert.equal(mes.getAttribute('data-animar'), null, paso);
+      assert.doesNotMatch(mes.innerHTML, /--demora/, paso);
+      assert.equal(pagina.estado.cuadros.length, 0, paso);
+    };
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    quieto('otro mes');
+    await pagina.tocar(pagina.el('ag-finde'));
+    quieto('sábado y domingo');
+    await pagina.contexto.volverAPedirTodo();
+    await pagina.esperar();
+    quieto('después de guardar');
+    await pagina.tocar(pagina.el('tab-licencias'));
+    await pagina.tocar(pagina.el('tab-agenda'));
+    quieto('de vuelta en la pestaña');
+  });
+
+  it('el movimiento espera a que el mes se vea: si llega con otra pestaña a la vista, se mueve al volver a la Agenda', async () => {
+    let soltar;
+    const tarda = new Promise((resolver) => { soltar = resolver; });
+    const pagina = montarPagina({
+      hash: '#agenda',
+      cuadros: true,
+      responder: conElFormulario({ eventos: { [RUTA_DEL_MES]: async () => { await tarda; return ok(conLaFrase(DEL_MES, '2026-10')); } } })
+    });
+    const inicio = pagina.contexto.iniciarMiEspacio();
+    await pagina.esperar();
+    await pagina.tocar(pagina.el('tab-licencias'));
+    soltar();
+    await inicio;
+    await pagina.esperar();
+    const mes = pagina.el('ag-mes');
+    assert.equal(mes.getAttribute('data-animar'), null);
+    assert.doesNotMatch(mes.innerHTML, /--demora/);
+    assert.equal(pagina.estado.cuadros.length, 0);
+    await pagina.tocar(pagina.el('tab-agenda'));
+    assert.equal(mes.getAttribute('data-animar'), '');
+    assert.match(mes.innerHTML, /--demora:/);
+    pagina.cuadro();
+    pagina.cuadro();
+    assert.equal(mes.getAttribute('data-animar'), null);
+  });
+
+  it('sin movimiento con prefers-reduced-motion o sin requestAnimationFrame: el mes llega quieto', async () => {
+    for (const opciones of [{ cuadros: true, reducido: true }, { cuadros: false }, { cuadros: true, reducido: true, telefono: true }]) {
+      const pagina = montarPagina({ hash: '#agenda', ...opciones, responder: conElFormulario() });
+      await pagina.iniciar();
+      const mes = pagina.el('ag-mes');
+      assert.equal(mes.getAttribute('data-animar'), null, JSON.stringify(opciones));
+      assert.doesNotMatch(mes.innerHTML, /--demora/, JSON.stringify(opciones));
+      assert.equal(pagina.estado.cuadros.length, 0, JSON.stringify(opciones));
+    }
+  });
+});
+
 // spec 2026-10-27-mi-espacio-licencia-word, 6: «Word» en la lista baja el Word con un fetch propio (el token en el encabezado) y
 // descargarBlob, con el nombre del Content-Disposition
 describe('«Word» en la lista de licencias (DOM falso)', () => {
@@ -5820,7 +7179,9 @@ describe('el segundo paso de «Cargar licencia» (DOM falso)', () => {
     assert.equal(pagina.pedidosA('GET', '/api/mi-espacio/licencias/6/nota').length, 1);
   });
 
-  it('otro año: una licencia de 2027, que la lista de 2026 no muestra, se ve igual (la fila viene de …/nota)', async () => {
+  // Desde la licencia anulada en Configuración (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3), la lista pasa a 2027 (acá el
+  // servidor falso no la tiene: la lista dice que no se pudo cargar), pero el segundo paso no depende de ella
+  it('otro año: una licencia de 2027 se ve igual aunque la lista no la tenga (la fila viene de …/nota), con «Está en la lista de 2027.»', async () => {
     const pagina = montarPagina({
       hash: '#licencias',
       responder: conFormularios({
@@ -5831,11 +7192,14 @@ describe('el segundo paso de «Cargar licencia» (DOM falso)', () => {
     await pagina.iniciar();
     await cargarLicencia(pagina, { desde: '2027-02-01', hasta: '2027-02-05' });
     await pagina.tocar(pagina.el('ml-guardar'));
-    assert.equal(pagina.el('vista-licencias').querySelector('[data-editar-licencia="10"]'), null, 'la lista de 2026 no la muestra');
+    assert.equal(pagina.pedidosA('GET', '/api/mi-espacio/licencias?anio=2027').length, 1, 'la lista se pide en 2027');
+    assert.equal(pagina.el('vista-licencias').querySelector('[data-editar-licencia="10"]'), null, 'la lista no la tiene');
     const nota = respuestaDeLaNota(conLicencias(PLANTA.estado, licencia(10, 'vacaciones', '2027-02-01', '2027-02-05')), 10);
     assert.equal(nota.fila.fechas_texto, '01/02 al 05/02/2027');
+    assert.equal(nota.lista, 'Está en la lista de 2027.');
     assert.equal(pagina.el('ml-paso-dos').innerHTML, M.htmlDelSegundoPaso({ ...nota, avisos: [] }));
     assert.equal(pagina.el('ml-paso-dos').querySelector('.me-paso-dos-fechas').textContent, '01/02 al 05/02/2027');
+    assert.equal(pagina.el('ml-paso-dos').querySelector('.me-paso-dos-lista').textContent, 'Está en la lista de 2027.');
   });
 
   it('«Listo», la × y Escape cierran; al volver a abrir «Cargar licencia» está el formulario', async () => {
@@ -6999,5 +8363,752 @@ describe('mi-espacio.html: los estilos de la planilla', () => {
       assert.ok(contraste(borde, fondo) >= 3, `${borde} sobre ${fondo}: ${contraste(borde, fondo).toFixed(2)}:1`);
     }
     assert.equal(de('.mp-nota-campo input', 'border'), borde);
+  });
+});
+
+// =====================================================================================================================================
+// Una licencia de otro año y los avisos para revisar (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 2.3 y 3.5): la persona de
+// planta con sus vacaciones de noviembre pasadas a enero de 2027 (la 20, del 04/01 al 15/01/2027), que en Configuración quedaron del
+// 04/01 al 08/01. Los datos, como los arma el servidor: resumenDe con los vínculos (`para_revisar` y la oración de lo cargado con su
+// `anio`), filasDeLicencias (`otros_anios`) y textoDeLaListaDe (`lista` del segundo paso, en respuestaDeLaNota)
+// =====================================================================================================================================
+
+const DE_ENERO = licencia(20, 'vacaciones', '2027-01-04', '2027-01-15');
+const CON_ENERO = Object.freeze({ ...PLANTA.estado, licencias: [...PLANTA.estado.licencias.filter((fila) => fila.id !== 6), DE_ENERO] });
+// El vínculo de una fila con Configuración como lo da vinculosDe, con lo que hay que revisar
+const conRevision = (motivo, desde = null, hasta = null) => ({ configuracion: null, revision: { motivo, desde, hasta } });
+const RESUMEN_CON_ENERO = resumenDel(PLANTA, {
+  estado: CON_ENERO, vinculos: new Map([[20, conRevision('fechas', '2027-01-04', '2027-01-08')]])
+});
+const LISTA_2026_CON_ENERO = licenciasDe(PLANTA, { estado: CON_ENERO });
+const LISTA_2027_CON_ENERO = licenciasDe(PLANTA, { estado: CON_ENERO, anio: 2027 });
+const [PARA_REVISAR_DE_ENERO] = RESUMEN_CON_ENERO.para_revisar;
+const AVISO_AMBAR = (items) => `<div class="me-aviso me-aviso-ambar"><ul class="me-faltantes">${items}</ul></div>`;
+const LINK_A_2027 = '<a href="#licencias" data-pestana="licencias" data-anio-licencias="2027">Ver en Licencias de 2027</a>';
+const FALTANTE_DE_FEBRERO = 'Revisá tus francos de febrero de 2027: cargaste 1 y no corresponde ninguno.';
+const OTROS_DE_2027 = '<p class="me-otros-anios">También tenés 1 licencia cargada en 2027. '
+  + '<button type="button" data-anio="2027">Ver 2027</button></p>';
+const NO_ENTEROS = Object.freeze(['2027', 2027.5, null, undefined, Number.NaN, MALICIOSO, {}]);
+
+describe('otro año y para revisar: lo puro', () => {
+  it('los datos de prueba son los del servidor: el aviso para revisar, la oración de lo cargado con su año y los otros años', () => {
+    assert.deepEqual(RESUMEN_CON_ENERO.para_revisar, [{
+      licencia_id: 20, anio: 2027, texto: 'Revisá tu licencia del 04/01 al 15/01/2027: en Configuración quedó del 04/01 al 08/01.',
+      enlace: 'Ver en Licencias de 2027'
+    }]);
+    assert.deepEqual(RESUMEN_CON_ENERO.faltantes, []);
+    assert.deepEqual(RESUMEN_CON_ENERO.titular.bajada[1], { texto: '10 ya están cargados para enero de 2027.', vence: false, anio: 2027 });
+    assert.deepEqual(LISTA_2026_CON_ENERO.otros_anios, [{ anio: 2027, cantidad: 1, texto: 'También tenés 1 licencia cargada en 2027.' }]);
+    assert.deepEqual(LISTA_2027_CON_ENERO.otros_anios, []);
+  });
+
+  it('htmlDeFaltantes: los faltantes como siempre y después cada aviso para revisar, con su link a Licencias de su año', () => {
+    const { texto } = PARA_REVISAR_DE_ENERO;
+    // Los dos
+    assert.equal(M.htmlDeFaltantes([FALTANTE_DE_FEBRERO], [PARA_REVISAR_DE_ENERO]),
+      AVISO_AMBAR(`<li>${FALTANTE_DE_FEBRERO}</li><li>${texto} ${LINK_A_2027}</li>`));
+    // Solo el aviso para revisar: en la lista igual
+    assert.equal(M.htmlDeFaltantes([], [PARA_REVISAR_DE_ENERO]), AVISO_AMBAR(`<li>${texto} ${LINK_A_2027}</li>`));
+    assert.equal(M.htmlDeFaltantes(undefined, [PARA_REVISAR_DE_ENERO]), AVISO_AMBAR(`<li>${texto} ${LINK_A_2027}</li>`));
+    // Solo los faltantes: como siempre (uno, un párrafo)
+    assert.equal(M.htmlDeFaltantes([FALTANTE_DE_FEBRERO], []), `<p class="me-aviso me-aviso-ambar">${FALTANTE_DE_FEBRERO}</p>`);
+    assert.equal(M.htmlDeFaltantes([FALTANTE_DE_FEBRERO]), `<p class="me-aviso me-aviso-ambar">${FALTANTE_DE_FEBRERO}</p>`);
+    // Ninguno (o lo que no es un aviso con texto): nada
+    for (const raro of [[], undefined, null, 'x', 3, [{}], [{ anio: 2027, enlace: 'Ver' }], [{ texto: '  ', anio: 2027 }], [null]]) {
+      assert.equal(M.htmlDeFaltantes([], raro), '', JSON.stringify(raro));
+    }
+    assert.equal(M.htmlDeFaltantes(), '');
+  });
+
+  it('htmlDeFaltantes: todo texto del servidor escapado, también el del link; un año que no es entero, o sin texto del link, sin link', () => {
+    const malo = M.htmlDeFaltantes([], [{ licencia_id: 20, anio: 2027, texto: '<script>alert(1)</script>', enlace: '<script>ver</script>' }]);
+    assert.equal(malo, AVISO_AMBAR('<li>&lt;script&gt;alert(1)&lt;/script&gt; <a href="#licencias" data-pestana="licencias" '
+      + 'data-anio-licencias="2027">&lt;script&gt;ver&lt;/script&gt;</a></li>'));
+    assert.ok(!malo.includes('<script>'));
+    for (const anio of NO_ENTEROS) {
+      assert.equal(M.htmlDeFaltantes([], [{ ...PARA_REVISAR_DE_ENERO, anio }]), AVISO_AMBAR(`<li>${PARA_REVISAR_DE_ENERO.texto}</li>`),
+        String(anio));
+    }
+    for (const enlace of ['', '  ', null, 3]) {
+      assert.equal(M.htmlDeFaltantes([], [{ ...PARA_REVISAR_DE_ENERO, enlace }]), AVISO_AMBAR(`<li>${PARA_REVISAR_DE_ENERO.texto}</li>`),
+        String(enlace));
+    }
+  });
+
+  it('htmlDelResumen le pasa `para_revisar`: el aviso ámbar va arriba de todo, antes de la banda; sin ninguno, no hay aviso', () => {
+    const html = M.htmlDelResumen(RESUMEN_CON_ENERO);
+    assert.ok(html.startsWith(`${AVISO_AMBAR(`<li>${PARA_REVISAR_DE_ENERO.texto} ${LINK_A_2027}</li>`)}<section class="me-banda"`));
+    assert.ok(!M.htmlDelResumen({ ...RESUMEN_CON_ENERO, para_revisar: [] }).includes('me-aviso-ambar'));
+    // Un Resumen de antes, sin `para_revisar`, como siempre
+    const deAntes = { ...RESUMEN_CON_ENERO };
+    delete deAntes.para_revisar;
+    assert.ok(M.htmlDelResumen(deAntes).startsWith('<section class="me-banda"'));
+  });
+
+  it('htmlDeLaFrase: la oración de lo cargado, con su año, es un link a Licencias de ese año; la que vence sigue en negrita', () => {
+    assert.equal(M.htmlDeLaFrase(RESUMEN_CON_ENERO.titular).match(/<p class="me-frase-bajada">[\s\S]*?<\/p>/)[0],
+      '<p class="me-frase-bajada"><b class="vence">8 vencen el jueves 31/12.</b> <a href="#licencias" data-pestana="licencias" '
+      + 'data-anio-licencias="2027" class="me-frase-link">10 ya están cargados para enero de 2027.</a> '
+      + 'Otros 10 se habilitan el 1/1/2027.</p>');
+    // Sin año, o con uno que no es entero (un null del servidor), el texto solo
+    for (const anio of NO_ENTEROS) {
+      const bajada = RESUMEN_CON_ENERO.titular.bajada.map((oracion) => (Object.hasOwn(oracion, 'anio') ? { ...oracion, anio } : oracion));
+      const html = M.htmlDeLaFrase({ ...RESUMEN_CON_ENERO.titular, bajada });
+      assert.ok(!html.includes('me-frase-link'), String(anio));
+      assert.ok(!html.includes('data-anio-licencias'), String(anio));
+      assert.ok(html.includes('</b> 10 ya están cargados para enero de 2027. Otros 10'), String(anio));
+    }
+    // El texto, escapado también en el link
+    const malo = M.htmlDeLaFrase({ ...RESUMEN_CON_ENERO.titular, bajada: [{ texto: MALICIOSO, vence: false, anio: 2027 }] });
+    assert.ok(malo.includes(`<a href="#licencias" data-pestana="licencias" data-anio-licencias="2027" class="me-frase-link">${ESCAPADO}</a>`));
+    assert.ok(!malo.includes(MALICIOSO));
+  });
+
+  it('la lista: debajo de la cabeza, cada otro año con su texto y «Ver AAAA» (el data-anio del selector)', () => {
+    const lista = M.htmlDeListaDeLicencias(LISTA_2026_CON_ENERO, 'todas');
+    assert.ok(lista.includes(`Cargar licencia</button></span></div>${OTROS_DE_2027}<div class="sg-chips"`));
+    assert.equal(lista.split('me-otros-anios').length - 1, 1);
+    const ver = botonesDe(lista).find((boton) => boton.texto === 'Ver 2027');
+    assert.deepEqual(ver.atributos, { type: 'button', 'data-anio': '2027' });
+    // Sin otros años, nada
+    assert.ok(!M.htmlDeListaDeLicencias(LISTA_2027_CON_ENERO, 'todas').includes('me-otros-anios'));
+    // Varios, en su orden; con otro filtro, también; sin licencias en el año que se ve, también (antes del vacío)
+    const varios = {
+      ...LISTA_2026_CON_ENERO,
+      otros_anios: [{ anio: 2025, cantidad: 2, texto: 'También tenés 2 licencias cargadas en 2025.' }, ...LISTA_2026_CON_ENERO.otros_anios]
+    };
+    const de2025 = '<p class="me-otros-anios">También tenés 2 licencias cargadas en 2025. '
+      + '<button type="button" data-anio="2025">Ver 2025</button></p>';
+    assert.ok(M.htmlDeListaDeLicencias(varios, 'franquicia').includes(`</div>${de2025}${OTROS_DE_2027}<div class="sg-chips"`));
+    const vacia = { ...LISTA_2027_CON_ENERO, licencias: [], filtros: [], otros_anios: LISTA_2026_CON_ENERO.otros_anios };
+    assert.ok(M.htmlDeListaDeLicencias(vacia, 'todas').includes(`</div>${OTROS_DE_2027}<p class="me-vacio">`));
+  });
+
+  it('la lista: el texto de otros años escapado; un año que no es entero, el texto sin el botón; lo que no es un aviso con texto, nada', () => {
+    const malo = M.htmlDeListaDeLicencias({ ...LISTA_2026_CON_ENERO, otros_anios: [{ anio: 2027, cantidad: 1, texto: MALICIOSO }] }, 'todas');
+    assert.ok(malo.includes(`<p class="me-otros-anios">${ESCAPADO} <button type="button" data-anio="2027">Ver 2027</button></p>`));
+    assert.ok(!malo.includes(MALICIOSO));
+    for (const anio of NO_ENTEROS) {
+      const html = M.htmlDeListaDeLicencias({ ...LISTA_2026_CON_ENERO, otros_anios: [{ anio, cantidad: 1, texto: 'También tenés 1.' }] }, 'todas');
+      assert.ok(html.includes('<p class="me-otros-anios">También tenés 1.</p>'), String(anio));
+    }
+    for (const raro of [undefined, null, 'x', [{}], [{ anio: 2027, texto: '' }], [null]]) {
+      assert.ok(!M.htmlDeListaDeLicencias({ ...LISTA_2026_CON_ENERO, otros_anios: raro }, 'todas').includes('me-otros-anios'),
+        JSON.stringify(raro));
+    }
+    // Sin modalidad, solo el mensaje
+    assert.equal(M.htmlDeListaDeLicencias({ ...SIN_MODALIDAD, otros_anios: LISTA_2026_CON_ENERO.otros_anios }, 'todas'),
+      M.htmlDeMensaje(MENSAJES_MI_ESPACIO.sinModalidad));
+  });
+
+  it('htmlDelSegundoPaso: `lista`, escapada, después de la licencia guardada; sin ella (la del año en curso), nada', () => {
+    const nota = respuestaDeLaNota(conLicencias(PLANTA.estado, licencia(10, 'vacaciones', '2027-02-01', '2027-02-05')), 10);
+    assert.equal(nota.lista, 'Está en la lista de 2027.');
+    const html = M.htmlDelSegundoPaso({ ...nota, avisos: [] });
+    assert.ok(html.includes('</div></div><p class="me-paso-dos-lista">Está en la lista de 2027.</p><h3 class="me-paso-dos-titulo">'));
+    // Sin la fila, después de los avisos
+    assert.ok(M.htmlDelSegundoPaso({ lista: nota.lista, avisos: [TEXTO_NO_SE_COPIA] }).startsWith(
+      `<div class="me-recuadro ambar"><p>${TEXTO_NO_SE_COPIA}</p></div><p class="me-paso-dos-lista">Está en la lista de 2027.</p>`));
+    assert.equal(NOTA_DE_LA_NUEVE.lista, null);
+    assert.ok(!M.htmlDelSegundoPaso({ ...NOTA_DE_LA_NUEVE, avisos: [] }).includes('me-paso-dos-lista'));
+    for (const lista of [null, undefined, '', '  ', 3, {}]) {
+      assert.ok(!M.htmlDelSegundoPaso({ ...nota, lista }).includes('me-paso-dos-lista'), String(lista));
+    }
+    const malo = M.htmlDelSegundoPaso({ ...nota, lista: MALICIOSO });
+    assert.ok(malo.includes(`<p class="me-paso-dos-lista">${ESCAPADO}</p>`));
+    assert.ok(!malo.includes(MALICIOSO));
+  });
+
+  it('anioDeLaLicencia: el año de un AAAA-MM-DD; lo demás, null', () => {
+    assert.equal(M.anioDeLaLicencia('2027-01-04'), 2027);
+    assert.equal(M.anioDeLaLicencia('2026-12-31'), 2026);
+    for (const raro of ['2027-1-4', '2027-02-30', '2027-01-04T00:00', '', ' 2027-01-04', null, undefined, 5, 2027, {}, ['2027-01-04']]) {
+      assert.equal(M.anioDeLaLicencia(raro), null, String(raro));
+    }
+  });
+});
+
+// Lo que contesta el servidor falso con las vacaciones de enero: el Resumen con el aviso para revisar, las listas de 2025 a 2027 y,
+// con `alta`, el alta de la 20; `extra`, como en conFormularios
+const ALTA_DE_LA_VEINTE = respuesta(201, { success: true, data: { id: 20 }, message: 'Licencia cargada.' });
+const conEnero = ({ alta = false, extra = () => undefined } = {}) => conFormularios({
+  extra: (metodo, ruta, cuerpo) => {
+    const propia = extra(metodo, ruta, cuerpo);
+    if (propia !== undefined) return propia;
+    if (alta && metodo === 'POST' && ruta === '/api/mi-espacio/licencias') return ALTA_DE_LA_VEINTE;
+    if (ruta === '/api/mi-espacio/resumen') return ok(RESUMEN_CON_ENERO);
+    if (ruta === '/api/mi-espacio/licencias' || ruta === '/api/mi-espacio/licencias?anio=2026') return ok(LISTA_2026_CON_ENERO);
+    if (ruta === '/api/mi-espacio/licencias?anio=2027') return ok(LISTA_2027_CON_ENERO);
+    if (ruta === '/api/mi-espacio/licencias?anio=2025') return ok(licenciasDe(PLANTA, { estado: CON_ENERO, anio: 2025 }));
+    return undefined;
+  }
+});
+// Los pedidos de la lista de licencias (los GET), en orden; el título de la lista que se ve; la pestaña elegida; y el año que la
+// lista tiene que mostrar la próxima vez que se pida
+const pedidosDeLaLista = (pagina) => pagina.estado.pedidos
+  .filter(({ metodo, ruta }) => metodo === 'GET' && /^\/api\/mi-espacio\/licencias(?:\?|$)/.test(ruta)).map(({ ruta }) => ruta);
+const tituloDeLaLista = (pagina) => pagina.el('vista-licencias').querySelector('h2')?.textContent ?? null;
+const pestanaElegida = (pagina) => ['resumen', 'licencias', 'horas', 'agenda']
+  .find((nombre) => pagina.el(`tab-${nombre}`).getAttribute('aria-selected') === 'true');
+const anioPendienteDe = (pagina) => vm.runInContext('pagina.anioDeLicencias', pagina.contexto);
+
+describe('otro año y para revisar en la página (DOM falso)', () => {
+  it('guardar una licencia de 2027 con Licencias abierta en 2026 pide la lista de 2027, y el segundo paso dice en qué lista quedó', async () => {
+    const pagina = montarPagina({ hash: '#licencias', responder: conEnero({ alta: true }) });
+    await pagina.iniciar();
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2026');
+    await cargarLicencia(pagina, { desde: '2027-01-04', hasta: '2027-01-15' });
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias', '/api/mi-espacio/licencias?anio=2027']);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+    assert.ok(pagina.el('vista-licencias').querySelector('[data-editar-licencia="20"]'));
+    assert.equal(pagina.el('ml-paso-dos').querySelector('.me-paso-dos-lista').textContent, 'Está en la lista de 2027.');
+    // Se usó una sola vez: ir y volver de la pestaña no la pide de nuevo
+    assert.equal(anioPendienteDe(pagina), null);
+    await pagina.tocar(listo(pagina));
+    await pagina.tocar(pagina.el('tab-resumen'));
+    await pagina.tocar(pagina.el('tab-licencias'));
+    assert.equal(pedidosDeLaLista(pagina).length, 2);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+  });
+
+  it('guardarla desde el Resumen, con Licencias sin abrir: al abrirla, la lista de 2027 (Review Focus 5); también desde «Vence pronto»', async () => {
+    const abrir = {
+      encabezado: async (pagina) => { await cargarLicencia(pagina, { desde: '2027-01-04', hasta: '2027-01-15' }); },
+      'vence pronto': async (pagina) => {
+        await pagina.tocar(pagina.el('vista-resumen').querySelector('[data-accion="cargar-licencia"][data-tipo="vacaciones"]'));
+        await pagina.correr();
+        await pagina.escribir('ml-desde', '2027-01-04');
+        await pagina.escribir('ml-hasta', '2027-01-15');
+        await pagina.correr();
+      }
+    };
+    for (const [desde, hacer] of Object.entries(abrir)) {
+      const pagina = montarPagina({ responder: conEnero({ alta: true }) });
+      await pagina.iniciar();
+      await hacer(pagina);
+      assert.equal(pagina.el('ml-tipos').querySelector('input:checked')?.getAttribute('value'), 'vacaciones', desde);
+      await pagina.tocar(pagina.el('ml-guardar'));
+      assert.equal(pagina.el('modal-licencia-titulo').textContent, 'Licencia cargada', desde);
+      assert.deepEqual(pedidosDeLaLista(pagina), [], `${desde}: la lista no se pidió`);
+      assert.equal(anioPendienteDe(pagina), 2027, desde);
+      await pagina.tocar(listo(pagina));
+      await pagina.tocar(pagina.el('tab-licencias'));
+      assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias?anio=2027'], desde);
+      assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027', desde);
+      assert.equal(anioPendienteDe(pagina), null, desde);
+    }
+  });
+
+  it('una del año en curso pide la lista sin ?anio=: desde Licencias en 2025 y desde el Resumen', async () => {
+    // Desde Licencias en 2025: la lista pasa al año en curso, sin ?anio=
+    const enLicencias = montarPagina({ hash: '#licencias', responder: conEnero() });
+    await enLicencias.iniciar();
+    await enLicencias.tocar(enLicencias.el('vista-licencias').querySelector('[data-anio="2025"]'));
+    assert.equal(tituloDeLaLista(enLicencias), 'Mis licencias de 2025');
+    await cargarLicencia(enLicencias);
+    await enLicencias.tocar(enLicencias.el('ml-guardar'));
+    assert.deepEqual(pedidosDeLaLista(enLicencias),
+      ['/api/mi-espacio/licencias', '/api/mi-espacio/licencias?anio=2025', '/api/mi-espacio/licencias']);
+    assert.equal(tituloDeLaLista(enLicencias), 'Mis licencias de 2026');
+    assert.equal(enLicencias.el('ml-paso-dos').querySelector('.me-paso-dos-lista'), null);
+
+    // Desde el Resumen: al abrir Licencias, también sin ?anio=
+    const enElResumen = montarPagina({ responder: conEnero() });
+    await enElResumen.iniciar();
+    await cargarLicencia(enElResumen);
+    await enElResumen.tocar(enElResumen.el('ml-guardar'));
+    await enElResumen.tocar(listo(enElResumen));
+    await enElResumen.tocar(enElResumen.el('tab-licencias'));
+    assert.deepEqual(pedidosDeLaLista(enElResumen), ['/api/mi-espacio/licencias']);
+  });
+
+  it('un uso autorizado de 2027 también: al abrir Licencias, la lista de su año', async () => {
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: conEnero({
+        extra: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/mi-espacio/licencias'
+          ? respuesta(201, { success: true, data: { id: 21 }, message: 'Uso autorizado registrado.' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-abrir="uso"]'));
+    await pagina.escribir('mu-fecha', '2027-01-04');
+    await pagina.correr();
+    await pagina.tocar(pagina.el('mu-guardar'));
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/licencias').at(-1).cuerpo.desde, '2027-01-04');
+    assert.equal(pagina.abierto('modal-uso'), false);
+    assert.equal(anioPendienteDe(pagina), 2027);
+    await pagina.tocar(pagina.el('tab-licencias'));
+    assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias?anio=2027']);
+  });
+
+  it('el link de la bajada y el del aviso para revisar abren Licencias en su año, con el foco en la pestaña; si ya lo muestra, no la piden', async () => {
+    const pagina = montarPagina({ responder: conEnero() });
+    await pagina.iniciar();
+    const vista = pagina.el('vista-resumen');
+    const bajada = vista.querySelector('.me-frase-link');
+    assert.equal(bajada.getAttribute('data-anio-licencias'), '2027');
+    const clic = bajada.disparar('click');
+    await pagina.esperar();
+    assert.equal(clic.defaultPrevented, true);
+    assert.equal(pestanaElegida(pagina), 'licencias');
+    assert.equal(pagina.documento.activeElement, pagina.el('tab-licencias'));
+    assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias?anio=2027']);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+    assert.equal(pagina.el('me-anuncio').textContent, 'Mis licencias de 2027');
+
+    // El del aviso para revisar: la lista ya muestra 2027, no la pide de nuevo
+    await pagina.tocar(pagina.el('tab-resumen'));
+    const aviso = vista.querySelector('.me-faltantes a');
+    assert.equal(aviso.textContent, 'Ver en Licencias de 2027');
+    await pagina.tocar(aviso);
+    assert.equal(pestanaElegida(pagina), 'licencias');
+    assert.equal(pagina.documento.activeElement, pagina.el('tab-licencias'));
+    assert.equal(pedidosDeLaLista(pagina).length, 1);
+
+    // Con la lista en 2026, la pide en 2027
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-anio="2026"]'));
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2026');
+    await pagina.tocar(pagina.el('tab-resumen'));
+    await pagina.tocar(vista.querySelector('.me-faltantes a'));
+    assert.deepEqual(pedidosDeLaLista(pagina),
+      ['/api/mi-espacio/licencias?anio=2027', '/api/mi-espacio/licencias?anio=2026', '/api/mi-espacio/licencias?anio=2027']);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+    assert.equal(pagina.documento.activeElement, pagina.el('tab-licencias'));
+  });
+
+  it('con Ctrl, Cmd, Mayúsculas, Alt o un botón que no es el principal, el link hace lo suyo: no cambia la pestaña ni pide nada', async () => {
+    for (const modificador of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+      const pagina = montarPagina({ responder: conEnero() });
+      await pagina.iniciar();
+      const clic = pagina.el('vista-resumen').querySelector('.me-frase-link').disparar('click', modificador);
+      await pagina.esperar();
+      assert.equal(clic.defaultPrevented, false, JSON.stringify(modificador));
+      assert.equal(pestanaElegida(pagina), 'resumen', JSON.stringify(modificador));
+      assert.deepEqual(pedidosDeLaLista(pagina), [], JSON.stringify(modificador));
+      assert.equal(anioPendienteDe(pagina), null, JSON.stringify(modificador));
+    }
+  });
+
+  it('«Ver 2027» de otros años pide ese año, el foco va a 2027 en el selector y se anuncia el título', async () => {
+    const pagina = montarPagina({ hash: '#licencias', responder: conEnero() });
+    await pagina.iniciar();
+    const ver = pagina.el('vista-licencias').querySelector('.me-otros-anios button');
+    assert.equal(ver.textContent, 'Ver 2027');
+    ver.focus();
+    await pagina.tocar(ver);
+    assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias', '/api/mi-espacio/licencias?anio=2027']);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+    const elegido = pagina.el('vista-licencias').querySelector('.me-segmento [data-anio="2027"]');
+    assert.equal(elegido.getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.documento.activeElement, elegido);
+    assert.equal(pagina.el('me-anuncio').textContent, 'Mis licencias de 2027');
+  });
+
+  it('con Licencias abierta y sin lista (la carga falló), guardar una de 2027 la pide en 2027', async () => {
+    let falla = true;
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conEnero({
+        alta: true,
+        extra: (metodo, ruta) => (falla && ruta === '/api/mi-espacio/licencias' ? respuesta(500, { success: false, error: 'x' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    falla = false;
+    assert.ok(pagina.el('vista-licencias').textContent.includes('No se pudieron cargar tus licencias.'));
+    await cargarLicencia(pagina, { desde: '2027-01-04', hasta: '2027-01-15' });
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias', '/api/mi-espacio/licencias?anio=2027']);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+    assert.equal(anioPendienteDe(pagina), null);
+  });
+
+  it('una lista vieja que llega después de guardar no tapa el año de lo guardado: al abrir Licencias, la pide en 2027', async () => {
+    const primera = demorada();
+    let pedidas = 0;
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conEnero({
+        alta: true,
+        extra: (metodo, ruta) => {
+          if (ruta !== '/api/mi-espacio/licencias') return undefined;
+          pedidas += 1;
+          return pedidas === 1 ? primera.promesa : undefined;
+        }
+      })
+    });
+    // La lista de entrada tarda: la página se usa mientras tanto (iniciarMiEspacio la espera, así que no se espera)
+    pagina.contexto.iniciarMiEspacio();
+    await pagina.esperar();
+    await pagina.tocar(pagina.el('tab-resumen'));
+    await cargarLicencia(pagina, { desde: '2027-01-04', hasta: '2027-01-15' });
+    await pagina.tocar(pagina.el('ml-guardar'));
+    await pagina.tocar(listo(pagina));
+    assert.equal(anioPendienteDe(pagina), 2027);
+    // Llega la de entrada (la de 2026), ya vieja
+    primera.soltar(ok(LISTA_2026_CON_ENERO));
+    await pagina.esperar();
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2026');
+    await pagina.tocar(pagina.el('tab-licencias'));
+    assert.deepEqual(pedidosDeLaLista(pagina), ['/api/mi-espacio/licencias', '/api/mi-espacio/licencias?anio=2027']);
+    assert.equal(tituloDeLaLista(pagina), 'Mis licencias de 2027');
+    assert.equal(anioPendienteDe(pagina), null);
+  });
+});
+
+// Los estilos del link de la bajada, del aviso para revisar, de otros años y del segundo paso (spec
+// 2026-10-28-mi-espacio-licencia-anulada), leídos del <style> de mi-espacio.html: subrayados, con 4,5:1 o más sobre su fondo, y el
+// foco visible de la página
+describe('mi-espacio.html: los estilos de otro año y para revisar', () => {
+  const estilo = estiloDeLaPagina();
+  const token = (nombre) => new RegExp(`${nombre}: (#[0-9A-Fa-f]{6});`).exec(estilo)?.[1];
+  const colorDe = (selector) => {
+    const regla = reglaDe(selector);
+    assert.ok(regla, selector);
+    const nombre = /(?:^|[;{\s])color: var\((--sg-[\w-]+)\);/.exec(regla)?.[1];
+    assert.ok(nombre, `${selector} { color }`);
+    return token(nombre);
+  };
+  const BLANCO = '#FFFFFF';
+
+  it('los links y el botón, subrayados; los textos, con 4,5:1 o más sobre su fondo', () => {
+    for (const selector of ['.me-frase-link', '.me-faltantes a', '.me-otros-anios button']) {
+      assert.match(reglaDe(selector) ?? '', /text-decoration: underline;/, selector);
+    }
+    const pares = [
+      ['el link de la bajada', colorDe('.me-frase-link'), token('--sg-cielo')],
+      ['el link del aviso para revisar', colorDe('.me-faltantes a'), token('--sg-ambar-fondo')],
+      ['otros años', colorDe('.me-otros-anios'), BLANCO],
+      ['«Ver 2027»', colorDe('.me-otros-anios button'), BLANCO],
+      ['en qué lista quedó', colorDe('.me-paso-dos-lista'), BLANCO]
+    ];
+    for (const [nombre, texto, fondo] of pares) {
+      assert.ok(texto && fondo, nombre);
+      assert.ok(contraste(texto, fondo) >= 4.5, `${nombre}: ${texto} sobre ${fondo}, ${contraste(texto, fondo).toFixed(2)}:1`);
+    }
+    // El de la bajada, con el color de la frase
+    assert.equal(colorDe('.me-frase-link'), colorDe('.me-frase'));
+  });
+
+  it('el foco, visible como en el resto de la página (los links y los botones de .me-pagina)', () => {
+    assert.match(reglaDe('.me-pagina a:focus-visible, .me-pagina button:focus-visible'), /outline: 3px solid var\(--tinta\);/);
+  });
+});
+
+// Los estilos de la agenda con más onda (spec 2026-10-28-mi-espacio-agenda-onda, 3.3, 3.4, 3.8 y 6), leídos del <style> de
+// mi-espacio.html: el texto con 4,5:1 o más sobre su fondo (también en los días que ya pasaron, en los de otro mes y en hoy), los
+// puntos y las líneas del teléfono con 3:1 o más sobre la celda más oscura (hoy, --sg-cielo) y sobre el blanco, y la leyenda con
+// los íconos del mes
+describe('mi-espacio.html: los estilos de la agenda', () => {
+  const estilo = estiloDeLaPagina();
+  const token = (nombre) => new RegExp(`${nombre}: (#[0-9A-Fa-f]{6});`).exec(estilo)?.[1];
+  // Un color de un valor: un token --sg-* (su #RRGGBB de :root) o un #RGB / #RRGGBB
+  const color = (valor) => {
+    const nombre = /var\((--sg-[\w-]+)\)/.exec(valor)?.[1];
+    const hex = nombre ? token(nombre) : /#[0-9A-Fa-f]{3,6}\b/.exec(valor)?.[0];
+    assert.ok(hex, `el color de ${valor}`);
+    return (hex.length === 4 ? `#${[...hex.slice(1)].map((c) => c + c).join('')}` : hex).toUpperCase();
+  };
+  // El valor de una propiedad en la regla de un selector, del <style> entero o de un pedazo (el bloque del teléfono)
+  const de = (selector, propiedad, texto = estilo) => {
+    const regla = new RegExp(`(?:^|\\n)\\s*${escaparRegex(selector)}\\s*\\{([^}]*)\\}`).exec(texto)?.[1];
+    assert.ok(regla, selector);
+    const valor = new RegExp(`(?:^|[;{\\s])${propiedad}: ([^;]+);`).exec(regla)?.[1];
+    assert.ok(valor, `${selector} { ${propiedad} }`);
+    return color(valor);
+  };
+  // El bloque del teléfono, con sus llaves
+  const telefono = (() => {
+    const inicio = estilo.indexOf('@media (max-width: 640px) {');
+    let nivel = 0;
+    for (let i = estilo.indexOf('{', inicio); i < estilo.length; i += 1) {
+      if (estilo[i] === '{') nivel += 1;
+      if (estilo[i] === '}' && (nivel -= 1) === 0) return estilo.slice(inicio, i + 1);
+    }
+    return '';
+  })();
+  const BLANCO = '#FFFFFF';
+  const CIELO = token('--sg-cielo');
+
+  it('el texto, con 4,5:1 o más sobre su fondo: la pizarra, los números, las barras, el día elegido, la banda y la cuenta', () => {
+    const pares = [
+      ['la pizarra de los compañeros', de('.me-tira.ausente', 'color'), de('.me-tira.ausente', 'background')],
+      ['tu licencia en la barra', de('.me-tira.licencia', 'color'), de('.me-tira.licencia', 'background')],
+      ['el número de otro mes', de('.me-celda.otro-mes .me-num', 'color'), de('.me-celda.otro-mes', 'background')],
+      ['el número de un día que pasó', de('.me-celda.paso .me-num', 'color'), BLANCO],
+      ['el número de un día que pasó, feriado', de('.me-celda.paso .me-num', 'color'), de('.me-celda.feriado', 'background')],
+      ['el número de un día', de('.me-num', 'color'), de('.me-celda.finde', 'background')],
+      ['el número de hoy', de('.me-celda.hoy .me-num', 'color'), de('.me-celda.hoy .me-num', 'background')],
+      ['«y N más», hoy', de('.me-mas', 'color'), de('.me-celda.hoy', 'background')],
+      ['la cabeza de los días', de('.me-mes th', 'color'), BLANCO],
+      ['la cabeza de hoy', de('.me-mes th.hoy', 'color'), BLANCO],
+      ['la frase del mes', de('.me-frase-del-mes', 'color'), de('.me-banda-del-mes', 'background')],
+      ['el mes', de('.me-titulo-del-mes h2', 'color'), de('.me-banda-del-mes', 'background')],
+      ['«Sábado y domingo»', de('.me-finde', 'color'), de('.me-finde', 'background')],
+      ['lo escondido el fin de semana', de('.me-finde-cuenta', 'color'), de('.me-finde-cuenta', 'background')],
+      ['la leyenda', de('.me-leyenda', 'color'), BLANCO]
+    ];
+    for (const clase of ['propio', 'compartido', 'licencia', 'feriado', 'ausente']) {
+      const selector = `.me-fila-del-dia.${clase} .me-elegido-cosa`;
+      pares.push([`el día elegido: ${clase}`, de(selector, 'color'), de(selector, 'background')]);
+    }
+    assert.equal(de('.me-tira.ausente', 'background'), token('--sg-suave'));
+    assert.equal(de('.me-tira.ausente', 'color'), BLANCO);
+    for (const [nombre, texto, fondo] of pares) {
+      assert.ok(contraste(texto, fondo) >= 4.5, `${nombre}: ${texto} sobre ${fondo}, ${contraste(texto, fondo).toFixed(2)}:1`);
+    }
+    // La muestra de los compañeros en la leyenda es la pizarra, como su barra
+    assert.equal(de('.me-leyenda .me-color.ausente', 'background'), token('--sg-suave'));
+    assert.equal(de('.me-leyenda .me-color.ausente', 'color'), BLANCO);
+  });
+
+  it('en el teléfono, los puntos (tinta, violeta y el ámbar del feriado) y las líneas (verde y pizarra), con 3:1 o más sobre la celda', () => {
+    const puntos = [['propio', de('.me-puntos .propio', 'background', telefono)], ['compartido', de('.me-puntos .compartido', 'background', telefono)],
+      ['feriado', de('.me-puntos .feriado', 'background', telefono)]];
+    assert.deepEqual(puntos.slice(0, 2).map(([, hex]) => hex), [token('--sg-tinta'), token('--sg-violeta')]);
+    const lineas = [['tu licencia', de('.me-tira.licencia', 'background', telefono)], ['los compañeros', de('.me-tira.ausente', 'background')]];
+    assert.deepEqual(lineas.map(([, hex]) => hex), [token('--sg-verde'), token('--sg-suave')]);
+    // En el teléfono, la de los compañeros no cambia: la de la compu
+    assert.doesNotMatch(telefono, /\n\s*\.me-tira\.ausente \{/);
+    // La celda más oscura es la de hoy (--sg-cielo): los otros fondos (otro mes, sábado y domingo, feriado) son más claros
+    for (const fondo of [de('.me-celda.otro-mes', 'background'), de('.me-celda.finde', 'background'), de('.me-celda.feriado', 'background')]) {
+      assert.ok(contraste(fondo, BLANCO) < contraste(CIELO, BLANCO), fondo);
+    }
+    for (const [nombre, hex] of [...puntos, ...lineas]) {
+      for (const fondo of [BLANCO, CIELO]) {
+        assert.ok(contraste(hex, fondo) >= 3, `${nombre}: ${hex} sobre ${fondo}, ${contraste(hex, fondo).toFixed(2)}:1`);
+      }
+    }
+  });
+
+  it('la leyenda lleva el ícono del mes de cada cosa (ICONOS_DEL_MES): el de lo que es solo tuyo, vacío', () => {
+    const leyenda = leer('mi-espacio.html').match(/<ul class="me-leyenda"[^>]*>([\s\S]*?)<\/ul>/)[1];
+    const muestras = Object.fromEntries([...leyenda.matchAll(/<span class="me-color (\w+)" aria-hidden="true">([\s\S]*?)<\/span>/g)]
+      .map(([, clase, icono]) => [clase, icono]));
+    assert.deepEqual(Object.keys(muestras), ['propio', 'compartido', 'licencia', 'feriado', 'ausente']);
+    for (const [clase, icono] of Object.entries(muestras)) assert.equal(icono, M.ICONOS_DEL_MES[clase], clase);
+  });
+
+  // Revisión final, 1: el texto de un tramo va en el pedazo de su primer día, a lo ancho de todo el tramo y arriba de los pedazos de
+  // los días que siguen (.me-tira.inicio, z-index 2). Si tomara los clics, tocar la barra en el tercer día caería en el texto, cuyo
+  // día es el primero: «Nuevo evento» con la fecha del primero (y el «+» del primero). Ni el texto ni el ícono los toman: el clic cae
+  // en el pedazo de ese día, que es suyo (con su title)
+  it('el texto y el ícono de una barra no toman clics (pointer-events: none): tocar un día de la barra es tocar ese día', () => {
+    const valor = (selector, propiedad) => {
+      const regla = reglaDe(selector);
+      assert.ok(regla, selector);
+      return new RegExp(`(?:^|[;{\\s])${propiedad}: ([^;]+);`).exec(regla)?.[1] ?? null;
+    };
+    assert.equal(valor('.me-tira-texto', 'pointer-events'), 'none');
+    assert.equal(valor('.me-tira .me-icono', 'pointer-events'), 'none');
+    // El pedazo sí los toma: es el que dice de qué día es
+    assert.equal(valor('.me-tira', 'pointer-events'), null);
+    assert.equal(valor('.me-tira.inicio', 'pointer-events'), null);
+    // Ninguna regla se los devuelve, tampoco las del teléfono (ahí el texto y el ícono son de 1 px, ocultos a la vista)
+    for (const [, otro] of estilo.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/pointer-events: ([^;]+);/g)) assert.equal(otro, 'none');
+    assert.match(telefono, /\.me-tira-texto, \.me-tira \.me-icono \{ position: absolute; width: 1px; height: 1px;/);
+  });
+});
+
+// =====================================================================================================================================
+// Las vacaciones al cargar una licencia (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga): lo nuevo que manda el servidor, dibujado
+// por la página sin recalcular nada (Ruling 19), con la persona de planta inventada de las maquetas: los avisos del cálculo (3.2, 3.4
+// y 3.6), el error de días debajo de «Hasta» (3.3), «Vence pronto» sin el botón cuando no hay días libres (3.7), las horas de
+// franquicia que se pierden en «El resto» (3.6) y el número de un tramo de un solo día en la regla (3.9)
+
+// Octubre sin ningún día libre: las licencias que faltaban cubren todos sus días hábiles (el franco de octubre se queda sin día)
+const OCTUBRE_SIN_DIAS_LIBRES = conLicencias(PLANTA.estado, licencia(100, 'medica', '2026-10-05', '2026-10-14'),
+  licencia(101, 'medica', '2026-10-16', '2026-10-22'), licencia(102, 'familiar', '2026-10-26', '2026-10-30'),
+  licencia(103, 'familiar', '2026-09-30'));
+// De hoy al 31/12, ningún día libre: las 25 horas de franquicia que quedan no entran en ningún día
+const HASTA_FIN_DE_ANIO_OCUPADO = conLicencias(PLANTA.estado, licencia(110, 'medica', '2026-10-26', '2026-11-02'),
+  licencia(111, 'familiar', '2026-11-10', '2026-12-11'), licencia(112, 'medica', '2026-12-14', '2026-12-31'));
+// Dos días de la licencia 2024 cargados en diciembre: queda 1, un tramo de un solo día entre 48
+const UNO_DE_LA_2024 = conLicencias(PLANTA.estado, licencia(101, 'vacaciones', '2026-12-14', '2026-12-15'));
+// Una médica que ocupa todos los días libres de diciembre: el franco de diciembre se queda sin días (un aviso que no frena)
+const MEDICA_DE_DICIEMBRE = Object.freeze({ tipo: 'medica', desde: '2026-12-01', hasta: '2026-12-31' });
+const FRANCO_SIN_DIAS = 'Tu franco de diciembre se queda sin días libres: vence el 31/12/2026.';
+// Unas vacaciones que van más allá de lo que alcanza: el error es del «Hasta»
+const VACACIONES_DE_MAS = Object.freeze({ tipo: 'vacaciones', desde: '2026-11-23', hasta: '2027-03-31' });
+const NO_ALCANZAN = 'No te alcanzan los días habilitados: esta licencia puede llegar hasta el 25/01/2027.';
+
+describe('las vacaciones al cargar: lo nuevo del servidor, en la página', () => {
+  it('el cálculo: cada aviso del servidor en su párrafo, después del texto de hoy, escapado; sin avisos, como antes', () => {
+    const { error, vista } = respuestaDelCalculo(MEDICA_DE_DICIEMBRE);
+    assert.equal(error, null);
+    assert.deepEqual(vista.avisos, [FRANCO_SIN_DIAS]);
+    assert.equal(M.htmlDelCalculo({ error, vista, paso: null }, 'medica'),
+      `<b>21 días hábiles de 31 corridos.</b> Te quedan 1 de 25.<p class="me-calculo-aviso">${FRANCO_SIN_DIAS}</p>`);
+    // Varios, cada uno en el suyo y en su orden; lo que no es un texto con algo no va
+    const varios = M.htmlDelCalculo({ vista: { ...vista, avisos: [FRANCO_SIN_DIAS, MALICIOSO, '', '  ', 7, null] } }, 'medica');
+    assert.ok(varios.endsWith(`Te quedan 1 de 25.<p class="me-calculo-aviso">${FRANCO_SIN_DIAS}</p><p class="me-calculo-aviso">${ESCAPADO}</p>`));
+    assert.ok(!varios.includes('<img'));
+    // Sin avisos (la lista vacía, sin la clave o algo que no es una lista), lo de antes
+    for (const avisos of [[], undefined, null, 'x', { 0: FRANCO_SIN_DIAS }]) {
+      assert.equal(M.htmlDelCalculo({ vista: { ...vista, avisos } }, 'medica'), '<b>21 días hábiles de 31 corridos.</b> Te quedan 1 de 25.',
+        JSON.stringify(avisos));
+    }
+    // Las vacaciones con su reparto: los avisos van después de todo (el reparto, lo que queda y lo de antes del arranque)
+    const vacaciones = respuestaDelCalculo(VACACIONES).vista;
+    const conAviso = M.htmlDelCalculo({ vista: { ...vacaciones, avisos: [MALICIOSO] } }, 'vacaciones');
+    assert.equal(conAviso, `${M.htmlDelCalculo({ vista: { ...vacaciones, avisos: [] } }, 'vacaciones')}<p class="me-calculo-aviso">${ESCAPADO}</p>`);
+  });
+
+  it('el cálculo con el error de días: solo los días, sin el reparto ni avisos (lo arma así el servidor)', () => {
+    const { error, vista } = respuestaDelCalculo(VACACIONES_DE_MAS);
+    assert.deepEqual(error, { campo: 'hasta', mensaje: NO_ALCANZAN });
+    assert.equal(M.htmlDelCalculo({ error, vista, paso: null }, 'vacaciones'), '<b>89 días hábiles de 129 corridos.</b>');
+  });
+
+  it('«Vence pronto» sin días libres: sin el botón (accion null) y con por qué en un párrafo, escapado; las demás, con el suyo', () => {
+    const resumen = resumenDel(PLANTA, { estado: OCTUBRE_SIN_DIAS_LIBRES });
+    const [franco] = resumen.vence_pronto;
+    assert.equal(franco.accion, null);
+    assert.equal(franco.sin_dias_libres, 'No te quedan días libres este mes para usarlo.');
+    const html = M.htmlDeVencePronto(resumen.vence_pronto);
+    const [primera] = filasDe(html);
+    assert.equal(primera.html, '<span class="me-talon" aria-hidden="true"><b>30</b>oct</span><div class="me-entrada-cuerpo">'
+      + '<b id="me-vence-0">1 franco compensatorio de octubre</b><span class="me-entrada-texto">Vence el viernes 30/10, en 4 días.</span>'
+      + '<p class="me-entrada-sin-dias">No te quedan días libres este mes para usarlo.</p></div>');
+    assert.equal(primera.texto, '30 oct 1 franco compensatorio de octubre Vence el viernes 30/10, en 4 días. No te quedan días libres este mes para usarlo.');
+    // Ningún botón vacío: solo los de las otras dos, cada uno con su título
+    assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [texto, atributos['data-tipo'], atributos['aria-describedby']]),
+      [['Cargar franquicia', 'franquicia', 'me-vence-1'], ['Cargar vacaciones', 'vacaciones', 'me-vence-2']]);
+    assert.equal((html.match(/me-entrada-sin-dias/g) ?? []).length, 1);
+    // Escapado
+    const malicioso = M.htmlDeVencePronto([{ ...franco, sin_dias_libres: MALICIOSO }]);
+    assert.ok(malicioso.includes(`<p class="me-entrada-sin-dias">${ESCAPADO}</p>`));
+    assert.ok(!malicioso.includes('<img'));
+    // Sin una acción con texto, nunca un botón sin nombre; sin por qué (o vacío), sin el párrafo
+    for (const accion of [null, undefined, 'Cargarlo', {}, { tipo: 'franco' }, { texto: '', tipo: 'franco' }, { texto: '  ', tipo: 'franco' }]) {
+      const uno = M.htmlDeVencePronto([{ ...franco, accion, sin_dias_libres: '' }]);
+      assert.ok(!uno.includes('<button'), JSON.stringify(accion));
+      assert.ok(!uno.includes('<p'), JSON.stringify(accion));
+    }
+    // Con la acción, el botón de siempre
+    assert.ok(M.htmlDeVencePronto([{ ...franco, accion: { texto: 'Cargarlo', tipo: 'franco' }, sin_dias_libres: undefined }])
+      .includes('<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-accion="cargar-licencia" data-tipo="franco" '
+        + 'aria-describedby="me-vence-0">Cargarlo</button></div></li>'));
+  });
+
+  it('«El resto»: las horas de franquicia que se pierden, debajo de «Franquicias» y fuera de su link (su aria-label no las diría); sin ellas, nada', () => {
+    const resumen = resumenDel(PLANTA, { estado: HASTA_FIN_DE_ANIO_OCUPADO });
+    const [franquicia, ...otros] = resumen.tanques.otros;
+    assert.equal(franquicia.clave, 'franquicia');
+    assert.equal(franquicia.perdidas_texto, 'Perdés 25 horas (vencen el 31/12/2026).');
+    assert.ok(otros.every((tanque) => !Object.hasOwn(tanque, 'perdidas_texto')));
+    const html = M.htmlDelResto(resumen);
+    const primero = html.match(/<ul class="me-numeros"><li>([\s\S]*?)<\/li>/)[1];
+    assert.ok(primero.startsWith('<a class="me-numero" href="#licencias"'));
+    assert.ok(primero.endsWith('</a><p class="me-perdidas">Perdés 25 horas (vencen el 31/12/2026).</p>'));
+    assert.equal((html.match(/me-perdidas/g) ?? []).length, 1);
+    // El link no cambió: su aria-label es el del servidor
+    assert.equal(linksDe(html)[0].atributos['aria-label'], franquicia.aria);
+    // Sin horas que se pierdan (''), sin la clave o con algo que no es un texto: nada
+    const planta = resumenDel(PLANTA);
+    assert.equal(planta.tanques.otros[0].perdidas_texto, '');
+    assert.ok(!M.htmlDelResto(planta).includes('me-perdidas'));
+    for (const perdidas of [undefined, null, '  ', 8]) {
+      const otro = { ...resumen, tanques: { ...resumen.tanques, otros: [{ ...franquicia, perdidas_texto: perdidas }, ...otros] } };
+      assert.ok(!M.htmlDelResto(otro).includes('me-perdidas'), String(perdidas));
+    }
+    // Escapado
+    const malicioso = M.htmlDelResto({ ...resumen, tanques: { ...resumen.tanques, otros: [{ ...franquicia, perdidas_texto: MALICIOSO }, ...otros] } });
+    assert.ok(malicioso.includes(`<p class="me-perdidas">${ESCAPADO}</p>`));
+    assert.ok(!malicioso.includes('<img'));
+  });
+
+  it('la regla: el tramo de un solo día (1 de la licencia 2024, entre 48) lleva su número y la clase un-dia; los demás, no', () => {
+    const resumen = resumenDel(PLANTA, { estado: UNO_DE_LA_2024 });
+    assert.deepEqual(resumen.tanques.vacaciones.capas.map(({ clase, n }) => [clase, n]),
+      [['vence', 1], ['tinta', 20], ['medio', 10], ['cargadas', 7], ['por_habilitar', 10]]);
+    const html = M.htmlDeLaRegla(resumen.tanques.vacaciones);
+    assert.ok(html.includes('<span class="me-tramo vence un-dia" style="--n:1;--demora:250ms;--duracion:160ms"><span>1</span></span>'));
+    assert.deepEqual(tramosDe(html).map(({ clase, unDia, numero }) => [clase, unDia, numero]), [
+      ['vence', true, '1'], ['tinta', false, '20'], ['medio', false, '10'], ['cargadas', false, '7'], ['por_habilitar', false, '10']
+    ]);
+    // La de PLANTA no tiene ninguno de un solo día
+    assert.ok(!M.htmlDeLaRegla(resumenDel(PLANTA).tanques.vacaciones).includes('un-dia'));
+  });
+});
+
+describe('las vacaciones al cargar: «Cargar licencia» en la página (DOM falso)', () => {
+  it('el error de días va debajo de «Hasta», con aria-invalid, y no debajo de «Desde»; el cálculo muestra solo los días', async () => {
+    const pagina = montarPagina({ responder: conFormularios() });
+    await pagina.iniciar();
+    await cargarLicencia(pagina, VACACIONES_DE_MAS);
+    assert.deepEqual(calculos(pagina).at(-1).cuerpo, { ...VACACIONES_DE_MAS, mostrar: true, nota: '' });
+    assert.equal(pagina.el('ml-hasta-error').textContent, NO_ALCANZAN);
+    assert.equal(pagina.el('ml-hasta-error').hidden, false);
+    assert.equal(pagina.el('ml-hasta').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('ml-desde-error').hidden, true);
+    assert.equal(pagina.el('ml-desde').getAttribute('aria-invalid'), null);
+    // Ni arriba del modal
+    assert.equal(pagina.el('ml-error').hidden, true);
+    assert.equal(pagina.el('ml-calculo').innerHTML, '<b>89 días hábiles de 129 corridos.</b>');
+    assert.equal(pagina.el('ml-calculo').hidden, false);
+  });
+
+  it('con avisos y sin error, el cálculo los muestra y «Guardar» sigue habilitado: un aviso no frena el guardado', async () => {
+    const pagina = montarPagina({ responder: conFormularios() });
+    await pagina.iniciar();
+    await cargarLicencia(pagina, MEDICA_DE_DICIEMBRE);
+    assert.equal(pagina.el('ml-calculo').innerHTML,
+      `<b>21 días hábiles de 31 corridos.</b> Te quedan 1 de 25.<p class="me-calculo-aviso">${FRANCO_SIN_DIAS}</p>`);
+    assert.equal(pagina.el('ml-calculo').hidden, false);
+    assert.equal(pagina.el('ml-guardar').disabled, false);
+    assert.equal(pagina.el('ml-error').hidden, true);
+    for (const id of ['ml-desde', 'ml-hasta']) assert.equal(pagina.el(id).getAttribute('aria-invalid'), null, id);
+    await pagina.tocar(pagina.el('ml-guardar'));
+    await pagina.esperar();
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/licencias').map(({ cuerpo }) => cuerpo),
+      [{ ...MEDICA_DE_DICIEMBRE, mostrar: true, nota: '' }]);
+    assert.equal(pagina.el('modal-licencia-titulo').textContent, 'Licencia cargada');
+  });
+});
+
+// Los estilos de lo nuevo, leídos del <style> de mi-espacio.html: los avisos en ámbar con 4,5:1 o más sobre su fondo, y el tramo de un
+// solo día, que muestra su número
+describe('mi-espacio.html: los estilos de las vacaciones al cargar', () => {
+  const estilo = estiloDeLaPagina();
+  const token = (nombre) => new RegExp(`${nombre}: (#[0-9A-Fa-f]{6});`).exec(estilo)?.[1];
+  // El token --sg-* de una propiedad (color o background) de la regla de un selector
+  const tokenDe = (selector, propiedad) => {
+    const regla = reglaDe(selector);
+    assert.ok(regla, selector);
+    const nombre = new RegExp(`(?:^|[;{\\s])${propiedad}: var\\((--sg-[\\w-]+)\\);`).exec(regla)?.[1];
+    assert.ok(nombre, `${selector} { ${propiedad} }`);
+    return nombre;
+  };
+
+  it('los avisos, en ámbar y con 4,5:1 o más sobre su fondo: el del cálculo sobre el recuadro, el de «Vence pronto» y las horas que se pierden', () => {
+    // «El resto» va sin tarjeta, sobre el fondo de la página (.main-content, con el --gray-100 de main.css)
+    assert.match(reglaDe('.main-content'), /background: var\(--gray-100\);/);
+    const gris = /--gray-100: (#[0-9A-Fa-f]{6});/.exec(leer('css/main.css'))[1];
+    const pares = [
+      ['el aviso del cálculo', '.me-calculo .me-calculo-aviso', token(tokenDe('.me-calculo', 'background'))],
+      ['sin días libres', '.me-entrada-sin-dias', token(tokenDe('.me-entrada', 'background'))],
+      ['las horas que se pierden', '.me-resto .me-perdidas', gris]
+    ];
+    for (const [nombre, selector, fondo] of pares) {
+      assert.equal(tokenDe(selector, 'color'), '--sg-ambar', nombre);
+      const texto = token('--sg-ambar');
+      assert.ok(texto && fondo, nombre);
+      assert.ok(contraste(texto, fondo) >= 4.5, `${nombre}: ${texto} sobre ${fondo}, ${contraste(texto, fondo).toFixed(2)}:1`);
+    }
+    // El del cálculo, sobre el celeste del recuadro (el de siempre)
+    assert.equal(tokenDe('.me-calculo', 'background'), '--sg-azul-fondo');
+  });
+
+  it('el tramo de un solo día muestra su número (el contenedor angosto no lo oculta), centrado y más chico si no entra', () => {
+    assert.match(reglaDe('.me-tramo.un-dia'), /padding: 0;/);
+    assert.match(reglaDe('.me-tramo.un-dia'), /justify-content: center;/);
+    const numero = reglaDe('.me-tramo.un-dia > span');
+    assert.match(numero, /visibility: visible;/);
+    assert.match(numero, /font-size: clamp\(0\.55rem, 150cqw, 1\.2rem\);/);
+    // Los demás tramos angostos siguen sin él (está en la lista de debajo)
+    assert.ok(estilo.includes('@container (max-width: 26px) { .me-tramo > span { visibility: hidden; } }'));
   });
 });

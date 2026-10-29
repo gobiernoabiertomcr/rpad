@@ -164,7 +164,7 @@ const adentro = (caja) => caja.x0 >= MARGEN && caja.x1 <= ANCHO - MARGEN && caja
 //     alturas }                             // ALTURAS_DE_LA_CINTA: la página las recibe con la cinta, no las copia
 // Los días van respecto del vencimiento (el aviso, antes; lo que pasa después, después) y en lo que se eligió en el selector: las
 // cifras de los tramos ya vienen así. La cadena: el aviso, la anticipación antes del vencimiento; después, uno detrás del otro, los
-// tramos de la gestión (externa: trámite, respuesta y carga; interna: producción y carga). Se corta en el primero sin cifra, y no se
+// tramos de la gestión (externa: redacción, respuesta y carga; interna: producción y carga). Se corta en el primero sin cifra, y no se
 // suman tramos para tapar el hueco (spec, 2.2). Los segmentos llevan su texto («Producción del relevamiento · 45 días hábiles»), para
 // el título del dibujo o una descripción en texto; lo que se escribe en el dibujo son los rótulos, que pueden no ir si no entran:
 // - el del aviso («Aviso · 27 días hábiles antes») y el de la carga («Entrega y carga, el mismo día» si se juntan con la entrega y la

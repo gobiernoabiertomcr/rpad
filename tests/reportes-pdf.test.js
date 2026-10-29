@@ -557,7 +557,7 @@ const conNotaDgmit = () => {
 // Un circuito con todo lo que puede decir una flecha (cifras grandes y orientativas, en curso, pendientes), para ver que entra
 const TRAMOS_A_MANO = {
   aviso: ['Aviso anticipado', 'Del aviso al vencimiento', 'DDPC', false],
-  tramite: ['Trámite y entrega de la nota', 'Del aviso a la nota en el área', 'DGMIT y DA', true],
+  tramite: ['Redacción y entrega de nota', 'Del aviso a la nota en el área', 'DGMIT y DA', true],
   respuesta: ['Respuesta del área', 'De la nota a la entrega', 'Área', false],
   produccion: ['Producción del relevamiento', 'Del aviso a la entrega', 'DGMIT y DIT', true],
   carga: ['Preparación y carga', 'De la entrega a la carga', 'DDPC', false]
@@ -691,7 +691,7 @@ describe('Métricas del año con el diseño del anexo', () => {
     // Con una nota DGMIT cargada, el tramo de la DGMIT ya tiene su cifra
     const conNota = lineasPorHoja(await renderMetricas(metricasDeLosCasos({ mapa: conNotaDgmit() })));
     assert.ok(!conNota[0].join(' ').includes('Todavía no hay notas DGMIT cargadas'), conNota[0].join(' | '));
-    assert.ok(conNota[0].join(' ').includes('Trámite y entrega de la nota'));
+    assert.ok(conNota[0].join(' ').includes('Redacción y entrega de nota'));
   });
 
   it('las cintas del PDF salen del circuito, con las letras del PDF: no las de la pantalla ni las de la foto', async () => {
@@ -1876,34 +1876,37 @@ const hashesPorHoja = (pdf) => contenidoPorHoja(pdf).map((contenido) => createHa
 
 // La referencia: los hashes de cada hoja, tomados con el código anterior al Ciclo de vida del dato. La hoja 3 de los dos Informes
 // anuales se volvió a tomar al traer Proyectos (spec 2026-10-25-proyectos): su único cambio en ese PDF es «Los hitos de AAAA cargados
-// en Gestión» → «… cargados en Proyectos» (services/reportesInformeAnualPdf.js), comprobado contra el código de antes del merge
+// en Gestión» → «… cargados en Proyectos» (services/reportesInformeAnualPdf.js), comprobado contra el código de antes del merge. La
+// hoja 1 de los cinco PDF y la hoja 3 de «con una nota DGMIT» se volvieron a tomar por el nombre nuevo de la etapa de la DGMIT y la
+// Dirección Administrativa, «Redacción y entrega de nota» (28/10/2026): sus únicos cambios son las líneas del nombre en la flecha del
+// circuito y, en la hoja 3, el rótulo de esa etapa en la cinta, comprobado con el diff de texto hoja por hoja contra el código de antes
 const REFERENCIA_DE_LOS_PDF = {
   'Métricas: los casos, con las métricas manuales': [
-    '341d7fbf281fd972313075f0f4a2a72f51604a11d4f6ce54efd7d1ce8e02a66c',
+    '824c83d5d7a1e4ed2bced1d750b4aacf75e96813d4b2dfb70dd7be00ae11124a',
     '596d156d8dc0c1317dd895d1b762c2b6abae85400ac43c0e1659f89d71651e07',
     'c4bed0f2a9f3e9e868c2e7331572bc3f1d5d23c07f979b094f8c8b477624cb5b',
     'ba74bcbe58b1843ae77d30ec527cf3c0e4faa0a43d119ba71dfa4a99945316b3'
   ],
   'Métricas: con una nota DGMIT, promedio en días corridos y dos destildados': [
-    '7d082a46897413744557df1c410f5883b224cbce8d0898a3a9359e7afc8f389a',
+    'b0cfd809863b2485984cd4e8d2ae3eef24f652c1d5c25e1faaf540c03aed2cad',
     'bcd0d261255a81fb983a8b5ae61823b1cec2711dededa31bb1152ac17dfd4628',
-    '0ede6c50fb9b749873e42a717a55ee232d919de3e34a2bb09314837c2a1a0afb',
+    '9b8a9a9a787f38c907662660e367f25fb19f31359c9f135dc2b2b5cabcfe2b0c',
     '68ca4866667a23170de2a3f33342c6b0b25b83eb9042d0f403979173f7cfc6cf',
     '64dfb481191d59fd35d552da99b6432ace0e31e8ee271445cf188e39ba1746ad'
   ],
   'Métricas: un año cerrado sin foto': [
-    '2ce2c535742a88eae8cfffc7901d94c533785cbc894776c31f2cccc8b2f52256',
+    '584277295a286131d695f4b3f6e013f2be933a9948b8b2225a1569889bcadc9d',
     '9ba43c0cb18799abffdbe57a60ea6a8e7d05e460d3cd9dd5dfff4090a0d22d32',
     '644352bcf71cba6e2b853d7d5900563625fc059a88403cd946ded88b7e0370f6',
     'b41f65872e8c92ff1ce1dfb7cbf89e4229f663ca2b9c8449b9427b852e6c4168'
   ],
   'Informe anual: el primer año con foto': [
-    '378207d03c6532c0951a8a60b2c1626159f16df9a1bc19ba748afa9981690ae9',
+    '1500b88a3dbd56ecda7c41a916c657498cb9abd014fc5552e1f5c80cd6322fca',
     '4502cbd20b01bae423e78651304946d30368c2368f6accb5ed27d73b66a6e502',
     'e185bd524c985140c2b6a206eea3b2a8a49e57e082d1a391b99b949c056bf53a'
   ],
   'Informe anual: con el año anterior y los logros': [
-    '378207d03c6532c0951a8a60b2c1626159f16df9a1bc19ba748afa9981690ae9',
+    '1500b88a3dbd56ecda7c41a916c657498cb9abd014fc5552e1f5c80cd6322fca',
     '4502cbd20b01bae423e78651304946d30368c2368f6accb5ed27d73b66a6e502',
     '7794fdd5f3bfc3011d0d06ad65ff5bcfc1ef4e89025a7de01e15609639e41c33'
   ]
@@ -1990,7 +1993,7 @@ const cicloVacio = () => cicloDeLosCasos({ mapa: new Map() });
 
 // La hoja más apretada (Foco 3 del plan): un año cerrado sin foto, al 31/12, con uno de los dos avisos de la foto que da el servidor
 // (opcionesDeMetricas, antes del día de la foto y en el reintento), la aclaración de la hoja y las notas que da un año real, hasta tres
-// renglones por bloque: en el aviso, el orientativo y la aclaración de dos renglones de los avisados ya vencidos; en el trámite, el
+// renglones por bloque: en el aviso, el orientativo y la aclaración de dos renglones de los avisados ya vencidos; en la redacción, el
 // orientativo y los pendientes; en la respuesta, el orientativo, el en curso y la aclaración de la fuente pública
 const avisoDeLaFoto = (hoy) => opcionesDeMetricas({ anio: 2026 }, { hoy, aniosConFoto: [] }).aviso_foto;
 const AVISO_ANTES_DE_LA_FOTO = avisoDeLaFoto('2027-01-05');
@@ -2048,7 +2051,7 @@ const VARIANTES_DEL_CICLO = [
     ...cicloLleno({ notas: [ORIENTATIVO, ...DOS_NOTAS] }), al: '2026-12-31',
     aviso_foto: 'La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.'
   })],
-  ['con una nota DGMIT: el trámite y la respuesta ya tienen cifras', () => cicloDeLosCasos({ mapa: conNotaDgmit() })],
+  ['con una nota DGMIT: la redacción y la respuesta ya tienen cifras', () => cicloDeLosCasos({ mapa: conNotaDgmit() })],
   ['2027, sin la última oración de «Cómo se cuenta»', () => cicloDeLosCasos({ anio: 2027, al: '2027-03-01' })]
 ];
 
@@ -2176,7 +2179,7 @@ describe('Ciclo de vida del dato con el diseño del anexo', () => {
     const { descripciones: d, seMide: m } = TEXTOS_DEL_CICLO;
     assert.equal(d.externa.aviso, 'El RPAD avisa a la DGMIT y a la Dirección Administrativa qué conjuntos de datos vencen en los próximos 40 días y qué datos hay que pedir de cada uno, por Nota Digital (hasta el 12/10/2026, por email).');
     assert.equal(m.externa.aviso, 'Se mide del aviso al vencimiento: cuanto más grande, más anticipación.');
-    assert.equal(d.externa.tramite, 'La DGMIT y la Dirección Administrativa preparan la nota formal que le pide los datos al área y se la hacen llegar.');
+    assert.equal(d.externa.tramite, 'La DGMIT y la Dirección Administrativa redactan la nota formal que le pide los datos al área y se la hacen llegar.');
     assert.equal(m.externa.tramite, 'Se mide del aviso del RPAD al día en que el área recibió la nota, con las notas DGMIT cargadas en el Seguimiento.');
     assert.equal(d.externa.respuesta, 'El área reúne y prepara los datos pedidos y se los entrega a Datos Públicos.');
     assert.equal(m.externa.respuesta, 'Se mide del día en que el área recibió la nota al «Recibido el». Con datos de una fuente pública, no se cuenta.');
@@ -2193,14 +2196,14 @@ describe('Ciclo de vida del dato con el diseño del anexo', () => {
     for (const anio of [2027, 2030]) assert.equal(TEXTOS_DEL_CICLO.comoSeCuenta(anio), sinLaUltima);
   });
 
-  it('vacío: el trámite sin notas DGMIT muestra el título, el texto y el pie del vacío; las demás, el suyo', async () => {
+  it('vacío: la redacción sin notas DGMIT muestra el título, el texto y el pie del vacío; las demás, el suyo', async () => {
     const datos = cicloDeLosCasos();
     const tramite = datos.etapas.externa[1];
     assert.deepEqual(tramite.vacio, {
       titulo: 'Todavía no hay notas DGMIT cargadas', texto: '7 notas pendientes de carga', pie: 'Se empieza a contar cuando se carguen en el Seguimiento.'
     });
     const [externa, interna] = lineasPorHoja(await renderCiclo(datos));
-    const delTramite = bloqueDe(externa, 'Trámite y entrega de la nota', 'Respuesta del área');
+    const delTramite = bloqueDe(externa, 'Redacción y entrega de nota', 'Respuesta del área');
     enOrden(delTramite, ['ESTADÍSTICAS DE LA ETAPA', tramite.vacio.titulo, tramite.vacio.texto, tramite.vacio.pie, 'Año anterior: no hay']);
     assert.ok(!delTramite.includes('Mediana') && !delTramite.includes('Promedio'), delTramite.join(' | '));
     enOrden(bloqueDe(externa, 'Respuesta del área', 'Preparación y carga'),
@@ -2210,9 +2213,9 @@ describe('Ciclo de vida del dato con el diseño del anexo', () => {
       ['Sin casos en 2026', 'En curso: 1 sin datos registrados todavía, hace 206 días hábiles (mediana)', 'Año anterior: no hay']);
     // Sin texto o sin pie, no quedan renglones vacíos
     assert.ok(!externa.includes('') && !interna.includes(''));
-    // Sin notas pendientes, el trámite no dice «0 notas pendientes de carga» (el texto del vacío llega vacío)
+    // Sin notas pendientes, la redacción no dice «0 notas pendientes de carga» (el texto del vacío llega vacío)
     const vacio = lineasPorHoja(await renderCiclo(cicloVacio()))[0];
-    enOrden(bloqueDe(vacio, 'Trámite y entrega de la nota', 'Respuesta del área'),
+    enOrden(bloqueDe(vacio, 'Redacción y entrega de nota', 'Respuesta del área'),
       ['Todavía no hay notas DGMIT cargadas', 'Se empieza a contar cuando se carguen en el Seguimiento.', 'Año anterior: no hay']);
     assert.ok(!vacio.some(l => l.includes('0 notas pendientes')) && !vacio.includes(''));
   });
@@ -2275,7 +2278,7 @@ describe('Ciclo de vida del dato con el diseño del anexo', () => {
     datos.etapas.externa[3] = conEmpate(datos.etapas.externa[3], 'El caso más corto');
     verificarDiagramacion(await diagramacion(() => renderCiclo(datos)));
     const externa = lineasPorHoja(await renderCiclo(datos))[0];
-    for (const [nombre, siguiente] of [['Aviso anticipado', 'Trámite y entrega de la nota'], ['Preparación y carga', 'Cómo se cuenta.']]) {
+    for (const [nombre, siguiente] of [['Aviso anticipado', 'Redacción y entrega de nota'], ['Preparación y carga', 'Cómo se cuenta.']]) {
       const bloque = bloqueDe(externa, nombre, siguiente).join(' ');
       assert.ok(bloque.includes('… y 1 más'), `falta "… y 1 más" en ${bloque}`);
       assert.ok(!bloque.includes(titulo), `el título va entero, sin el empate, en ${bloque}`);
@@ -2317,9 +2320,9 @@ describe('Ciclo de vida del dato con el diseño del anexo', () => {
           // Cada nota, entera y sin «…» (una nota en dos renglones se lee unida)
           notasEnteras(bloque, etapa.textos.notas, donde);
         });
-        // Las notas pendientes de carga siguen en el bloque del trámite
+        // Las notas pendientes de carga siguen en el bloque de la redacción
         if (gestion === 'externa') {
-          assert.ok(bloqueDe(lineas, 'Trámite y entrega de la nota', 'Respuesta del área').includes('13 notas pendientes de carga'), lineas.join(' | '));
+          assert.ok(bloqueDe(lineas, 'Redacción y entrega de nota', 'Respuesta del área').includes('13 notas pendientes de carga'), lineas.join(' | '));
         }
       });
     }
@@ -2387,6 +2390,28 @@ describe('Ciclo de vida del dato con el diseño del anexo', () => {
       const hojas = lineasPorHoja(await renderCiclo(raro));
       assert.equal(hojas.length, 2);
       assert.ok(!hojas.flat().some(l => /NaN|null|undefined/.test(l)), hojas.flat().join(' | '));
+    }
+  });
+});
+
+// El nombre de la etapa de la DGMIT y la Dirección Administrativa (28/10/2026): «Redacción y entrega de nota», entero, en la flecha
+// del circuito de Métricas y del Informe anual (en dos renglones, «Redacción y» / «entrega de nota») y en el bloque del Ciclo de vida
+// (en uno). Ninguna línea dice «trámite» (con tilde: la clave interna, `tramite`, no se escribe)
+describe('el nombre de la etapa de la DGMIT y la Dirección Administrativa en los PDF', () => {
+  it('ninguna línea dice «trámite»: la hoja 1 de Métricas y del Informe anual y la del Ciclo de vida dicen «Redacción y entrega de nota»', async () => {
+    const circuitos = [
+      ['Métricas, con una nota DGMIT', () => renderMetricas(metricasDeLosCasos({ mapa: conNotaDgmit() }))],
+      ['Informe anual', () => renderInforme()]
+    ];
+    for (const [donde, armar] of circuitos) {
+      const [primera] = lineasPorHoja(await armar());
+      assert.ok(!primera.some(l => /trámite/i.test(l)), `${donde}: ${primera.filter(l => /trámite/i.test(l)).join(' | ')}`);
+      for (const t of ['Redacción y', 'entrega de nota']) assert.ok(primera.includes(t), `${donde}: falta "${t}" en ${primera.join(' | ')}`);
+    }
+    for (const [donde, datos] of [['Ciclo de vida', cicloDeLosCasos()], ['Ciclo de vida, con una nota DGMIT', cicloDeLosCasos({ mapa: conNotaDgmit() })]]) {
+      const [externa] = lineasPorHoja(await renderCiclo(datos));
+      assert.ok(!externa.some(l => /trámite/i.test(l)), `${donde}: ${externa.filter(l => /trámite/i.test(l)).join(' | ')}`);
+      assert.ok(externa.includes('Redacción y entrega de nota'), `${donde}: ${externa.join(' | ')}`);
     }
   });
 });

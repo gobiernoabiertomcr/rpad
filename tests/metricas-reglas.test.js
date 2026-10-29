@@ -9,6 +9,7 @@ import {
   ESTADISTICOS, DIAS, VENTANA_DE_LA_REGLA, INICIO_DEL_REGISTRO, PRIMER_ANIO, duracion, cifraDe, unidadDe, casosDe, vistaDe,
   casosQueTocanElAnio, indiceMesAMes, estadosAl, antiguedadDeVencidos, contextoDelAnio, trabajoDelAnio, areasYTemas, etapasDe, conAnterior
 } from '../services/metricasReglas.js';
+import { cintasDeLaVista } from '../services/metricasCinta.js';
 import { ciclosDe, avisosDelCiclo } from '../services/seguimientoReglas.js';
 import { estadoDelDataset, tasaDeActualizacion, cumplimientoPorArea } from '../services/fechasDatasetReglas.js';
 import { diasEntre, diasHabilesTranscurridos, sumarDias, VENTANA_DIAS } from '../services/notasDigitalesCalendario.js';
@@ -672,7 +673,7 @@ describe('vistaDe', () => {
     const sinCifras = (t) => [t.clave, t.nombre, t.desde_hasta, t.responsable, t.dgmit];
     assert.deepEqual(v.circuito.externa.map(sinCifras), [
       ['aviso', 'Aviso anticipado', 'Del aviso al vencimiento', 'DDPC', false],
-      ['tramite', 'Trámite y entrega de la nota', 'Del aviso a la nota en el área', 'DGMIT y DA', true],
+      ['tramite', 'Redacción y entrega de nota', 'Del aviso a la nota en el área', 'DGMIT y DA', true],
       ['respuesta', 'Respuesta del área', 'De la nota a la entrega', 'Área', false],
       ['carga', 'Preparación y carga', 'De la entrega a la carga', 'DDPC', false]
     ]);
@@ -717,7 +718,7 @@ describe('vistaDe', () => {
     // Los ciclos abiertos de externos con algún aviso y sin nota DGMIT: el 1, el 11, el 33, el 52, el 58, el 61 y el 81 (los abiertos
     // del 9, el 10, el 25 y el 42 todavía no tuvieron avisos)
     assert.deepEqual(tramoDe(v, 'externa', 'tramite'), {
-      clave: 'tramite', nombre: 'Trámite y entrega de la nota', desde_hasta: 'Del aviso a la nota en el área', responsable: 'DGMIT y DA', dgmit: true,
+      clave: 'tramite', nombre: 'Redacción y entrega de nota', desde_hasta: 'Del aviso a la nota en el área', responsable: 'DGMIT y DA', dgmit: true,
       cifra: null, vacio: { titulo: 'Todavía no hay notas DGMIT cargadas', texto: '7 notas pendientes de carga' }, en_curso: null, pendientes: 7,
       pendientes_texto: '7 notas pendientes de carga'
     });
@@ -748,7 +749,7 @@ describe('vistaDe', () => {
     assert.equal(tramoDe(vista([caso({ requiere_nota: null })]), 'externa', 'tramite').pendientes, 1);
   });
 
-  it('con una nota DGMIT, el trámite cuenta desde el aviso y la respuesta desde la nota', () => {
+  it('con una nota DGMIT, la redacción cuenta desde el aviso y la respuesta desde la nota', () => {
     const fuentes = con(fuentesDelCaso(52, { importados: { 7: { recibido_el: '2026-02-02', origen_datos: 'area' } } }), {
       notasDgmit: [notaDgmit({ recibida: '2026-01-05' })]
     });
@@ -764,7 +765,7 @@ describe('vistaDe', () => {
     assert.equal(tramoDe(v, 'externa', 'tramite').pendientes, 1);
     assert.equal(tramoDe(v, 'externa', 'tramite').pendientes_texto, '1 nota pendiente de carga');
     assert.equal(tramoDe(v, 'externa', 'respuesta').en_curso, null);
-    // Con una nota en el ciclo abierto: el trámite suma ese ciclo (del aviso del 21/06/2026 a la nota del 10/07/2026), no quedan
+    // Con una nota en el ciclo abierto: la redacción suma ese ciclo (del aviso del 21/06/2026 a la nota del 10/07/2026), no quedan
     // pendientes y la respuesta está en curso hasta al
     const abierta = con(fuentes, { notasDgmit: [notaDgmit({ id: 2, numero: '90/26', tipo: 'reiteracion', recibida: '2026-07-10' })] });
     const w = vista(casosDe(mapaDe(abierta), { hoy: AL }));
@@ -815,7 +816,7 @@ describe('vistaDe', () => {
     const v = vista([area, publica]);
     assert.equal(cifraDel(v, 'externa', 'respuesta').ciclos, 1);
     assert.equal(cifraDel(v, 'externa', 'respuesta').valor, duracion('2026-03-02', '2026-04-06', 'habiles'));
-    // El trámite de la nota se cuenta igual, y la preparación y carga, desde el día en que se obtuvo la fuente
+    // La redacción y entrega de nota se cuenta igual, y la preparación y carga, desde el día en que se obtuvo la fuente
     assert.equal(cifraDel(v, 'externa', 'tramite').ciclos, 2);
     assert.equal(cifraDel(v, 'externa', 'carga').ciclos, 2);
     assert.equal(cifraDel(v, 'externa', 'carga').valor, cifraDe([2, duracion('2026-04-01', '2026-04-08', 'habiles')]).mediana);
@@ -859,7 +860,7 @@ describe('vistaDe', () => {
     assert.equal(tramoDe(conNota, 'externa', 'respuesta').en_curso.n, 1);
     // …y no van en la aclaración de los que no requieren nota
     assert.deepEqual(conNota.circuito.aclaraciones.externa.no_requieren_nota, { n: 0, texto: '' });
-    // Sin aviso de la regla y sin avisarse ya vencido, el trámite (que empieza en el aviso) no cuenta; la respuesta (desde la nota), sí
+    // Sin aviso de la regla y sin avisarse ya vencido, la redacción (que empieza en el aviso) no cuenta; la respuesta (desde la nota), sí
     const sinAviso = vista([cerrado({ aviso_regla: null, inicio_tramos: null, nota_dgmit: notaDe('2026-03-02') })]);
     assert.equal(cifraDel(sinAviso, 'externa', 'tramite'), null);
     assert.equal(cifraDel(sinAviso, 'externa', 'respuesta').ciclos, 1);
@@ -1327,7 +1328,7 @@ describe('vistaDe', () => {
     assert.deepEqual(filasDe(v, 11)[0].aviso, { fecha: '2025-12-06', texto: 'avisado ya vencido', que: 'email mensual de vencidos' });
     assert.equal(filasDe(v, 11)[0].recibido.texto, `en curso, hace ${d('2025-12-06', AL)}`);
     assert.deepEqual(filasDe(v, 33)[0].aviso, { fecha: '2026-06-21', texto: 'se avisó ya vencido', que: 'email de 40 días' });
-    // Con nota DGMIT: su número y su tipo, los días del trámite, y los de la respuesta debajo de «Recibido el»
+    // Con nota DGMIT: su número y su tipo, los días de la redacción, y los de la respuesta debajo de «Recibido el»
     const conNota = vista([cerrado({ nota_dgmit: notaDe('2026-03-02', { tipo: 'reiteracion' }) })]).casos[0];
     assert.deepEqual([conNota.nota, conNota.recibido], [
       { numero: '45/26', tipo: 'Reiteración', texto: d('2026-02-19', '2026-03-02') },
@@ -1373,7 +1374,7 @@ describe('vistaDe', () => {
   it('para completar: las notas DGMIT pendientes de carga y las actualizaciones sin «Recibido el» o sin origen', () => {
     const v = vista(casosReales());
     // Notas: los 7 abiertos con avisos y sin nota, y los 8 cerrados en el año: por actualización (el 9 dos veces, el 10 cuatro y el
-    // 52) y la reprogramación del 42 (no tiene origen, y su trámite cuenta igual: spec 1.2). Primero los abiertos, cada grupo por
+    // 52) y la reprogramación del 42 (no tiene origen, y su redacción cuenta igual: spec 1.2). Primero los abiertos, cada grupo por
     // vencimiento
     const notas = v.para_completar.notas;
     assert.equal(notas.length, 15);
@@ -1530,7 +1531,7 @@ describe('casosQueTocanElAnio', () => {
     assert.deepEqual(delAnio.map((c) => c.dataset_id), [902, 903, 904, 905, 907, 909, 910]);
     assert.deepEqual(vistaDe(todos, ANIO).para_completar.notas.map((n) => n.dataset_id).sort(), [903, 904, 909, 910]);
     for (const opciones of combinaciones(ANIO)) assert.deepEqual(vistaDe(delAnio, opciones), vistaDe(todos, opciones));
-    // La de 2025 con nota DGMIT queda porque la vista mira si hay notas DGMIT en todos los casos: sin ella, el trámite diría «Todavía
+    // La de 2025 con nota DGMIT queda porque la vista mira si hay notas DGMIT en todos los casos: sin ella, la redacción diría «Todavía
     // no hay notas DGMIT cargadas»
     const sinLaNota = delAnio.filter((c) => c.dataset_id !== 902);
     assert.notDeepEqual(vistaDe(sinLaNota, ANIO), vistaDe(todos, ANIO));
@@ -2189,7 +2190,7 @@ const etapas = (casos, opciones = {}) => etapasDe(casos, { anio: 2026, al: AL, .
 const etapaDe = (e, gestion, clave) => e[gestion].find((etapa) => etapa.clave === clave);
 const todasLasEtapas = (e) => [...e.externa, ...e.interna];
 // Los casos reales con dos notas DGMIT en el 52: una en su ciclo cerrado del 31/01/2026 (los datos llegaron el 02/02/2026) y otra en
-// el abierto (con la respuesta en curso). Así el trámite y la respuesta tienen cifras
+// el abierto (con la respuesta en curso). Así la redacción y la respuesta tienen cifras
 const casosConNotas = () => {
   const del52 = con(fuentesDelCaso(52, { importados: { 7: { recibido_el: '2026-02-02', origen_datos: 'area' } } }), {
     notasDgmit: [notaDgmit({ recibida: '2026-01-05' }), notaDgmit({ id: 2, numero: '90/26', tipo: 'reiteracion', recibida: '2026-07-10' })]
@@ -2233,7 +2234,7 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
     const datos = (etapa) => [etapa.clave, etapa.numero, etapa.nombre, etapa.desde_hasta, etapa.responsable, etapa.dgmit, etapa.nodos];
     assert.deepEqual(e.externa.map(datos), [
       ['aviso', 1, 'Aviso anticipado', 'Del aviso al vencimiento', 'DDPC', false, ['rpad', 'da']],
-      ['tramite', 2, 'Trámite y entrega de la nota', 'Del aviso a la nota en el área', 'DGMIT y DA', true, ['da', 'area']],
+      ['tramite', 2, 'Redacción y entrega de nota', 'Del aviso a la nota en el área', 'DGMIT y DA', true, ['da', 'area']],
       ['respuesta', 3, 'Respuesta del área', 'De la nota a la entrega', 'Área', false, ['area', 'ddpc']],
       ['carga', 4, 'Preparación y carga', 'De la entrega a la carga', 'DDPC', false, ['ddpc', 'portal']]
     ]);
@@ -2287,7 +2288,7 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
 
   it('paridad con vistaDe: la mediana y el promedio de cada etapa, en hábiles y en corridos, son la cifra del tramo con todos los ciclos', () => {
     const juegos = [casosReales(), casosConNotas(), [...CINCO(), caso({ dataset_id: 906, nota_dgmit: notaDe('2026-03-10') })], []];
-    // El segundo juego tiene cifras en las cuatro etapas de la externa: la paridad también se prueba en el trámite y en la respuesta
+    // El segundo juego tiene cifras en las cuatro etapas de la externa: la paridad también se prueba en la redacción y en la respuesta
     assert.ok(etapas(juegos[1]).externa.every((etapa) => etapa.n > 0));
     for (const casos of juegos) {
       const e = etapas(casos);
@@ -2389,7 +2390,7 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
     assert.equal(unaCarga.textos.ciclos, 'de 1 ciclo');
   });
 
-  it('vacío: sin notas DGMIT, el trámite y la respuesta lo dicen; con notas y sin casos, «Sin casos en 2026»', () => {
+  it('vacío: sin notas DGMIT, la redacción y la respuesta lo dicen; con notas y sin casos, «Sin casos en 2026»', () => {
     const casos = casosReales();
     const e = etapas(casos);
     const pendientes = tramoDe(vista(casos), 'externa', 'tramite').pendientes;
@@ -2417,7 +2418,7 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
     assert.deepEqual(etapaDe(etapasDe([], { anio: 2027, al: '2027-03-01' }), 'interna', 'aviso').vacio, { titulo: 'Sin casos en 2027', texto: '', pie: '' });
   });
 
-  it('vacío: sin ninguna nota pendiente, el trámite no dice «0 notas pendientes de carga» (Métricas sí, y no cambia)', () => {
+  it('vacío: sin ninguna nota pendiente, la redacción no dice «0 notas pendientes de carga» (Métricas sí, y no cambia)', () => {
     const sinNotasPendientes = { titulo: 'Todavía no hay notas DGMIT cargadas', texto: '', pie: 'Se empieza a contar cuando se carguen en el Seguimiento.' };
     const tramite = etapaDe(etapasDe([], { anio: 2026, al: AL }), 'externa', 'tramite');
     assert.deepEqual(tramite.vacio, sinNotasPendientes);
@@ -2445,7 +2446,7 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
     const produccion = etapaDe(etapas(casosReales()), 'interna', 'produccion');
     assert.deepEqual([produccion.n, produccion.textos.notas],
       [0, [{ tipo: 'en_curso', texto: 'En curso: 1 sin datos registrados todavía, hace 206 días hábiles (mediana)' }]]);
-    // Con notas DGMIT cargadas, un trámite sin casos terminados en el año igual dice sus pendientes: uno con nota y sin el aviso que
+    // Con notas DGMIT cargadas, una redacción sin casos terminados en el año igual dice sus pendientes: uno con nota y sin el aviso que
     // empieza el tramo, y otro avisado y sin nota
     const sinCasos = etapas([
       caso({ dataset_id: 901, nota_dgmit: notaDe('2026-03-10'), aviso_regla: null, primer_aviso: null, inicio_tramos: null, avisos_rpad: [] }),
@@ -2491,7 +2492,7 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
     ]);
     assert.deepEqual(respuesta(dos).textos.notas.map((nota) => nota.tipo), ['orientativo', 'en_curso', 'aclaracion']);
     assert.equal(vista(dos).circuito.aclaraciones.externa.fuente_publica.n, 2);
-    // Los pendientes van en el trámite con cifras, después del orientativo
+    // Los pendientes van en la redacción con cifras, después del orientativo
     const conNotas = etapas(casosConNotas());
     const pendientes = tramoDe(vista(casosConNotas()), 'externa', 'tramite').pendientes_texto;
     assert.equal(pendientes, '6 notas pendientes de carga');
@@ -2584,5 +2585,37 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
       sinTextosRaros(etapas(casos));
       sinTextosRaros(conAnterior(etapas(casos), etapas(casos)));
     }
+  });
+});
+
+// El nombre de la etapa de la DGMIT y la Dirección Administrativa (28/10/2026): «Redacción y entrega de nota». La clave interna sigue
+// siendo `tramite` (la foto del 31/12 y las cintas la usan), pero ningún texto que arma el servidor dice «trámite» (con tilde: así no se
+// confunde con la clave)
+describe('el nombre de la etapa de la DGMIT y la Dirección Administrativa', () => {
+  it('ninguna etapa se llama «trámite»: el circuito, las cintas y el Ciclo de vida dicen «Redacción y entrega de nota»', () => {
+    const NOMBRE = 'Redacción y entrega de nota';
+    // Con notas DGMIT la etapa tiene cifras, y su segmento y su rótulo van en la cinta externa; sin notas, la cinta se corta antes
+    for (const [casos, enLaCinta] of [[casosConNotas(), true], [casosReales(), false]]) {
+      for (const dias of DIAS) {
+        for (const estadistico of ESTADISTICOS) {
+          const v = vistaDe(casos, { anio: 2026, al: AL, estadistico, dias, sin: [] });
+          const donde = `${estadistico}, ${dias}`;
+          const deLaVista = JSON.stringify(v);
+          assert.doesNotMatch(deLaVista, /trámite/i, `la vista, ${donde}`);
+          assert.ok(deLaVista.includes(NOMBRE), `la vista, ${donde}`);
+          const cintas = cintasDeLaVista(v, { estadistico, dias });
+          const deLasCintas = JSON.stringify(cintas);
+          assert.doesNotMatch(deLasCintas, /trámite/i, `las cintas, ${donde}`);
+          assert.equal(deLasCintas.includes(NOMBRE), enLaCinta, `las cintas, ${donde}`);
+          if (enLaCinta) assert.ok(cintas.externa.segmentos.some((s) => s.texto.startsWith(`${NOMBRE} · `)), `${donde}: ${deLasCintas}`);
+        }
+      }
+      const deLasEtapas = JSON.stringify(etapas(casos));
+      assert.doesNotMatch(deLasEtapas, /trámite/i, 'las etapas');
+      assert.ok(deLasEtapas.includes(NOMBRE), 'las etapas');
+    }
+    // Con la mediana en días hábiles, el rótulo también entra en el dibujo
+    const cintas = cintasDeLaVista(vista(casosConNotas()), { estadistico: 'mediana', dias: 'habiles' });
+    assert.ok(cintas.externa.rotulos.some((r) => r.texto.startsWith(`${NOMBRE} · `)), JSON.stringify(cintas.externa.rotulos));
   });
 });

@@ -10,24 +10,31 @@ import assert from 'node:assert/strict';
 import {
   MODALIDADES, modalidadDe, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, NOMBRES_TIPO, DIAS_VACACIONES,
   DIAS_ESTUDIOS, DIAS_POR_EXAMEN, TOPES, JORNADA, LARGO_NOTA, MENSAJES_MI_ESPACIO,
-  textoRango, textoNoEstudia, textoSuperpuesta, textoSinHabilitados, textoTope, textoSinFranco, textoSinHorasAFavor,
-  textoSinNoUtilizadas, textoHorarioSuperpuesto, textoSaldo, textoAutorizadaDelFirmante,
+  textoRango, textoNoEstudia, textoSuperpuesta, textoSinHabilitados, textoHastaDondeAlcanza, textoSinNingunDia,
+  textoFaltanEnOtraCarga, textoTope, textoSinFranco, textoSinHorasAFavor,
+  textoSinNoUtilizadas, textoHorarioSuperpuesto, textoSaldo, textoSaldoDelArranque, textoSaldoDeLosDias, textoSaldoSinDias,
+  textoAutorizadaDelFirmante,
   AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN, AVISO_NOTAS_DE_HOY, AVISO_SIN_PERSONA_A_CARGO,
   textoSuperpuestaConConfiguracion, textoNoPaso, textoYaNoCubierta, textoEnConfiguracion, textoUnida,
-  textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA, TEXTO_ANULADA_POR_ADMINISTRACION,
-  TEXTO_NO_DIA_ENTERO,
+  textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA, TEXTO_ANULADA_EN_CONFIGURACION,
+  textoRevisalaEnConfiguracion, TEXTO_NO_DIA_ENTERO,
   mitadesDe, habilitaciones, venceLaLicencia, textoDeLasMitades, anioVigente, ordinariasDe, diasQueDescuentan, repartoDeVacaciones,
   textoDelReparto, textoDePerdidos, rangoDeFechas, esDiaEntero, topeDe, usoDeLosTopes, validarLicencia,
   horasDe, mesMas, horasPorMes, validarHorasExtras, francosDe, horasAFavorDe, noUtilizadasDe,
   TEXTO_ANTES_DEL_ARRANQUE, camposDelSaldoInicial, validarSaldoInicial, validarAnio, fueraDeLaModalidad, calcular,
   faltantesDe, problemaDeLaCarga, evaluarLicencia,
-  vinculoDe, textoDelVinculo, limiteParaCambiarTipo, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja, vinculosDeLaLista,
-  pasoPrevistoDe, ausenciasUnidas, textoNoEsta, textoDeLaVuelta, ausentesDelRango, ausentesDeHoyYManana, avisosDeVencimiento,
+  vinculoDe, textoDelVinculo, revisionDelVinculo, limiteParaCambiarTipo, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja,
+  vinculosDeLaLista,
+  pasoPrevistoDe, ausenciasUnidas, textoNoEsta, nombreCorto, textoDeLaVuelta, ausentesDelRango, ausentesDeHoyYManana,
+  avisosDeVencimiento,
   SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL, TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, horaSalidaValida, tipoDeDia,
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
-  avisosDeSalidas, mesDeLaPlanilla
+  avisosDeSalidas, mesDeLaPlanilla, porHabilitarDe, alcanceDeLaCarga, diasLibresEntre, diasLibresDelMes, franquiciaQueVence,
+  textoDePerdidosConLaCarga, textoDelFrancoSinDiasLibres, textoDeLasHorasSinDiasLibres, textoDeLaFranquiciaPerdida,
+  textoDelReacomodo, textoDeLosDiasHabiles
 } from '../services/miEspacioReglas.js';
 import { feriadosDelRango, calendarioCon } from '../services/feriadosReglas.js';
+import { sumarDias } from '../services/notasDigitalesCalendario.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
@@ -162,6 +169,28 @@ describe('los textos', () => {
     assert.equal(textoSuperpuesta('2026-11-05'), 'Ya tenés una licencia cargada el 05/11/2026: corregí la que ya está.');
     assert.equal(textoSinHabilitados('2026-06-15'),
       'No te alcanzan los días habilitados: para el 15/06/2026 no te queda ninguno.');
+    // Los errores de días de una carga (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.3)
+    assert.equal(textoHastaDondeAlcanza('2027-02-24'),
+      'No te alcanzan los días habilitados: esta licencia puede llegar hasta el 24/02/2027.');
+    assert.equal(textoSinNingunDia('2027-06-21'), 'No te alcanzan los días habilitados para el 21/06/2027.');
+    assert.equal(textoSinNingunDia('2027-06-21', null), 'No te alcanzan los días habilitados para el 21/06/2027.');
+    assert.equal(textoSinNingunDia('2027-06-21', { fecha: '2027-07-01', anio: 2027, dias: 5 }),
+      'No te alcanzan los días habilitados para el 21/06/2027. El 1/7/2027 se habilitan 5 más de la 2027.');
+    // Con 1, «se habilita»; una habilitación que no sirve no va
+    assert.equal(textoSinNingunDia('2027-06-21', { fecha: '2027-07-01', anio: 2027, dias: 1 }),
+      'No te alcanzan los días habilitados para el 21/06/2027. El 1/7/2027 se habilita 1 más de la 2027.');
+    assert.equal(textoSinNingunDia('2027-06-21', { fecha: 'x', anio: 2027, dias: 5 }),
+      'No te alcanzan los días habilitados para el 21/06/2027.');
+    assert.equal(textoSinNingunDia('2027-06-21', { fecha: '2027-07-01', anio: 2027, dias: 0 }),
+      'No te alcanzan los días habilitados para el 21/06/2027.');
+    // Las fechas de la otra carga como en la lista: el año solo al final si los dos son del mismo; si no, los dos
+    assert.equal(textoFaltanEnOtraCarga('2027-01-04', '2027-01-22', '2027-01-20'),
+      'Con estos días, a tus vacaciones del 04/01 al 22/01/2027 les faltan días desde el 20/01/2027.');
+    assert.equal(textoFaltanEnOtraCarga('2026-12-28', '2027-01-08', '2027-01-04'),
+      'Con estos días, a tus vacaciones del 28/12/2026 al 08/01/2027 les faltan días desde el 04/01/2027.');
+    // De un solo día, sin «desde»: el día que falta es ese mismo
+    assert.equal(textoFaltanEnOtraCarga('2027-01-04', '2027-01-04', '2027-01-04'),
+      'Con estos días, a tus vacaciones del 04/01/2027 les faltan días.');
     assert.equal(textoSinFranco('2027-02'), 'En febrero de 2027 no tenés francos para usar.');
     assert.equal(textoHorarioSuperpuesto('19:00', '22:00'), 'Se superpone con las horas extras de 19:00 a 22:00 de ese día.');
     assert.equal(textoHorarioSuperpuesto('22:00', '02:00', 'anterior'),
@@ -221,8 +250,76 @@ describe('los textos', () => {
       'Sigue en Configuración del 03/11 al 03/11: ya empezó y no se pudo anular.');
     assert.equal(TEXTO_TAMBIEN_EN_CONFIGURACION, 'También en Configuración → Licencias.');
     assert.equal(TEXTO_NO_SE_COPIA, 'Administración la cambió en Configuración: lo que corrijas acá ya no se copia.');
-    assert.equal(TEXTO_ANULADA_POR_ADMINISTRACION, 'Administración la anuló en Configuración: queda solo acá.');
     assert.equal(TEXTO_NO_DIA_ENTERO, 'No es el día entero: no pasa a Configuración');
+  });
+
+  // Spec 2026-10-28-mi-espacio-licencia-anulada (2.2 y 3.2): sin «Administración», porque pudo haber sido la misma persona
+  it('los textos de lo que quedó distinto en Configuración', () => {
+    assert.equal(TEXTO_ANULADA_EN_CONFIGURACION, 'Se anuló en Configuración: acá sigue contando. Si ya no va, borrala.');
+    assert.equal(textoRevisalaEnConfiguracion('2027-01-04', '2027-01-08'),
+      'En Configuración quedó del 04/01 al 08/01: revisala.');
+    assert.equal(textoRevisalaEnConfiguracion('2026-12-28', '2027-01-08'),
+      'En Configuración quedó del 28/12 al 08/01: revisala.');
+    // De un día, «el 17/11», no «del 17/11 al 17/11» (ruling de la revisión final de la spec); los textos de siempre no cambian
+    assert.equal(textoRevisalaEnConfiguracion('2026-11-17', '2026-11-17'), 'En Configuración quedó el 17/11: revisala.');
+    assert.equal(textoYaNoCubierta('2026-11-18', '2026-11-18'),
+      'Ya no está cubierta en Configuración del 18/11 al 18/11: revisala con administración.');
+    assert.equal(textoEnConfiguracion('2026-11-17', '2026-11-17'), 'En Configuración: del 17/11 al 17/11.');
+    // Lo que no es una fecha, la raya (como el resto de los textos del paso), también si las dos son iguales
+    assert.equal(textoRevisalaEnConfiguracion(null, 'x'), 'En Configuración quedó del — al —: revisala.');
+    assert.equal(textoRevisalaEnConfiguracion(null, null), 'En Configuración quedó del — al —: revisala.');
+    assert.equal(textoRevisalaEnConfiguracion('x', 'x'), 'En Configuración quedó del — al —: revisala.');
+  });
+
+  // Spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.2 y 3.4: lo que avisa el cálculo de una carga, sin frenarla
+  it('los avisos de lo que una carga hace perder o reacomoda', () => {
+    const ordinaria2024 = (perdidos) => ({ anio: 2024, perdidos, vence: '2026-12-31' });
+    // Los días de vacaciones: la diferencia, como «Perdés …», con «vence» en singular solo con 1
+    assert.equal(textoDePerdidosConLaCarga([ordinaria2024(3)]),
+      'Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026).');
+    assert.equal(textoDePerdidosConLaCarga([ordinaria2024(1)]),
+      'Con esta licencia perdés 1 de la 2024 (vence el 31/12/2026).');
+    assert.equal(textoDePerdidosConLaCarga([ordinaria2024(3), { anio: 2025, perdidos: 0, vence: '2027-12-31' },
+      { anio: 2026, perdidos: 5, vence: '2028-12-31' }]),
+    'Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026) y 5 de la 2026 (vencen el 31/12/2028).');
+    // Sin ninguna con perdidos, ''; «Perdés …» no cambió
+    assert.equal(textoDePerdidosConLaCarga([ordinaria2024(0)]), '');
+    assert.equal(textoDePerdidosConLaCarga(null), '');
+    assert.equal(textoDePerdidos([ordinaria2024(3)]), 'Perdés 3 de la 2024 (vencen el 31/12/2026).');
+    // El franco y las horas a favor de un mes, con el último día del mes (no el último hábil)
+    assert.equal(textoDelFrancoSinDiasLibres(1, '2026-12'),
+      'Tu franco de diciembre se queda sin días libres: vence el 31/12/2026.');
+    assert.equal(textoDelFrancoSinDiasLibres(2, '2026-12'),
+      'Tus 2 francos de diciembre se quedan sin días libres: vencen el 31/12/2026.');
+    assert.equal(textoDelFrancoSinDiasLibres(1, '2027-02'),
+      'Tu franco de febrero se queda sin días libres: vence el 28/02/2027.');
+    assert.equal(textoDeLasHorasSinDiasLibres(3, '2026-12'),
+      'Tus 3 horas a favor de diciembre se quedan sin días libres: vencen el 31/12/2026.');
+    assert.equal(textoDeLasHorasSinDiasLibres(1.5, '2026-11'),
+      'Tus 1,5 horas a favor de noviembre se quedan sin días libres: vencen el 30/11/2026.');
+    assert.equal(textoDeLasHorasSinDiasLibres(1, '2028-02'),
+      'Tu hora a favor de febrero se queda sin días libres: vence el 29/02/2028.');
+    // Un mes que no es un mes, la raya
+    assert.equal(textoDelFrancoSinDiasLibres(1, 'x'), 'Tu franco de — se queda sin días libres: vence el —.');
+    // La franquicia, como el email de vencimiento
+    assert.equal(textoDeLaFranquiciaPerdida(8, '2026-12-31'),
+      'Con esta licencia perdés 8 horas de franquicia (vencen el 31/12/2026).');
+    assert.equal(textoDeLaFranquiciaPerdida(1, '2026-12-31'),
+      'Con esta licencia perdés 1 hora de franquicia (vence el 31/12/2026).');
+    // Las otras cargas, con sus fechas como en la lista
+    assert.equal(textoDelReacomodo('2027-01-04', '2027-01-22', [{ anio: 2025, dias: 5 }, { anio: 2026, dias: 10 }]),
+      'Esta carga cambia de dónde salen tus vacaciones del 04/01 al 22/01/2027: ahora de las licencias 2025 (5 días) y '
+      + '2026 (10 días).');
+    assert.equal(textoDelReacomodo('2027-01-04', '2027-01-22', [{ anio: 2025, dias: 15 }]),
+      'Esta carga cambia de dónde salen tus vacaciones del 04/01 al 22/01/2027: ahora de la licencia 2025.');
+    assert.equal(textoDelReacomodo('2026-12-28', '2027-01-08', [{ anio: 2025, dias: 1 }, { anio: 2026, dias: 8 }]),
+      'Esta carga cambia de dónde salen tus vacaciones del 28/12/2026 al 08/01/2027: ahora de las licencias 2025 (1 día) y '
+      + '2026 (8 días).');
+    assert.equal(textoDelReacomodo('2027-01-04', '2027-01-04', [{ anio: 2025, dias: 1 }]),
+      'Esta carga cambia de dónde salen tus vacaciones del 04/01/2027: ahora de la licencia 2025.');
+    // Sin ninguna licencia, no hay qué decir
+    assert.equal(textoDelReacomodo('2027-01-04', '2027-01-22', []), '');
+    assert.equal(textoDelReacomodo('2027-01-04', '2027-01-22', null), '');
   });
 });
 
@@ -253,6 +350,42 @@ describe('las mitades y el vencimiento', () => {
     assert.equal(comienzo(2026, 30), 'Se habilitan en dos mitades: 15 el 1/7/2026 y 15 el 1/1/2027');
     // El de la base o el de un pedido, como texto, también
     assert.equal(textoDeLasMitades('2026', '20'), textoDeLasMitades(2026, 20));
+  });
+
+  // En el año del arranque, con el arranque desde el 1/7 (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8 y 7, decisión
+  // 3), la primera mitad es el saldo que se escribe en «De la AAAA»: el texto lo dice sin número, y la segunda, con el suyo
+  it('textoDeLasMitades: en el año del arranque, desde el 1/7, la primera mitad es lo que se pone en «De la AAAA»', () => {
+    const arranque = '2026-10-27';
+    assert.equal(textoDeLasMitades(2026, 20, { arranque }),
+      'La primera mitad es lo que pongas en «De la 2026», más abajo. El 1/1/2027 se habilitan 10.');
+    // La segunda mitad, la de mitadesDe: con un número impar, la menor
+    const segunda = (dias) => textoDeLasMitades(2026, dias, { arranque }).split('. ')[1];
+    assert.deepEqual(DIAS_VACACIONES.map(segunda), [
+      'El 1/1/2027 se habilitan 5.', 'El 1/1/2027 se habilitan 7.', 'El 1/1/2027 se habilitan 10.',
+      'El 1/1/2027 se habilitan 12.', 'El 1/1/2027 se habilitan 15.'
+    ]);
+    // El 1/7 justo ya es desde el 1/7; el año y los días de un pedido, como texto, también
+    assert.equal(textoDeLasMitades(2026, 20, { arranque: '2026-07-01' }), textoDeLasMitades(2026, 20, { arranque }));
+    assert.equal(textoDeLasMitades('2026', '20', { arranque }), textoDeLasMitades(2026, 20, { arranque }));
+    assert.equal(textoDeLasMitades(2027, 15, { arranque: '2027-12-31' }),
+      'La primera mitad es lo que pongas en «De la 2027», más abajo. El 1/1/2028 se habilitan 7.');
+  });
+
+  it('textoDeLasMitades: con el arranque antes del 1/7, en otro año o sin un arranque que sirva, el texto de siempre', () => {
+    const deSiempre = textoDeLasMitades(2026, 20);
+    for (const arranque of ['2026-03-10', '2026-06-30', '2026-01-01']) {
+      assert.equal(textoDeLasMitades(2026, 20, { arranque }), deSiempre, arranque);
+    }
+    // Los demás años, como siempre, aunque el arranque sea del 1/7 en adelante
+    assert.equal(textoDeLasMitades(2025, 20, { arranque: '2026-10-27' }), textoDeLasMitades(2025, 20));
+    assert.equal(textoDeLasMitades(2027, 20, { arranque: '2026-10-27' }), textoDeLasMitades(2027, 20));
+    for (const opciones of [undefined, null, {}, { arranque: null }, { arranque: '2026-02-30' }, { arranque: '27/10/2026' },
+      { arranque: 20261027 }, 'x', [], Object.create(null)]) {
+      assert.equal(textoDeLasMitades(2026, 20, opciones), deSiempre, String(opciones?.arranque ?? typeof opciones));
+    }
+    // Sin unos días de DIAS_VACACIONES o sin un año, null igual
+    assert.equal(textoDeLasMitades(2026, 12, { arranque: '2026-10-27' }), null);
+    assert.equal(textoDeLasMitades('abc', 20, { arranque: '2026-10-27' }), null);
   });
 
   it('textoDeLasMitades: sin unos días de DIAS_VACACIONES o sin un año, null', () => {
@@ -477,8 +610,9 @@ describe('el reparto de las vacaciones', () => {
         + 'la 2025 y 10 de la 2026. Perdés 7 de la 2024 (vencen el 31/12/2026).'],
       [[vacaciones(100, '2026-12-14', '2026-12-18')], 100, 'Salen de la licencia 2024, la más vieja. Te quedan 40 días: 10 de '
         + 'la 2024 (vencen el 31/12/2026), 20 de la 2025 y 10 de la 2026.'],
+      // Sin «la más vieja»: a la 2024 le quedan 7, aunque se pierdan (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9)
       [[vacaciones(100, '2026-12-21', '2026-12-31'), vacaciones(101, '2027-01-04', '2027-01-10')], 101, 'Salen de la licencia '
-        + '2025, la más vieja. Te quedan 25 días: 15 de la 2025 y 10 de la 2026. Perdés 7 de la 2024 (vencen el 31/12/2026).'],
+        + '2025. Te quedan 25 días: 15 de la 2025 y 10 de la 2026. Perdés 7 de la 2024 (vencen el 31/12/2026).'],
       [[vacaciones(100, '2026-12-21', '2027-01-10'), vacaciones(101, '2026-12-01', '2026-12-02')], 101, 'Salen de la licencia '
         + '2024, la más vieja. Te quedan 30 días: 20 de la 2025 y 10 de la 2026.'],
       [[vacaciones(100, '2026-12-14', '2026-12-18'), { id: 102, tipo: 'medica', desde: '2026-12-21', hasta: '2026-12-31',
@@ -636,6 +770,53 @@ describe('textoDelReparto', () => {
     const reparto = repartoDeVacaciones(PLANTA.estado, { hoy: HOY, feriados: SIN_FERIADOS });
     assert.equal(textoDelReparto(reparto, 999), '');
     assert.equal(textoDe(PLANTA.estado, vacaciones(100, '2026-10-21', '2026-10-23')), '');
+  });
+
+  // «la más vieja» solo cuando es cierto (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9): si queda una licencia
+  // más vieja que la primera que usa la carga, no vencida y con días (disponibles o que se pierden), no va
+  it('«la más vieja»: no va si queda una más vieja con días; una carga de enero no usa la 2024, que sigue con sus 15', () => {
+    assert.equal(textoDeLaCarga(PERSONA, [vacaciones(100, '2027-01-04', '2027-01-08')], 100),
+      'Salen de la licencia 2025. Te quedan 40 días: 15 de la 2024 (vencen el 31/12/2026), 15 de la 2025 y 10 de la 2026.');
+    assert.equal(textoDeLaCarga(PERSONA, [vacaciones(100, '2027-01-04', '2027-02-05')], 100),
+      'Salen de las licencias 2025 (20 días) y 2026 (5 días). Te quedan 20 días: 15 de la 2024 (vencen el 31/12/2026) y 5 '
+      + 'de la 2026.');
+  });
+
+  it('«la más vieja»: tampoco si a la más vieja solo le quedan días que se pierden', () => {
+    // La de diciembre deja 7 de la 2024 sin ningún día libre hasta el 31/12: la de enero ya no puede usarlos, pero quedan
+    assert.equal(textoDeLaCarga(PERSONA, [vacaciones(100, '2026-12-21', '2026-12-31'),
+      vacaciones(101, '2027-01-04', '2027-01-10')], 101),
+    'Salen de la licencia 2025. Te quedan 25 días: 15 de la 2025 y 10 de la 2026. Perdés 7 de la 2024 (vencen el 31/12/2026).');
+  });
+
+  it('«la más vieja»: sí con la más vieja vencida a hoy o sin días', () => {
+    // El 04/01/2027 la 2024 ya venció: la 2025 es la más vieja
+    const enero = repartoDeVacaciones(soloVacaciones('2026-10-26', PERSONA, vacaciones(100, '2027-01-04', '2027-01-08')),
+      { hoy: '2027-01-04', feriados: SIN_FERIADOS });
+    assert.equal(textoDelReparto(enero, 100),
+      'Salen de la licencia 2025, la más vieja. Te quedan 35 días: 15 de la 2025 (vencen el 31/12/2027) y 20 de la 2026.');
+    // Sin días de la 2024 (CONTRATO la tiene en 0), la 2025 también es la más vieja
+    assert.equal(textoDe(CONTRATO.estado, vacaciones(100, '2026-11-03', '2026-11-09')),
+      'Salen de la licencia 2025, la más vieja. Te quedan 8 días, todos de la 2026.');
+    // Una más vieja ya vencida no cuenta, aunque traiga días (un reparto armado a mano)
+    const aMano = {
+      hoy: '2027-01-04', porFila: new Map([[1, [{ anio: 2025, dias: 2 }]]]), sinCubrir: new Map(),
+      ordinarias: [{ anio: 2024, vence: '2026-12-31', disponibles: 3, perdidos: 1 },
+        { anio: 2025, vence: '2027-12-31', disponibles: 0, perdidos: 0 }]
+    };
+    assert.ok(textoDelReparto(aMano, 1).startsWith('Salen de la licencia 2025, la más vieja.'));
+    // Y una más nueva con días no cambia nada
+    assert.ok(textoDelReparto({ ...aMano, ordinarias: [{ anio: 2026, vence: '2028-12-31', disponibles: 4, perdidos: 0 }] }, 1)
+      .startsWith('Salen de la licencia 2025, la más vieja.'));
+  });
+});
+
+describe('textoDeLosDiasHabiles (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9)', () => {
+  it('los hábiles y, si son menos, de cuántos corridos: la misma forma en el cálculo, la lista y el segundo paso', () => {
+    assert.equal(textoDeLosDiasHabiles(18, 26), '18 días hábiles de 26 corridos');
+    assert.equal(textoDeLosDiasHabiles(1, 3), '1 día hábil de 3 corridos');
+    assert.equal(textoDeLosDiasHabiles(5, 5), '5 días hábiles');
+    assert.equal(textoDeLosDiasHabiles(1, 1), '1 día hábil');
   });
 });
 
@@ -1931,14 +2112,23 @@ describe('«Mis vacaciones y saldos»: los campos del saldo inicial', () => {
     assert.deepEqual(camposDelSaldoInicial(PLANTA.estado), [
       {
         clave: 'vacaciones-2024', concepto: 'vacaciones', anio: 2024, rotulo: 'Sin usar de la licencia 2024', maximo: 30,
-        paso: 1
+        paso: 1, ayuda: 'De 0 a 30, el máximo de una licencia.'
       },
-      { clave: 'vacaciones-2025', concepto: 'vacaciones', anio: 2025, rotulo: 'De la 2025', maximo: 30, paso: 1 },
-      { clave: 'vacaciones-2026', concepto: 'vacaciones', anio: 2026, rotulo: 'De la 2026', maximo: 10, paso: 1 },
-      { clave: 'franquicias', concepto: 'franquicias', anio: 2026, rotulo: 'Horas de franquicia', maximo: 42, paso: 1 },
-      { clave: 'estudios', concepto: 'estudios', anio: 2026, rotulo: 'Días de estudios', maximo: 15, paso: 1 },
-      { clave: 'medica', concepto: 'medica', anio: 2026, rotulo: 'Días de atención médica', maximo: 25, paso: 1 },
-      { clave: 'familiar', concepto: 'familiar', anio: 2026, rotulo: 'Días de grupo familiar', maximo: 25, paso: 1 }
+      {
+        clave: 'vacaciones-2025', concepto: 'vacaciones', anio: 2025, rotulo: 'De la 2025', maximo: 30, paso: 1,
+        ayuda: 'De 0 a 30, el máximo de una licencia.'
+      },
+      {
+        clave: 'vacaciones-2026', concepto: 'vacaciones', anio: 2026, rotulo: 'De la 2026', maximo: 10, paso: 1,
+        ayuda: 'De 0 a 10: lo que se habilitó de la 2026 hasta hoy.'
+      },
+      {
+        clave: 'franquicias', concepto: 'franquicias', anio: 2026, rotulo: 'Horas de franquicia', maximo: 42, paso: 1,
+        ayuda: ''
+      },
+      { clave: 'estudios', concepto: 'estudios', anio: 2026, rotulo: 'Días de estudios', maximo: 15, paso: 1, ayuda: '' },
+      { clave: 'medica', concepto: 'medica', anio: 2026, rotulo: 'Días de atención médica', maximo: 25, paso: 1, ayuda: '' },
+      { clave: 'familiar', concepto: 'familiar', anio: 2026, rotulo: 'Días de grupo familiar', maximo: 25, paso: 1, ayuda: '' }
     ]);
   });
 
@@ -1958,7 +2148,7 @@ describe('«Mis vacaciones y saldos»: los campos del saldo inicial', () => {
     ]);
     assert.deepEqual(campos.at(-1), {
       clave: 'horas_no_utilizadas', concepto: 'horas_no_utilizadas', anio: 2026, rotulo: 'Horas no utilizadas previamente',
-      maximo: 200, paso: 0.5
+      maximo: 200, paso: 0.5, ayuda: ''
     });
     // 15 días: la primera mitad es 8; y secundaria, 10 días de estudios
     assert.equal(campos.find((campo) => campo.clave === 'vacaciones-2026').maximo, 8);
@@ -1978,6 +2168,35 @@ describe('«Mis vacaciones y saldos»: los campos del saldo inicial', () => {
     // Sin ningún año cargado, 30, y la primera mitad, 15
     assert.equal(camposDelSaldoInicial({ modalidad: 'planta', arranque: HOY, anios: [] })
       .find((campo) => campo.clave === 'vacaciones-2026').maximo, 15);
+  });
+
+  // Cada tope dice de dónde sale (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): el del año del arranque, lo
+  // habilitado; uno anterior con sus días cargados, esos días; sin días cargados, el máximo de una licencia; los demás, nada
+  it('la ayuda de cada campo: de dónde sale su máximo', () => {
+    const ayudas = (arranque, anios, modalidad = 'planta') => Object.fromEntries(
+      camposDelSaldoInicial({ modalidad, arranque, anios }).map(({ clave, ayuda }) => [clave, ayuda]));
+    // 15 días en 2026 (la primera mitad, 8), 20 en 2025 y nada en 2024
+    assert.deepEqual(ayudas('2026-10-27', [
+      { anio: 2025, dias_vacaciones: 20, estudios: null }, { anio: 2026, dias_vacaciones: 15, estudios: 'universitario' }
+    ]), {
+      'vacaciones-2024': 'De 0 a 30, el máximo de una licencia.',
+      'vacaciones-2025': 'De 0 a 20: los días de la 2025.',
+      'vacaciones-2026': 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.',
+      franquicias: '', estudios: '', medica: '', familiar: ''
+    });
+    // Los días de un año anterior que valen heredados también son sus días; en contrato, igual, y sus horas sin ayuda
+    assert.deepEqual(ayudas('2026-03-10', [{ anio: 2024, dias_vacaciones: 25, estudios: null }], 'contrato'), {
+      'vacaciones-2024': 'De 0 a 25: los días de la 2024.',
+      'vacaciones-2025': 'De 0 a 25: los días de la 2025.',
+      medica: '', familiar: '', horas_no_utilizadas: ''
+    });
+    // Sin ningún año cargado, el del arranque con la primera mitad de 30
+    assert.equal(ayudas('2026-07-01', [])['vacaciones-2026'], 'De 0 a 15: lo que se habilitó de la 2026 hasta hoy.');
+    // Las tres ayudas como funciones; un año que no sirve, la raya
+    assert.equal(textoSaldoDelArranque(8, 2026), 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.');
+    assert.equal(textoSaldoDeLosDias(20, 2025), 'De 0 a 20: los días de la 2025.');
+    assert.equal(textoSaldoSinDias(30), 'De 0 a 30, el máximo de una licencia.');
+    assert.equal(textoSaldoDeLosDias(20, 'x'), 'De 0 a 20: los días de la —.');
   });
 
   it('sin una modalidad o un arranque válidos, ninguno', () => {
@@ -2001,19 +2220,44 @@ describe('validarSaldoInicial', () => {
 
   it('cada clave es obligatoria, y el error va en su clave', () => {
     assert.deepEqual(validar({ ...SALDOS_PLANTA, 'vacaciones-2025': undefined }),
-      { datos: null, error: { campo: 'vacaciones-2025', mensaje: textoSaldo(30) } });
+      { datos: null, error: { campo: 'vacaciones-2025', mensaje: 'De 0 a 30, el máximo de una licencia.' } });
     for (const vacio of [null, '', '  ', 'x', true, [3]]) {
       assert.deepEqual(validar({ ...SALDOS_PLANTA, medica: vacio }).error, { campo: 'medica', mensaje: textoSaldo(25) });
     }
-    assert.deepEqual(validarSaldoInicial({}, CAMPOS).error, { campo: 'vacaciones-2024', mensaje: textoSaldo(30) });
+    assert.deepEqual(validarSaldoInicial({}, CAMPOS).error,
+      { campo: 'vacaciones-2024', mensaje: 'De 0 a 30, el máximo de una licencia.' });
   });
 
   it('de 0 al máximo, en días enteros', () => {
     assert.deepEqual(validar({ ...SALDOS_PLANTA, 'vacaciones-2026': 11 }).error,
-      { campo: 'vacaciones-2026', mensaje: 'Escribí un número de 0 a 10.' });
+      { campo: 'vacaciones-2026', mensaje: 'De 0 a 10: lo que se habilitó de la 2026 hasta hoy.' });
     assert.deepEqual(validar({ ...SALDOS_PLANTA, franquicias: 2.5 }).error, { campo: 'franquicias', mensaje: textoSaldo(42) });
     assert.deepEqual(validar({ ...SALDOS_PLANTA, familiar: -1 }).error, { campo: 'familiar', mensaje: textoSaldo(25) });
     assert.equal(validar({ ...SALDOS_PLANTA, 'vacaciones-2026': 0, franquicias: 42 }).error, null);
+  });
+
+  // El error de un campo con ayuda es su ayuda (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): dice de dónde sale el
+  // tope. Sin ayuda (vacía, solo espacios o lo que no es un texto), textoSaldo con su máximo, como siempre
+  it('el error de un campo con ayuda es su ayuda; sin ayuda, textoSaldo', () => {
+    const campos = camposDelSaldoInicial({ modalidad: 'planta', arranque: '2026-10-27', anios: [
+      { anio: 2025, dias_vacaciones: 20, estudios: null }, { anio: 2026, dias_vacaciones: 15, estudios: null }
+    ] });
+    const llenos = Object.fromEntries(campos.map(({ clave }) => [clave, 0]));
+    const error = (clave, valor, lista = campos) => validarSaldoInicial({ saldos: { ...llenos, [clave]: valor } }, lista).error;
+    assert.deepEqual(error('vacaciones-2026', 9),
+      { campo: 'vacaciones-2026', mensaje: 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.' });
+    assert.deepEqual(error('vacaciones-2025', 21), { campo: 'vacaciones-2025', mensaje: 'De 0 a 20: los días de la 2025.' });
+    assert.deepEqual(error('vacaciones-2024', -1),
+      { campo: 'vacaciones-2024', mensaje: 'De 0 a 30, el máximo de una licencia.' });
+    // Un número que no es entero, también con la ayuda
+    assert.deepEqual(error('vacaciones-2025', 2.5), { campo: 'vacaciones-2025', mensaje: 'De 0 a 20: los días de la 2025.' });
+    assert.equal(error('vacaciones-2025', 20), null);
+    assert.deepEqual(error('medica', 26), { campo: 'medica', mensaje: textoSaldo(25) });
+    for (const ayuda of ['', '   ', null, 7, undefined]) {
+      const sinAyuda = campos.map((campo) => (campo.clave === 'vacaciones-2025' ? { ...campo, ayuda } : campo));
+      assert.deepEqual(error('vacaciones-2025', 21, sinAyuda), { campo: 'vacaciones-2025', mensaje: textoSaldo(20) },
+        String(ayuda));
+    }
   });
 
   it('las horas no utilizadas, de a media hora', () => {
@@ -2090,9 +2334,11 @@ describe('calcular', () => {
   it('PLANTA a hoy: el reparto, los topes, los francos y lo no utilizado, sin faltantes', () => {
     const calculo = calcular(PLANTA.estado, A_HOY);
     assert.deepEqual(Object.keys(calculo),
-      ['reparto', 'topes', 'francos', 'horasAFavor', 'noUtilizadas', 'faltantes', 'avisosDeSalidas']);
+      ['reparto', 'topes', 'franquicia', 'francos', 'horasAFavor', 'noUtilizadas', 'faltantes', 'avisosDeSalidas']);
     assert.deepEqual(calculo.reparto, repartoDeVacaciones(PLANTA.estado, A_HOY));
     assert.deepEqual(calculo.topes, usoDeLosTopes(PLANTA.estado, { feriados: SIN_FERIADOS }));
+    // Las 42 horas de franquicia menos las 17 del saldo inicial (spec 2026-10-28, 3.6)
+    assert.deepEqual(calculo.franquicia, { quedan: 25, perdidas: 0, disponibles: 25 });
     assert.deepEqual(calculo.francos, francosDe(PLANTA.estado, A_HOY));
     assert.deepEqual(calculo.horasAFavor, []);
     assert.deepEqual(calculo.noUtilizadas, { 2026: noUtilizadasDe(PLANTA.estado, 2026, A_HOY) });
@@ -2185,8 +2431,8 @@ describe('calcular', () => {
     const calculo = calcular(PLANTA.estado, { feriados: SIN_FERIADOS });
     assert.deepEqual(calculo.reparto.ordinarias, []);
     assert.equal(calculo.reparto.sinCubrir.size, 0);
-    assert.deepEqual([calculo.topes, calculo.francos, calculo.horasAFavor, calculo.noUtilizadas, calculo.faltantes,
-      calculo.avisosDeSalidas], [[], [], [], {}, [], []]);
+    assert.deepEqual([calculo.topes, calculo.franquicia, calculo.francos, calculo.horasAFavor, calculo.noUtilizadas,
+      calculo.faltantes, calculo.avisosDeSalidas], [[], null, [], [], {}, [], []]);
   });
 });
 
@@ -2313,10 +2559,12 @@ describe('lo que frena una carga', () => {
   const JUNIO = vacaciones(100, '2027-06-01', '2027-06-16');
 
   it('unas vacaciones sin días habilitados', () => {
-    // Sin saldo de la 2026, su segunda mitad se habilita el 1/1/2027
+    // Sin saldo de la 2026, su segunda mitad se habilita el 1/1/2027 (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.3:
+    // sin ningún día, el error va en «Desde» y dice lo que se habilita después)
     const estado = soloVacaciones('2026-10-26', { 2024: 0, 2025: 0, 2026: 0 });
     assert.deepEqual(evaluar(estado, { tipo: 'vacaciones', desde: '2026-11-03', hasta: '2026-11-04' }).error,
-      { campo: 'desde', mensaje: 'No te alcanzan los días habilitados: para el 03/11/2026 no te queda ninguno.' });
+      { campo: 'desde', mensaje: 'No te alcanzan los días habilitados para el 03/11/2026. El 1/1/2027 se habilitan 10 más de la '
+        + '2026.' });
     assert.equal(evaluar(estado, { tipo: 'vacaciones', desde: '2027-01-04', hasta: '2027-01-05' }).error, null);
   });
 
@@ -2378,8 +2626,10 @@ describe('lo que frena una carga', () => {
     const { datos, error } = evaluar(estado, entrada, { editadaId: 100 });
     assert.equal(error, null);
     assert.equal(datos.nota, 'Otra nota');
+    // Es la misma carga: el error va en «Hasta» y dice hasta dónde puede llegar (spec 2026-10-28, 3.3), el «Hasta» guardado,
+    // que no agranda el faltante que ya tenía
     assert.deepEqual(evaluar(estado, { ...entrada, hasta: '2027-06-17' }, { editadaId: 100 }).error,
-      { campo: 'desde', mensaje: textoSinHabilitados('2027-06-15') });
+      { campo: 'hasta', mensaje: textoHastaDondeAlcanza('2027-06-16') });
   });
 
   it('un faltante que ya estaba no frena una carga que no lo toca', () => {
@@ -2394,8 +2644,9 @@ describe('lo que frena una carga', () => {
     // el 10/06 queda sin cubrir
     const estado = soloVacaciones('2026-10-26', { 2024: 0, 2025: 0, 2026: 0 }, vacaciones(100, '2027-06-01', '2027-06-14'));
     assert.equal(evaluar(estado, { tipo: 'medica', desde: '2027-05-03', hasta: '2027-05-05' }).error, null);
+    // El error dice cuáles y desde cuándo les faltan, en «Hasta» (spec 2026-10-28, 3.3)
     assert.deepEqual(evaluar(estado, { tipo: 'vacaciones', desde: '2027-05-03', hasta: '2027-05-05' }).error,
-      { campo: 'desde', mensaje: textoSinHabilitados('2027-06-10') });
+      { campo: 'hasta', mensaje: textoFaltanEnOtraCarga('2027-06-01', '2027-06-14', '2027-06-10') });
   });
 });
 
@@ -2413,7 +2664,7 @@ describe('evaluarLicencia', () => {
           dias_habiles: 5, texto_dias: '5 días hábiles de 7 corridos',
           texto_reparto: 'Salen de la licencia 2024, la más vieja. Te quedan 33 días: 3 de la 2024 (vencen el 31/12/2026), '
             + '20 de la 2025 y 10 de la 2026.',
-          queda_texto: '', antes_del_arranque: false, texto_antes_del_arranque: ''
+          queda_texto: '', antes_del_arranque: false, texto_antes_del_arranque: '', avisos: []
         }
       });
     // Unas nuevas, todavía sin id
@@ -2510,7 +2761,7 @@ describe('evaluarLicencia', () => {
     assert.equal(TEXTO_ANTES_DEL_ARRANQUE, 'Es anterior al saldo inicial: queda como historia y no descuenta.');
     assert.deepEqual(vistaDe(PLANTA.estado, { tipo: 'medica', desde: '2026-10-19', hasta: '2026-10-20' }), {
       dias_habiles: 2, texto_dias: '2 días hábiles', texto_reparto: '', queda_texto: '', antes_del_arranque: true,
-      texto_antes_del_arranque: TEXTO_ANTES_DEL_ARRANQUE
+      texto_antes_del_arranque: TEXTO_ANTES_DEL_ARRANQUE, avisos: []
     });
     // Una que cruza el arranque descuenta desde el arranque: no es historia (sin las licencias de PLANTA, que tiene un
     // franco el 23/10)
@@ -2522,6 +2773,754 @@ describe('evaluarLicencia', () => {
     // Los francos no tienen saldo inicial: nunca son historia
     assert.equal(vistaDe(conHoras('planta', [extra(100, '2026-08-04', '18:00', '01:00')]),
       { tipo: 'franco', desde: '2026-10-19' }).antes_del_arranque, false);
+  });
+});
+
+describe('lo por habilitar y el alcance (spec 2026-10-28, 3.1)', () => {
+  // La persona de planta de la spec 2026-10-28-mi-espacio-vacaciones-en-la-carga (punto 1): 15 días de la 2024, 20 de la 2025
+  // y 10 de la 2026 en el saldo, 20 días por año, el arranque el 27/10/2026 y hoy el 28/10/2026, con la precarga de los
+  // feriados (el 07/12/2026 no es laborable, el 08 y el 09/02/2027 son Carnaval y el 23/02/2027, el aniversario de la ciudad)
+  const HOY_DE_LA_CARGA = '2026-10-28';
+  const A_LA_CARGA = Object.freeze({
+    hoy: HOY_DE_LA_CARGA, feriados: feriadosDelRango(FILAS_PRECARGA, '2024-01-01', '2028-12-31')
+  });
+  const persona = (...licencias) => soloVacaciones('2026-10-27', PERSONA, ...licencias);
+  const pedido = (desde, hasta) => ({ tipo: 'vacaciones', desde, hasta });
+  const evaluar = (estado, entrada, editadaId) => evaluarLicencia(estado, entrada, { ...A_LA_CARGA, editadaId });
+
+  // El «Hasta» más lejano que se guarda, probando uno por uno desde el desde hasta el último día del rango
+  const fuerzaBruta = (estado, entrada, editadaId) => {
+    const tope = rangoDeFechas(HOY_DE_LA_CARGA).hasta;
+    let ultimo = null;
+    for (let hasta = entrada.desde; hasta <= tope; hasta = sumarDias(hasta, 1)) {
+      if (evaluar(estado, { ...entrada, hasta }, editadaId).error === null) ultimo = hasta;
+    }
+    return ultimo;
+  };
+
+  it('porHabilitarDe sin cargas: el 1/1/2027 de la 2026 y las dos mitades de la 2027', () => {
+    const reparto = repartoDeVacaciones(persona(), A_LA_CARGA);
+    assert.deepEqual(porHabilitarDe(reparto.ordinarias, HOY_DE_LA_CARGA), [
+      { fecha: '2027-01-01', anio: 2026, dias: 10 },
+      { fecha: '2027-07-01', anio: 2027, dias: 10 },
+      { fecha: '2028-01-01', anio: 2027, dias: 10 }
+    ]);
+  });
+
+  it('porHabilitarDe: lo ya asignado de más consume primero la mitad más temprana', () => {
+    // Sin saldo: del 05/07 al 30/07/2027 son 18 días hábiles (el 09/07 es fijo y el 28/07, la Gesta galesa), 10 de la
+    // segunda mitad de la 2026 y 8 de la primera de la 2027
+    const julio = vacaciones(100, '2027-07-05', '2027-07-30');
+    const reparto = repartoDeVacaciones(soloVacaciones('2026-10-27', { 2024: 0, 2025: 0, 2026: 0 }, julio), A_LA_CARGA);
+    assert.deepEqual(reparto.porFila.get(100), [{ anio: 2026, dias: 10 }, { anio: 2027, dias: 8 }]);
+    assert.deepEqual(porHabilitarDe(reparto.ordinarias, HOY_DE_LA_CARGA), [
+      { fecha: '2027-07-01', anio: 2027, dias: 2 },
+      { fecha: '2028-01-01', anio: 2027, dias: 10 }
+    ]);
+    // Con 13 asignados de más, la primera mitad queda en 0 (no va) y a la segunda le quedan 7
+    const mitades = [{ dias: 10, habilita: '2027-07-01' }, { dias: 10, habilita: '2028-01-01' }];
+    assert.deepEqual(porHabilitarDe([{ anio: 2027, mitades, por_habilitar: 7 }], HOY_DE_LA_CARGA),
+      [{ fecha: '2028-01-01', anio: 2027, dias: 7 }]);
+    // Una mitad ya habilitada a hoy no cuenta: el 01/07/2027, la del 1/7 ya está
+    assert.deepEqual(porHabilitarDe([{ anio: 2027, mitades, por_habilitar: 10 }], '2027-07-01'),
+      [{ fecha: '2028-01-01', anio: 2027, dias: 10 }]);
+  });
+
+  it('porHabilitarDe: por fecha y después por año', () => {
+    const ordinarias = [
+      { anio: 2027, mitades: [{ dias: 4, habilita: '2027-01-01' }], por_habilitar: 4 },
+      { anio: 2026, mitades: [{ dias: 5, habilita: '2027-01-01' }, { dias: 3, habilita: '2026-12-01' }], por_habilitar: 8 }
+    ];
+    assert.deepEqual(porHabilitarDe(ordinarias, HOY_DE_LA_CARGA), [
+      { fecha: '2026-12-01', anio: 2026, dias: 3 },
+      { fecha: '2027-01-01', anio: 2026, dias: 5 },
+      { fecha: '2027-01-01', anio: 2027, dias: 4 }
+    ]);
+  });
+
+  it('del 01/12/2026 al 05/02/2027: no quedan días hoy, el 1/1 se habilitan 10 más y puede llegar hasta el 24/02/2027', () => {
+    const { datos, error, vista } = evaluar(persona(), pedido('2026-12-01', '2027-02-05'));
+    assert.equal(error, null);
+    assert.equal(datos.hasta, '2027-02-05');
+    assert.equal(vista.texto_dias, '45 días hábiles de 67 corridos');
+    assert.equal(vista.texto_reparto, 'Salen de las licencias 2024 (15 días), 2025 (20 días) y 2026 (10 días), las más '
+      + 'viejas. No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026: esta licencia puede llegar '
+      + 'hasta el 24/02/2027.');
+  });
+
+  it('del 01/12/2026 al 24/02/2027: ya no hay nada por habilitar hasta su hasta, ni alcance', () => {
+    const { error, vista } = evaluar(persona(), pedido('2026-12-01', '2027-02-24'));
+    assert.equal(error, null);
+    assert.equal(vista.texto_reparto, 'Salen de las licencias 2024 (15 días), 2025 (20 días) y 2026 (20 días), las más '
+      + 'viejas. No te quedan días disponibles.');
+  });
+
+  // «No te quedan días disponibles hoy.» va cuando hay algo por habilitar de las licencias hasta el año de hoy (lo mismo que nombra
+  // la opción del tipo, «· 10 más el 1/1»), aunque su fecha quede después del «Hasta» y no se nombre (la revisión final de la spec,
+  // 3.1). Del arranque al 31/12/2026 hay 42 días hábiles: para que una carga que termina antes del 1/1/2027 use todo lo
+  // habilitado, otra guardada, del 01/01 al 06/01/2027, usa los otros 3 de la primera mitad de la 2026. La segunda (10 días, el
+  // 1/1/2027) queda sin asignar, y el 1/1 está dentro de la guardada: esta no puede llegar más allá de su hasta
+  it('del 27/10 al 31/12/2026, con lo habilitado usado: «No te quedan días disponibles hoy.», sin nombrar el 1/1/2027', () => {
+    const { error, vista } = evaluar(persona(vacaciones(100, '2027-01-01', '2027-01-06')), pedido('2026-10-27', '2026-12-31'));
+    assert.equal(error, null);
+    assert.equal(alcanceDeLaCarga(persona(vacaciones(100, '2027-01-01', '2027-01-06')), pedido('2026-10-27', '2026-12-31'),
+      A_LA_CARGA), '2026-12-31');
+    assert.equal(vista.texto_reparto, 'Salen de las licencias 2024 (15 días), 2025 (20 días) y 2026 (7 días), las más viejas. '
+      + 'No te quedan días disponibles hoy.');
+    // Del 01/12/2026 al 24/02/2027 los 20 de la 2026 ya están asignados, y la 2027 es del año siguiente: sin «hoy»
+    assert.equal(evaluar(persona(), pedido('2026-12-01', '2027-02-24')).vista.texto_reparto, 'Salen de las licencias 2024 '
+      + '(15 días), 2025 (20 días) y 2026 (20 días), las más viejas. No te quedan días disponibles.');
+  });
+
+  it('textoDelReparto con hayPorHabilitar: «hoy» sin nombrar nada; solo con el true literal', () => {
+    const reparto = repartoDeVacaciones(persona(vacaciones(100, '2026-12-01', '2027-02-05')), A_LA_CARGA);
+    const salen = 'Salen de las licencias 2024 (15 días), 2025 (20 días) y 2026 (10 días), las más viejas. ';
+    const enero = { fecha: '2027-01-01', anio: 2026, dias: 10 };
+    assert.equal(textoDelReparto(reparto, 100, { habilitaciones: [], alcance: null, hasta: '2026-12-31', hayPorHabilitar: true }),
+      `${salen}No te quedan días disponibles hoy.`);
+    // Lo que pasa del hasta sigue sin nombrarse
+    assert.equal(textoDelReparto(reparto, 100,
+      { habilitaciones: [enero], alcance: null, hasta: '2026-12-31', hayPorHabilitar: true }), `${salen}No te quedan días disponibles hoy.`);
+    for (const valor of [false, 1, 'true', null, undefined]) {
+      assert.equal(textoDelReparto(reparto, 100, { habilitaciones: [], alcance: null, hasta: '2026-12-31', hayPorHabilitar: valor }),
+        `${salen}No te quedan días disponibles.`, String(valor));
+    }
+    // Con algo que nombrar, «hoy» va igual
+    assert.equal(textoDelReparto(reparto, 100, { habilitaciones: [enero], alcance: null, hasta: null, hayPorHabilitar: false }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026.`);
+  });
+
+  it('del 16/11 al 30/11/2026: lo que se habilita después de su hasta no se nombra', () => {
+    const { error, vista } = evaluar(persona(), pedido('2026-11-16', '2026-11-30'));
+    assert.equal(error, null);
+    assert.equal(vista.texto_reparto, 'Salen de la licencia 2024, la más vieja. Te quedan 35 días: 5 de la 2024 (vencen el '
+      + '31/12/2026), 20 de la 2025 y 10 de la 2026.');
+  });
+
+  it('una carga que llega al 1/7/2027 nombra las dos fechas', () => {
+    // La de diciembre (guardada) usa los 15 de la 2024; esta, 5 de la 2025: la mitad del 1/1/2027 de la 2026 sigue sin
+    // asignar, y el 1/7/2027 se habilita la primera de la 2027
+    const { error, vista } = evaluar(persona(vacaciones(100, '2026-12-01', '2026-12-23')), pedido('2027-06-28', '2027-07-02'));
+    assert.equal(error, null);
+    assert.equal(vista.texto_reparto, 'Salen de la licencia 2025, la más vieja. Te quedan 25 días: 15 de la 2025 y 10 de la '
+      + '2026. El 1/1/2027 se habilitan 10 más de la 2026 y el 1/7/2027, 10 de la 2027.');
+  });
+
+  it('alcanceDeLaCarga, como la fuerza bruta: sin cargas, desde el 01/12/2026 llega al 24/02/2027', () => {
+    const entrada = pedido('2026-12-01', '2026-12-01');
+    assert.equal(alcanceDeLaCarga(persona(), entrada, A_LA_CARGA), '2027-02-24');
+    assert.equal(fuerzaBruta(persona(), entrada), '2027-02-24');
+    // Un desde en sábado: se busca desde el primer día hábil, el lunes 30/11. El último día con licencia es el lunes
+    // 22/02/2027, y el martes 23 es feriado: el «Hasta» más lejano que se guarda es el 23
+    const sabado = pedido('2026-11-28', '2026-11-28');
+    assert.equal(alcanceDeLaCarga(persona(), sabado, A_LA_CARGA), fuerzaBruta(persona(), sabado));
+    assert.equal(alcanceDeLaCarga(persona(), sabado, A_LA_CARGA), '2027-02-23');
+  });
+
+  it('alcanceDeLaCarga, como la fuerza bruta: otra carga guardada en marzo de 2027 deja menos', () => {
+    // Las de marzo (10 días hábiles) ya no pueden usar la 2024: esta tiene que dejarles 10 de la 2025 y la 2026, y llega a
+    // 45 días hábiles, hasta el viernes 05/02/2027. Después vienen el fin de semana y Carnaval: el «Hasta» más lejano que se
+    // guarda es el martes 09/02
+    const estado = persona(vacaciones(100, '2027-03-01', '2027-03-12'));
+    const entrada = pedido('2026-12-01', '2026-12-01');
+    assert.equal(alcanceDeLaCarga(estado, entrada, A_LA_CARGA), '2027-02-09');
+    assert.equal(fuerzaBruta(estado, entrada), '2027-02-09');
+    // Sin la de marzo llegaba al 24/02/2027. Con ella, del 01/12 al 05/02 los 20 de la 2026 ya están asignados (10 a esta y
+    // 10 a la de marzo): no queda nada que se habilite para nombrar, y un alcance solo de fin de semana y feriados no se dice
+    assert.equal(evaluar(estado, pedido('2026-12-01', '2027-02-05')).vista.texto_reparto, 'Salen de las licencias 2024 '
+      + '(15 días), 2025 (20 días) y 2026 (10 días), las más viejas. No te quedan días disponibles.');
+  });
+
+  it('alcanceDeLaCarga, como la fuerza bruta: una corrección no choca consigo misma', () => {
+    const estado = persona(vacaciones(101, '2026-12-01', '2027-01-15'));
+    const entrada = pedido('2026-12-01', '2027-01-15');
+    assert.equal(alcanceDeLaCarga(estado, entrada, { ...A_LA_CARGA, editadaId: 101 }), '2027-02-24');
+    assert.equal(fuerzaBruta(estado, entrada, 101), '2027-02-24');
+    // El id como texto, como llega en un pedido
+    assert.equal(alcanceDeLaCarga(estado, entrada, { ...A_LA_CARGA, editadaId: '101' }), '2027-02-24');
+    // Como carga nueva, se superpone con la guardada desde el primer día
+    assert.equal(alcanceDeLaCarga(estado, entrada, A_LA_CARGA), null);
+    assert.equal(fuerzaBruta(estado, entrada), null);
+  });
+
+  it('alcanceDeLaCarga, como la fuerza bruta: un desde sin ningún día habilitado da null', () => {
+    // La guardada usa todo hasta el 24/02/2027: el 01/06/2027 la 2025 y la 2026 no tienen días y la 2027 todavía no se habilita
+    const estado = persona(vacaciones(100, '2026-12-01', '2027-02-24'));
+    const entrada = pedido('2027-06-01', '2027-06-01');
+    assert.equal(alcanceDeLaCarga(estado, entrada, A_LA_CARGA), null);
+    assert.equal(fuerzaBruta(estado, entrada), null);
+  });
+
+  it('alcanceDeLaCarga no pasa del último día del rango', () => {
+    // Con mucho saldo, todo el rango entra: el 31/12/2027
+    const holgado = soloVacaciones('2026-10-27', { 2024: 0, 2025: 0, 2026: 300 });
+    assert.equal(alcanceDeLaCarga(holgado, pedido('2027-11-01', '2027-11-01'), A_LA_CARGA), rangoDeFechas(HOY_DE_LA_CARGA).hasta);
+  });
+
+  it('textoDelReparto sin extras da lo de antes; con extras vacíos, también', () => {
+    const reparto = repartoDeVacaciones(persona(vacaciones(100, '2026-12-01', '2027-02-05')), A_LA_CARGA);
+    const antes = 'Salen de las licencias 2024 (15 días), 2025 (20 días) y 2026 (10 días), las más viejas. No te quedan días '
+      + 'disponibles.';
+    assert.equal(textoDelReparto(reparto, 100), antes);
+    for (const extras of [undefined, null, {}, { habilitaciones: [] }, 'x', 3]) {
+      assert.equal(textoDelReparto(reparto, 100, extras), antes, String(extras));
+    }
+    // Un alcance sin nada que se habilite no se nombra (la oración del alcance es la de las habilitaciones)
+    assert.equal(textoDelReparto(reparto, 100, { habilitaciones: [], alcance: '2027-02-24', hasta: '2027-02-05' }), antes);
+  });
+
+  it('textoDelReparto con extras: una, dos o tres fechas, el singular, el alcance y lo que pasa de la fecha tope', () => {
+    const reparto = repartoDeVacaciones(persona(vacaciones(100, '2026-12-01', '2027-02-05')), A_LA_CARGA);
+    const salen = 'Salen de las licencias 2024 (15 días), 2025 (20 días) y 2026 (10 días), las más viejas. ';
+    const enero = { fecha: '2027-01-01', anio: 2026, dias: 10 };
+    const julio = { fecha: '2027-07-01', anio: 2027, dias: 10 };
+    const proximoEnero = { fecha: '2028-01-01', anio: 2027, dias: 10 };
+    const texto = (extras) => textoDelReparto(reparto, 100, extras);
+    assert.equal(texto({ habilitaciones: [enero], alcance: null, hasta: null }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026.`);
+    assert.equal(texto({ habilitaciones: [enero, julio], alcance: null, hasta: null }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026 y el 1/7/2027, 10 de la 2027.`);
+    assert.equal(texto({ habilitaciones: [enero, julio, proximoEnero], alcance: null, hasta: null }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026, el 1/7/2027, 10 de la 2027 y `
+      + 'el 1/1/2028, 10 de la 2027.');
+    // Con 1, «se habilita»
+    assert.equal(texto({ habilitaciones: [{ ...enero, dias: 1 }, julio], alcance: null, hasta: null }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilita 1 más de la 2026 y el 1/7/2027, 10 de la 2027.`);
+    // El alcance, solo si es posterior al hasta; y lo que se habilita después del hasta o del alcance no se nombra
+    assert.equal(texto({ habilitaciones: [enero, julio], alcance: '2027-02-24', hasta: '2027-02-05' }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026: esta licencia puede llegar hasta `
+      + 'el 24/02/2027.');
+    assert.equal(texto({ habilitaciones: [enero, julio], alcance: '2027-02-05', hasta: '2027-02-05' }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026.`);
+    assert.equal(texto({ habilitaciones: [enero], alcance: null, hasta: '2026-12-31' }),
+      `${salen}No te quedan días disponibles.`);
+    // Las que no sirven se saltean
+    assert.equal(texto({ habilitaciones: [null, { fecha: 'x', anio: 2026, dias: 3 }, { ...julio, dias: 0 }, enero] }),
+      `${salen}No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026.`);
+  });
+
+  it('con días disponibles, lo que se habilita va después de «Te quedan …» y antes de «Perdés …»', () => {
+    // Del 21/12/2026 al 10/01/2027: «Perdés 2 de la 2024» (spec 2026-10-27, punto 3); el 1/1/2027 cae adentro
+    const { error, vista } = evaluar(persona(), pedido('2026-12-21', '2027-01-10'));
+    assert.equal(error, null);
+    assert.equal(vista.texto_reparto, 'Salen de la licencia 2024, la más vieja. Te quedan 30 días: 20 de la 2025 y 10 de la '
+      + '2026. El 1/1/2027 se habilitan 10 más de la 2026. Perdés 2 de la 2024 (vencen el 31/12/2026).');
+  });
+
+  it('nada tira con entradas raras', () => {
+    const raros = [undefined, null, '', 'x', 0, -3, 2.5, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
+    for (const valor of raros) {
+      assert.doesNotThrow(() => {
+        porHabilitarDe(valor, HOY_DE_LA_CARGA);
+        porHabilitarDe([valor, { anio: valor, mitades: valor, por_habilitar: valor }, { mitades: [valor] }], valor);
+        alcanceDeLaCarga(valor, valor, valor);
+        alcanceDeLaCarga(persona(), { tipo: 'vacaciones', desde: valor }, A_LA_CARGA);
+        alcanceDeLaCarga(persona(), pedido('2026-12-01', '2026-12-01'), { hoy: valor, feriados: valor, editadaId: valor });
+        textoDelReparto(repartoDeVacaciones(persona(vacaciones(100, '2026-12-01', '2027-02-05')), A_LA_CARGA), 100,
+          { habilitaciones: valor, alcance: valor, hasta: valor });
+      });
+      assert.deepEqual(porHabilitarDe(valor, HOY_DE_LA_CARGA), []);
+      assert.deepEqual(porHabilitarDe([{ anio: 2027, mitades: [{ dias: 10, habilita: '2027-07-01' }], por_habilitar: 10 }],
+        valor), []);
+      assert.equal(alcanceDeLaCarga(valor, pedido('2026-12-01', '2026-12-01'), A_LA_CARGA), null);
+      assert.equal(alcanceDeLaCarga(persona(), pedido('2026-12-01', '2026-12-01'), { hoy: valor }), null);
+    }
+  });
+});
+
+describe('los errores de días dicen hasta dónde alcanza (spec 2026-10-28, 3.3)', () => {
+  // Hoy el 28/10/2026, con la precarga de los feriados (el 07/12/2026 no es laborable, el 08 y el 09/02/2027 son Carnaval y
+  // el 23/02/2027, el aniversario de la ciudad)
+  const HOY_DE_LA_CARGA = '2026-10-28';
+  const A_LA_CARGA = Object.freeze({
+    hoy: HOY_DE_LA_CARGA, feriados: feriadosDelRango(FILAS_PRECARGA, '2024-01-01', '2028-12-31')
+  });
+  const pedido = (desde, hasta) => ({ tipo: 'vacaciones', desde, hasta });
+  const evaluar = (estado, entrada, editadaId) => evaluarLicencia(estado, entrada, { ...A_LA_CARGA, editadaId });
+  // La persona de planta de la spec (punto 1): 15 días de la 2024, 20 de la 2025 y 10 de la 2026, 20 por año
+  const persona = (...licencias) => soloVacaciones('2026-10-27', PERSONA, ...licencias);
+  // Una persona inventada de contrato con 10 días por año: 0 de la 2024, 7 de la 2025 y 5 de la 2026 en el saldo (la otra
+  // mitad de la 2026 se habilita el 1/1/2027), con el arranque hoy
+  const deContrato = (...licencias) => ({
+    ...CONTRATO.estado, arranque: HOY_DE_LA_CARGA, anios: [{ anio: 2026, dias_vacaciones: 10, estudios: null }],
+    saldos: saldosDeVacaciones({ 2024: 0, 2025: 7, 2026: 5 }), licencias
+  });
+  // Las de enero de la persona de contrato: 15 días hábiles, 7 de la 2025 y 8 de la 2026
+  const ENERO = vacaciones(100, '2027-01-04', '2027-01-22');
+
+  it('esta carga se queda corta: el error va en «Hasta» y dice hasta dónde puede llegar', () => {
+    // Del 01/12/2026 al 26/02/2027 son 57 días hábiles y le alcanzan 55: el alcance de 3.1
+    const { datos, error, vista } = evaluar(persona(), pedido('2026-12-01', '2027-02-26'));
+    assert.equal(datos, null);
+    assert.deepEqual(error,
+      { campo: 'hasta', mensaje: 'No te alcanzan los días habilitados: esta licencia puede llegar hasta el 24/02/2027.' });
+    assert.equal(alcanceDeLaCarga(persona(), pedido('2026-12-01', '2027-02-26'), A_LA_CARGA), '2027-02-24');
+    // El recuadro muestra solo los días, sin el reparto: esta carga no se guarda
+    assert.equal(vista.texto_dias, '57 días hábiles de 88 corridos');
+    assert.equal(vista.texto_reparto, '');
+    assert.equal(vista.dias_habiles, 57);
+    // Hasta el alcance, se guarda
+    assert.equal(evaluar(persona(), pedido('2026-12-01', '2027-02-24')).error, null);
+  });
+
+  it('otra carga guardada se queda sin días: sus fechas y desde cuándo le faltan', () => {
+    // Las de diciembre van antes en el orden: se llevan 5 de la 2025, y a las de enero les alcanzan 12 de sus 15 días
+    const { datos, error, vista } = evaluar(deContrato(ENERO), pedido('2026-12-14', '2026-12-18'));
+    assert.equal(datos, null);
+    assert.deepEqual(error, {
+      campo: 'hasta',
+      mensaje: 'Con estos días, a tus vacaciones del 04/01 al 22/01/2027 les faltan días desde el 20/01/2027.'
+    });
+    assert.equal(vista.texto_dias, '5 días hábiles');
+    assert.equal(vista.texto_reparto, '');
+    // Sin las de enero, se guarda
+    assert.equal(evaluar(deContrato(), pedido('2026-12-14', '2026-12-18')).error, null);
+  });
+
+  it('… de dos años, con los dos años; de un día, sin «desde»', () => {
+    // Del 28/12/2026 al 15/01/2027 son 14 días hábiles: con las de diciembre, les alcanzan los 12 primeros
+    const dosAnios = deContrato(vacaciones(101, '2026-12-28', '2027-01-15'));
+    assert.deepEqual(evaluar(dosAnios, pedido('2026-12-14', '2026-12-18')).error,
+      { campo: 'hasta', mensaje: textoFaltanEnOtraCarga('2026-12-28', '2027-01-15', '2027-01-14') });
+    assert.equal(textoFaltanEnOtraCarga('2026-12-28', '2027-01-15', '2027-01-14'),
+      'Con estos días, a tus vacaciones del 28/12/2026 al 15/01/2027 les faltan días desde el 14/01/2027.');
+    // Las de enero se llevan los 17 días hasta el 1/7/2027: al 22/06/2027 no le queda ninguno
+    const unDia = deContrato(vacaciones(102, '2027-06-22', '2027-06-22'));
+    assert.deepEqual(evaluar(unDia, pedido('2027-01-04', '2027-01-26')).error,
+      { campo: 'hasta', mensaje: 'Con estos días, a tus vacaciones del 22/06/2027 les faltan días.' });
+  });
+
+  it('al corregir esa misma carga alargándola, el error es el de esta carga, nunca el de otra', () => {
+    // Las de enero hasta el 29/01/2027 son 20 días hábiles y le alcanzan 17: hasta el 26/01
+    const estado = deContrato(ENERO);
+    const esperado = { campo: 'hasta', mensaje: textoHastaDondeAlcanza('2027-01-26') };
+    assert.deepEqual(evaluar(estado, pedido('2027-01-04', '2027-01-29'), 100).error, esperado);
+    // El id como texto, como llega en un pedido
+    assert.deepEqual(evaluar(estado, pedido('2027-01-04', '2027-01-29'), '100').error, esperado);
+    assert.equal(evaluar(estado, pedido('2027-01-04', '2027-01-26'), 100).error, null);
+    assert.equal(evaluar(estado, pedido('2027-01-04', '2027-01-29'), 100).vista.texto_reparto, '');
+  });
+
+  it('esta carga sin ningún día: en «Desde», con lo que se habilita después', () => {
+    // Las de enero se llevan los 17 días: el 22/06/2027 no queda ninguno, y el 1/7/2027 se habilita la mitad de la 2027
+    const estado = deContrato(vacaciones(100, '2027-01-04', '2027-01-26'));
+    const { datos, error, vista } = evaluar(estado, pedido('2027-06-22', '2027-06-25'));
+    assert.equal(datos, null);
+    assert.deepEqual(error,
+      { campo: 'desde', mensaje: textoSinNingunDia('2027-06-22', { fecha: '2027-07-01', anio: 2027, dias: 5 }) });
+    assert.equal(error.mensaje,
+      'No te alcanzan los días habilitados para el 22/06/2027. El 1/7/2027 se habilitan 5 más de la 2027.');
+    assert.equal(vista.texto_dias, '4 días hábiles');
+    assert.equal(vista.texto_reparto, '');
+    assert.equal(alcanceDeLaCarga(estado, pedido('2027-06-22', '2027-06-25'), A_LA_CARGA), null);
+    // Desde un feriado (el 21/06/2027 es Güemes, trasladado), el día que falta es el primero que descuenta
+    assert.deepEqual(evaluar(estado, pedido('2027-06-21', '2027-06-25')).error, error);
+  });
+
+  it('… lo que se habilita después es lo que queda sin esta carga', () => {
+    // Del 22/06 al 02/07/2027: el 01/07 y el 02/07 ya salen de la mitad de la 2027 que se habilita el 1/7, pero esta carga no
+    // se guarda: se habilitan 5, no los 3 que le dejaría
+    const estado = deContrato(vacaciones(100, '2027-01-04', '2027-01-26'));
+    assert.deepEqual(evaluar(estado, pedido('2027-06-22', '2027-07-02')).error, {
+      campo: 'desde',
+      mensaje: 'No te alcanzan los días habilitados para el 22/06/2027. El 1/7/2027 se habilitan 5 más de la 2027.'
+    });
+  });
+
+  it('los errores que no son de días no cambian', () => {
+    // Se superpone con una guardada: lo de siempre, de validarLicencia, sin vista
+    const { error, vista } = evaluar(deContrato(ENERO), pedido('2027-01-20', '2027-01-27'));
+    assert.deepEqual(error, { campo: 'desde', mensaje: textoSuperpuesta('2027-01-20') });
+    assert.equal(vista, null);
+    // Un tope que se pasa, también como siempre
+    const conMedica = conSaldo(deContrato(), 'medica', 24);
+    assert.deepEqual(evaluar(conMedica, { tipo: 'medica', desde: '2026-11-16', hasta: '2026-11-17' }).error,
+      { campo: 'desde', mensaje: textoTope('medica', 2026) });
+  });
+
+  it('nada tira con entradas raras', () => {
+    const raros = [undefined, null, '', 'x', 0, -3, 2.5, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
+    for (const valor of raros) {
+      assert.doesNotThrow(() => {
+        evaluar(deContrato(ENERO), pedido('2026-12-14', '2026-12-18'), valor);
+        evaluar(deContrato(ENERO), pedido('2027-01-04', '2027-01-29'), valor);
+        evaluarLicencia(deContrato(ENERO), pedido('2026-12-14', '2026-12-18'), { hoy: HOY_DE_LA_CARGA, feriados: valor });
+      });
+    }
+  });
+});
+
+describe('los días libres y la franquicia que vence (spec 2026-10-28, 3.6)', () => {
+  // La precarga de los feriados de 2026: el lunes 07/12 no es laborable (y el martes 08/12 es uno de los 9 fijos)
+  const CON_LA_PRECARGA = feriadosDelRango(FILAS_PRECARGA, '2026-01-01', '2027-12-31');
+  // Unas horas a favor de contrato: en planta no cuentan, pero ocupan su día
+  const horasAFavor = (id, fecha) => ({ id, tipo: 'horas_a_favor', desde: fecha, hasta: fecha, horas: 2 });
+  const franquicia = (id, fecha, horas) => ({ id, tipo: 'franquicia', desde: fecha, hasta: fecha, horas });
+  // PLANTA con 20 horas de franquicia usadas en 2026 en el saldo inicial (las dos de antes del arranque no descuentan): le
+  // quedan 22
+  const CON_22 = Object.freeze({
+    ...PLANTA.estado,
+    saldos: PLANTA.estado.saldos.map((saldo) => (saldo.concepto === 'franquicias' ? { ...saldo, cantidad: 20 } : saldo))
+  });
+  // El lunes 28/12/2026: hasta el jueves 31/12 hay 4 días hábiles
+  const FIN_DE_ANIO = '2026-12-28';
+  const queVence = (estado, hoy = FIN_DE_ANIO, feriados = SIN_FERIADOS) =>
+    franquiciaQueVence(estado, calcular(estado, { hoy, feriados }), { hoy, feriados, ocupadas: estado.licencias });
+
+  it('diasLibresEntre: los días hábiles con los feriados, fuera de toda licencia, con los dos extremos', () => {
+    // Del jueves 03/12 al viernes 11/12/2026: el sábado, el domingo, el 07 (de la tabla) y el 08 (fijo) no son hábiles
+    assert.equal(diasLibresEntre('2026-12-03', '2026-12-11', [], CON_LA_PRECARGA), 5);
+    // Sin la tabla, el 07 es hábil
+    assert.equal(diasLibresEntre('2026-12-03', '2026-12-11', [], SIN_FERIADOS), 6);
+    // Unas horas a favor de contrato ocupan su día, también en planta: dos licencias no comparten un día
+    assert.equal(diasLibresEntre('2026-12-03', '2026-12-11', [horasAFavor(103, '2026-12-10')], CON_LA_PRECARGA), 4);
+    // Unas vacaciones del 09 al 10 y otra que empieza antes del rango y lo toca el 03: quedan el 04 y el 11
+    assert.equal(diasLibresEntre('2026-12-03', '2026-12-11',
+      [vacaciones(100, '2026-12-09', '2026-12-10'), vacaciones(101, '2026-11-30', '2026-12-03')], CON_LA_PRECARGA), 2);
+    // Una franquicia de 2 horas también ocupa su día
+    assert.equal(diasLibresEntre('2026-12-11', '2026-12-11', [franquicia(104, '2026-12-11', 2)], CON_LA_PRECARGA), 0);
+    // Un día hábil libre, un fin de semana y un feriado de la tabla
+    assert.equal(diasLibresEntre('2026-12-11', '2026-12-11', [], CON_LA_PRECARGA), 1);
+    assert.equal(diasLibresEntre('2026-12-05', '2026-12-06', [], CON_LA_PRECARGA), 0);
+    assert.equal(diasLibresEntre('2026-12-07', '2026-12-07', [], CON_LA_PRECARGA), 0);
+  });
+
+  it('diasLibresEntre: hasta antes que desde, fechas que no son fechas, ocupadas o feriados raros', () => {
+    assert.equal(diasLibresEntre('2026-12-11', '2026-12-03', [], SIN_FERIADOS), 0);
+    for (const valor of [undefined, null, '', 'x', 0, NaN, {}, [], '2026-02-30', new Date('2026-12-03T12:00:00Z')]) {
+      assert.equal(diasLibresEntre(valor, '2026-12-11', [], SIN_FERIADOS), 0, String(valor));
+      assert.equal(diasLibresEntre('2026-12-03', valor, [], SIN_FERIADOS), 0, String(valor));
+      // Unas ocupadas que no son una lista, o filas que no son licencias con fechas, no ocupan nada
+      assert.equal(diasLibresEntre('2026-12-03', '2026-12-11', valor, SIN_FERIADOS), 6, String(valor));
+      const raras = [valor, { desde: valor, hasta: '2026-12-10' }];
+      assert.equal(diasLibresEntre('2026-12-03', '2026-12-11', raras, SIN_FERIADOS), 6, String(valor));
+      // Unos feriados que no son un Set no sacan ningún día
+      assert.equal(diasLibresEntre('2026-12-03', '2026-12-11', [], valor), 6, String(valor));
+    }
+  });
+
+  it('diasLibresDelMes: el mes entero, también los días que ya pasaron (spec 2026-10-28, 3.7 y 7.2)', () => {
+    // Diciembre de 2026: 21 días hábiles con los 9 fijos (el 08 y el 25) y 20 con la precarga (el 07)
+    assert.equal(diasLibresDelMes('2026-12', [], SIN_FERIADOS), 21);
+    assert.equal(diasLibresDelMes('2026-12', [], CON_LA_PRECARGA), 20);
+    // Unas vacaciones que tapan todo el mes no dejan ninguno; desde el 02/12, queda el martes 01/12
+    assert.equal(diasLibresDelMes('2026-12', [vacaciones(100, '2026-12-01', '2026-12-31')], SIN_FERIADOS), 0);
+    assert.equal(diasLibresDelMes('2026-12', [vacaciones(100, '2026-12-02', '2026-12-31')], SIN_FERIADOS), 1);
+    // Unas horas a favor de contrato o una franquicia de 2 horas también ocupan su día
+    const tapado = [vacaciones(100, '2026-12-02', '2026-12-31')];
+    assert.equal(diasLibresDelMes('2026-12', [...tapado, horasAFavor(101, '2026-12-01')], SIN_FERIADOS), 0);
+    assert.equal(diasLibresDelMes('2026-12', [...tapado, franquicia(101, '2026-12-01', 2)], SIN_FERIADOS), 0);
+    // Hasta el último día del mes: el 29/02 en un año bisiesto
+    assert.equal(diasLibresDelMes('2028-02', [vacaciones(100, '2028-02-01', '2028-02-28')], SIN_FERIADOS), 1);
+    // Lo que no es un mes, 0
+    for (const valor of [undefined, null, '', 'x', '2026-13', '2026-12-01', 2026, {}, []]) {
+      assert.equal(diasLibresDelMes(valor, [], SIN_FERIADOS), 0, String(valor));
+    }
+  });
+
+  it('franquiciaQueVence: con 22 horas y 4 días libres hasta el 31/12, no se pierde nada', () => {
+    assert.deepEqual(queVence(CON_22), { quedan: 22, perdidas: 0, disponibles: 22 });
+  });
+
+  it('franquiciaQueVence: con 2 días libres entran 14 horas y se pierden 8', () => {
+    assert.deepEqual(queVence(conLicencias(CON_22, vacaciones(100, '2026-12-28', '2026-12-29'))),
+      { quedan: 22, perdidas: 8, disponibles: 14 });
+  });
+
+  it('franquiciaQueVence: sin ningún día libre se pierden las 22', () => {
+    assert.deepEqual(queVence(conLicencias(CON_22, vacaciones(100, '2026-12-28', '2026-12-31'))),
+      { quedan: 22, perdidas: 22, disponibles: 0 });
+  });
+
+  it('franquiciaQueVence: una franquicia cargada descuenta sus horas y ocupa su día', () => {
+    // 3 horas el 28/12: quedan 19, con 3 días libres (21 horas): no se pierde nada
+    assert.deepEqual(queVence(conLicencias(CON_22, franquicia(100, '2026-12-28', 3))),
+      { quedan: 19, perdidas: 0, disponibles: 19 });
+    // 7 horas el 28/12 y vacaciones el 29 y el 30: quedan 15, con un solo día libre
+    const conSiete = conLicencias(CON_22, franquicia(100, '2026-12-28', 7), vacaciones(101, '2026-12-29', '2026-12-30'));
+    assert.deepEqual(queVence(conSiete), { quedan: 15, perdidas: 8, disponibles: 7 });
+    // Lo que se pasa del tope no da una cantidad negativa
+    const pasada = {
+      ...CON_22, saldos: CON_22.saldos.map((saldo) => (saldo.concepto === 'franquicias' ? { ...saldo, cantidad: 42 } : saldo))
+    };
+    assert.deepEqual(queVence(conLicencias(pasada, franquicia(100, '2026-12-28', 3))),
+      { quedan: 0, perdidas: 0, disponibles: 0 });
+  });
+
+  it('las perdidas son las de la cuenta con todos los días libres hasta el 31/12, día por día', () => {
+    // Quedan 15 (con 7 cargadas el 22/12): hacen falta 3 días libres; el 29/12 hay justo 3, y desde el 30/12, menos
+    const estado = conLicencias(CON_22, vacaciones(100, '2026-12-14', '2026-12-18'), franquicia(101, '2026-12-22', 7));
+    const perdidasPorDia = [];
+    for (let hoy = '2026-11-20'; hoy <= '2026-12-31'; hoy = sumarDias(hoy, 1)) {
+      const { quedan, perdidas, disponibles } = queVence(estado, hoy);
+      const libres = diasLibresEntre(hoy, '2026-12-31', estado.licencias, SIN_FERIADOS);
+      assert.equal(perdidas, Math.max(0, quedan - JORNADA * libres), hoy);
+      assert.equal(disponibles, quedan - perdidas, hoy);
+      if (perdidas > 0) perdidasPorDia.push([hoy, perdidas]);
+    }
+    assert.deepEqual(perdidasPorDia, [['2026-12-30', 1], ['2026-12-31', 8]]);
+  });
+
+  it('calcular suma la franquicia, con las mismas ocupadas que el reparto: una licencia de la otra modalidad ocupa su día', () => {
+    // Las vacaciones del 28 y el 29 y unas horas a favor de contrato el 31: queda libre solo el 30
+    const estado = conLicencias(CON_22, vacaciones(100, '2026-12-28', '2026-12-29'), horasAFavor(103, '2026-12-31'));
+    assert.equal(fueraDeLaModalidad(estado.licencias.at(-1), 'planta'), true);
+    const calculo = calcular(estado, { hoy: FIN_DE_ANIO, feriados: SIN_FERIADOS });
+    assert.deepEqual(calculo.franquicia, { quedan: 22, perdidas: 15, disponibles: 7 });
+    assert.deepEqual(calculo.franquicia, queVence(estado));
+    // Con los feriados de la tabla: desde el viernes 04/12 y con vacaciones del 09/12 al 31/12, quedan libres el 04 y el lunes
+    // 07 (el 08 es fijo); con la precarga, el 07 no es laborable y queda uno solo
+    const diciembre = conLicencias(CON_22, vacaciones(100, '2026-12-09', '2026-12-31'));
+    assert.deepEqual(calcular(diciembre, { hoy: '2026-12-04', feriados: SIN_FERIADOS }).franquicia,
+      { quedan: 22, perdidas: 8, disponibles: 14 });
+    assert.deepEqual(calcular(diciembre, { hoy: '2026-12-04', feriados: CON_LA_PRECARGA }).franquicia,
+      { quedan: 22, perdidas: 15, disponibles: 7 });
+  });
+
+  it('el año de hoy: el 1/1 cuenta la franquicia del año nuevo, entera', () => {
+    assert.deepEqual(queVence(CON_22, '2027-01-04'), { quedan: 42, perdidas: 0, disponibles: 42 });
+    // Lo cargado en 2027 no descuenta de la de 2026
+    assert.deepEqual(queVence(conLicencias(CON_22, franquicia(100, '2027-01-05', 7))),
+      { quedan: 22, perdidas: 0, disponibles: 22 });
+  });
+
+  it('en contrato, sin modalidad o sin un hoy válido, null', () => {
+    assert.equal(queVence(CONTRATO.estado, HOY), null);
+    assert.equal(calcular(CONTRATO.estado, A_HOY).franquicia, null);
+    assert.equal(queVence({ ...CON_22, modalidad: null }), null);
+    assert.equal(calcular({ ...CON_22, modalidad: null }, A_HOY).franquicia, null);
+    assert.equal(franquiciaQueVence(CON_22, calcular(CON_22, A_HOY), { feriados: SIN_FERIADOS }), null);
+    assert.equal(calcular(CON_22, { feriados: SIN_FERIADOS }).franquicia, null);
+  });
+
+  it('sin el cálculo o sin las ocupadas, lo de lo cargado', () => {
+    const estado = conLicencias(CON_22, vacaciones(100, '2026-12-28', '2026-12-29'));
+    const opciones = { hoy: FIN_DE_ANIO, feriados: SIN_FERIADOS };
+    assert.deepEqual(franquiciaQueVence(estado, null, opciones), queVence(estado));
+    assert.deepEqual(franquiciaQueVence(estado, calcular(estado, opciones), opciones), queVence(estado));
+  });
+
+  it('nada tira', () => {
+    for (const valor of [undefined, null, '', 'x', 0, -3, NaN, {}, [], new Date('2026-12-28T12:00:00Z')]) {
+      assert.doesNotThrow(() => {
+        franquiciaQueVence(valor, valor, valor);
+        franquiciaQueVence(CON_22, valor, { hoy: FIN_DE_ANIO, feriados: valor, ocupadas: valor });
+        franquiciaQueVence({ ...CON_22, saldos: valor, licencias: [valor] }, { topes: [valor] }, { hoy: FIN_DE_ANIO });
+        diasLibresEntre(valor, valor, valor, valor);
+      }, String(valor));
+    }
+  });
+});
+
+describe('lo que una carga hace perder o reacomoda (spec 2026-10-28, 3.2 y 3.4)', () => {
+  // Con la precarga de los feriados (el 07/12/2026 no es laborable y el 08/12 y el 25/12 son de los 9 fijos)
+  const FERIADOS = feriadosDelRango(FILAS_PRECARGA, '2024-01-01', '2028-12-31');
+  const evaluar = (estado, entrada, hoy, editadaId) => evaluarLicencia(estado, entrada, { hoy, feriados: FERIADOS, editadaId });
+  const avisosDe = (estado, entrada, hoy, editadaId) => evaluar(estado, entrada, hoy, editadaId).vista.avisos;
+  const pedido = (tipo, desde, hasta) => ({ tipo, desde, hasta });
+  const MEDIADOS_DE_DICIEMBRE = '2026-12-15';
+  // Las 42 horas de franquicia de 2026, ya usadas: así la carga no hace perder horas de franquicia
+  const franquiciaUsada = { concepto: 'franquicias', anio: 2026, cantidad: 42 };
+  // La persona inventada de la spec (3.2), de planta: solo 3 días de la 2024 (la 2026, 20 días: la segunda mitad se habilita
+  // el 1/1/2027), 2 días de atención médica usados en 2026 y, de entrada, la franquicia ya usada y sin horas extras
+  const conTres = (cambios = {}) => ({
+    modalidad: 'planta', arranque: '2026-10-27', anios: [{ anio: 2026, dias_vacaciones: 20, estudios: null }],
+    saldos: [...saldosDeVacaciones({ 2024: 3, 2025: 0, 2026: 0 }), { concepto: 'medica', anio: 2026, cantidad: 2 },
+      franquiciaUsada],
+    licencias: [], horasExtras: [], salidas: [], ...cambios
+  });
+
+  it('una atención médica que tapa los días que quedaban: «Con esta licencia perdés …», y se guarda igual', () => {
+    const { datos, error, vista } = evaluar(conTres(), pedido('medica', '2026-12-15', '2026-12-31'), MEDIADOS_DE_DICIEMBRE);
+    assert.equal(error, null);
+    assert.notEqual(datos, null);
+    assert.equal(vista.texto_dias, '12 días hábiles de 17 corridos');
+    assert.equal(vista.queda_texto, 'Te quedan 11 de 25.');
+    assert.deepEqual(vista.avisos, ['Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026).']);
+    // Con un día libre antes del 31/12 (el jueves 31), nada se pierde
+    assert.deepEqual(avisosDe(conTres(), pedido('medica', '2026-12-15', '2026-12-30'), MEDIADOS_DE_DICIEMBRE), []);
+    // Lo que ya se perdía no se vuelve a decir: solo lo que esta carga hace perder
+    const yaPerdidos = conTres({ licencias: [{ id: 100, ...pedido('medica', '2026-12-15', '2026-12-31'), horas: null }] });
+    assert.deepEqual(avisosDe(yaPerdidos, pedido('familiar', '2027-01-04', '2027-01-05'), MEDIADOS_DE_DICIEMBRE), []);
+  });
+
+  it('dos licencias que se pierden van juntas; con 1, «vence»', () => {
+    // 3 de la 2024 y 5 de la 2025: una extraordinaria hasta el 31/12/2027 tapa los días libres de las dos
+    const conDos = conTres({ saldos: [...saldosDeVacaciones({ 2024: 3, 2025: 5, 2026: 0 }), franquiciaUsada] });
+    assert.deepEqual(avisosDe(conDos, pedido('medica_extraordinaria', '2026-12-15', '2027-12-31'), MEDIADOS_DE_DICIEMBRE), [
+      'Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026) y 5 de la 2025 (vencen el 31/12/2027).'
+    ]);
+    const conUno = conTres({ saldos: [...saldosDeVacaciones({ 2024: 1, 2025: 0, 2026: 0 }), franquiciaUsada] });
+    assert.deepEqual(avisosDe(conUno, pedido('familiar', '2026-12-15', '2026-12-31'), MEDIADOS_DE_DICIEMBRE),
+      ['Con esta licencia perdés 1 de la 2024 (vence el 31/12/2026).']);
+  });
+
+  it('en el modal de vacaciones no va: el reparto ya dice «Perdés …» con el total', () => {
+    // 5 de la 2024 y una atención médica del 18/12 al 31/12: unas vacaciones del 15/12 al 17/12 usan 3 y pierden 2
+    const estado = conTres({
+      saldos: [...saldosDeVacaciones({ 2024: 5, 2025: 0, 2026: 0 }), franquiciaUsada],
+      licencias: [{ id: 100, ...pedido('medica', '2026-12-18', '2026-12-31'), horas: null }]
+    });
+    const { error, vista } = evaluar(estado, pedido('vacaciones', '2026-12-15', '2026-12-17'), MEDIADOS_DE_DICIEMBRE);
+    assert.equal(error, null);
+    assert.ok(vista.texto_reparto.endsWith('Perdés 2 de la 2024 (vencen el 31/12/2026).'), vista.texto_reparto);
+    assert.deepEqual(vista.avisos, []);
+    // Los mismos días como atención del grupo familiar: no usan la 2024, que se pierde entera
+    assert.deepEqual(avisosDe(estado, pedido('familiar', '2026-12-15', '2026-12-17'), MEDIADOS_DE_DICIEMBRE),
+      ['Con esta licencia perdés 5 de la 2024 (vencen el 31/12/2026).']);
+  });
+
+  it('el franco de un mes que se queda sin días libres, con el último día del mes', () => {
+    // La persona de planta de la spec (punto 1), hoy el 28/10/2026: 10,5 horas extras en octubre dan un franco para diciembre
+    const HOY_DE_LA_CARGA = '2026-10-28';
+    const octubre = (horasExtras) => ({ ...soloVacaciones('2026-10-27', PERSONA), horasExtras });
+    const unFranco = octubre([extra(100, '2026-10-06', '18:00', '21:30'), extra(101, '2026-10-14', '17:00', '21:00'),
+      extra(102, '2026-10-22', '19:00', '22:00')]);
+    assert.deepEqual(avisosDe(unFranco, pedido('vacaciones', '2026-12-01', '2026-12-31'), HOY_DE_LA_CARGA),
+      ['Tu franco de diciembre se queda sin días libres: vence el 31/12/2026.']);
+    // Con el 31/12 libre, el franco todavía entra
+    assert.deepEqual(avisosDe(unFranco, pedido('vacaciones', '2026-12-01', '2026-12-30'), HOY_DE_LA_CARGA), []);
+    // 14 horas dan dos francos
+    const dosFrancos = octubre([extra(100, '2026-10-06', '14:00', '21:00'), extra(101, '2026-10-13', '14:00', '21:00')]);
+    assert.deepEqual(avisosDe(dosFrancos, pedido('vacaciones', '2026-12-01', '2026-12-31'), HOY_DE_LA_CARGA),
+      ['Tus 2 francos de diciembre se quedan sin días libres: vencen el 31/12/2026.']);
+  });
+
+  it('… el mes entero cuenta, también los días que ya pasaron; y si ya no tenía días libres, no se dice', () => {
+    // Hoy el 15/12: del 01/12 al 14/12 hay días libres, porque un franco se puede registrar después
+    const estado = conTres({ horasExtras: [extra(100, '2026-10-06', '14:00', '21:00')] });
+    assert.deepEqual(avisosDe(estado, pedido('medica', '2026-12-15', '2026-12-31'), MEDIADOS_DE_DICIEMBRE),
+      ['Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026).']);
+    // Con todo diciembre tapado de antes, el franco ya no tenía días libres: otra carga no lo dice
+    const tapado = conTres({
+      horasExtras: [extra(100, '2026-10-06', '14:00', '21:00')],
+      licencias: [{ id: 101, ...pedido('medica_extraordinaria', '2026-12-01', '2026-12-31'), horas: null }]
+    });
+    assert.deepEqual(avisosDe(tapado, pedido('familiar', '2027-01-04', '2027-01-05'), MEDIADOS_DE_DICIEMBRE), []);
+  });
+
+  it('… y el franco que la carga usa no se queda sin días: lo que queda es lo que avisa', () => {
+    // Dos francos para diciembre y todo el mes tapado menos el 31/12: cargar un franco ese día deja el otro sin días (sin días
+    // de la 2024, que también se perderían)
+    const estado = conTres({
+      saldos: [...saldosDeVacaciones({ 2024: 0, 2025: 0, 2026: 0 }), franquiciaUsada],
+      horasExtras: [extra(100, '2026-10-06', '14:00', '21:00'), extra(101, '2026-10-13', '14:00', '21:00')],
+      licencias: [{ id: 102, ...pedido('medica_extraordinaria', '2026-12-01', '2026-12-30'), horas: null }]
+    });
+    assert.deepEqual(avisosDe(estado, { tipo: 'franco', desde: '2026-12-31' }, MEDIADOS_DE_DICIEMBRE),
+      ['Tu franco de diciembre se queda sin días libres: vence el 31/12/2026.']);
+    // Con un solo franco, cargarlo el 31/12 lo usa: no queda nada sin días
+    const unoSolo = { ...estado, horasExtras: [extra(100, '2026-10-06', '14:00', '21:00')] };
+    assert.deepEqual(avisosDe(unoSolo, { tipo: 'franco', desde: '2026-12-31' }, MEDIADOS_DE_DICIEMBRE), []);
+  });
+
+  it('las horas a favor de un mes que se quedan sin días libres (contrato)', () => {
+    // Una persona inventada de contrato con 3 horas extras en noviembre (dos salidas a las 16:30): 3 horas a favor en diciembre
+    const estado = {
+      ...CONTRATO.estado, arranque: '2026-10-28', anios: [{ anio: 2026, dias_vacaciones: 10, estudios: null }],
+      saldos: saldosDeVacaciones({ 2024: 0, 2025: 7, 2026: 5 }), licencias: [],
+      salidas: [salida(100, '2026-11-03', '16:30'), salida(101, '2026-11-04', '16:30')]
+    };
+    assert.deepEqual(avisosDe(estado, pedido('medica_extraordinaria', '2026-12-01', '2026-12-31'), '2026-12-01'),
+      ['Tus 3 horas a favor de diciembre se quedan sin días libres: vencen el 31/12/2026.']);
+    assert.deepEqual(avisosDe(estado, pedido('medica_extraordinaria', '2026-12-01', '2026-12-30'), '2026-12-01'), []);
+  });
+
+  it('las horas de franquicia que la carga hace perder', () => {
+    // Sin la franquicia usada: quedan las 42 horas, y del 15/12 al 31/12 no queda ningún día libre
+    const estado = conTres({ saldos: saldosDeVacaciones({ 2024: 0, 2025: 0, 2026: 0 }) });
+    assert.deepEqual(avisosDe(estado, pedido('medica', '2026-12-15', '2026-12-31'), MEDIADOS_DE_DICIEMBRE),
+      ['Con esta licencia perdés 42 horas de franquicia (vencen el 31/12/2026).']);
+    // Con tres días libres (21 horas), la diferencia: 21
+    assert.deepEqual(avisosDe(estado, pedido('medica', '2026-12-15', '2026-12-28'), MEDIADOS_DE_DICIEMBRE),
+      ['Con esta licencia perdés 21 horas de franquicia (vencen el 31/12/2026).']);
+  });
+
+  it('cada aviso en su orden: las vacaciones, el franco, la franquicia y las otras cargas', () => {
+    // Planta, hoy el 15/12: 3 de la 2024 y 5 de la 2025, un franco para diciembre (10,5 horas extras en octubre) y las 42
+    // horas de franquicia. Unas vacaciones del 01/12 al 04/12 (3 de la 2024 y 1 de la 2025) y otras del 04/01 al 08/01/2027
+    // (4 de la 2025 y 1 de la 2026) pasan a ser una atención médica de todo diciembre
+    const estado = conTres({
+      saldos: saldosDeVacaciones({ 2024: 3, 2025: 5, 2026: 0 }),
+      horasExtras: [extra(100, '2026-10-06', '18:00', '21:30'), extra(101, '2026-10-14', '17:00', '21:00'),
+        extra(102, '2026-10-22', '19:00', '22:00')],
+      licencias: [vacaciones(200, '2026-12-01', '2026-12-04'), vacaciones(201, '2027-01-04', '2027-01-08')]
+    });
+    const { datos, error, vista } = evaluar(estado, pedido('medica', '2026-12-01', '2026-12-31'), MEDIADOS_DE_DICIEMBRE, 200);
+    assert.equal(error, null);
+    assert.notEqual(datos, null);
+    assert.deepEqual(vista.avisos, [
+      'Con esta licencia perdés 3 de la 2024 (vencen el 31/12/2026).',
+      'Tu franco de diciembre se queda sin días libres: vence el 31/12/2026.',
+      'Con esta licencia perdés 42 horas de franquicia (vencen el 31/12/2026).',
+      'Esta carga cambia de dónde salen tus vacaciones del 04/01 al 08/01/2027: ahora de la licencia 2025.'
+    ]);
+  });
+
+  describe('las otras cargas que se reacomodan (3.4)', () => {
+    // La persona inventada de contrato de la spec 3.3, hoy el 28/10/2026: 0 de la 2024, 7 de la 2025 y 5 de la 2026 en el
+    // saldo, 10 días por año (la otra mitad de la 2026 se habilita el 1/1/2027 y la primera de la 2027, el 1/7/2027)
+    const HOY_DE_LA_CARGA = '2026-10-28';
+    const deContrato = (...licencias) => ({
+      ...CONTRATO.estado, arranque: HOY_DE_LA_CARGA, anios: [{ anio: 2026, dias_vacaciones: 10, estudios: null }],
+      saldos: saldosDeVacaciones({ 2024: 0, 2025: 7, 2026: 5 }), licencias
+    });
+    // Enero, 15 días hábiles (7 de la 2025 y 8 de la 2026), y julio, 5 (los 2 que quedan de la 2026 y 3 de la 2027)
+    const ENERO = vacaciones(100, '2027-01-04', '2027-01-22');
+    const JULIO = vacaciones(101, '2027-07-01', '2027-07-07');
+    const ENERO_Y_JULIO = deContrato(JULIO, ENERO);
+
+    it('una carga de diciembre les cambia de dónde salen a enero y a julio: una oración por cada una, en el orden de sus fechas',
+      () => {
+        const { datos, error, vista } = evaluar(ENERO_Y_JULIO, pedido('vacaciones', '2026-12-28', '2026-12-29'),
+          HOY_DE_LA_CARGA);
+        assert.equal(error, null);
+        assert.notEqual(datos, null);
+        assert.deepEqual(vista.avisos, [
+          'Esta carga cambia de dónde salen tus vacaciones del 04/01 al 22/01/2027: ahora de las licencias 2025 (5 días) y '
+            + '2026 (10 días).',
+          'Esta carga cambia de dónde salen tus vacaciones del 01/07 al 07/07/2027: ahora de la licencia 2027.'
+        ]);
+      });
+
+    it('una carga que no les cambia nada no dice nada', () => {
+      // Del 01/12/2027, después de las dos: salen de lo que queda
+      assert.deepEqual(avisosDe(ENERO_Y_JULIO, pedido('vacaciones', '2027-12-01', '2027-12-02'), HOY_DE_LA_CARGA), []);
+      // Al corregir una sin cambiarle nada, tampoco (también con el id como texto, como llega en un pedido)
+      assert.deepEqual(avisosDe(ENERO_Y_JULIO, pedido('vacaciones', '2027-01-04', '2027-01-22'), HOY_DE_LA_CARGA, 100), []);
+      assert.deepEqual(avisosDe(ENERO_Y_JULIO, pedido('vacaciones', '2027-01-04', '2027-01-22'), HOY_DE_LA_CARGA, '100'), []);
+    });
+
+    it('al corregir, la propia nunca se nombra: solo las otras', () => {
+      // Enero un día más corta: le deja un día de la 2026 a julio
+      const esperado = ['Esta carga cambia de dónde salen tus vacaciones del 01/07 al 07/07/2027: ahora de las licencias 2026 '
+        + '(3 días) y 2027 (2 días).'];
+      assert.deepEqual(avisosDe(ENERO_Y_JULIO, pedido('vacaciones', '2027-01-04', '2027-01-21'), HOY_DE_LA_CARGA, 100), esperado);
+      assert.deepEqual(avisosDe(ENERO_Y_JULIO, pedido('vacaciones', '2027-01-04', '2027-01-21'), HOY_DE_LA_CARGA, '100'),
+        esperado);
+    });
+
+    it('con un error de días, ningún aviso: la carga no se guarda', () => {
+      // Las de diciembre van antes en el orden y a las de enero les faltan días (spec 3.3)
+      const { datos, error, vista } = evaluar(deContrato(ENERO), pedido('vacaciones', '2026-12-14', '2026-12-18'),
+        HOY_DE_LA_CARGA);
+      assert.equal(datos, null);
+      assert.equal(error.campo, 'hasta');
+      assert.deepEqual(vista.avisos, []);
+    });
+
+    it('nada tira con entradas raras', () => {
+      for (const valor of [undefined, null, '', 'x', 0, -3, 2.5, NaN, {}, [], new Date('2026-10-26T12:00:00Z')]) {
+        assert.doesNotThrow(() => {
+          const { vista } = evaluar(ENERO_Y_JULIO, pedido('vacaciones', '2026-12-28', '2026-12-29'), HOY_DE_LA_CARGA, valor);
+          assert.ok(vista === null || Array.isArray(vista.avisos), String(valor));
+          evaluarLicencia(ENERO_Y_JULIO, pedido('vacaciones', '2026-12-28', '2026-12-29'),
+            { hoy: HOY_DE_LA_CARGA, feriados: valor });
+          evaluarLicencia({ ...ENERO_Y_JULIO, licencias: [valor, ...ENERO_Y_JULIO.licencias] },
+            pedido('vacaciones', '2026-12-28', '2026-12-29'), { hoy: HOY_DE_LA_CARGA, feriados: FERIADOS });
+        }, String(valor));
+      }
+    });
   });
 });
 
@@ -2615,12 +3614,21 @@ describe('nada tira', () => {
         textoNoEstudia(valor);
         textoSuperpuesta(valor);
         textoSinHabilitados(valor);
+        textoHastaDondeAlcanza(valor);
+        textoSinNingunDia(valor, valor);
+        textoSinNingunDia(valor, { fecha: valor, anio: valor, dias: valor });
+        textoFaltanEnOtraCarga(valor, valor, valor);
         textoTope(valor, valor, valor);
         textoSinFranco(valor);
         textoSinHorasAFavor(valor, valor);
         textoSinNoUtilizadas(valor, valor, valor);
         textoHorarioSuperpuesto(valor, valor, valor);
         textoSaldo(valor);
+        textoSaldoDelArranque(valor, valor);
+        textoSaldoDeLosDias(valor, valor);
+        textoSaldoSinDias(valor);
+        textoDeLasMitades(2026, 20, valor);
+        textoDeLasMitades(2026, 20, { arranque: valor });
         textoAutorizadaDelFirmante(valor, valor);
         textoSuperpuestaConConfiguracion(valor, valor);
         textoNoPaso(valor);
@@ -2713,6 +3721,8 @@ describe('nada tira', () => {
         validarSaldoInicial({ saldos: valor }, campos);
         validarSaldoInicial({ saldos: { ...SALDOS_PLANTA, franquicias: valor } }, campos);
         validarSaldoInicial({ saldos: SALDOS_PLANTA }, [valor, { clave: valor, maximo: valor, paso: valor }]);
+        validarSaldoInicial({ saldos: { 'vacaciones-2025': 99 } },
+          [{ clave: 'vacaciones-2025', maximo: 20, paso: 1, ayuda: valor }]);
         validarAnio(valor, valor, valor);
         validarAnio(2026, { dias_vacaciones: valor, estudios: valor }, HOY);
         fueraDeLaModalidad(valor, valor);
@@ -2822,11 +3832,46 @@ describe('el paso a Configuración', () => {
       });
     });
 
-    it('administración la cambió o la anuló', () => {
+    // Spec 2026-10-28-mi-espacio-licencia-anulada, 2.2 y 3.3: comparando las fechas de la fila con las de Configuración, también
+    // si las cambió la misma persona (la que cambió otra persona sigue con su texto: ya dice las fechas)
+    it('una creada con otras fechas en Configuración: para revisar, salvo que otro aviso ya lo explique', () => {
+      // La fila, del 02/11 al 06/11; la de Configuración, del 03/11 al 05/11
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial, { desde: '2026-11-02', hasta: '2026-11-06' }),
+        opciones), { texto: textoRevisalaEnConfiguracion('2026-11-03', '2026-11-05'), insignia: 'aviso' });
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial, { hasta: '2026-11-04' }), opciones),
+        { texto: 'En Configuración quedó del 03/11 al 05/11: revisala.', insignia: 'aviso' });
+      // La de Configuración, de un día: «el 03/11» (una franquicia de 7 horas es de día entero)
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial: oficialDe(7, '2026-11-03', '2026-11-03') },
+        franquicia('2026-11-04', 7, { licencia_oficial_id: 7, oficial: 'creada' }), opciones),
+      { texto: 'En Configuración quedó el 03/11: revisala.', insignia: 'aviso' });
+      // Que terminó en Configuración: la fila lo sigue diciendo
+      const terminada = oficialDe(7, '2026-10-19', '2026-10-21');
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial: terminada }, creadaDe(terminada, { hasta: '2026-10-23' }),
+        opciones), { texto: textoRevisalaEnConfiguracion('2026-10-19', '2026-10-21'), insignia: 'aviso' });
+      // De quien hoy no puede tener licencia, como siempre (lo de Configuración ya no tiene efecto)
+      for (const puedeTener of [false, undefined, 'true', 1]) {
+        assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial, { hasta: '2026-11-06' }),
+          { ...opciones, puedeTener }), { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' }, String(puedeTener));
+      }
+      // Una corrección que no se pudo copiar ya dice dónde quedó y por qué
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial, { hasta: '2026-11-06' }),
+        { ...opciones, sinPasar: 'Se superpone con otra licencia' }), {
+        texto: `${textoEnConfiguracion('2026-11-03', '2026-11-05')} ${textoNoPaso('Se superpone con otra licencia')}`,
+        insignia: 'aviso'
+      });
+      // Una que dejó de ser de día entero ya dice que sigue en Configuración
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, franquicia('2026-11-04', 3), opciones),
+        { texto: textoSigueEnConfiguracion('2026-11-03', '2026-11-05'), insignia: 'aviso' });
+      // Unas fechas de la fila que no sirven no se comparan
+      assert.deepEqual(textoDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial, { desde: 'x' }), opciones),
+        { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' });
+    });
+
+    it('administración la cambió; anulada en Configuración, sin decir quién', () => {
       assert.deepEqual(textoDelVinculo({ estado: 'creada_cambiada', oficial }, filaDe(), opciones),
         { texto: `${textoEnConfiguracion('2026-11-03', '2026-11-05')} ${TEXTO_NO_SE_COPIA}`, insignia: 'aviso' });
       assert.deepEqual(textoDelVinculo({ estado: 'creada_anulada', oficial: { ...oficial, anulada: 1 } }, filaDe(), opciones),
-        { texto: TEXTO_ANULADA_POR_ADMINISTRACION, insignia: 'aviso' });
+        { texto: TEXTO_ANULADA_EN_CONFIGURACION, insignia: 'aviso' });
     });
 
     it('una unida, cubierta o no', () => {
@@ -2854,6 +3899,139 @@ describe('el paso a Configuración', () => {
       assert.equal(textoDelVinculo(ninguno, franquicia('2026-11-03', 3), { ...opciones, puedeTener: false }), null);
       assert.equal(textoDelVinculo(ninguno, filaDe(), opciones), null);
       assert.equal(textoDelVinculo(ninguno, franquicia('2026-11-03', 7), opciones), null);
+    });
+  });
+
+  // Lo que el Resumen avisa para revisar (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1, 3.2 y 3.3): solo lo que
+  // todavía se puede resolver. Hoy es el lunes 26/10/2026
+  describe('revisionDelVinculo', () => {
+    const opciones = { hoy: HOY, sinPasar: null, puedeTener: true };
+    // El día anterior a HOY: el borde de «termina hoy», que todavía se resuelve
+    const AYER = '2026-10-25';
+    // La de Configuración, del 02/11 al 04/11; la fila, del 02/11 al 06/11
+    const oficial = oficialDe(7, '2026-11-02', '2026-11-04');
+    const conOtroHasta = creadaDe(oficial, { hasta: '2026-11-06' });
+
+    it('una creada con otras fechas en Configuración: con las de Configuración, la cambie quien la cambie', () => {
+      const fechas = { motivo: 'fechas', desde: '2026-11-02', hasta: '2026-11-04' };
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada', oficial }, conOtroHasta, opciones), fechas);
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada_cambiada', oficial }, conOtroHasta, opciones), fechas);
+      // Otro desde
+      const corrida = oficialDe(7, '2026-11-03', '2026-11-06');
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada', oficial: corrida }, creadaDe(corrida, { desde: '2026-11-02' }),
+        opciones), { motivo: 'fechas', desde: '2026-11-03', hasta: '2026-11-06' });
+      // La de Configuración termina hoy: todavía se resuelve
+      const terminaHoy = oficialDe(7, '2026-10-20', HOY);
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada', oficial: terminaHoy }, creadaDe(terminaHoy, { hasta: '2026-10-28' }),
+        opciones), { motivo: 'fechas', desde: '2026-10-20', hasta: HOY });
+      // La de Mi espacio ya terminó, pero la de Configuración no: corregir la fila a sus fechas lo resuelve
+      const sigue = oficialDe(7, '2026-10-19', '2026-10-28');
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada', oficial: sigue }, creadaDe(sigue, { hasta: '2026-10-23' }), opciones),
+        { motivo: 'fechas', desde: '2026-10-19', hasta: '2026-10-28' });
+      // Una franquicia de 7 horas es de día entero
+      const unDia = oficialDe(7, '2026-11-03', '2026-11-03');
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada', oficial: unDia }, franquicia('2026-11-04', 7,
+        { licencia_oficial_id: 7, oficial: 'creada' }), opciones), { motivo: 'fechas', desde: '2026-11-03', hasta: '2026-11-03' });
+    });
+
+    it('una creada: nada, con las mismas fechas o si otro aviso de la fila ya lo explica', () => {
+      assert.equal(revisionDelVinculo({ estado: 'creada', oficial }, creadaDe(oficial), opciones), null);
+      assert.equal(revisionDelVinculo({ estado: 'creada_cambiada', oficial }, creadaDe(oficial), opciones), null);
+      // Con el motivo de una corrección que no se pudo copiar
+      assert.equal(revisionDelVinculo({ estado: 'creada', oficial }, conOtroHasta,
+        { ...opciones, sinPasar: 'Se superpone con otra licencia' }), null);
+      // Uno que es solo espacios no es un motivo
+      assert.deepEqual(revisionDelVinculo({ estado: 'creada', oficial }, conOtroHasta, { ...opciones, sinPasar: '  ' }),
+        { motivo: 'fechas', desde: '2026-11-02', hasta: '2026-11-04' });
+      // Una que dejó de ser de día entero (queda en Configuración con sus fechas: no se podría resolver)
+      assert.equal(revisionDelVinculo({ estado: 'creada', oficial }, franquicia('2026-11-03', 3), opciones), null);
+      // De quien hoy no puede tener licencia
+      for (const puedeTener of [false, undefined, 'true', 1]) {
+        assert.equal(revisionDelVinculo({ estado: 'creada', oficial }, conOtroHasta, { ...opciones, puedeTener }), null,
+          String(puedeTener));
+      }
+      // La de Configuración ya terminó: las fechas de una creada quedan fijas (Review Focus 4)
+      const terminada = oficialDe(7, '2026-10-19', '2026-10-23');
+      assert.equal(revisionDelVinculo({ estado: 'creada', oficial: terminada }, creadaDe(terminada, { hasta: '2026-10-28' }),
+        opciones), null);
+      assert.equal(revisionDelVinculo({ estado: 'creada_cambiada', oficial: terminada },
+        creadaDe(terminada, { hasta: '2026-10-21' }), opciones), null);
+      // La de Configuración terminó ayer, aunque la de Mi espacio siga: tampoco
+      const terminoAyer = oficialDe(7, '2026-10-19', AYER);
+      for (const estado of ['creada', 'creada_cambiada']) {
+        assert.equal(revisionDelVinculo({ estado, oficial: terminoAyer }, creadaDe(terminoAyer, { hasta: '2026-10-28' }),
+          opciones), null, estado);
+      }
+    });
+
+    it('una creada anulada de antes, mientras la de Mi espacio no terminó', () => {
+      const anulada = { ...oficial, anulada: 1 };
+      const vinculo = vinculoDe(creadaDe(oficial), anulada, false);
+      assert.equal(vinculo.estado, 'creada_anulada');
+      const paraRevisar = { motivo: 'anulada', desde: null, hasta: null };
+      assert.deepEqual(revisionDelVinculo(vinculo, creadaDe(oficial), opciones), paraRevisar);
+      // La que termina hoy, también
+      assert.deepEqual(revisionDelVinculo(vinculo, creadaDe(oficial, { desde: '2026-10-19', hasta: HOY }), opciones), paraRevisar);
+      // Ni el motivo ni el rol la cambian: sigue contando hasta que la persona la borre
+      assert.deepEqual(revisionDelVinculo(vinculo, creadaDe(oficial), { ...opciones, sinPasar: 'Otro motivo', puedeTener: false }),
+        paraRevisar);
+      // La que ya terminó, no (Review Focus 4), tampoco la que terminó ayer
+      assert.equal(revisionDelVinculo(vinculo, creadaDe(oficial, { desde: '2026-10-19', hasta: '2026-10-23' }), opciones), null);
+      assert.equal(revisionDelVinculo(vinculo, creadaDe(oficial, { desde: '2026-10-19', hasta: AYER }), opciones), null);
+    });
+
+    it('una unida sin cubrir, mientras la de Mi espacio no terminó, con los días fuera', () => {
+      const larga = oficialDe(12, '2026-11-02', '2026-11-13');
+      const acortada = oficialDe(12, '2026-11-02', '2026-11-04');
+      const fila = unidaDe(larga);
+      const vinculo = vinculoDe(fila, acortada, false);
+      assert.equal(vinculo.estado, 'unida_sin_cubrir');
+      assert.deepEqual(revisionDelVinculo(vinculo, fila, opciones), { motivo: 'sin_cubrir', desde: '2026-11-05', hasta: '2026-11-06' });
+      // Anulada: toda la fila
+      assert.deepEqual(revisionDelVinculo(vinculoDe(fila, { ...larga, anulada: 1 }, true), fila, opciones),
+        { motivo: 'sin_cubrir', desde: '2026-11-02', hasta: '2026-11-06' });
+      // La que termina hoy, sí; la que ya terminó, no
+      const deHoy = unidaDe(larga, { desde: '2026-10-22', hasta: HOY });
+      const sinCubrirHoy = vinculoDe(deHoy, oficialDe(12, '2026-10-19', '2026-10-23'), false);
+      assert.deepEqual(revisionDelVinculo(sinCubrirHoy, deHoy, opciones), { motivo: 'sin_cubrir', desde: '2026-10-24', hasta: HOY });
+      const pasada = unidaDe(larga, { desde: '2026-10-19', hasta: '2026-10-23' });
+      assert.equal(revisionDelVinculo(vinculoDe(pasada, oficialDe(12, '2026-10-19', '2026-10-20'), false), pasada, opciones), null);
+      // La que terminó ayer, tampoco (sigue sin cubrir: es por la fecha)
+      const deAyer = unidaDe(larga, { desde: '2026-10-19', hasta: AYER });
+      const sinCubrirAyer = vinculoDe(deAyer, oficialDe(12, '2026-10-19', '2026-10-20'), false);
+      assert.deepEqual(sinCubrirAyer.sin_cubrir, { desde: '2026-10-21', hasta: AYER });
+      assert.equal(revisionDelVinculo(sinCubrirAyer, deAyer, opciones), null);
+      // Sin los días fuera, no
+      assert.equal(revisionDelVinculo({ ...vinculo, sin_cubrir: null }, fila, opciones), null);
+    });
+
+    it('una unida cubierta y sin vínculo, nada', () => {
+      const larga = oficialDe(12, '2026-11-02', '2026-11-13');
+      assert.equal(revisionDelVinculo(vinculoDe(unidaDe(larga), larga, false), unidaDe(larga), opciones), null);
+      assert.equal(revisionDelVinculo({ estado: 'ninguno', oficial: null }, filaDe(), opciones), null);
+      assert.equal(revisionDelVinculo({ estado: 'ninguno', oficial: null }, filaDe(),
+        { ...opciones, sinPasar: textoSuperpuestaConConfiguracion('2026-11-03', '2026-11-05') }), null);
+      assert.equal(revisionDelVinculo({ estado: 'otro', oficial }, conOtroHasta, opciones), null);
+    });
+
+    it('sin un hoy que sirva, nada; y nunca tira', () => {
+      const anulada = { ...oficial, anulada: 1 };
+      for (const hoy of [undefined, null, '', '2026-02-30', 20261026, new Date('2026-10-26T12:00:00Z')]) {
+        assert.equal(revisionDelVinculo({ estado: 'creada', oficial }, conOtroHasta, { ...opciones, hoy }), null, String(hoy));
+        assert.equal(revisionDelVinculo({ estado: 'creada_anulada', oficial: anulada }, creadaDe(oficial), { ...opciones, hoy }),
+          null, String(hoy));
+      }
+      const raros = [undefined, null, '', 'x', 0, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
+      for (const valor of raros) {
+        assert.doesNotThrow(() => {
+          assert.equal(revisionDelVinculo(valor, valor, valor), null);
+          assert.equal(revisionDelVinculo({ estado: 'creada', oficial: valor }, conOtroHasta, opciones), null);
+          assert.equal(revisionDelVinculo({ estado: 'creada', oficial }, valor, opciones), null);
+          assert.equal(revisionDelVinculo({ estado: 'creada_anulada', oficial: anulada }, valor, opciones), null);
+          assert.equal(revisionDelVinculo({ estado: 'unida_sin_cubrir', oficial, sin_cubrir: valor }, filaDe(), opciones), null);
+          revisionDelVinculo({ estado: 'creada', oficial }, conOtroHasta, valor);
+        }, String(valor));
+      }
     });
   });
 
@@ -2973,7 +4151,8 @@ describe('el paso a Configuración', () => {
           texto: `${textoEnConfiguracion('2026-10-19', '2026-10-23')} ${textoNoPaso('La fecha de fin tiene que ser ayer o posterior')}`,
           insignia: 'aviso'
         },
-        puede_borrar: false, solo_hasta: false, fechas_fijas: true, en_configuracion: { licencia_id: 7, autorizado_id: null }
+        puede_borrar: false, solo_hasta: false, fechas_fijas: true, en_configuracion: { licencia_id: 7, autorizado_id: null },
+        revision: null
       });
 
       // En curso en Configuración desde el 23/10; la fila quedó desde el 21/10
@@ -3154,28 +4333,34 @@ describe('el paso a Configuración', () => {
       const creada = { texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' };
       const enConfiguracion = (licenciaId) => ({ licencia_id: licenciaId, autorizado_id: null });
       assert.deepEqual(vinculos.get(1), {
-        configuracion: creada, puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: enConfiguracion(7)
+        configuracion: creada, puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: enConfiguracion(7),
+        revision: null
       });
       assert.deepEqual(vinculos.get(2), {
-        configuracion: creada, puede_borrar: false, solo_hasta: true, fechas_fijas: false, en_configuracion: enConfiguracion(8)
+        configuracion: creada, puede_borrar: false, solo_hasta: true, fechas_fijas: false, en_configuracion: enConfiguracion(8),
+        revision: null
       });
       assert.deepEqual(vinculos.get(3), {
-        configuracion: creada, puede_borrar: false, solo_hasta: false, fechas_fijas: true, en_configuracion: enConfiguracion(9)
+        configuracion: creada, puede_borrar: false, solo_hasta: false, fechas_fijas: true, en_configuracion: enConfiguracion(9),
+        revision: null
       });
       assert.deepEqual(vinculos.get(4), {
         configuracion: { texto: TEXTO_NO_DIA_ENTERO, insignia: 'aviso' }, puede_borrar: true, solo_hasta: false,
-        fechas_fijas: false, en_configuracion: null
+        fechas_fijas: false, en_configuracion: null, revision: null
       });
       // Sin nada para decir, no está
       assert.equal(vinculos.has(5), false);
-      // Una que administración cambió: ya no se corrige en Configuración desde acá, sin en_configuracion
+      // Una que administración cambió: ya no se corrige en Configuración desde acá, sin en_configuracion; quedó con otro hasta,
+      // así que el Resumen avisa para revisar
       assert.deepEqual(vinculos.get(6), {
         configuracion: { texto: `${textoEnConfiguracion('2026-11-23', '2026-11-25')} ${TEXTO_NO_SE_COPIA}`, insignia: 'aviso' },
-        puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: null
+        puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: null,
+        revision: { motivo: 'fechas', desde: '2026-11-23', hasta: '2026-11-25' }
       });
       // La que empieza hoy: el desde queda fijo, pero todavía se borra
       assert.deepEqual(vinculos.get(7), {
-        configuracion: creada, puede_borrar: true, solo_hasta: true, fechas_fijas: false, en_configuracion: enConfiguracion(11)
+        configuracion: creada, puede_borrar: true, solo_hasta: true, fechas_fijas: false, en_configuracion: enConfiguracion(11),
+        revision: null
       });
       assert.deepEqual([...vinculos.keys()].sort(), [1, 2, 3, 4, 6, 7]);
     });
@@ -3190,6 +4375,57 @@ describe('el paso a Configuración', () => {
       );
       assert.deepEqual(vinculos.get(1).en_configuracion, { licencia_id: 7, autorizado_id: 3 });
       assert.equal(vinculos.get(2).en_configuracion, null);
+    });
+
+    // Spec 2026-10-28-mi-espacio-licencia-anulada (2.2, 3.1, 3.2 y 3.3): lo que la fila dice siempre y lo que el Resumen avisa
+    // mientras se pueda resolver (Review Focus 4)
+    it('cada una con lo que hay para revisar, con el hoy de las opciones', () => {
+      const cambiada = oficialDe(7, '2026-11-02', '2026-11-04');
+      const deOtro = oficialDe(8, '2026-11-09', '2026-11-12');
+      const anulada = oficialDe(9, '2026-11-16', '2026-11-20', { anulada: 1 });
+      const anuladaTerminada = oficialDe(10, '2026-10-19', '2026-10-23', { anulada: 1 });
+      const acortada = oficialDe(11, '2026-11-23', '2026-11-24');
+      const terminada = oficialDe(12, '2026-10-12', '2026-10-14');
+      const acortadaTerminada = oficialDe(13, '2026-10-05', '2026-10-06');
+      const filas = [
+        creadaDe(cambiada, { id: 1, hasta: '2026-11-06' }),
+        creadaDe(deOtro, { id: 2, hasta: '2026-11-13' }),
+        creadaDe(anulada, { id: 3 }),
+        creadaDe(anuladaTerminada, { id: 4 }),
+        unidaDe(acortada, { id: 5, desde: '2026-11-23', hasta: '2026-11-26' }),
+        creadaDe(terminada, { id: 6, hasta: '2026-10-16' }),
+        unidaDe(acortadaTerminada, { id: 7, desde: '2026-10-05', hasta: '2026-10-09' }),
+        creadaDe(oficialDe(14, '2026-11-30', '2026-12-04'), { id: 8 })
+      ];
+      const oficiales = new Map([cambiada, deOtro, anulada, anuladaTerminada, acortada, terminada, acortadaTerminada,
+        oficialDe(14, '2026-11-30', '2026-12-04')].map((oficial) => [oficial.id, oficial]));
+      const opciones = { oficiales, tocadas: new Set([8]), hoy: HOY, puedeTener: true };
+      const vinculos = vinculosDeLaLista(filas, opciones);
+      const deCada = (id) => [vinculos.get(id).configuracion, vinculos.get(id).revision];
+      const aviso = (texto) => ({ texto, insignia: 'aviso' });
+
+      assert.deepEqual(deCada(1), [aviso(textoRevisalaEnConfiguracion('2026-11-02', '2026-11-04')),
+        { motivo: 'fechas', desde: '2026-11-02', hasta: '2026-11-04' }]);
+      assert.deepEqual(deCada(2), [aviso(`${textoEnConfiguracion('2026-11-09', '2026-11-12')} ${TEXTO_NO_SE_COPIA}`),
+        { motivo: 'fechas', desde: '2026-11-09', hasta: '2026-11-12' }]);
+      assert.deepEqual(deCada(3), [aviso(TEXTO_ANULADA_EN_CONFIGURACION), { motivo: 'anulada', desde: null, hasta: null }]);
+      assert.deepEqual(deCada(5), [aviso(textoYaNoCubierta('2026-11-25', '2026-11-26')),
+        { motivo: 'sin_cubrir', desde: '2026-11-25', hasta: '2026-11-26' }]);
+      // Lo que ya no se puede resolver: la fila lo dice, el Resumen no
+      assert.deepEqual(deCada(4), [aviso(TEXTO_ANULADA_EN_CONFIGURACION), null]);
+      assert.deepEqual(deCada(6), [aviso(textoRevisalaEnConfiguracion('2026-10-12', '2026-10-14')), null]);
+      assert.deepEqual(deCada(7), [aviso(textoYaNoCubierta('2026-10-07', '2026-10-09')), null]);
+      // Con las mismas fechas, nada para revisar
+      assert.deepEqual(deCada(8), [{ texto: TEXTO_TAMBIEN_EN_CONFIGURACION, insignia: 'creada' }, null]);
+
+      // Sin un hoy que sirva, nada para revisar (los textos de la fila no dependen de hoy)
+      const sinHoy = vinculosDeLaLista(filas, { ...opciones, hoy: undefined });
+      assert.deepEqual([...sinHoy.values()].map((vinculo) => vinculo.revision), filas.map(() => null));
+      assert.deepEqual([...sinHoy.values()].map((vinculo) => vinculo.configuracion),
+        [...vinculos.values()].map((vinculo) => vinculo.configuracion));
+      // De quien hoy no puede tener licencia, las fechas cambiadas no se avisan; lo anulado y lo sin cubrir, sí
+      const sinRol = vinculosDeLaLista(filas, { ...opciones, puedeTener: false });
+      assert.deepEqual([1, 2, 3, 5].map((id) => sinRol.get(id).revision?.motivo ?? null), [null, null, 'anulada', 'sin_cubrir']);
     });
   });
 
@@ -3497,17 +4733,80 @@ describe('«Hoy no están»', () => {
   });
 });
 
+// El nombre de los compañeros (spec 2026-10-28-mi-espacio-agenda-onda, 5.1): el primer nombre; si otra persona de la
+// administración activa tiene el mismo, con la inicial del último apellido; si aun así se repite, el nombre completo
+describe('nombreCorto', () => {
+  const ADMIN = [
+    { id: 1, nombre: 'Andrea Paula Molina' }, { id: 4, nombre: 'Julián Esteban Ferreyra' },
+    { id: 2, nombre: 'Carla Inés Benítez' }
+  ];
+  const CON_OTRA = [...ADMIN, { id: 9, nombre: 'Carla Ríos' }];
+  const MISMA_INICIAL = [...ADMIN, { id: 9, nombre: 'Carla Bustos' }];
+
+  it('el primer nombre, si nadie más de la administración lo tiene (ella misma no cuenta)', () => {
+    assert.equal(nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, ADMIN), 'Carla');
+    assert.equal(nombreCorto({ id: 1, nombre: 'Andrea Paula Molina' }, CON_OTRA), 'Andrea');
+  });
+
+  it('con otra del mismo nombre, la inicial del último apellido; con la misma inicial, el nombre completo', () => {
+    assert.equal(nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, CON_OTRA), 'Carla B.');
+    assert.equal(nombreCorto({ id: 9, nombre: 'Carla Ríos' }, CON_OTRA), 'Carla R.');
+    assert.equal(nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, MISMA_INICIAL), 'Carla Inés Benítez');
+    assert.equal(nombreCorto({ id: 9, nombre: 'Carla Bustos' }, MISMA_INICIAL), 'Carla Bustos');
+  });
+
+  it('sin tildes ni mayúsculas: «Matías» y «matias» son el mismo primer nombre, y «Benítez» y «benitez», la misma inicial',
+    () => {
+      assert.equal(nombreCorto({ id: 5, nombre: 'Matías Paz' }, [{ id: 5, nombre: 'Matías Paz' }, { id: 6, nombre: 'matias Sosa' }]),
+        'Matías P.');
+      assert.equal(nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, [...ADMIN, { id: 9, nombre: 'carla benitez' }]),
+        'Carla Inés Benítez');
+    });
+
+  it('quien no está en la lista (dejó de ser administración) se compara contra la lista', () => {
+    assert.equal(nombreCorto({ id: 7, nombre: 'Carla Vera' }, CON_OTRA), 'Carla V.');
+    assert.equal(nombreCorto({ id: 7, nombre: 'Tomás Quiroga' }, ADMIN), 'Tomás');
+  });
+
+  it('los espacios de más no cuentan; sin un nombre, \'\'; sin una lista, el primer nombre', () => {
+    assert.equal(nombreCorto({ id: 2, nombre: '  Carla   Inés  Benítez ' }, ADMIN), 'Carla');
+    assert.equal(nombreCorto({ id: 2, nombre: '  Carla   Inés  Benítez ' }, MISMA_INICIAL), 'Carla Inés Benítez');
+    assert.equal(nombreCorto({ id: 2, nombre: null }, ADMIN), '');
+    assert.equal(nombreCorto({ id: 2, nombre: '   ' }, ADMIN), '');
+    assert.equal(nombreCorto(null, ADMIN), '');
+    assert.equal(nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, null), 'Carla');
+    // Una sola palabra es todo el nombre: no hay un apellido del que sacar la inicial
+    assert.equal(nombreCorto({ id: 7, nombre: 'Carla' }, CON_OTRA), 'Carla');
+  });
+
+  it('nada tira, tampoco con personas raras en la lista', () => {
+    const raros = [undefined, null, '', 'x', 0, NaN, {}, [], new Date('2026-10-26T12:00:00Z')];
+    for (const valor of raros) {
+      assert.doesNotThrow(() => {
+        nombreCorto(valor, valor);
+        nombreCorto({ id: valor, nombre: valor }, [valor, { id: valor, nombre: valor }, ...ADMIN]);
+        nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, [valor, { id: 9, nombre: valor }]);
+      }, String(valor));
+    }
+    assert.equal(nombreCorto({ id: 2, nombre: 'Carla Inés Benítez' }, [null, 'x', { id: 9, nombre: 3 }, ...ADMIN]), 'Carla');
+  });
+});
+
 // El email de vencimiento (spec, sección 9): lo que está en su tramo. El franco o las horas a favor del mes de hoy, desde 5
 // días hábiles antes del último día hábil del mes hasta ese día; los días de la licencia que vence el 31/12, desde el primer
 // día hábil de diciembre. En octubre de 2026 el último día hábil es el viernes 30/10 y el tramo arranca el viernes 23/10
 describe('avisosDeVencimiento', () => {
+  // Como la corrida: con todas las licencias del estado como ocupadas (services/miEspacioAvisos.js)
   const avisos = (caso, hoy, feriados = SIN_FERIADOS, estado = caso.estado) =>
-    avisosDeVencimiento(calcular(estado, { hoy, feriados }), { hoy, feriados, modalidad: estado.modalidad });
+    avisosDeVencimiento(calcular(estado, { hoy, feriados }),
+      { hoy, feriados, modalidad: estado.modalidad, ocupadas: estado.licencias });
   const FRANCO_DE_OCTUBRE = {
     clave: 'franco-2026-10',
     texto: 'Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el viernes 30/10.'
   };
   const LICENCIA_2024 = { clave: 'licencia-2024', texto: 'Tenés 3 días de la licencia 2024: vence el 31/12/2026.' };
+  // Las 42 horas de franquicia de PLANTA menos las 17 del saldo inicial (spec 2026-10-28, 3.6)
+  const FRANQUICIA_2026 = { clave: 'franquicia-2026', texto: 'Tenés 25 horas de franquicia: vencen el 31/12/2026.' };
 
   it('PLANTA: el franco de octubre sale del 23/10 al 30/10, el último día hábil del mes', () => {
     assert.deepEqual(avisos(PLANTA, '2026-10-22'), []);
@@ -3521,13 +4820,16 @@ describe('avisosDeVencimiento', () => {
   it('PLANTA: los días de la licencia 2024 salen desde el primer día hábil de diciembre', () => {
     // El 30/11 la licencia todavía no: solo el franco de noviembre, en su último día hábil
     assert.deepEqual(avisos(PLANTA, '2026-11-30').map((aviso) => aviso.clave), ['franco-2026-11']);
-    assert.deepEqual(avisos(PLANTA, '2026-12-01'), [LICENCIA_2024]);
+    // Con la franquicia antes (spec 2026-10-28, 3.6)
+    assert.deepEqual(avisos(PLANTA, '2026-12-01'), [FRANQUICIA_2026, LICENCIA_2024]);
     // El 23/12 entra también el franco de diciembre (el 25/12 es feriado: el tramo va del 23/12 al jueves 31/12), primero
     assert.deepEqual(avisos(PLANTA, '2026-12-23'), [
       { clave: 'franco-2026-12', texto: 'Tenés 1 franco compensatorio para usar en diciembre: el último día hábil es el jueves 31/12.' },
+      FRANQUICIA_2026,
       LICENCIA_2024
     ]);
-    assert.deepEqual(avisos(PLANTA, '2026-12-31').map((aviso) => aviso.clave), ['franco-2026-12', 'licencia-2024']);
+    assert.deepEqual(avisos(PLANTA, '2026-12-31').map((aviso) => aviso.clave),
+      ['franco-2026-12', 'franquicia-2026', 'licencia-2024']);
     // En enero ya venció: la del año anterior al de hoy − 2 no se avisa
     assert.deepEqual(avisos(PLANTA, '2027-01-04'), []);
   });
@@ -3557,7 +4859,7 @@ describe('avisosDeVencimiento', () => {
     // Dos días más de vacaciones salen de la 2024: le queda 1
     const conMas = conLicencias(PLANTA.estado, vacaciones(100, '2026-11-10', '2026-11-11'));
     assert.deepEqual(avisos(PLANTA, '2026-12-01', SIN_FERIADOS, conMas),
-      [{ clave: 'licencia-2024', texto: 'Tenés 1 día de la licencia 2024: vence el 31/12/2026.' }]);
+      [FRANQUICIA_2026, { clave: 'licencia-2024', texto: 'Tenés 1 día de la licencia 2024: vence el 31/12/2026.' }]);
   });
 
   it('solo lo que queda: sin disponibles, o de la otra modalidad, nada', () => {
@@ -3566,11 +4868,119 @@ describe('avisosDeVencimiento', () => {
     assert.deepEqual(avisos(PLANTA, '2026-10-26', SIN_FERIADOS, usado), []);
     // Las vacaciones de la 2024 cargadas en diciembre ya no se avisan
     const cargadas = conLicencias(PLANTA.estado, vacaciones(100, '2026-12-14', '2026-12-16'));
-    assert.deepEqual(avisos(PLANTA, '2026-12-01', SIN_FERIADOS, cargadas), []);
+    assert.deepEqual(avisos(PLANTA, '2026-12-01', SIN_FERIADOS, cargadas), [FRANQUICIA_2026]);
     // Con otra modalidad, el franco no se avisa
     const hoy = '2026-10-26';
     assert.deepEqual(avisosDeVencimiento(calcular(PLANTA.estado, { hoy, feriados: SIN_FERIADOS }),
       { hoy, feriados: SIN_FERIADOS, modalidad: 'contrato' }), []);
+  });
+
+  describe('las horas de franquicia (spec 2026-10-28, 3.6)', () => {
+    // PLANTA con otro saldo inicial de franquicias (17 en el caso), y más licencias si hacen falta
+    const conSaldo = (horas, ...licencias) => conLicencias({
+      ...PLANTA.estado,
+      saldos: PLANTA.estado.saldos.map((saldo) => (saldo.concepto === 'franquicias' ? { ...saldo, cantidad: horas } : saldo))
+    }, ...licencias);
+    const franquicias = (hoy, estado, feriados = SIN_FERIADOS) => avisos(PLANTA, hoy, feriados, estado)
+      .filter((aviso) => aviso.clave.startsWith('franquicia-'));
+    const conHoras = (horas) => ({
+      clave: 'franquicia-2026', texto: `Tenés ${horas} horas de franquicia: vencen el 31/12/2026.`
+    });
+
+    it('desde el primer día hábil de diciembre hasta el 31/12: el 01/12 sí; el 30/11 y el 01/01, no', () => {
+      assert.deepEqual(franquicias('2026-11-30', conSaldo(20)), []);
+      assert.deepEqual(franquicias('2026-12-01', conSaldo(20)), [conHoras(22)]);
+      assert.deepEqual(franquicias('2026-12-31', conSaldo(20)).map((aviso) => aviso.clave), ['franquicia-2026']);
+      // El 1/1 es la del año nuevo, que todavía no se avisa
+      assert.deepEqual(avisos(PLANTA, '2027-01-01', SIN_FERIADOS, conSaldo(20)), []);
+      // Con el martes 01/12 feriado, el primer día hábil es el miércoles 02/12
+      const conElPrimero = new Set(['2026-12-01']);
+      assert.deepEqual(franquicias('2026-12-01', conSaldo(20), conElPrimero), []);
+      assert.deepEqual(avisos(PLANTA, '2026-12-02', conElPrimero, conSaldo(20)).map((aviso) => aviso.clave),
+        ['franquicia-2026', 'licencia-2024']);
+    });
+
+    it('lo que queda, con «hora» y «vence» en singular solo con 1', () => {
+      assert.deepEqual(franquicias('2026-12-01', conSaldo(41)),
+        [{ clave: 'franquicia-2026', texto: 'Tenés 1 hora de franquicia: vence el 31/12/2026.' }]);
+      assert.deepEqual(franquicias('2026-12-01', conSaldo(41.5)), [conHoras('0,5')]);
+      // Una franquicia cargada en diciembre descuenta sus horas
+      const delCatorce = { id: 100, tipo: 'franquicia', desde: '2026-12-14', hasta: '2026-12-14', horas: 7 };
+      assert.deepEqual(franquicias('2026-12-01', conSaldo(20, delCatorce)), [conHoras(15)]);
+    });
+
+    it('solo lo que todavía se puede usar: sin las horas que se pierden, y nada con disponibles en 0', () => {
+      // El lunes 28/12 con vacaciones el 28 y el 29: de las 22, entran 14 en el 30 y el 31
+      assert.deepEqual(franquicias('2026-12-28', conSaldo(20, vacaciones(100, '2026-12-28', '2026-12-29'))), [conHoras(14)]);
+      // Sin ningún día libre hasta el 31/12, todas se pierden: no se avisa
+      assert.deepEqual(franquicias('2026-12-28', conSaldo(20, vacaciones(100, '2026-12-28', '2026-12-31'))), []);
+      // Sin horas que queden, tampoco
+      assert.deepEqual(franquicias('2026-12-01', conSaldo(42)), []);
+    });
+
+    it('en contrato, o con un cálculo de planta y la modalidad de contrato, nunca', () => {
+      assert.deepEqual(avisos(CONTRATO, '2026-12-01').filter((aviso) => aviso.clave.startsWith('franquicia-')), []);
+      const hoy = '2026-12-01';
+      assert.equal(avisosDeVencimiento(calcular(PLANTA.estado, { hoy, feriados: SIN_FERIADOS }),
+        { hoy, feriados: SIN_FERIADOS, modalidad: 'contrato' }).some((aviso) => aviso.clave.startsWith('franquicia-')), false);
+    });
+  });
+
+  describe('el franco o las horas a favor sin ningún día libre en su mes (spec 2026-10-28, 3.7)', () => {
+    const FRANCO_DE_DICIEMBRE = {
+      clave: 'franco-2026-12',
+      texto: 'Tenés 1 franco compensatorio para usar en diciembre: el último día hábil es el jueves 31/12.'
+    };
+    const claves = (lista) => lista.map((aviso) => aviso.clave);
+
+    it('el 23/12, con vacaciones que tapan todo diciembre, el email no nombra el franco', () => {
+      const estado = conLicencias(PLANTA.estado, vacaciones(100, '2026-12-01', '2026-12-31'));
+      assert.equal(claves(avisos(PLANTA, '2026-12-23', SIN_FERIADOS, estado)).includes('franco-2026-12'), false);
+      // Sin esas vacaciones, sí
+      assert.deepEqual(avisos(PLANTA, '2026-12-23')[0], FRANCO_DE_DICIEMBRE);
+    });
+
+    it('un día libre del mes que ya pasó alcanza: un franco tomado se puede registrar después', () => {
+      // El martes 01/12 quedó libre
+      const estado = conLicencias(PLANTA.estado, vacaciones(100, '2026-12-02', '2026-12-31'));
+      assert.deepEqual(avisos(PLANTA, '2026-12-23', SIN_FERIADOS, estado)[0], FRANCO_DE_DICIEMBRE);
+    });
+
+    it('ese día libre no cuenta si es feriado o lo ocupa otra licencia, de cualquier tipo y de cualquier modalidad', () => {
+      const tapado = conLicencias(PLANTA.estado, vacaciones(100, '2026-12-02', '2026-12-31'));
+      assert.equal(claves(avisos(PLANTA, '2026-12-23', new Set(['2026-12-01']), tapado)).includes('franco-2026-12'), false);
+      // Una franquicia de 2 horas
+      const conFranquicia = conLicencias(tapado,
+        { id: 101, tipo: 'franquicia', desde: '2026-12-01', hasta: '2026-12-01', horas: 2 });
+      assert.equal(claves(avisos(PLANTA, '2026-12-23', SIN_FERIADOS, conFranquicia)).includes('franco-2026-12'), false);
+      // Unas horas a favor, que en planta no cuentan pero ocupan su día
+      const deContrato = conLicencias(tapado,
+        { id: 101, tipo: 'horas_a_favor', desde: '2026-12-01', hasta: '2026-12-01', horas: 2 });
+      assert.equal(claves(avisos(PLANTA, '2026-12-23', SIN_FERIADOS, deContrato)).includes('franco-2026-12'), false);
+    });
+
+    it('las horas a favor de contrato, igual', () => {
+      // Las 4 horas de la salida del 21/10, para usar en noviembre. El tramo va del lunes 23/11 al lunes 30/11
+      const HORAS_DE_NOVIEMBRE = {
+        clave: 'horas-2026-11', texto: 'Tenés 4 horas a favor para usar en noviembre: el último día hábil es el lunes 30/11.'
+      };
+      assert.deepEqual(avisos(CONTRATO, '2026-11-23'), [HORAS_DE_NOVIEMBRE]);
+      const tapado = conLicencias(CONTRATO.estado, vacaciones(100, '2026-11-02', '2026-11-30'));
+      assert.deepEqual(avisos(CONTRATO, '2026-11-23', SIN_FERIADOS, tapado), []);
+      // Con el lunes 02/11 libre, sí
+      const conUnDia = conLicencias(CONTRATO.estado, vacaciones(100, '2026-11-03', '2026-11-30'));
+      assert.deepEqual(avisos(CONTRATO, '2026-11-23', SIN_FERIADOS, conUnDia), [HORAS_DE_NOVIEMBRE]);
+    });
+
+    it('sin las ocupadas, ninguna licencia ocupa un día', () => {
+      const estado = conLicencias(PLANTA.estado, vacaciones(100, '2026-12-01', '2026-12-31'));
+      const hoy = '2026-12-23';
+      const calculo = calcular(estado, { hoy, feriados: SIN_FERIADOS });
+      for (const ocupadas of [undefined, null, 'x', {}]) {
+        assert.deepEqual(avisosDeVencimiento(calculo, { hoy, feriados: SIN_FERIADOS, modalidad: 'planta', ocupadas })[0],
+          FRANCO_DE_DICIEMBRE, String(ocupadas));
+      }
+    });
   });
 
   it('los días de la licencia 2024 que se pierden no se avisan (spec 2026-10-27, punto 2.5)', () => {

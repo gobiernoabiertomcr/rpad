@@ -619,7 +619,7 @@ describe('cicloDeVidaDe', () => {
     // La carga externa: la mediana de la foto, con los tres datasets
     assert.equal(etapaDe(guardada.etapas, 'externa', 'carga').habiles.mediana, MEDIANA_DE_LA_CARGA);
     assert.equal(etapaDe(data.etapas, 'externa', 'carga').textos.anterior, `Año anterior: mediana de ${MEDIANA_DE_LA_CARGA} días hábiles`);
-    // Una etapa que en 2026 no tuvo ciclos (el trámite de la nota, sin notas DGMIT): «no hay»
+    // Una etapa que en 2026 no tuvo ciclos (la redacción y entrega de nota, sin notas DGMIT): «no hay»
     assert.equal(etapaDe(guardada.etapas, 'externa', 'tramite').n, 0);
     assert.equal(etapaDe(data.etapas, 'externa', 'tramite').textos.anterior, ANTERIOR_NO_HAY);
 

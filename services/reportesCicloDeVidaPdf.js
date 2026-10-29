@@ -42,7 +42,7 @@ export const TEXTOS_DEL_CICLO = Object.freeze({
   descripciones: Object.freeze({
     externa: Object.freeze({
       aviso: `El RPAD avisa a la DGMIT y a la Dirección Administrativa qué conjuntos de datos vencen en los próximos ${VENTANA_DE_LA_REGLA.externa} días y qué datos hay que pedir de cada uno, por Nota Digital (hasta el 12/10/2026, por email).`,
-      tramite: 'La DGMIT y la Dirección Administrativa preparan la nota formal que le pide los datos al área y se la hacen llegar.',
+      tramite: 'La DGMIT y la Dirección Administrativa redactan la nota formal que le pide los datos al área y se la hacen llegar.',
       respuesta: 'El área reúne y prepara los datos pedidos y se los entrega a Datos Públicos.',
       carga: 'Los datos llegan en PDF, en papel o desordenados: Datos Públicos los transcribe, los ordena y los normaliza (que «Palazzo», «P. Palazzo» y «Próspero Palazzo» queden como un solo nombre) y los publica en el portal en formato abierto.'
     }),
