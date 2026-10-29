@@ -12,7 +12,8 @@ import {
   DIAS_ESTUDIOS, DIAS_POR_EXAMEN, TOPES, JORNADA, LARGO_NOTA, MENSAJES_MI_ESPACIO,
   textoRango, textoNoEstudia, textoSuperpuesta, textoSinHabilitados, textoHastaDondeAlcanza, textoSinNingunDia,
   textoFaltanEnOtraCarga, textoTope, textoSinFranco, textoSinHorasAFavor,
-  textoSinNoUtilizadas, textoHorarioSuperpuesto, textoSaldo, textoAutorizadaDelFirmante,
+  textoSinNoUtilizadas, textoHorarioSuperpuesto, textoSaldo, textoSaldoDelArranque, textoSaldoDeLosDias, textoSaldoSinDias,
+  textoAutorizadaDelFirmante,
   AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN, AVISO_NOTAS_DE_HOY, AVISO_SIN_PERSONA_A_CARGO,
   textoSuperpuestaConConfiguracion, textoNoPaso, textoYaNoCubierta, textoEnConfiguracion, textoUnida,
   textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA, TEXTO_ANULADA_EN_CONFIGURACION,
@@ -349,6 +350,42 @@ describe('las mitades y el vencimiento', () => {
     assert.equal(comienzo(2026, 30), 'Se habilitan en dos mitades: 15 el 1/7/2026 y 15 el 1/1/2027');
     // El de la base o el de un pedido, como texto, también
     assert.equal(textoDeLasMitades('2026', '20'), textoDeLasMitades(2026, 20));
+  });
+
+  // En el año del arranque, con el arranque desde el 1/7 (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8 y 7, decisión
+  // 3), la primera mitad es el saldo que se escribe en «De la AAAA»: el texto lo dice sin número, y la segunda, con el suyo
+  it('textoDeLasMitades: en el año del arranque, desde el 1/7, la primera mitad es lo que se pone en «De la AAAA»', () => {
+    const arranque = '2026-10-27';
+    assert.equal(textoDeLasMitades(2026, 20, { arranque }),
+      'La primera mitad es lo que pongas en «De la 2026», más abajo. El 1/1/2027 se habilitan 10.');
+    // La segunda mitad, la de mitadesDe: con un número impar, la menor
+    const segunda = (dias) => textoDeLasMitades(2026, dias, { arranque }).split('. ')[1];
+    assert.deepEqual(DIAS_VACACIONES.map(segunda), [
+      'El 1/1/2027 se habilitan 5.', 'El 1/1/2027 se habilitan 7.', 'El 1/1/2027 se habilitan 10.',
+      'El 1/1/2027 se habilitan 12.', 'El 1/1/2027 se habilitan 15.'
+    ]);
+    // El 1/7 justo ya es desde el 1/7; el año y los días de un pedido, como texto, también
+    assert.equal(textoDeLasMitades(2026, 20, { arranque: '2026-07-01' }), textoDeLasMitades(2026, 20, { arranque }));
+    assert.equal(textoDeLasMitades('2026', '20', { arranque }), textoDeLasMitades(2026, 20, { arranque }));
+    assert.equal(textoDeLasMitades(2027, 15, { arranque: '2027-12-31' }),
+      'La primera mitad es lo que pongas en «De la 2027», más abajo. El 1/1/2028 se habilitan 7.');
+  });
+
+  it('textoDeLasMitades: con el arranque antes del 1/7, en otro año o sin un arranque que sirva, el texto de siempre', () => {
+    const deSiempre = textoDeLasMitades(2026, 20);
+    for (const arranque of ['2026-03-10', '2026-06-30', '2026-01-01']) {
+      assert.equal(textoDeLasMitades(2026, 20, { arranque }), deSiempre, arranque);
+    }
+    // Los demás años, como siempre, aunque el arranque sea del 1/7 en adelante
+    assert.equal(textoDeLasMitades(2025, 20, { arranque: '2026-10-27' }), textoDeLasMitades(2025, 20));
+    assert.equal(textoDeLasMitades(2027, 20, { arranque: '2026-10-27' }), textoDeLasMitades(2027, 20));
+    for (const opciones of [undefined, null, {}, { arranque: null }, { arranque: '2026-02-30' }, { arranque: '27/10/2026' },
+      { arranque: 20261027 }, 'x', [], Object.create(null)]) {
+      assert.equal(textoDeLasMitades(2026, 20, opciones), deSiempre, String(opciones?.arranque ?? typeof opciones));
+    }
+    // Sin unos días de DIAS_VACACIONES o sin un año, null igual
+    assert.equal(textoDeLasMitades(2026, 12, { arranque: '2026-10-27' }), null);
+    assert.equal(textoDeLasMitades('abc', 20, { arranque: '2026-10-27' }), null);
   });
 
   it('textoDeLasMitades: sin unos días de DIAS_VACACIONES o sin un año, null', () => {
@@ -2075,14 +2112,23 @@ describe('«Mis vacaciones y saldos»: los campos del saldo inicial', () => {
     assert.deepEqual(camposDelSaldoInicial(PLANTA.estado), [
       {
         clave: 'vacaciones-2024', concepto: 'vacaciones', anio: 2024, rotulo: 'Sin usar de la licencia 2024', maximo: 30,
-        paso: 1
+        paso: 1, ayuda: 'De 0 a 30, el máximo de una licencia.'
       },
-      { clave: 'vacaciones-2025', concepto: 'vacaciones', anio: 2025, rotulo: 'De la 2025', maximo: 30, paso: 1 },
-      { clave: 'vacaciones-2026', concepto: 'vacaciones', anio: 2026, rotulo: 'De la 2026', maximo: 10, paso: 1 },
-      { clave: 'franquicias', concepto: 'franquicias', anio: 2026, rotulo: 'Horas de franquicia', maximo: 42, paso: 1 },
-      { clave: 'estudios', concepto: 'estudios', anio: 2026, rotulo: 'Días de estudios', maximo: 15, paso: 1 },
-      { clave: 'medica', concepto: 'medica', anio: 2026, rotulo: 'Días de atención médica', maximo: 25, paso: 1 },
-      { clave: 'familiar', concepto: 'familiar', anio: 2026, rotulo: 'Días de grupo familiar', maximo: 25, paso: 1 }
+      {
+        clave: 'vacaciones-2025', concepto: 'vacaciones', anio: 2025, rotulo: 'De la 2025', maximo: 30, paso: 1,
+        ayuda: 'De 0 a 30, el máximo de una licencia.'
+      },
+      {
+        clave: 'vacaciones-2026', concepto: 'vacaciones', anio: 2026, rotulo: 'De la 2026', maximo: 10, paso: 1,
+        ayuda: 'De 0 a 10: lo que se habilitó de la 2026 hasta hoy.'
+      },
+      {
+        clave: 'franquicias', concepto: 'franquicias', anio: 2026, rotulo: 'Horas de franquicia', maximo: 42, paso: 1,
+        ayuda: ''
+      },
+      { clave: 'estudios', concepto: 'estudios', anio: 2026, rotulo: 'Días de estudios', maximo: 15, paso: 1, ayuda: '' },
+      { clave: 'medica', concepto: 'medica', anio: 2026, rotulo: 'Días de atención médica', maximo: 25, paso: 1, ayuda: '' },
+      { clave: 'familiar', concepto: 'familiar', anio: 2026, rotulo: 'Días de grupo familiar', maximo: 25, paso: 1, ayuda: '' }
     ]);
   });
 
@@ -2102,7 +2148,7 @@ describe('«Mis vacaciones y saldos»: los campos del saldo inicial', () => {
     ]);
     assert.deepEqual(campos.at(-1), {
       clave: 'horas_no_utilizadas', concepto: 'horas_no_utilizadas', anio: 2026, rotulo: 'Horas no utilizadas previamente',
-      maximo: 200, paso: 0.5
+      maximo: 200, paso: 0.5, ayuda: ''
     });
     // 15 días: la primera mitad es 8; y secundaria, 10 días de estudios
     assert.equal(campos.find((campo) => campo.clave === 'vacaciones-2026').maximo, 8);
@@ -2122,6 +2168,35 @@ describe('«Mis vacaciones y saldos»: los campos del saldo inicial', () => {
     // Sin ningún año cargado, 30, y la primera mitad, 15
     assert.equal(camposDelSaldoInicial({ modalidad: 'planta', arranque: HOY, anios: [] })
       .find((campo) => campo.clave === 'vacaciones-2026').maximo, 15);
+  });
+
+  // Cada tope dice de dónde sale (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): el del año del arranque, lo
+  // habilitado; uno anterior con sus días cargados, esos días; sin días cargados, el máximo de una licencia; los demás, nada
+  it('la ayuda de cada campo: de dónde sale su máximo', () => {
+    const ayudas = (arranque, anios, modalidad = 'planta') => Object.fromEntries(
+      camposDelSaldoInicial({ modalidad, arranque, anios }).map(({ clave, ayuda }) => [clave, ayuda]));
+    // 15 días en 2026 (la primera mitad, 8), 20 en 2025 y nada en 2024
+    assert.deepEqual(ayudas('2026-10-27', [
+      { anio: 2025, dias_vacaciones: 20, estudios: null }, { anio: 2026, dias_vacaciones: 15, estudios: 'universitario' }
+    ]), {
+      'vacaciones-2024': 'De 0 a 30, el máximo de una licencia.',
+      'vacaciones-2025': 'De 0 a 20: los días de la 2025.',
+      'vacaciones-2026': 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.',
+      franquicias: '', estudios: '', medica: '', familiar: ''
+    });
+    // Los días de un año anterior que valen heredados también son sus días; en contrato, igual, y sus horas sin ayuda
+    assert.deepEqual(ayudas('2026-03-10', [{ anio: 2024, dias_vacaciones: 25, estudios: null }], 'contrato'), {
+      'vacaciones-2024': 'De 0 a 25: los días de la 2024.',
+      'vacaciones-2025': 'De 0 a 25: los días de la 2025.',
+      medica: '', familiar: '', horas_no_utilizadas: ''
+    });
+    // Sin ningún año cargado, el del arranque con la primera mitad de 30
+    assert.equal(ayudas('2026-07-01', [])['vacaciones-2026'], 'De 0 a 15: lo que se habilitó de la 2026 hasta hoy.');
+    // Las tres ayudas como funciones; un año que no sirve, la raya
+    assert.equal(textoSaldoDelArranque(8, 2026), 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.');
+    assert.equal(textoSaldoDeLosDias(20, 2025), 'De 0 a 20: los días de la 2025.');
+    assert.equal(textoSaldoSinDias(30), 'De 0 a 30, el máximo de una licencia.');
+    assert.equal(textoSaldoDeLosDias(20, 'x'), 'De 0 a 20: los días de la —.');
   });
 
   it('sin una modalidad o un arranque válidos, ninguno', () => {
@@ -2145,19 +2220,44 @@ describe('validarSaldoInicial', () => {
 
   it('cada clave es obligatoria, y el error va en su clave', () => {
     assert.deepEqual(validar({ ...SALDOS_PLANTA, 'vacaciones-2025': undefined }),
-      { datos: null, error: { campo: 'vacaciones-2025', mensaje: textoSaldo(30) } });
+      { datos: null, error: { campo: 'vacaciones-2025', mensaje: 'De 0 a 30, el máximo de una licencia.' } });
     for (const vacio of [null, '', '  ', 'x', true, [3]]) {
       assert.deepEqual(validar({ ...SALDOS_PLANTA, medica: vacio }).error, { campo: 'medica', mensaje: textoSaldo(25) });
     }
-    assert.deepEqual(validarSaldoInicial({}, CAMPOS).error, { campo: 'vacaciones-2024', mensaje: textoSaldo(30) });
+    assert.deepEqual(validarSaldoInicial({}, CAMPOS).error,
+      { campo: 'vacaciones-2024', mensaje: 'De 0 a 30, el máximo de una licencia.' });
   });
 
   it('de 0 al máximo, en días enteros', () => {
     assert.deepEqual(validar({ ...SALDOS_PLANTA, 'vacaciones-2026': 11 }).error,
-      { campo: 'vacaciones-2026', mensaje: 'Escribí un número de 0 a 10.' });
+      { campo: 'vacaciones-2026', mensaje: 'De 0 a 10: lo que se habilitó de la 2026 hasta hoy.' });
     assert.deepEqual(validar({ ...SALDOS_PLANTA, franquicias: 2.5 }).error, { campo: 'franquicias', mensaje: textoSaldo(42) });
     assert.deepEqual(validar({ ...SALDOS_PLANTA, familiar: -1 }).error, { campo: 'familiar', mensaje: textoSaldo(25) });
     assert.equal(validar({ ...SALDOS_PLANTA, 'vacaciones-2026': 0, franquicias: 42 }).error, null);
+  });
+
+  // El error de un campo con ayuda es su ayuda (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): dice de dónde sale el
+  // tope. Sin ayuda (vacía, solo espacios o lo que no es un texto), textoSaldo con su máximo, como siempre
+  it('el error de un campo con ayuda es su ayuda; sin ayuda, textoSaldo', () => {
+    const campos = camposDelSaldoInicial({ modalidad: 'planta', arranque: '2026-10-27', anios: [
+      { anio: 2025, dias_vacaciones: 20, estudios: null }, { anio: 2026, dias_vacaciones: 15, estudios: null }
+    ] });
+    const llenos = Object.fromEntries(campos.map(({ clave }) => [clave, 0]));
+    const error = (clave, valor, lista = campos) => validarSaldoInicial({ saldos: { ...llenos, [clave]: valor } }, lista).error;
+    assert.deepEqual(error('vacaciones-2026', 9),
+      { campo: 'vacaciones-2026', mensaje: 'De 0 a 8: lo que se habilitó de la 2026 hasta hoy.' });
+    assert.deepEqual(error('vacaciones-2025', 21), { campo: 'vacaciones-2025', mensaje: 'De 0 a 20: los días de la 2025.' });
+    assert.deepEqual(error('vacaciones-2024', -1),
+      { campo: 'vacaciones-2024', mensaje: 'De 0 a 30, el máximo de una licencia.' });
+    // Un número que no es entero, también con la ayuda
+    assert.deepEqual(error('vacaciones-2025', 2.5), { campo: 'vacaciones-2025', mensaje: 'De 0 a 20: los días de la 2025.' });
+    assert.equal(error('vacaciones-2025', 20), null);
+    assert.deepEqual(error('medica', 26), { campo: 'medica', mensaje: textoSaldo(25) });
+    for (const ayuda of ['', '   ', null, 7, undefined]) {
+      const sinAyuda = campos.map((campo) => (campo.clave === 'vacaciones-2025' ? { ...campo, ayuda } : campo));
+      assert.deepEqual(error('vacaciones-2025', 21, sinAyuda), { campo: 'vacaciones-2025', mensaje: textoSaldo(20) },
+        String(ayuda));
+    }
   });
 
   it('las horas no utilizadas, de a media hora', () => {
@@ -3489,6 +3589,11 @@ describe('nada tira', () => {
         textoSinNoUtilizadas(valor, valor, valor);
         textoHorarioSuperpuesto(valor, valor, valor);
         textoSaldo(valor);
+        textoSaldoDelArranque(valor, valor);
+        textoSaldoDeLosDias(valor, valor);
+        textoSaldoSinDias(valor);
+        textoDeLasMitades(2026, 20, valor);
+        textoDeLasMitades(2026, 20, { arranque: valor });
         textoAutorizadaDelFirmante(valor, valor);
         textoSuperpuestaConConfiguracion(valor, valor);
         textoNoPaso(valor);
@@ -3581,6 +3686,8 @@ describe('nada tira', () => {
         validarSaldoInicial({ saldos: valor }, campos);
         validarSaldoInicial({ saldos: { ...SALDOS_PLANTA, franquicias: valor } }, campos);
         validarSaldoInicial({ saldos: SALDOS_PLANTA }, [valor, { clave: valor, maximo: valor, paso: valor }]);
+        validarSaldoInicial({ saldos: { 'vacaciones-2025': 99 } },
+          [{ clave: 'vacaciones-2025', maximo: 20, paso: 1, ayuda: valor }]);
         validarAnio(valor, valor, valor);
         validarAnio(2026, { dias_vacaciones: valor, estudios: valor }, HOY);
         fueraDeLaModalidad(valor, valor);

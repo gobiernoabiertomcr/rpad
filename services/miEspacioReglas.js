@@ -247,6 +247,13 @@ export const textoHorarioSuperpuesto = (desde, hasta, dia) =>
   `Se superpone con las horas extras de ${horaTexto(desde)} a ${horaTexto(hasta)} `
   + `${typeof dia === 'string' && Object.hasOwn(DIA_DEL_HORARIO, dia) ? DIA_DEL_HORARIO[dia] : 'de ese día'}.`;
 export const textoSaldo = (maximo) => `Escribí un número de 0 a ${numeroTexto(maximo)}.`;
+// De dónde sale el tope de cada licencia ordinaria del saldo inicial, en la ayuda del campo y en su error (spec
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): la del año del arranque, lo que se habilitó (la primera mitad); la de un
+// año anterior con sus días cargados, esos días; y la de uno sin días cargados, el máximo de una licencia
+export const textoSaldoDelArranque = (maximo, anio) =>
+  `De 0 a ${numeroTexto(maximo)}: lo que se habilitó de la ${anioTexto(anio)} hasta hoy.`;
+export const textoSaldoDeLosDias = (maximo, anio) => `De 0 a ${numeroTexto(maximo)}: los días de la ${anioTexto(anio)}.`;
+export const textoSaldoSinDias = (maximo) => `De 0 a ${numeroTexto(maximo)}, el máximo de una licencia.`;
 
 // Los textos del paso a Configuración → Licencias (spec, sección 6), tal cual: textoSuperpuestaConConfiguracion,
 // textoNoPaso y TEXTO_NO_DIA_ENTERO no terminan en punto
@@ -314,12 +321,21 @@ const fechaSinCeros = (fecha) => `${Number(fecha.slice(8, 10))}/${Number(fecha.s
  * en dos mitades: 10 el 1/7/2026 y 10 el 1/1/2027 (con 15, 8 y 7; con 25, 13 y 12). Cada licencia vence el 31/12 de dos años
  * después.» Las fechas son las de `habilitaciones` y las mitades, las de `mitadesDe` (con un número impar, la primera es la
  * mayor). Unos días que no son de `DIAS_VACACIONES`, o un año que no sirve, null.
+ * Con `opciones.arranque` (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8 y 7, decisión 3): si es del año de la
+ * licencia, desde el 1/7, la primera mitad ya se habilitó y es el saldo que se escribe en «De la AAAA» del mismo modal, así que
+ * el texto lo dice sin número: «La primera mitad es lo que pongas en «De la 2026», más abajo. El 1/1/2027 se habilitan 10.» (la
+ * segunda mitad, la de `mitadesDe`). Con el arranque antes del 1/7, de otro año, o sin uno que sea una fecha, el de siempre.
  */
-export const textoDeLasMitades = (anio, dias) => {
+export const textoDeLasMitades = (anio, dias, opciones) => {
   const fechas = habilitaciones(anio);
   const total = numeroDe(dias);
   if (fechas === null || !DIAS_VACACIONES.includes(total)) return null;
   const [primera, segunda] = mitadesDe(total);
+  const arranque = esObjeto(opciones) ? opciones.arranque : null;
+  if (esFechaIso(arranque) && arranque >= fechas[0] && arranque < fechas[1]) {
+    return `La primera mitad es lo que pongas en «De la ${anioValido(anio)}», más abajo. El ${fechaSinCeros(fechas[1])} se `
+      + `habilitan ${segunda}.`;
+  }
   return `Se habilitan en dos mitades: ${primera} el ${fechaSinCeros(fechas[0])} y ${segunda} el ${fechaSinCeros(fechas[1])} `
     + '(con 15, 8 y 7; con 25, 13 y 12). Cada licencia vence el 31/12 de dos años después.';
 };
@@ -1475,34 +1491,48 @@ const DIAS_SIN_ELEGIR = 30;
 const MAXIMO_NO_UTILIZADAS = 200;
 
 /**
- * Los campos de «Para arrancar»: `[{ clave, concepto, anio, rotulo, maximo, paso }]`, en el orden del modal. `arranque` es
- * la fecha del arranque o, si todavía no hay, hoy; su año es A. `anio` es el de la licencia en las vacaciones y A en el
- * resto.
+ * Los campos de «Para arrancar»: `[{ clave, concepto, anio, rotulo, maximo, paso, ayuda }]`, en el orden del modal.
+ * `arranque` es la fecha del arranque o, si todavía no hay, hoy; su año es A. `anio` es el de la licencia en las vacaciones y
+ * A en el resto.
  * - Lo que quedaba sin usar de las licencias ordinarias no vencidas: `vacaciones-<A−2>` y `vacaciones-<A−1>`, hasta los
  *   días vigentes de ese año (`anioVigente`) o, si no hay, 30; y solo con el arranque desde el 1/7, cuando ya se habilitó
  *   la primera mitad, `vacaciones-<A>`, hasta esa mitad.
  * - Lo que ya se usó en el año: en planta, las horas de franquicia (42); los días de estudios, hasta el tope del año (no va
  *   con «No estudio»); y los de atención médica y de grupo familiar (25).
  * - En contrato, las horas no utilizadas previamente, hasta 200 y de a media hora (`paso` 0,5; el resto, 1).
+ * `ayuda` dice de dónde sale el máximo de cada licencia ordinaria (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8),
+ * debajo del campo y en su error: la de A, `textoSaldoDelArranque`; la de un año anterior con sus días cargados (también
+ * los que valen heredados), `textoSaldoDeLosDias`; sin días cargados, `textoSaldoSinDias`. Los demás campos, ''.
  * Sin una modalidad o un arranque válidos, [].
  */
 export const camposDelSaldoInicial = (datos) => {
   const { modalidad, arranque, anios } = esObjeto(datos) ? datos : {};
   if (!MODALIDADES.includes(modalidad) || !esFechaIso(arranque)) return [];
   const anio = anioDe(arranque);
-  const campo = (clave, concepto, delAnio, rotulo, maximo, paso = 1) =>
-    ({ clave, concepto, anio: delAnio, rotulo, maximo, paso });
-  const deVacaciones = (delAnio, rotulo, maximo) => campo(`vacaciones-${delAnio}`, 'vacaciones', delAnio, rotulo, maximo);
-  const diasDe = (delAnio) => {
+  const campo = (clave, concepto, delAnio, rotulo, maximo, paso = 1, ayuda = '') =>
+    ({ clave, concepto, anio: delAnio, rotulo, maximo, paso, ayuda });
+  const deVacaciones = (delAnio, rotulo, maximo, ayuda) =>
+    campo(`vacaciones-${delAnio}`, 'vacaciones', delAnio, rotulo, maximo, 1, ayuda);
+  // Los días cargados que valen para un año, o null si no hay
+  const elegidosDe = (delAnio) => {
     const dias = anioVigente(anios, delAnio)?.dias_vacaciones;
-    return DIAS_VACACIONES.includes(dias) ? dias : DIAS_SIN_ELEGIR;
+    return DIAS_VACACIONES.includes(dias) ? dias : null;
+  };
+  const deUnAnioAnterior = (delAnio, rotulo) => {
+    const dias = elegidosDe(delAnio);
+    return dias === null
+      ? deVacaciones(delAnio, rotulo, DIAS_SIN_ELEGIR, textoSaldoSinDias(DIAS_SIN_ELEGIR))
+      : deVacaciones(delAnio, rotulo, dias, textoSaldoDeLosDias(dias, delAnio));
   };
 
   const campos = [
-    deVacaciones(anio - 2, `Sin usar de la licencia ${anio - 2}`, diasDe(anio - 2)),
-    deVacaciones(anio - 1, `De la ${anio - 1}`, diasDe(anio - 1))
+    deUnAnioAnterior(anio - 2, `Sin usar de la licencia ${anio - 2}`),
+    deUnAnioAnterior(anio - 1, `De la ${anio - 1}`)
   ];
-  if (arranque >= fechaDe(anio, '07-01')) campos.push(deVacaciones(anio, `De la ${anio}`, mitadesDe(diasDe(anio))[0]));
+  if (arranque >= fechaDe(anio, '07-01')) {
+    const [primera] = mitadesDe(elegidosDe(anio) ?? DIAS_SIN_ELEGIR);
+    campos.push(deVacaciones(anio, `De la ${anio}`, primera, textoSaldoDelArranque(primera, anio)));
+  }
   if (modalidad === 'planta') campos.push(campo('franquicias', 'franquicias', anio, 'Horas de franquicia', TOPES.franquicia));
   const estudios = topeDe('estudios', anio, anios);
   if (estudios !== null) campos.push(campo('estudios', 'estudios', anio, 'Días de estudios', estudios));
@@ -1521,8 +1551,9 @@ export const camposDelSaldoInicial = (datos) => {
  * Valida el saldo inicial (`PUT /saldo-inicial`): `entrada.saldos` trae un número por cada clave de `campos` (los de
  * `camposDelSaldoInicial`), de 0 a su máximo, entero o, con `paso` 0,5, de a media hora (un número como texto sirve:
  * '6.5'). Devuelve `{ datos, error }`: `datos` es `[{ concepto, anio, cantidad }]`, en el orden de los campos; `error`, null
- * o `{ campo: <la clave>, mensaje }` del primero que no sirve (`textoSaldo` con su máximo si falta, no es un número o se
- * pasa; `saldoMedias` si no es de a media hora), y entonces `datos` es null. Lo que no es un campo no se guarda.
+ * o `{ campo: <la clave>, mensaje }` del primero que no sirve (si falta, no es un número, se pasa o no es entero, la `ayuda`
+ * del campo si tiene texto —spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8— y si no, `textoSaldo` con su máximo;
+ * `saldoMedias` si no es de a media hora), y entonces `datos` es null. Lo que no es un campo no se guarda.
  */
 export const validarSaldoInicial = (entrada, campos) => {
   const saldos = esObjeto(entrada) && esObjeto(entrada.saldos) ? entrada.saldos : {};
@@ -1530,12 +1561,13 @@ export const validarSaldoInicial = (entrada, campos) => {
   for (const campo of listaDe(campos)) {
     const maximo = esObjeto(campo) ? numeroDe(campo.maximo) : NaN;
     if (typeof campo?.clave !== 'string' || !Number.isFinite(maximo)) continue;
-    const { clave, concepto, anio, paso } = campo;
+    const { clave, concepto, anio, paso, ayuda } = campo;
+    const tope = typeof ayuda === 'string' && ayuda.trim() !== '' ? ayuda : textoSaldo(maximo);
     const cantidad = Object.hasOwn(saldos, clave) ? numeroDe(saldos[clave]) : NaN;
-    if (!(cantidad >= 0 && cantidad <= maximo)) return rechazo(clave, textoSaldo(maximo));
+    if (!(cantidad >= 0 && cantidad <= maximo)) return rechazo(clave, tope);
     const enMedias = paso === 0.5;
     if (!Number.isInteger(enMedias ? cantidad * 2 : cantidad)) {
-      return rechazo(clave, enMedias ? MENSAJES_MI_ESPACIO.saldoMedias : textoSaldo(maximo));
+      return rechazo(clave, enMedias ? MENSAJES_MI_ESPACIO.saldoMedias : tope);
     }
     datos.push({ concepto, anio, cantidad });
   }

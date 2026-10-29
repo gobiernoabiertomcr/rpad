@@ -56,7 +56,7 @@
  * Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad: los mensajes y
  * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), en la planilla horasDelDiaDeLaPlanilla (horasDeLaSalida,
  * con el tipo del día que manda el servidor), enDiasDeFranco, textoDeLaSumaDelMes y erroresDeLaPlanilla (los pasos 3 a 7 de
- * validarSalida), camposConLoElegido (camposDelSaldoInicial), las de
+ * validarSalida), camposConLoElegido (camposDelSaldoInicial, con la ayuda de textoSaldoDelArranque), las de
  * Configuración (efectoEnNotas, textoSinAuditor, textoAusenciasAutorizado y parametrosSinAuditor, de usuarios.js) y, en la agenda,
  * DIAS_DE_PROXIMOS (services/miEspacioEventosReglas.js), diaLargoDe (diaLargo) y tituloDelMes (mesTitulo, los dos de
  * services/miEspacioResumen.js), y en el evento, las de services/miEspacioEventosReglas.js: MENSAJES_EVENTO, LARGO_TITULO_EVENTO,
@@ -725,6 +725,10 @@ const numeroConComa = (valor) => {
 };
 // Copia de textoSaldo: «Escribí un número de 0 a 30.»
 const textoSaldo = (maximo) => `Escribí un número de 0 a ${numeroConComa(maximo)}.`;
+// Copia de textoSaldoDelArranque (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): la ayuda del campo de la licencia del
+// año del arranque, la única que cambia con los días que se eligen en el modal (camposConLoElegido). Las demás llegan del servidor
+const textoSaldoDelArranque = (maximo, anio) =>
+  `De 0 a ${numeroConComa(maximo)}: lo que se habilitó de la ${String(anio)} hasta hoy.`;
 
 // Copia de horasDe: las horas de un horario 'HH:MM' de a media hora; con hasta antes que desde, pasa la medianoche (+24 h). null
 // si son iguales o alguna no es una hora en punto o y media
@@ -1545,21 +1549,25 @@ function htmlDeLaPlanilla(planilla, estado) {
 /**
  * Los campos de «Para arrancar» (los de GET /saldo-inicial, que arma camposDelSaldoInicial con lo guardado) con lo que se elige
  * en el modal antes de guardarlo, si el saldo es del año del modal (`anio`; el de los campos es el de su `medica`): el máximo de
- * las vacaciones del año es la primera mitad de los días elegidos (con un número impar, la mayor), y el campo de los estudios
- * está solo si estudia, hasta los días de su carrera, antes de la atención médica. Cada campo conserva su `valor`.
+ * las vacaciones del año es la primera mitad de los días elegidos (con un número impar, la mayor), con su ayuda
+ * (textoSaldoDelArranque; spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8), y el campo de los estudios está solo si
+ * estudia, hasta los días de su carrera y sin ayuda, antes de la atención médica. Cada campo conserva su `valor`; las ayudas de
+ * los años anteriores no dependen de lo elegido y quedan como llegaron.
  */
 function camposConLoElegido(campos, { anio, dias, estudios } = {}) {
   const lista = listaDe(campos);
   if (!Number.isInteger(anio) || lista.find((campo) => campo.concepto === 'medica')?.anio !== anio) return lista;
+  const primera = Math.ceil(dias / 2);
   const conDias = DIAS_VACACIONES.includes(dias)
-    ? lista.map((campo) => (campo.clave === `vacaciones-${anio}` ? { ...campo, maximo: Math.ceil(dias / 2) } : campo))
+    ? lista.map((campo) => (campo.clave === `vacaciones-${anio}`
+      ? { ...campo, maximo: primera, ayuda: textoSaldoDelArranque(primera, anio) } : campo))
     : lista;
   const sinEstudios = conDias.filter((campo) => campo.clave !== 'estudios');
   if (typeof estudios !== 'string' || !Object.hasOwn(DIAS_ESTUDIOS, estudios)) return sinEstudios;
   const antes = conDias.find((campo) => campo.clave === 'estudios');
   const delCampo = {
     clave: 'estudios', concepto: 'estudios', anio, rotulo: 'Días de estudios', maximo: DIAS_ESTUDIOS[estudios], paso: 1,
-    valor: antes?.valor ?? null
+    ayuda: '', valor: antes?.valor ?? null
   };
   const medica = sinEstudios.findIndex((campo) => campo.concepto === 'medica');
   return [...sinEstudios.slice(0, medica), delCampo, ...sinEstudios.slice(medica)];
@@ -1570,17 +1578,18 @@ const valoresDelSaldo = (campos) => Object.fromEntries(listaDe(campos)
   .map((campo) => [campo.clave, campo.valor === null || campo.valor === undefined ? '' : numeroConComa(campo.valor)]));
 
 // Los errores del saldo inicial (`{ clave: mensaje }`), como validarSaldoInicial: de 0 a su máximo, entero o, con paso 0,5, de a
-// media hora
+// media hora. El mensaje es la ayuda del campo si tiene texto (de dónde sale el tope) y, si no, textoSaldo
 function erroresDelSaldo(valores, campos) {
   const errores = {};
   for (const campo of listaDe(campos)) {
     const maximo = Number(campo.maximo);
     if (typeof campo.clave !== 'string' || !Number.isFinite(maximo)) continue;
+    const tope = conTexto(campo.ayuda) ? campo.ayuda : textoSaldo(maximo);
     const cantidad = numeroDelCampo(deMapa(valores, campo.clave, ''));
     const enMedias = campo.paso === 0.5;
-    if (cantidad === null || !(cantidad >= 0 && cantidad <= maximo)) errores[campo.clave] = textoSaldo(maximo);
+    if (cantidad === null || !(cantidad >= 0 && cantidad <= maximo)) errores[campo.clave] = tope;
     else if (!Number.isInteger(enMedias ? cantidad * 2 : cantidad)) {
-      errores[campo.clave] = enMedias ? MENSAJES_FORMULARIOS.saldoMedias : textoSaldo(maximo);
+      errores[campo.clave] = enMedias ? MENSAJES_FORMULARIOS.saldoMedias : tope;
     }
   }
   return errores;
@@ -1610,12 +1619,17 @@ function htmlDeEstudios(elegidos) {
     + `<span><b>${nombre}</b><small>${detalle}</small></span></label>`).join('');
 }
 
-// Un campo de «Para arrancar», con su error
+// Un campo de «Para arrancar», con su ayuda (de dónde sale el tope, la que manda el servidor: spec
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8) debajo y antes de su error, los dos en su aria-describedby; sin ayuda, solo
+// el error
 const htmlDeCampoDelSaldo = (campo, valores) => {
   const id = `ms-campo-${String(campo.clave)}`;
+  const conAyuda = conTexto(campo.ayuda);
   return `<div class="form-group"><label class="form-label" for="${esc(id)}">${esc(campo.rotulo)}</label>`
     + `<input type="text" inputmode="decimal" class="form-input" id="${esc(id)}" data-saldo="${esc(campo.clave)}" `
-    + `value="${esc(deMapa(valores, campo.clave, ''))}" autocomplete="off" aria-describedby="${esc(id)}-error">`
+    + `value="${esc(deMapa(valores, campo.clave, ''))}" autocomplete="off" `
+    + `aria-describedby="${conAyuda ? `${esc(id)}-ayuda ` : ''}${esc(id)}-error">`
+    + (conAyuda ? `<p class="form-hint" id="${esc(id)}-ayuda">${esc(campo.ayuda)}</p>` : '')
     + `<p class="form-error" id="${esc(id)}-error" hidden></p></div>`;
 };
 

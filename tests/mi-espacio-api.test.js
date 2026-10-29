@@ -310,10 +310,15 @@ describe('el saldo inicial', () => {
 describe('el año', () => {
   const TEXTO_CON_20 = (anio) => `Se habilitan en dos mitades: 10 el 1/7/${anio} y 10 el 1/1/${anio + 1} (con 15, 8 y 7; con 25, `
     + '13 y 12). Cada licencia vence el 31/12 de dos años después.';
-  // Un texto por cada valor de DIAS_VACACIONES, para que el modal muestre el del botón elegido sin recalcular
-  const textosDelAnio = (anio) => Object.fromEntries(DIAS_VACACIONES.map(dias => [String(dias), textoDeLasMitades(anio, dias)]));
+  // Un texto por cada valor de DIAS_VACACIONES, para que el modal muestre el del botón elegido sin recalcular. Con el arranque
+  // de la persona o, sin arranque, con hoy, como los campos del saldo inicial (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga,
+  // 3.8)
+  const textosDelAnio = (anio, arranque = hoy) =>
+    Object.fromEntries(DIAS_VACACIONES.map(dias => [String(dias), textoDeLasMitades(anio, dias, { arranque })]));
 
   it('los días y los estudios del año, con las mitades', async () => {
+    // Con el arranque antes del 1/7, el texto de siempre
+    await conArranque('adminA', '2026-03-10');
     await conAnio('adminA', 2026, 20, 'universitario');
     const res = await api.get('/mi-espacio/anio/2026', como('adminA'));
     assert.equal(res.status, 200, JSON.stringify(res.body));
@@ -321,7 +326,7 @@ describe('el año', () => {
       anio: 2026, dias_vacaciones: 20, estudios: 'universitario', heredado: false,
       texto_mitades: 'Se habilitan en dos mitades: 10 el 1/7/2026 y 10 el 1/1/2027 (con 15, 8 y 7; con 25, 13 y 12). Cada '
         + 'licencia vence el 31/12 de dos años después.',
-      textos_mitades: textosDelAnio(2026)
+      textos_mitades: textosDelAnio(2026, '2026-03-10')
     });
     assert.deepEqual(Object.keys(res.body.data.textos_mitades), ['10', '15', '20', '25', '30']);
     assert.equal(res.body.data.textos_mitades['20'], res.body.data.texto_mitades);
@@ -347,7 +352,26 @@ describe('el año', () => {
       anio: ANIO, dias_vacaciones: null, estudios: null, heredado: false, texto_mitades: null,
       textos_mitades: textosDelAnio(ANIO)
     });
-    assert.equal(res.body.data.textos_mitades['20'], TEXTO_CON_20(ANIO));
+    // Sin arranque, con hoy: desde el 1/7, la primera mitad de este año es lo que se pone en «De la AAAA»
+    assert.equal(res.body.data.textos_mitades['20'], hoy >= `${ANIO}-07-01`
+      ? `La primera mitad es lo que pongas en «De la ${ANIO}», más abajo. El 1/1/${ANIO + 1} se habilitan 10.`
+      : TEXTO_CON_20(ANIO));
+  });
+
+  // En el año del arranque, con el arranque desde el 1/7, la primera mitad es el saldo que se escribe en «De la AAAA» (spec
+  // 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): el texto lo dice sin número; los demás años, como siempre
+  it('en el año del arranque, desde el 1/7, la primera mitad es lo que se pone en «De la AAAA»', async () => {
+    await conArranque('adminA', '2026-10-27');
+    await conAnio('adminA', 2026, 15);
+    const res = await api.get('/mi-espacio/anio/2026', como('adminA'));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.data.texto_mitades,
+      'La primera mitad es lo que pongas en «De la 2026», más abajo. El 1/1/2027 se habilitan 7.');
+    assert.deepEqual(res.body.data.textos_mitades, textosDelAnio(2026, '2026-10-27'));
+    assert.equal(res.body.data.textos_mitades['20'],
+      'La primera mitad es lo que pongas en «De la 2026», más abajo. El 1/1/2027 se habilitan 10.');
+    const siguiente = await api.get('/mi-espacio/anio/2027', como('adminA'));
+    assert.equal(siguiente.body.data.textos_mitades['20'], TEXTO_CON_20(2027));
   });
 });
 
@@ -2105,9 +2129,16 @@ describe('guardar el saldo inicial', () => {
     const casos = [
       [{ saldos: sinMedica }, rechazo(textoSaldo(25), 'medica')],
       [{ saldos: { ...completos, franquicias: 43 } }, rechazo(textoSaldo(42), 'franquicias')],
-      [{}, rechazo(textoSaldo(campos[0].maximo), campos[0].clave)]
+      // Un campo con ayuda (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): su error es la ayuda
+      [{}, rechazo(campos[0].ayuda, campos[0].clave)]
     ];
+    // La licencia de este año, desde el 1/7 (antes, su campo no va)
+    if (campos.some(campo => campo.clave === `vacaciones-${ANIO}`)) {
+      casos.push([{ saldos: { ...completos, [`vacaciones-${ANIO}`]: 11 } },
+        rechazo(`De 0 a 10: lo que se habilitó de la ${ANIO} hasta hoy.`, `vacaciones-${ANIO}`)]);
+    }
     assert.equal(casos[0][1].error, 'Escribí un número de 0 a 25.');
+    assert.equal(casos[2][1].error, 'De 0 a 30, el máximo de una licencia.');
     for (const [cuerpo, esperado] of casos) {
       const res = await api.put('/mi-espacio/saldo-inicial', cuerpo, como('adminA'));
       assert.equal(res.status, 400, JSON.stringify(cuerpo));
