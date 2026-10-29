@@ -5,9 +5,9 @@
 // año, así una segunda corrida (o dos a la vez) no la pisa. La API de métricas y el Informe anual la leen (leerFoto, aniosConFoto)
 // en lugar de recalcular el año con la base de hoy.
 //
-// datos (un JSON): { version, casos, vistas, cintas, contexto, trabajo, areas, etapas, generada }. Todos los números ya van calculados:
-// quien lee la foto (la API de métricas, el Informe anual, el Ciclo de vida del dato) no recalcula nada, así que un cambio posterior en
-// las reglas no reescribe un año pasado. Se lee así: datos.vistas[clave], datos.cintas[clave], datos.trabajo[estadistico],
+// datos (un JSON): { version, casos, vistas, cintas, contexto, trabajo, areas, etapas, feriados, generada }. Todos los números ya van
+// calculados: quien lee la foto (la API de métricas, el Informe anual, el Ciclo de vida del dato) no recalcula nada, así que un cambio
+// posterior en las reglas no reescribe un año pasado. Se lee así: datos.vistas[clave], datos.cintas[clave], datos.trabajo[estadistico],
 // datos.contexto y, las etapas, con etapasDeLaFoto.
 // - version: VERSION_DE_LA_FOTO, la forma de estos datos;
 // - casos: los casos de casosDe (la forma de siempre) que tocan el año (casosQueTocanElAnio), para saber de dónde salió cada número
@@ -26,9 +26,15 @@
 //   una sola vez (ya traen los días hábiles y los corridos, la mediana y el promedio). Es opcional: VERSION_DE_LA_FOTO sigue en 1 y
 //   PARTES_DE_LA_FOTO no la exige, porque una foto sacada antes no la tiene (etapasDeLaFoto la calcula con sus casos). Si calcularlas
 //   falla, la foto sale igual, sin ellas (etapasParaLaFoto): el reporte nuevo nunca frena la foto;
+// - feriados: los días que la tabla de feriados sacó de los hábiles (spec 2026-10-27-feriados-en-notas, 5), del 01/01/2025 al 31/12
+//   del año siguiente (las filas de los casos cuentan días hasta vencimientos de ese año), de feriadosDelCalendario: con ellos,
+//   etapasDeLaFoto vuelve a armar el calendario con el que se sacó (calendarioDeFechas). Es opcional, como `etapas`: una foto sacada
+//   con el código anterior no la tiene (contó con los 9 fijos) y PARTES_DE_LA_FOTO no la exige;
 // - generada: cuándo se sacó, 'AAAA-MM-DD HH:MM:SS' en hora argentina.
 // Todo se calcula con hoy = 31/12 y con todos los datasets (nunca destildados): cuenta lo que tiene fecha del año aunque se haya
-// registrado entre el 1/1 y el 10/1 (por ejemplo, una carga del 30/12 aprobada el 05/01), y nada de lo que pasó después del 31/12.
+// registrado entre el 1/1 y el 10/1 (por ejemplo, una carga del 30/12 aprobada el 05/01), y nada de lo que pasó después del 31/12. Los
+// días hábiles se cuentan con el calendario de la tabla de feriados (con los 9 fijos): si la tabla no se puede leer, la foto no se saca
+// y se reintenta en la corrida siguiente (una foto no se modifica nunca: con los 9 fijos quedaría así para siempre).
 import pool from '../config/database.js';
 import { fuentesDe } from './seguimientoDatos.js';
 import {
@@ -36,7 +42,9 @@ import {
 } from './metricasReglas.js';
 import { cintasDeLaVista } from './metricasCinta.js';
 import { DIA_DE_LA_FOTO, fotoQueToca } from './metricasOpciones.js';
-import { ahoraArgentina, hoyArgentina } from './notasDigitalesCalendario.js';
+import { ahoraArgentina, hoyArgentina, esFechaIso, CALENDARIO_FIJO } from './notasDigitalesCalendario.js';
+import { FECHA_MINIMA_FERIADO, exigirLaTabla, feriadosDelCalendario, calendarioDeFechas } from './feriadosReglas.js';
+import { leerCalendario } from './feriadosDatos.js';
 
 // Desde qué día del año ('MM-DD') se saca la foto del año anterior (el 10 de enero): vive en services/metricasOpciones.js, que es puro
 export { DIA_DE_LA_FOTO };
@@ -50,7 +58,7 @@ export const claveDeLaVista = (estadistico, dias) => `${estadistico}-${dias}`;
 // Las etapas del Ciclo de vida del dato para la foto, como una parte que se suma a sus datos: { etapas } con las de `calcular`
 // (etapasDe, que nunca tira; se recibe para poder probar la falla) o, si calcularlas tira, {} y el error a console.error. Así un error
 // del reporte nuevo nunca frena la foto del 31/12, que no se vuelve a sacar: sale sin `etapas` y etapasDeLaFoto las calcula con sus
-// `casos` al leerla. `opciones`: { anio, al }, las de etapasDe
+// `casos` (y sus `feriados`) al leerla. `opciones`: { anio, al, calendario }, las de etapasDe
 export const etapasParaLaFoto = (casos, opciones, calcular = etapasDe) => {
   try {
     return { etapas: calcular(casos, opciones) };
@@ -61,17 +69,19 @@ export const etapasParaLaFoto = (casos, opciones, calcular = etapasDe) => {
 };
 
 // Los datos de la foto de `anio` al 31/12, con las fuentes de todos los datasets (el Map de fuentesDe). No toca la base.
-// `generada`: el momento en que se saca.
-export const datosDeLaFoto = (fuentesPorDataset, { anio, generada }) => {
+// `generada`: el momento en que se saca; `calendario`: el de los días hábiles (el de la corrida, con la tabla; sin él, o con null, el
+// de los 9 fijos), que reciben los casos (el día del aviso de la regla), las vistas y las etapas, y del que salen los `feriados`.
+export const datosDeLaFoto = (fuentesPorDataset, { anio, generada, calendario }) => {
+  const delCalendario = calendario ?? CALENDARIO_FIJO;
   const al = `${anio}-12-31`;
-  const casos = casosDe(fuentesPorDataset, { hoy: al });
+  const casos = casosDe(fuentesPorDataset, { hoy: al, calendario: delCalendario });
   const delAnio = casosQueTocanElAnio(casos, { anio, al });
   const vistas = {};
   const cintas = {};
   for (const estadistico of ESTADISTICOS) {
     for (const dias of DIAS) {
       const clave = claveDeLaVista(estadistico, dias);
-      vistas[clave] = vistaDe(delAnio, { anio, al, estadistico, dias, sin: [] });
+      vistas[clave] = vistaDe(delAnio, { anio, al, estadistico, dias, sin: [], calendario: delCalendario });
       cintas[clave] = cintasDeLaVista(vistas[clave], { estadistico, dias });
     }
   }
@@ -84,7 +94,8 @@ export const datosDeLaFoto = (fuentesPorDataset, { anio, generada }) => {
     trabajo: Object.fromEntries(ESTADISTICOS.map((estadistico) =>
       [estadistico, trabajoDelAnio(fuentesPorDataset, casos, { anio, al, estadistico })])),
     areas: areasYTemas(fuentesPorDataset, { anio, al }),
-    ...etapasParaLaFoto(delAnio, { anio, al }),
+    ...etapasParaLaFoto(delAnio, { anio, al, calendario: delCalendario }),
+    feriados: feriadosDelCalendario(delCalendario, FECHA_MINIMA_FERIADO, `${anio + 1}-12-31`),
     generada
   };
 };
@@ -94,19 +105,24 @@ export const datosDeLaFoto = (fuentesPorDataset, { anio, generada }) => {
 // falta ninguna (con el último año que ya la tiene) o si otra corrida la guardó mientras esta la calculaba (el INSERT IGNORE no la
 // pisa); null si hoy no toca (antes del 10/01 del primer año que la tiene que tener: en 2026 no hay foto de 2025 que sacar). Tira si
 // algo falla (leer las fuentes o guardar): la corrida lo registra y la siguiente la vuelve a intentar.
-export const sacarFotoSiCorresponde = async ({ hoy = hoyArgentina() } = {}) => {
+// `calendario`: el de la corrida (una sola lectura de la tabla por corrida); sin él, o con null, lo lee. Solo se mira si toca sacar
+// una, y tiene que ser el de la tabla: si cayó a los 9 fijos, tira con MENSAJE_METRICAS_SIN_FERIADOS (exigirLaTabla) antes de leer
+// las fuentes, sin guardar nada (la corrida lo anota y la siguiente la vuelve a intentar).
+export const sacarFotoSiCorresponde = async ({ hoy = hoyArgentina(), calendario } = {}) => {
   const toca = fotoQueToca({ hoy, aniosConFoto: await aniosConFoto() });
   if (toca === null) return null;
   const { anio } = toca;
   if (!toca.falta) return { anio, ya: true };
-  const datos = datosDeLaFoto(await fuentesDe(null), { anio, generada: ahoraArgentina() });
+  const conLaTabla = exigirLaTabla(calendario ?? await leerCalendario());
+  const datos = datosDeLaFoto(await fuentesDe(null), { anio, generada: ahoraArgentina(), calendario: conLaTabla });
   const [resultado] = await pool.query(
     'INSERT IGNORE INTO metricas_fotos (anio, al, datos) VALUES (?, ?, ?)', [anio, `${anio}-12-31`, JSON.stringify(datos)]
   );
   return resultado.affectedRows === 1 ? { anio, sacada: true } : { anio, ya: true };
 };
 
-// Las partes de `datos` que son objetos (además de `casos`, una lista). `etapas` no está: es opcional (la lee etapasDeLaFoto)
+// Las partes de `datos` que son objetos (además de `casos`, una lista). `etapas` y `feriados` no están: son opcionales (las lee
+// etapasDeLaFoto)
 const PARTES_DE_LA_FOTO = Object.freeze(['vistas', 'cintas', 'contexto', 'trabajo', 'areas']);
 const esObjeto = (valor) => Boolean(valor) && typeof valor === 'object' && !Array.isArray(valor);
 
@@ -138,14 +154,30 @@ export const leerFoto = async (anio) => {
   return { anio: Number(fila.anio), al: fila.al, datos: datosLeidos(fila.datos, numero) };
 };
 
+// El calendario con el que se sacó una foto (spec 2026-10-27-feriados-en-notas, 5): sin `feriados` (sacada con el código anterior),
+// el de los 9 fijos; con una lista de fechas, el que se arma con ellas. null si lo guardado no es una lista de fechas
+const calendarioDeLaFoto = (datos) => {
+  if (datos.feriados === undefined) return CALENDARIO_FIJO;
+  return Array.isArray(datos.feriados) && datos.feriados.every(esFechaIso) ? calendarioDeFechas(datos.feriados) : null;
+};
+
 // Las etapas del Ciclo de vida del dato de una foto (spec 2026-10-25-ciclo-de-vida-del-dato, 3.3), lo mismo que devuelve etapasDe:
-// las guardadas, tal cual (Ruling 16: no se recalculan). Una foto sacada con el código anterior no las tiene: se calculan con los
-// casos que guardó, al 31/12 (son exactamente las entradas de las cifras: con el mismo código dan lo que habría guardado). Es la única
-// excepción a Ruling 16 y solo cubre esas fotos. Tira si no hay etapas que leer (lo guardado no son etapas, o no se pueden calcular),
-// como una foto que no se puede leer. `foto`: la de leerFoto ({ anio, datos }). No toca la base.
+// las guardadas, tal cual (Ruling 16: no se recalculan, y los `feriados` no se miran). Una foto sin ellas (sacada con el código
+// anterior, o en la que calcularlas falló: etapasParaLaFoto) las calcula con los casos que guardó, al 31/12, y con el calendario con
+// el que se sacó (calendarioDeLaFoto: el de sus `feriados` o, sin ellos, el de los 9 fijos): son exactamente las entradas de las
+// cifras, así que con el mismo código dan lo que habría guardado. Es la única excepción a Ruling 16 y solo cubre esas fotos. Tira si no
+// hay etapas que leer (lo guardado no son etapas, unos `feriados` que no son una lista de fechas, o no se pueden calcular), como una
+// foto que no se puede leer. `foto`: la de leerFoto ({ anio, datos }). No toca la base.
 export const etapasDeLaFoto = ({ anio, datos }) => {
-  const etapas = datos.etapas !== undefined ? datos.etapas : etapasDe(datos.casos, { anio, al: `${anio}-12-31` });
-  if (!esObjeto(etapas)) throw new Error(`La foto de ${anio} no se puede leer`);
+  const noSePuedeLeer = () => new Error(`La foto de ${anio} no se puede leer`);
+  if (datos.etapas !== undefined) {
+    if (!esObjeto(datos.etapas)) throw noSePuedeLeer();
+    return datos.etapas;
+  }
+  const calendario = calendarioDeLaFoto(datos);
+  if (calendario === null) throw noSePuedeLeer();
+  const etapas = etapasDe(datos.casos, { anio, al: `${anio}-12-31`, calendario });
+  if (!esObjeto(etapas)) throw noSePuedeLeer();
   return etapas;
 };
 

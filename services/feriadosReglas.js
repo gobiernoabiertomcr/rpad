@@ -2,8 +2,8 @@
  * Los feriados (spec 2026-10-26-feriados, secciones 1 a 4): las reglas de la tabla `feriados`, puras (sin pool ni Date
  * local: las fechas son texto 'AAAA-MM-DD' y se comparan como texto, y hoy llega por parámetro, `hoyArgentina()` en el
  * servidor). Ninguna función tira error: una entrada rara da null, false, 0, una lista vacía, un Set vacío o el error de su
- * campo. La excepción son las derivadas del calendario que arma `calendarioCon`, que tiran como las de `CALENDARIO_FIJO`
- * (calendarioCon mismo no tira).
+ * campo. Las excepciones son las derivadas del calendario que arma `calendarioCon`, que tiran como las de `CALENDARIO_FIJO`
+ * (calendarioCon mismo no tira), y `exigirLaTabla`, que tira a propósito con un calendario que cayó a los 9 fijos.
  *
  * Tres partes:
  * - El calendario con la tabla (spec 2026-10-27-feriados-en-notas, 1): `calendarioCon(filas)` arma el mismo objeto que
@@ -11,6 +11,10 @@
  *   feriados de la tabla. Lo leen las corridas de las 8:15 y de las 14:00 y lo que las anuncia (`leerCalendario`, en
  *   `services/feriadosDatos.js`); si la tabla no se puede leer, caen a los 9 fijos y lo dicen con `MENSAJE_CORRIDA_SIN_FERIADOS`
  *   y `MENSAJE_ESTADO_SIN_FERIADOS`. Métricas, el Ciclo de vida del dato y la Agenda de pedidos todavía cuentan con los 9 fijos.
+ *   La foto del 31/12 (spec 2026-10-27-feriados-en-notas, 2 y 5): `exigirLaTabla(calendario)` lo devuelve si se leyó de la
+ *   tabla y, si no, tira con `MENSAJE_METRICAS_SIN_FERIADOS` (la foto no se saca con los 9 fijos); `feriadosDelCalendario`, los
+ *   días que la tabla sacó de los hábiles, que la foto guarda, y `calendarioDeFechas`, el calendario que se vuelve a armar con
+ *   ellos al leerla.
  * - Contar días hábiles con los feriados en Mi espacio (`feriadosDelRango`, `esDiaHabilCon`, `diasHabilesDe`,
  *   `diasHabilesEntre`, `proximoDiaHabilCon`, `restarDiasHabilesCon`, `ultimoDiaHabilDelMesCon`). Envuelven a `esDiaHabil` sin
  *   cambiarlo: los feriados solo sacan días hábiles, nunca los agregan, y con un Set vacío se cuenta exactamente lo mismo que
@@ -286,6 +290,38 @@ export const calendarioCon = (filas, { origen = 'tabla', error = null } = {}) =>
   const esHabil = (fecha) => esDiaHabil(fecha) && !delAnio(fecha.slice(0, 4)).has(fecha);
   return Object.freeze({ ...derivadasDe(esHabil), origen, error });
 };
+
+// Lo que dice la corrida cuando la foto del 31/12 no se saca porque la tabla no se pudo leer (spec 2026-10-27-feriados-en-notas,
+// 2 y 6). En minúscula: la corrida lo anota detrás de «No se pudo sacar la foto del año: »
+export const MENSAJE_METRICAS_SIN_FERIADOS = 'no se pudieron leer los feriados de Configuración → Feriados';
+
+// El calendario, si se leyó de la tabla; si cayó a los 9 fijos (`error !== null`, nunca por `origen`), tira con
+// MENSAJE_METRICAS_SIN_FERIADOS, a propósito: Métricas y la foto no cuentan con los 9 fijos como si fueran la tabla (spec
+// 2026-10-27-feriados-en-notas, 2: la foto no se saca y se reintenta en la corrida siguiente)
+export const exigirLaTabla = (calendario) => {
+  if (calendario.error !== null) throw new Error(MENSAJE_METRICAS_SIN_FERIADOS);
+  return calendario;
+};
+
+// Los días de desde a hasta (los dos incluidos), en orden, que son hábiles con los 9 fijos (esDiaHabil) y no con el calendario:
+// los que la tabla sacó de los hábiles. Los guarda la foto del 31/12, para volver a armar su calendario al leerla
+// (calendarioDeFechas). [] con una fecha que no es una fecha o desde > hasta
+export const feriadosDelCalendario = (calendario, desde, hasta) => {
+  if (!esFechaIso(desde) || !esFechaIso(hasta) || hasta < desde) return [];
+  const fechas = [];
+  // Se cuentan los días, no se compara el texto: después del 9999-12-31, sumarDias da '+010000-01', que es menor
+  const total = diasEntre(desde, hasta) + 1;
+  for (let i = 0, fecha = desde; i < total; i++, fecha = sumarDias(fecha, 1)) {
+    if (esDiaHabil(fecha) && !calendario.esDiaHabil(fecha)) fechas.push(fecha);
+  }
+  return fechas;
+};
+
+// El calendario de una lista de fechas no hábiles (las de feriadosDelCalendario): una fila suelta por fecha, que no se repite y
+// rige. Con la lista de feriadosDelCalendario da lo mismo que el calendario original en ese rango. Una que no es una lista
+// cuenta como ninguna fecha (los 9 fijos)
+export const calendarioDeFechas = (fechas) =>
+  calendarioCon((Array.isArray(fechas) ? fechas : []).map((fecha) => ({ fecha, se_repite: 0, activo: 1 })));
 
 const rechazo = (campo, mensaje) => ({ datos: null, error: { campo, mensaje } });
 
