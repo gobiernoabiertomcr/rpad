@@ -4010,7 +4010,8 @@ function pintarPaso(formulario) {
 }
 
 // Los días sin auditor de las fechas del formulario (GET /usuarios/licencias/sin-auditor, como en Configuración): solo para quien
-// audita y solo si el paso pasa. Al corregir una creada, sin contar su licencia de Configuración (excluir). Solo avisa
+// audita y solo si el paso pasa. Al corregir una creada, sin contar su licencia de Configuración (excluir). Solo avisa. Sin aviso,
+// la caja queda oculta y vacía: «Guardar» la tiene en su aria-describedby, y un nodo oculto igual entra en la descripción
 async function actualizarSinAuditor(formulario, valores) {
   const caja = porId(`${FORMULARIOS[formulario.nombre].prefijo}-sin-auditor`);
   const pedido = ++formulario.pedidoSinAuditor;
@@ -4019,6 +4020,7 @@ async function actualizarSinAuditor(formulario, valores) {
     hoy: Utils.hoyEnArgentina()
   }) : null;
   if (parametros === null) {
+    caja.innerHTML = '';
     caja.hidden = true;
     return;
   }

@@ -4395,11 +4395,12 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.deepEqual(sinAuditor(auditora), ['/api/usuarios/licencias/sin-auditor?desde=2026-11-16&hasta=2026-11-20&usuario_id=1']);
     assert.equal(auditora.el('ml-sin-auditor').hidden, false);
     assert.equal(auditora.el('ml-sin-auditor').innerHTML, `<p>${en(`textoSinAuditor(${JSON.stringify(periodos[0])})`)}</p>`);
-    // Una franquicia de 3 horas, que no pasa: sin aviso
+    // Una franquicia de 3 horas, que no pasa: sin aviso, y vacío (está en el aria-describedby de «Guardar»: oculto, igual se leería)
     await auditora.elegir('ml-tipo', 'franquicia');
     await auditora.escribir('ml-horas', '3', 'change');
     await auditora.correr();
     assert.equal(auditora.el('ml-sin-auditor').hidden, true);
+    assert.equal(auditora.el('ml-sin-auditor').innerHTML, '');
   });
 
   it('al corregir una creada: la fila, la persona a cargo precargada, el excluir de Configuración y autorizado_id solo si cambió', async () => {
