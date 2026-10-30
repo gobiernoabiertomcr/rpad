@@ -18,7 +18,8 @@
  * en un navegador argentino. Febrero va siempre en 28.
  *
  * Estilos: las clases (gdat-chip, gdat-sub, gdat-fecha, gdat-acciones, gdat-btn, gdat-icono, gdat-opcion, pista, banda, marca,
- * etiqueta...) son las del mockup aprobado, docs/superpowers/specs/2026-10-17-fechas-datasets-mockup.html. Las que no están
+ * etiqueta...) son las del mockup aprobado, docs/superpowers/specs/2026-10-17-fechas-datasets-mockup.html (allí, con el prefijo
+ * de antes del 30/10/2026, que ocultaban los bloqueadores de anuncios). Las que no están
  * en el mockup (el texto del pedido y la tarjeta del celular) tienen su estilo en el <style> de admin.html.
  */
 

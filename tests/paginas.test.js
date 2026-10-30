@@ -562,10 +562,11 @@ describe('páginas', () => {
   // Ningún nombre empieza con «ad-» (de «admin»): los bloqueadores de anuncios ocultan muchos. EasyList y AdGuard tienen la regla
   // genérica ##.ad-btn, que escondía «Registrar actualización» y los botones de las ventanas de Gestión de Datasets a quien tenía
   // uno, y sus listas suman más de mil reglas .ad-… (mañana puede llegar .ad-tabla). Las clases de esa página llevan gdat- desde el
-  // 30/10/2026. Se mira cada página, cada script y cada hoja: un «ad-» que no sigue a una letra, un número, un guion ni un guion
-  // bajo, así cantidad-, rpad- y data-ad- no cuentan
+  // 30/10/2026. Se mira cada página, cada script y cada hoja: un «ad-» seguido de una letra, un número o un guion bajo (las listas
+  // también tienen .ad-300x250) que no sigue a una letra, un número, un guion ni un guion bajo, así cantidad-, rpad- y data-ad- no
+  // cuentan
   it('ninguna página, script ni hoja usa un nombre que empiece con «ad-» (los bloqueadores de anuncios lo ocultarían)', () => {
-    const PREFIJO_DE_ANUNCIOS = /(?<![A-Za-z0-9_-])ad-[a-z]/g;
+    const PREFIJO_DE_ANUNCIOS = /(?<![A-Za-z0-9_-])ad-[A-Za-z0-9_]/g;
     // Cada nombre una vez, entero, desde donde la expresión encontró el prefijo
     const nombresConAd = (texto) => [...new Set([...texto.matchAll(PREFIJO_DE_ANUNCIOS)].map(m => texto.slice(m.index).match(/^[\w-]+/)[0]))];
     const archivos = [['', '.html'], ['js/', '.js'], ['css/', '.css']].flatMap(([carpeta, extension]) =>
@@ -573,7 +574,8 @@ describe('páginas', () => {
     // Recorre las tres carpetas, y la expresión ve un nombre en una clase, en una hoja, en un texto o armado en un script
     for (const archivo of ['admin.html', 'js/admin.js', 'css/main.css']) assert.ok(archivos.includes(archivo), archivo);
     assert.deepEqual(nombresConAd('<p class="cantidad-x rpad-y" data-ad-z="1">'), []);
-    assert.deepEqual(nombresConAd('<b class="x ad-btn"> .ad-tabla { } toggle(\'ad-vh\') `ad-tarjeta-${id}`'), ['ad-btn', 'ad-tabla', 'ad-vh', 'ad-tarjeta-']);
+    assert.deepEqual(nombresConAd('<b class="x ad-btn"> .ad-tabla { } toggle(\'ad-vh\') `ad-tarjeta-${id}` .ad-300x250 .ad-_x'),
+      ['ad-btn', 'ad-tabla', 'ad-vh', 'ad-tarjeta-', 'ad-300x250', 'ad-_x']);
     const encontrados = archivos.map(archivo => [archivo, nombresConAd(fs.readFileSync(new URL(archivo, DIRECTORIO), 'utf8'))])
       .filter(([, nombres]) => nombres.length > 0);
     assert.deepEqual(encontrados, [], 'Los bloqueadores de anuncios ocultan las clases que empiezan con «ad-» (EasyList y AdGuard tienen '
