@@ -1107,6 +1107,11 @@ La de **cada media hora** manda los **recordatorios de la agenda de [Mi espacio]
 ### PDFs con páginas en blanco
 - Actualizar a v1.3.0 (corregido con `bufferPages: true`)
 
+### Falta un botón o una parte de una página
+- Por ejemplo, en Gestión de Datasets se ven el reloj, el lápiz y el tacho de cada fila, pero no "Registrar actualización"
+- Probar en una ventana de incógnito, o pausar el bloqueador de anuncios para el sitio: si ahí aparece, lo oculta una regla del bloqueador
+- Por eso ninguna clase del sitio empieza con `ad-` (EasyList y AdGuard tienen `##.ad-btn`): lo controla `tests/paginas.test.js`
+
 ---
 
 ## Changelog
