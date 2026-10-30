@@ -29,6 +29,18 @@ Cambiar todo el prefijo `ad-` de Gestión de Datasets, no solo `ad-btn`, y sumar
 - `npm test` completo antes y después (con el candado), contra una copia propia del dump.
 - En vivo, con la app de la rama y una cuenta editor de prueba: el botón se ve en la compu y en el celular; con la regla `.ad-btn { display: none !important }` puesta a mano sigue viéndose; y el cruce con las seis listas da 0 coincidencias en `admin.html` (con las ventanas).
 
+## Comprobación final (pedido del usuario, antes del despliegue)
+
+Que no se haya roto nada ni se haya tocado nada de más:
+
+1. **Solo los archivos previstos**: `git diff --stat ea8c8e7..HEAD` lista solo `public/admin.html`, `public/js/admin-fechas.js`, `public/js/admin.js`, `tests/admin-frontend.test.js`, `tests/paginas.test.js`, CLAUDE.md, README.md y este plan.
+2. **El cambio de nombre es exacto**: en cada uno de los tres archivos de la página y en `tests/admin-frontend.test.js`, volver a escribir `gdat-` como `ad-` (y la versión `20261128` como `20261127`) da, byte por byte, el archivo de ea8c8e7. Así no cambió nada más que el nombre.
+3. **Ningún `ad-` quedó**: la misma expresión del test no encuentra nada en `public/`.
+4. **La suite**: la misma cantidad de tests que antes, más los nuevos, y ninguno falla.
+5. **En vivo**: el editor de prueba ve el botón, también con la regla del bloqueador puesta; y el cruce con las seis listas da 0.
+6. **Sin nombres reales**: el diff no tiene ningún nombre, apellido ni usuario de la tabla `usuarios`.
+7. **Una revisión aparte**, de un agente que mira el diff sin el plan, buscando algo roto o de más.
+
 ## Despliegue
 
 Sin SQL, sin cron y sin Run NPM Install: subir `public/admin.html`, `public/js/admin-fechas.js` y `public/js/admin.js` y Restart. La vuelta atrás, los tres archivos de ea8c8e7. A quien ya tenía la página abierta le alcanza con recargar.
