@@ -15,9 +15,9 @@
 // cada una rechaza a la otra modalidad. La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word) se arma en el
 // momento, para la vista y para el Word, y no se guarda. Un id de otra persona responde 404, como uno que no existe: no se
 // revela que existe (sección 10). Lo único de otras personas que se ve es «Hoy no están» (sección 7: quién de administración
-// no está, nunca de qué), los eventos que le compartieron, en «Hoy y mañana» (los de la agenda:
-// controllers/miEspacioEventosController.js) y, solo el firmante titular, las personas que puede autorizar con sus licencias
-// (sección 6), como en Configuración.
+// no está, nunca de qué), los eventos que le compartieron o le muestran (un Personal (Público), solo «Carla: Turno médico»),
+// en «Hoy y mañana» (los de la agenda: controllers/miEspacioEventosController.js) y, solo el firmante titular, las personas
+// que puede autorizar con sus licencias (sección 6), como en Configuración.
 import pool from '../config/database.js';
 import { hoyArgentina, ahoraArgentina, sumarDias, diasEntre, esFechaIso } from '../services/notasDigitalesCalendario.js';
 import {
@@ -29,7 +29,8 @@ import {
   resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe, textoDeLaListaDe
 } from '../services/miEspacioResumen.js';
 import {
-  estadoDe, contextoDe, personaDe, licenciaDe, datosDeLaNota, ausenciasVisibles, feriadosPara, administracionActiva
+  estadoDe, contextoDe, personaDe, licenciaDe, datosDeLaNota, ausenciasVisibles, feriadosPara, administracionActiva,
+  usuariosActivos
 } from '../services/miEspacioDatos.js';
 import { filasDeFeriados } from '../services/feriadosDatos.js';
 import { calendarioCon } from '../services/feriadosReglas.js';
@@ -82,17 +83,33 @@ const responder = async (res, mensaje, operacion) => {
  * `eventosDeHoyYManana`, cada uno con su `dia` y su `quien`. El mismo `ahora` (`ahoraArgentina()`) da el aviso de cada evento
  * y saca los de hoy que ya terminaron (decisión del usuario, 27/10/2026). `feriados`: el Set del cálculo (cubre el aviso de
  * cada evento); `administracion`: la del contexto (`administracionActiva`, sin leerla otra vez), que da el nombre corto de
- * quien lo creó y de quién está («de Julián», «con Carla»; spec 2026-10-28-mi-espacio-agenda-onda, 5.1). Aislado: si
- * leerlos falla, el Resumen sale igual, con [], y el error queda en la consola.
+ * quien lo creó y de quién está («de Julián», «con Carla»; spec 2026-10-28-mi-espacio-agenda-onda, 5.1); `usuarios`: todos los
+ * usuarios activos (`usuariosActivos`), contra los que va el nombre corto de un Personal (Público) («Carla: Turno médico»,
+ * «lo ven Julián y Tomás como «…»»; spec 2026-10-29-mi-espacio-evento-publico, 5.4 y 6.3). Aislado: si leerlos falla, el
+ * Resumen sale igual, con [], y el error queda en la consola.
  */
-const eventosDelResumen = async (usuario, hoy, { feriados, administracion }) => {
+const eventosDelResumen = async (usuario, hoy, { feriados, administracion, usuarios }) => {
   try {
     const eventos = await eventosVisibles(usuario, hoy, sumarDias(hoy, 1));
     const ahora = ahoraArgentina();
-    const contexto = { usuarioId: usuario.id, ahora, feriados, administracion };
+    const contexto = { usuarioId: usuario.id, ahora, feriados, administracion, usuarios };
     return eventosDeHoyYManana(eventos.map((evento) => itemDeEvento(evento, contexto)), hoy, ahora);
   } catch (error) {
     console.error('Error al obtener los eventos de hoy y mañana:', error?.stack ?? error);
+    return [];
+  }
+};
+
+/**
+ * Todos los usuarios activos, para el nombre corto de un Personal (Público) en «Hoy y mañana» (`usuariosActivos`). Aislados,
+ * como los eventos: si leerlos falla, el Resumen sale igual (los nombres de un Público, con el primer nombre) y el error queda
+ * en la consola.
+ */
+const usuariosDelResumen = async () => {
+  try {
+    return await usuariosActivos();
+  } catch (error) {
+    console.error('Error al obtener los usuarios de hoy y mañana:', error?.stack ?? error);
     return [];
   }
 };
@@ -124,7 +141,8 @@ export const verResumen = (req, res) => responder(res, 'Error al obtener el Resu
   const { persona, estado, feriados, filasFeriados, administracion, calculo } = await contextoDe(req.user.userId, hoy);
   const [{ ausentes }, eventos, vinculos] = await Promise.all([
     ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados, administracion }),
-    eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, { feriados, administracion }),
+    usuariosDelResumen().then((usuarios) =>
+      eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, { feriados, administracion, usuarios })),
     vinculosDelResumen(persona, estado, hoy)
   ]);
   const hoyYManana = {

@@ -41,8 +41,8 @@ const ddmm = (fecha) => `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`;
 const ROLES = Object.freeze({
   superadmin: 'superadmin', adminA: 'admin', adminB: 'admin', editor: 'editor', lector: 'lector', colab: 'colaborador'
 });
-const TABLAS = ['mi_espacio_evento_envios', 'mi_espacio_evento_personas', 'mi_espacio_eventos', 'mi_espacio_eventos_corridas',
-  'feriados', 'mi_espacio_licencias', 'usuarios_licencias'];
+const TABLAS = ['mi_espacio_evento_envios', 'mi_espacio_evento_personas', 'mi_espacio_evento_vistas', 'mi_espacio_eventos',
+  'mi_espacio_eventos_corridas', 'feriados', 'mi_espacio_licencias', 'usuarios_licencias'];
 
 before(async () => {
   dbReal = process.env.DB_NAME;
@@ -142,10 +142,10 @@ const es404 = (res) => {
   assert.deepEqual(res.body, { success: false, error: MENSAJES_EVENTO.noEncontrado });
 };
 
-const CLAVES_DEL_MIO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos', 'creador',
-  'personas', 'personas_ids', 'recordatorio', 'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto'];
-const CLAVES_DEL_AJENO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos', 'creador',
-  'personas', 'recordatorio', 'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto', 'quien_largo'];
+const CLAVES_DEL_MIO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos', 'publico',
+  'creador', 'personas', 'personas_ids', 'recordatorio', 'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto'];
+const CLAVES_DEL_AJENO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos', 'publico',
+  'creador', 'personas', 'recordatorio', 'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto', 'quien_largo'];
 
 describe('un evento personal', () => {
   it('se guarda (201, «Evento guardado.») y quien lo creó lo ve como suyo, «Solo vos», con cuándo sale su aviso', async () => {
@@ -157,8 +157,11 @@ describe('un evento personal', () => {
     assert.ok(Number.isInteger(id) && id > 0);
 
     const data = await listado('adminA');
-    assert.deepEqual(Object.keys(data), ['desde', 'hasta', 'hoy', 'puede_compartir', 'eventos', 'licencias', 'feriados',
-      'ausentes', 'companeros_por_dia', 'frase_del_mes']);
+    assert.deepEqual(Object.keys(data), ['desde', 'hasta', 'hoy', 'puede_compartir', 'mi_nombre_corto', 'eventos', 'licencias',
+      'feriados', 'ausentes', 'companeros_por_dia', 'frase_del_mes']);
+    // El nombre de quien pide como lo ven los demás (el de la vista previa de un Personal (Público)): adminA y adminB empiezan
+    // con «Test» y comparten la inicial del último apellido, así que va completo
+    assert.equal(data.mi_nombre_corto, 'Test adminA');
     // Sin `mes`, sin frase; sin compañeros que no están, ningún día
     assert.equal(data.frase_del_mes, null);
     assert.deepEqual(data.companeros_por_dia, []);
@@ -170,8 +173,8 @@ describe('un evento personal', () => {
     // Leído de la base (los TIME, con TIME_FORMAT): el aviso sale con su momento, nunca null por un '10:00:00'
     assert.deepEqual(data.eventos[0], {
       id, titulo: 'Reunión de equipo', detalle: 'Sala de reuniones del 2.º piso.', fecha: q(1), desde: '10:00', hasta: '11:00',
-      es_mio: true, compartido: false, para_todos: false, creador: 'Test adminA', personas: [], personas_ids: [],
-      recordatorio: '2h', recordatorio_texto: '2 horas antes', mi_recordatorio: '2h',
+      es_mio: true, compartido: false, para_todos: false, publico: false, creador: 'Test adminA', personas: [],
+      personas_ids: [], recordatorio: '2h', recordatorio_texto: '2 horas antes', mi_recordatorio: '2h',
       aviso: { momento: `${q(1)} 08:00`, texto: `2 horas antes (el martes ${ddmm(q(1))} a las 08:00)`, corto: 'Aviso 2 h antes' },
       quien_texto: 'Solo vos'
     });
@@ -282,14 +285,14 @@ describe('para todos', () => {
       assert.equal(evento.es_mio, false);
       assert.equal(evento.para_todos, true);
       assert.equal(evento.quien_texto, 'De Test adminA');
-      assert.equal(evento.quien_largo, 'Lo creó Test adminA. Es para todos.');
+      assert.equal(evento.quien_largo, 'Lo creó Test adminA. Es para toda la administración.');
       assert.deepEqual(evento.personas, []);
     }
     assert.deepEqual(await idsDe('lector'), []);
     assert.deepEqual(await idsDe('colab'), []);
 
     const deA = await elDe('adminA', id);
-    assert.equal(deA.quien_texto, 'Con todos');
+    assert.equal(deA.quien_texto, 'Con toda la administración');
     assert.deepEqual(deA.personas, []);
     assert.deepEqual(deA.personas_ids, []);
     // «Todos» es una marca, no una lista: no hay filas
@@ -672,8 +675,8 @@ describe('los datos (services/miEspacioEventosDatos.js)', () => {
     const propio = await datos.eventoPropio(id, idDe('adminA'));
     assert.deepEqual(propio, {
       id, creado_por: idDe('adminA'), creador: 'Test adminA', titulo: 'Reunión de equipo', detalle: null, fecha: q(1),
-      desde: '10:00', hasta: null, compartido: true, para_todos: false, recordatorio: '2h',
-      personas: [{ id: idDe('adminB'), nombre: 'Test adminB', sin_recordatorio: false }]
+      desde: '10:00', hasta: null, compartido: true, para_todos: false, publico: false, publico_todos: false,
+      texto_publico: null, recordatorio: '2h', personas: [{ id: idDe('adminB'), nombre: 'Test adminB', sin_recordatorio: false }]
     });
     assert.equal(await datos.eventoPropio(id, idDe('adminB')), null);
     assert.equal(await datos.eventoPropio('abc', idDe('adminA')), null);
@@ -943,12 +946,12 @@ describe('«Hoy y mañana» del Resumen: los eventos', () => {
     assert.deepEqual(Object.keys(hoyYManana), ['ausentes_hoy', 'ausentes_manana', 'proximo_feriado', 'eventos']);
     assert.deepEqual(hoyYManana.eventos, [
       {
-        id: deHoy, hora: '12:00', titulo: 'Llamar a Vialidad por el TMDA', compartido: false, detalle: 'Hoy · solo vos',
-        dia: 'hoy', quien: 'solo vos'
+        id: deHoy, hora: '12:00', titulo: 'Llamar a Vialidad por el TMDA', compartido: false, publico: false,
+        detalle: 'Hoy · solo vos', dia: 'hoy', quien: 'solo vos'
       },
       {
-        id: deManana, hora: '10:00', titulo: 'Reunión de equipo', compartido: true, detalle: 'Mañana · de Test adminB',
-        dia: 'manana', quien: 'de Test adminB'
+        id: deManana, hora: '10:00', titulo: 'Reunión de equipo', compartido: true, publico: false,
+        detalle: 'Mañana · de Test adminB', dia: 'manana', quien: 'de Test adminB'
       }
     ]);
 
@@ -1368,6 +1371,517 @@ describe('los emails del guardado', () => {
       avisos.mock.restore();
       errores.mock.restore();
     }
+  });
+});
+
+// El Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, secciones 3, 6 y 9): lo crea cualquier rol y lo ven quien lo
+// creó y «Todos» (todos los usuarios activos, también los que se dan de alta después) o las personas elegidas, de cualquier rol.
+// A los demás les llega solo «<nombre corto>: <texto>», la fecha y las horas: el título, el detalle, el recordatorio y con quién
+// más está no salen del servidor (Review Focus 1: se buscan en el JSON de cada respuesta). No le manda ningún email a nadie más
+// que a quien lo creó (el recordatorio, en la corrida: tests/mi-espacio-eventos-corrida.test.js), tampoco al pasar un Laboral
+// a Público (Review Focus 2), y deja de verse si quien lo creó se desactiva (Review Focus 5). Un cuerpo sin `tipo`, el de una
+// pestaña abierta con la página anterior, guarda como antes (Review Focus 3). Los nombres cortos van contra todos los usuarios
+// activos: las seis personas empiezan con «Test», así que llevan la inicial del último apellido («Test s.», «Test l.»), salvo
+// adminA y adminB, que también la comparten y quedan con el nombre completo
+describe('Personal (Público)', () => {
+  const PUBLICO_TODOS = Object.freeze({ tipo: 'publico', para_todos: true, texto_publico: 'Turno médico' });
+  const publicoCon = (...claves) => ({ tipo: 'publico', personas: claves.map(idDe), texto_publico: 'Turno médico' });
+  // El turno de verdad: lo que nunca tiene que llegar a otra persona
+  const TURNO = Object.freeze({ titulo: 'Turno con el dentista', detalle: 'Llevar el carnet' });
+  const sinElTurno = (cuerpo, quien) => {
+    for (const texto of ['dentista', 'carnet']) assert.ok(!JSON.stringify(cuerpo).includes(texto), `${quien}: ${texto}`);
+  };
+  const CLAVES_DEL_AJENO_PUBLICO = ['id', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'publico', 'creador', 'titulo',
+    'texto_publico'];
+  const CLAVES_DEL_MIO_PUBLICO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos',
+    'publico', 'publico_todos', 'texto_publico', 'creador', 'personas', 'personas_ids', 'recordatorio', 'recordatorio_texto',
+    'mi_recordatorio', 'aviso', 'quien_texto'];
+  const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Las columnas del Público de un evento y a quién se le muestra, por SQL
+  const columnasDe = async (id) => {
+    const [fila] = await query(
+      'SELECT compartido, para_todos, publico, publico_todos, texto_publico FROM mi_espacio_eventos WHERE id = ?', [id]
+    );
+    return { ...fila, compartido: Number(fila.compartido), para_todos: Number(fila.para_todos), publico: Number(fila.publico),
+      publico_todos: Number(fila.publico_todos) };
+  };
+  const vistasDe = async (id) => (await query(
+    'SELECT usuario_id FROM mi_espacio_evento_vistas WHERE evento_id = ? ORDER BY usuario_id', [id]
+  )).map((fila) => Number(fila.usuario_id));
+  // Los envíos anotados de un evento ([tipo, clave], ordenados) y los emails de Mailpit con la marca del test, a cualquiera
+  const claveDe = (id) => Object.keys(usuarios).find((clave) => usuarios[clave].id === id);
+  const enviosDe = async (id) => (await query(
+    'SELECT usuario_id, tipo FROM mi_espacio_evento_envios WHERE evento_id = ? ORDER BY id', [id]
+  )).map((fila) => [fila.tipo, claveDe(Number(fila.usuario_id))]).sort();
+  const esperarEnvios = async (id, cantidad) => {
+    for (let intento = 0; intento < 100 && (await enviosDe(id)).length < cantidad; intento++) await esperar(50);
+    await esperar(300);
+    return enviosDe(id);
+  };
+  const conMarca = async (marca) => (await mailpit.mensajes())
+    .filter((mensaje) => `${mensaje.Subject ?? ''} ${mensaje.Snippet ?? ''}`.includes(marca));
+  const nuevaMarca = () => crypto.randomBytes(4).toString('hex');
+
+  it('el superadmin lo crea para todos: el lector, el colaborador y la administración ven solo «Test s.: Turno médico»; él, el '
+    + 'suyo entero', async () => {
+    const res = await api.post('/mi-espacio/eventos', formulario({ ...TURNO, ...PUBLICO_TODOS, recordatorio: '1h' }),
+      como('superadmin'));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(res.body, { success: true, data: { id: res.body.data.id }, message: 'Evento guardado.' });
+    const { id } = res.body.data;
+
+    for (const clave of ['lector', 'colab', 'adminA', 'adminB', 'editor']) {
+      const data = await listado(clave);
+      sinElTurno(data, clave);
+      const evento = data.eventos.find((cada) => cada.id === id);
+      assert.deepEqual(evento, {
+        id, fecha: q(1), desde: '10:00', hasta: '11:00', es_mio: false, compartido: false, publico: true, creador: 'Test s.',
+        titulo: 'Test s.: Turno médico', texto_publico: 'Turno médico'
+      }, clave);
+      assert.deepEqual(Object.keys(evento), CLAVES_DEL_AJENO_PUBLICO, clave);
+    }
+
+    const data = await listado('superadmin');
+    assert.equal(data.mi_nombre_corto, 'Test s.');
+    const suyo = data.eventos.find((cada) => cada.id === id);
+    assert.deepEqual(Object.keys(suyo), CLAVES_DEL_MIO_PUBLICO);
+    assert.equal(suyo.titulo, 'Turno con el dentista');
+    assert.equal(suyo.detalle, 'Llevar el carnet');
+    assert.equal(suyo.es_mio, true);
+    assert.equal(suyo.compartido, false);
+    assert.equal(suyo.para_todos, false);
+    assert.equal(suyo.publico, true);
+    assert.equal(suyo.publico_todos, true);
+    assert.equal(suyo.texto_publico, 'Turno médico');
+    assert.deepEqual(suyo.personas, []);
+    assert.deepEqual(suyo.personas_ids, []);
+    assert.equal(suyo.recordatorio, '1h');
+    assert.equal(suyo.quien_texto, 'Lo ven todos como «Turno médico»');
+
+    // En la base, como uno personal: compartido y para_todos en 0, sin filas de personas ni de vistas («Todos» es una marca)
+    assert.deepEqual(await columnasDe(id),
+      { compartido: 0, para_todos: 0, publico: 1, publico_todos: 1, texto_publico: 'Turno médico' });
+    assert.deepEqual(await filasDe(id), []);
+    assert.deepEqual(await vistasDe(id), []);
+  });
+
+  // Review Focus 1, por el orden (revisión de Task 3, Important 1): dentro de la misma fecha y hora, el lugar de un Público de
+  // otra persona no puede depender de su título oculto; si no, quien lo ve podría adivinarlo letra por letra con eventos
+  // propios a la misma hora («M», «T», «Tu», …). Con dos títulos ocultos distintos, el mismo orden en la agenda y en el Resumen
+  it('el orden no delata el título: un Privado propio y un Público ajeno a la misma hora salen igual con dos títulos ocultos',
+    async () => {
+      const manana = dia(1);
+      const propio = await crear('lector', { titulo: 'M', fecha: manana, desde: '10:00', hasta: '' });
+      const ajeno = await crear('superadmin',
+        { titulo: 'A del turno', fecha: manana, desde: '10:00', hasta: '', ...PUBLICO_TODOS });
+      const ordenes = [];
+      for (const titulo of ['A del turno', 'Z del turno']) {
+        const res = await cambiar('superadmin', ajeno, { titulo, fecha: manana, desde: '10:00', hasta: '', ...PUBLICO_TODOS });
+        assert.equal(res.status, 200, JSON.stringify(res.body));
+        const agenda = (await eventosDe('lector', manana, manana)).map((evento) => evento.id);
+        const resumen = await api.get('/mi-espacio/resumen', como('lector'));
+        assert.equal(resumen.status, 200, JSON.stringify(resumen.body));
+        ordenes.push({ agenda, resumen: resumen.body.data.hoy_y_manana.eventos.map((evento) => evento.id) });
+      }
+      assert.deepEqual(ordenes[0].agenda.slice().sort((a, b) => a - b), [propio, ajeno].sort((a, b) => a - b));
+      assert.deepEqual(ordenes[1], ordenes[0]);
+      assert.deepEqual(ordenes[0].resumen, ordenes[0].agenda);
+      // Los demás, como siempre: quien creó el Público lo ordena por su título, entre los suyos
+      const otro = await crear('superadmin', { titulo: 'M', fecha: manana, desde: '10:00', hasta: '' });
+      assert.deepEqual((await eventosDe('superadmin', manana, manana)).map((evento) => evento.id), [otro, ajeno]);
+    });
+
+  it('con personas: lo ve el colaborador y no adminA ni el superadmin; uno dado de alta después ve el «para todos» y no este',
+    async () => {
+      const conPersonas = await crear('lector', { ...TURNO, ...publicoCon('colab') });
+      const paraTodos = await crear('superadmin', { titulo: 'Otro turno', fecha: q(2), ...PUBLICO_TODOS });
+      assert.deepEqual(await vistasDe(conPersonas), [idDe('colab')]);
+      assert.deepEqual(await filasDe(conPersonas), []);
+      assert.deepEqual(await columnasDe(conPersonas),
+        { compartido: 0, para_todos: 0, publico: 1, publico_todos: 0, texto_publico: 'Turno médico' });
+
+      const delColab = await listado('colab');
+      sinElTurno(delColab, 'colab');
+      assert.deepEqual(delColab.eventos.map((evento) => [evento.id, evento.titulo]),
+        [[conPersonas, 'Test l.: Turno médico'], [paraTodos, 'Test s.: Turno médico']]);
+      // La administración no lo ve por serlo: solo si la eligieron
+      for (const clave of ['adminA', 'superadmin']) assert.ok(!(await idsDe(clave)).includes(conPersonas), clave);
+
+      const suyo = await elDe('lector', conPersonas);
+      assert.deepEqual(Object.keys(suyo), CLAVES_DEL_MIO_PUBLICO);
+      assert.equal(suyo.quien_texto, 'Lo ve Test c. como «Turno médico»');
+      assert.deepEqual(suyo.personas, ['Test colab']);
+      assert.deepEqual(suyo.personas_ids, [idDe('colab')]);
+      assert.equal(suyo.publico_todos, false);
+
+      const nuevos = await crearUsuariosPrueba(api, { despues: 'lector' });
+      try {
+        const res = await api.get(`/mi-espacio/eventos?desde=${q(0)}&hasta=${q(20)}`, { token: nuevos.despues.token });
+        assert.equal(res.status, 200, JSON.stringify(res.body));
+        assert.deepEqual(res.body.data.eventos.map((evento) => evento.id), [paraTodos]);
+      } finally {
+        await limpiarDatosPrueba(nuevos);
+      }
+    });
+
+  it('ningún email: crearlo para todos, cambiarle la hora y borrarlo no le manda nada a nadie ni deja filas', async () => {
+    const marca = nuevaMarca();
+    const turno = { titulo: `Turno ${marca}`, detalle: 'Llevar el carnet', ...PUBLICO_TODOS };
+    const id = await crear('superadmin', turno);
+    assert.equal((await cambiar('superadmin', id, { ...turno, desde: '12:00', hasta: '13:00' })).status, 200);
+    assert.equal((await borrar('superadmin', id)).status, 200);
+    // Los emails de un guardado salen después de responder: se espera un rato
+    await esperar(800);
+    assert.deepEqual(await enviosDe(id), []);
+    const casillas = Object.values(usuarios).map((usuario) => usuario.email);
+    const recibidos = (await conMarca(marca)).filter((mensaje) => mensaje.To.some((to) => casillas.includes(to.Address)));
+    assert.deepEqual(recibidos.map((mensaje) => mensaje.Subject), []);
+  });
+
+  it('Review Focus 2: un Laboral para todos con el recordatorio de adminB apagado que pasa a Público no manda nada ni deja '
+    + 'filas, y adminB lo ve como «Test adminA: Turno médico»; de vuelta a Laboral, la invitación a la administración',
+  async () => {
+    const marca = nuevaMarca();
+    const titulo = `Turno ${marca}`;
+    const id = await crear('adminA', { titulo, detalle: 'Llevar el carnet', ...PARA_TODOS });
+    const invitaciones = [['invitacion', 'adminB'], ['invitacion', 'editor'], ['invitacion', 'superadmin']];
+    assert.deepEqual(await esperarEnvios(id, 3), invitaciones);
+    assert.equal((await miRecordatorio('adminB', id, { sin_aviso: true })).status, 200);
+    assert.deepEqual(await filasDe(id), [{ usuario_id: idDe('adminB'), sin_recordatorio: 1 }]);
+    const antes = (await conMarca(marca)).length;
+
+    // Pasa a Público con otra hora (si fuera un Laboral, sería el email del cambio)
+    const res = await cambiar('adminA', id, { titulo, detalle: 'Llevar el carnet', desde: '12:00', hasta: '', ...PUBLICO_TODOS });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    await esperar(800);
+    assert.deepEqual(await enviosDe(id), invitaciones);
+    assert.equal((await conMarca(marca)).length, antes);
+    // El recordatorio apagado no sobrevive: ninguna fila de personas
+    assert.deepEqual(await filasDe(id), []);
+    assert.deepEqual(await columnasDe(id),
+      { compartido: 0, para_todos: 0, publico: 1, publico_todos: 1, texto_publico: 'Turno médico' });
+    const deB = await listado('adminB');
+    sinElTurno(deB, 'adminB');
+    assert.ok(!JSON.stringify(deB).includes(marca));
+    const evento = deB.eventos.find((cada) => cada.id === id);
+    assert.equal(evento.titulo, 'Test adminA: Turno médico');
+    assert.deepEqual(Object.keys(evento), CLAVES_DEL_AJENO_PUBLICO);
+
+    // De vuelta a Laboral para todos: entra la administración y le llega la invitación, como hoy
+    assert.equal((await cambiar('adminA', id, { titulo, tipo: 'laboral', para_todos: true })).status, 200);
+    assert.deepEqual(await esperarEnvios(id, 6), [...invitaciones, ...invitaciones].sort());
+    assert.deepEqual(await columnasDe(id), { compartido: 1, para_todos: 1, publico: 0, publico_todos: 0, texto_publico: null });
+    assert.deepEqual(await vistasDe(id), []);
+    assert.equal((await elDe('adminB', id)).titulo, titulo);
+  });
+
+  it('con personas que pasa a Privado o a Laboral: sus vistas se borran y texto_publico queda null', async () => {
+    const id = await crear('adminA', publicoCon('lector', 'colab'));
+    assert.deepEqual(await vistasDe(id), [idDe('lector'), idDe('colab')].sort((a, b) => a - b));
+    // Saca al lector y suma al editor: exactamente las elegidas
+    assert.equal((await cambiar('adminA', id, publicoCon('colab', 'editor'))).status, 200);
+    assert.deepEqual(await vistasDe(id), [idDe('editor'), idDe('colab')].sort((a, b) => a - b));
+    assert.deepEqual(await idsDe('lector'), []);
+    assert.equal((await elDe('adminA', id)).quien_texto, 'Lo ven Test c. y Test e. como «Turno médico»');
+    // Con «Todos», ninguna fila
+    assert.equal((await cambiar('adminA', id, PUBLICO_TODOS)).status, 200);
+    assert.deepEqual(await vistasDe(id), []);
+    assert.equal((await cambiar('adminA', id, publicoCon('colab'))).status, 200);
+    assert.deepEqual(await vistasDe(id), [idDe('colab')]);
+    // A Privado (el cuerpo de antes, sin tipo): ni vistas ni texto, y deja de verse
+    assert.equal((await cambiar('adminA', id, {})).status, 200);
+    assert.deepEqual(await vistasDe(id), []);
+    assert.deepEqual(await columnasDe(id), { compartido: 0, para_todos: 0, publico: 0, publico_todos: 0, texto_publico: null });
+    assert.deepEqual(await idsDe('colab'), []);
+    assert.equal((await elDe('adminA', id)).quien_texto, 'Solo vos');
+    // A Laboral con personas desde un Público con personas
+    assert.equal((await cambiar('adminA', id, publicoCon('colab'))).status, 200);
+    assert.equal((await cambiar('adminA', id, { tipo: 'laboral', personas: [idDe('adminB')] })).status, 200);
+    assert.deepEqual(await vistasDe(id), []);
+    assert.deepEqual(await filasDe(id), [{ usuario_id: idDe('adminB'), sin_recordatorio: 0 }]);
+    assert.deepEqual(await columnasDe(id), { compartido: 1, para_todos: 0, publico: 0, publico_todos: 0, texto_publico: null });
+  });
+
+  it('una invitada del Público que se desactiva sigue en él: quien lo creó guarda sin tocarla, y nadie la suma de nuevo',
+    async () => {
+      const id = await crear('adminA', publicoCon('lector', 'colab'));
+      await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [idDe('colab')]);
+      assert.equal((await cambiar('adminA', id, { titulo: 'Otro', ...publicoCon('lector', 'colab') })).status, 200);
+      assert.deepEqual(await vistasDe(id), [idDe('lector'), idDe('colab')].sort((a, b) => a - b));
+      // Los nombres de «Lo ven …» la incluyen (Ruling 4: todas las filas, como las invitadas de un Laboral); su nombre corto se
+      // arma igual contra los activos
+      assert.equal((await elDe('adminA', id)).quien_texto, 'Lo ven Test c. y Test l. como «Turno médico»');
+      const otro = await api.post('/mi-espacio/eventos', formulario(publicoCon('lector', 'colab')), como('adminA'));
+      es400(otro, 'personas', MENSAJES_EVENTO.personasInvalidas);
+    });
+
+  it('Review Focus 3: un cuerpo sin tipo guarda como antes, un Laboral para todos con sus invitaciones o un Privado', async () => {
+    const marca = nuevaMarca();
+    const titulo = `Reunión ${marca}`;
+    const laboral = await api.post('/mi-espacio/eventos',
+      { titulo, fecha: q(1), desde: '10:00', compartido: true, para_todos: true }, como('adminA'));
+    assert.equal(laboral.status, 201, JSON.stringify(laboral.body));
+    const id = laboral.body.data.id;
+    assert.deepEqual(await columnasDe(id), { compartido: 1, para_todos: 1, publico: 0, publico_todos: 0, texto_publico: null });
+    assert.deepEqual(await esperarEnvios(id, 3),
+      [['invitacion', 'adminB'], ['invitacion', 'editor'], ['invitacion', 'superadmin']]);
+    // Corregido con un cuerpo de antes: sigue Laboral para todos; sin compartido, Privado
+    assert.equal((await api.put(`/mi-espacio/eventos/${id}`,
+      { titulo, fecha: q(1), desde: '10:00', compartido: true, para_todos: true }, como('adminA'))).status, 200);
+    assert.equal((await elDe('adminB', id)).quien_largo, 'Lo creó Test adminA. Es para toda la administración.');
+    assert.equal((await api.put(`/mi-espacio/eventos/${id}`, { titulo, fecha: q(1), desde: '10:00' }, como('adminA'))).status,
+      200);
+    assert.deepEqual(await columnasDe(id), { compartido: 0, para_todos: 0, publico: 0, publico_todos: 0, texto_publico: null });
+    assert.deepEqual(await idsDe('adminB'), []);
+
+    const privado = await api.post('/mi-espacio/eventos', { titulo: 'Solo mío', fecha: q(2), desde: '09:00' }, como('lector'));
+    assert.equal(privado.status, 201, JSON.stringify(privado.body));
+    assert.deepEqual(await columnasDe(privado.body.data.id),
+      { compartido: 0, para_todos: 0, publico: 0, publico_todos: 0, texto_publico: null });
+    assert.equal((await elDe('lector', privado.body.data.id)).quien_texto, 'Solo vos');
+  });
+
+  it('Review Focus 5: si quien lo creó se desactiva, los demás dejan de verlo en la agenda, en «Hoy y mañana» y en la frase '
+    + 'del mes; su Laboral sigue para los invitados', async () => {
+    const manana = dia(1);
+    const mes = manana.slice(0, 7);
+    const [anio, numero] = mes.split('-').map(Number);
+    const primero = `${mes}-01`;
+    const ultimo = sumarDias(numero === 12 ? `${anio + 1}-01-01` : `${anio}-${String(numero + 1).padStart(2, '0')}-01`, -1);
+    const id = await crear('superadmin', { ...TURNO, ...PUBLICO_TODOS, fecha: manana });
+    const laboral = await crear('superadmin', { titulo: 'Reunión', fecha: manana, ...compartidoCon('adminA') });
+    const agenda = async () => {
+      const res = await api.get(`/mi-espacio/eventos?desde=${primero}&hasta=${ultimo}&mes=${mes}`, como('lector'));
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      return res.body.data;
+    };
+    const idsEnElMes = async (clave) => (await eventosDe(clave, primero, ultimo)).map((evento) => evento.id);
+    const delResumen = async () => {
+      const res = await api.get('/mi-espacio/resumen', como('lector'));
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      return res.body.data.hoy_y_manana.eventos.map((evento) => evento.id);
+    };
+
+    const antes = await agenda();
+    assert.deepEqual(antes.eventos.map((evento) => evento.id), [id]);
+    assert.match(antes.frase_del_mes, /^1 evento(\.|,| y)/);
+    assert.deepEqual(await delResumen(), [id]);
+
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [idDe('superadmin')]);
+    const despues = await agenda();
+    assert.deepEqual(despues.eventos, []);
+    assert.ok(!despues.frase_del_mes.includes('evento'), despues.frase_del_mes);
+    assert.deepEqual(await delResumen(), []);
+    assert.deepEqual(await idsEnElMes('colab'), []);
+    // Su Laboral, como hoy: adminA lo sigue viendo
+    assert.deepEqual(await idsEnElMes('adminA'), [laboral]);
+  });
+
+  it('«mi recordatorio» de un Público de otra persona: 400 sin campo, «Este evento no tiene recordatorio para vos.», sin el '
+    + 'título y sin escribir nada', async () => {
+    const id = await crear('superadmin', { ...TURNO, ...PUBLICO_TODOS });
+    const conPersonas = await crear('superadmin', { ...TURNO, ...publicoCon('colab') });
+    for (const clave of ['lector', 'adminA']) {
+      for (const cuerpo of [{ sin_aviso: true }, { sin_aviso: false }, { sin_aviso: 'si' }]) {
+        const res = await miRecordatorio(clave, id, cuerpo);
+        es400(res, null, 'Este evento no tiene recordatorio para vos.');
+        sinElTurno(res.body, clave);
+      }
+    }
+    es400(await miRecordatorio('colab', conPersonas, { sin_aviso: true }), null, MENSAJES_EVENTO.sinRecordatorio);
+    assert.deepEqual(await filasDe(id), []);
+    assert.deepEqual(await filasDe(conPersonas), []);
+    // El suyo, esTuyo; uno que no ve, 404
+    es400(await miRecordatorio('superadmin', id, { sin_aviso: true }), null, MENSAJES_EVENTO.esTuyo);
+    es404(await miRecordatorio('lector', conPersonas, { sin_aviso: true }));
+  });
+
+  // Revisión final: si quien lo creó se desactiva, los demás dejan de verlo (Review Focus 5); «mi recordatorio» tampoco lo
+  // encuentra: el mismo 404 que uno que no existe (no se revela que existe), sin el título y sin escribir nada
+  it('«mi recordatorio» de un Público cuya persona que lo creó se desactivó: el mismo 404 que uno que no existe, sin escribir nada',
+    async () => {
+      const id = await crear('superadmin', { ...TURNO, ...PUBLICO_TODOS });
+      const conPersonas = await crear('superadmin', { ...TURNO, ...publicoCon('colab') });
+      const filas = async () => ({
+        eventos: [await filaDelEvento(id), await filaDelEvento(conPersonas)],
+        columnas: [await columnasDe(id), await columnasDe(conPersonas)],
+        personas: [await filasDe(id), await filasDe(conPersonas)],
+        vistas: [await vistasDe(id), await vistasDe(conPersonas)]
+      });
+      await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [idDe('superadmin')]);
+      const antes = await filas();
+      assert.deepEqual(antes.personas, [[], []]);
+      assert.deepEqual(antes.vistas, [[], [idDe('colab')]]);
+      const noExiste = Number((await query('SELECT COALESCE(MAX(id), 0) + 1000 AS id FROM mi_espacio_eventos'))[0].id);
+      const delQueNoExiste = await miRecordatorio('lector', noExiste, { sin_aviso: true });
+      es404(delQueNoExiste);
+      const casos = [['lector', id], ['colab', id], ['adminA', id], ['editor', id], ['colab', conPersonas]];
+      for (const [clave, evento] of casos) {
+        for (const cuerpo of [{ sin_aviso: true }, { sin_aviso: false }]) {
+          const res = await miRecordatorio(clave, evento, cuerpo);
+          es404(res);
+          assert.deepEqual(res.body, delQueNoExiste.body, `${clave}, ${evento}`);
+          sinElTurno(res.body, clave);
+        }
+      }
+      assert.deepEqual(await filas(), antes);
+    });
+
+  describe('los 400', () => {
+    const CASOS = [
+      ['tipo', { tipo: 'otro' }, MENSAJES_EVENTO.tipo],
+      ['tipo', { tipo: '' }, MENSAJES_EVENTO.tipo],
+      ['texto_publico', { ...PUBLICO_TODOS, texto_publico: '   ' }, MENSAJES_EVENTO.textoPublico],
+      ['texto_publico', { tipo: 'publico', para_todos: true }, MENSAJES_EVENTO.textoPublico],
+      ['texto_publico', { ...PUBLICO_TODOS, texto_publico: 'x'.repeat(61) }, MENSAJES_EVENTO.textoPublicoLargo],
+      ['personas', { tipo: 'publico', texto_publico: 'Turno médico' }, MENSAJES_EVENTO.personasPublico],
+      ['personas', { tipo: 'publico', texto_publico: 'Turno médico', personas: [] }, MENSAJES_EVENTO.personasPublico],
+      ['personas', { tipo: 'publico', texto_publico: 'Turno médico', personas: ['abc'] }, MENSAJES_EVENTO.personasInvalidas]
+    ];
+    for (const [campo, cambios, mensaje] of CASOS) {
+      it(`${campo}: ${JSON.stringify(cambios).slice(0, 70)}, del lector, en el alta y en el cambio, sin escribir nada`,
+        async () => {
+          es400(await api.post('/mi-espacio/eventos', formulario(cambios), como('lector')), campo, mensaje);
+          assert.equal(await cuantosEventos(), 0);
+          const id = await crear('lector');
+          es400(await cambiar('lector', id, cambios), campo, mensaje);
+          assert.deepEqual(await columnasDe(id),
+            { compartido: 0, para_todos: 0, publico: 0, publico_todos: 0, texto_publico: null });
+        });
+    }
+
+    it('las personas: solo el propio es como ninguna; una desactivada o una que no existe, personasInvalidas', async () => {
+      es400(await api.post('/mi-espacio/eventos', formulario(publicoCon('lector')), como('lector')),
+        'personas', MENSAJES_EVENTO.personasPublico);
+      const nuevos = await crearUsuariosPrueba(api, { inactiva: 'lector' });
+      try {
+        await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [nuevos.inactiva.id]);
+        for (const persona of [nuevos.inactiva.id, 999999]) {
+          es400(await api.post('/mi-espacio/eventos',
+            formulario({ ...publicoCon('colab'), personas: [idDe('colab'), persona] }), como('lector')),
+          'personas', MENSAJES_EVENTO.personasInvalidas);
+        }
+      } finally {
+        await limpiarDatosPrueba(nuevos);
+      }
+      // El propio entre otras se saca sin error
+      const id = await crear('lector', { ...publicoCon('colab'), personas: [idDe('lector'), idDe('colab')] });
+      assert.deepEqual(await vistasDe(id), [idDe('colab')]);
+      assert.equal(await cuantosEventos(), 1);
+    });
+
+    it('un Laboral del lector o del colaborador, como hoy: sinPermiso en compartido; un Público suyo, 201', async () => {
+      for (const clave of ['lector', 'colab']) {
+        for (const cuerpo of [{ tipo: 'laboral', para_todos: true }, { tipo: 'laboral', personas: [idDe('adminB')] }]) {
+          es400(await api.post('/mi-espacio/eventos', formulario(cuerpo), como(clave)), 'compartido', MENSAJES_EVENTO.sinPermiso);
+        }
+      }
+      assert.equal(await cuantosEventos(), 0);
+      // 60 caracteres con emojis valen (contados con Array.from)
+      const id = await crear('colab', { ...PUBLICO_TODOS, texto_publico: '🙂'.repeat(60) });
+      assert.equal((await columnasDe(id)).texto_publico, '🙂'.repeat(60));
+      assert.equal((await elDe('lector', id)).titulo, `Test c.: ${'🙂'.repeat(60)}`);
+    });
+  });
+
+  it('GET /personas/publico: a cualquier rol, todos los usuarios activos menos quien pide, por nombre, solo id, nombre e '
+    + 'iniciales; GET /personas sigue con 403 al lector', async () => {
+    const nuevos = await crearUsuariosPrueba(api, { inactiva: 'admin' });
+    try {
+      await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [nuevos.inactiva.id]);
+      const TODOS = [
+        { id: idDe('adminA'), nombre: 'Test adminA', iniciales: 'TA' },
+        { id: idDe('adminB'), nombre: 'Test adminB', iniciales: 'TA' },
+        { id: idDe('colab'), nombre: 'Test colab', iniciales: 'TC' },
+        { id: idDe('editor'), nombre: 'Test editor', iniciales: 'TE' },
+        { id: idDe('lector'), nombre: 'Test lector', iniciales: 'TL' },
+        { id: idDe('superadmin'), nombre: 'Test superadmin', iniciales: 'TS' }
+      ];
+      for (const clave of ['lector', 'colab', 'adminA']) {
+        const res = await api.get('/mi-espacio/personas/publico', como(clave));
+        assert.equal(res.status, 200, JSON.stringify(res.body));
+        assert.equal(res.body.success, true);
+        assert.deepEqual(res.body.data, TODOS.filter((persona) => persona.id !== idDe(clave)), clave);
+        for (const persona of res.body.data) assert.deepEqual(Object.keys(persona), ['id', 'nombre', 'iniciales']);
+      }
+    } finally {
+      await limpiarDatosPrueba(nuevos);
+    }
+    const res = await api.get('/mi-espacio/personas', como('lector'));
+    assert.equal(res.status, 403, JSON.stringify(res.body));
+    assert.deepEqual(res.body, { success: false, error: 'No tenés permiso para compartir eventos.' });
+  });
+
+  it('el Resumen: «Hoy y mañana» del lector trae el de mañana como «Test s.: Turno médico», sin nada de quién está; quien lo '
+    + 'creó, con su título y «lo ven todos como «Turno médico»»', async () => {
+    const id = await crear('superadmin', { ...TURNO, ...PUBLICO_TODOS, fecha: dia(1) });
+    const delLector = await api.get('/mi-espacio/resumen', como('lector'));
+    assert.equal(delLector.status, 200, JSON.stringify(delLector.body));
+    sinElTurno(delLector.body, 'lector');
+    assert.deepEqual(delLector.body.data.hoy_y_manana.eventos, [{
+      id, hora: '10:00', titulo: 'Test s.: Turno médico', compartido: false, publico: true, detalle: 'Mañana', dia: 'manana',
+      quien: ''
+    }]);
+    const delSuperadmin = await api.get('/mi-espacio/resumen', como('superadmin'));
+    assert.equal(delSuperadmin.status, 200, JSON.stringify(delSuperadmin.body));
+    assert.deepEqual(delSuperadmin.body.data.hoy_y_manana.eventos, [{
+      id, hora: '10:00', titulo: 'Turno con el dentista', compartido: false, publico: true,
+      detalle: 'Mañana · lo ven todos como «Turno médico»', dia: 'manana', quien: 'lo ven todos como «Turno médico»'
+    }]);
+  });
+
+  describe('los datos (services/miEspacioEventosDatos.js y usuariosActivos)', () => {
+    it('eventoPropio: el Público entero, con sus vistas; eventoVisible a otra persona: recortado, sin el título ni el detalle',
+      async () => {
+        const id = await crear('lector', { ...TURNO, ...publicoCon('colab', 'adminA'), hasta: '' });
+        const propio = await datos.eventoPropio(id, idDe('lector'));
+        assert.deepEqual(propio, {
+          id, creado_por: idDe('lector'), creador: 'Test lector', titulo: 'Turno con el dentista', detalle: 'Llevar el carnet',
+          fecha: q(1), desde: '10:00', hasta: null, compartido: false, para_todos: false, publico: true, publico_todos: false,
+          texto_publico: 'Turno médico', recordatorio: '2h', personas: [],
+          vistas: [{ id: idDe('adminA'), nombre: 'Test adminA' }, { id: idDe('colab'), nombre: 'Test colab' }]
+        });
+        const RECORTADO = {
+          id, creado_por: idDe('lector'), creador: 'Test lector', fecha: q(1), desde: '10:00', hasta: null, compartido: 0,
+          publico: 1, texto_publico: 'Turno médico'
+        };
+        assert.deepEqual(await datos.eventoVisible(id, { id: idDe('colab'), rol: 'colaborador' }), RECORTADO);
+        assert.deepEqual(await datos.eventoVisible(id, { id: idDe('adminA'), rol: 'admin' }), RECORTADO);
+        assert.equal(await datos.eventoVisible(id, { id: idDe('adminB'), rol: 'admin' }), null);
+        assert.deepEqual(await datos.eventoVisible(id, { id: idDe('lector'), rol: 'lector' }), propio);
+        const visibles = await datos.eventosVisibles({ id: idDe('colab'), rol: 'colaborador' }, q(0), q(20));
+        assert.deepEqual(visibles, [RECORTADO]);
+        // La audiencia de un Público es nadie: ningún email del guardado le llega a otra persona
+        assert.deepEqual(await datos.audienciaDe(propio), []);
+        assert.deepEqual(await datos.audienciaDe({ ...propio, compartido: 1, para_todos: 1, publico: 1 }), []);
+      });
+
+    it('vistasDe: en lote, un Map de cada id a sus vistas por nombre, también las desactivadas (Ruling 4)', async () => {
+      const uno = await crear('lector', publicoCon('superadmin', 'colab'));
+      const otro = await crear('adminA', publicoCon('editor'));
+      const privado = await crear('adminA');
+      await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [idDe('colab')]);
+      const vistas = await datos.vistasDe([uno, otro, privado], pool);
+      assert.deepEqual([...vistas.entries()], [
+        [uno, [{ id: idDe('colab'), nombre: 'Test colab' }, { id: idDe('superadmin'), nombre: 'Test superadmin' }]],
+        [otro, [{ id: idDe('editor'), nombre: 'Test editor' }]],
+        [privado, []]
+      ]);
+      assert.deepEqual([...(await datos.vistasDe([], pool)).entries()], []);
+    });
+
+    it('personasParaElPublico y usuariosActivos: todos los roles, solo los activos', async () => {
+      const { usuariosActivos } = await import('../services/miEspacioDatos.js');
+      await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [idDe('editor')]);
+      const activos = await usuariosActivos();
+      assert.deepEqual(activos, ['superadmin', 'adminA', 'adminB', 'lector', 'colab']
+        .map((clave) => ({ id: idDe(clave), nombre: `Test ${clave}` })).sort((a, b) => a.id - b.id));
+      assert.deepEqual((await datos.personasParaElPublico(idDe('lector'))).map((persona) => persona.nombre),
+        ['Test adminA', 'Test adminB', 'Test colab', 'Test superadmin']);
+      assert.deepEqual((await datos.personasParaElPublico(null)).map((persona) => persona.id).sort((a, b) => a - b),
+        activos.map((persona) => persona.id));
+    });
   });
 });
 

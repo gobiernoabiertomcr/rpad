@@ -812,7 +812,10 @@ CREATE TABLE `mi_espacio_avisos` (
 -- La agenda de Mi espacio (database/updates/migracion-mi-espacio-agenda.sql): los eventos (personales o compartidos, con
 -- personas elegidas o para_todos; fecha y horas en hora argentina), con quién se compartió cada uno y si apagó su
 -- recordatorio (en uno para todos, solo quien lo apagó), qué email salió a quién (la clave única vale solo para los recordatorios: recordatorio_unico es 1 en ellos y
--- NULL en el resto) y la última corrida de los recordatorios (una sola fila, id = 1), para Correos → Estado
+-- NULL en el resto) y la última corrida de los recordatorios (una sola fila, id = 1), para Correos → Estado.
+-- El evento Personal (Público) (database/updates/migracion-mi-espacio-evento-publico.sql): publico, publico_todos y
+-- texto_publico en los eventos (un Público se guarda con compartido y para_todos en 0: para lo demás es un evento personal de
+-- quien lo creó) y a quién se le muestra uno con personas elegidas (mi_espacio_evento_vistas)
 -- =====================================================
 CREATE TABLE `mi_espacio_eventos` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -824,6 +827,9 @@ CREATE TABLE `mi_espacio_eventos` (
   `hasta` time DEFAULT NULL,
   `compartido` tinyint(1) NOT NULL DEFAULT 0,
   `para_todos` tinyint(1) NOT NULL DEFAULT 0,
+  `publico` tinyint(1) NOT NULL DEFAULT 0,
+  `publico_todos` tinyint(1) NOT NULL DEFAULT 0,
+  `texto_publico` varchar(60) DEFAULT NULL,
   `recordatorio` enum('ninguno','1h','2h','dia_anterior') NOT NULL DEFAULT '2h',
   `activo` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
@@ -842,6 +848,15 @@ CREATE TABLE `mi_espacio_evento_personas` (
   KEY `fk_mi_espacio_evento_personas_usuario` (`usuario_id`),
   CONSTRAINT `fk_mi_espacio_evento_personas_evento` FOREIGN KEY (`evento_id`) REFERENCES `mi_espacio_eventos` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_mi_espacio_evento_personas_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `mi_espacio_evento_vistas` (
+  `evento_id` int(11) NOT NULL,
+  `usuario_id` int(11) NOT NULL,
+  PRIMARY KEY (`evento_id`,`usuario_id`),
+  KEY `fk_mi_espacio_evento_vistas_usuario` (`usuario_id`),
+  CONSTRAINT `fk_mi_espacio_evento_vistas_evento` FOREIGN KEY (`evento_id`) REFERENCES `mi_espacio_eventos` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mi_espacio_evento_vistas_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `mi_espacio_evento_envios` (

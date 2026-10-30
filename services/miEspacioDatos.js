@@ -4,12 +4,13 @@
  * activas, lo que el paso a Configuración (sección 6) lee de las licencias de Configuración (y si hoy ya salieron notas con la
  * firma del titular, `notasDeHoyDelTitular`), las ausencias que ven los compañeros («Hoy no están», sección 7) y la
  * administración activa con la que se arma el nombre corto de cada uno (`administracionActiva`, spec
- * 2026-10-28-mi-espacio-agenda-onda, 5.1), quiénes están de licencia el día del email de vencimiento (sección 9), cuántas
- * licencias incluye un feriado (Configuración → Feriados, `licenciasQueIncluyen`) y la fecha y la firma de la nota de una
- * licencia (spec 2026-10-27-mi-espacio-licencia-word, `datosDeLaNota`). Lo que llega de la base como texto se
- * convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las fechas se leen con DATE_FORMAT ('AAAA-MM-DD'), los
- * DECIMAL, tinyint y smallint pasan por Number() (el '7.5' de unas horas, el '8.0' de un saldo) y los TIME ('19:00:00') se
- * cortan a 'HH:MM'.
+ * 2026-10-28-mi-espacio-agenda-onda, 5.1; el de un Personal (Público) de la agenda, contra todos los usuarios activos:
+ * `usuariosActivos`, spec 2026-10-29-mi-espacio-evento-publico, 6.3), quiénes están de licencia el día del email de
+ * vencimiento (sección 9), cuántas licencias incluye un feriado (Configuración → Feriados, `licenciasQueIncluyen`) y la fecha
+ * y la firma de la nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word, `datosDeLaNota`). Lo que llega de la base
+ * como texto se convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las fechas se leen con DATE_FORMAT
+ * ('AAAA-MM-DD'), los DECIMAL, tinyint y smallint pasan por Number() (el '7.5' de unas horas, el '8.0' de un saldo) y los TIME
+ * ('19:00:00') se cortan a 'HH:MM'.
  * Sin consultas N+1: las tablas se leen una vez para todas las personas (`estadosDe`). `conexion`: el pool, o la de una
  * transacción (lee lo que ella ve).
  */
@@ -197,6 +198,18 @@ export const administracionActiva = async (conexion = pool) => {
   const [filas] = await conexion.query(
     'SELECT id, nombre_completo FROM usuarios WHERE activo = 1 AND rol IN (?) ORDER BY id', [ROLES_QUE_COMPARTEN]
   );
+  return filas.map((fila) => ({ id: Number(fila.id), nombre: fila.nombre_completo }));
+};
+
+/**
+ * Todos los usuarios activos, de cualquier rol (`activo = 1`), contra los que se arma el nombre corto de quien cargó un Personal
+ * (Público) de la agenda y de quienes lo ven (spec 2026-10-29-mi-espacio-evento-publico, 6.3: lo puede crear y ver cualquier
+ * rol, y dos personas de cualquier rol pueden compartir el primer nombre): `[{ id, nombre }]`, por id. Solo el id y el nombre
+ * completo: ni el email ni el rol.
+ * @returns {Promise<{ id: number, nombre: string }[]>}
+ */
+export const usuariosActivos = async (conexion = pool) => {
+  const [filas] = await conexion.query('SELECT id, nombre_completo FROM usuarios WHERE activo = 1 ORDER BY id');
   return filas.map((fila) => ({ id: Number(fila.id), nombre: fila.nombre_completo }));
 };
 

@@ -122,7 +122,7 @@ describe('lector', () => {
     '/gestion/metricas', '/gestion/proyectos', '/gestion/timeline', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/ciclo-de-vida',
     '/feriados', '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial',
     '/mi-espacio/anio/2026', '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/firmante',
-    '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/salidas']) {
+    '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/salidas', '/mi-espacio/personas/publico']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.lector.token });
       assert.equal(res.status, 200);
@@ -234,6 +234,9 @@ const RUTAS_MI_ESPACIO = [
   ['GET', '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27'],
   ['GET', '/mi-espacio/eventos/aviso?fecha=2026-10-27&desde=10:00&recordatorio=2h'],
   ['GET', '/mi-espacio/personas'],
+  // El evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 6.4): la lista de todos los usuarios activos, para
+  // cualquier rol con sesión
+  ['GET', '/mi-espacio/personas/publico'],
   ['POST', '/mi-espacio/eventos'],
   ['PUT', '/mi-espacio/eventos/1'],
   ['DELETE', '/mi-espacio/eventos/1'],
@@ -263,7 +266,7 @@ describe('colaborador', () => {
     '/reportes/agenda', '/reportes/para-completar', '/gestion/proyectos', '/gestion/timeline', '/reportes/ciclo-de-vida', '/feriados',
     '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial', '/mi-espacio/anio/2026',
     '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/firmante',
-    '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/salidas']) {
+    '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/salidas', '/mi-espacio/personas/publico']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.colaborador.token });
       assert.equal(res.status, 200);

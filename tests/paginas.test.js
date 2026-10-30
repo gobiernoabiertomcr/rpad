@@ -94,8 +94,10 @@ const VERSION_PROYECTOS = '20261206';
 // 2026-10-28-mi-espacio-licencia-anulada, 2.2 y 2.3; y la agenda con más onda —la banda del mes, sábado y domingo, las barras, los
 // íconos y el día elegido del teléfono—, spec 2026-10-28-mi-espacio-agenda-onda, 3; y las vacaciones al cargar una licencia —los
 // avisos del cálculo, «Vence pronto» sin el botón, las horas de franquicia que se pierden y el número de un tramo de un solo día—,
-// spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3). Su versión es propia
-const VERSION_MI_ESPACIO = '20261217';
+// spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3; y el formulario del evento con los tres tipos —Personal (Privado), Personal
+// (Público) y Laboral, con lo que ven los demás, «Otro» y la vista previa—, spec 2026-10-29-mi-espacio-evento-publico, 4). Su versión
+// es propia
+const VERSION_MI_ESPACIO = '20261218';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -723,7 +725,8 @@ describe('páginas', () => {
       assert.ok(vista, 'la vista');
       const ids = [...vista.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
       assert.deepEqual(ids, ['vista-agenda', 'ag-mes-titulo', 'ag-anterior', 'ag-siguiente', 'ag-finde', 'ag-finde-cuenta', 'ag-hoy',
-        'ag-nuevo-evento', 'ag-frase', 'ag-mes', 'ag-leyenda-ausentes', 'ag-elegido', 'ag-proximos-titulo', 'ag-proximos']);
+        'ag-nuevo-evento', 'ag-frase', 'ag-mes', 'ag-leyenda-laborales', 'ag-leyenda-ausentes', 'ag-elegido', 'ag-proximos-titulo',
+        'ag-proximos']);
       // La banda, primero y fuera de las tarjetas, con la ola del Resumen (el mismo dibujo que OLA_DE_LA_BANDA de mi-espacio.js)
       const banda = vista.match(/<div class="me-banda-del-mes">[\s\S]*?<\/svg>\s*<\/div>/)?.[0] ?? '';
       assert.ok(banda, 'la banda');
@@ -742,16 +745,19 @@ describe('páginas', () => {
       assert.ok(banda.includes('<p class="me-frase-del-mes" id="ag-frase"></p>'));
       // Ninguna clase nueva lleva la palabra «agenda» (es la Agenda de pedidos de Reportes): solo los ids ag-* y el panel
       for (const [, clases] of vista.matchAll(/\sclass="([^"]*)"/g)) assert.doesNotMatch(clases, /agenda/, clases);
-      // La leyenda: los cinco colores, cada uno con su muestra y su ícono (el de lo que es solo tuyo, vacío); «Compañeros que no
-      // están», oculto hasta saber que quien mira los ve
+      // La leyenda: los colores, cada uno con su muestra y su ícono (el de lo que es solo tuyo, vacío; lo que ven otros, el ojo);
+      // desde el evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 5.2), siete: «Tuyos, a la vista», «Personales
+      // de otros» y «Laborales» (eran «Compartidos»). «Laborales» y «Compañeros que no están», ocultos hasta saber que quien mira los ve
       const leyenda = vista.match(/<ul class="me-leyenda"[^>]*>([\s\S]*?)<\/ul>/)?.[1] ?? '';
-      const muestras = [...leyenda.matchAll(/<li( id="ag-leyenda-ausentes" hidden)?><span class="me-color (\w+)" aria-hidden="true">((?:<svg [\s\S]*?<\/svg>)?)<\/span>([^<]+)<\/li>/g)]
+      const muestras = [...leyenda.matchAll(/<li( id="ag-leyenda-(?:laborales|ausentes)" hidden)?><span class="me-color ([\w-]+)" aria-hidden="true">((?:<svg [\s\S]*?<\/svg>)?)<\/span>([^<]+)<\/li>/g)]
         .map(([, oculto, clase, icono, texto]) => [clase, texto, Boolean(oculto), icono === '' ? '' : 'svg']);
       assert.deepEqual(muestras, [
-        ['propio', 'Solo vos', false, ''], ['compartido', 'Compartidos', false, 'svg'], ['licencia', 'Tus licencias y francos', false, 'svg'],
-        ['feriado', 'Feriados', false, 'svg'], ['ausente', 'Compañeros que no están', true, 'svg']
+        ['propio', 'Solo vos', false, ''], ['propio', 'Tuyos, a la vista', false, 'svg'], ['publico-otro', 'Personales de otros', false, 'svg'],
+        ['compartido', 'Laborales', true, 'svg'], ['licencia', 'Tus licencias y francos', false, 'svg'], ['feriado', 'Feriados', false, 'svg'],
+        ['ausente', 'Compañeros que no están', true, 'svg']
       ]);
-      assert.equal(leyenda.match(/<li\b/g)?.length, 5);
+      assert.equal(leyenda.match(/<li\b/g)?.length, 7);
+      assert.ok(leyenda.includes('<li id="ag-leyenda-laborales" hidden><span class="me-color compartido" aria-hidden="true">'));
       // El día elegido del teléfono: vacío (lo dibuja mi-espacio.js), en la tarjeta del mes, después de la leyenda
       assert.ok(vista.includes('<section class="me-elegido" id="ag-elegido" aria-labelledby="ag-elegido-titulo"></section>'));
       assert.ok(vista.indexOf('<ul class="me-leyenda"') < vista.indexOf('id="ag-elegido"'));
@@ -778,7 +784,7 @@ describe('páginas', () => {
       const afuera = estilo.replace(telefono, '');
       // Los próximos en su orden natural y, en el mes, nada de las rayitas de antes
       assert.doesNotMatch(estilo, /\.me-proximos-tarjeta \{ order: -1; \}/);
-      assert.doesNotMatch(estilo, /\.me-ev \{ font-size: 0/);
+      assert.doesNotMatch(estilo, /\.me-ev \{ font-size: 0[;\s}]/);
       assert.match(telefono, /\.me-elegido \{ display: block;[^}]*\}/);
       assert.match(telefono, /\.me-puntos \{ display: flex;[^}]*\}/);
       assert.match(telefono, /\.me-cosas \{ display: none; \}/);
@@ -791,8 +797,9 @@ describe('páginas', () => {
       // En la compu, el día elegido y los puntos no se ven
       assert.ok(afuera.includes('.me-elegido { display: none; }'));
       assert.ok(afuera.includes('.me-puntos { display: none; }'));
-      // Los cinco colores, en el mes y en la leyenda; los compañeros, la pizarra (gris oscura con letra blanca)
-      for (const clase of ['propio', 'compartido', 'licencia', 'feriado', 'ausente']) {
+      // Los seis colores, en el mes y en la leyenda (desde el evento Personal (Público), también el rosado de uno de otra persona); los
+      // compañeros, la pizarra (gris oscura con letra blanca)
+      for (const clase of ['propio', 'compartido', 'publico-otro', 'licencia', 'feriado', 'ausente']) {
         assert.ok(estilo.includes(`.me-ev.${clase}, .me-leyenda .${clase} {`), clase);
       }
       assert.match(estilo, /\n\s*\.me-tira\.ausente \{[^}]*background: var\(--sg-suave\);[^}]*color: #fff;[^}]*\}/);
@@ -872,7 +879,8 @@ describe('páginas', () => {
       }
       // Cada regla que pisa un color con CanvasText, al menos tan específica como la que lo da
       const PISADAS = [
-        ['puntos del teléfono', /\.me-puntos/, ['.me-puntos .propio', '.me-puntos .compartido', '.me-puntos .feriado', '.me-puntos i']],
+        ['puntos del teléfono', /\.me-puntos/, ['.me-puntos .propio', '.me-puntos .compartido', '.me-puntos .publico-otro', '.me-puntos .feriado',
+          '.me-puntos i']],
         ['punto de los próximos', /\.me-prox-icono/, ['.me-prox-icono.propio i']],
         ['punto del día elegido', /\.me-elegido-icono/, ['.me-elegido-icono i']],
         ['la perilla de la llave', /\.me-finde-llave::after/, ['.me-finde-llave::after', '.me-finde[aria-pressed="true"] .me-finde-llave::after']]
@@ -887,6 +895,26 @@ describe('páginas', () => {
       }
       // Las barras siguen en el bloque, con su borde
       assert.ok(reglasDelBloque.some(({ selector, cuerpo }) => selector.includes('.me-tira') && /CanvasText/.test(cuerpo)));
+      // El anillo de un Personal (Público) de otra persona (spec 2026-10-29-mi-espacio-evento-publico, 5.1 y 7): en alto contraste, un
+      // aro (Canvas por dentro y el borde en CanvasText, sin la sombra), no un punto lleno. Va después de la regla de los puntos, y es al
+      // menos tan específico como ella y como la del teléfono que le da el anillo
+      const lugarDe = (patron) => reglasDelBloque.findIndex(({ selector }) => patron.test(selector));
+      const anillo = reglasDelBloque[lugarDe(/\.me-puntos [^,]*\.publico-otro/)];
+      assert.ok(anillo, 'el anillo en alto contraste');
+      assert.match(anillo.cuerpo, /background: Canvas;/);
+      assert.match(anillo.cuerpo, /outline: 2px solid CanvasText;/);
+      assert.match(anillo.cuerpo, /outline-offset: -2px;/);
+      assert.match(anillo.cuerpo, /box-shadow: none;/);
+      assert.ok(lugarDe(/\.me-puntos i\[class\]$/) < lugarDe(/\.me-puntos [^,]*\.publico-otro/), 'después de la de los puntos');
+      for (const otro of ['.me-puntos i[class]', '.me-puntos .publico-otro']) {
+        assert.ok(noMenos(especificidad(anillo.selector), especificidad(otro)), `${anillo.selector} contra ${otro}`);
+      }
+      // La muestra de la leyenda (también la rosada) lleva su borde, con un selector que puede con el que le da su color
+      const muestra = reglasDelBloque.find(({ selector }) => selector.includes('.me-leyenda .me-color'));
+      assert.ok(muestra && /CanvasText/.test(muestra.cuerpo), 'la muestra de la leyenda');
+      for (const otro of ['.me-leyenda .publico-otro', '.me-leyenda .compartido', '.me-leyenda .me-color.ausente']) {
+        assert.ok(noMenos(especificidad(muestra.selector), especificidad(otro)), `${muestra.selector} contra ${otro}`);
+      }
     });
 
     // Revisión de la Task 7: en el teléfono, la línea de una licencia va sin el borde de color del principio; la regla tiene que poder
@@ -947,12 +975,18 @@ describe('páginas', () => {
           'mu-borrar', 'mu-pie', 'mu-guardar'],
         // La agenda (spec 2026-10-26-mi-espacio-agenda, 1, 2 y 6; maqueta 2, #evento y #evento-ajeno), antes de la confirmación: todos
         // los velos tienen el mismo z-index y el que va más abajo en el HTML queda arriba
+        // Desde el evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 4), «Tipo de evento» (sus botones los dibuja
+        // mi-espacio.js) en lugar de «¿Quién lo ve?», y lo del Público: qué ven los demás, «Otro» con su cuenta y la vista previa
         'modal-evento': ['modal-evento-titulo', 'ev-error', 'ev-titulo', 'ev-titulo-error', 'ev-fecha', 'ev-fecha-error', 'ev-desde',
-          'ev-desde-error', 'ev-hasta', 'ev-hasta-error', 'ev-detalle', 'ev-detalle-error', 'ev-grupo-quien', 'ev-quien-rotulo', 'ev-solo',
-          'ev-compartido', 'ev-grupo-personas', 'ev-personas-cuantas', 'ev-personas', 'ev-personas-ayuda', 'ev-personas-error',
-          'ev-recordatorio', 'ev-aviso', 'ev-recordatorio-ayuda', 'ev-recordatorio-error', 'ev-borrar', 'ev-guardar'],
-        'modal-evento-ajeno': ['modal-evento-ajeno-titulo', 'mea-error', 'mea-cuando', 'mea-detalle', 'mea-quien', 'mea-recordatorio',
-          'mea-aviso', 'mea-ayuda', 'mea-cerrar'],
+          'ev-desde-error', 'ev-hasta', 'ev-hasta-error', 'ev-detalle', 'ev-detalle-error', 'ev-grupo-tipo', 'ev-tipo-rotulo', 'ev-tipos',
+          'ev-tipo-ayuda', 'ev-tipo-error', 'ev-publico', 'ev-grupo-texto', 'ev-textos', 'ev-texto-error', 'ev-otro-grupo', 'ev-otro',
+          'ev-otro-cuenta', 'ev-otro-error', 'ev-vista-previa', 'ev-vista-previa-dia', 'ev-vista-previa-evento', 'ev-grupo-personas',
+          'ev-personas-cuantas', 'ev-personas', 'ev-personas-ayuda', 'ev-personas-error', 'ev-recordatorio', 'ev-aviso',
+          'ev-recordatorio-ayuda', 'ev-recordatorio-error', 'ev-borrar', 'ev-guardar'],
+        // Desde el evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 5.3), «Mi recordatorio» en su grupo, que se
+        // oculta en un Público
+        'modal-evento-ajeno': ['modal-evento-ajeno-titulo', 'mea-error', 'mea-cuando', 'mea-detalle', 'mea-quien', 'mea-grupo-recordatorio',
+          'mea-recordatorio', 'mea-aviso', 'mea-ayuda', 'mea-cerrar'],
         'modal-confirmar': ['modal-confirmar-titulo', 'mc-error', 'modal-confirmar-texto', 'modal-confirmar-si']
       };
       const nombres = Object.keys(MODALES);
@@ -1023,18 +1057,34 @@ describe('páginas', () => {
       });
 
       // La agenda (spec 2026-10-26-mi-espacio-agenda, 1 y 6; maqueta 2, #evento y #evento-ajeno)
-      it('el formulario del evento: «¿Quién lo ve?» (oculto hasta saber que comparte) con dos botones con aria-pressed, y las personas', () => {
+      it('el formulario del evento: «Tipo de evento» (a la vista para todos), lo del Público con su vista previa, y las personas', () => {
         const html = modal('modal-evento');
         assert.match(html, /<h2 class="modal-title" id="modal-evento-titulo">Nuevo evento<\/h2>/);
         assert.match(html, /<label class="form-label" for="ev-titulo">Qué<\/label>\s*<input type="text" class="form-input" id="ev-titulo" autocomplete="off" aria-describedby="ev-titulo-error">/);
         assert.match(html, /<input type="date" class="form-input" id="ev-fecha" aria-describedby="ev-fecha-error">/);
         for (const control of ['ev-desde', 'ev-hasta']) assert.match(html, new RegExp(`<input type="time" class="form-input" id="${control}" aria-describedby="${control}-error">`), control);
         assert.match(html, /<textarea class="form-textarea" id="ev-detalle" rows="3" aria-describedby="ev-detalle-error"><\/textarea>/);
-        assert.match(html, /<div class="me-grupo" id="ev-grupo-quien" role="group" aria-labelledby="ev-quien-rotulo" hidden>/);
-        assert.match(html, /<button type="button" class="me-opcion" id="ev-solo" aria-pressed="true"><span><b>Solo yo<\/b><small>Nadie más lo ve<\/small><\/span><\/button>/);
-        assert.match(html, /<button type="button" class="me-opcion" id="ev-compartido" aria-pressed="false"><span><b>Compartido<\/b><small>Con las personas que elijas<\/small><\/span><\/button>/);
+        // El tipo, para todos los roles (sus botones, con data-tipo y aria-pressed, los dibuja mi-espacio.js: dos o tres), con su ayuda
+        // y su error en la descripción del grupo
+        assert.match(html, new RegExp('<div class="me-grupo" id="ev-grupo-tipo" role="group" aria-labelledby="ev-tipo-rotulo" aria-describedby="ev-tipo-ayuda ev-tipo-error">\\s*'
+          + '<span class="form-label" id="ev-tipo-rotulo">Tipo de evento</span>\\s*<div class="me-opciones tres" id="ev-tipos"></div>\\s*'
+          + '<p class="form-hint" id="ev-tipo-ayuda" hidden></p>\\s*<p class="form-error" id="ev-tipo-error" hidden></p>\\s*</div>'));
+        assert.doesNotMatch(html, /¿Quién lo ve\?|Solo yo|>Compartido</);
+        // Lo del Público, oculto hasta elegirlo: qué ven los demás (las pastillas las dibuja mi-espacio.js), «Otro» con su cuenta (fuera
+        // de toda región viva) y la vista previa
+        assert.match(html, /<div id="ev-publico" hidden>\s*<fieldset class="me-grupo" id="ev-grupo-texto" aria-describedby="ev-texto-error">\s*<legend class="form-label">Qué ven los demás<\/legend>\s*<div class="me-textos" id="ev-textos"><\/div>\s*<p class="form-error" id="ev-texto-error" hidden><\/p>\s*<\/fieldset>/);
+        assert.match(html, /<div class="form-group me-otro" id="ev-otro-grupo" hidden>\s*<label class="form-label" for="ev-otro">Escribí qué ven los demás<\/label>\s*<input type="text" class="form-input" id="ev-otro" autocomplete="off" aria-describedby="ev-otro-cuenta ev-otro-error">\s*<p class="form-hint me-cuenta" id="ev-otro-cuenta">0 de 60 caracteres<\/p>\s*<p class="form-error" id="ev-otro-error" hidden><\/p>\s*<\/div>/);
+        assert.match(html, /<div class="me-vista-previa" id="ev-vista-previa">\s*<p class="me-vista-previa-rotulo">Así lo ven los demás:<\/p>\s*<div class="me-vista-previa-celda">\s*<span class="me-vista-previa-dia" id="ev-vista-previa-dia"><\/span>\s*<div id="ev-vista-previa-evento"><\/div>\s*<\/div>\s*<p class="me-vista-previa-ayuda">En su agenda y en «Hoy y mañana» del Resumen\. No ven el título ni el detalle\.<\/p>\s*<\/div>\s*<\/div>/);
+        assert.doesNotMatch(html, /aria-live|role="status"/);
+        // Sin las clases de la maqueta (ag-*): las de la página son me-*
+        for (const [, clases] of html.matchAll(/\sclass="([^"]*)"/g)) assert.doesNotMatch(clases, /(?:^|\s)ag-|agenda/, clases);
+        // En el orden del formulario: el tipo, lo del Público, con quién y el recordatorio
+        const lugar = (id) => html.indexOf(`id="${id}"`);
+        assert.ok(lugar('ev-detalle') < lugar('ev-grupo-tipo') && lugar('ev-grupo-tipo') < lugar('ev-publico')
+          && lugar('ev-publico') < lugar('ev-grupo-personas') && lugar('ev-grupo-personas') < lugar('ev-recordatorio'));
+        // Las personas: su ayuda arranca vacía (mi-espacio.js escribe la del Laboral o la del Público)
         assert.match(html, /<fieldset class="me-grupo" id="ev-grupo-personas" aria-describedby="ev-personas-ayuda ev-personas-error" hidden>/);
-        assert.match(html, /<p class="form-hint" id="ev-personas-ayuda">Les llega un email cuando los sumás, y otro si cambiás o borrás el evento\. Solo vos lo podés cambiar\.<\/p>/);
+        assert.match(html, /<p class="form-hint" id="ev-personas-ayuda"><\/p>/);
         // El recordatorio: las opciones las pone mi-espacio.js; cuándo sale (#ev-aviso) no es una región viva: lo describe el select
         assert.match(html, /<select class="form-select" id="ev-recordatorio" aria-describedby="ev-aviso ev-recordatorio-ayuda ev-recordatorio-error"><\/select>/);
         assert.match(html, /<p class="form-hint" id="ev-aviso" hidden><\/p>/);
@@ -1075,7 +1125,7 @@ describe('páginas', () => {
       it('el detalle de un evento ajeno: cuándo, el detalle, quién, «Mi recordatorio» y quién lo puede cambiar', () => {
         const html = modal('modal-evento-ajeno');
         assert.match(html, /<div class="modal me-modal me-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-evento-ajeno-titulo">/);
-        assert.match(html, /<label class="form-label" for="mea-recordatorio">Mi recordatorio<\/label>\s*<select class="form-select" id="mea-recordatorio" aria-describedby="mea-aviso mea-ayuda"><\/select>/);
+        assert.match(html, /<div class="form-group" id="mea-grupo-recordatorio">\s*<label class="form-label" for="mea-recordatorio">Mi recordatorio<\/label>\s*<select class="form-select" id="mea-recordatorio" aria-describedby="mea-aviso mea-ayuda"><\/select>/);
         assert.match(html, /<p class="form-hint" id="mea-ayuda">Solo quien lo creó puede cambiar el evento\.<\/p>/);
         const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
         assert.ok(ids.indexOf('mea-cuando') < ids.indexOf('mea-detalle') && ids.indexOf('mea-detalle') < ids.indexOf('mea-quien'));
@@ -1126,6 +1176,8 @@ describe('páginas', () => {
         assert.match(estilo, new RegExp(`${token}:`), token);
       }
       assert.match(estilo, /--sg-medio: #4C7AB0;/);
+      // El rosado de un Personal (Público) de otra persona (spec 2026-10-29-mi-espacio-evento-publico, 5.1): el texto, el fondo y el borde
+      assert.match(estilo, /--sg-rosado: #8A3B5C; --sg-rosado-fondo: #F7E3EC; --sg-rosado-borde: #B5577F;/);
       const EN_EL_STYLE = ['--n', '--p', '--demora', '--duracion'];
       const css = fs.readFileSync(new URL('../public/css/main.css', import.meta.url), 'utf8') + estilo;
       for (const [, variable] of estilo.matchAll(/var\((--[\w-]+)\)/g)) {

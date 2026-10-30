@@ -22,7 +22,7 @@ import {
   DIAS_DE_PROXIMOS, itemDeEvento, itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, MENSAJES_EVENTO,
   LARGO_TITULO_EVENTO, LARGO_DETALLE_EVENTO, FECHA_MINIMA_EVENTO, fechaMaximaEvento, textoRangoEvento, RECORDATORIOS,
   RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, validarEvento, inicialesDe, cuandoDelEvento, avisoDe, companerosPorDia, fraseDelMes,
-  mesDeLaFrase
+  mesDeLaFrase, TIPOS_DE_EVENTO, TEXTOS_PUBLICOS, LARGO_TEXTO_PUBLICO
 } from '../services/miEspacioEventosReglas.js';
 import { idPositivo } from '../services/proyectosReglas.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
@@ -1121,16 +1121,17 @@ const FERIADO_DIVERSIDAD = Object.freeze({ ...FERIADO_SOBERANIA, id: 2, fecha: '
 
 // Lo que contesta GET /api/mi-espacio/eventos para un rango: lo de ese rango, armado por el servidor (los compañeros, solo a quien
 // los ve: `puedeCompartir`, y por día, `companeros_por_dia`). Los días hábiles de las licencias y de los compañeros, sin feriados de
-// la tabla salvo con `conFeriados`, que les saca los de `feriados` (como hace el servidor con los suyos)
+// la tabla salvo con `conFeriados`, que les saca los de `feriados` (como hace el servidor con los suyos). `miNombreCorto`: el nombre
+// de quien mira como lo ven los demás (el de la vista previa de un Personal (Público))
 const respuestaDeEventos = ({ desde, hasta }, {
   eventos = EVENTOS_DE_PRUEBA, licencias = LICENCIAS_DE_PRUEBA, ausencias = AUSENCIAS_DE_PRUEBA,
-  feriados = [FERIADO_DIVERSIDAD, FERIADO_SOBERANIA], puedeCompartir = true, conFeriados = false
+  feriados = [FERIADO_DIVERSIDAD, FERIADO_SOBERANIA], puedeCompartir = true, conFeriados = false, miNombreCorto = 'Laura'
 } = {}) => {
   const rango = { desde, hasta, feriados: conFeriados ? feriadosDelRango(feriados, desde, hasta) : SIN_FERIADOS };
   const seTocan = (fila) => fila.desde <= hasta && fila.hasta >= desde;
   const ausentes = puedeCompartir ? ausencias.filter(seTocan).map((ausencia) => itemDeAusencia(ausencia, rango)) : [];
   return comoLlega({
-    desde, hasta, hoy: HOY, puede_compartir: puedeCompartir,
+    desde, hasta, hoy: HOY, puede_compartir: puedeCompartir, mi_nombre_corto: miNombreCorto,
     eventos: eventos.filter((evento) => evento.fecha >= desde && evento.fecha <= hasta)
       .map((evento) => itemDeEvento(evento, { usuarioId: 1, ahora: AHORA, feriados: SIN_FERIADOS })),
     licencias: licencias.filter(seTocan).map((fila) => itemDeLicencia(fila, rango)),
@@ -1588,11 +1589,13 @@ const renglonesDeLaCelda = (celda) => [...celda.html.replace(/<div class="me-res
 const ICONO = (clase) => M.ICONOS_DEL_MES[clase];
 
 describe('la agenda: el HTML del mes', () => {
-  it('ICONOS_DEL_MES: la bandera, el sol, la persona y las dos personas, decorativos; lo que es solo tuyo, sin ícono', () => {
+  // Desde el evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 5.1), también el ojo (Lucide «eye»: «lo ven
+  // otros»), el de un Público tuyo y el de uno de otra persona ('publico-otro', el mismo)
+  it('ICONOS_DEL_MES: la bandera, el sol, la persona, las dos personas y el ojo, decorativos; lo que es solo tuyo, sin ícono', () => {
     assert.ok(Object.isFrozen(M.ICONOS_DEL_MES));
-    assert.deepEqual(Object.keys(M.ICONOS_DEL_MES).sort(), ['ausente', 'compartido', 'feriado', 'licencia', 'propio']);
+    assert.deepEqual(Object.keys(M.ICONOS_DEL_MES).sort(), ['ausente', 'compartido', 'feriado', 'licencia', 'ojo', 'propio', 'publico-otro']);
     assert.equal(M.ICONOS_DEL_MES.propio, '');
-    for (const clase of ['feriado', 'licencia', 'ausente', 'compartido']) {
+    for (const clase of ['feriado', 'licencia', 'ausente', 'compartido', 'ojo', 'publico-otro']) {
       const icono = M.ICONOS_DEL_MES[clase];
       assert.match(icono, /^<svg [^>]*>[\s\S]*<\/svg>$/, clase);
       const atributos = atributosDe(icono.match(/^<svg([^>]*)>/)[1]);
@@ -1605,7 +1608,12 @@ describe('la agenda: el HTML del mes', () => {
     assert.ok(M.ICONOS_DEL_MES.licencia.includes('<circle cx="12" cy="12" r="4"/>'));
     assert.ok(M.ICONOS_DEL_MES.ausente.includes('<circle cx="12" cy="7" r="4"/>'));
     assert.ok(M.ICONOS_DEL_MES.compartido.includes('<path d="M16 3.13a4 4 0 0 1 0 7.75"/>'));
-    assert.equal(new Set(['feriado', 'licencia', 'ausente', 'compartido'].map(ICONO)).size, 4);
+    assert.ok(M.ICONOS_DEL_MES.ojo.includes('<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/>'));
+    assert.ok(M.ICONOS_DEL_MES.ojo.includes('<circle cx="12" cy="12" r="3"/>'));
+    // El de un Público de otra persona es el ojo, el mismo de la vista previa del formulario
+    assert.equal(M.ICONOS_DEL_MES['publico-otro'], M.ICONOS_DEL_MES.ojo);
+    assert.equal(M.ICONOS_DEL_MES.ojo, M.ICONO_DEL_OJO);
+    assert.equal(new Set(['feriado', 'licencia', 'ausente', 'compartido', 'ojo'].map(ICONO)).size, 5);
   });
 
   it('htmlDelMes: de entrada, de lunes a viernes (5 columnas); con sábado y domingo, 7; la cabeza de hoy, solo si hoy se ve', () => {
@@ -1997,7 +2005,8 @@ describe('la agenda: los próximos', () => {
       { hora: 'Vie 30', titulo: 'Sofía Paz no está', detalle: '', clase: 'ausente' }
     ] },
     { titulo: 'Más adelante', items: [
-      { hora: 'Lun 02/11', titulo: '10:00 Reunión de equipo', detalle: 'Aviso 2 h antes', clase: 'compartido', quien: 'Con todos', evento_id: 15 },
+      { hora: 'Lun 02/11', titulo: '10:00 Reunión de equipo', detalle: 'Aviso 2 h antes', clase: 'compartido', quien: 'Con toda la administración',
+        evento_id: 15 },
       { hora: 'Mar 03/11', titulo: 'Vacaciones', detalle: 'Hasta el lunes 09/11', clase: 'licencia' },
       { hora: 'Lun 23/11', titulo: 'Feriado: Día de la Soberanía Nacional', detalle: '', clase: 'feriado' }
     ] }
@@ -2044,7 +2053,7 @@ describe('la agenda: los próximos', () => {
       + 'Mañana, martes 27/10 10:00 Reunión de equipo Con 4 personas Aviso 2 h antes '
       + 'Esta semana Mié 28 15:30 Turno médico Solo vos Aviso el día hábil anterior '
       + 'Jue 29 09:00 Entrega del informe trimestral De Martín Aviso 2 h antes Vie 30 Sofía Paz no está '
-      + 'Más adelante Lun 02/11 10:00 Reunión de equipo Con todos Aviso 2 h antes Mar 03/11 Vacaciones Hasta el lunes 09/11 '
+      + 'Más adelante Lun 02/11 10:00 Reunión de equipo Con toda la administración Aviso 2 h antes Mar 03/11 Vacaciones Hasta el lunes 09/11 '
       + 'Lun 23/11 Feriado: Día de la Soberanía Nacional');
     // El ícono de cada cosa, decorativo, adentro del título y antes del texto (lo que es solo tuyo, un punto)
     assert.ok(html.includes('<li class="me-prox propio"><span class="me-prox-hora">12:00</span>'
@@ -5185,8 +5194,13 @@ describe('la agenda en la página (DOM falso)', () => {
     assert.equal(pagina.el('ag-mes-titulo').textContent, 'Octubre 2026');
     assert.equal(pagina.el('ag-mes').innerHTML, mesEnLaPagina('2026-10', DEL_MES, HOY));
     assert.equal(pagina.el('ag-proximos').innerHTML, M.htmlDeProximos(M.gruposDeProximos(PROXIMOS, HOY)));
-    // Quien ve a sus compañeros tiene su color en la leyenda
+    // Quien ve a sus compañeros tiene su color en la leyenda, y también el de los Laborales (spec 2026-10-29-mi-espacio-evento-publico,
+    // 5.2): administración ve los siete
     assert.equal(pagina.el('ag-leyenda-ausentes').hidden, false);
+    assert.equal(pagina.el('ag-leyenda-laborales').hidden, false);
+    const leyenda = pagina.el('vista-agenda').querySelector('.me-leyenda');
+    assert.deepEqual(leyenda.querySelectorAll('li').filter((li) => !li.hidden).map((li) => li.textContent),
+      ['Solo vos', 'Tuyos, a la vista', 'Personales de otros', 'Laborales', 'Tus licencias y francos', 'Feriados', 'Compañeros que no están']);
   });
 
   it('sin fragmento no pide la agenda; abrirla la pide una sola vez, y volver a ella no la pide otra vez', async () => {
@@ -5275,8 +5289,9 @@ describe('la agenda en la página (DOM falso)', () => {
     assert.equal(pagina.abierto('modal-evento'), false);
   });
 
-  // Decisión del usuario (27/10/2026): a quien no ve a los compañeros (el lector y el colaborador), la leyenda no le muestra su color
-  it('la leyenda: sin puede_compartir, sin «Compañeros que no están»; las otras cuatro quedan', async () => {
+  // Decisión del usuario (27/10/2026): a quien no ve a los compañeros (el lector y el colaborador), la leyenda no le muestra su color.
+  // Desde el evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 5.2), tampoco el de los Laborales, que no puede ver
+  it('la leyenda: sin puede_compartir, sin «Laborales» ni «Compañeros que no están»; las otras cinco quedan', async () => {
     const lector = (rango) => ok({ ...respuestaDeEventos(rango, { puedeCompartir: false }) });
     const pagina = montarPagina({
       hash: '#agenda',
@@ -5287,7 +5302,8 @@ describe('la agenda en la página (DOM falso)', () => {
     await pagina.iniciar();
     const leyenda = pagina.el('vista-agenda').querySelector('.me-leyenda');
     assert.deepEqual(leyenda.querySelectorAll('li').filter((li) => !li.hidden).map((li) => li.textContent),
-      ['Solo vos', 'Compartidos', 'Tus licencias y francos', 'Feriados']);
+      ['Solo vos', 'Tuyos, a la vista', 'Personales de otros', 'Tus licencias y francos', 'Feriados']);
+    assert.equal(pagina.el('ag-leyenda-laborales').hidden, true);
     assert.equal(pagina.el('ag-leyenda-ausentes').hidden, true);
     assert.ok(!pagina.el('ag-mes').innerHTML.includes('no está'));
   });
@@ -5431,9 +5447,10 @@ describe('la agenda en la página (DOM falso)', () => {
 const emojis = (n) => '😀'.repeat(n);
 // Un evento válido para la validación (el martes 27/10/2026 de 10:00 a 11:00), con lo que cambia cada caso
 const entradaDe = (cambios) => ({ titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:00', hasta: '11:00', ...cambios });
-// El primer error de erroresDelEvento, como el error de validarEvento ({ campo, mensaje } o null)
+// El primer error de erroresDelEvento, como el error de validarEvento ({ campo, mensaje } o null). Con `puedeCompartir`, como lo
+// llama la página para administración: el permiso de un Laboral lo controla la API, después de validarEvento
 const primerError = (entrada, hoy) => {
-  const [primero] = Object.entries(plano(M.erroresDelEvento(entrada, hoy)));
+  const [primero] = Object.entries(plano(M.erroresDelEvento(entrada, hoy, { puedeCompartir: true })));
   return primero ? { campo: primero[0], mensaje: primero[1] } : null;
 };
 // Cada evento de EVENTOS_DE_PRUEBA como lo manda GET /api/mi-espacio/eventos
@@ -5449,6 +5466,11 @@ describe('el formulario del evento: las paridades', () => {
     assert.deepEqual(plano(M.RECORDATORIOS), [...RECORDATORIOS]);
     assert.equal(M.RECORDATORIO_POR_DEFECTO, RECORDATORIO_POR_DEFECTO);
     assert.deepEqual(plano(M.TEXTO_RECORDATORIO), { ...TEXTO_RECORDATORIO });
+    // Los tres tipos y lo que ven los demás de un Público (spec 2026-10-29-mi-espacio-evento-publico, 4)
+    assert.deepEqual(plano(M.TIPOS_DE_EVENTO), [...TIPOS_DE_EVENTO]);
+    assert.deepEqual(plano(M.TEXTOS_PUBLICOS), [...TEXTOS_PUBLICOS]);
+    assert.equal(M.LARGO_TEXTO_PUBLICO, LARGO_TEXTO_PUBLICO);
+    assert.ok(Object.isFrozen(M.TIPOS_DE_EVENTO) && Object.isFrozen(M.TEXTOS_PUBLICOS));
   });
 
   it('fechaMaximaEvento: el mismo día dos años después (un 29/02 da el 28/02), con el tope del año 9999', () => {
@@ -5493,6 +5515,26 @@ describe('el formulario del evento: las paridades', () => {
     for (const compartido of ['true', 1, '1', 'si', {}, false, null]) casos.push({ compartido, para_todos: true, personas: [] });
     for (const paraTodos of ['true', 1, '1']) casos.push({ compartido: true, para_todos: paraTodos, personas: [] });
     for (const recordatorio of [undefined, null, ...RECORDATORIOS, 'otro', '15m', '', '1H', 2, ['2h'], {}]) casos.push({ recordatorio });
+    // Los tres tipos (spec 2026-10-29-mi-espacio-evento-publico, 6.5): el tipo, con el de un cuerpo de antes (sin él o null); lo que
+    // ven los demás de un Público y, en los otros tipos, lo que no cuenta; las personas de un Público y de un Laboral
+    for (const tipo of [undefined, null, '', 'otro', 'Publico', 'PUBLICO', ' publico', 1, true, ['publico'], {}, ...TIPOS_DE_EVENTO]) {
+      casos.push({ tipo }, { tipo, compartido: true, para_todos: true }, { tipo, texto_publico: 'Turno médico', para_todos: true });
+    }
+    for (const textoPublico of ['Turno médico', '  Turno médico  ', '', '   ', '\n\t', undefined, null, 42, ['Turno médico'],
+      emojis(60), `  ${emojis(60)}  `, emojis(61), 'a'.repeat(60), 'a'.repeat(61)]) {
+      casos.push({ tipo: 'publico', texto_publico: textoPublico, para_todos: true }, { tipo: 'privado', texto_publico: textoPublico },
+        { tipo: 'laboral', texto_publico: textoPublico, para_todos: true });
+    }
+    for (const personas of [[3, 3, 5], ['7', 2, '7'], [], undefined, null, 'todos', 3, [0], ['abc'], [3, -1], [1.5], [null], [3, {}]]) {
+      casos.push({ tipo: 'publico', texto_publico: 'Turno médico', personas }, { tipo: 'laboral', personas }, { tipo: 'privado', personas },
+        { tipo: 'publico', texto_publico: 'Turno médico', para_todos: true, personas });
+    }
+    for (const paraTodos of ['true', 1, '1', false, null]) {
+      casos.push({ tipo: 'publico', texto_publico: 'Turno médico', para_todos: paraTodos, personas: [] });
+    }
+    // Varios errores a la vez: el primero, en el orden del formulario
+    casos.push({ tipo: 'publico', texto_publico: '', personas: [], recordatorio: 'otro' }, { tipo: 'otro', texto_publico: '' },
+      { tipo: 'publico', texto_publico: emojis(61), personas: ['abc'] }, { tipo: 'laboral', personas: [], recordatorio: 'otro' });
     for (const caso of casos) {
       const entrada = entradaDe(caso);
       assert.deepEqual(primerError(entrada, HOY), validarEvento(entrada, HOY).error, JSON.stringify(caso) ?? String(caso));
@@ -5512,13 +5554,23 @@ describe('el formulario del evento: las paridades', () => {
       titulo: ' ', fecha: '2024-12-31', desde: '24:00', hasta: '25:00', detalle: emojis(1001), compartido: true, personas: [],
       recordatorio: 'otro'
     };
-    assert.equal(plano(M.erroresDelEvento({ ...malo, hasta: '09:00' }, HOY)).hasta, undefined);
-    const errores = plano(M.erroresDelEvento(malo, HOY));
+    const conPermiso = { puedeCompartir: true };
+    assert.equal(plano(M.erroresDelEvento({ ...malo, hasta: '09:00' }, HOY, conPermiso)).hasta, undefined);
+    const errores = plano(M.erroresDelEvento(malo, HOY, conPermiso));
     assert.deepEqual(Object.keys(errores), ['titulo', 'fecha', 'desde', 'hasta', 'detalle', 'personas', 'recordatorio']);
     assert.equal(errores.fecha, 'La fecha tiene que ser del 01/01/2025 al 26/10/2028.');
     assert.equal(errores.personas, MENSAJES_EVENTO.personas);
-    assert.equal(plano(M.erroresDelEvento({ ...malo, compartido: true, personas: ['abc'] }, HOY)).personas, MENSAJES_EVENTO.personasInvalidas);
+    assert.equal(plano(M.erroresDelEvento({ ...malo, compartido: true, personas: ['abc'] }, HOY, conPermiso)).personas,
+      MENSAJES_EVENTO.personasInvalidas);
     assert.deepEqual(plano(M.erroresDelEvento(entradaDe({}), HOY)), {});
+    // Un Público: el tipo, lo que ven los demás y sus personas, en su lugar (spec 2026-10-29-mi-espacio-evento-publico, 6.5)
+    const publico = plano(M.erroresDelEvento({ ...malo, compartido: undefined, tipo: 'publico', texto_publico: ' ' }, HOY));
+    assert.deepEqual(Object.keys(publico), ['titulo', 'fecha', 'desde', 'hasta', 'detalle', 'texto_publico', 'personas', 'recordatorio']);
+    assert.equal(publico.texto_publico, MENSAJES_EVENTO.textoPublico);
+    assert.equal(publico.personas, MENSAJES_EVENTO.personasPublico);
+    const otroTipo = plano(M.erroresDelEvento({ ...malo, tipo: 'otro' }, HOY, conPermiso));
+    assert.deepEqual(Object.keys(otroTipo), ['titulo', 'fecha', 'desde', 'hasta', 'detalle', 'tipo', 'recordatorio']);
+    assert.equal(otroTipo.tipo, MENSAJES_EVENTO.tipo);
   });
 
   it('idDeLaPersona es idPositivo', () => {
@@ -5556,53 +5608,56 @@ const PERSONAS_PARA_COMPARTIR = Object.freeze([
 describe('el formulario del evento: lo puro', () => {
   it('valoresDelEvento: uno nuevo, con la fecha que se le pasa y «2 horas antes»', () => {
     assert.deepEqual(plano(M.valoresDelEvento(null, { fecha: HOY })), {
-      id: null, titulo: '', fecha: HOY, desde: '', hasta: '', detalle: '', compartido: false, para_todos: false, personas: [],
-      conocidas: [], recordatorio: '2h'
+      id: null, titulo: '', fecha: HOY, desde: '', hasta: '', detalle: '', tipo: 'privado', para_todos: false, personas: [],
+      conocidas: [], texto_publico: '', otro: false, recordatorio: '2h'
     });
   });
 
   it('valoresDelEvento: uno propio, con sus personas (los ids y los nombres) y su recordatorio', () => {
     assert.deepEqual(plano(M.valoresDelEvento(itemDe(12), { fecha: HOY })), {
-      id: 12, titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:00', hasta: '11:00', detalle: '', compartido: true,
-      para_todos: false, personas: [3, 4, 5, 6], recordatorio: '2h',
+      id: 12, titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:00', hasta: '11:00', detalle: '', tipo: 'laboral',
+      para_todos: false, personas: [3, 4, 5, 6], recordatorio: '2h', texto_publico: '', otro: false,
       conocidas: [{ id: 3, nombre: 'Martín Ríos' }, { id: 4, nombre: 'Diego Fernández' }, { id: 5, nombre: 'Sofía Paz' },
         { id: 6, nombre: 'Carla Benítez' }]
     });
     const turno = plano(M.valoresDelEvento(itemDe(13), { fecha: HOY }));
     assert.equal(turno.recordatorio, 'dia_anterior');
     assert.equal(turno.hasta, '');
-    assert.equal(turno.compartido, false);
+    assert.equal(turno.tipo, 'privado');
     const paraTodos = plano(M.valoresDelEvento(itemDe(15), { fecha: HOY }));
     assert.equal(paraTodos.para_todos, true);
     assert.deepEqual(paraTodos.personas, []);
   });
 
-  it('cuerpoDelEvento: sin poder compartir (el lector y el colaborador), sin compartido, para_todos ni personas', () => {
+  it('cuerpoDelEvento: un Personal (Privado), solo con su tipo (el lector y el colaborador, y administración)', () => {
     const valores = { ...plano(M.valoresDelEvento(null, { fecha: HOY })), titulo: '  Turno médico ', desde: '15:30', detalle: ' Llevar estudios. ' };
-    assert.deepEqual(plano(M.cuerpoDelEvento(valores, {})), {
-      titulo: 'Turno médico', fecha: HOY, desde: '15:30', hasta: null, detalle: 'Llevar estudios.', recordatorio: '2h'
-    });
-    // Aunque el evento estuviera compartido (lo creó cuando era de administración)
-    assert.deepEqual(Object.keys(plano(M.cuerpoDelEvento({ ...valores, compartido: true, personas: [3] }, { puedeCompartir: false }))),
-      ['titulo', 'fecha', 'desde', 'hasta', 'detalle', 'recordatorio']);
+    for (const opciones of [{}, { puedeCompartir: false }, { puedeCompartir: true }]) {
+      assert.deepEqual(plano(M.cuerpoDelEvento(valores, opciones)), {
+        titulo: 'Turno médico', fecha: HOY, desde: '15:30', hasta: null, detalle: 'Llevar estudios.', recordatorio: '2h', tipo: 'privado'
+      }, JSON.stringify(opciones));
+    }
+    // Aunque tuviera personas o «Todos» de antes, un Privado no las manda
+    assert.deepEqual(Object.keys(plano(M.cuerpoDelEvento({ ...valores, para_todos: true, personas: [3] }, { puedeCompartir: true }))),
+      ['titulo', 'fecha', 'desde', 'hasta', 'detalle', 'recordatorio', 'tipo']);
   });
 
-  it('cuerpoDelEvento: con «Todos», para_todos y ninguna persona; con personas, ellas; «Solo yo», ninguna', () => {
+  it('cuerpoDelEvento: un Laboral con «Toda la administración», para_todos y ninguna persona; con personas, ellas', () => {
     const base = { ...plano(M.valoresDelEvento(itemDe(12), { fecha: HOY })) };
     assert.deepEqual(plano(M.cuerpoDelEvento({ ...base, para_todos: true }, { puedeCompartir: true })), {
       titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:00', hasta: '11:00', detalle: '', recordatorio: '2h',
-      compartido: true, para_todos: true, personas: []
+      tipo: 'laboral', compartido: true, para_todos: true, personas: []
     });
     assert.deepEqual(plano(M.cuerpoDelEvento(base, { puedeCompartir: true })).personas, [3, 4, 5, 6]);
-    const soloYo = plano(M.cuerpoDelEvento({ ...base, compartido: false }, { puedeCompartir: true }));
-    assert.deepEqual([soloYo.compartido, soloYo.para_todos, soloYo.personas], [false, false, []]);
+    // Sin poder compartir, solo el tipo (erroresDelEvento no lo deja llegar acá: el servidor lo rechazaría)
+    assert.deepEqual(Object.keys(plano(M.cuerpoDelEvento(base, { puedeCompartir: false }))),
+      ['titulo', 'fecha', 'desde', 'hasta', 'detalle', 'recordatorio', 'tipo']);
   });
 
-  it('htmlDePersonasDelEvento: «Todos» primero; cada persona con sus iniciales y aria-pressed; con «Todos», las demás deshabilitadas', () => {
+  it('htmlDePersonasDelEvento: «Toda la administración» primero (un Laboral); cada persona con sus iniciales y aria-pressed; con ella, las demás deshabilitadas', () => {
     const valores = { ...plano(M.valoresDelEvento(itemDe(12), { fecha: HOY })) };
     const botones = botonesDe(M.htmlDePersonasDelEvento(PERSONAS_PARA_COMPARTIR, valores));
     assert.deepEqual(botones.map(({ atributos, texto }) => [atributos['data-persona'], atributos['aria-pressed'], texto]), [
-      ['todos', 'false', 'Todos'], ['4', 'true', 'DF Diego Fernández'], ['6', 'true', 'CB Carla Benítez'], ['7', 'false', 'JO Julián Ortiz'],
+      ['todos', 'false', 'Toda la administración'], ['4', 'true', 'DF Diego Fernández'], ['6', 'true', 'CB Carla Benítez'], ['7', 'false', 'JO Julián Ortiz'],
       ['3', 'true', 'MR Martín Ríos'], ['5', 'true', 'SP Sofía Paz']
     ]);
     assert.ok(botones.every(({ atributos }) => atributos.type === 'button'));
@@ -5692,8 +5747,9 @@ describe('el formulario del evento: lo puro', () => {
     const partes = plano(M.htmlDelEventoAjeno({ ...item, detalle: 'Revisamos el informe.\nAntes de mandarlo.' }));
     assert.equal(textoDe(partes.cuando), 'Jueves 29/10/2026 a las 09:00');
     assert.equal(partes.detalle, 'Revisamos el informe.\nAntes de mandarlo.');
-    assert.equal(textoDe(partes.quien), 'Compartido Lo creó Martín. Están: vos.');
-    assert.ok(partes.quien.includes('<span class="me-insignia violeta">Compartido</span>'));
+    // Un Laboral: la insignia «Laboral» (era «Compartido»: spec 2026-10-29-mi-espacio-evento-publico, 5.3)
+    assert.equal(textoDe(partes.quien), 'Laboral Lo creó Martín. Están: vos.');
+    assert.ok(partes.quien.includes('<span class="me-insignia violeta">Laboral</span>'));
     assert.deepEqual([...partes.opciones.matchAll(/<option value="(\w+)"( selected)?>([^<]+)<\/option>/g)].map(([, valor, elegido, texto]) =>
       [valor, Boolean(elegido), texto]), [['evento', true, '2 horas antes (el que eligió Martín)'], ['ninguno', false, 'Sin aviso']]);
     assert.equal(M.miRecordatorioDe(item), 'evento');
@@ -5703,10 +5759,11 @@ describe('el formulario del evento: lo puro', () => {
     const sinRecordatorio = { ...item, recordatorio: 'ninguno', recordatorio_texto: 'Sin aviso', mi_recordatorio: 'ninguno' };
     assert.equal(M.htmlDelEventoAjeno(sinRecordatorio).opciones, '<option value="ninguno" selected>Sin aviso</option>');
     assert.equal(M.miRecordatorioDe(sinRecordatorio), 'ninguno');
-    // Para todos: «Es para todos»; con la hora de fin, «de … a …»
-    const deOtroParaTodos = { ...item, fecha: '2026-11-02', desde: '10:00', hasta: '11:00', quien_largo: 'Lo creó Martín. Es para todos.' };
+    // Para toda la administración: «Es para toda la administración.» (el texto del servidor); con la hora de fin, «de … a …»
+    const deOtroParaTodos = { ...item, fecha: '2026-11-02', desde: '10:00', hasta: '11:00',
+      quien_largo: 'Lo creó Martín. Es para toda la administración.' };
     assert.equal(textoDe(M.htmlDelEventoAjeno(deOtroParaTodos).cuando), 'Lunes 02/11/2026 de 10:00 a 11:00');
-    assert.equal(textoDe(M.htmlDelEventoAjeno(deOtroParaTodos).quien), 'Compartido Lo creó Martín. Es para todos.');
+    assert.equal(textoDe(M.htmlDelEventoAjeno(deOtroParaTodos).quien), 'Laboral Lo creó Martín. Es para toda la administración.');
   });
 
   // Review Focus 2
@@ -5735,9 +5792,391 @@ describe('el formulario del evento: lo puro', () => {
   });
 });
 
+// =====================================================================================================================================
+// Los tres tipos de evento en el formulario (spec 2026-10-29-mi-espacio-evento-publico, 4 y 7; la maqueta aprobada): Personal
+// (Privado), Personal (Público) y Laboral. Lo puro: los valores, los errores, el cuerpo, los botones del tipo, lo que ven los demás
+// con «Otro», la vista previa y las ayudas. Las personas inventadas
+// =====================================================================================================================================
+
+// Los Personales (Públicos) de Laura (1), como los lee services/miEspacioEventosDatos.js: uno con «Todos» y «Trámite personal», y uno con
+// dos personas y un texto que no es de la lista (lo escribió en «Otro»). Y uno de Carla (6), que llega recortado (6.3)
+const PUBLICO_CON_TODOS = eventoDe(16, 'Firma en la escribanía', '2026-10-30', '10:00',
+  { publico: 1, publico_todos: 1, texto_publico: 'Trámite personal', recordatorio: '1h' });
+const PUBLICO_CON_DOS = eventoDe(17, 'Mudanza', '2026-11-05', '08:00',
+  { publico: 1, texto_publico: 'Ayudo a mi hermana', vistas: [{ id: 6, nombre: 'Carla Benítez' }, { id: 9, nombre: 'Tomás Herrera' }] });
+const PUBLICO_DE_CARLA = eventoDe(18, 'Retirar el auto del taller', '2026-10-30', '10:00',
+  { creado_por: 6, creador: 'Carla Benítez', publico: 1, publico_todos: 1, texto_publico: 'Fuera de la oficina', detalle: 'Llevar la factura.' });
+const itemDel = (evento) => comoLlega(itemDeEvento(evento, { usuarioId: 1, ahora: AHORA, feriados: SIN_FERIADOS }));
+// Todos los usuarios activos menos quien pide (GET /api/mi-espacio/personas/publico), de cualquier rol, por nombre
+const PERSONAS_DEL_PUBLICO = Object.freeze([
+  { id: 11, nombre: 'Andrea Suárez' }, { id: 6, nombre: 'Carla Benítez' }, { id: 7, nombre: 'Julián Ortiz' },
+  { id: 10, nombre: 'Lucía Molina' }, { id: 9, nombre: 'Tomás Herrera' }
+].map((persona) => ({ ...persona, iniciales: inicialesDe(persona.nombre) })));
+const NUEVO = () => plano(M.valoresDelEvento(null, { fecha: HOY }));
+
+describe('el formulario del evento: los tres tipos (lo puro)', () => {
+  it('los textos que son solo del navegador', () => {
+    assert.equal(M.MENSAJE_OTRO_VACIO, 'Escribí qué ven los demás.');
+    assert.equal(M.MENSAJE_LABORAL_SIN_PERMISO, 'Ya no podés compartir eventos laborales. Elegí otro tipo para guardarlo.');
+    assert.equal(M.AYUDA_DE_LAS_PERSONAS_DEL_PUBLICO, 'No les llega ningún email: lo ven en su agenda y en el Resumen.');
+    assert.equal(M.AYUDA_DEL_RECORDATORIO_PUBLICO, 'Te llega solo a vos.');
+    assert.equal(M.AYUDA_DE_LAS_PERSONAS_DEL_LABORAL,
+      'Les llega un email cuando los sumás, y otro si cambiás o borrás el evento. Solo vos lo podés cambiar.');
+    assert.equal(M.AYUDA_DEL_RECORDATORIO_COMPARTIDO, 'Les llega a todas las personas del evento.');
+  });
+
+  it('valoresDelEvento: el tipo de cada uno, con lo que ven los demás, «Otro» y las personas del Público', () => {
+    assert.equal(plano(M.valoresDelEvento(itemDe(12), { fecha: HOY })).tipo, 'laboral');
+    assert.equal(plano(M.valoresDelEvento(itemDe(15), { fecha: HOY })).tipo, 'laboral');
+    assert.equal(plano(M.valoresDelEvento(itemDe(11), { fecha: HOY })).tipo, 'privado');
+    assert.deepEqual(plano(M.valoresDelEvento(itemDel(PUBLICO_CON_TODOS), { fecha: HOY })), {
+      id: 16, titulo: 'Firma en la escribanía', fecha: '2026-10-30', desde: '10:00', hasta: '', detalle: '', tipo: 'publico',
+      para_todos: true, personas: [], conocidas: [], texto_publico: 'Trámite personal', otro: false, recordatorio: '1h'
+    });
+    // Un texto que no es de la lista viene en «Otro», con sus personas (los ids y los nombres)
+    assert.deepEqual(plano(M.valoresDelEvento(itemDel(PUBLICO_CON_DOS), { fecha: HOY })), {
+      id: 17, titulo: 'Mudanza', fecha: '2026-11-05', desde: '08:00', hasta: '', detalle: '', tipo: 'publico', para_todos: false,
+      personas: [6, 9], conocidas: [{ id: 6, nombre: 'Carla Benítez' }, { id: 9, nombre: 'Tomás Herrera' }],
+      texto_publico: 'Ayudo a mi hermana', otro: true, recordatorio: '2h'
+    });
+    // Cada uno de la lista, sin «Otro»; uno con espacios o en minúsculas, en «Otro» (no es el de la lista)
+    for (const texto of TEXTOS_PUBLICOS) {
+      assert.equal(plano(M.valoresDelEvento({ ...itemDel(PUBLICO_CON_TODOS), texto_publico: texto }, { fecha: HOY })).otro, false, texto);
+    }
+    assert.equal(plano(M.valoresDelEvento({ ...itemDel(PUBLICO_CON_TODOS), texto_publico: 'trámite personal' }, { fecha: HOY })).otro, true);
+    // Sin texto (no pasa: el servidor lo exige), ni elegido ni «Otro»; un texto en uno que no es Público no cuenta
+    assert.deepEqual(['texto_publico', 'otro'].map((clave) => plano(M.valoresDelEvento({ ...itemDel(PUBLICO_CON_TODOS), texto_publico: null },
+      { fecha: HOY }))[clave]), ['', false]);
+    assert.deepEqual(['texto_publico', 'otro'].map((clave) => plano(M.valoresDelEvento({ ...itemDe(11), texto_publico: 'Viaje' },
+      { fecha: HOY }))[clave]), ['', false]);
+  });
+
+  it('erroresDelEvento: «Otro» vacío dice «Escribí qué ven los demás.»; sin elegir, «Elegí qué ven los demás.»; de más de 60, el largo', () => {
+    const publico = { ...entradaDe({}), tipo: 'publico', para_todos: true };
+    assert.deepEqual(plano(M.erroresDelEvento({ ...publico, texto_publico: '', otro: true }, HOY)), { texto_publico: M.MENSAJE_OTRO_VACIO });
+    assert.deepEqual(plano(M.erroresDelEvento({ ...publico, texto_publico: '   ', otro: true }, HOY)), { texto_publico: M.MENSAJE_OTRO_VACIO });
+    assert.deepEqual(plano(M.erroresDelEvento({ ...publico, texto_publico: '', otro: false }, HOY)),
+      { texto_publico: MENSAJES_EVENTO.textoPublico });
+    assert.deepEqual(plano(M.erroresDelEvento({ ...publico, texto_publico: emojis(61), otro: true }, HOY)),
+      { texto_publico: MENSAJES_EVENTO.textoPublicoLargo });
+    assert.deepEqual(plano(M.erroresDelEvento({ ...publico, texto_publico: ` ${emojis(60)} `, otro: true }, HOY)), {});
+    // «Otro» solo cuenta en un Público
+    assert.deepEqual(plano(M.erroresDelEvento({ ...entradaDe({}), tipo: 'privado', texto_publico: '', otro: true }, HOY)), {});
+  });
+
+  it('erroresDelEvento: un Laboral sin poder compartir (quien ya no es de administración) da el error del tipo, sin las personas', () => {
+    const laboral = { ...entradaDe({}), tipo: 'laboral', personas: [] };
+    for (const opciones of [undefined, {}, { puedeCompartir: false }, { puedeCompartir: 'true' }, { puedeCompartir: 1 }]) {
+      assert.deepEqual(plano(M.erroresDelEvento(laboral, HOY, opciones)), { tipo: M.MENSAJE_LABORAL_SIN_PERMISO }, JSON.stringify(opciones));
+    }
+    // Con permiso, el Laboral sin personas pide las personas
+    assert.deepEqual(plano(M.erroresDelEvento(laboral, HOY, { puedeCompartir: true })), { personas: MENSAJES_EVENTO.personas });
+    // Un cuerpo de antes (compartido, sin tipo) también es Laboral
+    assert.deepEqual(plano(M.erroresDelEvento({ ...entradaDe({}), compartido: true, para_todos: true }, HOY)),
+      { tipo: M.MENSAJE_LABORAL_SIN_PERMISO });
+    // El Privado y el Público no piden permiso
+    assert.deepEqual(plano(M.erroresDelEvento({ ...entradaDe({}), tipo: 'privado' }, HOY)), {});
+    assert.deepEqual(plano(M.erroresDelEvento({ ...entradaDe({}), tipo: 'publico', texto_publico: 'Turno médico', personas: [9] }, HOY)), {});
+  });
+
+  it('cuerpoDelEvento: un Público con «Todos», con personas y con «Otro»; nunca trae compartido', () => {
+    const publico = { ...NUEVO(), titulo: ' Control ', desde: '10:00', tipo: 'publico', para_todos: true, personas: [9], texto_publico: ' Turno médico ' };
+    for (const opciones of [{}, { puedeCompartir: true }]) {
+      assert.deepEqual(plano(M.cuerpoDelEvento(publico, opciones)), {
+        titulo: 'Control', fecha: HOY, desde: '10:00', hasta: null, detalle: '', recordatorio: '2h', tipo: 'publico', para_todos: true,
+        personas: [], texto_publico: 'Turno médico'
+      }, JSON.stringify(opciones));
+    }
+    const conPersonas = plano(M.cuerpoDelEvento({ ...publico, para_todos: false, personas: [9, 6], otro: true, texto_publico: 'Ayudo a mi hermana' }));
+    assert.deepEqual([conPersonas.para_todos, conPersonas.personas, conPersonas.texto_publico], [false, [9, 6], 'Ayudo a mi hermana']);
+    assert.ok(!Object.hasOwn(conPersonas, 'compartido'));
+    assert.ok(!Object.hasOwn(plano(M.cuerpoDelEvento({ ...publico, compartido: true }, { puedeCompartir: true })), 'compartido'));
+  });
+
+  it('valoresConElTipo: cambia el tipo y empieza de nuevo con quién (el «Todos» de cada tipo es otro); al volver al del evento, el suyo', () => {
+    const laboral = plano(M.valoresDelEvento(itemDe(12), { fecha: HOY }));
+    const aPublico = plano(M.valoresConElTipo(laboral, 'publico', laboral));
+    assert.deepEqual([aPublico.tipo, aPublico.para_todos, aPublico.personas, aPublico.conocidas], ['publico', false, [], []]);
+    assert.deepEqual(plano(M.valoresConElTipo(aPublico, 'laboral', laboral)),
+      { ...aPublico, tipo: 'laboral', personas: [3, 4, 5, 6], conocidas: laboral.conocidas });
+    // Las personas que ya estaban en el evento son de su tipo: en otro, no se ofrecen (el servidor las rechazaría)
+    assert.equal(laboral.conocidas.length, 4);
+    assert.deepEqual(plano(M.personasParaElegir(null, aPublico)), []);
+    const conTodos = plano(M.valoresConElTipo({ ...laboral, para_todos: true, personas: [] }, 'privado', laboral));
+    assert.deepEqual([conTodos.tipo, conTodos.para_todos, conTodos.personas], ['privado', false, []]);
+    // El mismo tipo no cambia nada; uno que no es un tipo, tampoco
+    const elegidas = { ...laboral, personas: [7] };
+    assert.deepEqual(plano(M.valoresConElTipo(elegidas, 'laboral', laboral)), elegidas);
+    assert.deepEqual(plano(M.valoresConElTipo(elegidas, 'otro', laboral)), elegidas);
+    // Lo que ven los demás se conserva (al volver al Público, sigue elegido)
+    const publico = plano(M.valoresDelEvento(itemDel(PUBLICO_CON_DOS), { fecha: HOY }));
+    const ida = plano(M.valoresConElTipo(publico, 'privado', publico));
+    assert.deepEqual(plano(M.valoresConElTipo(ida, 'publico', publico)), publico);
+    assert.deepEqual([ida.texto_publico, ida.otro, ida.conocidas], ['Ayudo a mi hermana', true, []]);
+  });
+
+  it('htmlDeTiposDeEvento: tres con administración, dos sin ella; un Laboral sin poder compartir, los tres con el Laboral deshabilitado', () => {
+    const tipos = (html) => [...html.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)].map(([, atributos, adentro]) => [
+      atributosDe(atributos)['data-tipo'], atributosDe(atributos)['aria-pressed'], /\sdisabled(?:\s|$)/.test(atributos), textoDe(adentro)]);
+    assert.deepEqual(tipos(M.htmlDeTiposDeEvento(NUEVO(), { puedeCompartir: true })), [
+      ['privado', 'true', false, 'Personal (Privado) Nadie más lo ve'],
+      ['publico', 'false', false, 'Personal (Público) Lo ven quienes elijas, con un texto corto'],
+      ['laboral', 'false', false, 'Laboral Con la administración que elijas']
+    ]);
+    assert.deepEqual(tipos(M.htmlDeTiposDeEvento({ ...NUEVO(), tipo: 'publico' }, {})).map(([tipo, pulsado]) => [tipo, pulsado]),
+      [['privado', 'false'], ['publico', 'true']]);
+    const laboral = M.htmlDeTiposDeEvento({ ...NUEVO(), tipo: 'laboral' }, { puedeCompartir: false });
+    assert.deepEqual(tipos(laboral).map(([tipo, pulsado, deshabilitado]) => [tipo, pulsado, deshabilitado]),
+      [['privado', 'false', false], ['publico', 'false', false], ['laboral', 'true', true]]);
+    assert.match(laboral, /<button type="button" class="me-opcion" data-tipo="laboral" aria-pressed="true" disabled><span><b>Laboral<\/b><small>Con la administración que elijas<\/small><\/span><\/button>/);
+    assert.deepEqual(plano(M.tiposQueSeVen(NUEVO(), {})), ['privado', 'publico']);
+    assert.deepEqual(plano(M.tiposQueSeVen({ tipo: 'laboral' }, {})), ['privado', 'publico', 'laboral']);
+    assert.deepEqual(plano(M.tiposQueSeVen(NUEVO(), { puedeCompartir: true })), ['privado', 'publico', 'laboral']);
+  });
+
+  it('htmlDeTextosPublicos: una pastilla por cada texto de la lista y «Otro», con aria-pressed (una sola elegida)', () => {
+    const pastillas = (valores) => botonesDe(M.htmlDeTextosPublicos(valores))
+      .map(({ atributos, texto }) => [atributos['data-texto'], atributos['aria-pressed'], atributos.class, texto]);
+    assert.deepEqual(pastillas({ ...NUEVO(), tipo: 'publico' }), [
+      ['Trámite personal', 'false', 'sg-chip', 'Trámite personal'], ['Turno médico', 'false', 'sg-chip', 'Turno médico'],
+      ['Asunto familiar', 'false', 'sg-chip', 'Asunto familiar'], ['Fuera de la oficina', 'false', 'sg-chip', 'Fuera de la oficina'],
+      ['Capacitación o curso', 'false', 'sg-chip', 'Capacitación o curso'], ['otro', 'false', 'sg-chip', 'Otro']
+    ]);
+    assert.deepEqual(pastillas({ tipo: 'publico', texto_publico: 'Turno médico', otro: false }).filter(([, pulsada]) => pulsada === 'true')
+      .map(([texto]) => texto), ['Turno médico']);
+    // Con «Otro», solo «Otro», aunque lo escrito sea igual a uno de la lista
+    assert.deepEqual(pastillas({ tipo: 'publico', texto_publico: 'Turno médico', otro: true }).filter(([, pulsada]) => pulsada === 'true')
+      .map(([texto]) => texto), ['otro']);
+  });
+
+  it('elegirTextoPublico: uno de la lista o «Otro», con lo escrito en su campo', () => {
+    const valores = { ...NUEVO(), tipo: 'publico' };
+    assert.deepEqual(plano(M.elegirTextoPublico(valores, 'Turno médico', 'algo')), { ...valores, texto_publico: 'Turno médico', otro: false });
+    assert.deepEqual(plano(M.elegirTextoPublico(valores, 'otro', 'Ayudo a mi hermana')),
+      { ...valores, texto_publico: 'Ayudo a mi hermana', otro: true });
+    assert.deepEqual(plano(M.elegirTextoPublico(valores, 'otro')), { ...valores, texto_publico: '', otro: true });
+    // Un valor que no es de la lista no cambia nada
+    assert.deepEqual(plano(M.elegirTextoPublico(valores, 'Viaje', 'algo')), valores);
+  });
+
+  it('cuentaDelTextoPublico: «0 de 60 caracteres», sin los espacios de los extremos y contados con Array.from; pasado de 60, marcado', () => {
+    assert.deepEqual(plano(M.cuentaDelTextoPublico('')), { texto: '0 de 60 caracteres', pasado: false });
+    assert.deepEqual(plano(M.cuentaDelTextoPublico('  Viaje  ')), { texto: '5 de 60 caracteres', pasado: false });
+    assert.deepEqual(plano(M.cuentaDelTextoPublico(emojis(60))), { texto: '60 de 60 caracteres', pasado: false });
+    assert.deepEqual(plano(M.cuentaDelTextoPublico(emojis(61))), { texto: '61 de 60 caracteres', pasado: true });
+    assert.deepEqual(plano(M.cuentaDelTextoPublico(null)), { texto: '0 de 60 caracteres', pasado: false });
+  });
+
+  it('htmlDeLaVistaPrevia: el día corto, el ojo, la hora y «nombre: texto» escapados, en la pastilla rosada de 3 renglones', () => {
+    const valores = { ...NUEVO(), fecha: '2026-11-05', desde: '10:00', tipo: 'publico', texto_publico: 'Turno médico' };
+    const vista = plano(M.htmlDeLaVistaPrevia(valores, { nombre: 'Tomás' }));
+    assert.equal(vista.dia, 'Jue 5');
+    assert.match(vista.evento, /^<span class="me-ev publico-otro" data-lineas="3"><svg class="me-icono" aria-hidden="true" focusable="false"[^>]*>[\s\S]*?<\/svg><b>10:00<\/b> Tomás: Turno médico<\/span>$/);
+    assert.equal(textoDe(vista.evento), '10:00 Tomás: Turno médico');
+    assert.ok(vista.evento.includes(M.ICONO_DEL_OJO));
+    // Lo escrito y el nombre, escapados
+    const malo = plano(M.htmlDeLaVistaPrevia({ ...valores, texto_publico: '<b>"x"</b>' }, { nombre: MALICIOSO }));
+    assert.ok(malo.evento.endsWith(`${ESCAPADO}: &lt;b&gt;&quot;x&quot;&lt;/b&gt;</span>`), malo.evento);
+    assert.ok(!malo.evento.includes('<img'));
+    // Sin texto, «Tomás: …»; sin hora, sin la hora; sin fecha, «Sin fecha»; sin nombre, «Tu nombre»
+    assert.equal(textoDe(plano(M.htmlDeLaVistaPrevia({ ...valores, texto_publico: '  ' }, { nombre: 'Tomás' })).evento), '10:00 Tomás: …');
+    assert.equal(textoDe(plano(M.htmlDeLaVistaPrevia({ ...valores, desde: '' }, { nombre: 'Tomás' })).evento), 'Tomás: Turno médico');
+    assert.equal(plano(M.htmlDeLaVistaPrevia({ ...valores, fecha: '' }, { nombre: 'Tomás' })).dia, 'Sin fecha');
+    for (const nombre of [null, undefined, '', '   ', 7]) {
+      assert.equal(textoDe(plano(M.htmlDeLaVistaPrevia(valores, { nombre })).evento), '10:00 Tu nombre: Turno médico', String(nombre));
+    }
+    assert.equal(plano(M.htmlDeLaVistaPrevia({ ...valores, fecha: '2026-11-01' }, { nombre: 'Tomás' })).dia, 'Dom 1');
+  });
+
+  it('htmlDePersonasDelEvento: «Toda la administración» en un Laboral y «Todos» en un Público', () => {
+    const todos = (valores) => botonesDe(M.htmlDePersonasDelEvento(PERSONAS_DEL_PUBLICO, valores))[0].texto;
+    assert.equal(todos({ tipo: 'laboral', personas: [] }), 'Toda la administración');
+    assert.equal(todos({ compartido: true, personas: [] }), 'Toda la administración');
+    assert.equal(todos({ tipo: 'publico', personas: [] }), 'Todos');
+    const conTodos = M.htmlDePersonasDelEvento(PERSONAS_DEL_PUBLICO, { tipo: 'publico', para_todos: true, personas: [] });
+    assert.match(conTodos, /<button type="button" class="me-persona" data-persona="todos" aria-pressed="true"><i aria-hidden="true"><svg[\s\S]*?<\/svg><\/i>Todos<\/button>/);
+  });
+
+  it('ayudasDelEvento: la del tipo, la de las personas y la del recordatorio de cada tipo', () => {
+    const sinNada = { tipo: '', personas: '', recordatorio: '' };
+    assert.deepEqual(plano(M.ayudasDelEvento({ tipo: 'privado' }, { puedeCompartir: true })), sinNada);
+    assert.deepEqual(plano(M.ayudasDelEvento({ tipo: 'privado' }, {})), sinNada);
+    for (const opciones of [{}, { puedeCompartir: true }]) {
+      assert.deepEqual(plano(M.ayudasDelEvento({ tipo: 'publico' }, opciones)), {
+        tipo: '', personas: M.AYUDA_DE_LAS_PERSONAS_DEL_PUBLICO, recordatorio: M.AYUDA_DEL_RECORDATORIO_PUBLICO
+      });
+    }
+    assert.deepEqual(plano(M.ayudasDelEvento({ tipo: 'laboral' }, { puedeCompartir: true })), {
+      tipo: '', personas: M.AYUDA_DE_LAS_PERSONAS_DEL_LABORAL, recordatorio: M.AYUDA_DEL_RECORDATORIO_COMPARTIDO
+    });
+    assert.deepEqual(plano(M.ayudasDelEvento({ tipo: 'laboral' }, {})), { ...sinNada, tipo: M.MENSAJE_LABORAL_SIN_PERMISO });
+  });
+
+  // Ruling 5: un Público de otra persona llega recortado (sin aviso, quién está, personas ni recordatorio); lo que la agenda ya
+  // dibujaba no se rompe con él (cómo se ve, en rosado y con el ojo, en «cómo se ve el evento Personal (Público)», abajo)
+  it('un Público de otra persona, recortado, no rompe nada de lo que dibuja la agenda', () => {
+    const ajeno = itemDel(PUBLICO_DE_CARLA);
+    assert.deepEqual(Object.keys(ajeno).sort(),
+      ['compartido', 'creador', 'desde', 'es_mio', 'fecha', 'hasta', 'id', 'publico', 'texto_publico', 'titulo'].sort());
+    assert.ok(!JSON.stringify(ajeno).includes('taller') && !JSON.stringify(ajeno).includes('factura'));
+    const datos = { ...respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' }, { eventos: [] }), eventos: [ajeno] };
+    const mes = M.htmlDelMes('2026-10', datos, HOY, { elegido: '2026-10-30', foco: '2026-10-30' });
+    assert.ok(textoDe(mes).includes('10:00 Carla: Fuera de la oficina'));
+    assert.ok(textoDe(M.htmlDelDiaElegido('2026-10-30', datos, HOY)).includes('Carla: Fuera de la oficina'));
+    const proximos = M.htmlDeProximos(M.gruposDeProximos({ ...datos, desde: HOY, hasta: '2026-11-25' }, HOY));
+    assert.ok(textoDe(proximos).includes('Carla: Fuera de la oficina'));
+    const partes = plano(M.htmlDelEventoAjeno(ajeno));
+    assert.equal(textoDe(partes.cuando), 'Viernes 30/10/2026 a las 10:00');
+    assert.equal(partes.detalle, '');
+    assert.equal(M.miRecordatorioDe(ajeno), 'ninguno');
+  });
+});
+
+// Cómo se ve el evento Personal (Público) en la agenda (spec 2026-10-29-mi-espacio-evento-publico, 5.1 a 5.4 y 7; la maqueta aprobada):
+// uno tuyo, en tinta y con el ojo («lo ven otros»), con a quiénes se lo mostrás en «Próximos» y en el día elegido; uno de otra persona,
+// en rosado y con el ojo, «Carla: Fuera de la oficina» (en el teléfono, un anillo), sin nada de quién está; y su detalle, sin «Mi recordatorio».
+// Con los Públicos de Laura (1) y el de Carla (6), como los manda el servidor
+describe('cómo se ve el evento Personal (Público) en la agenda (lo puro)', () => {
+  const OJO = () => M.ICONOS_DEL_MES.ojo;
+  // La grilla de octubre o los próximos, con estos eventos y sin compañeros (así ninguna barra le saca renglones a los eventos)
+  const delMesCon = (eventos) => respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' }, { eventos, ausencias: [] });
+  const proximosCon = (eventos) => respuestaDeEventos({ desde: HOY, hasta: '2026-11-25' }, { eventos, licencias: [], ausencias: [], feriados: [] });
+  const PUBLICOS = () => [PUBLICO_CON_TODOS, PUBLICO_CON_DOS, PUBLICO_DE_CARLA];
+  // Un texto público con HTML: el de un Público de Carla (en su título, «Carla: …») y el de uno de Laura (en «Lo ven todos como …»)
+  const CON_HTML_PUBLICO = '<b>"x"</b>';
+  const CON_HTML_PUBLICO_ESCAPADO = '&lt;b&gt;&quot;x&quot;&lt;/b&gt;';
+  const conHtml = () => [{ ...PUBLICO_CON_TODOS, texto_publico: CON_HTML_PUBLICO }, { ...PUBLICO_DE_CARLA, texto_publico: CON_HTML_PUBLICO }];
+
+  it('claseDelEvento: un Laboral, tuyo o de otra persona, compartido; un Público de otra persona, publico-otro; lo tuyo que no es Laboral, propio', () => {
+    assert.equal(M.claseDelEvento(itemDe(15)), 'compartido', 'un Laboral tuyo');
+    assert.equal(M.claseDelEvento(itemDe(14)), 'compartido', 'un Laboral de Martín');
+    assert.equal(M.claseDelEvento(itemDel(PUBLICO_DE_CARLA)), 'publico-otro', 'un Público de Carla');
+    assert.equal(M.claseDelEvento(itemDel(PUBLICO_CON_TODOS)), 'propio', 'un Público tuyo');
+    assert.equal(M.claseDelEvento(itemDe(11)), 'propio', 'un Privado');
+  });
+
+  it('iconoDe e iconoOPunto: el ícono que se pide (`icono`) si es uno del mes; si no, el de la clase', () => {
+    assert.equal(M.iconoDe('propio', 'ojo'), OJO());
+    assert.equal(M.iconoDe('publico-otro'), OJO());
+    assert.equal(M.iconoDe('propio'), '');
+    assert.equal(M.iconoDe('compartido', 'otro'), M.ICONOS_DEL_MES.compartido);
+    assert.equal(M.iconoDe('compartido', undefined), M.ICONOS_DEL_MES.compartido);
+    assert.equal(M.iconoOPunto('propio', 'ojo'), OJO());
+    assert.equal(M.iconoOPunto('propio'), '<i></i>');
+  });
+
+  it('cosasPorDia: un Público tuyo, propio con el ojo (`icono`); uno de otra persona, publico-otro con «Carla: Fuera de la oficina»', () => {
+    assert.deepEqual(cosasDe(delMesCon(PUBLICOS()))['2026-10-30'], [
+      { clase: 'publico-otro', texto: '10:00 Carla: Fuera de la oficina', evento_id: 18 },
+      { clase: 'propio', icono: 'ojo', texto: '10:00 Firma en la escribanía', evento_id: 16 }
+    ]);
+    // Los demás, sin `icono` (el de su clase)
+    for (const cosas of Object.values(cosasDe(DEL_MES))) for (const cosa of cosas) assert.ok(!Object.hasOwn(cosa, 'icono'), cosa.texto);
+  });
+
+  it('la grilla: uno de otra persona, una pastilla rosada con el ojo y «Carla: Fuera de la oficina» (su nombre accesible) y, en el teléfono, un anillo', () => {
+    const mes = M.htmlDelMes('2026-10', delMesCon(PUBLICOS()), HOY);
+    const celda = celdaConFecha(mes, '2026-10-30');
+    assert.ok(celda.html.includes(`<button type="button" class="me-ev publico-otro" data-lineas="2" data-evento="18" title="10:00 Carla: Fuera de la oficina">`
+      + `${OJO()}<b>10:00</b> Carla: Fuera de la oficina</button>`));
+    // Uno tuyo, en tinta (propio) con el ojo y su título
+    assert.ok(celda.html.includes(`<button type="button" class="me-ev propio" data-lineas="2" data-evento="16" `
+      + `title="10:00 Firma en la escribanía">${OJO()}<b>10:00</b> Firma en la escribanía</button>`));
+    // Los puntos del teléfono: el de otra persona es un anillo (su clase), no se distingue solo por el color
+    assert.ok(celda.html.includes('<span class="me-puntos" aria-hidden="true"><i class="publico-otro"></i><i class="propio"></i></span>'));
+    assert.equal(textoDe(celda.html.match(/<button type="button" class="me-ev publico-otro"[\s\S]*?<\/button>/)[0]).trim(), '10:00 Carla: Fuera de la oficina');
+    // El título del Público de Carla nunca llega: no hay nada que dibujar
+    assert.ok(!mes.includes('taller') && !mes.includes('factura'));
+  });
+
+  it('«Próximos»: uno tuyo, con la línea del ojo y a quiénes se lo mostrás (sin insignia); uno de otra persona, sin insignia ni aviso', () => {
+    const grupos = plano(M.gruposDeProximos(proximosCon(PUBLICOS()), HOY));
+    assert.deepEqual(grupos, [
+      { titulo: 'Esta semana', items: [
+        { hora: 'Vie 30', titulo: '10:00 Carla: Fuera de la oficina', detalle: '', clase: 'publico-otro', quien: '', evento_id: 18 },
+        { hora: 'Vie 30', titulo: '10:00 Firma en la escribanía', detalle: 'Aviso 1 h antes', clase: 'propio', icono: 'ojo',
+          quien: 'Lo ven todos como «Trámite personal»', evento_id: 16 }
+      ] },
+      { titulo: 'Más adelante', items: [
+        { hora: 'Jue 05/11', titulo: '08:00 Mudanza', detalle: 'Aviso 2 h antes', clase: 'propio', icono: 'ojo',
+          quien: 'Lo ven Carla y Tomás como «Ayudo a mi hermana»', evento_id: 17 }
+      ] }
+    ]);
+    const html = M.htmlDeProximos(grupos);
+    assert.ok(html.includes('<li class="me-prox publico-otro"><span class="me-prox-hora">Vie 30</span>'
+      + `<button type="button" class="me-prox-titulo" data-evento="18"><span class="me-prox-icono publico-otro" aria-hidden="true">${OJO()}</span>`
+      + '10:00 Carla: Fuera de la oficina</button></li>'));
+    assert.ok(html.includes('<li class="me-prox propio"><span class="me-prox-hora">Vie 30</span>'
+      + `<button type="button" class="me-prox-titulo" data-evento="16"><span class="me-prox-icono propio" aria-hidden="true">${OJO()}</span>`
+      + '10:00 Firma en la escribanía</button>'
+      + `<span class="me-prox-detalle"><span class="me-lo-ven">${OJO()}Lo ven todos como «Trámite personal»</span>Aviso 1 h antes</span></li>`));
+    assert.ok(html.includes(`<span class="me-lo-ven">${OJO()}Lo ven Carla y Tomás como «Ayudo a mi hermana»</span>`));
+    assert.ok(!html.includes('me-insignia'));
+    // Un quién que llegara en uno de otra persona (el servidor no lo manda) no se dibuja
+    const conQuien = M.htmlDeProximos([{ titulo: 'Esta semana', items: [{ ...grupos[0].items[0], quien: 'Con Carla' }] }]);
+    assert.ok(!conQuien.includes('Con Carla'));
+  });
+
+  it('el día elegido: uno tuyo con el ojo y debajo a quiénes se lo mostrás; uno de otra persona, en rosado con el ojo y nada debajo', () => {
+    const html = M.htmlDelDiaElegido('2026-10-30', delMesCon(PUBLICOS()), HOY);
+    assert.ok(html.includes('<li class="me-fila-del-dia publico-otro"><button type="button" class="me-elegido-cosa" data-evento="18">'
+      + `<span class="me-elegido-icono" aria-hidden="true">${OJO()}</span><span class="me-elegido-hora">10:00</span> `
+      + '<span class="me-elegido-texto">Carla: Fuera de la oficina</span></button></li>'));
+    assert.ok(html.includes('<li class="me-fila-del-dia propio"><button type="button" class="me-elegido-cosa" data-evento="16">'
+      + `<span class="me-elegido-icono" aria-hidden="true">${OJO()}</span><span class="me-elegido-hora">10:00</span> `
+      + '<span class="me-elegido-texto">Firma en la escribanía <small>Lo ven todos como «Trámite personal»</small></span></button></li>'));
+  });
+
+  it('un texto público con HTML sale escapado en la grilla, «Próximos», el día elegido y el detalle', () => {
+    const mes = M.htmlDelMes('2026-10', delMesCon(conHtml()), HOY);
+    const proximos = M.htmlDeProximos(M.gruposDeProximos(proximosCon(conHtml()), HOY));
+    const elegido = M.htmlDelDiaElegido('2026-10-30', delMesCon(conHtml()), HOY);
+    const ajeno = itemDel({ ...PUBLICO_DE_CARLA, texto_publico: CON_HTML_PUBLICO });
+    const detalle = Object.values(plano(M.htmlDelEventoAjeno({ ...ajeno, creador: CON_HTML_PUBLICO }))).join('');
+    for (const [donde, html] of [['la grilla', mes], ['«Próximos»', proximos], ['el día elegido', elegido], ['el detalle', detalle]]) {
+      assert.ok(!html.includes(CON_HTML_PUBLICO), donde);
+      assert.ok(html.includes(CON_HTML_PUBLICO_ESCAPADO), donde);
+    }
+    // El de Carla, en su título («Carla: …», también en el title) y el tuyo, en «Lo ven todos como …»
+    assert.ok(mes.includes(`title="10:00 Carla: ${CON_HTML_PUBLICO_ESCAPADO}"`));
+    assert.ok(proximos.includes(`Lo ven todos como «${CON_HTML_PUBLICO_ESCAPADO}»`));
+    assert.ok(elegido.includes(`<small>Lo ven todos como «${CON_HTML_PUBLICO_ESCAPADO}»</small>`));
+    assert.ok(detalle.includes(`Es un evento personal de ${CON_HTML_PUBLICO_ESCAPADO}: se ve solo lo que eligió mostrar.`));
+  });
+
+  it('htmlDelEventoAjeno: un Público, la insignia rosada con el ojo y por qué se ve poco, sin «Mi recordatorio»; un Laboral, «Laboral»', () => {
+    assert.deepEqual(plano(M.htmlDelEventoAjeno(itemDel(PUBLICO_DE_CARLA))), {
+      cuando: 'Viernes 30/10/2026 a las 10:00',
+      detalle: '',
+      quien: `<span class="me-insignia rosado">${OJO()}Personal (Público)</span>`
+        + '<span>Es un evento personal de Carla: se ve solo lo que eligió mostrar.</span>',
+      opciones: ''
+    });
+    // Sin el nombre de quien lo cargó (null, sin un nombre en la base)
+    assert.equal(textoDe(M.htmlDelEventoAjeno({ ...itemDel(PUBLICO_DE_CARLA), creador: null }).quien).trim().replace(/\s+/g, ' '),
+      'Personal (Público) Es un evento personal de otra persona: se ve solo lo que eligió mostrar.');
+    // Un detalle que llegara en un Público (el servidor no lo manda) no se dibuja
+    assert.equal(M.htmlDelEventoAjeno({ ...itemDel(PUBLICO_DE_CARLA), detalle: 'Llevar la factura.' }).detalle, '');
+    // Un Laboral, como siempre, con la insignia «Laboral»
+    const laboral = plano(M.htmlDelEventoAjeno(itemDe(14)));
+    assert.ok(laboral.quien.startsWith('<span class="me-insignia violeta">Laboral</span>'));
+    assert.notEqual(laboral.opciones, '');
+  });
+
+  it('«Hoy y mañana»: uno de otra persona, «10:00 Carla: Fuera de la oficina» sin nada debajo; uno tuyo, con a quiénes se lo mostrás', () => {
+    const items = [PUBLICO_CON_TODOS, PUBLICO_DE_CARLA].map((evento) => itemDel({ ...evento, fecha: HOY }));
+    const eventos = comoLlega(eventosDeHoyYManana(items, HOY, `${HOY} 06:00:00`));
+    const html = M.htmlDeHoyYManana({ ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null, eventos }, true);
+    assert.equal(columnasDe(html)[0].html, '<ul><li><time>10:00</time> Firma en la escribanía<small>lo ven todos como «Trámite personal»</small></li>'
+      + `<li><time>10:00</time> Carla: Fuera de la oficina</li></ul>${VER_LA_AGENDA}`);
+  });
+});
+
 // El servidor falso con la agenda y el formulario del evento: las personas, el aviso (el de avisoDe, con hoy a las 09:00) y lo que se
 // guarda; `extra`, primero (una respuesta, una promesa que la da o undefined), y `eventos`, los cambios de conEventos
 const RUTA_DE_PERSONAS = '/api/mi-espacio/personas';
+// Las de un Personal (Público): todos los usuarios activos menos quien pide, de cualquier rol
+const RUTA_DE_PERSONAS_DEL_PUBLICO = '/api/mi-espacio/personas/publico';
 const RUTA_DEL_AVISO = '/api/mi-espacio/eventos/aviso?';
 const rutaDelAviso = (fecha, desde, recordatorio = '2h') =>
   `/api/mi-espacio/eventos/aviso?fecha=${fecha}&desde=${encodeURIComponent(desde)}&recordatorio=${recordatorio}`;
@@ -5747,6 +6186,7 @@ const conElFormulario = ({ extra = () => undefined, eventos = {} } = {}) => asyn
   const propia = await extra(metodo, ruta, cuerpo);
   if (propia !== undefined) return propia;
   if (ruta === RUTA_DE_PERSONAS) return ok(PERSONAS_PARA_COMPARTIR);
+  if (ruta === RUTA_DE_PERSONAS_DEL_PUBLICO) return ok(PERSONAS_DEL_PUBLICO);
   if (ruta.startsWith(RUTA_DEL_AVISO)) {
     const parametros = new URL(ruta, 'http://rpad.test').searchParams;
     const { momento, texto } = avisoDe({ fecha: parametros.get('fecha'), desde: parametros.get('desde'),
@@ -5773,6 +6213,12 @@ const abrirElEvento = async (pagina, id, donde = 'ag-mes') => {
   return boton;
 };
 const personaDel = (pagina, valor) => pagina.el('ev-personas').querySelector(`[data-persona="${valor}"]`);
+// El botón de un tipo de evento («Tipo de evento»: mi-espacio.js los vuelve a dibujar al elegir uno) y una pastilla de lo que ven los
+// demás
+const tipoDel = (pagina, tipo) => pagina.el('ev-tipos').querySelector(`[data-tipo="${tipo}"]`);
+const textoDel = (pagina, texto) => pagina.el('ev-textos').querySelectorAll('[data-texto]').find((boton) => boton.getAttribute('data-texto') === texto);
+const tiposALaVista = (pagina) => pagina.el('ev-tipos').querySelectorAll('[data-tipo]').map((boton) => [boton.getAttribute('data-tipo'),
+  boton.getAttribute('aria-pressed'), boton.disabled]);
 
 describe('el formulario del evento en la página (DOM falso)', () => {
   it('«Nuevo evento»: hoy y «2 horas antes», el foco en «Qué» y, al cerrar, de vuelta al botón', async () => {
@@ -5795,39 +6241,43 @@ describe('el formulario del evento en la página (DOM falso)', () => {
     assert.equal(pagina.documento.activeElement, boton);
   });
 
-  // Decisión del usuario (27/10/2026): el lector y el colaborador tienen solo eventos personales
-  it('el lector no ve «¿Quién lo ve?» ni pide las personas, y lo que guarda no trae compartido', async () => {
+  // Decisión del usuario (27/10/2026): el lector y el colaborador no comparten Laborales; desde el evento Personal (Público) (spec
+  // 2026-10-29-mi-espacio-evento-publico, 4) ven «Tipo de evento» con los dos personales
+  it('el lector ve el tipo con los dos personales, no pide las personas de administración, y lo que guarda es un Personal (Privado)', async () => {
     const pagina = montarPagina({ responder: conElFormulario() });
     await pagina.iniciar();
     await pagina.tocar(pagina.el('btn-nuevo-evento'));
-    assert.equal(pagina.el('ev-grupo-quien').hidden, true);
+    assert.equal(pagina.el('ev-grupo-tipo').hidden, false);
+    assert.deepEqual(tiposALaVista(pagina), [['privado', 'true', false], ['publico', 'false', false]]);
+    assert.ok(pagina.el('ev-tipos').classList.contains('dos') && !pagina.el('ev-tipos').classList.contains('tres'));
     assert.equal(pagina.el('ev-grupo-personas').hidden, true);
+    assert.equal(pagina.el('ev-publico').hidden, true);
     await pagina.escribir('ev-titulo', 'Turno médico');
     await pagina.escribir('ev-desde', '15:30');
     await pagina.tocar(pagina.el('ev-guardar'));
     assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos').map((p) => p.cuerpo), [
-      { titulo: 'Turno médico', fecha: HOY, desde: '15:30', hasta: null, detalle: '', recordatorio: '2h' }
+      { titulo: 'Turno médico', fecha: HOY, desde: '15:30', hasta: null, detalle: '', recordatorio: '2h', tipo: 'privado' }
     ]);
-    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS).length, 0);
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS || ruta === RUTA_DE_PERSONAS_DEL_PUBLICO).length, 0);
   });
 
-  it('administración: «Solo yo» de entrada; «Compartido» muestra las personas, pedidas una sola vez', async () => {
+  it('administración: Personal (Privado) de entrada; Laboral muestra las personas, pedidas una sola vez', async () => {
     const pagina = montarPagina({ admin: true, responder: conElFormulario() });
     await pagina.iniciar();
     await pagina.tocar(pagina.el('btn-nuevo-evento'));
-    assert.equal(pagina.el('ev-grupo-quien').hidden, false);
-    assert.equal(pagina.el('ev-solo').getAttribute('aria-pressed'), 'true');
-    assert.equal(pagina.el('ev-compartido').getAttribute('aria-pressed'), 'false');
+    assert.equal(pagina.el('ev-grupo-tipo').hidden, false);
+    assert.deepEqual(tiposALaVista(pagina), [['privado', 'true', false], ['publico', 'false', false], ['laboral', 'false', false]]);
+    assert.ok(pagina.el('ev-tipos').classList.contains('tres') && !pagina.el('ev-tipos').classList.contains('dos'));
     assert.equal(pagina.el('ev-grupo-personas').hidden, true);
     assert.equal(pagina.el('ev-recordatorio-ayuda').hidden, true);
-    pagina.el('ev-compartido').focus();
-    await pagina.tocar(pagina.el('ev-compartido'));
-    assert.equal(pagina.el('ev-compartido').getAttribute('aria-pressed'), 'true');
-    assert.equal(pagina.el('ev-solo').getAttribute('aria-pressed'), 'false');
+    tipoDel(pagina, 'laboral').focus();
+    await pagina.tocar(tipoDel(pagina, 'laboral'));
+    assert.deepEqual(tiposALaVista(pagina), [['privado', 'false', false], ['publico', 'false', false], ['laboral', 'true', false]]);
     assert.equal(pagina.el('ev-grupo-personas').hidden, false);
     assert.equal(pagina.el('ev-recordatorio-ayuda').hidden, false);
-    assert.equal(pagina.documento.activeElement, pagina.el('ev-compartido'));
-    assert.equal(pagina.el('ev-personas').innerHTML, M.htmlDePersonasDelEvento(PERSONAS_PARA_COMPARTIR, { personas: [] }));
+    assert.equal(pagina.documento.activeElement, tipoDel(pagina, 'laboral'));
+    assert.equal(pagina.el('ev-personas').innerHTML, M.htmlDePersonasDelEvento(PERSONAS_PARA_COMPARTIR, { tipo: 'laboral', personas: [] }));
+    assert.equal(pagina.el('ev-personas-ayuda').textContent, M.AYUDA_DE_LAS_PERSONAS_DEL_LABORAL);
     // Una persona se suma (el foco queda en ella) y la cantidad se ve; «Todos» deshabilita a las demás
     const martin = personaDel(pagina, '3');
     martin.focus();
@@ -5839,21 +6289,22 @@ describe('el formulario del evento en la página (DOM falso)', () => {
     assert.equal(personaDel(pagina, 'todos').getAttribute('aria-pressed'), 'true');
     assert.ok(PERSONAS_PARA_COMPARTIR.every(({ id }) => personaDel(pagina, String(id)).disabled === true));
     assert.equal(pagina.el('ev-personas-cuantas').textContent, '');
-    // «Solo yo» vuelve a ocultarlas
-    await pagina.tocar(pagina.el('ev-solo'));
+    // Personal (Privado) vuelve a ocultarlas
+    await pagina.tocar(tipoDel(pagina, 'privado'));
     assert.equal(pagina.el('ev-grupo-personas').hidden, true);
-    // Cerrar y volver a abrir no vuelve a pedir las personas, y un formulario nuevo vuelve a «Solo yo»
+    // Cerrar y volver a abrir no vuelve a pedir las personas, y un formulario nuevo vuelve a Personal (Privado)
     await pagina.tecla('Escape');
     await pagina.tocar(pagina.el('btn-nuevo-evento'));
     assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS).length, 1);
-    assert.equal(pagina.el('ev-solo').getAttribute('aria-pressed'), 'true');
+    assert.equal(tipoDel(pagina, 'privado').getAttribute('aria-pressed'), 'true');
     assert.equal(pagina.el('ev-grupo-personas').hidden, true);
   });
 
   // El select la tiene en aria-describedby, y un texto oculto con hidden igual entra en la descripción (accname 1.2, paso 2A): en un
-  // evento personal tiene que estar vacía, no solo oculta
+  // Personal (Privado) tiene que estar vacía, no solo oculta. Un Laboral de quien ya no es de administración no la tiene: no se puede
+  // guardar como Laboral (spec 2026-10-29-mi-espacio-evento-publico, 4)
   const AYUDA_COMPARTIDO = 'Les llega a todas las personas del evento.';
-  it('en un evento personal, la ayuda del recordatorio compartido queda vacía (el lector, «Solo yo» y uno propio sin compartir)',
+  it('en un Personal (Privado), la ayuda del recordatorio del Laboral queda vacía (el lector, Privado y uno propio sin compartir)',
     async () => {
       const lector = montarPagina({ hash: '#agenda', responder: conElFormulario() });
       await lector.iniciar();
@@ -5873,8 +6324,8 @@ describe('el formulario del evento en la página (DOM falso)', () => {
       await abrirElEvento(admin, '13');
       assert.equal(admin.el('ev-recordatorio-ayuda').textContent, '');
       // Compartido y de vuelta a «Solo yo»: se vacía otra vez
-      await admin.tocar(admin.el('ev-compartido'));
-      await admin.tocar(admin.el('ev-solo'));
+      await admin.tocar(tipoDel(admin, 'laboral'));
+      await admin.tocar(tipoDel(admin, 'privado'));
       assert.equal(admin.el('ev-recordatorio-ayuda').textContent, '');
       assert.equal(admin.el('ev-recordatorio-ayuda').hidden, true);
     });
@@ -5891,7 +6342,7 @@ describe('el formulario del evento en la página (DOM falso)', () => {
     const nuevo = montarPagina({ hash: '#agenda', admin: true, responder: conElFormulario() });
     await nuevo.iniciar();
     await nuevo.tocar(nuevo.el('btn-nuevo-evento'));
-    await nuevo.tocar(nuevo.el('ev-compartido'));
+    await nuevo.tocar(tipoDel(nuevo, 'laboral'));
     assert.equal(nuevo.el('ev-recordatorio-ayuda').textContent, AYUDA_COMPARTIDO);
     assert.equal(nuevo.el('ev-recordatorio-ayuda').hidden, false);
   });
@@ -5904,15 +6355,15 @@ describe('el formulario del evento en la página (DOM falso)', () => {
     });
     await pagina.iniciar();
     await pagina.tocar(pagina.el('btn-nuevo-evento'));
-    await pagina.tocar(pagina.el('ev-compartido'));
+    await pagina.tocar(tipoDel(pagina, 'laboral'));
     assert.ok(textoDe(pagina.el('ev-personas').innerHTML).endsWith('No se pudo cargar la lista de personas. Probá de nuevo en unos minutos.'));
-    assert.ok(personaDel(pagina, 'todos'), '«Todos» se puede elegir igual');
+    assert.ok(personaDel(pagina, 'todos'), '«Toda la administración» se puede elegir igual');
     await pagina.tecla('Escape');
     falla = false;
     await pagina.tocar(pagina.el('btn-nuevo-evento'));
-    await pagina.tocar(pagina.el('ev-compartido'));
+    await pagina.tocar(tipoDel(pagina, 'laboral'));
     assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS).length, 2);
-    assert.equal(pagina.el('ev-personas').innerHTML, M.htmlDePersonasDelEvento(PERSONAS_PARA_COMPARTIR, { personas: [] }));
+    assert.equal(pagina.el('ev-personas').innerHTML, M.htmlDePersonasDelEvento(PERSONAS_PARA_COMPARTIR, { tipo: 'laboral', personas: [] }));
   });
 
   it('con un 403 de las personas (un rol viejo en el navegador), dice el mensaje del servidor, no «Probá de nuevo»', async () => {
@@ -5924,7 +6375,7 @@ describe('el formulario del evento en la página (DOM falso)', () => {
     });
     await pagina.iniciar();
     await pagina.tocar(pagina.el('btn-nuevo-evento'));
-    await pagina.tocar(pagina.el('ev-compartido'));
+    await pagina.tocar(tipoDel(pagina, 'laboral'));
     const texto = textoDe(pagina.el('ev-personas').innerHTML);
     assert.ok(texto.endsWith('No tenés permiso para compartir eventos.'), texto);
     assert.ok(!texto.includes('Probá de nuevo'), texto);
@@ -5949,7 +6400,7 @@ describe('el formulario del evento en la página (DOM falso)', () => {
       await pagina.escribir('ev-desde', '10:00');
       await pagina.escribir('ev-hasta', '11:00');
       await pagina.escribir('ev-detalle', 'Sala de reuniones del 2.º piso.');
-      await pagina.tocar(pagina.el('ev-compartido'));
+      await pagina.tocar(tipoDel(pagina, 'laboral'));
       await pagina.tocar(personaDel(pagina, 'todos'));
       const resumenes = pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length;
       const rangos = rangosPedidos(pagina).length;
@@ -5964,7 +6415,7 @@ describe('el formulario del evento en la página (DOM falso)', () => {
       assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/eventos').length, 1);
       assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos')[0].cuerpo, {
         titulo: 'Reunión de equipo', fecha: HOY, desde: '10:00', hasta: '11:00', detalle: 'Sala de reuniones del 2.º piso.', recordatorio: '2h',
-        compartido: true, para_todos: true, personas: []
+        tipo: 'laboral', compartido: true, para_todos: true, personas: []
       });
       soltar();
       await pagina.esperar();
@@ -5983,7 +6434,7 @@ describe('el formulario del evento en la página (DOM falso)', () => {
     await pagina.escribir('ev-titulo', '   ');
     await pagina.escribir('ev-fecha', '2024-12-31');
     await pagina.escribir('ev-hasta', '09:00');
-    await pagina.tocar(pagina.el('ev-compartido'));
+    await pagina.tocar(tipoDel(pagina, 'laboral'));
     await pagina.tocar(pagina.el('ev-guardar'));
     assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/eventos').length, 0);
     for (const [id, mensaje] of [['ev-titulo', MENSAJES_EVENTO.titulo], ['ev-fecha', 'La fecha tiene que ser del 01/01/2025 al 26/10/2028.'],
@@ -6088,7 +6539,7 @@ describe('el formulario del evento en la página (DOM falso)', () => {
     assert.deepEqual(['ev-titulo', 'ev-fecha', 'ev-desde', 'ev-hasta', 'ev-detalle', 'ev-recordatorio'].map((id) => pagina.el(id).value),
       ['Reunión de equipo', '2026-10-27', '10:00', '11:00', '', '2h']);
     assert.equal(pagina.el('ev-borrar').hidden, false);
-    assert.equal(pagina.el('ev-compartido').getAttribute('aria-pressed'), 'true');
+    assert.equal(tipoDel(pagina, 'laboral').getAttribute('aria-pressed'), 'true');
     assert.equal(pagina.el('ev-grupo-personas').hidden, false);
     assert.deepEqual(PERSONAS_PARA_COMPARTIR.map(({ id }) => [id, personaDel(pagina, String(id)).getAttribute('aria-pressed')]),
       [[4, 'true'], [6, 'true'], [7, 'false'], [3, 'true'], [5, 'true']]);
@@ -6101,7 +6552,7 @@ describe('el formulario del evento en la página (DOM falso)', () => {
     await pagina.tocar(pagina.el('ev-guardar'));
     assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/12').map((p) => p.cuerpo), [{
       titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:30', hasta: '11:00', detalle: '', recordatorio: '2h',
-      compartido: true, para_todos: false, personas: [4, 5, 6, 7]
+      tipo: 'laboral', compartido: true, para_todos: false, personas: [4, 5, 6, 7]
     }]);
     assert.deepEqual(abiertos(pagina), []);
     assert.equal(pagina.el('me-anuncio').textContent, 'Evento cambiado.');
@@ -6215,6 +6666,354 @@ describe('el formulario del evento en la página (DOM falso)', () => {
   });
 });
 
+// Los tres tipos de evento en la página (spec 2026-10-29-mi-espacio-evento-publico, 4 y 7): el lector carga un Personal (Público),
+// la vista previa, «Otro» con su cuenta y sus errores, el Laboral de administración con «Toda la administración», el Laboral de
+// quien ya no es de administración, un Público propio y los errores del servidor
+const conPublicos = (extra) => conElFormulario({
+  extra,
+  eventos: {
+    [RUTA_DEL_MES]: ok(conLaFrase(respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' },
+      { eventos: [...EVENTOS_DE_PRUEBA, PUBLICO_CON_TODOS] }), '2026-10')),
+    [RUTA_DE_PROXIMOS]: ok(respuestaDeEventos({ desde: '2026-10-26', hasta: '2026-11-25' },
+      { eventos: [...EVENTOS_DE_PRUEBA, PUBLICO_CON_TODOS, PUBLICO_CON_DOS] }))
+  }
+});
+const vistaPrevia = (pagina) => textoDe(pagina.el('ev-vista-previa-evento').innerHTML);
+// El pedido del nombre de quien mira (mi_nombre_corto) cuando la agenda todavía no se cargó: lo de hoy
+const RUTA_DEL_NOMBRE = `/api/mi-espacio/eventos?desde=${HOY}&hasta=${HOY}`;
+
+describe('el formulario del evento con los tres tipos en la página (DOM falso)', () => {
+  it('el lector elige Personal (Público), «Turno médico» y «Todos»: un solo POST con el tipo, «Todos» y el texto, y las personas de todos', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('ag-nuevo-evento'));
+    await pagina.correr();
+    await pagina.escribir('ev-titulo', 'Control con la dermatóloga');
+    await pagina.escribir('ev-fecha', '2026-11-05');
+    await pagina.escribir('ev-desde', '10:00');
+    tipoDel(pagina, 'publico').focus();
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    assert.deepEqual(tiposALaVista(pagina), [['privado', 'false', false], ['publico', 'true', false]]);
+    assert.equal(pagina.documento.activeElement, tipoDel(pagina, 'publico'));
+    assert.equal(pagina.el('ev-publico').hidden, false);
+    assert.equal(pagina.el('ev-otro-grupo').hidden, true);
+    assert.equal(pagina.el('ev-textos').innerHTML, M.htmlDeTextosPublicos({ tipo: 'publico', texto_publico: '', otro: false }));
+    assert.equal(pagina.el('ev-grupo-personas').hidden, false);
+    assert.equal(pagina.el('ev-personas').innerHTML, M.htmlDePersonasDelEvento(PERSONAS_DEL_PUBLICO, { tipo: 'publico', personas: [] }));
+    assert.equal(personaDel(pagina, 'todos').textContent, 'Todos');
+    assert.equal(pagina.el('ev-personas-ayuda').textContent, 'No les llega ningún email: lo ven en su agenda y en el Resumen.');
+    assert.equal(pagina.el('ev-recordatorio-ayuda').textContent, 'Te llega solo a vos.');
+    assert.equal(pagina.el('ev-recordatorio-ayuda').hidden, false);
+    assert.equal(pagina.el('ev-vista-previa-dia').textContent, 'Jue 5');
+    assert.equal(vistaPrevia(pagina), '10:00 Laura: …');
+    const turno = textoDel(pagina, 'Turno médico');
+    turno.focus();
+    await pagina.tocar(turno);
+    assert.equal(textoDel(pagina, 'Turno médico').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.documento.activeElement, textoDel(pagina, 'Turno médico'));
+    assert.equal(vistaPrevia(pagina), '10:00 Laura: Turno médico');
+    await pagina.tocar(personaDel(pagina, 'todos'));
+    await pagina.tocar(pagina.el('ev-guardar'));
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos').map((p) => p.cuerpo), [{
+      titulo: 'Control con la dermatóloga', fecha: '2026-11-05', desde: '10:00', hasta: null, detalle: '', recordatorio: '2h',
+      tipo: 'publico', para_todos: true, personas: [], texto_publico: 'Turno médico'
+    }]);
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS_DEL_PUBLICO).length, 1);
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS).length, 0);
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DEL_NOMBRE).length, 0, 'el nombre ya llegó con la agenda');
+    assert.deepEqual(abiertos(pagina), []);
+  });
+
+  it('la vista previa cambia con la hora, la fecha, la pastilla y lo que se escribe en «Otro»; la cuenta, con cada letra y sin anunciarse', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    assert.equal(pagina.el('ev-vista-previa-dia').textContent, 'Lun 26');
+    assert.equal(vistaPrevia(pagina), 'Laura: …');
+    await pagina.escribir('ev-desde', '10:00');
+    assert.equal(vistaPrevia(pagina), '10:00 Laura: …');
+    await pagina.escribir('ev-desde', '08:30', 'change');
+    assert.equal(vistaPrevia(pagina), '08:30 Laura: …');
+    await pagina.escribir('ev-fecha', '2026-10-29');
+    assert.equal(pagina.el('ev-vista-previa-dia').textContent, 'Jue 29');
+    const anuncio = pagina.el('me-anuncio').textContent;
+    await pagina.tocar(textoDel(pagina, 'otro'));
+    assert.equal(pagina.el('ev-otro-grupo').hidden, false);
+    assert.equal(textoDel(pagina, 'otro').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.documento.activeElement, pagina.el('ev-otro'));
+    assert.equal(pagina.el('ev-otro-cuenta').textContent, '0 de 60 caracteres');
+    await pagina.escribir('ev-otro', 'A');
+    assert.equal(pagina.el('ev-otro-cuenta').textContent, '1 de 60 caracteres');
+    await pagina.escribir('ev-otro', 'Ayudo a mi hermana');
+    assert.equal(pagina.el('ev-otro-cuenta').textContent, '18 de 60 caracteres');
+    assert.equal(pagina.el('ev-otro-cuenta').classList.contains('pasado'), false);
+    assert.equal(vistaPrevia(pagina), '08:30 Laura: Ayudo a mi hermana');
+    // La cuenta no es una región viva, y lo que se escribe no se anuncia
+    for (const atributo of ['aria-live', 'role']) assert.equal(pagina.el('ev-otro-cuenta').getAttribute(atributo), null, atributo);
+    assert.equal(pagina.el('me-anuncio').textContent, anuncio);
+    // Otra pastilla oculta «Otro», que conserva lo escrito: volver a elegirlo lo trae
+    await pagina.tocar(textoDel(pagina, 'Asunto familiar'));
+    assert.equal(pagina.el('ev-otro-grupo').hidden, true);
+    assert.equal(vistaPrevia(pagina), '08:30 Laura: Asunto familiar');
+    await pagina.tocar(textoDel(pagina, 'otro'));
+    assert.equal(vistaPrevia(pagina), '08:30 Laura: Ayudo a mi hermana');
+    assert.equal(pagina.el('ev-otro').value, 'Ayudo a mi hermana');
+    // Un texto con HTML, como texto
+    await pagina.escribir('ev-otro', '<b>"x"</b>');
+    assert.equal(pagina.el('ev-vista-previa-evento').querySelector('b').textContent, '08:30');
+    assert.ok(pagina.el('ev-vista-previa-evento').innerHTML.includes('Laura: &lt;b&gt;&quot;x&quot;&lt;/b&gt;'));
+  });
+
+  it('«Otro» con 61 caracteres: «Guardar» no manda nada y el error va debajo del campo, con aria-invalid y el foco ahí', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.escribir('ev-titulo', 'Mudanza');
+    await pagina.escribir('ev-desde', '08:00');
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    await pagina.tocar(personaDel(pagina, 'todos'));
+    // Sin elegir qué ven los demás: el error de las pastillas, con el foco en la primera
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.equal(pagina.el('ev-texto-error').textContent, MENSAJES_EVENTO.textoPublico);
+    assert.equal(pagina.el('ev-texto-error').hidden, false);
+    assert.equal(pagina.el('ev-textos').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.documento.activeElement, textoDel(pagina, 'Trámite personal'));
+    // «Otro» saca ese error; con 61 caracteres, el del largo, en su campo
+    await pagina.tocar(textoDel(pagina, 'otro'));
+    assert.equal(pagina.el('ev-texto-error').hidden, true);
+    assert.equal(pagina.el('ev-textos').getAttribute('aria-invalid'), null);
+    await pagina.escribir('ev-otro', 'a'.repeat(61));
+    assert.equal(pagina.el('ev-otro-cuenta').textContent, '61 de 60 caracteres');
+    assert.equal(pagina.el('ev-otro-cuenta').classList.contains('pasado'), true);
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/eventos').length, 0);
+    assert.equal(pagina.el('ev-otro-error').textContent, 'Lo que ven los demás puede tener hasta 60 caracteres.');
+    assert.equal(pagina.el('ev-otro-error').hidden, false);
+    assert.equal(pagina.el('ev-otro').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('ev-otro').getAttribute('aria-describedby'), 'ev-otro-cuenta ev-otro-error');
+    assert.equal(pagina.documento.activeElement, pagina.el('ev-otro'));
+    // Vacío, «Escribí qué ven los demás.»
+    await pagina.escribir('ev-otro', '   ');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.equal(pagina.el('ev-otro-error').textContent, 'Escribí qué ven los demás.');
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/eventos').length, 0);
+    // Con 60, se guarda
+    await pagina.escribir('ev-otro', 'a'.repeat(60));
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos').map((p) => p.cuerpo.texto_publico), ['a'.repeat(60)]);
+  });
+
+  it('administración: Laboral pide /mi-espacio/personas y dice «Toda la administración»; Público, /mi-espacio/personas/publico y «Todos»', async () => {
+    const pagina = montarPagina({ admin: true, responder: conElFormulario() });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.tocar(tipoDel(pagina, 'laboral'));
+    assert.equal(personaDel(pagina, 'todos').textContent, 'Toda la administración');
+    const ids = () => pagina.el('ev-personas').querySelectorAll('[data-persona]').map((boton) => boton.getAttribute('data-persona'));
+    assert.deepEqual(ids(), ['todos', ...PERSONAS_PARA_COMPARTIR.map(({ id }) => String(id))]);
+    assert.equal(pagina.el('ev-personas-ayuda').textContent, M.AYUDA_DE_LAS_PERSONAS_DEL_LABORAL);
+    await pagina.tocar(personaDel(pagina, '7'));
+    // El Público tiene su lista y su «Todos»; lo elegido en el Laboral no pasa (empieza de nuevo)
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    assert.equal(personaDel(pagina, 'todos').textContent, 'Todos');
+    assert.deepEqual(ids(), ['todos', ...PERSONAS_DEL_PUBLICO.map(({ id }) => String(id))]);
+    assert.ok(pagina.el('ev-personas').querySelectorAll('[data-persona]').every((boton) => boton.getAttribute('aria-pressed') === 'false'));
+    assert.equal(pagina.el('ev-personas-ayuda').textContent, M.AYUDA_DE_LAS_PERSONAS_DEL_PUBLICO);
+    await pagina.tocar(personaDel(pagina, '9'));
+    assert.equal(pagina.el('ev-personas-cuantas').textContent, '(1 persona)');
+    await pagina.tocar(tipoDel(pagina, 'laboral'));
+    assert.equal(pagina.el('ev-personas-cuantas').textContent, '');
+    assert.equal(personaDel(pagina, '9'), null, 'Tomás no es de administración');
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    // Cada lista se pidió una sola vez
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS).length, 1);
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS_DEL_PUBLICO).length, 1);
+  });
+
+  it('si las personas del Público no llegan, lo dice y se vuelven a pedir la próxima vez', async () => {
+    let falla = true;
+    const pagina = montarPagina({
+      responder: conElFormulario({
+        extra: (metodo, ruta) => (ruta === RUTA_DE_PERSONAS_DEL_PUBLICO && falla ? respuesta(500, { success: false, error: 'Error' }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    assert.ok(textoDe(pagina.el('ev-personas').innerHTML).endsWith('No se pudo cargar la lista de personas. Probá de nuevo en unos minutos.'));
+    assert.ok(personaDel(pagina, 'todos'), '«Todos» se puede elegir igual');
+    await pagina.tecla('Escape');
+    falla = false;
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS_DEL_PUBLICO).length, 2);
+    assert.equal(pagina.el('ev-personas').innerHTML, M.htmlDePersonasDelEvento(PERSONAS_DEL_PUBLICO, { tipo: 'publico', personas: [] }));
+  });
+
+  it('un lector con un Laboral suyo: el Laboral elegido y deshabilitado, con su ayuda; «Guardar» no manda nada hasta elegir otro tipo', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '12');
+    assert.deepEqual(tiposALaVista(pagina), [['privado', 'false', false], ['publico', 'false', false], ['laboral', 'true', true]]);
+    assert.ok(pagina.el('ev-tipos').classList.contains('tres'));
+    assert.equal(pagina.el('ev-tipo-ayuda').textContent, 'Ya no podés compartir eventos laborales. Elegí otro tipo para guardarlo.');
+    assert.equal(pagina.el('ev-tipo-ayuda').hidden, false);
+    assert.equal(pagina.el('ev-grupo-tipo').getAttribute('aria-describedby'), 'ev-tipo-ayuda ev-tipo-error');
+    assert.equal(pagina.el('ev-grupo-personas').hidden, true);
+    // Tocar el Laboral deshabilitado no hace nada
+    await pagina.tocar(tipoDel(pagina, 'laboral'));
+    assert.equal(tipoDel(pagina, 'laboral').getAttribute('aria-pressed'), 'true');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.equal(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/12').length, 0);
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    assert.equal(pagina.el('ev-tipo-error').textContent, 'Ya no podés compartir eventos laborales. Elegí otro tipo para guardarlo.');
+    assert.equal(pagina.el('ev-tipo-error').hidden, false);
+    assert.equal(pagina.el('ev-tipos').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.documento.activeElement, tipoDel(pagina, 'privado'));
+    // Otro tipo: el Laboral se va, con su ayuda y su error, y se guarda
+    await pagina.tocar(tipoDel(pagina, 'privado'));
+    assert.deepEqual(tiposALaVista(pagina), [['privado', 'true', false], ['publico', 'false', false]]);
+    assert.ok(pagina.el('ev-tipos').classList.contains('dos'));
+    assert.equal(pagina.el('ev-tipo-ayuda').textContent, '');
+    assert.equal(pagina.el('ev-tipo-ayuda').hidden, true);
+    assert.equal(pagina.el('ev-tipo-error').hidden, true);
+    assert.equal(pagina.el('ev-tipos').getAttribute('aria-invalid'), null);
+    assert.equal(pagina.documento.activeElement, tipoDel(pagina, 'privado'));
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/12').map((p) => p.cuerpo), [{
+      titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:00', hasta: '11:00', detalle: '', recordatorio: '2h', tipo: 'privado'
+    }]);
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS).length, 0);
+  });
+
+  it('un Público propio: «Editar evento» con su texto, «Todos» y la vista previa; uno con «Otro» y sus personas; el PUT', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conPublicos() });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '16');
+    assert.equal(pagina.el('modal-evento-titulo').textContent, 'Editar evento');
+    assert.deepEqual(tiposALaVista(pagina), [['privado', 'false', false], ['publico', 'true', false]]);
+    assert.equal(pagina.el('ev-publico').hidden, false);
+    assert.equal(textoDel(pagina, 'Trámite personal').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.el('ev-otro-grupo').hidden, true);
+    assert.equal(pagina.el('ev-otro').value, '');
+    assert.equal(personaDel(pagina, 'todos').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.el('ev-recordatorio').value, '1h');
+    assert.equal(pagina.el('ev-vista-previa-dia').textContent, 'Vie 30');
+    assert.equal(vistaPrevia(pagina), '10:00 Laura: Trámite personal');
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS_DEL_PUBLICO).length, 1);
+    await pagina.tecla('Escape');
+    await abrirElEvento(pagina, '17', 'ag-proximos');
+    assert.equal(textoDel(pagina, 'otro').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.el('ev-otro-grupo').hidden, false);
+    assert.equal(pagina.el('ev-otro').value, 'Ayudo a mi hermana');
+    assert.equal(pagina.el('ev-otro-cuenta').textContent, '18 de 60 caracteres');
+    assert.deepEqual(['6', '9', 'todos'].map((valor) => personaDel(pagina, valor).getAttribute('aria-pressed')), ['true', 'true', 'false']);
+    assert.equal(pagina.el('ev-personas-cuantas').textContent, '(2 personas)');
+    assert.equal(vistaPrevia(pagina), '08:00 Laura: Ayudo a mi hermana');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/17').map((p) => p.cuerpo), [{
+      titulo: 'Mudanza', fecha: '2026-11-05', desde: '08:00', hasta: null, detalle: '', recordatorio: '2h', tipo: 'publico', para_todos: false,
+      personas: [6, 9], texto_publico: 'Ayudo a mi hermana'
+    }]);
+  });
+
+  // Revisión de la Task 4: las personas que ya estaban en el evento son de su tipo. El servidor acepta a quien ya estaba solo si el
+  // evento era de ese tipo: un lector de un Público, ofrecido en un Laboral, daría 400 «Solo podés compartirlo con las personas de la
+  // lista.»
+  const ofrecidas = (pagina) => pagina.el('ev-personas').querySelectorAll('[data-persona]').map((boton) => [boton.getAttribute('data-persona'),
+    boton.getAttribute('aria-pressed')]);
+  it('administración pasa un Público con un lector a Laboral: el lector no se ofrece; de vuelta al Público, está otra vez elegido', async () => {
+    const pagina = montarPagina({ hash: '#agenda', admin: true, responder: conPublicos() });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '17', 'ag-proximos');
+    assert.equal(personaDel(pagina, '9').getAttribute('aria-pressed'), 'true', 'Tomás, en el Público');
+    await pagina.tocar(tipoDel(pagina, 'laboral'));
+    assert.equal(personaDel(pagina, '9'), null, 'Tomás no es de administración: no se ofrece en el Laboral');
+    assert.deepEqual(ofrecidas(pagina), [['todos', 'false'], ...PERSONAS_PARA_COMPARTIR.map(({ id }) => [String(id), 'false'])]);
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    assert.equal(personaDel(pagina, '9').getAttribute('aria-pressed'), 'true');
+    assert.equal(personaDel(pagina, '6').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.el('ev-personas-cuantas').textContent, '(2 personas)');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/17').map((p) => p.cuerpo.personas), [[6, 9]]);
+  });
+
+  it('administración pasa un Laboral con una persona que ya no está en la lista a Público: no se ofrece; de vuelta al Laboral, sí', async () => {
+    const conOtra = [...EVENTOS_DE_PRUEBA.filter((evento) => evento.id !== 12), eventoDe(12, 'Reunión de equipo', '2026-10-27', '10:00',
+      { hasta: '11:00', compartido: 1, personas: [...CUATRO_PERSONAS, { id: 8, nombre: 'Persona de Prueba', sin_recordatorio: 0 }] })];
+    const pagina = montarPagina({
+      hash: '#agenda', admin: true,
+      responder: conElFormulario({ eventos: { [RUTA_DEL_MES]: ok(respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' }, { eventos: conOtra })) } })
+    });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '12');
+    assert.equal(personaDel(pagina, '8').getAttribute('aria-pressed'), 'true');
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    assert.equal(personaDel(pagina, '8'), null, 'no está en la lista de todos los usuarios activos: no se ofrece en el Público');
+    assert.deepEqual(ofrecidas(pagina), [['todos', 'false'], ...PERSONAS_DEL_PUBLICO.map(({ id }) => [String(id), 'false'])]);
+    await pagina.tocar(tipoDel(pagina, 'laboral'));
+    assert.equal(personaDel(pagina, '8').getAttribute('aria-pressed'), 'true');
+    assert.equal(pagina.el('ev-personas-cuantas').textContent, '(5 personas)');
+  });
+
+  it('un 400 del servidor en tipo va a «Tipo de evento»; en texto_publico, a las pastillas o a «Otro», con el foco', async () => {
+    let contestar = respuesta(400, { success: false, error: MENSAJES_EVENTO.tipo, campo: 'tipo' });
+    const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario({ extra: (metodo) => (metodo === 'POST' ? contestar : undefined) }) });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.escribir('ev-titulo', 'Control');
+    await pagina.escribir('ev-desde', '10:00');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.equal(pagina.el('ev-tipo-error').textContent, MENSAJES_EVENTO.tipo);
+    assert.equal(pagina.el('ev-tipos').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.documento.activeElement, tipoDel(pagina, 'privado'));
+    contestar = respuesta(400, { success: false, error: MENSAJES_EVENTO.textoPublicoLargo, campo: 'texto_publico' });
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    await pagina.tocar(textoDel(pagina, 'Turno médico'));
+    await pagina.tocar(personaDel(pagina, 'todos'));
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.equal(pagina.el('ev-tipo-error').hidden, true);
+    assert.equal(pagina.el('ev-texto-error').textContent, MENSAJES_EVENTO.textoPublicoLargo);
+    assert.equal(pagina.el('ev-textos').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.documento.activeElement, textoDel(pagina, 'Trámite personal'));
+    await pagina.tocar(textoDel(pagina, 'otro'));
+    await pagina.escribir('ev-otro', 'Viaje');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.equal(pagina.el('ev-texto-error').hidden, true);
+    assert.equal(pagina.el('ev-otro-error').textContent, MENSAJES_EVENTO.textoPublicoLargo);
+    assert.equal(pagina.el('ev-otro').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.documento.activeElement, pagina.el('ev-otro'));
+    assert.equal(pagina.pedidosA('POST', '/api/mi-espacio/eventos').length, 3);
+  });
+
+  it('sin la agenda cargada (desde el Resumen), la vista previa pide el nombre una sola vez; si no llega, «Tu nombre»', async () => {
+    let falla = true;
+    const pagina = montarPagina({
+      responder: conElFormulario({ extra: (metodo, ruta) => (ruta === RUTA_DEL_NOMBRE && falla ? respuesta(500, { success: false, error: 'Error' }) : undefined) })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.escribir('ev-desde', '10:00');
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DEL_NOMBRE).length, 0, 'un Privado no lo pide');
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    assert.equal(vistaPrevia(pagina), '10:00 Tu nombre: …');
+    await pagina.tecla('Escape');
+    falla = false;
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.escribir('ev-desde', '10:00');
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    assert.equal(vistaPrevia(pagina), '10:00 Laura: …');
+    await pagina.tecla('Escape');
+    await pagina.tocar(pagina.el('btn-nuevo-evento'));
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    assert.equal(vistaPrevia(pagina), 'Laura: …');
+    assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DEL_NOMBRE).length, 2);
+  });
+});
+
 describe('el detalle de un evento ajeno en la página (DOM falso)', () => {
   it('cuándo es, quién lo creó, «Mi recordatorio» con el foco y «Solo quien lo creó puede cambiar el evento.»', async () => {
     const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario() });
@@ -6239,6 +7038,46 @@ describe('el detalle de un evento ajeno en la página (DOM falso)', () => {
     assert.deepEqual(abiertos(pagina), []);
     assert.equal(pagina.documento.activeElement, pagina.el('ag-proximos').querySelector('[data-evento="14"]'));
     assert.equal(pagina.rutas().length, antes);
+  });
+
+  // Un Personal (Público) de otra persona (spec 2026-10-29-mi-espacio-evento-publico, 5.3): su título («Carla: Fuera de la oficina»), cuándo
+  // es, la insignia rosada y por qué se ve poco; sin «Mi recordatorio» (los que lo ven no tienen), con el foco en «Cerrar», y nada que
+  // mandar. Un Laboral, después, vuelve a mostrar «Mi recordatorio»
+  it('un Público de otra persona: su título, cuándo, la insignia y por qué se ve poco, sin «Mi recordatorio» y sin ningún PUT', async () => {
+    const conCarla = (rango, mes) => ok(conLaFrase(respuestaDeEventos(rango, { eventos: [...EVENTOS_DE_PRUEBA, PUBLICO_DE_CARLA] }), mes));
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        eventos: {
+          [RUTA_DEL_MES]: conCarla({ desde: '2026-09-28', hasta: '2026-11-01' }, '2026-10'),
+          [RUTA_DE_PROXIMOS]: conCarla({ desde: '2026-10-26', hasta: '2026-11-25' })
+        }
+      })
+    });
+    await pagina.iniciar();
+    const boton = await abrirElEvento(pagina, '18');
+    assert.deepEqual(abiertos(pagina), ['modal-evento-ajeno']);
+    const partes = M.htmlDelEventoAjeno(itemDel(PUBLICO_DE_CARLA));
+    assert.equal(pagina.el('modal-evento-ajeno-titulo').textContent, 'Carla: Fuera de la oficina');
+    assert.equal(pagina.el('mea-cuando').innerHTML, partes.cuando);
+    assert.equal(pagina.el('mea-quien').innerHTML, partes.quien);
+    assert.equal(pagina.el('mea-detalle').hidden, true);
+    assert.equal(pagina.el('mea-grupo-recordatorio').hidden, true);
+    assert.equal(pagina.el('mea-aviso').hidden, true);
+    assert.equal(pagina.documento.activeElement, pagina.el('mea-cerrar'));
+    // Aunque al select oculto le llegara un cambio, no se manda nada
+    await pagina.escribir('mea-recordatorio', 'evento', 'change');
+    assert.deepEqual(pagina.estado.pedidos.filter((p) => p.metodo !== 'GET'), []);
+    await pagina.tocar(pagina.el('mea-cerrar'));
+    assert.deepEqual(abiertos(pagina), []);
+    assert.equal(pagina.documento.activeElement, boton);
+    assert.deepEqual(pagina.estado.pedidos.filter((p) => p.metodo !== 'GET'), []);
+    // Un Laboral de otra persona, después: «Mi recordatorio» vuelve, con el foco
+    await abrirElEvento(pagina, '14');
+    assert.equal(pagina.el('modal-evento-ajeno-titulo').textContent, 'Entrega del informe trimestral');
+    assert.equal(pagina.el('mea-grupo-recordatorio').hidden, false);
+    assert.equal(pagina.el('mea-recordatorio').innerHTML, M.htmlDelEventoAjeno(itemDe(14)).opciones);
+    assert.equal(pagina.documento.activeElement, pagina.el('mea-recordatorio'));
   });
 
   it('«Mi recordatorio» manda el PUT enseguida; al cerrar, se vuelve a pedir la agenda y el foco vuelve al evento', async () => {
@@ -6349,8 +7188,9 @@ describe('el detalle de un evento ajeno en la página (DOM falso)', () => {
 // La revisión de la Task 9: el mismo data-evento está en la grilla y en los próximos, y el de la grilla puede estar dentro de un
 // «y N más» oculto. Después de guardar, el foco vuelve al del mismo lugar, salta los ocultos y, si uno no lo toma, prueba el siguiente
 describe('el foco después de guardar un evento (DOM falso)', () => {
+  // El 12 es un Laboral: lo guarda administración (el lector tendría que elegir otro tipo)
   it('guardado desde los próximos, el foco vuelve al de los próximos, no al de la grilla; desde la grilla, al de la grilla', async () => {
-    const pagina = montarPagina({ hash: '#agenda', responder: conElFormulario() });
+    const pagina = montarPagina({ hash: '#agenda', admin: true, responder: conElFormulario() });
     await pagina.iniciar();
     await abrirElEvento(pagina, '12', 'ag-proximos');
     await pagina.tocar(pagina.el('ev-guardar'));
@@ -8850,7 +9690,7 @@ describe('mi-espacio.html: los estilos de la agenda', () => {
       ['lo escondido el fin de semana', de('.me-finde-cuenta', 'color'), de('.me-finde-cuenta', 'background')],
       ['la leyenda', de('.me-leyenda', 'color'), BLANCO]
     ];
-    for (const clase of ['propio', 'compartido', 'licencia', 'feriado', 'ausente']) {
+    for (const clase of ['propio', 'compartido', 'publico-otro', 'licencia', 'feriado', 'ausente']) {
       const selector = `.me-fila-del-dia.${clase} .me-elegido-cosa`;
       pares.push([`el día elegido: ${clase}`, de(selector, 'color'), de(selector, 'background')]);
     }
@@ -8883,12 +9723,18 @@ describe('mi-espacio.html: los estilos de la agenda', () => {
     }
   });
 
-  it('la leyenda lleva el ícono del mes de cada cosa (ICONOS_DEL_MES): el de lo que es solo tuyo, vacío', () => {
+  // Desde el evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 5.2), siete: lo tuyo dos veces (sin ícono y, lo que
+  // ven otros, con el ojo), lo de otra persona con el ojo en rosado y los Laborales (eran «Compartidos»)
+  it('la leyenda lleva el ícono del mes de cada cosa (ICONOS_DEL_MES): el de lo que es solo tuyo, vacío; lo que ven otros, el ojo', () => {
     const leyenda = leer('mi-espacio.html').match(/<ul class="me-leyenda"[^>]*>([\s\S]*?)<\/ul>/)[1];
-    const muestras = Object.fromEntries([...leyenda.matchAll(/<span class="me-color (\w+)" aria-hidden="true">([\s\S]*?)<\/span>/g)]
-      .map(([, clase, icono]) => [clase, icono]));
-    assert.deepEqual(Object.keys(muestras), ['propio', 'compartido', 'licencia', 'feriado', 'ausente']);
-    for (const [clase, icono] of Object.entries(muestras)) assert.equal(icono, M.ICONOS_DEL_MES[clase], clase);
+    const muestras = [...leyenda.matchAll(/<span class="me-color ([\w-]+)" aria-hidden="true">([\s\S]*?)<\/span>([^<]+)<\/li>/g)]
+      .map(([, clase, icono, texto]) => ({ clase, icono, texto }));
+    assert.deepEqual(muestras.map(({ clase, texto }) => [clase, texto]), [
+      ['propio', 'Solo vos'], ['propio', 'Tuyos, a la vista'], ['publico-otro', 'Personales de otros'], ['compartido', 'Laborales'],
+      ['licencia', 'Tus licencias y francos'], ['feriado', 'Feriados'], ['ausente', 'Compañeros que no están']
+    ]);
+    const iconos = ['propio', 'ojo', 'publico-otro', 'compartido', 'licencia', 'feriado', 'ausente'];
+    muestras.forEach(({ icono, texto }, i) => assert.equal(icono, M.ICONOS_DEL_MES[iconos[i]], texto));
   });
 
   // Revisión final, 1: el texto de un tramo va en el pedazo de su primer día, a lo ancho de todo el tramo y arriba de los pedazos de
@@ -8920,8 +9766,8 @@ describe('mi-espacio.html: los estilos de la agenda', () => {
 
 // Octubre sin ningún día libre: las licencias que faltaban cubren todos sus días hábiles (el franco de octubre se queda sin día)
 const OCTUBRE_SIN_DIAS_LIBRES = conLicencias(PLANTA.estado, licencia(100, 'medica', '2026-10-05', '2026-10-14'),
-  licencia(101, 'medica', '2026-10-16', '2026-10-22'), licencia(102, 'familiar', '2026-10-26', '2026-10-30'),
-  licencia(103, 'familiar', '2026-09-30'));
+  licencia(101, 'medica', '2026-10-16', '2026-10-22'),
+  licencia(102, 'familiar', '2026-10-26', '2026-10-30'), licencia(103, 'familiar', '2026-09-30'));
 // De hoy al 31/12, ningún día libre: las 25 horas de franquicia que quedan no entran en ningún día
 const HASTA_FIN_DE_ANIO_OCUPADO = conLicencias(PLANTA.estado, licencia(110, 'medica', '2026-10-26', '2026-11-02'),
   licencia(111, 'familiar', '2026-11-10', '2026-12-11'), licencia(112, 'medica', '2026-12-14', '2026-12-31'));
@@ -9110,5 +9956,181 @@ describe('mi-espacio.html: los estilos de las vacaciones al cargar', () => {
     assert.match(numero, /font-size: clamp\(0\.55rem, 150cqw, 1\.2rem\);/);
     // Los demás tramos angostos siguen sin él (está en la lista de debajo)
     assert.ok(estilo.includes('@container (max-width: 26px) { .me-tramo > span { visibility: hidden; } }'));
+  });
+});
+
+// Los estilos del formulario con los tres tipos (spec 2026-10-29-mi-espacio-evento-publico, 4, 5.1 y 7; la maqueta aprobada, con me- en
+// lugar de ag-): el rosado, las tres opciones del tipo, las pastillas de lo que ven los demás, «Otro» con su cuenta y la vista previa
+// (en 640 px, todo en una columna); el texto con 4,5:1 o más sobre su fondo y los bordes con 3:1 o más
+describe('mi-espacio.html: los estilos del formulario con los tres tipos', () => {
+  const estilo = estiloDeLaPagina();
+  const token = (nombre) => new RegExp(`${nombre}: (#[0-9A-Fa-f]{6});`).exec(estilo)?.[1]?.toUpperCase();
+  // El color de una propiedad de un selector: un token --sg-* (su #RRGGBB) o un #RRGGBB
+  const colorDe = (selector, propiedad, texto = estilo) => {
+    const regla = new RegExp(`(?:^|\\n)\\s*${escaparRegex(selector)}\\s*\\{([^}]*)\\}`).exec(texto)?.[1];
+    assert.ok(regla, selector);
+    const valor = new RegExp(`(?:^|[;{\\s])${propiedad}: ([^;]+);`).exec(regla)?.[1];
+    assert.ok(valor, `${selector} { ${propiedad} }`);
+    const nombre = /var\((--sg-[\w-]+)\)/.exec(valor)?.[1];
+    const hex = nombre ? token(nombre) : /#[0-9A-Fa-f]{3,6}\b/.exec(valor)?.[0]?.toUpperCase();
+    assert.ok(hex, `el color de ${selector} { ${propiedad} }`);
+    return hex.length === 4 ? `#${[...hex.slice(1)].map((c) => c + c).join('')}` : hex;
+  };
+  const telefono = (() => {
+    const inicio = estilo.indexOf('@media (max-width: 640px) {');
+    let nivel = 0;
+    for (let i = estilo.indexOf('{', inicio); i < estilo.length; i += 1) {
+      if (estilo[i] === '{') nivel += 1;
+      if (estilo[i] === '}' && (nivel -= 1) === 0) return estilo.slice(inicio, i + 1);
+    }
+    return '';
+  })();
+  const BLANCO = '#FFFFFF';
+  // La pastilla de un Público de otra persona: la misma regla le da su color a la muestra de la leyenda
+  const PASTILLA = '.me-ev.publico-otro, .me-leyenda .publico-otro';
+
+  it('los tokens del rosado (spec 5.1) y la pastilla de un Público de otra persona, con la forma de las del mes', () => {
+    assert.deepEqual([token('--sg-rosado'), token('--sg-rosado-fondo'), token('--sg-rosado-borde')], ['#8A3B5C', '#F7E3EC', '#B5577F']);
+    assert.equal(colorDe(PASTILLA, 'background'), token('--sg-rosado-fondo'));
+    assert.equal(colorDe(PASTILLA, 'border-color'), token('--sg-rosado-borde'));
+    assert.equal(colorDe(PASTILLA, 'color'), token('--sg-rosado'));
+  });
+
+  it('el texto, con 4,5:1 o más; el borde de la pastilla, con 3:1 o más contra su fondo y contra la celda', () => {
+    const pares = [
+      ['el texto rosado sobre su fondo', colorDe(PASTILLA, 'color'), colorDe(PASTILLA, 'background')],
+      ['el texto rosado sobre blanco', colorDe(PASTILLA, 'color'), BLANCO],
+      ['«Así lo ven los demás:»', colorDe('.me-vista-previa-rotulo', 'color'), colorDe('.me-vista-previa', 'background')],
+      ['la ayuda de la vista previa', colorDe('.me-vista-previa-ayuda', 'color'), colorDe('.me-vista-previa', 'background')],
+      ['el día de la vista previa', colorDe('.me-vista-previa-dia', 'color'), colorDe('.me-vista-previa-celda', 'background')],
+      ['la cuenta pasada de 60', colorDe('.me-cuenta.pasado', 'color'), BLANCO]
+    ];
+    for (const [nombre, texto, fondo] of pares) {
+      assert.ok(contraste(texto, fondo) >= 4.5, `${nombre}: ${texto} sobre ${fondo}, ${contraste(texto, fondo).toFixed(2)}:1`);
+    }
+    const borde = colorDe(PASTILLA, 'border-color');
+    for (const fondo of [colorDe(PASTILLA, 'background'), colorDe('.me-vista-previa-celda', 'background')]) {
+      assert.ok(contraste(borde, fondo) >= 3, `el borde ${borde} sobre ${fondo}: ${contraste(borde, fondo).toFixed(2)}:1`);
+    }
+    // El borde de las pastillas de lo que ven los demás (las .sg-chip), también con un error
+    assert.ok(contraste(colorDe('.sg-chip', 'border'), BLANCO) >= 3);
+    assert.ok(contraste(colorDe('.me-textos[aria-invalid="true"] .sg-chip', 'border-color'), BLANCO) >= 3);
+  });
+
+  it('las tres opciones del tipo, las pastillas, «Otro», la vista previa (sin --lineas: con data-lineas) y, en 640 px, una columna', () => {
+    assert.match(reglaDe('.me-opciones.tres'), /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+    assert.match(reglaDe('.me-textos'), /display: flex;/);
+    assert.match(reglaDe('.me-textos'), /flex-wrap: wrap;/);
+    assert.ok(reglaDe('.me-otro') !== null, '.me-otro');
+    assert.match(reglaDe('.me-vista-previa'), /grid-template-areas: 'rotulo rotulo' 'celda ayuda';/);
+    assert.match(reglaDe('.me-vista-previa'), /background: var\(--sg-cielo\);/);
+    assert.ok(reglaDe('.me-vista-previa-celda') !== null, '.me-vista-previa-celda');
+    assert.ok(reglaDe('.me-vista-previa .me-ev') !== null, '.me-vista-previa .me-ev');
+    assert.doesNotMatch(estilo, /--lineas/);
+    assert.match(telefono, /\n\s*\.me-opciones\.tres \{ grid-template-columns: minmax\(0, 1fr\); \}/);
+    assert.match(telefono, /\n\s*\.me-vista-previa \{ grid-template-columns: minmax\(0, 1fr\); grid-template-areas: 'rotulo' 'celda' 'ayuda'; \}/);
+    // El Laboral deshabilitado no se ve tocable, y no pierde contraste
+    assert.match(reglaDe('button.me-opcion:disabled'), /cursor: default;/);
+    assert.doesNotMatch(reglaDe('button.me-opcion:disabled'), /opacity/);
+  });
+});
+
+// Los estilos del evento Personal (Público) en la agenda (spec 2026-10-29-mi-espacio-evento-publico, 5.1 a 5.3 y 7; la maqueta aprobada,
+// con me- en lugar de ag-): la insignia rosada del detalle, la línea del ojo de «Próximos», el ícono y la fila del día elegido de uno de
+// otra persona y, en el teléfono, su anillo. El texto con 4,5:1 o más sobre su fondo, y los bordes y el anillo con 3:1 o más contra la
+// celda en la que van: la de hoy (--sg-cielo, la más oscura), la de un día que pasó (blanca, con lo de adentro desaturado por su
+// filter: saturate, que se aplica acá como lo aplican los navegadores, sobre sRGB) y la de otro mes
+describe('mi-espacio.html: los estilos del evento Personal (Público) en la agenda', () => {
+  const estilo = estiloDeLaPagina();
+  const token = (nombre) => new RegExp(`${nombre}: (#[0-9A-Fa-f]{6});`).exec(estilo)?.[1]?.toUpperCase();
+  const colorDe = (selector, propiedad, texto = estilo) => {
+    const regla = new RegExp(`(?:^|\\n)\\s*${escaparRegex(selector)}\\s*\\{([^}]*)\\}`).exec(texto)?.[1];
+    assert.ok(regla, selector);
+    const valor = new RegExp(`(?:^|[;{\\s])${propiedad}: ([^;]+);`).exec(regla)?.[1];
+    assert.ok(valor, `${selector} { ${propiedad} }`);
+    const nombre = /var\((--sg-[\w-]+)\)/.exec(valor)?.[1];
+    const hex = nombre ? token(nombre) : /#[0-9A-Fa-f]{3,6}\b/.exec(valor)?.[0]?.toUpperCase();
+    assert.ok(hex, `el color de ${selector} { ${propiedad} }`);
+    return hex.length === 4 ? `#${[...hex.slice(1)].map((c) => c + c).join('')}` : hex;
+  };
+  const telefono = (() => {
+    const inicio = estilo.indexOf('@media (max-width: 640px) {');
+    let nivel = 0;
+    for (let i = estilo.indexOf('{', inicio); i < estilo.length; i += 1) {
+      if (estilo[i] === '{') nivel += 1;
+      if (estilo[i] === '}' && (nivel -= 1) === 0) return estilo.slice(inicio, i + 1);
+    }
+    return '';
+  })();
+  const BLANCO = '#FFFFFF';
+  const PASTILLA = '.me-ev.publico-otro, .me-leyenda .publico-otro';
+  const FILA = '.me-fila-del-dia.publico-otro .me-elegido-cosa';
+  // Un color #RRGGBB con filter: saturate(s) (la matriz de Filter Effects, en sRGB)
+  const saturado = (hex, s) => {
+    const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const matriz = [[0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s], [0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s],
+      [0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s]];
+    return `#${matriz.map((fila) => Math.round(Math.min(255, Math.max(0, fila.reduce((suma, f, i) => suma + f * rgb[i], 0))))
+      .toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+  };
+  // Lo de adentro de un día que pasó, desaturado: el número de su filter
+  const DESATURADO = Number(/saturate\(([\d.]+)\)/.exec(reglaDe('.me-celda.paso .me-cosas') ?? '')?.[1]);
+  // Las celdas: la de hoy, la de un día que pasó (sin fondo propio: la de siempre) y la de otro mes
+  const CELDAS = () => [['hoy', colorDe('.me-celda.hoy', 'background')], ['un día que pasó', colorDe('.me-celda', 'background')],
+    ['otro mes', colorDe('.me-celda.otro-mes', 'background')]];
+
+  it('la insignia rosada del detalle, la línea del ojo de «Próximos», el ícono y la fila del día elegido: su color y su forma', () => {
+    assert.equal(colorDe('.me-insignia.rosado', 'background'), token('--sg-rosado-fondo'));
+    assert.equal(colorDe('.me-insignia.rosado', 'color'), token('--sg-rosado'));
+    // El ojo de la insignia, sin el margen de los íconos del mes (la insignia ya separa con su gap)
+    assert.match(reglaDe('.me-insignia .me-icono') ?? '', /margin-right: 0;/);
+    assert.equal(colorDe('.me-lo-ven', 'color'), token('--sg-tinta'));
+    assert.match(reglaDe('.me-lo-ven'), /display: inline-flex;/);
+    assert.match(reglaDe('.me-lo-ven'), /font-weight: 600;/);
+    assert.ok(reglaDe('.me-lo-ven .me-icono') !== null, '.me-lo-ven .me-icono');
+    // El ícono de «Próximos» de uno de otra persona, en rosado; el ojo de uno tuyo, en tinta
+    assert.equal(colorDe('.me-prox-icono.publico-otro', 'color'), token('--sg-rosado'));
+    assert.equal(colorDe('.me-prox-icono.propio', 'color'), token('--sg-tinta'));
+    // La fila del día elegido de uno de otra persona, en rosado
+    assert.deepEqual([colorDe(FILA, 'background'), colorDe(FILA, 'border-color'), colorDe(FILA, 'color')],
+      [token('--sg-rosado-fondo'), token('--sg-rosado-borde'), token('--sg-rosado')]);
+  });
+
+  it('el texto, con 4,5:1 o más sobre su fondo: la insignia, la línea del ojo, la fila del día elegido y la pastilla, también en un día que pasó', () => {
+    assert.ok(DESATURADO > 0 && DESATURADO < 1, String(DESATURADO));
+    const pares = [
+      ['la insignia rosada', colorDe('.me-insignia.rosado', 'color'), colorDe('.me-insignia.rosado', 'background')],
+      ['la línea del ojo', colorDe('.me-lo-ven', 'color'), BLANCO],
+      ['el ícono de «Próximos»', colorDe('.me-prox-icono.publico-otro', 'color'), BLANCO],
+      ['la fila del día elegido', colorDe(FILA, 'color'), colorDe(FILA, 'background')],
+      ['la pastilla, en un día que pasó', saturado(colorDe(PASTILLA, 'color'), DESATURADO), saturado(colorDe(PASTILLA, 'background'), DESATURADO)]
+    ];
+    for (const [nombre, texto, fondo] of pares) {
+      assert.ok(contraste(texto, fondo) >= 4.5, `${nombre}: ${texto} sobre ${fondo}, ${contraste(texto, fondo).toFixed(2)}:1`);
+    }
+  });
+
+  it('el borde de la pastilla y de la fila, con 3:1 o más contra su fondo y contra la celda (hoy, un día que pasó y otro mes)', () => {
+    const borde = colorDe(PASTILLA, 'border-color');
+    for (const [nombre, celda] of CELDAS()) {
+      const deEseDia = nombre === 'un día que pasó' ? saturado(borde, DESATURADO) : borde;
+      assert.ok(contraste(deEseDia, celda) >= 3, `el borde, ${nombre}: ${deEseDia} sobre ${celda}, ${contraste(deEseDia, celda).toFixed(2)}:1`);
+    }
+    assert.ok(contraste(saturado(borde, DESATURADO), saturado(colorDe(PASTILLA, 'background'), DESATURADO)) >= 3, 'en un día que pasó');
+    assert.ok(contraste(colorDe(FILA, 'border-color'), colorDe(FILA, 'background')) >= 3);
+    assert.ok(contraste(colorDe(FILA, 'border-color'), BLANCO) >= 3);
+  });
+
+  it('en el teléfono, uno de otra persona es un anillo rosado (blanco por dentro), con 3:1 o más contra la celda', () => {
+    const anillo = /\n\s*\.me-puntos \.publico-otro \{([^}]*)\}/.exec(telefono)?.[1] ?? '';
+    assert.match(anillo, /background: #fff;/);
+    assert.match(anillo, /box-shadow: inset 0 0 0 2px var\(--sg-rosado-borde\);/);
+    const rosado = token('--sg-rosado-borde');
+    for (const [nombre, celda] of [...CELDAS(), ['sábado y domingo', colorDe('.me-celda.finde', 'background')],
+      ['un feriado', colorDe('.me-celda.feriado', 'background')]]) {
+      assert.ok(contraste(rosado, celda) >= 3, `${nombre}: ${rosado} sobre ${celda}, ${contraste(rosado, celda).toFixed(2)}:1`);
+    }
+    // Y contra su blanco de adentro: es un anillo, no un punto lleno
+    assert.ok(contraste(rosado, BLANCO) >= 3);
   });
 });

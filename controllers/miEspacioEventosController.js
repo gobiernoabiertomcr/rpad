@@ -12,6 +12,13 @@
 // message? }; un error de validación, 400 con su campo. Cada guardado es una transacción; el cambio y la baja empiezan
 // bloqueando la fila del evento. Al guardar salen los emails de la invitación, el cambio y la cancelación (spec, sección 4):
 // quién recibe qué se decide en la transacción y se manda después de responder (services/miEspacioEventosEmails.js).
+// El Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, secciones 3 y 6): lo crea cualquier rol y lo ven quien lo
+// creó y «Todos» (todos los usuarios activos) o las personas elegidas, de cualquier rol (las de `personasParaElPublico`). Se
+// guarda como uno personal (compartido y para_todos en 0, con publico, publico_todos y texto_publico) y su audiencia en
+// mi_espacio_evento_vistas: no tiene audiencia de emails (`audienciaDe` da []), así que el guardado no le manda nada a nadie,
+// y a quien no lo creó la API le da solo «Carla: Turno médico» (los datos lo recortan antes de itemDeEvento), sin «mi
+// recordatorio» (400 sinRecordatorio). Los nombres cortos de un Público van contra todos los usuarios activos
+// (`usuariosActivos`).
 import pool from '../config/database.js';
 import { ahoraArgentina, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import {
@@ -19,13 +26,14 @@ import {
   itemDeAusencia, itemsDeFeriados, emailsDelGuardado, companerosPorDia, mesDeLaFrase, fraseDelMes
 } from '../services/miEspacioEventosReglas.js';
 import {
-  eventosVisibles, eventoVisible, eventoPropio, personasParaCompartir, licenciasPropiasEntre, audienciaDe
+  eventosVisibles, eventoVisible, eventoPropio, personasParaCompartir, personasParaElPublico, licenciasPropiasEntre, audienciaDe
 } from '../services/miEspacioEventosDatos.js';
 import { enviarEmailsDelGuardado } from '../services/miEspacioEventosEmails.js';
 import { feriadosEntre, filasDeFeriados } from '../services/feriadosDatos.js';
 import { feriadosDelRango } from '../services/feriadosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
-import { administracionActiva } from '../services/miEspacioDatos.js';
+import { administracionActiva, usuariosActivos } from '../services/miEspacioDatos.js';
+import { nombreCorto } from '../services/miEspacioReglas.js';
 import { rangoDelPedido, ausentesPara } from './miEspacioController.js';
 
 // Cuántos días antes de un evento se leen los feriados: su aviso sale antes que él («El día hábil anterior» de un lunes) y
@@ -123,12 +131,25 @@ const quienPide = (req) => ({ id: req.user.userId, rol: req.user.rol });
 // Los feriados que mueven el aviso de los eventos de desde a hasta (un Set, el de feriadosEntre)
 const feriadosParaLosAvisos = (desde, hasta) => feriadosEntre(desdeDeLosFeriados(desde), hasta);
 
+// Las personas elegidas de un Laboral o un Personal (Público) contra las que se pueden elegir (`lista`, las de la base, más las
+// que ya estaban en el evento: `yaEstaban`), sin quien lo guarda: `{ datos }` con ellas, o `{ error }` (personasDelPedido)
+const conLasPersonas = (datos, { usuario, lista, yaEstaban, tipo }) => {
+  const permitidas = new Set([...lista.map((persona) => persona.id), ...yaEstaban]);
+  const { personas, error } = personasDelPedido(datos.personas, { usuarioId: usuario.id, permitidas, tipo });
+  return error ? { error } : { datos: { ...datos, personas } };
+};
+
 /**
  * Lo que se guarda de un alta o un cambio (`entrada`, el formulario entero), o lo que lo frena, en este orden:
- * validarEvento; compartir sin ser administración (`sinPermiso`, en `compartido`: también a quien lo creó y dejó de serlo);
- * y las personas (`personasDelPedido`): las de `personasParaCompartir` o las que ya estaban elegidas en el evento
- * (`anterior`, el de antes de un cambio; las filas de un «para todos» son de recordatorios apagados, no de elegidas), sin
- * quien lo guarda. Devuelve `{ datos }` o `{ error }`.
+ * validarEvento (con el tipo: Personal (Privado), Personal (Público) o Laboral; un cuerpo sin `tipo` es el de antes);
+ * compartir un Laboral sin ser administración (`sinPermiso`, en `compartido`: también a quien lo creó y dejó de serlo); y las
+ * personas (`personasDelPedido`), sin quien lo guarda:
+ * - de un Laboral sin «Todos», las de `personasParaCompartir` (la administración) o las que ya estaban elegidas en el evento
+ *   (`anterior`, el de antes de un cambio; las filas de un «para todos» son de recordatorios apagados, no de elegidas);
+ * - de un Personal (Público) sin «Todos», las de `personasParaElPublico` (todos los usuarios activos, de cualquier rol) o las
+ *   que ya estaban en sus vistas (una invitada que se desactivó sigue, pero nadie la suma de nuevo), con el mensaje de
+ *   «ninguna» del Público (`personasPublico`).
+ * Devuelve `{ datos }` o `{ error }`.
  */
 const datosDelGuardado = async (entrada, { usuario, anterior = null }, conexion) => {
   const { datos, error } = validarEvento(entrada, hoyArgentina());
@@ -136,16 +157,23 @@ const datosDelGuardado = async (entrada, { usuario, anterior = null }, conexion)
   if (datos.compartido && !esAdmin(usuario.rol)) {
     return { error: { campo: 'compartido', mensaje: MENSAJES_EVENTO.sinPermiso } };
   }
+  if (datos.publico) {
+    if (datos.publico_todos) return { datos };
+    const yaEstaban = anterior?.publico ? (anterior.vistas ?? []).map((persona) => persona.id) : [];
+    return conLasPersonas(datos,
+      { usuario, lista: await personasParaElPublico(usuario.id, conexion), yaEstaban, tipo: 'publico' });
+  }
   if (!datos.compartido || datos.para_todos) return { datos };
   const yaEstaban = anterior?.compartido && !anterior.para_todos ? anterior.personas.map((persona) => persona.id) : [];
-  const permitidas = new Set([...(await personasParaCompartir(usuario.id, conexion)).map((persona) => persona.id), ...yaEstaban]);
-  const { personas, error: errorDePersonas } = personasDelPedido(datos.personas, { usuarioId: usuario.id, permitidas });
-  return errorDePersonas ? { error: errorDePersonas } : { datos: { ...datos, personas } };
+  return conLasPersonas(datos,
+    { usuario, lista: await personasParaCompartir(usuario.id, conexion), yaEstaban, tipo: 'laboral' });
 };
 
-// Las columnas que se guardan de un evento, en el orden de INSERT y de UPDATE
+// Las columnas que se guardan de un evento, en el orden de INSERT y de UPDATE (un Público lleva compartido y para_todos en 0:
+// lo dice validarEvento)
 const valoresDelEvento = (datos) => [datos.titulo, datos.detalle, datos.fecha, datos.desde, datos.hasta,
-  datos.compartido ? 1 : 0, datos.para_todos ? 1 : 0, datos.recordatorio];
+  datos.compartido ? 1 : 0, datos.para_todos ? 1 : 0, datos.publico ? 1 : 0, datos.publico_todos ? 1 : 0,
+  datos.texto_publico, datos.recordatorio];
 
 /**
  * Las filas de las personas de un evento después de guardarlo (spec, sección 3): sin compartir, ninguna; con «Todos», solo
@@ -173,10 +201,40 @@ const guardarPersonas = async (conexion, eventoId, datos, antes) => {
 };
 
 /**
+ * A quiénes se les muestra un Personal (Público) después de guardarlo (spec 2026-10-29-mi-espacio-evento-publico, 6.5), en
+ * mi_espacio_evento_vistas: si no es un Público (pasó a Privado o a Laboral), ninguna; con «Todos», ninguna (es una marca:
+ * `datos.personas` es []); con personas, exactamente las elegidas. `antes`: las filas que tenía (las `vistas` de
+ * eventoPropio, leídas con el evento bloqueado; [] en un alta o si no era un Público). Como guardarPersonas, se borra y se suma
+ * solo lo que cambia, por la clave.
+ */
+const guardarVistas = async (conexion, eventoId, datos, antes) => {
+  const quedan = new Set(datos.publico ? datos.personas : []);
+  const tenia = new Set(antes.map((persona) => persona.id));
+  const salen = [...tenia].filter((id) => !quedan.has(id));
+  const entran = [...quedan].filter((id) => !tenia.has(id));
+  if (salen.length > 0) {
+    await conexion.query('DELETE FROM mi_espacio_evento_vistas WHERE evento_id = ? AND usuario_id IN (?)', [eventoId, salen]);
+  }
+  if (entran.length > 0) {
+    await conexion.query('INSERT INTO mi_espacio_evento_vistas (evento_id, usuario_id) VALUES ?',
+      [entran.map((id) => [eventoId, id])]);
+  }
+};
+
+// El nombre de quien pide (su id) como lo ven los demás, contra todos los usuarios activos (`usuarios`): el de la vista previa de
+// un Personal (Público), «Carla: Turno médico». null si no está en la lista (no pasa: quien pide está activo)
+const miNombreCorto = (usuarioId, usuarios) => {
+  const yo = usuarios.find((persona) => persona.id === usuarioId);
+  return yo === undefined ? null : nombreCorto(yo, usuarios) || null;
+};
+
+/**
  * GET /api/mi-espacio/eventos?desde=AAAA-MM-DD&hasta=AAAA-MM-DD: lo que ve la persona en un rango de hasta 93 días (las
- * fechas, como «Hoy no están»: 400 en `fechas`, antes de leer nada). `puede_compartir`: si el formulario ofrece
- * «Compartido». Además de los eventos (por fecha, hora y título, cada uno como itemDeEvento), lo demás de la agenda (spec,
- * secciones 6 y 7), cada cosa entera y con sus días hábiles del rango:
+ * fechas, como «Hoy no están»: 400 en `fechas`, antes de leer nada). `puede_compartir`: si el formulario ofrece Laboral;
+ * `mi_nombre_corto`: el nombre de quien pide como lo ven los demás (contra todos los usuarios activos), el de la vista previa de
+ * un Personal (Público). Además de los eventos (por fecha, hora y título, cada uno como itemDeEvento: un Público de otra
+ * persona, solo «Carla: Turno médico», con el nombre corto contra todos los usuarios activos, `usuariosActivos`), lo demás de
+ * la agenda (spec, secciones 6 y 7), cada cosa entera y con sus días hábiles del rango:
  * - `licencias`: las suyas de Mi espacio (`licenciasPropiasEntre`), con el tipo (itemDeLicencia);
  * - `feriados`: los del rango, «Feriado: <nombre>» (itemsDeFeriados);
  * - `ausentes`: los compañeros que no están, como en «Hoy no están» (`ausentesPara`: leídas con margen y unidas, así la que
@@ -197,22 +255,22 @@ export const listarEventos = (req, res) => responder(res, 'Error al obtener los 
   const usuario = quienPide(req);
   const ahora = ahoraArgentina();
   const hoy = ahora.slice(0, 10);
-  const [eventos, licencias, filasFeriados, administracion] = await Promise.all([
+  const [eventos, licencias, filasFeriados, administracion, usuarios] = await Promise.all([
     eventosVisibles(usuario, desde, hasta), licenciasPropiasEntre(usuario.id, desde, hasta), filasDeFeriados(),
-    administracionActiva()
+    administracionActiva(), usuariosActivos()
   ]);
   const { ausentes } = await ausentesPara(usuario, { desde, hasta, hoy, filasFeriados, administracion });
   const feriados = feriadosDelRango(filasFeriados, desdeDeLosFeriados(desde), hasta);
   const rango = { desde, hasta, feriados };
   const items = {
-    eventos: eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados, administracion })),
+    eventos: eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados, administracion, usuarios })),
     licencias: licencias.map((licencia) => itemDeLicencia(licencia, rango)),
     feriados: itemsDeFeriados(filasFeriados, desde, hasta),
     ausentes: ausentes.map((ausente) => itemDeAusencia(ausente, rango))
   };
   const mes = mesDeLaFrase(req.query?.mes, { desde, hasta });
   return conDatos({
-    desde, hasta, hoy, puede_compartir: esAdmin(usuario.rol),
+    desde, hasta, hoy, puede_compartir: esAdmin(usuario.rol), mi_nombre_corto: miNombreCorto(usuario.id, usuarios),
     ...items,
     companeros_por_dia: companerosPorDia(items.ausentes),
     frase_del_mes: mes === null ? null : fraseDelMes({ mes, ...items })
@@ -236,26 +294,35 @@ export const listarPersonasParaCompartir = (req, res) => responder(res, 'Error a
   return conDatos(await personasParaCompartir(req.user.userId));
 });
 
-// POST /api/mi-espacio/eventos: un evento nuevo de la persona, con sus personas. Después de responder, la invitación a su
-// audiencia (el evento se vuelve a leer, ya guardado: el de los emails)
+// GET /api/mi-espacio/personas/publico: a quiénes se les puede mostrar un Personal (Público) (`personasParaElPublico`: todos los
+// usuarios activos, de cualquier rol, con id, nombre e iniciales), sin quien pide. Para cualquier rol con sesión (spec
+// 2026-10-29-mi-espacio-evento-publico, 6.4)
+export const listarPersonasParaElPublico = (req, res) => responder(res, 'Error al obtener las personas', async () =>
+  conDatos(await personasParaElPublico(req.user.userId)));
+
+// POST /api/mi-espacio/eventos: un evento nuevo de la persona, con sus personas (o, un Público, sus vistas). Después de
+// responder, la invitación a su audiencia (el evento se vuelve a leer, ya guardado: el de los emails; un Público no tiene)
 export const crearEvento = (req, res) => guardarEvento(res, 'Error al guardar el evento', async (conexion) => {
   const usuario = quienPide(req);
   const { datos, error } = await datosDelGuardado(cuerpoDe(req), { usuario }, conexion);
   if (error) return rechazo(error);
   const [resultado] = await conexion.query(
-    `INSERT INTO mi_espacio_eventos (titulo, detalle, fecha, desde, hasta, compartido, para_todos, recordatorio, creado_por)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO mi_espacio_eventos (titulo, detalle, fecha, desde, hasta, compartido, para_todos, publico, publico_todos,
+       texto_publico, recordatorio, creado_por)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [...valoresDelEvento(datos), usuario.id]
   );
   await guardarPersonas(conexion, resultado.insertId, datos, []);
+  await guardarVistas(conexion, resultado.insertId, datos, []);
   const despues = await eventoPropio(resultado.insertId, usuario.id, conexion);
   return [201, { success: true, data: { id: resultado.insertId }, message: 'Evento guardado.' },
     await emailsDelEvento(conexion, { despues })];
 });
 
-// PUT /api/mi-espacio/eventos/:id: cambia un evento de la persona con el formulario entero (solo quien lo creó). La audiencia
-// de antes se lee antes de escribir; después de responder, la invitación a los que entran y, si cambió el título, la fecha o
-// la hora, el cambio a los que siguen
+// PUT /api/mi-espacio/eventos/:id: cambia un evento de la persona con el formulario entero (solo quien lo creó), también de
+// tipo. La audiencia de antes se lee antes de escribir; después de responder, la invitación a los que entran y, si cambió el
+// título, la fecha o la hora, el cambio a los que siguen (un Público no tiene audiencia: pasar un Laboral a Público no le
+// manda nada a nadie, y pasar un Público a Laboral invita a los que entran)
 export const cambiarEvento = (req, res) => guardarEvento(res, 'Error al cambiar el evento', async (conexion) => {
   const usuario = quienPide(req);
   const antes = await eventoPropio(req.params.id, usuario.id, conexion, { bloquear: true });
@@ -265,11 +332,13 @@ export const cambiarEvento = (req, res) => guardarEvento(res, 'Error al cambiar 
   const audienciaAntes = await audienciaDe(antes, conexion);
   await conexion.query(
     `UPDATE mi_espacio_eventos
-     SET titulo = ?, detalle = ?, fecha = ?, desde = ?, hasta = ?, compartido = ?, para_todos = ?, recordatorio = ?
+     SET titulo = ?, detalle = ?, fecha = ?, desde = ?, hasta = ?, compartido = ?, para_todos = ?, publico = ?,
+       publico_todos = ?, texto_publico = ?, recordatorio = ?
      WHERE id = ?`,
     [...valoresDelEvento(datos), antes.id]
   );
   await guardarPersonas(conexion, antes.id, datos, antes.personas);
+  await guardarVistas(conexion, antes.id, datos, antes.vistas ?? []);
   const despues = await eventoPropio(antes.id, usuario.id, conexion);
   return [200, { success: true, data: { id: antes.id }, message: 'Evento cambiado.' },
     await emailsDelEvento(conexion, { antes, audienciaAntes, despues })];
@@ -307,7 +376,9 @@ const guardarMiFila = async (conexion, evento, usuarioId, sinAviso) => {
 
 // PUT /api/mi-espacio/eventos/:id/mi-recordatorio (`{ sin_aviso: true | false }`): una invitada apaga o prende su
 // recordatorio; el evento no cambia. Responde su recordatorio y cuándo sale, como los da itemDeEvento (sin la administración:
-// los nombres no van en la respuesta). Los feriados se leen antes de abrir la transacción: adentro, el pool tomaría una
+// los nombres no van en la respuesta). Un Personal (Público) de otra persona no tiene recordatorio para quien lo ve: 400 sin
+// campo (`sinRecordatorio`), antes de escribir nada y antes de itemDeEvento (el evento llega recortado; spec
+// 2026-10-29-mi-espacio-evento-publico, 6.6). Los feriados se leen antes de abrir la transacción: adentro, el pool tomaría una
 // segunda conexión mientras la fila del evento está bloqueada
 export const cambiarMiRecordatorio = (req, res) => responder(res, 'Error al cambiar tu recordatorio', async () => {
   const filasFeriados = await filasDeFeriados();
@@ -316,6 +387,9 @@ export const cambiarMiRecordatorio = (req, res) => responder(res, 'Error al camb
     const evento = await eventoVisible(req.params.id, usuario, conexion, { bloquear: true });
     if (evento === null) return noEncontrado();
     if (evento.creado_por === usuario.id) return rechazo({ campo: null, mensaje: MENSAJES_EVENTO.esTuyo });
+    if (evento.publico === 1 || evento.publico === true) {
+      return rechazo({ campo: null, mensaje: MENSAJES_EVENTO.sinRecordatorio });
+    }
     const { sin_aviso: sinAviso } = cuerpoDe(req);
     if (typeof sinAviso !== 'boolean') return rechazo({ campo: 'sin_aviso', mensaje: MENSAJES_EVENTO.miRecordatorio });
     await guardarMiFila(conexion, evento, usuario.id, sinAviso);

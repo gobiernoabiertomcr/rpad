@@ -13,7 +13,9 @@
     <link rel="stylesheet" href="css/main.css?v=20261109">
     <style>
         /* Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 8): los tokens y las piezas del Seguimiento y de Proyectos, con
-           los tres fondos que faltaban (ámbar, gris y violeta) y, desde el Resumen «Titular», el azul medio de la regla */
+           los tres fondos que faltaban (ámbar, gris y violeta), desde el Resumen «Titular», el azul medio de la regla y, desde el evento
+           Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 5.1), el rosado de un Público de otra persona: el texto,
+           #8A3B5C, da 6,00:1 sobre su fondo y 7,34:1 sobre blanco, y el borde, #B5577F, 3,70:1 contra su fondo y 4,53:1 contra blanco */
         :root {
             --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA;
             --sg-borde-control: #76879F; --sg-cielo: #DCEEF5;
@@ -24,6 +26,7 @@
             --sg-violeta: #5B4691; --sg-violeta-fondo: #ECE7F6;
             --sg-gris: #8A97A8; --sg-gris-fondo: #EEF1F5;
             --sg-medio: #4C7AB0;
+            --sg-rosado: #8A3B5C; --sg-rosado-fondo: #F7E3EC; --sg-rosado-borde: #B5577F;
         }
 
         /* Lo oculto con el atributo hidden no vuelve por una regla de display más específica */
@@ -77,6 +80,7 @@
         .me-insignia.verde { background: var(--sg-verde-fondo); color: var(--sg-verde); }
         .me-insignia.ambar { background: var(--sg-ambar-fondo); color: var(--sg-ambar); }
         .me-insignia.violeta { background: var(--sg-violeta-fondo); color: var(--sg-violeta); }
+        .me-insignia.rosado { background: var(--sg-rosado-fondo); color: var(--sg-rosado); }
         .me-insignia.gris { background: var(--sg-gris-fondo); color: var(--sg-suave); }
         .me-insignia.rojo { background: var(--sg-rojo-fondo); color: var(--sg-rojo); }
         .me-insignia.borde { background: #fff; border: 1px solid var(--sg-linea); color: var(--sg-suave); font-weight: 500; }
@@ -393,6 +397,9 @@
         .me-icono { flex: none; vertical-align: -2px; margin-right: 4px; }
         .me-ev.propio, .me-leyenda .propio { background: var(--sg-azul-fondo); border-color: var(--sg-tinta); color: var(--sg-tinta); }
         .me-ev.compartido, .me-leyenda .compartido { background: var(--sg-violeta-fondo); border-color: var(--sg-violeta); color: var(--sg-violeta); }
+        /* Un Personal (Público) de otra persona, en rosado y con el ojo (spec 2026-10-29-mi-espacio-evento-publico, 5.1): su pastilla en
+           el mes (también la de la vista previa del formulario) y su muestra en la leyenda */
+        .me-ev.publico-otro, .me-leyenda .publico-otro { background: var(--sg-rosado-fondo); border-color: var(--sg-rosado-borde); color: var(--sg-rosado); }
         .me-ev.licencia, .me-leyenda .licencia { background: var(--sg-verde-fondo); border-color: var(--sg-verde); color: var(--sg-verde); }
         .me-ev.feriado, .me-leyenda .feriado { background: var(--sg-sol); border-color: #C98A00; color: var(--sg-ambar); }
         .me-ev.ausente, .me-leyenda .ausente { background: var(--sg-gris-fondo); border-color: var(--sg-gris); color: var(--sg-suave); }
@@ -422,6 +429,7 @@
         .me-elegido-texto small { display: block; font-weight: 500; font-size: 0.8rem; }
         .me-fila-del-dia.propio .me-elegido-cosa { background: var(--sg-azul-fondo); border-color: var(--sg-tinta); color: var(--sg-tinta); }
         .me-fila-del-dia.compartido .me-elegido-cosa { background: var(--sg-violeta-fondo); border-color: var(--sg-violeta); color: var(--sg-violeta); }
+        .me-fila-del-dia.publico-otro .me-elegido-cosa { background: var(--sg-rosado-fondo); border-color: var(--sg-rosado-borde); color: var(--sg-rosado); }
         .me-fila-del-dia.licencia .me-elegido-cosa { background: var(--sg-verde-fondo); border-color: var(--sg-verde); color: var(--sg-verde); }
         .me-fila-del-dia.feriado .me-elegido-cosa { background: var(--sg-sol); border-color: #C98A00; color: var(--sg-ambar); }
         .me-fila-del-dia.ausente .me-elegido-cosa { background: var(--sg-gris-fondo); border-color: var(--sg-gris); color: var(--sg-suave); }
@@ -441,8 +449,10 @@
            ícono de cada cosa delante; lo que es solo tuyo, un punto) y el detalle (de un evento, quién está y su aviso) */
         .me-prox-icono { display: inline-flex; vertical-align: -1px; margin-right: 5px; }
         .me-prox-icono .me-icono { margin: 0; }
+        .me-prox-icono.propio { color: var(--sg-tinta); }
         .me-prox-icono.propio i { display: inline-block; width: 8px; height: 8px; margin: 3px 2px 0; border-radius: 50%; background: var(--sg-tinta); }
         .me-prox-icono.compartido { color: var(--sg-violeta); }
+        .me-prox-icono.publico-otro { color: var(--sg-rosado); }
         .me-prox-icono.licencia { color: var(--sg-verde); }
         .me-prox-icono.feriado { color: #9A6A00; }
         .me-prox-icono.ausente { color: var(--sg-suave); }
@@ -455,6 +465,11 @@
         .me-prox-titulo { font-size: 0.9rem; font-weight: 600; color: var(--sg-texto); }
         button.me-prox-titulo { background: none; border: 0; padding: 0; font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--sg-texto); text-align: left; cursor: pointer; }
         .me-prox-detalle { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 0.8rem; color: var(--sg-suave); }
+        /* Un Personal (Público) tuyo: a quiénes se lo mostrás y cómo («Lo ven todos como «Turno médico»»), con el ojo y sin insignia
+           (spec 2026-10-29-mi-espacio-evento-publico, 5.1). El ojo de la insignia del detalle, sin el margen de los del mes */
+        .me-lo-ven { display: inline-flex; align-items: flex-start; gap: 5px; color: var(--sg-tinta); font-weight: 600; line-height: 1.35; }
+        .me-lo-ven .me-icono { margin: 2px 0 0; flex: none; }
+        .me-insignia .me-icono { margin-right: 0; }
 
         /* Los formularios (maqueta 2): los modales de administración, con el lenguaje del Seguimiento y de Proyectos. Un clic en el
            velo no los cierra: son formularios largos. El cuerpo se desplaza y el pie (los botones) queda siempre a la vista */
@@ -511,8 +526,9 @@
         .me-check input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--sg-tinta); flex: none; }
         .me-check small { display: block; color: var(--sg-suave); font-size: 0.84rem; }
         .me-campos-saldo { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 14px; }
-        /* El evento (maqueta 2, #evento): «¿Quién lo ve?» con dos opciones grandes (botones con aria-pressed) y, si es compartido, las
-           personas, cada una con sus iniciales (en violeta la elegida; con «Todos», las demás deshabilitadas) */
+        /* El evento (maqueta 2, #evento): el tipo de evento con opciones grandes (botones con aria-pressed) y, en un Público o un
+           Laboral, las personas, cada una con sus iniciales (en violeta la elegida; con «Todos» o «Toda la administración», las demás
+           deshabilitadas) */
         .me-opciones.dos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         button.me-opcion { width: 100%; font: inherit; text-align: left; }
         .me-opcion[aria-pressed="true"] { border-color: var(--sg-tinta); background: #F3F7FC; box-shadow: inset 0 0 0 1px var(--sg-tinta); }
@@ -524,6 +540,27 @@
         .me-persona:disabled { opacity: 0.55; cursor: default; }
         .me-personas[aria-invalid="true"] .me-persona { border-color: var(--sg-rojo); }
         .me-personas-estado { font-size: 0.84rem; color: var(--sg-suave); }
+        /* El tipo de evento (spec 2026-10-29-mi-espacio-evento-publico, 4; la maqueta aprobada): tres opciones para administración y
+           dos (los personales) para un lector o un colaborador; el Laboral de quien ya no es de administración, elegido y
+           deshabilitado (con sus colores: no pierde contraste) */
+        .me-opciones.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        button.me-opcion:disabled { cursor: default; }
+        .me-opciones[aria-invalid="true"] .me-opcion { border-color: var(--sg-rojo); }
+        /* Lo que ven los demás de un Personal (Público): una pastilla de la lista (una sola elegida) o «Otro», que abre su campo con la
+           cuenta de 60 (en rojo pasada de 60) */
+        .me-textos { display: flex; flex-wrap: wrap; gap: 6px; }
+        .me-textos .sg-chip { height: 36px; }
+        .me-textos[aria-invalid="true"] .sg-chip { border-color: var(--sg-rojo); }
+        .me-otro { margin-top: -6px; }
+        .me-cuenta.pasado { color: var(--sg-rojo); font-weight: 600; }
+        /* «Así lo ven los demás:», lo único con protagonismo del formulario: el día como en su agenda, con la pastilla del evento (sus
+           renglones, con data-lineas, como en el mes) */
+        .me-vista-previa { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); grid-template-areas: 'rotulo rotulo' 'celda ayuda'; align-items: center; gap: 8px 16px; margin: 0 0 16px; padding: 14px 16px 16px; border-radius: 14px; background: var(--sg-cielo); }
+        .me-vista-previa-rotulo { grid-area: rotulo; margin: 0; font-weight: 700; color: var(--sg-tinta); font-size: 0.92rem; }
+        .me-vista-previa-celda { grid-area: celda; display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-height: 92px; padding: 6px 7px 10px; background: #fff; border: 1px solid var(--sg-linea); border-radius: 10px; box-shadow: 0 8px 22px rgba(26, 54, 93, 0.14); }
+        .me-vista-previa-dia { font-family: var(--f-titulo); font-weight: 700; font-size: 0.92rem; color: var(--sg-texto); }
+        .me-vista-previa .me-ev { padding: 4px 8px; font-size: 0.86rem; }
+        .me-vista-previa-ayuda { grid-area: ayuda; margin: 0; color: var(--sg-texto); font-size: 0.86rem; line-height: 1.45; }
         /* Un evento ajeno (maqueta 2, #evento-ajeno): cuándo, el detalle (con sus renglones) y quién lo creó y quiénes están */
         .me-ajeno-cuando { margin: 0 0 8px; font-size: 1rem; font-weight: 700; color: var(--sg-texto); }
         .me-ajeno-detalle { margin: 0 0 10px; color: var(--sg-texto); white-space: pre-line; overflow-wrap: anywhere; }
@@ -753,10 +790,13 @@
             .me-puntos i { width: 7px; height: 7px; border-radius: 50%; }
             .me-puntos .propio { background: var(--sg-tinta); }
             .me-puntos .compartido { background: var(--sg-violeta); }
+            .me-puntos .publico-otro { background: #fff; box-shadow: inset 0 0 0 2px var(--sg-rosado-borde); }
             .me-puntos .feriado { background: #9A6A00; }
             .me-leyenda { gap: 6px 12px; font-size: 0.78rem; }
             .me-elegido { display: block; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--sg-linea); }
             .me-opciones.dos { grid-template-columns: minmax(0, 1fr); }
+            .me-opciones.tres { grid-template-columns: minmax(0, 1fr); }
+            .me-vista-previa { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'rotulo' 'celda' 'ayuda'; }
             .me-banda { border-radius: 22px 22px 0 0; }
             .me-banda-cuerpo { padding: 22px 16px 14px; }
             .me-barra { height: 38px; }
@@ -768,8 +808,9 @@
         }
         /* La agenda en alto contraste (forced-colors; spec 2026-10-28-mi-espacio-agenda-onda, 6): el fondo no alcanza, así que las
            barras llevan su borde (arriba y abajo, y en sus puntas: se ve continua), los puntos (los del teléfono, el de los próximos y
-           el del día elegido) y la perilla de la llave van en CanvasText, la muestra de la leyenda y la llave con un borde, y el número
-           de hoy, con un borde. Va al final del <style> y cada selector es al menos tan específico como el que le da su color (los
+           el del día elegido) y la perilla de la llave van en CanvasText (el anillo de un Personal (Público) de otra persona, un aro:
+           Canvas por dentro y el borde en CanvasText), la muestra de la leyenda y la llave con un borde, y el número de hoy, con un
+           borde. Va al final del <style> y cada selector es al menos tan específico como el que le da su color (los
            puntos del teléfono, los próximos, la llave prendida): si no, esos ganan y el punto queda en Canvas, invisible. La ola del
            Resumen y de la banda del mes no se dibuja (más arriba) */
         @media (forced-colors: active) {
@@ -777,6 +818,7 @@
             .me-tira.inicio:not(.sigue-antes) { border-left: 1px solid CanvasText; }
             .me-tira.fin:not(.sigue-despues) { border-right: 1px solid CanvasText; }
             .me-puntos i[class] { forced-color-adjust: none; background: CanvasText; }
+            .me-puntos i[class].publico-otro { background: Canvas; box-shadow: none; outline: 2px solid CanvasText; outline-offset: -2px; }
             .me-proximos .me-prox-icono.propio i { forced-color-adjust: none; background: CanvasText; }
             .me-elegido .me-elegido-icono i { forced-color-adjust: none; background: CanvasText; }
             .me-leyenda .me-color[aria-hidden] { border: 1px solid CanvasText; }
@@ -912,11 +954,14 @@
                         <div class="me-tarjeta me-tarjeta-del-mes">
                             <div id="ag-mes"></div>
                             <!-- Los colores, cada uno con su ícono (los de ICONOS_DEL_MES de mi-espacio.js; lo que es solo tuyo, sin ícono).
-                                 «Compañeros que no están», solo para quien los ve (administración: decisión del usuario, 27/10/2026);
-                                 mi-espacio.js lo muestra -->
+                                 «Compañeros que no están», solo para quien los ve (administración: decisión del usuario, 27/10/2026), y
+                                 «Laborales» también (spec 2026-10-29-mi-espacio-evento-publico, 5.2); mi-espacio.js los muestra. El ojo
+                                 es «lo ven otros»: «Tuyos, a la vista» (lo tuyo con el ojo) y «Personales de otros» (en rosado) -->
                             <ul class="me-leyenda" aria-label="Los colores del mes">
                                 <li><span class="me-color propio" aria-hidden="true"></span>Solo vos</li>
-                                <li><span class="me-color compartido" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>Compartidos</li>
+                                <li><span class="me-color propio" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg></span>Tuyos, a la vista</li>
+                                <li><span class="me-color publico-otro" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg></span>Personales de otros</li>
+                                <li id="ag-leyenda-laborales" hidden><span class="me-color compartido" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>Laborales</li>
                                 <li><span class="me-color licencia" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></span>Tus licencias y francos</li>
                                 <li><span class="me-color feriado" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg></span>Feriados</li>
                                 <li id="ag-leyenda-ausentes" hidden><span class="me-color ausente" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Compañeros que no están</li>
@@ -1222,11 +1267,14 @@
         </div>
     </div>
 
-    <!-- «Nuevo evento» y «Editar evento» (spec 2026-10-26-mi-espacio-agenda, 1 y 6; maqueta 2, #evento): qué, la fecha y las
-         horas (la de fin, opcional), el detalle, quién lo ve (solo administración comparte: mi-espacio.js muestra «¿Quién lo ve?»
-         con Auth.isAdmin()), con quién (las personas o «Todos») y el recordatorio, con cuándo sale (#ev-aviso, que calcula el
-         servidor; lo describe el select, no es una región viva). #ev-recordatorio-ayuda arranca vacía: mi-espacio.js la escribe solo
-         en un evento compartido (lo que apunta aria-describedby se lee aunque esté oculto). Va antes de la confirmación: todos los
+    <!-- «Nuevo evento» y «Editar evento» (spec 2026-10-26-mi-espacio-agenda, 1 y 6; maqueta 2, #evento; y, desde el evento Personal
+         (Público), spec 2026-10-29-mi-espacio-evento-publico, 4 y 7, con su maqueta): qué, la fecha y las horas (la de fin,
+         opcional), el detalle, el tipo de evento (a la vista para todos: mi-espacio.js dibuja sus botones, Personal (Privado),
+         Personal (Público) y, solo con Auth.isAdmin(), Laboral), lo que ven los demás de un Público (una pastilla de la lista u
+         «Otro», con su cuenta, fuera de toda región viva, y la vista previa), con quién (las personas o «Todos» en un Público, «Toda
+         la administración» en un Laboral) y el recordatorio, con cuándo sale (#ev-aviso, que calcula el servidor; lo describe el
+         select, no es una región viva). #ev-personas-ayuda, #ev-tipo-ayuda y #ev-recordatorio-ayuda arrancan vacías: mi-espacio.js
+         las escribe según el tipo (lo que apunta aria-describedby se lee aunque esté oculto). Va antes de la confirmación: todos los
          velos tienen el mismo z-index y el que va más abajo en el HTML queda arriba -->
     <div class="modal-overlay" id="modal-evento">
         <div class="modal me-modal" role="dialog" aria-modal="true" aria-labelledby="modal-evento-titulo">
@@ -1263,17 +1311,37 @@
                     <textarea class="form-textarea" id="ev-detalle" rows="3" aria-describedby="ev-detalle-error"></textarea>
                     <p class="form-error" id="ev-detalle-error" hidden></p>
                 </div>
-                <div class="me-grupo" id="ev-grupo-quien" role="group" aria-labelledby="ev-quien-rotulo" hidden>
-                    <span class="form-label" id="ev-quien-rotulo">¿Quién lo ve?</span>
-                    <div class="me-opciones dos">
-                        <button type="button" class="me-opcion" id="ev-solo" aria-pressed="true"><span><b>Solo yo</b><small>Nadie más lo ve</small></span></button>
-                        <button type="button" class="me-opcion" id="ev-compartido" aria-pressed="false"><span><b>Compartido</b><small>Con las personas que elijas</small></span></button>
+                <div class="me-grupo" id="ev-grupo-tipo" role="group" aria-labelledby="ev-tipo-rotulo" aria-describedby="ev-tipo-ayuda ev-tipo-error">
+                    <span class="form-label" id="ev-tipo-rotulo">Tipo de evento</span>
+                    <div class="me-opciones tres" id="ev-tipos"></div>
+                    <p class="form-hint" id="ev-tipo-ayuda" hidden></p>
+                    <p class="form-error" id="ev-tipo-error" hidden></p>
+                </div>
+                <div id="ev-publico" hidden>
+                    <fieldset class="me-grupo" id="ev-grupo-texto" aria-describedby="ev-texto-error">
+                        <legend class="form-label">Qué ven los demás</legend>
+                        <div class="me-textos" id="ev-textos"></div>
+                        <p class="form-error" id="ev-texto-error" hidden></p>
+                    </fieldset>
+                    <div class="form-group me-otro" id="ev-otro-grupo" hidden>
+                        <label class="form-label" for="ev-otro">Escribí qué ven los demás</label>
+                        <input type="text" class="form-input" id="ev-otro" autocomplete="off" aria-describedby="ev-otro-cuenta ev-otro-error">
+                        <p class="form-hint me-cuenta" id="ev-otro-cuenta">0 de 60 caracteres</p>
+                        <p class="form-error" id="ev-otro-error" hidden></p>
+                    </div>
+                    <div class="me-vista-previa" id="ev-vista-previa">
+                        <p class="me-vista-previa-rotulo">Así lo ven los demás:</p>
+                        <div class="me-vista-previa-celda">
+                            <span class="me-vista-previa-dia" id="ev-vista-previa-dia"></span>
+                            <div id="ev-vista-previa-evento"></div>
+                        </div>
+                        <p class="me-vista-previa-ayuda">En su agenda y en «Hoy y mañana» del Resumen. No ven el título ni el detalle.</p>
                     </div>
                 </div>
                 <fieldset class="me-grupo" id="ev-grupo-personas" aria-describedby="ev-personas-ayuda ev-personas-error" hidden>
                     <legend class="form-label">Con quién <span class="me-opcional" id="ev-personas-cuantas"></span></legend>
                     <div class="me-personas" id="ev-personas"></div>
-                    <p class="form-hint" id="ev-personas-ayuda">Les llega un email cuando los sumás, y otro si cambiás o borrás el evento. Solo vos lo podés cambiar.</p>
+                    <p class="form-hint" id="ev-personas-ayuda"></p>
                     <p class="form-error" id="ev-personas-error" hidden></p>
                 </fieldset>
                 <div class="form-group">
@@ -1310,7 +1378,7 @@
                 <p class="me-ajeno-cuando" id="mea-cuando"></p>
                 <p class="me-ajeno-detalle" id="mea-detalle" hidden></p>
                 <p class="me-ajeno-quien" id="mea-quien"></p>
-                <div class="form-group">
+                <div class="form-group" id="mea-grupo-recordatorio">
                     <label class="form-label" for="mea-recordatorio">Mi recordatorio</label>
                     <select class="form-select" id="mea-recordatorio" aria-describedby="mea-aviso mea-ayuda"></select>
                     <p class="form-hint" id="mea-aviso" hidden></p>
@@ -1351,6 +1419,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/mi-espacio.js?v=20261217"></script>
+    <script src="js/mi-espacio.js?v=20261218"></script>
 </body>
 </html>

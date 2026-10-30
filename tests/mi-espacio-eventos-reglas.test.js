@@ -8,9 +8,9 @@ import assert from 'node:assert/strict';
 import {
   RECORDATORIOS, RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, AVISO_CORTO, LARGO_TITULO_EVENTO, LARGO_DETALLE_EVENTO,
   FECHA_MINIMA_EVENTO, ROLES_QUE_COMPARTEN, DIAS_DE_PROXIMOS, VENTANA_DE_LA_CORRIDA, MINUTOS_SIN_CORRER, BLOQUEO_EVENTOS,
-  MINUTOS_A_TIEMPO, HORA_DE_LOS_ATRASADOS, HORA_DE_CIERRE_DE_LOS_ATRASADOS, MENSAJES_EVENTO,
-  fechaMaximaEvento, textoRangoEvento, validarEvento, momentoDelAviso, textoDelAviso, cuandoDelEvento,
-  cuandoCortoDelEvento, cuandoEsElEvento, cuandoFue, textoDelEvento, listaConY, inicialesDe,
+  MINUTOS_A_TIEMPO, HORA_DE_LOS_ATRASADOS, HORA_DE_CIERRE_DE_LOS_ATRASADOS, MENSAJES_EVENTO, TIPOS_DE_EVENTO, TEXTOS_PUBLICOS,
+  LARGO_TEXTO_PUBLICO, textoDeQuienVeElPublico, fechaMaximaEvento, textoRangoEvento, validarEvento, momentoDelAviso,
+  textoDelAviso, cuandoDelEvento, cuandoCortoDelEvento, cuandoEsElEvento, cuandoFue, textoDelEvento, listaConY, inicialesDe,
   recordatoriosQueTocan, cambioQueAvisa, emailsDelGuardado, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento,
   itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, textoDelResultadoDeEventos,
   textoDeLaCorridaDeEventos, alertasDeLaCorridaDeEventos, alertaSinEstadoDeEventos, companerosPorDia, FRASE_DE_LA_LICENCIA,
@@ -74,18 +74,35 @@ describe('los valores de la agenda', () => {
       desde: 'Elegí a qué hora empieza.',
       hasta: 'La hora de fin tiene que ser después de la de inicio, el mismo día.',
       detalle: 'El detalle puede tener hasta 1000 caracteres.',
-      personas: 'Elegí con quién lo compartís, o «Todos».',
+      tipo: 'Elegí el tipo de evento.',
+      textoPublico: 'Elegí qué ven los demás.',
+      textoPublicoLargo: 'Lo que ven los demás puede tener hasta 60 caracteres.',
+      personas: 'Elegí con quién lo compartís, o «Toda la administración».',
+      personasPublico: 'Elegí con quién lo compartís, o «Todos».',
       personasInvalidas: 'Solo podés compartirlo con las personas de la lista.',
       recordatorio: 'Elegí cuándo te llega el recordatorio.',
       sinPermiso: 'No tenés permiso para compartir eventos.',
       noEncontrado: 'Evento no encontrado',
       miRecordatorio: 'Elegí si querés el recordatorio.',
-      esTuyo: 'El recordatorio de tu evento se cambia en el evento.'
+      esTuyo: 'El recordatorio de tu evento se cambia en el evento.',
+      sinRecordatorio: 'Este evento no tiene recordatorio para vos.'
     });
   });
 
+  // El evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 2 y 4): los tres tipos, en el orden del formulario,
+  // y lo que ven los demás de un Público, de la lista o escrito a mano
+  it('los tipos de evento, los textos del Público y su largo', () => {
+    assert.deepEqual(TIPOS_DE_EVENTO, ['privado', 'publico', 'laboral']);
+    assert.deepEqual(TEXTOS_PUBLICOS,
+      ['Trámite personal', 'Turno médico', 'Asunto familiar', 'Fuera de la oficina', 'Capacitación o curso']);
+    assert.equal(LARGO_TEXTO_PUBLICO, 60);
+    // Cada texto de la lista entra en el largo
+    for (const texto of TEXTOS_PUBLICOS) assert.ok(Array.from(texto).length <= LARGO_TEXTO_PUBLICO, texto);
+  });
+
   it('las listas y los mensajes no se pueden modificar', () => {
-    for (const valor of [RECORDATORIOS, TEXTO_RECORDATORIO, AVISO_CORTO, ROLES_QUE_COMPARTEN, MENSAJES_EVENTO]) {
+    for (const valor of [RECORDATORIOS, TEXTO_RECORDATORIO, AVISO_CORTO, ROLES_QUE_COMPARTEN, MENSAJES_EVENTO, TIPOS_DE_EVENTO,
+      TEXTOS_PUBLICOS]) {
       assert.ok(Object.isFrozen(valor));
     }
   });
@@ -107,11 +124,12 @@ describe('los valores de la agenda', () => {
 });
 
 describe('validarEvento', () => {
-  it('un evento válido: los datos, con los de entrada', () => {
+  it('un evento válido: los datos, con los de entrada (un cuerpo sin el tipo y sin compartir es Personal (Privado))', () => {
     assert.deepEqual(validar({}), {
       datos: {
-        titulo: 'Reunión de equipo', detalle: null, fecha: '2026-10-27', desde: '10:00', hasta: '11:00',
-        compartido: false, para_todos: false, personas: [], recordatorio: '2h'
+        titulo: 'Reunión de equipo', detalle: null, fecha: '2026-10-27', desde: '10:00', hasta: '11:00', tipo: 'privado',
+        compartido: false, para_todos: false, publico: false, publico_todos: false, personas: [], texto_publico: null,
+        recordatorio: '2h'
       },
       error: null
     });
@@ -181,7 +199,7 @@ describe('validarEvento', () => {
 
   it('compartido con personas: ids positivos, sin repetidos y en el orden recibido', () => {
     assert.deepEqual(datosDe({ compartido: true, personas: [3, 3, 5] }), {
-      ...datosDe({}), compartido: true, para_todos: false, personas: [3, 5]
+      ...datosDe({}), tipo: 'laboral', compartido: true, para_todos: false, personas: [3, 5]
     });
     assert.deepEqual(datosDe({ compartido: true, personas: ['7', 2, '7'] }).personas, [7, 2]);
   });
@@ -199,7 +217,7 @@ describe('validarEvento', () => {
 
   it('para todos: solo con compartido, y sin lista de personas', () => {
     assert.deepEqual(datosDe({ compartido: true, para_todos: true }), {
-      ...datosDe({}), compartido: true, para_todos: true, personas: []
+      ...datosDe({}), tipo: 'laboral', compartido: true, para_todos: true, personas: []
     });
     // «Todos» es una marca: las personas que vengan no se guardan
     assert.deepEqual(datosDe({ compartido: true, para_todos: true, personas: [3, 5] }).personas, []);
@@ -262,6 +280,133 @@ describe('validarEvento', () => {
       assert.deepEqual(resultado.error, { campo: 'titulo', mensaje: MENSAJES_EVENTO.titulo }, String(entrada));
     }
     assert.doesNotThrow(() => validarEvento(evento({ personas: [Symbol('x')], compartido: true }), HOY));
+    assert.doesNotThrow(() => validarEvento(evento({ tipo: 'publico', texto_publico: Symbol('x'), personas: [Symbol('x')] }), HOY));
+    assert.doesNotThrow(() => validarEvento(evento({ tipo: Symbol('x') }), HOY));
+  });
+
+  // Los tres tipos (spec 2026-10-29-mi-espacio-evento-publico, 2, 3 y 6.5). Un Público se guarda como uno personal (compartido y
+  // para_todos en false) con sus columnas: «Todos» es publico_todos; un Laboral, como el compartido de antes
+  describe('los tipos de evento', () => {
+    const BASE = {
+      titulo: 'Reunión de equipo', detalle: null, fecha: '2026-10-27', desde: '10:00', hasta: '11:00', recordatorio: '2h'
+    };
+    const PRIVADO = Object.freeze({
+      ...BASE, tipo: 'privado', compartido: false, para_todos: false, publico: false, publico_todos: false, personas: [],
+      texto_publico: null
+    });
+
+    it('Personal (Privado): nada de compartir, aunque el cuerpo traiga personas, «Todos» o un texto público', () => {
+      assert.deepEqual(datosDe({ tipo: 'privado' }), PRIVADO);
+      const conTodo = { compartido: true, para_todos: true, personas: [3, 5], texto_publico: 'Turno médico' };
+      assert.deepEqual(datosDe({ tipo: 'privado', ...conTodo }), PRIVADO);
+    });
+
+    it('Laboral: con las personas o «Toda la administración», como el compartido de antes; sin texto público', () => {
+      const laboral = { ...PRIVADO, tipo: 'laboral', compartido: true };
+      assert.deepEqual(datosDe({ tipo: 'laboral', personas: [3, 3, 5] }), { ...laboral, personas: [3, 5] });
+      assert.deepEqual(datosDe({ tipo: 'laboral', para_todos: true }), { ...laboral, para_todos: true });
+      // Con el tipo, `compartido` del cuerpo no cuenta; «Todos» es una marca (las personas que vengan no van) y el texto
+      // público no se guarda
+      assert.deepEqual(datosDe({ tipo: 'laboral', compartido: false, para_todos: true, personas: [3], texto_publico: 'Turno médico' }),
+        { ...laboral, para_todos: true });
+      // para_todos, solo el true literal
+      for (const paraTodos of ['true', 1, '1']) {
+        assert.deepEqual(datosDe({ tipo: 'laboral', para_todos: paraTodos, personas: [3] }), { ...laboral, personas: [3] },
+          String(paraTodos));
+      }
+    });
+
+    it('Personal (Público): compartido y para_todos en false, con «Todos» (publico_todos) o con personas, y el texto', () => {
+      const publico = { ...PRIVADO, tipo: 'publico', publico: true, texto_publico: 'Turno médico' };
+      assert.deepEqual(datosDe({ tipo: 'publico', para_todos: true, texto_publico: '  Turno médico  ' }),
+        { ...publico, publico_todos: true });
+      assert.deepEqual(datosDe({ tipo: 'publico', personas: ['7', 2, '7'], texto_publico: 'Turno médico' }),
+        { ...publico, personas: [7, 2] });
+      // Con «Todos», las personas que vengan no van, y `compartido` del cuerpo no cuenta
+      assert.deepEqual(
+        datosDe({ tipo: 'publico', compartido: true, para_todos: true, personas: [3, 5], texto_publico: 'Turno médico' }),
+        { ...publico, publico_todos: true });
+      // Uno escrito a mano («Otro»), tal cual (sin los espacios de las puntas)
+      assert.equal(datosDe({ tipo: 'publico', para_todos: true, texto_publico: ' Mudanza <b>"de oficina"</b> ' }).texto_publico,
+        'Mudanza <b>"de oficina"</b>');
+      // para_todos, solo el true literal
+      for (const paraTodos of ['true', 1, '1']) {
+        assert.deepEqual(datosDe({ tipo: 'publico', para_todos: paraTodos, personas: [3], texto_publico: 'Turno médico' }),
+          { ...publico, personas: [3] }, String(paraTodos));
+      }
+    });
+
+    it('un cuerpo de antes, sin el tipo (o con null): con compartido en true, Laboral; si no, Personal (Privado)', () => {
+      const laboral = { ...PRIVADO, tipo: 'laboral', compartido: true };
+      assert.deepEqual(datosDe({ compartido: true, para_todos: true }), { ...laboral, para_todos: true });
+      assert.deepEqual(datosDe({ compartido: true, personas: [3, 5] }), { ...laboral, personas: [3, 5] });
+      assert.deepEqual(datosDe({}), PRIVADO);
+      assert.deepEqual(datosDe({ tipo: null, compartido: true, personas: [3] }), { ...laboral, personas: [3] });
+      // Sin el tipo, un texto público no hace un Público
+      assert.deepEqual(datosDe({ para_todos: true, personas: [3], texto_publico: 'Turno médico' }), PRIVADO);
+      assert.deepEqual(datosDe({ compartido: 'true', para_todos: true, texto_publico: 'Turno médico' }), PRIVADO);
+    });
+
+    it('un tipo que no es de la lista: «Elegí el tipo de evento.», en tipo', () => {
+      for (const tipo of ['otro', '', 'Publico', 'PUBLICO', ' publico', 'compartido', 1, true, ['publico'], { tipo: 'publico' }]) {
+        assert.deepEqual(errorDe({ tipo, para_todos: true, texto_publico: 'Turno médico' }),
+          { campo: 'tipo', mensaje: 'Elegí el tipo de evento.' }, JSON.stringify(tipo));
+      }
+    });
+
+    it('el texto público: obligatorio, recortado y de hasta 60 caracteres (contados con Array.from); solo en un Público', () => {
+      const conTexto = (texto) => ({ tipo: 'publico', para_todos: true, texto_publico: texto });
+      for (const texto of ['', '   ', '\n\t ', undefined, null, 42, ['Turno médico'], { texto: 'Turno médico' }]) {
+        assert.deepEqual(errorDe(conTexto(texto)), { campo: 'texto_publico', mensaje: MENSAJES_EVENTO.textoPublico },
+          JSON.stringify(texto) ?? String(texto));
+      }
+      assert.deepEqual(errorDe(conTexto('x'.repeat(61))), { campo: 'texto_publico', mensaje: MENSAJES_EVENTO.textoPublicoLargo });
+      assert.equal(datosDe(conTexto('x'.repeat(60))).texto_publico, 'x'.repeat(60));
+      // 60 emojis son 60 caracteres (y 120 unidades de UTF-16): valen; 61, no
+      assert.equal(datosDe(conTexto('🙂'.repeat(60))).texto_publico, '🙂'.repeat(60));
+      assert.equal(datosDe(conTexto(`  ${'🙂'.repeat(60)}  `)).texto_publico, '🙂'.repeat(60));
+      assert.deepEqual(errorDe(conTexto('🙂'.repeat(61))), { campo: 'texto_publico', mensaje: MENSAJES_EVENTO.textoPublicoLargo });
+      // En un Privado o un Laboral no se controla: no se guarda
+      assert.equal(datosDe({ tipo: 'privado', texto_publico: '' }).texto_publico, null);
+      assert.equal(datosDe({ tipo: 'laboral', para_todos: true, texto_publico: 'x'.repeat(61) }).texto_publico, null);
+    });
+
+    it('las personas de un Público: sin «Todos» ni personas, «… o «Todos».»; un id que no sirve, «Solo podés…»', () => {
+      for (const personas of [[], undefined, null, 'todos', 3]) {
+        assert.deepEqual(errorDe({ tipo: 'publico', texto_publico: 'Turno médico', personas }),
+          { campo: 'personas', mensaje: MENSAJES_EVENTO.personasPublico }, String(personas));
+      }
+      for (const personas of [[0], ['abc'], [3, -1], [1.5], ['1e3'], ['03'], [null], [true], [3, {}]]) {
+        assert.deepEqual(errorDe({ tipo: 'publico', texto_publico: 'Turno médico', personas }),
+          { campo: 'personas', mensaje: MENSAJES_EVENTO.personasInvalidas }, JSON.stringify(personas));
+      }
+      // El Laboral, con el suyo: «… o «Toda la administración».»
+      assert.deepEqual(errorDe({ tipo: 'laboral', personas: [] }), { campo: 'personas', mensaje: MENSAJES_EVENTO.personas });
+      assert.equal(MENSAJES_EVENTO.personas, 'Elegí con quién lo compartís, o «Toda la administración».');
+      assert.equal(MENSAJES_EVENTO.personasPublico, 'Elegí con quién lo compartís, o «Todos».');
+    });
+
+    it('los controles van en orden: título, fecha, desde, hasta, detalle, tipo, texto público, personas y recordatorio', () => {
+      const malo = {
+        titulo: ' ', fecha: '2024-12-31', desde: '24:00', hasta: '09:00', detalle: emojis(1001), tipo: 'otro', texto_publico: '   ',
+        personas: [], recordatorio: 'otro'
+      };
+      const orden = ['titulo', 'fecha', 'desde', 'hasta', 'detalle', 'tipo', 'texto_publico', 'personas', 'recordatorio'];
+      const arreglos = [
+        { titulo: 'Reunión de equipo' }, { fecha: '2026-10-27' }, { desde: '10:00' }, { hasta: '11:00' }, { detalle: null },
+        { tipo: 'publico' }, { texto_publico: 'Turno médico' }, { personas: [3] }, { recordatorio: '1h' }
+      ];
+      let entrada = { ...malo };
+      orden.forEach((campo, i) => {
+        assert.equal(validarEvento(entrada, HOY).error.campo, campo);
+        assert.equal(validarEvento(entrada, HOY).datos, null);
+        entrada = { ...entrada, ...arreglos[i] };
+      });
+      assert.equal(validarEvento(entrada, HOY).error, null);
+      // Un detalle largo y el texto vacío: el del detalle
+      assert.deepEqual(errorDe({ detalle: emojis(1001), tipo: 'publico', para_todos: true, texto_publico: '' }),
+        { campo: 'detalle', mensaje: MENSAJES_EVENTO.detalle });
+    });
   });
 });
 
@@ -1118,6 +1263,64 @@ describe('personasDelPedido', () => {
     assert.equal(personasDelPedido([2], { usuarioId: 1, permitidas: 'todos' }).error.mensaje,
       MENSAJES_EVENTO.personasInvalidas);
   });
+
+  // Las de un Personal (Público), contra todos los usuarios activos (spec 2026-10-29-mi-espacio-evento-publico, 6.5): lo mismo,
+  // con el «ninguna» del Público
+  it('con tipo publico: lo mismo, y sin ninguna, «… o «Todos».»; de entrada (o con otro tipo), el del Laboral', () => {
+    const delPublico = (pedidas, permitidas = [2, 3, 4]) => personasDelPedido(pedidas, { usuarioId: 1, permitidas, tipo: 'publico' });
+    const ninguna = { personas: null, error: { campo: 'personas', mensaje: MENSAJES_EVENTO.personasPublico } };
+    assert.deepEqual(delPublico([3, 2]), { personas: [3, 2], error: null });
+    assert.deepEqual(delPublico([1, 4, 4]), { personas: [4], error: null });
+    assert.deepEqual(delPublico([1]), ninguna);
+    assert.deepEqual(delPublico([]), ninguna);
+    assert.deepEqual(delPublico(null), ninguna);
+    assert.deepEqual(delPublico([2, 9]), { personas: null, error: { campo: 'personas', mensaje: MENSAJES_EVENTO.personasInvalidas } });
+    for (const tipo of ['laboral', undefined, 'otro', null]) {
+      assert.equal(personasDelPedido([1], { usuarioId: 1, permitidas: [2], tipo }).error.mensaje, MENSAJES_EVENTO.personas,
+        String(tipo));
+    }
+  });
+});
+
+// Quién ve un Personal (Público) de quien lo creó (spec 2026-10-29-mi-espacio-evento-publico, 5.1), con los nombres cortos de
+// sus `vistas` contra todos los usuarios activos
+describe('textoDeQuienVeElPublico', () => {
+  const JULIAN = { id: 4, nombre: 'Julián Esteban Ferreyra' };
+  const TOMAS = { id: 8, nombre: 'Tomás Quiroga' };
+  const LUCIA = { id: 10, nombre: 'Lucía Sosa' };
+  const CARLA = { id: 2, nombre: 'Carla Inés Benítez' };
+  const USUARIOS = [{ id: 1, nombre: 'Andrea Paula Molina' }, CARLA, JULIAN, TOMAS, LUCIA];
+  const texto = (datos, usuarios = USUARIOS) => textoDeQuienVeElPublico(
+    { publico_todos: false, texto_publico: 'Turno médico', vistas: [], ...datos }, usuarios);
+
+  it('con «Todos», 1, 2 y 3 o más personas', () => {
+    assert.equal(texto({ publico_todos: true }), 'Lo ven todos como «Turno médico»');
+    assert.equal(texto({ publico_todos: 1 }), 'Lo ven todos como «Turno médico»');
+    // Con «Todos», las vistas que hubiera no cuentan
+    assert.equal(texto({ publico_todos: true, vistas: [JULIAN] }), 'Lo ven todos como «Turno médico»');
+    assert.equal(texto({ vistas: [JULIAN] }), 'Lo ve Julián como «Turno médico»');
+    assert.equal(texto({ vistas: [JULIAN, TOMAS] }), 'Lo ven Julián y Tomás como «Turno médico»');
+    assert.equal(texto({ vistas: [JULIAN, TOMAS, LUCIA] }), 'Lo ven 3 personas como «Turno médico»');
+    assert.equal(texto({ vistas: [JULIAN, TOMAS, LUCIA, CARLA], texto_publico: 'Fuera de la oficina' }),
+      'Lo ven 4 personas como «Fuera de la oficina»');
+  });
+
+  it('los nombres cortos, contra todos los usuarios: con dos Carlas, «Carla B.»; sin la lista, el primer nombre', () => {
+    const carlaR = { id: 9, nombre: 'Carla Ríos' };
+    assert.equal(texto({ vistas: [CARLA, JULIAN] }, [...USUARIOS, carlaR]), 'Lo ven Carla B. y Julián como «Turno médico»');
+    for (const usuarios of [undefined, null, 'x', {}]) {
+      assert.equal(texto({ vistas: [CARLA] }, usuarios), 'Lo ve Carla como «Turno médico»', String(usuarios));
+    }
+  });
+
+  it('nada tira: sin nombre, la cantidad; sin texto, la raya; sin nadie (los datos no lo dan), «Solo vos»', () => {
+    assert.equal(texto({ vistas: [{ id: 4, nombre: null }] }), 'Lo ve 1 persona como «Turno médico»');
+    assert.equal(texto({ vistas: [JULIAN, { id: 5, nombre: '' }] }), 'Lo ven 2 personas como «Turno médico»');
+    assert.equal(texto({ publico_todos: true, texto_publico: null }), 'Lo ven todos como «—»');
+    assert.equal(texto({ vistas: [null, 'x', { id: 'abc', nombre: 'Lucía Sosa' }, JULIAN] }), 'Lo ve Julián como «Turno médico»');
+    assert.equal(texto({}), 'Solo vos');
+    for (const evento of [null, undefined, 42, 'x', []]) assert.equal(textoDeQuienVeElPublico(evento, USUARIOS), 'Solo vos');
+  });
 });
 
 describe('itemDeEvento', () => {
@@ -1132,16 +1335,16 @@ describe('itemDeEvento', () => {
   const persona = (id, nombre, sinRecordatorio = false) => ({ id, nombre, sin_recordatorio: sinRecordatorio });
   const CUATRO = [persona(2, 'Martín Ríos'), persona(3, 'Sofía Paz'), persona(4, 'Carla Benítez'),
     persona(6, 'Diego Fernández', true)];
-  const CLAVES_DEL_MIO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos', 'creador',
-    'personas', 'personas_ids', 'recordatorio', 'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto'];
-  const CLAVES_DEL_AJENO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos', 'creador',
-    'personas', 'recordatorio', 'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto', 'quien_largo'];
+  const CLAVES_DEL_MIO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos', 'publico',
+    'creador', 'personas', 'personas_ids', 'recordatorio', 'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto'];
+  const CLAVES_DEL_AJENO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos', 'publico',
+    'creador', 'personas', 'recordatorio', 'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto', 'quien_largo'];
 
   // Sin la administración (como acá: `item` no la pasa), el nombre corto de cada uno es su primer nombre
   it('uno personal: «Solo vos», con su recordatorio y cuándo sale', () => {
     assert.deepEqual(item({}), {
       id: 5, titulo: 'Reunión de equipo', detalle: null, fecha: '2026-10-27', desde: '10:00', hasta: '11:00', es_mio: true,
-      compartido: false, para_todos: false, creador: 'Laura', personas: [], personas_ids: [], recordatorio: '2h',
+      compartido: false, para_todos: false, publico: false, creador: 'Laura', personas: [], personas_ids: [], recordatorio: '2h',
       recordatorio_texto: '2 horas antes', mi_recordatorio: '2h',
       aviso: { momento: '2026-10-27 08:00', texto: '2 horas antes (mañana a las 08:00)', corto: 'Aviso 2 h antes' },
       quien_texto: 'Solo vos'
@@ -1149,7 +1352,7 @@ describe('itemDeEvento', () => {
     assert.deepEqual(Object.keys(item({})), CLAVES_DEL_MIO);
   });
 
-  it('uno propio compartido: «Con <nombre>», «Con 4 personas» o «Con todos», con los nombres completos y los ids', () => {
+  it('uno propio compartido: «Con <nombre>», «Con 4 personas» o «Con toda la administración», con los nombres y los ids', () => {
     const uno = item({ compartido: true, personas: [persona(2, 'Martín Ríos')] });
     assert.equal(uno.quien_texto, 'Con Martín');
     assert.deepEqual(uno.personas, ['Martín Ríos']);
@@ -1162,7 +1365,7 @@ describe('itemDeEvento', () => {
     assert.equal(cuatro.mi_recordatorio, '2h');
     // Con «Todos», las filas son solo las de quienes apagaron su recordatorio: no son personas elegidas
     const todos = item({ compartido: true, para_todos: true, personas: [persona(6, 'Diego Fernández', true)] });
-    assert.equal(todos.quien_texto, 'Con todos');
+    assert.equal(todos.quien_texto, 'Con toda la administración');
     assert.deepEqual(todos.personas, []);
     assert.deepEqual(todos.personas_ids, []);
     assert.equal(todos.para_todos, true);
@@ -1182,7 +1385,7 @@ describe('itemDeEvento', () => {
       'Lo creó Laura. Están: vos.');
     // Para todos
     const todos = item({ compartido: true, para_todos: true, personas: [persona(6, 'Diego Fernández', true)] }, 2);
-    assert.equal(todos.quien_largo, 'Lo creó Laura. Es para todos.');
+    assert.equal(todos.quien_largo, 'Lo creó Laura. Es para toda la administración.');
     assert.equal(todos.quien_texto, 'De Laura');
     assert.deepEqual(todos.personas, []);
   });
@@ -1213,7 +1416,7 @@ describe('itemDeEvento', () => {
       assert.deepEqual(Object.keys(ajeno), CLAVES_DEL_AJENO);
       const paraTodos = comoLoVeAndrea(JULIAN, [], ADMINISTRACION, { para_todos: true });
       assert.equal(paraTodos.quien_texto, 'De Julián');
-      assert.equal(paraTodos.quien_largo, 'Lo creó Julián. Es para todos.');
+      assert.equal(paraTodos.quien_largo, 'Lo creó Julián. Es para toda la administración.');
     });
 
     it('uno propio con una persona: «Con Carla»; con dos, «Con 2 personas»; personas, completos', () => {
@@ -1227,7 +1430,7 @@ describe('itemDeEvento', () => {
       const conDos = comoLoVeAndrea(ANDREA, [CARLA_B, JULIAN]);
       assert.equal(conDos.quien_texto, 'Con 2 personas');
       assert.deepEqual(conDos.personas, ['Carla Inés Benítez', 'Julián Esteban Ferreyra']);
-      assert.equal(comoLoVeAndrea(ANDREA, [], ADMINISTRACION, { para_todos: true }).quien_texto, 'Con todos');
+      assert.equal(comoLoVeAndrea(ANDREA, [], ADMINISTRACION, { para_todos: true }).quien_texto, 'Con toda la administración');
     });
 
     it('con Carla Ríos en la administración: «Carla B.» y «Carla R.», también si no está en el evento', () => {
@@ -1269,7 +1472,7 @@ describe('itemDeEvento', () => {
     it('el punto de una inicial cierra la oración: «Lo creó Carla R.», sin dos puntos', () => {
       assert.equal(comoLoVeAndrea(CARLA_R, [ANDREA], CON_CARLA_RIOS).quien_largo, 'Lo creó Carla R. Están: vos.');
       assert.equal(comoLoVeAndrea(CARLA_R, [], CON_CARLA_RIOS, { para_todos: true }).quien_largo,
-        'Lo creó Carla R. Es para todos.');
+        'Lo creó Carla R. Es para toda la administración.');
       // Sin ninguna persona (la API no lo da: es la última rama del texto), solo quien lo creó
       assert.equal(comoLoVeAndrea(CARLA_R, [], CON_CARLA_RIOS).quien_largo, 'Lo creó Carla R.');
       // Y la lista que termina en una inicial
@@ -1284,6 +1487,148 @@ describe('itemDeEvento', () => {
         assert.equal(ajeno.quien_largo, 'Lo creó —. Están: vos.', String(creador));
       }
       assert.equal(comoLoVeAndrea(ANDREA, [{ id: 2, nombre: null }]).quien_texto, 'Con 1 persona');
+    });
+  });
+
+  // El Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 5.1 y 6.3): quien no lo creó recibe solo cuándo es, quién lo
+  // cargó (su nombre corto contra todos los usuarios activos, `usuarios`, no solo la administración) y lo que eligió mostrar; el
+  // título, el detalle, el recordatorio y con quién más está no salen del servidor. Quien lo creó lo ve entero, con quién lo ve
+  describe('un Personal (Público)', () => {
+    const ANDREA = Object.freeze({ id: 1, nombre: 'Andrea Paula Molina' });
+    const CARLA = Object.freeze({ id: 2, nombre: 'Carla Inés Benítez' });
+    const JULIAN = Object.freeze({ id: 4, nombre: 'Julián Esteban Ferreyra' });
+    const TOMAS = Object.freeze({ id: 8, nombre: 'Tomás Quiroga' });
+    const CARLA_R = Object.freeze({ id: 9, nombre: 'Carla Ríos' });
+    const LUCIA = Object.freeze({ id: 10, nombre: 'Lucía Sosa' });
+    // Todos los usuarios activos, de cualquier rol (Tomás y Lucía no son de administración)
+    const USUARIOS = Object.freeze([ANDREA, CARLA, JULIAN, TOMAS, LUCIA]);
+    const ADMINISTRACION = Object.freeze([ANDREA, CARLA, JULIAN]);
+    const CLAVES_DEL_AJENO_PUBLICO = ['id', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'publico', 'creador', 'titulo',
+      'texto_publico'];
+    const CLAVES_DEL_MIO_PUBLICO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos',
+      'publico', 'publico_todos', 'texto_publico', 'creador', 'personas', 'personas_ids', 'recordatorio', 'recordatorio_texto',
+      'mi_recordatorio', 'aviso', 'quien_texto'];
+    // El trámite de Carla para todos, entero (como lo dan los datos a quien lo creó), con lo que cambia cada caso
+    const tramite = (datos) => evento({
+      id: 7, creado_por: CARLA.id, creador: CARLA.nombre, titulo: 'Trámite en el banco', detalle: 'Llevar el carnet',
+      fecha: '2026-10-30', desde: '10:00', hasta: null, compartido: false, para_todos: false, publico: true, publico_todos: true,
+      texto_publico: 'Trámite personal', recordatorio: '1h', personas: [], vistas: [], ...datos
+    });
+    const comoLoVe = (quien, datos = {}, usuarios = USUARIOS) => itemDeEvento(tramite(datos),
+      { usuarioId: quien.id, ahora: AHORA, feriados: new Set(), administracion: ADMINISTRACION, usuarios });
+    const DE_CARLA = Object.freeze({
+      id: 7, fecha: '2026-10-30', desde: '10:00', hasta: null, es_mio: false, compartido: false, publico: true, creador: 'Carla',
+      titulo: 'Carla: Trámite personal', texto_publico: 'Trámite personal'
+    });
+
+    it('el de otra persona: solo cuándo es, quién lo cargó y lo que eligió mostrar, «Carla: Trámite personal»', () => {
+      const deCarla = comoLoVe(TOMAS);
+      assert.deepEqual(deCarla, DE_CARLA);
+      assert.deepEqual(Object.keys(deCarla), CLAVES_DEL_AJENO_PUBLICO);
+      // Ni el título ni el detalle, por ningún lado
+      for (const texto of ['banco', 'Llevar', 'carnet']) assert.ok(!JSON.stringify(deCarla).includes(texto), texto);
+      // Con personas elegidas, lo mismo: no dice con quién más está
+      const conPersonas = comoLoVe(TOMAS, { publico_todos: false, vistas: [TOMAS, LUCIA], hasta: '11:00' });
+      assert.deepEqual(conPersonas, { ...DE_CARLA, hasta: '11:00' });
+      for (const texto of ['banco', 'carnet', 'Lucía', 'Tomás']) assert.ok(!JSON.stringify(conPersonas).includes(texto), texto);
+      // Como llegan de la base (tinyint), igual
+      assert.deepEqual(comoLoVe(TOMAS, { publico: 1, publico_todos: 1, compartido: 0, para_todos: 0 }), DE_CARLA);
+    });
+
+    it('no lee el título, el detalle, el recordatorio ni con quién está: alcanza con el recortado de los datos', () => {
+      const recortado = {
+        id: 7, creado_por: CARLA.id, creador: CARLA.nombre, fecha: '2026-10-30', desde: '10:00', hasta: null, compartido: 0,
+        publico: 1, texto_publico: 'Trámite personal'
+      };
+      assert.deepEqual(itemDeEvento(recortado, { usuarioId: TOMAS.id, ahora: AHORA, usuarios: USUARIOS }), DE_CARLA);
+      // Si leyera alguna de estas, tiraría
+      const vigilado = { ...recortado };
+      for (const clave of ['titulo', 'detalle', 'recordatorio', 'personas', 'vistas', 'para_todos', 'publico_todos']) {
+        Object.defineProperty(vigilado, clave, { enumerable: true, get() { throw new Error(`leyó ${clave}`); } });
+      }
+      assert.deepEqual(itemDeEvento(vigilado, { usuarioId: TOMAS.id, ahora: AHORA, usuarios: USUARIOS }), DE_CARLA);
+      // Sin quien pide (un contexto que no sirve), nunca es tuyo: también recortado
+      for (const contexto of [undefined, null, {}, { usuarioId: 'x' }]) {
+        assert.deepEqual(Object.keys(itemDeEvento(tramite(), contexto)), CLAVES_DEL_AJENO_PUBLICO, JSON.stringify(contexto));
+      }
+    });
+
+    it('el nombre corto, contra todos los usuarios activos y no contra la administración: con otra Carla, «Carla B.»', () => {
+      // Carla Ríos no es de administración: cuenta igual
+      const conDos = comoLoVe(TOMAS, {}, [...USUARIOS, CARLA_R]);
+      assert.equal(conDos.creador, 'Carla B.');
+      assert.equal(conDos.titulo, 'Carla B.: Trámite personal');
+      // Sin los usuarios (o con algo que no es una lista), el primer nombre, aunque la administración tenga dos Carlas
+      for (const usuarios of [undefined, null, 'x', 42, {}]) {
+        const sinUsuarios = itemDeEvento(tramite(),
+          { usuarioId: TOMAS.id, ahora: AHORA, administracion: [...ADMINISTRACION, CARLA_R], usuarios });
+        assert.equal(sinUsuarios.titulo, 'Carla: Trámite personal', String(usuarios));
+      }
+      // Sin nombre, null y la raya; sin texto (los datos siempre lo traen), la raya
+      for (const creador of [null, '', '   ', 42]) {
+        const sinNombre = comoLoVe(TOMAS, { creador });
+        assert.equal(sinNombre.creador, null, String(creador));
+        assert.equal(sinNombre.titulo, '—: Trámite personal', String(creador));
+      }
+      for (const texto of [null, undefined, '', '   ', 42]) {
+        const sinTexto = comoLoVe(TOMAS, { texto_publico: texto });
+        assert.equal(sinTexto.titulo, 'Carla: —', String(texto));
+        assert.equal(sinTexto.texto_publico, null, String(texto));
+      }
+      // Lo que eligió mostrar va tal cual (escaparlo le toca a la página)
+      assert.equal(comoLoVe(TOMAS, { texto_publico: '<b>"Mudanza"</b>' }).titulo, 'Carla: <b>"Mudanza"</b>');
+    });
+
+    it('el tuyo: entero, con publico_todos, el texto y «Lo ven todos como «Trámite personal»»', () => {
+      const mio = comoLoVe(CARLA);
+      assert.deepEqual(mio, {
+        id: 7, titulo: 'Trámite en el banco', detalle: 'Llevar el carnet', fecha: '2026-10-30', desde: '10:00', hasta: null,
+        es_mio: true, compartido: false, para_todos: false, publico: true, publico_todos: true, texto_publico: 'Trámite personal',
+        creador: 'Carla', personas: [], personas_ids: [], recordatorio: '1h', recordatorio_texto: '1 hora antes',
+        mi_recordatorio: '1h', aviso: mio.aviso, quien_texto: 'Lo ven todos como «Trámite personal»'
+      });
+      assert.equal(mio.aviso.momento, '2026-10-30 09:00');
+      assert.deepEqual(Object.keys(mio), CLAVES_DEL_MIO_PUBLICO);
+      // Como llegan de la base (tinyint), igual
+      assert.deepEqual(comoLoVe(CARLA, { publico: 1, publico_todos: 1, compartido: 0, para_todos: 0 }), mio);
+    });
+
+    it('el tuyo con personas: «Lo ve Julián…», «Lo ven Julián y Tomás…» o «Lo ven 3 personas…», con sus nombres y sus ids', () => {
+      const conVistas = (vistas, usuarios) => comoLoVe(CARLA, { publico_todos: false, vistas }, usuarios);
+      assert.equal(conVistas([JULIAN]).quien_texto, 'Lo ve Julián como «Trámite personal»');
+      assert.equal(conVistas([JULIAN, TOMAS]).quien_texto, 'Lo ven Julián y Tomás como «Trámite personal»');
+      assert.equal(conVistas([JULIAN, TOMAS, LUCIA]).quien_texto, 'Lo ven 3 personas como «Trámite personal»');
+      assert.equal(conVistas([ANDREA, JULIAN, TOMAS, LUCIA]).quien_texto, 'Lo ven 4 personas como «Trámite personal»');
+      // personas: los nombres completos de vistas (el formulario); personas_ids, sus ids
+      const dos = conVistas([JULIAN, TOMAS]);
+      assert.deepEqual(dos.personas, ['Julián Esteban Ferreyra', 'Tomás Quiroga']);
+      assert.deepEqual(dos.personas_ids, [4, 8]);
+      assert.equal(dos.publico_todos, false);
+      assert.deepEqual(Object.keys(dos), CLAVES_DEL_MIO_PUBLICO);
+      // El nombre corto, contra todos los usuarios: con otra Carla (que no es de administración), «Carla B.»
+      const deAndrea = comoLoVe(ANDREA, { creado_por: ANDREA.id, creador: ANDREA.nombre, publico_todos: false, vistas: [CARLA] },
+        [...USUARIOS, CARLA_R]);
+      assert.equal(deAndrea.quien_texto, 'Lo ve Carla B. como «Trámite personal»');
+      // Las vistas raras no cuentan
+      assert.deepEqual(conVistas([null, 'x', { id: 'abc' }, JULIAN]).personas_ids, [4]);
+    });
+
+    it('con los datos mal (publico y compartido a la vez) manda el Público: nunca se lee como Laboral', () => {
+      const mal = { compartido: 1, para_todos: 1, personas: [{ id: TOMAS.id, nombre: TOMAS.nombre, sin_recordatorio: 0 }] };
+      const mio = comoLoVe(CARLA, mal);
+      assert.equal(mio.compartido, false);
+      assert.equal(mio.para_todos, false);
+      assert.deepEqual(mio.personas, []);
+      assert.equal(mio.quien_texto, 'Lo ven todos como «Trámite personal»');
+      assert.deepEqual(comoLoVe(TOMAS, mal), DE_CARLA);
+      // Con «Todos», las vistas que hubiera no son personas elegidas
+      assert.deepEqual(comoLoVe(CARLA, { vistas: [JULIAN] }).personas_ids, []);
+    });
+
+    it('un Personal (Privado) y un Laboral llevan publico en false', () => {
+      assert.equal(item({}).publico, false);
+      assert.equal(item({ publico: 0 }).publico, false);
+      assert.equal(item({ compartido: true, para_todos: true }, 2).publico, false);
     });
   });
 
@@ -1669,32 +2014,33 @@ describe('eventosDeHoyYManana', () => {
     item({ id: 3, titulo: 'Llamar a Vialidad por el TMDA', desde: '12:00' }),
     item({ id: 4, titulo: 'Entrega del informe trimestral', fecha: '2026-10-28', es_mio: false, compartido: true,
       quien_texto: 'De Martín Ríos' }),
-    item({ id: 5, titulo: 'Capacitación', desde: '09:00', es_mio: false, compartido: true, quien_texto: 'De Laura Gómez' }),
-    item({ id: 6, titulo: 'Mesa con Catastro', fecha: '2026-10-27', desde: '09:30', compartido: true, quien_texto: 'Con todos' })
+    item({ id: 5, titulo: 'Capacitación', desde: '09:00', es_mio: false, compartido: true, quien_texto: 'De Lucía Sosa' }),
+    item({ id: 6, titulo: 'Mesa con Catastro', fecha: '2026-10-27', desde: '09:30', compartido: true,
+      quien_texto: 'Con toda la administración' })
   ];
 
   it('los de hoy y los de mañana, por día y hora, con «Hoy · …» y «Mañana · …»; ni ayer ni pasado mañana', () => {
     const eventos = eventosDeHoyYManana(ITEMS, HOY);
     assert.deepEqual(eventos, [
       {
-        id: 5, hora: '09:00', titulo: 'Capacitación', compartido: true, detalle: 'Hoy · de Laura Gómez', dia: 'hoy',
-        quien: 'de Laura Gómez'
+        id: 5, hora: '09:00', titulo: 'Capacitación', compartido: true, publico: false, detalle: 'Hoy · de Lucía Sosa', dia: 'hoy',
+        quien: 'de Lucía Sosa'
       },
       {
-        id: 3, hora: '12:00', titulo: 'Llamar a Vialidad por el TMDA', compartido: false, detalle: 'Hoy · solo vos', dia: 'hoy',
-        quien: 'solo vos'
+        id: 3, hora: '12:00', titulo: 'Llamar a Vialidad por el TMDA', compartido: false, publico: false, detalle: 'Hoy · solo vos',
+        dia: 'hoy', quien: 'solo vos'
       },
       {
-        id: 6, hora: '09:30', titulo: 'Mesa con Catastro', compartido: true, detalle: 'Mañana · con todos', dia: 'manana',
-        quien: 'con todos'
+        id: 6, hora: '09:30', titulo: 'Mesa con Catastro', compartido: true, publico: false,
+        detalle: 'Mañana · con toda la administración', dia: 'manana', quien: 'con toda la administración'
       },
       {
-        id: 2, hora: '10:00', titulo: 'Reunión de equipo', compartido: true, detalle: 'Mañana · con 4 personas', dia: 'manana',
-        quien: 'con 4 personas'
+        id: 2, hora: '10:00', titulo: 'Reunión de equipo', compartido: true, publico: false, detalle: 'Mañana · con 4 personas',
+        dia: 'manana', quien: 'con 4 personas'
       }
     ]);
     for (const evento of eventos) {
-      assert.deepEqual(Object.keys(evento), ['id', 'hora', 'titulo', 'compartido', 'detalle', 'dia', 'quien']);
+      assert.deepEqual(Object.keys(evento), ['id', 'hora', 'titulo', 'compartido', 'publico', 'detalle', 'dia', 'quien']);
     }
   });
 
@@ -1702,7 +2048,32 @@ describe('eventosDeHoyYManana', () => {
     for (const items of [null, undefined, 42, 'x', {}]) assert.deepEqual(eventosDeHoyYManana(items, HOY), []);
     for (const hoy of [null, undefined, 'abc', '2026-02-30']) assert.deepEqual(eventosDeHoyYManana(ITEMS, hoy), []);
     assert.deepEqual(eventosDeHoyYManana([null, 'x', 42, [], item({ id: 3, quien_texto: undefined })], HOY),
-      [{ id: 3, hora: '10:00', titulo: 'Evento', compartido: false, detalle: 'Hoy', dia: 'hoy', quien: '' }]);
+      [{ id: 3, hora: '10:00', titulo: 'Evento', compartido: false, publico: false, detalle: 'Hoy', dia: 'hoy', quien: '' }]);
+  });
+
+  // El Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 5.4): el de otra persona, «Carla: Trámite personal» sin nada
+  // debajo; el tuyo, con quién lo ve. Con los ítems de itemDeEvento
+  it('un Personal (Público): el de otra persona sin quién está; el tuyo, «lo ven todos como «Trámite personal»»', () => {
+    const tramite = {
+      id: 9, creado_por: 2, creador: 'Carla Inés Benítez', titulo: 'Trámite en el banco', detalle: 'Llevar el carnet', fecha: HOY,
+      desde: '11:00', hasta: null, compartido: false, para_todos: false, publico: true, publico_todos: true,
+      texto_publico: 'Trámite personal', recordatorio: '1h', personas: [], vistas: []
+    };
+    const usuarios = [{ id: 2, nombre: 'Carla Inés Benítez' }, { id: 8, nombre: 'Tomás Quiroga' }];
+    const comoLoVe = (usuarioId) => eventosDeHoyYManana(
+      [itemDeEvento(tramite, { usuarioId, ahora: `${HOY} 09:00:00`, feriados: new Set(), usuarios })], HOY);
+    assert.deepEqual(comoLoVe(8), [{
+      id: 9, hora: '11:00', titulo: 'Carla: Trámite personal', compartido: false, publico: true, detalle: 'Hoy', dia: 'hoy',
+      quien: ''
+    }]);
+    assert.ok(!JSON.stringify(comoLoVe(8)).includes('banco'));
+    assert.deepEqual(comoLoVe(2), [{
+      id: 9, hora: '11:00', titulo: 'Trámite en el banco', compartido: false, publico: true,
+      detalle: 'Hoy · lo ven todos como «Trámite personal»', dia: 'hoy', quien: 'lo ven todos como «Trámite personal»'
+    }]);
+    // Uno de otra persona con un quien_texto (no lo trae): nada de quién está
+    assert.deepEqual(eventosDeHoyYManana([item({ es_mio: false, publico: true, quien_texto: 'De Carla' })], HOY)
+      .map(({ quien, detalle }) => [quien, detalle]), [['', 'Hoy']]);
   });
 
   // Decisión del usuario (27/10/2026; spec 2026-10-27-mi-espacio-resumen, 4.4): los de hoy que ya terminaron no van

@@ -21,8 +21,8 @@ import { BLOQUEO_EVENTOS, VENTANA_DE_LA_CORRIDA } from '../services/miEspacioEve
 const CASILLAS_POR_DEFECTO = ['datospublicos@comodoro.gov.ar', 'mit@comodoro.gov.ar', 'investigacionterritorial@comodoro.gov.ar'];
 const BLOQUEO_DE_LAS_NOTAS = 'rpad_notas_digitales';
 const NO_HABIL = 'Día no hábil: no se mandan recordatorios.';
-const TABLAS = ['mi_espacio_evento_envios', 'mi_espacio_evento_personas', 'mi_espacio_eventos', 'mi_espacio_eventos_corridas',
-  'feriados', 'usuarios_licencias', 'usuarios'];
+const TABLAS = ['mi_espacio_evento_envios', 'mi_espacio_evento_personas', 'mi_espacio_evento_vistas', 'mi_espacio_eventos',
+  'mi_espacio_eventos_corridas', 'feriados', 'usuarios_licencias', 'usuarios'];
 
 let base, dbReal, emailSoloA, corrida, datos, controlador, pool;
 
@@ -86,6 +86,24 @@ const evento = async ({
   for (const [quien, apagado] of [...personas.map((p) => [p, 0]), ...apagados.map((p) => [p, 1])]) {
     await query('INSERT INTO mi_espacio_evento_personas (evento_id, usuario_id, sin_recordatorio) VALUES (?, ?, ?)',
       [id, quien.id, apagado]);
+  }
+  return id;
+};
+
+// Un Personal (Público) por SQL (spec 2026-10-29-mi-espacio-evento-publico, 6.1: compartido y para_todos en 0), el martes 03/11
+// de 10:00 a 11:00 con «2 horas antes»: con «Todos» (`todos`) o con `vistas`, las personas a quienes se les muestra.
+// `compartido` y `paraTodos` en 1 son datos mal, para la defensa
+const publico = async ({
+  creador, todos = false, vistas = [], compartido = 0, paraTodos = 0, titulo = 'Turno con el dentista'
+}) => {
+  const { insertId: id } = await query(
+    `INSERT INTO mi_espacio_eventos (creado_por, titulo, detalle, fecha, desde, hasta, compartido, para_todos, publico,
+       publico_todos, texto_publico, recordatorio)
+     VALUES (?, ?, 'Llevar el carnet', '2026-11-03', '10:00', '11:00', ?, ?, 1, ?, 'Turno médico', '2h')`,
+    [creador.id, titulo, compartido, paraTodos, todos ? 1 : 0]
+  );
+  for (const quien of vistas) {
+    await query('INSERT INTO mi_espacio_evento_vistas (evento_id, usuario_id) VALUES (?, ?)', [id, quien.id]);
   }
   return id;
 };
@@ -220,7 +238,7 @@ describe('eventosParaLaCorrida: los eventos de la corrida, en lote', () => {
     assert.deepEqual(eventos.map((e) => e.id), [deHoy, delFinal]);
     assert.deepEqual(eventos[0], {
       id: deHoy, creado_por: adminA.id, titulo: 'Reunión de equipo', detalle: 'Sala 1.', fecha: '2026-11-03', desde: '10:00',
-      hasta: '11:00', recordatorio: '2h', compartido: true, para_todos: false,
+      hasta: '11:00', recordatorio: '2h', compartido: true, para_todos: false, publico: false,
       destinatarios: [
         { usuario_id: adminA.id, email: adminA.email, sin_recordatorio: false },
         { usuario_id: adminB.id, email: adminB.email, sin_recordatorio: false }
@@ -233,7 +251,7 @@ describe('eventosParaLaCorrida: los eventos de la corrida, en lote', () => {
     });
     assert.deepEqual(eventos[1], {
       id: delFinal, creado_por: adminA.id, titulo: 'Reunión de equipo', detalle: null, fecha: '2026-11-18', desde: '09:30',
-      hasta: null, recordatorio: 'dia_anterior', compartido: false, para_todos: false,
+      hasta: null, recordatorio: 'dia_anterior', compartido: false, para_todos: false, publico: false,
       destinatarios: [{ usuario_id: adminA.id, email: adminA.email, sin_recordatorio: false }], envios: []
     });
     // Sin un hoy, nada
@@ -354,6 +372,58 @@ describe('la corrida de los recordatorios', () => {
     assert.deepEqual(await enviosDe(id), [enviado(adminA, '2026-11-03 10:00', '2026-11-03 08:00:00')]);
     assert.equal((await esperarDe(adminA.email)).length, 1);
     assert.deepEqual(await recibidos(adminB.email), []);
+  });
+
+  // El Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 2.6 y 6.7): su recordatorio, como el de un Privado, le
+  // llega solo a quien lo creó; a los que lo ven, nada
+  it('un Personal (Público), para todos o con personas, le manda un solo recordatorio por evento: el de quien lo creó',
+    async () => {
+      const lector = await persona({ clave: 'lector', rol: 'lector' });
+      const adminB = await persona({ clave: 'adminB' });
+      const editor = await persona({ clave: 'editor', rol: 'editor' });
+      const colab = await persona({ clave: 'colab', rol: 'colaborador' });
+      const superadmin = await persona({ clave: 'superadmin', rol: 'superadmin' });
+      const paraTodos = await publico({ creador: lector, todos: true });
+      const conVistas = await publico({ creador: adminB, vistas: [editor, colab] });
+
+      const eventos = await datos.eventosParaLaCorrida('2026-11-03');
+      assert.deepEqual(eventos.map((e) => [e.id, e.publico, e.compartido, e.para_todos, e.destinatarios]), [
+        [paraTodos, true, false, false, [{ usuario_id: lector.id, email: lector.email, sin_recordatorio: false }]],
+        [conVistas, true, false, false, [{ usuario_id: adminB.id, email: adminB.email, sin_recordatorio: false }]]
+      ]);
+
+      assert.deepEqual(await corridaA('2026-11-03 08:00'), resultado({ enviados: 2 }));
+      assert.deepEqual(await enviosDe(paraTodos), [enviado(lector, '2026-11-03 10:00', '2026-11-03 08:00:00')]);
+      assert.deepEqual(await enviosDe(conVistas), [enviado(adminB, '2026-11-03 10:00', '2026-11-03 08:00:00')]);
+      assert.deepEqual(await asuntosDe(lector.email, 1), ['RPAD: Turno con el dentista, hoy a las 10:00']);
+      assert.deepEqual(await asuntosDe(adminB.email, 1), ['RPAD: Turno con el dentista, hoy a las 10:00']);
+      for (const quien of [editor, colab, superadmin]) assert.deepEqual(await recibidos(quien.email), []);
+      // Una corrida más no repite nada
+      assert.deepEqual(await corridaA('2026-11-03 08:30'), resultado());
+    });
+
+  it('la defensa: un Público con compartido y para_todos en 1 (datos mal, por SQL) le llega solo a quien lo creó, y '
+    + 'audienciaDe da []', async () => {
+    const marca = sufijo();
+    const adminA = await persona({ clave: 'adminA' });
+    const adminB = await persona({ clave: 'adminB' });
+    const editor = await persona({ clave: 'editor', rol: 'editor' });
+    const id = await publico({ creador: adminA, vistas: [adminB], compartido: 1, paraTodos: 1, titulo: `Turno ${marca}` });
+    // Y una fila de personas, como si quedara de un Laboral
+    await query('INSERT INTO mi_espacio_evento_personas (evento_id, usuario_id) VALUES (?, ?)', [id, editor.id]);
+
+    assert.deepEqual(await datos.audienciaDe({ id, creado_por: adminA.id, compartido: 1, para_todos: 1, publico: 1 }), []);
+    assert.deepEqual(await datos.audienciaDe({ id, creado_por: adminA.id, compartido: true, para_todos: false, publico: true }),
+      []);
+    const [delEvento] = await datos.eventosParaLaCorrida('2026-11-03');
+    assert.deepEqual(delEvento.destinatarios, [{ usuario_id: adminA.id, email: adminA.email, sin_recordatorio: false }]);
+
+    assert.deepEqual(await corridaA('2026-11-03 08:00'), resultado({ enviados: 1 }));
+    assert.deepEqual(await enviosDe(id), [enviado(adminA, '2026-11-03 10:00', '2026-11-03 08:00:00')]);
+    assert.equal((await esperarDe(adminA.email)).length, 1);
+    for (const quien of [adminB, editor]) assert.deepEqual(await recibidos(quien.email), []);
+    const delTest = (await mailpit.mensajes()).filter((mensaje) => mensaje.Subject.includes(marca));
+    assert.deepEqual(delTest.flatMap((mensaje) => mensaje.To.map((to) => to.Address)), [adminA.email]);
   });
 
   it('pasado a las 15:00 después de avisar, sale otra vez a las 13:00, con otra fila', async () => {
