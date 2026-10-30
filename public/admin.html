@@ -36,208 +36,208 @@
         .main-content { min-width: 0; }
 
         /* Solo para el lector de pantalla */
-        .ad-vh { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+        .gdat-vh { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
         /* La ayuda debajo de un campo y la separación del aviso de arriba de la lista (main.css no tiene clases para esto) */
-        .ad-ayuda { font-size: 0.8rem; color: var(--pf-suave); margin: 6px 0 0; }
-        .ad-aviso { margin-bottom: 12px; }
+        .gdat-ayuda { font-size: 0.8rem; color: var(--pf-suave); margin: 6px 0 0; }
+        .gdat-aviso { margin-bottom: 12px; }
 
         /* ---------- Lista (spec 2026-10-17-fechas-datasets, 8.2) ---------- */
-        .ad-barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
-        .ad-barra input[type=search] { flex: 1; min-width: 220px; font: inherit; font-size: 0.9rem; border: 1px solid var(--pf-borde-campo); border-radius: 8px; padding: 9px 12px; background: #fff; color: var(--pf-texto); }
-        .ad-barra select { font: inherit; font-size: 0.85rem; color: var(--pf-texto); border: 1px solid var(--pf-borde-campo); border-radius: 8px; padding: 8px 28px 8px 10px; background-color: #fff; max-width: 100%; }
-        .ad-estados { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-        .ad-estado-filtro { font: inherit; font-size: 0.82rem; border: 1px solid var(--pf-linea); background: #fff; color: var(--pf-texto); border-radius: 999px; padding: 6px 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: baseline; }
-        .ad-estado-filtro:hover { background: var(--pf-sutil); }
-        .ad-estado-filtro b { font-variant-numeric: tabular-nums; color: var(--pf-tinta); }
-        .ad-estado-filtro[aria-pressed=true] { background: var(--pf-tinta); border-color: var(--pf-tinta); color: #fff; }
-        .ad-estado-filtro[aria-pressed=true] b { color: #fff; }
-        .ad-estado-filtro:focus-visible, .ad-btn:focus-visible, .ad-icono:focus-visible,
-        .ad-barra input:focus-visible, .ad-barra select:focus-visible,
-        .ad-pie-tabla .pag-btn:focus-visible, .ad-marco:focus-visible,
-        .ad-cerrar:focus-visible, .ad-mes select:focus-visible, .ad-campos input:focus-visible, .ad-campos select:focus-visible,
-        .ad-opcion:focus-within { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+        .gdat-barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+        .gdat-barra input[type=search] { flex: 1; min-width: 220px; font: inherit; font-size: 0.9rem; border: 1px solid var(--pf-borde-campo); border-radius: 8px; padding: 9px 12px; background: #fff; color: var(--pf-texto); }
+        .gdat-barra select { font: inherit; font-size: 0.85rem; color: var(--pf-texto); border: 1px solid var(--pf-borde-campo); border-radius: 8px; padding: 8px 28px 8px 10px; background-color: #fff; max-width: 100%; }
+        .gdat-estados { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+        .gdat-estado-filtro { font: inherit; font-size: 0.82rem; border: 1px solid var(--pf-linea); background: #fff; color: var(--pf-texto); border-radius: 999px; padding: 6px 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: baseline; }
+        .gdat-estado-filtro:hover { background: var(--pf-sutil); }
+        .gdat-estado-filtro b { font-variant-numeric: tabular-nums; color: var(--pf-tinta); }
+        .gdat-estado-filtro[aria-pressed=true] { background: var(--pf-tinta); border-color: var(--pf-tinta); color: #fff; }
+        .gdat-estado-filtro[aria-pressed=true] b { color: #fff; }
+        .gdat-estado-filtro:focus-visible, .gdat-btn:focus-visible, .gdat-icono:focus-visible,
+        .gdat-barra input:focus-visible, .gdat-barra select:focus-visible,
+        .gdat-pie-tabla .pag-btn:focus-visible, .gdat-marco:focus-visible,
+        .gdat-cerrar:focus-visible, .gdat-mes select:focus-visible, .gdat-campos input:focus-visible, .gdat-campos select:focus-visible,
+        .gdat-opcion:focus-within { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
 
-        .ad-marco { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; overflow: auto; }
-        table.ad-tabla { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-        .ad-tabla th { text-align: left; font-weight: 500; color: var(--pf-suave); font-size: 0.8rem; padding: 11px 14px; border-bottom: 1px solid var(--pf-linea); background: var(--pf-sutil); white-space: nowrap; }
-        .ad-tabla td { padding: 12px 14px; border-bottom: 1px solid var(--pf-linea); vertical-align: top; color: var(--pf-texto); }
-        .ad-tabla tr:last-child td { border-bottom: 0; }
-        .ad-tabla tr.bloqueada td { background: #FBFAF6; }
+        .gdat-marco { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; overflow: auto; }
+        table.gdat-tabla { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        .gdat-tabla th { text-align: left; font-weight: 500; color: var(--pf-suave); font-size: 0.8rem; padding: 11px 14px; border-bottom: 1px solid var(--pf-linea); background: var(--pf-sutil); white-space: nowrap; }
+        .gdat-tabla td { padding: 12px 14px; border-bottom: 1px solid var(--pf-linea); vertical-align: top; color: var(--pf-texto); }
+        .gdat-tabla tr:last-child td { border-bottom: 0; }
+        .gdat-tabla tr.bloqueada td { background: #FBFAF6; }
         /* El lector no tiene acciones: su columna no se muestra */
-        .ad-tabla.ad-solo-lectura th:nth-child(5), .ad-tabla.ad-solo-lectura td:nth-child(5) { display: none; }
-        .ad-titulo { font-weight: 600; color: var(--pf-tinta); line-height: 1.3; }
-        .ad-sub { display: block; color: var(--pf-suave); font-size: 0.78rem; margin-top: 2px; line-height: 1.35; }
-        .ad-fecha { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .gdat-tabla.gdat-solo-lectura th:nth-child(5), .gdat-tabla.gdat-solo-lectura td:nth-child(5) { display: none; }
+        .gdat-titulo { font-weight: 600; color: var(--pf-tinta); line-height: 1.3; }
+        .gdat-sub { display: block; color: var(--pf-suave); font-size: 0.78rem; margin-top: 2px; line-height: 1.35; }
+        .gdat-fecha { font-variant-numeric: tabular-nums; white-space: nowrap; }
         /* El texto del pedido sí se parte: "Presupuestos de los ejercicios 2026 y 2027" ocupa dos renglones si hace falta */
-        .ad-pedido-texto { font-variant-numeric: tabular-nums; }
-        .ad-chip { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
-        .ad-chip.vencido { background: var(--pf-rojo-fondo); color: var(--pf-rojo); }
-        .ad-chip.proximo { background: var(--pf-ambar-fondo); color: var(--pf-ambar); }
-        .ad-chip.al-dia { background: var(--pf-verde-fondo); color: var(--pf-verde); }
-        .ad-chip.eventual { background: var(--pf-gris-fondo); color: var(--pf-suave); }
-        .ad-chip.pendiente { background: var(--pf-violeta-fondo); color: var(--pf-violeta); }
+        .gdat-pedido-texto { font-variant-numeric: tabular-nums; }
+        .gdat-chip { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+        .gdat-chip.vencido { background: var(--pf-rojo-fondo); color: var(--pf-rojo); }
+        .gdat-chip.proximo { background: var(--pf-ambar-fondo); color: var(--pf-ambar); }
+        .gdat-chip.al-dia { background: var(--pf-verde-fondo); color: var(--pf-verde); }
+        .gdat-chip.eventual { background: var(--pf-gris-fondo); color: var(--pf-suave); }
+        .gdat-chip.pendiente { background: var(--pf-violeta-fondo); color: var(--pf-violeta); }
         /* Sin próxima y con una frecuencia que no es eventual: blanca con borde, para que no se confunda con la gris del eventual */
-        .ad-chip.sin-fecha { background: #fff; color: var(--pf-texto); box-shadow: inset 0 0 0 1px #B8C4D1; }
-        .ad-acciones { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
-        .ad-btn { font: inherit; font-size: 0.8rem; font-weight: 600; border-radius: 8px; padding: 7px 11px; cursor: pointer; border: 1px solid var(--pf-linea); background: #fff; color: var(--pf-texto); display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
-        .ad-btn:hover:not(:disabled) { background: var(--pf-sutil); }
-        .ad-btn:disabled { opacity: .45; cursor: not-allowed; }
-        .ad-btn.registrar { color: var(--pf-tinta); border-color: #C9D6E3; }
-        .ad-btn.registrar svg { color: var(--pf-verde); flex: none; }
-        .ad-tabla .ocultable .ad-sub { white-space: nowrap; }
-        .ad-icono { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--pf-linea); background: #fff; color: var(--pf-suave); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
-        .ad-icono:hover:not(:disabled) { color: var(--pf-tinta); background: var(--pf-sutil); }
-        .ad-icono.borrar:hover:not(:disabled) { color: var(--pf-rojo); }
-        .ad-icono:disabled { opacity: .45; cursor: not-allowed; }
-        .ad-vacio { text-align: center; color: var(--pf-suave); padding: 28px 14px; }
-        .ad-tabla td.ad-vacio { padding: 28px 14px; }
-        .ad-pie-tabla { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 12px; padding: 10px 14px; font-size: 0.8rem; color: var(--pf-suave); border-top: 1px solid var(--pf-linea); background: var(--pf-sutil); }
-        .ad-pie-tabla .pag-info { color: var(--pf-suave); font-size: 0.8rem; }
+        .gdat-chip.sin-fecha { background: #fff; color: var(--pf-texto); box-shadow: inset 0 0 0 1px #B8C4D1; }
+        .gdat-acciones { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+        .gdat-btn { font: inherit; font-size: 0.8rem; font-weight: 600; border-radius: 8px; padding: 7px 11px; cursor: pointer; border: 1px solid var(--pf-linea); background: #fff; color: var(--pf-texto); display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+        .gdat-btn:hover:not(:disabled) { background: var(--pf-sutil); }
+        .gdat-btn:disabled { opacity: .45; cursor: not-allowed; }
+        .gdat-btn.registrar { color: var(--pf-tinta); border-color: #C9D6E3; }
+        .gdat-btn.registrar svg { color: var(--pf-verde); flex: none; }
+        .gdat-tabla .ocultable .gdat-sub { white-space: nowrap; }
+        .gdat-icono { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--pf-linea); background: #fff; color: var(--pf-suave); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
+        .gdat-icono:hover:not(:disabled) { color: var(--pf-tinta); background: var(--pf-sutil); }
+        .gdat-icono.borrar:hover:not(:disabled) { color: var(--pf-rojo); }
+        .gdat-icono:disabled { opacity: .45; cursor: not-allowed; }
+        .gdat-vacio { text-align: center; color: var(--pf-suave); padding: 28px 14px; }
+        .gdat-tabla td.gdat-vacio { padding: 28px 14px; }
+        .gdat-pie-tabla { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 12px; padding: 10px 14px; font-size: 0.8rem; color: var(--pf-suave); border-top: 1px solid var(--pf-linea); background: var(--pf-sutil); }
+        .gdat-pie-tabla .pag-info { color: var(--pf-suave); font-size: 0.8rem; }
 
         /* Celular: una tarjeta por dataset, con los mismos datos y botones de la fila */
-        .ad-tarjetas { display: none; }
-        .ad-tarjeta { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; min-width: 0; }
-        .ad-tarjeta.bloqueada { background: #FBFAF6; }
-        .ad-tarjeta-titulo { min-width: 0; overflow-wrap: anywhere; }
-        .ad-tarjeta-estado .ad-sub { display: inline; margin: 0 0 0 6px; }
-        .ad-tarjeta-datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px 14px; margin: 0; padding-top: 10px; border-top: 1px solid var(--pf-linea); }
-        .ad-tarjeta-datos dt { font-size: 0.75rem; color: var(--pf-suave); margin-bottom: 2px; }
-        .ad-tarjeta-datos dd { margin: 0; font-size: 0.85rem; color: var(--pf-texto); min-width: 0; overflow-wrap: anywhere; }
-        .ad-tarjeta .ad-acciones { justify-content: flex-start; flex-wrap: wrap; }
+        .gdat-tarjetas { display: none; }
+        .gdat-tarjeta { background: #fff; border: 1px solid var(--pf-linea); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; min-width: 0; }
+        .gdat-tarjeta.bloqueada { background: #FBFAF6; }
+        .gdat-tarjeta-titulo { min-width: 0; overflow-wrap: anywhere; }
+        .gdat-tarjeta-estado .gdat-sub { display: inline; margin: 0 0 0 6px; }
+        .gdat-tarjeta-datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px 14px; margin: 0; padding-top: 10px; border-top: 1px solid var(--pf-linea); }
+        .gdat-tarjeta-datos dt { font-size: 0.75rem; color: var(--pf-suave); margin-bottom: 2px; }
+        .gdat-tarjeta-datos dd { margin: 0; font-size: 0.85rem; color: var(--pf-texto); min-width: 0; overflow-wrap: anywhere; }
+        .gdat-tarjeta .gdat-acciones { justify-content: flex-start; flex-wrap: wrap; }
 
         /* ---------- Registrar actualización (spec 2026-10-17-fechas-datasets, 8.3, como el mockup aprobado) ---------- */
         /* El velo lleva el z-index de los avisos: showToast se agrega después al final de la página y queda por encima */
-        .ad-velo { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: flex-start; justify-content: center; padding: 32px 16px; z-index: 1000; overflow: auto; }
-        .ad-ventana { background: #fff; border-radius: 14px; width: min(720px, 100%); box-shadow: 0 20px 50px rgba(0,0,0,.2); }
-        .ad-ventana > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px 22px 14px; border-bottom: 1px solid var(--pf-linea); }
-        .ad-ventana > header h2 { margin: 0; font-size: 1.05rem; color: var(--pf-tinta); }
-        .ad-ventana > header p { margin: 3px 0 0; font-size: 0.88rem; color: var(--pf-texto); }
-        .ad-cerrar { background: none; border: 0; font-size: 1.4rem; line-height: 1; color: var(--pf-suave); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
-        .ad-cerrar:hover { background: var(--pf-sutil); }
-        .ad-cuerpo { padding: 18px 22px 8px; }
-        .ad-ventana > footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 22px; border-top: 1px solid var(--pf-linea); background: var(--pf-sutil); border-radius: 0 0 14px 14px; }
-        .ad-ventana > footer p { margin: 0; font-size: 0.8rem; color: var(--pf-suave); max-width: 380px; line-height: 1.4; }
-        .ad-ventana > footer .botones { display: flex; gap: 8px; }
-        .ad-btn.primario { background: var(--primary); border-color: var(--primary); color: #fff; }
-        .ad-btn.primario:hover:not(:disabled) { background: var(--primary-dark); }
+        .gdat-velo { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: flex-start; justify-content: center; padding: 32px 16px; z-index: 1000; overflow: auto; }
+        .gdat-ventana { background: #fff; border-radius: 14px; width: min(720px, 100%); box-shadow: 0 20px 50px rgba(0,0,0,.2); }
+        .gdat-ventana > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px 22px 14px; border-bottom: 1px solid var(--pf-linea); }
+        .gdat-ventana > header h2 { margin: 0; font-size: 1.05rem; color: var(--pf-tinta); }
+        .gdat-ventana > header p { margin: 3px 0 0; font-size: 0.88rem; color: var(--pf-texto); }
+        .gdat-cerrar { background: none; border: 0; font-size: 1.4rem; line-height: 1; color: var(--pf-suave); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+        .gdat-cerrar:hover { background: var(--pf-sutil); }
+        .gdat-cuerpo { padding: 18px 22px 8px; }
+        .gdat-ventana > footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 22px; border-top: 1px solid var(--pf-linea); background: var(--pf-sutil); border-radius: 0 0 14px 14px; }
+        .gdat-ventana > footer p { margin: 0; font-size: 0.8rem; color: var(--pf-suave); max-width: 380px; line-height: 1.4; }
+        .gdat-ventana > footer .botones { display: flex; gap: 8px; }
+        .gdat-btn.primario { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .gdat-btn.primario:hover:not(:disabled) { background: var(--primary-dark); }
 
         /* Lo que se pidió y la línea del ciclo. Los rótulos de las marcas no se salen del recuadro (no hay desplazamiento lateral) */
-        .ad-pedido { border: 1px solid var(--pf-linea); border-radius: 12px; padding: 14px 16px 12px; background: var(--pf-sutil); margin-bottom: 20px; overflow: hidden; }
-        .ad-pedido .rotulo { font-size: 0.8rem; color: var(--pf-suave); margin: 0; }
-        .ad-pedido .periodo { font-size: 1.15rem; font-weight: 600; color: var(--pf-tinta); margin: 2px 0 10px; font-variant-numeric: tabular-nums; }
-        .ad-pedido dl { display: flex; flex-wrap: wrap; gap: 4px 22px; margin: 0 0 14px; font-size: 0.83rem; }
-        .ad-pedido dl div { display: flex; gap: 6px; }
-        .ad-pedido dt { color: var(--pf-suave); }
-        .ad-pedido dd { margin: 0; color: var(--pf-texto); font-weight: 500; font-variant-numeric: tabular-nums; }
-        .ad-ciclo { position: relative; height: 58px; margin: 6px 4px 2px; }
-        .ad-ciclo .pista { position: absolute; left: 0; right: 0; top: 16px; height: 10px; border-radius: 999px; background: #E6EBF1; }
-        .ad-ciclo .banda { position: absolute; top: 16px; height: 10px; }
-        .ad-ciclo .publicado { background: #9DB3C9; border-radius: 999px 0 0 999px; }
-        .ad-ciclo .falta { background: repeating-linear-gradient(135deg, #F3D9A0 0 6px, #FBF1DC 6px 12px); border: 1px solid #E6C77F; }
+        .gdat-pedido { border: 1px solid var(--pf-linea); border-radius: 12px; padding: 14px 16px 12px; background: var(--pf-sutil); margin-bottom: 20px; overflow: hidden; }
+        .gdat-pedido .rotulo { font-size: 0.8rem; color: var(--pf-suave); margin: 0; }
+        .gdat-pedido .periodo { font-size: 1.15rem; font-weight: 600; color: var(--pf-tinta); margin: 2px 0 10px; font-variant-numeric: tabular-nums; }
+        .gdat-pedido dl { display: flex; flex-wrap: wrap; gap: 4px 22px; margin: 0 0 14px; font-size: 0.83rem; }
+        .gdat-pedido dl div { display: flex; gap: 6px; }
+        .gdat-pedido dt { color: var(--pf-suave); }
+        .gdat-pedido dd { margin: 0; color: var(--pf-texto); font-weight: 500; font-variant-numeric: tabular-nums; }
+        .gdat-ciclo { position: relative; height: 58px; margin: 6px 4px 2px; }
+        .gdat-ciclo .pista { position: absolute; left: 0; right: 0; top: 16px; height: 10px; border-radius: 999px; background: #E6EBF1; }
+        .gdat-ciclo .banda { position: absolute; top: 16px; height: 10px; }
+        .gdat-ciclo .publicado { background: #9DB3C9; border-radius: 999px 0 0 999px; }
+        .gdat-ciclo .falta { background: repeating-linear-gradient(135deg, #F3D9A0 0 6px, #FBF1DC 6px 12px); border: 1px solid #E6C77F; }
         /* La banda verde se mueve al cambiar "Datos al" (spec 8.5: el único movimiento de la pantalla) */
-        .ad-ciclo .llega { background: #5FA982; transition: width .35s ease; }
-        .ad-ciclo .marca { position: absolute; top: 8px; width: 2px; height: 26px; background: var(--pf-tinta); }
-        .ad-ciclo .marca.hoy { background: #C0504D; }
-        .ad-ciclo .etiqueta { position: absolute; top: 38px; font-size: 0.72rem; line-height: 1.25; color: var(--pf-suave); white-space: nowrap; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
-        .ad-ciclo .etiqueta.arriba, .ad-ciclo .etiqueta.hoy { top: -8px; }
-        .ad-ciclo .etiqueta.hoy { color: #A13F3C; }
+        .gdat-ciclo .llega { background: #5FA982; transition: width .35s ease; }
+        .gdat-ciclo .marca { position: absolute; top: 8px; width: 2px; height: 26px; background: var(--pf-tinta); }
+        .gdat-ciclo .marca.hoy { background: #C0504D; }
+        .gdat-ciclo .etiqueta { position: absolute; top: 38px; font-size: 0.72rem; line-height: 1.25; color: var(--pf-suave); white-space: nowrap; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+        .gdat-ciclo .etiqueta.arriba, .gdat-ciclo .etiqueta.hoy { top: -8px; }
+        .gdat-ciclo .etiqueta.hoy { color: #A13F3C; }
         /* Si "Hoy" pisaría a "Vence", sube un renglón (admin.js); la línea baja lo mismo, para no tapar el texto de arriba */
-        .ad-ciclo.con-alto { margin-top: 32px; }
-        .ad-ciclo .etiqueta.hoy.alto { top: -26px; }
-        .ad-leyenda { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.75rem; color: var(--pf-suave); margin-top: 6px; }
-        .ad-leyenda span { display: inline-flex; gap: 6px; align-items: center; }
-        .ad-leyenda i { width: 14px; height: 8px; border-radius: 3px; display: inline-block; }
-        .ad-leyenda .publicado { background: #9DB3C9; }
-        .ad-leyenda .falta { background: repeating-linear-gradient(135deg, #F3D9A0 0 4px, #FBF1DC 4px 8px); border: 1px solid #E6C77F; }
-        .ad-leyenda .llega { background: #5FA982; }
+        .gdat-ciclo.con-alto { margin-top: 32px; }
+        .gdat-ciclo .etiqueta.hoy.alto { top: -26px; }
+        .gdat-leyenda { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.75rem; color: var(--pf-suave); margin-top: 6px; }
+        .gdat-leyenda span { display: inline-flex; gap: 6px; align-items: center; }
+        .gdat-leyenda i { width: 14px; height: 8px; border-radius: 3px; display: inline-block; }
+        .gdat-leyenda .publicado { background: #9DB3C9; }
+        .gdat-leyenda .falta { background: repeating-linear-gradient(135deg, #F3D9A0 0 4px, #FBF1DC 4px 8px); border: 1px solid #E6C77F; }
+        .gdat-leyenda .llega { background: #5FA982; }
 
         /* Los tres pasos */
-        .ad-paso { display: grid; grid-template-columns: 28px 1fr; gap: 0 10px; margin-bottom: 18px; }
-        .ad-paso > div { min-width: 0; }
-        .ad-num { width: 24px; height: 24px; border-radius: 50%; background: var(--pf-tinta); color: #fff; font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
-        .ad-paso h3 { margin: 0 0 8px; font-size: 0.95rem; color: var(--pf-tinta); }
-        .ad-error { font-size: 0.8rem; color: var(--pf-rojo); margin: 6px 0 0; }
-        .ad-error-envio { background: var(--pf-rojo-fondo); border: 1px solid #EFCACA; border-radius: 8px; padding: 9px 12px; margin: 0 0 14px; font-size: 0.85rem; }
-        .ad-mes { display: flex; flex-wrap: wrap; gap: 8px; }
-        .ad-mes select, .ad-campos input, .ad-campos select { font: inherit; font-size: 0.9rem; color: var(--pf-texto); border: 1px solid var(--pf-borde-campo); border-radius: 8px; padding: 8px 10px; background: #fff; }
-        .ad-mes select:first-child { min-width: 150px; }
-        .ad-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .ad-campos label { display: block; font-size: 0.82rem; color: var(--pf-texto); font-weight: 500; margin-bottom: 4px; }
-        .ad-campos input, .ad-campos select { width: 100%; }
+        .gdat-paso { display: grid; grid-template-columns: 28px 1fr; gap: 0 10px; margin-bottom: 18px; }
+        .gdat-paso > div { min-width: 0; }
+        .gdat-num { width: 24px; height: 24px; border-radius: 50%; background: var(--pf-tinta); color: #fff; font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+        .gdat-paso h3 { margin: 0 0 8px; font-size: 0.95rem; color: var(--pf-tinta); }
+        .gdat-error { font-size: 0.8rem; color: var(--pf-rojo); margin: 6px 0 0; }
+        .gdat-error-envio { background: var(--pf-rojo-fondo); border: 1px solid #EFCACA; border-radius: 8px; padding: 9px 12px; margin: 0 0 14px; font-size: 0.85rem; }
+        .gdat-mes { display: flex; flex-wrap: wrap; gap: 8px; }
+        .gdat-mes select, .gdat-campos input, .gdat-campos select { font: inherit; font-size: 0.9rem; color: var(--pf-texto); border: 1px solid var(--pf-borde-campo); border-radius: 8px; padding: 8px 10px; background: #fff; }
+        .gdat-mes select:first-child { min-width: 150px; }
+        .gdat-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .gdat-campos label { display: block; font-size: 0.82rem; color: var(--pf-texto); font-weight: 500; margin-bottom: 4px; }
+        .gdat-campos input, .gdat-campos select { width: 100%; }
         /* «¿Quién entregó los datos?» ocupa el renglón entero, arriba de las dos fechas */
-        .ad-campos .ad-ancho { grid-column: 1 / -1; }
+        .gdat-campos .gdat-ancho { grid-column: 1 / -1; }
 
         /* Las opciones de la próxima: tarjetas de radio. Mientras llegan las nuevas, las de antes quedan apagadas (el paso no salta) */
-        .ad-opciones { display: grid; gap: 8px; }
-        .ad-opciones[aria-busy=true] { opacity: .6; }
-        .ad-opcion { display: grid; grid-template-columns: 20px 1fr; gap: 10px; border: 1px solid var(--pf-borde-campo); border-radius: 10px; padding: 12px 14px; cursor: pointer; background: #fff; }
-        .ad-opcion:hover { border-color: #A9BBCD; }
-        .ad-opcion input { margin-top: 3px; accent-color: var(--pf-tinta); }
-        .ad-opcion.elegida { border-color: var(--pf-tinta); box-shadow: 0 0 0 1px var(--pf-tinta) inset; background: #FAFCFE; }
-        .ad-opcion .fecha { font-weight: 700; color: var(--pf-tinta); font-variant-numeric: tabular-nums; font-size: 1rem; }
-        .ad-opcion .que { font-weight: 500; color: var(--pf-texto); margin-left: 8px; }
-        .ad-sugerida { font-size: 0.7rem; font-weight: 700; color: var(--pf-verde); background: var(--pf-verde-fondo); border-radius: 999px; padding: 2px 8px; margin-left: 8px; vertical-align: 2px; }
-        .ad-opcion .porque { display: block; font-size: 0.8rem; color: var(--pf-suave); margin-top: 3px; }
-        .ad-opcion .despues { display: block; font-size: 0.8rem; color: var(--pf-texto); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--pf-linea); }
-        .ad-opcion .aviso { color: var(--pf-ambar); }
-        .ad-otra { margin-top: 8px; }
+        .gdat-opciones { display: grid; gap: 8px; }
+        .gdat-opciones[aria-busy=true] { opacity: .6; }
+        .gdat-opcion { display: grid; grid-template-columns: 20px 1fr; gap: 10px; border: 1px solid var(--pf-borde-campo); border-radius: 10px; padding: 12px 14px; cursor: pointer; background: #fff; }
+        .gdat-opcion:hover { border-color: #A9BBCD; }
+        .gdat-opcion input { margin-top: 3px; accent-color: var(--pf-tinta); }
+        .gdat-opcion.elegida { border-color: var(--pf-tinta); box-shadow: 0 0 0 1px var(--pf-tinta) inset; background: #FAFCFE; }
+        .gdat-opcion .fecha { font-weight: 700; color: var(--pf-tinta); font-variant-numeric: tabular-nums; font-size: 1rem; }
+        .gdat-opcion .que { font-weight: 500; color: var(--pf-texto); margin-left: 8px; }
+        .gdat-sugerida { font-size: 0.7rem; font-weight: 700; color: var(--pf-verde); background: var(--pf-verde-fondo); border-radius: 999px; padding: 2px 8px; margin-left: 8px; vertical-align: 2px; }
+        .gdat-opcion .porque { display: block; font-size: 0.8rem; color: var(--pf-suave); margin-top: 3px; }
+        .gdat-opcion .despues { display: block; font-size: 0.8rem; color: var(--pf-texto); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--pf-linea); }
+        .gdat-opcion .aviso { color: var(--pf-ambar); }
+        .gdat-otra { margin-top: 8px; }
 
         /* ---------- Formulario del dataset y las otras ventanas (spec 2026-10-17-fechas-datasets, 8.4, como el mockup aprobado) ---------- */
-        .ad-ventana.chica { width: min(520px, 100%); }
-        .ad-ventana.ancha { width: min(780px, 100%); }
-        .ad-ventana > footer .botones { margin-left: auto; }
-        .ad-btn.peligro { background: var(--pf-rojo); border-color: var(--pf-rojo); color: #fff; }
-        .ad-btn.peligro:hover:not(:disabled) { background: #6F2929; }
-        .ad-ayuda.ad-arriba { margin: 0 0 12px; }
-        .ad-form fieldset { border: 1px solid var(--pf-linea); border-radius: 12px; padding: 14px 16px 6px; margin: 0 0 16px; min-width: 0; }
-        .ad-form legend { padding: 0 6px; font-weight: 600; color: var(--pf-tinta); font-size: 0.95rem; }
-        .ad-form .fila { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-        .ad-form .fila > div { min-width: 0; }
-        .ad-form .campo { margin-bottom: 12px; }
-        .ad-form label, .ad-form .ad-rotulo { display: block; font-size: 0.82rem; color: var(--pf-texto); font-weight: 500; margin-bottom: 4px; }
-        .ad-form select, .ad-form input, .ad-form textarea { font: inherit; font-size: 0.9rem; color: var(--pf-texto); border: 1px solid var(--pf-borde-campo); border-radius: 8px; padding: 8px 10px; background: #fff; width: 100%; }
-        .ad-form select:disabled, .ad-form input:disabled { background: var(--pf-gris-fondo); color: var(--pf-suave); cursor: not-allowed; }
-        .ad-form textarea { min-height: 72px; resize: vertical; line-height: 1.45; }
-        .ad-form [aria-invalid=true] { border-color: var(--pf-rojo); }
-        .ad-form .ad-mes { flex-wrap: nowrap; }
-        .ad-form .ad-mes select { width: auto; flex: 1 1 0; min-width: 0; }
-        .ad-form input:focus-visible, .ad-form select:focus-visible, .ad-form textarea:focus-visible,
-        .ad-formato:focus-visible, .ad-sugerencia button:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
-        .ad-obligatorio { color: var(--pf-rojo); }
-        .ad-con-boton { display: flex; gap: 8px; align-items: center; }
-        .ad-con-boton select { flex: 1; min-width: 0; }
-        .ad-info { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; background: var(--pf-azul-fondo); color: var(--pf-azul); font-size: 0.88rem; margin-bottom: 16px; }
-        .ad-info svg { flex: none; margin-top: 2px; }
-        .ad-portal { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 12px; }
-        .ad-portal .ad-ayuda { margin: 0; }
+        .gdat-ventana.chica { width: min(520px, 100%); }
+        .gdat-ventana.ancha { width: min(780px, 100%); }
+        .gdat-ventana > footer .botones { margin-left: auto; }
+        .gdat-btn.peligro { background: var(--pf-rojo); border-color: var(--pf-rojo); color: #fff; }
+        .gdat-btn.peligro:hover:not(:disabled) { background: #6F2929; }
+        .gdat-ayuda.gdat-arriba { margin: 0 0 12px; }
+        .gdat-form fieldset { border: 1px solid var(--pf-linea); border-radius: 12px; padding: 14px 16px 6px; margin: 0 0 16px; min-width: 0; }
+        .gdat-form legend { padding: 0 6px; font-weight: 600; color: var(--pf-tinta); font-size: 0.95rem; }
+        .gdat-form .fila { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+        .gdat-form .fila > div { min-width: 0; }
+        .gdat-form .campo { margin-bottom: 12px; }
+        .gdat-form label, .gdat-form .gdat-rotulo { display: block; font-size: 0.82rem; color: var(--pf-texto); font-weight: 500; margin-bottom: 4px; }
+        .gdat-form select, .gdat-form input, .gdat-form textarea { font: inherit; font-size: 0.9rem; color: var(--pf-texto); border: 1px solid var(--pf-borde-campo); border-radius: 8px; padding: 8px 10px; background: #fff; width: 100%; }
+        .gdat-form select:disabled, .gdat-form input:disabled { background: var(--pf-gris-fondo); color: var(--pf-suave); cursor: not-allowed; }
+        .gdat-form textarea { min-height: 72px; resize: vertical; line-height: 1.45; }
+        .gdat-form [aria-invalid=true] { border-color: var(--pf-rojo); }
+        .gdat-form .gdat-mes { flex-wrap: nowrap; }
+        .gdat-form .gdat-mes select { width: auto; flex: 1 1 0; min-width: 0; }
+        .gdat-form input:focus-visible, .gdat-form select:focus-visible, .gdat-form textarea:focus-visible,
+        .gdat-formato:focus-visible, .gdat-sugerencia button:focus-visible { outline: 2px solid var(--pf-acento); outline-offset: 2px; }
+        .gdat-obligatorio { color: var(--pf-rojo); }
+        .gdat-con-boton { display: flex; gap: 8px; align-items: center; }
+        .gdat-con-boton select { flex: 1; min-width: 0; }
+        .gdat-info { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; background: var(--pf-azul-fondo); color: var(--pf-azul); font-size: 0.88rem; margin-bottom: 16px; }
+        .gdat-info svg { flex: none; margin-top: 2px; }
+        .gdat-portal { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 12px; }
+        .gdat-portal .gdat-ayuda { margin: 0; }
 
         /* Los formatos: botones que se aprietan (aria-pressed), con el check a la vista solo en los elegidos */
-        .ad-formatos { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; border: 1px solid var(--pf-linea); border-radius: 10px; background: var(--pf-sutil); margin-bottom: 8px; min-height: 48px; }
-        .ad-formato { font: inherit; font-size: 0.8rem; display: inline-flex; gap: 6px; align-items: center; padding: 6px 12px; border: 1px solid var(--pf-borde-campo); border-radius: 999px; background: #fff; color: var(--pf-texto); cursor: pointer; }
-        .ad-formato:hover { border-color: var(--pf-acento); }
+        .gdat-formatos { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; border: 1px solid var(--pf-linea); border-radius: 10px; background: var(--pf-sutil); margin-bottom: 8px; min-height: 48px; }
+        .gdat-formato { font: inherit; font-size: 0.8rem; display: inline-flex; gap: 6px; align-items: center; padding: 6px 12px; border: 1px solid var(--pf-borde-campo); border-radius: 999px; background: #fff; color: var(--pf-texto); cursor: pointer; }
+        .gdat-formato:hover { border-color: var(--pf-acento); }
         /* Los no habituales elegidos (.sacar) se ven elegidos: al apretarlos se sacan */
-        .ad-formato[aria-pressed=true], .ad-formato.sacar { background: var(--pf-tinta); border-color: var(--pf-tinta); color: #fff; }
-        .ad-formato svg { display: none; }
-        .ad-formato[aria-pressed=true] svg, .ad-formato.sacar svg { display: inline; }
-        .ad-formato .ad-quitar { font-size: 1rem; line-height: 1; }
-        .ad-form .ad-agregar-formato { width: auto; max-width: 100%; font-size: 0.85rem; border-style: dashed; color: var(--pf-suave); }
+        .gdat-formato[aria-pressed=true], .gdat-formato.sacar { background: var(--pf-tinta); border-color: var(--pf-tinta); color: #fff; }
+        .gdat-formato svg { display: none; }
+        .gdat-formato[aria-pressed=true] svg, .gdat-formato.sacar svg { display: inline; }
+        .gdat-formato .gdat-quitar { font-size: 1rem; line-height: 1; }
+        .gdat-form .gdat-agregar-formato { width: auto; max-width: 100%; font-size: 0.85rem; border-style: dashed; color: var(--pf-suave); }
 
         /* El tipo de pedido sugerido, el aviso por las frases de período (ámbar, no bloquea) y la vista previa de la nota */
-        .ad-sugerencia { font-size: 0.78rem; color: var(--pf-suave); margin: 4px 0 0; }
-        .ad-sugerencia button { font: inherit; color: var(--pf-acento); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; border-radius: 4px; }
-        .ad-alerta { display: flex; gap: 8px; align-items: flex-start; padding: 9px 12px; border-radius: 8px; font-size: 0.82rem; background: var(--pf-ambar-fondo); border: 1px solid var(--pf-ambar-borde); color: var(--pf-ambar); margin-top: 8px; }
-        .ad-alerta svg { flex: none; margin-top: 1px; }
-        .ad-nota-rotulo { font-size: 0.82rem; color: var(--pf-texto); font-weight: 500; margin: 0 0 4px; }
-        .ad-nota { border: 1px solid #CFD8E3; border-radius: 10px; overflow: hidden; margin: 4px 0 14px; }
-        .ad-nota .cab { background: var(--pf-sutil); padding: 8px 12px; font-size: 0.8rem; color: var(--pf-suave); border-bottom: 1px solid var(--pf-linea); }
-        .ad-nota table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-        .ad-nota th { text-align: left; font-weight: 600; color: var(--pf-tinta); padding: 8px 10px; border-bottom: 1px solid var(--pf-linea); background: #fff; }
-        .ad-nota td { padding: 8px 10px; color: var(--pf-texto); vertical-align: top; font-variant-numeric: tabular-nums; }
-        .ad-nota td[aria-busy=true] { opacity: .6; }
-        .ad-nota .ad-error { margin: 0; padding: 0 12px 8px; }
-        .ad-nota .solicita { padding: 8px 12px 10px; font-size: 0.8rem; color: var(--pf-texto); border-top: 1px solid var(--pf-linea); line-height: 1.45; }
-        .ad-nota .solicita b { color: var(--pf-tinta); }
+        .gdat-sugerencia { font-size: 0.78rem; color: var(--pf-suave); margin: 4px 0 0; }
+        .gdat-sugerencia button { font: inherit; color: var(--pf-acento); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; border-radius: 4px; }
+        .gdat-alerta { display: flex; gap: 8px; align-items: flex-start; padding: 9px 12px; border-radius: 8px; font-size: 0.82rem; background: var(--pf-ambar-fondo); border: 1px solid var(--pf-ambar-borde); color: var(--pf-ambar); margin-top: 8px; }
+        .gdat-alerta svg { flex: none; margin-top: 1px; }
+        .gdat-nota-rotulo { font-size: 0.82rem; color: var(--pf-texto); font-weight: 500; margin: 0 0 4px; }
+        .gdat-nota { border: 1px solid #CFD8E3; border-radius: 10px; overflow: hidden; margin: 4px 0 14px; }
+        .gdat-nota .cab { background: var(--pf-sutil); padding: 8px 12px; font-size: 0.8rem; color: var(--pf-suave); border-bottom: 1px solid var(--pf-linea); }
+        .gdat-nota table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .gdat-nota th { text-align: left; font-weight: 600; color: var(--pf-tinta); padding: 8px 10px; border-bottom: 1px solid var(--pf-linea); background: #fff; }
+        .gdat-nota td { padding: 8px 10px; color: var(--pf-texto); vertical-align: top; font-variant-numeric: tabular-nums; }
+        .gdat-nota td[aria-busy=true] { opacity: .6; }
+        .gdat-nota .gdat-error { margin: 0; padding: 0 12px 8px; }
+        .gdat-nota .solicita { padding: 8px 12px 10px; font-size: 0.8rem; color: var(--pf-texto); border-top: 1px solid var(--pf-linea); line-height: 1.45; }
+        .gdat-nota .solicita b { color: var(--pf-tinta); }
 
         /* Avisos arriba de la lista */
         .alert {
@@ -254,30 +254,30 @@
         }
 
         @media (max-width: 860px) {
-            .ad-tabla .ocultable { display: none; }
-            .ad-btn .largo { display: none; }
-            .ad-campos, .ad-form .fila { grid-template-columns: 1fr; }
+            .gdat-tabla .ocultable { display: none; }
+            .gdat-btn .largo { display: none; }
+            .gdat-campos, .gdat-form .fila { grid-template-columns: 1fr; }
         }
 
         /* Celular: tarjetas en vez de la tabla, sin desplazamiento horizontal de la página */
         @media (max-width: 760px) {
-            .ad-marco { background: none; border: 0; border-radius: 0; overflow: visible; }
-            table.ad-tabla { display: none; }
-            .ad-tarjetas { display: grid; gap: 10px; }
-            .ad-pie-tabla { margin-top: 10px; border: 1px solid var(--pf-linea); border-radius: 12px; justify-content: center; text-align: center; }
-            .ad-barra input[type=search] { flex: 1 1 100%; min-width: 0; }
-            .ad-barra select { flex: 1 1 140px; min-width: 0; }
-            .ad-velo { padding: 12px 8px; }
-            .ad-ventana > header, .ad-cuerpo, .ad-ventana > footer { padding-left: 16px; padding-right: 16px; }
+            .gdat-marco { background: none; border: 0; border-radius: 0; overflow: visible; }
+            table.gdat-tabla { display: none; }
+            .gdat-tarjetas { display: grid; gap: 10px; }
+            .gdat-pie-tabla { margin-top: 10px; border: 1px solid var(--pf-linea); border-radius: 12px; justify-content: center; text-align: center; }
+            .gdat-barra input[type=search] { flex: 1 1 100%; min-width: 0; }
+            .gdat-barra select { flex: 1 1 140px; min-width: 0; }
+            .gdat-velo { padding: 12px 8px; }
+            .gdat-ventana > header, .gdat-cuerpo, .gdat-ventana > footer { padding-left: 16px; padding-right: 16px; }
         }
 
         /* En una pantalla angosta los rótulos de la línea del ciclo se pisarían: queda el texto de la cabecera (spec 15) */
         @media (max-width: 560px) {
-            .ad-ciclo, .ad-leyenda { display: none; }
+            .gdat-ciclo, .gdat-leyenda { display: none; }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .ad-ciclo .llega { transition: none; }
+            .gdat-ciclo .llega { transition: none; }
         }
     </style>
 </head>
@@ -362,20 +362,20 @@
             <div id="message-container"></div>
 
             <!-- Barra: búsqueda por título o área, gestión y tipo de pedido (las opciones de tipo las pone admin.js) -->
-            <div class="ad-barra">
-                <label class="ad-vh" for="buscar">Buscar por título o área</label>
+            <div class="gdat-barra">
+                <label class="gdat-vh" for="buscar">Buscar por título o área</label>
                 <input type="search" id="buscar" placeholder="Buscar por título o área" autocomplete="off">
-                <label class="ad-vh" for="filtro-gestion">Gestión</label>
+                <label class="gdat-vh" for="filtro-gestion">Gestión</label>
                 <select id="filtro-gestion">
                     <option value="">Interna y externa</option>
                     <option value="interna">Interna</option>
                     <option value="externa">Externa</option>
                 </select>
-                <label class="ad-vh" for="filtro-tipo">Tipo de pedido</label>
+                <label class="gdat-vh" for="filtro-tipo">Tipo de pedido</label>
                 <select id="filtro-tipo">
                     <option value="">Todos los tipos de pedido</option>
                 </select>
-                <label class="ad-vh" for="filtro-requiere-nota">Requiere nota DGMIT</label>
+                <label class="gdat-vh" for="filtro-requiere-nota">Requiere nota DGMIT</label>
                 <select id="filtro-requiere-nota">
                     <option value="">Requiere nota: todos</option>
                     <option value="1">Requiere nota: Sí</option>
@@ -384,30 +384,30 @@
             </div>
 
             <!-- Filtros de estado: admin.js pone los contadores, el botón presionado y cuáles se ven -->
-            <div class="ad-estados" id="filtros-estado" role="group" aria-label="Filtrar por estado">
-                <button type="button" class="ad-estado-filtro" data-filtro="" aria-pressed="true">Todos <b></b></button>
-                <button type="button" class="ad-estado-filtro" data-filtro="vencido" aria-pressed="false">Vencidos <b></b></button>
-                <button type="button" class="ad-estado-filtro" data-filtro="proximo" aria-pressed="false">Vencen en menos de 60 días <b></b></button>
-                <button type="button" class="ad-estado-filtro" data-filtro="al-dia" aria-pressed="false">Actualizados <b></b></button>
-                <button type="button" class="ad-estado-filtro" data-filtro="eventual" aria-pressed="false">Eventuales <b></b></button>
-                <button type="button" class="ad-estado-filtro" data-filtro="sin-fecha" aria-pressed="false" hidden>Sin fecha <b></b></button>
-                <button type="button" class="ad-estado-filtro" data-filtro="pendiente" aria-pressed="false" hidden>Con un cambio pendiente <b></b></button>
+            <div class="gdat-estados" id="filtros-estado" role="group" aria-label="Filtrar por estado">
+                <button type="button" class="gdat-estado-filtro" data-filtro="" aria-pressed="true">Todos <b></b></button>
+                <button type="button" class="gdat-estado-filtro" data-filtro="vencido" aria-pressed="false">Vencidos <b></b></button>
+                <button type="button" class="gdat-estado-filtro" data-filtro="proximo" aria-pressed="false">Vencen en menos de 60 días <b></b></button>
+                <button type="button" class="gdat-estado-filtro" data-filtro="al-dia" aria-pressed="false">Actualizados <b></b></button>
+                <button type="button" class="gdat-estado-filtro" data-filtro="eventual" aria-pressed="false">Eventuales <b></b></button>
+                <button type="button" class="gdat-estado-filtro" data-filtro="sin-fecha" aria-pressed="false" hidden>Sin fecha <b></b></button>
+                <button type="button" class="gdat-estado-filtro" data-filtro="pendiente" aria-pressed="false" hidden>Con un cambio pendiente <b></b></button>
             </div>
 
             <!-- Lista: la tabla en la computadora, una tarjeta por dataset en el celular, y el pie con las páginas -->
-            <div class="ad-marco" id="lista-datasets" tabindex="-1" role="region" aria-label="Lista de datasets">
-                <table class="ad-tabla" id="tabla-datasets">
+            <div class="gdat-marco" id="lista-datasets" tabindex="-1" role="region" aria-label="Lista de datasets">
+                <table class="gdat-tabla" id="tabla-datasets">
                     <thead>
-                        <tr><th scope="col">Dataset</th><th scope="col">Estado</th><th scope="col" class="ocultable">Datos publicados</th><th scope="col">Próximo pedido</th><th scope="col"><span class="ad-vh">Acciones</span></th></tr>
+                        <tr><th scope="col">Dataset</th><th scope="col">Estado</th><th scope="col" class="ocultable">Datos publicados</th><th scope="col">Próximo pedido</th><th scope="col"><span class="gdat-vh">Acciones</span></th></tr>
                     </thead>
                     <tbody id="filas-datasets">
                         <tr><td colspan="5" class="loading"><div class="spinner"></div></td></tr>
                     </tbody>
                 </table>
-                <div class="ad-tarjetas" id="tarjetas-datasets">
+                <div class="gdat-tarjetas" id="tarjetas-datasets">
                     <div class="loading"><div class="spinner"></div></div>
                 </div>
-                <div class="ad-pie-tabla">
+                <div class="gdat-pie-tabla">
                     <span class="pag-info" id="resumen-lista" aria-live="polite"></span>
                     <div class="pag-controls" id="controles-pagina"></div>
                 </div>
@@ -457,29 +457,29 @@
          presión empezó en el velo. Las que se abren desde el formulario van después de él, así quedan encima -->
 
     <!-- Nuevo dataset, paso 1: importar desde el Portal de Datos Abiertos (GET /andino/fetch), como siempre -->
-    <div class="ad-velo" id="modal-step1" hidden>
-        <form class="ad-ventana chica" id="form-paso1" role="dialog" aria-modal="true" aria-labelledby="paso1-titulo" novalidate>
+    <div class="gdat-velo" id="modal-step1" hidden>
+        <form class="gdat-ventana chica" id="form-paso1" role="dialog" aria-modal="true" aria-labelledby="paso1-titulo" novalidate>
             <header>
                 <div><h2 id="paso1-titulo">Nuevo dataset - Paso 1</h2></div>
-                <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+                <button type="button" class="gdat-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
             </header>
-            <div class="ad-cuerpo ad-form">
-                <div class="ad-info">
+            <div class="gdat-cuerpo gdat-form">
+                <div class="gdat-info">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
                     <div><b>Importar desde el Portal de Datos Abiertos</b><br>Pegá la URL del dataset para traer el título, la descripción y los formatos.</div>
                 </div>
                 <div class="campo">
                     <label for="andino-url">URL del dataset en el portal</label>
                     <input type="url" id="andino-url" placeholder="https://datos.comodoro.gov.ar/dataset/nombre-del-dataset" autocomplete="off" aria-describedby="andino-url-ayuda">
-                    <p class="ad-ayuda" id="andino-url-ayuda">Ejemplo: https://datos.comodoro.gov.ar/dataset/presupuesto-municipal</p>
+                    <p class="gdat-ayuda" id="andino-url-ayuda">Ejemplo: https://datos.comodoro.gov.ar/dataset/presupuesto-municipal</p>
                 </div>
-                <p class="ad-error ad-error-envio" id="step1-error" role="alert" hidden></p>
+                <p class="gdat-error gdat-error-envio" id="step1-error" role="alert" hidden></p>
             </div>
             <footer>
                 <p>Si el dataset no está en el portal, elegí la carga manual.</p>
                 <div class="botones">
-                    <button type="button" class="ad-btn" id="btn-carga-manual">Carga manual</button>
-                    <button type="submit" class="ad-btn primario" id="btn-siguiente">Siguiente</button>
+                    <button type="button" class="gdat-btn" id="btn-carga-manual">Carga manual</button>
+                    <button type="submit" class="gdat-btn primario" id="btn-siguiente">Siguiente</button>
                 </div>
             </footer>
         </form>
@@ -487,41 +487,41 @@
     <!-- Fin del paso 1 -->
 
     <!-- Nuevo dataset (paso 2 o carga manual) y Editar dataset -->
-    <div class="ad-velo" id="modal-dataset" hidden>
-        <form class="ad-ventana ancha ad-form-dataset" id="dataset-form" role="dialog" aria-modal="true" aria-labelledby="form-titulo" aria-describedby="form-subtitulo">
+    <div class="gdat-velo" id="modal-dataset" hidden>
+        <form class="gdat-ventana ancha gdat-form-dataset" id="dataset-form" role="dialog" aria-modal="true" aria-labelledby="form-titulo" aria-describedby="form-subtitulo">
             <header>
                 <div><h2 id="form-titulo"></h2><p id="form-subtitulo"></p></div>
-                <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+                <button type="button" class="gdat-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
             </header>
-            <div class="ad-cuerpo ad-form">
+            <div class="gdat-cuerpo gdat-form">
                 <fieldset>
                     <legend>Datos del dataset</legend>
 
                     <!-- Solo al editar un dataset del portal -->
-                    <div class="ad-portal" id="andino-update-section" hidden>
-                        <button type="button" class="ad-btn" id="btn-actualizar-portal">
+                    <div class="gdat-portal" id="andino-update-section" hidden>
+                        <button type="button" class="gdat-btn" id="btn-actualizar-portal">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
                             Actualizar desde portal</button>
-                        <span class="ad-ayuda">Trae del portal el título, la descripción y los formatos.</span>
+                        <span class="gdat-ayuda">Trae del portal el título, la descripción y los formatos.</span>
                     </div>
-                    <p class="ad-error" id="portal-error" role="alert" hidden></p>
+                    <p class="gdat-error" id="portal-error" role="alert" hidden></p>
 
                     <div class="campo">
-                        <label for="titulo">Título <span class="ad-obligatorio" aria-hidden="true">*</span></label>
+                        <label for="titulo">Título <span class="gdat-obligatorio" aria-hidden="true">*</span></label>
                         <input type="text" id="titulo" required>
                     </div>
 
                     <!-- El área que dice el portal: solo una referencia, en un alta importada -->
-                    <div class="ad-info" id="andino-area-referencia" hidden>
+                    <div class="gdat-info" id="andino-area-referencia" hidden>
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                         <div>Área según el portal: <i id="andino-area-texto"></i></div>
                     </div>
 
                     <div class="campo">
-                        <label for="area_id">Área responsable <span class="ad-obligatorio" aria-hidden="true">*</span></label>
-                        <div class="ad-con-boton">
+                        <label for="area_id">Área responsable <span class="gdat-obligatorio" aria-hidden="true">*</span></label>
+                        <div class="gdat-con-boton">
                             <select id="area_id" required></select>
-                            <button type="button" class="ad-icono" id="btn-nueva-area" aria-label="Agregar un área nueva" title="Agregar un área nueva">
+                            <button type="button" class="gdat-icono" id="btn-nueva-area" aria-label="Agregar un área nueva" title="Agregar un área nueva">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                             </button>
                         </div>
@@ -534,7 +534,7 @@
 
                     <div class="fila">
                         <div>
-                            <label for="tema_principal_id">Tema principal <span class="ad-obligatorio" aria-hidden="true">*</span></label>
+                            <label for="tema_principal_id">Tema principal <span class="gdat-obligatorio" aria-hidden="true">*</span></label>
                             <select id="tema_principal_id" required></select>
                         </div>
                         <div>
@@ -544,11 +544,11 @@
                     </div>
 
                     <div class="campo">
-                        <span class="ad-rotulo" id="form-l-formatos">Formatos del dataset <span class="ad-obligatorio" aria-hidden="true">*</span></span>
-                        <div class="ad-formatos" id="chips-container" role="group" aria-labelledby="form-l-formatos"></div>
-                        <select id="formato-dropdown" class="ad-agregar-formato" aria-label="Agregar otro formato"></select>
-                        <p class="ad-ayuda">Tocá un formato para elegirlo o sacarlo. Tiene que haber al menos uno.</p>
-                        <p class="ad-error" id="form-error-formatos" role="alert" hidden></p>
+                        <span class="gdat-rotulo" id="form-l-formatos">Formatos del dataset <span class="gdat-obligatorio" aria-hidden="true">*</span></span>
+                        <div class="gdat-formatos" id="chips-container" role="group" aria-labelledby="form-l-formatos"></div>
+                        <select id="formato-dropdown" class="gdat-agregar-formato" aria-label="Agregar otro formato"></select>
+                        <p class="gdat-ayuda">Tocá un formato para elegirlo o sacarlo. Tiene que haber al menos uno.</p>
+                        <p class="gdat-error" id="form-error-formatos" role="alert" hidden></p>
                     </div>
 
                     <div class="campo">
@@ -566,11 +566,11 @@
                     <legend>Actualización y pedido</legend>
                     <div class="fila">
                         <div>
-                            <label for="frecuencia_id">Frecuencia <span class="ad-obligatorio" aria-hidden="true">*</span></label>
+                            <label for="frecuencia_id">Frecuencia <span class="gdat-obligatorio" aria-hidden="true">*</span></label>
                             <select id="frecuencia_id" required></select>
                         </div>
                         <div>
-                            <label for="tipo_gestion">Tipo de gestión <span class="ad-obligatorio" aria-hidden="true">*</span></label>
+                            <label for="tipo_gestion">Tipo de gestión <span class="gdat-obligatorio" aria-hidden="true">*</span></label>
                             <select id="tipo_gestion" required>
                                 <option value="">Seleccionar...</option>
                                 <option value="externa">Externa (la provee otra área)</option>
@@ -581,80 +581,80 @@
                     <!-- Solo con gestión externa: admin.js lo muestra o lo oculta. Sin required: oculto no puede frenar el envío -->
                     <div class="fila" id="fila-requiere-nota" hidden>
                         <div>
-                            <label for="requiere_nota">Requiere nota DGMIT <span class="ad-obligatorio" aria-hidden="true">*</span></label>
+                            <label for="requiere_nota">Requiere nota DGMIT <span class="gdat-obligatorio" aria-hidden="true">*</span></label>
                             <select id="requiere_nota" aria-required="true" aria-describedby="form-ayuda-requiere-nota">
                                 <option value="">Elegí una opción</option>
                                 <option value="1">Sí</option>
                                 <option value="0">No</option>
                             </select>
-                            <p class="ad-ayuda" id="form-ayuda-requiere-nota">Sí: hay que mandarle una nota formal al área. No: los datos se obtienen de la fuente, sin nota.</p>
-                            <p class="ad-error" id="form-error-requiere-nota" role="alert" hidden></p>
+                            <p class="gdat-ayuda" id="form-ayuda-requiere-nota">Sí: hay que mandarle una nota formal al área. No: los datos se obtienen de la fuente, sin nota.</p>
+                            <p class="gdat-error" id="form-error-requiere-nota" role="alert" hidden></p>
                         </div>
                     </div>
                     <div class="fila">
                         <div>
                             <label for="tipo_pedido">Tipo de pedido</label>
                             <select id="tipo_pedido"></select>
-                            <p class="ad-sugerencia" id="form-sugerencia"></p>
+                            <p class="gdat-sugerencia" id="form-sugerencia"></p>
                         </div>
                         <div>
                             <label for="ultima_actualizacion">Cargado en el portal el</label>
                             <input type="date" id="ultima_actualizacion">
                             <!-- La edición no registra actualizaciones: si cambian la carga y la próxima, admin.js avisa acá -->
-                            <p class="ad-error" id="form-error-edicion" role="alert" hidden></p>
+                            <p class="gdat-error" id="form-error-edicion" role="alert" hidden></p>
                         </div>
                     </div>
                     <div class="fila">
                         <div>
                             <label for="form-datos-mes" id="form-l-datos">Datos al</label>
-                            <div class="ad-mes" role="group" aria-labelledby="form-l-datos">
+                            <div class="gdat-mes" role="group" aria-labelledby="form-l-datos">
                                 <select id="form-datos-mes" aria-label="Mes"></select>
                                 <select id="form-datos-anio" aria-label="Año"></select>
                             </div>
-                            <p class="ad-ayuda" id="form-ayuda-datos" hidden>En un presupuesto, el ejercicio publicado: se guarda el 31/12.</p>
-                            <p class="ad-error" id="form-error-datos" role="alert" hidden></p>
+                            <p class="gdat-ayuda" id="form-ayuda-datos" hidden>En un presupuesto, el ejercicio publicado: se guarda el 31/12.</p>
+                            <p class="gdat-error" id="form-error-datos" role="alert" hidden></p>
                         </div>
                         <div>
                             <label for="form-prox-mes" id="form-l-prox">Próxima actualización</label>
-                            <div class="ad-mes" role="group" aria-labelledby="form-l-prox">
+                            <div class="gdat-mes" role="group" aria-labelledby="form-l-prox">
                                 <select id="form-prox-mes" aria-label="Mes"></select>
                                 <select id="form-prox-anio" aria-label="Año"></select>
                             </div>
-                            <p class="ad-ayuda" id="form-aviso-eventual" hidden></p>
-                            <p class="ad-error" id="form-error-proxima" role="alert" hidden></p>
+                            <p class="gdat-ayuda" id="form-aviso-eventual" hidden></p>
+                            <p class="gdat-error" id="form-error-proxima" role="alert" hidden></p>
                         </div>
                     </div>
                     <div class="campo">
                         <label for="que_se_solicita">Qué se solicita</label>
                         <textarea id="que_se_solicita" rows="3" aria-describedby="form-ayuda-solicita"></textarea>
-                        <p class="ad-ayuda" id="form-ayuda-solicita">Describí qué tiene que mandar el área, sin fechas ni períodos: los agrega el sistema.</p>
-                        <div class="ad-alerta" id="form-alerta-frases" hidden>
+                        <p class="gdat-ayuda" id="form-ayuda-solicita">Describí qué tiene que mandar el área, sin fechas ni períodos: los agrega el sistema.</p>
+                        <div class="gdat-alerta" id="form-alerta-frases" hidden>
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
                             <span id="form-alerta-texto" aria-live="polite"></span>
                         </div>
                     </div>
 
-                    <p class="ad-nota-rotulo" id="form-l-nota">Así va a salir en la próxima nota</p>
-                    <div class="ad-nota" role="group" aria-labelledby="form-l-nota">
+                    <p class="gdat-nota-rotulo" id="form-l-nota">Así va a salir en la próxima nota</p>
+                    <div class="gdat-nota" role="group" aria-labelledby="form-l-nota">
                         <div class="cab" id="form-nota-cab"></div>
                         <table>
                             <!-- La columna "Requiere nota DGMIT" es solo de la gestión externa: admin.js la oculta en una interna -->
                             <thead><tr><th scope="col">Conjunto de datos</th><th scope="col">Frecuencia</th><th scope="col" id="form-nota-th-requiere">Requiere nota DGMIT</th><th scope="col">Datos solicitados</th></tr></thead>
                             <tbody><tr><td id="form-nota-titulo"></td><td id="form-nota-frecuencia"></td><td id="form-nota-requiere"></td><td id="form-nota-periodo" aria-live="polite"></td></tr></tbody>
                         </table>
-                        <p class="ad-error" id="form-nota-error" hidden></p>
+                        <p class="gdat-error" id="form-nota-error" hidden></p>
                         <div class="solicita"><b>Qué se solicita:</b> <span id="form-nota-solicita"></span></div>
                         <!-- Fin de la vista previa -->
                     </div>
                 </fieldset>
 
-                <p class="ad-error ad-error-envio" id="form-error" role="alert" hidden></p>
+                <p class="gdat-error gdat-error-envio" id="form-error" role="alert" hidden></p>
             </div>
             <footer>
                 <p>Queda como propuesta: otra persona la aprueba en Mi Perfil.</p>
                 <div class="botones">
-                    <button type="button" class="ad-btn" data-cerrar>Cancelar</button>
-                    <button type="submit" class="ad-btn primario" id="submit-btn">Proponer cambios</button>
+                    <button type="button" class="gdat-btn" data-cerrar>Cancelar</button>
+                    <button type="submit" class="gdat-btn primario" id="submit-btn">Proponer cambios</button>
                 </div>
             </footer>
         </form>
@@ -662,24 +662,24 @@
     <!-- Fin del formulario -->
 
     <!-- Confirmar "Actualizar desde portal" (desde el formulario: queda encima) -->
-    <div class="ad-velo" id="modal-confirm-update" hidden>
-        <div class="ad-ventana chica" role="dialog" aria-modal="true" aria-labelledby="confirmar-portal-titulo" aria-describedby="confirmar-portal-texto">
+    <div class="gdat-velo" id="modal-confirm-update" hidden>
+        <div class="gdat-ventana chica" role="dialog" aria-modal="true" aria-labelledby="confirmar-portal-titulo" aria-describedby="confirmar-portal-texto">
             <header>
                 <div><h2 id="confirmar-portal-titulo">Actualizar desde el portal</h2></div>
-                <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+                <button type="button" class="gdat-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
             </header>
-            <div class="ad-cuerpo">
+            <div class="gdat-cuerpo">
                 <div id="confirmar-portal-texto">
                     <p>¿Querés traer los datos del portal?</p>
-                    <p class="ad-ayuda"><strong>Se reemplazan</strong> el título y la descripción por los del portal.<br><strong>Se suman</strong> los formatos que tenga publicados (los que ya están elegidos quedan).</p>
+                    <p class="gdat-ayuda"><strong>Se reemplazan</strong> el título y la descripción por los del portal.<br><strong>Se suman</strong> los formatos que tenga publicados (los que ya están elegidos quedan).</p>
                 </div>
-                <p class="ad-error ad-error-envio" id="confirm-update-error" role="alert" hidden></p>
+                <p class="gdat-error gdat-error-envio" id="confirm-update-error" role="alert" hidden></p>
             </div>
             <footer>
                 <p>Después tenés que proponer los cambios.</p>
                 <div class="botones">
-                    <button type="button" class="ad-btn" data-cerrar>Cancelar</button>
-                    <button type="button" class="ad-btn primario" id="btn-confirm-update">Actualizar</button>
+                    <button type="button" class="gdat-btn" data-cerrar>Cancelar</button>
+                    <button type="button" class="gdat-btn primario" id="btn-confirm-update">Actualizar</button>
                 </div>
             </footer>
         </div>
@@ -687,44 +687,44 @@
     <!-- Fin de la confirmación -->
 
     <!-- Nueva área (desde el formulario: queda encima) -->
-    <div class="ad-velo" id="modal-quick-area" hidden>
-        <form class="ad-ventana chica" id="form-area-rapida" role="dialog" aria-modal="true" aria-labelledby="area-rapida-titulo" novalidate>
+    <div class="gdat-velo" id="modal-quick-area" hidden>
+        <form class="gdat-ventana chica" id="form-area-rapida" role="dialog" aria-modal="true" aria-labelledby="area-rapida-titulo" novalidate>
             <header>
                 <div><h2 id="area-rapida-titulo">Nueva área</h2></div>
-                <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+                <button type="button" class="gdat-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
             </header>
-            <div class="ad-cuerpo ad-form">
-                <p class="ad-ayuda ad-arriba">Los datos de contacto se completan después, en Configuración → Áreas.</p>
+            <div class="gdat-cuerpo gdat-form">
+                <p class="gdat-ayuda gdat-arriba">Los datos de contacto se completan después, en Configuración → Áreas.</p>
                 <div class="campo">
-                    <label for="quick-area-nombre">Nombre del área <span class="ad-obligatorio" aria-hidden="true">*</span></label>
+                    <label for="quick-area-nombre">Nombre del área <span class="gdat-obligatorio" aria-hidden="true">*</span></label>
                     <input type="text" id="quick-area-nombre" placeholder="Ej.: Dirección General de..." autocomplete="off">
                 </div>
-                <p class="ad-error ad-error-envio" id="quick-area-error" role="alert" hidden></p>
+                <p class="gdat-error gdat-error-envio" id="quick-area-error" role="alert" hidden></p>
             </div>
             <footer>
                 <div class="botones">
-                    <button type="button" class="ad-btn" data-cerrar>Cancelar</button>
-                    <button type="submit" class="ad-btn primario" id="btn-quick-area-save">Guardar</button>
+                    <button type="button" class="gdat-btn" data-cerrar>Cancelar</button>
+                    <button type="submit" class="gdat-btn primario" id="btn-quick-area-save">Guardar</button>
                 </div>
             </footer>
         </form>
     </div>
 
     <!-- Confirmar la eliminación -->
-    <div class="ad-velo" id="modal-delete" hidden>
-        <div class="ad-ventana chica" role="dialog" aria-modal="true" aria-labelledby="eliminar-titulo" aria-describedby="eliminar-texto">
+    <div class="gdat-velo" id="modal-delete" hidden>
+        <div class="gdat-ventana chica" role="dialog" aria-modal="true" aria-labelledby="eliminar-titulo" aria-describedby="eliminar-texto">
             <header>
                 <div><h2 id="eliminar-titulo">Eliminar dataset</h2></div>
-                <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+                <button type="button" class="gdat-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
             </header>
-            <div class="ad-cuerpo" id="eliminar-texto">
+            <div class="gdat-cuerpo" id="eliminar-texto">
                 <p>¿Querés proponer la baja de «<strong id="delete-dataset-name"></strong>»?</p>
-                <p class="ad-ayuda">Otra persona la tiene que aprobar en Mi Perfil.</p>
+                <p class="gdat-ayuda">Otra persona la tiene que aprobar en Mi Perfil.</p>
             </div>
             <footer>
                 <div class="botones">
-                    <button type="button" class="ad-btn" id="btn-cancelar-eliminar" data-cerrar>Cancelar</button>
-                    <button type="button" class="ad-btn peligro" id="btn-confirmar-eliminar">Proponer baja</button>
+                    <button type="button" class="gdat-btn" id="btn-cancelar-eliminar" data-cerrar>Cancelar</button>
+                    <button type="button" class="gdat-btn peligro" id="btn-confirmar-eliminar">Proponer baja</button>
                 </div>
             </footer>
         </div>
@@ -732,19 +732,19 @@
     <!-- Fin de eliminar -->
 
     <!-- ¿Descartar los cambios? (Escape en el formulario con cambios sin guardar: queda encima del formulario) -->
-    <div class="ad-velo" id="modal-descartar" hidden>
-        <div class="ad-ventana chica" role="alertdialog" aria-modal="true" aria-labelledby="descartar-titulo" aria-describedby="descartar-texto">
+    <div class="gdat-velo" id="modal-descartar" hidden>
+        <div class="gdat-ventana chica" role="alertdialog" aria-modal="true" aria-labelledby="descartar-titulo" aria-describedby="descartar-texto">
             <header>
                 <div><h2 id="descartar-titulo">¿Descartar los cambios?</h2></div>
-                <button type="button" class="ad-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+                <button type="button" class="gdat-cerrar" data-cerrar aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
             </header>
-            <div class="ad-cuerpo">
+            <div class="gdat-cuerpo">
                 <p id="descartar-texto">Lo que cambiaste en el formulario no se va a proponer.</p>
             </div>
             <footer>
                 <div class="botones">
-                    <button type="button" class="ad-btn" id="btn-seguir-editando" data-cerrar>Seguir editando</button>
-                    <button type="button" class="ad-btn peligro" id="btn-descartar">Descartar</button>
+                    <button type="button" class="gdat-btn" id="btn-seguir-editando" data-cerrar>Seguir editando</button>
+                    <button type="button" class="gdat-btn peligro" id="btn-descartar">Descartar</button>
                 </div>
             </footer>
         </div>
@@ -753,46 +753,46 @@
 
     <!-- Registrar actualización (spec 2026-10-17-fechas-datasets, 8.3): admin.js la abre, la llena, la cierra y maneja el
          teclado (Escape, Tab dentro de la ventana). Un clic afuera cierra solo si la presión empezó en el velo -->
-    <div class="ad-velo" id="modal-registrar-actualizacion" hidden>
-        <div class="ad-ventana" role="dialog" aria-modal="true" aria-labelledby="registrar-titulo" aria-describedby="registrar-dataset">
+    <div class="gdat-velo" id="modal-registrar-actualizacion" hidden>
+        <div class="gdat-ventana" role="dialog" aria-modal="true" aria-labelledby="registrar-titulo" aria-describedby="registrar-dataset">
             <header>
                 <div><h2 id="registrar-titulo">Registrar actualización</h2><p id="registrar-dataset"></p></div>
-                <button type="button" class="ad-cerrar" data-cerrar-registro aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
+                <button type="button" class="gdat-cerrar" data-cerrar-registro aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
             </header>
-            <div class="ad-cuerpo">
-                <section class="ad-pedido" aria-labelledby="registrar-rotulo">
+            <div class="gdat-cuerpo">
+                <section class="gdat-pedido" aria-labelledby="registrar-rotulo">
                     <p class="rotulo" id="registrar-rotulo">Datos solicitados</p>
                     <p class="periodo" id="registrar-periodo"></p>
                     <dl id="registrar-datos"></dl>
-                    <div class="ad-ciclo" id="registrar-ciclo" aria-hidden="true"></div>
-                    <div class="ad-leyenda" id="registrar-leyenda" aria-hidden="true">
+                    <div class="gdat-ciclo" id="registrar-ciclo" aria-hidden="true"></div>
+                    <div class="gdat-leyenda" id="registrar-leyenda" aria-hidden="true">
                         <span><i class="publicado"></i>Ya publicado</span>
                         <span><i class="falta"></i>Pedido, todavía no llegó</span>
                         <span><i class="llega"></i>Llega con esta actualización</span>
                     </div>
                 </section>
 
-                <div class="ad-paso">
-                    <div class="ad-num" aria-hidden="true">1</div>
+                <div class="gdat-paso">
+                    <div class="gdat-num" aria-hidden="true">1</div>
                     <div>
                         <h3 id="registrar-p1">¿A qué fecha son los datos que llegaron?</h3>
-                        <div class="ad-mes" role="group" aria-labelledby="registrar-p1">
+                        <div class="gdat-mes" role="group" aria-labelledby="registrar-p1">
                             <select id="registrar-mes" aria-label="Mes"></select>
                             <select id="registrar-anio" aria-label="Año"></select>
                         </div>
-                        <p class="ad-ayuda" id="registrar-ayuda1">Siempre es fin de mes. Por defecto, lo que se pidió.</p>
-                        <p class="ad-error" id="registrar-error-datos" role="alert" hidden></p>
+                        <p class="gdat-ayuda" id="registrar-ayuda1">Siempre es fin de mes. Por defecto, lo que se pidió.</p>
+                        <p class="gdat-error" id="registrar-error-datos" role="alert" hidden></p>
                     </div>
                 </div>
 
-                <div class="ad-paso">
-                    <div class="ad-num" aria-hidden="true">2</div>
+                <div class="gdat-paso">
+                    <div class="gdat-num" aria-hidden="true">2</div>
                     <div>
                         <h3>¿Cuándo llegó y cuándo se cargó?</h3>
-                        <div class="ad-campos">
+                        <div class="gdat-campos">
                             <!-- Solo en gestión externa: admin.js lo muestra, le pone las opciones y lo trae con lo sugerido.
                                  La fecha se llama «Recibido el» u «Obtenido el» según lo elegido (admin.js cambia el rótulo) -->
-                            <div class="ad-ancho" id="registrar-campo-origen" hidden>
+                            <div class="gdat-ancho" id="registrar-campo-origen" hidden>
                                 <label for="registrar-origen">¿Quién entregó los datos?</label>
                                 <select id="registrar-origen" required></select>
                             </div>
@@ -805,17 +805,17 @@
                                 <input type="date" id="registrar-cargado" required>
                             </div>
                         </div>
-                        <p class="ad-error" id="registrar-error-fechas" role="alert" hidden></p>
+                        <p class="gdat-error" id="registrar-error-fechas" role="alert" hidden></p>
                     </div>
                 </div>
 
-                <div class="ad-paso" id="registrar-paso3">
-                    <div class="ad-num" aria-hidden="true">3</div>
+                <div class="gdat-paso" id="registrar-paso3">
+                    <div class="gdat-num" aria-hidden="true">3</div>
                     <div>
                         <h3 id="registrar-p3">Próxima actualización</h3>
-                        <div class="ad-opciones" role="radiogroup" aria-labelledby="registrar-p3" id="registrar-opciones"></div>
-                        <div class="ad-otra" id="registrar-otra" hidden>
-                            <div class="ad-mes">
+                        <div class="gdat-opciones" role="radiogroup" aria-labelledby="registrar-p3" id="registrar-opciones"></div>
+                        <div class="gdat-otra" id="registrar-otra" hidden>
+                            <div class="gdat-mes">
                                 <select id="registrar-otra-mes" aria-label="Mes de la otra fecha"></select>
                                 <select id="registrar-otra-anio" aria-label="Año de la otra fecha"></select>
                             </div>
@@ -823,13 +823,13 @@
                     </div>
                 </div>
 
-                <p class="ad-error ad-error-envio" id="registrar-error" role="alert" hidden></p>
+                <p class="gdat-error gdat-error-envio" id="registrar-error" role="alert" hidden></p>
             </div>
             <footer>
                 <p>Queda como propuesta: otra persona la aprueba en Mi Perfil. Hasta entonces, el dataset no se puede editar.</p>
                 <div class="botones">
-                    <button type="button" class="ad-btn" data-cerrar-registro>Cancelar</button>
-                    <button type="button" class="ad-btn primario" id="registrar-proponer" disabled>Proponer actualización</button>
+                    <button type="button" class="gdat-btn" data-cerrar-registro>Cancelar</button>
+                    <button type="button" class="gdat-btn primario" id="registrar-proponer" disabled>Proponer actualización</button>
                 </div>
             </footer>
         </div>
@@ -841,7 +841,7 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/admin-fechas.js?v=20261127"></script>
-    <script src="js/admin.js?v=20261127"></script>
+    <script src="js/admin-fechas.js?v=20261128"></script>
+    <script src="js/admin.js?v=20261128"></script>
 </body>
 </html>

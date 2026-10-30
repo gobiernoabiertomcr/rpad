@@ -17,7 +17,7 @@
  * texto, los primeros 10 caracteres: nunca se pasan por `new Date()` ni por Utils.formatDate, que las correrían un día
  * en un navegador argentino. Febrero va siempre en 28.
  *
- * Estilos: las clases (ad-chip, ad-sub, ad-fecha, ad-acciones, ad-btn, ad-icono, ad-opcion, pista, banda, marca,
+ * Estilos: las clases (gdat-chip, gdat-sub, gdat-fecha, gdat-acciones, gdat-btn, gdat-icono, gdat-opcion, pista, banda, marca,
  * etiqueta...) son las del mockup aprobado, docs/superpowers/specs/2026-10-17-fechas-datasets-mockup.html. Las que no están
  * en el mockup (el texto del pedido y la tarjeta del celular) tienen su estilo en el <style> de admin.html.
  */
@@ -221,8 +221,8 @@ function htmlDeDatosPublicados(d) {
   let publicado = SIN_DATO;
   if (datosAl) publicado = d.tipo_pedido === 'ejercicio' ? `Ejercicio ${datosAl.slice(0, 4)}` : `Al ${fechaCorta(datosAl)}`;
   const cargado = soloFecha(d.ultima_actualizacion);
-  return `<span class="ad-fecha">${textoSeguro(publicado)}</span>`
-    + (cargado ? `<span class="ad-sub">Cargado el ${fechaCorta(cargado)}</span>` : '');
+  return `<span class="gdat-fecha">${textoSeguro(publicado)}</span>`
+    + (cargado ? `<span class="gdat-sub">Cargado el ${fechaCorta(cargado)}</span>` : '');
 }
 
 /**
@@ -235,24 +235,24 @@ function htmlDeProximoPedido(d, hoy) {
   const detalle = [];
   if (d.tipo_pedido_nombre) detalle.push(d.tipo_pedido_nombre);
   if (proxima && proxima >= hoy) detalle.push(`Vence el ${fechaCorta(proxima)}`);
-  return `<span class="ad-pedido-texto">${textoSeguro(texto)}</span>`
-    + (detalle.length ? `<span class="ad-sub">${detalle.map(textoSeguro).join('. ')}</span>` : '');
+  return `<span class="gdat-pedido-texto">${textoSeguro(texto)}</span>`
+    + (detalle.length ? `<span class="gdat-sub">${detalle.map(textoSeguro).join('. ')}</span>` : '');
 }
 
 // El título y el área. `idTitulo` (opcional): el id del título, para que la tarjeta se nombre con él (aria-labelledby)
 function htmlDeTitulo(d, idTitulo) {
-  return `<span class="ad-titulo"${idTitulo ? ` id="${idTitulo}"` : ''}>${textoSeguro(d.titulo)}</span>`
-    + `<span class="ad-sub">${textoSeguro(d.area_nombre)}</span>`;
+  return `<span class="gdat-titulo"${idTitulo ? ` id="${idTitulo}"` : ''}>${textoSeguro(d.titulo)}</span>`
+    + `<span class="gdat-sub">${textoSeguro(d.area_nombre)}</span>`;
 }
 
 // El id del título de la tarjeta de un dataset: solo letras, números, guiones y guiones bajos (un id con espacios o comillas
 // no serviría en aria-labelledby). La fila de la tabla no lo lleva: en la página están las dos y el id no se puede repetir
 function idDelTituloDeTarjeta(d) {
-  return `ad-tarjeta-${String(d.id ?? '').replace(/[^\w-]/g, '_')}-titulo`;
+  return `gdat-tarjeta-${String(d.id ?? '').replace(/[^\w-]/g, '_')}-titulo`;
 }
 
 function htmlDePastilla(estado) {
-  return `<span class="ad-chip ${estado.clase}">${textoSeguro(estado.texto)}</span><span class="ad-sub">${textoSeguro(estado.detalle)}</span>`;
+  return `<span class="gdat-chip ${estado.clase}">${textoSeguro(estado.texto)}</span><span class="gdat-sub">${textoSeguro(estado.detalle)}</span>`;
 }
 
 /**
@@ -269,11 +269,11 @@ function htmlDeAcciones(d, pendiente, esAdmin) {
   const idEnLink = textoSeguro(encodeURIComponent(String(d.id ?? '')));
   const titulo = textoSeguro(d.titulo);
   const bloqueo = pendiente ? ` disabled title="${TEXTO_BLOQUEO}"` : '';
-  return '<div class="ad-acciones">'
-    + `<button type="button" class="ad-btn registrar" data-registrar="${id}" aria-label="Registrar actualización de ${titulo}"${bloqueo}>${ICONO_REGISTRAR}<span class="largo">Registrar actualización</span></button>`
-    + `<a class="ad-icono" href="seguimiento.html?id=${idEnLink}" aria-label="Ver seguimiento de ${titulo}">${ICONO_SEGUIMIENTO}</a>`
-    + `<button type="button" class="ad-icono" data-editar="${id}" aria-label="Editar ${titulo}"${bloqueo}>${ICONO_EDITAR}</button>`
-    + `<button type="button" class="ad-icono borrar" data-eliminar="${id}" aria-label="Eliminar ${titulo}"${bloqueo}>${ICONO_ELIMINAR}</button>`
+  return '<div class="gdat-acciones">'
+    + `<button type="button" class="gdat-btn registrar" data-registrar="${id}" aria-label="Registrar actualización de ${titulo}"${bloqueo}>${ICONO_REGISTRAR}<span class="largo">Registrar actualización</span></button>`
+    + `<a class="gdat-icono" href="seguimiento.html?id=${idEnLink}" aria-label="Ver seguimiento de ${titulo}">${ICONO_SEGUIMIENTO}</a>`
+    + `<button type="button" class="gdat-icono" data-editar="${id}" aria-label="Editar ${titulo}"${bloqueo}>${ICONO_EDITAR}</button>`
+    + `<button type="button" class="gdat-icono borrar" data-eliminar="${id}" aria-label="Eliminar ${titulo}"${bloqueo}>${ICONO_ELIMINAR}</button>`
     + '</div>';
 }
 
@@ -307,10 +307,10 @@ function htmlDeTarjeta(dataset, opciones) {
   const estado = textoEstado(d.estado, d.dias_para_vencer, d.proxima_actualizacion, d.tipo_gestion, pendiente);
   // La tarjeta se nombra con el título del dataset (Ruling 15)
   const idTitulo = idDelTituloDeTarjeta(d);
-  return `<article class="ad-tarjeta${pendiente ? ' bloqueada' : ''}" aria-labelledby="${idTitulo}">`
-    + `<div class="ad-tarjeta-titulo">${htmlDeTitulo(d, idTitulo)}</div>`
-    + `<div class="ad-tarjeta-estado">${htmlDePastilla(estado)}</div>`
-    + '<dl class="ad-tarjeta-datos">'
+  return `<article class="gdat-tarjeta${pendiente ? ' bloqueada' : ''}" aria-labelledby="${idTitulo}">`
+    + `<div class="gdat-tarjeta-titulo">${htmlDeTitulo(d, idTitulo)}</div>`
+    + `<div class="gdat-tarjeta-estado">${htmlDePastilla(estado)}</div>`
+    + '<dl class="gdat-tarjeta-datos">'
     + `<div><dt>Datos publicados</dt><dd>${htmlDeDatosPublicados(d)}</dd></div>`
     + `<div><dt>Próximo pedido</dt><dd>${htmlDeProximoPedido(d, fecha)}</dd></div>`
     + '</dl>'
@@ -323,7 +323,7 @@ function htmlDeTarjeta(dataset, opciones) {
 // =====================================================
 
 function htmlDeOpcion(valor, contenido) {
-  return `<label class="ad-opcion"><input type="radio" name="proxima" value="${valor}"><span>${contenido}</span></label>`;
+  return `<label class="gdat-opcion"><input type="radio" name="proxima" value="${valor}"><span>${contenido}</span></label>`;
 }
 
 // "Atención: ya pasó y pediría datos que ya llegaron." a partir de la advertencia del servidor, que viene sin punto
@@ -345,7 +345,7 @@ function htmlDeOpciones(opciones) {
     const advertencia = textoDeAdvertencia(o.advertencia);
     return htmlDeOpcion(i,
       `<span class="fecha">${fechaCorta(o.fecha)}</span><span class="que">${textoSeguro(o.motivo)}</span>`
-      + (o.sugerida ? '<span class="ad-sugerida">Sugerida</span>' : '')
+      + (o.sugerida ? '<span class="gdat-sugerida">Sugerida</span>' : '')
       + (advertencia ? `<span class="porque aviso">${textoSeguro(advertencia)}</span>` : '')
       + (o.pideDespues ? `<span class="despues">La nota siguiente va a pedir: <b>${textoSeguro(o.pideDespues)}</b></span>` : ''));
   });

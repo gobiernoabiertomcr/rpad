@@ -49,8 +49,9 @@ const VERSION_PERFIL = '20261127';
 // admin.js y admin-fechas.js (la lista con filtros por estado, "Datos publicados" y "Próximo pedido"; después, el ícono "Ver
 // seguimiento" de cada fila, spec 2026-10-20-seguimiento-dataset; "Requiere nota DGMIT" en el formulario, el filtro y la vista
 // previa, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; «Recibido el» obligatorio, el origen de los datos y el aviso de la
-// edición que no registra actualizaciones, spec 2026-10-24-metricas-y-reportes): su versión es propia
-const VERSION_ADMIN = '20261127';
+// edición que no registra actualizaciones, spec 2026-10-24-metricas-y-reportes; después, las clases gdat- en lugar de ad-, por los
+// bloqueadores de anuncios): su versión es propia
+const VERSION_ADMIN = '20261128';
 // Los scripts del sitio público ("Datos al", "Cargado en el portal" y la próxima prevista; el estado del servidor), que hasta
 // ahora se cargaban sin ?v=; después, el rediseño de las páginas públicas): su versión es propia
 const VERSION_PUBLICAS = '20261109';
@@ -558,6 +559,27 @@ describe('páginas', () => {
     });
   });
 
+  // Ningún nombre empieza con «ad-» (de «admin»): los bloqueadores de anuncios ocultan muchos. EasyList y AdGuard tienen la regla
+  // genérica ##.ad-btn, que escondía «Registrar actualización» y los botones de las ventanas de Gestión de Datasets a quien tenía
+  // uno, y sus listas suman más de mil reglas .ad-… (mañana puede llegar .ad-tabla). Las clases de esa página llevan gdat- desde el
+  // 30/10/2026. Se mira cada página, cada script y cada hoja: un «ad-» que no sigue a una letra, un número, un guion ni un guion
+  // bajo, así cantidad-, rpad- y data-ad- no cuentan
+  it('ninguna página, script ni hoja usa un nombre que empiece con «ad-» (los bloqueadores de anuncios lo ocultarían)', () => {
+    const PREFIJO_DE_ANUNCIOS = /(?<![A-Za-z0-9_-])ad-[a-z]/g;
+    // Cada nombre una vez, entero, desde donde la expresión encontró el prefijo
+    const nombresConAd = (texto) => [...new Set([...texto.matchAll(PREFIJO_DE_ANUNCIOS)].map(m => texto.slice(m.index).match(/^[\w-]+/)[0]))];
+    const archivos = [['', '.html'], ['js/', '.js'], ['css/', '.css']].flatMap(([carpeta, extension]) =>
+      fs.readdirSync(new URL(carpeta, DIRECTORIO)).filter(nombre => nombre.endsWith(extension)).map(nombre => `${carpeta}${nombre}`));
+    // Recorre las tres carpetas, y la expresión ve un nombre en una clase, en una hoja, en un texto o armado en un script
+    for (const archivo of ['admin.html', 'js/admin.js', 'css/main.css']) assert.ok(archivos.includes(archivo), archivo);
+    assert.deepEqual(nombresConAd('<p class="cantidad-x rpad-y" data-ad-z="1">'), []);
+    assert.deepEqual(nombresConAd('<b class="x ad-btn"> .ad-tabla { } toggle(\'ad-vh\') `ad-tarjeta-${id}`'), ['ad-btn', 'ad-tabla', 'ad-vh', 'ad-tarjeta-']);
+    const encontrados = archivos.map(archivo => [archivo, nombresConAd(fs.readFileSync(new URL(archivo, DIRECTORIO), 'utf8'))])
+      .filter(([, nombres]) => nombres.length > 0);
+    assert.deepEqual(encontrados, [], 'Los bloqueadores de anuncios ocultan las clases que empiezan con «ad-» (EasyList y AdGuard tienen '
+      + `##.ad-btn, que escondía «Registrar actualización»): ${encontrados.map(([archivo, nombres]) => `${archivo}: ${nombres.join(', ')}`).join('; ')}`);
+  });
+
   // El menú de Administración (spec 2026-10-24-configuracion, 2): Gestión de Datasets, con el ícono de capas (layers de Lucide),
   // Correos, sin cambios, y Configuración, con la ruedita que tenía Gestión de Datasets. Salen Áreas y Usuarios, que ahora son
   // pestañas de Configuración (sus direcciones viejas las redirige app.js)
@@ -605,7 +627,7 @@ describe('páginas', () => {
       assert.ok(!svg.includes(RUEDITA), 'sin la ruedita');
       assert.match(svg, /^<svg aria-hidden="true" /);
       assert.equal(h1.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<[^>]+>/g, '').trim(), 'Gestión de Datasets');
-      assert.ok(html.includes('<p class="ad-ayuda ad-arriba">Los datos de contacto se completan después, en Configuración → Áreas.</p>'));
+      assert.ok(html.includes('<p class="gdat-ayuda gdat-arriba">Los datos de contacto se completan después, en Configuración → Áreas.</p>'));
       assert.ok(!html.includes('se completan después, en Áreas.'), 'sin el texto viejo');
     });
   });

@@ -177,7 +177,7 @@ function htmlDeLaLista(items, { pendientes, esAdmin = false, hoy, mensajeVacio =
   const lista = Array.isArray(items) ? items : [];
   if (lista.length === 0) {
     const mensaje = textoSeguro(mensajeVacio);
-    return { filas: `<tr><td colspan="5" class="ad-vacio">${mensaje}</td></tr>`, tarjetas: `<p class="ad-vacio">${mensaje}</p>` };
+    return { filas: `<tr><td colspan="5" class="gdat-vacio">${mensaje}</td></tr>`, tarjetas: `<p class="gdat-vacio">${mensaje}</p>` };
   }
   const conPendiente = new Set(Array.from(pendientes ?? [], (id) => String(id)));
   const fecha = soloFecha(hoy) ?? hoyEnArgentina();
@@ -213,9 +213,9 @@ function htmlDeFormatos(catalogo, seleccionados) {
   const habitual = (f) => Number(f.habitual) === 1;
   const elegido = (f) => elegidos.has(Number(f.id));
   const boton = (f) => (habitual(f)
-    ? `<button type="button" class="ad-formato" data-formato="${textoSeguro(f.id)}" aria-pressed="${elegido(f)}">${ICONO_ELEGIDO}${textoSeguro(f.nombre)}</button>`
-    : `<button type="button" class="ad-formato sacar" data-formato="${textoSeguro(f.id)}" aria-label="Sacar ${textoSeguro(f.nombre)}">`
-      + `${ICONO_ELEGIDO}${textoSeguro(f.nombre)}<span class="ad-quitar" aria-hidden="true">&times;</span></button>`);
+    ? `<button type="button" class="gdat-formato" data-formato="${textoSeguro(f.id)}" aria-pressed="${elegido(f)}">${ICONO_ELEGIDO}${textoSeguro(f.nombre)}</button>`
+    : `<button type="button" class="gdat-formato sacar" data-formato="${textoSeguro(f.id)}" aria-label="Sacar ${textoSeguro(f.nombre)}">`
+      + `${ICONO_ELEGIDO}${textoSeguro(f.nombre)}<span class="gdat-quitar" aria-hidden="true">&times;</span></button>`);
   const chips = [...lista.filter(habitual), ...lista.filter((f) => !habitual(f) && elegido(f))].map(boton).join('');
   const opciones = '<option value="">+ Agregar otro formato…</option>'
     + lista.filter((f) => !habitual(f) && !elegido(f)).map((f) => `<option value="${textoSeguro(f.id)}">${textoSeguro(f.nombre)}</option>`).join('');
@@ -326,7 +326,7 @@ async function loadCatalogos() {
 
 // Si fallan los catálogos el formulario no sirve: se avisa arriba de la lista, y el aviso queda (spec 8.6, arreglo 8)
 function avisarFallaDeCatalogos() {
-  document.getElementById('message-container').innerHTML = '<div class="alert alert-error ad-aviso" role="alert">'
+  document.getElementById('message-container').innerHTML = '<div class="alert alert-error gdat-aviso" role="alert">'
     + 'No se pudieron cargar los catálogos (temas, frecuencias o formatos): hasta que recargues la página no vas a poder crear ni editar datasets.'
     + '</div>';
 }
@@ -343,7 +343,7 @@ function actualizarSelectAreas() {
 // Los oyentes de la barra, de los filtros de estado y de los botones de la lista (por delegación: las filas no llevan onclick)
 function prepararLista() {
   // Para el lector, la columna de acciones no existe (ni a la vista ni para el lector de pantalla)
-  document.getElementById('tabla-datasets').classList.toggle('ad-solo-lectura', !puedeAdministrar);
+  document.getElementById('tabla-datasets').classList.toggle('gdat-solo-lectura', !puedeAdministrar);
 
   document.getElementById('filtros-estado').addEventListener('click', (evento) => {
     const boton = evento.target.closest('[data-filtro]');
@@ -473,7 +473,7 @@ function irAPagina(pagina, direccion) {
 // =====================================================
 // VENTANAS: abrir, cerrar, Escape, Tab y clic afuera (spec 8.6, arreglo 5)
 // =====================================================
-// Cada ventana de la página es un velo (.ad-velo, con `hidden`) con un diálogo adentro (.ad-ventana, role="dialog"). Se
+// Cada ventana de la página es un velo (.gdat-velo, con `hidden`) con un diálogo adentro (.gdat-ventana, role="dialog"). Se
 // apilan: el formulario abre encima la confirmación de "Actualizar desde portal" o "Nueva área". La de arriba recibe el
 // teclado (Escape la cierra y Tab no sale de ella) y, al cerrarse, el foco vuelve a lo que lo tenía al abrirla. Un clic
 // afuera cierra solo si la presión empezó en el velo (presionEnVelo y esClicAfuera, más abajo).
@@ -1656,7 +1656,7 @@ function alCambiarDatosAl() {
 // Ninguna próxima elegida: los radios sin marcar y "Otra fecha" cerrada y vacía
 function borrarEleccion() {
   for (const radio of document.querySelectorAll('#registrar-opciones input[name="proxima"]')) radio.checked = false;
-  for (const tarjeta of document.querySelectorAll('#registrar-opciones .ad-opcion')) tarjeta.classList.remove('elegida');
+  for (const tarjeta of document.querySelectorAll('#registrar-opciones .gdat-opcion')) tarjeta.classList.remove('elegida');
   document.getElementById('registrar-otra').hidden = true;
   document.getElementById('registrar-otra-mes').value = '';
   document.getElementById('registrar-otra-anio').value = '';
@@ -1675,7 +1675,7 @@ async function pedirOpciones(datosAl) {
   caja.setAttribute('aria-busy', 'true');
   const radios = caja.querySelectorAll('input[name="proxima"]');
   if (radios.length) radios.forEach((radio) => { radio.disabled = true; });
-  else if (!esEventual(dataset)) caja.innerHTML = '<p class="ad-ayuda">Calculando las opciones…</p>';
+  else if (!esEventual(dataset)) caja.innerHTML = '<p class="gdat-ayuda">Calculando las opciones…</p>';
   revisarRegistro();
 
   let opciones = [];
@@ -1708,7 +1708,7 @@ function pintarOpciones() {
 function alElegirOpcion(evento) {
   const radio = evento.target.closest('input[name="proxima"]');
   if (!radio) return;
-  for (const tarjeta of document.querySelectorAll('#registrar-opciones .ad-opcion')) {
+  for (const tarjeta of document.querySelectorAll('#registrar-opciones .gdat-opcion')) {
     tarjeta.classList.toggle('elegida', tarjeta.contains(radio) && radio.checked);
   }
   document.getElementById('registrar-otra').hidden = radio.value !== 'otra';
@@ -1854,7 +1854,7 @@ function teclaEnPagina(evento) {
     evento.preventDefault();
     if (!evento.repeat) salirDeVentana(id, 'escape');
   } else if (evento.key === 'Tab') {
-    retenerFoco(evento, document.querySelector(`#${id} .ad-ventana`));
+    retenerFoco(evento, document.querySelector(`#${id} .gdat-ventana`));
   }
 }
 

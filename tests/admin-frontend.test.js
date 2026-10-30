@@ -371,7 +371,7 @@ describe('admin-fechas.js: htmlDeFila', () => {
 
   it('un cambio pendiente lleva "Cambio pendiente" y los tres botones deshabilitados, con el motivo', () => {
     const html = fila(vencido(), { pendiente: true });
-    assert.match(html, /ad-chip pendiente/);
+    assert.match(html, /gdat-chip pendiente/);
     assert.match(html, />Cambio pendiente</);
     assert.match(html, /Esperando aprobación/);
     assert.doesNotMatch(html, /Sin respuesta/);
@@ -427,7 +427,7 @@ describe('admin-fechas.js: htmlDeFila', () => {
   it('Ver seguimiento: un link de ícono a seguimiento.html?id=, después de Registrar y antes de Editar, con aria-label con el título', () => {
     for (const armar of [fila, (d) => admin.htmlDeTarjeta(d, { pendiente: false, esAdmin: true, hoy: HOY })]) {
       const html = armar(dataset({ id: 1 }));
-      assert.match(html, /<a class="ad-icono" href="seguimiento\.html\?id=1" aria-label="Ver seguimiento de Pauta Publicitaria"><svg[\s\S]*?<\/svg><\/a>/);
+      assert.match(html, /<a class="gdat-icono" href="seguimiento\.html\?id=1" aria-label="Ver seguimiento de Pauta Publicitaria"><svg[\s\S]*?<\/svg><\/a>/);
       assert.equal(cantidad(html, '<a '), 1);
       assert.ok(html.indexOf('data-registrar') < html.indexOf('seguimiento.html'), 'después de Registrar');
       assert.ok(html.indexOf('seguimiento.html') < html.indexOf('data-editar'), 'antes de Editar');
@@ -464,18 +464,18 @@ describe('admin-fechas.js: htmlDeFila', () => {
 
   it('un eventual lleva "Eventual", no tiene pedido y no dice cuándo vence', () => {
     const html = fila(eventual());
-    assert.match(html, /ad-chip eventual/);
+    assert.match(html, /gdat-chip eventual/);
     assert.match(html, />Eventual</);
     assert.match(html, /Sin vencimiento/);
     assert.doesNotMatch(html, /Vence el|Fecha sugerida/);
     // El pedido es una raya y debajo va el tipo
-    assert.match(html, /<span class="ad-pedido-texto">—<\/span><span class="ad-sub">Eventual<\/span>/);
+    assert.match(html, /<span class="gdat-pedido-texto">—<\/span><span class="gdat-sub">Eventual<\/span>/);
   });
 
   it('el texto del pedido no va con la clase de las fechas (que no se parten): un pedido largo puede ocupar dos renglones', () => {
     const html = fila(ejercicio());
-    assert.match(html, /<span class="ad-pedido-texto">Presupuestos de los ejercicios 2026 y 2027<\/span>/);
-    assert.doesNotMatch(html, /<span class="ad-fecha">Presupuestos/);
+    assert.match(html, /<span class="gdat-pedido-texto">Presupuestos de los ejercicios 2026 y 2027<\/span>/);
+    assert.doesNotMatch(html, /<span class="gdat-fecha">Presupuestos/);
   });
 
   it('un ejercicio muestra "Ejercicio 2025" y no la fecha', () => {
@@ -487,16 +487,16 @@ describe('admin-fechas.js: htmlDeFila', () => {
 
   it('datos publicados: "Al" con la fecha y debajo "Cargado el"; sin Datos al, una raya', () => {
     const html = fila();
-    assert.match(html, /<span class="ad-fecha">Al 31\/07\/2026<\/span><span class="ad-sub">Cargado el 13\/10\/2026<\/span>/);
+    assert.match(html, /<span class="gdat-fecha">Al 31\/07\/2026<\/span><span class="gdat-sub">Cargado el 13\/10\/2026<\/span>/);
     const sinDatos = fila(dataset({ datos_al: null }));
-    assert.match(sinDatos, /<span class="ad-fecha">—<\/span><span class="ad-sub">Cargado el 13\/10\/2026<\/span>/);
+    assert.match(sinDatos, /<span class="gdat-fecha">—<\/span><span class="gdat-sub">Cargado el 13\/10\/2026<\/span>/);
     assert.doesNotMatch(sinDatos, /Al —/);
   });
 
   it('un ejercicio sin Datos al muestra una raya, no "Ejercicio —"', () => {
     const html = fila(ejercicio({ datos_al: null }));
     assert.doesNotMatch(html, /Ejercicio —|Ejercicio undefined|Ejercicio null/);
-    assert.match(html, /<span class="ad-fecha">—<\/span>/);
+    assert.match(html, /<span class="gdat-fecha">—<\/span>/);
   });
 
   it('sin fecha de carga no escribe "Cargado el —"', () => {
@@ -510,7 +510,7 @@ describe('admin-fechas.js: htmlDeFila', () => {
   });
 
   it('próximo pedido: debajo va el tipo y "Vence el dd/mm/aaaa" cuando la próxima es de hoy en adelante', () => {
-    assert.match(fila(), /<span class="ad-sub">Acumulado\. Vence el 31\/01\/2027<\/span>/);
+    assert.match(fila(), /<span class="gdat-sub">Acumulado\. Vence el 31\/01\/2027<\/span>/);
     assert.match(fila(dataset({ proxima_actualizacion: '2026-10-17T03:00:00.000Z' })), /Vence el 17\/10\/2026/);
     assert.doesNotMatch(fila(), /sugerida de envío/i);
   });
@@ -518,7 +518,7 @@ describe('admin-fechas.js: htmlDeFila', () => {
   it('próximo pedido: si ya venció no dice cuándo vence, solo el tipo', () => {
     const html = fila(vencido());
     assert.doesNotMatch(html, /Vence el|Fecha sugerida/);
-    assert.match(html, /<span class="ad-sub">Acumulado<\/span>/);
+    assert.match(html, /<span class="gdat-sub">Acumulado<\/span>/);
   });
 
   it('próximo pedido: el día antes de hoy ya no dice "Vence el"', () => {
@@ -531,11 +531,11 @@ describe('admin-fechas.js: htmlDeFila', () => {
   });
 
   it('el estado se pinta con la pastilla y el renglón de detalle', () => {
-    assert.match(fila(), /<span class="ad-chip al-dia">Actualizado<\/span><span class="ad-sub">Vence en ene 2027<\/span>/);
-    assert.match(fila(vencido()), /<span class="ad-chip vencido">Sin respuesta<\/span><span class="ad-sub">Venció en ene 2024<\/span>/);
-    assert.match(fila(dataset({ estado: 'proximo', dias_para_vencer: 44 })), /<span class="ad-chip proximo">Próximo a vencer<\/span><span class="ad-sub">Vence en 44 días<\/span>/);
+    assert.match(fila(), /<span class="gdat-chip al-dia">Actualizado<\/span><span class="gdat-sub">Vence en ene 2027<\/span>/);
+    assert.match(fila(vencido()), /<span class="gdat-chip vencido">Sin respuesta<\/span><span class="gdat-sub">Venció en ene 2024<\/span>/);
+    assert.match(fila(dataset({ estado: 'proximo', dias_para_vencer: 44 })), /<span class="gdat-chip proximo">Próximo a vencer<\/span><span class="gdat-sub">Vence en 44 días<\/span>/);
     assert.match(fila(dataset({ estado: 'sin-fecha', proxima_actualizacion: null, pedido: null, dias_para_vencer: null })),
-      /<span class="ad-chip sin-fecha">Sin fecha<\/span>/);
+      /<span class="gdat-chip sin-fecha">Sin fecha<\/span>/);
   });
 
   it('una gestión interna vencida dice "Atrasado"', () => {
@@ -570,7 +570,7 @@ describe('admin-fechas.js: htmlDeTarjeta', () => {
 
   it('un cambio pendiente: pastilla violeta y los tres botones deshabilitados, con el motivo', () => {
     const html = tarjeta(vencido(), { pendiente: true });
-    assert.match(html, /ad-chip pendiente/);
+    assert.match(html, /gdat-chip pendiente/);
     assert.match(html, /bloqueada/);
     assert.equal(cantidad(html, '<button'), 3);
     assert.equal(cantidad(html, ' disabled'), 3);
@@ -599,16 +599,16 @@ describe('admin-fechas.js: htmlDeTarjeta', () => {
   // Ruling 15: la tarjeta (<article>) tiene nombre accesible, el título del dataset
   it('la tarjeta se nombra con su título: aria-labelledby apunta al id del título', () => {
     const html = tarjeta(dataset({ id: 10 }));
-    const id = html.match(/^<article class="ad-tarjeta" aria-labelledby="([^"]+)">/)?.[1];
+    const id = html.match(/^<article class="gdat-tarjeta" aria-labelledby="([^"]+)">/)?.[1];
     assert.ok(id, 'la tarjeta lleva aria-labelledby');
-    assert.match(html, new RegExp(`<span class="ad-titulo" id="${id}">Pauta Publicitaria</span>`));
+    assert.match(html, new RegExp(`<span class="gdat-titulo" id="${id}">Pauta Publicitaria</span>`));
     assert.equal(cantidad(html, `id="${id}"`), 1);
   });
 
   it('el id del título es distinto para cada dataset, también si la tarjeta está bloqueada', () => {
     const id = (html) => html.match(/aria-labelledby="([^"]+)"/)[1];
     assert.notEqual(id(tarjeta(dataset({ id: 10 }))), id(tarjeta(dataset({ id: 11 }))));
-    assert.match(tarjeta(vencido(), { pendiente: true }), /^<article class="ad-tarjeta bloqueada" aria-labelledby="[^"]+">/);
+    assert.match(tarjeta(vencido(), { pendiente: true }), /^<article class="gdat-tarjeta bloqueada" aria-labelledby="[^"]+">/);
   });
 
   it('con un id hostil, el id del título solo lleva letras, números, guiones y guiones bajos', () => {
@@ -616,7 +616,7 @@ describe('admin-fechas.js: htmlDeTarjeta', () => {
     const id = html.match(/aria-labelledby="([^"]*)"/)[1];
     assert.match(id, /^[\w-]+$/);
     assert.doesNotMatch(html, /" onmouseover="/);
-    assert.match(html, new RegExp(`<span class="ad-titulo" id="${id}">`));
+    assert.match(html, new RegExp(`<span class="gdat-titulo" id="${id}">`));
   });
 
   it('la fila de la tabla no lleva ese id: en la página están la fila y la tarjeta del mismo dataset', () => {
@@ -634,7 +634,7 @@ describe('admin-fechas.js: htmlDeOpciones', () => {
   it('da una tarjeta de radio por opción más "Otra fecha", y ninguna viene elegida', () => {
     const html = admin.htmlDeOpciones(OPCIONES);
     assert.equal(cantidad(html, 'type="radio"'), 4);
-    assert.equal(cantidad(html, '<label class="ad-opcion"'), 4);
+    assert.equal(cantidad(html, '<label class="gdat-opcion"'), 4);
     assert.doesNotMatch(html, /checked/i);
   });
 
@@ -655,7 +655,7 @@ describe('admin-fechas.js: htmlDeOpciones', () => {
   it('la sugerida lleva la marca "Sugerida" y las demás no', () => {
     const html = admin.htmlDeOpciones(OPCIONES);
     assert.equal(cantidad(html, 'Sugerida'), 1);
-    const primera = html.split('<label class="ad-opcion"')[1];
+    const primera = html.split('<label class="gdat-opcion"')[1];
     assert.ok(primera.includes('Sugerida'));
   });
 
@@ -673,7 +673,7 @@ describe('admin-fechas.js: htmlDeOpciones', () => {
 
   it('la última tarjeta es "Otra fecha", con la explicación, y no tiene fecha', () => {
     const html = admin.htmlDeOpciones(OPCIONES);
-    const ultima = html.split('<label class="ad-opcion"').pop();
+    const ultima = html.split('<label class="gdat-opcion"').pop();
     assert.ok(ultima.includes('Otra fecha'));
     assert.ok(ultima.includes('Elegís el mes y el año'));
     assert.ok(ultima.includes('value="otra"'));
@@ -1246,8 +1246,8 @@ describe('admin.js: filas y tarjetas de una página', () => {
   it('sin datasets muestra el mensaje, escapado, en la tabla y en las tarjetas', () => {
     const { contexto: a } = cargarAdminJs();
     const { filas, tarjetas } = a.htmlDeLaLista([], { pendientes: [], esAdmin: true, hoy: HOY, mensajeVacio: 'Ningún <dataset>' });
-    assert.equal(filas, '<tr><td colspan="5" class="ad-vacio">Ningún &lt;dataset&gt;</td></tr>');
-    assert.equal(tarjetas, '<p class="ad-vacio">Ningún &lt;dataset&gt;</p>');
+    assert.equal(filas, '<tr><td colspan="5" class="gdat-vacio">Ningún &lt;dataset&gt;</td></tr>');
+    assert.equal(tarjetas, '<p class="gdat-vacio">Ningún &lt;dataset&gt;</p>');
   });
 });
 
@@ -1266,16 +1266,16 @@ describe('admin.js: catálogos', () => {
 
 describe('admin.html: la lista', () => {
   it('la barra: el buscador con su etiqueta, la gestión y el tipo de pedido', () => {
-    assert.match(PAGINA_ADMIN, /<label class="ad-vh" for="buscar">[^<]+<\/label>\s*<input type="search" id="buscar"/);
-    assert.match(PAGINA_ADMIN, /<label class="ad-vh" for="filtro-gestion">Gestión<\/label>\s*<select id="filtro-gestion">/);
-    assert.match(PAGINA_ADMIN, /<label class="ad-vh" for="filtro-tipo">Tipo de pedido<\/label>\s*<select id="filtro-tipo">/);
+    assert.match(PAGINA_ADMIN, /<label class="gdat-vh" for="buscar">[^<]+<\/label>\s*<input type="search" id="buscar"/);
+    assert.match(PAGINA_ADMIN, /<label class="gdat-vh" for="filtro-gestion">Gestión<\/label>\s*<select id="filtro-gestion">/);
+    assert.match(PAGINA_ADMIN, /<label class="gdat-vh" for="filtro-tipo">Tipo de pedido<\/label>\s*<select id="filtro-tipo">/);
     const gestion = PAGINA_ADMIN.match(/<select id="filtro-gestion">([\s\S]*?)<\/select>/)[1];
     assert.deepEqual([...gestion.matchAll(/<option value="([^"]*)">([^<]*)</g)].map((m) => [m[1], m[2]]),
       [['', 'Interna y externa'], ['interna', 'Interna'], ['externa', 'Externa']]);
   });
 
   it('la barra suma el filtro «Requiere nota» (Todos, Sí, No), con su etiqueta y después del tipo de pedido', () => {
-    assert.match(PAGINA_ADMIN, /<label class="ad-vh" for="filtro-requiere-nota">Requiere nota DGMIT<\/label>\s*<select id="filtro-requiere-nota">/);
+    assert.match(PAGINA_ADMIN, /<label class="gdat-vh" for="filtro-requiere-nota">Requiere nota DGMIT<\/label>\s*<select id="filtro-requiere-nota">/);
     const filtro = PAGINA_ADMIN.match(/<select id="filtro-requiere-nota">([\s\S]*?)<\/select>/)[1];
     assert.deepEqual([...filtro.matchAll(/<option value="([^"]*)">([^<]*)</g)].map((m) => [m[1], m[2]]),
       [['', 'Requiere nota: todos'], ['1', 'Requiere nota: Sí'], ['0', 'Requiere nota: No']]);
@@ -1284,8 +1284,8 @@ describe('admin.html: la lista', () => {
   });
 
   it('los filtros de estado: un grupo con un botón por estado, con aria-pressed', () => {
-    const grupo = PAGINA_ADMIN.match(/<div class="ad-estados" id="filtros-estado" role="group" aria-label="Filtrar por estado">([\s\S]*?)<\/div>/)?.[1] ?? '';
-    const botones = [...grupo.matchAll(/<button type="button" class="ad-estado-filtro" data-filtro="([^"]*)" aria-pressed="(true|false)"[^>]*>([^<]+)<b><\/b><\/button>/g)]
+    const grupo = PAGINA_ADMIN.match(/<div class="gdat-estados" id="filtros-estado" role="group" aria-label="Filtrar por estado">([\s\S]*?)<\/div>/)?.[1] ?? '';
+    const botones = [...grupo.matchAll(/<button type="button" class="gdat-estado-filtro" data-filtro="([^"]*)" aria-pressed="(true|false)"[^>]*>([^<]+)<b><\/b><\/button>/g)]
       .map((m) => [m[1], m[2], m[3].trim()]);
     assert.deepEqual(botones, [
       ['', 'true', 'Todos'], ['vencido', 'false', 'Vencidos'], ['proximo', 'false', 'Vencen en menos de 60 días'], ['al-dia', 'false', 'Actualizados'],
@@ -1293,12 +1293,12 @@ describe('admin.html: la lista', () => {
   });
 
   it('la tabla: las cinco columnas (la de acciones, con el título oculto a la vista) y #filas-datasets', () => {
-    const cabecera = PAGINA_ADMIN.match(/<table class="ad-tabla" id="tabla-datasets">[\s\S]*?<thead>([\s\S]*?)<\/thead>/)?.[1] ?? '';
+    const cabecera = PAGINA_ADMIN.match(/<table class="gdat-tabla" id="tabla-datasets">[\s\S]*?<thead>([\s\S]*?)<\/thead>/)?.[1] ?? '';
     assert.deepEqual([...cabecera.matchAll(/<th scope="col"[^>]*>([\s\S]*?)<\/th>/g)].map((m) => m[1]),
-      ['Dataset', 'Estado', 'Datos publicados', 'Próximo pedido', '<span class="ad-vh">Acciones</span>']);
+      ['Dataset', 'Estado', 'Datos publicados', 'Próximo pedido', '<span class="gdat-vh">Acciones</span>']);
     assert.match(cabecera, /<th scope="col" class="ocultable">Datos publicados<\/th>/);
     assert.match(PAGINA_ADMIN, /<tbody id="filas-datasets">/);
-    assert.match(PAGINA_ADMIN, /<div class="ad-tarjetas" id="tarjetas-datasets">/);
+    assert.match(PAGINA_ADMIN, /<div class="gdat-tarjetas" id="tarjetas-datasets">/);
     assert.match(PAGINA_ADMIN, /<span class="pag-info" id="resumen-lista" aria-live="polite"><\/span>/);
   });
 
@@ -1323,13 +1323,13 @@ describe('admin.html: CSS sin uso (como correos.html)', () => {
   const ADMIN_FECHAS = fs.readFileSync(new URL('../public/js/admin-fechas.js', import.meta.url), 'utf8');
   const inicio = PAGINA_ADMIN.indexOf('<style>');
   const fin = PAGINA_ADMIN.indexOf('</style>');
-  // La clase aparece como palabra entera: "ad-tarjeta" no cuenta dentro de "ad-tarjetas" ni "chip" dentro de "ad-chip"
+  // La clase aparece como palabra entera: "gdat-tarjeta" no cuenta dentro de "gdat-tarjetas" ni "chip" dentro de "gdat-chip"
   const aparece = (clase, texto) => new RegExp(`(^|[^\\w-])${clase}($|[^\\w-])`).test(texto);
 
   it('la comparación es por palabra entera, no por pedazo', () => {
-    assert.equal(aparece('ad-tarjeta', 'class="ad-tarjetas"'), false);
-    assert.equal(aparece('chip', 'class="ad-chip"'), false);
-    assert.equal(aparece('ad-chip', 'class="ad-chip vencido"'), true);
+    assert.equal(aparece('gdat-tarjeta', 'class="gdat-tarjetas"'), false);
+    assert.equal(aparece('chip', 'class="gdat-chip"'), false);
+    assert.equal(aparece('gdat-chip', 'class="gdat-chip vencido"'), true);
     assert.equal(aparece('al-dia', "clase: 'al-dia'"), true);
     assert.equal(aparece('selected', "classList.add('selected')"), true);
   });
@@ -1350,17 +1350,17 @@ describe('admin.html: CSS sin uso (como correos.html)', () => {
   it('las pastillas tienen todos los estados, también "sin fecha", y las tarjetas del celular tienen estilo', () => {
     const estilo = PAGINA_ADMIN.slice(inicio, fin);
     for (const estado of ['vencido', 'proximo', 'al-dia', 'eventual', 'pendiente', 'sin-fecha']) {
-      assert.match(estilo, new RegExp(`\\.ad-chip\\.${estado} \\{[^}]*background:[^}]*color:`), estado);
+      assert.match(estilo, new RegExp(`\\.gdat-chip\\.${estado} \\{[^}]*background:[^}]*color:`), estado);
     }
-    for (const clase of ['ad-tarjetas', 'ad-tarjeta', 'ad-tarjeta-titulo', 'ad-tarjeta-estado', 'ad-tarjeta-datos']) {
+    for (const clase of ['gdat-tarjetas', 'gdat-tarjeta', 'gdat-tarjeta-titulo', 'gdat-tarjeta-estado', 'gdat-tarjeta-datos']) {
       assert.match(estilo, new RegExp(`\\.${clase}[\\s{.,:]`), clase);
     }
   });
 
   it('el foco se ve en los botones de la paginación: el de main.css (sombra al 15 %) no alcanza sobre el pie', () => {
     const estilo = PAGINA_ADMIN.slice(inicio, fin).replace(/\/\*[\s\S]*?\*\//g, '');
-    const regla = estilo.match(/([^{}]*\.ad-pie-tabla \.pag-btn:focus-visible[^{}]*)\{([^}]*)\}/);
-    assert.ok(regla, 'hay una regla de foco para .ad-pie-tabla .pag-btn');
+    const regla = estilo.match(/([^{}]*\.gdat-pie-tabla \.pag-btn:focus-visible[^{}]*)\{([^}]*)\}/);
+    assert.ok(regla, 'hay una regla de foco para .gdat-pie-tabla .pag-btn');
     assert.match(regla[2], /outline: 2px solid var\(--pf-acento\); outline-offset: 2px;/);
   });
 
@@ -1368,8 +1368,8 @@ describe('admin.html: CSS sin uso (como correos.html)', () => {
     const estilo = PAGINA_ADMIN.slice(inicio, fin);
     assert.ok(estilo.includes('@media (max-width: 760px)'));
     const celular = estilo.slice(estilo.indexOf('@media (max-width: 760px)'));
-    assert.match(celular, /table\.ad-tabla \{ display: none; \}/);
-    assert.match(celular, /\.ad-tarjetas \{ display: grid;/);
+    assert.match(celular, /table\.gdat-tabla \{ display: none; \}/);
+    assert.match(celular, /\.gdat-tarjetas \{ display: grid;/);
   });
 });
 
@@ -1902,15 +1902,15 @@ describe('admin.js: Registrar actualización', () => {
 });
 
 describe('admin.html: la ventana de Registrar actualización', () => {
-  const ventana = PAGINA_ADMIN.match(/<div class="ad-velo" id="modal-registrar-actualizacion" hidden>([\s\S]*?)<!-- Fin de Registrar actualización -->/)?.[1] ?? '';
+  const ventana = PAGINA_ADMIN.match(/<div class="gdat-velo" id="modal-registrar-actualizacion" hidden>([\s\S]*?)<!-- Fin de Registrar actualización -->/)?.[1] ?? '';
 
   it('conserva el id, es un velo oculto y la ventana es un diálogo modal con su título', () => {
     assert.equal(cantidad(PAGINA_ADMIN, 'id="modal-registrar-actualizacion"'), 1);
     assert.ok(ventana, 'la ventana está y termina con su comentario');
-    assert.match(ventana, /<div class="ad-ventana" role="dialog" aria-modal="true" aria-labelledby="registrar-titulo" aria-describedby="registrar-dataset">/);
+    assert.match(ventana, /<div class="gdat-ventana" role="dialog" aria-modal="true" aria-labelledby="registrar-titulo" aria-describedby="registrar-dataset">/);
     assert.match(ventana, /<h2 id="registrar-titulo">Registrar actualización<\/h2>/);
     assert.match(ventana, /<p id="registrar-dataset"><\/p>/);
-    assert.match(ventana, /<button type="button" class="ad-cerrar" data-cerrar-registro aria-label="Cerrar">/);
+    assert.match(ventana, /<button type="button" class="gdat-cerrar" data-cerrar-registro aria-label="Cerrar">/);
   });
 
   it('no usa onclick: los oyentes los pone admin.js', () => {
@@ -1921,16 +1921,16 @@ describe('admin.html: la ventana de Registrar actualización', () => {
     assert.match(ventana, /<p class="rotulo" id="registrar-rotulo">Datos solicitados<\/p>/);
     assert.match(ventana, /<p class="periodo" id="registrar-periodo"><\/p>/);
     assert.match(ventana, /<dl id="registrar-datos"><\/dl>/);
-    assert.match(ventana, /<div class="ad-ciclo" id="registrar-ciclo" aria-hidden="true"><\/div>/);
-    assert.match(ventana, /<div class="ad-leyenda" id="registrar-leyenda" aria-hidden="true">/);
+    assert.match(ventana, /<div class="gdat-ciclo" id="registrar-ciclo" aria-hidden="true"><\/div>/);
+    assert.match(ventana, /<div class="gdat-leyenda" id="registrar-leyenda" aria-hidden="true">/);
     for (const texto of ['Ya publicado', 'Pedido, todavía no llegó', 'Llega con esta actualización']) assert.ok(ventana.includes(texto), texto);
   });
 
   it('paso 1: mes y año en un grupo con la pregunta, la ayuda y el error', () => {
     assert.match(ventana, /<h3 id="registrar-p1">¿A qué fecha son los datos que llegaron\?<\/h3>/);
-    assert.match(ventana, /<div class="ad-mes" role="group" aria-labelledby="registrar-p1">\s*<select id="registrar-mes" aria-label="Mes"><\/select>\s*<select id="registrar-anio" aria-label="Año"><\/select>/);
-    assert.match(ventana, /<p class="ad-ayuda" id="registrar-ayuda1">/);
-    assert.match(ventana, /<p class="ad-error" id="registrar-error-datos" role="alert" hidden><\/p>/);
+    assert.match(ventana, /<div class="gdat-mes" role="group" aria-labelledby="registrar-p1">\s*<select id="registrar-mes" aria-label="Mes"><\/select>\s*<select id="registrar-anio" aria-label="Año"><\/select>/);
+    assert.match(ventana, /<p class="gdat-ayuda" id="registrar-ayuda1">/);
+    assert.match(ventana, /<p class="gdat-error" id="registrar-error-datos" role="alert" hidden><\/p>/);
   });
 
   // «Recibido el» es obligatorio desde la spec 2026-10-24-metricas-y-reportes (4): ya no dice «(opcional)». Su rótulo cambia a
@@ -1939,34 +1939,34 @@ describe('admin.html: la ventana de Registrar actualización', () => {
     assert.doesNotMatch(ventana, /\(opcional\)/);
     assert.match(ventana, /<label for="registrar-recibido" id="registrar-rotulo-recibido">Recibido el<\/label>\s*<input type="date" id="registrar-recibido" required>/);
     assert.match(ventana, /<label for="registrar-cargado">Cargado en el portal el<\/label>\s*<input type="date" id="registrar-cargado" required>/);
-    assert.match(ventana, /<p class="ad-error" id="registrar-error-fechas" role="alert" hidden><\/p>/);
+    assert.match(ventana, /<p class="gdat-error" id="registrar-error-fechas" role="alert" hidden><\/p>/);
   });
 
   it('paso 2: «¿Quién entregó los datos?», un selector obligatorio que admin.js muestra solo en gestión externa, antes de la fecha', () => {
-    assert.match(ventana, /<div class="ad-ancho" id="registrar-campo-origen" hidden>\s*<label for="registrar-origen">¿Quién entregó los datos\?<\/label>\s*<select id="registrar-origen" required><\/select>\s*<\/div>/);
+    assert.match(ventana, /<div class="gdat-ancho" id="registrar-campo-origen" hidden>\s*<label for="registrar-origen">¿Quién entregó los datos\?<\/label>\s*<select id="registrar-origen" required><\/select>\s*<\/div>/);
     assert.ok(ventana.indexOf('id="registrar-origen"') < ventana.indexOf('id="registrar-recibido"'), 'el origen va antes de la fecha');
     assert.ok(ventana.indexOf('id="registrar-origen"') > ventana.indexOf('id="registrar-ayuda1"'), 'en el paso 2');
   });
 
   it('paso 3: las opciones en un radiogroup y "Otra fecha" con mes y año', () => {
-    assert.match(ventana, /<div class="ad-paso" id="registrar-paso3">/);
+    assert.match(ventana, /<div class="gdat-paso" id="registrar-paso3">/);
     assert.match(ventana, /<h3 id="registrar-p3">Próxima actualización<\/h3>/);
-    assert.match(ventana, /<div class="ad-opciones" role="radiogroup" aria-labelledby="registrar-p3" id="registrar-opciones"><\/div>/);
-    assert.match(ventana, /<div class="ad-otra" id="registrar-otra" hidden>/);
+    assert.match(ventana, /<div class="gdat-opciones" role="radiogroup" aria-labelledby="registrar-p3" id="registrar-opciones"><\/div>/);
+    assert.match(ventana, /<div class="gdat-otra" id="registrar-otra" hidden>/);
     assert.match(ventana, /<select id="registrar-otra-mes" aria-label="Mes de la otra fecha"><\/select>/);
     assert.match(ventana, /<select id="registrar-otra-anio" aria-label="Año de la otra fecha"><\/select>/);
   });
 
   it('el pie: el texto de la spec, "Cancelar" y "Proponer actualización" deshabilitado, y el error del envío', () => {
     assert.ok(ventana.includes('<p>Queda como propuesta: otra persona la aprueba en Mi Perfil. Hasta entonces, el dataset no se puede editar.</p>'));
-    assert.match(ventana, /<button type="button" class="ad-btn" data-cerrar-registro>Cancelar<\/button>/);
-    assert.match(ventana, /<button type="button" class="ad-btn primario" id="registrar-proponer" disabled>Proponer actualización<\/button>/);
-    assert.match(ventana, /<p class="ad-error ad-error-envio" id="registrar-error" role="alert" hidden><\/p>/);
+    assert.match(ventana, /<button type="button" class="gdat-btn" data-cerrar-registro>Cancelar<\/button>/);
+    assert.match(ventana, /<button type="button" class="gdat-btn primario" id="registrar-proponer" disabled>Proponer actualización<\/button>/);
+    assert.match(ventana, /<p class="gdat-error gdat-error-envio" id="registrar-error" role="alert" hidden><\/p>/);
   });
 
   it('la lista puede recibir el foco al volver de proponer (el botón que abrió la ventana queda deshabilitado)', () => {
     // Con nombre: al recibir el foco, el lector de pantalla dice qué es (role="region", porque un div sin rol no lleva aria-label)
-    assert.match(PAGINA_ADMIN, /<div class="ad-marco" id="lista-datasets" tabindex="-1" role="region" aria-label="Lista de datasets">/);
+    assert.match(PAGINA_ADMIN, /<div class="gdat-marco" id="lista-datasets" tabindex="-1" role="region" aria-label="Lista de datasets">/);
   });
 });
 
@@ -1976,18 +1976,18 @@ describe('admin.html: estilos de la ventana y del ciclo', () => {
   const estilo = PAGINA_ADMIN.slice(inicio, fin).replace(/\/\*[\s\S]*?\*\//g, '');
 
   it('la banda verde se mueve, y no se mueve si se pide menos movimiento', () => {
-    assert.match(estilo, /\.ad-ciclo \.llega \{[^}]*transition: width/);
+    assert.match(estilo, /\.gdat-ciclo \.llega \{[^}]*transition: width/);
     assert.ok(estilo.includes('@media (prefers-reduced-motion: reduce)'));
     const reducido = estilo.slice(estilo.indexOf('@media (prefers-reduced-motion: reduce)'));
-    assert.match(reducido, /\.ad-ciclo \.llega \{ transition: none; \}/);
+    assert.match(reducido, /\.gdat-ciclo \.llega \{ transition: none; \}/);
   });
 
   it('el velo va por debajo de los avisos (showToast usa z-index 1000 y se agrega después)', () => {
-    assert.match(estilo, /\.ad-velo \{[^}]*z-index: 1000;/);
+    assert.match(estilo, /\.gdat-velo \{[^}]*z-index: 1000;/);
   });
 
   it('el foco se ve en los controles de la ventana', () => {
-    for (const selector of ['.ad-cerrar:focus-visible', '.ad-mes select:focus-visible', '.ad-campos input:focus-visible', '.ad-opcion:focus-within']) {
+    for (const selector of ['.gdat-cerrar:focus-visible', '.gdat-mes select:focus-visible', '.gdat-campos input:focus-visible', '.gdat-opcion:focus-within']) {
       assert.ok(estilo.includes(selector), selector);
     }
   });
@@ -2911,10 +2911,10 @@ describe('admin.js: lo puro del formulario', () => {
 
   it('los habituales son botones con aria-pressed; los otros aparecen solo elegidos, y su botón dice que los saca', () => {
     const { chips } = a.htmlDeFormatos(CATALOGO, new Set([2, 7]));
-    const habituales = [...chips.matchAll(/<button type="button" class="ad-formato" data-formato="(\d+)" aria-pressed="(true|false)">/g)].map((m) => [m[1], m[2]]);
+    const habituales = [...chips.matchAll(/<button type="button" class="gdat-formato" data-formato="(\d+)" aria-pressed="(true|false)">/g)].map((m) => [m[1], m[2]]);
     assert.deepEqual(habituales, [['1', 'false'], ['2', 'true']]);
     // Al apretarlo desaparece: no es un botón que queda presionado, es "Sacar ODS"
-    assert.match(chips, /<button type="button" class="ad-formato sacar" data-formato="7" aria-label="Sacar ODS">/);
+    assert.match(chips, /<button type="button" class="gdat-formato sacar" data-formato="7" aria-label="Sacar ODS">/);
     assert.equal(cantidad(chips, 'aria-pressed'), 2);
     assert.doesNotMatch(chips, /onclick|<span class="chip/);
   });
@@ -2982,7 +2982,7 @@ describe('admin.js: el mensaje de un envío del formulario', () => {
 });
 
 describe('admin.html: las ventanas son diálogos (spec 8.6, arreglo 5)', () => {
-  const velos = [...PAGINA_ADMIN.matchAll(/<div class="ad-velo" id="([^"]+)" hidden>\s*<(div|form) class="ad-ventana[^"]*"([^>]*)>/g)]
+  const velos = [...PAGINA_ADMIN.matchAll(/<div class="gdat-velo" id="([^"]+)" hidden>\s*<(div|form) class="gdat-ventana[^"]*"([^>]*)>/g)]
     .map((m) => ({ id: m[1], atributos: m[3] }));
 
   it('ya no quedan modales viejos (.modal-overlay): todas las ventanas son velos con un diálogo modal con título', () => {
@@ -3001,7 +3001,7 @@ describe('admin.html: las ventanas son diálogos (spec 8.6, arreglo 5)', () => {
     for (const { id } of velos.filter((v) => v.id !== 'modal-registrar-actualizacion')) {
       assert.match(CODIGO_ADMIN, new RegExp(`'${id}': \\(\\) => `), id);
     }
-    assert.ok(cantidad(PAGINA_ADMIN, 'class="ad-cerrar" data-cerrar aria-label="Cerrar"') >= 5);
+    assert.ok(cantidad(PAGINA_ADMIN, 'class="gdat-cerrar" data-cerrar aria-label="Cerrar"') >= 5);
   });
 
   it('sin onclick: los oyentes los pone admin.js', () => {
@@ -3031,26 +3031,26 @@ describe('admin.html: las ventanas son diálogos (spec 8.6, arreglo 5)', () => {
 });
 
 describe('admin.html: el paso 1 (importar desde el portal: el flujo no cambia)', () => {
-  const paso1 = PAGINA_ADMIN.match(/<div class="ad-velo" id="modal-step1" hidden>([\s\S]*?)<!-- Fin del paso 1 -->/)?.[1] ?? '';
+  const paso1 = PAGINA_ADMIN.match(/<div class="gdat-velo" id="modal-step1" hidden>([\s\S]*?)<!-- Fin del paso 1 -->/)?.[1] ?? '';
 
   it('es un formulario de diálogo: Enter en la URL hace lo mismo que "Siguiente"', () => {
-    assert.match(paso1, /<form class="ad-ventana chica" id="form-paso1" role="dialog" aria-modal="true" aria-labelledby="paso1-titulo" novalidate>/);
+    assert.match(paso1, /<form class="gdat-ventana chica" id="form-paso1" role="dialog" aria-modal="true" aria-labelledby="paso1-titulo" novalidate>/);
     assert.match(paso1, /<h2 id="paso1-titulo">Nuevo dataset - Paso 1<\/h2>/);
   });
 
   it('la URL con su etiqueta, el ejemplo, y el error en la ventana', () => {
     assert.match(paso1, /<label for="andino-url">URL del dataset en el portal<\/label>\s*<input type="url" id="andino-url"/);
     assert.ok(paso1.includes('Ejemplo: https://datos.comodoro.gov.ar/dataset/presupuesto-municipal'));
-    assert.match(paso1, /<p class="ad-error ad-error-envio" id="step1-error" role="alert" hidden><\/p>/);
+    assert.match(paso1, /<p class="gdat-error gdat-error-envio" id="step1-error" role="alert" hidden><\/p>/);
   });
 
   it('"Importar desde el Portal de Datos Abiertos" con un ícono Lucide decorativo', () => {
-    assert.match(paso1, /<div class="ad-info">\s*<svg[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/svg>\s*<div><b>Importar desde el Portal de Datos Abiertos<\/b>/);
+    assert.match(paso1, /<div class="gdat-info">\s*<svg[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/svg>\s*<div><b>Importar desde el Portal de Datos Abiertos<\/b>/);
   });
 
   it('"Carga manual" y "Siguiente"', () => {
-    assert.match(paso1, /<button type="button" class="ad-btn" id="btn-carga-manual">Carga manual<\/button>/);
-    assert.match(paso1, /<button type="submit" class="ad-btn primario" id="btn-siguiente">Siguiente<\/button>/);
+    assert.match(paso1, /<button type="button" class="gdat-btn" id="btn-carga-manual">Carga manual<\/button>/);
+    assert.match(paso1, /<button type="submit" class="gdat-btn primario" id="btn-siguiente">Siguiente<\/button>/);
   });
 
   it('admin.js sigue usando GET /andino/fetch, en el paso 1 y en "Actualizar desde portal"', () => {
@@ -3059,11 +3059,11 @@ describe('admin.html: el paso 1 (importar desde el portal: el flujo no cambia)',
 });
 
 describe('admin.html: el formulario del dataset (spec 8.4)', () => {
-  const formulario = PAGINA_ADMIN.match(/<div class="ad-velo" id="modal-dataset" hidden>([\s\S]*?)<!-- Fin del formulario -->/)?.[1] ?? '';
+  const formulario = PAGINA_ADMIN.match(/<div class="gdat-velo" id="modal-dataset" hidden>([\s\S]*?)<!-- Fin del formulario -->/)?.[1] ?? '';
   const seccion = (leyenda) => formulario.match(new RegExp(`<fieldset>\\s*<legend>${leyenda}</legend>([\\s\\S]*?)</fieldset>`))?.[1] ?? '';
 
   it('es un formulario de diálogo con título y subtítulo', () => {
-    assert.match(formulario, /<form class="ad-ventana ancha ad-form-dataset" id="dataset-form" role="dialog" aria-modal="true" aria-labelledby="form-titulo" aria-describedby="form-subtitulo">/);
+    assert.match(formulario, /<form class="gdat-ventana ancha gdat-form-dataset" id="dataset-form" role="dialog" aria-modal="true" aria-labelledby="form-titulo" aria-describedby="form-subtitulo">/);
     assert.match(formulario, /<h2 id="form-titulo"><\/h2><p id="form-subtitulo"><\/p>/);
   });
 
@@ -3076,18 +3076,18 @@ describe('admin.html: el formulario del dataset (spec 8.4)', () => {
     for (const id of ['titulo', 'area_id', 'descripcion', 'tema_principal_id', 'tema_secundario_id', 'url_dataset', 'observaciones']) {
       assert.match(datos, new RegExp(`<label for="${id}">`), id);
     }
-    assert.match(datos, /<button type="button" class="ad-btn" id="btn-actualizar-portal">[\s\S]*?Actualizar desde portal<\/button>/);
-    assert.match(datos, /<div class="ad-formatos" id="chips-container" role="group" aria-labelledby="form-l-formatos"><\/div>/);
-    assert.match(datos, /<select id="formato-dropdown" class="ad-agregar-formato" aria-label="Agregar otro formato"><\/select>/);
+    assert.match(datos, /<button type="button" class="gdat-btn" id="btn-actualizar-portal">[\s\S]*?Actualizar desde portal<\/button>/);
+    assert.match(datos, /<div class="gdat-formatos" id="chips-container" role="group" aria-labelledby="form-l-formatos"><\/div>/);
+    assert.match(datos, /<select id="formato-dropdown" class="gdat-agregar-formato" aria-label="Agregar otro formato"><\/select>/);
   });
 
   it('"Actualización y pedido": frecuencia, gestión, tipo de pedido, "Cargado en el portal el", "Datos al", la próxima y "Qué se solicita"', () => {
     const pedido = seccion('Actualización y pedido');
     assert.match(pedido, /<label for="frecuencia_id">Frecuencia/);
     assert.match(pedido, /<label for="tipo_gestion">Tipo de gestión/);
-    assert.match(pedido, /<label for="tipo_pedido">Tipo de pedido<\/label>\s*<select id="tipo_pedido"><\/select>\s*<p class="ad-sugerencia" id="form-sugerencia"><\/p>/);
+    assert.match(pedido, /<label for="tipo_pedido">Tipo de pedido<\/label>\s*<select id="tipo_pedido"><\/select>\s*<p class="gdat-sugerencia" id="form-sugerencia"><\/p>/);
     assert.match(pedido, /<label for="ultima_actualizacion">Cargado en el portal el<\/label>\s*<input type="date" id="ultima_actualizacion">/);
-    assert.match(pedido, /<label for="form-datos-mes" id="form-l-datos">Datos al<\/label>\s*<div class="ad-mes" role="group" aria-labelledby="form-l-datos">\s*<select id="form-datos-mes" aria-label="Mes"><\/select>\s*<select id="form-datos-anio" aria-label="Año"><\/select>/);
+    assert.match(pedido, /<label for="form-datos-mes" id="form-l-datos">Datos al<\/label>\s*<div class="gdat-mes" role="group" aria-labelledby="form-l-datos">\s*<select id="form-datos-mes" aria-label="Mes"><\/select>\s*<select id="form-datos-anio" aria-label="Año"><\/select>/);
     assert.match(pedido, /<label for="form-prox-mes" id="form-l-prox">Próxima actualización/);
     assert.match(pedido, /<select id="form-prox-mes" aria-label="Mes"><\/select>\s*<select id="form-prox-anio" aria-label="Año"><\/select>/);
     assert.match(pedido, /<label for="que_se_solicita">Qué se solicita<\/label>/);
@@ -3102,7 +3102,7 @@ describe('admin.html: el formulario del dataset (spec 8.4)', () => {
 
   it('el selector requiere_nota está en admin.html con Elegí una opción / Sí / No', () => {
     const pedido = seccion('Actualización y pedido');
-    assert.match(pedido, /<label for="requiere_nota">Requiere nota DGMIT <span class="ad-obligatorio" aria-hidden="true">\*<\/span><\/label>/);
+    assert.match(pedido, /<label for="requiere_nota">Requiere nota DGMIT <span class="gdat-obligatorio" aria-hidden="true">\*<\/span><\/label>/);
     const selector = pedido.match(/<select id="requiere_nota"([^>]*)>([\s\S]*?)<\/select>/);
     assert.ok(selector, 'el selector está en "Actualización y pedido"');
     assert.deepEqual([...selector[2].matchAll(/<option value="([^"]*)">([^<]*)</g)].map((m) => [m[1], m[2]]),
@@ -3112,8 +3112,8 @@ describe('admin.html: el formulario del dataset (spec 8.4)', () => {
     // Lo obligatorio se dice a los lectores de pantalla con aria-required (el asterisco visible es aria-hidden)
     assert.match(selector[1], /\baria-required="true"/);
     assert.match(selector[1], /aria-describedby="form-ayuda-requiere-nota"/);
-    assert.match(pedido, /<p class="ad-ayuda" id="form-ayuda-requiere-nota">[^<]+<\/p>/);
-    assert.match(pedido, /<p class="ad-error" id="form-error-requiere-nota" role="alert" hidden><\/p>/);
+    assert.match(pedido, /<p class="gdat-ayuda" id="form-ayuda-requiere-nota">[^<]+<\/p>/);
+    assert.match(pedido, /<p class="gdat-error" id="form-error-requiere-nota" role="alert" hidden><\/p>/);
   });
 
   it('el selector está en su propia fila, justo después de la de «Tipo de gestión», oculto hasta que la gestión sea externa', () => {
@@ -3127,13 +3127,13 @@ describe('admin.html: el formulario del dataset (spec 8.4)', () => {
   });
 
   it('el aviso por las frases de período es ámbar y está oculto hasta que hace falta', () => {
-    assert.match(formulario, /<div class="ad-alerta" id="form-alerta-frases" hidden>/);
+    assert.match(formulario, /<div class="gdat-alerta" id="form-alerta-frases" hidden>/);
     assert.match(formulario, /<span id="form-alerta-texto" aria-live="polite"><\/span>/);
   });
 
   it('la vista previa "Así va a salir en la próxima nota", con las cuatro columnas de un externo y "Qué se solicita"', () => {
     assert.ok(formulario.includes('Así va a salir en la próxima nota'));
-    const nota = formulario.match(/<div class="ad-nota"[^>]*>([\s\S]*?)<!-- Fin de la vista previa -->/)?.[1] ?? '';
+    const nota = formulario.match(/<div class="gdat-nota"[^>]*>([\s\S]*?)<!-- Fin de la vista previa -->/)?.[1] ?? '';
     // «Requiere nota DGMIT» va entre Frecuencia y Datos solicitados; la interna la oculta y queda con tres
     assert.deepEqual([...nota.matchAll(/<th scope="col"[^>]*>([^<]+)<\/th>/g)].map((m) => m[1]),
       ['Conjunto de datos', 'Frecuencia', 'Requiere nota DGMIT', 'Datos solicitados']);
@@ -3144,25 +3144,25 @@ describe('admin.html: el formulario del dataset (spec 8.4)', () => {
     assert.ok(!nota.includes('form-nota-fecha'), 'form-nota-fecha ya no existe');
     assert.match(nota, /<td id="form-nota-periodo" aria-live="polite"><\/td>/);
     assert.match(nota, /<b>Qué se solicita:<\/b> <span id="form-nota-solicita"><\/span>/);
-    assert.match(nota, /<p class="ad-error" id="form-nota-error" hidden><\/p>/);
+    assert.match(nota, /<p class="gdat-error" id="form-nota-error" hidden><\/p>/);
   });
 
   it('los errores del envío van en la ventana, y el botón de proponer es el submit', () => {
-    assert.match(formulario, /<p class="ad-error ad-error-envio" id="form-error" role="alert" hidden><\/p>/);
-    assert.match(formulario, /<button type="submit" class="ad-btn primario" id="submit-btn">/);
+    assert.match(formulario, /<p class="gdat-error gdat-error-envio" id="form-error" role="alert" hidden><\/p>/);
+    assert.match(formulario, /<button type="submit" class="gdat-btn primario" id="submit-btn">/);
   });
 });
 
 describe('admin.html: "Actualizar desde portal" y las demás ventanas', () => {
   it('la confirmación dice que también se traen los formatos', () => {
-    const confirmacion = PAGINA_ADMIN.match(/<div class="ad-velo" id="modal-confirm-update" hidden>([\s\S]*?)<!-- Fin de la confirmación -->/)?.[1] ?? '';
+    const confirmacion = PAGINA_ADMIN.match(/<div class="gdat-velo" id="modal-confirm-update" hidden>([\s\S]*?)<!-- Fin de la confirmación -->/)?.[1] ?? '';
     assert.match(confirmacion, /formatos/);
     assert.match(confirmacion, /título/);
     assert.match(confirmacion, /descripción/);
   });
 
   it('"Nueva área" es un formulario con su etiqueta', () => {
-    assert.match(PAGINA_ADMIN, /<form class="ad-ventana chica" id="form-area-rapida" role="dialog" aria-modal="true" aria-labelledby="area-rapida-titulo" novalidate>/);
+    assert.match(PAGINA_ADMIN, /<form class="gdat-ventana chica" id="form-area-rapida" role="dialog" aria-modal="true" aria-labelledby="area-rapida-titulo" novalidate>/);
     assert.match(PAGINA_ADMIN, /<label for="quick-area-nombre">/);
   });
 });
@@ -3173,14 +3173,14 @@ describe('admin.html: estilos del formulario', () => {
   const estilo = PAGINA_ADMIN.slice(inicio, fin).replace(/\/\*[\s\S]*?\*\//g, '');
 
   it('los formatos elegidos se distinguen por aria-pressed, y el foco se ve en los campos y los formatos', () => {
-    assert.match(estilo, /\.ad-formato\[aria-pressed=true\], \.ad-formato\.sacar \{[^}]*background:/);
-    for (const selector of ['.ad-form input:focus-visible', '.ad-form select:focus-visible', '.ad-form textarea:focus-visible', '.ad-formato:focus-visible', '.ad-sugerencia button:focus-visible']) {
+    assert.match(estilo, /\.gdat-formato\[aria-pressed=true\], \.gdat-formato\.sacar \{[^}]*background:/);
+    for (const selector of ['.gdat-form input:focus-visible', '.gdat-form select:focus-visible', '.gdat-form textarea:focus-visible', '.gdat-formato:focus-visible', '.gdat-sugerencia button:focus-visible']) {
       assert.ok(estilo.includes(selector), selector);
     }
   });
 
   it('el aviso por las frases es ámbar', () => {
-    assert.match(estilo, /\.ad-alerta \{[^}]*background: var\(--pf-ambar-fondo\);[^}]*color: var\(--pf-ambar\);/);
+    assert.match(estilo, /\.gdat-alerta \{[^}]*background: var\(--pf-ambar-fondo\);[^}]*color: var\(--pf-ambar\);/);
   });
 });
 
@@ -3518,14 +3518,14 @@ describe('admin-fechas.js: cambios sin guardar en el formulario (Ruling 19)', ()
 });
 
 describe('admin.html: "¿Descartar los cambios?" y la baja (Rulings 19 y 20)', () => {
-  const descartar = PAGINA_ADMIN.match(/<div class="ad-velo" id="modal-descartar" hidden>([\s\S]*?)<!-- Fin de descartar -->/)?.[1] ?? '';
-  const eliminar = PAGINA_ADMIN.match(/<div class="ad-velo" id="modal-delete" hidden>([\s\S]*?)<!-- Fin de eliminar -->/)?.[1] ?? '';
+  const descartar = PAGINA_ADMIN.match(/<div class="gdat-velo" id="modal-descartar" hidden>([\s\S]*?)<!-- Fin de descartar -->/)?.[1] ?? '';
+  const eliminar = PAGINA_ADMIN.match(/<div class="gdat-velo" id="modal-delete" hidden>([\s\S]*?)<!-- Fin de eliminar -->/)?.[1] ?? '';
 
   it('la confirmación propia, después del formulario (queda encima): "Seguir editando" y "Descartar"', () => {
-    assert.match(descartar, /<div class="ad-ventana chica" role="alertdialog" aria-modal="true" aria-labelledby="descartar-titulo" aria-describedby="descartar-texto">/);
+    assert.match(descartar, /<div class="gdat-ventana chica" role="alertdialog" aria-modal="true" aria-labelledby="descartar-titulo" aria-describedby="descartar-texto">/);
     assert.match(descartar, /<h2 id="descartar-titulo">¿Descartar los cambios\?<\/h2>/);
-    assert.match(descartar, /<button type="button" class="ad-btn" id="btn-seguir-editando" data-cerrar>Seguir editando<\/button>/);
-    assert.match(descartar, /<button type="button" class="ad-btn peligro" id="btn-descartar">Descartar<\/button>/);
+    assert.match(descartar, /<button type="button" class="gdat-btn" id="btn-seguir-editando" data-cerrar>Seguir editando<\/button>/);
+    assert.match(descartar, /<button type="button" class="gdat-btn peligro" id="btn-descartar">Descartar<\/button>/);
     assert.ok(PAGINA_ADMIN.indexOf('id="modal-descartar"') > PAGINA_ADMIN.indexOf('id="modal-dataset"'));
   });
 
@@ -3536,7 +3536,7 @@ describe('admin.html: "¿Descartar los cambios?" y la baja (Rulings 19 y 20)', (
   it('la baja dice lo que hace, con voseo: es una propuesta que otra persona aprueba', () => {
     assert.match(eliminar, /<p>¿Querés proponer la baja de «<strong id="delete-dataset-name"><\/strong>»\?<\/p>/);
     assert.ok(eliminar.includes('Otra persona la tiene que aprobar en Mi Perfil.'));
-    assert.match(eliminar, /<button type="button" class="ad-btn peligro" id="btn-confirmar-eliminar">Proponer baja<\/button>/);
+    assert.match(eliminar, /<button type="button" class="gdat-btn peligro" id="btn-confirmar-eliminar">Proponer baja<\/button>/);
     assert.doesNotMatch(eliminar, /Está seguro|no se puede deshacer/);
   });
 });
