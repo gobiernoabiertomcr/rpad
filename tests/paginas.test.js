@@ -96,9 +96,10 @@ const VERSION_PROYECTOS = '20261206';
 // íconos y el día elegido del teléfono—, spec 2026-10-28-mi-espacio-agenda-onda, 3; y las vacaciones al cargar una licencia —los
 // avisos del cálculo, «Vence pronto» sin el botón, las horas de franquicia que se pierden y el número de un tramo de un solo día—,
 // spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3; y el formulario del evento con los tres tipos —Personal (Privado), Personal
-// (Público) y Laboral, con lo que ven los demás, «Otro» y la vista previa—, spec 2026-10-29-mi-espacio-evento-publico, 4). Su versión
-// es propia
-const VERSION_MI_ESPACIO = '20261218';
+// (Público) y Laboral, con lo que ven los demás, «Otro» y la vista previa—, spec 2026-10-29-mi-espacio-evento-publico, 4; y el tilde
+// «Sumar a {mes anterior}» en la planilla de horas extras de contrato —la pastilla punteada, la segunda línea de la banda, el bloque
+// «De febrero» y la pestaña—, spec 2026-10-30-mi-espacio-horas-mes-anterior, 4 y 5). Su versión es propia
+const VERSION_MI_ESPACIO = '20261219';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -991,7 +992,7 @@ describe('páginas', () => {
         // antes de la confirmación (que se abre sobre ella): los días, el selector de «Sumar el día» y sus errores los dibuja
         // mi-espacio.js. Su título es #mp-titulo
         'modal-planilla': ['mp-titulo', 'mp-anuncio', 'mp-anterior', 'mp-mes-titulo', 'mp-siguiente', 'mp-suma', 'mp-cuerpo', 'mp-error',
-          'mp-como-mes', 'mp-dias', 'mp-sumar', 'mp-pendientes', 'mp-guardar'],
+          'mp-como-anterior', 'mp-como-mes', 'mp-dias', 'mp-sumar', 'mp-pendientes', 'mp-guardar'],
         'modal-saldos': ['modal-saldos-titulo', 'ms-error', 'ms-modalidad', 'ms-dias', 'ms-dias-rotulo', 'ms-dias-opciones', 'ms-dias-ayuda',
           'ms-dias-mitades', 'ms-dias-error', 'ms-estudios', 'ms-estudios-opciones', 'ms-estudios-error', 'ms-campos', 'ms-guardar'],
         'modal-uso': ['modal-uso-titulo', 'mu-error', 'mu-fecha', 'mu-fecha-error', 'mu-grupo-horas', 'mu-horas', 'mu-horas-error',
@@ -1135,8 +1136,12 @@ describe('páginas', () => {
         assert.match(html, /<details class="mp-como">\s*<summary>Cómo se cuentan las horas<\/summary>/);
         assert.ok(html.includes('<li><b>Un día hábil</b>: tu jornada es de 8:00 a 15:00 y cuenta la salida.'));
         assert.ok(html.includes('<li><b>Un feriado, sábado o domingo</b>: cuenta todo el tiempo de la entrada a la salida, de a media hora.'));
-        assert.match(html, /<li id="mp-como-mes"><\/li>/);
+        // El renglón del tilde «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4), antes del de las
+        // horas a favor y oculto hasta que llega el mes (lo escribe mi-espacio.js con el mes anterior que manda el servidor)
+        assert.match(html, /<li id="mp-como-anterior" hidden><\/li>\s*<li id="mp-como-mes"><\/li>/);
         assert.match(html, /<div class="mp-columnas" aria-hidden="true">/);
+        // Seis columnas, como cada día: la del tilde, vacía, entre las horas y las acciones
+        assert.match(html, /<div class="mp-columnas" aria-hidden="true">\s*<span>Día<\/span><span>Entrada <span class="me-opcional">\(opcional\)<\/span><\/span><span>Salida<\/span><span>Horas extras<\/span><span><\/span><span><\/span>\s*<\/div>/);
         // Los días, sin semántica de lista (cada uno es un grupo con el nombre de su fecha)
         assert.match(html, /<div class="mp-dias" id="mp-dias"><\/div>/);
         assert.match(html, /<div class="mp-sumar" id="mp-sumar"><\/div>/);
@@ -1333,7 +1338,7 @@ describe('páginas', () => {
       const telefono = media('(max-width: 720px)');
       for (const regla of ['#modal-planilla { padding: 8px; }', '.mp-columnas { display: none; }', '.mp-rotulo { display: block; }',
         '.mp-dia input[type="time"] { height: 44px; }', '.mp-arriba { grid-template-columns: minmax(0, 1fr);',
-        "grid-template-areas: 'fecha horas' 'entrada salida' 'acciones acciones';", '.mp-sumar .form-select { min-width: 0; width: 100%; }',
+        "grid-template-areas: 'fecha horas' 'entrada salida' 'sumar acciones';", '.mp-sumar .form-select { min-width: 0; width: 100%; }',
         // Sin las columnas, sin su lugar arriba; el sábado o domingo, con el borde de la tarjeta y sin el de la computadora (no dos)
         '.me-modal-planilla .modal-body { padding: 0 12px 8px; scroll-padding-top: 0; }',
         '.mp-dia.finde { box-shadow: none; border-color: #C9D3DF; }']) {
@@ -1348,6 +1353,98 @@ describe('páginas', () => {
       assert.ok(estilo.indexOf('@media (max-width: 720px) {') < estilo.indexOf('@media (max-width: 640px) {'));
       // Las flechas deshabilitadas (el mes en curso, el primero) se ven apagadas
       assert.ok(estilo.includes('.me-flecha:disabled { opacity: 0.4; cursor: default; }'));
+    });
+
+    // «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, secciones 4 y 5; la maqueta, propuesta.css): la columna
+    // del tilde en cada fila (entre las horas y las acciones), el tilde (oculto en su lugar sin salida), la pastilla punteada de un día
+    // tildado con «→ enero», la segunda línea de la banda (con el alto de dos renglones siempre), el bloque «De febrero» y, en la
+    // pestaña, la pastilla y «Suma a enero». La clase del tilde es suya: ni la del id de la flecha (#mp-anterior) ni la de «¿Trabajaste
+    // un sábado o un domingo?» (.mp-sumar). En 720 px o menos, el tilde va en la tarjeta, debajo de la entrada, con 44 px de alto
+    it('«Sumar a {mes anterior}»: los estilos nuevos de la planilla y de la pestaña, y en 720 px o menos, el tilde en la tarjeta', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/).replace(/\/\*[\s\S]*?\*\//g, '');
+      const regla = (selector) => {
+        const escapado = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return estilo.match(new RegExp(`\\n\\s*${escapado} \\{([^}]*)\\}`))?.[1] ?? null;
+      };
+      const media = (condicion) => {
+        const inicio = estilo.indexOf(`@media ${condicion} {`);
+        assert.ok(inicio >= 0, condicion);
+        let nivel = 0;
+        for (let i = estilo.indexOf('{', inicio); i < estilo.length; i += 1) {
+          if (estilo[i] === '{') nivel += 1;
+          if (estilo[i] === '}' && (nivel -= 1) === 0) return estilo.slice(inicio, i + 1);
+        }
+        return '';
+      };
+      for (const selector of ['.mp-tilde', '.mp-tilde input', '.mp-tilde input:checked + span', '.mp-tilde.vacio', '.mp-horas b.otro-mes',
+        '.mp-horas small.mp-va-a', '.mp-suma-textos', '.mp-suma-aparte', '.mp-semana.de-otro-mes', '.mp-dia.de-otro-mes',
+        '.mp-dia.de-otro-mes .mp-guardada', '.me-dia-horas.otro-mes', '.me-fila-cuerpo .me-fila-otro-mes']) {
+        assert.ok(regla(selector) !== null, selector);
+      }
+      // La columna del tilde, entre la de las horas y la de las acciones, en cada fila y en las columnas de arriba; las acciones, en la
+      // última (también las de una fila sin tilde: la de una licencia y la del bloque «De febrero»)
+      assert.match(regla('.mp-dia, .mp-columnas'), /grid-template-columns: minmax\(120px, 176px\) minmax\(100px, 118px\) minmax\(100px, 118px\) minmax\(80px, 1fr\) auto minmax\(5\.6rem, auto\);/);
+      assert.match(regla('.mp-acciones'), /grid-column: -2 \/ -1;/);
+      // Sin salida, oculto sin perder su lugar (no corre nada al escribir la salida)
+      assert.match(regla('.mp-tilde.vacio'), /^\s*visibility: hidden;\s*$/);
+      // La banda, con el alto de dos renglones siempre; sus textos pueden achicarse (la banda es flex)
+      assert.match(regla('.mp-suma'), /min-height: 62px;/);
+      assert.match(regla('.mp-suma-textos'), /min-width: 0;/);
+      // El borde punteado de la pastilla de un día tildado, en la planilla y en la pestaña
+      assert.match(regla('.mp-horas b.otro-mes'), /border: 1\.5px dashed var\(--sg-medio\);/);
+      assert.match(regla('.me-dia-horas.otro-mes'), /border: 1\.5px dashed var\(--sg-medio\);/);
+      // De 721 a 860 px, la fila sigue en una línea: el tilde en dos renglones y «→ enero» solo para el lector de pantalla
+      const angosto = media('(min-width: 721px) and (max-width: 860px)');
+      assert.ok(angosto.includes('.mp-tilde { white-space: normal;'), 'el tilde en dos renglones');
+      assert.match(angosto, /\.mp-horas small\.mp-va-a \{ position: absolute; width: 1px; height: 1px;[^}]*clip: rect\(0 0 0 0\);/);
+      // En 720 px o menos: el tilde abajo a la izquierda, de 44 px, y «Nota» a su lado; sin tilde, las acciones a lo ancho
+      const telefono = media('(max-width: 720px)');
+      assert.ok(telefono.includes("grid-template-areas: 'fecha horas' 'entrada salida' 'sumar acciones';"));
+      assert.match(telefono, /\n\s*\.mp-tilde \{ grid-area: sumar; min-height: 44px;/);
+      assert.ok(telefono.includes('.mp-dia.licencia .mp-acciones, .mp-dia.de-otro-mes .mp-acciones { grid-column: 1 / -1; }'));
+      assert.ok(telefono.includes('.mp-acciones { grid-area: acciones; justify-content: flex-start; min-width: 0; }'));
+      // En alto contraste, la pastilla punteada conserva su borde
+      assert.ok(estilo.includes('@media (forced-colors: active) { .mp-horas b.otro-mes, .me-dia-horas.otro-mes { border-color: CanvasText; } }'));
+      // Ninguna regla para .mp-anterior (es el id de la flecha del mes)
+      assert.doesNotMatch(estilo, /\.mp-anterior\b/);
+    });
+
+    // Revisión de la Task 6 (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4: «La banda tiene siempre el alto de dos renglones
+    // (tildar no corre la planilla)»): la banda está fuera de #mp-cuerpo, así que si creciera al tildar, los días se correrían bajo el
+    // dedo. La segunda línea tiene siempre el alto de dos renglones exactos (también vacía) y no crece en ningún corte (lo que no entra
+    // se corta con «…»); la frase, que cambia con las horas, reserva sus renglones donde se parte: dos de 900 px para abajo y tres hasta
+    // 384 px (medido con las fuentes de la página, de 320 a 1280 px: con eso la banda tiene un solo alto en cada ancho)
+    it('«Sumar a {mes anterior}»: tildar no cambia el alto de la banda (la segunda línea, siempre dos renglones; la frase, sus renglones)', () => {
+      const estilo = bloque(/<style>[\s\S]*?<\/style>/).replace(/\/\*[\s\S]*?\*\//g, '');
+      const regla = (selector) => {
+        const escapado = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return estilo.match(new RegExp(`\\n\\s*${escapado} \\{([^}]*)\\}`))?.[1] ?? null;
+      };
+      const numero = (cuerpo, propiedad) => Number(new RegExp(`(?:^|;\\s*|\\s)${propiedad}: ([\\d.]+)(?:em)?;`).exec(cuerpo)?.[1]);
+      const renglones = (alto, interlineado) => Math.round((alto / interlineado) * 100) / 100;
+      // La segunda línea: un alto fijo de dos renglones (no un mínimo), con el texto que no se desborda
+      const aparte = regla('.mp-suma-aparte');
+      assert.ok(aparte, '.mp-suma-aparte');
+      assert.equal(renglones(numero(aparte, 'height'), numero(aparte, 'line-height')), 2);
+      for (const declaracion of ['display: -webkit-box;', '-webkit-box-orient: vertical;', '-webkit-line-clamp: 2;', 'line-clamp: 2;', 'overflow: hidden;']) {
+        assert.ok(aparte.includes(declaracion), declaracion);
+      }
+      assert.doesNotMatch(aparte, /(?:min|max)-height/);
+      // …en todos los cortes: ninguna otra regla la toca
+      assert.equal([...estilo.matchAll(/\.mp-suma-aparte\b/g)].length, 1);
+      // La frase: dos renglones de 900 px para abajo y tres hasta 384 px, después (el de 384 gana)
+      const texto = regla('.mp-suma-texto');
+      const interlineado = numero(texto, 'line-height');
+      assert.equal(interlineado, 1.4);
+      assert.doesNotMatch(texto, /(?:^|[;\s])(?:min-|max-)?height:/);
+      const dos = '@media (max-width: 900px) { .mp-suma-texto { min-height: 2.8em; } }';
+      const tres = '@media (max-width: 384px) { .mp-suma-texto { min-height: 4.2em; } }';
+      assert.ok(estilo.includes(dos), dos);
+      assert.ok(estilo.includes(tres), tres);
+      assert.ok(estilo.indexOf(dos) < estilo.indexOf(tres), 'el de 384 px, después');
+      assert.equal(renglones(2.8, interlineado), 2);
+      assert.equal(renglones(4.2, interlineado), 3);
+      assert.equal([...estilo.matchAll(/\.mp-suma-texto \{/g)].length, 3);
     });
   });
 

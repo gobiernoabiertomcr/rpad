@@ -17,7 +17,9 @@
 import { diasHabilesDe, diaDeLaSemana } from './feriadosReglas.js';
 import { esFechaIso, formatoCorto, formatoLargo } from './notasDigitalesCalendario.js';
 import { RENGLON_FIRMA_CONTRATADO, escapeHtml } from './notasDigitalesContenido.js';
-import { TIPOS_LICENCIA, MESES_HASTA_EL_FRANCO, MESES_HASTA_LAS_HORAS, mesMas, mesEnFrase } from './miEspacioReglas.js';
+import {
+  TIPOS_LICENCIA, MESES_HASTA_EL_FRANCO, MESES_HASTA_LAS_HORAS, mesMas, mesEnFrase, nombreDelMes, horasDeLaSalida
+} from './miEspacioReglas.js';
 
 // Los tipos que tienen nota: todos menos el uso autorizado (decisión del usuario, «por ahora»), en el orden de TIPOS_LICENCIA
 export const TIPOS_CON_NOTA = Object.freeze(TIPOS_LICENCIA.filter((tipo) => tipo !== 'uso_autorizado'));
@@ -117,10 +119,27 @@ const cuandoEmpieza = (dias) =>
 
 // El mes de las horas extras, `meses` antes del de la fecha, cruzando el año: «octubre de 2026»; null si no se puede armar.
 // Los meses son los de miEspacioReglas.js: el franco, MESES_HASTA_EL_FRANCO (dos: el de diciembre sale de las de octubre); las
-// horas a favor, MESES_HASTA_LAS_HORAS (uno)
+// horas a favor, MESES_HASTA_LAS_HORAS (uno), que su cuerpo cuenta aparte porque necesita también el mes 'AAAA-MM'
 const mesDeLasHorasExtras = (fecha, meses) => {
   const mes = mesMas(fecha.slice(0, 7), -meses);
   return mes === null ? null : mesEnFrase(mes);
+};
+
+// Los días tildados «Sumar a {mes anterior}» de un mes 'AAAA-MM' que dan horas (spec 2026-10-30-mi-espacio-horas-mes-anterior,
+// 7): sus horas cuentan en el mes anterior, el de las horas extras de la nota. Las salidas son las de `estado.salidas`; la
+// marca es solo el `true` literal, y un día que da 0 o null (`horasDeLaSalida`, con los feriados) no se nombra. Las fechas,
+// sin repetir y en orden; con lo que no es una lista, ninguna
+const diasSumadosDe = (salidas, mes, feriados) => [...new Set(listaDe(salidas)
+  .filter((fila) => esObjeto(fila) && fila.al_mes_anterior === true && esFechaIso(fila.fecha)
+    && fila.fecha.slice(0, 7) === mes && horasDeLaSalida(fila, feriados) > 0)
+  .map((fila) => fila.fecha))].sort();
+
+// Los días sumados de un mismo mes, con el mes y el año una sola vez, al final: «las del martes 2 de febrero de 2027», «las
+// del martes 2 y el miércoles 3 de febrero de 2027», «las del lunes 1, el martes 2 y el miércoles 3 de febrero de 2027»
+const textoDeLosDiasSumados = (fechas, mes) => {
+  const dias = fechas.map((fecha) => `${diaDeLaSemana(fecha)} ${Number(fecha.slice(8))}`);
+  const lista = dias.length === 1 ? dias[0] : `${dias.slice(0, -1).join(', el ')} y el ${dias.at(-1)}`;
+  return `las del ${lista} de ${mesEnFrase(mes)}`;
 };
 
 // «licencia por examen por dos (2) días hábiles, a partir del día …»
@@ -130,7 +149,8 @@ const porDias = (licencia, dias) => {
 };
 
 // Lo que sigue a PIDO en cada tipo. Los de días reciben los días hábiles de la licencia (al menos uno); los de un día (la
-// franquicia, el franco y las horas a favor) dicen su día, el desde, sin contar días. null si algo no se puede escribir
+// franquicia, el franco y las horas a favor) dicen su día, el desde, sin contar días. Las horas a favor reciben además las
+// salidas de la planilla y los feriados, para nombrar los días sumados al mes de sus horas. null si algo no se puede escribir
 const CUERPOS = Object.freeze({
   vacaciones: ({ dias }) => {
     const cantidad = textoDeDias(dias.length);
@@ -151,12 +171,19 @@ const CUERPOS = Object.freeze({
     return mes ? 'el usufructo del franco compensatorio correspondiente a las horas extras realizadas en '
       + `${mes}, el día ${conElDia(desde)}.` : null;
   },
-  horas_a_favor: ({ desde, horas }) => {
+  // El día va primero, en todas (spec 2026-10-30-mi-espacio-horas-mes-anterior, 7, la variante C que eligió el usuario), y
+  // los días tildados del mes siguiente al de las horas (el de la licencia), entre paréntesis antes del punto: «… realizadas
+  // en enero de 2027 (incluidas las del martes 2 de febrero de 2027, sumadas a enero).»
+  horas_a_favor: ({ desde, horas, salidas, feriados }) => {
     const texto = textoDeHoras(horas);
-    const mes = mesDeLasHorasExtras(desde, MESES_HASTA_LAS_HORAS);
-    if (!texto || !mes) return null;
-    return `el usufructo de ${texto} a favor, ${correspondientesALasHoras(horas)} a las horas extras realizadas en ${mes}, `
-      + `el día ${conElDia(desde)}.`;
+    const mesDeLasHoras = mesMas(desde.slice(0, 7), -MESES_HASTA_LAS_HORAS);
+    if (!texto || mesDeLasHoras === null) return null;
+    const delMes = mesMas(mesDeLasHoras, 1);
+    const sumados = diasSumadosDe(salidas, delMes, feriados);
+    const incluidas = sumados.length === 0 ? ''
+      : ` (incluidas ${textoDeLosDiasSumados(sumados, delMes)}, sumadas a ${nombreDelMes(mesDeLasHoras)})`;
+    return `el usufructo de ${texto} a favor el día ${conElDia(desde)}, ${correspondientesALasHoras(horas)} a las horas `
+      + `extras realizadas en ${mesEnFrase(mesDeLasHoras)}${incluidas}.`;
   }
 });
 // Los tipos que cuentan días hábiles; el resto es de un día
@@ -176,7 +203,9 @@ const firmaDe = ({ nombre, cargo, vinculo }) => {
 /**
  * La nota de una licencia: `licencia` = { tipo, desde, hasta, horas } (las de `estado.licencias`, con las horas como
  * número), y en las opciones, `fecha` = 'AAAA-MM-DD' (el día de la última vez que se guardó la licencia), `persona` =
- * { nombre, cargo, vinculo } y `feriados`, el Set de `contextoDe` (lo que no es un Set cuenta solo los 9 fijos).
+ * { nombre, cargo, vinculo }, `feriados`, el Set de `contextoDe` (lo que no es un Set cuenta solo los 9 fijos), y `salidas`,
+ * opcional, las de `estado.salidas` (sin ellas, ninguna): solo las usan las horas a favor, para nombrar los días tildados
+ * «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 7).
  * Da `{ nota }`, con `nota` = { fecha, destinatario: [string, string], sd, saludo, cuerpo, cierre, firma: [{ texto, chico }],
  * nombre } (`nombre`, el del archivo: «Nota de licencia - Licencia anual ordinaria - 2026-11-16.docx», con el desde), o
  * `{ error }` con una clave de MENSAJES_NOTA. Nunca tira.
@@ -185,7 +214,7 @@ export const notaDeLicencia = (licencia, opciones) => {
   if (!esObjeto(licencia)) return { error: 'error' };
   const { tipo, desde, hasta, horas } = licencia;
   if (!TIPOS_CON_NOTA.includes(tipo)) return { error: 'sinNota' };
-  const { fecha, persona, feriados } = esObjeto(opciones) ? opciones : {};
+  const { fecha, persona, feriados, salidas } = esObjeto(opciones) ? opciones : {};
   if (!esFechaIso(fecha) || !esFechaIso(desde) || !esFechaIso(hasta) || hasta < desde || !esObjeto(persona)) {
     return { error: 'error' };
   }
@@ -193,7 +222,7 @@ export const notaDeLicencia = (licencia, opciones) => {
   if (!nombre) return { error: 'error' };
   const dias = TIPOS_DE_DIAS.includes(tipo) ? diasHabilesDe(desde, hasta, feriados) : [];
   if (TIPOS_DE_DIAS.includes(tipo) && dias.length === 0) return { error: 'sinDiasHabiles' };
-  const cuerpo = CUERPOS[tipo]({ desde, horas, dias });
+  const cuerpo = CUERPOS[tipo]({ desde, horas, dias, salidas: listaDe(salidas), feriados });
   if (cuerpo === null) return { error: 'error' };
   return {
     nota: {

@@ -258,6 +258,22 @@ describe('renderNotaDocx: los bloques, en orden', () => {
 // ---------------------------------------------------------------------------------------------------------------------------
 
 describe('renderNotaDocx: los mismos renglones que la vista (htmlDeLaNota)', () => {
+  // Spec 2026-10-30-mi-espacio-horas-mes-anterior, 7. Inventado: el martes 02/02/2027 (salida 16:20, 1,5 h) y el miércoles
+  // 03/02 (15:50, 1 h), tildados «Sumar a enero», y unas horas a favor del viernes 05/02/2027
+  it('horas a favor con días sumados al mes anterior: el paréntesis, igual en el Word y en la vista', async () => {
+    const salidas = [
+      { id: 1, fecha: '2027-02-02', entrada: null, salida: '16:20', nota: null, al_mes_anterior: true },
+      { id: 2, fecha: '2027-02-03', entrada: null, salida: '15:50', nota: null, al_mes_anterior: true }
+    ];
+    const { nota } = notaDeLicencia({ tipo: 'horas_a_favor', desde: '2027-02-05', hasta: '2027-02-05', horas: 7 },
+      { fecha: '2027-02-03', persona: CONTRATADA, feriados: FERIADOS, salidas });
+    assert.ok(nota.cuerpo.endsWith(
+      '(incluidas las del martes 2 y el miércoles 3 de febrero de 2027, sumadas a enero).'), nota.cuerpo);
+    const word = parrafosDelWord((await wordDe(nota)).documento).map(sinXml);
+    assert.deepEqual(word, renglonesDeLaVista(htmlDeLaNota(nota)));
+    assert.ok(word.some((p) => p.texto === nota.cuerpo));
+  });
+
   for (const [tipo, licencia] of Object.entries(LICENCIAS)) {
     for (const [quien, persona] of Object.entries({ PLANTA, CONTRATADA, SIN_CARGO, SIN_VINCULO })) {
       it(`${tipo}, ${quien}: el mismo texto, en el mismo orden y con la misma diagramación`, async () => {

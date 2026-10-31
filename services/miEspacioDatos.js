@@ -66,9 +66,11 @@ export const personaDe = async (usuarioId, conexion = pool) => {
  * - `licencias`: `[{ id, tipo, desde, hasta, horas, mostrar, nota, licencia_oficial_id, oficial, sin_pasar }]`, por fecha
  *   (`horas` es null en las que no son por horas);
  * - `horasExtras`: `[{ id, fecha, desde, hasta, nota }]`, por fecha y horario;
- * - `salidas`: `[{ id, fecha, entrada, salida, nota }]`, la planilla de contrato (spec 2026-10-27-mi-espacio-horas, 6), por
- *   fecha (una por día); `entrada` es null si no se cargó. Se leen para cualquier modalidad: las reglas eligen cuáles cuentan
- *   (planta, `horasExtras`; contrato, `salidas`).
+ * - `salidas`: `[{ id, fecha, entrada, salida, nota, al_mes_anterior }]`, la planilla de contrato (spec
+ *   2026-10-27-mi-espacio-horas, 6), por fecha (una por día); `entrada` es null si no se cargó, y `al_mes_anterior` es el
+ *   tilde «Sumar a {mes anterior}» como booleano (spec 2026-10-30-mi-espacio-horas-mes-anterior, 8: las reglas leen solo
+ *   el `true` literal). Se leen para cualquier modalidad: las reglas eligen cuáles cuentan (planta, `horasExtras`;
+ *   contrato, `salidas`).
  * Los ids que no sirven o que no existen no están; sin ninguno, un Map vacío (sin consultar).
  * @returns {Promise<Map<number, object>>}
  */
@@ -131,10 +133,10 @@ export const estadosDe = async (usuarioIds, conexion = pool) => {
     });
   }
 
-  // Las horas, ya cortadas a 'HH:MM' en la consulta: una entrada NULL sigue siendo null
+  // Las horas, ya cortadas a 'HH:MM' en la consulta: una entrada NULL sigue siendo null. El tilde, un tinyint: 1 es true
   const [salidas] = await conexion.query(
     `SELECT id, usuario_id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, TIME_FORMAT(entrada, '%H:%i') AS entrada,
-            TIME_FORMAT(salida, '%H:%i') AS salida, nota
+            TIME_FORMAT(salida, '%H:%i') AS salida, nota, al_mes_anterior
      FROM mi_espacio_salidas
      WHERE usuario_id IN (?) AND activo = 1
      ORDER BY usuario_id, fecha, id`,
@@ -142,7 +144,8 @@ export const estadosDe = async (usuarioIds, conexion = pool) => {
   );
   for (const fila of salidas) {
     deLaPersona(fila.usuario_id).salidas.push({
-      id: Number(fila.id), fecha: fila.fecha, entrada: fila.entrada ?? null, salida: fila.salida, nota: fila.nota ?? null
+      id: Number(fila.id), fecha: fila.fecha, entrada: fila.entrada ?? null, salida: fila.salida, nota: fila.nota ?? null,
+      al_mes_anterior: Number(fila.al_mes_anterior) === 1
     });
   }
   return estados;

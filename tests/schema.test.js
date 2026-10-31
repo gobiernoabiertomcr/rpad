@@ -558,6 +558,9 @@ describe('database/schema.sql', () => {
       'mi_espacio_salidas.entrada time null=YES default=NULL key=',
       'mi_espacio_salidas.salida time null=NO default=null key=',
       'mi_espacio_salidas.nota varchar(200) null=YES default=NULL key=',
+      // El tilde «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 8): 1 si las horas del día suman al
+      // mes anterior al de su fecha
+      'mi_espacio_salidas.al_mes_anterior tinyint(1) null=NO default=0 key=',
       'mi_espacio_salidas.activo tinyint(1) null=NO default=1 key=',
       'mi_espacio_salidas.created_at timestamp null=NO default=current_timestamp() key=',
       'mi_espacio_salidas.updated_at timestamp null=NO default=current_timestamp() key='
@@ -2207,6 +2210,10 @@ describe('migracion-mi-espacio-horas.sql', () => {
   const BASE_MI_ESPACIO_HORAS = 'rpad_schema_mi_espacio_horas_test';
   const MIGRACION = 'migracion-mi-espacio-horas.sql';
   const ROLLBACK = 'rollback-mi-espacio-horas.sql';
+  // Lo que se le sumó después, con «Sumar a {mes anterior}»: la columna al_mes_anterior. Su migración va después de esta, y su
+  // vuelta atrás, antes que la de esta
+  const MIGRACION_MES_ANTERIOR = 'migracion-mi-espacio-horas-mes-anterior.sql';
+  const ROLLBACK_MES_ANTERIOR = 'rollback-mi-espacio-horas-mes-anterior.sql';
   // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
   const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
   // Sin los comentarios: lo que de verdad se ejecuta
@@ -2293,6 +2300,8 @@ describe('migracion-mi-espacio-horas.sql', () => {
     assert.ok(!anterior.some(esDeLasTablas), 'la base de partida ya tiene la tabla');
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION));
+    // Y lo que se le sumó después: la columna del tilde «Sumar a {mes anterior}»
+    await root.query(sql(MIGRACION_MES_ANTERIOR));
     await comoSchema();
   });
 
@@ -2300,6 +2309,8 @@ describe('migracion-mi-espacio-horas.sql', () => {
     await crearBase({ conLoNuevo: true });
     await cargarDatos();
     assert.equal(await contarEn('mi_espacio_salidas'), 1);
+    // Primero la vuelta atrás de «Sumar a {mes anterior}», como en el despliegue (la base no lo exige: la tabla se borra entera)
+    await root.query(sql(ROLLBACK_MES_ANTERIOR));
     await root.query(sql(ROLLBACK));
     await root.query(sql(ROLLBACK));
     // La estructura de main: la de schema.sql sin la tabla
@@ -2307,8 +2318,9 @@ describe('migracion-mi-espacio-horas.sql', () => {
     assert.deepEqual(await columnas(root, BASE_MI_ESPACIO_HORAS), deMain);
     assert.equal(await contarEn('usuarios'), 1);
     assert.equal(await contarEn('mi_espacio_horas_extras'), 1);
-    // La migración vuelve a dejar exactamente la estructura de schema.sql
+    // Las dos migraciones vuelven a dejar exactamente la estructura de schema.sql
     await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION_MES_ANTERIOR));
     await comoSchema();
   });
 
@@ -2513,4 +2525,143 @@ describe('migracion-mi-espacio-evento-publico.sql', () => {
       assert.equal(await contarEn(TABLA_NUEVA), 0);
     });
   }
+});
+
+// «Sumar a {mes anterior}» de la planilla de horas extras de contrato (spec 2026-10-30-mi-espacio-horas-mes-anterior, 8 y 11):
+// la columna al_mes_anterior de mi_espacio_salidas, 1 si las horas del día suman al mes anterior al de su fecha. La migración
+// y su vuelta atrás, sobre una base descartable creada con schema.sql
+describe('migracion-mi-espacio-horas-mes-anterior.sql', () => {
+  const BASE_MES_ANTERIOR = 'rpad_schema_mi_espacio_horas_mes_anterior_test';
+  const MIGRACION = 'migracion-mi-espacio-horas-mes-anterior.sql';
+  const ROLLBACK = 'rollback-mi-espacio-horas-mes-anterior.sql';
+  const COLUMNA = 'mi_espacio_salidas.al_mes_anterior';
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const sentencias = (archivo) => codigo(archivo).split(';').map(s => s.trim()).filter(Boolean);
+  const enLaBase = (tabla) => `\`${BASE_MES_ANTERIOR}\`.\`${tabla}\``;
+  const esLoNuevo = (c) => c.startsWith(`${COLUMNA} `);
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main): sin la columna
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_MES_ANTERIOR}\``);
+    await root.query(`CREATE DATABASE \`${BASE_MES_ANTERIOR}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_MES_ANTERIOR}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) await root.query('ALTER TABLE mi_espacio_salidas DROP COLUMN al_mes_anterior');
+  };
+  // Una persona de contrato (inventada), la de la maqueta
+  const cargarPersona = async () => {
+    const [{ insertId }] = await root.query(
+      `INSERT INTO ${enLaBase('usuarios')} (username, password_hash, nombre_completo, email, rol, vinculo) VALUES ('t_editor', 'x', 'Sofía Paz', 't_editor@rpad.test', 'editor', 'contrato')`);
+    return insertId;
+  };
+  // Dos salidas de febrero de 2027, como las escribe el código de antes (sin nombrar la columna)
+  const cargarSalidasDeAntes = (usuario) => root.query(
+    `INSERT INTO ${enLaBase('mi_espacio_salidas')} (usuario_id, fecha, salida) VALUES (?, '2027-02-02', '16:20'), (?, '2027-02-03', '15:50')`,
+    [usuario, usuario]);
+  const salidas = async () => (await root.query(
+    `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, TIME_FORMAT(salida, '%H:%i') AS salida, al_mes_anterior, activo
+     FROM ${enLaBase('mi_espacio_salidas')} ORDER BY fecha`))[0].map(f => ({ ...f }));
+  // La misma estructura que schema.sql: las columnas, en su orden, y también las claves foráneas, los índices, el motor y la
+  // colación de la tabla, que las columnas no muestran
+  const comoSchema = async () => {
+    assert.deepEqual(await columnas(root, BASE_MES_ANTERIOR), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_MES_ANTERIOR, TABLAS_MI_ESPACIO_HORAS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_HORAS));
+    assert.deepEqual(await indicesDe(root, BASE_MES_ANTERIOR, TABLAS_MI_ESPACIO_HORAS), await indicesDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_HORAS));
+    assert.deepEqual(await motoresDe(root, BASE_MES_ANTERIOR, TABLAS_MI_ESPACIO_HORAS), await motoresDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_HORAS));
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_MES_ANTERIOR}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega (nada de DROP, RENAME ni CHECK)', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+    // Los acentos de los comentarios llegan bien desde phpMyAdmin
+    assert.match(codigo(MIGRACION), /^SET NAMES utf8mb4;/);
+    assert.match(codigo(ROLLBACK), /^SET NAMES utf8mb4;/);
+    // Lo único que se ejecuta, además de SET NAMES: la columna, si todavía no está, después de nota
+    const lista = sentencias(MIGRACION);
+    assert.equal(lista.length, 2, lista.join('\n---\n'));
+    assert.match(lista[1],
+      /^ALTER TABLE `mi_espacio_salidas` ADD COLUMN IF NOT EXISTS `al_mes_anterior` tinyint\(1\) NOT NULL DEFAULT 0 AFTER `nota`$/);
+  });
+
+  it('las cabeceras dicen la spec, el orden, que es obligatoria, que se puede repetir y cómo se deshace; el rollback, que las horas tildadas vuelven a su mes y qué va después', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-10-30-mi-espacio-horas-mes-anterior-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    // El código anterior anda con la columna, y lo ya cargado queda sin tildar
+    assert.match(cabecera(MIGRACION), /el código anterior sigue funcionando/);
+    assert.match(cabecera(MIGRACION), /queda en 0/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código nuevo, después de migracion-mi-espacio-horas\.sql/);
+    assert.match(cabecera(MIGRACION), /Es obligatoria/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-mi-espacio-horas-mes-anterior\.sql/);
+    assert.match(cabecera(ROLLBACK), /migracion-mi-espacio-horas-mes-anterior\.sql/);
+    assert.match(cabecera(ROLLBACK), /ORDEN: primero volver a subir los archivos anteriores y hacer Restart; después correr esto/);
+    // Lo que pasa, dicho con su nombre: las salidas quedan, y las horas tildadas vuelven a su mes
+    assert.match(cabecera(ROLLBACK), /vuelven a su mes/);
+    // Y si también se deshace la planilla, esto va antes
+    assert.match(cabecera(ROLLBACK), /rollback-mi-espacio-horas\.sql/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('el rollback solo saca la columna: no borra tablas ni toca las salidas, usuarios ni ninguna otra', () => {
+    const lista = sentencias(ROLLBACK);
+    assert.equal(lista.length, 2, lista.join('\n---\n'));
+    assert.match(lista[1], /^ALTER TABLE `mi_espacio_salidas` DROP COLUMN IF EXISTS `al_mes_anterior`$/);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DROP TABLE|DELETE|UPDATE|TRUNCATE|INSERT|RENAME)\b/i);
+  });
+
+  it('la columna está en schema.sql y en la base del .env, después de nota, una sola vez', async () => {
+    const esperada = `${COLUMNA} tinyint(1) null=NO default=0 key=`;
+    for (const base of [BASE_TEMPORAL, process.env.DB_NAME]) {
+      const deLaTabla = (await columnas(root, base)).filter(c => c.startsWith('mi_espacio_salidas.'));
+      assert.deepEqual(deLaTabla.filter(esLoNuevo), [esperada], `${base}\n${deLaTabla.join('\n')}`);
+      const posicion = (columna) => deLaTabla.findIndex(c => c.startsWith(`mi_espacio_salidas.${columna} `));
+      assert.equal(posicion('al_mes_anterior'), posicion('nota') + 1, `${base}\n${deLaTabla.join('\n')}`);
+    }
+  });
+
+  it('desde la estructura de main deja la de schema.sql, se puede repetir y lo ya cargado queda en 0', async () => {
+    await crearBase({ conLoNuevo: false });
+    assert.ok(!(await columnas(root, BASE_MES_ANTERIOR)).some(esLoNuevo), 'la base de partida ya tiene la columna');
+    const usuario = await cargarPersona();
+    await cargarSalidasDeAntes(usuario);
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.equal((await columnas(root, BASE_MES_ANTERIOR)).filter(esLoNuevo).length, 1);
+    // Lo que había, sin tildar: nada cambia hasta que alguien tilde
+    assert.deepEqual(await salidas(), [
+      { fecha: '2027-02-02', salida: '16:20', al_mes_anterior: 0, activo: 1 },
+      { fecha: '2027-02-03', salida: '15:50', al_mes_anterior: 0, activo: 1 }
+    ]);
+    // Lo que escribe el código de antes con la columna puesta (sin nombrarla) también queda en 0
+    await root.query(`INSERT INTO ${enLaBase('mi_espacio_salidas')} (usuario_id, fecha, salida) VALUES (?, '2027-02-04', '16:00')`, [usuario]);
+    assert.equal((await salidas()).at(-1).al_mes_anterior, 0);
+  });
+
+  it('el rollback se puede repetir, saca la columna sin borrar las salidas, y la migración la recupera con todo en 0', async () => {
+    await crearBase({ conLoNuevo: true });
+    const usuario = await cargarPersona();
+    await root.query(
+      `INSERT INTO ${enLaBase('mi_espacio_salidas')} (usuario_id, fecha, salida, al_mes_anterior) VALUES (?, '2027-02-02', '16:20', 1), (?, '2027-02-03', '15:50', 0)`,
+      [usuario, usuario]);
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin la columna
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esLoNuevo(c));
+    assert.deepEqual(await columnas(root, BASE_MES_ANTERIOR), deMain);
+    const [quedan] = await root.query(
+      `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, TIME_FORMAT(salida, '%H:%i') AS salida FROM ${enLaBase('mi_espacio_salidas')} ORDER BY fecha`);
+    assert.deepEqual(quedan.map(f => ({ ...f })), [{ fecha: '2027-02-02', salida: '16:20' }, { fecha: '2027-02-03', salida: '15:50' }]);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql, con las dos sin tildar: las horas, en su mes
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.deepEqual((await salidas()).map(f => [f.fecha, f.al_mes_anterior]), [['2027-02-02', 0], ['2027-02-03', 0]]);
+  });
 });

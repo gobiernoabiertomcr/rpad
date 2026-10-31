@@ -620,7 +620,7 @@
         .mp-arriba { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 22px; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--sg-linea); }
         .mp-mes { display: flex; align-items: center; gap: 8px; }
         .mp-mes h3 { margin: 0; min-width: 158px; text-align: center; font-family: var(--f-titulo); font-weight: 700; font-size: 1.15rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
-        .mp-suma { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 10px 16px; border-radius: 16px; background: var(--sg-cielo); }
+        .mp-suma { display: flex; align-items: center; gap: 14px; min-width: 0; min-height: 62px; padding: 10px 16px; border-radius: 16px; background: var(--sg-cielo); }
         .mp-suma-cifra { font-family: var(--f-titulo); font-weight: 800; font-size: 2rem; line-height: 1; letter-spacing: -0.04em; color: var(--sg-tinta); font-variant-numeric: tabular-nums; white-space: nowrap; }
         .mp-suma-cifra small { font-family: var(--f-texto); font-size: 0.85rem; font-weight: 700; letter-spacing: 0; margin-left: 3px; color: var(--sg-azul); }
         .mp-suma-texto { margin: 0; font-size: 0.9rem; line-height: 1.4; color: var(--sg-texto); overflow-wrap: anywhere; }
@@ -631,9 +631,12 @@
         .mp-como li + li { margin-top: 4px; }
         .mp-como b { color: var(--sg-tinta); }
         /* Un día por fila: la fecha con sus marcas, la entrada (opcional en un día hábil: en gris mientras está vacía), la salida, las
-           horas (se calculan mientras se escribe) y «Quitar» y «Nota»; debajo, la nota, el aviso del servidor y el error */
+           horas (se calculan mientras se escribe), el tilde «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior,
+           sección 4) y «Quitar» y «Nota»; debajo, la nota, el aviso del servidor y el error. Cada fila es su propia grilla, así que
+           la última columna tiene un ancho mínimo (el tilde queda en la misma vertical en todas las filas) y las acciones van
+           siempre en ella, también en una fila sin tilde (la de una licencia con una salida de antes y la del bloque «De febrero») */
         .mp-dias { margin: 8px 0 0; }
-        .mp-dia, .mp-columnas { display: grid; grid-template-columns: minmax(120px, 176px) minmax(100px, 118px) minmax(100px, 118px) minmax(80px, 1fr) auto; gap: 6px 12px; align-items: center; }
+        .mp-dia, .mp-columnas { display: grid; grid-template-columns: minmax(120px, 176px) minmax(100px, 118px) minmax(100px, 118px) minmax(80px, 1fr) auto minmax(5.6rem, auto); gap: 6px 12px; align-items: center; }
         .mp-columnas { position: sticky; top: 0; z-index: 2; padding: 10px 12px 8px 15px; background: #fff; border-bottom: 1px solid var(--sg-linea); font-size: 0.78rem; font-weight: 600; color: var(--sg-suave); }
         .mp-columnas span:nth-child(4) { padding-left: 2px; }
         .mp-dia { position: relative; padding: 7px 12px 7px 15px; border-radius: 12px; margin-top: 2px; }
@@ -653,7 +656,7 @@
         .mp-horas b.cero { background: var(--sg-gris-fondo); color: var(--sg-suave); font-weight: 600; }
         .mp-horas b.nada { background: none; color: var(--sg-suave); font-weight: 500; min-width: 0; padding: 0; }
         .mp-horas small { font-size: 0.76rem; color: var(--sg-suave); line-height: 1.25; }
-        .mp-acciones { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+        .mp-acciones { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 5.6rem; grid-column: -2 / -1; }
         .mp-acciones .sg-link { font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
         .mp-nota-campo { grid-column: 2 / -1; }
         .mp-nota-campo input { width: 100%; height: 38px; padding: 0 12px; border: 1px solid var(--sg-borde-control); border-radius: 10px; font: inherit; font-size: 0.9rem; color: var(--sg-texto); }
@@ -685,11 +688,55 @@
         .mp-sumar p { margin: 0; font-size: 0.86rem; color: var(--sg-suave); }
         .mp-pendientes { font-size: 0.86rem; color: var(--sg-suave); }
         .mp-pendientes b { color: var(--sg-tinta); }
+        /* «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4; la maqueta, propuesta.css). El tilde: un
+           <label> con su casilla (su nombre dice el día: «Sumar a enero el martes 02/02»); tildado, el texto pasa a tinta. Sin salida,
+           no se ve pero ocupa su lugar (visibility: hidden: tampoco recibe el foco ni lo lee el lector de pantalla). Su clase es
+           .mp-tilde: ni el id de la flecha del mes (#mp-anterior) ni la de «¿Trabajaste un sábado o un domingo?» (.mp-sumar) */
+        .mp-tilde { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 4px 0 2px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; color: var(--sg-texto); white-space: nowrap; cursor: pointer; }
+        .mp-tilde input { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--sg-tinta); cursor: pointer; }
+        .mp-tilde:hover { background: var(--sg-sutil); }
+        .mp-tilde input:checked + span { color: var(--sg-tinta); }
+        .mp-tilde.vacio { visibility: hidden; }
+        /* Un día tildado: las mismas horas en una pastilla blanca con el borde punteado del azul medio (no cuentan en este mes) y, al
+           lado, «→ enero» en azul y negrita (no depende del color: dice adónde van) */
+        .mp-horas b.otro-mes { background: #fff; color: var(--sg-azul); border: 1.5px dashed var(--sg-medio); }
+        .mp-horas small.mp-va-a { color: var(--sg-azul); font-weight: 700; font-size: 0.8rem; white-space: nowrap; }
+        /* La banda: debajo de la frase, en chico, lo que se va al mes anterior o lo que viene del siguiente. Tildar o destildar cambia
+           los textos, nunca el alto de la banda (#mp-cuerpo está debajo: si la banda creciera, los días se correrían bajo el dedo).
+           La segunda línea tiene siempre el alto de dos renglones (2 × 1,35 = 2,7em), también vacía: con las dos frases juntas ocupa
+           dos renglones ya en la compu, y no crece; lo que no entra (las dos frases en un teléfono angosto) se corta con «…», y se lee
+           entero con el lector de pantalla (los días y el bloque «De febrero» dicen lo mismo). La frase, que cambia con las horas,
+           reserva sus renglones donde puede partirse (medido con las fuentes de la página: con el modal de 900 px entra en uno): de
+           900 px para abajo, en la compu angosta y en el teléfono, dos renglones (2 × 1,4 = 2,8em) y, hasta 384 px, tres (4,2em) */
+        .mp-suma-textos { min-width: 0; }
+        .mp-suma-aparte { height: 2.7em; margin: 2px 0 0; font-size: 0.84rem; line-height: 1.35; color: var(--sg-azul); font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+        @media (max-width: 900px) { .mp-suma-texto { min-height: 2.8em; } }
+        @media (max-width: 384px) { .mp-suma-texto { min-height: 4.2em; } }
+        /* En la planilla de enero, después de la última semana: «De febrero» (como el renglón de una semana) y cada día de febrero
+           tildado, de solo lectura, con «Ver en febrero» en la columna de las acciones */
+        .mp-semana.de-otro-mes { margin-top: 20px; }
+        .mp-dia.de-otro-mes { background: var(--sg-sutil); }
+        .mp-dia.de-otro-mes .mp-guardada { flex-direction: row; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
         /* El día por día de contrato de la pestaña: las horas en una pastilla (las que dan 0, en gris) y el aviso de una salida que
            dejó de cerrar, en ámbar */
         .me-dia-horas { display: inline-flex; align-items: center; justify-content: center; min-width: 52px; height: 26px; padding: 0 9px; border-radius: 999px; background: var(--sg-azul-fondo); color: var(--sg-azul); font-weight: 700; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
         .me-fila.tenue .me-dia-horas { background: var(--sg-gris-fondo); color: var(--sg-suave); font-weight: 600; }
         .me-fila-cuerpo .me-fila-aviso { color: var(--sg-ambar); font-weight: 600; }
+        /* La pestaña, en el día por día (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 5): la pastilla de un día que suma al
+           mes anterior, punteada como en la planilla, con «Suma a enero» al lado */
+        .me-dia-horas.otro-mes { background: #fff; color: var(--sg-azul); border: 1.5px dashed var(--sg-medio); }
+        .me-fila-cuerpo .me-fila-otro-mes { color: var(--sg-azul); font-weight: 700; font-size: 0.86rem; }
+        /* En alto contraste, la pastilla punteada conserva su borde */
+        @media (forced-colors: active) { .mp-horas b.otro-mes, .me-dia-horas.otro-mes { border-color: CanvasText; } }
+        /* De 721 a 860 px (el modal angosto de una ventana chica), para que la fila de la planilla siga en una línea sin desplazar de
+           costado: las columnas ceden un poco más, el texto del tilde va en dos renglones («Sumar a» / «diciembre», sin agrandar la
+           fila: los campos son más altos) y «→ enero» queda solo para el lector de pantalla (al lado, la pastilla punteada y el tilde
+           tildado ya lo dicen) */
+        @media (min-width: 721px) and (max-width: 860px) {
+            .mp-dia, .mp-columnas { grid-template-columns: minmax(104px, 176px) minmax(92px, 118px) minmax(92px, 118px) minmax(64px, 1fr) auto minmax(5.6rem, auto); column-gap: 8px; }
+            .mp-tilde { white-space: normal; max-width: 6.4rem; line-height: 1.2; }
+            .mp-horas small.mp-va-a { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+        }
 
         /* Foco visible (el de Proyectos: anillo --tinta de 3 px con halo --sol-fuerte) */
         .me-pagina a:focus-visible, .me-pagina button:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
@@ -737,7 +784,7 @@
             .mp-suma-cifra { font-size: 1.6rem; }
             .me-modal-planilla .modal-body { padding: 0 12px 8px; scroll-padding-top: 0; }
             .mp-columnas { display: none; }
-            .mp-dia { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'fecha horas' 'entrada salida' 'acciones acciones'; gap: 8px 10px; padding: 12px 12px 10px 15px; margin-top: 8px; border: 1px solid var(--sg-linea); }
+            .mp-dia { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'fecha horas' 'entrada salida' 'sumar acciones'; gap: 8px 10px; padding: 12px 12px 10px 15px; margin-top: 8px; border: 1px solid var(--sg-linea); }
             .mp-dia.feriado { border-color: #F0D78C; }
             .mp-dia.licencia { border-color: #BFE0CC; }
             .mp-dia.finde { box-shadow: none; border-color: #C9D3DF; }
@@ -745,7 +792,9 @@
             .mp-horas { grid-area: horas; justify-content: flex-end; flex-wrap: wrap; text-align: right; }
             .mp-campo.entrada { grid-area: entrada; }
             .mp-campo.salida { grid-area: salida; }
-            .mp-acciones { grid-area: acciones; justify-content: flex-start; }
+            .mp-acciones { grid-area: acciones; justify-content: flex-start; min-width: 0; }
+            .mp-tilde { grid-area: sumar; min-height: 44px; justify-self: start; white-space: normal; }
+            .mp-dia.licencia .mp-acciones, .mp-dia.de-otro-mes .mp-acciones { grid-column: 1 / -1; }
             .mp-rotulo { display: block; }
             .mp-dia input[type="time"] { height: 44px; }
             .mp-lugar, .mp-guardada { grid-column: 1 / -1; grid-row: 2; }
@@ -1141,7 +1190,9 @@
     <!-- «Cargar horas extras» de contrato (spec 2026-10-27-mi-espacio-horas, sección 4; la maqueta aprobada): la planilla del mes.
          Arriba, fijos, el mes con sus flechas y lo que lleva sumado; en el cuerpo, que se desplaza, «Cómo se cuentan las horas», las
          columnas y un día por fila, en semanas (los dibuja mi-espacio.js en #mp-dias, sin semántica de lista: cada día es un grupo
-         con el nombre de su fecha), y «¿Trabajaste un sábado o un domingo?»; en el pie, cuántos días cambiaron y los botones. Tiene
+         con el nombre de su fecha, y su tilde «Sumar a {mes anterior}»; al final, lo que entra del mes siguiente: spec
+         2026-10-30-mi-espacio-horas-mes-anterior, sección 4), y «¿Trabajaste un sábado o un domingo?»; en el pie, cuántos días
+         cambiaron y los botones. Tiene
          su propia región viva (#mp-anuncio: con aria-modal, la de la página puede no leerse). Un clic en el velo no la cierra -->
     <div class="modal-overlay" id="modal-planilla">
         <div class="modal me-modal me-modal-planilla" role="dialog" aria-modal="true" aria-labelledby="mp-titulo">
@@ -1165,11 +1216,12 @@
                     <ul>
                         <li><b>Un día hábil</b>: tu jornada es de 8:00 a 15:00 y cuenta la salida. Desde las 15:16 suma media hora, desde las 15:46 una hora, y así cada media hora. La entrada es opcional.</li>
                         <li><b>Un feriado, sábado o domingo</b>: cuenta todo el tiempo de la entrada a la salida, de a media hora. Si te faltan 10 minutos o menos para completar una, se suma.</li>
+                        <li id="mp-como-anterior" hidden></li>
                         <li id="mp-como-mes"></li>
                     </ul>
                 </details>
                 <div class="mp-columnas" aria-hidden="true">
-                    <span>Día</span><span>Entrada <span class="me-opcional">(opcional)</span></span><span>Salida</span><span>Horas extras</span><span></span>
+                    <span>Día</span><span>Entrada <span class="me-opcional">(opcional)</span></span><span>Salida</span><span>Horas extras</span><span></span><span></span>
                 </div>
                 <div class="mp-dias" id="mp-dias"></div>
                 <div class="mp-sumar" id="mp-sumar"></div>
@@ -1419,6 +1471,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/mi-espacio.js?v=20261218"></script>
+    <script src="js/mi-espacio.js?v=20261219"></script>
 </body>
 </html>

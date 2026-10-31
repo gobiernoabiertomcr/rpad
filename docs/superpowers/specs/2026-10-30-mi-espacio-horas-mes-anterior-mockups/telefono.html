@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>En el teléfono - RPAD (maqueta)</title>
+    <!-- MAQUETA (30/10/2026): la misma maqueta (index.html) dentro de un marco de 375 px de ancho, para ver la planilla como en el
+         teléfono sin achicar la ventana. No es parte del diseño. Datos inventados. -->
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --fondo: #0F1B2D; --texto: #E6EDF6; --suave: #BFD0E3; --borde: #34465F; --sol: #F2B705; }
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; background: var(--fondo); color: var(--texto); font-family: Figtree, system-ui, sans-serif; font-size: 0.9rem; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 16px; }
+        .barra { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; max-width: 760px; }
+        .barra b { color: #9FB2C8; font-weight: 600; margin-right: 6px; }
+        .barra button, .barra a { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--borde); background: transparent; color: var(--texto); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+        .barra button[aria-pressed="true"] { background: var(--texto); color: var(--fondo); border-color: var(--texto); }
+        .barra button:focus-visible, .barra a:focus-visible { outline: 3px solid var(--sol); outline-offset: 2px; }
+        .idea { margin: 0; color: var(--suave); max-width: 560px; text-align: center; line-height: 1.4; }
+        .telefono { width: 399px; max-width: 100%; padding: 12px; border-radius: 36px; background: #000; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45); }
+        iframe { display: block; width: 375px; max-width: 100%; height: 760px; border: 0; border-radius: 26px; background: #fff; }
+    </style>
+</head>
+<body>
+    <div class="barra" role="group" aria-label="Qué se ve en el teléfono">
+        <b>Maqueta, 375 px</b>
+        <button type="button" data-ver="febrero" aria-pressed="true">Planilla de febrero</button>
+        <button type="button" data-ver="enero" aria-pressed="false">Planilla de enero</button>
+        <button type="button" data-ver="pestana" aria-pressed="false">Pestaña: febrero</button>
+        <button type="button" data-ver="pestana-enero" aria-pressed="false">Pestaña: enero</button>
+        <button type="button" data-ver="nota" aria-pressed="false">La nota en Word</button>
+        <a href="index.html">Volver a la compu</a>
+    </div>
+    <p class="idea">Sofía Paz (contrato, inventada). Hoy es el miércoles 03/02/2027. En la tarjeta de cada día, «Sumar a enero» va abajo, debajo de la entrada, y «Nota» a su lado.</p>
+    <div class="telefono"><iframe id="marco" title="Mi espacio en un teléfono de 375 px" src="index.html?ver=febrero&amp;sinbarra=1"></iframe></div>
+    <script>
+        /* MAQUETA (30/10/2026): cambia lo que muestra el marco */
+        document.querySelector('.barra').addEventListener('click', (evento) => {
+            const boton = evento.target.closest('[data-ver]');
+            if (!boton) return;
+            for (const uno of document.querySelectorAll('[data-ver]')) uno.setAttribute('aria-pressed', String(uno === boton));
+            document.getElementById('marco').src = `index.html?ver=${boton.getAttribute('data-ver')}&sinbarra=1`;
+        });
+    </script>
+</body>
+</html>

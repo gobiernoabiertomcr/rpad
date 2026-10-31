@@ -442,8 +442,9 @@ const leerLaNota = async (usuarioId, licenciaId, hoy) => {
   const licencia = contexto.estado.licencias.find((fila) => fila.id === id);
   if (!licencia) return { rechazo: noEncontrada() };
   const { guardada, nombre, cargo, vinculo } = datos;
+  // Las salidas de la planilla: las horas a favor nombran los días tildados «Sumar a {mes anterior}» que suman a sus horas
   const { nota, error } = notaDeLicencia(licencia,
-    { fecha: guardada, persona: { nombre, cargo, vinculo }, feriados: contexto.feriados });
+    { fecha: guardada, persona: { nombre, cargo, vinculo }, feriados: contexto.feriados, salidas: contexto.estado.salidas });
   if (error !== undefined) {
     if (!Object.hasOwn(RECHAZOS_DE_LA_NOTA, error)) throw new Error(`La licencia ${id} no arma una nota (${error})`);
     return { rechazo: [RECHAZOS_DE_LA_NOTA[error], { success: false, error: MENSAJES_NOTA[error] }] };
@@ -631,15 +632,24 @@ const rechazoDeLosDias = (errores) => {
 const textoDeLoGuardado = (cantidad) => `Horas extras guardadas: ${cantidad} ${cantidad === 1 ? 'día' : 'días'}.`;
 
 // Guardar un día: un upsert por la clave (usuario_id, fecha), que vuelve a activar la fila de un día borrado; borrarlo, la
-// baja lógica de su fila activa (si no la hay, no hace nada)
+// baja lógica de su fila activa, que le saca también el tilde (si no la hay, no hace nada). El tilde «Sumar a {mes
+// anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 8) se escribe solo si el día lo trae: sin él, el primer upsert
+// no lo nombra, así un día nuevo queda en 0 y uno guardado conserva el suyo (una página vieja que no lo conoce no lo borra)
 const UPSERT_DE_LA_SALIDA = `INSERT INTO mi_espacio_salidas (usuario_id, fecha, entrada, salida, nota) VALUES (?, ?, ?, ?, ?)
   ON DUPLICATE KEY UPDATE entrada = VALUES(entrada), salida = VALUES(salida), nota = VALUES(nota), activo = 1`;
-const BAJA_DE_LA_SALIDA = 'UPDATE mi_espacio_salidas SET activo = 0 WHERE usuario_id = ? AND fecha = ? AND activo = 1';
+const UPSERT_DE_LA_SALIDA_CON_LA_MARCA = `INSERT INTO mi_espacio_salidas
+  (usuario_id, fecha, entrada, salida, nota, al_mes_anterior) VALUES (?, ?, ?, ?, ?, ?)
+  ON DUPLICATE KEY UPDATE entrada = VALUES(entrada), salida = VALUES(salida), nota = VALUES(nota),
+    al_mes_anterior = VALUES(al_mes_anterior), activo = 1`;
+const BAJA_DE_LA_SALIDA =
+  'UPDATE mi_espacio_salidas SET activo = 0, al_mes_anterior = 0 WHERE usuario_id = ? AND fecha = ? AND activo = 1';
 
 /**
- * PUT /api/mi-espacio/salidas: guarda los días de la planilla (`{ dias: [{ fecha, entrada, salida, nota }] }`, cada día con
- * su estado completo: todo vacío es borrarlo), todos o ninguno, en una transacción que bloquea solo la fila de la persona
- * (dos guardados a la vez se ordenan, y el segundo ve lo que dejó el primero: un doble envío deja una sola fila por día).
+ * PUT /api/mi-espacio/salidas: guarda los días de la planilla (`{ dias: [{ fecha, entrada, salida, nota,
+ * al_mes_anterior }] }`, cada día con su estado completo: todo vacío es borrarlo; `al_mes_anterior`, el tilde «Sumar a {mes
+ * anterior}», es opcional: true o false, y sin él se conserva lo guardado), todos o ninguno, en una transacción que bloquea
+ * solo la fila de la persona (dos guardados a la vez se ordenan, y el segundo ve lo que dejó el primero: un doble envío deja
+ * una sola fila por día).
  * Los controles, en este orden, con el estado leído bajo el bloqueo:
  * 1. la modalidad y el arranque (`frenoDeLasHorasExtras`), y planta (`planillaSoloContrato`), los dos con campo null;
  * 2. `dias`, una lista de 1 a MAXIMO_DIAS_POR_GUARDADO días (`sinDias` o `muchosDias`, en `dias`);
@@ -676,8 +686,10 @@ export const guardarSalidas = (req, res) => responder(res, 'Error al guardar las
       .map(({ dia, error }) => ({ fecha: fechaDelDia(dia), campo: error.campo, mensaje: error.mensaje }));
     if (errores.length > 0) return rechazoDeLosDias(errores);
     for (const { datos } of validados) {
+      const fila = [usuarioId, datos.fecha, datos.entrada, datos.salida, datos.nota];
       if (datos.borrar) await conexion.query(BAJA_DE_LA_SALIDA, [usuarioId, datos.fecha]);
-      else await conexion.query(UPSERT_DE_LA_SALIDA, [usuarioId, datos.fecha, datos.entrada, datos.salida, datos.nota]);
+      else if (datos.al_mes_anterior === null) await conexion.query(UPSERT_DE_LA_SALIDA, fila);
+      else await conexion.query(UPSERT_DE_LA_SALIDA_CON_LA_MARCA, [...fila, datos.al_mes_anterior ? 1 : 0]);
     }
     return [200, { success: true, data: { guardados: dias.length }, message: textoDeLoGuardado(dias.length) }];
   });

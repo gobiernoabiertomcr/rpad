@@ -31,7 +31,7 @@ import {
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
   avisosDeSalidas, mesDeLaPlanilla, porHabilitarDe, alcanceDeLaCarga, diasLibresEntre, diasLibresDelMes, franquiciaQueVence,
   textoDePerdidosConLaCarga, textoDelFrancoSinDiasLibres, textoDeLasHorasSinDiasLibres, textoDeLaFranquiciaPerdida,
-  textoDelReacomodo, textoDeLosDiasHabiles
+  textoDelReacomodo, textoDeLosDiasHabiles, mesDeLaSalida, repartoDelMes, textoDeLoQueSeMueve
 } from '../services/miEspacioReglas.js';
 import { feriadosDelRango, calendarioCon } from '../services/feriadosReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
@@ -159,7 +159,8 @@ describe('los textos', () => {
       diaRepetido: 'Ese día está dos veces.',
       planillaSoloContrato: 'La planilla es para las personas de contrato.',
       contratoEnLaPlanilla: 'Las personas de contrato cargan sus horas en la planilla.',
-      mes: 'Elegí un mes válido.'
+      mes: 'Elegí un mes válido.',
+      alMesAnterior: 'Elegí si este día suma al mes anterior.'
     });
   });
 
@@ -1429,10 +1430,10 @@ describe('las salidas de contrato', () => {
     assert.equal(textoDeLaSumaDelMes('2026-10', 18.5, '2026-10-27'),
       'En noviembre vas a tener 2 días de franco y 4,5 horas a favor.');
     assert.equal(textoDeLaSumaDelMes('2026-10', 18, '2026-10-27'), 'En noviembre vas a tener 2 días de franco y 4 horas a favor.');
-    assert.equal(textoDeLaSumaDelMes('2026-09', 10.5, '2026-10-27'), 'En octubre tuviste 1 día de franco y 3,5 horas a favor.');
+    assert.equal(textoDeLaSumaDelMes('2026-09', 10.5, '2026-10-27'), 'En octubre tenés 1 día de franco y 3,5 horas a favor.');
     // Solo días: sin «a favor»
     assert.equal(textoDeLaSumaDelMes('2026-12', 21, '2026-12-10'), 'En enero vas a tener 3 días de franco.');
-    assert.equal(textoDeLaSumaDelMes('2026-09', 7, '2026-10-27'), 'En octubre tuviste 1 día de franco.');
+    assert.equal(textoDeLaSumaDelMes('2026-09', 7, '2026-10-27'), 'En octubre tenés 1 día de franco.');
     // Solo horas
     assert.equal(textoDeLaSumaDelMes('2026-10', 4.5, '2026-10-27'), 'En noviembre vas a tener 4,5 horas a favor.');
     assert.equal(textoDeLaSumaDelMes('2026-10', 1, '2026-10-27'), 'En noviembre vas a tener 1 hora a favor.');
@@ -1537,19 +1538,20 @@ describe('las salidas de contrato', () => {
 
     it('un día correcto: los datos, con la nota recortada y borrar en false', () => {
       assert.deepEqual(validar({ fecha: '2026-10-26', entrada: '08:02', salida: '16:20', nota: '  Cierre de mes  ' }), {
-        datos: { fecha: '2026-10-26', entrada: '08:02', salida: '16:20', nota: 'Cierre de mes', borrar: false }, error: null
+        datos: { fecha: '2026-10-26', entrada: '08:02', salida: '16:20', nota: 'Cierre de mes', al_mes_anterior: null, borrar: false },
+        error: null
       });
       // La entrada y la nota vacías son null
       for (const vacia of [undefined, null, '', '   ']) {
         assert.deepEqual(validar({ fecha: '2026-10-26', entrada: vacia, salida: '16:20', nota: vacia }).datos,
-          { fecha: '2026-10-26', entrada: null, salida: '16:20', nota: null, borrar: false }, String(vacia));
+          { fecha: '2026-10-26', entrada: null, salida: '16:20', nota: null, al_mes_anterior: null, borrar: false }, String(vacia));
       }
       // Hoy se carga; una salida antes de las 15:00 también (da 0)
       assert.equal(errorDe({ fecha: HOY_SALIDAS, salida: '16:46' }), null);
       assert.equal(errorDe({ fecha: '2026-10-26', salida: '13:02' }), null);
       // Un feriado y un sábado con entrada
       assert.deepEqual(validar({ fecha: '2026-10-12', entrada: '09:21', salida: '12:10' }).datos,
-        { fecha: '2026-10-12', entrada: '09:21', salida: '12:10', nota: null, borrar: false });
+        { fecha: '2026-10-12', entrada: '09:21', salida: '12:10', nota: null, al_mes_anterior: null, borrar: false });
       assert.equal(errorDe({ fecha: '2026-10-24', entrada: '09:00', salida: '13:20' }), null);
     });
 
@@ -1564,7 +1566,9 @@ describe('las salidas de contrato', () => {
     });
 
     it('un día vacío es un borrado y pasa siempre: un día que no llegó, de licencia o fuera del rango', () => {
-      const borrado = (fecha) => ({ datos: { fecha, entrada: null, salida: null, nota: null, borrar: true }, error: null });
+      const borrado = (fecha) => ({
+        datos: { fecha, entrada: null, salida: null, nota: null, al_mes_anterior: false, borrar: true }, error: null
+      });
       assert.deepEqual(validar({ fecha: '2026-10-26' }), borrado('2026-10-26'));
       assert.deepEqual(validar({ fecha: '2026-10-28', entrada: '', salida: null, nota: '   ' }), borrado('2026-10-28'));
       assert.deepEqual(validar({ fecha: '2026-10-19', entrada: null, salida: '', nota: '' }), borrado('2026-10-19'));
@@ -1692,6 +1696,183 @@ describe('las salidas de contrato', () => {
       }, typeof valor);
     }
     assert.deepEqual([...horasPorMesDeSalidas(undefined)], []);
+  });
+});
+
+// Sumar las horas de un día al mes anterior (spec 2026-10-30-mi-espacio-horas-mes-anterior, secciones 3 y 4): un día de la
+// planilla con `al_mes_anterior` suma sus horas al mes anterior al de su fecha. Los datos son inventados, los de la maqueta:
+// enero de 2027 suma 5,5 h; el martes 02/02 sale a las 16:20 (1,5 h) y suma a enero; el miércoles 03/02 sale a las 15:50 (1 h)
+describe('sumar al mes anterior', () => {
+  const FERIADOS = new Set();
+  const ENERO = [
+    { id: 1, fecha: '2027-01-05', entrada: null, salida: '17:30', nota: null }, // 2,5
+    { id: 2, fecha: '2027-01-12', entrada: null, salida: '18:00', nota: null } // 3
+  ];
+  const DEL_02 = { id: 3, fecha: '2027-02-02', entrada: null, salida: '16:20', nota: null, al_mes_anterior: true }; // 1,5
+  const DEL_03 = { id: 4, fecha: '2027-02-03', entrada: null, salida: '15:50', nota: null }; // 1
+  // Desordenadas: las listas del reparto van por fecha
+  const SALIDAS = [DEL_03, ...ENERO, DEL_02];
+  // Hoy es el miércoles 03/02/2027
+  const CONTEXTO = { hoy: '2027-02-03', estado: { modalidad: 'contrato', licencias: [], salidas: [] }, feriados: FERIADOS };
+
+  it('mesDeLaSalida: el mes de su fecha o, tildada (solo el true literal), el anterior', () => {
+    assert.equal(mesDeLaSalida({ fecha: '2027-02-02', al_mes_anterior: true }), '2027-01');
+    for (const marca of [false, undefined, 'true', 1, null]) {
+      assert.equal(mesDeLaSalida({ fecha: '2027-02-02', al_mes_anterior: marca }), '2027-02', String(marca));
+    }
+    assert.equal(mesDeLaSalida({ fecha: '2027-02-02' }), '2027-02');
+    // Enero suma a diciembre del año anterior
+    assert.equal(mesDeLaSalida({ fecha: '2027-01-05', al_mes_anterior: true }), '2026-12');
+    // Sin una fecha válida, null
+    for (const fila of [{ fecha: 'x' }, { fecha: '2027-02-30', al_mes_anterior: true }, {}, null, '2027-02-02', []]) {
+      assert.equal(mesDeLaSalida(fila), null, JSON.stringify(fila));
+    }
+  });
+
+  it('horasPorMesDeSalidas: un día tildado suma al mes anterior', () => {
+    assert.deepEqual([...horasPorMesDeSalidas(SALIDAS, FERIADOS)], [['2027-01', 7], ['2027-02', 1]]);
+    // Sin el tilde, cada día en su mes
+    const sinTilde = SALIDAS.map((fila) => ({ ...fila, al_mes_anterior: false }));
+    assert.deepEqual([...horasPorMesDeSalidas(sinTilde, FERIADOS)], [['2027-01', 5.5], ['2027-02', 2.5]]);
+  });
+
+  it('no se cuentan dos veces: la suma de los meses es la de las horas de cada día', () => {
+    const todasTildadas = SALIDAS.map((fila) => ({ ...fila, al_mes_anterior: true }));
+    assert.deepEqual([...horasPorMesDeSalidas(todasTildadas, FERIADOS)], [['2026-12', 5.5], ['2027-01', 2.5]]);
+    for (const salidas of [SALIDAS, todasTildadas]) {
+      const delMapa = [...horasPorMesDeSalidas(salidas, FERIADOS).values()].reduce((suma, horas) => suma + horas, 0);
+      const deLosDias = salidas.reduce((suma, fila) => suma + horasDeLaSalida(fila, FERIADOS), 0);
+      assert.equal(delMapa, deLosDias);
+      assert.equal(delMapa, 8);
+    }
+  });
+
+  it('repartoDelMes: lo propio sin los tildados, lo que entra del mes siguiente y lo que se va', () => {
+    assert.deepEqual(repartoDelMes(SALIDAS, '2027-01', FERIADOS),
+      { propias: 5.5, entran: [{ fecha: '2027-02-02', horas: 1.5, fila: DEL_02 }], van: [] });
+    assert.deepEqual(repartoDelMes(SALIDAS, '2027-02', FERIADOS),
+      { propias: 1, entran: [], van: [{ fecha: '2027-02-02', horas: 1.5, fila: DEL_02 }] });
+    // Un tildado sin horas (un sábado sin entrada) va en las listas con null y no suma
+    const sabado = { id: 5, fecha: '2027-02-06', entrada: null, salida: '13:00', nota: null, al_mes_anterior: true };
+    const otroTildado = { id: 6, fecha: '2027-02-04', entrada: null, salida: '17:00', nota: null, al_mes_anterior: true }; // 2
+    const conMas = [sabado, ...SALIDAS, otroTildado];
+    assert.deepEqual(repartoDelMes(conMas, '2027-01', FERIADOS), {
+      propias: 5.5,
+      entran: [{ fecha: '2027-02-02', horas: 1.5, fila: DEL_02 }, { fecha: '2027-02-04', horas: 2, fila: otroTildado },
+        { fecha: '2027-02-06', horas: null, fila: sabado }],
+      van: []
+    });
+    assert.deepEqual(repartoDelMes(conMas, '2027-02', FERIADOS).van.map(({ fecha }) => fecha),
+      ['2027-02-02', '2027-02-04', '2027-02-06']);
+    // Lo propio y lo que entra es lo que da horasPorMesDeSalidas
+    for (const salidas of [SALIDAS, conMas, SALIDAS.map((fila) => ({ ...fila, al_mes_anterior: true }))]) {
+      const porMes = horasPorMesDeSalidas(salidas, FERIADOS);
+      for (const mes of ['2026-12', '2027-01', '2027-02', '2027-03']) {
+        const { propias, entran } = repartoDelMes(salidas, mes, FERIADOS);
+        assert.equal(propias + entran.reduce((suma, { horas }) => suma + (horas ?? 0), 0), porMes.get(mes) ?? 0, mes);
+      }
+    }
+    // Con un mes que no sirve, nada
+    for (const mes of [undefined, null, '', '2027-13', '2027-02-02', 202702]) {
+      assert.deepEqual(repartoDelMes(SALIDAS, mes, FERIADOS), { propias: 0, entran: [], van: [] }, String(mes));
+    }
+    assert.deepEqual(repartoDelMes(null, '2027-01', FERIADOS), { propias: 0, entran: [], van: [] });
+  });
+
+  it('textoDeLoQueSeMueve: lo que entra del mes siguiente y lo que se va al anterior', () => {
+    const enero = repartoDelMes(SALIDAS, '2027-01', FERIADOS);
+    const febrero = repartoDelMes(SALIDAS, '2027-02', FERIADOS);
+    assert.equal(textoDeLoQueSeMueve('2027-01', enero.entran, enero.van), 'Incluye 1,5 h de febrero.');
+    assert.equal(textoDeLoQueSeMueve('2027-02', febrero.entran, febrero.van), '1,5 h del martes 02/02 suman a enero.');
+    // Con 1 h, «suma»
+    assert.equal(textoDeLoQueSeMueve('2027-02', [], [{ fecha: '2027-02-02', horas: 1 }]), '1 h del martes 02/02 suma a enero.');
+    // Dos días y tres o más
+    assert.equal(textoDeLoQueSeMueve('2027-02', [], [{ fecha: '2027-02-02', horas: 1.5 }, { fecha: '2027-02-04', horas: 2 }]),
+      '3,5 h del martes 02/02 y del jueves 04/02 suman a enero.');
+    assert.equal(textoDeLoQueSeMueve('2027-02', [],
+      [{ fecha: '2027-02-02', horas: 1.5 }, { fecha: '2027-02-03', horas: 1 }, { fecha: '2027-02-04', horas: 1.5 }]),
+    '4 h de 3 días suman a enero.');
+    // Un mes que recibe y da: las dos frases, separadas por un espacio
+    assert.equal(textoDeLoQueSeMueve('2027-02', [{ fecha: '2027-03-02', horas: 2 }], [{ fecha: '2027-02-02', horas: 1.5 }]),
+      'Incluye 2 h de marzo. 1,5 h del martes 02/02 suman a enero.');
+    // Diciembre recibe de enero y enero da a diciembre
+    assert.equal(textoDeLoQueSeMueve('2026-12', [{ fecha: '2027-01-05', horas: 2.5 }], []), 'Incluye 2,5 h de enero.');
+    assert.equal(textoDeLoQueSeMueve('2027-01', [], [{ fecha: '2027-01-05', horas: 2.5 }]), '2,5 h del martes 05/01 suman a diciembre.');
+    // Un tildado con 0 h (o sin horas) no cuenta
+    assert.equal(textoDeLoQueSeMueve('2027-02', [{ fecha: '2027-03-02', horas: 0 }], [{ fecha: '2027-02-02', horas: 0 }]), '');
+    assert.equal(textoDeLoQueSeMueve('2027-02', [], [{ fecha: '2027-02-02', horas: 0 }, { fecha: '2027-02-03', horas: 1 }]),
+      '1 h del miércoles 03/02 suma a enero.');
+    assert.equal(textoDeLoQueSeMueve('2027-02', [{ fecha: '2027-03-06', horas: null }], [{ fecha: '2027-02-06', horas: null }]), '');
+    // Sin nada, ''
+    assert.equal(textoDeLoQueSeMueve('2027-02', [], []), '');
+    assert.equal(textoDeLoQueSeMueve('2027-02', null, undefined), '');
+    // Con un mes que no sirve, ''
+    assert.equal(textoDeLoQueSeMueve('2027-13', [{ fecha: '2027-03-02', horas: 2 }], [{ fecha: '2027-02-02', horas: 1.5 }]), '');
+  });
+
+  it('textoDeLaSumaDelMes: el verbo mira el mes en que se usan las horas', () => {
+    // El mes de uso es el de hoy: «tenés»
+    assert.equal(textoDeLaSumaDelMes('2027-01', 7, '2027-02-03'), 'En febrero tenés 1 día de franco.');
+    // Ya pasó: «tuviste»
+    assert.equal(textoDeLaSumaDelMes('2027-01', 7, '2027-03-01'), 'En febrero tuviste 1 día de franco.');
+    // Todavía no llegó: «vas a tener»
+    assert.equal(textoDeLaSumaDelMes('2027-02', 1, '2027-02-03'), 'En marzo vas a tener 1 hora a favor.');
+    // Sin horas, como antes: mira el mes de las horas
+    assert.equal(textoDeLaSumaDelMes('2027-01', 0, '2027-02-03'), 'En enero no hiciste horas extras.');
+    assert.equal(textoDeLaSumaDelMes('2027-02', 0, '2027-02-03'), 'Todavía no sumaste horas extras en febrero.');
+  });
+
+  describe('validarSalida', () => {
+    const validar = (dia) => validarSalida(dia, CONTEXTO);
+
+    it('el tilde: true o false literal, ese; sin la clave, null (se conserva lo guardado)', () => {
+      assert.equal(validar({ fecha: '2027-02-02', salida: '16:20', al_mes_anterior: true }).datos.al_mes_anterior, true);
+      assert.equal(validar({ fecha: '2027-02-02', salida: '16:20', al_mes_anterior: false }).datos.al_mes_anterior, false);
+      assert.equal(validar({ fecha: '2027-02-02', salida: '16:20' }).datos.al_mes_anterior, null);
+      assert.equal(validar({ fecha: '2027-02-02', salida: '16:20', al_mes_anterior: undefined }).datos.al_mes_anterior, null);
+      assert.deepEqual(validar({ fecha: '2027-02-02', entrada: '08:00', salida: '16:20', nota: 'Cierre', al_mes_anterior: true }), {
+        datos: { fecha: '2027-02-02', entrada: '08:00', salida: '16:20', nota: 'Cierre', al_mes_anterior: true, borrar: false },
+        error: null
+      });
+    });
+
+    it('un borrado deja el tilde en false', () => {
+      assert.deepEqual(validar({ fecha: '2027-02-02', al_mes_anterior: true }), {
+        datos: { fecha: '2027-02-02', entrada: null, salida: null, nota: null, al_mes_anterior: false, borrar: true }, error: null
+      });
+      assert.equal(validar({ fecha: '2027-02-02', al_mes_anterior: 'si' }).datos.al_mes_anterior, false);
+    });
+
+    it('otro valor da el error del tilde, que va al final', () => {
+      const delTilde = { campo: 'al_mes_anterior', mensaje: 'Elegí si este día suma al mes anterior.' };
+      assert.equal(MENSAJES_MI_ESPACIO.alMesAnterior, 'Elegí si este día suma al mes anterior.');
+      for (const valor of ['si', 'true', 1, 0, null, {}, []]) {
+        assert.deepEqual(validar({ fecha: '2027-02-02', salida: '16:20', al_mes_anterior: valor }),
+          { datos: null, error: delTilde }, JSON.stringify(valor));
+      }
+      // Con la salida mal, el de la salida; con la nota larga, el de la nota
+      assert.deepEqual(validar({ fecha: '2027-02-02', salida: '25:00', al_mes_anterior: 'si' }).error,
+        { campo: 'salida', mensaje: MENSAJES_MI_ESPACIO.horaSalida });
+      assert.deepEqual(validar({ fecha: '2027-02-02', salida: '16:20', nota: 'x'.repeat(201), al_mes_anterior: 'si' }).error,
+        { campo: 'nota', mensaje: MENSAJES_MI_ESPACIO.nota });
+      assert.deepEqual(validar({ fecha: '2027-02-04', salida: '16:20', al_mes_anterior: 'si' }).error,
+        { campo: 'fecha', mensaje: MENSAJES_MI_ESPACIO.diaQueNoLlego });
+    });
+  });
+
+  it('nada tira', () => {
+    const raros = [undefined, null, '', 'x', 0, -3, 2.5, NaN, {}, [], Object.create(null), Symbol('x')];
+    for (const valor of raros) {
+      assert.doesNotThrow(() => {
+        mesDeLaSalida(valor);
+        mesDeLaSalida({ fecha: valor, al_mes_anterior: valor });
+        repartoDelMes(valor, valor, valor);
+        repartoDelMes([valor, { fecha: '2027-02-02', salida: valor, al_mes_anterior: valor }], '2027-01', valor);
+        textoDeLoQueSeMueve(valor, valor, valor);
+        textoDeLoQueSeMueve('2027-02', [valor, { fecha: valor, horas: valor }], [valor, { fecha: valor, horas: valor }]);
+        validarSalida({ fecha: '2027-02-02', salida: '16:20', al_mes_anterior: valor }, CONTEXTO);
+      }, typeof valor);
+    }
   });
 });
 

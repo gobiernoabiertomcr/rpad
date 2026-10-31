@@ -784,7 +784,9 @@ CREATE TABLE `mi_espacio_horas_extras` (
 
 -- La planilla de horas extras de contrato (database/updates/migracion-mi-espacio-horas.sql): una fila por persona y día, con
 -- la salida y, opcional en un día hábil, la entrada (la valida la API). Las horas no se guardan: las calculan las reglas con
--- los feriados del momento. mi_espacio_horas_extras queda para planta
+-- los feriados del momento. mi_espacio_horas_extras queda para planta.
+-- «Sumar a {mes anterior}» (database/updates/migracion-mi-espacio-horas-mes-anterior.sql): al_mes_anterior es 1 si las horas
+-- del día suman al mes anterior al de su fecha
 CREATE TABLE `mi_espacio_salidas` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `usuario_id` int(11) NOT NULL,
@@ -792,6 +794,7 @@ CREATE TABLE `mi_espacio_salidas` (
   `entrada` time DEFAULT NULL,
   `salida` time NOT NULL,
   `nota` varchar(200) DEFAULT NULL,
+  `al_mes_anterior` tinyint(1) NOT NULL DEFAULT 0,
   `activo` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),

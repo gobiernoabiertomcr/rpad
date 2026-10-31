@@ -1502,11 +1502,11 @@ describe('la tabla de horas extras de contrato', () => {
     assert.equal(tabla.modalidad, 'contrato');
     assert.deepEqual(tabla.meses, [
       {
-        mes: '2026-10', mes_texto: 'Octubre 2026', horas_texto: '4 h', a_favor_texto: 'Noviembre 2026',
+        mes: '2026-10', mes_texto: 'Octubre 2026', horas_texto: '4 h', horas_detalle: '', a_favor_texto: 'Noviembre 2026',
         a_favor_detalle: '4 horas', usadas_texto: '—', usadas_detalle: '', estado: 'sumando', situacion: 'El mes sigue sumando'
       },
       {
-        mes: '2026-09', mes_texto: 'Septiembre 2026', horas_texto: '10,5 h', a_favor_texto: 'Octubre 2026',
+        mes: '2026-09', mes_texto: 'Septiembre 2026', horas_texto: '10,5 h', horas_detalle: '', a_favor_texto: 'Octubre 2026',
         a_favor_detalle: '1 día de franco y 3,5 horas', usadas_texto: '9 h', usadas_detalle: '09/10: 7 h · 20/10: 2 h',
         estado: 'en_uso', situacion: '1,5 h para usar hasta el 30/10'
       }
@@ -1571,7 +1571,7 @@ describe('la tabla de horas extras de contrato', () => {
     assert.deepEqual(Object.keys(tabla.dias_por_mes), ['2026-10', '2026-09']);
     assert.deepEqual(tabla.dias_por_mes['2026-10'], [{
       id: 4, fecha: '2026-10-21', fecha_texto: 'Mié 21/10', tipo_texto: '', horario: 'Salida 19:00', entrada_texto: '', horas: 4,
-      horas_texto: '4 h', cero: false, nota: null, aviso: null
+      horas_texto: '4 h', cero: false, nota: null, aviso: null, suma_a: ''
     }]);
     assert.deepEqual(tabla.dias_por_mes['2026-09'].map(({ id, fecha, horario, horas, horas_texto }) =>
       [id, fecha, horario, horas, horas_texto]), [
@@ -1592,15 +1592,17 @@ describe('la tabla de horas extras de contrato', () => {
     const delDia = (fecha) => octubre.find((dia) => dia.fecha === fecha);
     assert.deepEqual(delDia('2026-10-05'), {
       id: 10, fecha: '2026-10-05', fecha_texto: 'Lun 05/10', tipo_texto: '', horario: 'Salida 16:20',
-      entrada_texto: 'Entrada 08:02', horas: 1.5, horas_texto: '1,5 h', cero: false, nota: null, aviso: null
+      entrada_texto: 'Entrada 08:02', horas: 1.5, horas_texto: '1,5 h', cero: false, nota: null, aviso: null, suma_a: ''
     });
     assert.deepEqual(delDia('2026-10-12'), {
       id: 12, fecha: '2026-10-12', fecha_texto: 'Lun 12/10', tipo_texto: 'Feriado', horario: 'De 09:21 a 12:10',
-      entrada_texto: '', horas: 2.5, horas_texto: '2,5 h', cero: false, nota: 'Guardia de la mesa de datos', aviso: null
+      entrada_texto: '', horas: 2.5, horas_texto: '2,5 h', cero: false, nota: 'Guardia de la mesa de datos', aviso: null,
+      suma_a: ''
     });
     assert.deepEqual(delDia('2026-10-24'), {
       id: 15, fecha: '2026-10-24', fecha_texto: 'Sáb 24/10', tipo_texto: 'Sábado', horario: 'De 09:00 a 13:20',
-      entrada_texto: '', horas: 4.5, horas_texto: '4,5 h', cero: false, nota: 'Relevamiento en el barrio', aviso: null
+      entrada_texto: '', horas: 4.5, horas_texto: '4,5 h', cero: false, nota: 'Relevamiento en el barrio', aviso: null,
+      suma_a: ''
     });
     // Los que dan 0, en gris: «0» y `cero` (también con la entrada de un día hábil, que no cuenta)
     assert.deepEqual([delDia('2026-10-16'), delDia('2026-10-20')].map(({ entrada_texto, horas, horas_texto, cero }) =>
@@ -1619,7 +1621,7 @@ describe('la tabla de horas extras de contrato', () => {
     const del21 = conFeriado.dias_por_mes['2026-10'].find((dia) => dia.fecha === '2026-10-21');
     assert.deepEqual(del21, {
       id: 4, fecha: '2026-10-21', fecha_texto: 'Mié 21/10', tipo_texto: 'Feriado', horario: 'Salida 19:00', entrada_texto: '',
-      horas: null, horas_texto: '', cero: false, nota: null, aviso: 'Ahora es feriado: falta la entrada.'
+      horas: null, horas_texto: '', cero: false, nota: null, aviso: 'Ahora es feriado: falta la entrada.', suma_a: ''
     });
     const del25 = conFeriado.dias_por_mes['2026-10'].find((dia) => dia.fecha === '2026-10-25');
     assert.deepEqual([del25.tipo_texto, del25.horario, del25.horas_texto], ['Domingo', 'De 10:00 a 11:00', '1 h']);
@@ -1648,12 +1650,12 @@ describe('la tabla de horas extras de contrato', () => {
 
 describe('la planilla de un mes (spec 2026-10-27-mi-espacio-horas, secciones 3, 4 y 8)', () => {
   const CLAVES_DEL_DIA = ['fecha', 'fecha_texto', 'fecha_larga', 'tipo', 'feriado', 'finde_texto', 'licencia', 'futuro', 'hoy',
-    'entrada', 'salida', 'nota', 'horas', 'horas_texto', 'aviso'];
+    'entrada', 'salida', 'nota', 'al_mes_anterior', 'horas', 'horas_texto', 'aviso'];
 
   it('octubre: la cabeza, los días hábiles con los feriados de lunes a viernes, los sábados y domingos y la suma', () => {
     const planilla = planillaDel();
     assert.deepEqual(Object.keys(planilla),
-      ['modalidad', 'mes', 'mes_texto', 'hoy', 'anterior', 'siguiente', 'dias', 'fines_de_semana', 'suma']);
+      ['modalidad', 'mes', 'mes_texto', 'hoy', 'anterior', 'siguiente', 'sumar_a', 'dias', 'fines_de_semana', 'entran', 'suma']);
     assert.deepEqual([planilla.modalidad, planilla.mes, planilla.mes_texto, planilla.hoy],
       ['contrato', '2026-10', 'Octubre 2026', '2026-10-27']);
     // Los días hábiles de octubre, el feriado del 12/10 y el sábado 24/10, que tiene una salida
@@ -1669,7 +1671,7 @@ describe('la planilla de un mes (spec 2026-10-27-mi-espacio-horas, secciones 3, 
     for (const dia of [...planilla.dias, ...planilla.fines_de_semana]) assert.deepEqual(Object.keys(dia), CLAVES_DEL_DIA, dia.fecha);
     // La suma: 1,5 + 2,5 + 2,5 + 0 + 0 + 4 + 4,5 + 1, la misma de las horas a favor
     assert.deepEqual(planilla.suma,
-      { horas: 16, cifra: '16', texto: 'En noviembre vas a tener 2 días de franco y 2 horas a favor.' });
+      { horas: 16, cifra: '16', texto: 'En noviembre vas a tener 2 días de franco y 2 horas a favor.', detalle: '' });
     assert.equal(planilla.suma.horas, horasPorMesDeSalidas(ESTADO_PLANILLA.salidas, FERIADOS_PLANILLA).get('2026-10'));
     assert.equal(planilla.suma.horas, planilla.dias.reduce((suma, dia) => suma + (dia.horas ?? 0), 0));
   });
@@ -1678,13 +1680,13 @@ describe('la planilla de un mes (spec 2026-10-27-mi-espacio-horas, secciones 3, 
     const planilla = planillaDel();
     assert.deepEqual(diaDe(planilla, '2026-10-05'), {
       fecha: '2026-10-05', fecha_texto: 'Lun 05/10', fecha_larga: 'lunes 05/10', tipo: 'habil', feriado: null,
-      finde_texto: null, licencia: null, futuro: false, hoy: false, entrada: '08:02', salida: '16:20', nota: null, horas: 1.5,
-      horas_texto: '1,5 h', aviso: null
+      finde_texto: null, licencia: null, futuro: false, hoy: false, entrada: '08:02', salida: '16:20', nota: null,
+      al_mes_anterior: false, horas: 1.5, horas_texto: '1,5 h', aviso: null
     });
     assert.deepEqual(diaDe(planilla, '2026-10-06'), {
       fecha: '2026-10-06', fecha_texto: 'Mar 06/10', fecha_larga: 'martes 06/10', tipo: 'habil', feriado: null,
-      finde_texto: null, licencia: null, futuro: false, hoy: false, entrada: null, salida: null, nota: null, horas: null,
-      horas_texto: '', aviso: null
+      finde_texto: null, licencia: null, futuro: false, hoy: false, entrada: null, salida: null, nota: null,
+      al_mes_anterior: false, horas: null, horas_texto: '', aviso: null
     });
     // No llega a media hora: «0»; una hora, «1 h»
     assert.deepEqual([diaDe(planilla, '2026-10-16').horas, diaDe(planilla, '2026-10-16').horas_texto], [0, '0']);
@@ -1695,7 +1697,8 @@ describe('la planilla de un mes (spec 2026-10-27-mi-espacio-horas, secciones 3, 
     assert.deepEqual(diaDe(planillaDel(), '2026-10-12'), {
       fecha: '2026-10-12', fecha_texto: 'Lun 12/10', fecha_larga: 'lunes 12/10', tipo: 'feriado',
       feriado: 'Día del Respeto a la Diversidad Cultural', finde_texto: null, licencia: null, futuro: false, hoy: false,
-      entrada: '09:21', salida: '12:10', nota: 'Guardia de la mesa de datos', horas: 2.5, horas_texto: '2,5 h', aviso: null
+      entrada: '09:21', salida: '12:10', nota: 'Guardia de la mesa de datos', al_mes_anterior: false, horas: 2.5,
+      horas_texto: '2,5 h', aviso: null
     });
   });
 
@@ -1767,13 +1770,13 @@ describe('la planilla de un mes (spec 2026-10-27-mi-espacio-horas, secciones 3, 
     assert.deepEqual(diaDe(planilla, '2026-10-24'), {
       fecha: '2026-10-24', fecha_texto: 'Sáb 24/10', fecha_larga: 'sábado 24/10', tipo: 'finde', feriado: null,
       finde_texto: 'Sábado', licencia: null, futuro: false, hoy: false, entrada: '09:00', salida: '13:20',
-      nota: 'Relevamiento en el barrio', horas: 4.5, horas_texto: '4,5 h', aviso: null
+      nota: 'Relevamiento en el barrio', al_mes_anterior: false, horas: 4.5, horas_texto: '4,5 h', aviso: null
     });
     // El sábado 17/10 es feriado: va con los sábados y domingos para sumar, con `tipo: 'feriado'` y su nombre
     assert.deepEqual(planilla.fines_de_semana.find((dia) => dia.fecha === '2026-10-17'), {
       fecha: '2026-10-17', fecha_texto: 'Sáb 17/10', fecha_larga: 'sábado 17/10', tipo: 'feriado',
       feriado: 'Feriado de prueba en sábado', finde_texto: 'Sábado', licencia: null, futuro: false, hoy: false, entrada: null,
-      salida: null, nota: null, horas: null, horas_texto: '', aviso: null
+      salida: null, nota: null, al_mes_anterior: false, horas: null, horas_texto: '', aviso: null
     });
     const del18 = planilla.fines_de_semana.find((dia) => dia.fecha === '2026-10-18');
     assert.deepEqual([del18.tipo, del18.feriado, del18.finde_texto], ['finde', null, 'Domingo']);
@@ -1803,7 +1806,8 @@ describe('la planilla de un mes (spec 2026-10-27-mi-espacio-horas, secciones 3, 
     assert.deepEqual(diaDe(planilla, '2026-10-21'), {
       fecha: '2026-10-21', fecha_texto: 'Mié 21/10', fecha_larga: 'miércoles 21/10', tipo: 'feriado',
       feriado: 'Feriado cargado después', finde_texto: null, licencia: null, futuro: false, hoy: false, entrada: null,
-      salida: '19:00', nota: null, horas: null, horas_texto: '', aviso: 'Ahora es feriado: falta la entrada.'
+      salida: '19:00', nota: null, al_mes_anterior: false, horas: null, horas_texto: '',
+      aviso: 'Ahora es feriado: falta la entrada.'
     });
     assert.equal(planilla.suma.horas, 12);
   });
@@ -1840,10 +1844,10 @@ describe('la planilla de un mes (spec 2026-10-27-mi-espacio-horas, secciones 3, 
 
   it('la suma: un mes que ya pasó, uno sin horas y el en curso sin horas', () => {
     assert.deepEqual(planillaDel(ESTADO_PLANILLA, { mes: '2026-09' }).suma,
-      { horas: 10.5, cifra: '10,5', texto: 'En octubre tuviste 1 día de franco y 3,5 horas a favor.' });
+      { horas: 10.5, cifra: '10,5', texto: 'En octubre tenés 1 día de franco y 3,5 horas a favor.', detalle: '' });
     assert.deepEqual(planillaDel(ESTADO_PLANILLA, { mes: '2026-08' }).suma,
-      { horas: 0, cifra: '0', texto: 'En agosto no hiciste horas extras.' });
-    const sinHoras = { horas: 0, cifra: '0', texto: 'Todavía no sumaste horas extras en octubre.' };
+      { horas: 0, cifra: '0', texto: 'En agosto no hiciste horas extras.', detalle: '' });
+    const sinHoras = { horas: 0, cifra: '0', texto: 'Todavía no sumaste horas extras en octubre.', detalle: '' };
     assert.deepEqual(planillaDel({ ...CONTRATO.estado, salidas: [] }).suma, sinHoras);
     // Un estado sin la clave de las salidas, igual
     const sinSalidas = { ...CONTRATO.estado };
@@ -1869,6 +1873,242 @@ describe('la planilla de un mes (spec 2026-10-27-mi-espacio-horas, secciones 3, 
     sinHuecos(planilla);
     assert.deepEqual(JSON.parse(JSON.stringify(planilla)), planilla);
     sinHuecos(planillaDel(ESTADO_PLANILLA, { mes: '2024-01' }));
+  });
+});
+
+// Sumar al mes anterior (spec 2026-10-30-mi-espacio-horas-mes-anterior, secciones 4 y 5), con los datos de la maqueta: hoy es
+// el miércoles 03/02/2027; enero suma 5,5 h y el martes 02/02 (salida 16:20, 1,5 h) está tildado «Sumar a enero»; el miércoles
+// 03/02 (salida 15:50, 1 h), no. Sin feriados de la tabla
+describe('sumar al mes anterior', () => {
+  const HOY_DEL_TILDE = '2027-02-03';
+  const tildada = (salida) => ({ ...salida, al_mes_anterior: true });
+  const DE_ENERO = Object.freeze([
+    salidaDe(20, '2027-01-05', '17:00'), // 2 h
+    salidaDe(21, '2027-01-13', '16:50'), // 2 h
+    salidaDe(22, '2027-01-20', '16:20') // 1,5 h
+  ]);
+  const MARTES_TILDADO = Object.freeze(tildada(salidaDe(23, '2027-02-02', '16:20'))); // 1,5 h, a enero
+  const MIERCOLES = Object.freeze(salidaDe(24, '2027-02-03', '15:50')); // 1 h
+  const conSalidas = (...salidas) => ({ ...CONTRATO.estado, salidas: [...CONTRATO.estado.salidas, ...salidas] });
+  const ESTADO_DEL_TILDE = Object.freeze(conSalidas(...DE_ENERO, MARTES_TILDADO, MIERCOLES));
+  const planillaDelTilde = (mes, { estado = ESTADO_DEL_TILDE, hoy = HOY_DEL_TILDE, feriados = SIN_FERIADOS, filas = [] } = {}) =>
+    planillaDel(estado, { mes, hoy, feriados, filas });
+  const tablaDelTilde = (anio, { estado = ESTADO_DEL_TILDE, hoy = HOY_DEL_TILDE } = {}) => tablaDel(CONTRATO, { estado, hoy, anio });
+  const mesDe = (tabla, mes) => tabla.meses.find((fila) => fila.mes === mes);
+  // El martes 02/02 como día de la planilla: la forma de cualquier día, con su tilde
+  const DIA_TILDADO = Object.freeze({
+    fecha: '2027-02-02', fecha_texto: 'Mar 02/02', fecha_larga: 'martes 02/02', tipo: 'habil', feriado: null, finde_texto: null,
+    licencia: null, futuro: false, hoy: false, entrada: null, salida: '16:20', nota: null, al_mes_anterior: true, horas: 1.5,
+    horas_texto: '1,5 h', aviso: null
+  });
+
+  it('la planilla de enero: la cifra suma el martes 02/02 de febrero, con la segunda línea, y lo trae en entran', () => {
+    const enero = planillaDelTilde('2027-01');
+    assert.deepEqual(enero.suma,
+      { horas: 7, cifra: '7', texto: 'En febrero tenés 1 día de franco.', detalle: 'Incluye 1,5 h de febrero.' });
+    assert.equal(enero.sumar_a, 'diciembre');
+    assert.deepEqual(enero.entran, [DIA_TILDADO]);
+    // La cifra es la de las horas a favor (la regla nueva), y no la de sus propios días
+    assert.equal(enero.suma.horas, horasPorMesDeSalidas(ESTADO_DEL_TILDE.salidas, SIN_FERIADOS).get('2027-01'));
+    assert.equal(enero.dias.reduce((suma, dia) => suma + (dia.horas ?? 0), 0), 5.5);
+    // Sus días no están tildados; el de entran es el mismo día que muestra la planilla de febrero
+    assert.ok([...enero.dias, ...enero.fines_de_semana].every((dia) => dia.al_mes_anterior === false));
+    assert.deepEqual(enero.entran[0], diaDe(planillaDelTilde('2027-02'), '2027-02-02'));
+  });
+
+  it('la planilla de febrero: el 02/02 tildado, con sus horas; la cifra sin él y lo que se va a enero', () => {
+    const febrero = planillaDelTilde('2027-02');
+    assert.deepEqual(diaDe(febrero, '2027-02-02'), DIA_TILDADO);
+    assert.deepEqual([diaDe(febrero, '2027-02-03').al_mes_anterior, diaDe(febrero, '2027-02-03').horas], [false, 1]);
+    assert.deepEqual(febrero.suma, {
+      horas: 1, cifra: '1', texto: 'En marzo vas a tener 1 hora a favor.', detalle: '1,5 h del martes 02/02 suman a enero.'
+    });
+    assert.equal(febrero.suma.horas, horasPorMesDeSalidas(ESTADO_DEL_TILDE.salidas, SIN_FERIADOS).get('2027-02'));
+    // Marzo todavía no llegó: nada entra
+    assert.deepEqual(febrero.entran, []);
+    assert.equal(febrero.sumar_a, 'enero');
+    // Un día sin salida no está tildado
+    assert.equal(diaDe(febrero, '2027-02-01').al_mes_anterior, false);
+  });
+
+  it('el mes siguiente que ya llegó entra con lo suyo: con hoy en marzo, la planilla de febrero dice las dos cosas', () => {
+    // El martes 02/03 (16:20, 1,5 h) tildado «Sumar a febrero»
+    const estado = conSalidas(...DE_ENERO, MARTES_TILDADO, MIERCOLES, tildada(salidaDe(25, '2027-03-02', '16:20')));
+    const febrero = planillaDelTilde('2027-02', { estado, hoy: '2027-03-10' });
+    assert.deepEqual(febrero.suma, {
+      horas: 2.5, cifra: '2,5', texto: 'En marzo tenés 2,5 horas a favor.',
+      detalle: 'Incluye 1,5 h de marzo. 1,5 h del martes 02/02 suman a enero.'
+    });
+    assert.deepEqual(febrero.entran.map((dia) => [dia.fecha, dia.horas, dia.al_mes_anterior]), [['2027-03-02', 1.5, true]]);
+  });
+
+  it('entran va por fecha y con los nombres de los feriados del año de su fecha (diciembre recibe de enero)', () => {
+    // El lunes 04/01/2027, un feriado inventado de la tabla (de la entrada a la salida: 3 h), y el martes 05/01, los dos tildados
+    // «Sumar a diciembre»; el miércoles 13/01, no
+    const FERIADO_DE_ENERO = { ...FERIADO_SOBERANIA, id: 6, fecha: '2027-01-04', nombre: 'Feriado de prueba en enero', tipo: 'municipal' };
+    const estado = conSalidas(tildada(salidaDe(30, '2027-01-05', '17:00')), tildada(salidaDe(31, '2027-01-04', '12:00', '09:00')),
+      salidaDe(32, '2027-01-13', '16:50'));
+    const diciembre = planillaDelTilde('2026-12', { estado, feriados: feriadosDe([FERIADO_DE_ENERO]), filas: [FERIADO_DE_ENERO] });
+    assert.deepEqual(diciembre.entran.map((dia) => [dia.fecha, dia.tipo, dia.feriado, dia.horas, dia.al_mes_anterior]), [
+      ['2027-01-04', 'feriado', 'Feriado de prueba en enero', 3, true], ['2027-01-05', 'habil', null, 2, true]
+    ]);
+    assert.deepEqual(diciembre.suma, {
+      horas: 5, cifra: '5', texto: 'En enero tuviste 5 horas a favor.', detalle: 'Incluye 5 h de enero.'
+    });
+    assert.equal(diciembre.sumar_a, 'noviembre');
+    // En la planilla de enero los dos se van a diciembre
+    const enero = planillaDelTilde('2027-01', { estado, feriados: feriadosDe([FERIADO_DE_ENERO]), filas: [FERIADO_DE_ENERO] });
+    assert.deepEqual([enero.suma.horas, enero.suma.detalle],
+      [2, '5 h del lunes 04/01 y del martes 05/01 suman a diciembre.']);
+  });
+
+  it('la tabla de 2027: de dónde salen las horas de enero y lo que febrero le da a enero', () => {
+    const tabla = tablaDelTilde(2027);
+    assert.deepEqual(tabla.meses, [
+      {
+        mes: '2027-02', mes_texto: 'Febrero 2027', horas_texto: '1 h', horas_detalle: '1,5 h suman a enero',
+        a_favor_texto: 'Marzo 2027', a_favor_detalle: '1 hora', usadas_texto: '—', usadas_detalle: '', estado: 'sumando',
+        situacion: 'El mes sigue sumando'
+      },
+      {
+        mes: '2027-01', mes_texto: 'Enero 2027', horas_texto: '7 h', horas_detalle: '5,5 h + 1,5 h de febrero',
+        a_favor_texto: 'Febrero 2027', a_favor_detalle: '1 día de franco', usadas_texto: '—', usadas_detalle: '',
+        estado: 'en_uso', situacion: '7 h para usar hasta el 26/02'
+      }
+    ]);
+  });
+
+  it('el detalle de las horas: sin horas propias, «suma» con 1 h, y las dos cosas separadas por « · »', () => {
+    // Febrero sin el miércoles: lo único que recibe enero es el martes
+    const sinPropias = tablaDelTilde(2027, { estado: conSalidas(MARTES_TILDADO) });
+    assert.deepEqual([mesDe(sinPropias, '2027-01').horas_texto, mesDe(sinPropias, '2027-01').horas_detalle],
+      ['1,5 h', '1,5 h de febrero']);
+    // El miércoles (1 h) tildado y el martes no
+    const deUnaHora = tablaDelTilde(2027, { estado: conSalidas(...DE_ENERO, { ...MARTES_TILDADO, al_mes_anterior: false },
+      tildada(MIERCOLES)) });
+    assert.deepEqual([mesDe(deUnaHora, '2027-02').horas_texto, mesDe(deUnaHora, '2027-02').horas_detalle],
+      ['1,5 h', '1 h suma a enero']);
+    assert.deepEqual([mesDe(deUnaHora, '2027-01').horas_texto, mesDe(deUnaHora, '2027-01').horas_detalle],
+      ['6,5 h', '5,5 h + 1 h de febrero']);
+    // Febrero recibe de marzo y le da a enero
+    const lasDos = tablaDelTilde(2027, {
+      estado: conSalidas(...DE_ENERO, MARTES_TILDADO, MIERCOLES, tildada(salidaDe(25, '2027-03-02', '16:20'))), hoy: '2027-03-10'
+    });
+    assert.deepEqual([mesDe(lasDos, '2027-02').horas_texto, mesDe(lasDos, '2027-02').horas_detalle],
+      ['2,5 h', '1 h + 1,5 h de marzo · 1,5 h suman a enero']);
+    assert.deepEqual([mesDe(lasDos, '2027-03').horas_texto, mesDe(lasDos, '2027-03').horas_detalle], ['0 h', '1,5 h suman a febrero']);
+  });
+
+  it('un mes cuyas horas pasan todas al anterior tiene su fila: 0 h, sumando y, cuando terminó, «Sin horas a favor»', () => {
+    const estado = conSalidas(...DE_ENERO, MARTES_TILDADO);
+    const fila = {
+      mes: '2027-02', mes_texto: 'Febrero 2027', horas_texto: '0 h', horas_detalle: '1,5 h suman a enero',
+      a_favor_texto: 'Marzo 2027', a_favor_detalle: '', usadas_texto: '—', usadas_detalle: '', estado: 'sumando',
+      situacion: 'El mes sigue sumando'
+    };
+    assert.deepEqual(mesDe(tablaDelTilde(2027, { estado }), '2027-02'), fila);
+    assert.deepEqual(mesDe(tablaDelTilde(2027, { estado, hoy: '2027-04-12' }), '2027-02'),
+      { ...fila, estado: 'sin_horas', situacion: 'Sin horas a favor' });
+    // Sus días se ven en el día por día, con el total del mes
+    const tabla = tablaDelTilde(2027, { estado });
+    assert.deepEqual(tabla.dias_por_mes['2027-02'].map((dia) => [dia.fecha, dia.suma_a]), [['2027-02-02', 'Suma a enero']]);
+    assert.equal(tabla.totales_por_mes['2027-02'], '0 horas');
+    // Con un uso de más en marzo (un faltante), lo de siempre: sus usos y su situación
+    const conUso = conLicencias(estado, licencia(100, 'horas_a_favor', '2027-03-04', '2027-03-04', 2));
+    const conElUso = mesDe(tablaDelTilde(2027, { estado: conUso, hoy: '2027-04-12' }), '2027-02');
+    assert.deepEqual([conElUso.horas_texto, conElUso.usadas_texto, conElUso.usadas_detalle, conElUso.estado, conElUso.situacion],
+      ['0 h', '2 h', '04/03: 2 h', 'usadas', 'Todas usadas']);
+  });
+
+  it('un mes con una salida que no llega a media hora también tiene fila', () => {
+    const estado = conSalidas(...DE_ENERO, salidaDe(24, '2027-02-03', '15:05'));
+    const fila = mesDe(tablaDelTilde(2027, { estado }), '2027-02');
+    assert.deepEqual([fila.horas_texto, fila.horas_detalle, fila.a_favor_texto, fila.a_favor_detalle, fila.estado, fila.situacion],
+      ['0 h', '', 'Marzo 2027', '', 'sumando', 'El mes sigue sumando']);
+    const terminado = mesDe(tablaDelTilde(2027, { estado, hoy: '2027-04-12' }), '2027-02');
+    assert.deepEqual([terminado.estado, terminado.situacion], ['sin_horas', 'Sin horas a favor']);
+    // Un mes sin salidas ni horas, no
+    assert.equal(mesDe(tablaDelTilde(2027, { estado }), '2027-03'), undefined);
+  });
+
+  it('el día por día: el tildado con «Suma a enero» en su mes, y al final de enero, «De febrero»', () => {
+    const tabla = tablaDelTilde(2027);
+    assert.deepEqual(Object.keys(tabla.dias_por_mes), ['2027-02', '2027-01']);
+    const MARTES = {
+      id: 23, fecha: '2027-02-02', fecha_texto: 'Mar 02/02', tipo_texto: '', horario: 'Salida 16:20', entrada_texto: '',
+      horas: 1.5, horas_texto: '1,5 h', cero: false, nota: null, aviso: null
+    };
+    assert.deepEqual(tabla.dias_por_mes['2027-02'], [
+      {
+        id: 24, fecha: '2027-02-03', fecha_texto: 'Mié 03/02', tipo_texto: '', horario: 'Salida 15:50', entrada_texto: '',
+        horas: 1, horas_texto: '1 h', cero: false, nota: null, aviso: null, suma_a: ''
+      },
+      { ...MARTES, suma_a: 'Suma a enero' }
+    ]);
+    assert.deepEqual(tabla.dias_por_mes['2027-01'].map((dia) => dia.fecha), ['2027-01-20', '2027-01-13', '2027-01-05', '2027-02-02']);
+    assert.deepEqual(tabla.dias_por_mes['2027-01'].at(-1), { ...MARTES, tipo_texto: 'De febrero', suma_a: '', de_otro_mes: true });
+    // Los demás, sin la marca
+    assert.ok(tabla.dias_por_mes['2027-01'].slice(0, -1).every((dia) => dia.suma_a === '' && !('de_otro_mes' in dia)));
+    // El total de cada mes es el de su fila: lo que suma con la regla nueva
+    assert.deepEqual(tabla.totales_por_mes, { '2027-02': '1 hora', '2027-01': '7 horas' });
+  });
+
+  it('los que entran van por fecha al final, y uno de un sábado dice «De febrero» en lugar de «Sábado»', () => {
+    const estado = conSalidas(...DE_ENERO, tildada(salidaDe(26, '2027-02-04', '16:20')), MARTES_TILDADO,
+      tildada(salidaDe(27, '2027-02-06', '12:00', '09:00')));
+    const enero = tablaDelTilde(2027, { estado }).dias_por_mes['2027-01'];
+    assert.deepEqual(enero.map((dia) => [dia.fecha, dia.tipo_texto, dia.horario]), [
+      ['2027-01-20', '', 'Salida 16:20'], ['2027-01-13', '', 'Salida 16:50'], ['2027-01-05', '', 'Salida 17:00'],
+      ['2027-02-02', 'De febrero', 'Salida 16:20'], ['2027-02-04', 'De febrero', 'Salida 16:20'],
+      ['2027-02-06', 'De febrero', 'De 09:00 a 12:00']
+    ]);
+    assert.equal(tablaDelTilde(2027, { estado }).totales_por_mes['2027-01'], '11,5 horas');
+  });
+
+  it('cruzando el año: el martes 05/01/2027 tildado suma a diciembre de 2026, y cada tabla lo lista donde va', () => {
+    const estado = conSalidas(tildada(salidaDe(30, '2027-01-05', '17:00')), salidaDe(31, '2027-01-13', '16:50'));
+    const de2026 = tablaDelTilde(2026, { estado });
+    const diciembre = mesDe(de2026, '2026-12');
+    assert.deepEqual([diciembre.horas_texto, diciembre.horas_detalle, diciembre.a_favor_texto], ['2 h', '2 h de enero', 'Enero 2027']);
+    assert.deepEqual(de2026.meses.map((fila) => fila.mes), ['2026-12', '2026-10', '2026-09']);
+    assert.deepEqual(Object.keys(de2026.dias_por_mes), ['2026-12', '2026-10', '2026-09']);
+    assert.deepEqual(de2026.dias_por_mes['2026-12'].map((dia) => [dia.fecha, dia.tipo_texto, dia.suma_a, dia.de_otro_mes]),
+      [['2027-01-05', 'De enero', '', true]]);
+    assert.equal(de2026.totales_por_mes['2026-12'], '2 horas');
+    // La de 2027: enero lo lista en su mes, con «Suma a diciembre»
+    const de2027 = tablaDelTilde(2027, { estado });
+    assert.deepEqual(de2027.dias_por_mes['2027-01'].map((dia) => [dia.fecha, dia.tipo_texto, dia.suma_a]),
+      [['2027-01-13', '', ''], ['2027-01-05', '', 'Suma a diciembre']]);
+    assert.deepEqual([mesDe(de2027, '2027-01').horas_texto, mesDe(de2027, '2027-01').horas_detalle], ['2 h', '2 h suman a diciembre']);
+    assert.equal(de2027.totales_por_mes['2027-01'], '2 horas');
+    // Las planillas dicen lo mismo: diciembre lo recibe y enero lo da
+    const diciembreEnLaPlanilla = planillaDelTilde('2026-12', { estado });
+    assert.deepEqual([diciembreEnLaPlanilla.suma.horas, diciembreEnLaPlanilla.suma.detalle], [2, 'Incluye 2 h de enero.']);
+    assert.deepEqual(diciembreEnLaPlanilla.entran.map((dia) => dia.fecha), ['2027-01-05']);
+    const eneroEnLaPlanilla = planillaDelTilde('2027-01', { estado });
+    assert.deepEqual([eneroEnLaPlanilla.sumar_a, eneroEnLaPlanilla.suma.horas, eneroEnLaPlanilla.suma.detalle],
+      ['diciembre', 2, '2 h del martes 05/01 suman a diciembre.']);
+  });
+
+  it('sin tildes, nada se mueve: sin detalle, sin entran y sin marcas', () => {
+    const sinTildes = conSalidas(...DE_ENERO, { ...MARTES_TILDADO, al_mes_anterior: false }, MIERCOLES);
+    for (const mes of ['2027-01', '2027-02']) {
+      const planilla = planillaDelTilde(mes, { estado: sinTildes });
+      assert.deepEqual([planilla.suma.detalle, planilla.entran], ['', []], mes);
+      assert.ok(planilla.dias.every((dia) => dia.al_mes_anterior === false), mes);
+    }
+    assert.equal(planillaDelTilde('2027-01', { estado: sinTildes }).suma.horas, 5.5);
+    const tabla = tablaDelTilde(2027, { estado: sinTildes });
+    assert.ok(tabla.meses.every((fila) => fila.horas_detalle === ''));
+    assert.ok(Object.values(tabla.dias_por_mes).flat().every((dia) => dia.suma_a === '' && !('de_otro_mes' in dia)));
+    assert.deepEqual(tabla.totales_por_mes, { '2027-02': '2,5 horas', '2027-01': '5,5 horas' });
+  });
+
+  it('pasadas por JSON quedan igual: todo número es un número y todo texto, un texto', () => {
+    for (const valor of [planillaDelTilde('2027-01'), planillaDelTilde('2027-02'), tablaDelTilde(2027), tablaDelTilde(2026)]) {
+      sinHuecos(valor);
+      assert.deepEqual(JSON.parse(JSON.stringify(valor)), valor);
+    }
   });
 });
 

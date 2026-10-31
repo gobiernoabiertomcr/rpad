@@ -26,7 +26,8 @@ import {
   numeroTexto, mesEnFrase, nombreDelMes, diaYMes, enLista, modalidadDe, mesMas, topeDe, diasQueDescuentan, esDiaEntero,
   fueraDeLaModalidad, tieneSaldoInicial, horasDe, textoSinNoUtilizadas, rangoDeFechas, horaSalidaValida, tipoDeDia,
   horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos, fechasEnLaFrase,
-  diasLibresDelMes, porHabilitarDe, textoDeLosDiasHabiles
+  diasLibresDelMes, porHabilitarDe, textoDeLosDiasHabiles, MESES_HASTA_LAS_HORAS, mesDeLaSalida, horasPorMesDeSalidas,
+  repartoDelMes, textoDeLoQueSeMueve
 } from './miEspacioReglas.js';
 
 // Los dos formatos que ya estaban en las reglas: el panel los usa sin copiarlos
@@ -912,8 +913,11 @@ const situacionDeLosFrancos = (fila, francos, mesDeHoy, feriados) => {
   return ['no_utilizado', usados === null ? mayuscula(noUtilizados) : `${usados} · ${numeroTexto(sinUsar)} ${noUtilizados}`];
 };
 
+// En contrato, un mes trabajado que ya terminó sin horas ni usos (sus salidas no llegan a media hora o pasaron todas al mes
+// anterior: spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 5) no tiene horas a favor, ni usadas ni sin usar
 const situacionDeLasHoras = (fila, mesDeHoy) => {
   if (fila.mes_trabajado >= mesDeHoy) return ['sumando', 'El mes sigue sumando'];
+  if (cantidadDe(fila.horas) === 0 && cantidadDe(fila.usadas) === 0) return ['sin_horas', 'Sin horas a favor'];
   if (textoDe(fila.mes_de_uso) >= mesDeHoy) {
     const quedan = cantidadDe(fila.disponibles);
     if (quedan === 0) return ['usadas', 'Todas usadas'];
@@ -1009,56 +1013,130 @@ const diasDeLasHorasExtras = (datos, delAnio) => {
 
 /**
  * El día por día de contrato (spec 2026-10-27-mi-espacio-horas, sección 5): las salidas del año, de la más nueva a la más
- * vieja, cada una `{ id, fecha, fecha_texto, tipo_texto, horario, entrada_texto, horas, horas_texto, cero, nota, aviso }`:
+ * vieja, cada una `{ id, fecha, fecha_texto, tipo_texto, horario, entrada_texto, horas, horas_texto, cero, nota, aviso,
+ * suma_a }`:
  * - `tipo_texto`: 'Feriado', 'Sábado', 'Domingo' o '' (un día hábil); `horario`: en un día hábil, 'Salida 16:20' (y la
  *   entrada, que no cuenta, en `entrada_texto`: 'Entrada 08:02'); en uno que no lo es, 'De 09:21 a 12:10' (sin la entrada,
  *   'Salida 19:00': la que pasó a ser feriado, que no suma);
  * - `horas` (`horasDeLaSalida`, o null) con su texto (`textoDeLasHorasDelDia`) y `cero` si dan 0 (en gris);
- * - `aviso`: el de la salida que dejó de cerrar (`avisosDeSalidas` del cálculo), o null.
- * Y lo que suma cada mes ('16 horas'; lo que no suma, como 0).
+ * - `aviso`: el de la salida que dejó de cerrar (`avisosDeSalidas` del cálculo), o null;
+ * - `suma_a`: con el tilde «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 5), 'Suma a
+ *   enero' (el mes al que van sus horas, `mesDeLaSalida`); sin él, ''.
+ * Al final de cada mes van además, por fecha, los días tildados del mes siguiente que suman a él (también los de enero del año
+ * siguiente, que suman a diciembre: se toman las salidas cuya fecha o cuyo mes de las horas es del año), con la misma forma
+ * salvo `tipo_texto` 'De febrero' (en lugar de 'Feriado', 'Sábado' o 'Domingo'), `suma_a` '' y, solo ellos, `de_otro_mes:
+ * true`; en su propio mes siguen como cualquier día, con su `suma_a`. Y lo que suma cada mes con el tilde, el mismo número de
+ * las horas a favor (`horasPorMesDeSalidas`: '16 horas'; lo que no suma, como 0).
  */
 const diasDeLasSalidas = (datos, delAnio, feriados, avisos) => {
-  const diasPorMes = {};
-  const totales = {};
-  const salidas = listaDe(datos.salidas).filter((fila) => esSalida(fila) && fila.fecha.startsWith(delAnio))
+  const delAnioQue = (mes) => typeof mes === 'string' && mes.startsWith(delAnio);
+  const salidas = listaDe(datos.salidas)
+    .filter((fila) => esSalida(fila) && (fila.fecha.startsWith(delAnio) || delAnioQue(mesDeLaSalida(fila))))
     .sort((a, b) => compararTexto(b.fecha, a.fecha) || cantidadDe(idDe(b.id)) - cantidadDe(idDe(a.id)));
-  const horasDelMes = new Map();
+  const propios = new Map();
+  const deOtroMes = new Map();
+  const sumarA = (mapa, mes, dia) => {
+    if (!mapa.has(mes)) mapa.set(mes, []);
+    mapa.get(mes).push(dia);
+  };
   for (const fila of salidas) {
     const { fecha, salida } = fila;
     const mes = fecha.slice(0, 7);
+    const alQueSuma = mesDeLaSalida(fila);
     const tipo = tipoDeDia(fecha, feriados);
     const entrada = horaSalidaValida(fila.entrada) ? fila.entrada : null;
     const horas = horasDeLaSalida(fila, feriados);
     let tipoTexto = '';
     if (tipo === 'feriado') tipoTexto = 'Feriado';
     else if (tipo === 'finde') tipoTexto = nombreDelFinde(fecha);
-    if (!Object.hasOwn(diasPorMes, mes)) diasPorMes[mes] = [];
-    diasPorMes[mes].push({
+    const dia = {
       id: fila.id ?? null, fecha, fecha_texto: diaCortoSinAnio(fecha), tipo_texto: tipoTexto,
       horario: tipo !== 'habil' && entrada !== null ? `De ${entrada} a ${salida}` : `Salida ${salida}`,
       entrada_texto: tipo === 'habil' && entrada !== null ? `Entrada ${entrada}` : '',
-      horas, horas_texto: textoDeLasHorasDelDia(horas), cero: horas === 0, nota: notaDe(fila), aviso: avisos.get(fecha) ?? null
-    });
-    horasDelMes.set(mes, (horasDelMes.get(mes) ?? 0) + (horas ?? 0));
+      horas, horas_texto: textoDeLasHorasDelDia(horas), cero: horas === 0, nota: notaDe(fila), aviso: avisos.get(fecha) ?? null,
+      suma_a: alQueSuma === mes ? '' : `Suma a ${nombreDelMes(alQueSuma)}`
+    };
+    if (mes.startsWith(delAnio)) sumarA(propios, mes, dia);
+    if (alQueSuma !== mes && delAnioQue(alQueSuma)) {
+      sumarA(deOtroMes, alQueSuma, { ...dia, tipo_texto: `De ${nombreDelMes(mes)}`, suma_a: '', de_otro_mes: true });
+    }
   }
-  for (const [mes, horas] of horasDelMes) totales[mes] = conUnidad(horas, 'hora', 'horas');
+  // Los meses, del más nuevo al más viejo (uno puede tener solo días del mes siguiente)
+  const meses = [...new Set([...propios.keys(), ...deOtroMes.keys()])].sort((a, b) => compararTexto(b, a));
+  const horasPorMes = horasPorMesDeSalidas(datos.salidas, feriados);
+  const diasPorMes = {};
+  const totales = {};
+  for (const mes of meses) {
+    // Los del mes siguiente, por fecha: al revés de como vinieron
+    diasPorMes[mes] = [...(propios.get(mes) ?? []), ...(deOtroMes.get(mes) ?? []).reverse()];
+    totales[mes] = conUnidad(horasPorMes.get(mes) ?? 0, 'hora', 'horas');
+  }
   return { diasPorMes, totales };
+};
+
+// Lo que suman unos días de `repartoDelMes` (null como 0)
+const horasDeLosDias = (dias) => dias.reduce((suma, dia) => suma + (dia.horas ?? 0), 0);
+
+/**
+ * De dónde salen las horas de un mes trabajado de contrato (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 5), con
+ * `repartoDelMes`: lo que entra del mes siguiente, «5,5 h + 1,5 h de febrero» (sin horas propias, «1,5 h de febrero»), y lo que
+ * se va al anterior, «1,5 h suman a enero» («suma» con 1 h); si pasan las dos cosas, separadas por « · ». Sin nada que se
+ * mueva, ''.
+ */
+const textoDeDondeSalenLasHoras = (mes, salidas, feriados) => {
+  const { propias, entran, van } = repartoDelMes(salidas, mes, feriados);
+  const partes = [];
+  const queEntran = horasDeLosDias(entran);
+  if (queEntran > 0) {
+    const delSiguiente = `${numeroTexto(queEntran)} h de ${nombreDelMes(mesMas(mes, 1))}`;
+    partes.push(propias > 0 ? `${numeroTexto(propias)} h + ${delSiguiente}` : delSiguiente);
+  }
+  const queVan = horasDeLosDias(van);
+  if (queVan > 0) {
+    partes.push(`${numeroTexto(queVan)} h ${queVan === 1 ? 'suma' : 'suman'} a ${nombreDelMes(mesMas(mes, -1))}`);
+  }
+  return partes.join(' · ');
+};
+
+/**
+ * Los meses trabajados del año con alguna salida (por su fecha) que no están en `trabajados` (los que tienen horas a favor):
+ * en la tabla de contrato, un mes con salidas tiene siempre su fila, aunque sume 0 o todas sus horas pasen al mes anterior
+ * (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 5: así sus días se ven y se editan desde la pestaña). Cada uno, su
+ * fila de las horas a favor del cálculo (con 0 horas, si su mes de uso tiene usos de más) o, si no hay, una con 0 horas, su
+ * mes de uso y ningún uso. Solo la tabla: las horas a favor siguen sin un mes que suma 0.
+ */
+const mesesConSalidasSinHoras = (datos, cuenta, delAnio, trabajados) => {
+  const yaEstan = new Set(trabajados.map((fila) => fila.mes_trabajado));
+  const meses = new Set(listaDe(datos.salidas).filter((fila) => esSalida(fila) && fila.fecha.startsWith(delAnio))
+    .map((fila) => fila.fecha.slice(0, 7)));
+  return [...meses].filter((mes) => !yaEstan.has(mes)).map((mes) => listaDe(cuenta.horasAFavor)
+    .find((fila) => esObjeto(fila) && fila.mes_trabajado === mes)
+    ?? { mes_trabajado: mes, horas: 0, mes_de_uso: mesMas(mes, MESES_HASTA_LAS_HORAS), usos: [], usadas: 0 });
 };
 
 /**
  * La pestaña Horas extras de un año (`GET /api/mi-espacio/horas-extras?anio=`). Las opciones son `{ anio, hoy, feriados }`
  * (`anio`, como en `filasDeLicencias`). Todas llevan `{ modalidad, anio, anios, meses, dias_por_mes, totales_por_mes,
  * mes_en_curso }`: `meses` son los meses trabajados del año con horas (uno sin horas, que está en el cálculo solo porque su
- * mes de uso tiene usos, no va: ese uso de más ya es un faltante), del más nuevo al más viejo, cada uno con `estado` (para
- * el color de su situación) y `situacion`; `dias_por_mes`, los días de cada mes, del más nuevo al más viejo;
- * `totales_por_mes`, las horas de cada mes ('10,5 horas'); y `mes_en_curso`, el de hoy si es de ese año (si no, null).
+ * mes de uso tiene usos, no va: ese uso de más ya es un faltante; en contrato, sí, si tiene salidas: ver abajo), del más nuevo
+ * al más viejo, cada uno con `estado` (para el color de su situación) y `situacion`; `dias_por_mes`, los días de cada mes, del
+ * más nuevo al más viejo; `totales_por_mes`, las horas de cada mes ('10,5 horas'); y `mes_en_curso`, el de hoy si es de ese año
+ * (si no, null).
  * - En planta, cada mes es `{ mes, mes_texto, horas_texto, dias_texto, francos, uso_texto, estado, situacion }`, más
  *   `uso_autorizado: { puede, texto }`; los días son sus horas extras (`{ id, fecha, fecha_texto, desde, hasta, horario,
  *   horas_texto, nota }`: desde y hasta, para corregirlas).
- * - En contrato, `{ mes, mes_texto, horas_texto, a_favor_texto, a_favor_detalle, usadas_texto, usadas_detalle, estado,
- *   situacion }` (`a_favor_detalle`: las horas del mes en días de franco, «2 días de franco y 4 horas», `enDiasDeFranco`), más
- *   `no_utilizadas: { total_texto, filas: [{ titulo, texto, detalle }], uso_autorizado }`; los días son sus salidas de la
- *   planilla (`diasDeLasSalidas`: contrato no lee las horas extras de planta).
+ * - En contrato, `{ mes, mes_texto, horas_texto, horas_detalle, a_favor_texto, a_favor_detalle, usadas_texto, usadas_detalle,
+ *   estado, situacion }` (`a_favor_detalle`: las horas del mes en días de franco, «2 días de franco y 4 horas», `enDiasDeFranco`),
+ *   más `no_utilizadas: { total_texto, filas: [{ titulo, texto, detalle }], uso_autorizado }`; los días son sus salidas de la
+ *   planilla (`diasDeLasSalidas`: contrato no lee las horas extras de planta). Desde el tilde «Sumar a {mes anterior}» (spec
+ *   2026-10-30-mi-espacio-horas-mes-anterior, sección 5), las horas de un mes son las que suma con él (las horas a favor) y
+ *   `horas_detalle` dice de dónde salen cuando algo se mueve («5,5 h + 1,5 h de febrero», «1,5 h de febrero», «1,5 h suman a
+ *   enero» o las dos cosas, separadas por « · »; si no, ''). Las filas son los meses con horas a favor y, además, los meses
+ *   del año con alguna salida (por su fecha), aunque sumen 0 o todas sus horas pasen al anterior: con 0 horas, el mes de uso
+ *   sin detalle y «Usadas» como siempre; su situación, «El mes sigue sumando» mientras el mes no terminó y, después, sin horas
+ *   ni usos, `sin_horas`, «Sin horas a favor» (con usos de más, la de siempre). El día por día suma, en cada día tildado,
+ *   `suma_a` («Suma a enero») y, al final de cada mes, los días tildados del mes siguiente que suman a él («De febrero»); el
+ *   total de cada mes es el de su fila.
  * Sin modalidad, `modalidad` es null y lo demás va vacío.
  */
 export const tablaDeHorasExtras = (estado, calculo, opciones) => {
@@ -1106,19 +1184,22 @@ export const tablaDeHorasExtras = (estado, calculo, opciones) => {
     return { ...tabla, uso_autorizado: usoAutorizadoDe('planta', elAnio, cuenta) };
   }
 
-  tabla.meses = trabajados.map((fila) => {
-    const usos = listaDe(fila.usos).filter((uso) => esObjeto(uso) && esFechaIso(uso.fecha));
-    const usadas = cantidadDe(fila.usadas);
-    const [estadoDelMes, situacion] = situacionDeLasHoras(fila, mesDeHoy);
-    return {
-      mes: fila.mes_trabajado, mes_texto: mesTitulo(fila.mes_trabajado),
-      horas_texto: `${numeroTexto(cantidadDe(fila.horas))} h`, a_favor_texto: mesTitulo(fila.mes_de_uso),
-      a_favor_detalle: enDiasDeFranco(cantidadDe(fila.horas)),
-      usadas_texto: usadas > 0 ? `${numeroTexto(usadas)} h` : '—',
-      usadas_detalle: usos.map((uso) => `${diaYMes(uso.fecha)}: ${numeroTexto(cantidadDe(uso.horas))} h`).join(' · '),
-      estado: estadoDelMes, situacion
-    };
-  });
+  tabla.meses = [...trabajados, ...mesesConSalidasSinHoras(datos, cuenta, delAnio, trabajados)]
+    .sort((a, b) => compararTexto(b.mes_trabajado, a.mes_trabajado))
+    .map((fila) => {
+      const usos = listaDe(fila.usos).filter((uso) => esObjeto(uso) && esFechaIso(uso.fecha));
+      const usadas = cantidadDe(fila.usadas);
+      const [estadoDelMes, situacion] = situacionDeLasHoras(fila, mesDeHoy);
+      return {
+        mes: fila.mes_trabajado, mes_texto: mesTitulo(fila.mes_trabajado),
+        horas_texto: `${numeroTexto(cantidadDe(fila.horas))} h`,
+        horas_detalle: textoDeDondeSalenLasHoras(fila.mes_trabajado, datos.salidas, feriados),
+        a_favor_texto: mesTitulo(fila.mes_de_uso), a_favor_detalle: enDiasDeFranco(cantidadDe(fila.horas)),
+        usadas_texto: usadas > 0 ? `${numeroTexto(usadas)} h` : '—',
+        usadas_detalle: usos.map((uso) => `${diaYMes(uso.fecha)}: ${numeroTexto(cantidadDe(uso.horas))} h`).join(' · '),
+        estado: estadoDelMes, situacion
+      };
+    });
   return { ...tabla, no_utilizadas: noUtilizadasDeLaTabla(elAnio, cuenta) };
 };
 
@@ -1166,7 +1247,16 @@ const nombresDeLosFeriados = (filas, anio) => {
   return nombres;
 };
 
-// Un día de la planilla, con la forma de la spec (sección 8)
+// Las salidas de un mes de la planilla, por fecha (la primera de cada día: la base tiene una por persona y día)
+const salidasDelMes = (datos, mes) => {
+  const salidas = new Map();
+  for (const fila of listaDe(datos.salidas)) {
+    if (esSalida(fila) && fila.fecha.startsWith(`${mes}-`) && !salidas.has(fila.fecha)) salidas.set(fila.fecha, fila);
+  }
+  return salidas;
+};
+
+// Un día de la planilla, con la forma de la spec (sección 8), con `salidas` las de su mes y `nombres`, los feriados de su año
 const diaDeLaPlanilla = (fecha, { datos, hoy, feriados, salidas, avisos, nombres }) => {
   const tipo = tipoDeDia(fecha, feriados);
   const fila = salidas.get(fecha) ?? null;
@@ -1184,6 +1274,7 @@ const diaDeLaPlanilla = (fecha, { datos, hoy, feriados, salidas, avisos, nombres
     entrada: fila !== null && horaSalidaValida(fila.entrada) ? fila.entrada : null,
     salida: fila === null ? null : fila.salida,
     nota: fila === null ? null : notaDe(fila),
+    al_mes_anterior: fila !== null && fila.al_mes_anterior === true,
     horas,
     horas_texto: textoDeLasHorasDelDia(horas),
     aviso: fila === null ? null : (avisos.get(fecha) ?? null)
@@ -1194,17 +1285,25 @@ const diaDeLaPlanilla = (fecha, { datos, hoy, feriados, salidas, avisos, nombres
  * La planilla de un mes de contrato (`GET /api/mi-espacio/salidas?mes=`; spec 2026-10-27-mi-espacio-horas, sección 8). Las
  * opciones son `{ mes, hoy, feriados, filasFeriados }`: el mes, como lo lee `mesDeLaPlanilla` (sin mes, el de hoy); los
  * feriados, el Set del cálculo, y sus filas, para los nombres. Devuelve `{ modalidad: 'contrato', mes, mes_texto, hoy,
- * anterior, siguiente, dias, fines_de_semana, suma }`:
+ * anterior, siguiente, sumar_a, dias, fines_de_semana, entran, suma }`:
  * - `anterior` y `siguiente`, los meses vecinos, o null en el primer mes de `rangoDeFechas` y en el de hoy (no se va a un mes
  *   que todavía no llegó);
+ * - `sumar_a`: el nombre del mes anterior, en minúscula y sin año ('enero'), el del tilde «Sumar a enero» (spec
+ *   2026-10-30-mi-espacio-horas-mes-anterior, sección 4), en todos los meses (también en el primero del rango);
  * - `dias`: los días de lunes a viernes del mes (los hábiles y los feriados, también los que todavía no llegaron) y los
  *   sábados y domingos con una salida, por fecha; `fines_de_semana`: los demás sábados y domingos hasta hoy, para «Sumar el
  *   día». Un sábado o un domingo que además es feriado va con `tipo: 'feriado'` y su nombre. Cada día es `{ fecha,
  *   fecha_texto, fecha_larga, tipo: 'habil' | 'feriado' | 'finde', feriado, finde_texto, licencia: { texto, entera } | null,
- *   futuro, hoy, entrada, salida, nota, horas, horas_texto, aviso }` (`horas`, las de `horasDeLaSalida`, o null;
- *   `horas_texto`, '1,5 h', '0' o ''; `aviso`, el de `avisosDeSalidas` del cálculo, o null);
- * - `suma`: `{ horas, cifra, texto }`, lo que suman las horas del mes (las mismas de `horasPorMesDeSalidas`, que dan las
- *   horas a favor), su número ('18', '10,5') y la frase de la banda (`textoDeLaSumaDelMes`).
+ *   futuro, hoy, entrada, salida, nota, al_mes_anterior, horas, horas_texto, aviso }` (`al_mes_anterior`, el tilde, solo con
+ *   una salida: sin ella, false; `horas`, las de `horasDeLaSalida`, o null, también en un día tildado; `horas_texto`, '1,5 h',
+ *   '0' o ''; `aviso`, el de `avisosDeSalidas` del cálculo, o null);
+ * - `entran`: los días tildados del mes siguiente, que suman a este, por fecha, con la misma forma de un día (con las salidas
+ *   y los nombres de los feriados de su mes: los de diciembre reciben de enero del año siguiente); si el mes siguiente todavía
+ *   no llegó (`siguiente` null), [];
+ * - `suma`: `{ horas, cifra, texto, detalle }`, lo que suma el mes con el tilde (`repartoDelMes`: sus días sin tildar más los
+ *   tildados del mes siguiente, las mismas horas de `horasPorMesDeSalidas`, que dan las horas a favor), su número ('18',
+ *   '10,5'), la frase de la banda (`textoDeLaSumaDelMes`) y su segunda línea (`textoDeLoQueSeMueve`: «Incluye 1,5 h de
+ *   febrero.», «1,5 h del martes 02/02 suman a enero.», o '').
  * Fuera de contrato, con un mes que no sirve o sin un hoy válido, null.
  */
 export const planillaDelMes = (estado, calculo, opciones) => {
@@ -1214,32 +1313,43 @@ export const planillaDelMes = (estado, calculo, opciones) => {
   const elMes = mesDeLaPlanilla(mes, hoy);
   if (elMes === null) return null;
 
-  const salidas = new Map();
-  for (const fila of listaDe(datos.salidas)) {
-    if (esSalida(fila) && fila.fecha.startsWith(`${elMes}-`) && !salidas.has(fila.fecha)) salidas.set(fila.fecha, fila);
-  }
-  const contexto = {
-    datos, hoy, feriados, salidas, avisos: avisosPorFecha(esObjeto(calculo) ? calculo : {}),
-    nombres: nombresDeLosFeriados(filasFeriados, anioDe(elMes))
-  };
+  const avisos = avisosPorFecha(esObjeto(calculo) ? calculo : {});
+  const contextoDelMes = (delMes) => ({
+    datos, hoy, feriados, salidas: salidasDelMes(datos, delMes), avisos,
+    nombres: nombresDeLosFeriados(filasFeriados, anioDe(delMes))
+  });
+  const contexto = contextoDelMes(elMes);
   const dias = [];
   const finesDeSemana = [];
   for (let fecha = `${elMes}-01`; esFechaIso(fecha) && fecha.startsWith(`${elMes}-`); fecha = sumarDias(fecha, 1)) {
-    if (nombreDelFinde(fecha) === null || salidas.has(fecha)) dias.push(diaDeLaPlanilla(fecha, contexto));
+    if (nombreDelFinde(fecha) === null || contexto.salidas.has(fecha)) dias.push(diaDeLaPlanilla(fecha, contexto));
     else if (fecha <= hoy) finesDeSemana.push(diaDeLaPlanilla(fecha, contexto));
   }
 
-  const horas = dias.reduce((suma, dia) => suma + (dia.horas ?? 0), 0);
+  const siguiente = elMes === hoy.slice(0, 7) ? null : mesMas(elMes, 1);
+  let entran = [];
+  if (siguiente !== null) {
+    const delSiguiente = contextoDelMes(siguiente);
+    entran = [...delSiguiente.salidas.values()].filter((fila) => fila.al_mes_anterior === true)
+      .map((fila) => fila.fecha).sort(compararTexto).map((fecha) => diaDeLaPlanilla(fecha, delSiguiente));
+  }
+  const reparto = repartoDelMes(datos.salidas, elMes, feriados);
+  const horas = reparto.propias + horasDeLosDias(reparto.entran);
   return {
     modalidad: 'contrato',
     mes: elMes,
     mes_texto: mesTitulo(elMes),
     hoy,
     anterior: elMes === rangoDeFechas(hoy).desde.slice(0, 7) ? null : mesMas(elMes, -1),
-    siguiente: elMes === hoy.slice(0, 7) ? null : mesMas(elMes, 1),
+    siguiente,
+    sumar_a: nombreDelMes(mesMas(elMes, -1)),
     dias,
     fines_de_semana: finesDeSemana,
-    suma: { horas, cifra: numeroTexto(horas), texto: textoDeLaSumaDelMes(elMes, horas, hoy) }
+    entran,
+    suma: {
+      horas, cifra: numeroTexto(horas), texto: textoDeLaSumaDelMes(elMes, horas, hoy),
+      detalle: textoDeLoQueSeMueve(elMes, reparto.entran, reparto.van)
+    }
   };
 };
 

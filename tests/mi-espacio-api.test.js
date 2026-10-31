@@ -118,10 +118,11 @@ const conHorasExtras = async (clave, { fecha, desde, hasta, nota = null, activo 
   'INSERT INTO mi_espacio_horas_extras (usuario_id, fecha, desde, hasta, nota, activo) VALUES (?, ?, ?, ?, ?, ?)',
   [usuarios[clave].id, fecha, desde, hasta, nota, activo]
 )).insertId;
-// Una salida de la planilla de contrato (spec 2026-10-27-mi-espacio-horas, 6): la entrada puede faltar (NULL)
-const conSalida = async (clave, { fecha, entrada = null, salida, nota = null, activo = 1 }) => (await query(
-  'INSERT INTO mi_espacio_salidas (usuario_id, fecha, entrada, salida, nota, activo) VALUES (?, ?, ?, ?, ?, ?)',
-  [usuarios[clave].id, fecha, entrada, salida, nota, activo]
+// Una salida de la planilla de contrato (spec 2026-10-27-mi-espacio-horas, 6): la entrada puede faltar (NULL); con
+// `al_mes_anterior` en 1, el tilde «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 8)
+const conSalida = async (clave, { fecha, entrada = null, salida, nota = null, activo = 1, al_mes_anterior = 0 }) => (await query(
+  'INSERT INTO mi_espacio_salidas (usuario_id, fecha, entrada, salida, nota, al_mes_anterior, activo) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  [usuarios[clave].id, fecha, entrada, salida, nota, al_mes_anterior, activo]
 )).insertId;
 const conFeriado = async ({ fecha, nombre, se_repite = 0 }) => (await query(
   "INSERT INTO feriados (fecha, nombre, tipo, se_repite) VALUES (?, ?, 'nacional', ?)", [fecha, nombre, se_repite]
@@ -201,10 +202,10 @@ describe('lo que llega de la base: las salidas de la planilla (spec 2026-10-27-m
       await conSalida('editor', { fecha: q(2), entrada: '08:00:00', salida: '17:00:00', activo: 0 });
 
       const estado = (await datos.estadosDe([usuarios.editor.id])).get(usuarios.editor.id);
-      // Los ids, números; la nota que falta, null
+      // Los ids, números; la nota que falta, null; sin tildar, al_mes_anterior en false
       assert.deepEqual(estado.salidas, [
-        { id, fecha: q(1), entrada: null, salida: '16:46', nota: null },
-        { id: conEntrada, fecha: q(5), entrada: '09:21', salida: '12:10', nota: 'Inventario' }
+        { id, fecha: q(1), entrada: null, salida: '16:46', nota: null, al_mes_anterior: false },
+        { id: conEntrada, fecha: q(5), entrada: '09:21', salida: '12:10', nota: 'Inventario', al_mes_anterior: false }
       ]);
       for (const fila of estado.salidas) {
         assert.strictEqual(typeof fila.id, 'number');
@@ -212,6 +213,19 @@ describe('lo que llega de la base: las salidas de la planilla (spec 2026-10-27-m
       }
       sinFechasConHora(estado.salidas, 'salidas');
     });
+
+  // El tilde «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 8): un tinyint en la base, un booleano
+  // en el estado (las reglas leen solo el `true` literal)
+  it('al_mes_anterior llega como booleano: true en una salida guardada con 1, false en una con 0', async () => {
+    const tildada = await conSalida('editor', { fecha: q(1), salida: '16:20:00', al_mes_anterior: 1 });
+    const sinTildar = await conSalida('editor', { fecha: q(2), salida: '15:50:00', al_mes_anterior: 0 });
+    for (const estado of [
+      (await datos.estadosDe([usuarios.editor.id])).get(usuarios.editor.id), await datos.estadoDe(usuarios.editor.id)
+    ]) {
+      assert.deepEqual(estado.salidas.map(fila => [fila.id, fila.al_mes_anterior]), [[tildada, true], [sinTildar, false]]);
+      for (const fila of estado.salidas) assert.strictEqual(typeof fila.al_mes_anterior, 'boolean');
+    }
+  });
 });
 
 describe('lo ajeno no se ve', () => {
@@ -2672,7 +2686,7 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
       ],
       licencias: [licencia(franquicia, 'franquicia', q(1), q(1), 7.5, 'Trámite'), licencia(medica, 'medica', q(2), q(3), null)],
       horasExtras: [{ id: extra, fecha: q(2), desde: '19:00', hasta: '22:30', nota: null }],
-      salidas: [{ id: salida, fecha: q(0), entrada: '08:02', salida: '16:20', nota: 'Cierre' }]
+      salidas: [{ id: salida, fecha: q(0), entrada: '08:02', salida: '16:20', nota: 'Cierre', al_mes_anterior: false }]
     });
   });
 
@@ -3039,6 +3053,31 @@ describe('la nota de una licencia', () => {
         assert.ok(xml.includes(RENGLON_DEL_CONTRATADO) && xml.includes('Analista de prueba'));
       });
     });
+
+  // Spec 2026-10-30-mi-espacio-horas-mes-anterior, 7. Inventado: la persona de contrato, con unas horas a favor del viernes
+  // 05/02/2027 y dos salidas de febrero: la del martes 02/02 (16:20, 1,5 h), tildada «Sumar a enero», y la del miércoles 03/02,
+  // sin tildar
+  it('horas a favor: el día primero y la salida tildada «Sumar a enero» entre paréntesis, en la hoja y en el Word', async () => {
+    const id = await conLicencia('editor', { tipo: 'horas_a_favor', desde: '2027-02-05', horas: '7.0' });
+    await conSalida('editor', { fecha: '2027-02-02', salida: '16:20:00', al_mes_anterior: 1 });
+    await conSalida('editor', { fecha: '2027-02-03', salida: '15:50:00' });
+    const cuerpo = 'el usufructo de siete (7) horas a favor el día viernes 5 de febrero de 2027, correspondientes a las horas '
+      + 'extras realizadas en enero de 2027 (incluidas las del martes 2 de febrero de 2027, sumadas a enero).';
+
+    const res = await verNota('editor', id);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.ok(res.body.data.html.includes(cuerpo), res.body.data.html);
+    const word = await bajarWord('editor', id);
+    assert.equal(word.status, 200);
+    assert.ok((await textoDelWord(word.body)).includes(cuerpo));
+
+    // Sin el tilde, sin paréntesis: el día sigue primero
+    await query('UPDATE mi_espacio_salidas SET al_mes_anterior = 0 WHERE usuario_id = ?', [usuarios.editor.id]);
+    const sinTilde = await verNota('editor', id);
+    assert.equal(sinTilde.status, 200, JSON.stringify(sinTilde.body));
+    assert.ok(sinTilde.body.data.html.includes('el usufructo de siete (7) horas a favor el día viernes 5 de febrero de 2027, '
+      + 'correspondientes a las horas extras realizadas en enero de 2027.'), sinTilde.body.data.html);
+  });
 
   it('datosDeLaNota: el día argentino del guardado y la firma; de otra persona, dada de baja o con un id que no sirve, null',
     async () => {

@@ -130,19 +130,99 @@ describe('notaDeLicencia: el cuerpo de cada tipo', () => {
       /realizadas en noviembre de 2026, el día viernes 15 de enero de 2027\.$/);
   });
 
-  it('horas a favor: el mes anterior y la concordancia de las medias', () => {
+  it('horas a favor: el día primero, el mes anterior y la concordancia de las medias (spec '
+    + '2026-10-30-mi-espacio-horas-mes-anterior, 7: el día primero en todas)', () => {
     assert.equal(cuerpo({ tipo: 'horas_a_favor', desde: '2026-10-15', hasta: '2026-10-15', horas: 2.5 }),
-      `${PIDO}el usufructo de dos horas y media (2,5) a favor, correspondientes a las horas extras realizadas en septiembre de 2026, el día jueves 15 de octubre de 2026.`);
-    assert.match(cuerpo({ tipo: 'horas_a_favor', desde: '2026-10-15', hasta: '2026-10-15', horas: 0.5 }),
-      /media hora \(0,5\) a favor, correspondiente a las horas/);
-    assert.match(cuerpo({ tipo: 'horas_a_favor', desde: '2026-10-15', hasta: '2026-10-15', horas: 1 }),
-      /una \(1\) hora a favor, correspondiente a las horas/);
-    assert.match(cuerpo({ tipo: 'horas_a_favor', desde: '2026-10-15', hasta: '2026-10-15', horas: 1.5 }),
-      /una hora y media \(1,5\) a favor, correspondiente a las horas/);
-    assert.match(cuerpo({ tipo: 'horas_a_favor', desde: '2026-10-15', hasta: '2026-10-15', horas: 2 }),
-      /dos \(2\) horas a favor, correspondientes a las horas/);
+      `${PIDO}el usufructo de dos horas y media (2,5) a favor el día jueves 15 de octubre de 2026, correspondientes a las horas extras realizadas en septiembre de 2026.`);
+    const ELDIA = 'a favor el día jueves 15 de octubre de 2026,';
+    assert.ok(cuerpo({ tipo: 'horas_a_favor', desde: '2026-10-15', hasta: '2026-10-15', horas: 0.5 })
+      .includes(`media hora (0,5) ${ELDIA} correspondiente a las horas`));
+    assert.ok(cuerpo({ tipo: 'horas_a_favor', desde: '2026-10-15', hasta: '2026-10-15', horas: 1 })
+      .includes(`una (1) hora ${ELDIA} correspondiente a las horas`));
+    assert.ok(cuerpo({ tipo: 'horas_a_favor', desde: '2026-10-15', hasta: '2026-10-15', horas: 1.5 })
+      .includes(`una hora y media (1,5) ${ELDIA} correspondiente a las horas`));
+    assert.ok(cuerpo({ tipo: 'horas_a_favor', desde: '2026-10-15', hasta: '2026-10-15', horas: 2 })
+      .includes(`dos (2) horas ${ELDIA} correspondientes a las horas`));
     assert.match(cuerpo({ tipo: 'horas_a_favor', desde: '2027-01-15', hasta: '2027-01-15', horas: 1 }),
-      /realizadas en diciembre de 2026/);
+      /a favor el día viernes 15 de enero de 2027, correspondiente a las horas extras realizadas en diciembre de 2026\.$/);
+  });
+});
+
+// Las horas a favor con días tildados «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 7): la nota
+// nombra entre paréntesis los días del mes de la licencia que suman al de las horas y dan horas, en orden de fecha. Inventado:
+// enero y febrero de 2027, una persona de contrato con una licencia de horas a favor el viernes 05/02/2027
+describe('notaDeLicencia: las horas a favor con días sumados al mes anterior', () => {
+  const SIETE = Object.freeze({ tipo: 'horas_a_favor', desde: '2027-02-05', hasta: '2027-02-05', horas: 7 });
+  // Una salida de la planilla, como las de estado.salidas: un día hábil cuenta solo la salida, desde las 15:00
+  const salida = (fecha, horaDeSalida, alMesAnterior = true, entrada = null) =>
+    ({ id: 1, fecha, entrada, salida: horaDeSalida, nota: null, al_mes_anterior: alMesAnterior });
+  const conSalidas = (salidas, licencia = SIETE, feriados = FERIADOS) =>
+    notaDeLicencia(licencia, { fecha: '2027-02-03', persona: PERSONA, feriados, salidas }).nota.cuerpo;
+  const SIN_PARENTESIS = `${PIDO}el usufructo de siete (7) horas a favor el día viernes 5 de febrero de 2027, correspondientes a las horas extras realizadas en enero de 2027.`;
+
+  it('un día tildado (el martes 02/02, salida 16:20: 1,5 h): «incluidas las del martes 2 de febrero de 2027, sumadas a enero»',
+    () => {
+      assert.equal(conSalidas([salida('2027-02-02', '16:20')]),
+        `${PIDO}el usufructo de siete (7) horas a favor el día viernes 5 de febrero de 2027, correspondientes a las horas extras realizadas en enero de 2027 (incluidas las del martes 2 de febrero de 2027, sumadas a enero).`);
+    });
+
+  it('dos días: «el martes 2 y el miércoles 3»; tres: «el lunes 1, el martes 2 y el miércoles 3», en orden de fecha', () => {
+    assert.ok(conSalidas([salida('2027-02-03', '15:50'), salida('2027-02-02', '16:20')])
+      .endsWith('enero de 2027 (incluidas las del martes 2 y el miércoles 3 de febrero de 2027, sumadas a enero).'));
+    assert.ok(conSalidas([salida('2027-02-03', '15:50'), salida('2027-02-01', '16:00'), salida('2027-02-02', '16:20')])
+      .endsWith('enero de 2027 (incluidas las del lunes 1, el martes 2 y el miércoles 3 de febrero de 2027, sumadas a enero).'));
+  });
+
+  it('no se nombran: un tildado de 0 h, uno sin tildar, uno tildado de otro mes, una salida inválida ni lo que no es una salida',
+    () => {
+      assert.equal(conSalidas([
+        salida('2027-02-01', '15:10'), // tildado, pero da 0 h
+        salida('2027-02-02', '16:20', false), // sin tildar
+        salida('2027-02-04', '16:20', 1), // la marca es solo el true literal
+        salida('2027-03-02', '16:20'), // tildado, de marzo: suma a febrero, no a enero
+        salida('2027-01-12', '16:20'), // tildado, de enero: suma a diciembre
+        salida('2027-02-08', '25:00'), // una salida que no es una hora
+        salida('2027-02-06', '12:00'), // un sábado sin entrada: no da horas
+        salida('2027-02-10', '10:00', true, '11:00'), // la salida antes que la entrada
+        { fecha: '2027-02-09', al_mes_anterior: true }, // sin salida
+        { fecha: '09/02/2027', salida: '16:20', al_mes_anterior: true }, null, 'x', [], 3
+      ]), SIN_PARENTESIS);
+    });
+
+  it('sin salidas, con una lista vacía o con algo que no es una lista: sin paréntesis', () => {
+    assert.equal(armar(SIETE).nota.cuerpo, SIN_PARENTESIS);
+    for (const salidas of [[], null, undefined, 'x', {}, 3]) assert.equal(conSalidas(salidas), SIN_PARENTESIS, String(salidas));
+  });
+
+  it('los feriados cuentan: un tildado en un feriado del Set sin entrada no da horas y no se nombra; con entrada, sí', () => {
+    const feriados = new Set(['2027-02-03']);
+    assert.ok(conSalidas([salida('2027-02-02', '16:20'), salida('2027-02-03', '15:50')], SIETE, feriados)
+      .endsWith('(incluidas las del martes 2 de febrero de 2027, sumadas a enero).'));
+    // En un feriado cuenta de la entrada a la salida: de 09:00 a 10:30 es 1,5 h
+    assert.ok(conSalidas([salida('2027-02-02', '16:20'), salida('2027-02-03', '10:30', true, '09:00')], SIETE, feriados)
+      .endsWith('(incluidas las del martes 2 y el miércoles 3 de febrero de 2027, sumadas a enero).'));
+  });
+
+  it('«correspondiente» con 1 h, también con el paréntesis', () => {
+    assert.equal(conSalidas([salida('2027-02-02', '16:20')], { ...SIETE, horas: 1 }),
+      `${PIDO}el usufructo de una (1) hora a favor el día viernes 5 de febrero de 2027, correspondiente a las horas extras realizadas en enero de 2027 (incluidas las del martes 2 de febrero de 2027, sumadas a enero).`);
+  });
+
+  it('cruzando el año: unas horas a favor de enero con un día de enero tildado suman a diciembre', () => {
+    assert.equal(conSalidas([salida('2027-01-04', '16:20')], { ...SIETE, desde: '2027-01-15', hasta: '2027-01-15', horas: 2 }),
+      `${PIDO}el usufructo de dos (2) horas a favor el día viernes 15 de enero de 2027, correspondientes a las horas extras realizadas en diciembre de 2026 (incluidas las del lunes 4 de enero de 2027, sumadas a diciembre).`);
+  });
+
+  it('las salidas no cambian el franco ni los demás tipos', () => {
+    const salidas = [salida('2026-12-01', '16:20'), salida('2026-11-17', '16:20'), salida('2026-10-14', '16:20')];
+    for (const licencia of [
+      VACACIONES, { tipo: 'franco', desde: '2026-12-14', hasta: '2026-12-14', horas: null },
+      { tipo: 'franquicia', desde: '2026-11-04', hasta: '2026-11-04', horas: 3 },
+      { tipo: 'estudios', desde: '2026-11-16', hasta: '2026-11-17', horas: null }
+    ]) {
+      const conEllas = notaDeLicencia(licencia, { fecha: FECHA, persona: PERSONA, feriados: FERIADOS, salidas });
+      assert.deepEqual(conEllas, armar(licencia), licencia.tipo);
+    }
   });
 });
 

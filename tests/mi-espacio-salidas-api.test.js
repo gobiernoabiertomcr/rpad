@@ -13,7 +13,7 @@ import { asegurarBaseDePrueba } from './notas-fixtures.js';
 import {
   hoyArgentina, sumarDias, esDiaHabil, diaHabilAnterior, proximoDiaHabil, primerDiaHabilDelMes, FERIADOS_FIJOS
 } from '../services/notasDigitalesCalendario.js';
-import { MENSAJES_MI_ESPACIO, MAXIMO_DIAS_POR_GUARDADO, mesMas } from '../services/miEspacioReglas.js';
+import { MENSAJES_MI_ESPACIO, MAXIMO_DIAS_POR_GUARDADO, mesMas, nombreDelMes } from '../services/miEspacioReglas.js';
 
 let base, servidor, api, usuarios, dbReal, pool, controlador;
 const hoy = hoyArgentina();
@@ -159,7 +159,7 @@ describe('GET /mi-espacio/salidas', () => {
       assert.equal(res.status, 200, `${clave} ${JSON.stringify(res.body)}`);
       assert.equal(res.body.success, true);
       assert.deepEqual(Object.keys(res.body.data).sort(),
-        ['anterior', 'dias', 'fines_de_semana', 'hoy', 'mes', 'mes_texto', 'modalidad', 'siguiente', 'suma']);
+        ['anterior', 'dias', 'entran', 'fines_de_semana', 'hoy', 'mes', 'mes_texto', 'modalidad', 'siguiente', 'suma', 'sumar_a']);
       assert.equal(res.body.data.modalidad, 'contrato');
       assert.equal(res.body.data.mes, MES);
       assert.equal(res.body.data.hoy, hoy);
@@ -545,5 +545,127 @@ describe('las rutas de horas extras de antes, a contrato', () => {
     // Planta sigue cargando como siempre (en otro horario: el de antes es suyo)
     const dePlanta = await api.post('/mi-espacio/horas-extras', { ...cuerpo, desde: '19:00', hasta: '21:00' }, como('adminA'));
     assert.equal(dePlanta.status, 201, JSON.stringify(dePlanta.body));
+  });
+});
+
+// «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 8): cada día del PUT puede traer al_mes_anterior.
+// Si viene, es true o false (otro valor, 400 en al_mes_anterior); si no viene, se conserva lo guardado (una página vieja que no
+// conoce el tilde no lo borra) y un día nuevo queda en 0; un borrado lo deja en 0. Con el tilde, las horas del día suman al
+// mes anterior al de su fecha: el día es HABIL (el último hábil hasta hoy) y sus horas van a MES_DEL_TILDE
+describe('sumar al mes anterior', () => {
+  const MES_DEL_TILDE = mesMas(MES_HABIL, -1);
+  // 16:20 en un día hábil da 1,5 h; 15:50, 1 h
+  const TILDADO = Object.freeze({ fecha: HABIL, salida: '16:20', al_mes_anterior: true });
+  // Las salidas de una persona con su marca, también las dadas de baja
+  const marcasDe = async (clave) => (await query(
+    `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, TIME_FORMAT(salida, '%H:%i') AS salida, al_mes_anterior, activo
+     FROM mi_espacio_salidas WHERE usuario_id = ? ORDER BY fecha, id`,
+    [usuarios[clave].id]
+  )).map(fila => ({ ...fila, al_mes_anterior: Number(fila.al_mes_anterior), activo: Number(fila.activo) }));
+  // Las horas de cada fila de la pestaña Horas extras ('AAAA-MM' → horas, de su `horas_texto`, «1,5 h»), del año del mes del
+  // tilde y del de HABIL (en enero, son dos)
+  const horasDeLaPestana = async (clave) => {
+    const porMes = new Map();
+    for (const anio of new Set([MES_DEL_TILDE.slice(0, 4), MES_HABIL.slice(0, 4)])) {
+      const res = await api.get(`/mi-espacio/horas-extras?anio=${anio}`, como(clave));
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      for (const fila of res.body.data.meses) {
+        porMes.set(fila.mes, Number(fila.horas_texto.replace(/ h$/, '').replace(',', '.')));
+      }
+    }
+    return porMes;
+  };
+  // Las horas del día cuentan una sola vez, en el mes que toca
+  const horasEn = async (clave, mes, horas) => {
+    const porMes = await horasDeLaPestana(clave);
+    assert.equal(porMes.get(mes), horas, JSON.stringify([...porMes]));
+    assert.equal([...porMes.values()].reduce((suma, otras) => suma + otras, 0), horas, JSON.stringify([...porMes]));
+  };
+
+  it('con al_mes_anterior en true: 200, la fila con 1 y las horas en la fila del mes anterior de la pestaña', async () => {
+    await listoParaCargar('editor');
+    const res = await guardar('editor', [TILDADO]);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, guardado(1));
+    assert.deepEqual(await marcasDe('editor'), [{ fecha: HABIL, salida: '16:20', al_mes_anterior: 1, activo: 1 }]);
+    await horasEn('editor', MES_DEL_TILDE, 1.5);
+  });
+
+  it('sin el campo se conserva lo guardado: otra salida del mismo día sigue tildada, y un día nuevo queda en 0', async () => {
+    await listoParaCargar('editor');
+    assert.equal((await guardar('editor', [TILDADO])).status, 200);
+    const res = await guardar('editor', [{ fecha: HABIL, salida: '15:50' }, { fecha: HABIL_ANTES, salida: '16:20' }]);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(await marcasDe('editor'), [
+      { fecha: HABIL_ANTES, salida: '16:20', al_mes_anterior: 0, activo: 1 },
+      { fecha: HABIL, salida: '15:50', al_mes_anterior: 1, activo: 1 }
+    ]);
+    // Solo el de HABIL, con su hora nueva, en el mes del tilde
+    const porMes = await horasDeLaPestana('editor');
+    assert.equal(porMes.get(MES_DEL_TILDE), HABIL_ANTES.slice(0, 7) === MES_DEL_TILDE ? 2.5 : 1, JSON.stringify([...porMes]));
+  });
+
+  it('con al_mes_anterior en false, la marca vuelve a 0 y las horas, a su mes', async () => {
+    await listoParaCargar('editor');
+    assert.equal((await guardar('editor', [TILDADO])).status, 200);
+    assert.deepEqual((await marcasDe('editor')).map(fila => fila.al_mes_anterior), [1]);
+    const res = await guardar('editor', [{ ...TILDADO, al_mes_anterior: false }]);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(await marcasDe('editor'), [{ fecha: HABIL, salida: '16:20', al_mes_anterior: 0, activo: 1 }]);
+    await horasEn('editor', MES_HABIL, 1.5);
+  });
+
+  it('el borrado deja la marca en 0 (aunque traiga el tilde); vuelto a cargar sin el campo, activo y en 0', async () => {
+    await listoParaCargar('editor');
+    for (const borrado of [{ fecha: HABIL, entrada: '', salida: '', nota: '' }, { fecha: HABIL, salida: '', al_mes_anterior: true }]) {
+      await query('DELETE FROM mi_espacio_salidas');
+      assert.equal((await guardar('editor', [TILDADO])).status, 200);
+      assert.deepEqual((await marcasDe('editor')).map(fila => fila.al_mes_anterior), [1]);
+      const res = await guardar('editor', [borrado]);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.deepEqual(res.body, guardado(1));
+      assert.deepEqual(await marcasDe('editor'), [{ fecha: HABIL, salida: '16:20', al_mes_anterior: 0, activo: 0 }],
+        JSON.stringify(borrado));
+    }
+    const otraVez = await guardar('editor', [{ fecha: HABIL, salida: '15:50' }]);
+    assert.equal(otraVez.status, 200, JSON.stringify(otraVez.body));
+    assert.deepEqual(await marcasDe('editor'), [{ fecha: HABIL, salida: '15:50', al_mes_anterior: 0, activo: 1 }]);
+    await horasEn('editor', MES_HABIL, 1);
+  });
+
+  it('GET del mes anterior: trae en entran el día tildado del mes siguiente, y la suma lo cuenta y lo dice', async () => {
+    await listoParaCargar('editor');
+    assert.equal((await guardar('editor', [TILDADO])).status, 200);
+    const anterior = await planilla('editor', MES_DEL_TILDE);
+    assert.equal(anterior.status, 200, JSON.stringify(anterior.body));
+    const { data } = anterior.body;
+    assert.equal(data.sumar_a, nombreDelMes(mesMas(MES_DEL_TILDE, -1)));
+    assert.deepEqual(data.entran.map(otro => [otro.fecha, otro.salida, otro.al_mes_anterior, otro.horas, otro.horas_texto]),
+      [[HABIL, '16:20', true, 1.5, '1,5 h']]);
+    assert.deepEqual([data.suma.horas, data.suma.cifra, data.suma.detalle],
+      [1.5, '1,5', `Incluye 1,5 h de ${nombreDelMes(MES_HABIL)}.`]);
+    // En su propio mes, el día va tildado, con sus horas, y la suma no lo cuenta
+    const propio = await planilla('editor', MES_HABIL);
+    assert.equal(propio.status, 200, JSON.stringify(propio.body));
+    const delDia = propio.body.data.dias.find(otro => otro.fecha === HABIL);
+    assert.deepEqual([delDia.al_mes_anterior, delDia.horas], [true, 1.5]);
+    assert.equal(propio.body.data.suma.horas, 0);
+    assert.match(propio.body.data.suma.detalle, new RegExp(`^1,5 h del .+ suman a ${nombreDelMes(MES_DEL_TILDE)}\\.$`));
+    assert.deepEqual(propio.body.data.entran, []);
+  });
+
+  it('un al_mes_anterior que no es true ni false da 400 en al_mes_anterior, con su fecha, y no se guarda ningún día', async () => {
+    assert.equal(MENSAJES_MI_ESPACIO.alMesAnterior, 'Elegí si este día suma al mes anterior.');
+    await listoParaCargar('editor');
+    for (const valor of ['si', null, 1, 0, 'true', {}]) {
+      const res = await guardar('editor', [
+        { fecha: HABIL_ANTES, salida: '16:20', al_mes_anterior: true }, { fecha: HABIL, salida: '15:50', al_mes_anterior: valor }
+      ]);
+      assert.equal(res.status, 400, JSON.stringify(valor));
+      assert.deepEqual(res.body,
+        rechazoDeLosDias([{ fecha: HABIL, campo: 'al_mes_anterior', mensaje: MENSAJES_MI_ESPACIO.alMesAnterior }]),
+        JSON.stringify(valor));
+      assert.deepEqual(await marcasDe('editor'), [], JSON.stringify(valor));
+    }
   });
 });

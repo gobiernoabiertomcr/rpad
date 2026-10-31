@@ -32,7 +32,8 @@ import {
   DIAS_POR_EXAMEN, JORNADA, LARGO_NOTA, horasDe as horasDelServidor, camposDelSaldoInicial, validarSaldoInicial, textoSaldo,
   textoSaldoDelArranque, textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaDelFirmante,
   TIPOS_DE_UN_DIA, TIPOS_POR_HORAS, esDiaEntero, TEXTO_NO_SE_COPIA, SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL,
-  TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, tipoDeDia, horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, validarSalida
+  TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, tipoDeDia, horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, validarSalida,
+  repartoDelMes, textoDeLoQueSeMueve
 } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
 
@@ -3456,6 +3457,9 @@ describe('la planilla de horas extras: las paridades', () => {
       ['2026-10', 1, HOY_PLANILLA], ['2026-10', 0, HOY_PLANILLA], ['2026-09', 10.5, HOY_PLANILLA], ['2026-09', 7, HOY_PLANILLA],
       ['2026-09', 0, HOY_PLANILLA], ['2026-12', 21, '2026-12-10'], ['2026-12', 0.5, '2026-12-10'], ['2025-12', 3, HOY_PLANILLA],
       ['2026-10', null, HOY_PLANILLA], ['2026-10', NaN, HOY_PLANILLA], ['2026-10', -2, HOY_PLANILLA],
+      // El verbo mira el mes de uso (el siguiente): ya pasó, es el de hoy o todavía no llegó
+      ['2026-08', 7, HOY_PLANILLA], ['2026-11', 4, HOY_PLANILLA], ['2027-01', 7, '2027-02-03'], ['2027-01', 7, '2027-03-01'],
+      ['2027-02', 1, '2027-02-03'],
       // Los bordes de los años: el mes siguiente tiene que existir
       ['9999-12', 4, HOY_PLANILLA], ['9999-12', 0, HOY_PLANILLA], ['0000-05', 4, HOY_PLANILLA], ['0000-12', 4, HOY_PLANILLA],
       // Sin un mes o un hoy válidos
@@ -3590,13 +3594,14 @@ describe('la planilla de horas extras: lo puro', () => {
       ['2026-10-26', { salida: '17:00' }]
     ]);
     assert.deepEqual(plano(M.cuerpoDeLaPlanilla(cambios, ['2026-10-22', '2026-10-23', '2026-10-24', '2026-10-26'])), { dias: [
-      { fecha: '2026-10-22', entrada: '08:02', salida: '16:46', nota: 'Cierre del informe' },
-      { fecha: '2026-10-23', entrada: '', salida: '16:46', nota: '' },
-      { fecha: '2026-10-24', entrada: '', salida: '', nota: '' },
-      { fecha: '2026-10-26', entrada: '', salida: '17:00', nota: '' }
+      { fecha: '2026-10-22', entrada: '08:02', salida: '16:46', nota: 'Cierre del informe', al_mes_anterior: false },
+      { fecha: '2026-10-23', entrada: '', salida: '16:46', nota: '', al_mes_anterior: false },
+      { fecha: '2026-10-24', entrada: '', salida: '', nota: '', al_mes_anterior: false },
+      { fecha: '2026-10-26', entrada: '', salida: '17:00', nota: '', al_mes_anterior: false }
     ] });
     // Solo las fechas pedidas, en su orden; sin fechas, ninguno
-    assert.deepEqual(plano(M.cuerpoDeLaPlanilla(cambios, ['2026-10-23'])), { dias: [{ fecha: '2026-10-23', entrada: '', salida: '16:46', nota: '' }] });
+    assert.deepEqual(plano(M.cuerpoDeLaPlanilla(cambios, ['2026-10-23'])),
+      { dias: [{ fecha: '2026-10-23', entrada: '', salida: '16:46', nota: '', al_mes_anterior: false }] });
     assert.deepEqual(plano(M.cuerpoDeLaPlanilla(cambios, [])), { dias: [] });
     assert.deepEqual(plano(M.cuerpoDeLaPlanilla(null, null)), { dias: [] });
   });
@@ -3625,26 +3630,28 @@ describe('la planilla de horas extras: lo puro', () => {
 
   it('htmlDeLaBandaDeLaPlanilla: el total en grande y la frase, con lo que se suma en negrita; el texto es el del servidor', () => {
     const banda = M.htmlDeLaBandaDeLaPlanilla('2026-10', 18, HOY_PLANILLA);
-    assert.equal(banda, '<span class="mp-suma-cifra">18<small>h</small></span><p class="mp-suma-texto">En noviembre vas a tener '
-      + '<b>2 días de franco</b> y <b>4 horas a favor</b>.</p>');
-    assert.match(M.htmlDeLaBandaDeLaPlanilla('2026-10', 21, HOY_PLANILLA), /vas a tener <b>3 días de franco<\/b>\.<\/p>$/);
-    assert.match(M.htmlDeLaBandaDeLaPlanilla('2026-10', 4.5, HOY_PLANILLA), /^<span class="mp-suma-cifra">4,5<small>h<\/small><\/span>.*<b>4,5 horas a favor<\/b>\.<\/p>$/);
-    assert.match(M.htmlDeLaBandaDeLaPlanilla('2026-09', 10.5, HOY_PLANILLA), /En octubre tuviste <b>1 día de franco<\/b> y <b>3,5 horas a favor<\/b>\./);
-    assert.equal(M.htmlDeLaBandaDeLaPlanilla('2026-10', 0, HOY_PLANILLA),
-      '<span class="mp-suma-cifra">0<small>h</small></span><p class="mp-suma-texto">Todavía no sumaste horas extras en octubre.</p>');
+    assert.equal(banda, '<span class="mp-suma-cifra">18<small>h</small></span><div class="mp-suma-textos"><p class="mp-suma-texto">'
+      + 'En noviembre vas a tener <b>2 días de franco</b> y <b>4 horas a favor</b>.</p><p class="mp-suma-aparte"></p></div>');
+    assert.match(M.htmlDeLaBandaDeLaPlanilla('2026-10', 21, HOY_PLANILLA),
+      /vas a tener <b>3 días de franco<\/b>\.<\/p><p class="mp-suma-aparte"><\/p><\/div>$/);
+    assert.match(M.htmlDeLaBandaDeLaPlanilla('2026-10', 4.5, HOY_PLANILLA),
+      /^<span class="mp-suma-cifra">4,5<small>h<\/small><\/span>.*<b>4,5 horas a favor<\/b>\.<\/p><p class="mp-suma-aparte"><\/p><\/div>$/);
+    assert.match(M.htmlDeLaBandaDeLaPlanilla('2026-09', 10.5, HOY_PLANILLA), /En octubre tenés <b>1 día de franco<\/b> y <b>3,5 horas a favor<\/b>\./);
+    assert.equal(M.htmlDeLaBandaDeLaPlanilla('2026-10', 0, HOY_PLANILLA), '<span class="mp-suma-cifra">0<small>h</small></span>'
+      + '<div class="mp-suma-textos"><p class="mp-suma-texto">Todavía no sumaste horas extras en octubre.</p><p class="mp-suma-aparte"></p></div>');
     // El texto de la frase es siempre el de textoDeLaSumaDelMes del servidor (sin las negritas, que no separan palabras)
     const sinNegritas = (html) => textoDe(html.replace(/<\/?b>/g, ''));
     for (const [mes, horas] of [['2026-10', 18], ['2026-10', 18.5], ['2026-10', 21], ['2026-10', 4.5], ['2026-10', 1], ['2026-10', 0],
       ['2026-09', 10.5], ['2026-09', 7], ['2026-09', 0]]) {
-      const frase = M.htmlDeLaBandaDeLaPlanilla(mes, horas, HOY_PLANILLA).match(/<p class="mp-suma-texto">([\s\S]*)<\/p>/)[1];
+      const frase = M.htmlDeLaBandaDeLaPlanilla(mes, horas, HOY_PLANILLA).match(/<p class="mp-suma-texto">([\s\S]*?)<\/p>/)[1];
       assert.equal(sinNegritas(frase), textoDeLaSumaDelMes(mes, horas, HOY_PLANILLA), `${mes} ${horas}`);
     }
     // La de la planilla del servidor, con su suma
     assert.equal(sinNegritas(M.htmlDeLaBandaDeLaPlanilla(OCTUBRE.mes, OCTUBRE.suma.horas, OCTUBRE.hoy)),
       `${OCTUBRE.suma.cifra} h ${OCTUBRE.suma.texto}`);
     // Lo que no es un número: la raya, sin frase de horas
-    assert.equal(M.htmlDeLaBandaDeLaPlanilla('2026-10', NaN, HOY_PLANILLA),
-      '<span class="mp-suma-cifra">—<small>h</small></span><p class="mp-suma-texto">Todavía no sumaste horas extras en octubre.</p>');
+    assert.equal(M.htmlDeLaBandaDeLaPlanilla('2026-10', NaN, HOY_PLANILLA), '<span class="mp-suma-cifra">—<small>h</small></span>'
+      + '<div class="mp-suma-textos"><p class="mp-suma-texto">Todavía no sumaste horas extras en octubre.</p><p class="mp-suma-aparte"></p></div>');
   });
 
   it('diasPorFechaDe, diasVisiblesDeLaPlanilla y horasDeLosDias: sin cambios, la suma es la del servidor', () => {
@@ -3722,11 +3729,12 @@ describe('la planilla de horas extras: htmlDeLaPlanilla', () => {
     assert.equal(fila.atributos.role, 'group');
     assert.equal(fila.atributos['aria-labelledby'], 'mp-f-2026-10-05');
     assert.ok(fila.html.includes('<b id="mp-f-2026-10-05">Lun 05/10</b>'));
-    assert.equal(fila.texto, 'Lun 05/10 Entrada (opcional) Salida 1,5 h Nota');
+    assert.equal(fila.texto, 'Lun 05/10 Entrada (opcional) Salida 1,5 h Sumar a septiembre Nota');
     assert.deepEqual(camposDe(fila.html), [
       { type: 'time', class: 'opcional', 'data-campo': 'entrada', 'data-fecha': '2026-10-05', value: '08:02', 'data-vacio': '0',
         'aria-label': 'Entrada (opcional) del lunes 05/10' },
-      { type: 'time', 'data-campo': 'salida', 'data-fecha': '2026-10-05', value: '16:20', 'aria-label': 'Salida del lunes 05/10' }
+      { type: 'time', 'data-campo': 'salida', 'data-fecha': '2026-10-05', value: '16:20', 'aria-label': 'Salida del lunes 05/10' },
+      { type: 'checkbox', 'data-campo': 'al_mes_anterior', 'data-fecha': '2026-10-05', 'aria-label': 'Sumar a septiembre el lunes 05/10' }
     ]);
     assert.ok(fila.html.includes('<span class="mp-horas" id="mp-h-2026-10-05"><b>1,5 h</b></span>'));
     assert.deepEqual(botonesDe(fila.html).map(({ atributos, texto }) => [texto, atributos['data-nota'], atributos['aria-expanded'], atributos['aria-label']]),
@@ -3735,17 +3743,18 @@ describe('la planilla de horas extras: htmlDeLaPlanilla', () => {
     assert.doesNotMatch(html, /aria-live|role="status"|role="alert"/);
     // Sin salida, la raya; la entrada vacía, en gris (data-vacio)
     const vacio = filaDel(html, '2026-10-06');
-    assert.equal(vacio.texto, 'Mar 06/10 Entrada (opcional) Salida — Nota');
-    assert.deepEqual(camposDe(vacio.html).map((campo) => [campo.value, campo['data-vacio']]), [['', '1'], ['', undefined]]);
+    assert.equal(vacio.texto, 'Mar 06/10 Entrada (opcional) Salida — Sumar a septiembre Nota');
+    assert.deepEqual(camposDe(vacio.html).map((campo) => [campo.value, campo['data-vacio']]), [['', '1'], ['', undefined], [undefined, undefined]]);
     // Los que dan 0
-    assert.equal(filaDel(html, '2026-10-16').texto, 'Vie 16/10 Entrada (opcional) Salida 0 No llega a media hora Nota');
+    assert.equal(filaDel(html, '2026-10-16').texto, 'Vie 16/10 Entrada (opcional) Salida 0 No llega a media hora Sumar a septiembre Nota');
   });
 
   it('el feriado, con su nombre en ámbar y la entrada obligatoria; el sábado con salida, con «Quitar»; las notas', () => {
     const feriado = filaDel(html, '2026-10-12');
     assert.deepEqual(feriado.clases, ['mp-dia', 'feriado']);
     assert.ok(feriado.html.includes('<span class="mp-marcas"><span class="me-insignia ambar">Feriado: Día del Respeto a la Diversidad Cultural</span></span>'));
-    assert.equal(feriado.texto, 'Lun 12/10 Feriado: Día del Respeto a la Diversidad Cultural Entrada Salida 2,5 h Cambiar nota Guardia de la mesa de datos');
+    assert.equal(feriado.texto,
+      'Lun 12/10 Feriado: Día del Respeto a la Diversidad Cultural Entrada Salida 2,5 h Sumar a septiembre Cambiar nota Guardia de la mesa de datos');
     const [entrada] = camposDe(feriado.html);
     assert.equal(entrada.class, undefined);
     assert.equal(entrada['aria-label'], 'Entrada del lunes 12/10');
@@ -3756,7 +3765,7 @@ describe('la planilla de horas extras: htmlDeLaPlanilla', () => {
 
     const sabado = filaDel(html, '2026-10-24');
     assert.deepEqual(sabado.clases, ['mp-dia', 'finde']);
-    assert.equal(sabado.texto, 'Sáb 24/10 Sábado Entrada Salida 4,5 h Quitar Cambiar nota Relevamiento en el barrio');
+    assert.equal(sabado.texto, 'Sáb 24/10 Sábado Entrada Salida 4,5 h Sumar a septiembre Quitar Cambiar nota Relevamiento en el barrio');
     assert.ok(sabado.html.includes('<span class="me-insignia borde">Sábado</span>'));
     assert.deepEqual(botonesDe(sabado.html).map(({ atributos, texto }) => [texto, atributos['data-quitar'], atributos['aria-label']]),
       [['Quitar', '2026-10-24', 'Quitar el sábado 24/10'], ['Cambiar nota', undefined, 'Cambiar la nota del sábado 24/10']]);
@@ -3764,7 +3773,7 @@ describe('la planilla de horas extras: htmlDeLaPlanilla', () => {
     // La nota abierta: su campo debajo de la fila, sin la nota en cursiva
     const abierta = filaDel(planillaCon({ notasAbiertas: new Set(['2026-10-12']) }), '2026-10-12');
     assert.ok(!abierta.html.includes('mp-nota-vista'));
-    assert.deepEqual(camposDe(abierta.html)[2], {
+    assert.deepEqual(camposDe(abierta.html)[3], {
       type: 'text', 'data-campo': 'nota', 'data-fecha': '2026-10-12', value: 'Guardia de la mesa de datos',
       placeholder: 'Por ejemplo: cierre del informe mensual', 'aria-label': 'Nota del lunes 12/10'
     });
@@ -3776,9 +3785,9 @@ describe('la planilla de horas extras: htmlDeLaPlanilla', () => {
     // Las 2 horas a favor del 20/10 se cargan normal, con su etiqueta verde
     const del20 = filaDel(html, '2026-10-20');
     assert.deepEqual(del20.clases, ['mp-dia']);
-    assert.equal(del20.texto, 'Mar 20/10 2 h a favor Entrada (opcional) Salida 0 No llega a media hora Nota');
+    assert.equal(del20.texto, 'Mar 20/10 2 h a favor Entrada (opcional) Salida 0 No llega a media hora Sumar a septiembre Nota');
     assert.ok(del20.html.includes('<span class="me-insignia verde">2 h a favor</span>'));
-    assert.equal(camposDe(del20.html).length, 2);
+    assert.equal(camposDe(del20.html).length, 3);
     // Los estudios del 13/10: el día entero, sin campos ni grupo
     const del13 = filaDel(html, '2026-10-13');
     assert.deepEqual(del13.clases, ['mp-dia', 'licencia']);
@@ -3810,7 +3819,7 @@ describe('la planilla de horas extras: htmlDeLaPlanilla', () => {
     const hoy = filaDel(html, '2026-10-27');
     assert.deepEqual(hoy.clases, ['mp-dia', 'hoy']);
     assert.ok(hoy.html.includes('<b id="mp-f-2026-10-27">Mar 27/10 <span class="mp-hoy">Hoy</span></b>'));
-    assert.equal(camposDe(hoy.html).length, 2);
+    assert.equal(camposDe(hoy.html).length, 3);
     const futuro = filaDel(html, '2026-10-28');
     assert.deepEqual(futuro.clases, ['mp-dia', 'futuro']);
     assert.equal(futuro.texto, 'Mié 28/10 Todavía no llegó.');
@@ -3844,15 +3853,16 @@ describe('la planilla de horas extras: htmlDeLaPlanilla', () => {
     const enLaEntrada = filaDel(planillaCon({ cambios: new Map([['2026-10-12', { entrada: '', salida: '12:10', nota: '' }]]),
       errores: new Map([['2026-10-12', { campo: 'entrada', mensaje: MENSAJES_MI_ESPACIO.entradaFeriado }]]) }), '2026-10-12');
     assert.deepEqual(camposDe(enLaEntrada.html).map((campo) => [campo['data-campo'], campo['aria-invalid'], campo['aria-describedby']]),
-      [['entrada', 'true', 'mp-e-2026-10-12'], ['salida', undefined, undefined]]);
+      [['entrada', 'true', 'mp-e-2026-10-12'], ['salida', undefined, undefined], ['al_mes_anterior', undefined, undefined]]);
     const enLaNota = filaDel(planillaCon({ cambios: new Map([['2026-10-22', { entrada: '', salida: '16:46', nota: 'x'.repeat(201) }]]),
       errores: new Map([['2026-10-22', { campo: 'nota', mensaje: MENSAJES_MI_ESPACIO.nota }]]) }), '2026-10-22');
     assert.deepEqual(camposDe(enLaNota.html).map((campo) => [campo['data-campo'], campo['aria-invalid'], campo['aria-describedby']]),
-      [['entrada', undefined, undefined], ['salida', undefined, undefined], ['nota', 'true', 'mp-e-2026-10-22']]);
+      [['entrada', undefined, undefined], ['salida', undefined, undefined], ['al_mes_anterior', undefined, undefined],
+        ['nota', 'true', 'mp-e-2026-10-22']]);
     const sinCampo = filaDel(planillaCon({ cambios: new Map([['2026-10-22', { entrada: '', salida: '16:46', nota: '' }]]),
       errores: new Map([['2026-10-22', { campo: 'fecha', mensaje: MENSAJES_MI_ESPACIO.diaDeLicencia }]]) }), '2026-10-22');
     assert.deepEqual(camposDe(sinCampo.html).map((campo) => [campo['data-campo'], campo['aria-invalid'], campo['aria-describedby']]),
-      [['entrada', undefined, undefined], ['salida', 'true', 'mp-e-2026-10-22']]);
+      [['entrada', undefined, undefined], ['salida', 'true', 'mp-e-2026-10-22'], ['al_mes_anterior', undefined, undefined]]);
     assert.ok(sinCampo.html.includes(`<p class="mp-error" id="mp-e-2026-10-22">${MENSAJES_MI_ESPACIO.diaDeLicencia}</p>`));
   });
 
@@ -3914,11 +3924,12 @@ describe('la planilla de horas extras: htmlDeLaPlanilla', () => {
     const conFeriado = planillaDel(ESTADO_PLANILLA, { filas });
     const fila = filaDel(M.htmlDeLaPlanilla(conFeriado, VACIO), '2026-10-21');
     assert.deepEqual(fila.clases, ['mp-dia', 'feriado']);
-    assert.equal(fila.texto, 'Mié 21/10 Feriado: Feriado cargado después Entrada Salida — Poné la entrada Nota Ahora es feriado: falta la entrada.');
+    assert.equal(fila.texto,
+      'Mié 21/10 Feriado: Feriado cargado después Entrada Salida — Poné la entrada Sumar a septiembre Nota Ahora es feriado: falta la entrada.');
     assert.equal(camposDe(fila.html)[1]['aria-describedby'], 'mp-a-2026-10-21');
     // Con la entrada, ya no
     const arreglada = filaDel(M.htmlDeLaPlanilla(conFeriado, { ...VACIO, cambios: new Map([['2026-10-21', { entrada: '18:00', salida: '19:00', nota: '' }]]) }), '2026-10-21');
-    assert.equal(arreglada.texto, 'Mié 21/10 Feriado: Feriado cargado después Entrada Salida 1 h Nota');
+    assert.equal(arreglada.texto, 'Mié 21/10 Feriado: Feriado cargado después Entrada Salida 1 h Sumar a septiembre Nota');
     assert.equal(camposDe(arreglada.html)[1]['aria-describedby'], undefined);
   });
 
@@ -3926,21 +3937,21 @@ describe('la planilla de horas extras: htmlDeLaPlanilla', () => {
     const conDomingo = planillaCon({ agregados: new Set(['2026-10-25', '2026-10-17']) });
     const domingo = filaDel(conDomingo, '2026-10-25');
     assert.deepEqual(domingo.clases, ['mp-dia', 'finde']);
-    assert.equal(domingo.texto, 'Dom 25/10 Domingo Entrada Salida — Quitar Nota');
+    assert.equal(domingo.texto, 'Dom 25/10 Domingo Entrada Salida — Sumar a septiembre Quitar Nota');
     assert.equal(camposDe(domingo.html)[0]['aria-label'], 'Entrada del domingo 25/10');
     assert.deepEqual(semanasDe(conDomingo).map(([, texto]) => texto), ['1 y 2 de octubre —', '5 al 9 de octubre 4 h',
       '12 al 17 de octubre 2,5 h', '19 al 25 de octubre 8,5 h', '26 al 30 de octubre 1 h']);
     // El sábado 17/10, que además es feriado: con su nombre y «Quitar»
     const sabado = filaDel(conDomingo, '2026-10-17');
     assert.deepEqual(sabado.clases, ['mp-dia', 'feriado']);
-    assert.equal(sabado.texto, 'Sáb 17/10 Feriado: Feriado de prueba en sábado Entrada Salida — Quitar Nota');
+    assert.equal(sabado.texto, 'Sáb 17/10 Feriado: Feriado de prueba en sábado Entrada Salida — Sumar a septiembre Quitar Nota');
     // El sábado 24/10 guardado y quitado no se ve; vuelto a sumar, sí, vacío y cambiado
     const quitado = planillaCon({ cambios: new Map([['2026-10-24', { quitar: true }]]) });
     assert.equal(filaDel(quitado, '2026-10-24'), undefined);
     assert.equal(semanasDe(quitado)[3][1], '19 al 23 de octubre 4 h');
     const deVuelta = filaDel(planillaCon({ cambios: new Map([['2026-10-24', { quitar: true }]]), agregados: new Set(['2026-10-24']) }), '2026-10-24');
     assert.deepEqual(deVuelta.clases, ['mp-dia', 'finde', 'cambiado']);
-    assert.deepEqual(camposDe(deVuelta.html).map((campo) => campo.value), ['', '']);
+    assert.deepEqual(camposDe(deVuelta.html).map((campo) => campo.value), ['', '', undefined]);
     // Un día de los sábados y domingos que no está sumado no se ve
     assert.equal(filaDel(html, '2026-10-25'), undefined);
     // Los que se pueden sumar: los que no se ven (hasta hoy: el 31/10 todavía no llegó), también el sábado guardado que se quitó
@@ -4054,6 +4065,468 @@ describe('el día por día de contrato: las salidas', () => {
     // Sin una fecha que sirva, el texto corto del día en el nombre del botón
     assert.deepEqual(Object.entries(botonesDe(html)[0].atributos).filter(([clave]) => clave !== 'type' && clave !== 'class'),
       [['data-editar-salida', '&quot; onclick=&quot;alerta()'], ['aria-label', `Editar el ${ESCAPADO}`]]);
+  });
+});
+
+// =====================================================================================================================================
+// «Sumar a {mes anterior}» en la planilla y en la pestaña (spec 2026-10-30-mi-espacio-horas-mes-anterior, secciones 4 y 5; Task 5):
+// lo puro, con lo que arma el servidor (planillaDelMes y tablaDeHorasExtras) pasado por JSON. Los datos son los de la maqueta, todos
+// inventados: la persona de contrato de los casos, hoy el miércoles 03/02/2027; en enero de 2027 suma 5,5 h; el martes 02/02 sale a
+// las 16:20 (1,5 h) con «Sumar a enero» tildado y el miércoles 03/02 a las 15:50 (1 h), sin tildar. Enero suma 7 h y febrero, 1 h
+// =====================================================================================================================================
+
+const HOY_FEBRERO = '2027-02-03';
+const FERIADOS_FEBRERO = feriadosDelRango([], '2025-01-01', '2027-12-31');
+const salidaTildable = (id, fecha, salida, { entrada = null, nota = null, alMesAnterior = false } = {}) =>
+  ({ id, fecha, entrada, salida, nota, al_mes_anterior: alMesAnterior });
+const SALIDAS_DE_ENERO_Y_FEBRERO = Object.freeze([
+  salidaTildable(51, '2027-01-05', '15:46'), // 1 h
+  salidaTildable(52, '2027-01-07', '15:20', { entrada: '08:03' }), // 0,5 h
+  salidaTildable(53, '2027-01-12', '16:16', { nota: 'Actualización del tablero de obras' }), // 1,5 h
+  salidaTildable(54, '2027-01-18', '15:05'), // 0
+  salidaTildable(55, '2027-01-20', '17:16'), // 2,5 h
+  salidaTildable(56, '2027-02-02', '16:20', { alMesAnterior: true }), // 1,5 h, a enero
+  salidaTildable(57, '2027-02-03', '15:50') // 1 h
+]);
+const ESTADO_FEBRERO = Object.freeze({ ...CONTRATO.estado, salidas: SALIDAS_DE_ENERO_Y_FEBRERO });
+const planillaDeFebrero = (mes, { estado = ESTADO_FEBRERO, hoy = HOY_FEBRERO } = {}) => comoLlega(planillaDelMes(estado,
+  calcular(estado, { hoy, feriados: FERIADOS_FEBRERO }), { mes, hoy, feriados: FERIADOS_FEBRERO, filasFeriados: [] }));
+const tablaDeFebrero = (anio, { estado = ESTADO_FEBRERO, hoy = HOY_FEBRERO } = {}) => comoLlega(tablaDeHorasExtras(estado,
+  calcular(estado, { hoy, feriados: FERIADOS_FEBRERO }), { anio, hoy, feriados: FERIADOS_FEBRERO }));
+const ENERO_27 = planillaDeFebrero('2027-01');
+const FEBRERO_27 = planillaDeFebrero('2027-02');
+// Las listas de repartoDelMes del servidor para un mes de estas salidas (`entran` y `van`, cada día `{ fecha, horas, fila }`)
+const repartoDeFebrero = (mes, salidas = SALIDAS_DE_ENERO_Y_FEBRERO) => repartoDelMes(salidas, mes, FERIADOS_FEBRERO);
+const CON_B_X = '<b>"x"</b>';
+const CON_B_X_ESCAPADO = '&lt;b&gt;&quot;x&quot;&lt;/b&gt;';
+// Lo que dicen las listas del vm, como [fecha, horas]
+const fechasYHoras = (lista) => plano(lista.map((uno) => [uno.fecha, uno.horas]));
+
+describe('«Sumar a {mes anterior}»: las paridades', () => {
+  it('el servidor manda lo de la maqueta: enero suma 7 h con el 02/02, que entra de febrero; febrero, 1 h', () => {
+    assert.equal(ENERO_27.sumar_a, 'diciembre');
+    assert.equal(FEBRERO_27.sumar_a, 'enero');
+    assert.deepEqual(ENERO_27.entran.map((dia) => [dia.fecha, dia.horas, dia.al_mes_anterior]), [['2027-02-02', 1.5, true]]);
+    assert.deepEqual(FEBRERO_27.entran, []);
+    assert.deepEqual(ENERO_27.suma, { horas: 7, cifra: '7', texto: 'En febrero tenés 1 día de franco.', detalle: 'Incluye 1,5 h de febrero.' });
+    assert.deepEqual(FEBRERO_27.suma, {
+      horas: 1, cifra: '1', texto: 'En marzo vas a tener 1 hora a favor.', detalle: '1,5 h del martes 02/02 suman a enero.'
+    });
+  });
+
+  it('textoDeLoQueSeMueve es la del servidor: lo que entra del mes siguiente y lo que se va al anterior', () => {
+    const de = (fecha, horas) => ({ fecha, horas });
+    const casos = [
+      // Lo de la maqueta
+      ['2027-01', repartoDeFebrero('2027-01').entran, repartoDeFebrero('2027-01').van],
+      ['2027-02', repartoDeFebrero('2027-02').entran, repartoDeFebrero('2027-02').van],
+      // Un día, dos y tres o más; «suma» con 1 h; las dos cosas a la vez
+      ['2027-02', [], [de('2027-02-03', 1)]], ['2027-02', [], [de('2027-02-02', 1.5), de('2027-02-04', 2)]],
+      ['2027-02', [], [de('2027-02-01', 1), de('2027-02-02', 1.5), de('2027-02-04', 1.5)]],
+      ['2027-01', [de('2027-02-02', 1.5), de('2027-02-03', 1)], [de('2027-01-05', 0.5)]],
+      // Solo cuentan los que dan horas: 0, null, lo que no es un número, un día sin fecha
+      ['2027-02', [de('2027-03-01', 0)], [de('2027-02-02', 0), de('2027-02-03', null)]],
+      ['2027-02', [de('2027-03-01', '1.5'), de('x', 2), de(undefined, 2), null, 3], [de('2027-02-02', NaN), de('2027-02-03', Infinity), de('2027-02-04', -1)]],
+      ['2027-02', [], [de('2027-02-02', 0), de('2027-02-03', 1)]],
+      // Cruzando el año: diciembre recibe de enero, y lo de enero va a diciembre
+      ['2026-12', [de('2027-01-05', 2)], []], ['2027-01', [], [de('2027-01-05', 2)]],
+      // Los bordes de los años (mesMas): sin mes siguiente o sin anterior, esa frase no va
+      ['9999-12', [de('2027-02-02', 1)], []], ['0001-01', [], [de('2027-02-02', 1)]], ['0000-05', [de('2027-02-02', 1)], [de('2027-02-02', 1)]],
+      // Nada que decir, o un mes que no sirve
+      ['2027-02', [], []], ['2027-02', null, undefined], ['2027-02', 'x', {}],
+      ['2027-13', [de('2027-02-02', 1)], []], [undefined, [], [de('2027-02-02', 1)]], ['2027-2', [], []], [202702, [], []]
+    ];
+    for (const [mes, entran, van] of casos) {
+      assert.equal(M.textoDeLoQueSeMueve(mes, entran, van), textoDeLoQueSeMueve(mes, entran, van), `${mes} ${JSON.stringify([entran, van])}`);
+    }
+    // Los textos de la spec, escritos a mano
+    assert.equal(M.textoDeLoQueSeMueve('2027-01', [de('2027-02-02', 1.5)], []), 'Incluye 1,5 h de febrero.');
+    assert.equal(M.textoDeLoQueSeMueve('2027-02', [], [de('2027-02-02', 1.5)]), '1,5 h del martes 02/02 suman a enero.');
+    assert.equal(M.textoDeLoQueSeMueve('2027-02', [], [de('2027-02-03', 1)]), '1 h del miércoles 03/02 suma a enero.');
+    assert.equal(M.textoDeLoQueSeMueve('2027-02', [], [de('2027-02-02', 1), de('2027-02-04', 0.5)]),
+      '1,5 h del martes 02/02 y del jueves 04/02 suman a enero.');
+    assert.equal(M.textoDeLoQueSeMueve('2027-02', [], [de('2027-02-01', 1), de('2027-02-02', 1.5), de('2027-02-04', 1.5)]),
+      '4 h de 3 días suman a enero.');
+    assert.equal(M.textoDeLoQueSeMueve('2027-01', [de('2027-02-02', 1.5)], [de('2027-01-05', 1)]),
+      'Incluye 1,5 h de febrero. 1 h del martes 05/01 suma a diciembre.');
+    assert.equal(M.textoDeLoQueSeMueve('2027-02', [], []), '');
+  });
+
+  it('las listas de la página (diasQueEntran y diasQueSumanAlAnterior) dan el texto del servidor', () => {
+    const visibles = M.diasVisiblesDeLaPlanilla(FEBRERO_27, VACIO);
+    assert.equal(M.textoDeLoQueSeMueve('2027-02', M.diasQueEntran(FEBRERO_27, VACIO), M.diasQueSumanAlAnterior(visibles, new Map())),
+      FEBRERO_27.suma.detalle);
+    const visiblesDeEnero = M.diasVisiblesDeLaPlanilla(ENERO_27, VACIO);
+    assert.equal(M.textoDeLoQueSeMueve('2027-01', M.diasQueEntran(ENERO_27, VACIO), M.diasQueSumanAlAnterior(visiblesDeEnero, new Map())),
+      ENERO_27.suma.detalle);
+    // Y la cifra: los días sin tildar del mes más los que entran es lo que suma el servidor
+    const cifra = (planilla, estado = VACIO) => M.horasDeLosDias(M.diasVisiblesDeLaPlanilla(planilla, estado), estado.cambios)
+      + M.diasQueEntran(planilla, estado).reduce((suma, uno) => suma + (uno.horas ?? 0), 0);
+    assert.equal(cifra(ENERO_27), ENERO_27.suma.horas);
+    assert.equal(cifra(FEBRERO_27), FEBRERO_27.suma.horas);
+  });
+
+  it('la frase de la banda con el verbo del mes de uso: con hoy en él, «tenés»; antes, «vas a tener»; después, «tuviste»', () => {
+    const frase = (mes, horas, hoy) => textoDe(M.htmlDeLaBandaDeLaPlanilla(mes, horas, hoy).replace(/<\/?b>/g, '')
+      .match(/<p class="mp-suma-texto">([\s\S]*?)<\/p>/)[1]);
+    const casos = [['2027-01', 7, '2027-02-03'], ['2027-01', 7, '2027-01-20'], ['2027-01', 7, '2027-03-01'], ['2027-02', 1, '2027-02-03'],
+      ['2027-02', 8.5, '2027-03-31'], ['2027-02', 1, '2027-04-01'], ['2026-12', 7, '2027-01-04'], ['2026-12', 7, '2026-12-15']];
+    for (const [mes, horas, hoy] of casos) {
+      assert.equal(M.textoDeLaSumaDelMes(mes, horas, hoy), textoDeLaSumaDelMes(mes, horas, hoy), `${mes} ${horas} ${hoy}`);
+      assert.equal(frase(mes, horas, hoy), textoDeLaSumaDelMes(mes, horas, hoy), `${mes} ${horas} ${hoy}`);
+    }
+    assert.equal(M.textoDeLaSumaDelMes('2027-01', 7, '2027-02-03'), 'En febrero tenés 1 día de franco.');
+    assert.equal(M.textoDeLaSumaDelMes('2027-01', 7, '2027-01-20'), 'En febrero vas a tener 1 día de franco.');
+    assert.equal(M.textoDeLaSumaDelMes('2027-01', 7, '2027-03-01'), 'En febrero tuviste 1 día de franco.');
+    assert.equal(M.textoDeLaSumaDelMes('2026-12', 7, '2027-01-04'), 'En enero tenés 1 día de franco.');
+  });
+});
+
+describe('«Sumar a {mes anterior}»: lo de un día', () => {
+  it('valoresDeLaSalida: el tilde, solo el true literal y con una salida', () => {
+    assert.deepEqual(plano(M.valoresDeLaSalida({ entrada: '', salida: '16:20', nota: '', al_mes_anterior: true })),
+      { entrada: '', salida: '16:20', nota: '', al_mes_anterior: true });
+    assert.deepEqual(plano(M.valoresDeLaSalida({ salida: '16:20:00', al_mes_anterior: true })),
+      { entrada: '', salida: '16:20', nota: '', al_mes_anterior: true });
+    // Sin salida (también solo espacios), un «Quitar» o lo que no es el true literal: sin tilde
+    for (const fuente of [{ entrada: '08:00', salida: '', nota: 'x', al_mes_anterior: true }, { salida: '   ', al_mes_anterior: true },
+      { quitar: true, salida: '16:20', al_mes_anterior: true }, { salida: '16:20', al_mes_anterior: 'true' },
+      { salida: '16:20', al_mes_anterior: 1 }, { salida: '16:20' }, null, undefined, 'x']) {
+      assert.equal(M.valoresDeLaSalida(fuente).al_mes_anterior, false, JSON.stringify(fuente));
+    }
+  });
+
+  it('valorDelDia: el tilde del cambio o lo guardado, como se ve; un «Quitar», sin tilde', () => {
+    const del02 = FEBRERO_27.dias.find((dia) => dia.fecha === '2027-02-02');
+    const del03 = FEBRERO_27.dias.find((dia) => dia.fecha === '2027-02-03');
+    assert.deepEqual(plano(M.valorDelDia(del02, undefined)), { entrada: '', salida: '16:20', nota: '', al_mes_anterior: true });
+    assert.deepEqual(plano(M.valorDelDia(del03, undefined)), { entrada: '', salida: '15:50', nota: '', al_mes_anterior: false });
+    assert.deepEqual(plano(M.valorDelDia(del03, { entrada: '', salida: '15:50', nota: '', al_mes_anterior: true })),
+      { entrada: '', salida: '15:50', nota: '', al_mes_anterior: true });
+    // Como se escribió: sin salida, el tilde queda (se ve oculto); lo que se manda, sin él
+    assert.deepEqual(plano(M.valorDelDia(del02, { entrada: '', salida: '', nota: '', al_mes_anterior: true })),
+      { entrada: '', salida: '', nota: '', al_mes_anterior: true });
+    assert.deepEqual(plano(M.valorDelDia(del02, { quitar: true })), { entrada: '', salida: '', nota: '', al_mes_anterior: false });
+    assert.deepEqual(plano(M.valorDelDia(null, null)), { entrada: '', salida: '', nota: '', al_mes_anterior: false });
+    assert.equal(M.valorDelDia({ salida: '16:20', al_mes_anterior: 'si' }, undefined).al_mes_anterior, false);
+  });
+
+  it('fechasCambiadas: tildar o destildar es un cambio; volver a como estaba, no', () => {
+    const porFecha = porFechaDe(FEBRERO_27);
+    const cambiadas = (entradas) => plano(M.fechasCambiadas(new Map(entradas), porFecha));
+    assert.deepEqual(cambiadas([['2027-02-03', { entrada: '', salida: '15:50', nota: '', al_mes_anterior: true }]]), ['2027-02-03']);
+    assert.deepEqual(cambiadas([['2027-02-02', { entrada: '', salida: '16:20', nota: '', al_mes_anterior: false }]]), ['2027-02-02']);
+    assert.deepEqual(cambiadas([['2027-02-02', { entrada: '', salida: '16:20', nota: '', al_mes_anterior: true }],
+      ['2027-02-03', { entrada: '', salida: '15:50', nota: '', al_mes_anterior: false }]]), []);
+    // Un tilde sin salida no es nada: un día vacío sigue sin cambios
+    assert.deepEqual(cambiadas([['2027-02-01', { entrada: '', salida: '', nota: '', al_mes_anterior: true }]]), []);
+  });
+
+  it('cuerpoDeLaPlanilla: cada día manda su tilde, un booleano; sin salida, false', () => {
+    const cambios = new Map([
+      ['2027-02-02', { entrada: '', salida: '16:20', nota: '', al_mes_anterior: false }],
+      ['2027-02-03', { entrada: '', salida: '15:50:00', nota: ' ', al_mes_anterior: true }],
+      ['2027-02-01', { entrada: '', salida: '', nota: '', al_mes_anterior: true }],
+      ['2027-01-29', { quitar: true }]
+    ]);
+    assert.deepEqual(plano(M.cuerpoDeLaPlanilla(cambios, ['2027-01-29', '2027-02-01', '2027-02-02', '2027-02-03'])), { dias: [
+      { fecha: '2027-01-29', entrada: '', salida: '', nota: '', al_mes_anterior: false },
+      { fecha: '2027-02-01', entrada: '', salida: '', nota: '', al_mes_anterior: false },
+      { fecha: '2027-02-02', entrada: '', salida: '16:20', nota: '', al_mes_anterior: false },
+      { fecha: '2027-02-03', entrada: '', salida: '15:50', nota: '', al_mes_anterior: true }
+    ] });
+    // El servidor lo acepta: un booleano
+    for (const dia of plano(M.cuerpoDeLaPlanilla(cambios, ['2027-02-02', '2027-02-03'])).dias) {
+      assert.equal(validarSalida(dia, { hoy: HOY_FEBRERO, estado: ESTADO_FEBRERO, feriados: FERIADOS_FEBRERO }).error, null, dia.fecha);
+    }
+  });
+
+  it('horasDeLosDias no suma los días tildados (la banda y el total de cada semana); diasQueSumanAlAnterior, solo ellos', () => {
+    const visibles = M.diasVisiblesDeLaPlanilla(FEBRERO_27, VACIO);
+    assert.equal(M.horasDeLosDias(visibles, new Map()), 1);
+    assert.equal(M.horasDeLosDias(visibles, new Map()), repartoDeFebrero('2027-02').propias);
+    assert.deepEqual(fechasYHoras(M.diasQueSumanAlAnterior(visibles, new Map())), [['2027-02-02', 1.5]]);
+    // Tildar el 03/02 sin guardar: no suma nada en febrero; destildar el 02/02, suma los dos
+    const tildados = new Map([['2027-02-03', { entrada: '', salida: '15:50', nota: '', al_mes_anterior: true }]]);
+    assert.equal(M.horasDeLosDias(visibles, tildados), 0);
+    assert.deepEqual(fechasYHoras(M.diasQueSumanAlAnterior(visibles, tildados)), [['2027-02-02', 1.5], ['2027-02-03', 1]]);
+    const destildado = new Map([['2027-02-02', { entrada: '', salida: '16:20', nota: '', al_mes_anterior: false }]]);
+    assert.equal(M.horasDeLosDias(visibles, destildado), 2.5);
+    assert.deepEqual(fechasYHoras(M.diasQueSumanAlAnterior(visibles, destildado)), []);
+    // Un tildado que da 0, o que todavía no tiene horas, va con 0 o null; el día viene con él
+    const conCero = new Map([['2027-02-02', { entrada: '', salida: '15:10', nota: '', al_mes_anterior: true }]]);
+    assert.deepEqual(fechasYHoras(M.diasQueSumanAlAnterior(visibles, conCero)), [['2027-02-02', 0]]);
+    assert.equal(M.diasQueSumanAlAnterior(visibles, new Map())[0].dia.fecha, '2027-02-02');
+    for (const raro of [undefined, null, {}, 'x']) assert.deepEqual(plano(M.diasQueSumanAlAnterior(raro, raro)), [], String(raro));
+  });
+
+  it('diasQueEntran: los tildados del mes siguiente, de lo que mandó el servidor o, si ya se pidió, de ese mes con los cambios', () => {
+    // Sin el mes siguiente pedido: lo de `entran`
+    const soloEntran = M.diasQueEntran(ENERO_27, VACIO);
+    assert.deepEqual(fechasYHoras(soloEntran), [['2027-02-02', 1.5]]);
+    assert.deepEqual(plano(soloEntran[0].dia), ENERO_27.entran[0]);
+    assert.deepEqual(fechasYHoras(M.diasQueEntran(ENERO_27)), [['2027-02-02', 1.5]]);
+    // Con los cambios encima: destildado sin guardar, ya no entra
+    const destildado = new Map([['2027-02-02', { entrada: '', salida: '16:20', nota: '', al_mes_anterior: false }]]);
+    assert.deepEqual(fechasYHoras(M.diasQueEntran(ENERO_27, { ...VACIO, cambios: destildado })), []);
+    // Con febrero ya pedido (`meses`): sus días visibles con los cambios, también uno tildado sin guardar, por fecha
+    const meses = new Map([['2027-01', ENERO_27], ['2027-02', FEBRERO_27]]);
+    assert.deepEqual(fechasYHoras(M.diasQueEntran(ENERO_27, { ...VACIO, meses })), [['2027-02-02', 1.5]]);
+    const tildado = new Map([['2027-02-03', { entrada: '', salida: '15:50', nota: '', al_mes_anterior: true }]]);
+    assert.deepEqual(fechasYHoras(M.diasQueEntran(ENERO_27, { ...VACIO, meses, cambios: tildado })), [['2027-02-02', 1.5], ['2027-02-03', 1]]);
+    assert.deepEqual(fechasYHoras(M.diasQueEntran(ENERO_27, { ...VACIO, meses, cambios: destildado })), []);
+    // Con otra salida escrita sin guardar, sus horas nuevas
+    const otraSalida = new Map([['2027-02-02', { entrada: '', salida: '17:16', nota: '', al_mes_anterior: true }]]);
+    assert.deepEqual(fechasYHoras(M.diasQueEntran(ENERO_27, { ...VACIO, meses, cambios: otraSalida })), [['2027-02-02', 2.5]]);
+    // El mes de hoy no recibe nada (el siguiente no llegó); lo que no sirve, nada
+    assert.deepEqual(fechasYHoras(M.diasQueEntran(FEBRERO_27, { ...VACIO, meses })), []);
+    for (const raro of [undefined, null, {}, [], 'x', { mes: 'x', entran: ENERO_27.entran }]) {
+      assert.deepEqual(plano(M.diasQueEntran(raro, raro)), [], JSON.stringify(raro));
+    }
+    assert.deepEqual(fechasYHoras(M.diasQueEntran({ ...ENERO_27, entran: [null, 3, { fecha: 'x' }, ...ENERO_27.entran] }, VACIO)),
+      [['2027-02-02', 1.5]]);
+  });
+
+  it('textoDeSumarAlAnterior: el renglón de «Cómo se cuentan las horas», con el mes anterior; sin un mes o sin él, nada', () => {
+    assert.equal(M.textoDeSumarAlAnterior('2027-02', 'enero'),
+      'Si te autorizan a sumar las horas de un día al mes anterior, tildá «Sumar a enero»: cuentan como horas extras de enero.');
+    assert.equal(M.textoDeSumarAlAnterior('2027-01', ENERO_27.sumar_a),
+      'Si te autorizan a sumar las horas de un día al mes anterior, tildá «Sumar a diciembre»: cuentan como horas extras de diciembre.');
+    for (const [mes, sumarA] of [['2027-02', ''], ['2027-02', '  '], ['2027-02', null], ['2027-02', 3], [null, 'enero'], ['x', 'enero']]) {
+      assert.equal(M.textoDeSumarAlAnterior(mes, sumarA), '', `${mes} ${sumarA}`);
+    }
+  });
+});
+
+describe('«Sumar a {mes anterior}»: la fila, la banda y el bloque del mes siguiente', () => {
+  const del02 = FEBRERO_27.dias.find((dia) => dia.fecha === '2027-02-02');
+  const del03 = FEBRERO_27.dias.find((dia) => dia.fecha === '2027-02-03');
+  const enFebrero = (estado = {}) => M.htmlDeLaPlanilla(FEBRERO_27, { ...VACIO, ...estado });
+
+  it('htmlDelTilde: «Sumar a enero», con su nombre que empieza con lo que se ve y la fecha', () => {
+    assert.equal(M.htmlDelTilde(del02, M.valorDelDia(del02, undefined), 'enero'),
+      '<label class="mp-tilde" id="mp-t-2027-02-02"><input type="checkbox" data-campo="al_mes_anterior" data-fecha="2027-02-02" '
+      + 'checked aria-label="Sumar a enero el martes 02/02"><span>Sumar a enero</span></label>');
+    assert.equal(M.htmlDelTilde(del03, M.valorDelDia(del03, undefined), 'enero'),
+      '<label class="mp-tilde" id="mp-t-2027-02-03"><input type="checkbox" data-campo="al_mes_anterior" data-fecha="2027-02-03" '
+      + 'aria-label="Sumar a enero el miércoles 03/02"><span>Sumar a enero</span></label>');
+    // Sin salida: oculto sin perder su lugar (vacio) y sin el foco; tildado, como se escribió
+    assert.equal(M.htmlDelTilde(del02, { entrada: '', salida: ' ', nota: '', al_mes_anterior: true }, 'enero'),
+      '<label class="mp-tilde vacio" id="mp-t-2027-02-02"><input type="checkbox" data-campo="al_mes_anterior" data-fecha="2027-02-02" '
+      + 'checked tabindex="-1" aria-label="Sumar a enero el martes 02/02"><span>Sumar a enero</span></label>');
+    // El mes del servidor, escapado en el texto y en el nombre
+    const raro = M.htmlDelTilde(del03, M.valorDelDia(del03, undefined), CON_B_X);
+    assert.ok(!raro.includes('<b>'));
+    assert.ok(raro.includes(`aria-label="Sumar a ${CON_B_X_ESCAPADO} el miércoles 03/02"`));
+    assert.ok(raro.includes(`<span>Sumar a ${CON_B_X_ESCAPADO}</span>`));
+    // Sin el mes (una planilla de antes) o sin una fecha: el lugar, vacío
+    for (const [dia, sumarA] of [[del03, ''], [del03, undefined], [del03, null], [{ fecha: 'x' }, 'enero'], [null, 'enero']]) {
+      assert.equal(M.htmlDelTilde(dia, M.valorDelDia(del03, undefined), sumarA), '<span class="mp-tilde vacio" aria-hidden="true"></span>',
+        JSON.stringify([dia, sumarA]));
+    }
+    // Su clase no es la de otra cosa de la planilla: ni #mp-anterior (la flecha del mes) ni .mp-sumar («¿Trabajaste un sábado o un
+    // domingo?», con su borde punteado)
+    const planilla = M.htmlDeLaPlanilla(FEBRERO_27, VACIO);
+    assert.doesNotMatch(planilla, /mp-anterior|class="[^"]*\bmp-sumar\b/);
+  });
+
+  it('htmlDeLasHorasDeLaFila: un día tildado con horas, la pastilla otro-mes y «→ enero» («van a enero» para el lector)', () => {
+    const tildado = M.valorDelDia(del02, undefined);
+    assert.equal(M.htmlDeLasHorasDeLaFila(del02, tildado, 'enero'), '<b class="otro-mes">1,5 h</b><small class="mp-va-a">'
+      + '<span aria-hidden="true">→ </span><span class="visualmente-oculto">van a </span>enero</small>');
+    assert.equal(textoDe(M.htmlDeLasHorasDeLaFila(del02, tildado, 'enero')), '1,5 h → van a enero');
+    // Sin tildar, o tildado sin horas, como siempre
+    assert.equal(M.htmlDeLasHorasDeLaFila(del03, M.valorDelDia(del03, undefined), 'enero'), '<b>1 h</b>');
+    assert.equal(M.htmlDeLasHorasDeLaFila(del02, { ...tildado, salida: '15:10' }, 'enero'), '<b class="cero">0</b><small>No llega a media hora</small>');
+    assert.equal(M.htmlDeLasHorasDeLaFila(del02, { ...tildado, salida: '' }, 'enero'), '<b class="nada">—</b>');
+    // Sin el mes, la pastilla de siempre (no se dice adónde van); el mes, escapado
+    assert.equal(M.htmlDeLasHorasDeLaFila(del02, tildado), '<b>1,5 h</b>');
+    assert.equal(M.htmlDeLasHorasDeLaFila(del02, tildado, ''), '<b>1,5 h</b>');
+    assert.ok(M.htmlDeLasHorasDeLaFila(del02, tildado, CON_B_X).endsWith(`<span class="visualmente-oculto">van a </span>${CON_B_X_ESCAPADO}</small>`));
+  });
+
+  it('la fila de un día con campos: el tilde entre las horas y «Nota»; sin salida, oculto; sin campos, sin tilde', () => {
+    const html = enFebrero();
+    const fila = filaDel(html, '2027-02-02');
+    assert.equal(fila.texto, 'Mar 02/02 Entrada (opcional) Salida 1,5 h → van a enero Sumar a enero Nota');
+    assert.ok(fila.html.includes('<span class="mp-horas" id="mp-h-2027-02-02"><b class="otro-mes">1,5 h</b>'));
+    assert.ok(/<\/span><label class="mp-tilde" id="mp-t-2027-02-02">[\s\S]*<\/label><span class="mp-acciones">/.test(fila.html));
+    assert.deepEqual(camposDe(fila.html).map((campo) => [campo.type, campo['data-campo'], campo['aria-label']]), [
+      ['time', 'entrada', 'Entrada (opcional) del martes 02/02'], ['time', 'salida', 'Salida del martes 02/02'],
+      ['checkbox', 'al_mes_anterior', 'Sumar a enero el martes 02/02']
+    ]);
+    assert.ok(fila.html.includes('data-fecha="2027-02-02" checked aria-label="Sumar a enero el martes 02/02"'));
+    // El 03/02 (hoy), sin tildar
+    assert.equal(filaDel(html, '2027-02-03').texto, 'Mié 03/02 Hoy Entrada (opcional) Salida 1 h Sumar a enero Nota');
+    assert.ok(!filaDel(html, '2027-02-03').html.includes(' checked'));
+    // El lunes 01/02, sin salida: el tilde oculto y sin el foco
+    const vacio = filaDel(html, '2027-02-01');
+    assert.ok(vacio.html.includes('<label class="mp-tilde vacio" id="mp-t-2027-02-01">'));
+    assert.equal(camposDe(vacio.html)[2].tabindex, '-1');
+    // Los que no llegaron, sin campos ni tilde
+    assert.ok(!filaDel(html, '2027-02-04').html.includes('mp-tilde'));
+    // Tildado sin guardar: la raya de lo cambiado, la pastilla y el tilde marcado
+    const conCambio = filaDel(enFebrero({ cambios: new Map([['2027-02-03', { entrada: '', salida: '15:50', nota: '', al_mes_anterior: true }]]) }),
+      '2027-02-03');
+    assert.deepEqual(conCambio.clases, ['mp-dia', 'hoy', 'cambiado']);
+    assert.ok(conCambio.html.includes('<b class="otro-mes">1 h</b>'));
+    assert.ok(conCambio.html.includes('data-fecha="2027-02-03" checked aria-label="Sumar a enero el miércoles 03/02"'));
+    // El mes de la planilla del servidor (`sumar_a`) es el del tilde: en enero, «Sumar a diciembre», también en el primer mes
+    assert.ok(filaDel(M.htmlDeLaPlanilla(ENERO_27, VACIO), '2027-01-05').html.includes('<span>Sumar a diciembre</span>'));
+    // Escapado
+    const raro = M.htmlDeLaPlanilla({ ...FEBRERO_27, sumar_a: CON_B_X }, VACIO);
+    assert.ok(!raro.includes('<b>"x"'));
+    assert.ok(filaDel(raro, '2027-02-02').html.includes(`<span>Sumar a ${CON_B_X_ESCAPADO}</span>`));
+  });
+
+  it('la fila de una licencia de día entero con una salida de antes, tildada: sin tilde (no tiene campos), con adónde van sus horas', () => {
+    const conLicencia = { ...ESTADO_FEBRERO, licencias: [...ESTADO_FEBRERO.licencias, { id: 90, tipo: 'horas_a_favor', desde: '2027-02-02', hasta: '2027-02-02', horas: 7 }] };
+    const planilla = planillaDeFebrero('2027-02', { estado: conLicencia });
+    const fila = filaDel(M.htmlDeLaPlanilla(planilla, VACIO), '2027-02-02');
+    assert.ok(fila.clases.includes('licencia'));
+    assert.ok(!fila.html.includes('mp-tilde'));
+    assert.ok(fila.html.includes('<b class="otro-mes">1,5 h</b>'));
+  });
+
+  it('la semana no suma los días tildados', () => {
+    assert.deepEqual(semanasDe(enFebrero()), [['2027-02-01,2027-02-02,2027-02-03,2027-02-04,2027-02-05', '1 al 5 de febrero 1 h'],
+      ['2027-02-08,2027-02-09,2027-02-10,2027-02-11,2027-02-12', '8 al 12 de febrero —'],
+      ['2027-02-15,2027-02-16,2027-02-17,2027-02-18,2027-02-19', '15 al 19 de febrero —'],
+      ['2027-02-22,2027-02-23,2027-02-24,2027-02-25,2027-02-26', '22 al 26 de febrero —']]);
+    const destildado = new Map([['2027-02-02', { entrada: '', salida: '16:20', nota: '', al_mes_anterior: false }]]);
+    assert.equal(semanasDe(enFebrero({ cambios: destildado }))[0][1], '1 al 5 de febrero 2,5 h');
+  });
+
+  it('htmlDeLaBandaDeLaPlanilla: la segunda línea en .mp-suma-aparte, vacía sin nada que decir (la banda tiene siempre dos renglones)', () => {
+    assert.equal(M.htmlDeLaBandaDeLaPlanilla('2027-01', 7, HOY_FEBRERO, ENERO_27.suma.detalle),
+      '<span class="mp-suma-cifra">7<small>h</small></span><div class="mp-suma-textos"><p class="mp-suma-texto">En febrero tenés '
+      + '<b>1 día de franco</b>.</p><p class="mp-suma-aparte">Incluye 1,5 h de febrero.</p></div>');
+    assert.equal(M.htmlDeLaBandaDeLaPlanilla('2027-02', 1, HOY_FEBRERO, FEBRERO_27.suma.detalle),
+      '<span class="mp-suma-cifra">1<small>h</small></span><div class="mp-suma-textos"><p class="mp-suma-texto">En marzo vas a tener '
+      + '<b>1 hora a favor</b>.</p><p class="mp-suma-aparte">1,5 h del martes 02/02 suman a enero.</p></div>');
+    // Sin detalle (o sin el parámetro), el renglón vacío
+    for (const detalle of [undefined, '', null, 3, {}]) {
+      assert.ok(M.htmlDeLaBandaDeLaPlanilla('2027-02', 1, HOY_FEBRERO, detalle).endsWith('<p class="mp-suma-aparte"></p></div>'), String(detalle));
+    }
+    assert.ok(M.htmlDeLaBandaDeLaPlanilla('2027-02', 1, HOY_FEBRERO).endsWith('<p class="mp-suma-aparte"></p></div>'));
+    // Escapado
+    assert.ok(M.htmlDeLaBandaDeLaPlanilla('2027-02', 1, HOY_FEBRERO, CON_B_X).endsWith(`<p class="mp-suma-aparte">${CON_B_X_ESCAPADO}</p></div>`));
+    // La cifra y los dos renglones dicen lo del servidor
+    const banda = M.htmlDeLaBandaDeLaPlanilla(ENERO_27.mes, ENERO_27.suma.horas, ENERO_27.hoy, ENERO_27.suma.detalle);
+    assert.equal(textoDe(banda.replace(/<\/?b>/g, '')), `${ENERO_27.suma.cifra} h ${ENERO_27.suma.texto} ${ENERO_27.suma.detalle}`);
+  });
+
+  it('htmlDelBloqueDelMesSiguiente: en enero, «De febrero» con su total y el 02/02 de solo lectura, con «Ver en febrero»', () => {
+    const bloque = M.htmlDelBloqueDelMesSiguiente(ENERO_27, VACIO);
+    const filas = filasDeLaPlanilla(bloque);
+    assert.deepEqual(filas.map(({ clases }) => clases), [['mp-semana', 'de-otro-mes'], ['mp-dia', 'de-otro-mes']]);
+    assert.equal(filas[0].texto, 'De febrero 1,5 h');
+    assert.ok(filas[0].html.includes('<span class="mp-semana-total">1,5 h</span>'));
+    assert.equal(filas[0].atributos['data-fechas'], undefined);
+    const [, dia] = filas;
+    assert.deepEqual([dia.atributos.id, dia.atributos.role, dia.atributos['aria-labelledby']], ['mp-otro-2027-02-02', 'group', 'mp-of-2027-02-02']);
+    assert.equal(dia.texto, 'Mar 02/02 Salida 16:20 1,5 h Ver en febrero');
+    assert.ok(dia.html.includes('<b id="mp-of-2027-02-02">Mar 02/02</b>'));
+    assert.deepEqual(camposDe(bloque), []);
+    assert.deepEqual(botonesDe(bloque).map(({ atributos, texto }) => [texto, atributos.class, atributos['data-ver-en'], atributos['aria-label']]),
+      [['Ver en febrero', 'sg-link', '2027-02-02', 'Ver en febrero el martes 02/02']]);
+    // La planilla de enero lo suma al final, después de la última semana
+    const enero = M.htmlDeLaPlanilla(ENERO_27, VACIO);
+    assert.ok(enero.endsWith(bloque));
+    assert.deepEqual(semanasDe(enero).at(-1), [undefined, 'De febrero 1,5 h']);
+    // Con febrero ya pedido y otro día tildado sin guardar, con su entrada y su nota: los dos, por fecha
+    const meses = new Map([['2027-01', ENERO_27], ['2027-02', FEBRERO_27]]);
+    const cambios = new Map([['2027-02-03', { entrada: '08:10', salida: '15:50', nota: 'Cierre del <b>mes</b>', al_mes_anterior: true }]]);
+    const conDos = filasDeLaPlanilla(M.htmlDelBloqueDelMesSiguiente(ENERO_27, { ...VACIO, meses, cambios }));
+    assert.equal(conDos[0].texto, 'De febrero 2,5 h');
+    assert.deepEqual(conDos.slice(1).map(({ texto }) => texto), ['Mar 02/02 Salida 16:20 1,5 h Ver en febrero',
+      'Mié 03/02 Salida 15:50 Entrada 08:10 1 h Ver en febrero Cierre del <b>mes</b>']);
+    assert.ok(conDos[2].html.includes('<p class="mp-nota-vista">Cierre del &lt;b&gt;mes&lt;/b&gt;</p>'));
+    // Destildado sin guardar, no hay bloque; tampoco en febrero (el mes siguiente no llegó) ni en una planilla que no sirve
+    const destildado = new Map([['2027-02-02', { entrada: '', salida: '16:20', nota: '', al_mes_anterior: false }]]);
+    assert.equal(M.htmlDelBloqueDelMesSiguiente(ENERO_27, { ...VACIO, cambios: destildado }), '');
+    assert.ok(!M.htmlDeLaPlanilla(ENERO_27, { ...VACIO, cambios: destildado }).includes('de-otro-mes'));
+    assert.equal(M.htmlDelBloqueDelMesSiguiente(FEBRERO_27, VACIO), '');
+    for (const raro of [undefined, null, {}, 'x']) assert.equal(M.htmlDelBloqueDelMesSiguiente(raro, raro), '', String(raro));
+    // Un tildado que da 0: en el bloque, «0» con «No llega a media hora», y el total, la raya
+    const conCero = new Map([['2027-02-02', { entrada: '', salida: '15:10', nota: '', al_mes_anterior: true }]]);
+    const cero = filasDeLaPlanilla(M.htmlDelBloqueDelMesSiguiente(ENERO_27, { ...VACIO, cambios: conCero }));
+    assert.deepEqual(cero.map(({ texto }) => texto), ['De febrero —', 'Mar 02/02 Salida 15:10 0 No llega a media hora Ver en febrero']);
+  });
+
+  it('el bloque escapa lo del servidor: la fecha y la nota', () => {
+    const rara = comoLlega(ENERO_27);
+    Object.assign(rara.entran[0], { fecha_texto: MALICIOSO, nota: MALICIOSO, salida: '16:20' });
+    const bloque = M.htmlDelBloqueDelMesSiguiente(rara, VACIO);
+    assert.ok(!bloque.includes('<img'));
+    assert.ok(bloque.includes(`<b id="mp-of-2027-02-02">${ESCAPADO}</b>`));
+    assert.ok(bloque.includes(`<p class="mp-nota-vista">${ESCAPADO}</p>`));
+  });
+
+  it('lo nuevo no tira con lo que no sirve', () => {
+    for (const funcion of ['htmlDelTilde', 'diasQueEntran', 'diasQueSumanAlAnterior', 'textoDeLoQueSeMueve', 'htmlDelBloqueDelMesSiguiente',
+      'textoDeSumarAlAnterior', 'valoresDeLaSalida', 'valorDelDia', 'htmlDeLasHorasDeLaFila', 'htmlDeLaBandaDeLaPlanilla']) {
+      for (const valor of [undefined, null, {}, [], 'x', 3, new Map([['x', 'y']])]) {
+        assert.doesNotThrow(() => M[funcion](valor, valor, valor, valor), `${funcion}(${String(valor)})`);
+      }
+    }
+  });
+});
+
+describe('«Sumar a {mes anterior}»: la pestaña Horas extras', () => {
+  const tabla = tablaDeFebrero(2027);
+
+  it('la tabla: debajo de las horas, de dónde salen (horas_detalle), escapado', () => {
+    const filas = filasDeTablaDe(M.htmlDeTablaDeHorasAFavor(tabla));
+    assert.deepEqual(filas.map(({ celdas }) => celdas[1]), ['1 h 1,5 h suman a enero', '7 h 5,5 h + 1,5 h de febrero']);
+    assert.ok(filas[1].html.includes('<td class="num">7 h<small>5,5 h + 1,5 h de febrero</small></td>'));
+    assert.ok(filas[0].html.includes('<td class="num">1 h<small>1,5 h suman a enero</small></td>'));
+    // Sin detalle, como siempre
+    const sinDetalle = comoLlega(tabla);
+    sinDetalle.meses[0].horas_detalle = '';
+    assert.ok(filasDeTablaDe(M.htmlDeTablaDeHorasAFavor(sinDetalle))[0].html.includes('<td class="num">1 h</td>'));
+    const rara = comoLlega(tabla);
+    rara.meses[0].horas_detalle = CON_B_X;
+    assert.ok(filasDeTablaDe(M.htmlDeTablaDeHorasAFavor(rara))[0].html.includes(`<td class="num">1 h<small>${CON_B_X_ESCAPADO}</small></td>`));
+  });
+
+  it('«Sin horas a favor» (sin_horas): la fila en gris, con la insignia gris', () => {
+    assert.ok(M.SITUACIONES_EN_GRIS.includes('sin_horas'));
+    assert.equal(M.CLASE_DE_LA_SITUACION.sin_horas, 'gris');
+    // Febrero, con su único día tildado y ya terminado (hoy en marzo): suma 0
+    const soloTildado = { ...ESTADO_FEBRERO, salidas: SALIDAS_DE_ENERO_Y_FEBRERO.filter((fila) => fila.fecha !== '2027-02-03') };
+    const conCero = tablaDeFebrero(2027, { estado: soloTildado, hoy: '2027-03-15' });
+    const febrero = conCero.meses.find((fila) => fila.mes === '2027-02');
+    assert.deepEqual([febrero.horas_texto, febrero.estado, febrero.situacion], ['0 h', 'sin_horas', 'Sin horas a favor']);
+    const fila = filasDeTablaDe(M.htmlDeTablaDeHorasAFavor(conCero)).find(({ celdas }) => celdas[0] === 'Febrero 2027');
+    assert.deepEqual(fila.clases, ['tenue']);
+    assert.ok(fila.html.includes('<span class="me-insignia gris">Sin horas a favor</span>'));
+  });
+
+  it('el día por día: un día tildado con su pastilla otro-mes y «Suma a enero»; los que entran, al final, con «De febrero»', () => {
+    const febrero = M.htmlDeDiaPorDiaDeSalidas(tabla, '2027-02');
+    assert.deepEqual(filasDe(febrero).map(({ texto }) => texto), ['Mié 03/02 Salida 15:50 1 h Editar',
+      'Mar 02/02 Salida 16:20 1,5 h Suma a enero Editar']);
+    assert.ok(febrero.includes('<span class="me-dia-horas otro-mes">1,5 h</span><span class="me-detalle me-fila-otro-mes">Suma a enero</span>'));
+    assert.ok(febrero.includes('<span class="me-dia-horas">1 h</span>'));
+    const enero = M.htmlDeDiaPorDiaDeSalidas(tabla, '2027-01');
+    assert.match(enero, /<h3>Enero 2027, día por día<\/h3><span>7 horas<\/span>/);
+    const filas = filasDe(enero);
+    assert.equal(filas.at(-1).texto, 'Mar 02/02 De febrero Salida 16:20 1,5 h Editar');
+    assert.deepEqual(filas.map(({ clases }) => clases.includes('de-otro-mes')), [false, false, false, false, false, true]);
+    assert.ok(filas.at(-1).html.includes('<span class="me-fila-fecha">Mar 02/02<small>De febrero</small></span>'));
+    assert.ok(!filas.at(-1).html.includes('otro-mes">1,5 h'));
+    // Su «Editar» abre su mes (la fecha), como los demás
+    assert.deepEqual(botonesDe(enero).at(-1).atributos['data-editar-salida'], '2027-02-02');
+    assert.equal(botonesDe(enero).at(-1).atributos['aria-label'], 'Editar el martes 02/02');
+    // de_otro_mes, solo el true literal; suma_a, escapado
+    const rara = comoLlega(tabla);
+    rara.dias_por_mes['2027-01'].at(-1).de_otro_mes = 'true';
+    rara.dias_por_mes['2027-02'][1].suma_a = CON_B_X;
+    assert.ok(!filasDe(M.htmlDeDiaPorDiaDeSalidas(rara, '2027-01')).at(-1).clases.includes('de-otro-mes'));
+    const conHtml = M.htmlDeDiaPorDiaDeSalidas(rara, '2027-02');
+    assert.ok(!conHtml.includes('<b>"x"'));
+    assert.ok(conHtml.includes(`<span class="me-detalle me-fila-otro-mes">${CON_B_X_ESCAPADO}</span>`));
   });
 });
 
@@ -8763,9 +9236,9 @@ describe('la planilla de horas extras en la página (DOM falso)', () => {
     const horas = cuantas('/api/mi-espacio/horas-extras');
     await pagina.tocar(pagina.el('mp-guardar'));
     assert.deepEqual(pagina.pedidosA('PUT', RUTA_DEL_GUARDADO).map((pedido) => pedido.cuerpo), [{ dias: [
-      { fecha: '2026-09-30', entrada: '', salida: '18:00', nota: '' },
-      { fecha: '2026-10-22', entrada: '', salida: '16:46', nota: '' },
-      { fecha: '2026-10-24', entrada: '', salida: '', nota: '' }
+      { fecha: '2026-09-30', entrada: '', salida: '18:00', nota: '', al_mes_anterior: false },
+      { fecha: '2026-10-22', entrada: '', salida: '16:46', nota: '', al_mes_anterior: false },
+      { fecha: '2026-10-24', entrada: '', salida: '', nota: '', al_mes_anterior: false }
     ] }]);
     assert.equal(pagina.abierto('modal-planilla'), false);
     assert.deepEqual(pagina.estado.toasts, [['Horas extras guardadas: 3 días.', 'success']]);
@@ -9143,6 +9616,293 @@ describe('la planilla de horas extras en la página (DOM falso)', () => {
   });
 });
 
+// =====================================================================================================================================
+// «Sumar a {mes anterior}» en la planilla (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4; Task 6), con el DOM y el fetch
+// falsos y los datos de la maqueta, todos inventados (los de «Sumar a {mes anterior}»: lo puro): la persona de contrato, hoy el
+// miércoles 03/02/2027; enero suma 5,5 h; el martes 02/02 sale a las 16:20 (1,5 h), guardado con «Sumar a enero», y el miércoles 03/02
+// a las 15:50 (1 h). `SIN_TILDE`: lo mismo, con el 02/02 guardado sin tildar (enero suma 5,5 h y febrero, 2,5 h)
+// =====================================================================================================================================
+
+const RUTA_DE_ENERO_27 = '/api/mi-espacio/salidas?mes=2027-01';
+const RUTA_DE_FEBRERO_27 = '/api/mi-espacio/salidas?mes=2027-02';
+const ESTADO_SIN_TILDE = Object.freeze({
+  ...CONTRATO.estado, salidas: SALIDAS_DE_ENERO_Y_FEBRERO.map((fila) => ({ ...fila, al_mes_anterior: false }))
+});
+const SIN_TILDE = Object.freeze({
+  enero: planillaDeFebrero('2027-01', { estado: ESTADO_SIN_TILDE }), febrero: planillaDeFebrero('2027-02', { estado: ESTADO_SIN_TILDE })
+});
+// Lo que contesta el servidor falso: febrero (el mes en curso, sin `mes` o con él) y enero, de `planillas`, y lo de `extra` (que gana)
+const conFebrero = ({ planillas = { enero: ENERO_27, febrero: FEBRERO_27 }, extra = () => undefined } = {}) => conLaPlanilla({
+  extra: (metodo, ruta, cuerpo) => {
+    const propia = extra(metodo, ruta, cuerpo);
+    if (propia !== undefined || metodo !== 'GET') return propia;
+    if (ruta === RUTA_DEL_MES_EN_CURSO || ruta === RUTA_DE_FEBRERO_27) return ok(planillas.febrero);
+    if (ruta === RUTA_DE_ENERO_27) return ok(planillas.enero);
+    return undefined;
+  }
+});
+// El tilde de un día (su casilla) y tildarlo o destildarlo como en el navegador (un clic en la casilla da input y change)
+const tildeDel = (pagina, fecha) => campoDel(pagina, fecha, 'al_mes_anterior');
+const tildar = async (pagina, fecha, tildado = true) => {
+  const casilla = tildeDel(pagina, fecha);
+  assert.ok(casilla, `el tilde del ${fecha}`);
+  casilla.checked = tildado;
+  casilla.disparar('input');
+  casilla.disparar('change');
+  await pagina.esperar();
+};
+const cambiosDeLaPlanilla = (pagina) => vm.runInContext('pagina.planilla.cambios', pagina.contexto);
+// La banda: la cifra («7h») y la segunda línea
+const cifraDeLaBanda = (pagina) => pagina.el('mp-suma').querySelector('.mp-suma-cifra').textContent;
+const aparteDeLaBanda = (pagina) => pagina.el('mp-suma').querySelector('.mp-suma-aparte').textContent;
+// Las filas de solo lectura del bloque «De febrero», por su id
+const deOtroMes = (pagina) => pagina.el('mp-dias').querySelectorAll('.mp-dia.de-otro-mes').map((fila) => fila.id);
+const VA_A_ENERO = '<small class="mp-va-a"><span aria-hidden="true">→ </span><span class="visualmente-oculto">van a </span>enero</small>';
+const SUMAR_A_ENERO = 'Si te autorizan a sumar las horas de un día al mes anterior, tildá «Sumar a enero»: cuentan como horas extras de enero.';
+
+describe('«Sumar a {mes anterior}» en la planilla (DOM falso)', () => {
+  it('al abrir febrero: la banda del servidor (la cifra y su segunda línea), el 02/02 tildado y «Cómo se cuentan» con el renglón del tilde', async () => {
+    const pagina = montarPagina({ responder: conFebrero() });
+    await pagina.iniciar();
+    await abrirLaPlanilla(pagina);
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Febrero 2027');
+    assert.equal(pagina.el('mp-dias').innerHTML, M.htmlDeLaPlanilla(FEBRERO_27, VACIO));
+    assert.equal(pagina.el('mp-suma').innerHTML, M.htmlDeLaBandaDeLaPlanilla('2027-02', FEBRERO_27.suma.horas, HOY_FEBRERO, FEBRERO_27.suma.detalle));
+    assert.equal(cifraDeLaBanda(pagina), '1h');
+    assert.equal(aparteDeLaBanda(pagina), '1,5 h del martes 02/02 suman a enero.');
+    assert.equal(tildeDel(pagina, '2027-02-02').checked, true);
+    assert.equal(tildeDel(pagina, '2027-02-03').checked, false);
+    // (lo dibujó htmlDeLaPlanilla: el DOM falso guarda el innerHTML solo de lo que se escribe, así que se lee del árbol)
+    assert.equal(pagina.el('mp-h-2027-02-02').querySelector('b.otro-mes').textContent, '1,5 h');
+    assert.equal(pagina.el('mp-h-2027-02-02').querySelector('small.mp-va-a').textContent, '→ van a enero');
+    // El renglón del tilde, con el mes anterior que manda el servidor, antes del de las horas a favor
+    assert.equal(pagina.el('mp-como-anterior').textContent, SUMAR_A_ENERO);
+    assert.equal(pagina.el('mp-como-anterior').hidden, false);
+    assert.equal(pagina.el('mp-como-mes').textContent, 'Las horas de febrero son horas a favor en marzo.');
+    // El mes anterior: «Sumar a diciembre», en el tilde y en el renglón
+    await pagina.tocar(pagina.el('mp-anterior'));
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Enero 2027');
+    assert.equal(pagina.el('mp-como-anterior').textContent, SUMAR_A_ENERO.replaceAll('enero', 'diciembre'));
+    assert.equal(filaDeLaPagina(pagina, '2027-01-05').querySelector('.mp-tilde').textContent, 'Sumar a diciembre');
+  });
+
+  it('«Cómo se cuentan»: mientras llega el mes, y con una planilla de antes (sin `sumar_a`), sin el renglón del tilde', async () => {
+    const deAntes = Object.fromEntries(Object.entries(FEBRERO_27).filter(([clave]) => clave !== 'sumar_a'));
+    let soltar;
+    const demorado = new Promise((resolver) => { soltar = resolver; });
+    const pagina = montarPagina({
+      responder: conFebrero({ extra: (metodo, ruta) => (metodo === 'GET' && ruta === RUTA_DEL_MES_EN_CURSO ? demorado.then(() => ok(deAntes)) : undefined) })
+    });
+    await pagina.iniciar();
+    await abrirLaPlanilla(pagina);
+    assert.equal(pagina.el('mp-como-anterior').hidden, true);
+    assert.equal(pagina.el('mp-como-anterior').textContent, '');
+    soltar();
+    await pagina.esperar();
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Febrero 2027');
+    assert.equal(pagina.el('mp-como-anterior').hidden, true);
+    assert.equal(pagina.el('mp-como-anterior').textContent, '');
+    assert.equal(tildeDel(pagina, '2027-02-03'), null);
+  });
+
+  it('tildar un día cambia su estado, la pastilla de la fila, la semana, la banda y el pie, sin volver a dibujar la fila; destildar lo deja como estaba', async () => {
+    const pagina = montarPagina({ responder: conFebrero() });
+    await pagina.iniciar();
+    await abrirLaPlanilla(pagina);
+    const fila = filaDeLaPagina(pagina, '2027-02-03');
+    const casilla = tildeDel(pagina, '2027-02-03');
+    assert.deepEqual(totalesDeLasSemanas(pagina), ['1 h', '—', '—', '—']);
+    casilla.focus();
+    await tildar(pagina, '2027-02-03');
+    assert.deepEqual(plano(cambiosDeLaPlanilla(pagina).get('2027-02-03')), { entrada: '', salida: '15:50', nota: '', al_mes_anterior: true });
+    assert.equal(pagina.el('mp-h-2027-02-03').innerHTML, `<b class="otro-mes">1 h</b>${VA_A_ENERO}`);
+    assert.equal(fila.classList.contains('cambiado'), true);
+    // La semana y la banda no cuentan los días tildados; la segunda línea dice los dos que van a enero
+    assert.deepEqual(totalesDeLasSemanas(pagina), ['—', '—', '—', '—']);
+    assert.equal(cifraDeLaBanda(pagina), '0h');
+    assert.equal(aparteDeLaBanda(pagina), '2,5 h del martes 02/02 y del miércoles 03/02 suman a enero.');
+    assert.equal(pagina.el('mp-suma').innerHTML, M.htmlDeLaBandaDeLaPlanilla('2027-02', 0, HOY_FEBRERO,
+      '2,5 h del martes 02/02 y del miércoles 03/02 suman a enero.'));
+    assert.equal(pagina.el('mp-pendientes').innerHTML, '<b>1 día</b> con cambios sin guardar.');
+    // La fila no se volvió a dibujar: la casilla es la misma y sigue con el foco (tildar no anuncia nada)
+    assert.equal(fila.isConnected, true);
+    assert.equal(casilla.isConnected, true);
+    assert.equal(pagina.documento.activeElement, casilla);
+    assert.equal(pagina.el('mp-anuncio').textContent, '');
+    // Destildado, como estaba: sin la raya, la pastilla de siempre, la banda del servidor y «Todo guardado.»
+    await tildar(pagina, '2027-02-03', false);
+    assert.equal(fila.classList.contains('cambiado'), false);
+    assert.equal(pagina.el('mp-h-2027-02-03').innerHTML, '<b>1 h</b>');
+    assert.deepEqual(totalesDeLasSemanas(pagina), ['1 h', '—', '—', '—']);
+    assert.equal(pagina.el('mp-suma').innerHTML, M.htmlDeLaBandaDeLaPlanilla('2027-02', 1, HOY_FEBRERO, FEBRERO_27.suma.detalle));
+    assert.equal(pagina.el('mp-pendientes').innerHTML, 'Todo guardado.');
+    assert.equal(pagina.documento.activeElement, casilla);
+    // Destildar el 02/02 (guardado tildado): suma en febrero y la segunda línea queda vacía (el renglón sigue: la banda no se achica)
+    await tildar(pagina, '2027-02-02', false);
+    assert.equal(cifraDeLaBanda(pagina), '2,5h');
+    assert.equal(aparteDeLaBanda(pagina), '');
+    assert.equal(pagina.el('mp-h-2027-02-02').innerHTML, '<b>1,5 h</b>');
+    assert.deepEqual(totalesDeLasSemanas(pagina), ['2,5 h', '—', '—', '—']);
+    assert.equal(pagina.el('mp-pendientes').innerHTML, '<b>1 día</b> con cambios sin guardar.');
+  });
+
+  it('borrar la salida de un día tildado oculta el tilde (en su lugar y sin el foco); escribirla de nuevo lo vuelve a mostrar, tildado', async () => {
+    const pagina = montarPagina({ responder: conFebrero() });
+    await pagina.iniciar();
+    await abrirLaPlanilla(pagina);
+    const tilde = pagina.el('mp-t-2027-02-02');
+    assert.equal(tilde.classList.contains('vacio'), false);
+    await escribirEnLaPlanilla(pagina, '2027-02-02', 'salida', '');
+    assert.equal(tilde.isConnected, true);
+    assert.equal(tilde.classList.contains('vacio'), true);
+    assert.equal(tildeDel(pagina, '2027-02-02').getAttribute('tabindex'), '-1');
+    assert.equal(pagina.el('mp-h-2027-02-02').innerHTML, '<b class="nada">—</b>');
+    assert.equal(aparteDeLaBanda(pagina), '');
+    // Con otra salida, otra vez a la vista y tildado (lo que se tildó queda)
+    await escribirEnLaPlanilla(pagina, '2027-02-02', 'salida', '16:50');
+    assert.equal(tilde.classList.contains('vacio'), false);
+    assert.equal(tildeDel(pagina, '2027-02-02').getAttribute('tabindex'), null);
+    assert.equal(tildeDel(pagina, '2027-02-02').checked, true);
+    assert.equal(pagina.el('mp-h-2027-02-02').innerHTML, `<b class="otro-mes">2 h</b>${VA_A_ENERO}`);
+    assert.equal(aparteDeLaBanda(pagina), '2 h del martes 02/02 suman a enero.');
+    // Sin salida otra vez: el día se manda sin la marca (es un borrado)
+    await escribirEnLaPlanilla(pagina, '2027-02-02', 'salida', '');
+    assert.equal(tilde.classList.contains('vacio'), true);
+    assert.equal(M.cuerpoDeLaPlanilla(cambiosDeLaPlanilla(pagina), ['2027-02-02']).dias[0].al_mes_anterior, false);
+  });
+
+  // Review Focus 3: la planilla trabaja con los dos meses a la vez
+  it('tildar el 02/02 en febrero y, sin guardar, ir a enero: la banda dice 7 h e «Incluye 1,5 h de febrero.» y el bloque lista el 02/02; destildado, 5,5 h y sin bloque', async () => {
+    const pagina = montarPagina({ responder: conFebrero({ planillas: SIN_TILDE }) });
+    await pagina.iniciar();
+    await abrirLaPlanilla(pagina);
+    assert.equal(aparteDeLaBanda(pagina), '');
+    await tildar(pagina, '2027-02-02');
+    await pagina.tocar(pagina.el('mp-anterior'));
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_ENERO_27).length, 1);
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Enero 2027');
+    // Lo mismo que dice el servidor de enero con el 02/02 guardado tildado
+    assert.equal(pagina.el('mp-suma').innerHTML, M.htmlDeLaBandaDeLaPlanilla(ENERO_27.mes, ENERO_27.suma.horas, ENERO_27.hoy, ENERO_27.suma.detalle));
+    assert.equal(cifraDeLaBanda(pagina), '7h');
+    assert.equal(aparteDeLaBanda(pagina), 'Incluye 1,5 h de febrero.');
+    assert.deepEqual(deOtroMes(pagina), ['mp-otro-2027-02-02']);
+    assert.equal(totalesDeLasSemanas(pagina).at(-1), '1,5 h');
+    // Escribir en enero cambia la banda y las semanas de enero, nunca el total de «De febrero» (no es una semana de enero)
+    await escribirEnLaPlanilla(pagina, '2027-01-05', 'salida', '16:16');
+    assert.equal(cifraDeLaBanda(pagina), '7,5h');
+    assert.equal(totalesDeLasSemanas(pagina).at(-1), '1,5 h');
+    await escribirEnLaPlanilla(pagina, '2027-01-05', 'salida', '15:46');
+    assert.equal(pagina.el('mp-pendientes').innerHTML, '<b>1 día</b> con cambios sin guardar.');
+    // De vuelta a febrero (sin pedirlo otra vez), destildado, y otra vez a enero: 5,5 h, sin la segunda línea y sin el bloque
+    await pagina.tocar(pagina.el('mp-siguiente'));
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Febrero 2027');
+    assert.equal(tildeDel(pagina, '2027-02-02').checked, true);
+    await tildar(pagina, '2027-02-02', false);
+    await pagina.tocar(pagina.el('mp-anterior'));
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_ENERO_27).length, 1);
+    assert.equal(pagina.pedidosA('GET', RUTA_DEL_MES_EN_CURSO).length, 1);
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_FEBRERO_27).length, 0);
+    assert.equal(cifraDeLaBanda(pagina), '5,5h');
+    assert.equal(pagina.el('mp-suma').innerHTML, M.htmlDeLaBandaDeLaPlanilla('2027-01', 5.5, HOY_FEBRERO, ''));
+    assert.deepEqual(deOtroMes(pagina), []);
+    assert.equal(pagina.el('mp-dias').querySelector('.de-otro-mes'), null);
+    assert.equal(pagina.el('mp-pendientes').innerHTML, 'Todo guardado.');
+  });
+
+  it('«Ver en febrero» abre febrero (sin pedirlo otra vez si ya llegó) con el foco en el tilde de ese día, y lo anuncia', async () => {
+    const pagina = montarPagina({ responder: conFebrero() });
+    await pagina.iniciar();
+    await abrirLaPlanilla(pagina);
+    await pagina.tocar(pagina.el('mp-anterior'));
+    assert.deepEqual(deOtroMes(pagina), ['mp-otro-2027-02-02']);
+    const ver = pagina.el('mp-otro-2027-02-02').querySelector('[data-ver-en]');
+    assert.equal(ver.getAttribute('aria-label'), 'Ver en febrero el martes 02/02');
+    ver.focus();
+    await pagina.tocar(ver);
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Febrero 2027');
+    assert.equal(pagina.pedidosA('GET', RUTA_DEL_MES_EN_CURSO).length, 1);
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_FEBRERO_27).length, 0);
+    assert.equal(pagina.documento.activeElement, tildeDel(pagina, '2027-02-02'));
+    assert.equal(pagina.el('mp-anuncio').textContent, 'Febrero 2027');
+  });
+
+  it('«Ver en febrero» desde enero abierto con «Editar» de la pestaña: pide febrero una vez y lleva el foco a su tilde', async () => {
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: conFebrero({ extra: (metodo, ruta) => (ruta === '/api/mi-espacio/horas-extras' ? ok(tablaDeFebrero(2027)) : undefined) })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-mes="2027-01"]'));
+    await abrirLaPlanilla(pagina, pagina.el('vista-horas').querySelector('[data-editar-salida="2027-01-05"]'));
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Enero 2027');
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_ENERO_27).length, 1);
+    // El bloque, con lo que mandó el servidor (febrero todavía no se pidió)
+    assert.deepEqual(deOtroMes(pagina), ['mp-otro-2027-02-02']);
+    assert.equal(cifraDeLaBanda(pagina), '7h');
+    await pagina.tocar(pagina.el('mp-otro-2027-02-02').querySelector('[data-ver-en]'));
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_FEBRERO_27).length, 1);
+    assert.equal(pagina.el('mp-mes-titulo').textContent, 'Febrero 2027');
+    assert.equal(pagina.documento.activeElement, tildeDel(pagina, '2027-02-02'));
+    assert.equal(pagina.el('mp-anuncio').textContent, 'Febrero 2027');
+    // Volver a enero no lo pide otra vez; el bloque, ahora con febrero ya pedido, dice lo mismo
+    await pagina.tocar(pagina.el('mp-anterior'));
+    assert.equal(pagina.pedidosA('GET', RUTA_DE_ENERO_27).length, 1);
+    assert.deepEqual(deOtroMes(pagina), ['mp-otro-2027-02-02']);
+  });
+
+  it('«Ver en febrero» a un día sin tilde: el foco va a su «Quitar» o, sin él, a la fila (nunca al <body>)', async () => {
+    // El 02/02, tildado y con su salida, en una fila sin tilde: un día que pasó a ser de licencia de día entero (con «Quitar») o,
+    // para probar el último respaldo, uno sin campos ni «Quitar»
+    const conEl02 = (cambio) => ({ ...FEBRERO_27, dias: FEBRERO_27.dias.map((dia) => (dia.fecha === '2027-02-02' ? { ...dia, ...cambio } : dia)) });
+    const casos = [
+      { cambio: { licencia: { texto: 'Vacaciones', entera: true } }, foco: (fila) => fila.querySelector('[data-quitar]') },
+      { cambio: { futuro: true }, foco: (fila) => fila }
+    ];
+    for (const { cambio, foco } of casos) {
+      const pagina = montarPagina({ responder: conFebrero({ planillas: { enero: ENERO_27, febrero: conEl02(cambio) } }) });
+      await pagina.iniciar();
+      await abrirLaPlanilla(pagina);
+      assert.equal(tildeDel(pagina, '2027-02-02'), null);
+      await pagina.tocar(pagina.el('mp-anterior'));
+      assert.deepEqual(deOtroMes(pagina), ['mp-otro-2027-02-02']);
+      const ver = pagina.el('mp-otro-2027-02-02').querySelector('[data-ver-en]');
+      ver.focus();
+      await pagina.tocar(ver);
+      assert.equal(pagina.el('mp-mes-titulo').textContent, 'Febrero 2027');
+      const fila = pagina.el('mp-dia-2027-02-02');
+      const esperado = foco(fila);
+      assert.ok(esperado, JSON.stringify(cambio));
+      assert.notEqual(pagina.documento.activeElement, null, JSON.stringify(cambio));
+      assert.notEqual(pagina.documento.activeElement, pagina.documento.body, JSON.stringify(cambio));
+      assert.equal(pagina.documento.activeElement, esperado, JSON.stringify(cambio));
+      if (esperado === fila) assert.equal(fila.getAttribute('tabindex'), '-1');
+    }
+  });
+
+  it('«Guardar» manda un solo PUT con el tilde de cada día cambiado, de todos los meses', async () => {
+    const pagina = montarPagina({
+      responder: conFebrero({ extra: (metodo, ruta) => (metodo === 'PUT' && ruta === RUTA_DEL_GUARDADO ? guardadas(4) : undefined) })
+    });
+    await pagina.iniciar();
+    await abrirLaPlanilla(pagina);
+    await tildar(pagina, '2027-02-03');
+    await tildar(pagina, '2027-02-02', false);
+    await escribirEnLaPlanilla(pagina, '2027-02-01', 'salida', '16:00');
+    await pagina.tocar(pagina.el('mp-anterior'));
+    await tildar(pagina, '2027-01-12');
+    assert.equal(pagina.el('mp-pendientes').innerHTML, '<b>4 días</b> con cambios sin guardar (enero y febrero).');
+    await pagina.tocar(pagina.el('mp-guardar'));
+    assert.deepEqual(pagina.pedidosA('PUT', RUTA_DEL_GUARDADO).map((pedido) => pedido.cuerpo), [{ dias: [
+      { fecha: '2027-01-12', entrada: '', salida: '16:16', nota: 'Actualización del tablero de obras', al_mes_anterior: true },
+      { fecha: '2027-02-01', entrada: '', salida: '16:00', nota: '', al_mes_anterior: false },
+      { fecha: '2027-02-02', entrada: '', salida: '16:20', nota: '', al_mes_anterior: false },
+      { fecha: '2027-02-03', entrada: '', salida: '15:50', nota: '', al_mes_anterior: true }
+    ] }]);
+    assert.equal(pagina.abierto('modal-planilla'), false);
+    assert.deepEqual(pagina.estado.toasts, [['Horas extras guardadas: 4 días.', 'success']]);
+  });
+});
+
 // Los estilos de la planilla (spec 2026-10-27-mi-espacio-horas, sección 9: contraste de 4,5:1 en los textos y 3:1 en los bordes de
 // los controles), leídos del <style> de mi-espacio.html: el color de cada texto contra su fondo
 describe('mi-espacio.html: los estilos de la planilla', () => {
@@ -9193,6 +9953,45 @@ describe('mi-espacio.html: los estilos de la planilla', () => {
     ];
     for (const [nombre, texto, fondo] of pares) {
       assert.ok(contraste(texto, fondo) >= 4.5, `${nombre}: ${texto} sobre ${fondo}, ${contraste(texto, fondo).toFixed(2)}:1`);
+    }
+  });
+
+  // «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, secciones 4 y 5): el tilde, la pastilla punteada de un
+  // día tildado y «→ enero», la segunda línea de la banda, el bloque «De febrero» y, en la pestaña, la pastilla y «Suma a enero»
+  it('«Sumar a {mes anterior}»: los textos nuevos, con 4,5:1 o más sobre su fondo, y el borde punteado, con 3:1 o más', () => {
+    const feriado = de('.mp-dia.feriado', 'background');
+    const licencia = de('.mp-dia.licencia', 'background');
+    const hover = de('.mp-dia:hover', 'background');
+    const deOtroMes = de('.mp-dia.de-otro-mes', 'background');
+    const pares = [
+      ['el tilde', de('.mp-tilde', 'color'), BLANCO],
+      ['el tilde, en un feriado', de('.mp-tilde', 'color'), feriado],
+      ['el tilde, con el puntero', de('.mp-tilde', 'color'), de('.mp-tilde:hover', 'background')],
+      ['el tilde tildado', de('.mp-tilde input:checked + span', 'color'), BLANCO],
+      ['el tilde tildado, en un feriado', de('.mp-tilde input:checked + span', 'color'), feriado],
+      ['la pastilla de un día tildado', de('.mp-horas b.otro-mes', 'color'), de('.mp-horas b.otro-mes', 'background')],
+      ['«→ enero»', de('.mp-horas small.mp-va-a', 'color'), BLANCO],
+      ['«→ enero», en un feriado', de('.mp-horas small.mp-va-a', 'color'), feriado],
+      ['«→ enero», en una licencia', de('.mp-horas small.mp-va-a', 'color'), licencia],
+      ['«→ enero», con el puntero', de('.mp-horas small.mp-va-a', 'color'), hover],
+      ['la segunda línea de la banda', de('.mp-suma-aparte', 'color'), de('.mp-suma', 'background')],
+      ['un día de «De febrero»', de('.mp-fecha b', 'color'), deOtroMes],
+      ['su salida', de('.mp-guardada', 'color'), deOtroMes],
+      ['su entrada', de('.mp-guardada small', 'color'), deOtroMes],
+      ['sus horas', de('.mp-horas b', 'color'), de('.mp-horas b', 'background')],
+      ['la pastilla de la pestaña', de('.me-dia-horas.otro-mes', 'color'), de('.me-dia-horas.otro-mes', 'background')],
+      ['«Suma a enero»', de('.me-fila-cuerpo .me-fila-otro-mes', 'color'), BLANCO]
+    ];
+    for (const [nombre, texto, fondo] of pares) {
+      assert.ok(contraste(texto, fondo) >= 4.5, `${nombre}: ${texto} sobre ${fondo}, ${contraste(texto, fondo).toFixed(2)}:1`);
+    }
+    // El borde punteado de la pastilla (en la planilla y en la pestaña), contra el blanco de adentro y el fondo de cada fila
+    for (const selector of ['.mp-horas b.otro-mes', '.me-dia-horas.otro-mes']) {
+      const borde = de(selector, 'border');
+      assert.match(reglaDe(selector), /border: 1\.5px dashed var\(--sg-[\w-]+\);/, selector);
+      for (const fondo of [BLANCO, feriado, licencia, hover]) {
+        assert.ok(contraste(borde, fondo) >= 3, `${selector}: ${borde} sobre ${fondo}, ${contraste(borde, fondo).toFixed(2)}:1`);
+      }
     }
   });
 

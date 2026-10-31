@@ -24,7 +24,9 @@
  * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6) y la validación de una carga (`validarLicencia`, con la regla de 3.8:
  * dos licencias no comparten un día). Por último, las horas extras (3.5 a 3.7): la
  * validación de una carga (`validarHorasExtras`), la planilla de contrato (spec 2026-10-27-mi-espacio-horas: las horas de
- * una salida, `horasDeLaSalida`, el mes que se pide, `mesDeLaPlanilla`, la validación de un día, `validarSalida`, y las
+ * una salida, `horasDeLaSalida`, el mes al que suman, `mesDeLaSalida` —el de su fecha o, con el tilde «Sumar a {mes
+ * anterior}», el anterior: spec 2026-10-30-mi-espacio-horas-mes-anterior—, lo que se mueve entre dos meses, `repartoDelMes`
+ * y `textoDeLoQueSeMueve`, el mes que se pide, `mesDeLaPlanilla`, la validación de un día, `validarSalida`, y las
  * salidas guardadas que dejaron de cerrar, `avisosDeSalidas`, que nunca frenan una carga), los francos compensatorios de
  * planta (`francosDe`), las horas a favor de contrato (`horasAFavorDe`, desde las salidas) y lo no utilizado previamente de
  * cada año (`noUtilizadasDe`). Al final, «Mis vacaciones y saldos» (los campos del saldo inicial y el año, sección 4), el
@@ -140,7 +142,9 @@ export const MENSAJES_MI_ESPACIO = Object.freeze({
   diaRepetido: 'Ese día está dos veces.',
   planillaSoloContrato: 'La planilla es para las personas de contrato.',
   contratoEnLaPlanilla: 'Las personas de contrato cargan sus horas en la planilla.',
-  mes: 'Elegí un mes válido.'
+  mes: 'Elegí un mes válido.',
+  // El tilde «Sumar a {mes anterior}» de un día de la planilla (spec 2026-10-30-mi-espacio-horas-mes-anterior)
+  alMesAnterior: 'Elegí si este día suma al mes anterior.'
 });
 
 const MESES = Object.freeze([
@@ -1133,17 +1137,64 @@ export const horasDeLaSalida = (dia, feriados) => {
   return Math.floor((salida - entrada + TOLERANCIA_DIA_INHABIL) / 30) / 2;
 };
 
+// Si un día de la planilla suma sus horas al mes anterior al de su fecha (spec 2026-10-30-mi-espacio-horas-mes-anterior,
+// sección 3): el tilde «Sumar a {mes anterior}», solo el `true` literal
+const sumaAlMesAnterior = (fila) => esObjeto(fila) && fila.al_mes_anterior === true;
+
+/**
+ * El mes 'AAAA-MM' al que suman las horas de un día de la planilla: el de su fecha o, si está tildado (`al_mes_anterior`,
+ * solo el `true` literal), el anterior (`mesMas(…, -1)`: el de un día de enero es diciembre del año anterior). Es la única
+ * regla del tilde: las horas del día no cambian (`horasDeLaSalida`), solo el mes en que cuentan, y de ahí se acomodan las
+ * horas a favor y todo lo que sale de ellas. null sin una fecha válida.
+ */
+export const mesDeLaSalida = (fila) => {
+  if (!esObjeto(fila) || !esFechaIso(fila.fecha)) return null;
+  const mes = fila.fecha.slice(0, 7);
+  return sumaAlMesAnterior(fila) ? mesMas(mes, -1) : mes;
+};
+
 // Las horas extras de cada mes de la planilla ('AAAA-MM' → horas), de los meses más viejos a los más nuevos, como
-// `horasPorMes`: cada día en el mes de su fecha. Lo que da null no suma (un día que da 0 deja su mes, con 0)
+// `horasPorMes`: cada día en el mes al que suma (`mesDeLaSalida`: el de su fecha o, tildado, el anterior). Lo que da null no
+// suma (un día que da 0 deja su mes, con 0)
 export const horasPorMesDeSalidas = (salidas, feriados) => {
   const porMes = new Map();
   for (const fila of listaDe(salidas)) {
     const horas = horasDeLaSalida(fila, feriados);
-    if (horas === null) continue;
-    const mes = fila.fecha.slice(0, 7);
+    const mes = mesDeLaSalida(fila);
+    if (horas === null || mes === null) continue;
     porMes.set(mes, (porMes.get(mes) ?? 0) + horas);
   }
   return new Map([...porMes].sort(([a], [b]) => compararTexto(a, b)));
+};
+
+/**
+ * Cómo se reparten las horas de un mes 'AAAA-MM' de la planilla con sus vecinos (spec 2026-10-30-mi-espacio-horas-mes-anterior,
+ * sección 4): `{ propias, entran, van }`. `propias` es la suma de las horas (`horasDeLaSalida`; null cuenta 0) de los días del
+ * mes sin tildar; `entran`, los días tildados del mes siguiente, que suman a este; `van`, los días tildados del mes, que suman
+ * al anterior. Las dos listas van por fecha, cada día `{ fecha, horas, fila }` (`horas`, un número o null; la fila entera).
+ * Siempre `propias + Σ entran.horas` (null como 0) es lo que da `horasPorMesDeSalidas` para el mes (o 0). Con un mes que no
+ * sirve, `{ propias: 0, entran: [], van: [] }`. Nunca tira.
+ */
+export const repartoDelMes = (salidas, mes, feriados) => {
+  const reparto = { propias: 0, entran: [], van: [] };
+  if (!esMes(mes)) return reparto;
+  const siguiente = mesMas(mes, 1);
+  for (const fila of listaDe(salidas)) {
+    if (!esObjeto(fila) || !esFechaIso(fila.fecha)) continue;
+    const delMes = fila.fecha.slice(0, 7);
+    const horas = horasDeLaSalida(fila, feriados);
+    if (!sumaAlMesAnterior(fila)) {
+      if (delMes === mes) reparto.propias += horas ?? 0;
+    } else if (delMes === mes) {
+      reparto.van.push({ fecha: fila.fecha, horas, fila });
+    } else if (delMes === siguiente) {
+      reparto.entran.push({ fecha: fila.fecha, horas, fila });
+    }
+  }
+  const porFecha = (a, b) => compararTexto(a.fecha, b.fecha);
+  reparto.entran.sort(porFecha);
+  reparto.van.sort(porFecha);
+  return reparto;
 };
 
 // Unas horas en días de franco (cada 7, `JORNADA`) y las horas que sobran, con un decimal: `{ dias, resto }`; con lo que no
@@ -1169,23 +1220,59 @@ export const enDiasDeFranco = (horas) => {
 
 /**
  * La frase de la banda de la planilla (spec, sección 4), plana: lo que suman las horas de `mes` ('AAAA-MM') en el mes
- * siguiente, en minúscula y sin año. En el mes de hoy (o uno posterior), «En noviembre vas a tener 2 días de franco y 4,5
- * horas a favor.»; en uno que ya pasó, «En octubre tuviste 1 día de franco y 3,5 horas a favor.»; «a favor» va solo con
- * horas sueltas («En enero vas a tener 3 días de franco.»). Sin horas, con el mes de las horas: «Todavía no sumaste horas
- * extras en octubre.» o «En septiembre no hiciste horas extras.». Sin un mes o un hoy válidos, ''.
+ * siguiente, en minúscula y sin año. El verbo mira ese mes, el de uso (spec 2026-10-30-mi-espacio-horas-mes-anterior,
+ * sección 4): si todavía no llegó, «En noviembre vas a tener 2 días de franco y 4,5 horas a favor.»; si es el de hoy, «En
+ * octubre tenés 1 día de franco y 3,5 horas a favor.»; si ya pasó, «En septiembre tuviste 1 día de franco.»; «a favor» va
+ * solo con horas sueltas («En enero vas a tener 3 días de franco.»). Sin horas, con el mes de las horas: «Todavía no sumaste
+ * horas extras en octubre.» o «En septiembre no hiciste horas extras.». Sin un mes o un hoy válidos, ''.
  */
 export const textoDeLaSumaDelMes = (mes, horas, hoy) => {
   if (!esMes(mes) || !esFechaIso(hoy)) return '';
-  const paso = mes < hoy.slice(0, 7);
+  const deHoy = hoy.slice(0, 7);
   const enDias = enDiasDeFranco(horas);
   if (enDias === '') {
-    return paso ? `En ${nombreDelMes(mes)} no hiciste horas extras.`
+    return mes < deHoy ? `En ${nombreDelMes(mes)} no hiciste horas extras.`
       : `Todavía no sumaste horas extras en ${nombreDelMes(mes)}.`;
   }
-  const siguiente = mesMas(mes, MESES_HASTA_LAS_HORAS);
-  if (siguiente === null) return '';
+  const deUso = mesMas(mes, MESES_HASTA_LAS_HORAS);
+  if (deUso === null) return '';
+  const verbo = deUso < deHoy ? 'tuviste' : deUso === deHoy ? 'tenés' : 'vas a tener';
   const aFavor = diasYHorasDe(horas).resto > 0 ? ' a favor' : '';
-  return `En ${nombreDelMes(siguiente)} ${paso ? 'tuviste' : 'vas a tener'} ${enDias}${aFavor}.`;
+  return `En ${nombreDelMes(deUso)} ${verbo} ${enDias}${aFavor}.`;
+};
+
+// «del lunes 12/10»
+const delDia = (fecha) => `del ${diaDeLaSemana(fecha)} ${diaYMes(fecha)}`;
+// Los días de una lista de `repartoDelMes` que se nombran: los que dan horas (un tildado con 0 h, o sin horas, no suma nada)
+const conHorasQueSeMueven = (dias) => listaDe(dias).filter((dia) => esObjeto(dia) && esFechaIso(dia.fecha)
+  && typeof dia.horas === 'number' && Number.isFinite(dia.horas) && dia.horas > 0);
+const sumaDeLasHoras = (dias) => dias.reduce((suma, dia) => suma + dia.horas, 0);
+
+/**
+ * La segunda línea de la banda de la planilla (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4), plana: lo que se
+ * mueve entre `mes` ('AAAA-MM') y sus vecinos, con las listas `entran` y `van` de `repartoDelMes` (de cada día lee solo
+ * `fecha` y `horas`). Hasta dos frases, separadas por un espacio y en este orden: lo que entra del mes siguiente, «Incluye 1,5 h
+ * de febrero.», y lo que se va al anterior, «1,5 h del martes 02/02 suman a enero.» (con dos días, «… del martes 02/02 y del
+ * jueves 04/02 suman a enero.»; con tres o más, «4 h de 3 días suman a enero.»; «suma» si son 1 h). Solo cuentan los días que
+ * dan horas. Sin nada que decir, o con un mes que no sirve, ''.
+ */
+export const textoDeLoQueSeMueve = (mes, entran, van) => {
+  if (!esMes(mes)) return '';
+  const frases = [];
+  const siguiente = mesMas(mes, 1);
+  const queEntran = conHorasQueSeMueven(entran);
+  if (siguiente !== null && queEntran.length > 0) {
+    frases.push(`Incluye ${numeroTexto(sumaDeLasHoras(queEntran))} h de ${nombreDelMes(siguiente)}.`);
+  }
+  const anterior = mesMas(mes, -1);
+  const queVan = conHorasQueSeMueven(van);
+  if (anterior !== null && queVan.length > 0) {
+    const total = sumaDeLasHoras(queVan);
+    const deQue = queVan.length === 1 ? delDia(queVan[0].fecha)
+      : queVan.length === 2 ? `${delDia(queVan[0].fecha)} y ${delDia(queVan[1].fecha)}` : `de ${queVan.length} días`;
+    frases.push(`${numeroTexto(total)} h ${deQue} ${esUna(total) ? 'suma' : 'suman'} a ${nombreDelMes(anterior)}.`);
+  }
+  return frases.join(' ');
 };
 
 /**
@@ -1217,11 +1304,12 @@ export const licenciaDeDiaEnteroEn = (estado, fecha, feriados) => {
 };
 
 /**
- * Valida un día de la planilla, `{ fecha, entrada, salida, nota }`. El contexto es `{ hoy, estado, feriados }`. Devuelve
- * `{ datos, error }`, como `validarLicencia`: `datos` es `{ fecha, entrada, salida, nota, borrar }` (la entrada y la nota
- * vacías, null). Primero, el formato de la fecha (`fecha`); después, un día con la entrada, la salida y la nota vacías es un
- * borrado (`borrar: true`, con todo en null) y pasa siempre (también un día que no llegó, uno de licencia o uno fuera del
- * rango: así se puede quitar cualquier salida guardada). Si no, en este orden (spec, sección 7):
+ * Valida un día de la planilla, `{ fecha, entrada, salida, nota, al_mes_anterior }`. El contexto es `{ hoy, estado, feriados }`.
+ * Devuelve `{ datos, error }`, como `validarLicencia`: `datos` es `{ fecha, entrada, salida, nota, al_mes_anterior, borrar }`
+ * (la entrada y la nota vacías, null). Primero, el formato de la fecha (`fecha`); después, un día con la entrada, la salida y
+ * la nota vacías es un borrado (`borrar: true`, con todo en null y el tilde en false: un día que se borra pierde la marca)
+ * y pasa siempre (también un día que no llegó, uno de licencia o uno fuera del rango: así se puede quitar cualquier salida
+ * guardada). Si no, en este orden (spec, sección 7):
  * 1. la fecha, del 01/01 de dos años antes (`rangoDeFechas`) a hoy: antes, `textoRango` hasta hoy; después,
  *    `diaQueNoLlego`, los dos en `fecha`;
  * 2. que no sea un día de licencia de día entero (`licenciaDeDiaEnteroEn`): `diaDeLicencia`, en `fecha`;
@@ -1229,7 +1317,10 @@ export const licenciaDeDiaEnteroEn = (estado, fecha, feriados) => {
  * 4. la salida, obligatoria (hay entrada o nota): en un día hábil `salidaQueCuenta` y en uno que no lo es `salidaFalta`;
  * 5. la entrada, obligatoria en un día que no es hábil: `entradaFeriado` o `entradaFinde`;
  * 6. si hay entrada, la salida después de ella (también en un día hábil): `salidaAntes`, en `salida`;
- * 7. la nota: recortada, de hasta 200 caracteres contados con Array.from (lo que no es un texto es vacío).
+ * 7. la nota: recortada, de hasta 200 caracteres contados con Array.from (lo que no es un texto es vacío);
+ * 8. el tilde «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior): `true` o `false` literal, ese; sin
+ *    la clave (o `undefined`), null, que quiere decir conservar lo guardado (una página de antes no lo manda); otro valor,
+ *    `alMesAnterior`, en `al_mes_anterior`.
  * Vacía es no venir, null o un texto de espacios. Las horas no se recortan. Sin un hoy válido no pasa ninguna fecha (salvo un
  * borrado); un día o un contexto que no son objetos cuentan como `{}`. La modalidad y el arranque los controla quien la llama.
  */
@@ -1243,7 +1334,7 @@ export const validarSalida = (dia, contexto) => {
   const sinEntrada = esVacio(entrada);
   const sinSalida = esVacio(salida);
   if (sinEntrada && sinSalida && nota === '') {
-    return { datos: { fecha, entrada: null, salida: null, nota: null, borrar: true }, error: null };
+    return { datos: { fecha, entrada: null, salida: null, nota: null, al_mes_anterior: false, borrar: true }, error: null };
   }
 
   const rango = rangoDeFechas(hoy);
@@ -1266,9 +1357,16 @@ export const validarSalida = (dia, contexto) => {
     return rechazo('salida', MENSAJES_MI_ESPACIO.salidaAntes);
   }
   if (Array.from(nota).length > LARGO_NOTA) return rechazo('nota', MENSAJES_MI_ESPACIO.nota);
+  const marca = fuente.al_mes_anterior;
+  if (marca !== undefined && typeof marca !== 'boolean') {
+    return rechazo('al_mes_anterior', MENSAJES_MI_ESPACIO.alMesAnterior);
+  }
 
   return {
-    datos: { fecha, entrada: sinEntrada ? null : entrada, salida, nota: nota === '' ? null : nota, borrar: false },
+    datos: {
+      fecha, entrada: sinEntrada ? null : entrada, salida, nota: nota === '' ? null : nota, al_mes_anterior: marca ?? null,
+      borrar: false
+    },
     error: null
   };
 };
@@ -1277,8 +1375,6 @@ export const validarSalida = (dia, contexto) => {
 const NO_HABIL_EN_TEXTO = Object.freeze({ feriado: 'ahora es feriado', sabado: 'es sábado', domingo: 'es domingo' });
 const NO_HABIL_EN_AVISO = Object.freeze({ feriado: 'Ahora es feriado', sabado: 'Es sábado', domingo: 'Es domingo' });
 const AVISO_SALIDA_EN_LICENCIA = 'Ese día tenés una licencia de día entero: revisá esta salida.';
-// «del lunes 12/10»
-const delDia = (fecha) => `del ${diaDeLaSemana(fecha)} ${diaYMes(fecha)}`;
 
 /**
  * Las salidas guardadas que dejaron de cerrar porque cambió algo después (spec 2026-10-27-mi-espacio-horas, sección 7 y

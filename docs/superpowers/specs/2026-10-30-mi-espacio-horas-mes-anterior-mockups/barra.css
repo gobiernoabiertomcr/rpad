@@ -1,0 +1,25 @@
+/* MAQUETA (30/10/2026): la barra oscura de abajo, el aviso y la marca de lo nuevo en la nota (no son parte del diseño; la barra es
+   la de las maquetas anteriores). Datos inventados en la maqueta. */
+.me-pagina { padding-bottom: 150px; }
+.mq-barra { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 900; width: min(1120px, calc(100% - 20px)); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 14px; border-radius: 16px; background: #0F1B2D; color: #E6EDF6; font-size: 0.82rem; box-shadow: 0 10px 30px rgba(15, 27, 45, 0.35); }
+.mq-rotulo { color: #9FB2C8; font-weight: 600; }
+.mq-botones { display: flex; gap: 4px; flex-wrap: wrap; }
+.mq-botones button, .mq-botones a { display: inline-flex; align-items: center; height: 30px; padding: 0 11px; border-radius: 999px; border: 1px solid #34465F; background: transparent; color: #E6EDF6; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none; }
+.mq-botones button:hover, .mq-botones a:hover { border-color: #F2B705; }
+.mq-idea { flex-basis: 100%; margin: 0; color: #BFD0E3; line-height: 1.4; }
+.mq-barra button:focus-visible, .mq-barra a:focus-visible { outline: 3px solid #F2B705; outline-offset: 2px; }
+.mq-aviso { position: fixed; left: 50%; bottom: 130px; transform: translateX(-50%); z-index: 1100; background: var(--sg-tinta); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 0.88rem; opacity: 0; pointer-events: none; transition: opacity 0.2s; max-width: calc(100% - 32px); }
+.mq-aviso.visible { opacity: 1; }
+/* Lo nuevo de la nota en Word, resaltado solo en la maqueta */
+.me-hoja-texto mark.mq-nuevo { background: #FFF1B8; color: inherit; box-shadow: 0 0 0 1px #E3B63C; border-radius: 2px; }
+/* Dentro del marco del teléfono (telefono.html): sin la barra de la maqueta y sin la barra de desplazamiento de la página (en un
+   teléfono no le quita ancho a los 375 px) */
+.mq-sin-barra { scrollbar-width: none; }
+.mq-sin-barra .mq-barra { display: none; }
+.mq-sin-barra .me-pagina { padding-bottom: 0; }
+@media (max-width: 640px) {
+    .mq-barra { bottom: 8px; padding: 8px 10px; gap: 6px 10px; }
+    .mq-idea { display: none; }
+    .mq-botones button, .mq-botones a { height: 28px; padding: 0 9px; font-size: 0.78rem; }
+    .me-pagina { padding-bottom: 210px; }
+}

@@ -26,7 +26,10 @@
  *   vez por apertura (GET /mi-espacio/salidas?mes=; el en curso, sin él), actualiza la fila, la semana, la banda y el pie mientras
  *   se escribe (sin volver a dibujar la fila), guarda los días cambiados de todos los meses juntos (con un fetch propio:
  *   API.pedirJson no da los errores de cada día; mientras tanto, la planilla no acepta cambios) y, al cerrar con cambios, pregunta
- *   en la confirmación de la página.
+ *   en la confirmación de la página. Con «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4), el
+ *   tilde de cada día es un cambio más (su casilla, sin volver a dibujar la fila), la banda suma lo que entra del mes siguiente y
+ *   dice en su segunda línea lo que se mueve entre meses, los dos meses se miran a la vez con lo que no se guardó, y «Ver en febrero»
+ *   del bloque del mes siguiente abre ese mes con el foco en el tilde del día.
  * - Agenda (spec 2026-10-26-mi-espacio-agenda, 6): el mes de lunes a domingo, con «‹», «›», «Hoy» y hasta 3 cosas por día («y N
  *   más» muestra el resto), en sus colores (lo tuyo, lo compartido, tus licencias y francos, los feriados y los compañeros que no
  *   están) con su leyenda, y al costado los próximos 30 días (Hoy, Mañana, Esta semana y Más adelante). El mes no va en la
@@ -59,7 +62,8 @@
  * quedó distinto, con los faltantes pero sin ser uno) son links a Licencias de su año (irALicencias, con data-anio-licencias).
  * Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad: los mensajes y
  * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), en la planilla horasDelDiaDeLaPlanilla (horasDeLaSalida,
- * con el tipo del día que manda el servidor), enDiasDeFranco, textoDeLaSumaDelMes y erroresDeLaPlanilla (los pasos 3 a 7 de
+ * con el tipo del día que manda el servidor), enDiasDeFranco, textoDeLaSumaDelMes, textoDeLoQueSeMueve (la segunda línea de la
+ * banda, con lo que se tilda «Sumar a {mes anterior}»; con mesMas) y erroresDeLaPlanilla (los pasos 3 a 7 de
  * validarSalida), camposConLoElegido (camposDelSaldoInicial, con la ayuda de textoSaldoDelArranque), las de
  * Configuración (efectoEnNotas, textoSinAuditor, textoAusenciasAutorizado y parametrosSinAuditor, de usuarios.js) y, en la agenda,
  * DIAS_DE_PROXIMOS (services/miEspacioEventosReglas.js), diaLargoDe (diaLargo) y tituloDelMes (mesTitulo, los dos de
@@ -97,9 +101,13 @@ const CLASE_DEL_TIPO = Object.freeze({
   franco: 'verde', horas_a_favor: 'verde', uso_autorizado: 'gris'
 });
 // El color de la situación de un mes de horas extras (el `estado` que manda el servidor): todavía suma, se habilita, para usar o
-// usado. Lo que ya no se usa (no genera franco, no utilizado previamente, ya está en el saldo inicial) va en gris, sin insignia
-const CLASE_DE_LA_SITUACION = Object.freeze({ sumando: 'gris', proximo: 'azul', en_uso: 'ambar', usados: 'verde', usadas: 'verde' });
-const SITUACIONES_EN_GRIS = Object.freeze(['sin_franco', 'no_utilizado', 'no_utilizadas', 'antes_del_arranque']);
+// usado. Lo que ya no se usa (no genera franco, no utilizado previamente, ya está en el saldo inicial) va en gris, sin insignia. Un
+// mes de contrato que terminó sin horas ni usos (todas sus horas suman al anterior, o dan 0: «Sin horas a favor», `sin_horas`; spec
+// 2026-10-30-mi-espacio-horas-mes-anterior, sección 5) va en gris y con la insignia gris, como el que todavía suma
+const CLASE_DE_LA_SITUACION = Object.freeze({
+  sumando: 'gris', proximo: 'azul', en_uso: 'ambar', usados: 'verde', usadas: 'verde', sin_horas: 'gris'
+});
+const SITUACIONES_EN_GRIS = Object.freeze(['sin_franco', 'no_utilizado', 'no_utilizadas', 'antes_del_arranque', 'sin_horas']);
 
 // La nota de licencia en Word (spec 2026-10-27-mi-espacio-licencia-word, 6): el nombre del archivo si la respuesta no trae
 // Content-Disposition, y lo que se dice si la descarga falla sin un mensaje del servidor
@@ -610,13 +618,14 @@ function htmlDeTablaDeFrancos(tabla, mes = mesInicialDe(tabla)) {
 }
 
 /**
- * Contrato: las horas extras de cada mes trabajado, el mes en que quedan a favor (con lo mismo en días de franco debajo, en chico:
- * `a_favor_detalle`, «2 días de franco y 4 horas»; spec 2026-10-27-mi-espacio-horas, sección 5), lo que se usó (con cada uso
- * debajo) y su situación. `mes`, como en la de francos.
+ * Contrato: las horas extras de cada mes trabajado (debajo, en chico, de dónde salen cuando algo se mueve entre meses:
+ * `horas_detalle`, «5,5 h + 1,5 h de febrero» o «1,5 h suman a enero»; spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 5),
+ * el mes en que quedan a favor (con lo mismo en días de franco debajo, en chico: `a_favor_detalle`, «2 días de franco y 4 horas»;
+ * spec 2026-10-27-mi-espacio-horas, sección 5), lo que se usó (con cada uso debajo) y su situación. `mes`, como en la de francos.
  */
 function htmlDeTablaDeHorasAFavor(tabla, mes = mesInicialDe(tabla)) {
   const filas = listaDe(tabla?.meses).map((fila) => `<tr${claseDeLaFila(fila)}><td>${botonDelMes(fila, mes)}</td>`
-    + `<td class="num">${esc(fila.horas_texto)}</td>`
+    + `<td class="num">${esc(fila.horas_texto)}${conTexto(fila.horas_detalle) ? `<small>${esc(fila.horas_detalle)}</small>` : ''}</td>`
     + `<td>${esc(fila.a_favor_texto)}${conTexto(fila.a_favor_detalle) ? `<small>${esc(fila.a_favor_detalle)}</small>` : ''}</td>`
     + `<td class="num">${esc(fila.usadas_texto)}${conTexto(fila.usadas_detalle) ? `<small>${esc(fila.usadas_detalle)}</small>` : ''}</td>`
     + `<td>${htmlDeSituacion(fila)}</td></tr>`);
@@ -644,7 +653,11 @@ function htmlDeDiaPorDia(tabla, mes) {
  * `filaDelDiaPorDia`), con lo que manda el servidor: la fecha con la marca del día (Feriado, Sábado o Domingo), el horario («Salida
  * 16:20», o «De 09:21 a 12:10» en un día que no es hábil), la entrada de un día hábil, las horas en una pastilla (los que dan 0, en
  * gris con «No llega a media hora»), el aviso de una salida que dejó de cerrar, la nota y «Editar», que abre la planilla en ese día
- * (`data-editar-salida` con la fecha, y el día en su nombre: «Editar el lunes 05/10»). Un mes que no está en la tabla, nada.
+ * (`data-editar-salida` con la fecha, y el día en su nombre: «Editar el lunes 05/10»). Con el tilde «Sumar a {mes anterior}» (spec
+ * 2026-10-30-mi-espacio-horas-mes-anterior, sección 5): un día tildado lleva la pastilla punteada (`otro-mes`) y, debajo, `suma_a`
+ * («Suma a enero»); los días tildados del mes siguiente que suman a este van al final, con su `tipo_texto` («De febrero») debajo de
+ * la fecha, como «Feriado», y la clase `de-otro-mes` (solo con `de_otro_mes` en el true literal): su «Editar» abre su mes. Un mes
+ * que no está en la tabla, nada.
  */
 function htmlDeDiaPorDiaDeSalidas(tabla, mes) {
   const fila = listaDe(tabla?.meses).find((uno) => uno.mes === mes);
@@ -654,9 +667,13 @@ function htmlDeDiaPorDiaDeSalidas(tabla, mes) {
   const filas = dias.map((dia) => {
     const largo = esFechaDeTexto(dia.fecha) ? diaLargoDe(dia.fecha) : dia.fecha_texto;
     const cero = dia.cero === true;
-    return `<li class="me-fila${cero ? ' tenue' : ''}"><span class="me-fila-fecha">${esc(dia.fecha_texto)}`
+    const sumaA = conTexto(dia.suma_a);
+    const clases = ['me-fila', ...(cero ? ['tenue'] : []), ...(dia.de_otro_mes === true ? ['de-otro-mes'] : [])];
+    return `<li class="${clases.join(' ')}"><span class="me-fila-fecha">${esc(dia.fecha_texto)}`
       + `${conTexto(dia.tipo_texto) ? `<small>${esc(dia.tipo_texto)}</small>` : ''}</span>`
-      + `<span class="me-fila-cuerpo">${esc(dia.horario)}${detalle(dia.entrada_texto)}${detalle(dia.horas_texto, 'me-dia-horas')}`
+      + `<span class="me-fila-cuerpo">${esc(dia.horario)}${detalle(dia.entrada_texto)}`
+      + `${detalle(dia.horas_texto, sumaA ? 'me-dia-horas otro-mes' : 'me-dia-horas')}`
+      + `${sumaA ? detalle(dia.suma_a, 'me-detalle me-fila-otro-mes') : ''}`
       + `${cero ? '<span class="me-detalle">No llega a media hora</span>' : ''}${detalle(dia.aviso, 'me-detalle me-fila-aviso')}`
       + `${detalle(dia.nota, 'me-detalle me-fila-nota')}</span>`
       + `<button type="button" class="sg-link" data-editar-salida="${esc(dia.fecha)}" aria-label="Editar el ${esc(largo)}">Editar</button></li>`;
@@ -810,24 +827,73 @@ const partesEnDiasDeFranco = (horas) => {
 const enDiasDeFranco = (horas) => partesEnDiasDeFranco(horas).join(' y ');
 
 // La frase de la banda de la planilla, con cada parte de lo que se suma («2 días de franco», «4 horas a favor») pasada por
-// `marcar`: en el texto plano, tal cual; en la banda, en negrita. «a favor» va con las horas sueltas, la última parte
+// `marcar`: en el texto plano, tal cual; en la banda, en negrita. «a favor» va con las horas sueltas, la última parte. El verbo
+// mira el mes en que se usan las horas, el siguiente: ya pasó, «tuviste»; es el de hoy, «tenés»; todavía no llegó, «vas a tener»
 const fraseDeLaSumaDelMes = (mes, horas, hoy, marcar) => {
   if (typeof mes !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes) || !esFechaDeTexto(hoy)) return '';
-  const paso = mes < hoy.slice(0, 7);
+  const deHoy = hoy.slice(0, 7);
   const partes = partesEnDiasDeFranco(horas);
   if (partes.length === 0) {
-    return paso ? `En ${nombreDelMes(mes)} no hiciste horas extras.` : `Todavía no sumaste horas extras en ${nombreDelMes(mes)}.`;
+    return mes < deHoy ? `En ${nombreDelMes(mes)} no hiciste horas extras.` : `Todavía no sumaste horas extras en ${nombreDelMes(mes)}.`;
   }
   // El mes siguiente tiene que existir, como en mesMas del servidor: del año 1 al 9999
-  const anioSiguiente = Number(mes.slice(0, 4)) + (mes.endsWith('-12') ? 1 : 0);
+  const diciembre = mes.endsWith('-12');
+  const anioSiguiente = Number(mes.slice(0, 4)) + (diciembre ? 1 : 0);
   if (anioSiguiente < 1 || anioSiguiente > 9999) return '';
+  const deUso = `${String(anioSiguiente).padStart(4, '0')}-${diciembre ? '01' : String(Number(mes.slice(5, 7)) + 1).padStart(2, '0')}`;
+  let verbo = 'vas a tener';
+  if (deUso < deHoy) verbo = 'tuviste';
+  else if (deUso === deHoy) verbo = 'tenés';
   const aFavor = diasYHorasDeLaPlanilla(horas).resto > 0 ? ' a favor' : '';
   const marcadas = partes.map((parte, indice) => marcar(indice === partes.length - 1 ? `${parte}${aFavor}` : parte));
-  return `En ${nombreDelMes(mes, 1)} ${paso ? 'tuviste' : 'vas a tener'} ${marcadas.join(' y ')}.`;
+  return `En ${nombreDelMes(mes, 1)} ${verbo} ${marcadas.join(' y ')}.`;
 };
-// Copia de textoDeLaSumaDelMes: «En noviembre vas a tener 2 días de franco y 4,5 horas a favor.», «En octubre tuviste 1 día de
+// Copia de textoDeLaSumaDelMes: «En noviembre vas a tener 2 días de franco y 4,5 horas a favor.», «En octubre tenés 1 día de
 // franco.», «Todavía no sumaste horas extras en octubre.», «En septiembre no hiciste horas extras.»; sin un mes o un hoy válidos, ''
 const textoDeLaSumaDelMes = (mes, horas, hoy) => fraseDeLaSumaDelMes(mes, horas, hoy, (parte) => parte);
+
+// Copia de mesMas: 'AAAA-MM' más n meses (un entero, también negativo), o null si no es un mes, si n no es un entero o si el año
+// queda fuera de 0001 a 9999
+const mesMas = (mes, n) => {
+  if (typeof mes !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes) || !Number.isInteger(n)) return null;
+  const indice = Number(mes.slice(0, 4)) * 12 + Number(mes.slice(5, 7)) - 1 + n;
+  const anio = Math.floor(indice / 12);
+  if (anio < 1 || anio > 9999) return null;
+  return `${String(anio).padStart(4, '0')}-${String((indice % 12) + 1).padStart(2, '0')}`;
+};
+// Los días de una lista que se nombran en la segunda línea de la banda: los que dan horas (un tildado con 0 h, o sin horas, no suma
+// nada). De cada uno se leen solo `fecha` y `horas`
+const conHorasQueSeMueven = (dias) => (Array.isArray(dias) ? dias : []).filter((dia) => esObjeto(dia) && esFechaDeTexto(dia.fecha)
+  && typeof dia.horas === 'number' && Number.isFinite(dia.horas) && dia.horas > 0);
+/**
+ * Copia de textoDeLoQueSeMueve (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4): la segunda línea de la banda de la
+ * planilla, plana, con lo que se mueve entre `mes` ('AAAA-MM') y sus vecinos mientras se tilda. `entran` son los días tildados del
+ * mes siguiente, que suman a este (`diasQueEntran`), y `van`, los tildados del mes, que suman al anterior (`diasQueSumanAlAnterior`).
+ * Hasta dos frases, en este orden: «Incluye 1,5 h de febrero.» y «1,5 h del martes 02/02 suman a enero.» (con dos días, «… del
+ * martes 02/02 y del jueves 04/02 suman a enero.»; con tres o más, «4 h de 3 días suman a enero.»; «suma» si es 1 h). Sin nada que
+ * decir, o con un mes que no sirve, ''.
+ */
+const textoDeLoQueSeMueve = (mes, entran, van) => {
+  if (typeof mes !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return '';
+  const sumaDe = (dias) => dias.reduce((total, dia) => total + dia.horas, 0);
+  const frases = [];
+  const siguiente = mesMas(mes, 1);
+  const queEntran = conHorasQueSeMueven(entran);
+  if (siguiente !== null && queEntran.length > 0) {
+    frases.push(`Incluye ${numeroConComa(sumaDe(queEntran))} h de ${nombreDelMes(siguiente)}.`);
+  }
+  const anterior = mesMas(mes, -1);
+  const queVan = conHorasQueSeMueven(van);
+  if (anterior !== null && queVan.length > 0) {
+    const total = sumaDe(queVan);
+    const delDia = (fecha) => `del ${diaLargoDe(fecha)}`;
+    let deQue = `de ${queVan.length} días`;
+    if (queVan.length === 1) deQue = delDia(queVan[0].fecha);
+    else if (queVan.length === 2) deQue = `${delDia(queVan[0].fecha)} y ${delDia(queVan[1].fecha)}`;
+    frases.push(`${numeroConComa(total)} h ${deQue} ${Number(total) === 1 ? 'suma' : 'suman'} a ${nombreDelMes(anterior)}.`);
+  }
+  return frases.join(' ');
+};
 
 // Copias de usuarios.js (Configuración → Licencias): el efecto de la licencia del firmante en las notas, los días sin auditor y
 // las ausencias de la persona autorizada, con los mismos textos. efectoEnNotas recibe «hoy» por parámetro, y la licencia con
@@ -1201,13 +1267,15 @@ const cuerpoDeHoras = (valores) => ({
 // La planilla de un mes es la que manda GET /mi-espacio/salidas?mes= (planillaDelMes de services/miEspacioResumen.js): sus `dias`
 // (los de lunes a viernes, también los feriados y los que todavía no llegaron, y los sábados y domingos con una salida) y sus
 // `fines_de_semana` (los demás sábados y domingos hasta hoy, para «Sumar el día»), cada uno con lo guardado y su `tipo`. Encima van
-// los cambios de la página: `cambios`, un Map de cada fecha tocada a su estado completo `{ entrada, salida, nota }` (lo que se
-// manda; todo vacío es un borrado) o `{ quitar: true }` («Quitar»: también un borrado, y un sábado o domingo guardado deja de
-// verse); `agregados`, un Set de los sábados y domingos sumados; `errores`, un Map de cada fecha a su `{ campo, mensaje }`;
-// `notasAbiertas`, un Set de las fechas con la nota abierta. «Quitar» (lo hace la página) saca además el día de `agregados`: si
-// no, un sábado o domingo sumado y quitado seguiría a la vista; y volver a sumar uno guardado que se quitó deshace el «Quitar»
-// (vuelve con lo guardado). Los Map y los Set se reconocen por lo que saben hacer, no por su clase (los tests los arman fuera del
-// vm). Las semanas y sus totales son de presentación, como diasDeLaGrilla de la agenda.
+// los cambios de la página: `cambios`, un Map de cada fecha tocada a su estado completo `{ entrada, salida, nota, al_mes_anterior }`
+// (lo que se manda; todo vacío es un borrado; `al_mes_anterior`, el tilde «Sumar a {mes anterior}», vale solo con una salida: spec
+// 2026-10-30-mi-espacio-horas-mes-anterior, sección 3) o `{ quitar: true }` («Quitar»: también un borrado, y un sábado o domingo
+// guardado deja de verse); `agregados`, un Set de los sábados y domingos sumados; `errores`, un Map de cada fecha a su
+// `{ campo, mensaje }`; `notasAbiertas`, un Set de las fechas con la nota abierta; y `meses`, un Map de cada mes pedido en la
+// apertura a su planilla (de ahí, lo que entra del mes siguiente con lo que no se guardó: `diasQueEntran`). «Quitar» (lo hace la
+// página) saca además el día de `agregados`: si no, un sábado o domingo sumado y quitado seguiría a la vista; y volver a sumar uno
+// guardado que se quitó deshace el «Quitar» (vuelve con lo guardado). Los Map y los Set se reconocen por lo que saben hacer, no por
+// su clase (los tests los arman fuera del vm). Las semanas y sus totales son de presentación, como diasDeLaGrilla de la agenda.
 
 const esMapa = (valor) => valor !== null && typeof valor === 'object' && typeof valor.get === 'function'
   && typeof valor.has === 'function' && typeof valor[Symbol.iterator] === 'function';
@@ -1224,17 +1292,26 @@ const horaDelCampo = (valor) => {
   const limpio = valor.trim();
   return /^\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(limpio) ? limpio.slice(0, 5) : limpio;
 };
-// Lo de un día como se manda y como se compara con lo guardado: `{ entrada, salida, nota }`, con las horas cortadas, la nota
-// recortada y lo vacío como ''. Un «Quitar», o lo que no es un objeto, todo vacío
+// Lo de un día como se manda y como se compara con lo guardado: `{ entrada, salida, nota, al_mes_anterior }`, con las horas
+// cortadas, la nota recortada y lo vacío como ''. El tilde, `true` solo con el true literal y una salida (sin ella, el día es un
+// borrado y pierde la marca). Un «Quitar», o lo que no es un objeto, todo vacío y sin tilde
 const valoresDeLaSalida = (fuente) => {
   const datos = esObjeto(fuente) && fuente.quitar !== true ? fuente : {};
-  return { entrada: horaDelCampo(datos.entrada), salida: horaDelCampo(datos.salida), nota: comoTexto(datos.nota).trim() };
+  const salida = horaDelCampo(datos.salida);
+  return {
+    entrada: horaDelCampo(datos.entrada), salida, nota: comoTexto(datos.nota).trim(),
+    al_mes_anterior: salida !== '' && datos.al_mes_anterior === true
+  };
 };
-// Lo que muestra un día en sus campos, como se escribió: el cambio de la página (un «Quitar», vacío) o lo guardado
+// Lo que muestra un día en sus campos, como se escribió: el cambio de la página (un «Quitar», vacío y sin tilde) o lo guardado. El
+// tilde, como se tildó (solo el true literal), también sin salida: se ve oculto, y vuelve a verse tildado al escribir la salida
 const valorDelDia = (dia, cambio) => {
   const fuente = esObjeto(cambio) ? cambio : (esObjeto(dia) ? dia : {});
-  if (fuente.quitar === true) return { entrada: '', salida: '', nota: '' };
-  return { entrada: comoTexto(fuente.entrada), salida: comoTexto(fuente.salida), nota: comoTexto(fuente.nota) };
+  if (fuente.quitar === true) return { entrada: '', salida: '', nota: '', al_mes_anterior: false };
+  return {
+    entrada: comoTexto(fuente.entrada), salida: comoTexto(fuente.salida), nota: comoTexto(fuente.nota),
+    al_mes_anterior: fuente.al_mes_anterior === true
+  };
 };
 
 /**
@@ -1254,9 +1331,10 @@ function diasPorFechaDe(planillas) {
 }
 
 /**
- * Las fechas con cambios sin guardar, en orden: las de `cambios` cuyo `{ entrada, salida, nota }` (como se manda) es distinto de lo
- * guardado (el día de `diasPorFecha`; uno que no está ahí, vacío). Un día que se cambió y volvió a quedar como estaba no cuenta
- * (Review Focus 5: el pie vuelve a «Todo guardado.» y no se manda), ni un sábado o domingo sumado sin nada.
+ * Las fechas con cambios sin guardar, en orden: las de `cambios` cuyo `{ entrada, salida, nota, al_mes_anterior }` (como se manda)
+ * es distinto de lo guardado (el día de `diasPorFecha`; uno que no está ahí, vacío): tildar o destildar es un cambio. Un día que se
+ * cambió y volvió a quedar como estaba no cuenta (Review Focus 5: el pie vuelve a «Todo guardado.» y no se manda), ni un sábado o
+ * domingo sumado sin nada.
  */
 function fechasCambiadas(cambios, diasPorFecha) {
   if (!esMapa(cambios)) return [];
@@ -1265,7 +1343,8 @@ function fechasCambiadas(cambios, diasPorFecha) {
     if (!esFechaDeTexto(fecha)) continue;
     const ahora = valoresDeLaSalida(cambio);
     const antes = valoresDeLaSalida(esMapa(diasPorFecha) ? diasPorFecha.get(fecha) : null);
-    if (ahora.entrada !== antes.entrada || ahora.salida !== antes.salida || ahora.nota !== antes.nota) fechas.push(fecha);
+    if (ahora.entrada !== antes.entrada || ahora.salida !== antes.salida || ahora.nota !== antes.nota
+      || ahora.al_mes_anterior !== antes.al_mes_anterior) fechas.push(fecha);
   }
   return fechas.sort();
 }
@@ -1307,7 +1386,7 @@ function erroresDeLaPlanilla(cambios, diasPorFecha) {
 }
 
 // El cuerpo de PUT /mi-espacio/salidas: cada fecha pedida con su estado completo, como se manda (las horas cortadas a 'HH:MM', la
-// nota recortada y lo vacío como ''; un «Quitar», todo vacío: un borrado)
+// nota recortada y lo vacío como ''; un «Quitar», todo vacío: un borrado), siempre con su tilde, un booleano (sin salida, false)
 const cuerpoDeLaPlanilla = (cambios, fechas) => ({
   dias: (Array.isArray(fechas) ? fechas : []).map((fecha) => ({ fecha, ...valoresDeLaSalida(cambioDe(cambios, fecha)) }))
 });
@@ -1343,17 +1422,50 @@ function finesDeSemanaParaSumar(planilla, estado) {
   return [...libres.values()].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
 }
 
-// Lo que suman unos días de la planilla, con los cambios encima (con horasDelDiaDeLaPlanilla): la banda y el total de cada semana
+// Lo de un día de la planilla con los cambios encima, como se manda (valoresDeLaSalida), y sus horas (horasDelDiaDeLaPlanilla, o
+// null)
+const salidaDelDia = (dia, cambios) => valoresDeLaSalida(valorDelDia(dia, cambioDe(cambios, dia.fecha)));
+const horasDelDiaConCambios = (dia, cambios) => horasDelDiaDeLaPlanilla({ tipo: dia.tipo, ...salidaDelDia(dia, cambios) });
+
+// Lo que suman unos días de la planilla en su propio mes, con los cambios encima: la banda y el total de cada semana. Los días
+// tildados («Sumar a {mes anterior}») no suman acá: suman al mes anterior (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4)
 const horasDeLosDias = (dias, cambios) => listaDe(dias).reduce((suma, dia) => suma
-  + (horasDelDiaDeLaPlanilla({ tipo: dia.tipo, ...valoresDeLaSalida(valorDelDia(dia, cambioDe(cambios, dia.fecha))) }) ?? 0), 0);
+  + (salidaDelDia(dia, cambios).al_mes_anterior ? 0 : (horasDelDiaConCambios(dia, cambios) ?? 0)), 0);
+
+// Los días tildados de una lista de días de la planilla, con los cambios encima, cada uno `{ dia, fecha, horas }` (el día del
+// servidor, su fecha y sus horas, o null), en el orden de la lista: los que suman al mes anterior (también los que dan 0)
+const diasQueSumanAlAnterior = (dias, cambios) => listaDe(dias).filter((dia) => esFechaDeTexto(dia.fecha)
+  && salidaDelDia(dia, cambios).al_mes_anterior).map((dia) => ({ dia, fecha: dia.fecha, horas: horasDelDiaConCambios(dia, cambios) }));
 
 /**
- * La banda de arriba de la planilla (spec, sección 4): el total del mes en grande («18 h») y la frase de textoDeLaSumaDelMes, con lo
- * que se suma en negrita («En noviembre vas a tener <b>2 días de franco</b> y <b>4 horas a favor</b>.»). No es una región viva.
+ * Los días tildados del mes siguiente al de la planilla, que suman a ella (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4),
+ * con lo de la página encima, por fecha, cada uno `{ dia, fecha, horas }`: si ese mes ya se pidió en esta apertura (`estado.meses`,
+ * el Map de cada mes a su planilla), de sus días visibles, con `cambios` (también uno tildado o destildado sin guardar); si no, de
+ * `planilla.entran` (los que mandó el servidor), con `cambios`. El mes de hoy no recibe nada (el siguiente no llegó: `entran` viene
+ * vacío). Una planilla que no sirve, [].
  */
-function htmlDeLaBandaDeLaPlanilla(mes, horas, hoy) {
+function diasQueEntran(planilla, estado) {
+  if (!esObjeto(planilla) || !esMesDeTexto(planilla.mes)) return [];
+  const { cambios = null, meses = null } = esObjeto(estado) ? estado : {};
+  const siguiente = mesVecino(planilla.mes, 1);
+  const delSiguiente = siguiente !== null && esMapa(meses) ? meses.get(siguiente) : undefined;
+  const dias = esObjeto(delSiguiente) ? diasVisiblesDeLaPlanilla(delSiguiente, estado)
+    : listaDe(planilla.entran).filter((dia) => esFechaDeTexto(dia.fecha));
+  return diasQueSumanAlAnterior(dias, cambios).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+}
+
+/**
+ * La banda de arriba de la planilla (spec, sección 4): el total del mes en grande («18 h») y, al lado, la frase de
+ * textoDeLaSumaDelMes, con lo que se suma en negrita («En noviembre vas a tener <b>2 días de franco</b> y <b>4 horas a favor</b>.»),
+ * y debajo la segunda línea, `detalle` (lo que se mueve entre meses, de textoDeLoQueSeMueve: «Incluye 1,5 h de febrero.»), en
+ * .mp-suma-aparte, que va vacía si no hay nada que decir: así la banda tiene siempre el alto de dos renglones y tildar no corre la
+ * planilla (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4). No es una región viva.
+ */
+function htmlDeLaBandaDeLaPlanilla(mes, horas, hoy, detalle = '') {
   return `<span class="mp-suma-cifra">${esc(numeroConComa(horas))}<small>h</small></span>`
-    + `<p class="mp-suma-texto">${fraseDeLaSumaDelMes(mes, horas, hoy, (parte) => `<b>${esc(parte)}</b>`)}</p>`;
+    + '<div class="mp-suma-textos">'
+    + `<p class="mp-suma-texto">${fraseDeLaSumaDelMes(mes, horas, hoy, (parte) => `<b>${esc(parte)}</b>`)}</p>`
+    + `<p class="mp-suma-aparte">${esc(comoTexto(detalle))}</p></div>`;
 }
 
 /**
@@ -1404,6 +1516,12 @@ const textoDeSalirSinGuardar = (cantidad) => `Los cambios de ${cantidad === 1 ? 
 const textoDeLosErroresDeLaPlanilla = (cantidad) => (cantidad === 1 ? 'Revisá el día marcado.' : `Revisá los ${String(cantidad)} días marcados.`);
 const textoDeComoSeCuentan = (mes) => (esMesDeTexto(mes)
   ? `Las horas de ${nombreDelMes(mes)} son horas a favor en ${nombreDelMes(mes, 1)}.` : '');
+// El renglón del tilde en «Cómo se cuentan las horas» (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4), con el mes anterior
+// que manda el servidor (`sumar_a`): «Si te autorizan a sumar las horas de un día al mes anterior, tildá «Sumar a enero»: cuentan
+// como horas extras de enero.». Texto plano; sin un mes o sin `sumarA`, ''
+const textoDeSumarAlAnterior = (mes, sumarA) => (esMesDeTexto(mes) && conTexto(sumarA)
+  ? `Si te autorizan a sumar las horas de un día al mes anterior, tildá «Sumar a ${sumarA}»: cuentan como horas extras de ${sumarA}.`
+  : '');
 
 // El renglón de una semana de la planilla: «5 al 9 de octubre», «1 y 2 de octubre» (dos días seguidos), «30 de octubre»; sin
 // fechas, ''. Los días son los del mes de la primera
@@ -1423,10 +1541,13 @@ const textoDelTotalDeLaSemana = (horas) => (horas > 0 ? `${numeroConComa(horas)}
  * Las horas de una fila de la planilla mientras se escribe (lo que va en su #mp-h-AAAA-MM-DD), con el tipo del día y lo que tienen
  * sus campos: la pastilla con las horas («1,5 h»), «0» con «No llega a media hora», o la raya, sola (sin salida, o con una hora que
  * no se puede leer) o con lo que falta («Falta la salida» o «Poné la entrada» en un día que no es hábil, «La salida va después»).
+ * Un día tildado con horas (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4), con el mes anterior que manda el servidor
+ * (`sumarA`, `sumar_a` de la planilla): la pastilla punteada (`otro-mes`) y, al lado, «→ enero» (el lector de pantalla lee «van a
+ * enero»: la flecha es decorativa), así no depende solo del color; sin `sumarA`, la pastilla de siempre.
  */
-function htmlDeLasHorasDeLaFila(dia, valor) {
+function htmlDeLasHorasDeLaFila(dia, valor, sumarA) {
   const tipo = esObjeto(dia) ? dia.tipo : null;
-  const { entrada, salida } = valoresDeLaSalida(valor);
+  const { entrada, salida, al_mes_anterior: alMesAnterior } = valoresDeLaSalida(valor);
   const nada = '<b class="nada">—</b>';
   if (salida === '') return tipo !== 'habil' && entrada !== '' ? `${nada}<small>Falta la salida</small>` : nada;
   const horas = horasDelDiaDeLaPlanilla({ tipo, entrada, salida });
@@ -1436,7 +1557,28 @@ function htmlDeLasHorasDeLaFila(dia, valor) {
     return `${nada}<small>La salida va después</small>`;
   }
   if (horas === 0) return '<b class="cero">0</b><small>No llega a media hora</small>';
+  if (alMesAnterior && conTexto(sumarA)) {
+    return `<b class="otro-mes">${esc(numeroConComa(horas))} h</b><small class="mp-va-a"><span aria-hidden="true">→ </span>`
+      + `<span class="visualmente-oculto">van a </span>${esc(sumarA)}</small>`;
+  }
   return `<b>${esc(numeroConComa(horas))} h</b>`;
+}
+
+/**
+ * El tilde «Sumar a {mes anterior}» de una fila de la planilla (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4; la maqueta,
+ * `htmlDelTilde`), entre las horas y «Nota»: un <label class="mp-tilde" id="mp-t-AAAA-MM-DD"> con su casilla (`data-campo=
+ * "al_mes_anterior"` y la fecha, tildada si `valor.al_mes_anterior`, como se tildó) y el texto «Sumar a enero», con el mes que manda
+ * el servidor (`sumarA`). Su nombre empieza con lo que se ve: «Sumar a enero el martes 02/02». Sin salida, `vacio` (el <style> lo
+ * oculta sin que pierda su lugar: escribir la salida no corre nada) y la casilla fuera del orden del foco. Sin el mes (una planilla
+ * de antes) o sin una fecha, solo el lugar.
+ */
+function htmlDelTilde(dia, valor, sumarA) {
+  if (!esObjeto(dia) || !esFechaDeTexto(dia.fecha) || !conTexto(sumarA)) return '<span class="mp-tilde vacio" aria-hidden="true"></span>';
+  const id = esc(dia.fecha);
+  const vacio = valoresDeLaSalida(valor).salida === '';
+  return `<label class="mp-tilde${vacio ? ' vacio' : ''}" id="mp-t-${id}"><input type="checkbox" data-campo="al_mes_anterior" `
+    + `data-fecha="${id}"${esObjeto(valor) && valor.al_mes_anterior === true ? ' checked' : ''}${vacio ? ' tabindex="-1"' : ''} `
+    + `aria-label="Sumar a ${esc(sumarA)} el ${esc(diaLargoDe(dia.fecha))}"><span>Sumar a ${esc(sumarA)}</span></label>`;
 }
 
 // Las marcas debajo de la fecha de una fila: el feriado en ámbar con su nombre (también un sábado o domingo que lo es), o el
@@ -1458,14 +1600,15 @@ const htmlDeLasMarcasDelDia = (dia, { conEntera = false } = {}) => {
  * - un día de licencia de día entero: su tipo y «Es un día de licencia: no se cargan horas.», sin campos; con una salida guardada de
  *   antes, la salida (y la entrada) como texto, sus horas, el aviso del servidor y «Quitar»;
  * - los demás, un grupo con el nombre de su fecha (`role="group"` y `aria-labelledby`): la entrada (opcional en un día hábil), la
- *   salida, las horas, «Quitar» en un sábado o domingo, «Nota» (abre su campo debajo; con nota, la nota en cursiva y «Cambiar
- *   nota») y, mientras el día no cambió, el aviso del servidor («Ahora es feriado: falta la entrada.»). Un error va debajo, con
+ *   salida, las horas, el tilde «Sumar a {mes anterior}» (`htmlDelTilde`, con `sumarA`, el `sumar_a` de la planilla), «Quitar» en
+ *   un sábado o domingo, «Nota» (abre su campo debajo; con nota, la nota en cursiva y «Cambiar nota») y, mientras el día no cambió,
+ *   el aviso del servidor («Ahora es feriado: falta la entrada.»). Un error va debajo, con
  *   `aria-invalid` y `aria-describedby` en su campo (uno en la nota la abre; uno sin campo de la fila, del servidor, va a la salida).
  * Un error del servidor en una fila sin campos queda atado a lo que recibe el foco: en una que no llegó o de licencia sin salida, la
  * fila (un grupo con su nombre, `tabindex="-1"` y el error en su `aria-describedby`); en una de licencia con una salida de antes,
  * «Quitar» (con el aviso y el error). Cada fila es un <div>: van en #mp-dias, sin semántica de lista.
  */
-function htmlDeLaFilaDeLaPlanilla(dia, { cambios, errores, notasAbiertas, cambiadas }) {
+function htmlDeLaFilaDeLaPlanilla(dia, { cambios, errores, notasAbiertas, cambiadas, sumarA = '' }) {
   const { fecha } = dia;
   const id = esc(fecha);
   const largo = conTexto(dia.fecha_larga) ? dia.fecha_larga : diaLargoDe(fecha);
@@ -1506,7 +1649,7 @@ function htmlDeLaFilaDeLaPlanilla(dia, { cambios, errores, notasAbiertas, cambia
     const describe = ids.length === 0 ? '' : ` aria-describedby="${ids.join(' ')}"`;
     return `${grupo}><span class="mp-fecha">${nombre}${htmlDeLasMarcasDelDia(dia, { conEntera: true })}</span>`
       + `<span class="mp-guardada">Salida ${esc(valor.salida)}${entrada}</span>`
-      + `<span class="mp-horas" id="mp-h-${id}">${htmlDeLasHorasDeLaFila(dia, valor)}</span>`
+      + `<span class="mp-horas" id="mp-h-${id}">${htmlDeLasHorasDeLaFila(dia, valor, sumarA)}</span>`
       + `<span class="mp-acciones"><button type="button" class="sg-link me-link-rojo" data-quitar="${id}" `
       + `aria-label="Quitar la salida del ${esc(largo)}"${describe}>Quitar</button></span>${nota}${aviso}${htmlDelError}</div>`;
   }
@@ -1531,22 +1674,69 @@ function htmlDeLaFilaDeLaPlanilla(dia, { cambios, errores, notasAbiertas, cambia
     + `aria-label="${rotulo} del ${esc(largo)}"${describir('entrada')}></label>`
     + '<label class="mp-campo salida"><span class="mp-rotulo">Salida</span><input type="time" '
     + `data-campo="salida" data-fecha="${id}" value="${esc(valor.salida)}" aria-label="Salida del ${esc(largo)}"${describir('salida')}></label>`
-    + `<span class="mp-horas" id="mp-h-${id}">${htmlDeLasHorasDeLaFila(dia, valor)}</span>`
+    + `<span class="mp-horas" id="mp-h-${id}">${htmlDeLasHorasDeLaFila(dia, valor, sumarA)}</span>`
+    + htmlDelTilde(dia, valor, sumarA)
     + `<span class="mp-acciones">${quitar}<button type="button" class="sg-link" data-nota="${id}" aria-expanded="${String(abierta)}" `
     + `aria-label="${tieneNota ? 'Cambiar la nota' : 'Agregar una nota'} del ${esc(largo)}">${tieneNota ? 'Cambiar nota' : 'Nota'}</button></span>`
     + `${abierta ? campoDeLaNota : nota}${aviso}${htmlDelError}</div>`;
 }
 
 /**
+ * Un día del mes siguiente que suma a la planilla (de `diasQueEntran`: `{ dia, fecha, horas }`), de solo lectura (spec
+ * 2026-10-30-mi-espacio-horas-mes-anterior, sección 4; la maqueta, `htmlDelDiaDeOtroMes`): un grupo con el nombre de su fecha
+ * (`mp-dia de-otro-mes`, con ids propios, `mp-otro-` y `mp-of-`: los `mp-dia-` son de las filas de su mes), con sus marcas, «Salida
+ * 16:20» (y «Entrada …», si la tiene), sus horas y «Ver en febrero» (`data-ver-en` con la fecha: la página abre ese mes con el foco
+ * en su tilde; su nombre empieza con lo que se ve, «Ver en febrero el martes 02/02», como el del tilde), con su nota debajo, si tiene.
+ * Lo que se ve es lo de la página (los cambios sin guardar encima).
+ */
+function htmlDelDiaDeOtroMes({ dia, fecha, horas }, cambios) {
+  const id = esc(fecha);
+  const valor = salidaDelDia(dia, cambios);
+  const deMes = nombreDelMes(fecha.slice(0, 7));
+  const entrada = valor.entrada !== '' ? `<small>Entrada ${esc(valor.entrada)}</small>` : '';
+  let pastilla = `<b>${esc(numeroConComa(horas))} h</b>`;
+  if (horas === null) pastilla = '<b class="nada">—</b>';
+  else if (horas === 0) pastilla = '<b class="cero">0</b><small>No llega a media hora</small>';
+  return `<div class="mp-dia de-otro-mes" id="mp-otro-${id}" role="group" aria-labelledby="mp-of-${id}">`
+    + `<span class="mp-fecha"><b id="mp-of-${id}">${esc(dia.fecha_texto)}</b>${htmlDeLasMarcasDelDia(dia)}</span>`
+    + `<span class="mp-guardada">Salida ${esc(valor.salida)}${entrada}</span>`
+    + `<span class="mp-horas">${pastilla}</span>`
+    + `<span class="mp-acciones"><button type="button" class="sg-link" data-ver-en="${id}" `
+    + `aria-label="Ver en ${esc(deMes)} el ${esc(diaLargoDe(fecha))}">Ver en ${esc(deMes)}</button></span>`
+    + (valor.nota !== '' ? `<p class="mp-nota-vista">${esc(valor.nota)}</p>` : '')
+    + '</div>';
+}
+
+/**
+ * Lo que entra del mes siguiente, después de la última semana de la planilla (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección
+ * 4): si hay días que entran (`diasQueEntran`, con lo de la página encima), un renglón como el de una semana (`mp-semana de-otro-mes`,
+ * sin `data-fechas`: sus días no son de este mes), «De febrero» con lo que suman, y cada día de solo lectura (`htmlDelDiaDeOtroMes`).
+ * Sin ninguno (el mes siguiente todavía no llegó, o nadie tildó), ''.
+ */
+function htmlDelBloqueDelMesSiguiente(planilla, estado) {
+  const entran = diasQueEntran(planilla, estado);
+  if (entran.length === 0) return '';
+  const cambios = esObjeto(estado) ? estado.cambios : null;
+  const total = entran.reduce((suma, uno) => suma + (uno.horas ?? 0), 0);
+  return `<div class="mp-semana de-otro-mes"><span>De ${esc(nombreDelMes(planilla.mes, 1))}</span>`
+    + `<span class="mp-semana-total">${esc(textoDelTotalDeLaSemana(total))}</span></div>`
+    + entran.map((uno) => htmlDelDiaDeOtroMes(uno, cambios)).join('');
+}
+
+/**
  * La planilla de un mes (lo que va en #mp-dias, un <div>: sin semántica de lista, porque cada día es un grupo): los días que se
  * ven (`diasVisiblesDeLaPlanilla`), agrupados por semana (de lunes a domingo), cada semana con su renglón («5 al 9 de octubre» y lo
- * que suma, con los cambios, en .mp-semana-total: la página lo cambia mientras se escribe) y después sus filas
- * (`htmlDeLaFilaDeLaPlanilla`). Nada de esto es una región viva. Una planilla que no llegó, ''.
+ * que suma, con los cambios y sin los días tildados, en .mp-semana-total: la página lo cambia mientras se escribe) y después sus
+ * filas (`htmlDeLaFilaDeLaPlanilla`, con el tilde del mes anterior de la planilla, `sumar_a`) y, al final, lo que entra del mes
+ * siguiente (`htmlDelBloqueDelMesSiguiente`). Nada de esto es una región viva. Una planilla que no llegó, ''.
  */
 function htmlDeLaPlanilla(planilla, estado) {
   const { cambios = null, agregados = null, errores = null, notasAbiertas = null } = esObjeto(estado) ? estado : {};
   const dias = diasVisiblesDeLaPlanilla(planilla, { cambios, agregados });
-  const contexto = { cambios, errores, notasAbiertas, cambiadas: new Set(fechasCambiadas(cambios, diasPorFechaDe([planilla]))) };
+  const contexto = {
+    cambios, errores, notasAbiertas, cambiadas: new Set(fechasCambiadas(cambios, diasPorFechaDe([planilla]))),
+    sumarA: esObjeto(planilla) ? comoTexto(planilla.sumar_a) : ''
+  };
   const semanas = [];
   for (const dia of dias) {
     const lunes = sumarDiasA(dia.fecha, -lugarEnLaSemana(dia.fecha));
@@ -1558,7 +1748,7 @@ function htmlDeLaPlanilla(planilla, estado) {
     return `<div class="mp-semana" data-fechas="${esc(fechas.join(','))}"><span>${esc(textoDeLaSemana(fechas))}</span>`
       + `<span class="mp-semana-total">${esc(textoDelTotalDeLaSemana(horasDeLosDias(deLaSemana, cambios)))}</span></div>`
       + deLaSemana.map((dia) => htmlDeLaFilaDeLaPlanilla(dia, contexto)).join('');
-  }).join('');
+  }).join('') + htmlDelBloqueDelMesSiguiente(planilla, estado);
 }
 
 // ---- «Mis vacaciones y saldos» ----
@@ -4543,6 +4733,7 @@ async function abrirPlanilla({ mes = null, fecha = null, volverA = null } = {}) 
   porId('mp-anterior').disabled = true;
   porId('mp-siguiente').disabled = true;
   porId('mp-como-mes').textContent = textoDeComoSeCuentan(elMes);
+  pintarElRenglonDelTilde(null);
   for (const id of ['mp-suma', 'mp-dias', 'mp-sumar']) porId(id).innerHTML = '';
   porId('mp-dias').removeAttribute('aria-busy');
   porId('mp-pendientes').innerHTML = htmlDelPieDeLaPlanilla([]);
@@ -4657,7 +4848,8 @@ function mostrarMesDeLaPlanilla(planilla, mes) {
 }
 
 // La planilla del mes que se ve: el título y las flechas (no van a un mes que todavía no llegó ni antes del primero: los dice el
-// servidor), «Cómo se cuentan», los días, «Sumar el día», la banda, las semanas, el pie y el aviso de arriba del cuerpo
+// servidor), «Cómo se cuentan», los días (con lo que entra del mes siguiente al final: htmlDeLaPlanilla), «Sumar el día», la banda,
+// las semanas, el pie y el aviso de arriba del cuerpo
 function pintarLaPlanilla() {
   const planilla = pagina.planilla;
   const datos = planilla?.meses.get(planilla.mes);
@@ -4665,6 +4857,7 @@ function pintarLaPlanilla() {
   porId('mp-mes-titulo').textContent = conTexto(datos.mes_texto) ? datos.mes_texto : tituloDelMes(planilla.mes);
   pintarLasFlechasDeLaPlanilla(planilla);
   porId('mp-como-mes').textContent = textoDeComoSeCuentan(planilla.mes);
+  pintarElRenglonDelTilde(datos);
   porId('mp-dias').innerHTML = htmlDeLaPlanilla(datos, planilla);
   porId('mp-sumar').innerHTML = htmlDelSumarDeLaPlanilla(datos, planilla);
   pintarLaSumaDeLaPlanilla();
@@ -4692,16 +4885,29 @@ function pintarElGuardadoDeLaPlanilla(planilla) {
 // Las fechas con cambios sin guardar, de todos los meses pedidos
 const fechasDeLaPlanilla = (planilla) => fechasCambiadas(planilla.cambios, diasPorFechaDe(planilla.meses.values()));
 
-// Lo que cambia mientras se escribe, sin volver a dibujar las filas: la banda (lo que suma el mes, con los cambios), el total de
-// cada semana y el pie (los días con cambios, de todos los meses)
+// El renglón del tilde en «Cómo se cuentan las horas» (#mp-como-anterior), con el mes anterior que manda el servidor (`sumar_a`,
+// textoDeSumarAlAnterior); sin él (mientras llega el mes, o una planilla de antes), vacío y oculto
+function pintarElRenglonDelTilde(datos) {
+  const renglon = porId('mp-como-anterior');
+  renglon.textContent = esObjeto(datos) ? textoDeSumarAlAnterior(datos.mes, datos.sumar_a) : '';
+  renglon.hidden = renglon.textContent === '';
+}
+
+// Lo que cambia mientras se escribe o se tilda, sin volver a dibujar las filas: la banda (lo que suma el mes, con los cambios: sus
+// días sin tildar más los tildados del mes siguiente, `diasQueEntran`, y la segunda línea con lo que se mueve entre meses,
+// textoDeLoQueSeMueve), el total de cada semana del mes (las de `data-fechas`: el renglón «De febrero» del bloque del mes siguiente no
+// es una semana de este mes y su total no cambia mientras se escribe acá) y el pie (los días con cambios, de todos los meses)
 function pintarLaSumaDeLaPlanilla() {
   const planilla = pagina.planilla;
   const datos = planilla?.meses.get(planilla.mes);
   if (!datos) return;
   const visibles = diasVisiblesDeLaPlanilla(datos, planilla);
-  porId('mp-suma').innerHTML = htmlDeLaBandaDeLaPlanilla(planilla.mes, horasDeLosDias(visibles, planilla.cambios), datos.hoy);
+  const entran = diasQueEntran(datos, planilla);
+  const van = diasQueSumanAlAnterior(visibles, planilla.cambios);
+  const horas = horasDeLosDias(visibles, planilla.cambios) + entran.reduce((suma, uno) => suma + (uno.horas ?? 0), 0);
+  porId('mp-suma').innerHTML = htmlDeLaBandaDeLaPlanilla(planilla.mes, horas, datos.hoy, textoDeLoQueSeMueve(planilla.mes, entran, van));
   const porFecha = new Map(visibles.map((dia) => [dia.fecha, dia]));
-  for (const semana of porId('mp-dias').querySelectorAll('.mp-semana')) {
+  for (const semana of porId('mp-dias').querySelectorAll('.mp-semana[data-fechas]')) {
     const dias = comoTexto(semana.getAttribute('data-fechas')).split(',').map((fecha) => porFecha.get(fecha)).filter(Boolean);
     const total = semana.querySelector('.mp-semana-total');
     if (total) total.textContent = textoDelTotalDeLaSemana(horasDeLosDias(dias, planilla.cambios));
@@ -4733,9 +4939,11 @@ function anunciarEnLaPlanilla(texto) {
 // Los días de la planilla de todos los meses pedidos, por fecha, y el de una fecha
 const diaDeLaPlanilla = (planilla, fecha) => diasPorFechaDe(planilla.meses.values()).get(fecha) ?? null;
 
-// Lo que se escribe en un día (la entrada, la salida o la nota): su estado completo pasa a `cambios` y se actualizan, sin volver a
-// dibujar nada (el campo que se usa sigue siendo el mismo: no pierde el foco ni lo que se está escribiendo), su fila, la banda, las
-// semanas y el pie. Escribir en un día con error lo saca (y, sin ninguno, el aviso de arriba). Mientras guarda, nada
+// Lo que se escribe en un día (la entrada, la salida o la nota) o se tilda («Sumar a {mes anterior}», su casilla: el true literal si
+// está tildada): su estado completo pasa a `cambios` y se actualizan, sin volver a dibujar nada (el campo que se usa sigue siendo el
+// mismo: no pierde el foco ni lo que se está escribiendo), su fila, la banda, las semanas y el pie. Tildar no se anuncia: se ve en la
+// fila y en el pie, como lo que se escribe. Escribir en un día con error lo saca (y, sin ninguno, el aviso de arriba). Mientras
+// guarda, nada
 function alEscribirEnLaPlanilla(evento) {
   const planilla = pagina.planilla;
   const campo = evento.target?.closest?.('[data-campo]');
@@ -4743,8 +4951,9 @@ function alEscribirEnLaPlanilla(evento) {
   const fecha = campo.getAttribute('data-fecha');
   const nombre = campo.getAttribute('data-campo');
   const dia = diaDeLaPlanilla(planilla, fecha);
-  if (!dia || !['entrada', 'salida', 'nota'].includes(nombre)) return;
-  planilla.cambios.set(fecha, { ...valorDelDia(dia, planilla.cambios.get(fecha)), [nombre]: comoTexto(campo.value) });
+  if (!dia || !['entrada', 'salida', 'nota', 'al_mes_anterior'].includes(nombre)) return;
+  const valor = nombre === 'al_mes_anterior' ? campo.checked === true : comoTexto(campo.value);
+  planilla.cambios.set(fecha, { ...valorDelDia(dia, planilla.cambios.get(fecha)), [nombre]: valor });
   if (nombre === 'entrada') campo.setAttribute('data-vacio', comoTexto(campo.value).trim() === '' ? '1' : '0');
   if (planilla.errores.delete(fecha)) sinErrorDeLosDias(planilla);
   actualizarLaFilaDeLaPlanilla(fecha);
@@ -4759,17 +4968,28 @@ function sinErrorDeLosDias(planilla) {
   pintarElAvisoDeLaPlanilla(planilla);
 }
 
-// Una fila mientras se escribe, sin reemplazarla: sus horas, la raya de lo cambiado, el aviso del servidor (a la vista, y en la
-// descripción de la salida, solo mientras el día no cambió) y, si ya no tiene error, sin su error ni aria-invalid
+// Una fila mientras se escribe o se tilda, sin reemplazarla: sus horas (un día tildado, la pastilla punteada con «→ enero»), el
+// tilde (se ve solo con una salida: sin ella, `vacio`, oculto en su lugar y fuera del orden del foco, como lo dibuja htmlDelTilde),
+// la raya de lo cambiado, el aviso del servidor (a la vista, y en la descripción de la salida, solo mientras el día no cambió) y, si
+// ya no tiene error, sin su error ni aria-invalid
 function actualizarLaFilaDeLaPlanilla(fecha) {
   const planilla = pagina.planilla;
   const fila = porId(`mp-dia-${fecha}`);
   const dia = diaDeLaPlanilla(planilla, fecha);
   if (!fila || !dia) return;
   const cambio = planilla.cambios.get(fecha);
+  const valor = valorDelDia(dia, cambio);
   const cambiada = cambio !== undefined && fechasCambiadas(new Map([[fecha, cambio]]), new Map([[fecha, dia]])).length > 0;
   const horas = porId(`mp-h-${fecha}`);
-  if (horas) horas.innerHTML = htmlDeLasHorasDeLaFila(dia, valorDelDia(dia, cambio));
+  if (horas) horas.innerHTML = htmlDeLasHorasDeLaFila(dia, valor, planilla.meses.get(fecha.slice(0, 7))?.sumar_a);
+  const tilde = porId(`mp-t-${fecha}`);
+  if (tilde) {
+    const sinSalida = valoresDeLaSalida(valor).salida === '';
+    tilde.classList.toggle('vacio', sinSalida);
+    const casilla = tilde.querySelector('[data-campo="al_mes_anterior"]');
+    if (sinSalida) casilla?.setAttribute('tabindex', '-1');
+    else casilla?.removeAttribute('tabindex');
+  }
   fila.classList.toggle('cambiado', cambiada);
   const aviso = porId(`mp-a-${fecha}`);
   if (aviso) aviso.hidden = cambiada;
@@ -4800,7 +5020,8 @@ function alApretarEnLaPlanilla(evento) {
   (siguiente ?? porId('mp-guardar')).focus?.();
 }
 
-// Un clic en los días: «Nota» o «Quitar» (mientras guarda, nada)
+// Un clic en los días: «Nota», «Quitar» o, en el bloque del mes siguiente, «Ver en febrero» (ese mes, con el foco en el tilde de
+// ese día: irAlMesDeLaPlanilla). Mientras guarda, nada
 function alTocarLaPlanilla(evento) {
   if (!pagina.planilla || pagina.planilla.guardando) return;
   const nota = evento.target?.closest?.('[data-nota]');
@@ -4809,7 +5030,12 @@ function alTocarLaPlanilla(evento) {
     return;
   }
   const quitar = evento.target?.closest?.('[data-quitar]');
-  if (quitar) quitarElDia(quitar.getAttribute('data-quitar'));
+  if (quitar) {
+    quitarElDia(quitar.getAttribute('data-quitar'));
+    return;
+  }
+  const verEn = evento.target?.closest?.('[data-ver-en]');
+  if (verEn) irAlMesDeLaPlanilla('siguiente', { fecha: verEn.getAttribute('data-ver-en') });
 }
 
 // «Nota» abre el campo de la nota debajo de la fila, con el foco; otra vez, lo cierra (la nota escrita queda a la vista) y el foco
@@ -4857,17 +5083,41 @@ function sumarElDia() {
   fila?.querySelector('[data-campo="entrada"]')?.focus?.();
 }
 
-// Las flechas del mes («anterior» o «siguiente»: los meses que dice el servidor; mientras llega uno, nada). El mes que se elige se
-// anuncia en la planilla; si la flecha que se usó se apagó (el primer mes o el en curso), el foco pasa a la otra. Mientras guarda,
-// nada
-async function irAlMesDeLaPlanilla(cual) {
+// Las flechas del mes («anterior» o «siguiente»: los meses que dice el servidor; mientras llega uno, nada) y «Ver en febrero» del
+// bloque del mes siguiente (`fecha`, un día del siguiente: un mes ya pedido en esta apertura no se vuelve a pedir). El mes que se
+// elige se anuncia en la planilla; con `fecha`, el foco va al tilde de ese día (con su fila a la vista; sin tilde, a su «Quitar» o
+// a la fila); si no, si la flecha que se
+// usó se apagó (el primer mes o el en curso), el foco pasa a la otra. Mientras guarda, nada
+async function irAlMesDeLaPlanilla(cual, { fecha = null } = {}) {
   const planilla = pagina.planilla;
   const boton = porId(cual === 'anterior' ? 'mp-anterior' : 'mp-siguiente');
   const otra = porId(cual === 'anterior' ? 'mp-siguiente' : 'mp-anterior');
   const destino = planilla?.meses.get(planilla.mes)?.[cual];
   if (!planilla || planilla.guardando || planilla.cargando !== null || boton.disabled || !esMesDeTexto(destino)) return;
+  if (fecha !== null && (!esFechaDeTexto(fecha) || fecha.slice(0, 7) !== destino)) return;
   if (!(await cargarMesDeLaPlanilla(destino)) || pagina.planilla !== planilla) return;
   anunciarEnLaPlanilla(porId('mp-mes-titulo').textContent);
+  const tilde = fecha === null ? null : (porId(`mp-t-${fecha}`)?.querySelector('[data-campo="al_mes_anterior"]') ?? null);
+  const fila = fecha === null ? null : porId(`mp-dia-${fecha}`);
+  if (tilde) {
+    fila?.scrollIntoView?.({ block: 'center' });
+    tilde.focus?.();
+    return;
+  }
+  if (fila) {
+    // Sin tilde (por ejemplo, un día que pasó a ser de licencia de día entero con una salida de antes, todavía tildada): «Quitar»
+    // de esa fila o, si no tiene, la fila misma (con tabindex="-1", como las filas sin campos con un error). El botón que se tocó se
+    // fue con el redibujo: sin esto, el foco quedaría en <body>
+    fila.scrollIntoView?.({ block: 'center' });
+    const quitar = fila.querySelector('[data-quitar]');
+    if (quitar) {
+      quitar.focus?.();
+      return;
+    }
+    if (fila.getAttribute?.('tabindex') === null) fila.setAttribute?.('tabindex', '-1');
+    fila.focus?.();
+    return;
+  }
   const activo = document.activeElement;
   if (boton.disabled && !otra.disabled && (!activo || activo === document.body || activo === boton)) otra.focus?.();
 }
