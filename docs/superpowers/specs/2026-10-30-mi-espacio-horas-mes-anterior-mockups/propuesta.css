@@ -1,0 +1,63 @@
+/* MAQUETA (30/10/2026): lo NUEVO de la propuesta «Sumar a {mes anterior}», encima del <style> real (pagina.css, sin cambios).
+   Solo los tokens --sg-* de ese <style>. Datos inventados en la maqueta.
+
+   La fila de la planilla suma una columna, entre la de las horas y la de «Quitar» / «Nota»: el tilde «Sumar a enero». Cada fila es
+   su propia grilla, así que la última columna («Quitar», «Nota», «Cambiar nota») tiene un ancho mínimo para que el tilde quede en
+   la misma vertical en todas las filas. Sin salida, el tilde no se ve pero ocupa su lugar (visibility: hidden: tampoco recibe el
+   foco ni lo lee el lector de pantalla). */
+.mp-dia, .mp-columnas { grid-template-columns: minmax(120px, 176px) minmax(100px, 118px) minmax(100px, 118px) minmax(80px, 1fr) auto minmax(5.6rem, auto); }
+.mp-acciones { min-width: 5.6rem; }
+
+/* El tilde: un <label> con su casilla (el nombre accesible de la casilla dice el día: «Sumar el martes 02/02 a enero»). Tildado, el
+   texto pasa a tinta */
+.mp-anterior { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 4px 0 2px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; color: var(--sg-texto); white-space: nowrap; cursor: pointer; }
+.mp-anterior input { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--sg-tinta); cursor: pointer; }
+.mp-anterior:hover { background: var(--sg-sutil); }
+.mp-anterior input:checked + span { color: var(--sg-tinta); }
+.mp-anterior.vacio { visibility: hidden; }
+
+/* La pastilla de un día tildado: las mismas horas, en blanco con el borde punteado del azul medio (no cuentan en este mes) y, al
+   lado, «→ enero» en azul y negrita (no depende del color: dice adónde van). El borde, 4,4:1 sobre el blanco */
+.mp-horas b.otro-mes { background: #fff; color: var(--sg-azul); border: 1.5px dashed var(--sg-medio); }
+.mp-horas small.mp-va-a { color: var(--sg-azul); font-weight: 700; font-size: 0.8rem; white-space: nowrap; }
+
+/* La banda: debajo de la frase, en chico, lo que se va al mes anterior o lo que viene del siguiente. Con el alto de dos renglones
+   siempre, así tildar o destildar no corre los días hacia arriba o abajo (la casilla queda bajo el puntero) */
+.mp-suma { min-height: 62px; }
+.mp-suma-textos { min-width: 0; }
+.mp-suma-aparte { margin: 2px 0 0; font-size: 0.84rem; line-height: 1.35; color: var(--sg-azul); font-weight: 600; overflow-wrap: anywhere; }
+
+/* En la planilla de enero, después de la última semana: «De febrero» (como el renglón de una semana) y cada día de febrero tildado,
+   de solo lectura, con «Ver en febrero» en la columna de «Nota» */
+.mp-semana.de-otro-mes { margin-top: 20px; }
+.mp-dia.de-otro-mes { background: var(--sg-sutil); }
+.mp-dia.de-otro-mes .mp-guardada { flex-direction: row; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+.mp-dia.de-otro-mes .mp-acciones { grid-column: -2 / -1; }
+
+/* La pestaña Horas extras: en el día por día, la pastilla de un día que suma al mes anterior, con «Suma a enero» al lado */
+.me-dia-horas.otro-mes { background: #fff; color: var(--sg-azul); border: 1.5px dashed var(--sg-medio); }
+.me-fila-cuerpo .me-fila-otro-mes { color: var(--sg-azul); font-weight: 700; font-size: 0.86rem; }
+
+/* De 721 a 860 px (el modal angosto de una ventana chica), para que la fila siga en una línea sin desplazar de costado: las columnas
+   ceden un poco más, el texto del tilde va en dos renglones («Sumar a» / «diciembre», sin agrandar la fila: los campos son más
+   altos) y «→ enero» queda solo para el lector de pantalla (al lado, la pastilla punteada y el tilde tildado ya lo dicen) */
+@media (min-width: 721px) and (max-width: 860px) {
+    .mp-dia, .mp-columnas { grid-template-columns: minmax(104px, 176px) minmax(92px, 118px) minmax(92px, 118px) minmax(64px, 1fr) auto minmax(5.6rem, auto); column-gap: 8px; }
+    .mp-anterior { white-space: normal; max-width: 6.4rem; line-height: 1.2; }
+    .mp-horas small.mp-va-a { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+}
+
+/* En el teléfono (720 px o menos; la tarjeta del día de la página real): el tilde abajo a la izquierda, debajo de la entrada, y «Nota»
+   a su lado, debajo de la salida; de 44 px de alto para el dedo */
+@media (max-width: 720px) {
+    .mp-dia { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'fecha horas' 'entrada salida' 'anterior acciones'; }
+    .mp-anterior { grid-area: anterior; min-height: 44px; justify-self: start; white-space: normal; }
+    .mp-acciones { min-width: 0; }
+    .mp-dia.de-otro-mes { border-color: var(--sg-linea); }
+    .mp-dia.de-otro-mes .mp-acciones { grid-column: 1 / -1; }
+}
+
+/* En alto contraste, la pastilla punteada conserva su borde */
+@media (forced-colors: active) {
+    .mp-horas b.otro-mes, .me-dia-horas.otro-mes { border-color: CanvasText; }
+}

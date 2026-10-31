@@ -1,0 +1,816 @@
+/* MAQUETA (30/10/2026): el <style> de public/mi-espacio.html tal como está hoy en la rama (copiado sin cambios, de la línea
+   siguiente a <style> a la anterior a </style>). Lo nuevo de la propuesta va aparte, en propuesta.css. Datos inventados. */
+        /* Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 8): los tokens y las piezas del Seguimiento y de Proyectos, con
+           los tres fondos que faltaban (ámbar, gris y violeta), desde el Resumen «Titular», el azul medio de la regla y, desde el evento
+           Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 5.1), el rosado de un Público de otra persona: el texto,
+           #8A3B5C, da 6,00:1 sobre su fondo y 7,34:1 sobre blanco, y el borde, #B5577F, 3,70:1 contra su fondo y 4,53:1 contra blanco */
+        :root {
+            --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA;
+            --sg-borde-control: #76879F; --sg-cielo: #DCEEF5;
+            --sg-sol: #FCE8A8; --sg-sol-borde: #E3B63C; --sg-ambar: #7A5200; --sg-ambar-fondo: #FFF4D6;
+            --sg-verde: #2E6B4C; --sg-verde-fondo: #DDF1E6;
+            --sg-azul: #24507A; --sg-azul-fondo: #DCEAF7;
+            --sg-rojo: #8A3434; --sg-rojo-fondo: #F8E1E1;
+            --sg-violeta: #5B4691; --sg-violeta-fondo: #ECE7F6;
+            --sg-gris: #8A97A8; --sg-gris-fondo: #EEF1F5;
+            --sg-medio: #4C7AB0;
+            --sg-rosado: #8A3B5C; --sg-rosado-fondo: #F7E3EC; --sg-rosado-borde: #B5577F;
+        }
+
+        /* Lo oculto con el atributo hidden no vuelve por una regla de display más específica */
+        [hidden] { display: none !important; }
+        .visualmente-oculto { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+        .main-content { min-width: 0; background: var(--gray-100); }
+        .me-pagina { width: 100%; max-width: 1180px; margin: 0 auto; }
+        .me-bajada { margin: -14px 0 20px; color: var(--sg-suave); max-width: 76ch; line-height: 1.5; }
+        .me-acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+        /* Botones */
+        .sg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 999px; font: inherit; font-weight: 600; font-size: 0.9rem; border: 1px solid transparent; white-space: nowrap; cursor: pointer; text-decoration: none; }
+        .sg-btn svg { flex: none; }
+        .sg-btn-tinta { background: var(--sg-tinta); color: #fff; }
+        .sg-btn-borde { background: #fff; color: var(--sg-tinta); border-color: var(--sg-borde-control); }
+        .sg-btn-chico { height: 34px; padding: 0 14px; font-size: 0.86rem; }
+        .sg-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+        /* Deshabilitado mientras trabaja («Word» de una licencia, mientras baja): el cursor de espera, el subrayado punteado y el gris
+           de los textos secundarios, que sigue en 5,8:1 sobre blanco */
+        .sg-link:disabled { color: var(--sg-suave); cursor: progress; text-decoration-style: dotted; }
+
+        /* Pestañas (las de Proyectos), con la marca ámbar del Resumen cuando algo vence pronto */
+        .me-pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--sg-linea); margin-bottom: 18px; overflow-x: auto; scrollbar-width: none; }
+        .me-pestana { padding: 10px 18px; background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; font: inherit; font-weight: 600; color: var(--sg-suave); cursor: pointer; white-space: nowrap; }
+        .me-pestana:hover { color: var(--sg-tinta); }
+        .me-pestana[aria-selected="true"] { color: var(--sg-tinta); border-bottom-color: var(--sg-tinta); }
+        .me-pestana .me-marca { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #C98A00; margin-left: 6px; vertical-align: middle; }
+
+        /* Estados de una pestaña: cargando y sin JavaScript */
+        .me-estado { margin: 0; background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 28px 24px; color: var(--sg-suave); }
+
+        /* Tarjetas */
+        .me-tarjeta { background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 20px 24px; }
+        .me-tarjeta + .me-tarjeta { margin-top: 16px; }
+        .me-tarjeta h2, .me-tarjeta h3 { margin: 0; font-family: var(--f-titulo); font-weight: 650; letter-spacing: -0.01em; font-size: 1.12rem; color: var(--sg-tinta); }
+        .me-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 14px; }
+        .me-cabeza > span, .me-nota { color: var(--sg-suave); font-size: 0.88rem; }
+        .me-nota { margin: 12px 0 0; line-height: 1.5; }
+        .me-vacio { margin: 4px 0 0; color: var(--sg-suave); }
+
+        /* Avisos */
+        .me-aviso { display: flex; gap: 12px 16px; align-items: center; flex-wrap: wrap; padding: 12px 16px; border-radius: 12px; margin: 0 0 16px; font-size: 0.92rem; line-height: 1.45; border: 1px solid; }
+        .me-aviso p { margin: 0; }
+        .me-aviso-gris { background: var(--sg-sutil); border-color: var(--sg-linea); color: var(--sg-texto); }
+        .me-aviso-azul { background: #EEF5FC; border-color: #C9DCEF; color: var(--sg-azul); }
+        .me-aviso-error { background: #FBEEEE; border-color: #EFCACA; color: var(--sg-rojo); }
+
+        /* Insignias */
+        .me-insignia { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+        .me-insignia.azul { background: var(--sg-azul-fondo); color: var(--sg-azul); }
+        .me-insignia.verde { background: var(--sg-verde-fondo); color: var(--sg-verde); }
+        .me-insignia.ambar { background: var(--sg-ambar-fondo); color: var(--sg-ambar); }
+        .me-insignia.violeta { background: var(--sg-violeta-fondo); color: var(--sg-violeta); }
+        .me-insignia.rosado { background: var(--sg-rosado-fondo); color: var(--sg-rosado); }
+        .me-insignia.gris { background: var(--sg-gris-fondo); color: var(--sg-suave); }
+        .me-insignia.rojo { background: var(--sg-rojo-fondo); color: var(--sg-rojo); }
+        .me-insignia.borde { background: #fff; border: 1px solid var(--sg-linea); color: var(--sg-suave); font-weight: 500; }
+
+        /* Chips de filtro, con su cantidad */
+        .sg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+        .sg-chip { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--sg-borde-control); background: #fff; font: inherit; font-size: 0.86rem; font-weight: 500; color: var(--sg-texto); cursor: pointer; white-space: nowrap; }
+        .sg-chip[aria-pressed="true"] { background: var(--sg-tinta); border-color: var(--sg-tinta); color: #fff; }
+        .sg-chip b { font-variant-numeric: tabular-nums; }
+
+        /* El selector del año */
+        .me-segmento { display: inline-flex; border: 1px solid var(--sg-borde-control); border-radius: 999px; padding: 3px; background: #fff; }
+        .me-segmento button { white-space: nowrap; height: 30px; padding: 0 14px; border-radius: 999px; border: 0; background: none; font: inherit; font-size: 0.86rem; font-weight: 600; color: var(--sg-suave); cursor: pointer; font-variant-numeric: tabular-nums; }
+        .me-segmento button[aria-pressed="true"] { background: var(--sg-tinta); color: #fff; }
+        /* Las licencias de otros años que la lista no tiene (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3), debajo de la cabeza,
+           con «Ver 2027» como los links de la página */
+        .me-otros-anios { margin: 0 0 12px; color: var(--sg-texto); font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .me-otros-anios button { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+        /* Listas (filas): la fecha, el cuerpo y «Editar». En gris, lo que no cuenta */
+        .me-lista { list-style: none; margin: 0; padding: 0; }
+        .me-fila { display: grid; grid-template-columns: 190px minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; padding: 12px 0; border-top: 1px solid var(--sg-linea); }
+        .me-fila:first-child { border-top: 0; padding-top: 2px; }
+        .me-fila.me-fila-dos { grid-template-columns: 190px minmax(0, 1fr); }
+        .me-fila-fecha { font-weight: 600; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+        .me-fila-fecha small { display: block; font-weight: 400; color: var(--sg-suave); font-size: 0.82rem; }
+        /* Una nota o un motivo largo sin espacios se corta: no ensancha la fila */
+        .me-fila-cuerpo { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; min-width: 0; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .me-fila-cuerpo .me-detalle { color: var(--sg-suave); font-size: 0.88rem; }
+        .me-fila-cuerpo .me-detalle-aviso { color: var(--sg-ambar); font-weight: 600; }
+        .me-fila-cuerpo .me-fila-nota { font-style: italic; }
+        .me-fila.tenue .me-fila-fecha, .me-fila.tenue .me-fila-cuerpo { color: var(--sg-suave); }
+        /* «Word» y «Editar» de una licencia, juntos a la derecha de la fila (en el teléfono, arriba a la derecha, donde iba «Editar») */
+        .me-fila-acciones { display: flex; gap: 18px; align-items: center; justify-content: flex-end; white-space: nowrap; }
+
+        /* Tablas de horas extras: cada mes es un botón que elige el día por día */
+        .me-tabla-marco { overflow-x: auto; }
+        .me-tabla { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+        .me-tabla th { text-align: left; font-size: 0.8rem; font-weight: 600; color: var(--sg-suave); padding: 0 12px 10px 0; border-bottom: 1px solid var(--sg-linea); white-space: nowrap; }
+        .me-tabla td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--sg-linea); vertical-align: top; color: var(--sg-texto); }
+        .me-tabla tr:last-child td { border-bottom: 0; }
+        .me-tabla td small { display: block; color: var(--sg-suave); font-size: 0.82rem; margin-top: 2px; }
+        .me-tabla .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .me-tabla .me-insignia { white-space: normal; }
+        .me-tabla tr.tenue td { color: var(--sg-suave); }
+        .me-mes-boton { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; white-space: nowrap; }
+        .me-mes-boton[aria-pressed="true"] { text-decoration: none; border-bottom: 3px solid var(--sg-tinta); }
+        .me-tabla tr.tenue .me-mes-boton { color: var(--sg-suave); }
+        .me-uso { display: flex; gap: 8px 16px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+        .me-uso .me-nota { margin: 0; }
+
+        /* El Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen, 2; la opción 2 de la maqueta, con sus clases pasadas a .me-*): los
+           faltantes, la banda (la frase, «Vence pronto» y la regla), «El resto de 2026» y «Hoy y mañana» en columnas. El
+           sol marca solo lo que vence */
+        .me-aviso-ambar { background: var(--sg-ambar-fondo); border-color: #F0D78C; color: var(--sg-ambar); }
+        .me-faltantes { margin: 0; padding-left: 18px; }
+        /* Lo que hay que revisar va con los faltantes, con su link a Licencias de su año (spec 2026-10-28-mi-espacio-licencia-anulada,
+           2.2), como los demás links de la página */
+        .me-faltantes a { color: var(--sg-tinta); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+
+        /* La banda: el celeste de las páginas públicas, con las esquinas de arriba redondeadas y, abajo, la ola en el mismo celeste, que
+           cae sobre el fondo de la página. En la compu, la frase con la regla debajo y, a la derecha, «Vence pronto»; sin nada que venza,
+           la frase y la regla a todo el ancho */
+        .me-banda { position: relative; background: var(--sg-cielo); border-radius: 28px 28px 0 0; margin: 0 0 30px; }
+        .me-banda-cuerpo { --me-ancho-vence: 340px; display: grid; grid-template-columns: minmax(0, 1fr) var(--me-ancho-vence); grid-template-areas: 'frase vence' 'regla vence'; gap: 0 40px; padding: 30px 34px 18px; align-items: start; }
+        .me-banda-cuerpo.sin-vence { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'frase' 'regla'; }
+        .me-titular { grid-area: frase; min-width: 0; }
+        .me-vence { grid-area: vence; min-width: 0; }
+        .me-regla { grid-area: regla; min-width: 0; margin: 26px 0 0; }
+        .me-ola { position: absolute; left: 0; right: 0; bottom: -27px; width: 100%; height: 28px; color: var(--sg-cielo); display: block; pointer-events: none; }
+        /* En alto contraste, la ola (fill="currentColor") saldría como una franja del color del texto: es solo un adorno */
+        @media (forced-colors: active) { .me-ola { display: none; } }
+
+        /* La frase: el día y la modalidad, el título de la pestaña en grande (el número más grueso, no de otro color) y la bajada, con
+           lo que vence en ámbar. El número mide desde el primer cuadro lo que el valor final: una copia invisible del final y el que
+           sube (los dos aria-hidden) van en la misma celda, el que sube a la derecha; así no queda un hueco antes de un final de una
+           cifra ni el ancho salta de 9 a 10 a mitad del conteo (el título no se vuelve a partir). El oculto a la vista (.visualmente-
+           oculto, absoluto) no ocupa lugar */
+        .me-banda-dia { margin: 0 0 6px; color: var(--sg-azul); font-size: 0.92rem; font-weight: 600; }
+        .me-frase { margin: 0; font-family: var(--f-titulo); font-weight: 750; font-size: clamp(2rem, 4.4vw, 3.4rem); line-height: 1.02; letter-spacing: -0.035em; color: var(--sg-tinta); text-wrap: balance; overflow-wrap: anywhere; }
+        .me-cifra { display: inline-grid; justify-items: end; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .me-cifra-final, .me-cifra [data-contar] { grid-area: 1 / 1; }
+        .me-cifra-final { visibility: hidden; }
+        .me-frase-bajada { margin: 12px 0 0; font-size: 1.05rem; line-height: 1.5; color: var(--sg-texto); max-width: 52ch; overflow-wrap: anywhere; }
+        .me-frase-bajada b { font-weight: 700; }
+        .me-frase-bajada .vence { color: var(--sg-ambar); }
+        /* La oración de lo cargado lleva a Licencias de su año (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3): con el color de la
+           frase, subrayada */
+        .me-frase-link { color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; }
+        .me-frase-link:hover { text-decoration-thickness: 2px; }
+
+        /* La regla: la barra (decorativa) partida en un tramo por capa, cada uno con un casillero por día (--n, que escribe
+           mi-espacio.js: una línea blanca entre día y día) y su número, si entra; debajo, la lista de cada licencia. Los colores: la
+           licencia que vence en el sol, las otras en tinta y en azul medio, lo cargado a futuro rayado y lo que todavía no se habilita,
+           punteado sobre blanco translúcido. El margen de un tramo se achica con su columna (un tramo de 1 día entre 40 no se sale de
+           la suya) */
+        .me-barra { display: grid; column-gap: 4px; height: 46px; }
+        .me-tramo { container-type: inline-size; position: relative; border-radius: 10px; transform-origin: 0 50%; display: flex; align-items: center; padding: 0 min(10px, 20%); font-family: var(--f-titulo); font-weight: 800; font-size: 1.2rem; font-variant-numeric: tabular-nums; overflow: hidden;
+            background-image: repeating-linear-gradient(90deg, transparent 0 calc(100% / max(var(--n), 1) - 1.5px), rgba(255, 255, 255, 0.4) calc(100% / max(var(--n), 1) - 1.5px) calc(100% / max(var(--n), 1))); }
+        .me-tramo.vence { background-color: var(--sg-sol-borde); color: var(--sg-tinta); }
+        .me-tramo.tinta { background-color: var(--sg-tinta); color: #fff; }
+        .me-tramo.medio { background-color: var(--sg-medio); color: #fff; }
+        .me-tramo.cargadas { background-color: #fff; color: var(--sg-tinta); background-image: repeating-linear-gradient(135deg, rgba(26, 54, 93, 0.85) 0 3px, transparent 3px 7px); box-shadow: inset 0 0 0 2px var(--sg-tinta); }
+        .me-tramo.cargadas span { background: #fff; border-radius: 6px; padding: 0 5px; }
+        .me-tramo.por_habilitar { background-color: rgba(255, 255, 255, 0.55); color: var(--sg-suave); box-shadow: inset 0 0 0 2px #8FA3BA; background-image: repeating-linear-gradient(90deg, transparent 0 calc(100% / max(var(--n), 1) - 1.5px), rgba(143, 163, 186, 0.55) calc(100% / max(var(--n), 1) - 1.5px) calc(100% / max(var(--n), 1))); }
+        /* Un tramo angosto no muestra su número (está en la lista de debajo) */
+        @container (max-width: 26px) { .me-tramo > span { visibility: hidden; } }
+        /* …salvo el de un solo día (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9: un 1 que se pierde parece un error): sin
+           margen y centrado, lo muestra siempre, en la letra de siempre si entra y, si no, más chica (150cqw: una vez y media el ancho
+           del tramo, para una sola cifra); en lo cargado, su fondo blanco casi sin margen */
+        .me-tramo.un-dia { padding: 0; justify-content: center; }
+        .me-tramo.un-dia > span { visibility: visible; font-size: clamp(0.55rem, 150cqw, 1.2rem); }
+        .me-tramo.cargadas.un-dia span { padding: 0 1px; }
+        .me-regla-lista { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 26px; }
+        .me-regla-lista li { display: flex; gap: 9px; min-width: 0; font-size: 0.8rem; line-height: 1.3; color: var(--sg-suave); overflow-wrap: anywhere; }
+        .me-regla-lista li b { display: block; font-size: 0.88rem; color: var(--sg-texto); }
+        .me-regla-lista li.vence, .me-regla-lista li.vence b { color: var(--sg-ambar); }
+        .me-muestra { display: inline-block; width: 14px; height: 14px; border-radius: 4px; flex: none; margin-top: 2px; box-sizing: border-box; }
+        .me-muestra.vence { background: var(--sg-sol-borde); }
+        .me-muestra.tinta { background: var(--sg-tinta); }
+        .me-muestra.medio { background: var(--sg-medio); }
+        .me-muestra.cargadas { background: repeating-linear-gradient(135deg, var(--sg-tinta) 0 2px, #fff 2px 5px); box-shadow: inset 0 0 0 1.5px var(--sg-tinta); }
+        .me-muestra.por_habilitar { background: #fff; box-shadow: inset 0 0 0 2px #8FA3BA; }
+
+        /* Vence pronto: entradas amarillas con el talón de la fecha (decorativo), separado por una línea de puntos y con dos muescas
+           (un navegador que no dibuja la máscara deja la entrada sin muescas); a la derecha, el título, su línea y el botón */
+        .me-vence h2 { margin: 0 0 12px; font-family: var(--f-titulo); font-weight: 700; font-size: 1.12rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+        .me-entradas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+        .me-entrada { --muesca: 9px; position: relative; display: grid; grid-template-columns: 72px minmax(0, 1fr); background: var(--sg-sol); border-radius: 16px; color: var(--sg-ambar);
+            -webkit-mask: radial-gradient(circle var(--muesca) at 72px 0, #0000 98%, #000) top / 100% 51% no-repeat, radial-gradient(circle var(--muesca) at 72px 100%, #0000 98%, #000) bottom / 100% 51% no-repeat;
+            mask: radial-gradient(circle var(--muesca) at 72px 0, #0000 98%, #000) top / 100% 51% no-repeat, radial-gradient(circle var(--muesca) at 72px 100%, #0000 98%, #000) bottom / 100% 51% no-repeat; }
+        .me-talon { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 0; border-right: 2px dashed rgba(122, 82, 0, 0.35); font-size: 0.8rem; font-weight: 700; line-height: 1.1; }
+        .me-talon b { font-family: var(--f-titulo); font-size: 1.9rem; font-weight: 800; letter-spacing: -0.04em; color: var(--sg-tinta); }
+        .me-entrada-cuerpo { padding: 12px 14px 14px 16px; display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+        .me-entrada-cuerpo b { font-size: 1rem; color: var(--sg-tinta); line-height: 1.3; }
+        .me-entrada-texto { font-size: 0.9rem; font-weight: 600; color: var(--sg-ambar); line-height: 1.35; }
+        .me-entrada-cuerpo .sg-btn { align-self: flex-start; margin-top: 8px; background: #fff; border-color: rgba(122, 82, 0, 0.45); color: var(--sg-tinta); }
+        /* El franco o las horas a favor sin ningún día libre en su mes: sin el botón, con por qué (spec
+           2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7) */
+        .me-entrada-sin-dias { margin: 6px 0 0; font-size: 0.85rem; line-height: 1.35; color: var(--sg-ambar); }
+
+        /* El resto de 2026: sin tarjeta, sobre el fondo de la página. La cabeza; los números en una sola fila (uno por columna, sin
+           pasar a otra fila: así la línea vertical que los separa nunca queda al principio de una; de 760 px para abajo, de a dos por
+           fila, más abajo), cada uno un link a su pestaña con su línea, que se llena en la proporción valor / total (--p, que escribe
+           mi-espacio.js); el que vence, en ámbar; los meses y la médica extraordinaria. (.me-numeros y .me-numero también son los días
+           de vacaciones de «Mis vacaciones y saldos», en el modal: cada una va con lo que la contiene) */
+        .me-resto-cabeza { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: baseline; margin: 0 0 6px; padding: 0 4px; }
+        .me-resto h2, .me-hoy h2 { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.12rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+        .me-resto-al { color: var(--sg-suave); font-size: 0.88rem; display: flex; gap: 4px 16px; flex-wrap: wrap; align-items: baseline; }
+        .me-resto-al .sg-link { font-size: 0.88rem; }
+        .me-resto .me-numeros { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 16px 0; }
+        .me-resto .me-numeros li + li { border-left: 1px solid var(--sg-linea); }
+        .me-resto .me-numero { display: flex; flex-direction: column; gap: 3px; padding: 4px 22px 6px; margin: 0 6px; border-radius: 14px; color: inherit; text-decoration: none; min-width: 0; }
+        .me-resto .me-numeros li:first-child .me-numero { padding-left: 4px; margin-left: 0; }
+        .me-resto .me-numero:hover .nombre { text-decoration: underline; text-underline-offset: 3px; }
+        .me-resto .me-numero .grande { font-family: var(--f-titulo); font-weight: 800; font-size: 2.6rem; letter-spacing: -0.045em; line-height: 1; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
+        .me-resto .me-numero .grande small { font-family: var(--f-texto); font-size: 0.9rem; font-weight: 600; letter-spacing: 0; color: var(--sg-suave); margin-left: 5px; }
+        .me-resto .me-numero .nombre { font-weight: 700; color: var(--sg-texto); font-size: 0.95rem; margin-top: 4px; overflow-wrap: anywhere; }
+        .me-resto .me-numero .de { font-size: 0.82rem; color: var(--sg-suave); overflow-wrap: anywhere; }
+        .me-resto .me-numero.vence .grande, .me-resto .me-numero.vence .nombre { color: var(--sg-ambar); }
+        .me-linea { position: relative; height: 6px; border-radius: 999px; background: #DFE6EE; margin-top: 10px; overflow: hidden; }
+        .me-linea i { position: absolute; inset: 0 auto 0 0; width: var(--p); border-radius: 999px; background: var(--sg-tinta); transform-origin: 0 50%; }
+        .me-resto .me-numero.vence .me-linea i { background: var(--sg-sol-borde); }
+        /* Debajo del número de las franquicias, las horas que se pierden (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), en
+           ámbar, fuera del link y alineadas con él (su margen y su relleno, también de 760 px para abajo) */
+        .me-resto .me-perdidas { margin: 6px 6px 0; padding: 0 22px; font-size: 0.82rem; font-weight: 600; line-height: 1.35; color: var(--sg-ambar); overflow-wrap: anywhere; }
+        .me-resto .me-numeros li:first-child .me-perdidas { padding-left: 4px; margin-left: 0; }
+        .me-meses { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 16px 0 0; padding: 0 4px; font-size: 0.9rem; color: var(--sg-texto); }
+        .me-meses > b { font-weight: 700; margin-right: 4px; }
+        .me-meses .me-mes { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; max-width: 100%; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--sg-linea); background: #fff; font-size: 0.86rem; overflow-wrap: anywhere; }
+        .me-meses .me-mes strong { font-family: var(--f-titulo); font-size: 1.05rem; color: var(--sg-tinta); }
+        .me-meses .me-mes span { color: var(--sg-suave); }
+        .me-meses .me-mes.vence { background: var(--sg-sol); border-color: var(--sg-sol-borde); }
+        .me-meses .me-mes.vence span { color: var(--sg-ambar); }
+        .me-meses .me-mes.pendiente { border-style: dashed; border-color: #9AA8BA; }
+        .me-meses .me-mes.previo { background: var(--sg-gris-fondo); }
+        .me-meses .me-mes.previo strong { color: var(--sg-suave); }
+        .me-extra { margin: 10px 0 0; padding: 0 4px; font-size: 0.82rem; color: var(--sg-suave); overflow-wrap: anywhere; }
+
+        /* El movimiento (spec 2026-10-27-mi-espacio-resumen, 3), una sola vez por carga de la página: mi-espacio.js le pone
+           data-animar a #vista-resumen la primera vez que se ve la banda y se lo saca dos cuadros después. Con data-animar, los tramos
+           de la regla, sus números y las líneas del resto, vacíos y sin transición (si ya se habían dibujado llenos, se vacían de
+           golpe); al sacarlo se llenan de izquierda a derecha, cada uno con su --demora y su --duracion (las del style que escribe
+           mi-espacio.js): los tramos, uno detrás del otro; el número de cada tramo, cuando su tramo casi terminó; las líneas, de 700
+           ms (DURACION_DE_LA_LINEA de mi-espacio.js) y con la curva con la que sube su número (1 − (1 − x)³ en contarHasta: suben
+           juntos). Los números que suben los cuenta mi-espacio.js. Con prefers-reduced-motion, nada se mueve: todo está lleno desde el
+           principio, también con data-animar */
+        .me-tramo { transition: transform var(--duracion) cubic-bezier(0.4, 0, 0.3, 1) var(--demora); }
+        .me-tramo > span { transition: opacity 200ms ease calc(var(--demora) + var(--duracion) * 0.7); }
+        .me-linea i { transition: transform 700ms cubic-bezier(0.33, 1, 0.68, 1) var(--demora); }
+        #vista-resumen[data-animar] .me-tramo, #vista-resumen[data-animar] .me-linea i { transform: scaleX(0); transition: none; }
+        #vista-resumen[data-animar] .me-tramo > span { opacity: 0; transition: none; }
+        @media (prefers-reduced-motion: reduce) {
+            .me-tramo, .me-tramo > span, .me-linea i, #vista-resumen[data-animar] .me-tramo, #vista-resumen[data-animar] .me-tramo > span,
+            #vista-resumen[data-animar] .me-linea i { transition: none; transform: none; opacity: 1; }
+        }
+
+        /* Hoy y mañana: al final, después de una línea, en columnas separadas por una línea vertical y sin tarjetas (Hoy, Mañana y
+           Próximo feriado; una vacía no va), en una sola fila (la línea nunca queda al principio de una). De 760 px para abajo, una
+           debajo de la otra, sin la línea */
+        .me-hoy { margin: 28px 0 0; padding: 22px 4px 0; border-top: 1px solid var(--sg-linea); }
+        .me-hoy > .me-vacio { margin: 10px 0 0; font-size: 0.92rem; }
+        .me-hoy > .sg-link { display: inline-block; margin-top: 10px; font-size: 0.86rem; }
+        .me-columnas { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 18px 0; margin-top: 14px; }
+        .me-columna { padding: 0 22px; border-left: 1px solid var(--sg-linea); min-width: 0; }
+        .me-columna:first-child { padding-left: 0; border-left: 0; }
+        .me-columna h3 { margin: 0 0 10px; font-size: 0.86rem; font-weight: 700; letter-spacing: 0; color: var(--sg-suave); }
+        .me-columna ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+        .me-columna li { font-size: 0.92rem; line-height: 1.35; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .me-columna li small { display: block; color: var(--sg-suave); font-size: 0.8rem; }
+        .me-columna time { font-weight: 700; font-variant-numeric: tabular-nums; margin-right: 2px; color: var(--sg-tinta); }
+        .me-columna .ausente::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #9AA8BA; margin-right: 8px; vertical-align: 1px; }
+        .me-columna .sg-link { display: inline-block; margin-top: 10px; font-size: 0.86rem; }
+
+        /* La agenda (spec 2026-10-26-mi-espacio-agenda, 6; con más onda desde la spec 2026-10-28-mi-espacio-agenda-onda, 3 y 6, y la
+           maqueta aprobada): arriba, la banda del mes; debajo, el mes y, al costado, los próximos. Los colores: lo tuyo en tinta, lo
+           compartido en violeta, tus licencias y francos en verde, los feriados en el sol y los compañeros en la pizarra (gris oscura
+           con letra blanca: la eligió el usuario, la gris clara «se pierde»). La regla del Resumen tiene sus propias clases (.me-barra
+           y .me-muestra): las barras de la agenda son .me-tira y la muestra de la leyenda, .me-color */
+        .me-mes-y-proximos { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+        .me-mes-y-proximos > .me-tarjeta + .me-tarjeta { margin-top: 0; }
+        .me-tarjeta-del-mes { padding: 14px 16px 18px; }
+        .me-flecha { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 1px solid var(--sg-borde-control); background: #fff; color: var(--sg-tinta); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+
+        /* La banda del mes (spec 3.1): el celeste de la banda del Resumen (.me-banda, que no cambia), con las esquinas de arriba
+           redondeadas y la misma ola abajo (.me-ola). El mes en grande con ‹ › a su derecha (el título cambia de ancho de un mes a
+           otro y las flechas no saltan), a la derecha «Sábado y domingo», «Hoy» y «Nuevo evento» y, debajo del mes, la frase */
+        .me-banda-del-mes { position: relative; background: var(--sg-cielo); border-radius: 28px 28px 0 0; margin: 0 0 34px; }
+        .me-banda-del-mes-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'mes acciones' 'frase acciones'; align-items: center; gap: 4px 24px; padding: 24px 30px 14px; }
+        .me-titulo-del-mes { grid-area: mes; display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .me-titulo-del-mes h2 { margin: 0 10px 0 0; min-width: 0; font-family: var(--f-titulo); font-weight: 750; font-size: clamp(1.9rem, 3.4vw, 2.75rem); line-height: 1.02; letter-spacing: -0.035em; color: var(--sg-tinta); overflow-wrap: anywhere; }
+        .me-titulo-del-mes .me-flecha { flex: none; }
+        .me-acciones-del-mes { grid-area: acciones; display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+        .me-frase-del-mes { grid-area: frase; margin: 0; font-size: 1.05rem; line-height: 1.45; color: var(--sg-texto); max-width: 60ch; overflow-wrap: anywhere; }
+        /* «Sábado y domingo» (spec 3.2): una llave (aria-pressed: la mueve el atributo) y, con la llave apagada, lo que quedó
+           escondido el fin de semana en el sol (hidden mientras no hay nada) */
+        .me-finde { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 9px; border-radius: 999px; border: 1px solid var(--sg-borde-control); background: #fff; color: var(--sg-tinta); font: inherit; font-weight: 600; font-size: 0.86rem; cursor: pointer; white-space: nowrap; }
+        .me-finde-llave { position: relative; flex: none; width: 28px; height: 16px; border-radius: 999px; background: var(--sg-gris-fondo); box-shadow: inset 0 0 0 1px var(--sg-borde-control); transition: background-color 0.15s; }
+        .me-finde-llave::after { content: ''; position: absolute; top: 3px; left: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--sg-borde-control); transition: transform 0.15s; }
+        .me-finde[aria-pressed="true"] .me-finde-llave { background: var(--sg-tinta); box-shadow: none; }
+        .me-finde[aria-pressed="true"] .me-finde-llave::after { transform: translateX(12px); background: #fff; }
+        .me-finde-cuenta { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--sg-sol); color: var(--sg-ambar); font-size: 0.76rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+        /* El mes (spec 3.3): una tabla de lunes a viernes (o a domingo) con filas de 122 px o más, sin los bordes de afuera; la cabeza,
+           el día corto (el de hoy, en tinta y negrita). Cada día: su número (un botón: en la compu, «Nuevo evento» ese día; en el
+           teléfono, lo elige), sus pedazos de barra y lo suyo. Hoy, toda la celda en el celeste y el número en un círculo tinta; los
+           días del mes que ya pasaron, el número en el gris de los secundarios y lo de adentro un poco desaturado (sus textos siguen
+           con 4,5:1); los de otro mes, en el gris sutil; los feriados, en el ámbar claro, y sábado y domingo, apenas más gris que el
+           blanco. Con el mouse encima de un día (o con el foco en su número), el «+» de «Nuevo evento» arriba a la derecha: una pista,
+           no un control aparte (el control es el número). La tabla aísla las capas de sus barras. (.me-mes y .me-resto también son del
+           Resumen «Titular»: los meses de los francos y «El resto de 2026». Acá van con lo que los contiene: la tabla del mes y la
+           celda de un día) */
+        table.me-mes { width: 100%; table-layout: fixed; border-collapse: collapse; isolation: isolate; }
+        .me-mes th { padding: 2px 8px 8px; border: 0; background: none; font-size: 0.78rem; font-weight: 600; color: var(--sg-suave); text-align: left; }
+        .me-mes th.hoy { color: var(--sg-tinta); font-weight: 700; }
+        .me-celda { height: 122px; padding: 4px 5px 6px; border: 1px solid var(--sg-linea); vertical-align: top; background: #fff; cursor: pointer; }
+        .me-celda:first-child { border-left: 0; }
+        .me-celda:last-child { border-right: 0; }
+        .me-celda-cuerpo { position: relative; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .me-cosas, .me-celda .me-resto { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .me-celda.otro-mes { background: var(--sg-sutil); }
+        .me-celda.finde { background: #F7F9FB; }
+        .me-celda.feriado { background: #FFFBEB; }
+        .me-celda.hoy { background: var(--sg-cielo); }
+        .me-num { align-self: flex-start; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 5px; border: 0; border-radius: 999px; background: none; font-family: var(--f-titulo); font-weight: 700; font-size: 0.92rem; line-height: 1; color: var(--sg-texto); font-variant-numeric: tabular-nums; cursor: pointer; }
+        .me-celda.otro-mes .me-num { color: var(--sg-suave); font-weight: 600; }
+        .me-celda.paso .me-num { color: var(--sg-suave); font-weight: 600; }
+        .me-celda.paso .me-cosas { filter: saturate(0.55); }
+        .me-celda.hoy .me-num { background: var(--sg-tinta); color: #fff; }
+        .me-num:focus-visible { z-index: 3; }
+        .me-num::after { content: ''; position: absolute; top: 0; right: 0; width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(#fff, #fff) center / 10px 2px no-repeat, linear-gradient(#fff, #fff) center / 2px 10px no-repeat, var(--sg-tinta); opacity: 0; transition: opacity 0.12s; pointer-events: none; }
+        .me-celda:hover .me-num::after, .me-num:focus-visible::after { opacity: 1; }
+
+        /* Las barras (spec 3.4 y 6): encima de lo de cada día, hasta dos carriles de 22 px (tus licencias y, en el siguiente, los
+           compañeros). Cada día lleva su pedazo de cada carril (.me-tira; .vacia, el lugar vacío de un carril), que cruza el relleno y
+           el borde de la celda (-6 px: los 5 del relleno y el borde) para que la barra siga de un día al otro. La punta de un tramo
+           (.inicio y .fin), redondeada y con 3 px de aire; la que sigue en la semana de al lado (.sigue-antes y .sigue-despues), recta
+           y, en una licencia, sin el borde de color. El texto va una vez, en el pedazo de .inicio, a lo ancho de todo el tramo (--n,
+           sus días, que escribe mi-espacio.js; la cuenta deja afuera el relleno, el ícono y las puntas), en una línea con «…» y arriba
+           de los pedazos que siguen; en los demás va oculto a la vista: el lector de pantalla lo lee en cada día. El carril tiene una
+           sola columna del ancho del día (minmax(0, 1fr)) y la barra puede achicarse (min-width: 0): si no, el navegador mide la
+           columna con el ancho natural del texto (nowrap) y no con su calc(), y la barra se pinta sobre los días que siguen. El texto
+           y el ícono no toman clics (pointer-events: none): el texto se pinta arriba de los pedazos de los días que siguen, y su día
+           es el primero; así, tocar la barra en otro día cae en el pedazo de ese día (con su title) y abre «Nuevo evento» con su fecha */
+        .me-carriles { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: 22px; align-items: center; }
+        .me-tira { position: relative; z-index: 1; display: flex; align-items: center; gap: 4px; min-width: 0; height: 19px; margin: 0 -6px; padding: 0 6px; font-size: 0.74rem; font-weight: 600; line-height: 1; white-space: nowrap; transform-origin: 0 50%; transition: transform 0.5s cubic-bezier(0.22, 0.8, 0.3, 1) var(--demora); }
+        .me-tira.inicio { z-index: 2; margin-left: -2px; border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+        .me-tira.fin { margin-right: -2px; border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+        .me-tira.sigue-antes { margin-left: -6px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+        .me-tira.sigue-despues { margin-right: -6px; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+        .me-tira.licencia { background: var(--sg-verde-fondo); color: var(--sg-verde); }
+        .me-tira.licencia.inicio:not(.sigue-antes) { box-shadow: inset 3px 0 0 var(--sg-verde); }
+        .me-tira.ausente { background: var(--sg-suave); color: #fff; }
+        .me-tira .me-icono { flex: none; margin: 0; pointer-events: none; }
+        .me-tira-texto { flex: none; width: calc(var(--n) * 100% + var(--n) * 11px - 32px); overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+        /* El movimiento (spec 3.7), una sola vez por carga: mi-espacio.js le pone data-animar a #ag-mes la primera vez que el mes se
+           ve y se lo saca dos cuadros después. Con data-animar, las barras sin dibujar y sin transición; al sacarlo se dibujan de
+           izquierda a derecha, cada pedazo con su --demora (la del style que escribe mi-espacio.js), y el texto de cada tramo aparece
+           cuando su tramo casi terminó. Un pedazo sin --demora (el mes que se vuelve a dibujar) no tiene transición. Con
+           prefers-reduced-motion, nada se mueve (más abajo) */
+        .me-tira-texto { transition: opacity 0.2s ease calc(var(--demora) + var(--n) * 0.05s + 0.3s); }
+        #ag-mes[data-animar] .me-tira { transform: scaleX(0); transition: none; }
+        #ag-mes[data-animar] .me-tira-texto { opacity: 0; transition: none; }
+
+        /* Lo de cada día (spec 3.5): los feriados y los eventos, con su ícono, en los renglones que les tocan (data-lineas, que escribe
+           mi-espacio.js: hasta 3 con una cosa, 2 con dos y 1 con tres); lo que no entra se corta con «…» al final de su último
+           renglón (el title lo dice entero). Los puntos (uno por cosa) son del teléfono */
+        .me-ev { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; line-clamp: 1; overflow: hidden; width: 100%; margin: 0; padding: 2px 6px; border: 0; border-left: 3px solid; border-radius: 6px; font: inherit; font-size: 0.74rem; line-height: 1.3; text-align: left; overflow-wrap: anywhere; }
+        .me-ev[data-lineas="2"] { -webkit-line-clamp: 2; line-clamp: 2; }
+        .me-ev[data-lineas="3"] { -webkit-line-clamp: 3; line-clamp: 3; }
+        button.me-ev { cursor: pointer; }
+        button.me-ev:hover { filter: brightness(0.97); }
+        .me-ev b { font-weight: 700; }
+        .me-icono { flex: none; vertical-align: -2px; margin-right: 4px; }
+        .me-ev.propio, .me-leyenda .propio { background: var(--sg-azul-fondo); border-color: var(--sg-tinta); color: var(--sg-tinta); }
+        .me-ev.compartido, .me-leyenda .compartido { background: var(--sg-violeta-fondo); border-color: var(--sg-violeta); color: var(--sg-violeta); }
+        /* Un Personal (Público) de otra persona, en rosado y con el ojo (spec 2026-10-29-mi-espacio-evento-publico, 5.1): su pastilla en
+           el mes (también la de la vista previa del formulario) y su muestra en la leyenda */
+        .me-ev.publico-otro, .me-leyenda .publico-otro { background: var(--sg-rosado-fondo); border-color: var(--sg-rosado-borde); color: var(--sg-rosado); }
+        .me-ev.licencia, .me-leyenda .licencia { background: var(--sg-verde-fondo); border-color: var(--sg-verde); color: var(--sg-verde); }
+        .me-ev.feriado, .me-leyenda .feriado { background: var(--sg-sol); border-color: #C98A00; color: var(--sg-ambar); }
+        .me-ev.ausente, .me-leyenda .ausente { background: var(--sg-gris-fondo); border-color: var(--sg-gris); color: var(--sg-suave); }
+        .me-mas { align-self: flex-start; background: none; border: 0; padding: 0 0 0 6px; font: inherit; font-size: 0.74rem; font-weight: 600; color: var(--sg-suave); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+        .me-puntos { display: none; }
+
+        /* La leyenda (spec 3.6): una muestra de cada color con su ícono (la de los compañeros, la pizarra, como su barra) */
+        .me-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; list-style: none; margin: 14px 0 0; padding: 0; font-size: 0.82rem; color: var(--sg-suave); }
+        .me-leyenda li { display: inline-flex; align-items: center; gap: 6px; }
+        .me-color { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 18px; border-radius: 5px; border-left: 3px solid; }
+        .me-color .me-icono { margin: 0; }
+        .me-leyenda .me-color.ausente { background: var(--sg-suave); border-color: var(--sg-texto); color: #fff; }
+
+        /* El día elegido (spec 3.8): solo en el teléfono (más abajo), debajo de la grilla: la fecha, «Nuevo evento» ese día y lo de
+           ese día en filas de 44 px o más, con letra legible (el ícono, la hora o «Todo el día», el texto y quién está) */
+        .me-elegido { display: none; }
+        .me-elegido-cabeza { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+        .me-elegido-cabeza h3 { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.1rem; color: var(--sg-tinta); }
+        .me-elegido-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+        .me-elegido-cosa { width: 100%; min-height: 44px; display: grid; grid-template-columns: auto 64px minmax(0, 1fr); align-items: center; gap: 4px 8px; padding: 8px 10px; border: 0; border-left: 4px solid; border-radius: 10px; font: inherit; font-size: 0.9rem; text-align: left; }
+        button.me-elegido-cosa { cursor: pointer; }
+        .me-elegido-icono { display: inline-flex; width: 14px; justify-content: center; }
+        .me-elegido-icono .me-icono { margin: 0; }
+        .me-elegido-icono i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+        .me-elegido-hora { font-weight: 700; font-size: 0.84rem; font-variant-numeric: tabular-nums; }
+        .me-elegido-texto { font-weight: 600; overflow-wrap: anywhere; }
+        .me-elegido-texto small { display: block; font-weight: 500; font-size: 0.8rem; }
+        .me-fila-del-dia.propio .me-elegido-cosa { background: var(--sg-azul-fondo); border-color: var(--sg-tinta); color: var(--sg-tinta); }
+        .me-fila-del-dia.compartido .me-elegido-cosa { background: var(--sg-violeta-fondo); border-color: var(--sg-violeta); color: var(--sg-violeta); }
+        .me-fila-del-dia.publico-otro .me-elegido-cosa { background: var(--sg-rosado-fondo); border-color: var(--sg-rosado-borde); color: var(--sg-rosado); }
+        .me-fila-del-dia.licencia .me-elegido-cosa { background: var(--sg-verde-fondo); border-color: var(--sg-verde); color: var(--sg-verde); }
+        .me-fila-del-dia.feriado .me-elegido-cosa { background: var(--sg-sol); border-color: #C98A00; color: var(--sg-ambar); }
+        .me-fila-del-dia.ausente .me-elegido-cosa { background: var(--sg-gris-fondo); border-color: var(--sg-gris); color: var(--sg-suave); }
+
+        /* Con prefers-reduced-motion, nada se mueve: las barras, su texto, el «+» y la llave, sin transición, y quietas aunque
+           tuvieran data-animar */
+        @media (prefers-reduced-motion: reduce) {
+            .me-tira { transition: none; }
+            .me-tira-texto { transition: none; }
+            #ag-mes[data-animar] .me-tira { transform: none; }
+            #ag-mes[data-animar] .me-tira-texto { opacity: 1; }
+            .me-num::after { transition: none; }
+            .me-finde-llave, .me-finde-llave::after { transition: none; }
+        }
+
+        /* Los próximos: un grupo por título (Hoy, Mañana, Esta semana y Más adelante) y, en cada cosa, la hora, el título (con el
+           ícono de cada cosa delante; lo que es solo tuyo, un punto) y el detalle (de un evento, quién está y su aviso) */
+        .me-prox-icono { display: inline-flex; vertical-align: -1px; margin-right: 5px; }
+        .me-prox-icono .me-icono { margin: 0; }
+        .me-prox-icono.propio { color: var(--sg-tinta); }
+        .me-prox-icono.propio i { display: inline-block; width: 8px; height: 8px; margin: 3px 2px 0; border-radius: 50%; background: var(--sg-tinta); }
+        .me-prox-icono.compartido { color: var(--sg-violeta); }
+        .me-prox-icono.publico-otro { color: var(--sg-rosado); }
+        .me-prox-icono.licencia { color: var(--sg-verde); }
+        .me-prox-icono.feriado { color: #9A6A00; }
+        .me-prox-icono.ausente { color: var(--sg-suave); }
+        .me-proximos h3 { margin: 14px 0 6px; font-family: inherit; font-size: 0.78rem; font-weight: 700; letter-spacing: 0; color: var(--sg-suave); }
+        .me-proximos h3:first-child { margin-top: 0; }
+        .me-prox-lista { list-style: none; margin: 0; padding: 0; }
+        .me-prox { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 2px 10px; padding: 8px 0; border-top: 1px solid var(--sg-linea); overflow-wrap: anywhere; }
+        .me-prox:first-child { border-top: 0; }
+        .me-prox-hora { font-weight: 600; font-size: 0.86rem; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+        .me-prox-titulo { font-size: 0.9rem; font-weight: 600; color: var(--sg-texto); }
+        button.me-prox-titulo { background: none; border: 0; padding: 0; font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--sg-texto); text-align: left; cursor: pointer; }
+        .me-prox-detalle { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 0.8rem; color: var(--sg-suave); }
+        /* Un Personal (Público) tuyo: a quiénes se lo mostrás y cómo («Lo ven todos como «Turno médico»»), con el ojo y sin insignia
+           (spec 2026-10-29-mi-espacio-evento-publico, 5.1). El ojo de la insignia del detalle, sin el margen de los del mes */
+        .me-lo-ven { display: inline-flex; align-items: flex-start; gap: 5px; color: var(--sg-tinta); font-weight: 600; line-height: 1.35; }
+        .me-lo-ven .me-icono { margin: 2px 0 0; flex: none; }
+        .me-insignia .me-icono { margin-right: 0; }
+
+        /* Los formularios (maqueta 2): los modales de administración, con el lenguaje del Seguimiento y de Proyectos. Un clic en el
+           velo no los cierra: son formularios largos. El cuerpo se desplaza y el pie (los botones) queda siempre a la vista */
+        .modal.me-modal { max-width: 660px; border-radius: 18px; }
+        .modal.me-modal-chico { max-width: 480px; }
+        .me-modal .modal-header { padding: 18px 24px; }
+        .me-modal .modal-title { margin: 0; min-width: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.25rem; letter-spacing: -0.01em; color: var(--sg-tinta); overflow-wrap: anywhere; }
+        .me-modal .modal-close { color: var(--sg-suave); }
+        .me-modal .modal-body { padding: 18px 24px 4px; }
+        .me-modal .modal-footer { background: #fff; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; }
+        .me-modal .modal-footer .botones { display: flex; gap: 10px; margin-left: auto; }
+        .me-modal .form-group { margin-bottom: 16px; min-width: 0; }
+        .me-modal .form-label { font-weight: 600; color: var(--sg-texto); }
+        .me-modal .form-input, .me-modal .form-select { height: 44px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; color: var(--sg-texto); }
+        .me-modal .form-hint { color: var(--sg-suave); font-size: 0.84rem; line-height: 1.4; }
+        .me-modal .form-error { color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; margin: 4px 0 0; overflow-wrap: anywhere; }
+        .me-modal .form-textarea { min-height: 76px; padding: 10px 12px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; color: var(--sg-texto); line-height: 1.45; }
+        .me-modal .form-input[aria-invalid="true"], .me-modal .form-select[aria-invalid="true"], .me-modal .form-textarea[aria-invalid="true"], .me-opcion:has(input[aria-invalid="true"]), .me-modal .me-numero input[aria-invalid="true"] + span { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+        .me-modal-error { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; border: 1px solid #EFCACA; background: #FBEEEE; color: var(--sg-rojo); font-weight: 600; font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .me-modal-de { margin: 0 0 16px; color: var(--sg-texto); font-size: 0.92rem; }
+        .me-opcional { font-weight: 400; color: var(--sg-suave); }
+        .me-fila-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0 14px; }
+        .me-grupo { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+        .me-grupo legend { padding: 0; margin-bottom: 8px; }
+        .me-grupo .form-hint { margin: 8px 0 0; }
+        /* Las opciones grandes (los tipos y los estudios): un radio con su nombre y, debajo, lo que queda */
+        .me-opciones { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+        .me-opcion { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--sg-borde-control); border-radius: 12px; background: #fff; cursor: pointer; color: var(--sg-texto); }
+        .me-opcion:hover { background: var(--sg-sutil); }
+        .me-opcion input { width: 17px; height: 17px; margin: 2px 0 0; accent-color: var(--sg-tinta); flex: none; }
+        .me-opcion > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+        .me-opcion b { font-size: 0.9rem; }
+        .me-opcion small { font-size: 0.78rem; color: var(--sg-suave); line-height: 1.3; }
+        .me-opcion:has(input:checked) { border-color: var(--sg-tinta); background: #F3F7FC; box-shadow: inset 0 0 0 1px var(--sg-tinta); }
+        /* Los días de vacaciones: radios con forma de número (.me-numeros y .me-numero también son los números de «El resto de 2026»,
+           en el Resumen: acá van dentro del modal) */
+        .me-modal .me-numeros { display: flex; gap: 6px; flex-wrap: wrap; }
+        .me-modal .me-numero { position: relative; display: inline-flex; }
+        .me-modal .me-numero input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+        .me-modal .me-numero span { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--sg-borde-control); background: #fff; font-weight: 600; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+        .me-modal .me-numero input:checked + span { background: var(--sg-tinta); border-color: var(--sg-tinta); color: #fff; }
+        .me-modal .me-numero input:focus-visible + span { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        /* El cálculo del servidor, el aviso del paso a Configuración y el de los días sin auditor */
+        .me-recuadro { margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .me-recuadro p { margin: 0; }
+        .me-recuadro p + p { margin-top: 6px; }
+        .me-calculo { background: var(--sg-azul-fondo); color: var(--sg-azul); }
+        /* Los avisos del cálculo (lo que la carga hace perder o le cambia a otras; spec 2026-10-28-mi-espacio-vacaciones-en-la-carga,
+           3.2, 3.4 y 3.6), en ámbar sobre el celeste del recuadro, debajo del texto de los días */
+        .me-calculo .me-calculo-aviso { margin-top: 6px; color: var(--sg-ambar); font-weight: 600; }
+        .me-recuadro.azul { background: #EEF5FC; border: 1px solid #C9DCEF; color: var(--sg-azul); }
+        .me-recuadro.ambar { background: var(--sg-ambar-fondo); border: 1px solid #F0D78C; color: var(--sg-ambar); }
+        .me-check { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 16px; font-size: 0.92rem; color: var(--sg-texto); line-height: 1.4; cursor: pointer; }
+        .me-check input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--sg-tinta); flex: none; }
+        .me-check small { display: block; color: var(--sg-suave); font-size: 0.84rem; }
+        .me-campos-saldo { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 14px; }
+        /* El evento (maqueta 2, #evento): el tipo de evento con opciones grandes (botones con aria-pressed) y, en un Público o un
+           Laboral, las personas, cada una con sus iniciales (en violeta la elegida; con «Todos» o «Toda la administración», las demás
+           deshabilitadas) */
+        .me-opciones.dos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        button.me-opcion { width: 100%; font: inherit; text-align: left; }
+        .me-opcion[aria-pressed="true"] { border-color: var(--sg-tinta); background: #F3F7FC; box-shadow: inset 0 0 0 1px var(--sg-tinta); }
+        .me-personas { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .me-persona { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px 0 4px; border-radius: 999px; border: 1px solid var(--sg-borde-control); background: #fff; font: inherit; font-size: 0.86rem; color: var(--sg-texto); cursor: pointer; }
+        .me-persona i { width: 28px; height: 28px; border-radius: 50%; background: var(--sg-gris-fondo); color: var(--sg-suave); font-style: normal; font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+        .me-persona[aria-pressed="true"] { border-color: var(--sg-violeta); background: var(--sg-violeta-fondo); color: var(--sg-violeta); font-weight: 600; }
+        .me-persona[aria-pressed="true"] i { background: var(--sg-violeta); color: #fff; }
+        .me-persona:disabled { opacity: 0.55; cursor: default; }
+        .me-personas[aria-invalid="true"] .me-persona { border-color: var(--sg-rojo); }
+        .me-personas-estado { font-size: 0.84rem; color: var(--sg-suave); }
+        /* El tipo de evento (spec 2026-10-29-mi-espacio-evento-publico, 4; la maqueta aprobada): tres opciones para administración y
+           dos (los personales) para un lector o un colaborador; el Laboral de quien ya no es de administración, elegido y
+           deshabilitado (con sus colores: no pierde contraste) */
+        .me-opciones.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        button.me-opcion:disabled { cursor: default; }
+        .me-opciones[aria-invalid="true"] .me-opcion { border-color: var(--sg-rojo); }
+        /* Lo que ven los demás de un Personal (Público): una pastilla de la lista (una sola elegida) o «Otro», que abre su campo con la
+           cuenta de 60 (en rojo pasada de 60) */
+        .me-textos { display: flex; flex-wrap: wrap; gap: 6px; }
+        .me-textos .sg-chip { height: 36px; }
+        .me-textos[aria-invalid="true"] .sg-chip { border-color: var(--sg-rojo); }
+        .me-otro { margin-top: -6px; }
+        .me-cuenta.pasado { color: var(--sg-rojo); font-weight: 600; }
+        /* «Así lo ven los demás:», lo único con protagonismo del formulario: el día como en su agenda, con la pastilla del evento (sus
+           renglones, con data-lineas, como en el mes) */
+        .me-vista-previa { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); grid-template-areas: 'rotulo rotulo' 'celda ayuda'; align-items: center; gap: 8px 16px; margin: 0 0 16px; padding: 14px 16px 16px; border-radius: 14px; background: var(--sg-cielo); }
+        .me-vista-previa-rotulo { grid-area: rotulo; margin: 0; font-weight: 700; color: var(--sg-tinta); font-size: 0.92rem; }
+        .me-vista-previa-celda { grid-area: celda; display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-height: 92px; padding: 6px 7px 10px; background: #fff; border: 1px solid var(--sg-linea); border-radius: 10px; box-shadow: 0 8px 22px rgba(26, 54, 93, 0.14); }
+        .me-vista-previa-dia { font-family: var(--f-titulo); font-weight: 700; font-size: 0.92rem; color: var(--sg-texto); }
+        .me-vista-previa .me-ev { padding: 4px 8px; font-size: 0.86rem; }
+        .me-vista-previa-ayuda { grid-area: ayuda; margin: 0; color: var(--sg-texto); font-size: 0.86rem; line-height: 1.45; }
+        /* Un evento ajeno (maqueta 2, #evento-ajeno): cuándo, el detalle (con sus renglones) y quién lo creó y quiénes están */
+        .me-ajeno-cuando { margin: 0 0 8px; font-size: 1rem; font-weight: 700; color: var(--sg-texto); }
+        .me-ajeno-detalle { margin: 0 0 10px; color: var(--sg-texto); white-space: pre-line; overflow-wrap: anywhere; }
+        .me-ajeno-quien { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin: 0 0 16px; font-size: 0.88rem; color: var(--sg-suave); overflow-wrap: anywhere; }
+        .me-pie-izquierda { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+        .me-pie-izquierda small { color: var(--sg-suave); font-size: 0.82rem; }
+        .sg-link.me-link-rojo { color: var(--sg-rojo); }
+        .sg-btn-rojo { background: var(--sg-rojo); color: #fff; }
+        .sg-btn:disabled { opacity: 0.55; cursor: default; }
+        #ml-descargar-word:disabled { cursor: progress; }
+        /* El segundo paso de «Cargar licencia» (spec 2026-10-27-mi-espacio-licencia-word, 6; maqueta, versión C, «La nota a la
+           vista»): reemplaza el cuerpo y el pie del formulario. Arriba, la licencia guardada con su tilde y, en gris, lo demás de su
+           fila; después, «Así sale la nota» y la hoja sobre la mesa gris. La mesa no tiene alto máximo: el que se desplaza es el
+           cuerpo del modal (la hoja no tiene su propia barra) */
+        .me-modal .modal-body.me-paso-dos { padding-bottom: 18px; }
+        .me-paso-dos { color: var(--sg-texto); }
+        .me-paso-dos-hecho { display: flex; gap: 14px; align-items: flex-start; }
+        .me-tilde { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--sg-verde-fondo); color: var(--sg-verde); }
+        .me-paso-dos-licencia { min-width: 0; padding-top: 3px; }
+        .me-paso-dos-linea { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0; }
+        .me-paso-dos-fechas { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+        .me-paso-dos-cantidad { color: var(--sg-suave); font-size: 0.88rem; }
+        .me-paso-dos-detalle { margin: 6px 0 0; color: var(--sg-suave); font-size: 0.86rem; line-height: 1.45; overflow-wrap: anywhere; }
+        /* En qué lista de Licencias quedó, si no es la del año en curso (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3); debajo de la
+           licencia guardada, alineada con ella (a la derecha de la tilde: sus 30 px y los 14 del espacio) */
+        .me-paso-dos-lista { margin: 8px 0 0; color: var(--sg-texto); font-size: 0.9rem; font-weight: 600; overflow-wrap: anywhere; }
+        .me-paso-dos-hecho + .me-paso-dos-lista { margin-left: 44px; }
+        .me-paso-dos-titulo { margin: 18px 0 2px; font-family: var(--f-titulo); font-weight: 650; font-size: 1.02rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+        .me-paso-dos-ayuda { margin: 0 0 10px; color: var(--sg-suave); font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .me-mesa { padding: 16px; border-radius: 14px; background: var(--sg-gris-fondo); }
+        /* La hoja de la nota: A4 (21 × 29,7 cm), con márgenes de 2,5 cm arriba y abajo y 3 cm a los costados, Arial 11 con
+           interlineado 1,15, la sangría de 1,25 cm y la firma en la mitad derecha (a 8 cm), todo a escala de su ancho (cqw: la hoja
+           es su contenedor). Los renglones vacíos de la nota son <p></p>: tienen el alto de un renglón (sin él, se aplastan) */
+        .me-hoja { container-type: inline-size; aspect-ratio: 210 / 297; width: 100%; max-width: 560px; margin: 0 auto; background: #fff; box-shadow: 0 1px 3px rgba(26, 54, 93, 0.18), 0 6px 18px rgba(26, 54, 93, 0.08); color: #111; }
+        .me-hoja-texto { padding: 11.9cqw 14.29cqw; font: 1.848cqw/1.32 Arial, Helvetica, sans-serif; }
+        .me-hoja-texto p { margin: 0; min-height: 1.32em; }
+        .me-hoja-texto .derecha { text-align: right; }
+        .me-hoja-texto .sangria { text-indent: 5.95cqw; }
+        .me-hoja-texto .justificado { text-align: justify; }
+        .me-hoja-texto .sd { white-space: pre; }
+        .me-hoja-texto .firma { margin-left: 38.1cqw; text-align: center; }
+        .me-hoja-texto .chico { font-size: 0.82em; }
+        .me-modal :focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        .me-modal .me-numero input:focus-visible { outline: none; box-shadow: none; }
+
+        /* La planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, secciones 4 y 9; la maqueta aprobada,
+           planilla.css): más ancha y alta que los otros modales. Arriba, fijos, el mes con sus flechas (las de la agenda, apagadas
+           en el primer mes y en el en curso) y lo que lleva sumado (la banda celeste, en chico); en el cuerpo, que se desplaza,
+           «Cómo se cuentan» (cerrado), las columnas (pegadas arriba al desplazar) y un día por fila, en semanas. Las dos primeras
+           columnas ceden un poco antes de los 720 px, así la fila entra sin desplazar de costado */
+        .modal.me-modal.me-modal-planilla { max-width: 900px; height: min(880px, calc(100vh - 40px)); max-height: none; }
+        /* El cuerpo deja lugar arriba para las columnas pegadas (un día que recibe el foco no queda debajo de ellas), y el aviso de
+           arriba del cuerpo no queda pegado a la cabeza fija */
+        .me-modal-planilla .modal-body { padding: 0 24px 8px; scroll-padding-top: 44px; }
+        .me-modal-planilla .me-modal-error { margin-top: 14px; }
+        .me-flecha:disabled { opacity: 0.4; cursor: default; }
+        .mp-arriba { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 22px; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--sg-linea); }
+        .mp-mes { display: flex; align-items: center; gap: 8px; }
+        .mp-mes h3 { margin: 0; min-width: 158px; text-align: center; font-family: var(--f-titulo); font-weight: 700; font-size: 1.15rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+        .mp-suma { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 10px 16px; border-radius: 16px; background: var(--sg-cielo); }
+        .mp-suma-cifra { font-family: var(--f-titulo); font-weight: 800; font-size: 2rem; line-height: 1; letter-spacing: -0.04em; color: var(--sg-tinta); font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .mp-suma-cifra small { font-family: var(--f-texto); font-size: 0.85rem; font-weight: 700; letter-spacing: 0; margin-left: 3px; color: var(--sg-azul); }
+        .mp-suma-texto { margin: 0; font-size: 0.9rem; line-height: 1.4; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .mp-suma-texto b { color: var(--sg-tinta); }
+        .mp-como { margin: 14px 0 6px; font-size: 0.88rem; color: var(--sg-texto); }
+        .mp-como summary { cursor: pointer; font-weight: 600; color: var(--sg-tinta); width: fit-content; text-decoration: underline; text-underline-offset: 3px; }
+        .mp-como ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.5; }
+        .mp-como li + li { margin-top: 4px; }
+        .mp-como b { color: var(--sg-tinta); }
+        /* Un día por fila: la fecha con sus marcas, la entrada (opcional en un día hábil: en gris mientras está vacía), la salida, las
+           horas (se calculan mientras se escribe) y «Quitar» y «Nota»; debajo, la nota, el aviso del servidor y el error */
+        .mp-dias { margin: 8px 0 0; }
+        .mp-dia, .mp-columnas { display: grid; grid-template-columns: minmax(120px, 176px) minmax(100px, 118px) minmax(100px, 118px) minmax(80px, 1fr) auto; gap: 6px 12px; align-items: center; }
+        .mp-columnas { position: sticky; top: 0; z-index: 2; padding: 10px 12px 8px 15px; background: #fff; border-bottom: 1px solid var(--sg-linea); font-size: 0.78rem; font-weight: 600; color: var(--sg-suave); }
+        .mp-columnas span:nth-child(4) { padding-left: 2px; }
+        .mp-dia { position: relative; padding: 7px 12px 7px 15px; border-radius: 12px; margin-top: 2px; }
+        .mp-dia:hover { background: var(--sg-sutil); }
+        .mp-fecha { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .mp-fecha b { font-weight: 700; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+        .mp-hoy { margin-left: 4px; padding: 1px 8px; border-radius: 999px; background: var(--sg-tinta); color: #fff; font-size: 0.72rem; font-weight: 700; vertical-align: 1px; }
+        .mp-marcas { display: flex; flex-wrap: wrap; gap: 4px; }
+        .mp-marcas .me-insignia { font-size: 0.72rem; padding: 1px 8px; white-space: normal; line-height: 1.35; }
+        .mp-campo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .mp-rotulo { display: none; font-size: 0.76rem; font-weight: 600; color: var(--sg-suave); }
+        .mp-dia input[type="time"] { width: 100%; height: 40px; padding: 0 10px; border: 1px solid var(--sg-borde-control); border-radius: 10px; background: #fff; font: inherit; font-size: 0.95rem; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+        .mp-dia input.opcional[data-vacio="1"] { background: var(--sg-sutil); color: var(--sg-suave); }
+        .mp-dia input[aria-invalid="true"] { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+        .mp-horas { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .mp-horas b { display: inline-flex; align-items: center; justify-content: center; min-width: 58px; height: 30px; padding: 0 10px; border-radius: 999px; background: var(--sg-azul-fondo); color: var(--sg-azul); font-weight: 700; font-size: 0.9rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .mp-horas b.cero { background: var(--sg-gris-fondo); color: var(--sg-suave); font-weight: 600; }
+        .mp-horas b.nada { background: none; color: var(--sg-suave); font-weight: 500; min-width: 0; padding: 0; }
+        .mp-horas small { font-size: 0.76rem; color: var(--sg-suave); line-height: 1.25; }
+        .mp-acciones { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+        .mp-acciones .sg-link { font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
+        .mp-nota-campo { grid-column: 2 / -1; }
+        .mp-nota-campo input { width: 100%; height: 38px; padding: 0 12px; border: 1px solid var(--sg-borde-control); border-radius: 10px; font: inherit; font-size: 0.9rem; color: var(--sg-texto); }
+        .mp-nota-vista { grid-column: 2 / -1; margin: -2px 0 0; font-size: 0.86rem; font-style: italic; color: var(--sg-suave); overflow-wrap: anywhere; }
+        /* Los días que no se cargan (todavía no llegó, o de licencia de día entero): lo que dicen ocupa el lugar de los campos; con
+           una salida de antes, la salida como texto */
+        .mp-lugar { grid-column: 2 / 5; font-size: 0.88rem; color: var(--sg-suave); }
+        .mp-lugar .me-insignia { white-space: normal; }
+        .mp-guardada { grid-column: 2 / 4; display: flex; flex-direction: column; gap: 2px; color: var(--sg-texto); font-variant-numeric: tabular-nums; }
+        .mp-guardada small { font-size: 0.82rem; color: var(--sg-suave); }
+        .mp-aviso { grid-column: 2 / -1; margin: 0; color: var(--sg-ambar); font-weight: 600; font-size: 0.82rem; overflow-wrap: anywhere; }
+        /* Los tipos de día: el feriado en el sol y la licencia en verde (los fondos de la agenda); el sábado o domingo, con un borde;
+           el que no llegó, en gris. Lo cambiado y no guardado, con la raya de tinta a la izquierda */
+        .mp-dia.feriado { background: #FFFBEB; }
+        .mp-dia.finde { background: #fff; box-shadow: inset 0 0 0 1px #C9D3DF; }
+        .mp-dia.finde:hover { background: var(--sg-sutil); }
+        .mp-dia.licencia { background: #F1F8F4; }
+        .mp-dia.futuro .mp-fecha b { color: var(--sg-suave); font-weight: 600; }
+        .mp-dia.cambiado::before { content: ''; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 4px; border-radius: 999px; background: var(--sg-tinta); }
+        .mp-error { grid-column: 2 / -1; margin: 0; color: var(--sg-rojo); font-weight: 600; font-size: 0.82rem; overflow-wrap: anywhere; }
+        /* Las semanas: un renglón chico con lo que suman; al final, «¿Trabajaste un sábado o un domingo?»; en el pie, cuántos días
+           cambiaron */
+        .mp-semana { display: flex; justify-content: space-between; gap: 12px; margin: 14px 0 4px; padding: 0 12px 4px 15px; border-bottom: 1px dashed var(--sg-linea); font-size: 0.78rem; font-weight: 700; color: var(--sg-suave); }
+        .mp-semana:first-child { margin-top: 6px; }
+        .mp-semana-total { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .mp-sumar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 16px 0 10px; padding: 12px 15px; border: 1px dashed var(--sg-borde-control); border-radius: 12px; }
+        .mp-sumar .form-label { margin: 0; }
+        .mp-sumar .form-select { height: 38px; width: auto; min-width: 190px; border-color: var(--sg-borde-control); border-radius: 10px; font: inherit; font-size: 0.9rem; color: var(--sg-texto); }
+        .mp-sumar p { margin: 0; font-size: 0.86rem; color: var(--sg-suave); }
+        .mp-pendientes { font-size: 0.86rem; color: var(--sg-suave); }
+        .mp-pendientes b { color: var(--sg-tinta); }
+        /* El día por día de contrato de la pestaña: las horas en una pastilla (las que dan 0, en gris) y el aviso de una salida que
+           dejó de cerrar, en ámbar */
+        .me-dia-horas { display: inline-flex; align-items: center; justify-content: center; min-width: 52px; height: 26px; padding: 0 9px; border-radius: 999px; background: var(--sg-azul-fondo); color: var(--sg-azul); font-weight: 700; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+        .me-fila.tenue .me-dia-horas { background: var(--sg-gris-fondo); color: var(--sg-suave); font-weight: 600; }
+        .me-fila-cuerpo .me-fila-aviso { color: var(--sg-ambar); font-weight: 600; }
+
+        /* Foco visible (el de Proyectos: anillo --tinta de 3 px con halo --sol-fuerte) */
+        .me-pagina a:focus-visible, .me-pagina button:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        .me-pagina .me-pestana:focus-visible { outline-offset: -3px; border-radius: 6px 6px 0 0; box-shadow: none; }
+
+        /* En una columna, la banda en el orden del HTML: la frase, «Vence pronto» (lo que vence se ve primero, como pidió el usuario el
+           26/10) y la regla */
+        @media (max-width: 1000px) {
+            .me-banda-cuerpo { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'frase' 'vence' 'regla'; }
+            .me-vence { margin-top: 22px; }
+        }
+        @media (max-width: 980px) {
+            .me-fila { grid-template-columns: 1fr auto; }
+            .me-fila-cuerpo { grid-column: 1 / -1; grid-row: 2; }
+            .me-fila.me-fila-dos { grid-template-columns: 1fr; }
+            .me-mes-y-proximos { grid-template-columns: minmax(0, 1fr); }
+            .me-banda-del-mes-cuerpo { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'mes' 'frase' 'acciones'; }
+            .me-acciones-del-mes { justify-content: flex-start; margin-top: 10px; }
+        }
+        /* El Resumen a media anchura y en el teléfono (de 760 px para abajo: el contenido mide el ancho menos 32 px, y los cuatro
+           números del resto o las tres columnas de «Hoy y mañana» en una fila quedarían apretados): los números de a dos por fila, sin
+           la línea ni su relleno en el primero de cada una (el impar), y las columnas una debajo de la otra, sin la línea. Más ancho,
+           cada uno en una sola fila (las reglas de arriba): ninguna fila empieza con la línea, en ningún ancho */
+        @media (max-width: 760px) {
+            .me-resto .me-numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: row; }
+            .me-resto .me-numero { padding: 4px 12px; }
+            .me-resto .me-numeros li:nth-child(odd) { border-left: 0; }
+            .me-resto .me-numeros li:nth-child(odd) .me-numero { padding-left: 4px; margin-left: 0; }
+            .me-resto .me-perdidas { padding: 0 12px; }
+            .me-resto .me-numeros li:nth-child(odd) .me-perdidas { padding-left: 4px; margin-left: 0; }
+            .me-columnas { grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; }
+            .me-columna { padding: 0; border-left: 0; }
+        }
+        /* La planilla de contrato en el teléfono (720 px o menos; spec 2026-10-27-mi-espacio-horas, sección 4): el modal casi a
+           pantalla completa (solo su velo pierde margen), la cabeza en una columna, sin la fila de las columnas, y cada día una
+           tarjeta: arriba la fecha y las horas, debajo la entrada y la salida lado a lado (cada una con su rótulo visible y de 44 px)
+           y abajo «Quitar», «Nota» y lo demás */
+        @media (max-width: 720px) {
+            #modal-planilla { padding: 8px; }
+            .modal.me-modal.me-modal-planilla { height: calc(100vh - 16px); height: calc(100dvh - 16px); border-radius: 16px; }
+            .mp-arriba { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; gap: 10px; }
+            .mp-mes { justify-content: space-between; }
+            .mp-mes h3 { min-width: 0; }
+            .mp-suma { padding: 8px 12px; gap: 10px; }
+            .mp-suma-cifra { font-size: 1.6rem; }
+            .me-modal-planilla .modal-body { padding: 0 12px 8px; scroll-padding-top: 0; }
+            .mp-columnas { display: none; }
+            .mp-dia { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'fecha horas' 'entrada salida' 'acciones acciones'; gap: 8px 10px; padding: 12px 12px 10px 15px; margin-top: 8px; border: 1px solid var(--sg-linea); }
+            .mp-dia.feriado { border-color: #F0D78C; }
+            .mp-dia.licencia { border-color: #BFE0CC; }
+            .mp-dia.finde { box-shadow: none; border-color: #C9D3DF; }
+            .mp-fecha { grid-area: fecha; }
+            .mp-horas { grid-area: horas; justify-content: flex-end; flex-wrap: wrap; text-align: right; }
+            .mp-campo.entrada { grid-area: entrada; }
+            .mp-campo.salida { grid-area: salida; }
+            .mp-acciones { grid-area: acciones; justify-content: flex-start; }
+            .mp-rotulo { display: block; }
+            .mp-dia input[type="time"] { height: 44px; }
+            .mp-lugar, .mp-guardada { grid-column: 1 / -1; grid-row: 2; }
+            .mp-nota-campo, .mp-nota-vista, .mp-aviso, .mp-error { grid-column: 1 / -1; }
+            .mp-semana { padding: 0 4px 4px; margin-top: 18px; }
+            .mp-sumar .form-select { min-width: 0; width: 100%; }
+        }
+        /* En el teléfono (spec 2026-10-28-mi-espacio-agenda-onda, 3.8): la banda del mes más chica; el mes, más bajo, con el número
+           centrado (el elegido, con un anillo), sin lo de cada día ni el «+»; las barras, líneas finas de 5 px (verde y pizarra, con
+           3:1 o más sobre la celda) con su texto oculto a la vista y no para el lector de pantalla; lo de cada día, un punto de color
+           por cosa (tinta, violeta y un ámbar con 3:1 o más sobre el celeste de hoy); debajo de la grilla, el día elegido; y los
+           próximos, después del mes (el día elegido ya muestra hoy). En el evento, «Solo yo» y «Compartido», una debajo de la otra.
+           El Resumen: la banda con márgenes de 16 px, la barra de 38 px y la lista de la regla en una columna (el número de un tramo
+           sigue en 1,2 rem, salvo el «1» de un tramo de un día, que se achica si no entra: el blanco sobre el azul medio llega a 4,45:1,
+           pero el número es decorativo, la barra va con aria-hidden y la lista de debajo lo dice en texto) y los números del resto,
+           un poco más chicos */
+        @media (max-width: 640px) {
+            .me-tarjeta { padding: 16px; }
+            .me-banda-del-mes { border-radius: 22px 22px 0 0; }
+            .me-banda-del-mes-cuerpo { padding: 20px 16px 12px; }
+            .me-titulo-del-mes h2 { font-size: 1.85rem; margin-right: auto; }
+            .me-frase-del-mes { font-size: 0.98rem; }
+            .me-tarjeta-del-mes { padding: 10px 8px 14px; }
+            .me-mes th { padding: 2px 0 6px; text-align: center; }
+            .me-celda { height: 58px; padding: 3px 2px 4px; }
+            .me-num { align-self: center; }
+            .me-num::after { display: none; }
+            .me-celda.elegido .me-num { position: relative; }
+            .me-celda.elegido .me-num::before { content: ''; position: absolute; inset: -3px; border: 2px solid var(--sg-tinta); border-radius: 999px; }
+            .me-celda.hoy.elegido .me-num::before { inset: -5px; }
+            .me-cosas { display: none; }
+            .me-carriles { grid-auto-rows: 7px; }
+            .me-tira { height: 5px; margin: 0 -3px; padding: 0; }
+            .me-tira.inicio { margin-left: -1px; border-top-left-radius: 3px; border-bottom-left-radius: 3px; }
+            .me-tira.fin { margin-right: -1px; border-top-right-radius: 3px; border-bottom-right-radius: 3px; }
+            .me-tira.sigue-antes { margin-left: -3px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+            .me-tira.sigue-despues { margin-right: -3px; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+            .me-tira.licencia { background: var(--sg-verde); }
+            .me-tira.licencia.inicio:not(.sigue-antes) { box-shadow: none; }
+            .me-tira-texto, .me-tira .me-icono { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+            .me-puntos { display: flex; justify-content: center; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+            .me-puntos i { width: 7px; height: 7px; border-radius: 50%; }
+            .me-puntos .propio { background: var(--sg-tinta); }
+            .me-puntos .compartido { background: var(--sg-violeta); }
+            .me-puntos .publico-otro { background: #fff; box-shadow: inset 0 0 0 2px var(--sg-rosado-borde); }
+            .me-puntos .feriado { background: #9A6A00; }
+            .me-leyenda { gap: 6px 12px; font-size: 0.78rem; }
+            .me-elegido { display: block; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--sg-linea); }
+            .me-opciones.dos { grid-template-columns: minmax(0, 1fr); }
+            .me-opciones.tres { grid-template-columns: minmax(0, 1fr); }
+            .me-vista-previa { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'rotulo' 'celda' 'ayuda'; }
+            .me-banda { border-radius: 22px 22px 0 0; }
+            .me-banda-cuerpo { padding: 22px 16px 14px; }
+            .me-barra { height: 38px; }
+            .me-tramo { padding: 0 min(6px, 20%); }
+            .me-regla-lista { flex-direction: column; gap: 8px; }
+            .me-resto-cabeza { grid-template-columns: minmax(0, 1fr); }
+            .me-resto .me-numero .grande { font-size: 2.1rem; }
+            .me-mesa { padding: 8px; }
+        }
+        /* La agenda en alto contraste (forced-colors; spec 2026-10-28-mi-espacio-agenda-onda, 6): el fondo no alcanza, así que las
+           barras llevan su borde (arriba y abajo, y en sus puntas: se ve continua), los puntos (los del teléfono, el de los próximos y
+           el del día elegido) y la perilla de la llave van en CanvasText (el anillo de un Personal (Público) de otra persona, un aro:
+           Canvas por dentro y el borde en CanvasText), la muestra de la leyenda y la llave con un borde, y el número de hoy, con un
+           borde. Va al final del <style> y cada selector es al menos tan específico como el que le da su color (los
+           puntos del teléfono, los próximos, la llave prendida): si no, esos ganan y el punto queda en Canvas, invisible. La ola del
+           Resumen y de la banda del mes no se dibuja (más arriba) */
+        @media (forced-colors: active) {
+            .me-tira:not(.vacia) { border-top: 1px solid CanvasText; border-bottom: 1px solid CanvasText; }
+            .me-tira.inicio:not(.sigue-antes) { border-left: 1px solid CanvasText; }
+            .me-tira.fin:not(.sigue-despues) { border-right: 1px solid CanvasText; }
+            .me-puntos i[class] { forced-color-adjust: none; background: CanvasText; }
+            .me-puntos i[class].publico-otro { background: Canvas; box-shadow: none; outline: 2px solid CanvasText; outline-offset: -2px; }
+            .me-proximos .me-prox-icono.propio i { forced-color-adjust: none; background: CanvasText; }
+            .me-elegido .me-elegido-icono i { forced-color-adjust: none; background: CanvasText; }
+            .me-leyenda .me-color[aria-hidden] { border: 1px solid CanvasText; }
+            .me-celda.hoy .me-num { border: 2px solid CanvasText; }
+            .me-finde-llave { border: 1px solid CanvasText; }
+            .me-acciones-del-mes .me-finde[aria-pressed] .me-finde-llave::after { forced-color-adjust: none; background: CanvasText; }
+        }
