@@ -21,7 +21,7 @@
 - La banda: «tuviste» si el mes de uso (el siguiente al de la planilla) ya pasó, «tenés» si es el de hoy, «vas a tener» si no llegó.
 - La nota en Word de «Horas a favor» (todas): «el usufructo de {horas} a favor el día {día}, {correspondiente(s)} a las horas extras realizadas en {mes de año}.» y, con días sumados, antes del punto: « (incluidas las del martes 2 de febrero de 2027, sumadas a enero)»; dos: «las del martes 2 y el miércoles 3 de febrero de 2027»; tres o más: «las del lunes 1, el martes 2 y el miércoles 3 de febrero de 2027».
 - `VERSION_MI_ESPACIO` pasa de `'20261218'` a `'20261219'` (en `public/mi-espacio.html` y en `tests/paginas.test.js`).
-- Un commit por tarea, con la línea final `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Antes de cada commit, el diff se cruza contra los nombres reales con `node C:/Users/Mariano/AppData/Local/Temp/claude/C--git-rpad--claude-worktrees-mi-espacio-agenda-aedf9d/0ef75dc2-d259-4ef8-bdb8-8bd69e496460/scratchpad/cruce-nombres.mjs -` (con `git diff --cached` por stdin): tiene que dar 0 coincidencias.
+- Un commit por tarea, con la línea final `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Antes de cada commit, el diff se cruza contra los nombres reales con el script `cruce-nombres.mjs` que da el controlador (fuera del repo; `git diff --cached` por stdin, con `-`): tiene que dar 0 coincidencias.
 - Los tests de un archivo se corren con `node --test tests/<archivo>.test.js` (los de Docker necesitan `docker compose` arriba y el `.env` del worktree). La suite completa la corre solo el controlador, con el candado.
 
 ## Review Focus
