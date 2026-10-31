@@ -1,0 +1,48 @@
+/* MAQUETA (31/10/2026): lo nuevo de los días restituidos, con las clases y los tokens de la página (--sg-*), y la barra de la
+   maqueta (la de las anteriores). */
+
+/* El aviso de arriba del Resumen: el texto y el botón (me-aviso ya es flex con wrap) */
+.me-restituir p { flex: 1 1 360px; }
+.me-restituir .sg-btn { flex: 0 0 auto; }
+
+/* La línea de la fila de las vacaciones: el texto y su botón, en un renglón propio */
+.me-restituir-linea { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.me-restituir-linea .sg-btn { height: 32px; }
+
+/* «Hasta» lo pone Mi espacio: se ve como un campo de solo lectura */
+.form-input.mq-auto { background: var(--sg-sutil, #F4F7FB); color: var(--sg-texto); }
+
+/* Solo en la maqueta: lo nuevo, con borde punteado amarillo (se apaga con «Marcas: no») */
+.mq-nuevo { outline: 2px dashed #E3B63C; outline-offset: 3px; border-radius: 6px; }
+.mq-sin-marcas .mq-nuevo { outline: none; }
+
+/* El email */
+.mq-correo { margin-top: 8px; background: #fff; border: 1px solid #D7E0EA; border-radius: 16px; overflow: hidden; }
+.mq-correo-cabeza { padding: 14px 18px; border-bottom: 1px solid #D7E0EA; font-size: 0.92rem; color: #33475B; }
+.mq-correo-cabeza p { margin: 2px 0; }
+.mq-correo-cuerpo { display: block; width: 100%; height: 720px; border: 0; background: #F4F7FB; }
+
+/* La barra de la maqueta (la de las anteriores) */
+.me-pagina, .main-content > .page-header ~ #vista-feriados { padding-bottom: 170px; }
+.mq-barra { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 1200; width: min(1180px, calc(100% - 20px)); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 14px; border-radius: 16px; background: #0F1B2D; color: #E6EDF6; font-size: 0.82rem; box-shadow: 0 10px 30px rgba(15, 27, 45, 0.35); }
+.mq-rotulo { color: #9FB2C8; font-weight: 600; }
+.mq-botones { display: flex; gap: 4px; flex-wrap: wrap; }
+.mq-botones button, .mq-botones a, .mq-nota button { display: inline-flex; align-items: center; height: 30px; padding: 0 11px; border-radius: 999px; border: 1px solid #34465F; background: transparent; color: #E6EDF6; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none; }
+.mq-botones button[aria-pressed="true"] { background: #F2B705; color: #0F1B2D; border-color: #F2B705; }
+.mq-botones button:hover, .mq-botones a:hover { border-color: #F2B705; }
+.mq-idea { flex-basis: 100%; margin: 0; color: #E6EDF6; line-height: 1.4; }
+.mq-nota { flex-basis: 100%; margin: 0; color: #9FB2C8; font-size: 0.76rem; line-height: 1.4; }
+.mq-nota button { height: 22px; padding: 0 8px; margin-left: 4px; }
+.mq-barra button:focus-visible, .mq-barra a:focus-visible { outline: 3px solid #F2B705; outline-offset: 2px; }
+.mq-aviso { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); z-index: 1300; background: #1A365D; color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 0.88rem; opacity: 0; pointer-events: none; transition: opacity 0.2s; max-width: calc(100% - 32px); }
+.mq-aviso.visible { opacity: 1; }
+@media (max-width: 640px) {
+    .mq-barra { bottom: 8px; padding: 8px 10px; gap: 6px 10px; }
+    .mq-idea, .mq-nota { display: none; }
+    .mq-botones button, .mq-botones a { height: 28px; padding: 0 9px; font-size: 0.74rem; }
+    .me-pagina { padding-bottom: 230px; }
+}
+/* Con un modal abierto, la barra queda chica y el modal no pasa por debajo de ella */
+.mq-con-modal .mq-idea, .mq-con-modal .mq-nota { display: none; }
+.mq-con-modal .modal-overlay.active { padding-bottom: 96px; }
+.mq-con-modal .modal-overlay.active .modal { max-height: calc(100vh - 130px); }
