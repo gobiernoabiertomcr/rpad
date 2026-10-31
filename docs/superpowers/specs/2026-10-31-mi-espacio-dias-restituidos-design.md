@@ -86,7 +86,7 @@ Si después se alargan las vacaciones y ahora incluyen un feriado que ya estaba 
 
 **Los grupos.** Los días restituibles de unas vacaciones forman **un pedido por cada licencia de origen**, con el mismo plazo (decisión 11).
 
-**El plazo** de un grupo que todavía no se pidió es el último día hábil (`ultimoDiaHabilDelMesCon`, `services/feriadosReglas.js:257`, con los 9 fijos y la tabla) del mes que está 4 meses después del mes del **primer** día restituible de esas vacaciones que todavía no se pidió. Un pedido guarda el primer asueto que cubre; su plazo se vuelve a calcular con los feriados de hoy, así que un feriado nuevo en el último día lo corre. Si después de pedir se declara otro asueto en esas mismas vacaciones, sus días forman un grupo nuevo, con el plazo contado desde ese asueto (decisión 12).
+**El plazo** de un grupo que todavía no se pidió es el último día hábil (`ultimoDiaHabilDelMesCon`, `services/feriadosReglas.js:257`, con los 9 fijos y la tabla) del mes que está 4 meses después del mes del **primer** día restituible de su **tanda**. Una tanda son los días restituibles de unas vacaciones cuya foto se sacó antes del mismo pedido: la primera tanda, los fotografiados antes de cualquier pedido sobre esas vacaciones; la segunda, los fotografiados después del primer pedido y antes del segundo; y así. Así, los grupos de una misma tanda comparten el plazo aunque se pidan en días distintos (decisión 11: si se pide la 2024, la 2025 conserva el plazo del primer asueto), y un asueto que llega después de un pedido arma una tanda nueva, con el plazo contado desde él (decisión 12). Un pedido guarda el primer asueto de su tanda; su plazo se vuelve a calcular con los feriados de hoy, así que un feriado nuevo en el último día lo corre.
 
 **¿Tomarlos (caso A) o que vuelvan (caso B)?**
 - Si su licencia de origen vence **antes** del plazo (`venceLaLicencia`, `services/miEspacioReglas.js:315`: el 31/12 de dos años después), es el **caso A**: hay que tomarlos.
@@ -330,7 +330,6 @@ Va después de main 39eef2b, ya en producción, y **antes de los asuetos de fin 
 
 - **Lo cargado antes no se reconstruye.** Los feriados cargados antes del despliegue no generan restituciones, y el saldo inicial no carga restituciones pendientes.
 - **Manda el orden en el RPAD.** Si la persona carga las vacaciones después de que administración cargó el asueto, aunque las haya pedido en papel antes, no hay restitución: la regla del usuario es «carga licencia y luego carga asueto». Al revés, un feriado corregido a una fecha que cae en unas vacaciones cuenta como cargado después.
-- **El plazo después de un pedido parcial.** Si unas vacaciones tienen días de dos licencias y se pide una, el plazo de la otra se cuenta desde su propio primer asueto, que puede ser más tarde que el del pedido.
 - **El plazo del modal de Feriados** se cuenta desde el día que se carga. Si esas vacaciones ya tenían días por restituir de un asueto anterior, su plazo real es el de ese.
 - **El email no llega a quien está de licencia ese día.** Si la persona está de licencia los 5 días hábiles anteriores al plazo, el segundo email no llega. El aviso y «Vence pronto» siguen.
 
@@ -357,20 +356,22 @@ Va después de main 39eef2b, ya en producción, y **antes de los asuetos de fin 
 - **`schema.test.js`, `paginas.test.js`** (`VERSION_MI_ESPACIO` y `VERSION_FERIADOS`) **y `permisos.test.js`.**
 - **Los tests de hoy que esperan que un asueto recalcule unas vacaciones** cambian solo para las vacaciones con foto. Sin foto, el recálculo sigue igual: el feriado ya estaba.
 
-## 17. Decisiones de la sesión, para que el usuario las revise
+## 17. Decisiones de la sesión, revisadas por el usuario
 
-1. **Un tipo nuevo**, `restituidos` («Días restituidos»), con insignia azul y su filtro, y no una marca sobre vacaciones (sección 6).
-2. **«Vencen» en plural** en «Vence pronto» y en el email, como el resto de Mi espacio. La maqueta lo usa así; las preguntas decían «Vence».
-3. **El aviso A antes del 31/12** dice «Como esa licencia vence el 31/12/2026, antes del plazo, …», y desde el 01/01, «Como esa licencia ya venció, …».
+El 31/10/2026 el usuario aprobó todas las decisiones, en una sexta ronda de preguntas (las 1, 3, 5 y 6) y al ver la maqueta (las demás: «lo único, esta franja», la del punto 9 de la sección 3).
+
+1. **Un tipo nuevo**, `restituidos` («Días restituidos»), con insignia azul y su filtro, y no una marca sobre vacaciones (sección 6). En «Cargar licencia», una opción por grupo. *Aprobada.*
+2. **«Vencen» en plural** en «Vence pronto» y en el email, como el resto de Mi espacio.
+3. **El aviso A antes del 31/12** dice «Como esa licencia vence el 31/12/2026, antes del plazo, …», y desde el 01/01, «Como esa licencia ya venció, …». *Aprobada.*
 4. **En B, las vacaciones originales siguen con sus días** después del pedido. Lo que vuelve es un agregado a la licencia de origen (la mitad del pedido, sección 7), así vuelve justo a esa licencia y no a la última que usó la carga.
-5. **El pedido B no se puede borrar después del plazo** (409). La carga A se puede borrar como cualquier licencia, pero los días quedan perdidos.
-6. **El «Revisá tus días restituidos…»** de lo ya pedido va arriba de todo, con lo de Configuración. Solo el aviso de lo que está por restituir va entre la banda y el resto.
+5. **El pedido B no se puede borrar después del plazo** (409). La carga A se puede borrar como cualquier licencia, pero los días quedan perdidos. *Aprobada.*
+6. **El «Revisá tus días restituidos…»** de lo ya pedido va arriba de todo, con lo de Configuración. Solo el aviso de lo que está por restituir va entre la banda y el resto. *Aprobada.*
 7. **La oración de la banda** va en ámbar solo los últimos 30 días; antes, en el color de la frase.
 8. **Los textos que redactó la maqueta:** el aviso B, las líneas de la fila, la ayuda y el cálculo de «Cargar licencia», el modal B y su segundo paso, el email y su asunto, y los dos textos del modal de Feriados.
 9. **Los nombres de los dos archivos** de la sección 12.
-10. **El plazo después de un pedido parcial** (límite sabido de la sección 15).
+10. **Las tandas** (sección 4): los grupos de una misma tanda comparten el plazo, y un asueto después de un pedido arma una tanda nueva. Así se cumplen las decisiones 11 y 12 a la vez.
 11. **El plazo del modal de Feriados** se cuenta desde el día que se carga.
-12. **La carga A no cambia de tipo**, ninguna otra pasa a `restituidos`, y en «Cargar licencia» hay una opción por grupo.
+12. **La carga A no cambia de tipo**, y ninguna otra pasa a `restituidos`.
 13. **La recursión** sigue la misma regla, siempre como el caso A.
 14. **La vuelta atrás** pasa las cargas `restituidos` a vacaciones.
 15. **La carga A acepta persona a cargo del titular**, como unas vacaciones.
