@@ -1947,7 +1947,7 @@ describe('fraseDelMes', () => {
       vacaciones: 'tus vacaciones', horas_a_favor: 'tus horas a favor', franquicia: 'tu franquicia',
       estudios: 'tu licencia por estudios', medica: 'tu licencia médica',
       medica_extraordinaria: 'tu licencia médica extraordinaria', familiar: 'tu licencia por el grupo familiar',
-      franco: 'tu franco compensatorio', uso_autorizado: 'tu uso autorizado'
+      franco: 'tu franco compensatorio', uso_autorizado: 'tu uso autorizado', restituidos: 'tus días restituidos'
     });
     assert.ok(Object.isFrozen(FRASE_DE_LA_LICENCIA));
     for (const [tipo, frase] of Object.entries(FRASE_DE_LA_LICENCIA)) {

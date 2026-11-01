@@ -991,10 +991,11 @@ export const companerosPorDia = (ausentes) => {
 };
 
 // Cómo nombra la frase del mes cada licencia de Mi espacio, por tipo (los de `TIPOS_LICENCIA`), con su artículo: las
-// vacaciones y las horas a favor, «tus»; las demás, «tu»
+// vacaciones, las horas a favor y los días restituidos, «tus»; las demás, «tu»
 export const FRASE_DE_LA_LICENCIA = Object.freeze({
   vacaciones: 'tus vacaciones',
   horas_a_favor: 'tus horas a favor',
+  restituidos: 'tus días restituidos',
   franquicia: 'tu franquicia',
   estudios: 'tu licencia por estudios',
   medica: 'tu licencia médica',

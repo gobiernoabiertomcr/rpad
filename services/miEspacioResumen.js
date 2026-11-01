@@ -18,7 +18,7 @@
  * 27/10/2026: spec 2026-10-27-mi-espacio-dias-de-vacaciones, 2.6) y el de las horas de franquicia debajo de «Franquicias»
  * (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6).
  */
-import { diaDeLaSemana, diasHabilesDe, feriadosDelAnio, proximoDiaHabilCon, esDiaHabilCon } from './feriadosReglas.js';
+import { diaDeLaSemana, feriadosDelAnio, proximoDiaHabilCon, esDiaHabilCon } from './feriadosReglas.js';
 import { diasEntre, esFechaIso, formatoCorto, sumarDias } from './notasDigitalesCalendario.js';
 import { esAdmin, esAuditor } from './usuariosReglas.js';
 import {
@@ -27,7 +27,7 @@ import {
   fueraDeLaModalidad, tieneSaldoInicial, horasDe, textoSinNoUtilizadas, rangoDeFechas, horaSalidaValida, tipoDeDia,
   horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos, fechasEnLaFrase,
   diasLibresDelMes, porHabilitarDe, textoDeLosDiasHabiles, MESES_HASTA_LAS_HORAS, mesDeLaSalida, horasPorMesDeSalidas,
-  repartoDelMes, textoDeLoQueSeMueve
+  repartoDelMes, textoDeLoQueSeMueve, diasDeLaCarga
 } from './miEspacioReglas.js';
 
 // Los dos formatos que ya estaban en las reglas: el panel los usa sin copiarlos
@@ -505,10 +505,12 @@ const quedaDelTipo = (tipo, panel, tanques) => {
   return `${queda} ${tanque.numero}${tipo === 'franquicia' ? ' h' : ''} de ${numeroTexto(tanque.total)}`;
 };
 
-// Las opciones de «Cargar licencia»: los tipos de la modalidad, sin el uso autorizado (tiene su propio formulario) ni, con
-// «No estudio», los estudios
+// Las opciones de «Cargar licencia»: los tipos de la modalidad, sin el uso autorizado (tiene su propio formulario), sin los
+// días restituidos (no son un tipo más: se ofrecen uno por cada grupo por restituir, spec
+// 2026-10-31-mi-espacio-dias-restituidos, 7) ni, con «No estudio», los estudios
+const NO_SE_OFRECEN = Object.freeze(['uso_autorizado', 'restituidos']);
 const tiposDe = (panel, tanques) => TIPOS_POR_MODALIDAD[panel.modalidad]
-  .filter((tipo) => tipo !== 'uso_autorizado' && (tipo !== 'estudios' || estudiaEsteAnio(panel)))
+  .filter((tipo) => !NO_SE_OFRECEN.includes(tipo) && (tipo !== 'estudios' || estudiaEsteAnio(panel)))
   .map((tipo) => ({ tipo, nombre: NOMBRES_DE_LAS_OPCIONES[tipo], queda_texto: quedaDelTipo(tipo, panel, tanques) }));
 
 /**
@@ -585,7 +587,8 @@ export const resumenDe = (entrada) => {
   };
 };
 
-// La lista de licencias (spec, sección 8)
+// La lista de licencias (spec, sección 8). Los filtros, con los nombres de NOMBRES_TIPO (los días restituidos, «Días
+// restituidos») y algunos en plural
 const NOMBRES_DE_LOS_FILTROS = Object.freeze({
   ...NOMBRES_TIPO, franquicia: 'Franquicias', franco: 'Francos', uso_autorizado: 'Usos autorizados',
   familiar: 'Grupo familiar'
@@ -609,9 +612,11 @@ const textoDeLasFechas = (desde, hasta) => {
 
 // '5 días hábiles de 7 corridos' (la forma del cálculo de «Cargar licencia», `textoDeLosDiasHabiles`: spec
 // 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9), '2 días hábiles', '1 día' (un franco o un uso autorizado de planta, que
-// es un franco), '2 horas' o '7 horas, el día entero'. Un solo día que no es hábil (un feriado cargado después), como antes:
-// '1 día corrido, 0 hábiles'
-const textoDeLaCantidad = ({ tipo, desde, hasta }, horas, { modalidad, fuera, feriados }) => {
+// es un franco), '2 horas' o '7 horas, el día entero'. Los días son los de la carga, con sus días restituibles (`diasDeLaCarga`:
+// unas vacaciones siguen diciendo los días que se pidieron; spec 2026-10-31-mi-espacio-dias-restituidos, 4). Un solo día que
+// no es hábil (un feriado cargado después, que no se restituye), como antes: '1 día corrido, 0 hábiles'
+const textoDeLaCantidad = (fila, horas, { datos, modalidad, fuera, feriados }) => {
+  const { tipo, desde, hasta } = fila;
   const enHoras = tipo === 'franquicia' || tipo === 'horas_a_favor'
     || (tipo === 'uso_autorizado' && (modalidad !== 'planta' || fuera));
   if (enHoras) {
@@ -619,7 +624,7 @@ const textoDeLaCantidad = ({ tipo, desde, hasta }, horas, { modalidad, fuera, fe
     return horas === JORNADA ? `${numeroTexto(horas)} horas, el día entero` : conUnidad(horas, 'hora', 'horas');
   }
   if (tipo === 'franco' || tipo === 'uso_autorizado') return '1 día';
-  const habiles = diasHabilesDe(desde, hasta, feriados).length;
+  const habiles = diasDeLaCarga(fila, datos, feriados).length;
   const corridos = diasEntre(desde, hasta) + 1;
   if (corridos === 1 && habiles !== 1) return `1 día corrido, ${conUnidad(habiles, 'hábil', 'hábiles')}`;
   return textoDeLosDiasHabiles(habiles, corridos);
@@ -664,7 +669,7 @@ const filaDeLicencia = (fila, { datos, cuenta, hoy, persona, vinculos, feriados 
     hasta,
     horas,
     fechas_texto: textoDeLasFechas(desde, hasta),
-    cantidad_texto: textoDeLaCantidad(fila, horas, { modalidad, fuera, feriados }),
+    cantidad_texto: textoDeLaCantidad(fila, horas, { datos, modalidad, fuera, feriados }),
     proxima: hoy !== null && desde > hoy,
     de_licencias_texto: tipo === 'vacaciones' ? textoDeLasLicencias(cuenta.reparto, fila.id) : '',
     antes_del_arranque: antes,

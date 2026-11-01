@@ -3,7 +3,8 @@
  * puras (sin pool ni Date local: las fechas son texto 'AAAA-MM-DD' y se comparan como texto, las horas 'HH:MM', y hoy llega
  * por parámetro, `hoyArgentina()` en el servidor). Ninguna función tira error: una entrada rara da null, '', una lista vacía
  * o un Map vacío. Todo se cuenta en días hábiles con los feriados (`diasHabilesDe` de `services/feriadosReglas.js`, con el
- * Set de los feriados del rango) y se recalcula cada vez: un feriado nuevo corrige lo ya cargado.
+ * Set de los feriados del rango) y se recalcula cada vez: un feriado nuevo corrige lo ya cargado, salvo los días que restituye
+ * en unas vacaciones (abajo).
  *
  * El `Estado` es lo que cargó la persona, solo las filas activas:
  * `{ modalidad: 'planta' | 'contrato' | null, arranque: 'AAAA-MM-DD' | null, anios: [{ anio, dias_vacaciones, estudios }],
@@ -15,7 +16,7 @@
  * 2026-10-31-mi-espacio-dias-restituidos, 6) suman dos listas, de las cargas y los pedidos activos o no (las tandas cuentan
  * los dos): `restituibles: [{ id, licencia_id, feriado_id, fecha, tanda, restitucion_id }]`, la foto de los días que un
  * feriado cargado después dejó de hacer hábiles en una carga (`tanda` y `restitucion_id`, null mientras no se sellaron ni se
- * pidieron), y `restituciones: [{ id, licencia_id, anio, caso, dias, primer_asueto, tanda, fecha, carga_id, activo,
+ * pidieron; de ella salen los días restituibles de cada carga, `restituiblesDe`), y `restituciones: [{ id, licencia_id, anio, caso, dias, primer_asueto, tanda, fecha, carga_id, activo,
  * licencia: { tipo, desde, hasta, activo } }]`, los pedidos ('tomar', con su carga de días restituidos en `carga_id`, o
  * 'restituir') con la carga de la que salen. Un estado sin ellas cuenta como sin ninguna.
  *
@@ -24,7 +25,10 @@
  * del año siguiente) y vence el 31/12 de dos años después; cada carga de vacaciones sigue con la licencia que empezó a usar,
  * aunque pase su vencimiento, y después toma la más vieja que ese día esté habilitada, no vencida y con días libres, con las
  * cargas en el orden de sus fechas (`repartoDeVacaciones`, spec 2026-10-27-mi-espacio-dias-de-vacaciones), y lo que ya no
- * se puede empezar a usar antes de su vencimiento se pierde y se dice «Perdés …» (`textoDePerdidos`). Después, las
+ * se puede empezar a usar antes de su vencimiento se pierde y se dice «Perdés …» (`textoDePerdidos`). Los días que un
+ * feriado cargado después le sacó a unas vacaciones (o a una carga de días restituidos) y que siguen dentro de ella sin ser
+ * hábiles son restituibles (`restituiblesDe`, con la foto; spec 2026-10-31-mi-espacio-dias-restituidos, 4) y cuentan en su
+ * carga como hábiles (`diasDeLaCarga`): así conserva los días que se pidieron. Después, las
  * demás licencias (3.2 a 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`), las horas de franquicia que
  * vencen el 31/12 y las que ya no entran en los días libres que quedan (`franquiciaQueVence`, con `diasLibresEntre`; spec
  * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6) y la validación de una carga (`validarLicencia`, con la regla de 3.8:
@@ -66,18 +70,21 @@ export const TEXTO_MODALIDAD = Object.freeze({
   planta_permanente: 'Planta permanente', planta_politica: 'Planta política', contrato: 'Contrato'
 });
 
-// Los tipos, en el orden del enum de mi_espacio_licencias
+// Los tipos, en el orden del enum de mi_espacio_licencias (los días restituidos, al final: spec
+// 2026-10-31-mi-espacio-dias-restituidos, 6)
 export const TIPOS_LICENCIA = Object.freeze([
   'vacaciones', 'franquicia', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco', 'horas_a_favor',
-  'uso_autorizado'
+  'uso_autorizado', 'restituidos'
 ]);
-// Los de cada modalidad, en el orden de «Cargar licencia» (uso_autorizado no se ofrece ahí: tiene su propio formulario)
+// Los de cada modalidad, en el orden de «Cargar licencia» (uso_autorizado no se ofrece ahí: tiene su propio formulario; los
+// días restituidos, justo después de las vacaciones, se ofrecen uno por cada grupo por restituir y se cargan por su camino)
 export const TIPOS_POR_MODALIDAD = Object.freeze({
   planta: Object.freeze([
-    'vacaciones', 'franquicia', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'franco', 'uso_autorizado'
+    'vacaciones', 'restituidos', 'franquicia', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'franco',
+    'uso_autorizado'
   ]),
   contrato: Object.freeze([
-    'vacaciones', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'horas_a_favor', 'uso_autorizado'
+    'vacaciones', 'restituidos', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'horas_a_favor', 'uso_autorizado'
   ])
 });
 // Los tipos de una modalidad; sin una modalidad válida, ninguno
@@ -86,8 +93,12 @@ const tiposDeLaModalidad = (modalidad) =>
 export const NOMBRES_TIPO = Object.freeze({
   vacaciones: 'Vacaciones', franquicia: 'Franquicia', estudios: 'Estudios', medica: 'Atención médica',
   medica_extraordinaria: 'Médica extraordinaria', familiar: 'Atención del grupo familiar', franco: 'Franco compensatorio',
-  horas_a_favor: 'Horas a favor', uso_autorizado: 'Uso autorizado'
+  horas_a_favor: 'Horas a favor', uso_autorizado: 'Uso autorizado', restituidos: 'Días restituidos'
 });
+// Los tipos que dejan persona a cargo del firmante titular (corrección del usuario a la spec, sección 6): las vacaciones y los
+// días restituidos, que también lo son (spec 2026-10-31-mi-espacio-dias-restituidos, 7)
+export const TIPOS_CON_PERSONA_A_CARGO = Object.freeze(['vacaciones', 'restituidos']);
+export const dejaPersonaACargo = (tipo) => TIPOS_CON_PERSONA_A_CARGO.includes(tipo);
 
 // Los días de vacaciones que se eligen por año, según la antigüedad
 export const DIAS_VACACIONES = Object.freeze([10, 15, 20, 25, 30]);
@@ -418,14 +429,58 @@ const TIPOS_CON_SALDO = Object.freeze(['vacaciones', 'franquicia', 'estudios', '
 export const tieneSaldoInicial = (tipo, modalidad) =>
   TIPOS_CON_SALDO.includes(tipo) || (tipo === 'uso_autorizado' && modalidad === 'contrato');
 
+// Las cargas que pueden tener días restituibles: las vacaciones y, en la recursión, los días restituidos (spec
+// 2026-10-31-mi-espacio-dias-restituidos, 4)
+const TIPOS_CON_RESTITUIBLES = Object.freeze(['vacaciones', 'restituidos']);
+
 /**
- * Los días que descuenta una licencia: sus días hábiles con los feriados. En los tipos con saldo inicial, solo desde el
- * arranque, ese día incluido (sin arranque, ninguno: todavía no hay saldo). Un tipo desconocido o unas fechas que no son
- * fechas, [].
+ * Los días restituibles de una carga (spec 2026-10-31-mi-espacio-dias-restituidos, 4), por fecha y sin repetir: los de la
+ * foto (`estado.restituibles`, los días que un feriado cargado o corregido después de la carga dejó de hacer hábiles) con el
+ * id de la fila (comparado como número: el de un pedido llega como texto), solo si la fila es de vacaciones o de días
+ * restituidos, que siguen dentro de sus fechas, que hoy no son hábiles con los feriados (un asueto dado de baja, o un año en
+ * que no rige, lo vuelve hábil) y, en un tipo con saldo inicial, del arranque en adelante (sin arranque, ninguno: como
+ * `diasQueDescuentan`). La tanda y el pedido de cada día no cuentan acá. Una fila sin id (una carga nueva: la foto es de
+ * lo guardado), de otro tipo o con fechas que no son fechas, o un estado que no es un objeto, [].
+ */
+export const restituiblesDe = (fila, estado, feriados) => {
+  if (!esObjeto(fila) || !TIPOS_CON_RESTITUIBLES.includes(fila.tipo)) return [];
+  const id = idPositivoONulo(fila.id);
+  const { desde, hasta } = fila;
+  if (id === null || !esFechaIso(desde) || !esFechaIso(hasta)) return [];
+  const datos = esObjeto(estado) ? estado : {};
+  const conSaldo = tieneSaldoInicial(fila.tipo, datos.modalidad);
+  if (conSaldo && !esFechaIso(datos.arranque)) return [];
+  const fechas = new Set();
+  for (const restituible of listaDe(datos.restituibles)) {
+    if (!esObjeto(restituible) || idDe(restituible.licencia_id) !== id) continue;
+    const { fecha } = restituible;
+    if (!esFechaIso(fecha) || fecha < desde || fecha > hasta || esDiaHabilCon(fecha, feriados)) continue;
+    if (!conSaldo || fecha >= datos.arranque) fechas.add(fecha);
+  }
+  return [...fechas].sort();
+};
+
+/**
+ * Los días de una carga: sus días hábiles con los feriados (`diasHabilesDe`) más sus días restituibles (`restituiblesDe`),
+ * que cuentan como hábiles: así unas vacaciones conservan los días que se pidieron aunque después un asueto caiga en ellas
+ * (spec 2026-10-31-mi-espacio-dias-restituidos, 4). Por fecha y sin repetir; sin restituibles, los días hábiles de siempre.
+ * Lo que no es una fila, [].
+ */
+export const diasDeLaCarga = (fila, estado, feriados) => {
+  if (!esObjeto(fila)) return [];
+  const habiles = diasHabilesDe(fila.desde, fila.hasta, feriados);
+  const restituibles = restituiblesDe(fila, estado, feriados);
+  return restituibles.length === 0 ? habiles : [...new Set([...habiles, ...restituibles])].sort();
+};
+
+/**
+ * Los días que descuenta una licencia: sus días hábiles con los feriados y, en las vacaciones y los días restituidos, sus
+ * días restituibles (`diasDeLaCarga`). En los tipos con saldo inicial, solo desde el arranque, ese día incluido (sin
+ * arranque, ninguno: todavía no hay saldo). Un tipo desconocido o unas fechas que no son fechas, [].
  */
 export const diasQueDescuentan = (fila, estado, feriados) => {
   if (!esObjeto(fila) || !TIPOS_LICENCIA.includes(fila.tipo)) return [];
-  const dias = diasHabilesDe(fila.desde, fila.hasta, feriados);
+  const dias = diasDeLaCarga(fila, estado, feriados);
   const datos = esObjeto(estado) ? estado : {};
   if (!tieneSaldoInicial(fila.tipo, datos.modalidad)) return dias;
   return esFechaIso(datos.arranque) ? dias.filter((dia) => dia >= datos.arranque) : [];
@@ -443,8 +498,9 @@ const habilitadoAl = (ordinaria, fecha) =>
  * mitades habilitadas hasta ese día menos lo ya asignado); cuando no le quedan, o en el primer día, de la más vieja que ese
  * día esté habilitada, no vencida y con días libres; si no hay ninguna, el día queda sin cubrir y el siguiente vuelve a
  * buscar. Así, una carga que empieza a usar la 2024 a más tardar el 31/12/2026 la sigue usando en enero, y una que
- * empieza el 04/01/2027, ya no.
- * Devuelve `{ hoy, ordinarias, porFila, sinCubrir }`:
+ * empieza el 04/01/2027, ya no. Los días de cada fila son los que descuenta (`diasQueDescuentan`): con sus días
+ * restituibles, que el reparto asigna como cualquier otro (spec 2026-10-31-mi-espacio-dias-restituidos, 4).
+ * Devuelve `{ hoy, ordinarias, porFila, porFecha, sinCubrir }`:
  * - `ordinarias`: las de `ordinariasDe`, cada una con lo de hoy: `habilitado` (sus mitades habilitadas hasta hoy),
  *   `por_habilitar` (el resto, menos lo cargado a futuro de lo que todavía no se habilitó), `usados` (asignados hasta hoy),
  *   `cargados` (asignados después de hoy), `perdidos` y `disponibles` (lo habilitado que no se asignó, menos los perdidos;
@@ -455,6 +511,9 @@ const habilitadoAl = (ordinaria, fecha) =>
  *   nada se pierde: una carga que empiece ese día la sigue usando después del vencimiento.
  * - `porFila`: un Map de cada id de vacaciones a `[{ anio, dias }]`, por año (una sin días que descuenten, []). El id va
  *   como número (`idDe`): así se busca también con el de un pedido, que llega como texto.
+ * - `porFecha`: un Map de cada id de vacaciones (también como número) a un Map de cada día asignado al año de la licencia de
+ *   la que sale, por fecha (los sin cubrir no están; una sin días que descuenten, un Map vacío): la licencia de origen de un
+ *   día restituible (spec 2026-10-31-mi-espacio-dias-restituidos, 4).
  * - `sinCubrir`: un Map del id (también como número) a sus días sin cubrir, solo de las que tienen alguno.
  * - `hoy`: el de las opciones, o null (`textoDelReparto` lo usa para saber qué licencia vence este año).
  */
@@ -464,6 +523,7 @@ export const repartoDeVacaciones = (estado, opciones) => {
   const ordinarias = ordinariasDe(datos, hoy);
   const asignados = new Map(ordinarias.map((ordinaria) => [ordinaria.anio, []]));
   const contadosPorFila = new Map();
+  const porFecha = new Map();
   const sinCubrir = new Map();
 
   // Las filas con sus días, en el orden de su primer día (y del id); las que no tienen días no asignan nada
@@ -472,6 +532,7 @@ export const repartoDeVacaciones = (estado, opciones) => {
     if (!esObjeto(fila) || fila.tipo !== 'vacaciones') continue;
     const id = idDe(fila.id);
     contadosPorFila.set(id, new Map());
+    porFecha.set(id, new Map());
     const dias = diasQueDescuentan(fila, datos, feriados);
     if (dias.length > 0) filas.push({ id, hasta: fila.hasta, dias });
   }
@@ -493,6 +554,7 @@ export const repartoDeVacaciones = (estado, opciones) => {
         continue;
       }
       asignados.get(actual.anio).push(fecha);
+      porFecha.get(id).set(fecha, actual.anio);
       const deLaFila = contadosPorFila.get(id);
       deLaFila.set(actual.anio, (deLaFila.get(actual.anio) ?? 0) + 1);
       const previo = ultimoUso.get(actual.anio);
@@ -541,6 +603,7 @@ export const repartoDeVacaciones = (estado, opciones) => {
       };
     }),
     porFila,
+    porFecha,
     sinCubrir
   };
 };
@@ -766,10 +829,12 @@ export const rangoDeFechas = (hoy) => {
   return esFechaIso(rango.desde) && esFechaIso(rango.hasta) ? rango : null;
 };
 
-// Las ausencias de día completo (spec, sección 6): las licencias de días enteros, y las de horas con la jornada entera (de
-// TIPOS_POR_HORAS, public/js/mi-espacio.js tiene una copia, TIPOS_CON_HORAS, atada por un test de paridad)
+// Las ausencias de día completo (spec, sección 6): las licencias de días enteros (también los días restituidos, que pasan a
+// Configuración y se ven en «Hoy no están» como unas vacaciones: spec 2026-10-31-mi-espacio-dias-restituidos, 7), y las de
+// horas con la jornada entera (de TIPOS_POR_HORAS, public/js/mi-espacio.js tiene una copia, TIPOS_CON_HORAS, atada por un test
+// de paridad)
 const TIPOS_DE_DIA_ENTERO = Object.freeze([
-  'vacaciones', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco'
+  'vacaciones', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco', 'restituidos'
 ]);
 export const TIPOS_POR_HORAS = Object.freeze(['franquicia', 'horas_a_favor', 'uso_autorizado']);
 export const esDiaEntero = (fila) => esObjeto(fila) && (TIPOS_DE_DIA_ENTERO.includes(fila.tipo)
@@ -919,10 +984,14 @@ const primeraFechaEnComun = (licencias, desde, hasta, editadaId) => {
  * uso_autorizado }` (`editadaId`, el id de la que se corrige, como número o como texto). Devuelve `{ datos, error }`:
  * `error` es null, o `{ campo, mensaje }` del primero que no sirve, y entonces `datos` es null; si no, `datos` es
  * `{ tipo, desde, hasta, horas, mostrar, nota }`. Los controles, en este orden:
- * 1. el tipo, uno de la modalidad del estado; `uso_autorizado`, solo desde su formulario (`uso_autorizado: true`);
+ * 1. el tipo, uno de la modalidad del estado; `uso_autorizado`, solo desde su formulario (`uso_autorizado: true`), y
+ *    `restituidos`, nunca: se carga por su propio camino, con el grupo que restituye (spec
+ *    2026-10-31-mi-espacio-dias-restituidos, 4);
  * 2. las fechas: el formato (`fecha`, en su campo), el rango de `rangoDeFechas` (`textoRango`), que hasta no sea anterior
  *    a desde (`hastaAntes`) y, en los de un día, que sean el mismo (sin hasta, toma desde; otro, `unDia` en `hasta`);
- * 3. los días hábiles, con los feriados: ninguno da `sinDiasHabiles`, o `diaNoHabil` en los de un día (en `desde`);
+ * 3. los días hábiles, con los feriados: ninguno da `sinDiasHabiles`, o `diaNoHabil` en los de un día (en `desde`). Al
+ *    corregir unas vacaciones, cuentan también sus días restituibles (`diasDeLaCarga`, con el id de `editadaId`): un día que
+ *    un asueto cargado después dejó de hacer hábil sigue siendo suyo;
  * 4. las horas: en la franquicia, enteras de 1 a 7 (`horasEnteras`); en las horas a favor y el uso autorizado de contrato,
  *    de 0,5 a 7 de a media hora (`horasMedias`); en el uso autorizado de planta, siempre 7; en el resto, null;
  * 5. la nota: recortada, de hasta 200 caracteres contados con Array.from (vacía, o lo que no es un texto, es null);
@@ -942,7 +1011,8 @@ export const validarLicencia = (entrada, contexto) => {
   const { modalidad } = datos;
   const { tipo, desde } = fuente;
 
-  if (!tiposDeLaModalidad(modalidad).includes(tipo) || (tipo === 'uso_autorizado' && desdeSuFormulario !== true)) {
+  if (!tiposDeLaModalidad(modalidad).includes(tipo) || (tipo === 'uso_autorizado' && desdeSuFormulario !== true)
+    || tipo === 'restituidos') {
     return rechazo('tipo', MENSAJES_MI_ESPACIO.tipo);
   }
 
@@ -959,7 +1029,7 @@ export const validarLicencia = (entrada, contexto) => {
   if (deUnDia && hasta !== desde) return rechazo('hasta', MENSAJES_MI_ESPACIO.unDia);
 
   // Con las dos fechas en el rango, contar los días hábiles no da más de cuatro años de vueltas
-  const dias = diasHabilesDe(desde, hasta, feriados);
+  const dias = diasDeLaCarga({ id: editadaId, tipo, desde, hasta }, datos, feriados);
   if (dias.length === 0) {
     return rechazo('desde', deUnDia ? MENSAJES_MI_ESPACIO.diaNoHabil : MENSAJES_MI_ESPACIO.sinDiasHabiles);
   }
@@ -2229,7 +2299,7 @@ const avisosDeLaCarga = (fila, conLaFila, despues, { estado, antes, opciones }) 
 // le haría a lo demás (`avisos`, vacía)
 const vistaDe = (fila, conLaFila, calculo, contexto) => {
   const { feriados } = contexto.opciones;
-  const habiles = diasHabilesDe(fila.desde, fila.hasta, feriados).length;
+  const habiles = diasDeLaCarga(fila, conLaFila, feriados).length;
   const descuentan = diasQueDescuentan(fila, conLaFila, feriados);
   const antesDelArranque = tieneSaldoInicial(fila.tipo, conLaFila.modalidad) && descuentan.length === 0;
   return {
@@ -2479,8 +2549,9 @@ const ESTADOS_CON_OFICIAL = Object.freeze(['creada', 'creada_cambiada', 'creada_
  * - una creada sigue a la de Configuración. Si la corrección cambia las fechas se mira contra la fila guardada (`anterior`);
  *   hasta dónde se pueden cambiar, con las fechas de Configuración (son las mismas, salvo que una copia anterior no haya
  *   pasado):
- *   - unas vacaciones con persona a cargo que pasan a otro tipo: después de `limiteParaCambiarTipo`, el error `tipoFijo` en
- *     `tipo`; hasta ese día, el cambio le saca la persona a cargo (`sin_persona_a_cargo: true` en `'cambiar'`);
+ *   - unas vacaciones (o unos días restituidos: `dejaPersonaACargo`) con persona a cargo que pasan a un tipo que no la deja:
+ *     después de `limiteParaCambiarTipo`, el error `tipoFijo` en `tipo`; hasta ese día, el cambio le saca la persona a cargo
+ *     (`sin_persona_a_cargo: true` en `'cambiar'`);
  *   - si no es de día entero, `'anular'` si todavía se puede anular (`puedeAnularse`: empieza hoy o después); si no,
  *     `'quedar'`;
  *   - con otras fechas, que no son las de Configuración: si la corregida termina antes de hoy y la de Configuración todavía
@@ -2506,8 +2577,8 @@ export const pasoDeLaCorreccion = (entrada) => {
   }
   if (estado !== 'creada') return { accion: 'nada' };
 
-  const pierdeLaPersona = personaACargo === true && esObjeto(anterior) && anterior.tipo === 'vacaciones'
-    && fila.tipo !== 'vacaciones';
+  const pierdeLaPersona = personaACargo === true && esObjeto(anterior) && dejaPersonaACargo(anterior.tipo)
+    && !dejaPersonaACargo(fila.tipo);
   if (pierdeLaPersona && hoy > limiteParaCambiarTipo(oficial.desde, calendario)) {
     return { error: { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipoFijo } };
   }
@@ -2588,12 +2659,12 @@ export const vinculosDeLaLista = (licencias, opciones) => {
  * - `pasa`: las fechas quedan en Configuración como creada: se crea o se cambia la licencia, o una creada sigue igual;
  * - `avisos` (solo si pasa): `AVISO_DEL_PASO`; al superadmin, `AVISO_DEL_PASO_SUPERADMIN`; al titular, `AVISO_NOTAS_DE_HOY`
  *   si empieza hoy o antes y hoy ya salió alguna nota con su firma (`notasDeHoy`, solo el `true` literal: spec
- *   2026-10-27-feriados-en-notas, 4), y `AVISO_SIN_PERSONA_A_CARGO` si no son vacaciones (solo las vacaciones dejan persona a
- *   cargo);
+ *   2026-10-27-feriados-en-notas, 4), y `AVISO_SIN_PERSONA_A_CARGO` si no deja persona a cargo (`dejaPersonaACargo`: solo las
+ *   vacaciones y los días restituidos);
  *   a la persona autorizada del firmante, `textoAutorizadaDelFirmante` por cada una de `comoAutorizada` (las licencias del
  *   firmante en las que es la autorizada, `[{ desde, hasta }]`) que se pisa con la fila y no terminó antes de hoy, por fecha
  *   (decisión del usuario, 27/10/2026: no la frena);
- * - `firmante` (solo al titular, y si pasa): `{ soy_titular, puede_autorizar (las vacaciones), vispera, sin_anticipo,
+ * - `firmante` (solo al titular, y si pasa): `{ soy_titular, puede_autorizar (si deja persona a cargo), vispera, sin_anticipo,
  *   sin_dias_habiles, notas_de_hoy }`, con `vispera`, `sin_anticipo` y `sin_dias_habiles` de `visperaDeLaLicencia` con las
  *   demás licencias de Configuración del titular (`delTitular`, sin la que sigue a esta fila) y el `calendario` (sin él, los 9
  *   fijos), como Configuración, y `notas_de_hoy` cuando va `AVISO_NOTAS_DE_HOY`; si no, null;
@@ -2621,14 +2692,14 @@ export const pasoPrevistoDe = (entrada) => {
   const avisos = [AVISO_DEL_PASO];
   if (rol === 'superadmin') avisos.push(AVISO_DEL_PASO_SUPERADMIN);
   if (titular && deHoy) avisos.push(AVISO_NOTAS_DE_HOY);
-  if (titular && fila.tipo !== 'vacaciones') avisos.push(AVISO_SIN_PERSONA_A_CARGO);
+  if (titular && !dejaPersonaACargo(fila.tipo)) avisos.push(AVISO_SIN_PERSONA_A_CARGO);
   listaDe(comoAutorizada)
     .filter((delFirmante) => esOficial(delFirmante) && delFirmante.desde <= fila.hasta && delFirmante.hasta >= fila.desde
       && delFirmante.hasta >= hoy)
     .sort((a, b) => compararTexto(a.desde, b.desde) || compararTexto(a.hasta, b.hasta))
     .forEach((delFirmante) => avisos.push(textoAutorizadaDelFirmante(delFirmante.desde, delFirmante.hasta)));
   const firmante = titular ? {
-    soy_titular: true, puede_autorizar: fila.tipo === 'vacaciones', ...visperaDeLaLicencia(fila, delTitular, calendario),
+    soy_titular: true, puede_autorizar: dejaPersonaACargo(fila.tipo), ...visperaDeLaLicencia(fila, delTitular, calendario),
     notas_de_hoy: deHoy
   } : null;
   return { pasa: true, avisos, firmante, sin_pasar_previsto: sinPasarPrevisto };

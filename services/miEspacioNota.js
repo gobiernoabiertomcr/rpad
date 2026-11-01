@@ -21,8 +21,11 @@ import {
   TIPOS_LICENCIA, MESES_HASTA_EL_FRANCO, MESES_HASTA_LAS_HORAS, mesMas, mesEnFrase, nombreDelMes, horasDeLaSalida
 } from './miEspacioReglas.js';
 
-// Los tipos que tienen nota: todos menos el uso autorizado (decisión del usuario, «por ahora»), en el orden de TIPOS_LICENCIA
-export const TIPOS_CON_NOTA = Object.freeze(TIPOS_LICENCIA.filter((tipo) => tipo !== 'uso_autorizado'));
+// Los tipos que tienen nota: todos menos el uso autorizado (decisión del usuario, «por ahora») y, mientras su nota no tenga
+// los asuetos que restituye, los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 12), en el orden de
+// TIPOS_LICENCIA
+const SIN_NOTA = Object.freeze(['uso_autorizado', 'restituidos']);
+export const TIPOS_CON_NOTA = Object.freeze(TIPOS_LICENCIA.filter((tipo) => !SIN_NOTA.includes(tipo)));
 
 // Cómo se nombra cada tipo en el archivo: «Nota de licencia - <tipo> - <desde>.docx»
 export const NOMBRES_DEL_ARCHIVO = Object.freeze({

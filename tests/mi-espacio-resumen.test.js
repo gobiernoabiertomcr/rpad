@@ -11,7 +11,7 @@ import {
 } from '../services/miEspacioResumen.js';
 import * as reglas from '../services/miEspacioReglas.js';
 import { NOMBRES_DE_LOS_FIJOS, feriadosDelRango } from '../services/feriadosReglas.js';
-import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
+import { HOY, SIN_FERIADOS, PLANTA, CONTRATO, JULIETA, ASUETOS } from './fixtures/mi-espacio-casos.js';
 
 const { calcular, MENSAJES_MI_ESPACIO, horasPorMesDeSalidas, NOMBRES_TIPO } = reglas;
 
@@ -2138,6 +2138,60 @@ describe('el próximo feriado', () => {
 
   it('sin un hoy válido, null', () => {
     for (const raro of [undefined, null, '', 'x', 3]) assert.equal(proximoFeriadoDe([FERIADO_SOBERANIA], raro), null);
+  });
+});
+
+// Los días restituibles (spec 2026-10-31-mi-espacio-dias-restituidos, 4 y 7), con Julieta: sus vacaciones del 11/12/2026 al
+// 08/01/2027 incluyen los asuetos del 24 y el 31/12/2026, cargados después (la foto los guarda). Sin foto, el asueto ya estaba
+describe('los días restituibles (spec 2026-10-31-mi-espacio-dias-restituidos)', () => {
+  const sinFoto = { ...JULIETA.estado, restituibles: [] };
+  const calculoDeJulieta = (estado, hoy) => calcular(estado, { hoy, feriados: ASUETOS });
+  const filasDeJulieta = (estado, hoy, anio = 2026) => filasDeLicencias(estado, calculoDeJulieta(estado, hoy),
+    { anio, hoy, persona: JULIETA.persona, feriados: ASUETOS });
+  const resumenDeJulieta = (estado, hoy) => resumenDe({
+    persona: JULIETA.persona, estado, calculo: calculoDeJulieta(estado, hoy), hoy, feriados: ASUETOS, hoyYManana: HOY_Y_MANANA
+  });
+
+  // Review Focus 1: las vacaciones conservan sus días
+  it('la fila de las vacaciones sigue diciendo 19 días, de la licencia 2024', () => {
+    for (const anio of [2026, 2027]) {
+      const [fila] = filasDeJulieta(JULIETA.estado, '2027-01-11', anio).licencias;
+      assert.equal(fila.cantidad_texto, '19 días hábiles de 29 corridos', String(anio));
+      assert.equal(fila.de_licencias_texto, 'De la licencia 2024.', String(anio));
+    }
+    // Sin foto, como siempre: 17
+    assert.equal(filasDeJulieta(sinFoto, '2027-01-11').licencias[0].cantidad_texto, '17 días hábiles de 29 corridos');
+  });
+
+  it('la banda no dice «Perdés» y no hay faltantes', () => {
+    const conLaFoto = resumenDeJulieta(JULIETA.estado, '2026-12-22');
+    assert.deepEqual(conLaFoto.faltantes, []);
+    assert.ok(!conLaFoto.titular.bajada.some((oracion) => oracion.texto.startsWith('Perdés')),
+      JSON.stringify(conLaFoto.titular.bajada));
+    // Sin foto, los 2 días que libera el asueto se pierden (como hasta ahora)
+    assert.ok(resumenDeJulieta(sinFoto, '2026-12-22').titular.bajada
+      .some((oracion) => oracion.texto === 'Perdés 2 de la 2024 (vencen el 31/12/2026).'));
+  });
+
+  it('«Cargar licencia» no ofrece «Días restituidos» como un tipo más', () => {
+    for (const resumen of [resumenDeJulieta(JULIETA.estado, '2027-01-11'), resumenDel(PLANTA), resumenDel(CONTRATO)]) {
+      assert.ok(resumen.tipos.length > 0);
+      assert.ok(!resumen.tipos.some((opcion) => opcion.tipo === 'restituidos'), JSON.stringify(resumen.tipos));
+    }
+  });
+
+  it('una carga de días restituidos tiene su nombre y su filtro, y cuenta sus días hábiles', () => {
+    const restituidos = licencia(2, 'restituidos', '2027-04-12', '2027-04-13');
+    const estado = { ...JULIETA.estado, licencias: [...JULIETA.estado.licencias, restituidos] };
+    const lista = filasDeJulieta(estado, '2027-01-11', 2027);
+    assert.deepEqual(lista.filtros.find((filtro) => filtro.tipo === 'restituidos'),
+      { tipo: 'restituidos', nombre: 'Días restituidos', cantidad: 1 });
+    const fila = lista.licencias.find((otra) => otra.tipo === 'restituidos');
+    assert.equal(fila.tipo_nombre, 'Días restituidos');
+    assert.equal(fila.cantidad_texto, '2 días hábiles');
+    // No sale de ninguna licencia: no entra en el reparto
+    assert.equal(fila.de_licencias_texto, '');
+    sinHuecos(lista);
   });
 });
 

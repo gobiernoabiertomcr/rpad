@@ -1591,6 +1591,13 @@ describe('el paso a Configuración', () => {
       assert.deepEqual(conPersona.body, sinVacaciones);
       assert.deepEqual([await vinculosDe('adminB'), await deConfiguracion('adminB')], [[], []]);
     }
+    // Los días restituidos son vacaciones (spec 2026-10-31-mi-espacio-dias-restituidos, 7): la persona a cargo no se rechaza.
+    // La carga sí, en el tipo: «Días restituidos» se carga por su propio camino, con el grupo que restituye
+    const restituidos = await cargarMia('adminB',
+      { tipo: 'restituidos', desde: q(0), hasta: q(1), autorizado_id: usuarios.adminA.id });
+    assert.equal(restituidos.status, 400);
+    assert.equal(restituidos.body.campo, 'tipo', JSON.stringify(restituidos.body));
+    assert.deepEqual([await vinculosDe('adminB'), await deConfiguracion('adminB')], [[], []]);
     const medica = await cargarMia('adminB', { tipo: 'medica', desde: q(0), hasta: q(1) });
     const franquicia = await cargarMia('adminB', { tipo: 'franquicia', desde: q(2), horas: 7 });
     assert.deepEqual([medica.status, franquicia.status], [201, 201]);

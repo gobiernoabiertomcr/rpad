@@ -6,6 +6,7 @@ import {
   TIPOS_CON_NOTA, NOMBRES_DEL_ARCHIVO, MENSAJES_NOTA, enLetras, textoDeHoras, notaDeLicencia, htmlDeLaNota,
   aclaracionDeLaNota
 } from '../services/miEspacioNota.js';
+import { TIPOS_LICENCIA } from '../services/miEspacioReglas.js';
 
 const PERSONA = Object.freeze({ nombre: 'Lucía Fernández', cargo: 'Jefa de División Datos Abiertos', vinculo: 'planta_permanente' });
 // El lunes 23/11/2026, feriado de la tabla (los 9 fijos ya los saca esDiaHabil)
@@ -18,11 +19,14 @@ const cuerpo = (licencia) => armar(licencia).nota.cuerpo;
 const VACACIONES = Object.freeze({ tipo: 'vacaciones', desde: '2026-11-16', hasta: '2026-11-27', horas: null });
 
 describe('las constantes', () => {
-  it('los ocho tipos con nota, en el orden de TIPOS_LICENCIA y sin el uso autorizado', () => {
+  it('los ocho tipos con nota, en el orden de TIPOS_LICENCIA, sin el uso autorizado ni, por ahora, los días restituidos', () => {
     assert.deepEqual([...TIPOS_CON_NOTA], [
       'vacaciones', 'franquicia', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco', 'horas_a_favor'
     ]);
     assert.ok(Object.isFrozen(TIPOS_CON_NOTA));
+    // Los días restituidos son un tipo de Mi espacio, pero su nota (con los asuetos que restituye) todavía no se arma
+    assert.ok(TIPOS_LICENCIA.includes('restituidos'));
+    assert.deepEqual(armar({ tipo: 'restituidos', desde: '2026-11-16', hasta: '2026-11-17', horas: null }), { error: 'sinNota' });
   });
 
   it('el nombre de cada tipo en el archivo', () => {

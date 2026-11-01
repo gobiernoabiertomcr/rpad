@@ -31,11 +31,12 @@ import {
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
   avisosDeSalidas, mesDeLaPlanilla, porHabilitarDe, alcanceDeLaCarga, diasLibresEntre, diasLibresDelMes, franquiciaQueVence,
   textoDePerdidosConLaCarga, textoDelFrancoSinDiasLibres, textoDeLasHorasSinDiasLibres, textoDeLaFranquiciaPerdida,
-  textoDelReacomodo, textoDeLosDiasHabiles, mesDeLaSalida, repartoDelMes, textoDeLoQueSeMueve
+  textoDelReacomodo, textoDeLosDiasHabiles, mesDeLaSalida, repartoDelMes, textoDeLoQueSeMueve,
+  TIPOS_CON_PERSONA_A_CARGO, dejaPersonaACargo, restituiblesDe, diasDeLaCarga
 } from '../services/miEspacioReglas.js';
 import { feriadosDelRango, calendarioCon } from '../services/feriadosReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
-import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
+import { HOY, SIN_FERIADOS, PLANTA, CONTRATO, JULIETA, ASUETOS } from './fixtures/mi-espacio-casos.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
 // El calendario con la precarga de 2026 y 2027 (spec 2026-10-27-feriados-en-notas, 1): el 07/12/2026 no es laborable, y el 08/02
@@ -87,19 +88,33 @@ describe('las constantes', () => {
   });
 
   it('los tipos de licencia, los de cada modalidad y sus nombres', () => {
+    // Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 6): al final del enum, y en las dos modalidades justo
+    // después de las vacaciones
     assert.deepEqual(TIPOS_LICENCIA, [
       'vacaciones', 'franquicia', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco', 'horas_a_favor',
-      'uso_autorizado'
+      'uso_autorizado', 'restituidos'
     ]);
     assert.deepEqual(TIPOS_POR_MODALIDAD, {
-      planta: ['vacaciones', 'franquicia', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'franco', 'uso_autorizado'],
-      contrato: ['vacaciones', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'horas_a_favor', 'uso_autorizado']
+      planta: ['vacaciones', 'restituidos', 'franquicia', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'franco',
+        'uso_autorizado'],
+      contrato: ['vacaciones', 'restituidos', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'horas_a_favor',
+        'uso_autorizado']
     });
     assert.deepEqual(NOMBRES_TIPO, {
       vacaciones: 'Vacaciones', franquicia: 'Franquicia', estudios: 'Estudios', medica: 'Atención médica',
       medica_extraordinaria: 'Médica extraordinaria', familiar: 'Atención del grupo familiar', franco: 'Franco compensatorio',
-      horas_a_favor: 'Horas a favor', uso_autorizado: 'Uso autorizado'
+      horas_a_favor: 'Horas a favor', uso_autorizado: 'Uso autorizado', restituidos: 'Días restituidos'
     });
+    assert.deepEqual(Object.keys(NOMBRES_TIPO).sort(), [...TIPOS_LICENCIA].sort());
+  });
+
+  it('los tipos que dejan persona a cargo del firmante titular: las vacaciones y los días restituidos', () => {
+    assert.deepEqual(TIPOS_CON_PERSONA_A_CARGO, ['vacaciones', 'restituidos']);
+    for (const tipo of TIPOS_CON_PERSONA_A_CARGO) assert.equal(dejaPersonaACargo(tipo), true, tipo);
+    for (const otro of [...TIPOS_LICENCIA.filter((tipo) => !TIPOS_CON_PERSONA_A_CARGO.includes(tipo)), undefined, null, '',
+      'Vacaciones', ['vacaciones'], {}, 3]) {
+      assert.equal(dejaPersonaACargo(otro), false, String(otro));
+    }
   });
 
   it('los días, los topes y los largos', () => {
@@ -114,7 +129,8 @@ describe('las constantes', () => {
   it('están congeladas', () => {
     for (const constante of [
       MODALIDADES, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, TIPOS_POR_MODALIDAD.planta,
-      TIPOS_POR_MODALIDAD.contrato, NOMBRES_TIPO, DIAS_VACACIONES, DIAS_ESTUDIOS, TOPES, MENSAJES_MI_ESPACIO
+      TIPOS_POR_MODALIDAD.contrato, NOMBRES_TIPO, DIAS_VACACIONES, DIAS_ESTUDIOS, TOPES, MENSAJES_MI_ESPACIO,
+      TIPOS_CON_PERSONA_A_CARGO
     ]) assert.ok(Object.isFrozen(constante));
   });
 });
@@ -708,6 +724,187 @@ describe('el reparto de las vacaciones', () => {
   });
 });
 
+// Los días restituibles (spec 2026-10-31-mi-espacio-dias-restituidos, 4): con Julieta, cuyas vacaciones del 11/12/2026 al
+// 08/01/2027 incluyen los asuetos del 24 y el 31/12/2026, cargados después (la foto los guarda)
+describe('los días restituibles de una carga (spec 2026-10-31-mi-espacio-dias-restituidos, 4)', () => {
+  const ESTADO = JULIETA.estado;
+  const [VACACIONES_DE_JULIETA] = ESTADO.licencias;
+  const LOS_DOS = ['2026-12-24', '2026-12-31'];
+  // Una fila de la foto (las de JULIETA tienen ids 1 y 2: las de los tests, desde el 10)
+  const fotoDe = (id, licenciaId, fecha, extra = {}) =>
+    ({ id, licencia_id: licenciaId, feriado_id: 1, fecha, tanda: null, restitucion_id: null, ...extra });
+  const conFoto = (restituibles, licencias = ESTADO.licencias) => ({ ...ESTADO, restituibles, licencias });
+  // Sin foto: el asueto ya estaba cuando se cargaron las vacaciones
+  const sinFoto = conFoto([]);
+
+  it('restituiblesDe: los días de la foto que la carga sigue incluyendo y que hoy no son hábiles, por fecha', () => {
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, ESTADO, ASUETOS), LOS_DOS);
+    // En otro orden, repetidos o con los ids como texto, lo mismo
+    const desordenada = conFoto([fotoDe(10, '1', '2026-12-31'), fotoDe(11, 1, '2026-12-24'), fotoDe(12, 1, '2026-12-31')]);
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, desordenada, ASUETOS), LOS_DOS);
+    assert.deepEqual(restituiblesDe({ ...VACACIONES_DE_JULIETA, id: '1' }, ESTADO, ASUETOS), LOS_DOS);
+    // La tanda y el pedido no cambian qué días son restituibles (los grupos los arma restitucionesDe)
+    const pedida = conFoto(ESTADO.restituibles.map((fila) => ({ ...fila, tanda: 0, restitucion_id: 5 })));
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, pedida, ASUETOS), LOS_DOS);
+  });
+
+  it('un día que volvió a ser hábil (el asueto se dio de baja o ese año no rige) ya no se restituye', () => {
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, ESTADO, new Set(['2026-12-31'])), ['2026-12-31']);
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, ESTADO, SIN_FERIADOS), []);
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, ESTADO, undefined), []);
+  });
+
+  it('un día que la carga ya no incluye (las vacaciones se acortaron) ya no se restituye', () => {
+    assert.deepEqual(restituiblesDe({ ...VACACIONES_DE_JULIETA, hasta: '2026-12-23' }, ESTADO, ASUETOS), []);
+    assert.deepEqual(restituiblesDe({ ...VACACIONES_DE_JULIETA, hasta: '2026-12-28' }, ESTADO, ASUETOS), ['2026-12-24']);
+    assert.deepEqual(restituiblesDe({ ...VACACIONES_DE_JULIETA, desde: '2026-12-28' }, ESTADO, ASUETOS), ['2026-12-31']);
+  });
+
+  it('en las vacaciones, solo del arranque en adelante (sin arranque, ninguno)', () => {
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, { ...ESTADO, arranque: '2026-12-28' }, ASUETOS), ['2026-12-31']);
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, { ...ESTADO, arranque: '2026-12-24' }, ASUETOS), LOS_DOS);
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, { ...ESTADO, arranque: null }, ASUETOS), []);
+  });
+
+  it('solo los de esa carga, y solo en las vacaciones y en los días restituidos', () => {
+    // Otra carga con las mismas fechas no tiene foto
+    assert.deepEqual(restituiblesDe(vacaciones(10, '2026-12-11', '2027-01-08'), ESTADO, ASUETOS), []);
+    // Una atención médica con foto (no pasa: la foto es solo de vacaciones y de días restituidos) se recalcula como siempre
+    const medica = { id: 11, tipo: 'medica', desde: '2026-12-21', hasta: '2026-12-24', horas: null };
+    const conMedica = conFoto([fotoDe(10, 11, '2026-12-24')], [medica]);
+    assert.deepEqual(restituiblesDe(medica, conMedica, ASUETOS), []);
+    assert.deepEqual(diasDeLaCarga(medica, conMedica, ASUETOS), ['2026-12-21', '2026-12-22', '2026-12-23']);
+    // Una carga de días restituidos (la recursión: spec, 4); no es un tipo con saldo inicial, así que no mira el arranque
+    const restituidos = { id: 12, tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13', horas: null };
+    const conAsueto = new Set([...ASUETOS, '2027-04-12']);
+    const recursiva = conFoto([...ESTADO.restituibles, fotoDe(10, 12, '2027-04-12')], [VACACIONES_DE_JULIETA, restituidos]);
+    assert.deepEqual(restituiblesDe(restituidos, recursiva, conAsueto), ['2027-04-12']);
+    assert.deepEqual(restituiblesDe(restituidos, { ...recursiva, arranque: '2027-05-03' }, conAsueto), ['2027-04-12']);
+    assert.deepEqual(diasDeLaCarga(restituidos, recursiva, conAsueto), ['2027-04-12', '2027-04-13']);
+  });
+
+  it('una fila sin id, un tipo desconocido o lo que no es un estado: ninguno, sin tirar', () => {
+    const { id, ...sinId } = VACACIONES_DE_JULIETA;
+    assert.equal(id, 1);
+    for (const fila of [sinId, { ...VACACIONES_DE_JULIETA, id: null }, { ...VACACIONES_DE_JULIETA, id: 0 },
+      { ...VACACIONES_DE_JULIETA, id: 'x' }, { ...VACACIONES_DE_JULIETA, tipo: 'otro' },
+      { ...VACACIONES_DE_JULIETA, desde: '2026-02-30' }, undefined, null, 'x', [], 3]) {
+      assert.deepEqual(restituiblesDe(fila, ESTADO, ASUETOS), [], JSON.stringify(fila));
+    }
+    for (const estado of [undefined, null, '', 'x', 3, [], {}, { ...ESTADO, restituibles: 'x' },
+      { ...ESTADO, restituibles: [null, 3, 'x', {}, fotoDe(10, 1, '24/12/2026'), fotoDe(11, null, '2026-12-24')] }]) {
+      assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, estado, ASUETOS), [], JSON.stringify(estado));
+    }
+    for (const raro of [undefined, null, 'x', [], 3, {}]) {
+      assert.deepEqual(diasDeLaCarga(raro, ESTADO, ASUETOS), [], JSON.stringify(raro));
+      assert.doesNotThrow(() => diasDeLaCarga(VACACIONES_DE_JULIETA, raro, raro));
+    }
+  });
+
+  it('diasDeLaCarga: los días hábiles más los restituibles, por fecha y sin repetir', () => {
+    const dias = diasDeLaCarga(VACACIONES_DE_JULIETA, ESTADO, ASUETOS);
+    assert.equal(dias.length, 19);
+    assert.ok(dias.includes('2026-12-24') && dias.includes('2026-12-31'));
+    assert.deepEqual(dias, [...dias].sort());
+    assert.equal(new Set(dias).size, dias.length);
+    // Sin foto, los días hábiles (como siempre); sin los asuetos, los mismos 19 (son hábiles)
+    assert.equal(diasDeLaCarga(VACACIONES_DE_JULIETA, sinFoto, ASUETOS).length, 17);
+    assert.deepEqual(diasDeLaCarga(VACACIONES_DE_JULIETA, ESTADO, SIN_FERIADOS), dias);
+  });
+
+  // Review Focus 1: las vacaciones conservan sus días. Sin foto (el asueto ya estaba), todo se recalcula como siempre
+  it('las vacaciones conservan sus 19 días: diasQueDescuentan, el reparto y la licencia de cada día (porFecha)', () => {
+    assert.equal(diasQueDescuentan(VACACIONES_DE_JULIETA, sinFoto, SIN_FERIADOS).length, 19);
+    assert.equal(diasQueDescuentan(VACACIONES_DE_JULIETA, sinFoto, ASUETOS).length, 17);
+    const dias = diasQueDescuentan(VACACIONES_DE_JULIETA, ESTADO, ASUETOS);
+    assert.deepEqual(dias, diasDeLaCarga(VACACIONES_DE_JULIETA, ESTADO, ASUETOS));
+    assert.equal(dias.length, 19);
+
+    const reparto = repartoDeVacaciones(ESTADO, { hoy: '2027-01-11', feriados: ASUETOS });
+    assert.deepEqual(reparto.porFila.get(1), [{ anio: 2024, dias: 19 }]);
+    assert.equal(reparto.sinCubrir.size, 0);
+    const porFecha = reparto.porFecha.get(1);
+    assert.ok(porFecha instanceof Map);
+    assert.deepEqual([...porFecha.keys()], dias);
+    assert.equal(porFecha.get('2026-12-24'), 2024);
+    assert.equal(porFecha.get('2026-12-31'), 2024);
+    assert.ok([...porFecha.values()].every((anio) => anio === 2024));
+    // Con el id como texto (el de un pedido), también
+    assert.equal(reparto.porFecha.get(Number('1')), porFecha);
+    // Sin foto, el reparto de siempre: 17 días de la 2024
+    const sinLaFoto = repartoDeVacaciones(sinFoto, { hoy: '2027-01-11', feriados: ASUETOS });
+    assert.deepEqual(sinLaFoto.porFila.get(1), [{ anio: 2024, dias: 17 }]);
+    assert.equal(sinLaFoto.porFecha.get(1).size, 17);
+    assert.equal(sinLaFoto.porFecha.get(1).has('2026-12-24'), false);
+  });
+
+  it('porFecha: los días sin cubrir no están, y una carga sin días tiene su Map vacío', () => {
+    // Con 10 de la 2025 y nada de la 2026 hasta el 1/1: la 2025 cubre hasta el 24/12, del 28/12 al 31/12 no queda ninguna y
+    // en enero, la 2026
+    const otrasLicencias = { ...ESTADO, saldos: saldosDeVacaciones({ 2024: 0, 2025: 10, 2026: 0 }) };
+    const reparto = repartoDeVacaciones(otrasLicencias, { hoy: '2027-01-11', feriados: ASUETOS });
+    const porFecha = reparto.porFecha.get(1);
+    assert.deepEqual(reparto.sinCubrir.get(1), ['2026-12-28', '2026-12-29', '2026-12-30', '2026-12-31']);
+    assert.equal(porFecha.size, 15);
+    for (const fecha of reparto.sinCubrir.get(1)) assert.equal(porFecha.has(fecha), false, fecha);
+    assert.equal(porFecha.get('2026-12-24'), 2025);
+    assert.equal(porFecha.get('2027-01-04'), 2026);
+    // Antes del arranque no descuenta: sin días, sin ninguna fecha
+    const antes = repartoDeVacaciones({ ...ESTADO, arranque: '2027-02-01' }, { hoy: '2027-01-11', feriados: ASUETOS });
+    assert.equal(antes.porFecha.get(1).size, 0);
+    assert.equal(repartoDeVacaciones(null).porFecha.size, 0);
+  });
+
+  it('sin faltantes ni «Perdés», con hoy el 22/12/2026 (antes del vencimiento de la 2024) y al volver, el 11/01/2027', () => {
+    const calculo = calcular(ESTADO, { hoy: '2026-12-22', feriados: ASUETOS });
+    assert.deepEqual(calculo.faltantes, []);
+    assert.equal(textoDePerdidos(calculo.reparto.ordinarias), '');
+    assert.equal(ordinaria(calculo.reparto, 2024).perdidos, 0);
+    assert.deepEqual(calcular(ESTADO, { hoy: '2027-01-11', feriados: ASUETOS }).faltantes, []);
+    // Sin foto, los 2 días que libera el asueto se perderían (como hasta ahora)
+    const sinLaFoto = calcular(sinFoto, { hoy: '2026-12-22', feriados: ASUETOS });
+    assert.equal(textoDePerdidos(sinLaFoto.reparto.ordinarias), 'Perdés 2 de la 2024 (vencen el 31/12/2026).');
+  });
+
+  it('el cálculo de «Cargar licencia» de las mismas vacaciones sigue diciendo 19 días', () => {
+    const { error, vista } = evaluarLicencia(ESTADO, { tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08' },
+      { hoy: '2026-12-22', feriados: ASUETOS, editadaId: 1 });
+    assert.equal(error, null);
+    assert.equal(vista.dias_habiles, 19);
+    assert.equal(vista.texto_dias, '19 días hábiles de 29 corridos');
+    assert.match(vista.texto_reparto, /^Salen de la licencia 2024/);
+    assert.ok(!vista.texto_reparto.includes('Perdés'), vista.texto_reparto);
+    // Sin foto, 17
+    const sinLaFoto = evaluarLicencia(sinFoto, { tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08' },
+      { hoy: '2026-12-22', feriados: ASUETOS, editadaId: 1 });
+    assert.equal(sinLaFoto.vista.texto_dias, '17 días hábiles de 29 corridos');
+  });
+
+  it('validarLicencia: los días restituidos no se cargan por acá; una corrección de un día restituible tiene días', () => {
+    const contexto = { hoy: '2026-12-22', estado: ESTADO, feriados: ASUETOS };
+    const tipo = { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipo };
+    const restituidos = { tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13' };
+    for (const extra of [{}, { uso_autorizado: true }, { editadaId: 1 }, { estado: { ...ESTADO, modalidad: 'contrato' } }]) {
+      assert.deepEqual(validarLicencia(restituidos, { ...contexto, ...extra }).error, tipo, JSON.stringify(extra));
+    }
+    // Unas vacaciones de un solo día, el 24/12, cargadas antes del asueto
+    const deUnDia = vacaciones(10, '2026-12-24', '2026-12-24');
+    const estado = conFoto([fotoDe(10, 10, '2026-12-24')], [deUnDia]);
+    const entrada = { tipo: 'vacaciones', desde: '2026-12-24', hasta: '2026-12-24', nota: 'Turno' };
+    for (const editadaId of [10, '10']) {
+      const corregida = validarLicencia(entrada, { ...contexto, estado, editadaId });
+      assert.equal(corregida.error, null, String(editadaId));
+      assert.equal(corregida.datos.nota, 'Turno');
+    }
+    // Una carga nueva ese día no tiene días hábiles: la foto es de la carga guardada
+    assert.deepEqual(validarLicencia(entrada, { ...contexto, estado: { ...estado, licencias: [] } }).error,
+      { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.sinDiasHabiles });
+    // Ni una corrección de otra carga
+    assert.deepEqual(validarLicencia(entrada, { ...contexto, estado, editadaId: 11 }).error,
+      { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.sinDiasHabiles });
+  });
+});
+
 describe('textoDelReparto', () => {
   const textoDe = (estado, fila, feriados = SIN_FERIADOS) =>
     textoDelReparto(repartoDeVacaciones(conLicencias(estado, fila), { hoy: HOY, feriados }), fila.id);
@@ -829,7 +1026,7 @@ describe('el rango de fechas y el día entero', () => {
   });
 
   it('esDiaEntero: los de días enteros, y los de horas con 7', () => {
-    for (const tipo of ['vacaciones', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco']) {
+    for (const tipo of ['vacaciones', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco', 'restituidos']) {
       assert.equal(esDiaEntero({ tipo, horas: null }), true, tipo);
     }
     assert.equal(esDiaEntero({ tipo: 'franquicia', horas: 7 }), true);
@@ -3744,6 +3941,7 @@ describe('nada tira', () => {
     const vacio = repartoDeVacaciones(null);
     assert.deepEqual(vacio.ordinarias, []);
     assert.equal(vacio.porFila.size, 0);
+    assert.equal(vacio.porFecha.size, 0);
     assert.equal(vacio.sinCubrir.size, 0);
     assert.equal(textoDelReparto(null, 1), '');
     assert.equal(textoDelReparto({}, 1), '');
@@ -4459,6 +4657,24 @@ describe('el paso a Configuración', () => {
           { accion: 'nada' });
       });
 
+    it('los días restituidos dejan persona a cargo, como las vacaciones (spec 2026-10-31-mi-espacio-dias-restituidos, 7)', () => {
+      // Desde el lunes 02/11, con persona a cargo: el límite para cambiar el tipo es el jueves 29/10
+      const oficial = oficialDe(7, '2026-11-02', '2026-11-06', { autorizado_id: 3 });
+      const vinculo = { estado: 'creada', oficial };
+      const despuesDelLimite = { personaACargo: true, hoy: '2026-10-30' };
+      const deVacaciones = creadaDe(oficial);
+      const deRestituidos = creadaDe(oficial, { tipo: 'restituidos' });
+      // Siguen con su tipo: no pierden la persona, cualquier día
+      assert.deepEqual(correccion(deVacaciones, { ...deVacaciones, nota: 'x' }, vinculo, despuesDelLimite), { accion: 'nada' });
+      assert.deepEqual(correccion(deRestituidos, { ...deRestituidos, nota: 'x' }, vinculo, despuesDelLimite), { accion: 'nada' });
+      // A un tipo que no deja persona a cargo, la pierden, como las vacaciones
+      const aMedica = { ...deRestituidos, tipo: 'medica' };
+      assert.deepEqual(correccion(deRestituidos, aMedica, vinculo, despuesDelLimite),
+        { error: { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipoFijo } });
+      assert.deepEqual(correccion(deRestituidos, aMedica, vinculo, { ...despuesDelLimite, hoy: '2026-10-29' }),
+        { accion: 'cambiar', sin_persona_a_cargo: true });
+    });
+
     it('con la tabla, el límite cuenta los feriados de Configuración → Feriados (spec 2026-10-27-feriados-en-notas, 4)', () => {
       // Unas vacaciones desde el miércoles 09/12 con persona a cargo, que pasan a una médica el viernes 04/12
       const oficial = oficialDe(7, '2026-12-09', '2026-12-18', { autorizado_id: 3 });
@@ -4659,6 +4875,17 @@ describe('el paso a Configuración', () => {
         notas_de_hoy: true
       });
     });
+
+    it('al firmante titular, los días restituidos son vacaciones: dejan persona a cargo (spec 2026-10-31-mi-espacio-dias-restituidos, 7)',
+      () => {
+        const restituidos = filaDe({ tipo: 'restituidos' });
+        const deRestituidos = previsto({ soyTitular: true, fila: restituidos });
+        assert.deepEqual(deRestituidos, previsto({ soyTitular: true }));
+        assert.deepEqual(deRestituidos.avisos, [AVISO_DEL_PASO]);
+        assert.equal(deRestituidos.firmante.puede_autorizar, true);
+        // Pasan a Configuración como cualquier ausencia de día entero
+        assert.equal(previsto({ fila: restituidos }).pasa, true);
+      });
 
     it('al firmante titular: la víspera con la tabla, sin anticipo y las notas de hoy (spec 2026-10-27-feriados-en-notas, 4)', () => {
       const marcas = ({ vispera, sin_anticipo: sinAnticipo, sin_dias_habiles: sinDiasHabiles }) => [vispera, sinAnticipo, sinDiasHabiles];

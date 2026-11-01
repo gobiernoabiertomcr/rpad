@@ -23,7 +23,7 @@ import { hoyArgentina, ahoraArgentina, sumarDias, diasEntre, esFechaIso } from '
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, MAXIMO_DIAS_POR_GUARDADO, anioVigente, camposDelSaldoInicial, textoDeLasMitades,
   evaluarLicencia, validarHorasExtras, validarSalida, mesDeLaPlanilla, validarAnio, validarSaldoInicial, modalidadDe,
-  ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, nombreCorto
+  ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, nombreCorto, dejaPersonaACargo
 } from '../services/miEspacioReglas.js';
 import {
   resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe, textoDeLaListaDe
@@ -296,14 +296,15 @@ const MENSAJE_AUTORIZADO_INVALIDO = 'La persona autorizada no es válida.';
 /**
  * La persona a cargo del pedido (`autorizado_id`): `{ autorizado }`, con undefined si no vino, null para «nadie» (null o '')
  * o el id; o `{ error }` con el 400 en `autorizado_id`. Solo las vacaciones dejan persona a cargo (corrección del usuario a
- * la spec, sección 6): un valor en otro tipo es `autorizadoSoloVacaciones`, antes de abrir la transacción. Que la persona
- * sea el firmante titular y que la autorizada sirva lo controla Configuración (rechazoDeLaBase).
+ * la spec, sección 6), y los días restituidos, que también lo son (`dejaPersonaACargo`; spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 7): un valor en otro tipo es `autorizadoSoloVacaciones`, antes de abrir la
+ * transacción. Que la persona sea el firmante titular y que la autorizada sirva lo controla Configuración (rechazoDeLaBase).
  */
 const autorizadoDelPedido = (entrada) => {
   if (!Object.hasOwn(entrada, 'autorizado_id')) return { autorizado: undefined };
   const valor = entrada.autorizado_id;
   if (valor === null || valor === '') return { autorizado: null };
-  if (entrada.tipo !== 'vacaciones') {
+  if (!dejaPersonaACargo(entrada.tipo)) {
     return { error: { campo: 'autorizado_id', mensaje: MENSAJES_MI_ESPACIO.autorizadoSoloVacaciones } };
   }
   const id = idPositivo(valor);
