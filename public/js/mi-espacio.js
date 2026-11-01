@@ -4398,6 +4398,24 @@ function devolverElFoco(respaldo) {
   }
 }
 
+// El año que tenía una lista (la de Licencias o la de Horas extras), para volver a pedirla en él: el de hoy, o ninguno, da null (la
+// del año en curso que dice el servidor)
+const anioQueTenia = (datos) => (Number.isInteger(datos?.anio) && datos.anio !== anioDeHoy() ? datos.anio : null);
+
+// Vuelve a pedir la lista de Licencias, si se ve, en el año pendiente o en el que tenía y sin anunciarla, con el foco resguardado:
+// el de `control` (el botón que se usó, que la recarga reemplaza: respaldoDelFoco, tomado antes). Fuera de la pestaña, la suelta: se
+// pide la próxima vez que se abre
+async function recargarLaListaConElFocoEn(control) {
+  if (pagina.pestana !== 'licencias') {
+    pagina.licencias = null;
+    return;
+  }
+  const respaldo = respaldoDelFoco(control);
+  const anio = pagina.anioDeLicencias !== null ? tomarElAnioDeLicencias() : anioQueTenia(pagina.licencias);
+  await cargarLicencias(anio, { conAnuncio: false });
+  devolverElFoco(respaldo);
+}
+
 // Después de guardar o de borrar: el Resumen y las pestañas que ya se cargaron (la que se ve, enseguida y con el año que tenía
 // y, en Horas extras, el mes del día por día, y en la agenda, el mes que se ve, sin anunciarlo: se anuncia lo que se guardó; las
 // otras, cuando se vuelvan a abrir). La lista de Licencias, en el año pendiente si hay uno (pagina.anioDeLicencias: el de la licencia
@@ -4407,7 +4425,6 @@ function devolverElFoco(respaldo) {
 async function volverAPedirTodo() {
   const respaldo = respaldoDelFoco(document.activeElement);
   const cargas = [cargarResumen()];
-  const anioQueTenia = (datos) => (Number.isInteger(datos.anio) && datos.anio !== anioDeHoy() ? datos.anio : null);
   if (pagina.pestana === 'licencias' && (pagina.licencias !== null || pagina.anioDeLicencias !== null)) {
     const anio = pagina.anioDeLicencias !== null ? tomarElAnioDeLicencias() : anioQueTenia(pagina.licencias);
     cargas.push(cargarLicencias(anio, { conAnuncio: false }));
@@ -4458,18 +4475,27 @@ async function hayResumen() {
 // ---- «Cargar licencia» y «Registrar un uso autorizado» ----
 
 // Unos días restituidos nuevos de un grupo que no está entre los `tipos` del Resumen (opcionDelGrupo): el Resumen es de antes del
-// asueto (la persona tenía la página abierta cuando administración lo cargó, y la lista de Licencias, que se vuelve a pedir al abrir
-// la pestaña, ya tiene la línea con su botón). Se vuelve a pedir (y se pinta, como siempre); si no llega, el aviso de siempre, y si
-// el grupo sigue sin estar, ya no está por restituir: se avisa con el mensaje del servidor y el formulario no se abre. true si se
-// puede abrir (si mientras tanto se abrió otro modal, no)
-async function hayElGrupo(grupo) {
-  await cargarResumen();
-  if (pagina.resumen === null) {
-    avisarMiEspacio(MENSAJE_SIN_RESUMEN, 'error');
-    return false;
+// asueto (la persona tenía la página abierta cuando administración lo cargó, y la lista de Licencias, que se pide la primera vez que
+// se abre la pestaña —o después de guardar—, ya tiene la línea con su botón). Se vuelve a pedir (y se pinta, como siempre), salvo
+// que se acabe de pedir en esta misma apertura (`pedir` en false: hayResumen). Si otro pedido del Resumen reemplazó a este (un doble
+// clic), manda el último: este sale sin decir nada. Si no llega, el aviso de siempre, y si el grupo sigue sin estar, ya no está por
+// restituir: se avisa con el mensaje del servidor, el formulario no se abre y la lista se vuelve a pedir con el foco resguardado
+// (`volverA`, el botón que se usó: el viejo se va y, si el reparto cambió, se ve la línea nueva). true si se puede abrir (si
+// mientras tanto se abrió otro modal, no)
+async function hayElGrupo(grupo, { pedir = true, volverA = null } = {}) {
+  if (pedir) {
+    const carga = cargarResumen();
+    const propio = pagina.pedidos.resumen;
+    await carga;
+    if (propio !== pagina.pedidos.resumen) return false;
+    if (pagina.resumen === null) {
+      avisarMiEspacio(MENSAJE_SIN_RESUMEN, 'error');
+      return false;
+    }
   }
-  if (opcionDelGrupo(pagina.resumen.tipos, grupo) === null) {
+  if (opcionDelGrupo(pagina.resumen?.tipos, grupo) === null) {
     avisarMiEspacio(MENSAJES_FORMULARIOS.grupoNoPorRestituir, 'error');
+    recargarLaListaConElFocoEn(volverA);
     return false;
   }
   return pagina.modales.length === 0;
@@ -4480,9 +4506,10 @@ async function hayElGrupo(grupo) {
 // corrección de una fila de la lista. El uso autorizado tiene su formulario. Sin el saldo inicial no se puede cargar nada: abre
 // «Mis vacaciones y saldos»
 async function abrirLicencia({ fila = null, tipo = null, grupo = null, volverA = null } = {}) {
-  if (pagina.resumen === null && !(await hayResumen())) return;
+  const recienPedido = pagina.resumen === null;
+  if (recienPedido && !(await hayResumen())) return;
   if (!fila && tipo === 'restituidos' && conTexto(grupo) && opcionDelGrupo(pagina.resumen?.tipos, grupo) === null
-    && !(await hayElGrupo(grupo))) return;
+    && !(await hayElGrupo(grupo, { pedir: !recienPedido, volverA }))) return;
   if (pagina.resumen?.abrir_saldos === true) {
     abrirSaldos(volverA);
     return;

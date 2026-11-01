@@ -634,9 +634,10 @@ const licenciaActiva = (datos, id) => listaDe(datos.licencias).find((fila) => es
  * de `paraRevisarDe`: `{ licencia_id, anio, texto, enlace }`, uno por grupo pedido o cargado con `revisar` (el de las reglas,
  * que no lo pone en un pedido del caso B pasado el plazo), con la licencia que hay que revisar en `licencia_id` y el año y el
  * enlace de sus fechas («Ver en Licencias de 2026»; si no dice desde cuándo, null y ''). Esa licencia es su carga (las
- * vacaciones de las que salen), salvo en uno cargado cuya carga ya no está (decisión del controlador, por la revisión de la
- * Task 7): ahí, la de los días restituidos (`carga_id`). Uno pedido suma `restitucion_id`, `puede_borrar` (hasta el plazo
- * inclusive) y `anio_de_origen` (la licencia a la que volvieron los días): si su carga ya no está, su fila tampoco, y la
+ * vacaciones de las que salen, también si siguen activas con otro tipo: el texto las nombra), salvo en uno cargado cuya carga
+ * ya no está activa (decisión del controlador, por la revisión de la Task 7): ahí, la de los días restituidos (`carga_id`).
+ * Uno pedido suma `restitucion_id`, `puede_borrar` (hasta el plazo inclusive) y `anio_de_origen` (la licencia a la que
+ * volvieron los días): si su carga ya no está, su fila tampoco, y la
  * página dibuja la nota en Word y «Borrar el pedido» al lado del «Revisá…». Los repetidos (el mismo texto y el mismo año: dos
  * grupos de las mismas vacaciones que ya no están) van una vez, salvo los de un pedido, que traen su nota y su borrado.
  * Tampoco es un faltante.
@@ -647,11 +648,14 @@ const paraRevisarDeRestituciones = (grupos, { datos, hoy }) => {
     .filter((grupo) => (grupo.situacion === 'pedida' || grupo.situacion === 'cargada') && typeof grupo.revisar === 'string'
       && grupo.revisar !== '')
     .map((grupo) => {
+      // Su carga, si sigue activa; si no, en uno cargado, la de los días restituidos. Unas vacaciones corregidas a otro tipo
+      // siguen activas (el texto las nombra): la fila, con sus fechas de hoy
       const suCarga = licenciaActiva(datos, grupo.licencia_id);
-      const sinSuCarga = !esObjeto(suCarga) || !TIPOS_CON_RESTITUIBLES.includes(suCarga.tipo);
-      const cargada = grupo.situacion === 'cargada' && sinSuCarga ? licenciaActiva(datos, grupo.carga_id) : undefined;
-      const [licenciaId, desde] = esObjeto(cargada) && esFechaIso(cargada.desde)
-        ? [grupo.carga_id, cargada.desde] : [grupo.licencia_id, esObjeto(grupo.carga) ? grupo.carga.desde : null];
+      const deOtroTipo = esObjeto(suCarga) && !TIPOS_CON_RESTITUIBLES.includes(suCarga.tipo) && esFechaIso(suCarga.desde);
+      const cargada = grupo.situacion === 'cargada' && !esObjeto(suCarga) ? licenciaActiva(datos, grupo.carga_id) : undefined;
+      let [licenciaId, desde] = [grupo.licencia_id, esObjeto(grupo.carga) ? grupo.carga.desde : null];
+      if (deOtroTipo) desde = suCarga.desde;
+      else if (esObjeto(cargada) && esFechaIso(cargada.desde)) [licenciaId, desde] = [grupo.carga_id, cargada.desde];
       const anio = esFechaIso(desde) ? anioDe(desde) : null;
       const entrada = {
         licencia_id: licenciaId, anio, texto: grupo.revisar, enlace: anio === null ? '' : `Ver en Licencias de ${anio}`

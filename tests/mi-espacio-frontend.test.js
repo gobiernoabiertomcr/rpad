@@ -11632,20 +11632,31 @@ describe('los días restituidos: «Cargar licencia» en la página (DOM falso)',
     assert.equal(pagina.el('ml-fechas-ayuda').textContent, MAQUETA_DE_LOS_RESTITUIDOS.T.ayudaFechasA);
   });
 
-  // El Resumen de antes del asueto (revisión final, 1): la persona tenía Mi espacio abierto cuando administración cargó el asueto,
-  // así que su Resumen no tiene días por restituir (ni las opciones de «Días restituidos» entre sus tipos); la lista de Licencias,
-  // que se vuelve a pedir al abrir la pestaña, ya tiene la línea con «Cargar los días restituidos»
+  // El Resumen de antes del asueto (revisión final de los días restituidos, 1): la persona tenía Mi espacio abierto cuando
+  // administración cargó el asueto, así que su Resumen no tiene días por restituir (ni las opciones de «Días restituidos» entre sus
+  // tipos); la lista de Licencias, que se pide la primera vez que se abre la pestaña, ya tiene la línea con «Cargar los días
+  // restituidos». LISTA_SIN_LA_LINEA es la de antes del asueto
   const RESUMEN_DE_ANTES = resumenDeJulieta({ ...JULIETA.estado, restituibles: [] }, ABRIL_JULIETA, new Set());
-  const conElResumenDeAntes = (nuevo) => {
-    const pedidos = { resumen: 0 };
+  const RESUMEN_NUEVO = resumenDeJulieta(JULIETA.estado, ABRIL_JULIETA);
+  const LISTA_SIN_LA_LINEA = listaDeJulieta({ ...JULIETA.estado, restituibles: [] }, new Set());
+  // El servidor falso, con el primer Resumen de antes: `resumen(n)` contesta el pedido n del Resumen (desde el segundo) y `lista(n)`,
+  // el pedido n de la lista de Licencias (undefined: lo de siempre de conJulieta, con la línea); `pedidos` los cuenta
+  const conElResumenDeAntes = (resumen, lista = () => undefined) => {
+    const pedidos = { resumen: 0, lista: 0 };
     const extra = (metodo, ruta) => {
-      if (ruta !== '/api/mi-espacio/resumen') return undefined;
-      pedidos.resumen += 1;
-      return pedidos.resumen === 1 ? ok(RESUMEN_DE_ANTES) : nuevo();
+      if (ruta === '/api/mi-espacio/resumen') {
+        pedidos.resumen += 1;
+        return pedidos.resumen === 1 ? ok(RESUMEN_DE_ANTES) : resumen(pedidos.resumen);
+      }
+      if (metodo !== 'GET' || !/^\/api\/mi-espacio\/licencias(\?anio=\d{4})?$/.test(ruta)) return undefined;
+      pedidos.lista += 1;
+      return lista(pedidos.lista);
     };
     return { pedidos, responder: conJulieta({ extra }) };
   };
   const botonDeLaLinea = (pagina) => pagina.el('vista-licencias').querySelector('.me-restituir-linea [data-accion="cargar-licencia"]');
+  // Los modales abiertos, de abajo arriba (el estado de la página)
+  const modalesAbiertos = (pagina) => vm.runInContext('pagina.modales.map((sesion) => sesion.id).join()', pagina.contexto);
 
   it('con el Resumen de antes del asueto, la línea de la fila vuelve a pedir el Resumen antes de abrir: la opción del grupo, '
     + 'elegida, con sus ayudas, y el cálculo con su restitución', async () => {
@@ -11660,6 +11671,7 @@ describe('los días restituidos: «Cargar licencia» en la página (DOM falso)',
     await pagina.correr();
     assert.equal(pedidos.resumen, 2);
     assert.equal(pagina.abierto('modal-licencia'), true);
+    assert.equal(modalesAbiertos(pagina), 'modal-licencia');
     assert.deepEqual(tiposElegidos(pagina), [['restituidos', '1-2024-0']]);
     assert.equal(pagina.el('ml-fechas-ayuda').textContent, MAQUETA_DE_LOS_RESTITUIDOS.T.ayudaFechasA);
     assert.deepEqual(delHasta(pagina), HASTA_DE_LOS_RESTITUIDOS);
@@ -11678,19 +11690,55 @@ describe('los días restituidos: «Cargar licencia» en la página (DOM falso)',
     assert.deepEqual(tiposElegidos(pagina), [['restituidos', '1-2024-0']]);
   });
 
-  it('…si el grupo tampoco está en el Resumen nuevo (ya no está por restituir), no se abre y se avisa; si el Resumen no llega, '
-    + 'lo de siempre', async () => {
-    const { pedidos, responder } = conElResumenDeAntes(() => ok(RESUMEN_DE_ANTES));
+  it('un doble clic con el Resumen de antes: manda el último clic, sin aviso de error, y el formulario se abre una vez', async () => {
+    // Las dos respuestas del Resumen llegan en el orden de los pedidos y al revés: la vieja siempre se descarta
+    for (const enOrden of [true, false]) {
+      const respuestas = [demorada(), demorada()];
+      const { pedidos, responder } = conElResumenDeAntes((n) => respuestas[n - 2].promesa);
+      const pagina = montarPagina({ responder });
+      await pagina.iniciar();
+      await pagina.tocar(pagina.el('tab-licencias'));
+      const boton = botonDeLaLinea(pagina);
+      boton.focus();
+      await pagina.tocar(boton);
+      await pagina.tocar(boton);
+      assert.equal(pedidos.resumen, 3, String(enOrden));
+      for (const respuesta of enOrden ? respuestas : [...respuestas].reverse()) {
+        respuesta.soltar(ok(RESUMEN_NUEVO));
+        await pagina.esperar();
+      }
+      await pagina.correr();
+      assert.deepEqual(pagina.estado.toasts, [], String(enOrden));
+      assert.equal(pagina.abierto('modal-licencia'), true, String(enOrden));
+      assert.equal(modalesAbiertos(pagina), 'modal-licencia', String(enOrden));
+      assert.deepEqual(tiposElegidos(pagina), [['restituidos', '1-2024-0']], String(enOrden));
+      assert.equal(pedidos.lista, 1, String(enOrden));
+    }
+  });
+
+  it('…si el grupo tampoco está en el Resumen nuevo (ya no está por restituir), no se abre, se avisa y se vuelve a pedir la '
+    + 'lista (sin el botón viejo), con el foco en el lugar más cercano; si el Resumen no llega, lo de siempre', async () => {
+    const { pedidos, responder } = conElResumenDeAntes(() => ok(RESUMEN_DE_ANTES),
+      (n) => (n === 1 ? undefined : ok(LISTA_SIN_LA_LINEA)));
     const pagina = montarPagina({ responder });
     await pagina.iniciar();
     await pagina.tocar(pagina.el('tab-licencias'));
-    await pagina.tocar(botonDeLaLinea(pagina));
+    const boton = botonDeLaLinea(pagina);
+    boton.focus();
+    await pagina.tocar(boton);
     await pagina.correr();
     assert.equal(pedidos.resumen, 2);
     assert.equal(pagina.abierto('modal-licencia'), false);
     assert.deepEqual(pagina.estado.toasts, [[MENSAJES_MI_ESPACIO.grupoNoPorRestituir, 'error']]);
     assert.equal(M.MENSAJES_FORMULARIOS.grupoNoPorRestituir, 'Esos días ya no están para restituir.');
     assert.equal(calculos(pagina).length, 0);
+    // La lista se vuelve a pedir, en el año que tenía, sin anunciarla: el botón viejo ya no está, y el foco va al «Editar» de sus
+    // vacaciones (el control con identidad que seguía en la lista: respaldoDelFoco)
+    assert.equal(pedidos.lista, 2);
+    assert.equal(pagina.rutas().filter((ruta) => ruta.startsWith('/api/mi-espacio/licencias')).at(-1), '/api/mi-espacio/licencias?anio=2027');
+    assert.equal(botonDeLaLinea(pagina), null);
+    assert.equal(pagina.documento.activeElement, pagina.el('vista-licencias').querySelector('[data-editar-licencia="1"]'));
+    assert.equal(pagina.el('me-anuncio').textContent.trim(), MENSAJES_MI_ESPACIO.grupoNoPorRestituir);
 
     // El Resumen que se vuelve a pedir no llega: el aviso de siempre de un formulario sin el Resumen
     const sinResumen = conElResumenDeAntes(() => respuesta(500, { success: false, error: 'Error al obtener el resumen' }));
@@ -11702,6 +11750,25 @@ describe('los días restituidos: «Cargar licencia» en la página (DOM falso)',
     assert.equal(sinResumen.pedidos.resumen, 2);
     assert.equal(otra.abierto('modal-licencia'), false);
     assert.deepEqual(otra.estado.toasts, [[M.MENSAJE_SIN_RESUMEN, 'error']]);
+    assert.equal(sinResumen.pedidos.lista, 1);
+  });
+
+  it('con el Resumen sin cargar (falló al abrir la página), lo pide una sola vez antes de abrir: si el grupo no está, no lo '
+    + 'vuelve a pedir', async () => {
+    const pedidos = { resumen: 0 };
+    const extra = (metodo, ruta) => {
+      if (ruta !== '/api/mi-espacio/resumen') return undefined;
+      pedidos.resumen += 1;
+      return pedidos.resumen === 1 ? respuesta(500, { success: false, error: 'Error al obtener el resumen' }) : ok(RESUMEN_DE_ANTES);
+    };
+    const pagina = montarPagina({ responder: conJulieta({ extra }) });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('tab-licencias'));
+    await pagina.tocar(botonDeLaLinea(pagina));
+    await pagina.correr();
+    assert.equal(pedidos.resumen, 2);
+    assert.equal(pagina.abierto('modal-licencia'), false);
+    assert.deepEqual(pagina.estado.toasts, [[MENSAJES_MI_ESPACIO.grupoNoPorRestituir, 'error']]);
   });
 
   it('salir de «Días restituidos» a otro tipo deja vacío el «Hasta» que había puesto Mi espacio; entre los demás tipos, queda '
