@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
 import { HOJA_DE_LA_NOTA, TIPO_WORD, renderNotaDocx } from '../services/miEspacioNotaWord.js';
-import { LINEA_DE_LA_FIRMA, notaDeLicencia, htmlDeLaNota } from '../services/miEspacioNota.js';
+import { LINEA_DE_LA_FIRMA, notaDeLicencia, notaDeRestitucion, htmlDeLaNota } from '../services/miEspacioNota.js';
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // Las notas
@@ -290,6 +290,54 @@ describe('renderNotaDocx: los mismos renglones que la vista (htmlDeLaNota)', () 
     assert.deepEqual(word, renglonesDeLaVista(htmlDeLaNota(nota)));
     assert.ok(word.some((p) => p.texto === 'Ana "Anita" O\'Neil & <Cía>'));
   });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Los días restituidos por un asueto (spec 2026-10-31-mi-espacio-dias-restituidos, 12): la nota A (la carga de los días
+// restituidos) y la nota B (el pedido de restitución) salen en la misma hoja, con la misma estructura. La persona es la de la
+// maqueta, inventada: Julieta Ferreyra, con asuetos el jueves 24 y el jueves 31/12/2026
+// ---------------------------------------------------------------------------------------------------------------------------
+
+describe('renderNotaDocx: los días restituidos (A) y la restitución (B)', () => {
+  const JULIETA = Object.freeze({ nombre: 'Julieta Ferreyra', cargo: 'Coordinadora de Estadística', vinculo: 'planta_permanente' });
+  const ASUETOS = new Set(['2026-12-24', '2026-12-31']);
+  const FECHAS = Object.freeze(['2026-12-24', '2026-12-31']);
+  const notaA = (persona = JULIETA) => notaDeLicencia({ tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13', horas: null },
+    { fecha: '2027-04-01', persona, feriados: ASUETOS, restitucion: { anio: 2024, fechas: FECHAS } }).nota;
+  const notaB = (persona = JULIETA) =>
+    notaDeRestitucion({ anio: 2025, dias: 2, fechas: FECHAS }, { fecha: '2027-04-01', persona }).nota;
+  // Lo que dicen los Word de la maqueta (word/ de la carpeta de la maqueta, armados con renderNotaDocx), renglón por renglón
+  const ARRIBA = ['Comodoro Rivadavia, 1 de abril de 2027', '', '', 'Al Señor Director General de',
+    'Modernización e Investigación Territorial', `S${' '.repeat(15)}/${' '.repeat(15)}D`, '', 'De mi mayor consideración:', ''];
+  const ABAJO = ['', 'Sin otro particular, saludo a Ud. atentamente.', '', '', '', '', LINEA_DE_LA_FIRMA, 'Julieta Ferreyra',
+    'Coordinadora de Estadística'];
+
+  it('la nota A dice lo mismo que el Word de la maqueta', async () => {
+    const textos = parrafosDelWord((await wordDe(notaA())).documento).map((p) => p.texto);
+    assert.deepEqual(textos, [...ARRIBA,
+      'Me dirijo a Ud. a fin de solicitarle tenga a bien autorizar el usufructo de dos (2) días hábiles de mi licencia anual ordinaria 2024, restituidos por los asuetos de los días jueves 24 y jueves 31 de diciembre de 2026, declarados durante mis vacaciones, a partir del día lunes 12 de abril de 2027.',
+      ...ABAJO]);
+  });
+
+  it('la nota B dice lo mismo que el Word de la maqueta', async () => {
+    const textos = parrafosDelWord((await wordDe(notaB())).documento).map((p) => p.texto);
+    assert.deepEqual(textos, [...ARRIBA,
+      'Me dirijo a Ud. a fin de solicitarle tenga a bien autorizar la restitución a mi licencia anual ordinaria 2025 de dos (2) días hábiles, correspondientes a los asuetos de los días jueves 24 y jueves 31 de diciembre de 2026, declarados durante mis vacaciones.',
+      ...ABAJO]);
+  });
+
+  for (const [quien, persona] of Object.entries({
+    JULIETA, CONTRATADA, SIN_CARGO, SIN_VINCULO, CON_HTML: { nombre: 'Ana "Anita" & <Cía>', cargo: 'Jefa <de> & "Datos"', vinculo: 'contrato' }
+  })) {
+    for (const [cual, armar] of Object.entries({ A: notaA, B: notaB })) {
+      it(`nota ${cual}, ${quien}: el mismo texto que la vista, en el mismo orden y con la misma diagramación`, async () => {
+        const nota = armar(persona);
+        const word = parrafosDelWord((await wordDe(nota)).documento).map(sinXml);
+        assert.deepEqual(word, renglonesDeLaVista(htmlDeLaNota(nota)));
+        assert.ok(word.some((p) => p.texto === nota.cuerpo && p.alineado === 'both' && p.sangria === '709'));
+      });
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------------------------------------------------------

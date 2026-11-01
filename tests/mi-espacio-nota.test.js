@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TIPOS_CON_NOTA, NOMBRES_DEL_ARCHIVO, MENSAJES_NOTA, enLetras, textoDeHoras, notaDeLicencia, htmlDeLaNota,
-  aclaracionDeLaNota
+  aclaracionDeLaNota, textoDeLosAsuetos, notaDeRestitucion, aclaracionDeLaRestitucion
 } from '../services/miEspacioNota.js';
 import { TIPOS_LICENCIA } from '../services/miEspacioReglas.js';
 
@@ -19,21 +19,20 @@ const cuerpo = (licencia) => armar(licencia).nota.cuerpo;
 const VACACIONES = Object.freeze({ tipo: 'vacaciones', desde: '2026-11-16', hasta: '2026-11-27', horas: null });
 
 describe('las constantes', () => {
-  it('los ocho tipos con nota, en el orden de TIPOS_LICENCIA, sin el uso autorizado ni, por ahora, los días restituidos', () => {
+  it('los nueve tipos con nota, en el orden de TIPOS_LICENCIA: todos menos el uso autorizado (también los días restituidos)', () => {
     assert.deepEqual([...TIPOS_CON_NOTA], [
-      'vacaciones', 'franquicia', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco', 'horas_a_favor'
+      'vacaciones', 'franquicia', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco', 'horas_a_favor',
+      'restituidos'
     ]);
+    assert.deepEqual([...TIPOS_CON_NOTA], TIPOS_LICENCIA.filter((tipo) => tipo !== 'uso_autorizado'));
     assert.ok(Object.isFrozen(TIPOS_CON_NOTA));
-    // Los días restituidos son un tipo de Mi espacio, pero su nota (con los asuetos que restituye) todavía no se arma
-    assert.ok(TIPOS_LICENCIA.includes('restituidos'));
-    assert.deepEqual(armar({ tipo: 'restituidos', desde: '2026-11-16', hasta: '2026-11-17', horas: null }), { error: 'sinNota' });
   });
 
   it('el nombre de cada tipo en el archivo', () => {
     assert.deepEqual(NOMBRES_DEL_ARCHIVO, {
       vacaciones: 'Licencia anual ordinaria', franquicia: 'Franquicia', estudios: 'Estudios', medica: 'Atención médica',
       familiar: 'Atención del grupo familiar', medica_extraordinaria: 'Médica extraordinaria', franco: 'Franco compensatorio',
-      horas_a_favor: 'Horas a favor'
+      horas_a_favor: 'Horas a favor', restituidos: 'Días restituidos'
     });
     assert.deepEqual(Object.keys(NOMBRES_DEL_ARCHIVO).sort(), [...TIPOS_CON_NOTA].sort());
     assert.ok(Object.isFrozen(NOMBRES_DEL_ARCHIVO));
@@ -346,8 +345,11 @@ describe('notaDeLicencia: las partes fijas, la firma y el nombre', () => {
   });
 
   it('cada tipo con nota arma su nota y su nombre', () => {
+    // Los días restituidos necesitan además los asuetos que restituyen (sin ellos, error: ver su describe)
+    const restitucion = { anio: 2024, fechas: ['2026-11-04'] };
     for (const tipo of TIPOS_CON_NOTA) {
-      const resultado = armar({ tipo, desde: '2026-11-16', hasta: '2026-11-16', horas: 2 });
+      const resultado = notaDeLicencia({ tipo, desde: '2026-11-16', hasta: '2026-11-16', horas: 2 },
+        { fecha: FECHA, persona: PERSONA, feriados: FERIADOS, restitucion });
       assert.ok(resultado.nota, tipo);
       assert.ok(resultado.nota.cuerpo.startsWith(PIDO), tipo);
       assert.equal(resultado.nota.nombre, `Nota de licencia - ${NOMBRES_DEL_ARCHIVO[tipo]} - 2026-11-16.docx`);
@@ -442,5 +444,236 @@ describe('aclaracionDeLaNota', () => {
 
   it('con lo que no es una fecha, vacío', () => {
     for (const valor of [null, undefined, '', '2026-02-30', 20261027]) assert.equal(aclaracionDeLaNota(valor), '');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Los días restituidos por un asueto (spec 2026-10-31-mi-espacio-dias-restituidos, 12): la nota A (la carga de los días
+// restituidos, un tipo de licencia más) y la nota B (el pedido de restitución), con los textos aprobados. La persona es la de
+// la maqueta, inventada: Julieta Ferreyra, con vacaciones del 11/12/2026 al 08/01/2027 y asuetos el jueves 24 y el jueves
+// 31/12/2026, cargados después
+// ---------------------------------------------------------------------------------------------------------------------------
+
+const JULIETA = Object.freeze({ nombre: 'Julieta Ferreyra', cargo: 'Coordinadora de Estadística', vinculo: 'planta_permanente' });
+const ASUETOS = new Set(['2026-12-24', '2026-12-31']);
+const LAS_VACACIONES = Object.freeze({ tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08', horas: null });
+const LOS_RESTITUIDOS = Object.freeze({ tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13', horas: null });
+const DE_LA_2024 = Object.freeze({ anio: 2024, fechas: Object.freeze(['2026-12-24', '2026-12-31']) });
+const A_LA_2025 = Object.freeze({ anio: 2025, dias: 2, fechas: Object.freeze(['2026-12-24', '2026-12-31']) });
+// La nota A lleva la fecha de la carga (la última vez que se guardó) y la nota B, la del pedido
+const DIA_DE_LA_CARGA = '2027-04-01';
+const DIA_DEL_PEDIDO = '2027-04-01';
+
+const restituidos = (licencia = LOS_RESTITUIDOS, opciones = {}) => notaDeLicencia(licencia,
+  { fecha: DIA_DE_LA_CARGA, persona: JULIETA, feriados: ASUETOS, restitucion: DE_LA_2024, ...opciones });
+const restitucion = (pedido = A_LA_2025, opciones = {}) =>
+  notaDeRestitucion(pedido, { fecha: DIA_DEL_PEDIDO, persona: JULIETA, ...opciones });
+
+// Las hojas de la maqueta (MQ.MODAL_A.segundo y MQ.MODAL_B.cuerpo), copiadas: lo que se ve en el segundo paso
+const HOJA = (cuerpoDeLaNota) => '<div class="me-hoja"><div class="me-hoja-texto">'
+  + '<p class="derecha">Comodoro Rivadavia, 1 de abril de 2027</p><p></p><p></p>'
+  + '<p>Al Señor Director General de</p><p>Modernización e Investigación Territorial</p>'
+  + '<p class="sd">S               /               D</p><p></p><p>De mi mayor consideración:</p><p></p>'
+  + `<p class="sangria justificado">${cuerpoDeLaNota}</p><p></p>`
+  + '<p class="sangria">Sin otro particular, saludo a Ud. atentamente.</p><p></p><p></p><p></p><p></p>'
+  + '<div class="firma"><p>______________________________</p><p>Julieta Ferreyra</p><p>Coordinadora de Estadística</p></div>'
+  + '</div></div>';
+const CUERPO_A = `${PIDO}el usufructo de dos (2) días hábiles de mi licencia anual ordinaria 2024, restituidos por los asuetos de los días jueves 24 y jueves 31 de diciembre de 2026, declarados durante mis vacaciones, a partir del día lunes 12 de abril de 2027.`;
+const CUERPO_B = `${PIDO}la restitución a mi licencia anual ordinaria 2025 de dos (2) días hábiles, correspondientes a los asuetos de los días jueves 24 y jueves 31 de diciembre de 2026, declarados durante mis vacaciones.`;
+
+describe('textoDeLosAsuetos', () => {
+  it('un mes: «de los días jueves 24 y jueves 31 de diciembre de 2026», por fecha y sin repetir', () => {
+    assert.equal(textoDeLosAsuetos(['2026-12-24', '2026-12-31']), 'de los días jueves 24 y jueves 31 de diciembre de 2026');
+    assert.equal(textoDeLosAsuetos(['2026-12-31', '2026-12-24', '2026-12-31']),
+      'de los días jueves 24 y jueves 31 de diciembre de 2026');
+    assert.equal(textoDeLosAsuetos(['2026-12-31', '2026-12-28', '2026-12-24']),
+      'de los días jueves 24, lunes 28 y jueves 31 de diciembre de 2026');
+  });
+
+  it('dos meses y dos años: cada mes con sus días y el año al final de cada año', () => {
+    assert.equal(textoDeLosAsuetos(['2025-12-24', '2025-12-26', '2025-12-31', '2026-01-02']),
+      'de los días miércoles 24, viernes 26 y miércoles 31 de diciembre de 2025 y viernes 2 de enero de 2026');
+    // Dos meses del mismo año: el año una sola vez
+    assert.equal(textoDeLosAsuetos(['2026-11-30', '2026-12-24']),
+      'de los días lunes 30 de noviembre y jueves 24 de diciembre de 2026');
+    assert.equal(textoDeLosAsuetos(['2026-11-30', '2026-12-24', '2026-12-31', '2027-01-04']),
+      'de los días lunes 30 de noviembre, jueves 24 y jueves 31 de diciembre de 2026 y lunes 4 de enero de 2027');
+  });
+
+  it('un día: «del día jueves 24 de diciembre de 2026»', () => {
+    assert.equal(textoDeLosAsuetos(['2026-12-24']), 'del día jueves 24 de diciembre de 2026');
+    assert.equal(textoDeLosAsuetos(['2026-12-24', '2026-12-24']), 'del día jueves 24 de diciembre de 2026');
+  });
+
+  it('lo que no es una fecha no va; sin ninguna, o con lo que no es una lista, vacío', () => {
+    assert.equal(textoDeLosAsuetos(['2026-12-24', 'x', null, '2026-02-30', 3, '24/12/2026']),
+      'del día jueves 24 de diciembre de 2026');
+    for (const valor of [[], ['x'], null, undefined, '2026-12-24', {}, 3]) assert.equal(textoDeLosAsuetos(valor), '');
+  });
+});
+
+describe('notaDeLicencia: los días restituidos (la nota A)', () => {
+  it('el cuerpo al pie de la letra, la hoja de la maqueta y el nombre del archivo, con el «Desde»', () => {
+    const { nota } = restituidos();
+    assert.equal(nota.cuerpo, CUERPO_A);
+    assert.equal(nota.fecha, 'Comodoro Rivadavia, 1 de abril de 2027');
+    assert.equal(nota.nombre, 'Nota de licencia - Días restituidos - 2027-04-12.docx');
+    assert.equal(htmlDeLaNota(nota), HOJA(CUERPO_A));
+    assert.deepEqual(Object.keys(nota).sort(), ['cierre', 'cuerpo', 'destinatario', 'fecha', 'firma', 'nombre', 'saludo', 'sd']);
+  });
+
+  it('un solo día: «un (1) día hábil», «restituido por el asueto del día …, declarado» y «el día»', () => {
+    const { nota } = restituidos({ ...LOS_RESTITUIDOS, hasta: '2027-04-12' }, { restitucion: { anio: 2024, fechas: ['2026-12-24'] } });
+    assert.equal(nota.cuerpo,
+      `${PIDO}el usufructo de un (1) día hábil de mi licencia anual ordinaria 2024, restituido por el asueto del día jueves 24 de diciembre de 2026, declarado durante mis vacaciones, el día lunes 12 de abril de 2027.`);
+  });
+
+  it('los asuetos de varios meses, desordenados: «de los días …» con textoDeLosAsuetos', () => {
+    const { nota } = restituidos({ ...LOS_RESTITUIDOS, hasta: '2027-04-15' },
+      { restitucion: { anio: 2025, fechas: ['2027-01-04', '2026-12-31', '2026-12-24'] } });
+    assert.equal(nota.cuerpo,
+      `${PIDO}el usufructo de cuatro (4) días hábiles de mi licencia anual ordinaria 2025, restituidos por los asuetos de los días jueves 24 y jueves 31 de diciembre de 2026 y lunes 4 de enero de 2027, declarados durante mis vacaciones, a partir del día lunes 12 de abril de 2027.`);
+  });
+
+  it('«a partir del día» es su primer día hábil; los días se cuentan con los feriados', () => {
+    // Desde el sábado 10/04: del lunes 12 al martes 13
+    assert.equal(restituidos({ ...LOS_RESTITUIDOS, desde: '2027-04-10' }).nota.cuerpo, CUERPO_A);
+    // Un feriado de la tabla el martes 13 (cargado antes de la carga): un solo día hábil
+    assert.match(restituidos(LOS_RESTITUIDOS, { feriados: new Set(['2027-04-13']) }).nota.cuerpo,
+      /el usufructo de un \(1\) día hábil de mi licencia anual ordinaria 2024, restituido por los asuetos de los días jueves 24 y jueves 31 de diciembre de 2026, declarados durante mis vacaciones, el día lunes 12 de abril de 2027\.$/);
+  });
+
+  it('la recursión: un asueto cargado después sobre la carga de los días restituidos no le saca el día (sus restituibles)',
+    () => {
+      const feriados = new Set([...ASUETOS, '2027-04-13']);
+      assert.equal(restituidos(LOS_RESTITUIDOS, { feriados, restituibles: ['2027-04-13'] }).nota.cuerpo, CUERPO_A);
+    });
+
+  it('sin ningún día hábil ni restituible: sin nota, con su error', () => {
+    assert.deepEqual(restituidos(LOS_RESTITUIDOS, { feriados: new Set(['2027-04-12', '2027-04-13']) }),
+      { error: 'sinDiasHabiles' });
+  });
+
+  it('sin los asuetos que restituye, o con unos que no sirven: error', () => {
+    for (const valor of [undefined, null, 'x', [], {}, { anio: 2024 }, { fechas: ['2026-12-24'] },
+      { anio: 2024, fechas: [] }, { anio: 2024, fechas: ['x', null] }, { anio: 2024, fechas: '2026-12-24' },
+      { anio: '2024', fechas: ['2026-12-24'] }, { anio: 2024.5, fechas: ['2026-12-24'] }, { anio: 0, fechas: ['2026-12-24'] },
+      { anio: null, fechas: ['2026-12-24'] }]) {
+      assert.deepEqual(restituidos(LOS_RESTITUIDOS, { restitucion: valor }), { error: 'error' }, JSON.stringify(valor));
+    }
+  });
+
+  it('los demás tipos no miran los asuetos que restituye una carga', () => {
+    assert.deepEqual(armar(VACACIONES), notaDeLicencia(VACACIONES,
+      { fecha: FECHA, persona: PERSONA, feriados: FERIADOS, restitucion: DE_LA_2024 }));
+  });
+});
+
+describe('notaDeLicencia: los días restituibles cuentan en la carga (las vacaciones conservan sus días)', () => {
+  const vacaciones = (opciones = {}) =>
+    notaDeLicencia(LAS_VACACIONES, { fecha: '2026-11-27', persona: JULIETA, feriados: ASUETOS, ...opciones });
+  const DIECINUEVE = `${PIDO}el usufructo de diecinueve (19) días hábiles correspondientes a mi licencia anual ordinaria, a partir del día viernes 11 de diciembre de 2026.`;
+
+  it('con los asuetos cargados después y sus restituibles, sigue diciendo «diecinueve (19)», como la nota que se presentó', () => {
+    assert.equal(vacaciones({ restituibles: ['2026-12-24', '2026-12-31'] }).nota.cuerpo, DIECINUEVE);
+    // Sin los asuetos, 19 de por sí; con los asuetos y sin foto (el asueto ya estaba), 17, como hoy
+    assert.equal(vacaciones({ feriados: new Set() }).nota.cuerpo, DIECINUEVE);
+    assert.match(vacaciones().nota.cuerpo, /el usufructo de diecisiete \(17\) días hábiles/);
+    assert.match(vacaciones({ restituibles: [] }).nota.cuerpo, /el usufructo de diecisiete \(17\) días hábiles/);
+  });
+
+  it('cada día una vez: un restituible repetido o que ya es hábil no suma; uno fuera de las fechas o que no es una fecha, '
+    + 'tampoco', () => {
+    assert.equal(vacaciones({
+      restituibles: ['2026-12-31', '2026-12-24', '2026-12-24', '2026-12-14', '2026-12-10', '2027-01-11', 'x', null, 3]
+    }).nota.cuerpo, DIECINUEVE);
+    for (const restituibles of [null, undefined, 'x', {}, 3]) {
+      assert.match(vacaciones({ restituibles }).nota.cuerpo, /diecisiete \(17\)/, String(restituibles));
+    }
+  });
+
+  it('un restituible en el primer día lo vuelve «a partir del día»', () => {
+    const { nota } = notaDeLicencia({ tipo: 'vacaciones', desde: '2026-12-24', hasta: '2027-01-08', horas: null },
+      { fecha: '2026-11-27', persona: JULIETA, feriados: ASUETOS, restituibles: ['2026-12-24', '2026-12-31'] });
+    assert.ok(nota.cuerpo.endsWith('a partir del día jueves 24 de diciembre de 2026.'), nota.cuerpo);
+    // Del 24/12 al 08/01: el 28, el 29 y el 30/12 y del 4 al 8/01 son hábiles (el 25/12 y el 1/01 son fijos), más los dos
+    assert.match(nota.cuerpo, /el usufructo de diez \(10\) días hábiles/);
+  });
+
+  it('los demás tipos no los suman: solo las vacaciones y los días restituidos tienen restituibles', () => {
+    const estudios = { tipo: 'estudios', desde: '2026-12-23', hasta: '2026-12-24', horas: null };
+    assert.deepEqual(notaDeLicencia(estudios, { fecha: FECHA, persona: JULIETA, feriados: ASUETOS, restituibles: ['2026-12-24'] }),
+      notaDeLicencia(estudios, { fecha: FECHA, persona: JULIETA, feriados: ASUETOS }));
+  });
+});
+
+describe('notaDeRestitucion (la nota B)', () => {
+  it('el cuerpo al pie de la letra, la hoja de la maqueta y el nombre del archivo, con el día del pedido', () => {
+    const { nota } = restitucion();
+    assert.equal(nota.cuerpo, CUERPO_B);
+    assert.equal(nota.fecha, 'Comodoro Rivadavia, 1 de abril de 2027');
+    assert.equal(nota.nombre, 'Nota de restitución - Licencia 2025 - 2027-04-01.docx');
+    assert.equal(htmlDeLaNota(nota), HOJA(CUERPO_B));
+  });
+
+  it('la misma estructura que la nota de una licencia: las mismas claves, las partes fijas y la firma', () => {
+    const resultado = restitucion();
+    assert.deepEqual(Object.keys(resultado), ['nota']);
+    const { nota } = resultado;
+    const deLaLicencia = restituidos().nota;
+    assert.deepEqual(Object.keys(nota).sort(), Object.keys(deLaLicencia).sort());
+    for (const clave of ['destinatario', 'sd', 'saludo', 'cierre', 'firma']) assert.deepEqual(nota[clave], deLaLicencia[clave], clave);
+  });
+
+  it('un solo día: «un (1) día hábil, correspondiente al asueto del día …, declarado durante mis vacaciones»', () => {
+    assert.equal(restitucion({ anio: 2025, dias: 1, fechas: ['2026-12-24'] }).nota.cuerpo,
+      `${PIDO}la restitución a mi licencia anual ordinaria 2025 de un (1) día hábil, correspondiente al asueto del día jueves 24 de diciembre de 2026, declarado durante mis vacaciones.`);
+  });
+
+  it('los asuetos de dos años, desordenados', () => {
+    assert.equal(restitucion({ anio: 2025, dias: 4, fechas: ['2026-01-02', '2025-12-31', '2025-12-26', '2025-12-24'] }).nota.cuerpo,
+      `${PIDO}la restitución a mi licencia anual ordinaria 2025 de cuatro (4) días hábiles, correspondientes a los asuetos de los días miércoles 24, viernes 26 y miércoles 31 de diciembre de 2025 y viernes 2 de enero de 2026, declarados durante mis vacaciones.`);
+  });
+
+  it('la firma de un contratado y sin cargo, como la nota de una licencia', () => {
+    assert.deepEqual(restitucion(A_LA_2025, { persona: { ...JULIETA, vinculo: 'contrato' } }).nota.firma, [
+      { texto: 'Julieta Ferreyra', chico: false },
+      { texto: 'Personal contratado, cumpliendo funciones de', chico: true },
+      { texto: 'Coordinadora de Estadística', chico: false }
+    ]);
+    assert.deepEqual(restitucion(A_LA_2025, { persona: { ...JULIETA, cargo: null } }).nota.firma,
+      [{ texto: 'Julieta Ferreyra', chico: false }]);
+  });
+
+  it('nunca tira: un pedido, una fecha o una persona que no sirven dan error', () => {
+    for (const [pedido, opciones] of [[null, {}], [undefined, undefined], ['pedido', {}], [[], {}], [A_LA_2025, null],
+      [A_LA_2025, 'x']]) {
+      assert.deepEqual(notaDeRestitucion(pedido, opciones), { error: 'error' }, JSON.stringify([pedido, opciones]));
+    }
+    for (const pedido of [
+      { ...A_LA_2025, anio: '2025' }, { ...A_LA_2025, anio: null }, { ...A_LA_2025, anio: 25.5 }, { ...A_LA_2025, anio: 0 },
+      { ...A_LA_2025, dias: 0 }, { ...A_LA_2025, dias: -1 }, { ...A_LA_2025, dias: 1.5 }, { ...A_LA_2025, dias: '2' },
+      { ...A_LA_2025, dias: 1000 }, { ...A_LA_2025, dias: null }, { ...A_LA_2025, fechas: [] },
+      { ...A_LA_2025, fechas: ['x'] }, { ...A_LA_2025, fechas: null }, { ...A_LA_2025, fechas: '2026-12-24' }
+    ]) {
+      assert.deepEqual(restitucion(pedido), { error: 'error' }, JSON.stringify(pedido));
+    }
+    for (const fecha of [null, '', '2027-02-30', 20270401]) {
+      assert.deepEqual(restitucion(A_LA_2025, { fecha }), { error: 'error' }, String(fecha));
+    }
+    for (const persona of [null, 'Julieta', {}, { ...JULIETA, nombre: '  ' }, { ...JULIETA, nombre: 3 }]) {
+      assert.deepEqual(restitucion(A_LA_2025, { persona }), { error: 'error' }, JSON.stringify(persona));
+    }
+  });
+});
+
+describe('aclaracionDeLaRestitucion', () => {
+  it('el texto con la fecha corta del pedido', () => {
+    assert.equal(aclaracionDeLaRestitucion('2027-04-01'),
+      'Lleva la fecha del 01/04/2027, el día en que pediste la restitución. Se baja en Word, para imprimir y firmar.');
+  });
+
+  it('con lo que no es una fecha, vacío', () => {
+    for (const valor of [null, undefined, '', '2027-02-30', 20270401]) assert.equal(aclaracionDeLaRestitucion(valor), '');
   });
 });
