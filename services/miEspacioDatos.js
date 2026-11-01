@@ -28,8 +28,10 @@ const numeroONulo = (valor) => (valor === null || valor === undefined ? null : N
 // '19:00:00' → '19:00'
 const horaDe = (valor) => String(valor).slice(0, 5);
 
-const estadoVacio = (modalidad = null) =>
-  ({ modalidad, arranque: null, anios: [], saldos: [], licencias: [], horasExtras: [], salidas: [] });
+const estadoVacio = (modalidad = null) => ({
+  modalidad, arranque: null, anios: [], saldos: [], licencias: [], horasExtras: [], salidas: [], restituibles: [],
+  restituciones: []
+});
 
 // Una licencia de Mi espacio, de la base a lo que leen las reglas
 const COLUMNAS_LICENCIA_MIA = `id, usuario_id, tipo, DATE_FORMAT(desde, '%Y-%m-%d') AS desde,
@@ -59,8 +61,8 @@ export const personaDe = async (usuarioId, conexion = pool) => {
 };
 
 /**
- * El `Estado` de varias personas: un Map de cada id (número) que existe en `usuarios` a lo que cargó, con siete consultas para
- * todas. La modalidad sale del vínculo (`modalidadDe`); de cada tabla, solo lo activo:
+ * El `Estado` de varias personas: un Map de cada id (número) que existe en `usuarios` a lo que cargó, con nueve consultas para
+ * todas. La modalidad sale del vínculo (`modalidadDe`); de cada tabla, solo lo activo (salvo los días restituidos, abajo):
  * - `anios`: `[{ anio, dias_vacaciones, estudios }]`, por año;
  * - `saldos`: `[{ concepto, anio, cantidad }]`, por año y concepto;
  * - `licencias`: `[{ id, tipo, desde, hasta, horas, mostrar, nota, licencia_oficial_id, oficial, sin_pasar }]`, por fecha
@@ -71,6 +73,15 @@ export const personaDe = async (usuarioId, conexion = pool) => {
  *   tilde «Sumar a {mes anterior}» como booleano (spec 2026-10-30-mi-espacio-horas-mes-anterior, 8: las reglas leen solo
  *   el `true` literal). Se leen para cualquier modalidad: las reglas eligen cuáles cuentan (planta, `horasExtras`;
  *   contrato, `salidas`).
+ * Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 6), de las cargas activas o no y los pedidos activos o
+ * no (las tandas cuentan los dos; las reglas eligen lo que cuenta):
+ * - `restituibles`: `[{ id, licencia_id, feriado_id, fecha, tanda, restitucion_id }]`, la foto de los días que un feriado
+ *   cargado después dejó de hacer hábiles en una carga de la persona, por carga y fecha; `tanda` es null mientras ningún
+ *   pedido la selló y `restitucion_id`, mientras no se pidió;
+ * - `restituciones`: `[{ id, licencia_id, anio, caso, dias, primer_asueto, tanda, fecha, carga_id, activo, licencia: { tipo,
+ *   desde, hasta, activo } }]`, todos los pedidos de la persona, por carga e id, con la carga de la que salen (`licencia`,
+ *   aunque esté dada de baja); `carga_id` es la carga de los días restituidos de un caso 'tomar' (null en uno 'restituir')
+ *   y los dos `activo`, el del pedido y el de su carga, son 0 o 1.
  * Los ids que no sirven o que no existen no están; sin ninguno, un Map vacío (sin consultar).
  * @returns {Promise<Map<number, object>>}
  */
@@ -146,6 +157,46 @@ export const estadosDe = async (usuarioIds, conexion = pool) => {
     deLaPersona(fila.usuario_id).salidas.push({
       id: Number(fila.id), fecha: fila.fecha, entrada: fila.entrada ?? null, salida: fila.salida, nota: fila.nota ?? null,
       al_mes_anterior: Number(fila.al_mes_anterior) === 1
+    });
+  }
+
+  // La foto no tiene la persona: es la de la carga a la que apunta, activa o no
+  const [restituibles] = await conexion.query(
+    `SELECT r.id, l.usuario_id, r.licencia_id, r.feriado_id, DATE_FORMAT(r.fecha, '%Y-%m-%d') AS fecha, r.tanda,
+            r.restitucion_id
+     FROM mi_espacio_restituibles r
+     JOIN mi_espacio_licencias l ON l.id = r.licencia_id
+     WHERE l.usuario_id IN (?)
+     ORDER BY l.usuario_id, r.licencia_id, r.fecha, r.id`,
+    [encontrados]
+  );
+  for (const fila of restituibles) {
+    deLaPersona(fila.usuario_id).restituibles.push({
+      id: Number(fila.id), licencia_id: Number(fila.licencia_id), feriado_id: Number(fila.feriado_id), fecha: fila.fecha,
+      tanda: numeroONulo(fila.tanda), restitucion_id: numeroONulo(fila.restitucion_id)
+    });
+  }
+
+  // Todos los pedidos, con la carga de la que salen (la FK no deja un pedido sin ella)
+  const [restituciones] = await conexion.query(
+    `SELECT r.id, r.usuario_id, r.licencia_id, r.anio, r.caso, r.dias, DATE_FORMAT(r.primer_asueto, '%Y-%m-%d') AS primer_asueto,
+            r.tanda, DATE_FORMAT(r.fecha, '%Y-%m-%d') AS fecha, r.carga_id, r.activo, l.tipo AS licencia_tipo,
+            DATE_FORMAT(l.desde, '%Y-%m-%d') AS licencia_desde, DATE_FORMAT(l.hasta, '%Y-%m-%d') AS licencia_hasta,
+            l.activo AS licencia_activo
+     FROM mi_espacio_restituciones r
+     JOIN mi_espacio_licencias l ON l.id = r.licencia_id
+     WHERE r.usuario_id IN (?)
+     ORDER BY r.usuario_id, r.licencia_id, r.id`,
+    [encontrados]
+  );
+  for (const fila of restituciones) {
+    deLaPersona(fila.usuario_id).restituciones.push({
+      id: Number(fila.id), licencia_id: Number(fila.licencia_id), anio: Number(fila.anio), caso: fila.caso,
+      dias: Number(fila.dias), primer_asueto: fila.primer_asueto, tanda: Number(fila.tanda), fecha: fila.fecha,
+      carga_id: numeroONulo(fila.carga_id), activo: Number(fila.activo),
+      licencia: {
+        tipo: fila.licencia_tipo, desde: fila.licencia_desde, hasta: fila.licencia_hasta, activo: Number(fila.licencia_activo)
+      }
     });
   }
   return estados;

@@ -87,7 +87,9 @@ after(async () => {
 
 beforeEach(async () => {
   await asegurarBaseDePrueba();
+  // La foto y los pedidos de los días restituidos van antes que las licencias a las que apuntan
   for (const tabla of [
+    'mi_espacio_restituibles', 'mi_espacio_restituciones',
     'mi_espacio_licencias', 'mi_espacio_horas_extras', 'mi_espacio_salidas', 'mi_espacio_saldos', 'mi_espacio_anios',
     'mi_espacio_arranque', 'mi_espacio_avisos', 'usuarios_licencias', 'feriados'
   ]) {
@@ -126,6 +128,20 @@ const conSalida = async (clave, { fecha, entrada = null, salida, nota = null, ac
 )).insertId;
 const conFeriado = async ({ fecha, nombre, se_repite = 0 }) => (await query(
   "INSERT INTO feriados (fecha, nombre, tipo, se_repite) VALUES (?, ?, 'nacional', ?)", [fecha, nombre, se_repite]
+)).insertId;
+// La foto de un día por restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 6): `tanda` y `restitucion_id`, NULL mientras
+// ningún pedido la selló ni la pidió
+const conRestituible = async ({ licencia_id, feriado_id, fecha, tanda = null, restitucion_id = null }) => (await query(
+  'INSERT INTO mi_espacio_restituibles (licencia_id, feriado_id, fecha, tanda, restitucion_id) VALUES (?, ?, ?, ?, ?)',
+  [licencia_id, feriado_id, fecha, tanda, restitucion_id]
+)).insertId;
+// Un pedido de restitución: caso 'tomar' (con la carga de los días restituidos en `carga_id`) o 'restituir'
+const conRestitucion = async (clave, {
+  licencia_id, anio, caso, dias, primer_asueto, tanda, fecha, carga_id = null, activo = 1
+}) => (await query(
+  `INSERT INTO mi_espacio_restituciones (usuario_id, licencia_id, anio, caso, dias, primer_asueto, tanda, fecha, carga_id, activo)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [usuarios[clave].id, licencia_id, anio, caso, dias, primer_asueto, tanda, fecha, carga_id, activo]
 )).insertId;
 
 // Ninguna fecha llega como un Date de la base (el '2026-11-02T03:00:00.000Z' de JSON), en ningún nivel de la respuesta
@@ -2686,12 +2702,17 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
       ],
       licencias: [licencia(franquicia, 'franquicia', q(1), q(1), 7.5, 'Trámite'), licencia(medica, 'medica', q(2), q(3), null)],
       horasExtras: [{ id: extra, fecha: q(2), desde: '19:00', hasta: '22:30', nota: null }],
-      salidas: [{ id: salida, fecha: q(0), entrada: '08:02', salida: '16:20', nota: 'Cierre', al_mes_anterior: false }]
+      salidas: [{ id: salida, fecha: q(0), entrada: '08:02', salida: '16:20', nota: 'Cierre', al_mes_anterior: false }],
+      restituibles: [],
+      restituciones: []
     });
   });
 
   it('estadoDe: sin nada cargado ni vínculo, un estado vacío; de un id que no existe, también', async () => {
-    const vacio = { modalidad: null, arranque: null, anios: [], saldos: [], licencias: [], horasExtras: [], salidas: [] };
+    const vacio = {
+      modalidad: null, arranque: null, anios: [], saldos: [], licencias: [], horasExtras: [], salidas: [], restituibles: [],
+      restituciones: []
+    };
     assert.deepEqual(await datos.estadoDe(usuarios.lector.id), vacio);
     assert.deepEqual(await datos.estadoDe(999999), vacio);
   });
@@ -2717,6 +2738,101 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
     assert.deepEqual(estados.get(usuarios.adminA.id).salidas, []);
     assert.deepEqual(estados.get(usuarios.adminB.id).salidas, []);
     assert.equal((await datos.estadosDe([])).size, 0);
+  });
+
+  // Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 6): la foto de las cargas de la persona, activas o no,
+  // y todos sus pedidos, activos o no (las tandas cuentan los dos), cada uno con la carga de la que sale aunque esté dada de
+  // baja. Las fechas, inventadas: las de la maqueta (vacaciones del 11/12/2026 al 08/01/2027 y asuetos el 24 y el 31/12)
+  describe('la foto y los pedidos de los días restituidos', () => {
+    // Lo de una persona: unas vacaciones con dos días en la foto (el del 24/12 pedido y sellado, el del 31/12 abierto), la
+    // carga de los días restituidos de ese pedido y unas vacaciones de 2025 dadas de baja, con su día en la foto y su pedido
+    // dado de baja (un pedido borrado deja sus filas sin restitucion_id, con su tanda). Cargadas fuera de orden: la foto sale
+    // por carga y fecha, y los pedidos por carga e id
+    const conLoDeLosRestituidos = async (clave) => {
+      const asueto24 = await conFeriado({ fecha: '2026-12-24', nombre: 'Asueto de prueba' });
+      const asueto31 = await conFeriado({ fecha: '2026-12-31', nombre: 'Asueto de prueba' });
+      const asuetoViejo = await conFeriado({ fecha: '2025-12-24', nombre: 'Asueto de prueba' });
+      const vacaciones = await conLicencia(clave, { tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08' });
+      const restituidos = await conLicencia(clave, { tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-12' });
+      const borradas = await conLicencia(clave, { tipo: 'vacaciones', desde: '2025-12-22', hasta: '2026-01-09', activo: 0 });
+      const borrado = await conRestitucion(clave, {
+        licencia_id: borradas, anio: 2024, caso: 'restituir', dias: 1, primer_asueto: '2025-12-24', tanda: 0,
+        fecha: '2026-03-02', activo: 0
+      });
+      const pedido = await conRestitucion(clave, {
+        licencia_id: vacaciones, anio: 2024, caso: 'tomar', dias: 1, primer_asueto: '2026-12-24', tanda: 0,
+        fecha: '2027-04-01', carga_id: restituidos
+      });
+      const abierto = await conRestituible({ licencia_id: vacaciones, feriado_id: asueto31, fecha: '2026-12-31' });
+      const pedidoDia = await conRestituible({
+        licencia_id: vacaciones, feriado_id: asueto24, fecha: '2026-12-24', tanda: 0, restitucion_id: pedido
+      });
+      const viejo = await conRestituible({ licencia_id: borradas, feriado_id: asuetoViejo, fecha: '2025-12-24', tanda: 0 });
+      return {
+        restituibles: [
+          { id: pedidoDia, licencia_id: vacaciones, feriado_id: asueto24, fecha: '2026-12-24', tanda: 0, restitucion_id: pedido },
+          { id: abierto, licencia_id: vacaciones, feriado_id: asueto31, fecha: '2026-12-31', tanda: null, restitucion_id: null },
+          { id: viejo, licencia_id: borradas, feriado_id: asuetoViejo, fecha: '2025-12-24', tanda: 0, restitucion_id: null }
+        ],
+        restituciones: [
+          {
+            id: pedido, licencia_id: vacaciones, anio: 2024, caso: 'tomar', dias: 1, primer_asueto: '2026-12-24', tanda: 0,
+            fecha: '2027-04-01', carga_id: restituidos, activo: 1,
+            licencia: { tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08', activo: 1 }
+          },
+          {
+            id: borrado, licencia_id: borradas, anio: 2024, caso: 'restituir', dias: 1, primer_asueto: '2025-12-24', tanda: 0,
+            fecha: '2026-03-02', carga_id: null, activo: 0,
+            licencia: { tipo: 'vacaciones', desde: '2025-12-22', hasta: '2026-01-09', activo: 0 }
+          }
+        ]
+      };
+    };
+
+    it('estadoDe: la foto y los pedidos, con los números como números, las fechas como AAAA-MM-DD y null donde corresponde',
+      async () => {
+        const esperado = await conLoDeLosRestituidos('adminA');
+        const estado = await datos.estadoDe(usuarios.adminA.id);
+        assert.deepEqual(estado.restituibles, esperado.restituibles);
+        assert.deepEqual(estado.restituciones, esperado.restituciones);
+        for (const fila of estado.restituibles) {
+          for (const clave of ['id', 'licencia_id', 'feriado_id']) assert.strictEqual(typeof fila[clave], 'number', clave);
+          assert.match(fila.fecha, FECHA);
+        }
+        for (const pedido of estado.restituciones) {
+          for (const clave of ['id', 'licencia_id', 'anio', 'dias', 'tanda', 'activo']) {
+            assert.strictEqual(typeof pedido[clave], 'number', clave);
+          }
+          for (const fecha of [pedido.primer_asueto, pedido.fecha, pedido.licencia.desde, pedido.licencia.hasta]) {
+            assert.match(fecha, FECHA);
+          }
+          assert.strictEqual(typeof pedido.licencia.activo, 'number');
+        }
+        sinFechasConHora(estado.restituibles, 'restituibles');
+        sinFechasConHora(estado.restituciones, 'restituciones');
+        // Las licencias del estado siguen siendo solo las activas: la carga de los días restituidos, sí; las dadas de baja, no
+        assert.deepEqual(estado.licencias.map(fila => fila.tipo), ['vacaciones', 'restituidos']);
+      });
+
+    it('estadosDe: en lote, cada persona con su foto y sus pedidos; sin nada, las dos listas vacías', async () => {
+      const deA = await conLoDeLosRestituidos('adminA');
+      const deB = await conLoDeLosRestituidos('adminB');
+      const estados = await datos.estadosDe([usuarios.adminA.id, usuarios.adminB.id, usuarios.editor.id]);
+      assert.deepEqual(
+        [estados.get(usuarios.adminA.id).restituibles, estados.get(usuarios.adminA.id).restituciones],
+        [deA.restituibles, deA.restituciones]
+      );
+      assert.deepEqual(
+        [estados.get(usuarios.adminB.id).restituibles, estados.get(usuarios.adminB.id).restituciones],
+        [deB.restituibles, deB.restituciones]
+      );
+      assert.deepEqual(
+        [estados.get(usuarios.editor.id).restituibles, estados.get(usuarios.editor.id).restituciones], [[], []]
+      );
+      // El lote y el de una persona dan lo mismo
+      const soloA = await datos.estadoDe(usuarios.adminA.id);
+      assert.deepEqual([soloA.restituibles, soloA.restituciones], [deA.restituibles, deA.restituciones]);
+    });
   });
 
   it('personaDe: las columnas de la persona, o null', async () => {

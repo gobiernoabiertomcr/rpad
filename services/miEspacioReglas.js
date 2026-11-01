@@ -11,7 +11,13 @@
  * hasta }], salidas: [{ id, fecha, entrada, salida, nota }] }`. `arranque` es el día en que cargó su saldo inicial: en los
  * tipos con saldo inicial, lo anterior no descuenta (ya está en el saldo; spec, sección 4). Las horas extras son las de planta
  * (`francosDe`) y las salidas, las de la planilla de contrato (`horasAFavorDe`; spec 2026-10-27-mi-espacio-horas, sección 6):
- * cada modalidad lee solo las suyas. Un estado sin `salidas` cuenta como sin ninguna.
+ * cada modalidad lee solo las suyas. Un estado sin `salidas` cuenta como sin ninguna. Los días restituidos (spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 6) suman dos listas, de las cargas y los pedidos activos o no (las tandas cuentan
+ * los dos): `restituibles: [{ id, licencia_id, feriado_id, fecha, tanda, restitucion_id }]`, la foto de los días que un
+ * feriado cargado después dejó de hacer hábiles en una carga (`tanda` y `restitucion_id`, null mientras no se sellaron ni se
+ * pidieron), y `restituciones: [{ id, licencia_id, anio, caso, dias, primer_asueto, tanda, fecha, carga_id, activo,
+ * licencia: { tipo, desde, hasta, activo } }]`, los pedidos ('tomar', con su carga de días restituidos en `carga_id`, o
+ * 'restituir') con la carga de la que salen. Un estado sin ellas cuenta como sin ninguna.
  *
  * Acá están las constantes y los textos de todo Mi espacio (los mensajes, los de las cargas y los del paso a
  * Configuración) y las vacaciones (spec, 3.1): cada año tiene su licencia, que se habilita en dos mitades (el 1/7 y el 1/1
