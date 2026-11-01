@@ -29,7 +29,9 @@
  * se puede empezar a usar antes de su vencimiento se pierde y se dice «Perdés …» (`textoDePerdidos`). Los días que un
  * feriado cargado después le sacó a unas vacaciones (o a una carga de días restituidos) y que siguen dentro de ella sin ser
  * hábiles son restituibles (`restituiblesDe`, con la foto; spec 2026-10-31-mi-espacio-dias-restituidos, 4) y cuentan en su
- * carga como hábiles (`diasDeLaCarga`): así conserva los días que se pidieron. Después, las
+ * carga como hábiles (`diasDeLaCarga`): así conserva los días que se pidieron. Se agrupan por carga, licencia de origen y
+ * tanda, con su plazo y su caso (`restitucionesDe`, `plazoDeRestitucion`, `casoDeRestitucion`: tomarlos o pedir que vuelvan),
+ * y lo que se pide en el caso B vuelve a su licencia (`ordinariasDe`). Después, las
  * demás licencias (3.2 a 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`), las horas de franquicia que
  * vencen el 31/12 y las que ya no entran en los días libres que quedan (`franquiciaQueVence`, con `diasLibresEntre`; spec
  * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6) y la validación de una carga (`validarLicencia`, con la regla de 3.8:
@@ -393,6 +395,26 @@ const saldoDeVacaciones = (estado, anio) => {
   return Number.isFinite(cantidad) && cantidad > 0 ? cantidad : 0;
 };
 
+// Una marca de la base: 1 (o true) es sí; lo demás, no
+const estaActivo = (valor) => valor === true || numeroDe(valor) === 1;
+
+// Lo que vuelve a cada licencia por los pedidos de restitución activos del caso B (spec 2026-10-31-mi-espacio-dias-restituidos,
+// 4): un Map de cada año a sus mitades `{ dias, habilita }`, por el día del pedido (y del id). Los que no tienen días enteros
+// positivos o una fecha, no
+const mitadesDeLasRestituciones = (estado) => {
+  const pedidos = listaDe(estado.restituciones).filter((pedido) => esObjeto(pedido) && estaActivo(pedido.activo)
+    && pedido.caso === 'restituir' && esFechaIso(pedido.fecha) && Number.isInteger(numeroDe(pedido.dias))
+    && numeroDe(pedido.dias) > 0 && anioValido(pedido.anio) !== null)
+    .sort((a, b) => compararTexto(a.fecha, b.fecha) || (idDe(a.id) || 0) - (idDe(b.id) || 0));
+  const porAnio = new Map();
+  for (const pedido of pedidos) {
+    const anio = anioValido(pedido.anio);
+    if (!porAnio.has(anio)) porAnio.set(anio, []);
+    porAnio.get(anio).push({ dias: numeroDe(pedido.dias), habilita: pedido.fecha });
+  }
+  return porAnio;
+};
+
 /**
  * Las licencias ordinarias de la persona, de la más vieja a la más nueva: `[{ anio, total, mitades: [{ dias, habilita }],
  * vence, desde_saldo }]`, de (año del arranque − 2) a (año de hoy + 1), las vacaciones que se pueden cargar. `total` es la
@@ -401,11 +423,17 @@ const saldoDeVacaciones = (estado, anio) => {
  * - La del año del arranque, con el arranque desde el 1/7: la primera mitad es su saldo inicial (lo que quedaba sin usar de
  *   lo habilitado), también desde el arranque, y la segunda, la de `mitadesDe`.
  * - El resto, con los días del año vigente (`anioVigente`) en sus dos mitades.
+ * Cada pedido de restitución activo del caso B (`estado.restituciones` con `caso` 'restituir'; spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 4 y 7) le suma a la licencia de su `anio` una mitad más, `{ dias, habilita: el día
+ * del pedido }` (y a su `total`): los días vuelven enseguida a esa licencia, con su vencimiento, y las vacaciones de las que
+ * salen siguen descontándolos. Ya está habilitada, así que `porHabilitarDe` y `alcanceDeLaCarga` no la ven. Un pedido sin días
+ * enteros positivos, sin una fecha o de un año fuera de esta lista no suma nada.
  */
 export const ordinariasDe = (estado, hoy) => {
   if (!esObjeto(estado) || !esFechaIso(estado.arranque) || !esFechaIso(hoy)) return [];
   const { arranque } = estado;
   const anioDelArranque = anioDe(arranque);
+  const vueltas = mitadesDeLasRestituciones(estado);
   const ordinarias = [];
   for (let anio = anioDelArranque - 2; anio <= anioDe(hoy) + 1; anio++) {
     const fechas = habilitaciones(anio);
@@ -416,6 +444,7 @@ export const ordinariasDe = (estado, hoy) => {
     const segundaMitad = { dias: segunda, habilita: fechas[1] };
     if (anio === anioDelArranque && arranque >= fechas[0]) mitades = [delSaldo, segundaMitad];
     else if (anio >= anioDelArranque) mitades = [{ dias: primera, habilita: fechas[0] }, segundaMitad];
+    mitades = [...mitades, ...(vueltas.get(anio) ?? [])];
     ordinarias.push({
       anio, total: mitades.reduce((suma, mitad) => suma + mitad.dias, 0), mitades, vence: venceLaLicencia(anio),
       desde_saldo: mitades[0] === delSaldo
@@ -607,6 +636,207 @@ export const repartoDeVacaciones = (estado, opciones) => {
     porFecha,
     sinCubrir
   };
+};
+
+// Los días por restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 4): el plazo es el último día hábil del mes que está
+// 4 meses después del mes del primer asueto de su tanda
+export const PLAZO_DE_RESTITUCION_EN_MESES = 4;
+
+/**
+ * El plazo de un grupo de días por restituir: el último día hábil, con los feriados (`ultimoDiaHabilDelMesCon`: los 9 fijos y
+ * los del Set), del mes que está `PLAZO_DE_RESTITUCION_EN_MESES` meses después del mes del primer asueto. Del 24/12/2026, el
+ * 30/04/2027; del 24/12/2025, el 29/04/2026 (el 30/04/2026 es feriado provincial); del 12/03/2027, el 30/07/2027 (el 31/07 es
+ * sábado). Se calcula siempre con los feriados de hoy: uno nuevo en el último día lo corre. Lo que no es una fecha, null.
+ */
+export const plazoDeRestitucion = (primerAsueto, feriados) => {
+  if (!esFechaIso(primerAsueto)) return null;
+  const mes = mesMas(primerAsueto.slice(0, 7), PLAZO_DE_RESTITUCION_EN_MESES);
+  return mes === null ? null : ultimoDiaHabilDelMesCon(mes, feriados);
+};
+
+/**
+ * ¿Tomarlos o que vuelvan? 'tomar' (caso A: se cargan como «Días restituidos») si la licencia de origen vence antes del plazo
+ * (`venceLaLicencia`); si vence el mismo día o después, 'restituir' (caso B: se pide la restitución). Un año o un plazo que no
+ * sirven, null.
+ */
+export const casoDeRestitucion = (anio, plazo) => {
+  const vence = venceLaLicencia(anio);
+  if (vence === null || !esFechaIso(plazo)) return null;
+  return vence < plazo ? 'tomar' : 'restituir';
+};
+
+/**
+ * Las fechas de unos asuetos para un texto, por fecha y sin repetir (lo que no es una fecha no va), unidas con «, el» y
+ * « y el»: sin `conMes`, los días de un mismo mes y año van solos y el último de cada mes con su fecha («24 y el 31/12/2026»;
+ * «24, el 26, el 31/12/2025 y el 02/01/2026»), para el aviso del Resumen y el email; con `conMes` (solo el `true` literal),
+ * cada día con su mes y el último de cada año con el año («24/12 y el 31/12/2026»), para la fila, el cálculo, el modal B y el
+ * «Revisá…». Una sola, con su fecha entera: «24/12/2026». Sin ninguna, ''.
+ */
+export const fechasDeLosAsuetos = (fechas, opciones) => {
+  const conMes = esObjeto(opciones) && opciones.conMes === true;
+  const lista = [...new Set(listaDe(fechas).filter(esFechaIso))].sort();
+  const partes = lista.map((fecha, indice) => {
+    const siguiente = lista[indice + 1] ?? '';
+    if (conMes) return siguiente.slice(0, 4) === fecha.slice(0, 4) ? diaYMes(fecha) : fechaCorta(fecha);
+    return siguiente.slice(0, 7) === fecha.slice(0, 7) ? fecha.slice(8, 10) : fechaCorta(fecha);
+  });
+  return partes.length <= 1 ? partes.join('') : `${partes.slice(0, -1).join(', el ')} y el ${partes.at(-1)}`;
+};
+
+// Los «Revisá…» de un grupo ya pedido (spec 2026-10-31-mi-espacio-dias-restituidos, 4): la carga de la que sale (unas
+// vacaciones o, en la recursión, unos días restituidos) ya no está, ya no incluye alguno de sus días o alguno volvió a ser
+// hábil (el asueto se dio de baja, o ese año no rige)
+const textoDeLaCargaQueNoEsta = (carga) => (carga.tipo === 'restituidos'
+  ? `Revisá tus días restituidos: los días restituidos ${fechasDeLaCarga(carga.desde, carga.hasta)} ya no están cargados.`
+  : `Revisá tus días restituidos: las vacaciones ${fechasDeLaCarga(carga.desde, carga.hasta)} ya no están cargadas.`);
+const textoDeLosDiasQueYaNoIncluye = (carga, fechas) => `Revisá tus días restituidos: `
+  + `${carga.tipo === 'restituidos' ? 'tus días restituidos' : 'tus vacaciones'} ya no incluyen el `
+  + `${fechasDeLosAsuetos(fechas, { conMes: true })}.`;
+const textoDeLosAsuetosDadosDeBaja = (fechas) => (fechas.length === 1
+  ? `Revisá tus días restituidos: el asueto del ${fechasDeLosAsuetos(fechas, { conMes: true })} se dio de baja.`
+  : `Revisá tus días restituidos: los asuetos del ${fechasDeLosAsuetos(fechas, { conMes: true })} se dieron de baja.`);
+
+// La carga de un grupo como sale en él: `{ tipo, desde, hasta }` (de lo que no es una fila, todo null)
+const cargaDelGrupo = (fila) => ({
+  tipo: esObjeto(fila) && typeof fila.tipo === 'string' ? fila.tipo : null,
+  desde: esObjeto(fila) && esFechaIso(fila.desde) ? fila.desde : null,
+  hasta: esObjeto(fila) && esFechaIso(fila.hasta) ? fila.hasta : null
+});
+
+/**
+ * Los grupos de días restituibles de una persona (spec 2026-10-31-mi-espacio-dias-restituidos, 4, con las decisiones del
+ * constructor del plan): uno por carga, licencia de origen y tanda. Lee la foto (`estado.restituibles`), los pedidos
+ * (`estado.restituciones`, activos o no), las cargas activas de vacaciones y de días restituidos (`estado.licencias`), los
+ * feriados de hoy y el reparto (`opciones.reparto`, el de `calcular`; sin él, o con algo que no es un reparto, se calcula con
+ * `repartoDeVacaciones`). `Grupo = { clave, licencia_id, anio, tanda, caso, dias, fechas, primer_asueto, plazo, situacion,
+ * restitucion_id, carga_id, fecha_pedido, revisar, carga: { tipo, desde, hasta } }`, con `clave` '<licencia_id>-<anio>-<tanda>'
+ * y `licencia_id` la carga (las vacaciones o, en la recursión, la carga de días restituidos).
+ * - Las tandas se sellan al pedir: un pedido sobre una carga le pone a las filas abiertas de la foto de esa carga (`tanda`
+ *   null) la cantidad de pedidos que ya tenía, activos o no; la tanda de una fila abierta es esa misma cuenta. Así un asueto
+ *   que llega después de un pedido arma una tanda nueva, y un pedido borrado sigue separando las tandas.
+ * - Por restituir o perdida: las filas de la foto sin pedido activo (`restitucion_id` null, de un pedido dado de baja o de un
+ *   pedido del caso A cuya carga de días restituidos ya no está entre las licencias: cuenta como suelto) de una carga activa
+ *   que hoy son restituibles (`restituiblesDe`). La licencia de origen: en unas vacaciones, la del reparto (`porFecha`: un día
+ *   sin cubrir no forma grupo); en una carga de días restituidos, el `anio` de su pedido activo (sin él, no forma grupo).
+ *   `primer_asueto` es el más temprano de la tanda (sus días por restituir de cualquier licencia de origen y el
+ *   `primer_asueto` guardado de sus pedidos activos: pedir una licencia no le cambia el plazo a la otra) y `plazo`, el de
+ *   `plazoDeRestitucion`. `caso`: en una carga de días restituidos, siempre 'tomar'; si no, el de `casoDeRestitucion`.
+ *   `situacion`: 'por_restituir' hasta el plazo inclusive; después, 'perdida'. Sin pedido: `restitucion_id`, `carga_id` y
+ *   `fecha_pedido` null y `revisar` ''.
+ * - Pedida o cargada: cada pedido activo (salvo el suelto): 'pedida' (caso 'restituir') o 'cargada' (caso 'tomar', con su
+ *   carga en `carga_id`), con las fechas de sus filas, sus `dias`, `primer_asueto`, `tanda`, `anio` y `fecha` (en
+ *   `fecha_pedido`) guardados, y el plazo recalculado. `revisar` es el primer problema, en este orden, o '': la carga de la que
+ *   sale ya no está («… las vacaciones del 11/12/2026 al 08/01/2027 ya no están cargadas.»; la carga sale del pedido), alguna
+ *   fecha quedó fuera de sus fechas («… tus vacaciones ya no incluyen el 31/12/2026.») o volvió a ser hábil («… el asueto del
+ *   24/12/2026 se dio de baja.»). Queda como está: nada se recalcula solo.
+ * Por `carga.desde`, después por la carga, el primer asueto, el año y la tanda. Nada de esto es un faltante: no frena ninguna
+ * carga. Sin un hoy válido, sin una modalidad o con un estado que no es un objeto, [].
+ */
+export const restitucionesDe = (estado, opciones) => {
+  const { hoy, feriados, reparto: dado } = esObjeto(opciones) ? opciones : {};
+  if (!esObjeto(estado) || !esFechaIso(hoy) || !MODALIDADES.includes(estado.modalidad)) return [];
+  const reparto = esObjeto(dado) && dado.porFecha instanceof Map ? dado : repartoDeVacaciones(estado, { hoy, feriados });
+
+  // Las licencias activas por id y, de ellas, las cargas que pueden tener días restituibles
+  const activas = new Map();
+  for (const fila of listaDe(estado.licencias)) {
+    const id = esObjeto(fila) ? idPositivoONulo(fila.id) : null;
+    if (id !== null) activas.set(id, fila);
+  }
+  const cargas = new Map([...activas].filter(([, fila]) => TIPOS_CON_RESTITUIBLES.includes(fila.tipo)
+    && esFechaIso(fila.desde) && esFechaIso(fila.hasta)));
+
+  // Los pedidos: cuántos tuvo cada carga (activos o no: las tandas cuentan los dos) y los que sostienen sus días (los activos,
+  // sin el del caso A cuya carga de días restituidos ya no está)
+  const pedidos = listaDe(estado.restituciones).filter((pedido) => esObjeto(pedido) && idPositivoONulo(pedido.id) !== null);
+  const pedidosPorCarga = new Map();
+  for (const pedido of pedidos) {
+    const id = idPositivoONulo(pedido.licencia_id);
+    if (id !== null) pedidosPorCarga.set(id, (pedidosPorCarga.get(id) ?? 0) + 1);
+  }
+  const vigentes = pedidos.filter((pedido) => estaActivo(pedido.activo) && (pedido.caso === 'restituir'
+    || (pedido.caso === 'tomar' && activas.has(idPositivoONulo(pedido.carga_id)))));
+  const vigentesPorId = new Map(vigentes.map((pedido) => [idPositivoONulo(pedido.id), pedido]));
+  const fotos = listaDe(estado.restituibles).filter(esObjeto);
+  const tandaDe = (valor) => (Number.isInteger(numeroDe(valor)) ? numeroDe(valor) : null);
+
+  // Los días por restituir, por carga, año y tanda
+  const porRestituir = new Map();
+  for (const [id, carga] of cargas) {
+    const restituibles = new Set(restituiblesDe(carga, estado, feriados));
+    if (restituibles.size === 0) continue;
+    const porFecha = carga.tipo === 'vacaciones' && reparto.porFecha.get(id) instanceof Map ? reparto.porFecha.get(id) : null;
+    const suPedido = carga.tipo === 'restituidos'
+      ? vigentes.find((pedido) => pedido.caso === 'tomar' && idPositivoONulo(pedido.carga_id) === id) : undefined;
+    const abierta = pedidosPorCarga.get(id) ?? 0;
+    for (const fila of fotos) {
+      if (idDe(fila.licencia_id) !== id || !restituibles.has(fila.fecha)) continue;
+      if (vigentesPorId.has(idPositivoONulo(fila.restitucion_id))) continue;
+      const anio = porFecha === null ? anioValido(suPedido?.anio) : porFecha.get(fila.fecha);
+      if (!Number.isInteger(anio)) continue;
+      const tanda = tandaDe(fila.tanda) ?? abierta;
+      const clave = `${id}-${anio}-${tanda}`;
+      if (!porRestituir.has(clave)) porRestituir.set(clave, { id, carga, anio, tanda, fechas: new Set() });
+      porRestituir.get(clave).fechas.add(fila.fecha);
+    }
+  }
+
+  // El primer asueto de cada tanda de cada carga: sus días por restituir y lo guardado en sus pedidos activos
+  const primeros = new Map();
+  const anotarPrimero = (id, tanda, fecha) => {
+    const llave = `${id}-${tanda}`;
+    if (esFechaIso(fecha) && (!primeros.has(llave) || fecha < primeros.get(llave))) primeros.set(llave, fecha);
+  };
+  for (const { id, tanda, fechas } of porRestituir.values()) for (const fecha of fechas) anotarPrimero(id, tanda, fecha);
+  for (const pedido of vigentes) {
+    anotarPrimero(idPositivoONulo(pedido.licencia_id), tandaDe(pedido.tanda), pedido.primer_asueto);
+  }
+
+  const grupos = [];
+  for (const [clave, { id, carga, anio, tanda, fechas }] of porRestituir) {
+    const primer = primeros.get(`${id}-${tanda}`) ?? null;
+    const plazo = plazoDeRestitucion(primer, feriados);
+    grupos.push({
+      clave, licencia_id: id, anio, tanda,
+      caso: carga.tipo === 'restituidos' ? 'tomar' : casoDeRestitucion(anio, plazo),
+      dias: fechas.size, fechas: [...fechas].sort(), primer_asueto: primer, plazo,
+      situacion: esFechaIso(plazo) && hoy > plazo ? 'perdida' : 'por_restituir',
+      restitucion_id: null, carga_id: null, fecha_pedido: null, revisar: '', carga: cargaDelGrupo(carga)
+    });
+  }
+
+  // Los pedidos activos, como quedaron
+  for (const pedido of vigentes) {
+    const restitucionId = idPositivoONulo(pedido.id);
+    const id = idPositivoONulo(pedido.licencia_id);
+    const anio = anioValido(pedido.anio);
+    const tanda = tandaDe(pedido.tanda);
+    const fechas = [...new Set(fotos.filter((fila) => idPositivoONulo(fila.restitucion_id) === restitucionId
+      && esFechaIso(fila.fecha)).map((fila) => fila.fecha))].sort();
+    const suya = cargas.get(id);
+    const carga = cargaDelGrupo(suya ?? pedido.licencia);
+    let revisar = '';
+    if (suya === undefined) revisar = textoDeLaCargaQueNoEsta(carga);
+    else {
+      const fuera = fechas.filter((fecha) => fecha < suya.desde || fecha > suya.hasta);
+      const habiles = fechas.filter((fecha) => esDiaHabilCon(fecha, feriados));
+      if (fuera.length > 0) revisar = textoDeLosDiasQueYaNoIncluye(carga, fuera);
+      else if (habiles.length > 0) revisar = textoDeLosAsuetosDadosDeBaja(habiles);
+    }
+    const dias = numeroDe(pedido.dias);
+    const primer = esFechaIso(pedido.primer_asueto) ? pedido.primer_asueto : null;
+    grupos.push({
+      clave: `${id}-${anio}-${tanda}`, licencia_id: id, anio, tanda, caso: pedido.caso,
+      dias: Number.isInteger(dias) ? dias : fechas.length, fechas, primer_asueto: primer,
+      plazo: plazoDeRestitucion(primer, feriados), situacion: pedido.caso === 'tomar' ? 'cargada' : 'pedida',
+      restitucion_id: restitucionId, carga_id: idPositivoONulo(pedido.carga_id),
+      fecha_pedido: esFechaIso(pedido.fecha) ? pedido.fecha : null, revisar, carga
+    });
+  }
+
+  return grupos.sort((a, b) => compararTexto(a.carga.desde ?? '', b.carga.desde ?? '')
+    || (a.licencia_id ?? 0) - (b.licencia_id ?? 0) || compararTexto(a.primer_asueto ?? '', b.primer_asueto ?? '')
+    || (a.anio ?? 0) - (b.anio ?? 0) || (a.tanda ?? 0) - (b.tanda ?? 0));
 };
 
 // «2 de la 2024 (vencen el 31/12/2026) y 1 de la 2025 (vence el 31/12/2027)», de las ordinarias con `perdidos` mayor que 0;
@@ -1788,7 +2018,7 @@ export const fueraDeLaModalidad = (fila, modalidad) => {
 
 /**
  * Todo lo que sale de lo cargado, sin las filas que no corresponden a la modalidad (`fueraDeLaModalidad`): el `Calculo`,
- * `{ reparto, topes, franquicia, francos, horasAFavor, noUtilizadas, faltantes, avisosDeSalidas }`.
+ * `{ reparto, topes, franquicia, francos, horasAFavor, noUtilizadas, faltantes, avisosDeSalidas, restituciones }`.
  * - `reparto`: el de `repartoDeVacaciones`, con todas las licencias como ocupadas (`ocupadas`): una de la otra modalidad no
  *   cuenta, pero ocupa su día y no deja cargar nada ahí, así que no es un día libre para «Perdés».
  * - `topes`: el de `usoDeLosTopes`, solo con los tipos de la modalidad (el saldo de franquicias no cuenta en contrato).
@@ -1800,6 +2030,8 @@ export const fueraDeLaModalidad = (fila, modalidad) => {
  * - `faltantes`: los de `faltantesDe`.
  * - `avisosDeSalidas`: los de `avisosDeSalidas` (solo en contrato). Van aparte y nunca en `faltantes`: así
  *   `problemaDeLaCarga` no los ve y una licencia nunca se frena por una salida.
+ * - `restituciones`: los grupos de los días restituibles (`restitucionesDe`, spec 2026-10-31-mi-espacio-dias-restituidos, 4),
+ *   con el mismo reparto y los mismos feriados. Tampoco van en `faltantes`: un grupo por restituir o perdido no frena nada.
  * Sin un hoy válido, todo vacío: sin hoy no hay ninguna licencia habilitada, y todas las vacaciones quedarían sin cubrir.
  */
 export const calcular = (estado, opciones) => {
@@ -1807,7 +2039,7 @@ export const calcular = (estado, opciones) => {
   if (!esFechaIso(hoy)) {
     return {
       reparto: repartoDeVacaciones(null), topes: [], franquicia: null, francos: [], horasAFavor: [], noUtilizadas: {},
-      faltantes: [], avisosDeSalidas: []
+      faltantes: [], avisosDeSalidas: [], restituciones: []
     };
   }
   const datos = esObjeto(estado) ? estado : {};
@@ -1844,7 +2076,12 @@ export const calcular = (estado, opciones) => {
     noUtilizadas: Object.fromEntries([...anios].sort((a, b) => a - b)
       .map((anio) => [anio, noUtilizadasDe(deLaModalidad, anio, conHoy)]))
   };
-  return { ...calculo, faltantes: faltantesDe(calculo), avisosDeSalidas: avisosDeSalidas(deLaModalidad, feriados) };
+  return {
+    ...calculo,
+    faltantes: faltantesDe(calculo),
+    avisosDeSalidas: avisosDeSalidas(deLaModalidad, feriados),
+    restituciones: restitucionesDe(deLaModalidad, { hoy, feriados, reparto: calculo.reparto })
+  };
 };
 
 // Los textos de los faltantes del Resumen, neutros: «Revisá …»
