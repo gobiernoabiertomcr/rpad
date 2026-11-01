@@ -11755,8 +11755,9 @@ describe('los días restituidos: «Cargar licencia» en la página (DOM falso)',
 
   it('con el Resumen sin cargar (falló al abrir la página), lo pide una sola vez antes de abrir: si el grupo no está, no lo '
     + 'vuelve a pedir', async () => {
-    const pedidos = { resumen: 0 };
+    const pedidos = { resumen: 0, lista: 0 };
     const extra = (metodo, ruta) => {
+      if (metodo === 'GET' && /^\/api\/mi-espacio\/licencias(\?anio=\d{4})?$/.test(ruta)) pedidos.lista += 1;
       if (ruta !== '/api/mi-espacio/resumen') return undefined;
       pedidos.resumen += 1;
       return pedidos.resumen === 1 ? respuesta(500, { success: false, error: 'Error al obtener el resumen' }) : ok(RESUMEN_DE_ANTES);
@@ -11769,6 +11770,42 @@ describe('los días restituidos: «Cargar licencia» en la página (DOM falso)',
     assert.equal(pedidos.resumen, 2);
     assert.equal(pagina.abierto('modal-licencia'), false);
     assert.deepEqual(pagina.estado.toasts, [[MENSAJES_MI_ESPACIO.grupoNoPorRestituir, 'error']]);
+    // La lista, como en el test de arriba: se vuelve a pedir (sin el botón viejo)
+    assert.equal(pedidos.lista, 2);
+  });
+
+  it('si mientras se pide el Resumen la persona elige otro año de la lista, y el grupo ya no está, la lista no se vuelve a pedir: '
+    + 'se ve el año elegido', async () => {
+    // El Resumen tarda; la lista del año elegido también, y llega después de que se sabe que el grupo ya no está
+    const resumen = demorada();
+    const listas = [];
+    const { pedidos, responder } = conElResumenDeAntes(() => resumen.promesa, (n) => {
+      if (n === 1) return undefined;
+      const lista = demorada();
+      listas.push(lista);
+      return lista.promesa;
+    });
+    const pagina = montarPagina({ responder });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('tab-licencias'));
+    const anioDe = (pressed) => pagina.el('vista-licencias').querySelectorAll('[data-anio]')
+      .find((boton) => (boton.getAttribute('aria-pressed') === 'true') === pressed);
+    const otro = anioDe(false);
+    assert.ok(otro, 'otro año en el selector');
+    const elegido = otro.getAttribute('data-anio');
+    await pagina.tocar(botonDeLaLinea(pagina));
+    await pagina.tocar(otro);
+    resumen.soltar(ok(RESUMEN_DE_ANTES));
+    await pagina.esperar();
+    assert.deepEqual(pagina.estado.toasts, [[MENSAJES_MI_ESPACIO.grupoNoPorRestituir, 'error']]);
+    // Un solo pedido después del clic: el del año elegido, que ya trae la lista de ahora
+    assert.equal(pedidos.lista, 2);
+    assert.equal(listas.length, 1);
+    assert.equal(pagina.rutas().filter((ruta) => ruta.startsWith('/api/mi-espacio/licencias')).at(-1),
+      `/api/mi-espacio/licencias?anio=${elegido}`);
+    listas[0].soltar(ok({ ...listaDeJulieta(JULIETA.estado), anio: Number(elegido) }));
+    await pagina.esperar();
+    assert.equal(anioDe(true)?.getAttribute('data-anio'), elegido);
   });
 
   it('salir de «Días restituidos» a otro tipo deja vacío el «Hasta» que había puesto Mi espacio; entre los demás tipos, queda '

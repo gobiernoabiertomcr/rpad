@@ -3303,17 +3303,19 @@ function teclaEnPestanas(evento) {
 
 // El Resumen dice la modalidad: sin ella, no se carga nada (los botones del encabezado quedan ocultos) y la pestaña muestra el
 // mensaje; con ella y sin el saldo inicial, invita a completar «Mis vacaciones y saldos» y lo abre solo (una vez); si no,
-// «Titular», con la marca en la pestaña si algo vence pronto. Si falla, volver a la pestaña lo pide otra vez
+// «Titular», con la marca en la pestaña si algo vence pronto. Si falla, volver a la pestaña lo pide otra vez. Cada pedido tiene su
+// número (`pagina.pedidos.resumen`; una respuesta de uno que otro reemplazó se descarta), y al terminar lo devuelve: quien lo espera
+// sabe si el Resumen que quedó es el suyo (hayElGrupo). Los demás que la llaman no lo miran
 async function cargarResumen() {
   const pedido = ++pagina.pedidos.resumen;
   pagina.cargandoResumen = true;
   try {
     const { data } = await API.pedirJson('GET', '/mi-espacio/resumen');
-    if (pedido !== pagina.pedidos.resumen) return;
+    if (pedido !== pagina.pedidos.resumen) return pedido;
     pagina.resumen = esObjeto(data) ? data : {};
     pintarResumen();
   } catch (error) {
-    if (pedido !== pagina.pedidos.resumen) return;
+    if (pedido !== pagina.pedidos.resumen) return pedido;
     if (error?.status === 401) irAlLogin();
     else {
       pagina.resumen = null;
@@ -3322,6 +3324,7 @@ async function cargarResumen() {
   } finally {
     if (pedido === pagina.pedidos.resumen) pagina.cargandoResumen = false;
   }
+  return pedido;
 }
 
 function pintarResumen() {
@@ -4404,8 +4407,11 @@ const anioQueTenia = (datos) => (Number.isInteger(datos?.anio) && datos.anio !==
 
 // Vuelve a pedir la lista de Licencias, si se ve, en el año pendiente o en el que tenía y sin anunciarla, con el foco resguardado:
 // el de `control` (el botón que se usó, que la recarga reemplaza: respaldoDelFoco, tomado antes). Fuera de la pestaña, la suelta: se
-// pide la próxima vez que se abre
-async function recargarLaListaConElFocoEn(control) {
+// pide la próxima vez que se abre. `pedidoAlTocar` es el número del último pedido de la lista cuando se tocó el botón
+// (`pagina.pedidos.licencias`): si después alguien la pidió (la persona eligió otro año mientras se pedía el Resumen), no pide nada,
+// porque ese pedido ya trae lo de ahora (y el de acá, con un número más alto, descartaría su respuesta: pediría otro año)
+async function recargarLaListaConElFocoEn(control, pedidoAlTocar = pagina.pedidos.licencias) {
+  if (pagina.pedidos.licencias !== pedidoAlTocar) return;
   if (pagina.pestana !== 'licencias') {
     pagina.licencias = null;
     return;
@@ -4480,13 +4486,13 @@ async function hayResumen() {
 // que se acabe de pedir en esta misma apertura (`pedir` en false: hayResumen). Si otro pedido del Resumen reemplazó a este (un doble
 // clic), manda el último: este sale sin decir nada. Si no llega, el aviso de siempre, y si el grupo sigue sin estar, ya no está por
 // restituir: se avisa con el mensaje del servidor, el formulario no se abre y la lista se vuelve a pedir con el foco resguardado
-// (`volverA`, el botón que se usó: el viejo se va y, si el reparto cambió, se ve la línea nueva). true si se puede abrir (si
-// mientras tanto se abrió otro modal, no)
-async function hayElGrupo(grupo, { pedir = true, volverA = null } = {}) {
+// (`volverA`, el botón que se usó: el viejo se va y, si el reparto cambió, se ve la línea nueva), salvo que alguien la haya pedido
+// después del clic (`listaAlTocar`, el número del último pedido de la lista en ese momento: recargarLaListaConElFocoEn). true si se
+// puede abrir (si mientras tanto se abrió otro modal, no)
+async function hayElGrupo(grupo, { pedir = true, volverA = null, listaAlTocar = pagina.pedidos.licencias } = {}) {
+  // El número de su pedido del Resumen, que devuelve cargarResumen: si ya no es el último, otro lo reemplazó
   if (pedir) {
-    const carga = cargarResumen();
-    const propio = pagina.pedidos.resumen;
-    await carga;
+    const propio = await cargarResumen();
     if (propio !== pagina.pedidos.resumen) return false;
     if (pagina.resumen === null) {
       avisarMiEspacio(MENSAJE_SIN_RESUMEN, 'error');
@@ -4495,7 +4501,7 @@ async function hayElGrupo(grupo, { pedir = true, volverA = null } = {}) {
   }
   if (opcionDelGrupo(pagina.resumen?.tipos, grupo) === null) {
     avisarMiEspacio(MENSAJES_FORMULARIOS.grupoNoPorRestituir, 'error');
-    recargarLaListaConElFocoEn(volverA);
+    recargarLaListaConElFocoEn(volverA, listaAlTocar);
     return false;
   }
   return pagina.modales.length === 0;
@@ -4506,10 +4512,12 @@ async function hayElGrupo(grupo, { pedir = true, volverA = null } = {}) {
 // corrección de una fila de la lista. El uso autorizado tiene su formulario. Sin el saldo inicial no se puede cargar nada: abre
 // «Mis vacaciones y saldos»
 async function abrirLicencia({ fila = null, tipo = null, grupo = null, volverA = null } = {}) {
+  // Lo de la lista y del Resumen al tocar el botón, antes de esperar nada (hayElGrupo)
+  const listaAlTocar = pagina.pedidos.licencias;
   const recienPedido = pagina.resumen === null;
   if (recienPedido && !(await hayResumen())) return;
   if (!fila && tipo === 'restituidos' && conTexto(grupo) && opcionDelGrupo(pagina.resumen?.tipos, grupo) === null
-    && !(await hayElGrupo(grupo, { pedir: !recienPedido, volverA }))) return;
+    && !(await hayElGrupo(grupo, { pedir: !recienPedido, volverA, listaAlTocar }))) return;
   if (pagina.resumen?.abrir_saldos === true) {
     abrirSaldos(volverA);
     return;
