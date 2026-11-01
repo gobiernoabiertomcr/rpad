@@ -24,7 +24,8 @@ import { diasHabilesDe, diaDeLaSemana } from './feriadosReglas.js';
 import { esFechaIso, formatoCorto, formatoLargo } from './notasDigitalesCalendario.js';
 import { RENGLON_FIRMA_CONTRATADO, escapeHtml } from './notasDigitalesContenido.js';
 import {
-  TIPOS_LICENCIA, MESES_HASTA_EL_FRANCO, MESES_HASTA_LAS_HORAS, mesMas, mesEnFrase, nombreDelMes, horasDeLaSalida
+  TIPOS_LICENCIA, MESES_HASTA_EL_FRANCO, MESES_HASTA_LAS_HORAS, mesMas, mesEnFrase, nombreDelMes, horasDeLaSalida,
+  TIPOS_CON_RESTITUIBLES
 } from './miEspacioReglas.js';
 
 // Los tipos que tienen nota: todos menos el uso autorizado (decisión del usuario, «por ahora»), en el orden de TIPOS_LICENCIA
@@ -240,11 +241,10 @@ const CUERPOS = Object.freeze({
 });
 // Los tipos que cuentan días hábiles; el resto es de un día
 const TIPOS_DE_DIAS = Object.freeze(['vacaciones', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'restituidos']);
-// Los que suman sus días restituibles a los hábiles (los de `TIPOS_CON_RESTITUIBLES` de miEspacioReglas.js)
-const TIPOS_CON_RESTITUIBLES = Object.freeze(['vacaciones', 'restituidos']);
 
-// Los días de una licencia de días: sus días hábiles con los feriados y, en las vacaciones y los días restituidos, sus días
-// restituibles que caen dentro de sus fechas, que cuentan como hábiles. Por fecha y sin repetir
+// Los días de una licencia de días: sus días hábiles con los feriados y, en las vacaciones y los días restituidos
+// (`TIPOS_CON_RESTITUIBLES` de miEspacioReglas.js), sus días restituibles que caen dentro de sus fechas, que cuentan como
+// hábiles. Por fecha y sin repetir
 const diasDeLaLicencia = ({ tipo, desde, hasta }, feriados, restituibles) => {
   const habiles = diasHabilesDe(desde, hasta, feriados);
   if (!TIPOS_CON_RESTITUIBLES.includes(tipo)) return habiles;

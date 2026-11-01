@@ -3,6 +3,7 @@
 // la nota sale de notaDeLicencia y el Word se abre con JSZip para leer su XML. Las personas son inventadas.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import { HOJA_DE_LA_NOTA, TIPO_WORD, renderNotaDocx } from '../services/miEspacioNotaWord.js';
 import { LINEA_DE_LA_FIRMA, notaDeLicencia, notaDeRestitucion, htmlDeLaNota } from '../services/miEspacioNota.js';
@@ -306,25 +307,24 @@ describe('renderNotaDocx: los días restituidos (A) y la restitución (B)', () =
     { fecha: '2027-04-01', persona, feriados: ASUETOS, restitucion: { anio: 2024, fechas: FECHAS } }).nota;
   const notaB = (persona = JULIETA) =>
     notaDeRestitucion({ anio: 2025, dias: 2, fechas: FECHAS }, { fecha: '2027-04-01', persona }).nota;
-  // Lo que dicen los Word de la maqueta (word/ de la carpeta de la maqueta, armados con renderNotaDocx), renglón por renglón
-  const ARRIBA = ['Comodoro Rivadavia, 1 de abril de 2027', '', '', 'Al Señor Director General de',
-    'Modernización e Investigación Territorial', `S${' '.repeat(15)}/${' '.repeat(15)}D`, '', 'De mi mayor consideración:', ''];
-  const ABAJO = ['', 'Sin otro particular, saludo a Ud. atentamente.', '', '', '', '', LINEA_DE_LA_FIRMA, 'Julieta Ferreyra',
-    'Coordinadora de Estadística'];
+  // Los Word de la maqueta (word/ de la carpeta de la maqueta, armados con renderNotaDocx), cada uno con el nombre de su nota
+  const CARPETA_DE_LA_MAQUETA =
+    new URL('../docs/superpowers/specs/2026-10-31-mi-espacio-dias-restituidos-mockups/word/', import.meta.url);
+  const wordDeLaMaqueta = async (nombre) => abrir(await readFile(new URL(nombre, CARPETA_DE_LA_MAQUETA)));
 
-  it('la nota A dice lo mismo que el Word de la maqueta', async () => {
-    const textos = parrafosDelWord((await wordDe(notaA())).documento).map((p) => p.texto);
-    assert.deepEqual(textos, [...ARRIBA,
-      'Me dirijo a Ud. a fin de solicitarle tenga a bien autorizar el usufructo de dos (2) días hábiles de mi licencia anual ordinaria 2024, restituidos por los asuetos de los días jueves 24 y jueves 31 de diciembre de 2026, declarados durante mis vacaciones, a partir del día lunes 12 de abril de 2027.',
-      ...ABAJO]);
-  });
-
-  it('la nota B dice lo mismo que el Word de la maqueta', async () => {
-    const textos = parrafosDelWord((await wordDe(notaB())).documento).map((p) => p.texto);
-    assert.deepEqual(textos, [...ARRIBA,
-      'Me dirijo a Ud. a fin de solicitarle tenga a bien autorizar la restitución a mi licencia anual ordinaria 2025 de dos (2) días hábiles, correspondientes a los asuetos de los días jueves 24 y jueves 31 de diciembre de 2026, declarados durante mis vacaciones.',
-      ...ABAJO]);
-  });
+  for (const [cual, armar, nombre] of [
+    ['A', notaA, 'Nota de licencia - Días restituidos - 2027-04-12.docx'],
+    ['B', notaB, 'Nota de restitución - Licencia 2025 - 2027-04-01.docx']
+  ]) {
+    it(`la nota ${cual} dice lo mismo que el Word de la maqueta, renglón por renglón y con la misma diagramación`, async () => {
+      const nota = armar();
+      assert.equal(nota.nombre, nombre);
+      const maqueta = parrafosDelWord((await wordDeLaMaqueta(nombre)).documento).map(sinXml);
+      const word = parrafosDelWord((await wordDe(nota)).documento).map(sinXml);
+      assert.ok(maqueta.some((parrafo) => parrafo.texto === nota.cuerpo), 'el cuerpo está en el Word de la maqueta');
+      assert.deepEqual(word, maqueta);
+    });
+  }
 
   for (const [quien, persona] of Object.entries({
     JULIETA, CONTRATADA, SIN_CARGO, SIN_VINCULO, CON_HTML: { nombre: 'Ana "Anita" & <Cía>', cargo: 'Jefa <de> & "Datos"', vinculo: 'contrato' }

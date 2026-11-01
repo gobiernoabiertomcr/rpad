@@ -480,8 +480,8 @@ export const tieneSaldoInicial = (tipo, modalidad) =>
   TIPOS_CON_SALDO.includes(tipo) || (tipo === 'uso_autorizado' && modalidad === 'contrato');
 
 // Las cargas que pueden tener días restituibles: las vacaciones y, en la recursión, los días restituidos (spec
-// 2026-10-31-mi-espacio-dias-restituidos, 4)
-const TIPOS_CON_RESTITUIBLES = Object.freeze(['vacaciones', 'restituidos']);
+// 2026-10-31-mi-espacio-dias-restituidos, 4). La usa también la nota en Word (services/miEspacioNota.js)
+export const TIPOS_CON_RESTITUIBLES = Object.freeze(['vacaciones', 'restituidos']);
 
 /**
  * Los días restituibles de una carga (spec 2026-10-31-mi-espacio-dias-restituidos, 4), por fecha y sin repetir: los de la
@@ -1324,14 +1324,15 @@ export const validarLicencia = (entrada, contexto) => {
 };
 
 // La carga de los días restituidos, el caso A (spec 2026-10-31-mi-espacio-dias-restituidos, 4, 7 y 9): son exactamente los N
-// días de un grupo por restituir, todos juntos, desde un «Desde» posterior al fin de su carga y a más tardar el plazo; el
-// «Hasta» lo pone Mi espacio. No sale de ninguna licencia: sus días son los del grupo y no entran en el reparto.
+// días de un grupo por restituir, todos juntos, desde un «Desde» que va del primer día hábil después de su carga al plazo;
+// el «Hasta» lo pone Mi espacio. No sale de ninguna licencia: sus días son los del grupo y no entran en el reparto.
 
 /**
  * El «Hasta» de unos días restituidos: el día número `dias` contando desde `desde` (incluido) los días hábiles con los
- * feriados y los de `restituibles` (los días restituibles de la carga que se corrige, que siguen siendo suyos: así, con el
- * «Desde» de siempre, conserva su «Hasta»). A lo sumo `TOPE_DE_VUELTAS` días (366); si no llega, o con un «Desde» que no es
- * una fecha o unos días que no son un entero positivo, null.
+ * feriados y los de `restituibles`. Los `restituibles` sirven cuando se recalcula el «Hasta» de una carga que se corrige,
+ * con otro «Desde» o con el mismo: son sus días restituibles (los de un asueto cargado después, con su foto), que siguen
+ * siendo suyos, así un asueto que cayó adentro no la alarga. A lo sumo `TOPE_DE_VUELTAS` días (366); si no llega, o con un
+ * «Desde» que no es una fecha o unos días que no son un entero positivo, null.
  */
 export const hastaDeLosRestituidos = (desde, dias, feriados, restituibles = []) => {
   const cuantos = numeroDe(dias);
@@ -1404,11 +1405,20 @@ const restitucionDelPedido = (valor) => {
   return { licencia_id: licenciaId, anio, tanda };
 };
 
-// El grupo de una carga de días restituidos, de los de `restitucionesDe`: `{ grupo }`, o `{ error }` con la clave de su
-// mensaje. En el alta, el de `entrada.restitucion` que está por restituir (la clave y la situación: en un borde raro, un
-// pedido activo puede tener la misma clave), del caso A; en una corrección (`editadaId`, que no es null ni undefined), el
-// cargado de esa carga (`carga_id`)
-const grupoDeLosRestituidos = (grupos, entrada, editadaId) => {
+/**
+ * El grupo de una carga de días restituidos, entre los de `restitucionesDe` (`grupos`): `{ grupo }`, o `{ error }` con la
+ * clave de su mensaje en `MENSAJES_MI_ESPACIO`.
+ * - En el alta (`editadaId` null o undefined): el de `entrada.restitucion`, `{ licencia_id, anio, tanda }` con los tres
+ *   enteros (la carga, un id positivo; la tanda, desde 0; también como texto), que está por restituir. Se busca por la clave
+ *   y por la situación: en un borde raro, un pedido activo puede tener la misma clave que un grupo por restituir (el límite
+ *   sabido de `restitucionesDe`). Una restitución que no sirve da 'restitucionInvalida'; si no hay ninguno por restituir
+ *   (tampoco si pasó el plazo), 'grupoNoPorRestituir'; uno del caso B, 'grupoEsParaRestituir'; uno sin caso,
+ *   'grupoNoPorRestituir'.
+ * - En una corrección: el cargado de esa carga (situación 'cargada' y `carga_id` igual a `editadaId`); si no hay,
+ *   'grupoNoPorRestituir'.
+ * La usan `validarRestituidos`, la vista de `evaluarLicencia` y el controlador. Nunca tira.
+ */
+export const grupoDeLosRestituidos = (grupos, entrada, editadaId) => {
   const lista = listaDe(grupos).filter(esObjeto);
   if (editadaId !== undefined && editadaId !== null) {
     const editada = idPositivoONulo(editadaId);
@@ -1433,16 +1443,22 @@ const grupoDeLosRestituidos = (grupos, entrada, editadaId) => {
  * 1. el grupo, en `tipo`: en el alta, `entrada.restitucion` tiene que ser un objeto con los tres enteros
  *    (`restitucionInvalida`) de un grupo por restituir (`grupoNoPorRestituir`, también si pasó el plazo) del caso A
  *    (`grupoEsParaRestituir`); en una corrección, el grupo cargado de esa carga (la restitución que llegue no cuenta);
- * 2. «Desde», en `desde`: una fecha (`fecha`) del rango de `rangoDeFechas` (`textoRango`), posterior al fin de su carga y a
- *    más tardar el plazo (`textoDesdeDeLosRestituidos`). En una corrección que no cambia «Desde», esto último no se vuelve a
- *    mirar: lo ya cargado queda como está, aunque un feriado nuevo haya corrido el plazo;
- * 3. el «Hasta», que lo pone Mi espacio (el que llegue no cuenta): en una corrección que no cambia «Desde», el guardado; si
- *    no, el de `hastaDeLosRestituidos` con los días del grupo y, al corregir, los días restituibles de esa carga desde el
- *    «Desde» nuevo. Si no llega o se sale del rango, `textoRango` en `desde`;
+ * 2. «Desde», en `desde`: una fecha (`fecha`) del rango de `rangoDeFechas` (`textoRango`), del primer día hábil después de
+ *    su carga (`primerDiaDeLosRestituidos`) al plazo (`textoDesdeDeLosRestituidos`, que dice esas dos fechas, como la ayuda).
+ *    En una corrección que no cambia «Desde», esto último no se vuelve a mirar: lo ya cargado queda como está, aunque un
+ *    feriado nuevo haya corrido el plazo;
+ * 3. el «Hasta», que lo pone Mi espacio (el que llegue no cuenta): el de `hastaDeLosRestituidos` con los días del grupo y, al
+ *    corregir, los días restituibles de esa carga desde «Desde» (así, con un asueto cargado después adentro, queda igual; y
+ *    si se dio de baja un feriado que ya estaba al cargarla, la carga vuelve a sus N días). Solo una corrección que no cambia
+ *    «Desde» de una carga que ya terminó (su «Hasta», antes de hoy) conserva el guardado: sus fechas ya quedaron fijas en
+ *    Configuración (`fechasFijas`) y un cambio de la nota no tiene que tocarlas. Si no llega o se sale del rango,
+ *    `textoRango` en `desde`;
  * 4. la nota: recortada, de hasta 200 caracteres (`nota`);
  * 5. que no comparta un día con otra licencia cargada (`textoSuperpuesta`, en `desde`).
  * `mostrar` es 1 salvo con false, 0 o '0'. La modalidad y el arranque los controla antes quien la llama (`evaluarLicencia`).
  * Una entrada o un contexto que no son objetos cuentan como `{}`.
+ * Límite sabido: si la carga de la que salen los días termina después del plazo (rarísimo: el asueto cae en ella y el plazo
+ * es 4 meses después), no hay ningún «Desde» posible, y la ayuda y el error dicen un rango al revés. Queda así.
  */
 export const validarRestituidos = (entrada, contexto) => {
   const fuente = esObjeto(entrada) ? entrada : {};
@@ -1464,14 +1480,16 @@ export const validarRestituidos = (entrada, contexto) => {
     && fila.tipo === 'restituidos' && idDe(fila.id) === editada && esFechaIso(fila.desde) && esFechaIso(fila.hasta));
   const mismoDesde = guardada !== undefined && guardada.desde === desde;
 
-  const { carga, plazo } = grupo;
-  const finDeLaCarga = esObjeto(carga) ? carga.hasta : null;
-  if (!mismoDesde && (!esFechaIso(finDeLaCarga) || !esFechaIso(plazo) || desde <= finDeLaCarga || desde > plazo)) {
-    return rechazo('desde', textoDesdeDeLosRestituidos(primerDiaDeLosRestituidos(grupo, feriados), plazo));
+  const { plazo } = grupo;
+  const primero = primerDiaDeLosRestituidos(grupo, feriados);
+  if (!mismoDesde && (!esFechaIso(primero) || !esFechaIso(plazo) || desde < primero || desde > plazo)) {
+    return rechazo('desde', textoDesdeDeLosRestituidos(primero, plazo));
   }
 
-  let hasta = mismoDesde ? guardada.hasta : null;
-  if (!mismoDesde) {
+  // El «Hasta»: el guardado, solo si la carga no cambia «Desde» y ya terminó; si no, contado desde «Desde» con los días
+  // restituibles de la carga que se corrige (desde «Desde» hasta el fin del rango: los que queden adentro son suyos)
+  let hasta = mismoDesde && guardada.hasta < hoy ? guardada.hasta : null;
+  if (hasta === null) {
     const suyos = guardada === undefined ? []
       : restituiblesDe({ id: editada, tipo: 'restituidos', desde, hasta: rango.hasta }, datos, feriados);
     hasta = hastaDeLosRestituidos(desde, grupo.dias, feriados, suyos);
