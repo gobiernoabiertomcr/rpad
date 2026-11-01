@@ -2898,7 +2898,9 @@ describe('migracion-mi-espacio-restituciones.sql', () => {
     // Por qué es obligatoria: estadosDe lee las dos tablas, y Configuración → Feriados saca la foto
     assert.match(cabecera(MIGRACION), /Es obligatoria/);
     assert.match(cabecera(MIGRACION), /estadosDe/);
-    assert.match(cabecera(MIGRACION), /Configuración → Feriados no puede cargar ni corregir un feriado/);
+    assert.match(cabecera(MIGRACION), /Configuración → Feriados no puede corregir ningún feriado/);
+    assert.match(cabecera(MIGRACION), /cuando cae en unas vacaciones ya cargadas/);
+    assert.match(cabecera(MIGRACION), /«no rige» y la baja siguen andando/);
     assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
     assert.match(cabecera(MIGRACION), /Para deshacer: rollback-mi-espacio-restituciones\.sql/);
     // La verificación, comentada al final

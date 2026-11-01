@@ -25,8 +25,9 @@
 -- del RPAD > pestaña SQL, pegar y Continuar). Es obligatoria: el código nuevo lee las dos tablas cada vez que lee lo
 -- cargado de una persona (estadosDe), así que sin ellas da «Table doesn't exist»: todo lo de Mi espacio que lee el estado de
 -- una persona (el Resumen, las licencias, las horas extras, la nota de licencia) da error para todos, y, como el feriado
--- saca la foto en su misma transacción, Configuración → Feriados no puede cargar ni corregir un feriado (ni cargar el día de
--- «Se pasó al»); el paso de Mi espacio de la corrida de las 8:15 anota el error en Correos → Estado.
+-- saca la foto en su misma transacción, Configuración → Feriados no puede corregir ningún feriado (la corrección siempre lee
+-- la foto) ni cargar uno, volver a hacer regir uno o cargar el día de «Se pasó al» cuando cae en unas vacaciones ya cargadas
+-- («no rige» y la baja siguen andando); el paso de Mi espacio de la corrida de las 8:15 anota el error en Correos → Estado.
 -- Se puede volver a correr si se cortó a mitad: el MODIFY del tipo deja lo mismo, y lo que ya existe se saltea.
 -- Para deshacer: rollback-mi-espacio-restituciones.sql
 -- =====================================================
