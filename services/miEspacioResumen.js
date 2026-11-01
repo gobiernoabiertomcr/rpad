@@ -9,7 +9,11 @@
  * tal cual y no recalcula nada (Ruling 19). También el próximo feriado de «Hoy y mañana» (`proximoFeriadoDe`) y, desde la spec
  * 2026-10-28-mi-espacio-licencia-anulada (2.2, 2.3 y sección 3), lo que en Configuración quedó distinto, para revisar
  * (`paraRevisarDe`), las licencias de otros años que la lista no tiene (`otrosAniosDe`) y en qué lista quedó una licencia
- * (`textoDeLaListaDe`).
+ * (`textoDeLaListaDe`). Desde la spec 2026-10-31-mi-espacio-dias-restituidos (5, 7 y 9), los días que restituye un asueto
+ * cargado después de unas vacaciones: el aviso de cada grupo por restituir (entre la banda y «El resto»), su oración en la
+ * bajada, «Vence pronto», sus opciones de «Cargar licencia», el «Revisá…» de lo ya pedido, la línea de cada grupo en la fila
+ * de su carga y lo que dice el segundo paso de un pedido (`textoDeLaRestitucionHecha`), con los grupos que arma
+ * `restitucionesDe` en el cálculo y los textos de las reglas.
  *
  * Puras (sin pool ni Date local: las fechas son texto 'AAAA-MM-DD' y los meses, 'AAAA-MM'). Ninguna función tira: una
  * entrada rara da null, '', '—', una lista vacía o un objeto vacío. Todo número va como número y todo texto, como texto
@@ -27,7 +31,9 @@ import {
   fueraDeLaModalidad, tieneSaldoInicial, horasDe, textoSinNoUtilizadas, rangoDeFechas, horaSalidaValida, tipoDeDia,
   horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, mesDeLaPlanilla, textoDePerdidos, fechasEnLaFrase,
   diasLibresDelMes, porHabilitarDe, textoDeLosDiasHabiles, MESES_HASTA_LAS_HORAS, mesDeLaSalida, horasPorMesDeSalidas,
-  repartoDelMes, textoDeLoQueSeMueve, diasDeLaCarga
+  repartoDelMes, textoDeLoQueSeMueve, diasDeLaCarga, fechasDeLosAsuetos, textoDelAvisoDeRestitucion,
+  textoDelBotonDeRestitucion, textoDeLaFilaDeRestitucion, bajadaDeRestituciones, tituloDeRestitucionQueVence,
+  DIAS_DEL_AVISO_DE_RESTITUCION, textoDeLaAyudaDeRestituidos, textoDelHastaDeRestituidos
 } from './miEspacioReglas.js';
 
 // Los dos formatos que ya estaban en las reglas: el panel los usa sin copiarlos
@@ -91,6 +97,39 @@ const usadosDe = (cuenta, tipo, anio) => cantidadDe(listaDe(cuenta.topes)
 const noUtilizadasDel = (cuenta, anio) => (esObjeto(cuenta.noUtilizadas) && Object.hasOwn(cuenta.noUtilizadas, anio)
   && esObjeto(cuenta.noUtilizadas[anio]) ? cuenta.noUtilizadas[anio] : null);
 
+// Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 5, 7 y 9): lo que ve la persona de los grupos de
+// `restitucionesDe` (`calculo.restituciones`), con los textos de las reglas
+const SITUACIONES_DE_RESTITUCION = Object.freeze(['por_restituir', 'pedida', 'cargada', 'perdida']);
+const CASOS_DE_RESTITUCION = Object.freeze(['tomar', 'restituir']);
+// Los tipos de las filas de la lista que llevan la línea de sus grupos: las vacaciones y, en la recursión, los días restituidos
+const TIPOS_CON_RESTITUCIONES = Object.freeze(['vacaciones', 'restituidos']);
+
+/**
+ * Los grupos del cálculo que se pueden mostrar (`calculo.restituciones`, en el orden de `restitucionesDe`): con su clave, una
+ * situación y un caso conocidos, sus días y su año enteros (los días, desde 1), su carga (un id positivo), su tanda (desde
+ * 0) y su plazo. Un cálculo de antes, sin la clave, o con algo que no es una lista, [].
+ */
+const gruposDeRestitucion = (cuenta) => listaDe(cuenta.restituciones).filter((grupo) => esObjeto(grupo)
+  && typeof grupo.clave === 'string' && SITUACIONES_DE_RESTITUCION.includes(grupo.situacion)
+  && CASOS_DE_RESTITUCION.includes(grupo.caso) && Number.isInteger(grupo.dias) && grupo.dias > 0
+  && Number.isInteger(grupo.anio) && Number.isInteger(grupo.licencia_id) && grupo.licencia_id > 0
+  && Number.isInteger(grupo.tanda) && grupo.tanda >= 0 && esFechaIso(grupo.plazo));
+const porRestituir = (grupos) => grupos.filter((grupo) => grupo.situacion === 'por_restituir');
+
+// Lo que se manda para cargar o pedir los días de un grupo: `{ licencia_id, anio, tanda }`, el grupo como lo recibe la API
+const restitucionDe = ({ licencia_id: licenciaId, anio, tanda }) => ({ licencia_id: licenciaId, anio, tanda });
+
+/**
+ * El botón que resuelve un grupo por restituir, en su aviso, en «Vence pronto» y en la línea de la fila: `{ texto, tipo,
+ * grupo, restitucion }`, con el texto de las reglas («Cargar los días restituidos», «Cargar el día restituido» o «Pedir la
+ * restitución»), `tipo` 'restituidos' (caso A: abre «Cargar licencia» con ese grupo) o 'restitucion' (caso B: abre «Pedir la
+ * restitución»), la clave del grupo y su restitución.
+ */
+const accionDeRestitucion = (grupo) => ({
+  texto: textoDelBotonDeRestitucion(grupo), tipo: grupo.caso === 'tomar' ? 'restituidos' : 'restitucion', grupo: grupo.clave,
+  restitucion: restitucionDe(grupo)
+});
+
 // «Vence pronto» (spec, 3.9; la línea de cada cosa, spec 2026-10-27-mi-espacio-resumen, 4.1)
 // Desde qué día del año se avisan la licencia y las horas de franquicia que vencen el 31/12 (en «Vence pronto» y, la
 // licencia, en ámbar en la bajada: spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.5)
@@ -111,7 +150,7 @@ const textoDeLoQueVence = (fecha, cantidad, hoy) => {
 };
 
 // Una cosa de «Vence pronto»: `{ fecha, dia, mes, titulo, texto, accion }` (el día y el mes, del talón; `accion`, el botón que
-// la resuelve)
+// la resuelve: `{ texto, tipo }` y, la de un grupo de días restituidos, también `grupo` y `restitucion`)
 const cosaQueVence = ({ fecha, cantidad, titulo, accion }, hoy) => ({
   fecha, dia: String(Number(fecha.slice(8, 10))), mes: MESES_CORTOS[Number(fecha.slice(5, 7)) - 1], titulo,
   texto: textoDeLoQueVence(fecha, cantidad, hoy), accion
@@ -134,9 +173,13 @@ const textoSinDiasLibres = (planta, cantidad) => {
  * este año, en ese orden. El franco o las horas a favor sin ningún día libre en todo su mes (`diasLibresDelMes`, también los
  * días que ya pasaron, con todas las licencias del estado, de cualquier tipo y de cualquier modalidad; spec
  * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7 y 7.2) siguen, sin el botón (`accion` null) y con por qué en
- * `sin_dias_libres`, la única cosa que suma esa clave: «No te quedan días libres este mes para usarlo.».
+ * `sin_dias_libres`, la única cosa que suma esa clave: «No te quedan días libres este mes para usarlo.». Al final (spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 5 y 9), cada grupo de días por restituir en los últimos 30 días corridos antes de
+ * su plazo (`DIAS_DEL_AVISO_DE_RESTITUCION`, hasta el plazo inclusive), en su plazo: «2 días restituidos de la 2024» o «2
+ * días para restituir a la 2025», «Vencen el viernes 30/04, en 29 días.», con el botón de su aviso (`accionDeRestitucion`).
+ * Todo por fecha (con la misma, en este orden).
  */
-const venceProntoDe = ({ modalidad, hoy, mes, cuenta, datos, feriados }) => {
+const venceProntoDe = ({ modalidad, hoy, mes, cuenta, datos, feriados }, grupos) => {
   const lista = [];
   const planta = modalidad === 'planta';
   const delMes = delMesDeUso(planta ? cuenta.francos : cuenta.horasAFavor, mes);
@@ -175,6 +218,14 @@ const venceProntoDe = ({ modalidad, hoy, mes, cuenta, datos, feriados }) => {
         accion: { texto: 'Cargar vacaciones', tipo: 'vacaciones' }
       }, hoy));
     }
+  }
+
+  for (const grupo of porRestituir(grupos)) {
+    const faltan = diasEntre(hoy, grupo.plazo);
+    if (!(faltan >= 0 && faltan <= DIAS_DEL_AVISO_DE_RESTITUCION)) continue;
+    lista.push(cosaQueVence({
+      fecha: grupo.plazo, cantidad: grupo.dias, titulo: tituloDeRestitucionQueVence(grupo), accion: accionDeRestitucion(grupo)
+    }, hoy));
   }
   return lista.sort((a, b) => compararTexto(a.fecha, b.fecha));
 };
@@ -226,6 +277,11 @@ const paraLosMeses = (meses, anio) => {
     `para ${enLista(nombres)}${delAnio === anio ? '' : ` de ${delAnio}`}`));
 };
 
+// Los días de vacaciones disponibles, el número de la frase del Resumen: los de las licencias hasta el año de hoy (`anio`), las
+// que muestra la regla (`ordinariasDe` llega hasta la del año siguiente, sin nada habilitado)
+const diasDisponibles = (cuenta, anio) => ordinariasDel(cuenta).filter((ordinaria) => ordinaria.anio <= anio)
+  .reduce((suma, ordinaria) => suma + Math.max(0, cantidadDe(ordinaria.disponibles)), 0);
+
 /**
  * El tanque de vacaciones: `{ numero, unidad, pie, capacidad, aria, capas }`. Las capas van de abajo hacia arriba: las
  * licencias con días disponibles (la que vence este año, `vence`; las demás alternan `tinta` y `medio`; la nota es su
@@ -276,7 +332,7 @@ const tanqueDeVacaciones = (panel) => {
     });
   }
 
-  const numero = conDias.reduce((suma, ordinaria) => suma + cantidadDe(ordinaria.disponibles), 0);
+  const numero = diasDisponibles(panel.cuenta, anio);
   return {
     numero,
     unidad: numero === 1 ? 'día' : 'días',
@@ -302,9 +358,11 @@ const tanqueDeVacaciones = (panel) => {
  * 2.6), que no es una capa: esos días ya no se pueden usar. Sin ninguna, [].
  * La oración de lo cargado suma `anio`, el de la lista de Licencias a la que lleva (spec 2026-10-28-mi-espacio-licencia-anulada,
  * 2.3 y 3.5): el año del primer mes con días cargados (`anioCargado`, que da quien la llama), o null si no se sabe; las demás
- * no lo llevan.
+ * no lo llevan. Después de «Perdés …», las de los días por restituir (`bajadaDeRestituciones` de los `grupos`; spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 5 y 9: «Además, 2 restituidos de la 2024: empezá a tomarlos a más tardar el viernes
+ * 30/04.», con `vence` los últimos 30 días antes del plazo). Esos días no suman a la frase (decisión 17).
  */
-const bajadaDe = ({ numero, capas }, { hoy, perdidos, anioCargado }) => {
+const bajadaDe = ({ numero, capas }, { hoy, perdidos, anioCargado, grupos }) => {
   const capa = (clase) => capas.find((una) => una.clase === clase);
   const bajada = [];
   const vence = capa('vence');
@@ -328,7 +386,15 @@ const bajadaDe = ({ numero, capas }, { hoy, perdidos, anioCargado }) => {
     bajada.push({ texto: `${otros}${numeroTexto(porHabilitar.n)} ${minuscula(porHabilitar.nota)}.`, vence: false });
   }
   if (perdidos !== '') bajada.push({ texto: perdidos, vence: true });
-  return bajada;
+  return [...bajada, ...bajadaDeRestituciones(grupos, hoy)];
+};
+
+// La frase partida alrededor de los días de vacaciones disponibles, `[antes, cifra, despues]`: «Te quedan», '33' y «días de
+// vacaciones»; con 1, «Te queda», '1' y «día de vacaciones»; con 0, «No te quedan días de vacaciones», '' y ''
+const fraseDeLosDias = (numero) => {
+  if (numero === 1) return ['Te queda', '1', 'día de vacaciones'];
+  if (numero > 0) return ['Te quedan', numeroTexto(numero), 'días de vacaciones'];
+  return ['No te quedan días de vacaciones', '', ''];
 };
 
 /**
@@ -336,17 +402,14 @@ const bajadaDe = ({ numero, capas }, { hoy, perdidos, anioCargado }) => {
  * modalidad en minúscula («Lunes 26 de octubre, planta permanente»); `antes`, `cifra` y `despues`, la frase partida alrededor
  * de los días de vacaciones disponibles (los del tanque): «Te quedan», '33' y «días de vacaciones»; con 1, «Te queda», '1' y
  * «día de vacaciones»; con 0, «No te quedan días de vacaciones», '' y '' (la página no dibuja el número). La bajada suma al
- * final lo que se pierde de las ordinarias del reparto (`textoDePerdidos`) y, en la oración de lo cargado, el año del primer
- * mes con días cargados (`mesesCargados`, solo si hay algo cargado).
+ * final lo que se pierde de las ordinarias del reparto (`textoDePerdidos`), en la oración de lo cargado, el año del primer
+ * mes con días cargados (`mesesCargados`, solo si hay algo cargado), y las oraciones de los días por restituir (`grupos`).
  */
-const titularDe = (panel, modalidad, vacaciones) => {
+const titularDe = (panel, modalidad, vacaciones, grupos) => {
   const { hoy, cuenta } = panel;
   const { numero } = vacaciones;
   const [primerMes] = vacaciones.capas.some((capa) => capa.clase === 'cargadas') ? mesesCargados(panel) : [];
-  let frase = ['No te quedan días de vacaciones', '', ''];
-  if (numero === 1) frase = ['Te queda', '1', 'día de vacaciones'];
-  else if (numero > 0) frase = ['Te quedan', numeroTexto(numero), 'días de vacaciones'];
-  const [antes, cifra, despues] = frase;
+  const [antes, cifra, despues] = fraseDeLosDias(numero);
   return {
     encabezado: `${mayuscula(diaDeLaSemana(hoy))} ${Number(hoy.slice(8, 10))} de ${nombreDelMes(hoy.slice(0, 7))}, `
       + minuscula(modalidad.texto),
@@ -354,7 +417,8 @@ const titularDe = (panel, modalidad, vacaciones) => {
     cifra,
     despues,
     bajada: bajadaDe(vacaciones, {
-      hoy, perdidos: textoDePerdidos(ordinariasDel(cuenta)), anioCargado: primerMes === undefined ? null : anioDe(primerMes)
+      hoy, perdidos: textoDePerdidos(ordinariasDel(cuenta)), anioCargado: primerMes === undefined ? null : anioDe(primerMes),
+      grupos
     })
   };
 };
@@ -505,13 +569,58 @@ const quedaDelTipo = (tipo, panel, tanques) => {
   return `${queda} ${tanque.numero}${tipo === 'franquicia' ? ' h' : ''} de ${numeroTexto(tanque.total)}`;
 };
 
+/**
+ * Las opciones de «Días restituidos» de «Cargar licencia» (spec 2026-10-31-mi-espacio-dias-restituidos, 7 y 9): una por
+ * cada grupo por restituir del caso A, `{ tipo: 'restituidos', grupo, restitucion, nombre, queda_texto, dias, ayuda_desde,
+ * ayuda_hasta }`, con la clave del grupo y su restitución (lo que se manda al guardar), sus días, lo que dice debajo de la
+ * opción («2 de la 2024 · empezar hasta el 30/04»; de un día, «1 de la 2024 · tomarlo hasta el 30/04») y las ayudas de
+ * «Desde» y del «Hasta», que pone Mi espacio (`textoDeLaAyudaDeRestituidos` y `textoDelHastaDeRestituidos`).
+ */
+const opcionesDeRestituidos = ({ feriados }, grupos) => porRestituir(grupos).filter((grupo) => grupo.caso === 'tomar')
+  .map((grupo) => ({
+    tipo: 'restituidos', grupo: grupo.clave, restitucion: restitucionDe(grupo), nombre: NOMBRES_DE_LAS_OPCIONES.restituidos,
+    queda_texto: `${numeroTexto(grupo.dias)} de la ${grupo.anio} · ${grupo.dias === 1 ? 'tomarlo' : 'empezar'} hasta el `
+      + diaYMes(grupo.plazo),
+    dias: grupo.dias, ayuda_desde: textoDeLaAyudaDeRestituidos(grupo, feriados),
+    ayuda_hasta: textoDelHastaDeRestituidos(grupo.dias)
+  }));
+
 // Las opciones de «Cargar licencia»: los tipos de la modalidad, sin el uso autorizado (tiene su propio formulario), sin los
-// días restituidos (no son un tipo más: se ofrecen uno por cada grupo por restituir, spec
-// 2026-10-31-mi-espacio-dias-restituidos, 7) ni, con «No estudio», los estudios
+// días restituidos como un tipo más (se ofrecen uno por cada grupo por restituir del caso A, justo después de las
+// vacaciones: `opcionesDeRestituidos`; spec 2026-10-31-mi-espacio-dias-restituidos, 7) ni, con «No estudio», los estudios
 const NO_SE_OFRECEN = Object.freeze(['uso_autorizado', 'restituidos']);
-const tiposDe = (panel, tanques) => TIPOS_POR_MODALIDAD[panel.modalidad]
+const tiposDe = (panel, tanques, grupos) => TIPOS_POR_MODALIDAD[panel.modalidad]
   .filter((tipo) => !NO_SE_OFRECEN.includes(tipo) && (tipo !== 'estudios' || estudiaEsteAnio(panel)))
-  .map((tipo) => ({ tipo, nombre: NOMBRES_DE_LAS_OPCIONES[tipo], queda_texto: quedaDelTipo(tipo, panel, tanques) }));
+  .flatMap((tipo) => {
+    const opcion = { tipo, nombre: NOMBRES_DE_LAS_OPCIONES[tipo], queda_texto: quedaDelTipo(tipo, panel, tanques) };
+    return tipo === 'vacaciones' ? [opcion, ...opcionesDeRestituidos(panel, grupos)] : [opcion];
+  });
+
+/**
+ * Los avisos de los días por restituir, entre la banda y «El resto de AAAA» (spec 2026-10-31-mi-espacio-dias-restituidos, 5
+ * y 9; decisión 9 de la sección 3): uno por grupo por restituir, `{ clave, texto, accion }`, con el texto de las reglas
+ * (`textoDelAvisoDeRestitucion`, que cambia con hoy en el caso A) y el botón que lo resuelve (`accionDeRestitucion`). No es
+ * un faltante: no frena nada ni prende la marca (la prende «Vence pronto»).
+ */
+const avisosDeRestitucion = (grupos, hoy) => porRestituir(grupos).map((grupo) => ({
+  clave: grupo.clave, texto: textoDelAvisoDeRestitucion(grupo, hoy), accion: accionDeRestitucion(grupo)
+}));
+
+/**
+ * El «Revisá tus días restituidos…» de lo ya pedido (spec 2026-10-31-mi-espacio-dias-restituidos, 4 y 17.6), con la forma
+ * de `paraRevisarDe`: `{ licencia_id, anio, texto, enlace }`, uno por grupo pedido o cargado con `revisar` (el de las reglas,
+ * que no lo pone en un pedido del caso B pasado el plazo), con su carga en `licencia_id` y el año y el enlace de las fechas
+ * de su carga («Ver en Licencias de 2026»; si su carga no dice desde cuándo, null y ''). Tampoco es un faltante.
+ */
+const paraRevisarDeRestituciones = (grupos) => grupos
+  .filter((grupo) => (grupo.situacion === 'pedida' || grupo.situacion === 'cargada') && typeof grupo.revisar === 'string'
+    && grupo.revisar !== '')
+  .map((grupo) => {
+    const anio = esObjeto(grupo.carga) && esFechaIso(grupo.carga.desde) ? anioDe(grupo.carga.desde) : null;
+    return {
+      licencia_id: grupo.licencia_id, anio, texto: grupo.revisar, enlace: anio === null ? '' : `Ver en Licencias de ${anio}`
+    };
+  });
 
 /**
  * El Resumen «Titular» (spec, secciones 3.9 y 8, y spec 2026-10-27-mi-espacio-resumen, sección 4), todo lo de
@@ -521,7 +630,7 @@ const tiposDe = (panel, tanques) => TIPOS_POR_MODALIDAD[panel.modalidad]
  * `vinculosDe` (services/miEspacioPaso.js: un Map del id de cada fila a lo que dice de Configuración, con su `revision`).
  * Devuelve `{ modalidad: { clave, texto } | null, anio, al_texto, mensaje, abrir_saldos, persona: { nombre, ve_companeros,
  * audita, es_superadmin }, marca, vence_pronto, faltantes, para_revisar, tanques: { vacaciones, otros } | null, titular,
- * pastillas, extraordinaria, tipos, hoy_y_manana }`:
+ * restituciones, pastillas, extraordinaria, tipos, hoy_y_manana }`:
  * - sin modalidad, `mensaje` es `sinModalidad` y no hay nada que mostrar ni cargar;
  * - con modalidad y sin arranque, `mensaje` es `sinArranque` y `abrir_saldos` es true (se abre «Mis vacaciones y saldos»);
  * - si no, `marca` dice si hay algo en `vence_pronto` (cada cosa `{ fecha, dia, mes, titulo, texto, accion }`, con su línea en
@@ -532,6 +641,14 @@ const tiposDe = (panel, tanques) => TIPOS_POR_MODALIDAD[panel.modalidad]
  *   prende la marca), `titular` es la frase de la banda (`{ encabezado, antes, cifra, despues, bajada: [{ texto, vence }] }`,
  *   con `anio` en la oración de lo cargado; null sin tanques), `extraordinaria` la línea corta de la médica extraordinaria y
  *   `tipos`, las opciones de «Cargar licencia» con lo que queda de cada una.
+ * - Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 5, 7 y 9), de los grupos de `calculo.restituciones`
+ *   (los de `restitucionesDe`; un cálculo de antes, sin ellos, se ve igual que antes): `restituciones` son los avisos de los
+ *   grupos por restituir, `[{ clave, texto, accion: { texto, tipo: 'restituidos' | 'restitucion', grupo, restitucion: {
+ *   licencia_id, anio, tanda } } }]`, que la página pone entre la banda y «El resto»; `para_revisar` suma, después de lo de
+ *   Configuración, el «Revisá tus días restituidos…» de cada grupo ya pedido o cargado que cambió; la bajada suma sus
+ *   oraciones al final; `vence_pronto`, los de los últimos 30 días antes del plazo (con la misma `accion`: prenden la marca); y
+ *   `tipos`, después de las vacaciones, una opción por grupo por restituir del caso A (`opcionesDeRestituidos`). Sin modalidad
+ *   o sin arranque, nada de esto. Ningún grupo es un faltante: nada frena una carga.
  * `ve_companeros` es `esAdmin` (los compañeros son administración: spec, sección 7) y `audita`, `esAuditor`.
  */
 export const resumenDe = (entrada) => {
@@ -557,6 +674,7 @@ export const resumenDe = (entrada) => {
     para_revisar: [],
     tanques: null,
     titular: null,
+    restituciones: [],
     pastillas: null,
     extraordinaria: null,
     tipos: [],
@@ -570,7 +688,8 @@ export const resumenDe = (entrada) => {
     modalidad, hoy: deHoy, anio: anioDe(deHoy), mes: deHoy.slice(0, 7), datos,
     cuenta: esObjeto(calculo) ? calculo : {}, feriados
   };
-  const vencePronto = venceProntoDe(panel);
+  const grupos = gruposDeRestitucion(panel.cuenta);
+  const vencePronto = venceProntoDe(panel, grupos);
   const tanques = { vacaciones: tanqueDeVacaciones(panel), otros: otrosTanques(panel) };
   return {
     ...resumen,
@@ -578,13 +697,30 @@ export const resumenDe = (entrada) => {
     vence_pronto: vencePronto,
     faltantes: [...listaDe(panel.cuenta.faltantes), ...listaDe(panel.cuenta.avisosDeSalidas)]
       .filter((faltante) => esObjeto(faltante) && typeof faltante.texto === 'string').map((faltante) => faltante.texto),
-    para_revisar: paraRevisarDe(datos, vinculos),
+    para_revisar: [...paraRevisarDe(datos, vinculos), ...paraRevisarDeRestituciones(grupos)],
     tanques,
-    titular: titularDe(panel, resumen.modalidad, tanques.vacaciones),
+    titular: titularDe(panel, resumen.modalidad, tanques.vacaciones, grupos),
+    restituciones: avisosDeRestitucion(grupos, deHoy),
     pastillas: pastillasDe(panel),
     extraordinaria: textoDeLaExtraordinaria(panel),
-    tipos: tiposDe(panel, tanques)
+    tipos: tiposDe(panel, tanques, grupos)
   };
+};
+
+/**
+ * Lo que dice el segundo paso de «Pedir la restitución» (spec 2026-10-31-mi-espacio-dias-restituidos, 9), con el grupo ya
+ * pedido (el de `calculo.restituciones`, con el cálculo de después del pedido): «Los 2 días volvieron a tu licencia 2025: te
+ * quedan 23 días de vacaciones.» (de un día, «El día volvió …»), con el número de la frase del Resumen (`diasDisponibles`: «te
+ * queda 1 día de vacaciones» y, con 0, «no te quedan días de vacaciones»). Lo que no es un grupo con sus días (desde 1) y su
+ * año enteros, o sin un hoy que sirva, ''. Nunca tira.
+ */
+export const textoDeLaRestitucionHecha = (grupo, calculo, hoy) => {
+  if (!esObjeto(grupo) || !Number.isInteger(grupo.dias) || grupo.dias < 1 || !Number.isInteger(grupo.anio)
+    || !esFechaIso(hoy)) return '';
+  const volvieron = grupo.dias === 1 ? 'El día volvió' : `Los ${numeroTexto(grupo.dias)} días volvieron`;
+  const quedan = fraseDeLosDias(diasDisponibles(esObjeto(calculo) ? calculo : {}, anioDe(hoy)))
+    .filter((parte) => parte !== '').join(' ');
+  return `${volvieron} a tu licencia ${grupo.anio}: ${minuscula(quedan)}.`;
 };
 
 // La lista de licencias (spec, sección 8). Los filtros, con los nombres de NOMBRES_TIPO (los días restituidos, «Días
@@ -645,6 +781,39 @@ const textoDeLasLicencias = (reparto, id) => {
     `${anio} (${conUnidad(cantidadDe(dias), 'día', 'días')})`))}.`;
 };
 
+// Los días restituidos en la lista (spec 2026-10-31-mi-espacio-dias-restituidos, 9)
+
+/**
+ * La línea de un grupo debajo de la fila de su carga: `{ texto, aviso, accion, restitucion_id, puede_borrar, anio }`, con el
+ * texto de las reglas según su situación (`textoDeLaFilaDeRestitucion`; uno cargado, con las fechas de su carga de días
+ * restituidos) y `anio`, su licencia de origen. Por restituir: `aviso` (en ámbar, con ▲) y el botón de su aviso
+ * (`accionDeRestitucion`). Pedida: su `restitucion_id` (para la nota en Word y para borrar el pedido) y `puede_borrar`, hasta
+ * el plazo inclusive. Cargada y perdida: solo el texto, en gris.
+ */
+const lineaDeRestitucion = (grupo, { datos, hoy }) => {
+  const esperando = grupo.situacion === 'por_restituir';
+  const pedida = grupo.situacion === 'pedida' && Number.isInteger(grupo.restitucion_id);
+  const cargada = grupo.situacion === 'cargada'
+    ? listaDe(datos.licencias).find((otra) => esObjeto(otra) && idDe(otra.id) === grupo.carga_id) : undefined;
+  return {
+    texto: textoDeLaFilaDeRestitucion(grupo, cargada),
+    aviso: esperando,
+    accion: esperando ? accionDeRestitucion(grupo) : null,
+    restitucion_id: pedida ? grupo.restitucion_id : null,
+    puede_borrar: pedida && hoy !== null && hoy <= grupo.plazo,
+    anio: grupo.anio
+  };
+};
+
+// De qué licencia son unos días restituidos, en lugar del reparto (no salen de ninguna): «Restituidos de la licencia 2024
+// por los asuetos del 24/12 y el 31/12/2026.» o, de un día, «Restituido de la licencia 2024 por el asueto del 24/12/2026.»
+const textoDeLosRestituidos = (grupo) => {
+  const fechas = listaDe(grupo.fechas).filter(esFechaIso);
+  const asuetos = fechas.length === 0 ? ''
+    : ` por ${fechas.length === 1 ? 'el asueto' : 'los asuetos'} del ${fechasDeLosAsuetos(fechas, { conMes: true })}`;
+  return `${grupo.dias === 1 ? 'Restituido' : 'Restituidos'} de la licencia ${grupo.anio}${asuetos}.`;
+};
+
 /**
  * Una fila de la lista. Lo de Configuración sale del vínculo de la fila (Task 10: `{ configuracion: { texto, insignia } |
  * null, puede_borrar, solo_hasta, fechas_fijas, en_configuracion }`); sin vínculo, null, true, false, false y null.
@@ -653,8 +822,14 @@ const textoDeLasLicencias = (reparto, id) => {
  * compañeros ven…» va solo para administración (`esAdmin`: los únicos que tienen la casilla), con «Mostrar», en una ausencia
  * de día entero que todavía no terminó, con el nombre como lo ven los demás (`persona.nombre_corto`, el de `contextoDe`;
  * sin él, el nombre completo).
+ * Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9): una fila de vacaciones o de días restituidos suma
+ * `restituciones`, la línea de cada grupo de esa carga (`lineaDeRestitucion`, en el orden de los grupos; sin ninguno, []).
+ * Una de días restituidos, con su grupo cargado, dice de qué licencia son en `de_licencias_texto` (`textoDeLosRestituidos`) y
+ * suma `restituidos`, `{ ayuda_desde, ayuda_hasta, dias }`, lo que necesita el formulario para corregirla (sin su grupo,
+ * null). Las demás filas no llevan esas claves.
  */
-const filaDeLicencia = (fila, { datos, cuenta, hoy, persona, vinculos, feriados }) => {
+const filaDeLicencia = (fila, contexto) => {
+  const { datos, cuenta, hoy, persona, vinculos, feriados, grupos } = contexto;
   const { tipo, desde, hasta } = fila;
   const { modalidad, arranque } = datos;
   const fuera = fueraDeLaModalidad(fila, modalidad);
@@ -662,9 +837,15 @@ const filaDeLicencia = (fila, { datos, cuenta, hoy, persona, vinculos, feriados 
     && diasQueDescuentan(fila, datos, feriados).length === 0;
   const horas = typeof fila.horas === 'number' || typeof fila.horas === 'string' ? cantidadDe(fila.horas) : null;
   const mostrar = ![0, '0', false].includes(fila.mostrar);
-  const vinculo = vinculos.get(idDe(fila.id));
+  const id = idDe(fila.id);
+  const vinculo = vinculos.get(id);
   const conVinculo = esObjeto(vinculo);
   const configuracion = conVinculo && esObjeto(vinculo.configuracion) ? vinculo.configuracion : null;
+  const cargado = tipo === 'restituidos'
+    ? grupos.find((grupo) => grupo.situacion === 'cargada' && grupo.carga_id === id) : undefined;
+  let deLicencias = '';
+  if (tipo === 'vacaciones') deLicencias = textoDeLasLicencias(cuenta.reparto, fila.id);
+  else if (cargado !== undefined) deLicencias = textoDeLosRestituidos(cargado);
   return {
     id: fila.id ?? null,
     tipo,
@@ -675,7 +856,7 @@ const filaDeLicencia = (fila, { datos, cuenta, hoy, persona, vinculos, feriados 
     fechas_texto: textoDeLasFechas(desde, hasta),
     cantidad_texto: textoDeLaCantidad(fila, horas, { datos, modalidad, fuera, feriados }),
     proxima: hoy !== null && desde > hoy,
-    de_licencias_texto: tipo === 'vacaciones' ? textoDeLasLicencias(cuenta.reparto, fila.id) : '',
+    de_licencias_texto: deLicencias,
     antes_del_arranque: antes,
     fuera_de_la_modalidad: fuera,
     no_cuenta_texto: fuera ? TEXTO_FUERA_DE_LA_MODALIDAD : (antes ? TEXTO_ANTES_DEL_SALDO : ''),
@@ -692,7 +873,16 @@ const filaDeLicencia = (fila, { datos, cuenta, hoy, persona, vinculos, feriados 
     fechas_fijas: conVinculo && vinculo.fechas_fijas === true,
     en_configuracion: conVinculo && esObjeto(vinculo.en_configuracion) ? {
       licencia_id: vinculo.en_configuracion.licencia_id ?? null, autorizado_id: vinculo.en_configuracion.autorizado_id ?? null
-    } : null
+    } : null,
+    ...(TIPOS_CON_RESTITUCIONES.includes(tipo) ? {
+      restituciones: grupos.filter((grupo) => grupo.licencia_id === id).map((grupo) => lineaDeRestitucion(grupo, contexto))
+    } : {}),
+    ...(tipo === 'restituidos' ? {
+      restituidos: cargado === undefined ? null : {
+        ayuda_desde: textoDeLaAyudaDeRestituidos(cargado, feriados), ayuda_hasta: textoDelHastaDeRestituidos(cargado.dias),
+        dias: cargado.dias
+      }
+    } : {})
   };
 };
 
@@ -787,11 +977,15 @@ export const paraRevisarDe = (estado, vinculos) => {
     });
 };
 
-// Lo que necesita filaDeLicencia, igual para la lista y para una sola licencia (`hoy`, ya validado: una fecha o null)
-const contextoDeLasFilas = (datos, calculo, { hoy, persona, vinculos, feriados }) => ({
-  datos, cuenta: esObjeto(calculo) ? calculo : {}, hoy, persona: esObjeto(persona) ? persona : {},
-  vinculos: vinculos instanceof Map ? vinculos : new Map(), feriados
-});
+// Lo que necesita filaDeLicencia, igual para la lista y para una sola licencia (`hoy`, ya validado: una fecha o null; `grupos`,
+// los de los días restituidos que se pueden mostrar)
+const contextoDeLasFilas = (datos, calculo, { hoy, persona, vinculos, feriados }) => {
+  const cuenta = esObjeto(calculo) ? calculo : {};
+  return {
+    datos, cuenta, hoy, persona: esObjeto(persona) ? persona : {}, vinculos: vinculos instanceof Map ? vinculos : new Map(),
+    feriados, grupos: gruposDeRestitucion(cuenta)
+  };
+};
 
 // Si una licencia toca un año (una que cruza el 31/12 toca los dos)
 const tocaElAnio = (fila, anio) => fila.desde <= `${anio}-12-31` && fila.hasta >= `${anio}-01-01`;
@@ -831,7 +1025,9 @@ export const otrosAniosDe = (licencias, opciones) => {
  *   Usos autorizados, Grupo familiar), en el orden de `ORDEN_DE_LOS_FILTROS` (los días restituidos, después de las vacaciones).
  * - `licencias`: las que tocan el año (una que cruza el 31/12 va en los dos), de la más nueva a la más vieja. Lo anterior al
  *   arranque en un tipo con saldo inicial va con `antes_del_arranque` y lo que no corresponde a la modalidad, con
- *   `fuera_de_la_modalidad` (Review Focus 1): las dos se ven en gris, con su motivo en `no_cuenta_texto`.
+ *   `fuera_de_la_modalidad` (Review Focus 1): las dos se ven en gris, con su motivo en `no_cuenta_texto`. Una de vacaciones o
+ *   de días restituidos suma `restituciones`, la línea de cada grupo de días por restituir de esa carga, y una de días
+ *   restituidos, de qué licencia son y `restituidos` (spec 2026-10-31-mi-espacio-dias-restituidos, 9: ver `filaDeLicencia`).
  * - `otros_anios`: las de otros años del selector que todavía no terminaron (`otrosAniosDe`), para ir a esos años.
  */
 export const filasDeLicencias = (estado, calculo, opciones) => {

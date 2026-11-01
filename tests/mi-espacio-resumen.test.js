@@ -7,7 +7,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   numeroTexto, diaCorto, diaLargo, mesEnFrase, mesTitulo, resumenDe, filasDeLicencias, tablaDeHorasExtras, proximoFeriadoDe,
-  planillaDelMes, paraRevisarDe, otrosAniosDe, textoDeLaListaDe
+  planillaDelMes, paraRevisarDe, otrosAniosDe, textoDeLaListaDe, textoDeLaRestitucionHecha
 } from '../services/miEspacioResumen.js';
 import * as reglas from '../services/miEspacioReglas.js';
 import { NOMBRES_DE_LOS_FIJOS, feriadosDelRango } from '../services/feriadosReglas.js';
@@ -132,7 +132,7 @@ describe('el Resumen de PLANTA', () => {
     const resumen = resumenDel(PLANTA);
     assert.deepEqual(Object.keys(resumen), [
       'modalidad', 'anio', 'al_texto', 'mensaje', 'abrir_saldos', 'persona', 'marca', 'vence_pronto', 'faltantes',
-      'para_revisar', 'tanques', 'titular', 'pastillas', 'extraordinaria', 'tipos', 'hoy_y_manana'
+      'para_revisar', 'tanques', 'titular', 'restituciones', 'pastillas', 'extraordinaria', 'tipos', 'hoy_y_manana'
     ]);
     assert.deepEqual(resumen.modalidad, { clave: 'planta', texto: 'Planta permanente' });
     assert.equal(resumen.anio, 2026);
@@ -845,7 +845,8 @@ describe('la lista de licencias', () => {
       fechas_texto: '03/11 al 09/11/2026', cantidad_texto: '5 días hábiles de 7 corridos', proxima: true,
       de_licencias_texto: 'De la licencia 2024.', antes_del_arranque: false, fuera_de_la_modalidad: false,
       no_cuenta_texto: '', nota: null, mostrar: true, mostrar_texto: 'Tus compañeros ven «Laura Gómez no está».',
-      configuracion: null, puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: null
+      configuracion: null, puede_borrar: true, solo_hasta: false, fechas_fijas: false, en_configuracion: null,
+      restituciones: []
     });
   });
 
@@ -2173,11 +2174,15 @@ describe('los días restituibles (spec 2026-10-31-mi-espacio-dias-restituidos)',
       .some((oracion) => oracion.texto === 'Perdés 2 de la 2024 (vencen el 31/12/2026).'));
   });
 
-  it('«Cargar licencia» no ofrece «Días restituidos» como un tipo más', () => {
-    for (const resumen of [resumenDeJulieta(JULIETA.estado, '2027-01-11'), resumenDel(PLANTA), resumenDel(CONTRATO)]) {
+  it('«Cargar licencia» no ofrece «Días restituidos» como un tipo más: solo una opción por grupo por restituir', () => {
+    for (const resumen of [resumenDeJulieta(sinFoto, '2027-01-11'), resumenDel(PLANTA), resumenDel(CONTRATO)]) {
       assert.ok(resumen.tipos.length > 0);
       assert.ok(!resumen.tipos.some((opcion) => opcion.tipo === 'restituidos'), JSON.stringify(resumen.tipos));
     }
+    // Con un grupo por restituir del caso A, su opción, siempre con su grupo
+    const conElGrupo = resumenDeJulieta(JULIETA.estado, '2027-01-11').tipos.filter((opcion) => opcion.tipo === 'restituidos');
+    assert.equal(conElGrupo.length, 1);
+    assert.ok(conElGrupo.every((opcion) => typeof opcion.grupo === 'string' && opcion.grupo !== ''));
   });
 
   it('una carga de días restituidos tiene su nombre y su filtro, y cuenta sus días hábiles', () => {
@@ -2194,9 +2199,373 @@ describe('los días restituibles (spec 2026-10-31-mi-espacio-dias-restituidos)',
     const fila = lista.licencias.find((otra) => otra.tipo === 'restituidos');
     assert.equal(fila.tipo_nombre, 'Días restituidos');
     assert.equal(fila.cantidad_texto, '2 días hábiles');
-    // No sale de ninguna licencia: no entra en el reparto
+    // No sale de ninguna licencia: no entra en el reparto (y, sin su pedido, no dice de qué licencia son ni cómo corregirla)
     assert.equal(fila.de_licencias_texto, '');
+    assert.equal(fila.restituidos, null);
     sinHuecos(lista);
+  });
+});
+
+// El Resumen y la lista de Licencias con los días por restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 5, 7 y 9), en
+// los momentos de la maqueta. Julieta vuelve el lunes 11/01/2027: sus vacaciones del 11/12/2026 al 08/01/2027 (19 días, todos
+// de la 2024) incluyen los asuetos del 24 y el 31/12/2026, cargados el 22/12. Los textos son los de la maqueta (`MQ.T`),
+// escritos acá a mano
+describe('el Resumen y la lista de los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 5, 7 y 9)', () => {
+  const T = Object.freeze({
+    avisoA: 'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones: tenés 2 días restituidos de la licencia 2024. '
+      + 'Como esa licencia ya venció, tomalos todos juntos, empezando a más tardar el viernes 30/04/2027, con la nota al '
+      + 'Director General. Si no, se pierden.',
+    bajadaA: 'Además, 2 restituidos de la 2024: empezá a tomarlos a más tardar el viernes 30/04.',
+    venceTituloA: '2 días restituidos de la 2024',
+    venceTexto: 'Vencen el viernes 30/04, en 29 días.',
+    botonA: 'Cargar los días restituidos',
+    filaA: '2 días por restituir (asuetos del 24/12 y el 31/12/2026): empezá a tomarlos a más tardar el 30/04/2027.',
+    filaCargados: 'Los 2 días restituidos están cargados del 12/04 al 13/04/2027.',
+    filaPerdidos: '2 días por restituir: se perdieron el 30/04/2027.',
+    tipoA: '2 de la 2024 · empezar hasta el 30/04',
+    ayudaFechasA: 'Los 2 días van juntos: elegí desde cuándo y Mi espacio pone el «Hasta». Podés empezar del 11/01/2027 al '
+      + 'viernes 30/04/2027.',
+    deLicenciasRestituidos: 'Restituidos de la licencia 2024 por los asuetos del 24/12 y el 31/12/2026.',
+    avisoB: 'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones: podés pedir que te restituyan 2 días a tu licencia '
+      + '2025. Pedilo con la nota al Director General a más tardar el viernes 30/04/2027. Si no, se pierden.',
+    bajadaB: 'Además, 2 por restituir: pedí la restitución antes del viernes 30/04.',
+    venceTituloB: '2 días para restituir a la 2025',
+    botonB: 'Pedir la restitución',
+    filaB: '2 días por restituir a la licencia 2025 (asuetos del 24/12 y el 31/12/2026): pedí la restitución a más tardar el '
+      + '30/04/2027.',
+    filaPedida: 'Restitución pedida el 01/04/2027: los 2 días volvieron a la licencia 2025.',
+    hechoB: 'Los 2 días volvieron a tu licencia 2025: te quedan 23 días de vacaciones.'
+  });
+  const VUELVE = '2027-01-11';
+  const ABRIL = '2027-04-01';
+  const MAYO = '2027-05-03';
+  const [VACACIONES] = JULIETA.estado.licencias;
+  const DE_JULIETA = Object.freeze({ tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08' });
+  // Un pedido (de la variante B, si no se dice otra cosa) y la foto de Julieta sellada en la tanda 0 y enlazada a él
+  const pedidoDe = (id, extra = {}) => ({
+    id, licencia_id: 1, anio: 2025, caso: 'restituir', dias: 2, primer_asueto: '2026-12-24', tanda: 0, fecha: ABRIL,
+    carga_id: null, activo: 1, licencia: { ...DE_JULIETA, activo: 1 }, ...extra
+  });
+  const fotoSellada = (restitucionId) =>
+    JULIETA.estado.restituibles.map((fila) => ({ ...fila, tanda: 0, restitucion_id: restitucionId }));
+  const saldos = (porAnio) =>
+    Object.entries(porAnio).map(([anio, cantidad]) => ({ concepto: 'vacaciones', anio: Number(anio), cantidad }));
+  // La variante B (spec, 5): las mismas vacaciones, con 20 de la 2025 y sin saldo de la 2024; y con la restitución pedida
+  const VARIANTE_B = Object.freeze({ ...JULIETA.estado, saldos: saldos({ 2025: 20, 2026: 10 }) });
+  const B_PEDIDA = Object.freeze({ ...VARIANTE_B, restituibles: fotoSellada(10), restituciones: [pedidoDe(10)] });
+  // Los días de la 2024 cargados del 12/04 al 13/04/2027 (la carga 2, con su pedido del caso A)
+  const CARGA_A = Object.freeze({ id: 2, tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13', horas: null });
+  const CARGADOS = Object.freeze({
+    ...JULIETA.estado, licencias: [VACACIONES, CARGA_A], restituibles: fotoSellada(10),
+    restituciones: [pedidoDe(10, { anio: 2024, caso: 'tomar', carga_id: 2 })]
+  });
+
+  const calculoDeJulieta = (estado, hoy, feriados = ASUETOS) => calcular(estado, { hoy, feriados });
+  const resumenDeJulieta = (estado, hoy, { feriados = ASUETOS, vinculos } = {}) => resumenDe({
+    persona: JULIETA.persona, estado, calculo: calculoDeJulieta(estado, hoy, feriados), hoy, feriados,
+    hoyYManana: HOY_Y_MANANA, vinculos
+  });
+  const filasDeJulieta = (estado, hoy, { anio = 2027, feriados = ASUETOS } = {}) =>
+    filasDeLicencias(estado, calculoDeJulieta(estado, hoy, feriados), { anio, hoy, persona: JULIETA.persona, feriados });
+  const filaDe = (estado, hoy, id = 1, opciones) =>
+    filasDeJulieta(estado, hoy, opciones).licencias.find((fila) => fila.id === id);
+
+  const ACCION_A = Object.freeze({
+    texto: T.botonA, tipo: 'restituidos', grupo: '1-2024-0', restitucion: { licencia_id: 1, anio: 2024, tanda: 0 }
+  });
+  const ACCION_B = Object.freeze({
+    texto: T.botonB, tipo: 'restitucion', grupo: '1-2025-0', restitucion: { licencia_id: 1, anio: 2025, tanda: 0 }
+  });
+
+  it('el 11/01/2027, al volver: el aviso con «ya venció», la oración de la banda sin ámbar y nada en «Vence pronto»', () => {
+    const resumen = resumenDeJulieta(JULIETA.estado, VUELVE);
+    assert.deepEqual(resumen.restituciones, [{ clave: '1-2024-0', texto: T.avisoA, accion: ACCION_A }]);
+    assert.equal(resumen.titular.cifra, '35');
+    assert.deepEqual(resumen.titular.bajada, [
+      { texto: '15 vencen el 31/12/2027.', vence: false },
+      { texto: 'Otros 20 se habilitan el 1/7/2027 y el 1/1/2028.', vence: false },
+      { texto: T.bajadaA, vence: false }
+    ]);
+    // Todavía no está en «Vence pronto» (entra los últimos 30 días) y no prende la marca: un grupo no es un faltante
+    assert.deepEqual(resumen.vence_pronto, []);
+    assert.equal(resumen.marca, false);
+    assert.deepEqual(resumen.faltantes, []);
+    assert.deepEqual(resumen.para_revisar, []);
+    sinHuecos(resumen);
+  });
+
+  it('antes del vencimiento de la licencia, el aviso dice «Como esa licencia vence el 31/12/2026, antes del plazo»', () => {
+    const [aviso] = resumenDeJulieta(JULIETA.estado, '2026-12-22').restituciones;
+    assert.equal(aviso.texto, 'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones: tenés 2 días restituidos de la '
+      + 'licencia 2024. Como esa licencia vence el 31/12/2026, antes del plazo, tomalos todos juntos, empezando a más tardar el '
+      + 'viernes 30/04/2027, con la nota al Director General. Si no, se pierden.');
+    assert.deepEqual(aviso.accion, ACCION_A);
+  });
+
+  it('el 01/04/2027: «Vence pronto» con su acción, la oración de la banda en ámbar y la marca', () => {
+    const resumen = resumenDeJulieta(JULIETA.estado, ABRIL);
+    assert.deepEqual(resumen.vence_pronto, [{
+      fecha: '2027-04-30', dia: '30', mes: 'abr', titulo: T.venceTituloA, texto: T.venceTexto, accion: ACCION_A
+    }]);
+    assert.equal(resumen.marca, true);
+    assert.deepEqual(resumen.titular.bajada.at(-1), { texto: T.bajadaA, vence: true });
+    assert.deepEqual(resumen.restituciones, [{ clave: '1-2024-0', texto: T.avisoA, accion: ACCION_A }]);
+    assert.equal(resumen.titular.cifra, '35');
+    sinHuecos(resumen);
+  });
+
+  it('«Vence pronto» y el ámbar, desde 30 días corridos antes del plazo hasta el plazo', () => {
+    const estaEnVencePronto = (hoy) => resumenDeJulieta(JULIETA.estado, hoy).vence_pronto.length === 1;
+    const enAmbar = (hoy) => resumenDeJulieta(JULIETA.estado, hoy).titular.bajada.at(-1).vence;
+    assert.equal(estaEnVencePronto('2027-03-30'), false);
+    assert.equal(enAmbar('2027-03-30'), false);
+    assert.equal(estaEnVencePronto('2027-03-31'), true);
+    assert.equal(enAmbar('2027-03-31'), true);
+    const [elDia] = resumenDeJulieta(JULIETA.estado, '2027-04-30').vence_pronto;
+    assert.equal(elDia.texto, 'Vencen hoy.');
+    // Pasado el plazo, perdidos: ni aviso, ni «Vence pronto», ni oración, ni marca
+    const pasado = resumenDeJulieta(JULIETA.estado, MAYO);
+    assert.deepEqual([pasado.restituciones, pasado.vence_pronto, pasado.marca], [[], [], false]);
+    assert.ok(!pasado.titular.bajada.some((oracion) => oracion.texto.startsWith('Además')));
+  });
+
+  it('las opciones de «Cargar licencia»: una por grupo por restituir del caso A, justo después de las vacaciones', () => {
+    const { tipos } = resumenDeJulieta(JULIETA.estado, VUELVE);
+    assert.deepEqual(tipos.map((opcion) => opcion.tipo),
+      ['vacaciones', 'restituidos', 'franquicia', 'medica', 'familiar', 'medica_extraordinaria', 'franco']);
+    assert.deepEqual(tipos[1], {
+      tipo: 'restituidos', grupo: '1-2024-0', restitucion: { licencia_id: 1, anio: 2024, tanda: 0 }, nombre: 'Días restituidos',
+      queda_texto: T.tipoA, dias: 2, ayuda_desde: T.ayudaFechasA, ayuda_hasta: 'Lo pone Mi espacio: 2 días hábiles.'
+    });
+    // Ni del caso B, ni ya cargados, ni perdidos
+    for (const [estado, hoy] of [[VARIANTE_B, ABRIL], [CARGADOS, ABRIL], [JULIETA.estado, MAYO], [B_PEDIDA, ABRIL]]) {
+      assert.ok(!resumenDeJulieta(estado, hoy).tipos.some((opcion) => opcion.tipo === 'restituidos'), hoy);
+    }
+  });
+
+  it('la fila de las vacaciones al volver: siguen con 19 días y dicen los días por restituir, con su botón', () => {
+    for (const anio of [2026, 2027]) {
+      const fila = filaDe(JULIETA.estado, VUELVE, 1, { anio });
+      assert.equal(fila.cantidad_texto, '19 días hábiles de 29 corridos');
+      assert.equal(fila.de_licencias_texto, 'De la licencia 2024.');
+      assert.deepEqual(fila.restituciones, [
+        { texto: T.filaA, aviso: true, accion: ACCION_A, restitucion_id: null, puede_borrar: false, anio: 2024 }
+      ]);
+      assert.equal(Object.hasOwn(fila, 'restituidos'), false);
+    }
+  });
+
+  it('después de cargarlos: sin aviso, la línea de las vacaciones con las fechas de la carga y la fila de los días restituidos', () => {
+    const resumen = resumenDeJulieta(CARGADOS, ABRIL);
+    assert.deepEqual([resumen.restituciones, resumen.vence_pronto, resumen.marca], [[], [], false]);
+    assert.equal(resumen.titular.cifra, '35');
+    assert.ok(!resumen.titular.bajada.some((oracion) => oracion.texto.startsWith('Además')));
+
+    const lista = filasDeJulieta(CARGADOS, ABRIL);
+    assert.deepEqual(lista.filtros.map(({ tipo, nombre, cantidad }) => [tipo, nombre, cantidad]),
+      [['todas', 'Todas', 2], ['vacaciones', 'Vacaciones', 1], ['restituidos', 'Días restituidos', 1]]);
+    const vacaciones = lista.licencias.find((fila) => fila.id === 1);
+    assert.equal(vacaciones.cantidad_texto, '19 días hábiles de 29 corridos');
+    assert.deepEqual(vacaciones.restituciones, [
+      { texto: T.filaCargados, aviso: false, accion: null, restitucion_id: null, puede_borrar: false, anio: 2024 }
+    ]);
+    const restituidos = lista.licencias.find((fila) => fila.id === 2);
+    assert.equal(restituidos.tipo_nombre, 'Días restituidos');
+    assert.equal(restituidos.cantidad_texto, '2 días hábiles');
+    assert.equal(restituidos.proxima, true);
+    assert.equal(restituidos.de_licencias_texto, T.deLicenciasRestituidos);
+    assert.deepEqual(restituidos.restituidos,
+      { ayuda_desde: T.ayudaFechasA, ayuda_hasta: 'Lo pone Mi espacio: 2 días hábiles.', dias: 2 });
+    assert.deepEqual(restituidos.restituciones, []);
+    sinHuecos(lista);
+  });
+
+  it('de un solo día: «Restituido de la licencia 2024 por el asueto del 24/12/2026.»', () => {
+    const unDia = {
+      ...CARGADOS, licencias: [VACACIONES, { ...CARGA_A, hasta: '2027-04-12' }], restituibles: fotoSellada(10).slice(0, 1),
+      restituciones: [pedidoDe(10, { anio: 2024, caso: 'tomar', carga_id: 2, dias: 1 })]
+    };
+    const restituidos = filaDe(unDia, ABRIL, 2);
+    assert.equal(restituidos.de_licencias_texto, 'Restituido de la licencia 2024 por el asueto del 24/12/2026.');
+    assert.equal(restituidos.restituidos.ayuda_hasta, 'Lo pone Mi espacio: 1 día hábil.');
+    assert.equal(restituidos.restituidos.dias, 1);
+  });
+
+  it('el 03/05/2027 sin cargarlos: la línea en gris, sin botón ni aviso', () => {
+    const fila = filaDe(JULIETA.estado, MAYO);
+    assert.deepEqual(fila.restituciones, [
+      { texto: T.filaPerdidos, aviso: false, accion: null, restitucion_id: null, puede_borrar: false, anio: 2024 }
+    ]);
+    assert.equal(fila.cantidad_texto, '19 días hábiles de 29 corridos');
+  });
+
+  it('la variante B: el aviso, «Vence pronto», la banda y la fila piden la restitución', () => {
+    const resumen = resumenDeJulieta(VARIANTE_B, ABRIL);
+    assert.deepEqual(resumen.restituciones, [{ clave: '1-2025-0', texto: T.avisoB, accion: ACCION_B }]);
+    assert.equal(resumen.titular.cifra, '21');
+    assert.deepEqual(resumen.titular.bajada, [
+      { texto: '1 vence el 31/12/2027.', vence: false },
+      { texto: 'Otros 20 se habilitan el 1/7/2027 y el 1/1/2028.', vence: false },
+      { texto: T.bajadaB, vence: true }
+    ]);
+    assert.deepEqual(resumen.vence_pronto, [{
+      fecha: '2027-04-30', dia: '30', mes: 'abr', titulo: T.venceTituloB, texto: T.venceTexto, accion: ACCION_B
+    }]);
+    assert.equal(resumen.marca, true);
+    assert.deepEqual(filaDe(VARIANTE_B, ABRIL).restituciones, [
+      { texto: T.filaB, aviso: true, accion: ACCION_B, restitucion_id: null, puede_borrar: false, anio: 2025 }
+    ]);
+  });
+
+  it('la variante B, pedida: «Te quedan» pasa de 21 a 23, la línea con el pedido y se puede borrar hasta el plazo', () => {
+    const resumen = resumenDeJulieta(B_PEDIDA, ABRIL);
+    assert.equal(resumen.titular.cifra, '23');
+    assert.deepEqual([resumen.restituciones, resumen.vence_pronto, resumen.marca, resumen.para_revisar], [[], [], false, []]);
+    assert.deepEqual(resumen.titular.bajada, [
+      { texto: '3 vencen el 31/12/2027.', vence: false },
+      { texto: 'Otros 20 se habilitan el 1/7/2027 y el 1/1/2028.', vence: false }
+    ]);
+    const fila = filaDe(B_PEDIDA, ABRIL);
+    assert.equal(fila.cantidad_texto, '19 días hábiles de 29 corridos');
+    assert.equal(fila.de_licencias_texto, 'De la licencia 2025.');
+    assert.deepEqual(fila.restituciones, [
+      { texto: T.filaPedida, aviso: false, accion: null, restitucion_id: 10, puede_borrar: true, anio: 2025 }
+    ]);
+    // Hasta el plazo inclusive; después, ya no
+    assert.equal(filaDe(B_PEDIDA, '2027-04-30').restituciones[0].puede_borrar, true);
+    assert.equal(filaDe(B_PEDIDA, MAYO).restituciones[0].puede_borrar, false);
+  });
+
+  it('textoDeLaRestitucionHecha: los días que volvieron y lo que queda, con el número de la frase del Resumen', () => {
+    const calculo = calculoDeJulieta(B_PEDIDA, ABRIL);
+    const [grupo] = calculo.restituciones;
+    assert.equal(textoDeLaRestitucionHecha(grupo, calculo, ABRIL), T.hechoB);
+    assert.equal(resumenDeJulieta(B_PEDIDA, ABRIL).titular.cifra, '23');
+    assert.equal(textoDeLaRestitucionHecha({ ...grupo, dias: 1 }, calculo, ABRIL),
+      'El día volvió a tu licencia 2025: te quedan 23 días de vacaciones.');
+    // Con 1 y con 0; las licencias de los años que vienen no cuentan, como en la frase
+    const conDisponibles = (...ordinarias) => ({ reparto: { ordinarias } });
+    assert.equal(textoDeLaRestitucionHecha(grupo, conDisponibles({ anio: 2025, disponibles: 1 }, { anio: 2028, disponibles: 5 }),
+      ABRIL), 'Los 2 días volvieron a tu licencia 2025: te queda 1 día de vacaciones.');
+    assert.equal(textoDeLaRestitucionHecha(grupo, conDisponibles({ anio: 2025, disponibles: 0 }), ABRIL),
+      'Los 2 días volvieron a tu licencia 2025: no te quedan días de vacaciones.');
+    for (const raro of [undefined, null, '', 'x', 3, [], {}, { dias: 'x', anio: 2025 }, { dias: 2, anio: 'x' }]) {
+      assert.equal(textoDeLaRestitucionHecha(raro, calculo, ABRIL), '', JSON.stringify(raro));
+    }
+    for (const raro of [undefined, null, '', 'x', '2027-02-30']) assert.equal(textoDeLaRestitucionHecha(grupo, calculo, raro), '');
+    assert.doesNotThrow(() => textoDeLaRestitucionHecha(grupo, Symbol('x'), ABRIL));
+  });
+
+  it('el «Revisá…» de lo ya pedido va en para_revisar, después de lo de Configuración, sin ser un faltante', () => {
+    // El asueto del 24/12 se dio de baja después de pedir la restitución
+    const soloEl31 = new Set(['2026-12-31']);
+    const revisar = 'Revisá tus días restituidos: el asueto del 24/12/2026 se dio de baja.';
+    const resumen = resumenDeJulieta(B_PEDIDA, ABRIL, { feriados: soloEl31 });
+    assert.deepEqual(resumen.para_revisar, [{ licencia_id: 1, anio: 2026, texto: revisar, enlace: 'Ver en Licencias de 2026' }]);
+    assert.deepEqual([resumen.faltantes, resumen.marca], [[], false]);
+    // Con algo de Configuración para revisar, primero eso
+    const vinculos = new Map([[1, { revision: { motivo: 'anulada', desde: null, hasta: null } }]]);
+    assert.deepEqual(resumenDeJulieta(B_PEDIDA, ABRIL, { feriados: soloEl31, vinculos }).para_revisar.map((aviso) => aviso.texto), [
+      'Revisá tu licencia del 11/12/2026 al 08/01/2027: se anuló en Configuración y acá sigue contando.', revisar
+    ]);
+    // Un pedido del caso B que ya pasó el plazo no se puede borrar: no hay nada que revisar
+    assert.deepEqual(resumenDeJulieta(B_PEDIDA, MAYO, { feriados: soloEl31 }).para_revisar, []);
+    // Una carga del caso A cuyas vacaciones ya no incluyen un asueto, sí (también pasado el plazo)
+    const acortadas = { ...CARGADOS, licencias: [{ ...VACACIONES, hasta: '2026-12-28' }, CARGA_A] };
+    const otroRevisar = 'Revisá tus días restituidos: tus vacaciones ya no incluyen el 31/12/2026.';
+    for (const hoy of [ABRIL, MAYO]) {
+      assert.deepEqual(resumenDeJulieta(acortadas, hoy).para_revisar,
+        [{ licencia_id: 1, anio: 2026, texto: otroRevisar, enlace: 'Ver en Licencias de 2026' }], hoy);
+    }
+  });
+
+  it('dos licencias de origen: un aviso por grupo, una oración por caso y una línea por grupo', () => {
+    // 12 de la 2024 y 7 de la 2025: el 24/12 sale de la 2024 (caso A) y el 31/12, de la 2025 (caso B)
+    const dosLicencias = { ...JULIETA.estado, saldos: saldos({ 2024: 12, 2025: 15, 2026: 10 }) };
+    const calculo = calculoDeJulieta(dosLicencias, ABRIL);
+    const [a, b] = calculo.restituciones;
+    const resumen = resumenDeJulieta(dosLicencias, ABRIL);
+    assert.deepEqual(resumen.restituciones.map(({ clave, texto }) => [clave, texto]), [
+      ['1-2024-0', reglas.textoDelAvisoDeRestitucion(a, ABRIL)], ['1-2025-0', reglas.textoDelAvisoDeRestitucion(b, ABRIL)]
+    ]);
+    assert.deepEqual(resumen.restituciones.map((aviso) => aviso.accion.tipo), ['restituidos', 'restitucion']);
+    assert.deepEqual(resumen.titular.bajada.slice(-2), [
+      { texto: 'Además, 1 restituido de la 2024: tomalo a más tardar el viernes 30/04.', vence: true },
+      { texto: 'Además, 1 por restituir: pedí la restitución antes del viernes 30/04.', vence: true }
+    ]);
+    assert.deepEqual(resumen.vence_pronto.map((cosa) => [cosa.titulo, cosa.texto]), [
+      ['1 día restituido de la 2024', 'Vence el viernes 30/04, en 29 días.'],
+      ['1 día para restituir a la 2025', 'Vence el viernes 30/04, en 29 días.']
+    ]);
+    assert.deepEqual(resumen.tipos.filter((opcion) => opcion.tipo === 'restituidos').map((opcion) => opcion.queda_texto),
+      ['1 de la 2024 · tomarlo hasta el 30/04']);
+    assert.deepEqual(filaDe(dosLicencias, ABRIL).restituciones.map((linea) => [linea.texto, linea.aviso, linea.accion.tipo]), [
+      ['1 día por restituir (asueto del 24/12/2026): tomalo a más tardar el 30/04/2027.', true, 'restituidos'],
+      ['1 día por restituir a la licencia 2025 (asueto del 31/12/2026): pedí la restitución a más tardar el 30/04/2027.', true,
+        'restitucion']
+    ]);
+  });
+
+  it('la recursión: un asueto en la carga de días restituidos va en su fila, siempre para tomar', () => {
+    const feriados = new Set([...ASUETOS, '2027-04-12']);
+    const recursiva = {
+      ...CARGADOS,
+      restituibles: [...CARGADOS.restituibles,
+        { id: 10, licencia_id: 2, feriado_id: 3, fecha: '2027-04-12', tanda: null, restitucion_id: null }]
+    };
+    const restituidos = filaDe(recursiva, ABRIL, 2, { feriados });
+    assert.equal(restituidos.cantidad_texto, '2 días hábiles');
+    assert.deepEqual(restituidos.restituciones, [{
+      texto: '1 día por restituir (asueto del 12/04/2027): tomalo a más tardar el 31/08/2027.', aviso: true,
+      accion: { texto: 'Cargar el día restituido', tipo: 'restituidos', grupo: '2-2024-0',
+        restitucion: { licencia_id: 2, anio: 2024, tanda: 0 } },
+      restitucion_id: null, puede_borrar: false, anio: 2024
+    }]);
+    const [aviso] = resumenDeJulieta(recursiva, ABRIL, { feriados }).restituciones;
+    assert.ok(aviso.texto.startsWith('El asueto del 12/04/2027 cayó en tus días restituidos: tenés 1 día restituido de la '
+      + 'licencia 2024.'), aviso.texto);
+  });
+
+  it('un cálculo de antes (sin `restituciones`) se ve igual que hoy', () => {
+    const conLaClave = calculoDeJulieta(JULIETA.estado, ABRIL);
+    const { restituciones, ...deAntes } = conLaClave;
+    assert.equal(restituciones.length, 1);
+    const opciones = { persona: JULIETA.persona, estado: JULIETA.estado, hoy: ABRIL, feriados: ASUETOS, hoyYManana: HOY_Y_MANANA };
+    const deAntesResumen = resumenDe({ ...opciones, calculo: deAntes });
+    const sinGrupos = resumenDe({ ...opciones, calculo: { ...conLaClave, restituciones: [] } });
+    assert.deepEqual(deAntesResumen, sinGrupos);
+    assert.deepEqual(deAntesResumen.restituciones, []);
+    assert.equal(deAntesResumen.marca, false);
+    assert.ok(!deAntesResumen.tipos.some((opcion) => opcion.tipo === 'restituidos'));
+    const lista = filasDeLicencias(JULIETA.estado, deAntes, { anio: 2027, hoy: ABRIL, persona: JULIETA.persona, feriados: ASUETOS });
+    assert.deepEqual(lista.licencias[0].restituciones, []);
+    // Las demás filas no llevan la clave
+    const conMedica = { ...JULIETA.estado, licencias: [...JULIETA.estado.licencias, licencia(3, 'medica', '2027-02-01')] };
+    const medica = filaDe(conMedica, ABRIL, 3);
+    assert.equal(Object.hasOwn(medica, 'restituciones'), false);
+    assert.equal(Object.hasOwn(medica, 'restituidos'), false);
+  });
+
+  it('sin modalidad o sin arranque, nada nuevo', () => {
+    const sinModalidad = resumenDeJulieta({ ...JULIETA.estado, modalidad: null }, VUELVE);
+    const sinArranque = resumenDeJulieta({ ...JULIETA.estado, arranque: null }, VUELVE);
+    for (const resumen of [sinModalidad, sinArranque]) {
+      assert.deepEqual([resumen.restituciones, resumen.vence_pronto, resumen.para_revisar, resumen.tipos], [[], [], [], []]);
+    }
+    // Aunque el cálculo traiga grupos
+    const calculo = calculoDeJulieta(JULIETA.estado, VUELVE);
+    const conGrupos = resumenDe({ persona: JULIETA.persona, estado: { ...JULIETA.estado, arranque: null }, calculo, hoy: VUELVE,
+      feriados: ASUETOS });
+    assert.deepEqual(conGrupos.restituciones, []);
+  });
+
+  it('todo número es un número y todo texto, un texto, en cada momento', () => {
+    for (const [estado, hoy] of [[JULIETA.estado, VUELVE], [JULIETA.estado, ABRIL], [CARGADOS, ABRIL], [JULIETA.estado, MAYO],
+      [VARIANTE_B, ABRIL], [B_PEDIDA, ABRIL], [B_PEDIDA, MAYO]]) {
+      sinHuecos(resumenDeJulieta(estado, hoy));
+      sinHuecos(filasDeJulieta(estado, hoy));
+      sinHuecos(filasDeJulieta(estado, hoy, { anio: 2026 }));
+    }
   });
 });
 
@@ -2252,8 +2621,36 @@ describe('nada tira', () => {
         otrosAniosDe([valor, { id: valor, tipo: 'medica', desde: valor, hasta: valor }], { anio: valor, anios: valor, hoy: valor });
         otrosAniosDe(PLANTA.estado.licencias, { anio: 2025, anios: [valor, 2026], hoy: HOY });
         textoDeLaListaDe(valor, valor);
+        textoDeLaRestitucionHecha(valor, valor, valor);
+        textoDeLaRestitucionHecha({ dias: 2, anio: 2025 }, { reparto: { ordinarias: [valor, { anio: 2025, disponibles: valor }] } },
+          '2027-04-01');
       });
     }
+  });
+
+  it('un cálculo con grupos de días restituidos que no son lo que deberían', () => {
+    const calculo = calcular(JULIETA.estado, { hoy: '2027-04-01', feriados: ASUETOS });
+    const [grupo] = calculo.restituciones;
+    const raros = [undefined, null, 3, 'x', [], {}, { ...grupo, clave: 3 }, { ...grupo, situacion: 'otra' },
+      { ...grupo, caso: null }, { ...grupo, dias: Symbol('x') }, { ...grupo, dias: 'x' }, { ...grupo, anio: Symbol('x') },
+      { ...grupo, plazo: null }, { ...grupo, licencia_id: 'x' }, { ...grupo, tanda: -1 },
+      { ...grupo, fechas: 'x', carga: 3, revisar: 3 }, { ...grupo, situacion: 'pedida', restitucion_id: Symbol('x') },
+      { ...grupo, situacion: 'cargada', carga_id: Symbol('x'), revisar: 'Revisá algo.', carga: null }];
+    for (const roto of [Symbol('x'), 'x', {}, raros]) {
+      const conRoto = { ...calculo, restituciones: roto };
+      const opciones = { persona: JULIETA.persona, estado: JULIETA.estado, calculo: conRoto, hoy: '2027-04-01', feriados: ASUETOS };
+      assert.doesNotThrow(() => {
+        sinHuecos(resumenDe(opciones));
+        sinHuecos(filasDeLicencias(JULIETA.estado, conRoto,
+          { anio: 2027, hoy: '2027-04-01', persona: JULIETA.persona, feriados: ASUETOS }));
+      });
+    }
+    // De los raros, el «Revisá…» de uno cargado con su texto va igual, sin el enlace si su carga no dice desde cuándo
+    const { para_revisar: paraRevisar } = resumenDe({
+      persona: JULIETA.persona, estado: JULIETA.estado, calculo: { ...calculo, restituciones: raros }, hoy: '2027-04-01',
+      feriados: ASUETOS
+    });
+    assert.deepEqual(paraRevisar, [{ licencia_id: 1, anio: null, texto: 'Revisá algo.', enlace: '' }]);
   });
 
   it('un cálculo con partes que no son lo que deberían', () => {
