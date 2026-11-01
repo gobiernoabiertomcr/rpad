@@ -52,7 +52,8 @@ export const listarFeriados = async (req, res) => {
 };
 
 // GET /api/feriados/afectadas?fecha=&se_repite=&id=: cuántas licencias de Mi espacio incluye el feriado del modal, antes de guardar
-// (licenciasQueIncluyen: solo por las fechas en que cambia un día hábil), y de ellas cuántas vacaciones quedarían con días para
+// (licenciasQueIncluyen: solo por las fechas en que cambia un día hábil; con el id, sin las que ya tienen su foto en las fechas
+// que tenía, que conservan sus días), y de ellas cuántas vacaciones quedarían con días para
 // restituir y desde cuándo corre su plazo (vacacionesParaRestituir: solo las fechas que el guardado no tenía). La fecha y «se
 // repite» ('1'; cualquier otro valor es '0') son los del modal; con el id de uno guardado (al corregir), sus años que no rigen y su
 // baja desde un año, no se lo cuenta como otro feriado ese día y sus fechas de antes no quedan para restituir; sin id, o con uno
@@ -68,7 +69,7 @@ export const afectadasPorFeriado = async (req, res) => {
       activo: 1
     };
     const excluir = guardada?.id ?? null;
-    const licencias = await licenciasQueIncluyen(fila, { excluir });
+    const licencias = await licenciasQueIncluyen(fila, { excluir, antes: guardada });
     res.json({
       success: true, data: { licencias_afectadas: licencias, ...(await restitucionDelModal(fila, excluir, guardada)) }
     });
@@ -92,14 +93,15 @@ const restitucionDelModal = async (fila, excluir, antes) => {
 };
 
 // Cuántas licencias de Mi espacio incluyen el feriado `id` tal como quedó guardado (filaDeFeriado, con el pool: después del commit),
-// para la respuesta del alta y de la corrección, sin contarlo a él como otro feriado ese día. Aislado: el feriado ya se guardó, así
-// que si la cuenta falla va null y el error, a la consola, sin cambiar el resto de la respuesta. Uno que mientras tanto se dio de
-// baja no incluye ninguna. En la consola de las dos cuentas va solo la pila: los errores de mysql2 traen la consulta armada, y
+// para la respuesta del alta y de la corrección, sin contarlo a él como otro feriado ese día; en la corrección, con `antes` (la
+// fila de antes de corregirlo), sin las que ya tenían su foto en las fechas que tenía (conservan sus días). Aislado: el feriado
+// ya se guardó, así que si la cuenta falla va null y el error, a la consola, sin cambiar el resto de la respuesta. Uno que
+// mientras tanto se dio de baja no incluye ninguna. En la consola de las dos cuentas va solo la pila: los errores de mysql2 traen la consulta armada, y
 // esta lee las licencias de Mi espacio
-const licenciasAfectadasDe = async (id) => {
+const licenciasAfectadasDe = async (id, antes = null) => {
   try {
     const fila = await filaDeFeriado(id);
-    return fila ? await licenciasQueIncluyen(fila, { excluir: id }) : 0;
+    return fila ? await licenciasQueIncluyen(fila, { excluir: id, antes }) : 0;
   } catch (error) {
     console.error('Error contando las licencias que incluyen el feriado guardado:', error?.stack ?? error);
     return null;
@@ -124,7 +126,7 @@ const restitucionAfectadaDe = async (id, antes = null) => {
 
 // Las cuentas de la respuesta del alta y de la corrección, cada una aislada
 const cuentasDelFeriado = async (id, antes = null) => ({
-  licencias_afectadas: await licenciasAfectadasDe(id), ...(await restitucionAfectadaDe(id, antes))
+  licencias_afectadas: await licenciasAfectadasDe(id, antes), ...(await restitucionAfectadaDe(id, antes))
 });
 
 /**

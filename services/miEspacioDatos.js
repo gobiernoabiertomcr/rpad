@@ -473,11 +473,14 @@ export const ausentesEn = async (fecha, usuarioIds, conexion = pool) => {
  * repite cuenta todos los años en que rige (del primer año de las licencias activas al último), y cada licencia cuenta una vez
  * aunque lo incluya dos años. Solo cuentan las fechas en que el feriado cambia un día hábil (`fechasQueCambianDiasHabiles`,
  * decisión del usuario, 27/10/2026): no las de un sábado, un domingo, uno de los 9 fijos u otro feriado activo ese día, sin
- * contar el feriado `excluir` (el id del que se corrige, o del que se acaba de guardar: no es «otro»). Solo el número: ni
- * personas ni tipos. Sin licencias activas, o sin ninguna fecha que cambie algo, 0 (sin contar).
+ * contar el feriado `excluir` (el id del que se corrige, o del que se acaba de guardar: no es «otro»). Con `antes` (la fila de
+ * ese feriado guardado antes de corregirla), en las fechas que ya tenía no cuenta una licencia que ya tiene la foto de ese
+ * feriado en esa fecha (spec 2026-10-31-mi-espacio-dias-restituidos, 4: ese día es restituible y la carga conserva sus días: no
+ * se recalcula); las fechas nuevas y el alta, como siempre. Solo el número: ni personas ni tipos. Sin licencias activas, o sin
+ * ninguna fecha que cambie algo, 0 (sin contar).
  * @returns {Promise<number>}
  */
-export const licenciasQueIncluyen = async (fila, { excluir = null } = {}, conexion = pool) => {
+export const licenciasQueIncluyen = async (fila, { excluir = null, antes = null } = {}, conexion = pool) => {
   const [[rango]] = await conexion.query(
     'SELECT YEAR(MIN(desde)) AS primero, YEAR(MAX(hasta)) AS ultimo FROM mi_espacio_licencias WHERE activo = 1'
   );
@@ -486,10 +489,15 @@ export const licenciasQueIncluyen = async (fila, { excluir = null } = {}, conexi
   const otras = (await filasDeFeriados(conexion)).filter((otra) => otra.id !== excluido);
   const fechas = fechasQueCambianDiasHabiles(fila, Number(rango.primero), Number(rango.ultimo), otras);
   if (fechas.length === 0) return 0;
+  const yaTenia = new Set(excluido !== null && antes !== null && typeof antes === 'object'
+    ? fechasDelFeriado(antes, Number(rango.primero), Number(rango.ultimo)) : []);
+  const condiciones = fechas.map((fecha) => (yaTenia.has(fecha)
+    ? `(? BETWEEN l.desde AND l.hasta AND NOT EXISTS (
+         SELECT 1 FROM mi_espacio_restituibles r WHERE r.licencia_id = l.id AND r.feriado_id = ? AND r.fecha = ?))`
+    : '? BETWEEN l.desde AND l.hasta'));
   const [[{ cantidad }]] = await conexion.query(
-    `SELECT COUNT(*) AS cantidad FROM mi_espacio_licencias
-     WHERE activo = 1 AND (${fechas.map(() => '? BETWEEN desde AND hasta').join(' OR ')})`,
-    fechas
+    `SELECT COUNT(*) AS cantidad FROM mi_espacio_licencias l WHERE l.activo = 1 AND (${condiciones.join(' OR ')})`,
+    fechas.flatMap((fecha) => (yaTenia.has(fecha) ? [fecha, excluido, fecha] : [fecha]))
   );
   return Number(cantidad);
 };

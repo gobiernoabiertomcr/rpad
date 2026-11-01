@@ -1319,10 +1319,48 @@ describe('la foto de los días por restituir', () => {
     const de2027 = await insertarCarga('editor', 'vacaciones', '2027-12-20', '2027-12-28');
     const { id } = await cargar(asueto('2026-12-24', { se_repite: true }));
     assert.deepEqual(await laFoto(), [foto(vacaciones, id, '2026-12-24'), foto(de2027, id, '2027-12-24')]);
+    // Las vacaciones de 2026 conservan sus días (tienen la foto del 24/12/2026): no se cuentan como recalculadas
     assert.deepEqual(await corregir(id, asueto('2026-12-24')),
-      { licencias_afectadas: 1, vacaciones_para_restituir: 0, plazo_de_restitucion: null });
+      { licencias_afectadas: 0, vacaciones_para_restituir: 0, plazo_de_restitucion: null });
     assert.deepEqual(await laFoto(), [foto(vacaciones, id, '2026-12-24')]);
   });
+
+  // Revisión de la Task 15: al corregir un asueto que ya sacó foto, las vacaciones que la tienen conservan sus días, así que el
+  // modal no puede decir que se recalculan
+  it('con el id de uno guardado, las licencias que ya tienen su foto en las fechas que tenía no cuentan como recalculadas',
+    async () => {
+      const consultar = async (consulta) => {
+        const res = await api.get(`/feriados/afectadas${consulta}`, como('admin'));
+        assert.equal(res.status, 200, `${consulta}: ${JSON.stringify(res.body)}`);
+        return res.body.data;
+      };
+      await vacacionesDeJulieta();
+      // Una atención médica que lo incluye: esa sí se recalcula
+      await insertarCarga('superadmin', 'medica', '2026-12-22', '2026-12-28');
+      const { id, ...alta } = await cargar(asueto('2026-12-24'));
+      assert.deepEqual(alta, { licencias_afectadas: 2, vacaciones_para_restituir: 1, plazo_de_restitucion: '2027-04-30' });
+
+      // La misma fecha: solo la médica
+      assert.deepEqual(await consultar(`?fecha=2026-12-24&id=${id}`),
+        { licencias_afectadas: 1, vacaciones_para_restituir: 0, plazo_de_restitucion: null });
+      // Sin el id, el guardado es otro feriado ese día, como siempre: no cambia nada
+      assert.deepEqual((await consultar('?fecha=2026-12-24')).licencias_afectadas, 0);
+      // «Se repite» prendido: también las vacaciones de 2027, que no tienen foto y quedan para restituir
+      await conArranque('editor');
+      await insertarCarga('editor', 'vacaciones', '2027-12-20', '2027-12-28');
+      assert.deepEqual(await consultar(`?fecha=2026-12-24&se_repite=1&id=${id}`),
+        { licencias_afectadas: 2, vacaciones_para_restituir: 1, plazo_de_restitucion: '2028-04-28' });
+      // Otra fecha: las vacaciones de 2026 cuentan por esa fecha, que no tiene foto
+      assert.deepEqual(await consultar(`?fecha=2026-12-23&id=${id}`),
+        { licencias_afectadas: 2, vacaciones_para_restituir: 1, plazo_de_restitucion: '2027-04-30' });
+
+      // La respuesta del PUT, igual: renombrarlo cuenta solo la médica; moverlo al 23/12, las vacaciones por esa fecha nueva
+      // (su foto se acaba de sacar, pero esa fecha no la tenía)
+      assert.deepEqual(await corregir(id, asueto('2026-12-24', { nombre: 'Asueto navideño' })),
+        { licencias_afectadas: 1, vacaciones_para_restituir: 0, plazo_de_restitucion: null });
+      assert.deepEqual(await corregir(id, asueto('2026-12-23')),
+        { licencias_afectadas: 2, vacaciones_para_restituir: 1, plazo_de_restitucion: '2027-04-30' });
+    });
 
   it('al corregirlo, «sin pedido» es lo mismo que para la regla: la de un pedido dado de baja o de un pedido A sin su carga se borra',
     async () => {
@@ -1424,8 +1462,9 @@ describe('la foto de los días por restituir', () => {
     assert.equal((await consultar('?fecha=2026-12-24')).plazo_de_restitucion, '2027-04-29');
     // Con el id de uno guardado, las fechas que ya tenía no cuentan para restituir
     const { id } = await cargar(asueto('2026-12-24'));
+    // (las dos vacaciones ya tienen su foto en esa fecha: conservan sus días y solo se recalcula la médica)
     assert.deepEqual(await consultar(`?fecha=2026-12-24&id=${id}`),
-      { licencias_afectadas: 3, vacaciones_para_restituir: 0, plazo_de_restitucion: null });
+      { licencias_afectadas: 1, vacaciones_para_restituir: 0, plazo_de_restitucion: null });
     assert.deepEqual(await consultar(`?fecha=2026-12-23&id=${id}`),
       { licencias_afectadas: 3, vacaciones_para_restituir: 2, plazo_de_restitucion: '2027-04-29' });
   });
