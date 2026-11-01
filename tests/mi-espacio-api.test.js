@@ -3544,7 +3544,8 @@ describe('los días restituidos', () => {
 
   it('después del plazo: una creada que ya empezó no se borra (409, el pedido queda); una que no pasó a Configuración se '
     + 'borra y los días quedan perdidos', async () => {
-    // Julieta y el colaborador (de contrato: lo suyo no pasa a Configuración), con el mismo caso
+    // Julieta y el colaborador, con el mismo caso: lo del colaborador no pasa a Configuración porque su rol no puede tener
+    // licencia (`puedeTenerLicencia`)
     const vacaciones = await conVacaciones('adminA');
     const deColab = await conVacaciones('colab');
     await conLosAsuetos();
@@ -3741,6 +3742,101 @@ describe('los días restituidos', () => {
     const deLaA = await verNota('adminA', cargaA);
     assert.ok(deLaA.body.data.html.includes('el usufructo de dos (2) días hábiles de mi licencia anual ordinaria 2024'),
       deLaA.body.data.html);
+  });
+
+  it('unos días restituidos que ya pasaron a Configuración y ya empezaron no se mueven (restituidosEmpezados, en desde); '
+    + 'la nota y «Mostrar» sí se corrigen', async () => {
+    const vacaciones = await elCaso();
+    const { body } = await cargarEl(VUELVE, cuerpoA(vacaciones));
+    const { id } = body.data;
+    const [oficial] = await deConfiguracion();
+    // El martes 13/04/2027, el segundo de sus dos días
+    const EMPEZADA = '2027-04-13';
+    const mover = { tipo: 'restituidos', desde: '2027-04-14' };
+    const empezados = rechazo(MENSAJES_MI_ESPACIO.restituidosEmpezados, 'desde');
+    const res = await corregirEl(EMPEZADA, id, mover);
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.deepEqual(res.body, empezados);
+    const calculo = await calcularEl(EMPEZADA, { ...mover, id });
+    assert.equal(calculo.status, 200, JSON.stringify(calculo.body));
+    assert.deepEqual(calculo.body.data.error, { campo: 'desde', mensaje: empezados.error });
+
+    const conNota = await corregirEl(EMPEZADA, id, { tipo: 'restituidos', desde: '2027-04-12', nota: 'Con la nota firmada' });
+    assert.equal(conNota.status, 200, JSON.stringify(conNota.body));
+    const carga = await laCarga(id);
+    assert.deepEqual([carga.desde, carga.hasta, carga.nota], ['2027-04-12', '2027-04-13', 'Con la nota firmada']);
+    assert.deepEqual((await deConfiguracion()).map((cada) => [cada.id, cada.desde, cada.hasta, cada.anulada]),
+      [[oficial.id, '2027-04-12', '2027-04-13', 0]]);
+  });
+
+  it('sin modalidad, borrar unos días restituidos suelta su pedido igual (se apoya en el pedido guardado)', async () => {
+    const vacaciones = await elCaso();
+    const { body } = await cargarEl(VUELVE, cuerpoA(vacaciones));
+    const { id } = body.data;
+    await query('UPDATE usuarios SET vinculo = NULL WHERE id = ?', [usuarios.adminA.id]);
+    try {
+      const borrar = await borrarEl(VUELVE, id);
+      assert.equal(borrar.status, 200, JSON.stringify(borrar.body));
+      assert.equal((await laCarga(id)).activo, 0);
+      assert.deepEqual((await losPedidos()).map((pedido) => pedido.activo), [0]);
+      assert.deepEqual(await laFoto(vacaciones), abierta(null, 0));
+      assert.deepEqual((await deConfiguracion()).map((oficial) => oficial.anulada), [1]);
+    } finally {
+      await query('UPDATE usuarios SET vinculo = ? WHERE id = ?', ['planta_permanente', usuarios.adminA.id]);
+    }
+  });
+
+  // Simula una falla de la base en medio de la transacción: un trigger de la base de prueba rechaza todo `momento` ('INSERT' o
+  // 'UPDATE', texto fijo escrito en el test) sobre los pedidos, como conFallaAlSacarLaFoto de tests/feriados-api.test.js
+  const conFallaEnLosPedidos = async (momento, fn) => {
+    await asegurarBaseDePrueba();
+    await query('DROP TRIGGER IF EXISTS falla_simulada_pedidos');
+    await query(`CREATE TRIGGER falla_simulada_pedidos BEFORE ${momento} ON mi_espacio_restituciones FOR EACH ROW
+      BEGIN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Falla simulada'; END`);
+    try {
+      return await fn();
+    } finally {
+      await query('DROP TRIGGER IF EXISTS falla_simulada_pedidos');
+    }
+  };
+
+  it('si el pedido no se puede guardar, el alta se deshace entera: ni la carga, ni la licencia de Configuración, y la foto '
+    + 'sigue abierta', async () => {
+    const vacaciones = await elCaso();
+    const alta = await conFallaEnLosPedidos('INSERT', () => cargarEl(VUELVE, cuerpoA(vacaciones)));
+    assert.equal(alta.status, 500, JSON.stringify(alta.body));
+    assert.deepEqual(alta.body, { success: false, error: 'Error al cargar la licencia' });
+    assert.deepEqual((await guardadasDe('adminA')).map((fila) => fila.tipo), ['vacaciones']);
+    assert.deepEqual([await losPedidos(), await deConfiguracion()], [[], []]);
+    assert.deepEqual(await laFoto(vacaciones), abierta());
+    // Sin la falla, se carga
+    assert.equal((await cargarEl(VUELVE, cuerpoA(vacaciones))).status, 201);
+  });
+
+  it('si el pedido no se puede soltar, el borrado y la anulación en Configuración se deshacen enteros', async () => {
+    const vacaciones = await elCaso();
+    const { body } = await cargarEl(VUELVE, cuerpoA(vacaciones));
+    const { id } = body.data;
+    const [oficial] = await deConfiguracion();
+    const [pedido] = await losPedidos();
+    // La carga activa, la licencia de Configuración sin anular, el pedido activo y la foto enlazada
+    const comoEstaba = async () => {
+      assert.equal((await laCarga(id)).activo, 1);
+      assert.deepEqual((await deConfiguracion()).map((cada) => [cada.id, cada.anulada]), [[oficial.id, 0]]);
+      assert.deepEqual(await losPedidos(), [pedido]);
+      assert.deepEqual(await laFoto(vacaciones), abierta(pedido.id, 0));
+    };
+    await conFallaEnLosPedidos('UPDATE', async () => {
+      const borrar = await borrarEl(VUELVE, id);
+      assert.equal(borrar.status, 500, JSON.stringify(borrar.body));
+      assert.deepEqual(borrar.body, { success: false, error: 'Error al borrar la licencia' });
+      await comoEstaba();
+      const anular = await enElDia(VUELVE,
+        () => llamar(licencias.anularLicencia, { clave: 'adminB', params: { id: String(oficial.id) } }));
+      assert.equal(anular.status, 500, JSON.stringify(anular.body));
+      assert.equal(anular.body.success, false);
+      await comoEstaba();
+    });
   });
 
   // El pedido de restitución (spec 2026-10-31-mi-espacio-dias-restituidos, 4, 8 y 12: el caso B), con la variante B de

@@ -190,7 +190,8 @@ describe('los textos', () => {
       grupoEsParaRestituir: 'Esos días no se toman: pedí la restitución.',
       grupoEsParaTomar: 'Esos días se toman: cargalos como «Días restituidos».',
       restitucionNoEncontrada: 'Restitución no encontrada',
-      restitucionVencida: 'Ya pasó el plazo: la restitución no se puede borrar.'
+      restitucionVencida: 'Ya pasó el plazo: la restitución no se puede borrar.',
+      restituidosEmpezados: 'Ya empezó: los días restituidos no se pueden mover.'
     });
   });
 
@@ -5967,6 +5968,30 @@ describe('el paso a Configuración', () => {
         { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.fechasFijas } });
       // Sin cambiar las fechas, una terminada se corrige igual (el tipo, la nota)
       assert.deepEqual(correccion(creadaDe(terminada), creadaDe(terminada, { tipo: 'medica' }), fija), { accion: 'nada' });
+    });
+
+    it('unos días restituidos que ya pasaron a Configuración y ya empezaron no se mueven: restituidosEmpezados, en desde', () => {
+      // Su «Hasta» lo pone Mi espacio: «solo podés cambiar hasta cuándo» (soloHasta) diría algo que no se puede hacer
+      const enCurso = oficialDe(7, '2026-10-23', '2026-10-26');
+      const vinculo = { estado: 'creada', oficial: enCurso };
+      const restituidos = creadaDe(enCurso, { tipo: 'restituidos' });
+      assert.deepEqual(correccion(restituidos, { ...restituidos, desde: '2026-10-26', hasta: '2026-10-27' }, vinculo),
+        { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.restituidosEmpezados } });
+      // Una que empieza hoy, igual
+      const deHoy = oficialDe(7, HOY, '2026-10-27');
+      const deHoyRestituidos = creadaDe(deHoy, { tipo: 'restituidos' });
+      assert.deepEqual(correccion(deHoyRestituidos, { ...deHoyRestituidos, desde: '2026-10-27', hasta: '2026-10-28' },
+        { estado: 'creada', oficial: deHoy }), { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.restituidosEmpezados } });
+      // Sin mover el «Desde» (la nota, «Mostrar») no toca Configuración; una que todavía no empezó se mueve
+      assert.deepEqual(correccion(restituidos, { ...restituidos, nota: 'x', mostrar: 0 }, vinculo), { accion: 'nada' });
+      const futura = oficialDe(7, '2026-11-02', '2026-11-03');
+      const futuraRestituidos = creadaDe(futura, { tipo: 'restituidos' });
+      assert.deepEqual(correccion(futuraRestituidos, { ...futuraRestituidos, desde: '2026-11-04', hasta: '2026-11-05' },
+        { estado: 'creada', oficial: futura }), { accion: 'cambiar' });
+      // Unas vacaciones en el mismo caso siguen con soloHasta
+      const vacaciones = creadaDe(enCurso);
+      assert.deepEqual(correccion(vacaciones, { ...vacaciones, desde: '2026-10-26', hasta: '2026-10-27' }, vinculo),
+        { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.soloHasta } });
     });
 
     it('una creada cuya copia no pasó: sin cambiar las fechas se corrige siempre; los límites, con las de Configuración', () => {

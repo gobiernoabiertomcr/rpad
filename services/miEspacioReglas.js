@@ -177,7 +177,10 @@ export const MENSAJES_MI_ESPACIO = Object.freeze({
   grupoEsParaRestituir: 'Esos días no se toman: pedí la restitución.',
   grupoEsParaTomar: 'Esos días se toman: cargalos como «Días restituidos».',
   restitucionNoEncontrada: 'Restitución no encontrada',
-  restitucionVencida: 'Ya pasó el plazo: la restitución no se puede borrar.'
+  restitucionVencida: 'Ya pasó el plazo: la restitución no se puede borrar.',
+  // Mover el «Desde» de unos días restituidos que ya pasaron a Configuración y ya empezaron: su «Hasta» lo pone Mi espacio,
+  // así que `soloHasta` («solo podés cambiar hasta cuándo») diría algo que no se puede hacer
+  restituidosEmpezados: 'Ya empezó: los días restituidos no se pueden mover.'
 });
 
 const MESES = Object.freeze([
@@ -3342,7 +3345,7 @@ const ESTADOS_CON_OFICIAL = Object.freeze(['creada', 'creada_cambiada', 'creada_
  *   - con otras fechas, que no son las de Configuración: si la corregida termina antes de hoy y la de Configuración todavía
  *     se puede anular, `'anular'`; si la de Configuración terminó antes de hoy, `fechasFijas` (en el campo que cambia); si
  *     empieza hoy o antes y se mueve el desde, `soloHasta` en `desde` (como `validarEdicion`, que con el desde de hoy ya la
- *     da en curso); si no, `'cambiar'`;
+ *     da en curso; en unos días restituidos, cuyo «Hasta» lo pone Mi espacio, `restituidosEmpezados`); si no, `'cambiar'`;
  *   - sin cambiar las fechas nunca hay un error de fechas: si cambia la persona a cargo (o la pierde), `'cambiar'`; si no,
  *     `'nada'` (el tipo, la nota y «Mostrar» se cambian siempre, sin tocar Configuración);
  * - una creada que administración cambió o anuló: `'nada'`;
@@ -3380,7 +3383,8 @@ export const pasoDeLaCorreccion = (entrada) => {
       return { error: { campo: otroDesde ? 'desde' : 'hasta', mensaje: MENSAJES_MI_ESPACIO.fechasFijas } };
     }
     if (oficial.desde <= hoy && otroDesde && fila.desde !== oficial.desde) {
-      return { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.soloHasta } };
+      const clave = fila.tipo === 'restituidos' ? 'restituidosEmpezados' : 'soloHasta';
+      return { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO[clave] } };
     }
     return cambiar;
   }
