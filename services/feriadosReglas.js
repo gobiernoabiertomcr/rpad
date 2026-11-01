@@ -214,8 +214,9 @@ export const fechasQueCambianDiasHabiles = (fila, desdeAnio, hastaAnio, otrasFil
 };
 
 // Las cargas de Mi espacio que tienen foto: las vacaciones y, en la recursión, los días restituidos (spec
-// 2026-10-31-mi-espacio-dias-restituidos, 4)
-const TIPOS_CON_FOTO = Object.freeze(['vacaciones', 'restituidos']);
+// 2026-10-31-mi-espacio-dias-restituidos, 4). Es la lista de `cargasParaLaFoto` (services/miEspacioDatos.js), y un test la ata a
+// `TIPOS_CON_RESTITUIBLES` de services/miEspacioReglas.js (no se importa de ahí: miEspacioReglas importa de este archivo)
+export const TIPOS_CON_FOTO = Object.freeze(['vacaciones', 'restituidos']);
 // El id de una carga: un entero positivo, como número o como texto de cifras; lo demás (un booleano, '', 1.5), null
 const idDeCarga = (valor) => {
   if (typeof valor !== 'number' && typeof valor !== 'string') return null;

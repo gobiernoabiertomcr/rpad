@@ -9,8 +9,9 @@ import {
   MENSAJES_FERIADO, FECHA_MINIMA_FERIADO, LARGO_NOMBRE_FERIADO,
   validarFeriado, validarRige, bajaDesde, errorDeLaCorreccion, feriadosDelAnio, avisosDeLaFecha, aniosDelSelector,
   calendarioCon, MENSAJE_CORRIDA_SIN_FERIADOS, MENSAJE_ESTADO_SIN_FERIADOS,
-  MENSAJE_METRICAS_SIN_FERIADOS, exigirLaTabla, feriadosDelCalendario, calendarioDeFechas, fotosDelFeriado
+  MENSAJE_METRICAS_SIN_FERIADOS, exigirLaTabla, feriadosDelCalendario, calendarioDeFechas, fotosDelFeriado, TIPOS_CON_FOTO
 } from '../services/feriadosReglas.js';
+import { TIPOS_CON_RESTITUIBLES } from '../services/miEspacioReglas.js';
 import { FERIADOS_FIJOS, esDiaHabil, CALENDARIO_FIJO, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
@@ -1268,6 +1269,12 @@ describe('exigirLaTabla, feriadosDelCalendario y calendarioDeFechas', () => {
 describe('fotosDelFeriado', () => {
   const VACACIONES = Object.freeze({ id: 10, tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08', arranque: '2026-11-02' });
   const ASUETO = fila({ id: 7, fecha: '2026-12-24', nombre: 'Asueto', tipo: 'no_laborable' });
+
+  it('los tipos con foto son los que tienen días restituibles en la regla (TIPOS_CON_RESTITUIBLES), congelados', () => {
+    assert.deepEqual(TIPOS_CON_FOTO, ['vacaciones', 'restituidos']);
+    assert.deepEqual([...TIPOS_CON_FOTO].sort(), [...TIPOS_CON_RESTITUIBLES].sort());
+    assert.ok(Object.isFrozen(TIPOS_CON_FOTO));
+  });
 
   it('el 24/12/2026 sobre las vacaciones de Julieta: su carga, ese día', () => {
     assert.deepEqual(fotosDelFeriado(ASUETO, [VACACIONES], []), [{ licencia_id: 10, fecha: '2026-12-24' }]);

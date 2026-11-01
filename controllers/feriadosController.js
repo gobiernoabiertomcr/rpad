@@ -4,8 +4,8 @@
 // desde los días restituidos, cuántas vacaciones quedan con días para restituir y desde cuándo corre el plazo), solo
 // administración (authMiddleware + adminOnly).
 // La foto de los días por restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 6) va en la transacción del feriado: el alta,
-// la corrección (solo las fechas nuevas) y el día que carga «Se pasó al» anotan los días de las vacaciones ya cargadas que dejan
-// de ser hábiles (services/miEspacioRestituciones.js); «no rige» y la baja no la tocan.
+// la corrección (solo las fechas nuevas), volver a regir (ese año) y el día que carga «Se pasó al» anotan los días de las
+// vacaciones ya cargadas que dejan de ser hábiles (services/miEspacioRestituciones.js); «no rige» y la baja no la tocan.
 // Las reglas son puras (services/feriadosReglas.js) y las consultas de lectura están en services/feriadosDatos.js; acá se
 // escribe. Hoy es hoyArgentina(). Respuestas { success, data?, error?, campo?, message?, avisos? }.
 // Orden de los controles en las que reciben un id: un id que no es un entero positivo, que no existe o dado de baja da 404
@@ -69,14 +69,25 @@ export const afectadasPorFeriado = async (req, res) => {
     };
     const excluir = guardada?.id ?? null;
     const licencias = await licenciasQueIncluyen(fila, { excluir });
-    const { vacaciones, plazo } = await vacacionesParaRestituir(fila, { excluir, antes: guardada });
     res.json({
-      success: true,
-      data: { licencias_afectadas: licencias, vacaciones_para_restituir: vacaciones, plazo_de_restitucion: plazo }
+      success: true, data: { licencias_afectadas: licencias, ...(await restitucionDelModal(fila, excluir, guardada)) }
     });
   } catch (error) {
     console.error('Error contando las licencias que incluyen el feriado:', error?.stack ?? error);
     res.status(500).json({ success: false, error: 'Error al contar las licencias que incluyen el feriado' });
+  }
+};
+
+// Para el modal: cuántas vacaciones quedarían con días para restituir con el feriado `fila` y desde cuándo corre el plazo
+// (vacacionesParaRestituir), aislado: si falla, las dos en null y el error en la consola (la cuenta de las licencias sigue
+// siendo la del modal, y si esa falla, el 500 de siempre)
+const restitucionDelModal = async (fila, excluir, antes) => {
+  try {
+    const { vacaciones, plazo } = await vacacionesParaRestituir(fila, { excluir, antes });
+    return { vacaciones_para_restituir: vacaciones, plazo_de_restitucion: plazo };
+  } catch (error) {
+    console.error('Error contando las vacaciones con días para restituir por el feriado:', error?.stack ?? error);
+    return { vacaciones_para_restituir: null, plazo_de_restitucion: null };
   }
 };
 
@@ -137,23 +148,30 @@ const noEncontrado = () => [404, { success: false, error: MENSAJES_FERIADO.noEnc
 // El error de una regla, { campo, mensaje } (campo null en noSeRepite)
 const rechazoDeValidacion = ({ campo, mensaje }) => [400, { success: false, error: mensaje, campo }];
 
+// Cuántas veces se intenta una transacción que MariaDB corta por un bloqueo mutuo: la primera y una más
+const INTENTOS = 2;
+
 /**
  * Corre trabajo(conexion) en una transacción y devuelve lo que devolvió, [status, cuerpo]: un 2xx la confirma; cualquier otro, o
- * un error, la deshace. La conexión vuelve al pool siempre.
+ * un error, la deshace. La conexión vuelve al pool siempre. Si MariaDB la corta por un bloqueo mutuo (ER_LOCK_DEADLOCK: ya la
+ * deshizo entera), la repite una vez desde el principio, como las de Mi espacio: desde los días restituidos, el feriado escribe
+ * también la foto (`mi_espacio_restituibles`), que escriben los pedidos de Mi espacio.
  */
 const enTransaccion = async (trabajo) => {
-  const conexion = await pool.getConnection();
-  try {
-    await conexion.beginTransaction();
-    const resultado = await trabajo(conexion);
-    if (resultado[0] < 300) await conexion.commit();
-    else await conexion.rollback();
-    return resultado;
-  } catch (error) {
-    await conexion.rollback().catch(() => {});
-    throw error;
-  } finally {
-    conexion.release();
+  for (let intento = 1; ; intento++) {
+    const conexion = await pool.getConnection();
+    try {
+      await conexion.beginTransaction();
+      const resultado = await trabajo(conexion);
+      if (resultado[0] < 300) await conexion.commit();
+      else await conexion.rollback();
+      return resultado;
+    } catch (error) {
+      await conexion.rollback().catch(() => {});
+      if (error?.code !== 'ER_LOCK_DEADLOCK' || intento >= INTENTOS) throw error;
+    } finally {
+      conexion.release();
+    }
   }
 };
 
@@ -269,7 +287,8 @@ const textoDeRige = ({ anio, rige, pasa_al: pasaAl }, pasado = null) => {
 // feriado más): si sigue cargado, el mensaje lo dice. nuevo_id: el id del día al que se pasó, o null. avisos: los de ese día
 // (fin de semana, ya hay otro feriado), contra la proyección completa y sin contarlo a él, como al cargar uno; sin pasa_al, [].
 // El día que carga saca su foto, como un alta (spec 2026-10-31-mi-espacio-dias-restituidos, 6); el que ya estaba, no. «No rige»
-// no toca la foto: la regla ve que ese día volvió a ser hábil
+// no toca la foto (la regla ve que ese día volvió a ser hábil) y volver a regir saca la de ese año, como un alta de esa fecha
+// (decisión del controlador del plan, por la decisión 4 de la spec: cuenta cualquier día que deja de ser hábil)
 export const cambiarRige = (req, res) => responder(res, 'Error al cambiar si rige el feriado', async () => {
   const id = idPositivo(req.params.id);
   if (id === null) return noEncontrado();
@@ -280,6 +299,9 @@ export const cambiarRige = (req, res) => responder(res, 'Error al cambiar si rig
     if (error) return rechazoDeValidacion(error);
     if (datos.rige) {
       await conexion.query('DELETE FROM feriados_no_rige WHERE feriado_id = ? AND anio = ?', [id, datos.anio]);
+      // Volver a regir es como cargar esa fecha (decisión 4 de la spec de los días restituidos: cuenta cualquier día que deja de
+      // ser hábil): saca la foto de ese año, una fecha nueva contra la fila de antes, que no la tenía
+      await sacarLaFotoDe(conexion, id, fila);
       const pasado = await fechaDelDiaAlQueSePaso(conexion, fila, datos);
       return [200, { success: true, message: textoDeRige(datos, pasado), data: { nuevo_id: null }, avisos: [] }];
     }

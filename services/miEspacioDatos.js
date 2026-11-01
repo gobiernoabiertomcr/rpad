@@ -20,7 +20,9 @@ import pool from '../config/database.js';
 import { calcular, modalidadDe, esDiaEntero, nombreCorto, plazoDeRestitucion } from './miEspacioReglas.js';
 import { ROLES_QUE_COMPARTEN } from './miEspacioEventosReglas.js';
 import { filasDeFeriados } from './feriadosDatos.js';
-import { feriadosDelRango, fechasQueCambianDiasHabiles, fechasDelFeriado, fotosDelFeriado } from './feriadosReglas.js';
+import {
+  feriadosDelRango, fechasQueCambianDiasHabiles, fechasDelFeriado, fotosDelFeriado, TIPOS_CON_FOTO
+} from './feriadosReglas.js';
 import { idPositivo } from './proyectosReglas.js';
 import { esAdmin } from './usuariosReglas.js';
 import { esFechaIso, hoyArgentina } from './notasDigitalesCalendario.js';
@@ -493,10 +495,14 @@ export const licenciasQueIncluyen = async (fila, { excluir = null } = {}, conexi
 };
 
 /**
- * Las cargas que puede fotografiar un feriado (spec 2026-10-31-mi-espacio-dias-restituidos, 6): las activas de vacaciones y de
- * días restituidos de cualquier persona que tocan el rango de desde a hasta (los dos incluidos), cada una con el arranque de su
- * persona (null si todavía no cargó su saldo inicial), por id: `[{ id, tipo, desde, hasta, arranque }]`, la forma que lee
- * `fotosDelFeriado`. Con un rango que no es un rango, [] (sin consultar). `conexion`: la de la transacción del feriado.
+ * Las cargas que puede fotografiar un feriado (spec 2026-10-31-mi-espacio-dias-restituidos, 6): las activas de los tipos con
+ * foto (`TIPOS_CON_FOTO`: vacaciones y días restituidos) de cualquier persona que tocan el rango de desde a hasta (los dos
+ * incluidos), cada una con el arranque de su persona (null si todavía no cargó su saldo inicial), por id:
+ * `[{ id, tipo, desde, hasta, arranque }]`, la forma que lee `fotosDelFeriado`. Con un rango que no es un rango, [] (sin
+ * consultar). `conexion`: la de la transacción del feriado.
+ * Límite sabido: es una lectura común, sin bloquear las cargas. Si una persona guarda o alarga unas vacaciones en el mismo
+ * instante en que administración carga el asueto, ninguna de las dos transacciones ve la otra y esas vacaciones pueden quedar
+ * sin foto (la ventana es mínima; bloquear las cargas de todos en cada feriado no vale la pena).
  * @returns {Promise<{ id: number, tipo: string, desde: string, hasta: string, arranque: string | null }[]>}
  */
 export const cargasParaLaFoto = async (conexion, desde, hasta) => {
@@ -506,9 +512,9 @@ export const cargasParaLaFoto = async (conexion, desde, hasta) => {
             DATE_FORMAT(a.fecha, '%Y-%m-%d') AS arranque
      FROM mi_espacio_licencias l
      LEFT JOIN mi_espacio_arranque a ON a.usuario_id = l.usuario_id
-     WHERE l.activo = 1 AND l.tipo IN ('vacaciones', 'restituidos') AND l.desde <= ? AND l.hasta >= ?
+     WHERE l.activo = 1 AND l.tipo IN (?) AND l.desde <= ? AND l.hasta >= ?
      ORDER BY l.id`,
-    [hasta, desde]
+    [[...TIPOS_CON_FOTO], hasta, desde]
   );
   return filas.map((fila) => ({
     id: Number(fila.id), tipo: fila.tipo, desde: fila.desde, hasta: fila.hasta, arranque: fila.arranque ?? null
