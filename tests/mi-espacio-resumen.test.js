@@ -2228,7 +2228,7 @@ describe('el Resumen y la lista de los días restituidos (spec 2026-10-31-mi-esp
     deLicenciasRestituidos: 'Restituidos de la licencia 2024 por los asuetos del 24/12 y el 31/12/2026.',
     avisoB: 'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones: podés pedir que te restituyan 2 días a tu licencia '
       + '2025. Pedilo con la nota al Director General a más tardar el viernes 30/04/2027. Si no, se pierden.',
-    bajadaB: 'Además, 2 por restituir: pedí la restitución antes del viernes 30/04.',
+    bajadaB: 'Además, 2 por restituir: pedí la restitución a más tardar el viernes 30/04.',
     venceTituloB: '2 días para restituir a la 2025',
     botonB: 'Pedir la restitución',
     filaB: '2 días por restituir a la licencia 2025 (asuetos del 24/12 y el 31/12/2026): pedí la restitución a más tardar el '
@@ -2491,7 +2491,7 @@ describe('el Resumen y la lista de los días restituidos (spec 2026-10-31-mi-esp
     assert.deepEqual(resumen.restituciones.map((aviso) => aviso.accion.tipo), ['restituidos', 'restitucion']);
     assert.deepEqual(resumen.titular.bajada.slice(-2), [
       { texto: 'Además, 1 restituido de la 2024: tomalo a más tardar el viernes 30/04.', vence: true },
-      { texto: 'Además, 1 por restituir: pedí la restitución antes del viernes 30/04.', vence: true }
+      { texto: 'Además, 1 por restituir: pedí la restitución a más tardar el viernes 30/04.', vence: true }
     ]);
     assert.deepEqual(resumen.vence_pronto.map((cosa) => [cosa.titulo, cosa.texto]), [
       ['1 día restituido de la 2024', 'Vence el viernes 30/04, en 29 días.'],

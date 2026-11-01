@@ -1868,7 +1868,7 @@ describe('los textos de los días restituidos y sus avisos (spec 2026-10-31-mi-e
     filaPerdidos: '2 días por restituir: se perdieron el 30/04/2027.',
     avisoB: 'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones: podés pedir que te restituyan 2 días a tu licencia '
       + '2025. Pedilo con la nota al Director General a más tardar el viernes 30/04/2027. Si no, se pierden.',
-    bajadaB: 'Además, 2 por restituir: pedí la restitución antes del viernes 30/04.',
+    bajadaB: 'Además, 2 por restituir: pedí la restitución a más tardar el viernes 30/04.',
     venceTituloB: '2 días para restituir a la 2025',
     botonB: 'Pedir la restitución',
     filaB: '2 días por restituir a la licencia 2025 (asuetos del 24/12 y el 31/12/2026): pedí la restitución a más tardar el '
@@ -2037,7 +2037,7 @@ describe('los textos de los días restituidos y sus avisos (spec 2026-10-31-mi-e
     assert.deepEqual(bajadaDeRestituciones([GRUPO_A_UNO], VUELVE),
       [{ texto: 'Además, 1 restituido de la 2024: tomalo a más tardar el viernes 30/04.', vence: false }]);
     assert.deepEqual(bajadaDeRestituciones([GRUPO_B_UNO], VUELVE),
-      [{ texto: 'Además, 1 por restituir: pedí la restitución antes del viernes 30/04.', vence: false }]);
+      [{ texto: 'Además, 1 por restituir: pedí la restitución a más tardar el viernes 30/04.', vence: false }]);
   });
 
   it('la oración de la banda con dos licencias: las del caso A juntas, y las del B aparte', () => {
@@ -2056,11 +2056,11 @@ describe('los textos de los días restituidos y sus avisos (spec 2026-10-31-mi-e
     const dosLicencias = con({ saldos: saldosDeVacaciones({ 2024: 12, 2025: 15, 2026: 10 }) });
     assert.deepEqual(bajadaDeRestituciones(gruposDe(dosLicencias), VUELVE), [
       { texto: 'Además, 1 restituido de la 2024: tomalo a más tardar el viernes 30/04.', vence: false },
-      { texto: 'Además, 1 por restituir: pedí la restitución antes del viernes 30/04.', vence: false }
+      { texto: 'Además, 1 por restituir: pedí la restitución a más tardar el viernes 30/04.', vence: false }
     ]);
     // Dos del caso B con el mismo plazo se suman
     assert.deepEqual(bajadaDeRestituciones([GRUPO_B, { ...GRUPO_B_UNO, clave: '1-2026-0', anio: 2026 }], VUELVE),
-      [{ texto: 'Además, 3 por restituir: pedí la restitución antes del viernes 30/04.', vence: false }]);
+      [{ texto: 'Además, 3 por restituir: pedí la restitución a más tardar el viernes 30/04.', vence: false }]);
     // Con otro plazo, otra oración, por plazo (y la del plazo más cercano, en ámbar)
     const deMayo = { ...GRUPO_A, clave: '7-2024-1', licencia_id: 7, tanda: 1, plazo: '2027-05-31' };
     assert.deepEqual(bajadaDeRestituciones([deMayo, GRUPO_A], '2027-04-15'), [
@@ -2069,8 +2069,28 @@ describe('los textos de los días restituidos y sus avisos (spec 2026-10-31-mi-e
     ]);
   });
 
-  it('la oración de la banda: solo lo que está por restituir', () => {
+  it('la oración de la banda: con el plazo en otro año que hoy, la fecha lleva el año', () => {
+    // El 22/12/2026, el día de los asuetos, el plazo es del año siguiente
+    const delAsueto = '2026-12-22';
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(ESTADO, delAsueto), delAsueto), [{
+      texto: 'Además, 2 restituidos de la 2024: empezá a tomarlos a más tardar el viernes 30/04/2027.', vence: false
+    }]);
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(VARIANTE_B, delAsueto), delAsueto), [{
+      texto: 'Además, 2 por restituir: pedí la restitución a más tardar el viernes 30/04/2027.', vence: false
+    }]);
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_A_UNO], delAsueto),
+      [{ texto: 'Además, 1 restituido de la 2024: tomalo a más tardar el viernes 30/04/2027.', vence: false }]);
+    // El 01/04/2027, del mismo año: sin el año
+    const enAbril = '2027-04-01';
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(ESTADO, enAbril), enAbril), [{ texto: T.bajadaA, vence: true }]);
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(VARIANTE_B, enAbril), enAbril), [{ texto: T.bajadaB, vence: true }]);
+  });
+
+  it('la oración de la banda: solo lo que está por restituir, hasta el plazo inclusive', () => {
     assert.deepEqual(bajadaDeRestituciones([GRUPO_CARGADO, GRUPO_PEDIDO, GRUPO_PERDIDO], VUELVE), []);
+    // Un grupo por restituir que ya pasó su plazo (calculado otro día) no va; en el plazo, sí
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_A, GRUPO_B], '2027-05-03'), []);
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_A], '2027-04-30'), [{ texto: T.bajadaA, vence: true }]);
     assert.deepEqual(bajadaDeRestituciones(gruposDe(CARGADA, '2027-04-14'), '2027-04-14'), []);
     assert.deepEqual(bajadaDeRestituciones([], VUELVE), []);
     for (const raro of RAROS) {

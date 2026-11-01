@@ -1643,20 +1643,22 @@ export const textoDeLaFilaDeRestitucion = (grupo, cargada) => {
 export const DIAS_DEL_AVISO_DE_RESTITUCION = 30;
 
 /**
- * Las oraciones de los días por restituir al final de la bajada de la banda (spec, 5 y 9): los grupos por restituir, juntos
- * por caso y plazo, una oración por cada uno, por plazo (con el mismo, primero el caso A), `[{ texto, vence }]`, con `vence`
- * en los últimos 30 días corridos antes del plazo (`DIAS_DEL_AVISO_DE_RESTITUCION`; antes, en el color de la frase). Caso A,
- * con los días de cada licencia (sumados, si son de varias cargas): «Además, 2 restituidos de la 2024: empezá a tomarlos a
- * más tardar el viernes 30/04.» («Además, 2 restituidos de la 2024 y 1 de la 2025: …»; con uno solo, «Además, 1 restituido de
- * la 2024: tomalo a más tardar el viernes 30/04.»). Caso B, con los días de todas: «Además, 2 por restituir: pedí la
- * restitución antes del viernes 30/04.». Los grupos sin un plazo, un caso, unos días enteros positivos o, en A, un año, no
- * van. Sin un hoy válido, [].
+ * Las oraciones de los días por restituir al final de la bajada de la banda (spec, 5 y 9): los grupos por restituir hasta
+ * su plazo inclusive, juntos por caso y plazo, una oración por cada uno, por plazo (con el mismo, primero el caso A),
+ * `[{ texto, vence }]`, con `vence` en los últimos 30 días corridos antes del plazo (`DIAS_DEL_AVISO_DE_RESTITUCION`; antes,
+ * en el color de la frase). Caso A, con los días de cada licencia (sumados, si son de varias cargas): «Además, 2 restituidos
+ * de la 2024: empezá a tomarlos a más tardar el viernes 30/04.» («Además, 2 restituidos de la 2024 y 1 de la 2025: …»; con
+ * uno solo, «Además, 1 restituido de la 2024: tomalo a más tardar el viernes 30/04.»). Caso B, con los días de todas:
+ * «Además, 2 por restituir: pedí la restitución a más tardar el viernes 30/04.» (decisión del usuario, 31/10/2026: «a más
+ * tardar», como el aviso, la fila y el email). Con el plazo en otro año que hoy (el día del asueto, en diciembre), la fecha
+ * lleva el año: «… a más tardar el viernes 30/04/2027.». Los grupos sin un plazo, un caso, unos días enteros positivos o, en
+ * A, un año, no van. Sin un hoy válido, [].
  */
 export const bajadaDeRestituciones = (grupos, hoy) => {
   if (!esFechaIso(hoy)) return [];
   const juntos = new Map();
   for (const grupo of listaDe(grupos)) {
-    if (!tieneCaso(grupo) || grupo.situacion !== 'por_restituir' || !esFechaIso(grupo.plazo)) continue;
+    if (!tieneCaso(grupo) || grupo.situacion !== 'por_restituir' || !esFechaIso(grupo.plazo) || hoy > grupo.plazo) continue;
     const dias = numeroDe(grupo.dias);
     const anio = anioValido(grupo.anio);
     if (!Number.isInteger(dias) || dias < 1 || (grupo.caso === 'tomar' && anio === null)) continue;
@@ -1670,10 +1672,10 @@ export const bajadaDeRestituciones = (grupos, hoy) => {
     .sort((a, b) => compararTexto(a.plazo, b.plazo) || ordenDelCaso(a.caso) - ordenDelCaso(b.caso))
     .map(({ plazo, caso, porAnio }) => {
       const total = [...porAnio.values()].reduce((suma, dias) => suma + dias, 0);
-      const cuando = diaYMesConElDia(plazo);
+      const cuando = anioDe(plazo) === anioDe(hoy) ? diaYMesConElDia(plazo) : diaYFecha(plazo);
       const vence = diasEntre(hoy, plazo) <= DIAS_DEL_AVISO_DE_RESTITUCION;
       if (caso === 'restituir') {
-        return { texto: `Además, ${numeroTexto(total)} por restituir: pedí la restitución antes del ${cuando}.`, vence };
+        return { texto: `Además, ${numeroTexto(total)} por restituir: pedí la restitución a más tardar el ${cuando}.`, vence };
       }
       const deCadaUna = [...porAnio].sort(([a], [b]) => a - b).map(([anio, dias], indice) => (indice === 0
         ? `${numeroTexto(dias)} ${esUna(dias) ? 'restituido' : 'restituidos'} de la ${anio}`
