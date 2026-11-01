@@ -1198,6 +1198,22 @@ describe('los días restituidos: el plazo, el caso, los grupos y las tandas (spe
     assert.equal(revisarDe(borradas),
       'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ya no están cargadas.');
     assert.deepEqual(gruposDe(borradas, hoy)[0].carga, DE_JULIETA);
+    // Las vacaciones pasaron a otro tipo: siguen cargadas, con otro nombre (la carga del pedido es la fila de la base, con su
+    // tipo de hoy); la fila activa manda, también si la del pedido es de antes
+    const aMedica = { ...pedida, licencias: [{ ...VACACIONES_DE_JULIETA, tipo: 'medica' }] };
+    const comoMedica = 'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ahora están cargadas como '
+      + '«Atención médica».';
+    assert.equal(revisarDe(aMedica), comoMedica);
+    assert.equal(revisarDe({ ...aMedica, restituciones: [pedidoDe(10, { licencia: { ...DE_JULIETA, tipo: 'medica', activo: 1 } })] }),
+      comoMedica);
+    // Corregidas también de fechas: las de la fila, como se ven en la lista
+    const otrasFechas = {
+      ...pedida, licencias: [{ ...VACACIONES_DE_JULIETA, tipo: 'familiar', desde: '2026-12-14', hasta: '2026-12-18' }]
+    };
+    assert.equal(revisarDe(otrasFechas),
+      'Revisá tus días restituidos: las vacaciones del 14/12 al 18/12/2026 ahora están cargadas como «Atención del grupo familiar».');
+    // El primer problema, aunque además haya otros
+    assert.equal(revisarDe(aMedica, SIN_FERIADOS), comoMedica);
     // Una fecha quedó fuera de las vacaciones
     const hasta28 = { ...pedida, licencias: [{ ...VACACIONES_DE_JULIETA, hasta: '2026-12-28' }] };
     assert.equal(revisarDe(hasta28), 'Revisá tus días restituidos: tus vacaciones ya no incluyen el 31/12/2026.');
@@ -1388,6 +1404,9 @@ describe('los días restituidos: el plazo, el caso, los grupos y las tandas (spe
     // Con las vacaciones pasadas a otro tipo, lo mismo: ya no es una carga con días restituibles
     const otroTipo = { ...pedida, licencias: [{ ...VACACIONES_DE_JULIETA, tipo: 'medica' }] };
     assert.equal(ordinariasDe(otroTipo, hoy).find((o) => o.anio === 2025).total, 20);
+    // …y el pedido sigue pedido, con el «Revisá…» de las vacaciones que ahora tienen otro tipo
+    assert.deepEqual(gruposDe(otroTipo, hoy).map((otro) => [otro.situacion, otro.revisar]), [['pedida',
+      'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ahora están cargadas como «Atención médica».']]);
     // Con las vacaciones, la mitad sigue (como siempre); el id de la carga, también como texto
     assert.equal(ordinariasDe(pedida, hoy).find((o) => o.anio === 2025).total, 22);
     const conIdDeTexto = { ...pedida, restituciones: [pedidoDe(10, { fecha: '2027-04-01', licencia_id: '1' })] };

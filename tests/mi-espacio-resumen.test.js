@@ -2520,6 +2520,19 @@ describe('el Resumen y la lista de los días restituidos (spec 2026-10-31-mi-esp
     assert.deepEqual(resumenDeJulieta(sinLasVacaciones, MAYO).para_revisar, []);
   });
 
+  it('un pedido del caso B cuyas vacaciones pasaron a otro tipo: el «Revisá…» dice con qué tipo siguen cargadas', () => {
+    // La persona corrigió las vacaciones a «Atención médica» después de pedir la restitución: siguen en la lista, con otro tipo
+    const aMedica = { ...B_PEDIDA, licencias: [{ ...VACACIONES, tipo: 'medica' }] };
+    const revisar = 'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ahora están cargadas como '
+      + '«Atención médica».';
+    assert.deepEqual(resumenDeJulieta(aMedica, ABRIL).para_revisar, [{
+      licencia_id: 1, anio: 2026, texto: revisar, enlace: 'Ver en Licencias de 2026', restitucion_id: 10, puede_borrar: true,
+      anio_de_origen: 2025
+    }]);
+    // Pasado el plazo, como siempre, nada que revisar
+    assert.deepEqual(resumenDeJulieta(aMedica, MAYO).para_revisar, []);
+  });
+
   it('una carga del caso A cuyas vacaciones ya no están: el «Revisá…» lleva a la carga de días restituidos', () => {
     const sinLasVacaciones = { ...CARGADOS, licencias: [CARGA_A] };
     const revisar = 'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ya no están cargadas.';

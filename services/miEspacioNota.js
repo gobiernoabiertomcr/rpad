@@ -228,14 +228,16 @@ const CUERPOS = Object.freeze({
   },
   // La nota A (spec 2026-10-31-mi-espacio-dias-restituidos, 12): los días de la carga, de qué licencia salen y por qué asuetos
   // (`restitucion`, ya controlada). «restituido(s)» concuerda con los días y «el asueto … declarado» o «los asuetos …
-  // declarados», con los asuetos
+  // declarados», con los asuetos, declarados durante la carga de la que salen: «mis vacaciones» o, en la recursión (el asueto
+  // cayó en una carga de días restituidos), «mis días restituidos», como el aviso y el email
   restituidos: ({ dias, restitucion }) => {
     const cantidad = textoDeDias(dias.length);
     if (!cantidad) return null;
     const unAsueto = restitucion.fechas.length === 1;
+    const durante = restitucion.durante === 'restituidos' ? 'mis días restituidos' : 'mis vacaciones';
     return `el usufructo de ${cantidad} de mi licencia anual ordinaria ${restitucion.anio}, `
       + `${dias.length === 1 ? 'restituido' : 'restituidos'} por ${unAsueto ? 'el asueto' : 'los asuetos'} `
-      + `${textoDeLosAsuetos(restitucion.fechas)}, ${unAsueto ? 'declarado' : 'declarados'} durante mis vacaciones, `
+      + `${textoDeLosAsuetos(restitucion.fechas)}, ${unAsueto ? 'declarado' : 'declarados'} durante ${durante}, `
       + `${cuandoEmpieza(dias)}.`;
   }
 });
@@ -252,12 +254,14 @@ const diasDeLaLicencia = ({ tipo, desde, hasta }, feriados, restituibles) => {
   return suyos.length === 0 ? habiles : [...new Set([...habiles, ...suyos])].sort();
 };
 
-// Los asuetos que restituye una carga de días restituidos (`{ anio, fechas }`), controlados: el año de cuatro cifras y al
-// menos una fecha (las demás no van); si no sirven, null
+// Los asuetos que restituye una carga de días restituidos (`{ anio, fechas, durante }`), controlados: el año de cuatro cifras y
+// al menos una fecha (las demás no van); si no sirven, null. `durante`, el tipo de la carga de la que salen los días: 'restituidos'
+// en la recursión; cualquier otro valor, o ninguno, 'vacaciones'
 const restitucionDe = (restitucion) => {
   if (!esObjeto(restitucion) || !esAnioDeLicencia(restitucion.anio)) return null;
   const fechas = fechasDeAsuetos(restitucion.fechas);
-  return fechas.length === 0 ? null : { anio: restitucion.anio, fechas };
+  const durante = restitucion.durante === 'restituidos' ? 'restituidos' : 'vacaciones';
+  return fechas.length === 0 ? null : { anio: restitucion.anio, fechas, durante };
 };
 
 // La firma, de arriba abajo: el nombre, en un contratado el renglón chico del personal contratado (como en las Notas
@@ -294,9 +298,11 @@ const notaCon = ({ fecha, persona, nombre, cuerpo, archivo }) => ({
  * «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 7). Los días restituidos por un asueto (spec
  * 2026-10-31-mi-espacio-dias-restituidos, 12) suman dos opciones: `restituibles`, opcional, los días restituibles de la
  * licencia (los de `restituiblesDe`; sin ellos, ninguno), que en las vacaciones y en los días restituidos cuentan como
- * hábiles (así las vacaciones siguen diciendo los días que se pidieron); y `restitucion` = { anio, fechas }, la licencia de
- * la que salen y los asuetos que restituye, que necesita la carga de los días restituidos (la nota A; sin ella, o con un año
- * o unas fechas que no sirven, `{ error: 'error' }`) y los demás tipos no miran.
+ * hábiles (así las vacaciones siguen diciendo los días que se pidieron); y `restitucion` = { anio, fechas, durante }, la
+ * licencia de la que salen, los asuetos que restituye y el tipo de la carga en la que cayeron (`durante`: 'restituidos' en la
+ * recursión, «declarados durante mis días restituidos»; sin él, o con otro valor, «durante mis vacaciones»), que necesita la
+ * carga de los días restituidos (la nota A; sin ella, o con un año o unas fechas que no sirven, `{ error: 'error' }`) y los
+ * demás tipos no miran.
  * Da `{ nota }`, con `nota` = { fecha, destinatario: [string, string], sd, saludo, cuerpo, cierre, firma: [{ texto, chico }],
  * nombre } (`nombre`, el del archivo: «Nota de licencia - Licencia anual ordinaria - 2026-11-16.docx», con el desde), o
  * `{ error }` con una clave de MENSAJES_NOTA. Nunca tira.

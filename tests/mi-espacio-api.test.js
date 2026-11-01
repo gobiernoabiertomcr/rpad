@@ -3733,15 +3733,17 @@ describe('los días restituidos', () => {
     assert.deepEqual([deLaRecursion.licencia_id, deLaRecursion.anio, deLaRecursion.dias, deLaRecursion.primer_asueto],
       [cargaA, 2024, 1, '2027-04-13']);
     assert.deepEqual(await laFoto(cargaA), [{ fecha: '2027-04-13', tanda: 0, restitucion_id: deLaRecursion.id }]);
-    // La carga de la que sale conserva sus 2 días; la nueva, el suyo, de la 2024
+    // La carga de la que sale conserva sus 2 días; la nueva, el suyo, de la 2024, por un asueto declarado durante los días
+    // restituidos (no durante las vacaciones: la carga de la que sale es la de los días restituidos)
     const nota = await verNota('adminA', cargaB);
     assert.equal(nota.status, 200, JSON.stringify(nota.body));
     assert.ok(nota.body.data.html.includes('el usufructo de un (1) día hábil de mi licencia anual ordinaria 2024, restituido por '
-      + 'el asueto del día martes 13 de abril de 2027, declarado durante mis vacaciones, el día lunes 19 de abril de 2027.'),
+      + 'el asueto del día martes 13 de abril de 2027, declarado durante mis días restituidos, el día lunes 19 de abril de 2027.'),
     nota.body.data.html);
     const deLaA = await verNota('adminA', cargaA);
-    assert.ok(deLaA.body.data.html.includes('el usufructo de dos (2) días hábiles de mi licencia anual ordinaria 2024'),
-      deLaA.body.data.html);
+    assert.ok(deLaA.body.data.html.includes('el usufructo de dos (2) días hábiles de mi licencia anual ordinaria 2024, '
+      + 'restituidos por los asuetos de los días jueves 24 y jueves 31 de diciembre de 2026, declarados durante mis vacaciones,'),
+    deLaA.body.data.html);
   });
 
   it('unos días restituidos que ya pasaron a Configuración y ya empezaron no se mueven (restituidosEmpezados, en desde); '

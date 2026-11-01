@@ -835,6 +835,8 @@ const MENSAJES_FORMULARIOS = Object.freeze({
   // Unos días restituidos que ya empezaron en Configuración: su «Hasta» lo pone Mi espacio, así que no se pueden mover (spec
   // 2026-10-31-mi-espacio-dias-restituidos, 9)
   restituidosEmpezados: 'Ya empezó: los días restituidos no se pueden mover.',
+  // «Cargar los días restituidos» de un grupo que, con el Resumen vuelto a pedir, ya no está por restituir (abrirLicencia)
+  grupoNoPorRestituir: 'Esos días ya no están para restituir.',
   // Los de la planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, secciones 7 y 8)
   horaSalida: 'Escribí la hora como 16:45.',
   salidaQueCuenta: 'Falta la salida: es la que cuenta.',
@@ -4073,11 +4075,13 @@ function conectarFormularios() {
   porId('ml-tipos').addEventListener('change', (evento) => {
     const formulario = pagina.formulario;
     if (evento.target?.name !== 'ml-tipo' || !formulario) return;
+    const antes = formulario.tipo;
     formulario.tipo = evento.target.value;
-    // Unos días restituidos: el grupo de la opción, y el «Hasta» lo vuelve a poner el cálculo
+    // Unos días restituidos: el grupo de la opción, y el «Hasta» lo vuelve a poner el cálculo. Al salir de ellos, el que había
+    // puesto Mi espacio tampoco va con el otro tipo: vacío (entre los demás tipos, el de quien lo escribe queda)
     const restituidos = formulario.tipo === 'restituidos';
     formulario.valores = { ...formulario.valores, grupo: restituidos ? comoTexto(evento.target.dataset?.grupo) : '' };
-    if (restituidos) porId('ml-hasta').value = '';
+    if (restituidos || antes === 'restituidos') porId('ml-hasta').value = '';
     pintarCamposDelTipo();
     programarCalculo();
   });
@@ -4453,11 +4457,32 @@ async function hayResumen() {
 
 // ---- «Cargar licencia» y «Registrar un uso autorizado» ----
 
+// Unos días restituidos nuevos de un grupo que no está entre los `tipos` del Resumen (opcionDelGrupo): el Resumen es de antes del
+// asueto (la persona tenía la página abierta cuando administración lo cargó, y la lista de Licencias, que se vuelve a pedir al abrir
+// la pestaña, ya tiene la línea con su botón). Se vuelve a pedir (y se pinta, como siempre); si no llega, el aviso de siempre, y si
+// el grupo sigue sin estar, ya no está por restituir: se avisa con el mensaje del servidor y el formulario no se abre. true si se
+// puede abrir (si mientras tanto se abrió otro modal, no)
+async function hayElGrupo(grupo) {
+  await cargarResumen();
+  if (pagina.resumen === null) {
+    avisarMiEspacio(MENSAJE_SIN_RESUMEN, 'error');
+    return false;
+  }
+  if (opcionDelGrupo(pagina.resumen.tipos, grupo) === null) {
+    avisarMiEspacio(MENSAJES_FORMULARIOS.grupoNoPorRestituir, 'error');
+    return false;
+  }
+  return pagina.modales.length === 0;
+}
+
 // Abre «Cargar licencia»: nueva (con el `tipo` de «Vence pronto» y, unos días restituidos, con su `grupo`: el del aviso, «Vence
-// pronto» o la línea de la fila) o la corrección de una fila de la lista. El uso autorizado tiene su formulario. Sin el saldo inicial
-// no se puede cargar nada: abre «Mis vacaciones y saldos»
+// pronto» o la línea de la fila; si el grupo no está entre los tipos del Resumen, antes lo vuelve a pedir: hayElGrupo) o la
+// corrección de una fila de la lista. El uso autorizado tiene su formulario. Sin el saldo inicial no se puede cargar nada: abre
+// «Mis vacaciones y saldos»
 async function abrirLicencia({ fila = null, tipo = null, grupo = null, volverA = null } = {}) {
   if (pagina.resumen === null && !(await hayResumen())) return;
+  if (!fila && tipo === 'restituidos' && conTexto(grupo) && opcionDelGrupo(pagina.resumen?.tipos, grupo) === null
+    && !(await hayElGrupo(grupo))) return;
   if (pagina.resumen?.abrir_saldos === true) {
     abrirSaldos(volverA);
     return;

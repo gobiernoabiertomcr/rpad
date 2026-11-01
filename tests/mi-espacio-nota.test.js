@@ -549,6 +549,22 @@ describe('notaDeLicencia: los días restituidos (la nota A)', () => {
       assert.equal(restituidos(LOS_RESTITUIDOS, { feriados, restituibles: ['2027-04-13'] }).nota.cuerpo, CUERPO_A);
     });
 
+  it('la recursión: los días que se toman de un asueto que cayó en unos días restituidos, «declarado(s) durante mis días '
+    + 'restituidos» (`durante`, el tipo de la carga de la que salen)', () => {
+    const deLosRestituidos = { anio: 2024, fechas: ['2027-04-13'], durante: 'restituidos' };
+    const unDia = restituidos({ ...LOS_RESTITUIDOS, desde: '2027-04-19', hasta: '2027-04-19' }, { restitucion: deLosRestituidos });
+    assert.equal(unDia.nota.cuerpo,
+      `${PIDO}el usufructo de un (1) día hábil de mi licencia anual ordinaria 2024, restituido por el asueto del día martes 13 de abril de 2027, declarado durante mis días restituidos, el día lunes 19 de abril de 2027.`);
+    const dosDias = restituidos({ ...LOS_RESTITUIDOS, desde: '2027-04-19', hasta: '2027-04-20' },
+      { restitucion: { ...deLosRestituidos, fechas: ['2027-04-13', '2027-04-14'] } });
+    assert.equal(dosDias.nota.cuerpo,
+      `${PIDO}el usufructo de dos (2) días hábiles de mi licencia anual ordinaria 2024, restituidos por los asuetos de los días martes 13 y miércoles 14 de abril de 2027, declarados durante mis días restituidos, a partir del día lunes 19 de abril de 2027.`);
+    // «vacaciones» o sin el dato, o con otro valor, como siempre: «durante mis vacaciones»
+    for (const durante of ['vacaciones', undefined, null, 'medica', 'x', 3]) {
+      assert.equal(restituidos(LOS_RESTITUIDOS, { restitucion: { ...DE_LA_2024, durante } }).nota.cuerpo, CUERPO_A, String(durante));
+    }
+  });
+
   it('sin ningún día hábil ni restituible: sin nota, con su error', () => {
     assert.deepEqual(restituidos(LOS_RESTITUIDOS, { feriados: new Set(['2027-04-12', '2027-04-13']) }),
       { error: 'sinDiasHabiles' });

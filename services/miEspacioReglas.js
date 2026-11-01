@@ -727,11 +727,15 @@ export const fechasDeLosAsuetos = (fechas, opciones) => {
 };
 
 // Los «Revisá…» de un grupo ya pedido (spec 2026-10-31-mi-espacio-dias-restituidos, 4): la carga de la que sale (unas
-// vacaciones o, en la recursión, unos días restituidos) ya no está, ya no incluye alguno de sus días o alguno volvió a ser
-// hábil (el asueto se dio de baja, o ese año no rige)
+// vacaciones o, en la recursión, unos días restituidos) ya no está —o, unas vacaciones, siguen cargadas con otro tipo—, ya no
+// incluye alguno de sus días o alguno volvió a ser hábil (el asueto se dio de baja, o ese año no rige)
 const textoDeLaCargaQueNoEsta = (carga) => (carga.tipo === 'restituidos'
   ? `Revisá tus días restituidos: los días restituidos ${fechasDeLaCarga(carga.desde, carga.hasta)} ya no están cargados.`
   : `Revisá tus días restituidos: las vacaciones ${fechasDeLaCarga(carga.desde, carga.hasta)} ya no están cargadas.`);
+// Unas vacaciones corregidas a otro tipo (unos días restituidos nunca cambian de tipo, ni una licencia pasa a serlo): la fila
+// activa, con sus fechas de hoy, como se ve en la lista
+const textoDeLaCargaDeOtroTipo = (fila) => `Revisá tus días restituidos: las vacaciones ${fechasDeLaCarga(fila.desde, fila.hasta)} `
+  + `ahora están cargadas como «${NOMBRES_TIPO[fila.tipo]}».`;
 const textoDeLosDiasQueYaNoIncluye = (carga, fechas) => `Revisá tus días restituidos: `
   + `${carga.tipo === 'restituidos' ? 'tus días restituidos' : 'tus vacaciones'} ya no incluyen el `
   + `${fechasDeLosAsuetos(fechas, { conMes: true })}.`;
@@ -739,10 +743,15 @@ const textoDeLosAsuetosDadosDeBaja = (fechas) => (fechas.length === 1
   ? `Revisá tus días restituidos: el asueto del ${fechasDeLosAsuetos(fechas, { conMes: true })} se dio de baja.`
   : `Revisá tus días restituidos: los asuetos del ${fechasDeLosAsuetos(fechas, { conMes: true })} se dieron de baja.`);
 
-// El «Revisá…» de un pedido, el primer problema en este orden, o '': su carga (`suya`, la fila activa, o undefined) ya no está,
-// alguna de sus fechas quedó fuera de ella o volvió a ser hábil con los feriados de hoy
-const revisarDelPedido = (suya, carga, fechas, feriados) => {
-  if (suya === undefined) return textoDeLaCargaQueNoEsta(carga);
+// El «Revisá…» de un pedido, el primer problema en este orden, o '': su carga (`suya`, la fila activa con días restituibles, o
+// undefined) ya no está —si sigue activa con otro tipo (`activa`, la fila activa con ese id, de cualquier tipo), lo dice—, alguna
+// de sus fechas quedó fuera de ella o volvió a ser hábil con los feriados de hoy
+const revisarDelPedido = (suya, activa, carga, fechas, feriados) => {
+  if (suya === undefined) {
+    const deOtroTipo = esObjeto(activa) && Object.hasOwn(NOMBRES_TIPO, activa.tipo) && !TIPOS_CON_RESTITUIBLES.includes(activa.tipo)
+      && esFechaIso(activa.desde) && esFechaIso(activa.hasta);
+    return deOtroTipo ? textoDeLaCargaDeOtroTipo(activa) : textoDeLaCargaQueNoEsta(carga);
+  }
   const fuera = fechas.filter((fecha) => fecha < suya.desde || fecha > suya.hasta);
   if (fuera.length > 0) return textoDeLosDiasQueYaNoIncluye(carga, fuera);
   const habiles = fechas.filter((fecha) => esDiaHabilCon(fecha, feriados));
@@ -779,7 +788,9 @@ const cargaDelGrupo = (fila) => ({
  * - Pedida o cargada: cada pedido activo (salvo el suelto): 'pedida' (caso 'restituir') o 'cargada' (caso 'tomar', con su
  *   carga en `carga_id`), con las fechas de sus filas, sus `dias`, `primer_asueto`, `tanda`, `anio` y `fecha` (en
  *   `fecha_pedido`) guardados, y el plazo recalculado. `revisar` es el primer problema, en este orden, o '': la carga de la que
- *   sale ya no está («… las vacaciones del 11/12/2026 al 08/01/2027 ya no están cargadas.»; la carga sale del pedido), alguna
+ *   sale ya no está («… las vacaciones del 11/12/2026 al 08/01/2027 ya no están cargadas.»; la carga sale del pedido; unas
+ *   vacaciones corregidas a otro tipo siguen cargadas, y lo dice con las fechas de la fila: «… las vacaciones del 11/12/2026 al
+ *   08/01/2027 ahora están cargadas como «Atención médica».»), alguna
  *   fecha quedó fuera de sus fechas («… tus vacaciones ya no incluyen el 31/12/2026.») o volvió a ser hábil («… el asueto del
  *   24/12/2026 se dio de baja.»). Un pedido B que ya pasó su plazo no lleva `revisar`: no se puede borrar, así que no hay
  *   nada que resolver (una carga A, sí: se puede corregir o borrar siempre). Queda como está: nada se recalcula solo.
@@ -876,7 +887,7 @@ export const restitucionesDe = (estado, opciones) => {
     const plazo = plazoDeRestitucion(primer, feriados);
     // Un pedido B que ya pasó su plazo no se puede borrar: no hay nada que revisar
     const yaNoSeBorra = pedido.caso === 'restituir' && esFechaIso(plazo) && hoy > plazo;
-    const revisar = yaNoSeBorra ? '' : revisarDelPedido(suya, carga, fechas, feriados);
+    const revisar = yaNoSeBorra ? '' : revisarDelPedido(suya, activas.get(id), carga, fechas, feriados);
     const dias = numeroDe(pedido.dias);
     grupos.push({
       clave: `${id}-${anio}-${tanda}`, licencia_id: id, anio, tanda, caso: pedido.caso,

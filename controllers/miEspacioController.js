@@ -464,12 +464,16 @@ const fechasDelPedido = (estado, pedidoId) => [...new Set(estado.restituibles
   .filter((fila) => fila.restitucion_id === pedidoId).map((fila) => fila.fecha))].sort();
 
 // Los asuetos que restituye una carga de días restituidos, para su nota (la nota A: spec 2026-10-31-mi-espacio-dias-restituidos,
-// 12): `{ anio, fechas }`, del pedido guardado (el activo del caso A con esa carga) y de las filas de la foto que sostiene. No
-// sale de los grupos de `calcular`, que sin modalidad no se arman: la nota no depende de la modalidad. Sin pedido (no pasa: la
-// carga y su pedido se dan de baja juntos), null, y la nota no se arma
+// 12): `{ anio, fechas, durante }`, del pedido guardado (el activo del caso A con esa carga) y de las filas de la foto que
+// sostiene; `durante`, el tipo de la carga de la que salen sus días (la del pedido, `licencia`): 'restituidos' en la recursión
+// (el asueto cayó en otra carga de días restituidos) y si no 'vacaciones'. No sale de los grupos de `calcular`, que sin
+// modalidad no se arman: la nota no depende de la modalidad. Sin pedido (no pasa: la carga y su pedido se dan de baja juntos),
+// null, y la nota no se arma
 const restitucionDeLaCarga = (estado, cargaId) => {
   const pedido = estado.restituciones.find((otro) => otro.activo === 1 && otro.caso === 'tomar' && otro.carga_id === cargaId);
-  return pedido === undefined ? null : { anio: pedido.anio, fechas: fechasDelPedido(estado, pedido.id) };
+  if (pedido === undefined) return null;
+  const durante = pedido.licencia?.tipo === 'restituidos' ? 'restituidos' : 'vacaciones';
+  return { anio: pedido.anio, fechas: fechasDelPedido(estado, pedido.id), durante };
 };
 
 /**
