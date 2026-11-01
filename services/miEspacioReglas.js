@@ -1768,13 +1768,16 @@ export const recuadroDeLaRestitucion = (grupo) => {
 };
 
 // Lo que dice el servidor al pedir una restitución, «Restitución pedida: los 2 días volvieron a tu licencia 2025.» («el día
-// volvió»; lo que no es un grupo con su caso, ''), y al borrar el pedido
+// volvió»; lo que no es un grupo con su caso, ''), y al borrar el pedido: si sus días vuelven a estar por restituir (sus
+// vacaciones siguen cargadas y algún día sigue restituible), el primero; si no (las vacaciones ya no están, o los asuetos se
+// dieron de baja), el segundo, sin prometer nada
 export const mensajeDeLaRestitucionPedida = (grupo) => {
   if (!tieneCaso(grupo)) return '';
   const volvieron = esUna(grupo.dias) ? 'el día volvió' : `los ${numeroTexto(grupo.dias)} días volvieron`;
   return `Restitución pedida: ${volvieron} a tu licencia ${anioTexto(grupo.anio)}.`;
 };
 export const MENSAJE_RESTITUCION_BORRADA = 'Pedido de restitución borrado: los días vuelven a estar por restituir.';
+export const MENSAJE_RESTITUCION_BORRADA_SIN_DIAS = 'Pedido de restitución borrado.';
 
 // Las horas extras (spec, 3.5 a 3.7): se cargan con el día y el horario, de a media hora, y cuentan enteras en el día en que
 // empezaron, también si pasan la medianoche. En planta, cada 7 horas de un mes dan un franco compensatorio para usar dos

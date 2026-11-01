@@ -39,7 +39,7 @@ import {
   grupoDeLaRestitucion, TIPOS_CON_RESTITUIBLES,
   textoDelAvisoDeRestitucion, textoDelBotonDeRestitucion, textoDeLaFilaDeRestitucion, bajadaDeRestituciones,
   tituloDeRestitucionQueVence, partesDelEmailDeRestitucion, recuadroDeLaRestitucion, mensajeDeLaRestitucionPedida,
-  MENSAJE_RESTITUCION_BORRADA
+  MENSAJE_RESTITUCION_BORRADA, MENSAJE_RESTITUCION_BORRADA_SIN_DIAS
 } from '../services/miEspacioReglas.js';
 import { feriadosDelRango, calendarioCon } from '../services/feriadosReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
@@ -2223,6 +2223,8 @@ describe('los textos de los días restituidos y sus avisos (spec 2026-10-31-mi-e
     assert.equal(mensajeDeLaRestitucionPedida(GRUPO_B), 'Restitución pedida: los 2 días volvieron a tu licencia 2025.');
     assert.equal(mensajeDeLaRestitucionPedida(GRUPO_B_UNO), 'Restitución pedida: el día volvió a tu licencia 2025.');
     assert.equal(MENSAJE_RESTITUCION_BORRADA, 'Pedido de restitución borrado: los días vuelven a estar por restituir.');
+    // Si los días no vuelven a estar por restituir (las vacaciones ya no están o los asuetos se dieron de baja), sin prometerlo
+    assert.equal(MENSAJE_RESTITUCION_BORRADA_SIN_DIAS, 'Pedido de restitución borrado.');
   });
 
   it('ningún texto habla de tardanza, demora ni reproches', () => {
@@ -2233,7 +2235,8 @@ describe('los textos de los días restituidos y sus avisos (spec 2026-10-31-mi-e
         ...Object.values(recuadroDeLaRestitucion(grupo)), mensajeDeLaRestitucionPedida(grupo)
       ]),
       ...[GRUPO_CARGADO, GRUPO_PEDIDO, GRUPO_PERDIDO].map((grupo) => textoDeLaFilaDeRestitucion(grupo, CARGA_A)),
-      ...bajadaDeRestituciones([GRUPO_A, GRUPO_B], VUELVE).map(({ texto }) => texto), MENSAJE_RESTITUCION_BORRADA
+      ...bajadaDeRestituciones([GRUPO_A, GRUPO_B], VUELVE).map(({ texto }) => texto), MENSAJE_RESTITUCION_BORRADA,
+      MENSAJE_RESTITUCION_BORRADA_SIN_DIAS
     ];
     for (const texto of textos) {
       assert.ok(texto.length > 0);

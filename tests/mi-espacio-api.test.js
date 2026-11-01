@@ -4122,11 +4122,133 @@ describe('los días restituidos', () => {
         assert.equal(sinModalidad.body.data.hecho, '');
         assert.ok(sinModalidad.body.data.html.includes(CUERPO_B), sinModalidad.body.data.html);
         assert.ok((await textoDelWord((await bajarWordDelPedido('adminA', id)).body)).includes(CUERPO_B));
+        // Las vacaciones ya no están: los días no vuelven a estar por restituir, y el mensaje no lo promete
         const borrar = await borrarPedidoEl(ABRIL, id);
         assert.equal(borrar.status, 200, JSON.stringify(borrar.body));
+        assert.deepEqual(borrar.body, { success: true, message: 'Pedido de restitución borrado.' });
         assert.deepEqual((await losPedidos()).map((pedido) => pedido.activo), [0]);
       } finally {
         await query('UPDATE usuarios SET vinculo = ? WHERE id = ?', ['planta_permanente', usuarios.adminA.id]);
+      }
+    });
+
+    it('el mensaje del borrado dice que los días vuelven a estar por restituir solo si es así: con un asueto dado de baja, '
+      + 'el otro sigue; con los dos dados de baja, no', async () => {
+      const vacaciones = await conVacaciones('adminA', 'B');
+      await conLosAsuetos();
+      const darDeBaja = async (fecha) => {
+        const [{ id }] = await query("SELECT id FROM feriados WHERE fecha = ? AND activo = 1", [fecha]);
+        const res = await api.delete(`/feriados/${id}`, como('adminB'));
+        assert.equal(res.status, 200, JSON.stringify(res.body));
+      };
+      const primero = await pedirEl(ABRIL, deLa2025(vacaciones));
+      assert.equal(primero.status, 201, JSON.stringify(primero.body));
+
+      // Sin el asueto del 31/12, el 24/12 sigue restituible: vuelve a estar por restituir
+      await darDeBaja('2026-12-31');
+      const conUno = await borrarPedidoEl(ABRIL, primero.body.data.id);
+      assert.equal(conUno.status, 200, JSON.stringify(conUno.body));
+      assert.deepEqual(conUno.body,
+        { success: true, message: 'Pedido de restitución borrado: los días vuelven a estar por restituir.' });
+      assert.deepEqual((await losGrupos('adminA', ABRIL)).map(resumenDelGrupo),
+        [{ ...porRestituirB(vacaciones), dias: 1, fechas: ['2026-12-24'] }]);
+
+      // Sin los dos, nada vuelve a estar por restituir
+      const segundo = await pedirEl(ABRIL, deLa2025(vacaciones));
+      assert.equal(segundo.status, 201, JSON.stringify(segundo.body));
+      await darDeBaja('2026-12-24');
+      const sinNinguno = await borrarPedidoEl(ABRIL, segundo.body.data.id);
+      assert.equal(sinNinguno.status, 200, JSON.stringify(sinNinguno.body));
+      assert.deepEqual(sinNinguno.body, { success: true, message: 'Pedido de restitución borrado.' });
+      assert.deepEqual(await losGrupos('adminA', ABRIL), []);
+      assert.deepEqual((await losPedidos()).map((pedido) => pedido.activo), [0, 0]);
+    });
+
+    it('el mismo día del plazo se pide y se borra (201 y 200); el día hábil siguiente, no (400 y 409)', async () => {
+      const vacaciones = await conVacaciones('adminA', 'B');
+      const deB = await conVacaciones('adminB', 'B');
+      await conLosAsuetos();
+      const pedido = await pedirEl(PLAZO, deLa2025(vacaciones));
+      assert.equal(pedido.status, 201, JSON.stringify(pedido.body));
+      assert.deepEqual((await losPedidos()).map((cada) => [cada.fecha, cada.activo]), [[PLAZO, 1]]);
+      const borrar = await borrarPedidoEl(PLAZO, pedido.body.data.id);
+      assert.equal(borrar.status, 200, JSON.stringify(borrar.body));
+      assert.equal(borrar.body.message, 'Pedido de restitución borrado: los días vuelven a estar por restituir.');
+
+      // Pedido otra vez el día del plazo, el día hábil siguiente ya no se borra
+      const otra = await pedirEl(PLAZO, deLa2025(vacaciones));
+      assert.equal(otra.status, 201, JSON.stringify(otra.body));
+      const tarde = await borrarPedidoEl(DESPUES_DEL_PLAZO, otra.body.data.id);
+      assert.deepEqual([tarde.status, tarde.body], [409, rechazo(MENSAJES_MI_ESPACIO.restitucionVencida, null)]);
+      assert.deepEqual((await losPedidos()).map((cada) => cada.activo), [0, 1]);
+      // Y sin pedir a tiempo, el día hábil siguiente los días están perdidos: ni la vista ni el pedido
+      for (const accion of [verVistaEl, pedirEl]) {
+        const res = await accion(DESPUES_DEL_PLAZO, deLa2025(deB), { clave: 'adminB' });
+        assert.deepEqual([res.status, res.body], [400, rechazo(MENSAJES_MI_ESPACIO.grupoNoPorRestituir, null)]);
+      }
+      assert.deepEqual(await losPedidos('adminB'), []);
+    });
+
+    it('volver a pedir después de borrar: la tanda sellada se conserva (el pedido nuevo, con la misma tanda y el mismo plazo) y '
+      + 'la cuenta de pedidos incluye el dado de baja (un asueto que llega después arma la tanda siguiente)', async () => {
+      const vacaciones = await conVacaciones('adminA', 'B');
+      await conLosAsuetos();
+      const primero = await pedirEl(ABRIL, deLa2025(vacaciones));
+      assert.equal(primero.status, 201, JSON.stringify(primero.body));
+      const borrar = await borrarPedidoEl(ABRIL, primero.body.data.id);
+      assert.equal(borrar.status, 200, JSON.stringify(borrar.body));
+      assert.deepEqual(await laFoto(vacaciones), abierta(null, 0));
+
+      // Un asueto el jueves 07/01/2027, después del primer pedido: su tanda es la 1 (cuenta el pedido dado de baja), con su plazo
+      const res = await api.post('/feriados', { fecha: '2027-01-07', nombre: 'Asueto', tipo: 'no_laborable', se_repite: false },
+        como('adminB'));
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      const deLaTanda1 = {
+        ...porRestituirB(vacaciones), clave: `${vacaciones}-2025-1`, dias: 1, fechas: ['2027-01-07'], plazo: '2027-05-31'
+      };
+      assert.deepEqual((await losGrupos('adminA', ABRIL)).map(resumenDelGrupo), [porRestituirB(vacaciones), deLaTanda1]);
+
+      // Se vuelve a pedir la tanda 0: la misma tanda, el mismo primer asueto y el mismo plazo; el asueto nuevo queda sellado
+      // en la tanda 1, sin pedido
+      const segundo = await pedirEl(ABRIL, deLa2025(vacaciones));
+      assert.equal(segundo.status, 201, JSON.stringify(segundo.body));
+      const { id } = segundo.body.data;
+      assert.deepEqual((await losPedidos()).map((pedido) => [pedido.id, pedido.tanda, pedido.primer_asueto, pedido.dias,
+        pedido.activo]), [[primero.body.data.id, 0, '2026-12-24', 2, 0], [id, 0, '2026-12-24', 2, 1]]);
+      assert.deepEqual(await laFoto(vacaciones), [
+        ...abierta(id, 0), { fecha: '2027-01-07', tanda: 1, restitucion_id: null }
+      ]);
+      assert.deepEqual((await losGrupos('adminA', ABRIL)).map(resumenDelGrupo),
+        [{ ...porRestituirB(vacaciones), situacion: 'pedida', restitucion_id: id }, deLaTanda1]);
+    });
+
+    it('firmaDe: la firma de la persona (null con un id que no sirve o que no existe); un vínculo de contrato da su renglón en '
+      + 'la nota B', async () => {
+      for (const raro of [undefined, null, '', 'abc', 0, -1, 1.5, '1.5', 999999]) {
+        assert.equal(await datos.firmaDe(raro), null, JSON.stringify(raro));
+      }
+      const [guardada] = await query('SELECT cargo, vinculo FROM usuarios WHERE id = ?', [usuarios.adminA.id]);
+      assert.deepEqual(await datos.firmaDe(usuarios.adminA.id),
+        { nombre: PERSONAS.adminA[1], cargo: guardada.cargo ?? null, vinculo: 'planta_permanente' });
+      assert.deepEqual(await datos.firmaDe(String(usuarios.adminA.id)), await datos.firmaDe(usuarios.adminA.id));
+
+      const vacaciones = await conVacaciones('adminA', 'B');
+      await conLosAsuetos();
+      const { body } = await pedirEl(ABRIL, deLa2025(vacaciones));
+      await query('UPDATE usuarios SET vinculo = ?, cargo = ? WHERE id = ?', ['contrato', 'Analista de Datos', usuarios.adminA.id]);
+      try {
+        assert.deepEqual(await datos.firmaDe(usuarios.adminA.id),
+          { nombre: PERSONAS.adminA[1], cargo: 'Analista de Datos', vinculo: 'contrato' });
+        const nota = await verNotaDelPedidoEl(ABRIL, body.data.id);
+        assert.equal(nota.status, 200, JSON.stringify(nota.body));
+        const firma = '<div class="firma"><p>______________________________</p>'
+          + `<p>${PERSONAS.adminA[1]}</p><p class="chico">Personal contratado, cumpliendo funciones de</p><p>Analista de Datos</p>`;
+        assert.ok(nota.body.data.html.includes(firma), nota.body.data.html);
+        assert.ok((await textoDelWord((await bajarWordDelPedido('adminA', body.data.id)).body))
+          .includes('Personal contratado, cumpliendo funciones de'));
+      } finally {
+        await query('UPDATE usuarios SET vinculo = ?, cargo = ? WHERE id = ?',
+          ['planta_permanente', guardada.cargo, usuarios.adminA.id]);
       }
     });
   });

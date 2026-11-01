@@ -28,7 +28,7 @@ import {
   evaluarLicencia, validarHorasExtras, validarSalida, mesDeLaPlanilla, validarAnio, validarSaldoInicial, modalidadDe,
   ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, nombreCorto, dejaPersonaACargo, grupoDeLosRestituidos,
   restituiblesDe, grupoDeLaRestitucion, plazoDeRestitucion, recuadroDeLaRestitucion, mensajeDeLaRestitucionPedida,
-  MENSAJE_RESTITUCION_BORRADA
+  MENSAJE_RESTITUCION_BORRADA, MENSAJE_RESTITUCION_BORRADA_SIN_DIAS
 } from '../services/miEspacioReglas.js';
 import {
   resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe, textoDeLaListaDe,
@@ -616,7 +616,10 @@ export const pedirRestitucion = (req, res) => responder(res, 'Error al pedir la 
 
 // DELETE /api/mi-espacio/restituciones/:id: borra un pedido del caso B de la persona hasta su plazo (el de su primer asueto,
 // con los feriados de hoy), en una transacción que bloquea primero la fila de la persona: lo da de baja y deja sus días otra
-// vez por restituir, con su tanda y su plazo de siempre (`soltarPedido`). Después del plazo, 409 (decisión 15 de la spec)
+// vez por restituir, con su tanda y su plazo de siempre (`soltarPedido`). Después del plazo, 409 (decisión 15 de la spec). El
+// mensaje dice que los días vuelven a estar por restituir solo si es así: sus vacaciones siguen cargadas y algún día del
+// pedido sigue restituible (`restituiblesDe`); si no (las vacaciones ya no están, o los asuetos se dieron de baja), solo que
+// se borró
 export const borrarRestitucion = (req, res) => responder(res, 'Error al borrar el pedido de restitución', async () => {
   const id = idPositivo(req.params.id);
   if (id === null) return restitucionNoEncontrada();
@@ -632,19 +635,25 @@ export const borrarRestitucion = (req, res) => responder(res, 'Error al borrar e
       return rechazoDeLaCarga({ status: 409, campo: null, mensaje: MENSAJES_MI_ESPACIO.restitucionVencida });
     }
     await soltarPedido(conexion, id);
-    return [200, { success: true, message: MENSAJE_RESTITUCION_BORRADA }];
+    // Las fechas del pedido, del estado leído antes de soltarlo (después sus filas ya no tienen su `restitucion_id`)
+    const carga = estado.licencias.find((fila) => fila.id === pedido.licencia_id);
+    const restituibles = carga === undefined ? [] : restituiblesDe(carga, estado, feriados);
+    const vuelven = fechasDelPedido(estado, id).some((fecha) => restituibles.includes(fecha));
+    return [200, { success: true, message: vuelven ? MENSAJE_RESTITUCION_BORRADA : MENSAJE_RESTITUCION_BORRADA_SIN_DIAS }];
   });
 });
 
 /**
  * Lo que comparten las dos rutas de la nota de un pedido: `{ rechazo }` con el [status, cuerpo] del 404, o `{ nota, pedido,
  * contexto }`. La nota B lleva la fecha del pedido (el día en que se pidió) y sus asuetos son las fechas de las filas de la
- * foto que sostiene; se apoya en el pedido guardado, así sale también sin modalidad o con sus vacaciones ya borradas.
+ * foto que sostiene; se apoya en el pedido guardado, así sale también sin modalidad o con sus vacaciones ya borradas. Con
+ * `hoy`, `contexto` es el de `contextoDe` (con el cálculo, para lo que queda hoy); sin él, solo `{ estado }` (el Word: la nota
+ * B no cuenta días, así que no necesita el cálculo, los feriados ni la administración).
  */
-const leerLaNotaDelPedido = async (usuarioId, pedidoId, hoy) => {
+const leerLaNotaDelPedido = async (usuarioId, pedidoId, { hoy = null } = {}) => {
   const id = idPositivo(pedidoId);
   if (id === null) return { rechazo: restitucionNoEncontrada() };
-  const contexto = await contextoDe(usuarioId, hoy);
+  const contexto = hoy === null ? { estado: await estadoDe(usuarioId) } : await contextoDe(usuarioId, hoy);
   const pedido = pedidoDeRestitucion(contexto.estado, id);
   if (!pedido) return { rechazo: restitucionNoEncontrada() };
   const fechas = fechasDelPedido(contexto.estado, id);
@@ -658,7 +667,7 @@ const leerLaNotaDelPedido = async (usuarioId, pedidoId, hoy) => {
 // (`vacaciones`, `{ tipo_nombre, fechas_texto }`, como en la lista)
 export const verNotaDeRestitucion = (req, res) => responder(res, MENSAJES_NOTA.error, async () => {
   const hoy = hoyArgentina();
-  const { rechazo, nota, pedido, contexto } = await leerLaNotaDelPedido(req.user.userId, req.params.id, hoy);
+  const { rechazo, nota, pedido, contexto } = await leerLaNotaDelPedido(req.user.userId, req.params.id, { hoy });
   if (rechazo) return rechazo;
   const { estado, calculo } = contexto;
   return conDatos({
@@ -674,7 +683,7 @@ export const verNotaDeRestitucion = (req, res) => responder(res, MENSAJES_NOTA.e
 // errores van en JSON, como en las demás rutas; el 500, con el mensaje fijo y la pila solo en la consola, como `responder`
 export const bajarWordDeRestitucion = async (req, res) => {
   try {
-    const { rechazo, nota } = await leerLaNotaDelPedido(req.user.userId, req.params.id, hoyArgentina());
+    const { rechazo, nota } = await leerLaNotaDelPedido(req.user.userId, req.params.id);
     if (rechazo) {
       const [status, cuerpo] = rechazo;
       res.status(status).json(cuerpo);

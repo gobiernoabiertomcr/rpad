@@ -97,6 +97,11 @@ export const acomodarLaFotoDelFeriado = async (conexion, feriado, filas) => {
  * no sirven, tira (TypeError) sin escribir nada; si no enlaza todas las fechas del grupo (otro pedido tomó alguna: quien llama no
  * bloqueó o no volvió a leer el grupo), tira después de escribir, para que quien llama deshaga la transacción: un pedido nunca
  * queda con menos días de los que dice.
+ * Se sellan todas las filas abiertas de la carga, no solo las del grupo, a propósito: si se sellaran solo las del grupo, los
+ * días de otra licencia de origen de la misma tanda pasarían a la tanda siguiente y perderían el plazo del primer asueto
+ * (decisión 11 de la spec: si se pide la 2024, la 2025 conserva el plazo). Límite sabido: si administración carga un asueto en
+ * el mismo instante en que alguien pide (la foto se confirma entre la lectura de los grupos y el sellado), el sellado mete esa
+ * foto en la tanda del pedido, que comparte el plazo del primer asueto, en lugar de armar una tanda nueva con el suyo.
  * @returns {Promise<number>}
  */
 export const registrarPedido = async (conexion, { usuarioId, grupo, caso, cargaId = null, hoy }) => {
