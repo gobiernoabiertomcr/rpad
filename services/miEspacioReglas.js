@@ -6,7 +6,8 @@
  * Set de los feriados del rango) y se recalcula cada vez: un feriado nuevo corrige lo ya cargado, salvo los días que restituye
  * en unas vacaciones (abajo).
  *
- * El `Estado` es lo que cargó la persona, solo las filas activas:
+ * El `Estado` es lo que cargó la persona, solo las filas activas (salvo la foto y los pedidos de los días restituidos, activos
+ * o no):
  * `{ modalidad: 'planta' | 'contrato' | null, arranque: 'AAAA-MM-DD' | null, anios: [{ anio, dias_vacaciones, estudios }],
  * saldos: [{ concepto, anio, cantidad }], licencias: [{ id, tipo, desde, hasta, horas }], horasExtras: [{ id, fecha, desde,
  * hasta }], salidas: [{ id, fecha, entrada, salida, nota }] }`. `arranque` es el día en que cargó su saldo inicial: en los

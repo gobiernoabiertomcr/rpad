@@ -9,6 +9,9 @@
 -- espacio»): si alguna no tiene que seguir, se anula desde Configuración. Los usuarios y el resto de los datos no se tocan.
 -- Si también se deshacen las licencias y las firmas (rollback-licencias-firmas.sql), esto va antes: mi_espacio_licencias
 -- apunta a usuarios_licencias y, sin borrarla primero, aquel rollback no puede borrar esa tabla.
+-- Mientras esté migracion-mi-espacio-restituciones.sql, correr antes rollback-mi-espacio-restituciones.sql: los pedidos y
+-- la foto de los días restituidos apuntan a mi_espacio_licencias y, sin borrarlos primero, esto borra los avisos y las
+-- horas extras, falla en mi_espacio_licencias y deja la base a medias.
 -- Borra las seis en el orden inverso al de la migración.
 -- Se puede volver a correr: lo que ya no existe se saltea.
 -- =====================================================

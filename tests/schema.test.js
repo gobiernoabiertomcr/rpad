@@ -1729,6 +1729,8 @@ describe('migracion-feriados.sql', () => {
     assert.match(cabecera(ROLLBACK), /se pierden/i);
     // Lo que se pierde, dicho con su nombre (no alcanza con el del archivo)
     assert.match(cabecera(ROLLBACK), /los feriados cargados/);
+    // Mientras estén los días restituidos, su vuelta atrás va antes (la foto apunta a feriados)
+    assert.match(cabecera(ROLLBACK), /correr antes rollback-mi-espacio-restituciones\.sql/);
     assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
   });
 
@@ -2082,6 +2084,8 @@ describe('migracion-mi-espacio.sql', () => {
     assert.match(cabecera(ROLLBACK), /primero volver a subir los archivos anteriores/);
     assert.match(cabecera(ROLLBACK), /se pierden/i);
     assert.match(cabecera(ROLLBACK), /Las licencias que pasaron a Configuración → Licencias quedan allí/);
+    // Mientras estén los días restituidos, su vuelta atrás va antes (los pedidos y la foto apuntan a mi_espacio_licencias)
+    assert.match(cabecera(ROLLBACK), /correr antes rollback-mi-espacio-restituciones\.sql/);
     assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
   });
 
@@ -2894,7 +2898,7 @@ describe('migracion-mi-espacio-restituciones.sql', () => {
     assert.match(cabecera(ROLLBACK), /nueve valores/);
     // Y si también se deshace «Sumar al mes anterior», esto va antes; y antes que las de Mi espacio y los feriados, que la base
     // no dejaría borrar con estas tablas puestas
-    assert.match(cabecera(ROLLBACK), /rollback-mi-espacio-horas-mes-anterior\.sql/);
+    assert.match(cabecera(ROLLBACK), /rollback-mi-espacio-horas-mes-anterior\.sql\), esto va antes/);
     assert.match(cabecera(ROLLBACK), /rollback-mi-espacio\.sql/);
     assert.match(cabecera(ROLLBACK), /rollback-feriados\.sql/);
     assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);

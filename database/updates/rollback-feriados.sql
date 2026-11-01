@@ -8,6 +8,9 @@
 -- exportar las tablas antes. Los usuarios y el resto de los datos no se tocan, y los 9 feriados fijos siguen como siempre
 -- (salen del código).
 -- Borra primero feriados_no_rige y después feriados: así no choca con su clave foránea.
+-- Mientras esté migracion-mi-espacio-restituciones.sql, correr antes rollback-mi-espacio-restituciones.sql: la foto de los
+-- días por restituir apunta a feriados y, sin borrarla primero, esto borra feriados_no_rige, falla en feriados y deja la
+-- base a medias.
 -- Se puede volver a correr: lo que ya no existe se saltea.
 -- =====================================================
 

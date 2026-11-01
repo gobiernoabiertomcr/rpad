@@ -1,7 +1,7 @@
 /**
  * Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 5 y 10): las consultas de lo que cargó cada persona, de
  * solo lectura y parametrizadas. Devuelven el `Estado` de las reglas (services/miEspacioReglas.js), solo con las filas
- * activas, lo que el paso a Configuración (sección 6) lee de las licencias de Configuración (y si hoy ya salieron notas con la
+ * activas (salvo la foto y los pedidos de los días restituidos, activos o no: los cuentan las tandas), lo que el paso a Configuración (sección 6) lee de las licencias de Configuración (y si hoy ya salieron notas con la
  * firma del titular, `notasDeHoyDelTitular`), las ausencias que ven los compañeros («Hoy no están», sección 7) y la
  * administración activa con la que se arma el nombre corto de cada uno (`administracionActiva`, spec
  * 2026-10-28-mi-espacio-agenda-onda, 5.1; el de un Personal (Público) de la agenda, contra todos los usuarios activos:
@@ -184,7 +184,7 @@ export const estadosDe = async (usuarioIds, conexion = pool) => {
             DATE_FORMAT(l.desde, '%Y-%m-%d') AS licencia_desde, DATE_FORMAT(l.hasta, '%Y-%m-%d') AS licencia_hasta,
             l.activo AS licencia_activo
      FROM mi_espacio_restituciones r
-     JOIN mi_espacio_licencias l ON l.id = r.licencia_id
+     JOIN mi_espacio_licencias l ON l.id = r.licencia_id AND l.usuario_id = r.usuario_id
      WHERE r.usuario_id IN (?)
      ORDER BY r.usuario_id, r.licencia_id, r.id`,
     [encontrados]
