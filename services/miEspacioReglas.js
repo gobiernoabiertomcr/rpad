@@ -33,8 +33,9 @@
  * carga como hábiles (`diasDeLaCarga`): así conserva los días que se pidieron. Se agrupan por carga, licencia de origen y
  * tanda, con su plazo y su caso (`restitucionesDe`, `plazoDeRestitucion`, `casoDeRestitucion`: tomarlos o pedir que vuelvan);
  * lo que se pide en el caso B vuelve a su licencia (`ordinariasDe`) y lo del caso A se carga aparte, como «Días restituidos»,
- * con el «Hasta» que pone Mi espacio (`validarRestituidos`, `hastaDeLosRestituidos`). Después, las
- * demás licencias (3.2 a 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`), las horas de franquicia que
+ * con el «Hasta» que pone Mi espacio (`validarRestituidos`, `hastaDeLosRestituidos`); sus textos (el aviso del Resumen, la
+ * fila, la banda, «Vence pronto», el email y el modal B) están al lado. Después, las demás licencias (3.2 a 3.4): lo que
+ * suma cada una contra su tope del año (`usoDeLosTopes`), las horas de franquicia que
  * vencen el 31/12 y las que ya no entran en los días libres que quedan (`franquiciaQueVence`, con `diasLibresEntre`; spec
  * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6) y la validación de una carga (`validarLicencia`, con la regla de 3.8:
  * dos licencias no comparten un día). Por último, las horas extras (3.5 a 3.7): la
@@ -54,7 +55,8 @@
  * 2026-10-28-mi-espacio-licencia-anulada). Por último, lo que ven los compañeros, «Hoy no están» (sección 7:
  * `ausenciasUnidas` y `ausentesDelRango`, sin el tipo, y los dos grupos de «Hoy y mañana», `ausentesDeHoyYManana`), con el
  * nombre de cada uno como lo ven los demás (`nombreCorto`: «Carla», o «Carla B.» si hay otra Carla; spec
- * 2026-10-28-mi-espacio-agenda-onda, 5.1), y lo que dice el email de vencimiento (sección 9: `avisosDeVencimiento`).
+ * 2026-10-28-mi-espacio-agenda-onda, 5.1), y lo que dice el email de vencimiento (sección 9: `avisosDeVencimiento`, con los
+ * dos avisos de cada grupo de días por restituir).
  * Los textos son planos: escaparlos le toca a quien los dibuja.
  */
 import {
@@ -1356,6 +1358,11 @@ export const primerDiaDeLosRestituidos = (grupo, feriados) => {
 
 // «viernes 30/04/2027» (la raya si no es una fecha)
 const diaYFecha = (fecha) => (esFechaIso(fecha) ? `${diaDeLaSemana(fecha)} ${fechaCorta(fecha)}` : '—');
+// Las fechas de los asuetos de un grupo (lo que no es una fecha no va)
+const asuetosDelGrupo = (grupo) => listaDe(grupo.fechas).filter(esFechaIso);
+// «, por los asuetos del 24/12 y el 31/12/2026» o «, por el asueto del 24/12/2026», con el mes; sin fechas, ''
+const porLosAsuetos = (fechas) => (fechas.length === 0 ? ''
+  : `, ${fechas.length === 1 ? 'por el asueto' : 'por los asuetos'} del ${fechasDeLosAsuetos(fechas, { conMes: true })}`);
 
 /**
  * El texto del cálculo de «Cargar licencia» con unos días restituidos (el `texto_reparto` de su vista): «Son los días
@@ -1364,11 +1371,8 @@ const diaYFecha = (fecha) => (esFechaIso(fecha) ? `${diaDeLaSemana(fecha)} ${fec
  */
 export const textoDelCalculoDeRestituidos = (grupo) => {
   if (!esObjeto(grupo)) return '';
-  const fechas = listaDe(grupo.fechas).filter(esFechaIso);
   const cuales = esUna(grupo.dias) ? 'Es el día restituido' : 'Son los días restituidos';
-  const asuetos = fechas.length === 0 ? ''
-    : `, ${fechas.length === 1 ? 'por el asueto' : 'por los asuetos'} del ${fechasDeLosAsuetos(fechas, { conMes: true })}`;
-  return `${cuales} de la licencia ${anioTexto(grupo.anio)}${asuetos}.`;
+  return `${cuales} de la licencia ${anioTexto(grupo.anio)}${porLosAsuetos(asuetosDelGrupo(grupo))}.`;
 };
 
 /**
@@ -1489,6 +1493,234 @@ export const validarRestituidos = (entrada, contexto) => {
     error: null
   };
 };
+
+// Los textos de los días por restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 5, 9 y 10; los redactó la maqueta,
+// decisión 8 de la sección 17): el aviso del Resumen y su botón, la línea de la fila, la oración de la banda, el título de
+// «Vence pronto», los párrafos del email, el recuadro del modal B y lo que dice el servidor al pedir y al borrar. Reciben un
+// `Grupo` de `restitucionesDe` y, los que cambian con el día, hoy. En plural, salvo con un solo día («Vencen», como el resto
+// de Mi espacio: decisión 2). Un caso o una situación que no se conocen dan ''
+const CASOS_DE_RESTITUCION = Object.freeze(['tomar', 'restituir']);
+const tieneCaso = (grupo) => esObjeto(grupo) && CASOS_DE_RESTITUCION.includes(grupo.caso);
+// «viernes 30/04» (la raya si no es una fecha)
+const diaYMesConElDia = (fecha) => (esFechaIso(fecha) ? `${diaDeLaSemana(fecha)} ${diaYMes(fecha)}` : '—');
+// Las partes de un párrafo (un texto o `{ negrita }`) en texto plano, sin las negritas
+const textoDeLasPartes = (partes) => partes.map((parte) => (typeof parte === 'string' ? parte : parte.negrita)).join('');
+// Las partes de un párrafo con los textos seguidos juntos en uno
+const juntarPartes = (partes) => partes.reduce((juntas, parte) => {
+  if (typeof parte === 'string' && typeof juntas.at(-1) === 'string') juntas[juntas.length - 1] += parte;
+  else juntas.push(parte);
+  return juntas;
+}, []);
+
+// «Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones» o «El asueto del 24/12/2026 cayó en tus días restituidos»
+// (la recursión), y en el email, con las fechas de la carga (decisión 16: el email nombra las vacaciones; el aviso del
+// Resumen, no, porque se ve al lado)
+const dondeCayeron = (grupo, conLasFechas) => {
+  const fechas = asuetosDelGrupo(grupo);
+  const uno = fechas.length === 1;
+  const asuetos = fechas.length === 0 ? 'Los asuetos cayeron'
+    : `${uno ? 'El asueto' : 'Los asuetos'} del ${fechasDeLosAsuetos(fechas)} ${uno ? 'cayó' : 'cayeron'}`;
+  const carga = esObjeto(grupo.carga) ? grupo.carga : {};
+  const cuales = carga.tipo === 'restituidos' ? 'tus días restituidos' : 'tus vacaciones';
+  const cuando = conLasFechas && esFechaIso(carga.desde) && esFechaIso(carga.hasta)
+    ? ` ${fechasDeLaCarga(carga.desde, carga.hasta)}` : '';
+  return `${asuetos} en ${cuales}${cuando}`;
+};
+// Lo que tiene la persona, por partes (en negrita, lo que el email resalta): «tenés **2 días restituidos de la licencia
+// 2024**.» o «podés pedir que te restituyan **2 días a tu licencia 2025**.»
+const partesDeLoQueTenes = (grupo) => {
+  const cuantos = diasTexto(grupo.dias);
+  const anio = anioTexto(grupo.anio);
+  if (grupo.caso === 'restituir') return ['podés pedir que te restituyan ', { negrita: `${cuantos} a tu licencia ${anio}` }, '.'];
+  return ['tenés ', { negrita: `${cuantos} ${esUna(grupo.dias) ? 'restituido' : 'restituidos'} de la licencia ${anio}` }, '.'];
+};
+// Qué hacer y hasta cuándo, por partes. En el caso A, hasta el vencimiento de la licencia (inclusive) «Como esa licencia vence
+// el 31/12/2026, antes del plazo, …» y después «Como esa licencia ya venció, …» (decisión 3; sin un hoy, esto último)
+const partesDeQueHacer = (grupo, hoy) => {
+  const uno = esUna(grupo.dias);
+  const pierden = `Si no, ${uno ? 'se pierde' : 'se pierden'}.`;
+  const plazo = { negrita: diaYFecha(grupo.plazo) };
+  if (grupo.caso === 'restituir') return ['Pedilo con la nota al Director General a más tardar el ', plazo, `. ${pierden}`];
+  const vence = venceLaLicencia(grupo.anio);
+  const como = esFechaIso(hoy) && vence !== null && hoy <= vence
+    ? `Como esa licencia vence el ${fechaCorta(vence)}, antes del plazo,` : 'Como esa licencia ya venció,';
+  return [`${como} ${uno ? 'tomalo' : 'tomalos todos juntos, empezando'} a más tardar el `, plazo,
+    `, con la nota al Director General. ${pierden}`];
+};
+
+/**
+ * El aviso de un grupo por restituir, en el Resumen, entre la banda y «El resto de AAAA» (spec, 5 y 9). Caso A: «Los asuetos
+ * del 24 y el 31/12/2026 cayeron en tus vacaciones: tenés 2 días restituidos de la licencia 2024. Como esa licencia ya
+ * venció, tomalos todos juntos, empezando a más tardar el viernes 30/04/2027, con la nota al Director General. Si no, se
+ * pierden.» (hasta el vencimiento de la licencia, «Como esa licencia vence el 31/12/2026, antes del plazo, …»: decisión 3).
+ * Caso B: «… podés pedir que te restituyan 2 días a tu licencia 2025. Pedilo con la nota al Director General a más tardar el
+ * viernes 30/04/2027. Si no, se pierden.». De un día, «El asueto del 24/12/2026 cayó …», «1 día restituido», «tomalo» y «se
+ * pierde»; en la recursión, «cayeron en tus días restituidos». Lo que no es un grupo con su caso, ''.
+ */
+export const textoDelAvisoDeRestitucion = (grupo, hoy) => (tieneCaso(grupo)
+  ? `${dondeCayeron(grupo, false)}: ${textoDeLasPartes(partesDeLoQueTenes(grupo))} `
+    + textoDeLasPartes(partesDeQueHacer(grupo, hoy))
+  : '');
+
+// El botón del aviso (y de «Vence pronto» y de la fila): «Cargar los días restituidos» («Cargar el día restituido») en el
+// caso A o «Pedir la restitución» en el B; lo que no es un grupo con su caso, ''
+export const textoDelBotonDeRestitucion = (grupo) => {
+  if (!tieneCaso(grupo)) return '';
+  if (grupo.caso === 'restituir') return 'Pedir la restitución';
+  return esUna(grupo.dias) ? 'Cargar el día restituido' : 'Cargar los días restituidos';
+};
+
+// «del 12/04 al 13/04/2027» o, de un solo día, «el 12/04/2027» (de una carga sin fechas, '')
+const cuandoEstaCargada = (cargada) => {
+  if (!esObjeto(cargada) || !esFechaIso(cargada.desde) || !esFechaIso(cargada.hasta)) return '';
+  const { desde, hasta } = cargada;
+  return desde === hasta ? ` el ${fechaCorta(desde)}` : ` ${fechasDeLaCarga(desde, hasta)}`;
+};
+
+/**
+ * La línea de un grupo debajo de la fila de su carga en la lista de Licencias (spec, 9), según su situación (`cargada`, la
+ * carga de días restituidos del caso A, para sus fechas):
+ * - por restituir, A: «2 días por restituir (asuetos del 24/12 y el 31/12/2026): empezá a tomarlos a más tardar el
+ *   30/04/2027.» («1 día por restituir (asueto del 24/12/2026): tomalo a más tardar …»); B: «2 días por restituir a la licencia
+ *   2025 (asuetos del 24/12 y el 31/12/2026): pedí la restitución a más tardar el 30/04/2027.»;
+ * - cargada: «Los 2 días restituidos están cargados del 12/04 al 13/04/2027.» («El día restituido está cargado el
+ *   12/04/2027.»; sin la carga, sin fechas);
+ * - pedida: «Restitución pedida el 01/04/2027: los 2 días volvieron a la licencia 2025.» («… el día volvió …»);
+ * - perdida: «2 días por restituir: se perdieron el 30/04/2027.» («1 día por restituir: se perdió …»).
+ * Lo que no es un grupo, o con una situación (o, por restituir, un caso) que no se conocen, ''.
+ */
+export const textoDeLaFilaDeRestitucion = (grupo, cargada) => {
+  if (!esObjeto(grupo)) return '';
+  const uno = esUna(grupo.dias);
+  const fechas = asuetosDelGrupo(grupo);
+  const asuetos = fechas.length === 0 ? ''
+    : ` (${fechas.length === 1 ? 'asueto' : 'asuetos'} del ${fechasDeLosAsuetos(fechas, { conMes: true })})`;
+  const plazo = fechaCorta(grupo.plazo);
+  const licencia = anioTexto(grupo.anio);
+  if (grupo.situacion === 'por_restituir' && grupo.caso === 'tomar') {
+    return `${diasTexto(grupo.dias)} por restituir${asuetos}: ${uno ? 'tomalo' : 'empezá a tomarlos'} a más tardar el `
+      + `${plazo}.`;
+  }
+  if (grupo.situacion === 'por_restituir' && grupo.caso === 'restituir') {
+    return `${diasTexto(grupo.dias)} por restituir a la licencia ${licencia}${asuetos}: pedí la restitución a más tardar el `
+      + `${plazo}.`;
+  }
+  if (grupo.situacion === 'cargada') {
+    const cuales = uno ? 'El día restituido está cargado' : `Los ${numeroTexto(grupo.dias)} días restituidos están cargados`;
+    return `${cuales}${cuandoEstaCargada(cargada)}.`;
+  }
+  if (grupo.situacion === 'pedida') {
+    const cuando = esFechaIso(grupo.fecha_pedido) ? ` el ${fechaCorta(grupo.fecha_pedido)}` : '';
+    const volvieron = uno ? 'el día volvió' : `los ${numeroTexto(grupo.dias)} días volvieron`;
+    return `Restitución pedida${cuando}: ${volvieron} a la licencia ${licencia}.`;
+  }
+  if (grupo.situacion === 'perdida') {
+    return `${diasTexto(grupo.dias)} por restituir: ${uno ? 'se perdió' : 'se perdieron'} el ${plazo}.`;
+  }
+  return '';
+};
+
+// Hasta cuántos días corridos antes del plazo la oración de la banda va en ámbar (decisión 7) y, en «Vence pronto», lo que
+// vence en esos días
+export const DIAS_DEL_AVISO_DE_RESTITUCION = 30;
+
+/**
+ * Las oraciones de los días por restituir al final de la bajada de la banda (spec, 5 y 9): los grupos por restituir, juntos
+ * por caso y plazo, una oración por cada uno, por plazo (con el mismo, primero el caso A), `[{ texto, vence }]`, con `vence`
+ * en los últimos 30 días corridos antes del plazo (`DIAS_DEL_AVISO_DE_RESTITUCION`; antes, en el color de la frase). Caso A,
+ * con los días de cada licencia (sumados, si son de varias cargas): «Además, 2 restituidos de la 2024: empezá a tomarlos a
+ * más tardar el viernes 30/04.» («Además, 2 restituidos de la 2024 y 1 de la 2025: …»; con uno solo, «Además, 1 restituido de
+ * la 2024: tomalo a más tardar el viernes 30/04.»). Caso B, con los días de todas: «Además, 2 por restituir: pedí la
+ * restitución antes del viernes 30/04.». Los grupos sin un plazo, un caso, unos días enteros positivos o, en A, un año, no
+ * van. Sin un hoy válido, [].
+ */
+export const bajadaDeRestituciones = (grupos, hoy) => {
+  if (!esFechaIso(hoy)) return [];
+  const juntos = new Map();
+  for (const grupo of listaDe(grupos)) {
+    if (!tieneCaso(grupo) || grupo.situacion !== 'por_restituir' || !esFechaIso(grupo.plazo)) continue;
+    const dias = numeroDe(grupo.dias);
+    const anio = anioValido(grupo.anio);
+    if (!Number.isInteger(dias) || dias < 1 || (grupo.caso === 'tomar' && anio === null)) continue;
+    const llave = `${grupo.plazo}-${grupo.caso}`;
+    if (!juntos.has(llave)) juntos.set(llave, { plazo: grupo.plazo, caso: grupo.caso, porAnio: new Map() });
+    const { porAnio } = juntos.get(llave);
+    porAnio.set(anio, (porAnio.get(anio) ?? 0) + dias);
+  }
+  const ordenDelCaso = (caso) => CASOS_DE_RESTITUCION.indexOf(caso);
+  return [...juntos.values()]
+    .sort((a, b) => compararTexto(a.plazo, b.plazo) || ordenDelCaso(a.caso) - ordenDelCaso(b.caso))
+    .map(({ plazo, caso, porAnio }) => {
+      const total = [...porAnio.values()].reduce((suma, dias) => suma + dias, 0);
+      const cuando = diaYMesConElDia(plazo);
+      const vence = diasEntre(hoy, plazo) <= DIAS_DEL_AVISO_DE_RESTITUCION;
+      if (caso === 'restituir') {
+        return { texto: `Además, ${numeroTexto(total)} por restituir: pedí la restitución antes del ${cuando}.`, vence };
+      }
+      const deCadaUna = [...porAnio].sort(([a], [b]) => a - b).map(([anio, dias], indice) => (indice === 0
+        ? `${numeroTexto(dias)} ${esUna(dias) ? 'restituido' : 'restituidos'} de la ${anio}`
+        : `${numeroTexto(dias)} de la ${anio}`));
+      const tomar = esUna(total) ? 'tomalo' : 'empezá a tomarlos';
+      return { texto: `Además, ${enLista(deCadaUna)}: ${tomar} a más tardar el ${cuando}.`, vence };
+    });
+};
+
+// El título de un grupo en «Vence pronto»: «2 días restituidos de la 2024» (caso A) o «2 días para restituir a la 2025» (caso
+// B), «1 día …» con uno solo; lo que no es un grupo con su caso, ''
+export const tituloDeRestitucionQueVence = (grupo) => {
+  if (!tieneCaso(grupo)) return '';
+  return grupo.caso === 'tomar'
+    ? `${diasTexto(grupo.dias)} ${esUna(grupo.dias) ? 'restituido' : 'restituidos'} de la ${anioTexto(grupo.anio)}`
+    : `${diasTexto(grupo.dias)} para restituir a la ${anioTexto(grupo.anio)}`;
+};
+
+/**
+ * Los tres párrafos del email de un grupo por restituir (spec, 10, y el email de la maqueta), cada uno una lista de partes:
+ * un texto o `{ negrita }` (lo que el email resalta; escapar y marcar le toca a la plantilla). Caso A: «Los asuetos del 24 y
+ * el 31/12/2026 cayeron en tus vacaciones del 11/12/2026 al 08/01/2027: tenés **2 días restituidos de la licencia 2024**.»,
+ * «Como esa licencia ya venció, tomalos todos juntos, empezando a más tardar el **viernes 30/04/2027**, con la nota al
+ * Director General. Si no, se pierden.» (con su variante hasta el vencimiento, como el aviso) y «En Mi espacio podés
+ * cargarlos y bajar la nota en Word.». Caso B: «… podés pedir que te restituyan **2 días a tu licencia 2025**.», «Pedilo con
+ * la nota al Director General a más tardar el **viernes 30/04/2027**. Si no, se pierden.» y «En Mi espacio podés pedirla y
+ * bajar la nota en Word.». Lo que no es un grupo con su caso, [].
+ */
+export const partesDelEmailDeRestitucion = (grupo, hoy) => {
+  if (!tieneCaso(grupo)) return [];
+  const enMiEspacio = grupo.caso === 'tomar'
+    ? `En Mi espacio podés ${esUna(grupo.dias) ? 'cargarlo' : 'cargarlos'} y bajar la nota en Word.`
+    : 'En Mi espacio podés pedirla y bajar la nota en Word.';
+  return [
+    juntarPartes([`${dondeCayeron(grupo, true)}: `, ...partesDeLoQueTenes(grupo)]),
+    partesDeQueHacer(grupo, hoy),
+    [enMiEspacio]
+  ];
+};
+
+/**
+ * El recuadro del modal «Pedir la restitución» (spec, 9), `{ resaltado, resto }` (la página pone el resaltado en negrita y
+ * el resto, que empieza con un espacio, a continuación): «**2 días hábiles vuelven a tu licencia 2025** (vence el
+ * 31/12/2027), por los asuetos del 24/12 y el 31/12/2026. Al pedirla se arma la nota al Director General y los días vuelven
+ * enseguida.» («1 día hábil vuelve …», «… y el día vuelve enseguida.»). Lo que no es un grupo con su caso, los dos vacíos.
+ */
+export const recuadroDeLaRestitucion = (grupo) => {
+  if (!tieneCaso(grupo)) return { resaltado: '', resto: '' };
+  const uno = esUna(grupo.dias);
+  return {
+    resaltado: `${textoDeLosDiasHabiles(grupo.dias, grupo.dias)} ${uno ? 'vuelve' : 'vuelven'} a tu licencia `
+      + anioTexto(grupo.anio),
+    resto: ` (vence el ${fechaCorta(venceLaLicencia(grupo.anio))})${porLosAsuetos(asuetosDelGrupo(grupo))}. Al pedirla se `
+      + `arma la nota al Director General y ${uno ? 'el día vuelve' : 'los días vuelven'} enseguida.`
+  };
+};
+
+// Lo que dice el servidor al pedir una restitución, «Restitución pedida: los 2 días volvieron a tu licencia 2025.» («el día
+// volvió»; lo que no es un grupo con su caso, ''), y al borrar el pedido
+export const mensajeDeLaRestitucionPedida = (grupo) => {
+  if (!tieneCaso(grupo)) return '';
+  const volvieron = esUna(grupo.dias) ? 'el día volvió' : `los ${numeroTexto(grupo.dias)} días volvieron`;
+  return `Restitución pedida: ${volvieron} a tu licencia ${anioTexto(grupo.anio)}.`;
+};
+export const MENSAJE_RESTITUCION_BORRADA = 'Pedido de restitución borrado: los días vuelven a estar por restituir.';
 
 // Las horas extras (spec, 3.5 a 3.7): se cargan con el día y el horario, de a media hora, y cuentan enteras en el día en que
 // empezaron, también si pasan la medianoche. En planta, cada 7 horas de un mes dan un franco compensatorio para usar dos
@@ -3323,9 +3555,11 @@ export const ausentesDeHoyYManana = (ausentes, hoy) => {
 
 // El email de vencimiento (spec, sección 9): el franco o las horas a favor del mes de hoy se avisan desde 5 días hábiles antes
 // del último día hábil del mes, y las horas de franquicia y los días de la licencia que vencen el 31/12, desde el primer día
-// hábil de diciembre
+// hábil de diciembre. Los días por restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 7 y 10), dos veces: desde que
+// aparecen y desde 5 días hábiles antes del plazo
 const DIAS_HABILES_ANTES_DEL_ULTIMO = 5;
 const DESDE_EL_AVISO_DE_LA_LICENCIA = '12-01';
+const DIAS_HABILES_ANTES_DEL_PLAZO = 5;
 
 // «el viernes 30/10»
 const elDia = (fecha) => `el ${diaDeLaSemana(fecha)} ${diaYMes(fecha)}`;
@@ -3353,8 +3587,16 @@ const textoDeLaFranquicia = (horas, vence) =>
  *   hábil de diciembre hasta el 31/12: «Tenés 22 horas de franquicia: vencen el 31/12/2026.».
  * - `licencia-AAAA`: los días disponibles de la licencia ordinaria que vence el 31/12 de este año (la de dos años antes),
  *   desde el primer día hábil de diciembre (`proximoDiaHabilCon`) hasta el 31/12.
+ * - Después de lo de antes y por plazo, dos por cada grupo por restituir de `calculo.restituciones` (spec
+ *   2026-10-31-mi-espacio-dias-restituidos, 7 y 10), hasta el plazo inclusive: `restitucion-<licencia>-<anio>-<tanda>-1`
+ *   desde que aparece y `…-2` desde 5 días hábiles antes del plazo (`restarDiasHabilesCon`, con los feriados), cada uno con
+ *   `restitucion: { grupo, partes, primero }` (`grupo`, la clave del grupo; `partes`, los párrafos de
+ *   `partesDelEmailDeRestitucion`; `primero`, true en el `-1`) y, en `texto`, esos párrafos en texto plano. Las claves entran
+ *   en `mi_espacio_avisos.clave` (varchar(40): con los ids, los años y las tandas más grandes, 35 caracteres). Cuál se manda
+ *   y cuándo dibujar uno solo lo decide la corrida (`services/miEspacioAvisos.js`).
  * `calculo` es el de `calcular` con ese hoy y esos feriados. Nunca dice el tipo de una licencia médica: solo vacaciones,
- * francos y horas. Sin un cálculo o un hoy válidos, []; sin una modalidad, solo la licencia.
+ * francos, horas y días por restituir. Sin un cálculo o un hoy válidos, []; sin una modalidad, la licencia y los días por
+ * restituir que traiga el cálculo (sin una modalidad, `calcular` no arma ninguno).
  */
 export const avisosDeVencimiento = (calculo, opciones) => {
   const { hoy, feriados, modalidad, ocupadas } = esObjeto(opciones) ? opciones : {};
@@ -3386,6 +3628,22 @@ export const avisosDeVencimiento = (calculo, opciones) => {
       esObjeto(ordinaria) && Number.isInteger(ordinaria.anio) && ordinaria.vence === finDelAnio);
     const dias = numeroDe(vieja?.disponibles);
     if (dias > 0) avisos.push({ clave: `licencia-${vieja.anio}`, texto: textoDeLaLicencia(dias, vieja.anio, finDelAnio) });
+  }
+
+  // Los días por restituir, por plazo: la clave sale de la carga, el año y la tanda del grupo
+  const porRestituir = listaDe(calculo.restituciones).filter((grupo) => tieneCaso(grupo) && grupo.situacion === 'por_restituir'
+    && esFechaIso(grupo.plazo) && hoy <= grupo.plazo && idPositivoONulo(grupo.licencia_id) !== null
+    && anioValido(grupo.anio) !== null && Number.isInteger(grupo.tanda) && grupo.tanda >= 0)
+    .sort((a, b) => compararTexto(a.plazo, b.plazo));
+  for (const grupo of porRestituir) {
+    const clave = `${idPositivoONulo(grupo.licencia_id)}-${anioValido(grupo.anio)}-${grupo.tanda}`;
+    const partes = partesDelEmailDeRestitucion(grupo, hoy);
+    const texto = partes.map(textoDeLasPartes).join(' ');
+    avisos.push({ clave: `restitucion-${clave}-1`, texto, restitucion: { grupo: clave, partes, primero: true } });
+    const segundo = restarDiasHabilesCon(grupo.plazo, DIAS_HABILES_ANTES_DEL_PLAZO, feriados);
+    if (segundo !== null && segundo <= hoy) {
+      avisos.push({ clave: `restitucion-${clave}-2`, texto, restitucion: { grupo: clave, partes, primero: false } });
+    }
   }
   return avisos;
 };
