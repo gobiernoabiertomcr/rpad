@@ -11101,8 +11101,9 @@ describe('los días restituidos: el aviso del Resumen, «Vence pronto» y lo que
     const resumen = resumenDeJulieta(JULIETA.estado, VUELVE_JULIETA);
     const html = M.htmlDelResumen(resumen);
     const aviso = M.htmlDeRestituciones(resumen.restituciones);
-    // Después de la banda (que termina con su ola) y antes del resto
-    assert.ok(html.includes(`</svg></section>${aviso}<section class="me-resto"`), html);
+    // Después de la banda (que termina con su ola) y antes del resto, en su contenedor con id (el lugar de sus botones: el de «Vence
+    // pronto» del mismo grupo tiene el mismo data-grupo, y el foco vuelve al que se usó)
+    assert.ok(html.includes(`</svg></section><div id="me-restituciones">${aviso}</div><section class="me-resto"`), html);
     assert.ok(html.indexOf('<section class="me-banda"') < html.indexOf(aviso));
     // Sin grupos por restituir, o un Resumen de antes de los días restituidos (sin `restituciones`): sin aviso, como hoy
     const sinAviso = { ...resumen, restituciones: [] };
@@ -11110,7 +11111,7 @@ describe('los días restituidos: el aviso del Resumen, «Vence pronto» y lo que
     delete deAntes.restituciones;
     assert.ok(!M.htmlDelResumen(sinAviso).includes('me-restituir'));
     assert.equal(M.htmlDelResumen(deAntes), M.htmlDelResumen(sinAviso));
-    assert.equal(M.htmlDelResumen(deAntes), html.replace(aviso, ''));
+    assert.equal(M.htmlDelResumen(deAntes), html.replace(`<div id="me-restituciones">${aviso}</div>`, ''));
     // Los de antes de esta entrega (con los casos de siempre) no cambian
     const planta = resumenDel(PLANTA);
     assert.ok(!Object.hasOwn(planta, 'restituciones') || planta.restituciones.length === 0);
@@ -11391,6 +11392,22 @@ describe('los días restituidos: «Cargar licencia»', () => {
   });
 });
 
+describe('los días restituidos: las opciones de «Cargar licencia»', () => {
+  it('opcionesDeLicencia: una nueva, todas; corregir unos días restituidos, solo su opción; otra licencia, sin los de los grupos', () => {
+    const tipos = resumenDeJulieta(JULIETA.estado, ABRIL_JULIETA).tipos;
+    assert.deepEqual(plano(M.opcionesDeLicencia(tipos, null, M.valoresDeLicencia(null, 'restituidos', '1-2024-0'))), tipos);
+    const restituidos = filaDeJulieta(CARGADOS, ABRIL_JULIETA, 2);
+    assert.deepEqual(plano(M.opcionesDeLicencia(tipos, restituidos, M.valoresDeLicencia(restituidos))),
+      [{ tipo: 'restituidos', nombre: 'Días restituidos', queda_texto: '', grupo: '1-2024-0' }]);
+    // Sin su grupo (una carga sin pedido), igual sola, con el grupo vacío
+    assert.deepEqual(plano(M.opcionesDeLicencia(tipos, { ...restituidos, restituidos: null },
+      M.valoresDeLicencia({ ...restituidos, restituidos: null }))), [{ tipo: 'restituidos', nombre: 'Días restituidos', queda_texto: '', grupo: '' }]);
+    const vacaciones = filaDeJulieta(JULIETA.estado, VUELVE_JULIETA);
+    assert.deepEqual(plano(M.opcionesDeLicencia(tipos, vacaciones, M.valoresDeLicencia(vacaciones))).map((opcion) => opcion.tipo),
+      tipos.filter((opcion) => opcion.tipo !== 'restituidos').map((opcion) => opcion.tipo));
+  });
+});
+
 describe('los días restituidos: la pista de las fechas al corregir', () => {
   it('ayudaDeLasFechasDe: unos días restituidos que ya empezaron no se pueden mover (restituidosEmpezados), no «solo hasta»', () => {
     assert.equal(M.MENSAJES_FORMULARIOS.restituidosEmpezados, MENSAJES_MI_ESPACIO.restituidosEmpezados);
@@ -11423,7 +11440,10 @@ describe('los días restituidos: «Pedir la restitución» y la confirmación', 
 
   it('htmlDeLaVistaDeRestitucion: el recuadro, «Así sale la nota», la aclaración y la hoja (tal cual), como en la maqueta', () => {
     const vista = { recuadro: comoLlega(recuadroDeLaRestitucion(grupoB)), html: HOJA_B, aclaracion: aclaracionDeLaRestitucion(ABRIL_JULIETA) };
-    assert.equal(M.htmlDeLaVistaDeRestitucion(vista), MAQUETA_DE_LOS_RESTITUIDOS.MODAL_B.cuerpo.replace(' mq-nuevo', ''));
+    // El recuadro lleva su id (describe «Pedir la restitución»); la maqueta no lo tiene
+    assert.equal(M.htmlDeLaVistaDeRestitucion(vista).replace(' id="mr-recuadro"', ''),
+      MAQUETA_DE_LOS_RESTITUIDOS.MODAL_B.cuerpo.replace(' mq-nuevo', ''));
+    assert.ok(M.htmlDeLaVistaDeRestitucion(vista).startsWith('<div class="me-recuadro me-calculo" id="mr-recuadro"><b>'));
     // La hoja va tal cual (la arma y la escapa el servidor); lo demás, escapado; sin recuadro ni aclaración, sin ellos
     const conHtml = M.htmlDeLaVistaDeRestitucion({ recuadro: null, html: '<div class="me-hoja"><b>x</b></div>', aclaracion: MAL_ESCAPADO });
     assert.equal(conHtml, `<h3 class="me-paso-dos-titulo">Así sale la nota</h3><p class="me-paso-dos-ayuda">${BIEN_ESCAPADO}</p>`
@@ -11645,9 +11665,9 @@ describe('los días restituidos: «Cargar licencia» en la página (DOM falso)',
     await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="2"]'));
     await pagina.correr();
     assert.equal(pagina.el('modal-licencia-titulo').textContent, 'Corregir la licencia del 12/04 al 13/04/2027');
+    // Solo su opción: unos días restituidos no cambian de tipo (el servidor responde restituidosFijo)
     const radios = pagina.el('ml-tipos').querySelectorAll('input');
-    assert.deepEqual(radios.filter((radio) => radio.getAttribute('value') === 'restituidos').map((radio) => radio.getAttribute('data-grupo')),
-      ['1-2024-0']);
+    assert.deepEqual(radios.map((radio) => [radio.getAttribute('value'), radio.getAttribute('data-grupo')]), [['restituidos', '1-2024-0']]);
     assert.deepEqual(tiposElegidos(pagina), [['restituidos', '1-2024-0']]);
     assert.equal(pagina.el('ml-desde').value, '2027-04-12');
     assert.equal(pagina.el('ml-hasta').value, '2027-04-13');
@@ -11707,6 +11727,35 @@ describe('los días restituidos: «Cargar licencia» en la página (DOM falso)',
     assert.equal(pagina.el('ml-fechas-ayuda').hidden, false);
   });
 
+  it('el «Hasta» de unos días restituidos se vacía al cambiar «Desde» (hasta que llega el cálculo) y si el cálculo falla', async () => {
+    let falla = false;
+    const pagina = montarPagina({ responder: conJulieta({ extra: (metodo, ruta) => (falla && ruta === '/api/mi-espacio/licencias/calculo'
+      ? respuesta(500, { success: false, error: 'Error al calcular la licencia' }) : undefined) }) });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-resumen').querySelector('#me-restituciones [data-accion="cargar-licencia"]'));
+    await pagina.correr();
+    await pagina.escribir('ml-desde', '2027-04-12');
+    await pagina.correr();
+    assert.equal(pagina.el('ml-hasta').value, '2027-04-13');
+    // Otro «Desde»: el «Hasta» de antes no va con él; vacío hasta el cálculo
+    await pagina.escribir('ml-desde', '2027-04-19');
+    assert.equal(pagina.el('ml-hasta').value, '');
+    await pagina.correr();
+    assert.equal(pagina.el('ml-hasta').value, '2027-04-20');
+    // El cálculo falla: vacío (el modal dice que no se pudo calcular)
+    falla = true;
+    await pagina.escribir('ml-desde', '2027-04-26');
+    await pagina.correr();
+    assert.equal(pagina.el('ml-hasta').value, '');
+    assert.equal(pagina.el('ml-error').hidden, false);
+    // En otro tipo, el «Hasta» es de quien lo escribe: cambiar «Desde» no lo toca
+    falla = false;
+    await pagina.elegir('ml-tipo', 'vacaciones');
+    await pagina.escribir('ml-hasta', '2027-04-30');
+    await pagina.escribir('ml-desde', '2027-04-27');
+    assert.equal(pagina.el('ml-hasta').value, '2027-04-30');
+  });
+
   it('corregir otra licencia no ofrece los días restituidos de un grupo por restituir', async () => {
     const pagina = montarPagina({ hash: '#licencias', responder: conJulieta() });
     await pagina.iniciar();
@@ -11732,12 +11781,19 @@ describe('los días restituidos: «Pedir la restitución» en la página (DOM fa
     assert.equal(pagina.el('mr-vista').innerHTML, '<p class="me-aviso me-aviso-gris">Armando la nota…</p>');
     assert.equal(pagina.pedidosA('GET', RUTA_DE_LA_VISTA_B).length, 1);
     assert.equal(pagina.pedidosA('GET', RUTA_DE_LA_VISTA_B)[0].encabezados.Authorization, 'Bearer token-de-prueba');
+    // Hasta que llega la vista, «Pedir la restitución» queda deshabilitado y el foco, en «Cancelar»
+    assert.equal(pagina.el('mr-pedir').disabled, true);
+    await pagina.correr();
+    assert.equal(pagina.documento.activeElement, pagina.el('mr-pie').querySelector('[data-cerrar]'));
     vista.soltar(ok(VISTA_B));
     await pagina.esperar();
     assert.equal(pagina.el('mr-vista').innerHTML, M.htmlDeLaVistaDeRestitucion(VISTA_B));
     assert.ok(pagina.el('mr-vista').querySelector('.me-mesa .me-hoja'), 'la hoja del servidor');
-    await pagina.correr();
+    // Con la vista, se habilita y el foco pasa a él (nadie lo había movido); el recuadro lo describe
+    assert.equal(pagina.el('mr-pedir').disabled, false);
     assert.equal(pagina.documento.activeElement, pagina.el('mr-pedir'));
+    assert.equal(pagina.el('mr-pedir').getAttribute('aria-describedby'), 'mr-recuadro');
+    assert.ok(pagina.el('mr-recuadro').textContent.startsWith('2 días hábiles vuelven a tu licencia 2025'));
     assert.equal(pagina.el('mr-error').hidden, true);
     // «Cancelar» cierra sin pedir nada y el foco vuelve al botón
     await pagina.tocar(pagina.el('mr-pie').querySelector('[data-cerrar]'));
@@ -11788,7 +11844,7 @@ describe('los días restituidos: «Pedir la restitución» en la página (DOM fa
     assert.equal(word.length, 1);
     assert.equal(word[0].encabezados.Authorization, 'Bearer token-de-prueba');
     assert.deepEqual(pagina.estado.descargas.map(({ download }) => download), [NOMBRE_DEL_WORD_B]);
-    // «Listo» cierra; al volver a abrir (de la línea de la fila, otra vez por restituir en este servidor falso), está el formulario
+    // «Listo» cierra
     await pagina.tocar(pagina.el('mr-paso-dos-pie').querySelector('[data-cerrar]'));
     assert.equal(pagina.abierto('modal-restitucion'), false);
     assert.equal(pagina.el('mr-paso-dos').innerHTML, '');
@@ -11796,6 +11852,78 @@ describe('los días restituidos: «Pedir la restitución» en la página (DOM fa
     assert.ok(!pagina.el('vista-resumen').querySelector('.me-restituir'), 'ya no hay aviso');
     // El botón que lo abrió ya no está (el grupo quedó pedido): el foco va al título del Resumen (respaldoDelFoco), nunca a <body>
     assert.equal(pagina.documento.activeElement?.getAttribute('id'), 'me-frase');
+    // Al volver a abrir (de la línea de la fila: la lista de este servidor falso sigue con el grupo por restituir), está el formulario,
+    // con la vista de antes de pedir y «Pedir la restitución» habilitado
+    await pagina.tocar(pagina.el('tab-licencias'));
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('.me-restituir-linea [data-accion="pedir-restitucion"]'));
+    await pagina.correr();
+    assert.deepEqual(delModalB(pagina), ANTES_DE_PEDIR);
+    assert.equal(pagina.el('mr-vista').innerHTML, M.htmlDeLaVistaDeRestitucion(VISTA_B));
+    assert.equal(pagina.el('mr-pedir').disabled, false);
+    assert.equal(pagina.el('mr-error').hidden, true);
+    assert.equal(pagina.el('mr-paso-dos').innerHTML, '');
+    assert.equal(pagina.documento.activeElement, pagina.el('mr-pedir'));
+  });
+
+  // Después de un 400 (el grupo ya no está por restituir), al cerrar el modal la página vuelve a pedir todo, y el foco vuelve al botón
+  // que se usó: el del aviso o el de «Vence pronto», que tienen el mismo data-grupo (el aviso está en #me-restituciones)
+  it('después de un 400, al cerrar se vuelve a pedir todo y el foco vuelve al botón que se usó (el aviso o «Vence pronto»)', async () => {
+    const motivo = 'Esos días ya no están para restituir.';
+    for (const [lugar, selector] of [['el aviso', '#me-restituciones [data-accion="pedir-restitucion"]'],
+      ['«Vence pronto»', '.me-vence [data-accion="pedir-restitucion"]']]) {
+      const pagina = montarPagina({ responder: conJulieta({ estado: VARIANTE_B, extra: (metodo, ruta) => (metodo === 'POST'
+        && ruta === '/api/mi-espacio/restituciones' ? respuesta(400, { success: false, error: motivo, campo: null }) : undefined) }) });
+      await pagina.iniciar();
+      const boton = pagina.el('vista-resumen').querySelector(selector);
+      assert.ok(boton, lugar);
+      boton.focus();
+      await pagina.tocar(boton);
+      await pagina.correr();
+      await pagina.tocar(pagina.el('mr-pedir'));
+      assert.equal(pagina.el('mr-error').textContent, motivo, lugar);
+      const resumenes = pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length;
+      await pagina.tocar(pagina.el('mr-pie').querySelector('[data-cerrar]'));
+      assert.equal(pagina.abierto('modal-restitucion'), false, lugar);
+      assert.equal(pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length, resumenes + 1, lugar);
+      // El Resumen se volvió a dibujar (el botón es otro): el foco, en el del mismo lugar
+      const nuevo = pagina.el('vista-resumen').querySelector(selector);
+      assert.notEqual(nuevo, boton, lugar);
+      assert.equal(pagina.documento.activeElement, nuevo, lugar);
+    }
+    // Sin un 400, cerrar no vuelve a pedir nada
+    const pagina = montarPagina({ responder: conJulieta({ estado: VARIANTE_B }) });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-resumen').querySelector('#me-restituciones [data-accion="pedir-restitucion"]'));
+    await pagina.correr();
+    const resumenes = pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length;
+    await pagina.tocar(pagina.el('mr-pie').querySelector('[data-cerrar]'));
+    assert.equal(pagina.rutas().filter((ruta) => ruta === '/api/mi-espacio/resumen').length, resumenes);
+  });
+
+  it('después de pedir desde la línea de la fila, al cerrar el foco va al «Word» nuevo de esa restitución', async () => {
+    let pedida = false;
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conJulieta({
+        estado: VARIANTE_B,
+        extra: (metodo, ruta) => {
+          if (metodo === 'POST' && ruta === '/api/mi-espacio/restituciones') { pedida = true; return PEDIDA_B; }
+          if (!pedida) return undefined;
+          if (ruta === '/api/mi-espacio/resumen') return ok(resumenDeJulieta(B_PEDIDA, ABRIL_JULIETA));
+          return metodo === 'GET' && ruta.startsWith('/api/mi-espacio/licencias') ? ok(listaDeJulieta(B_PEDIDA)) : undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    const boton = pagina.el('vista-licencias').querySelector('.me-restituir-linea [data-accion="pedir-restitucion"]');
+    boton.focus();
+    await pagina.tocar(boton);
+    await pagina.correr();
+    await pagina.tocar(pagina.el('mr-pedir'));
+    assert.deepEqual(delModalB(pagina), YA_PEDIDA);
+    await pagina.tocar(pagina.el('mr-paso-dos-pie').querySelector('[data-cerrar]'));
+    assert.equal(pagina.abierto('modal-restitucion'), false);
+    assert.equal(pagina.documento.activeElement, pagina.el('vista-licencias').querySelector('.me-restituir-linea [data-word-restitucion="10"]'));
   });
 
   it('un 400 queda en el modal y el foco vuelve a «Pedir la restitución»; la vista y la nota que fallan; con un 401, al login', async () => {
@@ -11834,6 +11962,7 @@ describe('los días restituidos: «Pedir la restitución» en la página (DOM fa
     assert.equal(sinVista.el('mr-vista').innerHTML, '');
     assert.equal(sinVista.el('mr-error').textContent, motivo);
     assert.equal(sinVista.el('mr-pedir').disabled, false);
+    assert.equal(sinVista.documento.activeElement, sinVista.el('mr-pedir'));
 
     // La nota del segundo paso: la restitución quedó pedida (anunciado) y «Descargar Word» sigue andando
     const sinNota = conFalla('/api/mi-espacio/restituciones/10/nota', () => respuesta(500, { success: false, error: 'Error al armar la nota' }));

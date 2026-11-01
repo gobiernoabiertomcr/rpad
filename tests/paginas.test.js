@@ -1104,7 +1104,8 @@ describe('páginas', () => {
           + '<p class="me-modal-error" id="mr-error" role="alert" hidden></p>\\s*<div id="mr-vista"></div>\\s*</div>'));
         assert.match(html, new RegExp('<div class="modal-footer" id="mr-pie">\\s*<div class="botones">\\s*'
           + '<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>\\s*'
-          + '<button type="button" class="sg-btn sg-btn-tinta" id="mr-pedir">Pedir la restitución</button>\\s*</div>\\s*</div>'));
+          + '<button type="button" class="sg-btn sg-btn-tinta" id="mr-pedir" aria-describedby="mr-recuadro">Pedir la restitución</button>\\s*'
+          + '</div>\\s*</div>'));
         assert.match(html, new RegExp('<div class="modal-body me-paso-dos" id="mr-paso-dos" hidden></div>\\s*'
           + '<div class="modal-footer" id="mr-paso-dos-pie" hidden>\\s*<div class="botones">\\s*'
           + '<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Listo</button>\\s*'

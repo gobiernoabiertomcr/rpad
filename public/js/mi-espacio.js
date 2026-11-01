@@ -521,13 +521,16 @@ function htmlDeRestituciones(lista) {
  * La pestaña Resumen (lo que manda GET /api/mi-espacio/resumen). Sin modalidad, el mensaje del servidor; sin el saldo inicial,
  * la invitación a «Mis vacaciones y saldos»; si no, los faltantes con lo que hay que revisar, la banda (la frase, «Vence pronto» y
  * la regla), los avisos de los días por restituir (entre la banda y el resto: decisión 9 de la spec
- * 2026-10-31-mi-espacio-dias-restituidos, sección 3), «El resto de 2026» y «Hoy y mañana».
+ * 2026-10-31-mi-espacio-dias-restituidos, sección 3; en #me-restituciones, el lugar de sus botones: el de «Vence pronto» del mismo
+ * grupo tiene el mismo data-grupo, y así el foco vuelve al que se usó), «El resto de 2026» y «Hoy y mañana».
  */
 function htmlDelResumen(resumen) {
   if (!esObjeto(resumen)) return '';
   if (!esObjeto(resumen.modalidad)) return htmlDeMensaje(resumen.mensaje);
   if (resumen.abrir_saldos === true) return htmlSinArranque();
-  return htmlDeFaltantes(resumen.faltantes, resumen.para_revisar) + htmlDeLaBanda(resumen) + htmlDeRestituciones(resumen.restituciones)
+  const restituciones = htmlDeRestituciones(resumen.restituciones);
+  return htmlDeFaltantes(resumen.faltantes, resumen.para_revisar) + htmlDeLaBanda(resumen)
+    + (restituciones === '' ? '' : `<div id="me-restituciones">${restituciones}</div>`)
     + htmlDelResto(resumen) + htmlDeHoyYManana(resumen.hoy_y_manana, esObjeto(resumen.persona) ? resumen.persona.ve_companeros : false);
 }
 
@@ -1181,19 +1184,16 @@ const opcionDelGrupo = (tipos, grupo) => (conTexto(grupo)
  * Las opciones de «Cargar licencia» (los `tipos` del Resumen) para lo que se abre: una nueva, todas; una corrección, sin las de los
  * días restituidos de los grupos por restituir (una licencia no pasa a ser unos días restituidos: spec
  * 2026-10-31-mi-espacio-dias-restituidos, 17.12) y con la de su tipo, aunque ya no esté entre las de la modalidad (o con «No
- * estudio»), con su nombre: se ve elegida. La de unos días restituidos que se corrigen es la de su grupo (`valores.grupo`), después de
- * las vacaciones (los días restituidos no cambian de tipo ni de grupo)
+ * estudio»), con su nombre: se ve elegida. Unos días restituidos que se corrigen, solo la suya, la de su grupo (`valores.grupo`): no
+ * cambian de tipo ni de grupo (el servidor responde `restituidosFijo`)
  */
 function opcionesDeLicencia(tipos, fila, valores) {
   const todas = listaDe(tipos);
   if (!esObjeto(fila)) return todas;
   const datos = esObjeto(valores) ? valores : {};
-  const sinRestituidos = todas.filter((opcion) => opcion.tipo !== 'restituidos');
   const suya = { tipo: datos.tipo, nombre: fila.tipo_nombre, queda_texto: '' };
-  if (datos.tipo === 'restituidos') {
-    const despues = sinRestituidos.findIndex((opcion) => opcion.tipo === 'vacaciones') + 1;
-    return [...sinRestituidos.slice(0, despues), { ...suya, grupo: comoTexto(datos.grupo) }, ...sinRestituidos.slice(despues)];
-  }
+  if (datos.tipo === 'restituidos') return [{ ...suya, grupo: comoTexto(datos.grupo) }];
+  const sinRestituidos = todas.filter((opcion) => opcion.tipo !== 'restituidos');
   return sinRestituidos.some((opcion) => opcion.tipo === datos.tipo) ? sinRestituidos : [...sinRestituidos, suya];
 }
 
@@ -1408,13 +1408,14 @@ function htmlDelRecuadroDeRestitucion(recuadro) {
 
 /**
  * Lo que muestra el modal antes de pedir (lo que manda GET /mi-espacio/restituciones/vista, `{ recuadro, html, aclaracion }`): el
- * recuadro celeste del cálculo (sin textos, no va), «Así sale la nota», la aclaración y la hoja (tal cual), como el segundo paso de
- * una licencia
+ * recuadro celeste del cálculo (sin textos, no va; con el id mr-recuadro, que describe «Pedir la restitución»), «Así sale la nota»,
+ * la aclaración y la hoja (tal cual), como el segundo paso de una licencia
  */
 function htmlDeLaVistaDeRestitucion(vista) {
   const { recuadro, html, aclaracion } = esObjeto(vista) ? vista : {};
   const adentro = htmlDelRecuadroDeRestitucion(recuadro);
-  return (adentro === '' ? '' : `<div class="me-recuadro me-calculo">${adentro}</div>`) + htmlDeLaNotaDelSegundoPaso(aclaracion, html);
+  return (adentro === '' ? '' : `<div class="me-recuadro me-calculo" id="mr-recuadro">${adentro}</div>`)
+    + htmlDeLaNotaDelSegundoPaso(aclaracion, html);
 }
 
 /**
@@ -4084,6 +4085,10 @@ function conectarFormularios() {
     porId(id).addEventListener('input', programarCalculo);
     porId(id).addEventListener('change', programarCalculo);
   }
+  // Unos días restituidos: el «Hasta» es el de su «Desde», que pone el cálculo; mientras llega, vacío
+  for (const tipo of ['input', 'change']) {
+    porId('ml-desde').addEventListener(tipo, () => { if (pagina.formulario?.tipo === 'restituidos') porId('ml-hasta').value = ''; });
+  }
   for (const id of ['ml-horas', 'mu-horas']) {
     porId(id).addEventListener('change', () => {
       pintarMostrar();
@@ -4655,11 +4660,11 @@ async function pedirCalculo(formulario) {
 async function pintarCalculo(formulario, data, valores, falla = null) {
   const { nombre } = formulario;
   const { prefijo } = FORMULARIOS[nombre];
-  // Unos días restituidos: el «Hasta» es el que pone Mi espacio (`vista.hasta`; sin vista, vacío). Si el cálculo no llegó, queda el
-  // que había (al corregir, el guardado)
+  // Unos días restituidos: el «Hasta» es el que pone Mi espacio (`vista.hasta`); sin vista, o si el cálculo no llegó, vacío (nunca uno
+  // que no es del «Desde» de la pantalla)
   let conElHasta = valores;
-  if (nombre === 'licencia' && valores.tipo === 'restituidos' && falla === null) {
-    const hasta = esObjeto(data?.vista) && esFechaDeTexto(data.vista.hasta) ? data.vista.hasta : '';
+  if (nombre === 'licencia' && valores.tipo === 'restituidos') {
+    const hasta = falla === null && esObjeto(data?.vista) && esFechaDeTexto(data.vista.hasta) ? data.vista.hasta : '';
     porId('ml-hasta').value = hasta;
     conElHasta = { ...valores, hasta };
   }
@@ -4938,11 +4943,16 @@ const accionesDeLaPagina = () => [
   ...listaDe(pagina.licencias?.licencias).flatMap((fila) => listaDe(fila.restituciones).map((linea) => linea.accion))
 ];
 
+// «Cancelar» del formulario del modal: el foco, mientras «Pedir la restitución» espera la vista
+const cancelarDeLaRestitucion = () => porId('mr-pie').querySelector('[data-cerrar]');
+
 /**
  * Abre «Pedir la restitución» del grupo `grupo` (el de su botón: el aviso, «Vence pronto» o la línea de la fila), con lo que se pide
  * (la `restitucion` de su acción, restitucionDelGrupo): el formulario, con «Armando la nota…» hasta que llega la vista (GET
- * /mi-espacio/restituciones/vista) y el foco en «Pedir la restitución». Un clic en el velo no lo cierra. Si el grupo no está entre
- * lo que llegó del servidor, se avisa y no se abre
+ * /mi-espacio/restituciones/vista). Mientras, «Pedir la restitución» queda deshabilitado y el foco va a «Cancelar»; con la vista, al
+ * botón. Un clic en el velo no lo cierra. Al cerrarlo después de un 400 (el grupo ya no está por restituir), la página vuelve a
+ * pedir todo y el foco va al equivalente del botón que lo abrió. Si el grupo no está entre lo que llegó del servidor, se avisa y no
+ * se abre
  */
 function abrirRestitucion({ grupo, volverA = null } = {}) {
   const restitucion = restitucionDelGrupo(grupo, accionesDeLaPagina());
@@ -4950,21 +4960,38 @@ function abrirRestitucion({ grupo, volverA = null } = {}) {
     avisarMiEspacio(MENSAJE_SIN_EL_GRUPO, 'error');
     return;
   }
-  const sesion = { grupo, restitucion, pidiendo: false, id: null };
+  const sesion = { grupo, restitucion, pidiendo: false, id: null, recargarAlCerrar: false };
   quitarSegundoPasoDeRestitucion();
   pagina.restitucion = sesion;
   porId('modal-restitucion-titulo').textContent = 'Pedir la restitución';
   avisoDelModal('restitucion', '');
   porId('mr-vista').innerHTML = htmlDeMensaje(TEXTO_ARMANDO_LA_NOTA);
-  porId('mr-pedir').disabled = false;
-  abrirModal('modal-restitucion', { volverA, foco: () => porId('mr-pedir'), alCerrar: quitarSegundoPasoDeRestitucion });
+  porId('mr-pedir').disabled = true;
+  abrirModal('modal-restitucion', {
+    volverA,
+    foco: () => (porId('mr-pedir').disabled ? cancelarDeLaRestitucion() : porId('mr-pedir')),
+    alCerrar: () => {
+      const recargar = sesion.recargarAlCerrar === true;
+      quitarSegundoPasoDeRestitucion();
+      if (recargar) recargarConElFocoEn(volverA);
+    }
+  });
   pedirLaVistaDeRestitucion(sesion);
 }
 
+// Vuelve a pedir todo y, cuando termina, el foco va al equivalente de `control` (el botón que abrió el modal, que la recarga
+// reemplaza: respaldoDelFoco, tomado antes)
+function recargarConElFocoEn(control) {
+  const respaldo = respaldoDelFoco(control);
+  const aplicar = () => devolverElFoco(respaldo);
+  volverAPedirTodo().then(aplicar, aplicar);
+}
+
 // GET /mi-espacio/restituciones/vista?licencia_id=&anio=&tanda=: el recuadro, la aclaración y la hoja (htmlDeLaVistaDeRestitucion).
-// Si no llega, el motivo arriba del modal (el del servidor: un grupo que ya no está por restituir; sin respuesta,
-// MENSAJE_SIN_CONEXION) y la vista vacía: «Pedir la restitución» sigue (el servidor vuelve a controlar). Con un 401, al login. Una
-// respuesta de otra apertura, o que llega con el modal cerrado o ya pedida, no toca nada
+// Si no llega, el motivo arriba del modal (el del servidor: un grupo que ya no está por restituir, y entonces al cerrar se vuelve a
+// pedir todo; sin respuesta, MENSAJE_SIN_CONEXION) y la vista vacía. Llegue o no, «Pedir la restitución» se habilita (el servidor
+// vuelve a controlar) y, si el foco seguía en «Cancelar», pasa a él. Con un 401, al login. Una respuesta de otra apertura, o que
+// llega con el modal cerrado o ya pedida, no toca nada
 async function pedirLaVistaDeRestitucion(sesion) {
   const { licencia_id: licenciaId, anio, tanda } = sesion.restitucion;
   const ruta = `/mi-espacio/restituciones/vista?licencia_id=${encodeURIComponent(licenciaId)}&anio=${encodeURIComponent(anio)}`
@@ -4979,15 +5006,19 @@ async function pedirLaVistaDeRestitucion(sesion) {
       irAlLogin();
       return;
     }
+    if (error?.status === 400) sesion.recargarAlCerrar = true;
     porId('mr-vista').innerHTML = '';
     avisoDelModal('restitucion', motivoDeLaFalla(error, MENSAJE_SIN_LA_VISTA_DE_RESTITUCION));
   }
+  const boton = porId('mr-pedir');
+  boton.disabled = false;
+  if (document.activeElement === cancelarDeLaRestitucion()) boton.focus?.();
 }
 
 // «Pedir la restitución»: POST /mi-espacio/restituciones con lo que se pide. Mientras, el botón queda deshabilitado y el modal no se
 // cierra (un doble clic manda un solo pedido). Con un 201, el segundo paso (pasarAlSegundoPasoDeRestitucion); con un 400 (el grupo ya
-// no está por restituir, o es del caso A), el motivo arriba del modal, que sigue abierto, y el foco vuelve al botón; con un 401, al
-// login
+// no está por restituir, o es del caso A), el motivo arriba del modal, que sigue abierto, el foco vuelve al botón y, al cerrar, la
+// página vuelve a pedir todo; con un 401, al login
 async function pedirLaRestitucion() {
   const sesion = pagina.restitucion;
   const boton = porId('mr-pedir');
@@ -5004,6 +5035,7 @@ async function pedirLaRestitucion() {
     boton.disabled = false;
     if (error?.status === 401) irAlLogin();
     else if (pagina.restitucion === sesion) {
+      if (error?.status === 400) sesion.recargarAlCerrar = true;
       avisoDelModal('restitucion', motivoDeLaFalla(error, MENSAJE_NO_SE_GUARDO));
       boton.focus?.();
     }
@@ -5015,15 +5047,19 @@ async function pedirLaRestitucion() {
  * («Restitución pedida»), el cuerpo con «Armando la nota…» hasta que llega GET …/:id/nota, y el pie («Listo» y «Descargar Word»,
  * que recibe el foco); #me-anuncio dice lo que dijo el servidor («Restitución pedida: los 2 días volvieron a tu licencia 2025.») y
  * que se puede bajar la nota. La página vuelve a pedir todo de fondo y, al cerrar, el foco va adonde va después de cualquier
- * guardado (el respaldo del botón que abrió el modal, tomado antes de la recarga)
+ * guardado (el respaldo del botón que abrió el modal, tomado antes de la recarga), probando primero el «Word» nuevo de esta
+ * restitución (el de la línea de su fila, si se pidió desde ahí)
  */
 function pasarAlSegundoPasoDeRestitucion(sesion, respuesta) {
   const modal = 'modal-restitucion';
   const abierta = pagina.modales.find((una) => una.id === modal) ?? null;
-  const respaldo = respaldoDelFoco(abierta?.volverA ?? null);
-  const recarga = volverAPedirTodo();
   const id = respuesta?.data?.id;
   sesion.id = Number.isInteger(id) ? id : null;
+  const respaldo = respaldoDelFoco(abierta?.volverA ?? null);
+  if (respaldo !== null && sesion.id !== null) {
+    respaldo.candidatos.unshift({ atributo: 'data-word-restitucion', valor: String(sesion.id), dentro: null });
+  }
+  const recarga = volverAPedirTodo();
   porId('modal-restitucion-titulo').textContent = 'Restitución pedida';
   porId('mr-cuerpo').hidden = true;
   porId('mr-pie').hidden = true;
