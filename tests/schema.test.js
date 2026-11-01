@@ -79,9 +79,24 @@ const TABLAS_MI_ESPACIO_AGENDA = ['mi_espacio_eventos', 'mi_espacio_evento_perso
 // la salida y, opcional en un día hábil, la entrada
 const TABLAS_MI_ESPACIO_HORAS = ['mi_espacio_salidas'];
 
-// Las tablas que crea schema.sql: 41 hasta la agenda de Mi espacio, 42 con la planilla de contrato y 43 con el evento Personal
-// (Público)
-const TOTAL_DE_TABLAS = 43;
+// Las dos tablas de los días restituidos de Mi espacio (spec 2026-10-31-mi-espacio-dias-restituidos, 6), en el orden de su
+// migración: los pedidos de restitución y la foto (qué días de qué cargas dejó de hacer hábiles un feriado cargado después),
+// que apunta a los pedidos
+const TABLAS_MI_ESPACIO_RESTITUCIONES = ['mi_espacio_restituciones', 'mi_espacio_restituibles'];
+const esDeLosDiasRestituidos = (c) => TABLAS_MI_ESPACIO_RESTITUCIONES.some(tabla => c.startsWith(`${tabla}.`));
+
+// El tipo de una licencia de Mi espacio: desde los días restituidos, con 'restituidos' al final (diez valores); antes, nueve
+const TIPO_DE_LICENCIA_ANTES = "mi_espacio_licencias.tipo enum('vacaciones','franquicia','estudios','medica','medica_extraordinaria','familiar','franco','horas_a_favor','uso_autorizado') null=NO default=null key=";
+const TIPO_DE_LICENCIA = "mi_espacio_licencias.tipo enum('vacaciones','franquicia','estudios','medica','medica_extraordinaria','familiar','franco','horas_a_favor','uso_autorizado','restituidos') null=NO default=null key=";
+
+// La estructura de schema.sql sin lo de los días restituidos: sin sus dos tablas y con el tipo de licencia de nueve valores
+const sinLosDiasRestituidos = (lista) => lista
+  .filter(c => !esDeLosDiasRestituidos(c))
+  .map(c => (c === TIPO_DE_LICENCIA ? TIPO_DE_LICENCIA_ANTES : c));
+
+// Las tablas que crea schema.sql: 41 hasta la agenda de Mi espacio, 42 con la planilla de contrato, 43 con el evento Personal
+// (Público) y 45 con los días restituidos
+const TOTAL_DE_TABLAS = 45;
 
 // Las columnas generadas de unas tablas, con cómo se guardan y su expresión: `columnas` no lee EXTRA
 const generadasDe = async (conexion, base, tablas) => {
@@ -413,7 +428,8 @@ describe('database/schema.sql', () => {
       'mi_espacio_horas_extras.updated_at timestamp null=YES default=current_timestamp() key=',
       'mi_espacio_licencias.id int(11) null=NO default=null key=PRI',
       'mi_espacio_licencias.usuario_id int(11) null=NO default=null key=MUL',
-      "mi_espacio_licencias.tipo enum('vacaciones','franquicia','estudios','medica','medica_extraordinaria','familiar','franco','horas_a_favor','uso_autorizado') null=NO default=null key=",
+      // Desde los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 6), con 'restituidos' al final
+      TIPO_DE_LICENCIA,
       // Iguales en lo de un día
       'mi_espacio_licencias.desde date null=NO default=null key=',
       'mi_espacio_licencias.hasta date null=NO default=null key=',
@@ -580,6 +596,68 @@ describe('database/schema.sql', () => {
     assert.deepEqual(await generadasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_HORAS), []);
   });
 
+  it('los días restituidos de Mi espacio: los pedidos y la foto, con sus columnas, la clave única y las FK (spec 2026-10-31-mi-espacio-dias-restituidos, 6)', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(esDeLosDiasRestituidos);
+    assert.deepEqual(lista, [
+      // Los pedidos: uno por grupo que se pidió (en A, la carga de los días restituidos; en B, la restitución a la licencia)
+      'mi_espacio_restituciones.id int(11) null=NO default=null key=PRI',
+      'mi_espacio_restituciones.usuario_id int(11) null=NO default=null key=MUL',
+      // Las vacaciones de las que salen los días o, en la recursión, la carga de días restituidos
+      'mi_espacio_restituciones.licencia_id int(11) null=NO default=null key=MUL',
+      // La licencia de origen
+      'mi_espacio_restituciones.anio smallint(6) null=NO default=null key=',
+      "mi_espacio_restituciones.caso enum('tomar','restituir') null=NO default=null key=",
+      'mi_espacio_restituciones.dias smallint(6) null=NO default=null key=',
+      // Del que sale el plazo
+      'mi_espacio_restituciones.primer_asueto date null=NO default=null key=',
+      'mi_espacio_restituciones.tanda smallint(6) null=NO default=null key=',
+      // El día del pedido: la fecha de la nota B y la habilitación de sus días
+      'mi_espacio_restituciones.fecha date null=NO default=null key=',
+      // En A, la carga «Días restituidos»; en B, NULL
+      'mi_espacio_restituciones.carga_id int(11) null=YES default=NULL key=MUL',
+      'mi_espacio_restituciones.activo tinyint(1) null=NO default=1 key=',
+      'mi_espacio_restituciones.created_at timestamp null=YES default=current_timestamp() key=',
+      'mi_espacio_restituciones.updated_at timestamp null=YES default=current_timestamp() key=',
+      // La foto: un día de una carga que un feriado cargado después dejó de hacer hábil
+      'mi_espacio_restituibles.id int(11) null=NO default=null key=PRI',
+      // El primer campo de la clave única de dos: un mismo valor se repite (otro día de la misma carga)
+      'mi_espacio_restituibles.licencia_id int(11) null=NO default=null key=MUL',
+      'mi_espacio_restituibles.feriado_id int(11) null=NO default=null key=MUL',
+      'mi_espacio_restituibles.fecha date null=NO default=null key=',
+      // NULL mientras ningún pedido la selló
+      'mi_espacio_restituibles.tanda smallint(6) null=YES default=NULL key=',
+      // NULL mientras no se pidió
+      'mi_espacio_restituibles.restitucion_id int(11) null=YES default=NULL key=MUL',
+      'mi_espacio_restituibles.created_at timestamp null=YES default=current_timestamp() key='
+    ]);
+    // Borrar a la persona o la carga borra sus pedidos y su foto; borrar la carga de días restituidos deja su pedido sin ella;
+    // borrar el feriado borra su foto; borrar el pedido deja la foto sin pedir
+    assert.deepEqual(await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_RESTITUCIONES), [
+      'mi_espacio_restituciones.carga_id -> mi_espacio_licencias.id (fk_mi_espacio_restituciones_carga) borrado=SET NULL',
+      'mi_espacio_restituciones.licencia_id -> mi_espacio_licencias.id (fk_mi_espacio_restituciones_licencia) borrado=CASCADE',
+      'mi_espacio_restituciones.usuario_id -> usuarios.id (fk_mi_espacio_restituciones_usuario) borrado=CASCADE',
+      'mi_espacio_restituibles.feriado_id -> feriados.id (fk_mi_espacio_restituibles_feriado) borrado=CASCADE',
+      'mi_espacio_restituibles.licencia_id -> mi_espacio_licencias.id (fk_mi_espacio_restituibles_licencia) borrado=CASCADE',
+      'mi_espacio_restituibles.restitucion_id -> mi_espacio_restituciones.id (fk_mi_espacio_restituibles_restitucion) borrado=SET NULL'
+    ]);
+    // Un día, una sola vez por carga: la foto se saca con INSERT IGNORE. La clave única es también el índice de la FK de la
+    // carga, y el de los pedidos de una persona, el de la FK de usuario_id
+    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_RESTITUCIONES), [
+      'mi_espacio_restituciones.fk_mi_espacio_restituciones_carga (carga_id) repetible=1',
+      'mi_espacio_restituciones.fk_mi_espacio_restituciones_licencia (licencia_id) repetible=1',
+      'mi_espacio_restituciones.idx_mi_espacio_restituciones_usuario (usuario_id,activo) repetible=1',
+      'mi_espacio_restituciones.PRIMARY (id) repetible=0',
+      'mi_espacio_restituibles.fk_mi_espacio_restituibles_feriado (feriado_id) repetible=1',
+      'mi_espacio_restituibles.fk_mi_espacio_restituibles_restitucion (restitucion_id) repetible=1',
+      'mi_espacio_restituibles.PRIMARY (id) repetible=0',
+      'mi_espacio_restituibles.uq_mi_espacio_restituibles_dia (licencia_id,fecha) repetible=0'
+    ]);
+    assert.deepEqual(await motoresDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_RESTITUCIONES),
+      TABLAS_MI_ESPACIO_RESTITUCIONES.map(tabla => `${tabla} InnoDB utf8mb4_unicode_ci`));
+    // Sin columnas generadas
+    assert.deepEqual(await generadasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_RESTITUCIONES), []);
+  });
+
   it(`crea ${TOTAL_DE_TABLAS} tablas`, async () => {
     const [[{ total }]] = await root.query(
       "SELECT COUNT(*) AS total FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'",
@@ -608,7 +686,7 @@ describe('database/schema.sql', () => {
     assert.deepEqual({ ...fk }, { tabla: 'cambios_pendientes', columna: 'id', borrado: 'SET NULL' });
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO, ...TABLAS_MI_ESPACIO_AGENDA, ...TABLAS_MI_ESPACIO_HORAS]) {
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO, ...TABLAS_MI_ESPACIO_AGENDA, ...TABLAS_MI_ESPACIO_HORAS, ...TABLAS_MI_ESPACIO_RESTITUCIONES]) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
@@ -1592,6 +1670,10 @@ describe('migracion-feriados.sql', () => {
   const BASE_FERIADOS = 'rpad_schema_feriados_test';
   const MIGRACION = 'migracion-feriados.sql';
   const ROLLBACK = 'rollback-feriados.sql';
+  // Lo que se le sumó después, con los días restituidos de Mi espacio: la foto (mi_espacio_restituibles) apunta a los
+  // feriados. Su migración va después de esta, y su vuelta atrás, antes que la de esta: la base lo exige
+  const MIGRACION_RESTITUCIONES = 'migracion-mi-espacio-restituciones.sql';
+  const ROLLBACK_RESTITUCIONES = 'rollback-mi-espacio-restituciones.sql';
   // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
   const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
   // Sin los comentarios: lo que de verdad se ejecuta
@@ -1605,7 +1687,10 @@ describe('migracion-feriados.sql', () => {
     await root.query(`USE \`${BASE_FERIADOS}\``);
     await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
     if (!conLoNuevo) {
+      // Primero las tablas de los días restituidos: la foto apunta a los feriados
       await root.query(`
+        DROP TABLE mi_espacio_restituibles;
+        DROP TABLE mi_espacio_restituciones;
         DROP TABLE feriados_no_rige;
         DROP TABLE feriados;`);
     }
@@ -1658,6 +1743,8 @@ describe('migracion-feriados.sql', () => {
     assert.ok(!anterior.some(esDeLasTablas), 'la base de partida ya tiene las tablas');
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION));
+    // Y lo que se le sumó después: las tablas de los días restituidos
+    await root.query(sql(MIGRACION_RESTITUCIONES));
     assert.deepEqual(await columnas(root, BASE_FERIADOS), await columnas(root, BASE_TEMPORAL));
     // Y también las claves foráneas y los índices, que las columnas no muestran del todo
     assert.deepEqual(await clavesAjenasDe(root, BASE_FERIADOS, TABLAS_FERIADOS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_FERIADOS));
@@ -1667,15 +1754,19 @@ describe('migracion-feriados.sql', () => {
   it('el rollback se puede repetir, deja la estructura de main sin borrar al usuario que cargó el feriado, y la migración la recupera', async () => {
     await crearBase({ conLoNuevo: true });
     await cargarDatos();
+    // Primero la vuelta atrás de los días restituidos, como en el despliegue: la foto apunta a los feriados, y con ella puesta
+    // la base no deja borrarlos
+    await root.query(sql(ROLLBACK_RESTITUCIONES));
     await root.query(sql(ROLLBACK));
     await root.query(sql(ROLLBACK));
-    // La estructura de main: la de schema.sql sin las dos tablas
-    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
+    // La estructura de main: la de schema.sql sin las dos tablas (ni lo de los días restituidos)
+    const deMain = sinLosDiasRestituidos(await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
     assert.deepEqual(await columnas(root, BASE_FERIADOS), deMain);
     // El usuario que había cargado el feriado sigue ahí
     assert.equal(await contarEn('usuarios'), 1);
-    // La migración vuelve a dejar exactamente la estructura de schema.sql
+    // Las dos migraciones vuelven a dejar exactamente la estructura de schema.sql
     await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION_RESTITUCIONES));
     assert.deepEqual(await columnas(root, BASE_FERIADOS), await columnas(root, BASE_TEMPORAL));
     assert.deepEqual(await clavesAjenasDe(root, BASE_FERIADOS, TABLAS_FERIADOS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_FERIADOS));
     assert.deepEqual(await indicesDe(root, BASE_FERIADOS, TABLAS_FERIADOS), await indicesDe(root, BASE_TEMPORAL, TABLAS_FERIADOS));
@@ -1928,6 +2019,10 @@ describe('migracion-mi-espacio.sql', () => {
   const BASE_MI_ESPACIO = 'rpad_schema_mi_espacio_test';
   const MIGRACION = 'migracion-mi-espacio.sql';
   const ROLLBACK = 'rollback-mi-espacio.sql';
+  // Lo que se le sumó después, con los días restituidos: el tipo 'restituidos' y las dos tablas, que apuntan a
+  // mi_espacio_licencias. Su migración va después de esta, y su vuelta atrás, antes que la de esta: la base lo exige
+  const MIGRACION_RESTITUCIONES = 'migracion-mi-espacio-restituciones.sql';
+  const ROLLBACK_RESTITUCIONES = 'rollback-mi-espacio-restituciones.sql';
   // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
   const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
   // Sin los comentarios: lo que de verdad se ejecuta
@@ -1941,7 +2036,8 @@ describe('migracion-mi-espacio.sql', () => {
     await root.query(`USE \`${BASE_MI_ESPACIO}\``);
     await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
     if (!conLoNuevo) {
-      await root.query([...TABLAS_MI_ESPACIO].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
+      // Primero las tablas de los días restituidos: apuntan a mi_espacio_licencias
+      await root.query([...TABLAS_MI_ESPACIO, ...TABLAS_MI_ESPACIO_RESTITUCIONES].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
     }
   };
   // Una persona con una licencia de Configuración y una fila en cada tabla, con la licencia de Mi espacio apuntando a la de
@@ -2001,6 +2097,8 @@ describe('migracion-mi-espacio.sql', () => {
     assert.ok(!anterior.some(esDeLasTablas), 'la base de partida ya tiene las tablas');
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION));
+    // Y lo que se le sumó después: el tipo 'restituidos' y las tablas de los días restituidos
+    await root.query(sql(MIGRACION_RESTITUCIONES));
     assert.deepEqual(await columnas(root, BASE_MI_ESPACIO), await columnas(root, BASE_TEMPORAL));
     // Y también las claves foráneas, los índices, el motor y la colación, que las columnas no muestran
     assert.deepEqual(await clavesAjenasDe(root, BASE_MI_ESPACIO, TABLAS_MI_ESPACIO), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO));
@@ -2012,10 +2110,13 @@ describe('migracion-mi-espacio.sql', () => {
     await crearBase({ conLoNuevo: true });
     const { usuario, oficial } = await cargarDatos();
     for (const tabla of TABLAS_MI_ESPACIO) assert.equal(await contarEn(tabla), 1, tabla);
+    // Primero la vuelta atrás de los días restituidos, como en el despliegue: sus tablas apuntan a mi_espacio_licencias, y con
+    // ellas puestas la base no deja borrarla
+    await root.query(sql(ROLLBACK_RESTITUCIONES));
     await root.query(sql(ROLLBACK));
     await root.query(sql(ROLLBACK));
-    // La estructura de main: la de schema.sql sin las seis tablas
-    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
+    // La estructura de main: la de schema.sql sin las seis tablas (ni las de los días restituidos)
+    const deMain = sinLosDiasRestituidos(await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
     assert.deepEqual(await columnas(root, BASE_MI_ESPACIO), deMain);
     // La persona y la licencia que había pasado a Configuración siguen ahí, tal cual
     assert.equal(await contarEn('usuarios'), 1);
@@ -2023,8 +2124,9 @@ describe('migracion-mi-espacio.sql', () => {
       `SELECT id, usuario_id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, anulada
        FROM \`${BASE_MI_ESPACIO}\`.usuarios_licencias`);
     assert.deepEqual(licencias.map(l => ({ ...l })), [{ id: oficial, usuario_id: usuario, desde: '2026-11-03', hasta: '2026-11-05', anulada: 0 }]);
-    // La migración vuelve a dejar exactamente la estructura de schema.sql
+    // Las dos migraciones vuelven a dejar exactamente la estructura de schema.sql
     await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION_RESTITUCIONES));
     assert.deepEqual(await columnas(root, BASE_MI_ESPACIO), await columnas(root, BASE_TEMPORAL));
     assert.deepEqual(await clavesAjenasDe(root, BASE_MI_ESPACIO, TABLAS_MI_ESPACIO), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO));
     assert.deepEqual(await indicesDe(root, BASE_MI_ESPACIO, TABLAS_MI_ESPACIO), await indicesDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO));
@@ -2664,4 +2766,268 @@ describe('migracion-mi-espacio-horas-mes-anterior.sql', () => {
     await comoSchema();
     assert.deepEqual((await salidas()).map(f => [f.fecha, f.al_mes_anterior]), [['2027-02-02', 0], ['2027-02-03', 0]]);
   });
+});
+
+// Los días de vacaciones que restituye un asueto (spec 2026-10-31-mi-espacio-dias-restituidos, 6 y 14): el tipo 'restituidos'
+// de mi_espacio_licencias, los pedidos de restitución (mi_espacio_restituciones) y la foto de los días por restituir
+// (mi_espacio_restituibles). La migración y su vuelta atrás, sobre una base descartable creada con schema.sql. La persona y las
+// fechas son las de la maqueta, inventadas
+describe('migracion-mi-espacio-restituciones.sql', () => {
+  const BASE_RESTITUCIONES = 'rpad_schema_mi_espacio_restituciones_test';
+  const MIGRACION = 'migracion-mi-espacio-restituciones.sql';
+  const ROLLBACK = 'rollback-mi-espacio-restituciones.sql';
+  // Las tablas que cambian, para comparar lo que las columnas no muestran
+  const TABLAS_QUE_CAMBIAN = ['mi_espacio_licencias', ...TABLAS_MI_ESPACIO_RESTITUCIONES];
+  // El tipo de licencia, como lo escriben la migración (diez valores) y la vuelta atrás (nueve)
+  const ENUM_DIEZ = "enum('vacaciones','franquicia','estudios','medica','medica_extraordinaria','familiar','franco','horas_a_favor','uso_autorizado','restituidos')";
+  const ENUM_NUEVE = "enum('vacaciones','franquicia','estudios','medica','medica_extraordinaria','familiar','franco','horas_a_favor','uso_autorizado')";
+  const escapar = (texto) => texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const sentencias = (archivo) => codigo(archivo).split(';').map(s => s.trim()).filter(Boolean);
+  const enLaBase = (tabla) => `\`${BASE_RESTITUCIONES}\`.\`${tabla}\``;
+  const tipoDeLicencia = async (base) => (await columnas(root, base)).filter(c => c.startsWith('mi_espacio_licencias.tipo '));
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main): sin las dos tablas (la
+  // foto primero: apunta a los pedidos) y con el tipo de nueve valores
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_RESTITUCIONES}\``);
+    await root.query(`CREATE DATABASE \`${BASE_RESTITUCIONES}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_RESTITUCIONES}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) {
+      await root.query(`DROP TABLE mi_espacio_restituibles;
+        DROP TABLE mi_espacio_restituciones;
+        ALTER TABLE mi_espacio_licencias MODIFY tipo ${ENUM_NUEVE} NOT NULL;`);
+    }
+  };
+  // La persona de la maqueta (inventada), los dos asuetos cargados después y sus vacaciones del 11/12/2026 al 08/01/2027
+  const cargarVacaciones = async () => {
+    const [{ insertId: usuario }] = await root.query(
+      `INSERT INTO ${enLaBase('usuarios')} (username, password_hash, nombre_completo, email, rol, vinculo) VALUES ('t_admin', 'x', 'Julieta Ferreyra', 't_admin@rpad.test', 'admin', 'planta_permanente')`);
+    const asueto = async (fecha) => (await root.query(
+      `INSERT INTO ${enLaBase('feriados')} (fecha, nombre, tipo, creado_por) VALUES (?, 'Asueto', 'no_laborable', ?)`, [fecha, usuario]))[0].insertId;
+    const asuetos = [await asueto('2026-12-24'), await asueto('2026-12-31')];
+    const [{ insertId: vacaciones }] = await root.query(
+      `INSERT INTO ${enLaBase('mi_espacio_licencias')} (usuario_id, tipo, desde, hasta) VALUES (?, 'vacaciones', '2026-12-11', '2027-01-08')`, [usuario]);
+    return { usuario, asuetos, vacaciones };
+  };
+  // La foto de los dos asuetos sobre las vacaciones, sin pedir todavía
+  const sacarLaFoto = async ({ asuetos, vacaciones }) => {
+    for (const [i, fecha] of ['2026-12-24', '2026-12-31'].entries()) {
+      await root.query(`INSERT INTO ${enLaBase('mi_espacio_restituibles')} (licencia_id, feriado_id, fecha) VALUES (?, ?, ?)`,
+        [vacaciones, asuetos[i], fecha]);
+    }
+  };
+  // El caso A: la carga de los días restituidos del 12/04 al 13/04/2027 (guardada el 01/04/2027 a las 10:00), su pedido y la
+  // foto sellada y enlazada a él
+  const cargarLosRestituidos = async ({ usuario, vacaciones }) => {
+    const [{ insertId: carga }] = await root.query(
+      `INSERT INTO ${enLaBase('mi_espacio_licencias')} (usuario_id, tipo, desde, hasta, updated_at) VALUES (?, 'restituidos', '2027-04-12', '2027-04-13', '2027-04-01 10:00:00')`,
+      [usuario]);
+    const [{ insertId: pedido }] = await root.query(
+      `INSERT INTO ${enLaBase('mi_espacio_restituciones')} (usuario_id, licencia_id, anio, caso, dias, primer_asueto, tanda, fecha, carga_id)
+       VALUES (?, ?, 2024, 'tomar', 2, '2026-12-24', 0, '2027-04-01', ?)`, [usuario, vacaciones, carga]);
+    await root.query(`UPDATE ${enLaBase('mi_espacio_restituibles')} SET tanda = 0, restitucion_id = ? WHERE licencia_id = ?`, [pedido, vacaciones]);
+    return { carga, pedido };
+  };
+  const contarEn = async (tabla) => {
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM ${enLaBase(tabla)}`);
+    return total;
+  };
+  const licencias = async () => (await root.query(
+    `SELECT id, tipo, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta,
+            DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS guardada, activo
+     FROM ${enLaBase('mi_espacio_licencias')} ORDER BY id`))[0].map(f => ({ ...f }));
+  // La misma estructura que schema.sql: las columnas, en su orden, y también las claves foráneas, los índices, el motor y la
+  // colación, que las columnas no muestran
+  const comoSchema = async () => {
+    assert.deepEqual(await columnas(root, BASE_RESTITUCIONES), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_RESTITUCIONES, TABLAS_QUE_CAMBIAN), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_QUE_CAMBIAN));
+    assert.deepEqual(await indicesDe(root, BASE_RESTITUCIONES, TABLAS_QUE_CAMBIAN), await indicesDe(root, BASE_TEMPORAL, TABLAS_QUE_CAMBIAN));
+    assert.deepEqual(await motoresDe(root, BASE_RESTITUCIONES, TABLAS_QUE_CAMBIAN), await motoresDe(root, BASE_TEMPORAL, TABLAS_QUE_CAMBIAN));
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_RESTITUCIONES}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega (nada de DROP, RENAME ni CHECK)', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+    // Los acentos de los comentarios llegan bien desde phpMyAdmin
+    assert.match(codigo(MIGRACION), /^SET NAMES utf8mb4;/);
+    assert.match(codigo(ROLLBACK), /^SET NAMES utf8mb4;/);
+    // Lo único que se ejecuta, además de SET NAMES: el tipo con 'restituidos' al final (se puede repetir) y las dos tablas, si
+    // todavía no están, primero los pedidos (la foto los apunta)
+    const lista = sentencias(MIGRACION);
+    assert.equal(lista.length, 4, lista.join('\n---\n'));
+    assert.match(lista[1], new RegExp(`^ALTER TABLE \`mi_espacio_licencias\` MODIFY \`tipo\` ${escapar(ENUM_DIEZ)} NOT NULL$`));
+    assert.match(lista[2], /^CREATE TABLE IF NOT EXISTS `mi_espacio_restituciones`/);
+    assert.match(lista[3], /^CREATE TABLE IF NOT EXISTS `mi_espacio_restituibles`/);
+  });
+
+  it('las cabeceras dicen la spec, que es obligatoria, el orden, que se puede repetir, cómo se verifica y cómo se deshace; el rollback, qué se pierde y qué va después', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-10-31-mi-espacio-dias-restituidos-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    // El código anterior anda con la estructura nueva, y la migración no carga datos
+    assert.match(cabecera(MIGRACION), /el código anterior sigue funcionando/);
+    assert.match(cabecera(MIGRACION), /nunca guarda 'restituidos'/);
+    assert.match(cabecera(MIGRACION), /No carga datos/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código nuevo, después de migracion-mi-espacio-horas-mes-anterior\.sql/);
+    // Por qué es obligatoria: estadosDe lee las dos tablas, y Configuración → Feriados saca la foto
+    assert.match(cabecera(MIGRACION), /Es obligatoria/);
+    assert.match(cabecera(MIGRACION), /estadosDe/);
+    assert.match(cabecera(MIGRACION), /Configuración → Feriados no puede cargar ni corregir un feriado/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-mi-espacio-restituciones\.sql/);
+    // La verificación, comentada al final
+    assert.match(cabecera(MIGRACION), /SHOW TABLES LIKE 'mi_espacio_restitu%';/);
+    assert.match(cabecera(MIGRACION), /tiene que dar 2 filas/);
+    assert.match(cabecera(ROLLBACK), /migracion-mi-espacio-restituciones\.sql/);
+    assert.match(cabecera(ROLLBACK), /ORDEN: primero volver a subir los archivos anteriores y hacer Restart; después correr esto/);
+    // Lo que pasa, dicho con su nombre: las cargas de días restituidos pasan a vacaciones; se pierden los pedidos y la foto
+    assert.match(cabecera(ROLLBACK), /pasan a vacaciones/);
+    assert.match(cabecera(ROLLBACK), /Se pierden los pedidos de restitución y la foto/);
+    assert.match(cabecera(ROLLBACK), /nueve valores/);
+    // Y si también se deshace «Sumar al mes anterior», esto va antes; y antes que las de Mi espacio y los feriados, que la base
+    // no dejaría borrar con estas tablas puestas
+    assert.match(cabecera(ROLLBACK), /rollback-mi-espacio-horas-mes-anterior\.sql/);
+    assert.match(cabecera(ROLLBACK), /rollback-mi-espacio\.sql/);
+    assert.match(cabecera(ROLLBACK), /rollback-feriados\.sql/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('el rollback pasa las cargas de días restituidos a vacaciones, borra primero la foto y después los pedidos, y deja el tipo con nueve valores', () => {
+    const lista = sentencias(ROLLBACK);
+    assert.equal(lista.length, 5, lista.join('\n---\n'));
+    // Sin tocar la fecha de su nota (updated_at): la vuelta atrás no es un guardado de la persona
+    assert.match(lista[1],
+      /^UPDATE `mi_espacio_licencias` SET `tipo` = 'vacaciones', `updated_at` = `updated_at` WHERE `tipo` = 'restituidos'$/);
+    assert.deepEqual([...codigo(ROLLBACK).matchAll(/DROP TABLE IF EXISTS `(\w+)`/gi)].map(m => m[1]),
+      ['mi_espacio_restituibles', 'mi_espacio_restituciones']);
+    assert.match(lista[2], /^DROP TABLE IF EXISTS `mi_espacio_restituibles`$/);
+    assert.match(lista[3], /^DROP TABLE IF EXISTS `mi_espacio_restituciones`$/);
+    assert.match(lista[4], new RegExp(`^ALTER TABLE \`mi_espacio_licencias\` MODIFY \`tipo\` ${escapar(ENUM_NUEVE)} NOT NULL$`));
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELETE|TRUNCATE|INSERT|RENAME)\b/i);
+  });
+
+  it('el tipo con diez valores y las dos tablas están en schema.sql y en la base del .env', async () => {
+    for (const base of [BASE_TEMPORAL, process.env.DB_NAME]) {
+      assert.deepEqual(await tipoDeLicencia(base), [TIPO_DE_LICENCIA], base);
+      const [tablas] = await root.query(
+        `SELECT TABLE_NAME AS tabla FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (?) ORDER BY TABLE_NAME`,
+        [base, TABLAS_MI_ESPACIO_RESTITUCIONES]);
+      assert.deepEqual(tablas.map(t => t.tabla), TABLAS_MI_ESPACIO_RESTITUCIONES, base);
+    }
+  });
+
+  it('desde la estructura de main deja la de schema.sql, se puede repetir y lo ya cargado no cambia', async () => {
+    await crearBase({ conLoNuevo: false });
+    const anterior = await columnas(root, BASE_RESTITUCIONES);
+    assert.ok(!anterior.some(esDeLosDiasRestituidos), 'la base de partida ya tiene las tablas');
+    assert.deepEqual(await tipoDeLicencia(BASE_RESTITUCIONES), [TIPO_DE_LICENCIA_ANTES]);
+    const { vacaciones } = await cargarVacaciones();
+    const antes = await licencias();
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    // Las vacaciones siguen como estaban, también la fecha de su nota
+    assert.deepEqual(await licencias(), antes);
+    assert.equal(antes[0].id, vacaciones);
+    // Lo que escribe el código de antes, con la estructura nueva, entra igual
+    await root.query(`INSERT INTO ${enLaBase('mi_espacio_licencias')} (usuario_id, tipo, desde, hasta) SELECT usuario_id, 'franco', '2027-02-15', '2027-02-15' FROM ${enLaBase('mi_espacio_licencias')} LIMIT 1`);
+    assert.equal(await contarEn('mi_espacio_licencias'), 2);
+  });
+
+  it('el rollback se puede repetir: la carga de días restituidos pasa a vacaciones (sin cambiar la fecha de su nota), se borran la foto y los pedidos, y la migración la recupera', async () => {
+    await crearBase({ conLoNuevo: true });
+    const datos = await cargarVacaciones();
+    await sacarLaFoto(datos);
+    const { carga } = await cargarLosRestituidos(datos);
+    assert.equal(await contarEn('mi_espacio_restituibles'), 2);
+    assert.equal(await contarEn('mi_espacio_restituciones'), 1);
+    const antes = await licencias();
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin las dos tablas y con el tipo de nueve valores
+    assert.deepEqual(await columnas(root, BASE_RESTITUCIONES), sinLosDiasRestituidos(await columnas(root, BASE_TEMPORAL)));
+    // Las dos cargas siguen, con sus fechas: la de los días restituidos, como unas vacaciones, y con la fecha de su nota
+    assert.deepEqual(await licencias(), antes.map(l => (l.id === carga ? { ...l, tipo: 'vacaciones' } : l)));
+    assert.deepEqual((await licencias()).find(l => l.id === carga),
+      { id: carga, tipo: 'vacaciones', desde: '2027-04-12', hasta: '2027-04-13', guardada: '2027-04-01 10:00:00', activo: 1 });
+    // La persona y los asuetos siguen
+    assert.equal(await contarEn('usuarios'), 1);
+    assert.equal(await contarEn('feriados'), 2);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql, sin pedidos ni foto
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.equal(await contarEn('mi_espacio_restituciones'), 0);
+    assert.equal(await contarEn('mi_espacio_restituibles'), 0);
+  });
+
+  // Un día, una sola vez por carga (la foto se saca con INSERT IGNORE); el tipo 'restituidos' entra; y qué pasa al borrar cada
+  // cosa. Con la estructura de schema.sql y con la de la migración
+  for (const origen of ['schema.sql', 'la migración']) {
+    it(`la foto, una vez por carga y día, y lo que se borra con cada cosa (${origen})`, async () => {
+      await crearBase({ conLoNuevo: origen === 'schema.sql' });
+      if (origen === 'la migración') await root.query(sql(MIGRACION));
+      const datos = await cargarVacaciones();
+      await sacarLaFoto(datos);
+      // El mismo día de la misma carga otra vez: con INSERT IGNORE no entra, y con un INSERT a secas la clave única lo frena
+      const [ignorado] = await root.query(
+        `INSERT IGNORE INTO ${enLaBase('mi_espacio_restituibles')} (licencia_id, feriado_id, fecha) VALUES (?, ?, '2026-12-24')`,
+        [datos.vacaciones, datos.asuetos[0]]);
+      assert.equal(ignorado.affectedRows, 0);
+      await assert.rejects(
+        root.query(`INSERT INTO ${enLaBase('mi_espacio_restituibles')} (licencia_id, feriado_id, fecha) VALUES (?, ?, '2026-12-24')`,
+          [datos.vacaciones, datos.asuetos[0]]),
+        { code: 'ER_DUP_ENTRY' });
+      // Una foto sin pedir: sin tanda ni pedido
+      const foto = async () => (await root.query(
+        `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, tanda, restitucion_id FROM ${enLaBase('mi_espacio_restituibles')} ORDER BY fecha`))[0]
+        .map(f => ({ ...f }));
+      assert.deepEqual(await foto(), [
+        { fecha: '2026-12-24', tanda: null, restitucion_id: null },
+        { fecha: '2026-12-31', tanda: null, restitucion_id: null }
+      ]);
+      // El caso A: la carga 'restituidos' entra en el tipo, con su pedido y la foto sellada
+      const { carga, pedido } = await cargarLosRestituidos(datos);
+      const [[pedidoLeido]] = await root.query(
+        `SELECT caso, dias, DATE_FORMAT(primer_asueto, '%Y-%m-%d') AS primer_asueto, tanda, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, carga_id, activo
+         FROM ${enLaBase('mi_espacio_restituciones')} WHERE id = ?`, [pedido]);
+      assert.deepEqual({ ...pedidoLeido },
+        { caso: 'tomar', dias: 2, primer_asueto: '2026-12-24', tanda: 0, fecha: '2027-04-01', carga_id: carga, activo: 1 });
+      // Borrar la carga de días restituidos deja el pedido sin ella
+      await root.query(`DELETE FROM ${enLaBase('mi_espacio_licencias')} WHERE id = ?`, [carga]);
+      const [[{ carga_id: sinCarga }]] = await root.query(`SELECT carga_id FROM ${enLaBase('mi_espacio_restituciones')} WHERE id = ?`, [pedido]);
+      assert.equal(sinCarga, null);
+      // Borrar el pedido deja la foto sin pedir, con su tanda
+      await root.query(`DELETE FROM ${enLaBase('mi_espacio_restituciones')} WHERE id = ?`, [pedido]);
+      assert.deepEqual(await foto(), [
+        { fecha: '2026-12-24', tanda: 0, restitucion_id: null },
+        { fecha: '2026-12-31', tanda: 0, restitucion_id: null }
+      ]);
+      // Borrar un feriado borra su foto
+      await root.query(`DELETE FROM ${enLaBase('feriados')} WHERE id = ?`, [datos.asuetos[1]]);
+      assert.deepEqual((await foto()).map(f => f.fecha), ['2026-12-24']);
+      // Borrar las vacaciones borra sus pedidos y lo que quedaba de su foto
+      await root.query(
+        `INSERT INTO ${enLaBase('mi_espacio_restituciones')} (usuario_id, licencia_id, anio, caso, dias, primer_asueto, tanda, fecha)
+         VALUES (?, ?, 2025, 'restituir', 1, '2026-12-24', 1, '2027-04-01')`, [datos.usuario, datos.vacaciones]);
+      await root.query(`DELETE FROM ${enLaBase('mi_espacio_licencias')} WHERE id = ?`, [datos.vacaciones]);
+      assert.equal(await contarEn('mi_espacio_restituciones'), 0);
+      assert.equal(await contarEn('mi_espacio_restituibles'), 0);
+      // Borrar a la persona borra sus pedidos (los usuarios no se borran: se desactivan)
+      const [{ insertId: otras }] = await root.query(
+        `INSERT INTO ${enLaBase('mi_espacio_licencias')} (usuario_id, tipo, desde, hasta) VALUES (?, 'vacaciones', '2027-03-01', '2027-03-05')`, [datos.usuario]);
+      await root.query(
+        `INSERT INTO ${enLaBase('mi_espacio_restituciones')} (usuario_id, licencia_id, anio, caso, dias, primer_asueto, tanda, fecha)
+         VALUES (?, ?, 2025, 'restituir', 1, '2027-03-03', 0, '2027-03-10')`, [datos.usuario, otras]);
+      await root.query(`DELETE FROM ${enLaBase('usuarios')} WHERE id = ?`, [datos.usuario]);
+      assert.equal(await contarEn('mi_espacio_restituciones'), 0);
+    });
+  }
 });
