@@ -6,19 +6,21 @@
  * administración activa con la que se arma el nombre corto de cada uno (`administracionActiva`, spec
  * 2026-10-28-mi-espacio-agenda-onda, 5.1; el de un Personal (Público) de la agenda, contra todos los usuarios activos:
  * `usuariosActivos`, spec 2026-10-29-mi-espacio-evento-publico, 6.3), quiénes están de licencia el día del email de
- * vencimiento (sección 9), cuántas licencias incluye un feriado (Configuración → Feriados, `licenciasQueIncluyen`) y la fecha
- * y la firma de la nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word, `datosDeLaNota`). Lo que llega de la base
- * como texto se convierte acá (el pool no tiene `dateStrings` ni `decimalNumbers`): las fechas se leen con DATE_FORMAT
+ * vencimiento (sección 9), cuántas licencias incluye un feriado (Configuración → Feriados, `licenciasQueIncluyen`), las
+ * cargas que fotografía y cuántas vacaciones deja con días por restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 6:
+ * `cargasParaLaFoto`, `fotosParaElFeriado` y `vacacionesParaRestituir`) y la fecha y la firma de la nota de una licencia (spec
+ * 2026-10-27-mi-espacio-licencia-word, `datosDeLaNota`). Lo que llega de la base como texto se convierte acá (el pool no tiene
+ * `dateStrings` ni `decimalNumbers`): las fechas se leen con DATE_FORMAT
  * ('AAAA-MM-DD'), los DECIMAL, tinyint y smallint pasan por Number() (el '7.5' de unas horas, el '8.0' de un saldo) y los TIME
  * ('19:00:00') se cortan a 'HH:MM'.
  * Sin consultas N+1: las tablas se leen una vez para todas las personas (`estadosDe`). `conexion`: el pool, o la de una
  * transacción (lee lo que ella ve).
  */
 import pool from '../config/database.js';
-import { calcular, modalidadDe, esDiaEntero, nombreCorto } from './miEspacioReglas.js';
+import { calcular, modalidadDe, esDiaEntero, nombreCorto, plazoDeRestitucion } from './miEspacioReglas.js';
 import { ROLES_QUE_COMPARTEN } from './miEspacioEventosReglas.js';
 import { filasDeFeriados } from './feriadosDatos.js';
-import { feriadosDelRango, fechasQueCambianDiasHabiles } from './feriadosReglas.js';
+import { feriadosDelRango, fechasQueCambianDiasHabiles, fechasDelFeriado, fotosDelFeriado } from './feriadosReglas.js';
 import { idPositivo } from './proyectosReglas.js';
 import { esAdmin } from './usuariosReglas.js';
 import { esFechaIso, hoyArgentina } from './notasDigitalesCalendario.js';
@@ -488,4 +490,93 @@ export const licenciasQueIncluyen = async (fila, { excluir = null } = {}, conexi
     fechas
   );
   return Number(cantidad);
+};
+
+/**
+ * Las cargas que puede fotografiar un feriado (spec 2026-10-31-mi-espacio-dias-restituidos, 6): las activas de vacaciones y de
+ * días restituidos de cualquier persona que tocan el rango de desde a hasta (los dos incluidos), cada una con el arranque de su
+ * persona (null si todavía no cargó su saldo inicial), por id: `[{ id, tipo, desde, hasta, arranque }]`, la forma que lee
+ * `fotosDelFeriado`. Con un rango que no es un rango, [] (sin consultar). `conexion`: la de la transacción del feriado.
+ * @returns {Promise<{ id: number, tipo: string, desde: string, hasta: string, arranque: string | null }[]>}
+ */
+export const cargasParaLaFoto = async (conexion, desde, hasta) => {
+  if (!esFechaIso(desde) || !esFechaIso(hasta) || hasta < desde) return [];
+  const [filas] = await conexion.query(
+    `SELECT l.id, l.tipo, DATE_FORMAT(l.desde, '%Y-%m-%d') AS desde, DATE_FORMAT(l.hasta, '%Y-%m-%d') AS hasta,
+            DATE_FORMAT(a.fecha, '%Y-%m-%d') AS arranque
+     FROM mi_espacio_licencias l
+     LEFT JOIN mi_espacio_arranque a ON a.usuario_id = l.usuario_id
+     WHERE l.activo = 1 AND l.tipo IN ('vacaciones', 'restituidos') AND l.desde <= ? AND l.hasta >= ?
+     ORDER BY l.id`,
+    [hasta, desde]
+  );
+  return filas.map((fila) => ({
+    id: Number(fila.id), tipo: fila.tipo, desde: fila.desde, hasta: fila.hasta, arranque: fila.arranque ?? null
+  }));
+};
+
+// El rango en que puede regir un feriado, para leer solo las cargas que lo tocan: desde su fecha (no rige hacia atrás) hasta
+// ella misma, o, uno que se repite, hasta el 31/12 de su hasta_anio (sin él, sin fin). Sin una fecha, null
+const rangoDelFeriado = (fila) => {
+  if (fila === null || typeof fila !== 'object' || !esFechaIso(fila.fecha)) return null;
+  if (Number(fila.se_repite) !== 1) return { desde: fila.fecha, hasta: fila.fecha };
+  const hastaAnio = idPositivo(fila.hasta_anio);
+  return { desde: fila.fecha, hasta: hastaAnio === null ? '9999-12-31' : `${String(hastaAnio).padStart(4, '0')}-12-31` };
+};
+
+// Si dos filas rigen exactamente las mismas fechas: la misma fecha, «se repite», hasta_anio y años que no rigen
+const mismasFechas = (a, b) => a.fecha === b.fecha && Number(a.se_repite) === Number(b.se_repite)
+  && String(a.hasta_anio ?? '') === String(b.hasta_anio ?? '')
+  && JSON.stringify(a.no_rige ?? []) === JSON.stringify(b.no_rige ?? []);
+
+// Si ya se sabe, sin leer las cargas, que el feriado no tiene ninguna fecha nueva que cambie un día hábil (así no hay foto):
+// una corrección que no cambió sus fechas (con `antes`, la fila de antes: renombrarlo no tiene fechas nuevas), o uno que no se
+// repite, que tiene una sola fecha, en su año. Nunca dice que no cuando podría haber una
+const sinFechasNuevas = (fila, otras, antes) => {
+  if (antes !== null && mismasFechas(antes, fila)) return true;
+  if (Number(fila.se_repite) === 1) return false;
+  const anio = Number(fila.fecha.slice(0, 4));
+  const yaTenia = new Set(antes === null ? [] : fechasDelFeriado(antes, anio, anio));
+  return fechasQueCambianDiasHabiles(fila, anio, anio, otras).every((fecha) => yaTenia.has(fecha));
+};
+
+/**
+ * La foto que saca el feriado `fila` (spec 2026-10-31-mi-espacio-dias-restituidos, 6): `fotosDelFeriado` con las cargas de
+ * `cargasParaLaFoto` en el rango en que puede regir. `otras`, los demás feriados activos (sin él); `antes`, la fila antes de
+ * corregirlo (solo cuentan las fechas nuevas). Si ya se sabe que no tiene fechas nuevas que cambien un día hábil (un sábado, un
+ * fijo, otro feriado ese día, o una corrección que no tocó la fecha ni «se repite»), [] sin leer las cargas. `conexion`: la de
+ * la transacción del feriado, o el pool.
+ * @returns {Promise<{ licencia_id: number, fecha: string }[]>}
+ */
+export const fotosParaElFeriado = async (fila, { otras = [], antes = null } = {}, conexion = pool) => {
+  const rango = rangoDelFeriado(fila);
+  const anterior = antes !== null && typeof antes === 'object' ? antes : null;
+  if (rango === null || sinFechasNuevas(fila, otras, anterior)) return [];
+  const cargas = await cargasParaLaFoto(conexion, rango.desde, rango.hasta);
+  return fotosDelFeriado(fila, cargas, otras, { antes: anterior });
+};
+
+// Cuántos años después de la primera fecha se piden los feriados para el plazo (el último día hábil del mes que está 4 meses
+// después cae, a lo sumo, en el año siguiente)
+const ANIOS_DEL_PLAZO = 1;
+
+/**
+ * Para el modal del feriado y la respuesta del alta y de la corrección (spec 2026-10-31-mi-espacio-dias-restituidos, 8 y 9):
+ * cuántas cargas de vacaciones (o de días restituidos) quedarían con días para restituir con el feriado `fila` (las que tendrían
+ * foto, `fotosParaElFeriado`) y el plazo contado desde la primera de esas fechas (`plazoDeRestitucion`, con los feriados de la
+ * tabla y el del modal: un límite sabido de la spec, sección 15, es que unas vacaciones con días de un asueto anterior tienen el
+ * plazo de ese). `fila` tiene la forma de las de `filasDeFeriados`; `excluir`, el id del que se corrige o del que se acaba de
+ * guardar (no es «otro» feriado ese día); `antes`, la fila guardada antes de corregirla (las fechas que ya tenía no cuentan).
+ * Solo el número y la fecha: ni personas ni tipos. Sin ninguna, `{ vacaciones: 0, plazo: null }`.
+ * @returns {Promise<{ vacaciones: number, plazo: string | null }>}
+ */
+export const vacacionesParaRestituir = async (fila, { excluir = null, antes = null } = {}, conexion = pool) => {
+  const excluido = idPositivo(excluir);
+  const otras = (await filasDeFeriados(conexion)).filter((otra) => otra.id !== excluido);
+  const fotos = await fotosParaElFeriado(fila, { otras, antes }, conexion);
+  if (fotos.length === 0) return { vacaciones: 0, plazo: null };
+  const primera = fotos.map((foto) => foto.fecha).sort()[0];
+  const hasta = `${Number(primera.slice(0, 4)) + ANIOS_DEL_PLAZO}-12-31`;
+  const feriados = feriadosDelRango([...otras, fila], primera, hasta);
+  return { vacaciones: new Set(fotos.map((foto) => foto.licencia_id)).size, plazo: plazoDeRestitucion(primera, feriados) };
 };
