@@ -14,10 +14,12 @@ import fs from 'fs';
 import vm from 'vm';
 import {
   filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, resumenDe, proximoFeriadoDe, diaLargo, mesTitulo, planillaDelMes,
-  textoDeLaListaDe
+  textoDeLaListaDe, textoDeLaRestitucionHecha
 } from '../services/miEspacioResumen.js';
 import { feriadosDelRango } from '../services/feriadosReglas.js';
-import { notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota } from '../services/miEspacioNota.js';
+import {
+  notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota, notaDeRestitucion, aclaracionDeLaRestitucion
+} from '../services/miEspacioNota.js';
 import {
   DIAS_DE_PROXIMOS, itemDeEvento, itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, MENSAJES_EVENTO,
   LARGO_TITULO_EVENTO, LARGO_DETALLE_EVENTO, FECHA_MINIMA_EVENTO, fechaMaximaEvento, textoRangoEvento, RECORDATORIOS,
@@ -33,9 +35,9 @@ import {
   textoSaldoDelArranque, textoDeLasMitades, evaluarLicencia, pasoPrevistoDe, AVISO_DEL_PASO, AVISO_SIN_PERSONA_A_CARGO, textoAutorizadaDelFirmante,
   TIPOS_DE_UN_DIA, TIPOS_POR_HORAS, esDiaEntero, TEXTO_NO_SE_COPIA, SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL,
   TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, tipoDeDia, horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, validarSalida,
-  repartoDelMes, textoDeLoQueSeMueve
+  repartoDelMes, textoDeLoQueSeMueve, TIPOS_LICENCIA, TIPOS_CON_PERSONA_A_CARGO, dejaPersonaACargo, recuadroDeLaRestitucion
 } from '../services/miEspacioReglas.js';
-import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
+import { HOY, SIN_FERIADOS, PLANTA, CONTRATO, JULIETA, ASUETOS } from './fixtures/mi-espacio-casos.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
 
@@ -3217,13 +3219,14 @@ describe('los formularios: lo puro', () => {
 
   it('valoresDeLicencia: los de una fila de la lista, o los de una nueva con su tipo', () => {
     const fila = { ...licenciasDe(PLANTA).licencias[0], nota: 'Viaje', en_configuracion: { licencia_id: 40, autorizado_id: 3 } };
+    // `grupo`, el de unos días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9): en los demás tipos, ''
     assert.deepEqual(plano(M.valoresDeLicencia(fila)), {
-      id: 6, tipo: 'vacaciones', desde: '2026-11-03', hasta: '2026-11-09', horas: '', nota: 'Viaje', mostrar: true,
+      id: 6, tipo: 'vacaciones', grupo: '', desde: '2026-11-03', hasta: '2026-11-09', horas: '', nota: 'Viaje', mostrar: true,
       autorizado: '3', autorizado_inicial: '3', licencia_oficial: 40
     });
     assert.deepEqual(plano(M.valoresDeLicencia(null, 'franco')), {
-      id: null, tipo: 'franco', desde: '', hasta: '', horas: '', nota: '', mostrar: true, autorizado: '', autorizado_inicial: '',
-      licencia_oficial: null
+      id: null, tipo: 'franco', grupo: '', desde: '', hasta: '', horas: '', nota: '', mostrar: true, autorizado: '',
+      autorizado_inicial: '', licencia_oficial: null
     });
     assert.equal(M.valoresDeLicencia(null).tipo, '');
     assert.equal(M.valoresDeLicencia({ ...fila, tipo: 'franquicia', horas: 2 }).horas, '2');
@@ -10931,5 +10934,473 @@ describe('mi-espacio.html: los estilos del evento Personal (Público) en la agen
     }
     // Y contra su blanco de adentro: es un anillo, no un punto lleno
     assert.ok(contraste(rosado, BLANCO) >= 3);
+  });
+});
+
+// =====================================================================================================================================
+// Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9; Task 13): lo puro de la página, con los datos que arma el
+// servidor para Julieta Ferreyra (la persona inventada de la maqueta: vacaciones del 11/12/2026 al 08/01/2027, con los asuetos del 24
+// y el 31/12/2026 cargados después), pasados por JSON como los manda la API, y comparados con el HTML de la maqueta (`window.MQ` de
+// docs/superpowers/specs/2026-10-31-mi-espacio-dias-restituidos-mockups/datos.js; lo nuevo lleva ahí la clase mq-nuevo, que en la
+// página real no va, y los botones de la maqueta llevan sus data-mq-* en lugar de los de la página)
+// =====================================================================================================================================
+
+const MAQUETA_DE_LOS_RESTITUIDOS = (() => {
+  const contexto = vm.createContext({ window: {} });
+  vm.runInContext(fs.readFileSync(new URL('../docs/superpowers/specs/2026-10-31-mi-espacio-dias-restituidos-mockups/datos.js',
+    import.meta.url), 'utf8'), contexto);
+  return comoLlega(contexto.window.MQ);
+})();
+// El HTML de la maqueta y el de la página, sin lo que cada uno pone en sus botones (los data-* y los aria-label que la maqueta no
+// tiene) ni la clase mq-nuevo: así se comparan las etiquetas, las clases y los textos
+const sinLosDatos = (html) => html.replace(/ mq-nuevo/g, '')
+  .replace(/ (?:data-mq-[\w-]+|data-accion|data-tipo|data-grupo|data-word-restitucion|data-borrar-restitucion|aria-label)="[^"]*"/g, '');
+const VUELVE_JULIETA = '2027-01-11';
+const ABRIL_JULIETA = '2027-04-01';
+const MAYO_JULIETA = '2027-05-03';
+const [VACACIONES_DE_JULIETA] = JULIETA.estado.licencias;
+const DE_JULIETA = Object.freeze({ tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08' });
+// Un pedido (de la variante B, si no se dice otra cosa) y la foto de Julieta sellada en la tanda 0 y enlazada a él
+const pedidoDeJulieta = (id, extra = {}) => ({
+  id, licencia_id: 1, anio: 2025, caso: 'restituir', dias: 2, primer_asueto: '2026-12-24', tanda: 0, fecha: ABRIL_JULIETA,
+  carga_id: null, activo: 1, licencia: { ...DE_JULIETA, activo: 1 }, ...extra
+});
+const fotoSelladaDeJulieta = (restitucionId) =>
+  JULIETA.estado.restituibles.map((fila) => ({ ...fila, tanda: 0, restitucion_id: restitucionId }));
+const saldosDeJulieta = (porAnio) =>
+  Object.entries(porAnio).map(([anio, cantidad]) => ({ concepto: 'vacaciones', anio: Number(anio), cantidad }));
+// La variante B: las mismas vacaciones, con 20 de la 2025 y sin saldo de la 2024; y con la restitución pedida el 01/04/2027
+const VARIANTE_B = Object.freeze({ ...JULIETA.estado, saldos: saldosDeJulieta({ 2025: 20, 2026: 10 }) });
+const B_PEDIDA = Object.freeze({ ...VARIANTE_B, restituibles: fotoSelladaDeJulieta(10), restituciones: [pedidoDeJulieta(10)] });
+// Los días de la 2024 cargados del 12/04 al 13/04/2027 (la carga 2, con su pedido del caso A)
+const CARGA_A = Object.freeze({ id: 2, tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13', horas: null });
+const CARGADOS = Object.freeze({
+  ...JULIETA.estado, licencias: [VACACIONES_DE_JULIETA, CARGA_A], restituibles: fotoSelladaDeJulieta(10),
+  restituciones: [pedidoDeJulieta(10, { anio: 2024, caso: 'tomar', carga_id: 2 })]
+});
+const calculoDeJulieta = (estado, hoy, feriados = ASUETOS) => calcular(estado, { hoy, feriados });
+const resumenDeJulieta = (estado, hoy, feriados = ASUETOS) => comoLlega(resumenDe({
+  persona: JULIETA.persona, estado, calculo: calculoDeJulieta(estado, hoy, feriados), hoy, feriados,
+  hoyYManana: { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null }
+}));
+// La persona con su nombre corto, como la arma contextoDe (así «Tus compañeros ven «Julieta no está».», como en la maqueta)
+const filaDeJulieta = (estado, hoy, id = 1, anio = 2027) => comoLlega(filasDeLicencias(estado, calculoDeJulieta(estado, hoy),
+  { anio, hoy, persona: { ...JULIETA.persona, nombre_corto: 'Julieta' }, feriados: ASUETOS })).licencias.find((fila) => fila.id === id);
+// La firma de la nota de Julieta (la de la maqueta) y la hoja de cada nota, como la arma el servidor
+const FIRMA_DE_JULIETA = Object.freeze({ nombre: 'Julieta Ferreyra', cargo: 'Coordinadora de Estadística', vinculo: 'planta_permanente' });
+const FECHAS_DE_LOS_ASUETOS = Object.freeze(['2026-12-24', '2026-12-31']);
+const HOJA_A = htmlDeLaNota(notaDeLicencia(CARGA_A, {
+  fecha: ABRIL_JULIETA, persona: FIRMA_DE_JULIETA, feriados: ASUETOS, restitucion: { anio: 2024, fechas: [...FECHAS_DE_LOS_ASUETOS] }
+}).nota);
+const HOJA_B = htmlDeLaNota(notaDeRestitucion({ anio: 2025, dias: 2, fechas: [...FECHAS_DE_LOS_ASUETOS] },
+  { fecha: ABRIL_JULIETA, persona: FIRMA_DE_JULIETA }).nota);
+// Lo que se lee de una clase de la página o de la maqueta: el primer elemento con esa clase y lo que tiene adentro
+const conLaClase = (html, etiqueta, clase) =>
+  new RegExp(`<${etiqueta} class="${clase}(?: mq-nuevo)?"[^>]*>[\\s\\S]*?</${etiqueta}>`).exec(html)?.[0] ?? null;
+const lineaDe = (html) => {
+  // La línea de un grupo: el <span class="me-restituir-linea"> entero (sus <span> y sus <button> adentro, sin otro igual)
+  const inicio = html.search(/<span class="me-restituir-linea(?: mq-nuevo)?">/);
+  if (inicio === -1) return null;
+  let profundidad = 0;
+  for (const marca of html.slice(inicio).matchAll(/<(\/?)span\b[^>]*>/g)) {
+    profundidad += marca[1] === '/' ? -1 : 1;
+    if (profundidad === 0) return html.slice(inicio, inicio + marca.index + marca[0].length);
+  }
+  return null;
+};
+const ACCION_A_DE_JULIETA = Object.freeze({
+  texto: 'Cargar los días restituidos', tipo: 'restituidos', grupo: '1-2024-0', restitucion: { licencia_id: 1, anio: 2024, tanda: 0 }
+});
+const ACCION_B_DE_JULIETA = Object.freeze({
+  texto: 'Pedir la restitución', tipo: 'restitucion', grupo: '1-2025-0', restitucion: { licencia_id: 1, anio: 2025, tanda: 0 }
+});
+const BOTON_A = '<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-accion="cargar-licencia" data-tipo="restituidos" '
+  + 'data-grupo="1-2024-0">Cargar los días restituidos</button>';
+const BOTON_B = '<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-accion="pedir-restitucion" data-grupo="1-2025-0">'
+  + 'Pedir la restitución</button>';
+const WORD_DE_LA_2025 = '<button type="button" class="sg-link" data-word-restitucion="10" '
+  + 'aria-label="Descargar en Word la nota de la restitución a la licencia 2025">Word</button>';
+const BORRAR_DE_LA_2025 = '<button type="button" class="sg-link me-link-rojo" data-borrar-restitucion="10" '
+  + 'aria-label="Borrar el pedido de restitución a la licencia 2025">Borrar el pedido</button>';
+const MAL_ESCAPADO = '<b>"x"</b>';
+const BIEN_ESCAPADO = '&lt;b&gt;&quot;x&quot;&lt;/b&gt;';
+
+describe('los días restituidos: las paridades y las constantes', () => {
+  it('TIPOS_CON_PERSONA_A_CARGO y dejaPersonaACargo son los del servidor (las vacaciones y los días restituidos)', () => {
+    assert.deepEqual(plano(M.TIPOS_CON_PERSONA_A_CARGO), [...TIPOS_CON_PERSONA_A_CARGO]);
+    assert.ok(Object.isFrozen(M.TIPOS_CON_PERSONA_A_CARGO));
+    for (const tipo of [...TIPOS_LICENCIA, '', null, undefined, 'Vacaciones', 3, {}]) {
+      assert.equal(M.dejaPersonaACargo(tipo), dejaPersonaACargo(tipo), String(tipo));
+    }
+  });
+
+  it('la insignia de los días restituidos es azul, como la de las vacaciones; las demás no cambian', () => {
+    assert.equal(M.CLASE_DEL_TIPO.restituidos, 'azul');
+    assert.deepEqual(plano(M.CLASE_DEL_TIPO), {
+      vacaciones: 'azul', franquicia: 'violeta', estudios: 'ambar', medica: 'rojo', medica_extraordinaria: 'rojo', familiar: 'azul',
+      franco: 'verde', horas_a_favor: 'verde', uso_autorizado: 'gris', restituidos: 'azul'
+    });
+  });
+});
+
+describe('los días restituidos: el aviso del Resumen, «Vence pronto» y lo que hay que revisar', () => {
+  it('htmlDeRestituciones: el aviso ámbar de la maqueta, con su botón (A: «Cargar licencia» con el grupo)', () => {
+    const { restituciones } = resumenDeJulieta(JULIETA.estado, VUELVE_JULIETA);
+    assert.deepEqual(restituciones, [{ clave: '1-2024-0', texto: MAQUETA_DE_LOS_RESTITUIDOS.T.avisoA, accion: ACCION_A_DE_JULIETA }]);
+    const html = M.htmlDeRestituciones(restituciones);
+    assert.equal(html, `<div class="me-aviso me-aviso-ambar me-restituir"><p>${MAQUETA_DE_LOS_RESTITUIDOS.T.avisoA}</p>${BOTON_A}</div>`);
+    const deLaMaqueta = conLaClase(MAQUETA_DE_LOS_RESTITUIDOS.MOMENTOS['al-volver'].resumen.html, 'div', 'me-aviso me-aviso-ambar me-restituir');
+    assert.equal(sinLosDatos(html), sinLosDatos(deLaMaqueta));
+  });
+
+  it('htmlDeRestituciones: el caso B pide la restitución (data-accion="pedir-restitucion", con el grupo y sin tipo)', () => {
+    const { restituciones } = resumenDeJulieta(VARIANTE_B, ABRIL_JULIETA);
+    const html = M.htmlDeRestituciones(restituciones);
+    assert.equal(html, `<div class="me-aviso me-aviso-ambar me-restituir"><p>${MAQUETA_DE_LOS_RESTITUIDOS.T.avisoB}</p>${BOTON_B}</div>`);
+    const deLaMaqueta = conLaClase(MAQUETA_DE_LOS_RESTITUIDOS.MOMENTOS['variante-b'].resumen.html, 'div', 'me-aviso me-aviso-ambar me-restituir');
+    assert.equal(sinLosDatos(html), sinLosDatos(deLaMaqueta));
+  });
+
+  it('htmlDeRestituciones: uno por grupo, en su orden; sin texto no va; sin botón con texto, el aviso solo; nada, \'\'', () => {
+    const otro = { clave: '1-2025-0', texto: 'Otro aviso.', accion: ACCION_B_DE_JULIETA };
+    const dos = M.htmlDeRestituciones([{ clave: '1-2024-0', texto: 'Un aviso.', accion: ACCION_A_DE_JULIETA }, otro]);
+    assert.equal((dos.match(/me-restituir/g) ?? []).length, 2);
+    assert.ok(dos.indexOf('Un aviso.') < dos.indexOf('Otro aviso.'));
+    assert.equal(M.htmlDeRestituciones([{ clave: 'x', texto: 'Solo el texto.' }]),
+      '<div class="me-aviso me-aviso-ambar me-restituir"><p>Solo el texto.</p></div>');
+    assert.equal(M.htmlDeRestituciones([{ clave: 'x', texto: 'Solo el texto.', accion: { ...ACCION_A_DE_JULIETA, texto: '  ' } }]),
+      '<div class="me-aviso me-aviso-ambar me-restituir"><p>Solo el texto.</p></div>');
+    // Sin el grupo en la acción, el de la clave del aviso
+    assert.ok(M.htmlDeRestituciones([{ clave: '1-2024-0', texto: 'x', accion: { texto: 'Cargar', tipo: 'restituidos' } }])
+      .includes('data-accion="cargar-licencia" data-tipo="restituidos" data-grupo="1-2024-0">'));
+    for (const raro of [[], undefined, null, 'x', 3, {}, [null], [{}], [{ texto: '  ', accion: ACCION_A_DE_JULIETA }]]) {
+      assert.equal(M.htmlDeRestituciones(raro), '', JSON.stringify(raro));
+    }
+  });
+
+  it('htmlDeRestituciones: todo texto del servidor, escapado (también en los atributos)', () => {
+    const html = M.htmlDeRestituciones([{
+      clave: MAL_ESCAPADO, texto: MAL_ESCAPADO, accion: { texto: MAL_ESCAPADO, tipo: MAL_ESCAPADO, grupo: MAL_ESCAPADO }
+    }]);
+    assert.ok(!html.includes('<b>'), html);
+    assert.equal(html, `<div class="me-aviso me-aviso-ambar me-restituir"><p>${BIEN_ESCAPADO}</p><button type="button" `
+      + `class="sg-btn sg-btn-borde sg-btn-chico" data-accion="cargar-licencia" data-tipo="${BIEN_ESCAPADO}" data-grupo="${BIEN_ESCAPADO}">`
+      + `${BIEN_ESCAPADO}</button></div>`);
+  });
+
+  it('htmlDelResumen pone el aviso entre la banda y «El resto de AAAA»; un Resumen de antes, sin la clave, se ve como hoy', () => {
+    const resumen = resumenDeJulieta(JULIETA.estado, VUELVE_JULIETA);
+    const html = M.htmlDelResumen(resumen);
+    const aviso = M.htmlDeRestituciones(resumen.restituciones);
+    // Después de la banda (que termina con su ola) y antes del resto
+    assert.ok(html.includes(`</svg></section>${aviso}<section class="me-resto"`), html);
+    assert.ok(html.indexOf('<section class="me-banda"') < html.indexOf(aviso));
+    // Sin grupos por restituir, o un Resumen de antes de los días restituidos (sin `restituciones`): sin aviso, como hoy
+    const sinAviso = { ...resumen, restituciones: [] };
+    const deAntes = { ...resumen };
+    delete deAntes.restituciones;
+    assert.ok(!M.htmlDelResumen(sinAviso).includes('me-restituir'));
+    assert.equal(M.htmlDelResumen(deAntes), M.htmlDelResumen(sinAviso));
+    assert.equal(M.htmlDelResumen(deAntes), html.replace(aviso, ''));
+    // Los de antes de esta entrega (con los casos de siempre) no cambian
+    const planta = resumenDel(PLANTA);
+    assert.ok(!Object.hasOwn(planta, 'restituciones') || planta.restituciones.length === 0);
+    const plantaDeAntes = { ...planta };
+    delete plantaDeAntes.restituciones;
+    assert.equal(M.htmlDelResumen(planta), M.htmlDelResumen(plantaDeAntes));
+  });
+
+  it('htmlDeVencePronto: la entrada de la maqueta, con el grupo; el caso B pide la restitución', () => {
+    const vencePronto = (estado) => resumenDeJulieta(estado, ABRIL_JULIETA).vence_pronto;
+    const a = M.htmlDeVencePronto(vencePronto(JULIETA.estado));
+    assert.ok(a.includes('<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-accion="cargar-licencia" '
+      + 'data-tipo="restituidos" data-grupo="1-2024-0" aria-describedby="me-vence-0">Cargar los días restituidos</button>'), a);
+    const b = M.htmlDeVencePronto(vencePronto(VARIANTE_B));
+    assert.ok(b.includes('<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-accion="pedir-restitucion" '
+      + 'data-grupo="1-2025-0" aria-describedby="me-vence-0">Pedir la restitución</button>'), b);
+    for (const [html, momento] of [[a, 'abril'], [b, 'variante-b']]) {
+      const deLaMaqueta = conLaClase(MAQUETA_DE_LOS_RESTITUIDOS.MOMENTOS[momento].resumen.html, 'li', 'me-entrada');
+      assert.equal(sinLosDatos(conLaClase(html, 'li', 'me-entrada')), sinLosDatos(deLaMaqueta), momento);
+    }
+    // Una acción de antes (sin grupo) se dibuja como siempre; un grupo, escapado
+    assert.ok(M.htmlDeVencePronto([{ fecha: '2026-10-30', dia: '30', mes: 'oct', titulo: 'x', texto: 'y',
+      accion: { texto: 'Cargarlo', tipo: 'franco' } }]).includes('data-accion="cargar-licencia" data-tipo="franco" aria-describedby="me-vence-0">'));
+    assert.ok(M.htmlDeVencePronto([{ fecha: '2027-04-30', dia: '30', mes: 'abr', titulo: 'x', texto: 'y',
+      accion: { texto: 'Pedir', tipo: 'restitucion', grupo: MAL_ESCAPADO } }])
+      .includes(`data-accion="pedir-restitucion" data-grupo="${BIEN_ESCAPADO}" aria-describedby="me-vence-0">`));
+  });
+
+  it('htmlDeFaltantes: el «Revisá…» de un pedido B suma «Word» (con su licencia de origen) y, hasta el plazo, «Borrar el pedido»', () => {
+    // El asueto del 24/12 se dio de baja después de pedir la restitución: el «Revisá…», con su pedido
+    const resumen = resumenDeJulieta(B_PEDIDA, ABRIL_JULIETA, new Set(['2026-12-31']));
+    const [aviso] = resumen.para_revisar;
+    assert.deepEqual(aviso, {
+      licencia_id: 1, anio: 2026, texto: 'Revisá tus días restituidos: el asueto del 24/12/2026 se dio de baja.',
+      enlace: 'Ver en Licencias de 2026', restitucion_id: 10, puede_borrar: true, anio_de_origen: 2025
+    });
+    const link = '<a href="#licencias" data-pestana="licencias" data-anio-licencias="2026">Ver en Licencias de 2026</a>';
+    // El aria-label dice la licencia de origen (2025), no el año del link (2026)
+    assert.equal(M.htmlDeFaltantes(resumen.faltantes, resumen.para_revisar),
+      AVISO_AMBAR(`<li>${aviso.texto} ${link} ${WORD_DE_LA_2025} ${BORRAR_DE_LA_2025}</li>`));
+    // Pasado el plazo (sin borrar), solo «Word»; sin pedido (el de una carga A), como los de Configuración
+    assert.equal(M.htmlDeFaltantes([], [{ ...aviso, puede_borrar: false }]), AVISO_AMBAR(`<li>${aviso.texto} ${link} ${WORD_DE_LA_2025}</li>`));
+    for (const sinPedido of [null, undefined, '10', 0.5]) {
+      assert.equal(M.htmlDeFaltantes([], [{ ...aviso, restitucion_id: sinPedido }]), AVISO_AMBAR(`<li>${aviso.texto} ${link}</li>`),
+        String(sinPedido));
+    }
+    const deAntes = { ...aviso };
+    for (const clave of ['restitucion_id', 'puede_borrar', 'anio_de_origen']) delete deAntes[clave];
+    assert.equal(M.htmlDeFaltantes([], [deAntes]), AVISO_AMBAR(`<li>${aviso.texto} ${link}</li>`));
+    // Sin una licencia de origen que sea un año entero, el aria-label sin el año; todo, escapado
+    for (const anio of NO_ENTEROS) {
+      const html = M.htmlDeFaltantes([], [{ ...aviso, anio_de_origen: anio }]);
+      assert.ok(html.includes('aria-label="Descargar en Word la nota de la restitución">Word</button>'), String(anio));
+      assert.ok(html.includes('aria-label="Borrar el pedido de restitución">Borrar el pedido</button>'), String(anio));
+    }
+    assert.ok(!M.htmlDeFaltantes([], [{ ...aviso, texto: MAL_ESCAPADO }]).includes('<b>'));
+  });
+});
+
+describe('los días restituidos: la fila de la lista de Licencias', () => {
+  const lineaDeLaFila = (estado, hoy, id = 1) => lineaDe(M.htmlDeFilaDeLicencia(filaDeJulieta(estado, hoy, id)));
+  const lineaDeLaMaqueta = (momento) => lineaDe(MAQUETA_DE_LOS_RESTITUIDOS.MOMENTOS[momento].listas[2027]);
+
+  it('por restituir (A): ▲, el texto en ámbar y el botón del aviso, como en la maqueta', () => {
+    const linea = lineaDeLaFila(JULIETA.estado, VUELVE_JULIETA);
+    assert.equal(linea, '<span class="me-restituir-linea"><span class="me-detalle me-detalle-aviso"><span aria-hidden="true">▲ </span>'
+      + `${MAQUETA_DE_LOS_RESTITUIDOS.T.filaA}</span>${BOTON_A}</span>`);
+    assert.equal(sinLosDatos(linea), sinLosDatos(lineaDeLaMaqueta('al-volver')));
+  });
+
+  it('por restituir (B): el botón pide la restitución', () => {
+    const linea = lineaDeLaFila(VARIANTE_B, ABRIL_JULIETA);
+    assert.equal(linea, '<span class="me-restituir-linea"><span class="me-detalle me-detalle-aviso"><span aria-hidden="true">▲ </span>'
+      + `${MAQUETA_DE_LOS_RESTITUIDOS.T.filaB}</span>${BOTON_B}</span>`);
+    assert.equal(sinLosDatos(linea), sinLosDatos(lineaDeLaMaqueta('variante-b')));
+  });
+
+  it('pedida: el texto en gris, «Word» (con la licencia de origen) y, hasta el plazo, «Borrar el pedido»', () => {
+    const linea = lineaDeLaFila(B_PEDIDA, ABRIL_JULIETA);
+    assert.equal(linea, `<span class="me-restituir-linea"><span class="me-detalle">${MAQUETA_DE_LOS_RESTITUIDOS.T.filaPedida}</span>`
+      + `${WORD_DE_LA_2025}${BORRAR_DE_LA_2025}</span>`);
+    assert.equal(sinLosDatos(linea), sinLosDatos(lineaDeLaMaqueta('b-pedida')));
+    // Pasado el plazo, solo «Word»
+    assert.equal(lineaDeLaFila(B_PEDIDA, MAYO_JULIETA), '<span class="me-restituir-linea"><span class="me-detalle">'
+      + `${MAQUETA_DE_LOS_RESTITUIDOS.T.filaPedida}</span>${WORD_DE_LA_2025}</span>`);
+  });
+
+  it('cargada y perdida: solo el texto, en gris', () => {
+    for (const [estado, hoy, texto, momento] of [[CARGADOS, ABRIL_JULIETA, 'filaCargados', 'cargados'],
+      [JULIETA.estado, MAYO_JULIETA, 'filaPerdidos', 'perdidos']]) {
+      const linea = lineaDeLaFila(estado, hoy);
+      assert.equal(linea, `<span class="me-restituir-linea"><span class="me-detalle">${MAQUETA_DE_LOS_RESTITUIDOS.T[texto]}</span></span>`);
+      assert.equal(sinLosDatos(linea), sinLosDatos(lineaDeLaMaqueta(momento)), momento);
+    }
+  });
+
+  it('la línea va en el cuerpo de la fila, después de lo demás; la fila de los días restituidos, con su insignia azul', () => {
+    const html = M.htmlDeFilaDeLicencia(filaDeJulieta(JULIETA.estado, VUELVE_JULIETA));
+    assert.match(html, /<span class="me-fila-cuerpo"><span class="me-insignia azul">Vacaciones<\/span><span class="me-detalle">De la licencia 2024\.<\/span><span class="me-restituir-linea">/);
+    assert.match(html, /<\/span><\/span><span class="me-fila-acciones">/);
+    const restituidos = filaDeJulieta(CARGADOS, ABRIL_JULIETA, 2);
+    const fila = M.htmlDeFilaDeLicencia(restituidos);
+    assert.ok(fila.includes('<span class="me-insignia azul">Días restituidos</span><span class="me-insignia borde">Próxima</span>'
+      + `<span class="me-detalle">${MAQUETA_DE_LOS_RESTITUIDOS.T.deLicenciasRestituidos}</span>`), fila);
+    assert.ok(!fila.includes('me-restituir-linea'));
+    assert.ok(MAQUETA_DE_LOS_RESTITUIDOS.MOMENTOS.cargados.listas[2027].includes('<span class="me-insignia azul mq-nuevo">Días restituidos</span>'));
+  });
+
+  it('una fila de antes (sin `restituciones`), o con la lista vacía, se ve igual que hoy', () => {
+    for (const fila of licenciasDe(PLANTA).licencias) {
+      const deAntes = { ...fila };
+      delete deAntes.restituciones;
+      assert.equal(M.htmlDeFilaDeLicencia({ ...deAntes, restituciones: [] }), M.htmlDeFilaDeLicencia(deAntes));
+      assert.ok(!M.htmlDeFilaDeLicencia(deAntes).includes('me-restituir'));
+    }
+    const vacaciones = filaDeJulieta(JULIETA.estado, VUELVE_JULIETA);
+    for (const raro of [undefined, null, 'x', 3, {}, [null], [{}], [{ texto: '  ', aviso: true }]]) {
+      assert.ok(!M.htmlDeFilaDeLicencia({ ...vacaciones, restituciones: raro }).includes('me-restituir'), JSON.stringify(raro));
+    }
+  });
+
+  it('la línea: todo texto del servidor escapado, también en los atributos; sin año de origen, el aria-label sin el año', () => {
+    const vacaciones = filaDeJulieta(JULIETA.estado, VUELVE_JULIETA);
+    const html = M.htmlDeFilaDeLicencia({ ...vacaciones, restituciones: [
+      { texto: MAL_ESCAPADO, aviso: true, accion: { texto: MAL_ESCAPADO, tipo: 'restituidos', grupo: MAL_ESCAPADO } },
+      { texto: MAL_ESCAPADO, aviso: false, restitucion_id: 10, puede_borrar: true, anio: MAL_ESCAPADO }
+    ] });
+    assert.ok(!html.includes('<b>'), html);
+    assert.ok(html.includes(`data-grupo="${BIEN_ESCAPADO}">${BIEN_ESCAPADO}</button>`));
+    assert.ok(html.includes('aria-label="Descargar en Word la nota de la restitución">Word</button>'));
+  });
+});
+
+describe('los días restituidos: «Cargar licencia»', () => {
+  const tiposDeAbril = resumenDeJulieta(JULIETA.estado, ABRIL_JULIETA).tipos;
+  const radiosDe = (html) => [...html.matchAll(/<input ([^>]*)>/g)]
+    .map(([, atributos]) => ({ ...atributosDe(atributos), checked: /(^|\s)checked(\s|$)/.test(atributos) }));
+
+  it('htmlDeTiposDeLicencia: la opción de cada grupo, con data-grupo, elegida la del grupo elegido (la de la maqueta)', () => {
+    const html = M.htmlDeTiposDeLicencia(tiposDeAbril, 'restituidos', '1-2024-0');
+    const radios = radiosDe(html);
+    assert.deepEqual(radios.map((radio) => radio.value),
+      ['vacaciones', 'restituidos', 'franquicia', 'medica', 'familiar', 'medica_extraordinaria', 'franco']);
+    assert.deepEqual(radios.filter((radio) => radio.checked).map((radio) => [radio.value, radio['data-grupo']]), [['restituidos', '1-2024-0']]);
+    assert.ok(radios.every((radio) => (radio.value === 'restituidos') === Object.hasOwn(radio, 'data-grupo')));
+    const opcion = conLaClase(html.replace('<label class="me-opcion">', '<label class="me-opcion-vacaciones">'), 'label', 'me-opcion');
+    assert.equal(opcion, '<label class="me-opcion"><input type="radio" name="ml-tipo" value="restituidos" data-grupo="1-2024-0" checked '
+      + 'aria-describedby="ml-tipos-error"><span><b>Días restituidos</b><small>2 de la 2024 · empezar hasta el 30/04</small></span></label>');
+    assert.equal(sinLosDatos(opcion), conLaClase(MAQUETA_DE_LOS_RESTITUIDOS.MODAL_A.tipos, 'label', 'me-opcion mq-nuevo').replace(' mq-nuevo', ''));
+  });
+
+  it('htmlDeTiposDeLicencia: con dos grupos, la del elegido; sin grupo, la primera; con un grupo que no está, ninguna', () => {
+    const otro = { ...tiposDeAbril[1], grupo: '1-2025-0', queda_texto: '1 de la 2025 · tomarlo hasta el 30/04' };
+    const tipos = [tiposDeAbril[0], tiposDeAbril[1], otro, ...tiposDeAbril.slice(2)];
+    const elegidas = (tipo, grupo) => radiosDe(M.htmlDeTiposDeLicencia(tipos, tipo, grupo)).filter((radio) => radio.checked)
+      .map((radio) => radio['data-grupo'] ?? radio.value);
+    assert.deepEqual(elegidas('restituidos', '1-2025-0'), ['1-2025-0']);
+    assert.deepEqual(elegidas('restituidos', '1-2024-0'), ['1-2024-0']);
+    assert.deepEqual(elegidas('restituidos'), ['1-2024-0']);
+    assert.deepEqual(elegidas('restituidos', ''), ['1-2024-0']);
+    assert.deepEqual(elegidas('restituidos', '9-2024-0'), []);
+    assert.deepEqual(elegidas('vacaciones', '1-2025-0'), ['vacaciones']);
+    assert.deepEqual(elegidas(null), []);
+    // Sin opciones de días restituidos, con o sin grupo, lo de siempre
+    const deAntes = resumenDel(PLANTA).tipos;
+    assert.equal(M.htmlDeTiposDeLicencia(deAntes, 'franquicia', '1-2024-0'), M.htmlDeTiposDeLicencia(deAntes, 'franquicia'));
+    assert.ok(!M.htmlDeTiposDeLicencia(deAntes, 'franquicia').includes('data-grupo'));
+    // Un grupo con HTML, escapado
+    assert.ok(M.htmlDeTiposDeLicencia([{ ...tiposDeAbril[1], grupo: MAL_ESCAPADO }], 'restituidos', MAL_ESCAPADO)
+      .includes(`value="restituidos" data-grupo="${BIEN_ESCAPADO}" checked `));
+  });
+
+  it('valoresDeLicencia suma el grupo: el elegido en una nueva de días restituidos y, de una fila, su grupo cargado', () => {
+    assert.equal(M.valoresDeLicencia(null, 'restituidos', '1-2024-0').grupo, '1-2024-0');
+    assert.deepEqual(plano(M.valoresDeLicencia(null, 'restituidos', '1-2024-0')), {
+      id: null, tipo: 'restituidos', grupo: '1-2024-0', desde: '', hasta: '', horas: '', nota: '', mostrar: true, autorizado: '',
+      autorizado_inicial: '', licencia_oficial: null
+    });
+    const fila = filaDeJulieta(CARGADOS, ABRIL_JULIETA, 2);
+    assert.equal(fila.restituidos.grupo, '1-2024-0');
+    const valores = plano(M.valoresDeLicencia(fila));
+    assert.deepEqual([valores.id, valores.tipo, valores.grupo, valores.desde, valores.hasta], [2, 'restituidos', '1-2024-0', '2027-04-12', '2027-04-13']);
+    // El de la fila manda: no se cambia de grupo al corregir
+    assert.equal(M.valoresDeLicencia(fila, 'restituidos', '9-2025-0').grupo, '1-2024-0');
+    // Sin grupo (una fila de días restituidos sin su pedido, o una de otro tipo), ''
+    assert.equal(M.valoresDeLicencia({ ...fila, restituidos: null }).grupo, '');
+    assert.equal(M.valoresDeLicencia(filaDeJulieta(JULIETA.estado, VUELVE_JULIETA)).grupo, '');
+    assert.equal(M.valoresDeLicencia(null, 'vacaciones', '1-2024-0').grupo, '');
+    assert.equal(M.valoresDeLicencia(null, 'restituidos').grupo, '');
+    assert.equal(M.valoresDeLicencia(null, 'restituidos', 3).grupo, '');
+  });
+
+  it('erroresDeLicencia de unos días restituidos controla solo «Desde» (el «Hasta» lo pone Mi espacio), y la nota', () => {
+    const errores = (valores) => plano(M.erroresDeLicencia({ ...M.valoresDeLicencia(null, 'restituidos', '1-2024-0'), ...valores }));
+    assert.deepEqual(errores({}), { desde: MENSAJES_MI_ESPACIO.fecha });
+    assert.deepEqual(errores({ desde: '2027-04-12' }), {});
+    assert.deepEqual(errores({ desde: '2027-04-12', hasta: 'x' }), {});
+    assert.deepEqual(errores({ desde: '2027-04-12', hasta: '2027-04-01' }), {});
+    assert.deepEqual(errores({ desde: '2027-02-30' }), { desde: MENSAJES_MI_ESPACIO.fecha });
+    assert.deepEqual(errores({ desde: '2027-04-12', nota: 'a'.repeat(201) }), { nota: MENSAJES_MI_ESPACIO.nota });
+  });
+
+  it('cuerpoDeLicencia de unos días restituidos: en el alta, la restitución de la opción elegida; al corregir, sin ella', () => {
+    const nueva = { ...M.valoresDeLicencia(null, 'restituidos', '1-2024-0'), desde: '2027-04-12', hasta: '2027-04-13', nota: ' Turno ' };
+    assert.deepEqual(plano(M.cuerpoDeLicencia(nueva, { tipos: tiposDeAbril })), {
+      tipo: 'restituidos', restitucion: { licencia_id: 1, anio: 2024, tanda: 0 }, desde: '2027-04-12', mostrar: true, nota: 'Turno'
+    });
+    assert.deepEqual(Object.keys(plano(M.cuerpoDeLicencia(nueva, { tipos: tiposDeAbril }))), ['tipo', 'restitucion', 'desde', 'mostrar', 'nota']);
+    // Sin la opción de ese grupo (o sin las opciones), la restitución va en null: el servidor dice qué elegir
+    assert.equal(M.cuerpoDeLicencia(nueva, { tipos: [] }).restitucion, null);
+    assert.equal(M.cuerpoDeLicencia(nueva).restitucion, null);
+    assert.equal(M.cuerpoDeLicencia({ ...nueva, grupo: '9-2024-0' }, { tipos: tiposDeAbril }).restitucion, null);
+    // Al corregir: el «Desde», la nota y «Mostrar», sin la restitución ni el «Hasta»
+    const corregida = { ...M.valoresDeLicencia(filaDeJulieta(CARGADOS, ABRIL_JULIETA, 2)), desde: '2027-04-19', mostrar: false };
+    assert.deepEqual(plano(M.cuerpoDeLicencia(corregida, { tipos: tiposDeAbril })),
+      { tipo: 'restituidos', desde: '2027-04-19', mostrar: false, nota: '' });
+    // La persona a cargo del titular, como en unas vacaciones: en el alta siempre (nadie es null); al corregir, si cambió
+    assert.equal(M.cuerpoDeLicencia({ ...nueva, autorizado: '3' }, { soyTitular: true, tipos: tiposDeAbril }).autorizado_id, 3);
+    assert.equal(M.cuerpoDeLicencia(nueva, { soyTitular: true, tipos: tiposDeAbril }).autorizado_id, null);
+    assert.ok(!Object.hasOwn(M.cuerpoDeLicencia({ ...nueva, autorizado: '3' }, { tipos: tiposDeAbril }), 'autorizado_id'));
+    assert.ok(!Object.hasOwn(M.cuerpoDeLicencia({ ...corregida, autorizado: '3', autorizado_inicial: '3' }, { soyTitular: true }), 'autorizado_id'));
+    assert.equal(M.cuerpoDeLicencia({ ...corregida, autorizado: '5', autorizado_inicial: '3' }, { soyTitular: true }).autorizado_id, 5);
+    // Las demás, como siempre (las opciones no cambian nada)
+    assert.deepEqual(plano(M.cuerpoDeLicencia({ ...M.valoresDeLicencia(null), ...VACACIONES }, { tipos: tiposDeAbril })),
+      { tipo: 'vacaciones', desde: '2026-11-16', hasta: '2026-11-20', mostrar: true, nota: '' });
+  });
+
+  it('el cálculo de unos días restituidos (la vista del servidor) es el de la maqueta', () => {
+    const { vista } = comoLlega(evaluarLicencia(JULIETA.estado,
+      { tipo: 'restituidos', restitucion: { licencia_id: 1, anio: 2024, tanda: 0 }, desde: '2027-04-12', mostrar: true, nota: '' },
+      { hoy: ABRIL_JULIETA, feriados: ASUETOS }));
+    assert.equal(vista.hasta, '2027-04-13');
+    assert.equal(M.htmlDelCalculo({ error: null, vista, paso: null }, 'restituidos'), MAQUETA_DE_LOS_RESTITUIDOS.MODAL_A.calculo);
+  });
+
+  it('el segundo paso de unos días restituidos es el de la maqueta: la insignia azul, la licencia de origen y la nota A', () => {
+    const fila = { ...filaDeJulieta(CARGADOS, ABRIL_JULIETA, 2), configuracion: { texto: 'También en Configuración → Licencias.', insignia: null } };
+    const html = M.htmlDelSegundoPaso({ fila, html: HOJA_A, aclaracion: aclaracionDeLaNota(ABRIL_JULIETA) });
+    assert.equal(html, MAQUETA_DE_LOS_RESTITUIDOS.MODAL_A.segundo);
+  });
+});
+
+describe('los días restituidos: «Pedir la restitución» y la confirmación', () => {
+  const grupoB = calculoDeJulieta(VARIANTE_B, ABRIL_JULIETA).restituciones[0];
+  const TILDE_SIN_ATRIBUTOS = (html) => html.replace(/<svg [^>]*>/, '<svg>');
+
+  it('htmlDelRecuadroDeRestitucion: lo resaltado en negrita y el resto (el recuadro del servidor), como en la maqueta', () => {
+    const recuadro = comoLlega(recuadroDeLaRestitucion(grupoB));
+    assert.equal(M.htmlDelRecuadroDeRestitucion(recuadro), MAQUETA_DE_LOS_RESTITUIDOS.T.modalB);
+    assert.equal(M.htmlDelRecuadroDeRestitucion({ resaltado: MAL_ESCAPADO, resto: MAL_ESCAPADO }), `<b>${BIEN_ESCAPADO}</b>${BIEN_ESCAPADO}`);
+    assert.equal(M.htmlDelRecuadroDeRestitucion({ resaltado: '', resto: ' y lo demás.' }), ' y lo demás.');
+    assert.equal(M.htmlDelRecuadroDeRestitucion({ resaltado: 'Lo resaltado' }), '<b>Lo resaltado</b>');
+    for (const raro of [undefined, null, 'x', 3, [], {}, { resaltado: 3, resto: {} }]) {
+      assert.equal(M.htmlDelRecuadroDeRestitucion(raro), '', JSON.stringify(raro));
+    }
+  });
+
+  it('htmlDeLaVistaDeRestitucion: el recuadro, «Así sale la nota», la aclaración y la hoja (tal cual), como en la maqueta', () => {
+    const vista = { recuadro: comoLlega(recuadroDeLaRestitucion(grupoB)), html: HOJA_B, aclaracion: aclaracionDeLaRestitucion(ABRIL_JULIETA) };
+    assert.equal(M.htmlDeLaVistaDeRestitucion(vista), MAQUETA_DE_LOS_RESTITUIDOS.MODAL_B.cuerpo.replace(' mq-nuevo', ''));
+    // La hoja va tal cual (la arma y la escapa el servidor); lo demás, escapado; sin recuadro ni aclaración, sin ellos
+    const conHtml = M.htmlDeLaVistaDeRestitucion({ recuadro: null, html: '<div class="me-hoja"><b>x</b></div>', aclaracion: MAL_ESCAPADO });
+    assert.equal(conHtml, `<h3 class="me-paso-dos-titulo">Así sale la nota</h3><p class="me-paso-dos-ayuda">${BIEN_ESCAPADO}</p>`
+      + '<div class="me-mesa"><div class="me-hoja"><b>x</b></div></div>');
+    assert.equal(M.htmlDeLaVistaDeRestitucion(), '<h3 class="me-paso-dos-titulo">Así sale la nota</h3><div class="me-mesa"></div>');
+  });
+
+  it('htmlDelSegundoPasoDeRestitucion: la tilde, las vacaciones, lo que volvió y la nota B, como en la maqueta', () => {
+    const calculo = calculoDeJulieta(B_PEDIDA, ABRIL_JULIETA);
+    const hecho = textoDeLaRestitucionHecha(calculo.restituciones[0], calculo, ABRIL_JULIETA);
+    assert.equal(hecho, MAQUETA_DE_LOS_RESTITUIDOS.T.hechoB);
+    const html = M.htmlDelSegundoPasoDeRestitucion({
+      vacaciones: { tipo_nombre: 'Vacaciones', fechas_texto: '11/12/2026 al 08/01/2027' }, hecho, html: HOJA_B,
+      aclaracion: aclaracionDeLaRestitucion(ABRIL_JULIETA)
+    });
+    assert.ok(html.startsWith(`<div class="me-paso-dos-hecho"><span class="me-tilde" aria-hidden="true">${M.TILDE_DEL_SEGUNDO_PASO}</span>`));
+    assert.equal(TILDE_SIN_ATRIBUTOS(html), TILDE_SIN_ATRIBUTOS(MAQUETA_DE_LOS_RESTITUIDOS.MODAL_B.segundo));
+  });
+
+  it('htmlDelSegundoPasoDeRestitucion: con el tipo, su insignia; sin vacaciones, solo lo que volvió; todo escapado salvo la hoja', () => {
+    const conTipo = M.htmlDelSegundoPasoDeRestitucion({ vacaciones: { tipo: 'restituidos', tipo_nombre: 'Días restituidos', fechas_texto: 'x' } });
+    assert.ok(conTipo.includes('<span class="me-insignia azul">Días restituidos</span><b class="me-paso-dos-fechas">x</b>'));
+    const sinVacaciones = M.htmlDelSegundoPasoDeRestitucion({ hecho: 'Volvieron.', html: '<p>hoja</p>' });
+    assert.equal(sinVacaciones, `<div class="me-paso-dos-hecho"><span class="me-tilde" aria-hidden="true">${M.TILDE_DEL_SEGUNDO_PASO}</span>`
+      + '<div class="me-paso-dos-licencia"><p class="me-paso-dos-detalle"><span>Volvieron.</span></p></div></div>'
+      + '<h3 class="me-paso-dos-titulo">Así sale la nota</h3><div class="me-mesa"><p>hoja</p></div>');
+    const malo = M.htmlDelSegundoPasoDeRestitucion({
+      vacaciones: { tipo: MAL_ESCAPADO, tipo_nombre: MAL_ESCAPADO, fechas_texto: MAL_ESCAPADO }, hecho: MAL_ESCAPADO, aclaracion: MAL_ESCAPADO
+    });
+    assert.ok(!malo.includes('<b>"x"'), malo);
+    assert.ok(malo.includes(`<span class="me-insignia azul">${BIEN_ESCAPADO}</span>`));
+    assert.equal(M.htmlDelSegundoPasoDeRestitucion(), '<h3 class="me-paso-dos-titulo">Así sale la nota</h3><div class="me-mesa"></div>');
+    assert.equal(M.htmlDelSegundoPasoDeRestitucion({ vacaciones: 'x', hecho: '  ' }),
+      '<h3 class="me-paso-dos-titulo">Así sale la nota</h3><div class="me-mesa"></div>');
+  });
+
+  it('textoDeConfirmacionDeRestitucion: lo que pasa al borrar el pedido, en texto plano', () => {
+    const texto = '¿Borrar el pedido de restitución? Los días vuelven a estar por restituir y la nota que armaste ya no vale.';
+    assert.equal(M.textoDeConfirmacionDeRestitucion(filaDeJulieta(B_PEDIDA, ABRIL_JULIETA).restituciones[0]), texto);
+    assert.equal(M.textoDeConfirmacionDeRestitucion(), texto);
   });
 });

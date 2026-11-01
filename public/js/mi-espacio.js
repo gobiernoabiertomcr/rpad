@@ -60,8 +60,13 @@
  * de un año dice las de otros años que todavía no terminaron (`otros_anios`, con «Ver AAAA», el data-anio del selector); y en el
  * Resumen, la oración de lo cargado de la bajada (con su `anio`) y cada aviso para revisar (`para_revisar`, lo que en Configuración
  * quedó distinto, con los faltantes pero sin ser uno) son links a Licencias de su año (irALicencias, con data-anio-licencias).
+ * Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9): el aviso de cada grupo por restituir entre la banda y «El
+ * resto» (htmlDeRestituciones), su entrada en «Vence pronto» y la línea de cada grupo debajo de la fila de su carga, todos con el
+ * botón que lo resuelve (data-accion y data-grupo: «Cargar licencia» con «Días restituidos», una opción por grupo y sin el «Hasta»,
+ * que lo pone el servidor, o «Pedir la restitución», con su modal y su segundo paso); un pedido del caso B, con «Word» y «Borrar el
+ * pedido» en su línea y en su «Revisá…» de arriba del Resumen.
  * Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad: los mensajes y
- * las constantes de services/miEspacioReglas.js, horasDelHorario (horasDe), en la planilla horasDelDiaDeLaPlanilla (horasDeLaSalida,
+ * las constantes de services/miEspacioReglas.js (también TIPOS_CON_PERSONA_A_CARGO y dejaPersonaACargo), horasDelHorario (horasDe), en la planilla horasDelDiaDeLaPlanilla (horasDeLaSalida,
  * con el tipo del día que manda el servidor), enDiasDeFranco, textoDeLaSumaDelMes, textoDeLoQueSeMueve (la segunda línea de la
  * banda, con lo que se tilda «Sumar a {mes anterior}»; con mesMas) y erroresDeLaPlanilla (los pasos 3 a 7 de
  * validarSalida), camposConLoElegido (camposDelSaldoInicial, con la ayuda de textoSaldoDelArranque), las de
@@ -95,10 +100,11 @@ const PESTANAS = Object.freeze(['resumen', 'licencias', 'horas', 'agenda']);
 // Copia de MENSAJES_MI_ESPACIO.sinArranque (services/miEspacioReglas.js), atada por un test de paridad
 const TEXTO_SIN_ARRANQUE = 'Para empezar, completá «Mis vacaciones y saldos».';
 
-// El color de la insignia de cada tipo de licencia
+// El color de la insignia de cada tipo de licencia (los días restituidos, azules como las vacaciones: spec
+// 2026-10-31-mi-espacio-dias-restituidos, 17.1)
 const CLASE_DEL_TIPO = Object.freeze({
   vacaciones: 'azul', franquicia: 'violeta', estudios: 'ambar', medica: 'rojo', medica_extraordinaria: 'rojo', familiar: 'azul',
-  franco: 'verde', horas_a_favor: 'verde', uso_autorizado: 'gris'
+  franco: 'verde', horas_a_favor: 'verde', uso_autorizado: 'gris', restituidos: 'azul'
 });
 // El color de la situación de un mes de horas extras (el `estado` que manda el servidor): todavía suma, se habilita, para usar o
 // usado. Lo que ya no se usa (no genera franco, no utilizado previamente, ya está en el saldo inicial) va en gris, sin insignia. Un
@@ -197,18 +203,42 @@ const atributosDelLinkALicencias = (anio, clase = '') => `href="#licencias" data
   + `${clase ? ` class="${clase}"` : ''}`;
 
 /**
+ * «Word» y «Borrar el pedido» de un pedido de restitución (el caso B: spec 2026-10-31-mi-espacio-dias-restituidos, 9), en la línea
+ * de su fila y en el «Revisá…» de arriba del Resumen: `restitucionId`, el id del pedido (un entero: si no, nada); `puedeBorrar`, solo
+ * el true literal (hasta el plazo); y `anio`, la licencia a la que volvieron los días, que dicen sus aria-label («Descargar en Word la
+ * nota de la restitución a la licencia 2025», «Borrar el pedido de restitución a la licencia 2025»; sin un año entero, sin él). Los
+ * botones, uno después del otro, con `entre` entre los dos y antes del primero (en el «Revisá…», un espacio, como el link)
+ */
+const botonesDelPedido = ({ restitucionId, puedeBorrar, anio }, entre = '') => {
+  if (!Number.isInteger(restitucionId)) return '';
+  const id = String(restitucionId);
+  const aLaLicencia = Number.isInteger(anio) ? ` a la licencia ${String(anio)}` : '';
+  const word = `<button type="button" class="sg-link" data-word-restitucion="${id}" `
+    + `aria-label="Descargar en Word la nota de la restitución${aLaLicencia}">Word</button>`;
+  const borrar = puedeBorrar === true ? `${entre}<button type="button" class="sg-link me-link-rojo" data-borrar-restitucion="${id}" `
+    + `aria-label="Borrar el pedido de restitución${aLaLicencia}">Borrar el pedido</button>` : '';
+  return `${entre}${word}${borrar}`;
+};
+
+/**
  * Los faltantes (lo guardado que dejó de cerrar), con su texto neutro, en un aviso ámbar arriba de todo, y después lo que hay que
  * revisar (`paraRevisar`, el `para_revisar` del Resumen, `[{ licencia_id, anio, texto, enlace }]`: lo que en Configuración quedó
  * distinto; va con los faltantes, pero no es uno: spec 2026-10-28-mi-espacio-licencia-anulada, 2.2), cada uno con su texto y el link
  * a Licencias de su año («Ver en Licencias de 2027»; con un año que no es un entero, o sin el texto del link, solo el texto). Un solo
- * faltante, sin nada para revisar, es un párrafo, como siempre; si no, una lista. Sin ninguno de los dos, ''
+ * faltante, sin nada para revisar, es un párrafo, como siempre; si no, una lista. Sin ninguno de los dos, ''. El «Revisá tus días
+ * restituidos…» de un pedido del caso B (spec 2026-10-31-mi-espacio-dias-restituidos, 9; el que trae `restitucion_id`, con
+ * `puede_borrar` y `anio_de_origen`, la licencia a la que volvieron los días: su `anio` es el del link) suma, después del link,
+ * «Word» y, hasta el plazo, «Borrar el pedido» (`botonesDelPedido`): si sus vacaciones ya no están, tampoco su fila, y se resuelve
+ * desde acá
  */
 function htmlDeFaltantes(faltantes, paraRevisar) {
   const textos = (Array.isArray(faltantes) ? faltantes : []).filter(conTexto);
   const revisar = listaDe(paraRevisar).filter((aviso) => conTexto(aviso.texto)).map((aviso) => {
     const link = Number.isInteger(aviso.anio) && conTexto(aviso.enlace)
       ? ` <a ${atributosDelLinkALicencias(aviso.anio)}>${esc(aviso.enlace)}</a>` : '';
-    return `<li>${esc(aviso.texto)}${link}</li>`;
+    const delPedido = botonesDelPedido(
+      { restitucionId: aviso.restitucion_id, puedeBorrar: aviso.puede_borrar, anio: aviso.anio_de_origen }, ' ');
+    return `<li>${esc(aviso.texto)}${link}${delPedido}</li>`;
   });
   if (textos.length === 0 && revisar.length === 0) return '';
   if (textos.length === 1 && revisar.length === 0) return `<p class="me-aviso me-aviso-ambar">${esc(textos[0])}</p>`;
@@ -250,20 +280,37 @@ function htmlDeLaFrase(titular) {
 }
 
 /**
+ * Lo que hace el botón de una acción del servidor (`{ texto, tipo, grupo? }`: la de «Vence pronto», la del aviso de los días por
+ * restituir y la de la línea de su fila), como atributos: abrir «Cargar licencia» con su tipo (data-accion="cargar-licencia" y
+ * data-tipo) o, la del caso B de los días restituidos (`tipo: 'restitucion'`: spec 2026-10-31-mi-espacio-dias-restituidos, 9), abrir
+ * «Pedir la restitución» (data-accion="pedir-restitucion", sin tipo); con un `grupo` (la clave del grupo de días restituidos), también
+ * data-grupo. Una acción de antes (sin grupo) da lo de siempre
+ */
+const atributosDeLaAccion = (accion) => {
+  const grupo = conTexto(accion.grupo) ? ` data-grupo="${esc(accion.grupo)}"` : '';
+  if (accion.tipo === 'restitucion') return `data-accion="pedir-restitucion"${grupo}`;
+  return `data-accion="cargar-licencia" data-tipo="${esc(accion.tipo)}"${grupo}`;
+};
+// El botón de una acción, chico y con borde (el de «Vence pronto», el del aviso y el de la línea de la fila), con `extra` (un
+// atributo más, como el aria-describedby de «Vence pronto») al final. Sin una acción con texto, ''
+const botonDeLaAccion = (accion, extra = '') => (esObjeto(accion) && conTexto(accion.texto)
+  ? `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" ${atributosDeLaAccion(accion)}${extra}>${esc(accion.texto)}</button>`
+  : '');
+
+/**
  * «Vence pronto» (los `vence_pronto` del Resumen, `{ fecha, dia, mes, titulo, texto, accion, sin_dias_libres? }`), al lado de la
  * frase: cada cosa es una entrada amarilla con el talón de la fecha (decorativo: la línea ya la dice), el título, su línea («Vence el
  * viernes 30/10, en 4 días.») y el botón que la resuelve, que abre «Cargar licencia» con su tipo (data-accion y data-tipo) y se
- * describe con el título. El franco o las horas a favor del mes sin ningún día libre llegan sin acción (`accion` null) y con por qué
- * en `sin_dias_libres` («No te quedan días libres este mes para usarlo.»: spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7):
- * sin el botón, que no tendría nombre, y con ese texto en un párrafo. Sin nada, ''
+ * describe con el título; la de un grupo de días por restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 9), con su data-grupo
+ * y, en el caso B, «Pedir la restitución» (`atributosDeLaAccion`). El franco o las horas a favor del mes sin ningún día libre llegan
+ * sin acción (`accion` null) y con por qué en `sin_dias_libres` («No te quedan días libres este mes para usarlo.»: spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7): sin el botón, que no tendría nombre, y con ese texto en un párrafo. Sin nada, ''
  */
 function htmlDeVencePronto(lista) {
   const cosas = listaDe(lista);
   if (cosas.length === 0) return '';
   const entradas = cosas.map((cosa, i) => {
-    const boton = esObjeto(cosa.accion) && conTexto(cosa.accion.texto)
-      ? '<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-accion="cargar-licencia" '
-        + `data-tipo="${esc(cosa.accion.tipo)}" aria-describedby="me-vence-${i}">${esc(cosa.accion.texto)}</button>` : '';
+    const boton = botonDeLaAccion(cosa.accion, ` aria-describedby="me-vence-${i}"`);
     const sinDias = conTexto(cosa.sin_dias_libres) ? `<p class="me-entrada-sin-dias">${esc(cosa.sin_dias_libres)}</p>` : '';
     return `<li class="me-entrada"><span class="me-talon" aria-hidden="true"><b>${esc(cosa.dia)}</b>${esc(cosa.mes)}</span>`
       + `<div class="me-entrada-cuerpo"><b id="me-vence-${i}">${esc(cosa.titulo)}</b><span class="me-entrada-texto">${esc(cosa.texto)}</span>`
@@ -446,16 +493,32 @@ function htmlDeHoyYManana(datos, veCompaneros) {
 }
 
 /**
+ * Los avisos de los días por restituir (las `restituciones` del Resumen, `[{ clave, texto, accion }]`: spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 5 y 9), uno por grupo y en su orden: un aviso ámbar con el texto del servidor y el botón
+ * que lo resuelve (`accion`: en el caso A, «Cargar los días restituidos», que abre «Cargar licencia» con ese grupo; en el B, «Pedir
+ * la restitución»), con data-grupo (el de la acción o, sin él, la clave del aviso). No es un faltante: no prende la marca. Sin texto,
+ * no va; sin una acción con texto, el aviso sin botón. Sin ninguno (o un Resumen de antes, sin la clave), ''
+ */
+function htmlDeRestituciones(lista) {
+  return listaDe(lista).filter((aviso) => conTexto(aviso.texto)).map((aviso) => {
+    const accion = esObjeto(aviso.accion) ? { ...aviso.accion, grupo: conTexto(aviso.accion.grupo) ? aviso.accion.grupo : aviso.clave }
+      : null;
+    return `<div class="me-aviso me-aviso-ambar me-restituir"><p>${esc(aviso.texto)}</p>${botonDeLaAccion(accion)}</div>`;
+  }).join('');
+}
+
+/**
  * La pestaña Resumen (lo que manda GET /api/mi-espacio/resumen). Sin modalidad, el mensaje del servidor; sin el saldo inicial,
  * la invitación a «Mis vacaciones y saldos»; si no, los faltantes con lo que hay que revisar, la banda (la frase, «Vence pronto» y
- * la regla), «El resto de 2026» y «Hoy y mañana».
+ * la regla), los avisos de los días por restituir (entre la banda y el resto: decisión 9 de la spec
+ * 2026-10-31-mi-espacio-dias-restituidos, sección 3), «El resto de 2026» y «Hoy y mañana».
  */
 function htmlDelResumen(resumen) {
   if (!esObjeto(resumen)) return '';
   if (!esObjeto(resumen.modalidad)) return htmlDeMensaje(resumen.mensaje);
   if (resumen.abrir_saldos === true) return htmlSinArranque();
-  return htmlDeFaltantes(resumen.faltantes, resumen.para_revisar) + htmlDeLaBanda(resumen) + htmlDelResto(resumen)
-    + htmlDeHoyYManana(resumen.hoy_y_manana, esObjeto(resumen.persona) ? resumen.persona.ve_companeros : false);
+  return htmlDeFaltantes(resumen.faltantes, resumen.para_revisar) + htmlDeLaBanda(resumen) + htmlDeRestituciones(resumen.restituciones)
+    + htmlDelResto(resumen) + htmlDeHoyYManana(resumen.hoy_y_manana, esObjeto(resumen.persona) ? resumen.persona.ve_companeros : false);
 }
 
 // Los años del selector (los que manda el servidor), con aria-pressed en el elegido
@@ -477,9 +540,28 @@ function htmlDeFiltrosDeLicencias(filtros, elegido) {
   return `<div class="sg-chips" role="group" aria-label="Filtrar las licencias por tipo">${botones}</div>`;
 }
 
+/**
+ * La línea de un grupo de días restituidos debajo de la fila de su carga (una de `fila.restituciones`, `{ texto, aviso, accion,
+ * restitucion_id, puede_borrar, anio }`: spec 2026-10-31-mi-espacio-dias-restituidos, 9), en su propio renglón: por restituir
+ * (`aviso`, el true literal), ▲ (decorativo) y el texto en ámbar, con el botón de su aviso (`accion`); pedida (con su
+ * `restitucion_id`), el texto en gris, «Word» y, hasta el plazo, «Borrar el pedido» (`botonesDelPedido`, con `anio`, la licencia a
+ * la que volvieron los días); cargada o perdida, solo el texto, en gris. Sin texto, ''
+ */
+const htmlDeLineaDeRestitucion = (linea) => {
+  if (!conTexto(linea.texto)) return '';
+  if (linea.aviso === true) {
+    return '<span class="me-restituir-linea"><span class="me-detalle me-detalle-aviso"><span aria-hidden="true">▲ </span>'
+      + `${esc(linea.texto)}</span>${botonDeLaAccion(linea.accion)}</span>`;
+  }
+  return `<span class="me-restituir-linea"><span class="me-detalle">${esc(linea.texto)}</span>`
+    + `${botonesDelPedido({ restitucionId: linea.restitucion_id, puedeBorrar: linea.puede_borrar, anio: linea.anio })}</span>`;
+};
+
 // Una licencia: las fechas con lo que suman, la insignia del tipo, «Próxima» si no empezó, por qué no cuenta (en gris), de qué
-// licencia salen las vacaciones, cómo está en Configuración (en ámbar si hay algo para revisar), si la ven los compañeros, la nota
-// y, a la derecha, «Word» (la nota de licencia; todas menos el uso autorizado, también las que ya pasaron) y «Editar»
+// licencia salen las vacaciones, cómo está en Configuración (en ámbar si hay algo para revisar), si la ven los compañeros, la nota,
+// la línea de cada grupo de días restituidos de la carga (`restituciones`, solo en unas vacaciones o unos días restituidos: spec
+// 2026-10-31-mi-espacio-dias-restituidos, 9; una fila de antes, sin la clave, se ve como siempre) y, a la derecha, «Word» (la nota de
+// licencia; todas menos el uso autorizado, también las que ya pasaron) y «Editar»
 function htmlDeFilaDeLicencia(fila) {
   const gris = conTexto(fila.no_cuenta_texto);
   const cantidad = conTexto(fila.cantidad_texto) ? `<small>${esc(fila.cantidad_texto)}</small>` : '';
@@ -493,6 +575,7 @@ function htmlDeFilaDeLicencia(fila) {
   }
   detalle(fila.mostrar_texto);
   detalle(fila.nota, 'me-detalle me-fila-nota');
+  partes.push(...listaDe(fila.restituciones).map(htmlDeLineaDeRestitucion));
   const word = fila.tipo === 'uso_autorizado' ? ''
     : `<button type="button" class="sg-link" data-word-licencia="${esc(fila.id)}" `
       + `aria-label="Descargar en Word la nota de la licencia del ${esc(fila.fechas_texto)}">Word</button>`;
@@ -975,6 +1058,11 @@ const largoDeLaNota = (nota) => Array.from(comoTexto(nota).trim()).length;
 const TIPOS_DE_UN_DIA = Object.freeze(['franquicia', 'franco', 'horas_a_favor', 'uso_autorizado']);
 const TIPOS_CON_HORAS = Object.freeze(['franquicia', 'horas_a_favor', 'uso_autorizado']);
 const deUnDia = (tipo) => TIPOS_DE_UN_DIA.includes(tipo);
+// Los tipos en que el firmante titular deja persona a cargo: las vacaciones y los días restituidos, que son vacaciones (spec
+// 2026-10-31-mi-espacio-dias-restituidos, 7 y 17.15). Copias de TIPOS_CON_PERSONA_A_CARGO y dejaPersonaACargo de
+// services/miEspacioReglas.js, atadas por un test de paridad
+const TIPOS_CON_PERSONA_A_CARGO = Object.freeze(['vacaciones', 'restituidos']);
+const dejaPersonaACargo = (tipo) => TIPOS_CON_PERSONA_A_CARGO.includes(tipo);
 // Cómo se cargan las horas de un tipo: 'enteras' (la franquicia, de 1 a 7), 'medias' (las horas a favor y el uso autorizado de
 // contrato, de 0,5 a 7) o null (sin horas; el uso autorizado de planta es un franco, el día entero)
 const horasDelTipo = (tipo, modalidad) => {
@@ -996,18 +1084,27 @@ const textoSinCalculo = (falla) => `No se pudo calcular: ${falla?.status ? 'hubo
  * Los valores de «Cargar licencia» (o del uso autorizado): los de una fila de la lista que se corrige o, sin fila, los de una
  * nueva con `tipo` (el de «Vence pronto»; sin él, ninguno). Las horas, como texto. `autorizado` es la persona a cargo elegida y
  * `autorizado_inicial`, la que ya tenía (de `en_configuracion`, solo de una creada): autorizado_id viaja solo si cambian.
- * `licencia_oficial` es el id de su licencia de Configuración (el excluir del aviso de los días sin auditor), o null.
+ * `licencia_oficial` es el id de su licencia de Configuración (el excluir del aviso de los días sin auditor), o null. `grupo` (spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 9) es la clave del grupo de unos días restituidos: de una fila, el de su carga
+ * (`restituidos.grupo`: al corregir no se cambia de grupo); de una nueva, el elegido (`grupo`, el del aviso, «Vence pronto» o la
+ * línea de la fila). En otro tipo, o sin uno, ''.
  */
-function valoresDeLicencia(fila, tipo) {
+function valoresDeLicencia(fila, tipo, grupo) {
   const datos = esObjeto(fila) ? fila : {};
   const enConfiguracion = esObjeto(datos.en_configuracion) ? datos.en_configuracion : {};
   const autorizado = Number.isInteger(enConfiguracion.autorizado_id) ? String(enConfiguracion.autorizado_id) : '';
   let elTipo = '';
   if (conTexto(datos.tipo)) elTipo = datos.tipo;
   else if (conTexto(tipo)) elTipo = tipo;
+  let elGrupo = '';
+  if (elTipo === 'restituidos') {
+    if (esObjeto(fila)) elGrupo = esObjeto(datos.restituidos) && conTexto(datos.restituidos.grupo) ? datos.restituidos.grupo : '';
+    else if (conTexto(grupo)) elGrupo = grupo;
+  }
   return {
     id: datos.id ?? null,
     tipo: elTipo,
+    grupo: elGrupo,
     desde: comoTexto(datos.desde),
     hasta: comoTexto(datos.hasta),
     horas: typeof datos.horas === 'number' && Number.isFinite(datos.horas) ? String(datos.horas) : '',
@@ -1021,16 +1118,17 @@ function valoresDeLicencia(fila, tipo) {
 
 /**
  * Los errores de una licencia antes de pedir nada (`{ campo: mensaje }`, en el orden del formulario; sin ninguno, {}): el tipo,
- * las fechas (el formato y que el hasta no sea anterior; en los de un día, solo la fecha), las horas de los tipos que se cargan
- * en horas (con `modalidad`: en planta, el uso autorizado no lleva) y el largo de la nota. Los mensajes son los del servidor, que
- * controla además el rango, los días hábiles, los topes y lo que se superpone.
+ * las fechas (el formato y que el hasta no sea anterior; en los de un día, solo la fecha; en unos días restituidos, solo el desde:
+ * el «Hasta» lo pone Mi espacio, spec 2026-10-31-mi-espacio-dias-restituidos, 9), las horas de los tipos que se cargan en horas
+ * (con `modalidad`: en planta, el uso autorizado no lleva) y el largo de la nota. Los mensajes son los del servidor, que controla
+ * además el rango, los días hábiles, los topes, lo que se superpone y, en unos días restituidos, el grupo y el plazo.
  */
 function erroresDeLicencia(valores, { modalidad = null } = {}) {
   const datos = esObjeto(valores) ? valores : {};
   const errores = {};
   if (!conTexto(datos.tipo)) errores.tipo = MENSAJES_FORMULARIOS.tipo;
   if (!esFechaDeTexto(datos.desde)) errores.desde = MENSAJES_FORMULARIOS.fecha;
-  else if (!deUnDia(datos.tipo)) {
+  else if (!deUnDia(datos.tipo) && datos.tipo !== 'restituidos') {
     if (!esFechaDeTexto(datos.hasta)) errores.hasta = MENSAJES_FORMULARIOS.fecha;
     else if (datos.hasta < datos.desde) errores.hasta = MENSAJES_FORMULARIOS.hastaAntes;
   }
@@ -1046,34 +1144,53 @@ function erroresDeLicencia(valores, { modalidad = null } = {}) {
   return errores;
 }
 
+// La opción de «Días restituidos» de un grupo entre los `tipos` del Resumen (una por grupo por restituir del caso A: `{ tipo:
+// 'restituidos', grupo, restitucion, nombre, queda_texto, dias, ayuda_desde, ayuda_hasta }`, spec
+// 2026-10-31-mi-espacio-dias-restituidos, 9), o null
+const opcionDelGrupo = (tipos, grupo) => (conTexto(grupo)
+  ? listaDe(tipos).find((opcion) => opcion.tipo === 'restituidos' && opcion.grupo === grupo) ?? null : null);
+
 /**
  * El cuerpo de POST /licencias y PUT /licencias/:id (y del cálculo previo): el tipo, las fechas (en los de un día, el hasta es
  * el desde), las horas (solo en los tipos de horas que las llevan, como número), «Mostrar» y la nota recortada. `autorizado_id`
- * va solo en las vacaciones del firmante titular (`soyTitular`: el campo «Autorizo a…» está a la vista) y, al corregir, solo si
- * se cambió la persona: si no, el servidor conserva la de Configuración. Vacío es null (nadie).
+ * va solo en las vacaciones (o los días restituidos: `dejaPersonaACargo`) del firmante titular (`soyTitular`: el campo «Autorizo
+ * a…» está a la vista) y, al corregir, solo si se cambió la persona: si no, el servidor conserva la de Configuración. Vacío es null
+ * (nadie). Unos días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 8 y 9) mandan `{ tipo, restitucion, desde,
+ * mostrar, nota }`: sin el «Hasta», que lo pone el servidor, y, en el alta, la `restitucion` de la opción del grupo elegido entre
+ * los `tipos` del Resumen (`opcionDelGrupo`; sin ella, null, y el servidor dice qué elegir); al corregir, sin ella (el grupo es el
+ * de la carga).
  */
-function cuerpoDeLicencia(valores, { soyTitular = false } = {}) {
+function cuerpoDeLicencia(valores, { soyTitular = false, tipos = [] } = {}) {
   const datos = esObjeto(valores) ? valores : {};
-  const cuerpo = {
-    tipo: datos.tipo, desde: datos.desde, hasta: deUnDia(datos.tipo) ? datos.desde : datos.hasta, mostrar: datos.mostrar !== false,
-    nota: comoTexto(datos.nota).trim()
-  };
+  const nueva = datos.id === null || datos.id === undefined;
+  const fechas = datos.tipo === 'restituidos'
+    ? { ...(nueva ? { restitucion: opcionDelGrupo(tipos, datos.grupo)?.restitucion ?? null } : {}), desde: datos.desde }
+    : { desde: datos.desde, hasta: deUnDia(datos.tipo) ? datos.desde : datos.hasta };
+  const cuerpo = { tipo: datos.tipo, ...fechas, mostrar: datos.mostrar !== false, nota: comoTexto(datos.nota).trim() };
   const horas = numeroDelCampo(datos.horas);
   if (TIPOS_CON_HORAS.includes(datos.tipo) && horas !== null) cuerpo.horas = horas;
-  const nueva = datos.id === null || datos.id === undefined;
-  if (soyTitular === true && datos.tipo === 'vacaciones'
+  if (soyTitular === true && dejaPersonaACargo(datos.tipo)
     && (nueva || comoTexto(datos.autorizado) !== comoTexto(datos.autorizado_inicial))) {
     cuerpo.autorizado_id = conTexto(datos.autorizado) ? Number(datos.autorizado) : null;
   }
   return cuerpo;
 }
 
-// Los tipos de «Cargar licencia» (los `tipos` del Resumen): radios grandes, cada uno con lo que queda. El uso autorizado no va:
-// tiene su propio formulario
-function htmlDeTiposDeLicencia(tipos, elegido) {
-  return listaDe(tipos).filter((opcion) => opcion.tipo !== 'uso_autorizado').map((opcion) => '<label class="me-opcion">'
-    + `<input type="radio" name="ml-tipo" value="${esc(opcion.tipo)}"${opcion.tipo === elegido ? ' checked' : ''} `
-    + 'aria-describedby="ml-tipos-error">'
+/**
+ * Los tipos de «Cargar licencia» (los `tipos` del Resumen): radios grandes, cada uno con lo que queda. El uso autorizado no va:
+ * tiene su propio formulario. Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9) son una opción por grupo, todas
+ * con value="restituidos" y cada una con su data-grupo: con `elegido` 'restituidos', va elegida la del `grupo` (sin grupo, la
+ * primera; con uno que no está entre las opciones, ninguna). Las demás, la del tipo `elegido`
+ */
+function htmlDeTiposDeLicencia(tipos, elegido, grupo = '') {
+  const opciones = listaDe(tipos).filter((opcion) => opcion.tipo !== 'uso_autorizado');
+  const restituidos = opciones.filter((opcion) => opcion.tipo === 'restituidos');
+  let elegida = opciones.find((opcion) => opcion.tipo === elegido);
+  if (elegido === 'restituidos') elegida = conTexto(grupo) ? opcionDelGrupo(restituidos, grupo) : restituidos[0];
+  return opciones.map((opcion) => '<label class="me-opcion">'
+    + `<input type="radio" name="ml-tipo" value="${esc(opcion.tipo)}"`
+    + `${opcion.tipo === 'restituidos' && conTexto(opcion.grupo) ? ` data-grupo="${esc(opcion.grupo)}"` : ''}`
+    + `${elegida !== undefined && opcion === elegida ? ' checked' : ''} aria-describedby="ml-tipos-error">`
     + `<span><b>${esc(opcion.nombre)}</b>${conTexto(opcion.queda_texto) ? `<small>${esc(opcion.queda_texto)}</small>` : ''}`
     + '</span></label>')
     .join('');
@@ -1175,6 +1292,20 @@ const htmlDeLosAvisosDelGuardado = (avisos) => {
 const htmlDelSegundoPasoEnEspera = (avisos) => htmlDeLosAvisosDelGuardado(avisos) + htmlDeMensaje(TEXTO_ARMANDO_LA_NOTA);
 const htmlDelSegundoPasoSinVista = (avisos) => htmlDeLosAvisosDelGuardado(avisos) + htmlDeError(MENSAJE_SIN_VISTA);
 
+// Lo guardado en el segundo paso, con la tilde: la línea (la insignia, las fechas y lo que suma, ya armados; sin nada, sin la
+// línea) y, en gris, los detalles (ya armados; sin ninguno, sin el párrafo). La usan los dos segundos pasos: el de una licencia y
+// el de un pedido de restitución
+const htmlDeLoHecho = (linea, detalles) => '<div class="me-paso-dos-hecho">'
+  + `<span class="me-tilde" aria-hidden="true">${TILDE_DEL_SEGUNDO_PASO}</span><div class="me-paso-dos-licencia">`
+  + (linea.length > 0 ? `<p class="me-paso-dos-linea">${linea.join('')}</p>` : '')
+  + (detalles.length > 0 ? `<p class="me-paso-dos-detalle">${detalles.join(' ')}</p>` : '') + '</div></div>';
+
+// «Así sale la nota», con la aclaración debajo (escapada; sin ella, nada), y la hoja sobre la mesa gris (`html`, armada y escapada
+// por el servidor: va tal cual; lo que no es un texto, la mesa vacía)
+const htmlDeLaNotaDelSegundoPaso = (aclaracion, html) => '<h3 class="me-paso-dos-titulo">Así sale la nota</h3>'
+  + (conTexto(aclaracion) ? `<p class="me-paso-dos-ayuda">${esc(aclaracion)}</p>` : '')
+  + `<div class="me-mesa">${typeof html === 'string' ? html : ''}</div>`;
+
 /**
  * El cuerpo del segundo paso con lo que manda GET …/nota: los avisos del guardado (`avisos`, en ámbar); la licencia guardada, con la
  * tilde, la insignia de su tipo, las fechas y lo que suma y, en gris, de qué licencias sale, lo de Configuración y lo que ven los
@@ -1192,15 +1323,59 @@ function htmlDelSegundoPaso({ fila = null, html = '', aclaracion = '', avisos = 
     if (conTexto(fila.cantidad_texto)) linea.push(`<span class="me-paso-dos-cantidad">${esc(fila.cantidad_texto)}</span>`);
     const detalles = [fila.de_licencias_texto, esObjeto(fila.configuracion) ? fila.configuracion.texto : null, fila.mostrar_texto]
       .filter(conTexto).map((texto) => `<span>${esc(texto)}</span>`);
-    partes.push(`<div class="me-paso-dos-hecho"><span class="me-tilde" aria-hidden="true">${TILDE_DEL_SEGUNDO_PASO}</span>`
-      + `<div class="me-paso-dos-licencia"><p class="me-paso-dos-linea">${linea.join('')}</p>`
-      + (detalles.length > 0 ? `<p class="me-paso-dos-detalle">${detalles.join(' ')}</p>` : '') + '</div></div>');
+    partes.push(htmlDeLoHecho(linea, detalles));
   }
   if (conTexto(lista)) partes.push(`<p class="me-paso-dos-lista">${esc(lista)}</p>`);
-  partes.push('<h3 class="me-paso-dos-titulo">Así sale la nota</h3>');
-  if (conTexto(aclaracion)) partes.push(`<p class="me-paso-dos-ayuda">${esc(aclaracion)}</p>`);
-  partes.push(`<div class="me-mesa">${typeof html === 'string' ? html : ''}</div>`);
+  partes.push(htmlDeLaNotaDelSegundoPaso(aclaracion, html));
   return partes.join('');
+}
+
+// ---- «Pedir la restitución» y el borrado de un pedido (spec 2026-10-31-mi-espacio-dias-restituidos, 9; el caso B) ----
+
+// Lo que pregunta la confirmación de «Borrar el pedido», en texto plano (va con textContent): es la misma para cualquier pedido
+const TEXTO_DE_CONFIRMACION_DE_RESTITUCION = '¿Borrar el pedido de restitución? Los días vuelven a estar por restituir y la nota que '
+  + 'armaste ya no vale.';
+const textoDeConfirmacionDeRestitucion = () => TEXTO_DE_CONFIRMACION_DE_RESTITUCION;
+
+/**
+ * El recuadro del modal (el `recuadro` de GET /mi-espacio/restituciones/vista, `{ resaltado, resto }`, que arma
+ * recuadroDeLaRestitucion del servidor): lo resaltado en negrita y el resto a continuación («<b>2 días hábiles vuelven a tu
+ * licencia 2025</b> (vence el 31/12/2027), por los asuetos …»), los dos escapados. Sin recuadro, o sin textos, ''
+ */
+function htmlDelRecuadroDeRestitucion(recuadro) {
+  if (!esObjeto(recuadro)) return '';
+  return (conTexto(recuadro.resaltado) ? `<b>${esc(recuadro.resaltado)}</b>` : '') + esc(comoTexto(recuadro.resto));
+}
+
+/**
+ * Lo que muestra el modal antes de pedir (lo que manda GET /mi-espacio/restituciones/vista, `{ recuadro, html, aclaracion }`): el
+ * recuadro celeste del cálculo (sin textos, no va), «Así sale la nota», la aclaración y la hoja (tal cual), como el segundo paso de
+ * una licencia
+ */
+function htmlDeLaVistaDeRestitucion(vista) {
+  const { recuadro, html, aclaracion } = esObjeto(vista) ? vista : {};
+  const adentro = htmlDelRecuadroDeRestitucion(recuadro);
+  return (adentro === '' ? '' : `<div class="me-recuadro me-calculo">${adentro}</div>`) + htmlDeLaNotaDelSegundoPaso(aclaracion, html);
+}
+
+/**
+ * El segundo paso de «Pedir la restitución», con lo que manda GET /mi-espacio/restituciones/:id/nota (`{ vacaciones: { tipo_nombre,
+ * fechas_texto }, hecho, html, aclaracion }`), como el de una licencia: la tilde, la insignia de las vacaciones de las que salen los
+ * días (azul; con su `tipo`, el color de ese tipo) con sus fechas y, en gris, lo que volvió («Los 2 días volvieron a tu licencia
+ * 2025: te quedan 23 días de vacaciones.», `hecho`); después «Así sale la nota», la aclaración y la hoja (tal cual). Todo otro texto
+ * del servidor, escapado. Sin vacaciones ni lo que volvió, sin la tilde
+ */
+function htmlDelSegundoPasoDeRestitucion(datos) {
+  const { vacaciones, hecho, html, aclaracion } = esObjeto(datos) ? datos : {};
+  const linea = [];
+  if (esObjeto(vacaciones)) {
+    if (conTexto(vacaciones.tipo_nombre)) {
+      linea.push(`<span class="me-insignia ${deMapa(CLASE_DEL_TIPO, vacaciones.tipo, 'azul')}">${esc(vacaciones.tipo_nombre)}</span>`);
+    }
+    if (conTexto(vacaciones.fechas_texto)) linea.push(`<b class="me-paso-dos-fechas">${esc(vacaciones.fechas_texto)}</b>`);
+  }
+  const detalles = conTexto(hecho) ? [`<span>${esc(hecho)}</span>`] : [];
+  return (linea.length > 0 || detalles.length > 0 ? htmlDeLoHecho(linea, detalles) : '') + htmlDeLaNotaDelSegundoPaso(aclaracion, html);
 }
 
 // ---- Las horas extras ----
