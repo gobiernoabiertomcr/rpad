@@ -118,6 +118,8 @@ const SITUACIONES_EN_GRIS = Object.freeze(['sin_franco', 'no_utilizado', 'no_uti
 // La nota de licencia en Word (spec 2026-10-27-mi-espacio-licencia-word, 6): el nombre del archivo si la respuesta no trae
 // Content-Disposition, y lo que se dice si la descarga falla sin un mensaje del servidor
 const NOMBRE_DEL_WORD_POR_DEFECTO = 'Nota de licencia.docx';
+// …y el de la nota de un pedido de restitución (spec 2026-10-31-mi-espacio-dias-restituidos, 12)
+const NOMBRE_DEL_WORD_DE_RESTITUCION = 'Nota de restitución.docx';
 const MENSAJE_SIN_DESCARGA = 'No se pudo descargar la nota. Probá de nuevo en unos minutos.';
 
 const NOTA_DE_LAS_LICENCIAS = 'Los días se cuentan hábiles: sin sábados, domingos ni feriados.';
@@ -1149,6 +1151,38 @@ function erroresDeLicencia(valores, { modalidad = null } = {}) {
 // 2026-10-31-mi-espacio-dias-restituidos, 9), o null
 const opcionDelGrupo = (tipos, grupo) => (conTexto(grupo)
   ? listaDe(tipos).find((opcion) => opcion.tipo === 'restituidos' && opcion.grupo === grupo) ?? null : null);
+
+/**
+ * Las opciones de «Cargar licencia» (los `tipos` del Resumen) para lo que se abre: una nueva, todas; una corrección, sin las de los
+ * días restituidos de los grupos por restituir (una licencia no pasa a ser unos días restituidos: spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 17.12) y con la de su tipo, aunque ya no esté entre las de la modalidad (o con «No
+ * estudio»), con su nombre: se ve elegida. La de unos días restituidos que se corrigen es la de su grupo (`valores.grupo`), después de
+ * las vacaciones (los días restituidos no cambian de tipo ni de grupo)
+ */
+function opcionesDeLicencia(tipos, fila, valores) {
+  const todas = listaDe(tipos);
+  if (!esObjeto(fila)) return todas;
+  const datos = esObjeto(valores) ? valores : {};
+  const sinRestituidos = todas.filter((opcion) => opcion.tipo !== 'restituidos');
+  const suya = { tipo: datos.tipo, nombre: fila.tipo_nombre, queda_texto: '' };
+  if (datos.tipo === 'restituidos') {
+    const despues = sinRestituidos.findIndex((opcion) => opcion.tipo === 'vacaciones') + 1;
+    return [...sinRestituidos.slice(0, despues), { ...suya, grupo: comoTexto(datos.grupo) }, ...sinRestituidos.slice(despues)];
+  }
+  return sinRestituidos.some((opcion) => opcion.tipo === datos.tipo) ? sinRestituidos : [...sinRestituidos, suya];
+}
+
+// Las ayudas de «Desde» y del «Hasta» de unos días restituidos (`{ desde, hasta }`, textos del servidor): las de la opción del grupo
+// (`ayuda_desde` y `ayuda_hasta`) en una nueva o, al corregir, las de la fila (`fila.restituidos`). Sin ellas, ''
+const ayudasDeRestituidos = (tipos, fila, grupo) => {
+  const fuente = esObjeto(fila) ? (esObjeto(fila.restituidos) ? fila.restituidos : null) : opcionDelGrupo(tipos, grupo);
+  return { desde: comoTexto(fuente?.ayuda_desde), hasta: comoTexto(fuente?.ayuda_hasta) };
+};
+
+// Lo que se pide para un grupo de días por restituir (`{ licencia_id, anio, tanda }`, la `restitucion` de su acción), entre las
+// acciones del servidor que hay en la página (la del aviso del Resumen, la de «Vence pronto» y la de la línea de la fila), o null
+const restitucionDelGrupo = (grupo, acciones) => (conTexto(grupo)
+  ? listaDe(acciones).find((accion) => accion.grupo === grupo && esObjeto(accion.restitucion))?.restitucion ?? null : null);
 
 /**
  * El cuerpo de POST /licencias y PUT /licencias/:id (y del cálculo previo): el tipo, las fechas (en los de un día, el hasta es
@@ -3086,7 +3120,9 @@ document.addEventListener('DOMContentLoaded', () => {
 // 4.1): `semana`, con `finde` («Sábado y domingo» prendido: de entrada, lo que recuerda este navegador), `elegido` (el día elegido
 // del teléfono) y `foco` (el número con tabindex="0": el mes es una sola parada del tabulador), dos días que se ven en la grilla
 // (al abrir un mes, hoy si es de ese mes y si no el 1, o el visible más cercano: empezarElMes), y `animado` (las barras ya se
-// dibujaron de izquierda a derecha: pasa una sola vez por carga)
+// dibujaron de izquierda a derecha: pasa una sola vez por carga). `restitucion`, el modal «Pedir la restitución» abierto (spec
+// 2026-10-31-mi-espacio-dias-restituidos, 9): `{ grupo, restitucion, pidiendo, id }`, con el grupo y lo que se pide, si está pidiendo
+// y, ya pedida, el id del pedido; null con el modal cerrado
 const pagina = {
   pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, bandaAnimada: false,
   anioDeLicencias: null, mesDeEventos: null, delMes: null, proximos: null,
@@ -3094,7 +3130,7 @@ const pagina = {
   cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0, nota: 0 },
   modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null,
   segundoPaso: null, evento: null, eventoAjeno: null, personas: null, personasPublico: null, miNombre: null, pidiendoMiNombre: false,
-  planilla: null
+  planilla: null, restitucion: null
 };
 
 const porId = (id) => document.getElementById(id);
@@ -3340,20 +3376,18 @@ function contarHasta(elemento, demoraMs, duracionMs) {
 }
 
 // Un clic en el Resumen: «Mis vacaciones y saldos» y los botones de «Vence pronto» abren su formulario (el de licencia, con su
-// tipo); un número del resto (y «Ver la agenda») abre su pestaña y el foco va a la pestaña; el link de la bajada y el de un aviso
-// para revisar (data-anio-licencias), Licencias en ese año (irALicencias). Con Ctrl, Cmd, Mayúsculas, Alt o un botón que no es el
-// principal, el link hace lo suyo: otra pestaña del navegador
+// tipo y, unos días restituidos, con su grupo); los de los días por restituir (el aviso y «Vence pronto», spec
+// 2026-10-31-mi-espacio-dias-restituidos, 9), «Cargar licencia» o «Pedir la restitución», y «Word» y «Borrar el pedido» de un pedido
+// en su «Revisá…» (alTocarUnaRestitucion); un número del resto (y «Ver la agenda») abre su pestaña y el foco va a la pestaña; el
+// link de la bajada y el de un aviso para revisar (data-anio-licencias), Licencias en ese año (irALicencias). Con Ctrl, Cmd,
+// Mayúsculas, Alt o un botón que no es el principal, el link hace lo suyo: otra pestaña del navegador
 function alTocarResumen(evento) {
   const saldos = evento.target?.closest?.('[data-abrir="saldos"]');
   if (saldos) {
     abrirSaldos(saldos);
     return;
   }
-  const accion = evento.target?.closest?.('[data-accion="cargar-licencia"]');
-  if (accion) {
-    abrirLicencia({ tipo: accion.dataset.tipo, volverA: accion });
-    return;
-  }
+  if (alTocarUnaRestitucion(evento.target)) return;
   const destino = evento.target?.closest?.('[data-pestana]');
   if (!destino || evento.ctrlKey || evento.metaKey || evento.shiftKey || evento.altKey || (evento.button ?? 0) !== 0) return;
   evento.preventDefault?.();
@@ -3432,12 +3466,12 @@ const descargarBlob = (blob, nombre) => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
-// El Word de una licencia (GET /mi-espacio/licencias/:id/word), con el token en el encabezado: `{ blob, nombre }`, con el nombre
-// del Content-Disposition (null si no viene). Es local, como pedirWord de notas.js, porque API.pedirArchivo no da el estado ni los
-// encabezados (api.js no cambia). Si el servidor responde un error, tira un Error con su `status` (401: la sesión venció) y su
-// mensaje ('' si no trae uno)
-async function pedirWordDeLicencia(id) {
-  const response = await fetch(`${CONFIG.API_URL}/mi-espacio/licencias/${encodeURIComponent(id)}/word`, {
+// Un Word de Mi espacio (la nota de una licencia, GET /mi-espacio/licencias/:id/word, o la de un pedido de restitución, GET
+// /mi-espacio/restituciones/:id/word), con el token en el encabezado: `{ blob, nombre }`, con el nombre del Content-Disposition
+// (null si no viene). Es local, como pedirWord de notas.js, porque API.pedirArchivo no da el estado ni los encabezados (api.js no
+// cambia). Si el servidor responde un error, tira un Error con su `status` (401: la sesión venció) y su mensaje ('' si no trae uno)
+async function pedirWordDe(ruta) {
+  const response = await fetch(`${CONFIG.API_URL}${ruta}`, {
     method: 'GET',
     headers: Auth.getAuthHeaders()
   });
@@ -3451,21 +3485,20 @@ async function pedirWordDeLicencia(id) {
 }
 
 /**
- * «Word» de una fila de la lista (y «Descargar Word» del segundo paso del modal): baja la nota de la licencia `id` con el nombre que
- * da el servidor (o NOMBRE_DEL_WORD_POR_DEFECTO). Mientras baja, `boton` queda deshabilitado (un segundo clic no pide nada) y, si
- * tenía el foco y se perdió mientras tanto (deshabilitado, el navegador lo suelta a <body>), lo recupera al terminar; si la persona
- * lo llevó a otro lado (otro control, o el modal que abrió o cerró mientras bajaba), ahí queda. Con un 401, al login; con otro
- * error, el aviso con el mensaje del servidor (el 409 de una licencia sin días hábiles) o, sin mensaje (o sin respuesta),
- * MENSAJE_SIN_DESCARGA
+ * Baja el Word de `ruta` (pedirWordDe) con el nombre que da el servidor (o `porDefecto`). Mientras baja, `boton` queda deshabilitado
+ * (un segundo clic no pide nada) y, si tenía el foco y se perdió mientras tanto (deshabilitado, el navegador lo suelta a <body>), lo
+ * recupera al terminar; si la persona lo llevó a otro lado (otro control, o el modal que abrió o cerró mientras bajaba), ahí queda.
+ * Con un 401, al login; con otro error, el aviso con el mensaje del servidor (el 409 de una licencia sin días hábiles) o, sin mensaje
+ * (o sin respuesta), MENSAJE_SIN_DESCARGA
  */
-async function bajarWordDeLicencia(id, boton) {
+async function bajarWordDe(ruta, boton, porDefecto) {
   if (boton?.disabled) return;
   const teniaElFoco = Boolean(boton) && document.activeElement === boton;
   if (boton) boton.disabled = true;
   let falla = null;
   try {
-    const { blob, nombre } = await pedirWordDeLicencia(id);
-    descargarBlob(blob, conTexto(nombre) ? nombre : NOMBRE_DEL_WORD_POR_DEFECTO);
+    const { blob, nombre } = await pedirWordDe(ruta);
+    descargarBlob(blob, conTexto(nombre) ? nombre : porDefecto);
   } catch (error) {
     falla = error ?? new Error('');
   }
@@ -3479,10 +3512,52 @@ async function bajarWordDeLicencia(id, boton) {
   if (falla) avisarMiEspacio(Number.isInteger(falla.status) && conTexto(falla.message) ? falla.message : MENSAJE_SIN_DESCARGA, 'error');
 }
 
-// Un clic en la pestaña: «Cargar licencia», «Word» o «Editar» de una fila, «Cambiar» el saldo inicial, un año del selector (el
-// elegido no pide nada) o un filtro (dibuja sin pedir nada)
+// «Word» de una fila de la lista (y «Descargar Word» del segundo paso del modal): la nota de la licencia `id`
+function bajarWordDeLicencia(id, boton) {
+  return bajarWordDe(`/mi-espacio/licencias/${encodeURIComponent(id)}/word`, boton, NOMBRE_DEL_WORD_POR_DEFECTO);
+}
+
+// «Word» de un pedido de restitución (en la línea de su fila, en su «Revisá…» y en el segundo paso de «Pedir la restitución»: spec
+// 2026-10-31-mi-espacio-dias-restituidos, 9 y 12): la nota del pedido `id`
+function bajarWordDeRestitucion(id, boton) {
+  return bajarWordDe(`/mi-espacio/restituciones/${encodeURIComponent(id)}/word`, boton, NOMBRE_DEL_WORD_DE_RESTITUCION);
+}
+
+/**
+ * Los botones de los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9), en el Resumen y en la lista: los de un grupo
+ * por restituir (data-accion: «Cargar licencia» con «Días restituidos» de su grupo, o «Pedir la restitución») y, de un pedido, «Word»
+ * y «Borrar el pedido». También «Cargar licencia» de «Vence pronto» (con su tipo). true si el clic fue en uno de ellos
+ */
+function alTocarUnaRestitucion(objetivo) {
+  const cargar = objetivo?.closest?.('[data-accion="cargar-licencia"]');
+  if (cargar) {
+    abrirLicencia({ tipo: cargar.dataset.tipo, grupo: cargar.dataset.grupo, volverA: cargar });
+    return true;
+  }
+  const pedir = objetivo?.closest?.('[data-accion="pedir-restitucion"]');
+  if (pedir) {
+    abrirRestitucion({ grupo: pedir.dataset.grupo, volverA: pedir });
+    return true;
+  }
+  const word = objetivo?.closest?.('[data-word-restitucion]');
+  if (word) {
+    bajarWordDeRestitucion(word.dataset.wordRestitucion, word);
+    return true;
+  }
+  const borrar = objetivo?.closest?.('[data-borrar-restitucion]');
+  if (borrar) {
+    pedirBorrarRestitucion(borrar.dataset.borrarRestitucion, borrar);
+    return true;
+  }
+  return false;
+}
+
+// Un clic en la pestaña: «Cargar licencia», «Word» o «Editar» de una fila, los botones de la línea de un grupo de días restituidos
+// (alTocarUnaRestitucion), «Cambiar» el saldo inicial, un año del selector (el elegido no pide nada) o un filtro (dibuja sin pedir
+// nada)
 async function alTocarLicencias(evento) {
   const objetivo = evento.target;
+  if (alTocarUnaRestitucion(objetivo)) return;
   if (objetivo?.closest?.('[data-cargar="licencia"]')) {
     abrirLicencia({ volverA: objetivo.closest('[data-cargar="licencia"]') });
     return;
@@ -3948,6 +4023,8 @@ const FORMULARIOS = Object.freeze({
     }
   },
   eventoAjeno: { modal: 'modal-evento-ajeno', prefijo: 'mea', campos: {} },
+  // «Pedir la restitución» (spec 2026-10-31-mi-espacio-dias-restituidos, 9): sin campos; lo que falla, en #mr-error
+  restitucion: { modal: 'modal-restitucion', prefijo: 'mr', campos: {} },
   confirmar: { modal: 'modal-confirmar', prefijo: 'mc', campos: {} }
 });
 
@@ -3967,8 +4044,13 @@ function conectarFormularios() {
   document.addEventListener('keydown', alApretarUnaTecla);
 
   porId('ml-tipos').addEventListener('change', (evento) => {
-    if (evento.target?.name !== 'ml-tipo' || !pagina.formulario) return;
-    pagina.formulario.tipo = evento.target.value;
+    const formulario = pagina.formulario;
+    if (evento.target?.name !== 'ml-tipo' || !formulario) return;
+    formulario.tipo = evento.target.value;
+    // Unos días restituidos: el grupo de la opción, y el «Hasta» lo vuelve a poner el cálculo
+    const restituidos = formulario.tipo === 'restituidos';
+    formulario.valores = { ...formulario.valores, grupo: restituidos ? comoTexto(evento.target.dataset?.grupo) : '' };
+    if (restituidos) porId('ml-hasta').value = '';
     pintarCamposDelTipo();
     programarCalculo();
   });
@@ -3991,6 +4073,11 @@ function conectarFormularios() {
   // «Descargar Word» del segundo paso: la nota de la licencia guardada, por el mismo camino que «Word» de la lista
   porId('ml-descargar-word').addEventListener('click', () => {
     if (pagina.segundoPaso) bajarWordDeLicencia(pagina.segundoPaso.id, porId('ml-descargar-word'));
+  });
+  // «Pedir la restitución» y, ya pedida, «Descargar Word» de su nota
+  porId('mr-pedir').addEventListener('click', pedirLaRestitucion);
+  porId('mr-descargar-word').addEventListener('click', () => {
+    if (Number.isInteger(pagina.restitucion?.id)) bajarWordDeRestitucion(pagina.restitucion.id, porId('mr-descargar-word'));
   });
 
   for (const id of ['mh-fecha', 'mh-desde', 'mh-hasta']) {
@@ -4062,6 +4149,7 @@ function estaOcupado(modal) {
   if (modal === 'modal-saldos') return pagina.saldos?.guardando === true;
   if (modal === 'modal-evento') return pagina.evento?.guardando === true;
   if (modal === 'modal-evento-ajeno') return pagina.eventoAjeno?.guardando === true;
+  if (modal === 'modal-restitucion') return pagina.restitucion?.pidiendo === true;
   return pagina.formulario?.guardando === true && FORMULARIOS[pagina.formulario.nombre].modal === modal;
 }
 
@@ -4193,12 +4281,15 @@ function mostrarFallaDelServidor(nombre, falla, boton) {
 
 // Las pestañas que se vuelven a dibujar después de guardar o de borrar, y lo que identifica a un control que abre un modal, en este
 // orden: el «Editar» de una fila (por su id; en el día por día de contrato, por su fecha), «Mis vacaciones y saldos», «Cambiar» o
-// «Registrar un uso autorizado», «Cargar licencia» o «Cargar horas extras» de una tarjeta, un botón de «Vence pronto» (por su tipo),
-// un evento de la agenda (por su id) y, desde la agenda con más onda, el número de un día del mes y «Nuevo evento» del día elegido
-// (por su fecha: un «Nuevo evento» abierto desde ahí vuelve a él)
+// «Registrar un uso autorizado», «Cargar licencia» o «Cargar horas extras» de una tarjeta, un botón de un grupo de días
+// restituidos (por su grupo: el del aviso, el de «Vence pronto» y el de la línea de la fila, que abren «Cargar licencia» o «Pedir la
+// restitución»), un botón de «Vence pronto» (por su tipo), «Word» y «Borrar el pedido» de un pedido de restitución (por su id), un
+// evento de la agenda (por su id) y, desde la agenda con más onda, el número de un día del mes y «Nuevo evento» del día elegido (por
+// su fecha: un «Nuevo evento» abierto desde ahí vuelve a él)
 const VISTAS_QUE_SE_DIBUJAN = Object.freeze(['vista-resumen', 'vista-licencias', 'vista-horas', 'vista-agenda']);
 const IDENTIDADES_DEL_FOCO = Object.freeze(['data-editar-licencia', 'data-editar-horas', 'data-editar-salida', 'data-abrir',
-  'data-cargar', 'data-tipo', 'data-evento', 'data-dia', 'data-nuevo-el']);
+  'data-cargar', 'data-grupo', 'data-tipo', 'data-word-restitucion', 'data-borrar-restitucion', 'data-evento', 'data-dia',
+  'data-nuevo-el']);
 
 // El id del lugar de la pestaña donde está un control (el primer antepasado con id, antes de la pestaña: en la agenda, 'ag-mes' o
 // 'ag-proximos'), o null
@@ -4331,9 +4422,10 @@ async function hayResumen() {
 
 // ---- «Cargar licencia» y «Registrar un uso autorizado» ----
 
-// Abre «Cargar licencia»: nueva (con el `tipo` de «Vence pronto») o la corrección de una fila de la lista. El uso autorizado tiene su
-// formulario. Sin el saldo inicial no se puede cargar nada: abre «Mis vacaciones y saldos»
-async function abrirLicencia({ fila = null, tipo = null, volverA = null } = {}) {
+// Abre «Cargar licencia»: nueva (con el `tipo` de «Vence pronto» y, unos días restituidos, con su `grupo`: el del aviso, «Vence
+// pronto» o la línea de la fila) o la corrección de una fila de la lista. El uso autorizado tiene su formulario. Sin el saldo inicial
+// no se puede cargar nada: abre «Mis vacaciones y saldos»
+async function abrirLicencia({ fila = null, tipo = null, grupo = null, volverA = null } = {}) {
   if (pagina.resumen === null && !(await hayResumen())) return;
   if (pagina.resumen?.abrir_saldos === true) {
     abrirSaldos(volverA);
@@ -4343,26 +4435,22 @@ async function abrirLicencia({ fila = null, tipo = null, volverA = null } = {}) 
     abrirUso({ fila, volverA });
     return;
   }
-  const valores = valoresDeLicencia(fila, tipo);
-  // El tipo de la fila, aunque ya no esté entre los de la modalidad (o con «No estudio»): se ve elegido
-  const tipos = listaDe(pagina.resumen?.tipos);
-  const opciones = fila && !tipos.some((opcion) => opcion.tipo === valores.tipo)
-    ? [...tipos, { tipo: valores.tipo, nombre: fila.tipo_nombre, queda_texto: '' }] : tipos;
+  const valores = valoresDeLicencia(fila, tipo, grupo);
+  // El tipo de la fila se ve elegido (opcionesDeLicencia); una corrección no ofrece los días restituidos de otro grupo
+  const opciones = opcionesDeLicencia(pagina.resumen?.tipos, fila, valores);
   // Siempre abre el formulario (el segundo paso se va al cerrar el modal: esto es por las dudas)
   quitarSegundoPaso();
   porId('modal-licencia-titulo').textContent = fila ? `Corregir la licencia del ${comoTexto(fila.fechas_texto)}` : 'Cargar licencia';
-  porId('ml-tipos-opciones').innerHTML = htmlDeTiposDeLicencia(opciones, valores.tipo);
+  porId('ml-tipos-opciones').innerHTML = htmlDeTiposDeLicencia(opciones, valores.tipo, valores.grupo);
   porId('ml-desde').value = valores.desde;
   porId('ml-hasta').value = valores.hasta;
   porId('ml-horas').value = valores.horas;
   porId('ml-grupo-autorizado').hidden = true;
-  // Una creada que ya empezó o que ya terminó: lo que se puede cambiar de sus fechas (lo controla el servidor; el desde no se
-  // bloquea, así se puede volver a las fechas de Configuración)
-  const fechas = porId('ml-fechas-ayuda');
-  fechas.textContent = fila?.fechas_fijas === true ? MENSAJES_FORMULARIOS.fechasFijas
-    : (fila?.solo_hasta === true ? MENSAJES_FORMULARIOS.soloHasta : '');
-  fechas.hidden = fechas.textContent === '';
   iniciarFormulario('licencia', { fila, valores });
+  // Una creada que ya empezó o que ya terminó: lo que se puede cambiar de sus fechas (lo controla el servidor; el desde no se
+  // bloquea, así se puede volver a las fechas de Configuración). Lo escribe pintarCamposDelTipo, con la ayuda de unos días restituidos
+  pagina.formulario.ayudaDeLasFechas = fila?.fechas_fijas === true ? MENSAJES_FORMULARIOS.fechasFijas
+    : (fila?.solo_hasta === true ? MENSAJES_FORMULARIOS.soloHasta : '');
   pintarCamposDelTipo();
   abrirModal('modal-licencia', { volverA, foco: () => controlDeFoco('ml-tipos'), alCerrar: cerrarFormulario });
   if (Object.keys(erroresDeLicencia(valores, { modalidad: modalidadActual() })).length === 0) programarCalculo();
@@ -4422,12 +4510,29 @@ function cerrarFormulario() {
   pagina.formulario = null;
 }
 
-// Los campos del tipo elegido: «Desde» y «Hasta, inclusive», o «Fecha» en los de un día, y las horas en los que van por horas
+// Los campos del tipo elegido: «Desde» y «Hasta, inclusive», o «Fecha» en los de un día, y las horas en los que van por horas. En
+// unos días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9), el «Hasta» lo pone Mi espacio: de solo lectura (con la
+// clase me-auto) y descripto por su ayuda («Lo pone Mi espacio: 2 días hábiles.», en #ml-hasta-ayuda), y la ayuda de «Desde» dice
+// desde cuándo se pueden empezar (las de la opción del grupo o, al corregir, las de la fila: ayudasDeRestituidos). La ayuda de las
+// fechas de una creada que ya empezó o que ya terminó gana
 function pintarCamposDelTipo() {
-  const { tipo, valores } = pagina.formulario;
+  const formulario = pagina.formulario;
+  const { tipo, valores } = formulario;
   const unDia = deUnDia(tipo);
   porId('ml-desde-rotulo').textContent = unDia ? 'Fecha' : 'Desde';
   porId('ml-grupo-hasta').hidden = unDia;
+  const restituidos = tipo === 'restituidos';
+  const ayudas = restituidos ? ayudasDeRestituidos(pagina.resumen?.tipos, formulario.fila, valores.grupo) : { desde: '', hasta: '' };
+  const hasta = porId('ml-hasta');
+  hasta.readOnly = restituidos;
+  hasta.classList.toggle('me-auto', restituidos);
+  hasta.setAttribute('aria-describedby', restituidos ? 'ml-hasta-ayuda ml-hasta-error' : 'ml-fechas-ayuda ml-hasta-error');
+  const ayudaDelHasta = porId('ml-hasta-ayuda');
+  ayudaDelHasta.textContent = ayudas.hasta;
+  ayudaDelHasta.hidden = ayudas.hasta === '';
+  const fechas = porId('ml-fechas-ayuda');
+  fechas.textContent = conTexto(formulario.ayudaDeLasFechas) ? formulario.ayudaDeLasFechas : ayudas.desde;
+  fechas.hidden = fechas.textContent === '';
   const enHoras = horasDelTipo(tipo, modalidadActual());
   porId('ml-grupo-horas').hidden = enHoras === null;
   if (enHoras !== null) {
@@ -4501,7 +4606,7 @@ async function pedirCalculo(formulario) {
   let data = null;
   let falla = null;
   if (!tipo && !desde && !hasta && !horas) {
-    const cuerpo = cuerpoDeLicencia(valores);
+    const cuerpo = cuerpoDeLicencia(valores, { tipos: pagina.resumen?.tipos });
     if (valores.id !== null) cuerpo.id = valores.id;
     try {
       ({ data } = await API.pedirJson('POST', '/mi-espacio/licencias/calculo', cuerpo));
@@ -4525,6 +4630,14 @@ async function pedirCalculo(formulario) {
 async function pintarCalculo(formulario, data, valores, falla = null) {
   const { nombre } = formulario;
   const { prefijo } = FORMULARIOS[nombre];
+  // Unos días restituidos: el «Hasta» es el que pone Mi espacio (`vista.hasta`; sin vista, vacío). Si el cálculo no llegó, queda el
+  // que había (al corregir, el guardado)
+  let conElHasta = valores;
+  if (nombre === 'licencia' && valores.tipo === 'restituidos' && falla === null) {
+    const hasta = esObjeto(data?.vista) && esFechaDeTexto(data.vista.hasta) ? data.vista.hasta : '';
+    porId('ml-hasta').value = hasta;
+    conElHasta = { ...valores, hasta };
+  }
   formulario.paso = esObjeto(data?.paso) ? data.paso : null;
   limpiarErrores(nombre);
   if (falla !== null) avisoDelModal(nombre, textoSinCalculo(falla));
@@ -4539,7 +4652,7 @@ async function pintarCalculo(formulario, data, valores, falla = null) {
   if (nombre === 'licencia') await prepararPersonaACargo(formulario);
   if (pagina.formulario !== formulario) return;
   pintarPaso(formulario);
-  actualizarSinAuditor(formulario, valores);
+  actualizarSinAuditor(formulario, conElHasta);
 }
 
 // El campo «Autorizo a presentar las notas en mi nombre a:» (spec, sección 6): solo cuando el paso pasa y el firmante titular
@@ -4648,7 +4761,7 @@ async function guardarLicencia(nombre) {
     if (pagina.formulario === formulario) boton.focus?.();
     return;
   }
-  const cuerpo = cuerpoDeLicencia(valores, { soyTitular: conPersonaACargo(formulario) });
+  const cuerpo = cuerpoDeLicencia(valores, { soyTitular: conPersonaACargo(formulario), tipos: pagina.resumen?.tipos });
   formulario.guardando = true;
   boton.disabled = true;
   try {
@@ -4781,6 +4894,177 @@ function pedirBorrarLicencia(nombre) {
     titulo: nombre === 'uso' ? '¿Borrar el uso autorizado?' : '¿Borrar la licencia?', texto: textoDeConfirmacion(formulario.fila),
     volverA: porId(`${FORMULARIOS[nombre].prefijo}-borrar`), formulario: FORMULARIOS[nombre].modal,
     borrar: () => API.pedirJson('DELETE', `/mi-espacio/licencias/${encodeURIComponent(id)}`)
+  });
+}
+
+// ---- «Pedir la restitución» y el borrado de un pedido (spec 2026-10-31-mi-espacio-dias-restituidos, 9; el caso B) ----
+
+// Lo que dice el modal si no se encuentra el grupo, si no llega la vista o si, ya pedida, no llega la nota
+const MENSAJE_SIN_EL_GRUPO = 'No se pudo abrir «Pedir la restitución». Probá de nuevo en unos minutos.';
+const MENSAJE_SIN_LA_VISTA_DE_RESTITUCION = 'No se pudo armar la vista de la nota. Probá de nuevo en unos minutos.';
+const MENSAJE_SIN_LA_NOTA_DE_RESTITUCION = 'La restitución quedó pedida, pero no se pudo armar la vista de la nota. Probá «Descargar '
+  + 'Word» o bajala después con «Word» en la lista.';
+
+// Las acciones del servidor que hay en la página (`{ texto, tipo, grupo, restitucion }`): la de cada aviso de los días por restituir
+// y de «Vence pronto» del Resumen y la de cada línea de las filas de la lista de Licencias
+const accionesDeLaPagina = () => [
+  ...listaDe(pagina.resumen?.restituciones).map((aviso) => aviso.accion),
+  ...listaDe(pagina.resumen?.vence_pronto).map((cosa) => cosa.accion),
+  ...listaDe(pagina.licencias?.licencias).flatMap((fila) => listaDe(fila.restituciones).map((linea) => linea.accion))
+];
+
+/**
+ * Abre «Pedir la restitución» del grupo `grupo` (el de su botón: el aviso, «Vence pronto» o la línea de la fila), con lo que se pide
+ * (la `restitucion` de su acción, restitucionDelGrupo): el formulario, con «Armando la nota…» hasta que llega la vista (GET
+ * /mi-espacio/restituciones/vista) y el foco en «Pedir la restitución». Un clic en el velo no lo cierra. Si el grupo no está entre
+ * lo que llegó del servidor, se avisa y no se abre
+ */
+function abrirRestitucion({ grupo, volverA = null } = {}) {
+  const restitucion = restitucionDelGrupo(grupo, accionesDeLaPagina());
+  if (restitucion === null) {
+    avisarMiEspacio(MENSAJE_SIN_EL_GRUPO, 'error');
+    return;
+  }
+  const sesion = { grupo, restitucion, pidiendo: false, id: null };
+  quitarSegundoPasoDeRestitucion();
+  pagina.restitucion = sesion;
+  porId('modal-restitucion-titulo').textContent = 'Pedir la restitución';
+  avisoDelModal('restitucion', '');
+  porId('mr-vista').innerHTML = htmlDeMensaje(TEXTO_ARMANDO_LA_NOTA);
+  porId('mr-pedir').disabled = false;
+  abrirModal('modal-restitucion', { volverA, foco: () => porId('mr-pedir'), alCerrar: quitarSegundoPasoDeRestitucion });
+  pedirLaVistaDeRestitucion(sesion);
+}
+
+// GET /mi-espacio/restituciones/vista?licencia_id=&anio=&tanda=: el recuadro, la aclaración y la hoja (htmlDeLaVistaDeRestitucion).
+// Si no llega, el motivo arriba del modal (el del servidor: un grupo que ya no está por restituir; sin respuesta,
+// MENSAJE_SIN_CONEXION) y la vista vacía: «Pedir la restitución» sigue (el servidor vuelve a controlar). Con un 401, al login. Una
+// respuesta de otra apertura, o que llega con el modal cerrado o ya pedida, no toca nada
+async function pedirLaVistaDeRestitucion(sesion) {
+  const { licencia_id: licenciaId, anio, tanda } = sesion.restitucion;
+  const ruta = `/mi-espacio/restituciones/vista?licencia_id=${encodeURIComponent(licenciaId)}&anio=${encodeURIComponent(anio)}`
+    + `&tanda=${encodeURIComponent(tanda)}`;
+  try {
+    const { data } = await API.pedirJson('GET', ruta);
+    if (pagina.restitucion !== sesion || sesion.id !== null) return;
+    porId('mr-vista').innerHTML = htmlDeLaVistaDeRestitucion(data);
+  } catch (error) {
+    if (pagina.restitucion !== sesion || sesion.id !== null) return;
+    if (error?.status === 401) {
+      irAlLogin();
+      return;
+    }
+    porId('mr-vista').innerHTML = '';
+    avisoDelModal('restitucion', motivoDeLaFalla(error, MENSAJE_SIN_LA_VISTA_DE_RESTITUCION));
+  }
+}
+
+// «Pedir la restitución»: POST /mi-espacio/restituciones con lo que se pide. Mientras, el botón queda deshabilitado y el modal no se
+// cierra (un doble clic manda un solo pedido). Con un 201, el segundo paso (pasarAlSegundoPasoDeRestitucion); con un 400 (el grupo ya
+// no está por restituir, o es del caso A), el motivo arriba del modal, que sigue abierto, y el foco vuelve al botón; con un 401, al
+// login
+async function pedirLaRestitucion() {
+  const sesion = pagina.restitucion;
+  const boton = porId('mr-pedir');
+  if (!sesion || sesion.pidiendo || sesion.id !== null) return;
+  sesion.pidiendo = true;
+  boton.disabled = true;
+  avisoDelModal('restitucion', '');
+  try {
+    const respuesta = await API.pedirJson('POST', '/mi-espacio/restituciones', { ...sesion.restitucion });
+    sesion.pidiendo = false;
+    if (pagina.restitucion === sesion) pasarAlSegundoPasoDeRestitucion(sesion, respuesta);
+  } catch (error) {
+    sesion.pidiendo = false;
+    boton.disabled = false;
+    if (error?.status === 401) irAlLogin();
+    else if (pagina.restitucion === sesion) {
+      avisoDelModal('restitucion', motivoDeLaFalla(error, MENSAJE_NO_SE_GUARDO));
+      boton.focus?.();
+    }
+  }
+}
+
+/**
+ * Pedida la restitución, el modal no se cierra: pasa al segundo paso, como «Cargar licencia» (pasarAlSegundoPaso). El título
+ * («Restitución pedida»), el cuerpo con «Armando la nota…» hasta que llega GET …/:id/nota, y el pie («Listo» y «Descargar Word»,
+ * que recibe el foco); #me-anuncio dice lo que dijo el servidor («Restitución pedida: los 2 días volvieron a tu licencia 2025.») y
+ * que se puede bajar la nota. La página vuelve a pedir todo de fondo y, al cerrar, el foco va adonde va después de cualquier
+ * guardado (el respaldo del botón que abrió el modal, tomado antes de la recarga)
+ */
+function pasarAlSegundoPasoDeRestitucion(sesion, respuesta) {
+  const modal = 'modal-restitucion';
+  const abierta = pagina.modales.find((una) => una.id === modal) ?? null;
+  const respaldo = respaldoDelFoco(abierta?.volverA ?? null);
+  const recarga = volverAPedirTodo();
+  const id = respuesta?.data?.id;
+  sesion.id = Number.isInteger(id) ? id : null;
+  porId('modal-restitucion-titulo').textContent = 'Restitución pedida';
+  porId('mr-cuerpo').hidden = true;
+  porId('mr-pie').hidden = true;
+  const cuerpo = porId('mr-paso-dos');
+  cuerpo.innerHTML = htmlDeMensaje(TEXTO_ARMANDO_LA_NOTA);
+  cuerpo.hidden = false;
+  cuerpo.scrollTop = 0;
+  porId('mr-paso-dos-pie').hidden = false;
+  porId('mr-descargar-word').focus?.();
+  anunciar(`${conTexto(respuesta?.message) ? respuesta.message : 'Restitución pedida.'} Podés descargar la nota en Word.`);
+  if (abierta !== null) {
+    abierta.alCerrar = () => {
+      soltarElFocoDe(modal);
+      quitarSegundoPasoDeRestitucion();
+      const aplicar = () => devolverElFoco(respaldo);
+      recarga.then(aplicar, aplicar);
+    };
+  }
+  pedirLaNotaDeRestitucion(sesion);
+}
+
+// GET /mi-espacio/restituciones/:id/nota: las vacaciones, lo que volvió y la hoja (htmlDelSegundoPasoDeRestitucion); si no llega (o
+// llega sin hoja, o sin id), MENSAJE_SIN_LA_NOTA_DE_RESTITUCION, también anunciado: la restitución ya se pidió y «Descargar Word»
+// sigue andando. Con un 401, al login. Una respuesta que llega con el modal cerrado, o de otra apertura, no toca nada
+async function pedirLaNotaDeRestitucion(sesion) {
+  let data = null;
+  let falla = null;
+  try {
+    if (sesion.id === null) throw new Error('');
+    ({ data } = await API.pedirJson('GET', `/mi-espacio/restituciones/${encodeURIComponent(sesion.id)}/nota`));
+  } catch (error) {
+    falla = error ?? new Error('');
+  }
+  if (pagina.restitucion !== sesion) return;
+  if (falla?.status === 401) {
+    irAlLogin();
+    return;
+  }
+  if (falla === null && esObjeto(data) && conTexto(data.html)) {
+    porId('mr-paso-dos').innerHTML = htmlDelSegundoPasoDeRestitucion(data);
+    return;
+  }
+  porId('mr-paso-dos').innerHTML = htmlDeError(MENSAJE_SIN_LA_NOTA_DE_RESTITUCION);
+  anunciar(MENSAJE_SIN_LA_NOTA_DE_RESTITUCION);
+}
+
+// Al cerrar el modal (y, por las dudas, al abrirlo): lo del pedido se va (una respuesta que llegue después se descarta) y vuelven el
+// cuerpo y el pie del formulario, vacíos, para la próxima vez
+function quitarSegundoPasoDeRestitucion() {
+  pagina.restitucion = null;
+  const cuerpo = porId('mr-paso-dos');
+  cuerpo.hidden = true;
+  cuerpo.innerHTML = '';
+  porId('mr-paso-dos-pie').hidden = true;
+  porId('mr-vista').innerHTML = '';
+  porId('mr-cuerpo').hidden = false;
+  porId('mr-pie').hidden = false;
+}
+
+// «Borrar el pedido» (en la línea de su fila y en su «Revisá…» de arriba del Resumen): la confirmación (textoDeConfirmacionDeRestitucion)
+// y, si se confirma, DELETE /mi-espacio/restituciones/:id. Un 409 (ya pasó el plazo) cierra la confirmación y se avisa con el mensaje
+// del servidor, como un 404, y se vuelve a pedir todo
+function pedirBorrarRestitucion(id, boton) {
+  pedirConfirmacion({
+    titulo: 'Borrar el pedido', texto: textoDeConfirmacionDeRestitucion(), volverA: boton, formulario: null,
+    borrar: () => API.pedirJson('DELETE', `/mi-espacio/restituciones/${encodeURIComponent(id)}`), cierranCon: [409]
   });
 }
 
@@ -5562,14 +5846,16 @@ async function guardarSaldos() {
 
 // ---- La confirmación de un borrado ----
 
-// Abre la confirmación sobre el formulario (`formulario`, su modal): `texto`, en texto plano; «Borrar» corre `borrar`. El foco va
-// a «Cancelar», que no borra nada, y vuelve a `volverA`. Para otra pregunta (salir de la planilla con cambios), los textos de los
-// dos botones (`textoSi`, el que confirma, y `textoNo`, el que vuelve, con el foco; de entrada, «Borrar» y «Cancelar») y, en lugar
-// de `borrar`, `alConfirmar`, lo que pasa al confirmar (sin pedir nada: se cierra la confirmación y corre)
+// Abre la confirmación sobre el formulario (`formulario`, su modal; sin formulario, null: «Borrar el pedido» se pide desde una
+// pestaña): `texto`, en texto plano; «Borrar» corre `borrar`. El foco va a «Cancelar», que no borra nada, y vuelve a `volverA`. Para
+// otra pregunta (salir de la planilla con cambios), los textos de los dos botones (`textoSi`, el que confirma, y `textoNo`, el que
+// vuelve, con el foco; de entrada, «Borrar» y «Cancelar») y, en lugar de `borrar`, `alConfirmar`, lo que pasa al confirmar (sin
+// pedir nada: se cierra la confirmación y corre). `cierranCon`, los status que, además del 404, cierran la confirmación y se avisan
+// (el 409 de un pedido de restitución que ya pasó su plazo)
 function pedirConfirmacion({
-  titulo, texto, volverA, formulario, borrar = null, alConfirmar = null, textoSi = 'Borrar', textoNo = 'Cancelar'
+  titulo, texto, volverA, formulario, borrar = null, alConfirmar = null, textoSi = 'Borrar', textoNo = 'Cancelar', cierranCon = []
 }) {
-  pagina.confirmacion = { formulario, borrar, alConfirmar, ocupado: false };
+  pagina.confirmacion = { formulario, borrar, alConfirmar, ocupado: false, cierranCon };
   porId('modal-confirmar-titulo').textContent = titulo;
   porId('modal-confirmar-texto').textContent = texto;
   porId('modal-confirmar-si').textContent = textoSi;
@@ -5583,7 +5869,8 @@ function pedirConfirmacion({
 }
 
 // «Borrar»: si sale bien, se cierran la confirmación y el formulario, se anuncia y se vuelve a pedir todo; si no, el error queda en
-// la confirmación (un 404, como al guardar). Con `alConfirmar` (salir de la planilla sin guardar), se cierra la confirmación y corre
+// la confirmación (un 404, o un status de `cierranCon`, como al guardar: se cierra y se avisa). Con `alConfirmar` (salir de la
+// planilla sin guardar), se cierra la confirmación y corre
 async function confirmarElBorrado() {
   const actual = pagina.confirmacion;
   const boton = porId('modal-confirmar-si');
@@ -5607,7 +5894,7 @@ async function confirmarElBorrado() {
     actual.ocupado = false;
     boton.disabled = false;
     if (error?.status === 401) irAlLogin();
-    else if (error?.status === 404) {
+    else if (error?.status === 404 || actual.cierranCon.includes(error?.status)) {
       cerrarModal('modal-confirmar');
       noEstaMas(actual.formulario, error);
     } else if (pagina.confirmacion === actual) {

@@ -603,6 +603,15 @@
         .me-hoja-texto .sd { white-space: pre; }
         .me-hoja-texto .firma { margin-left: 38.1cqw; text-align: center; }
         .me-hoja-texto .chico { font-size: 0.82em; }
+        /* Los días que restituye un asueto (spec 2026-10-31-mi-espacio-dias-restituidos, 9; propuesta.css de la maqueta): el aviso
+           entre la banda y el resto (un .me-aviso ámbar: el texto y su botón), la línea de cada grupo en la fila de su carga (en su
+           propio renglón, con su botón) y el «Hasta» de unos días restituidos, que pone Mi espacio (de solo lectura) */
+        .me-restituir p { flex: 1 1 360px; }
+        .me-restituir .sg-btn { flex: 0 0 auto; }
+        .me-restituir-linea { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+        .me-restituir-linea .sg-btn { height: 32px; }
+        .me-modal .form-input.me-auto { background: var(--sg-sutil); color: var(--sg-texto); }
+        #mr-descargar-word:disabled { cursor: progress; }
         .me-modal :focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
         .me-modal .me-numero input:focus-visible { outline: none; box-shadow: none; }
 
@@ -854,6 +863,7 @@
             .me-resto-cabeza { grid-template-columns: minmax(0, 1fr); }
             .me-resto .me-numero .grande { font-size: 2.1rem; }
             .me-mesa { padding: 8px; }
+            .me-restituir-linea .sg-btn { height: 44px; }
         }
         /* La agenda en alto contraste (forced-colors; spec 2026-10-28-mi-espacio-agenda-onda, 6): el fondo no alcanza, así que las
            barras llevan su borde (arriba y abajo, y en sus puntas: se ve continua), los puntos (los del teléfono, el de los próximos y
@@ -1096,6 +1106,7 @@
                     <div class="form-group" id="ml-grupo-hasta">
                         <label class="form-label" for="ml-hasta">Hasta, inclusive</label>
                         <input type="date" class="form-input" id="ml-hasta" aria-describedby="ml-fechas-ayuda ml-hasta-error">
+                        <p class="form-hint" id="ml-hasta-ayuda" hidden></p>
                         <p class="form-error" id="ml-hasta-error" hidden></p>
                     </div>
                     <div class="form-group" id="ml-grupo-horas" hidden>
@@ -1319,6 +1330,36 @@
         </div>
     </div>
 
+    <!-- «Pedir la restitución» (spec 2026-10-31-mi-espacio-dias-restituidos, 9; el caso B; la maqueta aprobada): la nota a la vista
+         antes de pedirla (#mr-vista: el recuadro, «Así sale la nota» y la hoja, que dibuja mi-espacio.js con lo que manda el
+         servidor), con «Cancelar» y «Pedir la restitución»; después del pedido, el segundo paso, como el de «Cargar licencia», con
+         lo que volvió, la nota, «Listo» y «Descargar Word». Un clic en el velo no lo cierra -->
+    <div class="modal-overlay" id="modal-restitucion">
+        <div class="modal me-modal" role="dialog" aria-modal="true" aria-labelledby="modal-restitucion-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-restitucion-titulo">Pedir la restitución</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body me-paso-dos" id="mr-cuerpo">
+                <p class="me-modal-error" id="mr-error" role="alert" hidden></p>
+                <div id="mr-vista"></div>
+            </div>
+            <div class="modal-footer" id="mr-pie">
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="mr-pedir">Pedir la restitución</button>
+                </div>
+            </div>
+            <div class="modal-body me-paso-dos" id="mr-paso-dos" hidden></div>
+            <div class="modal-footer" id="mr-paso-dos-pie" hidden>
+                <div class="botones">
+                    <button type="button" class="sg-btn sg-btn-borde" data-cerrar>Listo</button>
+                    <button type="button" class="sg-btn sg-btn-tinta" id="mr-descargar-word">Descargar Word</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- «Nuevo evento» y «Editar evento» (spec 2026-10-26-mi-espacio-agenda, 1 y 6; maqueta 2, #evento; y, desde el evento Personal
          (Público), spec 2026-10-29-mi-espacio-evento-publico, 4 y 7, con su maqueta): qué, la fecha y las horas (la de fin,
          opcional), el detalle, el tipo de evento (a la vista para todos: mi-espacio.js dibuja sus botones, Personal (Privado),
@@ -1471,6 +1512,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/mi-espacio.js?v=20261219"></script>
+    <script src="js/mi-espacio.js?v=20261220"></script>
 </body>
 </html>
