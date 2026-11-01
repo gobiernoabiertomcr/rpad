@@ -480,23 +480,56 @@ export const resumenAvisosRetenidosTemplate = (retenidos) => {
 // MI ESPACIO: el aviso de vencimiento (spec 2026-10-26-mi-espacio-licencias-y-horas, 9)
 // =====================================================
 
-const NOTA_VENCIMIENTO_MI_ESPACIO = 'Este aviso te llega una sola vez por cada cosa. Lo que cargás en Mi espacio lo ves solo vos.';
+// La nota del pie: cuántas veces llega cada cosa y que lo cargado lo ve solo la persona. Con el primer aviso de unos días para
+// restituir sin el segundo de su grupo, la primera oración dice que va a llegar otro (spec 2026-10-31-mi-espacio-dias-restituidos,
+// 10, y el email de la maqueta)
+const UNA_SOLA_VEZ = 'Este aviso te llega una sola vez por cada cosa.';
+const OTRO_AVISO_DE_RESTITUCION = 'Te va a llegar otro aviso 5 días hábiles antes del plazo.';
+const SOLO_VOS = 'Lo que cargás en Mi espacio lo ves solo vos.';
+
+// Si un aviso es de unos días para restituir: trae `restitucion` ({ grupo, partes, primero }, de avisosDeVencimiento)
+const esDeRestitucion = (aviso) => aviso?.restitucion !== null && typeof aviso?.restitucion === 'object';
+
+// Los párrafos de un aviso, en HTML ya escapado. Uno de restitución, con sus párrafos por partes (un texto o { negrita }, la
+// forma de parrafoDelEvento: escapados ahí y con el <strong> que pone el código); si sus partes no sirven, o cualquier otro, su
+// texto en un párrafo
+const parrafosDelAviso = (aviso) => {
+  const partes = esDeRestitucion(aviso) ? aviso.restitucion.partes : null;
+  if (Array.isArray(partes) && partes.length > 0 && partes.every(Array.isArray)) {
+    return partes.map((parrafoPorPartes) => parrafoDelEvento(...parrafoPorPartes).html);
+  }
+  return [escapeHtml(aviso.texto)];
+};
+
+// Si va a llegar otro aviso: va el primero de un grupo por restituir y no el segundo de ese mismo grupo
+const llegaOtroAviso = (avisos) => {
+  const conSegundo = new Set(avisos.filter((aviso) => esDeRestitucion(aviso) && aviso.restitucion.primero === false)
+    .map((aviso) => aviso.restitucion.grupo));
+  return avisos.some((aviso) => esDeRestitucion(aviso) && aviso.restitucion.primero === true
+    && !conSegundo.has(aviso.restitucion.grupo));
+};
 
 /**
- * Lo que vence pronto en Mi espacio, a la persona (la corrida de las 8:15, services/miEspacioAvisos.js). avisos: los
- * `{ texto }` de avisosDeVencimiento (services/miEspacioReglas.js), en texto plano, un renglón por cosa: vacaciones, francos y
- * horas, nunca el tipo de una licencia médica. El botón abre el Resumen.
+ * Lo que vence pronto en Mi espacio, a la persona (la corrida de las 8:15, services/miEspacioAvisos.js). avisos: los de
+ * avisosDeVencimiento (services/miEspacioReglas.js): vacaciones, francos y horas, nunca el tipo de una licencia médica, cada uno
+ * con su `texto` (texto plano, un renglón por cosa) y, los de unos días para restituir (spec 2026-10-31-mi-espacio-dias-restituidos,
+ * 10), con `restitucion` (`{ grupo, partes, primero }`): en el HTML van con sus párrafos y sus negritas, y en el texto plano con
+ * su `texto`. Si todos son de restitución, el asunto y el título son los suyos («RPAD: tenés días para restituir en Mi espacio»
+ * y «Días para restituir»); si no, los de siempre. El botón abre el Resumen.
  */
 export const vencimientoMiEspacioTemplate = ({ nombre_completo, avisos }) => {
   const url = `${RPAD_URL}/mi-espacio.html#resumen`;
   const renglones = avisos.map(aviso => aviso.texto);
+  const soloRestitucion = avisos.length > 0 && avisos.every(esDeRestitucion);
+  const titulo = soloRestitucion ? 'Días para restituir' : 'Lo que vence pronto';
+  const nota = `${llegaOtroAviso(avisos) ? OTRO_AVISO_DE_RESTITUCION : UNA_SOLA_VEZ} ${SOLO_VOS}`;
   return {
-    subject: 'RPAD: lo que vence pronto en Mi espacio',
+    subject: soloRestitucion ? 'RPAD: tenés días para restituir en Mi espacio' : 'RPAD: lo que vence pronto en Mi espacio',
     html: plantillaSimple({
-      titulo: 'Lo que vence pronto',
-      parrafos: [`Hola, ${escapeHtml(nombre_completo)}.`, ...renglones.map(escapeHtml)],
+      titulo,
+      parrafos: [`Hola, ${escapeHtml(nombre_completo)}.`, ...avisos.flatMap(parrafosDelAviso)],
       boton: { texto: 'Ver en Mi espacio', url },
-      notas: [escapeHtml(NOTA_VENCIMIENTO_MI_ESPACIO)]
+      notas: [escapeHtml(nota)]
     }),
     text: [
       `Hola, ${nombre_completo}.`,
@@ -505,7 +538,7 @@ export const vencimientoMiEspacioTemplate = ({ nombre_completo, avisos }) => {
       '',
       `Ver en Mi espacio: ${url}`,
       '',
-      NOTA_VENCIMIENTO_MI_ESPACIO
+      nota
     ].join('\n')
   };
 };
@@ -529,7 +562,8 @@ const nombreDelCreador = (creador) => (typeof creador === 'string' && creador.tr
 /**
  * Un párrafo de los emails de un evento, armado por partes: un texto, `{ negrita }` o `{ tachado }`. Cada parte se escapa una
  * sola vez, acá (plantillaSimple no escapa sus párrafos), y las marcas (<strong> y <s>) las pone el código, nunca lo que
- * escribió una persona (Review Focus 2). Devuelve `{ html, texto }`: el texto plano dice lo mismo, sin las marcas.
+ * escribió una persona (Review Focus 2). Devuelve `{ html, texto }`: el texto plano dice lo mismo, sin las marcas. Lo usan
+ * también los avisos de los días para restituir del email de vencimiento (parrafosDelAviso), con sus negritas.
  */
 const parrafoDelEvento = (...partes) => ({
   html: partes.map((parte) => {
