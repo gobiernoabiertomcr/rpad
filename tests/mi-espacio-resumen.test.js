@@ -2186,6 +2186,11 @@ describe('los días restituibles (spec 2026-10-31-mi-espacio-dias-restituidos)',
     const lista = filasDeJulieta(estado, '2027-01-11', 2027);
     assert.deepEqual(lista.filtros.find((filtro) => filtro.tipo === 'restituidos'),
       { tipo: 'restituidos', nombre: 'Días restituidos', cantidad: 1 });
+    // Su filtro va justo después de «Vacaciones», como en TIPOS_POR_MODALIDAD (no al final, como en TIPOS_LICENCIA)
+    const conMedica = { ...estado, licencias: [...estado.licencias, licencia(3, 'medica', '2027-02-01', '2027-02-02')] };
+    assert.deepEqual(filasDeJulieta(conMedica, '2027-01-11', 2027).filtros.map(({ tipo, nombre }) => [tipo, nombre]), [
+      ['todas', 'Todas'], ['vacaciones', 'Vacaciones'], ['restituidos', 'Días restituidos'], ['medica', 'Atención médica']
+    ]);
     const fila = lista.licencias.find((otra) => otra.tipo === 'restituidos');
     assert.equal(fila.tipo_nombre, 'Días restituidos');
     assert.equal(fila.cantidad_texto, '2 días hábiles');

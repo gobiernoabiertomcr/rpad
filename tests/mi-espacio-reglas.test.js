@@ -761,6 +761,16 @@ describe('los días restituibles de una carga (spec 2026-10-31-mi-espacio-dias-r
     assert.deepEqual(restituiblesDe({ ...VACACIONES_DE_JULIETA, desde: '2026-12-28' }, ESTADO, ASUETOS), ['2026-12-31']);
   });
 
+  it('solo los días que un feriado de la tabla dejó de hacer hábiles: una fila en un sábado o en un fijo no suma', () => {
+    // El sábado 26/12 y el viernes 25/12 (Navidad, uno de los 9 fijos) no eran hábiles: la foto no los guarda, y si estuvieran
+    // no sumarían, aunque estén en el Set de los feriados
+    const conFinde = conFoto([...ESTADO.restituibles, fotoDe(10, 1, '2026-12-26'), fotoDe(11, 1, '2026-12-25')]);
+    for (const feriados of [ASUETOS, new Set([...ASUETOS, '2026-12-25', '2026-12-26'])]) {
+      assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, conFinde, feriados), LOS_DOS);
+      assert.equal(diasDeLaCarga(VACACIONES_DE_JULIETA, conFinde, feriados).length, 19);
+    }
+  });
+
   it('en las vacaciones, solo del arranque en adelante (sin arranque, ninguno)', () => {
     assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, { ...ESTADO, arranque: '2026-12-28' }, ASUETOS), ['2026-12-31']);
     assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, { ...ESTADO, arranque: '2026-12-24' }, ASUETOS), LOS_DOS);
@@ -830,8 +840,13 @@ describe('los días restituibles de una carga (spec 2026-10-31-mi-espacio-dias-r
     assert.equal(porFecha.get('2026-12-24'), 2024);
     assert.equal(porFecha.get('2026-12-31'), 2024);
     assert.ok([...porFecha.values()].every((anio) => anio === 2024));
-    // Con el id como texto (el de un pedido), también
-    assert.equal(reparto.porFecha.get(Number('1')), porFecha);
+    // Con el id de la fila como texto (el de un pedido), los Map van con el id como número, con los mismos 19 días
+    const conIdDeTexto = conFoto(ESTADO.restituibles, [{ ...VACACIONES_DE_JULIETA, id: '1' }]);
+    const delTexto = repartoDeVacaciones(conIdDeTexto, { hoy: '2027-01-11', feriados: ASUETOS });
+    assert.deepEqual(delTexto.porFila.get(1), [{ anio: 2024, dias: 19 }]);
+    assert.ok(delTexto.porFecha.get(1) instanceof Map);
+    assert.deepEqual([...delTexto.porFecha.get(1)], [...porFecha]);
+    assert.equal(delTexto.porFila.has('1'), false);
     // Sin foto, el reparto de siempre: 17 días de la 2024
     const sinLaFoto = repartoDeVacaciones(sinFoto, { hoy: '2027-01-11', feriados: ASUETOS });
     assert.deepEqual(sinLaFoto.porFila.get(1), [{ anio: 2024, dias: 17 }]);

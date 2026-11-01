@@ -593,6 +593,10 @@ const NOMBRES_DE_LOS_FILTROS = Object.freeze({
   ...NOMBRES_TIPO, franquicia: 'Franquicias', franco: 'Francos', uso_autorizado: 'Usos autorizados',
   familiar: 'Grupo familiar'
 });
+// Su orden: el de TIPOS_LICENCIA, con los días restituidos justo después de las vacaciones, como en TIPOS_POR_MODALIDAD (en
+// TIPOS_LICENCIA van al final, como en el enum de la base)
+const ORDEN_DE_LOS_FILTROS = Object.freeze(TIPOS_LICENCIA.filter((tipo) => tipo !== 'restituidos')
+  .flatMap((tipo) => (tipo === 'vacaciones' ? [tipo, 'restituidos'] : [tipo])));
 const TEXTO_FUERA_DE_LA_MODALIDAD = 'No corresponde a tu modalidad actual: no cuenta.';
 const TEXTO_ANTES_DEL_SALDO = 'Antes del saldo inicial: no descuenta';
 
@@ -824,7 +828,7 @@ export const otrosAniosDe = (licencias, opciones) => {
  * de cuatro cifras; si no sirve, el de hoy; `feriados`, el Set del cálculo, para contar los días hábiles de cada fila).
  * - `anios`: los del selector, de dos antes del arranque al siguiente al de hoy.
  * - `filtros`: «Todas» y cada tipo con filas en el año, con su cantidad, en plural donde hace falta (Franquicias, Francos,
- *   Usos autorizados, Grupo familiar).
+ *   Usos autorizados, Grupo familiar), en el orden de `ORDEN_DE_LOS_FILTROS` (los días restituidos, después de las vacaciones).
  * - `licencias`: las que tocan el año (una que cruza el 31/12 va en los dos), de la más nueva a la más vieja. Lo anterior al
  *   arranque en un tipo con saldo inicial va con `antes_del_arranque` y lo que no corresponde a la modalidad, con
  *   `fuera_de_la_modalidad` (Review Focus 1): las dos se ven en gris, con su motivo en `no_cuenta_texto`.
@@ -849,7 +853,7 @@ export const filasDeLicencias = (estado, calculo, opciones) => {
       || cantidadDe(idDe(b.id)) - cantidadDe(idDe(a.id)));
 
   const contexto = contextoDeLasFilas(datos, calculo, { hoy: deHoy, persona, vinculos, feriados });
-  const filtros = TIPOS_LICENCIA
+  const filtros = ORDEN_DE_LOS_FILTROS
     .map((tipo) => ({
       tipo, nombre: NOMBRES_DE_LOS_FILTROS[tipo], cantidad: delAnio.filter((fila) => fila.tipo === tipo).length
     }))

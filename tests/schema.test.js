@@ -5,6 +5,7 @@ import fs from 'fs';
 import mysql from 'mysql2/promise';
 import { query, cerrarDb } from './helpers.js';
 import { feriadosDelAnio, validarFeriado, TIPOS_FERIADO } from '../services/feriadosReglas.js';
+import { TIPOS_LICENCIA } from '../services/miEspacioReglas.js';
 
 const BASE_TEMPORAL = 'rpad_schema_test';
 let root;
@@ -656,6 +657,19 @@ describe('database/schema.sql', () => {
       TABLAS_MI_ESPACIO_RESTITUCIONES.map(tabla => `${tabla} InnoDB utf8mb4_unicode_ci`));
     // Sin columnas generadas
     assert.deepEqual(await generadasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_RESTITUCIONES), []);
+  });
+
+  it('el tipo de una licencia de Mi espacio: el enum de schema.sql es TIPOS_LICENCIA de services/miEspacioReglas.js, en su orden', () => {
+    const schema = fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8');
+    const tabla = schema.match(/CREATE TABLE `mi_espacio_licencias` \(([\s\S]*?)\n\) ENGINE/);
+    assert.ok(tabla, 'schema.sql crea mi_espacio_licencias');
+    const tipo = tabla[1].match(/^\s*`tipo` enum\(([^)]*)\) NOT NULL,$/m);
+    assert.ok(tipo, 'mi_espacio_licencias tiene la columna tipo, un enum NOT NULL');
+    const valores = tipo[1].split(',').map(valor => valor.trim().replace(/^'(.*)'$/, '$1'));
+    assert.deepEqual(valores, [...TIPOS_LICENCIA]);
+    // La columna que lee la base del .env (TIPO_DE_LICENCIA, la de los tests de arriba) dice lo mismo
+    assert.equal(TIPO_DE_LICENCIA,
+      `mi_espacio_licencias.tipo enum(${TIPOS_LICENCIA.map(valor => `'${valor}'`).join(',')}) null=NO default=null key=`);
   });
 
   it(`crea ${TOTAL_DE_TABLAS} tablas`, async () => {

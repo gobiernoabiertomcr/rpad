@@ -17,9 +17,10 @@
  * 2026-10-31-mi-espacio-dias-restituidos, 6) suman dos listas, de las cargas y los pedidos activos o no (las tandas cuentan
  * los dos): `restituibles: [{ id, licencia_id, feriado_id, fecha, tanda, restitucion_id }]`, la foto de los días que un
  * feriado cargado después dejó de hacer hábiles en una carga (`tanda` y `restitucion_id`, null mientras no se sellaron ni se
- * pidieron; de ella salen los días restituibles de cada carga, `restituiblesDe`), y `restituciones: [{ id, licencia_id, anio, caso, dias, primer_asueto, tanda, fecha, carga_id, activo,
- * licencia: { tipo, desde, hasta, activo } }]`, los pedidos ('tomar', con su carga de días restituidos en `carga_id`, o
- * 'restituir') con la carga de la que salen. Un estado sin ellas cuenta como sin ninguna.
+ * pidieron; de ella salen los días restituibles de cada carga, `restituiblesDe`), y `restituciones: [{ id, licencia_id,
+ * anio, caso, dias, primer_asueto, tanda, fecha, carga_id, activo, licencia: { tipo, desde, hasta, activo } }]`, los pedidos
+ * ('tomar', con su carga de días restituidos en `carga_id`, o 'restituir') con la carga de la que salen. Un estado sin ellas
+ * cuenta como sin ninguna.
  *
  * Acá están las constantes y los textos de todo Mi espacio (los mensajes, los de las cargas y los del paso a
  * Configuración) y las vacaciones (spec, 3.1): cada año tiene su licencia, que se habilita en dos mitades (el 1/7 y el 1/1
@@ -467,10 +468,12 @@ const TIPOS_CON_RESTITUIBLES = Object.freeze(['vacaciones', 'restituidos']);
  * Los días restituibles de una carga (spec 2026-10-31-mi-espacio-dias-restituidos, 4), por fecha y sin repetir: los de la
  * foto (`estado.restituibles`, los días que un feriado cargado o corregido después de la carga dejó de hacer hábiles) con el
  * id de la fila (comparado como número: el de un pedido llega como texto), solo si la fila es de vacaciones o de días
- * restituidos, que siguen dentro de sus fechas, que hoy no son hábiles con los feriados (un asueto dado de baja, o un año en
- * que no rige, lo vuelve hábil) y, en un tipo con saldo inicial, del arranque en adelante (sin arranque, ninguno: como
- * `diasQueDescuentan`). La tanda y el pedido de cada día no cuentan acá. Una fila sin id (una carga nueva: la foto es de
- * lo guardado), de otro tipo o con fechas que no son fechas, o un estado que no es un objeto, [].
+ * restituidos, que siguen dentro de sus fechas, que son días que un feriado de la tabla dejó de hacer hábiles (hábiles con
+ * el calendario de los 9 fijos, `CALENDARIO_FIJO.esDiaHabil`: de lunes a viernes y fuera de los fijos, que ya no eran hábiles,
+ * y no hábiles con los feriados de hoy: un asueto dado de baja, o un año en que no rige, lo vuelve hábil) y, en un tipo con
+ * saldo inicial, del arranque en adelante (sin arranque, ninguno: como `diasQueDescuentan`). La foto nunca guarda un sábado
+ * o un fijo, pero la regla no depende de eso. La tanda y el pedido de cada día no cuentan acá. Una fila sin id (una carga
+ * nueva: la foto es de lo guardado), de otro tipo o con fechas que no son fechas, o un estado que no es un objeto, [].
  */
 export const restituiblesDe = (fila, estado, feriados) => {
   if (!esObjeto(fila) || !TIPOS_CON_RESTITUIBLES.includes(fila.tipo)) return [];
@@ -484,7 +487,8 @@ export const restituiblesDe = (fila, estado, feriados) => {
   for (const restituible of listaDe(datos.restituibles)) {
     if (!esObjeto(restituible) || idDe(restituible.licencia_id) !== id) continue;
     const { fecha } = restituible;
-    if (!esFechaIso(fecha) || fecha < desde || fecha > hasta || esDiaHabilCon(fecha, feriados)) continue;
+    if (!esFechaIso(fecha) || fecha < desde || fecha > hasta) continue;
+    if (!CALENDARIO_FIJO.esDiaHabil(fecha) || esDiaHabilCon(fecha, feriados)) continue;
     if (!conSaldo || fecha >= datos.arranque) fechas.add(fecha);
   }
   return [...fechas].sort();
