@@ -15,7 +15,8 @@
 // cada una rechaza a la otra modalidad. La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word) se arma en el
 // momento, para la vista y para el Word, y no se guarda. Los días restituidos por un asueto (spec
 // 2026-10-31-mi-espacio-dias-restituidos, 8) se cargan, se corrigen y se borran por las mismas rutas, con su pedido (el caso A:
-// services/miEspacioRestituciones.js) en la misma transacción. Un id de otra persona responde 404, como uno que no existe: no se
+// services/miEspacioRestituciones.js) en la misma transacción; los del caso B se piden, se borran y tienen su nota por las rutas
+// de /mi-espacio/restituciones. Un id de otra persona responde 404, como uno que no existe: no se
 // revela que existe (sección 10). Lo único de otras personas que se ve es «Hoy no están» (sección 7: quién de administración
 // no está, nunca de qué), los eventos que le compartieron o le muestran (un Personal (Público), solo «Carla: Turno médico»),
 // en «Hoy y mañana» (los de la agenda: controllers/miEspacioEventosController.js) y, solo el firmante titular, las personas
@@ -26,22 +27,26 @@ import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, MAXIMO_DIAS_POR_GUARDADO, anioVigente, camposDelSaldoInicial, textoDeLasMitades,
   evaluarLicencia, validarHorasExtras, validarSalida, mesDeLaPlanilla, validarAnio, validarSaldoInicial, modalidadDe,
   ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, nombreCorto, dejaPersonaACargo, grupoDeLosRestituidos,
-  restituiblesDe
+  restituiblesDe, grupoDeLaRestitucion, plazoDeRestitucion, recuadroDeLaRestitucion, mensajeDeLaRestitucionPedida,
+  MENSAJE_RESTITUCION_BORRADA
 } from '../services/miEspacioReglas.js';
 import {
-  resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe, textoDeLaListaDe
+  resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe, textoDeLaListaDe,
+  textoDeLaRestitucionHecha, vacacionesDeLaRestitucion
 } from '../services/miEspacioResumen.js';
 import {
-  estadoDe, contextoDe, personaDe, licenciaDe, datosDeLaNota, ausenciasVisibles, feriadosPara, administracionActiva,
+  estadoDe, contextoDe, personaDe, licenciaDe, datosDeLaNota, firmaDe, ausenciasVisibles, feriadosPara, administracionActiva,
   usuariosActivos
 } from '../services/miEspacioDatos.js';
 import { filasDeFeriados } from '../services/feriadosDatos.js';
 import { calendarioCon } from '../services/feriadosReglas.js';
-import { notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota, MENSAJES_NOTA } from '../services/miEspacioNota.js';
+import {
+  notaDeLicencia, notaDeRestitucion, htmlDeLaNota, aclaracionDeLaNota, aclaracionDeLaRestitucion, MENSAJES_NOTA
+} from '../services/miEspacioNota.js';
 import { renderNotaDocx, TIPO_WORD } from '../services/miEspacioNotaWord.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { aplicarCarga, aplicarCorreccion, aplicarBaja, pasoPrevisto, vinculosDe } from '../services/miEspacioPaso.js';
-import { registrarPedido, soltarLosPedidosDeLasCargas } from '../services/miEspacioRestituciones.js';
+import { registrarPedido, soltarPedido, soltarLosPedidosDeLasCargas } from '../services/miEspacioRestituciones.js';
 import {
   bloquearUsuarios, firmanteTitular, autorizables, conSusLicencias
 } from '../services/licenciasOficialesService.js';
@@ -527,6 +532,149 @@ export const verNotaDeLicencia = (req, res) => responder(res, MENSAJES_NOTA.erro
 export const bajarWordDeLicencia = async (req, res) => {
   try {
     const { rechazo, nota } = await leerLaNota(req.user.userId, req.params.id, hoyArgentina());
+    if (rechazo) {
+      const [status, cuerpo] = rechazo;
+      res.status(status).json(cuerpo);
+      return;
+    }
+    const word = await renderNotaDocx(nota);
+    res.set({ 'Content-Type': TIPO_WORD, 'Content-Disposition': disposicionDeAdjunto(nota.nombre) });
+    res.send(word);
+  } catch (error) {
+    console.error(`${MENSAJES_NOTA.error}:`, error?.stack ?? error);
+    res.status(500).json({ success: false, error: MENSAJES_NOTA.error });
+  }
+};
+
+// El pedido de restitución (spec 2026-10-31-mi-espacio-dias-restituidos, 4, 8, 9 y 12: el caso B): los días que un asueto
+// cargado después dejó de hacer hábiles en unas vacaciones vuelven a su licencia de origen, que vence después del plazo, con un
+// pedido y su nota al Director General. La vista del modal y el pedido trabajan sobre un grupo por restituir (los de
+// `calcular`, que se arman solo con modalidad); el borrado y la nota, sobre el pedido guardado (`estado.restituciones`, con
+// las filas de la foto que sostiene, y `plazoDeRestitucion` de su primer asueto), así no dependen de la modalidad. Un pedido de
+// otra persona, que no existe, dado de baja o del caso A (el de unos días restituidos, que se borra borrando su carga) da el
+// mismo 404. Nunca toca Configuración ni manda emails
+
+// Un pedido de restitución que no está para quien lo pide: el mismo 404
+const restitucionNoEncontrada = () => [404, { success: false, error: MENSAJES_MI_ESPACIO.restitucionNoEncontrada }];
+
+// Un pedido del caso B activo de la persona, entre los de su estado (todos los suyos, activos o no), o undefined
+const pedidoDeRestitucion = (estado, id) =>
+  estado.restituciones.find((pedido) => pedido.id === id && pedido.activo === 1 && pedido.caso === 'restituir');
+
+/**
+ * El grupo de la vista o del pedido (`restitucion`, `{ licencia_id, anio, tanda }`), entre los de lo cargado
+ * (`calculo.restituciones`): `{ grupo }`, o `{ rechazo }` con el [status, cuerpo] de un 400 con campo null. Antes, como en
+ * «Cargar licencia», la modalidad y el arranque (el freno de las horas extras: sin ellos no hay grupos); después, un grupo que
+ * no está por restituir (`grupoNoPorRestituir`, también el de otra persona: para ella no existe) o del caso A
+ * (`grupoEsParaTomar`).
+ */
+const grupoDelPedido = ({ estado, calculo }, restitucion) => {
+  const freno = frenoDeLasHorasExtras(estado);
+  if (freno) return { rechazo: rechazoDeLaCarga(freno) };
+  const { grupo, error } = grupoDeLaRestitucion(calculo.restituciones, restitucion);
+  return error ? { rechazo: rechazoDeLaCarga({ campo: null, mensaje: MENSAJES_MI_ESPACIO[error] }) } : { grupo };
+};
+
+// La nota B (`notaDeRestitucion`) de `pedido` (`{ anio, dias, fechas }`), con `fecha` y la firma de la persona (`firmaDe`).
+// Una nota que no se puede armar tira, y la ruta responde 500 con su mensaje fijo (el detalle, solo en la consola)
+const notaDelPedido = async (usuarioId, pedido, fecha) => {
+  const { nota, error } = notaDeRestitucion(pedido, { fecha, persona: await firmaDe(usuarioId) });
+  if (error !== undefined) throw new Error(`El pedido de restitución no arma una nota (${error})`);
+  return nota;
+};
+
+// GET /api/mi-espacio/restituciones/vista?licencia_id=&anio=&tanda=: lo que muestra el modal «Pedir la restitución» antes de
+// pedirla, sin guardar nada: el recuadro (`{ resaltado, resto }`), la hoja de la nota con la fecha de hoy (`html`, armada y
+// escapada acá) y el renglón que va arriba (`aclaracion`)
+export const verVistaDeRestitucion = (req, res) => responder(res, MENSAJES_NOTA.error, async () => {
+  const hoy = hoyArgentina();
+  const usuarioId = req.user.userId;
+  const { licencia_id: licenciaId, anio, tanda } = req.query;
+  const { grupo, rechazo } = grupoDelPedido(await contextoDe(usuarioId, hoy), { licencia_id: licenciaId, anio, tanda });
+  if (rechazo) return rechazo;
+  const nota = await notaDelPedido(usuarioId, { anio: grupo.anio, dias: grupo.dias, fechas: grupo.fechas }, hoy);
+  return conDatos({
+    recuadro: recuadroDeLaRestitucion(grupo), html: htmlDeLaNota(nota), aclaracion: aclaracionDeLaRestitucion(hoy)
+  });
+});
+
+// POST /api/mi-espacio/restituciones: pide la restitución de un grupo del caso B (`{ licencia_id, anio, tanda }`), en una
+// transacción que bloquea primero la fila de la persona y lee los grupos después (así de dos pedidos a la vez del mismo grupo,
+// el segundo ya no lo encuentra por restituir y da 400). `registrarPedido` sella la tanda, guarda el pedido con el día de hoy
+// y enlaza la foto: los días vuelven enseguida a su licencia (la mitad del pedido, en `ordinariasDe`)
+export const pedirRestitucion = (req, res) => responder(res, 'Error al pedir la restitución', async () => {
+  const hoy = hoyArgentina();
+  const usuarioId = req.user.userId;
+  const entrada = cuerpoDe(req);
+  return enTransaccion(usuarioId, false, async (conexion) => {
+    const { grupo, rechazo } = grupoDelPedido(await contextoDe(usuarioId, hoy, conexion), entrada);
+    if (rechazo) return rechazo;
+    const id = await registrarPedido(conexion, { usuarioId, grupo, caso: 'restituir', cargaId: null, hoy });
+    return [201, { success: true, data: { id }, message: mensajeDeLaRestitucionPedida(grupo) }];
+  });
+});
+
+// DELETE /api/mi-espacio/restituciones/:id: borra un pedido del caso B de la persona hasta su plazo (el de su primer asueto,
+// con los feriados de hoy), en una transacción que bloquea primero la fila de la persona: lo da de baja y deja sus días otra
+// vez por restituir, con su tanda y su plazo de siempre (`soltarPedido`). Después del plazo, 409 (decisión 15 de la spec)
+export const borrarRestitucion = (req, res) => responder(res, 'Error al borrar el pedido de restitución', async () => {
+  const id = idPositivo(req.params.id);
+  if (id === null) return restitucionNoEncontrada();
+  const hoy = hoyArgentina();
+  const usuarioId = req.user.userId;
+  return enTransaccion(usuarioId, false, async (conexion) => {
+    const estado = await estadoDe(usuarioId, conexion);
+    const pedido = pedidoDeRestitucion(estado, id);
+    if (!pedido) return restitucionNoEncontrada();
+    const feriados = await feriadosPara([estado], hoy, await filasDeFeriados(conexion));
+    const plazo = plazoDeRestitucion(pedido.primer_asueto, feriados);
+    if (plazo === null || hoy > plazo) {
+      return rechazoDeLaCarga({ status: 409, campo: null, mensaje: MENSAJES_MI_ESPACIO.restitucionVencida });
+    }
+    await soltarPedido(conexion, id);
+    return [200, { success: true, message: MENSAJE_RESTITUCION_BORRADA }];
+  });
+});
+
+/**
+ * Lo que comparten las dos rutas de la nota de un pedido: `{ rechazo }` con el [status, cuerpo] del 404, o `{ nota, pedido,
+ * contexto }`. La nota B lleva la fecha del pedido (el día en que se pidió) y sus asuetos son las fechas de las filas de la
+ * foto que sostiene; se apoya en el pedido guardado, así sale también sin modalidad o con sus vacaciones ya borradas.
+ */
+const leerLaNotaDelPedido = async (usuarioId, pedidoId, hoy) => {
+  const id = idPositivo(pedidoId);
+  if (id === null) return { rechazo: restitucionNoEncontrada() };
+  const contexto = await contextoDe(usuarioId, hoy);
+  const pedido = pedidoDeRestitucion(contexto.estado, id);
+  if (!pedido) return { rechazo: restitucionNoEncontrada() };
+  const fechas = fechasDelPedido(contexto.estado, id);
+  const nota = await notaDelPedido(usuarioId, { anio: pedido.anio, dias: pedido.dias, fechas }, pedido.fecha);
+  return { nota, pedido, contexto };
+};
+
+// GET /api/mi-espacio/restituciones/:id/nota: el segundo paso de «Pedir la restitución», en una sola respuesta: la hoja de la
+// nota (`html`, armada y escapada acá), su fecha (la del pedido), el renglón que va arriba (`aclaracion`), lo que dice de los
+// días que volvieron (`hecho`, con lo que queda hoy: sin modalidad no hay qué contar, '') y las vacaciones de las que salen
+// (`vacaciones`, `{ tipo_nombre, fechas_texto }`, como en la lista)
+export const verNotaDeRestitucion = (req, res) => responder(res, MENSAJES_NOTA.error, async () => {
+  const hoy = hoyArgentina();
+  const { rechazo, nota, pedido, contexto } = await leerLaNotaDelPedido(req.user.userId, req.params.id, hoy);
+  if (rechazo) return rechazo;
+  const { estado, calculo } = contexto;
+  return conDatos({
+    html: htmlDeLaNota(nota),
+    fecha: pedido.fecha,
+    aclaracion: aclaracionDeLaRestitucion(pedido.fecha),
+    hecho: estado.modalidad === null ? '' : textoDeLaRestitucionHecha(pedido, calculo, hoy),
+    vacaciones: vacacionesDeLaRestitucion(pedido)
+  });
+});
+
+// GET /api/mi-espacio/restituciones/:id/word: la nota B en Word, con el nombre del archivo en el Content-Disposition. Los
+// errores van en JSON, como en las demás rutas; el 500, con el mensaje fijo y la pila solo en la consola, como `responder`
+export const bajarWordDeRestitucion = async (req, res) => {
+  try {
+    const { rechazo, nota } = await leerLaNotaDelPedido(req.user.userId, req.params.id, hoyArgentina());
     if (rechazo) {
       const [status, cuerpo] = rechazo;
       res.status(status).json(cuerpo);

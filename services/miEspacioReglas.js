@@ -1447,6 +1447,25 @@ export const grupoDeLosRestituidos = (grupos, entrada, editadaId) => {
 };
 
 /**
+ * El grupo de un pedido de restitución (el caso B: spec 2026-10-31-mi-espacio-dias-restituidos, 4 y 8), entre los de
+ * `restitucionesDe` (`grupos`): `{ grupo }`, el por restituir del caso B de `restitucion` (`{ licencia_id, anio, tanda }` con
+ * los tres enteros, también como texto, los de una consulta), o `{ error }` con la clave de su mensaje en `MENSAJES_MI_ESPACIO`:
+ * 'grupoEsParaTomar' si es del caso A (se carga como «Días restituidos») y 'grupoNoPorRestituir' si no hay ninguno por
+ * restituir con esa clave (tampoco si pasó el plazo, o con una restitución que no sirve: nadie arma un pedido así desde la
+ * página). Se busca por la clave y por la situación, como `grupoDeLosRestituidos`. La usa el controlador (la vista del modal y
+ * el pedido). Nunca tira.
+ */
+export const grupoDeLaRestitucion = (grupos, restitucion) => {
+  const pedida = restitucionDelPedido(restitucion);
+  if (pedida === null) return { error: 'grupoNoPorRestituir' };
+  const grupo = listaDe(grupos).filter(esObjeto).find((otro) => otro.situacion === 'por_restituir'
+    && otro.licencia_id === pedida.licencia_id && otro.anio === pedida.anio && otro.tanda === pedida.tanda);
+  if (grupo === undefined) return { error: 'grupoNoPorRestituir' };
+  if (grupo.caso === 'tomar') return { error: 'grupoEsParaTomar' };
+  return grupo.caso === 'restituir' ? { grupo } : { error: 'grupoNoPorRestituir' };
+};
+
+/**
  * Valida una carga de días restituidos (el caso A), el cuerpo de un alta o de una corrección. El contexto es `{ hoy, estado,
  * feriados, editadaId, grupos }` (`grupos`, los de `restitucionesDe`: `calculo.restituciones` de lo cargado; `editadaId`, el
  * id de la carga que se corrige). Devuelve `{ datos, error }`, como `validarLicencia`: `error` es null, o `{ campo, mensaje }`

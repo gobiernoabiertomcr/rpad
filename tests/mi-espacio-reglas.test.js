@@ -36,7 +36,7 @@ import {
   PLAZO_DE_RESTITUCION_EN_MESES, plazoDeRestitucion, casoDeRestitucion, fechasDeLosAsuetos, restitucionesDe,
   textoDesdeDeLosRestituidos, hastaDeLosRestituidos, primerDiaDeLosRestituidos, validarRestituidos,
   textoDelCalculoDeRestituidos, textoDeLaAyudaDeRestituidos, textoDelHastaDeRestituidos, grupoDeLosRestituidos,
-  TIPOS_CON_RESTITUIBLES,
+  grupoDeLaRestitucion, TIPOS_CON_RESTITUIBLES,
   textoDelAvisoDeRestitucion, textoDelBotonDeRestitucion, textoDeLaFilaDeRestitucion, bajadaDeRestituciones,
   tituloDeRestitucionQueVence, partesDelEmailDeRestitucion, recuadroDeLaRestitucion, mensajeDeLaRestitucionPedida,
   MENSAJE_RESTITUCION_BORRADA
@@ -1655,6 +1655,31 @@ describe('la carga de los días restituidos, caso A (spec 2026-10-31-mi-espacio-
     // Los tipos con días restituibles, los que comparte con la nota en Word
     assert.deepEqual(TIPOS_CON_RESTITUIBLES, ['vacaciones', 'restituidos']);
     assert.ok(Object.isFrozen(TIPOS_CON_RESTITUIBLES));
+  });
+
+  it('grupoDeLaRestitucion: el por restituir del caso B de esa clave; uno del caso A, grupoEsParaTomar', () => {
+    const [DE_B] = gruposDe(VARIANTE_B);
+    assert.deepEqual([DE_B.clave, DE_B.caso, DE_B.situacion], ['1-2025-0', 'restituir', 'por_restituir']);
+    const DE_LA_2025 = Object.freeze({ licencia_id: 1, anio: 2025, tanda: 0 });
+    const pedida = { ...DE_B, situacion: 'pedida', restitucion_id: 10 };
+    const perdida = { ...DE_B, situacion: 'perdida' };
+    // Por la clave y por la situación (con la misma clave, uno pedido o uno perdido no cuentan); los ids como texto valen
+    assert.deepEqual(grupoDeLaRestitucion([pedida, perdida, DE_B], DE_LA_2025), { grupo: DE_B });
+    assert.deepEqual(grupoDeLaRestitucion([DE_B], { licencia_id: '1', anio: '2025', tanda: '0' }), { grupo: DE_B });
+    assert.deepEqual(grupoDeLaRestitucion([pedida, perdida], DE_LA_2025), { error: 'grupoNoPorRestituir' });
+    assert.deepEqual(grupoDeLaRestitucion([DE_B], { ...DE_LA_2025, tanda: 1 }), { error: 'grupoNoPorRestituir' });
+    // Uno del caso A se carga como «Días restituidos»; uno sin caso no está para restituir
+    assert.deepEqual(grupoDeLaRestitucion([GRUPO, DE_B], DE_LA_2024), { error: 'grupoEsParaTomar' });
+    assert.deepEqual(grupoDeLaRestitucion([{ ...DE_B, caso: null }], DE_LA_2025), { error: 'grupoNoPorRestituir' });
+    // Una restitución que no sirve (sin los tres enteros, una tanda negativa, una lista) no es ningún grupo; nada tira
+    for (const restitucion of [undefined, null, '', 'x', 3, [], {}, { licencia_id: 1, anio: 2025 },
+      { licencia_id: 'abc', anio: 2025, tanda: 0 }, { licencia_id: 1, anio: 2025, tanda: -1 },
+      { licencia_id: ['1'], anio: '2025', tanda: '0' }]) {
+      assert.deepEqual(grupoDeLaRestitucion([DE_B], restitucion), { error: 'grupoNoPorRestituir' }, JSON.stringify(restitucion));
+    }
+    for (const raro of [undefined, null, '', 'x', 3, {}, [null, 3, 'x']]) {
+      assert.deepEqual(grupoDeLaRestitucion(raro, DE_LA_2025), { error: 'grupoNoPorRestituir' }, JSON.stringify(raro));
+    }
   });
 
   it('validarRestituidos: la nota, «Mostrar» y que no se superponga con otra licencia', () => {

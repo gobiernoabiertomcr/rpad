@@ -334,6 +334,20 @@ export const datosDeLaNota = async (usuarioId, licenciaId, conexion = pool) => {
   };
 };
 
+/**
+ * La firma de la nota de un pedido de restitución (spec 2026-10-31-mi-espacio-dias-restituidos, 12): `{ nombre, cargo,
+ * vinculo }` de la persona, o null (un id que no sirve o que no existe). La de una licencia la lee `datosDeLaNota`, junto con
+ * la licencia; la de un pedido no depende de su carga, que puede estar dada de baja (`personaDe` no lee el cargo).
+ * @returns {Promise<{ nombre: string, cargo: string | null, vinculo: string | null } | null>}
+ */
+export const firmaDe = async (usuarioId, conexion = pool) => {
+  const id = idPositivo(usuarioId);
+  if (id === null) return null;
+  const [[fila]] = await conexion.query('SELECT nombre_completo, cargo, vinculo FROM usuarios WHERE id = ?', [id]);
+  if (!fila) return null;
+  return { nombre: fila.nombre_completo, cargo: fila.cargo ?? null, vinculo: fila.vinculo ?? null };
+};
+
 // El paso a Configuración → Licencias (spec, sección 6): las licencias de Configuración, como las leen las reglas
 // (`{ id, desde, hasta, anulada, autorizado_id }`, con los números como números)
 const COLUMNAS_OFICIAL = `id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, anulada,

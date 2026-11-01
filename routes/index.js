@@ -64,7 +64,8 @@ import { verMiFirma, guardarMiFirma, verImagenMiFirma } from '../controllers/fir
 import {
   verResumen, listarLicenciasMias, listarHorasExtras, verAnio, verSaldoInicial, calcularLicencia, cargarLicenciaMia,
   corregirLicenciaMia, borrarLicenciaMia, verNotaDeLicencia, bajarWordDeLicencia, cargarHorasExtras, corregirHorasExtras,
-  borrarHorasExtras, verPlanilla, guardarSalidas, guardarAnio, guardarSaldoInicial, listarAusentes, verFirmante
+  borrarHorasExtras, verPlanilla, guardarSalidas, guardarAnio, guardarSaldoInicial, listarAusentes, verFirmante,
+  verVistaDeRestitucion, pedirRestitucion, borrarRestitucion, verNotaDeRestitucion, bajarWordDeRestitucion
 } from '../controllers/miEspacioController.js';
 import {
   listarEventos, verAvisoDelEvento, listarPersonasParaCompartir, listarPersonasParaElPublico, crearEvento, cambiarEvento,
@@ -204,6 +205,13 @@ router.delete('/mi-espacio/licencias/:id', authMiddleware, borrarLicenciaMia);
 // La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word, sección 5): la vista del segundo paso y el Word
 router.get('/mi-espacio/licencias/:id/nota', authMiddleware, verNotaDeLicencia);
 router.get('/mi-espacio/licencias/:id/word', authMiddleware, bajarWordDeLicencia);
+// El pedido de restitución de los días que restituye un asueto (spec 2026-10-31-mi-espacio-dias-restituidos, 8: el caso B): la
+// vista del modal (va antes que las rutas con :id), el pedido, su borrado hasta el plazo y su nota, para la vista y en Word
+router.get('/mi-espacio/restituciones/vista', authMiddleware, verVistaDeRestitucion);
+router.post('/mi-espacio/restituciones', authMiddleware, pedirRestitucion);
+router.delete('/mi-espacio/restituciones/:id', authMiddleware, borrarRestitucion);
+router.get('/mi-espacio/restituciones/:id/nota', authMiddleware, verNotaDeRestitucion);
+router.get('/mi-espacio/restituciones/:id/word', authMiddleware, bajarWordDeRestitucion);
 router.get('/mi-espacio/horas-extras', authMiddleware, listarHorasExtras);
 router.post('/mi-espacio/horas-extras', authMiddleware, cargarHorasExtras);
 router.put('/mi-espacio/horas-extras/:id', authMiddleware, corregirHorasExtras);

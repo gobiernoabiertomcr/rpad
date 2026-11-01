@@ -12,8 +12,8 @@
  * (`textoDeLaListaDe`). Desde la spec 2026-10-31-mi-espacio-dias-restituidos (5, 7 y 9), los días que restituye un asueto
  * cargado después de unas vacaciones: el aviso de cada grupo por restituir (entre la banda y «El resto»), su oración en la
  * bajada, «Vence pronto», sus opciones de «Cargar licencia», el «Revisá…» de lo ya pedido, la línea de cada grupo en la fila
- * de su carga y lo que dice el segundo paso de un pedido (`textoDeLaRestitucionHecha`), con los grupos que arma
- * `restitucionesDe` en el cálculo y los textos de las reglas.
+ * de su carga y lo que dice el segundo paso de un pedido (`textoDeLaRestitucionHecha` y, de su carga,
+ * `vacacionesDeLaRestitucion`), con los grupos que arma `restitucionesDe` en el cálculo y los textos de las reglas.
  *
  * Puras (sin pool ni Date local: las fechas son texto 'AAAA-MM-DD' y los meses, 'AAAA-MM'). Ninguna función tira: una
  * entrada rara da null, '', '—', una lista vacía o un objeto vacío. Todo número va como número y todo texto, como texto
@@ -771,6 +771,20 @@ export const textoDeLaRestitucionHecha = (grupo, calculo, hoy) => {
   const quedan = fraseDeLosDias(diasDisponibles(esObjeto(calculo) ? calculo : {}, anioDe(hoy)))
     .filter((parte) => parte !== '').join(' ');
   return `${volvieron} a tu licencia ${grupo.anio}: ${minuscula(quedan)}.`;
+};
+
+/**
+ * La carga de la que salen los días de un pedido de restitución, para el segundo paso de «Pedir la restitución» (spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 9): `{ tipo_nombre, fechas_texto }`, con el nombre de su tipo y sus fechas como en
+ * la lista («Vacaciones» y «11/12/2026 al 08/01/2027»). La carga es la del pedido guardado (`pedido.licencia`, la de
+ * `estado.restituciones`, también si está dada de baja). Sin una carga con un tipo de `NOMBRES_TIPO` y sus fechas, los dos
+ * vacíos. Nunca tira.
+ */
+export const vacacionesDeLaRestitucion = (pedido) => {
+  const { tipo, desde, hasta } = esObjeto(pedido) && esObjeto(pedido.licencia) ? pedido.licencia : {};
+  if (typeof tipo !== 'string' || !Object.hasOwn(NOMBRES_TIPO, tipo) || !esFechaIso(desde) || !esFechaIso(hasta)
+    || hasta < desde) return { tipo_nombre: '', fechas_texto: '' };
+  return { tipo_nombre: NOMBRES_TIPO[tipo], fechas_texto: textoDeLasFechas(desde, hasta) };
 };
 
 // La lista de licencias (spec, sección 8). Los filtros, con los nombres de NOMBRES_TIPO (los días restituidos, «Días

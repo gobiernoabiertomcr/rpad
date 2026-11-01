@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
 import { iniciarServidor, crearCliente, crearUsuariosPrueba, limpiarDatosPrueba, cerrarDb, query, db } from './helpers.js';
 import { BLOQUEO_EVENTOS } from '../services/miEspacioEventosReglas.js';
+import { MENSAJES_MI_ESPACIO } from '../services/miEspacioReglas.js';
 
 let servidor, api, usuarios;
 
@@ -110,6 +111,26 @@ const pedir = (metodo, ruta, token) => {
   return metodo === 'POST' ? api.post(ruta, {}, opciones) : api.put(ruta, {}, opciones);
 };
 
+// Las lecturas del pedido de restitución (spec 2026-10-31-mi-espacio-dias-restituidos, 8): el lector y el colaborador las usan
+// como cualquiera, sobre lo suyo. Sin nada para restituir, contesta el controlador (la vista, 400 con lo que la frena; la nota y
+// el Word de un pedido que no existe, 404): nunca el 403 de un middleware, un 401 ni el 404 de una ruta que no existe
+const LECTURAS_DE_LA_RESTITUCION = [
+  ['/mi-espacio/restituciones/vista?licencia_id=1&anio=2025&tanda=0', 400,
+    [MENSAJES_MI_ESPACIO.sinModalidad, MENSAJES_MI_ESPACIO.sinArranque, MENSAJES_MI_ESPACIO.grupoNoPorRestituir]],
+  ['/mi-espacio/restituciones/999999/nota', 404, [MENSAJES_MI_ESPACIO.restitucionNoEncontrada]],
+  ['/mi-espacio/restituciones/999999/word', 404, [MENSAJES_MI_ESPACIO.restitucionNoEncontrada]]
+];
+const llegaAlControlador = (clave) => {
+  for (const [ruta, status, errores] of LECTURAS_DE_LA_RESTITUCION) {
+    it(`llega al controlador en GET ${ruta}`, async () => {
+      const res = await api.get(ruta, { token: usuarios[clave].token });
+      assert.equal(res.status, status, JSON.stringify(res.body));
+      assert.equal(res.body.success, false);
+      assert.ok(errores.includes(res.body.error), JSON.stringify(res.body));
+    });
+  }
+};
+
 describe('lector', () => {
   for (const [metodo, ruta] of RUTAS_SOLO_ADMIN) {
     it(`recibe 403 en ${metodo} ${ruta}`, async () => {
@@ -128,6 +149,8 @@ describe('lector', () => {
       assert.equal(res.status, 200);
     });
   }
+
+  llegaAlControlador('lector');
 
   // La agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, sección 1): solo administración comparte eventos
   it('recibe 403 en GET /mi-espacio/personas', async () => {
@@ -240,7 +263,13 @@ const RUTAS_MI_ESPACIO = [
   ['POST', '/mi-espacio/eventos'],
   ['PUT', '/mi-espacio/eventos/1'],
   ['DELETE', '/mi-espacio/eventos/1'],
-  ['PUT', '/mi-espacio/eventos/1/mi-recordatorio']
+  ['PUT', '/mi-espacio/eventos/1/mi-recordatorio'],
+  // El pedido de restitución de los días que restituye un asueto (spec 2026-10-31-mi-espacio-dias-restituidos, 8: el caso B)
+  ['GET', '/mi-espacio/restituciones/vista?licencia_id=1&anio=2025&tanda=0'],
+  ['POST', '/mi-espacio/restituciones'],
+  ['DELETE', '/mi-espacio/restituciones/1'],
+  ['GET', '/mi-espacio/restituciones/1/nota'],
+  ['GET', '/mi-espacio/restituciones/1/word']
 ];
 
 describe('Mi espacio', () => {
@@ -272,6 +301,8 @@ describe('colaborador', () => {
       assert.equal(res.status, 200);
     });
   }
+
+  llegaAlControlador('colaborador');
 
   it('recibe 403 en GET /mi-espacio/personas', async () => {
     const res = await api.get('/mi-espacio/personas', { token: usuarios.colaborador.token });

@@ -7,7 +7,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   numeroTexto, diaCorto, diaLargo, mesEnFrase, mesTitulo, resumenDe, filasDeLicencias, tablaDeHorasExtras, proximoFeriadoDe,
-  planillaDelMes, paraRevisarDe, otrosAniosDe, textoDeLaListaDe, textoDeLaRestitucionHecha
+  planillaDelMes, paraRevisarDe, otrosAniosDe, textoDeLaListaDe, textoDeLaRestitucionHecha, vacacionesDeLaRestitucion
 } from '../services/miEspacioResumen.js';
 import * as reglas from '../services/miEspacioReglas.js';
 import { NOMBRES_DE_LOS_FIJOS, feriadosDelRango } from '../services/feriadosReglas.js';
@@ -2456,6 +2456,26 @@ describe('el Resumen y la lista de los días restituidos (spec 2026-10-31-mi-esp
     assert.doesNotThrow(() => textoDeLaRestitucionHecha(grupo, Symbol('x'), ABRIL));
   });
 
+  it('vacacionesDeLaRestitucion: el tipo y las fechas de la carga de la que salen los días, como en la lista', () => {
+    const pedido = (licencia) => ({ id: 10, anio: 2025, caso: 'restituir', dias: 2, licencia });
+    assert.deepEqual(vacacionesDeLaRestitucion(pedido({ tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08', activo: 1 })),
+      { tipo_nombre: 'Vacaciones', fechas_texto: '11/12/2026 al 08/01/2027' });
+    // Dada de baja también (la nota de un pedido cuya carga ya no está); en el mismo año y de un día, como en la lista
+    assert.deepEqual(vacacionesDeLaRestitucion(pedido({ tipo: 'vacaciones', desde: '2026-11-16', hasta: '2026-11-27', activo: 0 })),
+      { tipo_nombre: 'Vacaciones', fechas_texto: '16/11 al 27/11/2026' });
+    assert.deepEqual(vacacionesDeLaRestitucion(pedido({ tipo: 'restituidos', desde: '2027-04-19', hasta: '2027-04-19' })),
+      { tipo_nombre: 'Días restituidos', fechas_texto: 'Lun 19/04/2027' });
+    // Sin una carga con su tipo y sus fechas, nada; nunca tira
+    const nada = { tipo_nombre: '', fechas_texto: '' };
+    const fechas = { desde: '2026-12-11', hasta: '2027-01-08' };
+    const raros = [
+      undefined, null, '', 'x', 3, [], {}, pedido(null), pedido(fechas), pedido({ ...fechas, tipo: 'otro' }),
+      pedido({ ...fechas, tipo: 'toString' }), pedido({ tipo: 'vacaciones', desde: '2026-12-11' }),
+      pedido({ tipo: 'vacaciones', desde: '2027-01-08', hasta: '2026-12-11' })
+    ];
+    for (const raro of raros) assert.deepEqual(vacacionesDeLaRestitucion(raro), nada, JSON.stringify(raro));
+  });
+
   it('el «Revisá…» de lo ya pedido va en para_revisar, después de lo de Configuración, sin ser un faltante', () => {
     // El asueto del 24/12 se dio de baja después de pedir la restitución
     const soloEl31 = new Set(['2026-12-31']);
@@ -2697,6 +2717,8 @@ describe('nada tira', () => {
         otrosAniosDe(PLANTA.estado.licencias, { anio: 2025, anios: [valor, 2026], hoy: HOY });
         textoDeLaListaDe(valor, valor);
         textoDeLaRestitucionHecha(valor, valor, valor);
+        vacacionesDeLaRestitucion(valor);
+        vacacionesDeLaRestitucion({ licencia: { tipo: valor, desde: valor, hasta: valor } });
         textoDeLaRestitucionHecha({ dias: 2, anio: 2025 }, { reparto: { ordinarias: [valor, { anio: 2025, disponibles: valor }] } },
           '2027-04-01');
       });
