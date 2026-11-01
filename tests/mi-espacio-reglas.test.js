@@ -1375,6 +1375,29 @@ describe('los días restituidos: el plazo, el caso, los grupos y las tandas (spe
     assert.equal(ordinaria(deFebrero, 2025).disponibles, 0);
   });
 
+  it('un pedido del caso B cuya carga ya no está no suma su mitad: sus días ya volvieron con la baja', () => {
+    const hoy = '2027-04-05';
+    const pedida = { ...VARIANTE_B, restituibles: fotoSellada(10), restituciones: [pedidoDe(10, { fecha: '2027-04-01' })] };
+    // La persona borró las vacaciones (o administración las anuló en Configuración): los 19 días ya volvieron a la 2025, así
+    // que «Te quedan» es 40 (20 de la 2025 y 20 de la 2026), sin los 2 del pedido
+    const sinLasVacaciones = { ...pedida, licencias: [] };
+    assert.deepEqual(ordinariasDe(sinLasVacaciones, hoy), ordinariasDe({ ...VARIANTE_B, licencias: [] }, hoy));
+    const reparto = repartoDeVacaciones(sinLasVacaciones, { hoy, feriados: ASUETOS });
+    assert.deepEqual([disponibles(reparto), ordinaria(reparto, 2025).disponibles], [40, 20]);
+    // Con las vacaciones pasadas a otro tipo, lo mismo: ya no es una carga con días restituibles
+    const otroTipo = { ...pedida, licencias: [{ ...VACACIONES_DE_JULIETA, tipo: 'medica' }] };
+    assert.equal(ordinariasDe(otroTipo, hoy).find((o) => o.anio === 2025).total, 20);
+    // Con las vacaciones, la mitad sigue (como siempre); el id de la carga, también como texto
+    assert.equal(ordinariasDe(pedida, hoy).find((o) => o.anio === 2025).total, 22);
+    const conIdDeTexto = { ...pedida, restituciones: [pedidoDe(10, { fecha: '2027-04-01', licencia_id: '1' })] };
+    assert.equal(ordinariasDe(conIdDeTexto, hoy).find((o) => o.anio === 2025).total, 22);
+    // El pedido sigue pedido, con su «Revisá…» mientras no pasó el plazo; después, sin él
+    const [grupo] = gruposDe(sinLasVacaciones, hoy);
+    assert.deepEqual([grupo.situacion, grupo.revisar], ['pedida',
+      'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ya no están cargadas.']);
+    assert.deepEqual(gruposDe(sinLasVacaciones, '2027-05-03').map((otro) => [otro.situacion, otro.revisar]), [['pedida', '']]);
+  });
+
   it('nada frena (Review Focus 4): un grupo por restituir o perdido no es un faltante ni frena una carga', () => {
     for (const hoy of [VUELVE, '2027-05-03']) {
       const opciones = { hoy, feriados: ASUETOS };

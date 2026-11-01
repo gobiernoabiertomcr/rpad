@@ -2375,7 +2375,7 @@ describe('el Resumen y la lista de los días restituidos (spec 2026-10-31-mi-esp
     assert.equal(restituidos.proxima, true);
     assert.equal(restituidos.de_licencias_texto, T.deLicenciasRestituidos);
     assert.deepEqual(restituidos.restituidos,
-      { ayuda_desde: T.ayudaFechasA, ayuda_hasta: 'Lo pone Mi espacio: 2 días hábiles.', dias: 2 });
+      { grupo: '1-2024-0', ayuda_desde: T.ayudaFechasA, ayuda_hasta: 'Lo pone Mi espacio: 2 días hábiles.', dias: 2 });
     assert.deepEqual(restituidos.restituciones, []);
     sinHuecos(lista);
   });
@@ -2461,7 +2461,10 @@ describe('el Resumen y la lista de los días restituidos (spec 2026-10-31-mi-esp
     const soloEl31 = new Set(['2026-12-31']);
     const revisar = 'Revisá tus días restituidos: el asueto del 24/12/2026 se dio de baja.';
     const resumen = resumenDeJulieta(B_PEDIDA, ABRIL, { feriados: soloEl31 });
-    assert.deepEqual(resumen.para_revisar, [{ licencia_id: 1, anio: 2026, texto: revisar, enlace: 'Ver en Licencias de 2026' }]);
+    assert.deepEqual(resumen.para_revisar, [{
+      licencia_id: 1, anio: 2026, texto: revisar, enlace: 'Ver en Licencias de 2026', restitucion_id: 10, puede_borrar: true,
+      anio_de_origen: 2025
+    }]);
     assert.deepEqual([resumen.faltantes, resumen.marca], [[], false]);
     // Con algo de Configuración para revisar, primero eso
     const vinculos = new Map([[1, { revision: { motivo: 'anulada', desde: null, hasta: null } }]]);
@@ -2477,6 +2480,78 @@ describe('el Resumen y la lista de los días restituidos (spec 2026-10-31-mi-esp
       assert.deepEqual(resumenDeJulieta(acortadas, hoy).para_revisar,
         [{ licencia_id: 1, anio: 2026, texto: otroRevisar, enlace: 'Ver en Licencias de 2026' }], hoy);
     }
+  });
+
+  it('un pedido del caso B cuyas vacaciones ya no están: «Te quedan» sin sus días, y se resuelve desde el «Revisá…»', () => {
+    // La persona borró las vacaciones (o administración las anuló en Configuración) después de pedir la restitución: los 19
+    // días ya volvieron a la 2025 y los 2 del pedido no se suman otra vez
+    const sinLasVacaciones = { ...B_PEDIDA, licencias: [] };
+    const resumen = resumenDeJulieta(sinLasVacaciones, ABRIL);
+    assert.equal(resumen.titular.cifra, '40');
+    const revisar = 'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ya no están cargadas.';
+    // Sin la fila de las vacaciones, el «Revisá…» trae lo que hace falta para la nota en Word y para borrar el pedido
+    assert.deepEqual(resumen.para_revisar, [{
+      licencia_id: 1, anio: 2026, texto: revisar, enlace: 'Ver en Licencias de 2026', restitucion_id: 10, puede_borrar: true,
+      anio_de_origen: 2025
+    }]);
+    assert.deepEqual([resumen.faltantes, resumen.marca, resumen.restituciones], [[], false, []]);
+    assert.equal(resumenDeJulieta(sinLasVacaciones, '2027-04-30').para_revisar[0].puede_borrar, true);
+    // Pasado el plazo el pedido ya no se puede borrar: no hay nada que revisar
+    assert.deepEqual(resumenDeJulieta(sinLasVacaciones, MAYO).para_revisar, []);
+  });
+
+  it('una carga del caso A cuyas vacaciones ya no están: el «Revisá…» lleva a la carga de días restituidos', () => {
+    const sinLasVacaciones = { ...CARGADOS, licencias: [CARGA_A] };
+    const revisar = 'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ya no están cargadas.';
+    assert.deepEqual(resumenDeJulieta(sinLasVacaciones, ABRIL).para_revisar,
+      [{ licencia_id: 2, anio: 2027, texto: revisar, enlace: 'Ver en Licencias de 2027' }]);
+    // Con las vacaciones todavía cargadas (acortadas), el «Revisá…» lleva a ellas (ver el test de arriba)
+  });
+
+  it('los «Revisá…» repetidos van una sola vez, salvo los de un pedido, que traen su propia nota y su borrado', () => {
+    // Dos cargas del caso A de dos tandas de las mismas vacaciones, que ya no están: el mismo texto, el mismo año
+    const dosCargas = {
+      ...JULIETA.estado,
+      licencias: [CARGA_A, { ...CARGA_A, id: 3, desde: '2027-04-19', hasta: '2027-04-19' }],
+      restituibles: [{ ...JULIETA.estado.restituibles[0], tanda: 0, restitucion_id: 10 },
+        { ...JULIETA.estado.restituibles[1], tanda: 1, restitucion_id: 11 }],
+      restituciones: [pedidoDe(10, { anio: 2024, caso: 'tomar', carga_id: 2, dias: 1 }),
+        pedidoDe(11, { anio: 2024, caso: 'tomar', carga_id: 3, dias: 1, tanda: 1, primer_asueto: '2026-12-31' })]
+    };
+    const revisar = 'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ya no están cargadas.';
+    assert.deepEqual(resumenDeJulieta(dosCargas, ABRIL).para_revisar,
+      [{ licencia_id: 2, anio: 2027, texto: revisar, enlace: 'Ver en Licencias de 2027' }]);
+    // Dos pedidos del caso B de las mismas vacaciones (de la 2025 y de la 2026), que ya no están: los dos, con su pedido
+    const dosPedidos = {
+      ...JULIETA.estado, saldos: saldos({ 2025: 13, 2026: 10 }), licencias: [],
+      restituibles: [{ ...JULIETA.estado.restituibles[0], tanda: 0, restitucion_id: 10 },
+        { ...JULIETA.estado.restituibles[1], tanda: 0, restitucion_id: 11 }],
+      restituciones: [pedidoDe(10, { dias: 1 }), pedidoDe(11, { anio: 2026, dias: 1 })]
+    };
+    assert.deepEqual(resumenDeJulieta(dosPedidos, ABRIL).para_revisar.map((aviso) => [aviso.texto, aviso.restitucion_id,
+      aviso.anio_de_origen]), [[revisar, 10, 2025], [revisar, 11, 2026]]);
+  });
+
+  it('la opción de «Cargar licencia» dice el año del plazo si no es el de hoy', () => {
+    const opcion = resumenDeJulieta(JULIETA.estado, '2026-12-22').tipos.find((otra) => otra.tipo === 'restituidos');
+    assert.equal(opcion.queda_texto, '2 de la 2024 · empezar hasta el 30/04/2027');
+    assert.equal(resumenDeJulieta(JULIETA.estado, VUELVE).tipos.find((otra) => otra.tipo === 'restituidos').queda_texto,
+      T.tipoA);
+  });
+
+  it('dos opciones con el mismo texto dicen de qué vacaciones son', () => {
+    // Dos cargas de vacaciones de la 2024, cada una con un asueto: dos grupos de 1 día de la 2024 con el mismo plazo
+    const dosVacaciones = {
+      ...JULIETA.estado,
+      licencias: [{ ...VACACIONES, desde: '2026-12-21', hasta: '2026-12-24' },
+        { ...VACACIONES, id: 4, desde: '2026-12-28', hasta: '2026-12-31' }],
+      restituibles: [JULIETA.estado.restituibles[0], { ...JULIETA.estado.restituibles[1], licencia_id: 4 }]
+    };
+    const opciones = resumenDeJulieta(dosVacaciones, VUELVE).tipos.filter((otra) => otra.tipo === 'restituidos');
+    assert.deepEqual(opciones.map(({ grupo, queda_texto: queda }) => [grupo, queda]), [
+      ['1-2024-0', '1 de la 2024 · tomarlo hasta el 30/04 · de las vacaciones del 21/12 al 24/12/2026'],
+      ['4-2024-0', '1 de la 2024 · tomarlo hasta el 30/04 · de las vacaciones del 28/12 al 31/12/2026']
+    ]);
   });
 
   it('dos licencias de origen: un aviso por grupo, una oración por caso y una línea por grupo', () => {

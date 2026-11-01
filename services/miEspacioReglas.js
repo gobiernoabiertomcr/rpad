@@ -415,13 +415,25 @@ const saldoDeVacaciones = (estado, anio) => {
 // Una marca de la base: 1 (o true) es sí; lo demás, no
 const estaActivo = (valor) => valor === true || numeroDe(valor) === 1;
 
+// Las cargas que pueden tener días restituibles (las vacaciones y, en la recursión, los días restituidos: spec
+// 2026-10-31-mi-espacio-dias-restituidos, 4) que están entre las licencias del estado, con sus fechas, por id. Un pedido cuya
+// carga ya no está entre ellas (la persona la borró, administración la anuló en Configuración o pasó a otro tipo) ya no
+// sostiene sus días: con la baja, esos días ya volvieron a las licencias
+const cargasConRestituibles = (estado) => new Map(listaDe(estado.licencias)
+  .filter((fila) => esObjeto(fila) && idPositivoONulo(fila.id) !== null && TIPOS_CON_RESTITUIBLES.includes(fila.tipo)
+    && esFechaIso(fila.desde) && esFechaIso(fila.hasta))
+  .map((fila) => [idPositivoONulo(fila.id), fila]));
+
 // Lo que vuelve a cada licencia por los pedidos de restitución activos del caso B (spec 2026-10-31-mi-espacio-dias-restituidos,
-// 4): un Map de cada año a sus mitades `{ dias, habilita, licencia_id }` (`licencia_id`, la carga de la que salen los días, o
-// null), por el día del pedido (y del id). Los que no tienen días enteros positivos o una fecha, no
+// 4): un Map de cada año a sus mitades `{ dias, habilita, licencia_id }` (`licencia_id`, la carga de la que salen los días),
+// por el día del pedido (y del id). Los que no tienen días enteros positivos o una fecha, no; los de una carga que ya no está
+// (`cargasConRestituibles`), tampoco (decisión del controlador, por la revisión de la Task 7: como el pedido del caso A suelto,
+// si la carga ya no está, sus días ya volvieron a las licencias con su baja, y sumarlos otra vez los contaría dos veces)
 const mitadesDeLasRestituciones = (estado) => {
+  const cargas = cargasConRestituibles(estado);
   const pedidos = listaDe(estado.restituciones).filter((pedido) => esObjeto(pedido) && estaActivo(pedido.activo)
     && pedido.caso === 'restituir' && esFechaIso(pedido.fecha) && Number.isInteger(numeroDe(pedido.dias))
-    && numeroDe(pedido.dias) > 0 && anioValido(pedido.anio) !== null)
+    && numeroDe(pedido.dias) > 0 && anioValido(pedido.anio) !== null && cargas.has(idPositivoONulo(pedido.licencia_id)))
     .sort((a, b) => compararTexto(a.fecha, b.fecha) || (idDe(a.id) || 0) - (idDe(b.id) || 0));
   const porAnio = new Map();
   for (const pedido of pedidos) {
@@ -447,7 +459,8 @@ const mitadesDeLasRestituciones = (estado) => {
  * vencimiento, y las vacaciones de las que salen siguen descontándolos. Esa carga nunca usa la mitad (`repartoDeVacaciones`):
  * si no, con el pedido hecho antes de que terminen las vacaciones, sus días siguientes la absorberían y lo restituido
  * terminaría en otra licencia. Ya está habilitada, así que `porHabilitarDe` y `alcanceDeLaCarga` no la ven. Un pedido sin días
- * enteros positivos, sin una fecha o de un año fuera de esta lista no suma nada.
+ * enteros positivos, sin una fecha, de un año fuera de esta lista o cuya carga ya no está entre las licencias (borrada,
+ * anulada en Configuración o pasada a otro tipo: sus días ya volvieron con la baja) no suma nada.
  */
 export const ordinariasDe = (estado, hoy) => {
   if (!esObjeto(estado) || !esFechaIso(estado.arranque) || !esFechaIso(hoy)) return [];
@@ -784,8 +797,7 @@ export const restitucionesDe = (estado, opciones) => {
     const id = esObjeto(fila) ? idPositivoONulo(fila.id) : null;
     if (id !== null) activas.set(id, fila);
   }
-  const cargas = new Map([...activas].filter(([, fila]) => TIPOS_CON_RESTITUIBLES.includes(fila.tipo)
-    && esFechaIso(fila.desde) && esFechaIso(fila.hasta)));
+  const cargas = cargasConRestituibles(estado);
 
   // Los pedidos: cuántos tuvo cada carga (activos o no: las tandas cuentan los dos) y los que sostienen sus días (los activos,
   // sin el del caso A cuya carga de días restituidos ya no está)

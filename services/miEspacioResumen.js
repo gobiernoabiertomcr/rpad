@@ -33,7 +33,7 @@ import {
   diasLibresDelMes, porHabilitarDe, textoDeLosDiasHabiles, MESES_HASTA_LAS_HORAS, mesDeLaSalida, horasPorMesDeSalidas,
   repartoDelMes, textoDeLoQueSeMueve, diasDeLaCarga, fechasDeLosAsuetos, textoDelAvisoDeRestitucion,
   textoDelBotonDeRestitucion, textoDeLaFilaDeRestitucion, bajadaDeRestituciones, tituloDeRestitucionQueVence,
-  DIAS_DEL_AVISO_DE_RESTITUCION, textoDeLaAyudaDeRestituidos, textoDelHastaDeRestituidos
+  DIAS_DEL_AVISO_DE_RESTITUCION, textoDeLaAyudaDeRestituidos, textoDelHastaDeRestituidos, TIPOS_CON_RESTITUIBLES
 } from './miEspacioReglas.js';
 
 // Los dos formatos que ya estaban en las reglas: el panel los usa sin copiarlos
@@ -101,8 +101,6 @@ const noUtilizadasDel = (cuenta, anio) => (esObjeto(cuenta.noUtilizadas) && Obje
 // `restitucionesDe` (`calculo.restituciones`), con los textos de las reglas
 const SITUACIONES_DE_RESTITUCION = Object.freeze(['por_restituir', 'pedida', 'cargada', 'perdida']);
 const CASOS_DE_RESTITUCION = Object.freeze(['tomar', 'restituir']);
-// Los tipos de las filas de la lista que llevan la línea de sus grupos: las vacaciones y, en la recursión, los días restituidos
-const TIPOS_CON_RESTITUCIONES = Object.freeze(['vacaciones', 'restituidos']);
 
 /**
  * Los grupos del cálculo que se pueden mostrar (`calculo.restituciones`, en el orden de `restitucionesDe`): con su clave, una
@@ -569,21 +567,43 @@ const quedaDelTipo = (tipo, panel, tanques) => {
   return `${queda} ${tanque.numero}${tipo === 'franquicia' ? ' h' : ''} de ${numeroTexto(tanque.total)}`;
 };
 
+// Lo que dice debajo de la opción de un grupo: «2 de la 2024 · empezar hasta el 30/04» (de un día, «1 de la 2024 · tomarlo
+// hasta el 30/04»), con el año del plazo si no es el de hoy, como la bajada («… hasta el 30/04/2027», el día del asueto)
+const quedaDeLosRestituidos = (grupo, hoy) => `${numeroTexto(grupo.dias)} de la ${grupo.anio} · `
+  + `${grupo.dias === 1 ? 'tomarlo' : 'empezar'} hasta el `
+  + (anioDe(grupo.plazo) === anioDe(hoy) ? diaYMes(grupo.plazo) : formatoCorto(grupo.plazo));
+
+// De qué carga es un grupo, para dos opciones que dirían lo mismo: «de las vacaciones del 11/12/2026 al 08/01/2027» (en la
+// recursión, «de los días restituidos del …»); sin sus fechas, ''
+const deQueCarga = ({ carga }) => {
+  if (!esObjeto(carga) || !esFechaIso(carga.desde) || !esFechaIso(carga.hasta)) return '';
+  const cual = carga.tipo === 'restituidos' ? 'de los días restituidos' : 'de las vacaciones';
+  return `${cual} del ${fechasDeUnaFrase(carga.desde, carga.hasta)}`;
+};
+
 /**
  * Las opciones de «Días restituidos» de «Cargar licencia» (spec 2026-10-31-mi-espacio-dias-restituidos, 7 y 9): una por
  * cada grupo por restituir del caso A, `{ tipo: 'restituidos', grupo, restitucion, nombre, queda_texto, dias, ayuda_desde,
  * ayuda_hasta }`, con la clave del grupo y su restitución (lo que se manda al guardar), sus días, lo que dice debajo de la
- * opción («2 de la 2024 · empezar hasta el 30/04»; de un día, «1 de la 2024 · tomarlo hasta el 30/04») y las ayudas de
- * «Desde» y del «Hasta», que pone Mi espacio (`textoDeLaAyudaDeRestituidos` y `textoDelHastaDeRestituidos`).
+ * opción (`quedaDeLosRestituidos`: «2 de la 2024 · empezar hasta el 30/04») y las ayudas de «Desde» y del «Hasta», que pone
+ * Mi espacio (`textoDeLaAyudaDeRestituidos` y `textoDelHastaDeRestituidos`). Si dos opciones dirían lo mismo (dos cargas con
+ * un grupo de la misma licencia, los mismos días y el mismo plazo), cada una suma de qué carga es: «… · de las vacaciones
+ * del 21/12 al 24/12/2026».
  */
-const opcionesDeRestituidos = ({ feriados }, grupos) => porRestituir(grupos).filter((grupo) => grupo.caso === 'tomar')
-  .map((grupo) => ({
-    tipo: 'restituidos', grupo: grupo.clave, restitucion: restitucionDe(grupo), nombre: NOMBRES_DE_LAS_OPCIONES.restituidos,
-    queda_texto: `${numeroTexto(grupo.dias)} de la ${grupo.anio} · ${grupo.dias === 1 ? 'tomarlo' : 'empezar'} hasta el `
-      + diaYMes(grupo.plazo),
-    dias: grupo.dias, ayuda_desde: textoDeLaAyudaDeRestituidos(grupo, feriados),
-    ayuda_hasta: textoDelHastaDeRestituidos(grupo.dias)
-  }));
+const opcionesDeRestituidos = ({ hoy, feriados }, grupos) => {
+  const delCasoA = porRestituir(grupos).filter((grupo) => grupo.caso === 'tomar');
+  const quedas = delCasoA.map((grupo) => quedaDeLosRestituidos(grupo, hoy));
+  return delCasoA.map((grupo, indice) => {
+    const queda = quedas[indice];
+    const repetida = quedas.indexOf(queda) !== quedas.lastIndexOf(queda) && deQueCarga(grupo) !== '';
+    return {
+      tipo: 'restituidos', grupo: grupo.clave, restitucion: restitucionDe(grupo), nombre: NOMBRES_DE_LAS_OPCIONES.restituidos,
+      queda_texto: repetida ? `${queda} · ${deQueCarga(grupo)}` : queda,
+      dias: grupo.dias, ayuda_desde: textoDeLaAyudaDeRestituidos(grupo, feriados),
+      ayuda_hasta: textoDelHastaDeRestituidos(grupo.dias)
+    };
+  });
+};
 
 // Las opciones de «Cargar licencia»: los tipos de la modalidad, sin el uso autorizado (tiene su propio formulario), sin los
 // días restituidos como un tipo más (se ofrecen uno por cada grupo por restituir del caso A, justo después de las
@@ -606,21 +626,50 @@ const avisosDeRestitucion = (grupos, hoy) => porRestituir(grupos).map((grupo) =>
   clave: grupo.clave, texto: textoDelAvisoDeRestitucion(grupo, hoy), accion: accionDeRestitucion(grupo)
 }));
 
+// La licencia activa del estado con ese id, o undefined
+const licenciaActiva = (datos, id) => listaDe(datos.licencias).find((fila) => esObjeto(fila) && idDe(fila.id) === id);
+
 /**
  * El «Revisá tus días restituidos…» de lo ya pedido (spec 2026-10-31-mi-espacio-dias-restituidos, 4 y 17.6), con la forma
  * de `paraRevisarDe`: `{ licencia_id, anio, texto, enlace }`, uno por grupo pedido o cargado con `revisar` (el de las reglas,
- * que no lo pone en un pedido del caso B pasado el plazo), con su carga en `licencia_id` y el año y el enlace de las fechas
- * de su carga («Ver en Licencias de 2026»; si su carga no dice desde cuándo, null y ''). Tampoco es un faltante.
+ * que no lo pone en un pedido del caso B pasado el plazo), con la licencia que hay que revisar en `licencia_id` y el año y el
+ * enlace de sus fechas («Ver en Licencias de 2026»; si no dice desde cuándo, null y ''). Esa licencia es su carga (las
+ * vacaciones de las que salen), salvo en uno cargado cuya carga ya no está (decisión del controlador, por la revisión de la
+ * Task 7): ahí, la de los días restituidos (`carga_id`). Uno pedido suma `restitucion_id`, `puede_borrar` (hasta el plazo
+ * inclusive) y `anio_de_origen` (la licencia a la que volvieron los días): si su carga ya no está, su fila tampoco, y la
+ * página dibuja la nota en Word y «Borrar el pedido» al lado del «Revisá…». Los repetidos (el mismo texto y el mismo año: dos
+ * grupos de las mismas vacaciones que ya no están) van una vez, salvo los de un pedido, que traen su nota y su borrado.
+ * Tampoco es un faltante.
  */
-const paraRevisarDeRestituciones = (grupos) => grupos
-  .filter((grupo) => (grupo.situacion === 'pedida' || grupo.situacion === 'cargada') && typeof grupo.revisar === 'string'
-    && grupo.revisar !== '')
-  .map((grupo) => {
-    const anio = esObjeto(grupo.carga) && esFechaIso(grupo.carga.desde) ? anioDe(grupo.carga.desde) : null;
-    return {
-      licencia_id: grupo.licencia_id, anio, texto: grupo.revisar, enlace: anio === null ? '' : `Ver en Licencias de ${anio}`
-    };
-  });
+const paraRevisarDeRestituciones = (grupos, { datos, hoy }) => {
+  const vistos = new Set();
+  return grupos
+    .filter((grupo) => (grupo.situacion === 'pedida' || grupo.situacion === 'cargada') && typeof grupo.revisar === 'string'
+      && grupo.revisar !== '')
+    .map((grupo) => {
+      const suCarga = licenciaActiva(datos, grupo.licencia_id);
+      const sinSuCarga = !esObjeto(suCarga) || !TIPOS_CON_RESTITUIBLES.includes(suCarga.tipo);
+      const cargada = grupo.situacion === 'cargada' && sinSuCarga ? licenciaActiva(datos, grupo.carga_id) : undefined;
+      const [licenciaId, desde] = esObjeto(cargada) && esFechaIso(cargada.desde)
+        ? [grupo.carga_id, cargada.desde] : [grupo.licencia_id, esObjeto(grupo.carga) ? grupo.carga.desde : null];
+      const anio = esFechaIso(desde) ? anioDe(desde) : null;
+      const entrada = {
+        licencia_id: licenciaId, anio, texto: grupo.revisar, enlace: anio === null ? '' : `Ver en Licencias de ${anio}`
+      };
+      if (grupo.situacion !== 'pedida') return entrada;
+      const pedida = Number.isInteger(grupo.restitucion_id);
+      return {
+        ...entrada, restitucion_id: pedida ? grupo.restitucion_id : null, puede_borrar: pedida && hoy <= grupo.plazo,
+        anio_de_origen: grupo.anio
+      };
+    })
+    .filter((entrada) => {
+      const clave = `${entrada.anio}|${entrada.texto}`;
+      const repetida = vistos.has(clave);
+      vistos.add(clave);
+      return Object.hasOwn(entrada, 'restitucion_id') || !repetida;
+    });
+};
 
 /**
  * El Resumen «Titular» (spec, secciones 3.9 y 8, y spec 2026-10-27-mi-espacio-resumen, sección 4), todo lo de
@@ -645,7 +694,8 @@ const paraRevisarDeRestituciones = (grupos) => grupos
  *   (los de `restitucionesDe`; un cálculo de antes, sin ellos, se ve igual que antes): `restituciones` son los avisos de los
  *   grupos por restituir, `[{ clave, texto, accion: { texto, tipo: 'restituidos' | 'restitucion', grupo, restitucion: {
  *   licencia_id, anio, tanda } } }]`, que la página pone entre la banda y «El resto»; `para_revisar` suma, después de lo de
- *   Configuración, el «Revisá tus días restituidos…» de cada grupo ya pedido o cargado que cambió; la bajada suma sus
+ *   Configuración, el «Revisá tus días restituidos…» de cada grupo ya pedido o cargado que cambió (uno pedido, con lo que
+ *   hace falta para su nota y para borrarlo: `paraRevisarDeRestituciones`); la bajada suma sus
  *   oraciones al final; `vence_pronto`, los de los últimos 30 días antes del plazo (con la misma `accion`: prenden la marca); y
  *   `tipos`, después de las vacaciones, una opción por grupo por restituir del caso A (`opcionesDeRestituidos`). Sin modalidad
  *   o sin arranque, nada de esto. Ningún grupo es un faltante: nada frena una carga.
@@ -697,7 +747,7 @@ export const resumenDe = (entrada) => {
     vence_pronto: vencePronto,
     faltantes: [...listaDe(panel.cuenta.faltantes), ...listaDe(panel.cuenta.avisosDeSalidas)]
       .filter((faltante) => esObjeto(faltante) && typeof faltante.texto === 'string').map((faltante) => faltante.texto),
-    para_revisar: [...paraRevisarDe(datos, vinculos), ...paraRevisarDeRestituciones(grupos)],
+    para_revisar: [...paraRevisarDe(datos, vinculos), ...paraRevisarDeRestituciones(grupos, { datos, hoy: deHoy })],
     tanques,
     titular: titularDe(panel, resumen.modalidad, tanques.vacaciones, grupos),
     restituciones: avisosDeRestitucion(grupos, deHoy),
@@ -825,8 +875,8 @@ const textoDeLosRestituidos = (grupo) => {
  * Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9): una fila de vacaciones o de días restituidos suma
  * `restituciones`, la línea de cada grupo de esa carga (`lineaDeRestitucion`, en el orden de los grupos; sin ninguno, []).
  * Una de días restituidos, con su grupo cargado, dice de qué licencia son en `de_licencias_texto` (`textoDeLosRestituidos`) y
- * suma `restituidos`, `{ ayuda_desde, ayuda_hasta, dias }`, lo que necesita el formulario para corregirla (sin su grupo,
- * null). Las demás filas no llevan esas claves.
+ * suma `restituidos`, `{ grupo, ayuda_desde, ayuda_hasta, dias }` (`grupo`, la clave de su grupo), lo que necesita el
+ * formulario para corregirla (sin su grupo, null). Las demás filas no llevan esas claves.
  */
 const filaDeLicencia = (fila, contexto) => {
   const { datos, cuenta, hoy, persona, vinculos, feriados, grupos } = contexto;
@@ -874,13 +924,13 @@ const filaDeLicencia = (fila, contexto) => {
     en_configuracion: conVinculo && esObjeto(vinculo.en_configuracion) ? {
       licencia_id: vinculo.en_configuracion.licencia_id ?? null, autorizado_id: vinculo.en_configuracion.autorizado_id ?? null
     } : null,
-    ...(TIPOS_CON_RESTITUCIONES.includes(tipo) ? {
+    ...(TIPOS_CON_RESTITUIBLES.includes(tipo) ? {
       restituciones: grupos.filter((grupo) => grupo.licencia_id === id).map((grupo) => lineaDeRestitucion(grupo, contexto))
     } : {}),
     ...(tipo === 'restituidos' ? {
       restituidos: cargado === undefined ? null : {
-        ayuda_desde: textoDeLaAyudaDeRestituidos(cargado, feriados), ayuda_hasta: textoDelHastaDeRestituidos(cargado.dias),
-        dias: cargado.dias
+        grupo: cargado.clave, ayuda_desde: textoDeLaAyudaDeRestituidos(cargado, feriados),
+        ayuda_hasta: textoDelHastaDeRestituidos(cargado.dias), dias: cargado.dias
       }
     } : {})
   };
@@ -934,14 +984,17 @@ const esFilaDeLaLista = (fila) => esObjeto(fila) && TIPOS_LICENCIA.includes(fila
 
 // Lo que quedó distinto en Configuración, para revisar (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 3.1, 3.2 y 3.5)
 
-// El texto de una, con las fechas de su fila en la lista («04/01 al 15/01/2027») y, en una fecha cambiada o una unida sin
-// cubrir, las de la `revision` (sin decir quién la cambió: pudo ser la misma persona). De un día (ruling de la revisión
-// final: a mitad de frase, «Lun 16/11/2026» y «del 18/11 al 18/11» se leen mal), la licencia con el día de la semana en
-// minúscula («del lunes 16/11/2026») y las de Configuración con «el» («el 18/11», `fechasEnLaFrase`). Un motivo desconocido,
-// null
+// Las fechas de una licencia a mitad de frase, después de «del»: las de su fila en la lista («04/01 al 15/01/2027») o, de un
+// día (ruling de la revisión final: a mitad de frase, «Lun 16/11/2026» se lee mal), con el día de la semana en minúscula
+// («lunes 16/11/2026»)
+const fechasDeUnaFrase = (desde, hasta) =>
+  (desde === hasta ? `${diaDeLaSemana(desde)} ${formatoCorto(desde)}` : textoDeLasFechas(desde, hasta));
+
+// El texto de una, con las fechas de su fila en la lista (`fechasDeUnaFrase`) y, en una fecha cambiada o una unida sin
+// cubrir, las de la `revision` (sin decir quién la cambió: pudo ser la misma persona), con «el» si son de un día («el 18/11»,
+// `fechasEnLaFrase`: «del 18/11 al 18/11» se lee mal). Un motivo desconocido, null
 const textoParaRevisar = (fila, { motivo, desde, hasta }) => {
-  const fechas = fila.desde === fila.hasta
-    ? `${diaDeLaSemana(fila.desde)} ${formatoCorto(fila.desde)}` : textoDeLasFechas(fila.desde, fila.hasta);
+  const fechas = fechasDeUnaFrase(fila.desde, fila.hasta);
   if (motivo === 'fechas') {
     return `Revisá tu licencia del ${fechas}: en Configuración quedó ${fechasEnLaFrase(desde, hasta)}.`;
   }
