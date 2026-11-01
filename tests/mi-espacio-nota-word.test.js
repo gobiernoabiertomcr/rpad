@@ -3,9 +3,10 @@
 // la nota sale de notaDeLicencia y el Word se abre con JSZip para leer su XML. Las personas son inventadas.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import { HOJA_DE_LA_NOTA, TIPO_WORD, renderNotaDocx } from '../services/miEspacioNotaWord.js';
-import { LINEA_DE_LA_FIRMA, notaDeLicencia, htmlDeLaNota } from '../services/miEspacioNota.js';
+import { LINEA_DE_LA_FIRMA, notaDeLicencia, notaDeRestitucion, htmlDeLaNota } from '../services/miEspacioNota.js';
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // Las notas
@@ -290,6 +291,53 @@ describe('renderNotaDocx: los mismos renglones que la vista (htmlDeLaNota)', () 
     assert.deepEqual(word, renglonesDeLaVista(htmlDeLaNota(nota)));
     assert.ok(word.some((p) => p.texto === 'Ana "Anita" O\'Neil & <Cía>'));
   });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Los días restituidos por un asueto (spec 2026-10-31-mi-espacio-dias-restituidos, 12): la nota A (la carga de los días
+// restituidos) y la nota B (el pedido de restitución) salen en la misma hoja, con la misma estructura. La persona es la de la
+// maqueta, inventada: Julieta Ferreyra, con asuetos el jueves 24 y el jueves 31/12/2026
+// ---------------------------------------------------------------------------------------------------------------------------
+
+describe('renderNotaDocx: los días restituidos (A) y la restitución (B)', () => {
+  const JULIETA = Object.freeze({ nombre: 'Julieta Ferreyra', cargo: 'Coordinadora de Estadística', vinculo: 'planta_permanente' });
+  const ASUETOS = new Set(['2026-12-24', '2026-12-31']);
+  const FECHAS = Object.freeze(['2026-12-24', '2026-12-31']);
+  const notaA = (persona = JULIETA) => notaDeLicencia({ tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13', horas: null },
+    { fecha: '2027-04-01', persona, feriados: ASUETOS, restitucion: { anio: 2024, fechas: FECHAS } }).nota;
+  const notaB = (persona = JULIETA) =>
+    notaDeRestitucion({ anio: 2025, dias: 2, fechas: FECHAS }, { fecha: '2027-04-01', persona }).nota;
+  // Los Word de la maqueta (word/ de la carpeta de la maqueta, armados con renderNotaDocx), cada uno con el nombre de su nota
+  const CARPETA_DE_LA_MAQUETA =
+    new URL('../docs/superpowers/specs/2026-10-31-mi-espacio-dias-restituidos-mockups/word/', import.meta.url);
+  const wordDeLaMaqueta = async (nombre) => abrir(await readFile(new URL(nombre, CARPETA_DE_LA_MAQUETA)));
+
+  for (const [cual, armar, nombre] of [
+    ['A', notaA, 'Nota de licencia - Días restituidos - 2027-04-12.docx'],
+    ['B', notaB, 'Nota de restitución - Licencia 2025 - 2027-04-01.docx']
+  ]) {
+    it(`la nota ${cual} dice lo mismo que el Word de la maqueta, renglón por renglón y con la misma diagramación`, async () => {
+      const nota = armar();
+      assert.equal(nota.nombre, nombre);
+      const maqueta = parrafosDelWord((await wordDeLaMaqueta(nombre)).documento).map(sinXml);
+      const word = parrafosDelWord((await wordDe(nota)).documento).map(sinXml);
+      assert.ok(maqueta.some((parrafo) => parrafo.texto === nota.cuerpo), 'el cuerpo está en el Word de la maqueta');
+      assert.deepEqual(word, maqueta);
+    });
+  }
+
+  for (const [quien, persona] of Object.entries({
+    JULIETA, CONTRATADA, SIN_CARGO, SIN_VINCULO, CON_HTML: { nombre: 'Ana "Anita" & <Cía>', cargo: 'Jefa <de> & "Datos"', vinculo: 'contrato' }
+  })) {
+    for (const [cual, armar] of Object.entries({ A: notaA, B: notaB })) {
+      it(`nota ${cual}, ${quien}: el mismo texto que la vista, en el mismo orden y con la misma diagramación`, async () => {
+        const nota = armar(persona);
+        const word = parrafosDelWord((await wordDe(nota)).documento).map(sinXml);
+        assert.deepEqual(word, renglonesDeLaVista(htmlDeLaNota(nota)));
+        assert.ok(word.some((p) => p.texto === nota.cuerpo && p.alineado === 'both' && p.sangria === '709'));
+      });
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------------------------------------------------------

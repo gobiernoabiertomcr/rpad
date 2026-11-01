@@ -9,8 +9,9 @@ import {
   MENSAJES_FERIADO, FECHA_MINIMA_FERIADO, LARGO_NOMBRE_FERIADO,
   validarFeriado, validarRige, bajaDesde, errorDeLaCorreccion, feriadosDelAnio, avisosDeLaFecha, aniosDelSelector,
   calendarioCon, MENSAJE_CORRIDA_SIN_FERIADOS, MENSAJE_ESTADO_SIN_FERIADOS,
-  MENSAJE_METRICAS_SIN_FERIADOS, exigirLaTabla, feriadosDelCalendario, calendarioDeFechas
+  MENSAJE_METRICAS_SIN_FERIADOS, exigirLaTabla, feriadosDelCalendario, calendarioDeFechas, fotosDelFeriado, TIPOS_CON_FOTO
 } from '../services/feriadosReglas.js';
+import { TIPOS_CON_RESTITUIBLES } from '../services/miEspacioReglas.js';
 import { FERIADOS_FIJOS, esDiaHabil, CALENDARIO_FIJO, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
@@ -1259,5 +1260,116 @@ describe('exigirLaTabla, feriadosDelCalendario y calendarioDeFechas', () => {
     const sinFechas = calendarioDeFechas([]);
     for (const dia of DIAS) assert.equal(sinFechas.esDiaHabil(dia), CALENDARIO_FIJO.esDiaHabil(dia), dia);
     assert.equal(sinFechas.diasHabilesTranscurridos('2025-12-31', '2026-12-31'), 253);
+  });
+});
+
+// La foto de los días por restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 4 y 6): qué días de qué cargas deja de hacer
+// hábiles un feriado cargado o corregido cuando las cargas ya estaban. Con Julieta Ferreyra (inventada): vacaciones del
+// 11/12/2026 al 08/01/2027 y arranque el 02/11/2026; el asueto, el jueves 24/12/2026
+describe('fotosDelFeriado', () => {
+  const VACACIONES = Object.freeze({ id: 10, tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08', arranque: '2026-11-02' });
+  const ASUETO = fila({ id: 7, fecha: '2026-12-24', nombre: 'Asueto', tipo: 'no_laborable' });
+
+  it('los tipos con foto son los que tienen días restituibles en la regla (TIPOS_CON_RESTITUIBLES), congelados', () => {
+    assert.deepEqual(TIPOS_CON_FOTO, ['vacaciones', 'restituidos']);
+    assert.deepEqual([...TIPOS_CON_FOTO].sort(), [...TIPOS_CON_RESTITUIBLES].sort());
+    assert.ok(Object.isFrozen(TIPOS_CON_FOTO));
+  });
+
+  it('el 24/12/2026 sobre las vacaciones de Julieta: su carga, ese día', () => {
+    assert.deepEqual(fotosDelFeriado(ASUETO, [VACACIONES], []), [{ licencia_id: 10, fecha: '2026-12-24' }]);
+    // El id como número aunque llegue como texto
+    assert.deepEqual(fotosDelFeriado(ASUETO, [{ ...VACACIONES, id: '10' }], []), [{ licencia_id: 10, fecha: '2026-12-24' }]);
+  });
+
+  it('un sábado, uno de los 9 fijos u otro feriado activo ese día no dejan de hacer hábil nada: ninguna', () => {
+    assert.deepEqual(fotosDelFeriado({ ...ASUETO, fecha: '2026-12-26' }, [VACACIONES], []), []);
+    assert.deepEqual(fotosDelFeriado({ ...ASUETO, fecha: '2026-12-25' }, [VACACIONES], []), []);
+    assert.deepEqual(fotosDelFeriado(ASUETO, [VACACIONES], [fila({ id: 8, fecha: '2026-12-24', nombre: 'Otro' })]), []);
+    // Uno dado de baja ese día, o de otro día, no cuenta
+    assert.deepEqual(fotosDelFeriado(ASUETO, [VACACIONES], [fila({ id: 8, fecha: '2026-12-24', activo: 0 })]),
+      [{ licencia_id: 10, fecha: '2026-12-24' }]);
+    assert.deepEqual(fotosDelFeriado(ASUETO, [VACACIONES], [fila({ id: 8, fecha: '2026-12-23' })]),
+      [{ licencia_id: 10, fecha: '2026-12-24' }]);
+  });
+
+  it('en unas vacaciones, solo del arranque en adelante (sin arranque, ninguna); fuera de sus fechas, tampoco', () => {
+    assert.deepEqual(fotosDelFeriado(ASUETO, [{ ...VACACIONES, arranque: '2026-12-28' }], []), []);
+    // El día del arranque, sí
+    assert.deepEqual(fotosDelFeriado(ASUETO, [{ ...VACACIONES, arranque: '2026-12-24' }], []),
+      [{ licencia_id: 10, fecha: '2026-12-24' }]);
+    for (const arranque of [null, undefined, '', '2026-02-30']) {
+      assert.deepEqual(fotosDelFeriado(ASUETO, [{ ...VACACIONES, arranque }], []), [], String(arranque));
+    }
+    assert.deepEqual(fotosDelFeriado(ASUETO, [{ ...VACACIONES, hasta: '2026-12-23' }], []), []);
+    assert.deepEqual(fotosDelFeriado(ASUETO, [{ ...VACACIONES, desde: '2026-12-28' }], []), []);
+    // Los dos extremos van incluidos
+    assert.deepEqual(fotosDelFeriado(ASUETO, [{ ...VACACIONES, desde: '2026-12-24', hasta: '2026-12-24' }], []),
+      [{ licencia_id: 10, fecha: '2026-12-24' }]);
+  });
+
+  it('una carga de días restituidos, sí (y sin mirar el arranque); otro tipo, no', () => {
+    const restituidos = { id: 11, tipo: 'restituidos', desde: '2026-12-21', hasta: '2026-12-24', arranque: null };
+    assert.deepEqual(fotosDelFeriado(ASUETO, [restituidos], []), [{ licencia_id: 11, fecha: '2026-12-24' }]);
+    for (const tipo of ['medica', 'estudios', 'familiar', 'franco', 'franquicia', 'uso_autorizado', 'otro', undefined]) {
+      assert.deepEqual(fotosDelFeriado(ASUETO, [{ ...VACACIONES, tipo }], []), [], String(tipo));
+    }
+  });
+
+  it('con `antes` (la fila antes de corregirla), solo las fechas nuevas: la misma fecha no saca nada', () => {
+    assert.deepEqual(fotosDelFeriado({ ...ASUETO, nombre: 'Asueto navideño' }, [VACACIONES], [], { antes: ASUETO }), []);
+    // Del 23/12 al 24/12: el 24/12 es nueva
+    assert.deepEqual(fotosDelFeriado(ASUETO, [VACACIONES], [], { antes: { ...ASUETO, fecha: '2026-12-23' } }),
+      [{ licencia_id: 10, fecha: '2026-12-24' }]);
+    // De no repetirse a repetirse: solo los otros años (el 24/12/2027 cae viernes)
+    const otraCarga = { id: 12, tipo: 'vacaciones', desde: '2027-12-20', hasta: '2027-12-28', arranque: '2026-11-02' };
+    assert.deepEqual(fotosDelFeriado({ ...ASUETO, se_repite: 1 }, [VACACIONES, otraCarga], [], { antes: ASUETO }),
+      [{ licencia_id: 12, fecha: '2027-12-24' }]);
+    // Un `antes` que no es una fila no saca ninguna fecha
+    for (const antes of [null, undefined, 'x', 3]) {
+      assert.deepEqual(fotosDelFeriado(ASUETO, [VACACIONES], [], { antes }), [{ licencia_id: 10, fecha: '2026-12-24' }],
+        String(antes));
+    }
+  });
+
+  it('uno que se repite, cada año en que rige dentro de las cargas, por fecha y por carga', () => {
+    const repite = { ...ASUETO, se_repite: 1 };
+    const deOtra = { id: 4, tipo: 'vacaciones', desde: '2026-12-21', hasta: '2026-12-31', arranque: '2026-10-01' };
+    const de2027 = { id: 12, tipo: 'vacaciones', desde: '2027-12-20', hasta: '2027-12-28', arranque: '2026-11-02' };
+    // El 24/12/2028 cae domingo: no va, aunque una carga lo incluya
+    const de2028 = { id: 13, tipo: 'vacaciones', desde: '2028-12-22', hasta: '2028-12-27', arranque: '2026-11-02' };
+    assert.deepEqual(fotosDelFeriado(repite, [de2028, de2027, VACACIONES, deOtra], []), [
+      { licencia_id: 4, fecha: '2026-12-24' }, { licencia_id: 10, fecha: '2026-12-24' }, { licencia_id: 12, fecha: '2027-12-24' }
+    ]);
+    // Un año que no rige no va; hasta_anio, tampoco más allá
+    assert.deepEqual(fotosDelFeriado({ ...repite, no_rige: [2026] }, [VACACIONES, de2027], []),
+      [{ licencia_id: 12, fecha: '2027-12-24' }]);
+    assert.deepEqual(fotosDelFeriado({ ...repite, hasta_anio: 2026 }, [VACACIONES, de2027], []),
+      [{ licencia_id: 10, fecha: '2026-12-24' }]);
+    // Uno que no se repite, solo su año
+    assert.deepEqual(fotosDelFeriado(ASUETO, [de2027], []), []);
+  });
+
+  it('sin cargas, con cargas que no sirven o con entradas raras: ninguna, y nunca tira', () => {
+    assert.deepEqual(fotosDelFeriado(ASUETO, [], []), []);
+    for (const cargas of [undefined, null, 'x', 3, {}, [null, 'x', 3, {}, []]]) {
+      assert.deepEqual(fotosDelFeriado(ASUETO, cargas, []), [], JSON.stringify(cargas));
+    }
+    for (const id of [0, -1, 1.5, null, undefined, 'abc', '', true]) {
+      assert.deepEqual(fotosDelFeriado(ASUETO, [{ ...VACACIONES, id }], []), [], String(id));
+    }
+    assert.deepEqual(fotosDelFeriado(ASUETO, [{ ...VACACIONES, desde: '2026-02-30' }], []), []);
+    assert.deepEqual(fotosDelFeriado(ASUETO, [{ ...VACACIONES, desde: '2027-01-09' }], []), []);
+    assert.deepEqual(fotosDelFeriado({ ...ASUETO, activo: 0 }, [VACACIONES], []), []);
+    const raras = [undefined, null, 'hola', 3, NaN, {}, [], [null], { fecha: 3, se_repite: 1, no_rige: 'x', hasta_anio: 'x' }];
+    for (const a of raras) {
+      for (const b of raras) {
+        assert.doesNotThrow(() => {
+          fotosDelFeriado(a, b, a, b);
+          fotosDelFeriado(a, [VACACIONES], b, { antes: a });
+          fotosDelFeriado(ASUETO, [VACACIONES], a, { antes: b });
+        }, `${JSON.stringify(a)} ${JSON.stringify(b)}`);
+      }
+    }
   });
 });

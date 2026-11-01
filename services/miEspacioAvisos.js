@@ -9,6 +9,8 @@
  * - Un solo email por persona y por corrida, siempre con `to: [email]`: sin destinatario, sendEmail manda a las casillas por
  *   defecto de la DGMIT.
  * - Si sale, se anota cada clave; si no, no se anota nada y sale en la próxima corrida del tramo.
+ * - Los días para restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 10) tienen dos avisos por grupo, desde que aparece y
+ *   desde 5 días hábiles antes del plazo; si los dos tocan el mismo día, va uno solo (el segundo) y se anotan las dos claves.
  * - Con el bloqueo `rpad_mi_espacio_avisos` (GET_LOCK, como las Notas Digitales): dos corridas a la vez (el cron y una a mano)
  *   no mandan el mismo email dos veces.
  */
@@ -62,15 +64,24 @@ const anotar = (usuarioId, claves) => {
   );
 };
 
-// Lo que vence pronto de una persona y todavía no se le avisó, con su email: `{ avisos, email }`, o null sin nada que mandar.
-// Todas sus licencias ocupan sus días: un franco o unas horas a favor sin ningún día libre en su mes no se nombran
+// Lo que vence pronto de una persona y todavía no se le avisó, con su email: `{ claves, email }` (`claves`, las que se anotan si
+// sale), o null sin nada que mandar. Todas sus licencias ocupan sus días: un franco o unas horas a favor sin ningún día libre en
+// su mes no se nombran. Si quedan los dos avisos de un mismo grupo por restituir (apareció ya en sus últimos 5 días hábiles, o
+// la persona volvió de licencia en ellos), el email dibuja uno solo, el segundo, y se anotan las dos claves: así no repite los
+// párrafos ni dice que va a llegar otro aviso
 const emailDe = ({ nombre_completo: nombreCompleto }, estado, { hoy, feriados, avisadas }) => {
   if (!estado?.modalidad) return null;
   const calculo = calcular(estado, { hoy, feriados });
-  const avisos = avisosDeVencimiento(calculo, { hoy, feriados, modalidad: estado.modalidad, ocupadas: estado.licencias })
+  const pendientes = avisosDeVencimiento(calculo, { hoy, feriados, modalidad: estado.modalidad, ocupadas: estado.licencias })
     .filter((aviso) => !avisadas.has(aviso.clave));
-  if (avisos.length === 0) return null;
-  return { avisos, email: vencimientoMiEspacioTemplate({ nombre_completo: nombreCompleto, avisos }) };
+  if (pendientes.length === 0) return null;
+  const conSegundo = new Set(pendientes.filter((aviso) => aviso.restitucion?.primero === false)
+    .map((aviso) => aviso.restitucion.grupo));
+  const avisos = pendientes.filter((aviso) => !(aviso.restitucion?.primero === true && conSegundo.has(aviso.restitucion.grupo)));
+  return {
+    claves: pendientes.map((aviso) => aviso.clave),
+    email: vencimientoMiEspacioTemplate({ nombre_completo: nombreCompleto, avisos })
+  };
 };
 
 // Le manda a cada persona lo suyo, y lo anota en `resultado`. Cada persona va aislada: un error inesperado al preparar su
@@ -106,7 +117,7 @@ const avisarATodas = async (resultado, { hoy, filas }) => {
     }
     resultado.enviados += 1;
     try {
-      await anotar(id, preparado.avisos.map((aviso) => aviso.clave));
+      await anotar(id, preparado.claves);
     } catch (error) {
       console.error('Error al anotar el aviso de Mi espacio:', error?.stack ?? error);
       resultado.errores.push({ usuario_id: id, error: error.message, motivo: MOTIVOS.anotacion });

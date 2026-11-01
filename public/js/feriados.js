@@ -10,9 +10,10 @@
 // solo sus modales, primero el de la baja. La lista la manda el servidor ya armada (GET /api/feriados: las fechas, el día de la
 // semana, el tipo y las aclaraciones); acá no se recalcula nada, y el modal corrige con la fecha guardada (fecha_guardada), nunca con
 // la del año que se mira (en uno que se repite, lo dice debajo de la fecha: ayudaDeLaFechaFeriado). Debajo de la fecha dice también
-// cuántas licencias de Mi espacio la incluyen (GET /feriados/afectadas, 300 ms después del último cambio de la fecha o de «Se
-// repite» hecho por quien usa el modal; abrirlo no lo pide). Escribe con API.pedirJson (POST, PUT y DELETE de /feriados; api.js no
-// cambió). #feriados-anuncio es la única región viva de la vista: lo que se vuelve a dibujar no lleva aria-live.
+// cuántas licencias de Mi espacio la incluyen y, de esas, cuántas vacaciones quedan con ese día para restituir y hasta cuándo (GET
+// /feriados/afectadas, 300 ms después del último cambio de la fecha o de «Se repite» hecho por quien usa el modal; abrirlo no lo
+// pide). Escribe con API.pedirJson (POST, PUT y DELETE de /feriados; api.js no cambió). #feriados-anuncio es la única región viva
+// de la vista: lo que se vuelve a dibujar no lleva aria-live.
 
 // =====================================================
 // El estado de la pestaña
@@ -393,13 +394,22 @@ const describedbyDeLaFechaFeriado = (actual, conAyuda, conAfectadas) => {
 // La espera después del último cambio de la fecha o de «Se repite» antes de pedir cuántas licencias de Mi espacio la incluyen
 const ESPERA_AFECTADAS_FERIADO = 300;
 
-// Debajo de la fecha, texto plano (va con textContent): cuántas licencias de Mi espacio incluyen el feriado, con lo que manda GET
-// /api/feriados/afectadas. Con 0, o con lo que no es una cantidad, nada
-const textoDeAfectadasFeriado = (cantidad) => {
+// Debajo de la fecha, texto plano (va con textContent): cuántas licencias de Mi espacio incluyen el feriado y, de esas, cuántas
+// vacaciones quedan con ese día para restituir con nota y hasta cuándo (spec 2026-10-31-mi-espacio-dias-restituidos, 9), con lo que
+// manda GET /api/feriados/afectadas (licencias_afectadas, vacaciones_para_restituir y plazo_de_restitucion, 'AAAA-MM-DD'). El texto lo
+// arma el navegador, sin copia del servidor, y no dice de quién. Sin licencias (0, o lo que no es una cantidad), nada; sin
+// vacaciones (0, null si el servidor no las pudo contar, o lo que no es una cantidad), el texto de antes; todas son vacaciones (más
+// vacaciones que licencias no pasa: cuentan como todas), «… lo incluye: son vacaciones, y …»; de los dos, «En 2 vacaciones, …» (con
+// una, «En unas vacaciones») y «la otra se recalcula» o «las otras N se recalculan». Sin un plazo que sea una fecha, sin «hasta …»
+const textoDeAfectadasFeriado = (cantidad, vacaciones = 0, plazo = null) => {
   if (!Number.isInteger(cantidad) || cantidad <= 0) return '';
-  return cantidad === 1
-    ? '1 licencia cargada lo incluye: sus días hábiles se recalculan.'
-    : `${String(cantidad)} licencias cargadas lo incluyen: sus días hábiles se recalculan.`;
+  const licencias = cantidad === 1 ? '1 licencia cargada lo incluye' : `${String(cantidad)} licencias cargadas lo incluyen`;
+  if (!Number.isInteger(vacaciones) || vacaciones <= 0) return `${licencias}: sus días hábiles se recalculan.`;
+  const queda = `ese día queda para restituir con nota${esFechaFeriado(plazo) ? ` hasta el ${fechaLargaFeriado(plazo)}` : ''}`;
+  if (vacaciones >= cantidad) return `${licencias}: son vacaciones, y ${queda}.`;
+  const resto = cantidad - vacaciones;
+  return `${licencias}. En ${vacaciones === 1 ? 'unas' : String(vacaciones)} vacaciones, ${queda}; `
+    + `${resto === 1 ? 'la otra se recalcula' : `las otras ${String(resto)} se recalculan`}.`;
 };
 
 // GET /feriados/afectadas con la fecha y «se repite» del modal y, al corregir, el id del feriado (su baja y sus años que no rigen los
@@ -803,20 +813,22 @@ function programarAfectadasFeriado() {
   temporizadorDeAfectadasFeriado = setTimeout(() => pedirAfectadasFeriado(sesion, turno), ESPERA_AFECTADAS_FERIADO);
 }
 
-// Pide cuántas licencias incluyen la fecha y «se repite» que tiene el modal ahora (sin una fecha, nada) y las muestra, si es la
-// respuesta del último pedido y el modal sigue siendo el mismo
+// Pide cuántas licencias incluyen la fecha y «se repite» que tiene el modal ahora (sin una fecha, nada), cuántas de esas son
+// vacaciones que quedan con ese día para restituir y el plazo, y lo muestra, si es la respuesta del último pedido y el modal sigue
+// siendo el mismo
 async function pedirAfectadasFeriado(sesion, turno) {
   temporizadorDeAfectadasFeriado = null;
   const ruta = rutaDeAfectadasFeriado(porIdFeriado('fe-fecha')?.value, porIdFeriado('fe-se-repite')?.checked === true, sesion.id);
   if (ruta === null) return;
-  let cantidad = null;
+  let datos = null;
   try {
-    cantidad = (await API.pedirJson('GET', ruta))?.data?.licencias_afectadas;
+    datos = (await API.pedirJson('GET', ruta))?.data;
   } catch {
     // Si el pedido falla, no se muestra nada: es un aviso, no frena el guardado
   }
   if (turno !== turnoDeAfectadasFeriado || modalDelFeriado !== sesion) return;
-  mostrarAfectadasFeriado(textoDeAfectadasFeriado(cantidad));
+  mostrarAfectadasFeriado(textoDeAfectadasFeriado(datos?.licencias_afectadas, datos?.vacaciones_para_restituir,
+    datos?.plazo_de_restitucion));
 }
 
 // «No rige» se ve al corregir uno que se repite mientras «Se repite» siga tildado; «Se pasó al», con «no rige» marcado

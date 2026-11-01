@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'fs';
 import * as plantillas from '../services/emailTemplates.js';
 import { remitente } from '../services/emailService.js';
-import { casosDeEmail, textoVisible } from './emails-fixtures.js';
+import { casosDeEmail, textoVisible, AVISO_DE_RESTITUCION } from './emails-fixtures.js';
 
 const casos = casosDeEmail(plantillas);
 const fuente = (archivo) => readFileSync(new URL(`../services/${archivo}`, import.meta.url), 'utf8');
@@ -319,6 +319,8 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     'aviso al superadmin': 'RPAD: cambio en los usuarios',
     'resumen de avisos retenidos': 'RPAD: cambios en los usuarios durante tu licencia',
     'vencimiento de Mi espacio': 'RPAD: lo que vence pronto en Mi espacio',
+    // Nuevo con los días restituidos de Mi espacio (spec 2026-10-31-mi-espacio-dias-restituidos, 10): solo, su propio asunto
+    'días para restituir': 'RPAD: tenés días para restituir en Mi espacio',
     // Nuevos con la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, 4)
     'evento: invitación': 'RPAD: te sumaron a un evento',
     'evento: cambio': 'RPAD: cambió un evento',
@@ -348,6 +350,8 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     'resumen de avisos retenidos': `${RPAD} Cambios en los usuarios durante tu licencia Mientras estabas de licencia hubo 2 cambios que te habrían llegado como aviso: 10 de noviembre de 2026 a las 10:00 h – Persona Admin (padmin): Persona Lectora (plectora): Desactivado 10 de noviembre de 2026 a las 12:30 h – Persona Admin (padmin): Persona Lectora (plectora): Lector → Administrador Ver el panel de usuarios Este resumen te llega porque sos superadmin y estos avisos no se enviaron durante tu licencia. ${PIE}`,
     // Nuevo con Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 9): sin el tipo de ninguna licencia médica
     'vencimiento de Mi espacio': `${RPAD} Lo que vence pronto Hola, Persona de Prueba. Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el viernes 30/10. Tenés 3 días de la licencia 2024: vence el 31/12/2026. Ver en Mi espacio Este aviso te llega una sola vez por cada cosa. Lo que cargás en Mi espacio lo ves solo vos. ${PIE}`,
+    // Nuevo con los días restituidos de Mi espacio (spec 2026-10-31-mi-espacio-dias-restituidos, 10): el email de la maqueta
+    'días para restituir': `${RPAD} Días para restituir Hola, Julieta Ferreyra. Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones del 11/12/2026 al 08/01/2027: tenés 2 días restituidos de la licencia 2024. Como esa licencia ya venció, tomalos todos juntos, empezando a más tardar el viernes 30/04/2027, con la nota al Director General. Si no, se pierden. En Mi espacio podés cargarlos y bajar la nota en Word. Ver en Mi espacio Te va a llegar otro aviso 5 días hábiles antes del plazo. Lo que cargás en Mi espacio lo ves solo vos. ${PIE}`,
     // Nuevos con la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, 4): el detalle va en su párrafo, después de la
     // línea del evento
     'evento: invitación': `${RPAD} Te sumaron a un evento Persona de Prueba te sumó a un evento: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00. Sala de reuniones del 2.º piso. Ver en Mi espacio Solo quien lo creó lo puede cambiar. Si cambia o se cancela, te llega otro email. ${PIE}`,
@@ -413,6 +417,182 @@ describe('El aviso de vencimiento de Mi espacio', () => {
     assert.ok(!html.includes('<img'));
     assert.equal(html.split('&lt;img src=x onerror=alert(1)&gt; &amp; más').length - 1, 2);
     assert.equal(text.split(raro).length - 1, 2);
+  });
+});
+
+// Los días para restituir en el aviso de vencimiento de Mi espacio (spec 2026-10-31-mi-espacio-dias-restituidos, 10): cada aviso
+// de restitución va con sus párrafos y sus negritas (escapados acá; las marcas las pone el código), solos llevan su asunto y su
+// título, y la nota del pie dice que va a llegar otro aviso solo si va el primero sin el segundo de su grupo
+describe('Los días para restituir en el aviso de Mi espacio', () => {
+  const NOMBRE = 'días para restituir';
+  // El segundo aviso del mismo grupo (desde 5 días hábiles antes del plazo) y un franco, otra cosa que vence
+  const SEGUNDO = {
+    ...AVISO_DE_RESTITUCION, clave: 'restitucion-1-2024-0-2', restitucion: { ...AVISO_DE_RESTITUCION.restitucion, primero: false }
+  };
+  const FRANCO = {
+    clave: 'franco-2027-04', texto: 'Tenés 1 franco compensatorio para usar en abril: el último día hábil es el viernes 30/04.'
+  };
+  const OTRO_AVISO = 'Te va a llegar otro aviso 5 días hábiles antes del plazo.';
+  const NOTA_DE_SIEMPRE = 'Este aviso te llega una sola vez por cada cosa. Lo que cargás en Mi espacio lo ves solo vos.';
+  const NOTA_CON_OTRO_AVISO = `${OTRO_AVISO} Lo que cargás en Mi espacio lo ves solo vos.`;
+  const PARRAFO = '<p style="margin: 12px 0 0 0; color: #2B3A4A; font-size: 14px; line-height: 1.6;">';
+  const email = (avisos, nombre = 'Julieta Ferreyra') => plantillas.vencimientoMiEspacioTemplate({ nombre_completo: nombre, avisos });
+
+  it('el email de la maqueta: el asunto, el título y cada párrafo en el suyo, con sus negritas en <strong>', () => {
+    const { email: { subject, html } } = casos.find(c => c.nombre === NOMBRE);
+    assert.equal(subject, 'RPAD: tenés días para restituir en Mi espacio');
+    assert.ok(html.includes('<title>Días para restituir</title>'));
+    assert.match(html, /<h2 [^>]*>Días para restituir<\/h2>/);
+    assert.ok(html.includes(`${PARRAFO}Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones del 11/12/2026 al 08/01/2027: `
+      + `tenés <strong>2 días restituidos de la licencia 2024</strong>.</p>${PARRAFO}Como esa licencia ya venció, tomalos todos `
+      + 'juntos, empezando a más tardar el <strong>viernes 30/04/2027</strong>, con la nota al Director General. Si no, se '
+      + `pierden.</p>${PARRAFO}En Mi espacio podés cargarlos y bajar la nota en Word.</p>`), html);
+    assert.match(html, /<a href="[^"]*\/mi-espacio\.html#resumen" [^>]*>Ver en Mi espacio<\/a>/);
+    assert.ok(html.includes(`>${NOTA_CON_OTRO_AVISO}</p>`), html);
+    assert.equal(html.split('<strong>').length - 1, 2);
+  });
+
+  it('el texto alternativo: el saludo, el texto de cada aviso en un renglón, el link y la nota del pie', () => {
+    const { email: { text } } = casos.find(c => c.nombre === NOMBRE);
+    assert.equal(text, [
+      'Hola, Julieta Ferreyra.',
+      '',
+      AVISO_DE_RESTITUCION.texto,
+      '',
+      `Ver en Mi espacio: ${plantillas.RPAD_URL}/mi-espacio.html#resumen`,
+      '',
+      NOTA_CON_OTRO_AVISO
+    ].join('\n'));
+    assert.ok(!text.includes('<'), text);
+  });
+
+  it('el segundo aviso, solo: su asunto y su título, sin «Te va a llegar otro aviso…» y con la nota de siempre', () => {
+    const { subject, html, text } = email([SEGUNDO]);
+    assert.equal(subject, 'RPAD: tenés días para restituir en Mi espacio');
+    assert.match(html, /<h2 [^>]*>Días para restituir<\/h2>/);
+    for (const parte of [html, text]) {
+      assert.ok(!parte.includes(OTRO_AVISO), parte);
+      assert.ok(parte.includes(NOTA_DE_SIEMPRE), parte);
+    }
+  });
+
+  it('los dos avisos de un mismo grupo juntos: sin «Te va a llegar otro aviso…»; uno de otro grupo, sí', () => {
+    for (const parte of Object.values(email([AVISO_DE_RESTITUCION, SEGUNDO]))) assert.ok(!parte.includes(OTRO_AVISO), parte);
+    // El primero de otro grupo (otra licencia de origen), con el segundo de este: va a llegar el segundo de ese otro
+    const deOtroGrupo = {
+      ...AVISO_DE_RESTITUCION, clave: 'restitucion-1-2025-0-1', restitucion: { ...AVISO_DE_RESTITUCION.restitucion, grupo: '1-2025-0' }
+    };
+    const { html, text } = email([SEGUNDO, deOtroGrupo]);
+    assert.ok(html.includes(`>${NOTA_CON_OTRO_AVISO}</p>`), html);
+    assert.ok(text.endsWith(NOTA_CON_OTRO_AVISO), text);
+  });
+
+  it('con otra cosa que vence (un franco): el asunto y el título de siempre, el franco en su renglón y la restitución con sus '
+    + 'párrafos', () => {
+    const { subject, html, text } = email([FRANCO, SEGUNDO]);
+    assert.equal(subject, 'RPAD: lo que vence pronto en Mi espacio');
+    assert.match(html, /<h2 [^>]*>Lo que vence pronto<\/h2>/);
+    assert.ok(textoVisible(html).includes(`Lo que vence pronto Hola, Julieta Ferreyra. ${FRANCO.texto} `
+      + `${AVISO_DE_RESTITUCION.texto} Ver en Mi espacio ${NOTA_DE_SIEMPRE}`), textoVisible(html));
+    assert.ok(html.includes(`${PARRAFO}${FRANCO.texto}</p>${PARRAFO}Los asuetos del 24`), html);
+    assert.ok(html.includes('<strong>viernes 30/04/2027</strong>'));
+    assert.equal(text, ['Hola, Julieta Ferreyra.', '', FRANCO.texto, AVISO_DE_RESTITUCION.texto, '',
+      `Ver en Mi espacio: ${plantillas.RPAD_URL}/mi-espacio.html#resumen`, '', NOTA_DE_SIEMPRE].join('\n'));
+    // Con el primero, la nota dice el otro aviso también acá
+    assert.ok(email([FRANCO, AVISO_DE_RESTITUCION]).text.endsWith(NOTA_CON_OTRO_AVISO));
+  });
+
+  it('el nombre y lo que viene en las partes van escapados en el HTML y tal cual en el texto; las marcas las pone el código',
+    () => {
+    const raro = '<img src=x onerror=alert(1)> & "más"';
+    const aviso = {
+      clave: 'restitucion-9-2024-0-1',
+      texto: `${raro} ${raro}`,
+      restitucion: { grupo: '9-2024-0', partes: [[raro, { negrita: raro }], ['<b>x</b>']], primero: true }
+    };
+    const { html, text } = email([aviso], raro);
+    assert.ok(!html.includes('<img'), html);
+    assert.ok(!html.includes('<b>'), html);
+    const escapado = '&lt;img src=x onerror=alert(1)&gt; &amp; &quot;más&quot;';
+    assert.ok(html.includes(`${PARRAFO}${escapado}<strong>${escapado}</strong></p>${PARRAFO}&lt;b&gt;x&lt;/b&gt;</p>`), html);
+    assert.equal(html.split(escapado).length - 1, 3);
+    assert.equal(text.split(raro).length - 1, 3);
+  });
+
+  // Dos grupos en el mismo email: dos licencias de origen de las mismas vacaciones (el 24/12, de la 2025, y el 31/12, de la 2026:
+  // los dos caso B) o uno de cada caso (el 24/12 de la 2024, caso A, y el 31/12 de la 2026, caso B). Cada aviso con sus partes,
+  // como las arma partesDelEmailDeRestitucion, y su texto
+  describe('con dos grupos, los párrafos de cierre iguales van una sola vez, al final de los de restitución', () => {
+    const DE_LAS_VACACIONES = 'cayó en tus vacaciones del 11/12/2026 al 08/01/2027: ';
+    const PLAZO = { negrita: 'viernes 30/04/2027' };
+    const CIERRE_B = 'En Mi espacio podés pedirla y bajar la nota en Word.';
+    const CIERRE_A = 'En Mi espacio podés cargarlo y bajar la nota en Word.';
+    const textoDe = (partes) => partes.map((p) => p.map((x) => (typeof x === 'string' ? x : x.negrita)).join('')).join(' ');
+    const avisoDe = (grupo, partes) => ({
+      clave: `restitucion-${grupo}-1`, texto: textoDe(partes), restitucion: { grupo, partes, primero: true }
+    });
+    const B = (anio, dia) => avisoDe(`1-${anio}-0`, [
+      [`El asueto del ${dia}/12/2026 ${DE_LAS_VACACIONES}podés pedir que te restituyan `,
+        { negrita: `1 día a tu licencia ${anio}` }, '.'],
+      ['Pedilo con la nota al Director General a más tardar el ', PLAZO, '. Si no, se pierde.'],
+      [CIERRE_B]
+    ]);
+    const A_2024 = avisoDe('1-2024-0', [
+      [`El asueto del 24/12/2026 ${DE_LAS_VACACIONES}tenés `, { negrita: '1 día restituido de la licencia 2024' }, '.'],
+      ['Como esa licencia ya venció, tomalo a más tardar el ', PLAZO, ', con la nota al Director General. Si no, se pierde.'],
+      [CIERRE_A]
+    ]);
+    const B_2025 = B(2025, 24);
+    const B_2026 = B(2026, 31);
+    // Los dos primeros párrafos de un aviso, en texto plano: lo que va sin el cierre
+    const sinElCierre = (aviso) => textoDe(aviso.restitucion.partes.slice(0, -1));
+    const veces = (texto, parte) => texto.split(parte).length - 1;
+
+    it('dos grupos B: «En Mi espacio podés pedirla…» una sola vez, después de los párrafos de los dos', () => {
+      const { subject, html, text } = email([B_2025, B_2026]);
+      assert.equal(subject, 'RPAD: tenés días para restituir en Mi espacio');
+      assert.equal(veces(html, CIERRE_B), 1, html);
+      assert.equal(textoVisible(html), 'RPAD Registro Permanente de Actualización de Datasets Días para restituir Hola, Julieta '
+        + `Ferreyra. ${sinElCierre(B_2025)} ${sinElCierre(B_2026)} ${CIERRE_B} Ver en Mi espacio ${NOTA_CON_OTRO_AVISO} `
+        + 'Dirección de Datos Públicos y Comunicación Municipalidad de Comodoro Rivadavia');
+      assert.ok(html.includes(`${PARRAFO}Pedilo con la nota al Director General a más tardar el <strong>viernes 30/04/2027`
+        + `</strong>. Si no, se pierde.</p>${PARRAFO}${CIERRE_B}</p>\n`), html);
+      // En el texto plano, un renglón por aviso, y el cierre una sola vez, al final del último
+      assert.equal(text, ['Hola, Julieta Ferreyra.', '', sinElCierre(B_2025), `${sinElCierre(B_2026)} ${CIERRE_B}`, '',
+        `Ver en Mi espacio: ${plantillas.RPAD_URL}/mi-espacio.html#resumen`, '', NOTA_CON_OTRO_AVISO].join('\n'));
+    });
+
+    it('uno A y uno B: cada cierre una vez, en el orden de sus avisos, después de los párrafos de los dos', () => {
+      const { html, text } = email([A_2024, B_2026]);
+      assert.equal(veces(html, CIERRE_A), 1, html);
+      assert.equal(veces(html, CIERRE_B), 1, html);
+      assert.ok(textoVisible(html).includes(`Hola, Julieta Ferreyra. ${sinElCierre(A_2024)} ${sinElCierre(B_2026)} ${CIERRE_A} `
+        + `${CIERRE_B} Ver en Mi espacio`), textoVisible(html));
+      assert.ok(html.includes(`${PARRAFO}${CIERRE_A}</p>${PARRAFO}${CIERRE_B}</p>\n`), html);
+      assert.equal(text.split('\n')[2], sinElCierre(A_2024));
+      assert.equal(text.split('\n')[3], `${sinElCierre(B_2026)} ${CIERRE_A} ${CIERRE_B}`);
+      for (const cierre of [CIERRE_A, CIERRE_B]) assert.equal(veces(text, cierre), 1, text);
+    });
+
+    it('con un franco antes: el franco en su párrafo y los cierres al final de los de restitución', () => {
+      const { subject, html } = email([FRANCO, B_2025, B_2026]);
+      assert.equal(subject, 'RPAD: lo que vence pronto en Mi espacio');
+      assert.ok(textoVisible(html).includes(`Hola, Julieta Ferreyra. ${FRANCO.texto} ${sinElCierre(B_2025)} ${sinElCierre(B_2026)} `
+        + `${CIERRE_B} Ver en Mi espacio`), textoVisible(html));
+    });
+
+    it('un solo grupo queda igual: sus tres párrafos y, en el texto plano, su texto', () => {
+      const { html, text } = email([B_2025]);
+      assert.ok(textoVisible(html).includes(`Hola, Julieta Ferreyra. ${B_2025.texto} Ver en Mi espacio`), textoVisible(html));
+      assert.equal(text.split('\n')[2], B_2025.texto);
+    });
+  });
+
+  it('un aviso de restitución sin partes que sirvan se dibuja con su texto, en un párrafo', () => {
+    const sinPartes = { ...AVISO_DE_RESTITUCION, restitucion: { ...AVISO_DE_RESTITUCION.restitucion, partes: [] } };
+    const { html } = email([sinPartes]);
+    assert.ok(html.includes(`${PARRAFO}${AVISO_DE_RESTITUCION.texto}</p>`), html);
+    assert.ok(!html.includes('<strong>'), html);
   });
 });
 

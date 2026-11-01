@@ -24,8 +24,9 @@
  *   de un feriado (`validarFeriado`, y `errorDeLaCorreccion` en una corrección), de «no rige» (`validarRige`) y de la baja
  *   desde un año (`bajaDesde`), la lista de un año (`feriadosDelAnio`), los avisos al guardar (`avisosDeLaFecha`), los
  *   años del selector (`aniosDelSelector`), las fechas en que rige uno en un rango de años (`fechasDelFeriado`) y, de ellas, las
- *   que cambian un día hábil (`fechasQueCambianDiasHabiles`: con esas se cuentan las licencias de Mi espacio que lo incluyen).
- *   Los textos son planos: escaparlos le toca a quien los dibuja.
+ *   que cambian un día hábil (`fechasQueCambianDiasHabiles`: con esas se cuentan las licencias de Mi espacio que lo incluyen
+ *   y, de esas, los días de las vacaciones ya cargadas que deja por restituir, `fotosDelFeriado`: la foto de la spec
+ *   2026-10-31-mi-espacio-dias-restituidos, 6). Los textos son planos: escaparlos le toca a quien los dibuja.
  * `FERIADOS_FIJOS` es un array que se puede modificar: acá nunca se le escribe y se recorre una copia.
  *
  * Una fila es la de `services/feriadosDatos.js`: `{ id, fecha, nombre, tipo, trasladado_de, se_repite, hasta_anio, activo,
@@ -210,6 +211,60 @@ export const fechasQueCambianDiasHabiles = (fila, desdeAnio, hastaAnio, otrasFil
   if (fechas.length === 0) return [];
   const otros = feriadosDelRango(otrasFilas, fechas[0], fechas.at(-1));
   return fechas.filter((fecha) => esDiaHabilCon(fecha, otros));
+};
+
+// Las cargas de Mi espacio que tienen foto: las vacaciones y, en la recursión, los días restituidos (spec
+// 2026-10-31-mi-espacio-dias-restituidos, 4). Es la lista de `cargasParaLaFoto` (services/miEspacioDatos.js), y un test la ata a
+// `TIPOS_CON_RESTITUIBLES` de services/miEspacioReglas.js (no se importa de ahí: miEspacioReglas importa de este archivo)
+export const TIPOS_CON_FOTO = Object.freeze(['vacaciones', 'restituidos']);
+// El id de una carga: un entero positivo, como número o como texto de cifras; lo demás (un booleano, '', 1.5), null
+const idDeCarga = (valor) => {
+  if (typeof valor !== 'number' && typeof valor !== 'string') return null;
+  return /^[1-9]\d*$/.test(String(valor)) ? Number(valor) : null;
+};
+
+/**
+ * La foto de los días por restituir que saca un feriado al cargarlo o corregirlo (spec 2026-10-31-mi-espacio-dias-restituidos,
+ * 4 y 6): `[{ licencia_id, fecha }]`, por fecha y después por carga, con cada fecha en que el feriado deja de hacer hábil un día
+ * (`fechasQueCambianDiasHabiles(fila, desdeAnio, hastaAnio, otrasFilas)`, con los años de las cargas: uno que se repite, cada
+ * año en que rige dentro de ellas) que una carga incluye. Las cargas, `{ id, tipo, desde, hasta, arranque }` (las de
+ * `cargasParaLaFoto`, services/miEspacioDatos.js): solo las de vacaciones o de días restituidos, con fechas que son fechas y,
+ * en unas vacaciones, la fecha del arranque de su persona en adelante (sin arranque, ninguna: lo de antes no descuenta). Con
+ * `antes` (la fila antes de corregirla), solo las fechas nuevas: las que ya tenía (`fechasDelFeriado(antes, …)`) no van, así
+ * renombrarlo no fotografía las cargas que se hicieron después. `otrasFilas` va sin la fila misma. Con una fila, unas cargas o
+ * unas opciones que no sirven, []; nunca tira.
+ * @param {object} fila la del feriado como quedó guardado (la forma de `filasDeFeriados`)
+ * @param {object[]} cargas
+ * @param {object[]} otrasFilas los demás feriados activos
+ * @param {{ antes?: object | null }} [opciones]
+ * @returns {{ licencia_id: number, fecha: string }[]}
+ */
+export const fotosDelFeriado = (fila, cargas, otrasFilas, opciones) => {
+  const antes = esObjeto(opciones) && esObjeto(opciones.antes) ? opciones.antes : null;
+  const porId = new Map();
+  for (const carga of Array.isArray(cargas) ? cargas : []) {
+    if (!esObjeto(carga) || !TIPOS_CON_FOTO.includes(carga.tipo)) continue;
+    const id = idDeCarga(carga.id);
+    const { desde, hasta } = carga;
+    if (id !== null && esFechaIso(desde) && esFechaIso(hasta) && desde <= hasta && !porId.has(id)) {
+      porId.set(id, { id, tipo: carga.tipo, desde, hasta, arranque: esFechaIso(carga.arranque) ? carga.arranque : null });
+    }
+  }
+  if (porId.size === 0) return [];
+  const validas = [...porId.values()].sort((a, b) => a.id - b.id);
+  const desdeAnio = Math.min(...validas.map((carga) => anioDe(carga.desde)));
+  const hastaAnio = Math.max(...validas.map((carga) => anioDe(carga.hasta)));
+  const yaTenia = new Set(antes === null ? [] : fechasDelFeriado(antes, desdeAnio, hastaAnio));
+  const fotos = [];
+  for (const fecha of fechasQueCambianDiasHabiles(fila, desdeAnio, hastaAnio, otrasFilas)) {
+    if (yaTenia.has(fecha)) continue;
+    for (const carga of validas) {
+      if (fecha < carga.desde || fecha > carga.hasta) continue;
+      if (carga.tipo === 'vacaciones' && (carga.arranque === null || fecha < carga.arranque)) continue;
+      fotos.push({ licencia_id: carga.id, fecha });
+    }
+  }
+  return fotos;
 };
 
 // Los días hábiles de desde a hasta, los dos incluidos (diasHabilesTranscurridos no cuenta el primero). [] si hasta es

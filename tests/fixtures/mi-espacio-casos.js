@@ -5,6 +5,7 @@
 // Cada caso es `{ persona, estado }`: `persona`, con las columnas de `usuarios` que usa Mi espacio; `estado`, el `Estado` de
 // services/miEspacioReglas.js, solo con las filas activas. Hoy, para los dos, es HOY, el lunes 26/10/2026, que es también el
 // día del arranque. Los feriados son los 9 fijos y ninguno de la tabla (SIN_FERIADOS, que nadie modifica).
+// Al final, un tercer caso, el de los días restituidos (JULIETA, con su hoy y sus feriados: ASUETOS).
 // Los casos están congelados: un test que necesita otro dato arma una copia.
 
 const congelado = (valor) => {
@@ -105,5 +106,39 @@ export const CONTRATO = congelado({
       // Octubre: 4 h
       { id: 4, fecha: '2026-10-21', entrada: null, salida: '19:00', nota: null }
     ]
+  }
+});
+
+// Julieta Ferreyra, la persona inventada de la maqueta de los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos,
+// 5): planta permanente y administradora, 20 días por año, arranque el lunes 02/11/2026 y un saldo de 19 días de la 2024, 15
+// de la 2025 y 10 de la 2026. Tiene vacaciones del viernes 11/12/2026 al viernes 08/01/2027: 19 días hábiles, todos de la
+// 2024 (vence el 31/12/2026). El martes 22/12/2026, con las vacaciones ya cargadas, administración cargó los asuetos del
+// jueves 24 y del jueves 31/12/2026 (ASUETOS, los únicos feriados de la tabla: los 9 fijos los pone esDiaHabil), así que la
+// foto (`restituibles`) guarda esos dos días, todavía sin tanda ni pedido. Su hoy depende del momento de la maqueta: el
+// 22/12/2026, el día de los asuetos, o el lunes 11/01/2027, cuando vuelve
+export const ASUETOS = new Set(['2026-12-24', '2026-12-31']);
+
+export const JULIETA = congelado({
+  persona: {
+    id: 3, nombre_completo: 'Julieta Ferreyra', rol: 'admin', vinculo: 'planta_permanente',
+    email: 'julieta.ferreyra@rpad.test', activo: 1
+  },
+  estado: {
+    modalidad: 'planta',
+    arranque: '2026-11-02',
+    anios: [{ anio: 2026, dias_vacaciones: 20, estudios: null }],
+    saldos: [
+      { concepto: 'vacaciones', anio: 2024, cantidad: 19 },
+      { concepto: 'vacaciones', anio: 2025, cantidad: 15 },
+      { concepto: 'vacaciones', anio: 2026, cantidad: 10 }
+    ],
+    licencias: [{ id: 1, tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08', horas: null }],
+    horasExtras: [],
+    salidas: [],
+    restituibles: [
+      { id: 1, licencia_id: 1, feriado_id: 1, fecha: '2026-12-24', tanda: null, restitucion_id: null },
+      { id: 2, licencia_id: 1, feriado_id: 2, fecha: '2026-12-31', tanda: null, restitucion_id: null }
+    ],
+    restituciones: []
   }
 });

@@ -1,6 +1,27 @@
 // Datos de ejemplo para las plantillas de services/emailTemplates.js: una entrada por email del sistema
 // (las Notas Digitales tienen su propio armado y no están acá). Los usa tests/email-diseno.test.js.
 
+// El primer aviso de los días para restituir de Julieta Ferreyra, la persona inventada de la maqueta (spec
+// 2026-10-31-mi-espacio-dias-restituidos, 5 y 10), como lo arma avisosDeVencimiento (services/miEspacioReglas.js) el lunes
+// 11/01/2027: sus párrafos por partes (un texto o { negrita }) y, en `texto`, los mismos en texto plano
+export const AVISO_DE_RESTITUCION = Object.freeze({
+  clave: 'restitucion-1-2024-0-1',
+  texto: 'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones del 11/12/2026 al 08/01/2027: tenés 2 días restituidos '
+    + 'de la licencia 2024. Como esa licencia ya venció, tomalos todos juntos, empezando a más tardar el viernes 30/04/2027, '
+    + 'con la nota al Director General. Si no, se pierden. En Mi espacio podés cargarlos y bajar la nota en Word.',
+  restitucion: Object.freeze({
+    grupo: '1-2024-0',
+    partes: [
+      ['Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones del 11/12/2026 al 08/01/2027: tenés ',
+        { negrita: '2 días restituidos de la licencia 2024' }, '.'],
+      ['Como esa licencia ya venció, tomalos todos juntos, empezando a más tardar el ', { negrita: 'viernes 30/04/2027' },
+        ', con la nota al Director General. Si no, se pierden.'],
+      ['En Mi espacio podés cargarlos y bajar la nota en Word.']
+    ],
+    primero: true
+  })
+});
+
 // Cada caso: { nombre, email: { subject, html, text? }, boton }. boton: si el email tiene un botón
 export const casosDeEmail = (t) => {
   const cambios = [
@@ -68,6 +89,12 @@ export const casosDeEmail = (t) => {
           { clave: 'licencia-2024', texto: 'Tenés 3 días de la licencia 2024: vence el 31/12/2026.' }
         ]
       }),
+      boton: true
+    },
+    // El email de la maqueta de los días restituidos: el primer aviso, solo
+    {
+      nombre: 'días para restituir',
+      email: t.vencimientoMiEspacioTemplate({ nombre_completo: 'Julieta Ferreyra', avisos: [AVISO_DE_RESTITUCION] }),
       boton: true
     },
     { nombre: 'evento: invitación', email: t.eventoInvitacionTemplate({ creador: 'Persona de Prueba', evento }), boton: true },

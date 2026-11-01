@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuración, feriado sobre unas vacaciones - RPAD (maqueta)</title>
+    <!-- MAQUETA (31/10/2026), los días restituidos por un asueto, con datos inventados. La carcasa y main.css son
+         los de la página real; pagina.css (o config.css) es el <style> real copiado sin cambios; lo que ya existe (la banda, «Vence
+         pronto», la lista, la nota) lo arman las funciones reales de public/js/mi-espacio.js y services/ con los datos (datos.js, generado fuera del repo);
+         lo nuevo lleva la clase mq-nuevo y está en propuesta.css. La barra oscura de abajo es de la maqueta. -->
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="config.css">
+    <link rel="stylesheet" href="propuesta.css">
+</head>
+<body>
+        <div class="app-container">
+        <!-- Header (con sesión de administración: lo que pone main.js, con la campanita de los cambios pendientes) -->
+        <header class="header header--con-sesion">
+            <div class="header-left">
+                <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir el menú" aria-controls="sidebar" aria-expanded="false">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+                </button>
+                <a href="#" class="header-marca">
+                    <img src="img/logo.png" alt="Municipalidad de Comodoro Rivadavia" class="header-logo">
+                    <span class="header-marca-texto">
+                        <span class="header-title">RPAD</span>
+                        <span class="header-subtitle">Registro Permanente de Actualización de Datasets</span>
+                    </span>
+                </a>
+            </div>
+            <nav class="header-nav" aria-label="Principal">
+                <a href="#">Inicio</a>
+                <a href="#">Datasets</a>
+                <a href="#">Calendario</a>
+                <a href="#">Contacto</a>
+            </nav>
+            <div class="header-right" id="header-actions">
+                <a href="#" class="header-notification" id="header-notification" title="Cambios pendientes">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                    <span class="header-notification-badge" id="header-notification-badge"></span>
+                </a>
+                <a href="#" class="header-user" title="Mi Perfil">
+                    <div class="header-user-info">
+                        <div class="header-user-name">Julieta Ferreyra</div>
+                        <div class="header-user-role">Superadmin</div>
+                    </div>
+                    <div class="header-user-avatar">JF</div>
+                </a>
+                <button class="btn btn-secondary btn-sm" type="button" data-maqueta-accion="Salir">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                    Salir
+                </button>
+            </div>
+        </header>
+
+        <!-- Sidebar Overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar" aria-label="Menú">
+            <div class="sidebar-header">
+                <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="sidebar-logo">
+            </div>
+            <nav class="sidebar-nav">
+                <div class="sidebar-section" id="sidebarPrincipal">
+                    <div class="sidebar-section-title">Principal</div>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Inicio</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg><span>Datasets</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg><span>Calendario</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Contacto</span></a>
+                </div>
+                <div class="sidebar-section" id="sidebarAdmin">
+                    <div class="sidebar-section-title">Administración</div>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>Gestión de Datasets</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Correos</span></a>
+                    <a href="#" class="sidebar-link active"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Configuración</span></a>
+                </div>
+                <div class="sidebar-section" id="sidebarTools">
+                    <div class="sidebar-section-title">Herramientas</div>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Métricas y Reportes</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg><span>Notas</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M8 10v4"/><path d="M12 10v2"/><path d="M16 10v6"/></svg><span>Proyectos</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span>Seguimiento</span></a>
+                </div>
+                <div class="sidebar-section" id="sidebarAccount">
+                    <div class="sidebar-section-title">Mi cuenta</div>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Mi Perfil</span></a>
+                    <a href="#" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg><span>Mi espacio</span></a>
+                </div>
+            </nav>
+        </aside>
+
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="page-header">
+                <h1 class="page-title"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>Configuración</h1>
+                <button type="button" class="btn btn-primary"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Nuevo feriado</button>
+            </div>
+            <div class="usuario-pestanas pagina-pestanas" role="tablist">
+                <button type="button" class="usuario-pestana" role="tab" aria-selected="false">Usuarios</button>
+                <button type="button" class="usuario-pestana" role="tab" aria-selected="false">Licencias</button>
+                <button type="button" class="usuario-pestana" role="tab" aria-selected="false">Áreas</button>
+                <button type="button" class="usuario-pestana activa" role="tab" aria-selected="true">Feriados</button>
+            </div>
+            <div id="vista-feriados">
+                <p class="fe-aviso"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>Estos feriados, junto con los 9 fijos, son los días no hábiles de todo el sistema: esos días no sale ninguna nota ni ningún email automático, y no cuentan como días hábiles en las licencias, Mi espacio ni Métricas.</span></p>
+                <section class="ar-tarjeta" aria-labelledby="titulo-feriados">
+                    <div class="ar-cabeza fe-cabeza">
+                        <h2 id="titulo-feriados">Feriados y días no laborables de 2026</h2>
+                        <div class="fe-anios" id="feriados-anio" role="group" aria-label="Año"></div>
+                    </div>
+                    <div class="ar-chips" id="feriados-filtros" role="group" aria-label="Filtrar feriados"></div>
+                    <div id="feriados-lista"></div>
+                </section>
+            </div>
+            <footer class="footer">
+                <div class="footer-cuerpo">
+                    <div class="footer-marca">
+                        <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="footer-logo">
+                        <p class="footer-direccion">Dirección de Datos Públicos y Comunicación</p>
+                        <p>D. G. de Modernización e Investigación Territorial<br>Subsecretaría de Modernización y Transparencia</p>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">El registro</h2>
+                        <ul>
+                            <li><a href="#">Inicio</a></li>
+                            <li><a href="#">Datasets</a></li>
+                            <li><a href="#">Calendario</a></li>
+                            <li><a href="#">Contacto</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Datos abiertos</h2>
+                        <ul>
+                            <li><a href="https://datos.comodoro.gov.ar" target="_blank" rel="noopener">datos.comodoro.gov.ar</a></li>
+                            <li>Licencia CC BY-SA 4.0</li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Marco legal</h2>
+                        <ul>
+                            <li>Ordenanza N° 17.662/23, artículo 8°</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <span>© <span id="footer-anio">2026</span> Secretaría de Gobierno, Modernización y Transparencia. Municipalidad de Comodoro Rivadavia</span>
+                    <span>RPAD v2.0.0</span>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <div class="modal-overlay active" id="modal-feriado">
+        <div class="modal ar-modal fe-modal" role="dialog" aria-modal="true" aria-labelledby="modal-feriado-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-feriado-titulo">Nuevo feriado</h2>
+                <button type="button" class="modal-close" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="fe-fecha">Fecha <span class="requerido" aria-hidden="true">*</span></label>
+                        <div class="fe-con-dia">
+                            <input type="date" id="fe-fecha" class="form-input" value="2026-12-24" aria-describedby="fe-fecha-dia fe-fecha-afectadas">
+                            <span class="fe-dia" id="fe-fecha-dia"></span>
+                        </div>
+                        <p class="form-hint mq-nuevo" id="fe-fecha-afectadas"></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="fe-nombre">Nombre <span class="requerido" aria-hidden="true">*</span></label>
+                        <input type="text" id="fe-nombre" class="form-input" value="Asueto administrativo municipal" autocomplete="off">
+                    </div>
+                </div>
+                <fieldset class="ar-ambito-grupo" id="fe-tipo">
+                    <legend class="form-label">Tipo <span class="requerido" aria-hidden="true">*</span></legend>
+                    <div class="ar-ambitos" id="fe-tipo-opciones"></div>
+                </fieldset>
+                <div class="form-group fe-mitad">
+                    <label class="form-label" for="fe-trasladado">Trasladado del <span class="fe-opcional">(opcional)</span></label>
+                    <input type="date" id="fe-trasladado" class="form-input" aria-describedby="fe-trasladado-ayuda">
+                    <p class="form-hint" id="fe-trasladado-ayuda">La fecha original de un trasladable, del mismo año.</p>
+                </div>
+                <div class="form-group">
+                    <label class="fe-casilla"><input type="checkbox" id="fe-se-repite"><span><b>Se repite todos los años, el mismo día</b><small>Para los de fecha fija, como el aniversario de la ciudad. Los móviles se cargan año por año.</small></span></label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="fe-pie-izquierda"><small>Siempre el día entero</small></div>
+                <div class="botones">
+                    <button type="button" class="ar-btn ar-btn-borde">Cancelar</button>
+                    <button type="button" class="ar-btn ar-btn-tinta">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mq-barra" role="region" aria-label="Controles de la maqueta">
+        <span class="mq-rotulo">Maqueta</span>
+        <div class="mq-botones" id="mq-botones"><a href="index.html#al-volver">← Mi espacio</a><button type="button" data-mq-afectadas="1" aria-pressed="true">Con 1 licencia</button><button type="button" data-mq-afectadas="3" aria-pressed="false">Con 3 licencias</button></div>
+        <p class="mq-idea" id="mq-idea">Martes 22/12/2026: administración carga el asueto del 24/12 en Configuración → Feriados. Debajo de la fecha, lo nuevo: cuántas licencias lo incluyen y, de esas, cuántas son vacaciones a las que el día les queda para restituir y hasta cuándo (el último día hábil de abril de 2027), sin decir de quién.</p>
+        <p class="mq-nota">Julieta Ferreyra, inventada (planta permanente, admin), con hoy el 01/04/2027. Vacaciones del 11/12/2026 al 08/01/2027 y asuetos inventados el 24 y el 31/12/2026. Caso A: 19 días de la 2024 (vence el 31/12/2026); caso B: de la 2025 (vence el 31/12/2027). Lo nuevo va con borde punteado amarillo <button type="button" id="mq-marcas" aria-pressed="true">Marcas: sí</button></p>
+    </div>
+    <div class="mq-aviso" id="mq-aviso" role="status" aria-live="polite"></div>
+    <script src="datos-feriados.js"></script>
+    <script src="maqueta-feriados.js"></script>
+</body>
+</html>

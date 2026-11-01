@@ -13,22 +13,30 @@
  * `notaDeLicencia` da `{ nota }` o `{ error }`, con `error` una clave de `MENSAJES_NOTA`: 'sinNota' (el uso autorizado o un
  * tipo que no tiene nota), 'sinDiasHabiles' (una licencia de días sin ningún día hábil: un feriado cargado después cayó
  * sobre ella) o 'error' (una licencia, una fecha o una persona que no sirven: no puede salir de la base).
+ *
+ * Los días restituidos por un asueto (spec 2026-10-31-mi-espacio-dias-restituidos, 12): unas vacaciones y una carga de días
+ * restituidos suman a sus días hábiles sus días restituibles (`restituibles`, los de `restituiblesDe`), así la nota sigue
+ * diciendo los días que se pidieron aunque después un asueto caiga en ellas; la carga de los días restituidos (la nota A)
+ * dice además de qué licencia salen y por qué asuetos (`restitucion`), y el pedido de restitución (la nota B) tiene su propia
+ * nota, `notaDeRestitucion`, con la misma estructura (así `htmlDeLaNota` y el Word no cambian).
  */
 import { diasHabilesDe, diaDeLaSemana } from './feriadosReglas.js';
 import { esFechaIso, formatoCorto, formatoLargo } from './notasDigitalesCalendario.js';
 import { RENGLON_FIRMA_CONTRATADO, escapeHtml } from './notasDigitalesContenido.js';
 import {
-  TIPOS_LICENCIA, MESES_HASTA_EL_FRANCO, MESES_HASTA_LAS_HORAS, mesMas, mesEnFrase, nombreDelMes, horasDeLaSalida
+  TIPOS_LICENCIA, MESES_HASTA_EL_FRANCO, MESES_HASTA_LAS_HORAS, mesMas, mesEnFrase, nombreDelMes, horasDeLaSalida,
+  TIPOS_CON_RESTITUIBLES
 } from './miEspacioReglas.js';
 
 // Los tipos que tienen nota: todos menos el uso autorizado (decisión del usuario, «por ahora»), en el orden de TIPOS_LICENCIA
+// (con los días restituidos al final: spec 2026-10-31-mi-espacio-dias-restituidos, 12)
 export const TIPOS_CON_NOTA = Object.freeze(TIPOS_LICENCIA.filter((tipo) => tipo !== 'uso_autorizado'));
 
 // Cómo se nombra cada tipo en el archivo: «Nota de licencia - <tipo> - <desde>.docx»
 export const NOMBRES_DEL_ARCHIVO = Object.freeze({
   vacaciones: 'Licencia anual ordinaria', franquicia: 'Franquicia', estudios: 'Estudios', medica: 'Atención médica',
   familiar: 'Atención del grupo familiar', medica_extraordinaria: 'Médica extraordinaria', franco: 'Franco compensatorio',
-  horas_a_favor: 'Horas a favor'
+  horas_a_favor: 'Horas a favor', restituidos: 'Días restituidos'
 });
 
 // Los mensajes de las rutas, por la clave del error de notaDeLicencia (sinNota es un 404, sinDiasHabiles un 409 y error un 500)
@@ -142,6 +150,39 @@ const textoDeLosDiasSumados = (fechas, mes) => {
   return `las del ${lista} de ${mesEnFrase(mes)}`;
 };
 
+// Unas fechas de asuetos, por fecha y sin repetir (lo que no es una fecha no va)
+const fechasDeAsuetos = (fechas) => [...new Set(listaDe(fechas).filter(esFechaIso))].sort();
+// Los nombres unidos con «, » y « y »: «a», «a y b», «a, b y c»
+const unidos = (partes) => (partes.length <= 1 ? partes.join('') : `${partes.slice(0, -1).join(', ')} y ${partes.at(-1)}`);
+
+/**
+ * Los asuetos que restituye una nota, para seguir a «por el asueto» o «a los asuetos» (spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 12), por fecha y sin repetir (lo que no es una fecha no va): cada día con el de la
+ * semana, los de un mismo mes juntos con su mes y el año al final de cada año: «de los días jueves 24 y jueves 31 de diciembre
+ * de 2026», «de los días miércoles 24, viernes 26 y miércoles 31 de diciembre de 2025 y viernes 2 de enero de 2026», «de los
+ * días lunes 30 de noviembre y jueves 24 de diciembre de 2026». Uno solo: «del día jueves 24 de diciembre de 2026». Sin
+ * ninguno, o con lo que no es una lista, ''.
+ */
+export const textoDeLosAsuetos = (fechas) => {
+  const lista = fechasDeAsuetos(fechas);
+  if (lista.length === 0) return '';
+  // Los meses, en orden, con sus días: «jueves 24 y jueves 31 de diciembre», y el año si el mes que sigue es de otro año
+  const meses = [];
+  for (const fecha of lista) {
+    const mes = fecha.slice(0, 7);
+    if (meses.at(-1)?.mes !== mes) meses.push({ mes, dias: [] });
+    meses.at(-1).dias.push(`${diaDeLaSemana(fecha)} ${Number(fecha.slice(8))}`);
+  }
+  const partes = meses.map(({ mes, dias }, indice) => {
+    const conAnio = meses[indice + 1]?.mes.slice(0, 4) !== mes.slice(0, 4);
+    return `${unidos(dias)} de ${conAnio ? mesEnFrase(mes) : nombreDelMes(mes)}`;
+  });
+  return `${lista.length === 1 ? 'del día' : 'de los días'} ${unidos(partes)}`;
+};
+
+// Un año de una licencia ordinaria, el que se escribe en «mi licencia anual ordinaria 2024»: un entero de cuatro cifras
+const esAnioDeLicencia = (anio) => Number.isInteger(anio) && anio >= 1000 && anio <= 9999;
+
 // «licencia por examen por dos (2) días hábiles, a partir del día …»
 const porDias = (licencia, dias) => {
   const cantidad = textoDeDias(dias.length);
@@ -184,10 +225,44 @@ const CUERPOS = Object.freeze({
       : ` (incluidas ${textoDeLosDiasSumados(sumados, delMes)}, sumadas a ${nombreDelMes(mesDeLasHoras)})`;
     return `el usufructo de ${texto} a favor el día ${conElDia(desde)}, ${correspondientesALasHoras(horas)} a las horas `
       + `extras realizadas en ${mesEnFrase(mesDeLasHoras)}${incluidas}.`;
+  },
+  // La nota A (spec 2026-10-31-mi-espacio-dias-restituidos, 12): los días de la carga, de qué licencia salen y por qué asuetos
+  // (`restitucion`, ya controlada). «restituido(s)» concuerda con los días y «el asueto … declarado» o «los asuetos …
+  // declarados», con los asuetos, declarados durante la carga de la que salen: «mis vacaciones» o, en la recursión (el asueto
+  // cayó en una carga de días restituidos), «mis días restituidos», como el aviso y el email
+  restituidos: ({ dias, restitucion }) => {
+    const cantidad = textoDeDias(dias.length);
+    if (!cantidad) return null;
+    const unAsueto = restitucion.fechas.length === 1;
+    const durante = restitucion.durante === 'restituidos' ? 'mis días restituidos' : 'mis vacaciones';
+    return `el usufructo de ${cantidad} de mi licencia anual ordinaria ${restitucion.anio}, `
+      + `${dias.length === 1 ? 'restituido' : 'restituidos'} por ${unAsueto ? 'el asueto' : 'los asuetos'} `
+      + `${textoDeLosAsuetos(restitucion.fechas)}, ${unAsueto ? 'declarado' : 'declarados'} durante ${durante}, `
+      + `${cuandoEmpieza(dias)}.`;
   }
 });
 // Los tipos que cuentan días hábiles; el resto es de un día
-const TIPOS_DE_DIAS = Object.freeze(['vacaciones', 'estudios', 'medica', 'familiar', 'medica_extraordinaria']);
+const TIPOS_DE_DIAS = Object.freeze(['vacaciones', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'restituidos']);
+
+// Los días de una licencia de días: sus días hábiles con los feriados y, en las vacaciones y los días restituidos
+// (`TIPOS_CON_RESTITUIBLES` de miEspacioReglas.js), sus días restituibles que caen dentro de sus fechas, que cuentan como
+// hábiles. Por fecha y sin repetir
+const diasDeLaLicencia = ({ tipo, desde, hasta }, feriados, restituibles) => {
+  const habiles = diasHabilesDe(desde, hasta, feriados);
+  if (!TIPOS_CON_RESTITUIBLES.includes(tipo)) return habiles;
+  const suyos = listaDe(restituibles).filter((fecha) => esFechaIso(fecha) && fecha >= desde && fecha <= hasta);
+  return suyos.length === 0 ? habiles : [...new Set([...habiles, ...suyos])].sort();
+};
+
+// Los asuetos que restituye una carga de días restituidos (`{ anio, fechas, durante }`), controlados: el año de cuatro cifras y
+// al menos una fecha (las demás no van); si no sirven, null. `durante`, el tipo de la carga de la que salen los días: 'restituidos'
+// en la recursión; cualquier otro valor, o ninguno, 'vacaciones'
+const restitucionDe = (restitucion) => {
+  if (!esObjeto(restitucion) || !esAnioDeLicencia(restitucion.anio)) return null;
+  const fechas = fechasDeAsuetos(restitucion.fechas);
+  const durante = restitucion.durante === 'restituidos' ? 'restituidos' : 'vacaciones';
+  return fechas.length === 0 ? null : { anio: restitucion.anio, fechas, durante };
+};
 
 // La firma, de arriba abajo: el nombre, en un contratado el renglón chico del personal contratado (como en las Notas
 // Digitales) y el cargo. Sin cargo, solo el nombre: «cumpliendo funciones de» necesita un cargo. Sin vínculo, como planta
@@ -200,12 +275,34 @@ const firmaDe = ({ nombre, cargo, vinculo }) => {
   ];
 };
 
+// La nota armada, con lo fijo, el cuerpo (lo que sigue a PIDO) y el nombre del archivo: la misma estructura para la nota de una
+// licencia y la de una restitución
+const notaCon = ({ fecha, persona, nombre, cuerpo, archivo }) => ({
+  nota: {
+    fecha: `${LUGAR}, ${formatoLargo(fecha)}`,
+    destinatario: [...DESTINATARIO],
+    sd: SD,
+    saludo: SALUDO,
+    cuerpo: `${PIDO}${cuerpo}`,
+    cierre: CIERRE,
+    firma: firmaDe({ nombre, cargo: textoDe(persona.cargo), vinculo: persona.vinculo }),
+    nombre: archivo
+  }
+});
+
 /**
  * La nota de una licencia: `licencia` = { tipo, desde, hasta, horas } (las de `estado.licencias`, con las horas como
  * número), y en las opciones, `fecha` = 'AAAA-MM-DD' (el día de la última vez que se guardó la licencia), `persona` =
  * { nombre, cargo, vinculo }, `feriados`, el Set de `contextoDe` (lo que no es un Set cuenta solo los 9 fijos), y `salidas`,
  * opcional, las de `estado.salidas` (sin ellas, ninguna): solo las usan las horas a favor, para nombrar los días tildados
- * «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 7).
+ * «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 7). Los días restituidos por un asueto (spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 12) suman dos opciones: `restituibles`, opcional, los días restituibles de la
+ * licencia (los de `restituiblesDe`; sin ellos, ninguno), que en las vacaciones y en los días restituidos cuentan como
+ * hábiles (así las vacaciones siguen diciendo los días que se pidieron); y `restitucion` = { anio, fechas, durante }, la
+ * licencia de la que salen, los asuetos que restituye y el tipo de la carga en la que cayeron (`durante`: 'restituidos' en la
+ * recursión, «declarados durante mis días restituidos»; sin él, o con otro valor, «durante mis vacaciones»), que necesita la
+ * carga de los días restituidos (la nota A; sin ella, o con un año o unas fechas que no sirven, `{ error: 'error' }`) y los
+ * demás tipos no miran.
  * Da `{ nota }`, con `nota` = { fecha, destinatario: [string, string], sd, saludo, cuerpo, cierre, firma: [{ texto, chico }],
  * nombre } (`nombre`, el del archivo: «Nota de licencia - Licencia anual ordinaria - 2026-11-16.docx», con el desde), o
  * `{ error }` con una clave de MENSAJES_NOTA. Nunca tira.
@@ -214,28 +311,44 @@ export const notaDeLicencia = (licencia, opciones) => {
   if (!esObjeto(licencia)) return { error: 'error' };
   const { tipo, desde, hasta, horas } = licencia;
   if (!TIPOS_CON_NOTA.includes(tipo)) return { error: 'sinNota' };
-  const { fecha, persona, feriados, salidas } = esObjeto(opciones) ? opciones : {};
+  const { fecha, persona, feriados, salidas, restituibles, restitucion: asuetos } = esObjeto(opciones) ? opciones : {};
   if (!esFechaIso(fecha) || !esFechaIso(desde) || !esFechaIso(hasta) || hasta < desde || !esObjeto(persona)) {
     return { error: 'error' };
   }
   const nombre = textoDe(persona.nombre);
   if (!nombre) return { error: 'error' };
-  const dias = TIPOS_DE_DIAS.includes(tipo) ? diasHabilesDe(desde, hasta, feriados) : [];
+  const restitucion = tipo === 'restituidos' ? restitucionDe(asuetos) : null;
+  if (tipo === 'restituidos' && restitucion === null) return { error: 'error' };
+  const dias = TIPOS_DE_DIAS.includes(tipo) ? diasDeLaLicencia({ tipo, desde, hasta }, feriados, restituibles) : [];
   if (TIPOS_DE_DIAS.includes(tipo) && dias.length === 0) return { error: 'sinDiasHabiles' };
-  const cuerpo = CUERPOS[tipo]({ desde, horas, dias, salidas: listaDe(salidas), feriados });
+  const cuerpo = CUERPOS[tipo]({ desde, horas, dias, salidas: listaDe(salidas), feriados, restitucion });
   if (cuerpo === null) return { error: 'error' };
-  return {
-    nota: {
-      fecha: `${LUGAR}, ${formatoLargo(fecha)}`,
-      destinatario: [...DESTINATARIO],
-      sd: SD,
-      saludo: SALUDO,
-      cuerpo: `${PIDO}${cuerpo}`,
-      cierre: CIERRE,
-      firma: firmaDe({ nombre, cargo: textoDe(persona.cargo), vinculo: persona.vinculo }),
-      nombre: `Nota de licencia - ${NOMBRES_DEL_ARCHIVO[tipo]} - ${desde}.docx`
-    }
-  };
+  const archivo = `Nota de licencia - ${NOMBRES_DEL_ARCHIVO[tipo]} - ${desde}.docx`;
+  return notaCon({ fecha, persona, nombre, cuerpo, archivo });
+};
+
+/**
+ * La nota de un pedido de restitución (la nota B, spec 2026-10-31-mi-espacio-dias-restituidos, 12): `pedido` = { anio, dias,
+ * fechas } (la licencia a la que vuelven los días, cuántos son —el entero guardado en el pedido, de 1 a 999— y los asuetos
+ * que los restituyen), y en las opciones, `fecha` = 'AAAA-MM-DD' (el día del pedido) y `persona` = { nombre, cargo, vinculo }.
+ * Da `{ nota }`, con la misma estructura que `notaDeLicencia` (así `htmlDeLaNota` y el Word no cambian) y `nombre` «Nota de
+ * restitución - Licencia 2025 - 2027-04-01.docx» (con el día del pedido), o `{ error: 'error' }` con un pedido, una fecha o
+ * una persona que no sirven. «correspondiente(s)» concuerda con los días y «al asueto … declarado» o «a los asuetos …
+ * declarados», con los asuetos. Nunca tira.
+ */
+export const notaDeRestitucion = (pedido, opciones) => {
+  const restitucion = esObjeto(pedido) ? restitucionDe(pedido) : null;
+  const { fecha, persona } = esObjeto(opciones) ? opciones : {};
+  if (restitucion === null || !esFechaIso(fecha) || !esObjeto(persona)) return { error: 'error' };
+  const cantidad = textoDeDias(pedido.dias);
+  const nombre = textoDe(persona.nombre);
+  if (!cantidad || !nombre) return { error: 'error' };
+  const unAsueto = restitucion.fechas.length === 1;
+  const cuerpo = `la restitución a mi licencia anual ordinaria ${restitucion.anio} de ${cantidad}, `
+    + `${pedido.dias === 1 ? 'correspondiente' : 'correspondientes'} ${unAsueto ? 'al asueto' : 'a los asuetos'} `
+    + `${textoDeLosAsuetos(restitucion.fechas)}, ${unAsueto ? 'declarado' : 'declarados'} durante mis vacaciones.`;
+  const archivo = `Nota de restitución - Licencia ${restitucion.anio} - ${fecha}.docx`;
+  return notaCon({ fecha, persona, nombre, cuerpo, archivo });
 };
 
 // Un renglón de la hoja, con el texto escapado; los vacíos son `<p></p>` (la hoja les da el alto de un renglón)
@@ -267,4 +380,10 @@ export const htmlDeLaNota = (nota) => {
 export const aclaracionDeLaNota = (fecha) => (esFechaIso(fecha)
   ? `Lleva la fecha del ${formatoCorto(fecha)}, la última vez que guardaste un cambio en la licencia. `
     + 'Se baja en Word, para imprimir y firmar.'
+  : '');
+
+// El de la nota de una restitución, con el día del pedido (spec 2026-10-31-mi-espacio-dias-restituidos, 9); con lo que no es
+// una fecha, ''
+export const aclaracionDeLaRestitucion = (fecha) => (esFechaIso(fecha)
+  ? `Lleva la fecha del ${formatoCorto(fecha)}, el día en que pediste la restitución. Se baja en Word, para imprimir y firmar.`
   : '');

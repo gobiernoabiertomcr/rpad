@@ -32,9 +32,10 @@ const VERSION_PANTALLAS = '20261211';
 const VERSION_AREAS = '20261205';
 // feriados.js (la pestaña Feriados de Configuración, la cuarta: el selector del año, los filtros y la tabla, spec
 // 2026-10-26-feriados, 4): el número siguiente al más alto de este archivo cuando se creó (VERSION_REPORTES). Cambió después (cuántas
-// licencias de Mi espacio incluye la fecha, en el modal del feriado, spec 2026-10-26-mi-espacio-licencias-y-horas). Su versión es
-// propia (solo la usa configuracion.html)
-const VERSION_FERIADOS = '20261209';
+// licencias de Mi espacio incluye la fecha, en el modal del feriado, spec 2026-10-26-mi-espacio-licencias-y-horas; y, de esas,
+// cuántas vacaciones quedan con ese día para restituir y hasta cuándo, spec 2026-10-31-mi-espacio-dias-restituidos, 9). Su versión
+// es propia (solo la usa configuracion.html)
+const VERSION_FERIADOS = '20261210';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
 // reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6;
@@ -98,8 +99,10 @@ const VERSION_PROYECTOS = '20261206';
 // spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3; y el formulario del evento con los tres tipos —Personal (Privado), Personal
 // (Público) y Laboral, con lo que ven los demás, «Otro» y la vista previa—, spec 2026-10-29-mi-espacio-evento-publico, 4; y el tilde
 // «Sumar a {mes anterior}» en la planilla de horas extras de contrato —la pastilla punteada, la segunda línea de la banda, el bloque
-// «De febrero» y la pestaña—, spec 2026-10-30-mi-espacio-horas-mes-anterior, 4 y 5). Su versión es propia
-const VERSION_MI_ESPACIO = '20261219';
+// «De febrero» y la pestaña—, spec 2026-10-30-mi-espacio-horas-mes-anterior, 4 y 5; y los días que restituye un asueto —el aviso
+// entre la banda y el resto, la línea de la fila, «Días restituidos» en «Cargar licencia» con el «Hasta» que pone Mi espacio y
+// «Pedir la restitución», con su nota—, spec 2026-10-31-mi-espacio-dias-restituidos, 9). Su versión es propia
+const VERSION_MI_ESPACIO = '20261220';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -963,7 +966,7 @@ describe('páginas', () => {
       assert.ok(html().indexOf('id="me-anuncio"') < html().indexOf('role="tablist"'), 'antes de las pestañas');
       const enLosModales = [...html().slice(pagina.length).matchAll(/<[^>]*role="(status|alert|log)"[^>]*>/g)].map(([etiqueta]) => etiqueta);
       assert.deepEqual(enLosModales.map((etiqueta) => etiqueta.match(/id="([^"]+)"/)[1]),
-        ['ml-error', 'mh-error', 'mp-anuncio', 'mp-error', 'ms-error', 'mu-error', 'ev-error', 'mea-error', 'mc-error']);
+        ['ml-error', 'mh-error', 'mp-anuncio', 'mp-error', 'ms-error', 'mu-error', 'mr-error', 'ev-error', 'mea-error', 'mc-error']);
       const errores = enLosModales.filter((etiqueta) => !etiqueta.includes('id="mp-anuncio"'));
       assert.ok(errores.every((etiqueta) => etiqueta.includes('role="alert"') && etiqueta.includes(' hidden')));
       assert.deepEqual(enLosModales.filter((etiqueta) => etiqueta.includes('id="mp-anuncio"')),
@@ -981,7 +984,8 @@ describe('páginas', () => {
       const MODALES = {
         // Con el segundo paso (spec 2026-10-27-mi-espacio-licencia-word, 6): el cuerpo y el pie del formulario y los del segundo paso
         'modal-licencia': ['modal-licencia-titulo', 'ml-cuerpo', 'ml-error', 'ml-tipos', 'ml-tipos-opciones', 'ml-tipos-error',
-          'ml-desde-rotulo', 'ml-desde', 'ml-desde-error', 'ml-grupo-hasta', 'ml-hasta', 'ml-hasta-error', 'ml-grupo-horas', 'ml-horas',
+          'ml-desde-rotulo', 'ml-desde', 'ml-desde-error', 'ml-grupo-hasta', 'ml-hasta', 'ml-hasta-ayuda', 'ml-hasta-error', 'ml-grupo-horas',
+          'ml-horas',
           'ml-horas-error', 'ml-fechas-ayuda', 'ml-calculo', 'ml-nota', 'ml-nota-error', 'ml-grupo-mostrar', 'ml-mostrar',
           'ml-mostrar-ayuda', 'ml-grupo-autorizado', 'ml-autorizado', 'ml-autorizado-ayuda', 'ml-autorizado-error', 'ml-paso',
           'ml-sin-auditor', 'ml-pie-del-formulario', 'ml-borrar', 'ml-pie', 'ml-guardar', 'ml-paso-dos', 'ml-paso-dos-pie',
@@ -998,6 +1002,10 @@ describe('páginas', () => {
         'modal-uso': ['modal-uso-titulo', 'mu-error', 'mu-fecha', 'mu-fecha-error', 'mu-grupo-horas', 'mu-horas', 'mu-horas-error',
           'mu-calculo', 'mu-nota', 'mu-nota-error', 'mu-grupo-mostrar', 'mu-mostrar', 'mu-mostrar-ayuda', 'mu-paso', 'mu-sin-auditor',
           'mu-borrar', 'mu-pie', 'mu-guardar'],
+        // «Pedir la restitución» (spec 2026-10-31-mi-espacio-dias-restituidos, 9; el caso B): la nota a la vista antes de pedirla
+        // (#mr-vista, que dibuja mi-espacio.js, con el error sin campo arriba) y, después del pedido, el segundo paso
+        'modal-restitucion': ['modal-restitucion-titulo', 'mr-cuerpo', 'mr-error', 'mr-vista', 'mr-pie', 'mr-pedir', 'mr-paso-dos',
+          'mr-paso-dos-pie', 'mr-descargar-word'],
         // La agenda (spec 2026-10-26-mi-espacio-agenda, 1, 2 y 6; maqueta 2, #evento y #evento-ajeno), antes de la confirmación: todos
         // los velos tienen el mismo z-index y el que va más abajo en el HTML queda arriba
         // Desde el evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 4), «Tipo de evento» (sus botones los dibuja
@@ -1077,6 +1085,32 @@ describe('páginas', () => {
           + '<button type="button" class="sg-btn sg-btn-tinta" id="ml-descargar-word">Descargar Word</button>\\s*</div>\\s*</div>'));
         assert.ok(html.indexOf('id="ml-pie-del-formulario"') < html.indexOf('id="ml-paso-dos"'));
         // Las cuatro partes son hijas del .modal: el cuerpo es el que se desplaza y el pie queda a la vista
+        assert.equal((html.match(/<div class="modal-body[" ]/g) ?? []).length, 2);
+        assert.equal((html.match(/<div class="modal-footer[" ]/g) ?? []).length, 2);
+      });
+
+      // Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9): el «Hasta» de «Cargar licencia» tiene su ayuda (la de
+      // unos días restituidos, que lo pone Mi espacio: vacía y oculta hasta que mi-espacio.js la escribe) y «Pedir la restitución»,
+      // como el segundo paso de una licencia: el cuerpo (el error sin campo y la vista) y su pie y, después, los del segundo paso
+      it('«Cargar licencia»: la ayuda del «Hasta», debajo del campo y antes de su error', () => {
+        assert.match(modal('modal-licencia'), new RegExp('<input type="date" class="form-input" id="ml-hasta" aria-describedby="ml-fechas-ayuda ml-hasta-error">\\s*'
+          + '<p class="form-hint" id="ml-hasta-ayuda" hidden></p>\\s*<p class="form-error" id="ml-hasta-error" hidden></p>'));
+      });
+
+      it('«Pedir la restitución»: el cuerpo con el error y la vista, el pie con «Cancelar» y «Pedir la restitución», y el segundo paso oculto', () => {
+        const html = modal('modal-restitucion');
+        assert.match(html, /<h2 class="modal-title" id="modal-restitucion-titulo">Pedir la restitución<\/h2>/);
+        assert.match(html, new RegExp('<div class="modal-body me-paso-dos" id="mr-cuerpo">\\s*'
+          + '<p class="me-modal-error" id="mr-error" role="alert" hidden></p>\\s*<div id="mr-vista"></div>\\s*</div>'));
+        assert.match(html, new RegExp('<div class="modal-footer" id="mr-pie">\\s*<div class="botones">\\s*'
+          + '<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Cancelar</button>\\s*'
+          + '<button type="button" class="sg-btn sg-btn-tinta" id="mr-pedir" aria-describedby="mr-recuadro">Pedir la restitución</button>\\s*'
+          + '</div>\\s*</div>'));
+        assert.match(html, new RegExp('<div class="modal-body me-paso-dos" id="mr-paso-dos" hidden></div>\\s*'
+          + '<div class="modal-footer" id="mr-paso-dos-pie" hidden>\\s*<div class="botones">\\s*'
+          + '<button type="button" class="sg-btn sg-btn-borde" data-cerrar>Listo</button>\\s*'
+          + '<button type="button" class="sg-btn sg-btn-tinta" id="mr-descargar-word">Descargar Word</button>\\s*</div>\\s*</div>'));
+        assert.ok(html.indexOf('id="mr-pie"') < html.indexOf('id="mr-paso-dos"'));
         assert.equal((html.match(/<div class="modal-body[" ]/g) ?? []).length, 2);
         assert.equal((html.match(/<div class="modal-footer[" ]/g) ?? []).length, 2);
       });

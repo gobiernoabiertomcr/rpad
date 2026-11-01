@@ -22,6 +22,7 @@ import pool from '../config/database.js';
 import { cargarLicencia, cambiarLicencia, anularLicenciaDe, firmanteTitular } from './licenciasOficialesService.js';
 import { puedeTenerLicencia } from './licenciasReglas.js';
 import { leerCalendario } from './feriadosDatos.js';
+import { soltarLosPedidosDeLasCargas } from './miEspacioRestituciones.js';
 import {
   oficialesDe, tocadasPorOtros, oficialesQueSeCruzan, delFirmanteComoAutorizada, notasDeHoyDelTitular
 } from './miEspacioDatos.js';
@@ -158,17 +159,23 @@ export const aplicarBaja = async (conexion, { persona, fila, hoy }) => {
  * 2.1 y 3b), en la transacción de la anulación (después de bloquearUsuarios): las filas creadas activas que la apuntan y no
  * empezaron antes de hoy se dan de baja con ella (activo = 0), la anule quien la anule. Las unidas no se tocan, y una creada
  * que en Mi espacio ya empezó tampoco (Mi espacio nunca borra solo una licencia que empezó): queda para que la persona la
- * revise. Devuelve `{ borradas, quedan }`: las que se dieron de baja y las creadas activas que siguen apuntándola.
+ * revise. Una carga de días restituidos que se da de baja suelta además su pedido (`soltarLosPedidosDeLasCargas`; spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 4 y 11): sus días vuelven a estar por restituir hasta el plazo y, después, quedan
+ * perdidos, como al borrarla desde Mi espacio. Devuelve `{ borradas, quedan }`: las que se dieron de baja y las creadas
+ * activas que siguen apuntándola.
  * No va dentro de `anularLicenciaDe` (services/licenciasOficialesService.js): la usan también `aplicarCorreccion` y
  * `aplicarBaja`, y en una corrección que anula la de Configuración (una franquicia de 7 horas que pasa a 3) la fila de Mi
  * espacio tiene que quedar activa.
  */
 export const bajaPorLaAnulacion = async (conexion, { licenciaOficialId, hoy }) => {
-  const [baja] = await conexion.query(
-    `UPDATE mi_espacio_licencias SET activo = 0
-     WHERE licencia_oficial_id = ? AND oficial = 'creada' AND activo = 1 AND desde >= ?`,
-    [licenciaOficialId, hoy]
+  const queSeDanDeBaja = "licencia_oficial_id = ? AND oficial = 'creada' AND activo = 1 AND desde >= ?";
+  const valores = [licenciaOficialId, hoy];
+  // Las cargas de días restituidos que se van a dar de baja, antes de darlas (después ya no se distinguen de las de antes)
+  const [restituidas] = await conexion.query(
+    `SELECT id FROM mi_espacio_licencias WHERE ${queSeDanDeBaja} AND tipo = 'restituidos' FOR UPDATE`, valores
   );
+  const [baja] = await conexion.query(`UPDATE mi_espacio_licencias SET activo = 0 WHERE ${queSeDanDeBaja}`, valores);
+  await soltarLosPedidosDeLasCargas(conexion, restituidas.map(({ id }) => Number(id)));
   const [[{ quedan }]] = await conexion.query(
     `SELECT COUNT(*) AS quedan FROM mi_espacio_licencias
      WHERE licencia_oficial_id = ? AND oficial = 'creada' AND activo = 1`,

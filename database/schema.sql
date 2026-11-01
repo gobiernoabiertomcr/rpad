@@ -748,7 +748,7 @@ CREATE TABLE `mi_espacio_saldos` (
 CREATE TABLE `mi_espacio_licencias` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `usuario_id` int(11) NOT NULL,
-  `tipo` enum('vacaciones','franquicia','estudios','medica','medica_extraordinaria','familiar','franco','horas_a_favor','uso_autorizado') NOT NULL,
+  `tipo` enum('vacaciones','franquicia','estudios','medica','medica_extraordinaria','familiar','franco','horas_a_favor','uso_autorizado','restituidos') NOT NULL,
   `desde` date NOT NULL,
   `hasta` date NOT NULL,
   `horas` decimal(3,1) DEFAULT NULL,
@@ -809,6 +809,51 @@ CREATE TABLE `mi_espacio_avisos` (
   `enviado_at` datetime NOT NULL,
   PRIMARY KEY (`usuario_id`,`clave`),
   CONSTRAINT `fk_mi_espacio_avisos_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Los días de vacaciones que restituye un asueto (database/updates/migracion-mi-espacio-restituciones.sql): el tipo
+-- 'restituidos' de mi_espacio_licencias (la carga aparte de esos días, caso A), los pedidos (mi_espacio_restituciones: caso
+-- 'tomar', con la carga en carga_id, o 'restituir', que vuelven a la licencia de origen) y la foto (mi_espacio_restituibles:
+-- cada día de una carga que un feriado cargado después dejó de hacer hábil, una vez por carga y día; tanda y restitucion_id,
+-- NULL mientras no se pidió). Los grupos, el plazo y el caso no se guardan: los calculan las reglas
+CREATE TABLE `mi_espacio_restituciones` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `usuario_id` int(11) NOT NULL,
+  `licencia_id` int(11) NOT NULL,
+  `anio` smallint(6) NOT NULL,
+  `caso` enum('tomar','restituir') NOT NULL,
+  `dias` smallint(6) NOT NULL,
+  `primer_asueto` date NOT NULL,
+  `tanda` smallint(6) NOT NULL,
+  `fecha` date NOT NULL,
+  `carga_id` int(11) DEFAULT NULL,
+  `activo` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_mi_espacio_restituciones_usuario` (`usuario_id`,`activo`),
+  KEY `fk_mi_espacio_restituciones_licencia` (`licencia_id`),
+  KEY `fk_mi_espacio_restituciones_carga` (`carga_id`),
+  CONSTRAINT `fk_mi_espacio_restituciones_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mi_espacio_restituciones_licencia` FOREIGN KEY (`licencia_id`) REFERENCES `mi_espacio_licencias` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mi_espacio_restituciones_carga` FOREIGN KEY (`carga_id`) REFERENCES `mi_espacio_licencias` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `mi_espacio_restituibles` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `licencia_id` int(11) NOT NULL,
+  `feriado_id` int(11) NOT NULL,
+  `fecha` date NOT NULL,
+  `tanda` smallint(6) DEFAULT NULL,
+  `restitucion_id` int(11) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mi_espacio_restituibles_dia` (`licencia_id`,`fecha`),
+  KEY `fk_mi_espacio_restituibles_feriado` (`feriado_id`),
+  KEY `fk_mi_espacio_restituibles_restitucion` (`restitucion_id`),
+  CONSTRAINT `fk_mi_espacio_restituibles_licencia` FOREIGN KEY (`licencia_id`) REFERENCES `mi_espacio_licencias` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mi_espacio_restituibles_feriado` FOREIGN KEY (`feriado_id`) REFERENCES `feriados` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mi_espacio_restituibles_restitucion` FOREIGN KEY (`restitucion_id`) REFERENCES `mi_espacio_restituciones` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================

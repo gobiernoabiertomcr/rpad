@@ -538,6 +538,46 @@ describe('feriados.js: el modal, las licencias de Mi espacio que incluye la fech
     for (const raro of [null, undefined, -1, 1.5, NaN, '2', {}, []]) assert.equal(F.textoDeAfectadasFeriado(raro), '', String(raro));
   });
 
+  // Las vacaciones que quedan con ese día para restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 9): las cuentas y el plazo
+  // los manda el servidor y el texto lo arma el navegador (sin copia del servidor), sin decir de quién
+  it('textoDeAfectadasFeriado: con vacaciones, ese día queda para restituir con nota hasta el plazo', () => {
+    // Los dos textos de la maqueta (window.MQF.T de docs/superpowers/specs/2026-10-31-mi-espacio-dias-restituidos-mockups/
+    // datos-feriados.js), copiados a mano
+    const FERIADO_1 = '1 licencia cargada lo incluye: son vacaciones, y ese día queda para restituir con nota hasta el 30/04/2027.';
+    const FERIADO_3 = '3 licencias cargadas lo incluyen. En 2 vacaciones, ese día queda para restituir con nota hasta el 30/04/2027; '
+      + 'la otra se recalcula.';
+    assert.equal(F.textoDeAfectadasFeriado(1, 1, '2027-04-30'), FERIADO_1);
+    assert.equal(F.textoDeAfectadasFeriado(3, 2, '2027-04-30'), FERIADO_3);
+    // Todas son vacaciones, en plural
+    assert.equal(F.textoDeAfectadasFeriado(3, 3, '2027-04-30'),
+      '3 licencias cargadas lo incluyen: son vacaciones, y ese día queda para restituir con nota hasta el 30/04/2027.');
+    // De los dos: una de vacaciones («En unas vacaciones») y más de una que se recalcula («las otras N se recalculan»)
+    assert.equal(F.textoDeAfectadasFeriado(2, 1, '2027-04-30'), '2 licencias cargadas lo incluyen. En unas vacaciones, ese día '
+      + 'queda para restituir con nota hasta el 30/04/2027; la otra se recalcula.');
+    assert.equal(F.textoDeAfectadasFeriado(4, 1, '2028-01-31'), '4 licencias cargadas lo incluyen. En unas vacaciones, ese día '
+      + 'queda para restituir con nota hasta el 31/01/2028; las otras 3 se recalculan.');
+    assert.equal(F.textoDeAfectadasFeriado(12, 2, '2027-04-30'), '12 licencias cargadas lo incluyen. En 2 vacaciones, ese día '
+      + 'queda para restituir con nota hasta el 30/04/2027; las otras 10 se recalculan.');
+    // Más vacaciones que licencias no pasa (las dos cuentas salen de las mismas fechas): todas son vacaciones, con las licencias
+    assert.equal(F.textoDeAfectadasFeriado(1, 2, '2027-04-30'), FERIADO_1);
+    // Sin un plazo que sea una fecha (null: el servidor no lo pudo contar), sin «hasta …»
+    for (const plazo of [null, undefined, '', '2027-04', '2027-02-30', '30/04/2027', 20270430, {}]) {
+      assert.equal(F.textoDeAfectadasFeriado(1, 1, plazo),
+        '1 licencia cargada lo incluye: son vacaciones, y ese día queda para restituir con nota.', String(plazo));
+      assert.equal(F.textoDeAfectadasFeriado(3, 2, plazo), '3 licencias cargadas lo incluyen. En 2 vacaciones, ese día queda para '
+        + 'restituir con nota; la otra se recalcula.', String(plazo));
+    }
+    // Sin vacaciones (0, la cuenta que falló —null— o lo que no es una cantidad), el texto de antes, aunque llegue un plazo
+    for (const vacaciones of [0, null, undefined, -1, 1.5, NaN, '1', {}, []]) {
+      assert.equal(F.textoDeAfectadasFeriado(2, vacaciones, '2027-04-30'),
+        '2 licencias cargadas lo incluyen: sus días hábiles se recalculan.', String(vacaciones));
+    }
+    // Sin licencias (0, o lo que no es una cantidad), nada, aunque lleguen vacaciones y un plazo
+    for (const raro of [0, null, undefined, -1, 1.5, NaN, '2', {}, []]) {
+      assert.equal(F.textoDeAfectadasFeriado(raro, 1, '2027-04-30'), '', String(raro));
+    }
+  });
+
   it('rutaDeAfectadasFeriado: la fecha y «se repite» (1 o 0) y, al corregir, el id; sin una fecha, null', () => {
     assert.equal(F.rutaDeAfectadasFeriado('2026-12-13', true, null), '/feriados/afectadas?fecha=2026-12-13&se_repite=1');
     assert.equal(F.rutaDeAfectadasFeriado('2026-12-13', false, null), '/feriados/afectadas?fecha=2026-12-13&se_repite=0');
@@ -2089,14 +2129,17 @@ describe('feriados.js con un DOM: lo que llega mientras tanto', () => {
 // el test; abrir el modal no pide nada
 describe('feriados.js con un DOM: las licencias que incluye la fecha', () => {
   const DEL_HTML = 'fe-fecha-dia fe-fecha-error';
-  // La pestaña cargada con 2026 y temporizadores a mano. `afectadas(ruta)` contesta GET /feriados/afectadas (un número, o una
-  // promesa de uno)
+  // La pestaña cargada con 2026 y temporizadores a mano. `afectadas(ruta)` contesta GET /feriados/afectadas (o una promesa de lo
+  // que contesta): un número es la cuenta de las licencias sola, como antes de los días restituidos; un objeto, el `data` entero
   const conAfectadas = async (afectadas) => {
     const pagina = crearPagina({
       temporizadores: true,
-      servidor: async (metodo, ruta) => (ruta.startsWith('/feriados/afectadas?')
-        ? { status: 200, body: { success: true, data: { licencias_afectadas: await afectadas(ruta) } } }
-        : { status: 200, body: RESPUESTA_2026 })
+      servidor: async (metodo, ruta) => {
+        if (!ruta.startsWith('/feriados/afectadas?')) return { status: 200, body: RESPUESTA_2026 };
+        const respuesta = await afectadas(ruta);
+        const data = respuesta !== null && typeof respuesta === 'object' ? respuesta : { licencias_afectadas: respuesta };
+        return { status: 200, body: { success: true, data } };
+      }
     });
     pagina.alCargar();
     await pagina.contexto.cargarFeriados();
@@ -2193,5 +2236,37 @@ describe('feriados.js con un DOM: las licencias que incluye la fecha', () => {
     pagina.vencer();
     assert.equal(pedidasDe(pagina).length, 2);
     assert.deepEqual(leyenda(pagina), [true, '', DEL_HTML]);
+  });
+
+  // Desde los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9): el pedido lee también vacaciones_para_restituir
+  // y plazo_de_restitucion, y el texto los suma; sin ellos (un servidor de antes, o la cuenta que falló), el texto de antes
+  it('con vacaciones para restituir: el texto dice cuántas y hasta cuándo, sin nombres', async () => {
+    const DATOS = new Map([
+      ['2026-12-24', { licencias_afectadas: 3, vacaciones_para_restituir: 2, plazo_de_restitucion: '2027-04-30', nombre: 'Persona X' }],
+      ['2026-12-31', { licencias_afectadas: 1, vacaciones_para_restituir: 1, plazo_de_restitucion: '2027-04-30' }],
+      ['2026-12-30', { licencias_afectadas: 2, vacaciones_para_restituir: null, plazo_de_restitucion: null }],
+      ['2026-12-29', { licencias_afectadas: 2, vacaciones_para_restituir: 1, plazo_de_restitucion: null }]
+    ]);
+    const pagina = await conAfectadas((ruta) => DATOS.get(ruta.match(/fecha=([\d-]+)/)[1]));
+    const CON_AFECTADAS = 'fe-fecha-dia fe-fecha-afectadas fe-fecha-error';
+    apretar(pagina, 'btn-nuevo-feriado');
+    pagina.vencer();
+    const mirar = async (fecha) => {
+      cambiarFecha(pagina, fecha);
+      pagina.vencer();
+      await esperar();
+      return leyenda(pagina);
+    };
+    assert.deepEqual(await mirar('2026-12-24'), [false, '3 licencias cargadas lo incluyen. En 2 vacaciones, ese día queda para '
+      + 'restituir con nota hasta el 30/04/2027; la otra se recalcula.', CON_AFECTADAS]);
+    assert.equal(pagina.elemento('fe-fecha-afectadas').escrituras, 0, 'texto plano: nunca como HTML');
+    assert.ok(!pagina.elemento('fe-fecha-afectadas').textContent.includes('Persona X'), 'sin nombres');
+    assert.deepEqual(await mirar('2026-12-31'), [false, '1 licencia cargada lo incluye: son vacaciones, y ese día queda para '
+      + 'restituir con nota hasta el 30/04/2027.', CON_AFECTADAS]);
+    assert.deepEqual(await mirar('2026-12-30'), [false, DOS, CON_AFECTADAS], 'la cuenta de las vacaciones falló: el texto de antes');
+    assert.deepEqual(await mirar('2026-12-29'), [false, '2 licencias cargadas lo incluyen. En unas vacaciones, ese día queda para '
+      + 'restituir con nota; la otra se recalcula.', CON_AFECTADAS], 'sin el plazo, sin «hasta …»');
+    assert.deepEqual(pedidasDe(pagina), ['2026-12-24', '2026-12-31', '2026-12-30', '2026-12-29']
+      .map((fecha) => `/feriados/afectadas?fecha=${fecha}&se_repite=0`));
   });
 });

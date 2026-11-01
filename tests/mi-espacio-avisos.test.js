@@ -16,7 +16,7 @@ const FRANCO_DE_OCTUBRE = 'Tenés 1 franco compensatorio para usar en octubre: e
 // Las casillas por defecto de sendEmail (services/emailService.js): las de la DGMIT
 const CASILLAS_POR_DEFECTO = ['datospublicos@comodoro.gov.ar', 'mit@comodoro.gov.ar', 'investigacionterritorial@comodoro.gov.ar'];
 
-let base, dbReal, emailSoloA, avisos, datos, controlador;
+let base, dbReal, emailSoloA, avisos, datos, controlador, feriados;
 
 before(async () => {
   dbReal = process.env.DB_NAME;
@@ -28,6 +28,7 @@ before(async () => {
   avisos = await import('../services/miEspacioAvisos.js');
   datos = await import('../services/miEspacioDatos.js');
   controlador = await import('../controllers/notificacionesController.js');
+  feriados = await import('../controllers/feriadosController.js');
 });
 
 after(async () => {
@@ -45,7 +46,8 @@ beforeEach(async () => {
   process.env.EMAIL_SOLO_A = '';
   // limpiarBase comprueba que la base es de prueba y deja la última corrida en blanco
   await limpiarBase();
-  for (const tabla of ['mi_espacio_avisos', 'mi_espacio_licencias', 'mi_espacio_horas_extras', 'mi_espacio_arranque',
+  for (const tabla of ['mi_espacio_avisos', 'mi_espacio_restituibles', 'mi_espacio_restituciones', 'mi_espacio_licencias',
+    'mi_espacio_horas_extras', 'mi_espacio_arranque',
     'usuarios_licencias', 'feriados', 'usuarios']) {
     await query(`DELETE FROM ${tabla}`);
   }
@@ -411,6 +413,167 @@ describe('enviarAvisosDeVencimiento', () => {
       assert.equal(await bloqueoLibre(), true);
       assert.deepEqual((await anotados(laura.id)).map((fila) => fila.clave), ['franco-2026-10']);
     });
+});
+
+// Los días para restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 10; Review Focus 6): con Julieta Ferreyra, la persona
+// inventada de la maqueta, y los asuetos cargados como administración por Configuración → Feriados (el controlador, que saca la
+// foto en su transacción). El primer aviso le llega al volver de sus vacaciones y el segundo, 5 días hábiles antes del plazo
+// (el viernes 30/04/2027), cada uno una sola vez; si los dos tocan el mismo día, va uno solo con las dos claves
+describe('los días para restituir', () => {
+  const ASUNTO_DE_RESTITUIR = 'RPAD: tenés días para restituir en Mi espacio';
+  const PARRAFOS = 'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones del 11/12/2026 al 08/01/2027: tenés 2 días '
+    + 'restituidos de la licencia 2024. Como esa licencia ya venció, tomalos todos juntos, empezando a más tardar el viernes '
+    + '30/04/2027, con la nota al Director General. Si no, se pierden. En Mi espacio podés cargarlos y bajar la nota en Word.';
+  const OTRO_AVISO = 'Te va a llegar otro aviso 5 días hábiles antes del plazo.';
+  const NOTA_DE_SIEMPRE = 'Este aviso te llega una sola vez por cada cosa. Lo que cargás en Mi espacio lo ves solo vos.';
+  const FRANCO_DE_ABRIL = 'Tenés 1 franco compensatorio para usar en abril: el último día hábil es el viernes 30/04.';
+
+  // Julieta: planta permanente, 20 días por año, arranque el 02/11/2026, saldo de 19 días de la 2024, 15 de la 2025 y 10 de la
+  // 2026, y vacaciones del 11/12/2026 al 08/01/2027 (19 días hábiles, todos de la 2024, que vence el 31/12/2026)
+  const conLasVacacionesDeJulieta = async () => {
+    const julieta = await persona({ nombre: 'Julieta Ferreyra' });
+    await query("INSERT INTO mi_espacio_arranque (usuario_id, fecha) VALUES (?, '2026-11-02')", [julieta.id]);
+    await query('INSERT INTO mi_espacio_anios (usuario_id, anio, dias_vacaciones) VALUES (?, 2026, 20)', [julieta.id]);
+    await query(
+      `INSERT INTO mi_espacio_saldos (usuario_id, concepto, anio, cantidad)
+       VALUES (?, 'vacaciones', 2024, 19), (?, 'vacaciones', 2025, 15), (?, 'vacaciones', 2026, 10)`,
+      [julieta.id, julieta.id, julieta.id]
+    );
+    const { insertId: vacaciones } = await licenciaDeMiEspacio(julieta.id, 'vacaciones', '2026-12-11', '2027-01-08');
+    return { ...julieta, vacaciones };
+  };
+
+  // El martes 22/12/2026, con las vacaciones ya cargadas, una persona de administración (inventada, sin saldo inicial: a ella
+  // no le llega nada) carga los asuetos del jueves 24 y del jueves 31/12/2026: la foto guarda los dos días
+  const cargarLosAsuetos = async () => {
+    const { id: adminId } = await persona({ nombre: 'Persona Admin' });
+    mock.timers.enable({ apis: ['Date'], now: new Date('2026-12-22T13:00:00Z') });
+    try {
+      for (const fecha of ['2026-12-24', '2026-12-31']) {
+        const res = {
+          statusCode: null, body: null,
+          status(codigo) { this.statusCode = codigo; return this; },
+          json(cuerpo) { this.body = cuerpo; return this; }
+        };
+        await feriados.crearFeriado({ body: { fecha, nombre: 'Asueto de prueba', tipo: 'no_laborable' }, user: { userId: adminId } },
+          res);
+        assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+      }
+    } finally {
+      mock.timers.reset();
+    }
+  };
+
+  // Julieta con sus vacaciones y los asuetos ya cargados, y las claves de sus dos avisos
+  const julietaConLosAsuetos = async () => {
+    const julieta = await conLasVacacionesDeJulieta();
+    await cargarLosAsuetos();
+    const foto = await query("SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha FROM mi_espacio_restituibles WHERE licencia_id = ? "
+      + 'ORDER BY fecha', [julieta.vacaciones]);
+    assert.deepEqual(foto.map((fila) => fila.fecha), ['2026-12-24', '2026-12-31']);
+    const grupo = `restitucion-${julieta.vacaciones}-2024-0`;
+    return { ...julieta, primera: `${grupo}-1`, segunda: `${grupo}-2` };
+  };
+
+  const elUnicoMensaje = async (quien) => {
+    const mensajes = await mailpit.esperar(paraCasilla(quien.email));
+    assert.equal(mensajes.length, 1);
+    return mensajes[0];
+  };
+
+  it('el 22/12, de vacaciones, nada; el lunes 11/01 al volver, el email de la maqueta; el 12/01, nada; el viernes 23/04, el '
+    + 'segundo', async () => {
+    const julieta = await julietaConLosAsuetos();
+
+    // El mismo día de los asuetos está de vacaciones: no le llega nada (le llega al volver)
+    assert.deepEqual(await pasoDel('2026-12-22'), { dia_habil: true, enviados: 0, errores: [] });
+    assert.deepEqual(await anotados(julieta.id), []);
+    assert.deepEqual(await recibidos(julieta.email), []);
+
+    // El lunes 11/01/2027 vuelve: el primer aviso, con el asunto, el título, los tres párrafos y la nota del pie de la maqueta
+    assert.deepEqual(await pasoDel('2027-01-11'), { dia_habil: true, enviados: 1, errores: [] });
+    assert.deepEqual(await anotados(julieta.id), [{ clave: julieta.primera, enviado_at: '2027-01-11 08:15:00' }]);
+    const primero = await elUnicoMensaje(julieta);
+    assert.equal(primero.Subject, ASUNTO_DE_RESTITUIR);
+    assert.deepEqual(primero.To.map((t) => t.Address), [julieta.email]);
+    assert.equal(primero.From.Name, 'Dir. de Datos Públicos y Comunicación');
+    const html = await mailpit.html(primero.ID);
+    assert.equal(textoVisible(html), 'RPAD Registro Permanente de Actualización de Datasets Días para restituir Hola, Julieta '
+      + `Ferreyra. ${PARRAFOS} Ver en Mi espacio ${OTRO_AVISO} Lo que cargás en Mi espacio lo ves solo vos. Dirección de Datos `
+      + 'Públicos y Comunicación Municipalidad de Comodoro Rivadavia');
+    assert.ok(html.includes('tenés <strong>2 días restituidos de la licencia 2024</strong>.</p>'), html);
+    assert.ok(html.includes('a más tardar el <strong>viernes 30/04/2027</strong>, con la nota'), html);
+
+    // El martes 12/01, nada: ya se le avisó
+    assert.deepEqual(await pasoDel('2027-01-12'), { dia_habil: true, enviados: 0, errores: [] });
+    assert.equal((await recibidos(julieta.email)).length, 1);
+
+    // El jueves 22/04 todavía no; el viernes 23/04 (5 días hábiles antes del plazo), el segundo, sin «Te va a llegar otro aviso…»
+    assert.deepEqual(await pasoDel('2027-04-22'), { dia_habil: true, enviados: 0, errores: [] });
+    assert.deepEqual(await pasoDel('2027-04-23'), { dia_habil: true, enviados: 1, errores: [] });
+    assert.deepEqual(await anotados(julieta.id), [
+      { clave: julieta.primera, enviado_at: '2027-01-11 08:15:00' },
+      { clave: julieta.segunda, enviado_at: '2027-04-23 08:15:00' }
+    ]);
+    const mensajes = await recibidos(julieta.email);
+    assert.equal(mensajes.length, 2);
+    const segundo = mensajes.find((mensaje) => mensaje.ID !== primero.ID);
+    assert.equal(segundo.Subject, ASUNTO_DE_RESTITUIR);
+    const texto = textoVisible(await mailpit.html(segundo.ID));
+    assert.ok(texto.includes(`Días para restituir Hola, Julieta Ferreyra. ${PARRAFOS} Ver en Mi espacio ${NOTA_DE_SIEMPRE}`), texto);
+    assert.ok(!texto.includes(OTRO_AVISO), texto);
+
+    // El lunes 26/04, nada más
+    assert.deepEqual(await pasoDel('2027-04-26'), { dia_habil: true, enviados: 0, errores: [] });
+    assert.equal((await recibidos(julieta.email)).length, 2);
+  });
+
+  it('si los dos avisos tocan el mismo día (de licencia en Configuración del 11/01 al 22/04), va uno solo y se anotan las dos '
+    + 'claves', async () => {
+    const julieta = await julietaConLosAsuetos();
+    await licenciaDeConfiguracion(julieta.id, '2027-01-11', '2027-04-22');
+
+    assert.deepEqual(await pasoDel('2027-01-11'), { dia_habil: true, enviados: 0, errores: [] });
+    assert.deepEqual(await recibidos(julieta.email), []);
+
+    assert.deepEqual(await pasoDel('2027-04-23'), { dia_habil: true, enviados: 1, errores: [] });
+    assert.deepEqual(await anotados(julieta.id), [
+      { clave: julieta.primera, enviado_at: '2027-04-23 08:15:00' },
+      { clave: julieta.segunda, enviado_at: '2027-04-23 08:15:00' }
+    ]);
+    const mensaje = await elUnicoMensaje(julieta);
+    assert.equal(mensaje.Subject, ASUNTO_DE_RESTITUIR);
+    const texto = textoVisible(await mailpit.html(mensaje.ID));
+    // Los párrafos una sola vez, y sin «Te va a llegar otro aviso…»: este ya es el último
+    assert.equal(texto.split('cayeron en tus vacaciones').length - 1, 1, texto);
+    assert.ok(texto.includes(`${PARRAFOS} Ver en Mi espacio ${NOTA_DE_SIEMPRE}`), texto);
+    assert.ok(!texto.includes(OTRO_AVISO), texto);
+
+    assert.deepEqual(await pasoDel('2027-04-26'), { dia_habil: true, enviados: 0, errores: [] });
+    assert.equal((await recibidos(julieta.email)).length, 1);
+  });
+
+  it('con un franco el mismo día: el asunto de siempre, el renglón del franco y los párrafos de la restitución', async () => {
+    const julieta = await julietaConLosAsuetos();
+    // 7 horas extras en febrero de 2027: un franco para usar en abril, que se avisa desde el viernes 23/04
+    await query(
+      `INSERT INTO mi_espacio_horas_extras (usuario_id, fecha, desde, hasta)
+       VALUES (?, '2027-02-03', '18:00', '22:00'), (?, '2027-02-10', '18:00', '21:00')`,
+      [julieta.id, julieta.id]
+    );
+    assert.deepEqual(await pasoDel('2027-01-11'), { dia_habil: true, enviados: 1, errores: [] });
+
+    assert.deepEqual(await pasoDel('2027-04-23'), { dia_habil: true, enviados: 1, errores: [] });
+    assert.deepEqual((await anotados(julieta.id)).map((fila) => fila.clave), ['franco-2027-04', julieta.primera, julieta.segunda]);
+    const mensajes = await recibidos(julieta.email);
+    assert.equal(mensajes.length, 2);
+    const delFranco = mensajes.find((mensaje) => mensaje.Subject === ASUNTO);
+    assert.ok(delFranco, JSON.stringify(mensajes.map((mensaje) => mensaje.Subject)));
+    const html = await mailpit.html(delFranco.ID);
+    assert.ok(textoVisible(html).includes(`Lo que vence pronto Hola, Julieta Ferreyra. ${FRANCO_DE_ABRIL} ${PARRAFOS} Ver en Mi `
+      + `espacio ${NOTA_DE_SIEMPRE}`), textoVisible(html));
+    assert.ok(html.includes('<strong>viernes 30/04/2027</strong>'), html);
+  });
 });
 
 describe('en la corrida de las 8:15', () => {

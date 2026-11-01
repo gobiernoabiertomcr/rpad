@@ -31,11 +31,19 @@ import {
   horasDeLaSalida, horasPorMesDeSalidas, enDiasDeFranco, textoDeLaSumaDelMes, licenciaDeDiaEnteroEn, validarSalida,
   avisosDeSalidas, mesDeLaPlanilla, porHabilitarDe, alcanceDeLaCarga, diasLibresEntre, diasLibresDelMes, franquiciaQueVence,
   textoDePerdidosConLaCarga, textoDelFrancoSinDiasLibres, textoDeLasHorasSinDiasLibres, textoDeLaFranquiciaPerdida,
-  textoDelReacomodo, textoDeLosDiasHabiles, mesDeLaSalida, repartoDelMes, textoDeLoQueSeMueve
+  textoDelReacomodo, textoDeLosDiasHabiles, mesDeLaSalida, repartoDelMes, textoDeLoQueSeMueve,
+  TIPOS_CON_PERSONA_A_CARGO, dejaPersonaACargo, restituiblesDe, diasDeLaCarga,
+  PLAZO_DE_RESTITUCION_EN_MESES, plazoDeRestitucion, casoDeRestitucion, fechasDeLosAsuetos, restitucionesDe,
+  textoDesdeDeLosRestituidos, hastaDeLosRestituidos, primerDiaDeLosRestituidos, validarRestituidos,
+  textoDelCalculoDeRestituidos, textoDeLaAyudaDeRestituidos, textoDelHastaDeRestituidos, grupoDeLosRestituidos,
+  grupoDeLaRestitucion, TIPOS_CON_RESTITUIBLES,
+  textoDelAvisoDeRestitucion, textoDelBotonDeRestitucion, textoDeLaFilaDeRestitucion, bajadaDeRestituciones,
+  tituloDeRestitucionQueVence, partesDelEmailDeRestitucion, recuadroDeLaRestitucion, mensajeDeLaRestitucionPedida,
+  MENSAJE_RESTITUCION_BORRADA, MENSAJE_RESTITUCION_BORRADA_SIN_DIAS
 } from '../services/miEspacioReglas.js';
 import { feriadosDelRango, calendarioCon } from '../services/feriadosReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
-import { HOY, SIN_FERIADOS, PLANTA, CONTRATO } from './fixtures/mi-espacio-casos.js';
+import { HOY, SIN_FERIADOS, PLANTA, CONTRATO, JULIETA, ASUETOS } from './fixtures/mi-espacio-casos.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 
 // El calendario con la precarga de 2026 y 2027 (spec 2026-10-27-feriados-en-notas, 1): el 07/12/2026 no es laborable, y el 08/02
@@ -87,19 +95,33 @@ describe('las constantes', () => {
   });
 
   it('los tipos de licencia, los de cada modalidad y sus nombres', () => {
+    // Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 6): al final del enum, y en las dos modalidades justo
+    // después de las vacaciones
     assert.deepEqual(TIPOS_LICENCIA, [
       'vacaciones', 'franquicia', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco', 'horas_a_favor',
-      'uso_autorizado'
+      'uso_autorizado', 'restituidos'
     ]);
     assert.deepEqual(TIPOS_POR_MODALIDAD, {
-      planta: ['vacaciones', 'franquicia', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'franco', 'uso_autorizado'],
-      contrato: ['vacaciones', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'horas_a_favor', 'uso_autorizado']
+      planta: ['vacaciones', 'restituidos', 'franquicia', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'franco',
+        'uso_autorizado'],
+      contrato: ['vacaciones', 'restituidos', 'estudios', 'medica', 'familiar', 'medica_extraordinaria', 'horas_a_favor',
+        'uso_autorizado']
     });
     assert.deepEqual(NOMBRES_TIPO, {
       vacaciones: 'Vacaciones', franquicia: 'Franquicia', estudios: 'Estudios', medica: 'Atención médica',
       medica_extraordinaria: 'Médica extraordinaria', familiar: 'Atención del grupo familiar', franco: 'Franco compensatorio',
-      horas_a_favor: 'Horas a favor', uso_autorizado: 'Uso autorizado'
+      horas_a_favor: 'Horas a favor', uso_autorizado: 'Uso autorizado', restituidos: 'Días restituidos'
     });
+    assert.deepEqual(Object.keys(NOMBRES_TIPO).sort(), [...TIPOS_LICENCIA].sort());
+  });
+
+  it('los tipos que dejan persona a cargo del firmante titular: las vacaciones y los días restituidos', () => {
+    assert.deepEqual(TIPOS_CON_PERSONA_A_CARGO, ['vacaciones', 'restituidos']);
+    for (const tipo of TIPOS_CON_PERSONA_A_CARGO) assert.equal(dejaPersonaACargo(tipo), true, tipo);
+    for (const otro of [...TIPOS_LICENCIA.filter((tipo) => !TIPOS_CON_PERSONA_A_CARGO.includes(tipo)), undefined, null, '',
+      'Vacaciones', ['vacaciones'], {}, 3]) {
+      assert.equal(dejaPersonaACargo(otro), false, String(otro));
+    }
   });
 
   it('los días, los topes y los largos', () => {
@@ -114,7 +136,8 @@ describe('las constantes', () => {
   it('están congeladas', () => {
     for (const constante of [
       MODALIDADES, TEXTO_MODALIDAD, TIPOS_LICENCIA, TIPOS_POR_MODALIDAD, TIPOS_POR_MODALIDAD.planta,
-      TIPOS_POR_MODALIDAD.contrato, NOMBRES_TIPO, DIAS_VACACIONES, DIAS_ESTUDIOS, TOPES, MENSAJES_MI_ESPACIO
+      TIPOS_POR_MODALIDAD.contrato, NOMBRES_TIPO, DIAS_VACACIONES, DIAS_ESTUDIOS, TOPES, MENSAJES_MI_ESPACIO,
+      TIPOS_CON_PERSONA_A_CARGO
     ]) assert.ok(Object.isFrozen(constante));
   });
 });
@@ -160,7 +183,15 @@ describe('los textos', () => {
       planillaSoloContrato: 'La planilla es para las personas de contrato.',
       contratoEnLaPlanilla: 'Las personas de contrato cargan sus horas en la planilla.',
       mes: 'Elegí un mes válido.',
-      alMesAnterior: 'Elegí si este día suma al mes anterior.'
+      alMesAnterior: 'Elegí si este día suma al mes anterior.',
+      restituidosFijo: 'Los días restituidos no cambian de tipo.',
+      restitucionInvalida: 'Elegí qué días restituidos querés cargar.',
+      grupoNoPorRestituir: 'Esos días ya no están para restituir.',
+      grupoEsParaRestituir: 'Esos días no se toman: pedí la restitución.',
+      grupoEsParaTomar: 'Esos días se toman: cargalos como «Días restituidos».',
+      restitucionNoEncontrada: 'Restitución no encontrada',
+      restitucionVencida: 'Ya pasó el plazo: la restitución no se puede borrar.',
+      restituidosEmpezados: 'Ya empezó: los días restituidos no se pueden mover.'
     });
   });
 
@@ -708,6 +739,1648 @@ describe('el reparto de las vacaciones', () => {
   });
 });
 
+// Los días restituibles (spec 2026-10-31-mi-espacio-dias-restituidos, 4): con Julieta, cuyas vacaciones del 11/12/2026 al
+// 08/01/2027 incluyen los asuetos del 24 y el 31/12/2026, cargados después (la foto los guarda)
+describe('los días restituibles de una carga (spec 2026-10-31-mi-espacio-dias-restituidos, 4)', () => {
+  const ESTADO = JULIETA.estado;
+  const [VACACIONES_DE_JULIETA] = ESTADO.licencias;
+  const LOS_DOS = ['2026-12-24', '2026-12-31'];
+  // Una fila de la foto (las de JULIETA tienen ids 1 y 2: las de los tests, desde el 10)
+  const fotoDe = (id, licenciaId, fecha, extra = {}) =>
+    ({ id, licencia_id: licenciaId, feriado_id: 1, fecha, tanda: null, restitucion_id: null, ...extra });
+  const conFoto = (restituibles, licencias = ESTADO.licencias) => ({ ...ESTADO, restituibles, licencias });
+  // Sin foto: el asueto ya estaba cuando se cargaron las vacaciones
+  const sinFoto = conFoto([]);
+
+  it('restituiblesDe: los días de la foto que la carga sigue incluyendo y que hoy no son hábiles, por fecha', () => {
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, ESTADO, ASUETOS), LOS_DOS);
+    // En otro orden, repetidos o con los ids como texto, lo mismo
+    const desordenada = conFoto([fotoDe(10, '1', '2026-12-31'), fotoDe(11, 1, '2026-12-24'), fotoDe(12, 1, '2026-12-31')]);
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, desordenada, ASUETOS), LOS_DOS);
+    assert.deepEqual(restituiblesDe({ ...VACACIONES_DE_JULIETA, id: '1' }, ESTADO, ASUETOS), LOS_DOS);
+    // La tanda y el pedido no cambian qué días son restituibles (los grupos los arma restitucionesDe)
+    const pedida = conFoto(ESTADO.restituibles.map((fila) => ({ ...fila, tanda: 0, restitucion_id: 5 })));
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, pedida, ASUETOS), LOS_DOS);
+  });
+
+  it('un día que volvió a ser hábil (el asueto se dio de baja o ese año no rige) ya no se restituye', () => {
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, ESTADO, new Set(['2026-12-31'])), ['2026-12-31']);
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, ESTADO, SIN_FERIADOS), []);
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, ESTADO, undefined), []);
+  });
+
+  it('un día que la carga ya no incluye (las vacaciones se acortaron) ya no se restituye', () => {
+    assert.deepEqual(restituiblesDe({ ...VACACIONES_DE_JULIETA, hasta: '2026-12-23' }, ESTADO, ASUETOS), []);
+    assert.deepEqual(restituiblesDe({ ...VACACIONES_DE_JULIETA, hasta: '2026-12-28' }, ESTADO, ASUETOS), ['2026-12-24']);
+    assert.deepEqual(restituiblesDe({ ...VACACIONES_DE_JULIETA, desde: '2026-12-28' }, ESTADO, ASUETOS), ['2026-12-31']);
+  });
+
+  it('solo los días que un feriado de la tabla dejó de hacer hábiles: una fila en un sábado o en un fijo no suma', () => {
+    // El sábado 26/12 y el viernes 25/12 (Navidad, uno de los 9 fijos) no eran hábiles: la foto no los guarda, y si estuvieran
+    // no sumarían, aunque estén en el Set de los feriados
+    const conFinde = conFoto([...ESTADO.restituibles, fotoDe(10, 1, '2026-12-26'), fotoDe(11, 1, '2026-12-25')]);
+    for (const feriados of [ASUETOS, new Set([...ASUETOS, '2026-12-25', '2026-12-26'])]) {
+      assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, conFinde, feriados), LOS_DOS);
+      assert.equal(diasDeLaCarga(VACACIONES_DE_JULIETA, conFinde, feriados).length, 19);
+    }
+  });
+
+  it('en las vacaciones, solo del arranque en adelante (sin arranque, ninguno)', () => {
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, { ...ESTADO, arranque: '2026-12-28' }, ASUETOS), ['2026-12-31']);
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, { ...ESTADO, arranque: '2026-12-24' }, ASUETOS), LOS_DOS);
+    assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, { ...ESTADO, arranque: null }, ASUETOS), []);
+  });
+
+  it('solo los de esa carga, y solo en las vacaciones y en los días restituidos', () => {
+    // Otra carga con las mismas fechas no tiene foto
+    assert.deepEqual(restituiblesDe(vacaciones(10, '2026-12-11', '2027-01-08'), ESTADO, ASUETOS), []);
+    // Una atención médica con foto (no pasa: la foto es solo de vacaciones y de días restituidos) se recalcula como siempre
+    const medica = { id: 11, tipo: 'medica', desde: '2026-12-21', hasta: '2026-12-24', horas: null };
+    const conMedica = conFoto([fotoDe(10, 11, '2026-12-24')], [medica]);
+    assert.deepEqual(restituiblesDe(medica, conMedica, ASUETOS), []);
+    assert.deepEqual(diasDeLaCarga(medica, conMedica, ASUETOS), ['2026-12-21', '2026-12-22', '2026-12-23']);
+    // Una carga de días restituidos (la recursión: spec, 4); no es un tipo con saldo inicial, así que no mira el arranque
+    const restituidos = { id: 12, tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13', horas: null };
+    const conAsueto = new Set([...ASUETOS, '2027-04-12']);
+    const recursiva = conFoto([...ESTADO.restituibles, fotoDe(10, 12, '2027-04-12')], [VACACIONES_DE_JULIETA, restituidos]);
+    assert.deepEqual(restituiblesDe(restituidos, recursiva, conAsueto), ['2027-04-12']);
+    assert.deepEqual(restituiblesDe(restituidos, { ...recursiva, arranque: '2027-05-03' }, conAsueto), ['2027-04-12']);
+    assert.deepEqual(diasDeLaCarga(restituidos, recursiva, conAsueto), ['2027-04-12', '2027-04-13']);
+  });
+
+  it('una fila sin id, un tipo desconocido o lo que no es un estado: ninguno, sin tirar', () => {
+    const { id, ...sinId } = VACACIONES_DE_JULIETA;
+    assert.equal(id, 1);
+    for (const fila of [sinId, { ...VACACIONES_DE_JULIETA, id: null }, { ...VACACIONES_DE_JULIETA, id: 0 },
+      { ...VACACIONES_DE_JULIETA, id: 'x' }, { ...VACACIONES_DE_JULIETA, tipo: 'otro' },
+      { ...VACACIONES_DE_JULIETA, desde: '2026-02-30' }, undefined, null, 'x', [], 3]) {
+      assert.deepEqual(restituiblesDe(fila, ESTADO, ASUETOS), [], JSON.stringify(fila));
+    }
+    for (const estado of [undefined, null, '', 'x', 3, [], {}, { ...ESTADO, restituibles: 'x' },
+      { ...ESTADO, restituibles: [null, 3, 'x', {}, fotoDe(10, 1, '24/12/2026'), fotoDe(11, null, '2026-12-24')] }]) {
+      assert.deepEqual(restituiblesDe(VACACIONES_DE_JULIETA, estado, ASUETOS), [], JSON.stringify(estado));
+    }
+    for (const raro of [undefined, null, 'x', [], 3, {}]) {
+      assert.deepEqual(diasDeLaCarga(raro, ESTADO, ASUETOS), [], JSON.stringify(raro));
+      assert.doesNotThrow(() => diasDeLaCarga(VACACIONES_DE_JULIETA, raro, raro));
+    }
+  });
+
+  it('diasDeLaCarga: los días hábiles más los restituibles, por fecha y sin repetir', () => {
+    const dias = diasDeLaCarga(VACACIONES_DE_JULIETA, ESTADO, ASUETOS);
+    assert.equal(dias.length, 19);
+    assert.ok(dias.includes('2026-12-24') && dias.includes('2026-12-31'));
+    assert.deepEqual(dias, [...dias].sort());
+    assert.equal(new Set(dias).size, dias.length);
+    // Sin foto, los días hábiles (como siempre); sin los asuetos, los mismos 19 (son hábiles)
+    assert.equal(diasDeLaCarga(VACACIONES_DE_JULIETA, sinFoto, ASUETOS).length, 17);
+    assert.deepEqual(diasDeLaCarga(VACACIONES_DE_JULIETA, ESTADO, SIN_FERIADOS), dias);
+  });
+
+  // Review Focus 1: las vacaciones conservan sus días. Sin foto (el asueto ya estaba), todo se recalcula como siempre
+  it('las vacaciones conservan sus 19 días: diasQueDescuentan, el reparto y la licencia de cada día (porFecha)', () => {
+    assert.equal(diasQueDescuentan(VACACIONES_DE_JULIETA, sinFoto, SIN_FERIADOS).length, 19);
+    assert.equal(diasQueDescuentan(VACACIONES_DE_JULIETA, sinFoto, ASUETOS).length, 17);
+    const dias = diasQueDescuentan(VACACIONES_DE_JULIETA, ESTADO, ASUETOS);
+    assert.deepEqual(dias, diasDeLaCarga(VACACIONES_DE_JULIETA, ESTADO, ASUETOS));
+    assert.equal(dias.length, 19);
+
+    const reparto = repartoDeVacaciones(ESTADO, { hoy: '2027-01-11', feriados: ASUETOS });
+    assert.deepEqual(reparto.porFila.get(1), [{ anio: 2024, dias: 19 }]);
+    assert.equal(reparto.sinCubrir.size, 0);
+    const porFecha = reparto.porFecha.get(1);
+    assert.ok(porFecha instanceof Map);
+    assert.deepEqual([...porFecha.keys()], dias);
+    assert.equal(porFecha.get('2026-12-24'), 2024);
+    assert.equal(porFecha.get('2026-12-31'), 2024);
+    assert.ok([...porFecha.values()].every((anio) => anio === 2024));
+    // Con el id de la fila como texto (el de un pedido), los Map van con el id como número, con los mismos 19 días
+    const conIdDeTexto = conFoto(ESTADO.restituibles, [{ ...VACACIONES_DE_JULIETA, id: '1' }]);
+    const delTexto = repartoDeVacaciones(conIdDeTexto, { hoy: '2027-01-11', feriados: ASUETOS });
+    assert.deepEqual(delTexto.porFila.get(1), [{ anio: 2024, dias: 19 }]);
+    assert.ok(delTexto.porFecha.get(1) instanceof Map);
+    assert.deepEqual([...delTexto.porFecha.get(1)], [...porFecha]);
+    assert.equal(delTexto.porFila.has('1'), false);
+    // Sin foto, el reparto de siempre: 17 días de la 2024
+    const sinLaFoto = repartoDeVacaciones(sinFoto, { hoy: '2027-01-11', feriados: ASUETOS });
+    assert.deepEqual(sinLaFoto.porFila.get(1), [{ anio: 2024, dias: 17 }]);
+    assert.equal(sinLaFoto.porFecha.get(1).size, 17);
+    assert.equal(sinLaFoto.porFecha.get(1).has('2026-12-24'), false);
+  });
+
+  it('porFecha: los días sin cubrir no están, y una carga sin días tiene su Map vacío', () => {
+    // Con 10 de la 2025 y nada de la 2026 hasta el 1/1: la 2025 cubre hasta el 24/12, del 28/12 al 31/12 no queda ninguna y
+    // en enero, la 2026
+    const otrasLicencias = { ...ESTADO, saldos: saldosDeVacaciones({ 2024: 0, 2025: 10, 2026: 0 }) };
+    const reparto = repartoDeVacaciones(otrasLicencias, { hoy: '2027-01-11', feriados: ASUETOS });
+    const porFecha = reparto.porFecha.get(1);
+    assert.deepEqual(reparto.sinCubrir.get(1), ['2026-12-28', '2026-12-29', '2026-12-30', '2026-12-31']);
+    assert.equal(porFecha.size, 15);
+    for (const fecha of reparto.sinCubrir.get(1)) assert.equal(porFecha.has(fecha), false, fecha);
+    assert.equal(porFecha.get('2026-12-24'), 2025);
+    assert.equal(porFecha.get('2027-01-04'), 2026);
+    // Antes del arranque no descuenta: sin días, sin ninguna fecha
+    const antes = repartoDeVacaciones({ ...ESTADO, arranque: '2027-02-01' }, { hoy: '2027-01-11', feriados: ASUETOS });
+    assert.equal(antes.porFecha.get(1).size, 0);
+    assert.equal(repartoDeVacaciones(null).porFecha.size, 0);
+  });
+
+  it('sin faltantes ni «Perdés», con hoy el 22/12/2026 (antes del vencimiento de la 2024) y al volver, el 11/01/2027', () => {
+    const calculo = calcular(ESTADO, { hoy: '2026-12-22', feriados: ASUETOS });
+    assert.deepEqual(calculo.faltantes, []);
+    assert.equal(textoDePerdidos(calculo.reparto.ordinarias), '');
+    assert.equal(ordinaria(calculo.reparto, 2024).perdidos, 0);
+    assert.deepEqual(calcular(ESTADO, { hoy: '2027-01-11', feriados: ASUETOS }).faltantes, []);
+    // Sin foto, los 2 días que libera el asueto se perderían (como hasta ahora)
+    const sinLaFoto = calcular(sinFoto, { hoy: '2026-12-22', feriados: ASUETOS });
+    assert.equal(textoDePerdidos(sinLaFoto.reparto.ordinarias), 'Perdés 2 de la 2024 (vencen el 31/12/2026).');
+  });
+
+  it('el cálculo de «Cargar licencia» de las mismas vacaciones sigue diciendo 19 días', () => {
+    const { error, vista } = evaluarLicencia(ESTADO, { tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08' },
+      { hoy: '2026-12-22', feriados: ASUETOS, editadaId: 1 });
+    assert.equal(error, null);
+    assert.equal(vista.dias_habiles, 19);
+    assert.equal(vista.texto_dias, '19 días hábiles de 29 corridos');
+    assert.match(vista.texto_reparto, /^Salen de la licencia 2024/);
+    assert.ok(!vista.texto_reparto.includes('Perdés'), vista.texto_reparto);
+    // Sin foto, 17
+    const sinLaFoto = evaluarLicencia(sinFoto, { tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08' },
+      { hoy: '2026-12-22', feriados: ASUETOS, editadaId: 1 });
+    assert.equal(sinLaFoto.vista.texto_dias, '17 días hábiles de 29 corridos');
+  });
+
+  it('validarLicencia: los días restituidos no se cargan por acá; una corrección de un día restituible tiene días', () => {
+    const contexto = { hoy: '2026-12-22', estado: ESTADO, feriados: ASUETOS };
+    const tipo = { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipo };
+    const restituidos = { tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13' };
+    for (const extra of [{}, { uso_autorizado: true }, { editadaId: 1 }, { estado: { ...ESTADO, modalidad: 'contrato' } }]) {
+      assert.deepEqual(validarLicencia(restituidos, { ...contexto, ...extra }).error, tipo, JSON.stringify(extra));
+    }
+    // Unas vacaciones de un solo día, el 24/12, cargadas antes del asueto
+    const deUnDia = vacaciones(10, '2026-12-24', '2026-12-24');
+    const estado = conFoto([fotoDe(10, 10, '2026-12-24')], [deUnDia]);
+    const entrada = { tipo: 'vacaciones', desde: '2026-12-24', hasta: '2026-12-24', nota: 'Turno' };
+    for (const editadaId of [10, '10']) {
+      const corregida = validarLicencia(entrada, { ...contexto, estado, editadaId });
+      assert.equal(corregida.error, null, String(editadaId));
+      assert.equal(corregida.datos.nota, 'Turno');
+    }
+    // Una carga nueva ese día no tiene días hábiles: la foto es de la carga guardada
+    assert.deepEqual(validarLicencia(entrada, { ...contexto, estado: { ...estado, licencias: [] } }).error,
+      { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.sinDiasHabiles });
+    // Ni una corrección de otra carga
+    assert.deepEqual(validarLicencia(entrada, { ...contexto, estado, editadaId: 11 }).error,
+      { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.sinDiasHabiles });
+  });
+});
+
+// Los grupos de los días por restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 4, con las decisiones del constructor del
+// plan: las tandas se sellan al pedir y el primer asueto de una tanda es el más temprano de sus días por restituir y de sus
+// pedidos activos). Con Julieta: sus vacaciones del 11/12/2026 al 08/01/2027 salen todas de la 2024 (vence el 31/12/2026), y
+// los asuetos del 24 y el 31/12/2026 se cargaron después
+describe('los días restituidos: el plazo, el caso, los grupos y las tandas (spec 2026-10-31-mi-espacio-dias-restituidos, 4)', () => {
+  const ESTADO = JULIETA.estado;
+  const [VACACIONES_DE_JULIETA] = ESTADO.licencias;
+  const VUELVE = '2027-01-11';
+  const LOS_DOS = ['2026-12-24', '2026-12-31'];
+  const DE_JULIETA = Object.freeze({ tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08' });
+  // Una fila de la foto (las de JULIETA tienen ids 1 y 2: las de los tests, desde el 10), un pedido (desde el 10) y una
+  // carga de días restituidos (desde el 20)
+  const fotoDe = (id, licenciaId, fecha, extra = {}) =>
+    ({ id, licencia_id: licenciaId, feriado_id: 1, fecha, tanda: null, restitucion_id: null, ...extra });
+  const pedidoDe = (id, extra = {}) => ({
+    id, licencia_id: 1, anio: 2025, caso: 'restituir', dias: 2, primer_asueto: '2026-12-24', tanda: 0, fecha: '2027-01-11',
+    carga_id: null, activo: 1, licencia: { ...DE_JULIETA, activo: 1 }, ...extra
+  });
+  const restituidos = (id, desde, hasta) => ({ id, tipo: 'restituidos', desde, hasta, horas: null });
+  // La foto de Julieta sellada en una tanda y enlazada a un pedido (o sin pedido, con null)
+  const fotoSellada = (restitucionId, tanda = 0) =>
+    ESTADO.restituibles.map((fila) => ({ ...fila, tanda, restitucion_id: restitucionId }));
+  const con = (cambios) => ({ ...ESTADO, ...cambios });
+  // La variante B (spec, 5): las mismas vacaciones, con 20 de la 2025 y sin saldo de la 2024
+  const VARIANTE_B = con({ saldos: saldosDeVacaciones({ 2024: 0, 2025: 20, 2026: 10 }) });
+  const gruposDe = (estado, hoy = VUELVE, feriados = ASUETOS) => restitucionesDe(estado, { hoy, feriados });
+  // Lo que distingue a los grupos, para compararlos en una línea
+  const resumido = (grupos) => grupos.map(({ clave, caso, situacion, fechas, primer_asueto, plazo }) =>
+    [clave, caso, situacion, fechas, primer_asueto, plazo]);
+  // El grupo de Julieta al volver: los 2 días de la 2024, que vence antes del plazo (caso A)
+  const GRUPO_DE_JULIETA = Object.freeze({
+    clave: '1-2024-0', licencia_id: 1, anio: 2024, tanda: 0, caso: 'tomar', dias: 2, fechas: LOS_DOS,
+    primer_asueto: '2026-12-24', plazo: '2027-04-30', situacion: 'por_restituir', restitucion_id: null, carga_id: null,
+    fecha_pedido: null, revisar: '', carga: DE_JULIETA
+  });
+
+  it('plazoDeRestitucion: el último día hábil del mes que está 4 meses después del primer asueto', () => {
+    assert.equal(PLAZO_DE_RESTITUCION_EN_MESES, 4);
+    assert.equal(plazoDeRestitucion('2026-12-24', ASUETOS), '2027-04-30');
+    assert.equal(plazoDeRestitucion('2026-12-01', SIN_FERIADOS), '2027-04-30');
+    // El 30/04/2026 es feriado provincial («Plebiscito de 1902», en la precarga)
+    const plebiscito = FILAS_PRECARGA.filter((fila) => fila.fecha === '2026-04-30');
+    assert.equal(plebiscito.length, 1);
+    const conPlebiscito = feriadosDelRango(plebiscito, '2026-01-01', '2026-12-31');
+    assert.equal(plazoDeRestitucion('2025-12-24', conPlebiscito), '2026-04-29');
+    assert.equal(plazoDeRestitucion('2025-12-24', SIN_FERIADOS), '2026-04-30');
+    // Julio de 2027 termina un sábado; febrero de 2028 tiene 29 días
+    assert.equal(plazoDeRestitucion('2027-03-12', SIN_FERIADOS), '2027-07-30');
+    assert.equal(plazoDeRestitucion('2027-10-31', SIN_FERIADOS), '2028-02-29');
+    // Un feriado cargado en el último día lo corre al hábil anterior
+    assert.equal(plazoDeRestitucion('2026-12-24', new Set([...ASUETOS, '2027-04-30'])), '2027-04-29');
+    for (const raro of [undefined, null, '', 'x', 3, [], {}, '2026-02-30', '24/12/2026']) {
+      assert.equal(plazoDeRestitucion(raro, ASUETOS), null, JSON.stringify(raro));
+    }
+  });
+
+  it('casoDeRestitucion: tomarlos si la licencia vence antes del plazo; si no (también el mismo día), restituirlos', () => {
+    assert.equal(casoDeRestitucion(2024, '2027-04-30'), 'tomar');
+    assert.equal(casoDeRestitucion(2025, '2027-04-30'), 'restituir');
+    // Con un asueto del 15/10/2027 el plazo es el 29/02/2028, después del vencimiento de la 2025
+    assert.equal(plazoDeRestitucion('2027-10-15', SIN_FERIADOS), '2028-02-29');
+    assert.equal(casoDeRestitucion(2025, '2028-02-29'), 'tomar');
+    // El borde: vence el mismo día que el plazo
+    assert.equal(casoDeRestitucion(2024, '2026-12-31'), 'restituir');
+    assert.equal(casoDeRestitucion('2024', '2027-04-30'), 'tomar');
+    for (const raro of [undefined, null, '', 'x', [], {}, 2024.5, '24']) {
+      assert.equal(casoDeRestitucion(raro, '2027-04-30'), null, JSON.stringify(raro));
+      assert.equal(casoDeRestitucion(2024, raro), null, JSON.stringify(raro));
+    }
+  });
+
+  it('fechasDeLosAsuetos: los días de un mismo mes van solos y el último de cada mes (o de cada año) con su fecha', () => {
+    assert.equal(fechasDeLosAsuetos(LOS_DOS), '24 y el 31/12/2026');
+    assert.equal(fechasDeLosAsuetos(LOS_DOS, { conMes: true }), '24/12 y el 31/12/2026');
+    const cuatro = ['2025-12-24', '2025-12-26', '2025-12-31', '2026-01-02'];
+    assert.equal(fechasDeLosAsuetos(cuatro), '24, el 26, el 31/12/2025 y el 02/01/2026');
+    assert.equal(fechasDeLosAsuetos(cuatro, { conMes: true }), '24/12, el 26/12, el 31/12/2025 y el 02/01/2026');
+    // Dos meses del mismo año
+    assert.equal(fechasDeLosAsuetos(['2026-11-30', '2026-12-24']), '30/11/2026 y el 24/12/2026');
+    assert.equal(fechasDeLosAsuetos(['2026-11-30', '2026-12-24'], { conMes: true }), '30/11 y el 24/12/2026');
+    // Una sola, con su fecha entera en las dos formas
+    assert.equal(fechasDeLosAsuetos(['2026-12-24']), '24/12/2026');
+    assert.equal(fechasDeLosAsuetos(['2026-12-24'], { conMes: true }), '24/12/2026');
+    // Desordenadas, repetidas o con algo que no es una fecha, lo mismo
+    assert.equal(fechasDeLosAsuetos(['2026-12-31', 'x', '2026-12-24', '2026-12-31', null]), '24 y el 31/12/2026');
+    assert.equal(fechasDeLosAsuetos(LOS_DOS, { conMes: 'sí' }), '24 y el 31/12/2026');
+    for (const raro of [undefined, null, '', 'x', 3, [], {}, ['x']]) assert.equal(fechasDeLosAsuetos(raro), '');
+  });
+
+  it('Julieta, al volver: un grupo por restituir del caso A, con los 2 días de la 2024 y su plazo', () => {
+    assert.deepEqual(gruposDe(ESTADO), [GRUPO_DE_JULIETA]);
+    // El día en que se cargaron los asuetos, y hasta el plazo inclusive, lo mismo
+    assert.deepEqual(gruposDe(ESTADO, '2026-12-22'), [GRUPO_DE_JULIETA]);
+    assert.deepEqual(gruposDe(ESTADO, '2027-04-30'), [GRUPO_DE_JULIETA]);
+    // Pasado el plazo sin pedir nada, se pierden
+    assert.deepEqual(gruposDe(ESTADO, '2027-05-03'), [{ ...GRUPO_DE_JULIETA, situacion: 'perdida' }]);
+    // Con el reparto de calcular, lo mismo que calculándolo
+    const opciones = { hoy: VUELVE, feriados: ASUETOS };
+    const reparto = repartoDeVacaciones(ESTADO, opciones);
+    assert.deepEqual(restitucionesDe(ESTADO, { ...opciones, reparto }), [GRUPO_DE_JULIETA]);
+    const calculo = calcular(ESTADO, opciones);
+    assert.deepEqual(calculo.restituciones, [GRUPO_DE_JULIETA]);
+    assert.deepEqual(calculo.restituciones, restitucionesDe(ESTADO, { ...opciones, reparto: calculo.reparto }));
+    // Sin foto (el asueto ya estaba cuando se cargaron las vacaciones), nada
+    assert.deepEqual(gruposDe(con({ restituibles: [] })), []);
+  });
+
+  it('la variante B: los días de la 2025 vencen después del plazo, así que se pide la restitución', () => {
+    assert.deepEqual(gruposDe(VARIANTE_B), [{ ...GRUPO_DE_JULIETA, clave: '1-2025-0', anio: 2025, caso: 'restituir' }]);
+  });
+
+  it('dos licencias de origen en la misma tanda: un grupo por licencia, con el plazo del primer asueto', () => {
+    // 12 de la 2024 y 7 de la 2025: el 24/12 sale de la 2024 y el 31/12, de la 2025
+    const dosLicencias = con({ saldos: saldosDeVacaciones({ 2024: 12, 2025: 15, 2026: 10 }) });
+    assert.deepEqual(resumido(gruposDe(dosLicencias)), [
+      ['1-2024-0', 'tomar', 'por_restituir', ['2026-12-24'], '2026-12-24', '2027-04-30'],
+      ['1-2025-0', 'restituir', 'por_restituir', ['2026-12-31'], '2026-12-24', '2027-04-30']
+    ]);
+    // Con los asuetos del 24/12 y del 04/01/2027: el del 04/01 solo tendría plazo el 31/05/2027, pero es de la misma tanda
+    const feriados = new Set(['2026-12-24', '2027-01-04']);
+    const conEnero = { ...dosLicencias, restituibles: [ESTADO.restituibles[0], fotoDe(10, 1, '2027-01-04')] };
+    assert.deepEqual(resumido(gruposDe(conEnero, VUELVE, feriados)), [
+      ['1-2024-0', 'tomar', 'por_restituir', ['2026-12-24'], '2026-12-24', '2027-04-30'],
+      ['1-2025-0', 'restituir', 'por_restituir', ['2027-01-04'], '2026-12-24', '2027-04-30']
+    ]);
+    assert.equal(plazoDeRestitucion('2027-01-04', feriados), '2027-05-31');
+  });
+
+  it('pedir una de las dos licencias no le cambia el plazo a la otra (decisión 11)', () => {
+    const feriados = new Set(['2026-12-24', '2027-01-04']);
+    const hoy = '2027-02-05';
+    // Dos del caso B: 12 de la 2025 (hasta el 29/12, con el 24/12) y 7 de la 2026 (desde el 30/12, con el 04/01)
+    const dosB = con({ saldos: saldosDeVacaciones({ 2024: 0, 2025: 12, 2026: 10 }) });
+    const sinPedir = { ...dosB, restituibles: [ESTADO.restituibles[0], fotoDe(10, 1, '2027-01-04')] };
+    assert.deepEqual(resumido(gruposDe(sinPedir, hoy, feriados)), [
+      ['1-2025-0', 'restituir', 'por_restituir', ['2026-12-24'], '2026-12-24', '2027-04-30'],
+      ['1-2026-0', 'restituir', 'por_restituir', ['2027-01-04'], '2026-12-24', '2027-04-30']
+    ]);
+    // Pedida la de la 2025 (la foto se selló en la tanda 0 y su día quedó enlazado), la de la 2026 conserva el plazo del 24/12
+    const pedidaLa2025 = {
+      ...dosB,
+      restituibles: [{ ...ESTADO.restituibles[0], tanda: 0, restitucion_id: 10 }, fotoDe(10, 1, '2027-01-04', { tanda: 0 })],
+      restituciones: [pedidoDe(10, { dias: 1, fecha: '2027-02-01' })]
+    };
+    const grupos = gruposDe(pedidaLa2025, hoy, feriados);
+    assert.deepEqual(resumido(grupos), [
+      ['1-2025-0', 'restituir', 'pedida', ['2026-12-24'], '2026-12-24', '2027-04-30'],
+      ['1-2026-0', 'restituir', 'por_restituir', ['2027-01-04'], '2026-12-24', '2027-04-30']
+    ]);
+    assert.deepEqual(grupos[0], {
+      clave: '1-2025-0', licencia_id: 1, anio: 2025, tanda: 0, caso: 'restituir', dias: 1, fechas: ['2026-12-24'],
+      primer_asueto: '2026-12-24', plazo: '2027-04-30', situacion: 'pedida', restitucion_id: 10, carga_id: null,
+      fecha_pedido: '2027-02-01', revisar: '', carga: DE_JULIETA
+    });
+
+    // Lo mismo con una del caso A: cargados los días de la 2024, la de la 2025 conserva el plazo del 24/12
+    const dosLicencias = con({
+      saldos: saldosDeVacaciones({ 2024: 12, 2025: 15, 2026: 10 }),
+      licencias: [VACACIONES_DE_JULIETA, restituidos(20, '2027-04-12', '2027-04-12')],
+      restituibles: [{ ...ESTADO.restituibles[0], tanda: 0, restitucion_id: 10 }, fotoDe(10, 1, '2027-01-04', { tanda: 0 })],
+      restituciones: [pedidoDe(10, { anio: 2024, caso: 'tomar', dias: 1, fecha: '2027-02-01', carga_id: 20 })]
+    });
+    const conLaCarga = gruposDe(dosLicencias, hoy, feriados);
+    assert.deepEqual(resumido(conLaCarga), [
+      ['1-2024-0', 'tomar', 'cargada', ['2026-12-24'], '2026-12-24', '2027-04-30'],
+      ['1-2025-0', 'restituir', 'por_restituir', ['2027-01-04'], '2026-12-24', '2027-04-30']
+    ]);
+    assert.deepEqual([conLaCarga[0].restitucion_id, conLaCarga[0].carga_id, conLaCarga[0].fecha_pedido], [10, 20, '2027-02-01']);
+  });
+
+  it('otro asueto después de pedir arma una tanda nueva, con su propio plazo (decisión 12)', () => {
+    const feriados = new Set([...ASUETOS, '2027-01-04']);
+    // La variante B con la restitución pedida el 11/01; el asueto del 04/01 se cargó después (su foto quedó abierta)
+    const estado = {
+      ...VARIANTE_B,
+      restituibles: [...fotoSellada(10), fotoDe(12, 1, '2027-01-04')],
+      restituciones: [pedidoDe(10)]
+    };
+    const grupos = gruposDe(estado, '2027-01-20', feriados);
+    assert.deepEqual(resumido(grupos), [
+      ['1-2025-0', 'restituir', 'pedida', LOS_DOS, '2026-12-24', '2027-04-30'],
+      ['1-2025-1', 'restituir', 'por_restituir', ['2027-01-04'], '2027-01-04', '2027-05-31']
+    ]);
+    assert.deepEqual(grupos.map((grupo) => grupo.tanda), [0, 1]);
+  });
+
+  it('borrar el pedido devuelve sus días a «por restituir» con su plazo de siempre, y sigue separando las tandas', () => {
+    const feriados = new Set([...ASUETOS, '2027-01-04']);
+    // El pedido dado de baja: sus días quedaron sellados en la tanda 0, sin pedido; el del 04/01 sigue abierto
+    const estado = {
+      ...VARIANTE_B,
+      restituibles: [...fotoSellada(null), fotoDe(12, 1, '2027-01-04')],
+      restituciones: [pedidoDe(10, { activo: 0 })]
+    };
+    assert.deepEqual(resumido(gruposDe(estado, '2027-01-20', feriados)), [
+      ['1-2025-0', 'restituir', 'por_restituir', LOS_DOS, '2026-12-24', '2027-04-30'],
+      ['1-2025-1', 'restituir', 'por_restituir', ['2027-01-04'], '2027-01-04', '2027-05-31']
+    ]);
+    // Sin el otro asueto: el grupo de siempre; con la foto todavía enlazada al pedido dado de baja, lo mismo
+    const borrado = { ...VARIANTE_B, restituibles: fotoSellada(null), restituciones: [pedidoDe(10, { activo: 0 })] };
+    const esperado = [['1-2025-0', 'restituir', 'por_restituir', LOS_DOS, '2026-12-24', '2027-04-30']];
+    assert.deepEqual(resumido(gruposDe(borrado, '2027-01-20')), esperado);
+    assert.deepEqual(resumido(gruposDe({ ...borrado, restituibles: fotoSellada(10) }, '2027-01-20')), esperado);
+    // Pasado el plazo, perdidos
+    assert.deepEqual(gruposDe(borrado, '2027-05-03').map((grupo) => grupo.situacion), ['perdida']);
+  });
+
+  it('un pedido del caso A cuya carga de días restituidos ya no está activa cuenta como suelto', () => {
+    const pedidoA = pedidoDe(10, { anio: 2024, caso: 'tomar', fecha: '2027-02-01', carga_id: 20 });
+    const conLaCarga = con({
+      licencias: [VACACIONES_DE_JULIETA, restituidos(20, '2027-04-12', '2027-04-13')],
+      restituibles: fotoSellada(10),
+      restituciones: [pedidoA]
+    });
+    assert.deepEqual(resumido(gruposDe(conLaCarga, '2027-02-05')),
+      [['1-2024-0', 'tomar', 'cargada', LOS_DOS, '2026-12-24', '2027-04-30']]);
+    // Sin la carga (la anularon en Configuración, o algo la dio de baja sin soltar el pedido): por restituir hasta el plazo
+    const sinLaCarga = { ...conLaCarga, licencias: [VACACIONES_DE_JULIETA] };
+    assert.deepEqual(gruposDe(sinLaCarga, '2027-02-05'), [GRUPO_DE_JULIETA]);
+    assert.deepEqual(gruposDe(sinLaCarga, '2027-05-03'), [{ ...GRUPO_DE_JULIETA, situacion: 'perdida' }]);
+    // Un pedido A sin carga, lo mismo
+    const sinCargaId = { ...sinLaCarga, restituciones: [{ ...pedidoA, carga_id: null }] };
+    assert.deepEqual(gruposDe(sinCargaId, '2027-02-05'), [GRUPO_DE_JULIETA]);
+  });
+
+  it('los cambios antes de pedir se acomodan solos: acortar, alargar, borrar, la baja del asueto y «no rige»', () => {
+    // Acortadas al 28/12, el 31/12 ya no está
+    const acortadas = { ...VACACIONES_DE_JULIETA, hasta: '2026-12-28' };
+    const [delAcortado] = gruposDe(con({ licencias: [acortadas] }));
+    assert.deepEqual([delAcortado.fechas, delAcortado.dias, delAcortado.carga.hasta], [['2026-12-24'], 1, '2026-12-28']);
+    // Alargadas hasta un feriado que ya estaba (sin foto): ese día no se restituye
+    const alargadas = { ...VACACIONES_DE_JULIETA, hasta: '2027-01-15' };
+    assert.deepEqual(resumido(gruposDe(con({ licencias: [alargadas] }), VUELVE, new Set([...ASUETOS, '2027-01-12']))),
+      [['1-2024-0', 'tomar', 'por_restituir', LOS_DOS, '2026-12-24', '2027-04-30']]);
+    // Borradas, nada
+    assert.deepEqual(gruposDe(con({ licencias: [] })), []);
+    // El asueto del 31/12 dado de baja: queda el 24/12 (y al revés, con el del 24/12 que ese año no rige, el 31/12)
+    assert.deepEqual(resumido(gruposDe(ESTADO, VUELVE, new Set(['2026-12-24']))),
+      [['1-2024-0', 'tomar', 'por_restituir', ['2026-12-24'], '2026-12-24', '2027-04-30']]);
+    assert.deepEqual(resumido(gruposDe(ESTADO, VUELVE, new Set(['2026-12-31']))),
+      [['1-2024-0', 'tomar', 'por_restituir', ['2026-12-31'], '2026-12-31', '2027-04-30']]);
+    assert.deepEqual(gruposDe(ESTADO, VUELVE, SIN_FERIADOS), []);
+    // Una carga anterior al arranque, de otra persona (otro id) o de otro tipo, nada
+    assert.deepEqual(gruposDe(con({ arranque: '2027-01-11' })), []);
+    assert.deepEqual(gruposDe(con({ restituibles: ESTADO.restituibles.map((fila) => ({ ...fila, licencia_id: 9 })) })), []);
+    const medica = { ...VACACIONES_DE_JULIETA, tipo: 'medica' };
+    assert.deepEqual(gruposDe(con({ licencias: [medica] })), []);
+  });
+
+  it('ya pedidos, quedan como están y el texto dice qué revisar, en orden', () => {
+    const hoy = '2027-01-20';
+    const pedida = { ...VARIANTE_B, restituibles: fotoSellada(10), restituciones: [pedidoDe(10)] };
+    const revisarDe = (estado, feriados = ASUETOS) => {
+      const grupos = gruposDe(estado, hoy, feriados);
+      assert.deepEqual(grupos.map((grupo) => [grupo.situacion, grupo.fechas]), [['pedida', LOS_DOS]]);
+      return grupos[0].revisar;
+    };
+    assert.equal(revisarDe(pedida), '');
+    // Las vacaciones ya no están cargadas (la carga, la del pedido)
+    const borradas = { ...pedida, licencias: [] };
+    assert.equal(revisarDe(borradas),
+      'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ya no están cargadas.');
+    assert.deepEqual(gruposDe(borradas, hoy)[0].carga, DE_JULIETA);
+    // Las vacaciones pasaron a otro tipo: siguen cargadas, con otro nombre (la carga del pedido es la fila de la base, con su
+    // tipo de hoy); la fila activa manda, también si la del pedido es de antes
+    const aMedica = { ...pedida, licencias: [{ ...VACACIONES_DE_JULIETA, tipo: 'medica' }] };
+    const comoMedica = 'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ahora están cargadas como '
+      + '«Atención médica».';
+    assert.equal(revisarDe(aMedica), comoMedica);
+    assert.equal(revisarDe({ ...aMedica, restituciones: [pedidoDe(10, { licencia: { ...DE_JULIETA, tipo: 'medica', activo: 1 } })] }),
+      comoMedica);
+    // Corregidas también de fechas: las de la fila, como se ven en la lista
+    const otrasFechas = {
+      ...pedida, licencias: [{ ...VACACIONES_DE_JULIETA, tipo: 'familiar', desde: '2026-12-14', hasta: '2026-12-18' }]
+    };
+    assert.equal(revisarDe(otrasFechas),
+      'Revisá tus días restituidos: las vacaciones del 14/12 al 18/12/2026 ahora están cargadas como «Atención del grupo familiar».');
+    // El primer problema, aunque además haya otros
+    assert.equal(revisarDe(aMedica, SIN_FERIADOS), comoMedica);
+    // Una fecha quedó fuera de las vacaciones
+    const hasta28 = { ...pedida, licencias: [{ ...VACACIONES_DE_JULIETA, hasta: '2026-12-28' }] };
+    assert.equal(revisarDe(hasta28), 'Revisá tus días restituidos: tus vacaciones ya no incluyen el 31/12/2026.');
+    const hasta23 = { ...pedida, licencias: [{ ...VACACIONES_DE_JULIETA, hasta: '2026-12-23' }] };
+    assert.equal(revisarDe(hasta23), 'Revisá tus días restituidos: tus vacaciones ya no incluyen el 24/12 y el 31/12/2026.');
+    // Volvió a ser hábil
+    assert.equal(revisarDe(pedida, new Set(['2026-12-31'])),
+      'Revisá tus días restituidos: el asueto del 24/12/2026 se dio de baja.');
+    assert.equal(revisarDe(pedida, SIN_FERIADOS),
+      'Revisá tus días restituidos: los asuetos del 24/12 y el 31/12/2026 se dieron de baja.');
+    // El primero que haya, en ese orden
+    assert.equal(revisarDe(borradas, SIN_FERIADOS),
+      'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ya no están cargadas.');
+    assert.equal(revisarDe(hasta28, SIN_FERIADOS),
+      'Revisá tus días restituidos: tus vacaciones ya no incluyen el 31/12/2026.');
+    // El plazo se recalcula con los feriados de hoy
+    assert.equal(gruposDe(pedida, hoy, new Set([...ASUETOS, '2027-04-30']))[0].plazo, '2027-04-29');
+  });
+
+  it('un pedido B que ya pasó su plazo no lleva «Revisá…» (no se puede borrar); una carga A, sí', () => {
+    const pedida = { ...VARIANTE_B, restituibles: fotoSellada(10), restituciones: [pedidoDe(10)] };
+    const revisarDe = (estado, hoy, feriados) => gruposDe(estado, hoy, feriados).map(({ situacion, revisar }) =>
+      [situacion, revisar]);
+    // Hasta el plazo inclusive, el texto; desde el día siguiente, nada, sea cual sea el problema
+    assert.deepEqual(revisarDe(pedida, '2027-04-30', SIN_FERIADOS),
+      [['pedida', 'Revisá tus días restituidos: los asuetos del 24/12 y el 31/12/2026 se dieron de baja.']]);
+    for (const estado of [pedida, { ...pedida, licencias: [] }]) {
+      for (const feriados of [ASUETOS, SIN_FERIADOS]) {
+        assert.deepEqual(revisarDe(estado, '2027-05-03', feriados), [['pedida', '']]);
+      }
+    }
+    // Una carga A se puede borrar o corregir siempre: el texto sigue después del plazo
+    const cargada = con({
+      licencias: [VACACIONES_DE_JULIETA, restituidos(20, '2027-04-12', '2027-04-13')],
+      restituibles: fotoSellada(10),
+      restituciones: [pedidoDe(10, { anio: 2024, caso: 'tomar', fecha: '2027-02-01', carga_id: 20 })]
+    });
+    assert.deepEqual(revisarDe(cargada, '2027-05-03', new Set(['2026-12-31'])),
+      [['cargada', 'Revisá tus días restituidos: el asueto del 24/12/2026 se dio de baja.']]);
+  });
+
+  it('la recursión: un asueto que cae en una carga de días restituidos arma su grupo, siempre del caso A (Review Focus 7)', () => {
+    const hoy = '2027-04-08';
+    const feriados = new Set([...ASUETOS, '2027-04-12']);
+    const cargaA = restituidos(20, '2027-04-12', '2027-04-13');
+    const pedidoA = pedidoDe(10, { anio: 2024, caso: 'tomar', fecha: '2027-02-01', carga_id: 20 });
+    const estado = con({
+      licencias: [VACACIONES_DE_JULIETA, cargaA],
+      restituibles: [...fotoSellada(10), fotoDe(12, 20, '2027-04-12')],
+      restituciones: [pedidoA]
+    });
+    const grupos = gruposDe(estado, hoy, feriados);
+    assert.deepEqual(resumido(grupos), [
+      ['1-2024-0', 'tomar', 'cargada', LOS_DOS, '2026-12-24', '2027-04-30'],
+      ['20-2024-0', 'tomar', 'por_restituir', ['2027-04-12'], '2027-04-12', '2027-08-31']
+    ]);
+    assert.deepEqual(grupos[1].carga, { tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13' });
+    assert.deepEqual([grupos[1].licencia_id, grupos[1].anio, grupos[1].dias, grupos[1].revisar], [20, 2024, 1, '']);
+    // Siempre A, aunque el año de su pedido venciera después del plazo
+    const conLa2025 = { ...estado, restituciones: [{ ...pedidoA, anio: 2025 }] };
+    assert.equal(casoDeRestitucion(2025, '2027-08-31'), 'restituir');
+    assert.deepEqual(gruposDe(conLa2025, hoy, feriados).map(({ clave, caso }) => [clave, caso]),
+      [['1-2025-0', 'tomar'], ['20-2025-0', 'tomar']]);
+
+    // Pedida también (cargada en otra carga de días restituidos) y después corrida o borrada: el «Revisá…» de esos días
+    const cargaB = restituidos(21, '2027-05-03', '2027-05-03');
+    const pedidoB = pedidoDe(11, {
+      licencia_id: 20, anio: 2024, caso: 'tomar', dias: 1, primer_asueto: '2027-04-12', fecha: '2027-04-08', carga_id: 21,
+      licencia: { tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13', activo: 1 }
+    });
+    const ambas = {
+      ...estado,
+      licencias: [VACACIONES_DE_JULIETA, cargaA, cargaB],
+      restituibles: [...fotoSellada(10), fotoDe(12, 20, '2027-04-12', { tanda: 0, restitucion_id: 11 })],
+      restituciones: [pedidoA, pedidoB]
+    };
+    const deAmbas = gruposDe(ambas, hoy, feriados);
+    assert.deepEqual(resumido(deAmbas), [
+      ['1-2024-0', 'tomar', 'cargada', LOS_DOS, '2026-12-24', '2027-04-30'],
+      ['20-2024-0', 'tomar', 'cargada', ['2027-04-12'], '2027-04-12', '2027-08-31']
+    ]);
+    const corrida = { ...ambas, licencias: [VACACIONES_DE_JULIETA, { ...cargaA, desde: '2027-04-13', hasta: '2027-04-14' }, cargaB] };
+    assert.equal(gruposDe(corrida, hoy, feriados)[1].revisar,
+      'Revisá tus días restituidos: tus días restituidos ya no incluyen el 12/04/2027.');
+    // Borrada la primera carga, su pedido queda suelto (sus días vuelven a estar por restituir) y el de la recursión avisa
+    const borrada = { ...ambas, licencias: [VACACIONES_DE_JULIETA, cargaB] };
+    const deLaBorrada = gruposDe(borrada, hoy, feriados);
+    assert.deepEqual(resumido(deLaBorrada), [
+      ['1-2024-0', 'tomar', 'por_restituir', LOS_DOS, '2026-12-24', '2027-04-30'],
+      ['20-2024-0', 'tomar', 'cargada', ['2027-04-12'], '2027-04-12', '2027-08-31']
+    ]);
+    assert.equal(deLaBorrada[1].revisar,
+      'Revisá tus días restituidos: los días restituidos del 12/04 al 13/04/2027 ya no están cargados.');
+
+    // Una carga de días restituidos sin su pedido activo no sabe de qué licencia es: no arma grupo
+    const sinPedido = { ...estado, restituciones: [{ ...pedidoA, activo: 0 }] };
+    assert.deepEqual(gruposDe(sinPedido, hoy, feriados).map(({ clave }) => clave), ['1-2024-0']);
+  });
+
+  it('un día de la foto que el reparto no cubre no forma grupo, pero cuenta para el primer asueto de su tanda', () => {
+    // Con 10 de la 2025: la 2025 cubre hasta el 24/12 y del 28/12 al 31/12 no queda ninguna
+    const sinCubrir = con({ saldos: saldosDeVacaciones({ 2024: 0, 2025: 10, 2026: 0 }) });
+    assert.deepEqual(resumido(gruposDe(sinCubrir)),
+      [['1-2025-0', 'restituir', 'por_restituir', ['2026-12-24'], '2026-12-24', '2027-04-30']]);
+    // Con los asuetos del 31/12 (sin cubrir) y del 04/01 (de la 2026, que se habilita el 1/1): el plazo es el del 31/12, así
+    // corregir el saldo nunca acorta un plazo
+    const feriados = new Set(['2026-12-31', '2027-01-04']);
+    const conEnero = { ...sinCubrir, restituibles: [ESTADO.restituibles[1], fotoDe(10, 1, '2027-01-04')] };
+    assert.deepEqual(repartoDeVacaciones(conEnero, { hoy: VUELVE, feriados }).sinCubrir.get(1),
+      ['2026-12-28', '2026-12-29', '2026-12-30', '2026-12-31']);
+    assert.deepEqual(resumido(gruposDe(conEnero, VUELVE, feriados)),
+      [['1-2026-0', 'restituir', 'por_restituir', ['2027-01-04'], '2026-12-31', '2027-04-30']]);
+    assert.equal(plazoDeRestitucion('2027-01-04', feriados), '2027-05-31');
+  });
+
+  it('la mitad del caso B: lo pedido vuelve a su licencia el día del pedido, y las vacaciones siguen con sus 19 días', () => {
+    const hoy = '2027-04-05';
+    const aHoy = { hoy, feriados: ASUETOS };
+    const pedida = { ...VARIANTE_B, restituibles: fotoSellada(10), restituciones: [pedidoDe(10, { fecha: '2027-04-01' })] };
+    const ordinarias = ordinariasDe(pedida, hoy);
+    assert.deepEqual(ordinarias.find((o) => o.anio === 2025), {
+      anio: 2025, total: 22,
+      mitades: [{ dias: 20, habilita: '2026-11-02' }, { dias: 2, habilita: '2027-04-01', licencia_id: 1 }],
+      vence: '2027-12-31', desde_saldo: true
+    });
+    // Las demás no cambian
+    assert.deepEqual(ordinarias.filter((o) => o.anio !== 2025), ordinariasDe(VARIANTE_B, hoy).filter((o) => o.anio !== 2025));
+    // «Te quedan» pasa de 21 a 23: la 2025, de 1 a 3
+    const antes = repartoDeVacaciones(VARIANTE_B, aHoy);
+    const despues = repartoDeVacaciones(pedida, aHoy);
+    assert.deepEqual([disponibles(antes), ordinaria(antes, 2025).disponibles], [21, 1]);
+    assert.deepEqual([disponibles(despues), ordinaria(despues, 2025).disponibles], [23, 3]);
+    assert.equal(ordinaria(despues, 2025).por_habilitar, 0);
+    assert.match(textoDelReparto(despues, 1), /Te quedan 23 días: 3 de la 2025 \(vencen el 31\/12\/2027\) y 20 de la 2026\./);
+    // Las vacaciones originales siguen con sus 19 días, de la 2025
+    assert.deepEqual(despues.porFila.get(1), [{ anio: 2025, dias: 19 }]);
+    assert.equal(diasQueDescuentan(VACACIONES_DE_JULIETA, pedida, ASUETOS).length, 19);
+    assert.equal(calcular(pedida, aHoy).restituciones[0].situacion, 'pedida');
+    // Un pedido dado de baja, del caso A o con días, una fecha o un año que no sirven no suma nada
+    for (const otro of [{ activo: 0 }, { caso: 'tomar', carga_id: 20 }, { dias: 0 }, { dias: 'x' }, { fecha: null },
+      { fecha: '01/04/2027' }, { anio: 2019 }]) {
+      const estado = { ...pedida, restituciones: [pedidoDe(10, { fecha: '2027-04-01', ...otro })] };
+      assert.deepEqual(ordinariasDe(estado, hoy), ordinariasDe(VARIANTE_B, hoy), JSON.stringify(otro));
+    }
+  });
+
+  it('la mitad del caso B no la usa su propia carga: pedida antes de que terminen las vacaciones, vuelve justo a su licencia', () => {
+    // 13 de la 2025 y 10 de la 2026: el 24/12 sale de la 2025 y el 31/12, de la 2026. Los asuetos se cargaron el 22/12 y la
+    // restitución de la 2025 (el 24/12) se pidió el 23/12, con las vacaciones todavía en curso
+    const feriados = ASUETOS;
+    const dosB = con({ saldos: saldosDeVacaciones({ 2024: 0, 2025: 13, 2026: 10 }) });
+    const antes = repartoDeVacaciones(dosB, { hoy: '2026-12-22', feriados });
+    assert.deepEqual([antes.porFecha.get(1).get('2026-12-24'), antes.porFecha.get(1).get('2026-12-31')], [2025, 2026]);
+    const pedida = {
+      ...dosB,
+      restituibles: [{ ...ESTADO.restituibles[0], tanda: 0, restitucion_id: 10 }, { ...ESTADO.restituibles[1], tanda: 0 }],
+      restituciones: [pedidoDe(10, { dias: 1, fecha: '2026-12-23' })]
+    };
+    const despues = repartoDeVacaciones(pedida, { hoy: VUELVE, feriados });
+    // Las vacaciones no absorben la mitad: el 31/12 sigue en la 2026 y la 2025 queda con el día que volvió
+    assert.deepEqual([despues.porFecha.get(1).get('2026-12-24'), despues.porFecha.get(1).get('2026-12-31')], [2025, 2026]);
+    assert.deepEqual(despues.porFila.get(1), [{ anio: 2025, dias: 13 }, { anio: 2026, dias: 6 }]);
+    assert.deepEqual([ordinaria(despues, 2025).disponibles, ordinaria(despues, 2026).disponibles], [1, 14]);
+    // Un grupo por clave: la 2025, pedida, y la 2026, por restituir con el plazo del 24/12
+    const grupos = gruposDe(pedida, VUELVE, feriados);
+    assert.deepEqual(resumido(grupos), [
+      ['1-2025-0', 'restituir', 'pedida', ['2026-12-24'], '2026-12-24', '2027-04-30'],
+      ['1-2026-0', 'restituir', 'por_restituir', ['2026-12-31'], '2026-12-24', '2027-04-30']
+    ]);
+    assert.equal(new Set(grupos.map(({ clave }) => clave)).size, grupos.length);
+    // Otra carga sí la usa: unas vacaciones de un día en febrero salen del día que volvió a la 2025
+    const conFebrero = { ...pedida, licencias: [...pedida.licencias, vacaciones(30, '2027-02-01', '2027-02-01')] };
+    const deFebrero = repartoDeVacaciones(conFebrero, { hoy: VUELVE, feriados });
+    assert.deepEqual(deFebrero.porFila.get(30), [{ anio: 2025, dias: 1 }]);
+    assert.deepEqual(deFebrero.porFila.get(1), despues.porFila.get(1));
+    assert.equal(ordinaria(deFebrero, 2025).disponibles, 0);
+  });
+
+  it('un pedido del caso B cuya carga ya no está no suma su mitad: sus días ya volvieron con la baja', () => {
+    const hoy = '2027-04-05';
+    const pedida = { ...VARIANTE_B, restituibles: fotoSellada(10), restituciones: [pedidoDe(10, { fecha: '2027-04-01' })] };
+    // La persona borró las vacaciones (o administración las anuló en Configuración): los 19 días ya volvieron a la 2025, así
+    // que «Te quedan» es 40 (20 de la 2025 y 20 de la 2026), sin los 2 del pedido
+    const sinLasVacaciones = { ...pedida, licencias: [] };
+    assert.deepEqual(ordinariasDe(sinLasVacaciones, hoy), ordinariasDe({ ...VARIANTE_B, licencias: [] }, hoy));
+    const reparto = repartoDeVacaciones(sinLasVacaciones, { hoy, feriados: ASUETOS });
+    assert.deepEqual([disponibles(reparto), ordinaria(reparto, 2025).disponibles], [40, 20]);
+    // Con las vacaciones pasadas a otro tipo, lo mismo: ya no es una carga con días restituibles
+    const otroTipo = { ...pedida, licencias: [{ ...VACACIONES_DE_JULIETA, tipo: 'medica' }] };
+    assert.equal(ordinariasDe(otroTipo, hoy).find((o) => o.anio === 2025).total, 20);
+    // …y el pedido sigue pedido, con el «Revisá…» de las vacaciones que ahora tienen otro tipo
+    assert.deepEqual(gruposDe(otroTipo, hoy).map((otro) => [otro.situacion, otro.revisar]), [['pedida',
+      'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ahora están cargadas como «Atención médica».']]);
+    // Con las vacaciones, la mitad sigue (como siempre); el id de la carga, también como texto
+    assert.equal(ordinariasDe(pedida, hoy).find((o) => o.anio === 2025).total, 22);
+    const conIdDeTexto = { ...pedida, restituciones: [pedidoDe(10, { fecha: '2027-04-01', licencia_id: '1' })] };
+    assert.equal(ordinariasDe(conIdDeTexto, hoy).find((o) => o.anio === 2025).total, 22);
+    // El pedido sigue pedido, con su «Revisá…» mientras no pasó el plazo; después, sin él
+    const [grupo] = gruposDe(sinLasVacaciones, hoy);
+    assert.deepEqual([grupo.situacion, grupo.revisar], ['pedida',
+      'Revisá tus días restituidos: las vacaciones del 11/12/2026 al 08/01/2027 ya no están cargadas.']);
+    assert.deepEqual(gruposDe(sinLasVacaciones, '2027-05-03').map((otro) => [otro.situacion, otro.revisar]), [['pedida', '']]);
+  });
+
+  it('nada frena (Review Focus 4): un grupo por restituir o perdido no es un faltante ni frena una carga', () => {
+    for (const hoy of [VUELVE, '2027-05-03']) {
+      const opciones = { hoy, feriados: ASUETOS };
+      const antes = calcular(ESTADO, opciones);
+      assert.equal(antes.restituciones.length, 1, hoy);
+      assert.deepEqual(antes.faltantes, [], hoy);
+      const entrada = { tipo: 'medica', desde: sumarDias(hoy, 1), hasta: sumarDias(hoy, 2) };
+      const despues = calcular(con({ licencias: [...ESTADO.licencias, { id: 20, ...entrada, horas: null }] }), opciones);
+      assert.equal(problemaDeLaCarga(antes, despues), null, hoy);
+      assert.equal(evaluarLicencia(ESTADO, entrada, opciones).error, null, hoy);
+    }
+  });
+
+  it('nada tira: lo que no es un estado, unas opciones raras o filas raras', () => {
+    const opciones = { hoy: VUELVE, feriados: ASUETOS };
+    for (const raro of [undefined, null, '', 'x', 3, [], {}]) {
+      assert.deepEqual(restitucionesDe(raro, opciones), [], JSON.stringify(raro));
+      // Sin un hoy válido, ninguno
+      assert.deepEqual(restitucionesDe(ESTADO, raro), [], JSON.stringify(raro));
+      assert.deepEqual(restitucionesDe(ESTADO, { feriados: ASUETOS, hoy: raro }), [], JSON.stringify(raro));
+      assert.doesNotThrow(() => restitucionesDe(ESTADO, { hoy: VUELVE, feriados: raro }));
+      // Un reparto que no es un reparto se calcula
+      assert.deepEqual(restitucionesDe(ESTADO, { ...opciones, reparto: raro }), [GRUPO_DE_JULIETA], JSON.stringify(raro));
+      assert.doesNotThrow(() =>
+        restitucionesDe({ ...ESTADO, restituibles: raro, restituciones: raro, licencias: raro }, opciones));
+      assert.doesNotThrow(() => ordinariasDe({ ...ESTADO, restituciones: raro }, VUELVE));
+    }
+    // Sin modalidad, ninguno (como todo lo demás de Mi espacio)
+    assert.deepEqual(gruposDe({ ...ESTADO, modalidad: null }), []);
+    // Las filas raras no cuentan
+    const raras = con({
+      restituibles: [null, 3, 'x', {}, ...ESTADO.restituibles, fotoDe(10, 1, 'x'), fotoDe(11, 'x', '2026-12-24')],
+      restituciones: [null, 3, 'x', {}, { id: 'x', activo: 1, caso: 'restituir' }]
+    });
+    assert.deepEqual(gruposDe(raras), [GRUPO_DE_JULIETA]);
+    assert.deepEqual(ordinariasDe(raras, VUELVE), ordinariasDe(ESTADO, VUELVE));
+  });
+});
+
+describe('la carga de los días restituidos, caso A (spec 2026-10-31-mi-espacio-dias-restituidos, 4, 7 y 9)', () => {
+  const ESTADO = JULIETA.estado;
+  const [VACACIONES_DE_JULIETA] = ESTADO.licencias;
+  const VUELVE = '2027-01-11';
+  const A_LA_VUELTA = Object.freeze({ hoy: VUELVE, feriados: ASUETOS });
+  // El 05/02/2027, con los días de la 2024 ya cargados (CARGADA)
+  const EN_FEBRERO = Object.freeze({ hoy: '2027-02-05', feriados: ASUETOS });
+  const DE_LA_2024 = Object.freeze({ licencia_id: 1, anio: 2024, tanda: 0 });
+  const DE_JULIETA = Object.freeze({ tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08' });
+  // Una fila de la foto, un pedido (desde el 10) y una carga de días restituidos (desde el 20), como en los grupos
+  const fotoDe = (id, licenciaId, fecha, extra = {}) =>
+    ({ id, licencia_id: licenciaId, feriado_id: 1, fecha, tanda: null, restitucion_id: null, ...extra });
+  const pedidoA = (id, extra = {}) => ({
+    id, licencia_id: 1, anio: 2024, caso: 'tomar', dias: 2, primer_asueto: '2026-12-24', tanda: 0, fecha: '2027-02-01',
+    carga_id: 20, activo: 1, licencia: { ...DE_JULIETA, activo: 1 }, ...extra
+  });
+  const restituidos = (id, desde, hasta) => ({ id, tipo: 'restituidos', desde, hasta, horas: null });
+  const fotoSellada = (restitucionId) => ESTADO.restituibles.map((fila) => ({ ...fila, tanda: 0, restitucion_id: restitucionId }));
+  // Julieta con los días de la 2024 ya cargados del lunes 12/04 al martes 13/04/2027
+  const CARGADA = Object.freeze({
+    ...ESTADO,
+    licencias: [VACACIONES_DE_JULIETA, restituidos(20, '2027-04-12', '2027-04-13')],
+    restituibles: fotoSellada(10),
+    restituciones: [pedidoA(10)]
+  });
+  // La variante B (spec, 5): las mismas vacaciones, con 20 de la 2025 y sin saldo de la 2024
+  const VARIANTE_B = Object.freeze({ ...ESTADO, saldos: saldosDeVacaciones({ 2024: 0, 2025: 20, 2026: 10 }) });
+
+  const gruposDe = (estado, opciones = A_LA_VUELTA) => calcular(estado, opciones).restituciones;
+  const [GRUPO] = gruposDe(ESTADO);
+  const validar = (entrada, estado = ESTADO, opciones = A_LA_VUELTA) =>
+    validarRestituidos(entrada, { ...opciones, estado, grupos: gruposDe(estado, opciones) });
+  const alta = (desde, extra = {}) => ({ tipo: 'restituidos', restitucion: DE_LA_2024, desde, ...extra });
+  const datosDe = (desde, hasta, extra = {}) =>
+    ({ tipo: 'restituidos', desde, hasta, horas: null, mostrar: 1, nota: null, restitucion: DE_LA_2024, ...extra });
+  const bien = (desde, hasta, extra) => ({ datos: datosDe(desde, hasta, extra), error: null });
+  const mal = (campo, mensaje) => ({ datos: null, error: { campo, mensaje } });
+  const DESDE_FUERA = textoDesdeDeLosRestituidos('2027-01-11', '2027-04-30');
+  const CALCULO_DE_JULIETA = 'Son los días restituidos de la licencia 2024, por los asuetos del 24/12 y el 31/12/2026.';
+  const evaluar = (estado, entrada, opciones = A_LA_VUELTA) => evaluarLicencia(estado, entrada, opciones);
+
+  it('el grupo de Julieta, al volver, es el de los 2 días de la 2024 (caso A)', () => {
+    assert.deepEqual([GRUPO.clave, GRUPO.caso, GRUPO.situacion, GRUPO.dias, GRUPO.plazo], ['1-2024-0', 'tomar', 'por_restituir',
+      2, '2027-04-30']);
+  });
+
+  it('los mensajes y los textos del cálculo, la ayuda y el «Hasta», en plural y en singular', () => {
+    assert.equal(MENSAJES_MI_ESPACIO.restituidosFijo, 'Los días restituidos no cambian de tipo.');
+    assert.equal(MENSAJES_MI_ESPACIO.restitucionInvalida, 'Elegí qué días restituidos querés cargar.');
+    assert.equal(MENSAJES_MI_ESPACIO.grupoNoPorRestituir, 'Esos días ya no están para restituir.');
+    assert.equal(MENSAJES_MI_ESPACIO.grupoEsParaRestituir, 'Esos días no se toman: pedí la restitución.');
+    assert.equal(MENSAJES_MI_ESPACIO.grupoEsParaTomar, 'Esos días se toman: cargalos como «Días restituidos».');
+    assert.equal(MENSAJES_MI_ESPACIO.restitucionNoEncontrada, 'Restitución no encontrada');
+    assert.equal(MENSAJES_MI_ESPACIO.restitucionVencida, 'Ya pasó el plazo: la restitución no se puede borrar.');
+    assert.equal(DESDE_FUERA, 'Elegí un día del 11/01/2027 al 30/04/2027.');
+
+    // Los de la maqueta (MQ.T.calculoA y MQ.T.ayudaFechasA), copiados acá
+    assert.equal(textoDelCalculoDeRestituidos(GRUPO), CALCULO_DE_JULIETA);
+    assert.equal(textoDeLaAyudaDeRestituidos(GRUPO, ASUETOS), 'Los 2 días van juntos: elegí desde cuándo y Mi espacio pone el '
+      + '«Hasta». Podés empezar del 11/01/2027 al viernes 30/04/2027.');
+    assert.equal(textoDelHastaDeRestituidos(2), 'Lo pone Mi espacio: 2 días hábiles.');
+    // Con un solo día
+    const unDia = { ...GRUPO, dias: 1, fechas: ['2026-12-24'] };
+    assert.equal(textoDelCalculoDeRestituidos(unDia), 'Es el día restituido de la licencia 2024, por el asueto del 24/12/2026.');
+    assert.equal(textoDeLaAyudaDeRestituidos(unDia, ASUETOS),
+      'Es 1 día: elegí cuándo y Mi espacio pone el «Hasta». Podés tomarlo del 11/01/2027 al viernes 30/04/2027.');
+    assert.equal(textoDelHastaDeRestituidos(1), 'Lo pone Mi espacio: 1 día hábil.');
+    // Con tres, que cruzan el año
+    const tres = { ...GRUPO, dias: 3, fechas: ['2026-12-24', '2026-12-31', '2027-01-04'] };
+    assert.equal(textoDelCalculoDeRestituidos(tres),
+      'Son los días restituidos de la licencia 2024, por los asuetos del 24/12, el 31/12/2026 y el 04/01/2027.');
+    assert.equal(textoDelHastaDeRestituidos(3), 'Lo pone Mi espacio: 3 días hábiles.');
+    // Con unas vacaciones que terminan el jueves 30/12/2026: después del asueto del 31/12, el 1/1 y el fin de semana, el 04/01
+    const hasta30 = { ...GRUPO, carga: { ...DE_JULIETA, hasta: '2026-12-30' } };
+    assert.match(textoDeLaAyudaDeRestituidos(hasta30, ASUETOS), /Podés empezar del 04\/01\/2027 al viernes 30\/04\/2027\.$/);
+    // Lo que no es un grupo, ''
+    for (const raro of [undefined, null, '', 'x', 3, []]) {
+      assert.equal(textoDelCalculoDeRestituidos(raro), '', JSON.stringify(raro));
+      assert.equal(textoDeLaAyudaDeRestituidos(raro, ASUETOS), '', JSON.stringify(raro));
+    }
+  });
+
+  it('hastaDeLosRestituidos: el día número N contando desde «Desde» los días hábiles y los restituibles', () => {
+    // Desde el lunes 12/04/2027, el segundo es el martes; uno solo, el mismo lunes
+    assert.equal(hastaDeLosRestituidos('2027-04-12', 2, ASUETOS), '2027-04-13');
+    assert.equal(hastaDeLosRestituidos('2027-04-12', 1, ASUETOS), '2027-04-12');
+    // Desde un sábado, el fin de semana no cuenta
+    assert.equal(hastaDeLosRestituidos('2027-04-10', 2, ASUETOS), '2027-04-13');
+    assert.equal(hastaDeLosRestituidos('2027-04-10', 1, ASUETOS), '2027-04-12');
+    // Cruzando un feriado de la tabla, uno de los 9 fijos (el miércoles 24/03/2027) o el fin de semana
+    assert.equal(hastaDeLosRestituidos('2027-04-28', 2, new Set(['2027-04-29'])), '2027-04-30');
+    assert.equal(hastaDeLosRestituidos('2027-03-23', 2, SIN_FERIADOS), '2027-03-25');
+    assert.equal(hastaDeLosRestituidos('2027-04-30', 2, ASUETOS), '2027-05-03');
+    // Con los restituibles de la carga que se corrige: el día del asueto cuenta
+    assert.equal(hastaDeLosRestituidos('2027-04-12', 2, new Set(['2027-04-13'])), '2027-04-14');
+    assert.equal(hastaDeLosRestituidos('2027-04-12', 2, new Set(['2027-04-13']), ['2027-04-13']), '2027-04-13');
+    assert.equal(hastaDeLosRestituidos('2027-04-12', 2, new Set(['2027-04-13']), ['2027-04-13', 'x', null]), '2027-04-13');
+    // Un restituible anterior a «Desde» no cuenta
+    assert.equal(hastaDeLosRestituidos('2027-04-14', 1, new Set(['2027-04-13']), ['2027-04-13']), '2027-04-14');
+    // Los feriados que no son un Set, como sin feriados
+    assert.equal(hastaDeLosRestituidos('2027-04-12', 2, undefined), '2027-04-13');
+    // A lo sumo 366 vueltas: del 12/04/2027 al 11/04/2028 hay 258 días hábiles (260 de lunes a viernes, menos los 4 fijos que
+    // caen de lunes a viernes, más los dos últimos); con uno más, null. Una entrada que no sirve, también null
+    assert.equal(hastaDeLosRestituidos('2027-04-12', 258, SIN_FERIADOS), '2028-04-11');
+    assert.equal(hastaDeLosRestituidos('2027-04-12', 259, SIN_FERIADOS), null);
+    for (const raro of [undefined, null, '', 'x', 0, -1, 1.5, NaN, [], {}]) {
+      assert.equal(hastaDeLosRestituidos('2027-04-12', raro, ASUETOS), null, JSON.stringify(raro));
+      assert.equal(hastaDeLosRestituidos(raro, 2, ASUETOS), null, JSON.stringify(raro));
+      assert.doesNotThrow(() => hastaDeLosRestituidos('2027-04-12', 2, raro, raro));
+    }
+    assert.equal(hastaDeLosRestituidos('9999-12-31', 2, SIN_FERIADOS), null);
+  });
+
+  it('primerDiaDeLosRestituidos: el primer día hábil después del fin de su carga', () => {
+    assert.equal(primerDiaDeLosRestituidos(GRUPO, ASUETOS), '2027-01-11');
+    assert.equal(primerDiaDeLosRestituidos({ ...GRUPO, carga: { ...DE_JULIETA, hasta: '2026-12-30' } }, ASUETOS), '2027-01-04');
+    assert.equal(primerDiaDeLosRestituidos({ ...GRUPO, carga: { ...DE_JULIETA, hasta: '2026-12-30' } }, SIN_FERIADOS),
+      '2026-12-31');
+    for (const raro of [undefined, null, '', 'x', 3, [], {}, { carga: null }, { carga: { hasta: 'x' } }]) {
+      assert.equal(primerDiaDeLosRestituidos(raro, ASUETOS), null, JSON.stringify(raro));
+    }
+  });
+
+  it('validarRestituidos, el alta: «Desde» va del primer día hábil después de las vacaciones al plazo, y el «Hasta» lo pone Mi espacio', () => {
+    assert.deepEqual(validar(alta('2027-04-12')), bien('2027-04-12', '2027-04-13'));
+    // El primer día hábil después de las vacaciones (el lunes 11/01) y el plazo entran; con el plazo, termina después
+    assert.deepEqual(validar(alta('2027-01-11')), bien('2027-01-11', '2027-01-12'));
+    assert.deepEqual(validar(alta('2027-04-30')), bien('2027-04-30', '2027-05-03'));
+    // El último día de las vacaciones, el fin de semana que las sigue (lo que dicen la ayuda y el error) y el día después del
+    // plazo, no
+    for (const desde of ['2027-01-08', '2027-01-09', '2027-01-10', '2026-12-20', '2027-05-01']) {
+      assert.deepEqual(validar(alta(desde)), mal('desde', DESDE_FUERA), desde);
+    }
+    // Una fecha que no es una fecha, o fuera del rango (del 01/01/2025 al 31/12/2028)
+    for (const raro of [undefined, null, '', 'x', '2027-02-30', '12/04/2027', 3]) {
+      assert.deepEqual(validar(alta(raro)), mal('desde', MENSAJES_MI_ESPACIO.fecha), JSON.stringify(raro));
+    }
+    assert.deepEqual(validar(alta('2029-01-05')), mal('desde', textoRango('2025-01-01', '2028-12-31')));
+    // Un «Hasta» que se sale del rango, con un grupo armado a mano: también en «Desde»
+    const aFinDeAnio = { ...GRUPO, carga: { ...DE_JULIETA, desde: '2028-12-11', hasta: '2028-12-20' }, plazo: '2029-04-30' };
+    assert.deepEqual(validarRestituidos(alta('2028-12-29'), { ...A_LA_VUELTA, estado: ESTADO, grupos: [aFinDeAnio] }),
+      mal('desde', textoRango('2025-01-01', '2028-12-31')));
+    assert.deepEqual(validarRestituidos(alta('2028-12-27'), { ...A_LA_VUELTA, estado: ESTADO, grupos: [aFinDeAnio] }),
+      bien('2028-12-27', '2028-12-28'));
+    // El «Hasta» que llega no cuenta: lo pone Mi espacio
+    assert.deepEqual(validar(alta('2027-04-12', { hasta: '2027-04-30' })), bien('2027-04-12', '2027-04-13'));
+  });
+
+  it('validarRestituidos: el grupo tiene que estar por restituir y ser del caso A', () => {
+    // Pasado el plazo, perdido
+    assert.equal(gruposDe(ESTADO, { ...A_LA_VUELTA, hoy: '2027-05-03' })[0].situacion, 'perdida');
+    assert.deepEqual(validar(alta('2027-05-05'), ESTADO, { ...A_LA_VUELTA, hoy: '2027-05-03' }),
+      mal('tipo', MENSAJES_MI_ESPACIO.grupoNoPorRestituir));
+    // Del caso B: se pide la restitución
+    assert.deepEqual(validar(alta('2027-04-12', { restitucion: { licencia_id: 1, anio: 2025, tanda: 0 } }), VARIANTE_B),
+      mal('tipo', MENSAJES_MI_ESPACIO.grupoEsParaRestituir));
+    // Otro grupo, otra tanda u otra carga, que no está
+    for (const restitucion of [{ licencia_id: 1, anio: 2024, tanda: 1 }, { licencia_id: 1, anio: 2025, tanda: 0 },
+      { licencia_id: 9, anio: 2024, tanda: 0 }, { licencia_id: 1, anio: 24, tanda: 0 }]) {
+      assert.deepEqual(validar(alta('2027-04-12', { restitucion })), mal('tipo', MENSAJES_MI_ESPACIO.grupoNoPorRestituir),
+        JSON.stringify(restitucion));
+    }
+    // Ya cargados: no se cargan dos veces
+    assert.deepEqual(validar(alta('2027-04-19'), CARGADA, EN_FEBRERO), mal('tipo', MENSAJES_MI_ESPACIO.grupoNoPorRestituir));
+    // Con la misma clave, un pedido activo y un grupo por restituir: cuenta el que está por restituir
+    const pedida = { ...GRUPO, situacion: 'cargada', restitucion_id: 10, carga_id: 20 };
+    const conLosDos = (grupos) => validarRestituidos(alta('2027-04-12'), { ...A_LA_VUELTA, estado: ESTADO, grupos });
+    assert.deepEqual(conLosDos([pedida, GRUPO]), bien('2027-04-12', '2027-04-13'));
+    assert.deepEqual(conLosDos([pedida]), mal('tipo', MENSAJES_MI_ESPACIO.grupoNoPorRestituir));
+    // Uno sin caso (sin plazo) no se carga
+    assert.deepEqual(conLosDos([{ ...GRUPO, caso: null }]), mal('tipo', MENSAJES_MI_ESPACIO.grupoNoPorRestituir));
+    // Una restitución que no es un objeto con los tres enteros
+    for (const restitucion of [undefined, null, '', 'x', 3, [], {}, { licencia_id: 1, anio: 2024 },
+      { licencia_id: 0, anio: 2024, tanda: 0 }, { licencia_id: 'x', anio: 2024, tanda: 0 }, { licencia_id: 1, anio: 2024.5, tanda: 0 },
+      { licencia_id: 1, anio: 2024, tanda: -1 }, { licencia_id: 1, anio: 2024, tanda: 0.5 }, { licencia_id: 1, anio: 2024, tanda: '' },
+      { licencia_id: 1, anio: 2024, tanda: true }]) {
+      assert.deepEqual(validar(alta('2027-04-12', { restitucion })), mal('tipo', MENSAJES_MI_ESPACIO.restitucionInvalida),
+        JSON.stringify(restitucion));
+    }
+    // Los ids como texto (los de un formulario) valen
+    assert.deepEqual(validar(alta('2027-04-12', { restitucion: { licencia_id: '1', anio: '2024', tanda: '0' } })),
+      bien('2027-04-12', '2027-04-13'));
+    // El grupo va antes que «Desde»
+    assert.deepEqual(validar(alta('x', { restitucion: null })), mal('tipo', MENSAJES_MI_ESPACIO.restitucionInvalida));
+  });
+
+  it('grupoDeLosRestituidos: en el alta, el por restituir de esa clave; al corregir, el cargado de esa carga', () => {
+    const cargado = { ...GRUPO, situacion: 'cargada', restitucion_id: 10, carga_id: 20 };
+    const perdido = { ...GRUPO, situacion: 'perdida' };
+    const deB = { ...GRUPO, clave: '1-2025-0', anio: 2025, caso: 'restituir' };
+    // El alta: por la clave y por la situación (con la misma clave, un pedido activo o uno perdido no cuentan)
+    assert.deepEqual(grupoDeLosRestituidos([cargado, perdido, GRUPO], { restitucion: DE_LA_2024 }, null), { grupo: GRUPO });
+    assert.deepEqual(grupoDeLosRestituidos([cargado, perdido], { restitucion: DE_LA_2024 }), { error: 'grupoNoPorRestituir' });
+    assert.deepEqual(grupoDeLosRestituidos([GRUPO], { restitucion: { licencia_id: '1', anio: '2024', tanda: '0' } }),
+      { grupo: GRUPO });
+    assert.deepEqual(grupoDeLosRestituidos([GRUPO, deB], { restitucion: { licencia_id: 1, anio: 2025, tanda: 0 } }),
+      { error: 'grupoEsParaRestituir' });
+    assert.deepEqual(grupoDeLosRestituidos([{ ...GRUPO, caso: null }], { restitucion: DE_LA_2024 }),
+      { error: 'grupoNoPorRestituir' });
+    assert.deepEqual(grupoDeLosRestituidos([GRUPO], { restitucion: { licencia_id: 1, anio: 2024 } }),
+      { error: 'restitucionInvalida' });
+    // La corrección: el cargado de esa carga, sin mirar la restitución que llegue
+    assert.deepEqual(grupoDeLosRestituidos([GRUPO, cargado], { restitucion: { licencia_id: 9, anio: 1, tanda: 9 } }, 20),
+      { grupo: cargado });
+    assert.deepEqual(grupoDeLosRestituidos([GRUPO, cargado], {}, '20'), { grupo: cargado });
+    for (const editadaId of [21, 1, 'x', 0]) {
+      assert.deepEqual(grupoDeLosRestituidos([GRUPO, cargado], { restitucion: DE_LA_2024 }, editadaId),
+        { error: 'grupoNoPorRestituir' }, JSON.stringify(editadaId));
+    }
+    // Lo que no es una lista o una entrada no tira
+    for (const raro of [undefined, null, '', 'x', 3, {}, [null, 3, 'x']]) {
+      assert.deepEqual(grupoDeLosRestituidos(raro, { restitucion: DE_LA_2024 }), { error: 'grupoNoPorRestituir' },
+        JSON.stringify(raro));
+      assert.deepEqual(grupoDeLosRestituidos([GRUPO], raro), { error: 'restitucionInvalida' }, JSON.stringify(raro));
+    }
+    // Los tipos con días restituibles, los que comparte con la nota en Word
+    assert.deepEqual(TIPOS_CON_RESTITUIBLES, ['vacaciones', 'restituidos']);
+    assert.ok(Object.isFrozen(TIPOS_CON_RESTITUIBLES));
+  });
+
+  it('grupoDeLaRestitucion: el por restituir del caso B de esa clave; uno del caso A, grupoEsParaTomar', () => {
+    const [DE_B] = gruposDe(VARIANTE_B);
+    assert.deepEqual([DE_B.clave, DE_B.caso, DE_B.situacion], ['1-2025-0', 'restituir', 'por_restituir']);
+    const DE_LA_2025 = Object.freeze({ licencia_id: 1, anio: 2025, tanda: 0 });
+    const pedida = { ...DE_B, situacion: 'pedida', restitucion_id: 10 };
+    const perdida = { ...DE_B, situacion: 'perdida' };
+    // Por la clave y por la situación (con la misma clave, uno pedido o uno perdido no cuentan); los ids como texto valen
+    assert.deepEqual(grupoDeLaRestitucion([pedida, perdida, DE_B], DE_LA_2025), { grupo: DE_B });
+    assert.deepEqual(grupoDeLaRestitucion([DE_B], { licencia_id: '1', anio: '2025', tanda: '0' }), { grupo: DE_B });
+    assert.deepEqual(grupoDeLaRestitucion([pedida, perdida], DE_LA_2025), { error: 'grupoNoPorRestituir' });
+    assert.deepEqual(grupoDeLaRestitucion([DE_B], { ...DE_LA_2025, tanda: 1 }), { error: 'grupoNoPorRestituir' });
+    // Uno del caso A se carga como «Días restituidos»; uno sin caso no está para restituir
+    assert.deepEqual(grupoDeLaRestitucion([GRUPO, DE_B], DE_LA_2024), { error: 'grupoEsParaTomar' });
+    assert.deepEqual(grupoDeLaRestitucion([{ ...DE_B, caso: null }], DE_LA_2025), { error: 'grupoNoPorRestituir' });
+    // Una restitución que no sirve (sin los tres enteros, una tanda negativa, una lista) no es ningún grupo; nada tira
+    for (const restitucion of [undefined, null, '', 'x', 3, [], {}, { licencia_id: 1, anio: 2025 },
+      { licencia_id: 'abc', anio: 2025, tanda: 0 }, { licencia_id: 1, anio: 2025, tanda: -1 },
+      { licencia_id: ['1'], anio: '2025', tanda: '0' }]) {
+      assert.deepEqual(grupoDeLaRestitucion([DE_B], restitucion), { error: 'grupoNoPorRestituir' }, JSON.stringify(restitucion));
+    }
+    for (const raro of [undefined, null, '', 'x', 3, {}, [null, 3, 'x']]) {
+      assert.deepEqual(grupoDeLaRestitucion(raro, DE_LA_2025), { error: 'grupoNoPorRestituir' }, JSON.stringify(raro));
+    }
+  });
+
+  it('validarRestituidos: la nota, «Mostrar» y que no se superponga con otra licencia', () => {
+    assert.deepEqual(validar(alta('2027-04-12', { nota: '  Con la nota  ', mostrar: false })),
+      bien('2027-04-12', '2027-04-13', { nota: 'Con la nota', mostrar: 0 }));
+    assert.deepEqual(validar(alta('2027-04-12', { nota: '   ', mostrar: '0' })), bien('2027-04-12', '2027-04-13', { mostrar: 0 }));
+    assert.deepEqual(validar(alta('2027-04-12', { nota: 'x'.repeat(201) })), mal('nota', MENSAJES_MI_ESPACIO.nota));
+    // Con una atención médica el martes 13/04, en «Desde», con la primera fecha en común (después de la nota)
+    const conMedica = { ...ESTADO, licencias: [VACACIONES_DE_JULIETA, { id: 30, tipo: 'medica', desde: '2027-04-13',
+      hasta: '2027-04-13', horas: null }] };
+    assert.deepEqual(validar(alta('2027-04-12'), conMedica), mal('desde', textoSuperpuesta('2027-04-13')));
+    assert.deepEqual(validar(alta('2027-04-12', { nota: 'x'.repeat(201) }), conMedica), mal('nota', MENSAJES_MI_ESPACIO.nota));
+    assert.deepEqual(validar(alta('2027-04-14'), conMedica), bien('2027-04-14', '2027-04-15'));
+  });
+
+  it('validarRestituidos, la corrección: la de su carga; sin cambiar «Desde», conserva el «Hasta»; si lo cambia, lo recalcula', () => {
+    const corregir = (entrada, estado = CARGADA, feriados = ASUETOS) =>
+      validar(entrada, estado, { ...EN_FEBRERO, feriados, editadaId: 20 });
+    // La restitución que llegue no cuenta: es la de su carga
+    assert.deepEqual(corregir({ desde: '2027-04-12', nota: 'Trámite' }), bien('2027-04-12', '2027-04-13', { nota: 'Trámite' }));
+    assert.deepEqual(corregir({ desde: '2027-04-19', restitucion: { licencia_id: 9, anio: 2030, tanda: 4 } }),
+      bien('2027-04-19', '2027-04-20'));
+    assert.deepEqual(validar({ desde: '2027-04-19' }, CARGADA, { ...EN_FEBRERO, editadaId: '20' }), bien('2027-04-19', '2027-04-20'));
+    // Cambiando «Desde», el «Hasta» se cuenta de nuevo, también con un feriado en el medio
+    assert.deepEqual(corregir({ desde: '2027-04-19' }, CARGADA, new Set([...ASUETOS, '2027-04-20'])),
+      bien('2027-04-19', '2027-04-21'));
+
+    // Sin cambiar «Desde», el «Hasta» también se vuelve a contar, con los días restituibles de la carga. La conservación: con
+    // un asueto cargado después en el martes 13/04 (con su foto), el 13/04 sigue siendo suyo y la carga queda igual
+    const conAsueto = { ...CARGADA, restituibles: [...CARGADA.restituibles, fotoDe(12, 20, '2027-04-13')] };
+    assert.deepEqual(corregir({ desde: '2027-04-12', nota: 'Trámite' }, conAsueto, new Set([...ASUETOS, '2027-04-13'])),
+      bien('2027-04-12', '2027-04-13', { nota: 'Trámite' }));
+    // Y con un feriado que ya estaba al cargarla (el viernes 16/04, sin foto: la carga del jueves 15/04 llegó al lunes 19/04)
+    // mientras sigue, también queda igual
+    const del15 = { ...CARGADA, licencias: [VACACIONES_DE_JULIETA, restituidos(20, '2027-04-15', '2027-04-19')] };
+    const con16 = new Set([...ASUETOS, '2027-04-16']);
+    assert.deepEqual(corregir({ desde: '2027-04-15' }, del15, con16), bien('2027-04-15', '2027-04-19'));
+    // El recálculo: dado de baja ese feriado, el 16/04 vuelve a ser hábil y cambiar la nota deja la carga en sus 2 días
+    assert.deepEqual(corregir({ desde: '2027-04-15', nota: 'Trámite' }, del15),
+      bien('2027-04-15', '2027-04-16', { nota: 'Trámite' }));
+    // Salvo que la carga ya haya terminado: sus fechas quedan fijas en Configuración, y el «Hasta» guardado no cambia
+    assert.deepEqual(validar({ desde: '2027-04-15', nota: 'Trámite' }, del15, { hoy: '2027-05-10', feriados: ASUETOS,
+      editadaId: 20 }), bien('2027-04-15', '2027-04-19', { nota: 'Trámite' }));
+
+    // Sin cambiar «Desde», sus bordes no se vuelven a mirar: la carga desde el viernes 30/04/2027 (el plazo) y después un
+    // feriado nuevo ese día, con su foto, que corre el plazo al jueves 29/04. Cambiar la nota pasa, con el mismo «Hasta»
+    const con30 = new Set([...ASUETOS, '2027-04-30']);
+    const del30 = {
+      ...CARGADA,
+      licencias: [VACACIONES_DE_JULIETA, restituidos(20, '2027-04-30', '2027-05-03')],
+      restituibles: [...CARGADA.restituibles, fotoDe(12, 20, '2027-04-30')]
+    };
+    assert.equal(gruposDe(del30, { ...EN_FEBRERO, feriados: con30 })[0].plazo, '2027-04-29');
+    assert.deepEqual(corregir({ desde: '2027-04-30', nota: 'Trámite' }, del30, con30),
+      bien('2027-04-30', '2027-05-03', { nota: 'Trámite' }));
+    // Moverla al 30/04 desde otro día, no: el plazo ya es el 29/04
+    assert.deepEqual(corregir({ desde: '2027-04-30' }, CARGADA, con30),
+      mal('desde', textoDesdeDeLosRestituidos('2027-01-11', '2027-04-29')));
+    // Los bordes de «Desde» y la superposición, como en el alta (la carga que se corrige no cuenta)
+    assert.deepEqual(corregir({ desde: '2027-01-08' }), mal('desde', DESDE_FUERA));
+    assert.deepEqual(corregir({ desde: '2027-05-01' }), mal('desde', DESDE_FUERA));
+    assert.deepEqual(corregir({ desde: '2027-04-13' }), bien('2027-04-13', '2027-04-14'));
+    // Otra carga, una que no existe o una que no es de días restituidos: no hay grupo cargado
+    for (const editadaId of [21, 1, 'x']) {
+      assert.deepEqual(validar({ desde: '2027-04-19' }, CARGADA, { ...EN_FEBRERO, editadaId }),
+        mal('tipo', MENSAJES_MI_ESPACIO.grupoNoPorRestituir), JSON.stringify(editadaId));
+    }
+  });
+
+  it('evaluarLicencia del alta: la vista de la maqueta, con el «Hasta» que pone Mi espacio', () => {
+    const maqueta = { hoy: '2027-04-01', feriados: ASUETOS };
+    const vista = (hasta, textoDias = '2 días hábiles') => ({
+      dias_habiles: 2, texto_dias: textoDias, texto_reparto: CALCULO_DE_JULIETA, queda_texto: '', antes_del_arranque: false,
+      texto_antes_del_arranque: '', avisos: [], hasta
+    });
+    assert.deepEqual(evaluar(ESTADO, alta('2027-04-12'), maqueta),
+      { datos: datosDe('2027-04-12', '2027-04-13'), error: null, vista: vista('2027-04-13') });
+    // Desde un sábado: 2 días hábiles de 4 corridos
+    assert.deepEqual(evaluar(ESTADO, alta('2027-04-10'), maqueta),
+      { datos: datosDe('2027-04-10', '2027-04-13'), error: null, vista: vista('2027-04-13', '2 días hábiles de 4 corridos') });
+    // Con el controlador: editadaId null en el alta
+    assert.deepEqual(evaluar(ESTADO, alta('2027-04-12'), { ...maqueta, editadaId: null }).datos, datosDe('2027-04-12', '2027-04-13'));
+    // Los errores de validarRestituidos pasan tal cual, sin vista
+    assert.deepEqual(evaluar(ESTADO, alta('2027-05-03'), maqueta), { ...mal('desde', DESDE_FUERA), vista: null });
+    assert.deepEqual(evaluar(VARIANTE_B, alta('2027-04-12', { restitucion: { licencia_id: 1, anio: 2025, tanda: 0 } }), maqueta),
+      { ...mal('tipo', MENSAJES_MI_ESPACIO.grupoEsParaRestituir), vista: null });
+    // validarLicencia sigue sin aceptarlos por el camino de siempre
+    assert.deepEqual(validarLicencia(alta('2027-04-12', { hasta: '2027-04-13' }), { ...maqueta, estado: ESTADO }),
+      mal('tipo', MENSAJES_MI_ESPACIO.tipo));
+  });
+
+  it('evaluarLicencia del alta: lo que la carga hace perder se avisa, como en cualquier otra, sin frenarla', () => {
+    // Otra variante inventada: vacaciones del 11/10 al 22/10/2027, de la 2025, y asuetos el 14 y el 15/10/2027 cargados después.
+    // El plazo es el 29/02/2028, después del vencimiento de la 2025 (caso A). El 20/12/2027, con una atención médica hasta el
+    // 29/12, quedan dos días libres antes del 31/12: cargar los días restituidos ahí hace perder lo que queda de la 2025 y
+    // horas de franquicia
+    const asuetos = new Set(['2027-10-14', '2027-10-15']);
+    const estado = {
+      ...ESTADO,
+      saldos: saldosDeVacaciones({ 2024: 0, 2025: 15, 2026: 0 }),
+      licencias: [vacaciones(1, '2027-10-11', '2027-10-22'),
+        { id: 30, tipo: 'medica', desde: '2027-12-20', hasta: '2027-12-29', horas: null }],
+      restituibles: [fotoDe(1, 1, '2027-10-14'), fotoDe(2, 1, '2027-10-15')],
+      restituciones: []
+    };
+    const opciones = { hoy: '2027-12-20', feriados: asuetos };
+    const [grupo] = gruposDe(estado, opciones);
+    assert.deepEqual([grupo.clave, grupo.caso, grupo.situacion, grupo.plazo], ['1-2025-0', 'tomar', 'por_restituir', '2028-02-29']);
+    const restitucion = { licencia_id: 1, anio: 2025, tanda: 0 };
+    const { datos, error, vista } = evaluar(estado, alta('2027-12-30', { restitucion }), opciones);
+    assert.equal(error, null);
+    assert.deepEqual(datos, datosDe('2027-12-30', '2027-12-31', { restitucion }));
+    assert.deepEqual(vista.avisos, [
+      'Con esta licencia perdés 5 de la 2025 (vencen el 31/12/2027).',
+      'Con esta licencia perdés 14 horas de franquicia (vencen el 31/12/2027).'
+    ]);
+    assert.equal(vista.texto_reparto,
+      'Son los días restituidos de la licencia 2025, por los asuetos del 14/10 y el 15/10/2027.');
+  });
+
+  it('evaluarLicencia de la corrección: cambia «Desde» y el «Hasta» se recalcula', () => {
+    const corregir = (entrada, opciones = {}) => evaluar(CARGADA, entrada, { ...EN_FEBRERO, editadaId: 20, ...opciones });
+    const { datos, error, vista } = corregir({ tipo: 'restituidos', desde: '2027-04-19', nota: 'Trámite' });
+    assert.equal(error, null);
+    assert.deepEqual(datos, datosDe('2027-04-19', '2027-04-20', { nota: 'Trámite' }));
+    assert.deepEqual(vista, {
+      dias_habiles: 2, texto_dias: '2 días hábiles', texto_reparto: CALCULO_DE_JULIETA, queda_texto: '',
+      antes_del_arranque: false, texto_antes_del_arranque: '', avisos: [], hasta: '2027-04-20'
+    });
+    // Sin cambiar «Desde», el «Hasta» guardado
+    assert.equal(corregir({ tipo: 'restituidos', desde: '2027-04-12', mostrar: 0 }).datos.hasta, '2027-04-13');
+    // Superpuesta con otra licencia
+    const conMedica = { ...CARGADA, licencias: [...CARGADA.licencias, { id: 30, tipo: 'medica', desde: '2027-04-20',
+      hasta: '2027-04-20', horas: null }] };
+    assert.deepEqual(evaluar(conMedica, { tipo: 'restituidos', desde: '2027-04-19' }, { ...EN_FEBRERO, editadaId: 20 }),
+      { ...mal('desde', textoSuperpuesta('2027-04-20')), vista: null });
+  });
+
+  it('restituidosFijo: una carga de días restituidos no cambia de tipo, y ninguna otra pasa a serlo', () => {
+    const fijo = { ...mal('tipo', MENSAJES_MI_ESPACIO.restituidosFijo), vista: null };
+    assert.deepEqual(evaluar(CARGADA, { tipo: 'vacaciones', desde: '2027-04-12', hasta: '2027-04-13' },
+      { ...EN_FEBRERO, editadaId: 20 }), fijo);
+    assert.deepEqual(evaluar(CARGADA, { desde: '2027-04-12', hasta: '2027-04-13' }, { ...EN_FEBRERO, editadaId: '20' }), fijo);
+    assert.deepEqual(evaluar(CARGADA, alta('2027-04-19'), { ...EN_FEBRERO, editadaId: 1 }), fijo);
+    // Antes, la modalidad y el arranque
+    assert.deepEqual(evaluar({ ...CARGADA, arranque: null }, { tipo: 'vacaciones', desde: '2027-04-12', hasta: '2027-04-13' },
+      { ...EN_FEBRERO, editadaId: 20 }), { ...mal(null, MENSAJES_MI_ESPACIO.sinArranque), vista: null });
+    assert.deepEqual(evaluar({ ...ESTADO, modalidad: null }, alta('2027-04-12')),
+      { ...mal(null, MENSAJES_MI_ESPACIO.sinModalidad), vista: null });
+    // Las vacaciones de Julieta se siguen corrigiendo como siempre
+    assert.equal(evaluar(CARGADA, { tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08' },
+      { ...EN_FEBRERO, editadaId: 1 }).error, null);
+  });
+
+  it('la recursión: los días de un asueto que cayó en una carga de días restituidos se cargan igual (Review Focus 7)', () => {
+    // El asueto del lunes 12/04/2027 cayó en la carga de los días de la 2024 (del 12/04 al 13/04)
+    const opciones = { hoy: '2027-04-08', feriados: new Set([...ASUETOS, '2027-04-12']) };
+    const estado = { ...CARGADA, restituibles: [...CARGADA.restituibles, fotoDe(12, 20, '2027-04-12')] };
+    const grupos = gruposDe(estado, opciones);
+    const recursivo = grupos.find((grupo) => grupo.licencia_id === 20);
+    assert.deepEqual([recursivo.clave, recursivo.caso, recursivo.situacion, recursivo.plazo],
+      ['20-2024-0', 'tomar', 'por_restituir', '2027-08-31']);
+    // La carga de los días restituidos conserva sus 2 días
+    assert.equal(diasDeLaCarga(estado.licencias[1], estado, opciones.feriados).length, 2);
+    const restitucion = { licencia_id: 20, anio: 2024, tanda: 0 };
+    assert.equal(textoDeLaAyudaDeRestituidos(recursivo, opciones.feriados),
+      'Es 1 día: elegí cuándo y Mi espacio pone el «Hasta». Podés tomarlo del 14/04/2027 al martes 31/08/2027.');
+    assert.deepEqual(evaluar(estado, alta('2027-04-14', { restitucion }), opciones), {
+      datos: datosDe('2027-04-14', '2027-04-14', { restitucion }),
+      error: null,
+      vista: {
+        dias_habiles: 1, texto_dias: '1 día hábil',
+        texto_reparto: 'Es el día restituido de la licencia 2024, por el asueto del 12/04/2027.', queda_texto: '',
+        antes_del_arranque: false, texto_antes_del_arranque: '', avisos: [], hasta: '2027-04-14'
+      }
+    });
+    // Antes del fin de su carga, no
+    assert.deepEqual(validar(alta('2027-04-13', { restitucion }), estado, opciones),
+      mal('desde', textoDesdeDeLosRestituidos('2027-04-14', '2027-08-31')));
+
+    // Corregir la carga del 12/04 al 13/04 para que empiece el 13/04: el 12/04 queda afuera y vuelve a contarse el hábil
+    const corregir = (entrada, otro = estado, feriados = opciones.feriados) =>
+      evaluar(otro, { tipo: 'restituidos', ...entrada }, { ...opciones, feriados, editadaId: 20 });
+    assert.equal(corregir({ desde: '2027-04-13' }).datos.hasta, '2027-04-14');
+    // Con la foto de un asueto del martes 13/04 en la carga que se corrige, moverla al 13/04 lo cuenta como suyo
+    const feriados13 = new Set([...ASUETOS, '2027-04-13']);
+    const conEl13 = { ...CARGADA, restituibles: [...CARGADA.restituibles, fotoDe(12, 20, '2027-04-13')] };
+    const corrida = corregir({ desde: '2027-04-13' }, conEl13, feriados13);
+    assert.equal(corrida.datos.hasta, '2027-04-14');
+    assert.equal(corrida.vista.dias_habiles, 2);
+    assert.equal(corrida.vista.texto_dias, '2 días hábiles');
+  });
+
+  it('nada tira: entradas, contextos y grupos raros', () => {
+    for (const raro of [undefined, null, '', 'x', 3, [], {}, NaN]) {
+      assert.deepEqual(validarRestituidos(raro, raro), mal('tipo', MENSAJES_MI_ESPACIO.restitucionInvalida),
+        JSON.stringify(raro));
+      assert.doesNotThrow(() => validarRestituidos(alta('2027-04-12'), { ...A_LA_VUELTA, estado: raro, grupos: [GRUPO] }));
+      assert.doesNotThrow(() => validarRestituidos(alta('2027-04-12'), { ...A_LA_VUELTA, estado: ESTADO, grupos: raro }));
+      assert.doesNotThrow(() => validarRestituidos(alta('2027-04-12'), { hoy: raro, estado: ESTADO, grupos: [GRUPO] }));
+      assert.doesNotThrow(() => validarRestituidos(alta('2027-04-12'), { ...A_LA_VUELTA, estado: ESTADO,
+        grupos: [raro, { ...GRUPO, carga: raro, plazo: raro, fechas: raro, dias: raro }] }));
+      assert.doesNotThrow(() => validarRestituidos(alta('2027-04-12'), { ...A_LA_VUELTA, estado: ESTADO, grupos: [GRUPO],
+        editadaId: raro }));
+      assert.doesNotThrow(() => evaluarLicencia(ESTADO, alta('2027-04-12', { restitucion: raro }), A_LA_VUELTA));
+      assert.doesNotThrow(() => evaluarLicencia(ESTADO, alta(raro), { ...A_LA_VUELTA, editadaId: raro }));
+      assert.doesNotThrow(() => evaluarLicencia(raro, alta('2027-04-12'), raro));
+      assert.doesNotThrow(() => textoDelHastaDeRestituidos(raro));
+      assert.doesNotThrow(() => textoDesdeDeLosRestituidos(raro, raro));
+    }
+    // Sin un hoy válido, el rango no existe
+    assert.deepEqual(validarRestituidos(alta('2027-04-12'), { hoy: 'x', estado: ESTADO, grupos: [GRUPO] }),
+      mal('desde', MENSAJES_MI_ESPACIO.fecha));
+    assert.equal(textoDesdeDeLosRestituidos(null, 'x'), 'Elegí un día del — al —.');
+  });
+});
+
+describe('los textos de los días restituidos y sus avisos (spec 2026-10-31-mi-espacio-dias-restituidos, 5, 7, 9 y 10)', () => {
+  const ESTADO = JULIETA.estado;
+  const [VACACIONES_DE_JULIETA] = ESTADO.licencias;
+  const VUELVE = '2027-01-11';
+  const DE_JULIETA = Object.freeze({ tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08' });
+  // Los textos de la maqueta (window.MQ.T de docs/superpowers/specs/2026-10-31-mi-espacio-dias-restituidos-mockups/datos.js),
+  // copiados a mano
+  const T = Object.freeze({
+    avisoA: 'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones: tenés 2 días restituidos de la licencia 2024. Como '
+      + 'esa licencia ya venció, tomalos todos juntos, empezando a más tardar el viernes 30/04/2027, con la nota al Director '
+      + 'General. Si no, se pierden.',
+    bajadaA: 'Además, 2 restituidos de la 2024: empezá a tomarlos a más tardar el viernes 30/04.',
+    venceTituloA: '2 días restituidos de la 2024',
+    botonA: 'Cargar los días restituidos',
+    filaA: '2 días por restituir (asuetos del 24/12 y el 31/12/2026): empezá a tomarlos a más tardar el 30/04/2027.',
+    filaCargados: 'Los 2 días restituidos están cargados del 12/04 al 13/04/2027.',
+    filaPerdidos: '2 días por restituir: se perdieron el 30/04/2027.',
+    avisoB: 'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones: podés pedir que te restituyan 2 días a tu licencia '
+      + '2025. Pedilo con la nota al Director General a más tardar el viernes 30/04/2027. Si no, se pierden.',
+    bajadaB: 'Además, 2 por restituir: pedí la restitución a más tardar el viernes 30/04.',
+    venceTituloB: '2 días para restituir a la 2025',
+    botonB: 'Pedir la restitución',
+    filaB: '2 días por restituir a la licencia 2025 (asuetos del 24/12 y el 31/12/2026): pedí la restitución a más tardar el '
+      + '30/04/2027.',
+    filaPedida: 'Restitución pedida el 01/04/2027: los 2 días volvieron a la licencia 2025.',
+    modalB: '<b>2 días hábiles vuelven a tu licencia 2025</b> (vence el 31/12/2027), por los asuetos del 24/12 y el '
+      + '31/12/2026. Al pedirla se arma la nota al Director General y los días vuelven enseguida.'
+  });
+  // Los tres párrafos del email de la maqueta (email.html), con las negritas en <strong>
+  const EMAIL_A = Object.freeze([
+    'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones del 11/12/2026 al 08/01/2027: tenés <strong>2 días '
+      + 'restituidos de la licencia 2024</strong>.',
+    'Como esa licencia ya venció, tomalos todos juntos, empezando a más tardar el <strong>viernes 30/04/2027</strong>, con la '
+      + 'nota al Director General. Si no, se pierden.',
+    'En Mi espacio podés cargarlos y bajar la nota en Word.'
+  ]);
+
+  // Una fila de la foto, un pedido (desde el 10) y una carga de días restituidos (desde el 20), como en los grupos
+  const fotoDe = (id, licenciaId, fecha, extra = {}) =>
+    ({ id, licencia_id: licenciaId, feriado_id: 1, fecha, tanda: null, restitucion_id: null, ...extra });
+  const pedidoDe = (id, extra = {}) => ({
+    id, licencia_id: 1, anio: 2025, caso: 'restituir', dias: 2, primer_asueto: '2026-12-24', tanda: 0, fecha: '2027-04-01',
+    carga_id: null, activo: 1, licencia: { ...DE_JULIETA, activo: 1 }, ...extra
+  });
+  const restituidos = (id, desde, hasta) => ({ id, tipo: 'restituidos', desde, hasta, horas: null });
+  const fotoSellada = (restitucionId) => ESTADO.restituibles.map((fila) => ({ ...fila, tanda: 0, restitucion_id: restitucionId }));
+  const con = (cambios) => ({ ...ESTADO, ...cambios });
+  // La variante B (spec, 5): las mismas vacaciones, con 20 de la 2025 y sin saldo de la 2024
+  const VARIANTE_B = con({ saldos: saldosDeVacaciones({ 2024: 0, 2025: 20, 2026: 10 }) });
+  // Con un solo asueto en la foto (el del 24/12): un día por restituir
+  const UN_DIA = con({ restituibles: [ESTADO.restituibles[0]] });
+  const UN_DIA_B = { ...VARIANTE_B, restituibles: [ESTADO.restituibles[0]] };
+  // Julieta con los días de la 2024 ya cargados del lunes 12/04 al martes 13/04/2027
+  const CARGA_A = Object.freeze(restituidos(20, '2027-04-12', '2027-04-13'));
+  const CARGADA = con({
+    licencias: [VACACIONES_DE_JULIETA, CARGA_A],
+    restituibles: fotoSellada(10),
+    restituciones: [pedidoDe(10, { anio: 2024, caso: 'tomar', fecha: '2027-02-01', carga_id: 20 })]
+  });
+  // La variante B con la restitución pedida el 01/04/2027
+  const PEDIDA = { ...VARIANTE_B, restituibles: fotoSellada(10), restituciones: [pedidoDe(10)] };
+  // La recursión: con los días cargados, asuetos el lunes 12/04 (y el martes 13/04) en la carga de días restituidos
+  const RECURSION_UNO = { ...CARGADA, restituibles: [...CARGADA.restituibles, fotoDe(12, 20, '2027-04-12')] };
+  const RECURSION_DOS = { ...RECURSION_UNO, restituibles: [...RECURSION_UNO.restituibles, fotoDe(13, 20, '2027-04-13')] };
+  const ASUETOS_DE_ABRIL = new Set([...ASUETOS, '2027-04-12', '2027-04-13']);
+
+  // Los grupos de un estado en un día (los de calcular), y el primero por restituir
+  const gruposDe = (estado, hoy = VUELVE, feriados = ASUETOS) => calcular(estado, { hoy, feriados }).restituciones;
+  const porRestituirDe = (estado, hoy = VUELVE, feriados = ASUETOS) =>
+    gruposDe(estado, hoy, feriados).find((grupo) => grupo.situacion === 'por_restituir');
+  const GRUPO_A = porRestituirDe(ESTADO);
+  const GRUPO_B = porRestituirDe(VARIANTE_B);
+  const GRUPO_A_UNO = porRestituirDe(UN_DIA);
+  const GRUPO_B_UNO = porRestituirDe(UN_DIA_B);
+  const [GRUPO_CARGADO] = gruposDe(CARGADA, '2027-04-14');
+  const [GRUPO_PEDIDO] = gruposDe(PEDIDA, '2027-04-01');
+  const [GRUPO_PERDIDO] = gruposDe(ESTADO, '2027-05-03');
+  const GRUPO_RECURSION_UNO = porRestituirDe(RECURSION_UNO, '2027-04-14', ASUETOS_DE_ABRIL);
+  const GRUPO_RECURSION_DOS = porRestituirDe(RECURSION_DOS, '2027-04-14', ASUETOS_DE_ABRIL);
+  // Las partes de un párrafo en texto (sin las negritas) y en HTML (con <strong>)
+  const enTexto = (partes) => partes.map((parte) => (typeof parte === 'string' ? parte : parte.negrita)).join('');
+  const enHtml = (partes) => partes.map((parte) => (typeof parte === 'string' ? parte : `<strong>${parte.negrita}</strong>`))
+    .join('');
+  const RAROS = [undefined, null, '', 'x', 0, 3, NaN, [], {}];
+  // Lo que no sirve en un campo de un grupo (un 3 es un año, un id o unos días válidos)
+  const NO_SIRVEN = [undefined, null, '', 'x', -1, 1.5, NaN, [], {}];
+
+  it('los grupos de los momentos de la maqueta', () => {
+    assert.deepEqual([GRUPO_A.clave, GRUPO_A.caso, GRUPO_A.dias, GRUPO_A.plazo], ['1-2024-0', 'tomar', 2, '2027-04-30']);
+    assert.deepEqual([GRUPO_B.clave, GRUPO_B.caso, GRUPO_B.dias], ['1-2025-0', 'restituir', 2]);
+    assert.deepEqual([GRUPO_A_UNO.dias, GRUPO_A_UNO.fechas, GRUPO_B_UNO.dias, GRUPO_B_UNO.caso],
+      [1, ['2026-12-24'], 1, 'restituir']);
+    assert.deepEqual([GRUPO_CARGADO.situacion, GRUPO_PEDIDO.situacion, GRUPO_PERDIDO.situacion], ['cargada', 'pedida', 'perdida']);
+    assert.deepEqual([GRUPO_RECURSION_UNO.clave, GRUPO_RECURSION_UNO.caso, GRUPO_RECURSION_UNO.plazo, GRUPO_RECURSION_UNO.carga],
+      ['20-2024-0', 'tomar', '2027-08-31', { tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13' }]);
+    assert.deepEqual(GRUPO_RECURSION_DOS.fechas, ['2027-04-12', '2027-04-13']);
+  });
+
+  it('el aviso del Resumen: el caso A desde el 01/01, con la licencia ya vencida, como en la maqueta', () => {
+    assert.equal(textoDelAvisoDeRestitucion(GRUPO_A, VUELVE), T.avisoA);
+    assert.equal(textoDelAvisoDeRestitucion(GRUPO_A, '2027-01-01'), T.avisoA);
+    assert.equal(textoDelAvisoDeRestitucion(GRUPO_A, '2027-04-30'), T.avisoA);
+  });
+
+  it('el aviso A hasta el vencimiento de la licencia, inclusive: «vence el 31/12/2026, antes del plazo» (decisión 3)', () => {
+    const antes = 'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones: tenés 2 días restituidos de la licencia 2024. '
+      + 'Como esa licencia vence el 31/12/2026, antes del plazo, tomalos todos juntos, empezando a más tardar el viernes '
+      + '30/04/2027, con la nota al Director General. Si no, se pierden.';
+    assert.equal(textoDelAvisoDeRestitucion(porRestituirDe(ESTADO, '2026-12-22'), '2026-12-22'), antes);
+    assert.equal(textoDelAvisoDeRestitucion(GRUPO_A, '2026-12-31'), antes);
+    // Sin un hoy que sirva, el de la licencia ya vencida
+    for (const raro of RAROS) assert.equal(textoDelAvisoDeRestitucion(GRUPO_A, raro), T.avisoA, JSON.stringify(raro));
+  });
+
+  it('el aviso B y los de un solo día', () => {
+    assert.equal(textoDelAvisoDeRestitucion(GRUPO_B, VUELVE), T.avisoB);
+    // El caso B no depende del día
+    assert.equal(textoDelAvisoDeRestitucion(GRUPO_B, '2026-12-22'), T.avisoB);
+    assert.equal(textoDelAvisoDeRestitucion(GRUPO_A_UNO, VUELVE), 'El asueto del 24/12/2026 cayó en tus vacaciones: tenés '
+      + '1 día restituido de la licencia 2024. Como esa licencia ya venció, tomalo a más tardar el viernes 30/04/2027, con la '
+      + 'nota al Director General. Si no, se pierde.');
+    assert.equal(textoDelAvisoDeRestitucion(GRUPO_A_UNO, '2026-12-22'), 'El asueto del 24/12/2026 cayó en tus vacaciones: '
+      + 'tenés 1 día restituido de la licencia 2024. Como esa licencia vence el 31/12/2026, antes del plazo, tomalo a más tardar '
+      + 'el viernes 30/04/2027, con la nota al Director General. Si no, se pierde.');
+    assert.equal(textoDelAvisoDeRestitucion(GRUPO_B_UNO, VUELVE), 'El asueto del 24/12/2026 cayó en tus vacaciones: podés '
+      + 'pedir que te restituyan 1 día a tu licencia 2025. Pedilo con la nota al Director General a más tardar el viernes '
+      + '30/04/2027. Si no, se pierde.');
+  });
+
+  it('el aviso de la recursión: los asuetos cayeron en tus días restituidos', () => {
+    assert.equal(textoDelAvisoDeRestitucion(GRUPO_RECURSION_UNO, '2027-04-14'), 'El asueto del 12/04/2027 cayó en tus días '
+      + 'restituidos: tenés 1 día restituido de la licencia 2024. Como esa licencia ya venció, tomalo a más tardar el martes '
+      + '31/08/2027, con la nota al Director General. Si no, se pierde.');
+    assert.equal(textoDelAvisoDeRestitucion(GRUPO_RECURSION_DOS, '2027-04-14'), 'Los asuetos del 12 y el 13/04/2027 cayeron en '
+      + 'tus días restituidos: tenés 2 días restituidos de la licencia 2024. Como esa licencia ya venció, tomalos todos juntos, '
+      + 'empezando a más tardar el martes 31/08/2027, con la nota al Director General. Si no, se pierden.');
+  });
+
+  it('el botón del aviso', () => {
+    assert.equal(textoDelBotonDeRestitucion(GRUPO_A), T.botonA);
+    assert.equal(textoDelBotonDeRestitucion(GRUPO_A_UNO), 'Cargar el día restituido');
+    assert.equal(textoDelBotonDeRestitucion(GRUPO_B), T.botonB);
+    assert.equal(textoDelBotonDeRestitucion(GRUPO_B_UNO), T.botonB);
+    assert.equal(textoDelBotonDeRestitucion(GRUPO_RECURSION_UNO), 'Cargar el día restituido');
+  });
+
+  it('la línea de la fila, por restituir: el caso A y el B, en plural y en singular', () => {
+    assert.equal(textoDeLaFilaDeRestitucion(GRUPO_A), T.filaA);
+    assert.equal(textoDeLaFilaDeRestitucion(GRUPO_A_UNO),
+      '1 día por restituir (asueto del 24/12/2026): tomalo a más tardar el 30/04/2027.');
+    assert.equal(textoDeLaFilaDeRestitucion(GRUPO_B), T.filaB);
+    assert.equal(textoDeLaFilaDeRestitucion(GRUPO_B_UNO),
+      '1 día por restituir a la licencia 2025 (asueto del 24/12/2026): pedí la restitución a más tardar el 30/04/2027.');
+    // La carga que se pase no cambia nada
+    assert.equal(textoDeLaFilaDeRestitucion(GRUPO_A, CARGA_A), T.filaA);
+  });
+
+  it('la línea de la fila, cargada, pedida y perdida', () => {
+    assert.equal(textoDeLaFilaDeRestitucion(GRUPO_CARGADO, CARGA_A), T.filaCargados);
+    assert.equal(textoDeLaFilaDeRestitucion({ ...GRUPO_CARGADO, dias: 1, fechas: ['2026-12-24'] },
+      restituidos(20, '2027-04-12', '2027-04-12')), 'El día restituido está cargado el 12/04/2027.');
+    // Una carga de un día que empieza un sábado y termina el lunes dice sus dos fechas
+    assert.equal(textoDeLaFilaDeRestitucion({ ...GRUPO_CARGADO, dias: 1, fechas: ['2026-12-24'] },
+      restituidos(20, '2027-04-10', '2027-04-12')), 'El día restituido está cargado del 10/04 al 12/04/2027.');
+    // Sin la carga (o con algo que no tiene fechas), sin fechas
+    for (const raro of [undefined, null, 'x', {}, { desde: 'x', hasta: 'y' }]) {
+      assert.equal(textoDeLaFilaDeRestitucion(GRUPO_CARGADO, raro), 'Los 2 días restituidos están cargados.', JSON.stringify(raro));
+    }
+    assert.equal(textoDeLaFilaDeRestitucion(GRUPO_PEDIDO), T.filaPedida);
+    assert.equal(textoDeLaFilaDeRestitucion({ ...GRUPO_PEDIDO, dias: 1, fechas: ['2026-12-24'] }),
+      'Restitución pedida el 01/04/2027: el día volvió a la licencia 2025.');
+    assert.equal(textoDeLaFilaDeRestitucion({ ...GRUPO_PEDIDO, fecha_pedido: null }),
+      'Restitución pedida: los 2 días volvieron a la licencia 2025.');
+    assert.equal(textoDeLaFilaDeRestitucion(GRUPO_PERDIDO), T.filaPerdidos);
+    assert.equal(textoDeLaFilaDeRestitucion(gruposDe(UN_DIA, '2027-05-03')[0]), '1 día por restituir: se perdió el 30/04/2027.');
+    // Una perdida del caso B dice lo mismo
+    assert.equal(textoDeLaFilaDeRestitucion(gruposDe(VARIANTE_B, '2027-05-03')[0]), T.filaPerdidos);
+  });
+
+  it('la oración de la banda: juntos por caso y plazo, en ámbar los últimos 30 días corridos (decisión 7)', () => {
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_A], VUELVE), [{ texto: T.bajadaA, vence: false }]);
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(ESTADO, '2027-03-30'), '2027-03-30'), [{ texto: T.bajadaA, vence: false }]);
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(ESTADO, '2027-03-31'), '2027-03-31'), [{ texto: T.bajadaA, vence: true }]);
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(ESTADO, '2027-04-30'), '2027-04-30'), [{ texto: T.bajadaA, vence: true }]);
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_B], VUELVE), [{ texto: T.bajadaB, vence: false }]);
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_A_UNO], VUELVE),
+      [{ texto: 'Además, 1 restituido de la 2024: tomalo a más tardar el viernes 30/04.', vence: false }]);
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_B_UNO], VUELVE),
+      [{ texto: 'Además, 1 por restituir: pedí la restitución a más tardar el viernes 30/04.', vence: false }]);
+  });
+
+  it('la oración de la banda con dos licencias: las del caso A juntas, y las del B aparte', () => {
+    // Dos grupos del caso A con el mismo plazo, de la 2024 y de la 2025 (desordenados)
+    const de2025 = { ...GRUPO_A_UNO, clave: '1-2025-0', anio: 2025, fechas: ['2026-12-31'] };
+    assert.deepEqual(bajadaDeRestituciones([de2025, GRUPO_A], VUELVE), [{
+      texto: 'Además, 2 restituidos de la 2024 y 1 de la 2025: empezá a tomarlos a más tardar el viernes 30/04.', vence: false
+    }]);
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_A_UNO, de2025], VUELVE), [{
+      texto: 'Además, 1 restituido de la 2024 y 1 de la 2025: empezá a tomarlos a más tardar el viernes 30/04.', vence: false
+    }]);
+    // La misma licencia en dos cargas se suma
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_A, { ...GRUPO_A_UNO, clave: '7-2024-0', licencia_id: 7 }], VUELVE),
+      [{ texto: 'Además, 3 restituidos de la 2024: empezá a tomarlos a más tardar el viernes 30/04.', vence: false }]);
+    // Julieta con 12 de la 2024: el 24/12 sale de la 2024 (caso A) y el 31/12, de la 2025 (caso B), con el mismo plazo
+    const dosLicencias = con({ saldos: saldosDeVacaciones({ 2024: 12, 2025: 15, 2026: 10 }) });
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(dosLicencias), VUELVE), [
+      { texto: 'Además, 1 restituido de la 2024: tomalo a más tardar el viernes 30/04.', vence: false },
+      { texto: 'Además, 1 por restituir: pedí la restitución a más tardar el viernes 30/04.', vence: false }
+    ]);
+    // Dos del caso B con el mismo plazo se suman
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_B, { ...GRUPO_B_UNO, clave: '1-2026-0', anio: 2026 }], VUELVE),
+      [{ texto: 'Además, 3 por restituir: pedí la restitución a más tardar el viernes 30/04.', vence: false }]);
+    // Con otro plazo, otra oración, por plazo (y la del plazo más cercano, en ámbar)
+    const deMayo = { ...GRUPO_A, clave: '7-2024-1', licencia_id: 7, tanda: 1, plazo: '2027-05-31' };
+    assert.deepEqual(bajadaDeRestituciones([deMayo, GRUPO_A], '2027-04-15'), [
+      { texto: T.bajadaA, vence: true },
+      { texto: 'Además, 2 restituidos de la 2024: empezá a tomarlos a más tardar el lunes 31/05.', vence: false }
+    ]);
+  });
+
+  it('la oración de la banda: con el plazo en otro año que hoy, la fecha lleva el año', () => {
+    // El 22/12/2026, el día de los asuetos, el plazo es del año siguiente
+    const delAsueto = '2026-12-22';
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(ESTADO, delAsueto), delAsueto), [{
+      texto: 'Además, 2 restituidos de la 2024: empezá a tomarlos a más tardar el viernes 30/04/2027.', vence: false
+    }]);
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(VARIANTE_B, delAsueto), delAsueto), [{
+      texto: 'Además, 2 por restituir: pedí la restitución a más tardar el viernes 30/04/2027.', vence: false
+    }]);
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_A_UNO], delAsueto),
+      [{ texto: 'Además, 1 restituido de la 2024: tomalo a más tardar el viernes 30/04/2027.', vence: false }]);
+    // El 01/04/2027, del mismo año: sin el año
+    const enAbril = '2027-04-01';
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(ESTADO, enAbril), enAbril), [{ texto: T.bajadaA, vence: true }]);
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(VARIANTE_B, enAbril), enAbril), [{ texto: T.bajadaB, vence: true }]);
+  });
+
+  it('la oración de la banda: solo lo que está por restituir, hasta el plazo inclusive', () => {
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_CARGADO, GRUPO_PEDIDO, GRUPO_PERDIDO], VUELVE), []);
+    // Un grupo por restituir que ya pasó su plazo (calculado otro día) no va; en el plazo, sí
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_A, GRUPO_B], '2027-05-03'), []);
+    assert.deepEqual(bajadaDeRestituciones([GRUPO_A], '2027-04-30'), [{ texto: T.bajadaA, vence: true }]);
+    assert.deepEqual(bajadaDeRestituciones(gruposDe(CARGADA, '2027-04-14'), '2027-04-14'), []);
+    assert.deepEqual(bajadaDeRestituciones([], VUELVE), []);
+    for (const raro of RAROS) {
+      assert.deepEqual(bajadaDeRestituciones(raro, VUELVE), [], JSON.stringify(raro));
+      assert.deepEqual(bajadaDeRestituciones([GRUPO_A], raro), [], JSON.stringify(raro));
+    }
+    for (const raro of NO_SIRVEN) {
+      assert.deepEqual(bajadaDeRestituciones([raro, { ...GRUPO_A, plazo: raro }, { ...GRUPO_A, caso: raro },
+        { ...GRUPO_A, dias: raro }, { ...GRUPO_A, anio: raro }], VUELVE), [], JSON.stringify(raro));
+    }
+  });
+
+  it('el título de «Vence pronto»', () => {
+    assert.equal(tituloDeRestitucionQueVence(GRUPO_A), T.venceTituloA);
+    assert.equal(tituloDeRestitucionQueVence(GRUPO_B), T.venceTituloB);
+    assert.equal(tituloDeRestitucionQueVence(GRUPO_A_UNO), '1 día restituido de la 2024');
+    assert.equal(tituloDeRestitucionQueVence(GRUPO_B_UNO), '1 día para restituir a la 2025');
+  });
+
+  it('los párrafos del email del caso A, como en la maqueta, con las negritas aparte', () => {
+    const partes = partesDelEmailDeRestitucion(GRUPO_A, VUELVE);
+    assert.deepEqual(partes, [
+      ['Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones del 11/12/2026 al 08/01/2027: tenés ',
+        { negrita: '2 días restituidos de la licencia 2024' }, '.'],
+      ['Como esa licencia ya venció, tomalos todos juntos, empezando a más tardar el ', { negrita: 'viernes 30/04/2027' },
+        ', con la nota al Director General. Si no, se pierden.'],
+      ['En Mi espacio podés cargarlos y bajar la nota en Word.']
+    ]);
+    assert.deepEqual(partes.map(enHtml), EMAIL_A);
+    // Los dos primeros, sin las vacaciones, son el aviso del Resumen (decisión 16: el email las nombra; el aviso, no)
+    assert.equal(`${enTexto(partes[0]).replace(' del 11/12/2026 al 08/01/2027', '')} ${enTexto(partes[1])}`, T.avisoA);
+    // Hasta el vencimiento de la licencia, «vence el … antes del plazo»
+    assert.deepEqual(partesDelEmailDeRestitucion(GRUPO_A, '2026-12-22')[1], ['Como esa licencia vence el 31/12/2026, antes '
+      + 'del plazo, tomalos todos juntos, empezando a más tardar el ', { negrita: 'viernes 30/04/2027' },
+    ', con la nota al Director General. Si no, se pierden.']);
+  });
+
+  it('los párrafos del email del caso B, de un solo día y de la recursión', () => {
+    assert.deepEqual(partesDelEmailDeRestitucion(GRUPO_B, VUELVE), [
+      ['Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones del 11/12/2026 al 08/01/2027: podés pedir que te '
+        + 'restituyan ', { negrita: '2 días a tu licencia 2025' }, '.'],
+      ['Pedilo con la nota al Director General a más tardar el ', { negrita: 'viernes 30/04/2027' },
+        '. Si no, se pierden.'],
+      ['En Mi espacio podés pedirla y bajar la nota en Word.']
+    ]);
+    assert.deepEqual(partesDelEmailDeRestitucion(GRUPO_A_UNO, VUELVE), [
+      ['El asueto del 24/12/2026 cayó en tus vacaciones del 11/12/2026 al 08/01/2027: tenés ',
+        { negrita: '1 día restituido de la licencia 2024' }, '.'],
+      ['Como esa licencia ya venció, tomalo a más tardar el ', { negrita: 'viernes 30/04/2027' },
+        ', con la nota al Director General. Si no, se pierde.'],
+      ['En Mi espacio podés cargarlo y bajar la nota en Word.']
+    ]);
+    assert.deepEqual(partesDelEmailDeRestitucion(GRUPO_B_UNO, VUELVE), [
+      ['El asueto del 24/12/2026 cayó en tus vacaciones del 11/12/2026 al 08/01/2027: podés pedir que te restituyan ',
+        { negrita: '1 día a tu licencia 2025' }, '.'],
+      ['Pedilo con la nota al Director General a más tardar el ', { negrita: 'viernes 30/04/2027' }, '. Si no, se pierde.'],
+      ['En Mi espacio podés pedirla y bajar la nota en Word.']
+    ]);
+    assert.deepEqual(partesDelEmailDeRestitucion(GRUPO_RECURSION_UNO, '2027-04-14')[0], [
+      'El asueto del 12/04/2027 cayó en tus días restituidos del 12/04 al 13/04/2027: tenés ',
+      { negrita: '1 día restituido de la licencia 2024' }, '.'
+    ]);
+    // Sin las fechas de la carga, sin «del … al …»
+    assert.equal(enTexto(partesDelEmailDeRestitucion({ ...GRUPO_A, carga: { tipo: 'vacaciones', desde: null, hasta: null } },
+      VUELVE)[0]), 'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones: tenés 2 días restituidos de la licencia 2024.');
+  });
+
+  it('el recuadro del modal B y los mensajes del pedido', () => {
+    const recuadro = recuadroDeLaRestitucion(GRUPO_B);
+    assert.deepEqual(recuadro, {
+      resaltado: '2 días hábiles vuelven a tu licencia 2025',
+      resto: ' (vence el 31/12/2027), por los asuetos del 24/12 y el 31/12/2026. Al pedirla se arma la nota al Director '
+        + 'General y los días vuelven enseguida.'
+    });
+    assert.equal(`<b>${recuadro.resaltado}</b>${recuadro.resto}`, T.modalB);
+    assert.deepEqual(recuadroDeLaRestitucion(GRUPO_B_UNO), {
+      resaltado: '1 día hábil vuelve a tu licencia 2025',
+      resto: ' (vence el 31/12/2027), por el asueto del 24/12/2026. Al pedirla se arma la nota al Director General y el día '
+        + 'vuelve enseguida.'
+    });
+    assert.equal(mensajeDeLaRestitucionPedida(GRUPO_B), 'Restitución pedida: los 2 días volvieron a tu licencia 2025.');
+    assert.equal(mensajeDeLaRestitucionPedida(GRUPO_B_UNO), 'Restitución pedida: el día volvió a tu licencia 2025.');
+    assert.equal(MENSAJE_RESTITUCION_BORRADA, 'Pedido de restitución borrado: los días vuelven a estar por restituir.');
+    // Si los días no vuelven a estar por restituir (las vacaciones ya no están o los asuetos se dieron de baja), sin prometerlo
+    assert.equal(MENSAJE_RESTITUCION_BORRADA_SIN_DIAS, 'Pedido de restitución borrado.');
+  });
+
+  it('ningún texto habla de tardanza, demora ni reproches', () => {
+    const textos = [
+      ...[GRUPO_A, GRUPO_B, GRUPO_A_UNO, GRUPO_B_UNO, GRUPO_RECURSION_DOS].flatMap((grupo) => [
+        textoDelAvisoDeRestitucion(grupo, VUELVE), textoDelBotonDeRestitucion(grupo), textoDeLaFilaDeRestitucion(grupo),
+        tituloDeRestitucionQueVence(grupo), ...partesDelEmailDeRestitucion(grupo, VUELVE).map(enTexto),
+        ...Object.values(recuadroDeLaRestitucion(grupo)), mensajeDeLaRestitucionPedida(grupo)
+      ]),
+      ...[GRUPO_CARGADO, GRUPO_PEDIDO, GRUPO_PERDIDO].map((grupo) => textoDeLaFilaDeRestitucion(grupo, CARGA_A)),
+      ...bajadaDeRestituciones([GRUPO_A, GRUPO_B], VUELVE).map(({ texto }) => texto), MENSAJE_RESTITUCION_BORRADA,
+      MENSAJE_RESTITUCION_BORRADA_SIN_DIAS
+    ];
+    for (const texto of textos) {
+      assert.ok(texto.length > 0);
+      assert.doesNotMatch(texto, /tardanza|demora|atraso|undefined|null|NaN|—/i, texto);
+    }
+  });
+
+  it('lo que no es un grupo (o un caso o una situación que no se conocen) da textos vacíos, y nada tira', () => {
+    for (const raro of RAROS) {
+      for (const grupo of [raro, { ...GRUPO_A, caso: raro }]) {
+        assert.equal(textoDelAvisoDeRestitucion(grupo, VUELVE), '', JSON.stringify(grupo));
+        assert.equal(textoDelBotonDeRestitucion(grupo), '', JSON.stringify(grupo));
+        assert.equal(tituloDeRestitucionQueVence(grupo), '', JSON.stringify(grupo));
+        assert.deepEqual(partesDelEmailDeRestitucion(grupo, VUELVE), [], JSON.stringify(grupo));
+      }
+      assert.equal(textoDeLaFilaDeRestitucion(raro), '', JSON.stringify(raro));
+      assert.equal(textoDeLaFilaDeRestitucion({ ...GRUPO_A, situacion: raro }), '', JSON.stringify(raro));
+      assert.equal(textoDeLaFilaDeRestitucion({ ...GRUPO_A, caso: raro }), '', JSON.stringify(raro));
+      for (const grupo of [raro, { ...GRUPO_B, caso: raro }]) {
+        assert.deepEqual(recuadroDeLaRestitucion(grupo), { resaltado: '', resto: '' }, JSON.stringify(grupo));
+        assert.equal(mensajeDeLaRestitucionPedida(grupo), '', JSON.stringify(grupo));
+      }
+      // Un grupo con las partes raras no tira
+      const torcido = { ...GRUPO_A, fechas: raro, dias: raro, anio: raro, plazo: raro, carga: raro, fecha_pedido: raro };
+      for (const situacion of ['por_restituir', 'cargada', 'pedida', 'perdida']) {
+        for (const caso of ['tomar', 'restituir']) {
+          const grupo = { ...torcido, situacion, caso };
+          assert.doesNotThrow(() => {
+            textoDelAvisoDeRestitucion(grupo, raro);
+            textoDelBotonDeRestitucion(grupo);
+            textoDeLaFilaDeRestitucion(grupo, raro);
+            tituloDeRestitucionQueVence(grupo);
+            partesDelEmailDeRestitucion(grupo, raro);
+            recuadroDeLaRestitucion(grupo);
+            mensajeDeLaRestitucionPedida(grupo);
+            bajadaDeRestituciones([grupo], VUELVE);
+          }, JSON.stringify(grupo));
+        }
+      }
+    }
+  });
+
+  describe('avisosDeVencimiento: los dos avisos de cada grupo por restituir', () => {
+    // Como la corrida (services/miEspacioAvisos.js)
+    const avisosDe = (estado, hoy, feriados = ASUETOS) => avisosDeVencimiento(calcular(estado, { hoy, feriados }),
+      { hoy, feriados, modalidad: estado.modalidad, ocupadas: estado.licencias });
+    const avisoDe = (grupo, hoy, numero) => ({
+      clave: `restitucion-${grupo.clave}-${numero}`,
+      texto: partesDelEmailDeRestitucion(grupo, hoy).map(enTexto).join(' '),
+      restitucion: { grupo: grupo.clave, partes: partesDelEmailDeRestitucion(grupo, hoy), primero: numero === 1 }
+    });
+
+    it('el lunes 11/01/2027, al volver, solo el primero, con el texto del email', () => {
+      assert.deepEqual(avisosDe(ESTADO, VUELVE), [avisoDe(GRUPO_A, VUELVE, 1)]);
+      const [aviso] = avisosDe(ESTADO, VUELVE);
+      assert.equal(aviso.clave, 'restitucion-1-2024-0-1');
+      assert.equal(aviso.texto, 'Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones del 11/12/2026 al 08/01/2027: '
+        + 'tenés 2 días restituidos de la licencia 2024. Como esa licencia ya venció, tomalos todos juntos, empezando a más '
+        + 'tardar el viernes 30/04/2027, con la nota al Director General. Si no, se pierden. En Mi espacio podés cargarlos y '
+        + 'bajar la nota en Word.');
+      assert.deepEqual(aviso.restitucion.partes.map(enHtml), EMAIL_A);
+      // Desde el día en que aparece (el de los asuetos, con la licencia todavía sin vencer)
+      const grupoDel22 = porRestituirDe(ESTADO, '2026-12-22');
+      assert.deepEqual(avisosDe(ESTADO, '2026-12-22'), [avisoDe(grupoDel22, '2026-12-22', 1)]);
+    });
+
+    it('el segundo, desde 5 días hábiles antes del plazo: el viernes 23/04/2027 los dos, hasta el plazo', () => {
+      const claves = (hoy, estado = ESTADO, feriados = ASUETOS) => avisosDe(estado, hoy, feriados).map((aviso) => aviso.clave);
+      assert.deepEqual(claves('2027-04-22'), ['restitucion-1-2024-0-1']);
+      assert.deepEqual(avisosDe(ESTADO, '2027-04-23'), [avisoDe(GRUPO_A, '2027-04-23', 1), avisoDe(GRUPO_A, '2027-04-23', 2)]);
+      assert.deepEqual(claves('2027-04-30'), ['restitucion-1-2024-0-1', 'restitucion-1-2024-0-2']);
+      // Pasado el plazo, ninguno
+      assert.deepEqual(claves('2027-05-01'), []);
+      assert.deepEqual(claves('2027-05-03'), []);
+      // Con un feriado el martes 27/04, el segundo empieza el jueves 22/04
+      const conFeriado = new Set([...ASUETOS, '2027-04-27']);
+      assert.deepEqual(claves('2027-04-21', ESTADO, conFeriado), ['restitucion-1-2024-0-1']);
+      assert.deepEqual(claves('2027-04-22', ESTADO, conFeriado), ['restitucion-1-2024-0-1', 'restitucion-1-2024-0-2']);
+      // El caso B, con su texto
+      assert.deepEqual(avisosDe(VARIANTE_B, '2027-04-23'),
+        [avisoDe(GRUPO_B, '2027-04-23', 1), avisoDe(GRUPO_B, '2027-04-23', 2)]);
+    });
+
+    it('sin grupos pedidos, cargados ni perdidos', () => {
+      assert.deepEqual(avisosDe(PEDIDA, '2027-04-23'), []);
+      assert.deepEqual(avisosDe(CARGADA, '2027-04-23'), []);
+      assert.deepEqual(avisosDe(con({ restituibles: [] }), VUELVE), []);
+      const hoy = '2027-04-23';
+      const calculo = calcular(ESTADO, { hoy, feriados: ASUETOS });
+      const opciones = { hoy, feriados: ASUETOS, modalidad: 'planta' };
+      assert.deepEqual(avisosDeVencimiento({ ...calculo, restituciones: [GRUPO_CARGADO, GRUPO_PEDIDO, GRUPO_PERDIDO] }, opciones),
+        []);
+      // Un grupo por restituir que ya pasó su plazo (el cálculo es de otro día), tampoco
+      assert.deepEqual(avisosDeVencimiento(calculo, { ...opciones, hoy: '2027-05-03' }), []);
+    });
+
+    it('después de lo de antes, por plazo; las claves entran en varchar(40)', () => {
+      const hoy = '2026-12-01';
+      const calculo = calcular(PLANTA.estado, { hoy, feriados: SIN_FERIADOS });
+      const deMayo = { ...GRUPO_A, clave: '7-2024-1', licencia_id: 7, tanda: 1, plazo: '2027-05-31' };
+      const avisos = avisosDeVencimiento({ ...calculo, restituciones: [deMayo, GRUPO_A] },
+        { hoy, feriados: SIN_FERIADOS, modalidad: 'planta', ocupadas: PLANTA.estado.licencias });
+      assert.deepEqual(avisos.map((aviso) => aviso.clave),
+        ['franquicia-2026', 'licencia-2024', 'restitucion-1-2024-0-1', 'restitucion-7-2024-1-1']);
+      // La clave sale del grupo (la carga, el año y la tanda), con los números más grandes de sus columnas
+      const grande = { ...GRUPO_A, clave: '2147483647-2024-32767', licencia_id: 2147483647, tanda: 32767 };
+      const [aviso] = avisosDeVencimiento({ restituciones: [grande] }, { hoy: VUELVE, feriados: ASUETOS });
+      assert.equal(aviso.clave, 'restitucion-2147483647-2024-32767-1');
+      assert.ok(aviso.clave.length <= 40);
+      assert.ok(`${aviso.clave.slice(0, -1)}2`.length <= 40);
+      assert.equal(aviso.restitucion.grupo, '2147483647-2024-32767');
+    });
+
+    it('nada tira con grupos raros', () => {
+      for (const raro of NO_SIRVEN) {
+        const restituciones = [raro, { ...GRUPO_A, situacion: 'por_restituir', plazo: raro },
+          { ...GRUPO_A, licencia_id: raro }, { ...GRUPO_A, anio: raro }, { ...GRUPO_A, tanda: raro }, { ...GRUPO_A, caso: raro }];
+        assert.deepEqual(avisosDeVencimiento({ restituciones }, { hoy: VUELVE, feriados: raro }), [], JSON.stringify(raro));
+        assert.deepEqual(avisosDeVencimiento({ restituciones: raro }, { hoy: VUELVE, feriados: ASUETOS }), [],
+          JSON.stringify(raro));
+      }
+    });
+  });
+});
+
 describe('textoDelReparto', () => {
   const textoDe = (estado, fila, feriados = SIN_FERIADOS) =>
     textoDelReparto(repartoDeVacaciones(conLicencias(estado, fila), { hoy: HOY, feriados }), fila.id);
@@ -829,7 +2502,7 @@ describe('el rango de fechas y el día entero', () => {
   });
 
   it('esDiaEntero: los de días enteros, y los de horas con 7', () => {
-    for (const tipo of ['vacaciones', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco']) {
+    for (const tipo of ['vacaciones', 'estudios', 'medica', 'medica_extraordinaria', 'familiar', 'franco', 'restituidos']) {
       assert.equal(esDiaEntero({ tipo, horas: null }), true, tipo);
     }
     assert.equal(esDiaEntero({ tipo: 'franquicia', horas: 7 }), true);
@@ -2515,7 +4188,8 @@ describe('calcular', () => {
   it('PLANTA a hoy: el reparto, los topes, los francos y lo no utilizado, sin faltantes', () => {
     const calculo = calcular(PLANTA.estado, A_HOY);
     assert.deepEqual(Object.keys(calculo),
-      ['reparto', 'topes', 'franquicia', 'francos', 'horasAFavor', 'noUtilizadas', 'faltantes', 'avisosDeSalidas']);
+      ['reparto', 'topes', 'franquicia', 'francos', 'horasAFavor', 'noUtilizadas', 'faltantes', 'avisosDeSalidas',
+        'restituciones']);
     assert.deepEqual(calculo.reparto, repartoDeVacaciones(PLANTA.estado, A_HOY));
     assert.deepEqual(calculo.topes, usoDeLosTopes(PLANTA.estado, { feriados: SIN_FERIADOS }));
     // Las 42 horas de franquicia menos las 17 del saldo inicial (spec 2026-10-28, 3.6)
@@ -2525,6 +4199,7 @@ describe('calcular', () => {
     assert.deepEqual(calculo.noUtilizadas, { 2026: noUtilizadasDe(PLANTA.estado, 2026, A_HOY) });
     assert.deepEqual(calculo.faltantes, []);
     assert.deepEqual(calculo.avisosDeSalidas, []);
+    assert.deepEqual(calculo.restituciones, []);
   });
 
   it('CONTRATO a hoy: las horas a favor y las horas no utilizadas', () => {
@@ -2613,7 +4288,8 @@ describe('calcular', () => {
     assert.deepEqual(calculo.reparto.ordinarias, []);
     assert.equal(calculo.reparto.sinCubrir.size, 0);
     assert.deepEqual([calculo.topes, calculo.franquicia, calculo.francos, calculo.horasAFavor, calculo.noUtilizadas,
-      calculo.faltantes, calculo.avisosDeSalidas], [[], null, [], [], {}, [], []]);
+      calculo.faltantes, calculo.avisosDeSalidas, calculo.restituciones], [[], null, [], [], {}, [], [], []]);
+    assert.deepEqual(calcular(JULIETA.estado, { feriados: ASUETOS }).restituciones, []);
   });
 });
 
@@ -3744,6 +5420,7 @@ describe('nada tira', () => {
     const vacio = repartoDeVacaciones(null);
     assert.deepEqual(vacio.ordinarias, []);
     assert.equal(vacio.porFila.size, 0);
+    assert.equal(vacio.porFecha.size, 0);
     assert.equal(vacio.sinCubrir.size, 0);
     assert.equal(textoDelReparto(null, 1), '');
     assert.equal(textoDelReparto({}, 1), '');
@@ -4315,6 +5992,30 @@ describe('el paso a Configuración', () => {
       assert.deepEqual(correccion(creadaDe(terminada), creadaDe(terminada, { tipo: 'medica' }), fija), { accion: 'nada' });
     });
 
+    it('unos días restituidos que ya pasaron a Configuración y ya empezaron no se mueven: restituidosEmpezados, en desde', () => {
+      // Su «Hasta» lo pone Mi espacio: «solo podés cambiar hasta cuándo» (soloHasta) diría algo que no se puede hacer
+      const enCurso = oficialDe(7, '2026-10-23', '2026-10-26');
+      const vinculo = { estado: 'creada', oficial: enCurso };
+      const restituidos = creadaDe(enCurso, { tipo: 'restituidos' });
+      assert.deepEqual(correccion(restituidos, { ...restituidos, desde: '2026-10-26', hasta: '2026-10-27' }, vinculo),
+        { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.restituidosEmpezados } });
+      // Una que empieza hoy, igual
+      const deHoy = oficialDe(7, HOY, '2026-10-27');
+      const deHoyRestituidos = creadaDe(deHoy, { tipo: 'restituidos' });
+      assert.deepEqual(correccion(deHoyRestituidos, { ...deHoyRestituidos, desde: '2026-10-27', hasta: '2026-10-28' },
+        { estado: 'creada', oficial: deHoy }), { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.restituidosEmpezados } });
+      // Sin mover el «Desde» (la nota, «Mostrar») no toca Configuración; una que todavía no empezó se mueve
+      assert.deepEqual(correccion(restituidos, { ...restituidos, nota: 'x', mostrar: 0 }, vinculo), { accion: 'nada' });
+      const futura = oficialDe(7, '2026-11-02', '2026-11-03');
+      const futuraRestituidos = creadaDe(futura, { tipo: 'restituidos' });
+      assert.deepEqual(correccion(futuraRestituidos, { ...futuraRestituidos, desde: '2026-11-04', hasta: '2026-11-05' },
+        { estado: 'creada', oficial: futura }), { accion: 'cambiar' });
+      // Unas vacaciones en el mismo caso siguen con soloHasta
+      const vacaciones = creadaDe(enCurso);
+      assert.deepEqual(correccion(vacaciones, { ...vacaciones, desde: '2026-10-26', hasta: '2026-10-27' }, vinculo),
+        { error: { campo: 'desde', mensaje: MENSAJES_MI_ESPACIO.soloHasta } });
+    });
+
     it('una creada cuya copia no pasó: sin cambiar las fechas se corrige siempre; los límites, con las de Configuración', () => {
       // La de Configuración terminó el 23/10; la fila quedó del 19/10 al 22/10 con el motivo
       const terminada = oficialDe(7, '2026-10-19', '2026-10-23');
@@ -4458,6 +6159,24 @@ describe('el paso a Configuración', () => {
         assert.deepEqual(correccion(anterior, { ...anterior, nota: 'x' }, vinculo, { ...conPersona, hoy: '2026-10-30' }),
           { accion: 'nada' });
       });
+
+    it('los días restituidos dejan persona a cargo, como las vacaciones (spec 2026-10-31-mi-espacio-dias-restituidos, 7)', () => {
+      // Desde el lunes 02/11, con persona a cargo: el límite para cambiar el tipo es el jueves 29/10
+      const oficial = oficialDe(7, '2026-11-02', '2026-11-06', { autorizado_id: 3 });
+      const vinculo = { estado: 'creada', oficial };
+      const despuesDelLimite = { personaACargo: true, hoy: '2026-10-30' };
+      const deVacaciones = creadaDe(oficial);
+      const deRestituidos = creadaDe(oficial, { tipo: 'restituidos' });
+      // Siguen con su tipo: no pierden la persona, cualquier día
+      assert.deepEqual(correccion(deVacaciones, { ...deVacaciones, nota: 'x' }, vinculo, despuesDelLimite), { accion: 'nada' });
+      assert.deepEqual(correccion(deRestituidos, { ...deRestituidos, nota: 'x' }, vinculo, despuesDelLimite), { accion: 'nada' });
+      // A un tipo que no deja persona a cargo, la pierden, como las vacaciones
+      const aMedica = { ...deRestituidos, tipo: 'medica' };
+      assert.deepEqual(correccion(deRestituidos, aMedica, vinculo, despuesDelLimite),
+        { error: { campo: 'tipo', mensaje: MENSAJES_MI_ESPACIO.tipoFijo } });
+      assert.deepEqual(correccion(deRestituidos, aMedica, vinculo, { ...despuesDelLimite, hoy: '2026-10-29' }),
+        { accion: 'cambiar', sin_persona_a_cargo: true });
+    });
 
     it('con la tabla, el límite cuenta los feriados de Configuración → Feriados (spec 2026-10-27-feriados-en-notas, 4)', () => {
       // Unas vacaciones desde el miércoles 09/12 con persona a cargo, que pasan a una médica el viernes 04/12
@@ -4659,6 +6378,17 @@ describe('el paso a Configuración', () => {
         notas_de_hoy: true
       });
     });
+
+    it('al firmante titular, los días restituidos son vacaciones: dejan persona a cargo (spec 2026-10-31-mi-espacio-dias-restituidos, 7)',
+      () => {
+        const restituidos = filaDe({ tipo: 'restituidos' });
+        const deRestituidos = previsto({ soyTitular: true, fila: restituidos });
+        assert.deepEqual(deRestituidos, previsto({ soyTitular: true }));
+        assert.deepEqual(deRestituidos.avisos, [AVISO_DEL_PASO]);
+        assert.equal(deRestituidos.firmante.puede_autorizar, true);
+        // Pasan a Configuración como cualquier ausencia de día entero
+        assert.equal(previsto({ fila: restituidos }).pasa, true);
+      });
 
     it('al firmante titular: la víspera con la tabla, sin anticipo y las notas de hoy (spec 2026-10-27-feriados-en-notas, 4)', () => {
       const marcas = ({ vispera, sin_anticipo: sinAnticipo, sin_dias_habiles: sinDiasHabiles }) => [vispera, sinAnticipo, sinDiasHabiles];
