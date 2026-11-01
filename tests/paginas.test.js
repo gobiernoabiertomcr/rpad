@@ -32,9 +32,10 @@ const VERSION_PANTALLAS = '20261211';
 const VERSION_AREAS = '20261205';
 // feriados.js (la pestaña Feriados de Configuración, la cuarta: el selector del año, los filtros y la tabla, spec
 // 2026-10-26-feriados, 4): el número siguiente al más alto de este archivo cuando se creó (VERSION_REPORTES). Cambió después (cuántas
-// licencias de Mi espacio incluye la fecha, en el modal del feriado, spec 2026-10-26-mi-espacio-licencias-y-horas). Su versión es
-// propia (solo la usa configuracion.html)
-const VERSION_FERIADOS = '20261209';
+// licencias de Mi espacio incluye la fecha, en el modal del feriado, spec 2026-10-26-mi-espacio-licencias-y-horas; y, de esas,
+// cuántas vacaciones quedan con ese día para restituir y hasta cuándo, spec 2026-10-31-mi-espacio-dias-restituidos, 9). Su versión
+// es propia (solo la usa configuracion.html)
+const VERSION_FERIADOS = '20261210';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
 // reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6;
