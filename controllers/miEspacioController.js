@@ -13,7 +13,9 @@
 // ningún faltante los frena (3.10). Las personas de contrato cargan sus horas en la planilla (spec 2026-10-27-mi-espacio-horas,
 // sección 8: GET y PUT /mi-espacio/salidas, todos los días de un guardado o ninguno), y las de planta, en sus horas extras:
 // cada una rechaza a la otra modalidad. La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word) se arma en el
-// momento, para la vista y para el Word, y no se guarda. Un id de otra persona responde 404, como uno que no existe: no se
+// momento, para la vista y para el Word, y no se guarda. Los días restituidos por un asueto (spec
+// 2026-10-31-mi-espacio-dias-restituidos, 8) se cargan, se corrigen y se borran por las mismas rutas, con su pedido (el caso A:
+// services/miEspacioRestituciones.js) en la misma transacción. Un id de otra persona responde 404, como uno que no existe: no se
 // revela que existe (sección 10). Lo único de otras personas que se ve es «Hoy no están» (sección 7: quién de administración
 // no está, nunca de qué), los eventos que le compartieron o le muestran (un Personal (Público), solo «Carla: Turno médico»),
 // en «Hoy y mañana» (los de la agenda: controllers/miEspacioEventosController.js) y, solo el firmante titular, las personas
@@ -23,7 +25,8 @@ import { hoyArgentina, ahoraArgentina, sumarDias, diasEntre, esFechaIso } from '
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, MAXIMO_DIAS_POR_GUARDADO, anioVigente, camposDelSaldoInicial, textoDeLasMitades,
   evaluarLicencia, validarHorasExtras, validarSalida, mesDeLaPlanilla, validarAnio, validarSaldoInicial, modalidadDe,
-  ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, nombreCorto, dejaPersonaACargo
+  ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, nombreCorto, dejaPersonaACargo, grupoDeLosRestituidos,
+  restituiblesDe
 } from '../services/miEspacioReglas.js';
 import {
   resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe, textoDeLaListaDe
@@ -38,6 +41,7 @@ import { notaDeLicencia, htmlDeLaNota, aclaracionDeLaNota, MENSAJES_NOTA } from 
 import { renderNotaDocx, TIPO_WORD } from '../services/miEspacioNotaWord.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { aplicarCarga, aplicarCorreccion, aplicarBaja, pasoPrevisto, vinculosDe } from '../services/miEspacioPaso.js';
+import { registrarPedido, soltarLosPedidosDeLasCargas } from '../services/miEspacioRestituciones.js';
 import {
   bloquearUsuarios, firmanteTitular, autorizables, conSusLicencias
 } from '../services/licenciasOficialesService.js';
@@ -316,13 +320,27 @@ const DEL_PASO = 'licencia_oficial_id = ?, oficial = ?, sin_pasar = ?';
 const valoresDelPaso = (paso) => [paso.licencia_oficial_id, paso.oficial, paso.sin_pasar];
 
 /**
+ * El pedido 'tomar' de una carga de días restituidos recién guardada (spec 2026-10-31-mi-espacio-dias-restituidos, 4 y 8: el
+ * caso A), en la transacción del alta: el grupo es el que validó `evaluarLicencia` (`restitucion`, `{ licencia_id, anio,
+ * tanda }`), entre los de lo cargado (`calculo.restituciones`, leídos bajo el bloqueo: de dos altas a la vez del mismo grupo,
+ * la segunda ya no lo encuentra por restituir y da 400). `registrarPedido` sella la tanda, guarda el pedido y enlaza la foto;
+ * si algo no cierra, tira y la transacción se deshace entera (la carga y su paso a Configuración también).
+ */
+const pedirLosRestituidos = async (conexion, { usuarioId, calculo, restitucion, cargaId, hoy }) => {
+  const { grupo, error } = grupoDeLosRestituidos(calculo.restituciones, { restitucion }, null);
+  if (error) throw new Error(`El grupo de los días restituidos de la carga ${cargaId} ya no está (${error})`);
+  await registrarPedido(conexion, { usuarioId, grupo, caso: 'tomar', cargaId, hoy });
+};
+
+/**
  * POST /api/mi-espacio/licencias/calculo: el cálculo de «Cargar licencia» antes de guardar (`{ ...licencia, id? }`, con el
  * id de la que se corrige), sin guardar nada: `{ error, vista, paso }`. Un error va dentro de `data`, con 200. `paso` es lo
  * que pasaría con Configuración (`pasoPrevisto`: `{ pasa, avisos, firmante, sin_pasar_previsto }`), o null si la licencia
  * no se puede guardar como está; un error del paso (el tipo fijo de unas vacaciones con persona a cargo, «ya empezó», «ya
  * terminó») va en `error` si la licencia no tiene otro. Lo que se anuncia de las Notas Digitales (la víspera, el límite para
  * cambiar el tipo) se cuenta con el calendario de las filas de los feriados que ya leyó `contextoDe` (spec
- * 2026-10-27-feriados-en-notas, 4): si no se pueden leer, Mi espacio no se calcula, como siempre
+ * 2026-10-27-feriados-en-notas, 4): si no se pueden leer, Mi espacio no se calcula, como siempre. Con unos días restituidos
+ * (spec 2026-10-31-mi-espacio-dias-restituidos, 8 y 9), la vista suma el «Hasta» que pone Mi espacio (`vista.hasta`)
  */
 export const calcularLicencia = (req, res) => responder(res, 'Error al calcular la licencia', async () => {
   const hoy = hoyArgentina();
@@ -339,7 +357,8 @@ export const calcularLicencia = (req, res) => responder(res, 'Error al calcular 
 });
 
 // POST /api/mi-espacio/licencias: carga una licencia de la persona y, si es de día entero, la pasa a Configuración (con el
-// calendario de las filas de los feriados que ya leyó contextoDe)
+// calendario de las filas de los feriados que ya leyó contextoDe). Unos días restituidos (`tipo: 'restituidos'`, con
+// `restitucion` y el «Desde»: el «Hasta» lo pone `evaluarLicencia`) guardan además su pedido, en la misma transacción
 export const cargarLicenciaMia = (req, res) => responder(res, 'Error al cargar la licencia', async () => {
   const hoy = hoyArgentina();
   const usuarioId = req.user.userId;
@@ -347,7 +366,7 @@ export const cargarLicenciaMia = (req, res) => responder(res, 'Error al cargar l
   const { autorizado, error: errorDelAutorizado } = autorizadoDelPedido(entrada);
   if (errorDelAutorizado) return rechazoDeLaCarga(errorDelAutorizado);
   return enTransaccion(usuarioId, puedePasar(await personaDe(usuarioId)), async (conexion, conTodos) => {
-    const { persona, estado, feriados, filasFeriados } = await contextoDe(usuarioId, hoy, conexion);
+    const { persona, estado, feriados, filasFeriados, calculo } = await contextoDe(usuarioId, hoy, conexion);
     if (!conTodos && puedePasar(persona)) return CON_TODOS;
     const { datos, error } = evaluar(estado, entrada, { hoy, feriados });
     if (error) return rechazoDeLaCarga(error);
@@ -361,12 +380,18 @@ export const cargarLicenciaMia = (req, res) => responder(res, 'Error al cargar l
       [usuarioId, datos.tipo, datos.desde, datos.hasta, datos.horas, mostrarDe(persona, datos), datos.nota,
         ...valoresDelPaso(paso)]
     );
+    if (datos.tipo === 'restituidos') {
+      await pedirLosRestituidos(conexion,
+        { usuarioId, calculo, restitucion: datos.restitucion, cargaId: resultado.insertId, hoy });
+    }
     return [201, { success: true, data: { id: resultado.insertId }, message: 'Licencia cargada.' }];
   });
 });
 
 // PUT /api/mi-espacio/licencias/:id: corrige una licencia activa de la persona (la corregida no choca consigo misma) y
-// Configuración la sigue, si corresponde (con el calendario de las filas de los feriados que ya leyó contextoDe)
+// Configuración la sigue, si corresponde (con el calendario de las filas de los feriados que ya leyó contextoDe). De unos días
+// restituidos cambian el «Desde» (el «Hasta» lo vuelve a poner `evaluarLicencia`), la nota y «Mostrar»: su pedido no cambia
+// (el grupo es el de la carga; la `restitucion` que llegue no cuenta) y ninguna carga cambia de tipo desde o hacia ellos
 export const corregirLicenciaMia = (req, res) => responder(res, 'Error al corregir la licencia', async () => {
   const id = idPositivo(req.params.id);
   if (id === null) return noEncontrada();
@@ -397,7 +422,10 @@ export const corregirLicenciaMia = (req, res) => responder(res, 'Error al correg
 });
 
 // DELETE /api/mi-espacio/licencias/:id: baja lógica de una licencia activa de la persona. En Mi espacio nunca se frena
-// (borrar solo libera días: spec, 3.10); una creada que ya empezó no se borra, porque no se puede anular en Configuración
+// (borrar solo libera días: spec, 3.10); una creada que ya empezó no se borra, porque no se puede anular en Configuración. Unos
+// días restituidos sueltan su pedido en la misma transacción: hasta el plazo, sus días vuelven a estar por restituir; después,
+// quedan perdidos (spec 2026-10-31-mi-espacio-dias-restituidos, 4). Se apoya en el pedido guardado, no en los grupos: no
+// depende de la modalidad
 export const borrarLicenciaMia = (req, res) => responder(res, 'Error al borrar la licencia', async () => {
   const id = idPositivo(req.params.id);
   if (id === null) return noEncontrada();
@@ -413,6 +441,7 @@ export const borrarLicenciaMia = (req, res) => responder(res, 'Error al borrar l
     await conexion.query(
       'UPDATE mi_espacio_licencias SET activo = 0 WHERE id = ? AND usuario_id = ? AND activo = 1', [id, usuarioId]
     );
+    if (fila.tipo === 'restituidos') await soltarLosPedidosDeLasCargas(conexion, [id]);
     return [200, { success: true, message: 'Licencia borrada.' }];
   });
 });
@@ -425,13 +454,29 @@ export const borrarLicenciaMia = (req, res) => responder(res, 'Error al borrar l
 // que no arman una nota) no está acá: es un 500
 const RECHAZOS_DE_LA_NOTA = Object.freeze({ sinNota: 404, sinDiasHabiles: 409 });
 
+// Las fechas de la foto que sostiene un pedido de restitución (las filas con su `restitucion_id`), por fecha y sin repetir
+const fechasDelPedido = (estado, pedidoId) => [...new Set(estado.restituibles
+  .filter((fila) => fila.restitucion_id === pedidoId).map((fila) => fila.fecha))].sort();
+
+// Los asuetos que restituye una carga de días restituidos, para su nota (la nota A: spec 2026-10-31-mi-espacio-dias-restituidos,
+// 12): `{ anio, fechas }`, del pedido guardado (el activo del caso A con esa carga) y de las filas de la foto que sostiene. No
+// sale de los grupos de `calcular`, que sin modalidad no se arman: la nota no depende de la modalidad. Sin pedido (no pasa: la
+// carga y su pedido se dan de baja juntos), null, y la nota no se arma
+const restitucionDeLaCarga = (estado, cargaId) => {
+  const pedido = estado.restituciones.find((otro) => otro.activo === 1 && otro.caso === 'tomar' && otro.carga_id === cargaId);
+  return pedido === undefined ? null : { anio: pedido.anio, fechas: fechasDelPedido(estado, pedido.id) };
+};
+
 /**
  * Lo que comparten las dos rutas de la nota: `{ rechazo }` con el [status, cuerpo] de un 404 o un 409, o `{ nota, guardada,
  * licencia, contexto }`. La licencia tiene que ser activa y de la persona (`datosDeLaNota`, que trae también la fecha de la
  * nota y la firma); un id que no es un entero positivo, de otra persona, que no existe o dado de baja da el mismo 404. La
  * licencia sale del `estado` de `contextoDe` (con sus horas como número) y los días hábiles se cuentan con sus feriados, como
- * la lista. Sin modalidad, la nota se arma igual: el texto no depende de ella. Una nota que no se puede armar (la clave
- * 'error') tira, y la ruta responde 500 con el mensaje fijo (el detalle, solo en la consola).
+ * la lista, más sus días restituibles (`restituiblesDe`: unas vacaciones en las que cayó un asueto cargado después siguen
+ * diciendo los días que se pidieron; spec 2026-10-31-mi-espacio-dias-restituidos, 4). La de unos días restituidos dice además
+ * de qué licencia salen y qué asuetos los restituyen (`restitucionDeLaCarga`). Sin modalidad, la nota se arma igual: el texto
+ * no depende de ella. Una nota que no se puede armar (la clave 'error') tira, y la ruta responde 500 con el mensaje fijo (el
+ * detalle, solo en la consola).
  */
 const leerLaNota = async (usuarioId, licenciaId, hoy) => {
   const id = idPositivo(licenciaId);
@@ -443,9 +488,13 @@ const leerLaNota = async (usuarioId, licenciaId, hoy) => {
   const licencia = contexto.estado.licencias.find((fila) => fila.id === id);
   if (!licencia) return { rechazo: noEncontrada() };
   const { guardada, nombre, cargo, vinculo } = datos;
+  const { estado, feriados } = contexto;
   // Las salidas de la planilla: las horas a favor nombran los días tildados «Sumar a {mes anterior}» que suman a sus horas
-  const { nota, error } = notaDeLicencia(licencia,
-    { fecha: guardada, persona: { nombre, cargo, vinculo }, feriados: contexto.feriados, salidas: contexto.estado.salidas });
+  const { nota, error } = notaDeLicencia(licencia, {
+    fecha: guardada, persona: { nombre, cargo, vinculo }, feriados, salidas: estado.salidas,
+    restituibles: restituiblesDe(licencia, estado, feriados),
+    restitucion: licencia.tipo === 'restituidos' ? restitucionDeLaCarga(estado, licencia.id) : undefined
+  });
   if (error !== undefined) {
     if (!Object.hasOwn(RECHAZOS_DE_LA_NOTA, error)) throw new Error(`La licencia ${id} no arma una nota (${error})`);
     return { rechazo: [RECHAZOS_DE_LA_NOTA[error], { success: false, error: MENSAJES_NOTA[error] }] };

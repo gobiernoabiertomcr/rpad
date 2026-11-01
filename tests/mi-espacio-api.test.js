@@ -21,7 +21,7 @@ import {
   textoSinNoUtilizadas, textoAutorizadaDelFirmante, AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN, AVISO_NOTAS_DE_HOY,
   AVISO_SIN_PERSONA_A_CARGO, textoSuperpuestaConConfiguracion, textoNoPaso, textoYaNoCubierta, textoEnConfiguracion,
   textoUnida, textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA,
-  TEXTO_ANULADA_EN_CONFIGURACION, TEXTO_NO_DIA_ENTERO, textoRevisalaEnConfiguracion
+  TEXTO_ANULADA_EN_CONFIGURACION, TEXTO_NO_DIA_ENTERO, textoRevisalaEnConfiguracion, textoDesdeDeLosRestituidos
 } from '../services/miEspacioReglas.js';
 import { MENSAJES_NOTA } from '../services/miEspacioNota.js';
 
@@ -1592,11 +1592,12 @@ describe('el paso a Configuración', () => {
       assert.deepEqual([await vinculosDe('adminB'), await deConfiguracion('adminB')], [[], []]);
     }
     // Los días restituidos son vacaciones (spec 2026-10-31-mi-espacio-dias-restituidos, 7): la persona a cargo no se rechaza.
-    // La carga sí, en el tipo: «Días restituidos» se carga por su propio camino, con el grupo que restituye
+    // La carga sí, en el tipo: «Días restituidos» se carga con el grupo que restituye (`restitucion`), y sin él da
+    // `restitucionInvalida`, antes de llegar a Configuración (con el grupo, ver «los días restituidos»)
     const restituidos = await cargarMia('adminB',
       { tipo: 'restituidos', desde: q(0), hasta: q(1), autorizado_id: usuarios.adminA.id });
     assert.equal(restituidos.status, 400);
-    assert.equal(restituidos.body.campo, 'tipo', JSON.stringify(restituidos.body));
+    assert.deepEqual(restituidos.body, rechazo(MENSAJES_MI_ESPACIO.restitucionInvalida, 'tipo'));
     assert.deepEqual([await vinculosDe('adminB'), await deConfiguracion('adminB')], [[], []]);
     const medica = await cargarMia('adminB', { tipo: 'medica', desde: q(0), hasta: q(1) });
     const franquicia = await cargarMia('adminB', { tipo: 'franquicia', desde: q(2), horas: 7 });
@@ -3216,4 +3217,529 @@ describe('la nota de una licencia', () => {
         assert.equal(await datos.datosDeLaNota(usuario, licencia), null, `${usuario} ${licencia}`);
       }
     });
+});
+
+// Los días restituidos por un asueto (spec 2026-10-31-mi-espacio-dias-restituidos, 4, 8, 11 y 12): la carga del caso A
+// («Días restituidos»), su corrección, su borrado, su nota y la anulación en Configuración. El caso es el de Julieta Ferreyra
+// (inventado, spec 5; acá, adminA): planta permanente, arranque el lunes 02/11/2026, 20 días por año y un saldo de 19 de la
+// 2024, 15 de la 2025 y 10 de la 2026, con vacaciones del viernes 11/12/2026 al viernes 08/01/2027 (19 días hábiles, todos de
+// la 2024) cargadas antes de los asuetos del jueves 24 y del jueves 31/12/2026, que administración carga por POST /feriados:
+// así la foto se saca de verdad. Los dos días por restituir son de la 2024, que vence antes del plazo (el 30/04/2027): caso A.
+// Lo de Mi espacio va por el controlador, en un día fijo (mock.timers: el servidor de prueba no tiene el reloj falso; casi
+// todo, el lunes 11/01/2027, cuando vuelve); la nota y el Word, que no dependen de hoy, por HTTP
+describe('los días restituidos', () => {
+  let licencias;
+  before(async () => {
+    licencias = await import('../controllers/licenciasController.js');
+  });
+  beforeEach(async () => {
+    await query("DELETE FROM usuarios_auditoria WHERE accion IN ('licencia_cargada', 'licencia_editada', 'licencia_anulada')");
+    await query('DELETE FROM usuarios_firmas');
+    await query('UPDATE notas_digitales_config SET firmante_usuario_id = NULL');
+  });
+
+  // El lunes en que vuelve de las vacaciones, el plazo de los dos días y el primer día hábil después del plazo
+  const VUELVE = '2027-01-11';
+  const PLAZO = '2027-04-30';
+  const DESPUES_DEL_PLAZO = '2027-05-03';
+  const ASUETOS = ['2026-12-24', '2026-12-31'];
+
+  // Las vacaciones de Julieta en `clave`, con su arranque, sus días de 2026 y su saldo, todavía sin los asuetos. Con
+  // `variante: 'B'`, 20 de la 2025 y nada de la 2024: los asuetos caen en la 2025, que vence después del plazo (caso B).
+  // Devuelve el id de las vacaciones
+  const conVacaciones = async (clave = 'adminA', variante = 'A') => {
+    await conArranque(clave, '2026-11-02');
+    await conAnio(clave, 2026, 20);
+    if (variante === 'A') await conSaldo(clave, 'vacaciones', 2024, '19.0');
+    await conSaldo(clave, 'vacaciones', 2025, variante === 'A' ? '15.0' : '20.0');
+    await conSaldo(clave, 'vacaciones', 2026, '10.0');
+    return conLicencia(clave, { tipo: 'vacaciones', desde: '2026-12-11', hasta: '2027-01-08' });
+  };
+  // Los dos asuetos, cargados por administración en Configuración → Feriados (sacan la foto de las vacaciones ya cargadas)
+  const conLosAsuetos = async () => {
+    for (const fecha of ASUETOS) {
+      const res = await api.post('/feriados', { fecha, nombre: 'Asueto', tipo: 'no_laborable', se_repite: false }, como('adminB'));
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+    }
+  };
+  const elCaso = async () => {
+    const vacaciones = await conVacaciones();
+    await conLosAsuetos();
+    return vacaciones;
+  };
+
+  // Una ruta de un controlador como la pide `clave`: { status, body } (con res.json a secas, como el de Configuración, 200)
+  const llamar = async (accion, { clave = 'adminA', body = {}, params = {} } = {}) => {
+    const respuesta = { status(codigo) { this.codigo = codigo; return this; }, json(cuerpo) { this.cuerpo = cuerpo; } };
+    await accion({ user: { userId: usuarios[clave].id, rol: PERSONAS[clave][0] }, body, params, query: {} }, respuesta);
+    return { status: respuesta.codigo ?? 200, body: respuesta.cuerpo };
+  };
+  // Lo que se hace en un día fijo, a las 12:00 de Argentina
+  const enElDia = async (fecha, trabajo) => {
+    mock.timers.enable({ apis: ['Date'], now: new Date(`${fecha}T15:00:00Z`) });
+    try {
+      return await trabajo();
+    } finally {
+      mock.timers.reset();
+    }
+  };
+  const calcularEl = (fecha, body, opciones = {}) =>
+    enElDia(fecha, () => llamar(controlador.calcularLicencia, { ...opciones, body }));
+  const cargarEl = (fecha, body, opciones = {}) =>
+    enElDia(fecha, () => llamar(controlador.cargarLicenciaMia, { ...opciones, body }));
+  const corregirEl = (fecha, id, body, opciones = {}) =>
+    enElDia(fecha, () => llamar(controlador.corregirLicenciaMia, { ...opciones, body, params: { id: String(id) } }));
+  const borrarEl = (fecha, id, opciones = {}) =>
+    enElDia(fecha, () => llamar(controlador.borrarLicenciaMia, { ...opciones, params: { id: String(id) } }));
+  const verNota = (clave, id) => api.get(`/mi-espacio/licencias/${id}/nota`, como(clave));
+  const bajarWord = (clave, id) => api.get(`/mi-espacio/licencias/${id}/word`, como(clave));
+  const textoDelWord = async (buffer) => (await JSZip.loadAsync(buffer)).file('word/document.xml').async('string');
+
+  // El cuerpo de la carga de los dos días restituidos de la 2024 (la tanda 0 de las vacaciones), desde el lunes 12/04/2027
+  const cuerpoA = (vacaciones, cambios = {}) => ({
+    tipo: 'restituidos', restitucion: { licencia_id: vacaciones, anio: 2024, tanda: 0 }, desde: '2027-04-12', ...cambios
+  });
+  // Los pedidos de restitución de una persona y la foto de una carga, por id y por fecha
+  const losPedidos = (clave = 'adminA') => query(
+    `SELECT id, licencia_id, anio, caso, dias, DATE_FORMAT(primer_asueto, '%Y-%m-%d') AS primer_asueto, tanda,
+       DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, carga_id, activo
+     FROM mi_espacio_restituciones WHERE usuario_id = ? ORDER BY id`,
+    [usuarios[clave].id]
+  );
+  const laFoto = (licenciaId) => query(
+    `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, tanda, restitucion_id FROM mi_espacio_restituibles
+     WHERE licencia_id = ? ORDER BY fecha`,
+    [licenciaId]
+  );
+  const abierta = (restitucionId = null, tanda = null) =>
+    ASUETOS.map((fecha) => ({ fecha, tanda, restitucion_id: restitucionId }));
+  // Las licencias de Configuración de una persona
+  const deConfiguracion = (clave = 'adminA') => query(
+    `SELECT id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, autorizado_id, autorizado_at,
+       anulada, creado_por
+     FROM usuarios_licencias WHERE usuario_id = ? ORDER BY desde, id`,
+    [usuarios[clave].id]
+  );
+  // La carga de Mi espacio con su vínculo con Configuración
+  const laCarga = async (id) => (await query(
+    `SELECT tipo, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, mostrar, nota,
+       licencia_oficial_id, oficial, activo
+     FROM mi_espacio_licencias WHERE id = ?`,
+    [id]
+  ))[0];
+  // Los grupos de la persona en un día (los de `calcular`, con lo que hay en la base)
+  const losGrupos = async (clave, fecha) => (await datos.contextoDe(usuarios[clave].id, fecha)).calculo.restituciones;
+  // Lo que importa de un grupo
+  const resumenDelGrupo = (grupo) => ({
+    clave: grupo.clave, situacion: grupo.situacion, caso: grupo.caso, dias: grupo.dias, fechas: grupo.fechas,
+    plazo: grupo.plazo, restitucion_id: grupo.restitucion_id, carga_id: grupo.carga_id
+  });
+  const porRestituir = (vacaciones) => ({
+    clave: `${vacaciones}-2024-0`, situacion: 'por_restituir', caso: 'tomar', dias: 2, fechas: ASUETOS, plazo: PLAZO,
+    restitucion_id: null, carga_id: null
+  });
+
+  it('el cálculo y el alta desde el 12/04/2027: el «Hasta» lo pone el servidor, y en la misma transacción el pedido «tomar» '
+    + 'con la foto enlazada y la carga en Configuración, con la insignia', async () => {
+    const vacaciones = await elCaso();
+    assert.deepEqual((await losGrupos('adminA', VUELVE)).map(resumenDelGrupo), [porRestituir(vacaciones)]);
+
+    // El cálculo: los 2 días, su texto y el «Hasta», sin guardar nada
+    const calculo = await calcularEl(VUELVE, cuerpoA(vacaciones));
+    assert.equal(calculo.status, 200, JSON.stringify(calculo.body));
+    const { error, vista, paso } = calculo.body.data;
+    assert.equal(error, null);
+    assert.deepEqual(vista, {
+      dias_habiles: 2, texto_dias: '2 días hábiles',
+      texto_reparto: 'Son los días restituidos de la licencia 2024, por los asuetos del 24/12 y el 31/12/2026.',
+      queda_texto: '', antes_del_arranque: false, texto_antes_del_arranque: '', avisos: [], hasta: '2027-04-13'
+    });
+    // Pasa a Configuración como unas vacaciones
+    assert.equal(paso.pasa, true, JSON.stringify(paso));
+    assert.ok(paso.avisos.includes(AVISO_DEL_PASO), JSON.stringify(paso.avisos));
+    assert.deepEqual([await losPedidos(), await deConfiguracion()], [[], []]);
+
+    // El alta: el «Hasta» que llega no cuenta
+    const alta = await cargarEl(VUELVE, cuerpoA(vacaciones, { hasta: '2027-04-30', nota: 'Con la nota firmada' }));
+    assert.equal(alta.status, 201, JSON.stringify(alta.body));
+    const { id } = alta.body.data;
+    assert.deepEqual(alta.body, { success: true, data: { id }, message: 'Licencia cargada.' });
+    const [oficial] = await deConfiguracion();
+    assert.deepEqual(await laCarga(id), {
+      tipo: 'restituidos', desde: '2027-04-12', hasta: '2027-04-13', mostrar: 1, nota: 'Con la nota firmada',
+      licencia_oficial_id: oficial.id, oficial: 'creada', activo: 1
+    });
+    // El pedido, del día de la carga, con la tanda y el primer asueto del grupo; la foto, sellada y enlazada
+    const pedidos = await losPedidos();
+    assert.equal(pedidos.length, 1);
+    assert.deepEqual(pedidos, [{
+      id: pedidos[0].id, licencia_id: vacaciones, anio: 2024, caso: 'tomar', dias: 2, primer_asueto: '2026-12-24', tanda: 0,
+      fecha: VUELVE, carga_id: id, activo: 1
+    }]);
+    assert.deepEqual(await laFoto(vacaciones), abierta(pedidos[0].id, 0));
+    // Configuración: las fechas, sin persona a cargo, y la insignia «Cargada desde Mi espacio»
+    assert.deepEqual([oficial.desde, oficial.hasta, oficial.anulada, oficial.creado_por, oficial.autorizado_id],
+      ['2027-04-12', '2027-04-13', 0, usuarios.adminA.id, null]);
+    const lista = await api.get('/usuarios/licencias?incluir_pasadas=1', como('adminB'));
+    assert.equal(lista.status, 200, JSON.stringify(lista.body));
+    assert.equal(lista.body.data.licencias.find((licencia) => licencia.id === oficial.id).desde_mi_espacio, true);
+    // El grupo, cargado
+    assert.deepEqual((await losGrupos('adminA', VUELVE)).map(resumenDelGrupo), [{
+      ...porRestituir(vacaciones), situacion: 'cargada', restitucion_id: pedidos[0].id, carga_id: id
+    }]);
+  });
+
+  it('los 400, cada uno con su campo, sin guardar nada: un grupo que no sirve, del caso B o perdido, «Desde» fuera de lo '
+    + 'que se puede y la superposición', async () => {
+    // Julieta y, con la variante B, adminB: las dos vacaciones antes de los asuetos
+    const vacaciones = await conVacaciones('adminA');
+    const deB = await conVacaciones('adminB', 'B');
+    await conLosAsuetos();
+    await conLicencia('adminA', { tipo: 'medica', desde: '2027-04-13' });
+    const fueraDeLoQueSePuede = rechazo(textoDesdeDeLosRestituidos('2027-01-11', PLAZO), 'desde');
+    const sinRestitucion = { tipo: 'restituidos', desde: '2027-04-12' };
+    const casos = [
+      [VUELVE, 'adminA', sinRestitucion, rechazo(MENSAJES_MI_ESPACIO.restitucionInvalida, 'tipo')],
+      [VUELVE, 'adminA', cuerpoA(vacaciones, { restitucion: 'la 2024' }),
+        rechazo(MENSAJES_MI_ESPACIO.restitucionInvalida, 'tipo')],
+      [VUELVE, 'adminA', cuerpoA(vacaciones, { restitucion: { licencia_id: vacaciones, anio: 2025, tanda: 0 } }),
+        rechazo(MENSAJES_MI_ESPACIO.grupoNoPorRestituir, 'tipo')],
+      [VUELVE, 'adminB', cuerpoA(deB, { restitucion: { licencia_id: deB, anio: 2025, tanda: 0 } }),
+        rechazo(MENSAJES_MI_ESPACIO.grupoEsParaRestituir, 'tipo')],
+      // Pasado el plazo, los días están perdidos: no se cargan
+      [DESPUES_DEL_PLAZO, 'adminA', cuerpoA(vacaciones, { desde: DESPUES_DEL_PLAZO }),
+        rechazo(MENSAJES_MI_ESPACIO.grupoNoPorRestituir, 'tipo')],
+      // El último día de las vacaciones, el sábado que sigue y el día después del plazo
+      [VUELVE, 'adminA', cuerpoA(vacaciones, { desde: '2027-01-08' }), fueraDeLoQueSePuede],
+      [VUELVE, 'adminA', cuerpoA(vacaciones, { desde: '2027-01-09' }), fueraDeLoQueSePuede],
+      [VUELVE, 'adminA', cuerpoA(vacaciones, { desde: DESPUES_DEL_PLAZO }), fueraDeLoQueSePuede],
+      [VUELVE, 'adminA', cuerpoA(vacaciones, { desde: 'mañana' }), rechazo(MENSAJES_MI_ESPACIO.fecha, 'desde')],
+      // La médica del martes 13/04
+      [VUELVE, 'adminA', cuerpoA(vacaciones), rechazo(textoSuperpuesta('2027-04-13'), 'desde')]
+    ];
+    for (const [fecha, clave, cuerpo, esperado] of casos) {
+      const res = await cargarEl(fecha, cuerpo, { clave });
+      assert.equal(res.status, 400, `${fecha} ${JSON.stringify(cuerpo)}: ${JSON.stringify(res.body)}`);
+      assert.deepEqual(res.body, esperado, `${fecha} ${JSON.stringify(cuerpo)}`);
+      // El cálculo dice lo mismo, con 200
+      const calculo = await calcularEl(fecha, cuerpo, { clave });
+      assert.equal(calculo.status, 200);
+      assert.deepEqual(calculo.body.data.error, { campo: esperado.campo, mensaje: esperado.error }, JSON.stringify(cuerpo));
+    }
+    // Nada quedó: ni cargas de días restituidos, ni pedidos, ni Configuración, y la foto sigue abierta
+    for (const clave of ['adminA', 'adminB']) {
+      assert.deepEqual((await guardadasDe(clave)).filter((fila) => fila.tipo === 'restituidos'), [], clave);
+      assert.deepEqual([await losPedidos(clave), await deConfiguracion(clave)], [[], []], clave);
+    }
+    assert.deepEqual(await laFoto(vacaciones), abierta());
+    assert.deepEqual(await laFoto(deB), abierta());
+  });
+
+  it('dos altas a la vez del mismo grupo dejan una sola carga y un solo pedido: la segunda da 400', async () => {
+    const vacaciones = await elCaso();
+    const respuestas = await enElDia(VUELVE, () => Promise.all([
+      llamar(controlador.cargarLicenciaMia, { body: cuerpoA(vacaciones) }),
+      llamar(controlador.cargarLicenciaMia, { body: cuerpoA(vacaciones, { desde: '2027-04-19' }) })
+    ]));
+    assert.deepEqual(respuestas.map((res) => res.status).sort(), [201, 400], JSON.stringify(respuestas.map((res) => res.body)));
+    const segunda = respuestas.find((res) => res.status === 400);
+    assert.deepEqual(segunda.body, rechazo(MENSAJES_MI_ESPACIO.grupoNoPorRestituir, 'tipo'));
+    const { id } = respuestas.find((res) => res.status === 201).body.data;
+    assert.deepEqual((await guardadasDe('adminA')).filter((fila) => fila.tipo === 'restituidos').map((fila) => fila.id), [id]);
+    const pedidos = await losPedidos();
+    assert.deepEqual(pedidos.map((pedido) => [pedido.carga_id, pedido.activo]), [[id, 1]]);
+    assert.equal((await deConfiguracion()).length, 1);
+  });
+
+  it('corregir: el servidor vuelve a poner el «Hasta» desde el «Desde» nuevo, con la nota y «Mostrar»; el pedido no cambia',
+    async () => {
+      const vacaciones = await elCaso();
+      const { body } = await cargarEl(VUELVE, cuerpoA(vacaciones));
+      const { id } = body.data;
+      const pedidos = await losPedidos();
+
+      // Del jueves 15/04 al viernes 16/04: el «Hasta» que llega no cuenta, y la restitución tampoco (es la de la carga)
+      const corregida = await corregirEl(VUELVE, id, {
+        tipo: 'restituidos', desde: '2027-04-15', hasta: '2027-04-12', nota: 'Otra nota', mostrar: false,
+        restitucion: { licencia_id: vacaciones, anio: 2025, tanda: 7 }
+      });
+      assert.equal(corregida.status, 200, JSON.stringify(corregida.body));
+      assert.equal(corregida.body.message, 'Licencia corregida.');
+      const carga = await laCarga(id);
+      assert.deepEqual([carga.tipo, carga.desde, carga.hasta, carga.nota, carga.mostrar, carga.oficial, carga.activo],
+        ['restituidos', '2027-04-15', '2027-04-16', 'Otra nota', 0, 'creada', 1]);
+      assert.deepEqual(await losPedidos(), pedidos);
+      assert.deepEqual(await laFoto(vacaciones), abierta(pedidos[0].id, 0));
+      // Configuración la sigue: todavía no empezó
+      assert.deepEqual((await deConfiguracion()).map((oficial) => [oficial.desde, oficial.hasta, oficial.anulada]),
+        [['2027-04-15', '2027-04-16', 0]]);
+
+      // Desde un viernes, el «Hasta» es el lunes; el cálculo de una corrección dice el suyo
+      const calculo = await calcularEl(VUELVE, { id, tipo: 'restituidos', desde: '2027-04-23' });
+      assert.equal(calculo.status, 200, JSON.stringify(calculo.body));
+      assert.equal(calculo.body.data.error, null);
+      assert.equal(calculo.body.data.vista.hasta, '2027-04-26');
+      const delViernes = await corregirEl(VUELVE, id, { tipo: 'restituidos', desde: '2027-04-23' });
+      assert.equal(delViernes.status, 200, JSON.stringify(delViernes.body));
+      assert.deepEqual([(await laCarga(id)).desde, (await laCarga(id)).hasta], ['2027-04-23', '2027-04-26']);
+
+      // Fuera de lo que se puede: el 400 de siempre, y nada cambia
+      const tarde = await corregirEl(VUELVE, id, { tipo: 'restituidos', desde: DESPUES_DEL_PLAZO });
+      assert.equal(tarde.status, 400, JSON.stringify(tarde.body));
+      assert.deepEqual(tarde.body, rechazo(textoDesdeDeLosRestituidos('2027-01-11', PLAZO), 'desde'));
+      assert.deepEqual([(await laCarga(id)).desde, (await laCarga(id)).hasta], ['2027-04-23', '2027-04-26']);
+      assert.deepEqual(await losPedidos(), pedidos);
+    });
+
+  it('los días restituidos no cambian de tipo, y ninguna otra carga pasa a serlo (restituidosFijo, en tipo)', async () => {
+    const vacaciones = await elCaso();
+    const { body } = await cargarEl(VUELVE, cuerpoA(vacaciones));
+    const { id } = body.data;
+    const fijo = rechazo(MENSAJES_MI_ESPACIO.restituidosFijo, 'tipo');
+    const casos = [
+      [id, { tipo: 'vacaciones', desde: '2027-04-12', hasta: '2027-04-13' }],
+      [vacaciones, cuerpoA(vacaciones, { desde: '2026-12-11' })]
+    ];
+    for (const [licencia, cuerpo] of casos) {
+      const res = await corregirEl(VUELVE, licencia, cuerpo);
+      assert.equal(res.status, 400, JSON.stringify(res.body));
+      assert.deepEqual(res.body, fijo);
+      const calculo = await calcularEl(VUELVE, { ...cuerpo, id: licencia });
+      assert.deepEqual(calculo.body.data, { error: { campo: 'tipo', mensaje: fijo.error }, vista: null, paso: null });
+    }
+    assert.deepEqual([(await laCarga(id)).tipo, (await laCarga(vacaciones)).tipo], ['restituidos', 'vacaciones']);
+  });
+
+  it('borrar antes del plazo da de baja la carga y suelta su pedido: los días vuelven a estar por restituir, con su plazo, '
+    + 'y se pueden volver a cargar', async () => {
+    const vacaciones = await elCaso();
+    const { body } = await cargarEl(VUELVE, cuerpoA(vacaciones));
+    const { id } = body.data;
+    const [pedido] = await losPedidos();
+
+    const borrar = await borrarEl(VUELVE, id);
+    assert.equal(borrar.status, 200, JSON.stringify(borrar.body));
+    assert.deepEqual(borrar.body, { success: true, message: 'Licencia borrada.' });
+    assert.equal((await laCarga(id)).activo, 0);
+    assert.deepEqual((await losPedidos()).map((cada) => [cada.id, cada.activo]), [[pedido.id, 0]]);
+    // La foto queda sin pedido, con su tanda; la de Configuración, anulada
+    assert.deepEqual(await laFoto(vacaciones), abierta(null, 0));
+    assert.deepEqual((await deConfiguracion()).map((oficial) => oficial.anulada), [1]);
+    assert.deepEqual((await losGrupos('adminA', VUELVE)).map(resumenDelGrupo), [porRestituir(vacaciones)]);
+    // El Resumen vuelve a avisar
+    const resumen = await enElDia(VUELVE, () => llamar(controlador.verResumen));
+    assert.equal(resumen.status, 200, JSON.stringify(resumen.body));
+    assert.deepEqual(resumen.body.data.restituciones.map((aviso) => aviso.accion), [{
+      texto: 'Cargar los días restituidos', tipo: 'restituidos', grupo: `${vacaciones}-2024-0`,
+      restitucion: { licencia_id: vacaciones, anio: 2024, tanda: 0 }
+    }]);
+
+    // Otra vez: otro pedido, de la misma tanda
+    const otra = await cargarEl(VUELVE, cuerpoA(vacaciones));
+    assert.equal(otra.status, 201, JSON.stringify(otra.body));
+    const pedidos = await losPedidos();
+    assert.deepEqual(pedidos.map((cada) => [cada.tanda, cada.carga_id, cada.activo]), [[0, id, 0], [0, otra.body.data.id, 1]]);
+    assert.deepEqual(await laFoto(vacaciones), abierta(pedidos[1].id, 0));
+  });
+
+  it('después del plazo: una creada que ya empezó no se borra (409, el pedido queda); una que no pasó a Configuración se '
+    + 'borra y los días quedan perdidos', async () => {
+    // Julieta y el colaborador (de contrato: lo suyo no pasa a Configuración), con el mismo caso
+    const vacaciones = await conVacaciones('adminA');
+    const deColab = await conVacaciones('colab');
+    await conLosAsuetos();
+    const deJulieta = await cargarEl(VUELVE, cuerpoA(vacaciones));
+    const delColab = await cargarEl(VUELVE, cuerpoA(deColab), { clave: 'colab' });
+    assert.deepEqual([deJulieta.status, delColab.status], [201, 201], JSON.stringify([deJulieta.body, delColab.body]));
+    assert.equal((await laCarga(delColab.body.data.id)).oficial, null);
+
+    const noSeBorra = await borrarEl(DESPUES_DEL_PLAZO, deJulieta.body.data.id);
+    assert.equal(noSeBorra.status, 409, JSON.stringify(noSeBorra.body));
+    assert.deepEqual(noSeBorra.body, rechazo(MENSAJES_MI_ESPACIO.yaEmpezo, null));
+    assert.deepEqual((await losPedidos()).map((pedido) => pedido.activo), [1]);
+    assert.deepEqual((await losGrupos('adminA', DESPUES_DEL_PLAZO)).map((grupo) => grupo.situacion), ['cargada']);
+
+    const seBorra = await borrarEl(DESPUES_DEL_PLAZO, delColab.body.data.id, { clave: 'colab' });
+    assert.equal(seBorra.status, 200, JSON.stringify(seBorra.body));
+    assert.deepEqual((await losPedidos('colab')).map((pedido) => pedido.activo), [0]);
+    assert.deepEqual((await losGrupos('colab', DESPUES_DEL_PLAZO)).map(resumenDelGrupo),
+      [{ ...porRestituir(deColab), situacion: 'perdida' }]);
+  });
+
+  it('la nota A y su Word salen con el pedido guardado (también sin modalidad); las vacaciones siguen con sus 19 días',
+    async () => {
+      const vacaciones = await elCaso();
+      const { body } = await cargarEl(VUELVE, cuerpoA(vacaciones));
+      const { id } = body.data;
+      const cuerpo = 'el usufructo de dos (2) días hábiles de mi licencia anual ordinaria 2024, restituidos por los asuetos de '
+        + 'los días jueves 24 y jueves 31 de diciembre de 2026, declarados durante mis vacaciones, a partir del día lunes 12 de '
+        + 'abril de 2027.';
+
+      const nota = await verNota('adminA', id);
+      assert.equal(nota.status, 200, JSON.stringify(nota.body));
+      assert.ok(nota.body.data.html.includes(cuerpo), nota.body.data.html);
+      assert.deepEqual([nota.body.data.fila.id, nota.body.data.fila.tipo], [id, 'restituidos']);
+      const word = await bajarWord('adminA', id);
+      assert.equal(word.status, 200);
+      assert.equal(word.headers.get('content-type'), TIPO_WORD);
+      assert.ok(word.headers.get('content-disposition')
+        .endsWith(`filename*=UTF-8''${encodeURIComponent('Nota de licencia - Días restituidos - 2027-04-12.docx')}`),
+      word.headers.get('content-disposition'));
+      assert.ok((await textoDelWord(word.body)).includes(cuerpo));
+
+      // Las vacaciones conservan sus días: los asuetos cargados después cuentan como hábiles (Review Focus 1)
+      const deLasVacaciones = await verNota('adminA', vacaciones);
+      assert.equal(deLasVacaciones.status, 200, JSON.stringify(deLasVacaciones.body));
+      assert.ok(deLasVacaciones.body.data.html.includes('el usufructo de diecinueve (19) días hábiles correspondientes'),
+        deLasVacaciones.body.data.html);
+      assert.ok((await textoDelWord((await bajarWord('adminA', vacaciones)).body)).includes('diecinueve (19) días hábiles'));
+
+      // Sin modalidad no hay grupos (calcular no los arma), pero la nota se apoya en el pedido guardado
+      await query('UPDATE usuarios SET vinculo = NULL WHERE id = ?', [usuarios.adminA.id]);
+      try {
+        const sinModalidad = await verNota('adminA', id);
+        assert.equal(sinModalidad.status, 200, JSON.stringify(sinModalidad.body));
+        assert.ok(sinModalidad.body.data.html.includes(cuerpo), sinModalidad.body.data.html);
+        assert.ok((await textoDelWord((await bajarWord('adminA', id)).body)).includes(cuerpo));
+      } finally {
+        await query('UPDATE usuarios SET vinculo = ? WHERE id = ?', ['planta_permanente', usuarios.adminA.id]);
+      }
+    });
+
+  it('lo ajeno da 404, y el grupo de otra persona es uno que no está para restituir', async () => {
+    const vacaciones = await elCaso();
+    await conArranque('adminB', '2026-11-02');
+    await conAnio('adminB', 2026, 20);
+    // Mientras el grupo de Julieta está por restituir, adminB no lo puede cargar: para ella no existe
+    const deOtra = await cargarEl(VUELVE, cuerpoA(vacaciones), { clave: 'adminB' });
+    assert.equal(deOtra.status, 400, JSON.stringify(deOtra.body));
+    assert.deepEqual(deOtra.body, rechazo(MENSAJES_MI_ESPACIO.grupoNoPorRestituir, 'tipo'));
+    assert.deepEqual([await losPedidos('adminB'), await losPedidos('adminA')], [[], []]);
+
+    const { body } = await cargarEl(VUELVE, cuerpoA(vacaciones));
+    const { id } = body.data;
+    const corregir = await corregirEl(VUELVE, id, { tipo: 'restituidos', desde: '2027-04-15' }, { clave: 'adminB' });
+    const borrar = await borrarEl(VUELVE, id, { clave: 'adminB' });
+    const nota = await verNota('adminB', id);
+    const word = await bajarWord('adminB', id);
+    for (const res of [corregir, borrar, nota, word]) {
+      assert.equal(res.status, 404, JSON.stringify(res.body));
+      assert.deepEqual(res.body, NO_ENCONTRADA);
+    }
+    assert.deepEqual([(await laCarga(id)).desde, (await laCarga(id)).activo], ['2027-04-12', 1]);
+    assert.deepEqual((await losPedidos()).map((pedido) => pedido.activo), [1]);
+  });
+
+  it('el firmante titular deja a alguien a cargo de sus días restituidos, como de unas vacaciones', async () => {
+    await comoTitular('adminA');
+    await conFirma('adminB');
+    const vacaciones = await elCaso();
+    const calculo = await calcularEl(VUELVE, cuerpoA(vacaciones));
+    assert.equal(calculo.status, 200, JSON.stringify(calculo.body));
+    assert.equal(calculo.body.data.paso.firmante.puede_autorizar, true);
+    assert.ok(!calculo.body.data.paso.avisos.includes(AVISO_SIN_PERSONA_A_CARGO), JSON.stringify(calculo.body.data.paso));
+
+    const alta = await cargarEl(VUELVE, cuerpoA(vacaciones, { autorizado_id: usuarios.adminB.id }));
+    assert.equal(alta.status, 201, JSON.stringify(alta.body));
+    const [oficial] = await deConfiguracion();
+    assert.deepEqual([oficial.desde, oficial.hasta, oficial.autorizado_id], ['2027-04-12', '2027-04-13', usuarios.adminB.id]);
+    assert.notEqual(oficial.autorizado_at, null);
+    assert.deepEqual((await losPedidos()).map((pedido) => [pedido.carga_id, pedido.activo]), [[alta.body.data.id, 1]]);
+  });
+
+  it('anular en Configuración la licencia de unos días restituidos da de baja la carga y suelta su pedido: los días vuelven '
+    + 'a estar por restituir', async () => {
+    const vacaciones = await elCaso();
+    const { body } = await cargarEl(VUELVE, cuerpoA(vacaciones));
+    const { id } = body.data;
+    const [oficial] = await deConfiguracion();
+
+    const anular = await enElDia(VUELVE,
+      () => llamar(licencias.anularLicencia, { clave: 'adminB', params: { id: String(oficial.id) } }));
+    assert.equal(anular.status, 200, JSON.stringify(anular.body));
+    assert.equal(anular.body.message, 'Licencia anulada. También se borró de Mi espacio.');
+    assert.equal((await laCarga(id)).activo, 0);
+    assert.deepEqual((await losPedidos()).map((pedido) => pedido.activo), [0]);
+    assert.deepEqual(await laFoto(vacaciones), abierta(null, 0));
+    assert.deepEqual((await losGrupos('adminA', VUELVE)).map(resumenDelGrupo), [porRestituir(vacaciones)]);
+  });
+
+  it('bajaPorLaAnulacion suelta el pedido de la carga de días restituidos que da de baja, no el de la que ya empezó',
+    async () => {
+      const { bajaPorLaAnulacion } = await import('../services/miEspacioPaso.js');
+      const oficial = (await query(
+        'INSERT INTO usuarios_licencias (usuario_id, desde, hasta, creado_por) VALUES (?, ?, ?, ?)',
+        [usuarios.adminA.id, dia(-1), dia(30), usuarios.adminA.id]
+      )).insertId;
+      const vacaciones = await conLicencia('adminA', { tipo: 'vacaciones', desde: dia(-60), hasta: dia(-40) });
+      const asueto = await conFeriado({ fecha: dia(-50), nombre: 'Asueto' });
+      const carga = async (desde) => (await query(
+        `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, licencia_oficial_id, oficial)
+         VALUES (?, 'restituidos', ?, ?, ?, 'creada')`,
+        [usuarios.adminA.id, desde, desde, oficial]
+      )).insertId;
+      const empezada = await carga(dia(-1));
+      const futura = await carga(dia(5));
+      const pedido = (cargaId, tanda) => conRestitucion('adminA', {
+        licencia_id: vacaciones, anio: ANIO - 2, caso: 'tomar', dias: 1, primer_asueto: dia(-50), tanda, fecha: dia(-30),
+        carga_id: cargaId
+      });
+      const deLaEmpezada = await pedido(empezada, 0);
+      const deLaFutura = await pedido(futura, 1);
+      await conRestituible({ licencia_id: vacaciones, feriado_id: asueto, fecha: dia(-50), tanda: 1, restitucion_id: deLaFutura });
+
+      const conexion = await pool.getConnection();
+      try {
+        await conexion.beginTransaction();
+        assert.deepEqual(await bajaPorLaAnulacion(conexion, { licenciaOficialId: oficial, hoy }), { borradas: 1, quedan: 1 });
+        await conexion.commit();
+      } catch (error) {
+        await conexion.rollback();
+        throw error;
+      } finally {
+        conexion.release();
+      }
+      assert.deepEqual((await losPedidos()).map((cada) => [cada.id, cada.activo]), [[deLaEmpezada, 1], [deLaFutura, 0]]);
+      assert.deepEqual(await laFoto(vacaciones), [{ fecha: dia(-50), tanda: 1, restitucion_id: null }]);
+      assert.deepEqual([(await laCarga(empezada)).activo, (await laCarga(futura)).activo], [1, 0]);
+    });
+
+  it('la recursión (Review Focus 7): un asueto que cae en unos días restituidos ya cargados arma su grupo, del caso A, que '
+    + 'se carga igual', async () => {
+    const vacaciones = await elCaso();
+    const { body } = await cargarEl(VUELVE, cuerpoA(vacaciones));
+    const cargaA = body.data.id;
+    // Administración carga un asueto el martes 13/04/2027, el segundo día de esa carga: la carga sigue con sus 2 días
+    const res = await api.post('/feriados', { fecha: '2027-04-13', nombre: 'Asueto', tipo: 'no_laborable', se_repite: false },
+      como('adminB'));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(await laFoto(cargaA), [{ fecha: '2027-04-13', tanda: null, restitucion_id: null }]);
+    const grupo = (await losGrupos('adminA', VUELVE)).find((cada) => cada.licencia_id === cargaA);
+    assert.deepEqual(resumenDelGrupo(grupo), {
+      clave: `${cargaA}-2024-0`, situacion: 'por_restituir', caso: 'tomar', dias: 1, fechas: ['2027-04-13'],
+      plazo: '2027-08-31', restitucion_id: null, carga_id: null
+    });
+
+    // Se carga como cualquier otro: el «Desde», después de la carga de la que sale
+    const restitucion = { licencia_id: cargaA, anio: 2024, tanda: 0 };
+    const antes = await cargarEl(VUELVE, { tipo: 'restituidos', restitucion, desde: '2027-04-13' });
+    assert.deepEqual(antes.body, rechazo(textoDesdeDeLosRestituidos('2027-04-14', '2027-08-31'), 'desde'));
+    const alta = await cargarEl(VUELVE, { tipo: 'restituidos', restitucion, desde: '2027-04-19' });
+    assert.equal(alta.status, 201, JSON.stringify(alta.body));
+    const cargaB = alta.body.data.id;
+    assert.deepEqual([(await laCarga(cargaB)).desde, (await laCarga(cargaB)).hasta], ['2027-04-19', '2027-04-19']);
+    const deLaRecursion = (await losPedidos()).find((pedido) => pedido.carga_id === cargaB);
+    assert.deepEqual([deLaRecursion.licencia_id, deLaRecursion.anio, deLaRecursion.dias, deLaRecursion.primer_asueto],
+      [cargaA, 2024, 1, '2027-04-13']);
+    assert.deepEqual(await laFoto(cargaA), [{ fecha: '2027-04-13', tanda: 0, restitucion_id: deLaRecursion.id }]);
+    // La carga de la que sale conserva sus 2 días; la nueva, el suyo, de la 2024
+    const nota = await verNota('adminA', cargaB);
+    assert.equal(nota.status, 200, JSON.stringify(nota.body));
+    assert.ok(nota.body.data.html.includes('el usufructo de un (1) día hábil de mi licencia anual ordinaria 2024, restituido por '
+      + 'el asueto del día martes 13 de abril de 2027, declarado durante mis vacaciones, el día lunes 19 de abril de 2027.'),
+    nota.body.data.html);
+    const deLaA = await verNota('adminA', cargaA);
+    assert.ok(deLaA.body.data.html.includes('el usufructo de dos (2) días hábiles de mi licencia anual ordinaria 2024'),
+      deLaA.body.data.html);
+  });
 });

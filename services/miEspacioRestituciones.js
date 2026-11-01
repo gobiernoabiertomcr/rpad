@@ -144,3 +144,22 @@ export const soltarPedido = async (conexion, pedidoId) => {
   await conexion.query('UPDATE mi_espacio_restituibles SET restitucion_id = NULL WHERE restitucion_id = ?', [pedidoId]);
   return baja.affectedRows === 1;
 };
+
+/**
+ * Suelta (`soltarPedido`) los pedidos activos del caso A de unas cargas de días restituidos que se dan de baja (`cargaIds`: al
+ * borrarlas desde Mi espacio o cuando Configuración → Licencias anula la licencia que crearon), en la transacción de quien
+ * llama: sus días vuelven a estar por restituir hasta el plazo y, después, quedan perdidos (spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 4: «Deshacer»). Los pedidos se leen con `FOR UPDATE` (la última versión confirmada).
+ * Lo que no es un id positivo no cuenta; sin ninguno, no lee nada. Devuelve cuántos soltó.
+ * @returns {Promise<number>}
+ */
+export const soltarLosPedidosDeLasCargas = async (conexion, cargaIds) => {
+  const ids = (Array.isArray(cargaIds) ? cargaIds : []).filter((id) => Number.isInteger(id) && id > 0);
+  if (ids.length === 0) return 0;
+  const [pedidos] = await conexion.query(
+    `SELECT id FROM mi_espacio_restituciones WHERE carga_id IN (?) AND caso = 'tomar' AND activo = 1 ORDER BY id FOR UPDATE`,
+    [ids]
+  );
+  for (const { id } of pedidos) await soltarPedido(conexion, Number(id));
+  return pedidos.length;
+};
