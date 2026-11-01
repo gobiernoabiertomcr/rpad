@@ -31,8 +31,9 @@
  * feriado cargado después le sacó a unas vacaciones (o a una carga de días restituidos) y que siguen dentro de ella sin ser
  * hábiles son restituibles (`restituiblesDe`, con la foto; spec 2026-10-31-mi-espacio-dias-restituidos, 4) y cuentan en su
  * carga como hábiles (`diasDeLaCarga`): así conserva los días que se pidieron. Se agrupan por carga, licencia de origen y
- * tanda, con su plazo y su caso (`restitucionesDe`, `plazoDeRestitucion`, `casoDeRestitucion`: tomarlos o pedir que vuelvan),
- * y lo que se pide en el caso B vuelve a su licencia (`ordinariasDe`). Después, las
+ * tanda, con su plazo y su caso (`restitucionesDe`, `plazoDeRestitucion`, `casoDeRestitucion`: tomarlos o pedir que vuelvan);
+ * lo que se pide en el caso B vuelve a su licencia (`ordinariasDe`) y lo del caso A se carga aparte, como «Días restituidos»,
+ * con el «Hasta» que pone Mi espacio (`validarRestituidos`, `hastaDeLosRestituidos`). Después, las
  * demás licencias (3.2 a 3.4): lo que suma cada una contra su tope del año (`usoDeLosTopes`), las horas de franquicia que
  * vencen el 31/12 y las que ya no entran en los días libres que quedan (`franquiciaQueVence`, con `diasLibresEntre`; spec
  * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6) y la validación de una carga (`validarLicencia`, con la regla de 3.8:
@@ -60,7 +61,7 @@ import {
   diasHabilesDe, ultimoDiaHabilDelMesCon, proximoDiaHabilCon, restarDiasHabilesCon, diaDeLaSemana, esDiaHabilCon
 } from './feriadosReglas.js';
 import {
-  diasEntre, esFechaIso, formatoCorto, sumarDias, FERIADOS_FIJOS, CALENDARIO_FIJO
+  diasEntre, esFechaIso, formatoCorto, sumarDias, FERIADOS_FIJOS, CALENDARIO_FIJO, TOPE_DE_VUELTAS
 } from './notasDigitalesCalendario.js';
 import { puedeTenerLicencia, puedeAnularse, visperaDeLaLicencia } from './licenciasReglas.js';
 
@@ -165,7 +166,16 @@ export const MENSAJES_MI_ESPACIO = Object.freeze({
   contratoEnLaPlanilla: 'Las personas de contrato cargan sus horas en la planilla.',
   mes: 'Elegí un mes válido.',
   // El tilde «Sumar a {mes anterior}» de un día de la planilla (spec 2026-10-30-mi-espacio-horas-mes-anterior)
-  alMesAnterior: 'Elegí si este día suma al mes anterior.'
+  alMesAnterior: 'Elegí si este día suma al mes anterior.',
+  // Los de los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 4 y 8): la carga del caso A, el pedido del caso
+  // B y su borrado
+  restituidosFijo: 'Los días restituidos no cambian de tipo.',
+  restitucionInvalida: 'Elegí qué días restituidos querés cargar.',
+  grupoNoPorRestituir: 'Esos días ya no están para restituir.',
+  grupoEsParaRestituir: 'Esos días no se toman: pedí la restitución.',
+  grupoEsParaTomar: 'Esos días se toman: cargalos como «Días restituidos».',
+  restitucionNoEncontrada: 'Restitución no encontrada',
+  restitucionVencida: 'Ya pasó el plazo: la restitución no se puede borrar.'
 });
 
 const MESES = Object.freeze([
@@ -229,6 +239,10 @@ export const textoNoEstudia = (anio) =>
 export const textoSuperpuesta = (fecha) => `Ya tenés una licencia cargada el ${fechaCorta(fecha)}: corregí la que ya está.`;
 export const textoSinHabilitados = (fecha) =>
   `No te alcanzan los días habilitados: para el ${fechaCorta(fecha)} no te queda ninguno.`;
+// El «Desde» de unos días restituidos fuera de lo que se puede: del primer día hábil después de su carga al plazo (spec
+// 2026-10-31-mi-espacio-dias-restituidos, 4)
+export const textoDesdeDeLosRestituidos = (primero, plazo) =>
+  `Elegí un día del ${fechaCorta(primero)} al ${fechaCorta(plazo)}.`;
 // El cálculo de una carga con fechas anteriores al arranque, en un tipo con saldo inicial (spec, sección 4)
 export const TEXTO_ANTES_DEL_ARRANQUE = 'Es anterior al saldo inicial: queda como historia y no descuenta.';
 
@@ -1289,6 +1303,175 @@ export const validarLicencia = (entrada, contexto) => {
   return { datos: { tipo, desde, hasta, horas, mostrar, nota: nota === '' ? null : nota }, error: null };
 };
 
+// La carga de los días restituidos, el caso A (spec 2026-10-31-mi-espacio-dias-restituidos, 4, 7 y 9): son exactamente los N
+// días de un grupo por restituir, todos juntos, desde un «Desde» posterior al fin de su carga y a más tardar el plazo; el
+// «Hasta» lo pone Mi espacio. No sale de ninguna licencia: sus días son los del grupo y no entran en el reparto.
+
+/**
+ * El «Hasta» de unos días restituidos: el día número `dias` contando desde `desde` (incluido) los días hábiles con los
+ * feriados y los de `restituibles` (los días restituibles de la carga que se corrige, que siguen siendo suyos: así, con el
+ * «Desde» de siempre, conserva su «Hasta»). A lo sumo `TOPE_DE_VUELTAS` días (366); si no llega, o con un «Desde» que no es
+ * una fecha o unos días que no son un entero positivo, null.
+ */
+export const hastaDeLosRestituidos = (desde, dias, feriados, restituibles = []) => {
+  const cuantos = numeroDe(dias);
+  if (!esFechaIso(desde) || !Number.isInteger(cuantos) || cuantos < 1) return null;
+  const suyos = new Set(listaDe(restituibles).filter(esFechaIso));
+  let contados = 0;
+  let dia = desde;
+  for (let vuelta = 0; vuelta < TOPE_DE_VUELTAS && esFechaIso(dia); vuelta++, dia = sumarDias(dia, 1)) {
+    if (esDiaHabilCon(dia, feriados) || suyos.has(dia)) contados++;
+    if (contados === cuantos) return dia;
+  }
+  return null;
+};
+
+/**
+ * El primer día en que se pueden empezar a tomar los días restituidos de un grupo: el primer día hábil, con los feriados,
+ * después del fin de su carga (`grupo.carga.hasta`: las vacaciones o, en la recursión, la carga de días restituidos). Lo que
+ * no es un grupo con su carga, null.
+ */
+export const primerDiaDeLosRestituidos = (grupo, feriados) => {
+  const hasta = esObjeto(grupo) && esObjeto(grupo.carga) ? grupo.carga.hasta : null;
+  return esFechaIso(hasta) ? proximoDiaHabilCon(sumarDias(hasta, 1), feriados) : null;
+};
+
+// «viernes 30/04/2027» (la raya si no es una fecha)
+const diaYFecha = (fecha) => (esFechaIso(fecha) ? `${diaDeLaSemana(fecha)} ${fechaCorta(fecha)}` : '—');
+
+/**
+ * El texto del cálculo de «Cargar licencia» con unos días restituidos (el `texto_reparto` de su vista): «Son los días
+ * restituidos de la licencia 2024, por los asuetos del 24/12 y el 31/12/2026.» o, de un día, «Es el día restituido de la
+ * licencia 2024, por el asueto del 24/12/2026.» (las fechas, con `fechasDeLosAsuetos` y su mes). Lo que no es un grupo, ''.
+ */
+export const textoDelCalculoDeRestituidos = (grupo) => {
+  if (!esObjeto(grupo)) return '';
+  const fechas = listaDe(grupo.fechas).filter(esFechaIso);
+  const cuales = esUna(grupo.dias) ? 'Es el día restituido' : 'Son los días restituidos';
+  const asuetos = fechas.length === 0 ? ''
+    : `, ${fechas.length === 1 ? 'por el asueto' : 'por los asuetos'} del ${fechasDeLosAsuetos(fechas, { conMes: true })}`;
+  return `${cuales} de la licencia ${anioTexto(grupo.anio)}${asuetos}.`;
+};
+
+/**
+ * La ayuda de «Desde» de unos días restituidos: «Los 2 días van juntos: elegí desde cuándo y Mi espacio pone el «Hasta».
+ * Podés empezar del 11/01/2027 al viernes 30/04/2027.» o, de un día, «Es 1 día: elegí cuándo y Mi espacio pone el «Hasta».
+ * Podés tomarlo del 11/01/2027 al viernes 30/04/2027.», del primer día hábil después de su carga
+ * (`primerDiaDeLosRestituidos`) al plazo. Lo que no es un grupo, ''.
+ */
+export const textoDeLaAyudaDeRestituidos = (grupo, feriados) => {
+  if (!esObjeto(grupo)) return '';
+  const cuando = `del ${fechaCorta(primerDiaDeLosRestituidos(grupo, feriados))} al ${diaYFecha(grupo.plazo)}`;
+  return esUna(grupo.dias)
+    ? `Es 1 día: elegí cuándo y Mi espacio pone el «Hasta». Podés tomarlo ${cuando}.`
+    : `Los ${numeroTexto(grupo.dias)} días van juntos: elegí desde cuándo y Mi espacio pone el «Hasta». `
+      + `Podés empezar ${cuando}.`;
+};
+
+// La ayuda del «Hasta» de unos días restituidos, de solo lectura: «Lo pone Mi espacio: 2 días hábiles.» («1 día hábil»)
+export const textoDelHastaDeRestituidos = (dias) => `Lo pone Mi espacio: ${textoDeLosDiasHabiles(dias, dias)}.`;
+
+// Una restitución del pedido, `{ licencia_id, anio, tanda }` con los tres enteros (la carga, un id positivo; la tanda, desde
+// 0; también como texto, los de un formulario), como números; si no, null
+const restitucionDelPedido = (valor) => {
+  if (!esObjeto(valor)) return null;
+  const licenciaId = idPositivoONulo(valor.licencia_id);
+  const anio = numeroDe(valor.anio);
+  const tanda = numeroDe(valor.tanda);
+  if (licenciaId === null || !Number.isInteger(anio) || !Number.isInteger(tanda) || tanda < 0) return null;
+  return { licencia_id: licenciaId, anio, tanda };
+};
+
+// El grupo de una carga de días restituidos, de los de `restitucionesDe`: `{ grupo }`, o `{ error }` con la clave de su
+// mensaje. En el alta, el de `entrada.restitucion` que está por restituir (la clave y la situación: en un borde raro, un
+// pedido activo puede tener la misma clave), del caso A; en una corrección (`editadaId`, que no es null ni undefined), el
+// cargado de esa carga (`carga_id`)
+const grupoDeLosRestituidos = (grupos, entrada, editadaId) => {
+  const lista = listaDe(grupos).filter(esObjeto);
+  if (editadaId !== undefined && editadaId !== null) {
+    const editada = idPositivoONulo(editadaId);
+    const cargado = lista.find((grupo) => grupo.situacion === 'cargada' && editada !== null && grupo.carga_id === editada);
+    return cargado === undefined ? { error: 'grupoNoPorRestituir' } : { grupo: cargado };
+  }
+  const pedida = restitucionDelPedido(esObjeto(entrada) ? entrada.restitucion : null);
+  if (pedida === null) return { error: 'restitucionInvalida' };
+  const grupo = lista.find((otro) => otro.situacion === 'por_restituir' && otro.licencia_id === pedida.licencia_id
+    && otro.anio === pedida.anio && otro.tanda === pedida.tanda);
+  if (grupo === undefined) return { error: 'grupoNoPorRestituir' };
+  if (grupo.caso === 'restituir') return { error: 'grupoEsParaRestituir' };
+  return grupo.caso === 'tomar' ? { grupo } : { error: 'grupoNoPorRestituir' };
+};
+
+/**
+ * Valida una carga de días restituidos (el caso A), el cuerpo de un alta o de una corrección. El contexto es `{ hoy, estado,
+ * feriados, editadaId, grupos }` (`grupos`, los de `restitucionesDe`: `calculo.restituciones` de lo cargado; `editadaId`, el
+ * id de la carga que se corrige). Devuelve `{ datos, error }`, como `validarLicencia`: `error` es null, o `{ campo, mensaje }`
+ * del primero que no sirve, y entonces `datos` es null; si no, `datos` es `{ tipo: 'restituidos', desde, hasta, horas: null,
+ * mostrar, nota, restitucion: { licencia_id, anio, tanda } }`. Los controles, en este orden:
+ * 1. el grupo, en `tipo`: en el alta, `entrada.restitucion` tiene que ser un objeto con los tres enteros
+ *    (`restitucionInvalida`) de un grupo por restituir (`grupoNoPorRestituir`, también si pasó el plazo) del caso A
+ *    (`grupoEsParaRestituir`); en una corrección, el grupo cargado de esa carga (la restitución que llegue no cuenta);
+ * 2. «Desde», en `desde`: una fecha (`fecha`) del rango de `rangoDeFechas` (`textoRango`), posterior al fin de su carga y a
+ *    más tardar el plazo (`textoDesdeDeLosRestituidos`). En una corrección que no cambia «Desde», esto último no se vuelve a
+ *    mirar: lo ya cargado queda como está, aunque un feriado nuevo haya corrido el plazo;
+ * 3. el «Hasta», que lo pone Mi espacio (el que llegue no cuenta): en una corrección que no cambia «Desde», el guardado; si
+ *    no, el de `hastaDeLosRestituidos` con los días del grupo y, al corregir, los días restituibles de esa carga desde el
+ *    «Desde» nuevo. Si no llega o se sale del rango, `textoRango` en `desde`;
+ * 4. la nota: recortada, de hasta 200 caracteres (`nota`);
+ * 5. que no comparta un día con otra licencia cargada (`textoSuperpuesta`, en `desde`).
+ * `mostrar` es 1 salvo con false, 0 o '0'. La modalidad y el arranque los controla antes quien la llama (`evaluarLicencia`).
+ * Una entrada o un contexto que no son objetos cuentan como `{}`.
+ */
+export const validarRestituidos = (entrada, contexto) => {
+  const fuente = esObjeto(entrada) ? entrada : {};
+  const { hoy, estado, feriados, editadaId, grupos } = esObjeto(contexto) ? contexto : {};
+  const datos = esObjeto(estado) ? estado : {};
+  const { grupo, error } = grupoDeLosRestituidos(grupos, fuente, editadaId);
+  if (error) return rechazo('tipo', MENSAJES_MI_ESPACIO[error]);
+
+  const { desde } = fuente;
+  if (!esFechaIso(desde)) return rechazo('desde', MENSAJES_MI_ESPACIO.fecha);
+  const rango = rangoDeFechas(hoy);
+  if (rango === null) return rechazo('desde', MENSAJES_MI_ESPACIO.fecha);
+  const fueraDelRango = (fecha) => fecha < rango.desde || fecha > rango.hasta;
+  if (fueraDelRango(desde)) return rechazo('desde', textoRango(rango.desde, rango.hasta));
+
+  // La carga que se corrige, y si conserva su «Desde»
+  const editada = idPositivoONulo(editadaId);
+  const guardada = editada === null ? undefined : listaDe(datos.licencias).find((fila) => esObjeto(fila)
+    && fila.tipo === 'restituidos' && idDe(fila.id) === editada && esFechaIso(fila.desde) && esFechaIso(fila.hasta));
+  const mismoDesde = guardada !== undefined && guardada.desde === desde;
+
+  const { carga, plazo } = grupo;
+  const finDeLaCarga = esObjeto(carga) ? carga.hasta : null;
+  if (!mismoDesde && (!esFechaIso(finDeLaCarga) || !esFechaIso(plazo) || desde <= finDeLaCarga || desde > plazo)) {
+    return rechazo('desde', textoDesdeDeLosRestituidos(primerDiaDeLosRestituidos(grupo, feriados), plazo));
+  }
+
+  let hasta = mismoDesde ? guardada.hasta : null;
+  if (!mismoDesde) {
+    const suyos = guardada === undefined ? []
+      : restituiblesDe({ id: editada, tipo: 'restituidos', desde, hasta: rango.hasta }, datos, feriados);
+    hasta = hastaDeLosRestituidos(desde, grupo.dias, feriados, suyos);
+    if (hasta === null || fueraDelRango(hasta)) return rechazo('desde', textoRango(rango.desde, rango.hasta));
+  }
+
+  const nota = typeof fuente.nota === 'string' ? fuente.nota.trim() : '';
+  if (Array.from(nota).length > LARGO_NOTA) return rechazo('nota', MENSAJES_MI_ESPACIO.nota);
+
+  const enComun = primeraFechaEnComun(datos.licencias, desde, hasta, editadaId);
+  if (enComun !== null) return rechazo('desde', textoSuperpuesta(enComun));
+
+  const mostrar = [false, 0, '0'].includes(fuente.mostrar) ? 0 : 1;
+  return {
+    datos: {
+      tipo: 'restituidos', desde, hasta, horas: null, mostrar, nota: nota === '' ? null : nota,
+      restitucion: { licencia_id: grupo.licencia_id, anio: grupo.anio, tanda: grupo.tanda }
+    },
+    error: null
+  };
+};
+
 // Las horas extras (spec, 3.5 a 3.7): se cargan con el día y el horario, de a media hora, y cuentan enteras en el día en que
 // empezaron, también si pasan la medianoche. En planta, cada 7 horas de un mes dan un franco compensatorio para usar dos
 // meses después, solo en ese mes; en contrato, cada hora es una hora a favor del mes siguiente. Lo que no se usó en su mes
@@ -2331,26 +2514,57 @@ const textoDeLoQueQueda = (fila, modalidad, calculo, descuentan) => {
   return '';
 };
 
+// Los validadores de una carga, para `evaluarLaCarga`: reciben el estado (con su modalidad y su arranque ya controlados), la
+// entrada, las opciones de `evaluarLicencia` y una función que da el `Calculo` de lo cargado (lo calcula una sola vez, y solo
+// si hace falta), y devuelven `{ datos, error }`. El de siempre es `validarLicencia`; el de los días restituidos,
+// `validarRestituidos`, con los grupos de lo cargado
+const validarComoLicencia = (estado, entrada, { hoy, feriados, editadaId, uso_autorizado: usoAutorizado }) =>
+  validarLicencia(entrada, { hoy, estado, feriados, editadaId, uso_autorizado: usoAutorizado });
+const validarComoRestituidos = (estado, entrada, { hoy, feriados, editadaId }, loCargado) =>
+  validarRestituidos(entrada, { hoy, estado, feriados, editadaId, grupos: loCargado().restituciones });
+
+// El validador de una carga (spec 2026-10-31-mi-espacio-dias-restituidos, 4 y 7): una de días restituidos (una nueva de ese
+// tipo, o la corrección de una) va por `validarRestituidos`; la corrección que cambiaría el tipo desde o hacia «Días
+// restituidos» da `restituidosFijo` en `tipo` (la carga del caso A no cambia de tipo, y ninguna otra pasa a serlo); el resto,
+// por `validarLicencia`. La carga que se corrige es la de `editadaId` entre las licencias del estado
+const validadorDe = (estado, entrada, opciones) => {
+  const { editadaId } = opciones;
+  const editada = editadaId === undefined || editadaId === null ? NaN : idDe(editadaId);
+  const guardada = listaDe(esObjeto(estado) ? estado.licencias : null)
+    .find((fila) => esObjeto(fila) && idDe(fila.id) === editada);
+  const esDeRestituidos = esObjeto(entrada) && entrada.tipo === 'restituidos';
+  if (guardada !== undefined && (guardada.tipo === 'restituidos') !== esDeRestituidos) {
+    return () => rechazo('tipo', MENSAJES_MI_ESPACIO.restituidosFijo);
+  }
+  return esDeRestituidos ? validarComoRestituidos : validarComoLicencia;
+};
+
 /**
  * La evaluación de una carga sin la vista (los pasos 1 a 3 de `evaluarLicencia`): `{ datos, error, fila, conLaFila, antes,
  * despues, faltante }`. `fila` es la licencia validada con el id de la que se corrige, `conLaFila`, el estado con ella
  * (reemplaza a la corregida), `antes`, el `Calculo` de lo cargado (al corregir, con la versión guardada de la fila), y
  * `despues`, el de lo cargado con ella; los cuatro son null si frena en los pasos 1 o 2. `faltante` es el que frena la carga
  * en el paso 3 (el de `problemaDeLaCarga`, con su clave), o null. El parámetro `antes` es ese `Calculo`, si quien llama ya lo
- * tiene (`alcanceDeLaCarga` prueba muchos «Hasta» con el mismo); si no, se calcula. La vista y los errores de días que dicen
- * hasta dónde alcanza no van acá: piden el alcance, que vuelve a evaluar la carga.
+ * tiene (`alcanceDeLaCarga` prueba muchos «Hasta» con el mismo); si no, se calcula, solo si hace falta. `validar` es el
+ * validador del paso 2 (`validadorDe`; sin él, `validarLicencia`: el alcance y los errores de días son de unas vacaciones).
+ * La vista y los errores de días que dicen hasta dónde alcanza no van acá: piden el alcance, que vuelve a evaluar la carga.
  */
-const evaluarLaCarga = (estado, entrada, opciones, antes) => {
+const evaluarLaCarga = (estado, entrada, opciones, antes, validar = validarComoLicencia) => {
   const datosDelEstado = esObjeto(estado) ? estado : {};
-  const { hoy, feriados, editadaId, uso_autorizado: usoAutorizado } = esObjeto(opciones) ? opciones : {};
+  const lasOpciones = esObjeto(opciones) ? opciones : {};
+  const { hoy, feriados, editadaId } = lasOpciones;
   const frenada = (error) => ({ datos: null, error, fila: null, conLaFila: null, antes: null, despues: null, faltante: null });
   if (!MODALIDADES.includes(datosDelEstado.modalidad)) {
     return frenada({ campo: null, mensaje: MENSAJES_MI_ESPACIO.sinModalidad });
   }
   if (!esFechaIso(datosDelEstado.arranque)) return frenada({ campo: null, mensaje: MENSAJES_MI_ESPACIO.sinArranque });
 
-  const { datos, error } = validarLicencia(entrada,
-    { hoy, estado: datosDelEstado, feriados, editadaId, uso_autorizado: usoAutorizado });
+  let calculado = antes ?? null;
+  const loCargado = () => {
+    if (calculado === null) calculado = calcular(datosDelEstado, { hoy, feriados });
+    return calculado;
+  };
+  const { datos, error } = validar(datosDelEstado, entrada, lasOpciones, loCargado);
   if (error) return frenada(error);
 
   const editada = idDe(editadaId);
@@ -2360,9 +2574,8 @@ const evaluarLaCarga = (estado, entrada, opciones, antes) => {
     licencias: [...listaDe(datosDelEstado.licencias).filter((otra) => !esObjeto(otra) || idDe(otra.id) !== editada), fila]
   };
   const despues = calcular(conLaFila, { hoy, feriados });
-  const loCargado = antes ?? calcular(datosDelEstado, { hoy, feriados });
-  const { faltante, problema } = loQueFrena(loCargado, despues, editadaId);
-  return { datos: problema === null ? datos : null, error: problema, fila, conLaFila, antes: loCargado, despues, faltante };
+  const { faltante, problema } = loQueFrena(loCargado(), despues, editadaId);
+  return { datos: problema === null ? datos : null, error: problema, fila, conLaFila, antes: loCargado(), despues, faltante };
 };
 
 /**
@@ -2557,13 +2770,37 @@ const vistaDe = (fila, conLaFila, calculo, contexto) => {
   };
 };
 
+// Lo que muestra el cálculo de «Cargar licencia» con unos días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9),
+// con los mismos parámetros que `vistaDe`: sus días (los de `diasDeLaCarga`, también sus restituibles: los N del grupo), el
+// texto de los días restituidos de su grupo (`textoDelCalculoDeRestituidos`, en `texto_reparto`; el grupo, el de la carga
+// entre los de lo cargado), lo que la carga le hace a lo demás (`avisos`, como en cualquier carga; con un error, vacía) y el
+// «Hasta» que pone Mi espacio (`hasta`, solo en esta vista). No sale de ninguna licencia: no hay lo que queda ni nada
+// anterior al arranque
+const vistaDeRestituidos = (fila, conLaFila, calculo, contexto) => {
+  const { feriados, editadaId } = contexto.opciones;
+  const { grupo } = grupoDeLosRestituidos(contexto.antes.restituciones, fila, editadaId);
+  const dias = diasDeLaCarga(fila, conLaFila, feriados).length;
+  return {
+    dias_habiles: dias,
+    texto_dias: textoDeLosDiasHabiles(dias, diasEntre(fila.desde, fila.hasta) + 1),
+    texto_reparto: textoDelCalculoDeRestituidos(grupo),
+    queda_texto: '',
+    antes_del_arranque: false,
+    texto_antes_del_arranque: '',
+    avisos: contexto.conError ? [] : avisosDeLaCarga(fila, conLaFila, calculo, contexto),
+    hasta: fila.hasta
+  };
+};
+
 /**
  * Evalúa una licencia antes de guardarla (el alta, la corrección y el cálculo previo de «Cargar licencia»): `{ datos, error,
  * vista }`. Las opciones son las de `validarLicencia`: `{ hoy, feriados, editadaId, uso_autorizado }`. Los controles, en
  * este orden:
  * 1. la modalidad (`sinModalidad`) y el arranque (`sinArranque`), los dos con `campo: null` (sin arranque, `validarLicencia`
  *    no puede controlar «No estudio»);
- * 2. `validarLicencia`;
+ * 2. `validarLicencia` o, con `tipo: 'restituidos'` (una carga del caso A, o la corrección de una: spec
+ *    2026-10-31-mi-espacio-dias-restituidos, 4), `validarRestituidos`, con los grupos de lo cargado. Una corrección que
+ *    cambiaría el tipo desde o hacia «Días restituidos» da `restituidosFijo` en `tipo`;
  * 3. `problemaDeLaCarga`, entre el `Calculo` de lo cargado y el de lo cargado con esta licencia (la corregida, `editadaId`,
  *    reemplaza a la guardada): un faltante nuevo, o más grande, frena la carga. Si son días de vacaciones sin cubrir, el
  *    error dice hasta dónde alcanza (`errorDeDias`, spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.3): en «Hasta»,
@@ -2590,15 +2827,20 @@ const vistaDe = (fila, conLaFila, calculo, contexto) => {
  *   vence el 31/12/2026.»), las horas de franquicia que hace perder y las otras cargas de vacaciones a las que les cambia de
  *   dónde salen («Esta carga cambia de dónde salen tus vacaciones del 04/01 al 22/01/2027: ahora de la licencia 2025.»);
  *   con un error, [].
+ * Con unos días restituidos, la vista es `{ dias_habiles, texto_dias, texto_reparto, queda_texto: '', antes_del_arranque:
+ * false, texto_antes_del_arranque: '', avisos, hasta }` (`vistaDeRestituidos`): `texto_dias`, «2 días hábiles»;
+ * `texto_reparto`, el de `textoDelCalculoDeRestituidos` («Son los días restituidos de la licencia 2024, por los asuetos del
+ * 24/12 y el 31/12/2026.»); los `avisos`, como en cualquier carga; y `hasta`, el «Hasta» que puso Mi espacio.
  */
 export const evaluarLicencia = (estado, entrada, opciones) => {
-  const carga = evaluarLaCarga(estado, entrada, opciones);
+  const lasOpciones = esObjeto(opciones) ? opciones : {};
+  const carga = evaluarLaCarga(estado, entrada, lasOpciones, undefined, validadorDe(estado, entrada, lasOpciones));
   const { datos, fila, conLaFila, antes, despues, faltante } = carga;
   if (fila === null) return { datos, error: carga.error, vista: null };
-  const lasOpciones = esObjeto(opciones) ? opciones : {};
   const error = errorDeDias(faltante, { estado, fila, conLaFila, despues, opciones: lasOpciones }) ?? carga.error;
   const contexto = { estado, antes, opciones: lasOpciones, conError: error !== null };
-  return { datos, error, vista: vistaDe(fila, conLaFila, despues, contexto) };
+  const vista = fila.tipo === 'restituidos' ? vistaDeRestituidos : vistaDe;
+  return { datos, error, vista: vista(fila, conLaFila, despues, contexto) };
 };
 
 // El paso a Configuración → Licencias (spec, sección 6). Las ausencias de día entero (`esDiaEntero`) de quien puede tener
