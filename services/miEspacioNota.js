@@ -25,7 +25,7 @@ import { esFechaIso, formatoCorto, formatoLargo } from './notasDigitalesCalendar
 import { RENGLON_FIRMA_CONTRATADO, escapeHtml } from './notasDigitalesContenido.js';
 import {
   TIPOS_LICENCIA, MESES_HASTA_EL_FRANCO, MESES_HASTA_LAS_HORAS, mesMas, mesEnFrase, nombreDelMes, horasDeLaSalida,
-  TIPOS_CON_RESTITUIBLES
+  TIPOS_CON_RESTITUIBLES, horasAcumuladasDe
 } from './miEspacioReglas.js';
 
 // Los tipos que tienen nota: todos menos el uso autorizado (decisión del usuario, «por ahora»), en el orden de TIPOS_LICENCIA
@@ -215,16 +215,33 @@ const CUERPOS = Object.freeze({
   // El día va primero, en todas (spec 2026-10-30-mi-espacio-horas-mes-anterior, 7, la variante C que eligió el usuario), y
   // los días tildados del mes siguiente al de las horas (el de la licencia), entre paréntesis antes del punto: «… realizadas
   // en enero de 2027 (incluidas las del martes 2 de febrero de 2027, sumadas a enero).»
-  horas_a_favor: ({ desde, horas, salidas, feriados }) => {
+  // Con horas acumuladas de contrato (spec 2026-11-03-mi-espacio-horas-acumuladas, 9; `acumuladas`, la parte de `horas` que
+  // sale de ellas, la de `horasAcumuladasDe`): con las dos, el total y, después de dos puntos, la parte del mes (con su
+  // «correspondiente(s)» y el paréntesis de hoy) y la acumulada: «… siete (7) horas a favor el día viernes 6 de noviembre de
+  // 2026: seis horas y media (6,5) correspondientes a las horas extras realizadas en octubre de 2026 y media hora (0,5) de
+  // horas extras acumuladas de meses anteriores.»; solo acumuladas, sin mes ni paréntesis: «… una hora y media (1,5) de horas
+  // extras acumuladas de meses anteriores el día lunes 9 de noviembre de 2026.» Sin acumuladas, el texto de antes
+  horas_a_favor: ({ desde, horas, acumuladas, salidas, feriados }) => {
     const texto = textoDeHoras(horas);
     const mesDeLasHoras = mesMas(desde.slice(0, 7), -MESES_HASTA_LAS_HORAS);
     if (!texto || mesDeLasHoras === null) return null;
-    const delMes = mesMas(mesDeLasHoras, 1);
-    const sumados = diasSumadosDe(salidas, delMes, feriados);
+    const deAntes = acumuladas > 0 ? textoDeHoras(acumuladas) : '';
+    if (acumuladas > 0 && !deAntes) return null;
+    const acumuladasDeAntes = `${deAntes} de horas extras acumuladas de meses anteriores`;
+    const delMes = horas - acumuladas;
+    if (delMes <= 0) return `el usufructo de ${acumuladasDeAntes} el día ${conElDia(desde)}.`;
+    const mesDeLaLicencia = mesMas(mesDeLasHoras, 1);
+    const sumados = diasSumadosDe(salidas, mesDeLaLicencia, feriados);
     const incluidas = sumados.length === 0 ? ''
-      : ` (incluidas ${textoDeLosDiasSumados(sumados, delMes)}, sumadas a ${nombreDelMes(mesDeLasHoras)})`;
-    return `el usufructo de ${texto} a favor el día ${conElDia(desde)}, ${correspondientesALasHoras(horas)} a las horas `
-      + `extras realizadas en ${mesEnFrase(mesDeLasHoras)}${incluidas}.`;
+      : ` (incluidas ${textoDeLosDiasSumados(sumados, mesDeLaLicencia)}, sumadas a ${nombreDelMes(mesDeLasHoras)})`;
+    const realizadas = `a las horas extras realizadas en ${mesEnFrase(mesDeLasHoras)}${incluidas}`;
+    if (!deAntes) {
+      return `el usufructo de ${texto} a favor el día ${conElDia(desde)}, ${correspondientesALasHoras(horas)} ${realizadas}.`;
+    }
+    const textoDelMes = textoDeHoras(delMes);
+    if (!textoDelMes) return null;
+    return `el usufructo de ${texto} a favor el día ${conElDia(desde)}: ${textoDelMes} `
+      + `${correspondientesALasHoras(delMes)} ${realizadas} y ${acumuladasDeAntes}.`;
   },
   // La nota A (spec 2026-10-31-mi-espacio-dias-restituidos, 12): los días de la carga, de qué licencia salen y por qué asuetos
   // (`restitucion`, ya controlada). «restituido(s)» concuerda con los días y «el asueto … declarado» o «los asuetos …
@@ -291,8 +308,9 @@ const notaCon = ({ fecha, persona, nombre, cuerpo, archivo }) => ({
 });
 
 /**
- * La nota de una licencia: `licencia` = { tipo, desde, hasta, horas } (las de `estado.licencias`, con las horas como
- * número), y en las opciones, `fecha` = 'AAAA-MM-DD' (el día de la última vez que se guardó la licencia), `persona` =
+ * La nota de una licencia: `licencia` = { tipo, desde, hasta, horas, horas_acumuladas } (las de `estado.licencias`, con las
+ * horas como número; `horas_acumuladas`, solo en las horas a favor, la parte que sale de las acumuladas: spec
+ * 2026-11-03-mi-espacio-horas-acumuladas, 9), y en las opciones, `fecha` = 'AAAA-MM-DD' (el día de la última vez que se guardó la licencia), `persona` =
  * { nombre, cargo, vinculo }, `feriados`, el Set de `contextoDe` (lo que no es un Set cuenta solo los 9 fijos), y `salidas`,
  * opcional, las de `estado.salidas` (sin ellas, ninguna): solo las usan las horas a favor, para nombrar los días tildados
  * «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 7). Los días restituidos por un asueto (spec
@@ -321,7 +339,9 @@ export const notaDeLicencia = (licencia, opciones) => {
   if (tipo === 'restituidos' && restitucion === null) return { error: 'error' };
   const dias = TIPOS_DE_DIAS.includes(tipo) ? diasDeLaLicencia({ tipo, desde, hasta }, feriados, restituibles) : [];
   if (TIPOS_DE_DIAS.includes(tipo) && dias.length === 0) return { error: 'sinDiasHabiles' };
-  const cuerpo = CUERPOS[tipo]({ desde, horas, dias, salidas: listaDe(salidas), feriados, restitucion });
+  // La parte acumulada de unas horas a favor (en los demás tipos, 0): la de miEspacioReglas.js, nunca más que `horas`
+  const acumuladas = horasAcumuladasDe(licencia);
+  const cuerpo = CUERPOS[tipo]({ desde, horas, acumuladas, dias, salidas: listaDe(salidas), feriados, restitucion });
   if (cuerpo === null) return { error: 'error' };
   const archivo = `Nota de licencia - ${NOMBRES_DEL_ARCHIVO[tipo]} - ${desde}.docx`;
   return notaCon({ fecha, persona, nombre, cuerpo, archivo });

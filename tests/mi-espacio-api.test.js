@@ -25,6 +25,7 @@ import {
   textoSinHorasAFavor, textoQuedanAcumuladas, nombreDelMes
 } from '../services/miEspacioReglas.js';
 import { MENSAJES_NOTA } from '../services/miEspacioNota.js';
+import { diaDeLaSemana } from '../services/feriadosReglas.js';
 
 let base, servidor, api, usuarios, dbReal, emailSoloA, datos, pool, firmas, controlador;
 const hoy = hoyArgentina();
@@ -4335,10 +4336,14 @@ describe('las horas a favor con horas acumuladas (spec 2026-11-03-mi-espacio-hor
       assert.equal(ausentes.status, 200, JSON.stringify(ausentes.body));
       assert.deepEqual(ausentes.body.data.ausentes.map((ausente) => ausente.nombre), ['Carla']);
 
-      // La nota se arma con las 7 horas del día (el texto de la parte acumulada lo suma la nota en Word: spec, 9)
+      // La nota dice el total y, después de los dos puntos, la parte del mes (las 6,5 de la salida del mes anterior) y la
+      // acumulada (spec, 9), con la fecha que arma el servidor
       const nota = await api.get(`/mi-espacio/licencias/${fila.id}/nota`, como('editor'));
       assert.equal(nota.status, 200, JSON.stringify(nota.body));
-      assert.match(nota.body.data.html, /siete \(7\) horas a favor el día/);
+      const cuerpo = `el usufructo de siete (7) horas a favor el día ${diaDeLaSemana(DIA)} ${formatoLargo(DIA)}: seis horas y `
+        + `media (6,5) correspondientes a las horas extras realizadas en ${mesEnFrase(mesMas(MES_DE_USO, -1))} y media hora `
+        + '(0,5) de horas extras acumuladas de meses anteriores.';
+      assert.ok(nota.body.data.html.includes(cuerpo), nota.body.data.html);
     });
 
   it('7 horas con 1,5 acumuladas (5,5 del mes): 201', async () => {
