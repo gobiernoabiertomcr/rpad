@@ -21,7 +21,7 @@ import {
   mitadesDe, habilitaciones, venceLaLicencia, textoDeLasMitades, anioVigente, ordinariasDe, diasQueDescuentan, repartoDeVacaciones,
   textoDelReparto, textoDePerdidos, rangoDeFechas, esDiaEntero, topeDe, usoDeLosTopes, validarLicencia,
   horasDe, mesMas, horasPorMes, validarHorasExtras, francosDe, horasAFavorDe, noUtilizadasDe,
-  horasAcumuladasDe, horasDelMesDe, acumuladasDe, textoQuedanAcumuladas,
+  horasAcumuladasDe, horasDelMesDe, acumuladasDe, textoQuedanAcumuladas, topesDeHorasAFavor,
   TEXTO_ANTES_DEL_ARRANQUE, camposDelSaldoInicial, validarSaldoInicial, validarAnio, fueraDeLaModalidad, calcular,
   faltantesDe, problemaDeLaCarga, evaluarLicencia,
   vinculoDe, textoDelVinculo, revisionDelVinculo, limiteParaCambiarTipo, pasoDeLaCarga, pasoDeLaCorreccion, pasoDeLaBaja,
@@ -157,6 +157,7 @@ describe('los textos', () => {
       porExamen: 'Cada examen es de 1 a 3 días hábiles.',
       horasEnteras: 'Las franquicias se toman por hora entera, de 1 a 7.',
       horasMedias: 'Las horas van de a media hora, de 0,5 a 7.',
+      acumuladasMedias: 'Las horas acumuladas van de a media hora, hasta el total.',
       nota: 'La nota puede tener hasta 200 caracteres.',
       horario: 'Elegí de qué hora a qué hora, de a media hora.',
       diasVacaciones: 'Elegí 10, 15, 20, 25 o 30 días.',
@@ -2603,11 +2604,15 @@ describe('validarLicencia', () => {
   it('una carga que sirve: los datos, con la nota recortada', () => {
     assert.deepEqual(validar({ tipo: 'franquicia', desde: '2026-11-10', hasta: '2026-11-10', horas: 3, nota: '  Trámite  ' }),
       {
-        datos: { tipo: 'franquicia', desde: '2026-11-10', hasta: '2026-11-10', horas: 3, mostrar: 1, nota: 'Trámite' },
+        datos: {
+          tipo: 'franquicia', desde: '2026-11-10', hasta: '2026-11-10', horas: 3, horas_acumuladas: null, mostrar: 1,
+          nota: 'Trámite'
+        },
         error: null
       });
     assert.deepEqual(sinErrores(validar({ tipo: 'medica', desde: '2026-11-16', hasta: '2026-11-20', horas: 4, nota: '   ' })),
-      { tipo: 'medica', desde: '2026-11-16', hasta: '2026-11-20', horas: null, mostrar: 1, nota: null });
+      { tipo: 'medica', desde: '2026-11-16', hasta: '2026-11-20', horas: null, horas_acumuladas: null, mostrar: 1,
+        nota: null });
   });
 
   it('el tipo: el de la modalidad, y el uso autorizado solo desde su formulario', () => {
@@ -4159,6 +4164,236 @@ describe('las horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 4)'
     assert.deepEqual(evaluar(conUno, { tipo: 'uso_autorizado', desde: '2026-11-05', horas: 1 }).error,
       { campo: 'horas', mensaje: 'Te quedan 0,5 horas acumuladas.' });
   });
+
+  it('horasAcumuladasDe nunca pasa de las horas del día: las dos partes suman el total', () => {
+    assert.equal(horasAcumuladasDe(aFavor(1, '2026-11-06', 1, 3)), 1);
+    assert.equal(horasAcumuladasDe(aFavor(1, '2026-11-06', '2.0', '5')), 2);
+    for (const [horas, acumuladas] of [[7, 0.5], [1, 3], [1.5, 1.5], [2, null], ['7.0', '1.5']]) {
+      const fila = aFavor(1, '2026-11-06', horas, acumuladas);
+      assert.equal(horasDelMesDe(fila) + horasAcumuladasDe(fila), Number(horas), `${horas} y ${acumuladas}`);
+    }
+    // Sin unas horas que sean un número finito, nada acumulado
+    for (const horas of [null, undefined, '', 'x', NaN, Infinity, true]) {
+      assert.equal(horasAcumuladasDe(aFavor(1, '2026-11-06', horas, 1)), 0, String(horas));
+    }
+  });
+
+  describe('la carga: la validación, los topes y el cálculo (spec 2026-11-03-mi-espacio-horas-acumuladas, 5 y 7)', () => {
+    const ACUMULADAS_MEDIAS = 'Las horas acumuladas van de a media hora, hasta el total.';
+    const validar = (entrada, estado = acumulando(), hoy = '2026-11-03') =>
+      validarLicencia(entrada, { hoy, estado, feriados: SIN_FERIADOS });
+    const evaluar = (estado, entrada, hoy = '2026-11-03', opciones = {}) =>
+      evaluarLicencia(estado, entrada, { ...el(hoy), ...opciones });
+    const pedido = (fecha, horas, acumuladas) => ({ tipo: 'horas_a_favor', desde: fecha, horas, horas_acumuladas: acumuladas });
+    // El 05/12/2026, con noviembre sin usar: las 6,5 de noviembre ya pasaron a las acumuladas (8 en total). En la segunda,
+    // 7 de esas 8 ya se usaron como acumuladas el 03/12
+    const SIN_USAR = acumulando();
+    const USADAS = acumulando([aFavor(201, '2026-12-03', 7, 7)]);
+
+    it('el mensaje', () => {
+      assert.equal(MENSAJES_MI_ESPACIO.acumuladasMedias, ACUMULADAS_MEDIAS);
+    });
+
+    it('validarLicencia: horas_acumuladas de 0 a las horas, de a media hora', () => {
+      const datosDe = (entrada) => {
+        const { datos, error } = validar(entrada);
+        assert.equal(error, null);
+        return datos;
+      };
+      // Sin la clave, null o '': nada acumulado (una página anterior guarda como hoy)
+      assert.deepEqual(datosDe({ tipo: 'horas_a_favor', desde: '2026-11-06', horas: 2 }), {
+        tipo: 'horas_a_favor', desde: '2026-11-06', hasta: '2026-11-06', horas: 2, horas_acumuladas: null, mostrar: 1,
+        nota: null
+      });
+      for (const valor of [null, '', '   ', 0, '0']) {
+        assert.equal(datosDe(pedido('2026-11-06', 2, valor)).horas_acumuladas, null, JSON.stringify(valor));
+      }
+      assert.equal(datosDe(pedido('2026-11-06', 2, '0.5')).horas_acumuladas, 0.5);
+      assert.equal(datosDe(pedido('2026-11-06', 2, 0.5)).horas_acumuladas, 0.5);
+      assert.equal(datosDe(pedido('2026-11-06', 7, 0.5)).horas_acumuladas, 0.5);
+      // Hasta el total: todas acumuladas
+      assert.equal(datosDe(pedido('2026-11-06', 1.5, 1.5)).horas_acumuladas, 1.5);
+      assert.equal(datosDe(pedido('2026-11-06', '7', '7.0')).horas_acumuladas, 7);
+      for (const valor of [-0.5, 0.25, '0,5', true, false, 2.5, '3', [], {}, 'x', NaN, Infinity]) {
+        assert.deepEqual(validar(pedido('2026-11-06', 2, valor)),
+          { datos: null, error: { campo: 'horas_acumuladas', mensaje: ACUMULADAS_MEDIAS } }, String(valor));
+      }
+      // El error de las horas va antes
+      assert.deepEqual(validar(pedido('2026-11-06', 8, -1)).error,
+        { campo: 'horas', mensaje: MENSAJES_MI_ESPACIO.horasMedias });
+      // En otro tipo, la clave se ignora
+      const enPlanta = (entrada) => validarLicencia(entrada, { hoy: HOY, estado: PLANTA.estado, feriados: SIN_FERIADOS });
+      assert.equal(enPlanta({ tipo: 'franquicia', desde: '2026-11-10', horas: 3, horas_acumuladas: 1 }).datos.horas_acumuladas,
+        null);
+      assert.equal(enPlanta({ tipo: 'medica', desde: '2026-11-16', hasta: '2026-11-17', horas_acumuladas: 'x' })
+        .datos.horas_acumuladas, null);
+      const conUso = validarLicencia({ tipo: 'uso_autorizado', desde: '2026-11-06', horas: 1, horas_acumuladas: 1 },
+        { hoy: '2026-11-03', estado: acumulando(), feriados: SIN_FERIADOS, uso_autorizado: true });
+      assert.equal(conUso.datos.horas_acumuladas, null);
+    });
+
+    it('topesDeHorasAFavor: lo del mes de la fecha y las acumuladas de hoy', () => {
+      const topes = (estado, fecha, hoy = '2026-11-03', editadaId) =>
+        topesDeHorasAFavor(estado, fecha, { ...el(hoy), editadaId });
+      assert.deepEqual(topes(acumulando(), '2026-11-06'),
+        { mes: '2026-11', mes_texto: 'noviembre', del_mes: 6.5, acumuladas: 1.5, termino: false });
+      // Al corregir una carga de 7 (0,5 acumuladas), sus horas vuelven a los dos topes (Review Focus 1)
+      const conLaCarga = acumulando([aFavor(200, '2026-11-06', 7, 0.5)]);
+      assert.deepEqual(topes(conLaCarga, '2026-11-06'),
+        { mes: '2026-11', mes_texto: 'noviembre', del_mes: 0, acumuladas: 1, termino: false });
+      assert.deepEqual(topes(conLaCarga, '2026-11-06', '2026-11-03', 200),
+        { mes: '2026-11', mes_texto: 'noviembre', del_mes: 6.5, acumuladas: 1.5, termino: false });
+      assert.deepEqual(topes(conLaCarga, '2026-11-06', '2026-11-03', '200'),
+        { mes: '2026-11', mes_texto: 'noviembre', del_mes: 6.5, acumuladas: 1.5, termino: false });
+      // Diciembre: noviembre todavía no trabajó nada para diciembre; las acumuladas son las de hoy
+      assert.deepEqual(topes(acumulando(), '2026-12-04'),
+        { mes: '2026-12', mes_texto: 'diciembre', del_mes: 0, acumuladas: 1.5, termino: false });
+      assert.deepEqual(topes(conLaCarga, '2026-12-04', '2026-11-03', 200),
+        { mes: '2026-12', mes_texto: 'diciembre', del_mes: 0, acumuladas: 1.5, termino: false });
+    });
+
+    it('topesDeHorasAFavor: una carga en un mes que ya terminó (spec 5)', () => {
+      const topes = (estado, editadaId) => topesDeHorasAFavor(estado, '2026-11-20', { ...el('2026-12-05'), editadaId });
+      assert.deepEqual(topes(SIN_USAR),
+        { mes: '2026-11', mes_texto: 'noviembre', del_mes: 6.5, acumuladas: 8, termino: true });
+      // Si lo que le sobraba a noviembre ya se usó como acumuladas en otro día, solo lo que sigue libre
+      assert.deepEqual(topes(USADAS), { mes: '2026-11', mes_texto: 'noviembre', del_mes: 1, acumuladas: 1, termino: true });
+      // Corregir la del 03/12 vuelve a dejar todo libre
+      assert.deepEqual(topes(USADAS, 201),
+        { mes: '2026-11', mes_texto: 'noviembre', del_mes: 6.5, acumuladas: 8, termino: true });
+    });
+
+    it('topesDeHorasAFavor: null fuera de contrato, sin arranque o con una fecha que no es una fecha', () => {
+      assert.equal(topesDeHorasAFavor(PLANTA.estado, '2026-11-06', A_HOY), null);
+      assert.equal(topesDeHorasAFavor({ ...acumulando(), modalidad: null }, '2026-11-06', el('2026-11-03')), null);
+      assert.equal(topesDeHorasAFavor(acumulando([], OCTUBRE, { arranque: null }), '2026-11-06', el('2026-11-03')), null);
+      for (const fecha of [null, undefined, '', '2026-11', '2026-02-30', 20261106]) {
+        assert.equal(topesDeHorasAFavor(acumulando(), fecha, el('2026-11-03')), null, String(fecha));
+      }
+      assert.equal(topesDeHorasAFavor(acumulando(), '2026-11-06', { feriados: SIN_FERIADOS }), null);
+      assert.equal(topesDeHorasAFavor(null, '2026-11-06', null), null);
+    });
+
+    it('evaluarLicencia: del mes y acumuladas, el día entero', () => {
+      const { datos, error, vista } = evaluar(acumulando(), pedido('2026-11-06', 7, 0.5));
+      assert.equal(error, null);
+      assert.equal(datos.horas_acumuladas, 0.5);
+      assert.equal(vista.texto_dias, '7 horas, el día entero');
+      assert.equal(vista.queda_texto,
+        'Usás 6,5 horas a favor de noviembre y 0,5 de tus horas acumuladas. Te queda 1 hora acumulada.');
+    });
+
+    it('evaluarLicencia: solo acumuladas', () => {
+      const { error, vista } = evaluar(acumulando(), pedido('2026-11-06', 1.5, 1.5));
+      assert.equal(error, null);
+      assert.equal(vista.texto_dias, '1,5 horas');
+      assert.equal(vista.queda_texto, 'Usás 1,5 horas acumuladas. No te quedan horas acumuladas.');
+      // Una sola hora, en singular
+      assert.equal(evaluar(acumulando(), pedido('2026-11-06', 1, 1)).vista.queda_texto,
+        'Usás 1 hora acumulada. Te quedan 0,5 horas acumuladas.');
+      assert.equal(evaluar(acumulando(), pedido('2026-11-06', 2, 1)).vista.queda_texto,
+        'Usás 1 hora a favor de noviembre y 1 de tus horas acumuladas. Te quedan 0,5 horas acumuladas.');
+    });
+
+    it('evaluarLicencia: solo del mes, sin error, como hoy', () => {
+      const { error, vista } = evaluar(acumulando(), pedido('2026-11-06', 6.5));
+      assert.equal(error, null);
+      assert.equal(vista.texto_dias, '6,5 horas');
+      assert.equal(vista.queda_texto, 'Usás 6,5 horas a favor de noviembre. Te quedan 0.');
+      // 7 horas sin acumuladas, pero alcanza: el texto de siempre, sin «el día entero»
+      const conSiete = acumulando([], [...OCTUBRE, salida(102, '2026-10-20', '15:30')]);
+      assert.equal(evaluar(conSiete, pedido('2026-11-06', 7)).vista.texto_dias, '7 horas');
+    });
+
+    it('evaluarLicencia: las del mes que no alcanzan, en «horas», y la vista sin «Te quedan 0» (el arreglo)', () => {
+      const { datos, error, vista } = evaluar(acumulando(), pedido('2026-11-06', 7));
+      assert.equal(datos, null);
+      assert.deepEqual(error, { campo: 'horas', mensaje: 'En noviembre de 2026 te quedan 6,5 horas a favor.' });
+      assert.equal(vista.queda_texto, '');
+      assert.equal(vista.texto_dias, '7 horas');
+    });
+
+    it('evaluarLicencia: las acumuladas que no alcanzan, en «horas_acumuladas»', () => {
+      const { datos, error, vista } = evaluar(acumulando(), pedido('2026-11-06', 7, 2));
+      assert.equal(datos, null);
+      assert.deepEqual(error, { campo: 'horas_acumuladas', mensaje: 'Te quedan 1,5 horas acumuladas.' });
+      assert.equal(vista.queda_texto, '');
+      // Del mes de más y acumuladas que alcanzan: el error va en «horas»
+      assert.deepEqual(evaluar(acumulando(), pedido('2026-11-06', 7, 0)).error,
+        { campo: 'horas', mensaje: 'En noviembre de 2026 te quedan 6,5 horas a favor.' });
+      // Con otra carga que ya usó una: le queda media hora
+      assert.deepEqual(evaluar(acumulando([aFavor(200, '2026-11-09', 1, 1)]), pedido('2026-11-06', 2, 1)).error,
+        { campo: 'horas_acumuladas', mensaje: 'Te quedan 0,5 horas acumuladas.' });
+    });
+
+    it('evaluarLicencia: corregir una carga que ya usaba acumuladas cuenta lo suyo (Review Focus 1)', () => {
+      const estado = acumulando([aFavor(200, '2026-11-06', 7, 0.5)]);
+      const sinCambios = evaluar(estado, { ...pedido('2026-11-06', 7, 0.5), nota: 'Otra' }, '2026-11-03', { editadaId: 200 });
+      assert.equal(sinCambios.error, null);
+      assert.equal(sinCambios.datos.nota, 'Otra');
+      assert.equal(evaluar(estado, pedido('2026-11-06', 7, 1.5), '2026-11-03', { editadaId: 200 }).error, null);
+      assert.deepEqual(evaluar(estado, pedido('2026-11-06', 7, 2), '2026-11-03', { editadaId: 200 }).error,
+        { campo: 'horas_acumuladas', mensaje: 'Te quedan 1,5 horas acumuladas.' });
+    });
+
+    it('evaluarLicencia: una carga tarde, en un mes que ya terminó', () => {
+      // Con lo que sobraba libre, sale de su mes y baja las acumuladas, sin contarse dos veces
+      const { error, vista } = evaluar(SIN_USAR, pedido('2026-11-20', 2), '2026-12-05');
+      assert.equal(error, null);
+      assert.equal(vista.queda_texto, 'Usás 2 horas a favor de noviembre. Te quedan 4,5.');
+      // Con 1 libre: 2 del mes no entran, y el error va en «horas» con lo que queda de verdad
+      const tarde = evaluar(USADAS, pedido('2026-11-20', 2), '2026-12-05');
+      assert.deepEqual(tarde.error, { campo: 'horas', mensaje: 'En noviembre de 2026 te queda 1 hora a favor.' });
+      assert.equal(tarde.vista.queda_texto, '');
+      // 1 sí entra
+      assert.equal(evaluar(USADAS, pedido('2026-11-20', 1), '2026-12-05').error, null);
+      // 1 del mes y media acumulada: el mes entra, lo acumulado ya no (lo que queda menos lo que se toma del mes)
+      assert.deepEqual(evaluar(USADAS, pedido('2026-11-20', 1.5, 0.5), '2026-12-05').error,
+        { campo: 'horas_acumuladas', mensaje: 'No te quedan horas acumuladas.' });
+      // Con 4 acumuladas libres (las otras 4 de las 8, usadas el 03/12): 3 del mes y 2 acumuladas no entran, y lo que queda
+      // es 4 menos lo que se toma del mes
+      const conCuatro = acumulando([aFavor(201, '2026-12-03', 4, 4)]);
+      assert.deepEqual(evaluar(conCuatro, pedido('2026-11-20', 5, 2), '2026-12-05').error,
+        { campo: 'horas_acumuladas', mensaje: 'Te queda 1 hora acumulada.' });
+      assert.equal(evaluar(conCuatro, pedido('2026-11-20', 4, 1), '2026-12-05').error, null);
+      // Con todo libre, cualquier día de hasta 7 entra
+      assert.equal(evaluar(SIN_USAR, pedido('2026-11-20', 7, 4), '2026-12-05').error, null);
+    });
+
+    it('lo que ya estaba no frena; agrandar la parte acumulada, sí', () => {
+      // Una carga de 7 (0,5 acumuladas) guardada, y después el saldo inicial baja a 0: la cuenta queda en faltante
+      const sinSaldo = acumulando([aFavor(200, '2026-11-06', 7, 0.5)], OCTUBRE,
+        { saldos: [{ concepto: 'horas_no_utilizadas', anio: 2026, cantidad: 0 }] });
+      assert.deepEqual(faltantesDe(calcular(sinSaldo, el('2026-11-03'))).map((faltante) => faltante.clave), ['acumuladas']);
+      const nota = evaluar(sinSaldo, { ...pedido('2026-11-06', 7, 0.5), nota: 'Corregida' }, '2026-11-03', { editadaId: 200 });
+      assert.equal(nota.error, null);
+      assert.equal(nota.datos.nota, 'Corregida');
+      assert.deepEqual(evaluar(sinSaldo, pedido('2026-11-06', 7, 1), '2026-11-03', { editadaId: 200 }).error,
+        { campo: 'horas_acumuladas', mensaje: 'No te quedan horas acumuladas.' });
+      // Lo mismo si una salida vieja baja las horas a favor de su mes
+      const sinUnaSalida = acumulando([aFavor(200, '2026-11-06', 7, 0.5)], [OCTUBRE[0]]);
+      assert.deepEqual(faltantesDe(calcular(sinUnaSalida, el('2026-11-03'))).map((faltante) => faltante.clave),
+        ['horas:2026-11']);
+      assert.equal(evaluar(sinUnaSalida, { ...pedido('2026-11-06', 7, 0.5), nota: 'Corregida' }, '2026-11-03',
+        { editadaId: 200 }).error, null);
+    });
+
+    it('el arreglo en todo tipo: con un error, sin «Te quedan …»', () => {
+      const franquicia = evaluarLicencia(conSaldo(PLANTA.estado, 'franquicias', 40),
+        { tipo: 'franquicia', desde: '2026-11-10', horas: 3 }, A_HOY);
+      assert.deepEqual(franquicia.error,
+        { campo: 'horas', mensaje: 'Con esta licencia pasarías las 42 horas de franquicia de 2026.' });
+      assert.equal(franquicia.vista.queda_texto, '');
+      assert.equal(evaluarLicencia(conSaldo(PLANTA.estado, 'franquicias', 40),
+        { tipo: 'franquicia', desde: '2026-11-10', horas: 2 }, A_HOY).vista.queda_texto,
+      'Te quedan 0 de 42 horas de franquicia.');
+      // El uso autorizado de contrato: el error sigue en «horas», y sin «Te quedan»
+      const usoDeMas = evaluarLicencia(acumulando(), { tipo: 'uso_autorizado', desde: '2026-11-04', horas: 2 },
+        { ...el('2026-11-03'), uso_autorizado: true });
+      assert.deepEqual(usoDeMas.error, { campo: 'horas', mensaje: 'Te quedan 1,5 horas acumuladas.' });
+      assert.equal(usoDeMas.vista.queda_texto, '');
+    });
+  });
 });
 
 // Una licencia nueva (las de los casos tienen ids del 1 al 6: las de los tests, desde el 100)
@@ -4734,7 +4969,10 @@ describe('evaluarLicencia', () => {
   it('PLANTA: corregir las vacaciones de noviembre', () => {
     assert.deepEqual(evaluar(PLANTA.estado, { tipo: 'vacaciones', desde: '2026-11-03', hasta: '2026-11-09' }, { editadaId: 6 }),
       {
-        datos: { tipo: 'vacaciones', desde: '2026-11-03', hasta: '2026-11-09', horas: null, mostrar: 1, nota: null },
+        datos: {
+          tipo: 'vacaciones', desde: '2026-11-03', hasta: '2026-11-09', horas: null, horas_acumuladas: null, mostrar: 1,
+          nota: null
+        },
         error: null,
         vista: {
           dias_habiles: 5, texto_dias: '5 días hábiles de 7 corridos',
@@ -4830,7 +5068,9 @@ describe('evaluarLicencia', () => {
     assert.equal(datos, null);
     assert.equal(error.campo, 'desde');
     assert.equal(vista.texto_dias, '3 días hábiles');
-    assert.equal(vista.queda_texto, 'Te quedan 0 de 25.');
+    // Con un error, lo que queda no se dice (spec 2026-11-03-mi-espacio-horas-acumuladas, 5: no «Te quedan 0» al lado del
+    // error)
+    assert.equal(vista.queda_texto, '');
   });
 
   it('lo anterior al arranque queda como historia y no descuenta', () => {
@@ -5841,6 +6081,13 @@ describe('nada tira', () => {
         evaluarLicencia(PLANTA.estado, valor, { hoy: HOY, feriados: valor, editadaId: valor });
         evaluarLicencia(PLANTA.estado, { tipo: 'franquicia', desde: '2026-11-10', horas: valor, nota: valor },
           { hoy: HOY, feriados: valor, editadaId: valor });
+        evaluarLicencia(CONTRATO.estado, { tipo: 'horas_a_favor', desde: '2026-10-29', horas: 1, horas_acumuladas: valor },
+          { hoy: HOY, feriados: SIN_FERIADOS, editadaId: valor });
+        evaluarLicencia(CONTRATO.estado, { tipo: 'horas_a_favor', desde: '2026-10-29', horas: 7, horas_acumuladas: valor },
+          { hoy: HOY, feriados: valor, editadaId: valor });
+        topesDeHorasAFavor(valor, valor, valor);
+        topesDeHorasAFavor(CONTRATO.estado, '2026-10-29', { hoy: HOY, feriados: valor, editadaId: valor });
+        topesDeHorasAFavor({ ...CONTRATO.estado, licencias: valor, salidas: valor }, '2026-10-29', { hoy: HOY });
       }, typeof valor);
     }
     assert.deepEqual(validarSaldoInicial(null, null), { datos: [], error: null });

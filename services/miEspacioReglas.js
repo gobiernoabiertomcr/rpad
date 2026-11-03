@@ -139,6 +139,8 @@ export const MENSAJES_MI_ESPACIO = Object.freeze({
   porExamen: 'Cada examen es de 1 a 3 días hábiles.',
   horasEnteras: 'Las franquicias se toman por hora entera, de 1 a 7.',
   horasMedias: 'Las horas van de a media hora, de 0,5 a 7.',
+  // La parte acumulada de unas horas a favor de contrato (spec 2026-11-03-mi-espacio-horas-acumuladas, 7)
+  acumuladasMedias: 'Las horas acumuladas van de a media hora, hasta el total.',
   nota: 'La nota puede tener hasta 200 caracteres.',
   horario: 'Elegí de qué hora a qué hora, de a media hora.',
   diasVacaciones: 'Elegí 10, 15, 20, 25 o 30 días.',
@@ -1269,6 +1271,16 @@ const horasDeLaCarga = (tipo, valor, modalidad) => {
   return { horas: null };
 };
 
+// La parte acumulada de una carga (spec 2026-11-03-mi-espacio-horas-acumuladas, 7): solo en las horas a favor, de 0 a `horas`
+// (el total del día), de a media hora. Sin ella (no vino, null o un texto de espacios) o con 0, `{ acumuladas: null }`; en
+// otro tipo, se ignora (null). Otro valor (un negativo, un cuarto de hora, '0,5', un booleano, más que el total), `{ error }`
+const acumuladasDeLaCarga = (tipo, valor, horas) => {
+  if (tipo !== 'horas_a_favor' || esVacio(valor)) return { acumuladas: null };
+  const acumuladas = numeroDe(valor);
+  if (!Number.isInteger(acumuladas * 2) || acumuladas < 0 || acumuladas > horas) return { error: 'acumuladasMedias' };
+  return { acumuladas: acumuladas === 0 ? null : acumuladas };
+};
+
 // La primera fecha que [desde, hasta] comparte con otra licencia cargada (no con la que se corrige), o null
 const primeraFechaEnComun = (licencias, desde, hasta, editadaId) => {
   const editada = idDe(editadaId);
@@ -1286,7 +1298,7 @@ const primeraFechaEnComun = (licencias, desde, hasta, editadaId) => {
  * Valida una licencia, el cuerpo de un alta o de una corrección. El contexto es `{ hoy, estado, feriados, editadaId,
  * uso_autorizado }` (`editadaId`, el id de la que se corrige, como número o como texto). Devuelve `{ datos, error }`:
  * `error` es null, o `{ campo, mensaje }` del primero que no sirve, y entonces `datos` es null; si no, `datos` es
- * `{ tipo, desde, hasta, horas, mostrar, nota }`. Los controles, en este orden:
+ * `{ tipo, desde, hasta, horas, horas_acumuladas, mostrar, nota }`. Los controles, en este orden:
  * 1. el tipo, uno de la modalidad del estado; `uso_autorizado`, solo desde su formulario (`uso_autorizado: true`), y
  *    `restituidos`, nunca: se carga por su propio camino, con el grupo que restituye (spec
  *    2026-10-31-mi-espacio-dias-restituidos, 4);
@@ -1296,7 +1308,10 @@ const primeraFechaEnComun = (licencias, desde, hasta, editadaId) => {
  *    corregir unas vacaciones, cuentan también sus días restituibles (`diasDeLaCarga`, con el id de `editadaId`): un día que
  *    un asueto cargado después dejó de hacer hábil sigue siendo suyo;
  * 4. las horas: en la franquicia, enteras de 1 a 7 (`horasEnteras`); en las horas a favor y el uso autorizado de contrato,
- *    de 0,5 a 7 de a media hora (`horasMedias`); en el uso autorizado de planta, siempre 7; en el resto, null;
+ *    de 0,5 a 7 de a media hora (`horasMedias`); en el uso autorizado de planta, siempre 7; en el resto, null. Después, en
+ *    las horas a favor, la parte acumulada (`horas_acumuladas`, spec 2026-11-03-mi-espacio-horas-acumuladas, 7): de 0 a
+ *    `horas`, de a media hora (`acumuladasMedias`, en `horas_acumuladas`); sin ella o con 0, null (todo del mes, como una
+ *    página anterior). En otro tipo se ignora y es null;
  * 5. la nota: recortada, de hasta 200 caracteres contados con Array.from (vacía, o lo que no es un texto, es null);
  * 6. que no comparta un día con otra licencia cargada (spec, 3.8): `textoSuperpuesta` con la primera fecha en común, en
  *    `desde`;
@@ -1339,6 +1354,8 @@ export const validarLicencia = (entrada, contexto) => {
 
   const { horas, error: errorDeLasHoras } = horasDeLaCarga(tipo, fuente.horas, modalidad);
   if (errorDeLasHoras) return rechazo('horas', MENSAJES_MI_ESPACIO[errorDeLasHoras]);
+  const { acumuladas, error: errorDeLasAcumuladas } = acumuladasDeLaCarga(tipo, fuente.horas_acumuladas, horas);
+  if (errorDeLasAcumuladas) return rechazo('horas_acumuladas', MENSAJES_MI_ESPACIO[errorDeLasAcumuladas]);
 
   const nota = typeof fuente.nota === 'string' ? fuente.nota.trim() : '';
   if (Array.from(nota).length > LARGO_NOTA) return rechazo('nota', MENSAJES_MI_ESPACIO.nota);
@@ -1354,7 +1371,9 @@ export const validarLicencia = (entrada, contexto) => {
   }
 
   const mostrar = [false, 0, '0'].includes(fuente.mostrar) ? 0 : 1;
-  return { datos: { tipo, desde, hasta, horas, mostrar, nota: nota === '' ? null : nota }, error: null };
+  return {
+    datos: { tipo, desde, hasta, horas, horas_acumuladas: acumuladas, mostrar, nota: nota === '' ? null : nota }, error: null
+  };
 };
 
 // La carga de los días restituidos, el caso A (spec 2026-10-31-mi-espacio-dias-restituidos, 4, 7 y 9): son exactamente los N
@@ -2304,13 +2323,16 @@ export const francosDe = (estado, opciones) => {
 
 /**
  * La parte acumulada de una carga de horas a favor (spec 2026-11-03-mi-espacio-horas-acumuladas, 6): su `horas_acumuladas`,
- * la parte de `horas` (el total del día) que sale de las horas acumuladas. Sin ella (null, sin la clave, o lo que no es un
- * número positivo y finito: el '0.5' de un DECIMAL sirve), o en otro tipo, 0.
+ * la parte de `horas` (el total del día) que sale de las horas acumuladas, nunca más que `horas` (así `horasDelMesDe` y esta
+ * siempre suman el total). Sin ella (null, sin la clave, o lo que no es un número positivo y finito: el '0.5' de un DECIMAL
+ * sirve), sin unas horas que sean un número finito, o en otro tipo, 0.
  */
 export const horasAcumuladasDe = (fila) => {
   if (!esObjeto(fila) || fila.tipo !== 'horas_a_favor') return 0;
-  const horas = numeroDe(fila.horas_acumuladas);
-  return Number.isFinite(horas) && horas > 0 ? horas : 0;
+  const acumuladas = numeroDe(fila.horas_acumuladas);
+  const horas = numeroDe(fila.horas);
+  if (!Number.isFinite(acumuladas) || !(acumuladas > 0) || !Number.isFinite(horas)) return 0;
+  return Math.max(0, Math.min(acumuladas, horas));
 };
 // La parte del mes de una carga: `horas` menos su parte acumulada (`horasAcumuladasDe`), nunca menos de 0. Sin unas horas que
 // sean un número finito, 0
@@ -2680,6 +2702,36 @@ export const calcular = (estado, opciones) => {
   };
 };
 
+/**
+ * Lo que queda para una carga de horas a favor de contrato (spec 2026-11-03-mi-espacio-horas-acumuladas, 5 y 7), los topes de
+ * los dos campos: `{ mes, mes_texto, del_mes, acumuladas, termino }`, antes de esta carga y con lo que ya usaba la que se
+ * corrige (`editadaId`: sin ella en lo cargado, sus horas del mes y acumuladas vuelven a los dos topes).
+ * - `mes`: el mes de `fecha`, 'AAAA-MM', y `mes_texto`, su nombre en minúscula ('noviembre'), el rótulo de «De noviembre».
+ * - `del_mes`: lo que queda de las horas a favor de ese mes de uso (`a_favor − usadas`; 0 si no hay ninguna).
+ * - `acumuladas`: lo que queda de las horas acumuladas, las de hoy (`acumuladasDe`: un mes que no terminó no suma).
+ * - `termino`: si el mes de uso ya terminó (una carga tarde, «Una carga en un mes que ya terminó»): lo que le sobraba ya pasó a
+ *   las acumuladas, así que lo que se toma del mes también las baja, y `del_mes` no pasa de `acumuladas`.
+ * null fuera de contrato, sin arranque, sin un hoy válido o con una fecha que no es una fecha.
+ */
+export const topesDeHorasAFavor = (estado, fecha, opciones) => {
+  const { hoy, feriados, editadaId } = esObjeto(opciones) ? opciones : {};
+  if (!esObjeto(estado) || estado.modalidad !== 'contrato' || !esFechaIso(estado.arranque) || !esFechaIso(fecha)
+    || !esFechaIso(hoy)) {
+    return null;
+  }
+  const editada = editadaId === undefined || editadaId === null ? NaN : idDe(editadaId);
+  const sinLaCarga = {
+    ...estado, licencias: listaDe(estado.licencias).filter((fila) => !esObjeto(fila) || idDe(fila.id) !== editada)
+  };
+  const calculo = calcular(sinLaCarga, { hoy, feriados });
+  const mes = fecha.slice(0, 7);
+  const delMes = calculo.horasAFavor.find((otro) => otro.mes_de_uso === mes);
+  const queda = delMes === undefined ? 0 : Math.max(0, delMes.a_favor - delMes.usadas);
+  const acumuladas = esObjeto(calculo.acumuladas) ? calculo.acumuladas.quedan : 0;
+  const termino = terminoElMes(mes, hoy);
+  return { mes, mes_texto: nombreDelMes(mes), del_mes: termino ? Math.min(queda, acumuladas) : queda, acumuladas, termino };
+};
+
 // Los textos de los faltantes del Resumen, neutros: «Revisá …»
 const QUE_SE_REVISA = Object.freeze({
   franquicia: 'tus franquicias', estudios: 'tu licencia por estudios', medica: 'tu atención médica',
@@ -2742,7 +2794,8 @@ const textoFaltanteDeAcumuladas = (usadas, habia) => `Revisá tus horas acumulad
  * Lo guardado que dejó de cerrar (spec, 3.10): `[{ clave, campo, medida, texto, mensaje }]`. Los cambios posteriores (dar de
  * baja un feriado, bajar los días de un año, corregir el saldo inicial) no se frenan: lo que dejan sin cubrir queda como
  * faltante, con un texto neutro para el Resumen (`texto`) y el error que daría una carga (`mensaje`; `campo` es `desde` en
- * días y francos, y `horas` en horas). `medida` es lo que compara `problemaDeLaCarga`. En este orden:
+ * días y francos, `horas` en horas y `horas_acumuladas` en las horas acumuladas). `medida` es lo que compara
+ * `problemaDeLaCarga`. En este orden:
  * - `vacaciones:<id>`: sus días sin cubrir, con el primero («para el 15/06/2027 faltan 2 días habilitados»), por fecha;
  * - `tope:<tipo>:<anio>`: lo que suma, si pasa el tope (sin tope, como con «No estudio», no hay faltante);
  * - `franco:<mes>`: los francos de más en ese mes de uso;
@@ -2813,7 +2866,7 @@ export const faltantesDe = (calculo) => {
     const cargado = cargadoDe(delAnio);
     if (anio === null || cargado <= habia) continue;
     faltantes.push({
-      clave: `uso:${anio}`, campo: delAnio.unidad === 'horas' ? 'horas' : 'desde', medida: cargado - habia,
+      clave: `uso:${anio}`, campo: 'desde', medida: cargado - habia,
       texto: textoFaltanteDeUsos(delAnio.unidad, anio, cargado, habia),
       mensaje: textoSinNoUtilizadas(MODALIDAD_DE_LA_UNIDAD[delAnio.unidad], anio, quedanDeLoNoUtilizado(delAnio))
     });
@@ -2899,8 +2952,10 @@ export const textoDeLosDiasHabiles = (habiles, corridos) => {
   return corridos === habiles ? enHabiles : `${enHabiles} de ${numeroTexto(corridos)} corridos`;
 };
 
-// «5 días hábiles», «5 días hábiles de 7 corridos» o, en horas, «2 horas»
+// «5 días hábiles», «5 días hábiles de 7 corridos» o, en horas, «2 horas». Unas horas a favor de 7 con una parte acumulada,
+// «7 horas, el día entero» (spec 2026-11-03-mi-espacio-horas-acumuladas, 5: el total de los dos campos)
 const textoDeLosDias = (fila, modalidad, habiles) => {
+  if (horasAcumuladasDe(fila) > 0 && numeroDe(fila.horas) === JORNADA) return `${textoDeHoras(fila.horas)}, el día entero`;
   if (seCuentaEnHoras(fila.tipo, modalidad)) return textoDeHoras(fila.horas);
   return textoDeLosDiasHabiles(habiles, diasEntre(fila.desde, fila.hasta) + 1);
 };
@@ -2916,9 +2971,22 @@ const textoQuedanNoUtilizadas = (modalidad, quedan) => {
   return `${queda} Se descuentan primero ${lasMasViejas}.`;
 };
 
+// Lo que usan unas horas a favor con una parte acumulada (spec 2026-11-03-mi-espacio-horas-acumuladas, 5), y lo que queda de
+// las acumuladas: «Usás 6,5 horas a favor de noviembre y 0,5 de tus horas acumuladas. Te queda 1 hora acumulada.» o, todas
+// acumuladas, «Usás 1,5 horas acumuladas. No te quedan horas acumuladas.»
+const textoDeLasHorasConAcumuladas = (fila, mes, calculo) => {
+  const acumuladas = horasAcumuladasDe(fila);
+  const delMes = horasDelMesDe(fila);
+  const usas = delMes > 0
+    ? `Usás ${textoDeHoras(delMes)} a favor de ${nombreDelMes(mes)} y ${numeroTexto(acumuladas)} de tus horas acumuladas.`
+    : `Usás ${numeroTexto(acumuladas)} ${esUna(acumuladas) ? 'hora acumulada' : 'horas acumuladas'}.`;
+  return `${usas} ${textoQuedanAcumuladas(esObjeto(calculo.acumuladas) ? calculo.acumuladas.quedan : 0)}`;
+};
+
 // Lo que queda después de una carga, del tipo de la fila: con tope, el del año de su primer día que descuenta; las horas a
-// favor y el franco, los de su mes; el uso autorizado, lo no utilizado de su año (en contrato, las horas acumuladas). Las
-// vacaciones lo dicen en el reparto y la extraordinaria no tiene tope: ''
+// favor y el franco, los de su mes (las horas a favor con una parte acumulada, también lo que queda de las acumuladas); el
+// uso autorizado, lo no utilizado de su año (en contrato, las horas acumuladas). Las vacaciones lo dicen en el reparto y la
+// extraordinaria no tiene tope: ''
 const textoDeLoQueQueda = (fila, modalidad, calculo, descuentan) => {
   const { tipo } = fila;
   const mes = fila.desde.slice(0, 7);
@@ -2931,6 +2999,7 @@ const textoDeLoQueQueda = (fila, modalidad, calculo, descuentan) => {
     return tipo === 'franquicia' ? `${quedan} horas de franquicia.` : `${quedan}.`;
   }
   if (tipo === 'horas_a_favor') {
+    if (horasAcumuladasDe(fila) > 0) return textoDeLasHorasConAcumuladas(fila, mes, calculo);
     const delMes = calculo.horasAFavor.find((otro) => otro.mes_de_uso === mes);
     const quedan = delMes === undefined ? 0 : quedanDeLasHoras(delMes);
     return `Usás ${textoDeHoras(fila.horas)} a favor de ${nombreDelMes(mes)}. Te quedan ${numeroTexto(quedan)}.`;
@@ -3083,14 +3152,28 @@ const errorDeDias = (faltante, { estado, fila, conLaFila, despues, opciones }) =
 };
 
 /**
- * El error de una carga que frena por las horas acumuladas (el faltante `acumuladas`, spec
- * 2026-11-03-mi-espacio-horas-acumuladas, 4): en un uso autorizado va en «Horas», el único campo de horas de su formulario,
- * con el mensaje de `problemaDeLaCarga` (lo que quedaba antes de la carga). Con otro faltante, otra carga o sin error, null
- * (el error queda como lo dio `problemaDeLaCarga`).
+ * Dónde va y qué dice el error de una carga que frena por las horas (spec 2026-11-03-mi-espacio-horas-acumuladas, 4, 5 y 7).
+ * Qué frena lo decide `problemaDeLaCarga` (un faltante nuevo o más grande); acá solo se reescribe su lugar y su texto:
+ * - un uso autorizado que frena por las horas acumuladas (el faltante `acumuladas`): en «Horas», el único campo de horas de
+ *   su formulario, con el mensaje de `problemaDeLaCarga` (lo que quedaba antes de la carga);
+ * - unas horas a favor de contrato que frenan por las de su mes (`horas:<mes>`) o por las acumuladas: con los topes de su
+ *   fecha (`topesDeHorasAFavor`, con `editadaId`), si la parte del mes pasa de `del_mes`, en «horas» con
+ *   `textoSinHorasAFavor(mes, del_mes)` (también en una carga tarde, aunque lo que se pase por dentro sea la cuenta de las
+ *   acumuladas); si no, en «horas_acumuladas» con lo que queda de las acumuladas (en una carga tarde, menos lo que se toma
+ *   del mes, que también las baja).
+ * Con otro faltante, otra carga o sin error, null (el error queda como lo dio `problemaDeLaCarga`).
  */
-const errorDeLasAcumuladas = (faltante, fila, error) => {
-  if (faltante === null || faltante.clave !== 'acumuladas' || error === null || fila.tipo !== 'uso_autorizado') return null;
-  return { ...error, campo: 'horas' };
+const errorDeLasHoras = (faltante, { fila, estado, opciones, error }) => {
+  if (faltante === null || error === null) return null;
+  const { clave } = faltante;
+  if (fila.tipo === 'uso_autorizado') return clave === 'acumuladas' ? { ...error, campo: 'horas' } : null;
+  if (fila.tipo !== 'horas_a_favor' || (clave !== 'acumuladas' && !clave.startsWith('horas:'))) return null;
+  const topes = topesDeHorasAFavor(estado, fila.desde, opciones);
+  if (topes === null) return null;
+  const delMes = horasDelMesDe(fila);
+  if (delMes > topes.del_mes) return { campo: 'horas', mensaje: textoSinHorasAFavor(topes.mes, topes.del_mes) };
+  const quedan = Math.max(0, topes.acumuladas - (topes.termino ? delMes : 0));
+  return { campo: 'horas_acumuladas', mensaje: textoQuedanAcumuladas(quedan) };
 };
 
 // Lo que suma el cálculo de unas vacaciones (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.1), los `extras` de
@@ -3198,7 +3281,8 @@ const avisosDeLaCarga = (fila, conLaFila, despues, { estado, antes, opciones }) 
 // ella. `contexto` es `{ estado, antes, opciones, conError }`: el estado de antes de la carga, su `Calculo` y las opciones de
 // `evaluarLicencia`, para lo que se habilita después y el alcance de unas vacaciones (`extrasDelReparto`) y para lo que la
 // carga le hace a lo demás (`avisosDeLaCarga`), y si la carga tiene un error. Con un error la carga no se guarda (spec
-// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.3): la vista dice solo los días, sin el reparto ni nada de lo que la carga
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.3): la vista dice solo los días, sin el reparto, sin lo que queda (spec
+// 2026-11-03-mi-espacio-horas-acumuladas, 5: un «Te quedan 0» al lado del error se contradice) y sin nada de lo que la carga
 // le haría a lo demás (`avisos`, vacía)
 const vistaDe = (fila, conLaFila, calculo, contexto) => {
   const { feriados } = contexto.opciones;
@@ -3211,7 +3295,7 @@ const vistaDe = (fila, conLaFila, calculo, contexto) => {
     texto_reparto: fila.tipo === 'vacaciones' && !contexto.conError
       ? textoDelReparto(calculo.reparto, fila.id, extrasDelReparto(fila, calculo, contexto))
       : '',
-    queda_texto: antesDelArranque ? '' : textoDeLoQueQueda(fila, conLaFila.modalidad, calculo, descuentan),
+    queda_texto: antesDelArranque || contexto.conError ? '' : textoDeLoQueQueda(fila, conLaFila.modalidad, calculo, descuentan),
     antes_del_arranque: antesDelArranque,
     texto_antes_del_arranque: antesDelArranque ? TEXTO_ANTES_DEL_ARRANQUE : '',
     avisos: contexto.conError ? [] : avisosDeLaCarga(fila, conLaFila, calculo, contexto)
@@ -3255,17 +3339,23 @@ const vistaDeRestituidos = (fila, conLaFila, calculo, contexto) => {
  *    «No te alcanzan los días habilitados: esta licencia puede llegar hasta el 24/02/2027.» o, si le faltan a otra carga ya
  *    guardada, «Con estos días, a tus vacaciones del 04/01 al 22/01/2027 les faltan días desde el 20/01/2027.»; en «Desde»,
  *    si a esta no le alcanza ni el primer día, «No te alcanzan los días habilitados para el 21/06/2027. El 1/7/2027 se
- *    habilitan 5 más de la 2027.».
+ *    habilitan 5 más de la 2027.». Si son las horas de unas horas a favor de contrato (las de su mes o las acumuladas), el
+ *    error va en el campo de la parte que no alcanza, con los topes de su fecha (`errorDeLasHoras`, spec
+ *    2026-11-03-mi-espacio-horas-acumuladas, 5): en «horas», «En noviembre de 2026 te quedan 6,5 horas a favor.»; en
+ *    «horas_acumuladas», «Te quedan 1,5 horas acumuladas.». En un uso autorizado de contrato, las acumuladas van en «horas».
  * Con un error, `datos` es null. `vista` es null en los pasos 1 y 2; si no, `{ dias_habiles, texto_dias, texto_reparto,
  * queda_texto, antes_del_arranque, texto_antes_del_arranque, avisos }`, con lo cargado con esta licencia:
- * - `texto_dias`: «5 días hábiles» o «5 días hábiles de 7 corridos»; en horas, «2 horas»;
+ * - `texto_dias`: «5 días hábiles» o «5 días hábiles de 7 corridos»; en horas, «2 horas» (unas horas a favor de 7 con una
+ *   parte acumulada, «7 horas, el día entero»);
  * - `texto_reparto`: en las vacaciones, el de `textoDelReparto`, con lo que se habilita después hasta su hasta o su alcance
  *   y, si deja los disponibles de hoy en 0, hasta dónde puede llegar (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.1:
  *   «… No te quedan días disponibles hoy. El 1/1/2027 se habilitan 10 más de la 2026: esta licencia puede llegar hasta el
  *   24/02/2027.»); con un error (3.3: la carga no se guarda, solo van los días) y en los demás tipos, '';
  * - `queda_texto`: «Te quedan 22 de 25.», «Te quedan 23 de 42 horas de franquicia.», «Usás 1,5 horas a favor de octubre.
- *   Te quedan 0.», la del franco de su mes o lo no utilizado que queda; '' en las vacaciones, la extraordinaria y lo
- *   anterior al arranque;
+ *   Te quedan 0.» (con una parte acumulada, «Usás 6,5 horas a favor de noviembre y 0,5 de tus horas acumuladas. Te queda 1
+ *   hora acumulada.» o «Usás 1,5 horas acumuladas. No te quedan horas acumuladas.»), la del franco de su mes o lo no
+ *   utilizado que queda; '' en las vacaciones, la extraordinaria, lo anterior al arranque y con un error (spec
+ *   2026-11-03-mi-espacio-horas-acumuladas, 5: un «Te quedan 0» al lado del error se contradice);
  * - `antes_del_arranque`: un tipo con saldo inicial cuyos días son todos anteriores al arranque, con
  *   `texto_antes_del_arranque` (`TEXTO_ANTES_DEL_ARRANQUE`; si no, '');
  * - `avisos` (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.2 y 3.4): lo que esta carga le hace a lo demás, comparado
@@ -3286,7 +3376,7 @@ export const evaluarLicencia = (estado, entrada, opciones) => {
   const { datos, fila, conLaFila, antes, despues, faltante } = carga;
   if (fila === null) return { datos, error: carga.error, vista: null };
   const error = errorDeDias(faltante, { estado, fila, conLaFila, despues, opciones: lasOpciones })
-    ?? errorDeLasAcumuladas(faltante, fila, carga.error) ?? carga.error;
+    ?? errorDeLasHoras(faltante, { fila, estado, opciones: lasOpciones, error: carga.error }) ?? carga.error;
   const contexto = { estado, antes, opciones: lasOpciones, conError: error !== null };
   const vista = fila.tipo === 'restituidos' ? vistaDeRestituidos : vistaDe;
   return { datos, error, vista: vista(fila, conLaFila, despues, contexto) };
