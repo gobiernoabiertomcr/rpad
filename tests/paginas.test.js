@@ -102,7 +102,7 @@ const VERSION_PROYECTOS = '20261206';
 // «De febrero» y la pestaña—, spec 2026-10-30-mi-espacio-horas-mes-anterior, 4 y 5; y los días que restituye un asueto —el aviso
 // entre la banda y el resto, la línea de la fila, «Días restituidos» en «Cargar licencia» con el «Hasta» que pone Mi espacio y
 // «Pedir la restitución», con su nota—, spec 2026-10-31-mi-espacio-dias-restituidos, 9). Su versión es propia
-const VERSION_MI_ESPACIO = '20261220';
+const VERSION_MI_ESPACIO = '20261221';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -985,8 +985,10 @@ describe('páginas', () => {
         // Con el segundo paso (spec 2026-10-27-mi-espacio-licencia-word, 6): el cuerpo y el pie del formulario y los del segundo paso
         'modal-licencia': ['modal-licencia-titulo', 'ml-cuerpo', 'ml-error', 'ml-tipos', 'ml-tipos-opciones', 'ml-tipos-error',
           'ml-desde-rotulo', 'ml-desde', 'ml-desde-error', 'ml-grupo-hasta', 'ml-hasta', 'ml-hasta-ayuda', 'ml-hasta-error', 'ml-grupo-horas',
-          'ml-horas',
-          'ml-horas-error', 'ml-fechas-ayuda', 'ml-calculo', 'ml-nota', 'ml-nota-error', 'ml-grupo-mostrar', 'ml-mostrar',
+          'ml-horas-rotulo', 'ml-horas',
+          'ml-horas-error', 'ml-dos-horas', 'ml-horas-del-mes-rotulo', 'ml-horas-del-mes-tope', 'ml-horas-del-mes',
+          'ml-horas-del-mes-error', 'ml-horas-acumuladas-rotulo', 'ml-horas-acumuladas-tope', 'ml-horas-acumuladas',
+          'ml-horas-acumuladas-error', 'ml-horas-total', 'ml-horas-acumuladas-ayuda', 'ml-fechas-ayuda', 'ml-calculo', 'ml-nota', 'ml-nota-error', 'ml-grupo-mostrar', 'ml-mostrar',
           'ml-mostrar-ayuda', 'ml-grupo-autorizado', 'ml-autorizado', 'ml-autorizado-ayuda', 'ml-autorizado-error', 'ml-paso',
           'ml-sin-auditor', 'ml-pie-del-formulario', 'ml-borrar', 'ml-pie', 'ml-guardar', 'ml-paso-dos', 'ml-paso-dos-pie',
           'ml-descargar-word'],
@@ -1092,6 +1094,27 @@ describe('páginas', () => {
       // Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9): el «Hasta» de «Cargar licencia» tiene su ayuda (la de
       // unos días restituidos, que lo pone Mi espacio: vacía y oculta hasta que mi-espacio.js la escribe) y «Pedir la restitución»,
       // como el segundo paso de una licencia: el cuerpo (el error sin campo y la vista) y su pie y, después, los del segundo paso
+      // Las horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 5; la opción B de la maqueta): en «Horas a favor» de
+      // contrato, con acumuladas, dos campos («De noviembre» y «Acumuladas», con sus topes, que escribe mi-espacio.js), el total y la
+      // ayuda de la autorización, dentro del grupo de las horas y después de su error, ocultos de entrada. Los dos campos tienen el
+      // total en su aria-describedby (revisión final, 3: si no, un lector de pantalla no lo oye nunca)
+      it('«Cargar licencia»: los dos campos de las horas a favor, después del error de «Horas»', () => {
+        assert.match(modal('modal-licencia'), new RegExp('<p class="form-error" id="ml-horas-error" hidden></p>\\s*'
+          + '<div class="me-dos-horas" id="ml-dos-horas" hidden>\\s*<div class="form-group">\\s*'
+          + '<label class="form-label" for="ml-horas-del-mes" id="ml-horas-del-mes-rotulo">Del mes '
+          + '<span class="me-opcional" id="ml-horas-del-mes-tope"></span></label>\\s*'
+          + '<select class="form-select" id="ml-horas-del-mes" aria-describedby="ml-horas-total ml-horas-del-mes-error"></select>\\s*'
+          + '<p class="form-error" id="ml-horas-del-mes-error" hidden></p>\\s*</div>\\s*<div class="form-group">\\s*'
+          + '<label class="form-label" for="ml-horas-acumuladas" id="ml-horas-acumuladas-rotulo">Acumuladas '
+          + '<span class="me-opcional" id="ml-horas-acumuladas-tope"></span></label>\\s*'
+          + '<select class="form-select" id="ml-horas-acumuladas" aria-describedby="ml-horas-total ml-horas-acumuladas-ayuda ml-horas-acumuladas-error">'
+          + '</select>\\s*<p class="form-error" id="ml-horas-acumuladas-error" hidden></p>\\s*</div>\\s*'
+          + '<p class="me-dos-horas-total" id="ml-horas-total"></p>\\s*'
+          + '<p class="form-hint" id="ml-horas-acumuladas-ayuda">Las horas acumuladas se usan con la autorización del Director General.</p>'
+          + '\\s*</div>\\s*</div>'));
+        assert.match(modal('modal-licencia'), /<label class="form-label" for="ml-horas" id="ml-horas-rotulo">Horas<\/label>/);
+      });
+
       it('«Cargar licencia»: la ayuda del «Hasta», debajo del campo y antes de su error', () => {
         assert.match(modal('modal-licencia'), new RegExp('<input type="date" class="form-input" id="ml-hasta" aria-describedby="ml-fechas-ayuda ml-hasta-error">\\s*'
           + '<p class="form-hint" id="ml-hasta-ayuda" hidden></p>\\s*<p class="form-error" id="ml-hasta-error" hidden></p>'));

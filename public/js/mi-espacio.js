@@ -127,6 +127,9 @@ const NOTA_DE_LOS_FRANCOS = 'Solo las horas extras al 100%. Cada 7 horas de un m
   + 'después, en ese mes.';
 const NOTA_DE_LAS_HORAS_A_FAVOR = 'Cada hora extra de un mes es una hora menos de trabajo el mes siguiente, de a media hora. 7 horas '
   + 'son el día entero.';
+// El título y la nota de la tarjeta de contrato de una respuesta de antes, sin los suyos (desde las horas acumuladas, los manda el
+// servidor)
+const TITULO_DE_LAS_NO_UTILIZADAS = 'Horas no utilizadas previamente';
 const NOTA_DE_LAS_NO_UTILIZADAS = 'Quedan a la vista aunque su mes ya pasó. Vuelven a cero el 1/1.';
 
 // El Resumen «Titular»: la clase de cada capa del tanque de vacaciones, en un tramo de la regla y en su muestra (la `clase` del
@@ -783,17 +786,32 @@ function htmlDeDiaPorDiaDeSalidas(tabla, mes) {
     + `<span>${esc(deMapa(tabla.totales_por_mes, mes, ''))}</span></div><ul class="me-lista">${filas.join('')}</ul></div>`;
 }
 
-// Contrato: «Horas no utilizadas previamente», cada mes con su origen (y lo del saldo inicial), con el uso autorizado debajo
+// Contrato: lo que manda «Usar horas acumuladas» debajo de la tarjeta (spec 2026-11-03-mi-espacio-horas-acumuladas, 10): el texto
+// del servidor y, si quedan, el botón, que abre «Cargar licencia» con «Horas a favor» (`data-usar-acumuladas`, con el tipo)
+function htmlDelUsoDeLasAcumuladas(uso) {
+  if (!esObjeto(uso)) return '';
+  const boton = uso.puede === true
+    ? '<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-usar-acumuladas="horas_a_favor">Usar horas acumuladas</button>'
+    : '';
+  return `<div class="me-uso"><p class="me-nota">${esc(uso.texto)}</p>${boton}</div>`;
+}
+
+/**
+ * Contrato: «Horas acumuladas» (spec 2026-11-03-mi-espacio-horas-acumuladas, 10), cada mes con su origen (y lo del saldo inicial),
+ * con el título y la nota del servidor (sin ellos, una respuesta de antes, los de antes) y «Usar horas acumuladas» debajo
+ */
 function htmlDeNoUtilizadas(tabla) {
   const noUtilizadas = tabla?.no_utilizadas;
   if (!esObjeto(noUtilizadas)) return '';
+  const titulo = conTexto(noUtilizadas.titulo) ? noUtilizadas.titulo : TITULO_DE_LAS_NO_UTILIZADAS;
+  const nota = conTexto(noUtilizadas.nota) ? noUtilizadas.nota : NOTA_DE_LAS_NO_UTILIZADAS;
   const filas = listaDe(noUtilizadas.filas).map((fila) => `<li class="me-fila me-fila-dos"><span class="me-fila-fecha">${esc(fila.titulo)}</span>`
     + `<span class="me-fila-cuerpo">${esc(fila.texto)}${conTexto(fila.detalle) ? `<span class="me-detalle">${esc(fila.detalle)}</span>` : ''}`
     + '</span></li>');
-  return '<div class="me-tarjeta"><div class="me-cabeza"><h3>Horas no utilizadas previamente</h3>'
+  return `<div class="me-tarjeta"><div class="me-cabeza"><h3>${esc(titulo)}</h3>`
     + `<span>${esc(noUtilizadas.total_texto)}</span></div>`
     + (filas.length > 0 ? `<ul class="me-lista">${filas.join('')}</ul>` : '')
-    + `<p class="me-nota">${NOTA_DE_LAS_NO_UTILIZADAS}</p>${htmlDelUsoAutorizado(noUtilizadas.uso_autorizado)}</div>`;
+    + `<p class="me-nota">${esc(nota)}</p>${htmlDelUsoDeLasAcumuladas(noUtilizadas.uso_autorizado)}</div>`;
 }
 
 /**
@@ -824,6 +842,8 @@ const MENSAJES_FORMULARIOS = Object.freeze({
   hastaAntes: 'La licencia no puede terminar antes de empezar.',
   horasEnteras: 'Las franquicias se toman por hora entera, de 1 a 7.',
   horasMedias: 'Las horas van de a media hora, de 0,5 a 7.',
+  // La parte acumulada de unas horas a favor de contrato (spec 2026-11-03-mi-espacio-horas-acumuladas, 7)
+  acumuladasMedias: 'Las horas acumuladas van de a media hora, hasta el total.',
   nota: 'La nota puede tener hasta 200 caracteres.',
   horario: 'Elegí de qué hora a qué hora, de a media hora.',
   diasVacaciones: 'Elegí 10, 15, 20, 25 o 30 días.',
@@ -1110,7 +1130,8 @@ const textoSinCalculo = (falla) => `No se pudo calcular: ${falla?.status ? 'hubo
  * `licencia_oficial` es el id de su licencia de Configuración (el excluir del aviso de los días sin auditor), o null. `grupo` (spec
  * 2026-10-31-mi-espacio-dias-restituidos, 9) es la clave del grupo de unos días restituidos: de una fila, el de su carga
  * (`restituidos.grupo`: al corregir no se cambia de grupo); de una nueva, el elegido (`grupo`, el del aviso, «Vence pronto» o la
- * línea de la fila). En otro tipo, o sin uno, ''.
+ * línea de la fila). En otro tipo, o sin uno, ''. `horas_acumuladas` (spec 2026-11-03-mi-espacio-horas-acumuladas, 5) es la parte
+ * acumulada de unas horas a favor que se corrigen, como texto, como `horas` (el total del día); sin ella, con 0 o en otro tipo, ''.
  */
 function valoresDeLicencia(fila, tipo, grupo) {
   const datos = esObjeto(fila) ? fila : {};
@@ -1131,6 +1152,8 @@ function valoresDeLicencia(fila, tipo, grupo) {
     desde: comoTexto(datos.desde),
     hasta: comoTexto(datos.hasta),
     horas: typeof datos.horas === 'number' && Number.isFinite(datos.horas) ? String(datos.horas) : '',
+    horas_acumuladas: elTipo === 'horas_a_favor' && typeof datos.horas_acumuladas === 'number' && datos.horas_acumuladas > 0
+      ? String(datos.horas_acumuladas) : '',
     nota: comoTexto(datos.nota),
     mostrar: datos.mostrar !== false,
     autorizado,
@@ -1139,12 +1162,25 @@ function valoresDeLicencia(fila, tipo, grupo) {
   };
 }
 
+// Copia de acumuladasDeLaCarga (services/miEspacioReglas.js), atada por un test de paridad con validarLicencia: la parte acumulada de
+// unas horas a favor vale vacía (sin ella, null, '' o solo espacios: todo del mes) o, como número o como texto, de 0 a `horas` (el
+// total del día), de a media hora. '0,5', un booleano, un negativo o un cuarto de hora, no
+const acumuladasValidas = (valor, horas) => {
+  if (valor === undefined || valor === null || (typeof valor === 'string' && valor.trim() === '')) return true;
+  let numero = NaN;
+  if (typeof valor === 'number') numero = valor;
+  else if (typeof valor === 'string') numero = Number(valor);
+  return Number.isInteger(numero * 2) && numero >= 0 && numero <= horas;
+};
+
 /**
  * Los errores de una licencia antes de pedir nada (`{ campo: mensaje }`, en el orden del formulario; sin ninguno, {}): el tipo,
  * las fechas (el formato y que el hasta no sea anterior; en los de un día, solo la fecha; en unos días restituidos, solo el desde:
  * el «Hasta» lo pone Mi espacio, spec 2026-10-31-mi-espacio-dias-restituidos, 9), las horas de los tipos que se cargan en horas
- * (con `modalidad`: en planta, el uso autorizado no lleva) y el largo de la nota. Los mensajes son los del servidor, que controla
- * además el rango, los días hábiles, los topes, lo que se superpone y, en unos días restituidos, el grupo y el plazo.
+ * (con `modalidad`: en planta, el uso autorizado no lleva), en las horas a favor y con las horas bien, la parte acumulada (spec
+ * 2026-11-03-mi-espacio-horas-acumuladas, 5: `acumuladasValidas`, en `horas_acumuladas`) y el largo de la nota. Los mensajes son
+ * los del servidor, que controla además el rango, los días hábiles, los topes, lo que se superpone y, en unos días restituidos, el
+ * grupo y el plazo.
  */
 function erroresDeLicencia(valores, { modalidad = null } = {}) {
   const datos = esObjeto(valores) ? valores : {};
@@ -1162,6 +1198,9 @@ function erroresDeLicencia(valores, { modalidad = null } = {}) {
   }
   if (enHoras === 'medias' && !(horas !== null && Number.isInteger(horas * 2) && horas >= 0.5 && horas <= JORNADA)) {
     errores.horas = MENSAJES_FORMULARIOS.horasMedias;
+  }
+  if (datos.tipo === 'horas_a_favor' && errores.horas === undefined && !acumuladasValidas(datos.horas_acumuladas, horas)) {
+    errores.horas_acumuladas = MENSAJES_FORMULARIOS.acumuladasMedias;
   }
   if (largoDeLaNota(datos.nota) > LARGO_NOTA) errores.nota = MENSAJES_FORMULARIOS.nota;
   return errores;
@@ -1219,7 +1258,9 @@ const restitucionDelGrupo = (grupo, acciones) => (conTexto(grupo)
  * (nadie). Unos días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 8 y 9) mandan `{ tipo, restitucion, desde,
  * mostrar, nota }`: sin el «Hasta», que lo pone el servidor, y, en el alta, la `restitucion` de la opción del grupo elegido entre
  * los `tipos` del Resumen (`opcionDelGrupo`; sin ella, null, y el servidor dice qué elegir); al corregir, sin ella (el grupo es el
- * de la carga).
+ * de la carga). Unas horas a favor con los dos campos (spec 2026-11-03-mi-espacio-horas-acumuladas, 5) mandan también
+ * `horas_acumuladas`, como número (`horas` es el total del día); con un solo campo (`horas_acumuladas` vacío), sin la clave, como
+ * siempre: todo del mes.
  */
 function cuerpoDeLicencia(valores, { soyTitular = false, tipos = [] } = {}) {
   const datos = esObjeto(valores) ? valores : {};
@@ -1230,6 +1271,7 @@ function cuerpoDeLicencia(valores, { soyTitular = false, tipos = [] } = {}) {
   const cuerpo = { tipo: datos.tipo, ...fechas, mostrar: datos.mostrar !== false, nota: comoTexto(datos.nota).trim() };
   const horas = numeroDelCampo(datos.horas);
   if (TIPOS_CON_HORAS.includes(datos.tipo) && horas !== null) cuerpo.horas = horas;
+  if (datos.tipo === 'horas_a_favor' && conTexto(datos.horas_acumuladas)) cuerpo.horas_acumuladas = Number(datos.horas_acumuladas);
   if (soyTitular === true && dejaPersonaACargo(datos.tipo)
     && (nueva || comoTexto(datos.autorizado) !== comoTexto(datos.autorizado_inicial))) {
     cuerpo.autorizado_id = conTexto(datos.autorizado) ? Number(datos.autorizado) : null;
@@ -1266,6 +1308,91 @@ function htmlDeOpcionesDeHoras(enHoras, elegida) {
       + `${numeroConComa(horas)}${horas === JORNADA ? ', el día entero' : ''}</option>`);
   }
   return opciones.join('');
+}
+
+// ---- Las horas a favor con horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 5; la opción B de la maqueta) ----
+// En contrato, con horas acumuladas (los topes de GET /mi-espacio/horas-a-favor/topes: `{ mes, mes_texto, del_mes, acumuladas,
+// termino }`, los del mes de la fecha elegida y los de hoy) o en una carga que ya las usa, el campo «Horas» se reemplaza por dos:
+// «De noviembre» (el mes de la fecha) y «Acumuladas», cada uno de 0 a su tope, de a media hora, con el total debajo. Los topes los
+// manda el servidor; lo de acá solo los aplica
+
+// Una cantidad de horas de un tope: de a media hora, para abajo, de 0 a 7 (lo que no es un número, 0)
+const mediaHoraHasta = (valor) => {
+  const numero = typeof valor === 'number' ? valor : Number(valor);
+  return Number.isFinite(numero) ? Math.min(JORNADA, Math.max(0, Math.floor(numero * 2) / 2)) : 0;
+};
+// Lo elegido en uno de los dos campos, como número (vacío o lo que no es un número, 0)
+const horasElegidas = (valor) => {
+  const numero = numeroDelCampo(valor);
+  return Number.isFinite(numero) && numero > 0 ? numero : 0;
+};
+
+/**
+ * Los dos campos con sus topes (`topes`, los del servidor; null si no llegaron) y lo elegido (`{ delMes, acumuladas }`, números): `{
+ * delMes: { tope, valor }, acumuladas: { tope, valor } }`. «De …», hasta lo que queda del mes (`del_mes`) y nunca más de 7;
+ * «Acumuladas», hasta lo que queda (`acumuladas`; con el mes terminado, `termino`, menos lo elegido del mes, que ya es parte de
+ * ellas) y nunca más de 7 menos lo elegido del mes. Lo elegido nunca pasa de su tope: si pasa (otro mes, o se subió lo del mes), baja
+ * hasta él. Sin topes, los dos hasta el día entero (el servidor valida igual). `guardadas` (`{ delMes, acumuladas }`, números, o null)
+ * son las partes de la carga que se corrige, si la fecha sigue en su mes: cada tope es al menos la suya (un cambio posterior, como
+ * una salida borrada, pudo dejar los topes debajo; abrir «Editar» nunca baja lo guardado: el cálculo del servidor dice el faltante),
+ * y el de las acumuladas sigue sin pasar de 7 menos lo del mes
+ */
+function lasDosHoras(topes, elegidas, guardadas = null) {
+  const conTopes = esObjeto(topes);
+  const elegido = esObjeto(elegidas) ? elegidas : {};
+  const guardado = esObjeto(guardadas) ? guardadas : {};
+  const topeDelMes = mediaHoraHasta(Math.max(conTopes ? mediaHoraHasta(topes.del_mes) : JORNADA, horasElegidas(guardado.delMes)));
+  const delMes = Math.min(horasElegidas(elegido.delMes), topeDelMes);
+  const queda = conTopes ? mediaHoraHasta(topes.acumuladas) - (topes.termino === true ? delMes : 0) : JORNADA;
+  const topeDeLasAcumuladas = mediaHoraHasta(Math.min(Math.max(queda, horasElegidas(guardado.acumuladas)), JORNADA - delMes));
+  return {
+    delMes: { tope: topeDelMes, valor: delMes },
+    acumuladas: { tope: topeDeLasAcumuladas, valor: Math.min(horasElegidas(elegido.acumuladas), topeDeLasAcumuladas) }
+  };
+}
+
+// Las opciones de uno de los dos campos: de 0 al tope, de a media hora (un tope que no es un número, solo el 0), con la elegida
+function htmlDeOpcionesDeLasDos(tope, elegida) {
+  const hasta = mediaHoraHasta(tope);
+  const opciones = [];
+  for (let horas = 0; horas <= hasta; horas += 0.5) {
+    opciones.push(`<option value="${String(horas)}"${String(horas) === elegida ? ' selected' : ''}>${numeroConComa(horas)}</option>`);
+  }
+  return opciones.join('');
+}
+
+// El total, debajo de los dos campos: «Total: 7 horas, el día entero.», «Total: 2 horas.», «Total: 1 hora.» o, sin nada elegido,
+// «Elegí cuántas horas tomás.»
+function textoDelTotalDeLasDos(delMes, acumuladas) {
+  const total = horasElegidas(delMes) + horasElegidas(acumuladas);
+  if (total === 0) return 'Elegí cuántas horas tomás.';
+  return `Total: ${textoDeHoras(total)}${total === JORNADA ? ', el día entero' : ''}.`;
+}
+
+// Una cantidad de horas para un rótulo: de a media hora, para abajo, desde 0 y sin el tope de 7 de las opciones (el rótulo dice lo
+// que queda: con 8 acumuladas, «tenés 8», como la tarjeta; lo que no es un número, 0)
+const mediaHoraDelRotulo = (valor) => {
+  const numero = typeof valor === 'number' ? valor : Number(valor);
+  return Number.isFinite(numero) ? Math.max(0, Math.floor(numero * 2) / 2) : 0;
+};
+
+// Los rótulos de los dos campos: `{ mes, delMes, acumuladas }` («De noviembre», «(quedan 4)» y «(tenés 6,5)»), con el mes y los
+// topes del servidor, sin el tope de 7 (las opciones sí lo tienen: lasDosHoras). Sin topes (mientras llegan, o si no llegaron), el
+// mes de la fecha elegida (sin una fecha, «Del mes») y sin topes: nunca uno viejo
+function rotulosDeLasDos(topes, desde) {
+  if (esObjeto(topes) && conTexto(topes.mes_texto)) {
+    return {
+      mes: `De ${topes.mes_texto}`, delMes: `(quedan ${numeroConComa(mediaHoraDelRotulo(topes.del_mes))})`,
+      acumuladas: `(tenés ${numeroConComa(mediaHoraDelRotulo(topes.acumuladas))})`
+    };
+  }
+  return { mes: esFechaDeTexto(desde) ? `De ${nombreDelMes(desde.slice(0, 7))}` : 'Del mes', delMes: '', acumuladas: '' };
+}
+
+// El rótulo de «De noviembre», con su tope al lado (`#ml-horas-del-mes-tope`), escapado
+function htmlDelRotuloDelMes(topes, desde) {
+  const rotulos = rotulosDeLasDos(topes, desde);
+  return `${esc(rotulos.mes)} <span class="me-opcional" id="ml-horas-del-mes-tope">${esc(rotulos.delMes)}</span>`;
 }
 
 // El cálculo del servidor (la `vista` de POST /licencias/calculo): los días hábiles (en los estudios, si es el máximo por
@@ -3156,7 +3283,7 @@ const pagina = {
   pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, bandaAnimada: false,
   anioDeLicencias: null, mesDeEventos: null, delMes: null, proximos: null,
   semana: { finde: false, elegido: null, foco: null, animado: false },
-  cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0, nota: 0 },
+  cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0, nota: 0, topes: 0 },
   modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null,
   segundoPaso: null, evento: null, eventoAjeno: null, personas: null, personasPublico: null, miNombre: null, pidiendoMiNombre: false,
   planilla: null, restitucion: null
@@ -3656,7 +3783,8 @@ function pintarHoras() {
 }
 
 // Un clic en la pestaña: «Cargar horas extras» (en contrato, la planilla), «Editar» de un día (en contrato, la planilla en ese día),
-// «Registrar un uso autorizado», un año del selector o un mes de la tabla (cambia el día por día sin pedir nada)
+// «Registrar un uso autorizado» (en contrato, «Usar horas acumuladas»), un año del selector o un mes de la tabla (cambia el día
+// por día sin pedir nada)
 async function alTocarHoras(evento) {
   const objetivo = evento.target;
   if (objetivo?.closest?.('[data-cargar="horas"]')) {
@@ -3679,6 +3807,12 @@ async function alTocarHoras(evento) {
   const uso = objetivo?.closest?.('[data-abrir="uso"]');
   if (uso) {
     abrirUso({ volverA: uso });
+    return;
+  }
+  // Contrato: «Usar horas acumuladas» abre «Cargar licencia» con «Horas a favor» (spec 2026-11-03-mi-espacio-horas-acumuladas, 10)
+  const acumuladas = objetivo?.closest?.('[data-usar-acumuladas]');
+  if (acumuladas) {
+    abrirLicencia({ tipo: 'horas_a_favor', volverA: acumuladas });
     return;
   }
   const anio = objetivo?.closest?.('[data-anio]');
@@ -4031,7 +4165,8 @@ const FORMULARIOS = Object.freeze({
   licencia: {
     modal: 'modal-licencia', prefijo: 'ml',
     campos: {
-      tipo: 'ml-tipos', desde: 'ml-desde', hasta: 'ml-hasta', horas: 'ml-horas', nota: 'ml-nota', autorizado_id: 'ml-autorizado'
+      tipo: 'ml-tipos', desde: 'ml-desde', hasta: 'ml-hasta', horas: 'ml-horas', horas_acumuladas: 'ml-horas-acumuladas',
+      nota: 'ml-nota', autorizado_id: 'ml-autorizado'
     }
   },
   uso: {
@@ -4086,6 +4221,7 @@ function conectarFormularios() {
     formulario.valores = { ...formulario.valores, grupo: restituidos ? comoTexto(evento.target.dataset?.grupo) : '' };
     if (restituidos || antes === 'restituidos') porId('ml-hasta').value = '';
     pintarCamposDelTipo();
+    pedirLosTopes(formulario);
     programarCalculo();
   });
   for (const id of ['ml-desde', 'ml-hasta', 'mu-fecha']) {
@@ -4096,8 +4232,26 @@ function conectarFormularios() {
   for (const tipo of ['input', 'change']) {
     porId('ml-desde').addEventListener(tipo, () => { if (pagina.formulario?.tipo === 'restituidos') porId('ml-hasta').value = ''; });
   }
+  // Unas horas a favor: los topes de los dos campos son los del mes de la fecha (spec 2026-11-03-mi-espacio-horas-acumuladas, 5)
+  for (const tipo of ['input', 'change']) {
+    porId('ml-desde').addEventListener(tipo, () => {
+      if (pagina.formulario?.tipo === 'horas_a_favor') pedirLosTopes(pagina.formulario, { esperar: true });
+    });
+  }
   for (const id of ['ml-horas', 'mu-horas']) {
     porId(id).addEventListener('change', () => {
+      pintarMostrar();
+      programarCalculo();
+    });
+  }
+  // Los dos campos de las horas a favor: un cambio limpia sus errores, acomoda el tope de las acumuladas y el total, y vuelve a pedir
+  // el cálculo
+  for (const id of ['ml-horas-del-mes', 'ml-horas-acumuladas']) {
+    porId(id).addEventListener('change', () => {
+      const formulario = pagina.formulario;
+      if (!conLasDosHoras(formulario)) return;
+      for (const campo of ['ml-horas-del-mes', 'ml-horas-acumuladas']) ponerError(campo, null);
+      pintarLasDosHoras(formulario);
       pintarMostrar();
       programarCalculo();
     });
@@ -4262,12 +4416,14 @@ function avisoDelModal(nombre, mensaje) {
 // «Otro»
 const controlesDe = (nombre) => [...new Set(Object.values(FORMULARIOS[nombre].campos)),
   ...(nombre === 'saldos' ? [...porId('ms-campos').querySelectorAll('[data-saldo]')].map((campo) => campo.id) : []),
-  ...(nombre === 'evento' ? ['ev-otro'] : [])];
+  ...(nombre === 'evento' ? ['ev-otro'] : []), ...(nombre === 'licencia' ? ['ml-horas-del-mes'] : [])];
 
 // El control de un campo de los errores (del navegador o del servidor): el de FORMULARIOS, salvo lo que ven los demás de un Público
-// con «Otro» elegido, que va a su campo; uno que no es del formulario, null
+// con «Otro» elegido, que va a su campo, y las horas de unas horas a favor con los dos campos, que van a «De noviembre» (spec
+// 2026-11-03-mi-espacio-horas-acumuladas, 5); uno que no es del formulario, null
 const controlDelCampo = (nombre, campo) => {
   if (nombre === 'evento' && campo === 'texto_publico' && pagina.evento?.valores?.otro === true) return 'ev-otro';
+  if (nombre === 'licencia' && campo === 'horas' && conLasDosHoras(pagina.formulario)) return 'ml-horas-del-mes';
   return deMapa(FORMULARIOS[nombre].campos, campo, null);
 };
 
@@ -4322,12 +4478,12 @@ function mostrarFallaDelServidor(nombre, falla, boton) {
 // «Registrar un uso autorizado», «Cargar licencia» o «Cargar horas extras» de una tarjeta, un botón de un grupo de días
 // restituidos (por su grupo: el del aviso, el de «Vence pronto» y el de la línea de la fila, que abren «Cargar licencia» o «Pedir la
 // restitución»), un botón de «Vence pronto» (por su tipo), «Word» y «Borrar el pedido» de un pedido de restitución (por su id), un
-// evento de la agenda (por su id) y, desde la agenda con más onda, el número de un día del mes y «Nuevo evento» del día elegido (por
-// su fecha: un «Nuevo evento» abierto desde ahí vuelve a él)
+// evento de la agenda (por su id), desde la agenda con más onda, el número de un día del mes y «Nuevo evento» del día elegido (por
+// su fecha: un «Nuevo evento» abierto desde ahí vuelve a él) y, desde las horas acumuladas, «Usar horas acumuladas» de contrato
 const VISTAS_QUE_SE_DIBUJAN = Object.freeze(['vista-resumen', 'vista-licencias', 'vista-horas', 'vista-agenda']);
 const IDENTIDADES_DEL_FOCO = Object.freeze(['data-editar-licencia', 'data-editar-horas', 'data-editar-salida', 'data-abrir',
   'data-cargar', 'data-grupo', 'data-tipo', 'data-word-restitucion', 'data-borrar-restitucion', 'data-evento', 'data-dia',
-  'data-nuevo-el']);
+  'data-nuevo-el', 'data-usar-acumuladas']);
 
 // El id del lugar de la pestaña donde está un control (el primer antepasado con id, antes de la pestaña: en la agenda, 'ag-mes' o
 // 'ag-proximos'), o null
@@ -4541,7 +4697,14 @@ async function abrirLicencia({ fila = null, tipo = null, grupo = null, volverA =
   // Una creada que ya empezó o que ya terminó: lo que se puede cambiar de sus fechas (lo controla el servidor; el desde no se
   // bloquea, así se puede volver a las fechas de Configuración). Lo escribe pintarCamposDelTipo, con la ayuda de unos días restituidos
   pagina.formulario.ayudaDeLasFechas = ayudaDeLasFechasDe(fila);
+  // Unas horas a favor que ya usan acumuladas abren con los dos campos, con lo de la fila (spec 2026-11-03-mi-espacio-horas-acumuladas,
+  // 5): la parte del mes es el total menos las acumuladas. Los topes, después
+  pagina.formulario.dosHoras = valores.tipo === 'horas_a_favor' && conTexto(valores.horas_acumuladas);
+  pintarLasDosHoras(pagina.formulario, {
+    delMes: String(horasElegidas(valores.horas) - horasElegidas(valores.horas_acumuladas)), acumuladas: valores.horas_acumuladas
+  });
   pintarCamposDelTipo();
+  pedirLosTopes(pagina.formulario);
   abrirModal('modal-licencia', { volverA, foco: () => controlDeFoco('ml-tipos'), alCerrar: cerrarFormulario });
   if (Object.keys(erroresDeLicencia(valores, { modalidad: modalidadActual() })).length === 0) programarCalculo();
 }
@@ -4575,7 +4738,10 @@ function iniciarFormulario(nombre, { fila, valores }) {
   cerrarFormulario();
   pagina.formulario = {
     nombre, fila, valores, tipo: valores.tipo, paso: null, pedido: 0, esperando: false, sinCalculo: false, temporizador: null,
-    guardando: false, pedidoSinAuditor: 0, firmante: null, autorizadoListo: false
+    guardando: false, pedidoSinAuditor: 0, firmante: null, autorizadoListo: false,
+    // Unas horas a favor (spec 2026-11-03-mi-espacio-horas-acumuladas, 5): los topes del servidor (o null), si se están pidiendo
+    // (mientras, el cálculo espera y los campos de las horas quedan deshabilitados) y si van los dos campos en lugar de «Horas»
+    topes: null, cargandoTopes: false, temporizadorDeTopes: null, dosHoras: false
   };
   limpiarErrores(nombre);
   porId(`${prefijo}-nota`).value = valores.nota;
@@ -4597,6 +4763,7 @@ function iniciarFormulario(nombre, { fila, valores }) {
 // Al cerrar el formulario, lo que esperaba se descarta
 function cerrarFormulario() {
   clearTimeout(pagina.formulario?.temporizador);
+  clearTimeout(pagina.formulario?.temporizadorDeTopes);
   pagina.formulario = null;
 }
 
@@ -4630,7 +4797,131 @@ function pintarCamposDelTipo() {
     porId('ml-horas').innerHTML = htmlDeOpcionesDeHoras(enHoras, elegidas);
     porId('ml-horas').value = elegidas;
   }
+  pintarLasDosHoras(formulario);
   pintarMostrar();
+}
+
+// ---- Las horas a favor con horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 5) ----
+
+// Si el formulario abierto es unas horas a favor con los dos campos, «De noviembre» y «Acumuladas», en lugar de «Horas»
+const conLasDosHoras = (formulario) => formulario?.nombre === 'licencia' && formulario.tipo === 'horas_a_favor'
+  && formulario.dosHoras === true;
+
+// Lo elegido en los campos de las horas de «Cargar licencia» (`{ delMes, acumuladas }`, como texto): con los dos, los suyos; si no, lo
+// de «Horas», todo del mes
+const horasDeLosCampos = (formulario) => (conLasDosHoras(formulario)
+  ? { delMes: porId('ml-horas-del-mes').value, acumuladas: porId('ml-horas-acumuladas').value }
+  : { delMes: porId('ml-horas').value, acumuladas: '0' });
+
+// Las horas del formulario, como texto: con los dos campos, el total; si no, las de «Horas»
+function horasDelCampo(formulario) {
+  if (!conLasDosHoras(formulario)) return porId(`${FORMULARIOS[formulario.nombre].prefijo}-horas`).value;
+  const { delMes, acumuladas } = horasDeLosCampos(formulario);
+  return String(horasElegidas(delMes) + horasElegidas(acumuladas));
+}
+
+// Las partes de unas horas a favor que se corrigen (`{ delMes, acumuladas }`, números: lo del mes es el total menos las acumuladas),
+// mientras la fecha siga en su mes y los topes sean de ese mes (si llegaron); si no (una nueva, otro tipo u otro mes), null: valen los
+// topes, como en una carga nueva
+function partesGuardadas(formulario) {
+  const { fila, valores } = formulario;
+  if (!esObjeto(fila) || fila.tipo !== 'horas_a_favor' || formulario.tipo !== 'horas_a_favor' || !esFechaDeTexto(fila.desde)) return null;
+  const mes = fila.desde.slice(0, 7);
+  const desde = porId('ml-desde').value;
+  if (!esFechaDeTexto(desde) || desde.slice(0, 7) !== mes) return null;
+  if (esObjeto(formulario.topes) && formulario.topes.mes !== mes) return null;
+  const acumuladas = horasElegidas(valores.horas_acumuladas);
+  return { delMes: Math.max(0, horasElegidas(valores.horas) - acumuladas), acumuladas };
+}
+
+// Los dos campos o «Horas» (su rótulo, el campo y su error): los dos, con los topes del servidor (lasDosHoras: lo elegido nunca pasa
+// de su tope), sus rótulos y el total; mientras llegan los topes, los campos de las horas, deshabilitados. `elegidas`, lo que va en
+// los dos campos (de entrada, lo que tienen)
+function pintarLasDosHoras(formulario, elegidas = horasDeLosCampos(formulario)) {
+  const dos = conLasDosHoras(formulario);
+  porId('ml-dos-horas').hidden = !dos;
+  porId('ml-horas-rotulo').hidden = dos;
+  porId('ml-horas').hidden = dos;
+  if (dos) ponerError('ml-horas', null);
+  const cargando = formulario.nombre === 'licencia' && formulario.cargandoTopes === true;
+  for (const id of ['ml-horas', 'ml-horas-del-mes', 'ml-horas-acumuladas']) porId(id).disabled = cargando;
+  if (!dos) return;
+  const { delMes, acumuladas } = lasDosHoras(formulario.topes, elegidas, partesGuardadas(formulario));
+  const desde = porId('ml-desde').value;
+  porId('ml-horas-del-mes-rotulo').innerHTML = htmlDelRotuloDelMes(formulario.topes, desde);
+  porId('ml-horas-acumuladas-tope').textContent = rotulosDeLasDos(formulario.topes, desde).acumuladas;
+  for (const [id, campo] of [['ml-horas-del-mes', delMes], ['ml-horas-acumuladas', acumuladas]]) {
+    porId(id).innerHTML = htmlDeOpcionesDeLasDos(campo.tope, String(campo.valor));
+    porId(id).value = String(campo.valor);
+  }
+  porId('ml-horas-total').textContent = textoDelTotalDeLasDos(delMes.valor, acumuladas.valor);
+}
+
+// Mientras se piden los topes: los campos de las horas, deshabilitados, y los rótulos con el mes de la fecha y sin topes (nunca uno
+// viejo); lo elegido queda
+function pintarLosTopesEnEspera(formulario) {
+  for (const id of ['ml-horas', 'ml-horas-del-mes', 'ml-horas-acumuladas']) porId(id).disabled = true;
+  if (!conLasDosHoras(formulario)) return;
+  const desde = porId('ml-desde').value;
+  porId('ml-horas-del-mes-rotulo').innerHTML = htmlDelRotuloDelMes(null, desde);
+  porId('ml-horas-acumuladas-tope').textContent = '';
+}
+
+// Los topes de unas horas a favor (GET /mi-espacio/horas-a-favor/topes, con la fecha elegida —sin una, los de hoy, que dice el
+// servidor— y, al corregir, el id de la carga, así sus horas vuelven a los topes): al abrir el formulario, al elegir el tipo y, con
+// `esperar`, 300 ms después del último cambio de la fecha. Cada pedido se numera (`pagina.pedidos.topes`): una respuesta vieja, o de
+// otro formulario, se descarta. Mientras, el cálculo y «Guardar» esperan. Al llegar: los dos campos si hay acumuladas (o la carga que
+// se corrige ya las usa); si no, o si no llegaron, «Horas», como siempre (el servidor valida igual). En otro tipo, nada que pedir
+function pedirLosTopes(formulario, { esperar = false } = {}) {
+  if (pagina.formulario !== formulario || formulario.nombre !== 'licencia') return;
+  clearTimeout(formulario.temporizadorDeTopes);
+  const pedido = ++pagina.pedidos.topes;
+  if (formulario.tipo !== 'horas_a_favor') {
+    formulario.cargandoTopes = false;
+    pintarLasDosHoras(formulario);
+    return;
+  }
+  formulario.cargandoTopes = true;
+  formulario.topes = null;
+  formulario.esperando = true;
+  porId('ml-guardar').disabled = true;
+  pintarLosTopesEnEspera(formulario);
+  if (esperar) formulario.temporizadorDeTopes = setTimeout(() => traerLosTopes(formulario, pedido), ESPERA_DEL_CALCULO);
+  else traerLosTopes(formulario, pedido);
+}
+
+async function traerLosTopes(formulario, pedido) {
+  const vigente = () => pagina.formulario === formulario && pedido === pagina.pedidos.topes;
+  if (!vigente()) return;
+  const desde = porId('ml-desde').value;
+  const id = formulario.fila?.id;
+  const consulta = [esFechaDeTexto(desde) ? `fecha=${encodeURIComponent(desde)}` : '',
+    Number.isInteger(id) ? `id=${encodeURIComponent(String(id))}` : ''].filter(conTexto).join('&');
+  let topes = null;
+  try {
+    const { data } = await API.pedirJson('GET', `/mi-espacio/horas-a-favor/topes${consulta ? `?${consulta}` : ''}`);
+    if (esObjeto(data) && conTexto(data.mes_texto)) topes = data;
+  } catch (error) {
+    if (!vigente()) return;
+    if (error?.status === 401) {
+      irAlLogin();
+      return;
+    }
+  }
+  if (!vigente()) return;
+  const elegidas = horasDeLosCampos(formulario);
+  const antes = conLasDosHoras(formulario);
+  formulario.topes = topes;
+  formulario.cargandoTopes = false;
+  formulario.dosHoras = (topes !== null && Number(topes.acumuladas) > 0) || conTexto(formulario.valores.horas_acumuladas);
+  // De los dos campos a «Horas»: el total
+  if (antes && !conLasDosHoras(formulario)) {
+    const total = horasElegidas(elegidas.delMes) + horasElegidas(elegidas.acumuladas);
+    porId('ml-horas').value = total > 0 ? String(total) : '';
+  }
+  pintarLasDosHoras(formulario, elegidas);
+  pintarMostrar();
+  programarCalculo();
 }
 
 // «Mostrar a mis compañeros»: solo para administración (los compañeros son administración) y solo en una licencia de día
@@ -4640,7 +4931,7 @@ function pintarMostrar() {
   const formulario = pagina.formulario;
   if (!formulario) return;
   const { prefijo } = FORMULARIOS[formulario.nombre];
-  const horas = porId(`${prefijo}-grupo-horas`).hidden ? '' : porId(`${prefijo}-horas`).value;
+  const horas = porId(`${prefijo}-grupo-horas`).hidden ? '' : horasDelCampo(formulario);
   porId(`${prefijo}-grupo-mostrar`).hidden = pagina.resumen?.persona?.ve_companeros !== true
     || !esDeDiaEntero(formulario.tipo, horas, modalidadActual());
 }
@@ -4654,7 +4945,10 @@ function valoresDelFormulario(formulario) {
   const leidos = {
     ...valores, tipo, desde,
     hasta: nombre === 'licencia' && !deUnDia(tipo) ? porId('ml-hasta').value : desde,
-    horas: grupoDeHoras.hidden ? '' : porId(`${prefijo}-horas`).value,
+    horas: grupoDeHoras.hidden ? '' : horasDelCampo(formulario),
+    // Con los dos campos, la parte acumulada; si no, '' (el cuerpo va sin ella: todo del mes)
+    horas_acumuladas: !grupoDeHoras.hidden && conLasDosHoras(formulario)
+      ? String(horasElegidas(porId('ml-horas-acumuladas').value)) : '',
     nota: porId(`${prefijo}-nota`).value
   };
   if (!porId(`${prefijo}-grupo-mostrar`).hidden) leidos.mostrar = porId(`${prefijo}-mostrar`).checked;
@@ -4689,13 +4983,14 @@ function calcularYa(formulario) {
 // nada que pedir. Una respuesta vieja (el formulario cambió o se cerró mientras) se descarta. Si no llega (un error del servidor
 // o sin conexión), el formulario lo dice y queda `sinCalculo`: sin él no se ve qué pasa con Configuración
 async function pedirCalculo(formulario) {
-  if (pagina.formulario !== formulario) return;
+  // Mientras llegan los topes de unas horas a favor, espera: al llegar, lo vuelven a pedir (con los campos de su mes)
+  if (pagina.formulario !== formulario || formulario.cargandoTopes) return;
   const pedido = ++formulario.pedido;
   const valores = valoresDelFormulario(formulario);
-  const { tipo, desde, hasta, horas } = erroresDeLicencia(valores, { modalidad: modalidadActual() });
+  const { tipo, desde, hasta, horas, horas_acumuladas: acumuladas } = erroresDeLicencia(valores, { modalidad: modalidadActual() });
   let data = null;
   let falla = null;
-  if (!tipo && !desde && !hasta && !horas) {
+  if (!tipo && !desde && !hasta && !horas && !acumuladas) {
     const cuerpo = cuerpoDeLicencia(valores, { tipos: pagina.resumen?.tipos });
     if (valores.id !== null) cuerpo.id = valores.id;
     try {
@@ -4732,7 +5027,7 @@ async function pintarCalculo(formulario, data, valores, falla = null) {
   limpiarErrores(nombre);
   if (falla !== null) avisoDelModal(nombre, textoSinCalculo(falla));
   if (esObjeto(data?.error) && conTexto(data.error.mensaje)) {
-    if (!ponerError(deMapa(FORMULARIOS[nombre].campos, data.error.campo, null), data.error.mensaje)) {
+    if (!ponerError(controlDelCampo(nombre, data.error.campo), data.error.mensaje)) {
       avisoDelModal(nombre, data.error.mensaje);
     }
   }

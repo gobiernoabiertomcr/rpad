@@ -39,9 +39,10 @@ const estadoVacio = (modalidad = null) => ({
 
 // Una licencia de Mi espacio, de la base a lo que leen las reglas
 const COLUMNAS_LICENCIA_MIA = `id, usuario_id, tipo, DATE_FORMAT(desde, '%Y-%m-%d') AS desde,
-  DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, horas, mostrar, nota, licencia_oficial_id, oficial, sin_pasar`;
+  DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta, horas, horas_acumuladas, mostrar, nota, licencia_oficial_id, oficial, sin_pasar`;
 const aLicencia = (fila) => ({
   id: Number(fila.id), tipo: fila.tipo, desde: fila.desde, hasta: fila.hasta, horas: numeroONulo(fila.horas),
+  horas_acumuladas: numeroONulo(fila.horas_acumuladas),
   mostrar: Number(fila.mostrar), nota: fila.nota ?? null, licencia_oficial_id: numeroONulo(fila.licencia_oficial_id),
   oficial: fila.oficial ?? null, sin_pasar: fila.sin_pasar ?? null
 });
@@ -69,8 +70,9 @@ export const personaDe = async (usuarioId, conexion = pool) => {
  * todas. La modalidad sale del vínculo (`modalidadDe`); de cada tabla, solo lo activo (salvo los días restituidos, abajo):
  * - `anios`: `[{ anio, dias_vacaciones, estudios }]`, por año;
  * - `saldos`: `[{ concepto, anio, cantidad }]`, por año y concepto;
- * - `licencias`: `[{ id, tipo, desde, hasta, horas, mostrar, nota, licencia_oficial_id, oficial, sin_pasar }]`, por fecha
- *   (`horas` es null en las que no son por horas);
+ * - `licencias`: `[{ id, tipo, desde, hasta, horas, horas_acumuladas, mostrar, nota, licencia_oficial_id, oficial, sin_pasar }]`,
+ *   por fecha (`horas` es null en las que no son por horas; `horas_acumuladas`, la parte de `horas` que sale de las horas
+ *   acumuladas de contrato, spec 2026-11-03-mi-espacio-horas-acumuladas, 6, es null si no se usó);
  * - `horasExtras`: `[{ id, fecha, desde, hasta, nota }]`, por fecha y horario;
  * - `salidas`: `[{ id, fecha, entrada, salida, nota, al_mes_anterior }]`, la planilla de contrato (spec
  *   2026-10-27-mi-espacio-horas, 6), por fecha (una por día); `entrada` es null si no se cargó, y `al_mes_anterior` es el

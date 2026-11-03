@@ -229,6 +229,76 @@ describe('notaDeLicencia: las horas a favor con días sumados al mes anterior', 
   });
 });
 
+// Las horas a favor con horas acumuladas de contrato (spec 2026-11-03-mi-espacio-horas-acumuladas, 9): `horas` es el total
+// del día y `horas_acumuladas`, la parte que sale de las acumuladas de meses anteriores. Con las dos, la nota dice el total y,
+// después de dos puntos, cada parte; solo con acumuladas, no nombra ningún mes. Inventado: una persona de contrato con horas a
+// favor en noviembre de 2026
+describe('notaDeLicencia: las horas a favor con horas acumuladas', () => {
+  const DEL_MES_Y_ACUMULADAS = Object.freeze({
+    tipo: 'horas_a_favor', desde: '2026-11-06', hasta: '2026-11-06', horas: 7, horas_acumuladas: 0.5
+  });
+  const conSalidas = (licencia, salidas) =>
+    notaDeLicencia(licencia, { fecha: '2026-11-03', persona: PERSONA, feriados: FERIADOS, salidas }).nota.cuerpo;
+
+  it('7 horas con 0,5 acumuladas: el total y, después de los dos puntos, la parte del mes y la acumulada', () => {
+    assert.equal(cuerpo(DEL_MES_Y_ACUMULADAS),
+      `${PIDO}el usufructo de siete (7) horas a favor el día viernes 6 de noviembre de 2026: seis horas y media (6,5) correspondientes a las horas extras realizadas en octubre de 2026 y media hora (0,5) de horas extras acumuladas de meses anteriores.`);
+  });
+
+  it('solo acumuladas (1,5 de 1,5): sin mes de las horas extras, con el día al final', () => {
+    assert.equal(cuerpo({ tipo: 'horas_a_favor', desde: '2026-11-09', hasta: '2026-11-09', horas: 1.5, horas_acumuladas: 1.5 }),
+      `${PIDO}el usufructo de una hora y media (1,5) de horas extras acumuladas de meses anteriores el día lunes 9 de noviembre de 2026.`);
+  });
+
+  it('con un día tildado «Sumar a octubre» (el lunes 02/11, 1 h): el paréntesis de hoy va después del mes de las horas', () => {
+    const salidas = [{ id: 1, fecha: '2026-11-02', entrada: null, salida: '16:00', nota: null, al_mes_anterior: true }];
+    assert.equal(conSalidas(DEL_MES_Y_ACUMULADAS, salidas),
+      `${PIDO}el usufructo de siete (7) horas a favor el día viernes 6 de noviembre de 2026: seis horas y media (6,5) correspondientes a las horas extras realizadas en octubre de 2026 (incluidas las del lunes 2 de noviembre de 2026, sumadas a octubre) y media hora (0,5) de horas extras acumuladas de meses anteriores.`);
+  });
+
+  it('solo acumuladas con un día tildado: no nombra ningún mes ni el paréntesis', () => {
+    const salidas = [{ id: 1, fecha: '2026-11-02', entrada: null, salida: '16:00', nota: null, al_mes_anterior: true }];
+    assert.equal(conSalidas({ ...DEL_MES_Y_ACUMULADAS, horas: 1.5, horas_acumuladas: 1.5 }, salidas),
+      `${PIDO}el usufructo de una hora y media (1,5) de horas extras acumuladas de meses anteriores el día viernes 6 de noviembre de 2026.`);
+  });
+
+  it('«correspondiente» concuerda con la parte del mes: 1 h del mes y 0,5 acumuladas', () => {
+    assert.equal(cuerpo({ ...DEL_MES_Y_ACUMULADAS, horas: 1.5, horas_acumuladas: 0.5 }),
+      `${PIDO}el usufructo de una hora y media (1,5) a favor el día viernes 6 de noviembre de 2026: una (1) hora correspondiente a las horas extras realizadas en octubre de 2026 y media hora (0,5) de horas extras acumuladas de meses anteriores.`);
+    // Con 2 h del mes, en plural, aunque el total sea más
+    assert.ok(cuerpo({ ...DEL_MES_Y_ACUMULADAS, horas: 3, horas_acumuladas: 1 })
+      .includes(': dos (2) horas correspondientes a las horas extras realizadas en octubre de 2026 y una (1) hora de horas extras acumuladas de meses anteriores.'));
+  });
+
+  it('el texto de un DECIMAL («0.5») sirve, y más acumuladas que el total cuentan como todas acumuladas', () => {
+    assert.equal(cuerpo({ ...DEL_MES_Y_ACUMULADAS, horas_acumuladas: '0.5' }), cuerpo(DEL_MES_Y_ACUMULADAS));
+    assert.equal(cuerpo({ ...DEL_MES_Y_ACUMULADAS, horas: 1.5, horas_acumuladas: 3 }),
+      `${PIDO}el usufructo de una hora y media (1,5) de horas extras acumuladas de meses anteriores el día viernes 6 de noviembre de 2026.`);
+  });
+
+  it('sin acumuladas (null, 0, sin la clave o lo que no es un número positivo): el texto de hoy', () => {
+    const deHoy = `${PIDO}el usufructo de siete (7) horas a favor el día viernes 6 de noviembre de 2026, correspondientes a las horas extras realizadas en octubre de 2026.`;
+    const { horas_acumuladas: _, ...sinLaClave } = DEL_MES_Y_ACUMULADAS;
+    assert.equal(cuerpo(sinLaClave), deHoy);
+    for (const valor of [null, 0, '', -0.5, 'x', true, NaN]) {
+      assert.equal(cuerpo({ ...DEL_MES_Y_ACUMULADAS, horas_acumuladas: valor }), deHoy, String(valor));
+    }
+  });
+
+  it('en otro tipo, `horas_acumuladas` no cuenta: la franquicia sigue con su texto', () => {
+    const franquicia = { tipo: 'franquicia', desde: '2026-11-04', hasta: '2026-11-04', horas: 3 };
+    assert.deepEqual(armar({ ...franquicia, horas_acumuladas: 1 }), armar(franquicia));
+  });
+
+  it('el nombre del archivo, la fecha y la firma no cambian', () => {
+    const { horas_acumuladas: _, ...sinAcumuladas } = DEL_MES_Y_ACUMULADAS;
+    const con = armar(DEL_MES_Y_ACUMULADAS).nota;
+    const sin = armar(sinAcumuladas).nota;
+    assert.deepEqual({ ...con, cuerpo: null }, { ...sin, cuerpo: null });
+    assert.equal(con.nombre, 'Nota de licencia - Horas a favor - 2026-11-06.docx');
+  });
+});
+
 describe('notaDeLicencia: los días hábiles', () => {
   it('«a partir del día» es el primer día hábil, no el desde', () => {
     // Del sábado 31/10 al viernes 6/11: del lunes 2 al viernes 6

@@ -275,6 +275,24 @@ describe('renderNotaDocx: los mismos renglones que la vista (htmlDeLaNota)', () 
     assert.ok(word.some((p) => p.texto === nota.cuerpo));
   });
 
+  // Spec 2026-11-03-mi-espacio-horas-acumuladas, 9. Inventado: unas horas a favor del viernes 06/11/2026 con 0,5 acumuladas
+  // (con el lunes 02/11 tildado «Sumar a octubre», 1 h) y unas del lunes 09/11/2026, todas acumuladas
+  for (const [caso, licencia, salidas, final] of [
+    ['del mes y acumuladas', { tipo: 'horas_a_favor', desde: '2026-11-06', hasta: '2026-11-06', horas: 7, horas_acumuladas: 0.5 },
+      [{ id: 1, fecha: '2026-11-02', entrada: null, salida: '16:00', nota: null, al_mes_anterior: true }],
+      'realizadas en octubre de 2026 (incluidas las del lunes 2 de noviembre de 2026, sumadas a octubre) y media hora (0,5) de horas extras acumuladas de meses anteriores.'],
+    ['solo acumuladas', { tipo: 'horas_a_favor', desde: '2026-11-09', hasta: '2026-11-09', horas: 1.5, horas_acumuladas: 1.5 },
+      [], 'de horas extras acumuladas de meses anteriores el día lunes 9 de noviembre de 2026.']
+  ]) {
+    it(`horas a favor con horas acumuladas (${caso}): igual en el Word y en la vista`, async () => {
+      const { nota } = notaDeLicencia(licencia, { fecha: '2026-11-03', persona: CONTRATADA, feriados: FERIADOS, salidas });
+      assert.ok(nota.cuerpo.endsWith(final), nota.cuerpo);
+      const word = parrafosDelWord((await wordDe(nota)).documento).map(sinXml);
+      assert.deepEqual(word, renglonesDeLaVista(htmlDeLaNota(nota)));
+      assert.ok(word.some((p) => p.texto === nota.cuerpo));
+    });
+  }
+
   for (const [tipo, licencia] of Object.entries(LICENCIAS)) {
     for (const [quien, persona] of Object.entries({ PLANTA, CONTRATADA, SIN_CARGO, SIN_VINCULO })) {
       it(`${tipo}, ${quien}: el mismo texto, en el mismo orden y con la misma diagramación`, async () => {

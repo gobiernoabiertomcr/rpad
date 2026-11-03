@@ -36,7 +36,7 @@ import {
   TIPOS_DE_UN_DIA, TIPOS_POR_HORAS, esDiaEntero, TEXTO_NO_SE_COPIA, SALIDA_DE_LA_JORNADA, TOLERANCIA_DIA_HABIL,
   TOLERANCIA_DIA_INHABIL, MAXIMO_DIAS_POR_GUARDADO, tipoDeDia, horasDeLaSalida, enDiasDeFranco, textoDeLaSumaDelMes, validarSalida,
   repartoDelMes, textoDeLoQueSeMueve, TIPOS_LICENCIA, TIPOS_CON_PERSONA_A_CARGO, dejaPersonaACargo, recuadroDeLaRestitucion,
-  mensajeDeLaRestitucionPedida, MENSAJE_RESTITUCION_BORRADA
+  mensajeDeLaRestitucionPedida, MENSAJE_RESTITUCION_BORRADA, topesDeHorasAFavor, validarLicencia
 } from '../services/miEspacioReglas.js';
 import { HOY, SIN_FERIADOS, PLANTA, CONTRATO, JULIETA, ASUETOS } from './fixtures/mi-espacio-casos.js';
 
@@ -473,7 +473,7 @@ describe('el Resumen «Titular»', () => {
     assert.deepEqual(mesesDe(M.htmlDeLosMeses(contrato.pastillas)), [
       ['vence', '1,5', 'Octubre', 'De 10,5, hasta el viernes 30/10'],
       ['pendiente', '4', 'Noviembre', 'Octubre sigue sumando'],
-      ['previo', '6,5', 'Horas de 2026', 'No utilizadas previamente']
+      ['previo', '6,5', 'Horas acumuladas', 'De meses anteriores']
     ]);
     // En el resto, después de los números
     assert.ok(M.htmlDelResto(planta).includes(`</ul>${html}`));
@@ -1016,12 +1016,33 @@ describe('las horas extras', () => {
     assert.ok(!conHtml.includes('<img') && conHtml.includes(`<small>${ESCAPADO}</small>`));
   });
 
-  it('contrato: «Horas no utilizadas previamente», con su total, cada fila y «Registrar un uso autorizado»', () => {
+  // Spec 2026-11-03-mi-espacio-horas-acumuladas, 10: el título y la nota del servidor, y «Usar horas acumuladas»
+  it('contrato: «Horas acumuladas», con su total, cada fila, la nota y «Usar horas acumuladas»', () => {
     const html = M.htmlDeNoUtilizadas(contrato);
-    assert.match(html, /<h3>Horas no utilizadas previamente<\/h3><span>6,5 horas en 2026<\/span>/);
+    assert.match(html, /<h3>Horas acumuladas<\/h3><span>6,5 horas<\/span>/);
     assert.deepEqual(filasDe(html).map(({ texto }) => texto), ['Del saldo inicial 6,5 horas']);
+    assert.ok(html.includes('<p class="me-nota">No vencen: quedan hasta que las uses.</p>'));
     assert.ok(html.includes(contrato.no_utilizadas.uso_autorizado.texto));
-    assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [atributos['data-abrir'], texto]), [['uso', 'Registrar un uso autorizado']]);
+    assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [atributos['data-usar-acumuladas'], atributos['data-abrir'], texto]),
+      [['horas_a_favor', undefined, 'Usar horas acumuladas']]);
+    assert.doesNotMatch(html, /data-abrir="uso"|Registrar un uso autorizado|no utilizad|Vuelven a cero/);
+    // Sin acumuladas: el texto y sin botón
+    const sinAcumuladas = M.htmlDeNoUtilizadas({ ...contrato, no_utilizadas: { ...contrato.no_utilizadas, total_texto: '0 horas',
+      filas: [], uso_autorizado: { puede: false, texto: 'No tenés horas acumuladas.' } } });
+    assert.ok(sinAcumuladas.includes('<p class="me-nota">No tenés horas acumuladas.</p>'));
+    assert.deepEqual(botonesDe(sinAcumuladas), []);
+    // El título, la nota y el texto del servidor, escapados
+    const conHtml = M.htmlDeNoUtilizadas({ ...contrato, no_utilizadas: { ...contrato.no_utilizadas, titulo: MALICIOSO, nota: MALICIOSO,
+      uso_autorizado: { puede: true, texto: MALICIOSO } } });
+    assert.ok(!conHtml.includes('<img'));
+    assert.equal(conHtml.split(ESCAPADO).length - 1, 3);
+    // Sin título ni nota (una respuesta de antes), los de antes
+    const deAntes = { ...contrato.no_utilizadas };
+    delete deAntes.titulo;
+    delete deAntes.nota;
+    const html2 = M.htmlDeNoUtilizadas({ ...contrato, no_utilizadas: deAntes });
+    assert.match(html2, /<h3>Horas no utilizadas previamente<\/h3>/);
+    assert.ok(html2.includes('<p class="me-nota">Quedan a la vista aunque su mes ya pasó. Vuelven a cero el 1/1.</p>'));
     // Con el mes de origen, debajo
     const conMes = { ...contrato, no_utilizadas: { ...contrato.no_utilizadas, filas: [{ titulo: 'Septiembre 2026', texto: '1,5 horas', detalle: 'de las extras de agosto' }] } };
     assert.deepEqual(filasDe(M.htmlDeNoUtilizadas(conMes)).map(({ texto }) => texto), ['Septiembre 2026 1,5 horas de las extras de agosto']);
@@ -3220,13 +3241,15 @@ describe('los formularios: lo puro', () => {
 
   it('valoresDeLicencia: los de una fila de la lista, o los de una nueva con su tipo', () => {
     const fila = { ...licenciasDe(PLANTA).licencias[0], nota: 'Viaje', en_configuracion: { licencia_id: 40, autorizado_id: 3 } };
-    // `grupo`, el de unos días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9): en los demás tipos, ''
+    // `grupo`, el de unos días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9): en los demás tipos, ''; y
+    // `horas_acumuladas`, la parte acumulada de unas horas a favor (spec 2026-11-03-mi-espacio-horas-acumuladas, 5): en los demás, ''
     assert.deepEqual(plano(M.valoresDeLicencia(fila)), {
-      id: 6, tipo: 'vacaciones', grupo: '', desde: '2026-11-03', hasta: '2026-11-09', horas: '', nota: 'Viaje', mostrar: true,
+      id: 6, tipo: 'vacaciones', grupo: '', desde: '2026-11-03', hasta: '2026-11-09', horas: '', horas_acumuladas: '', nota: 'Viaje',
+      mostrar: true,
       autorizado: '3', autorizado_inicial: '3', licencia_oficial: 40
     });
     assert.deepEqual(plano(M.valoresDeLicencia(null, 'franco')), {
-      id: null, tipo: 'franco', grupo: '', desde: '', hasta: '', horas: '', nota: '', mostrar: true, autorizado: '',
+      id: null, tipo: 'franco', grupo: '', desde: '', hasta: '', horas: '', horas_acumuladas: '', nota: '', mostrar: true, autorizado: '',
       autorizado_inicial: '', licencia_oficial: null
     });
     assert.equal(M.valoresDeLicencia(null).tipo, '');
@@ -5371,7 +5394,8 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.equal(pagina.el('ms-campo-medica-error').textContent, 'Escribí un número de 0 a 25.');
   });
 
-  it('«Registrar un uso autorizado» en contrato: con las horas, de a media hora', async () => {
+  // Spec 2026-11-03-mi-espacio-horas-acumuladas, 8 y 10: en contrato, la tarjeta abre «Cargar licencia» con «Horas a favor»
+  it('«Usar horas acumuladas» en contrato abre «Cargar licencia» con «Horas a favor»; al cerrar, el foco vuelve al botón', async () => {
     const pagina = montarPagina({
       hash: '#horas',
       responder: (metodo, ruta) => {
@@ -5381,7 +5405,33 @@ describe('los formularios en la página (DOM falso)', () => {
       }
     });
     await pagina.iniciar();
-    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-abrir="uso"]'));
+    assert.equal(pagina.el('vista-horas').querySelector('[data-abrir="uso"]'), null);
+    const boton = pagina.el('vista-horas').querySelector('[data-usar-acumuladas]');
+    assert.equal(boton.textContent, 'Usar horas acumuladas');
+    await pagina.tocar(boton);
+    assert.equal(pagina.abierto('modal-licencia'), true);
+    assert.equal(pagina.abierto('modal-uso'), false);
+    assert.equal(pagina.el('ml-tipos').querySelector('input:checked').getAttribute('value'), 'horas_a_favor');
+    await pagina.tocar(pagina.el('modal-licencia').querySelector('.modal-footer [data-cerrar]'));
+    assert.equal(pagina.abierto('modal-licencia'), false);
+    assert.equal(pagina.documento.activeElement, boton);
+    // Después de guardar, la recarga lo reemplaza: el foco va a su equivalente
+    assert.ok(M.IDENTIDADES_DEL_FOCO.includes('data-usar-acumuladas'));
+  });
+
+  it('«Registrar un uso autorizado» de contrato (uno que ya estaba): con las horas, de a media hora', async () => {
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: (metodo, ruta) => {
+        if (ruta === '/api/mi-espacio/resumen') return ok(resumenDel(CONTRATO));
+        if (ruta === '/api/mi-espacio/horas-extras') return ok(horasDe(CONTRATO));
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await pagina.iniciar();
+    // La página ya no lo ofrece en contrato: lo abre el formulario de siempre (el «Editar» de un uso cargado lo abre así)
+    await pagina.contexto.abrirUso();
+    await pagina.esperar();
     assert.equal(pagina.abierto('modal-uso'), true);
     assert.equal(pagina.el('mu-grupo-horas').hidden, false);
     assert.equal(pagina.el('mu-horas').innerHTML, M.htmlDeOpcionesDeHoras('medias', ''));
@@ -11325,7 +11375,8 @@ describe('los días restituidos: «Cargar licencia»', () => {
   it('valoresDeLicencia suma el grupo: el elegido en una nueva de días restituidos y, de una fila, su grupo cargado', () => {
     assert.equal(M.valoresDeLicencia(null, 'restituidos', '1-2024-0').grupo, '1-2024-0');
     assert.deepEqual(plano(M.valoresDeLicencia(null, 'restituidos', '1-2024-0')), {
-      id: null, tipo: 'restituidos', grupo: '1-2024-0', desde: '', hasta: '', horas: '', nota: '', mostrar: true, autorizado: '',
+      id: null, tipo: 'restituidos', grupo: '1-2024-0', desde: '', hasta: '', horas: '', horas_acumuladas: '', nota: '', mostrar: true,
+      autorizado: '',
       autorizado_inicial: '', licencia_oficial: null
     });
     const fila = filaDeJulieta(CARGADOS, ABRIL_JULIETA, 2);
@@ -12303,5 +12354,516 @@ describe('mi-espacio.html: los estilos de los días restituidos', () => {
     assert.ok(contraste(token('--sg-suave'), '#FFFFFF') >= 4.5);
     assert.ok(contraste(token('--sg-ambar'), '#FFFFFF') >= 4.5);
     assert.ok(contraste(token('--sg-borde-control'), token('--sg-sutil')) >= 3);
+  });
+});
+
+// =====================================================================================================================================
+// Las horas acumuladas en «Cargar licencia» → «Horas a favor» (spec 2026-11-03-mi-espacio-horas-acumuladas, 5; la opción B de la
+// maqueta): con horas acumuladas, dos campos, «De {mes}» y «Acumuladas», con los topes de GET /mi-espacio/horas-a-favor/topes y el
+// total debajo. La persona de contrato inventada de CONTRATO (6,5 horas acumuladas del saldo inicial; noviembre, 4 h a favor), como
+// admin, así ve «Mostrar a mis compañeros»
+// =====================================================================================================================================
+
+const RUTA_DE_LOS_TOPES = '/api/mi-espacio/horas-a-favor/topes';
+const CONTRATO_ADMIN = Object.freeze({ ...CONTRATO, persona: { ...CONTRATO.persona, rol: 'admin' } });
+// CONTRATO sin horas acumuladas (sin el saldo inicial de las no utilizadas)
+const SIN_ACUMULADAS = Object.freeze({
+  ...CONTRATO.estado,
+  saldos: CONTRATO.estado.saldos.map((saldo) => (saldo.concepto === 'horas_no_utilizadas' ? { ...saldo, cantidad: 0 } : saldo))
+});
+// Una carga de noviembre de 7 h, 3 de ellas acumuladas
+const CON_UNA_COMBINADA = Object.freeze({
+  ...CONTRATO.estado,
+  licencias: [...CONTRATO.estado.licencias,
+    { id: 9, tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', horas: 7, horas_acumuladas: 3 }]
+});
+// Los topes como los arma el servidor (verTopesDeHorasAFavor): sin `fecha`, hoy; `id`, el de la carga que se corrige
+const topesDel = (estado, ruta) => {
+  const parametros = new URLSearchParams(ruta.split('?')[1] ?? '');
+  const id = parametros.get('id');
+  return comoLlega(topesDeHorasAFavor(estado, parametros.get('fecha') ?? HOY,
+    { hoy: HOY, feriados: SIN_FERIADOS, editadaId: id === null ? null : Number(id) }));
+};
+// El servidor falso de la persona de contrato: el Resumen, la lista, los topes y el cálculo (de evaluarLicencia, con su estado);
+// `extra` gana
+const conLasAcumuladas = ({ estado = CONTRATO.estado, extra = () => undefined } = {}) => (metodo, ruta, cuerpo) => {
+  const propia = extra(metodo, ruta, cuerpo);
+  if (propia !== undefined) return propia;
+  if (ruta === '/api/mi-espacio/resumen') return ok(resumenDel(CONTRATO_ADMIN, { estado }));
+  if (ruta === '/api/mi-espacio/licencias') return ok(licenciasDe(CONTRATO_ADMIN, { estado }));
+  if (metodo === 'GET' && ruta.split('?')[0] === RUTA_DE_LOS_TOPES) return ok(topesDel(estado, ruta));
+  if (metodo === 'POST' && ruta === '/api/mi-espacio/licencias/calculo') {
+    const { id, ...entrada } = cuerpo;
+    return ok(respuestaDelCalculo(entrada, { estado, editadaId: id ?? null }));
+  }
+  if (ruta === '/api/mi-espacio/firmante') return ok({ soy_titular: false });
+  return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+};
+const topesPedidos = (pagina) => pagina.rutas().filter((ruta) => ruta.split('?')[0] === RUTA_DE_LOS_TOPES);
+// Las opciones de un select: [valor, texto]
+const opcionesDe = (select) => select.querySelectorAll('option').map((opcion) => [opcion.getAttribute('value'), opcion.textContent]);
+const hastaDe = (tope) => {
+  const lista = [];
+  for (let horas = 0; horas <= tope; horas += 0.5) lista.push([String(horas), String(horas).replace('.', ',')]);
+  return lista;
+};
+// Abre «Cargar licencia» con «Horas a favor» desde el encabezado, escribe la fecha (si va) y deja que lleguen los topes y el cálculo
+const abrirHorasAFavor = async (pagina, { desde } = {}) => {
+  await pagina.tocar(pagina.el('btn-cargar-licencia'));
+  await pagina.correr();
+  await pagina.elegir('ml-tipo', 'horas_a_favor');
+  await pagina.correr();
+  if (desde !== undefined) {
+    await pagina.escribir('ml-desde', desde);
+    await pagina.correr();
+    await pagina.correr();
+  }
+};
+
+describe('las horas acumuladas en «Cargar licencia»: lo puro', () => {
+  it('MENSAJES_FORMULARIOS.acumuladasMedias es el del servidor', () => {
+    assert.equal(M.MENSAJES_FORMULARIOS.acumuladasMedias, MENSAJES_MI_ESPACIO.acumuladasMedias);
+  });
+
+  it('erroresDeLicencia: la parte acumulada, con los bordes de validarLicencia (de a media hora, de 0 a las horas)', () => {
+    const contexto = { hoy: HOY, estado: CONTRATO.estado, feriados: SIN_FERIADOS };
+    const valores = ['', '0', '0.5', '3', '6.5', '7', '7.5', '0.25', '-0.5', 'x', ' ', 0, 0.5, 3, 7, 7.5, -0.5, null, undefined, true];
+    for (const horas of ['7', '3', '0.5', 7]) {
+      for (const acumuladas of valores) {
+        const entrada = { tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', horas, horas_acumuladas: acumuladas };
+        const { error } = validarLicencia(entrada, contexto);
+        const esperado = error?.campo === 'horas_acumuladas' ? { horas_acumuladas: error.mensaje } : {};
+        assert.deepEqual(plano(M.erroresDeLicencia(entrada, { modalidad: 'contrato' })), esperado, `${horas} ${String(acumuladas)}`);
+      }
+    }
+    assert.deepEqual(plano(M.erroresDeLicencia({ tipo: 'horas_a_favor', desde: '2026-11-10', horas: '3', horas_acumuladas: '3.5' },
+      { modalidad: 'contrato' })), { horas_acumuladas: MENSAJES_MI_ESPACIO.acumuladasMedias });
+    // Otro tipo no la mira
+    assert.deepEqual(plano(M.erroresDeLicencia({ tipo: 'franquicia', desde: '2026-11-10', horas: '3', horas_acumuladas: '9' },
+      { modalidad: 'planta' })), {});
+  });
+
+  it('valoresDeLicencia: las acumuladas de una fila de horas a favor, como texto; sin ellas o de otra fila, vacío', () => {
+    const fila = { id: 9, tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', horas: 7, horas_acumuladas: 0.5 };
+    assert.equal(M.valoresDeLicencia(fila).horas_acumuladas, '0.5');
+    assert.equal(M.valoresDeLicencia(fila).horas, '7');
+    assert.equal(M.valoresDeLicencia({ ...fila, horas_acumuladas: 0 }).horas_acumuladas, '');
+    assert.equal(M.valoresDeLicencia({ ...fila, horas_acumuladas: undefined }).horas_acumuladas, '');
+    assert.equal(M.valoresDeLicencia({ ...fila, tipo: 'franquicia', horas_acumuladas: 2 }).horas_acumuladas, '');
+    assert.equal(M.valoresDeLicencia(null, 'horas_a_favor').horas_acumuladas, '');
+  });
+
+  it('cuerpoDeLicencia: con las dos, las horas (el total) y las acumuladas, como números; con un solo campo, sin la clave', () => {
+    const base = { id: null, tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', nota: '', mostrar: true };
+    assert.deepEqual(plano(M.cuerpoDeLicencia({ ...base, horas: '7', horas_acumuladas: '0.5' })),
+      { tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', mostrar: true, nota: '', horas: 7, horas_acumuladas: 0.5 });
+    assert.equal(plano(M.cuerpoDeLicencia({ ...base, horas: '3', horas_acumuladas: '0' })).horas_acumuladas, 0);
+    assert.deepEqual(plano(M.cuerpoDeLicencia({ ...base, horas: '3', horas_acumuladas: '' })),
+      { tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', mostrar: true, nota: '', horas: 3 });
+    assert.ok(!Object.hasOwn(plano(M.cuerpoDeLicencia({ ...base, horas: '3' })), 'horas_acumuladas'));
+    // En otro tipo, nunca
+    assert.ok(!Object.hasOwn(plano(M.cuerpoDeLicencia({ ...base, tipo: 'franquicia', horas: '3', horas_acumuladas: '1' })),
+      'horas_acumuladas'));
+  });
+
+  it('htmlDeOpcionesDeLasDos: de 0 al tope, de a media hora, con la elegida; un tope raro, solo el 0', () => {
+    assert.equal(M.htmlDeOpcionesDeLasDos(1.5, '0.5'), '<option value="0">0</option><option value="0.5" selected>0,5</option>'
+      + '<option value="1">1</option><option value="1.5">1,5</option>');
+    assert.equal(M.htmlDeOpcionesDeLasDos(0, '0'), '<option value="0" selected>0</option>');
+    // Más que el día, hasta 7; un cuarto de hora, para abajo
+    assert.equal((M.htmlDeOpcionesDeLasDos(9, '').match(/<option/g) ?? []).length, 15);
+    assert.equal((M.htmlDeOpcionesDeLasDos(1.75, '').match(/<option/g) ?? []).length, 4);
+    for (const raro of [-1, NaN, null, undefined, 'x']) {
+      assert.equal(M.htmlDeOpcionesDeLasDos(raro, '0'), '<option value="0" selected>0</option>', String(raro));
+    }
+  });
+
+  it('textoDelTotalDeLasDos: «Total: 7 horas, el día entero.», «Total: 2 horas.», «Total: 1 hora.» o «Elegí cuántas horas tomás.»', () => {
+    assert.equal(M.textoDelTotalDeLasDos(6.5, 0.5), 'Total: 7 horas, el día entero.');
+    assert.equal(M.textoDelTotalDeLasDos(0, 2), 'Total: 2 horas.');
+    assert.equal(M.textoDelTotalDeLasDos(1, 0), 'Total: 1 hora.');
+    assert.equal(M.textoDelTotalDeLasDos(1, 0.5), 'Total: 1,5 horas.');
+    assert.equal(M.textoDelTotalDeLasDos(0, 0), 'Elegí cuántas horas tomás.');
+    assert.equal(M.textoDelTotalDeLasDos(NaN, null), 'Elegí cuántas horas tomás.');
+  });
+
+  it('lasDosHoras: los topes de cada campo y lo elegido, que nunca pasa de su tope', () => {
+    const topes = { mes: '2026-11', mes_texto: 'noviembre', del_mes: 4, acumuladas: 6.5, termino: false };
+    assert.deepEqual(plano(M.lasDosHoras(topes, { delMes: 4, acumuladas: 3 })),
+      { delMes: { tope: 4, valor: 4 }, acumuladas: { tope: 3, valor: 3 } });
+    // Las acumuladas, nunca más de 7 menos lo del mes: lo elegido baja
+    assert.deepEqual(plano(M.lasDosHoras(topes, { delMes: 2, acumuladas: 6.5 })),
+      { delMes: { tope: 4, valor: 2 }, acumuladas: { tope: 5, valor: 5 } });
+    assert.deepEqual(plano(M.lasDosHoras({ ...topes, del_mes: 9 }, { delMes: 9, acumuladas: 1 })),
+      { delMes: { tope: 7, valor: 7 }, acumuladas: { tope: 0, valor: 0 } });
+    // Con el mes terminado, las acumuladas menos lo del mes
+    assert.deepEqual(plano(M.lasDosHoras({ ...topes, del_mes: 2, acumuladas: 3, termino: true }, { delMes: 2, acumuladas: 3 })),
+      { delMes: { tope: 2, valor: 2 }, acumuladas: { tope: 1, valor: 1 } });
+    // Sin topes (no llegaron), el día entero
+    assert.deepEqual(plano(M.lasDosHoras(null, { delMes: 4, acumuladas: 3 })),
+      { delMes: { tope: 7, valor: 4 }, acumuladas: { tope: 3, valor: 3 } });
+    assert.deepEqual(plano(M.lasDosHoras(topes, {})), { delMes: { tope: 4, valor: 0 }, acumuladas: { tope: 6.5, valor: 0 } });
+    // Un tope negativo o raro, 0
+    assert.deepEqual(plano(M.lasDosHoras({ ...topes, del_mes: -1, acumuladas: 'x' }, { delMes: 1, acumuladas: 1 })),
+      { delMes: { tope: 0, valor: 0 }, acumuladas: { tope: 0, valor: 0 } });
+    // Revisión, 1: al corregir, cada tope es al menos la parte guardada de la carga, y el de las acumuladas sigue sin pasar de 7 menos
+    // lo del mes
+    const debajo = { ...topes, del_mes: 2, acumuladas: 1.5 };
+    assert.deepEqual(plano(M.lasDosHoras(debajo, { delMes: 4, acumuladas: 3 }, { delMes: 4, acumuladas: 3 })),
+      { delMes: { tope: 4, valor: 4 }, acumuladas: { tope: 3, valor: 3 } });
+    assert.deepEqual(plano(M.lasDosHoras(debajo, { delMes: 4, acumuladas: 3 })),
+      { delMes: { tope: 2, valor: 2 }, acumuladas: { tope: 1.5, valor: 1.5 } });
+    // Con los topes más altos, los topes
+    assert.deepEqual(plano(M.lasDosHoras(topes, { delMes: 1, acumuladas: 0 }, { delMes: 1, acumuladas: 0 })),
+      { delMes: { tope: 4, valor: 1 }, acumuladas: { tope: 6, valor: 0 } });
+    assert.deepEqual(plano(M.lasDosHoras({ ...debajo, del_mes: 6 }, { delMes: 6, acumuladas: 3 }, { delMes: 4, acumuladas: 3 })),
+      { delMes: { tope: 6, valor: 6 }, acumuladas: { tope: 1, valor: 1 } });
+  });
+
+  it('rotulosDeLasDos: «De noviembre» con «(quedan 4)» y «(tenés 6,5)»; sin topes, el mes de la fecha y sin topes', () => {
+    const topes = { mes: '2026-11', mes_texto: 'noviembre', del_mes: 4, acumuladas: 6.5, termino: false };
+    assert.deepEqual(plano(M.rotulosDeLasDos(topes, '2026-12-01')), { mes: 'De noviembre', delMes: '(quedan 4)', acumuladas: '(tenés 6,5)' });
+    assert.deepEqual(plano(M.rotulosDeLasDos(null, '2026-12-01')), { mes: 'De diciembre', delMes: '', acumuladas: '' });
+    assert.deepEqual(plano(M.rotulosDeLasDos(null, '')), { mes: 'Del mes', delMes: '', acumuladas: '' });
+    // Revisión final, 1: los rótulos dicen lo que queda, sin el tope de 7 de las opciones (la tarjeta dice «8 horas»: el campo no
+    // puede decir «tenés 7»); de a media hora, para abajo, y nunca negativo
+    assert.deepEqual(plano(M.rotulosDeLasDos({ ...topes, del_mes: 10.5, acumuladas: 8 }, '2026-12-01')),
+      { mes: 'De noviembre', delMes: '(quedan 10,5)', acumuladas: '(tenés 8)' });
+    assert.deepEqual(plano(M.rotulosDeLasDos({ ...topes, del_mes: 10.7, acumuladas: -2 }, '2026-12-01')),
+      { mes: 'De noviembre', delMes: '(quedan 10,5)', acumuladas: '(tenés 0)' });
+    // Las opciones, en cambio, siguen hasta 7
+    assert.deepEqual(plano(M.lasDosHoras({ ...topes, del_mes: 10.5, acumuladas: 8 }, { delMes: 0, acumuladas: 8 })),
+      { delMes: { tope: 7, valor: 0 }, acumuladas: { tope: 7, valor: 7 } });
+    assert.equal(M.htmlDelRotuloDelMes({ ...topes, mes_texto: MALICIOSO }, ''),
+      `De ${ESCAPADO} <span class="me-opcional" id="ml-horas-del-mes-tope">(quedan 4)</span>`);
+  });
+});
+
+describe('las horas acumuladas en «Cargar licencia» (DOM falso)', () => {
+  it('«Horas a favor» con acumuladas pide los topes y dibuja los dos campos con sus topes, sus rótulos y el total', async () => {
+    const pagina = montarPagina({ responder: conLasAcumuladas() });
+    await pagina.iniciar();
+    await abrirHorasAFavor(pagina);
+    // Sin fecha, los de hoy (los dice el servidor)
+    assert.deepEqual(topesPedidos(pagina), [RUTA_DE_LOS_TOPES]);
+    assert.equal(pagina.el('ml-dos-horas').hidden, false);
+    assert.equal(pagina.el('ml-horas-del-mes-rotulo').textContent, 'De octubre (quedan 1,5)');
+    assert.equal(pagina.el('ml-horas-acumuladas-rotulo').textContent, 'Acumuladas (tenés 6,5)');
+    assert.deepEqual(opcionesDe(pagina.el('ml-horas-del-mes')), hastaDe(1.5));
+    assert.deepEqual(opcionesDe(pagina.el('ml-horas-acumuladas')), hastaDe(6.5));
+    assert.equal(pagina.el('ml-horas-total').textContent, 'Elegí cuántas horas tomás.');
+    assert.equal(pagina.el('ml-horas-acumuladas-ayuda').textContent,
+      'Las horas acumuladas se usan con la autorización del Director General.');
+    // El campo «Horas» de siempre, su rótulo y su error, no se ven
+    assert.equal(pagina.el('ml-horas').hidden, true);
+    assert.equal(pagina.el('ml-horas-rotulo').hidden, true);
+    assert.equal(pagina.el('ml-horas-error').hidden, true);
+    // Con la fecha, los de su mes
+    await pagina.escribir('ml-desde', '2026-11-10');
+    assert.equal(pagina.el('ml-horas-del-mes').disabled, true, 'mientras llegan');
+    assert.equal(pagina.el('ml-horas-acumuladas').disabled, true);
+    await pagina.correr();
+    await pagina.correr();
+    assert.equal(topesPedidos(pagina).at(-1), `${RUTA_DE_LOS_TOPES}?fecha=2026-11-10`);
+    assert.equal(pagina.el('ml-horas-del-mes').disabled, false);
+    assert.equal(pagina.el('ml-horas-del-mes-rotulo').textContent, 'De noviembre (quedan 4)');
+    assert.deepEqual(opcionesDe(pagina.el('ml-horas-del-mes')), hastaDe(4));
+    // 4 del mes y 3 acumuladas: las acumuladas, hasta 7 menos lo del mes
+    await pagina.escribir('ml-horas-del-mes', '4', 'change');
+    assert.deepEqual(opcionesDe(pagina.el('ml-horas-acumuladas')), hastaDe(3));
+    await pagina.escribir('ml-horas-acumuladas', '3', 'change');
+    assert.equal(pagina.el('ml-horas-total').textContent, 'Total: 7 horas, el día entero.');
+    // El día entero: «Mostrar a mis compañeros»
+    assert.equal(pagina.el('ml-grupo-mostrar').hidden, false);
+    await pagina.correr();
+    assert.deepEqual(calculos(pagina).at(-1).cuerpo,
+      { tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', mostrar: true, nota: '', horas: 7, horas_acumuladas: 3 });
+    assert.equal(pagina.el('ml-calculo').hidden, false);
+    // Bajar lo del mes no deja las acumuladas por encima de su tope
+    await pagina.escribir('ml-horas-del-mes', '1', 'change');
+    assert.equal(pagina.el('ml-horas-total').textContent, 'Total: 4 horas.');
+    assert.equal(pagina.el('ml-grupo-mostrar').hidden, true);
+    await pagina.escribir('ml-horas-del-mes', '4', 'change');
+    await pagina.escribir('ml-horas-acumuladas', '1', 'change');
+    await pagina.escribir('ml-horas-del-mes', '2', 'change');
+    assert.equal(pagina.el('ml-horas-acumuladas').value, '1');
+    assert.equal(pagina.el('ml-horas-total').textContent, 'Total: 3 horas.');
+  });
+
+  it('«Usar horas acumuladas» de la tarjeta abre «Horas a favor» y, al abrir, ya pide los topes y muestra los dos campos', async () => {
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: conLasAcumuladas({ extra: (metodo, ruta) => (ruta === '/api/mi-espacio/horas-extras' ? ok(horasDe(CONTRATO)) : undefined) })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-usar-acumuladas]'));
+    assert.deepEqual(topesPedidos(pagina), [RUTA_DE_LOS_TOPES]);
+    assert.equal(pagina.el('ml-dos-horas').hidden, false);
+    assert.equal(pagina.el('ml-horas-acumuladas-rotulo').textContent, 'Acumuladas (tenés 6,5)');
+    assert.equal(pagina.el('ml-horas-del-mes').disabled, false);
+  });
+
+  it('cambiar la fecha a diciembre pide los topes de nuevo y cambia el rótulo; una respuesta vieja se descarta', async () => {
+    let soltar;
+    const demorada = new Promise((resolver) => { soltar = resolver; });
+    const responder = conLasAcumuladas();
+    const pagina = montarPagina({
+      responder: (metodo, ruta, cuerpo) => (ruta === `${RUTA_DE_LOS_TOPES}?fecha=2026-11-10`
+        ? demorada.then(() => responder(metodo, ruta, cuerpo)) : responder(metodo, ruta, cuerpo))
+    });
+    await pagina.iniciar();
+    await abrirHorasAFavor(pagina);
+    await pagina.escribir('ml-desde', '2026-11-10');
+    await pagina.correr();
+    await pagina.escribir('ml-desde', '2026-12-01');
+    // Mientras tanto, el mes de la fecha y sin topes viejos
+    assert.equal(pagina.el('ml-horas-del-mes-rotulo').textContent, 'De diciembre ');
+    await pagina.correr();
+    await pagina.correr();
+    assert.equal(pagina.el('ml-horas-del-mes-rotulo').textContent, 'De diciembre (quedan 0)');
+    assert.deepEqual(opcionesDe(pagina.el('ml-horas-del-mes')), hastaDe(0));
+    soltar();
+    await pagina.esperar();
+    await pagina.correr();
+    assert.equal(pagina.el('ml-horas-del-mes-rotulo').textContent, 'De diciembre (quedan 0)');
+    assert.equal(pagina.el('ml-horas-del-mes').disabled, false);
+    assert.deepEqual(topesPedidos(pagina).slice(-2), [`${RUTA_DE_LOS_TOPES}?fecha=2026-11-10`, `${RUTA_DE_LOS_TOPES}?fecha=2026-12-01`]);
+  });
+
+  it('sin acumuladas, el campo «Horas» de siempre; si los topes no llegan, también (el servidor valida igual)', async () => {
+    const falla = (metodo, ruta) => (ruta.startsWith(RUTA_DE_LOS_TOPES) ? respuesta(500, { success: false, error: 'x' }) : undefined);
+    for (const responder of [conLasAcumuladas({ estado: SIN_ACUMULADAS }), conLasAcumuladas({ extra: falla })]) {
+      const pagina = montarPagina({ responder });
+      await pagina.iniciar();
+      await abrirHorasAFavor(pagina, { desde: '2026-11-10' });
+      assert.equal(topesPedidos(pagina).length, 2);
+      assert.equal(pagina.el('ml-dos-horas').hidden, true);
+      assert.equal(pagina.el('ml-horas').hidden, false);
+      assert.equal(pagina.el('ml-horas-rotulo').hidden, false);
+      assert.equal(pagina.el('ml-horas').disabled, false);
+      await pagina.escribir('ml-horas', '3', 'change');
+      await pagina.correr();
+      assert.deepEqual(calculos(pagina).at(-1).cuerpo,
+        { tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', mostrar: true, nota: '', horas: 3 });
+      assert.deepEqual(pagina.estado.toasts, []);
+      assert.equal(pagina.el('ml-error').hidden, true);
+    }
+  });
+
+  it('antes del arranque, el campo «Horas» de siempre (el servidor no ofrece acumuladas); desde el arranque, los dos', async () => {
+    // CONTRATO arranca el 26/10/2026 con horas acumuladas en su saldo inicial: el viernes 23/10 es anterior
+    const pagina = montarPagina({ responder: conLasAcumuladas() });
+    await pagina.iniciar();
+    await abrirHorasAFavor(pagina, { desde: '2026-10-23' });
+    assert.equal(topesPedidos(pagina).at(-1), `${RUTA_DE_LOS_TOPES}?fecha=2026-10-23`);
+    assert.equal(topesDel(CONTRATO.estado, topesPedidos(pagina).at(-1)).acumuladas, 0);
+    assert.equal(pagina.el('ml-dos-horas').hidden, true);
+    assert.equal(pagina.el('ml-horas').hidden, false);
+    assert.equal(pagina.el('ml-horas').disabled, false);
+    await pagina.escribir('ml-desde', '2026-10-26');
+    await pagina.correr();
+    await pagina.correr();
+    assert.ok(topesDel(CONTRATO.estado, topesPedidos(pagina).at(-1)).acumuladas > 0);
+    assert.equal(pagina.el('ml-dos-horas').hidden, false);
+  });
+
+  it('con el mes terminado, las acumuladas ofrecen lo que queda menos lo del mes', async () => {
+    const pagina = montarPagina({
+      responder: conLasAcumuladas({
+        extra: (metodo, ruta) => (ruta.startsWith(RUTA_DE_LOS_TOPES)
+          ? ok({ mes: '2026-09', mes_texto: 'septiembre', del_mes: 2, acumuladas: 3, termino: true }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await abrirHorasAFavor(pagina, { desde: '2026-09-21' });
+    assert.equal(pagina.el('ml-horas-del-mes-rotulo').textContent, 'De septiembre (quedan 2)');
+    assert.equal(pagina.el('ml-horas-acumuladas-rotulo').textContent, 'Acumuladas (tenés 3)');
+    assert.deepEqual(opcionesDe(pagina.el('ml-horas-del-mes')), hastaDe(2));
+    assert.deepEqual(opcionesDe(pagina.el('ml-horas-acumuladas')), hastaDe(3));
+    await pagina.escribir('ml-horas-del-mes', '2', 'change');
+    assert.deepEqual(opcionesDe(pagina.el('ml-horas-acumuladas')), hastaDe(1));
+  });
+
+  it('un error del servidor en horas va debajo de «De noviembre», y en horas_acumuladas, debajo de «Acumuladas»; un cambio los limpia', async () => {
+    let contestar = respuesta(400, { success: false, error: 'En noviembre de 2026 te quedan 4 horas a favor.', campo: 'horas' });
+    const pagina = montarPagina({
+      responder: conLasAcumuladas({
+        extra: (metodo, ruta) => (metodo === 'POST' && ruta === '/api/mi-espacio/licencias' ? contestar : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await abrirHorasAFavor(pagina, { desde: '2026-11-10' });
+    await pagina.escribir('ml-horas-del-mes', '4', 'change');
+    await pagina.escribir('ml-horas-acumuladas', '1', 'change');
+    await pagina.correr();
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/licencias').at(-1).cuerpo,
+      { tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', mostrar: true, nota: '', horas: 5, horas_acumuladas: 1 });
+    assert.equal(pagina.el('ml-horas-del-mes').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('ml-horas-del-mes-error').textContent, 'En noviembre de 2026 te quedan 4 horas a favor.');
+    assert.equal(pagina.el('ml-horas-del-mes-error').hidden, false);
+    assert.equal(pagina.documento.activeElement, pagina.el('ml-horas-del-mes'));
+    assert.equal(pagina.el('ml-error').hidden, true);
+    // Un cambio lo limpia y vuelve a pedir el cálculo
+    const antes = calculos(pagina).length;
+    await pagina.escribir('ml-horas-del-mes', '3.5', 'change');
+    assert.equal(pagina.el('ml-horas-del-mes').getAttribute('aria-invalid'), null);
+    assert.equal(pagina.el('ml-horas-del-mes-error').hidden, true);
+    await pagina.correr();
+    assert.equal(calculos(pagina).length, antes + 1);
+    contestar = respuesta(400, { success: false, error: 'Te queda 1 hora acumulada.', campo: 'horas_acumuladas' });
+    await pagina.tocar(pagina.el('ml-guardar'));
+    assert.equal(pagina.el('ml-horas-acumuladas').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('ml-horas-acumuladas-error').textContent, 'Te queda 1 hora acumulada.');
+    assert.equal(pagina.el('ml-horas-acumuladas-error').hidden, false);
+    await pagina.escribir('ml-horas-acumuladas', '0.5', 'change');
+    assert.equal(pagina.el('ml-horas-acumuladas').getAttribute('aria-invalid'), null);
+    assert.equal(pagina.el('ml-horas-acumuladas-error').hidden, true);
+  });
+
+  it('un error del cálculo en horas_acumuladas va debajo de «Acumuladas»', async () => {
+    const pagina = montarPagina({
+      responder: conLasAcumuladas({
+        extra: (metodo, ruta) => (metodo === 'POST' && ruta.endsWith('/calculo')
+          ? ok({ error: { campo: 'horas_acumuladas', mensaje: 'Te quedan 6,5 horas acumuladas.' }, vista: null, paso: null })
+          : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await abrirHorasAFavor(pagina, { desde: '2026-11-10' });
+    await pagina.escribir('ml-horas-acumuladas', '2', 'change');
+    await pagina.correr();
+    assert.equal(pagina.el('ml-horas-acumuladas-error').textContent, 'Te quedan 6,5 horas acumuladas.');
+    assert.equal(pagina.el('ml-horas-acumuladas').getAttribute('aria-invalid'), 'true');
+    assert.equal(pagina.el('ml-error').hidden, true);
+  });
+
+  it('corregir una carga con acumuladas abre los dos campos con sus valores y los topes con su id', async () => {
+    let soltar;
+    const demorada = new Promise((resolver) => { soltar = resolver; });
+    const responder = conLasAcumuladas({ estado: CON_UNA_COMBINADA });
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: (metodo, ruta, cuerpo) => (ruta.startsWith(RUTA_DE_LOS_TOPES)
+        ? demorada.then(() => responder(metodo, ruta, cuerpo)) : responder(metodo, ruta, cuerpo))
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="9"]'));
+    // Antes de que lleguen los topes, ya con los dos campos (la carga usa acumuladas) y lo de la fila, deshabilitados; el cálculo
+    // y «Guardar» esperan
+    assert.equal(pagina.el('ml-dos-horas').hidden, false);
+    assert.equal(pagina.el('ml-horas-del-mes').disabled, true);
+    assert.equal(pagina.el('ml-horas-acumuladas').disabled, true);
+    assert.equal(pagina.el('ml-horas-del-mes').value, '4');
+    assert.equal(pagina.el('ml-horas-acumuladas').value, '3');
+    assert.equal(pagina.el('ml-horas-del-mes-rotulo').textContent, 'De noviembre ');
+    assert.equal(pagina.el('ml-guardar').disabled, true);
+    await pagina.correr();
+    assert.equal(calculos(pagina).length, 0);
+    soltar();
+    await pagina.esperar();
+    await pagina.correr();
+    await pagina.correr();
+    assert.equal(topesPedidos(pagina).at(-1), `${RUTA_DE_LOS_TOPES}?fecha=2026-11-10&id=9`);
+    assert.equal(pagina.el('ml-horas-del-mes-rotulo').textContent, 'De noviembre (quedan 4)');
+    assert.equal(pagina.el('ml-horas-acumuladas-rotulo').textContent, 'Acumuladas (tenés 6,5)');
+    assert.equal(pagina.el('ml-horas-del-mes').value, '4');
+    assert.equal(pagina.el('ml-horas-acumuladas').value, '3');
+    assert.equal(pagina.el('ml-horas-total').textContent, 'Total: 7 horas, el día entero.');
+    assert.equal(pagina.el('ml-horas-del-mes').disabled, false);
+    assert.deepEqual(calculos(pagina).at(-1).cuerpo, {
+      tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', mostrar: true, nota: '', horas: 7, horas_acumuladas: 3, id: 9
+    });
+  });
+
+  // Revisión, 1: un cambio posterior (una salida borrada, el saldo inicial más bajo) dejó los topes de la carga que se corrige debajo
+  // de lo que tenía. Abrir «Editar» no baja lo guardado: los campos lo conservan y, si solo cambia la nota, el cuerpo lleva lo mismo
+  for (const [cual, debajo] of [['del mes', { del_mes: 2, acumuladas: 6.5 }], ['de las acumuladas', { del_mes: 4, acumuladas: 1.5 }]]) {
+    it(`corregir una carga con los topes ${cual} debajo de lo guardado conserva lo guardado y lo manda igual`, async () => {
+      const pagina = montarPagina({
+        hash: '#licencias',
+        responder: conLasAcumuladas({
+          estado: CON_UNA_COMBINADA,
+          extra: (metodo, ruta) => {
+            if (ruta === `${RUTA_DE_LOS_TOPES}?fecha=2026-11-10&id=9`) {
+              return ok({ mes: '2026-11', mes_texto: 'noviembre', termino: false, ...debajo });
+            }
+            if (metodo === 'PUT' && ruta === '/api/mi-espacio/licencias/9') return ok({ id: 9 }, 'Licencia corregida.');
+            return undefined;
+          }
+        })
+      });
+      await pagina.iniciar();
+      await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="9"]'));
+      await pagina.correr();
+      await pagina.correr();
+      assert.equal(pagina.el('ml-horas-del-mes').value, '4');
+      assert.equal(pagina.el('ml-horas-acumuladas').value, '3');
+      assert.deepEqual(opcionesDe(pagina.el('ml-horas-del-mes')), hastaDe(Math.max(debajo.del_mes, 4)));
+      assert.deepEqual(opcionesDe(pagina.el('ml-horas-acumuladas')), hastaDe(3));
+      assert.equal(pagina.el('ml-horas-total').textContent, 'Total: 7 horas, el día entero.');
+      await pagina.escribir('ml-nota', 'Turno');
+      await pagina.correr();
+      await pagina.tocar(pagina.el('ml-guardar'));
+      assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/licencias/9').at(-1).cuerpo,
+        { tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', mostrar: true, nota: 'Turno', horas: 7, horas_acumuladas: 3 });
+    });
+  }
+
+  it('corregir una carga y pasar la fecha a otro mes: valen los topes de ese mes, como en una carga nueva', async () => {
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conLasAcumuladas({
+        estado: CON_UNA_COMBINADA,
+        extra: (metodo, ruta) => (ruta === `${RUTA_DE_LOS_TOPES}?fecha=2026-12-01&id=9`
+          ? ok({ mes: '2026-12', mes_texto: 'diciembre', del_mes: 0, acumuladas: 1.5, termino: false }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="9"]'));
+    await pagina.correr();
+    await pagina.correr();
+    await pagina.escribir('ml-desde', '2026-12-01');
+    await pagina.correr();
+    await pagina.correr();
+    assert.equal(pagina.el('ml-horas-del-mes-rotulo').textContent, 'De diciembre (quedan 0)');
+    assert.deepEqual(opcionesDe(pagina.el('ml-horas-del-mes')), hastaDe(0));
+    assert.deepEqual(opcionesDe(pagina.el('ml-horas-acumuladas')), hastaDe(1.5));
+    assert.equal(pagina.el('ml-horas-del-mes').value, '0');
+    assert.equal(pagina.el('ml-horas-acumuladas').value, '1.5');
+  });
+
+  it('al pasar a otro tipo, los dos campos se van y el cálculo no lleva las acumuladas', async () => {
+    const pagina = montarPagina({ responder: conLasAcumuladas() });
+    await pagina.iniciar();
+    await abrirHorasAFavor(pagina, { desde: '2026-11-10' });
+    assert.equal(pagina.el('ml-dos-horas').hidden, false);
+    await pagina.elegir('ml-tipo', 'medica');
+    assert.equal(pagina.el('ml-grupo-horas').hidden, true);
+    await pagina.escribir('ml-hasta', '2026-11-10');
+    await pagina.correr();
+    assert.equal(calculos(pagina).at(-1).cuerpo.tipo, 'medica');
+    assert.ok(!Object.hasOwn(calculos(pagina).at(-1).cuerpo, 'horas_acumuladas'));
+    // Y de vuelta, otra vez los topes
+    const antes = topesPedidos(pagina).length;
+    await pagina.elegir('ml-tipo', 'horas_a_favor');
+    await pagina.correr();
+    assert.equal(topesPedidos(pagina).length, antes + 1);
+    assert.equal(pagina.el('ml-dos-horas').hidden, false);
+  });
+});
+
+describe('mi-espacio.html: los dos campos de las horas a favor', () => {
+  const estilo = estiloDeLaPagina();
+  const token = (nombre) => new RegExp(`${nombre}: (#[0-9A-Fa-f]{6});`).exec(estilo)?.[1];
+
+  it('dos columnas; en el teléfono, una debajo de la otra; el total, con 4,5:1 o más, como los topes y la ayuda', () => {
+    assert.match(reglaDe('.me-dos-horas') ?? '', /grid-template-columns: 1fr 1fr;/);
+    const telefono = estilo.slice(estilo.indexOf('@media (max-width: 640px)'));
+    assert.match(telefono, /\.me-dos-horas \{ grid-template-columns: 1fr; \}/);
+    const color = /color: var\((--sg-[\w-]+)\);/.exec(reglaDe('.me-dos-horas-total') ?? '')?.[1];
+    assert.ok(color, '.me-dos-horas-total { color }');
+    assert.ok(contraste(token(color), '#FFFFFF') >= 4.5);
+    assert.ok(contraste(token('--sg-suave'), '#FFFFFF') >= 4.5, 'los topes y la ayuda');
   });
 });

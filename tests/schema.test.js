@@ -436,6 +436,8 @@ describe('database/schema.sql', () => {
       'mi_espacio_licencias.hasta date null=NO default=null key=',
       // Solo en la franquicia, las horas a favor y el uso autorizado
       'mi_espacio_licencias.horas decimal(3,1) null=YES default=NULL key=',
+      // La parte de horas que sale de las horas acumuladas de contrato (spec 2026-11-03-mi-espacio-horas-acumuladas, 6)
+      'mi_espacio_licencias.horas_acumuladas decimal(3,1) null=YES default=NULL key=',
       // «Mostrar a mis compañeros»
       'mi_espacio_licencias.mostrar tinyint(1) null=NO default=1 key=',
       'mi_espacio_licencias.nota varchar(200) null=YES default=NULL key=',
@@ -2039,6 +2041,7 @@ describe('migracion-mi-espacio.sql', () => {
   // mi_espacio_licencias. Su migración va después de esta, y su vuelta atrás, antes que la de esta: la base lo exige
   const MIGRACION_RESTITUCIONES = 'migracion-mi-espacio-restituciones.sql';
   const ROLLBACK_RESTITUCIONES = 'rollback-mi-espacio-restituciones.sql';
+  const MIGRACION_ACUMULADAS = 'migracion-mi-espacio-horas-acumuladas.sql';
   // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
   const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
   // Sin los comentarios: lo que de verdad se ejecuta
@@ -2115,8 +2118,9 @@ describe('migracion-mi-espacio.sql', () => {
     assert.ok(!anterior.some(esDeLasTablas), 'la base de partida ya tiene las tablas');
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION));
-    // Y lo que se le sumó después: el tipo 'restituidos' y las tablas de los días restituidos
+    // Y lo que se le sumó después: el tipo 'restituidos', las tablas de los días restituidos y las horas acumuladas
     await root.query(sql(MIGRACION_RESTITUCIONES));
+    await root.query(sql(MIGRACION_ACUMULADAS));
     assert.deepEqual(await columnas(root, BASE_MI_ESPACIO), await columnas(root, BASE_TEMPORAL));
     // Y también las claves foráneas, los índices, el motor y la colación, que las columnas no muestran
     assert.deepEqual(await clavesAjenasDe(root, BASE_MI_ESPACIO, TABLAS_MI_ESPACIO), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO));
@@ -2145,6 +2149,7 @@ describe('migracion-mi-espacio.sql', () => {
     // Las dos migraciones vuelven a dejar exactamente la estructura de schema.sql
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION_RESTITUCIONES));
+    await root.query(sql(MIGRACION_ACUMULADAS));
     assert.deepEqual(await columnas(root, BASE_MI_ESPACIO), await columnas(root, BASE_TEMPORAL));
     assert.deepEqual(await clavesAjenasDe(root, BASE_MI_ESPACIO, TABLAS_MI_ESPACIO), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO));
     assert.deepEqual(await indicesDe(root, BASE_MI_ESPACIO, TABLAS_MI_ESPACIO), await indicesDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO));
@@ -2783,6 +2788,154 @@ describe('migracion-mi-espacio-horas-mes-anterior.sql', () => {
     await root.query(sql(MIGRACION));
     await comoSchema();
     assert.deepEqual((await salidas()).map(f => [f.fecha, f.al_mes_anterior]), [['2027-02-02', 0], ['2027-02-03', 0]]);
+  });
+});
+
+// Las horas acumuladas de contrato (spec 2026-11-03-mi-espacio-horas-acumuladas, 6 y 15): la columna horas_acumuladas de
+// mi_espacio_licencias, la parte de horas que sale de las horas acumuladas. La migración y su vuelta atrás, sobre una base
+// descartable creada con schema.sql
+describe('migracion-mi-espacio-horas-acumuladas.sql', () => {
+  const BASE_ACUMULADAS = 'rpad_schema_mi_espacio_horas_acumuladas_test';
+  const MIGRACION = 'migracion-mi-espacio-horas-acumuladas.sql';
+  const ROLLBACK = 'rollback-mi-espacio-horas-acumuladas.sql';
+  const COLUMNA = 'mi_espacio_licencias.horas_acumuladas';
+  const TABLAS = ['mi_espacio_licencias'];
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const sentencias = (archivo) => codigo(archivo).split(';').map(s => s.trim()).filter(Boolean);
+  const enLaBase = (tabla) => `\`${BASE_ACUMULADAS}\`.\`${tabla}\``;
+  const esLoNuevo = (c) => c.startsWith(`${COLUMNA} `);
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main): sin la columna
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_ACUMULADAS}\``);
+    await root.query(`CREATE DATABASE \`${BASE_ACUMULADAS}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_ACUMULADAS}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) await root.query('ALTER TABLE mi_espacio_licencias DROP COLUMN horas_acumuladas');
+  };
+  // Una persona de contrato (inventada)
+  const cargarPersona = async () => {
+    const [{ insertId }] = await root.query(
+      `INSERT INTO ${enLaBase('usuarios')} (username, password_hash, nombre_completo, email, rol, vinculo) VALUES ('t_editor', 'x', 'Sofía Paz', 't_editor@rpad.test', 'editor', 'contrato')`);
+    return insertId;
+  };
+  // Dos cargas de horas a favor, como las escribe el código de antes (sin nombrar la columna)
+  const cargarLicenciasDeAntes = (usuario) => root.query(
+    `INSERT INTO ${enLaBase('mi_espacio_licencias')} (usuario_id, tipo, desde, hasta, horas) VALUES (?, 'horas_a_favor', '2027-02-02', '2027-02-02', 7.0), (?, 'horas_a_favor', '2027-02-03', '2027-02-03', 3.5)`,
+    [usuario, usuario]);
+  const licencias = async () => (await root.query(
+    `SELECT DATE_FORMAT(desde, '%Y-%m-%d') AS desde, horas, horas_acumuladas, activo
+     FROM ${enLaBase('mi_espacio_licencias')} ORDER BY desde`))[0].map(f => ({ ...f }));
+  // La misma estructura que schema.sql: las columnas, en su orden, y también las claves foráneas, los índices, el motor y la
+  // colación de la tabla, que las columnas no muestran
+  const comoSchema = async () => {
+    assert.deepEqual(await columnas(root, BASE_ACUMULADAS), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_ACUMULADAS, TABLAS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS));
+    assert.deepEqual(await indicesDe(root, BASE_ACUMULADAS, TABLAS), await indicesDe(root, BASE_TEMPORAL, TABLAS));
+    assert.deepEqual(await motoresDe(root, BASE_ACUMULADAS, TABLAS), await motoresDe(root, BASE_TEMPORAL, TABLAS));
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_ACUMULADAS}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega (nada de DROP, RENAME ni CHECK)', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+    // Los acentos de los comentarios llegan bien desde phpMyAdmin
+    assert.match(codigo(MIGRACION), /^SET NAMES utf8mb4;/);
+    assert.match(codigo(ROLLBACK), /^SET NAMES utf8mb4;/);
+    // Lo único que se ejecuta, además de SET NAMES: la columna, si todavía no está, después de horas
+    const lista = sentencias(MIGRACION);
+    assert.equal(lista.length, 2, lista.join('\n---\n'));
+    assert.match(lista[1],
+      /^ALTER TABLE `mi_espacio_licencias` ADD COLUMN IF NOT EXISTS `horas_acumuladas` decimal\(3,1\) DEFAULT NULL AFTER `horas`$/);
+  });
+
+  it('las cabeceras dicen la spec, el orden, que es obligatoria, que se puede repetir y cómo se deshace; el rollback, qué se pierde y qué va después', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-11-03-mi-espacio-horas-acumuladas-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    // El código anterior anda con la columna, y lo ya cargado queda en NULL
+    assert.match(cabecera(MIGRACION), /el código anterior sigue funcionando/);
+    assert.match(cabecera(MIGRACION), /queda en NULL/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código nuevo, después de migracion-mi-espacio-restituciones\.sql/);
+    assert.match(cabecera(MIGRACION), /Es obligatoria/);
+    assert.match(cabecera(MIGRACION), /estadosDe/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-mi-espacio-horas-acumuladas\.sql/);
+    assert.match(cabecera(MIGRACION), /SHOW COLUMNS FROM mi_espacio_licencias LIKE 'horas_acumuladas'/);
+    assert.match(cabecera(ROLLBACK), /migracion-mi-espacio-horas-acumuladas\.sql/);
+    assert.match(cabecera(ROLLBACK), /ORDEN: primero volver a subir los archivos anteriores y hacer Restart; después correr esto/);
+    // Lo que se pierde, dicho con su nombre: qué parte de cada día era acumulada
+    assert.match(cabecera(ROLLBACK), /se pierde qué parte de\s+(-- )?cada día era acumulada/);
+    assert.match(cabecera(ROLLBACK), /cuentan enteras contra su mes/);
+    // Y si también se deshacen los días restituidos, esto va antes
+    assert.match(cabecera(ROLLBACK), /rollback-mi-espacio-restituciones\.sql/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('el rollback solo saca la columna: no borra tablas ni toca las licencias, usuarios ni ninguna otra', () => {
+    const lista = sentencias(ROLLBACK);
+    assert.equal(lista.length, 2, lista.join('\n---\n'));
+    assert.match(lista[1], /^ALTER TABLE `mi_espacio_licencias` DROP COLUMN IF EXISTS `horas_acumuladas`$/);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DROP TABLE|DELETE|UPDATE|TRUNCATE|INSERT|RENAME)\b/i);
+  });
+
+  it('la columna está en schema.sql y en la base del .env, justo después de horas, una sola vez', async () => {
+    const esperada = `${COLUMNA} decimal(3,1) null=YES default=NULL key=`;
+    for (const base of [BASE_TEMPORAL, process.env.DB_NAME]) {
+      const deLaTabla = (await columnas(root, base)).filter(c => c.startsWith('mi_espacio_licencias.'));
+      assert.deepEqual(deLaTabla.filter(esLoNuevo), [esperada], `${base}\n${deLaTabla.join('\n')}`);
+      const posicion = (columna) => deLaTabla.findIndex(c => c.startsWith(`mi_espacio_licencias.${columna} `));
+      assert.equal(posicion('horas_acumuladas'), posicion('horas') + 1, `${base}\n${deLaTabla.join('\n')}`);
+    }
+  });
+
+  it('desde la estructura de main deja la de schema.sql, se puede repetir y lo ya cargado queda en NULL', async () => {
+    await crearBase({ conLoNuevo: false });
+    assert.ok(!(await columnas(root, BASE_ACUMULADAS)).some(esLoNuevo), 'la base de partida ya tiene la columna');
+    const usuario = await cargarPersona();
+    await cargarLicenciasDeAntes(usuario);
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.equal((await columnas(root, BASE_ACUMULADAS)).filter(esLoNuevo).length, 1);
+    // Lo que había, sin parte acumulada: todo cuenta contra su mes, como hasta ahora
+    assert.deepEqual(await licencias(), [
+      { desde: '2027-02-02', horas: '7.0', horas_acumuladas: null, activo: 1 },
+      { desde: '2027-02-03', horas: '3.5', horas_acumuladas: null, activo: 1 }
+    ]);
+    // Lo que escribe el código de antes con la columna puesta (sin nombrarla) también queda en NULL
+    await root.query(
+      `INSERT INTO ${enLaBase('mi_espacio_licencias')} (usuario_id, tipo, desde, hasta, horas) VALUES (?, 'horas_a_favor', '2027-02-04', '2027-02-04', 2.0)`,
+      [usuario]);
+    assert.equal((await licencias()).at(-1).horas_acumuladas, null);
+    // La columna guarda medias horas
+    await root.query(`UPDATE ${enLaBase('mi_espacio_licencias')} SET horas_acumuladas = 0.5 WHERE desde = '2027-02-02'`);
+    assert.equal((await licencias())[0].horas_acumuladas, '0.5');
+  });
+
+  it('el rollback se puede repetir, saca la columna sin borrar las licencias, y la migración la recupera con todo en NULL', async () => {
+    await crearBase({ conLoNuevo: true });
+    const usuario = await cargarPersona();
+    await root.query(
+      `INSERT INTO ${enLaBase('mi_espacio_licencias')} (usuario_id, tipo, desde, hasta, horas, horas_acumuladas) VALUES (?, 'horas_a_favor', '2027-02-02', '2027-02-02', 7.0, 0.5), (?, 'horas_a_favor', '2027-02-03', '2027-02-03', 3.5, NULL)`,
+      [usuario, usuario]);
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin la columna
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esLoNuevo(c));
+    assert.deepEqual(await columnas(root, BASE_ACUMULADAS), deMain);
+    const [quedan] = await root.query(
+      `SELECT DATE_FORMAT(desde, '%Y-%m-%d') AS desde, horas FROM ${enLaBase('mi_espacio_licencias')} ORDER BY desde`);
+    assert.deepEqual(quedan.map(f => ({ ...f })), [{ desde: '2027-02-02', horas: '7.0' }, { desde: '2027-02-03', horas: '3.5' }]);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql, con las dos sin parte acumulada
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.deepEqual((await licencias()).map(f => [f.desde, f.horas_acumuladas]), [['2027-02-02', null], ['2027-02-03', null]]);
   });
 });
 

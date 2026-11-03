@@ -492,6 +492,13 @@
         .me-modal-de { margin: 0 0 16px; color: var(--sg-texto); font-size: 0.92rem; }
         .me-opcional { font-weight: 400; color: var(--sg-suave); }
         .me-fila-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0 14px; }
+        /* Las horas a favor con horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 5; la opción B de la maqueta): en lugar
+           del campo «Horas», «De noviembre» y «Acumuladas» en la misma fila (en el teléfono, una debajo de la otra), con sus topes al
+           lado del rótulo y, debajo, el total en negrita y la ayuda de la autorización */
+        .me-dos-horas { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+        .me-dos-horas .form-group { margin-bottom: 6px; min-width: 0; }
+        .me-dos-horas-total { grid-column: 1 / -1; margin: 2px 0 0; font-weight: 700; color: var(--sg-tinta); }
+        .me-dos-horas .form-hint { grid-column: 1 / -1; margin: 2px 0 0; }
         .me-grupo { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
         .me-grupo legend { padding: 0; margin-bottom: 8px; }
         .me-grupo .form-hint { margin: 8px 0 0; }
@@ -822,6 +829,7 @@
            un poco más chicos */
         @media (max-width: 640px) {
             .me-tarjeta { padding: 16px; }
+            .me-dos-horas { grid-template-columns: 1fr; }
             .me-banda-del-mes { border-radius: 22px 22px 0 0; }
             .me-banda-del-mes-cuerpo { padding: 20px 16px 12px; }
             .me-titulo-del-mes h2 { font-size: 1.85rem; margin-right: auto; }
@@ -1110,9 +1118,23 @@
                         <p class="form-error" id="ml-hasta-error" hidden></p>
                     </div>
                     <div class="form-group" id="ml-grupo-horas" hidden>
-                        <label class="form-label" for="ml-horas">Horas</label>
+                        <label class="form-label" for="ml-horas" id="ml-horas-rotulo">Horas</label>
                         <select class="form-select" id="ml-horas" aria-describedby="ml-horas-error"></select>
                         <p class="form-error" id="ml-horas-error" hidden></p>
+                        <div class="me-dos-horas" id="ml-dos-horas" hidden>
+                            <div class="form-group">
+                                <label class="form-label" for="ml-horas-del-mes" id="ml-horas-del-mes-rotulo">Del mes <span class="me-opcional" id="ml-horas-del-mes-tope"></span></label>
+                                <select class="form-select" id="ml-horas-del-mes" aria-describedby="ml-horas-total ml-horas-del-mes-error"></select>
+                                <p class="form-error" id="ml-horas-del-mes-error" hidden></p>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="ml-horas-acumuladas" id="ml-horas-acumuladas-rotulo">Acumuladas <span class="me-opcional" id="ml-horas-acumuladas-tope"></span></label>
+                                <select class="form-select" id="ml-horas-acumuladas" aria-describedby="ml-horas-total ml-horas-acumuladas-ayuda ml-horas-acumuladas-error"></select>
+                                <p class="form-error" id="ml-horas-acumuladas-error" hidden></p>
+                            </div>
+                            <p class="me-dos-horas-total" id="ml-horas-total"></p>
+                            <p class="form-hint" id="ml-horas-acumuladas-ayuda">Las horas acumuladas se usan con la autorización del Director General.</p>
+                        </div>
                     </div>
                 </div>
                 <p class="form-hint me-modal-de" id="ml-fechas-ayuda" hidden></p>
@@ -1512,6 +1534,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/mi-espacio.js?v=20261220"></script>
+    <script src="js/mi-espacio.js?v=20261221"></script>
 </body>
 </html>

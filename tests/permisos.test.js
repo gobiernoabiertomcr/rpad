@@ -143,7 +143,8 @@ describe('lector', () => {
     '/gestion/metricas', '/gestion/proyectos', '/gestion/timeline', '/seguimiento', '/metricas', '/metricas/pdf', '/reportes/ciclo-de-vida',
     '/feriados', '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial',
     '/mi-espacio/anio/2026', '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/firmante',
-    '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/salidas', '/mi-espacio/personas/publico']) {
+    '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/salidas', '/mi-espacio/personas/publico',
+    '/mi-espacio/horas-a-favor/topes']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.lector.token });
       assert.equal(res.status, 200);
@@ -249,6 +250,8 @@ const RUTAS_MI_ESPACIO = [
   // La planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, sección 8)
   ['GET', '/mi-espacio/salidas'],
   ['PUT', '/mi-espacio/salidas'],
+  // Los topes de «De <mes>» y «Acumuladas» de unas horas a favor de contrato (spec 2026-11-03-mi-espacio-horas-acumuladas, 7)
+  ['GET', '/mi-espacio/horas-a-favor/topes'],
   ['PUT', '/mi-espacio/anio/2026'],
   ['PUT', '/mi-espacio/saldo-inicial'],
   ['GET', '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27'],
@@ -295,7 +298,8 @@ describe('colaborador', () => {
     '/reportes/agenda', '/reportes/para-completar', '/gestion/proyectos', '/gestion/timeline', '/reportes/ciclo-de-vida', '/feriados',
     '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial', '/mi-espacio/anio/2026',
     '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/firmante',
-    '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/salidas', '/mi-espacio/personas/publico']) {
+    '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/salidas', '/mi-espacio/personas/publico',
+    '/mi-espacio/horas-a-favor/topes']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.colaborador.token });
       assert.equal(res.status, 200);

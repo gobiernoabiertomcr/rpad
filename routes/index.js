@@ -65,7 +65,8 @@ import {
   verResumen, listarLicenciasMias, listarHorasExtras, verAnio, verSaldoInicial, calcularLicencia, cargarLicenciaMia,
   corregirLicenciaMia, borrarLicenciaMia, verNotaDeLicencia, bajarWordDeLicencia, cargarHorasExtras, corregirHorasExtras,
   borrarHorasExtras, verPlanilla, guardarSalidas, guardarAnio, guardarSaldoInicial, listarAusentes, verFirmante,
-  verVistaDeRestitucion, pedirRestitucion, borrarRestitucion, verNotaDeRestitucion, bajarWordDeRestitucion
+  verVistaDeRestitucion, pedirRestitucion, borrarRestitucion, verNotaDeRestitucion, bajarWordDeRestitucion,
+  verTopesDeHorasAFavor
 } from '../controllers/miEspacioController.js';
 import {
   listarEventos, verAvisoDelEvento, listarPersonasParaCompartir, listarPersonasParaElPublico, crearEvento, cambiarEvento,
@@ -202,6 +203,9 @@ router.post('/mi-espacio/licencias/calculo', authMiddleware, calcularLicencia);
 router.post('/mi-espacio/licencias', authMiddleware, cargarLicenciaMia);
 router.put('/mi-espacio/licencias/:id', authMiddleware, corregirLicenciaMia);
 router.delete('/mi-espacio/licencias/:id', authMiddleware, borrarLicenciaMia);
+// Los topes de «De <mes>» y «Acumuladas» de unas horas a favor de contrato en una fecha (spec
+// 2026-11-03-mi-espacio-horas-acumuladas, 7)
+router.get('/mi-espacio/horas-a-favor/topes', authMiddleware, verTopesDeHorasAFavor);
 // La nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word, sección 5): la vista del segundo paso y el Word
 router.get('/mi-espacio/licencias/:id/nota', authMiddleware, verNotaDeLicencia);
 router.get('/mi-espacio/licencias/:id/word', authMiddleware, bajarWordDeLicencia);

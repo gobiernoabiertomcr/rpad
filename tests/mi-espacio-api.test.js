@@ -21,9 +21,11 @@ import {
   textoSinNoUtilizadas, textoAutorizadaDelFirmante, AVISO_DEL_PASO, AVISO_DEL_PASO_SUPERADMIN, AVISO_NOTAS_DE_HOY,
   AVISO_SIN_PERSONA_A_CARGO, textoSuperpuestaConConfiguracion, textoNoPaso, textoYaNoCubierta, textoEnConfiguracion,
   textoUnida, textoSigueEnConfiguracion, TEXTO_TAMBIEN_EN_CONFIGURACION, TEXTO_NO_SE_COPIA,
-  TEXTO_ANULADA_EN_CONFIGURACION, TEXTO_NO_DIA_ENTERO, textoRevisalaEnConfiguracion, textoDesdeDeLosRestituidos
+  TEXTO_ANULADA_EN_CONFIGURACION, TEXTO_NO_DIA_ENTERO, textoRevisalaEnConfiguracion, textoDesdeDeLosRestituidos,
+  textoSinHorasAFavor, textoQuedanAcumuladas, nombreDelMes
 } from '../services/miEspacioReglas.js';
 import { MENSAJES_NOTA } from '../services/miEspacioNota.js';
+import { diaDeLaSemana } from '../services/feriadosReglas.js';
 
 let base, servidor, api, usuarios, dbReal, emailSoloA, datos, pool, firmas, controlador;
 const hoy = hoyArgentina();
@@ -110,11 +112,13 @@ const conSaldo = (clave, concepto, anio, cantidad) => query(
   'INSERT INTO mi_espacio_saldos (usuario_id, concepto, anio, cantidad) VALUES (?, ?, ?, ?)',
   [usuarios[clave].id, concepto, anio, cantidad]
 );
-const conLicencia = async (clave, { tipo, desde, hasta = desde, horas = null, nota = null, activo = 1, mostrar = 1 }) =>
+// `horas_acumuladas`: la parte de `horas` que sale de las horas acumuladas de contrato (spec
+// 2026-11-03-mi-espacio-horas-acumuladas, 6); sin ella, NULL
+const conLicencia = async (clave, { tipo, desde, hasta = desde, horas = null, horas_acumuladas = null, nota = null, activo = 1, mostrar = 1 }) =>
   (await query(
-    `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, horas, nota, activo, mostrar)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [usuarios[clave].id, tipo, desde, hasta, horas, nota, activo, mostrar]
+    `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, horas, horas_acumuladas, nota, activo, mostrar)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [usuarios[clave].id, tipo, desde, hasta, horas, horas_acumuladas, nota, activo, mostrar]
   )).insertId;
 const conHorasExtras = async (clave, { fecha, desde, hasta, nota = null, activo = 1 }) => (await query(
   'INSERT INTO mi_espacio_horas_extras (usuario_id, fecha, desde, hasta, nota, activo) VALUES (?, ?, ?, ?, ?, ?)',
@@ -2697,8 +2701,8 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
     await conSalida('adminB', { fecha: q(0), salida: '16:00:00' });
 
     const estado = await datos.estadoDe(usuarios.adminA.id);
-    const licencia = (id, tipo, desde, hasta, horas, nota = null) => ({
-      id, tipo, desde, hasta, horas, mostrar: 1, nota, licencia_oficial_id: null, oficial: null, sin_pasar: null
+    const licencia = (id, tipo, desde, hasta, horas, nota = null, horas_acumuladas = null) => ({
+      id, tipo, desde, hasta, horas, horas_acumuladas, mostrar: 1, nota, licencia_oficial_id: null, oficial: null, sin_pasar: null
     });
     assert.deepEqual(estado, {
       modalidad: 'planta',
@@ -2714,6 +2718,19 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
       restituibles: [],
       restituciones: []
     });
+  });
+
+  it('estadoDe: las horas acumuladas de una carga de horas a favor llegan como número (0,5); las demás, null', async () => {
+    await conArranque('adminB', hoy);
+    const conAcumuladas = await conLicencia('adminB', { tipo: 'horas_a_favor', desde: q(1), horas: '7.0', horas_acumuladas: '0.5' });
+    const sinAcumuladas = await conLicencia('adminB', { tipo: 'horas_a_favor', desde: q(2), horas: '3.0' });
+    const estado = await datos.estadoDe(usuarios.adminB.id);
+    assert.deepEqual(estado.licencias.map(fila => [fila.id, fila.horas, fila.horas_acumuladas]),
+      [[conAcumuladas, 7, 0.5], [sinAcumuladas, 3, null]]);
+    assert.strictEqual(typeof estado.licencias[0].horas_acumuladas, 'number');
+    // Y por lote, igual
+    const lote = await datos.estadosDe([usuarios.adminB.id]);
+    assert.deepEqual(lote.get(usuarios.adminB.id).licencias.map(fila => fila.horas_acumuladas), [0.5, null]);
   });
 
   it('estadoDe: sin nada cargado ni vínculo, un estado vacío; de un id que no existe, también', async () => {
@@ -4253,5 +4270,281 @@ describe('los días restituidos', () => {
           ['planta_permanente', guardada.cargo, usuarios.adminA.id]);
       }
     });
+  });
+});
+
+// Las horas a favor de contrato con horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 7): `horas` es el total del
+// día y `horas_acumuladas`, la parte que sale de las acumuladas (lo que les sobró a los meses que ya terminaron y el saldo
+// inicial de horas no utilizadas). La API usa la fecha real: las fechas se arman desde hoy, con la tabla `feriados` vacía (los
+// días hábiles son los de lunes a viernes sin los 9 fijos). Las personas son las inventadas de arriba: el editor y el
+// colaborador son de contrato (el editor pasa a Configuración; el colaborador, no)
+describe('las horas a favor con horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 7)', () => {
+  const MES_HOY = hoy.slice(0, 7);
+  // El primer día hábil desde hoy y su mes, el de las horas a favor que se usan (el en curso, salvo que ya no le queden días
+  // hábiles); el siguiente, el de una carga a futuro
+  const DIA = proximoDiaHabil(hoy);
+  const MES_DE_USO = DIA.slice(0, 7);
+  const primerHabilDe = (mes) => proximoDiaHabil(`${mes}-01`);
+  const DIA_DEL_MES_QUE_VIENE = primerHabilDe(mesMas(MES_DE_USO, 1));
+  // Un mes que ya terminó (el pasado) y el anterior a ese: sus salidas dan las horas a favor del pasado, que sobraron
+  const MES_PASADO = mesMas(MES_HOY, -1);
+  const MES_ANTEPASADO = mesMas(MES_HOY, -2);
+  const DIA_PASADO = primerHabilDe(MES_PASADO);
+  const OTRO_DIA_PASADO = proximoDiaHabil(sumarDias(DIA_PASADO, 1));
+
+  const cargar = (clave, cuerpo) => api.post('/mi-espacio/licencias', cuerpo, como(clave));
+  const corregir = (clave, id, cuerpo) => api.put(`/mi-espacio/licencias/${id}`, cuerpo, como(clave));
+  const topes = (clave, consulta = '') => api.get(`/mi-espacio/horas-a-favor/topes${consulta}`, como(clave));
+  // Un día de horas a favor; sin `horas_acumuladas`, el cuerpo no trae la clave (una página anterior)
+  const unDia = (desde, horas, horas_acumuladas) => ({
+    tipo: 'horas_a_favor', desde, hasta: desde, horas, ...(horas_acumuladas === undefined ? {} : { horas_acumuladas })
+  });
+  // Las licencias activas de una persona como quedaron en la base (los DECIMAL, como número; NULL sigue null)
+  const guardadasDe = async (clave) => (await query(
+    `SELECT id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, horas, horas_acumuladas, oficial, licencia_oficial_id
+     FROM mi_espacio_licencias WHERE usuario_id = ? AND activo = 1 ORDER BY desde, id`,
+    [usuarios[clave].id]
+  )).map((fila) => ({
+    ...fila, horas: Number(fila.horas), horas_acumuladas: fila.horas_acumuladas === null ? null : Number(fila.horas_acumuladas)
+  }));
+  const lasHorasDe = async (clave) => (await guardadasDe(clave)).map((fila) => [fila.horas, fila.horas_acumuladas]);
+  // 6,5 horas a favor en el mes de uso (una salida a las 21:30 el mes anterior) y 1,5 de saldo inicial de horas no
+  // utilizadas, con el arranque hoy
+  const conHorasDeUso = async (clave) => {
+    await listoParaCargar(clave);
+    await conSaldo(clave, 'horas_no_utilizadas', ANIO, '1.5');
+    await conSalida(clave, { fecha: primerHabilDe(mesMas(MES_DE_USO, -1)), salida: '21:30:00' });
+  };
+  const topesDe = (mes, del_mes, acumuladas, termino = false) =>
+    ({ mes, mes_texto: nombreDelMes(mes), del_mes, acumuladas, termino });
+
+  it('7 horas con 0,5 acumuladas: se guardan las dos y es de día entero (pasa a Configuración y «Hoy no están» lo muestra)',
+    async () => {
+      await conHorasDeUso('editor');
+      const res = await cargar('editor', unDia(DIA, 7, 0.5));
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      const [fila] = await guardadasDe('editor');
+      assert.deepEqual([fila.id, fila.desde, fila.horas, fila.horas_acumuladas], [res.body.data.id, DIA, 7, 0.5]);
+      assert.equal(fila.oficial, 'creada');
+      const oficiales = await query(
+        `SELECT id, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta
+         FROM usuarios_licencias WHERE usuario_id = ? AND anulada = 0`, [usuarios.editor.id]);
+      assert.deepEqual(oficiales.map(({ desde, hasta }) => [desde, hasta]), [[DIA, DIA]]);
+      assert.equal(fila.licencia_oficial_id, oficiales[0].id);
+
+      const ausentes = await api.get(`/mi-espacio/ausentes?desde=${DIA}&hasta=${DIA}`, como('adminA'));
+      assert.equal(ausentes.status, 200, JSON.stringify(ausentes.body));
+      assert.deepEqual(ausentes.body.data.ausentes.map((ausente) => ausente.nombre), ['Carla']);
+
+      // La nota dice el total y, después de los dos puntos, la parte del mes (las 6,5 de la salida del mes anterior) y la
+      // acumulada (spec, 9), con la fecha que arma el servidor
+      const nota = await api.get(`/mi-espacio/licencias/${fila.id}/nota`, como('editor'));
+      assert.equal(nota.status, 200, JSON.stringify(nota.body));
+      const cuerpo = `el usufructo de siete (7) horas a favor el día ${diaDeLaSemana(DIA)} ${formatoLargo(DIA)}: seis horas y `
+        + `media (6,5) correspondientes a las horas extras realizadas en ${mesEnFrase(mesMas(MES_DE_USO, -1))} y media hora `
+        + '(0,5) de horas extras acumuladas de meses anteriores.';
+      assert.ok(nota.body.data.html.includes(cuerpo), nota.body.data.html);
+    });
+
+  it('7 horas con 1,5 acumuladas (5,5 del mes): 201', async () => {
+    await conHorasDeUso('colab');
+    const res = await cargar('colab', unDia(DIA, 7, 1.5));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const [fila] = await guardadasDe('colab');
+    assert.deepEqual([fila.horas, fila.horas_acumuladas, fila.oficial], [7, 1.5, null]);
+  });
+
+  it('8 horas: 400 en `horas`; 7 con 2 acumuladas: 400 en `horas_acumuladas` con lo que queda. Ninguna se guarda', async () => {
+    await conHorasDeUso('colab');
+    const ocho = await cargar('colab', unDia(DIA, 8, 0.5));
+    assert.equal(ocho.status, 400);
+    assert.deepEqual(ocho.body, rechazo(MENSAJES_MI_ESPACIO.horasMedias, 'horas'));
+    const dos = await cargar('colab', unDia(DIA, 7, 2));
+    assert.equal(dos.status, 400);
+    assert.deepEqual(dos.body, rechazo('Te quedan 1,5 horas acumuladas.', 'horas_acumuladas'));
+    assert.deepEqual(await guardadasDe('colab'), []);
+  });
+
+  it('horas acumuladas que no van de a media hora hasta el total: 400 en `horas_acumuladas`, sin guardar nada', async () => {
+    await conHorasDeUso('colab');
+    for (const valor of [0.25, -0.5, '0,5', true, 7.5]) {
+      const res = await cargar('colab', unDia(DIA, 7, valor));
+      assert.equal(res.status, 400, String(valor));
+      assert.deepEqual(res.body, rechazo(MENSAJES_MI_ESPACIO.acumuladasMedias, 'horas_acumuladas'), String(valor));
+    }
+    assert.deepEqual(await guardadasDe('colab'), []);
+  });
+
+  it('sin la clave `horas_acumuladas` (una página anterior): 7 horas dan el error de hoy; 6,5 se guardan con NULL', async () => {
+    await conHorasDeUso('colab');
+    const siete = await cargar('colab', unDia(DIA, 7));
+    assert.equal(siete.status, 400);
+    assert.deepEqual(siete.body, rechazo(textoSinHorasAFavor(MES_DE_USO, 6.5), 'horas'));
+    assert.deepEqual(await guardadasDe('colab'), []);
+    const res = await cargar('colab', unDia(DIA, 6.5));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(await lasHorasDe('colab'), [[6.5, null]]);
+  });
+
+  it('una franquicia de planta con `horas_acumuladas`: la clave se ignora y queda NULL', async () => {
+    await listoParaCargar('adminA');
+    const res = await cargar('adminA', { tipo: 'franquicia', desde: q(0), hasta: q(0), horas: 3, horas_acumuladas: 1 });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(await lasHorasDe('adminA'), [[3, null]]);
+  });
+
+  it('corregir: la combinada sin cambios, 200 (sus horas vuelven a los topes); a solo del mes, 200 y vuelven las acumuladas',
+    async () => {
+      await conHorasDeUso('colab');
+      const alta = await cargar('colab', unDia(DIA, 7, 0.5));
+      assert.equal(alta.status, 201, JSON.stringify(alta.body));
+      const { id } = alta.body.data;
+      const igual = await corregir('colab', id, unDia(DIA, 7, 0.5));
+      assert.equal(igual.status, 200, JSON.stringify(igual.body));
+      assert.deepEqual(await lasHorasDe('colab'), [[7, 0.5]]);
+
+      const delMes = await corregir('colab', id, unDia(DIA, 6.5));
+      assert.equal(delMes.status, 200, JSON.stringify(delMes.body));
+      assert.deepEqual(await lasHorasDe('colab'), [[6.5, null]]);
+      const res = await topes('colab', `?fecha=${DIA}`);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.deepEqual(res.body.data, topesDe(MES_DE_USO, 0, 1.5));
+    });
+
+  it('el doble envío: dos POST iguales a la vez, uno entra y el otro da 400 (superpuesta), nunca dos', async () => {
+    await conHorasDeUso('colab');
+    for (let vuelta = 0; vuelta < 3; vuelta++) {
+      await query('DELETE FROM mi_espacio_licencias');
+      const cuerpo = unDia(DIA, 7, 0.5);
+      const respuestas = await Promise.all([cargar('colab', cuerpo), cargar('colab', cuerpo)]);
+      assert.deepEqual(respuestas.map((res) => res.status).sort(), [201, 400], JSON.stringify(respuestas.map((res) => res.body)));
+      const rechazada = respuestas.find((res) => res.status === 400);
+      assert.deepEqual(rechazada.body, rechazo(textoSuperpuesta(DIA), 'desde'));
+      assert.equal((await guardadasDe('colab')).length, 1, `vuelta ${vuelta}`);
+    }
+  });
+
+  it('una carga a futuro usa las acumuladas de hoy: el saldo inicial entra; con el sobrante del mes en curso, no', async () => {
+    await conHorasDeUso('colab');
+    // Lo que le sobra al mes de uso todavía no es acumulado: el mes no terminó
+    const conElSobrante = await cargar('colab', unDia(DIA_DEL_MES_QUE_VIENE, 2, 2));
+    assert.equal(conElSobrante.status, 400);
+    assert.deepEqual(conElSobrante.body, rechazo(textoQuedanAcumuladas(1.5), 'horas_acumuladas'));
+    const res = await cargar('colab', unDia(DIA_DEL_MES_QUE_VIENE, 1.5, 1.5));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const [fila] = await guardadasDe('colab');
+    assert.deepEqual([fila.desde, fila.horas, fila.horas_acumuladas], [DIA_DEL_MES_QUE_VIENE, 1.5, 1.5]);
+  });
+
+  it('una carga tarde: la parte de un mes que ya terminó entra hasta lo que le sobraba y baja las acumuladas en lo mismo',
+    async () => {
+      // El arranque, el 1° del antepasado; 8 horas de salidas ese mes (dos días a las 19:00): 8 horas a favor del pasado,
+      // que sobraron y son acumuladas
+      const arranque = `${MES_ANTEPASADO}-01`;
+      await conArranque('colab', arranque);
+      for (const anio of new Set([Number(arranque.slice(0, 4)), ANIO])) await conAnio('colab', anio, 20);
+      const primero = primerHabilDe(MES_ANTEPASADO);
+      await conSalida('colab', { fecha: primero, salida: '19:00:00' });
+      await conSalida('colab', { fecha: proximoDiaHabil(sumarDias(primero, 1)), salida: '19:00:00' });
+      const antes = await topes('colab', `?fecha=${DIA_PASADO}`);
+      assert.equal(antes.status, 200, JSON.stringify(antes.body));
+      assert.deepEqual(antes.body.data, topesDe(MES_PASADO, 8, 8, true));
+
+      const res = await cargar('colab', unDia(DIA_PASADO, 7));
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      const deHoy = await topes('colab');
+      assert.equal(deHoy.body.data.acumuladas, 1);
+      const otro = await topes('colab', `?fecha=${OTRO_DIA_PASADO}`);
+      assert.deepEqual(otro.body.data, topesDe(MES_PASADO, 1, 1, true));
+
+      const demas = await cargar('colab', unDia(OTRO_DIA_PASADO, 1.5));
+      assert.equal(demas.status, 400);
+      assert.deepEqual(demas.body, rechazo(textoSinHorasAFavor(MES_PASADO, 1), 'horas'));
+      assert.deepEqual(await lasHorasDe('colab'), [[7, null]]);
+    });
+
+  describe('GET /mi-espacio/horas-a-favor/topes', () => {
+    it('sin `fecha`, los de hoy; con una fecha del mes de uso, los de ese mes', async () => {
+      await conHorasDeUso('colab');
+      const sinFecha = await topes('colab');
+      assert.equal(sinFecha.status, 200, JSON.stringify(sinFecha.body));
+      assert.equal(sinFecha.body.data.mes, MES_HOY);
+      const conHoy = await topes('colab', `?fecha=${hoy}`);
+      assert.deepEqual(sinFecha.body, conHoy.body);
+      const vacia = await topes('colab', '?fecha=');
+      assert.deepEqual(vacia.body, conHoy.body);
+
+      const res = await topes('colab', `?fecha=${MES_DE_USO}-06`);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.deepEqual(res.body, { success: true, data: topesDe(MES_DE_USO, 6.5, 1.5) });
+    });
+
+    it('con `id`: una carga propia vuelve a los topes; una ajena, una dada de baja o un id que no sirve, se ignoran',
+      async () => {
+        await conHorasDeUso('colab');
+        const alta = await cargar('colab', unDia(DIA, 7, 0.5));
+        assert.equal(alta.status, 201, JSON.stringify(alta.body));
+        const { id } = alta.body.data;
+        const sinId = await topes('colab', `?fecha=${DIA}`);
+        assert.deepEqual(sinId.body.data, topesDe(MES_DE_USO, 0, 1));
+        const conId = await topes('colab', `?fecha=${DIA}&id=${id}`);
+        assert.deepEqual(conId.body.data, topesDe(MES_DE_USO, 6.5, 1.5));
+
+        // Una carga del editor (para el colaborador no existe) y una propia dada de baja
+        await conHorasDeUso('editor');
+        const ajena = await conLicencia('editor', { tipo: 'horas_a_favor', desde: DIA, horas: '7.0', horas_acumuladas: '0.5' });
+        const baja = await conLicencia('colab', { tipo: 'horas_a_favor', desde: q(1), horas: '1.0', activo: 0 });
+        for (const otro of [ajena, baja, 'abc', 0, -1, 999999]) {
+          const res = await topes('colab', `?fecha=${DIA}&id=${otro}`);
+          assert.equal(res.status, 200, String(otro));
+          assert.deepEqual(res.body.data, topesDe(MES_DE_USO, 0, 1), String(otro));
+        }
+      });
+
+    it('una fecha que no es una fecha: 400 en `fecha`', async () => {
+      await conHorasDeUso('colab');
+      for (const consulta of ['?fecha=x', '?fecha=2026-02-30', `?fecha=${hoy}&fecha=${hoy}`]) {
+        for (const clave of ['colab', 'lector']) {
+          const res = await topes(clave, consulta);
+          assert.equal(res.status, 400, `${clave} ${consulta}`);
+          assert.deepEqual(res.body, rechazo(MENSAJES_MI_ESPACIO.fecha, 'fecha'), `${clave} ${consulta}`);
+        }
+      }
+    });
+
+    it('planta: `data` null; contrato sin arranque, también; sin modalidad, el mensaje de siempre', async () => {
+      await listoParaCargar('adminA');
+      const planta = await topes('adminA');
+      assert.equal(planta.status, 200, JSON.stringify(planta.body));
+      assert.deepEqual(planta.body, { success: true, data: null });
+      const sinArranque = await topes('colab');
+      assert.deepEqual(sinArranque.body, { success: true, data: null });
+      const lector = await topes('lector');
+      assert.equal(lector.status, 200);
+      assert.deepEqual(lector.body, { success: true, data: { modalidad: null, mensaje: MENSAJES_MI_ESPACIO.sinModalidad } });
+    });
+
+    it('un 500 dice su mensaje fijo, con la pila solo en la consola', async () => {
+      const log = mock.method(console, 'error', () => {});
+      const respuesta = { status(codigo) { this.codigo = codigo; return this; }, json(cuerpo) { this.cuerpo = cuerpo; } };
+      try {
+        // Un pedido sin usuario: leer el contexto tira
+        await controlador.verTopesDeHorasAFavor({ query: {} }, respuesta);
+      } finally {
+        log.mock.restore();
+      }
+      assert.equal(respuesta.codigo, 500);
+      assert.deepEqual(respuesta.cuerpo, { success: false, error: 'Error al obtener las horas a favor' });
+      assert.equal(log.mock.callCount(), 1);
+    });
+  });
+
+  it('lo ajeno: corregir una carga de otra persona da el 404 de siempre', async () => {
+    await conHorasDeUso('colab');
+    const ajena = await conLicencia('editor', { tipo: 'horas_a_favor', desde: DIA, horas: '7.0', horas_acumuladas: '0.5' });
+    const res = await corregir('colab', ajena, unDia(DIA, 7, 0.5));
+    assert.equal(res.status, 404);
+    assert.deepEqual(res.body, NO_ENCONTRADA);
+    assert.deepEqual(await lasHorasDe('editor'), [[7, 0.5]]);
   });
 });
