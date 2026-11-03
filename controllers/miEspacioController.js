@@ -26,9 +26,9 @@ import { hoyArgentina, ahoraArgentina, sumarDias, diasEntre, esFechaIso } from '
 import {
   MENSAJES_MI_ESPACIO, DIAS_VACACIONES, MAXIMO_DIAS_POR_GUARDADO, anioVigente, camposDelSaldoInicial, textoDeLasMitades,
   evaluarLicencia, validarHorasExtras, validarSalida, mesDeLaPlanilla, validarAnio, validarSaldoInicial, modalidadDe,
-  ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, nombreCorto, dejaPersonaACargo, grupoDeLosRestituidos,
-  restituiblesDe, grupoDeLaRestitucion, plazoDeRestitucion, recuadroDeLaRestitucion, mensajeDeLaRestitucionPedida,
-  MENSAJE_RESTITUCION_BORRADA, MENSAJE_RESTITUCION_BORRADA_SIN_DIAS
+  topesDeHorasAFavor, ausenciasUnidas, ausentesDelRango, ausentesDeHoyYManana, nombreCorto, dejaPersonaACargo,
+  grupoDeLosRestituidos, restituiblesDe, grupoDeLaRestitucion, plazoDeRestitucion, recuadroDeLaRestitucion,
+  mensajeDeLaRestitucionPedida, MENSAJE_RESTITUCION_BORRADA, MENSAJE_RESTITUCION_BORRADA_SIN_DIAS
 } from '../services/miEspacioReglas.js';
 import {
   resumenDe, filasDeLicencias, filaDeUnaLicencia, tablaDeHorasExtras, planillaDelMes, proximoFeriadoDe, textoDeLaListaDe,
@@ -183,6 +183,26 @@ export const listarHorasExtras = (req, res) => responder(res, 'Error al obtener 
   return conDatos(tablaDeHorasExtras(estado, calculo, { anio, hoy, feriados }));
 });
 
+/**
+ * GET /api/mi-espacio/horas-a-favor/topes?fecha=AAAA-MM-DD&id=N: los topes de «De <mes>» y «Acumuladas» de unas horas a favor
+ * de contrato en esa fecha (spec 2026-11-03-mi-espacio-horas-acumuladas, 5 y 7): `{ mes, mes_texto, del_mes, acumuladas,
+ * termino }` de `topesDeHorasAFavor`, con las de hoy. Sin `fecha` (o vacía), hoy; una fecha que no es una fecha (también una
+ * repetida, que Express da como lista), 400 en `fecha`. `id`, el de la carga que se corrige: sus horas vuelven a los topes
+ * solo si es una licencia activa de la persona; cualquier otro (ajeno, que no existe, dado de baja o que no es un id) se
+ * ignora, sin decir nada (no se revela que existe). Sin modalidad, el mensaje de siempre; planta o sin arranque, `data` null
+ */
+export const verTopesDeHorasAFavor = (req, res) => responder(res, 'Error al obtener las horas a favor', async () => {
+  const hoy = hoyArgentina();
+  const { fecha: pedida, id } = req.query;
+  const fecha = pedida === undefined || pedida === '' ? hoy : pedida;
+  if (!esFechaIso(fecha)) return [400, { success: false, error: MENSAJES_MI_ESPACIO.fecha, campo: 'fecha' }];
+  const { estado, feriados } = await contextoDe(req.user.userId, hoy);
+  if (estado.modalidad === null) return sinModalidad();
+  const propia = idPositivo(id);
+  const editadaId = propia !== null && estado.licencias.some((fila) => fila.id === propia) ? propia : null;
+  return conDatos(topesDeHorasAFavor(estado, fecha, { hoy, feriados, editadaId }));
+});
+
 // GET /api/mi-espacio/anio/:anio: los días de vacaciones y los estudios que valen ese año, para «Mis vacaciones y saldos». Si no
 // los eligió para ese año, los del anterior más cercano (`anioVigente`), con `heredado`; sin ninguno, null. `texto_mitades` es
 // el de esos días (null sin ninguno) y `textos_mitades`, el de cada valor de DIAS_VACACIONES ('10' a '30'): el modal muestra el
@@ -292,6 +312,9 @@ const evaluar = (estado, entrada, { hoy, feriados, editadaId = null }) =>
 // La casilla «Mostrar a mis compañeros» la tiene solo administración («los compañeros» son administración: spec, sección 7);
 // el lector y el colaborador guardan 0
 const mostrarDe = (persona, datos) => (esAdmin(persona?.rol) ? datos.mostrar : 0);
+// La parte acumulada de unas horas a favor de contrato (spec 2026-11-03-mi-espacio-horas-acumuladas, 7), la de
+// `validarLicencia` (null con 0 o en otro tipo). Unos días restituidos (`validarRestituidos`) no la traen: quedan con NULL
+const parteAcumuladaDe = (datos) => datos.horas_acumuladas ?? null;
 
 // Un id que no es un entero positivo, de otra persona, que no existe o dado de baja: el mismo 404
 const noEncontrada = () => [404, { success: false, error: MENSAJES_MI_ESPACIO.noEncontrada }];
@@ -379,11 +402,11 @@ export const cargarLicenciaMia = (req, res) => responder(res, 'Error al cargar l
       { persona, fila: datos, hoy, autorizadoId: autorizado ?? null, calendario: calendarioCon(filasFeriados) });
     if (paso.error) return rechazoDeLaCarga(paso.error);
     const [resultado] = await conexion.query(
-      `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, horas, mostrar, nota, licencia_oficial_id, oficial,
-         sin_pasar)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [usuarioId, datos.tipo, datos.desde, datos.hasta, datos.horas, mostrarDe(persona, datos), datos.nota,
-        ...valoresDelPaso(paso)]
+      `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, horas, horas_acumuladas, mostrar, nota,
+         licencia_oficial_id, oficial, sin_pasar)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [usuarioId, datos.tipo, datos.desde, datos.hasta, datos.horas, parteAcumuladaDe(datos), mostrarDe(persona, datos),
+        datos.nota, ...valoresDelPaso(paso)]
     );
     if (datos.tipo === 'restituidos') {
       await pedirLosRestituidos(conexion,
@@ -417,10 +440,11 @@ export const corregirLicenciaMia = (req, res) => responder(res, 'Error al correg
     });
     if (paso.error) return rechazoDeLaCarga(paso.error);
     await conexion.query(
-      `UPDATE mi_espacio_licencias SET tipo = ?, desde = ?, hasta = ?, horas = ?, mostrar = ?, nota = ?, ${DEL_PASO}
+      `UPDATE mi_espacio_licencias SET tipo = ?, desde = ?, hasta = ?, horas = ?, horas_acumuladas = ?, mostrar = ?, nota = ?,
+         ${DEL_PASO}
        WHERE id = ? AND usuario_id = ? AND activo = 1`,
-      [datos.tipo, datos.desde, datos.hasta, datos.horas, mostrarDe(persona, datos), datos.nota, ...valoresDelPaso(paso), id,
-        usuarioId]
+      [datos.tipo, datos.desde, datos.hasta, datos.horas, parteAcumuladaDe(datos), mostrarDe(persona, datos), datos.nota,
+        ...valoresDelPaso(paso), id, usuarioId]
     );
     return [200, { success: true, data: { id }, message: 'Licencia corregida.', avisos: paso.avisos }];
   });
