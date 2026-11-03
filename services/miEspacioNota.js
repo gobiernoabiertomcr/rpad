@@ -219,15 +219,15 @@ const CUERPOS = Object.freeze({
   // sale de ellas, la de `horasAcumuladasDe`): con las dos, el total y, después de dos puntos, la parte del mes (con su
   // «correspondiente(s)» y el paréntesis de hoy) y la acumulada: «… siete (7) horas a favor el día viernes 6 de noviembre de
   // 2026: seis horas y media (6,5) correspondientes a las horas extras realizadas en octubre de 2026 y media hora (0,5) de
-  // horas extras acumuladas de meses anteriores.»; solo acumuladas, sin mes ni paréntesis: «… una hora y media (1,5) de horas
-  // extras acumuladas de meses anteriores el día lunes 9 de noviembre de 2026.» Sin acumuladas, el texto de antes
+  // horas extras no usufructuadas de meses anteriores.»; solo acumuladas, sin mes ni paréntesis: «… una hora y media (1,5) de horas
+  // extras no usufructuadas de meses anteriores el día lunes 9 de noviembre de 2026.» Sin acumuladas, el texto de antes
   horas_a_favor: ({ desde, horas, acumuladas, salidas, feriados }) => {
     const texto = textoDeHoras(horas);
     const mesDeLasHoras = mesMas(desde.slice(0, 7), -MESES_HASTA_LAS_HORAS);
     if (!texto || mesDeLasHoras === null) return null;
     const deAntes = acumuladas > 0 ? textoDeHoras(acumuladas) : '';
     if (acumuladas > 0 && !deAntes) return null;
-    const acumuladasDeAntes = `${deAntes} de horas extras acumuladas de meses anteriores`;
+    const acumuladasDeAntes = `${deAntes} de horas extras no usufructuadas de meses anteriores`;
     const delMes = horas - acumuladas;
     if (delMes <= 0) return `el usufructo de ${acumuladasDeAntes} el día ${conElDia(desde)}.`;
     const mesDeLaLicencia = mesMas(mesDeLasHoras, 1);

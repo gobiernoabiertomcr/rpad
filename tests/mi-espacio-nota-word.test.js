@@ -280,9 +280,9 @@ describe('renderNotaDocx: los mismos renglones que la vista (htmlDeLaNota)', () 
   for (const [caso, licencia, salidas, final] of [
     ['del mes y acumuladas', { tipo: 'horas_a_favor', desde: '2026-11-06', hasta: '2026-11-06', horas: 7, horas_acumuladas: 0.5 },
       [{ id: 1, fecha: '2026-11-02', entrada: null, salida: '16:00', nota: null, al_mes_anterior: true }],
-      'realizadas en octubre de 2026 (incluidas las del lunes 2 de noviembre de 2026, sumadas a octubre) y media hora (0,5) de horas extras acumuladas de meses anteriores.'],
+      'realizadas en octubre de 2026 (incluidas las del lunes 2 de noviembre de 2026, sumadas a octubre) y media hora (0,5) de horas extras no usufructuadas de meses anteriores.'],
     ['solo acumuladas', { tipo: 'horas_a_favor', desde: '2026-11-09', hasta: '2026-11-09', horas: 1.5, horas_acumuladas: 1.5 },
-      [], 'de horas extras acumuladas de meses anteriores el día lunes 9 de noviembre de 2026.']
+      [], 'de horas extras no usufructuadas de meses anteriores el día lunes 9 de noviembre de 2026.']
   ]) {
     it(`horas a favor con horas acumuladas (${caso}): igual en el Word y en la vista`, async () => {
       const { nota } = notaDeLicencia(licencia, { fecha: '2026-11-03', persona: CONTRATADA, feriados: FERIADOS, salidas });

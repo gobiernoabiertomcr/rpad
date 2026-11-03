@@ -43,7 +43,7 @@ No es un error de cálculo: falta poder juntar las dos cosas en un día.
 4. **Dos números** (opción B de la maqueta): cuántas horas del mes y cuántas acumuladas, con el total debajo.
 5. **Siguen necesitando la autorización del Director General**, y el formulario lo dice. Mi espacio no la controla (como el
    uso autorizado de hoy): la nota en Word es el pedido de autorización.
-6. **La nota en Word dice primero el total y el día, y después de dónde sale cada parte** (texto en la sección 9).
+6. **La nota en Word dice primero el total y el día, y después de dónde sale cada parte** (texto en la sección 9). Al probarla en local, el usuario cambió en la nota «acumuladas» por «no usufructuadas» (03/11/2026); en la pantalla siguen siendo «Horas acumuladas».
 7. **Para cargar un día a futuro valen las acumuladas que hay hoy.** Lo que sobre de un mes pasa a las acumuladas recién cuando
    termina ese mes.
 8. Planta no cambia nada.
@@ -166,14 +166,14 @@ Solo cambia la de «Horas a favor» que usa acumuladas. Las demás, también la 
 
 - **Del mes y acumuladas:** «Me dirijo a Ud. a fin de solicitarle tenga a bien autorizar el usufructo de siete (7) horas a favor
   el día viernes 6 de noviembre de 2026: seis horas y media (6,5) correspondientes a las horas extras realizadas en octubre de
-  2026 y media hora (0,5) de horas extras acumuladas de meses anteriores.»
-- **Solo acumuladas:** «… el usufructo de una hora y media (1,5) de horas extras acumuladas de meses anteriores el día lunes 9 de
+  2026 y media hora (0,5) de horas extras no usufructuadas de meses anteriores.»
+- **Solo acumuladas:** «… el usufructo de una hora y media (1,5) de horas extras no usufructuadas de meses anteriores el día lunes 9 de
   noviembre de 2026.»
 - Las horas con las palabras de hoy (`textoDeHoras`: «una (1) hora», «media hora (0,5)», «una hora y media (1,5)», …) y
   «correspondiente» o «correspondientes» como hoy (`correspondientesALasHoras`, con la parte del mes).
 - Con días tildados «Sumar a {mes anterior}» (spec 2026-10-30, 7), el paréntesis de hoy va después del mes de las horas: «… a
   las horas extras realizadas en octubre de 2026 (incluidas las del lunes 2 de noviembre de 2026, sumadas a octubre) y media
-  hora (0,5) de horas extras acumuladas de meses anteriores.» Solo nombra días del mes de la licencia, como hoy.
+  hora (0,5) de horas extras no usufructuadas de meses anteriores.» Solo nombra días del mes de la licencia, como hoy.
 - El nombre del archivo, la fecha y la firma no cambian.
 
 ## 10. Lo que se ve en el resto de Mi espacio (contrato)
