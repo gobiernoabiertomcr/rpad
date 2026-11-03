@@ -868,14 +868,15 @@ const textoDeLasLicencias = (reparto, id) => {
 };
 
 // De dónde salen las horas de una carga de horas a favor con horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas,
-// 10): «6,5 de noviembre y 0,5 acumuladas» (con el mes de su fecha, el de uso; «1 acumulada») o, sin horas del mes, «Todas
-// acumuladas». Sin parte acumulada, '' (como antes)
+// 10): «6,5 de noviembre y 0,5 acumuladas.» (con el mes de su fecha, el de uso; «1 acumulada.») o, sin horas del mes, «Todas
+// acumuladas.», con su punto, como los demás textos de `de_licencias_texto` (la página los pone uno detrás del otro). Sin
+// parte acumulada, '' (como antes)
 const textoDeLasAcumuladasDeLaCarga = (fila) => {
   const acumuladas = horasAcumuladasDe(fila);
   if (acumuladas <= 0) return '';
   const delMes = horasDelMesDe(fila);
-  if (delMes <= 0) return 'Todas acumuladas';
-  return `${numeroTexto(delMes)} de ${nombreDelMes(fila.desde.slice(0, 7))} y ${conUnidad(acumuladas, 'acumulada', 'acumuladas')}`;
+  if (delMes <= 0) return 'Todas acumuladas.';
+  return `${numeroTexto(delMes)} de ${nombreDelMes(fila.desde.slice(0, 7))} y ${conUnidad(acumuladas, 'acumulada', 'acumuladas')}.`;
 };
 
 // Los días restituidos en la lista (spec 2026-10-31-mi-espacio-dias-restituidos, 9)

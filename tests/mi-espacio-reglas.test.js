@@ -4274,11 +4274,51 @@ describe('las horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 4)'
         restituibles: [], restituciones: []
       };
       const opciones = { hoy: '2026-11-03', feriados: SIN_FERIADOS };
+      // La fecha es anterior al arranque: no ofrece acumuladas (la carga no las bajaría: ver el test siguiente)
       assert.deepEqual(topesDeHorasAFavor(estado, '2026-09-15', opciones),
-        { mes: '2026-09', mes_texto: 'septiembre', del_mes: 3, acumuladas: 1.5, termino: false });
+        { mes: '2026-09', mes_texto: 'septiembre', del_mes: 3, acumuladas: 0, termino: false });
       // Y el servidor acepta esas 3 del mes
       assert.equal(evaluarLicencia(estado, { tipo: 'horas_a_favor', desde: '2026-09-15', hasta: '2026-09-15', horas: 3 },
         opciones).error, null);
+    });
+
+    it('topesDeHorasAFavor: antes del arranque no hay acumuladas; desde el arranque, las de hoy', () => {
+      // `acumulando()` arranca el 28/10/2026 con 1,5 horas no utilizadas: lo anterior al arranque ya está en el saldo inicial y
+      // su parte acumulada nunca se descontaría (`acumuladasDe`), así que no se ofrece
+      // (octubre ya terminó: `termino` es el de ese mes, también antes del arranque)
+      const topes = (fecha) => topesDeHorasAFavor(acumulando(), fecha, el('2026-11-03'));
+      assert.deepEqual(topes('2026-10-27'),
+        { mes: '2026-10', mes_texto: 'octubre', del_mes: 0, acumuladas: 0, termino: true });
+      assert.deepEqual(topes('2026-10-28'),
+        { mes: '2026-10', mes_texto: 'octubre', del_mes: 0, acumuladas: 1.5, termino: true });
+      assert.deepEqual(topes('2026-10-29'),
+        { mes: '2026-10', mes_texto: 'octubre', del_mes: 0, acumuladas: 1.5, termino: true });
+    });
+
+    it('evaluarLicencia: unas horas a favor anteriores al arranque no usan acumuladas (400 en horas_acumuladas)', () => {
+      // Arranque el 28/10/2026 con 1,5 horas no utilizadas y 3 horas a favor de septiembre sin usar
+      const estado = {
+        modalidad: 'contrato', arranque: '2026-10-28', anios: [{ anio: 2026, dias_vacaciones: 20, estudios: null }],
+        saldos: [{ concepto: 'horas_no_utilizadas', anio: 2026, cantidad: 1.5 }], licencias: [], horasExtras: [],
+        salidas: [{ id: 1, fecha: '2026-08-20', entrada: null, salida: '18:00', nota: null, al_mes_anterior: false }],
+        restituibles: [], restituciones: []
+      };
+      const opciones = { hoy: '2026-11-03', feriados: SIN_FERIADOS };
+      const carga = (horas, acumuladas) => evaluarLicencia(estado,
+        { tipo: 'horas_a_favor', desde: '2026-09-15', hasta: '2026-09-15', horas, horas_acumuladas: acumuladas }, opciones);
+      for (const [horas, acumuladas] of [[3, 1], [1, 1], [3.5, 0.5]]) {
+        const { datos, error } = carga(horas, acumuladas);
+        assert.equal(datos, null, `${horas} y ${acumuladas}`);
+        assert.deepEqual(error, { campo: 'horas_acumuladas', mensaje: 'No te quedan horas acumuladas.' }, `${horas} y ${acumuladas}`);
+      }
+      assert.equal(textoQuedanAcumuladas(0), 'No te quedan horas acumuladas.');
+      // Sin parte acumulada, la carga pasa como antes
+      for (const acumuladas of [undefined, null, 0]) assert.equal(carga(3, acumuladas).error, null, String(acumuladas));
+      // Desde el arranque no cambia nada: la del 06/11 con 0,5 acumuladas se guarda
+      const desdeElArranque = evaluarLicencia(acumulando(),
+        { tipo: 'horas_a_favor', desde: '2026-11-06', hasta: '2026-11-06', horas: 7, horas_acumuladas: 0.5 }, el('2026-11-03'));
+      assert.equal(desdeElArranque.error, null);
+      assert.equal(desdeElArranque.datos.horas_acumuladas, 0.5);
     });
 
     it('topesDeHorasAFavor: null fuera de contrato, sin arranque o con una fecha que no es una fecha', () => {

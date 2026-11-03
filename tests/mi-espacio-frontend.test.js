@@ -12650,6 +12650,23 @@ describe('las horas acumuladas en «Cargar licencia» (DOM falso)', () => {
     }
   });
 
+  it('antes del arranque, el campo «Horas» de siempre (el servidor no ofrece acumuladas); desde el arranque, los dos', async () => {
+    // CONTRATO arranca el 26/10/2026 con horas acumuladas en su saldo inicial: el viernes 23/10 es anterior
+    const pagina = montarPagina({ responder: conLasAcumuladas() });
+    await pagina.iniciar();
+    await abrirHorasAFavor(pagina, { desde: '2026-10-23' });
+    assert.equal(topesPedidos(pagina).at(-1), `${RUTA_DE_LOS_TOPES}?fecha=2026-10-23`);
+    assert.equal(topesDel(CONTRATO.estado, topesPedidos(pagina).at(-1)).acumuladas, 0);
+    assert.equal(pagina.el('ml-dos-horas').hidden, true);
+    assert.equal(pagina.el('ml-horas').hidden, false);
+    assert.equal(pagina.el('ml-horas').disabled, false);
+    await pagina.escribir('ml-desde', '2026-10-26');
+    await pagina.correr();
+    await pagina.correr();
+    assert.ok(topesDel(CONTRATO.estado, topesPedidos(pagina).at(-1)).acumuladas > 0);
+    assert.equal(pagina.el('ml-dos-horas').hidden, false);
+  });
+
   it('con el mes terminado, las acumuladas ofrecen lo que queda menos lo del mes', async () => {
     const pagina = montarPagina({
       responder: conLasAcumuladas({

@@ -2733,7 +2733,12 @@ export const topesDeHorasAFavor = (estado, fecha, opciones) => {
   // Lo que le sobra al mes pasó a las acumuladas solo si su mes de uso terminó desde el arranque: si terminó antes, ya está en el
   // saldo inicial, y tomarlo del mes no las baja (revisión final, 2)
   const termino = terminoElMes(mes, hoy) && !(delMes !== undefined && delMes.antes_del_arranque === true);
-  return { mes, mes_texto: nombreDelMes(mes), del_mes: termino ? Math.min(queda, acumuladas) : queda, acumuladas, termino };
+  // Una fecha anterior al arranque no usa acumuladas: lo de antes ya está en el saldo inicial y `acumuladasDe` no descontaría su
+  // parte acumulada (`antesDelArranqueConAcumuladas`); `del_mes` y `termino`, los de ese mes
+  return {
+    mes, mes_texto: nombreDelMes(mes), del_mes: termino ? Math.min(queda, acumuladas) : queda,
+    acumuladas: fecha < estado.arranque ? 0 : acumuladas, termino
+  };
 };
 
 // Los textos de los faltantes del Resumen, neutros: «Revisá …»
@@ -3028,8 +3033,17 @@ const textoDeLoQueQueda = (fila, modalidad, calculo, descuentan) => {
 // entrada, las opciones de `evaluarLicencia` y una función que da el `Calculo` de lo cargado (lo calcula una sola vez, y solo
 // si hace falta), y devuelven `{ datos, error }`. El de siempre es `validarLicencia`; el de los días restituidos,
 // `validarRestituidos`, con los grupos de lo cargado
-const validarComoLicencia = (estado, entrada, { hoy, feriados, editadaId, uso_autorizado: usoAutorizado }) =>
-  validarLicencia(entrada, { hoy, estado, feriados, editadaId, uso_autorizado: usoAutorizado });
+// Unas horas a favor anteriores al arranque con parte acumulada: lo de antes del arranque ya está en el saldo inicial y
+// `acumuladasDe` no descuenta esa parte, así que no se guarda (400 en «horas_acumuladas», con «No te quedan horas
+// acumuladas.», lo mismo que ofrece `topesDeHorasAFavor` para esa fecha). Sin parte acumulada, o desde el arranque, nada cambia
+const antesDelArranqueConAcumuladas = (datos, estado) => esObjeto(datos) && datos.tipo === 'horas_a_favor'
+  && esFechaIso(estado.arranque) && esFechaIso(datos.desde) && datos.desde < estado.arranque
+  && cantidadDe(datos.horas_acumuladas) > 0;
+const validarComoLicencia = (estado, entrada, { hoy, feriados, editadaId, uso_autorizado: usoAutorizado }) => {
+  const validada = validarLicencia(entrada, { hoy, estado, feriados, editadaId, uso_autorizado: usoAutorizado });
+  if (validada.error || !antesDelArranqueConAcumuladas(validada.datos, estado)) return validada;
+  return rechazo('horas_acumuladas', textoQuedanAcumuladas(0));
+};
 const validarComoRestituidos = (estado, entrada, { hoy, feriados, editadaId }, loCargado) =>
   validarRestituidos(entrada, { hoy, estado, feriados, editadaId, grupos: loCargado().restituciones });
 

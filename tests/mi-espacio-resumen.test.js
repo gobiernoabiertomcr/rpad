@@ -1067,11 +1067,11 @@ describe('la lista de licencias', () => {
     const filas = filasDel(CONTRATO, { estado }).licencias;
     const deLa = (id) => filas.find((fila) => fila.id === id);
     assert.deepEqual([100, 101, 102, 103, 104].map((id) => [deLa(id).horas_acumuladas, deLa(id).de_licencias_texto]), [
-      [0.5, '6,5 de noviembre y 0,5 acumuladas'],
-      [1.5, 'Todas acumuladas'],
+      [0.5, '6,5 de noviembre y 0,5 acumuladas.'],
+      [1.5, 'Todas acumuladas.'],
       [0, ''],
       [0, ''],
-      [1, '6 de diciembre y 1 acumulada']
+      [1, '6 de diciembre y 1 acumulada.']
     ]);
     assert.equal(deLa(100).cantidad_texto, '7 horas, el día entero');
     assert.equal(deLa(100).tipo_nombre, 'Horas a favor');
