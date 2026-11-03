@@ -4263,6 +4263,24 @@ describe('las horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 4)'
         { mes: '2026-11', mes_texto: 'noviembre', del_mes: 6.5, acumuladas: 8, termino: true });
     });
 
+    it('topesDeHorasAFavor: un mes de uso que terminó antes del arranque no es parte de las acumuladas (revisión final, 2)', () => {
+      // Arranque el 28/10/2026 con 1,5 horas no utilizadas; 3 horas a favor de septiembre (trabajadas en agosto), sin usar. Lo
+      // que le sobra a septiembre ya está en el saldo inicial: no baja las acumuladas, así que del mes quedan las 3 (lo que el
+      // servidor acepta al guardar), no 1,5, y `termino` es false (la página no resta lo del mes de las acumuladas)
+      const estado = {
+        modalidad: 'contrato', arranque: '2026-10-28', anios: [{ anio: 2026, dias_vacaciones: 20, estudios: null }],
+        saldos: [{ concepto: 'horas_no_utilizadas', anio: 2026, cantidad: 1.5 }], licencias: [], horasExtras: [],
+        salidas: [{ id: 1, fecha: '2026-08-20', entrada: null, salida: '18:00', nota: null, al_mes_anterior: false }],
+        restituibles: [], restituciones: []
+      };
+      const opciones = { hoy: '2026-11-03', feriados: SIN_FERIADOS };
+      assert.deepEqual(topesDeHorasAFavor(estado, '2026-09-15', opciones),
+        { mes: '2026-09', mes_texto: 'septiembre', del_mes: 3, acumuladas: 1.5, termino: false });
+      // Y el servidor acepta esas 3 del mes
+      assert.equal(evaluarLicencia(estado, { tipo: 'horas_a_favor', desde: '2026-09-15', hasta: '2026-09-15', horas: 3 },
+        opciones).error, null);
+    });
+
     it('topesDeHorasAFavor: null fuera de contrato, sin arranque o con una fecha que no es una fecha', () => {
       assert.equal(topesDeHorasAFavor(PLANTA.estado, '2026-11-06', A_HOY), null);
       assert.equal(topesDeHorasAFavor({ ...acumulando(), modalidad: null }, '2026-11-06', el('2026-11-03')), null);

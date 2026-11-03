@@ -12525,6 +12525,15 @@ describe('las horas acumuladas en «Cargar licencia»: lo puro', () => {
     assert.deepEqual(plano(M.rotulosDeLasDos(topes, '2026-12-01')), { mes: 'De noviembre', delMes: '(quedan 4)', acumuladas: '(tenés 6,5)' });
     assert.deepEqual(plano(M.rotulosDeLasDos(null, '2026-12-01')), { mes: 'De diciembre', delMes: '', acumuladas: '' });
     assert.deepEqual(plano(M.rotulosDeLasDos(null, '')), { mes: 'Del mes', delMes: '', acumuladas: '' });
+    // Revisión final, 1: los rótulos dicen lo que queda, sin el tope de 7 de las opciones (la tarjeta dice «8 horas»: el campo no
+    // puede decir «tenés 7»); de a media hora, para abajo, y nunca negativo
+    assert.deepEqual(plano(M.rotulosDeLasDos({ ...topes, del_mes: 10.5, acumuladas: 8 }, '2026-12-01')),
+      { mes: 'De noviembre', delMes: '(quedan 10,5)', acumuladas: '(tenés 8)' });
+    assert.deepEqual(plano(M.rotulosDeLasDos({ ...topes, del_mes: 10.7, acumuladas: -2 }, '2026-12-01')),
+      { mes: 'De noviembre', delMes: '(quedan 10,5)', acumuladas: '(tenés 0)' });
+    // Las opciones, en cambio, siguen hasta 7
+    assert.deepEqual(plano(M.lasDosHoras({ ...topes, del_mes: 10.5, acumuladas: 8 }, { delMes: 0, acumuladas: 8 })),
+      { delMes: { tope: 7, valor: 0 }, acumuladas: { tope: 7, valor: 7 } });
     assert.equal(M.htmlDelRotuloDelMes({ ...topes, mes_texto: MALICIOSO }, ''),
       `De ${ESCAPADO} <span class="me-opcional" id="ml-horas-del-mes-tope">(quedan 4)</span>`);
   });

@@ -3,7 +3,9 @@
 -- =====================================================
 -- Spec: docs/superpowers/specs/2026-11-03-mi-espacio-horas-acumuladas-design.md (secciones 6 y 15)
 -- Solo agrega: no borra columnas ni datos, y el código anterior sigue funcionando con esta estructura (no conoce la columna
--- nueva y no la lee; lo que guarda queda con horas_acumuladas en NULL, todo del mes).
+-- nueva y no la lee; una carga nueva queda con horas_acumuladas en NULL, todo del mes). Ojo: si el código anterior corrige una
+-- carga que ya tenía horas acumuladas (por ejemplo, entre volver a los archivos anteriores y correr el rollback), su UPDATE no
+-- toca la columna y queda el valor viejo; el código nuevo nunca toma más que horas (horasAcumuladasDe) y el rollback la borra.
 -- Columna nueva de mi_espacio_licencias, después de horas:
 --   horas_acumuladas: la parte de horas que sale de las horas acumuladas, en una carga de «Horas a favor» de una persona de
 --   contrato (de 0 a horas, de a media hora). horas sigue siendo el total del día; la parte del mes es horas - horas_acumuladas.

@@ -1369,14 +1369,21 @@ function textoDelTotalDeLasDos(delMes, acumuladas) {
   return `Total: ${textoDeHoras(total)}${total === JORNADA ? ', el día entero' : ''}.`;
 }
 
+// Una cantidad de horas para un rótulo: de a media hora, para abajo, desde 0 y sin el tope de 7 de las opciones (el rótulo dice lo
+// que queda: con 8 acumuladas, «tenés 8», como la tarjeta; lo que no es un número, 0)
+const mediaHoraDelRotulo = (valor) => {
+  const numero = typeof valor === 'number' ? valor : Number(valor);
+  return Number.isFinite(numero) ? Math.max(0, Math.floor(numero * 2) / 2) : 0;
+};
+
 // Los rótulos de los dos campos: `{ mes, delMes, acumuladas }` («De noviembre», «(quedan 4)» y «(tenés 6,5)»), con el mes y los
-// topes del servidor. Sin topes (mientras llegan, o si no llegaron), el mes de la fecha elegida (sin una fecha, «Del mes») y sin
-// topes: nunca uno viejo
+// topes del servidor, sin el tope de 7 (las opciones sí lo tienen: lasDosHoras). Sin topes (mientras llegan, o si no llegaron), el
+// mes de la fecha elegida (sin una fecha, «Del mes») y sin topes: nunca uno viejo
 function rotulosDeLasDos(topes, desde) {
   if (esObjeto(topes) && conTexto(topes.mes_texto)) {
     return {
-      mes: `De ${topes.mes_texto}`, delMes: `(quedan ${numeroConComa(mediaHoraHasta(topes.del_mes))})`,
-      acumuladas: `(tenés ${numeroConComa(mediaHoraHasta(topes.acumuladas))})`
+      mes: `De ${topes.mes_texto}`, delMes: `(quedan ${numeroConComa(mediaHoraDelRotulo(topes.del_mes))})`,
+      acumuladas: `(tenés ${numeroConComa(mediaHoraDelRotulo(topes.acumuladas))})`
     };
   }
   return { mes: esFechaDeTexto(desde) ? `De ${nombreDelMes(desde.slice(0, 7))}` : 'Del mes', delMes: '', acumuladas: '' };

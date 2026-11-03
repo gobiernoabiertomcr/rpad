@@ -1096,17 +1096,18 @@ describe('páginas', () => {
       // como el segundo paso de una licencia: el cuerpo (el error sin campo y la vista) y su pie y, después, los del segundo paso
       // Las horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 5; la opción B de la maqueta): en «Horas a favor» de
       // contrato, con acumuladas, dos campos («De noviembre» y «Acumuladas», con sus topes, que escribe mi-espacio.js), el total y la
-      // ayuda de la autorización, dentro del grupo de las horas y después de su error, ocultos de entrada
+      // ayuda de la autorización, dentro del grupo de las horas y después de su error, ocultos de entrada. Los dos campos tienen el
+      // total en su aria-describedby (revisión final, 3: si no, un lector de pantalla no lo oye nunca)
       it('«Cargar licencia»: los dos campos de las horas a favor, después del error de «Horas»', () => {
         assert.match(modal('modal-licencia'), new RegExp('<p class="form-error" id="ml-horas-error" hidden></p>\\s*'
           + '<div class="me-dos-horas" id="ml-dos-horas" hidden>\\s*<div class="form-group">\\s*'
           + '<label class="form-label" for="ml-horas-del-mes" id="ml-horas-del-mes-rotulo">Del mes '
           + '<span class="me-opcional" id="ml-horas-del-mes-tope"></span></label>\\s*'
-          + '<select class="form-select" id="ml-horas-del-mes" aria-describedby="ml-horas-del-mes-error"></select>\\s*'
+          + '<select class="form-select" id="ml-horas-del-mes" aria-describedby="ml-horas-total ml-horas-del-mes-error"></select>\\s*'
           + '<p class="form-error" id="ml-horas-del-mes-error" hidden></p>\\s*</div>\\s*<div class="form-group">\\s*'
           + '<label class="form-label" for="ml-horas-acumuladas" id="ml-horas-acumuladas-rotulo">Acumuladas '
           + '<span class="me-opcional" id="ml-horas-acumuladas-tope"></span></label>\\s*'
-          + '<select class="form-select" id="ml-horas-acumuladas" aria-describedby="ml-horas-acumuladas-ayuda ml-horas-acumuladas-error">'
+          + '<select class="form-select" id="ml-horas-acumuladas" aria-describedby="ml-horas-total ml-horas-acumuladas-ayuda ml-horas-acumuladas-error">'
           + '</select>\\s*<p class="form-error" id="ml-horas-acumuladas-error" hidden></p>\\s*</div>\\s*'
           + '<p class="me-dos-horas-total" id="ml-horas-total"></p>\\s*'
           + '<p class="form-hint" id="ml-horas-acumuladas-ayuda">Las horas acumuladas se usan con la autorización del Director General.</p>'

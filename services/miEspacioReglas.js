@@ -2711,7 +2711,8 @@ export const calcular = (estado, opciones) => {
  * - `del_mes`: lo que queda de las horas a favor de ese mes de uso (`a_favor − usadas`; 0 si no hay ninguna).
  * - `acumuladas`: lo que queda de las horas acumuladas, las de hoy (`acumuladasDe`: un mes que no terminó no suma).
  * - `termino`: si el mes de uso ya terminó (una carga tarde, «Una carga en un mes que ya terminó»): lo que le sobraba ya pasó a
- *   las acumuladas, así que lo que se toma del mes también las baja, y `del_mes` no pasa de `acumuladas`.
+ *   las acumuladas, así que lo que se toma del mes también las baja, y `del_mes` no pasa de `acumuladas`. Un mes de uso que
+ *   terminó antes del arranque (`antes_del_arranque`: lo que le sobraba ya está en el saldo inicial) da false.
  * null fuera de contrato, sin arranque, sin un hoy válido o con una fecha que no es una fecha.
  */
 export const topesDeHorasAFavor = (estado, fecha, opciones) => {
@@ -2729,7 +2730,9 @@ export const topesDeHorasAFavor = (estado, fecha, opciones) => {
   const delMes = calculo.horasAFavor.find((otro) => otro.mes_de_uso === mes);
   const queda = delMes === undefined ? 0 : Math.max(0, delMes.a_favor - delMes.usadas);
   const acumuladas = esObjeto(calculo.acumuladas) ? calculo.acumuladas.quedan : 0;
-  const termino = terminoElMes(mes, hoy);
+  // Lo que le sobra al mes pasó a las acumuladas solo si su mes de uso terminó desde el arranque: si terminó antes, ya está en el
+  // saldo inicial, y tomarlo del mes no las baja (revisión final, 2)
+  const termino = terminoElMes(mes, hoy) && !(delMes !== undefined && delMes.antes_del_arranque === true);
   return { mes, mes_texto: nombreDelMes(mes), del_mes: termino ? Math.min(queda, acumuladas) : queda, acumuladas, termino };
 };
 
