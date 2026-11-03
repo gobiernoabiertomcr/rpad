@@ -2507,7 +2507,7 @@ export const noUtilizadasDe = (estado, anio, opciones) => {
 
 // Los días de una licencia de un año del que no se eligieron (ni de antes): el máximo de DIAS_VACACIONES
 const DIAS_SIN_ELEGIR = 30;
-// Lo más que se carga de horas no utilizadas previamente en el saldo inicial
+// Lo más que se carga de horas acumuladas (contrato) en el saldo inicial
 const MAXIMO_NO_UTILIZADAS = 200;
 
 /**
@@ -2519,7 +2519,8 @@ const MAXIMO_NO_UTILIZADAS = 200;
  *   la primera mitad, `vacaciones-<A>`, hasta esa mitad.
  * - Lo que ya se usó en el año: en planta, las horas de franquicia (42); los días de estudios, hasta el tope del año (no va
  *   con «No estudio»); y los de atención médica y de grupo familiar (25).
- * - En contrato, las horas no utilizadas previamente, hasta 200 y de a media hora (`paso` 0,5; el resto, 1).
+ * - En contrato, las horas acumuladas (el concepto sigue siendo `horas_no_utilizadas`: spec
+ *   2026-11-03-mi-espacio-horas-acumuladas, 10), hasta 200 y de a media hora (`paso` 0,5; el resto, 1).
  * `ayuda` dice de dónde sale el máximo de cada licencia ordinaria (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8),
  * debajo del campo y en su error: la de A, `textoSaldoDelArranque`; la de un año anterior con sus días cargados (también
  * los que valen heredados), `textoSaldoDeLosDias`; sin días cargados, `textoSaldoSinDias`. Los demás campos, ''.
@@ -2561,8 +2562,7 @@ export const camposDelSaldoInicial = (datos) => {
     campo('familiar', 'familiar', anio, 'Días de grupo familiar', TOPES.familiar)
   );
   if (modalidad === 'contrato') {
-    campos.push(campo('horas_no_utilizadas', 'horas_no_utilizadas', anio, 'Horas no utilizadas previamente',
-      MAXIMO_NO_UTILIZADAS, 0.5));
+    campos.push(campo('horas_no_utilizadas', 'horas_no_utilizadas', anio, 'Horas acumuladas', MAXIMO_NO_UTILIZADAS, 0.5));
   }
   return campos;
 };
@@ -2639,9 +2639,9 @@ export const fueraDeLaModalidad = (fila, modalidad) => {
  * - `franquicia`: el de `franquiciaQueVence` (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), con esos topes y las
  *   mismas ocupadas que el reparto; null en contrato.
  * - `francos` y `horasAFavor`: los de `francosDe` y `horasAFavorDe` (cada uno, [] en la otra modalidad).
- * - `noUtilizadas`: `{ [anio]: noUtilizadasDe }` de cada año con algo que mirar: el de hoy, el del arranque, el de cada mes
- *   de uso y el de cada uso autorizado. Sin modalidad, {}. En contrato se sigue calculando (lo lee el Resumen), pero ya no da
- *   faltantes: los da `acumuladas`.
+ * - `noUtilizadas`: en planta, `{ [anio]: noUtilizadasDe }` de cada año con algo que mirar: el de hoy, el del arranque, el de
+ *   cada mes de uso y el de cada uso autorizado. Sin modalidad y en contrato, {} (en contrato no hay años: lo reemplaza
+ *   `acumuladas`).
  * - `acumuladas`: en contrato, las horas acumuladas (`acumuladasDe`, spec 2026-11-03-mi-espacio-horas-acumuladas, 4); si no,
  *   null.
  * - `faltantes`: los de `faltantesDe`.
@@ -2669,8 +2669,9 @@ export const calcular = (estado, opciones) => {
   const francos = francosDe(deLaModalidad, conHoy);
   const horasAFavor = horasAFavorDe(deLaModalidad, conHoy);
 
+  // Lo no utilizado por año es solo de planta: en contrato, las horas acumuladas no tienen años
   const anios = new Set();
-  if (tipos.length > 0) {
+  if (tipos.length > 0 && modalidad !== 'contrato') {
     anios.add(anioDe(hoy));
     if (esFechaIso(datos.arranque)) anios.add(anioDe(datos.arranque));
     for (const mes of [...francos, ...horasAFavor]) anios.add(Number(mes.mes_de_uso.slice(0, 4)));

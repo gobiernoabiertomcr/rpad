@@ -33,7 +33,8 @@ import {
   diasLibresDelMes, porHabilitarDe, textoDeLosDiasHabiles, MESES_HASTA_LAS_HORAS, mesDeLaSalida, horasPorMesDeSalidas,
   repartoDelMes, textoDeLoQueSeMueve, diasDeLaCarga, fechasDeLosAsuetos, textoDelAvisoDeRestitucion,
   textoDelBotonDeRestitucion, textoDeLaFilaDeRestitucion, bajadaDeRestituciones, tituloDeRestitucionQueVence,
-  DIAS_DEL_AVISO_DE_RESTITUCION, textoDeLaAyudaDeRestituidos, textoDelHastaDeRestituidos, TIPOS_CON_RESTITUIBLES
+  DIAS_DEL_AVISO_DE_RESTITUCION, textoDeLaAyudaDeRestituidos, textoDelHastaDeRestituidos, TIPOS_CON_RESTITUIBLES,
+  horasAcumuladasDe, horasDelMesDe
 } from './miEspacioReglas.js';
 
 // Los dos formatos que ya estaban en las reglas: el panel los usa sin copiarlos
@@ -93,7 +94,12 @@ const delMesDeUso = (lista, mes) => listaDe(lista).find((fila) => esObjeto(fila)
 // Lo que suma un tipo con tope en un año (`usoDeLosTopes`), o 0
 const usadosDe = (cuenta, tipo, anio) => cantidadDe(listaDe(cuenta.topes)
   .find((uso) => esObjeto(uso) && uso.tipo === tipo && uso.anio === anio)?.usados);
-// Lo no utilizado previamente de un año (`noUtilizadasDe`), o null
+// Las horas acumuladas de contrato (`acumuladasDe`: spec 2026-11-03-mi-espacio-horas-acumuladas, 4), o un objeto vacío
+const acumuladasDel = (cuenta) => (esObjeto(cuenta.acumuladas) ? cuenta.acumuladas : {});
+// Lo que queda de ellas, nunca menos de 0 (un cambio posterior que deja la cuenta en negativo es un faltante, no un número)
+const quedanAcumuladas = (cuenta) => Math.max(0, cantidadDe(acumuladasDel(cuenta).quedan));
+
+// Lo no utilizado previamente de un año (`noUtilizadasDe`, solo planta), o null
 const noUtilizadasDel = (cuenta, anio) => (esObjeto(cuenta.noUtilizadas) && Object.hasOwn(cuenta.noUtilizadas, anio)
   && esObjeto(cuenta.noUtilizadas[anio]) ? cuenta.noUtilizadas[anio] : null);
 
@@ -493,25 +499,32 @@ const pastilla = (fila, planta, mes) => {
   };
 };
 
-// Lo no utilizado previamente de este año, en gris al final de las pastillas: el mes del que viene si es uno solo, o el año
+// En gris al final de las pastillas. En planta, lo no utilizado previamente de este año: el mes del que viene si es uno solo,
+// o el año. En contrato, las horas acumuladas, sin años (spec 2026-11-03-mi-espacio-horas-acumuladas, 10): «1,5 · Horas
+// acumuladas · De meses anteriores» («1 · Hora acumulada»)
 const previoDe = (planta, anio, cuenta) => {
+  if (!planta) {
+    const quedan = quedanAcumuladas(cuenta);
+    if (quedan <= 0) return null;
+    return {
+      numero: numeroTexto(quedan), titulo: quedan === 1 ? 'Hora acumulada' : 'Horas acumuladas', nota: 'De meses anteriores'
+    };
+  }
   const delAnio = noUtilizadasDel(cuenta, anio);
   const quedan = cantidadDe(delAnio?.quedan);
   if (quedan <= 0) return null;
   const meses = listaDe(delAnio.meses).filter((mes) => esObjeto(mes) && cantidadDe(mes.quedan) > 0);
   const delSaldo = esObjeto(delAnio.saldo) && cantidadDe(delAnio.saldo.quedan) > 0;
   const titulo = !delSaldo && meses.length === 1
-    ? mayuscula(nombreDelMes(meses[0].mes_de_uso)) : `${planta ? 'Francos' : 'Horas'} de ${anio}`;
-  const [uno, varios] = planta
-    ? ['No utilizado previamente', 'No utilizados previamente']
-    : ['No utilizada previamente', 'No utilizadas previamente'];
-  return { numero: numeroTexto(quedan), titulo, nota: quedan === 1 ? uno : varios };
+    ? mayuscula(nombreDelMes(meses[0].mes_de_uso)) : `Francos de ${anio}`;
+  return { numero: numeroTexto(quedan), titulo, nota: quedan === 1 ? 'No utilizado previamente' : 'No utilizados previamente' };
 };
 
 /**
  * Las pastillas de debajo de los tanques: `{ titulo, meses: [{ numero, mes, nota, estado }], previo }`. En planta, los
  * francos de los meses de uso de este mes a dos más, los que tienen alguno; en contrato, las horas a favor de este mes y
- * del siguiente, las que tienen alguna. `previo` es lo no utilizado previamente del año, o null.
+ * del siguiente, las que tienen alguna. `previo` es lo no utilizado previamente del año (en contrato, las horas acumuladas),
+ * o null.
  */
 const pastillasDe = ({ modalidad, mes, anio, cuenta }) => {
   const planta = modalidad === 'planta';
@@ -546,7 +559,8 @@ const textoDeLoQueSeHabilita = ({ hoy, anio, cuenta }) => {
 
 // Lo que queda de cada tipo, debajo de su opción: «33 disponibles» (con lo que se habilita después, «45 disponibles · 10
 // más el 1/1»), «Quedan 25 h de 42», «Quedan 9 de 15», «Sin tope», «1 para octubre» (el primer mes de uso, desde este, con
-// francos para usar) y «Quedan 1,5 h en octubre»
+// francos para usar) y «Quedan 1,5 h en octubre» (con horas acumuladas, «Quedan 1,5 h en octubre · 6,5 acumuladas»: spec
+// 2026-11-03-mi-espacio-horas-acumuladas, 5)
 const quedaDelTipo = (tipo, panel, tanques) => {
   if (tipo === 'vacaciones') {
     const disponibles = conUnidad(tanques.vacaciones.numero, 'disponible', 'disponibles');
@@ -563,7 +577,11 @@ const quedaDelTipo = (tipo, panel, tanques) => {
   const tanque = tanques.otros.find((otro) => otro.clave === tipo);
   if (tanque === undefined) return '';
   const queda = tanque.valor === 1 ? 'Queda' : 'Quedan';
-  if (tipo === 'horas_a_favor') return `${queda} ${tanque.numero} h en ${nombreDelMes(panel.mes)}`;
+  if (tipo === 'horas_a_favor') {
+    const delMes = `${queda} ${tanque.numero} h en ${nombreDelMes(panel.mes)}`;
+    const acumuladas = quedanAcumuladas(panel.cuenta);
+    return acumuladas > 0 ? `${delMes} · ${conUnidad(acumuladas, 'acumulada', 'acumuladas')}` : delMes;
+  }
   return `${queda} ${tanque.numero}${tipo === 'franquicia' ? ' h' : ''} de ${numeroTexto(tanque.total)}`;
 };
 
@@ -849,6 +867,17 @@ const textoDeLasLicencias = (reparto, id) => {
     `${anio} (${conUnidad(cantidadDe(dias), 'día', 'días')})`))}.`;
 };
 
+// De dónde salen las horas de una carga de horas a favor con horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas,
+// 10): «6,5 de noviembre y 0,5 acumuladas» (con el mes de su fecha, el de uso; «1 acumulada») o, sin horas del mes, «Todas
+// acumuladas». Sin parte acumulada, '' (como antes)
+const textoDeLasAcumuladasDeLaCarga = (fila) => {
+  const acumuladas = horasAcumuladasDe(fila);
+  if (acumuladas <= 0) return '';
+  const delMes = horasDelMesDe(fila);
+  if (delMes <= 0) return 'Todas acumuladas';
+  return `${numeroTexto(delMes)} de ${nombreDelMes(fila.desde.slice(0, 7))} y ${conUnidad(acumuladas, 'acumulada', 'acumuladas')}`;
+};
+
 // Los días restituidos en la lista (spec 2026-10-31-mi-espacio-dias-restituidos, 9)
 
 /**
@@ -895,6 +924,9 @@ const textoDeLosRestituidos = (grupo) => {
  * Una de días restituidos, con su grupo cargado, dice de qué licencia son en `de_licencias_texto` (`textoDeLosRestituidos`) y
  * suma `restituidos`, `{ grupo, ayuda_desde, ayuda_hasta, dias }` (`grupo`, la clave de su grupo), lo que necesita el
  * formulario para corregirla (sin su grupo, null). Las demás filas no llevan esas claves.
+ * Las horas a favor (spec 2026-11-03-mi-espacio-horas-acumuladas, 10): una carga de horas a favor suma `horas_acumuladas`, su
+ * parte acumulada (0 sin ella: `horasAcumuladasDe`), para que el formulario la corrija con los dos campos, y, con una parte
+ * acumulada, dice de dónde salen sus horas en `de_licencias_texto` (`textoDeLasAcumuladasDeLaCarga`). Solo esa clave de más.
  */
 const filaDeLicencia = (fila, contexto) => {
   const { datos, cuenta, hoy, persona, vinculos, feriados, grupos } = contexto;
@@ -914,6 +946,7 @@ const filaDeLicencia = (fila, contexto) => {
   let deLicencias = '';
   if (tipo === 'vacaciones') deLicencias = textoDeLasLicencias(cuenta.reparto, fila.id);
   else if (cargado !== undefined) deLicencias = textoDeLosRestituidos(cargado);
+  else if (tipo === 'horas_a_favor') deLicencias = textoDeLasAcumuladasDeLaCarga(fila);
   return {
     id: fila.id ?? null,
     tipo,
@@ -945,6 +978,7 @@ const filaDeLicencia = (fila, contexto) => {
     ...(TIPOS_CON_RESTITUIBLES.includes(tipo) ? {
       restituciones: grupos.filter((grupo) => grupo.licencia_id === id).map((grupo) => lineaDeRestitucion(grupo, contexto))
     } : {}),
+    ...(tipo === 'horas_a_favor' ? { horas_acumuladas: horasAcumuladasDe(fila) } : {}),
     ...(tipo === 'restituidos' ? {
       restituidos: cargado === undefined ? null : {
         grupo: cargado.clave, ayuda_desde: textoDeLaAyudaDeRestituidos(cargado, feriados),
@@ -963,7 +997,7 @@ const USADOS_EN_DIAS = Object.freeze([
 /**
  * El saldo inicial al final de la lista del año del arranque (en los demás años, null): `{ fecha, titulo, cargado_texto,
  * texto }`. El texto dice lo que quedaba de cada licencia ordinaria, lo que ya se había usado en el año (en planta, las
- * franquicias) y, en contrato, las horas no utilizadas previamente; lo que es 0 no se nombra.
+ * franquicias) y, en contrato, las horas acumuladas («Tenías 1,5 horas acumuladas.»); lo que es 0 no se nombra.
  */
 const saldoInicialDe = ({ arranque, modalidad, saldos }, anio) => {
   if (!esFechaIso(arranque) || anioDe(arranque) !== anio) return null;
@@ -991,7 +1025,7 @@ const saldoInicialDe = ({ arranque, modalidad, saldos }, anio) => {
   }
   if (usados.length > 0) texto += ` En ${anio} ya habías usado ${enLista(usados)}.`;
   const horas = modalidad === 'contrato' ? cantidad('horas_no_utilizadas') : 0;
-  if (horas > 0) texto += ` Tenías ${conUnidad(horas, 'hora no utilizada', 'horas no utilizadas')} previamente.`;
+  if (horas > 0) texto += ` Tenías ${conUnidad(horas, 'hora acumulada', 'horas acumuladas')}.`;
 
   return { fecha: arranque, titulo: `Saldo inicial ${anio}`, cargado_texto: `Cargado el ${formatoCorto(arranque)}`, texto };
 };
@@ -1202,18 +1236,14 @@ const situacionDeLasHoras = (fila, mesDeHoy) => {
   const sinUsar = cantidadDe(fila.no_utilizadas);
   if (sinUsar === 0) return ['usadas', 'Todas usadas'];
   if (fila.antes_del_arranque === true) return ['antes_del_arranque', 'Antes del saldo inicial: está en el saldo'];
-  return ['no_utilizadas', `${numeroTexto(sinUsar)} h ${sinUsar === 1 ? 'no utilizada' : 'no utilizadas'} previamente`];
+  // Lo que quedó sin usar pasó a las horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 10)
+  return ['no_utilizadas', `${numeroTexto(sinUsar)} h ${sinUsar === 1 ? 'pasó' : 'pasaron'} a acumuladas`];
 };
 
-// El uso autorizado (spec, 3.5 y 3.6): se puede registrar si queda algo no utilizado previamente en el año
-const usoAutorizadoDe = (modalidad, anio, cuenta) => {
+// El uso autorizado de planta (spec, 3.5 y 3.6): se puede registrar si queda algún franco no utilizado previamente en el año
+const usoAutorizadoDe = (anio, cuenta) => {
   const quedan = cantidadDe(noUtilizadasDel(cuenta, anio)?.quedan);
-  if (quedan <= 0) return { puede: false, texto: textoSinNoUtilizadas(modalidad, anio, 0) };
-  if (modalidad === 'contrato') {
-    return {
-      puede: true, texto: 'Si te autorizan a tomarlas, registrá un uso autorizado: se descuentan primero las más viejas.'
-    };
-  }
+  if (quedan <= 0) return { puede: false, texto: textoSinNoUtilizadas('planta', anio, 0) };
   return {
     puede: true,
     texto: `Tenés ${conUnidad(quedan, 'franco no utilizado', 'francos no utilizados')} previamente en ${anio}. `
@@ -1221,21 +1251,34 @@ const usoAutorizadoDe = (modalidad, anio, cuenta) => {
   };
 };
 
-// «Horas no utilizadas previamente» de contrato: lo que queda de cada mes, del más nuevo al más viejo, y del saldo inicial
-const noUtilizadasDeLaTabla = (anio, cuenta) => {
-  const delAnio = noUtilizadasDel(cuenta, anio);
-  const filas = listaDe(delAnio?.meses).filter((mes) => esObjeto(mes) && cantidadDe(mes.quedan) > 0)
+// Lo que dice debajo de la tarjeta de las horas acumuladas, con su botón si quedan
+const TEXTO_PARA_USAR_ACUMULADAS = 'Si te autorizan a tomarlas, sumalas en «Cargar licencia», con las horas a favor del mes o '
+  + 'solas: se descuentan primero las más viejas.';
+
+/**
+ * «Horas acumuladas» de contrato (spec 2026-11-03-mi-espacio-horas-acumuladas, 10; la clave de la tabla sigue siendo
+ * `no_utilizadas`): `{ titulo, total_texto, filas, nota, uso_autorizado: { puede, texto } }`, con lo que queda de cada mes,
+ * del más nuevo al más viejo, y del saldo inicial, de cualquier año (`acumuladasDe`, la cuenta de hoy: no depende del año de
+ * la tabla). Sin nada que quede, «0 horas» y `puede` false: nunca un número negativo.
+ */
+const acumuladasDeLaTabla = (cuenta) => {
+  const acumuladas = acumuladasDel(cuenta);
+  const filas = listaDe(acumuladas.meses).filter((mes) => esObjeto(mes) && cantidadDe(mes.quedan) > 0)
     .sort((a, b) => compararTexto(textoDe(b.mes_de_uso), textoDe(a.mes_de_uso)))
     .map((mes) => ({
       titulo: mesTitulo(mes.mes_de_uso), texto: conUnidad(cantidadDe(mes.quedan), 'hora', 'horas'),
       detalle: `de las extras de ${nombreDelMes(mes.mes_trabajado)}`
     }));
-  const delSaldo = esObjeto(delAnio?.saldo) ? cantidadDe(delAnio.saldo.quedan) : 0;
+  const delSaldo = esObjeto(acumuladas.saldo) ? cantidadDe(acumuladas.saldo.quedan) : 0;
   if (delSaldo > 0) filas.push({ titulo: 'Del saldo inicial', texto: conUnidad(delSaldo, 'hora', 'horas'), detalle: '' });
+  const quedan = quedanAcumuladas(cuenta);
   return {
-    total_texto: `${conUnidad(cantidadDe(delAnio?.quedan), 'hora', 'horas')} en ${anio}`,
+    titulo: 'Horas acumuladas',
+    total_texto: conUnidad(quedan, 'hora', 'horas'),
     filas,
-    uso_autorizado: usoAutorizadoDe('contrato', anio, cuenta)
+    nota: 'No vencen: quedan hasta que las uses.',
+    uso_autorizado: quedan > 0
+      ? { puede: true, texto: TEXTO_PARA_USAR_ACUMULADAS } : { puede: false, texto: 'No tenés horas acumuladas.' }
   };
 };
 
@@ -1403,7 +1446,8 @@ const mesesConSalidasSinHoras = (datos, cuenta, delAnio, trabajados) => {
  *   horas_texto, nota }`: desde y hasta, para corregirlas).
  * - En contrato, `{ mes, mes_texto, horas_texto, horas_detalle, a_favor_texto, a_favor_detalle, usadas_texto, usadas_detalle,
  *   estado, situacion }` (`a_favor_detalle`: las horas del mes en días de franco, «2 días de franco y 4 horas», `enDiasDeFranco`),
- *   más `no_utilizadas: { total_texto, filas: [{ titulo, texto, detalle }], uso_autorizado }`; los días son sus salidas de la
+ *   más `no_utilizadas: { titulo, total_texto, filas: [{ titulo, texto, detalle }], nota, uso_autorizado }`, las horas
+ *   acumuladas (`acumuladasDeLaTabla`: no dependen del año); los días son sus salidas de la
  *   planilla (`diasDeLasSalidas`: contrato no lee las horas extras de planta). Desde el tilde «Sumar a {mes anterior}» (spec
  *   2026-10-30-mi-espacio-horas-mes-anterior, sección 5), las horas de un mes son las que suma con él (las horas a favor) y
  *   `horas_detalle` dice de dónde salen cuando algo se mueve («5,5 h + 1,5 h de febrero», «1,5 h de febrero», «1,5 h suman a
@@ -1457,7 +1501,7 @@ export const tablaDeHorasExtras = (estado, calculo, opciones) => {
         uso_texto: francos > 0 ? mesTitulo(fila.mes_de_uso) : '—', estado: estadoDelMes, situacion
       };
     });
-    return { ...tabla, uso_autorizado: usoAutorizadoDe('planta', elAnio, cuenta) };
+    return { ...tabla, uso_autorizado: usoAutorizadoDe(elAnio, cuenta) };
   }
 
   tabla.meses = [...trabajados, ...mesesConSalidasSinHoras(datos, cuenta, delAnio, trabajados)]
@@ -1476,7 +1520,7 @@ export const tablaDeHorasExtras = (estado, calculo, opciones) => {
         estado: estadoDelMes, situacion
       };
     });
-  return { ...tabla, no_utilizadas: noUtilizadasDeLaTabla(elAnio, cuenta) };
+  return { ...tabla, no_utilizadas: acumuladasDeLaTabla(cuenta) };
 };
 
 // La planilla de contrato (spec 2026-10-27-mi-espacio-horas, secciones 3, 4 y 8)

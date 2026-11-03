@@ -127,6 +127,9 @@ const NOTA_DE_LOS_FRANCOS = 'Solo las horas extras al 100%. Cada 7 horas de un m
   + 'después, en ese mes.';
 const NOTA_DE_LAS_HORAS_A_FAVOR = 'Cada hora extra de un mes es una hora menos de trabajo el mes siguiente, de a media hora. 7 horas '
   + 'son el día entero.';
+// El título y la nota de la tarjeta de contrato de una respuesta de antes, sin los suyos (desde las horas acumuladas, los manda el
+// servidor)
+const TITULO_DE_LAS_NO_UTILIZADAS = 'Horas no utilizadas previamente';
 const NOTA_DE_LAS_NO_UTILIZADAS = 'Quedan a la vista aunque su mes ya pasó. Vuelven a cero el 1/1.';
 
 // El Resumen «Titular»: la clase de cada capa del tanque de vacaciones, en un tramo de la regla y en su muestra (la `clase` del
@@ -783,17 +786,32 @@ function htmlDeDiaPorDiaDeSalidas(tabla, mes) {
     + `<span>${esc(deMapa(tabla.totales_por_mes, mes, ''))}</span></div><ul class="me-lista">${filas.join('')}</ul></div>`;
 }
 
-// Contrato: «Horas no utilizadas previamente», cada mes con su origen (y lo del saldo inicial), con el uso autorizado debajo
+// Contrato: lo que manda «Usar horas acumuladas» debajo de la tarjeta (spec 2026-11-03-mi-espacio-horas-acumuladas, 10): el texto
+// del servidor y, si quedan, el botón, que abre «Cargar licencia» con «Horas a favor» (`data-usar-acumuladas`, con el tipo)
+function htmlDelUsoDeLasAcumuladas(uso) {
+  if (!esObjeto(uso)) return '';
+  const boton = uso.puede === true
+    ? '<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-usar-acumuladas="horas_a_favor">Usar horas acumuladas</button>'
+    : '';
+  return `<div class="me-uso"><p class="me-nota">${esc(uso.texto)}</p>${boton}</div>`;
+}
+
+/**
+ * Contrato: «Horas acumuladas» (spec 2026-11-03-mi-espacio-horas-acumuladas, 10), cada mes con su origen (y lo del saldo inicial),
+ * con el título y la nota del servidor (sin ellos, una respuesta de antes, los de antes) y «Usar horas acumuladas» debajo
+ */
 function htmlDeNoUtilizadas(tabla) {
   const noUtilizadas = tabla?.no_utilizadas;
   if (!esObjeto(noUtilizadas)) return '';
+  const titulo = conTexto(noUtilizadas.titulo) ? noUtilizadas.titulo : TITULO_DE_LAS_NO_UTILIZADAS;
+  const nota = conTexto(noUtilizadas.nota) ? noUtilizadas.nota : NOTA_DE_LAS_NO_UTILIZADAS;
   const filas = listaDe(noUtilizadas.filas).map((fila) => `<li class="me-fila me-fila-dos"><span class="me-fila-fecha">${esc(fila.titulo)}</span>`
     + `<span class="me-fila-cuerpo">${esc(fila.texto)}${conTexto(fila.detalle) ? `<span class="me-detalle">${esc(fila.detalle)}</span>` : ''}`
     + '</span></li>');
-  return '<div class="me-tarjeta"><div class="me-cabeza"><h3>Horas no utilizadas previamente</h3>'
+  return `<div class="me-tarjeta"><div class="me-cabeza"><h3>${esc(titulo)}</h3>`
     + `<span>${esc(noUtilizadas.total_texto)}</span></div>`
     + (filas.length > 0 ? `<ul class="me-lista">${filas.join('')}</ul>` : '')
-    + `<p class="me-nota">${NOTA_DE_LAS_NO_UTILIZADAS}</p>${htmlDelUsoAutorizado(noUtilizadas.uso_autorizado)}</div>`;
+    + `<p class="me-nota">${esc(nota)}</p>${htmlDelUsoDeLasAcumuladas(noUtilizadas.uso_autorizado)}</div>`;
 }
 
 /**
@@ -3656,7 +3674,8 @@ function pintarHoras() {
 }
 
 // Un clic en la pestaña: «Cargar horas extras» (en contrato, la planilla), «Editar» de un día (en contrato, la planilla en ese día),
-// «Registrar un uso autorizado», un año del selector o un mes de la tabla (cambia el día por día sin pedir nada)
+// «Registrar un uso autorizado» (en contrato, «Usar horas acumuladas»), un año del selector o un mes de la tabla (cambia el día
+// por día sin pedir nada)
 async function alTocarHoras(evento) {
   const objetivo = evento.target;
   if (objetivo?.closest?.('[data-cargar="horas"]')) {
@@ -3679,6 +3698,12 @@ async function alTocarHoras(evento) {
   const uso = objetivo?.closest?.('[data-abrir="uso"]');
   if (uso) {
     abrirUso({ volverA: uso });
+    return;
+  }
+  // Contrato: «Usar horas acumuladas» abre «Cargar licencia» con «Horas a favor» (spec 2026-11-03-mi-espacio-horas-acumuladas, 10)
+  const acumuladas = objetivo?.closest?.('[data-usar-acumuladas]');
+  if (acumuladas) {
+    abrirLicencia({ tipo: 'horas_a_favor', volverA: acumuladas });
     return;
   }
   const anio = objetivo?.closest?.('[data-anio]');
@@ -4322,12 +4347,12 @@ function mostrarFallaDelServidor(nombre, falla, boton) {
 // «Registrar un uso autorizado», «Cargar licencia» o «Cargar horas extras» de una tarjeta, un botón de un grupo de días
 // restituidos (por su grupo: el del aviso, el de «Vence pronto» y el de la línea de la fila, que abren «Cargar licencia» o «Pedir la
 // restitución»), un botón de «Vence pronto» (por su tipo), «Word» y «Borrar el pedido» de un pedido de restitución (por su id), un
-// evento de la agenda (por su id) y, desde la agenda con más onda, el número de un día del mes y «Nuevo evento» del día elegido (por
-// su fecha: un «Nuevo evento» abierto desde ahí vuelve a él)
+// evento de la agenda (por su id), desde la agenda con más onda, el número de un día del mes y «Nuevo evento» del día elegido (por
+// su fecha: un «Nuevo evento» abierto desde ahí vuelve a él) y, desde las horas acumuladas, «Usar horas acumuladas» de contrato
 const VISTAS_QUE_SE_DIBUJAN = Object.freeze(['vista-resumen', 'vista-licencias', 'vista-horas', 'vista-agenda']);
 const IDENTIDADES_DEL_FOCO = Object.freeze(['data-editar-licencia', 'data-editar-horas', 'data-editar-salida', 'data-abrir',
   'data-cargar', 'data-grupo', 'data-tipo', 'data-word-restitucion', 'data-borrar-restitucion', 'data-evento', 'data-dia',
-  'data-nuevo-el']);
+  'data-nuevo-el', 'data-usar-acumuladas']);
 
 // El id del lugar de la pestaña donde está un control (el primer antepasado con id, antes de la pestaña: en la agenda, 'ag-mes' o
 // 'ag-proximos'), o null

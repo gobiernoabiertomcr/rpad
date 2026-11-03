@@ -4131,8 +4131,8 @@ describe('las horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 4)'
     const calculo = calcular(estado, el('2026-11-03'));
     assert.deepEqual(calculo.acumuladas, acumuladasDe(estado, el('2026-11-03')));
     assert.equal(calculo.faltantes.some((faltante) => faltante.clave.startsWith('uso:')), false);
-    // Lo no utilizado del año se sigue calculando (lo lee el Resumen)
-    assert.equal(calculo.noUtilizadas[2026].unidad, 'horas');
+    // Lo no utilizado por año ya no se calcula en contrato: lo reemplazan las acumuladas (también en el Resumen)
+    assert.deepEqual(calculo.noUtilizadas, {});
     assert.deepEqual(calcular(CONTRATO.estado, A_HOY).acumuladas, acumuladasDe(CONTRATO.estado, A_HOY));
     assert.equal(calcular(PLANTA.estado, A_HOY).acumuladas, null);
     assert.equal(calcular({ ...PLANTA.estado, modalidad: null }, A_HOY).acumuladas, null);
@@ -4454,7 +4454,7 @@ describe('«Mis vacaciones y saldos»: los campos del saldo inicial', () => {
       'vacaciones-2024', 'vacaciones-2025', 'vacaciones-2026', 'estudios', 'medica', 'familiar', 'horas_no_utilizadas'
     ]);
     assert.deepEqual(campos.at(-1), {
-      clave: 'horas_no_utilizadas', concepto: 'horas_no_utilizadas', anio: 2026, rotulo: 'Horas no utilizadas previamente',
+      clave: 'horas_no_utilizadas', concepto: 'horas_no_utilizadas', anio: 2026, rotulo: 'Horas acumuladas',
       maximo: 200, paso: 0.5, ayuda: ''
     });
     // 15 días: la primera mitad es 8; y secundaria, 10 días de estudios
@@ -4660,7 +4660,8 @@ describe('calcular', () => {
     assert.deepEqual(calculo.topes, usoDeLosTopes(CONTRATO.estado, { feriados: SIN_FERIADOS }));
     assert.deepEqual(calculo.francos, []);
     assert.deepEqual(calculo.horasAFavor, horasAFavorDe(CONTRATO.estado, A_HOY));
-    assert.equal(calculo.noUtilizadas[2026].quedan, 6.5);
+    assert.deepEqual(calculo.noUtilizadas, {});
+    assert.equal(calculo.acumuladas.quedan, 6.5);
     assert.deepEqual(calculo.faltantes, []);
     assert.deepEqual(calculo.avisosDeSalidas, []);
   });
@@ -4680,10 +4681,9 @@ describe('calcular', () => {
   });
 
   it('lo no utilizado de cada año con algo: hoy, el arranque, los meses de uso y los usos autorizados', () => {
-    // Las horas de diciembre se usan en enero de 2027
+    // En contrato ya no hay años: las horas de diciembre, que se usan en enero de 2027, van a las acumuladas
     const diciembre = conSalidas([salida(100, '2026-12-10', '18:00')]);
-    assert.deepEqual(Object.keys(calcular(diciembre, { hoy: '2027-02-15', feriados: SIN_FERIADOS }).noUtilizadas),
-      ['2026', '2027']);
+    assert.deepEqual(calcular(diciembre, { hoy: '2027-02-15', feriados: SIN_FERIADOS }).noUtilizadas, {});
     // Un uso autorizado de 2025, en planta (cuenta también antes del arranque)
     const usoViejo = conHoras('planta', [], [uso(200, 'uso_autorizado', '2025-11-04', 7)]);
     assert.deepEqual(Object.keys(calcular(usoViejo, A_HOY).noUtilizadas), ['2025', '2026']);

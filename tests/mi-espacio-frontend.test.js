@@ -473,7 +473,7 @@ describe('el Resumen «Titular»', () => {
     assert.deepEqual(mesesDe(M.htmlDeLosMeses(contrato.pastillas)), [
       ['vence', '1,5', 'Octubre', 'De 10,5, hasta el viernes 30/10'],
       ['pendiente', '4', 'Noviembre', 'Octubre sigue sumando'],
-      ['previo', '6,5', 'Horas de 2026', 'No utilizadas previamente']
+      ['previo', '6,5', 'Horas acumuladas', 'De meses anteriores']
     ]);
     // En el resto, después de los números
     assert.ok(M.htmlDelResto(planta).includes(`</ul>${html}`));
@@ -1016,12 +1016,33 @@ describe('las horas extras', () => {
     assert.ok(!conHtml.includes('<img') && conHtml.includes(`<small>${ESCAPADO}</small>`));
   });
 
-  it('contrato: «Horas no utilizadas previamente», con su total, cada fila y «Registrar un uso autorizado»', () => {
+  // Spec 2026-11-03-mi-espacio-horas-acumuladas, 10: el título y la nota del servidor, y «Usar horas acumuladas»
+  it('contrato: «Horas acumuladas», con su total, cada fila, la nota y «Usar horas acumuladas»', () => {
     const html = M.htmlDeNoUtilizadas(contrato);
-    assert.match(html, /<h3>Horas no utilizadas previamente<\/h3><span>6,5 horas en 2026<\/span>/);
+    assert.match(html, /<h3>Horas acumuladas<\/h3><span>6,5 horas<\/span>/);
     assert.deepEqual(filasDe(html).map(({ texto }) => texto), ['Del saldo inicial 6,5 horas']);
+    assert.ok(html.includes('<p class="me-nota">No vencen: quedan hasta que las uses.</p>'));
     assert.ok(html.includes(contrato.no_utilizadas.uso_autorizado.texto));
-    assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [atributos['data-abrir'], texto]), [['uso', 'Registrar un uso autorizado']]);
+    assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [atributos['data-usar-acumuladas'], atributos['data-abrir'], texto]),
+      [['horas_a_favor', undefined, 'Usar horas acumuladas']]);
+    assert.doesNotMatch(html, /data-abrir="uso"|Registrar un uso autorizado|no utilizad|Vuelven a cero/);
+    // Sin acumuladas: el texto y sin botón
+    const sinAcumuladas = M.htmlDeNoUtilizadas({ ...contrato, no_utilizadas: { ...contrato.no_utilizadas, total_texto: '0 horas',
+      filas: [], uso_autorizado: { puede: false, texto: 'No tenés horas acumuladas.' } } });
+    assert.ok(sinAcumuladas.includes('<p class="me-nota">No tenés horas acumuladas.</p>'));
+    assert.deepEqual(botonesDe(sinAcumuladas), []);
+    // El título, la nota y el texto del servidor, escapados
+    const conHtml = M.htmlDeNoUtilizadas({ ...contrato, no_utilizadas: { ...contrato.no_utilizadas, titulo: MALICIOSO, nota: MALICIOSO,
+      uso_autorizado: { puede: true, texto: MALICIOSO } } });
+    assert.ok(!conHtml.includes('<img'));
+    assert.equal(conHtml.split(ESCAPADO).length - 1, 3);
+    // Sin título ni nota (una respuesta de antes), los de antes
+    const deAntes = { ...contrato.no_utilizadas };
+    delete deAntes.titulo;
+    delete deAntes.nota;
+    const html2 = M.htmlDeNoUtilizadas({ ...contrato, no_utilizadas: deAntes });
+    assert.match(html2, /<h3>Horas no utilizadas previamente<\/h3>/);
+    assert.ok(html2.includes('<p class="me-nota">Quedan a la vista aunque su mes ya pasó. Vuelven a cero el 1/1.</p>'));
     // Con el mes de origen, debajo
     const conMes = { ...contrato, no_utilizadas: { ...contrato.no_utilizadas, filas: [{ titulo: 'Septiembre 2026', texto: '1,5 horas', detalle: 'de las extras de agosto' }] } };
     assert.deepEqual(filasDe(M.htmlDeNoUtilizadas(conMes)).map(({ texto }) => texto), ['Septiembre 2026 1,5 horas de las extras de agosto']);
@@ -5371,7 +5392,8 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.equal(pagina.el('ms-campo-medica-error').textContent, 'Escribí un número de 0 a 25.');
   });
 
-  it('«Registrar un uso autorizado» en contrato: con las horas, de a media hora', async () => {
+  // Spec 2026-11-03-mi-espacio-horas-acumuladas, 8 y 10: en contrato, la tarjeta abre «Cargar licencia» con «Horas a favor»
+  it('«Usar horas acumuladas» en contrato abre «Cargar licencia» con «Horas a favor»; al cerrar, el foco vuelve al botón', async () => {
     const pagina = montarPagina({
       hash: '#horas',
       responder: (metodo, ruta) => {
@@ -5381,7 +5403,33 @@ describe('los formularios en la página (DOM falso)', () => {
       }
     });
     await pagina.iniciar();
-    await pagina.tocar(pagina.el('vista-horas').querySelector('[data-abrir="uso"]'));
+    assert.equal(pagina.el('vista-horas').querySelector('[data-abrir="uso"]'), null);
+    const boton = pagina.el('vista-horas').querySelector('[data-usar-acumuladas]');
+    assert.equal(boton.textContent, 'Usar horas acumuladas');
+    await pagina.tocar(boton);
+    assert.equal(pagina.abierto('modal-licencia'), true);
+    assert.equal(pagina.abierto('modal-uso'), false);
+    assert.equal(pagina.el('ml-tipos').querySelector('input:checked').getAttribute('value'), 'horas_a_favor');
+    await pagina.tocar(pagina.el('modal-licencia').querySelector('.modal-footer [data-cerrar]'));
+    assert.equal(pagina.abierto('modal-licencia'), false);
+    assert.equal(pagina.documento.activeElement, boton);
+    // Después de guardar, la recarga lo reemplaza: el foco va a su equivalente
+    assert.ok(M.IDENTIDADES_DEL_FOCO.includes('data-usar-acumuladas'));
+  });
+
+  it('«Registrar un uso autorizado» de contrato (uno que ya estaba): con las horas, de a media hora', async () => {
+    const pagina = montarPagina({
+      hash: '#horas',
+      responder: (metodo, ruta) => {
+        if (ruta === '/api/mi-espacio/resumen') return ok(resumenDel(CONTRATO));
+        if (ruta === '/api/mi-espacio/horas-extras') return ok(horasDe(CONTRATO));
+        return RESPUESTAS_DE_ENTRADA(metodo, ruta);
+      }
+    });
+    await pagina.iniciar();
+    // La página ya no lo ofrece en contrato: lo abre el formulario de siempre (el «Editar» de un uso cargado lo abre así)
+    await pagina.contexto.abrirUso();
+    await pagina.esperar();
     assert.equal(pagina.abierto('modal-uso'), true);
     assert.equal(pagina.el('mu-grupo-horas').hidden, false);
     assert.equal(pagina.el('mu-horas').innerHTML, M.htmlDeOpcionesDeHoras('medias', ''));
