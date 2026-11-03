@@ -4342,7 +4342,7 @@ describe('las horas a favor con horas acumuladas (spec 2026-11-03-mi-espacio-hor
       assert.equal(nota.status, 200, JSON.stringify(nota.body));
       const cuerpo = `el usufructo de siete (7) horas a favor el día ${diaDeLaSemana(DIA)} ${formatoLargo(DIA)}: seis horas y `
         + `media (6,5) correspondientes a las horas extras realizadas en ${mesEnFrase(mesMas(MES_DE_USO, -1))} y media hora `
-        + '(0,5) de horas extras acumuladas de meses anteriores.';
+        + '(0,5) de horas extras no usufructuadas de meses anteriores.';
       assert.ok(nota.body.data.html.includes(cuerpo), nota.body.data.html);
     });
 
