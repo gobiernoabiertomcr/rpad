@@ -12506,6 +12506,18 @@ describe('las horas acumuladas en «Cargar licencia»: lo puro', () => {
     // Un tope negativo o raro, 0
     assert.deepEqual(plano(M.lasDosHoras({ ...topes, del_mes: -1, acumuladas: 'x' }, { delMes: 1, acumuladas: 1 })),
       { delMes: { tope: 0, valor: 0 }, acumuladas: { tope: 0, valor: 0 } });
+    // Revisión, 1: al corregir, cada tope es al menos la parte guardada de la carga, y el de las acumuladas sigue sin pasar de 7 menos
+    // lo del mes
+    const debajo = { ...topes, del_mes: 2, acumuladas: 1.5 };
+    assert.deepEqual(plano(M.lasDosHoras(debajo, { delMes: 4, acumuladas: 3 }, { delMes: 4, acumuladas: 3 })),
+      { delMes: { tope: 4, valor: 4 }, acumuladas: { tope: 3, valor: 3 } });
+    assert.deepEqual(plano(M.lasDosHoras(debajo, { delMes: 4, acumuladas: 3 })),
+      { delMes: { tope: 2, valor: 2 }, acumuladas: { tope: 1.5, valor: 1.5 } });
+    // Con los topes más altos, los topes
+    assert.deepEqual(plano(M.lasDosHoras(topes, { delMes: 1, acumuladas: 0 }, { delMes: 1, acumuladas: 0 })),
+      { delMes: { tope: 4, valor: 1 }, acumuladas: { tope: 6, valor: 0 } });
+    assert.deepEqual(plano(M.lasDosHoras({ ...debajo, del_mes: 6 }, { delMes: 6, acumuladas: 3 }, { delMes: 4, acumuladas: 3 })),
+      { delMes: { tope: 6, valor: 6 }, acumuladas: { tope: 1, valor: 1 } });
   });
 
   it('rotulosDeLasDos: «De noviembre» con «(quedan 4)» y «(tenés 6,5)»; sin topes, el mes de la fecha y sin topes', () => {
@@ -12736,6 +12748,63 @@ describe('las horas acumuladas en «Cargar licencia» (DOM falso)', () => {
     assert.deepEqual(calculos(pagina).at(-1).cuerpo, {
       tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', mostrar: true, nota: '', horas: 7, horas_acumuladas: 3, id: 9
     });
+  });
+
+  // Revisión, 1: un cambio posterior (una salida borrada, el saldo inicial más bajo) dejó los topes de la carga que se corrige debajo
+  // de lo que tenía. Abrir «Editar» no baja lo guardado: los campos lo conservan y, si solo cambia la nota, el cuerpo lleva lo mismo
+  for (const [cual, debajo] of [['del mes', { del_mes: 2, acumuladas: 6.5 }], ['de las acumuladas', { del_mes: 4, acumuladas: 1.5 }]]) {
+    it(`corregir una carga con los topes ${cual} debajo de lo guardado conserva lo guardado y lo manda igual`, async () => {
+      const pagina = montarPagina({
+        hash: '#licencias',
+        responder: conLasAcumuladas({
+          estado: CON_UNA_COMBINADA,
+          extra: (metodo, ruta) => {
+            if (ruta === `${RUTA_DE_LOS_TOPES}?fecha=2026-11-10&id=9`) {
+              return ok({ mes: '2026-11', mes_texto: 'noviembre', termino: false, ...debajo });
+            }
+            if (metodo === 'PUT' && ruta === '/api/mi-espacio/licencias/9') return ok({ id: 9 }, 'Licencia corregida.');
+            return undefined;
+          }
+        })
+      });
+      await pagina.iniciar();
+      await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="9"]'));
+      await pagina.correr();
+      await pagina.correr();
+      assert.equal(pagina.el('ml-horas-del-mes').value, '4');
+      assert.equal(pagina.el('ml-horas-acumuladas').value, '3');
+      assert.deepEqual(opcionesDe(pagina.el('ml-horas-del-mes')), hastaDe(Math.max(debajo.del_mes, 4)));
+      assert.deepEqual(opcionesDe(pagina.el('ml-horas-acumuladas')), hastaDe(3));
+      assert.equal(pagina.el('ml-horas-total').textContent, 'Total: 7 horas, el día entero.');
+      await pagina.escribir('ml-nota', 'Turno');
+      await pagina.correr();
+      await pagina.tocar(pagina.el('ml-guardar'));
+      assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/licencias/9').at(-1).cuerpo,
+        { tipo: 'horas_a_favor', desde: '2026-11-10', hasta: '2026-11-10', mostrar: true, nota: 'Turno', horas: 7, horas_acumuladas: 3 });
+    });
+  }
+
+  it('corregir una carga y pasar la fecha a otro mes: valen los topes de ese mes, como en una carga nueva', async () => {
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conLasAcumuladas({
+        estado: CON_UNA_COMBINADA,
+        extra: (metodo, ruta) => (ruta === `${RUTA_DE_LOS_TOPES}?fecha=2026-12-01&id=9`
+          ? ok({ mes: '2026-12', mes_texto: 'diciembre', del_mes: 0, acumuladas: 1.5, termino: false }) : undefined)
+      })
+    });
+    await pagina.iniciar();
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-editar-licencia="9"]'));
+    await pagina.correr();
+    await pagina.correr();
+    await pagina.escribir('ml-desde', '2026-12-01');
+    await pagina.correr();
+    await pagina.correr();
+    assert.equal(pagina.el('ml-horas-del-mes-rotulo').textContent, 'De diciembre (quedan 0)');
+    assert.deepEqual(opcionesDe(pagina.el('ml-horas-del-mes')), hastaDe(0));
+    assert.deepEqual(opcionesDe(pagina.el('ml-horas-acumuladas')), hastaDe(1.5));
+    assert.equal(pagina.el('ml-horas-del-mes').value, '0');
+    assert.equal(pagina.el('ml-horas-acumuladas').value, '1.5');
   });
 
   it('al pasar a otro tipo, los dos campos se van y el cálculo no lleva las acumuladas', async () => {

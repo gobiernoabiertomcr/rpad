@@ -1332,15 +1332,19 @@ const horasElegidas = (valor) => {
  * delMes: { tope, valor }, acumuladas: { tope, valor } }`. «De …», hasta lo que queda del mes (`del_mes`) y nunca más de 7;
  * «Acumuladas», hasta lo que queda (`acumuladas`; con el mes terminado, `termino`, menos lo elegido del mes, que ya es parte de
  * ellas) y nunca más de 7 menos lo elegido del mes. Lo elegido nunca pasa de su tope: si pasa (otro mes, o se subió lo del mes), baja
- * hasta él. Sin topes, los dos hasta el día entero (el servidor valida igual)
+ * hasta él. Sin topes, los dos hasta el día entero (el servidor valida igual). `guardadas` (`{ delMes, acumuladas }`, números, o null)
+ * son las partes de la carga que se corrige, si la fecha sigue en su mes: cada tope es al menos la suya (un cambio posterior, como
+ * una salida borrada, pudo dejar los topes debajo; abrir «Editar» nunca baja lo guardado: el cálculo del servidor dice el faltante),
+ * y el de las acumuladas sigue sin pasar de 7 menos lo del mes
  */
-function lasDosHoras(topes, elegidas) {
+function lasDosHoras(topes, elegidas, guardadas = null) {
   const conTopes = esObjeto(topes);
   const elegido = esObjeto(elegidas) ? elegidas : {};
-  const topeDelMes = conTopes ? mediaHoraHasta(topes.del_mes) : JORNADA;
+  const guardado = esObjeto(guardadas) ? guardadas : {};
+  const topeDelMes = mediaHoraHasta(Math.max(conTopes ? mediaHoraHasta(topes.del_mes) : JORNADA, horasElegidas(guardado.delMes)));
   const delMes = Math.min(horasElegidas(elegido.delMes), topeDelMes);
   const queda = conTopes ? mediaHoraHasta(topes.acumuladas) - (topes.termino === true ? delMes : 0) : JORNADA;
-  const topeDeLasAcumuladas = mediaHoraHasta(Math.min(queda, JORNADA - delMes));
+  const topeDeLasAcumuladas = mediaHoraHasta(Math.min(Math.max(queda, horasElegidas(guardado.acumuladas)), JORNADA - delMes));
   return {
     delMes: { tope: topeDelMes, valor: delMes },
     acumuladas: { tope: topeDeLasAcumuladas, valor: Math.min(horasElegidas(elegido.acumuladas), topeDeLasAcumuladas) }
@@ -4809,6 +4813,20 @@ function horasDelCampo(formulario) {
   return String(horasElegidas(delMes) + horasElegidas(acumuladas));
 }
 
+// Las partes de unas horas a favor que se corrigen (`{ delMes, acumuladas }`, números: lo del mes es el total menos las acumuladas),
+// mientras la fecha siga en su mes y los topes sean de ese mes (si llegaron); si no (una nueva, otro tipo u otro mes), null: valen los
+// topes, como en una carga nueva
+function partesGuardadas(formulario) {
+  const { fila, valores } = formulario;
+  if (!esObjeto(fila) || fila.tipo !== 'horas_a_favor' || formulario.tipo !== 'horas_a_favor' || !esFechaDeTexto(fila.desde)) return null;
+  const mes = fila.desde.slice(0, 7);
+  const desde = porId('ml-desde').value;
+  if (!esFechaDeTexto(desde) || desde.slice(0, 7) !== mes) return null;
+  if (esObjeto(formulario.topes) && formulario.topes.mes !== mes) return null;
+  const acumuladas = horasElegidas(valores.horas_acumuladas);
+  return { delMes: Math.max(0, horasElegidas(valores.horas) - acumuladas), acumuladas };
+}
+
 // Los dos campos o «Horas» (su rótulo, el campo y su error): los dos, con los topes del servidor (lasDosHoras: lo elegido nunca pasa
 // de su tope), sus rótulos y el total; mientras llegan los topes, los campos de las horas, deshabilitados. `elegidas`, lo que va en
 // los dos campos (de entrada, lo que tienen)
@@ -4821,7 +4839,7 @@ function pintarLasDosHoras(formulario, elegidas = horasDeLosCampos(formulario)) 
   const cargando = formulario.nombre === 'licencia' && formulario.cargandoTopes === true;
   for (const id of ['ml-horas', 'ml-horas-del-mes', 'ml-horas-acumuladas']) porId(id).disabled = cargando;
   if (!dos) return;
-  const { delMes, acumuladas } = lasDosHoras(formulario.topes, elegidas);
+  const { delMes, acumuladas } = lasDosHoras(formulario.topes, elegidas, partesGuardadas(formulario));
   const desde = porId('ml-desde').value;
   porId('ml-horas-del-mes-rotulo').innerHTML = htmlDelRotuloDelMes(formulario.topes, desde);
   porId('ml-horas-acumuladas-tope').textContent = rotulosDeLasDos(formulario.topes, desde).acumuladas;
