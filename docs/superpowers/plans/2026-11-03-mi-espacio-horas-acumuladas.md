@@ -104,7 +104,8 @@ Sin código. El controlador:
   cabecera que dice qué se pierde (spec, 6). `schema.sql`: la columna en su lugar. `miEspacioDatos.js`: la columna en
   `COLUMNAS_LICENCIA_MIA` y `horas_acumuladas: numeroONulo(fila.horas_acumuladas)` en `aLicencia`, después de `horas`.
 - [ ] **Step 4:** aplicar la migración a `rpad_rama_saldo_horas` (la base del `.env`) y a la base de Docker de los tests si hace
-  falta; los dos archivos de tests → PASS.
+  falta; los dos archivos de tests → PASS. Cambia también, por la clave nueva, el `deepEqual` de las licencias de `estadoDe`
+  (`tests/mi-espacio-api.test.js` ~2700-2711, también las de planta): suman `horas_acumuladas: null`.
 - [ ] **Step 5: Commit y push.**
 
 ---
@@ -124,11 +125,13 @@ Sin código. El controlador:
   - `acumuladasDe(estado, { hoy, feriados }) → { saldo: { cantidad, quedan }, meses: [{ mes_de_uso, mes_trabajado, cantidad,
     quedan }], usos: [{ id, fecha, cantidad }], entra, sale, quedan }`. Fuera de contrato o sin un hoy válido, todo en 0 y listas
     vacías.
-  - `calcular(...)` suma `acumuladas` (contrato: `acumuladasDe`; si no, null) y, en contrato, `noUtilizadas` queda `{}` (planta,
-    como hoy).
+  - `calcular(...)` suma `acumuladas` (contrato: `acumuladasDe`; si no, null). **En contrato, `noUtilizadas` se sigue calculando
+    hasta la Task 5** (la leen `previoDe`, `usoAutorizadoDe` y `noUtilizadasDeLaTabla` del Resumen, que cambian ahí), pero ya no
+    da faltantes: los `uso:<anio>` quedan solo para planta.
   - `textoQuedanAcumuladas(quedan) → string`: «No te quedan horas acumuladas.», «Te queda 1 hora acumulada.», «Te quedan 1,5
-    horas acumuladas.» (exportada: la página la copia en Task 7 solo si la usa).
-  - El faltante `{ clave: 'acumuladas', campo: 'horas_acumuladas', medida, texto, mensaje }`.
+    horas acumuladas.» (exportada).
+  - El faltante `{ clave: 'acumuladas', campo: 'horas_acumuladas', medida, texto, mensaje }` (el campo de una carga lo ajusta la
+    Task 3 según su tipo).
 
 - [ ] **Step 1: Tests que fallan** (puros, con una persona de contrato inventada; los números del caso: arranque el 28/10/2026,
   saldo inicial `horas_no_utilizadas` 2026 = 1,5, salidas de octubre que dan 6,5 h; hoy el 03/11/2026):
@@ -147,21 +150,30 @@ Sin código. El controlador:
   - `faltantesDe` con lo que sale por encima de lo que entra: `{ clave: 'acumuladas', campo: 'horas_acumuladas', medida: 0.5,
     texto: 'Revisá tus horas acumuladas: usaste 2 horas y había 1,5.', mensaje: 'No te quedan horas acumuladas.' }`; sin nada
     que entra: «… usaste 1 hora y no había ninguna.».
-  - `calcular` de contrato: `noUtilizadas` es `{}` y `acumuladas` el de `acumuladasDe`; de planta, `acumuladas` null y
-    `noUtilizadas` como hoy (los tests de planta no cambian).
+  - `calcular` de contrato: `acumuladas` es el de `acumuladasDe` y `faltantesDe` no tiene ningún `uso:<anio>`; de planta,
+    `acumuladas` null y todo como hoy (los tests de planta no cambian).
+  - Sin reinicio en la carga: un uso autorizado de contrato de 2027 que usa el saldo de 2026 no da faltante (hoy daba `uso:2027`).
   - `textoQuedanAcumuladas(0)`, `(1)`, `(0.5)`, `(1.5)`.
+  - El uso autorizado de contrato: `textoDeLoQueQueda` dice `textoQuedanAcumuladas(quedan)` + ' Se descuentan primero las más
+    viejas.' y su error por pasarse va en `horas` con `textoQuedanAcumuladas` (su formulario no tiene otro campo).
 - [ ] **Step 2:** `node --test tests/mi-espacio-reglas.test.js` → FAIL.
 - [ ] **Step 3: Implementar.** `horasAFavorDe`: los usos de `horas_a_favor` cuentan `horasDelMesDe(fila)` (si da 0, no es un uso
   del mes). `acumuladasDe`: entra el saldo (`saldoDeHorasNoUtilizadas` sin la condición del año: la fila es la del año del
   arranque) y los `no_utilizadas > 0` de los meses de `horasAFavorDe` que terminaron y no son `antes_del_arranque`, de cualquier
   año; sale lo de `uso_autorizado` (como hoy: `diasQueDescuentan`, que ya respeta el arranque) y `horasAcumuladasDe` de cada
   `horas_a_favor` con fecha desde el arranque; se descuenta del saldo y después de los meses, del más viejo al más nuevo, sin
-  negativos (como el bucle de `noUtilizadasDe`). `calcular`: `noUtilizadas` solo en planta; `acumuladas` en contrato.
-  `faltantesDe`: el faltante de arriba (los `uso:<anio>` siguen para planta). `mensajeDeLaCarga`: con la clave `acumuladas`,
-  `textoQuedanAcumuladas` de lo que quedaba antes de la carga, con lo que ya usaba la fila que se corrige (como
-  `quedanDeLoNoUtilizado`).
-- [ ] **Step 4:** el archivo → PASS. Los tests de hoy que miraban `calcular(...).noUtilizadas` de contrato pasan a mirar
-  `acumuladas`; los de `noUtilizadasDe` (la función no cambia) y los de planta quedan como están.
+  negativos (como el bucle de `noUtilizadasDe`). `calcular`: `acumuladas` en contrato. `faltantesDe`: saltea las entradas de
+  `noUtilizadas` en horas (contrato) y suma el faltante de arriba al final, donde iban los `uso:<anio>` (que siguen para planta).
+  `mensajeDeLaCarga`: con la clave `acumuladas`, `textoQuedanAcumuladas` de lo que quedaba antes de la carga, con lo que ya usaba la
+  fila que se corrige (como `quedanDeLoNoUtilizado`). `textoDeLoQueQueda` del uso autorizado de contrato: `calculo.acumuladas`.
+  En `evaluarLicencia`, como `errorDeDias`: si lo que frena es el faltante `acumuladas` y la carga es un `uso_autorizado`, el error
+  va en `horas`.
+- [ ] **Step 4:** el archivo → PASS. Cambian los tests de hoy de contrato que miran los `uso:2026` y su orden
+  (`tests/mi-espacio-reglas.test.js` ~4378-4404), el error del uso autorizado (~4469-4471: ahora `{ campo: 'horas', mensaje: 'Te
+  quedan 6,5 horas acumuladas.' }`) y su «Quedan 3,5 horas no utilizadas previamente…» (~4599-4600: «Te quedan 3,5 horas
+  acumuladas. Se descuentan primero las más viejas.»). Los de `noUtilizadasDe` (la función no cambia) y los de planta quedan como
+  están. **Al terminar, `npm test` completo tiene que dar verde**: si algo de `mi-espacio-resumen`, `mi-espacio-frontend` o
+  `mi-espacio-api` falla, es porque leía uno de estos textos; se ajusta acá, sin tocar el Resumen.
 - [ ] **Step 5: Commit y push.**
 
 ---
@@ -203,19 +215,26 @@ Sin código. El controlador:
   - Carga tarde del 20/11 el 05/12 con 2 del mes cuando solo queda 1 libre: error en `horas`, 'En noviembre de 2026 te queda 1
     hora a favor.'.
   - El arreglo en todo tipo: una franquicia de planta que pasa el tope da su error y `queda_texto` ''; sin error, `queda_texto`
-    como hoy (este es el único test de planta que cambia, por la decisión de la spec 5).
+    como hoy.
   - Solo del mes, sin acumuladas, sin error: la vista como hoy («Usás 6,5 horas a favor de noviembre. Te quedan 0.»).
+  - **Lo que ya estaba no frena** (la regla de `loQueFrena`): una carga de 7 h (0,5 acumuladas) guardada, y después el saldo
+    inicial baja a 0: corregir solo su nota pasa (sin error), aunque la cuenta quede en faltante; lo mismo si una salida vieja
+    baja las horas a favor de su mes. Agrandar la parte acumulada sí frena.
 - [ ] **Step 2:** el archivo → FAIL.
 - [ ] **Step 3: Implementar.** `validarLicencia`: el control de `horas_acumuladas` justo después del de las horas (paso 4).
   `topesDeHorasAFavor`: `calcular` del estado sin la carga de `editadaId`; `del_mes` = `a_favor − usadas` del mes de uso de
-  `fecha` (0 si no está); `acumuladas` = `acumuladas.quedan`; con `termino`, el mínimo. En `evaluarLaCarga`, para `horas_a_favor`
-  de contrato y antes de `loQueFrena`, con esos topes: la parte del mes por encima de `del_mes` → error en `horas` con
-  `textoSinHorasAFavor(mes, del_mes)`; si no, la acumulada por encima de `acumuladas − (termino ? parte del mes : 0)` → error en
-  `horas_acumuladas` con `textoQuedanAcumuladas` de ese número. `textoDeLoQueQueda` de `horas_a_favor`: con parte acumulada, los
-  textos de arriba (y '7 horas, el día entero' en `texto_dias` solo con acumuladas, en `vistaDe`); sin ella, como hoy; el uso
-  autorizado de contrato dice `textoQuedanAcumuladas(...)` + ' Se descuentan primero las más viejas.'. `vistaDe`: con
-  `contexto.conError`, `queda_texto` ''.
-- [ ] **Step 4:** el archivo → PASS. Los tests de hoy que esperaban «Te quedan 0.» al lado de un error cambian; los demás no.
+  `fecha` (0 si no está); `acumuladas` = `acumuladas.quedan`; con `termino`, el mínimo. **Qué frena lo sigue decidiendo
+  `loQueFrena`** (un faltante nuevo o más grande): no hay un control nuevo antes de él. Lo que cambia es **dónde va el error y qué
+  dice**, en `evaluarLicencia`, como `errorDeDias` (una función nueva al lado, por ejemplo `errorDeLasHoras(faltante, { fila,
+  estado, opciones })`), solo con una carga `horas_a_favor` de contrato que frena por `horas:<mes>` o por `acumuladas`: con los
+  topes de su fecha (con `editadaId`), si la parte del mes pasa de `del_mes` (también en la carga tarde, aunque lo que se pase por
+  dentro sea la cuenta de las acumuladas), el error va en `horas` con `textoSinHorasAFavor(mes, del_mes)`; si no, en
+  `horas_acumuladas` con `textoQuedanAcumuladas(acumuladas − (termino ? parte del mes : 0))`. `textoDeLoQueQueda` de
+  `horas_a_favor`: con parte acumulada, los textos de arriba (y '7 horas, el día entero' en `texto_dias` solo con acumuladas, en
+  `vistaDe`); sin ella, como hoy. `vistaDe`: con `contexto.conError`, `queda_texto` ''.
+- [ ] **Step 4:** el archivo → PASS. Cambian los tests de hoy que esperaban un «Te quedan …» al lado de un error: también uno de
+  planta, el de la médica con error (`tests/mi-espacio-reglas.test.js` ~4608-4615, que esperaba 'Te quedan 0 de 25.' y ahora '';
+  es el arreglo de la spec 5). Los demás, no. `npm test` completo en verde.
 - [ ] **Step 5: Commit y push.**
 
 ---
@@ -246,6 +265,11 @@ Sin código. El controlador:
   - PUT de la carga combinada sin cambios: 200 (sus horas vuelven a los topes); PUT a solo del mes (6,5, sin acumuladas): 200 y
     vuelven las acumuladas.
   - El doble envío (dos POST iguales a la vez): uno entra y el otro da 400 (`textoSuperpuesta`), nunca dos.
+  - Una carga a futuro con «las de hoy»: un día hábil del mes que viene con `horas_acumuladas` igual al saldo inicial entra; con el
+    sobrante del mes en curso sumado, no (ese sobrante todavía no es acumulado).
+  - Una carga tarde: con salidas de hace dos meses (horas a favor del mes pasado, que ya terminó, con sobrante), un día hábil del
+    mes pasado con parte del mes hasta lo que sobraba entra y baja las acumuladas en lo mismo (`GET …/topes` lo muestra); con más,
+    400 en `horas`.
   - `GET /mi-espacio/horas-a-favor/topes`: sin `fecha`, con la del 06/11 de este mes, con `id` propio y ajeno, con `fecha`
     'x' (400), planta (`data: null`), sin modalidad.
   - Lo ajeno: el PUT de una carga de otra persona da el 404 de siempre.
@@ -259,13 +283,15 @@ Sin código. El controlador:
 
 ---
 
-## Task 5: El Resumen, la tarjeta y la lista (media → Opus, alto: muchos textos y consumidores)
+## Task 5: El Resumen, la tarjeta y la lista (difícil → Opus, alto: muchos textos y consumidores, servidor y página)
 
 **Files:**
 - Modify: `services/miEspacioResumen.js` (`quedaDelTipo` ~566, `previoDe` ~497, `usoAutorizadoDe` ~1209,
   `noUtilizadasDeLaTabla` ~1225, `situacionDeLasHoras` ~1205, `saldoInicialDe` ~993, `filaDeLicencia` ~899, `tablaDeHorasExtras`
-  ~1418), `services/miEspacioReglas.js` (`camposDelSaldoInicial`: el rótulo)
-- Test: `tests/mi-espacio-resumen.test.js`, `tests/mi-espacio-reglas.test.js` (el rótulo)
+  ~1418), `services/miEspacioReglas.js` (`camposDelSaldoInicial`: el rótulo; `calcular`: deja de calcular `noUtilizadas` en
+  contrato, que ya nadie lee), `public/js/mi-espacio.js` (la tarjeta: `htmlDeNoUtilizadas` ~787, `htmlDelUsoAutorizado` ~701 y
+  `alTocarHoras` ~3660)
+- Test: `tests/mi-espacio-resumen.test.js`, `tests/mi-espacio-reglas.test.js` (el rótulo), `tests/mi-espacio-frontend.test.js`
 
 **Interfaces:**
 - Consumes: `calculo.acumuladas`, `horasAcumuladasDe`, `horasDelMesDe`, `nombreDelMes` (Tasks 2 y 3).
@@ -280,19 +306,29 @@ Sin código. El controlador:
     si no, `puede` false y «No tenés horas acumuladas.». Las filas, de cualquier año, la más nueva primero, más «Del saldo
     inicial». No depende del `anio` pedido.
   - La situación `no_utilizadas` de un mes: «1,5 h pasaron a acumuladas» («1 h pasó a acumuladas»).
-  - Cada fila de la lista suma `acumuladas_texto`: en `horas_a_favor` con parte acumulada, «6,5 de noviembre y 0,5 acumuladas» o
-    «Todas acumuladas»; si no, ''.
+  - La fila de una carga `horas_a_favor` (solo ese tipo: las demás filas no cambian de forma) suma `horas_acumuladas` (número; 0
+    sin parte acumulada), para que la página abra la corrección con los dos campos, y su `de_licencias_texto` (vacío hoy en ese
+    tipo; la página ya lo dibuja en la lista y en el segundo paso) dice «6,5 de noviembre y 0,5 acumuladas» o «Todas acumuladas»;
+    sin parte acumulada, '' como hoy.
   - El saldo inicial: «Tenías 1,5 horas acumuladas.» («1 hora acumulada»). El campo de «Para arrancar», `rotulo` 'Horas
     acumuladas'.
+  - La página: `htmlDeNoUtilizadas` usa `titulo` y `nota` del servidor (sin ellos, los de hoy); en contrato, el botón es «Usar
+    horas acumuladas», con `data-usar-acumuladas`, y `alTocarHoras` abre `abrirLicencia({ tipo: 'horas_a_favor', volverA })`; en
+    planta, «Registrar un uso autorizado» (`data-abrir="uso"`) como hoy. El foco vuelve al botón al cerrar el modal.
   - Planta: todo como hoy.
 
 - [ ] **Step 1: Tests que fallan** con esos textos y valores, y que planta no cambia (sus tests de hoy sin tocar). La tarjeta con
   `quedan` 0 (todo usado) dice «0 horas» y «No tenés horas acumuladas.», sin negativos. La tabla de 2025 de contrato trae la misma
-  tarjeta que la de 2026.
+  tarjeta que la de 2026. En `mi-espacio-frontend.test.js`: la tarjeta con el título, la nota y el botón nuevos (escapados), el
+  botón de planta como hoy, el clic que abre «Cargar licencia» con «Horas a favor» y el foco al cerrar.
 - [ ] **Step 2:** → FAIL.
 - [ ] **Step 3: Implementar** leyendo `calculo.acumuladas` en contrato (las funciones de hoy siguen con `noUtilizadas` en
-  planta).
-- [ ] **Step 4:** → PASS. Los tests de hoy de contrato con «no utilizadas previamente», «Horas de 2026» o «en 2026» cambian.
+  planta); después, `calcular` deja de calcular `noUtilizadas` en contrato (`{}`).
+- [ ] **Step 4:** → PASS. Cambian los tests de hoy de contrato con «no utilizadas previamente», «Horas de 2026» o «en 2026»,
+  también los de la página que arman sus datos con las funciones reales del servidor: `mi-espacio-frontend.test.js` ~476
+  (`['previo', '6,5', 'Horas de 2026', …]`), ~1019-1028 (la tarjeta: `<h3>Horas no utilizadas previamente</h3><span>6,5 horas en
+  2026</span>` y `data-abrir="uso"`) y el `queda_texto` de la opción de horas a favor. El `deepEqual` de una fila de planta
+  (`mi-espacio-resumen.test.js` ~842-851) no cambia. `npm test` completo en verde.
 - [ ] **Step 5: Commit y push.**
 
 ---
@@ -332,16 +368,16 @@ Sin código. El controlador:
 - Test: `tests/mi-espacio-frontend.test.js`, `tests/paginas.test.js`
 
 **Interfaces:**
-- Consumes: `GET /mi-espacio/horas-a-favor/topes` (Task 4), `tabla.no_utilizadas.titulo` y `.nota` y `fila.acumuladas_texto`
-  (Task 5), `MENSAJES_MI_ESPACIO.acumuladasMedias` (Task 3).
+- Consumes: `GET /mi-espacio/horas-a-favor/topes` (Task 4), `fila.horas_acumuladas` de las filas `horas_a_favor` (Task 5),
+  `MENSAJES_MI_ESPACIO.acumuladasMedias` (Task 3).
 - Produces (HTML, dentro de `#ml-grupo-horas`, después de `#ml-horas-error`): `<div class="me-dos-horas" id="ml-dos-horas"
   hidden>` con dos `.form-group`: `<label for="ml-horas-del-mes" id="ml-horas-del-mes-rotulo">` («De noviembre» y `<span
   class="me-opcional" id="ml-horas-del-mes-tope">(quedan 6,5)</span>`), `<select class="form-select" id="ml-horas-del-mes"
   aria-describedby="ml-horas-del-mes-error">`, `<p class="form-error" id="ml-horas-del-mes-error" hidden>`; lo mismo con
   `ml-horas-acumuladas` («Acumuladas» y «(tenés 1,5)», `aria-describedby="ml-horas-acumuladas-ayuda ml-horas-acumuladas-error"`);
   `<p class="me-dos-horas-total" id="ml-horas-total">` y `<p class="form-hint" id="ml-horas-acumuladas-ayuda">Las horas
-  acumuladas se usan con la autorización del Director General.</p>`. El segundo paso («Licencia cargada») muestra
-  `acumuladas_texto` de la fila como la lista.
+  acumuladas se usan con la autorización del Director General.</p>`. (El segundo paso y la lista ya muestran el
+  `de_licencias_texto` de la fila: no cambian.)
 
 - [ ] **Step 1: Tests que fallan** (en el `vm`, con el `api.js` de verdad, y con el DOM y el `fetch` falsos):
   - Paridad: `MENSAJES_FORMULARIOS.acumuladasMedias` igual al del servidor.
@@ -350,16 +386,17 @@ Sin código. El controlador:
     sin la clave (como hoy).
   - `htmlDeOpcionesDeLasDos(tope, elegida)` (o el nombre que elija el implementador): de 0 al tope de a media hora.
   - El total: «Total: 7 horas, el día entero.», «Total: 2 horas.», «Total: 1 hora.», «Elegí cuántas horas tomás.».
-  - La tarjeta: el título y la nota del servidor (sin ellos, los de hoy), el botón «Usar horas acumuladas» con
-    `data-usar-acumuladas` en contrato (planta, «Registrar un uso autorizado» como hoy), y `acumuladas_texto` en la fila, escapado.
+  - `valoresDeLicencia` de una fila `horas_a_favor` con `horas_acumuladas` 0,5: `horas_acumuladas: '0.5'` (como texto, igual que
+    `horas`); de otra fila, ''.
   - DOM: «Usarlas» con acumuladas pide los topes (`/mi-espacio/horas-a-favor/topes?fecha=…`) y dibuja los dos campos con sus
     topes y rótulos; elegir 6,5 y 0,5 manda el cálculo con `horas: 7, horas_acumuladas: 0.5`; los campos no ofrecen más que su
     tope (las acumuladas, nunca más de 7 menos lo del mes; con `termino`, de las acumuladas menos lo del mes); cambiar la fecha a
     diciembre pide los topes de nuevo y cambia el rótulo a «De diciembre»; una respuesta vieja de los topes se descarta; sin
     acumuladas (`acumuladas` 0) queda el campo «Horas» de hoy; si los topes no llegan, también (el servidor valida igual); un
     error del servidor en `horas` va debajo de «De noviembre» y en `horas_acumuladas`, debajo de «Acumuladas» (con
-    `aria-invalid`); «Mostrar a mis compañeros» aparece con 7 en total; corregir una carga con acumuladas abre los dos campos con
-    sus valores; el botón de la tarjeta abre «Cargar licencia» con «Horas a favor» y el foco vuelve a él al cerrar.
+    `aria-invalid`), y un cambio en cualquiera de los dos los limpia y vuelve a pedir el cálculo; «Mostrar a mis compañeros»
+    aparece con 7 en total; corregir una carga con acumuladas abre los dos campos con sus valores; en el modo de dos campos, el
+    rótulo, el campo y el error de «Horas» (`#ml-horas`) no se ven.
   - `paginas.test.js`: `VERSION_MI_ESPACIO` '20261221' y los ids nuevos del modal.
   - Los textos nuevos con 4,5:1 o más (como los tests de contraste de hoy) y el corte del teléfono (≤ 640 px: los dos campos uno
     debajo del otro).
@@ -369,7 +406,10 @@ Sin código. El controlador:
   mientras llegan, los campos de horas quedan deshabilitados. El modo de dos campos va con `topes.acumuladas > 0` o con una carga
   que se corrige que ya tenía `horas_acumuladas`. `valoresDelFormulario` lee, en ese modo, `horas` (la suma) y
   `horas_acumuladas`; `pintarMostrar` usa ese total; el campo de los errores de `horas` es `ml-horas-del-mes` en ese modo (como
-  `controlDelCampo` de los eventos). Los estilos, `.me-dos-horas` (dos columnas; una en 640 px), con los tokens `--sg-*`.
+  `controlDelCampo` de los eventos) y el de `horas_acumuladas`, `ml-horas-acumuladas`; los dos selects nuevos entran en lo que
+  limpia `limpiarErrores` (`controlesDe('licencia')`, ~4258) y tienen su listener de `change` (como `ml-horas`, ~4099: `pintarMostrar`
+  y `programarCalculo`); `valoresDeLicencia` lee `fila.horas_acumuladas`. Los estilos, `.me-dos-horas` (dos columnas; una en 640
+  px), con los tokens `--sg-*`.
 - [ ] **Step 4:** → PASS.
 - [ ] **Step 5: Commit y push.**
 
