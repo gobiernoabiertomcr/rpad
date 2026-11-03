@@ -1,0 +1,32 @@
+/* MAQUETA (03/11/2026): lo nuevo de la propuesta y la barra de la maqueta. Solo con los tokens de la página */
+.mq-nuevo { outline: 2px dashed #B86E00; outline-offset: 4px; border-radius: 6px; }
+.mq-sin-marcas .mq-nuevo { outline: none; }
+
+.mq-acumuladas { margin: 4px 0 16px; }
+.mq-acumuladas .me-check small { display: block; margin-top: 2px; }
+
+.mq-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; margin-top: 2px; }
+.mq-dos .form-group { margin-bottom: 6px; }
+.mq-total { grid-column: 1 / -1; margin: 2px 0 0; font-weight: 700; color: var(--sg-tinta); }
+.mq-total-error { color: #B42318; }
+.mq-dos .form-hint { grid-column: 1 / -1; margin: 2px 0 0; }
+
+.mq-barra {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 3000;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 10px 16px; background: #14243B; color: #fff; font-size: 0.9rem;
+}
+.mq-barra b { font-family: var(--f-titulo); letter-spacing: -0.01em; }
+.mq-barra button {
+  min-height: 36px; padding: 6px 12px; border-radius: 999px; border: 1px solid #8EA3BF; background: transparent;
+  color: #fff; font: inherit; cursor: pointer;
+}
+.mq-barra button[aria-pressed="true"] { background: #F5C451; border-color: #F5C451; color: #14243B; font-weight: 700; }
+.mq-barra button:focus-visible { outline: 3px solid #F5C451; outline-offset: 2px; }
+.mq-barra .mq-idea { flex: 1 1 320px; color: #DCE5F1; }
+body { padding-bottom: 72px; }
+.mq-aviso {
+  position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 3001; padding: 10px 16px;
+  border-radius: 10px; background: #14243B; color: #fff; opacity: 0; transition: opacity .2s; pointer-events: none;
+}
+.mq-aviso.visible { opacity: 1; }
