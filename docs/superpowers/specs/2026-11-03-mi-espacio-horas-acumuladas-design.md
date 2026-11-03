@@ -47,6 +47,8 @@ No es un error de cálculo: falta poder juntar las dos cosas en un día.
 7. **Para cargar un día a futuro valen las acumuladas que hay hoy.** Lo que sobre de un mes pasa a las acumuladas recién cuando
    termina ese mes.
 8. Planta no cambia nada.
+9. **Un día que se carga tarde sale de su mes**, como si se hubiera cargado a tiempo (sección 5, «Una carga en un mes que ya
+   terminó»).
 
 ## 4. Las horas acumuladas: la cuenta (contrato)
 
@@ -90,11 +92,27 @@ Lo que se ve (la opción B de la maqueta, sobre el modal real):
   tus horas acumuladas. Te queda 1 hora acumulada.»; solo acumuladas: «**1,5 horas.** Usás 1,5 horas acumuladas. No te quedan
   horas acumuladas.»; solo del mes, como hoy.
 - **El hallazgo de la sección 2 se corrige:** con un error en las horas, el recuadro no dice «Usás … Te quedan 0.»: dice solo el
-  total, como el cálculo de unas vacaciones con un error de días.
+  total, como el cálculo de unas vacaciones con un error de días. *Decisión del constructor: vale para todo tipo con la misma
+  contradicción, también la franquicia de planta («Te quedan 0 de 42 horas de franquicia.» al lado del error del tope) y el uso
+  autorizado; es un arreglo, no un cambio de planta.*
 - Con 7 horas en total es de día entero (sección 7).
 - Los errores, debajo de su campo: las del mes que no alcanzan, el de hoy («En noviembre de 2026 te quedan 6,5 horas a
   favor.»), debajo de «De noviembre»; las acumuladas que no alcanzan, «Te quedan 1,5 horas acumuladas.» («Te queda 1 hora
   acumulada.», «No te quedan horas acumuladas.»), debajo de «Acumuladas».
+
+**Una carga en un mes que ya terminó** (decisión 9): por ejemplo, el 05/12 se carga el 20/11, un día que se tomó y no se
+cargó, o se corrige el 05/12 una carga del 06/11. Lo que le sobraba a noviembre ya pasó a las acumuladas el 01/12, así que esas
+horas están en los dos lados y no se pueden contar dos veces:
+
+- La parte del mes sale de su mes, como si se hubiera cargado a tiempo: «De noviembre» sigue, y la nota dice «correspondientes a
+  las horas extras realizadas en octubre de 2026».
+- Pero esas horas ya son parte de las acumuladas: lo que se toma del mes también baja las acumuladas. El tope de «De noviembre» es
+  lo que le sobraba a noviembre, sin pasar de lo que queda de las acumuladas (con lo que ya usaba la carga que se corrige); el de
+  «Acumuladas», lo que queda de las acumuladas menos lo elegido del mes.
+- Si lo que le sobraba a noviembre ya se usó como acumuladas en otro día, «De noviembre» ofrece solo lo que sigue libre (puede
+  ser 0).
+- Si no alcanza, el error va debajo de «De noviembre», con lo que queda de verdad («En noviembre de 2026 te quedan 0,5 horas a
+  favor.», el texto de hoy con ese número), aunque por dentro lo que se pasa sea la cuenta de las acumuladas.
 
 Los demás caminos que abren este modal: «Usarlas» de «Vence pronto» (como hoy) y el botón de la tarjeta de las acumuladas
 (sección 10).
@@ -201,6 +219,18 @@ Solo cambia la de «Horas a favor» que usa acumuladas. Las demás, también la 
 
 ## 13. Lo que queda para el plan (decisiones del constructor, para revisar)
 
+Lo que ya decidió el constructor del diseño, para que el usuario lo revise al leer:
+
+- `horas` sigue siendo el total del día y la parte acumulada va en una columna nueva (sección 6).
+- La tarjeta de las acumuladas no cambia con el año elegido (sección 10).
+- Los usos autorizados de contrato que pudiera haber siguen contando y el servidor los acepta (sección 8).
+- El paréntesis de «Sumar al mes anterior» en la nota va después del mes de las horas (sección 9).
+- El arreglo del «Te quedan 0» vale para todo tipo con la misma contradicción (sección 5).
+- Los textos nuevos que no dictó el usuario: los del cálculo, el faltante, la tarjeta, la pastilla, la fila y «pasaron a
+  acumuladas».
+
+Lo que decide el plan:
+
 - Cómo se llama y qué forma tiene la cuenta nueva en el `Calculo` (por ejemplo, `acumuladas`, al lado de `noUtilizadas`, que
   queda solo para planta) y qué consumidores cambian: `previoDe`, `usoAutorizadoDe`, `noUtilizadasDeLaTabla`, `faltantesDe`,
   `mensajeDeLaCarga`, `textoDeLoQueQueda`, `quedaDelTipo`, la fila de la lista y la nota.
@@ -221,8 +251,9 @@ Solo cambia la de «Horas a favor» que usa acumuladas. Las demás, también la 
   autorizado viejo de contrato que sigue contando y planta sin ningún cambio (sus tests de hoy, sin tocar).
 - La validación de `horas_acumuladas` en sus bordes, y un cuerpo sin la clave igual a hoy.
 - La API con Docker: el caso de la maqueta (6,5 + 0,5 el 06/11 se guarda, pasa a Configuración y queda 1 hora), 6,5 + 1,5 (no:
-  pasa de 7), 7 del mes (el error de hoy), solo acumuladas, otro mes, lo ajeno, el doble envío y una carga a futuro con «las de
-  hoy».
+  pasa de 7), 7 del mes (el error de hoy), solo acumuladas, otro mes, lo ajeno, el doble envío, una carga a futuro con «las de
+  hoy» y una carga tarde en un mes que ya terminó (sale de su mes, baja las acumuladas, nunca cuenta dos veces y, si lo que
+  sobraba ya se usó como acumuladas, no se ofrece).
 - La nota y el Word: los dos textos de la sección 9 al pie de la letra, con «Sumar al mes anterior», y el Word igual a la vista.
 - La página en el `vm` (las paridades, los dos campos, los topes que llegan, el total, los errores en su campo, el cálculo sin
   «Te quedan 0» con un error, la tarjeta y su botón) y `paginas.test.js` (la versión).
