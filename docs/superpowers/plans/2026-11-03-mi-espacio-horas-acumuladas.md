@@ -13,7 +13,8 @@ licencia» → «Horas a favor», solas o junto con las del mes, sin que vuelvan
 
 **Tech Stack:** Node 22, Express 4, MariaDB 10.6+ (mysql2/promise), vanilla JS, `node --test`, `docx`.
 
-**Spec:** `docs/superpowers/specs/2026-11-03-mi-espacio-horas-acumuladas-design.md` (aprobado el 03/11/2026). La maqueta, opción
+**Spec:** `docs/superpowers/specs/2026-11-03-mi-espacio-horas-acumuladas-design.md` (aprobado el 03/11/2026; el usuario aprobó
+este plan el 03/11/2026). La maqueta, opción
 B: `docs/superpowers/specs/2026-11-03-mi-espacio-horas-acumuladas-mockups/` (`?opcion=b`). El executor lee las dos.
 
 ## Global Constraints
