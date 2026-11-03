@@ -110,11 +110,13 @@ const conSaldo = (clave, concepto, anio, cantidad) => query(
   'INSERT INTO mi_espacio_saldos (usuario_id, concepto, anio, cantidad) VALUES (?, ?, ?, ?)',
   [usuarios[clave].id, concepto, anio, cantidad]
 );
-const conLicencia = async (clave, { tipo, desde, hasta = desde, horas = null, nota = null, activo = 1, mostrar = 1 }) =>
+// `horas_acumuladas`: la parte de `horas` que sale de las horas acumuladas de contrato (spec
+// 2026-11-03-mi-espacio-horas-acumuladas, 6); sin ella, NULL
+const conLicencia = async (clave, { tipo, desde, hasta = desde, horas = null, horas_acumuladas = null, nota = null, activo = 1, mostrar = 1 }) =>
   (await query(
-    `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, horas, nota, activo, mostrar)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [usuarios[clave].id, tipo, desde, hasta, horas, nota, activo, mostrar]
+    `INSERT INTO mi_espacio_licencias (usuario_id, tipo, desde, hasta, horas, horas_acumuladas, nota, activo, mostrar)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [usuarios[clave].id, tipo, desde, hasta, horas, horas_acumuladas, nota, activo, mostrar]
   )).insertId;
 const conHorasExtras = async (clave, { fecha, desde, hasta, nota = null, activo = 1 }) => (await query(
   'INSERT INTO mi_espacio_horas_extras (usuario_id, fecha, desde, hasta, nota, activo) VALUES (?, ?, ?, ?, ?, ?)',
@@ -2697,8 +2699,8 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
     await conSalida('adminB', { fecha: q(0), salida: '16:00:00' });
 
     const estado = await datos.estadoDe(usuarios.adminA.id);
-    const licencia = (id, tipo, desde, hasta, horas, nota = null) => ({
-      id, tipo, desde, hasta, horas, mostrar: 1, nota, licencia_oficial_id: null, oficial: null, sin_pasar: null
+    const licencia = (id, tipo, desde, hasta, horas, nota = null, horas_acumuladas = null) => ({
+      id, tipo, desde, hasta, horas, horas_acumuladas, mostrar: 1, nota, licencia_oficial_id: null, oficial: null, sin_pasar: null
     });
     assert.deepEqual(estado, {
       modalidad: 'planta',
@@ -2714,6 +2716,19 @@ describe('la lectura (services/miEspacioDatos.js)', () => {
       restituibles: [],
       restituciones: []
     });
+  });
+
+  it('estadoDe: las horas acumuladas de una carga de horas a favor llegan como número (0,5); las demás, null', async () => {
+    await conArranque('adminB', hoy);
+    const conAcumuladas = await conLicencia('adminB', { tipo: 'horas_a_favor', desde: q(1), horas: '7.0', horas_acumuladas: '0.5' });
+    const sinAcumuladas = await conLicencia('adminB', { tipo: 'horas_a_favor', desde: q(2), horas: '3.0' });
+    const estado = await datos.estadoDe(usuarios.adminB.id);
+    assert.deepEqual(estado.licencias.map(fila => [fila.id, fila.horas, fila.horas_acumuladas]),
+      [[conAcumuladas, 7, 0.5], [sinAcumuladas, 3, null]]);
+    assert.strictEqual(typeof estado.licencias[0].horas_acumuladas, 'number');
+    // Y por lote, igual
+    const lote = await datos.estadosDe([usuarios.adminB.id]);
+    assert.deepEqual(lote.get(usuarios.adminB.id).licencias.map(fila => fila.horas_acumuladas), [0.5, null]);
   });
 
   it('estadoDe: sin nada cargado ni vínculo, un estado vacío; de un id que no existe, también', async () => {

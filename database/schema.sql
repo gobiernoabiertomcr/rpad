@@ -752,6 +752,7 @@ CREATE TABLE `mi_espacio_licencias` (
   `desde` date NOT NULL,
   `hasta` date NOT NULL,
   `horas` decimal(3,1) DEFAULT NULL,
+  `horas_acumuladas` decimal(3,1) DEFAULT NULL,
   `mostrar` tinyint(1) NOT NULL DEFAULT 1,
   `nota` varchar(200) DEFAULT NULL,
   `licencia_oficial_id` int(11) DEFAULT NULL,
