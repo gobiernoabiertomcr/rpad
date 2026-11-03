@@ -1,6 +1,6 @@
 # Mi espacio: las horas acumuladas de contrato
 
-Fecha: 03/11/2026. Decisiones del usuario del 03/11/2026. La maqueta, con un nombre y unas salidas inventados (los totales son
+Fecha: 03/11/2026. Decisiones del usuario del 03/11/2026; el usuario aprobó este diseño el 03/11/2026. La maqueta, con un nombre y unas salidas inventados (los totales son
 los del caso), está en `docs/superpowers/specs/2026-11-03-mi-espacio-horas-acumuladas-mockups/`; el usuario eligió la
 **opción B, «Dos números»**. Lo que se ve y los contratos van acá; los textos, al pie de la letra.
 
