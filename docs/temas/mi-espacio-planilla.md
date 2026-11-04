@@ -8,11 +8,11 @@ Historia y motivos, en las specs:
 
 ## La planilla de contrato
 
-  - La planilla de contrato (spec 2026-10-27-mi-espacio-horas, secciones 3 y 7; la maqueta que eligió el usuario, en `docs/superpowers/specs/2026-10-27-mi-espacio-horas-mockups/`): una persona de contrato no carga horarios sueltos sino, por cada día, a qué hora se fue (y, si quiere, a qué hora entró), y el sistema calcula las horas extras; planta no cambia.
+  - La planilla de contrato (spec 2026-10-27-mi-espacio-horas, secciones 3 y 7; la maqueta que eligió el usuario, en `docs/superpowers/specs/2026-10-27-mi-espacio-horas-mockups/`): una persona de contrato no carga horarios sueltos sino, por cada día, a qué hora se fue (y, si quiere, a qué hora entró), y el sistema calcula las horas extras; planta carga horarios sueltos y no tiene planilla.
     Las reglas (decisión del usuario, 27/10/2026): la jornada es de 8:00 a 15:00, la misma para todas las personas de contrato (`SALIDA_DE_LA_JORNADA` = '15:00', fija en el código); en un día hábil (`esDiaHabilCon`, con los feriados de la tabla) cuenta solo la salida, desde las 15:00, de a media hora, y una media hora vale desde su minuto 16 (`TOLERANCIA_DIA_HABIL` = 14:
     `floor((salida − 15:00 + 14) / 30) / 2`, 0 antes de las 15:00; 15:15 da 0, 15:16 da 0,5 y 16:16 da 1,5), y la entrada es opcional y no cuenta (el ingreso no se controla); en un feriado, un sábado o un domingo (también los 9 fijos) la entrada es obligatoria y cuentan todos los minutos de la entrada a la salida, con 10 de tolerancia (`TOLERANCIA_DIA_INHABIL`:
     `floor((salida − entrada + 10) / 30) / 2`; 79 minutos dan 1 y 80, 1,5; desde la hora en que entra, aunque sea antes de las 8:00); la salida es del mismo día (no pasa la medianoche) y, con entrada, va después de ella, también en un día hábil; un solo horario por día.
-    Las horas de un mes son horas a favor del mes siguiente, 1 a 1, con todo lo demás de 3.6.
+    Las horas de un mes son horas a favor del mes siguiente, 1 a 1, con todo lo demás de la spec 2026-10-26-mi-espacio-licencias-y-horas, 3.6 (ver `docs/temas/mi-espacio.md`).
     «Días de franco» es solo una forma de decirlo, en la planilla y en la pestaña (`enDiasDeFranco`: cada 7 horas, `JORNADA`, un día, y lo que sobra en horas:
     «2 días de franco y 4,5 horas», «3 días de franco», «4,5 horas»; singular solo con 1): no hay un franco de contrato, y las horas a favor se siguen usando desde «Cargar licencia» → «Horas a favor», de a media hora, 7 horas el día entero.
     Las funciones (puras; ninguna tira):
@@ -28,9 +28,9 @@ Historia y motivos, en las specs:
     **Nunca frenan nada**: van aparte de `faltantes`, así `problemaDeLaCarga` no los ve y una licencia nunca se rechaza por una salida («el sistema no frena licencias», del usuario).
     La baja de un feriado no deja aviso: el día pasa a ser hábil y la salida cuenta desde las 15:00.
     Con «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 3; decisiones del usuario, 30/10/2026: a una persona de contrato la pueden autorizar a sumar las horas de unos días a las del mes anterior, para llegar al día entero), cada salida tiene la marca `al_mes_anterior` (el tilde «Sumar a {mes anterior}», en cualquier día de cualquier mes;
-    Mi espacio no controla la autorización ni la fecha de hoy): marcada, sus horas (las de siempre, `horasDeLaSalida`) suman enteras al mes anterior al de su fecha.
+    Mi espacio no controla la autorización ni la fecha de hoy): marcada, sus horas (las de `horasDeLaSalida`) suman enteras al mes anterior al de su fecha.
     En la cuenta:
-    `mesDeLaSalida(fila)` (el 'AAAA-MM' de la fecha o, con el `true` literal, `mesMas(ese, -1)`; null sin una fecha) es el mes en que cuenta cada salida y `horasPorMesDeSalidas` suma ahí, así `horasAFavorDe`, `noUtilizadasDe`, los faltantes, el Resumen, «Vence pronto», «Cargar licencia» y el email de vencimiento se acomodan solos (un día que se destilda después de usar sus horas deja el faltante ámbar de siempre: no frena nada).
+    `mesDeLaSalida(fila)` (el 'AAAA-MM' de la fecha o, con el `true` literal, `mesMas(ese, -1)`; null sin una fecha) es el mes en que cuenta cada salida y `horasPorMesDeSalidas` suma ahí, así `horasAFavorDe`, `noUtilizadasDe`, los faltantes, el Resumen, «Vence pronto», «Cargar licencia» y el email de vencimiento se acomodan solos (un día que se destilda después de usar sus horas deja el faltante ámbar de esas horas (`horas:AAAA-MM`): no frena nada).
     `repartoDelMes(salidas, mes, feriados)` → `{ propias, entran, van }`: las horas de los días sin marcar del mes, los marcados del mes siguiente que suman a él y los marcados del mes que suman al anterior (las dos listas por fecha, `{ fecha, horas, fila }`, con `horas` null si no dan horas), con `propias` más las horas de `entran` igual a lo de `horasPorMesDeSalidas` para ese mes.
     `textoDeLoQueSeMueve(mes, entran, van)` es la segunda línea de la banda:
     «Incluye 1,5 h de febrero.» y «1,5 h del martes 02/02 suman a enero.» («suma» con 1 h; con dos días, «… del martes 02/02 y del jueves 04/02 suman a enero.»; con tres o más, «4 h de 3 días suman a enero.»), separadas por un espacio y solo con los días que dan horas; sin nada, ''.
@@ -41,7 +41,7 @@ Historia y motivos, en las specs:
 ## La planilla en la API
 
 - La planilla de contrato en la API (spec 2026-10-27-mi-espacio-horas, sección 8;
-  `verPlanilla` y `guardarSalidas`, en `RUTAS_MI_ESPACIO`):
+  `verPlanilla` y `guardarSalidas`, en `RUTAS_MI_ESPACIO`, y el `GET`, también en las lecturas del lector y del colaborador):
   `GET /api/mi-espacio/salidas?mes=AAAA-MM` (sin `mes` o vacío, el en curso; un mes que no pasa `mesDeLaPlanilla` —otro formato, anterior a enero de hace dos años, posterior al de hoy o repetido, que Express da como lista— da 400 `MENSAJES_MI_ESPACIO.mes`, «Elegí un mes válido.», en `mes`, antes de leer nada; sin modalidad, 200 `{ modalidad: null, mensaje }`; en planta, 400 `planillaSoloContrato`, «La planilla es para las personas de contrato.», con `campo` null; leer no pide el arranque;
   un 500, «Error al obtener la planilla») → lo que arma `planillaDelMes(estado, calculo, { mes, hoy, feriados, filasFeriados })` (`services/miEspacioResumen.js`, pura) con lo de `contextoDe`:
   `{ modalidad: 'contrato', mes, mes_texto, hoy, anterior, siguiente, dias, fines_de_semana, suma: { horas, cifra, texto } }` (`anterior`, null en enero de hace dos años, y `siguiente`, null en el mes de hoy;
@@ -59,20 +59,21 @@ Historia y motivos, en las specs:
   No toca Configuración ni manda emails.
   Las rutas de los horarios sueltos:
   `POST` y `PUT /mi-espacio/horas-extras…` a una persona de contrato dan 400 `contratoEnLaPlanilla` («Las personas de contrato cargan sus horas en la planilla.», `campo` null; después del 404 de la corrección y de los frenos de la modalidad y el arranque), así nadie de contrato crea horarios que ya no cuentan;
-  `DELETE` sigue andando (un horario viejo se puede quitar); y `GET /mi-espacio/horas-extras` da, en contrato, el `dias_por_mes` de las salidas (`diasDeLasSalidas`:
-  cada una `{ id, fecha, fecha_texto, tipo_texto, horario, entrada_texto, horas, horas_texto, cero, nota, aviso }`, de la más nueva a la más vieja, con `tipo_texto` 'Feriado', 'Sábado', 'Domingo' o '', `horario` «Salida 16:20» en un día hábil —y «Entrada 08:02» en `entrada_texto`— o «De 09:21 a 12:10» en uno que no lo es, y `cero` en las que dan 0), `totales_por_mes` con lo que suman sus salidas y `a_favor_detalle` en cada mes; planta, el de sus horarios sueltos.
-  Con «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 4, 5, 8 y 9; sin rutas nuevas), la planilla trae `sumar_a` después de `siguiente` (el nombre del mes anterior, en minúscula y sin año, el del tilde: 'enero'; en todos los meses, también en el primero del rango) y `entran` después de `fines_de_semana` (los días tildados del mes siguiente que suman a este, por fecha, con la forma de los días de la planilla y los nombres de los feriados de su año;
-  [] si el mes siguiente todavía no llegó); cada día trae `al_mes_anterior` después de `nota` (false sin salida); y `suma` es `{ horas, cifra, texto, detalle }`, con `horas` las de `repartoDelMes` (las propias más las que entran: las que dan las horas a favor), el verbo nuevo en `texto` y en `detalle` la segunda línea (`textoDeLoQueSeMueve`, o '').
+  `DELETE` no se frena (un horario viejo se puede quitar); y `GET /mi-espacio/horas-extras` da, en contrato, el `dias_por_mes` de las salidas (`diasDeLasSalidas`:
+  cada una `{ id, fecha, fecha_texto, tipo_texto, horario, entrada_texto, horas, horas_texto, cero, nota, aviso }`, de la más nueva a la más vieja, con `tipo_texto` 'Feriado', 'Sábado', 'Domingo' o '', `horario` «Salida 16:20» en un día hábil —y «Entrada 08:02» en `entrada_texto`— o «De 09:21 a 12:10» en uno que no lo es, y `cero` en las que dan 0), `totales_por_mes` con lo que suman sus salidas y `a_favor_detalle` en cada mes;
+  en planta, `dias_por_mes` y `totales_por_mes` salen de sus horarios sueltos (`diasDeLasHorasExtras`), sin `a_favor_detalle`.
+  Con «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 4, 5, 8 y 9), la planilla trae `sumar_a` después de `siguiente` (el nombre del mes anterior, en minúscula y sin año, el del tilde: 'enero'; en todos los meses, también en el primero del rango) y `entran` después de `fines_de_semana` (los días tildados del mes siguiente que suman a este, por fecha, con la forma de los días de la planilla y los nombres de los feriados de su año; [] si el mes siguiente todavía no llegó);
+  cada día trae `al_mes_anterior` después de `nota` (false sin salida); y `suma` es `{ horas, cifra, texto, detalle }`, con `horas` las de `repartoDelMes` (las propias más las que entran: las que dan las horas a favor), la frase de `textoDeLaSumaDelMes` en `texto` y en `detalle` la segunda línea (`textoDeLoQueSeMueve`, o '').
   El `PUT` recibe en cada día `al_mes_anterior`, opcional (`true` o `false`; sin él, se conserva lo guardado y un día nuevo queda en 0; un borrado lo deja en 0; otro valor, el 400 de `validarSalida`, con su fecha, y no se guarda ningún día).
   En `GET /mi-espacio/horas-extras` de contrato, cada fila de la tabla trae `horas_detalle` después de `horas_texto`, de dónde salen sus horas cuando algo se mueve entre meses («5,5 h + 1,5 h de febrero», «1,5 h de febrero» sin horas propias, «1,5 h suman a enero» o «1 h suma a enero», las dos partes con « · »; si nada se mueve, ''), y un mes con salidas tiene siempre su fila (`mesesConSalidasSinHoras`; respuesta del usuario:
   «Sí, con salidas hay fila»), aunque sume 0 o todas sus horas pasen al anterior:
-  «0 h», el mes de uso sin detalle, «—» y «El mes sigue sumando» mientras el mes no terminó y, después, sin horas ni usos, `estado` 'sin_horas', «Sin horas a favor» (con usos de más, lo de siempre), así sus días se ven y se editan desde la pestaña (las horas a favor, el Resumen, «Vence pronto» y el email siguen sin un mes en 0); en el día por día (`diasDeLasSalidas`), cada día trae `suma_a` («Suma a enero» si está tildado;
+  «0 h», el mes de uso sin detalle, «—» y «El mes sigue sumando» mientras el mes no terminó y, después, sin horas ni usos, `estado` 'sin_horas', «Sin horas a favor» (con usos de más, `estado` 'usadas', «Todas usadas»), así sus días se ven y se editan desde la pestaña (las horas a favor, el Resumen, «Vence pronto» y el email siguen sin un mes en 0); en el día por día (`diasDeLasSalidas`), cada día trae `suma_a` («Suma a enero» si está tildado;
   si no, '') y, al final de su mes de las horas y por fecha, van los días tildados del mes siguiente, con `tipo_texto` «De febrero», `suma_a` '' y `de_otro_mes: true` (solo ellos llevan la clave);
   `totales_por_mes` es lo de `horasPorMesDeSalidas` (el mismo número de la fila).
 
 ## La planilla en la página
 
-- La planilla en la página (spec 2026-10-27-mi-espacio-horas, secciones 4 y 5; la maqueta que aprobó el usuario; el código, en la convención de `mi-espacio.js`): en contrato, «Cargar horas extras» (el del encabezado, `#btn-cargar-horas`, y el de la tarjeta, `data-cargar="horas"`) abre `#modal-planilla` en lugar de `#modal-horas`, que sigue para planta («Planta queda como está»: decisión del usuario);
+- La planilla en la página (spec 2026-10-27-mi-espacio-horas, secciones 4 y 5; la maqueta que aprobó el usuario; el código, en «La página» de este documento): en contrato, «Cargar horas extras» (el del encabezado, `#btn-cargar-horas`, y el de la tarjeta, `data-cargar="horas"`) abre `#modal-planilla` en lugar de `#modal-horas`, que sigue para planta («Planta queda como está»: decisión del usuario);
   como siempre, sin el saldo inicial abre antes «Mis vacaciones y saldos» y sin modalidad los botones no se ven.
   Es un modal de administración más ancho (900 px) y alto, que un clic en el velo no cierra, con su propia región viva, `#mp-anuncio` (con `aria-modal`, la de la página puede no leerse), y arriba, fijos, el mes con sus flechas (no va a un mes que no llegó ni antes de enero de hace dos años) y la banda celeste con el total del mes en grande y la frase de `suma.texto`, que cambia mientras se escribe.
   En el cuerpo, que se desplaza:
@@ -104,7 +105,7 @@ Historia y motivos, en las specs:
 
 ## La página
 
-La planilla de horas extras de contrato (ver `docs/temas/mi-espacio.md`), lo puro, con su modelo en el comentario de su sección: la planilla de un mes es la de `GET /mi-espacio/salidas?mes=` y encima van `cambios` (un Map de cada fecha tocada a su estado completo `{ entrada, salida, nota }` —todo vacío es un borrado— o a `{ quitar: true }`), `agregados` (un Set de los sábados y domingos sumados:
+La planilla de horas extras de contrato, lo puro, con su modelo en el comentario de su sección: la planilla de un mes es la de `GET /mi-espacio/salidas?mes=` y encima van `cambios` (un Map de cada fecha tocada a su estado completo `{ entrada, salida, nota }` —todo vacío es un borrado— o a `{ quitar: true }`), `agregados` (un Set de los sábados y domingos sumados:
 «Quitar» saca el día de ahí, y volver a sumar uno guardado que se quitó lo trae con lo guardado), `errores` (un Map de cada fecha a `{ campo, mensaje }`) y `notasAbiertas`; los Map y los Set se reconocen por lo que saben hacer, no por su clase (los tests los arman fuera del `vm`).
 Las funciones:
 `htmlDeLaPlanilla(planilla, { cambios, agregados, errores, notasAbiertas })` (las semanas de lunes a domingo con su renglón, `textoDeLaSemana` —«5 al 9 de octubre»— y su total en `.mp-semana-total`, y las filas de `htmlDeLaFilaDeLaPlanilla`, todo en `<div>`, sin semántica de lista; cada día que se carga es un `role="group"` con `aria-labelledby` a su fecha y cada campo lleva su `aria-label`, «Salida del lunes 05/10», «Entrada (opcional) del lunes 05/10»;
@@ -138,7 +139,7 @@ Los estilos, con el prefijo `.mp-` de la maqueta (y `.me-dia-horas` y `.me-fila-
 
 ## La página: sumar al mes anterior
 
-Con «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior; ver `docs/temas/mi-espacio.md`), cada día con salida de la planilla de contrato tiene el tilde «Sumar a {mes anterior}».
+Con «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior), cada día con salida de la planilla de contrato tiene el tilde «Sumar a {mes anterior}».
 Lo puro:
 `valoresDeLaSalida` y `valorDelDia` traen `al_mes_anterior` (solo el `true` literal y, en `valoresDeLaSalida`, solo con una salida; un «Quitar», false), así `fechasCambiadas` cuenta un cambio solo del tilde y `cuerpoDeLaPlanilla` lo manda siempre, como booleano;
 `salidaDelDia` y `horasDelDiaConCambios`;
@@ -169,6 +170,7 @@ la frase reserva dos renglones de 900 px para abajo y tres de 384 px para abajo)
 ## Reglas de los tests
 
 Los tests de la planilla usan personas y datos inventados, nunca nombres reales; `tests/mi-espacio-salidas-api.test.js` usa la base `rpad_test_mi_espacio_salidas`.
+Los de «Sumar al mes anterior» usan los datos inventados de la maqueta: enero de 2027 con 5,5 h, el martes 02/02/2027 con salida a las 16:20 (1,5 h) tildado y el miércoles 03/02 a las 15:50 (1 h) sin tildar.
 
 ## Archivos de tests
 

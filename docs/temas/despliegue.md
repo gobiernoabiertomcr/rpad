@@ -1,101 +1,107 @@
 # Despliegue
 
 Cómo se despliega en producción, el orden de las migraciones y las vueltas atrás, y lo pendiente con fecha.
+Lo de cada entrega ya desplegada está en su `PASOS.txt` y en git; las secciones «Migración» del README dan el detalle de cada una.
 
-Historia y motivos, en las specs:
-- `docs/superpowers/specs/2026-10-28-mi-espacio-agenda-onda-design.md`
-- `docs/superpowers/specs/2026-10-28-mi-espacio-vacaciones-en-la-carga-design.md`
-- `docs/superpowers/specs/2026-10-29-mi-espacio-evento-publico-design.md`
-- `docs/superpowers/specs/2026-10-30-mi-espacio-horas-mes-anterior-design.md`
-- `docs/superpowers/specs/2026-10-31-mi-espacio-dias-restituidos-design.md`
-- `docs/superpowers/specs/2026-11-03-mi-espacio-horas-acumuladas-design.md`
-- `docs/superpowers/specs/2026-11-03-validacion-api-publica-design.md`
-- `docs/superpowers/specs/2026-11-03-reiteracion-bimestral-design.md`
-- `docs/superpowers/specs/2026-11-03-notas-firma-digital-design.md`
+## El procedimiento
 
-## Despliegue (producción)
+Despliega el usuario, desde cPanel y sin terminal; acá se arma el kit.
+cPanel sin terminal: el SQL se corre en phpMyAdmin (pestaña SQL o Importar), los archivos se suben con el Administrador de archivos, y las variables de entorno, "Run NPM Install" y Restart se manejan en Setup Node.js App.
+El zip se carga en `/home/datospublicos/rpad` y se extrae ahí mismo.
+Las Tareas Cron son tres, todos los días: 8:05 `/api/cron/notificaciones` (a las 8:15 hasta que se despliegue la firma digital; ver los pendientes), 14:00 `/api/cron/cambios-pendientes` y `*/30` `/api/cron/eventos`.
+El respaldo y el despliegue, fuera del horario de los crons (8:05, 14:00 y las medias horas), por ejemplo a las 10:10.
+Run NPM Install, solo si cambia `package.json`.
 
-- cPanel sin terminal: el SQL se corre en phpMyAdmin (pestaña SQL o Importar), los archivos se suben con el Administrador de archivos, y las variables de entorno, "Run NPM Install" y Restart se manejan en Setup Node.js App.
-  El cron se configura en Tareas Cron.
-- Las migraciones van antes que el código (excepción:
-  `migracion-fechas-datasets-textos.sql` va después de subir los archivos, ver el README;
-  `migracion-metricas-recibido-datos.sql` va después de `migracion-metricas.sql` y puede ir antes o después de los archivos, pero antes del 10/01/2027, cuando se saca la foto de 2026, que no se modifica nunca).
-  El Ciclo de vida del dato no tiene SQL (subir los archivos y Restart), pero también va antes del 10/01/2027, para que la foto de 2026 salga con sus `etapas`.
-  Feriados:
-  `migracion-feriados.sql` y después `migracion-feriados-datos.sql` (la precarga), subir los archivos y Restart; sin cron ni Run NPM Install.
-  Mi espacio (licencias y horas extras), con los feriados ya desplegados:
-  `migracion-mi-espacio.sql` **antes** de subir el código (obligatoria: sin `mi_espacio_licencias`, Configuración → Licencias da 500), después los archivos y Restart; sin cron nuevo (el email de vencimiento va en la corrida de las 8:15) ni Run NPM Install.
-  La agenda de Mi espacio, con la entrega anterior ya desplegada:
-  `migracion-mi-espacio-agenda.sql` **antes** de subir el código y después de `migracion-mi-espacio.sql`, los archivos y Restart (sin Run NPM Install ni variables de entorno nuevas); después, probar a mano `/api/cron/eventos?secret=…` (un JSON con `"success":true`), crear la Tarea Cron nueva cada media hora (`*/30`, todos los días;
-  las de las 8:15 y las 14:00 no se tocan) y, pasada la media hora siguiente, mirar que Correos → Estado diga «Recordatorios de la agenda: última corrida hoy a las …» sin alertas de la agenda.
-  El Resumen «Titular» de Mi espacio, con la agenda ya desplegada, no tiene SQL: subir los archivos y Restart (sin cron nuevo ni Run NPM Install).
-  La planilla de horas extras de contrato, con la nota de licencia en Word ya desplegada (que tampoco tiene SQL: los archivos y Restart): primero, en phpMyAdmin, la consulta previa de la cabecera de `migracion-mi-espacio-horas.sql` (`SELECT COUNT(*) FROM mi_espacio_horas_extras h JOIN usuarios u ON u.id = h.usuario_id WHERE h.activo = 1 AND u.vinculo = 'contrato';`), que tiene que dar 0 (si no, no se sigue: esas horas dejarían de contar);
-  después `migracion-mi-espacio-horas.sql` **antes** de subir el código (obligatoria: sin `mi_espacio_salidas`, Mi espacio da 500), los archivos y Restart; sin cron nuevo, sin variables de entorno nuevas y sin Run NPM Install.
-  Los feriados en todo el sistema, tanda 1 (con el kit de las horas extras de contrato ya desplegado, con su SQL; el kit se arma contra b597d81 y lleva todo lo que entró después: el arreglo de los días de vacaciones de Mi espacio —cada carga sigue con la licencia que empezó a usar y el aviso «Perdés …», sin SQL ni kit propio:
-  `services/miEspacioReglas.js` y `services/miEspacioResumen.js`— y esta tanda, los archivos de `git diff --name-only b597d81..HEAD` sin tests ni docs): sin SQL, sin cron nuevo y sin Run NPM Install; subir los archivos y Restart, **antes del jueves 03/12/2026** (la víspera del viernes 04/12).
-  Si no llega para el lunes 02/11/2026, el plan B de la spec (sección 9): apagar el «Envío automático» de Correos → Estado antes de las 8:15 y volverlo a prender entre las 8:20 y las 14:00 (prendido a las 14:00: apagado, el recordatorio manda por email lo que iba por nota), lo mismo el 09/11 si el Estado del 06/11 anuncia algo y el 23/11, y nunca el 07/12 (se perdería el adelanto de la víspera).
-  Después de desplegarla, mirar en Correos → Estado que las fechas anunciadas sean las reales (spec, sección 3) y que no haya alertas nuevas (`feriados-sin-leer`).
-  La licencia anulada en Configuración y las licencias de otro año de Mi espacio, con el kit de los feriados en todo el sistema ya desplegado (ad0de02): sin SQL, sin cron nuevo y sin Run NPM Install; subir los archivos (los de `git diff --name-only ad0de02..HEAD`, sin tests ni docs) y Restart.
-  La agenda de Mi espacio con más onda (spec 2026-10-28-mi-espacio-agenda-onda), después del kit de la licencia anulada (main 65a79f8, con `mi-espacio.js?v=20261215` ya en producción): sin SQL, sin cron nuevo, sin variables de entorno nuevas y sin Run NPM Install; subir los archivos (los de `git diff --name-only 65a79f8..HEAD`, sin tests ni docs:
-  `controllers/miEspacioController.js`, `controllers/miEspacioEventosController.js`, `services/miEspacioDatos.js`, `services/miEspacioEventosReglas.js`, `services/miEspacioReglas.js`, `services/miEspacioResumen.js`, `public/js/mi-espacio.js` y `public/mi-espacio.html`, que lo pide con `?v=20261216`) y Restart.
-  Las vacaciones al cargar una licencia de Mi espacio (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga; kit `RPAD-deploy-mi-espacio-vacaciones-licencia`), después del kit de la agenda con más onda: el kit y su vuelta atrás se arman contra ddc018e (el merge de la agenda, con `mi-espacio.js?v=20261216` ya en producción);
-  sin SQL (la clave `franquicia-AAAA` del email entra en `mi_espacio_avisos.clave`, `varchar(40)`), sin cron nuevo (el email de la franquicia va en la corrida de las 8:15), sin variables de entorno nuevas y sin Run NPM Install; subir los archivos (los de `git diff --name-only ddc018e..HEAD`, sin tests ni docs:
-  `controllers/miEspacioController.js`, `services/miEspacioAvisos.js`, `services/miEspacioReglas.js`, `services/miEspacioResumen.js`, `public/js/mi-espacio.js` y `public/mi-espacio.html`, que lo pide con `?v=20261217`, y los de «Redacción y entrega de nota», abajo, que viajan en este kit:
-  `services/metricasReglas.js`, `services/metricasCinta.js` y `services/reportesCicloDeVidaPdf.js`) y Restart, **antes del 10/01/2027**.
-  El nombre «Redacción y entrega de nota» de la etapa de la DGMIT y la Dirección Administrativa en Métricas y Reportes (decisión del usuario del 28/10/2026, con «redactan» en la descripción del Ciclo de vida;
-  el nombre anterior queda solo en `docs/`) no tiene kit propio: viaja en el de las vacaciones al cargar una licencia (arriba), sin SQL (los archivos y Restart), y tiene que estar en producción **antes del 10/01/2027**: la foto de 2026 guarda los textos ya armados (`vistas`, `cintas` y `etapas`) y no se modifica nunca, así que con el código anterior Métricas, el Informe anual y el Ciclo de vida de 2026 dirían el nombre anterior para siempre.
-  Los feriados en todo el sistema, tanda 2 (Métricas, el Ciclo de vida del dato, la foto del 31/12, el Informe anual y la Agenda de pedidos; kit `RPAD-deploy-feriados-en-metricas`), después del kit de las vacaciones al cargar una licencia (main 51e47e6, con `mi-espacio.js?v=20261217` ya en producción): sin SQL, sin cron nuevo, sin variables de entorno nuevas y sin Run NPM Install; subir los archivos (los de `git diff --name-only 51e47e6..HEAD`, sin tests ni docs:
-  `controllers/metricasController.js`, `notificacionesController.js` y `reportesController.js`;
-  `services/feriadosReglas.js`, `metricasFoto.js`, `metricasReglas.js`, `reportesAgenda.js`, `reportesCicloDeVidaPdf.js` y `reportesMetricasPdf.js`;
-  `public/configuracion.html` y `reportes.html`, que pide `reportes.js?v=20261208`, y `public/js/reportes.js`) y Restart, fuera del horario de los crons y **antes del 10/01/2027**, el día en que la corrida de las 8:15 saca la foto de 2026:
-  si llega tarde, la foto de 2026 queda con los 9 fijos para siempre y la de 2027 con la tabla (la comparación del Informe anual y el «Año anterior» del Ciclo de vida mezclarían dos calendarios), y la bajada nueva sale igual en la pestaña y en el Informe anual de 2026.
-  Al desplegarla, Correos → Estado no cambia (nada que mirar ahí): la bajada de la pestaña Métricas dice «… sin feriados ni días no laborables.» (Ctrl+F5) y el aviso azul de Configuración → Feriados, «… los días no hábiles de todo el sistema …».
-  El 10/01/2027 (domingo) o el 11/01, mirar en Métricas y Reportes que 2026 ya no diga «La foto de 2026 se saca …» ni «… todavía no se sacó» y que se descargue el Informe anual de 2026, y que la última corrida de Correos → Estado no diga «No se pudo sacar la foto del año» (si lo dice, la tabla no se pudo leer: la corrida del día siguiente la vuelve a intentar).
-  El evento Personal (Público) de la agenda de Mi espacio (spec 2026-10-29-mi-espacio-evento-publico), después del kit `RPAD-deploy-feriados-en-metricas`, que ya está en producción: antes de empezar, como comprobación previa y no como algo que falte desplegar, mirar en el código fuente de las páginas que `reportes.html` pida `reportes.js?v=20261208` y `mi-espacio.html`, `mi-espacio.js?v=20261217` (la de main 6f5d38a); si no, no se sigue.
-  El kit y su vuelta atrás se arman contra 6f5d38a.
-  Primero `migracion-mi-espacio-evento-publico.sql`, **antes** de subir el código y después de `migracion-mi-espacio-horas.sql` (obligatoria: sin las columnas nuevas, la agenda no carga, no se guarda ningún evento y la corrida de los recordatorios termina con errores; ver «Base de datos»); después los archivos (los de `git diff --name-only 6f5d38a..HEAD`, sin tests ni docs:
-  `routes/index.js`, `controllers/miEspacioController.js` y `miEspacioEventosController.js`, `services/miEspacioDatos.js`, `miEspacioEventosDatos.js` y `miEspacioEventosReglas.js`, `public/js/mi-espacio.js` y `public/mi-espacio.html`, que lo pide con `?v=20261218`;
-  `database/schema.sql` cambia, pero no se corre) y Restart; y **después del Restart**, el SQL privado del evento real que motivó el pedido (`database/privado/mi-espacio-evento-publico-datos.sql`, no versionado: viaja solo en el kit), que lo convierte en el lugar a Personal (Público) con «Todos» y termina con una verificación que tiene que dar `convertido` 1 (con 0, alguien cambió o borró el evento antes del despliegue y no se tocó nada).
-  Sin cron nuevo, sin variables de entorno nuevas y sin Run NPM Install.
-  La vuelta atrás: los archivos anteriores y Restart, después `database/privado/rollback-mi-espacio-evento-publico-datos.sql` (lo devuelve a compartido con toda la administración; su verificación, `devuelto` 1) y recién después `rollback-mi-espacio-evento-publico.sql` (si también se deshiciera la agenda, `rollback-mi-espacio-agenda.sql` va después de este: solo no se puede correr).
-  Después de desplegar (Ctrl+F5), solo mirar:
-  Mi espacio → Agenda con la leyenda de siete y «Nuevo evento» con «Tipo de evento» (sin guardar nada: un Laboral de prueba manda invitaciones de verdad), y que pasada la media hora siguiente Correos → Estado no tenga alertas de la agenda.
-  Gestión de Datasets sin el prefijo `ad-` (kit `RPAD-deploy-admin-editor-registrar`), después del kit del evento Personal (Público), que ya está en producción (main ea8c8e7): sin SQL, sin cron nuevo, sin variables de entorno nuevas y sin Run NPM Install; subir los archivos (`public/admin.html`, que pide `admin-fechas.js` y `admin.js` con `?v=20261128`, `public/js/admin-fechas.js` y `public/js/admin.js`) y Restart;
-  después (Ctrl+F5), en Gestión de Datasets, cada fila tiene «Registrar actualización».
-  «Sumar al mes anterior» en la planilla de horas extras de contrato (spec 2026-10-30-mi-espacio-horas-mes-anterior), después del kit de Gestión de Datasets sin el prefijo `ad-` (todo main 9fcc2af desplegado: en el código fuente, `mi-espacio.html` pide `mi-espacio.js?v=20261218` y `admin.html`, `admin.js?v=20261128`): el kit y su vuelta atrás se arman contra 9fcc2af.
-  Primero `migracion-mi-espacio-horas-mes-anterior.sql`, **antes** de subir el código (obligatoria: sin la columna, Mi espacio da 500 para todos; ver «Base de datos»), con su verificación (1 fila); después los archivos (los de `git diff --name-only 9fcc2af..HEAD`, sin tests ni docs:
-  `controllers/miEspacioController.js`, `services/miEspacioDatos.js`, `miEspacioNota.js`, `miEspacioReglas.js` y `miEspacioResumen.js`, `public/js/mi-espacio.js` y `public/mi-espacio.html`, que lo pide con `?v=20261219`;
-  `database/schema.sql` cambia, pero no se corre) y Restart; sin cron nuevo, sin variables de entorno nuevas y sin Run NPM Install.
-  Después (Ctrl+F5), solo mirar: con una persona de contrato, «Cargar horas extras» muestra el tilde «Sumar a {mes anterior}» en los días con salida (cerrar con «Cancelar», sin tildar ni guardar nada en la base real).
-  La vuelta atrás: los archivos anteriores y Restart, y después `rollback-mi-espacio-horas-mes-anterior.sql` (si también se deshiciera la planilla, antes que `rollback-mi-espacio-horas.sql`).
-  Los días que restituye un asueto (spec 2026-10-31-mi-espacio-dias-restituidos; kit `RPAD-deploy-mi-espacio-dias-restituidos`), después del kit de «Sumar al mes anterior», que ya está en producción: el kit y su vuelta atrás se arman contra main 39eef2b; antes de empezar, como comprobación previa, mirar en el código fuente de las páginas que `mi-espacio.html` pida `mi-espacio.js?v=20261219` y `configuracion.html`, `feriados.js?v=20261209` (si no, no se sigue).
-  Primero, en phpMyAdmin, `migracion-mi-espacio-restituciones.sql`, **antes** de subir el código y después de `migracion-mi-espacio-horas-mes-anterior.sql` (obligatoria: sin las dos tablas, Mi espacio da 500 para todos y Configuración → Feriados no corrige ningún feriado ni carga uno sobre unas vacaciones ya cargadas; ver «Base de datos»), con su verificación (`SHOW TABLES LIKE 'mi_espacio_restitu%';`, 2 filas, y el tipo de `mi_espacio_licencias` terminado en 'restituidos');
-  después los archivos (los de `git diff --name-only 39eef2b..HEAD`, sin tests, docs ni SQL:
-  `routes/index.js`, `controllers/feriadosController.js` y `miEspacioController.js`, `services/emailTemplates.js`, `feriadosReglas.js`, `miEspacioAvisos.js`, `miEspacioDatos.js`, `miEspacioEventosReglas.js`, `miEspacioNota.js`, `miEspacioPaso.js`, `miEspacioReglas.js` y `miEspacioResumen.js` y, nuevo, `services/miEspacioRestituciones.js` —si falta, la app no arranca—, `public/js/mi-espacio.js` y `feriados.js`, `public/mi-espacio.html`, que lo pide con `?v=20261220`, y `public/configuracion.html`,
-  que pide `feriados.js?v=20261210`;
-  `database/schema.sql` cambia, pero no se corre) y Restart; sin Run NPM Install, sin variables de entorno nuevas y sin cron nuevo (los emails de los días para restituir van en la corrida de las 8:15).
-  Después (Ctrl+F5), solo mirar (spec, 14):
-  Mi espacio abre sin errores (Resumen, Licencias, Horas extras y Agenda) y, en Configuración → Feriados, el modal de un feriado nuevo, **sin guardarlo**, con una fecha dentro de unas vacaciones cargadas, si hay alguna (al desplegar, en producción todavía no hay); al día siguiente, la última corrida de Correos → Estado, sin errores de Mi espacio.
-  Tiene que estar en producción **antes de los asuetos de fin de año** (se declaran por decreto, se suelen cargar a mediados de diciembre y no vienen en la precarga): los feriados cargados antes del despliegue no generan restituciones.
-  La vuelta atrás, en orden: los archivos de main 39eef2b y Restart, y después `rollback-mi-espacio-restituciones.sql` (antes que `rollback-mi-espacio-horas-mes-anterior.sql`, si también se deshiciera esa, y siempre antes que `rollback-mi-espacio.sql` y que `rollback-feriados.sql`, que mientras esté esta migración no se pueden correr solos).
-  Las horas acumuladas de contrato de Mi espacio (spec 2026-11-03-mi-espacio-horas-acumuladas; kit `RPAD-deploy-mi-espacio-horas-acumuladas`), después del kit de los días restituidos, que ya está en producción: el kit y su vuelta atrás se arman contra main cd44547; antes de empezar, como comprobación previa, mirar en el código fuente de las páginas que `mi-espacio.html` pida `mi-espacio.js?v=20261220` (si no, no se sigue).
-  Primero, en phpMyAdmin, `migracion-mi-espacio-horas-acumuladas.sql`, **antes** de subir el código y después de `migracion-mi-espacio-restituciones.sql` (obligatoria: sin la columna, Mi espacio da 500 para todos; ver «Base de datos»), con su verificación (`SHOW COLUMNS FROM mi_espacio_licencias LIKE 'horas_acumuladas';`, 1 fila); después los archivos (los de `git diff --name-only cd44547..HEAD`, sin tests, docs ni SQL:
-  `routes/index.js`, `controllers/miEspacioController.js`, `services/miEspacioDatos.js`, `miEspacioNota.js`, `miEspacioReglas.js` y `miEspacioResumen.js`, `public/js/mi-espacio.js` y `public/mi-espacio.html`, que lo pide con `?v=20261221`;
-  `database/schema.sql` cambia, pero no se corre) y Restart; sin Run NPM Install, sin variables de entorno nuevas y sin cron nuevo.
-  Después (Ctrl+F5), solo mirar, sin guardar nada: con una persona de contrato, la tarjeta «Horas acumuladas» de la pestaña Horas extras y, si tiene acumuladas, «Cargar licencia» → «Horas a favor» con los dos campos (cerrar con «Cancelar»); al día siguiente, la última corrida de Correos → Estado, sin errores de Mi espacio.
-  La vuelta atrás, en orden: los archivos de main cd44547 y Restart, y después `rollback-mi-espacio-horas-acumuladas.sql` (antes que `rollback-mi-espacio-restituciones.sql`, si también se deshiciera esa).
-  La validación de la API pública (spec 2026-11-03-validacion-api-publica), **sin kit propio (decisión del usuario, 03/11/2026): va con el kit de la reiteración bimestral, que por eso se arma contra 3949aae**; sin SQL, sin cron nuevo, sin variables de entorno nuevas y sin Run NPM Install, con `middleware/cuerpo.js` nuevo (si falta, la app no arranca) y `admin.html`, que pide `admin-fechas.js` y `admin.js` con `?v=20261129`.
-  El respaldo y el despliegue, fuera del horario de los crons (8:15, 14:00 y las medias horas).
-  Las cargas de datos de personas (roles, cargos) van en `database/privado/` (no versionado) y se corren después del código.
-  El Excel de las notas DGMIT de 2026 (`RPAD - Notas DGMIT 2026 - para completar.xlsx`) se importa con la importación de la spec de notas DGMIT (sección 9), que todavía no está hecha.
+## El kit
+
+Cada entrega con algo para producción tiene su kit en `~/rpad-kits/RPAD-deploy-<tema>/`, armado contra el último commit desplegado, que confirma el usuario.
+Trae `PASOS.txt`, `sql/` (las migraciones, numeradas), `archivos-<tema>/` y su zip, `vuelta-atras/` (los archivos y el zip del commit desplegado y los `rollback-*.sql`) y `VERIFICACION.txt` (el sha256 de cada archivo contra `git show`).
+**El filtro:** `git diff --name-only <producción>..<nuevo>`, sin `tests/`, `docs/`, `database/`, `CLAUDE.md`, `README.md`, `.claude/` ni `.gitignore`: la aplicación no lee ningún documento.
+Un kit no se escribe acá: lo que dice cada uno queda en su `PASOS.txt`.
+
+## Los pasos
+
+1. Comprobar con Ctrl+U los `?v=` que pide cada página: tienen que ser los que dejó el kit anterior; si no, no se sigue.
+2. Respaldo: la base (Exportar) y `config`, `controllers`, `services`, `routes` y `public`, sin `uploads/`.
+3. El SQL en phpMyAdmin, con su verificación.
+4. Los archivos; si van sueltos, primero `services` y `config`, después `controllers` y `routes`, `public/js` y al final los `.html`.
+5. Restart, enseguida.
+6. Ctrl+F5 y solo mirar: no se guarda nada en la base real, porque un evento Laboral de prueba manda invitaciones de verdad.
+7. Al día siguiente, la última corrida en Correos → Estado, sin errores.
+
+Si algo sale mal: primero los archivos anteriores y Restart; después, si hace falta sacar lo nuevo, los `rollback-*.sql` de la tabla.
+
+## Las migraciones
+
+Las migraciones van antes que el código: sin ellas, lo que las lee da 500 (`docs/temas/base-de-datos.md` dice qué pasa sin cada una).
+`migracion-fechas-datasets-textos.sql` es la excepción: va después de subir los archivos y antes del Restart.
+`migracion-metricas-recibido-datos.sql` va después de `migracion-metricas.sql` y puede ir antes o después de los archivos.
+`database/schema.sql` cambia, pero no se corre.
+Un archivo nuevo de `services/` que falte no deja arrancar la app.
+Las cargas de datos de personas (roles, cargos) van en `database/privado/` (no versionado) y se corren después del código.
+Después de `migracion-notas-dgmit.sql` no se vuelven a correr `migracion-editor-auditoria.sql` ni `migracion-usuarios-superadmin.sql`: fijan el rol sin `colaborador` (fallan o dejan el rol de un colaborador vacío).
+
+Las migraciones se corren de arriba para abajo y las vueltas atrás, de abajo para arriba.
+La última columna dice qué tiene que correr antes esa vuelta atrás: sin eso, no se puede correr sola (falla a mitad de camino y deja la base a medias).
+
+| # | Migración | Vuelta atrás | Antes de esa vuelta atrás |
+|---:|---|---|---|
+| 1 | `migracion-v1.2.0-v1.3.0.sql` | — | |
+| 2 | `migracion-v1.3.0-v1.4.0.sql` | — | |
+| 3 | `migracion-v1.4.0-v1.5.0.sql.sql` | — | |
+| 4 | `migracion-metricas-proyectos.sql` | — | |
+| 5 | `migracion-upload-archivos.sql` | — | |
+| 6 | `migracion-logros-independientes.sql` | — | |
+| 7 | `migracion-rol-default-lector.sql` | — | |
+| 8 | `migracion-notas-digitales.sql` | — | |
+| 9 | `migracion-que-se-solicita.sql` | — | |
+| 10 | `migracion-que-se-solicita-datos.sql` | — | |
+| 11 | `migracion-notas-digitales-anexo.sql` | — | |
+| 12 | `migracion-usuarios-superadmin.sql` | `rollback-usuarios-superadmin.sql` | |
+| 13 | `migracion-licencias-firmas.sql` | `rollback-licencias-firmas.sql` | `rollback-mi-espacio.sql`, si está Mi espacio |
+| 14 | `migracion-editor-auditoria.sql` | `rollback-editor-auditoria.sql` | `rollback-editor-sin-responsabilidad.sql` y `rollback-notas-dgmit.sql`, si están |
+| 15 | `migracion-fechas-datasets.sql` | — | |
+| 16 | `migracion-fechas-datasets-datos.sql` | — | |
+| 17 | `migracion-fechas-datasets-textos.sql` | — | |
+| 18 | `migracion-requiere-nota.sql` | — | |
+| 19 | `migracion-requiere-nota-datos.sql` | — | |
+| 20 | `migracion-editor-sin-responsabilidad.sql` | `rollback-editor-sin-responsabilidad.sql` | `rollback-notas-dgmit.sql`, si está |
+| 21 | `migracion-notas-dgmit.sql` | `rollback-notas-dgmit.sql` | |
+| 22 | `migracion-metricas.sql` | `rollback-metricas.sql` | |
+| 23 | `migracion-metricas-recibido-datos.sql` | — (la borra `rollback-metricas.sql`) | |
+| 24 | `migracion-generador-notas.sql` | `rollback-generador-notas.sql` | |
+| 25 | `migracion-feriados.sql` | `rollback-feriados.sql` | `rollback-mi-espacio-restituciones.sql`, si está |
+| 26 | `migracion-feriados-datos.sql` | — (la borra `rollback-feriados.sql`) | |
+| 27 | `migracion-mi-espacio.sql` | `rollback-mi-espacio.sql` | `rollback-mi-espacio-restituciones.sql`, si está |
+| 28 | `migracion-mi-espacio-agenda.sql` | `rollback-mi-espacio-agenda.sql` | `rollback-mi-espacio-evento-publico.sql`, si está, y borrar la Tarea Cron de `/api/cron/eventos` |
+| 29 | `migracion-mi-espacio-horas.sql` | `rollback-mi-espacio-horas.sql` | |
+| 30 | `migracion-mi-espacio-evento-publico.sql` | `rollback-mi-espacio-evento-publico.sql` | `database/privado/rollback-mi-espacio-evento-publico-datos.sql`, si se corrió el SQL privado del evento real |
+| 31 | `migracion-mi-espacio-horas-mes-anterior.sql` | `rollback-mi-espacio-horas-mes-anterior.sql` | |
+| 32 | `migracion-mi-espacio-restituciones.sql` | `rollback-mi-espacio-restituciones.sql` | |
+| 33 | `migracion-mi-espacio-horas-acumuladas.sql` | `rollback-mi-espacio-horas-acumuladas.sql` | |
+| 34 | `migracion-notas-firma-digital.sql` | `rollback-notas-firma-digital.sql` | |
+
+`database/privado/rollback-mi-espacio-evento-publico-datos.sql` devuelve el evento real a compartido con toda la administración (su verificación, `devuelto` 1).
+Está fuera del repositorio y no aparece en la Mac de trabajo: solo viajó en su kit, `RPAD-deploy-mi-espacio-evento-para-todos`.
+
+## La foto del año
+
+El 10/01 de cada año, la corrida de la mañana saca la foto del año anterior, que guarda textos ya armados (`vistas`, `cintas` y `etapas`) y no se modifica nunca.
+Lo que cambie esos textos o el calendario de Métricas, del Ciclo de vida o del Informe anual, y los datos de ese año, tienen que estar en producción antes.
+
+## Pendientes con fecha
+
+Se borran al cumplirse.
+
 - La reiteración bimestral (spec 2026-11-03-reiteracion-bimestral; kit `RPAD-deploy-reiteracion-bimestral`, armado contra 3949aae, que lleva también la validación de la API pública): sin SQL, sin cron nuevo, sin variables de entorno nuevas y sin Run NPM Install; los archivos y Restart, fuera del horario de los crons y **antes del martes 01/12/2026**.
   Si llega después, la de diciembre sale como siempre y la aclaración de Métricas («Desde diciembre de 2026») hay que corregirla.
   Después (Ctrl+F5), solo mirar:
   Correos → Estado dice «Próxima reiteración 04/01/2027».
   La vuelta atrás: los archivos de 3949aae y Restart; en un mes par, la corrida siguiente genera la reiteración de ese mes, salvo que se corra antes el SQL opcional del kit.
-- La firma digital de las Notas Digitales (spec 2026-11-03-notas-firma-digital; kit `RPAD-deploy-notas-firma-digital`): primero, en phpMyAdmin, `migracion-notas-firma-digital.sql` **antes** de subir el código (obligatoria), los archivos y Restart, fuera del horario de los crons; después, **mover la Tarea Cron de `/api/cron/notificaciones` de las 8:15 a las 8:05**, y no entre las 8:00 y las 8:15: editada en ese intervalo, puede correr dos veces ese día;
+- La firma digital de las Notas Digitales (spec 2026-11-03-notas-firma-digital; kit `RPAD-deploy-notas-firma-digital`), después del kit de la reiteración bimestral:
+  primero, en phpMyAdmin, `migracion-notas-firma-digital.sql` **antes** de subir el código (obligatoria), los archivos y Restart, fuera del horario de los crons;
+  después, **mover la Tarea Cron de `/api/cron/notificaciones` de las 8:15 a las 8:05**, y no entre las 8:00 y las 8:15 ni entre las 13:00 y las 14:00: editada en esos ratos, puede correr dos veces ese día;
   sin Run NPM Install, sin variables de entorno nuevas y sin Tarea Cron nueva.
   El interruptor queda apagado hasta que el usuario quiera probarlo; la primera prueba real la hace el usuario.
-  La vuelta atrás: los archivos anteriores y Restart, y después `rollback-notas-firma-digital.sql`.
-- Regla del proyecto: no romper nada de lo implementado.
-  Correr `npm test` completo antes y después de cada cambio.
+- **Antes del 10/01/2027:** las notas DGMIT de 2026 cargadas a mano desde el Seguimiento (decisión del usuario, 25/10/2026: no hay SQL de importación) y `database/privado/metricas-recibido-datos-25-38-39.sql`.
+- El 10/01/2027 (domingo) o el 11/01, mirar en Métricas y Reportes que 2026 ya no diga «La foto de 2026 se saca …» ni «… todavía no se sacó» y que se descargue el Informe anual de 2026, y que la última corrida de Correos → Estado no diga «No se pudo sacar la foto del año» (si lo dice, la tabla no se pudo leer: la corrida del día siguiente la vuelve a intentar).

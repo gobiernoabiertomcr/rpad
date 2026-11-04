@@ -166,7 +166,7 @@ En gestión externa, el RPAD avisa a la DGMIT y a la Dirección Administrativa, 
 - **Dónde se ve:** en el circuito ("Nota DGMIT N° 156/26 / Solicitud recibida por el área el 22/10/2026, hace 2 días", en violeta; sin nota, "Pendiente de carga" si ya hacía falta, "Todavía no hizo falta" si no, o "Ya no se pide" en un dado de baja), en los movimientos (filtro "Notas DGMIT"), en la cinta, en la columna "Última nota DGMIT al área" de la lista, en el PDF del Seguimiento y en el anexo de cada reiteración.
 - **En el anexo de la reiteración**, que le llega a la DGMIT, sin nota el circuito dice solo "La manda la DGMIT al área" (nunca "Pendiente de carga").
 - **No cambia:** una nota DGMIT no es un aviso del RPAD (no cuenta en los avisos del ciclo, el estado ni los ciclos), no sale ningún email y las Notas Digitales no cambian. Gestión interna sigue igual.
-- **Las notas anteriores** no se cargan en esta entrega: las tablas arrancan vacías y, cuando llegue el Excel completo, se importan con un SQL aparte.
+- **Las notas anteriores** se cargan a mano desde el Seguimiento: las tablas arrancan vacías y no hay SQL de importación.
 - **Dónde está la regla:** `services/notasDgmitReglas.js` (validación, pura), `controllers/notasDgmitController.js` (la API) y `services/seguimientoReglas.js` (cómo se ve en el Seguimiento). Ver [Migración: Notas DGMIT](#migración-notas-dgmit).
 - **Detalle de diseño:** `docs/superpowers/specs/2026-10-24-notas-dgmit-design.md`.
 
@@ -710,7 +710,7 @@ En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin �
 
 **Si algo sale mal:** subir de nuevo los archivos del backup → Restart. Las tablas nuevas pueden quedar (son aditivas y el código anterior no las usa). Para sacarlas, phpMyAdmin → pegar `database/updates/rollback-metricas.sql` **después** del Restart: borra las dos tablas y **se pierden la foto de cada año y los «Recibido el» importados** (exportarlas antes si hace falta conservarlas). Los cambios registrados no se tocan: las actualizaciones aprobadas con el código nuevo conservan su «Recibido el» y su origen en el cambio.
 
-**Notas DGMIT de 2026:** el Excel `RPAD - Notas DGMIT 2026 - para completar.xlsx` no entra en esta entrega: se importa con la importación de notas DGMIT (sección 9 de `docs/superpowers/specs/2026-10-24-notas-dgmit-design.md`), que se hace aparte y también tiene que entrar antes del 10/01/2027 para que cuente en la foto de 2026.
+**Notas DGMIT de 2026:** se cargan a mano desde Herramientas → Seguimiento, y tienen que estar antes del 10/01/2027 para que cuenten en la foto de 2026.
 
 ### Migración: Generador de Notas
 

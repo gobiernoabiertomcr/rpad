@@ -170,7 +170,7 @@ Si tocás esto, leé este documento de `docs/temas/`:
 - El 0 es un valor: sobre `requiere_nota` y los parecidos, nunca `x || null`, siempre `??`.
 - Lo ya enviado no cambia: una nota queda en bytes, y su PDF y su anexo nunca se regeneran.
 - La foto del 31/12 (`metricas_fotos`) no se modifica nunca y guarda textos ya armados. Cambiar su forma obliga a subir su versión o a leer con tolerancia.
-- Las migraciones van antes que el código, y todo lo nuevo va también en `database/schema.sql`. `estadosDe` lee todas las tablas de Mi espacio: una columna sin migrar da 500 en todo Mi espacio.
+- Las migraciones van antes que el código, y todo lo nuevo va también en `database/schema.sql`. `estadosDe` lee las tablas de Mi espacio que hacen al estado de una persona: una columna sin migrar en ellas da 500 en todo Mi espacio.
 - Sin `CHECK` en la base para las reglas de negocio: valida la API.
 - `aprobarCambio` es el único que aplica un cambio a un dataset. La forma de `datos_nuevos` y `datos_anteriores` la leen el Seguimiento, Métricas y las notas de auditoría: es un contrato.
 
