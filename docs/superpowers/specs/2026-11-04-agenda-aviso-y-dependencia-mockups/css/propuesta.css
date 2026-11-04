@@ -63,3 +63,18 @@
 @media (max-width: 767px) { [data-forma="1"] .me-opciones { grid-template-columns: minmax(0, 1fr); } }
 /* En la comparación se ven como en el modal de la compu; en el teléfono de verdad, la 1 se apila y la 2 y la 4 siguen en una fila */
 .mq-carta [data-forma="1"] .me-opciones { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* La frase: con el ícono de lo elegido y, en «Yo y quienes elija», las iniciales de quienes reciben el mail */
+#ev-tipo-ayuda.mq-frase-apagada { background: none; border-style: dashed; color: var(--sg-suave); }
+.mq-frase-fila { display: flex; gap: 8px; align-items: flex-start; }
+.mq-frase-ico { display: inline-flex; flex: none; margin-top: 1px; }
+.mq-frase-ico svg { width: 18px; height: 18px; }
+.mq-frase-ico[data-de="privado"] { color: var(--sg-tinta); }
+.mq-frase-ico[data-de="publico"] { color: var(--sg-rosado); }
+.mq-frase-ico[data-de="laboral"] { color: var(--sg-violeta); }
+.mq-frase-cadena { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--sg-linea); }
+.mq-jefes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.mq-jefe { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 2px; border-radius: 999px; background: #fff; border: 1px solid var(--sg-linea); font-weight: 600; color: var(--sg-tinta); font-size: 0.82rem; }
+.mq-iniciales { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--sg-tinta); color: #fff; font-size: 0.68rem; font-weight: 700; }
+[data-forma="4"] .me-opciones[aria-invalid="true"] { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+[data-forma="4"] .me-opciones[aria-invalid="true"] .me-opcion { border-color: transparent; }

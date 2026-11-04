@@ -15,12 +15,25 @@
     privado: 'Solo vos lo ves. Nadie más, ni en la agenda ni por mail.',
     ninguno: 'Elegí una opción para ver a quién le llega.',
     publico: `Lo ven en su agenda las personas que elijas, solo con el texto corto. A ${JEFES}, de quienes dependés, les llega ese texto por mail antes del evento, salvo que lo cargues para hoy.`.replace('de quienes dependés, les llega', rol === 'editor' ? 'de quienes dependés, les llega' : 'de quien dependés, le llega'),
+    publico_corta: 'Lo ven en su agenda las personas que elijas, solo con el texto corto.',
     laboral: 'Lo ve la administración que elijas, con todo el detalle.'
   };
   window.MQ = {
     variante,
     frase: (tipo) => FRASES[tipo],
     iconos: window.MAQUETA.ICONOS,
+    // La frase con su ícono y, en «Yo y quienes elija», las iniciales de quienes reciben el mail
+    adornarFrase(nodo, tipo) {
+      nodo.classList.toggle('mq-frase-apagada', !['privado', 'publico', 'laboral'].includes(tipo));
+      if (!['privado', 'publico', 'laboral'].includes(tipo) || nodo.hidden) return;
+      const fila = (texto) => `<span class="mq-frase-fila"><span class="mq-frase-ico" data-de="${tipo}" aria-hidden="true">${window.MAQUETA.ICONOS[tipo]}</span><span>${Utils.escapeHtml(texto)}</span></span>`;
+      if (tipo !== 'publico') { nodo.innerHTML = fila(FRASES[tipo]); return; }
+      const jefes = rol === 'editor' ? [['FR', 'Federico'], ['GP', 'Graciela']] : [['GP', 'Graciela']];
+      const chips = jefes.map(([ini, nombre]) => `<span class="mq-jefe"><span class="mq-iniciales" aria-hidden="true">${ini}</span>${nombre}</span>`).join('');
+      const texto = jefes.length > 1 ? 'De quienes dependés: les llega ese texto por mail antes del evento, salvo que lo cargues para hoy.'
+        : 'De quien dependés: le llega ese texto por mail antes del evento, salvo que lo cargues para hoy.';
+      nodo.innerHTML = `${fila(FRASES.publico_corta)}<span class="mq-frase-cadena"><span class="mq-jefes">${chips}</span><span>${texto}</span></span>`;
+    },
     opciones: variante === 'B' ? Object.freeze({
       privado: Object.freeze({ nombre: 'Solo yo', ayuda: 'Nadie más lo ve' }),
       publico: Object.freeze({ nombre: 'Yo y quienes elija', ayuda: 'Ven un texto corto' }),
@@ -58,7 +71,7 @@
   });
   const mensaje = (e, verbo) => {
     if (e.tipo === 'privado') return `Evento ${verbo}. Solo vos lo ves.`;
-    if (e.tipo === 'publico') return `Evento ${verbo}. ${quien(e)} en su agenda, y a ${JEFES} les llega el día hábil anterior.`;
+    if (e.tipo === 'publico') return `Evento ${verbo}. ${quien(e)} en su agenda, y a ${JEFES} les llega antes del evento.`;
     return `Evento ${verbo}. ${quien(e)}.`;
   };
 

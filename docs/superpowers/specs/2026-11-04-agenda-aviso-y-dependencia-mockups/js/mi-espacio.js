@@ -6449,6 +6449,7 @@ function pintarQuienLoVe() {
     porId(id).textContent = texto;
     porId(id).hidden = texto === '';
   }
+  window.MQ.adornarFrase(porId('ev-tipo-ayuda'), valores.tipo);
   porId('ev-personas-ayuda').textContent = ayudas.personas;
   const publico = valores.tipo === 'publico';
   porId('ev-publico').hidden = !publico;

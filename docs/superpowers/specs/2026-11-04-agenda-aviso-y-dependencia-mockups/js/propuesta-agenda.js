@@ -43,12 +43,12 @@
 
   const panel = M.panel('agenda', `
     <label>Diseño del selector
-      <select id="mq-forma"><option value="1">1. Tarjetas con ícono</option><option value="2">2. Íconos grandes</option><option value="3">3. Lista de alcance</option><option value="4">4. Barra compacta</option></select></label>
+      <select id="mq-forma"><option value="4">4. Barra compacta (elegida)</option><option value="1">1. Tarjetas con ícono</option><option value="2">2. Íconos grandes</option><option value="3">3. Lista de alcance</option></select></label>
     <label>Quién carga
       <select id="mq-rol"><option value="editor">Editor (dos personas arriba)</option><option value="lector">Lector (una persona arriba)</option></select></label>
     <a href="#" id="mq-reiniciar">Volver a los eventos de ejemplo</a>`);
   const grupo = document.getElementById('ev-grupo-tipo');
-  const forma = M.leer('mq-forma', '2');
+  const forma = M.leer('mq-forma', '4');
   grupo.dataset.forma = forma;
   panel.querySelector('#mq-forma').value = forma;
   panel.querySelector('#mq-rol').value = rol;
