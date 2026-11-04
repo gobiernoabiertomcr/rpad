@@ -63,6 +63,13 @@ const hoy = hoyArgentina();
 const dia = (n) => sumarDias(hoy, n);
 
 describe('lo que el editor puede (spec 8.1)', () => {
+  // Sin url no sale a la red: alcanza para ver que pasa los dos controles de la ruta
+  it('llega a GET /andino/fetch, que usa Gestión de Datasets', async () => {
+    const res = await api.get('/andino/fetch', como('editor'));
+    assert.equal(res.status, 400);
+    assert.equal(res.body.error, 'Se requiere el parámetro url');
+  });
+
   it('entra a todo el área de administración: usuarios, historial, licencias, cambios, correos y su firma', async () => {
     for (const ruta of ['/usuarios', `/usuarios/${usuarios.adminA.id}`, '/usuarios/licencias', '/usuarios/licencias/sin-auditor', '/cambios-pendientes/para-revisar',
       '/cambios-pendientes/contador', '/notificaciones/notas-digitales/estado', '/notificaciones/notas-digitales/config',

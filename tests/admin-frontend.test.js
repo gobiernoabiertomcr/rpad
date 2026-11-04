@@ -2966,6 +2966,13 @@ describe('admin.js: lo puro del formulario', () => {
       'Dataset no encontrado en el portal de datos abiertos. Podés seguir con la carga manual.');
     assert.equal(a.textoDeErrorDelPortal('No se pudo conectar. Intente más tarde.'), 'No se pudo conectar. Intente más tarde. Podés seguir con la carga manual.');
     assert.equal(a.textoDeErrorDelPortal(''), 'No se pudo obtener información del portal. Podés seguir con la carga manual.');
+    assert.equal(a.textoDeErrorDelPortal('El portal no respondió a tiempo.', 504), 'El portal no respondió a tiempo. Podés seguir con la carga manual.');
+  });
+
+  it('sin sesión o sin permiso no ofrece la carga manual, que también los pide', () => {
+    assert.equal(a.textoDeErrorDelPortal('Token inválido o expirado', 401), 'Token inválido o expirado');
+    assert.equal(a.textoDeErrorDelPortal('Acceso denegado.', 403), 'Acceso denegado.');
+    assert.equal(a.textoDeErrorDelPortal('', 401), 'No se pudo obtener información del portal');
   });
 });
 
@@ -3055,6 +3062,10 @@ describe('admin.html: el paso 1 (importar desde el portal: el flujo no cambia)',
 
   it('admin.js sigue usando GET /andino/fetch, en el paso 1 y en "Actualizar desde portal"', () => {
     assert.equal(cantidad(CODIGO_ADMIN, '/andino/fetch?url=${encodeURIComponent(url)}'), 2);
+  });
+
+  it('los dos pedidos a /andino/fetch mandan el token: la ruta es solo de administración', () => {
+    assert.equal(cantidad(CODIGO_ADMIN, '/andino/fetch?url=${encodeURIComponent(url)}`, { headers: Auth.getAuthHeaders() })'), 2);
   });
 });
 

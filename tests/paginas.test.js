@@ -52,7 +52,7 @@ const VERSION_PERFIL = '20261127';
 // previa, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; «Recibido el» obligatorio, el origen de los datos y el aviso de la
 // edición que no registra actualizaciones, spec 2026-10-24-metricas-y-reportes; después, las clases gdat- en lugar de ad-, por los
 // bloqueadores de anuncios): su versión es propia
-const VERSION_ADMIN = '20261128';
+const VERSION_ADMIN = '20261129';
 // Los scripts del sitio público ("Datos al", "Cargado en el portal" y la próxima prevista; el estado del servidor), que hasta
 // ahora se cargaban sin ?v=; después, el rediseño de las páginas públicas): su versión es propia
 const VERSION_PUBLICAS = '20261109';
