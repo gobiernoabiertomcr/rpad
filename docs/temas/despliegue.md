@@ -8,8 +8,8 @@ Lo de cada entrega ya desplegada está en su `PASOS.txt` y en git; las secciones
 Despliega el usuario, desde cPanel y sin terminal; acá se arma el kit.
 cPanel sin terminal: el SQL se corre en phpMyAdmin (pestaña SQL o Importar), los archivos se suben con el Administrador de archivos, y las variables de entorno, "Run NPM Install" y Restart se manejan en Setup Node.js App.
 El zip se carga en `/home/datospublicos/rpad` y se extrae ahí mismo.
-Las Tareas Cron son tres, todos los días: 8:05 `/api/cron/notificaciones` (a las 8:15 hasta que se despliegue la firma digital; ver los pendientes), 14:00 `/api/cron/cambios-pendientes` y `*/30` `/api/cron/eventos`.
-El respaldo y el despliegue, fuera del horario de los crons (8:05, u 8:15 hasta la firma digital; 14:00 y las medias horas), por ejemplo a las 10:10.
+Las Tareas Cron son tres, todos los días: 8:05 `/api/cron/notificaciones`, 14:00 `/api/cron/cambios-pendientes` y `*/30` `/api/cron/eventos`.
+El respaldo y el despliegue, fuera del horario de los crons (8:05, 14:00 y las medias horas), por ejemplo a las 10:10.
 Run NPM Install, solo si cambia `package.json`.
 
 ## El kit
@@ -80,6 +80,7 @@ La última columna dice qué tiene que correr antes esa vuelta atrás: sin eso, 
 | 32 | `migracion-mi-espacio-restituciones.sql` | `rollback-mi-espacio-restituciones.sql` | |
 | 33 | `migracion-mi-espacio-horas-acumuladas.sql` | `rollback-mi-espacio-horas-acumuladas.sql` | |
 | 34 | `migracion-notas-firma-digital.sql` | `rollback-notas-firma-digital.sql` | Volver la Tarea Cron de `/api/cron/notificaciones` a las 8:15 |
+| 35 | `migracion-notas-firma-leyenda.sql` | `rollback-notas-firma-leyenda.sql` | |
 
 `database/privado/rollback-mi-espacio-evento-publico-datos.sql` devuelve el evento real a compartido con toda la administración (su verificación, `devuelto` 1).
 Está fuera del repositorio y no aparece en la Mac de trabajo: solo viajó en su kit, `RPAD-deploy-mi-espacio-evento-para-todos`.
@@ -93,15 +94,10 @@ Lo que cambie esos textos o el calendario de Métricas, del Ciclo de vida o del 
 
 Se borran al cumplirse.
 
-- La reiteración bimestral (spec 2026-11-03-reiteracion-bimestral; kit `RPAD-deploy-reiteracion-bimestral`, armado contra 3949aae, que lleva también la validación de la API pública): sin SQL, sin cron nuevo, sin variables de entorno nuevas y sin Run NPM Install; los archivos y Restart, fuera del horario de los crons y **antes del martes 01/12/2026**.
-  Si llega después, la de diciembre sale como siempre y la aclaración de Métricas («Desde diciembre de 2026») hay que corregirla.
-  Después (Ctrl+F5), solo mirar:
-  Correos → Estado dice «Próxima reiteración 04/01/2027».
-  La vuelta atrás: los archivos de 3949aae y Restart; en un mes par, la corrida siguiente genera la reiteración de ese mes, salvo que se corra antes el SQL opcional del kit.
-- La firma digital de las Notas Digitales (spec 2026-11-03-notas-firma-digital; kit `RPAD-deploy-notas-firma-digital`), después del kit de la reiteración bimestral:
-  primero, en phpMyAdmin, `migracion-notas-firma-digital.sql` **antes** de subir el código (obligatoria), los archivos y Restart, fuera del horario de los crons;
-  después, **mover la Tarea Cron de `/api/cron/notificaciones` de las 8:15 a las 8:05**, y no entre las 8:00 y las 8:15 ni entre las 13:00 y las 14:00: editada en esos ratos, puede correr dos veces ese día;
+- La leyenda de la firma digital (spec 2026-11-04-firma-digital-leyenda; kit `RPAD-deploy-notas-firma-leyenda`):
+  antes, comprobar que Correos pida `correos.js?v=20261213` y mirar en Correos → Libro que no haya una nota esperando la firma, tampoco de un día anterior;
+  primero, en phpMyAdmin, `migracion-notas-firma-leyenda.sql` **antes** de subir el código (obligatoria), los archivos y Restart, fuera del horario de los crons y no entre las 8:05 y las 14:00, porque el interruptor de la firma digital está prendido (dump de producción del 04/11/2026);
   sin Run NPM Install, sin variables de entorno nuevas y sin Tarea Cron nueva.
-  El interruptor queda apagado hasta que el usuario quiera probarlo; la primera prueba real la hace el usuario.
+  Una nota que igual espere al desplegar sigue andando con su `pdf`, sin leyenda.
 - **Antes del 10/01/2027:** las notas DGMIT de 2026 cargadas a mano desde el Seguimiento (decisión del usuario, 25/10/2026: no hay SQL de importación) y `database/privado/metricas-recibido-datos-25-38-39.sql`.
 - El 10/01/2027 (domingo) o el 11/01, mirar en Métricas y Reportes que 2026 ya no diga «La foto de 2026 se saca …» ni «… todavía no se sacó» y que se descargue el Informe anual de 2026, y que la última corrida de Correos → Estado no diga «No se pudo sacar la foto del año» (si lo dice, la tabla no se pudo leer: la corrida del día siguiente la vuelve a intentar).

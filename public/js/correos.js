@@ -222,12 +222,21 @@ const archivoDeNota = (n) => `Nota-Digital-${n.numero}-${String(n.anio).slice(-2
 const cuandoFirmo = (momento) => (momento ? ` el ${momento.slice(8, 10)}/${momento.slice(5, 7)} a las ${momento.slice(11, 16)}` : '');
 
 // Lo que dice el modal (textContent: sin escapar). Al subir, lo que dijo el servidor del archivo elegido
-const textoDeLaRevision = ({ numero_texto: numero, firmado_por: nombre, firmado_at: momento, archivo }) =>
-  `Es la Nota Digital N° ${numero}, firmada digitalmente por ${nombre}${cuandoFirmo(momento)}. La firma no se ve en la hoja. Sale como ${archivo}.`;
+const textoDeLaRevision = ({ numero_texto: numero, firmado_por: nombre, firmado_at: momento, archivo, con_leyenda: conLeyenda, certificado }) =>
+  `Es la Nota Digital N° ${numero}, firmada digitalmente por ${nombre}${cuandoFirmo(momento)}. ${
+    conLeyenda === true ? 'La firma no se dibuja en la hoja: la hoja lleva la leyenda al pie.' : 'La firma no se ve en la hoja.'
+  } Sale como ${archivo}.${certificado?.texto ? ` ${certificado.texto}` : ''}`;
 const textoDeVerFirmada = (n) => (n.firmado_por
   ? `Firmada digitalmente por ${n.firmado_por}${cuandoFirmo(n.firmado_at)}. La firma no se ve en la hoja. Sale como ${archivoDeNota(n)}.`
   : 'Todavía sin firmar. Es la misma nota que llegó adjunta al mail: bajala para firmarla.');
 const MENSAJE_YA_NO_ESPERABAN = 'Esas notas ya no esperan la firma: están en el Libro.';
+// Soltar a mano una nota que sigue esperando porque la corrida de las 14:00 no corrió (spec 2026-11-04-firma-digital-leyenda, 2.6): un envío no se
+// deshace, así que antes dice cómo sale. como: 'firmada' o 'sin-firmar'
+const confirmacionDeSoltar = (como) => ({
+  titulo: '¿Enviar la nota ahora?',
+  texto: como === 'firmada' ? 'Esta nota sale ahora firmada.' : 'Esta nota no se firmó: sale ahora con la imagen de la firma, sin la leyenda.',
+  accion: 'Enviar'
+});
 const textoDelBotonDeEnviar = (cantidad) => (cantidad === 1 ? 'Enviar la firmada' : `Enviar las ${cantidad} firmadas`);
 
 // La tarjeta «Notas para firmar hoy». notas: las de estado.para_firmar; avisos: lo último que dijo cada fila, por id; enviadas: lo que dijo
@@ -318,12 +327,16 @@ const volverALaTarjeta = () => {
 
 // Abre el modal con un PDF: el que se elige (revisar, con Confirmar) o el de la nota (ver, con Bajar PDF). Siempre un blob: de tipo PDF.
 // estado: lo que queda en firmaDigital.modal. Mientras se guarda no abre nada: una respuesta que llega tarde no cambia lo que se está mirando
-function abrirModalFirmada({ titulo, texto, blob, principal, secundario, principalVisible = true, estado }) {
+function abrirModalFirmada({ titulo, texto, avisos = [], blob, principal, secundario, principalVisible = true, estado }) {
   if (firmaDigital.guardando) return;
   cerrarModalFirmada();
   firmaDigital.url = URL.createObjectURL(blob);
   document.getElementById('modal-firmada-titulo').textContent = titulo;
   document.getElementById('modal-firmada-texto').textContent = texto;
+  // Lo que el servidor señala del certificado: no frena, «Confirmar» sigue habilitado
+  const aviso = document.getElementById('modal-firmada-aviso');
+  aviso.textContent = avisos.join(' ');
+  aviso.hidden = avisos.length === 0;
   document.getElementById('modal-firmada-marco').src = firmaDigital.url;
   const boton = document.getElementById('modal-firmada-principal');
   boton.textContent = principal;
@@ -371,6 +384,7 @@ async function alElegirFirmada(evento) {
     abrirModalFirmada({
       titulo: 'Revisá la nota firmada',
       texto: textoDeLaRevision(cuerpo.data),
+      avisos: cuerpo.data.certificado?.avisos ?? [],
       blob: new Blob([archivo], { type: 'application/pdf' }),
       principal: 'Confirmar',
       secundario: 'Cancelar',
@@ -664,7 +678,7 @@ function filaDelLibro(n) {
     <td class="co-cant">${celdaCantidad(n)}</td>
     <td class="co-para ocultable">${esc(n.para)}${n.cc ? `<small>CC: ${esc(n.cc)}</small>` : ''}</td>
     <td><span class="co-estado">${n.espera_firma === true && n.estado === 'pendiente'
-    ? `<span class="co-pastilla para-firmar">${n.firmado_por ? 'Firmada, sin enviar' : 'Para firmar'}</span><small>${n.fecha < (Utils.hoyEnArgentina?.() ?? '') ? 'sale en la próxima corrida' : 'hasta las 14:00'}</small>`
+    ? `<span class="co-pastilla para-firmar">${n.firmado_por ? 'Firmada, sin enviar' : 'Para firmar'}</span><small>${n.reintentable === true || n.fecha < (Utils.hoyEnArgentina?.() ?? '') ? 'sale en la próxima corrida' : 'hasta las 14:00'}</small>`
     : `<span class="co-pastilla ${esc(n.estado)}" title="${esc(detalleEstado)}">${ETIQUETAS[n.estado]}</span>${n.enviada_at ? `<small>${esc(fechaHora(n.enviada_at))}</small>` : ''}${
       n.firmado_por ? `<span class="co-firmada" title="${esc(`Firmada${cuandoFirmo(n.firmado_at)}`)}">${TILDE_DE_FIRMA} Firmada digitalmente por ${esc(n.firmado_por)}</span>` : ''}`}</span></td>
     <td><div class="co-acciones">
@@ -673,6 +687,7 @@ function filaDelLibro(n) {
       <button type="button" class="co-btn" data-accion="word" data-id="${n.id}" data-archivo="${esc(archivoWord)}">Word</button>
       ${n.tiene_anexo ? `<button type="button" class="co-btn" data-accion="anexo" data-id="${n.id}" data-archivo="${esc(archivoAnexo)}">Anexo</button>` : ''}
       ${n.estado !== 'enviada' && n.espera_firma !== true ? `<button type="button" class="co-btn reintentar" data-accion="reintentar" data-id="${n.id}">Reintentar</button>` : ''}
+      ${n.reintentable === true ? `<button type="button" class="co-btn reintentar" data-accion="reintentar" data-id="${n.id}" data-soltar="${n.firmado_por ? 'firmada' : 'sin-firmar'}">Reintentar</button>` : ''}
     </div></td>
   </tr>`;
 }
@@ -681,6 +696,7 @@ async function accionDelLibro(evento) {
   const boton = evento.target.closest('button[data-accion]');
   if (!boton) return;
   const id = Number(boton.dataset.id);
+  if (boton.dataset.accion === 'reintentar' && boton.dataset.soltar && !(await confirmar(confirmacionDeSoltar(boton.dataset.soltar)))) return;
   try {
     if (boton.dataset.accion === 'ver') {
       const nota = await API.getNota(id);

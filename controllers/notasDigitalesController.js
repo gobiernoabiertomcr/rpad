@@ -10,7 +10,7 @@ import { listaDeCorreos } from '../services/emailService.js';
 import { decodificarImagenSubida, ImagenSubidaInvalida } from '../services/imagenesSubidas.js';
 import { firmaDeUsuario } from '../services/firmasService.js';
 import { bloquesDeNotaDigital, NotaNoReconocida } from '../services/notasDigitalesWord.js';
-import { MENSAJE_ESPERA_FIRMA, MENSAJE_CORRIDA_EN_CURSO } from '../services/notasFirmaDigital.js';
+import { MENSAJE_ESPERA_FIRMA, MENSAJE_CORRIDA_EN_CURSO, puedeReintentarLaQueEspera } from '../services/notasFirmaDigital.js';
 import { idsPositivos } from '../services/proyectosReglas.js';
 import { renderDocx, membreteParaWord } from '../services/notasWord.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
@@ -126,7 +126,15 @@ export const listarNotas = async (req, res) => {
        LIMIT 500`,
       datasetId ? [datasetId, ...parametros] : parametros
     );
-    res.json({ success: true, data: filas.map(fila => ({ ...fila, tiene_anexo: Boolean(fila.tiene_anexo), espera_firma: Boolean(fila.espera_firma) })) });
+    // Una que espera y ya tendría que haber salido se puede soltar a mano (spec 2026-11-04-firma-digital-leyenda, 2.6). Se lee una vez, si hace falta
+    const paraSoltar = filas.some(fila => fila.espera_firma) ? await notas.condicionesParaSoltar() : null;
+    res.json({
+      success: true,
+      data: filas.map(fila => ({
+        ...fila, tiene_anexo: Boolean(fila.tiene_anexo), espera_firma: Boolean(fila.espera_firma),
+        reintentable: Boolean(fila.espera_firma) && fila.estado === 'pendiente' && puedeReintentarLaQueEspera({ fecha: fila.fecha, ...paraSoltar })
+      }))
+    });
   } catch (error) {
     errorInterno(res, 'Error al obtener el libro de notas', error);
   }
@@ -178,13 +186,14 @@ export const obtenerNota = async (req, res) => {
 
 export const descargarPdf = async (req, res) => {
   try {
-    // Con firma digital, la copia firmada, con el mismo nombre (spec 2026-11-03-notas-firma-digital, 4.7): también desde el Seguimiento
-    const [[nota]] = await pool.query('SELECT numero, anio, es_prueba, pdf, pdf_firmado FROM notas_digitales WHERE id = ?', [idDe(req.params.id)]);
+    // Con firma digital, la copia firmada, con el mismo nombre (spec 2026-11-03-notas-firma-digital, 4.7): también desde el Seguimiento. Mientras
+    // espera la firma, la copia con la leyenda, la que se firma (spec 2026-11-04-firma-digital-leyenda, 3). La ruta es solo de administración
+    const [[nota]] = await pool.query('SELECT numero, anio, es_prueba, pdf, pdf_firmado, pdf_para_firmar FROM notas_digitales WHERE id = ?', [idDe(req.params.id)]);
     if (!nota) return res.status(404).json({ success: false, error: 'Nota no encontrada' });
     const archivo = nota.es_prueba ? 'Nota-Digital-PRUEBA.pdf' : `Nota-Digital-${nota.numero}-${String(nota.anio).slice(-2)}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${archivo}"`);
-    res.send(nota.pdf_firmado ?? nota.pdf);
+    res.send(nota.pdf_firmado ?? nota.pdf_para_firmar ?? nota.pdf);
   } catch (error) {
     errorInterno(res, 'Error al descargar el PDF', error);
   }
@@ -267,11 +276,14 @@ export const enviarNotasFirmadas = async (req, res) => {
 
 export const reintentarNota = async (req, res) => {
   try {
-    const [[nota]] = await pool.query('SELECT id, estado, espera_firma FROM notas_digitales WHERE id = ?', [idDe(req.params.id)]);
+    const [[nota]] = await pool.query("SELECT id, estado, espera_firma, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha FROM notas_digitales WHERE id = ?", [idDe(req.params.id)]);
     if (!nota) return res.status(404).json({ success: false, error: 'Nota no encontrada' });
     if (nota.estado === 'enviada') return res.status(400).json({ success: false, error: 'La nota ya fue enviada' });
-    // «Reintentar» no sirve de atajo: una nota que espera la firma sale al enviarla firmada o a las 14:00 (spec 2026-11-03-notas-firma-digital, 4.11)
-    if (nota.espera_firma) return res.status(409).json({ success: false, error: MENSAJE_ESPERA_FIRMA });
+    // «Reintentar» no sirve de atajo: una nota que espera la firma sale al enviarla firmada o a las 14:00. Si esa corrida no corrió, sí se puede
+    // soltar a mano (spec 2026-11-04-firma-digital-leyenda, 2.6)
+    if (nota.espera_firma && !puedeReintentarLaQueEspera({ fecha: nota.fecha, ...(await notas.condicionesParaSoltar()) })) {
+      return res.status(409).json({ success: false, error: MENSAJE_ESPERA_FIRMA });
+    }
     // Comparte el bloqueo con la corrida diaria: si hay una en curso, no se envía para no duplicar la nota
     const resultado = await notas.reintentarNota(nota.id);
     if (resultado.enCurso) return res.status(409).json({ success: false, error: resultado.error });

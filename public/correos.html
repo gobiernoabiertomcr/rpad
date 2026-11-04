@@ -212,6 +212,7 @@
         .co-estado .co-firmada { max-width: 16em; }
         .co-envio + .co-envio { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--pf-linea); }
         #modal-firmada-marco { height: 62vh; }
+        #modal-firmada-aviso { margin: 0 0 10px; }
         .nd-modal .modal-header { border-bottom: 1px solid var(--pf-linea); }
         .nd-modal .modal-title { color: var(--pf-tinta); }
         .co-confirmar { max-width: 440px; border-radius: 14px; }
@@ -574,6 +575,7 @@
                     </div>
                     <div class="modal-body">
                         <p id="modal-firmada-texto" class="test-hint"></p>
+                        <p id="modal-firmada-aviso" class="co-fila-aviso mal" role="alert" hidden></p>
                         <!-- Sin sandbox: el visor de PDF del navegador no abre adentro de un iframe aislado. Solo muestra un blob: de tipo PDF -->
                         <iframe id="modal-firmada-marco" class="nd-marco" title="La nota"></iframe>
                     </div>
@@ -644,6 +646,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/correos.js?v=20261213"></script>
+    <script src="js/correos.js?v=20261214"></script>
 </body>
 </html>

@@ -3317,3 +3317,85 @@ describe('migracion-notas-firma-digital.sql', () => {
     await comoSchema();
   });
 });
+
+// La leyenda de la firma digital (spec 2026-11-04-firma-digital-leyenda, 6): la copia que se firma. La migración y su vuelta atrás, sobre una
+// base descartable creada con schema.sql
+describe('migracion-notas-firma-leyenda.sql', () => {
+  const BASE_LEYENDA = 'rpad_schema_notas_firma_leyenda_test';
+  const MIGRACION = 'migracion-notas-firma-leyenda.sql';
+  const ROLLBACK = 'rollback-notas-firma-leyenda.sql';
+  const TABLAS = ['notas_digitales'];
+  const COLUMNA = 'notas_digitales.pdf_para_firmar';
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const enLaBase = (tabla) => `\`${BASE_LEYENDA}\`.\`${tabla}\``;
+  const esLoNuevo = (c) => c.startsWith(`${COLUMNA} `);
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_LEYENDA}\``);
+    await root.query(`CREATE DATABASE \`${BASE_LEYENDA}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_LEYENDA}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) await root.query('ALTER TABLE notas_digitales DROP COLUMN pdf_para_firmar');
+  };
+  const cargarNota = () => root.query(
+    `INSERT INTO ${enLaBase('notas_digitales')} (numero, anio, tipo, gestion, fecha, asunto, para, html, texto, pdf)
+     VALUES (1, 2026, 'aviso', 'interna', '2026-12-01', 'Nota', 'a@ejemplo.gob.ar', '<p>x</p>', 'x', 'bytes')`);
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_LEYENDA}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+    assert.match(codigo(MIGRACION), /^SET NAMES utf8mb4;/);
+    assert.match(codigo(ROLLBACK), /^SET NAMES utf8mb4;/);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DROP TABLE|DELETE|UPDATE|TRUNCATE|INSERT|RENAME)\b/i);
+  });
+
+  it('las cabeceras dicen la spec, el orden, que es obligatoria, que se puede repetir y qué se pierde', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-11-04-firma-digital-leyenda-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código nuevo, después de migracion-notas-firma-digital\.sql/);
+    assert.match(cabecera(MIGRACION), /Es obligatoria/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-notas-firma-leyenda\.sql/);
+    assert.match(cabecera(ROLLBACK), /migracion-notas-firma-leyenda\.sql/);
+    assert.match(cabecera(ROLLBACK), /ORDEN: primero volver a subir los archivos anteriores y hacer Restart; después correr esto/);
+    assert.match(cabecera(ROLLBACK), /antes de\s+(--\s+)?rollback-notas-firma-digital\.sql/);
+    assert.match(cabecera(ROLLBACK), /se pierden las copias con la leyenda/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('la columna está en schema.sql y en la base del .env, una vez, nula y sin valor', async () => {
+    for (const base of [BASE_TEMPORAL, process.env.DB_NAME]) {
+      const nuevas = (await columnas(root, base)).filter(esLoNuevo);
+      assert.deepEqual(nuevas, [`${COLUMNA} mediumblob null=YES default=NULL key=`], base);
+    }
+  });
+
+  it('desde la estructura de main deja la de schema.sql, se puede repetir y lo ya cargado no cambia', async () => {
+    await crearBase({ conLoNuevo: false });
+    assert.ok(!(await columnas(root, BASE_LEYENDA)).some(esLoNuevo), 'la base de partida ya tiene lo nuevo');
+    await cargarNota();
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    assert.deepEqual(await columnas(root, BASE_LEYENDA), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await indicesDe(root, BASE_LEYENDA, TABLAS), await indicesDe(root, BASE_TEMPORAL, TABLAS));
+    const [[nota]] = await root.query(`SELECT pdf_para_firmar, CAST(pdf AS CHAR) AS pdf FROM ${enLaBase('notas_digitales')}`);
+    assert.deepEqual({ ...nota }, { pdf_para_firmar: null, pdf: 'bytes' });
+  });
+
+  it('el rollback deja la estructura de main, se puede repetir y no toca las notas', async () => {
+    await crearBase({ conLoNuevo: true });
+    await cargarNota();
+    await root.query(`UPDATE ${enLaBase('notas_digitales')} SET pdf_para_firmar = 'copia'`);
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esLoNuevo(c));
+    assert.deepEqual(await columnas(root, BASE_LEYENDA), deMain);
+    const [[nota]] = await root.query(`SELECT CAST(pdf AS CHAR) AS pdf FROM ${enLaBase('notas_digitales')}`);
+    assert.equal(nota.pdf, 'bytes');
+  });
+});

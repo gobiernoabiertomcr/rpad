@@ -153,10 +153,12 @@ const reiteracionPropia = ({ numero, anio, gestion, fecha, momento, para, cc, no
  * auditoria: { nuevos, reiterados, catalogos } de la nota de auditoría (tipo 'auditoria', sin gestión ni datasets; spec
  * 2026-10-15, 10). Salvo en las pruebas, cada cambio queda en notas_digitales_cambios con su sección: cuenta como incluido
  * desde que la nota se genera (spec 9.3).
+ * copiasParaFirmar: un Map de la corrida, con la firma digital prendida: suma la copia con la leyenda de esta nota, por su id (spec
+ * 2026-11-04-firma-digital-leyenda, 2.3). Se guarda solo si la nota termina esperando.
  */
 export const generarNota = async ({
   tipo, gestion, fecha, datasets, config, esPrueba = false, usuarioId = null, preparado = null,
-  firma = null, rangoVencimientos = null, autorizacion = null, auditoria = null
+  firma = null, rangoVencimientos = null, autorizacion = null, auditoria = null, copiasParaFirmar = null
 }) => {
   const esAutorizacion = tipo === 'autorizacion';
   const esAuditoria = tipo === 'auditoria';
@@ -239,6 +241,14 @@ export const generarNota = async ({
       }
     }
     await conexion.commit();
+    // Después del commit y en su propio try: si la copia no se puede armar, la nota espera sin ella y sale igual
+    if (copiasParaFirmar) {
+      try {
+        copiasParaFirmar.set(resultado.insertId, await renderPdf(nota, { ...opcionesPdf(config, firmaNota), leyendaFirmaDigital: true }));
+      } catch (error) {
+        console.error('No se pudo armar la copia para firmar de una nota digital:', error.stack);
+      }
+    }
     return resultado.insertId;
   } catch (error) {
     await conexion.rollback().catch(() => {});
@@ -250,7 +260,8 @@ export const generarNota = async ({
 
 // Envía el contenido guardado de la nota (un reintento manda exactamente lo mismo). Con firma digital, la copia firmada en lugar del
 // pdf, con el mismo nombre, y la línea que lo dice en el email, armada acá y sin guardarla: `html` sigue como se generó y el Word no
-// cambia (spec 2026-11-03-notas-firma-digital, 4.7 y 4.8). Salga o no, deja de esperar: ya no le toca a nadie firmarla
+// cambia (spec 2026-11-03-notas-firma-digital, 4.7 y 4.8). Salga o no, deja de esperar: ya no le toca a nadie firmarla, y se borra la copia con
+// la leyenda: una nota que sale sin firmar no guarda una hoja que dice «firmado» (spec 2026-11-04-firma-digital-leyenda, 2.3)
 export const enviarNota = async (id) => {
   const [[nota]] = await pool.query(
     `SELECT id, numero, anio, es_prueba, asunto, para, cc, cco, html, texto, pdf, anexo_pdf, estado, pdf_firmado, firmado_por
@@ -280,13 +291,13 @@ export const enviarNota = async (id) => {
 
   if (resultado.success) {
     await pool.query(
-      `UPDATE notas_digitales SET estado = 'enviada', intentos = intentos + 1, enviada_at = NOW(), espera_firma = 0,
+      `UPDATE notas_digitales SET estado = 'enviada', intentos = intentos + 1, enviada_at = NOW(), espera_firma = 0, pdf_para_firmar = NULL,
          message_id = ?, respuesta_smtp = ?, ultimo_error = NULL WHERE id = ?`,
       [resultado.messageId ?? null, String(resultado.response ?? '').slice(0, 500), id]
     );
   } else {
     await pool.query(
-      "UPDATE notas_digitales SET estado = 'fallida', intentos = intentos + 1, espera_firma = 0, ultimo_error = ? WHERE id = ?",
+      "UPDATE notas_digitales SET estado = 'fallida', intentos = intentos + 1, espera_firma = 0, pdf_para_firmar = NULL, ultimo_error = ? WHERE id = ?",
       [resultado.error, id]
     );
   }
@@ -325,6 +336,12 @@ export const conBloqueo = async (fn, nombre = BLOQUEO) => {
   }
 };
 
+// Lo que hace falta saber, en un pedido, para decidir si una nota que espera se puede soltar a mano (puedeReintentarLaQueEspera)
+export const condicionesParaSoltar = async ({ hoy = hoyArgentina(), ahora = ahoraArgentina(), calendario = null } = {}) => {
+  const [config, conElCalendario] = await Promise.all([obtenerConfig(), calendario ?? leerCalendario()]);
+  return { hoy, ahora, envioActivo: Boolean(config.envio_activo), diaHabil: conElCalendario.esDiaHabil(hoy) };
+};
+
 // Reintento manual de una nota: comparte el bloqueo con la corrida diaria para no enviar dos veces la misma nota
 export const reintentarNota = async (id) => {
   const corrida = await conBloqueo(() => enviarNota(id));
@@ -361,7 +378,7 @@ const avisarLasQueEsperan = async (resumen, hoy) => {
     try {
       const persona = await quienFirmaLaNota(id, hoy);
       if (persona === null) throw new Error('Ya no hay quién firme esta nota');
-      const [[nota]] = await pool.query('SELECT id, numero, anio, tipo, gestion, pdf FROM notas_digitales WHERE id = ?', [id]);
+      const [[nota]] = await pool.query('SELECT id, numero, anio, tipo, gestion, pdf, pdf_para_firmar FROM notas_digitales WHERE id = ?', [id]);
       if (!porPersona.has(persona.id)) porPersona.set(persona.id, { persona, notas: [] });
       porPersona.get(persona.id).notas.push(nota);
     } catch (error) {
@@ -373,7 +390,7 @@ const avisarLasQueEsperan = async (resumen, hoy) => {
       const { subject, html, text } = notasParaFirmarTemplate({ nombre: persona.nombre, notas });
       const resultado = await sendEmail({
         from: remitente(), replyTo: process.env.SMTP_USER, to: [persona.email], subject, html, text,
-        attachments: notas.map(n => ({ filename: archivoDeLaNota(n), content: n.pdf, contentType: 'application/pdf' }))
+        attachments: notas.map(n => ({ filename: archivoDeLaNota(n), content: n.pdf_para_firmar ?? n.pdf, contentType: 'application/pdf' }))
       });
       if (!resultado.success) throw new Error('No se pudo enviar el mail con las notas para firmar');
     } catch (error) {
@@ -428,15 +445,16 @@ export const enviarLasQueEsperanFirma = async ({
 };
 
 // Las notas que se pueden nombrar cuando se sube un PDF que no es el de esa fila: las de los últimos días y las que esperan, más cortas
-// que lo subido (si no, no pueden ser su comienzo)
+// que lo subido (si no, no pueden ser su comienzo). Cada una, con lo que se pudo firmar: la copia con la leyenda mientras espera; salida firmada,
+// esa copia ya no está, y queda lo firmado (el mismo archivo subido a otra fila); si no, su pdf
 const DIAS_DE_LAS_OTRAS_NOTAS = 31;
 const otrasNotasPara = async (id, largo, hoy) => {
   const [filas] = await pool.query(
-    `SELECT numero, anio, pdf FROM notas_digitales
-     WHERE id <> ? AND es_prueba = 0 AND LENGTH(pdf) <= ? AND (espera_firma = 1 OR fecha >= ?)`,
+    `SELECT numero, anio, pdf, pdf_para_firmar, pdf_firmado FROM notas_digitales
+     WHERE id <> ? AND es_prueba = 0 AND LENGTH(COALESCE(pdf_para_firmar, pdf_firmado, pdf)) <= ? AND (espera_firma = 1 OR fecha >= ?)`,
     [id, largo, sumarDias(hoy, -DIAS_DE_LAS_OTRAS_NOTAS)]
   );
-  return filas;
+  return filas.map(({ numero, anio, pdf, pdf_para_firmar: copia, pdf_firmado: firmada }) => ({ numero, anio, pdf: copia ?? firmada ?? pdf }));
 };
 
 // Una nota que ya no espera, según salió o no (una firmada cuyo email falló no salió: la reintentan el Libro y la corrida)
@@ -449,17 +467,21 @@ const estadoDeLaNota = async (id) => (await pool.query('SELECT estado FROM notas
  * Da { status, ok, mensaje, data }; con otra corrida en curso, { ocupado: true }. status: 404 (no es una nota real o no existe), 409 (ya
  * no espera), 400 (el PDF no sirve), 200.
  */
-export const subirNotaFirmada = async ({ id, archivo, usuarioId, soloVerificar = false, hoy = hoyArgentina() }) => {
+export const subirNotaFirmada = async ({ id, archivo, usuarioId, soloVerificar = false, hoy = hoyArgentina(), ahora = ahoraArgentina() }) => {
   const [[nota]] = await pool.query(
-    'SELECT id, numero, anio, pdf, espera_firma, estado FROM notas_digitales WHERE id = ? AND es_prueba = 0', [id]
+    'SELECT id, numero, anio, pdf, pdf_para_firmar, espera_firma, estado FROM notas_digitales WHERE id = ? AND es_prueba = 0', [id]
   );
   if (!nota) return { status: 404, ok: false, mensaje: 'Nota no encontrada' };
   if (!nota.espera_firma || nota.estado !== 'pendiente') return { status: 409, ok: false, mensaje: mensajeDeLaQueYaNoEspera(nota) };
-  const verificacion = verificarNotaFirmada(archivo, nota, await otrasNotasPara(id, archivo.length, hoy));
+  // Se firma la copia con la leyenda; una nota que espera sin ella (generada antes de esa entrega, o si no se pudo armar), su pdf
+  const conLeyenda = nota.pdf_para_firmar !== null;
+  const queSeFirma = { ...nota, pdf: nota.pdf_para_firmar ?? nota.pdf };
+  const verificacion = verificarNotaFirmada(archivo, queSeFirma, await otrasNotasPara(id, archivo.length, hoy), ahora);
   if (verificacion.resultado !== 'firmada') return { status: 400, ok: false, mensaje: mensajeDelRechazo(verificacion, nota) };
   const data = {
     numero: nota.numero, anio: nota.anio, numero_texto: numeroDeLaNota(nota), archivo: archivoDeLaNota(nota),
-    firmado_por: verificacion.firmado_por, firmado_at: verificacion.firmado_at, guardada: !soloVerificar
+    firmado_por: verificacion.firmado_por, firmado_at: verificacion.firmado_at, guardada: !soloVerificar, con_leyenda: conLeyenda,
+    certificado: verificacion.certificado
   };
   if (soloVerificar) return { status: 200, ok: true, mensaje: '', data };
   const corrida = await conBloqueo(async () => {
@@ -529,7 +551,7 @@ const alertaDeLasAtrasadas = (notas, { envioActivo, diaHabil }) => {
   if (!diaHabil) return { tipo, nivel: 'advertencia', mensaje: `${sujeto} y hoy no es día hábil: ${una ? 'sale' : 'salen'} en la próxima corrida de la mañana.` };
   return {
     tipo, nivel: 'error',
-    mensaje: `${sujeto} y ya pasaron las 14:00: revisá la Tarea Cron de /api/cron/cambios-pendientes. ${una ? 'Sale' : 'Salen'} en la próxima corrida de la mañana.`
+    mensaje: `${sujeto} y ya pasaron las 14:00: revisá la Tarea Cron de /api/cron/cambios-pendientes. ${una ? 'Sale' : 'Salen'} en la próxima corrida de la mañana, o con «Reintentar» en el Libro.`
   };
 };
 
@@ -717,6 +739,8 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario, ahora) => {
     return;
   }
   resumen.ejecutado = true;
+  // Las copias con la leyenda de las notas que genera esta corrida, por id: con la firma digital apagada no se arma ninguna
+  const copiasParaFirmar = config.firma_digital_activa ? new Map() : null;
 
   // Envía una nota ya generada; una excepción (no un envío fallido) queda como error del paso
   const enviar = async (id, contexto) => {
@@ -737,7 +761,8 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario, ahora) => {
       try {
         const quienFirma = await quienFirmaLaNota(id, hoy);
         if (debeEsperarFirma({ activa: config.firma_digital_activa, ahora, quienFirma })) {
-          await pool.query('UPDATE notas_digitales SET espera_firma = 1 WHERE id = ?', [id]);
+          // Con execute, la copia viaja en binario y no ocupa el doble. Si falla, cae en el catch: se anota y la nota sale
+          await pool.execute('UPDATE notas_digitales SET espera_firma = 1, pdf_para_firmar = ? WHERE id = ?', [copiasParaFirmar?.get(id) ?? null, id]);
           resumen.para_firmar.push(id);
           return;
         }
@@ -796,7 +821,7 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario, ahora) => {
   const generarAutorizacion = async () => {
     let id;
     try {
-      id = await generarNota({ tipo: 'autorizacion', gestion: null, fecha: hoy, datasets: [], config, usuarioId, firma, autorizacion });
+      id = await generarNota({ tipo: 'autorizacion', gestion: null, fecha: hoy, datasets: [], config, usuarioId, firma, autorizacion, copiasParaFirmar });
       resumen.generadas.push({ id, tipo: 'autorizacion', gestion: null, datasets: 0 });
     } catch (error) {
       anotarError(resumen, { tipo: 'autorizacion' }, error);
@@ -841,7 +866,7 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario, ahora) => {
       const { datasets, rangoVencimientos } = aviso;
       conAutorizacion = aviso.autorizacion;
       if (!datasets.length) continue;
-      id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId, firma, rangoVencimientos, autorizacion: conAutorizacion });
+      id = await generarNota({ tipo: 'aviso', gestion, fecha: hoy, datasets, config, usuarioId, firma, rangoVencimientos, autorizacion: conAutorizacion, copiasParaFirmar });
       resumen.generadas.push({ id, tipo: 'aviso', gestion, datasets: datasets.length });
     } catch (error) {
       anotarError(resumen, { tipo: 'aviso', gestion }, error);
@@ -872,7 +897,7 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario, ahora) => {
         const datasets = await seleccionarParaReiteracion(gestion, hoy);
         if (datasets.length) {
           // Si la generación lanza una excepción se sale al catch sin marcar el mes: se reintenta en la próxima corrida
-          const id = await generarNota({ tipo: 'reiteracion', gestion, fecha: hoy, datasets, config, usuarioId, firma });
+          const id = await generarNota({ tipo: 'reiteracion', gestion, fecha: hoy, datasets, config, usuarioId, firma, copiasParaFirmar });
           resumen.generadas.push({ id, tipo: 'reiteracion', gestion, datasets: datasets.length });
           await enviarOEsperar(id, { tipo: 'reiteracion', gestion });
         }
@@ -896,7 +921,7 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario, ahora) => {
       if (nuevos.length || reiterados.length) {
         const id = await generarNota({
           tipo: 'auditoria', gestion: null, fecha: hoy, datasets: [], config, usuarioId, firma,
-          auditoria: { nuevos, reiterados, catalogos: await catalogosParaAuditoria() }
+          auditoria: { nuevos, reiterados, catalogos: await catalogosParaAuditoria() }, copiasParaFirmar
         });
         resumen.generadas.push({ id, tipo: 'auditoria', gestion: null, datasets: 0, cambios: nuevos.length + reiterados.length });
         await enviarOEsperar(id, { tipo: 'auditoria' });

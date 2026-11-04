@@ -6,9 +6,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   HORA_LIMITE_DE_FIRMA, HORA_DE_LA_ALERTA_DE_FIRMA, esperaDeMas, paso14, debeEsperarFirma, leerFirmaAgregada, verificarNotaFirmada, mensajeDelRechazo, numeroDeLaNota, archivoDeLaNota,
-  textoDeLaLineaDeFirma, conLineaDeFirma
+  textoDeLaLineaDeFirma, conLineaDeFirma, revisionDelCertificado, puedeReintentarLaQueEspera
 } from '../services/notasFirmaDigital.js';
 import { bloquesDeNotaDigital } from '../services/notasDigitalesWord.js';
+import { construirNota, renderHtml } from '../services/notasDigitalesContenido.js';
 
 const leer = (archivo) => fs.readFileSync(new URL(`./fixtures/firma-digital/${archivo}`, import.meta.url));
 const A = { numero: 12, anio: 2026, pdf: leer('nota-a.pdf') };
@@ -213,14 +214,29 @@ describe('los textos', () => {
   it('la línea va justo debajo de la primera, escapada en el HTML y no en el texto', () => {
     const r = conLineaDeFirma({ html: '<p style="color:#800000">SE ADJUNTA NOTA EN PDF</p><p>Cuerpo</p>', texto: 'SE ADJUNTA NOTA EN PDF\n\nCuerpo' }, '<b>"Paz"</b>');
     assert.equal(r.html,
-      '<p style="color:#800000">SE ADJUNTA NOTA EN PDF</p><p style="margin:4px 0 0;color:#800000;">La nota está firmada digitalmente por &lt;b&gt;&quot;Paz&quot;&lt;/b&gt;.</p><p>Cuerpo</p>');
+      '<p style="color:#800000">SE ADJUNTA NOTA EN PDF</p><p style="margin:0 0 20px;color:#800000;">La nota está firmada digitalmente por &lt;b&gt;&quot;Paz&quot;&lt;/b&gt;, en conformidad con la Ordenanza N° 15.276/20.</p><p>Cuerpo</p>');
     assert.equal(r.texto, `SE ADJUNTA NOTA EN PDF\n${textoDeLaLineaDeFirma('<b>"Paz"</b>')}\n\nCuerpo`);
+  });
+
+  it('el texto, la norma y el aire, con el HTML de una nota de verdad: igual de separada del título y del REF', () => {
+    assert.equal(textoDeLaLineaDeFirma('Julieta Ferreyra'), 'La nota está firmada digitalmente por Julieta Ferreyra, en conformidad con la Ordenanza N° 15.276/20.');
+    const html = renderHtml(construirNota({
+      tipo: 'aviso', gestion: 'interna', numero: 12, anio: 2026, esPrueba: false, fecha: '2026-11-02', datasets: [], areas: [],
+      config: { linea_cc_interna: 'CC', linea_cc_externa: 'CC', firma_nombre: 'Nombre', firma_cargo: 'Cargo' }
+    }));
+    const r = conLineaDeFirma({ html, texto: 'SE ADJUNTA NOTA EN PDF\n\nCuerpo' }, 'Julieta Ferreyra');
+    const parrafos = [...r.html.matchAll(/<p style="([^"]*)">([^<]*|<b>)/g)].map(m => m[1]);
+    assert.match(parrafos[0], /^margin:0 0 20px;color:#800000;font-weight:bold;/);
+    assert.equal(parrafos[1], 'margin:0 0 20px;color:#800000;');
+    assert.match(parrafos[2], /^margin:0 0 4px;/);
+    assert.ok(r.html.indexOf('firmada digitalmente') < r.html.indexOf('REF.:'));
+    assert.ok(!html.includes('firmada digitalmente'), 'el html guardado no la tiene');
   });
 
   it('sin un párrafo o sin un salto, también', () => {
     const r = conLineaDeFirma({ html: 'solo', texto: 'solo' }, 'X');
     assert.ok(r.html.endsWith('solo') && r.html.includes('firmada digitalmente por X'));
-    assert.equal(r.texto, 'solo\nLa nota está firmada digitalmente por X.');
+    assert.equal(r.texto, 'solo\nLa nota está firmada digitalmente por X, en conformidad con la Ordenanza N° 15.276/20.');
   });
 
   it('el Word sale del html guardado: con la línea tampoco se confundiría, pero no se guarda', () => {
@@ -230,5 +246,81 @@ describe('los textos', () => {
     assert.ok(conLinea.html.includes('firmada digitalmente por X'));
     assert.ok(conLinea.html.startsWith(html.slice(0, html.indexOf('</p>') + 4)));
     assert.deepEqual(bloquesDeNotaDigital(html), antes);
+  });
+});
+
+// El certificado al revisar (spec 2026-11-04-firma-digital-leyenda, 2.5): se ve, avisa y nunca frena
+describe('revisionDelCertificado', () => {
+  const VIGENTE = { emisor: 'AC MODERNIZACION-PFDR', desde: '2026-10-29 10:12:04', hasta: '2030-10-29 10:12:04' };
+  const OJO_EMISOR = 'Ojo: el emisor del certificado no es uno de los certificadores conocidos (AC MODERNIZACION-PFDR y AC ONTI). Mirá que sea la firma digital oficial.';
+  const OJO_VIGENCIA = 'Ojo: el certificado no estaba vigente cuando se firmó la nota.';
+
+  it('un certificado conocido y vigente: el texto, sin avisos', () => {
+    assert.deepEqual(revisionDelCertificado(VIGENTE, '2026-12-22 09:00:00'), { texto: 'Certificado de AC MODERNIZACION-PFDR, vigente hasta el 29/10/2030.', avisos: [] });
+    assert.deepEqual(revisionDelCertificado({ ...VIGENTE, emisor: 'AC ONTI' }, '2026-12-22 09:00:00').avisos, []);
+  });
+
+  it('otro emisor o ninguno: lo avisa', () => {
+    assert.deepEqual(revisionDelCertificado({ ...VIGENTE, emisor: 'Autoridad Inventada' }, '2026-12-22 09:00:00').avisos, [OJO_EMISOR]);
+    assert.equal(revisionDelCertificado({ ...VIGENTE, emisor: '' }, '2026-12-22 09:00:00').texto, 'Certificado de un emisor sin nombre, vigente hasta el 29/10/2030.');
+    assert.deepEqual(revisionDelCertificado({ ...VIGENTE, emisor: '' }, '2026-12-22 09:00:00').avisos, [OJO_EMISOR]);
+  });
+
+  it('un momento fuera de la vigencia, antes o después: lo avisa; en el borde, no', () => {
+    assert.deepEqual(revisionDelCertificado(VIGENTE, '2026-10-29 10:12:03').avisos, [OJO_VIGENCIA]);
+    assert.deepEqual(revisionDelCertificado(VIGENTE, '2030-10-29 10:12:05').avisos, [OJO_VIGENCIA]);
+    assert.deepEqual(revisionDelCertificado(VIGENTE, '2026-10-29 10:12:04').avisos, []);
+    assert.deepEqual(revisionDelCertificado(VIGENTE, '2030-10-29 10:12:04').avisos, []);
+  });
+
+  it('los dos avisos juntos, primero el emisor', () => {
+    assert.deepEqual(revisionDelCertificado({ ...VIGENTE, emisor: 'Otra' }, '2031-01-01 00:00:00').avisos, [OJO_EMISOR, OJO_VIGENCIA]);
+  });
+
+  it('sin momento o sin fechas no dice nada de la vigencia', () => {
+    assert.deepEqual(revisionDelCertificado(VIGENTE, null).avisos, []);
+    const sinFechas = revisionDelCertificado({ emisor: 'AC ONTI', desde: null, hasta: null }, '2026-12-22 09:00:00');
+    assert.deepEqual(sinFechas, { texto: 'Certificado de AC ONTI.', avisos: [] });
+  });
+
+  it('las firmas de prueba, autofirmadas, verifican igual: el aviso no frena', () => {
+    const r = verificarNotaFirmada(FIRMADA_A, A, [], '2026-12-22 09:00:00');
+    assert.equal(r.resultado, 'firmada');
+    assert.match(r.certificado.texto, /^Certificado de .+, vigente hasta el \d{2}\/\d{2}\/\d{4}\.$/);
+    assert.ok(r.certificado.avisos.includes(OJO_EMISOR));
+  });
+
+  it('una firma que no verifica no trae certificado', () => {
+    const r = verificarNotaFirmada(A.pdf, A);
+    assert.equal(r.resultado, 'sin_firma');
+    assert.equal(r.certificado, undefined);
+  });
+});
+
+// Soltar a mano una nota que sigue esperando (spec 2026-11-04-firma-digital-leyenda, 2.6)
+describe('puedeReintentarLaQueEspera', () => {
+  const HOY = '2026-12-22';
+  const puede = (cambios) => puedeReintentarLaQueEspera({ fecha: HOY, hoy: HOY, ahora: `${HOY} 14:15:00`, envioActivo: true, diaHabil: true, ...cambios });
+
+  it('la de hoy, recién a las 14:15', () => {
+    assert.equal(puede({ ahora: `${HOY} 08:15:00` }), false);
+    assert.equal(puede({ ahora: `${HOY} 14:00:00` }), false);
+    assert.equal(puede({ ahora: `${HOY} 14:14:59` }), false);
+    assert.equal(puede({ ahora: `${HOY} 14:15:00` }), true);
+    assert.equal(puede({ ahora: `${HOY} 17:00:00` }), true);
+  });
+
+  it('la de un día anterior, a cualquier hora', () => {
+    assert.equal(puede({ fecha: '2026-12-21', ahora: `${HOY} 08:15:00` }), true);
+  });
+
+  it('una de otro día futuro, nunca', () => {
+    assert.equal(puede({ fecha: '2026-12-23', ahora: `${HOY} 15:00:00` }), false);
+  });
+
+  it('con el envío apagado o un día no hábil, tampoco: las 14:00 tampoco la mandarían', () => {
+    assert.equal(puede({ envioActivo: false }), false);
+    assert.equal(puede({ diaHabil: false }), false);
+    assert.equal(puede({ fecha: '2026-12-21', envioActivo: false }), false);
   });
 });

@@ -9,6 +9,9 @@
 import crypto, { X509Certificate } from 'node:crypto';
 import { ahoraArgentina } from './notasDigitalesCalendario.js';
 
+// La norma que citan la leyenda de la hoja y la línea del email (spec 2026-11-04-firma-digital-leyenda, 2)
+export const ORDENANZA_FIRMA_DIGITAL = 'Ordenanza N° 15.276/20';
+
 // Hasta esta hora espera una nota: a las 14:00 sale lo que quede (spec, 4.1 y 4.9)
 export const HORA_LIMITE_DE_FIRMA = '14:00';
 
@@ -31,6 +34,11 @@ export const HORA_DE_LA_ALERTA_DE_FIRMA = '14:15';
 // argentina; si es de otro día, de hoy no se sabe la hora
 export const esperaDeMas = (fecha, hoy, ahora) => fecha < hoy
   || (fecha === hoy && typeof ahora === 'string' && ahora.startsWith(hoy) && ahora.slice(11, 16) >= HORA_DE_LA_ALERTA_DE_FIRMA);
+
+// ¿Se puede soltar a mano una nota que sigue esperando? (spec 2026-11-04-firma-digital-leyenda, 2.6): cuando la corrida de las 14:00 tendría que
+// haberla mandado y no lo hizo. Antes no: «Reintentar» no sirve de atajo. Con el envío apagado o un día no hábil, las 14:00 tampoco la mandarían
+export const puedeReintentarLaQueEspera = ({ fecha, hoy, ahora, envioActivo, diaHabil }) => Boolean(envioActivo) && Boolean(diaHabil)
+  && esperaDeMas(fecha, hoy, ahora);
 
 // ---------- Un lector de DER chico, solo con largos definidos: lo que se sale del buffer tira, y lo ataja leerFirmaAgregada ----------
 const elemento = (der, inicio) => {
@@ -97,9 +105,36 @@ const certificadoSiVerifica = (bytes, digest, firmados, firma) => {
   }
 };
 
+// El emisor y la vigencia, en hora argentina, para mostrarlos al revisar (spec 2026-11-04-firma-digital-leyenda, 2.5). Una fecha que no se entiende
+// no invalida la firma: queda sin vigencia
+const momentoDelCertificado = (texto) => {
+  const fecha = new Date(texto);
+  return Number.isNaN(fecha.getTime()) ? null : ahoraArgentina(fecha);
+};
+const datosDelCertificado = (certificado) => ({
+  emisor: cnDe(certificado.issuer), desde: momentoDelCertificado(certificado.validFrom), hasta: momentoDelCertificado(certificado.validTo)
+});
+
+const CERTIFICADORES_CONOCIDOS = ['AC MODERNIZACION-PFDR', 'AC ONTI'];
+
+/**
+ * Lo que se ve del certificado al revisar la nota subida (spec 2026-11-04-firma-digital-leyenda, 2.5): { texto, avisos }. Nada de esto frena, porque la
+ * firma ya verificó: frenar exigiría mantener una lista cuyo error rechazaría todas las firmas, y esta lista solo puede dar un aviso de más.
+ * momento: el que declara la firma o, sin él, el de ahora; todo en 'AAAA-MM-DD HH:MM:SS', hora argentina.
+ */
+export const revisionDelCertificado = ({ emisor, desde, hasta }, momento) => {
+  const avisos = [];
+  if (!CERTIFICADORES_CONOCIDOS.includes(emisor)) {
+    avisos.push(`Ojo: el emisor del certificado no es uno de los certificadores conocidos (${CERTIFICADORES_CONOCIDOS.join(' y ')}). Mirá que sea la firma digital oficial.`);
+  }
+  if (momento && desde && hasta && (momento < desde || momento > hasta)) avisos.push('Ojo: el certificado no estaba vigente cuando se firmó la nota.');
+  const vigencia = hasta ? `, vigente hasta el ${hasta.slice(8, 10)}/${hasta.slice(5, 7)}/${hasta.slice(0, 4)}` : '';
+  return { texto: `Certificado de ${emisor || 'un emisor sin nombre'}${vigencia}.`, avisos };
+};
+
 /**
  * La firma que `subido` agrega después de los primeros `largoDelOriginal` bytes (spec, 4.6, pasos 2 a 4):
- * { ok: true, firmado_por, firmado_at } o { ok: false, motivo }. motivo: 'sin_firma' (no hay ningún /ByteRange en lo agregado),
+ * { ok: true, firmado_por, firmado_at, certificado } o { ok: false, motivo }. motivo: 'sin_firma' (no hay ningún /ByteRange en lo agregado),
  * 'con_cambios' (lo agregado es más de una actualización: alguien guardó el PDF antes de firmarlo, por ejemplo con un comentario, y la
  * hoja puede ser otra) o 'invalida'. Nunca tira.
  */
@@ -155,7 +190,7 @@ export const leerFirmaAgregada = (subido, largoDelOriginal) => {
     if (!certificado) return { ok: false, motivo: 'invalida' };
     const nombre = cnDe(certificado.subject);
     if (!nombre) return { ok: false, motivo: 'invalida' };
-    return { ok: true, firmado_por: nombre, firmado_at: momento };
+    return { ok: true, firmado_por: nombre, firmado_at: momento, certificado: datosDelCertificado(certificado) };
   } catch {
     return { ok: false, motivo: 'invalida' };
   }
@@ -166,7 +201,7 @@ const empiezaCon = (archivo, pdf) => Buffer.isBuffer(pdf) && pdf.length > 0 && a
 
 /**
  * El PDF subido a la fila de `nota`, comparado byte por byte con su PDF (spec, 4.5 y 4.6). otras: las demás notas que se pueden nombrar
- * ([{ numero, anio, pdf }]). Da { resultado, otra, firmado_por, firmado_at }:
+ * ([{ numero, anio, pdf }]); ahora: con qué momento se mira la vigencia de una firma que no declara el suyo. Da { resultado, otra, firmado_por, firmado_at, certificado }:
  * - 'firmada': es esta nota, con una firma que verifica (con quién firmó y cuándo);
  * - 'sin_firma': es esta nota, sin nada agregado o sin firma en lo agregado;
  * - 'firma_invalida': es esta nota, con una firma que no verifica;
@@ -174,7 +209,7 @@ const empiezaCon = (archivo, pdf) => Buffer.isBuffer(pdf) && pdf.length > 0 && a
  * - 'otra_nota': empieza con el PDF de una de `otras` (va en `otra`);
  * - 'no_es': nada de lo anterior. Lo que no es un Buffer, también. Nunca tira.
  */
-export const verificarNotaFirmada = (subido, nota, otras = []) => {
+export const verificarNotaFirmada = (subido, nota, otras = [], ahora = null) => {
   if (!Buffer.isBuffer(subido) || subido.length === 0) return { resultado: 'no_es' };
   if (!empiezaCon(subido, nota?.pdf)) {
     const otra = Array.isArray(otras) ? otras.find(o => empiezaCon(subido, o?.pdf)) : null;
@@ -182,7 +217,12 @@ export const verificarNotaFirmada = (subido, nota, otras = []) => {
   }
   if (subido.length === nota.pdf.length) return { resultado: 'sin_firma' };
   const firma = leerFirmaAgregada(subido, nota.pdf.length);
-  if (firma.ok) return { resultado: 'firmada', firmado_por: firma.firmado_por, firmado_at: firma.firmado_at };
+  if (firma.ok) {
+    return {
+      resultado: 'firmada', firmado_por: firma.firmado_por, firmado_at: firma.firmado_at,
+      certificado: revisionDelCertificado(firma.certificado, firma.firmado_at ?? ahora)
+    };
+  }
   if (firma.motivo === 'con_cambios') return { resultado: 'con_cambios' };
   return { resultado: firma.motivo === 'sin_firma' ? 'sin_firma' : 'firma_invalida' };
 };
@@ -208,7 +248,7 @@ export const MENSAJE_ESPERA_FIRMA = 'Esta nota espera la firma digital: sale sol
 export const MENSAJE_CORRIDA_EN_CURSO = 'Hay una corrida de Notas Digitales en curso. Probá de nuevo en unos minutos.';
 
 // La línea del email a los destinatarios de una nota firmada (spec, 4.8). Texto plano
-export const textoDeLaLineaDeFirma = (nombre) => `La nota está firmada digitalmente por ${nombre}.`;
+export const textoDeLaLineaDeFirma = (nombre) => `La nota está firmada digitalmente por ${nombre}, en conformidad con la ${ORDENANZA_FIRMA_DIGITAL}.`;
 
 const escaparHtml = (texto) => String(texto).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
@@ -220,7 +260,7 @@ const escaparHtml = (texto) => String(texto).replace(/&/g, '&amp;').replace(/</g
 export const conLineaDeFirma = ({ html, texto }, nombre) => {
   const linea = textoDeLaLineaDeFirma(nombre);
   const finDelParrafo = html.indexOf('</p>');
-  const parrafo = `<p style="margin:4px 0 0;color:#800000;">${escaparHtml(linea)}</p>`;
+  const parrafo = `<p style="margin:0 0 20px;color:#800000;">${escaparHtml(linea)}</p>`;
   const finDelRenglon = texto.indexOf('\n');
   return {
     html: finDelParrafo < 0 ? `${parrafo}${html}` : `${html.slice(0, finDelParrafo + 4)}${parrafo}${html.slice(finDelParrafo + 4)}`,

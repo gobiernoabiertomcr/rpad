@@ -240,6 +240,12 @@ Historia y motivos, en las specs:
   El código anterior anda con ellas (no las lee y una nota nueva queda en 0).
   `tests/schema.test.js` la necesita: la base local también, antes de correr la suite.
   `rollback-notas-firma-digital.sql` va después de volver a los archivos anteriores y las borra (se pierden las copias firmadas: las notas que ya salieron quedan como enviadas, con su `pdf` sin firmar en el Libro; una que esperaba en ese momento pasa a ser una pendiente común y sale en la corrida siguiente).
+- La leyenda de la firma digital (spec 2026-11-04-firma-digital-leyenda, 6):
+  `notas_digitales.pdf_para_firmar` mediumblob (la copia con la leyenda, solo mientras la nota espera), después de `firma_subida_por`: así la migración y el rollback de la firma digital la dejan en su lugar.
+  `migracion-notas-firma-leyenda.sql` (aditiva y repetible) va **antes** del código, obligatoria: el código nuevo la escribe al enviar cualquier nota y, sin ella, el email sale, la nota no queda como enviada y se vuelve a mandar.
+  El código anterior anda con ella (no la lee).
+  `tests/schema.test.js` la necesita: la base local también, antes de correr la suite.
+  `rollback-notas-firma-leyenda.sql` va después de volver a los archivos anteriores, y antes de `rollback-notas-firma-digital.sql` si se deshacen las dos: una nota que espera en ese momento sale a las 14:00 y una firmada sobre la copia, sin subir, ya no se reconoce.
 
 ## Archivos de tests
 

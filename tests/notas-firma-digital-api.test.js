@@ -39,10 +39,10 @@ after(async () => {
 });
 
 // Una nota que espera la firma, con el PDF de la fixture
-const notaQueEspera = async ({ numero = 12, pdf = ORIGINAL_A, fecha = HOY, estado = 'pendiente', espera = 1 } = {}) => {
+const notaQueEspera = async ({ numero = 12, pdf = ORIGINAL_A, copia = null, fecha = HOY, estado = 'pendiente', espera = 1 } = {}) => {
   const id = await crearNota({ tipo: 'aviso', gestion: 'interna', fecha, numero, anio: Number(fecha.slice(0, 4)), estado, intentos: 0 });
-  await query('UPDATE notas_digitales SET pdf = ?, espera_firma = ?, para = ?, asunto = ?, html = ?, texto = ? WHERE id = ?', [
-    pdf, espera, 'mit@rpad.test', `Nota Digital N° ${numero}`, '<p style="color:#800000">SE ADJUNTA NOTA EN PDF</p><p>Cuerpo</p>', 'SE ADJUNTA NOTA EN PDF\n\nCuerpo', id
+  await query('UPDATE notas_digitales SET pdf = ?, pdf_para_firmar = ?, espera_firma = ?, para = ?, asunto = ?, html = ?, texto = ? WHERE id = ?', [
+    pdf, copia, espera, 'mit@rpad.test', `Nota Digital N° ${numero}`, '<p style="color:#800000">SE ADJUNTA NOTA EN PDF</p><p>Cuerpo</p>', 'SE ADJUNTA NOTA EN PDF\n\nCuerpo', id
   ]);
   return id;
 };
@@ -209,7 +209,7 @@ describe('enviar las firmadas', () => {
     assert.deepEqual(detalle.Attachments.map(a => a.FileName), [`Nota-Digital-12-${HOY.slice(2, 4)}.pdf`]);
     const adjunto = Buffer.from(await (await fetch(`${MAILPIT_URL}/api/v1/message/${mail.ID}/part/${detalle.Attachments[0].PartID}`)).arrayBuffer());
     assert.ok(adjunto.equals(FIRMADA_A));
-    assert.ok(detalle.HTML.includes('La nota está firmada digitalmente por Julieta Ferreyra.'));
+    assert.ok(detalle.HTML.includes('La nota está firmada digitalmente por Julieta Ferreyra, en conformidad con la Ordenanza N° 15.276/20.'));
     const [{ html }] = await query('SELECT html FROM notas_digitales WHERE id = ?', [id]);
     assert.ok(!html.includes('firmada digitalmente'));
   });
@@ -287,13 +287,14 @@ describe('enviar las firmadas', () => {
     assert.equal(resumen.enviadas, 1);
     const [mail] = await mensajes();
     const detalle = await (await fetch(`${MAILPIT_URL}/api/v1/message/${mail.ID}`)).json();
-    assert.ok(detalle.HTML.includes('La nota está firmada digitalmente por Julieta Ferreyra.'));
+    assert.ok(detalle.HTML.includes('La nota está firmada digitalmente por Julieta Ferreyra, en conformidad con la Ordenanza N° 15.276/20.'));
   });
 });
 
 describe('lo demás de Correos', () => {
-  it('«Reintentar» no sirve de atajo: 409 con una nota que espera', async () => {
-    const id = await notaQueEspera();
+  it('«Reintentar» no sirve de atajo: 409 con una nota que espera y todavía no tendría que haber salido', async () => {
+    // Con una fecha futura: la de hoy depende de la hora en que corre el test
+    const id = await notaQueEspera({ fecha: '2099-01-02' });
     const res = await api.post(`/notificaciones/notas-digitales/${id}/reintentar`, {}, comoAdmin());
     assert.deepEqual([res.status, res.body.error], [409, 'Esta nota espera la firma digital: sale sola en la próxima corrida.']);
     assert.equal((await fila(id)).estado, 'pendiente');
@@ -335,5 +336,133 @@ describe('lo demás de Correos', () => {
     assert.equal((await enviar([id], { token: usuarios.lector.token })).status, 403);
     assert.equal((await enviar([id], {})).status, 401);
     assert.equal((await subir(id, FIRMADA_A, { token: usuarios.editor.token })).status, 200);
+  });
+});
+
+// Las dos copias (spec 2026-11-04-firma-digital-leyenda, 2.3 y 3): lo subido se compara con la copia con la leyenda; una nota que espera sin ella, con su pdf
+// Soltar a mano si las 14:00 no corrieron (spec 2026-11-04-firma-digital-leyenda, 2.6). Con una nota de un día anterior; la hora la miran los tests puros
+describe('«Reintentar» de una nota que sigue esperando', () => {
+  const AYER = '2020-01-02';
+  const enElLibro = async (id) => (await api.get('/notificaciones/notas-digitales', comoAdmin())).body.data.find(n => n.id === id);
+
+  it('con el envío apagado no se puede, y el Libro lo dice', async () => {
+    await configurarNotas({ firma_digital_activa: 1, envio_activo: 0 });
+    const id = await notaQueEspera({ fecha: AYER });
+    assert.equal((await enElLibro(id)).reintentable, false);
+    const res = await api.post(`/notificaciones/notas-digitales/${id}/reintentar`, {}, comoAdmin());
+    assert.deepEqual([res.status, res.body.error], [409, 'Esta nota espera la firma digital: sale sola en la próxima corrida.']);
+    await configurarNotas({ firma_digital_activa: 1, envio_activo: 1 });
+  });
+
+  it('una de un día anterior, si hoy es hábil, se puede: sale con su pdf; si no, 409', async () => {
+    await configurarNotas({ firma_digital_activa: 1, envio_activo: 1 });
+    const { diaHabil } = await motor.condicionesParaSoltar();
+    const id = await notaQueEspera({ fecha: AYER, pdf: ORIGINAL_B, copia: ORIGINAL_A });
+    assert.equal((await enElLibro(id)).reintentable, diaHabil);
+    const res = await api.post(`/notificaciones/notas-digitales/${id}/reintentar`, {}, comoAdmin());
+    if (!diaHabil) {
+      assert.equal(res.status, 409);
+      return;
+    }
+    assert.equal(res.status, 200);
+    const nota = await fila(id);
+    assert.deepEqual([nota.estado, nota.espera_firma], ['enviada', 0]);
+    const [mail] = await mensajes();
+    const detalle = await (await fetch(`${MAILPIT_URL}/api/v1/message/${mail.ID}`)).json();
+    const parte = detalle.Attachments[0];
+    const adjunto = Buffer.from(await (await fetch(`${MAILPIT_URL}/api/v1/message/${mail.ID}/part/${parte.PartID}`)).arrayBuffer());
+    assert.ok(adjunto.equals(ORIGINAL_B), 'sin firmar, la de siempre');
+  });
+
+  it('una pendiente común, una fallida o una ya enviada con la marca puesta (una vuelta atrás a medias) no llevan la marca', async () => {
+    const comun = await notaQueEspera({ fecha: AYER, numero: 20, espera: 0 });
+    const fallida = await notaQueEspera({ fecha: AYER, numero: 21, estado: 'fallida', espera: 0 });
+    const enviada = await notaQueEspera({ fecha: AYER, numero: 22, estado: 'enviada', espera: 1 });
+    for (const id of [comun, fallida, enviada]) assert.equal((await enElLibro(id)).reintentable, false, String(id));
+  });
+
+  it('un lector no puede', async () => {
+    const id = await notaQueEspera({ fecha: AYER });
+    const res = await api.post(`/notificaciones/notas-digitales/${id}/reintentar`, {}, { token: usuarios.lector.token });
+    assert.equal(res.status, 403);
+  });
+});
+
+describe('la copia con la leyenda, por la API', () => {
+  const bajar = async (id) => {
+    const res = await fetch(`${servidor.url}/api/notificaciones/notas-digitales/${id}/pdf`, { headers: { Authorization: `Bearer ${usuarios.adminA.token}` } });
+    return Buffer.from(await res.arrayBuffer());
+  };
+
+  it('lo firmado sobre la copia se reconoce y lo dice, al revisar y al guardar', async () => {
+    const id = await notaQueEspera({ pdf: ORIGINAL_B, copia: ORIGINAL_A });
+    const revisar = await subir(id, FIRMADA_A, { soloVerificar: true });
+    assert.equal(revisar.status, 200);
+    assert.equal(revisar.body.data.con_leyenda, true);
+    const guardar = await subir(id, FIRMADA_A);
+    assert.equal(guardar.status, 200);
+    assert.equal(guardar.body.data.con_leyenda, true);
+    const nota = await fila(id);
+    assert.ok(nota.pdf_firmado.equals(FIRMADA_A));
+    assert.ok(nota.pdf.equals(ORIGINAL_B), 'pdf no se toca');
+  });
+
+  it('lo firmado sobre el pdf, habiendo copia, no es esta nota', async () => {
+    const id = await notaQueEspera({ pdf: ORIGINAL_A, copia: ORIGINAL_B });
+    const res = await subir(id, FIRMADA_A);
+    assert.deepEqual([res.status, res.body.error], [400, 'Ese PDF no es esta nota. No se guardó nada.']);
+    assert.equal((await fila(id)).pdf_firmado, null);
+  });
+
+  it('la copia sin firmar se rechaza por eso, no por no ser la nota', async () => {
+    const id = await notaQueEspera({ pdf: ORIGINAL_B, copia: ORIGINAL_A });
+    const res = await subir(id, ORIGINAL_A);
+    assert.deepEqual([res.status, res.body.error], [400, 'Ese PDF es esta nota, pero no tiene firma digital. Firmala y volvé a subirla.']);
+  });
+
+  it('una nota que espera sin copia sigue andando con su pdf, y dice que no tiene leyenda', async () => {
+    const id = await notaQueEspera();
+    const res = await subir(id, FIRMADA_A);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.con_leyenda, false);
+  });
+
+  it('la revisión trae el certificado, y su aviso no frena: se guarda igual', async () => {
+    const id = await notaQueEspera({ pdf: ORIGINAL_B, copia: ORIGINAL_A });
+    const revisar = await subir(id, FIRMADA_A, { soloVerificar: true });
+    assert.match(revisar.body.data.certificado.texto, /^Certificado de .+, vigente hasta el \d{2}\/\d{2}\/\d{4}\.$/);
+    assert.match(revisar.body.data.certificado.avisos.join(' '), /no es uno de los certificadores conocidos/);
+    assert.equal((await subir(id, FIRMADA_A)).status, 200);
+  });
+
+  it('nombra a otra nota que espera por su copia', async () => {
+    await notaQueEspera({ numero: 13, pdf: ORIGINAL_A, copia: ORIGINAL_B });
+    const id = await notaQueEspera({ numero: 12, pdf: ORIGINAL_B, copia: ORIGINAL_A });
+    const res = await subir(id, FIRMADA_B);
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /^Ese PDF es la Nota Digital N° 13\/\d\d, no la 12\/\d\d\. No se guardó nada\.$/);
+  });
+
+  it('nombra a una nota que ya salió firmada, si se sube ese mismo archivo en otra fila', async () => {
+    const salio = await notaQueEspera({ numero: 13, pdf: ORIGINAL_A, copia: ORIGINAL_B });
+    assert.equal((await subir(salio, FIRMADA_B)).status, 200);
+    assert.equal((await motor.enviarNota(salio)).success, true);
+    const id = await notaQueEspera({ numero: 12, pdf: ORIGINAL_B, copia: ORIGINAL_A });
+    const res = await subir(id, FIRMADA_B);
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /^Ese PDF es la Nota Digital N° 13\/\d\d, no la 12\/\d\d\. No se guardó nada\.$/);
+  });
+
+  it('«Ver» baja la copia mientras espera, la firmada si se subió y, sin firmar y enviada, el pdf', async () => {
+    const id = await notaQueEspera({ pdf: ORIGINAL_B, copia: ORIGINAL_A });
+    assert.ok((await bajar(id)).equals(ORIGINAL_A));
+    await subir(id, FIRMADA_A);
+    assert.ok((await bajar(id)).equals(FIRMADA_A));
+
+    const sinFirmar = await notaQueEspera({ numero: 14, pdf: ORIGINAL_B, copia: ORIGINAL_A });
+    assert.equal((await motor.enviarNota(sinFirmar)).success, true);
+    assert.ok((await bajar(sinFirmar)).equals(ORIGINAL_B));
+    const [{ pdf_para_firmar: copia }] = await query('SELECT pdf_para_firmar FROM notas_digitales WHERE id = ?', [sinFirmar]);
+    assert.equal(copia, null);
   });
 });

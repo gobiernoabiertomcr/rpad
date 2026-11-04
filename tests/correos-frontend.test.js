@@ -2727,6 +2727,16 @@ describe('correos.js: la firma digital', () => {
         'Firmada digitalmente por Julieta Ferreyra el 01/12 a las 09:12. La firma no se ve en la hoja. Sale como Nota-Digital-13-26.pdf.');
       contexto.__n = SIN_FIRMAR;
       assert.match(evaluar(contexto, 'textoDeVerFirmada(__n)'), /^Todavía sin firmar\./);
+      // Con la leyenda, y el certificado después (spec 2026-11-04-firma-digital-leyenda, 2.4 y 2.5)
+      contexto.__d = {
+        numero_texto: '8/26', firmado_por: 'José Núñez', firmado_at: '2026-12-01 09:12:40', archivo: 'Nota-Digital-8-26.pdf', con_leyenda: true,
+        certificado: { texto: 'Certificado de AC EJEMPLO, vigente hasta el 29/10/2030.', avisos: [] }
+      };
+      assert.equal(evaluar(contexto, 'textoDeLaRevision(__d)'),
+        'Es la Nota Digital N° 8/26, firmada digitalmente por José Núñez el 01/12 a las 09:12. La firma no se dibuja en la hoja: la hoja lleva la leyenda al pie. Sale como Nota-Digital-8-26.pdf. Certificado de AC EJEMPLO, vigente hasta el 29/10/2030.');
+      // Sin la leyenda (una nota que esperaba sin la copia), lo de siempre, con el certificado
+      contexto.__d.con_leyenda = false;
+      assert.match(evaluar(contexto, 'textoDeLaRevision(__d)'), /La firma no se ve en la hoja\. Sale como Nota-Digital-8-26\.pdf\. Certificado de AC EJEMPLO/);
     });
   });
 
@@ -2739,7 +2749,8 @@ describe('correos.js: la firma digital', () => {
     const BASE = { id: 7, numero: 12, anio: 2026, fecha: '2026-12-01', tipo: 'aviso', gestion: 'externa', cantidad_datasets: 1, para: 'p@rpad.test', cc: null, enviada_at: null, tiene_anexo: 1, es_prueba: 0 };
 
     it('la que espera dice «Para firmar» o «Firmada, sin enviar», hasta las 14:00, sin «Reintentar»', async () => {
-      const h = await fila({ ...BASE, estado: 'pendiente', espera_firma: true });
+      // Con una fecha lejana: la de hoy se compara con el reloj de verdad
+      const h = await fila({ ...BASE, fecha: '2099-12-01', estado: 'pendiente', espera_firma: true });
       assert.ok(h.includes('<span class="co-pastilla para-firmar">Para firmar</span><small>hasta las 14:00</small>'));
       assert.ok(!h.includes('Reintentar'));
       assert.ok((await fila({ ...BASE, estado: 'pendiente', espera_firma: true, firmado_por: 'X' })).includes('Firmada, sin enviar'));
@@ -2758,6 +2769,68 @@ describe('correos.js: la firma digital', () => {
       const comun = await fila({ ...BASE, estado: 'pendiente', espera_firma: false });
       assert.ok(comun.includes('Reintentar'));
       assert.ok(!comun.includes('Para firmar'));
+    });
+
+    it('la que ya tendría que haber salido lleva «Reintentar» y lo dice; la marca del servidor manda', async () => {
+      const sinFirmar = await fila({ ...BASE, estado: 'pendiente', espera_firma: true, reintentable: true });
+      assert.ok(sinFirmar.includes('<button type="button" class="co-btn reintentar" data-accion="reintentar" data-id="7" data-soltar="sin-firmar">Reintentar</button>'));
+      assert.ok(sinFirmar.includes('<small>sale en la próxima corrida</small>'));
+      const firmada = await fila({ ...BASE, estado: 'pendiente', espera_firma: true, reintentable: true, firmado_por: 'X' });
+      assert.ok(firmada.includes('data-soltar="firmada"'));
+      assert.equal((sinFirmar.match(/data-accion="reintentar"/g) ?? []).length, 1, 'un solo botón');
+      const noPuede = await fila({ ...BASE, estado: 'pendiente', espera_firma: true, reintentable: false });
+      assert.ok(!noPuede.includes('Reintentar'));
+    });
+
+    describe('«Reintentar» pide confirmación antes de soltarla', () => {
+      const botonDe = (dataset) => {
+        const b = { dataset: { accion: 'reintentar', id: '7', ...dataset }, disabled: false, closest: (s) => (s === 'button[data-accion]' ? b : null) };
+        return b;
+      };
+      const armar = () => {
+        const pedidos = [];
+        const panel = cargarCorreos({
+          reintentarNota: async (id) => { pedidos.push(id); return { message: 'Nota enviada' }; }, getLibroNotas: async () => [], getEstadoNotas: async () => ({})
+        }, { Utils: utilsReal() });
+        return { ...panel, pedidos };
+      };
+
+      it('sin firmar: dice que sale con la imagen y sin la leyenda; cancelar no manda nada', async () => {
+        const p = armar();
+        const accion = p.contexto.accionDelLibro({ target: botonDe({ soltar: 'sin-firmar' }) });
+        assert.equal(p.elemento('modal-confirmar-titulo').textContent, '¿Enviar la nota ahora?');
+        assert.equal(p.elemento('modal-confirmar-texto').textContent, 'Esta nota no se firmó: sale ahora con la imagen de la firma, sin la leyenda.');
+        assert.equal(p.elemento('modal-confirmar-aceptar').textContent, 'Enviar');
+        p.contexto.cerrarConfirmacion(false);
+        await accion;
+        assert.deepEqual(p.pedidos, []);
+      });
+
+      it('firmada: dice que sale firmada; aceptar la manda', async () => {
+        const p = armar();
+        const accion = p.contexto.accionDelLibro({ target: botonDe({ soltar: 'firmada' }) });
+        assert.equal(p.elemento('modal-confirmar-texto').textContent, 'Esta nota sale ahora firmada.');
+        p.contexto.cerrarConfirmacion(true);
+        await accion;
+        assert.deepEqual(p.pedidos, [7]);
+      });
+
+      it('al aceptar deshabilita el botón: un doble clic manda un solo pedido', async () => {
+        const p = armar();
+        const elBoton = botonDe({ soltar: 'sin-firmar' });
+        const accion = p.contexto.accionDelLibro({ target: elBoton });
+        assert.equal(elBoton.disabled, false, 'mientras pregunta, no');
+        p.contexto.cerrarConfirmacion(true);
+        await accion;
+        assert.equal(elBoton.disabled, true);
+      });
+
+      it('una fallida, sin la marca, no pregunta: como siempre', async () => {
+        const p = armar();
+        await p.contexto.accionDelLibro({ target: botonDe({}) });
+        assert.deepEqual(p.pedidos, [7]);
+        assert.equal(p.elemento('modal-confirmar-texto').textContent, '');
+      });
     });
   });
 
@@ -2817,6 +2890,27 @@ describe('correos.js: la firma digital', () => {
       assert.equal(p.urls[0].type, 'application/pdf', 'siempre un PDF, aunque el archivo diga otra cosa');
       assert.equal(p.elemento('modal-firmada-principal').textContent, 'Confirmar');
       assert.equal(p.elemento('modal-firmada-secundario').textContent, 'Cancelar');
+    });
+
+    it('los avisos del certificado se ven en el modal, sin armar HTML, y «Confirmar» sigue habilitado; «Ver» no los trae', async () => {
+      const avisos = ['Ojo: <b>uno</b>.', 'Ojo: dos.'];
+      const conAvisos = { cuerpo: { data: { ...VERIFICADA.cuerpo.data, certificado: { texto: 'Certificado de X.', avisos } } } };
+      const p = pagina({ respuestas: [conAvisos] });
+      await p.contexto.cargarEstado();
+      await elegir(p, 7);
+      assert.equal(p.elemento('modal-firmada-aviso').textContent, 'Ojo: <b>uno</b>. Ojo: dos.');
+      assert.equal(p.elemento('modal-firmada-aviso').hidden, false);
+      assert.equal(p.elemento('modal-firmada-principal').disabled, false);
+      p.contexto.abrirModalFirmada({ titulo: 'Nota', texto: 'x', blob: {}, principal: 'a', secundario: 'b', estado: {} });
+      assert.equal(p.elemento('modal-firmada-aviso').hidden, true);
+      assert.equal(p.elemento('modal-firmada-aviso').textContent, '');
+    });
+
+    it('sin avisos, el lugar queda oculto', async () => {
+      const p = pagina({ respuestas: [VERIFICADA] });
+      await p.contexto.cargarEstado();
+      await elegir(p, 7);
+      assert.equal(p.elemento('modal-firmada-aviso').hidden, true);
     });
 
     it('«Confirmar» manda el mismo archivo, sin solo_verificar, y la fila dice que falta enviarla', async () => {

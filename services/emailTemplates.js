@@ -372,7 +372,7 @@ export const notasParaFirmarTemplate = ({ nombre, notas, url = `${RPAD_URL}/corr
   const pasos = notas.length === 1
     ? 'Firmala en el Firmador de firmar.gob.ar y subila en su fila, en la pantalla que abre el botón de abajo. Si el archivo no es esa nota, el RPAD te avisa. Antes de enviarla vas a poder mirarla.'
     : 'Firmalas en el Firmador de firmar.gob.ar, de a una, y subí cada una en su fila, en la pantalla que abre el botón de abajo. Si un archivo no es esa nota, el RPAD te avisa. Antes de enviarlas vas a poder mirarlas.';
-  const cierre = 'A las 14:00 sale lo que quede: firmada si la subiste y la confirmaste; si no, con la imagen de tu firma, como siempre. Si hoy no podés, no hace falta que hagas nada. ¡Gracias!';
+  const cierre = 'A las 14:00 sale lo que quede: firmada si la subiste y la confirmaste, con la leyenda al pie; si no, con la imagen de tu firma y sin la leyenda, como siempre. Si hoy no podés, no hace falta que hagas nada. ¡Gracias!';
   return {
     subject: `RPAD: hoy tenés ${cuantas} para firmar`,
     html: plantillaSimple({

@@ -474,6 +474,7 @@ CREATE TABLE `notas_digitales` (
   `firmado_por` varchar(255) DEFAULT NULL,
   `firmado_at` datetime DEFAULT NULL,
   `firma_subida_por` int(11) DEFAULT NULL,
+  `pdf_para_firmar` mediumblob DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_notas_numero` (`anio`,`numero`),

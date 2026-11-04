@@ -3,6 +3,7 @@
 import zlib from 'node:zlib';
 import PDFDocument from 'pdfkit';
 import { renglonesDeFirma } from './notasDigitalesContenido.js';
+import { ORDENANZA_FIRMA_DIGITAL } from './notasFirmaDigital.js';
 
 const MM = 72 / 25.4;
 // Hoja oficio, la que usa la Municipalidad para imprimir: Legal exacto, 8½ × 14 pulgadas a 72 puntos por pulgada (spec
@@ -23,6 +24,14 @@ const TAMANO_PIE = 10;
 const TAMANO_MINIMO_PIE = 7;
 const BASE_PIE = 12.5 * MM;
 const BASE_PAGINACION = 17.5 * MM;
+// La leyenda de la firma digital (spec 2026-11-04-firma-digital-leyenda, 2.2), solo en la copia que se firma: en la franja blanca debajo de la
+// dirección del membrete, que termina a unos 33,4 puntos del borde. Se dibuja con la hoja ya armada, así que no le quita lugar a la nota, y a más
+// de 5 mm del borde, para que la imprima cualquier impresora. tope, alto y base, en puntos desde el borde inferior
+export const LEYENDA_FIRMA = Object.freeze({
+  fuerte: 'Documento firmado digitalmente', resto: ` en conformidad con la ${ORDENANZA_FIRMA_DIGITAL}.`,
+  tope: 30, alto: 15, base: 19.8, tamano: 8, relleno: 9, radio: 2.5, lugarDelTilde: 13, radioDelTilde: 4.5,
+  fondo: '#E4EEF9', borde: '#2B3585', texto: '#1C2466'
+});
 const NORMAL = 'Helvetica';
 const NEGRITA = 'Helvetica-Bold';
 const CURSIVA = 'Helvetica-Oblique';
@@ -439,9 +448,31 @@ const prepararTabla = (doc, seccionDeLaNota, ancho) => {
 
 // Membrete (banner y pie) y numeración de cada hoja: se dibujan al final, cuando ya se sabe cuántas hojas hay.
 // banner: { imagen (abierta con doc.openImage, así el archivo la guarda una sola vez), ancho, alto, x } o null.
-const agregarMembreteYPies = (doc, nota, ancho, { banner, pie }) => {
+const dibujarLeyendaDeFirma = (doc) => {
+  const l = LEYENDA_FIRMA;
+  const anchoFuerte = doc.font(NEGRITA).fontSize(l.tamano).widthOfString(l.fuerte);
+  const anchoResto = doc.font(NORMAL).fontSize(l.tamano).widthOfString(l.resto);
+  const anchoTotal = anchoFuerte + anchoResto + 2 * l.relleno + l.lugarDelTilde;
+  const x = (doc.page.width - anchoTotal) / 2;
+  const y = doc.page.height - l.tope;
+  doc.save();
+  doc.roundedRect(x, y, anchoTotal, l.alto, l.radio).lineWidth(0.75).fillAndStroke(l.fondo, l.borde);
+  // El tilde va dibujado: Helvetica no lo tiene
+  const cx = x + l.relleno + l.radioDelTilde;
+  const cy = y + l.alto / 2;
+  doc.circle(cx, cy, l.radioDelTilde).fill(l.texto);
+  doc.moveTo(cx - 2.2, cy + 0.1).lineTo(cx - 0.6, cy + 1.8).lineTo(cx + 2.3, cy - 1.9)
+    .lineWidth(1).lineCap('round').lineJoin('round').stroke('#FFFFFF');
+  const xTexto = x + l.relleno + l.lugarDelTilde;
+  const yTexto = doc.page.height - l.base;
+  doc.fillColor(l.texto).font(NEGRITA).fontSize(l.tamano).text(l.fuerte, xTexto, yTexto, { lineBreak: false, baseline: 'alphabetic' });
+  doc.font(NORMAL).fontSize(l.tamano).text(l.resto, xTexto + anchoFuerte, yTexto, { lineBreak: false, baseline: 'alphabetic' });
+  doc.restore();
+};
+
+const agregarMembreteYPies = (doc, nota, ancho, { banner, pie, leyenda }) => {
   const { start, count } = doc.bufferedPageRange();
-  if (count < 2 && !banner && !pie) return;
+  if (count < 2 && !banner && !pie && !leyenda) return;
   // Un pie más ancho que el texto de la hoja se achica para entrar en una línea (hacia abajo, al centésimo de punto),
   // hasta 7 puntos: uno que no entra ni así (la configuración no lo guarda) sale en 7 puntos, centrado.
   // Se centra a mano y se escribe sin ancho: el ajuste de líneas de PDFKit mide palabra por palabra, sin el
@@ -462,12 +493,14 @@ const agregarMembreteYPies = (doc, nota, ancho, { banner, pie }) => {
     if (count > 1) {
       const paginacion = `Nota Digital N° ${nota.numeroTexto} – Página ${i + 1} de ${count}`;
       doc.font(NORMAL).fontSize(8);
-      if (pie) {
+      // Sin el pie, va más abajo; con la leyenda, que ocupa ese lugar, en el de siempre con el pie
+      if (pie || leyenda) {
         doc.text(paginacion, MARGENES.left, doc.page.height - BASE_PAGINACION, { width: ancho, align: 'center', lineBreak: false, baseline: 'alphabetic' });
       } else {
         doc.text(paginacion, MARGENES.left, doc.page.height - inferior / 2, { width: ancho, align: 'center', lineBreak: false });
       }
     }
+    if (leyenda) dibujarLeyendaDeFirma(doc);
     doc.page.margins.bottom = inferior;
   }
 };
@@ -535,7 +568,9 @@ const medirCierre = (nota, imagenes) => {
   return borrador.y - inicio;
 };
 
-export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, membreteImagen = null, membretePie = null } = {}) => new Promise((resolve, reject) => {
+export const renderPdf = (nota, {
+  firmaImagen = null, presentanteImagen = null, membreteImagen = null, membretePie = null, leyendaFirmaDigital = false
+} = {}) => new Promise((resolve, reject) => {
   try {
     // Una imagen dañada rechaza la promesa acá, antes de llegar a PDFKit (que tumbaría el proceso)
     if (firmaImagen) validarImagenFirma(firmaImagen);
@@ -724,7 +759,7 @@ export const renderPdf = (nota, { firmaImagen = null, presentanteImagen = null, 
 
     dibujarCierre(doc, nota, { firmaImagen, presentanteImagen });
 
-    agregarMembreteYPies(doc, nota, ancho, { banner, pie });
+    agregarMembreteYPies(doc, nota, ancho, { banner, pie, leyenda: leyendaFirmaDigital === true });
     doc.end();
   } catch (error) {
     reject(error);

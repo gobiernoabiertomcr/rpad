@@ -3,9 +3,9 @@ import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import PDFDocument from 'pdfkit';
 import { construirNota, construirNotaDeAutorizacion, construirNotaDeAuditoria } from '../services/notasDigitalesContenido.js';
-import { renderPdf, validarImagenFirma, validarImagenMembrete } from '../services/notasDigitalesPdf.js';
+import { renderPdf, validarImagenFirma, validarImagenMembrete, LEYENDA_FIRMA } from '../services/notasDigitalesPdf.js';
 import { pngRgba, pngRgb, pngsDanados, jpegMinimo } from './firma-fixtures.js';
-import { lineasPorHoja, textosPorHoja, imagenesPorHoja, imagenesGuardadas, tamanosPorHoja, HOJA_OFICIO, todasDelTamano } from './pdf-lector.js';
+import { lineasPorHoja, textosPorHoja, imagenesPorHoja, imagenesGuardadas, tamanosPorHoja, contenidoPorHoja, HOJA_OFICIO, todasDelTamano } from './pdf-lector.js';
 
 // PNG válido de 1x1 píxel
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -1948,5 +1948,135 @@ describe('renderPdf: nota de auditoría (spec 2026-10-15-dias-habiles-licencias-
     assert.ok(conVariasHojas > 0, 'el barrido tiene que incluir notas de varias hojas');
     const contratada = await renderPdf(auditoria(1, { nuevos: [{ ...cambio(1), usuario_contratado: true }] }));
     assert.ok(incluye(contratada, 'Persona Editora, personal contratado, cumpliendo funciones de Cargo de Prueba'));
+  });
+});
+
+// La leyenda de la firma digital (spec 2026-11-04-firma-digital-leyenda, 2.2 y 2.3): solo en la copia que se firma, en todas las hojas, en la franja
+// blanca debajo de la dirección del membrete. No le quita lugar a la nota: con ella y sin ella, todo lo demás queda en el mismo lugar
+describe('renderPdf: la leyenda de la firma digital', () => {
+  const FUERTE = 'Documento firmado digitalmente';
+  const RESTO = 'en conformidad con la Ordenanza N° 15.276/20.';
+  const conMembrete = { membreteImagen: BANNER_RGBA, membretePie: PIE };
+  const esDeLaLeyenda = (t) => t.texto === FUERTE || t.texto === RESTO;
+  const NOTAS = [
+    ['un aviso de una hoja', () => nota(1)],
+    ['un aviso de varias hojas', () => nota(30)],
+    ['un aviso con las dos firmas', () => nota(30, { firma: FIRMA_CON_LEYENDA })],
+    ['una reiteración', () => nota(30, { tipo: 'reiteracion' })],
+    ['la nota de autorización', () => notaDeAutorizacion(FIRMA_TITULAR)],
+    ['la nota de auditoría', () => notaDeAuditoria(FIRMA_CON_LEYENDA)]
+  ];
+
+  it('sin la opción no hay leyenda, y la opción en false es lo mismo', async () => {
+    for (const [caso, armar] of NOTAS) {
+      const sin = await renderPdf(armar(), conMembrete);
+      assert.ok(!textosPorHoja(sin).flat().some(esDeLaLeyenda), caso);
+      const enFalse = await renderPdf(armar(), { ...conMembrete, leyendaFirmaDigital: false });
+      assert.deepEqual(contenidoPorHoja(enFalse), contenidoPorHoja(sin), caso);
+    }
+  });
+
+  it('solo el true literal la dibuja', async () => {
+    for (const valor of [1, 'true', {}, null, undefined]) {
+      const pdf = await renderPdf(nota(1), { ...conMembrete, leyendaFirmaDigital: valor });
+      assert.ok(!textosPorHoja(pdf).flat().some(esDeLaLeyenda), String(valor));
+    }
+  });
+
+  for (const [caso, armar] of NOTAS) {
+    it(`${caso}: va en todas las hojas y nada se corre`, async () => {
+      const sin = await renderPdf(armar(), conMembrete);
+      const con = await renderPdf(armar(), { ...conMembrete, leyendaFirmaDigital: true });
+      assert.equal(tamanosPorHoja(con).length, tamanosPorHoja(sin).length);
+      const textosCon = textosPorHoja(con);
+      for (const hoja of textosCon) {
+        assert.deepEqual(hoja.filter(esDeLaLeyenda).map(t => t.texto), [FUERTE, RESTO]);
+      }
+      assert.deepEqual(textosCon.map(hoja => hoja.filter(t => !esDeLaLeyenda(t))), textosPorHoja(sin));
+      assert.deepEqual(imagenesPorHoja(con), imagenesPorHoja(sin));
+    });
+  }
+
+  it('la letra, el lugar y el centrado: debajo de la dirección, a más de 5 mm del borde', async () => {
+    const pdf = await renderPdf(nota(1), { ...conMembrete, leyendaFirmaDigital: true });
+    const [hoja] = textosPorHoja(pdf);
+    const fuerte = hoja.find(t => t.texto === FUERTE);
+    const resto = hoja.find(t => t.texto === RESTO);
+    assert.deepEqual([fuerte.fuente, fuerte.tamano], ['Helvetica-Bold', 8]);
+    assert.deepEqual([resto.fuente, resto.tamano], ['Helvetica', 8]);
+    assert.ok(cerca(fuerte.base, LEYENDA_FIRMA.base) && cerca(resto.base, LEYENDA_FIRMA.base));
+    const anchoFuerte = anchoDe(LEYENDA_FIRMA.fuerte, 8, 'Helvetica-Bold');
+    const anchoResto = anchoDe(LEYENDA_FIRMA.resto, 8);
+    assert.ok(cerca(resto.x, fuerte.x + anchoFuerte), 'el resto va a continuación');
+    const izquierda = fuerte.x - LEYENDA_FIRMA.lugarDelTilde - LEYENDA_FIRMA.relleno;
+    const derecha = resto.x + anchoResto + LEYENDA_FIRMA.relleno;
+    assert.ok(cerca((izquierda + derecha) / 2, ANCHO_HOJA / 2), 'el recuadro va centrado');
+    const direccion = hoja.find(t => t.texto === PIE);
+    assert.ok(LEYENDA_FIRMA.tope < direccion.base - DESCENDENTE * direccion.tamano, 'no toca la dirección');
+    assert.ok(LEYENDA_FIRMA.tope - LEYENDA_FIRMA.alto >= 5 * MM, 'a más de 5 mm del borde');
+    // Lo dibujado, no las constantes: PDFKit escribe el camino desde arriba de la hoja, y el recuadro empieza en su borde superior
+    const [contenido] = contenidoPorHoja(pdf);
+    const arriba = ALTO_HOJA - LEYENDA_FIRMA.tope;
+    const inicio = new RegExp(`(-?[\\d.]+) ${arriba} m`).exec(contenido);
+    assert.ok(inicio, 'el recuadro empieza en su lugar');
+    assert.ok(cerca(Number(inicio[1]), izquierda + LEYENDA_FIRMA.radio), 'y a su izquierda, con el radio');
+    assert.ok(new RegExp(`-?[\\d.]+ ${arriba + LEYENDA_FIRMA.alto} l`).test(contenido), 'y baja hasta su alto');
+    assert.ok(LEYENDA_FIRMA.base > LEYENDA_FIRMA.tope - LEYENDA_FIRMA.alto && LEYENDA_FIRMA.base + ASCENDENTE * 8 < LEYENDA_FIRMA.tope, 'el texto va adentro');
+  });
+
+  it('el recuadro y el tilde están dibujados, con sus colores, en todas las hojas', async () => {
+    const pdf = await renderPdf(nota(30), { ...conMembrete, leyendaFirmaDigital: true });
+    const canal = (hex) => parseInt(hex, 16) / 255;
+    const componentes = (color) => [color.slice(1, 3), color.slice(3, 5), color.slice(5, 7)].map(canal);
+    const usaColor = (contenido, color) => {
+      const buscado = componentes(color);
+      return [...contenido.matchAll(/(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (?:scn|SCN)/g)]
+        .some(m => m.slice(1, 4).every((v, i) => Math.abs(Number(v) - buscado[i]) < 0.01));
+    };
+    const coloresDe = (contenido) => [...contenido.matchAll(/(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (?:scn|SCN)/g)].map(m => m.slice(1, 4).map(Number));
+    const esColor = (valores, color) => valores.every((v, i) => Math.abs(v - componentes(color)[i]) < 0.01);
+    for (const contenido of contenidoPorHoja(pdf)) {
+      for (const color of [LEYENDA_FIRMA.fondo, LEYENDA_FIRMA.borde, LEYENDA_FIRMA.texto, '#FFFFFF']) {
+        assert.ok(usaColor(contenido, color), color);
+      }
+      // En su orden: el recuadro, el círculo, el tilde y el texto, que van al final de la hoja
+      const ultimos = coloresDe(contenido).slice(-5);
+      for (const [i, color] of [LEYENDA_FIRMA.fondo, LEYENDA_FIRMA.borde, LEYENDA_FIRMA.texto, '#FFFFFF', LEYENDA_FIRMA.texto].entries()) {
+        assert.ok(esColor(ultimos[i], color), `${i}: ${color}`);
+      }
+    }
+  });
+
+  it('sin banner ni pie, en una sola hoja, también va', async () => {
+    const pdf = await renderPdf(nota(1), { leyendaFirmaDigital: true });
+    assert.deepEqual(textosPorHoja(pdf)[0].filter(esDeLaLeyenda).map(t => t.texto), [FUERTE, RESTO]);
+  });
+
+  it('sin el pie del membrete, en varias hojas, la paginación sube para no quedar debajo del recuadro; sin la leyenda, sigue abajo', async () => {
+    const sinPie = { membreteImagen: BANNER_RGBA };
+    const conLeyenda = await renderPdf(nota(30), { ...sinPie, leyendaFirmaDigital: true });
+    const textos = textosPorHoja(conLeyenda);
+    assert.ok(textos.length > 1);
+    for (const hoja of textos) {
+      const paginacion = hoja.find(t => esPaginacion(t.texto));
+      assert.ok(cerca(paginacion.base, 17.5 * MM), 'en el lugar que tiene con el pie');
+      assert.ok(paginacion.base - DESCENDENTE * paginacion.tamano > LEYENDA_FIRMA.tope, 'arriba del recuadro');
+    }
+    // Lo demás, en su lugar
+    const sinLeyenda = await renderPdf(nota(30), sinPie);
+    const sinLoQueCambia = (hojas) => hojas.map(hoja => hoja.filter(t => !esDeLaLeyenda(t) && !esPaginacion(t.texto)));
+    assert.deepEqual(sinLoQueCambia(textos), sinLoQueCambia(textosPorHoja(sinLeyenda)));
+    const baseSinLeyenda = textosPorHoja(sinLeyenda)[0].find(t => esPaginacion(t.texto)).base;
+    assert.ok(baseSinLeyenda < 17.5 * MM, 'la nota común queda como siempre');
+  });
+
+  it('con el pie del membrete, tampoco la toca la paginación', async () => {
+    const pdf = await renderPdf(nota(30), { ...conMembrete, leyendaFirmaDigital: true });
+    for (const hoja of textosPorHoja(pdf)) {
+      const direccion = hoja.find(t => t.texto === PIE);
+      const paginacion = hoja.find(t => esPaginacion(t.texto));
+      assert.ok(paginacion.base > direccion.base, 'la paginación sigue arriba de la dirección');
+      assert.ok(direccion.base > hoja.find(t => t.texto === FUERTE).base, 'la leyenda va debajo de la dirección');
+    }
   });
 });

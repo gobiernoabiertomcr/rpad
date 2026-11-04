@@ -42,8 +42,9 @@ const VERSION_FERIADOS = '20261210';
 // reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6;
 // la línea de los recordatorios de la agenda en el Estado, spec 2026-10-26-mi-espacio-agenda, 5; la licencia del firmante sin
 // anticipo y la vista previa de otro día, spec 2026-10-27-feriados-en-notas, 6; lo que dice de la reiteración una licencia sin
-// persona autorizada, spec 2026-11-03-reiteracion-bimestral, 5): su versión es propia
-const VERSION_CORREOS = '20261213';
+// persona autorizada, spec 2026-11-03-reiteracion-bimestral, 5; el certificado al revisar y «Reintentar» de una nota que espera, spec
+// 2026-11-04-firma-digital-leyenda, 2.5 y 2.6): su versión es propia
+const VERSION_CORREOS = '20261214';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas; "Requiere nota DGMIT" en la
 // comparación, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; el editor que audita sin responsabilidad, spec
 // 2026-10-20-editor-sin-responsabilidad; la vista previa de la firma con el nombre en negrita y el cargo un punto menos; el
