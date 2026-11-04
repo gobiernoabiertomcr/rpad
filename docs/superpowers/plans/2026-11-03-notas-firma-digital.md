@@ -154,7 +154,7 @@ Con una copia de la base local (recargada con el último dump de producción si 
 3. **El caso del usuario:** el 01/12 el titular carga vacaciones del 10/12/2026 al 08/01/2027 con la persona autorizada a cargo, y el 04/12 ella carga las suyas, del 11/01 al 22/01/2027. Partir de `~/rpad-notas/firma-digital-simulacion/` (el ensayo del 03/11, con el arnés en `~/rpad-notas/firma-digital-sim/`) y comparar: quién recibe cada mail, quién firma cada nota, y que del 10/12 al 08/01 el mail le llegue a ella y nunca al titular. Sumar una nota de auditoría y un feriado cargado a último momento.
 4. **Con las firmas reales, solo en local y sin copiarlas:**
    - Los 4 pares de `~/Downloads/` (`Original Nota-Digital-N-26.pdf` y `document*.pdf`): `verificarNotaFirmada` da `firmada` en su fila y `otra_nota` en las demás.
-   - Las que firme el usuario de `~/rpad-notas/firma-digital-simulacion/firmadas/`: poner esos PDF originales en la base de simulación, como notas que esperan, y subirlas por la pantalla, con el modal y «Enviar». Si la reiteración bimestral cambió qué notas salen, sirven igual para esta prueba; no se comparan con las notas nuevas.
+   - **Volver a generar las notas del ensayo con el main de ese momento** (la reiteración bimestral cambia qué notas salen y sus números: el usuario decidió el 03/11 no firmar las del ensayo con 3949aae). Recién entonces el usuario firma las suyas, las deja en `firmadas/` y se suben por la pantalla, con el modal y «Enviar», en la base de simulación que tiene esos mismos PDF.
 5. Cero intentos de red, cero errores. Dejar el cierre en `~/rpad-notas/firma-digital-simulacion-cierre.md`, sin nombres en el repo.
 
 ## Task 8: Docs, revisión, merge y kit
