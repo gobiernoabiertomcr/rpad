@@ -271,8 +271,10 @@ export const ejecutarNotificacionCambiosPendientes = async (req, res) => {
     const data = { ...resultados, calendario: calendario.origen, ...(firmaDigital ? { firma_digital: firmaDigital } : {}) };
     const sinErroresDeFirma = !firmaDigital || (firmaDigital.errores.length === 0 && !firmaDigital.ocupado);
     if (!resultados.dia_habil) {
-      return res.status(sinFeriados ? 207 : 200)
-        .json({ success: !sinFeriados, message: 'Hoy no es día hábil: no se envían recordatorios.', data });
+      // Las que esperaban la firma no salen un día no hábil (salen en la corrida siguiente), pero un error al mirarlas se dice igual
+      const bien = !sinFeriados && sinErroresDeFirma;
+      return res.status(bien ? 200 : 207)
+        .json({ success: bien, message: 'Hoy no es día hábil: no se envían recordatorios.', data });
     }
     const sinErrores = resultados.errores.length === 0;
     const success = sinErrores && !sinFeriados && sinErroresDeFirma;

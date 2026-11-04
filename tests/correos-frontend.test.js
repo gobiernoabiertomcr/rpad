@@ -2681,22 +2681,34 @@ describe('correos.js: la firma digital', () => {
       assert.ok(html([FIRMADA, { ...FIRMADA, id: 9, numero: 14 }]).includes('>Enviar las 2 firmadas</button>'));
     });
 
-    it('lo que dijo cada fila, en su lugar y con role="status"', () => {
+    it('lo que dijo cada fila, en su lugar: la región viva es otra, fija', () => {
       const h = html([SIN_FIRMAR], { avisos: { 7: { bien: false, texto: 'Ese PDF es la Nota Digital N° 13/26, no la 12/26. No se guardó nada.' } } });
-      assert.ok(h.includes('<p class="co-fila-aviso mal" role="status">Ese PDF es la Nota Digital N° 13/26, no la 12/26. No se guardó nada.</p>'));
+      assert.ok(h.includes('<p class="co-fila-aviso mal">Ese PDF es la Nota Digital N° 13/26, no la 12/26. No se guardó nada.</p>'));
+      assert.ok(!h.includes('role="status"'));
       assert.ok(html([FIRMADA], { avisos: { 8: { bien: true, texto: 'Guardada. Falta enviarla.' } } }).includes('co-fila-aviso bien'));
     });
 
     it('sin notas y con lo que se envió: lo dice, sin lista ni botones', () => {
-      const h = html([], { enviadas: ['Nota Digital N° 12/26: enviada, firmada digitalmente.'] });
+      const h = html([], { enviadas: [{ bien: true, texto: 'Nota Digital N° 12/26: enviada, firmada digitalmente.' }] });
       assert.ok(h.includes('No quedan notas para firmar'));
+      assert.ok(h.includes('Ya salieron todas las de hoy.'));
       assert.ok(h.includes('<li class="bien">Nota Digital N° 12/26: enviada, firmada digitalmente.</li>'));
       assert.ok(!h.includes('data-subir-firmada'));
     });
 
+    it('si alguna no salió, no dice que salieron todas, y esa va en rojo', () => {
+      const h = html([], { enviadas: [
+        { bien: true, texto: 'Nota Digital N° 12/26: enviada, firmada digitalmente.' },
+        { bien: false, texto: 'Nota Digital N° 13/26: quedó firmada, pero el email no salió. Se vuelve a intentar en la próxima corrida.' }
+      ] });
+      assert.ok(!h.includes('Ya salieron todas las de hoy.'));
+      assert.ok(h.includes('La que no salió se vuelve a intentar en la próxima corrida, firmada.'));
+      assert.ok(h.includes('<li class="mal">Nota Digital N° 13/26: quedó firmada'));
+    });
+
     it('todo texto del servidor va escapado', () => {
       const raro = '<b>"x"</b>';
-      const h = html([{ ...FIRMADA, firmado_por: raro, firma_nombre: raro }], { avisos: { 8: { bien: false, texto: raro } }, enviadas: [raro] });
+      const h = html([{ ...FIRMADA, firmado_por: raro, firma_nombre: raro }], { avisos: { 8: { bien: false, texto: raro } }, enviadas: [{ bien: false, texto: raro }] });
       assert.ok(!h.includes('<b>"x"</b>'));
       assert.ok(h.includes('&lt;b&gt;'));
     });
@@ -2752,6 +2764,7 @@ describe('correos.js: la firma digital', () => {
         append(clave, valor, nombre) { this.partes[clave] = valor; if (nombre) this.partes[`${clave}_nombre`] = nombre; }
       }
       const urls = [];
+      const avisos = [];
       const fetchFalso = async (url, opciones) => {
         pedidos.push({ url, encabezados: opciones.headers, partes: opciones.body.partes });
         const { status = 200, cuerpo = {} } = respuestas.shift() ?? {};
@@ -2764,13 +2777,14 @@ describe('correos.js: la firma digital', () => {
         pedirJson: async () => ({ data: { resultados: [] } }),
         ...api
       }, {
+        showToast: (mensaje, tipo) => avisos.push({ mensaje, tipo }),
         Utils: utilsReal(), fetch: fetchFalso, FormData: FormDataFalso, CONFIG: { API_URL: '/api' }, Blob: class { constructor(partes, o) { this.partes = partes; this.type = o?.type; } },
         Auth: { getAuthHeaders: () => ({ 'Content-Type': 'application/json', Authorization: 'Bearer t' }), clearSession() {} },
         URL: { createObjectURL: (b) => { urls.push(b); return `blob:${urls.length}`; }, revokeObjectURL(u) { urls.push(`revocada ${u}`); } },
         window: { location: { href: '' } }
       });
       carga.elemento('nd-firmada-archivo').click = () => {};
-      return { ...carga, pedidos, urls };
+      return { ...carga, pedidos, urls, avisos };
     };
     const ARCHIVO = { name: 'document.pdf' };
     // Elige un archivo para una fila, como el navegador
@@ -2810,6 +2824,17 @@ describe('correos.js: la firma digital', () => {
       assert.ok(!p.elemento('modal-firmada').classList.contains('active'));
       assert.ok(p.urls.includes('revocada blob:1'));
       assert.ok(p.elemento('nd-para-firmar').innerHTML.includes('Guardada. Falta enviarla.'));
+    });
+
+    it('elegir otro archivo saca el rechazo anterior antes de abrir el modal', async () => {
+      const RECHAZO = { status: 400, cuerpo: { error: 'Ese PDF es la Nota Digital N° 13/26, no la 12/26. No se guardó nada.' } };
+      const p = pagina({ respuestas: [RECHAZO, VERIFICADA] });
+      await p.contexto.cargarEstado();
+      await elegir(p, 7);
+      assert.ok(p.elemento('nd-para-firmar').innerHTML.includes('no la 12/26'));
+      await elegir(p, 7);
+      assert.ok(p.elemento('modal-firmada').classList.contains('active'));
+      assert.ok(!p.elemento('nd-para-firmar').innerHTML.includes('no la 12/26'), 'detrás del modal ya no está el rechazo');
     });
 
     it('«Cancelar» no guarda nada', async () => {
@@ -2882,7 +2907,90 @@ describe('correos.js: la firma digital', () => {
       await p.contexto.cargarEstado();
       await p.contexto.accionDeParaFirmar({ target: boton({}, '#btn-enviar-firmadas') });
       assert.deepEqual(JSON.parse(JSON.stringify(llamados)), [['POST', '/notificaciones/notas-digitales/firmadas/enviar', [8]]]);
-      assert.deepEqual([...evaluar(p.contexto, 'firmaDigital.enviadas')], ['Nota Digital N° 13/26: enviada, firmada digitalmente.']);
+      assert.deepEqual(JSON.parse(JSON.stringify(evaluar(p.contexto, 'firmaDigital.enviadas'))), [{ bien: true, texto: 'Nota Digital N° 13/26: enviada, firmada digitalmente.' }]);
+      assert.equal(p.elemento('nd-firmada-anuncio').textContent, 'Nota Digital N° 13/26: enviada, firmada digitalmente.');
+    });
+
+    it('«Enviar» sin ninguna que siga esperando lo avisa, y no queda en silencio', async () => {
+      const p = pagina({
+        estado: { para_firmar: [FIRMADA] },
+        api: { pedirJson: async () => ({ data: { resultados: [] } }) }
+      });
+      await p.contexto.cargarEstado();
+      await p.contexto.accionDeParaFirmar({ target: boton({}, '#btn-enviar-firmadas') });
+      assert.ok(p.avisos.some(a => a.mensaje === 'Esas notas ya no esperan la firma: están en el Libro.' && a.tipo === 'error'));
+    });
+
+    it('un archivo para una nota que ya salió: la fila ya no está, así que se avisa aparte', async () => {
+      const estados = [{ para_firmar: [SIN_FIRMAR] }, { para_firmar: [] }];
+      const p = pagina({
+        respuestas: [{ status: 409, cuerpo: { error: 'Esta nota ya salió.' } }],
+        api: { getEstadoNotas: async () => ({ envio_activo: true, configuracion_faltante: [], fallidas: 0, proximas: {}, ultima_corrida: null, alertas: [], ...estados.shift() }) }
+      });
+      await p.contexto.cargarEstado();
+      await elegir(p, 7);
+      assert.equal(p.elemento('nd-para-firmar').hidden, true);
+      assert.ok(p.avisos.some(a => a.mensaje === 'Esta nota ya salió.' && a.tipo === 'error'));
+    });
+
+    it('«Confirmar» a una nota que ya salió también se avisa aparte', async () => {
+      const estados = [{ para_firmar: [SIN_FIRMAR] }, { para_firmar: [] }];
+      const p = pagina({
+        respuestas: [VERIFICADA, { status: 409, cuerpo: { error: 'Esta nota ya salió.' } }],
+        api: { getEstadoNotas: async () => ({ envio_activo: true, configuracion_faltante: [], fallidas: 0, proximas: {}, ultima_corrida: null, alertas: [], ...estados.shift() }) }
+      });
+      await p.contexto.cargarEstado();
+      await elegir(p, 7);
+      await p.contexto.alTocarPrincipalDelModal();
+      assert.ok(p.avisos.some(a => a.mensaje === 'Esta nota ya salió.' && a.tipo === 'error'));
+    });
+
+    it('al cerrar «Ver», el foco vuelve a «Ver»; al cancelar la revisión, a «Subir firmada»', async () => {
+      const enfocados = [];
+      const p = pagina({ respuestas: [VERIFICADA] });
+      p.contexto.document.querySelector = (selector) => ({ focus: () => enfocados.push(selector) });
+      await p.contexto.cargarEstado();
+      await p.contexto.accionDeParaFirmar({ target: boton({ verFirmada: '7' }, '[data-ver-firmada]') });
+      p.contexto.cerrarModalFirmada();
+      assert.equal(enfocados.at(-1), '[data-ver-firmada="7"]');
+      await elegir(p, 7);
+      p.contexto.cerrarModalFirmada();
+      assert.equal(enfocados.at(-1), '[data-subir-firmada="7"]');
+    });
+
+    it('una respuesta que llega mientras se guarda no cambia el modal', async () => {
+      const p = pagina({ respuestas: [VERIFICADA] });
+      await p.contexto.cargarEstado();
+      await elegir(p, 7);
+      const antes = p.elemento('modal-firmada-titulo').textContent;
+      const urls = p.urls.length;
+      evaluar(p.contexto, 'firmaDigital.guardando = true');
+      await p.contexto.accionDeParaFirmar({ target: boton({ verFirmada: '7' }, '[data-ver-firmada]') });
+      assert.equal(p.elemento('modal-firmada-titulo').textContent, antes);
+      assert.equal(p.urls.length, urls);
+      assert.equal(evaluar(p.contexto, 'firmaDigital.modal.modo'), 'revisar');
+      evaluar(p.contexto, 'firmaDigital.guardando = false');
+    });
+
+    it('Tab no sale del modal: del último botón a la ×, y de la × con Mayúsculas al último', async () => {
+      const p = pagina({ respuestas: [VERIFICADA] });
+      await p.contexto.cargarEstado();
+      await elegir(p, 7);
+      const tecla = (activo, shiftKey) => {
+        let frenada = false;
+        p.contexto.document.activeElement = activo === null ? {} : p.elemento(activo);
+        p.contexto.teclaEnPagina({ key: 'Tab', shiftKey, preventDefault() { frenada = true; } });
+        return frenada;
+      };
+      const enfocado = [];
+      for (const id of ['modal-firmada-cerrar', 'modal-firmada-principal']) p.elemento(id).focus = () => enfocado.push(id);
+      assert.equal(tecla('modal-firmada-principal', false), true);
+      assert.equal(enfocado.at(-1), 'modal-firmada-cerrar');
+      assert.equal(tecla('modal-firmada-cerrar', true), true);
+      assert.equal(enfocado.at(-1), 'modal-firmada-principal');
+      assert.equal(tecla('modal-firmada-secundario', false), false, 'entre los botones, Tab se deja');
+      assert.equal(tecla(null, false), true, 'con el foco afuera, vuelve');
+      assert.equal(enfocado.at(-1), 'modal-firmada-principal');
     });
 
     it('cargarEstado no reescribe la tarjeta si no cambió, y la oculta si no hay nada', async () => {
@@ -2928,7 +3036,8 @@ describe('correos.html: la firma digital', () => {
   const html = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
   it('la tarjeta va arriba de los filtros, oculta, con su selector de archivo de un solo PDF', () => {
     assert.ok(html.indexOf('id="nd-para-firmar"') < html.indexOf('class="co-filtros"'));
-    assert.match(html, /<div class="co-tarjeta co-para-firmar" id="nd-para-firmar" hidden><\/div>/);
+    assert.match(html, /<div class="co-tarjeta co-para-firmar" id="nd-para-firmar" tabindex="-1" hidden><\/div>/);
+    assert.match(html, /<p id="nd-firmada-anuncio" class="co-anuncio" role="status"><\/p>/);
     assert.match(html, /<input type="file" id="nd-firmada-archivo" accept="application\/pdf,\.pdf"[^>]* hidden>/);
     assert.doesNotMatch(html, /id="nd-firmada-archivo"[^>]*multiple/);
   });

@@ -464,7 +464,8 @@ export const subirNotaFirmada = async ({ id, archivo, usuarioId, soloVerificar =
   };
   if (soloVerificar) return { status: 200, ok: true, mensaje: '', data };
   const corrida = await conBloqueo(async () => {
-    const [resultado] = await pool.query(
+    // Con execute, el PDF viaja en binario: en un error, err.sql no lo trae en hexadecimal (va a la consola), y no ocupa el doble
+    const [resultado] = await pool.execute(
       `UPDATE notas_digitales SET pdf_firmado = ?, firmado_por = ?, firmado_at = ?, firma_subida_por = ?
        WHERE id = ? AND espera_firma = 1 AND estado = 'pendiente'`,
       [archivo, verificacion.firmado_por, verificacion.firmado_at, usuarioId, id]

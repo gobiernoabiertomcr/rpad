@@ -468,3 +468,56 @@ describe('Correos → Estado', () => {
     assert.equal(estado.para_firmar.at(-1).firmado_at, '2026-11-02 09:12');
   });
 });
+
+describe('las 14:00 por el controlador (nunca /api/cron/*)', () => {
+  const corridaDeLas14 = async (momento) => {
+    const controlador = await import('../controllers/notificacionesController.js');
+    const res = { statusCode: 200, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
+    mock.timers.enable({ apis: ['Date'], now: new Date(momento) });
+    try {
+      await controlador.ejecutarNotificacionCambiosPendientes({}, res);
+    } finally {
+      mock.timers.reset();
+    }
+    return res;
+  };
+
+  beforeEach(async () => {
+    await crearDataset({ vencimiento: '2026-12-31' });
+    await correr('2026-11-02');
+    await mailpit.vaciar();
+  });
+
+  it('envía la que espera, lo dice en data y, si ya no queda ninguna, data no lo trae', async () => {
+    const res = await corridaDeLas14('2026-11-02T17:00:00.000Z');
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.data.firma_digital.enviadas, 1);
+    assert.equal((await notas())[0].estado, 'enviada');
+    const otra = await corridaDeLas14('2026-11-03T17:00:00.000Z');
+    assert.equal(otra.body.data.firma_digital, undefined);
+  });
+
+  it('un día no hábil la que espera no sale: la toma la mañana del próximo día hábil, y responde 200', async () => {
+    const res = await corridaDeLas14('2026-11-07T17:00:00.000Z');
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.data.firma_digital, undefined);
+    assert.equal((await notas())[0].estado, 'pendiente');
+    await correr('2026-11-09');
+    assert.equal((await notas())[0].estado, 'enviada');
+  });
+
+  it('un día no hábil, un error al mirar las que esperan se dice igual: 207', async () => {
+    await query('RENAME TABLE notas_digitales_config TO notas_digitales_config_oculta');
+    let res;
+    try {
+      res = await corridaDeLas14('2026-11-07T17:00:00.000Z');
+    } finally {
+      await query('RENAME TABLE notas_digitales_config_oculta TO notas_digitales_config');
+    }
+    assert.equal(res.statusCode, 207);
+    assert.equal(res.body.success, false);
+    assert.equal(res.body.data.dia_habil, false);
+  });
+});

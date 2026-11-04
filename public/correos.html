@@ -18,7 +18,7 @@
         :root {
             --pf-tinta: #1F3A5F;
             --pf-texto: #2B3A4A;
-            --pf-suave: #6B7A8C;
+            --pf-suave: #64748B;
             --pf-linea: #E4E9EF;
             --pf-sutil: #F7F9FB;
             --pf-acento: #3E6B96;
@@ -201,7 +201,8 @@
         .co-fila-botones { margin-left: auto; display: inline-flex; gap: 6px; flex-wrap: wrap; }
         .co-fila-aviso { flex: 1 0 100%; margin: 2px 0 0; padding: 7px 11px; border-radius: 8px; font-size: 0.88rem; }
         .co-fila-aviso.bien, .co-subidas .bien { background: var(--pf-verde-fondo); color: var(--pf-verde); }
-        .co-fila-aviso.mal { background: var(--pf-rojo-fondo); color: var(--pf-rojo); }
+        .co-fila-aviso.mal, .co-subidas .mal { background: var(--pf-rojo-fondo); color: var(--pf-rojo); }
+        .co-anuncio { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
         .co-subidas { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; }
         .co-subidas li { padding: 7px 11px; border-radius: 8px; }
         .co-enviar-firmadas { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
@@ -346,7 +347,8 @@
 
             <section id="vista-libro" role="tabpanel" aria-labelledby="pestana-libro" hidden>
                 <!-- Las notas que esperan la firma digital (spec 2026-11-03-notas-firma-digital, 6): se dibuja desde el Estado -->
-                <div class="co-tarjeta co-para-firmar" id="nd-para-firmar" hidden></div>
+                <div class="co-tarjeta co-para-firmar" id="nd-para-firmar" tabindex="-1" hidden></div>
+                <p id="nd-firmada-anuncio" class="co-anuncio" role="status"></p>
                 <input type="file" id="nd-firmada-archivo" accept="application/pdf,.pdf" aria-label="El PDF firmado de la nota" hidden>
                 <!-- Libro de Notas Digitales -->
                 <div class="co-filtros">

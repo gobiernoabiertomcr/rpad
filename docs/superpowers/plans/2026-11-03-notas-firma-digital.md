@@ -26,7 +26,7 @@ los usernames y nombres de la tabla `usuarios`.
 `tests/schema.test.js`.
 
 - Las columnas de la sección 8 de la spec, con `ADD COLUMN IF NOT EXISTS` y cada una con su `AFTER`: en `notas_digitales`, después de `presentada_por_id`; en
-  la configuración, después de `envio_activo`. La FK con un nombre fijo, repetible (como lo hacen las migraciones anteriores: mirar cómo resuelven una FK repetible).
+  la configuración, al final, después de `updated_by` (un test viejo fija las posiciones de esa tabla: se conserva sin tocarlo). La FK con un nombre fijo, repetible (como lo hacen las migraciones anteriores: mirar cómo resuelven una FK repetible).
 - Cabecera con la spec, «solo agrega», el orden y qué se pierde con la vuelta atrás. Verificación comentada al final.
 - Sumar a `schema.sql`, en el mismo orden.
 - **Test:** las columnas; la migración dos veces desde la estructura de main; la vuelta atrás dos veces; y que el código anterior anda con
@@ -55,7 +55,8 @@ export const verificarNotaFirmada = (subido, nota, otras = []) => ({
 export const leerFirmaAgregada = (subido, largoDelOriginal) => /* { ok, firmado_por, firmado_at } | { ok: false, motivo } */;
 export const conLineaDeFirma = ({ html, texto }, nombre) => /* { html, texto } */;
 export const textoDeLaLineaDeFirma = (nombre) => `La nota está firmada digitalmente por ${nombre}.`;
-export const debeEsperarFirma = ({ activa, esPrueba, ahora, quienFirma }) => /* boolean */;
+export const debeEsperarFirma = ({ activa, ahora, quienFirma }) => /* boolean; las notas de prueba no pasan por acá */;
+export const paso14 = (ahora) => /* boolean */;
 export const HORA_LIMITE_DE_FIRMA = '14:00';
 ```
 - El orden: ¿empieza con los bytes de `nota.pdf`? (`Buffer.equals` sobre `subarray`). Si no, ¿con los de alguna de `otras`? (`otra_nota`); si no, `no_es`. Dos notas nunca empiezan igual, porque
