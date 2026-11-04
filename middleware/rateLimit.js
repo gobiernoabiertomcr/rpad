@@ -6,8 +6,8 @@ import { rateLimit, ipKeyGenerator } from 'express-rate-limit';
 // req.ip es la IP real porque app.js confía en un proxy (Apache) con 'trust proxy'.
 const VENTANA_MS = 15 * 60 * 1000;
 
-// La parte de la clave de un límite que manda el cliente: solo un texto (lo demás cuenta como vacío) y con tope, porque la clave queda
-// en memoria durante toda la ventana
+// La parte de la clave de un límite que manda el cliente: solo un texto (lo demás cuenta como vacío) y con un tope que no le llega a
+// ninguna cuenta (usuarios.username y usuarios.email)
 const TOPE_DE_LA_CLAVE = 100;
 const claveDeTexto = (valor) => (typeof valor === 'string' ? valor.trim().toLowerCase().slice(0, TOPE_DE_LA_CLAVE) : '');
 

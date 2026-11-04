@@ -90,9 +90,18 @@ describe('el límite de intentos de login', () => {
     assert.equal((await entrar({ username: `${comun}11`, password: 'incorrecta' }, headers)).status, 429);
   });
 
-  it('si difieren antes de los 100 caracteres, cuentan aparte', async () => {
-    const res = await entrar({ username: `y${'x'.repeat(100)}`, password: 'incorrecta' }, headers);
+  it('si difieren en el carácter 100, cuentan aparte', async () => {
+    const res = await entrar({ username: `${'x'.repeat(99)}y`, password: 'incorrecta' }, headers);
     assert.equal(res.status, 401);
+  });
+
+  it('los valores que no son textos cuentan juntos', async () => {
+    const otra = { 'X-Forwarded-For': '192.0.2.201' };
+    for (let i = 1; i <= 10; i++) {
+      const res = await entrar({ username: [`lista-${i}`], password: 'x' }, otra);
+      assert.equal(res.status, 400, `el intento ${i} todavía no debe bloquearse`);
+    }
+    assert.equal((await entrar({ username: ['lista-11'], password: 'x' }, otra)).status, 429);
   });
 });
 
@@ -116,11 +125,17 @@ describe('¿Olvidaste tu contraseña?', () => {
   it('un texto de verdad sigue buscando la cuenta', async () => {
     const res = await recuperar({ identificador: usuarios.adminA.username });
     assert.equal(res.status, 200);
-    let tokens = 0;
-    for (let i = 0; i < 50 && tokens === 0; i++) {
+    // El envío sigue después de responder: lo último que escribe es el historial
+    let enviados = 0;
+    for (let i = 0; i < 50 && enviados === 0; i++) {
       await new Promise((resolver) => setTimeout(resolver, 100));
-      tokens = Number(await tokensDe(usuarios.adminA.id));
+      [{ enviados }] = await query(
+        "SELECT COUNT(*) AS enviados FROM usuarios_auditoria WHERE usuario_id = ? AND accion = 'recuperacion_enviada'",
+        [usuarios.adminA.id]
+      );
+      enviados = Number(enviados);
     }
-    assert.ok(tokens >= 1);
+    assert.equal(enviados, 1);
+    assert.equal(Number(await tokensDe(usuarios.adminA.id)), 1);
   });
 });
