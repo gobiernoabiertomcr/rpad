@@ -1,4 +1,4 @@
-// Lo que se responde cuando el cuerpo de un pedido no se puede usar (spec 2026-11-03-validacion-api-publica). Un texto fijo y un
+// Lo que se responde cuando el cuerpo o la query de un pedido no se pueden usar (spec 2026-11-03-validacion-api-publica). Un texto fijo y un
 // renglón en la consola: err.message y err.body repiten lo que mandó el cliente, que puede ser una contraseña
 
 const MENSAJES_DEL_CUERPO = {
@@ -40,9 +40,10 @@ export const motivoDeRechazo = (raiz) => {
   return null;
 };
 
-// Después de express.json y express.urlencoded: un valor del cuerpo tiene que comportarse como un dato común, en todas las rutas
-export const cuerpoComun = (req, res, next) => {
-  const motivo = motivoDeRechazo(req.body);
+// Después de express.json y express.urlencoded: un valor del cuerpo o de la query tiene que comportarse como un dato común, en todas
+// las rutas. La query nunca llega al tope de niveles: su lector junta en una sola clave lo que pasa de los suyos
+export const datosComunes = (req, res, next) => {
+  const motivo = motivoDeRechazo(req.body) ?? motivoDeRechazo(req.query);
   if (motivo) return rechazar(req, res, 400, motivo);
   next();
 };

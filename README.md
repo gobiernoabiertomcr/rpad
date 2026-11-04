@@ -335,7 +335,7 @@ rpad/
 │       ├── migracion-mi-espacio-horas-acumuladas.sql   # Las horas acumuladas de contrato: la columna horas_acumuladas de mi_espacio_licencias (después de la de los días restituidos y antes del código, obligatoria; repetible)
 │       └── rollback-mi-espacio-horas-acumuladas.sql    # Deshace la anterior (después de volver a los archivos anteriores; se pierde qué parte de cada día era acumulada; va antes que rollback-mi-espacio-restituciones.sql)
 ├── middleware/
-│   ├── cuerpo.js                  # Lo que se responde cuando el cuerpo de un pedido no se puede usar
+│   ├── cuerpo.js                  # Lo que se responde cuando el cuerpo o la query de un pedido no se pueden usar
 │   └── auth.js                    # JWT middleware (authMiddleware y sesionOpcional, para las rutas públicas que muestran más con sesión)
 ├── routes/
 │   └── index.js                   # Definición de rutas API
@@ -1184,8 +1184,8 @@ La de **cada media hora** manda los **recordatorios de la agenda de [Mi espacio]
 ## Changelog
 
 ### Validación de la API pública (2026-11)
-- **Un cuerpo que no se puede usar es un error del pedido:** un JSON roto da 400 y uno de más de 1 MB, 413, con el formato de la API y un texto fijo, sin repetir lo que llegó ni dejarlo en la consola. Se rechazan con el mismo 400 las claves que pisan lo que todo objeto trae de fábrica y más de 32 niveles, en todas las rutas. Los demás errores no cambian
-- **Contacto, login y "¿Olvidaste tu contraseña?"** miran primero que cada campo sea un texto, y el largo antes que el formato. El email del formulario de contacto sigue la regla de los usuarios (hasta 100 caracteres). Las pantallas no cambian
+- **Un cuerpo que no se puede usar es un error del pedido:** un JSON roto da 400 y uno de más de 1 MB, 413, con el formato de la API y un texto fijo, sin repetir lo que llegó ni dejarlo en la consola. Se rechazan con el mismo 400, en todas las rutas, las claves que pisan lo que todo objeto trae de fábrica (`CLAVES_RESERVADAS`), en el cuerpo y en la query, y un cuerpo de más de 32 niveles. Los demás errores no cambian
+- **Contacto, login y "¿Olvidaste tu contraseña?"** miran primero que cada campo sea un texto. El email del formulario de contacto sigue la regla de los usuarios (hasta 100 caracteres, el largo antes que el formato): uno más largo da "Ingrese un email válido"
 - **`GET /api/andino/fetch` pasa a pedir sesión de administración**, y su pedido al portal tiene tiempo límite: 504 si vence, con un mensaje claro
 - Sin SQL, sin Tarea Cron nueva, sin variables de entorno nuevas y sin Run NPM Install. Sin kit propio: va con el de la reiteración bimestral
 - Detalle de diseño: `docs/superpowers/specs/2026-11-03-validacion-api-publica-design.md`

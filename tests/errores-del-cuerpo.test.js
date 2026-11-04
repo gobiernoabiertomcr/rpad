@@ -95,7 +95,7 @@ describe('un cuerpo que no se puede leer', () => {
   });
 });
 
-describe('un cuerpo que no es un dato común', () => {
+describe('lo que no es un dato común', () => {
   for (const clave of ['__proto__', 'constructor', 'toString', 'valueOf']) {
     it(`la clave ${clave} da 400, en cualquier nivel`, async () => {
       for (const cuerpo of [`{"${clave}":1}`, `{"dato":{"${clave}":1}}`, `{"lista":[{"${clave}":{"otro":1}}]}`]) {
@@ -111,6 +111,18 @@ describe('un cuerpo que no es un dato común', () => {
     assert.equal(res.status, 400);
     assert.deepEqual(res.body, NO_SE_PUEDE_LEER);
     assert.ok(await aparecioEnLosLogs('Pedido rechazado (clave reservada): POST /api/prueba-de-la-clave'));
+  });
+
+  it('en la query, también', async () => {
+    const res = await fetch(`${servidor.url}/api/prueba-de-la-query?dato[toString]=1`);
+    assert.equal(res.status, 400);
+    assert.deepEqual(await res.json(), NO_SE_PUEDE_LEER);
+    assert.ok(await aparecioEnLosLogs('Pedido rechazado (clave reservada): GET /api/prueba-de-la-query'));
+  });
+
+  it('una query común sigue llegando a la ruta', async () => {
+    const res = await fetch(`${servidor.url}/api/datasets?tema=a&tema=b&busqueda=constructor&otro[a]=1`);
+    assert.equal(res.status, 200);
   });
 
   it('escrita con escapes, también', async () => {
