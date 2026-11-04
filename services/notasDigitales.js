@@ -35,7 +35,7 @@ import { leerCalendario } from './feriadosDatos.js';
 import { MENSAJE_CORRIDA_SIN_FERIADOS, MENSAJE_ESTADO_SIN_FERIADOS } from './feriadosReglas.js';
 import {
   debeEsperarFirma, paso14, conLineaDeFirma, verificarNotaFirmada, mensajeDelRechazo, archivoDeLaNota, numeroDeLaNota,
-  MENSAJE_FIRMADA_GUARDADA, MENSAJE_NOTA_YA_SALIO
+  MENSAJE_FIRMADA_GUARDADA, MENSAJE_NOTA_YA_SALIO, MENSAJE_NOTA_YA_NO_ESPERA
 } from './notasFirmaDigital.js';
 import { notasParaFirmarTemplate } from './emailTemplates.js';
 
@@ -386,15 +386,21 @@ const avisarLasQueEsperan = async (resumen, hoy) => {
  * A las 14:00 sale lo que quede (spec, 4.9): las que esperan, con la copia firmada si se subió y no se confirmó y, si no, con la imagen, y
  * las firmadas que fallaron. Solo a partir de esa hora (la ruta manual de los recordatorios se puede llamar antes), en un día hábil, con
  * el envío automático activo y la configuración completa, como la corrida: si no, esperan y las toma la corrida de la mañana. Bajo el mismo
- * candado. Da { ejecutado, ocupado, enviadas, fallidas, errores }; los errores van con un id y un texto, como en la corrida.
+ * candado: como alguien puede estar enviando justo antes de esa hora (el SMTP tarda), lo intenta unas veces antes de darlo por ocupado, y
+ * entonces las toma la corrida de la mañana. Da { ejecutado, ocupado, enviadas, fallidas, errores }; los errores van con un id y un texto,
+ * como en la corrida.
  */
-export const enviarLasQueEsperanFirma = async ({ hoy = hoyArgentina(), ahora = ahoraArgentina(), calendario }) => {
+const INTENTOS_DEL_CANDADO = 6;
+const ESPERA_DEL_CANDADO_MS = 5000;
+export const enviarLasQueEsperanFirma = async ({
+  hoy = hoyArgentina(), ahora = ahoraArgentina(), calendario, intentos = INTENTOS_DEL_CANDADO, esperaMs = ESPERA_DEL_CANDADO_MS
+}) => {
   const resumen = { ejecutado: false, ocupado: false, enviadas: 0, fallidas: 0, errores: [] };
   if (!paso14(ahora)) return resumen;
   const config = await obtenerConfig();
   if (!config.envio_activo || !calendario.esDiaHabil(hoy)) return resumen;
   if (configuracionCompleta(config, await firmaTitularDe(config)).length > 0) return resumen;
-  const corrida = await conBloqueo(async () => {
+  const enviarTodas = async () => {
     resumen.ejecutado = true;
     const [filas] = await pool.query(
       `SELECT id FROM notas_digitales
@@ -412,8 +418,13 @@ export const enviarLasQueEsperanFirma = async ({ hoy = hoyArgentina(), ahora = a
         resumen.errores.push({ id, mensaje: String(error?.message ?? error) });
       }
     }
-  });
-  if (corrida.ocupado) resumen.ocupado = true;
+  };
+  for (let intento = 1; intento <= intentos; intento++) {
+    const corrida = await conBloqueo(enviarTodas);
+    resumen.ocupado = corrida.ocupado === true;
+    if (!resumen.ocupado) break;
+    if (intento < intentos) await new Promise(resolver => setTimeout(resolver, esperaMs));
+  }
   return resumen;
 };
 
@@ -429,6 +440,10 @@ const otrasNotasPara = async (id, largo, hoy) => {
   return filas;
 };
 
+// Una nota que ya no espera, según salió o no (una firmada cuyo email falló no salió: la reintentan el Libro y la corrida)
+const mensajeDeLaQueYaNoEspera = (nota) => (nota?.estado === 'enviada' ? MENSAJE_NOTA_YA_SALIO : MENSAJE_NOTA_YA_NO_ESPERA);
+const estadoDeLaNota = async (id) => (await pool.query('SELECT estado FROM notas_digitales WHERE id = ?', [id]))[0][0];
+
 /**
  * Un PDF subido a la fila de una nota (spec, 4.5). Con soloVerificar, no escribe nada: lo que dice es lo que dirá al confirmar. Si no,
  * guarda la copia firmada, bajo el candado (así no se cruza con la corrida o las 14:00), y no envía.
@@ -440,7 +455,7 @@ export const subirNotaFirmada = async ({ id, archivo, usuarioId, soloVerificar =
     'SELECT id, numero, anio, pdf, espera_firma, estado FROM notas_digitales WHERE id = ? AND es_prueba = 0', [id]
   );
   if (!nota) return { status: 404, ok: false, mensaje: 'Nota no encontrada' };
-  if (!nota.espera_firma || nota.estado !== 'pendiente') return { status: 409, ok: false, mensaje: MENSAJE_NOTA_YA_SALIO };
+  if (!nota.espera_firma || nota.estado !== 'pendiente') return { status: 409, ok: false, mensaje: mensajeDeLaQueYaNoEspera(nota) };
   const verificacion = verificarNotaFirmada(archivo, nota, await otrasNotasPara(id, archivo.length, hoy));
   if (verificacion.resultado !== 'firmada') return { status: 400, ok: false, mensaje: mensajeDelRechazo(verificacion, nota) };
   const data = {
@@ -456,7 +471,7 @@ export const subirNotaFirmada = async ({ id, archivo, usuarioId, soloVerificar =
     );
     return resultado.affectedRows === 1
       ? { status: 200, ok: true, mensaje: MENSAJE_FIRMADA_GUARDADA, data }
-      : { status: 409, ok: false, mensaje: MENSAJE_NOTA_YA_SALIO };
+      : { status: 409, ok: false, mensaje: mensajeDeLaQueYaNoEspera(await estadoDeLaNota(id)) };
   });
   return corrida.ocupado ? { ocupado: true } : corrida.resultado;
 };
@@ -505,10 +520,12 @@ const notasParaFirmar = async () => {
 };
 
 const textoDeLaAlertaDeFirma = (notas) => {
-  const n = notas.length;
-  return notas.every(nota => nota.firmado_por)
-    ? `Hay ${n === 1 ? '1 nota firmada' : `${n} notas firmadas`} sin enviar. ${n === 1 ? 'Sale sola' : 'Salen solas'} a las 14:00.`
-    : `Hay ${n === 1 ? '1 nota' : `${n} notas`} para firmar. Las que no se suban antes de las 14:00 salen con la imagen de la firma.`;
+  const firmadas = notas.filter(nota => nota.firmado_por).length;
+  const faltan = notas.length - firmadas;
+  const cuantasFirmadas = firmadas === 1 ? '1 nota firmada' : `${firmadas} notas firmadas`;
+  if (faltan === 0) return `Hay ${cuantasFirmadas} sin enviar. ${firmadas === 1 ? 'Sale sola' : 'Salen solas'} a las 14:00.`;
+  const cuantasFaltan = faltan === 1 ? '1 nota' : `${faltan} notas`;
+  return `Hay ${cuantasFaltan} para firmar${firmadas ? ` y ${cuantasFirmadas} sin enviar` : ''}. Las que no se suban antes de las 14:00 salen con la imagen de la firma.`;
 };
 
 // =====================================================

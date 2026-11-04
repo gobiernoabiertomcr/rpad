@@ -254,6 +254,9 @@ describe('enviar las firmadas', () => {
     const nota = await fila(id);
     assert.deepEqual([nota.estado, nota.espera_firma], ['fallida', 0]);
     assert.ok(nota.pdf_firmado.equals(FIRMADA_A));
+    // No salió: no dice que salió
+    const otra = await subir(id, FIRMADA_A);
+    assert.deepEqual([otra.status, otra.body.error], [409, 'Esta nota ya no espera la firma: está en el Libro.']);
     process.env.EMAIL_SOLO_A = '';
     const re = await api.post(`/notificaciones/notas-digitales/${id}/reintentar`, {}, comoAdmin());
     assert.equal(re.status, 200);

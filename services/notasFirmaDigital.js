@@ -79,6 +79,16 @@ const cnDe = (subject) => {
   return linea ? linea.slice(3).replace(/\\(.)/g, '$1').trim().slice(0, 255) : '';
 };
 
+// El certificado, si su clave verifica la firma; si no (otra clave, otro algoritmo o algo que no es un certificado), null
+const certificadoSiVerifica = (bytes, digest, firmados, firma) => {
+  try {
+    const certificado = new X509Certificate(bytes);
+    return crypto.createVerify(digest).update(firmados).verify(certificado.publicKey, firma) ? certificado : null;
+  } catch {
+    return null;
+  }
+};
+
 /**
  * La firma que `subido` agrega después de los primeros `largoDelOriginal` bytes (spec, 4.6, pasos 2 a 4):
  * { ok: true, firmado_por, firmado_at } o { ok: false, motivo }. motivo: 'sin_firma' (no hay ningún /ByteRange en lo agregado) o
@@ -124,14 +134,14 @@ export const leerFirmaAgregada = (subido, largoDelOriginal) => {
     const hash = crypto.createHash(digest).update(subido.subarray(0, hastaContents)).update(subido.subarray(desdeContents)).digest();
     if (!hashFirmado?.equals(hash)) return { ok: false, motivo: 'invalida' };
 
-    // Lo que se firma son los atributos, con su etiqueta original de SET (CMS, RFC 5652, 5.4), no la [0] con que van guardados
-    const primero = hijosDe(der, certificados)[0];
-    const certificado = new X509Certificate(der.subarray(primero.inicio, primero.fin));
+    // Lo que se firma son los atributos, con su etiqueta original de SET (CMS, RFC 5652, 5.4), no la [0] con que van guardados. Quien
+    // firmó es el certificado cuya clave verifica: hoy el Firmador manda uno solo, pero si sumara la cadena, no se sabe en qué orden
     const firmados = Buffer.from(der.subarray(atributos.inicio, atributos.fin));
     firmados[0] = 0x31;
-    if (!crypto.createVerify(digest).update(firmados).verify(certificado.publicKey, bytesDe(der, firma))) {
-      return { ok: false, motivo: 'invalida' };
-    }
+    const certificado = hijosDe(der, certificados)
+      .map(c => certificadoSiVerifica(der.subarray(c.inicio, c.fin), digest, firmados, bytesDe(der, firma)))
+      .find(Boolean);
+    if (!certificado) return { ok: false, motivo: 'invalida' };
     const nombre = cnDe(certificado.subject);
     if (!nombre) return { ok: false, motivo: 'invalida' };
     return { ok: true, firmado_por: nombre, firmado_at: momento };
@@ -179,6 +189,7 @@ export const mensajeDelRechazo = ({ resultado, otra }, nota) => {
 };
 export const MENSAJE_FIRMADA_GUARDADA = 'Guardada. Falta enviarla.';
 export const MENSAJE_NOTA_YA_SALIO = 'Esta nota ya salió.';
+export const MENSAJE_NOTA_YA_NO_ESPERA = 'Esta nota ya no espera la firma: está en el Libro.';
 export const MENSAJE_ESPERA_FIRMA = 'Esta nota espera la firma digital: sale sola a las 14:00.';
 export const MENSAJE_CORRIDA_EN_CURSO = 'Hay una corrida de Notas Digitales en curso. Probá de nuevo en unos minutos.';
 

@@ -15,6 +15,8 @@ const A = { numero: 12, anio: 2026, pdf: leer('nota-a.pdf') };
 const B = { numero: 13, anio: 2026, pdf: leer('nota-b.pdf') };
 const FIRMADA_A = leer('nota-a-firmada.pdf');
 const FIRMADA_B = leer('nota-b-firmada.pdf');
+const C = { numero: 14, anio: 2026, pdf: leer('nota-c.pdf') };
+const FIRMADA_C = leer('nota-c-firmada.pdf');
 
 // Una copia de la firmada de A con un texto reemplazado por otro del mismo largo (los rangos no se corren)
 const conTexto = (de, por) => {
@@ -57,6 +59,12 @@ describe('verificarNotaFirmada', () => {
 
   it('un nombre con acentos y eñes llega tal cual', () => {
     assert.equal(verificarNotaFirmada(FIRMADA_B, B).firmado_por, 'José Núñez');
+  });
+
+  it('si el CMS trae más de un certificado, firmó aquel cuya clave verifica, aunque no vaya primero', () => {
+    const r = verificarNotaFirmada(FIRMADA_C, C);
+    assert.equal(r.resultado, 'firmada');
+    assert.equal(r.firmado_por, 'Julieta Ferreyra');
   });
 
   it('la firmada de otra nota, en esta fila: la nombra, si se la puede nombrar', () => {

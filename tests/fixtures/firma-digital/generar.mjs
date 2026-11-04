@@ -26,7 +26,7 @@ const pdfDeNota = (numero, firmante) => new Promise((listo) => {
 });
 
 // La firma agregada al final: los objetos nuevos, su xref y su trailer. Como iText, deja un salto de línea antes de lo agregado
-const firmar = (original, { carpeta, sujeto, cuando }) => {
+const firmar = (original, { carpeta, sujeto, cuando, conCadena = false }) => {
   const clave = path.join(carpeta, 'clave.pem');
   const certificado = path.join(carpeta, 'certificado.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-utf8', '-keyout', clave, '-out', certificado, '-days', '3650',
@@ -67,8 +67,17 @@ const firmar = (original, { carpeta, sujeto, cuando }) => {
   const cubierto = path.join(carpeta, 'cubierto.bin');
   const salida = path.join(carpeta, 'firma.der');
   fs.writeFileSync(cubierto, Buffer.concat([sinRango.subarray(0, inicioDeContents), sinRango.subarray(finDeContents)]));
+  // Con otro certificado de una clave EC, más corto: los certificados del CMS van ordenados por sus bytes, así que va antes que el del firmante
+  const cadena = [];
+  if (conCadena) {
+    const otra = path.join(carpeta, 'otra.pem');
+    const otro = path.join(carpeta, 'otro.pem');
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-keyout', otra, '-out', otro, '-days', '3650',
+      '-subj', '/CN=Autoridad de Prueba/C=AR'], { stdio: 'ignore' });
+    cadena.push('-certfile', otro);
+  }
   execFileSync('openssl', ['cms', '-sign', '-binary', '-md', 'sha256', '-nosmimecap', '-in', cubierto, '-signer', certificado, '-inkey', clave,
-    '-outform', 'DER', '-out', salida], { stdio: 'ignore' });
+    ...cadena, '-outform', 'DER', '-out', salida], { stdio: 'ignore' });
   const hexadecimal = fs.readFileSync(salida).toString('hex');
   if (hexadecimal.length > LARGO_CONTENTS) throw new Error('El CMS no entra en /Contents');
   sinRango.write(hexadecimal.padEnd(LARGO_CONTENTS, '0'), inicioDeContents + 1, 'latin1');
@@ -79,7 +88,8 @@ const carpeta = fs.mkdtempSync(path.join(os.tmpdir(), 'rpad-firma-'));
 try {
   const notas = [
     { archivo: 'nota-a', numero: '12/26', firmante: 'Julieta Ferreyra', sujeto: '/CN=Julieta Ferreyra/serialNumber=CUIL 00000000000/C=AR', cuando: '20261201091200' },
-    { archivo: 'nota-b', numero: '13/26', firmante: 'José Núñez', sujeto: '/CN=José Núñez/serialNumber=CUIL 00000000001/C=AR', cuando: '20261201091500' }
+    { archivo: 'nota-b', numero: '13/26', firmante: 'José Núñez', sujeto: '/CN=José Núñez/serialNumber=CUIL 00000000001/C=AR', cuando: '20261201091500' },
+    { archivo: 'nota-c', numero: '14/26', firmante: 'Julieta Ferreyra', sujeto: '/CN=Julieta Ferreyra/serialNumber=CUIL 00000000000/C=AR', cuando: '20261201091800', conCadena: true }
   ];
   for (const nota of notas) {
     const original = await pdfDeNota(nota.numero, nota.firmante);

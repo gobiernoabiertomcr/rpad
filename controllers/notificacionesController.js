@@ -238,10 +238,10 @@ export const previewEmail = async (req, res) => {
 const lasQueEsperanFirma = async (calendario) => {
   try {
     const resumen = await enviarLasQueEsperanFirma({ hoy: hoyArgentina(), calendario });
-    if (resumen.errores.length > 0 || resumen.fallidas > 0) {
+    if (resumen.errores.length > 0 || resumen.fallidas > 0 || resumen.ocupado) {
       await anotarEnLaUltimaCorrida('No se pudieron enviar todas las notas que esperaban la firma digital: se reintenta en la próxima corrida').catch(() => {});
     }
-    return resumen.enviadas + resumen.fallidas + resumen.errores.length > 0 ? resumen : null;
+    return resumen.enviadas + resumen.fallidas + resumen.errores.length > 0 || resumen.ocupado ? resumen : null;
   } catch (error) {
     console.error('Error enviando las notas que esperaban la firma digital:', error?.stack ?? error);
     await anotarEnLaUltimaCorrida('No se pudieron enviar las notas que esperaban la firma digital: se reintenta en la próxima corrida').catch(() => {});
@@ -269,7 +269,7 @@ export const ejecutarNotificacionCambiosPendientes = async (req, res) => {
     const firmaDigital = await lasQueEsperanFirma(calendario);
     const resultados = await enviarCambiosPendientes({ hoy: hoyArgentina(), calendario });
     const data = { ...resultados, calendario: calendario.origen, ...(firmaDigital ? { firma_digital: firmaDigital } : {}) };
-    const sinErroresDeFirma = !firmaDigital || firmaDigital.errores.length === 0;
+    const sinErroresDeFirma = !firmaDigital || (firmaDigital.errores.length === 0 && !firmaDigital.ocupado);
     if (!resultados.dia_habil) {
       return res.status(sinFeriados ? 207 : 200)
         .json({ success: !sinFeriados, message: 'Hoy no es día hábil: no se envían recordatorios.', data });

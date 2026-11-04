@@ -326,7 +326,7 @@ describe('a las 14:00', () => {
     const conexion = await db().getConnection();
     await conexion.query('SELECT GET_LOCK(?, 0)', [BLOQUEO]);
     try {
-      const resumen = await lasCatorce('2026-11-02');
+      const resumen = await motor.enviarLasQueEsperanFirma({ hoy: '2026-11-02', ahora: '2026-11-02 14:00:00', calendario: CALENDARIO_FIJO, intentos: 2, esperaMs: 1 });
       assert.deepEqual([resumen.ocupado, resumen.enviadas, resumen.errores.length], [true, 0, 0]);
     } finally {
       await conexion.query('SELECT RELEASE_LOCK(?)', [BLOQUEO]);
@@ -334,6 +334,41 @@ describe('a las 14:00', () => {
     }
     await correr('2026-11-03');
     assert.deepEqual([(await notas())[0].estado, (await notas())[0].espera_firma], ['enviada', 0]);
+  });
+
+  it('si el candado se libera mientras espera, las manda', async () => {
+    const conexion = await db().getConnection();
+    await conexion.query('SELECT GET_LOCK(?, 0)', [BLOQUEO]);
+    const pedido = motor.enviarLasQueEsperanFirma({ hoy: '2026-11-02', ahora: '2026-11-02 14:00:00', calendario: CALENDARIO_FIJO, intentos: 40, esperaMs: 25 });
+    await new Promise(r => setTimeout(r, 60));
+    await conexion.query('SELECT RELEASE_LOCK(?)', [BLOQUEO]);
+    conexion.release();
+    const resumen = await pedido;
+    assert.deepEqual([resumen.ocupado, resumen.enviadas], [false, 1]);
+  });
+
+  it('el controlador de las 14:00 deja anotado un candado ocupado, y responde 207', async () => {
+    const { ejecutarNotificacionCambiosPendientes } = await import('../controllers/notificacionesController.js');
+    const conexion = await db().getConnection();
+    await conexion.query('SELECT GET_LOCK(?, 0)', [BLOQUEO]);
+    mock.timers.enable({ apis: ['Date', 'setTimeout'], now: new Date('2026-11-02T17:00:00Z') });
+    try {
+      const respuesta = { status(c) { this.codigo = c; return this; }, json(c) { this.cuerpo = c; return this; } };
+      const pedido = ejecutarNotificacionCambiosPendientes({ query: {}, user: undefined }, respuesta);
+      // Los 5 intentos de espera, de a 5 segundos, sin esperar de verdad
+      for (let i = 0; i < 200 && !respuesta.cuerpo; i++) {
+        mock.timers.tick(5000);
+        await new Promise(resolver => setImmediate(resolver));
+      }
+      await pedido;
+      assert.equal(respuesta.codigo, 207);
+      assert.equal(respuesta.cuerpo.data.firma_digital.ocupado, true);
+      assert.match((await ultimaCorrida()).resultado, /No se pudieron enviar todas las notas que esperaban la firma digital/);
+    } finally {
+      mock.timers.reset();
+      await conexion.query('SELECT RELEASE_LOCK(?)', [BLOQUEO]);
+      conexion.release();
+    }
   });
 
   it('si el email falla queda fallida, deja de esperar y la corrida siguiente la reintenta', async () => {
@@ -423,6 +458,13 @@ describe('Correos → Estado', () => {
     await query("UPDATE notas_digitales SET pdf_firmado = 'x', firmado_por = 'X', firmado_at = '2026-11-02 09:12:00'");
     estado = await motor.estadoNotas({ hoy: '2026-11-02' });
     assert.equal(estado.alertas.find(a => a.tipo === 'para-firmar').mensaje, 'Hay 1 nota firmada sin enviar. Sale sola a las 14:00.');
+    // Con una firmada y otra sin firmar, cuenta cada una por su lado
+    await crearDataset({ vencimiento: '2026-12-31', titulo: 'Otro', gestion: 'externa', requiereNota: 1 });
+    await query("UPDATE notas_digitales SET fecha = '2026-11-23'");
+    await correr('2026-11-23');
+    estado = await motor.estadoNotas({ hoy: '2026-11-23' });
+    assert.equal(estado.alertas.find(a => a.tipo === 'para-firmar').mensaje,
+      'Hay 1 nota para firmar y 1 nota firmada sin enviar. Las que no se suban antes de las 14:00 salen con la imagen de la firma.');
     assert.equal(estado.para_firmar[0].firmado_at, '2026-11-02 09:12');
   });
 });
