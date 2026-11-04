@@ -43,7 +43,7 @@ const VERSION_FERIADOS = '20261210';
 // la línea de los recordatorios de la agenda en el Estado, spec 2026-10-26-mi-espacio-agenda, 5; la licencia del firmante sin
 // anticipo y la vista previa de otro día, spec 2026-10-27-feriados-en-notas, 6; lo que dice de la reiteración una licencia sin
 // persona autorizada, spec 2026-11-03-reiteracion-bimestral, 5): su versión es propia
-const VERSION_CORREOS = '20261212';
+const VERSION_CORREOS = '20261213';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas; "Requiere nota DGMIT" en la
 // comparación, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; el editor que audita sin responsabilidad, spec
 // 2026-10-20-editor-sin-responsabilidad; la vista previa de la firma con el nombre en negrita y el cargo un punto menos; el

@@ -191,6 +191,26 @@
         .modal-overlay.active { transition: opacity 0.3s ease, visibility 0s; }
         .modal-overlay.active .modal { transition: transform 0.3s ease, visibility 0s; }
         .nd-modal { max-width: 900px; width: 95%; border-radius: 14px; }
+        /* Las notas para firmar (spec 2026-11-03-notas-firma-digital, 6) */
+        .co-para-firmar { margin-bottom: 16px; border-color: var(--pf-ambar-borde); background: #FFFBEF; }
+        .co-para-firmar .co-ayuda { margin: 0; max-width: 62ch; }
+        .co-para-firmar-lista { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+        .co-para-firmar-lista li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #fff; border: 1px solid var(--pf-linea); border-radius: 10px; padding: 9px 12px; }
+        .co-para-firmar-lista .co-numero { min-width: 3.2em; }
+        .co-para-firmar-quien { color: var(--pf-suave); font-size: 0.85rem; }
+        .co-fila-botones { margin-left: auto; display: inline-flex; gap: 6px; flex-wrap: wrap; }
+        .co-fila-aviso { flex: 1 0 100%; margin: 2px 0 0; padding: 7px 11px; border-radius: 8px; font-size: 0.88rem; }
+        .co-fila-aviso.bien, .co-subidas .bien { background: var(--pf-verde-fondo); color: var(--pf-verde); }
+        .co-fila-aviso.mal { background: var(--pf-rojo-fondo); color: var(--pf-rojo); }
+        .co-subidas { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; }
+        .co-subidas li { padding: 7px 11px; border-radius: 8px; }
+        .co-enviar-firmadas { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+        .co-pastilla.para-firmar { background: var(--pf-ambar-fondo); color: var(--pf-ambar); }
+        .co-firmada { display: inline-flex; align-items: center; gap: 4px; color: var(--pf-verde); font-size: 0.75rem; font-weight: 600; line-height: 1.25; }
+        .co-firmada svg { flex: none; }
+        .co-estado .co-firmada { max-width: 16em; }
+        .co-envio + .co-envio { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--pf-linea); }
+        #modal-firmada-marco { height: 62vh; }
         .nd-modal .modal-header { border-bottom: 1px solid var(--pf-linea); }
         .nd-modal .modal-title { color: var(--pf-tinta); }
         .co-confirmar { max-width: 440px; border-radius: 14px; }
@@ -325,6 +345,9 @@
             </div>
 
             <section id="vista-libro" role="tabpanel" aria-labelledby="pestana-libro" hidden>
+                <!-- Las notas que esperan la firma digital (spec 2026-11-03-notas-firma-digital, 6): se dibuja desde el Estado -->
+                <div class="co-tarjeta co-para-firmar" id="nd-para-firmar" hidden></div>
+                <input type="file" id="nd-firmada-archivo" accept="application/pdf,.pdf" aria-label="El PDF firmado de la nota" hidden>
                 <!-- Libro de Notas Digitales -->
                 <div class="co-filtros">
                     <select id="filtro-anio" aria-label="Año"><option value="">Todos los años</option></select>
@@ -371,6 +394,16 @@
                         <label class="co-switch" for="envio-activo">
                             <input type="checkbox" id="envio-activo" role="switch" aria-label="Envío automático de Notas Digitales">
                             <span id="envio-activo-texto" class="badge badge-secondary">Desactivado</span>
+                        </label>
+                    </div>
+                    <div class="co-envio">
+                        <div>
+                            <h2>Firma digital de las notas</h2>
+                            <p class="co-ayuda">Cuando está activada, a las 8:05 las notas le llegan a quien firma y esperan hasta las 14:00. Las que no se suban firmadas salen con la imagen de la firma.</p>
+                        </div>
+                        <label class="co-switch" for="firma-activa">
+                            <input type="checkbox" id="firma-activa" role="switch" aria-label="Firma digital de las notas">
+                            <span id="firma-activa-texto" class="badge badge-secondary">Desactivada</span>
                         </label>
                     </div>
                     <div class="co-lineas">
@@ -530,6 +563,25 @@
                 </div>
             </div>
 
+            <!-- Modal: mirar una nota para firmar, o leer el PDF firmado antes de guardarlo (spec 2026-11-03-notas-firma-digital, 4.5) -->
+            <div class="modal-overlay" id="modal-firmada">
+                <div class="modal nd-modal" role="dialog" aria-modal="true" aria-labelledby="modal-firmada-titulo">
+                    <div class="modal-header">
+                        <h3 class="modal-title" id="modal-firmada-titulo">Nota</h3>
+                        <button type="button" class="modal-close" id="modal-firmada-cerrar" aria-label="Cerrar">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p id="modal-firmada-texto" class="test-hint"></p>
+                        <!-- Sin sandbox: el visor de PDF del navegador no abre adentro de un iframe aislado. Solo muestra un blob: de tipo PDF -->
+                        <iframe id="modal-firmada-marco" class="nd-marco" title="La nota"></iframe>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="co-btn" id="modal-firmada-secundario">Cerrar</button>
+                        <button type="button" class="co-btn primario" id="modal-firmada-principal">Confirmar</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Modal: confirmación (en lugar del cuadro del navegador) -->
             <div class="modal-overlay" id="modal-confirmar">
                 <div class="modal co-confirmar" role="alertdialog" aria-modal="true" aria-labelledby="modal-confirmar-titulo" aria-describedby="modal-confirmar-texto">
@@ -590,6 +642,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/correos.js?v=20261212"></script>
+    <script src="js/correos.js?v=20261213"></script>
 </body>
 </html>
