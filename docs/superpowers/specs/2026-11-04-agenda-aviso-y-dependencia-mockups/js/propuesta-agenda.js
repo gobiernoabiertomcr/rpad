@@ -7,7 +7,14 @@
   if (variante === 'B') document.getElementById('ev-tipo-rotulo').textContent = '¿Quién lo ve?';
 
   document.getElementById('ev-guardar').addEventListener('click', (e) => {
-    if (tipos.querySelector('[aria-pressed="true"]')) return;
+    const elegido = tipos.querySelector('[aria-pressed="true"]');
+    if (elegido?.dataset.tipo === 'laboral') {
+      const caja = document.getElementById('ev-personas');
+      const conTodos = caja.querySelector('[data-persona="todos"][aria-pressed="true"]') !== null;
+      const cuantas = conTodos ? M.PERSONAS.length - 1 : caja.querySelectorAll('[data-persona][aria-pressed="true"]').length;
+      if (cuantas >= 5 && !confirm(`Les va a llegar un mail a ${cuantas} personas. ¿Guardar?`)) { e.stopImmediatePropagation(); e.preventDefault(); return; }
+    }
+    if (elegido) return;
     e.stopImmediatePropagation();
     e.preventDefault();
     const error = document.getElementById('ev-tipo-error');
@@ -42,28 +49,20 @@
   });
 
   const panel = M.panel('agenda', `
-    <label>Aviso de «Yo y quienes elija»
-      <select id="mq-frase"><option value="1">1. Cada cosa en su lugar</option><option value="2">2. Dos renglones arriba</option><option value="3">3. Dos tarjetas</option><option value="4">4. Resumen antes de Guardar</option></select></label>
+    <label>Hora en la maqueta (hoy es 04/11)
+      <select id="mq-hora"><option value="10:30">10:30, antes de las 14:00</option><option value="15:00">15:00, después de las 14:00</option></select></label>
     <label>Quién carga
       <select id="mq-rol"><option value="editor">Editor (dos personas arriba)</option><option value="lector">Lector (una persona arriba)</option></select></label>
     <a href="#" id="mq-reiniciar">Volver a los eventos de ejemplo</a>`);
   const grupo = document.getElementById('ev-grupo-tipo');
   grupo.dataset.forma = '4';
-  panel.querySelector('#mq-frase').value = M.leer('mq-frase', '1');
+  panel.querySelector('#mq-hora').value = M.leer('mq-hora', '10:30');
   panel.querySelector('#mq-rol').value = rol;
-  panel.querySelector('#mq-frase').addEventListener('change', (e) => {
-    M.guardar('mq-frase', e.target.value);
+  const refrescar = () => {
     if (tipos.querySelector('[aria-pressed="true"]')?.dataset.tipo === 'publico') window.MQ.adornarFrase(document.getElementById('ev-tipo-ayuda'), 'publico');
-  });
-  // El resumen, sobre los botones del pie, y lo que cambia con las personas elegidas
-  const pie = document.createElement('div');
-  pie.id = 'mq-pie-resumen';
-  pie.className = 'mq-pie-resumen';
-  pie.hidden = true;
-  document.querySelector('#modal-evento .modal-footer').before(pie);
-  const personas = document.getElementById('ev-personas');
-  window.MQ.vivo = () => M.pintarVivo(document.getElementById('modal-evento'), M.elegidasDe(personas));
-  new MutationObserver(window.MQ.vivo).observe(personas, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-pressed'] });
+  };
+  panel.querySelector('#mq-hora').addEventListener('change', (e) => { M.guardar('mq-hora', e.target.value); refrescar(); });
+  document.getElementById('ev-fecha').addEventListener('input', refrescar);
   panel.querySelector('#mq-rol').addEventListener('change', (e) => { M.guardar('mq-rol', e.target.value); location.reload(); });
   panel.querySelector('#mq-reiniciar').addEventListener('click', (e) => { e.preventDefault(); sessionStorage.removeItem('mq-eventos'); location.reload(); });
   if (!location.hash) location.hash = '#agenda';

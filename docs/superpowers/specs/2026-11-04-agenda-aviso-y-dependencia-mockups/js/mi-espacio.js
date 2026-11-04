@@ -6504,6 +6504,7 @@ function alTocarUnTipo(evento) {
   const tipo = boton.getAttribute('data-tipo');
   if (!TIPOS_DE_EVENTO.includes(tipo) || tipo === formulario.valores.tipo) return;
   formulario.valores = valoresConElTipo(formulario.valores, tipo, formulario.original);
+  if (tipo === 'publico' && !formulario.item && formulario.valores.para_todos !== true && formulario.valores.personas.length === 0) formulario.valores.personas = [...window.MQ.jefes];
   for (const id of ['ev-tipos', 'ev-textos', 'ev-otro', 'ev-personas']) ponerError(id, null);
   if (tipo === 'publico') {
     pedirLasPersonas(formulario, 'publico');

@@ -23,12 +23,11 @@
     frase: (tipo) => FRASES[tipo],
     iconos: window.MAQUETA.ICONOS,
     administracion: [1, 3],
+    jefes: rol === 'editor' ? [1, 3] : [3],
     // La frase, y en «Yo y quienes elija», el mail y la agenda bien separados (window.MAQUETA.piezas, según la opción del panel)
     adornarFrase(nodo, tipo) {
       const legend = document.querySelector('#ev-grupo-personas legend');
       legend.childNodes[0].nodeValue = 'Con quién ';
-      const pie = document.getElementById('mq-pie-resumen');
-      if (pie) pie.hidden = true;
       nodo.classList.toggle('mq-frase-apagada', !['privado', 'publico', 'laboral'].includes(tipo));
       if (!['privado', 'publico', 'laboral'].includes(tipo) || nodo.hidden) return;
       if (tipo !== 'publico') {
@@ -36,12 +35,10 @@
         return;
       }
       const jefes = rol === 'editor' ? [['FR', 'Federico'], ['GP', 'Graciela']] : [['GP', 'Graciela']];
-      const piezas = M.piezas(M.leer('mq-frase', '1'), jefes);
+      const piezas = M.piezas(jefes, M.cuandoDelAviso(document.getElementById('ev-fecha').value, HOY, M.leer('mq-hora', '10:30')));
       nodo.innerHTML = piezas.arriba;
       legend.childNodes[0].nodeValue = `${piezas.rotulo} `;
       document.getElementById('ev-personas-ayuda').innerHTML = piezas.ayuda;
-      if (pie) { pie.innerHTML = piezas.pie; pie.hidden = piezas.pie === ''; }
-      window.MQ.vivo?.();
     },
     opciones: variante === 'B' ? Object.freeze({
       privado: Object.freeze({ nombre: 'Solo yo', ayuda: 'Nadie más lo ve' }),
@@ -103,7 +100,7 @@
       }
       if (ruta === '/mi-espacio/eventos/aviso') return M.respuesta(200, { success: true, data: { texto: '' } });
       if (ruta.startsWith('/mi-espacio/ausentes')) return M.respuesta(200, { success: true, data: { puede_ver: true, ausentes: [] } });
-      if (ruta === '/mi-espacio/personas/publico') return M.respuesta(200, { success: true, data: M.PERSONAS.filter((p) => p.id !== 2).map((p) => ({ id: p.id, nombre: p.nombre_completo })) });
+      if (ruta === '/mi-espacio/personas/publico') return M.respuesta(200, { success: true, data: [...M.PERSONAS.filter((p) => window.MQ.jefes.includes(p.id)), ...M.PERSONAS.filter((p) => p.id !== 2 && !window.MQ.jefes.includes(p.id))].map((p) => ({ id: p.id, nombre: p.nombre_completo })) });
       if (ruta === '/mi-espacio/personas') return M.respuesta(200, { success: true, data: M.PERSONAS.filter((p) => p.id !== 2).map((p) => ({ id: p.id, nombre: p.nombre_completo })) });
       if (ruta.startsWith('/usuarios/licencias/sin-auditor')) return M.respuesta(200, { success: true, data: { periodos: [] } });
       return M.respuesta(200, { success: true, data: null });
