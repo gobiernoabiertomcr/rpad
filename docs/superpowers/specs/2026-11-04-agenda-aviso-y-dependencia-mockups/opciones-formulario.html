@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Opciones del formulario - Maqueta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css"><link rel="stylesheet" href="css/mi-espacio-estilos.css"><link rel="stylesheet" href="css/propuesta.css">
+<style>body { background: var(--gray-100); }</style></head>
+<body><main class="mq-opciones-pagina">
+<h1>¿Quién lo ve? Cuatro opciones</h1>
+<p>En todas, nada viene marcado y los íconos son los mismos de la grilla de la agenda: candado, ojo y personas. Tocá cada opción para ver la frase.</p>
+<div class="mq-cuadricula">
+<article class="mq-carta">
+  <h2>1. Tarjetas con ícono</h2><p>Lo más parecido a hoy, con ícono y ayuda en cada tarjeta. Se lee todo antes de elegir.</p>
+  <div class="me-grupo" data-forma="1" role="group" aria-labelledby="rot-1">
+    <span class="form-label" id="rot-1">¿Quién lo ve?</span>
+    <div class="me-opciones tres"></div>
+    <p class="mq-frase apagada"></p>
+  </div>
+  <div class="form-group"><label class="form-label" for="que-1">Qué</label><input type="text" class="form-input" id="que-1" autocomplete="off"></div>
+  <a class="mq-probar" href="mi-espacio.html#agenda" data-probar="1">Probarla en el formulario real</a>
+</article>
+<article class="mq-carta">
+  <h2>2. Íconos grandes</h2><p>Solo ícono y nombre: se entiende de un vistazo, y lo demás lo dice la frase. Mi recomendación.</p>
+  <div class="me-grupo" data-forma="2" role="group" aria-labelledby="rot-2">
+    <span class="form-label" id="rot-2">¿Quién lo ve?</span>
+    <div class="me-opciones tres"></div>
+    <p class="mq-frase apagada"></p>
+  </div>
+  <div class="form-group"><label class="form-label" for="que-2">Qué</label><input type="text" class="form-input" id="que-2" autocomplete="off"></div>
+  <a class="mq-probar" href="mi-espacio.html#agenda" data-probar="2">Probarla en el formulario real</a>
+</article>
+<article class="mq-carta">
+  <h2>3. Lista de alcance</h2><p>De lo más cerrado a lo más abierto, una opción por renglón. La más clara y la que más lugar ocupa.</p>
+  <div class="me-grupo" data-forma="3" role="group" aria-labelledby="rot-3">
+    <span class="form-label" id="rot-3">¿Quién lo ve?</span>
+    <div class="me-opciones tres"></div>
+    <p class="mq-frase apagada"></p>
+  </div>
+  <div class="form-group"><label class="form-label" for="que-3">Qué</label><input type="text" class="form-input" id="que-3" autocomplete="off"></div>
+  <a class="mq-probar" href="mi-espacio.html#agenda" data-probar="3">Probarla en el formulario real</a>
+</article>
+<article class="mq-carta">
+  <h2>4. Barra compacta</h2><p>Una sola pieza, la que menos lugar ocupa. Es la que menos se nota: se puede pasar de largo.</p>
+  <div class="me-grupo" data-forma="4" role="group" aria-labelledby="rot-4">
+    <span class="form-label" id="rot-4">¿Quién lo ve?</span>
+    <div class="me-opciones tres"></div>
+    <p class="mq-frase apagada"></p>
+  </div>
+  <div class="form-group"><label class="form-label" for="que-4">Qué</label><input type="text" class="form-input" id="que-4" autocomplete="off"></div>
+  <a class="mq-probar" href="mi-espacio.html#agenda" data-probar="4">Probarla en el formulario real</a>
+</article>
+</div></main>
+<script src="js/maqueta-comun.js"></script>
+<script>
+const M = window.MAQUETA;
+const OPCIONES = [['privado', 'Solo yo', 'Nadie más lo ve'], ['publico', 'Yo y quienes elija', 'Ven un texto corto'], ['laboral', 'Laboral', 'Con la administración que elijas']];
+const FRASES = { privado: 'Solo vos lo ves. Nadie más, ni en la agenda ni por mail.',
+  publico: 'Lo ven en su agenda las personas que elijas, solo con el texto corto. A Federico y Graciela, de quienes dependés, les llega ese texto por mail antes del evento, salvo que lo cargues para hoy.',
+  laboral: 'Lo ve la administración que elijas, con todo el detalle.' };
+document.querySelectorAll('.me-grupo').forEach((grupo) => {
+  const caja = grupo.querySelector('.me-opciones');
+  const frase = grupo.querySelector('.mq-frase');
+  caja.innerHTML = OPCIONES.map(([tipo, nombre, ayuda]) => `<button type="button" class="me-opcion" data-tipo="${tipo}" aria-pressed="false"><span class="mq-ico" aria-hidden="true">${M.ICONOS[tipo]}</span><span><b>${nombre}</b><small>${ayuda}</small></span></button>`).join('');
+  frase.textContent = 'Elegí una opción para ver a quién le llega.';
+  caja.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tipo]');
+    if (!b) return;
+    caja.querySelectorAll('[data-tipo]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    frase.textContent = FRASES[b.dataset.tipo];
+    frase.classList.remove('apagada');
+  });
+});
+document.querySelector('.mq-cuadricula').addEventListener('click', (e) => {
+  const a = e.target.closest('[data-probar]');
+  if (a) M.guardar('mq-forma', a.dataset.probar);
+});
+M.panel('opciones');
+</script></body></html>

@@ -13,12 +13,14 @@
 
   const FRASES = {
     privado: 'Solo vos lo ves. Nadie más, ni en la agenda ni por mail.',
-    publico: `Lo ven en su agenda las personas que elijas, solo con el texto corto. A ${JEFES}, de quienes dependés, les llega ese mismo texto por mail a las 14:00 del día hábil anterior o, si lo cargás más tarde, a las 8:05 de ese día. Si lo cargás para hoy, no les llega.`.replace('de quienes dependés, les llega', rol === 'editor' ? 'de quienes dependés, les llega' : 'de quien dependés, le llega'),
+    ninguno: 'Elegí una opción para ver a quién le llega.',
+    publico: `Lo ven en su agenda las personas que elijas, solo con el texto corto. A ${JEFES}, de quienes dependés, les llega ese texto por mail antes del evento, salvo que lo cargues para hoy.`.replace('de quienes dependés, les llega', rol === 'editor' ? 'de quienes dependés, les llega' : 'de quien dependés, le llega'),
     laboral: 'Lo ve la administración que elijas, con todo el detalle.'
   };
   window.MQ = {
     variante,
     frase: (tipo) => FRASES[tipo],
+    iconos: window.MAQUETA.ICONOS,
     opciones: variante === 'B' ? Object.freeze({
       privado: Object.freeze({ nombre: 'Solo yo', ayuda: 'Nadie más lo ve' }),
       publico: Object.freeze({ nombre: 'Yo y quienes elija', ayuda: 'Ven un texto corto' }),

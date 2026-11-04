@@ -42,14 +42,17 @@
   });
 
   const panel = M.panel('agenda', `
-    <label>Texto del formulario
-      <select id="mq-variante"><option value="A">A: nombres actuales («Tipo de evento»)</option><option value="B">B: «¿Quién lo ve?»</option></select></label>
+    <label>Diseño del selector
+      <select id="mq-forma"><option value="1">1. Tarjetas con ícono</option><option value="2">2. Íconos grandes</option><option value="3">3. Lista de alcance</option><option value="4">4. Barra compacta</option></select></label>
     <label>Quién carga
       <select id="mq-rol"><option value="editor">Editor (dos personas arriba)</option><option value="lector">Lector (una persona arriba)</option></select></label>
     <a href="#" id="mq-reiniciar">Volver a los eventos de ejemplo</a>`);
-  panel.querySelector('#mq-variante').value = variante;
+  const grupo = document.getElementById('ev-grupo-tipo');
+  const forma = M.leer('mq-forma', '2');
+  grupo.dataset.forma = forma;
+  panel.querySelector('#mq-forma').value = forma;
   panel.querySelector('#mq-rol').value = rol;
-  panel.querySelector('#mq-variante').addEventListener('change', (e) => { M.guardar('mq-variante', e.target.value); location.reload(); });
+  panel.querySelector('#mq-forma').addEventListener('change', (e) => { M.guardar('mq-forma', e.target.value); grupo.dataset.forma = e.target.value; });
   panel.querySelector('#mq-rol').addEventListener('change', (e) => { M.guardar('mq-rol', e.target.value); location.reload(); });
   panel.querySelector('#mq-reiniciar').addEventListener('click', (e) => { e.preventDefault(); sessionStorage.removeItem('mq-eventos'); location.reload(); });
   if (!location.hash) location.hash = '#agenda';

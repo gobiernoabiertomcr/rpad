@@ -3103,7 +3103,7 @@ function htmlDeTiposDeEvento(valores, { puedeCompartir = false } = {}) {
     const { nombre, ayuda } = OPCIONES_DEL_TIPO[tipo];
     const deshabilitado = tipo === 'laboral' && puedeCompartir !== true ? ' disabled' : '';
     return `<button type="button" class="me-opcion" data-tipo="${tipo}" aria-pressed="${String(datos.tipo === tipo)}"${deshabilitado}>`
-      + `<span><b>${esc(nombre)}</b><small>${esc(ayuda)}</small></span></button>`;
+      + `<span class="mq-ico" aria-hidden="true">${window.MQ.iconos[tipo]}</span><span><b>${esc(nombre)}</b><small>${esc(ayuda)}</small></span></button>`;
   }).join('');
 }
 
@@ -3160,7 +3160,7 @@ function ayudasDelEvento(valores, { puedeCompartir = false } = {}) {
   if (tipo === 'laboral' && puedeCompartir === true) {
     return { tipo: window.MQ.frase('laboral'), personas: AYUDA_DE_LAS_PERSONAS_DEL_LABORAL, recordatorio: AYUDA_DEL_RECORDATORIO_COMPARTIDO };
   }
-  return { tipo: tipo === 'laboral' ? MENSAJE_LABORAL_SIN_PERMISO : (tipo === 'privado' ? window.MQ.frase('privado') : ''), personas: '', recordatorio: '' };
+  return { tipo: tipo === 'laboral' ? MENSAJE_LABORAL_SIN_PERMISO : (tipo === 'privado' ? window.MQ.frase('privado') : window.MQ.frase('ninguno')), personas: '', recordatorio: '' };
 }
 
 // Los recordatorios, en el orden de RECORDATORIOS, con el elegido (uno que no es de la lista, el de entrada)
