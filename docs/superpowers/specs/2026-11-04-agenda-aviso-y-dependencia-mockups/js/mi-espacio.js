@@ -1,0 +1,6717 @@
+/**
+ * Mi espacio - RPAD (spec 2026-10-26-mi-espacio-licencias-y-horas, secciones 8 y 11)
+ * El panel personal de cada usuario: sus licencias, sus horas extras, lo que le queda y su agenda, en cuatro pestañas que viajan en
+ * la dirección (#resumen, #licencias, #horas y #agenda). Lo que se carga acá lo ve solo su dueño, salvo los eventos que comparte. Los
+ * números y los textos los arma el servidor (GET /api/mi-espacio/resumen, /mi-espacio/licencias?anio=, /mi-espacio/horas-extras?anio=
+ * y /mi-espacio/eventos?desde=&hasta=, con services/miEspacioResumen.js y services/miEspacioEventosReglas.js) y la página los imprime
+ * tal cual: no recalcula nada (Ruling 19). Sin la modalidad cargada, las tres primeras pestañas muestran el mensaje del servidor y no
+ * dejan cargar nada; la agenda se ve igual (decisión del usuario, 27/10/2026).
+ * - Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen): los faltantes en un aviso ámbar; la banda celeste, con la frase («Te
+ *   quedan 33 días de vacaciones», con el día y la modalidad arriba y la bajada debajo), «Vence pronto» (cada cosa como una entrada
+ *   amarilla con su talón, su línea y el botón que la resuelve) y la regla (los días por licencia, un tramo por capa, con su lista);
+ *   «El resto de 2026» (un número con su línea por saldo, cada uno un link a su pestaña, los francos o las horas a favor mes por mes
+ *   y la médica extraordinaria); y «Hoy y mañana» en columnas (los eventos de hoy y de mañana, quién no está —solo para
+ *   administración— y el próximo feriado). La pestaña lleva una marca ámbar si algo vence pronto.
+ * - Licencias: la lista del año, con el selector del año y los filtros por tipo (con su cantidad); al final, el saldo inicial con
+ *   «Cambiar». Lo anterior al saldo inicial y lo que no corresponde a la modalidad actual se ven en gris, con su motivo. Cada
+ *   licencia, menos el uso autorizado, tiene «Word» al lado de «Editar» (spec 2026-10-27-mi-espacio-licencia-word, 6): la nota de
+ *   licencia, de GET /mi-espacio/licencias/:id/word con un fetch propio (el token en el encabezado; API.pedirArchivo no da los
+ *   encabezados), con el nombre del Content-Disposition (nombreDelAdjunto) y bajada con descargarBlob (bajarWordDeLicencia).
+ * - Horas extras: la tabla por mes (en planta, los francos; en contrato, las horas a favor, con lo mismo en días de franco debajo)
+ *   y el día por día de un mes (cada mes de la tabla es un botón; de entrada, el en curso; en contrato, las salidas de la planilla,
+ *   cada una con «Editar», data-editar-salida) y, en contrato, las horas no utilizadas previamente. La planilla de contrato (spec
+ *   2026-10-27-mi-espacio-horas, secciones 4 y 9): lo puro arma las semanas y las filas de un mes con los cambios de la página
+ *   encima, la banda, el pie, «Sumar el día», los errores y el cuerpo de PUT /mi-espacio/salidas; la página (#modal-planilla, que
+ *   abren en contrato «Cargar horas extras» y «Editar» del día por día; en planta, todo sigue con #modal-horas) pide cada mes una
+ *   vez por apertura (GET /mi-espacio/salidas?mes=; el en curso, sin él), actualiza la fila, la semana, la banda y el pie mientras
+ *   se escribe (sin volver a dibujar la fila), guarda los días cambiados de todos los meses juntos (con un fetch propio:
+ *   API.pedirJson no da los errores de cada día; mientras tanto, la planilla no acepta cambios) y, al cerrar con cambios, pregunta
+ *   en la confirmación de la página. Con «Sumar a {mes anterior}» (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4), el
+ *   tilde de cada día es un cambio más (su casilla, sin volver a dibujar la fila), la banda suma lo que entra del mes siguiente y
+ *   dice en su segunda línea lo que se mueve entre meses, los dos meses se miran a la vez con lo que no se guardó, y «Ver en febrero»
+ *   del bloque del mes siguiente abre ese mes con el foco en el tilde del día.
+ * - Agenda (spec 2026-10-26-mi-espacio-agenda, 6): el mes de lunes a domingo, con «‹», «›», «Hoy» y hasta 3 cosas por día («y N
+ *   más» muestra el resto), en sus colores (lo tuyo, lo compartido, tus licencias y francos, los feriados y los compañeros que no
+ *   están) con su leyenda, y al costado los próximos 30 días (Hoy, Mañana, Esta semana y Más adelante). El mes no va en la
+ *   dirección. «Hoy y mañana» del Resumen suma los eventos de hoy y de mañana. Un evento propio (de la grilla o de los próximos) abre
+ *   su formulario; uno de otra persona, su detalle con «Mi recordatorio» (que se guarda al elegirlo); los dos «Nuevo evento», el
+ *   formulario vacío (hoy y «2 horas antes»), también sin modalidad. Desde el evento Personal (Público) (spec
+ *   2026-10-29-mi-espacio-evento-publico, 4), «Tipo de evento», para todos los roles: Personal (Privado), que no ve nadie más;
+ *   Personal (Público), que ven quienes se elijan («Todos» o las personas de GET /mi-espacio/personas/publico, todos los usuarios
+ *   activos, pedidas una vez) solo con el nombre corto de quien lo carga y un texto de la lista u «Otro», con su vista previa; y
+ *   Laboral, el compartido con la administración («Toda la administración» o las personas de GET /mi-espacio/personas, pedidas una
+ *   vez), solo de administración (Auth.isAdmin(), el true literal: un Laboral de quien ya no lo es se ve elegido y deshabilitado,
+ *   y hay que elegir otro tipo). Cuándo sale el recordatorio lo dice el servidor (GET /mi-espacio/eventos/aviso, 300 ms después
+ *   del último cambio; una respuesta vieja se descarta).
+ * Los formularios (secciones 4, 6 y 8; maqueta 2), modales que un clic en el velo no cierra: «Cargar licencia» (los tipos de la
+ * modalidad con lo que queda de cada uno, el cálculo del servidor 300 ms después del último cambio, «Mostrar a mis compañeros»,
+ * el aviso del paso a Configuración, la persona a cargo del firmante en sus vacaciones y los días sin auditor), «Cargar horas
+ * extras» (con lo que suman en el mes; en contrato, la planilla del mes), «Mis vacaciones y saldos» (se abre solo sin el saldo
+ * inicial), «Registrar un uso autorizado» y la confirmación de un borrado (o de salir de la planilla con cambios), que se abre sobre
+ * el formulario. Los abren los botones del encabezado y los data-* de las pestañas (data-cargar, data-abrir, data-editar-licencia,
+ * data-editar-horas, data-editar-salida y, en «Vence pronto», data-accion con su data-tipo). Al guardar una licencia (no un uso
+ * autorizado), «Cargar licencia» no se cierra: pasa al segundo paso (spec
+ * 2026-10-27-mi-espacio-licencia-word, 6; la versión C de la maqueta), con la licencia guardada, la nota a la vista (GET
+ * /mi-espacio/licencias/:id/nota, la hoja armada y escapada por el servidor, que va tal cual), «Listo» y «Descargar Word»; lo
+ * guardado se anuncia en #me-anuncio, sin aviso flotante, y al cerrar el foco va adonde va después de cualquier guardado.
+ * Una licencia de otro año (spec 2026-10-28-mi-espacio-licencia-anulada, 2.2, 2.3 y 3.5): al guardar una licencia o un uso
+ * autorizado, la lista de Licencias pasa al año de su `desde` (pagina.anioDeLicencias: enseguida si la pestaña se ve; si no, la
+ * próxima vez que se abra; el año en curso, sin ?anio=) y el segundo paso dice en qué lista quedó (`lista` de GET …/nota); la lista
+ * de un año dice las de otros años que todavía no terminaron (`otros_anios`, con «Ver AAAA», el data-anio del selector); y en el
+ * Resumen, la oración de lo cargado de la bajada (con su `anio`) y cada aviso para revisar (`para_revisar`, lo que en Configuración
+ * quedó distinto, con los faltantes pero sin ser uno) son links a Licencias de su año (irALicencias, con data-anio-licencias).
+ * Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9): el aviso de cada grupo por restituir entre la banda y «El
+ * resto» (htmlDeRestituciones), su entrada en «Vence pronto» y la línea de cada grupo debajo de la fila de su carga, todos con el
+ * botón que lo resuelve (data-accion y data-grupo: «Cargar licencia» con «Días restituidos», una opción por grupo y sin el «Hasta»,
+ * que lo pone el servidor, o «Pedir la restitución», con su modal y su segundo paso); un pedido del caso B, con «Word» y «Borrar el
+ * pedido» en su línea y en su «Revisá…» de arriba del Resumen.
+ * Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad: los mensajes y
+ * las constantes de services/miEspacioReglas.js (también TIPOS_CON_PERSONA_A_CARGO y dejaPersonaACargo), horasDelHorario (horasDe), en la planilla horasDelDiaDeLaPlanilla (horasDeLaSalida,
+ * con el tipo del día que manda el servidor), enDiasDeFranco, textoDeLaSumaDelMes, textoDeLoQueSeMueve (la segunda línea de la
+ * banda, con lo que se tilda «Sumar a {mes anterior}»; con mesMas) y erroresDeLaPlanilla (los pasos 3 a 7 de
+ * validarSalida), camposConLoElegido (camposDelSaldoInicial, con la ayuda de textoSaldoDelArranque), las de
+ * Configuración (efectoEnNotas, textoSinAuditor, textoAusenciasAutorizado y parametrosSinAuditor, de usuarios.js) y, en la agenda,
+ * DIAS_DE_PROXIMOS (services/miEspacioEventosReglas.js), diaLargoDe (diaLargo) y tituloDelMes (mesTitulo, los dos de
+ * services/miEspacioResumen.js), y en el evento, las de services/miEspacioEventosReglas.js: MENSAJES_EVENTO, LARGO_TITULO_EVENTO,
+ * LARGO_DETALLE_EVENTO, FECHA_MINIMA_EVENTO, fechaMaximaEvento, textoRangoDelEvento (textoRangoEvento), RECORDATORIOS,
+ * RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, TIPOS_DE_EVENTO, TEXTOS_PUBLICOS, LARGO_TEXTO_PUBLICO, erroresDelEvento
+ * (validarEvento, en sus bordes, también el tipo, lo que ven los demás y las personas de un Público), cuandoDelEventoDe
+ * (cuandoDelEvento) e iniciales (inicialesDe), e idDeLaPersona (idPositivo de services/proyectosReglas.js). La agenda no recalcula
+ * días hábiles ni textos: los días que pinta una licencia o un compañero, el aviso, quién está y «Hasta el …» los manda el
+ * servidor; acá solo se cuentan los días de la grilla, con Date.UTC.
+ * Al cargarse el archivo solo declara (tests/mi-espacio-frontend.test.js lo carga en un vm después del api.js de verdad): lo que
+ * arma HTML es puro y va primero; lo que toca el DOM o la API va aparte, al final (iniciarMiEspacio, enganchado a
+ * DOMContentLoaded), con los eventos delegados en contenedores fijos: volver a dibujar no engancha nada, y el foco vuelve al control
+ * que se usó (en la agenda, al del mismo lugar —la grilla o los próximos—, saltando los ocultos). Pide los datos con
+ * API.pedirJson. Todo texto del servidor pasa por Utils.escapeHtml (también en los aria-label) y un número se escribe con String
+ * (Utils.escapeHtml(0) da ''); lo que va con textContent (los títulos de los modales, la confirmación), tal cual. Lo que cambia se anuncia en #me-anuncio, la única región viva de la página (en cada modal, su error sin
+ * campo es role="alert"); lo que dice el servidor al guardar o borrar (salvo al guardar una licencia: lo dice el segundo paso), y
+ * un formulario que no se pudo abrir, se ve además en un aviso (avisarMiEspacio: el showToast de main.js, como en Áreas, Feriados
+ * y Proyectos).
+ */
+
+// =====================================================
+// Constantes
+// =====================================================
+
+// Las pestañas, en su orden: el fragmento de la dirección. Uno desconocido, o ninguno, abre el Resumen
+const PESTANAS = Object.freeze(['resumen', 'licencias', 'horas', 'agenda']);
+
+// Copia de MENSAJES_MI_ESPACIO.sinArranque (services/miEspacioReglas.js), atada por un test de paridad
+const TEXTO_SIN_ARRANQUE = 'Para empezar, completá «Mis vacaciones y saldos».';
+
+// El color de la insignia de cada tipo de licencia (los días restituidos, azules como las vacaciones: spec
+// 2026-10-31-mi-espacio-dias-restituidos, 17.1)
+const CLASE_DEL_TIPO = Object.freeze({
+  vacaciones: 'azul', franquicia: 'violeta', estudios: 'ambar', medica: 'rojo', medica_extraordinaria: 'rojo', familiar: 'azul',
+  franco: 'verde', horas_a_favor: 'verde', uso_autorizado: 'gris', restituidos: 'azul'
+});
+// El color de la situación de un mes de horas extras (el `estado` que manda el servidor): todavía suma, se habilita, para usar o
+// usado. Lo que ya no se usa (no genera franco, no utilizado previamente, ya está en el saldo inicial) va en gris, sin insignia. Un
+// mes de contrato que terminó sin horas ni usos (todas sus horas suman al anterior, o dan 0: «Sin horas a favor», `sin_horas`; spec
+// 2026-10-30-mi-espacio-horas-mes-anterior, sección 5) va en gris y con la insignia gris, como el que todavía suma
+const CLASE_DE_LA_SITUACION = Object.freeze({
+  sumando: 'gris', proximo: 'azul', en_uso: 'ambar', usados: 'verde', usadas: 'verde', sin_horas: 'gris'
+});
+const SITUACIONES_EN_GRIS = Object.freeze(['sin_franco', 'no_utilizado', 'no_utilizadas', 'antes_del_arranque', 'sin_horas']);
+
+// La nota de licencia en Word (spec 2026-10-27-mi-espacio-licencia-word, 6): el nombre del archivo si la respuesta no trae
+// Content-Disposition, y lo que se dice si la descarga falla sin un mensaje del servidor
+const NOMBRE_DEL_WORD_POR_DEFECTO = 'Nota de licencia.docx';
+// …y el de la nota de un pedido de restitución (spec 2026-10-31-mi-espacio-dias-restituidos, 12)
+const NOMBRE_DEL_WORD_DE_RESTITUCION = 'Nota de restitución.docx';
+const MENSAJE_SIN_DESCARGA = 'No se pudo descargar la nota. Probá de nuevo en unos minutos.';
+
+const NOTA_DE_LAS_LICENCIAS = 'Los días se cuentan hábiles: sin sábados, domingos ni feriados.';
+const NOTA_DE_LOS_FRANCOS = 'Solo las horas extras al 100%. Cada 7 horas de un mes dan un franco compensatorio, que se usa dos meses '
+  + 'después, en ese mes.';
+const NOTA_DE_LAS_HORAS_A_FAVOR = 'Cada hora extra de un mes es una hora menos de trabajo el mes siguiente, de a media hora. 7 horas '
+  + 'son el día entero.';
+// El título y la nota de la tarjeta de contrato de una respuesta de antes, sin los suyos (desde las horas acumuladas, los manda el
+// servidor)
+const TITULO_DE_LAS_NO_UTILIZADAS = 'Horas no utilizadas previamente';
+const NOTA_DE_LAS_NO_UTILIZADAS = 'Quedan a la vista aunque su mes ya pasó. Vuelven a cero el 1/1.';
+
+// El Resumen «Titular»: la clase de cada capa del tanque de vacaciones, en un tramo de la regla y en su muestra (la `clase` del
+// servidor; una desconocida, en tinta), y la de cada mes de los francos o de las horas a favor (el `estado`; el disponible, sin
+// clase)
+const CLASE_DE_LA_CAPA = Object.freeze({
+  vence: 'vence', tinta: 'tinta', medio: 'medio', cargadas: 'cargadas', por_habilitar: 'por_habilitar'
+});
+const CLASE_DE_LA_PASTILLA = Object.freeze({ vence: 'vence', pendiente: 'pendiente' });
+// El movimiento del Resumen (spec 2026-10-27-mi-espacio-resumen, 3), en milisegundos: los tramos de la regla empiezan a los 250 y
+// duran en total unos 1300, cada uno max(160, n / capacidad × 1300), uno detrás del otro; las líneas del resto, a los 900 y 90
+// más por línea, de 700 cada una. Se escriben en el style de cada tramo y de cada línea (--demora y --duracion; la duración de
+// las líneas, en el <style>), y con los mismos tiempos suben los números (animarLaBanda)
+const DEMORA_DE_LA_REGLA = 250;
+const DURACION_DE_LA_REGLA = 1300;
+const TRAMO_MINIMO = 160;
+const DEMORA_DEL_RESTO = 900;
+const ENTRE_LINEAS = 90;
+const DURACION_DE_LA_LINEA = 700;
+// La ola de abajo de la banda: el dibujo de las páginas públicas, en el celeste de la banda (currentColor), que cae sobre el fondo
+// de la página. Decorativa
+const OLA_DE_LA_BANDA = '<svg class="me-ola" viewBox="0 0 1200 28" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
+  + '<path d="M0 0 H1200 V14 C 1100 26, 1000 26, 900 14 S 700 2, 600 12 S 400 28, 300 16 S 100 4, 0 18 Z" fill="currentColor"/></svg>';
+const TEXTO_DE_LA_MARCA = 'Hay algo que vence pronto';
+// El nombre de la lista de la regla (la de la maqueta aprobada): la barra es decorativa y la lista dice lo mismo en texto
+const TEXTO_DE_LA_REGLA = 'Tus vacaciones, por licencia';
+
+// =====================================================
+// Lo puro: lo que arma el HTML
+// =====================================================
+
+const esObjeto = (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
+const listaDe = (valor) => (Array.isArray(valor) ? valor.filter(esObjeto) : []);
+// Un texto o un número del servidor, escapado (un número también: Utils.escapeHtml(0) da '')
+const esc = (valor) => Utils.escapeHtml(String(valor ?? ''));
+// El valor de un mapa del servidor, o el de reserva (sin heredar nada de Object.prototype)
+const deMapa = (mapa, clave, reserva) => (esObjeto(mapa) && Object.hasOwn(mapa, clave) ? mapa[clave] : reserva);
+const conTexto = (valor) => typeof valor === 'string' && valor.trim() !== '';
+// Un año del servidor en un título o en un vacío («de 2026», «en 2026»); uno que no es un año, nada
+const delAnio = (anio) => (Number.isInteger(anio) ? ` de ${String(anio)}` : '');
+const enElAnio = (anio) => (Number.isInteger(anio) ? ` en ${String(anio)}` : '');
+
+function pestanaDeHash(hash) {
+  const nombre = String(hash ?? '').replace(/^#/, '');
+  return PESTANAS.includes(nombre) ? nombre : PESTANAS[0];
+}
+
+// El mensaje del servidor en lugar de una pestaña (sin modalidad cargada)
+function htmlDeMensaje(texto) {
+  return `<p class="me-aviso me-aviso-gris">${esc(texto)}</p>`;
+}
+
+// Con la modalidad y sin el saldo inicial: el botón abre «Mis vacaciones y saldos»
+function htmlSinArranque() {
+  return `<div class="me-aviso me-aviso-azul"><p>${esc(TEXTO_SIN_ARRANQUE)}</p>`
+    + '<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" data-abrir="saldos">Mis vacaciones y saldos</button></div>';
+}
+
+// Un error de una carga, en la pestaña
+function htmlDeError(texto) {
+  return `<p class="me-aviso me-aviso-error">${esc(texto)}</p>`;
+}
+
+// ---- El Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen, 2 y 5) ----
+
+// La marca ámbar de la pestaña Resumen cuando algo vence pronto (como la del Estado en Correos: una imagen con su nombre, no un
+// title). Solo con el true literal
+function htmlDeMarca(marca) {
+  return marca === true ? `<span class="me-marca" role="img" aria-label="${TEXTO_DE_LA_MARCA}"></span>` : '';
+}
+
+// El link a la lista de Licencias de un año (el de la bajada y el de un aviso para revisar: spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.3 y 3.5): data-pestana, como los demás links del Resumen, y el año en
+// data-anio-licencias (alTocarResumen, con irALicencias). `clase`, la del link, si lleva una
+const atributosDelLinkALicencias = (anio, clase = '') => `href="#licencias" data-pestana="licencias" data-anio-licencias="${String(anio)}"`
+  + `${clase ? ` class="${clase}"` : ''}`;
+
+/**
+ * «Word» y «Borrar el pedido» de un pedido de restitución (el caso B: spec 2026-10-31-mi-espacio-dias-restituidos, 9), en la línea
+ * de su fila y en el «Revisá…» de arriba del Resumen: `restitucionId`, el id del pedido (un entero: si no, nada); `puedeBorrar`, solo
+ * el true literal (hasta el plazo); `anio`, la licencia a la que volvieron los días, que dicen sus aria-label («Descargar en Word la
+ * nota de la restitución a la licencia 2025», «Borrar el pedido de restitución a la licencia 2025»; sin un año entero, sin él); y
+ * `describe`, el id del texto de su línea o de su «Revisá…», que los describe (aria-describedby: dos pedidos de la misma licencia
+ * tienen botones con el mismo nombre). Los botones, uno después del otro, con `entre` entre los dos y antes del primero (en el
+ * «Revisá…», un espacio, como el link)
+ */
+const botonesDelPedido = ({ restitucionId, puedeBorrar, anio, describe = null }, entre = '') => {
+  if (!Number.isInteger(restitucionId)) return '';
+  const id = String(restitucionId);
+  const aLaLicencia = Number.isInteger(anio) ? ` a la licencia ${String(anio)}` : '';
+  const descripcion = describe === null ? '' : ` aria-describedby="${describe}"`;
+  const word = `<button type="button" class="sg-link" data-word-restitucion="${id}" `
+    + `aria-label="Descargar en Word la nota de la restitución${aLaLicencia}"${descripcion}>Word</button>`;
+  const borrar = puedeBorrar === true ? `${entre}<button type="button" class="sg-link me-link-rojo" data-borrar-restitucion="${id}" `
+    + `aria-label="Borrar el pedido de restitución${aLaLicencia}"${descripcion}>Borrar el pedido</button>` : '';
+  return `${entre}${word}${borrar}`;
+};
+
+/**
+ * Los faltantes (lo guardado que dejó de cerrar), con su texto neutro, en un aviso ámbar arriba de todo, y después lo que hay que
+ * revisar (`paraRevisar`, el `para_revisar` del Resumen, `[{ licencia_id, anio, texto, enlace }]`: lo que en Configuración quedó
+ * distinto; va con los faltantes, pero no es uno: spec 2026-10-28-mi-espacio-licencia-anulada, 2.2), cada uno con su texto y el link
+ * a Licencias de su año («Ver en Licencias de 2027»; con un año que no es un entero, o sin el texto del link, solo el texto). Un solo
+ * faltante, sin nada para revisar, es un párrafo, como siempre; si no, una lista. Sin ninguno de los dos, ''. El «Revisá tus días
+ * restituidos…» de un pedido del caso B (spec 2026-10-31-mi-espacio-dias-restituidos, 9; el que trae `restitucion_id`, con
+ * `puede_borrar` y `anio_de_origen`, la licencia a la que volvieron los días: su `anio` es el del link) suma, después del link,
+ * «Word» y, hasta el plazo, «Borrar el pedido» (`botonesDelPedido`, descriptos por su texto, que va en un <span> con id): si sus
+ * vacaciones ya no están, tampoco su fila, y se resuelve desde acá
+ */
+function htmlDeFaltantes(faltantes, paraRevisar) {
+  const textos = (Array.isArray(faltantes) ? faltantes : []).filter(conTexto);
+  const revisar = listaDe(paraRevisar).filter((aviso) => conTexto(aviso.texto)).map((aviso, i) => {
+    const link = Number.isInteger(aviso.anio) && conTexto(aviso.enlace)
+      ? ` <a ${atributosDelLinkALicencias(aviso.anio)}>${esc(aviso.enlace)}</a>` : '';
+    if (!Number.isInteger(aviso.restitucion_id)) return `<li>${esc(aviso.texto)}${link}</li>`;
+    const describe = `me-restituir-revisar-${String(i)}`;
+    const delPedido = botonesDelPedido(
+      { restitucionId: aviso.restitucion_id, puedeBorrar: aviso.puede_borrar, anio: aviso.anio_de_origen, describe }, ' ');
+    return `<li><span id="${describe}">${esc(aviso.texto)}</span>${link}${delPedido}</li>`;
+  });
+  if (textos.length === 0 && revisar.length === 0) return '';
+  if (textos.length === 1 && revisar.length === 0) return `<p class="me-aviso me-aviso-ambar">${esc(textos[0])}</p>`;
+  return `<div class="me-aviso me-aviso-ambar"><ul class="me-faltantes">${textos.map((texto) => `<li>${esc(texto)}</li>`).join('')}`
+    + `${revisar.join('')}</ul></div>`;
+}
+
+// El número de la frase como texto: el del servidor ('33'; uno que es un número, con String). Sin él, ''
+const textoDeLaCifra = (cifra) => {
+  if (typeof cifra === 'number' && Number.isFinite(cifra)) return String(cifra);
+  return conTexto(cifra) ? cifra : '';
+};
+
+/**
+ * La frase de la banda (el `titular` del Resumen: `{ encabezado, antes, cifra, despues, bajada: [{ texto, vence }] }`): arriba, el día
+ * y la modalidad; el título de la pestaña, «Te quedan 33 días de vacaciones», con el número tres veces: el final, invisible, que le
+ * da al número su ancho desde el primer cuadro; el que se ve, encima (el que sube al abrir, data-contar); los dos, decorativos
+ * (aria-hidden); y el oculto a la vista, que un lector de pantalla lee siempre con su valor final. Debajo, la bajada, las oraciones
+ * unidas con un espacio, la que vence en negrita y la que trae un `anio` entero (la de lo cargado, «10 ya están cargados para enero de
+ * 2027.»: spec 2026-10-28-mi-espacio-licencia-anulada, 2.3), un link a Licencias de ese año (.me-frase-link). Sin `cifra` (con 0
+ * días), la frase sin el número; sin oraciones, sin bajada. Sin titular, ''
+ */
+function htmlDeLaFrase(titular) {
+  if (!esObjeto(titular)) return '';
+  const cifra = textoDeLaCifra(titular.cifra);
+  const numero = cifra === '' ? ''
+    : `<span class="me-cifra"><span class="me-cifra-final" aria-hidden="true">${esc(cifra)}</span>`
+      + `<span aria-hidden="true" data-contar>${esc(cifra)}</span><span class="visualmente-oculto">${esc(cifra)}</span></span>`;
+  const frase = [conTexto(titular.antes) ? esc(titular.antes) : '', numero, conTexto(titular.despues) ? esc(titular.despues) : '']
+    .filter((parte) => parte !== '').join(' ');
+  const oraciones = listaDe(titular.bajada).filter((oracion) => conTexto(oracion.texto)).map((oracion) => {
+    const texto = oracion.vence === true ? `<b class="vence">${esc(oracion.texto)}</b>` : esc(oracion.texto);
+    return Number.isInteger(oracion.anio) ? `<a ${atributosDelLinkALicencias(oracion.anio, 'me-frase-link')}>${texto}</a>` : texto;
+  });
+  return '<div class="me-titular">'
+    + `${conTexto(titular.encabezado) ? `<p class="me-banda-dia">${esc(titular.encabezado)}</p>` : ''}`
+    + `<h2 class="me-frase" id="me-frase">${frase}</h2>`
+    + `${oraciones.length > 0 ? `<p class="me-frase-bajada">${oraciones.join(' ')}</p>` : ''}</div>`;
+}
+
+/**
+ * Lo que hace el botón de una acción del servidor (`{ texto, tipo, grupo? }`: la de «Vence pronto», la del aviso de los días por
+ * restituir y la de la línea de su fila), como atributos: abrir «Cargar licencia» con su tipo (data-accion="cargar-licencia" y
+ * data-tipo) o, la del caso B de los días restituidos (`tipo: 'restitucion'`: spec 2026-10-31-mi-espacio-dias-restituidos, 9), abrir
+ * «Pedir la restitución» (data-accion="pedir-restitucion", sin tipo); con un `grupo` (la clave del grupo de días restituidos), también
+ * data-grupo. Una acción de antes (sin grupo) da lo de siempre
+ */
+const atributosDeLaAccion = (accion) => {
+  const grupo = conTexto(accion.grupo) ? ` data-grupo="${esc(accion.grupo)}"` : '';
+  if (accion.tipo === 'restitucion') return `data-accion="pedir-restitucion"${grupo}`;
+  return `data-accion="cargar-licencia" data-tipo="${esc(accion.tipo)}"${grupo}`;
+};
+// El botón de una acción, chico y con borde (el de «Vence pronto», el del aviso y el de la línea de la fila), con `extra` (un
+// atributo más, como el aria-describedby de «Vence pronto») al final. Sin una acción con texto, ''
+const botonDeLaAccion = (accion, extra = '') => (esObjeto(accion) && conTexto(accion.texto)
+  ? `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" ${atributosDeLaAccion(accion)}${extra}>${esc(accion.texto)}</button>`
+  : '');
+
+/**
+ * «Vence pronto» (los `vence_pronto` del Resumen, `{ fecha, dia, mes, titulo, texto, accion, sin_dias_libres? }`), al lado de la
+ * frase: cada cosa es una entrada amarilla con el talón de la fecha (decorativo: la línea ya la dice), el título, su línea («Vence el
+ * viernes 30/10, en 4 días.») y el botón que la resuelve, que abre «Cargar licencia» con su tipo (data-accion y data-tipo) y se
+ * describe con el título; la de un grupo de días por restituir (spec 2026-10-31-mi-espacio-dias-restituidos, 9), con su data-grupo
+ * y, en el caso B, «Pedir la restitución» (`atributosDeLaAccion`). El franco o las horas a favor del mes sin ningún día libre llegan
+ * sin acción (`accion` null) y con por qué en `sin_dias_libres` («No te quedan días libres este mes para usarlo.»: spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.7): sin el botón, que no tendría nombre, y con ese texto en un párrafo. Sin nada, ''
+ */
+function htmlDeVencePronto(lista) {
+  const cosas = listaDe(lista);
+  if (cosas.length === 0) return '';
+  const entradas = cosas.map((cosa, i) => {
+    const boton = botonDeLaAccion(cosa.accion, ` aria-describedby="me-vence-${i}"`);
+    const sinDias = conTexto(cosa.sin_dias_libres) ? `<p class="me-entrada-sin-dias">${esc(cosa.sin_dias_libres)}</p>` : '';
+    return `<li class="me-entrada"><span class="me-talon" aria-hidden="true"><b>${esc(cosa.dia)}</b>${esc(cosa.mes)}</span>`
+      + `<div class="me-entrada-cuerpo"><b id="me-vence-${i}">${esc(cosa.titulo)}</b><span class="me-entrada-texto">${esc(cosa.texto)}</span>`
+      + `${boton}${sinDias}</div></li>`;
+  });
+  return '<aside class="me-vence" aria-labelledby="me-vence-titulo"><h2 id="me-vence-titulo">Vence pronto</h2>'
+    + `<ol class="me-entradas">${entradas.join('')}</ol></aside>`;
+}
+
+// Una cantidad de una capa: un número positivo; lo demás, 0
+const cantidadDeLaCapa = (capa) => (typeof capa.n === 'number' && Number.isFinite(capa.n) && capa.n > 0 ? capa.n : 0);
+
+// Cuándo empieza y cuánto dura cada tramo de la regla, en ms (spec, 3): el primero a los 250 y cada uno max(160, n / capacidad ×
+// 1300), redondeado, y el que sigue empieza donde termina el anterior. Con una capacidad que no es un número positivo, todos en 0
+// (quietos). Recibe las cantidades ya leídas (cantidadDeLaCapa) y devuelve [{ demora, duracion }]
+function tiemposDeLaRegla(cantidades, capacidad) {
+  if (!(typeof capacidad === 'number' && Number.isFinite(capacidad) && capacidad > 0)) return cantidades.map(() => ({ demora: 0, duracion: 0 }));
+  let demora = DEMORA_DE_LA_REGLA;
+  return cantidades.map((n) => {
+    const tiempo = { demora, duracion: Math.round(Math.max(TRAMO_MINIMO, (n / capacidad) * DURACION_DE_LA_REGLA)) };
+    demora += tiempo.duracion;
+    return tiempo;
+  });
+}
+
+/**
+ * La regla (el tanque de vacaciones: `{ capacidad, capas: [{ clase, n, nombre, nota }] }`): la barra, decorativa (la lista de debajo
+ * dice lo mismo en texto), partida en un tramo por capa, cada uno en su columna de n fracciones (minmax(0, nfr): uno de 1 día entre
+ * 40 se ve igual, y su número, si no entra, lo oculta el <style>; el de un solo día lleva además la clase un-dia, y el <style> lo
+ * muestra, más chico si no entra: spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.9), en el color de su clase, con un casillero
+ * por día (--n) y lo que necesita el movimiento (--demora y --duracion); debajo, la lista («Tus vacaciones, por licencia»): cada capa
+ * con su muestra, «Licencia 2024: 3» y su nota, la que vence en ámbar. Una n que no es un número positivo cuenta 0. Sin capas, ''
+ */
+function htmlDeLaRegla(vacaciones) {
+  if (!esObjeto(vacaciones)) return '';
+  const capas = listaDe(vacaciones.capas);
+  if (capas.length === 0) return '';
+  const cantidades = capas.map(cantidadDeLaCapa);
+  const tiempos = tiemposDeLaRegla(cantidades, vacaciones.capacidad);
+  const columnas = cantidades.map((n) => `minmax(0, ${String(n)}fr)`).join(' ');
+  const tramos = capas.map((capa, i) => {
+    const n = String(cantidades[i]);
+    const { demora, duracion } = tiempos[i];
+    return `<span class="me-tramo ${deMapa(CLASE_DE_LA_CAPA, capa.clase, 'tinta')}${cantidades[i] === 1 ? ' un-dia' : ''}" `
+      + `style="--n:${n};--demora:${String(demora)}ms;--duracion:${String(duracion)}ms"><span>${n}</span></span>`;
+  });
+  const lista = capas.map((capa, i) => {
+    const clase = deMapa(CLASE_DE_LA_CAPA, capa.clase, 'tinta');
+    return `<li${clase === 'vence' ? ' class="vence"' : ''}><i class="me-muestra ${clase}" aria-hidden="true"></i>`
+      + `<span><b>${esc(capa.nombre)}: ${String(cantidades[i])}</b>${esc(capa.nota)}</span></li>`;
+  });
+  return `<div class="me-regla"><div class="me-barra" aria-hidden="true" style="grid-template-columns: ${columnas}">${tramos.join('')}</div>`
+    + `<ul class="me-regla-lista" aria-label="${TEXTO_DE_LA_REGLA}">${lista.join('')}</ul></div>`;
+}
+
+/**
+ * La banda celeste, arriba del Resumen: una section que se nombra con la frase; adentro, la frase, «Vence pronto» (a la derecha en la
+ * compu; sin nada por vencer, la frase y la regla a todo el ancho: sin-vence) y la regla, y debajo la ola. Sin la frase o sin los
+ * tanques (sin un hoy válido), o sin el Resumen, ''
+ */
+function htmlDeLaBanda(resumen) {
+  if (!esObjeto(resumen) || !esObjeto(resumen.titular) || !esObjeto(resumen.tanques)) return '';
+  const vence = htmlDeVencePronto(resumen.vence_pronto);
+  return `<section class="me-banda" aria-labelledby="me-frase"><div class="me-banda-cuerpo${vence === '' ? ' sin-vence' : ''}">`
+    + `${htmlDeLaFrase(resumen.titular)}${vence}${htmlDeLaRegla(resumen.tanques.vacaciones)}</div>${OLA_DE_LA_BANDA}</section>`;
+}
+
+// Lo que se llena la línea de un número del resto, en %: valor / total × 100, redondeado a un decimal y entre 0 y 100. Con un total
+// que no es un número positivo, o un valor que no es un número, 0
+const llenoDe = (valor, total) => {
+  if (!(typeof total === 'number' && Number.isFinite(total) && total > 0) || !(typeof valor === 'number' && Number.isFinite(valor))) return 0;
+  return Math.min(100, Math.max(0, Math.round((valor / total) * 1000) / 10));
+};
+
+/**
+ * Los francos compensatorios o las horas a favor, mes por mes, en una línea (las `pastillas` del Resumen): el título y una etiqueta
+ * por mes, «1 Diciembre Octubre sigue sumando», la del mes que vence en amarillo, la que todavía suma punteada y lo no utilizado
+ * previamente en gris. Sin ningún mes ni nada no utilizado, ''
+ */
+function htmlDeLosMeses(pastillas) {
+  if (!esObjeto(pastillas)) return '';
+  const mes = (clase, numero, titulo, nota) => `<span class="me-mes${clase ? ` ${clase}` : ''}"><strong>${esc(numero)}</strong> `
+    + `${esc(titulo)} <span>${esc(nota)}</span></span>`;
+  const meses = listaDe(pastillas.meses).map((uno) => mes(deMapa(CLASE_DE_LA_PASTILLA, uno.estado, ''), uno.numero, uno.mes, uno.nota));
+  const { previo } = pastillas;
+  if (esObjeto(previo)) meses.push(mes('previo', previo.numero, previo.titulo, previo.nota));
+  if (meses.length === 0) return '';
+  return `<p class="me-meses"><b>${esc(pastillas.titulo)}:</b>${meses.join('')}</p>`;
+}
+
+/**
+ * «El resto de 2026», debajo de la banda: la cabeza (el título con el año, el día y «Mis vacaciones y saldos»), un número por cada
+ * uno de los demás tanques (franquicias u horas a favor, estudios, atención médica y grupo familiar), cada uno un link a su pestaña
+ * (Horas extras o, si no, Licencias) con el aria-label del servidor, con el número que sube al abrir (data-contar) y su unidad, el
+ * nombre, su total y una línea decorativa que se llena en la proporción valor / total (--p, con su --demora: 900 ms y 90 más por
+ * línea); el que vence, en ámbar. Debajo de cada número que lo trae, en ámbar, su `perdidas_texto` (el servidor lo manda solo en
+ * el de las franquicias: las horas que se pierden, «Perdés 8 horas (vencen el 31/12/2026).», o '': spec
+ * 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6), fuera del link (su aria-label, el del servidor, no lo diría). Después, los
+ * meses y la médica extraordinaria. Sin tanques (sin un hoy válido), o sin el Resumen, ''
+ */
+function htmlDelResto(resumen) {
+  if (!esObjeto(resumen) || !esObjeto(resumen.tanques)) return '';
+  const numeros = listaDe(resumen.tanques.otros).map((tanque, i) => {
+    const pestana = tanque.pestana === 'horas' ? 'horas' : 'licencias';
+    const linea = `--p:${String(llenoDe(tanque.valor, tanque.total))}%;--demora:${String(DEMORA_DEL_RESTO + ENTRE_LINEAS * i)}ms`;
+    const perdidas = conTexto(tanque.perdidas_texto) ? `<p class="me-perdidas">${esc(tanque.perdidas_texto)}</p>` : '';
+    return `<li><a class="me-numero${tanque.vence === true ? ' vence' : ''}" href="#${pestana}" data-pestana="${pestana}" aria-label="${esc(tanque.aria)}">`
+      + `<span class="grande"><b data-contar>${esc(tanque.numero)}</b><small>${esc(tanque.unidad)}</small></span>`
+      + `<span class="nombre">${esc(tanque.nombre)}</span><span class="de">${esc(tanque.de)}</span>`
+      + `<span class="me-linea" aria-hidden="true"><i style="${linea}"></i></span></a>${perdidas}</li>`;
+  });
+  return '<section class="me-resto" aria-labelledby="me-resto-titulo"><div class="me-resto-cabeza">'
+    + `<h2 id="me-resto-titulo">El resto${delAnio(resumen.anio)}</h2><span class="me-resto-al">`
+    + `${conTexto(resumen.al_texto) ? `<span>${esc(resumen.al_texto)}</span>` : ''}`
+    + '<button type="button" class="sg-link" data-abrir="saldos">Mis vacaciones y saldos</button></span></div>'
+    + `${numeros.length > 0 ? `<ul class="me-numeros">${numeros.join('')}</ul>` : ''}`
+    + htmlDeLosMeses(resumen.pastillas)
+    + `${conTexto(resumen.extraordinaria) ? `<p class="me-extra">${esc(resumen.extraordinaria)}</p>` : ''}</section>`;
+}
+
+// Para el movimiento: el valor de un número del Resumen como lo escribe el servidor ('33'; con decimales, con coma: '1,5'); lo que
+// no es un número así (vacío, negativo, con otra cosa), null
+const numeroDelTexto = (texto) => {
+  const limpio = typeof texto === 'string' ? texto.trim() : '';
+  return /^\d+(?:,\d+)?$/.test(limpio) ? Number(limpio.replace(',', '.')) : null;
+};
+
+// …y la demora de una línea del resto, en ms, del style que escribe htmlDelResto ('--p:59.5%;--demora:900ms'). Sin ella, 0
+const demoraDelEstilo = (estilo) => {
+  const ms = /--demora:\s*(\d+(?:\.\d+)?)ms/.exec(typeof estilo === 'string' ? estilo : '')?.[1];
+  return ms === undefined ? 0 : Number(ms);
+};
+
+// Las iniciales de un nombre, decorativas: la primera letra del primero y del último. Lo que no es un texto, '' (copia de inicialesDe
+// de services/miEspacioEventosReglas.js, atada por un test de paridad)
+const iniciales = (nombre) => {
+  const palabras = typeof nombre === 'string' ? nombre.trim().split(/\s+/).filter(Boolean) : [];
+  const inicial = (palabra) => Array.from(palabra)[0].toUpperCase();
+  if (palabras.length === 0) return '';
+  return palabras.length === 1 ? inicial(palabras[0]) : inicial(palabras[0]) + inicial(palabras.at(-1));
+};
+
+/**
+ * «Hoy y mañana» (el `hoy_y_manana` del Resumen), al final y en columnas: «Hoy», con los eventos de hoy (`dia: 'hoy'`: la hora, el
+ * título y debajo `quien`, «solo vos», «con 4 personas»…) y, para quien ve a sus compañeros (`veCompaneros`, el true literal:
+ * administración), los que hoy no están, con el texto y la vuelta que manda el servidor (nunca el tipo); «Mañana», lo mismo de
+ * mañana; y «Próximo feriado». Una columna sin nada no va: solo se ven los de administración que eligieron mostrarse, así que «están
+ * todos» podría no ser cierto. Con la agenda (`eventos` es una lista, aunque vacía), la sección va siempre (decisión del usuario,
+ * 27/10/2026): sin ningún evento, «No tenés eventos hoy ni mañana.» debajo del título, y «Ver la agenda», que abre su pestaña
+ * (data-pestana, como los números del resto), al final de la última columna o, sin columnas, después de esa frase. Sin la lista (un
+ * Resumen anterior a la agenda), sin «Ver la agenda», y sin ninguna columna no hay sección
+ */
+function htmlDeHoyYManana(datos, veCompaneros) {
+  const hoy = esObjeto(datos) ? datos : {};
+  const conEventos = Array.isArray(hoy.eventos);
+  const eventos = listaDe(hoy.eventos);
+  // La hora y el título, con un espacio entre los dos (sin él, un lector de pantalla y lo copiado dirían «09:00Título»)
+  const filaDeEvento = (evento) => `<li>${conTexto(evento.hora) ? `<time>${esc(evento.hora)}</time> ` : ''}${esc(evento.titulo)}`
+    + `${conTexto(evento.quien) ? `<small>${esc(evento.quien)}</small>` : ''}</li>`;
+  const filaDeAusente = (ausente) => `<li class="ausente">${esc(ausente.texto)}`
+    + `${conTexto(ausente.vuelve_texto) ? `<small>${esc(ausente.vuelve_texto)}</small>` : ''}</li>`;
+  const delDia = (dia, ausentes) => [
+    ...eventos.filter((evento) => evento.dia === dia).map(filaDeEvento),
+    ...(veCompaneros === true ? listaDe(ausentes).map(filaDeAusente) : [])
+  ];
+  const { proximo_feriado: feriado } = hoy;
+  const columnas = [
+    ['Hoy', delDia('hoy', hoy.ausentes_hoy)],
+    ['Mañana', delDia('manana', hoy.ausentes_manana)],
+    ['Próximo feriado', esObjeto(feriado) ? [`<li><b>${esc(feriado.cuando)}</b><small>${esc(feriado.nombre)}</small></li>`] : []]
+  ].filter(([, filas]) => filas.length > 0);
+  if (!conEventos && columnas.length === 0) return '';
+  const verLaAgenda = conEventos ? '<a class="sg-link" href="#agenda" data-pestana="agenda">Ver la agenda</a>' : '';
+  const sinEventos = conEventos && !eventos.some((evento) => evento.dia === 'hoy' || evento.dia === 'manana');
+  const html = columnas.map(([titulo, filas], i) => `<div class="me-columna"><h3>${titulo}</h3><ul>${filas.join('')}</ul>`
+    + `${i === columnas.length - 1 ? verLaAgenda : ''}</div>`);
+  return '<section class="me-hoy" aria-labelledby="me-hoy-titulo"><h2 id="me-hoy-titulo">Hoy y mañana</h2>'
+    + `${sinEventos ? '<p class="me-vacio">No tenés eventos hoy ni mañana.</p>' : ''}`
+    + `${html.length > 0 ? `<div class="me-columnas">${html.join('')}</div>` : verLaAgenda}</section>`;
+}
+
+/**
+ * Los avisos de los días por restituir (las `restituciones` del Resumen, `[{ clave, texto, accion }]`: spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 5 y 9), uno por grupo y en su orden: un aviso ámbar con el texto del servidor y el botón
+ * que lo resuelve (`accion`: en el caso A, «Cargar los días restituidos», que abre «Cargar licencia» con ese grupo; en el B, «Pedir
+ * la restitución»), con data-grupo (el de la acción o, sin él, la clave del aviso) y descripto por el texto (con dos grupos, los
+ * botones dicen lo mismo: como en «Vence pronto», aria-describedby al párrafo, que lleva su id). No es un faltante: no prende la
+ * marca. Sin texto, no va; sin una acción con texto, el aviso sin botón (ni id). Sin ninguno (o un Resumen de antes, sin la clave), ''
+ */
+function htmlDeRestituciones(lista) {
+  return listaDe(lista).filter((aviso) => conTexto(aviso.texto)).map((aviso, i) => {
+    const accion = esObjeto(aviso.accion) ? { ...aviso.accion, grupo: conTexto(aviso.accion.grupo) ? aviso.accion.grupo : aviso.clave }
+      : null;
+    const id = `me-restituir-aviso-${String(i)}`;
+    const boton = botonDeLaAccion(accion, ` aria-describedby="${id}"`);
+    return `<div class="me-aviso me-aviso-ambar me-restituir"><p${boton === '' ? '' : ` id="${id}"`}>${esc(aviso.texto)}</p>${boton}</div>`;
+  }).join('');
+}
+
+/**
+ * La pestaña Resumen (lo que manda GET /api/mi-espacio/resumen). Sin modalidad, el mensaje del servidor; sin el saldo inicial,
+ * la invitación a «Mis vacaciones y saldos»; si no, los faltantes con lo que hay que revisar, la banda (la frase, «Vence pronto» y
+ * la regla), los avisos de los días por restituir (entre la banda y el resto: decisión 9 de la spec
+ * 2026-10-31-mi-espacio-dias-restituidos, sección 3; en #me-restituciones, el lugar de sus botones: el de «Vence pronto» del mismo
+ * grupo tiene el mismo data-grupo, y así el foco vuelve al que se usó), «El resto de 2026» y «Hoy y mañana».
+ */
+function htmlDelResumen(resumen) {
+  if (!esObjeto(resumen)) return '';
+  if (!esObjeto(resumen.modalidad)) return htmlDeMensaje(resumen.mensaje);
+  if (resumen.abrir_saldos === true) return htmlSinArranque();
+  const restituciones = htmlDeRestituciones(resumen.restituciones);
+  return htmlDeFaltantes(resumen.faltantes, resumen.para_revisar) + htmlDeLaBanda(resumen)
+    + (restituciones === '' ? '' : `<div id="me-restituciones">${restituciones}</div>`)
+    + htmlDelResto(resumen) + htmlDeHoyYManana(resumen.hoy_y_manana, esObjeto(resumen.persona) ? resumen.persona.ve_companeros : false);
+}
+
+// Los años del selector (los que manda el servidor), con aria-pressed en el elegido
+function htmlDelSelectorDeAnio(anios, anio) {
+  const botones = (Array.isArray(anios) ? anios : []).filter(Number.isInteger)
+    .map((uno) => `<button type="button" data-anio="${String(uno)}" aria-pressed="${String(uno === anio)}">${String(uno)}</button>`)
+    .join('');
+  return botones ? `<span class="me-segmento" role="group" aria-label="Año">${botones}</span>` : '';
+}
+
+// El filtro elegido, si está entre los del año; si no (el elegido en otro año), Todas
+const filtroElegido = (filtros, elegido) => (listaDe(filtros).some((filtro) => filtro.tipo === elegido) ? elegido : 'todas');
+
+// «Todas» y cada tipo con filas en el año, con su cantidad
+function htmlDeFiltrosDeLicencias(filtros, elegido) {
+  const actual = filtroElegido(filtros, elegido);
+  const botones = listaDe(filtros).map((filtro) => `<button type="button" class="sg-chip" data-filtro-licencia="${esc(filtro.tipo)}" `
+    + `aria-pressed="${String(filtro.tipo === actual)}">${esc(filtro.nombre)} <b>${esc(filtro.cantidad)}</b></button>`).join('');
+  return `<div class="sg-chips" role="group" aria-label="Filtrar las licencias por tipo">${botones}</div>`;
+}
+
+/**
+ * La línea de un grupo de días restituidos debajo de la fila de su carga (una de `fila.restituciones`, `{ texto, aviso, accion,
+ * restitucion_id, puede_borrar, anio }`: spec 2026-10-31-mi-espacio-dias-restituidos, 9), en su propio renglón: por restituir
+ * (`aviso`, el true literal), ▲ (decorativo) y el texto en ámbar, con el botón de su aviso (`accion`); pedida (con su
+ * `restitucion_id`), el texto en gris, «Word» y, hasta el plazo, «Borrar el pedido» (`botonesDelPedido`, con `anio`, la licencia a
+ * la que volvieron los días); cargada o perdida, solo el texto, en gris. Los botones, descriptos por el texto de su línea (`id`, el de
+ * ese texto: dos grupos de la misma carga tienen botones con el mismo nombre; sin id, sin la descripción). Sin texto, ''
+ */
+const htmlDeLineaDeRestitucion = (linea, id = null) => {
+  if (!conTexto(linea.texto)) return '';
+  const conId = (botones) => (botones !== '' && id !== null ? ` id="${id}"` : '');
+  if (linea.aviso === true) {
+    const boton = botonDeLaAccion(linea.accion, id === null ? '' : ` aria-describedby="${id}"`);
+    return `<span class="me-restituir-linea"><span class="me-detalle me-detalle-aviso"${conId(boton)}><span aria-hidden="true">▲ </span>`
+      + `${esc(linea.texto)}</span>${boton}</span>`;
+  }
+  const botones = botonesDelPedido({ restitucionId: linea.restitucion_id, puedeBorrar: linea.puede_borrar, anio: linea.anio, describe: id });
+  return `<span class="me-restituir-linea"><span class="me-detalle"${conId(botones)}>${esc(linea.texto)}</span>${botones}</span>`;
+};
+
+// Una licencia: las fechas con lo que suman, la insignia del tipo, «Próxima» si no empezó, por qué no cuenta (en gris), de qué
+// licencia salen las vacaciones, cómo está en Configuración (en ámbar si hay algo para revisar), si la ven los compañeros, la línea
+// de cada grupo de días restituidos de la carga (`restituciones`, solo en unas vacaciones o unos días restituidos: spec
+// 2026-10-31-mi-espacio-dias-restituidos, 9; con los demás detalles del sistema, antes de la nota personal; una fila de antes, sin la
+// clave, se ve como siempre; el texto de cada una, con el id me-restituir-linea-<fila>-<n>, describe sus botones), la nota y, a la
+// derecha, «Word» (la nota de licencia; todas menos el uso autorizado, también las que ya pasaron) y «Editar»
+function htmlDeFilaDeLicencia(fila) {
+  const gris = conTexto(fila.no_cuenta_texto);
+  const cantidad = conTexto(fila.cantidad_texto) ? `<small>${esc(fila.cantidad_texto)}</small>` : '';
+  const partes = [`<span class="me-insignia ${deMapa(CLASE_DEL_TIPO, fila.tipo, 'gris')}">${esc(fila.tipo_nombre)}</span>`];
+  if (fila.proxima === true) partes.push('<span class="me-insignia borde">Próxima</span>');
+  const detalle = (texto, clase = 'me-detalle') => { if (conTexto(texto)) partes.push(`<span class="${clase}">${esc(texto)}</span>`); };
+  detalle(fila.no_cuenta_texto);
+  detalle(fila.de_licencias_texto);
+  if (esObjeto(fila.configuracion)) {
+    detalle(fila.configuracion.texto, fila.configuracion.insignia === 'aviso' ? 'me-detalle me-detalle-aviso' : 'me-detalle');
+  }
+  detalle(fila.mostrar_texto);
+  partes.push(...listaDe(fila.restituciones).map((linea, i) =>
+    htmlDeLineaDeRestitucion(linea, Number.isInteger(fila.id) ? `me-restituir-linea-${String(fila.id)}-${String(i)}` : null)));
+  detalle(fila.nota, 'me-detalle me-fila-nota');
+  const word = fila.tipo === 'uso_autorizado' ? ''
+    : `<button type="button" class="sg-link" data-word-licencia="${esc(fila.id)}" `
+      + `aria-label="Descargar en Word la nota de la licencia del ${esc(fila.fechas_texto)}">Word</button>`;
+  return `<li class="me-fila${gris ? ' tenue' : ''}"><span class="me-fila-fecha">${esc(fila.fechas_texto)}${cantidad}</span>`
+    + `<span class="me-fila-cuerpo">${partes.join('')}</span>`
+    + `<span class="me-fila-acciones">${word}`
+    + `<button type="button" class="sg-link" data-editar-licencia="${esc(fila.id)}" aria-label="Editar la licencia del ${esc(fila.fechas_texto)}">`
+    + 'Editar</button></span></li>';
+}
+
+/**
+ * El nombre del archivo de un Content-Disposition (el que arma disposicionDeAdjunto de services/seguimientoReglas.js): el
+ * `filename*` en UTF-8 (RFC 5987), decodificado; si no hay, o no se puede decodificar (un % roto), el `filename` entre comillas;
+ * si no, null. Nunca tira
+ */
+function nombreDelAdjunto(cabecera) {
+  if (!conTexto(cabecera)) return null;
+  const extendido = /(?:^|;)\s*filename\*\s*=\s*([^;]*)/i.exec(cabecera)?.[1].trim() ?? '';
+  const enUtf8 = /^utf-8'[^']*'(.*)$/i.exec(extendido)?.[1] ?? '';
+  try {
+    const decodificado = decodeURIComponent(enUtf8);
+    if (decodificado !== '') return decodificado;
+  } catch {
+    // Un % roto: sigue con el filename
+  }
+  const comun = /(?:^|;)\s*filename\s*=\s*"((?:[^"\\]|\\.)*)"/i.exec(cabecera)?.[1].replace(/\\(.)/g, '$1') ?? '';
+  return comun === '' ? null : comun;
+}
+
+// El saldo inicial, al final de la lista del año del arranque
+function htmlDelSaldoInicial(saldo) {
+  return `<li class="me-fila tenue"><span class="me-fila-fecha">${esc(saldo.titulo)}<small>${esc(saldo.cargado_texto)}</small></span>`
+    + `<span class="me-fila-cuerpo">${esc(saldo.texto)}</span>`
+    + '<button type="button" class="sg-link" data-abrir="saldos" aria-label="Cambiar el saldo inicial">Cambiar</button></li>';
+}
+
+// Las licencias de otros años que la lista no tiene y que todavía no terminaron (los `otros_anios` del servidor, `{ anio, cantidad,
+// texto }`: spec 2026-10-28-mi-espacio-licencia-anulada, 2.3), cada una con su texto («También tenés 1 licencia cargada en 2027.») y
+// «Ver 2027», con el data-anio del selector (lo atiende el mismo clic). Con un año que no es un entero, solo el texto. Sin ninguna, ''
+function htmlDeOtrosAnios(otros) {
+  return listaDe(otros).filter((otro) => conTexto(otro.texto)).map((otro) => `<p class="me-otros-anios">${esc(otro.texto)}`
+    + `${Number.isInteger(otro.anio) ? ` <button type="button" data-anio="${String(otro.anio)}">Ver ${String(otro.anio)}</button>` : ''}`
+    + '</p>').join('');
+}
+
+/**
+ * La pestaña Licencias (lo que manda GET /api/mi-espacio/licencias): la tarjeta del año, con el selector del año y «Cargar
+ * licencia», las de otros años que todavía no terminaron (`otros_anios`), los filtros, las filas del tipo elegido (`filtro`: 'todas'
+ * o un tipo; uno que no está en el año es Todas), el saldo inicial (con Todas) y la nota de los días hábiles. Sin modalidad, solo el
+ * mensaje del servidor.
+ */
+function htmlDeListaDeLicencias(datos, filtro) {
+  if (!esObjeto(datos)) return '';
+  if (datos.modalidad === null) return htmlDeMensaje(datos.mensaje);
+  const anio = Number.isInteger(datos.anio) ? datos.anio : null;
+  const licencias = listaDe(datos.licencias);
+  const actual = filtroElegido(datos.filtros, filtro);
+  const visibles = actual === 'todas' ? licencias : licencias.filter((fila) => fila.tipo === actual);
+  const filas = visibles.map(htmlDeFilaDeLicencia);
+  if (actual === 'todas' && esObjeto(datos.saldo_inicial)) filas.push(htmlDelSaldoInicial(datos.saldo_inicial));
+  return '<div class="me-tarjeta"><div class="me-cabeza">'
+    + `<h2>Mis licencias${delAnio(anio)}</h2><span class="me-acciones">${htmlDelSelectorDeAnio(datos.anios, anio)}`
+    + '<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" data-cargar="licencia">Cargar licencia</button></span></div>'
+    + htmlDeOtrosAnios(datos.otros_anios)
+    + (licencias.length > 0 ? htmlDeFiltrosDeLicencias(datos.filtros, actual) : '')
+    + (visibles.length === 0 ? `<p class="me-vacio">No hay licencias cargadas${enElAnio(anio)}.</p>` : '')
+    + (filas.length > 0 ? `<ul class="me-lista">${filas.join('')}</ul>` : '')
+    + `<p class="me-nota">${NOTA_DE_LAS_LICENCIAS}</p></div>`;
+}
+
+// El mes del día por día de entrada: el en curso, si está en la tabla; si no, el más nuevo de la tabla; sin meses, null
+function mesInicialDe(tabla) {
+  const meses = listaDe(tabla?.meses).map((fila) => fila.mes);
+  if (meses.includes(tabla?.mes_en_curso)) return tabla.mes_en_curso;
+  return meses[0] ?? null;
+}
+
+// El mes pedido, si está en la tabla; si no, el de entrada
+const mesDeLaTabla = (tabla, mes) => (listaDe(tabla?.meses).some((fila) => fila.mes === mes) ? mes : mesInicialDe(tabla));
+
+// La cabeza de la tarjeta de las horas extras: el título, el selector del año y «Cargar horas extras»
+const cabezaDeHoras = (titulo, tabla) => `<div class="me-cabeza"><h2>${titulo}${delAnio(tabla?.anio)}</h2>`
+  + `<span class="me-acciones">${htmlDelSelectorDeAnio(tabla?.anios, tabla?.anio)}`
+  + '<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" data-cargar="horas">Cargar horas extras</button></span></div>';
+
+// El mes trabajado de una fila de la tabla: un botón que elige el día por día de ese mes
+const botonDelMes = (fila, elegido) => `<button type="button" class="me-mes-boton" data-mes="${esc(fila.mes)}" `
+  + `aria-pressed="${String(fila.mes === elegido)}">${esc(fila.mes_texto)}</button>`;
+
+// La situación de un mes, con el color de su estado; la que ya no se usa, como texto (la fila va en gris)
+function htmlDeSituacion(fila) {
+  const clase = deMapa(CLASE_DE_LA_SITUACION, fila.estado, null);
+  return clase === null ? esc(fila.situacion) : `<span class="me-insignia ${clase}">${esc(fila.situacion)}</span>`;
+}
+const claseDeLaFila = (fila) => (SITUACIONES_EN_GRIS.includes(fila.estado) ? ' class="tenue"' : '');
+
+// La tabla de una modalidad, o el vacío del año
+function htmlDeTabla(tabla, columnas, filas) {
+  if (filas.length === 0) return `<p class="me-vacio">No hay horas extras cargadas${enElAnio(tabla?.anio)}.</p>`;
+  return `<div class="me-tabla-marco"><table class="me-tabla"><thead><tr>${columnas.map((columna) => `<th>${columna}</th>`).join('')}`
+    + `</tr></thead><tbody>${filas.join('')}</tbody></table></div>`;
+}
+
+// «Registrar un uso autorizado»: el texto del servidor y, si queda algo no utilizado previamente, el botón
+function htmlDelUsoAutorizado(uso) {
+  if (!esObjeto(uso)) return '';
+  const boton = uso.puede === true
+    ? '<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-abrir="uso">Registrar un uso autorizado</button>' : '';
+  return `<div class="me-uso"><p class="me-nota">${esc(uso.texto)}</p>${boton}</div>`;
+}
+
+/**
+ * Planta: las horas extras al 100% de cada mes trabajado, los francos que dan, en qué mes se usan y su situación, con el uso
+ * autorizado debajo. `mes` es el mes del día por día (de entrada, el en curso), que se marca en la tabla.
+ */
+function htmlDeTablaDeFrancos(tabla, mes = mesInicialDe(tabla)) {
+  const filas = listaDe(tabla?.meses).map((fila) => `<tr${claseDeLaFila(fila)}><td>${botonDelMes(fila, mes)}</td>`
+    + `<td class="num">${esc(fila.horas_texto)}<small>${esc(fila.dias_texto)}</small></td><td class="num">${esc(fila.francos)}</td>`
+    + `<td>${esc(fila.uso_texto)}</td><td>${htmlDeSituacion(fila)}</td></tr>`);
+  return `<div class="me-tarjeta">${cabezaDeHoras('Horas extras al 100%', tabla)}`
+    + htmlDeTabla(tabla, ['Mes trabajado', 'Horas', 'Francos', 'Para usar en', 'Situación'], filas)
+    + `<p class="me-nota">${NOTA_DE_LOS_FRANCOS}</p>${htmlDelUsoAutorizado(tabla?.uso_autorizado)}</div>`;
+}
+
+/**
+ * Contrato: las horas extras de cada mes trabajado (debajo, en chico, de dónde salen cuando algo se mueve entre meses:
+ * `horas_detalle`, «5,5 h + 1,5 h de febrero» o «1,5 h suman a enero»; spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 5),
+ * el mes en que quedan a favor (con lo mismo en días de franco debajo, en chico: `a_favor_detalle`, «2 días de franco y 4 horas»;
+ * spec 2026-10-27-mi-espacio-horas, sección 5), lo que se usó (con cada uso debajo) y su situación. `mes`, como en la de francos.
+ */
+function htmlDeTablaDeHorasAFavor(tabla, mes = mesInicialDe(tabla)) {
+  const filas = listaDe(tabla?.meses).map((fila) => `<tr${claseDeLaFila(fila)}><td>${botonDelMes(fila, mes)}</td>`
+    + `<td class="num">${esc(fila.horas_texto)}${conTexto(fila.horas_detalle) ? `<small>${esc(fila.horas_detalle)}</small>` : ''}</td>`
+    + `<td>${esc(fila.a_favor_texto)}${conTexto(fila.a_favor_detalle) ? `<small>${esc(fila.a_favor_detalle)}</small>` : ''}</td>`
+    + `<td class="num">${esc(fila.usadas_texto)}${conTexto(fila.usadas_detalle) ? `<small>${esc(fila.usadas_detalle)}</small>` : ''}</td>`
+    + `<td>${htmlDeSituacion(fila)}</td></tr>`);
+  return `<div class="me-tarjeta">${cabezaDeHoras('Horas extras y horas a favor', tabla)}`
+    + htmlDeTabla(tabla, ['Mes trabajado', 'Horas extras', 'A favor en', 'Usadas', 'Situación'], filas)
+    + `<p class="me-nota">${NOTA_DE_LAS_HORAS_A_FAVOR}</p></div>`;
+}
+
+// Las horas extras de un mes de la tabla, día por día, cada una con «Editar»; un mes que no está en la tabla, nada
+function htmlDeDiaPorDia(tabla, mes) {
+  const fila = listaDe(tabla?.meses).find((uno) => uno.mes === mes);
+  const dias = listaDe(deMapa(tabla?.dias_por_mes, mes, []));
+  if (fila === undefined || dias.length === 0) return '';
+  const filas = dias.map((dia) => `<li class="me-fila"><span class="me-fila-fecha">${esc(dia.fecha_texto)}</span>`
+    + `<span class="me-fila-cuerpo">${esc(dia.horario)}<span class="me-detalle">${esc(dia.horas_texto)}</span>`
+    + `${conTexto(dia.nota) ? `<span class="me-detalle me-fila-nota">${esc(dia.nota)}</span>` : ''}</span>`
+    + `<button type="button" class="sg-link" data-editar-horas="${esc(dia.id)}" `
+    + `aria-label="Editar las horas extras del ${esc(dia.fecha_texto)} de ${esc(dia.horario)}">Editar</button></li>`);
+  return `<div class="me-tarjeta"><div class="me-cabeza"><h3>${esc(fila.mes_texto)}, día por día</h3>`
+    + `<span>${esc(deMapa(tabla.totales_por_mes, mes, ''))}</span></div><ul class="me-lista">${filas.join('')}</ul></div>`;
+}
+
+/**
+ * Contrato: las salidas de un mes de la tabla, día por día (spec 2026-10-27-mi-espacio-horas, sección 5; la maqueta,
+ * `filaDelDiaPorDia`), con lo que manda el servidor: la fecha con la marca del día (Feriado, Sábado o Domingo), el horario («Salida
+ * 16:20», o «De 09:21 a 12:10» en un día que no es hábil), la entrada de un día hábil, las horas en una pastilla (los que dan 0, en
+ * gris con «No llega a media hora»), el aviso de una salida que dejó de cerrar, la nota y «Editar», que abre la planilla en ese día
+ * (`data-editar-salida` con la fecha, y el día en su nombre: «Editar el lunes 05/10»). Con el tilde «Sumar a {mes anterior}» (spec
+ * 2026-10-30-mi-espacio-horas-mes-anterior, sección 5): un día tildado lleva la pastilla punteada (`otro-mes`) y, debajo, `suma_a`
+ * («Suma a enero»); los días tildados del mes siguiente que suman a este van al final, con su `tipo_texto` («De febrero») debajo de
+ * la fecha, como «Feriado», y la clase `de-otro-mes` (solo con `de_otro_mes` en el true literal): su «Editar» abre su mes. Un mes
+ * que no está en la tabla, nada.
+ */
+function htmlDeDiaPorDiaDeSalidas(tabla, mes) {
+  const fila = listaDe(tabla?.meses).find((uno) => uno.mes === mes);
+  const dias = listaDe(deMapa(tabla?.dias_por_mes, mes, []));
+  if (fila === undefined || dias.length === 0) return '';
+  const detalle = (texto, clase = 'me-detalle') => (conTexto(texto) ? `<span class="${clase}">${esc(texto)}</span>` : '');
+  const filas = dias.map((dia) => {
+    const largo = esFechaDeTexto(dia.fecha) ? diaLargoDe(dia.fecha) : dia.fecha_texto;
+    const cero = dia.cero === true;
+    const sumaA = conTexto(dia.suma_a);
+    const clases = ['me-fila', ...(cero ? ['tenue'] : []), ...(dia.de_otro_mes === true ? ['de-otro-mes'] : [])];
+    return `<li class="${clases.join(' ')}"><span class="me-fila-fecha">${esc(dia.fecha_texto)}`
+      + `${conTexto(dia.tipo_texto) ? `<small>${esc(dia.tipo_texto)}</small>` : ''}</span>`
+      + `<span class="me-fila-cuerpo">${esc(dia.horario)}${detalle(dia.entrada_texto)}`
+      + `${detalle(dia.horas_texto, sumaA ? 'me-dia-horas otro-mes' : 'me-dia-horas')}`
+      + `${sumaA ? detalle(dia.suma_a, 'me-detalle me-fila-otro-mes') : ''}`
+      + `${cero ? '<span class="me-detalle">No llega a media hora</span>' : ''}${detalle(dia.aviso, 'me-detalle me-fila-aviso')}`
+      + `${detalle(dia.nota, 'me-detalle me-fila-nota')}</span>`
+      + `<button type="button" class="sg-link" data-editar-salida="${esc(dia.fecha)}" aria-label="Editar el ${esc(largo)}">Editar</button></li>`;
+  });
+  return `<div class="me-tarjeta"><div class="me-cabeza"><h3>${esc(fila.mes_texto)}, día por día</h3>`
+    + `<span>${esc(deMapa(tabla.totales_por_mes, mes, ''))}</span></div><ul class="me-lista">${filas.join('')}</ul></div>`;
+}
+
+// Contrato: lo que manda «Usar horas acumuladas» debajo de la tarjeta (spec 2026-11-03-mi-espacio-horas-acumuladas, 10): el texto
+// del servidor y, si quedan, el botón, que abre «Cargar licencia» con «Horas a favor» (`data-usar-acumuladas`, con el tipo)
+function htmlDelUsoDeLasAcumuladas(uso) {
+  if (!esObjeto(uso)) return '';
+  const boton = uso.puede === true
+    ? '<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-usar-acumuladas="horas_a_favor">Usar horas acumuladas</button>'
+    : '';
+  return `<div class="me-uso"><p class="me-nota">${esc(uso.texto)}</p>${boton}</div>`;
+}
+
+/**
+ * Contrato: «Horas acumuladas» (spec 2026-11-03-mi-espacio-horas-acumuladas, 10), cada mes con su origen (y lo del saldo inicial),
+ * con el título y la nota del servidor (sin ellos, una respuesta de antes, los de antes) y «Usar horas acumuladas» debajo
+ */
+function htmlDeNoUtilizadas(tabla) {
+  const noUtilizadas = tabla?.no_utilizadas;
+  if (!esObjeto(noUtilizadas)) return '';
+  const titulo = conTexto(noUtilizadas.titulo) ? noUtilizadas.titulo : TITULO_DE_LAS_NO_UTILIZADAS;
+  const nota = conTexto(noUtilizadas.nota) ? noUtilizadas.nota : NOTA_DE_LAS_NO_UTILIZADAS;
+  const filas = listaDe(noUtilizadas.filas).map((fila) => `<li class="me-fila me-fila-dos"><span class="me-fila-fecha">${esc(fila.titulo)}</span>`
+    + `<span class="me-fila-cuerpo">${esc(fila.texto)}${conTexto(fila.detalle) ? `<span class="me-detalle">${esc(fila.detalle)}</span>` : ''}`
+    + '</span></li>');
+  return `<div class="me-tarjeta"><div class="me-cabeza"><h3>${esc(titulo)}</h3>`
+    + `<span>${esc(noUtilizadas.total_texto)}</span></div>`
+    + (filas.length > 0 ? `<ul class="me-lista">${filas.join('')}</ul>` : '')
+    + `<p class="me-nota">${esc(nota)}</p>${htmlDelUsoDeLasAcumuladas(noUtilizadas.uso_autorizado)}</div>`;
+}
+
+/**
+ * La pestaña Horas extras (lo que manda GET /api/mi-espacio/horas-extras): en planta, la tabla de francos y el día por día; en
+ * contrato, la de horas a favor, el día por día de las salidas de la planilla y las horas no utilizadas previamente. `mes` es el
+ * del día por día (uno que no está en la tabla, el de entrada). Sin modalidad, solo el mensaje del servidor.
+ */
+function htmlDeHorasExtras(tabla, mes) {
+  if (!esObjeto(tabla)) return '';
+  const elegido = mesDeLaTabla(tabla, mes);
+  if (tabla.modalidad === 'planta') return htmlDeTablaDeFrancos(tabla, elegido) + htmlDeDiaPorDia(tabla, elegido);
+  if (tabla.modalidad === 'contrato') {
+    return htmlDeTablaDeHorasAFavor(tabla, elegido) + htmlDeDiaPorDiaDeSalidas(tabla, elegido) + htmlDeNoUtilizadas(tabla);
+  }
+  return htmlDeMensaje(tabla.mensaje);
+}
+
+// =====================================================
+// Lo puro: los formularios
+// =====================================================
+
+// ---- Copias mínimas, para avisar en el momento (el servidor valida igual), atadas por tests de paridad ----
+
+// Las claves de MENSAJES_MI_ESPACIO (services/miEspacioReglas.js) que usan los formularios
+const MENSAJES_FORMULARIOS = Object.freeze({
+  tipo: 'Elegí el tipo de licencia.',
+  fecha: 'Elegí una fecha válida.',
+  hastaAntes: 'La licencia no puede terminar antes de empezar.',
+  horasEnteras: 'Las franquicias se toman por hora entera, de 1 a 7.',
+  horasMedias: 'Las horas van de a media hora, de 0,5 a 7.',
+  // La parte acumulada de unas horas a favor de contrato (spec 2026-11-03-mi-espacio-horas-acumuladas, 7)
+  acumuladasMedias: 'Las horas acumuladas van de a media hora, hasta el total.',
+  nota: 'La nota puede tener hasta 200 caracteres.',
+  horario: 'Elegí de qué hora a qué hora, de a media hora.',
+  diasVacaciones: 'Elegí 10, 15, 20, 25 o 30 días.',
+  estudios: 'Elegí universitaria, secundaria o «No estudio».',
+  saldoMedias: 'Escribí las horas de a media hora.',
+  yaEmpezo: 'Ya empezó: no se puede borrar',
+  soloHasta: 'Ya empezó: solo podés cambiar hasta cuándo.',
+  fechasFijas: 'Ya terminó: las fechas quedan fijas.',
+  // Unos días restituidos que ya empezaron en Configuración: su «Hasta» lo pone Mi espacio, así que no se pueden mover (spec
+  // 2026-10-31-mi-espacio-dias-restituidos, 9)
+  restituidosEmpezados: 'Ya empezó: los días restituidos no se pueden mover.',
+  // «Cargar los días restituidos» de un grupo que, con el Resumen vuelto a pedir, ya no está por restituir (abrirLicencia)
+  grupoNoPorRestituir: 'Esos días ya no están para restituir.',
+  // Los de la planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, secciones 7 y 8)
+  horaSalida: 'Escribí la hora como 16:45.',
+  salidaQueCuenta: 'Falta la salida: es la que cuenta.',
+  salidaFalta: 'Falta la salida.',
+  entradaFeriado: 'En un feriado, poné también la entrada.',
+  entradaFinde: 'En un sábado o domingo, poné también la entrada.',
+  salidaAntes: 'La salida tiene que ser después de la entrada.',
+  muchosDias: 'Guardá de a 100 días como mucho.'
+});
+// Los días de vacaciones que se eligen por año, los de estudios según la carrera y los de cada examen, las horas de un día entero y
+// el largo de una nota (en caracteres contados con Array.from): los de services/miEspacioReglas.js
+const DIAS_VACACIONES = Object.freeze([10, 15, 20, 25, 30]);
+const DIAS_ESTUDIOS = Object.freeze({ universitario: 15, secundario: 10 });
+const DIAS_POR_EXAMEN = 3;
+const JORNADA = 7;
+const LARGO_NOTA = 200;
+
+// Un número con coma y a lo sumo un decimal, como numeroTexto del servidor: '10,5'
+const numeroConComa = (valor) => {
+  const numero = Math.round(Number(valor) * 10) / 10;
+  return Number.isFinite(numero) ? String(numero).replace('.', ',') : '—';
+};
+// Copia de textoSaldo: «Escribí un número de 0 a 30.»
+const textoSaldo = (maximo) => `Escribí un número de 0 a ${numeroConComa(maximo)}.`;
+// Copia de textoSaldoDelArranque (spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8): la ayuda del campo de la licencia del
+// año del arranque, la única que cambia con los días que se eligen en el modal (camposConLoElegido). Las demás llegan del servidor
+const textoSaldoDelArranque = (maximo, anio) =>
+  `De 0 a ${numeroConComa(maximo)}: lo que se habilitó de la ${String(anio)} hasta hoy.`;
+
+// Copia de horasDe: las horas de un horario 'HH:MM' de a media hora; con hasta antes que desde, pasa la medianoche (+24 h). null
+// si son iguales o alguna no es una hora en punto o y media
+const minutosDelDia = (hora) => {
+  if (typeof hora !== 'string' || !/^([01]\d|2[0-3]):(00|30)$/.test(hora)) return null;
+  return Number(hora.slice(0, 2)) * 60 + Number(hora.slice(3));
+};
+const horasDelHorario = (desde, hasta) => {
+  const inicio = minutosDelDia(desde);
+  const fin = minutosDelDia(hasta);
+  if (inicio === null || fin === null || inicio === fin) return null;
+  return ((fin > inicio ? fin : fin + 24 * 60) - inicio) / 60;
+};
+
+// La planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, secciones 3 y 9), para decir las horas de cada día y
+// lo que suma el mes mientras se escribe: la jornada termina a las 15:00; una media hora vale aunque falten hasta 14 minutos en un
+// día hábil y hasta 10 en uno que no lo es; se guardan de a 100 días como mucho. Copias de las de services/miEspacioReglas.js
+const SALIDA_DE_LA_JORNADA = '15:00';
+const TOLERANCIA_DIA_HABIL = 14;
+const TOLERANCIA_DIA_INHABIL = 10;
+const MAXIMO_DIAS_POR_GUARDADO = 100;
+// Los tipos de día de la planilla (los de tipoDeDia del servidor)
+const TIPOS_DE_DIA = Object.freeze(['habil', 'feriado', 'finde']);
+// Copia de horaSalidaValida: una hora 'HH:MM' de un día, con cualquier minuto (de 00:00 a 23:59), en minutos desde las 00:00; lo que
+// no lo es («16:46:00», «9:05», «25:00»), null
+const minutosDeLaSalida = (hora) => (typeof hora === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(hora)
+  ? Number(hora.slice(0, 2)) * 60 + Number(hora.slice(3)) : null);
+
+/**
+ * Copia de horasDeLaSalida (spec, sección 3), con el `tipo` del día que manda el servidor ('habil', 'feriado' o 'finde': el de
+ * tipoDeDia con los feriados de ese momento) en lugar de la fecha y los feriados. Las horas extras de un día, de a 0,5, o null:
+ * - en un día hábil, los minutos después de las 15:00 (antes, 0), con una media hora desde su minuto 16; la entrada no cuenta;
+ * - en un feriado, un sábado o un domingo, los minutos de la entrada a la salida, con 10 de tolerancia.
+ * null sin una salida válida, en un día que no es hábil sin una entrada válida, con una entrada válida y la salida antes o igual
+ * que ella (también en un día hábil) o con un tipo que no es de la planilla. Nunca tira.
+ */
+function horasDelDiaDeLaPlanilla(dia) {
+  if (!esObjeto(dia) || !TIPOS_DE_DIA.includes(dia.tipo)) return null;
+  const salida = minutosDeLaSalida(dia.salida);
+  if (salida === null) return null;
+  const entrada = minutosDeLaSalida(dia.entrada);
+  if (entrada !== null && salida <= entrada) return null;
+  if (dia.tipo === 'habil') {
+    const minutos = Math.max(0, salida - minutosDeLaSalida(SALIDA_DE_LA_JORNADA));
+    return Math.floor((minutos + TOLERANCIA_DIA_HABIL) / 30) / 2;
+  }
+  if (entrada === null) return null;
+  return Math.floor((salida - entrada + TOLERANCIA_DIA_INHABIL) / 30) / 2;
+}
+
+// Copia de diasYHorasDe: unas horas en días de franco (cada 7, JORNADA) y las que sobran, con un decimal; con lo que no es un
+// número positivo, ninguno
+const diasYHorasDeLaPlanilla = (horas) => {
+  if (typeof horas !== 'number' || !Number.isFinite(horas) || horas <= 0) return { dias: 0, resto: 0 };
+  const total = Math.round(horas * 10) / 10;
+  const dias = Math.floor(total / JORNADA);
+  return { dias, resto: Math.round((total - dias * JORNADA) * 10) / 10 };
+};
+// Las partes de enDiasDeFranco: ['2 días de franco', '4,5 horas'], ['3 días de franco'], ['4,5 horas'] o []
+const partesEnDiasDeFranco = (horas) => {
+  const { dias, resto } = diasYHorasDeLaPlanilla(horas);
+  return [dias > 0 ? `${dias} ${dias === 1 ? 'día' : 'días'} de franco` : '', resto > 0 ? textoDeHoras(resto) : '']
+    .filter((parte) => parte !== '');
+};
+// Copia de enDiasDeFranco: «2 días de franco y 4,5 horas», «3 días de franco», «4,5 horas», «1 hora»; '' sin horas
+const enDiasDeFranco = (horas) => partesEnDiasDeFranco(horas).join(' y ');
+
+// La frase de la banda de la planilla, con cada parte de lo que se suma («2 días de franco», «4 horas a favor») pasada por
+// `marcar`: en el texto plano, tal cual; en la banda, en negrita. «a favor» va con las horas sueltas, la última parte. El verbo
+// mira el mes en que se usan las horas, el siguiente: ya pasó, «tuviste»; es el de hoy, «tenés»; todavía no llegó, «vas a tener»
+const fraseDeLaSumaDelMes = (mes, horas, hoy, marcar) => {
+  if (typeof mes !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes) || !esFechaDeTexto(hoy)) return '';
+  const deHoy = hoy.slice(0, 7);
+  const partes = partesEnDiasDeFranco(horas);
+  if (partes.length === 0) {
+    return mes < deHoy ? `En ${nombreDelMes(mes)} no hiciste horas extras.` : `Todavía no sumaste horas extras en ${nombreDelMes(mes)}.`;
+  }
+  // El mes siguiente tiene que existir, como en mesMas del servidor: del año 1 al 9999
+  const diciembre = mes.endsWith('-12');
+  const anioSiguiente = Number(mes.slice(0, 4)) + (diciembre ? 1 : 0);
+  if (anioSiguiente < 1 || anioSiguiente > 9999) return '';
+  const deUso = `${String(anioSiguiente).padStart(4, '0')}-${diciembre ? '01' : String(Number(mes.slice(5, 7)) + 1).padStart(2, '0')}`;
+  let verbo = 'vas a tener';
+  if (deUso < deHoy) verbo = 'tuviste';
+  else if (deUso === deHoy) verbo = 'tenés';
+  const aFavor = diasYHorasDeLaPlanilla(horas).resto > 0 ? ' a favor' : '';
+  const marcadas = partes.map((parte, indice) => marcar(indice === partes.length - 1 ? `${parte}${aFavor}` : parte));
+  return `En ${nombreDelMes(mes, 1)} ${verbo} ${marcadas.join(' y ')}.`;
+};
+// Copia de textoDeLaSumaDelMes: «En noviembre vas a tener 2 días de franco y 4,5 horas a favor.», «En octubre tenés 1 día de
+// franco.», «Todavía no sumaste horas extras en octubre.», «En septiembre no hiciste horas extras.»; sin un mes o un hoy válidos, ''
+const textoDeLaSumaDelMes = (mes, horas, hoy) => fraseDeLaSumaDelMes(mes, horas, hoy, (parte) => parte);
+
+// Copia de mesMas: 'AAAA-MM' más n meses (un entero, también negativo), o null si no es un mes, si n no es un entero o si el año
+// queda fuera de 0001 a 9999
+const mesMas = (mes, n) => {
+  if (typeof mes !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes) || !Number.isInteger(n)) return null;
+  const indice = Number(mes.slice(0, 4)) * 12 + Number(mes.slice(5, 7)) - 1 + n;
+  const anio = Math.floor(indice / 12);
+  if (anio < 1 || anio > 9999) return null;
+  return `${String(anio).padStart(4, '0')}-${String((indice % 12) + 1).padStart(2, '0')}`;
+};
+// Los días de una lista que se nombran en la segunda línea de la banda: los que dan horas (un tildado con 0 h, o sin horas, no suma
+// nada). De cada uno se leen solo `fecha` y `horas`
+const conHorasQueSeMueven = (dias) => (Array.isArray(dias) ? dias : []).filter((dia) => esObjeto(dia) && esFechaDeTexto(dia.fecha)
+  && typeof dia.horas === 'number' && Number.isFinite(dia.horas) && dia.horas > 0);
+/**
+ * Copia de textoDeLoQueSeMueve (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4): la segunda línea de la banda de la
+ * planilla, plana, con lo que se mueve entre `mes` ('AAAA-MM') y sus vecinos mientras se tilda. `entran` son los días tildados del
+ * mes siguiente, que suman a este (`diasQueEntran`), y `van`, los tildados del mes, que suman al anterior (`diasQueSumanAlAnterior`).
+ * Hasta dos frases, en este orden: «Incluye 1,5 h de febrero.» y «1,5 h del martes 02/02 suman a enero.» (con dos días, «… del
+ * martes 02/02 y del jueves 04/02 suman a enero.»; con tres o más, «4 h de 3 días suman a enero.»; «suma» si es 1 h). Sin nada que
+ * decir, o con un mes que no sirve, ''.
+ */
+const textoDeLoQueSeMueve = (mes, entran, van) => {
+  if (typeof mes !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return '';
+  const sumaDe = (dias) => dias.reduce((total, dia) => total + dia.horas, 0);
+  const frases = [];
+  const siguiente = mesMas(mes, 1);
+  const queEntran = conHorasQueSeMueven(entran);
+  if (siguiente !== null && queEntran.length > 0) {
+    frases.push(`Incluye ${numeroConComa(sumaDe(queEntran))} h de ${nombreDelMes(siguiente)}.`);
+  }
+  const anterior = mesMas(mes, -1);
+  const queVan = conHorasQueSeMueven(van);
+  if (anterior !== null && queVan.length > 0) {
+    const total = sumaDe(queVan);
+    const delDia = (fecha) => `del ${diaLargoDe(fecha)}`;
+    let deQue = `de ${queVan.length} días`;
+    if (queVan.length === 1) deQue = delDia(queVan[0].fecha);
+    else if (queVan.length === 2) deQue = `${delDia(queVan[0].fecha)} y ${delDia(queVan[1].fecha)}`;
+    frases.push(`${numeroConComa(total)} h ${deQue} ${Number(total) === 1 ? 'suma' : 'suman'} a ${nombreDelMes(anterior)}.`);
+  }
+  return frases.join(' ');
+};
+
+// Copias de usuarios.js (Configuración → Licencias): el efecto de la licencia del firmante en las notas, los días sin auditor y
+// las ausencias de la persona autorizada, con los mismos textos. efectoEnNotas recibe «hoy» por parámetro, y la licencia con
+// `{ desde, vispera, sin_anticipo, sin_dias_habiles }` (las calcula el servidor, con el calendario: spec
+// 2026-10-27-feriados-en-notas, 6)
+
+// 'AAAA-MM-DD' → 'dd/mm/aaaa' sin pasar por Date
+const fechaCorta = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
+const efectoEnNotas = (licencia, autorizadoNombre, hoy) => {
+  if (hoy && licencia?.desde && licencia.desde <= hoy) {
+    return autorizadoNombre
+      ? `Licencia en curso: ${autorizadoNombre} presenta las notas con las dos firmas, citando la nota que comunica la autorización (si todavía no salió, la próxima corrida la genera primero), y vuelve a presentar en su fecha cada aviso que se adelantó.`
+      : 'Licencia en curso sin persona autorizada: no se generan notas hasta la vuelta. Lo que toque avisar sale el primer día hábil después de la licencia. La reiteración que toque, ese día si es un mes de reiteración; si no, en el próximo.';
+  }
+  if (licencia?.sin_dias_habiles === true) return 'No tiene días hábiles: las notas no cambian.';
+  if (licencia?.sin_anticipo === true) {
+    return autorizadoNombre
+      ? `Empieza a continuación de otra licencia: los avisos no se adelantan. Desde el primer día, ${autorizadoNombre} presenta las notas con las dos firmas, después de la nota que comunica la autorización.`
+      : 'Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar sale el primer día hábil después de la licencia. La reiteración que toque, ese día si es un mes de reiteración; si no, en el próximo.';
+  }
+  const cuando = licencia?.vispera ? `el ${fechaCorta(licencia.vispera)}` : 'el último día hábil anterior';
+  return autorizadoNombre
+    ? `Los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:05), en una nota que comunica la autorización a ${autorizadoNombre}. Durante la licencia, ${autorizadoNombre} presenta las demás notas con las dos firmas, citando esa nota, y vuelve a presentar cada aviso en su fecha.`
+    : `Sin persona autorizada: los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:05). La reiteración que toque durante la licencia sale a la vuelta, si es un mes de reiteración; si no, en el próximo. Cargá la licencia antes de ese día.`;
+};
+const listaConY = (nombres) => (nombres.length > 1 ? `${nombres.slice(0, -1).join(', ')} y ${nombres.at(-1)}` : nombres.join(''));
+const textoSinAuditor = ({ desde, hasta, vuelve, respaldo }) => {
+  const unDia = desde === hasta;
+  const cuando = unDia ? `El ${fechaCorta(desde)}` : `Del ${fechaCorta(desde)} al ${fechaCorta(hasta)}`;
+  const hastaCuando = vuelve ? `el ${fechaCorta(vuelve)}` : 'que haya un auditor disponible';
+  const texto = `${cuando} no va a haber ningún auditor disponible: los cambios que se propongan ${unDia ? 'ese día' : 'en esos días'} van a quedar pendientes hasta ${hastaCuando}.`;
+  return respaldo?.length
+    ? `${texto} En ${unDia ? 'ese día' : 'esos días'} solo pueden auditar de respaldo: ${listaConY(respaldo)} (nunca un cambio propio).`
+    : texto;
+};
+const MAXIMO_DIAS_SIN_AUDITOR = 366;
+const diaUtc = (iso) => {
+  const [a, m, d] = iso.split('-').map(Number);
+  return Date.UTC(a, m - 1, d);
+};
+const esFechaValida = (iso) => /^\d{4}-\d{2}-\d{2}$/.test(iso ?? '') && new Date(diaUtc(iso)).toISOString().slice(0, 10) === iso;
+const diasDelRango = (desde, hasta) => (diaUtc(hasta) - diaUtc(desde)) / 86400000 + 1;
+const textoAusenciasAutorizado = (nombre, ausencias, desde, hasta) => {
+  if (!nombre || !esFechaValida(desde) || !esFechaValida(hasta)) return [];
+  return [...(ausencias ?? [])]
+    .sort((x, y) => x.desde.localeCompare(y.desde))
+    .map(({ desde: d, hasta: h, vuelve }) => ({ a: d > desde ? d : desde, b: h < hasta ? h : hasta, vuelve }))
+    .filter(({ a, b }) => a <= b)
+    .map(({ a, b, vuelve }) => {
+      const cuando = a === b ? `el ${fechaCorta(a)}: ese día` : `del ${fechaCorta(a)} al ${fechaCorta(b)}: esos días`;
+      const presenta = vuelve && vuelve <= hasta ? ` Desde el ${fechaCorta(vuelve)} las presenta en tu nombre.` : '';
+      return `${nombre} va a estar de licencia ${cuando} no se generan notas.${presenta}`;
+    });
+};
+const parametrosSinAuditor = ({ usuarioId, desde, hasta, excluir = null, hoy = '' }) => {
+  if (!usuarioId || !esFechaValida(desde) || !esFechaValida(hasta)) return null;
+  const inicio = hoy && desde < hoy ? hoy : desde;
+  if (inicio > hasta || diasDelRango(inicio, hasta) > MAXIMO_DIAS_SIN_AUDITOR) return null;
+  return { desde: inicio, hasta, usuario_id: usuarioId, ...(excluir ? { excluir } : {}) };
+};
+
+// ---- Lo de cada formulario ----
+
+const comoTexto = (valor) => (typeof valor === 'string' ? valor : '');
+// 'AAAA-MM-DD' de un día que existe (como esFechaIso del servidor, sobre el texto: sin Date local)
+const esFechaDeTexto = (valor) => typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor) && Utils.soloFecha(valor) === valor;
+// El año de una licencia, el de su `desde` ('AAAA-MM-DD', cortado como texto): el de la lista de Licencias en que queda al guardarla
+// (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3). Lo que no es una fecha así, null
+const anioDeLaLicencia = (desde) => (esFechaDeTexto(desde) ? Number(desde.slice(0, 4)) : null);
+// Un número escrito en un campo, con coma o con punto: '' es null; lo que no es un número, NaN
+const numeroDelCampo = (texto) => {
+  const limpio = String(texto ?? '').trim().replace(',', '.');
+  return limpio === '' ? null : Number(limpio);
+};
+const largoDeLaNota = (nota) => Array.from(comoTexto(nota).trim()).length;
+
+// Los tipos de un solo día (el campo es «Fecha»: desde y hasta son el mismo) y los que se cargan en horas: copias de
+// TIPOS_DE_UN_DIA y TIPOS_POR_HORAS de services/miEspacioReglas.js, atadas por un test de paridad
+const TIPOS_DE_UN_DIA = Object.freeze(['franquicia', 'franco', 'horas_a_favor', 'uso_autorizado']);
+const TIPOS_CON_HORAS = Object.freeze(['franquicia', 'horas_a_favor', 'uso_autorizado']);
+const deUnDia = (tipo) => TIPOS_DE_UN_DIA.includes(tipo);
+// Los tipos en que el firmante titular deja persona a cargo: las vacaciones y los días restituidos, que son vacaciones (spec
+// 2026-10-31-mi-espacio-dias-restituidos, 7 y 17.15). Copias de TIPOS_CON_PERSONA_A_CARGO y dejaPersonaACargo de
+// services/miEspacioReglas.js, atadas por un test de paridad
+const TIPOS_CON_PERSONA_A_CARGO = Object.freeze(['vacaciones', 'restituidos']);
+const dejaPersonaACargo = (tipo) => TIPOS_CON_PERSONA_A_CARGO.includes(tipo);
+// Cómo se cargan las horas de un tipo: 'enteras' (la franquicia, de 1 a 7), 'medias' (las horas a favor y el uso autorizado de
+// contrato, de 0,5 a 7) o null (sin horas; el uso autorizado de planta es un franco, el día entero)
+const horasDelTipo = (tipo, modalidad) => {
+  if (tipo === 'franquicia') return 'enteras';
+  if (tipo === 'horas_a_favor' || (tipo === 'uso_autorizado' && modalidad !== 'planta')) return 'medias';
+  return null;
+};
+// Si una licencia es de día entero, como esDiaEntero del servidor (atada por un test de paridad): una de horas, solo con la
+// jornada entera (el uso autorizado de planta es un franco, el día entero). Solo esas se les muestran a los compañeros (spec,
+// sección 7): las de menos de 7 horas, nunca. `horas`, como las escribe el campo
+const esDeDiaEntero = (tipo, horas, modalidad) => !TIPOS_CON_HORAS.includes(tipo) || horasDelTipo(tipo, modalidad) === null
+  || numeroDelCampo(horas) === JORNADA;
+// Lo que dice el formulario si el cálculo no llegó (un error del servidor, o sin conexión): sin él no se ve qué pasa con
+// Configuración, así que «Guardar» lo vuelve a pedir antes de guardar
+const textoSinCalculo = (falla) => `No se pudo calcular: ${falla?.status ? 'hubo un error en el servidor'
+  : 'no se pudo conectar con el servidor'}. Probá de nuevo en unos minutos.`;
+
+/**
+ * Los valores de «Cargar licencia» (o del uso autorizado): los de una fila de la lista que se corrige o, sin fila, los de una
+ * nueva con `tipo` (el de «Vence pronto»; sin él, ninguno). Las horas, como texto. `autorizado` es la persona a cargo elegida y
+ * `autorizado_inicial`, la que ya tenía (de `en_configuracion`, solo de una creada): autorizado_id viaja solo si cambian.
+ * `licencia_oficial` es el id de su licencia de Configuración (el excluir del aviso de los días sin auditor), o null. `grupo` (spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 9) es la clave del grupo de unos días restituidos: de una fila, el de su carga
+ * (`restituidos.grupo`: al corregir no se cambia de grupo); de una nueva, el elegido (`grupo`, el del aviso, «Vence pronto» o la
+ * línea de la fila). En otro tipo, o sin uno, ''. `horas_acumuladas` (spec 2026-11-03-mi-espacio-horas-acumuladas, 5) es la parte
+ * acumulada de unas horas a favor que se corrigen, como texto, como `horas` (el total del día); sin ella, con 0 o en otro tipo, ''.
+ */
+function valoresDeLicencia(fila, tipo, grupo) {
+  const datos = esObjeto(fila) ? fila : {};
+  const enConfiguracion = esObjeto(datos.en_configuracion) ? datos.en_configuracion : {};
+  const autorizado = Number.isInteger(enConfiguracion.autorizado_id) ? String(enConfiguracion.autorizado_id) : '';
+  let elTipo = '';
+  if (conTexto(datos.tipo)) elTipo = datos.tipo;
+  else if (conTexto(tipo)) elTipo = tipo;
+  let elGrupo = '';
+  if (elTipo === 'restituidos') {
+    if (esObjeto(fila)) elGrupo = esObjeto(datos.restituidos) && conTexto(datos.restituidos.grupo) ? datos.restituidos.grupo : '';
+    else if (conTexto(grupo)) elGrupo = grupo;
+  }
+  return {
+    id: datos.id ?? null,
+    tipo: elTipo,
+    grupo: elGrupo,
+    desde: comoTexto(datos.desde),
+    hasta: comoTexto(datos.hasta),
+    horas: typeof datos.horas === 'number' && Number.isFinite(datos.horas) ? String(datos.horas) : '',
+    horas_acumuladas: elTipo === 'horas_a_favor' && typeof datos.horas_acumuladas === 'number' && datos.horas_acumuladas > 0
+      ? String(datos.horas_acumuladas) : '',
+    nota: comoTexto(datos.nota),
+    mostrar: datos.mostrar !== false,
+    autorizado,
+    autorizado_inicial: autorizado,
+    licencia_oficial: Number.isInteger(enConfiguracion.licencia_id) ? enConfiguracion.licencia_id : null
+  };
+}
+
+// Copia de acumuladasDeLaCarga (services/miEspacioReglas.js), atada por un test de paridad con validarLicencia: la parte acumulada de
+// unas horas a favor vale vacía (sin ella, null, '' o solo espacios: todo del mes) o, como número o como texto, de 0 a `horas` (el
+// total del día), de a media hora. '0,5', un booleano, un negativo o un cuarto de hora, no
+const acumuladasValidas = (valor, horas) => {
+  if (valor === undefined || valor === null || (typeof valor === 'string' && valor.trim() === '')) return true;
+  let numero = NaN;
+  if (typeof valor === 'number') numero = valor;
+  else if (typeof valor === 'string') numero = Number(valor);
+  return Number.isInteger(numero * 2) && numero >= 0 && numero <= horas;
+};
+
+/**
+ * Los errores de una licencia antes de pedir nada (`{ campo: mensaje }`, en el orden del formulario; sin ninguno, {}): el tipo,
+ * las fechas (el formato y que el hasta no sea anterior; en los de un día, solo la fecha; en unos días restituidos, solo el desde:
+ * el «Hasta» lo pone Mi espacio, spec 2026-10-31-mi-espacio-dias-restituidos, 9), las horas de los tipos que se cargan en horas
+ * (con `modalidad`: en planta, el uso autorizado no lleva), en las horas a favor y con las horas bien, la parte acumulada (spec
+ * 2026-11-03-mi-espacio-horas-acumuladas, 5: `acumuladasValidas`, en `horas_acumuladas`) y el largo de la nota. Los mensajes son
+ * los del servidor, que controla además el rango, los días hábiles, los topes, lo que se superpone y, en unos días restituidos, el
+ * grupo y el plazo.
+ */
+function erroresDeLicencia(valores, { modalidad = null } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  const errores = {};
+  if (!conTexto(datos.tipo)) errores.tipo = MENSAJES_FORMULARIOS.tipo;
+  if (!esFechaDeTexto(datos.desde)) errores.desde = MENSAJES_FORMULARIOS.fecha;
+  else if (!deUnDia(datos.tipo) && datos.tipo !== 'restituidos') {
+    if (!esFechaDeTexto(datos.hasta)) errores.hasta = MENSAJES_FORMULARIOS.fecha;
+    else if (datos.hasta < datos.desde) errores.hasta = MENSAJES_FORMULARIOS.hastaAntes;
+  }
+  const enHoras = horasDelTipo(datos.tipo, modalidad);
+  const horas = numeroDelCampo(datos.horas);
+  if (enHoras === 'enteras' && !(Number.isInteger(horas) && horas >= 1 && horas <= JORNADA)) {
+    errores.horas = MENSAJES_FORMULARIOS.horasEnteras;
+  }
+  if (enHoras === 'medias' && !(horas !== null && Number.isInteger(horas * 2) && horas >= 0.5 && horas <= JORNADA)) {
+    errores.horas = MENSAJES_FORMULARIOS.horasMedias;
+  }
+  if (datos.tipo === 'horas_a_favor' && errores.horas === undefined && !acumuladasValidas(datos.horas_acumuladas, horas)) {
+    errores.horas_acumuladas = MENSAJES_FORMULARIOS.acumuladasMedias;
+  }
+  if (largoDeLaNota(datos.nota) > LARGO_NOTA) errores.nota = MENSAJES_FORMULARIOS.nota;
+  return errores;
+}
+
+// Lo que dice debajo de las fechas de una fila que se corrige: una creada que ya terminó (`fechas_fijas`), que ya empezó
+// (`solo_hasta`; en unos días restituidos, cuyo «Hasta» lo pone Mi espacio, `restituidosEmpezados`: no se pueden mover) o nada
+const ayudaDeLasFechasDe = (fila) => {
+  if (!esObjeto(fila)) return '';
+  if (fila.fechas_fijas === true) return MENSAJES_FORMULARIOS.fechasFijas;
+  if (fila.solo_hasta !== true) return '';
+  return fila.tipo === 'restituidos' ? MENSAJES_FORMULARIOS.restituidosEmpezados : MENSAJES_FORMULARIOS.soloHasta;
+};
+
+// La opción de «Días restituidos» de un grupo entre los `tipos` del Resumen (una por grupo por restituir del caso A: `{ tipo:
+// 'restituidos', grupo, restitucion, nombre, queda_texto, dias, ayuda_desde, ayuda_hasta }`, spec
+// 2026-10-31-mi-espacio-dias-restituidos, 9), o null
+const opcionDelGrupo = (tipos, grupo) => (conTexto(grupo)
+  ? listaDe(tipos).find((opcion) => opcion.tipo === 'restituidos' && opcion.grupo === grupo) ?? null : null);
+
+/**
+ * Las opciones de «Cargar licencia» (los `tipos` del Resumen) para lo que se abre: una nueva, todas; una corrección, sin las de los
+ * días restituidos de los grupos por restituir (una licencia no pasa a ser unos días restituidos: spec
+ * 2026-10-31-mi-espacio-dias-restituidos, 17.12) y con la de su tipo, aunque ya no esté entre las de la modalidad (o con «No
+ * estudio»), con su nombre: se ve elegida. Unos días restituidos que se corrigen, solo la suya, la de su grupo (`valores.grupo`): no
+ * cambian de tipo ni de grupo (el servidor responde `restituidosFijo`)
+ */
+function opcionesDeLicencia(tipos, fila, valores) {
+  const todas = listaDe(tipos);
+  if (!esObjeto(fila)) return todas;
+  const datos = esObjeto(valores) ? valores : {};
+  const suya = { tipo: datos.tipo, nombre: fila.tipo_nombre, queda_texto: '' };
+  if (datos.tipo === 'restituidos') return [{ ...suya, grupo: comoTexto(datos.grupo) }];
+  const sinRestituidos = todas.filter((opcion) => opcion.tipo !== 'restituidos');
+  return sinRestituidos.some((opcion) => opcion.tipo === datos.tipo) ? sinRestituidos : [...sinRestituidos, suya];
+}
+
+// Las ayudas de «Desde» y del «Hasta» de unos días restituidos (`{ desde, hasta }`, textos del servidor): las de la opción del grupo
+// (`ayuda_desde` y `ayuda_hasta`) en una nueva o, al corregir, las de la fila (`fila.restituidos`). Sin ellas, ''
+const ayudasDeRestituidos = (tipos, fila, grupo) => {
+  const fuente = esObjeto(fila) ? (esObjeto(fila.restituidos) ? fila.restituidos : null) : opcionDelGrupo(tipos, grupo);
+  return { desde: comoTexto(fuente?.ayuda_desde), hasta: comoTexto(fuente?.ayuda_hasta) };
+};
+
+// Lo que se pide para un grupo de días por restituir (`{ licencia_id, anio, tanda }`, la `restitucion` de su acción), entre las
+// acciones del servidor que hay en la página (la del aviso del Resumen, la de «Vence pronto» y la de la línea de la fila), o null
+const restitucionDelGrupo = (grupo, acciones) => (conTexto(grupo)
+  ? listaDe(acciones).find((accion) => accion.grupo === grupo && esObjeto(accion.restitucion))?.restitucion ?? null : null);
+
+/**
+ * El cuerpo de POST /licencias y PUT /licencias/:id (y del cálculo previo): el tipo, las fechas (en los de un día, el hasta es
+ * el desde), las horas (solo en los tipos de horas que las llevan, como número), «Mostrar» y la nota recortada. `autorizado_id`
+ * va solo en las vacaciones (o los días restituidos: `dejaPersonaACargo`) del firmante titular (`soyTitular`: el campo «Autorizo
+ * a…» está a la vista) y, al corregir, solo si se cambió la persona: si no, el servidor conserva la de Configuración. Vacío es null
+ * (nadie). Unos días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 8 y 9) mandan `{ tipo, restitucion, desde,
+ * mostrar, nota }`: sin el «Hasta», que lo pone el servidor, y, en el alta, la `restitucion` de la opción del grupo elegido entre
+ * los `tipos` del Resumen (`opcionDelGrupo`; sin ella, null, y el servidor dice qué elegir); al corregir, sin ella (el grupo es el
+ * de la carga). Unas horas a favor con los dos campos (spec 2026-11-03-mi-espacio-horas-acumuladas, 5) mandan también
+ * `horas_acumuladas`, como número (`horas` es el total del día); con un solo campo (`horas_acumuladas` vacío), sin la clave, como
+ * siempre: todo del mes.
+ */
+function cuerpoDeLicencia(valores, { soyTitular = false, tipos = [] } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  const nueva = datos.id === null || datos.id === undefined;
+  const fechas = datos.tipo === 'restituidos'
+    ? { ...(nueva ? { restitucion: opcionDelGrupo(tipos, datos.grupo)?.restitucion ?? null } : {}), desde: datos.desde }
+    : { desde: datos.desde, hasta: deUnDia(datos.tipo) ? datos.desde : datos.hasta };
+  const cuerpo = { tipo: datos.tipo, ...fechas, mostrar: datos.mostrar !== false, nota: comoTexto(datos.nota).trim() };
+  const horas = numeroDelCampo(datos.horas);
+  if (TIPOS_CON_HORAS.includes(datos.tipo) && horas !== null) cuerpo.horas = horas;
+  if (datos.tipo === 'horas_a_favor' && conTexto(datos.horas_acumuladas)) cuerpo.horas_acumuladas = Number(datos.horas_acumuladas);
+  if (soyTitular === true && dejaPersonaACargo(datos.tipo)
+    && (nueva || comoTexto(datos.autorizado) !== comoTexto(datos.autorizado_inicial))) {
+    cuerpo.autorizado_id = conTexto(datos.autorizado) ? Number(datos.autorizado) : null;
+  }
+  return cuerpo;
+}
+
+/**
+ * Los tipos de «Cargar licencia» (los `tipos` del Resumen): radios grandes, cada uno con lo que queda. El uso autorizado no va:
+ * tiene su propio formulario. Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9) son una opción por grupo, todas
+ * con value="restituidos" y cada una con su data-grupo: con `elegido` 'restituidos', va elegida la del `grupo` (sin grupo, la
+ * primera; con uno que no está entre las opciones, ninguna). Las demás, la del tipo `elegido`
+ */
+function htmlDeTiposDeLicencia(tipos, elegido, grupo = '') {
+  const opciones = listaDe(tipos).filter((opcion) => opcion.tipo !== 'uso_autorizado');
+  const restituidos = opciones.filter((opcion) => opcion.tipo === 'restituidos');
+  let elegida = opciones.find((opcion) => opcion.tipo === elegido);
+  if (elegido === 'restituidos') elegida = conTexto(grupo) ? opcionDelGrupo(restituidos, grupo) : restituidos[0];
+  return opciones.map((opcion) => '<label class="me-opcion">'
+    + `<input type="radio" name="ml-tipo" value="${esc(opcion.tipo)}"`
+    + `${opcion.tipo === 'restituidos' && conTexto(opcion.grupo) ? ` data-grupo="${esc(opcion.grupo)}"` : ''}`
+    + `${elegida !== undefined && opcion === elegida ? ' checked' : ''} aria-describedby="ml-tipos-error">`
+    + `<span><b>${esc(opcion.nombre)}</b>${conTexto(opcion.queda_texto) ? `<small>${esc(opcion.queda_texto)}</small>` : ''}`
+    + '</span></label>')
+    .join('');
+}
+
+// Las horas que se pueden elegir: enteras, de 1 a 7, o de a media hora, de 0,5 a 7 (7 es el día entero), con la elegida
+function htmlDeOpcionesDeHoras(enHoras, elegida) {
+  const paso = enHoras === 'enteras' ? 1 : 0.5;
+  const opciones = ['<option value="">—</option>'];
+  for (let horas = paso; horas <= JORNADA; horas += paso) {
+    opciones.push(`<option value="${String(horas)}"${String(horas) === elegida ? ' selected' : ''}>`
+      + `${numeroConComa(horas)}${horas === JORNADA ? ', el día entero' : ''}</option>`);
+  }
+  return opciones.join('');
+}
+
+// ---- Las horas a favor con horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 5; la opción B de la maqueta) ----
+// En contrato, con horas acumuladas (los topes de GET /mi-espacio/horas-a-favor/topes: `{ mes, mes_texto, del_mes, acumuladas,
+// termino }`, los del mes de la fecha elegida y los de hoy) o en una carga que ya las usa, el campo «Horas» se reemplaza por dos:
+// «De noviembre» (el mes de la fecha) y «Acumuladas», cada uno de 0 a su tope, de a media hora, con el total debajo. Los topes los
+// manda el servidor; lo de acá solo los aplica
+
+// Una cantidad de horas de un tope: de a media hora, para abajo, de 0 a 7 (lo que no es un número, 0)
+const mediaHoraHasta = (valor) => {
+  const numero = typeof valor === 'number' ? valor : Number(valor);
+  return Number.isFinite(numero) ? Math.min(JORNADA, Math.max(0, Math.floor(numero * 2) / 2)) : 0;
+};
+// Lo elegido en uno de los dos campos, como número (vacío o lo que no es un número, 0)
+const horasElegidas = (valor) => {
+  const numero = numeroDelCampo(valor);
+  return Number.isFinite(numero) && numero > 0 ? numero : 0;
+};
+
+/**
+ * Los dos campos con sus topes (`topes`, los del servidor; null si no llegaron) y lo elegido (`{ delMes, acumuladas }`, números): `{
+ * delMes: { tope, valor }, acumuladas: { tope, valor } }`. «De …», hasta lo que queda del mes (`del_mes`) y nunca más de 7;
+ * «Acumuladas», hasta lo que queda (`acumuladas`; con el mes terminado, `termino`, menos lo elegido del mes, que ya es parte de
+ * ellas) y nunca más de 7 menos lo elegido del mes. Lo elegido nunca pasa de su tope: si pasa (otro mes, o se subió lo del mes), baja
+ * hasta él. Sin topes, los dos hasta el día entero (el servidor valida igual). `guardadas` (`{ delMes, acumuladas }`, números, o null)
+ * son las partes de la carga que se corrige, si la fecha sigue en su mes: cada tope es al menos la suya (un cambio posterior, como
+ * una salida borrada, pudo dejar los topes debajo; abrir «Editar» nunca baja lo guardado: el cálculo del servidor dice el faltante),
+ * y el de las acumuladas sigue sin pasar de 7 menos lo del mes
+ */
+function lasDosHoras(topes, elegidas, guardadas = null) {
+  const conTopes = esObjeto(topes);
+  const elegido = esObjeto(elegidas) ? elegidas : {};
+  const guardado = esObjeto(guardadas) ? guardadas : {};
+  const topeDelMes = mediaHoraHasta(Math.max(conTopes ? mediaHoraHasta(topes.del_mes) : JORNADA, horasElegidas(guardado.delMes)));
+  const delMes = Math.min(horasElegidas(elegido.delMes), topeDelMes);
+  const queda = conTopes ? mediaHoraHasta(topes.acumuladas) - (topes.termino === true ? delMes : 0) : JORNADA;
+  const topeDeLasAcumuladas = mediaHoraHasta(Math.min(Math.max(queda, horasElegidas(guardado.acumuladas)), JORNADA - delMes));
+  return {
+    delMes: { tope: topeDelMes, valor: delMes },
+    acumuladas: { tope: topeDeLasAcumuladas, valor: Math.min(horasElegidas(elegido.acumuladas), topeDeLasAcumuladas) }
+  };
+}
+
+// Las opciones de uno de los dos campos: de 0 al tope, de a media hora (un tope que no es un número, solo el 0), con la elegida
+function htmlDeOpcionesDeLasDos(tope, elegida) {
+  const hasta = mediaHoraHasta(tope);
+  const opciones = [];
+  for (let horas = 0; horas <= hasta; horas += 0.5) {
+    opciones.push(`<option value="${String(horas)}"${String(horas) === elegida ? ' selected' : ''}>${numeroConComa(horas)}</option>`);
+  }
+  return opciones.join('');
+}
+
+// El total, debajo de los dos campos: «Total: 7 horas, el día entero.», «Total: 2 horas.», «Total: 1 hora.» o, sin nada elegido,
+// «Elegí cuántas horas tomás.»
+function textoDelTotalDeLasDos(delMes, acumuladas) {
+  const total = horasElegidas(delMes) + horasElegidas(acumuladas);
+  if (total === 0) return 'Elegí cuántas horas tomás.';
+  return `Total: ${textoDeHoras(total)}${total === JORNADA ? ', el día entero' : ''}.`;
+}
+
+// Una cantidad de horas para un rótulo: de a media hora, para abajo, desde 0 y sin el tope de 7 de las opciones (el rótulo dice lo
+// que queda: con 8 acumuladas, «tenés 8», como la tarjeta; lo que no es un número, 0)
+const mediaHoraDelRotulo = (valor) => {
+  const numero = typeof valor === 'number' ? valor : Number(valor);
+  return Number.isFinite(numero) ? Math.max(0, Math.floor(numero * 2) / 2) : 0;
+};
+
+// Los rótulos de los dos campos: `{ mes, delMes, acumuladas }` («De noviembre», «(quedan 4)» y «(tenés 6,5)»), con el mes y los
+// topes del servidor, sin el tope de 7 (las opciones sí lo tienen: lasDosHoras). Sin topes (mientras llegan, o si no llegaron), el
+// mes de la fecha elegida (sin una fecha, «Del mes») y sin topes: nunca uno viejo
+function rotulosDeLasDos(topes, desde) {
+  if (esObjeto(topes) && conTexto(topes.mes_texto)) {
+    return {
+      mes: `De ${topes.mes_texto}`, delMes: `(quedan ${numeroConComa(mediaHoraDelRotulo(topes.del_mes))})`,
+      acumuladas: `(tenés ${numeroConComa(mediaHoraDelRotulo(topes.acumuladas))})`
+    };
+  }
+  return { mes: esFechaDeTexto(desde) ? `De ${nombreDelMes(desde.slice(0, 7))}` : 'Del mes', delMes: '', acumuladas: '' };
+}
+
+// El rótulo de «De noviembre», con su tope al lado (`#ml-horas-del-mes-tope`), escapado
+function htmlDelRotuloDelMes(topes, desde) {
+  const rotulos = rotulosDeLasDos(topes, desde);
+  return `${esc(rotulos.mes)} <span class="me-opcional" id="ml-horas-del-mes-tope">${esc(rotulos.delMes)}</span>`;
+}
+
+// El cálculo del servidor (la `vista` de POST /licencias/calculo): los días hábiles (en los estudios, si es el máximo por
+// examen), de qué licencia salen y lo que queda; después, cada uno de sus avisos (`avisos`: lo que la carga hace perder o le
+// cambia a otras, que no frena el guardado; spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.2, 3.4 y 3.6) en su párrafo, en
+// ámbar. Sin vista (la licencia no se puede guardar como está), ''
+function htmlDelCalculo(data, tipo) {
+  const vista = esObjeto(data) && esObjeto(data.vista) ? data.vista : null;
+  if (vista === null || !conTexto(vista.texto_dias)) return '';
+  const examen = tipo === 'estudios' && vista.dias_habiles === DIAS_POR_EXAMEN ? ', el máximo por examen' : '';
+  const resto = [vista.texto_reparto, vista.queda_texto, vista.texto_antes_del_arranque].filter(conTexto).map(esc);
+  const avisos = (Array.isArray(vista.avisos) ? vista.avisos : []).filter(conTexto)
+    .map((aviso) => `<p class="me-calculo-aviso">${esc(aviso)}</p>`);
+  return [`<b>${esc(vista.texto_dias)}${examen}.</b>`, ...resto].join(' ') + avisos.join('');
+}
+
+/**
+ * Lo que dice el formulario del paso a Configuración (el `paso` del cálculo), un párrafo por texto. Si pasa, los avisos del
+ * servidor y, en las vacaciones del firmante titular, el efecto en las notas con la persona a cargo elegida (`autorizado`, su
+ * nombre, o null: nadie) y los días en que ella está de licencia (`ausencias`, las de GET /mi-espacio/firmante), con las fechas
+ * del formulario (`desde` y `hasta`) y `hoy`. Con `conEfecto` false (no se sabe quién queda a cargo), el efecto no va. Si no
+ * pasa, por qué (una de administración que la cubre o con la que se superpone); sin nada que decir, ''.
+ */
+function htmlDelPaso(paso, { autorizado = null, ausencias = [], hoy = '', desde = '', hasta = '', conEfecto = true } = {}) {
+  if (!esObjeto(paso)) return '';
+  const parrafos = [];
+  if (paso.pasa === true) {
+    parrafos.push(...(Array.isArray(paso.avisos) ? paso.avisos : []).filter(conTexto));
+    if (conEfecto !== false && esObjeto(paso.firmante) && paso.firmante.puede_autorizar === true) {
+      const nombre = conTexto(autorizado) ? autorizado : null;
+      const { vispera, sin_anticipo: sinAnticipo, sin_dias_habiles: sinDiasHabiles } = paso.firmante;
+      parrafos.push(efectoEnNotas({ desde, vispera, sin_anticipo: sinAnticipo, sin_dias_habiles: sinDiasHabiles }, nombre, hoy));
+      if (nombre !== null) parrafos.push(...textoAusenciasAutorizado(nombre, listaDe(ausencias), desde, hasta));
+    }
+  } else if (conTexto(paso.sin_pasar_previsto)) parrafos.push(paso.sin_pasar_previsto);
+  return parrafos.map((texto) => `<p>${esc(texto)}</p>`).join('');
+}
+
+// Las personas que el firmante puede dejar a cargo (`[{ id, nombre }]`), después de «Nadie»
+function htmlDeAutorizables(personas) {
+  return ['<option value="">Nadie: se anticipan los avisos</option>',
+    ...listaDe(personas).map((persona) => `<option value="${esc(persona.id)}">${esc(persona.nombre)}</option>`)].join('');
+}
+
+// La confirmación de un borrado, en texto plano (va con textContent): qué se borra y, de una licencia creada en Configuración, que
+// también se anula allá. Una fila de horas extras (la del día por día) tiene su horario
+function textoDeConfirmacion(fila) {
+  const datos = esObjeto(fila) ? fila : {};
+  const nota = conTexto(datos.nota) ? ` («${datos.nota}»)` : '';
+  if (typeof datos.horario === 'string') return `Horas extras del ${comoTexto(datos.fecha_texto)}, de ${datos.horario}${nota}.`;
+  const enConfiguracion = esObjeto(datos.en_configuracion) ? ' También se anula en Configuración → Licencias.' : '';
+  return `${comoTexto(datos.tipo_nombre)} del ${comoTexto(datos.fechas_texto)}${nota}.${enConfiguracion}`;
+}
+
+// ---- El segundo paso de «Cargar licencia» (spec 2026-10-27-mi-espacio-licencia-word, 6; la versión C de la maqueta) ----
+
+// Lo que dice el segundo paso mientras llega GET …/nota y, si no llega, que la licencia igual quedó guardada
+const TEXTO_ARMANDO_LA_NOTA = 'Armando la nota…';
+const MENSAJE_SIN_VISTA = 'La licencia quedó guardada, pero no se pudo armar la vista de la nota. Probá «Descargar Word» o bajala '
+  + 'después con «Word» en la lista.';
+// La tilde verde de la licencia guardada (check de Lucide), decorativa: lo dice el título del modal
+const TILDE_DEL_SEGUNDO_PASO = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" '
+  + 'stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+  + '<path d="M20 6 9 17l-5-5"/></svg>';
+
+// El título del modal en el segundo paso: el alta o la corrección
+const tituloDelSegundoPaso = (corregida) => (corregida === true ? 'Licencia corregida' : 'Licencia cargada');
+
+// Los avisos con los que respondió el guardado (solo la corrección los trae: por ejemplo, que ya no se copia a Configuración), los
+// que son un texto con algo
+const avisosDelGuardado = (avisos) => (Array.isArray(avisos) ? avisos.filter(conTexto) : []);
+
+// Lo que se anuncia en #me-anuncio al pasar al segundo paso (no hay aviso flotante: lo dice el título): qué se guardó, que se puede
+// bajar la nota y los avisos
+const anuncioDelSegundoPaso = (corregida, avisos) =>
+  [`${tituloDelSegundoPaso(corregida)}. Podés descargar la nota en Word.`, ...avisosDelGuardado(avisos)].join(' ');
+
+// Los avisos del guardado, en un recuadro ámbar arriba de todo (sin avisos, '')
+const htmlDeLosAvisosDelGuardado = (avisos) => {
+  const textos = avisosDelGuardado(avisos);
+  return textos.length > 0 ? `<div class="me-recuadro ambar">${textos.map((texto) => `<p>${esc(texto)}</p>`).join('')}</div>` : '';
+};
+
+// El segundo paso sin la nota: los avisos y «Armando la nota…», hasta que llega; o los avisos y MENSAJE_SIN_VISTA, si no llegó
+const htmlDelSegundoPasoEnEspera = (avisos) => htmlDeLosAvisosDelGuardado(avisos) + htmlDeMensaje(TEXTO_ARMANDO_LA_NOTA);
+const htmlDelSegundoPasoSinVista = (avisos) => htmlDeLosAvisosDelGuardado(avisos) + htmlDeError(MENSAJE_SIN_VISTA);
+
+// Lo guardado en el segundo paso, con la tilde: la línea (la insignia, las fechas y lo que suma, ya armados; sin nada, sin la
+// línea) y, en gris, los detalles (ya armados; sin ninguno, sin el párrafo). La usan los dos segundos pasos: el de una licencia y
+// el de un pedido de restitución
+const htmlDeLoHecho = (linea, detalles) => '<div class="me-paso-dos-hecho">'
+  + `<span class="me-tilde" aria-hidden="true">${TILDE_DEL_SEGUNDO_PASO}</span><div class="me-paso-dos-licencia">`
+  + (linea.length > 0 ? `<p class="me-paso-dos-linea">${linea.join('')}</p>` : '')
+  + (detalles.length > 0 ? `<p class="me-paso-dos-detalle">${detalles.join(' ')}</p>` : '') + '</div></div>';
+
+// «Así sale la nota», con la aclaración debajo (escapada; sin ella, nada), y la hoja sobre la mesa gris (`html`, armada y escapada
+// por el servidor: va tal cual; lo que no es un texto, la mesa vacía)
+const htmlDeLaNotaDelSegundoPaso = (aclaracion, html) => '<h3 class="me-paso-dos-titulo">Así sale la nota</h3>'
+  + (conTexto(aclaracion) ? `<p class="me-paso-dos-ayuda">${esc(aclaracion)}</p>` : '')
+  + `<div class="me-mesa">${typeof html === 'string' ? html : ''}</div>`;
+
+/**
+ * El cuerpo del segundo paso con lo que manda GET …/nota: los avisos del guardado (`avisos`, en ámbar); la licencia guardada, con la
+ * tilde, la insignia de su tipo, las fechas y lo que suma y, en gris, de qué licencias sale, lo de Configuración y lo que ven los
+ * compañeros (los textos de `fila`, la misma de la lista, aunque la lista muestre otro año); en qué lista de Licencias quedó
+ * (`lista`, «Está en la lista de 2027.», solo si no es la del año en curso: spec 2026-10-28-mi-espacio-licencia-anulada, 2.3);
+ * «Así sale la nota», con la `aclaracion` debajo; y la hoja (`html`, armada y escapada por el servidor: va tal cual, como la nota del
+ * Generador de Notas) sobre la mesa gris. Todo otro texto del servidor, escapado. Sin fila, sin la licencia; sin lista, nada; sin
+ * hoja, la mesa vacía
+ */
+function htmlDelSegundoPaso({ fila = null, html = '', aclaracion = '', avisos = [], lista = null } = {}) {
+  const partes = [htmlDeLosAvisosDelGuardado(avisos)];
+  if (esObjeto(fila)) {
+    const linea = [`<span class="me-insignia ${deMapa(CLASE_DEL_TIPO, fila.tipo, 'gris')}">${esc(fila.tipo_nombre)}</span>`];
+    if (conTexto(fila.fechas_texto)) linea.push(`<b class="me-paso-dos-fechas">${esc(fila.fechas_texto)}</b>`);
+    if (conTexto(fila.cantidad_texto)) linea.push(`<span class="me-paso-dos-cantidad">${esc(fila.cantidad_texto)}</span>`);
+    const detalles = [fila.de_licencias_texto, esObjeto(fila.configuracion) ? fila.configuracion.texto : null, fila.mostrar_texto]
+      .filter(conTexto).map((texto) => `<span>${esc(texto)}</span>`);
+    partes.push(htmlDeLoHecho(linea, detalles));
+  }
+  if (conTexto(lista)) partes.push(`<p class="me-paso-dos-lista">${esc(lista)}</p>`);
+  partes.push(htmlDeLaNotaDelSegundoPaso(aclaracion, html));
+  return partes.join('');
+}
+
+// ---- «Pedir la restitución» y el borrado de un pedido (spec 2026-10-31-mi-espacio-dias-restituidos, 9; el caso B) ----
+
+// Lo que pregunta la confirmación de «Borrar el pedido», en texto plano (va con textContent): es la misma para cualquier pedido
+const TEXTO_DE_CONFIRMACION_DE_RESTITUCION = '¿Borrar el pedido de restitución? Los días vuelven a estar por restituir y la nota que '
+  + 'armaste ya no vale.';
+const textoDeConfirmacionDeRestitucion = () => TEXTO_DE_CONFIRMACION_DE_RESTITUCION;
+
+/**
+ * El recuadro del modal (el `recuadro` de GET /mi-espacio/restituciones/vista, `{ resaltado, resto }`, que arma
+ * recuadroDeLaRestitucion del servidor): lo resaltado en negrita y el resto a continuación («<b>2 días hábiles vuelven a tu
+ * licencia 2025</b> (vence el 31/12/2027), por los asuetos …»), los dos escapados. Sin recuadro, o sin textos, ''
+ */
+function htmlDelRecuadroDeRestitucion(recuadro) {
+  if (!esObjeto(recuadro)) return '';
+  return (conTexto(recuadro.resaltado) ? `<b>${esc(recuadro.resaltado)}</b>` : '') + esc(comoTexto(recuadro.resto));
+}
+
+/**
+ * Lo que muestra el modal antes de pedir (lo que manda GET /mi-espacio/restituciones/vista, `{ recuadro, html, aclaracion }`): el
+ * recuadro celeste del cálculo (sin textos, no va; con el id mr-recuadro, que describe «Pedir la restitución»), «Así sale la nota»,
+ * la aclaración y la hoja (tal cual), como el segundo paso de una licencia
+ */
+function htmlDeLaVistaDeRestitucion(vista) {
+  const { recuadro, html, aclaracion } = esObjeto(vista) ? vista : {};
+  const adentro = htmlDelRecuadroDeRestitucion(recuadro);
+  return (adentro === '' ? '' : `<div class="me-recuadro me-calculo" id="mr-recuadro">${adentro}</div>`)
+    + htmlDeLaNotaDelSegundoPaso(aclaracion, html);
+}
+
+/**
+ * El segundo paso de «Pedir la restitución», con lo que manda GET /mi-espacio/restituciones/:id/nota (`{ vacaciones: { tipo_nombre,
+ * fechas_texto }, hecho, html, aclaracion }`), como el de una licencia: la tilde, la insignia de las vacaciones de las que salen los
+ * días (`tipo_nombre`, en el azul de las vacaciones: un pedido del caso B sale siempre de unas vacaciones, y la recursión es siempre
+ * el caso A) con sus fechas y, en gris, lo que volvió («Los 2 días volvieron a tu licencia 2025: te quedan 23 días de vacaciones.»,
+ * `hecho`); después «Así sale la nota», la aclaración y la hoja (tal cual). Todo otro texto del servidor, escapado. Sin vacaciones
+ * ni lo que volvió, sin la tilde
+ */
+function htmlDelSegundoPasoDeRestitucion(datos) {
+  const { vacaciones, hecho, html, aclaracion } = esObjeto(datos) ? datos : {};
+  const linea = [];
+  if (esObjeto(vacaciones)) {
+    if (conTexto(vacaciones.tipo_nombre)) {
+      linea.push(`<span class="me-insignia ${CLASE_DEL_TIPO.vacaciones}">${esc(vacaciones.tipo_nombre)}</span>`);
+    }
+    if (conTexto(vacaciones.fechas_texto)) linea.push(`<b class="me-paso-dos-fechas">${esc(vacaciones.fechas_texto)}</b>`);
+  }
+  const detalles = conTexto(hecho) ? [`<span>${esc(hecho)}</span>`] : [];
+  return (linea.length > 0 || detalles.length > 0 ? htmlDeLoHecho(linea, detalles) : '') + htmlDeLaNotaDelSegundoPaso(aclaracion, html);
+}
+
+// ---- Las horas extras ----
+
+const NOMBRES_DE_LOS_MESES = Object.freeze([
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+]);
+// El nombre del mes de 'AAAA-MM', o del que viene `mas` meses después
+const nombreDelMes = (mes, mas = 0) => NOMBRES_DE_LOS_MESES[(Number(mes.slice(5, 7)) - 1 + mas) % 12];
+const textoDeHoras = (horas) => `${numeroConComa(horas)} ${horas === 1 ? 'hora' : 'horas'}`;
+
+/**
+ * Lo que suman unas horas extras mientras se cargan en el modal de planta: «3,5 horas.» y, si la fecha es del año de la tabla
+ * cargada (la de la pestaña), lo que lleva el mes con ellas (sin contar dos veces las que se corrigen, `valores.id`; un mes sin fila
+ * en la tabla, la primera carga del mes, llevaba 0) y los francos compensatorios que da para usar dos meses después («… En octubre
+ * llevás 14 horas: 2 francos compensatorios para usar en diciembre.»; sin llegar a 7 horas, solo lo que lleva). Contrato carga en
+ * la planilla, que dice su propia suma (htmlDeLaBandaDeLaPlanilla; spec 2026-10-27-mi-espacio-horas, sección 9): con otra
+ * modalidad, solo las horas. Un horario que no sirve, ''.
+ */
+function textoDeLaSuma(valores, tabla, modalidad) {
+  const datos = esObjeto(valores) ? valores : {};
+  const horas = horasDelHorario(datos.desde, datos.hasta);
+  if (horas === null) return '';
+  const base = `${textoDeHoras(horas)}.`;
+  const mes = esFechaDeTexto(datos.fecha) ? datos.fecha.slice(0, 7) : null;
+  if (modalidad !== 'planta' || mes === null || !esObjeto(tabla) || tabla.anio !== Number(mes.slice(0, 4))) return base;
+  const otras = listaDe(deMapa(tabla.dias_por_mes, mes, []))
+    .filter((dia) => datos.id === null || datos.id === undefined || String(dia.id) !== String(datos.id))
+    .reduce((suma, dia) => suma + (horasDelHorario(dia.desde, dia.hasta) ?? 0), 0);
+  const total = otras + horas;
+  const lleva = `En ${nombreDelMes(mes)} llevás ${textoDeHoras(total)}`;
+  const francos = Math.floor(total / JORNADA);
+  if (francos === 0) return `${base} ${lleva}.`;
+  return `${base} ${lleva}: ${francos} ${francos === 1 ? 'franco compensatorio' : 'francos compensatorios'} para usar en `
+    + `${nombreDelMes(mes, 2)}.`;
+}
+
+// Los valores de «Cargar horas extras»: los de un día del día por día que se corrige, o vacíos
+function valoresDeHoras(dia) {
+  const datos = esObjeto(dia) ? dia : {};
+  return {
+    id: datos.id ?? null, fecha: comoTexto(datos.fecha), desde: comoTexto(datos.desde), hasta: comoTexto(datos.hasta),
+    nota: comoTexto(datos.nota)
+  };
+}
+
+// Los errores de unas horas extras antes de pedir nada, con los mensajes y los campos del servidor (el horario va en `desde`)
+function erroresDeHoras(valores) {
+  const datos = esObjeto(valores) ? valores : {};
+  const errores = {};
+  if (!esFechaDeTexto(datos.fecha)) errores.fecha = MENSAJES_FORMULARIOS.fecha;
+  if (horasDelHorario(datos.desde, datos.hasta) === null) errores.desde = MENSAJES_FORMULARIOS.horario;
+  if (largoDeLaNota(datos.nota) > LARGO_NOTA) errores.nota = MENSAJES_FORMULARIOS.nota;
+  return errores;
+}
+
+// El cuerpo de POST /horas-extras y PUT /horas-extras/:id
+const cuerpoDeHoras = (valores) => ({
+  fecha: valores.fecha, desde: valores.desde, hasta: valores.hasta, nota: comoTexto(valores.nota).trim()
+});
+
+// ---- La planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, secciones 4 y 9; la maqueta aprobada) ----
+//
+// La planilla de un mes es la que manda GET /mi-espacio/salidas?mes= (planillaDelMes de services/miEspacioResumen.js): sus `dias`
+// (los de lunes a viernes, también los feriados y los que todavía no llegaron, y los sábados y domingos con una salida) y sus
+// `fines_de_semana` (los demás sábados y domingos hasta hoy, para «Sumar el día»), cada uno con lo guardado y su `tipo`. Encima van
+// los cambios de la página: `cambios`, un Map de cada fecha tocada a su estado completo `{ entrada, salida, nota, al_mes_anterior }`
+// (lo que se manda; todo vacío es un borrado; `al_mes_anterior`, el tilde «Sumar a {mes anterior}», vale solo con una salida: spec
+// 2026-10-30-mi-espacio-horas-mes-anterior, sección 3) o `{ quitar: true }` («Quitar»: también un borrado, y un sábado o domingo
+// guardado deja de verse); `agregados`, un Set de los sábados y domingos sumados; `errores`, un Map de cada fecha a su
+// `{ campo, mensaje }`; `notasAbiertas`, un Set de las fechas con la nota abierta; y `meses`, un Map de cada mes pedido en la
+// apertura a su planilla (de ahí, lo que entra del mes siguiente con lo que no se guardó: `diasQueEntran`). «Quitar» (lo hace la
+// página) saca además el día de `agregados`: si no, un sábado o domingo sumado y quitado seguiría a la vista; y volver a sumar uno
+// guardado que se quitó deshace el «Quitar» (vuelve con lo guardado). Los Map y los Set se reconocen por lo que saben hacer, no por
+// su clase (los tests los arman fuera del vm). Las semanas y sus totales son de presentación, como diasDeLaGrilla de la agenda.
+
+const esMapa = (valor) => valor !== null && typeof valor === 'object' && typeof valor.get === 'function'
+  && typeof valor.has === 'function' && typeof valor[Symbol.iterator] === 'function';
+const esConjunto = (valor) => valor !== null && typeof valor === 'object' && typeof valor.has === 'function';
+const cambioDe = (cambios, fecha) => (esMapa(cambios) ? cambios.get(fecha) : undefined);
+const tieneEn = (conjunto, fecha) => esConjunto(conjunto) && conjunto.has(fecha) === true;
+// Un sábado o un domingo (también uno que además es feriado: se suma y se quita como los demás)
+const esFinDeSemana = (fecha) => lugarEnLaSemana(fecha) >= 5;
+
+// Una hora como se manda: la de un <input type="time"> ('16:46', o con segundos, '16:46:00' o '16:46:00.000'), cortada a 'HH:MM'
+// (Review Focus 1); otro texto, recortado (el servidor lo rechaza con su mensaje, y la página también); lo que no es un texto, ''
+const horaDelCampo = (valor) => {
+  if (typeof valor !== 'string') return '';
+  const limpio = valor.trim();
+  return /^\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(limpio) ? limpio.slice(0, 5) : limpio;
+};
+// Lo de un día como se manda y como se compara con lo guardado: `{ entrada, salida, nota, al_mes_anterior }`, con las horas
+// cortadas, la nota recortada y lo vacío como ''. El tilde, `true` solo con el true literal y una salida (sin ella, el día es un
+// borrado y pierde la marca). Un «Quitar», o lo que no es un objeto, todo vacío y sin tilde
+const valoresDeLaSalida = (fuente) => {
+  const datos = esObjeto(fuente) && fuente.quitar !== true ? fuente : {};
+  const salida = horaDelCampo(datos.salida);
+  return {
+    entrada: horaDelCampo(datos.entrada), salida, nota: comoTexto(datos.nota).trim(),
+    al_mes_anterior: salida !== '' && datos.al_mes_anterior === true
+  };
+};
+// Lo que muestra un día en sus campos, como se escribió: el cambio de la página (un «Quitar», vacío y sin tilde) o lo guardado. El
+// tilde, como se tildó (solo el true literal), también sin salida: se ve oculto, y vuelve a verse tildado al escribir la salida
+const valorDelDia = (dia, cambio) => {
+  const fuente = esObjeto(cambio) ? cambio : (esObjeto(dia) ? dia : {});
+  if (fuente.quitar === true) return { entrada: '', salida: '', nota: '', al_mes_anterior: false };
+  return {
+    entrada: comoTexto(fuente.entrada), salida: comoTexto(fuente.salida), nota: comoTexto(fuente.nota),
+    al_mes_anterior: fuente.al_mes_anterior === true
+  };
+};
+
+/**
+ * Los días del servidor por fecha (los del mes y los sábados y domingos para sumar), de una lista de planillas o de lo que se pueda
+ * recorrer (los meses ya pedidos: `pagina.planilla.meses.values()`): un Map de la fecha al día, con lo guardado y su `tipo`.
+ */
+function diasPorFechaDe(planillas) {
+  const lista = Array.isArray(planillas) ? planillas
+    : (planillas !== null && typeof planillas === 'object' && typeof planillas[Symbol.iterator] === 'function' ? [...planillas] : []);
+  const porFecha = new Map();
+  for (const planilla of lista.filter(esObjeto)) {
+    for (const dia of [...listaDe(planilla.dias), ...listaDe(planilla.fines_de_semana)]) {
+      if (esFechaDeTexto(dia.fecha) && !porFecha.has(dia.fecha)) porFecha.set(dia.fecha, dia);
+    }
+  }
+  return porFecha;
+}
+
+/**
+ * Las fechas con cambios sin guardar, en orden: las de `cambios` cuyo `{ entrada, salida, nota, al_mes_anterior }` (como se manda)
+ * es distinto de lo guardado (el día de `diasPorFecha`; uno que no está ahí, vacío): tildar o destildar es un cambio. Un día que se
+ * cambió y volvió a quedar como estaba no cuenta (Review Focus 5: el pie vuelve a «Todo guardado.» y no se manda), ni un sábado o
+ * domingo sumado sin nada.
+ */
+function fechasCambiadas(cambios, diasPorFecha) {
+  if (!esMapa(cambios)) return [];
+  const fechas = [];
+  for (const [fecha, cambio] of cambios) {
+    if (!esFechaDeTexto(fecha)) continue;
+    const ahora = valoresDeLaSalida(cambio);
+    const antes = valoresDeLaSalida(esMapa(diasPorFecha) ? diasPorFecha.get(fecha) : null);
+    if (ahora.entrada !== antes.entrada || ahora.salida !== antes.salida || ahora.nota !== antes.nota
+      || ahora.al_mes_anterior !== antes.al_mes_anterior) fechas.push(fecha);
+  }
+  return fechas.sort();
+}
+
+// Los pasos 3 a 7 de validarSalida (services/miEspacioReglas.js) sobre lo que se manda (`valoresDeLaSalida`) y el tipo del día, con
+// los mismos campos y los mismos mensajes: `{ campo, mensaje }`, o null. Todo vacío es un borrado y pasa. Los pasos 1 y 2 (un día
+// que no llegó o uno de licencia) no hacen falta: la página no deja escribir en esos días (el servidor los controla igual)
+const errorDeLaSalida = (tipo, { entrada, salida, nota }) => {
+  if (entrada === '' && salida === '' && nota === '') return null;
+  if (entrada !== '' && minutosDeLaSalida(entrada) === null) return { campo: 'entrada', mensaje: MENSAJES_FORMULARIOS.horaSalida };
+  if (salida !== '' && minutosDeLaSalida(salida) === null) return { campo: 'salida', mensaje: MENSAJES_FORMULARIOS.horaSalida };
+  if (salida === '') {
+    return { campo: 'salida', mensaje: tipo === 'habil' ? MENSAJES_FORMULARIOS.salidaQueCuenta : MENSAJES_FORMULARIOS.salidaFalta };
+  }
+  if (tipo !== 'habil' && entrada === '') {
+    return { campo: 'entrada', mensaje: tipo === 'feriado' ? MENSAJES_FORMULARIOS.entradaFeriado : MENSAJES_FORMULARIOS.entradaFinde };
+  }
+  if (entrada !== '' && minutosDeLaSalida(salida) <= minutosDeLaSalida(entrada)) {
+    return { campo: 'salida', mensaje: MENSAJES_FORMULARIOS.salidaAntes };
+  }
+  if (largoDeLaNota(nota) > LARGO_NOTA) return { campo: 'nota', mensaje: MENSAJES_FORMULARIOS.nota };
+  return null;
+};
+
+/**
+ * Los errores de la planilla antes de pedir nada: un Map de cada fecha con cambios (`fechasCambiadas`) al primer error de su día
+ * (los pasos 3 a 7 de validarSalida: el formato de las horas, la salida que falta, la entrada que falta, el orden y la nota), con
+ * el tipo de día que mandó el servidor. Un día que no está en `diasPorFecha` (sin su tipo) no se controla: lo controla el servidor.
+ */
+function erroresDeLaPlanilla(cambios, diasPorFecha) {
+  const errores = new Map();
+  for (const fecha of fechasCambiadas(cambios, diasPorFecha)) {
+    const dia = esMapa(diasPorFecha) ? diasPorFecha.get(fecha) : null;
+    if (!esObjeto(dia) || !TIPOS_DE_DIA.includes(dia.tipo)) continue;
+    const error = errorDeLaSalida(dia.tipo, valoresDeLaSalida(cambioDe(cambios, fecha)));
+    if (error !== null) errores.set(fecha, error);
+  }
+  return errores;
+}
+
+// El cuerpo de PUT /mi-espacio/salidas: cada fecha pedida con su estado completo, como se manda (las horas cortadas a 'HH:MM', la
+// nota recortada y lo vacío como ''; un «Quitar», todo vacío: un borrado), siempre con su tilde, un booleano (sin salida, false)
+const cuerpoDeLaPlanilla = (cambios, fechas) => ({
+  dias: (Array.isArray(fechas) ? fechas : []).map((fecha) => ({ fecha, ...valoresDeLaSalida(cambioDe(cambios, fecha)) }))
+});
+
+/**
+ * Los días que se ven en la planilla de un mes, por fecha: los del servidor (`dias`), salvo un sábado o domingo guardado que se
+ * quitó, y los sábados y domingos sumados (`agregados`, de los `fines_de_semana` o uno quitado que se vuelve a sumar).
+ */
+function diasVisiblesDeLaPlanilla(planilla, estado) {
+  const { cambios = null, agregados = null } = esObjeto(estado) ? estado : {};
+  if (!esObjeto(planilla)) return [];
+  const visibles = new Map();
+  for (const dia of listaDe(planilla.dias)) {
+    if (!esFechaDeTexto(dia.fecha) || visibles.has(dia.fecha)) continue;
+    const quitado = cambioDe(cambios, dia.fecha)?.quitar === true;
+    if (!esFinDeSemana(dia.fecha) || !quitado || tieneEn(agregados, dia.fecha)) visibles.set(dia.fecha, dia);
+  }
+  for (const dia of listaDe(planilla.fines_de_semana)) {
+    if (esFechaDeTexto(dia.fecha) && !visibles.has(dia.fecha) && tieneEn(agregados, dia.fecha)) visibles.set(dia.fecha, dia);
+  }
+  return [...visibles.values()].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+}
+
+// Los sábados y domingos del mes que se pueden sumar («¿Trabajaste un sábado o un domingo?»): los que no se ven, de los
+// `fines_de_semana` del servidor (hasta hoy) y uno guardado que se quitó, por fecha
+function finesDeSemanaParaSumar(planilla, estado) {
+  if (!esObjeto(planilla)) return [];
+  const visibles = new Set(diasVisiblesDeLaPlanilla(planilla, estado).map((dia) => dia.fecha));
+  const libres = new Map();
+  for (const dia of [...listaDe(planilla.dias), ...listaDe(planilla.fines_de_semana)]) {
+    if (esFechaDeTexto(dia.fecha) && esFinDeSemana(dia.fecha) && !visibles.has(dia.fecha)) libres.set(dia.fecha, dia);
+  }
+  return [...libres.values()].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+}
+
+// Lo de un día de la planilla con los cambios encima, como se manda (valoresDeLaSalida), y sus horas (horasDelDiaDeLaPlanilla, o
+// null)
+const salidaDelDia = (dia, cambios) => valoresDeLaSalida(valorDelDia(dia, cambioDe(cambios, dia.fecha)));
+const horasDelDiaConCambios = (dia, cambios) => horasDelDiaDeLaPlanilla({ tipo: dia.tipo, ...salidaDelDia(dia, cambios) });
+
+// Lo que suman unos días de la planilla en su propio mes, con los cambios encima: la banda y el total de cada semana. Los días
+// tildados («Sumar a {mes anterior}») no suman acá: suman al mes anterior (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4)
+const horasDeLosDias = (dias, cambios) => listaDe(dias).reduce((suma, dia) => suma
+  + (salidaDelDia(dia, cambios).al_mes_anterior ? 0 : (horasDelDiaConCambios(dia, cambios) ?? 0)), 0);
+
+// Los días tildados de una lista de días de la planilla, con los cambios encima, cada uno `{ dia, fecha, horas }` (el día del
+// servidor, su fecha y sus horas, o null), en el orden de la lista: los que suman al mes anterior (también los que dan 0)
+const diasQueSumanAlAnterior = (dias, cambios) => listaDe(dias).filter((dia) => esFechaDeTexto(dia.fecha)
+  && salidaDelDia(dia, cambios).al_mes_anterior).map((dia) => ({ dia, fecha: dia.fecha, horas: horasDelDiaConCambios(dia, cambios) }));
+
+/**
+ * Los días tildados del mes siguiente al de la planilla, que suman a ella (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4),
+ * con lo de la página encima, por fecha, cada uno `{ dia, fecha, horas }`: si ese mes ya se pidió en esta apertura (`estado.meses`,
+ * el Map de cada mes a su planilla), de sus días visibles, con `cambios` (también uno tildado o destildado sin guardar); si no, de
+ * `planilla.entran` (los que mandó el servidor), con `cambios`. El mes de hoy no recibe nada (el siguiente no llegó: `entran` viene
+ * vacío). Una planilla que no sirve, [].
+ */
+function diasQueEntran(planilla, estado) {
+  if (!esObjeto(planilla) || !esMesDeTexto(planilla.mes)) return [];
+  const { cambios = null, meses = null } = esObjeto(estado) ? estado : {};
+  const siguiente = mesVecino(planilla.mes, 1);
+  const delSiguiente = siguiente !== null && esMapa(meses) ? meses.get(siguiente) : undefined;
+  const dias = esObjeto(delSiguiente) ? diasVisiblesDeLaPlanilla(delSiguiente, estado)
+    : listaDe(planilla.entran).filter((dia) => esFechaDeTexto(dia.fecha));
+  return diasQueSumanAlAnterior(dias, cambios).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+}
+
+/**
+ * La banda de arriba de la planilla (spec, sección 4): el total del mes en grande («18 h») y, al lado, la frase de
+ * textoDeLaSumaDelMes, con lo que se suma en negrita («En noviembre vas a tener <b>2 días de franco</b> y <b>4 horas a favor</b>.»),
+ * y debajo la segunda línea, `detalle` (lo que se mueve entre meses, de textoDeLoQueSeMueve: «Incluye 1,5 h de febrero.»), en
+ * .mp-suma-aparte, que va vacía si no hay nada que decir: así la banda tiene siempre el alto de dos renglones y tildar no corre la
+ * planilla (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4). No es una región viva.
+ */
+function htmlDeLaBandaDeLaPlanilla(mes, horas, hoy, detalle = '') {
+  return `<span class="mp-suma-cifra">${esc(numeroConComa(horas))}<small>h</small></span>`
+    + '<div class="mp-suma-textos">'
+    + `<p class="mp-suma-texto">${fraseDeLaSumaDelMes(mes, horas, hoy, (parte) => `<b>${esc(parte)}</b>`)}</p>`
+    + `<p class="mp-suma-aparte">${esc(comoTexto(detalle))}</p></div>`;
+}
+
+/**
+ * El pie de la planilla: «Todo guardado.» o cuántos días tienen cambios sin guardar, con sus meses si son más de uno («3 días con
+ * cambios sin guardar (septiembre y octubre).»; el mismo mes de dos años, con el año). Texto plano.
+ */
+function textoDelPieDeLaPlanilla(fechas) {
+  const partes = partesDelPie(fechas);
+  return partes === null ? 'Todo guardado.' : `${partes.cuenta}${partes.resto}`;
+}
+// …y en el pie de la página, con la cuenta en negrita, como en la maqueta («<b>3 días</b> con cambios sin guardar (septiembre y
+// octubre).»), escapado
+function htmlDelPieDeLaPlanilla(fechas) {
+  const partes = partesDelPie(fechas);
+  return partes === null ? 'Todo guardado.' : `<b>${esc(partes.cuenta)}</b>${esc(partes.resto)}`;
+}
+// Las dos partes del pie: la cuenta («3 días») y lo que sigue; sin fechas, null
+function partesDelPie(fechas) {
+  const validas = [...new Set((Array.isArray(fechas) ? fechas : []).filter(esFechaDeTexto))];
+  if (validas.length === 0) return null;
+  const meses = [...new Set(validas.map((fecha) => fecha.slice(0, 7)))].sort();
+  const nombres = meses.map((mes) => nombreDelMes(mes));
+  const conAnio = new Set(nombres).size < nombres.length;
+  const enMeses = meses.length > 1
+    ? ` (${listaConY(meses.map((mes, indice) => (conAnio ? `${nombres[indice]} de ${mes.slice(0, 4)}` : nombres[indice])))})` : '';
+  return { cuenta: `${validas.length} ${validas.length === 1 ? 'día' : 'días'}`, resto: ` con cambios sin guardar${enMeses}.` };
+}
+
+/**
+ * «¿Trabajaste un sábado o un domingo?» al final de la planilla (lo que va en #mp-sumar): el selector de los sábados y domingos del
+ * mes que se pueden sumar (`finesDeSemanaParaSumar`, con su texto corto del servidor) y «Sumar el día»; sin ninguno, por qué. Una
+ * planilla que no llegó, ''.
+ */
+function htmlDelSumarDeLaPlanilla(planilla, estado) {
+  if (!esObjeto(planilla) || !esMesDeTexto(planilla.mes)) return '';
+  const libres = finesDeSemanaParaSumar(planilla, estado);
+  if (libres.length === 0) return `<p>No quedan sábados ni domingos para sumar en ${esc(nombreDelMes(planilla.mes))}.</p>`;
+  const opciones = libres.map((dia) => `<option value="${esc(dia.fecha)}">${esc(conTexto(dia.fecha_texto) ? dia.fecha_texto : dia.fecha)}</option>`);
+  return '<label class="form-label" for="mp-finde">¿Trabajaste un sábado o un domingo?</label>'
+    + `<select class="form-select" id="mp-finde">${opciones.join('')}</select>`
+    + '<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" id="mp-sumar-boton">Sumar el día</button>';
+}
+
+// Lo que dicen la confirmación de salir con cambios («Los cambios de 3 días se pierden.»), el aviso de arriba del cuerpo con los
+// días marcados («Revisá el día marcado.», «Revisá los 2 días marcados.») y el último renglón de «Cómo se cuentan las horas» («Las
+// horas de octubre son horas a favor en noviembre.»; un mes que no sirve, '')
+const textoDeSalirSinGuardar = (cantidad) => `Los cambios de ${cantidad === 1 ? '1 día' : `${String(cantidad)} días`} se pierden.`;
+const textoDeLosErroresDeLaPlanilla = (cantidad) => (cantidad === 1 ? 'Revisá el día marcado.' : `Revisá los ${String(cantidad)} días marcados.`);
+const textoDeComoSeCuentan = (mes) => (esMesDeTexto(mes)
+  ? `Las horas de ${nombreDelMes(mes)} son horas a favor en ${nombreDelMes(mes, 1)}.` : '');
+// El renglón del tilde en «Cómo se cuentan las horas» (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4), con el mes anterior
+// que manda el servidor (`sumar_a`): «Si te autorizan a sumar las horas de un día al mes anterior, tildá «Sumar a enero»: cuentan
+// como horas extras de enero.». Texto plano; sin un mes o sin `sumarA`, ''
+const textoDeSumarAlAnterior = (mes, sumarA) => (esMesDeTexto(mes) && conTexto(sumarA)
+  ? `Si te autorizan a sumar las horas de un día al mes anterior, tildá «Sumar a ${sumarA}»: cuentan como horas extras de ${sumarA}.`
+  : '');
+
+// El renglón de una semana de la planilla: «5 al 9 de octubre», «1 y 2 de octubre» (dos días seguidos), «30 de octubre»; sin
+// fechas, ''. Los días son los del mes de la primera
+function textoDeLaSemana(fechas) {
+  const validas = (Array.isArray(fechas) ? fechas : []).filter(esFechaDeTexto).sort();
+  if (validas.length === 0) return '';
+  const dias = validas.map((fecha) => Number(fecha.slice(8, 10)));
+  const delMes = ` de ${nombreDelMes(validas[0])}`;
+  if (dias.length === 1) return `${dias[0]}${delMes}`;
+  if (dias.length === 2 && dias[1] - dias[0] === 1) return `${dias[0]} y ${dias[1]}${delMes}`;
+  return `${dias[0]} al ${dias.at(-1)}${delMes}`;
+}
+// Lo que suma una semana: «3 h», o la raya si no suma nada
+const textoDelTotalDeLaSemana = (horas) => (horas > 0 ? `${numeroConComa(horas)} h` : '—');
+
+/**
+ * Las horas de una fila de la planilla mientras se escribe (lo que va en su #mp-h-AAAA-MM-DD), con el tipo del día y lo que tienen
+ * sus campos: la pastilla con las horas («1,5 h»), «0» con «No llega a media hora», o la raya, sola (sin salida, o con una hora que
+ * no se puede leer) o con lo que falta («Falta la salida» o «Poné la entrada» en un día que no es hábil, «La salida va después»).
+ * Un día tildado con horas (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4), con el mes anterior que manda el servidor
+ * (`sumarA`, `sumar_a` de la planilla): la pastilla punteada (`otro-mes`) y, al lado, «→ enero» (el lector de pantalla lee «van a
+ * enero»: la flecha es decorativa), así no depende solo del color; sin `sumarA`, la pastilla de siempre.
+ */
+function htmlDeLasHorasDeLaFila(dia, valor, sumarA) {
+  const tipo = esObjeto(dia) ? dia.tipo : null;
+  const { entrada, salida, al_mes_anterior: alMesAnterior } = valoresDeLaSalida(valor);
+  const nada = '<b class="nada">—</b>';
+  if (salida === '') return tipo !== 'habil' && entrada !== '' ? `${nada}<small>Falta la salida</small>` : nada;
+  const horas = horasDelDiaDeLaPlanilla({ tipo, entrada, salida });
+  if (horas === null) {
+    if (minutosDeLaSalida(salida) === null || (entrada !== '' && minutosDeLaSalida(entrada) === null)) return nada;
+    if (tipo !== 'habil' && entrada === '') return `${nada}<small>Poné la entrada</small>`;
+    return `${nada}<small>La salida va después</small>`;
+  }
+  if (horas === 0) return '<b class="cero">0</b><small>No llega a media hora</small>';
+  if (alMesAnterior && conTexto(sumarA)) {
+    return `<b class="otro-mes">${esc(numeroConComa(horas))} h</b><small class="mp-va-a"><span aria-hidden="true">→ </span>`
+      + `<span class="visualmente-oculto">van a </span>${esc(sumarA)}</small>`;
+  }
+  return `<b>${esc(numeroConComa(horas))} h</b>`;
+}
+
+/**
+ * El tilde «Sumar a {mes anterior}» de una fila de la planilla (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección 4; la maqueta,
+ * `htmlDelTilde`), entre las horas y «Nota»: un <label class="mp-tilde" id="mp-t-AAAA-MM-DD"> con su casilla (`data-campo=
+ * "al_mes_anterior"` y la fecha, tildada si `valor.al_mes_anterior`, como se tildó) y el texto «Sumar a enero», con el mes que manda
+ * el servidor (`sumarA`). Su nombre empieza con lo que se ve: «Sumar a enero el martes 02/02». Sin salida, `vacio` (el <style> lo
+ * oculta sin que pierda su lugar: escribir la salida no corre nada) y la casilla fuera del orden del foco. Sin el mes (una planilla
+ * de antes) o sin una fecha, solo el lugar.
+ */
+function htmlDelTilde(dia, valor, sumarA) {
+  if (!esObjeto(dia) || !esFechaDeTexto(dia.fecha) || !conTexto(sumarA)) return '<span class="mp-tilde vacio" aria-hidden="true"></span>';
+  const id = esc(dia.fecha);
+  const vacio = valoresDeLaSalida(valor).salida === '';
+  return `<label class="mp-tilde${vacio ? ' vacio' : ''}" id="mp-t-${id}"><input type="checkbox" data-campo="al_mes_anterior" `
+    + `data-fecha="${id}"${esObjeto(valor) && valor.al_mes_anterior === true ? ' checked' : ''}${vacio ? ' tabindex="-1"' : ''} `
+    + `aria-label="Sumar a ${esc(sumarA)} el ${esc(diaLargoDe(dia.fecha))}"><span>Sumar a ${esc(sumarA)}</span></label>`;
+}
+
+// Las marcas debajo de la fecha de una fila: el feriado en ámbar con su nombre (también un sábado o domingo que lo es), o el
+// sábado o el domingo con un borde, y la licencia de unas horas («2 h a favor»; con `conEntera`, también la del día entero)
+const htmlDeLasMarcasDelDia = (dia, { conEntera = false } = {}) => {
+  const marcas = [];
+  if (dia.tipo === 'feriado') marcas.push(`<span class="me-insignia ambar">Feriado: ${esc(dia.feriado)}</span>`);
+  else if (dia.tipo === 'finde' && conTexto(dia.finde_texto)) marcas.push(`<span class="me-insignia borde">${esc(dia.finde_texto)}</span>`);
+  if (esObjeto(dia.licencia) && (dia.licencia.entera !== true || conEntera)) {
+    marcas.push(`<span class="me-insignia verde">${esc(dia.licencia.texto)}</span>`);
+  }
+  return marcas.length > 0 ? `<span class="mp-marcas">${marcas.join('')}</span>` : '';
+};
+
+/**
+ * Una fila de la planilla (un día; la maqueta, `htmlDelDia`), con sus clases (`feriado` o `finde`, `licencia`, `futuro`, `hoy` y
+ * `cambiado`, la raya de lo que no se guardó):
+ * - un día que todavía no llegó: «Todavía no llegó.», sin campos;
+ * - un día de licencia de día entero: su tipo y «Es un día de licencia: no se cargan horas.», sin campos; con una salida guardada de
+ *   antes, la salida (y la entrada) como texto, sus horas, el aviso del servidor y «Quitar»;
+ * - los demás, un grupo con el nombre de su fecha (`role="group"` y `aria-labelledby`): la entrada (opcional en un día hábil), la
+ *   salida, las horas, el tilde «Sumar a {mes anterior}» (`htmlDelTilde`, con `sumarA`, el `sumar_a` de la planilla), «Quitar» en
+ *   un sábado o domingo, «Nota» (abre su campo debajo; con nota, la nota en cursiva y «Cambiar nota») y, mientras el día no cambió,
+ *   el aviso del servidor («Ahora es feriado: falta la entrada.»). Un error va debajo, con
+ *   `aria-invalid` y `aria-describedby` en su campo (uno en la nota la abre; uno sin campo de la fila, del servidor, va a la salida).
+ * Un error del servidor en una fila sin campos queda atado a lo que recibe el foco: en una que no llegó o de licencia sin salida, la
+ * fila (un grupo con su nombre, `tabindex="-1"` y el error en su `aria-describedby`); en una de licencia con una salida de antes,
+ * «Quitar» (con el aviso y el error). Cada fila es un <div>: van en #mp-dias, sin semántica de lista.
+ */
+function htmlDeLaFilaDeLaPlanilla(dia, { cambios, errores, notasAbiertas, cambiadas, sumarA = '' }) {
+  const { fecha } = dia;
+  const id = esc(fecha);
+  const largo = conTexto(dia.fecha_larga) ? dia.fecha_larga : diaLargoDe(fecha);
+  const valor = valorDelDia(dia, cambioDe(cambios, fecha));
+  const entera = esObjeto(dia.licencia) && dia.licencia.entera === true;
+  const cambiado = cambiadas.has(fecha);
+  const error = esMapa(errores) && esObjeto(errores.get(fecha)) ? errores.get(fecha) : null;
+  const clases = ['mp-dia'];
+  if (dia.tipo === 'feriado') clases.push('feriado');
+  else if (dia.tipo === 'finde') clases.push('finde');
+  if (entera) clases.push('licencia');
+  if (dia.futuro === true) clases.push('futuro');
+  if (dia.hoy === true) clases.push('hoy');
+  if (cambiado) clases.push('cambiado');
+  const abre = `<div class="${clases.join(' ')}" id="mp-dia-${id}"`;
+  const nombre = `<b id="mp-f-${id}">${esc(dia.fecha_texto)}${dia.hoy === true ? ' <span class="mp-hoy">Hoy</span>' : ''}</b>`;
+  const htmlDelError = error === null ? '' : `<p class="mp-error" id="mp-e-${id}">${esc(error.mensaje)}</p>`;
+  const insigniaEntera = entera ? `<span class="me-insignia verde">${esc(dia.licencia.texto)}</span> ` : '';
+  const conSalida = valor.salida.trim() !== '';
+  const grupo = `${abre} role="group" aria-labelledby="mp-f-${id}"`;
+
+  if (dia.futuro === true || (entera && !conSalida)) {
+    const texto = dia.futuro === true ? 'Todavía no llegó.' : 'Es un día de licencia: no se cargan horas.';
+    // Sin campos, un error (del servidor) describe la fila, que recibe el foco
+    const conError = error === null ? '>' : ` tabindex="-1" aria-describedby="mp-e-${id}">`;
+    return `${error === null ? abre : grupo}${conError}<span class="mp-fecha">${nombre}${htmlDeLasMarcasDelDia(dia)}</span>`
+      + `<span class="mp-lugar">${insigniaEntera}${texto}</span>${htmlDelError}</div>`;
+  }
+
+  const aviso = !cambiado && conTexto(dia.aviso) ? `<p class="mp-aviso" id="mp-a-${id}">${esc(dia.aviso)}</p>` : '';
+  const nota = conTexto(valor.nota) ? `<p class="mp-nota-vista">${esc(valor.nota)}</p>` : '';
+
+  if (entera) {
+    // Una licencia de día entero con una salida guardada de antes: sigue sumando, como texto, hasta que se la quita. «Quitar» es lo
+    // único que recibe el foco: lo describen el aviso y el error
+    const entrada = valor.entrada.trim() !== '' ? `<small>Entrada ${esc(valor.entrada)}</small>` : '';
+    const ids = [...(aviso === '' ? [] : [`mp-a-${id}`]), ...(error === null ? [] : [`mp-e-${id}`])];
+    const describe = ids.length === 0 ? '' : ` aria-describedby="${ids.join(' ')}"`;
+    return `${grupo}><span class="mp-fecha">${nombre}${htmlDeLasMarcasDelDia(dia, { conEntera: true })}</span>`
+      + `<span class="mp-guardada">Salida ${esc(valor.salida)}${entrada}</span>`
+      + `<span class="mp-horas" id="mp-h-${id}">${htmlDeLasHorasDeLaFila(dia, valor, sumarA)}</span>`
+      + `<span class="mp-acciones"><button type="button" class="sg-link me-link-rojo" data-quitar="${id}" `
+      + `aria-label="Quitar la salida del ${esc(largo)}"${describe}>Quitar</button></span>${nota}${aviso}${htmlDelError}</div>`;
+  }
+
+  // El campo del error: el suyo (entrada, salida o nota) o, uno sin campo de la fila, la salida
+  const campoDelError = error === null ? null : (['entrada', 'salida', 'nota'].includes(error.campo) ? error.campo : 'salida');
+  const describir = (campo) => {
+    const ids = [...(campoDelError === campo ? [`mp-e-${id}`] : []), ...(campo === 'salida' && aviso !== '' ? [`mp-a-${id}`] : [])];
+    return (campoDelError === campo ? ' aria-invalid="true"' : '') + (ids.length > 0 ? ` aria-describedby="${ids.join(' ')}"` : '');
+  };
+  const habil = dia.tipo === 'habil';
+  const rotulo = habil ? 'Entrada (opcional)' : 'Entrada';
+  const tieneNota = valor.nota.trim() !== '';
+  const abierta = tieneEn(notasAbiertas, fecha) || campoDelError === 'nota';
+  const quitar = esFinDeSemana(fecha) ? `<button type="button" class="sg-link me-link-rojo" data-quitar="${id}" `
+    + `aria-label="Quitar el ${esc(largo)}">Quitar</button>` : '';
+  const campoDeLaNota = `<span class="mp-nota-campo"><input type="text" data-campo="nota" data-fecha="${id}" value="${esc(valor.nota)}" `
+    + `placeholder="Por ejemplo: cierre del informe mensual" aria-label="Nota del ${esc(largo)}"${describir('nota')}></span>`;
+  return `${grupo}><span class="mp-fecha">${nombre}${htmlDeLasMarcasDelDia(dia)}</span>`
+    + `<label class="mp-campo entrada"><span class="mp-rotulo">${rotulo}</span><input type="time"${habil ? ' class="opcional"' : ''} `
+    + `data-campo="entrada" data-fecha="${id}" value="${esc(valor.entrada)}" data-vacio="${valor.entrada.trim() === '' ? '1' : '0'}" `
+    + `aria-label="${rotulo} del ${esc(largo)}"${describir('entrada')}></label>`
+    + '<label class="mp-campo salida"><span class="mp-rotulo">Salida</span><input type="time" '
+    + `data-campo="salida" data-fecha="${id}" value="${esc(valor.salida)}" aria-label="Salida del ${esc(largo)}"${describir('salida')}></label>`
+    + `<span class="mp-horas" id="mp-h-${id}">${htmlDeLasHorasDeLaFila(dia, valor, sumarA)}</span>`
+    + htmlDelTilde(dia, valor, sumarA)
+    + `<span class="mp-acciones">${quitar}<button type="button" class="sg-link" data-nota="${id}" aria-expanded="${String(abierta)}" `
+    + `aria-label="${tieneNota ? 'Cambiar la nota' : 'Agregar una nota'} del ${esc(largo)}">${tieneNota ? 'Cambiar nota' : 'Nota'}</button></span>`
+    + `${abierta ? campoDeLaNota : nota}${aviso}${htmlDelError}</div>`;
+}
+
+/**
+ * Un día del mes siguiente que suma a la planilla (de `diasQueEntran`: `{ dia, fecha, horas }`), de solo lectura (spec
+ * 2026-10-30-mi-espacio-horas-mes-anterior, sección 4; la maqueta, `htmlDelDiaDeOtroMes`): un grupo con el nombre de su fecha
+ * (`mp-dia de-otro-mes`, con ids propios, `mp-otro-` y `mp-of-`: los `mp-dia-` son de las filas de su mes), con sus marcas, «Salida
+ * 16:20» (y «Entrada …», si la tiene), sus horas y «Ver en febrero» (`data-ver-en` con la fecha: la página abre ese mes con el foco
+ * en su tilde; su nombre empieza con lo que se ve, «Ver en febrero el martes 02/02», como el del tilde), con su nota debajo, si tiene.
+ * Lo que se ve es lo de la página (los cambios sin guardar encima).
+ */
+function htmlDelDiaDeOtroMes({ dia, fecha, horas }, cambios) {
+  const id = esc(fecha);
+  const valor = salidaDelDia(dia, cambios);
+  const deMes = nombreDelMes(fecha.slice(0, 7));
+  const entrada = valor.entrada !== '' ? `<small>Entrada ${esc(valor.entrada)}</small>` : '';
+  let pastilla = `<b>${esc(numeroConComa(horas))} h</b>`;
+  if (horas === null) pastilla = '<b class="nada">—</b>';
+  else if (horas === 0) pastilla = '<b class="cero">0</b><small>No llega a media hora</small>';
+  return `<div class="mp-dia de-otro-mes" id="mp-otro-${id}" role="group" aria-labelledby="mp-of-${id}">`
+    + `<span class="mp-fecha"><b id="mp-of-${id}">${esc(dia.fecha_texto)}</b>${htmlDeLasMarcasDelDia(dia)}</span>`
+    + `<span class="mp-guardada">Salida ${esc(valor.salida)}${entrada}</span>`
+    + `<span class="mp-horas">${pastilla}</span>`
+    + `<span class="mp-acciones"><button type="button" class="sg-link" data-ver-en="${id}" `
+    + `aria-label="Ver en ${esc(deMes)} el ${esc(diaLargoDe(fecha))}">Ver en ${esc(deMes)}</button></span>`
+    + (valor.nota !== '' ? `<p class="mp-nota-vista">${esc(valor.nota)}</p>` : '')
+    + '</div>';
+}
+
+/**
+ * Lo que entra del mes siguiente, después de la última semana de la planilla (spec 2026-10-30-mi-espacio-horas-mes-anterior, sección
+ * 4): si hay días que entran (`diasQueEntran`, con lo de la página encima), un renglón como el de una semana (`mp-semana de-otro-mes`,
+ * sin `data-fechas`: sus días no son de este mes), «De febrero» con lo que suman, y cada día de solo lectura (`htmlDelDiaDeOtroMes`).
+ * Sin ninguno (el mes siguiente todavía no llegó, o nadie tildó), ''.
+ */
+function htmlDelBloqueDelMesSiguiente(planilla, estado) {
+  const entran = diasQueEntran(planilla, estado);
+  if (entran.length === 0) return '';
+  const cambios = esObjeto(estado) ? estado.cambios : null;
+  const total = entran.reduce((suma, uno) => suma + (uno.horas ?? 0), 0);
+  return `<div class="mp-semana de-otro-mes"><span>De ${esc(nombreDelMes(planilla.mes, 1))}</span>`
+    + `<span class="mp-semana-total">${esc(textoDelTotalDeLaSemana(total))}</span></div>`
+    + entran.map((uno) => htmlDelDiaDeOtroMes(uno, cambios)).join('');
+}
+
+/**
+ * La planilla de un mes (lo que va en #mp-dias, un <div>: sin semántica de lista, porque cada día es un grupo): los días que se
+ * ven (`diasVisiblesDeLaPlanilla`), agrupados por semana (de lunes a domingo), cada semana con su renglón («5 al 9 de octubre» y lo
+ * que suma, con los cambios y sin los días tildados, en .mp-semana-total: la página lo cambia mientras se escribe) y después sus
+ * filas (`htmlDeLaFilaDeLaPlanilla`, con el tilde del mes anterior de la planilla, `sumar_a`) y, al final, lo que entra del mes
+ * siguiente (`htmlDelBloqueDelMesSiguiente`). Nada de esto es una región viva. Una planilla que no llegó, ''.
+ */
+function htmlDeLaPlanilla(planilla, estado) {
+  const { cambios = null, agregados = null, errores = null, notasAbiertas = null } = esObjeto(estado) ? estado : {};
+  const dias = diasVisiblesDeLaPlanilla(planilla, { cambios, agregados });
+  const contexto = {
+    cambios, errores, notasAbiertas, cambiadas: new Set(fechasCambiadas(cambios, diasPorFechaDe([planilla]))),
+    sumarA: esObjeto(planilla) ? comoTexto(planilla.sumar_a) : ''
+  };
+  const semanas = [];
+  for (const dia of dias) {
+    const lunes = sumarDiasA(dia.fecha, -lugarEnLaSemana(dia.fecha));
+    if (semanas.length === 0 || semanas.at(-1).lunes !== lunes) semanas.push({ lunes, dias: [] });
+    semanas.at(-1).dias.push(dia);
+  }
+  return semanas.map(({ dias: deLaSemana }) => {
+    const fechas = deLaSemana.map((dia) => dia.fecha);
+    return `<div class="mp-semana" data-fechas="${esc(fechas.join(','))}"><span>${esc(textoDeLaSemana(fechas))}</span>`
+      + `<span class="mp-semana-total">${esc(textoDelTotalDeLaSemana(horasDeLosDias(deLaSemana, cambios)))}</span></div>`
+      + deLaSemana.map((dia) => htmlDeLaFilaDeLaPlanilla(dia, contexto)).join('');
+  }).join('') + htmlDelBloqueDelMesSiguiente(planilla, estado);
+}
+
+// ---- «Mis vacaciones y saldos» ----
+
+/**
+ * Los campos de «Para arrancar» (los de GET /saldo-inicial, que arma camposDelSaldoInicial con lo guardado) con lo que se elige
+ * en el modal antes de guardarlo, si el saldo es del año del modal (`anio`; el de los campos es el de su `medica`): el máximo de
+ * las vacaciones del año es la primera mitad de los días elegidos (con un número impar, la mayor), con su ayuda
+ * (textoSaldoDelArranque; spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8), y el campo de los estudios está solo si
+ * estudia, hasta los días de su carrera y sin ayuda, antes de la atención médica. Cada campo conserva su `valor`; las ayudas de
+ * los años anteriores no dependen de lo elegido y quedan como llegaron.
+ */
+function camposConLoElegido(campos, { anio, dias, estudios } = {}) {
+  const lista = listaDe(campos);
+  if (!Number.isInteger(anio) || lista.find((campo) => campo.concepto === 'medica')?.anio !== anio) return lista;
+  const primera = Math.ceil(dias / 2);
+  const conDias = DIAS_VACACIONES.includes(dias)
+    ? lista.map((campo) => (campo.clave === `vacaciones-${anio}`
+      ? { ...campo, maximo: primera, ayuda: textoSaldoDelArranque(primera, anio) } : campo))
+    : lista;
+  const sinEstudios = conDias.filter((campo) => campo.clave !== 'estudios');
+  if (typeof estudios !== 'string' || !Object.hasOwn(DIAS_ESTUDIOS, estudios)) return sinEstudios;
+  const antes = conDias.find((campo) => campo.clave === 'estudios');
+  const delCampo = {
+    clave: 'estudios', concepto: 'estudios', anio, rotulo: 'Días de estudios', maximo: DIAS_ESTUDIOS[estudios], paso: 1,
+    ayuda: '', valor: antes?.valor ?? null
+  };
+  const medica = sinEstudios.findIndex((campo) => campo.concepto === 'medica');
+  return [...sinEstudios.slice(0, medica), delCampo, ...sinEstudios.slice(medica)];
+}
+
+// Lo que muestra cada campo al abrir: lo guardado, con coma; sin nada guardado, vacío
+const valoresDelSaldo = (campos) => Object.fromEntries(listaDe(campos)
+  .map((campo) => [campo.clave, campo.valor === null || campo.valor === undefined ? '' : numeroConComa(campo.valor)]));
+
+// Los errores del saldo inicial (`{ clave: mensaje }`), como validarSaldoInicial: de 0 a su máximo, entero o, con paso 0,5, de a
+// media hora. El mensaje es la ayuda del campo si tiene texto (de dónde sale el tope) y, si no, textoSaldo
+function erroresDelSaldo(valores, campos) {
+  const errores = {};
+  for (const campo of listaDe(campos)) {
+    const maximo = Number(campo.maximo);
+    if (typeof campo.clave !== 'string' || !Number.isFinite(maximo)) continue;
+    const tope = conTexto(campo.ayuda) ? campo.ayuda : textoSaldo(maximo);
+    const cantidad = numeroDelCampo(deMapa(valores, campo.clave, ''));
+    const enMedias = campo.paso === 0.5;
+    if (cantidad === null || !(cantidad >= 0 && cantidad <= maximo)) errores[campo.clave] = tope;
+    else if (!Number.isInteger(enMedias ? cantidad * 2 : cantidad)) {
+      errores[campo.clave] = enMedias ? MENSAJES_FORMULARIOS.saldoMedias : tope;
+    }
+  }
+  return errores;
+}
+
+// El cuerpo de PUT /saldo-inicial: un número por campo
+const cuerpoDelSaldo = (valores, campos) => ({
+  saldos: Object.fromEntries(listaDe(campos).map((campo) => [campo.clave, numeroDelCampo(deMapa(valores, campo.clave, ''))]))
+});
+
+// Los días de vacaciones del año, como números para elegir (cada uno describe el error del grupo, como los tipos de licencia)
+const htmlDeDiasDeVacaciones = (elegidos) => DIAS_VACACIONES.map((dias) => '<label class="me-numero">'
+  + `<input type="radio" name="ms-dia" value="${String(dias)}"${dias === elegidos ? ' checked' : ''} aria-describedby="ms-dias-error">`
+  + `<span>${String(dias)}</span></label>`)
+  .join('');
+
+// La licencia por estudios: universitaria, secundaria o «No estudio» (el valor vacío). `elegidos`: la carrera, '' por «No
+// estudio» o undefined (todavía no eligió)
+function htmlDeEstudios(elegidos) {
+  const opciones = [
+    ['universitario', 'Universitaria', `${String(DIAS_ESTUDIOS.universitario)} días por año`],
+    ['secundario', 'Secundaria', `${String(DIAS_ESTUDIOS.secundario)} días por año`],
+    ['', 'No estudio', 'Sin licencia por estudios']
+  ];
+  return opciones.map(([valor, nombre, detalle]) => '<label class="me-opcion">'
+    + `<input type="radio" name="ms-estudio" value="${valor}"${valor === elegidos ? ' checked' : ''} aria-describedby="ms-estudios-error">`
+    + `<span><b>${nombre}</b><small>${detalle}</small></span></label>`).join('');
+}
+
+// Un campo de «Para arrancar», con su ayuda (de dónde sale el tope, la que manda el servidor: spec
+// 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.8) debajo y antes de su error, los dos en su aria-describedby; sin ayuda, solo
+// el error
+const htmlDeCampoDelSaldo = (campo, valores) => {
+  const id = `ms-campo-${String(campo.clave)}`;
+  const conAyuda = conTexto(campo.ayuda);
+  return `<div class="form-group"><label class="form-label" for="${esc(id)}">${esc(campo.rotulo)}</label>`
+    + `<input type="text" inputmode="decimal" class="form-input" id="${esc(id)}" data-saldo="${esc(campo.clave)}" `
+    + `value="${esc(deMapa(valores, campo.clave, ''))}" autocomplete="off" `
+    + `aria-describedby="${conAyuda ? `${esc(id)}-ayuda ` : ''}${esc(id)}-error">`
+    + (conAyuda ? `<p class="form-hint" id="${esc(id)}-ayuda">${esc(campo.ayuda)}</p>` : '')
+    + `<p class="form-error" id="${esc(id)}-error" hidden></p></div>`;
+};
+
+// «Para arrancar»: lo que quedaba de cada licencia ordinaria; después, «Y lo que ya usaste en 2026:» y, en contrato, las horas no
+// utilizadas previamente
+function htmlDeCamposDelSaldo(campos, valores) {
+  const lista = listaDe(campos).filter((campo) => typeof campo.clave === 'string');
+  const grupo = (filtro) => {
+    const delGrupo = lista.filter(filtro);
+    if (delGrupo.length === 0) return '';
+    return `<div class="me-campos-saldo">${delGrupo.map((campo) => htmlDeCampoDelSaldo(campo, valores)).join('')}</div>`;
+  };
+  const anio = lista.find((campo) => campo.concepto === 'medica')?.anio;
+  return grupo((campo) => campo.concepto === 'vacaciones')
+    + (Number.isInteger(anio) ? `<p class="form-hint">Y lo que ya usaste en ${String(anio)}:</p>` : '')
+    + grupo((campo) => !['vacaciones', 'horas_no_utilizadas'].includes(campo.concepto))
+    + grupo((campo) => campo.concepto === 'horas_no_utilizadas');
+}
+
+// =====================================================
+// Lo puro: la agenda (spec 2026-10-26-mi-espacio-agenda, 6)
+// =====================================================
+
+// Los próximos van de hoy a hoy + 30 (copia de DIAS_DE_PROXIMOS de services/miEspacioEventosReglas.js, atada por un test de paridad)
+const DIAS_DE_PROXIMOS = 30;
+// Los días de la semana, de lunes a domingo: el nombre («lunes 26/10») y el corto (la cabeza del mes y «Mié 28»)
+const NOMBRES_DE_LOS_DIAS = Object.freeze(['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']);
+const DIAS_CORTOS = Object.freeze(['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']);
+
+// 'AAAA-MM' de un mes que se puede pedir (de 2000 a 2100, los años de las fechas de GET /mi-espacio/eventos)
+const esMesDeTexto = (mes) => typeof mes === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(mes)
+  && Number(mes.slice(0, 4)) >= 2000 && Number(mes.slice(0, 4)) <= 2100;
+// Los días se cuentan con Date.UTC sobre las partes de la fecha (diaUtc), nunca con la hora local: la fecha de un momento UTC y la
+// fecha de `dias` días después (o antes)
+const fechaDeUtc = (ms) => new Date(ms).toISOString().slice(0, 10);
+const sumarDiasA = (fecha, dias) => fechaDeUtc(diaUtc(fecha) + dias * 86400000);
+// El lugar de una fecha en la semana: 0 el lunes … 6 el domingo
+const lugarEnLaSemana = (fecha) => (new Date(diaUtc(fecha)).getUTCDay() + 6) % 7;
+// «lunes 26/10» (como diaLargo de services/miEspacioResumen.js, atada por un test de paridad), «Mié 28» y «Mar 03/11»
+const diaLargoDe = (fecha) => `${NOMBRES_DE_LOS_DIAS[lugarEnLaSemana(fecha)]} ${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`;
+const diaDeEstaSemana = (fecha) => `${DIAS_CORTOS[lugarEnLaSemana(fecha)]} ${String(Number(fecha.slice(8, 10)))}`;
+const diaMasAdelante = (fecha) => `${DIAS_CORTOS[lugarEnLaSemana(fecha)]} ${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`;
+
+/**
+ * Los días de la grilla de un mes ('AAAA-MM'), de lunes a domingo: del lunes de la semana del 1 al domingo de la del último, cada
+ * uno `{ fecha, dia, del_mes, finde }` (`dia`, el número del día; `del_mes`, si es del mes y no de un vecino; `finde`, sábado o
+ * domingo). Un mes que no sirve, [].
+ */
+function diasDeLaGrilla(mes) {
+  if (!esMesDeTexto(mes)) return [];
+  const primero = `${mes}-01`;
+  const ultimo = fechaDeUtc(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0));
+  const hasta = sumarDiasA(ultimo, 6 - lugarEnLaSemana(ultimo));
+  const dias = [];
+  for (let fecha = sumarDiasA(primero, -lugarEnLaSemana(primero)); fecha <= hasta; fecha = sumarDiasA(fecha, 1)) {
+    dias.push({ fecha, dia: Number(fecha.slice(8, 10)), del_mes: fecha.slice(0, 7) === mes, finde: lugarEnLaSemana(fecha) >= 5 });
+  }
+  return dias;
+}
+
+// El mes `n` meses después (con `n` negativo, antes): 'AAAA-MM', o null si el mes o `n` no sirven o se sale de los que se piden
+function mesVecino(mes, n) {
+  if (!esMesDeTexto(mes) || !Number.isInteger(n)) return null;
+  const indice = Number(mes.slice(0, 4)) * 12 + Number(mes.slice(5, 7)) - 1 + n;
+  const vecino = `${String(Math.floor(indice / 12))}-${String((indice % 12) + 1).padStart(2, '0')}`;
+  return esMesDeTexto(vecino) ? vecino : null;
+}
+
+// 'Octubre 2026' (como mesTitulo de services/miEspacioResumen.js, atada por un test de paridad); un mes que no sirve, ''
+function tituloDelMes(mes) {
+  if (!esMesDeTexto(mes)) return '';
+  const nombre = nombreDelMes(mes);
+  return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${mes.slice(0, 4)}`;
+}
+
+// Lo que se pide para un mes (`{ desde, hasta }`: toda su grilla, con los días de los meses vecinos) y para los próximos (de hoy a
+// hoy + DIAS_DE_PROXIMOS); con un mes o un hoy que no sirven, null
+function rangoDeLaGrilla(mes) {
+  const dias = diasDeLaGrilla(mes);
+  return dias.length > 0 ? { desde: dias[0].fecha, hasta: dias.at(-1).fecha } : null;
+}
+const rangoDeProximos = (hoy) => (esFechaDeTexto(hoy) ? { desde: hoy, hasta: sumarDiasA(hoy, DIAS_DE_PROXIMOS) } : null);
+
+// La hora de un evento ('HH:MM'), o ''
+const horaDelEvento = (evento) => (typeof evento.desde === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(evento.desde) ? evento.desde : '');
+// El color de un evento (spec 2026-10-29-mi-espacio-evento-publico, 5.1): violeta un Laboral, tuyo o de otra persona ('compartido');
+// rosado un Personal (Público) de otra persona ('publico-otro'); tinta lo tuyo que no es Laboral ('propio': un Privado y un Público
+// tuyo, que lleva el ojo, iconoDelEvento). Uno de otra persona que no es ninguno de los dos (no llega), violeta, como antes
+const claseDelEvento = (evento) => {
+  if (evento.publico === true && evento.es_mio !== true) return 'publico-otro';
+  return evento.compartido === true || evento.es_mio !== true ? 'compartido' : 'propio';
+};
+// El ícono de un evento que no es el de su clase: un Público tuyo, en tinta con el ojo (`{ icono: 'ojo' }`, para sumarlo a su cosa);
+// los demás, el de su clase ({})
+const iconoDelEvento = (evento) => {
+  if (evento.publico === true && evento.es_mio === true) return { icono: 'ojo' };
+  return evento.es_mio === true && evento.compartido !== true && evento.publico !== true ? { icono: 'candado' } : {};
+};
+// Los eventos (los ítems de GET /mi-espacio/eventos) con una fecha, por fecha, hora y título
+const eventosEnOrden = (eventos) => listaDe(eventos).filter((evento) => esFechaDeTexto(evento.fecha))
+  .sort((a, b) => a.fecha.localeCompare(b.fecha) || horaDelEvento(a).localeCompare(horaDelEvento(b))
+    || comoTexto(a.titulo).localeCompare(comoTexto(b.titulo), 'es'));
+// Los días en que se pinta una licencia o un compañero: los hábiles dentro del rango (`dias`, del servidor)
+const diasPintados = (fila) => (Array.isArray(fila.dias) ? fila.dias.filter(esFechaDeTexto) : []);
+
+/**
+ * Lo que va en cada día del mes que no es una barra (spec 2026-10-28-mi-espacio-agenda-onda, 3.5; tus licencias y los compañeros
+ * que no están van en las barras: barrasDelMes), con lo que manda GET /mi-espacio/eventos para la grilla: `Map<fecha, [{ clase,
+ * texto, evento_id? }]>`. En un día, en este orden: los feriados («Feriado: …») y los eventos por hora y título («10:00 Reunión de
+ * equipo», con su `evento_id`). `clase` es el color: 'feriado', 'propio', 'compartido' o 'publico-otro' (claseDelEvento; un
+ * Personal (Público) de otra persona, «10:00 Carla: Turno médico»), y uno tuyo Público suma `icono: 'ojo'`.
+ */
+function cosasPorDia(datos) {
+  const fuente = esObjeto(datos) ? datos : {};
+  const porDia = new Map();
+  const sumar = (fecha, cosa) => {
+    if (!esFechaDeTexto(fecha)) return;
+    if (!porDia.has(fecha)) porDia.set(fecha, []);
+    porDia.get(fecha).push(cosa);
+  };
+  for (const feriado of listaDe(fuente.feriados)) sumar(feriado.fecha, { clase: 'feriado', texto: comoTexto(feriado.texto) });
+  for (const evento of eventosEnOrden(fuente.eventos)) {
+    const texto = [horaDelEvento(evento), comoTexto(evento.titulo)].filter(conTexto).join(' ');
+    sumar(evento.fecha, { clase: claseDelEvento(evento), ...iconoDelEvento(evento), texto, evento_id: evento.id ?? null });
+  }
+  return porDia;
+}
+
+// El modelo del mes (spec 2026-10-28-mi-espacio-agenda-onda, 3.2, 3.4, 3.5 y 3.8): las semanas que se ven, las barras de cada
+// semana, los renglones de lo de cada día, lo que queda escondido el fin de semana y el día visible más cercano. Es solo lo de dibujo:
+// los días hábiles, los textos y los nombres los manda el servidor (Ruling 19)
+
+/**
+ * Las semanas de la grilla de un mes ('AAAA-MM'), cada una con sus días de `diasDeLaGrilla` (`{ fecha, dia, del_mes, finde }`, en
+ * orden): con `finde` (solo el true literal: «Sábado y domingo» prendido), las semanas enteras, de lunes a domingo; si no (de
+ * entrada), de lunes a viernes y sin las semanas cuyos lunes a viernes son todos de otro mes (noviembre de 2026 empieza un domingo:
+ * su primera fila es la del lunes 2). Un mes que no sirve, [].
+ */
+function semanasDelMes(mes, opciones) {
+  const conFinde = esObjeto(opciones) && opciones.finde === true;
+  const dias = diasDeLaGrilla(mes);
+  const semanas = [];
+  for (let i = 0; i < dias.length; i += 7) {
+    const visibles = dias.slice(i, i + 7).filter((dia) => conFinde || !dia.finde);
+    if (visibles.some((dia) => dia.del_mes)) semanas.push(visibles);
+  }
+  return semanas;
+}
+
+// Las filas de la grilla (las de semanasDelMes), cada una con sus días que tienen fecha; lo que no es una lista no es una fila
+const filasDeLasSemanas = (semanas) => (Array.isArray(semanas)
+  ? semanas.filter(Array.isArray).map((semana) => listaDe(semana).filter((dia) => esFechaDeTexto(dia.fecha)))
+  : []);
+
+// Los tramos de una fila: los días de columnas seguidas con la misma clave (`claveDe(fecha)`; null es nada), `[{ clave, desde,
+// hasta }]` con las columnas de sus puntas
+const tramosDeLaFila = (dias, claveDe) => {
+  const tramos = [];
+  dias.forEach((dia, columna) => {
+    const clave = claveDe(dia.fecha);
+    if (clave === null) return;
+    const ultimo = tramos.at(-1);
+    if (ultimo !== undefined && ultimo.clave === clave && ultimo.hasta === columna - 1) ultimo.hasta = columna;
+    else tramos.push({ clave, desde: columna, hasta: columna });
+  });
+  return tramos;
+};
+
+/**
+ * Las barras del mes (spec 3.4), una por fila de `semanas` (las de semanasDelMes), con lo que manda GET /mi-espacio/eventos
+ * (`datos`): `{ carriles, piezas }`. `carriles` es 0, 1 o 2: el 1 es de tus licencias si la semana tiene algún día de licencia
+ * (los `dias` de cada una), y los compañeros (los días de `companeros_por_dia`) van en el siguiente (sin licencias, el 1). `piezas` es un
+ * Map de cada fecha de la fila a sus carriles (`[Pieza|null]`, uno por carril; sin carriles, []). Un tramo son los días de
+ * columnas seguidas de la fila con la misma licencia (por su id) o con el mismo texto de compañeros, y cada día suyo es una
+ * Pieza: `{ clase, texto, titulo, inicio, fin, largo, sigue_antes, sigue_despues }`, con `clase` 'licencia' o 'ausente',
+ * `texto` el de la licencia («Vacaciones») o el del día («Carla y Julián no están»), `inicio` y `fin` en sus puntas, `largo`
+ * (los días del tramo) solo en la de `inicio` (en las demás, null), `sigue_despues` en la última columna de la fila si la
+ * primera de la fila siguiente tiene lo mismo (un viernes que sigue el lunes, con el fin de semana oculto) y `sigue_antes` al
+ * revés; las filas de las puntas de la grilla no siguen. `titulo`: en una licencia, «Vacaciones. Hasta el viernes 27/11» (sin
+ * `hasta_texto`, el texto); en los compañeros, cada uno de los que no están ese día (los de `ausentes` que lo tienen en sus
+ * `dias`), en el orden del texto, con su texto y su `hasta_texto`: «Carla no está. Hasta el viernes 13/11. Julián no está.».
+ */
+function barrasDelMes(semanas, datos) {
+  const filas = filasDeLasSemanas(semanas);
+  const fuente = esObjeto(datos) ? datos : {};
+  // Tus licencias: la de cada día (la primera que lo pinta) con su clave, el id (sin un id que sirva, su lugar en la lista)
+  const licencias = new Map();
+  listaDe(fuente.licencias).forEach((licencia, lugar) => {
+    const clave = Number.isInteger(licencia.id) && licencia.id > 0 ? `id ${String(licencia.id)}` : `lugar ${String(lugar)}`;
+    for (const fecha of diasPintados(licencia)) if (!licencias.has(fecha)) licencias.set(fecha, { clave, licencia });
+  });
+  // Los compañeros de cada día: el texto del servidor y quiénes son (para el title)
+  const companeros = new Map();
+  for (const dia of listaDe(fuente.companeros_por_dia)) {
+    if (esFechaDeTexto(dia.fecha) && conTexto(dia.texto) && !companeros.has(dia.fecha)) companeros.set(dia.fecha, dia.texto);
+  }
+  const ausentesDelDia = new Map();
+  for (const ausente of listaDe(fuente.ausentes).filter((uno) => conTexto(uno.texto))) {
+    for (const fecha of new Set(diasPintados(ausente))) {
+      if (!ausentesDelDia.has(fecha)) ausentesDelDia.set(fecha, []);
+      ausentesDelDia.get(fecha).push(ausente);
+    }
+  }
+  const tituloDeLaLicencia = (fecha) => {
+    const { licencia } = licencias.get(fecha);
+    const texto = comoTexto(licencia.texto);
+    return conTexto(licencia.hasta_texto) ? `${texto}. ${licencia.hasta_texto}` : texto;
+  };
+  // En el orden del texto del día: el servidor ordena los nombres con localeCompare en castellano (companerosPorDia)
+  const tituloDeLosCompaneros = (fecha) => {
+    const delDia = [...(ausentesDelDia.get(fecha) ?? [])].sort((a, b) => comoTexto(a.nombre).localeCompare(comoTexto(b.nombre), 'es'));
+    if (delDia.length === 0) return companeros.get(fecha);
+    return delDia.map((ausente) => (conTexto(ausente.hasta_texto) ? `${ausente.texto}. ${ausente.hasta_texto}.` : `${ausente.texto}.`))
+      .join(' ');
+  };
+  const tipos = [
+    { clase: 'licencia', clave: (fecha) => licencias.get(fecha)?.clave ?? null,
+      texto: (fecha) => comoTexto(licencias.get(fecha).licencia.texto), titulo: tituloDeLaLicencia },
+    { clase: 'ausente', clave: (fecha) => companeros.get(fecha) ?? null, texto: (fecha) => companeros.get(fecha),
+      titulo: tituloDeLosCompaneros }
+  ];
+  return filas.map((dias, fila) => {
+    const carriles = tipos.map((tipo) => ({ tipo, tramos: tramosDeLaFila(dias, tipo.clave) })).filter((carril) => carril.tramos.length > 0);
+    const piezas = new Map(dias.map((dia) => [dia.fecha, carriles.map(() => null)]));
+    // El último día de la fila anterior y el primero de la siguiente (las filas de las puntas no tienen)
+    const anterior = filas[fila - 1]?.at(-1)?.fecha ?? null;
+    const siguiente = filas[fila + 1]?.[0]?.fecha ?? null;
+    carriles.forEach(({ tipo, tramos }, carril) => {
+      for (const tramo of tramos) {
+        for (let columna = tramo.desde; columna <= tramo.hasta; columna++) {
+          const fecha = dias[columna].fecha;
+          piezas.get(fecha)[carril] = {
+            clase: tipo.clase,
+            texto: tipo.texto(fecha),
+            titulo: tipo.titulo(fecha),
+            inicio: columna === tramo.desde,
+            fin: columna === tramo.hasta,
+            largo: columna === tramo.desde ? tramo.hasta - tramo.desde + 1 : null,
+            sigue_antes: columna === 0 && anterior !== null && tipo.clave(anterior) === tramo.clave,
+            sigue_despues: columna === dias.length - 1 && siguiente !== null && tipo.clave(siguiente) === tramo.clave
+          };
+        }
+      }
+    });
+    return { carriles: carriles.length, piezas };
+  });
+}
+
+/**
+ * Los renglones de lo de cada día (spec 3.5): con `cantidad` cosas (los feriados y los eventos) y `lugares` (4 menos los carriles
+ * de su semana), `{ lineas, mas }`. Con 3 cosas o menos y lugar para todas, se ven todas, con un renglón cada una, y los lugares que
+ * sobran se reparten en orden hasta el tope (3 renglones con una cosa, 2 con dos y 1 con tres): `lineas` tiene los renglones de
+ * cada una y `mas` es 0. Si no, se ven las que entran menos una (al menos una), de un renglón, y `mas` cuenta las demás («y N más»).
+ * Una cantidad que no es un entero positivo es ninguna cosa; unos lugares que no son un entero positivo, ninguno.
+ */
+function renglonesDelDia(cantidad, lugares) {
+  const cosas = Number.isInteger(cantidad) && cantidad > 0 ? cantidad : 0;
+  const lugar = Number.isInteger(lugares) && lugares > 0 ? lugares : 0;
+  if (cosas === 0) return { lineas: [], mas: 0 };
+  if (cosas <= 3 && cosas <= lugar) {
+    const tope = cosas === 1 ? 3 : cosas === 2 ? 2 : 1;
+    const lineas = Array(cosas).fill(1);
+    let sobran = lugar - cosas;
+    for (let i = 0; i < cosas && sobran > 0; i++) {
+      const extra = Math.min(tope - 1, sobran);
+      lineas[i] += extra;
+      sobran -= extra;
+    }
+    return { lineas, mas: 0 };
+  }
+  const aLaVista = Math.min(cosas, Math.max(1, lugar - 1));
+  return { lineas: Array(aLaVista).fill(1), mas: cosas - aLaVista };
+}
+
+// Lo que queda escondido el fin de semana con «Sábado y domingo» apagado (spec 3.2): los feriados y los eventos de los sábados y
+// domingos del mes ('AAAA-MM'; las licencias y los compañeros se pintan solo en días hábiles), cada uno una cosa, como en la
+// grilla. Un mes que no sirve, 0
+function cuantasEnElFinde(mes, datos) {
+  if (!esMesDeTexto(mes)) return 0;
+  const fuente = esObjeto(datos) ? datos : {};
+  const escondida = (fila) => esFechaDeTexto(fila.fecha) && fila.fecha.slice(0, 7) === mes && lugarEnLaSemana(fila.fecha) >= 5;
+  return listaDe(fuente.feriados).filter(escondida).length + listaDe(fuente.eventos).filter(escondida).length;
+}
+
+// El nombre del botón «Sábado y domingo» cuando quedó algo escondido (spec 3.2; la cantidad de cuantasEnElFinde): «Sábado y
+// domingo: 1 cosa escondida», «Sábado y domingo: 3 cosas escondidas». Sin nada escondido (o con una cantidad que no es un entero
+// positivo), '': el nombre del botón es su texto
+const etiquetaDelFinDeSemana = (cantidad) => (Number.isInteger(cantidad) && cantidad > 0
+  ? `Sábado y domingo: ${cantidad === 1 ? '1 cosa escondida' : `${String(cantidad)} cosas escondidas`}` : '');
+
+// El día de la grilla más cercano a una fecha que se ve (spec 3.8 y decisión 9.12: el día elegido del teléfono y el foco del
+// teclado): la fecha si se ve; si no, el primer día visible que la sigue en `semanas` (las de semanasDelMes) y, si no hay, el
+// último que la precede (hoy sábado 31/10 → el viernes 30; el 1/11, domingo → el lunes 2). Sin días o con una fecha que no sirve,
+// null
+function diaVisibleCercano(fecha, semanas) {
+  if (!esFechaDeTexto(fecha)) return null;
+  const visibles = filasDeLasSemanas(semanas).flat().map((dia) => dia.fecha);
+  return visibles.find((visible) => visible >= fecha) ?? visibles.at(-1) ?? null;
+}
+
+/**
+ * Adónde va el foco del mes con una tecla (spec 4.1 y decisión 9.5: el número de cada día es un botón y el mes, una sola parada del
+ * tabulador), desde `fecha` en las filas de `semanas` (las de semanasDelMes, con los días que se ven): ArrowRight y ArrowLeft, al
+ * día visible siguiente o anterior (del viernes al lunes, con sábado y domingo ocultos); ArrowDown y ArrowUp, al de la misma columna
+ * en la fila de abajo o de arriba; Home y End, al primero y al último de su fila. En el borde de la grilla, la misma fecha: no se
+ * mueve. Otra tecla, o una fecha que no se ve, null.
+ */
+function diaConLaTecla(fecha, tecla, semanas) {
+  const filas = filasDeLasSemanas(semanas).map((dias) => dias.map((dia) => dia.fecha));
+  const fila = esFechaDeTexto(fecha) ? filas.findIndex((dias) => dias.includes(fecha)) : -1;
+  if (fila === -1) return null;
+  const columna = filas[fila].indexOf(fecha);
+  const todas = filas.flat();
+  const lugar = todas.indexOf(fecha);
+  const destinos = {
+    ArrowRight: () => todas[lugar + 1],
+    ArrowLeft: () => (lugar > 0 ? todas[lugar - 1] : undefined),
+    ArrowDown: () => filas[fila + 1]?.[columna],
+    ArrowUp: () => (fila > 0 ? filas[fila - 1][columna] : undefined),
+    Home: () => filas[fila][0],
+    End: () => filas[fila].at(-1)
+  };
+  return Object.hasOwn(destinos, tecla) ? (destinos[tecla]() ?? fecha) : null;
+}
+
+// El HTML del mes (spec 2026-10-28-mi-espacio-agenda-onda, 3.3 a 3.8 y 6): lo de dibujo, con el modelo de arriba. Los textos y los
+// nombres son los del servidor, escapados (también en los title)
+
+// Los íconos del mes (Lucide, embebidos y decorativos): la bandera del feriado, el sol de tus licencias, la persona del compañero
+// que no está, las dos personas de un Laboral (también el de otra persona) y, desde el evento Personal (Público) (spec
+// 2026-10-29-mi-espacio-evento-publico, 5.1), el ojo, «lo ven otros»: el de un Público tuyo (`ojo`, que se pide con `icono`: su
+// clase es propio) y el de uno de otra persona ('publico-otro', el mismo); lo que es solo tuyo, sin ícono
+const iconoDelMes = (cuerpo) => '<svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" '
+  + 'width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" '
+  + `stroke-linejoin="round">${cuerpo}</svg>`;
+// El ojo (Lucide «eye»), decorativo: «lo ven otros» (spec 5.1). También en la vista previa del formulario y en la insignia del detalle
+const ICONO_DEL_OJO = iconoDelMes('<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/>'
+  + '<circle cx="12" cy="12" r="3"/>');
+const ICONOS_DEL_MES = Object.freeze({
+  feriado: iconoDelMes('<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>'),
+  licencia: iconoDelMes('<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/>'
+    + '<path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/>'
+    + '<path d="m19.07 4.93-1.41 1.41"/>'),
+  ausente: iconoDelMes('<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
+  compartido: iconoDelMes('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'
+    + '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
+  ojo: ICONO_DEL_OJO,
+  candado: iconoDelMes('<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'),
+  'publico-otro': ICONO_DEL_OJO,
+  propio: ''
+});
+// El ícono de una cosa: el que pide (`icono`, si es uno del mes: el ojo de un Público tuyo) o, si no, el de su clase ('' si no
+// tiene); en una lista (el día elegido y los próximos), lo que no tiene ícono es un punto
+const iconoDe = (clase, icono) => {
+  if (typeof icono === 'string' && Object.hasOwn(ICONOS_DEL_MES, icono)) return ICONOS_DEL_MES[icono];
+  return Object.hasOwn(ICONOS_DEL_MES, clase) ? ICONOS_DEL_MES[clase] : '';
+};
+const iconoOPunto = (clase, icono) => iconoDe(clase, icono) || '<i></i>';
+// El «+» de «Nuevo evento» del día elegido (Lucide «plus»), decorativo
+const ICONO_DE_MAS = '<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" '
+  + 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
+
+// Un pedazo de barra, el de un día en un carril (spec 3.4 y 6), o el lugar vacío de ese carril. El del principio del tramo lleva el
+// ícono y el texto a la vista, y en su style los días del tramo (--n: el texto ocupa todo el tramo); los demás, el texto solo para
+// el lector de pantalla (cada día dice lo suyo). Con `demora` (el movimiento, en segundos), cuándo se dibuja (--demora)
+const htmlDePieza = (pieza, demora) => {
+  if (!esObjeto(pieza)) return '<span class="me-tira vacia"></span>';
+  const clases = ['me-tira', pieza.clase, pieza.inicio === true && 'inicio', pieza.fin === true && 'fin', pieza.sigue_antes === true && 'sigue-antes',
+    pieza.sigue_despues === true && 'sigue-despues'].filter(Boolean).join(' ');
+  const largo = pieza.inicio === true && Number.isInteger(pieza.largo) && pieza.largo > 0 ? `--n:${String(pieza.largo)}` : '';
+  const estilo = [largo, demora === null ? '' : `--demora:${demora}s`].filter(conTexto).join(';');
+  const adentro = pieza.inicio === true
+    ? `${iconoDe(pieza.clase)}<span class="me-tira-texto">${esc(pieza.texto)}</span>`
+    : `<span class="visualmente-oculto">${esc(pieza.texto)}</span>`;
+  return `<span class="${clases}" title="${esc(pieza.titulo)}"${estilo === '' ? '' : ` style="${estilo}"`}>${adentro}</span>`;
+};
+
+// El texto de un evento en el día es «HH:MM título» (cosasPorDia): la hora va en negrita
+const HORA_Y_TITULO = /^((?:[01]\d|2[0-3]):[0-5]\d)(?: ([\s\S]*))?$/;
+// Una cosa de un día, con sus renglones (`lineas`, data-lineas: renglonesDelDia) y su ícono (el de su clase o el que pide: el ojo de
+// un Público tuyo): un evento es un botón (lo abre, con su id); un feriado, un texto. Los dos con su title: en la celda se corta
+const htmlDeCosa = (cosa, lineas) => {
+  const esEvento = Object.hasOwn(cosa, 'evento_id');
+  const partes = esEvento ? HORA_Y_TITULO.exec(cosa.texto) : null;
+  const texto = partes === null ? esc(cosa.texto) : `<b>${partes[1]}</b>${partes[2] === undefined ? '' : ` ${esc(partes[2])}`}`;
+  const comun = `class="me-ev ${cosa.clase}" data-lineas="${String(lineas)}"`;
+  const icono = iconoDe(cosa.clase, cosa.icono);
+  return esEvento
+    ? `<button type="button" ${comun} data-evento="${esc(cosa.evento_id)}" title="${esc(cosa.texto)}">${icono}${texto}</button>`
+    : `<span ${comun} title="${esc(cosa.texto)}">${icono}${texto}</span>`;
+};
+
+/**
+ * Un día de la grilla (spec 3.3 a 3.5 y 3.8): su número (un botón: en la compu, «Nuevo evento el jueves 22/10»; en el teléfono,
+ * «Ver el jueves 22/10» y, el del día elegido, con aria-current="true": ahí lo de cada día no se ve y los puntos van con
+ * aria-hidden, así que el anillo es lo único que lo marca a la vista y el lector de pantalla lo sabe por este atributo; con
+ * tabindex="0" solo el del foco), su pedazo de cada carril de la semana, lo suyo (los feriados y los eventos, cosasPorDia) con los
+ * renglones de renglonesDelDia —el resto, oculto, y «y N más», que lo muestra (data-ver-mas)— y sus puntos (los del teléfono, uno
+ * por cosa, con su clase: el de un Público de otra persona, 'publico-otro', es un anillo). Hoy, con aria-current="date" en su
+ * celda; los días del mes que ya pasaron, los de los meses vecinos, los fines de semana, los feriados y el elegido, con su clase.
+ */
+const htmlDeLaCelda = (dia, { cosas, piezas, lugares, hoy, foco, elegido, telefono, demora }) => {
+  const { lineas, mas } = renglonesDelDia(cosas.length, lugares);
+  const clases = ['me-celda', !dia.del_mes && 'otro-mes', dia.finde && 'finde', cosas.some((cosa) => cosa.clase === 'feriado') && 'feriado',
+    dia.fecha === hoy && 'hoy', dia.del_mes && hoy !== null && dia.fecha < hoy && 'paso', dia.fecha === elegido && 'elegido'].filter(Boolean).join(' ');
+  const numero = `<button type="button" class="me-num" data-dia="${dia.fecha}" tabindex="${dia.fecha === foco ? '0' : '-1'}" `
+    + `aria-label="${telefono ? 'Ver' : 'Nuevo evento'} el ${diaLargoDe(dia.fecha)}"${telefono && dia.fecha === elegido ? ' aria-current="true"' : ''}>`
+    + `${String(dia.dia)}</button>`;
+  const carriles = piezas.length > 0 ? `<div class="me-carriles">${piezas.map((pieza) => htmlDePieza(pieza, demora)).join('')}</div>` : '';
+  const aLaVista = cosas.slice(0, lineas.length).map((cosa, i) => htmlDeCosa(cosa, lineas[i])).join('');
+  const resto = mas > 0 ? `<div class="me-resto" hidden>${cosas.slice(lineas.length).map((cosa) => htmlDeCosa(cosa, 1)).join('')}</div>`
+    + `<button type="button" class="me-mas" data-ver-mas="${dia.fecha}">y ${String(mas)} más</button>` : '';
+  const puntos = cosas.map((cosa) => `<i class="${cosa.clase}"></i>`).join('');
+  return `<td class="${clases}" data-fecha="${dia.fecha}"${dia.fecha === hoy ? ' aria-current="date"' : ''}><div class="me-celda-cuerpo">`
+    + `${numero}${carriles}<div class="me-cosas">${aLaVista}${resto}</div><span class="me-puntos" aria-hidden="true">${puntos}</span></div></td>`;
+};
+
+/**
+ * El mes ('AAAA-MM') con lo que manda GET /mi-espacio/eventos para su grilla (`datos`; sin ellos, mientras se piden, la grilla
+ * vacía) y `hoy`: una tabla nombrada por el título del mes (#ag-mes-titulo), con la cabeza de los días (el corto a la vista y el
+ * nombre para el lector de pantalla; la de hoy, si hoy se ve, con la clase `hoy`) y una fila por semana de semanasDelMes, con una
+ * celda por día (htmlDeLaCelda). Las opciones (de entrada, las de la compu sin movimiento): `finde` (solo el true literal: con
+ * sábado y domingo), `elegido` (el día elegido del teléfono), `foco` (el número con tabindex="0": el mes es una sola parada del
+ * tabulador; si no se ve o no es una fecha, hoy si es del mes y si no el 1, o el día visible más cercano: diaVisibleCercano),
+ * `telefono` (el número dice «Ver el …» y el del elegido lleva aria-current="true") y `animar` (cada pedazo de barra con su
+ * --demora: semana × 0,16 s + columna × 0,05 s). Un mes que no sirve, ''.
+ */
+function htmlDelMes(mes, datos, hoy, opciones) {
+  const elegidas = esObjeto(opciones) ? opciones : {};
+  const finde = elegidas.finde === true;
+  const semanas = semanasDelMes(mes, { finde });
+  if (semanas.length === 0) return '';
+  const filas = filasDeLasSemanas(semanas);
+  const visibles = new Set(filas.flat().map((dia) => dia.fecha));
+  const deHoy = esFechaDeTexto(hoy) ? hoy : null;
+  const foco = visibles.has(elegidas.foco) ? elegidas.foco
+    : diaVisibleCercano(deHoy !== null && deHoy.slice(0, 7) === mes ? deHoy : `${mes}-01`, semanas);
+  const contexto = {
+    hoy: deHoy, foco, elegido: esFechaDeTexto(elegidas.elegido) ? elegidas.elegido : null, telefono: elegidas.telefono === true
+  };
+  const animar = elegidas.animar === true;
+  const columnaDeHoy = visibles.has(deHoy) ? lugarEnLaSemana(deHoy) : null;
+  const cabeza = DIAS_CORTOS.slice(0, finde ? 7 : 5).map((corto, i) => `<th scope="col"${i === columnaDeHoy ? ' class="hoy"' : ''}>`
+    + `<span aria-hidden="true">${corto}</span><span class="visualmente-oculto">${NOMBRES_DE_LOS_DIAS[i]}</span></th>`).join('');
+  const cosas = cosasPorDia(datos);
+  const barras = barrasDelMes(semanas, datos);
+  const cuerpo = filas.map((dias, fila) => `<tr>${dias.map((dia, columna) => htmlDeLaCelda(dia, {
+    ...contexto,
+    cosas: cosas.get(dia.fecha) ?? [],
+    piezas: barras[fila].piezas.get(dia.fecha) ?? [],
+    lugares: 4 - barras[fila].carriles,
+    demora: animar ? (fila * 0.16 + columna * 0.05).toFixed(2) : null
+  })).join('')}</tr>`).join('');
+  return `<table class="me-mes" aria-labelledby="ag-mes-titulo"><thead><tr>${cabeza}</tr></thead><tbody>${cuerpo}</tbody></table>`;
+}
+
+// «miércoles 28 de octubre» (el día elegido, sin el año)
+const diaConElMes = (fecha) => `${NOMBRES_DE_LOS_DIAS[lugarEnLaSemana(fecha)]} ${String(Number(fecha.slice(8, 10)))} de ${nombreDelMes(fecha)}`;
+
+// Una fila del día elegido: el ícono (lo que es solo tuyo, un punto; un Público, el ojo), la hora (o «Todo el día»), el texto y, en
+// un evento, quién está (en un Público tuyo, a quiénes se lo mostrás y cómo: «Lo ven todos como «Turno médico»»); un evento es un
+// botón (lo abre, como en la grilla)
+const htmlDeFilaDelDia = (fila) => {
+  const quien = conTexto(fila.quien) ? ` <small>${esc(fila.quien)}</small>` : '';
+  const cuerpo = `<span class="me-elegido-icono" aria-hidden="true">${iconoOPunto(fila.clase, fila.icono)}</span>`
+    + `<span class="me-elegido-hora">${esc(fila.hora)}</span> <span class="me-elegido-texto">${esc(fila.texto)}${quien}</span>`;
+  return `<li class="me-fila-del-dia ${fila.clase}">${Object.hasOwn(fila, 'evento_id')
+    ? `<button type="button" class="me-elegido-cosa" data-evento="${esc(fila.evento_id)}">${cuerpo}</button>`
+    : `<div class="me-elegido-cosa">${cuerpo}</div>`}</li>`;
+};
+
+// El título del día elegido: «Jueves 22 de octubre», con « (hoy)» si es hoy (lo que se anuncia al elegirlo en el teléfono). Una
+// fecha que no sirve, ''
+const tituloDelDiaElegido = (fecha, hoy) => (esFechaDeTexto(fecha) ? `${conMayuscula(diaConElMes(fecha))}${fecha === hoy ? ' (hoy)' : ''}` : '');
+
+/**
+ * El día elegido del teléfono (spec 3.8), con lo que manda GET /mi-espacio/eventos para la grilla (`datos`): su fecha
+ * (tituloDelDiaElegido; el título está siempre: nombra la sección, #ag-elegido), «Nuevo evento» con esa fecha (data-nuevo-el) y lo
+ * de ese día, de todo el día primero (los feriados, tu licencia y los compañeros que no están, con el texto del día de
+ * `companeros_por_dia`) y después los eventos por hora, con quién está; sin nada, «No hay nada este día.». Sin lo del mes (`datos`
+ * no es un objeto: mientras se pide, o si no se pudo cargar), no se sabe qué hay ese día: solo el título y «Nuevo evento», sin
+ * lista ni «No hay nada este día.». Una fecha que no sirve, ''.
+ */
+function htmlDelDiaElegido(fecha, datos, hoy) {
+  if (!esFechaDeTexto(fecha)) return '';
+  const cabeza = `<div class="me-elegido-cabeza"><h3 id="ag-elegido-titulo">${esc(tituloDelDiaElegido(fecha, hoy))}</h3>`
+    + `<button type="button" class="sg-btn sg-btn-borde sg-btn-chico" data-nuevo-el="${fecha}">${ICONO_DE_MAS}Nuevo evento</button></div>`;
+  if (!esObjeto(datos)) return cabeza;
+  const fuente = datos;
+  const filas = [];
+  const deTodoElDia = (clase, texto) => filas.push({ clase, hora: 'Todo el día', texto: comoTexto(texto) });
+  for (const feriado of listaDe(fuente.feriados)) if (feriado.fecha === fecha) deTodoElDia('feriado', feriado.texto);
+  for (const licencia of listaDe(fuente.licencias)) if (diasPintados(licencia).includes(fecha)) deTodoElDia('licencia', licencia.texto);
+  const companeros = listaDe(fuente.companeros_por_dia).find((dia) => dia.fecha === fecha && conTexto(dia.texto));
+  if (companeros !== undefined) deTodoElDia('ausente', companeros.texto);
+  for (const evento of eventosEnOrden(fuente.eventos)) {
+    if (evento.fecha !== fecha) continue;
+    filas.push({
+      clase: claseDelEvento(evento), ...iconoDelEvento(evento), hora: horaDelEvento(evento), texto: comoTexto(evento.titulo),
+      quien: comoTexto(evento.quien_texto), evento_id: evento.id ?? null
+    });
+  }
+  const lista = filas.length === 0 ? '<p class="me-vacio">No hay nada este día.</p>'
+    : `<ul class="me-elegido-lista">${filas.map(htmlDeFilaDelDia).join('')}</ul>`;
+  return `${cabeza}${lista}`;
+}
+
+/**
+ * Los próximos (lo que manda GET /mi-espacio/eventos de hoy a hoy + 30), agrupados en «Hoy, lunes 26/10», «Mañana, martes 27/10»,
+ * «Esta semana» (hasta el domingo) y «Más adelante», sin grupos vacíos: `[{ titulo, items }]`. Cada ítem, `{ hora, titulo, detalle,
+ * clase }` y, si es un evento, `quien` y `evento_id`. En un día, primero lo de todo el día (los feriados, tus licencias y los
+ * compañeros, en ese orden) y después los eventos por hora y título. Hoy y mañana dicen la hora (o «Todo el día»); esta semana,
+ * «Mié 28», y más adelante, «Mar 03/11», con la hora del evento en el título. Lo de varios días va una vez, el día en que empieza o
+ * hoy, si ya empezó, con su «Hasta el …»; lo que terminó antes de hoy o es de después del rango no va. El detalle de un evento es su
+ * aviso corto («Aviso 2 h antes») y `quien`, el «Solo vos», «Con 4 personas» o «De …» del servidor (en un Público tuyo, que suma
+ * `icono: 'ojo'`, «Lo ven todos como «Turno médico»»; en uno de otra persona, ninguno de los dos). Con un hoy que no sirve, [].
+ */
+function gruposDeProximos(datos, hoy) {
+  const rango = rangoDeProximos(hoy);
+  if (rango === null) return [];
+  const fuente = esObjeto(datos) ? datos : {};
+  const enRango = (fecha) => esFechaDeTexto(fecha) && fecha >= hoy && fecha <= rango.hasta;
+  const cosas = [];
+  const deTodoElDia = (fecha, clase, texto, detalle) => {
+    if (enRango(fecha)) cosas.push({ fecha, clase, texto: comoTexto(texto), detalle: comoTexto(detalle) });
+  };
+  const deVariosDias = (fila, clase) => {
+    if (!esFechaDeTexto(fila.desde) || !esFechaDeTexto(fila.hasta) || fila.hasta < hoy) return;
+    deTodoElDia(fila.desde > hoy ? fila.desde : hoy, clase, fila.texto, fila.hasta_texto);
+  };
+  for (const feriado of listaDe(fuente.feriados)) deTodoElDia(feriado.fecha, 'feriado', feriado.texto, '');
+  for (const licencia of listaDe(fuente.licencias)) deVariosDias(licencia, 'licencia');
+  for (const ausente of listaDe(fuente.ausentes)) deVariosDias(ausente, 'ausente');
+  for (const evento of eventosEnOrden(fuente.eventos)) {
+    if (!enRango(evento.fecha)) continue;
+    cosas.push({
+      fecha: evento.fecha, clase: claseDelEvento(evento), ...iconoDelEvento(evento), hora: horaDelEvento(evento),
+      texto: comoTexto(evento.titulo), detalle: comoTexto(esObjeto(evento.aviso) ? evento.aviso.corto : ''),
+      quien: comoTexto(evento.quien_texto), evento_id: evento.id ?? null
+    });
+  }
+  // Por fecha; en un día, en el orden en que se sumaron (sort es estable)
+  cosas.sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+  const manana = sumarDiasA(hoy, 1);
+  const domingo = sumarDiasA(hoy, 6 - lugarEnLaSemana(hoy));
+  const grupos = [
+    { titulo: `Hoy, ${diaLargoDe(hoy)}`, es: (fecha) => fecha === hoy, dia: null },
+    { titulo: `Mañana, ${diaLargoDe(manana)}`, es: (fecha) => fecha === manana, dia: null },
+    { titulo: 'Esta semana', es: (fecha) => fecha <= domingo, dia: diaDeEstaSemana },
+    { titulo: 'Más adelante', es: () => true, dia: diaMasAdelante }
+  ].map((grupo) => ({ ...grupo, items: [] }));
+  for (const cosa of cosas) {
+    const grupo = grupos.find((uno) => uno.es(cosa.fecha));
+    const esEvento = Object.hasOwn(cosa, 'evento_id');
+    const item = grupo.dia === null
+      ? { hora: esEvento ? cosa.hora : 'Todo el día', titulo: cosa.texto }
+      : { hora: grupo.dia(cosa.fecha), titulo: esEvento && cosa.hora ? `${cosa.hora} ${cosa.texto}` : cosa.texto };
+    Object.assign(item, { detalle: cosa.detalle, clase: cosa.clase });
+    if (Object.hasOwn(cosa, 'icono')) item.icono = cosa.icono;
+    if (esEvento) Object.assign(item, { quien: cosa.quien, evento_id: cosa.evento_id });
+    grupo.items.push(item);
+  }
+  return grupos.filter((grupo) => grupo.items.length > 0).map(({ titulo, items }) => ({ titulo, items }));
+}
+
+// Una cosa de los próximos: la hora, el título con el ícono de la cosa delante (decorativo; lo que es solo tuyo, un punto; un
+// Público, el ojo; un evento es un botón con su id: lo abre) y el detalle (de un evento, quién está, en su color, y su aviso). Un
+// Público tuyo (el que lleva el ojo, `icono`) dice a quiénes se lo mostrás y cómo, en una línea con el ojo y sin insignia («Lo ven
+// todos como «Turno médico»», spec 2026-10-29-mi-espacio-evento-publico, 5.1); uno de otra persona, nada de quién está
+const htmlDeProximo = (item) => {
+  const icono = `<span class="me-prox-icono ${esc(item.clase)}" aria-hidden="true">${iconoOPunto(item.clase, item.icono)}</span>`;
+  const titulo = Object.hasOwn(item, 'evento_id')
+    ? `<button type="button" class="me-prox-titulo" data-evento="${esc(item.evento_id)}">${icono}${esc(item.titulo)}</button>`
+    : `<span class="me-prox-titulo">${icono}${esc(item.titulo)}</span>`;
+  let quien = '';
+  if (conTexto(item.quien) && item.clase !== 'publico-otro') {
+    quien = item.icono === 'ojo' ? `<span class="me-lo-ven">${ICONO_DEL_OJO}${esc(item.quien)}</span>`
+      : `<span class="me-insignia ${item.clase === 'propio' ? 'azul' : 'violeta'}">${esc(item.quien)}</span>`;
+  }
+  const detalle = quien !== '' || conTexto(item.detalle) ? `<span class="me-prox-detalle">${quien}${esc(item.detalle)}</span>` : '';
+  return `<li class="me-prox ${esc(item.clase)}"><span class="me-prox-hora">${esc(item.hora)}</span>${titulo}${detalle}</li>`;
+};
+
+// Los próximos, cada grupo con su título; sin nada, «No hay nada en los próximos 30 días.»
+function htmlDeProximos(grupos) {
+  const conAlgo = listaDe(grupos).filter((grupo) => listaDe(grupo.items).length > 0);
+  if (conAlgo.length === 0) return `<p class="me-vacio">No hay nada en los próximos ${String(DIAS_DE_PROXIMOS)} días.</p>`;
+  return conAlgo.map((grupo) => `<h3>${esc(grupo.titulo)}</h3><ul class="me-prox-lista">${listaDe(grupo.items).map(htmlDeProximo).join('')}</ul>`)
+    .join('');
+}
+
+// =====================================================
+// Lo puro: el formulario del evento y el detalle de uno ajeno (spec 2026-10-26-mi-espacio-agenda, 1, 2 y 6; maqueta 2)
+// =====================================================
+
+// ---- Copias mínimas de services/miEspacioEventosReglas.js, para avisar en el momento (el servidor valida igual), atadas por tests
+// de paridad ----
+
+const MENSAJES_EVENTO = Object.freeze({
+  titulo: 'Escribí qué es el evento.',
+  tituloLargo: 'El título puede tener hasta 150 caracteres.',
+  desde: 'Elegí a qué hora empieza.',
+  hasta: 'La hora de fin tiene que ser después de la de inicio, el mismo día.',
+  detalle: 'El detalle puede tener hasta 1000 caracteres.',
+  tipo: 'Elegí el tipo de evento.',
+  textoPublico: 'Elegí qué ven los demás.',
+  textoPublicoLargo: 'Lo que ven los demás puede tener hasta 60 caracteres.',
+  personas: 'Elegí con quién lo compartís, o «Toda la administración».',
+  personasPublico: 'Elegí con quién lo compartís, o «Todos».',
+  personasInvalidas: 'Solo podés compartirlo con las personas de la lista.',
+  recordatorio: 'Elegí cuándo te llega el recordatorio.',
+  sinPermiso: 'No tenés permiso para compartir eventos.',
+  noEncontrado: 'Evento no encontrado',
+  miRecordatorio: 'Elegí si querés el recordatorio.',
+  esTuyo: 'El recordatorio de tu evento se cambia en el evento.',
+  sinRecordatorio: 'Este evento no tiene recordatorio para vos.'
+});
+// El largo del título y del detalle (en caracteres contados con Array.from) y la fecha más vieja; la más nueva, fechaMaximaEvento
+const LARGO_TITULO_EVENTO = 150;
+const LARGO_DETALLE_EVENTO = 1000;
+const FECHA_MINIMA_EVENTO = '2025-01-01';
+// Los recordatorios, en el orden del formulario, el de entrada y cómo se muestra cada uno
+const RECORDATORIOS = Object.freeze(['1h', '2h', 'dia_anterior', 'ninguno']);
+const RECORDATORIO_POR_DEFECTO = '2h';
+const TEXTO_RECORDATORIO = Object.freeze({
+  '1h': '1 hora antes', '2h': '2 horas antes', dia_anterior: 'El día hábil anterior', ninguno: 'Sin aviso'
+});
+// Los tipos de evento, en el orden del formulario (spec 2026-10-29-mi-espacio-evento-publico, 2 y 4): Personal (Privado), Personal
+// (Público) y Laboral; lo que ven los demás de un Público, de la lista («Otro» lo escribe quien lo carga), y su largo (en caracteres
+// contados con Array.from)
+const TIPOS_DE_EVENTO = Object.freeze(['privado', 'publico', 'laboral']);
+const TEXTOS_PUBLICOS = Object.freeze([
+  'Trámite personal', 'Turno médico', 'Asunto familiar', 'Fuera de la oficina', 'Capacitación o curso'
+]);
+const LARGO_TEXTO_PUBLICO = 60;
+// El tipo de un evento, como el paso 6 de validarEvento: el de TIPOS_DE_EVENTO que dice `tipo`; sin él (o null: los valores o el
+// cuerpo de antes), Laboral con `compartido` en el true literal y si no Personal (Privado); cualquier otro valor, null
+const tipoDelEvento = (datos) => {
+  if (datos.tipo === undefined || datos.tipo === null) return datos.compartido === true ? 'laboral' : 'privado';
+  return typeof datos.tipo === 'string' && TIPOS_DE_EVENTO.includes(datos.tipo) ? datos.tipo : null;
+};
+
+// ---- Solo del navegador (con tests de comportamiento) ----
+
+// «Otro» vacío (el servidor dice el de un texto vacío, MENSAJES_EVENTO.textoPublico) y un Laboral de quien ya no es de
+// administración (el servidor lo rechaza con sinPermiso en `compartido`, sin control: spec, decisión 10.3)
+const MENSAJE_OTRO_VACIO = 'Escribí qué ven los demás.';
+const MENSAJE_LABORAL_SIN_PERMISO = 'Ya no podés compartir eventos laborales. Elegí otro tipo para guardarlo.';
+// Las ayudas de con quién y del recordatorio de un Público y de un Laboral
+const AYUDA_DE_LAS_PERSONAS_DEL_PUBLICO = 'A estas personas no les llega ningún email: lo ven en su agenda y en el Resumen.';
+const AYUDA_DEL_RECORDATORIO_PUBLICO = 'Te llega solo a vos.';
+const AYUDA_DE_LAS_PERSONAS_DEL_LABORAL = 'Les llega un email cuando los sumás, y otro si cambiás o borrás el evento. Solo vos lo podés '
+  + 'cambiar.';
+const AYUDA_DEL_RECORDATORIO_COMPARTIDO = 'Les llega a todas las personas del evento.';
+// Cada tipo en el formulario: su nombre y lo que dice debajo
+const OPCIONES_DEL_TIPO = window.MQ?.opciones ?? Object.freeze({
+  privado: Object.freeze({ nombre: 'Personal (Privado)', ayuda: 'Nadie más lo ve' }),
+  publico: Object.freeze({ nombre: 'Personal (Público)', ayuda: 'Lo ven quienes elijas, con un texto corto' }),
+  laboral: Object.freeze({ nombre: 'Laboral', ayuda: 'Con la administración que elijas' })
+});
+// En la vista previa, mientras no llegó el nombre de quien carga (o si no llegó)
+const NOMBRE_DE_LA_VISTA_PREVIA = 'Tu nombre';
+
+// La fecha más nueva de un evento: el mismo día dos años después de hoy (un 29/02 da el 28/02); null si hoy no es una fecha; después
+// del año 9999, el 31/12/9999
+const fechaMaximaEvento = (hoy) => {
+  if (!esFechaDeTexto(hoy)) return null;
+  const anio = Number(hoy.slice(0, 4)) + 2;
+  if (anio > 9999) return '9999-12-31';
+  const mesYDia = hoy.slice(5) === '02-29' ? '02-28' : hoy.slice(5);
+  return `${String(anio).padStart(4, '0')}-${mesYDia}`;
+};
+// El error de una fecha fuera del rango, como textoRangoEvento: «La fecha tiene que ser del 01/01/2025 al 26/10/2028.» (sin un
+// tope, la raya)
+const textoRangoDelEvento = (hasta) => `La fecha tiene que ser del ${Utils.fechaCorta(FECHA_MINIMA_EVENTO)} al ${Utils.fechaCorta(hasta)}.`;
+// Un id de una persona, como idPositivo de services/proyectosReglas.js: un entero positivo de hasta 10 cifras, en número o en texto;
+// si no, null
+const idDeLaPersona = (valor) => {
+  if (typeof valor !== 'string' && typeof valor !== 'number') return null;
+  const texto = String(valor);
+  return /^[1-9]\d{0,9}$/.test(texto) ? Number(texto) : null;
+};
+// 'HH:MM' de 00:00 a 23:59 (ni '9:00' ni '10:00:00')
+const esHoraDeTexto = (valor) => typeof valor === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(valor);
+// 'martes 27/10/2026', de una fecha ya controlada
+const diaConFechaDe = (fecha) => `${NOMBRES_DE_LOS_DIAS[lugarEnLaSemana(fecha)]} ${fecha.slice(8, 10)}/${fecha.slice(5, 7)}/${fecha.slice(0, 4)}`;
+// Cuándo es un evento, como cuandoDelEvento: «martes 27/10/2026 de 10:00 a 11:00», o «… a las 10:00» sin hora de fin; si no sirve,
+// la raya
+const cuandoDelEventoDe = (evento) => {
+  if (!esObjeto(evento) || !esFechaDeTexto(evento.fecha) || !esHoraDeTexto(evento.desde)) return '—';
+  const dia = diaConFechaDe(evento.fecha);
+  return esHoraDeTexto(evento.hasta) ? `${dia} de ${evento.desde} a ${evento.hasta}` : `${dia} a las ${evento.desde}`;
+};
+const conMayuscula = (texto) => texto.charAt(0).toUpperCase() + texto.slice(1);
+
+/**
+ * Los errores de un evento antes de pedir nada (`{ campo: mensaje }`, todos, en el orden del formulario; sin ninguno, {}), con los
+ * controles y los mensajes de validarEvento (el primero es el suyo, con `puedeCompartir`: test de paridad en sus bordes). `valores`
+ * tiene las claves del cuerpo (titulo, fecha, desde, hasta, detalle, tipo, para_todos, personas, texto_publico y recordatorio; o,
+ * de antes, compartido en lugar de tipo) y `otro`: el título y el detalle recortados y contados con Array.from; la fecha de
+ * FECHA_MINIMA_EVENTO a fechaMaximaEvento(hoy); las horas 'HH:MM' y la de fin, si viene, después de la de inicio; el tipo
+ * (tipoDelEvento: uno que no es de la lista, `tipo`), y un Laboral sin `puedeCompartir` (solo el true literal: administración) da
+ * MENSAJE_LABORAL_SIN_PERMISO en `tipo` (quien lo creó ya no es de administración: tiene que elegir otro tipo); lo que ven los demás
+ * de un Público, recortado (sin texto, `textoPublico`, o MENSAJE_OTRO_VACIO con «Otro» elegido; de más de 60, `textoPublicoLargo`);
+ * las personas de un Público o de un Laboral que se puede guardar, sin «Todos» (solo el true literal), que sean ids (una lista que
+ * falta o vacía, `personasPublico` o `personas`; un id que no sirve, `personasInvalidas`; todos en `personas`), y con «Todos» no
+ * cuentan; y el recordatorio (sin él, o null, 2 horas antes) de la lista. Que las personas sean de la lista, el servidor.
+ */
+function erroresDelEvento(valores, hoy, { puedeCompartir = false } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  const errores = {};
+  const titulo = comoTexto(datos.titulo).trim();
+  if (titulo === '') errores.titulo = MENSAJES_EVENTO.titulo;
+  else if (Array.from(titulo).length > LARGO_TITULO_EVENTO) errores.titulo = MENSAJES_EVENTO.tituloLargo;
+  const maxima = fechaMaximaEvento(hoy);
+  if (!esFechaDeTexto(datos.fecha) || maxima === null || datos.fecha < FECHA_MINIMA_EVENTO || datos.fecha > maxima) {
+    errores.fecha = textoRangoDelEvento(maxima);
+  }
+  if (!esHoraDeTexto(datos.desde)) errores.desde = MENSAJES_EVENTO.desde;
+  const sinHasta = datos.hasta === undefined || datos.hasta === null || datos.hasta === '';
+  if (!sinHasta && (!esHoraDeTexto(datos.hasta) || (esHoraDeTexto(datos.desde) && datos.hasta <= datos.desde))) {
+    errores.hasta = MENSAJES_EVENTO.hasta;
+  }
+  if (Array.from(comoTexto(datos.detalle).trim()).length > LARGO_DETALLE_EVENTO) errores.detalle = MENSAJES_EVENTO.detalle;
+  const tipo = tipoDelEvento(datos);
+  const publico = tipo === 'publico';
+  const laboral = tipo === 'laboral' && puedeCompartir === true;
+  if (tipo === null) errores.tipo = MENSAJES_EVENTO.tipo;
+  else if (tipo === 'laboral' && !laboral) errores.tipo = MENSAJE_LABORAL_SIN_PERMISO;
+  if (publico) {
+    const texto = comoTexto(datos.texto_publico).trim();
+    if (texto === '') errores.texto_publico = datos.otro === true ? MENSAJE_OTRO_VACIO : MENSAJES_EVENTO.textoPublico;
+    else if (Array.from(texto).length > LARGO_TEXTO_PUBLICO) errores.texto_publico = MENSAJES_EVENTO.textoPublicoLargo;
+  }
+  if ((publico || laboral) && datos.para_todos !== true) {
+    const ninguna = publico ? MENSAJES_EVENTO.personasPublico : MENSAJES_EVENTO.personas;
+    if (!Array.isArray(datos.personas) || datos.personas.length === 0) errores.personas = ninguna;
+    else if (datos.personas.some((id) => idDeLaPersona(id) === null)) errores.personas = MENSAJES_EVENTO.personasInvalidas;
+  }
+  if (!RECORDATORIOS.includes(datos.recordatorio ?? RECORDATORIO_POR_DEFECTO)) errores.recordatorio = MENSAJES_EVENTO.recordatorio;
+  return errores;
+}
+
+// ---- Lo de cada formulario ----
+
+/**
+ * Los valores del formulario del evento: los de un evento propio (un ítem de GET /mi-espacio/eventos, con `personas_ids`) o, sin él,
+ * los de uno nuevo (un Personal (Privado)), con la `fecha` que se le pasa (hoy) y «2 horas antes». Las horas y el detalle, como texto
+ * ('' sin ellos); `tipo`, 'laboral' si es compartido, 'publico' si es un Personal (Público) y si no 'privado'; `para_todos`, el
+ * «Todos» de su tipo (el de la administración en un Laboral, `publico_todos` en un Público); `personas`, los ids elegidos ([] con
+ * «Todos»); `conocidas`, las personas del evento con su nombre (`{ id, nombre }`), así una que ya no está en la lista para elegir
+ * (dejó de ser administración) se ve y no se saca sin querer; y, en un Público, `texto_publico`, lo que ven los demás, con `otro`
+ * si no es uno de TEXTOS_PUBLICOS (lo escribió en «Otro»).
+ */
+function valoresDelEvento(item, { fecha = '' } = {}) {
+  if (!esObjeto(item)) {
+    return {
+      id: null, titulo: '', fecha: comoTexto(fecha), desde: '', hasta: '', detalle: '', tipo: '', para_todos: false,
+      personas: [], conocidas: [], texto_publico: '', otro: false, recordatorio: RECORDATORIO_POR_DEFECTO
+    };
+  }
+  const nombres = Array.isArray(item.personas) ? item.personas : [];
+  const conocidas = (Array.isArray(item.personas_ids) ? item.personas_ids : [])
+    .map((id, i) => ({ id: idDeLaPersona(id), nombre: comoTexto(nombres[i]) })).filter((persona) => persona.id !== null);
+  let tipo = 'privado';
+  if (item.compartido === true) tipo = 'laboral';
+  else if (item.publico === true) tipo = 'publico';
+  const paraTodos = (tipo === 'laboral' && item.para_todos === true) || (tipo === 'publico' && item.publico_todos === true);
+  const texto = tipo === 'publico' ? comoTexto(item.texto_publico) : '';
+  return {
+    id: item.id ?? null, titulo: comoTexto(item.titulo), fecha: comoTexto(item.fecha), desde: comoTexto(item.desde),
+    hasta: comoTexto(item.hasta), detalle: comoTexto(item.detalle), tipo, para_todos: paraTodos,
+    personas: paraTodos ? [] : conocidas.map((persona) => persona.id), conocidas,
+    texto_publico: texto, otro: texto !== '' && !TEXTOS_PUBLICOS.includes(texto),
+    recordatorio: RECORDATORIOS.includes(item.recordatorio) ? item.recordatorio : RECORDATORIO_POR_DEFECTO
+  };
+}
+
+/**
+ * Los valores con otro `tipo` (uno de TIPOS_DE_EVENTO; el mismo, o uno que no es de la lista, no cambia nada): con quién empieza de
+ * nuevo, sin «Todos» ni personas (el «Todos» y las personas de cada tipo son otros: un lector elegido en un Público no es de la
+ * administración de un Laboral), y sin las `conocidas` del evento (personasParaElegir las ofrece aunque no estén en la lista, y el
+ * servidor acepta a quien ya estaba solo si el evento era de ese tipo: un lector de un Público, en un Laboral, daría 400), salvo al
+ * volver al tipo de `original` (los valores con que se abrió el formulario), que trae los suyos. Lo que ven los demás se conserva.
+ */
+function valoresConElTipo(valores, tipo, original) {
+  const datos = esObjeto(valores) ? valores : {};
+  if (!TIPOS_DE_EVENTO.includes(tipo) || datos.tipo === tipo) return { ...datos };
+  const delOriginal = esObjeto(original) && original.tipo === tipo;
+  return {
+    ...datos, tipo, para_todos: delOriginal && original.para_todos === true,
+    personas: delOriginal && Array.isArray(original.personas) ? [...original.personas] : [],
+    conocidas: delOriginal && Array.isArray(original.conocidas) ? [...original.conocidas] : []
+  };
+}
+
+/**
+ * El cuerpo de POST /mi-espacio/eventos y PUT /mi-espacio/eventos/:id (el formulario entero; spec
+ * 2026-10-29-mi-espacio-evento-publico, 6.5): el título y el detalle recortados, la fecha, las horas (sin hora de fin, null), el
+ * recordatorio y siempre `tipo`. Un Público suma `para_todos` (su «Todos»: solo el true literal), `personas` (con «Todos», []) y
+ * `texto_publico`, recortado, y nunca `compartido`; un Laboral, solo con `puedeCompartir` (administración; el true literal),
+ * `compartido: true`, `para_todos` y `personas`. Un Privado (y un Laboral sin poder compartir, que erroresDelEvento no deja llegar
+ * acá), solo el tipo.
+ */
+function cuerpoDelEvento(valores, { puedeCompartir = false } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  const tipo = tipoDelEvento(datos) ?? datos.tipo;
+  const cuerpo = {
+    titulo: comoTexto(datos.titulo).trim(), fecha: comoTexto(datos.fecha), desde: comoTexto(datos.desde),
+    hasta: conTexto(datos.hasta) ? datos.hasta : null, detalle: comoTexto(datos.detalle).trim(), recordatorio: datos.recordatorio, tipo
+  };
+  const paraTodos = datos.para_todos === true;
+  const personas = !paraTodos && Array.isArray(datos.personas) ? [...datos.personas] : [];
+  if (tipo === 'publico') return { ...cuerpo, para_todos: paraTodos, personas, texto_publico: comoTexto(datos.texto_publico).trim() };
+  if (tipo === 'laboral' && puedeCompartir === true) return { ...cuerpo, compartido: true, para_todos: paraTodos, personas };
+  return cuerpo;
+}
+
+// Las personas para elegir: las de la lista para compartir (GET /mi-espacio/personas; null mientras llega o si no llegó) y, al
+// final, las del evento que no están en ella (`valores.conocidas`)
+function personasParaElegir(lista, valores) {
+  const delServidor = listaDe(lista);
+  const enLaLista = new Set(delServidor.map((persona) => idDeLaPersona(persona.id)));
+  const delEvento = listaDe(esObjeto(valores) ? valores.conocidas : null)
+    .filter((persona) => idDeLaPersona(persona.id) !== null && !enLaLista.has(idDeLaPersona(persona.id)));
+  return [...delServidor, ...delEvento];
+}
+
+// El ícono de «Todos» (Lucide «users»), decorativo
+const ICONO_DE_TODOS = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'
+  + '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+const MENSAJE_SIN_PERSONAS = 'No se pudo cargar la lista de personas. Probá de nuevo en unos minutos.';
+
+/**
+ * Con quién se comparte: el «Todos» del tipo primero (`data-persona="todos"`: «Toda la administración» en un Laboral y «Todos» en un
+ * Público, que son todos los usuarios activos; spec 2026-10-29-mi-espacio-evento-publico, 2.7) y cada persona (`data-persona="<id>"`,
+ * con sus iniciales, decorativas, y su nombre), botones con aria-pressed. Con «Todos» elegido, las demás van deshabilitadas (todos ya
+ * están). `sinLista`: 'cargando' o 'fallo' dice por qué todavía no está la lista (las del evento y «Todos» se pueden elegir igual);
+ * con 'fallo', `motivo` es el mensaje del servidor que lo explica (el 403 de un rol viejo en el navegador), escapado, y sin él,
+ * «Probá de nuevo…».
+ */
+function htmlDePersonasDelEvento(personas, valores, { sinLista = null, motivo = '' } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  const paraTodos = datos.para_todos === true;
+  const elegidas = Array.isArray(datos.personas) ? datos.personas : [];
+  const todos = tipoDelEvento(datos) === 'laboral' ? 'Toda la administración' : 'Todos';
+  const botones = [`<button type="button" class="me-persona" data-persona="todos" aria-pressed="${String(paraTodos)}">`
+    + `<i aria-hidden="true">${ICONO_DE_TODOS}</i>${todos}</button>`];
+  for (const persona of listaDe(personas)) {
+    const id = idDeLaPersona(persona.id);
+    if (id === null) continue;
+    const sigla = conTexto(persona.iniciales) ? persona.iniciales : iniciales(persona.nombre);
+    botones.push(`<button type="button" class="me-persona" data-persona="${String(id)}" `
+      + `aria-pressed="${String(!paraTodos && elegidas.includes(id))}"${paraTodos ? ' disabled' : ''}>`
+      + `<i aria-hidden="true">${esc(sigla)}</i>${esc(persona.nombre)}</button>`);
+  }
+  let estado = '';
+  if (sinLista === 'cargando') estado = 'Cargando las personas…';
+  else if (sinLista === 'fallo') estado = conTexto(motivo) ? esc(motivo) : MENSAJE_SIN_PERSONAS;
+  return botones.join('') + (estado ? `<span class="me-personas-estado">${estado}</span>` : '');
+}
+
+// Un clic en una persona (`valor`: 'todos' o su id): «Todos» se prende o se apaga y saca a las elegidas (con «Todos» están todos);
+// una persona se suma o se saca, salvo con «Todos». Devuelve los valores nuevos
+function elegirPersona(valores, valor) {
+  const datos = esObjeto(valores) ? valores : {};
+  const personas = Array.isArray(datos.personas) ? datos.personas : [];
+  if (valor === 'todos') return { ...datos, para_todos: datos.para_todos !== true, personas: [] };
+  const id = idDeLaPersona(valor);
+  if (id === null || datos.para_todos === true) return { ...datos, personas: [...personas] };
+  return { ...datos, personas: personas.includes(id) ? personas.filter((otra) => otra !== id) : [...personas, id] };
+}
+
+// Cuántas personas eligió, al lado de «Con quién»: «(1 persona)», «(4 personas)»; sin ninguna o con «Todos», nada
+function textoDeCuantasPersonas(valores) {
+  const datos = esObjeto(valores) ? valores : {};
+  const cuantas = Array.isArray(datos.personas) ? datos.personas.length : 0;
+  if (datos.para_todos === true || cuantas === 0) return '';
+  return `(${String(cuantas)} ${cuantas === 1 ? 'persona' : 'personas'})`;
+}
+
+// ---- Los tres tipos (spec 2026-10-29-mi-espacio-evento-publico, 4 y 7; la maqueta aprobada) ----
+
+// Los tipos que ofrece el formulario, en su orden: los tres con `puedeCompartir` (administración; el true literal); sin él, los dos
+// personales, salvo que el evento sea un Laboral (lo creó cuando era de administración): entonces los tres, y el Laboral, elegido y
+// deshabilitado (htmlDeTiposDeEvento), dice que hay que elegir otro
+const tiposQueSeVen = (valores, { puedeCompartir = false } = {}) => (puedeCompartir === true || valores?.tipo === 'laboral'
+  ? [...TIPOS_DE_EVENTO] : TIPOS_DE_EVENTO.filter((tipo) => tipo !== 'laboral'));
+
+/**
+ * «Tipo de evento»: una opción grande por cada tipo de tiposQueSeVen (`.me-opcion`, con `data-tipo` y aria-pressed en el elegido), con
+ * su nombre y lo que dice debajo. Sin `puedeCompartir`, el Laboral (si está) va deshabilitado.
+ */
+function htmlDeTiposDeEvento(valores, { puedeCompartir = false } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  return tiposQueSeVen(datos, { puedeCompartir }).map((tipo) => {
+    const { nombre, ayuda } = OPCIONES_DEL_TIPO[tipo];
+    const deshabilitado = tipo === 'laboral' && puedeCompartir !== true ? ' disabled' : '';
+    return `<button type="button" class="me-opcion" data-tipo="${tipo}" aria-pressed="${String(datos.tipo === tipo)}"${deshabilitado}>`
+      + `<span><b>${esc(nombre)}</b><small>${esc(ayuda)}</small></span></button>`;
+  }).join('');
+}
+
+// «Qué ven los demás»: una pastilla (`.sg-chip`, con `data-texto` y aria-pressed) por cada uno de TEXTOS_PUBLICOS y, al final,
+// «Otro» (`data-texto="otro"`), con una sola elegida: la de su texto o, con `otro`, «Otro»
+function htmlDeTextosPublicos(valores) {
+  const datos = esObjeto(valores) ? valores : {};
+  const otro = datos.otro === true;
+  const texto = comoTexto(datos.texto_publico).trim();
+  const pastilla = (valor, rotulo, elegida) => `<button type="button" class="sg-chip" data-texto="${esc(valor)}" `
+    + `aria-pressed="${String(elegida)}">${esc(rotulo)}</button>`;
+  return [...TEXTOS_PUBLICOS.map((uno) => pastilla(uno, uno, !otro && texto === uno)), pastilla('otro', 'Otro', otro)].join('');
+}
+
+// Un clic en una pastilla (`valor`: uno de TEXTOS_PUBLICOS u 'otro'): la de la lista es lo que ven los demás; «Otro», lo escrito en su
+// campo (`escrito`). Otro valor no cambia nada. Devuelve los valores nuevos
+function elegirTextoPublico(valores, valor, escrito = '') {
+  const datos = esObjeto(valores) ? valores : {};
+  if (valor === 'otro') return { ...datos, texto_publico: comoTexto(escrito), otro: true };
+  if (TEXTOS_PUBLICOS.includes(valor)) return { ...datos, texto_publico: valor, otro: false };
+  return { ...datos };
+}
+
+// La cuenta de «Otro»: «12 de 60 caracteres», sin los espacios de los extremos (como el servidor) y contados con Array.from; `pasado`,
+// si pasa de 60
+const cuentaDelTextoPublico = (texto) => {
+  const largo = Array.from(comoTexto(texto).trim()).length;
+  return { texto: `${String(largo)} de ${String(LARGO_TEXTO_PUBLICO)} caracteres`, pasado: largo > LARGO_TEXTO_PUBLICO };
+};
+
+/**
+ * «Así lo ven los demás:» (spec 4): el día como en su agenda (`dia`, texto plano: «Jue 5»; sin una fecha, «Sin fecha») y la pastilla
+ * del evento (`evento`, HTML): rosada, de hasta 3 renglones, con el ojo, la hora en negrita (si sirve) y «Carla: Turno médico», con el
+ * nombre como lo ven los demás (`nombre`, el mi_nombre_corto del servidor; sin él, «Tu nombre») y lo que ven (sin texto, «…»), los
+ * dos escapados.
+ */
+function htmlDeLaVistaPrevia(valores, { nombre = '' } = {}) {
+  const datos = esObjeto(valores) ? valores : {};
+  const dia = esFechaDeTexto(datos.fecha) ? diaDeEstaSemana(datos.fecha) : 'Sin fecha';
+  const hora = esHoraDeTexto(datos.desde) ? `<b>${datos.desde}</b> ` : '';
+  const quien = conTexto(nombre) ? nombre.trim() : NOMBRE_DE_LA_VISTA_PREVIA;
+  const texto = comoTexto(datos.texto_publico).trim();
+  return {
+    dia,
+    evento: `<span class="me-ev publico-otro" data-lineas="3">${ICONO_DEL_OJO}${hora}${esc(`${quien}: ${texto === '' ? '…' : texto}`)}</span>`
+  };
+}
+
+// Las ayudas de cada tipo, texto plano para textContent ('' sin ayuda): la del tipo (un Laboral sin poder compartir: que elija otro),
+// la de con quién y la del recordatorio (en un Público le llega solo a quien lo crea; en un Laboral, a todos los del evento)
+function ayudasDelEvento(valores, { puedeCompartir = false } = {}) {
+  const tipo = esObjeto(valores) ? valores.tipo : null;
+  if (tipo === 'publico') return { tipo: window.MQ.frase('publico'), personas: AYUDA_DE_LAS_PERSONAS_DEL_PUBLICO, recordatorio: AYUDA_DEL_RECORDATORIO_PUBLICO };
+  if (tipo === 'laboral' && puedeCompartir === true) {
+    return { tipo: window.MQ.frase('laboral'), personas: AYUDA_DE_LAS_PERSONAS_DEL_LABORAL, recordatorio: AYUDA_DEL_RECORDATORIO_COMPARTIDO };
+  }
+  return { tipo: tipo === 'laboral' ? MENSAJE_LABORAL_SIN_PERMISO : (tipo === 'privado' ? window.MQ.frase('privado') : ''), personas: '', recordatorio: '' };
+}
+
+// Los recordatorios, en el orden de RECORDATORIOS, con el elegido (uno que no es de la lista, el de entrada)
+function htmlDeOpcionesDeRecordatorio(elegido) {
+  const actual = RECORDATORIOS.includes(elegido) ? elegido : RECORDATORIO_POR_DEFECTO;
+  return RECORDATORIOS.map((clave) => `<option value="${clave}"${clave === actual ? ' selected' : ''}>${esc(TEXTO_RECORDATORIO[clave])}</option>`)
+    .join('');
+}
+
+// La ruta de GET /mi-espacio/eventos/aviso (cuándo sale el recordatorio, que calcula el servidor con los feriados) para la fecha, la
+// hora y el recordatorio del formulario; sin una fecha o una hora que sirvan, o con «Sin aviso» (no hay nada que decir), null
+function pedidoDelAviso(valores) {
+  const { fecha, desde, recordatorio } = esObjeto(valores) ? valores : {};
+  if (!esFechaDeTexto(fecha) || !esHoraDeTexto(desde) || !RECORDATORIOS.includes(recordatorio) || recordatorio === 'ninguno') return null;
+  return `/mi-espacio/eventos/aviso?fecha=${encodeURIComponent(fecha)}&desde=${encodeURIComponent(desde)}`
+    + `&recordatorio=${encodeURIComponent(recordatorio)}`;
+}
+
+// «Mi recordatorio» de un evento ajeno: 'evento' (el que eligió quien lo creó) o 'ninguno' (lo apagó, o quien lo creó eligió «Sin
+// aviso»)
+function miRecordatorioDe(item) {
+  const datos = esObjeto(item) ? item : {};
+  const conAviso = RECORDATORIOS.includes(datos.recordatorio) && datos.recordatorio !== 'ninguno';
+  return conAviso && datos.mi_recordatorio !== 'ninguno' ? 'evento' : 'ninguno';
+}
+
+/**
+ * El detalle de un evento ajeno (un ítem de GET /mi-espacio/eventos con `es_mio` false), cada parte en HTML escapado (el título va
+ * con textContent): `cuando` («Jueves 29/10/2026 de 09:00 a 10:00»), `detalle` (el texto; los renglones los respeta el <style>),
+ * `quien` (la insignia «Laboral» y el «Lo creó … Están: vos, …» del servidor) y `opciones`, las de «Mi recordatorio»: el que
+ * eligió quien lo creó («2 horas antes (el que eligió Martín Ríos)») y «Sin aviso», con la elegida; si quien lo creó eligió «Sin
+ * aviso», solo ese texto.
+ * Un Personal (Público) de otra persona (`publico`, spec 2026-10-29-mi-espacio-evento-publico, 5.3; llega recortado: sin detalle,
+ * quién está ni recordatorio): `quien` es la insignia rosada con el ojo, «Personal (Público)», y «Es un evento personal de Carla: se
+ * ve solo lo que eligió mostrar.» (sin el nombre de quien lo cargó, «de otra persona»), sin detalle aunque llegara y sin `opciones`:
+ * los que lo ven no tienen «Mi recordatorio» (abrirEventoAjeno oculta su grupo).
+ */
+function htmlDelEventoAjeno(item) {
+  const datos = esObjeto(item) ? item : {};
+  const cuando = cuandoDelEventoDe(datos);
+  if (datos.publico === true) {
+    const de = conTexto(datos.creador) ? datos.creador : 'otra persona';
+    return {
+      cuando: esc(cuando === '—' ? cuando : conMayuscula(cuando)),
+      detalle: '',
+      quien: `<span class="me-insignia rosado">${ICONO_DEL_OJO}${esc(OPCIONES_DEL_TIPO.publico.nombre)}</span>`
+        + `<span>Es un evento personal de ${esc(de)}: se ve solo lo que eligió mostrar.</span>`,
+      opciones: ''
+    };
+  }
+  const elegido = miRecordatorioDe(datos);
+  const conAviso = RECORDATORIOS.includes(datos.recordatorio) && datos.recordatorio !== 'ninguno';
+  const textoDelEvento = conTexto(datos.recordatorio_texto) ? datos.recordatorio_texto : TEXTO_RECORDATORIO[datos.recordatorio] ?? '';
+  const opcion = (valor, texto) => `<option value="${valor}"${valor === elegido ? ' selected' : ''}>${esc(texto)}</option>`;
+  const opciones = conAviso
+    ? opcion('evento', `${textoDelEvento}${conTexto(datos.creador) ? ` (el que eligió ${datos.creador})` : ''}`)
+      + opcion('ninguno', TEXTO_RECORDATORIO.ninguno)
+    : opcion('ninguno', conTexto(datos.recordatorio_texto) ? datos.recordatorio_texto : TEXTO_RECORDATORIO.ninguno);
+  return {
+    cuando: esc(cuando === '—' ? cuando : conMayuscula(cuando)),
+    detalle: esc(comoTexto(datos.detalle)),
+    quien: `<span class="me-insignia violeta">${esc(OPCIONES_DEL_TIPO.laboral.nombre)}</span>`
+      + `${conTexto(datos.quien_largo) ? `<span>${esc(datos.quien_largo)}</span>` : ''}`,
+    opciones
+  };
+}
+
+/**
+ * La confirmación del borrado de un evento propio, en texto plano (va con textContent): «¿Borrar «Reunión de equipo» del martes
+ * 27/10/2026?» y, si es compartido, a quiénes les llega la cancelación: « A las 4 personas les llega un email que dice que se
+ * canceló.», «A la persona…» o «A toda la administración…». Uno de antes de hoy (`hoy`) no la manda: el servidor no avisa de un
+ * evento que ya empezó.
+ */
+function textoDeConfirmacionDeEvento(item, { hoy = '' } = {}) {
+  const datos = esObjeto(item) ? item : {};
+  const cuando = esFechaDeTexto(datos.fecha) ? ` del ${diaConFechaDe(datos.fecha)}` : '';
+  const pregunta = `¿Borrar «${comoTexto(datos.titulo).trim()}»${cuando}?`;
+  const yaPaso = esFechaDeTexto(hoy) && esFechaDeTexto(datos.fecha) && datos.fecha < hoy;
+  if (datos.compartido !== true || yaPaso) return pregunta;
+  const cancelacion = 'un email que dice que se canceló.';
+  if (datos.para_todos === true) return `${pregunta} A toda la administración le llega ${cancelacion}`;
+  const cuantas = Array.isArray(datos.personas) ? datos.personas.length : 0;
+  if (cuantas === 0) return pregunta;
+  return cuantas === 1 ? `${pregunta} A la persona le llega ${cancelacion}` : `${pregunta} A las ${String(cuantas)} personas les llega ${cancelacion}`;
+}
+
+// =====================================================
+// La página (DOM y API)
+// =====================================================
+
+// Todos los roles con sesión la ven; sin sesión, al login
+document.addEventListener('DOMContentLoaded', () => {
+  if (!Auth.isAuthenticated()) {
+    window.location.href = 'login.html';
+    return;
+  }
+  iniciarMiEspacio();
+});
+
+// El estado de la página: el Resumen, la lista de licencias con su filtro, la tabla de horas extras con su mes y, en la agenda, el
+// mes que se ve (`mesDeEventos`, 'AAAA-MM': de entrada, el de hoy; no va en la dirección), lo de su grilla (`delMes`) y los próximos
+// (`proximos`) (null hasta que llegan, y después de una carga que falló). `pedidos` numera las cargas de cada pestaña (en la agenda,
+// las del mes y las de los próximos): una respuesta que llega después de otra más nueva se descarta. `cargandoResumen`: hay un
+// pedido del Resumen en vuelo. `bandaAnimada`: la banda del Resumen ya se movió (pasa una sola vez). Los formularios:
+// `modales`, los abiertos, del de abajo al de arriba (la confirmación se abre sobre el formulario); `formulario`, el de «Cargar
+// licencia» o del uso autorizado abierto; `horasExtras`, el de las horas extras; `saldos`, el de «Mis vacaciones y saldos»
+// (`saldosAbiertosSolos`: ya se abrió solo una vez); `confirmacion`, el borrado que se confirma; y `firmante`, el pedido de
+// GET /mi-espacio/firmante (una sola vez). El segundo paso de «Cargar licencia» (la licencia ya guardada, con la nota a la vista):
+// `segundoPaso`, `{ id, corregida, avisos }` mientras se ve (si no, null), y `pedidos.nota` numera cada GET …/nota (también al
+// cerrar: la respuesta que llega con el modal cerrado o después de otro guardado se descarta). La agenda: `evento`, el formulario
+// del evento abierto (su propio estado: el cálculo de las licencias mira `formulario`, y no se tienen que cruzar); `eventoAjeno`,
+// el detalle de un evento de otra persona; y `personas`, el pedido de GET /mi-espacio/personas (una sola vez, y solo para
+// administración). La planilla de horas extras de contrato: `planilla`, su propio estado mientras está abierta (ver abrirPlanilla;
+// si no, null). `anioDeLicencias` (un año o null): el que la lista de Licencias tiene que mostrar la próxima vez que se pida (el de
+// la licencia que se acaba de guardar o el de un link del Resumen: spec 2026-10-28-mi-espacio-licencia-anulada, 2.3); lo usa una
+// sola vez quien la pide (tomarElAnioDeLicencias). El mes de la agenda (spec 2026-10-28-mi-espacio-agenda-onda, 3.2, 3.7, 3.8 y
+// 4.1): `semana`, con `finde` («Sábado y domingo» prendido: de entrada, lo que recuerda este navegador), `elegido` (el día elegido
+// del teléfono) y `foco` (el número con tabindex="0": el mes es una sola parada del tabulador), dos días que se ven en la grilla
+// (al abrir un mes, hoy si es de ese mes y si no el 1, o el visible más cercano: empezarElMes), y `animado` (las barras ya se
+// dibujaron de izquierda a derecha: pasa una sola vez por carga). `restitucion`, el modal «Pedir la restitución» abierto (spec
+// 2026-10-31-mi-espacio-dias-restituidos, 9): `{ grupo, restitucion, pidiendo, id }`, con el grupo y lo que se pide, si está pidiendo
+// y, ya pedida, el id del pedido; null con el modal cerrado
+const pagina = {
+  pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, bandaAnimada: false,
+  anioDeLicencias: null, mesDeEventos: null, delMes: null, proximos: null,
+  semana: { finde: false, elegido: null, foco: null, animado: false },
+  cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0, nota: 0, topes: 0 },
+  modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null,
+  segundoPaso: null, evento: null, eventoAjeno: null, personas: null, personasPublico: null, miNombre: null, pidiendoMiNombre: false,
+  planilla: null, restitucion: null
+};
+
+const porId = (id) => document.getElementById(id);
+
+// La región viva de la página (#me-anuncio, fuera de lo que se vuelve a dibujar). Un texto igual al anterior se cambia apenas (un
+// espacio duro al final), para que se vuelva a anunciar
+function anunciar(texto) {
+  const region = porId('me-anuncio');
+  if (!region || !texto) return;
+  region.textContent = region.textContent === texto ? `${texto} ` : texto;
+}
+
+// Un aviso de la página, como en Áreas, Feriados y Proyectos: el toast de main.js (showToast inserta HTML: se escapa) y, como el
+// toast no se anuncia, lo mismo en #me-anuncio. `tipo`: 'success', 'error' o 'warning'
+function avisarMiEspacio(texto, tipo) {
+  if (!conTexto(texto)) return;
+  if (typeof showToast === 'function') showToast(esc(texto), tipo);
+  anunciar(texto);
+}
+
+// Lo que se dice cuando un formulario no se puede abrir
+const MENSAJE_SIN_RESUMEN = 'No se pudo abrir el formulario: no se pudo cargar el resumen. Probá de nuevo en unos minutos.';
+const MENSAJE_SIN_SALDOS = 'No se pudo abrir «Mis vacaciones y saldos». Probá de nuevo en unos minutos.';
+
+// La sesión venció (401): se cierra y al login
+function irAlLogin() {
+  if (typeof Auth.clearSession === 'function') Auth.clearSession();
+  window.location.href = 'login.html';
+}
+
+// Lo que no se pudo cargar, en su pestaña y, si se pide, anunciado
+function mostrarFalla(vista, texto, conAnuncio = true) {
+  porId(vista).innerHTML = htmlDeError(texto);
+  if (conAnuncio) anunciar(texto);
+}
+
+// Los controles de una pestaña con ese atributo y ese valor (en la agenda, un evento está en la grilla y en los próximos), y el
+// primero, o null
+const controlesCon = (vista, atributo, valor) =>
+  [...porId(vista).querySelectorAll(`[${atributo}]`)].filter((uno) => uno.getAttribute(atributo) === valor);
+const controlCon = (vista, atributo, valor) => controlesCon(vista, atributo, valor)[0] ?? null;
+
+// Después de volver a dibujar una pestaña, el foco va al control equivalente al que se usó (el botón viejo ya no está)
+function enfocar(vista, atributo, valor) {
+  controlCon(vista, atributo, valor)?.focus();
+}
+
+// Abre la pestaña de la dirección y pide el Resumen (primero: la pestaña Resumen no lo pide dos veces). «Sábado y domingo», como lo
+// dejó la persona en este navegador. Devuelve las cargas, para quien quiera esperarlas
+function iniciarMiEspacio() {
+  pagina.semana.finde = finDeSemanaGuardado();
+  conectarEventos();
+  const resumen = cargarResumen();
+  const cargas = Promise.all([mostrarPestana(pestanaDeHash(window.location.hash)), resumen]);
+  // Las fuentes llegan después y ensanchan las pestañas: la elegida se vuelve a llevar a la vista
+  document.fonts?.ready?.then?.(() => llevarALaVista(porId(`tab-${pagina.pestana}`)));
+  return cargas;
+}
+
+function conectarEventos() {
+  for (const nombre of PESTANAS) {
+    const pestana = porId(`tab-${nombre}`);
+    pestana.addEventListener('click', () => mostrarPestana(nombre));
+    pestana.addEventListener('keydown', teclaEnPestanas);
+  }
+  window.addEventListener?.('hashchange', () => mostrarPestana(pestanaDeHash(window.location.hash)));
+  porId('vista-resumen').addEventListener('click', alTocarResumen);
+  porId('vista-licencias').addEventListener('click', alTocarLicencias);
+  porId('vista-horas').addEventListener('click', alTocarHoras);
+  porId('vista-agenda').addEventListener('click', alTocarEventos);
+  porId('ag-mes').addEventListener('keydown', teclaEnElMes);
+  escucharElAncho();
+  porId('btn-cargar-licencia').addEventListener('click', (evento) => abrirLicencia({ volverA: evento.currentTarget }));
+  porId('btn-cargar-horas').addEventListener('click', (evento) => abrirCargaDeHoras({ volverA: evento.currentTarget }));
+  porId('btn-nuevo-evento').addEventListener('click', (evento) => abrirEvento({ volverA: evento.currentTarget }));
+  conectarFormularios();
+}
+
+// ---- Las pestañas ----
+
+// Muestra una pestaña, la escribe en la dirección (replaceState: no suma pasos al botón Atrás) y, la primera vez (o después de una
+// carga que falló), pide sus datos. Licencias, también si hay un año pendiente (pagina.anioDeLicencias: el de la licencia que se
+// guardó con la pestaña sin abrir, o el de un link del Resumen), y la pide en ese año. Devuelve la carga
+function mostrarPestana(nombre) {
+  pagina.pestana = PESTANAS.includes(nombre) ? nombre : PESTANAS[0];
+  for (const otra of PESTANAS) {
+    const activa = otra === pagina.pestana;
+    const pestana = porId(`tab-${otra}`);
+    pestana.setAttribute('aria-selected', String(activa));
+    pestana.tabIndex = activa ? 0 : -1;
+    porId(`vista-${otra}`).hidden = !activa;
+  }
+  llevarALaVista(porId(`tab-${pagina.pestana}`));
+  window.history?.replaceState?.(null, '', `#${pagina.pestana}`);
+  if (pagina.pestana === 'resumen') {
+    if (pagina.resumen === null && !pagina.cargandoResumen) return cargarResumen();
+    animarLaBanda();
+  }
+  if (pagina.pestana === 'licencias' && (pagina.licencias === null || pagina.anioDeLicencias !== null)) {
+    return cargarLicencias(tomarElAnioDeLicencias());
+  }
+  if (pagina.pestana === 'horas' && pagina.horas === null) return cargarHorasExtras(null);
+  if (pagina.pestana === 'agenda') {
+    // El mes llegó con otra pestaña a la vista: se mueve ahora, la primera vez que se ve
+    if (tocaMoverElMes()) pintarMesDeEventos();
+    if (pagina.delMes === null || pagina.proximos === null) return cargarEventos();
+  }
+  return Promise.resolve();
+}
+
+// En el teléfono no entran las cuatro pestañas y la barra se desplaza de costado: la elegida se lleva a la vista (al abrir con
+// #agenda, por ejemplo desde un email), moviendo solo la barra, nunca la página
+function llevarALaVista(pestana) {
+  const barra = pestana?.parentNode;
+  const caja = pestana?.getBoundingClientRect?.();
+  const marco = barra?.getBoundingClientRect?.();
+  if (!caja || !marco || typeof barra.scrollLeft !== 'number') return;
+  if (caja.right > marco.right) barra.scrollLeft += caja.right - marco.right;
+  else if (caja.left < marco.left) barra.scrollLeft -= marco.left - caja.left;
+}
+
+// Teclado en la barra: flechas (con vuelta), Inicio y Fin. Mueven el foco y activan la pestaña. Con Alt, Ctrl o Cmd son atajos del
+// navegador: no se tocan
+function teclaEnPestanas(evento) {
+  if (evento.altKey || evento.ctrlKey || evento.metaKey) return;
+  const actual = PESTANAS.indexOf(evento.target?.dataset?.pestana);
+  if (actual === -1) return;
+  const ultima = PESTANAS.length - 1;
+  let destino;
+  if (evento.key === 'ArrowRight') destino = actual === ultima ? 0 : actual + 1;
+  else if (evento.key === 'ArrowLeft') destino = actual === 0 ? ultima : actual - 1;
+  else if (evento.key === 'Home') destino = 0;
+  else if (evento.key === 'End') destino = ultima;
+  else return;
+  evento.preventDefault?.();
+  mostrarPestana(PESTANAS[destino]);
+  porId(`tab-${PESTANAS[destino]}`).focus();
+}
+
+// ---- El Resumen ----
+
+// El Resumen dice la modalidad: sin ella, no se carga nada (los botones del encabezado quedan ocultos) y la pestaña muestra el
+// mensaje; con ella y sin el saldo inicial, invita a completar «Mis vacaciones y saldos» y lo abre solo (una vez); si no,
+// «Titular», con la marca en la pestaña si algo vence pronto. Si falla, volver a la pestaña lo pide otra vez. Cada pedido tiene su
+// número (`pagina.pedidos.resumen`; una respuesta de uno que otro reemplazó se descarta), y al terminar lo devuelve: quien lo espera
+// sabe si el Resumen que quedó es el suyo (hayElGrupo). Los demás que la llaman no lo miran
+async function cargarResumen() {
+  const pedido = ++pagina.pedidos.resumen;
+  pagina.cargandoResumen = true;
+  try {
+    const { data } = await API.pedirJson('GET', '/mi-espacio/resumen');
+    if (pedido !== pagina.pedidos.resumen) return pedido;
+    pagina.resumen = esObjeto(data) ? data : {};
+    pintarResumen();
+  } catch (error) {
+    if (pedido !== pagina.pedidos.resumen) return pedido;
+    if (error?.status === 401) irAlLogin();
+    else {
+      pagina.resumen = null;
+      mostrarFalla('vista-resumen', 'No se pudo cargar el resumen. Probá de nuevo en unos minutos.');
+    }
+  } finally {
+    if (pedido === pagina.pedidos.resumen) pagina.cargandoResumen = false;
+  }
+  return pedido;
+}
+
+function pintarResumen() {
+  const { resumen } = pagina;
+  const conModalidad = esObjeto(resumen.modalidad);
+  porId('btn-cargar-horas').hidden = !conModalidad;
+  porId('btn-cargar-licencia').hidden = !conModalidad;
+  const vista = porId('vista-resumen');
+  // Un Resumen que se vuelve a dibujar (por ejemplo, al guardar una licencia) llega quieto, aunque la banda vieja todavía se
+  // estuviera moviendo: sin data-animar, sus tramos y sus líneas se dibujan llenos
+  vista.removeAttribute('data-animar');
+  vista.innerHTML = htmlDelResumen(resumen);
+  porId('me-marca').innerHTML = htmlDeMarca(resumen.marca);
+  // La primera vez que la banda se dibuja y se ve, se mueve (una sola vez)
+  animarLaBanda();
+  // La primera vez, sin el saldo inicial, «Mis vacaciones y saldos» se abre solo (el foco vuelve a su botón del Resumen)
+  if (conModalidad && resumen.abrir_saldos === true && !pagina.saldosAbiertosSolos && pagina.modales.length === 0) {
+    pagina.saldosAbiertosSolos = true;
+    abrirSaldos(vista.querySelector('[data-abrir="saldos"]'));
+  }
+}
+
+// El único movimiento de la página (spec 2026-10-27-mi-espacio-resumen, 3), una sola vez por carga: la primera vez que la banda
+// está dibujada y se ve (también si aparece recién al guardar «Mis vacaciones y saldos», desde la invitación). Le pone data-animar
+// a #vista-resumen, que en el <style> deja vacíos los tramos de la regla y las líneas del resto, y se lo saca dos cuadros después:
+// en el primero el navegador los dibuja vacíos y en el segundo empiezan las transiciones, cada una con su --demora y su --duracion
+// (quietas con prefers-reduced-motion). Al mismo tiempo suben los números: el de la frase con la regla y cada uno del resto con su
+// línea. Con el Resumen oculto (se abrió otra pestaña), espera a que se vea (mostrarPestana); sin requestAnimationFrame no hace
+// nada: todo queda en su valor final
+function animarLaBanda() {
+  const vista = porId('vista-resumen');
+  if (pagina.bandaAnimada || vista.hidden || !vista.querySelector('.me-banda')) return;
+  if (typeof window.requestAnimationFrame !== 'function') return;
+  pagina.bandaAnimada = true;
+  vista.setAttribute('data-animar', '');
+  const cifra = vista.querySelector('.me-cifra [data-contar]');
+  if (cifra) contarHasta(cifra, DEMORA_DE_LA_REGLA, DURACION_DE_LA_REGLA);
+  for (const numero of vista.querySelectorAll('.me-resto .me-numero')) {
+    const contador = numero.querySelector('[data-contar]');
+    if (contador) contarHasta(contador, demoraDelEstilo(numero.querySelector('.me-linea i')?.getAttribute('style')), DURACION_DE_LA_LINEA);
+  }
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => vista.removeAttribute('data-animar')));
+}
+
+// La persona pidió menos movimiento (prefers-reduced-motion: reduce). Sin matchMedia, no
+const menosMovimiento = () => typeof window.matchMedia === 'function'
+  && window.matchMedia('(prefers-reduced-motion: reduce)')?.matches === true;
+
+// Un número que sube al abrir (data-contar). Lee el valor final del texto que dejó el HTML ('33'; con coma: '1,5'), escribe 0 y lo
+// sube con los tiempos de requestAnimationFrame: espera `demoraMs` desde el primer cuadro y dura `duracionMs`, rápido al principio
+// y despacio al final, en enteros (nunca más que el final) hasta el último cuadro, que deja el texto final tal cual. Un cuadro sin
+// tiempo escribe el final. Si el número ya no está en el documento (el Resumen se volvió a dibujar), se detiene sin escribir nada.
+// No cuenta lo que no es un número mayor que 0 (un 0 queda en 0), ni sin requestAnimationFrame, ni con prefers-reduced-motion:
+// reduce (spec, 3: nada se mueve). Lo que lee un lector de pantalla no cambia: el número que sube va con aria-hidden
+function contarHasta(elemento, demoraMs, duracionMs) {
+  const final = elemento.textContent;
+  const hasta = numeroDelTexto(final);
+  if (hasta === null || hasta <= 0 || typeof window.requestAnimationFrame !== 'function' || menosMovimiento()) return;
+  const demora = Number.isFinite(demoraMs) && demoraMs > 0 ? demoraMs : 0;
+  const duracion = Number.isFinite(duracionMs) && duracionMs > 0 ? duracionMs : 0;
+  let inicio = null;
+  const paso = (tiempo) => {
+    if (!elemento.isConnected) return;
+    if (typeof tiempo !== 'number' || !Number.isFinite(tiempo)) {
+      elemento.textContent = final;
+      return;
+    }
+    inicio ??= tiempo;
+    const transcurrido = tiempo - inicio - demora;
+    let avance = 0;
+    if (transcurrido > 0) avance = duracion > 0 ? Math.min(1, transcurrido / duracion) : 1;
+    if (avance >= 1) {
+      elemento.textContent = final;
+      return;
+    }
+    elemento.textContent = String(Math.floor(hasta * (1 - (1 - avance) ** 3)));
+    window.requestAnimationFrame(paso);
+  };
+  elemento.textContent = '0';
+  window.requestAnimationFrame(paso);
+}
+
+// Un clic en el Resumen: «Mis vacaciones y saldos» y los botones de «Vence pronto» abren su formulario (el de licencia, con su
+// tipo y, unos días restituidos, con su grupo); los de los días por restituir (el aviso y «Vence pronto», spec
+// 2026-10-31-mi-espacio-dias-restituidos, 9), «Cargar licencia» o «Pedir la restitución», y «Word» y «Borrar el pedido» de un pedido
+// en su «Revisá…» (alTocarUnaRestitucion); un número del resto (y «Ver la agenda») abre su pestaña y el foco va a la pestaña; el
+// link de la bajada y el de un aviso para revisar (data-anio-licencias), Licencias en ese año (irALicencias). Con Ctrl, Cmd,
+// Mayúsculas, Alt o un botón que no es el principal, el link hace lo suyo: otra pestaña del navegador
+function alTocarResumen(evento) {
+  const saldos = evento.target?.closest?.('[data-abrir="saldos"]');
+  if (saldos) {
+    abrirSaldos(saldos);
+    return;
+  }
+  if (alTocarUnaRestitucion(evento.target)) return;
+  const destino = evento.target?.closest?.('[data-pestana]');
+  if (!destino || evento.ctrlKey || evento.metaKey || evento.shiftKey || evento.altKey || (evento.button ?? 0) !== 0) return;
+  evento.preventDefault?.();
+  if (destino.dataset.pestana === 'licencias' && destino.dataset.anioLicencias !== undefined) {
+    irALicencias(Number(destino.dataset.anioLicencias));
+    return;
+  }
+  mostrarPestana(destino.dataset.pestana);
+  porId(`tab-${pagina.pestana}`).focus();
+}
+
+// ---- Licencias ----
+
+// El año pendiente de la lista (pagina.anioDeLicencias), para cargarLicencias, una sola vez: lo vuelve a null. El de hoy, o
+// ninguno, da null: la lista sin ?anio=, la del año en curso que dice el servidor (con el reloj del teléfono adelantado, el año del
+// teléfono daría otra cosa)
+function tomarElAnioDeLicencias() {
+  const anio = pagina.anioDeLicencias;
+  pagina.anioDeLicencias = null;
+  return Number.isInteger(anio) && anio !== anioDeHoy() ? anio : null;
+}
+
+// Abre la pestaña Licencias en el año `anio` (el link de la bajada del Resumen y el de un aviso para revisar: spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.3 y 3.5) y el foco va a la pestaña. Si la lista ya muestra ese año, no pide nada; si
+// muestra otro, o no está, la pide en ese año (mostrarPestana, con pagina.anioDeLicencias). El año del link gana a uno pendiente. Un
+// año que no es un entero abre la pestaña como siempre. Devuelve la carga
+function irALicencias(anio) {
+  if (Number.isInteger(anio)) {
+    if (esObjeto(pagina.licencias) && pagina.licencias.anio === anio) pagina.anioDeLicencias = null;
+    else {
+      pagina.licencias = null;
+      pagina.anioDeLicencias = anio;
+    }
+  }
+  const carga = mostrarPestana('licencias');
+  porId('tab-licencias').focus();
+  return carga;
+}
+
+// Pide las licencias de un año (null: el en curso). Al elegir un año, se anuncia el título de la tarjeta (`conAnuncio`: después de
+// guardar, no; ahí se anuncia lo que se guardó). Si falla, la pestaña lo dice y queda sin lista: volver a ella la pide otra vez (la
+// del año en curso). Devuelve si dibujó la lista (una respuesta vieja o una falla, no)
+async function cargarLicencias(anio, { conAnuncio = true } = {}) {
+  const pedido = ++pagina.pedidos.licencias;
+  try {
+    const { data } = await API.pedirJson('GET', Number.isInteger(anio) ? `/mi-espacio/licencias?anio=${anio}` : '/mi-espacio/licencias');
+    if (pedido !== pagina.pedidos.licencias) return false;
+    pagina.licencias = esObjeto(data) ? data : {};
+    pintarLicencias();
+    if (conAnuncio && Number.isInteger(anio) && Number.isInteger(pagina.licencias.anio)) anunciar(`Mis licencias de ${pagina.licencias.anio}`);
+    return true;
+  } catch (error) {
+    if (pedido !== pagina.pedidos.licencias) return false;
+    if (error?.status === 401) irAlLogin();
+    else {
+      pagina.licencias = null;
+      mostrarFalla('vista-licencias', 'No se pudieron cargar tus licencias. Probá de nuevo en unos minutos.', conAnuncio);
+    }
+    return false;
+  }
+}
+
+function pintarLicencias() {
+  porId('vista-licencias').innerHTML = htmlDeListaDeLicencias(pagina.licencias, pagina.filtro);
+}
+
+// ---- La nota de licencia en Word (spec 2026-10-27-mi-espacio-licencia-word, 6) ----
+
+// Descarga un Blob con ese nombre de archivo y libera su URL (copiado de correos.js)
+const descargarBlob = (blob, nombre) => {
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = nombre;
+  enlace.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+// Un Word de Mi espacio (la nota de una licencia, GET /mi-espacio/licencias/:id/word, o la de un pedido de restitución, GET
+// /mi-espacio/restituciones/:id/word), con el token en el encabezado: `{ blob, nombre }`, con el nombre del Content-Disposition
+// (null si no viene). Es local, como pedirWord de notas.js, porque API.pedirArchivo no da el estado ni los encabezados (api.js no
+// cambia). Si el servidor responde un error, tira un Error con su `status` (401: la sesión venció) y su mensaje ('' si no trae uno)
+async function pedirWordDe(ruta) {
+  const response = await fetch(`${CONFIG.API_URL}${ruta}`, {
+    method: 'GET',
+    headers: Auth.getAuthHeaders()
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    const error = new Error(esObjeto(data) && conTexto(data.error) ? data.error : '');
+    error.status = response.status;
+    throw error;
+  }
+  return { blob: await response.blob(), nombre: nombreDelAdjunto(response.headers?.get?.('content-disposition') ?? null) };
+}
+
+/**
+ * Baja el Word de `ruta` (pedirWordDe) con el nombre que da el servidor (o `porDefecto`). Mientras baja, `boton` queda deshabilitado
+ * (un segundo clic no pide nada) y, si tenía el foco y se perdió mientras tanto (deshabilitado, el navegador lo suelta a <body>), lo
+ * recupera al terminar; si la persona lo llevó a otro lado (otro control, o el modal que abrió o cerró mientras bajaba), ahí queda.
+ * Con un 401, al login; con otro error, el aviso con el mensaje del servidor (el 409 de una licencia sin días hábiles) o, sin mensaje
+ * (o sin respuesta), MENSAJE_SIN_DESCARGA
+ */
+async function bajarWordDe(ruta, boton, porDefecto) {
+  if (boton?.disabled) return;
+  const teniaElFoco = Boolean(boton) && document.activeElement === boton;
+  if (boton) boton.disabled = true;
+  let falla = null;
+  try {
+    const { blob, nombre } = await pedirWordDe(ruta);
+    descargarBlob(blob, conTexto(nombre) ? nombre : porDefecto);
+  } catch (error) {
+    falla = error ?? new Error('');
+  }
+  if (boton) boton.disabled = false;
+  if (falla?.status === 401) {
+    irAlLogin();
+    return;
+  }
+  const activo = document.activeElement;
+  if (teniaElFoco && (!activo || activo === document.body)) boton.focus?.();
+  if (falla) avisarMiEspacio(Number.isInteger(falla.status) && conTexto(falla.message) ? falla.message : MENSAJE_SIN_DESCARGA, 'error');
+}
+
+// «Word» de una fila de la lista (y «Descargar Word» del segundo paso del modal): la nota de la licencia `id`
+function bajarWordDeLicencia(id, boton) {
+  return bajarWordDe(`/mi-espacio/licencias/${encodeURIComponent(id)}/word`, boton, NOMBRE_DEL_WORD_POR_DEFECTO);
+}
+
+// «Word» de un pedido de restitución (en la línea de su fila, en su «Revisá…» y en el segundo paso de «Pedir la restitución»: spec
+// 2026-10-31-mi-espacio-dias-restituidos, 9 y 12): la nota del pedido `id`
+function bajarWordDeRestitucion(id, boton) {
+  return bajarWordDe(`/mi-espacio/restituciones/${encodeURIComponent(id)}/word`, boton, NOMBRE_DEL_WORD_DE_RESTITUCION);
+}
+
+/**
+ * Los botones de los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9), en el Resumen y en la lista: los de un grupo
+ * por restituir (data-accion: «Cargar licencia» con «Días restituidos» de su grupo, o «Pedir la restitución») y, de un pedido, «Word»
+ * y «Borrar el pedido». También «Cargar licencia» de «Vence pronto» (con su tipo). true si el clic fue en uno de ellos
+ */
+function alTocarUnaRestitucion(objetivo) {
+  const cargar = objetivo?.closest?.('[data-accion="cargar-licencia"]');
+  if (cargar) {
+    abrirLicencia({ tipo: cargar.dataset.tipo, grupo: cargar.dataset.grupo, volverA: cargar });
+    return true;
+  }
+  const pedir = objetivo?.closest?.('[data-accion="pedir-restitucion"]');
+  if (pedir) {
+    abrirRestitucion({ grupo: pedir.dataset.grupo, volverA: pedir });
+    return true;
+  }
+  const word = objetivo?.closest?.('[data-word-restitucion]');
+  if (word) {
+    bajarWordDeRestitucion(word.dataset.wordRestitucion, word);
+    return true;
+  }
+  const borrar = objetivo?.closest?.('[data-borrar-restitucion]');
+  if (borrar) {
+    pedirBorrarRestitucion(borrar.dataset.borrarRestitucion, borrar);
+    return true;
+  }
+  return false;
+}
+
+// Un clic en la pestaña: «Cargar licencia», «Word» o «Editar» de una fila, los botones de la línea de un grupo de días restituidos
+// (alTocarUnaRestitucion), «Cambiar» el saldo inicial, un año del selector (el elegido no pide nada) o un filtro (dibuja sin pedir
+// nada)
+async function alTocarLicencias(evento) {
+  const objetivo = evento.target;
+  if (alTocarUnaRestitucion(objetivo)) return;
+  if (objetivo?.closest?.('[data-cargar="licencia"]')) {
+    abrirLicencia({ volverA: objetivo.closest('[data-cargar="licencia"]') });
+    return;
+  }
+  const word = objetivo?.closest?.('[data-word-licencia]');
+  if (word) {
+    await bajarWordDeLicencia(word.dataset.wordLicencia, word);
+    return;
+  }
+  const editar = objetivo?.closest?.('[data-editar-licencia]');
+  if (editar) {
+    const fila = listaDe(pagina.licencias?.licencias).find((una) => String(una.id) === editar.dataset.editarLicencia);
+    if (fila) abrirLicencia({ fila, volverA: editar });
+    return;
+  }
+  const saldos = objetivo?.closest?.('[data-abrir="saldos"]');
+  if (saldos) {
+    abrirSaldos(saldos);
+    return;
+  }
+  const anio = objetivo?.closest?.('[data-anio]');
+  if (anio) {
+    if (anio.getAttribute('aria-pressed') === 'true') return;
+    if (await cargarLicencias(Number(anio.dataset.anio))) enfocar('vista-licencias', 'data-anio', anio.dataset.anio);
+    return;
+  }
+  const filtro = objetivo?.closest?.('[data-filtro-licencia]');
+  if (filtro) {
+    pagina.filtro = filtro.dataset.filtroLicencia;
+    pintarLicencias();
+    enfocar('vista-licencias', 'data-filtro-licencia', pagina.filtro);
+  }
+}
+
+// ---- Horas extras ----
+
+// Pide las horas extras de un año (null: el en curso); el día por día vuelve al mes de entrada o, con `mes` (la recarga después
+// de guardar), sigue en ese mes si está en la tabla. Si falla, como las licencias: volver a la pestaña la pide otra vez.
+// Devuelve si dibujó la pestaña
+async function cargarHorasExtras(anio, { conAnuncio = true, mes = null } = {}) {
+  const pedido = ++pagina.pedidos.horas;
+  try {
+    const { data } = await API.pedirJson('GET', Number.isInteger(anio) ? `/mi-espacio/horas-extras?anio=${anio}` : '/mi-espacio/horas-extras');
+    if (pedido !== pagina.pedidos.horas) return false;
+    pagina.horas = esObjeto(data) ? data : {};
+    pagina.mes = mesDeLaTabla(pagina.horas, mes);
+    pintarHoras();
+    if (conAnuncio && Number.isInteger(anio) && Number.isInteger(pagina.horas.anio)) anunciar(`Horas extras de ${pagina.horas.anio}`);
+    return true;
+  } catch (error) {
+    if (pedido !== pagina.pedidos.horas) return false;
+    if (error?.status === 401) irAlLogin();
+    else {
+      pagina.horas = null;
+      pagina.mes = null;
+      mostrarFalla('vista-horas', 'No se pudieron cargar tus horas extras. Probá de nuevo en unos minutos.', conAnuncio);
+    }
+    return false;
+  }
+}
+
+function pintarHoras() {
+  porId('vista-horas').innerHTML = htmlDeHorasExtras(pagina.horas, pagina.mes);
+}
+
+// Un clic en la pestaña: «Cargar horas extras» (en contrato, la planilla), «Editar» de un día (en contrato, la planilla en ese día),
+// «Registrar un uso autorizado» (en contrato, «Usar horas acumuladas»), un año del selector o un mes de la tabla (cambia el día
+// por día sin pedir nada)
+async function alTocarHoras(evento) {
+  const objetivo = evento.target;
+  if (objetivo?.closest?.('[data-cargar="horas"]')) {
+    abrirCargaDeHoras({ volverA: objetivo.closest('[data-cargar="horas"]') });
+    return;
+  }
+  const salida = objetivo?.closest?.('[data-editar-salida]');
+  if (salida) {
+    const fecha = salida.getAttribute('data-editar-salida');
+    if (esFechaDeTexto(fecha)) abrirPlanilla({ mes: fecha.slice(0, 7), fecha, volverA: salida });
+    return;
+  }
+  const editar = objetivo?.closest?.('[data-editar-horas]');
+  if (editar) {
+    const dia = Object.values(esObjeto(pagina.horas?.dias_por_mes) ? pagina.horas.dias_por_mes : {}).flatMap(listaDe)
+      .find((uno) => String(uno.id) === editar.dataset.editarHoras);
+    if (dia) abrirHorasExtras({ dia, volverA: editar });
+    return;
+  }
+  const uso = objetivo?.closest?.('[data-abrir="uso"]');
+  if (uso) {
+    abrirUso({ volverA: uso });
+    return;
+  }
+  // Contrato: «Usar horas acumuladas» abre «Cargar licencia» con «Horas a favor» (spec 2026-11-03-mi-espacio-horas-acumuladas, 10)
+  const acumuladas = objetivo?.closest?.('[data-usar-acumuladas]');
+  if (acumuladas) {
+    abrirLicencia({ tipo: 'horas_a_favor', volverA: acumuladas });
+    return;
+  }
+  const anio = objetivo?.closest?.('[data-anio]');
+  if (anio) {
+    if (anio.getAttribute('aria-pressed') === 'true') return;
+    if (await cargarHorasExtras(Number(anio.dataset.anio))) enfocar('vista-horas', 'data-anio', anio.dataset.anio);
+    return;
+  }
+  const mes = objetivo?.closest?.('[data-mes]');
+  if (mes) {
+    pagina.mes = mes.dataset.mes;
+    pintarHoras();
+    enfocar('vista-horas', 'data-mes', pagina.mes);
+  }
+}
+
+// ---- La agenda ----
+
+// Lo que se dice cuando no llega el mes o los próximos (en su lugar de la pestaña y en #me-anuncio)
+const MENSAJE_SIN_MES = 'No se pudo cargar el mes. Probá de nuevo en unos minutos.';
+const MENSAJE_SIN_PROXIMOS = 'No se pudieron cargar los próximos. Probá de nuevo en unos minutos.';
+
+// GET /mi-espacio/eventos de un rango `{ desde, hasta }`; el de la grilla, con su `mes` ('AAAA-MM'), para que el servidor mande la
+// frase de la banda (frase_del_mes: solo si el mes entero cae en el rango, y la grilla siempre lo tiene, de lunes a domingo,
+// también con sábado y domingo ocultos); el de los próximos, sin
+const rutaDeEventos = ({ desde, hasta }, mes = null) => `/mi-espacio/eventos?desde=${encodeURIComponent(desde)}`
+  + `&hasta=${encodeURIComponent(hasta)}${mes === null ? '' : `&mes=${encodeURIComponent(mes)}`}`;
+
+// «Sábado y domingo» prendido o apagado, recordado en cada navegador (spec 3.2 y decisión 9.1): '1' prendido, '0' apagado. Sin
+// almacenamiento (una ventana privada, uno bloqueado o lleno), apagado y sin error: la elección vale hasta que se cierra la página
+const CLAVE_DEL_FIN_DE_SEMANA = 'rpad-mi-espacio-fin-de-semana';
+function finDeSemanaGuardado() {
+  try {
+    return window.localStorage?.getItem(CLAVE_DEL_FIN_DE_SEMANA) === '1';
+  } catch {
+    return false;
+  }
+}
+function guardarElFinDeSemana(finde) {
+  try {
+    window.localStorage?.setItem(CLAVE_DEL_FIN_DE_SEMANA, finde ? '1' : '0');
+  } catch {
+    // Sin almacenamiento: no se recuerda
+  }
+}
+
+// La pantalla del teléfono (spec 3.8, 640 px o menos, como el <style>): tocar un día lo elige y su número dice «Ver el …»; en la
+// compu, «Nuevo evento el …». Sin matchMedia, la compu
+const CONSULTA_DEL_TELEFONO = '(max-width: 640px)';
+const enElTelefono = () => typeof window.matchMedia === 'function' && window.matchMedia(CONSULTA_DEL_TELEFONO)?.matches === true;
+
+// Si cambia el ancho (girar el teléfono, achicar la ventana), el mes se vuelve a dibujar con lo que hace cada número (si llegó: un
+// mes que no se pudo cargar sigue diciéndolo; uno que se está pidiendo se dibuja cuando llega)
+function escucharElAncho() {
+  const consulta = typeof window.matchMedia === 'function' ? window.matchMedia(CONSULTA_DEL_TELEFONO) : null;
+  consulta?.addEventListener?.('change', () => {
+    if (esMesDeTexto(pagina.mesDeEventos) && pagina.delMes !== null) pintarMesDeEventos();
+  });
+}
+
+// El día elegido y el del foco al abrir un mes (spec 3.8 y decisión 9.12): hoy si es de ese mes y si no el 1, o el día visible más
+// cercano (con sábado y domingo ocultos, hoy sábado 31/10 → el viernes 30; el 1/11, domingo → el lunes 2)
+function empezarElMes(mes) {
+  const hoy = Utils.hoyEnArgentina();
+  const dia = diaVisibleCercano(hoy.slice(0, 7) === mes ? hoy : `${mes}-01`, semanasDelMes(mes, { finde: pagina.semana.finde }));
+  pagina.semana.elegido = dia;
+  pagina.semana.foco = dia;
+}
+
+// La pestaña Agenda: pide lo de la grilla del mes que se ve (de entrada, el de hoy, con hoy elegido) y los próximos, dos
+// GET /mi-espacio/eventos, los que todavía no llegaron o, con `forzar` (después de guardar o de borrar), los dos, sin borrar lo que
+// se ve mientras (el día elegido y el del foco no cambian). `conAnuncio`: una falla se anuncia (después de guardar, no). Devuelve
+// las cargas
+function cargarEventos({ forzar = false, conAnuncio = true } = {}) {
+  if (!esMesDeTexto(pagina.mesDeEventos)) {
+    pagina.mesDeEventos = Utils.hoyEnArgentina().slice(0, 7);
+    empezarElMes(pagina.mesDeEventos);
+  }
+  const cargas = [];
+  if (forzar || pagina.delMes === null) cargas.push(cargarMesDeEventos(pagina.mesDeEventos, { conAnuncio }));
+  if (forzar || pagina.proximos === null) cargas.push(cargarProximos({ conAnuncio }));
+  return Promise.all(cargas);
+}
+
+// Pide lo de la grilla de un mes y lo dibuja; mientras, sin nada de antes, la grilla vacía con su título. Una respuesta vieja (de otro
+// mes o de un pedido anterior) se descarta. `anunciarElMes`: al cambiar de mes, su título se anuncia cuando llega. Si falla, la
+// grilla lo dice y queda sin datos: volver a la pestaña lo pide otra vez
+async function cargarMesDeEventos(mes, { conAnuncio = true, anunciarElMes = false } = {}) {
+  const rango = rangoDeLaGrilla(mes);
+  if (rango === null) return;
+  const pedido = ++pagina.pedidos.mes;
+  if (pagina.delMes === null) pintarMesDeEventos();
+  try {
+    const { data } = await API.pedirJson('GET', rutaDeEventos(rango, mes));
+    if (pedido !== pagina.pedidos.mes) return;
+    pagina.delMes = esObjeto(data) ? data : {};
+    pintarMesDeEventos();
+    if (anunciarElMes) anunciar(tituloDelMes(mes));
+  } catch (error) {
+    if (pedido !== pagina.pedidos.mes) return;
+    if (error?.status === 401) irAlLogin();
+    else {
+      pagina.delMes = null;
+      mostrarFalla('ag-mes', MENSAJE_SIN_MES, conAnuncio);
+    }
+  }
+}
+
+// El número de un día en la grilla (su botón), o null
+const numeroDelDia = (fecha) => (esFechaDeTexto(fecha) ? porId('ag-mes').querySelector(`[data-dia="${fecha}"]`) : null);
+
+// El mes que se ve (spec 3.1 a 3.8): el título, la grilla (htmlDelMes, con «Sábado y domingo», el día elegido, el número del foco y
+// lo que hace cada número en esta pantalla), la frase de la banda (la del servidor, como texto; sin ella o mientras se pide el mes,
+// vacía), «Sábado y domingo» y, siempre, el día elegido (en la compu no se ve, pero su título nombra la sección; sin datos, solo el
+// título y «Nuevo evento»).
+// «Compañeros que no están», en la leyenda, solo para quien los ve (decisión del usuario, 27/10/2026), y también «Laborales» (spec
+// 2026-10-29-mi-espacio-evento-publico, 5.2: el lector y el colaborador no pueden ver ni uno ni otro): lo dice el servidor
+// (`puede_compartir`, administración) y, hasta que llega, quedan ocultos. Un mes que se vuelve a dibujar llega quieto (sin data-animar);
+// la primera vez que se ve con sus datos, se mueve (moverElMes). Si el foco estaba en un número del mes, pasa al número del foco del
+// mes nuevo (el botón viejo ya no está)
+function pintarMesDeEventos() {
+  const { semana, delMes } = pagina;
+  const mes = pagina.mesDeEventos;
+  const hoy = Utils.hoyEnArgentina();
+  const lugar = porId('ag-mes');
+  const activo = document.activeElement;
+  const conFoco = Boolean(activo) && lugar.contains(activo) && typeof activo.getAttribute?.('data-dia') === 'string';
+  const animar = tocaMoverElMes();
+  lugar.removeAttribute('data-animar');
+  porId('ag-mes-titulo').textContent = tituloDelMes(mes);
+  lugar.innerHTML = htmlDelMes(mes, delMes, hoy, {
+    finde: semana.finde, elegido: semana.elegido, foco: semana.foco, telefono: enElTelefono(), animar
+  });
+  if (animar) moverElMes(lugar);
+  porId('ag-frase').textContent = comoTexto(delMes?.frase_del_mes);
+  pintarElFinDeSemana();
+  porId('ag-elegido').innerHTML = htmlDelDiaElegido(semana.elegido, delMes, hoy);
+  if (esObjeto(delMes)) {
+    porId('ag-leyenda-laborales').hidden = delMes.puede_compartir !== true;
+    porId('ag-leyenda-ausentes').hidden = delMes.puede_compartir !== true;
+  }
+  if (conFoco) numeroDelDia(semana.foco)?.focus?.();
+}
+
+// «Sábado y domingo» (aria-pressed) y, apagado, cuántas cosas quedaron escondidas el fin de semana del mes: en su pastilla y en su
+// nombre («Sábado y domingo: 1 cosa escondida»); prendido, o sin nada escondido (también mientras se pide el mes), nada
+function pintarElFinDeSemana() {
+  const { finde } = pagina.semana;
+  const boton = porId('ag-finde');
+  const cuenta = porId('ag-finde-cuenta');
+  const escondidas = finde ? 0 : cuantasEnElFinde(pagina.mesDeEventos, pagina.delMes);
+  const etiqueta = etiquetaDelFinDeSemana(escondidas);
+  boton.setAttribute('aria-pressed', String(finde));
+  if (etiqueta === '') boton.removeAttribute('aria-label');
+  else boton.setAttribute('aria-label', etiqueta);
+  cuenta.textContent = escondidas > 0 ? String(escondidas) : '';
+  cuenta.hidden = escondidas === 0;
+}
+
+// «Sábado y domingo»: lo prende o lo apaga, lo recuerda en este navegador y vuelve a dibujar el mes sin pedir nada (la grilla ya
+// trae de lunes a domingo). El día elegido y el del foco pasan al visible más cercano (apagado, un sábado elegido va al lunes que
+// sigue o, al final de la grilla, al viernes). Sin lo del mes (no se pudo cargar, o todavía se está pidiendo), lo vuelve a pedir: una
+// grilla vacía no tapa el aviso de que el mes no llegó. El foco queda en el botón
+function cambiarElFinDeSemana() {
+  const { semana } = pagina;
+  semana.finde = !semana.finde;
+  guardarElFinDeSemana(semana.finde);
+  if (!esMesDeTexto(pagina.mesDeEventos)) return;
+  const semanas = semanasDelMes(pagina.mesDeEventos, { finde: semana.finde });
+  if (semana.elegido === null || semana.foco === null) empezarElMes(pagina.mesDeEventos);
+  semana.elegido = diaVisibleCercano(semana.elegido, semanas);
+  semana.foco = diaVisibleCercano(semana.foco, semanas);
+  if (pagina.delMes === null) cargarMesDeEventos(pagina.mesDeEventos);
+  else pintarMesDeEventos();
+}
+
+// El movimiento (spec 3.7), una sola vez por carga, como la banda del Resumen (animarLaBanda): la primera vez que el mes se dibuja
+// con sus datos y se ve (si la pestaña abre en otra, al entrar a la Agenda: mostrarPestana). Sin requestAnimationFrame o con
+// prefers-reduced-motion, nunca
+const tocaMoverElMes = () => !pagina.semana.animado && esObjeto(pagina.delMes) && porId('vista-agenda').hidden !== true
+  && typeof window.requestAnimationFrame === 'function' && !menosMovimiento();
+// Le pone data-animar a #ag-mes (en el <style>, las barras sin dibujar y sin transición) y se lo saca dos cuadros después: en el
+// primero el navegador las dibuja vacías y en el segundo empiezan las transiciones, cada pedazo con su --demora (htmlDelMes con
+// `animar`)
+function moverElMes(lugar) {
+  pagina.semana.animado = true;
+  lugar.setAttribute('data-animar', '');
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => lugar.removeAttribute('data-animar')));
+}
+
+// Muestra otro mes («‹», «›» y «Hoy»): el título y la grilla vacía enseguida, con su día elegido (hoy si es de ese mes; si no, el 1),
+// y lo de la grilla cuando llega
+function mostrarMesDeEventos(mes) {
+  if (!esMesDeTexto(mes)) return Promise.resolve();
+  pagina.mesDeEventos = mes;
+  pagina.delMes = null;
+  empezarElMes(mes);
+  return cargarMesDeEventos(mes, { anunciarElMes: true });
+}
+
+// El número de un día pasa a ser la parada del tabulador del mes (tabindex="0"; los demás, "-1"), sin volver a dibujar
+function marcarElFoco(fecha) {
+  pagina.semana.foco = fecha;
+  for (const numero of porId('ag-mes').querySelectorAll('[data-dia]')) {
+    numero.setAttribute('tabindex', numero.getAttribute('data-dia') === fecha ? '0' : '-1');
+  }
+}
+
+// Tocar un día (spec 4.1 y 3.8; su número, su espacio libre, un feriado o el pedazo de una barra): en la compu, «Nuevo evento» con
+// esa fecha (al cerrarlo, el foco vuelve a su número, que queda como la parada del mes); en el teléfono, lo elige: el mes se vuelve
+// a dibujar con el anillo en su número (y aria-current="true") y, debajo, lo de ese día, y se anuncia su título en #me-anuncio (ahí
+// lo de cada día no se ve: el día elegido es lo único que un lector de pantalla tiene de un día)
+function tocarUnDia(fecha) {
+  if (enElTelefono()) {
+    pagina.semana.elegido = fecha;
+    pagina.semana.foco = fecha;
+    pintarMesDeEventos();
+    anunciar(tituloDelDiaElegido(fecha, Utils.hoyEnArgentina()));
+    return;
+  }
+  marcarElFoco(fecha);
+  abrirEvento({ fecha, volverA: numeroDelDia(fecha) });
+}
+
+// El teclado en el mes (spec 4.1, decisión 9.5): en un número, las flechas, Inicio y Fin llevan el foco y la parada del tabulador
+// a otro día (diaConLaTecla; en el borde no se mueve, pero la flecha igual no desplaza la página). Enter y Espacio son el clic del
+// botón (tocarUnDia). Con Alt, Ctrl o Cmd son atajos del navegador: no se tocan
+function teclaEnElMes(evento) {
+  if (evento.altKey || evento.ctrlKey || evento.metaKey) return;
+  const numero = evento.target?.closest?.('[data-dia]');
+  if (!numero || !esMesDeTexto(pagina.mesDeEventos)) return;
+  const destino = diaConLaTecla(numero.getAttribute('data-dia'), evento.key,
+    semanasDelMes(pagina.mesDeEventos, { finde: pagina.semana.finde }));
+  if (destino === null) return;
+  evento.preventDefault?.();
+  marcarElFoco(destino);
+  numeroDelDia(destino)?.focus?.();
+}
+
+// Pide los próximos (de hoy a hoy + 30) y los dibuja; si falla, como el mes
+async function cargarProximos({ conAnuncio = true } = {}) {
+  const rango = rangoDeProximos(Utils.hoyEnArgentina());
+  if (rango === null) return;
+  const pedido = ++pagina.pedidos.proximos;
+  try {
+    const { data } = await API.pedirJson('GET', rutaDeEventos(rango));
+    if (pedido !== pagina.pedidos.proximos) return;
+    pagina.proximos = esObjeto(data) ? data : {};
+    pintarProximos();
+  } catch (error) {
+    if (pedido !== pagina.pedidos.proximos) return;
+    if (error?.status === 401) irAlLogin();
+    else {
+      pagina.proximos = null;
+      mostrarFalla('ag-proximos', MENSAJE_SIN_PROXIMOS, conAnuncio);
+    }
+  }
+}
+
+function pintarProximos() {
+  porId('ag-proximos').innerHTML = htmlDeProximos(gruposDeProximos(pagina.proximos, Utils.hoyEnArgentina()));
+}
+
+// «y N más»: muestra el resto en su celda, se va y el foco pasa a lo primero que apareció (un texto lo recibe con tabindex="-1")
+function verElResto(boton) {
+  const resto = boton.closest('.me-celda')?.querySelector('.me-resto');
+  if (!resto) return;
+  resto.hidden = false;
+  const primero = resto.querySelector('.me-ev');
+  if (primero && String(primero.tagName).toLowerCase() !== 'button') primero.setAttribute('tabindex', '-1');
+  primero?.focus?.();
+  boton.hidden = true;
+}
+
+// Un evento de la grilla o de los próximos (el botón con su data-evento): el ítem de lo que llegó, buscado primero en lo del mismo
+// lugar (los próximos o el mes), o null
+function eventoDelBoton(boton) {
+  const id = boton.getAttribute('data-evento');
+  const delMes = listaDe(pagina.delMes?.eventos);
+  const proximos = listaDe(pagina.proximos?.eventos);
+  const enOrden = porId('ag-proximos')?.contains?.(boton) ? [...proximos, ...delMes] : [...delMes, ...proximos];
+  return enOrden.find((item) => String(item.id) === id) ?? null;
+}
+
+// Un clic en la pestaña: «‹» y «›» (el mes anterior o el siguiente), «Hoy» (el mes de hoy; si ya se ve y llegó, vuelve a elegir hoy,
+// sin pedir nada), «Sábado y domingo», «Nuevo evento», un evento (el propio abre su formulario; el de otra persona, su detalle; en la
+// grilla, en el día elegido o en los próximos), «y N más», «Nuevo evento» del día elegido (con esa fecha) y, en la grilla, cualquier
+// otro lugar de un día: su número, su espacio libre, un feriado o el pedazo de una barra (tocarUnDia)
+function alTocarEventos(evento) {
+  const objetivo = evento.target;
+  const nuevo = objetivo?.closest?.('#ag-nuevo-evento');
+  if (nuevo) {
+    abrirEvento({ volverA: nuevo });
+    return;
+  }
+  const deUnEvento = objetivo?.closest?.('[data-evento]');
+  if (deUnEvento) {
+    const item = eventoDelBoton(deUnEvento);
+    if (item?.es_mio === true) abrirEvento({ item, volverA: deUnEvento });
+    else if (item) abrirEventoAjeno({ item, volverA: deUnEvento });
+    return;
+  }
+  if (objetivo?.closest?.('#ag-anterior')) {
+    mostrarMesDeEventos(mesVecino(pagina.mesDeEventos, -1));
+    return;
+  }
+  if (objetivo?.closest?.('#ag-siguiente')) {
+    mostrarMesDeEventos(mesVecino(pagina.mesDeEventos, 1));
+    return;
+  }
+  if (objetivo?.closest?.('#ag-hoy')) {
+    const deHoy = Utils.hoyEnArgentina().slice(0, 7);
+    if (deHoy !== pagina.mesDeEventos || pagina.delMes === null) mostrarMesDeEventos(deHoy);
+    else {
+      empezarElMes(deHoy);
+      pintarMesDeEventos();
+    }
+    return;
+  }
+  if (objetivo?.closest?.('#ag-finde')) {
+    cambiarElFinDeSemana();
+    return;
+  }
+  const verMas = objetivo?.closest?.('[data-ver-mas]');
+  if (verMas) {
+    verElResto(verMas);
+    return;
+  }
+  const nuevoElDia = objetivo?.closest?.('[data-nuevo-el]');
+  if (nuevoElDia) {
+    abrirEvento({ fecha: nuevoElDia.getAttribute('data-nuevo-el'), volverA: nuevoElDia });
+    return;
+  }
+  const dia = objetivo?.closest?.('.me-celda')?.getAttribute('data-fecha');
+  if (esFechaDeTexto(dia)) tocarUnDia(dia);
+}
+
+// =====================================================
+// Los formularios (DOM y API)
+// =====================================================
+
+// La espera entre el último cambio y el pedido del cálculo, y la del velo antes de poner el foco (hasta que termina su transición,
+// no deja enfocar)
+const ESPERA_DEL_CALCULO = 300;
+const ESPERA_DEL_VELO = 100;
+
+// Cada formulario: su modal, el prefijo de sus ids (el error sin campo es <prefijo>-error) y el control de cada campo de los errores
+// del servidor
+const FORMULARIOS = Object.freeze({
+  licencia: {
+    modal: 'modal-licencia', prefijo: 'ml',
+    campos: {
+      tipo: 'ml-tipos', desde: 'ml-desde', hasta: 'ml-hasta', horas: 'ml-horas', horas_acumuladas: 'ml-horas-acumuladas',
+      nota: 'ml-nota', autorizado_id: 'ml-autorizado'
+    }
+  },
+  uso: {
+    modal: 'modal-uso', prefijo: 'mu',
+    campos: { desde: 'mu-fecha', hasta: 'mu-fecha', horas: 'mu-horas', nota: 'mu-nota' }
+  },
+  horasExtras: {
+    modal: 'modal-horas', prefijo: 'mh', campos: { fecha: 'mh-fecha', desde: 'mh-desde', hasta: 'mh-hasta', nota: 'mh-nota' }
+  },
+  // La planilla de contrato: sus errores van en cada día (los dibuja htmlDeLaPlanilla); el resto, en #mp-error
+  planilla: { modal: 'modal-planilla', prefijo: 'mp', campos: {} },
+  saldos: { modal: 'modal-saldos', prefijo: 'ms', campos: { dias_vacaciones: 'ms-dias', estudios: 'ms-estudios' } },
+  // La agenda: el formulario del evento (`compartido`, el permiso, no tiene control: va arriba del modal; lo que ven los demás de un
+  // Público va a las pastillas o, con «Otro» elegido, a su campo: controlDelCampo) y el detalle de uno ajeno (todo lo que falla, en
+  // #mea-error)
+  evento: {
+    modal: 'modal-evento', prefijo: 'ev',
+    campos: {
+      titulo: 'ev-titulo', fecha: 'ev-fecha', desde: 'ev-desde', hasta: 'ev-hasta', detalle: 'ev-detalle', tipo: 'ev-tipos',
+      texto_publico: 'ev-textos', personas: 'ev-personas', recordatorio: 'ev-recordatorio'
+    }
+  },
+  eventoAjeno: { modal: 'modal-evento-ajeno', prefijo: 'mea', campos: {} },
+  // «Pedir la restitución» (spec 2026-10-31-mi-espacio-dias-restituidos, 9): sin campos; lo que falla, en #mr-error
+  restitucion: { modal: 'modal-restitucion', prefijo: 'mr', campos: {} },
+  confirmar: { modal: 'modal-confirmar', prefijo: 'mc', campos: {} }
+});
+
+// La modalidad de la persona ('planta', 'contrato' o null), la del Resumen
+const modalidadActual = () => pagina.resumen?.modalidad?.clave ?? pagina.horas?.modalidad ?? null;
+const anioDeHoy = () => Number(Utils.hoyEnArgentina().slice(0, 4));
+
+function conectarFormularios() {
+  for (const { modal } of Object.values(FORMULARIOS)) {
+    // Cierran la × y «Cancelar» (data-cerrar), si es el de arriba y no está guardando (la planilla, preguntando si tiene cambios);
+    // un clic en el velo, nunca
+    porId(modal).addEventListener('click', (evento) => {
+      const cerrar = evento.target?.closest?.('[data-cerrar]');
+      if (cerrar && pagina.modales.at(-1)?.id === modal && !estaOcupado(modal)) pedirCerrarModal(modal, cerrar);
+    });
+  }
+  document.addEventListener('keydown', alApretarUnaTecla);
+
+  porId('ml-tipos').addEventListener('change', (evento) => {
+    const formulario = pagina.formulario;
+    if (evento.target?.name !== 'ml-tipo' || !formulario) return;
+    const antes = formulario.tipo;
+    formulario.tipo = evento.target.value;
+    // Unos días restituidos: el grupo de la opción, y el «Hasta» lo vuelve a poner el cálculo. Al salir de ellos, el que había
+    // puesto Mi espacio tampoco va con el otro tipo: vacío (entre los demás tipos, el de quien lo escribe queda)
+    const restituidos = formulario.tipo === 'restituidos';
+    formulario.valores = { ...formulario.valores, grupo: restituidos ? comoTexto(evento.target.dataset?.grupo) : '' };
+    if (restituidos || antes === 'restituidos') porId('ml-hasta').value = '';
+    pintarCamposDelTipo();
+    pedirLosTopes(formulario);
+    programarCalculo();
+  });
+  for (const id of ['ml-desde', 'ml-hasta', 'mu-fecha']) {
+    porId(id).addEventListener('input', programarCalculo);
+    porId(id).addEventListener('change', programarCalculo);
+  }
+  // Unos días restituidos: el «Hasta» es el de su «Desde», que pone el cálculo; mientras llega, vacío
+  for (const tipo of ['input', 'change']) {
+    porId('ml-desde').addEventListener(tipo, () => { if (pagina.formulario?.tipo === 'restituidos') porId('ml-hasta').value = ''; });
+  }
+  // Unas horas a favor: los topes de los dos campos son los del mes de la fecha (spec 2026-11-03-mi-espacio-horas-acumuladas, 5)
+  for (const tipo of ['input', 'change']) {
+    porId('ml-desde').addEventListener(tipo, () => {
+      if (pagina.formulario?.tipo === 'horas_a_favor') pedirLosTopes(pagina.formulario, { esperar: true });
+    });
+  }
+  for (const id of ['ml-horas', 'mu-horas']) {
+    porId(id).addEventListener('change', () => {
+      pintarMostrar();
+      programarCalculo();
+    });
+  }
+  // Los dos campos de las horas a favor: un cambio limpia sus errores, acomoda el tope de las acumuladas y el total, y vuelve a pedir
+  // el cálculo
+  for (const id of ['ml-horas-del-mes', 'ml-horas-acumuladas']) {
+    porId(id).addEventListener('change', () => {
+      const formulario = pagina.formulario;
+      if (!conLasDosHoras(formulario)) return;
+      for (const campo of ['ml-horas-del-mes', 'ml-horas-acumuladas']) ponerError(campo, null);
+      pintarLasDosHoras(formulario);
+      pintarMostrar();
+      programarCalculo();
+    });
+  }
+  porId('ml-autorizado').addEventListener('change', () => { if (pagina.formulario) pintarPaso(pagina.formulario); });
+  for (const nombre of ['licencia', 'uso']) {
+    const { prefijo } = FORMULARIOS[nombre];
+    porId(`${prefijo}-guardar`).addEventListener('click', () => guardarLicencia(nombre));
+    porId(`${prefijo}-borrar`).addEventListener('click', () => pedirBorrarLicencia(nombre));
+  }
+  // «Descargar Word» del segundo paso: la nota de la licencia guardada, por el mismo camino que «Word» de la lista
+  porId('ml-descargar-word').addEventListener('click', () => {
+    if (pagina.segundoPaso) bajarWordDeLicencia(pagina.segundoPaso.id, porId('ml-descargar-word'));
+  });
+  // «Pedir la restitución» y, ya pedida, «Descargar Word» de su nota
+  porId('mr-pedir').addEventListener('click', pedirLaRestitucion);
+  porId('mr-descargar-word').addEventListener('click', () => {
+    if (Number.isInteger(pagina.restitucion?.id)) bajarWordDeRestitucion(pagina.restitucion.id, porId('mr-descargar-word'));
+  });
+
+  for (const id of ['mh-fecha', 'mh-desde', 'mh-hasta']) {
+    porId(id).addEventListener('input', actualizarLaSuma);
+    porId(id).addEventListener('change', actualizarLaSuma);
+  }
+  porId('mh-guardar').addEventListener('click', guardarHorasExtras);
+  porId('mh-borrar').addEventListener('click', pedirBorrarHorasExtras);
+
+  // La planilla de contrato: lo que se escribe en cada día, «Nota» y «Quitar» (delegados en #mp-dias, que se vuelve a dibujar),
+  // Enter, «Sumar el día» (delegado en #mp-sumar), las flechas del mes y «Guardar»
+  for (const tipo of ['input', 'change']) porId('mp-dias').addEventListener(tipo, alEscribirEnLaPlanilla);
+  porId('mp-dias').addEventListener('click', alTocarLaPlanilla);
+  porId('modal-planilla').addEventListener('keydown', alApretarEnLaPlanilla);
+  porId('mp-sumar').addEventListener('click', (evento) => { if (evento.target?.closest?.('#mp-sumar-boton')) sumarElDia(); });
+  porId('mp-anterior').addEventListener('click', () => irAlMesDeLaPlanilla('anterior'));
+  porId('mp-siguiente').addEventListener('click', () => irAlMesDeLaPlanilla('siguiente'));
+  porId('mp-guardar').addEventListener('click', guardarPlanilla);
+
+  porId('ms-dias').addEventListener('change', alElegirEnLosSaldos);
+  porId('ms-estudios').addEventListener('change', alElegirEnLosSaldos);
+  porId('ms-guardar').addEventListener('click', guardarSaldos);
+
+  // El evento: la fecha, la hora y el recordatorio piden cuándo sale el aviso (y la fecha y la hora cambian la vista previa); el tipo,
+  // las pastillas de lo que ven los demás y cada persona (delegados en su lista, que se vuelve a dibujar); lo escrito en «Otro»;
+  // «Guardar» y «Borrar». El detalle de uno ajeno: «Mi recordatorio» se guarda enseguida
+  for (const id of ['ev-fecha', 'ev-desde', 'ev-recordatorio']) {
+    porId(id).addEventListener('input', alCambiarElCuando);
+    porId(id).addEventListener('change', alCambiarElCuando);
+  }
+  porId('ev-tipos').addEventListener('click', alTocarUnTipo);
+  porId('ev-textos').addEventListener('click', alTocarUnTexto);
+  porId('ev-otro').addEventListener('input', alEscribirElOtro);
+  porId('ev-personas').addEventListener('click', alTocarUnaPersona);
+  porId('ev-guardar').addEventListener('click', guardarEvento);
+  porId('ev-borrar').addEventListener('click', pedirBorrarEvento);
+  porId('mea-recordatorio').addEventListener('change', guardarMiRecordatorio);
+
+  porId('modal-confirmar-si').addEventListener('click', confirmarElBorrado);
+}
+
+// ---- Los modales ----
+
+// Abre un modal sobre los que ya están: el foco va a `foco()` después de la transición del velo y, al cerrarlo, vuelve a `volverA`
+// (el botón que lo abrió); `alCerrar` limpia lo del formulario
+function abrirModal(id, { volverA = null, foco = null, alCerrar = null } = {}) {
+  const sesion = { id, volverA, alCerrar };
+  pagina.modales.push(sesion);
+  porId(id).classList.add('active');
+  setTimeout(() => {
+    if (pagina.modales.at(-1) === sesion) foco?.()?.focus?.();
+  }, ESPERA_DEL_VELO);
+}
+
+function cerrarModal(id) {
+  const lugar = pagina.modales.findIndex((sesion) => sesion.id === id);
+  if (lugar === -1) return;
+  const [sesion] = pagina.modales.splice(lugar, 1);
+  porId(id).classList.remove('active');
+  sesion.alCerrar?.();
+  if (sesion.volverA && sesion.volverA.isConnected !== false) sesion.volverA.focus?.();
+}
+
+// Mientras se guarda o se borra, su modal no se cierra (ni con Escape, ni con la ×, ni con «Cancelar»)
+function estaOcupado(modal) {
+  if (modal === 'modal-confirmar') return pagina.confirmacion?.ocupado === true;
+  if (modal === 'modal-horas') return pagina.horasExtras?.guardando === true;
+  if (modal === 'modal-planilla') return pagina.planilla?.guardando === true;
+  if (modal === 'modal-saldos') return pagina.saldos?.guardando === true;
+  if (modal === 'modal-evento') return pagina.evento?.guardando === true;
+  if (modal === 'modal-evento-ajeno') return pagina.eventoAjeno?.guardando === true;
+  if (modal === 'modal-restitucion') return pagina.restitucion?.pidiendo === true;
+  return pagina.formulario?.guardando === true && FORMULARIOS[pagina.formulario.nombre].modal === modal;
+}
+
+// Escape cierra el modal de arriba: primero la confirmación, después el formulario (la planilla, preguntando si tiene cambios)
+function alApretarUnaTecla(evento) {
+  if (evento.key !== 'Escape' || pagina.modales.length === 0) return;
+  const arriba = pagina.modales.at(-1).id;
+  evento.preventDefault?.();
+  if (!estaOcupado(arriba)) pedirCerrarModal(arriba, document.activeElement);
+}
+
+// Cerrar un modal con la ×, «Cancelar» o Escape (`desde`, el control que se usó o el que tenía el foco): la planilla pregunta antes
+// si tiene cambios (pedirSalirDeLaPlanilla); los demás se cierran
+function pedirCerrarModal(modal, desde) {
+  if (modal === 'modal-planilla') pedirSalirDeLaPlanilla(desde);
+  else cerrarModal(modal);
+}
+
+// ---- Los errores ----
+
+// Un grupo de opciones: el fieldset de unos radios (ml-tipos, ms-dias, ms-estudios)
+const esGrupoDeOpciones = (control) => String(control?.tagName).toLowerCase() === 'fieldset';
+
+// Si un control está dentro de algo oculto (un grupo con hidden, como el «Hasta» de los tipos de un día): su error no se vería
+const estaOculto = (control) => {
+  for (let nodo = control; typeof nodo?.tagName === 'string'; nodo = nodo.parentNode) if (nodo.hidden === true) return true;
+  return false;
+};
+
+// El párrafo del error de un control que no es <id>-error: el del tipo y el de lo que ven los demás de un evento son de su grupo
+// (#ev-grupo-tipo y #ev-grupo-texto, que los tienen en su aria-describedby)
+const PARRAFOS_DE_ERROR = Object.freeze({ 'ev-tipos': 'ev-tipo-error', 'ev-textos': 'ev-texto-error' });
+
+// Muestra (o saca, con null) el error de un campo: su párrafo (<id>-error, o el de PARRAFOS_DE_ERROR) y aria-invalid en el control.
+// En un grupo de opciones, aria-invalid va en cada radio (en un fieldset no vale: ARIA 1.2), que ya lo describe con
+// aria-describedby. false si el control no está o, al poner un error, si está oculto (quien llama lo dice arriba del modal)
+function ponerError(id, mensaje) {
+  const control = id ? porId(id) : null;
+  if (!control || (mensaje && estaOculto(control))) return false;
+  const parrafo = porId(deMapa(PARRAFOS_DE_ERROR, id, `${id}-error`));
+  if (parrafo) {
+    parrafo.textContent = mensaje ?? '';
+    parrafo.hidden = !mensaje;
+  }
+  for (const marcado of esGrupoDeOpciones(control) ? control.querySelectorAll('input') : [control]) {
+    if (mensaje) marcado.setAttribute('aria-invalid', 'true');
+    else marcado.removeAttribute('aria-invalid');
+  }
+  return true;
+}
+
+// El control que recibe el foco de un campo: en un grupo de opciones, la elegida o la primera; en una lista de botones (las
+// personas de un evento), el primero que se puede tocar
+function controlDeFoco(id) {
+  const control = porId(id);
+  if (esGrupoDeOpciones(control)) return control.querySelector('input:checked') ?? control.querySelector('input') ?? control;
+  if (String(control?.tagName).toLowerCase() === 'div') {
+    return [...control.querySelectorAll('button')].find((boton) => !boton.disabled) ?? control;
+  }
+  return control;
+}
+
+// El error sin campo, arriba del cuerpo del modal (nunca detrás del velo)
+function avisoDelModal(nombre, mensaje) {
+  const aviso = porId(`${FORMULARIOS[nombre].prefijo}-error`);
+  aviso.textContent = mensaje ?? '';
+  aviso.hidden = !mensaje;
+  if (mensaje) aviso.scrollIntoView?.({ block: 'nearest' });
+}
+
+// Los controles con error de un formulario: los de sus campos, en «Mis vacaciones y saldos», los de «Para arrancar» y, en el evento,
+// «Otro»
+const controlesDe = (nombre) => [...new Set(Object.values(FORMULARIOS[nombre].campos)),
+  ...(nombre === 'saldos' ? [...porId('ms-campos').querySelectorAll('[data-saldo]')].map((campo) => campo.id) : []),
+  ...(nombre === 'evento' ? ['ev-otro'] : []), ...(nombre === 'licencia' ? ['ml-horas-del-mes'] : [])];
+
+// El control de un campo de los errores (del navegador o del servidor): el de FORMULARIOS, salvo lo que ven los demás de un Público
+// con «Otro» elegido, que va a su campo, y las horas de unas horas a favor con los dos campos, que van a «De noviembre» (spec
+// 2026-11-03-mi-espacio-horas-acumuladas, 5); uno que no es del formulario, null
+const controlDelCampo = (nombre, campo) => {
+  if (nombre === 'evento' && campo === 'texto_publico' && pagina.evento?.valores?.otro === true) return 'ev-otro';
+  if (nombre === 'licencia' && campo === 'horas' && conLasDosHoras(pagina.formulario)) return 'ml-horas-del-mes';
+  return deMapa(FORMULARIOS[nombre].campos, campo, null);
+};
+
+function limpiarErrores(nombre) {
+  for (const id of controlesDe(nombre)) ponerError(id, null);
+  avisoDelModal(nombre, '');
+}
+
+// Los errores (`[[id del control, mensaje]]`), todos juntos (los demás campos quedan limpios), y el foco al primero. Uno sin un
+// control a la vista va arriba del modal. true si hubo
+function mostrarErrores(nombre, errores) {
+  limpiarErrores(nombre);
+  const conControl = errores.filter(([id, mensaje]) => ponerError(id, mensaje));
+  const sinControl = errores.filter((error) => !conControl.includes(error));
+  if (sinControl.length > 0) avisoDelModal(nombre, sinControl.map(([, mensaje]) => mensaje).join(' '));
+  if (conControl.length > 0) controlDeFoco(conControl[0][0])?.focus?.();
+  return errores.length > 0;
+}
+
+// Los errores de un formulario por campo (`{ campo: mensaje }`) con su control
+const conSusControles = (nombre, errores) => Object.entries(errores)
+  .map(([campo, mensaje]) => [controlDelCampo(nombre, campo), mensaje]);
+
+// Un pedido que no llegó al servidor: API.pedirJson tira el error del navegador («Failed to fetch»), sin status y en inglés
+const MENSAJE_SIN_CONEXION = 'No se pudo conectar con el servidor. Probá de nuevo en unos minutos.';
+const MENSAJE_NO_SE_GUARDO = 'No se pudo guardar. Probá de nuevo en unos minutos.';
+const MENSAJE_NO_SE_BORRO = 'No se pudo borrar. Probá de nuevo en unos minutos.';
+
+// Lo que se dice de una falla: el mensaje del servidor; sin respuesta (sin status), MENSAJE_SIN_CONEXION; sin mensaje, `sinMensaje`
+const motivoDeLaFalla = (falla, sinMensaje) => {
+  if (!falla?.status) return MENSAJE_SIN_CONEXION;
+  return conTexto(falla.message) ? falla.message : sinMensaje;
+};
+
+// Un error del servidor al guardar: con un campo del formulario a la vista, en ese campo y con el foco ahí; sin campo (o uno que
+// no es del formulario o está oculto, o sin respuesta), arriba del modal, con el foco en el botón (quien llama lo habilita antes:
+// uno deshabilitado no recibe el foco)
+function mostrarFallaDelServidor(nombre, falla, boton) {
+  limpiarErrores(nombre);
+  const mensaje = motivoDeLaFalla(falla, MENSAJE_NO_SE_GUARDO);
+  const id = controlDelCampo(nombre, falla?.campo);
+  if (ponerError(id, mensaje)) {
+    controlDeFoco(id)?.focus?.();
+    return;
+  }
+  avisoDelModal(nombre, mensaje);
+  boton.focus?.();
+}
+
+// Las pestañas que se vuelven a dibujar después de guardar o de borrar, y lo que identifica a un control que abre un modal, en este
+// orden: el «Editar» de una fila (por su id; en el día por día de contrato, por su fecha), «Mis vacaciones y saldos», «Cambiar» o
+// «Registrar un uso autorizado», «Cargar licencia» o «Cargar horas extras» de una tarjeta, un botón de un grupo de días
+// restituidos (por su grupo: el del aviso, el de «Vence pronto» y el de la línea de la fila, que abren «Cargar licencia» o «Pedir la
+// restitución»), un botón de «Vence pronto» (por su tipo), «Word» y «Borrar el pedido» de un pedido de restitución (por su id), un
+// evento de la agenda (por su id), desde la agenda con más onda, el número de un día del mes y «Nuevo evento» del día elegido (por
+// su fecha: un «Nuevo evento» abierto desde ahí vuelve a él) y, desde las horas acumuladas, «Usar horas acumuladas» de contrato
+const VISTAS_QUE_SE_DIBUJAN = Object.freeze(['vista-resumen', 'vista-licencias', 'vista-horas', 'vista-agenda']);
+const IDENTIDADES_DEL_FOCO = Object.freeze(['data-editar-licencia', 'data-editar-horas', 'data-editar-salida', 'data-abrir',
+  'data-cargar', 'data-grupo', 'data-tipo', 'data-word-restitucion', 'data-borrar-restitucion', 'data-evento', 'data-dia',
+  'data-nuevo-el', 'data-usar-acumuladas']);
+
+// El id del lugar de la pestaña donde está un control (el primer antepasado con id, antes de la pestaña: en la agenda, 'ag-mes' o
+// 'ag-proximos'), o null
+const lugarDe = (control) => {
+  for (let nodo = control?.parentNode; typeof nodo?.getAttribute === 'function'; nodo = nodo.parentNode) {
+    const id = nodo.getAttribute('id');
+    if (id) return VISTAS_QUE_SE_DIBUJAN.includes(id) ? null : id;
+  }
+  return null;
+};
+
+// Lo que identifica a un control: su atributo, su valor y su lugar (`dentro`: un evento está en la grilla y en los próximos)
+const identidadDe = (control) => {
+  const atributo = IDENTIDADES_DEL_FOCO.find((uno) => typeof control?.getAttribute?.(uno) === 'string');
+  return atributo ? { atributo, valor: control.getAttribute(atributo), dentro: lugarDe(control) } : null;
+};
+
+/**
+ * Adónde va el foco cuando se vuelve a dibujar la pestaña del control que lo tiene (el botón que abrió el modal, al que cerrarModal
+ * lo devolvió y que la recarga reemplaza), como respaldoDeLaEliminacion de proyectos.js: `{ vista, candidatos }`, del preferido al
+ * último, o null si el control no está en una pestaña (los del encabezado no se vuelven a dibujar) o no abre un modal. Los
+ * candidatos: el mismo control (el «Editar» de la misma fila), los de su misma lista (el que seguía, después el anterior: la fila
+ * se borró), el título de su panel (por su texto), el primer título de la pestaña y la pestaña misma.
+ */
+function respaldoDelFoco(control) {
+  const vista = VISTAS_QUE_SE_DIBUJAN.find((id) => porId(id)?.contains?.(control));
+  const propia = identidadDe(control);
+  if (!vista || propia === null) return null;
+  const lista = control.closest('li')?.parentNode;
+  const botones = lista ? [...lista.querySelectorAll('button')] : [];
+  const lugar = botones.indexOf(control);
+  const vecinos = lugar === -1 ? [] : [...botones.slice(lugar + 1), ...botones.slice(0, lugar).reverse()];
+  const panel = control.closest('.me-tarjeta') ?? control.closest('section');
+  const titulo = panel?.querySelector('h2') ?? panel?.querySelector('h3');
+  return {
+    vista,
+    candidatos: [propia, ...vecinos.map(identidadDe).filter((identidad) => identidad !== null),
+      ...(titulo ? [{ titulo: titulo.textContent }] : []), { primerTitulo: true }, { pestana: true }]
+  };
+}
+
+// Los controles de la pestaña que corresponden a un candidato de respaldoDelFoco, del preferido al último ([] si no hay): de un
+// control, los que están a la vista y habilitados (uno dentro de un «y N más» oculto, no), primero el del mismo lugar que el que
+// se usó (los próximos o la grilla); de un título, el que dice ese texto, el primero de la pestaña o la pestaña misma
+function controlesDelCandidato(vista, candidato) {
+  if (candidato.atributo) {
+    const controles = controlesCon(vista, candidato.atributo, candidato.valor).filter((uno) => !uno.disabled && !estaOculto(uno));
+    const lugar = candidato.dentro ? porId(candidato.dentro) : null;
+    return lugar ? [...controles.filter((uno) => lugar.contains(uno)), ...controles.filter((uno) => !lugar.contains(uno))] : controles;
+  }
+  const titulos = [...porId(vista).querySelectorAll('h2'), ...porId(vista).querySelectorAll('h3')];
+  let control = porId(`tab-${vista.slice('vista-'.length)}`);
+  if (candidato.titulo !== undefined) control = titulos.find((uno) => uno.textContent === candidato.titulo) ?? null;
+  else if (candidato.primerTitulo) control = titulos[0] ?? null;
+  return control ? [control] : [];
+}
+
+// Si el foco se perdió (el control que lo tenía ya no está: quedó en <body>), va al primer candidato que está y que lo toma (si uno
+// no lo toma, el siguiente). Un título recibe el foco con tabindex="-1". Con un modal abierto, o si el foco ya está en otro lado, no
+// se toca
+function devolverElFoco(respaldo) {
+  if (respaldo === null || pagina.modales.length > 0) return;
+  const activo = document.activeElement;
+  if (activo && activo !== document.body && activo.isConnected !== false) return;
+  for (const candidato of respaldo.candidatos) {
+    for (const control of controlesDelCandidato(respaldo.vista, candidato)) {
+      if (/^h[23]$/.test(String(control.tagName).toLowerCase())) control.setAttribute('tabindex', '-1');
+      control.focus?.();
+      if (document.activeElement === control) return;
+    }
+  }
+}
+
+// El año que tenía una lista (la de Licencias o la de Horas extras), para volver a pedirla en él: el de hoy, o ninguno, da null (la
+// del año en curso que dice el servidor)
+const anioQueTenia = (datos) => (Number.isInteger(datos?.anio) && datos.anio !== anioDeHoy() ? datos.anio : null);
+
+// Vuelve a pedir la lista de Licencias, si se ve, en el año pendiente o en el que tenía y sin anunciarla, con el foco resguardado:
+// el de `control` (el botón que se usó, que la recarga reemplaza: respaldoDelFoco, tomado antes). Fuera de la pestaña, la suelta: se
+// pide la próxima vez que se abre. `pedidoAlTocar` es el número del último pedido de la lista cuando se tocó el botón
+// (`pagina.pedidos.licencias`): si después alguien la pidió (la persona eligió otro año mientras se pedía el Resumen), no pide nada,
+// porque ese pedido ya trae lo de ahora (y el de acá, con un número más alto, descartaría su respuesta: pediría otro año)
+async function recargarLaListaConElFocoEn(control, pedidoAlTocar = pagina.pedidos.licencias) {
+  if (pagina.pedidos.licencias !== pedidoAlTocar) return;
+  if (pagina.pestana !== 'licencias') {
+    pagina.licencias = null;
+    return;
+  }
+  const respaldo = respaldoDelFoco(control);
+  const anio = pagina.anioDeLicencias !== null ? tomarElAnioDeLicencias() : anioQueTenia(pagina.licencias);
+  await cargarLicencias(anio, { conAnuncio: false });
+  devolverElFoco(respaldo);
+}
+
+// Después de guardar o de borrar: el Resumen y las pestañas que ya se cargaron (la que se ve, enseguida y con el año que tenía
+// y, en Horas extras, el mes del día por día, y en la agenda, el mes que se ve, sin anunciarlo: se anuncia lo que se guardó; las
+// otras, cuando se vuelvan a abrir). La lista de Licencias, en el año pendiente si hay uno (pagina.anioDeLicencias: el de la licencia
+// que se acaba de guardar, que lo usa una sola vez; si no se ve la pestaña, queda para cuando se abra), y si no, en el que tenía. La
+// agenda se vuelve a pedir siempre: también muestra las licencias. El foco, que cerrarModal devolvió al botón que abrió el modal, va
+// a su equivalente cuando terminan (respaldoDelFoco: la recarga reemplazó el botón)
+async function volverAPedirTodo() {
+  const respaldo = respaldoDelFoco(document.activeElement);
+  const cargas = [cargarResumen()];
+  if (pagina.pestana === 'licencias' && (pagina.licencias !== null || pagina.anioDeLicencias !== null)) {
+    const anio = pagina.anioDeLicencias !== null ? tomarElAnioDeLicencias() : anioQueTenia(pagina.licencias);
+    cargas.push(cargarLicencias(anio, { conAnuncio: false }));
+  } else if (pagina.pestana !== 'licencias') pagina.licencias = null;
+  if (pagina.horas !== null) {
+    if (pagina.pestana === 'horas') {
+      cargas.push(cargarHorasExtras(anioQueTenia(pagina.horas), { conAnuncio: false, mes: pagina.mes }));
+    } else pagina.horas = null;
+  }
+  if (pagina.pestana === 'agenda') cargas.push(cargarEventos({ forzar: true, conAnuncio: false }));
+  else {
+    // Lo que se estaba pidiendo ya es viejo: se descarta
+    pagina.delMes = null;
+    pagina.proximos = null;
+    pagina.pedidos.mes += 1;
+    pagina.pedidos.proximos += 1;
+  }
+  await Promise.all(cargas);
+  devolverElFoco(respaldo);
+}
+
+// Lo que dice el servidor al guardar: el mensaje y sus avisos (por ejemplo, que una corrección ya no se copia a Configuración)
+const textoDeLaRespuesta = (respuesta) => [respuesta?.message, ...(Array.isArray(respuesta?.avisos) ? respuesta.avisos : [])]
+  .filter(conTexto).join(' ');
+// …en un aviso de la página: de éxito o, con avisos, de advertencia
+const avisarLaRespuesta = (respuesta) => avisarMiEspacio(textoDeLaRespuesta(respuesta),
+  Array.isArray(respuesta?.avisos) && respuesta.avisos.some(conTexto) ? 'warning' : 'success');
+
+// Un 404 (lo que se corregía o se borraba ya no está): se cierra el formulario, se avisa y se vuelve a pedir todo
+function noEstaMas(modal, falla) {
+  cerrarModal(modal);
+  avisarMiEspacio(falla?.message, 'error');
+  volverAPedirTodo();
+}
+
+// Los formularios necesitan el Resumen (los tipos de «Cargar licencia» y si falta el saldo inicial): si todavía no llegó, o
+// falló, se pide antes de abrir; si no llega, se avisa. true si se puede abrir (si mientras tanto se abrió otro modal, no)
+async function hayResumen() {
+  if (pagina.resumen !== null) return true;
+  await cargarResumen();
+  if (pagina.resumen === null) {
+    avisarMiEspacio(MENSAJE_SIN_RESUMEN, 'error');
+    return false;
+  }
+  return pagina.modales.length === 0;
+}
+
+// ---- «Cargar licencia» y «Registrar un uso autorizado» ----
+
+// Unos días restituidos nuevos de un grupo que no está entre los `tipos` del Resumen (opcionDelGrupo): el Resumen es de antes del
+// asueto (la persona tenía la página abierta cuando administración lo cargó, y la lista de Licencias, que se pide la primera vez que
+// se abre la pestaña —o después de guardar—, ya tiene la línea con su botón). Se vuelve a pedir (y se pinta, como siempre), salvo
+// que se acabe de pedir en esta misma apertura (`pedir` en false: hayResumen). Si otro pedido del Resumen reemplazó a este (un doble
+// clic), manda el último: este sale sin decir nada. Si no llega, el aviso de siempre, y si el grupo sigue sin estar, ya no está por
+// restituir: se avisa con el mensaje del servidor, el formulario no se abre y la lista se vuelve a pedir con el foco resguardado
+// (`volverA`, el botón que se usó: el viejo se va y, si el reparto cambió, se ve la línea nueva), salvo que alguien la haya pedido
+// después del clic (`listaAlTocar`, el número del último pedido de la lista en ese momento: recargarLaListaConElFocoEn). true si se
+// puede abrir (si mientras tanto se abrió otro modal, no)
+async function hayElGrupo(grupo, { pedir = true, volverA = null, listaAlTocar = pagina.pedidos.licencias } = {}) {
+  // El número de su pedido del Resumen, que devuelve cargarResumen: si ya no es el último, otro lo reemplazó
+  if (pedir) {
+    const propio = await cargarResumen();
+    if (propio !== pagina.pedidos.resumen) return false;
+    if (pagina.resumen === null) {
+      avisarMiEspacio(MENSAJE_SIN_RESUMEN, 'error');
+      return false;
+    }
+  }
+  if (opcionDelGrupo(pagina.resumen?.tipos, grupo) === null) {
+    avisarMiEspacio(MENSAJES_FORMULARIOS.grupoNoPorRestituir, 'error');
+    recargarLaListaConElFocoEn(volverA, listaAlTocar);
+    return false;
+  }
+  return pagina.modales.length === 0;
+}
+
+// Abre «Cargar licencia»: nueva (con el `tipo` de «Vence pronto» y, unos días restituidos, con su `grupo`: el del aviso, «Vence
+// pronto» o la línea de la fila; si el grupo no está entre los tipos del Resumen, antes lo vuelve a pedir: hayElGrupo) o la
+// corrección de una fila de la lista. El uso autorizado tiene su formulario. Sin el saldo inicial no se puede cargar nada: abre
+// «Mis vacaciones y saldos»
+async function abrirLicencia({ fila = null, tipo = null, grupo = null, volverA = null } = {}) {
+  // Lo de la lista y del Resumen al tocar el botón, antes de esperar nada (hayElGrupo)
+  const listaAlTocar = pagina.pedidos.licencias;
+  const recienPedido = pagina.resumen === null;
+  if (recienPedido && !(await hayResumen())) return;
+  if (!fila && tipo === 'restituidos' && conTexto(grupo) && opcionDelGrupo(pagina.resumen?.tipos, grupo) === null
+    && !(await hayElGrupo(grupo, { pedir: !recienPedido, volverA, listaAlTocar }))) return;
+  if (pagina.resumen?.abrir_saldos === true) {
+    abrirSaldos(volverA);
+    return;
+  }
+  if (fila?.tipo === 'uso_autorizado') {
+    abrirUso({ fila, volverA });
+    return;
+  }
+  const valores = valoresDeLicencia(fila, tipo, grupo);
+  // El tipo de la fila se ve elegido (opcionesDeLicencia); una corrección no ofrece los días restituidos de otro grupo
+  const opciones = opcionesDeLicencia(pagina.resumen?.tipos, fila, valores);
+  // Siempre abre el formulario (el segundo paso se va al cerrar el modal: esto es por las dudas)
+  quitarSegundoPaso();
+  porId('modal-licencia-titulo').textContent = fila ? `Corregir la licencia del ${comoTexto(fila.fechas_texto)}` : 'Cargar licencia';
+  porId('ml-tipos-opciones').innerHTML = htmlDeTiposDeLicencia(opciones, valores.tipo, valores.grupo);
+  porId('ml-desde').value = valores.desde;
+  porId('ml-hasta').value = valores.hasta;
+  porId('ml-horas').value = valores.horas;
+  porId('ml-grupo-autorizado').hidden = true;
+  iniciarFormulario('licencia', { fila, valores });
+  // Una creada que ya empezó o que ya terminó: lo que se puede cambiar de sus fechas (lo controla el servidor; el desde no se
+  // bloquea, así se puede volver a las fechas de Configuración). Lo escribe pintarCamposDelTipo, con la ayuda de unos días restituidos
+  pagina.formulario.ayudaDeLasFechas = ayudaDeLasFechasDe(fila);
+  // Unas horas a favor que ya usan acumuladas abren con los dos campos, con lo de la fila (spec 2026-11-03-mi-espacio-horas-acumuladas,
+  // 5): la parte del mes es el total menos las acumuladas. Los topes, después
+  pagina.formulario.dosHoras = valores.tipo === 'horas_a_favor' && conTexto(valores.horas_acumuladas);
+  pintarLasDosHoras(pagina.formulario, {
+    delMes: String(horasElegidas(valores.horas) - horasElegidas(valores.horas_acumuladas)), acumuladas: valores.horas_acumuladas
+  });
+  pintarCamposDelTipo();
+  pedirLosTopes(pagina.formulario);
+  abrirModal('modal-licencia', { volverA, foco: () => controlDeFoco('ml-tipos'), alCerrar: cerrarFormulario });
+  if (Object.keys(erroresDeLicencia(valores, { modalidad: modalidadActual() })).length === 0) programarCalculo();
+}
+
+// Abre «Registrar un uso autorizado» (nuevo, o la corrección de una fila): la fecha y, en contrato, las horas
+async function abrirUso({ fila = null, volverA = null } = {}) {
+  if (pagina.resumen === null && !(await hayResumen())) return;
+  if (pagina.resumen?.abrir_saldos === true) {
+    abrirSaldos(volverA);
+    return;
+  }
+  const valores = valoresDeLicencia(fila, 'uso_autorizado');
+  porId('modal-uso-titulo').textContent = fila ? `Corregir el uso autorizado del ${comoTexto(fila.fechas_texto)}`
+    : 'Registrar un uso autorizado';
+  porId('mu-fecha').value = valores.desde;
+  const enHoras = horasDelTipo('uso_autorizado', modalidadActual());
+  porId('mu-grupo-horas').hidden = enHoras === null;
+  porId('mu-horas').innerHTML = enHoras === null ? '' : htmlDeOpcionesDeHoras(enHoras, valores.horas);
+  porId('mu-horas').value = enHoras === null ? '' : valores.horas;
+  iniciarFormulario('uso', { fila, valores });
+  abrirModal('modal-uso', { volverA, foco: () => porId('mu-fecha'), alCerrar: cerrarFormulario });
+  if (Object.keys(erroresDeLicencia(valores, { modalidad: modalidadActual() })).length === 0) programarCalculo();
+}
+
+// Lo común de los dos: el estado del formulario (el pedido del cálculo numera cada uno: una respuesta vieja se descarta;
+// `esperando`, hay uno programado o en vuelo, y «Guardar» espera su respuesta; `sinCalculo`, el último no llegó, y «Guardar» lo
+// vuelve a pedir en lugar de guardar), la nota, «Mostrar a mis compañeros», «Borrar» (o por qué no se puede) y lo que dice el
+// cálculo, vacío hasta que llega
+function iniciarFormulario(nombre, { fila, valores }) {
+  const { prefijo } = FORMULARIOS[nombre];
+  cerrarFormulario();
+  pagina.formulario = {
+    nombre, fila, valores, tipo: valores.tipo, paso: null, pedido: 0, esperando: false, sinCalculo: false, temporizador: null,
+    guardando: false, pedidoSinAuditor: 0, firmante: null, autorizadoListo: false,
+    // Unas horas a favor (spec 2026-11-03-mi-espacio-horas-acumuladas, 5): los topes del servidor (o null), si se están pidiendo
+    // (mientras, el cálculo espera y los campos de las horas quedan deshabilitados) y si van los dos campos en lugar de «Horas»
+    topes: null, cargandoTopes: false, temporizadorDeTopes: null, dosHoras: false
+  };
+  limpiarErrores(nombre);
+  porId(`${prefijo}-nota`).value = valores.nota;
+  porId(`${prefijo}-mostrar`).checked = valores.mostrar;
+  pintarMostrar();
+  const quien = comoTexto(pagina.resumen?.persona?.nombre);
+  porId(`${prefijo}-mostrar-ayuda`).textContent = `Ven «${quien} no está», sin el tipo de licencia.`;
+  porId(`${prefijo}-borrar`).hidden = !(fila && fila.puede_borrar !== false);
+  const pie = porId(`${prefijo}-pie`);
+  pie.textContent = fila && fila.puede_borrar === false ? MENSAJES_FORMULARIOS.yaEmpezo : '';
+  pie.hidden = pie.textContent === '';
+  for (const caja of [`${prefijo}-calculo`, `${prefijo}-paso`, `${prefijo}-sin-auditor`]) {
+    porId(caja).innerHTML = '';
+    porId(caja).hidden = true;
+  }
+  porId(`${prefijo}-guardar`).disabled = false;
+}
+
+// Al cerrar el formulario, lo que esperaba se descarta
+function cerrarFormulario() {
+  clearTimeout(pagina.formulario?.temporizador);
+  clearTimeout(pagina.formulario?.temporizadorDeTopes);
+  pagina.formulario = null;
+}
+
+// Los campos del tipo elegido: «Desde» y «Hasta, inclusive», o «Fecha» en los de un día, y las horas en los que van por horas. En
+// unos días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 9), el «Hasta» lo pone Mi espacio: de solo lectura (con la
+// clase me-auto) y descripto por su ayuda («Lo pone Mi espacio: 2 días hábiles.», en #ml-hasta-ayuda), y la ayuda de «Desde» dice
+// desde cuándo se pueden empezar (las de la opción del grupo o, al corregir, las de la fila: ayudasDeRestituidos). La ayuda de las
+// fechas de una creada que ya empezó o que ya terminó gana
+function pintarCamposDelTipo() {
+  const formulario = pagina.formulario;
+  const { tipo, valores } = formulario;
+  const unDia = deUnDia(tipo);
+  porId('ml-desde-rotulo').textContent = unDia ? 'Fecha' : 'Desde';
+  porId('ml-grupo-hasta').hidden = unDia;
+  const restituidos = tipo === 'restituidos';
+  const ayudas = restituidos ? ayudasDeRestituidos(pagina.resumen?.tipos, formulario.fila, valores.grupo) : { desde: '', hasta: '' };
+  const hasta = porId('ml-hasta');
+  hasta.readOnly = restituidos;
+  hasta.classList.toggle('me-auto', restituidos);
+  hasta.setAttribute('aria-describedby', restituidos ? 'ml-hasta-ayuda ml-hasta-error' : 'ml-fechas-ayuda ml-hasta-error');
+  const ayudaDelHasta = porId('ml-hasta-ayuda');
+  ayudaDelHasta.textContent = ayudas.hasta;
+  ayudaDelHasta.hidden = ayudas.hasta === '';
+  const fechas = porId('ml-fechas-ayuda');
+  fechas.textContent = conTexto(formulario.ayudaDeLasFechas) ? formulario.ayudaDeLasFechas : ayudas.desde;
+  fechas.hidden = fechas.textContent === '';
+  const enHoras = horasDelTipo(tipo, modalidadActual());
+  porId('ml-grupo-horas').hidden = enHoras === null;
+  if (enHoras !== null) {
+    const elegidas = porId('ml-horas').value || valores.horas;
+    porId('ml-horas').innerHTML = htmlDeOpcionesDeHoras(enHoras, elegidas);
+    porId('ml-horas').value = elegidas;
+  }
+  pintarLasDosHoras(formulario);
+  pintarMostrar();
+}
+
+// ---- Las horas a favor con horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 5) ----
+
+// Si el formulario abierto es unas horas a favor con los dos campos, «De noviembre» y «Acumuladas», en lugar de «Horas»
+const conLasDosHoras = (formulario) => formulario?.nombre === 'licencia' && formulario.tipo === 'horas_a_favor'
+  && formulario.dosHoras === true;
+
+// Lo elegido en los campos de las horas de «Cargar licencia» (`{ delMes, acumuladas }`, como texto): con los dos, los suyos; si no, lo
+// de «Horas», todo del mes
+const horasDeLosCampos = (formulario) => (conLasDosHoras(formulario)
+  ? { delMes: porId('ml-horas-del-mes').value, acumuladas: porId('ml-horas-acumuladas').value }
+  : { delMes: porId('ml-horas').value, acumuladas: '0' });
+
+// Las horas del formulario, como texto: con los dos campos, el total; si no, las de «Horas»
+function horasDelCampo(formulario) {
+  if (!conLasDosHoras(formulario)) return porId(`${FORMULARIOS[formulario.nombre].prefijo}-horas`).value;
+  const { delMes, acumuladas } = horasDeLosCampos(formulario);
+  return String(horasElegidas(delMes) + horasElegidas(acumuladas));
+}
+
+// Las partes de unas horas a favor que se corrigen (`{ delMes, acumuladas }`, números: lo del mes es el total menos las acumuladas),
+// mientras la fecha siga en su mes y los topes sean de ese mes (si llegaron); si no (una nueva, otro tipo u otro mes), null: valen los
+// topes, como en una carga nueva
+function partesGuardadas(formulario) {
+  const { fila, valores } = formulario;
+  if (!esObjeto(fila) || fila.tipo !== 'horas_a_favor' || formulario.tipo !== 'horas_a_favor' || !esFechaDeTexto(fila.desde)) return null;
+  const mes = fila.desde.slice(0, 7);
+  const desde = porId('ml-desde').value;
+  if (!esFechaDeTexto(desde) || desde.slice(0, 7) !== mes) return null;
+  if (esObjeto(formulario.topes) && formulario.topes.mes !== mes) return null;
+  const acumuladas = horasElegidas(valores.horas_acumuladas);
+  return { delMes: Math.max(0, horasElegidas(valores.horas) - acumuladas), acumuladas };
+}
+
+// Los dos campos o «Horas» (su rótulo, el campo y su error): los dos, con los topes del servidor (lasDosHoras: lo elegido nunca pasa
+// de su tope), sus rótulos y el total; mientras llegan los topes, los campos de las horas, deshabilitados. `elegidas`, lo que va en
+// los dos campos (de entrada, lo que tienen)
+function pintarLasDosHoras(formulario, elegidas = horasDeLosCampos(formulario)) {
+  const dos = conLasDosHoras(formulario);
+  porId('ml-dos-horas').hidden = !dos;
+  porId('ml-horas-rotulo').hidden = dos;
+  porId('ml-horas').hidden = dos;
+  if (dos) ponerError('ml-horas', null);
+  const cargando = formulario.nombre === 'licencia' && formulario.cargandoTopes === true;
+  for (const id of ['ml-horas', 'ml-horas-del-mes', 'ml-horas-acumuladas']) porId(id).disabled = cargando;
+  if (!dos) return;
+  const { delMes, acumuladas } = lasDosHoras(formulario.topes, elegidas, partesGuardadas(formulario));
+  const desde = porId('ml-desde').value;
+  porId('ml-horas-del-mes-rotulo').innerHTML = htmlDelRotuloDelMes(formulario.topes, desde);
+  porId('ml-horas-acumuladas-tope').textContent = rotulosDeLasDos(formulario.topes, desde).acumuladas;
+  for (const [id, campo] of [['ml-horas-del-mes', delMes], ['ml-horas-acumuladas', acumuladas]]) {
+    porId(id).innerHTML = htmlDeOpcionesDeLasDos(campo.tope, String(campo.valor));
+    porId(id).value = String(campo.valor);
+  }
+  porId('ml-horas-total').textContent = textoDelTotalDeLasDos(delMes.valor, acumuladas.valor);
+}
+
+// Mientras se piden los topes: los campos de las horas, deshabilitados, y los rótulos con el mes de la fecha y sin topes (nunca uno
+// viejo); lo elegido queda
+function pintarLosTopesEnEspera(formulario) {
+  for (const id of ['ml-horas', 'ml-horas-del-mes', 'ml-horas-acumuladas']) porId(id).disabled = true;
+  if (!conLasDosHoras(formulario)) return;
+  const desde = porId('ml-desde').value;
+  porId('ml-horas-del-mes-rotulo').innerHTML = htmlDelRotuloDelMes(null, desde);
+  porId('ml-horas-acumuladas-tope').textContent = '';
+}
+
+// Los topes de unas horas a favor (GET /mi-espacio/horas-a-favor/topes, con la fecha elegida —sin una, los de hoy, que dice el
+// servidor— y, al corregir, el id de la carga, así sus horas vuelven a los topes): al abrir el formulario, al elegir el tipo y, con
+// `esperar`, 300 ms después del último cambio de la fecha. Cada pedido se numera (`pagina.pedidos.topes`): una respuesta vieja, o de
+// otro formulario, se descarta. Mientras, el cálculo y «Guardar» esperan. Al llegar: los dos campos si hay acumuladas (o la carga que
+// se corrige ya las usa); si no, o si no llegaron, «Horas», como siempre (el servidor valida igual). En otro tipo, nada que pedir
+function pedirLosTopes(formulario, { esperar = false } = {}) {
+  if (pagina.formulario !== formulario || formulario.nombre !== 'licencia') return;
+  clearTimeout(formulario.temporizadorDeTopes);
+  const pedido = ++pagina.pedidos.topes;
+  if (formulario.tipo !== 'horas_a_favor') {
+    formulario.cargandoTopes = false;
+    pintarLasDosHoras(formulario);
+    return;
+  }
+  formulario.cargandoTopes = true;
+  formulario.topes = null;
+  formulario.esperando = true;
+  porId('ml-guardar').disabled = true;
+  pintarLosTopesEnEspera(formulario);
+  if (esperar) formulario.temporizadorDeTopes = setTimeout(() => traerLosTopes(formulario, pedido), ESPERA_DEL_CALCULO);
+  else traerLosTopes(formulario, pedido);
+}
+
+async function traerLosTopes(formulario, pedido) {
+  const vigente = () => pagina.formulario === formulario && pedido === pagina.pedidos.topes;
+  if (!vigente()) return;
+  const desde = porId('ml-desde').value;
+  const id = formulario.fila?.id;
+  const consulta = [esFechaDeTexto(desde) ? `fecha=${encodeURIComponent(desde)}` : '',
+    Number.isInteger(id) ? `id=${encodeURIComponent(String(id))}` : ''].filter(conTexto).join('&');
+  let topes = null;
+  try {
+    const { data } = await API.pedirJson('GET', `/mi-espacio/horas-a-favor/topes${consulta ? `?${consulta}` : ''}`);
+    if (esObjeto(data) && conTexto(data.mes_texto)) topes = data;
+  } catch (error) {
+    if (!vigente()) return;
+    if (error?.status === 401) {
+      irAlLogin();
+      return;
+    }
+  }
+  if (!vigente()) return;
+  const elegidas = horasDeLosCampos(formulario);
+  const antes = conLasDosHoras(formulario);
+  formulario.topes = topes;
+  formulario.cargandoTopes = false;
+  formulario.dosHoras = (topes !== null && Number(topes.acumuladas) > 0) || conTexto(formulario.valores.horas_acumuladas);
+  // De los dos campos a «Horas»: el total
+  if (antes && !conLasDosHoras(formulario)) {
+    const total = horasElegidas(elegidas.delMes) + horasElegidas(elegidas.acumuladas);
+    porId('ml-horas').value = total > 0 ? String(total) : '';
+  }
+  pintarLasDosHoras(formulario, elegidas);
+  pintarMostrar();
+  programarCalculo();
+}
+
+// «Mostrar a mis compañeros»: solo para administración (los compañeros son administración) y solo en una licencia de día
+// entero (esDeDiaEntero): una franquicia o unas horas de menos de 7 horas no se les muestran nunca (spec, sección 7). Oculta,
+// no se lee: viaja lo que tenía
+function pintarMostrar() {
+  const formulario = pagina.formulario;
+  if (!formulario) return;
+  const { prefijo } = FORMULARIOS[formulario.nombre];
+  const horas = porId(`${prefijo}-grupo-horas`).hidden ? '' : horasDelCampo(formulario);
+  porId(`${prefijo}-grupo-mostrar`).hidden = pagina.resumen?.persona?.ve_companeros !== true
+    || !esDeDiaEntero(formulario.tipo, horas, modalidadActual());
+}
+
+// Lo que dice el formulario abierto, como lo lee valoresDeLicencia
+function valoresDelFormulario(formulario) {
+  const { nombre, valores, tipo } = formulario;
+  const { prefijo } = FORMULARIOS[nombre];
+  const desde = porId(nombre === 'licencia' ? 'ml-desde' : 'mu-fecha').value;
+  const grupoDeHoras = porId(`${prefijo}-grupo-horas`);
+  const leidos = {
+    ...valores, tipo, desde,
+    hasta: nombre === 'licencia' && !deUnDia(tipo) ? porId('ml-hasta').value : desde,
+    horas: grupoDeHoras.hidden ? '' : horasDelCampo(formulario),
+    // Con los dos campos, la parte acumulada; si no, '' (el cuerpo va sin ella: todo del mes)
+    horas_acumuladas: !grupoDeHoras.hidden && conLasDosHoras(formulario)
+      ? String(horasElegidas(porId('ml-horas-acumuladas').value)) : '',
+    nota: porId(`${prefijo}-nota`).value
+  };
+  if (!porId(`${prefijo}-grupo-mostrar`).hidden) leidos.mostrar = porId(`${prefijo}-mostrar`).checked;
+  if (nombre === 'licencia' && !porId('ml-grupo-autorizado').hidden) leidos.autorizado = porId('ml-autorizado').value;
+  return leidos;
+}
+
+// Si el campo «Autorizo a…» está a la vista: el firmante titular, en unas vacaciones que pasan a Configuración
+const conPersonaACargo = (formulario) => formulario.nombre === 'licencia' && !porId('ml-grupo-autorizado').hidden;
+
+// Cada cambio pide el cálculo 300 ms después del último; mientras, «Guardar» espera
+function programarCalculo() {
+  const formulario = pagina.formulario;
+  if (!formulario) return;
+  clearTimeout(formulario.temporizador);
+  formulario.pedido += 1;
+  formulario.esperando = true;
+  porId(`${FORMULARIOS[formulario.nombre].prefijo}-guardar`).disabled = true;
+  formulario.temporizador = setTimeout(() => pedirCalculo(formulario), ESPERA_DEL_CALCULO);
+}
+
+// Pide el cálculo enseguida, sin la espera (desde «Guardar», cuando el anterior no llegó): mientras, «Guardar» espera
+function calcularYa(formulario) {
+  clearTimeout(formulario.temporizador);
+  formulario.esperando = true;
+  porId(`${FORMULARIOS[formulario.nombre].prefijo}-guardar`).disabled = true;
+  return pedirCalculo(formulario);
+}
+
+// El cálculo del servidor (POST /licencias/calculo, sin guardar nada): los días, de qué licencia salen, lo que queda, el error si
+// no se puede guardar (en su campo, sin llevarse el foco) y el paso a Configuración. Sin el tipo y las fechas (o las horas) no hay
+// nada que pedir. Una respuesta vieja (el formulario cambió o se cerró mientras) se descarta. Si no llega (un error del servidor
+// o sin conexión), el formulario lo dice y queda `sinCalculo`: sin él no se ve qué pasa con Configuración
+async function pedirCalculo(formulario) {
+  // Mientras llegan los topes de unas horas a favor, espera: al llegar, lo vuelven a pedir (con los campos de su mes)
+  if (pagina.formulario !== formulario || formulario.cargandoTopes) return;
+  const pedido = ++formulario.pedido;
+  const valores = valoresDelFormulario(formulario);
+  const { tipo, desde, hasta, horas, horas_acumuladas: acumuladas } = erroresDeLicencia(valores, { modalidad: modalidadActual() });
+  let data = null;
+  let falla = null;
+  if (!tipo && !desde && !hasta && !horas && !acumuladas) {
+    const cuerpo = cuerpoDeLicencia(valores, { tipos: pagina.resumen?.tipos });
+    if (valores.id !== null) cuerpo.id = valores.id;
+    try {
+      ({ data } = await API.pedirJson('POST', '/mi-espacio/licencias/calculo', cuerpo));
+    } catch (error) {
+      if (pagina.formulario !== formulario || pedido !== formulario.pedido) return;
+      if (error?.status === 401) {
+        irAlLogin();
+        return;
+      }
+      falla = error ?? {};
+    }
+    if (pagina.formulario !== formulario || pedido !== formulario.pedido) return;
+  }
+  formulario.sinCalculo = falla !== null;
+  await pintarCalculo(formulario, esObjeto(data) ? data : null, valores, falla);
+  if (pagina.formulario !== formulario || pedido !== formulario.pedido) return;
+  formulario.esperando = false;
+  porId(`${FORMULARIOS[formulario.nombre].prefijo}-guardar`).disabled = formulario.guardando;
+}
+
+async function pintarCalculo(formulario, data, valores, falla = null) {
+  const { nombre } = formulario;
+  const { prefijo } = FORMULARIOS[nombre];
+  // Unos días restituidos: el «Hasta» es el que pone Mi espacio (`vista.hasta`); sin vista, o si el cálculo no llegó, vacío (nunca uno
+  // que no es del «Desde» de la pantalla)
+  let conElHasta = valores;
+  if (nombre === 'licencia' && valores.tipo === 'restituidos') {
+    const hasta = falla === null && esObjeto(data?.vista) && esFechaDeTexto(data.vista.hasta) ? data.vista.hasta : '';
+    porId('ml-hasta').value = hasta;
+    conElHasta = { ...valores, hasta };
+  }
+  formulario.paso = esObjeto(data?.paso) ? data.paso : null;
+  limpiarErrores(nombre);
+  if (falla !== null) avisoDelModal(nombre, textoSinCalculo(falla));
+  if (esObjeto(data?.error) && conTexto(data.error.mensaje)) {
+    if (!ponerError(controlDelCampo(nombre, data.error.campo), data.error.mensaje)) {
+      avisoDelModal(nombre, data.error.mensaje);
+    }
+  }
+  const calculo = porId(`${prefijo}-calculo`);
+  calculo.innerHTML = htmlDelCalculo(data, valores.tipo);
+  calculo.hidden = calculo.innerHTML === '';
+  if (nombre === 'licencia') await prepararPersonaACargo(formulario);
+  if (pagina.formulario !== formulario) return;
+  pintarPaso(formulario);
+  actualizarSinAuditor(formulario, conElHasta);
+}
+
+// El campo «Autorizo a presentar las notas en mi nombre a:» (spec, sección 6): solo cuando el paso pasa y el firmante titular
+// carga vacaciones, con las personas de GET /mi-espacio/firmante. Viene vacío; al corregir, con la persona a cargo que ya tiene
+// (y, si ya no cumple las condiciones, igual elegida: si no, guardar otro cambio la quitaría)
+async function prepararPersonaACargo(formulario) {
+  const grupo = porId('ml-grupo-autorizado');
+  const paso = formulario.paso;
+  if (!(paso?.pasa === true && paso.firmante?.puede_autorizar === true)) {
+    grupo.hidden = true;
+    return;
+  }
+  const firmante = await datosDelFirmante();
+  if (pagina.formulario !== formulario) return;
+  if (firmante.soy_titular !== true) {
+    grupo.hidden = true;
+    return;
+  }
+  formulario.firmante = firmante;
+  if (!formulario.autorizadoListo) {
+    const actual = formulario.valores.autorizado;
+    const personas = listaDe(firmante.autorizables).map((persona) => ({ id: String(persona.id), nombre: persona.nombre_completo }));
+    if (conTexto(actual) && !personas.some((persona) => persona.id === actual)) {
+      personas.push({ id: actual, nombre: 'Otro usuario (ya no cumple las condiciones)' });
+    }
+    porId('ml-autorizado').innerHTML = htmlDeAutorizables(personas);
+    porId('ml-autorizado').value = actual;
+    formulario.autorizadoListo = true;
+  }
+  grupo.hidden = false;
+}
+
+// GET /mi-espacio/firmante, una sola vez (si falla, se vuelve a pedir la próxima)
+function datosDelFirmante() {
+  pagina.firmante ??= API.pedirJson('GET', '/mi-espacio/firmante').then(
+    ({ data }) => (esObjeto(data) ? data : {}),
+    (error) => {
+      pagina.firmante = null;
+      if (error?.status === 401) irAlLogin();
+      return {};
+    }
+  );
+  return pagina.firmante;
+}
+
+// El aviso del paso a Configuración: azul si pasa; si no, en ámbar, por qué. En las vacaciones del titular, con el efecto en las
+// notas de la persona elegida y sus días de licencia, solo si se sabe quién queda a cargo: «Nadie» o una de la lista. Con el
+// campo oculto al corregir (GET /mi-espacio/firmante falló: la persona que tenía se conserva) o con «Otro usuario (ya no cumple
+// las condiciones)», «Sin persona autorizada…» sería falso y el efecto no va. En unas nuevas con el campo oculto, nadie queda a
+// cargo (autorizado_id no viaja): ahí sí es cierto y va
+function pintarPaso(formulario) {
+  const caja = porId(`${FORMULARIOS[formulario.nombre].prefijo}-paso`);
+  const valores = valoresDelFormulario(formulario);
+  const conCampo = conPersonaACargo(formulario);
+  const elegida = conCampo
+    ? listaDe(formulario.firmante?.autorizables).find((persona) => String(persona.id) === valores.autorizado) : undefined;
+  const nuevaSinCampo = !conCampo && formulario.nombre === 'licencia' && formulario.fila === null;
+  caja.innerHTML = htmlDelPaso(formulario.paso, {
+    autorizado: elegida?.nombre_completo ?? null, ausencias: elegida?.ausencias ?? [],
+    hoy: formulario.firmante?.hoy ?? Utils.hoyEnArgentina(), desde: valores.desde, hasta: valores.hasta,
+    conEfecto: nuevaSinCampo || (conCampo && (elegida !== undefined || !conTexto(valores.autorizado)))
+  });
+  caja.hidden = caja.innerHTML === '';
+  caja.classList.toggle('azul', formulario.paso?.pasa === true);
+  caja.classList.toggle('ambar', formulario.paso?.pasa !== true);
+}
+
+// Los días sin auditor de las fechas del formulario (GET /usuarios/licencias/sin-auditor, como en Configuración): solo para quien
+// audita y solo si el paso pasa. Al corregir una creada, sin contar su licencia de Configuración (excluir). Solo avisa. Sin aviso,
+// la caja queda oculta y vacía: «Guardar» la tiene en su aria-describedby, y un nodo oculto igual entra en la descripción
+async function actualizarSinAuditor(formulario, valores) {
+  const caja = porId(`${FORMULARIOS[formulario.nombre].prefijo}-sin-auditor`);
+  const pedido = ++formulario.pedidoSinAuditor;
+  const parametros = formulario.paso?.pasa === true && Auth.isAuditor?.() === true ? parametrosSinAuditor({
+    usuarioId: Auth.getUser?.()?.id, desde: valores.desde, hasta: valores.hasta, excluir: valores.licencia_oficial,
+    hoy: Utils.hoyEnArgentina()
+  }) : null;
+  if (parametros === null) {
+    caja.innerHTML = '';
+    caja.hidden = true;
+    return;
+  }
+  let periodos = [];
+  try {
+    periodos = listaDe(await API.getSinAuditor(parametros));
+  } catch { /* sin el dato no hay aviso */ }
+  if (pagina.formulario !== formulario || pedido !== formulario.pedidoSinAuditor) return;
+  caja.innerHTML = periodos.map((periodo) => `<p>${esc(textoSinAuditor(periodo))}</p>`).join('');
+  caja.hidden = periodos.length === 0;
+}
+
+// «Guardar»: los errores del formulario antes de pedir nada; si el último cálculo no llegó, lo vuelve a pedir y no guarda (sin él
+// no se vio qué pasa con Configuración); si no, POST o PUT. Mientras, «Guardar» queda deshabilitado (un doble clic manda un solo
+// pedido). Con un 2xx, la lista de Licencias pasa al año de lo guardado (pagina.anioDeLicencias, el de su `desde`: spec
+// 2026-10-28-mi-espacio-licencia-anulada, 2.3). Guardada una licencia, el modal pasa al segundo paso (pasarAlSegundoPaso); un uso
+// autorizado, que no tiene nota, se cierra, se avisa lo que dijo el servidor y se vuelve a pedir todo
+async function guardarLicencia(nombre) {
+  const formulario = pagina.formulario;
+  const boton = porId(`${FORMULARIOS[nombre].prefijo}-guardar`);
+  if (formulario?.nombre !== nombre || formulario.guardando || formulario.esperando) return;
+  const valores = valoresDelFormulario(formulario);
+  if (mostrarErrores(nombre, conSusControles(nombre, erroresDeLicencia(valores, { modalidad: modalidadActual() })))) return;
+  if (formulario.sinCalculo) {
+    await calcularYa(formulario);
+    // Mientras esperaba quedó deshabilitado: el foco vuelve a él
+    if (pagina.formulario === formulario) boton.focus?.();
+    return;
+  }
+  const cuerpo = cuerpoDeLicencia(valores, { soyTitular: conPersonaACargo(formulario), tipos: pagina.resumen?.tipos });
+  formulario.guardando = true;
+  boton.disabled = true;
+  try {
+    const respuesta = formulario.fila
+      ? await API.pedirJson('PUT', `/mi-espacio/licencias/${encodeURIComponent(formulario.fila.id)}`, cuerpo)
+      : await API.pedirJson('POST', '/mi-espacio/licencias', cuerpo);
+    formulario.guardando = false;
+    pagina.anioDeLicencias = anioDeLaLicencia(cuerpo.desde);
+    if (nombre === 'licencia') {
+      pasarAlSegundoPaso(formulario, respuesta);
+      return;
+    }
+    cerrarModal(FORMULARIOS[nombre].modal);
+    avisarLaRespuesta(respuesta);
+    volverAPedirTodo();
+  } catch (error) {
+    formulario.guardando = false;
+    boton.disabled = formulario.esperando;
+    if (error?.status === 401) irAlLogin();
+    else if (error?.status === 404) noEstaMas(FORMULARIOS[nombre].modal, error);
+    else if (pagina.formulario === formulario) mostrarFallaDelServidor(nombre, error, boton);
+  } finally {
+    if (pagina.formulario === formulario) boton.disabled = formulario.esperando;
+  }
+}
+
+// ---- El segundo paso de «Cargar licencia» (spec 2026-10-27-mi-espacio-licencia-word, 6) ----
+
+/**
+ * Guardada una licencia (POST o PUT, 2xx), el modal no se cierra: pasa al segundo paso (mostrarSegundoPaso), con la licencia
+ * guardada, la nota a la vista y «Descargar Word». Antes de recargar se guarda adónde va el foco al cerrar: el respaldo del botón
+ * que abrió el modal, como después de cualquier guardado (volverAPedirTodo lo calcula con el foco, que acá queda en el modal, y la
+ * recarga reemplaza ese botón). La página vuelve a pedir todo de fondo (así la lista de atrás ya la muestra) y el formulario
+ * termina: su cálculo, la persona a cargo y sus temporizadores ya no siguen. Al cerrar el modal (Escape, la × o «Listo»), el
+ * segundo paso se va, el foco que quedó en el modal se suelta y, cuando termina la recarga, va al respaldo (si el botón que lo abrió
+ * sigue ahí, cerrarModal se lo da mientras tanto)
+ */
+function pasarAlSegundoPaso(formulario, respuesta) {
+  const { modal } = FORMULARIOS.licencia;
+  const sesion = pagina.modales.find((una) => una.id === modal) ?? null;
+  const respaldo = respaldoDelFoco(sesion?.volverA ?? null);
+  const recarga = volverAPedirTodo();
+  mostrarSegundoPaso({
+    id: respuesta?.data?.id ?? formulario.fila?.id ?? null, corregida: Boolean(formulario.fila), avisos: respuesta?.avisos ?? []
+  });
+  cerrarFormulario();
+  if (sesion === null) return;
+  sesion.alCerrar = () => {
+    soltarElFocoDe(modal);
+    quitarSegundoPaso();
+    const aplicar = () => devolverElFoco(respaldo);
+    recarga.then(aplicar, aplicar);
+  };
+}
+
+// El foco que quedó dentro de un modal que se cierra se suelta (queda en <body>): así devolverElFoco lo lleva al respaldo
+function soltarElFocoDe(id) {
+  const activo = document.activeElement;
+  if (activo && activo !== document.body && porId(id)?.contains?.(activo)) activo.blur?.();
+}
+
+/**
+ * Muestra el segundo paso de la licencia `id` en lugar del formulario: el título («Licencia cargada» o «Licencia corregida»), el
+ * cuerpo (los avisos del guardado y «Armando la nota…», hasta que llega GET …/nota) y el pie («Listo» y «Descargar Word»). El
+ * foco va a «Descargar Word» y #me-anuncio dice lo que se guardó, con los avisos (no hay aviso flotante: lo dice el título)
+ */
+function mostrarSegundoPaso({ id, corregida, avisos }) {
+  pagina.segundoPaso = { id, corregida: corregida === true, avisos: avisosDelGuardado(avisos) };
+  const pedido = ++pagina.pedidos.nota;
+  porId('modal-licencia-titulo').textContent = tituloDelSegundoPaso(pagina.segundoPaso.corregida);
+  porId('ml-cuerpo').hidden = true;
+  porId('ml-pie-del-formulario').hidden = true;
+  const cuerpo = porId('ml-paso-dos');
+  cuerpo.innerHTML = htmlDelSegundoPasoEnEspera(pagina.segundoPaso.avisos);
+  cuerpo.hidden = false;
+  cuerpo.scrollTop = 0;
+  porId('ml-paso-dos-pie').hidden = false;
+  porId('ml-descargar-word').focus?.();
+  anunciar(anuncioDelSegundoPaso(pagina.segundoPaso.corregida, pagina.segundoPaso.avisos));
+  pedirLaNotaDelSegundoPaso(id, pedido);
+}
+
+// GET …/nota: con la respuesta, la licencia, en qué lista quedó y la hoja (htmlDelSegundoPaso); si no llega (o llega sin hoja),
+// MENSAJE_SIN_VISTA, también anunciado, con los avisos del guardado detrás (el anuncio pisa el anterior, que los decía): la licencia
+// ya se guardó y «Descargar Word» sigue andando. Con un 401, al login. Una respuesta de otro segundo paso, o que llega con el modal
+// cerrado (`pedido` ya no es el último), no toca nada
+async function pedirLaNotaDelSegundoPaso(id, pedido) {
+  let data = null;
+  let falla = null;
+  try {
+    ({ data } = await API.pedirJson('GET', `/mi-espacio/licencias/${encodeURIComponent(id)}/nota`));
+  } catch (error) {
+    falla = error ?? new Error('');
+  }
+  if (pedido !== pagina.pedidos.nota || pagina.segundoPaso === null) return;
+  if (falla?.status === 401) {
+    irAlLogin();
+    return;
+  }
+  const { avisos } = pagina.segundoPaso;
+  if (falla === null && esObjeto(data) && conTexto(data.html)) {
+    porId('ml-paso-dos').innerHTML = htmlDelSegundoPaso({
+      fila: data.fila, html: data.html, aclaracion: data.aclaracion, avisos, lista: data.lista
+    });
+    return;
+  }
+  porId('ml-paso-dos').innerHTML = htmlDelSegundoPasoSinVista(avisos);
+  anunciar([MENSAJE_SIN_VISTA, ...avisos].join(' '));
+}
+
+// Al cerrar el modal: el segundo paso se va (una respuesta de GET …/nota que llegue después se descarta) y vuelven el cuerpo y el
+// pie del formulario, para la próxima vez que se abra
+function quitarSegundoPaso() {
+  pagina.pedidos.nota += 1;
+  pagina.segundoPaso = null;
+  const cuerpo = porId('ml-paso-dos');
+  cuerpo.hidden = true;
+  cuerpo.innerHTML = '';
+  porId('ml-paso-dos-pie').hidden = true;
+  porId('ml-cuerpo').hidden = false;
+  porId('ml-pie-del-formulario').hidden = false;
+}
+
+// «Borrar»: la confirmación, sobre el formulario
+function pedirBorrarLicencia(nombre) {
+  const formulario = pagina.formulario;
+  if (formulario?.nombre !== nombre || !formulario.fila || formulario.guardando) return;
+  const { id } = formulario.fila;
+  pedirConfirmacion({
+    titulo: nombre === 'uso' ? '¿Borrar el uso autorizado?' : '¿Borrar la licencia?', texto: textoDeConfirmacion(formulario.fila),
+    volverA: porId(`${FORMULARIOS[nombre].prefijo}-borrar`), formulario: FORMULARIOS[nombre].modal,
+    borrar: () => API.pedirJson('DELETE', `/mi-espacio/licencias/${encodeURIComponent(id)}`)
+  });
+}
+
+// ---- «Pedir la restitución» y el borrado de un pedido (spec 2026-10-31-mi-espacio-dias-restituidos, 9; el caso B) ----
+
+// Lo que dice el modal si no se encuentra el grupo, si no llega la vista o si, ya pedida, no llega la nota
+const MENSAJE_SIN_EL_GRUPO = 'No se pudo abrir «Pedir la restitución». Probá de nuevo en unos minutos.';
+const MENSAJE_SIN_LA_VISTA_DE_RESTITUCION = 'No se pudo armar la vista de la nota. Probá de nuevo en unos minutos.';
+const MENSAJE_SIN_LA_NOTA_DE_RESTITUCION = 'La restitución quedó pedida, pero no se pudo armar la vista de la nota. Probá «Descargar '
+  + 'Word» o bajala después con «Word» en la lista.';
+
+// Las acciones del servidor que hay en la página (`{ texto, tipo, grupo, restitucion }`): la de cada aviso de los días por restituir
+// y de «Vence pronto» del Resumen y la de cada línea de las filas de la lista de Licencias
+const accionesDeLaPagina = () => [
+  ...listaDe(pagina.resumen?.restituciones).map((aviso) => aviso.accion),
+  ...listaDe(pagina.resumen?.vence_pronto).map((cosa) => cosa.accion),
+  ...listaDe(pagina.licencias?.licencias).flatMap((fila) => listaDe(fila.restituciones).map((linea) => linea.accion))
+];
+
+// «Cancelar» del formulario del modal: el foco, mientras «Pedir la restitución» espera la vista
+const cancelarDeLaRestitucion = () => porId('mr-pie').querySelector('[data-cerrar]');
+
+/**
+ * Abre «Pedir la restitución» del grupo `grupo` (el de su botón: el aviso, «Vence pronto» o la línea de la fila), con lo que se pide
+ * (la `restitucion` de su acción, restitucionDelGrupo): el formulario, con «Armando la nota…» hasta que llega la vista (GET
+ * /mi-espacio/restituciones/vista). Mientras, «Pedir la restitución» queda deshabilitado y el foco va a «Cancelar»; con la vista, al
+ * botón. Un clic en el velo no lo cierra. Al cerrarlo después de un 400 (el grupo ya no está por restituir), la página vuelve a
+ * pedir todo y el foco va al equivalente del botón que lo abrió. Si el grupo no está entre lo que llegó del servidor, se avisa y no
+ * se abre
+ */
+function abrirRestitucion({ grupo, volverA = null } = {}) {
+  const restitucion = restitucionDelGrupo(grupo, accionesDeLaPagina());
+  if (restitucion === null) {
+    avisarMiEspacio(MENSAJE_SIN_EL_GRUPO, 'error');
+    return;
+  }
+  const sesion = { grupo, restitucion, pidiendo: false, id: null, recargarAlCerrar: false };
+  quitarSegundoPasoDeRestitucion();
+  pagina.restitucion = sesion;
+  porId('modal-restitucion-titulo').textContent = 'Pedir la restitución';
+  avisoDelModal('restitucion', '');
+  porId('mr-vista').innerHTML = htmlDeMensaje(TEXTO_ARMANDO_LA_NOTA);
+  porId('mr-pedir').disabled = true;
+  abrirModal('modal-restitucion', {
+    volverA,
+    foco: () => (porId('mr-pedir').disabled ? cancelarDeLaRestitucion() : porId('mr-pedir')),
+    alCerrar: () => {
+      const recargar = sesion.recargarAlCerrar === true;
+      quitarSegundoPasoDeRestitucion();
+      if (recargar) recargarConElFocoEn(volverA);
+    }
+  });
+  pedirLaVistaDeRestitucion(sesion);
+}
+
+// Vuelve a pedir todo y, cuando termina, el foco va al equivalente de `control` (el botón que abrió el modal, que la recarga
+// reemplaza: respaldoDelFoco, tomado antes)
+function recargarConElFocoEn(control) {
+  const respaldo = respaldoDelFoco(control);
+  const aplicar = () => devolverElFoco(respaldo);
+  volverAPedirTodo().then(aplicar, aplicar);
+}
+
+// GET /mi-espacio/restituciones/vista?licencia_id=&anio=&tanda=: el recuadro, la aclaración y la hoja (htmlDeLaVistaDeRestitucion).
+// Si no llega, el motivo arriba del modal (el del servidor: un grupo que ya no está por restituir, y entonces al cerrar se vuelve a
+// pedir todo; sin respuesta, MENSAJE_SIN_CONEXION) y la vista vacía. Llegue o no, «Pedir la restitución» se habilita (el servidor
+// vuelve a controlar) y, si el foco seguía en «Cancelar», pasa a él. Con un 401, al login. Una respuesta de otra apertura, o que
+// llega con el modal cerrado o ya pedida, no toca nada
+async function pedirLaVistaDeRestitucion(sesion) {
+  const { licencia_id: licenciaId, anio, tanda } = sesion.restitucion;
+  const ruta = `/mi-espacio/restituciones/vista?licencia_id=${encodeURIComponent(licenciaId)}&anio=${encodeURIComponent(anio)}`
+    + `&tanda=${encodeURIComponent(tanda)}`;
+  try {
+    const { data } = await API.pedirJson('GET', ruta);
+    if (pagina.restitucion !== sesion || sesion.id !== null) return;
+    porId('mr-vista').innerHTML = htmlDeLaVistaDeRestitucion(data);
+  } catch (error) {
+    if (pagina.restitucion !== sesion || sesion.id !== null) return;
+    if (error?.status === 401) {
+      irAlLogin();
+      return;
+    }
+    if (error?.status === 400) sesion.recargarAlCerrar = true;
+    porId('mr-vista').innerHTML = '';
+    avisoDelModal('restitucion', motivoDeLaFalla(error, MENSAJE_SIN_LA_VISTA_DE_RESTITUCION));
+  }
+  const boton = porId('mr-pedir');
+  boton.disabled = false;
+  if (document.activeElement === cancelarDeLaRestitucion()) boton.focus?.();
+}
+
+// «Pedir la restitución»: POST /mi-espacio/restituciones con lo que se pide. Mientras, el botón queda deshabilitado y el modal no se
+// cierra (un doble clic manda un solo pedido). Con un 201, el segundo paso (pasarAlSegundoPasoDeRestitucion); con un 400 (el grupo ya
+// no está por restituir, o es del caso A), el motivo arriba del modal, que sigue abierto, el foco vuelve al botón y, al cerrar, la
+// página vuelve a pedir todo; con un 401, al login
+async function pedirLaRestitucion() {
+  const sesion = pagina.restitucion;
+  const boton = porId('mr-pedir');
+  if (!sesion || sesion.pidiendo || sesion.id !== null) return;
+  sesion.pidiendo = true;
+  boton.disabled = true;
+  avisoDelModal('restitucion', '');
+  try {
+    const respuesta = await API.pedirJson('POST', '/mi-espacio/restituciones', { ...sesion.restitucion });
+    sesion.pidiendo = false;
+    if (pagina.restitucion === sesion) pasarAlSegundoPasoDeRestitucion(sesion, respuesta);
+  } catch (error) {
+    sesion.pidiendo = false;
+    boton.disabled = false;
+    if (error?.status === 401) irAlLogin();
+    else if (pagina.restitucion === sesion) {
+      if (error?.status === 400) sesion.recargarAlCerrar = true;
+      avisoDelModal('restitucion', motivoDeLaFalla(error, MENSAJE_NO_SE_GUARDO));
+      boton.focus?.();
+    }
+  }
+}
+
+/**
+ * Pedida la restitución, el modal no se cierra: pasa al segundo paso, como «Cargar licencia» (pasarAlSegundoPaso). El título
+ * («Restitución pedida»), el cuerpo con «Armando la nota…» hasta que llega GET …/:id/nota, y el pie («Listo» y «Descargar Word»,
+ * que recibe el foco); #me-anuncio dice lo que dijo el servidor («Restitución pedida: los 2 días volvieron a tu licencia 2025.») y
+ * que se puede bajar la nota. La página vuelve a pedir todo de fondo y, al cerrar, el foco va adonde va después de cualquier
+ * guardado (el respaldo del botón que abrió el modal, tomado antes de la recarga), probando primero el «Word» nuevo de esta
+ * restitución (el de la línea de su fila, si se pidió desde ahí)
+ */
+function pasarAlSegundoPasoDeRestitucion(sesion, respuesta) {
+  const modal = 'modal-restitucion';
+  const abierta = pagina.modales.find((una) => una.id === modal) ?? null;
+  const id = respuesta?.data?.id;
+  sesion.id = Number.isInteger(id) ? id : null;
+  const respaldo = respaldoDelFoco(abierta?.volverA ?? null);
+  if (respaldo !== null && sesion.id !== null) {
+    respaldo.candidatos.unshift({ atributo: 'data-word-restitucion', valor: String(sesion.id), dentro: null });
+  }
+  const recarga = volverAPedirTodo();
+  porId('modal-restitucion-titulo').textContent = 'Restitución pedida';
+  porId('mr-cuerpo').hidden = true;
+  porId('mr-pie').hidden = true;
+  const cuerpo = porId('mr-paso-dos');
+  cuerpo.innerHTML = htmlDeMensaje(TEXTO_ARMANDO_LA_NOTA);
+  cuerpo.hidden = false;
+  cuerpo.scrollTop = 0;
+  porId('mr-paso-dos-pie').hidden = false;
+  porId('mr-descargar-word').focus?.();
+  anunciar(`${conTexto(respuesta?.message) ? respuesta.message : 'Restitución pedida.'} Podés descargar la nota en Word.`);
+  if (abierta !== null) {
+    abierta.alCerrar = () => {
+      soltarElFocoDe(modal);
+      quitarSegundoPasoDeRestitucion();
+      const aplicar = () => devolverElFoco(respaldo);
+      recarga.then(aplicar, aplicar);
+    };
+  }
+  pedirLaNotaDeRestitucion(sesion);
+}
+
+// GET /mi-espacio/restituciones/:id/nota: las vacaciones, lo que volvió y la hoja (htmlDelSegundoPasoDeRestitucion); si no llega (o
+// llega sin hoja, o sin id), MENSAJE_SIN_LA_NOTA_DE_RESTITUCION, también anunciado: la restitución ya se pidió y «Descargar Word»
+// sigue andando. Con un 401, al login. Una respuesta que llega con el modal cerrado, o de otra apertura, no toca nada
+async function pedirLaNotaDeRestitucion(sesion) {
+  let data = null;
+  let falla = null;
+  try {
+    if (sesion.id === null) throw new Error('');
+    ({ data } = await API.pedirJson('GET', `/mi-espacio/restituciones/${encodeURIComponent(sesion.id)}/nota`));
+  } catch (error) {
+    falla = error ?? new Error('');
+  }
+  if (pagina.restitucion !== sesion) return;
+  if (falla?.status === 401) {
+    irAlLogin();
+    return;
+  }
+  if (falla === null && esObjeto(data) && conTexto(data.html)) {
+    porId('mr-paso-dos').innerHTML = htmlDelSegundoPasoDeRestitucion(data);
+    return;
+  }
+  porId('mr-paso-dos').innerHTML = htmlDeError(MENSAJE_SIN_LA_NOTA_DE_RESTITUCION);
+  anunciar(MENSAJE_SIN_LA_NOTA_DE_RESTITUCION);
+}
+
+// Al cerrar el modal (y, por las dudas, al abrirlo): lo del pedido se va (una respuesta que llegue después se descarta) y vuelven el
+// cuerpo y el pie del formulario, vacíos, para la próxima vez
+function quitarSegundoPasoDeRestitucion() {
+  pagina.restitucion = null;
+  const cuerpo = porId('mr-paso-dos');
+  cuerpo.hidden = true;
+  cuerpo.innerHTML = '';
+  porId('mr-paso-dos-pie').hidden = true;
+  porId('mr-vista').innerHTML = '';
+  porId('mr-cuerpo').hidden = false;
+  porId('mr-pie').hidden = false;
+}
+
+// «Borrar el pedido» (en la línea de su fila y en su «Revisá…» de arriba del Resumen): la confirmación (textoDeConfirmacionDeRestitucion)
+// y, si se confirma, DELETE /mi-espacio/restituciones/:id. Un 409 (ya pasó el plazo) cierra la confirmación y se avisa con el mensaje
+// del servidor, como un 404, y se vuelve a pedir todo
+function pedirBorrarRestitucion(id, boton) {
+  pedirConfirmacion({
+    titulo: 'Borrar el pedido', texto: textoDeConfirmacionDeRestitucion(), volverA: boton, formulario: null,
+    borrar: () => API.pedirJson('DELETE', `/mi-espacio/restituciones/${encodeURIComponent(id)}`), cierranCon: [409]
+  });
+}
+
+// ---- «Cargar horas extras» ----
+
+// Abre «Cargar horas extras» (nuevas, o la corrección de un día del día por día), con lo que suman en el mes: si la tabla de la
+// pestaña todavía no llegó, la pide, sin mostrar la pestaña
+async function abrirHorasExtras({ dia = null, volverA = null } = {}) {
+  if (pagina.resumen === null && !(await hayResumen())) return;
+  if (pagina.resumen?.abrir_saldos === true) {
+    abrirSaldos(volverA);
+    return;
+  }
+  const valores = valoresDeHoras(dia);
+  let titulo = modalidadActual() === 'planta' ? 'Cargar horas extras al 100%' : 'Cargar horas extras';
+  if (dia) titulo = `Corregir las horas extras del ${comoTexto(dia.fecha_texto)}`;
+  porId('modal-horas-titulo').textContent = titulo;
+  for (const campo of ['fecha', 'desde', 'hasta', 'nota']) porId(`mh-${campo}`).value = valores[campo];
+  pagina.horasExtras = { dia, valores, guardando: false };
+  limpiarErrores('horasExtras');
+  porId('mh-borrar').hidden = !dia;
+  porId('mh-guardar').disabled = false;
+  actualizarLaSuma();
+  if (pagina.horas === null) cargarHorasExtras(null, { conAnuncio: false }).then(actualizarLaSuma);
+  abrirModal('modal-horas', { volverA, foco: () => porId('mh-fecha'), alCerrar: () => { pagina.horasExtras = null; } });
+}
+
+const valoresDeLasHorasExtras = () => ({
+  ...pagina.horasExtras.valores, fecha: porId('mh-fecha').value, desde: porId('mh-desde').value, hasta: porId('mh-hasta').value,
+  nota: porId('mh-nota').value
+});
+
+function actualizarLaSuma() {
+  if (!pagina.horasExtras) return;
+  const suma = porId('mh-suma');
+  suma.textContent = textoDeLaSuma(valoresDeLasHorasExtras(), pagina.horas, modalidadActual());
+  suma.hidden = suma.textContent === '';
+}
+
+async function guardarHorasExtras() {
+  const formulario = pagina.horasExtras;
+  const boton = porId('mh-guardar');
+  if (!formulario || formulario.guardando) return;
+  const valores = valoresDeLasHorasExtras();
+  if (mostrarErrores('horasExtras', conSusControles('horasExtras', erroresDeHoras(valores)))) return;
+  formulario.guardando = true;
+  boton.disabled = true;
+  try {
+    const respuesta = formulario.dia
+      ? await API.pedirJson('PUT', `/mi-espacio/horas-extras/${encodeURIComponent(formulario.dia.id)}`, cuerpoDeHoras(valores))
+      : await API.pedirJson('POST', '/mi-espacio/horas-extras', cuerpoDeHoras(valores));
+    formulario.guardando = false;
+    cerrarModal('modal-horas');
+    avisarLaRespuesta(respuesta);
+    volverAPedirTodo();
+  } catch (error) {
+    formulario.guardando = false;
+    boton.disabled = false;
+    if (error?.status === 401) irAlLogin();
+    else if (error?.status === 404) noEstaMas('modal-horas', error);
+    else if (pagina.horasExtras === formulario) mostrarFallaDelServidor('horasExtras', error, boton);
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+function pedirBorrarHorasExtras() {
+  const formulario = pagina.horasExtras;
+  if (!formulario?.dia || formulario.guardando) return;
+  const { id } = formulario.dia;
+  pedirConfirmacion({
+    titulo: '¿Borrar las horas extras?', texto: textoDeConfirmacion(formulario.dia), volverA: porId('mh-borrar'),
+    formulario: 'modal-horas', borrar: () => API.pedirJson('DELETE', `/mi-espacio/horas-extras/${encodeURIComponent(id)}`)
+  });
+}
+
+// ---- La planilla de horas extras de contrato (spec 2026-10-27-mi-espacio-horas, secciones 4 y 9; la maqueta aprobada) ----
+
+// Lo que se dice cuando un mes de la planilla no llega y el servidor no dice por qué
+const MENSAJE_SIN_LA_PLANILLA = 'No se pudo cargar el mes. Probá de nuevo en unos minutos.';
+
+// «Cargar horas extras» (el del encabezado y el de la tarjeta de la pestaña): en contrato, la planilla; si no, el modal de planta,
+// como siempre. Sin el Resumen todavía (dice la modalidad), lo pide antes
+async function abrirCargaDeHoras({ volverA = null } = {}) {
+  if (pagina.resumen === null && !(await hayResumen())) return;
+  if (modalidadActual() === 'contrato') abrirPlanilla({ volverA });
+  else abrirHorasExtras({ volverA });
+}
+
+/**
+ * Abre la planilla en un mes ('AAAA-MM'; sin él, el en curso), con su propio estado, `pagina.planilla` (no se cruza con el de los
+ * otros formularios):
+ * - `mes`, el que se ve (null hasta que llega el primero), y `meses`, los ya pedidos en esta apertura, por mes (cada uno se pide una
+ *   vez: cambiar de mes no pierde lo cargado);
+ * - `cambios`, `agregados`, `errores` y `notasAbiertas`, encima de lo que mandó el servidor (ver «La planilla de horas extras de
+ *   contrato», en lo puro);
+ * - `guardando` (mientras tanto, no se cierra ni acepta cambios: pintarElGuardadoDeLaPlanilla), `pedido` (el número del último
+ *   GET: una respuesta vieja se descarta) y `cargando` (el mes que se está pidiendo, o 'en curso': mientras tanto, las flechas no
+ *   hacen nada);
+ * - `aviso`, lo que dice #mp-error, y `avisoDeLosDias`, si es el de los días marcados (se va cuando no queda ninguno);
+ * - `foco`, adónde va el foco al abrir: la salida de `fecha` (la de «Editar») o, en el mes en curso, la de hoy, o la primera; un día
+ *   sin salida para escribir (uno de licencia con una salida de antes), su «Quitar».
+ * Sin el saldo inicial abre «Mis vacaciones y saldos», como los demás formularios. Sin `mes`, el primer GET va sin él (el servidor
+ * da el de hoy: con el reloj del teléfono adelantado un mes, pedir el de su fecha daría 400) y el mes es el que llega; mientras
+ * tanto, el título dice el de la fecha del teléfono.
+ */
+async function abrirPlanilla({ mes = null, fecha = null, volverA = null } = {}) {
+  if (pagina.resumen === null && !(await hayResumen())) return;
+  if (pagina.resumen?.abrir_saldos === true) {
+    abrirSaldos(volverA);
+    return;
+  }
+  if (pagina.planilla !== null) return;
+  const planilla = {
+    mes: null, meses: new Map(), cambios: new Map(), agregados: new Set(), errores: new Map(), notasAbiertas: new Set(),
+    guardando: false, pedido: 0, cargando: null, aviso: '', avisoDeLosDias: false,
+    foco: { fecha: esFechaDeTexto(fecha) ? fecha : null, pendiente: true, velo: false }
+  };
+  pagina.planilla = planilla;
+  const mesPedido = esMesDeTexto(mes) ? mes : null;
+  const elMes = mesPedido ?? Utils.hoyEnArgentina().slice(0, 7);
+  // Lo de la apertura anterior se va; mientras llega el mes, su título y las flechas apagadas
+  porId('mp-cuerpo').inert = false;
+  porId('mp-mes-titulo').textContent = tituloDelMes(elMes);
+  porId('mp-anterior').disabled = true;
+  porId('mp-siguiente').disabled = true;
+  porId('mp-como-mes').textContent = textoDeComoSeCuentan(elMes);
+  pintarElRenglonDelTilde(null);
+  for (const id of ['mp-suma', 'mp-dias', 'mp-sumar']) porId(id).innerHTML = '';
+  porId('mp-dias').removeAttribute('aria-busy');
+  porId('mp-pendientes').innerHTML = htmlDelPieDeLaPlanilla([]);
+  porId('mp-anuncio').textContent = '';
+  porId('mp-guardar').disabled = false;
+  porId('mp-cuerpo').scrollTop = 0;
+  pintarElAvisoDeLaPlanilla(planilla);
+  abrirModal('modal-planilla', {
+    volverA, foco: () => focoAlAbrirLaPlanilla(planilla),
+    alCerrar: () => { if (pagina.planilla === planilla) pagina.planilla = null; }
+  });
+  await cargarMesDeLaPlanilla(mesPedido);
+}
+
+// El primer foco (abrirModal lo pide después del velo): el día de `foco`, si su mes ya llegó; si no, la × (nunca detrás del velo), y
+// el día cuando llegue el mes (mostrarMesDeLaPlanilla, si el foco sigue en la ×)
+function focoAlAbrirLaPlanilla(planilla) {
+  planilla.foco.velo = true;
+  return controlDelFocoInicial(planilla) ?? porId('modal-planilla').querySelector('.modal-close');
+}
+
+// El control del día de `foco` (y lo da por usado): la salida de su fecha o, sin ella, su «Quitar»; si el día no está o no tiene
+// ninguno, el de hoy, y si no, la primera salida del mes. Con la fila a la vista, centrada. Antes de que llegue el mes, null
+function controlDelFocoInicial(planilla) {
+  const datos = planilla.meses.get(planilla.mes);
+  if (!planilla.foco.pendiente || !datos) return null;
+  planilla.foco.pendiente = false;
+  const hoy = listaDe(datos.dias).find((dia) => dia.hoy === true)?.fecha ?? null;
+  for (const fecha of [planilla.foco.fecha, hoy]) {
+    const fila = esFechaDeTexto(fecha) ? porId(`mp-dia-${fecha}`) : null;
+    const control = fila?.querySelector('[data-campo="salida"]') ?? fila?.querySelector('[data-quitar]') ?? null;
+    if (control) {
+      fila.scrollIntoView?.({ block: 'center' });
+      return control;
+    }
+  }
+  return porId('mp-dias').querySelector('[data-campo="salida"]');
+}
+
+/**
+ * Muestra un mes en la planilla: uno ya pedido en esta apertura, enseguida; si no, lo pide (GET /mi-espacio/salidas?mes=) y,
+ * mientras tanto, el que se veía sigue a la vista, ocupado (aria-busy), y las flechas no hacen nada. Una respuesta vieja (de un
+ * pedido anterior, o de otra apertura) se descarta. Si no llega, lo dice arriba del cuerpo (con un 401, al login) y el mes que se
+ * veía sigue. Con `mes` null, el en curso: el GET va sin `mes` y el mes es el que dice el servidor (abrirPlanilla). Devuelve si lo
+ * mostró
+ */
+async function cargarMesDeLaPlanilla(mes) {
+  const planilla = pagina.planilla;
+  const enCurso = mes === null;
+  if (!planilla || (!enCurso && !esMesDeTexto(mes))) return false;
+  if (!enCurso && planilla.meses.has(mes)) {
+    mostrarMesYaPedido(planilla, mes);
+    return true;
+  }
+  const pedido = ++planilla.pedido;
+  planilla.cargando = enCurso ? 'en curso' : mes;
+  porId('mp-dias').setAttribute('aria-busy', 'true');
+  let datos = null;
+  let falla = null;
+  try {
+    const ruta = enCurso ? '/mi-espacio/salidas' : `/mi-espacio/salidas?mes=${encodeURIComponent(mes)}`;
+    ({ data: datos } = await API.pedirJson('GET', ruta));
+  } catch (error) {
+    falla = error ?? new Error('');
+  }
+  if (pagina.planilla !== planilla || pedido !== planilla.pedido) return false;
+  planilla.cargando = null;
+  porId('mp-dias').removeAttribute('aria-busy');
+  if (falla?.status === 401) {
+    irAlLogin();
+    return false;
+  }
+  const llego = esObjeto(datos) && Array.isArray(datos.dias) && esMesDeTexto(datos.mes) && (enCurso || datos.mes === mes);
+  if (falla || !llego) {
+    planilla.aviso = falla ? motivoDeLaFalla(falla, MENSAJE_SIN_LA_PLANILLA) : (conTexto(datos?.mensaje) ? datos.mensaje : MENSAJE_SIN_LA_PLANILLA);
+    planilla.avisoDeLosDias = false;
+    pintarElAvisoDeLaPlanilla(planilla);
+    return false;
+  }
+  planilla.meses.set(datos.mes, datos);
+  mostrarMesDeLaPlanilla(planilla, datos.mes);
+  return true;
+}
+
+// El mes que se estaba pidiendo pasa a ser viejo (se descarta al llegar: no cambia el mes que se ve) y las flechas vuelven a andar
+function soltarElMesPedido(planilla) {
+  planilla.pedido += 1;
+  planilla.cargando = null;
+  porId('mp-dias').removeAttribute('aria-busy');
+}
+
+// Un mes ya pedido: lo que se estaba pidiendo pasa a ser viejo y se muestra enseguida
+function mostrarMesYaPedido(planilla, mes) {
+  soltarElMesPedido(planilla);
+  mostrarMesDeLaPlanilla(planilla, mes);
+}
+
+// Dibuja el mes (si es otro, el cuerpo vuelve arriba; el aviso de una falla se va, el de los días marcados queda) y, la primera vez,
+// el foco va al día de `foco` si quedó en la × mientras llegaba
+function mostrarMesDeLaPlanilla(planilla, mes) {
+  const cambia = planilla.mes !== mes;
+  planilla.mes = mes;
+  if (!planilla.avisoDeLosDias) planilla.aviso = '';
+  pintarLaPlanilla();
+  if (cambia) porId('mp-cuerpo').scrollTop = 0;
+  if (planilla.foco.pendiente && planilla.foco.velo) {
+    const activo = document.activeElement;
+    const cerrar = porId('modal-planilla').querySelector('.modal-close');
+    const control = controlDelFocoInicial(planilla);
+    if (control && (!activo || activo === document.body || activo === cerrar)) control.focus?.();
+  }
+}
+
+// La planilla del mes que se ve: el título y las flechas (no van a un mes que todavía no llegó ni antes del primero: los dice el
+// servidor), «Cómo se cuentan», los días (con lo que entra del mes siguiente al final: htmlDeLaPlanilla), «Sumar el día», la banda,
+// las semanas, el pie y el aviso de arriba del cuerpo
+function pintarLaPlanilla() {
+  const planilla = pagina.planilla;
+  const datos = planilla?.meses.get(planilla.mes);
+  if (!datos) return;
+  porId('mp-mes-titulo').textContent = conTexto(datos.mes_texto) ? datos.mes_texto : tituloDelMes(planilla.mes);
+  pintarLasFlechasDeLaPlanilla(planilla);
+  porId('mp-como-mes').textContent = textoDeComoSeCuentan(planilla.mes);
+  pintarElRenglonDelTilde(datos);
+  porId('mp-dias').innerHTML = htmlDeLaPlanilla(datos, planilla);
+  porId('mp-sumar').innerHTML = htmlDelSumarDeLaPlanilla(datos, planilla);
+  pintarLaSumaDeLaPlanilla();
+  pintarElAvisoDeLaPlanilla(planilla);
+}
+
+// Las flechas del mes: al anterior y al siguiente que dice el servidor (nunca a uno que todavía no llegó ni antes del primero) y,
+// mientras se guarda, apagadas
+function pintarLasFlechasDeLaPlanilla(planilla) {
+  const datos = planilla.meses.get(planilla.mes);
+  porId('mp-anterior').disabled = planilla.guardando || !esMesDeTexto(datos?.anterior);
+  porId('mp-siguiente').disabled = planilla.guardando || !esMesDeTexto(datos?.siguiente);
+}
+
+// Mientras se guarda, la planilla no acepta cambios (spec, sección 2: que no se pierda lo cargado sin aviso; lo que se escribiera
+// mientras tanto no iría en el PUT y, al cerrar, se perdería): el cuerpo inerte (ni el foco, ni los clics, ni el lector de pantalla
+// llegan a los días ni a «Sumar el día»), las flechas y «Guardar» apagados (y los que cambian algo no hacen nada: `guardando`). Al
+// responder, todo vuelve. El cuerpo es de la página: vuelve siempre; las flechas, solo si la planilla sigue abierta
+function pintarElGuardadoDeLaPlanilla(planilla) {
+  porId('mp-cuerpo').inert = planilla.guardando;
+  porId('mp-guardar').disabled = planilla.guardando;
+  if (pagina.planilla === planilla) pintarLasFlechasDeLaPlanilla(planilla);
+}
+
+// Las fechas con cambios sin guardar, de todos los meses pedidos
+const fechasDeLaPlanilla = (planilla) => fechasCambiadas(planilla.cambios, diasPorFechaDe(planilla.meses.values()));
+
+// El renglón del tilde en «Cómo se cuentan las horas» (#mp-como-anterior), con el mes anterior que manda el servidor (`sumar_a`,
+// textoDeSumarAlAnterior); sin él (mientras llega el mes, o una planilla de antes), vacío y oculto
+function pintarElRenglonDelTilde(datos) {
+  const renglon = porId('mp-como-anterior');
+  renglon.textContent = esObjeto(datos) ? textoDeSumarAlAnterior(datos.mes, datos.sumar_a) : '';
+  renglon.hidden = renglon.textContent === '';
+}
+
+// Lo que cambia mientras se escribe o se tilda, sin volver a dibujar las filas: la banda (lo que suma el mes, con los cambios: sus
+// días sin tildar más los tildados del mes siguiente, `diasQueEntran`, y la segunda línea con lo que se mueve entre meses,
+// textoDeLoQueSeMueve), el total de cada semana del mes (las de `data-fechas`: el renglón «De febrero» del bloque del mes siguiente no
+// es una semana de este mes y su total no cambia mientras se escribe acá) y el pie (los días con cambios, de todos los meses)
+function pintarLaSumaDeLaPlanilla() {
+  const planilla = pagina.planilla;
+  const datos = planilla?.meses.get(planilla.mes);
+  if (!datos) return;
+  const visibles = diasVisiblesDeLaPlanilla(datos, planilla);
+  const entran = diasQueEntran(datos, planilla);
+  const van = diasQueSumanAlAnterior(visibles, planilla.cambios);
+  const horas = horasDeLosDias(visibles, planilla.cambios) + entran.reduce((suma, uno) => suma + (uno.horas ?? 0), 0);
+  porId('mp-suma').innerHTML = htmlDeLaBandaDeLaPlanilla(planilla.mes, horas, datos.hoy, textoDeLoQueSeMueve(planilla.mes, entran, van));
+  const porFecha = new Map(visibles.map((dia) => [dia.fecha, dia]));
+  for (const semana of porId('mp-dias').querySelectorAll('.mp-semana[data-fechas]')) {
+    const dias = comoTexto(semana.getAttribute('data-fechas')).split(',').map((fecha) => porFecha.get(fecha)).filter(Boolean);
+    const total = semana.querySelector('.mp-semana-total');
+    if (total) total.textContent = textoDelTotalDeLaSemana(horasDeLosDias(dias, planilla.cambios));
+  }
+  porId('mp-pendientes').innerHTML = htmlDelPieDeLaPlanilla(fechasDeLaPlanilla(planilla));
+}
+
+// #mp-error (role="alert"): el aviso de la planilla, o nada. Un texto igual al que tiene no se vuelve a escribir (se volvería a
+// anunciar cada vez que se dibuja la planilla)
+function pintarElAvisoDeLaPlanilla(planilla) {
+  const aviso = porId('mp-error');
+  if (aviso.textContent !== planilla.aviso) aviso.textContent = planilla.aviso;
+  aviso.hidden = planilla.aviso === '';
+}
+
+// El aviso de un «Guardar» que no salió: se anuncia aunque diga lo mismo que el que ya está (un guardado que vuelve a fallar igual),
+// con un espacio al final, como anunciar. Queda así en `aviso`: volver a dibujar la planilla no lo repite
+function avisoQueSeAnuncia(planilla, texto) {
+  planilla.aviso = porId('mp-error').textContent === texto ? `${texto} ` : texto;
+}
+
+// La región viva de la planilla (#mp-anuncio, dentro del diálogo: con aria-modal, #me-anuncio puede no leerse), como anunciar
+function anunciarEnLaPlanilla(texto) {
+  const region = porId('mp-anuncio');
+  if (!region || !texto) return;
+  region.textContent = region.textContent === texto ? `${texto} ` : texto;
+}
+
+// Los días de la planilla de todos los meses pedidos, por fecha, y el de una fecha
+const diaDeLaPlanilla = (planilla, fecha) => diasPorFechaDe(planilla.meses.values()).get(fecha) ?? null;
+
+// Lo que se escribe en un día (la entrada, la salida o la nota) o se tilda («Sumar a {mes anterior}», su casilla: el true literal si
+// está tildada): su estado completo pasa a `cambios` y se actualizan, sin volver a dibujar nada (el campo que se usa sigue siendo el
+// mismo: no pierde el foco ni lo que se está escribiendo), su fila, la banda, las semanas y el pie. Tildar no se anuncia: se ve en la
+// fila y en el pie, como lo que se escribe. Escribir en un día con error lo saca (y, sin ninguno, el aviso de arriba). Mientras
+// guarda, nada
+function alEscribirEnLaPlanilla(evento) {
+  const planilla = pagina.planilla;
+  const campo = evento.target?.closest?.('[data-campo]');
+  if (!planilla || planilla.guardando || !campo) return;
+  const fecha = campo.getAttribute('data-fecha');
+  const nombre = campo.getAttribute('data-campo');
+  const dia = diaDeLaPlanilla(planilla, fecha);
+  if (!dia || !['entrada', 'salida', 'nota', 'al_mes_anterior'].includes(nombre)) return;
+  const valor = nombre === 'al_mes_anterior' ? campo.checked === true : comoTexto(campo.value);
+  planilla.cambios.set(fecha, { ...valorDelDia(dia, planilla.cambios.get(fecha)), [nombre]: valor });
+  if (nombre === 'entrada') campo.setAttribute('data-vacio', comoTexto(campo.value).trim() === '' ? '1' : '0');
+  if (planilla.errores.delete(fecha)) sinErrorDeLosDias(planilla);
+  actualizarLaFilaDeLaPlanilla(fecha);
+  pintarLaSumaDeLaPlanilla();
+}
+
+// Si ya no queda ningún día con error, el aviso de los días marcados se va
+function sinErrorDeLosDias(planilla) {
+  if (planilla.errores.size > 0 || !planilla.avisoDeLosDias) return;
+  planilla.aviso = '';
+  planilla.avisoDeLosDias = false;
+  pintarElAvisoDeLaPlanilla(planilla);
+}
+
+// Una fila mientras se escribe o se tilda, sin reemplazarla: sus horas (un día tildado, la pastilla punteada con «→ enero»), el
+// tilde (se ve solo con una salida: sin ella, `vacio`, oculto en su lugar y fuera del orden del foco, como lo dibuja htmlDelTilde),
+// la raya de lo cambiado, el aviso del servidor (a la vista, y en la descripción de la salida, solo mientras el día no cambió) y, si
+// ya no tiene error, sin su error ni aria-invalid
+function actualizarLaFilaDeLaPlanilla(fecha) {
+  const planilla = pagina.planilla;
+  const fila = porId(`mp-dia-${fecha}`);
+  const dia = diaDeLaPlanilla(planilla, fecha);
+  if (!fila || !dia) return;
+  const cambio = planilla.cambios.get(fecha);
+  const valor = valorDelDia(dia, cambio);
+  const cambiada = cambio !== undefined && fechasCambiadas(new Map([[fecha, cambio]]), new Map([[fecha, dia]])).length > 0;
+  const horas = porId(`mp-h-${fecha}`);
+  if (horas) horas.innerHTML = htmlDeLasHorasDeLaFila(dia, valor, planilla.meses.get(fecha.slice(0, 7))?.sumar_a);
+  const tilde = porId(`mp-t-${fecha}`);
+  if (tilde) {
+    const sinSalida = valoresDeLaSalida(valor).salida === '';
+    tilde.classList.toggle('vacio', sinSalida);
+    const casilla = tilde.querySelector('[data-campo="al_mes_anterior"]');
+    if (sinSalida) casilla?.setAttribute('tabindex', '-1');
+    else casilla?.removeAttribute('tabindex');
+  }
+  fila.classList.toggle('cambiado', cambiada);
+  const aviso = porId(`mp-a-${fecha}`);
+  if (aviso) aviso.hidden = cambiada;
+  const conError = planilla.errores.has(fecha);
+  const error = porId(`mp-e-${fecha}`);
+  if (error && !conError) error.hidden = true;
+  for (const control of fila.querySelectorAll('[data-campo]')) {
+    if (!conError) control.removeAttribute('aria-invalid');
+    const ids = comoTexto(control.getAttribute('aria-describedby')).split(/\s+/)
+      .filter((uno) => uno !== '' && uno !== `mp-a-${fecha}` && (conError || uno !== `mp-e-${fecha}`));
+    if (aviso && !cambiada && control.getAttribute('data-campo') === 'salida') ids.push(`mp-a-${fecha}`);
+    if (ids.length > 0) control.setAttribute('aria-describedby', ids.join(' '));
+    else control.removeAttribute('aria-describedby');
+  }
+}
+
+// Enter en una salida o en una nota lleva a la salida del día siguiente que se carga; en la última, a «Guardar» (spec, sección 4).
+// Con Alt, Ctrl, Cmd o Mayúsculas, no se toca
+function alApretarEnLaPlanilla(evento) {
+  if (evento.key !== 'Enter' || evento.altKey || evento.ctrlKey || evento.metaKey || evento.shiftKey) return;
+  const campo = evento.target?.closest?.('#mp-dias [data-campo]');
+  const nombre = campo?.getAttribute('data-campo');
+  if (nombre !== 'salida' && nombre !== 'nota') return;
+  evento.preventDefault?.();
+  const salidas = [...porId('mp-dias').querySelectorAll('[data-campo="salida"]')];
+  const lugar = salidas.findIndex((salida) => salida.getAttribute('data-fecha') === campo.getAttribute('data-fecha'));
+  const siguiente = lugar === -1 ? null : (salidas[lugar + 1] ?? null);
+  (siguiente ?? porId('mp-guardar')).focus?.();
+}
+
+// Un clic en los días: «Nota», «Quitar» o, en el bloque del mes siguiente, «Ver en febrero» (ese mes, con el foco en el tilde de
+// ese día: irAlMesDeLaPlanilla). Mientras guarda, nada
+function alTocarLaPlanilla(evento) {
+  if (!pagina.planilla || pagina.planilla.guardando) return;
+  const nota = evento.target?.closest?.('[data-nota]');
+  if (nota) {
+    alternarLaNota(nota.getAttribute('data-nota'));
+    return;
+  }
+  const quitar = evento.target?.closest?.('[data-quitar]');
+  if (quitar) {
+    quitarElDia(quitar.getAttribute('data-quitar'));
+    return;
+  }
+  const verEn = evento.target?.closest?.('[data-ver-en]');
+  if (verEn) irAlMesDeLaPlanilla('siguiente', { fecha: verEn.getAttribute('data-ver-en') });
+}
+
+// «Nota» abre el campo de la nota debajo de la fila, con el foco; otra vez, lo cierra (la nota escrita queda a la vista) y el foco
+// vuelve al botón. Mientras guarda, nada
+function alternarLaNota(fecha) {
+  const planilla = pagina.planilla;
+  if (!planilla || planilla.guardando) return;
+  const abrir = !planilla.notasAbiertas.has(fecha);
+  if (abrir) planilla.notasAbiertas.add(fecha);
+  else planilla.notasAbiertas.delete(fecha);
+  pintarLaPlanilla();
+  const fila = porId(`mp-dia-${fecha}`);
+  (fila?.querySelector(abrir ? '[data-campo="nota"]' : '[data-nota]') ?? fila?.querySelector('[data-nota]'))?.focus?.();
+}
+
+// «Quitar» un día (un sábado o domingo, o la salida de antes de un día de licencia): lo saca de los sumados y, si tenía algo
+// guardado, se borra al guardar (`{ quitar: true }`); si no, su cambio se va. El foco va a «Guardar». Mientras guarda, nada
+function quitarElDia(fecha) {
+  const planilla = pagina.planilla;
+  if (!planilla || planilla.guardando) return;
+  const guardado = valoresDeLaSalida(diaDeLaPlanilla(planilla, fecha));
+  planilla.agregados.delete(fecha);
+  if (guardado.entrada !== '' || guardado.salida !== '' || guardado.nota !== '') planilla.cambios.set(fecha, { quitar: true });
+  else planilla.cambios.delete(fecha);
+  planilla.notasAbiertas.delete(fecha);
+  if (planilla.errores.delete(fecha)) sinErrorDeLosDias(planilla);
+  pintarLaPlanilla();
+  porId('mp-guardar').focus?.();
+}
+
+// «Sumar el día»: el sábado o domingo elegido (sin elegir, el primero) aparece en su semana, con el foco en su entrada; uno guardado
+// que se había quitado vuelve con lo guardado. Mientras guarda, nada
+function sumarElDia() {
+  const planilla = pagina.planilla;
+  const datos = planilla?.meses.get(planilla.mes);
+  const selector = porId('mp-finde');
+  if (!datos || !selector || planilla.guardando) return;
+  const fecha = comoTexto(selector.value) || comoTexto(selector.querySelector('option')?.getAttribute('value'));
+  if (!finesDeSemanaParaSumar(datos, planilla).some((dia) => dia.fecha === fecha)) return;
+  planilla.agregados.add(fecha);
+  if (planilla.cambios.get(fecha)?.quitar === true) planilla.cambios.delete(fecha);
+  pintarLaPlanilla();
+  const fila = porId(`mp-dia-${fecha}`);
+  fila?.scrollIntoView?.({ block: 'center' });
+  fila?.querySelector('[data-campo="entrada"]')?.focus?.();
+}
+
+// Las flechas del mes («anterior» o «siguiente»: los meses que dice el servidor; mientras llega uno, nada) y «Ver en febrero» del
+// bloque del mes siguiente (`fecha`, un día del siguiente: un mes ya pedido en esta apertura no se vuelve a pedir). El mes que se
+// elige se anuncia en la planilla; con `fecha`, el foco va al tilde de ese día (con su fila a la vista; sin tilde, a su «Quitar» o
+// a la fila); si no, si la flecha que se
+// usó se apagó (el primer mes o el en curso), el foco pasa a la otra. Mientras guarda, nada
+async function irAlMesDeLaPlanilla(cual, { fecha = null } = {}) {
+  const planilla = pagina.planilla;
+  const boton = porId(cual === 'anterior' ? 'mp-anterior' : 'mp-siguiente');
+  const otra = porId(cual === 'anterior' ? 'mp-siguiente' : 'mp-anterior');
+  const destino = planilla?.meses.get(planilla.mes)?.[cual];
+  if (!planilla || planilla.guardando || planilla.cargando !== null || boton.disabled || !esMesDeTexto(destino)) return;
+  if (fecha !== null && (!esFechaDeTexto(fecha) || fecha.slice(0, 7) !== destino)) return;
+  if (!(await cargarMesDeLaPlanilla(destino)) || pagina.planilla !== planilla) return;
+  anunciarEnLaPlanilla(porId('mp-mes-titulo').textContent);
+  const tilde = fecha === null ? null : (porId(`mp-t-${fecha}`)?.querySelector('[data-campo="al_mes_anterior"]') ?? null);
+  const fila = fecha === null ? null : porId(`mp-dia-${fecha}`);
+  if (tilde) {
+    fila?.scrollIntoView?.({ block: 'center' });
+    tilde.focus?.();
+    return;
+  }
+  if (fila) {
+    // Sin tilde (por ejemplo, un día que pasó a ser de licencia de día entero con una salida de antes, todavía tildada): «Quitar»
+    // de esa fila o, si no tiene, la fila misma (con tabindex="-1", como las filas sin campos con un error). El botón que se tocó se
+    // fue con el redibujo: sin esto, el foco quedaría en <body>
+    fila.scrollIntoView?.({ block: 'center' });
+    const quitar = fila.querySelector('[data-quitar]');
+    if (quitar) {
+      quitar.focus?.();
+      return;
+    }
+    if (fila.getAttribute?.('tabindex') === null) fila.setAttribute?.('tabindex', '-1');
+    fila.focus?.();
+    return;
+  }
+  const activo = document.activeElement;
+  if (boton.disabled && !otra.disabled && (!activo || activo === document.body || activo === boton)) otra.focus?.();
+}
+
+// PUT /mi-espacio/salidas, con un fetch propio (como pedirWordDeLicencia): API.pedirJson no da los errores de cada día de un 400
+// (`errores`, `[{ fecha, campo, mensaje }]`) y api.js no cambia. Devuelve la respuesta; con un error del servidor, tira un Error con
+// su `status`, su mensaje y sus `errores`; sin respuesta, el del navegador (sin status)
+async function pedirGuardarLaPlanilla(cuerpo) {
+  const response = await fetch(`${CONFIG.API_URL}/mi-espacio/salidas`, {
+    method: 'PUT', headers: Auth.getAuthHeaders(), body: JSON.stringify(cuerpo)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(esObjeto(data) && conTexto(data.error) ? data.error : '');
+    error.status = response.status;
+    error.errores = esObjeto(data) ? listaDe(data.errores) : [];
+    throw error;
+  }
+  return esObjeto(data) ? data : {};
+}
+
+/**
+ * «Guardar» (spec, sección 4): sin cambios, cierra; con más de MAXIMO_DIAS_POR_GUARDADO días, lo dice arriba del cuerpo. Controla
+ * los días cambiados con las copias (erroresDeLaPlanilla) y, si alguno falla, no pide nada: los marca (marcarLosDias). Si no, manda
+ * todos los días cambiados de todos los meses juntos; al responder bien cierra, avisa (aviso y #me-anuncio, como los demás) y vuelve
+ * a pedir el Resumen y la pestaña. Mientras guarda, «Guardar» queda deshabilitado, el modal no se cierra (un doble clic manda un
+ * solo pedido) y la planilla no acepta cambios (pintarElGuardadoDeLaPlanilla: lo que se escribiera no iría en el PUT); al responder,
+ * todo vuelve, antes de mostrar el error (el foco tiene que poder ir al día). Un error del servidor con días va a esos días; sin
+ * días, arriba del cuerpo, con el foco en «Guardar»
+ */
+async function guardarPlanilla() {
+  const planilla = pagina.planilla;
+  if (!planilla || planilla.guardando) return;
+  const porFecha = diasPorFechaDe(planilla.meses.values());
+  const fechas = fechasCambiadas(planilla.cambios, porFecha);
+  if (fechas.length === 0) {
+    cerrarModal('modal-planilla');
+    return;
+  }
+  if (fechas.length > MAXIMO_DIAS_POR_GUARDADO) {
+    avisarSinLosDias(planilla, MENSAJES_FORMULARIOS.muchosDias);
+    return;
+  }
+  const errores = erroresDeLaPlanilla(planilla.cambios, porFecha);
+  if (errores.size > 0) {
+    marcarLosDias(planilla, errores);
+    return;
+  }
+  planilla.guardando = true;
+  pintarElGuardadoDeLaPlanilla(planilla);
+  let respuesta = null;
+  let falla = null;
+  try {
+    respuesta = await pedirGuardarLaPlanilla(cuerpoDeLaPlanilla(planilla.cambios, fechas));
+  } catch (error) {
+    falla = error ?? new Error('');
+  } finally {
+    planilla.guardando = false;
+    pintarElGuardadoDeLaPlanilla(planilla);
+  }
+  if (falla === null) {
+    cerrarModal('modal-planilla');
+    avisarLaRespuesta(respuesta);
+    volverAPedirTodo();
+  } else if (falla.status === 401) irAlLogin();
+  else if (pagina.planilla === planilla) mostrarFallaDeLaPlanilla(planilla, falla, porFecha);
+}
+
+// Un error del servidor al guardar: los días de `errores` que están en la planilla, en sus filas; sin ninguno, el mensaje arriba
+// del cuerpo (sin respuesta, MENSAJE_SIN_CONEXION)
+function mostrarFallaDeLaPlanilla(planilla, falla, porFecha) {
+  const errores = new Map();
+  for (const error of listaDe(falla?.errores)) {
+    if (esFechaDeTexto(error.fecha) && porFecha.has(error.fecha) && !errores.has(error.fecha) && conTexto(error.mensaje)) {
+      errores.set(error.fecha, { campo: comoTexto(error.campo), mensaje: error.mensaje });
+    }
+  }
+  if (errores.size > 0) marcarLosDias(planilla, errores);
+  else avisarSinLosDias(planilla, motivoDeLaFalla(falla, MENSAJE_NO_SE_GUARDO));
+}
+
+// Un aviso de la planilla sin días marcados (los que había se van), arriba del cuerpo, con el foco en «Guardar» (se anuncia aunque
+// sea el mismo de antes: avisoQueSeAnuncia)
+function avisarSinLosDias(planilla, mensaje) {
+  planilla.errores = new Map();
+  avisoQueSeAnuncia(planilla, mensaje);
+  planilla.avisoDeLosDias = false;
+  pintarLaPlanilla();
+  pintarElAvisoDeLaPlanilla(planilla);
+  porId('mp-guardar').focus?.();
+}
+
+// Los días con error (de la página o del servidor), cada uno en su fila, con «Revisá el día marcado.» arriba del cuerpo y el foco en
+// el primero por fecha; si es de otro mes, la planilla pasa a ese mes (Review Focus 4), y se anuncia. Un mes que se estaba pidiendo
+// se descarta (al llegar, no cambia el mes ni se lleva el foco del error) y el aviso se anuncia aunque sea el mismo de antes
+function marcarLosDias(planilla, errores) {
+  soltarElMesPedido(planilla);
+  planilla.errores = errores;
+  avisoQueSeAnuncia(planilla, textoDeLosErroresDeLaPlanilla(errores.size));
+  planilla.avisoDeLosDias = true;
+  const [primero] = [...errores.keys()].sort();
+  const mes = primero.slice(0, 7);
+  if (mes !== planilla.mes && planilla.meses.has(mes)) {
+    mostrarMesYaPedido(planilla, mes);
+    anunciarEnLaPlanilla(porId('mp-mes-titulo').textContent);
+  } else pintarLaPlanilla();
+  (controlDelError(primero, errores.get(primero)) ?? porId('mp-guardar')).focus?.();
+}
+
+// El control de un día con error: su campo (uno que no es de la fila, la salida); en una fila sin campos, su «Quitar» o la fila
+// misma (htmlDeLaFilaDeLaPlanilla la deja recibir el foco). Un día que no se ve, null
+function controlDelError(fecha, error) {
+  const fila = porId(`mp-dia-${fecha}`);
+  if (!fila) return null;
+  const campo = ['entrada', 'salida', 'nota'].includes(error?.campo) ? error.campo : 'salida';
+  return fila.querySelector(`[data-campo="${campo}"]`) ?? fila.querySelector('[data-campo="salida"]')
+    ?? fila.querySelector('[data-quitar]') ?? (fila.getAttribute('tabindex') === '-1' ? fila : null);
+}
+
+/**
+ * Salir de la planilla (la ×, «Cancelar» o Escape; `desde`, el control que se usó o el que tenía el foco): sin cambios, se cierra;
+ * con cambios, pregunta en la confirmación de la página («¿Salir sin guardar?» / «Los cambios de 3 días se pierden.»): «Seguir
+ * cargando» (con el foco) vuelve a donde estaba, sin perder nada, y «Salir sin guardar» cierra y descarta. Mientras guarda, nada
+ */
+function pedirSalirDeLaPlanilla(desde = null) {
+  const planilla = pagina.planilla;
+  if (!planilla || planilla.guardando) return;
+  const cantidad = fechasDeLaPlanilla(planilla).length;
+  if (cantidad === 0) {
+    cerrarModal('modal-planilla');
+    return;
+  }
+  pedirConfirmacion({
+    titulo: '¿Salir sin guardar?', texto: textoDeSalirSinGuardar(cantidad),
+    volverA: desde && porId('modal-planilla').contains(desde) ? desde : porId('mp-guardar'), formulario: 'modal-planilla',
+    textoSi: 'Salir sin guardar', textoNo: 'Seguir cargando', alConfirmar: () => cerrarModal('modal-planilla')
+  });
+}
+
+// ---- «Mis vacaciones y saldos» ----
+
+// Abre «Mis vacaciones y saldos» (spec, sección 4) con lo que vale para el año en curso (GET /anio/:anio) y los campos de «Para
+// arrancar» (GET /saldo-inicial). Si no se puede, un aviso lo dice (sin el saldo inicial, los botones de carga llevan acá: nunca
+// quedan sin responder). `recargarAlCerrar`: el año se guardó y el saldo no; al cerrarlo, la página se vuelve a pedir
+async function abrirSaldos(volverA = null) {
+  if (pagina.saldos !== null) return;
+  const anio = anioDeHoy();
+  pagina.saldos = { cargando: true };
+  let deEseAnio;
+  let saldo;
+  try {
+    [{ data: deEseAnio }, { data: saldo }] = await Promise.all([
+      API.pedirJson('GET', `/mi-espacio/anio/${anio}`), API.pedirJson('GET', '/mi-espacio/saldo-inicial')
+    ]);
+  } catch (error) {
+    pagina.saldos = null;
+    if (error?.status === 401) irAlLogin();
+    else avisarMiEspacio(MENSAJE_SIN_SALDOS, 'error');
+    return;
+  }
+  if (!esObjeto(deEseAnio) || !esObjeto(saldo) || !Array.isArray(saldo.campos)) {
+    pagina.saldos = null;
+    avisarMiEspacio(comoTexto(saldo?.mensaje) || comoTexto(deEseAnio?.mensaje) || MENSAJE_SIN_SALDOS, 'warning');
+    return;
+  }
+  const dias = DIAS_VACACIONES.includes(deEseAnio.dias_vacaciones) ? deEseAnio.dias_vacaciones : null;
+  pagina.saldos = {
+    anio, campos: saldo.campos, camposDelModal: saldo.campos, textos: deEseAnio.textos_mitades, guardando: false,
+    recargarAlCerrar: false
+  };
+  const modalidad = pagina.resumen?.modalidad?.texto;
+  porId('ms-modalidad').innerHTML = conTexto(modalidad)
+    ? `Modalidad: <b>${esc(modalidad)}</b> <span class="me-opcional">(la carga administración en Configuración → Usuarios)</span>` : '';
+  porId('ms-modalidad').hidden = !conTexto(modalidad);
+  porId('ms-dias-rotulo').textContent = `Días de la licencia ${String(anio)}`;
+  porId('ms-dias-opciones').innerHTML = htmlDeDiasDeVacaciones(dias);
+  // Sin días elegidos todavía (la primera vez), los estudios tampoco; si no, null es «No estudio»
+  porId('ms-estudios-opciones').innerHTML = htmlDeEstudios(dias === null ? undefined : (deEseAnio.estudios ?? ''));
+  pintarCamposDelSaldo(valoresDelSaldo(saldo.campos));
+  limpiarErrores('saldos');
+  porId('ms-guardar').disabled = false;
+  abrirModal('modal-saldos', { volverA, foco: () => controlDeFoco('ms-dias'), alCerrar: cerrarSaldos });
+}
+
+// Al cerrar «Mis vacaciones y saldos» guardado a medias (con «Cancelar», la × o Escape), los días del año nuevos ya están en la
+// base: la página se vuelve a pedir, después de que el foco vuelva al botón que lo abrió (respaldoDelFoco lo busca)
+function cerrarSaldos() {
+  const recargar = pagina.saldos?.recargarAlCerrar === true;
+  pagina.saldos = null;
+  if (recargar) Promise.resolve().then(volverAPedirTodo);
+}
+
+// Lo elegido en el modal: los días (o null) y los estudios (la carrera, null por «No estudio» o undefined si no eligió)
+const diasElegidos = () => {
+  const dias = Number(porId('ms-dias').querySelector('input:checked')?.value);
+  return DIAS_VACACIONES.includes(dias) ? dias : null;
+};
+const estudiosElegidos = () => {
+  const elegido = porId('ms-estudios').querySelector('input:checked');
+  if (!elegido) return undefined;
+  return conTexto(elegido.value) ? elegido.value : null;
+};
+const valoresEscritosDelSaldo = () => Object.fromEntries([...porId('ms-campos').querySelectorAll('[data-saldo]')]
+  .map((campo) => [campo.dataset.saldo, campo.value]));
+
+// «Para arrancar» con lo elegido arriba (camposConLoElegido) y lo escrito, y la ayuda de los días: cómo se habilitan los elegidos
+function pintarCamposDelSaldo(valores) {
+  const saldos = pagina.saldos;
+  const dias = diasElegidos();
+  saldos.camposDelModal = camposConLoElegido(saldos.campos, { anio: saldos.anio, dias, estudios: estudiosElegidos() });
+  porId('ms-campos').innerHTML = htmlDeCamposDelSaldo(saldos.camposDelModal, valores);
+  porId('ms-dias-mitades').textContent = dias === null ? '' : comoTexto(deMapa(saldos.textos, String(dias), ''));
+}
+
+function alElegirEnLosSaldos() {
+  if (pagina.saldos?.campos) pintarCamposDelSaldo(valoresEscritosDelSaldo());
+}
+
+// «Guardar»: primero los días y los estudios del año (PUT /anio/:anio) y después el saldo inicial (PUT /saldo-inicial). Si el
+// segundo falla, el modal queda abierto: el año ya se guardó
+async function guardarSaldos() {
+  const saldos = pagina.saldos;
+  const boton = porId('ms-guardar');
+  if (!saldos?.campos || saldos.guardando) return;
+  const dias = diasElegidos();
+  const estudios = estudiosElegidos();
+  const valores = valoresEscritosDelSaldo();
+  const errores = [];
+  if (dias === null) errores.push(['ms-dias', MENSAJES_FORMULARIOS.diasVacaciones]);
+  if (estudios === undefined) errores.push(['ms-estudios', MENSAJES_FORMULARIOS.estudios]);
+  for (const [clave, mensaje] of Object.entries(erroresDelSaldo(valores, saldos.camposDelModal))) {
+    errores.push([`ms-campo-${clave}`, mensaje]);
+  }
+  if (mostrarErrores('saldos', errores)) return;
+  saldos.guardando = true;
+  boton.disabled = true;
+  let anioGuardado = false;
+  try {
+    await API.pedirJson('PUT', `/mi-espacio/anio/${saldos.anio}`, { dias_vacaciones: dias, estudios });
+    anioGuardado = true;
+    const respuesta = await API.pedirJson('PUT', '/mi-espacio/saldo-inicial', cuerpoDelSaldo(valores, saldos.camposDelModal));
+    saldos.guardando = false;
+    saldos.recargarAlCerrar = false;
+    cerrarModal('modal-saldos');
+    avisarLaRespuesta(respuesta);
+    volverAPedirTodo();
+  } catch (error) {
+    saldos.guardando = false;
+    boton.disabled = false;
+    if (error?.status === 401) irAlLogin();
+    else if (pagina.saldos === saldos && !anioGuardado) mostrarFallaDelServidor('saldos', error, boton);
+    else if (pagina.saldos === saldos) {
+      // El año ya se guardó: el motivo del saldo, en su campo (si es de «Para arrancar» o de los días) y arriba del modal
+      saldos.recargarAlCerrar = true;
+      limpiarErrores('saldos');
+      const id = porId(`ms-campo-${error?.campo}`) ? `ms-campo-${error.campo}` : deMapa(FORMULARIOS.saldos.campos, error?.campo, null);
+      const motivo = motivoDeLaFalla(error, MENSAJE_NO_SE_GUARDO);
+      ponerError(id, motivo);
+      // Con un punto, no con dos puntos: la ayuda de un tope ya trae los suyos («De 0 a 8: …»)
+      avisoDelModal('saldos', `Los días del año se guardaron, pero el saldo inicial no. ${motivo.replace(/\.$/, '')}.`);
+      (id ? controlDeFoco(id) : boton)?.focus?.();
+    }
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+// ---- La confirmación de un borrado ----
+
+// Abre la confirmación sobre el formulario (`formulario`, su modal; sin formulario, null: «Borrar el pedido» se pide desde una
+// pestaña): `texto`, en texto plano; «Borrar» corre `borrar`. El foco va a «Cancelar», que no borra nada, y vuelve a `volverA`. Para
+// otra pregunta (salir de la planilla con cambios), los textos de los dos botones (`textoSi`, el que confirma, y `textoNo`, el que
+// vuelve, con el foco; de entrada, «Borrar» y «Cancelar») y, en lugar de `borrar`, `alConfirmar`, lo que pasa al confirmar (sin
+// pedir nada: se cierra la confirmación y corre). `cierranCon`, los status que, además del 404, cierran la confirmación y se avisan
+// (el 409 de un pedido de restitución que ya pasó su plazo)
+function pedirConfirmacion({
+  titulo, texto, volverA, formulario, borrar = null, alConfirmar = null, textoSi = 'Borrar', textoNo = 'Cancelar', cierranCon = []
+}) {
+  pagina.confirmacion = { formulario, borrar, alConfirmar, ocupado: false, cierranCon };
+  porId('modal-confirmar-titulo').textContent = titulo;
+  porId('modal-confirmar-texto').textContent = texto;
+  porId('modal-confirmar-si').textContent = textoSi;
+  porId('modal-confirmar').querySelector('.modal-footer [data-cerrar]').textContent = textoNo;
+  avisoDelModal('confirmar', '');
+  porId('modal-confirmar-si').disabled = false;
+  abrirModal('modal-confirmar', {
+    volverA, foco: () => porId('modal-confirmar').querySelector('.modal-footer [data-cerrar]'),
+    alCerrar: () => { pagina.confirmacion = null; }
+  });
+}
+
+// «Borrar»: si sale bien, se cierran la confirmación y el formulario, se anuncia y se vuelve a pedir todo; si no, el error queda en
+// la confirmación (un 404, o un status de `cierranCon`, como al guardar: se cierra y se avisa). Con `alConfirmar` (salir de la
+// planilla sin guardar), se cierra la confirmación y corre
+async function confirmarElBorrado() {
+  const actual = pagina.confirmacion;
+  const boton = porId('modal-confirmar-si');
+  if (!actual || actual.ocupado) return;
+  if (typeof actual.alConfirmar === 'function') {
+    cerrarModal('modal-confirmar');
+    actual.alConfirmar();
+    return;
+  }
+  actual.ocupado = true;
+  boton.disabled = true;
+  avisoDelModal('confirmar', '');
+  try {
+    const respuesta = await actual.borrar();
+    actual.ocupado = false;
+    cerrarModal('modal-confirmar');
+    cerrarModal(actual.formulario);
+    avisarLaRespuesta(respuesta);
+    volverAPedirTodo();
+  } catch (error) {
+    actual.ocupado = false;
+    boton.disabled = false;
+    if (error?.status === 401) irAlLogin();
+    else if (error?.status === 404 || actual.cierranCon.includes(error?.status)) {
+      cerrarModal('modal-confirmar');
+      noEstaMas(actual.formulario, error);
+    } else if (pagina.confirmacion === actual) {
+      avisoDelModal('confirmar', motivoDeLaFalla(error, MENSAJE_NO_SE_BORRO));
+      boton.focus?.();
+    }
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+// ---- El evento (la agenda: spec 2026-10-26-mi-espacio-agenda, 1, 2 y 6; los tres tipos: spec 2026-10-29-mi-espacio-evento-publico,
+// 4 y 7) ----
+
+// Una lista de personas para elegir, una sola vez por página (en `pagina[clave]`; si falla, se vuelve a pedir la próxima): `{ lista,
+// motivo }`, con quiénes se puede elegir o, si no llegó, `lista` null y, con un 403 (un rol viejo en el navegador: ya no es
+// administración), el mensaje del servidor en `motivo` («No tenés permiso para compartir eventos.»); con otra falla, ''
+function pedirUnaListaDePersonas(clave, ruta) {
+  pagina[clave] ??= API.pedirJson('GET', ruta).then(
+    ({ data }) => ({ lista: listaDe(data), motivo: '' }),
+    (error) => {
+      pagina[clave] = null;
+      if (error?.status === 401) irAlLogin();
+      return { lista: null, motivo: error?.status === 403 ? comoTexto(error.message) : '' };
+    }
+  );
+  return pagina[clave];
+}
+// Las de un Laboral: la administración (GET /mi-espacio/personas, solo para administración). Las de un Público: todos los usuarios
+// activos, de cualquier rol (GET /mi-espacio/personas/publico, para todos)
+const personasParaCompartir = () => pedirUnaListaDePersonas('personas', '/mi-espacio/personas');
+const personasParaElPublico = () => pedirUnaListaDePersonas('personasPublico', '/mi-espacio/personas/publico');
+
+// Las personas del tipo (`'laboral'` o `'publico'`) para este formulario: se piden una vez por formulario (la página guarda la
+// respuesta) y, mientras llegan, «Cargando las personas…»
+function pedirLasPersonas(formulario, tipo) {
+  if (formulario.listas[tipo]) return;
+  formulario.listas[tipo] = { lista: null, sinLista: 'cargando', motivo: '' };
+  (tipo === 'publico' ? personasParaElPublico() : personasParaCompartir()).then(({ lista, motivo }) => {
+    if (pagina.evento !== formulario) return;
+    formulario.listas[tipo] = { lista, sinLista: lista === null ? 'fallo' : null, motivo };
+    if (formulario.valores.tipo === tipo) pintarPersonas();
+  });
+}
+
+// El nombre de quien carga como lo ven los demás (`mi_nombre_corto` de GET /mi-espacio/eventos), para la vista previa: el de la
+// agenda, si ya llegó; si no, el que se pidió (null mientras tanto o si no llegó)
+function nombreDeLaVistaPrevia() {
+  const conNombre = [pagina.delMes, pagina.proximos].find((datos) => esObjeto(datos) && conTexto(datos.mi_nombre_corto));
+  return conNombre ? conNombre.mi_nombre_corto : pagina.miNombre;
+}
+
+// Sin la agenda cargada (el formulario se abrió desde otra pestaña), el nombre se pide con lo de hoy, una vez por página (si no
+// llega, se vuelve a pedir la próxima vez que se elige un Público); al llegar, la vista previa se vuelve a dibujar
+function pedirMiNombre() {
+  if (nombreDeLaVistaPrevia() !== null || pagina.pidiendoMiNombre) return;
+  const hoy = Utils.hoyEnArgentina();
+  pagina.pidiendoMiNombre = true;
+  API.pedirJson('GET', rutaDeEventos({ desde: hoy, hasta: hoy })).then(({ data }) => {
+    pagina.miNombre = esObjeto(data) && conTexto(data.mi_nombre_corto) ? data.mi_nombre_corto : null;
+  }, (error) => {
+    if (error?.status === 401) irAlLogin();
+  }).then(() => {
+    pagina.pidiendoMiNombre = false;
+    pintarVistaPrevia();
+  });
+}
+
+/**
+ * Abre el formulario del evento: «Nuevo evento» (hoy, o la `fecha` del día que se tocó en el mes, Personal (Privado) y «2 horas
+ * antes») o «Editar evento» con uno propio (`item`, de lo que llegó de GET /mi-espacio/eventos). Sin modalidad se abre igual
+ * (decisión del usuario, 27/10/2026). «Tipo de evento» se ve para todos los roles; el Laboral, solo con Auth.isAdmin() (el true
+ * literal), que además pide la lista de la administración (como antes de los tres tipos); un Laboral propio de quien ya no es de
+ * administración se ve elegido y deshabilitado. Un Público pide su lista (y, sin la agenda, el nombre). El foco va a «Qué» y, al
+ * cerrar, vuelve a `volverA`
+ */
+function abrirEvento({ item = null, volverA = null, fecha = null } = {}) {
+  if (pagina.evento !== null) return;
+  const puedeCompartir = Auth.isAdmin?.() === true;
+  const valores = valoresDelEvento(item, { fecha: esFechaDeTexto(fecha) ? fecha : Utils.hoyEnArgentina() });
+  const formulario = {
+    item, valores, original: valores, puedeCompartir, guardando: false, temporizador: null, pedidoDelAviso: 0, listas: {}
+  };
+  pagina.evento = formulario;
+  porId('modal-evento-titulo').textContent = item ? 'Editar evento' : 'Nuevo evento';
+  for (const campo of ['titulo', 'fecha', 'desde', 'hasta', 'detalle']) porId(`ev-${campo}`).value = valores[campo];
+  porId('ev-otro').value = valores.otro ? valores.texto_publico : '';
+  porId('ev-recordatorio').innerHTML = htmlDeOpcionesDeRecordatorio(valores.recordatorio);
+  porId('ev-recordatorio').value = valores.recordatorio;
+  porId('ev-borrar').hidden = item === null;
+  porId('ev-guardar').disabled = false;
+  limpiarErrores('evento');
+  if (puedeCompartir) pedirLasPersonas(formulario, 'laboral');
+  if (valores.tipo === 'publico') {
+    pedirLasPersonas(formulario, 'publico');
+    pedirMiNombre();
+  }
+  pintarQuienLoVe();
+  // Cuándo sale su aviso: el que llegó con el evento, mientras se pide de nuevo (pudo pasar el día)
+  mostrarAvisoDelEvento(item && valores.recordatorio !== 'ninguno' ? item.aviso?.texto : '');
+  programarAvisoDelEvento();
+  abrirModal('modal-evento', { volverA, foco: () => porId('ev-titulo'), alCerrar: cerrarFormularioDeEvento });
+}
+
+// Al cerrar el formulario, lo que esperaba se descarta
+function cerrarFormularioDeEvento() {
+  clearTimeout(pagina.evento?.temporizador);
+  pagina.evento = null;
+}
+
+// Lo que dice el formulario abierto: lo escrito y lo elegido con los botones (con «Otro», lo que ven los demás es lo de su campo)
+const valoresDelFormularioDeEvento = (formulario) => ({
+  ...formulario.valores, titulo: porId('ev-titulo').value, fecha: porId('ev-fecha').value, desde: porId('ev-desde').value,
+  hasta: porId('ev-hasta').value, detalle: porId('ev-detalle').value, recordatorio: porId('ev-recordatorio').value,
+  texto_publico: formulario.valores.otro === true ? porId('ev-otro').value : formulario.valores.texto_publico
+});
+
+// Lo que depende del tipo: sus botones (dos o tres, con el elegido; quien llama devuelve el foco), su ayuda, lo de un Público (qué ven
+// los demás y la vista previa), con quién (en un Público y en un Laboral que se puede guardar) y las ayudas de las personas y del
+// recordatorio. Esas ayudas las describe su control (aria-describedby), que las lee aunque estén ocultas: sin ayuda, además de
+// ocultarse, se vacían
+function pintarQuienLoVe() {
+  const formulario = pagina.evento;
+  const { valores, puedeCompartir } = formulario;
+  const tipos = porId('ev-tipos');
+  tipos.innerHTML = htmlDeTiposDeEvento(valores, { puedeCompartir });
+  const tres = tiposQueSeVen(valores, { puedeCompartir }).length === 3;
+  tipos.classList.toggle('tres', tres);
+  tipos.classList.toggle('dos', !tres);
+  const ayudas = ayudasDelEvento(valores, { puedeCompartir });
+  for (const [id, texto] of [['ev-tipo-ayuda', ayudas.tipo], ['ev-recordatorio-ayuda', ayudas.recordatorio]]) {
+    porId(id).textContent = texto;
+    porId(id).hidden = texto === '';
+  }
+  porId('ev-personas-ayuda').textContent = ayudas.personas;
+  const publico = valores.tipo === 'publico';
+  porId('ev-publico').hidden = !publico;
+  if (publico) pintarLoQueVenLosDemas();
+  porId('ev-grupo-personas').hidden = ayudas.personas === '';
+  pintarPersonas();
+}
+
+function pintarPersonas() {
+  const formulario = pagina.evento;
+  if (!formulario) return;
+  const { lista = null, sinLista = null, motivo = '' } = formulario.listas[formulario.valores.tipo] ?? {};
+  porId('ev-personas').innerHTML = htmlDePersonasDelEvento(personasParaElegir(lista, formulario.valores), formulario.valores,
+    { sinLista, motivo });
+  porId('ev-personas-cuantas').textContent = textoDeCuantasPersonas(formulario.valores);
+}
+
+// Las pastillas, «Otro» con su cuenta y la vista previa
+function pintarLoQueVenLosDemas() {
+  const { valores } = pagina.evento;
+  porId('ev-textos').innerHTML = htmlDeTextosPublicos(valores);
+  porId('ev-otro-grupo').hidden = valores.otro !== true;
+  pintarLaCuentaDelOtro();
+  pintarVistaPrevia();
+}
+
+// La cuenta de «Otro», con cada letra (no es una región viva: la lee el campo, que la tiene en su aria-describedby)
+function pintarLaCuentaDelOtro() {
+  const { texto, pasado } = cuentaDelTextoPublico(porId('ev-otro').value);
+  const cuenta = porId('ev-otro-cuenta');
+  cuenta.textContent = texto;
+  cuenta.classList.toggle('pasado', pasado);
+}
+
+// «Así lo ven los demás:», con la fecha, la hora y lo que ven de ahora (solo en un Público)
+function pintarVistaPrevia() {
+  const formulario = pagina.evento;
+  if (!formulario || formulario.valores.tipo !== 'publico') return;
+  const { dia, evento } = htmlDeLaVistaPrevia(valoresDelFormularioDeEvento(formulario), { nombre: nombreDeLaVistaPrevia() });
+  porId('ev-vista-previa-dia').textContent = dia;
+  porId('ev-vista-previa-evento').innerHTML = evento;
+}
+
+// Un clic en un tipo (uno deshabilitado, o el que ya está, no hace nada): el formulario se vuelve a dibujar para ese tipo (con quién
+// empieza de nuevo: valoresConElTipo), sus errores se van, se pide lo que le falta y el foco queda en el tipo que se tocó
+function alTocarUnTipo(evento) {
+  const formulario = pagina.evento;
+  const boton = evento.target?.closest?.('[data-tipo]');
+  if (!formulario || formulario.guardando || !boton || boton.disabled) return;
+  const tipo = boton.getAttribute('data-tipo');
+  if (!TIPOS_DE_EVENTO.includes(tipo) || tipo === formulario.valores.tipo) return;
+  formulario.valores = valoresConElTipo(formulario.valores, tipo, formulario.original);
+  for (const id of ['ev-tipos', 'ev-textos', 'ev-otro', 'ev-personas']) ponerError(id, null);
+  if (tipo === 'publico') {
+    pedirLasPersonas(formulario, 'publico');
+    pedirMiNombre();
+  } else if (tipo === 'laboral') pedirLasPersonas(formulario, 'laboral');
+  pintarQuienLoVe();
+  porId('ev-tipos').querySelector(`[data-tipo="${tipo}"]`)?.focus?.();
+}
+
+// Un clic en una pastilla: lo que ven los demás (con «Otro», lo escrito en su campo, que aparece con el foco); sus errores se van y el
+// foco queda en la pastilla que se tocó
+function alTocarUnTexto(evento) {
+  const formulario = pagina.evento;
+  const boton = evento.target?.closest?.('[data-texto]');
+  if (!formulario || formulario.guardando || !boton) return;
+  const valor = boton.getAttribute('data-texto');
+  formulario.valores = elegirTextoPublico(formulario.valores, valor, porId('ev-otro').value);
+  ponerError('ev-textos', null);
+  ponerError('ev-otro', null);
+  pintarLoQueVenLosDemas();
+  if (valor === 'otro') porId('ev-otro').focus?.();
+  else [...porId('ev-textos').querySelectorAll('[data-texto]')].find((uno) => uno.getAttribute('data-texto') === valor)?.focus?.();
+}
+
+// Lo que se escribe en «Otro»: la cuenta y la vista previa (el error, si lo hay, queda hasta el próximo «Guardar»)
+function alEscribirElOtro() {
+  const formulario = pagina.evento;
+  if (!formulario || formulario.valores.otro !== true) return;
+  formulario.valores = { ...formulario.valores, texto_publico: porId('ev-otro').value };
+  pintarLaCuentaDelOtro();
+  pintarVistaPrevia();
+}
+
+// Un clic en una persona (o en «Todos»): la lista se vuelve a dibujar y el foco queda en la que se tocó
+function alTocarUnaPersona(evento) {
+  const formulario = pagina.evento;
+  const boton = evento.target?.closest?.('[data-persona]');
+  if (!formulario || formulario.guardando || !boton || boton.disabled) return;
+  const valor = boton.getAttribute('data-persona');
+  formulario.valores = elegirPersona(formulario.valores, valor);
+  ponerError('ev-personas', null);
+  pintarPersonas();
+  porId('ev-personas').querySelector(`[data-persona="${valor}"]`)?.focus?.();
+}
+
+// Cuándo sale el recordatorio, debajo del select (lo describe: no es una región viva); sin nada que decir, oculto
+function mostrarAvisoDelEvento(texto) {
+  const aviso = porId('ev-aviso');
+  aviso.textContent = comoTexto(texto);
+  aviso.hidden = aviso.textContent === '';
+}
+
+// Cambió la fecha, la hora o el recordatorio: el aviso que se veía ya no vale, y se vuelve a pedir; en un Público, la vista previa
+// dice la fecha y la hora nuevas
+function alCambiarElCuando() {
+  if (!pagina.evento) return;
+  mostrarAvisoDelEvento('');
+  programarAvisoDelEvento();
+  pintarVistaPrevia();
+}
+
+// El aviso se pide 300 ms después del último cambio (sin una fecha y una hora que sirvan, o con «Sin aviso», no se pide); lo que
+// estaba en vuelo queda viejo
+function programarAvisoDelEvento() {
+  const formulario = pagina.evento;
+  if (!formulario) return;
+  clearTimeout(formulario.temporizador);
+  formulario.pedidoDelAviso += 1;
+  const ruta = pedidoDelAviso(valoresDelFormularioDeEvento(formulario));
+  if (ruta === null) return;
+  formulario.temporizador = setTimeout(() => pedirAvisoDelEvento(formulario, ruta), ESPERA_DEL_CALCULO);
+}
+
+// GET /mi-espacio/eventos/aviso: el texto del servidor (con los feriados). Una respuesta vieja (el formulario cambió o se cerró
+// mientras) se descarta; si falla, no se dice nada (el error, si lo hay, sale al guardar)
+async function pedirAvisoDelEvento(formulario, ruta) {
+  if (pagina.evento !== formulario) return;
+  const pedido = formulario.pedidoDelAviso;
+  const vigente = () => pagina.evento === formulario && pedido === formulario.pedidoDelAviso;
+  try {
+    const { data } = await API.pedirJson('GET', ruta);
+    if (vigente()) mostrarAvisoDelEvento(esObjeto(data) ? data.texto : '');
+  } catch (error) {
+    if (!vigente()) return;
+    if (error?.status === 401) irAlLogin();
+    else mostrarAvisoDelEvento('');
+  }
+}
+
+// «Guardar»: los errores antes de pedir nada; si no, POST o PUT. Mientras, «Guardar» queda deshabilitado y el modal no se cierra: un
+// doble clic manda un solo pedido (dos eventos compartidos mandarían dos invitaciones). Al guardar, se cierra, se avisa lo que dijo el
+// servidor y se vuelve a pedir todo (la agenda y el Resumen)
+async function guardarEvento() {
+  const formulario = pagina.evento;
+  const boton = porId('ev-guardar');
+  if (!formulario || formulario.guardando) return;
+  const valores = valoresDelFormularioDeEvento(formulario);
+  const errores = erroresDelEvento(valores, Utils.hoyEnArgentina(), { puedeCompartir: formulario.puedeCompartir });
+  if (mostrarErrores('evento', conSusControles('evento', errores))) return;
+  const cuerpo = cuerpoDelEvento(valores, { puedeCompartir: formulario.puedeCompartir });
+  formulario.guardando = true;
+  boton.disabled = true;
+  try {
+    const respuesta = formulario.item
+      ? await API.pedirJson('PUT', `/mi-espacio/eventos/${encodeURIComponent(formulario.item.id)}`, cuerpo)
+      : await API.pedirJson('POST', '/mi-espacio/eventos', cuerpo);
+    formulario.guardando = false;
+    cerrarModal('modal-evento');
+    avisarLaRespuesta(respuesta);
+    volverAPedirTodo();
+  } catch (error) {
+    formulario.guardando = false;
+    boton.disabled = false;
+    if (error?.status === 401) irAlLogin();
+    else if (error?.status === 404) noEstaMas('modal-evento', error);
+    else if (pagina.evento === formulario) mostrarFallaDelServidor('evento', error, boton);
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+// «Borrar el evento»: la confirmación, sobre el formulario, con lo guardado (no lo que se está escribiendo)
+function pedirBorrarEvento() {
+  const formulario = pagina.evento;
+  if (!formulario?.item || formulario.guardando) return;
+  const { item } = formulario;
+  pedirConfirmacion({
+    titulo: 'Borrar el evento', texto: textoDeConfirmacionDeEvento(item, { hoy: Utils.hoyEnArgentina() }), volverA: porId('ev-borrar'),
+    formulario: 'modal-evento', borrar: () => API.pedirJson('DELETE', `/mi-espacio/eventos/${encodeURIComponent(item.id)}`)
+  });
+}
+
+// ---- El detalle de un evento ajeno ----
+
+/**
+ * Abre el detalle de un evento que compartió otra persona (spec, sección 2; maqueta 2, #evento-ajeno): el título (con textContent),
+ * cuándo es, el detalle, quién lo creó y quiénes están, y «Mi recordatorio», con el foco. Solo quien lo creó puede cambiarlo. Un
+ * Personal (Público) de otra persona (spec 2026-10-29-mi-espacio-evento-publico, 5.3), sin «Mi recordatorio» (su grupo, oculto: los
+ * que lo ven no tienen), con el foco en «Cerrar».
+ * `recargarAlCerrar`: «Mi recordatorio» cambió; la agenda se vuelve a pedir al cerrar, después de que el foco vuelva al evento
+ * (mientras está abierto, volver a dibujar la agenda dejaría a `volverA` fuera de la página)
+ */
+function abrirEventoAjeno({ item, volverA = null }) {
+  if (pagina.eventoAjeno !== null) return;
+  const partes = htmlDelEventoAjeno(item);
+  const elegido = miRecordatorioDe(item);
+  pagina.eventoAjeno = { item, elegido, guardando: false, recargarAlCerrar: false };
+  porId('modal-evento-ajeno-titulo').textContent = comoTexto(item.titulo);
+  porId('mea-cuando').innerHTML = partes.cuando;
+  porId('mea-detalle').innerHTML = partes.detalle;
+  porId('mea-detalle').hidden = partes.detalle === '';
+  porId('mea-quien').innerHTML = partes.quien;
+  const publico = item.publico === true;
+  porId('mea-grupo-recordatorio').hidden = publico;
+  const select = porId('mea-recordatorio');
+  select.innerHTML = partes.opciones;
+  select.value = elegido;
+  select.disabled = false;
+  mostrarAvisoAjeno(publico ? '' : item.aviso?.texto, elegido);
+  avisoDelModal('eventoAjeno', '');
+  abrirModal('modal-evento-ajeno', {
+    volverA, foco: () => porId(publico ? 'mea-cerrar' : 'mea-recordatorio'), alCerrar: cerrarEventoAjeno
+  });
+}
+
+function cerrarEventoAjeno() {
+  const recargar = pagina.eventoAjeno?.recargarAlCerrar === true;
+  pagina.eventoAjeno = null;
+  if (recargar) Promise.resolve().then(volverAPedirTodo);
+}
+
+// Cuándo sale «Mi recordatorio» (el texto del servidor); apagado, nada
+function mostrarAvisoAjeno(texto, elegido) {
+  const aviso = porId('mea-aviso');
+  aviso.textContent = elegido === 'evento' ? comoTexto(texto) : '';
+  aviso.hidden = aviso.textContent === '';
+}
+
+// «Mi recordatorio»: el PUT enseguida (el evento no cambia). Mientras, el select queda deshabilitado y el detalle no se cierra; si
+// sale bien, se anuncia y se dice cuándo sale; si falla, el select vuelve a lo de antes y el error va arriba del detalle (un 404,
+// como al guardar). El foco vuelve al select. Un Personal (Público) no tiene: no se manda nada
+async function guardarMiRecordatorio() {
+  const ajeno = pagina.eventoAjeno;
+  const select = porId('mea-recordatorio');
+  if (!ajeno || ajeno.guardando || ajeno.item?.publico === true || select.value === ajeno.elegido) return;
+  const elegido = select.value;
+  ajeno.guardando = true;
+  select.disabled = true;
+  avisoDelModal('eventoAjeno', '');
+  try {
+    const respuesta = await API.pedirJson('PUT', `/mi-espacio/eventos/${encodeURIComponent(ajeno.item.id)}/mi-recordatorio`,
+      { sin_aviso: elegido === 'ninguno' });
+    ajeno.guardando = false;
+    ajeno.elegido = elegido;
+    ajeno.recargarAlCerrar = true;
+    select.disabled = false;
+    mostrarAvisoAjeno(respuesta?.data?.aviso?.texto, elegido);
+    avisarLaRespuesta(respuesta);
+    select.focus?.();
+  } catch (error) {
+    ajeno.guardando = false;
+    select.disabled = false;
+    select.value = ajeno.elegido;
+    if (error?.status === 401) irAlLogin();
+    else if (error?.status === 404) {
+      // noEstaMas ya vuelve a pedir todo: cerrar el detalle no lo pide otra vez (aunque antes un cambio haya salido bien)
+      ajeno.recargarAlCerrar = false;
+      noEstaMas('modal-evento-ajeno', error);
+    } else if (pagina.eventoAjeno === ajeno) {
+      avisoDelModal('eventoAjeno', motivoDeLaFalla(error, MENSAJE_NO_SE_GUARDO));
+      select.focus?.();
+    }
+  }
+}
