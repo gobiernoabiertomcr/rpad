@@ -469,6 +469,59 @@ describe('Correos → Estado', () => {
   });
 });
 
+describe('Correos → Estado: las que ya tendrían que haber salido', () => {
+  const alertas = (estado, tipo) => estado.alertas.filter(a => a.tipo === tipo);
+  beforeEach(async () => {
+    await crearDataset({ vencimiento: '2026-12-31' });
+    await correr('2026-11-02');
+  });
+
+  it('a las 14:14 todavía es la de siempre; a las 14:15, en rojo y con la Tarea Cron', async () => {
+    let estado = await motor.estadoNotas({ hoy: '2026-11-02', ahora: '2026-11-02 14:14:00' });
+    assert.equal(alertas(estado, 'para-firmar').length, 1);
+    assert.equal(alertas(estado, 'para-firmar-atrasada').length, 0);
+    estado = await motor.estadoNotas({ hoy: '2026-11-02', ahora: '2026-11-02 14:15:00' });
+    assert.equal(alertas(estado, 'para-firmar').length, 0);
+    const [alerta] = alertas(estado, 'para-firmar-atrasada');
+    assert.equal(alerta.nivel, 'error');
+    assert.equal(alerta.mensaje, 'Hay 1 nota que sigue esperando la firma y ya pasaron las 14:00: revisá la Tarea Cron de /api/cron/cambios-pendientes. Sale en la próxima corrida de la mañana.');
+  });
+
+  it('una de un día anterior también, y sale en la corrida de la mañana', async () => {
+    const estado = await motor.estadoNotas({ hoy: '2026-11-03', ahora: '2026-11-03 07:00:00' });
+    assert.equal(alertas(estado, 'para-firmar-atrasada')[0].nivel, 'error');
+    await correr('2026-11-03');
+    assert.equal((await notas())[0].estado, 'enviada');
+    assert.equal(alertas(await motor.estadoNotas({ hoy: '2026-11-03', ahora: '2026-11-03 09:00:00' }), 'para-firmar-atrasada').length, 0);
+  });
+
+  it('con el envío automático apagado lo dice, y un día no hábil es una advertencia', async () => {
+    await query('UPDATE notas_digitales_config SET envio_activo = 0');
+    let [alerta] = alertas(await motor.estadoNotas({ hoy: '2026-11-02', ahora: '2026-11-02 15:00:00' }), 'para-firmar-atrasada');
+    assert.equal(alerta.nivel, 'error');
+    assert.equal(alerta.mensaje, 'Hay 1 nota que sigue esperando la firma y el envío automático está apagado: no sale hasta que se active.');
+    await query('UPDATE notas_digitales_config SET envio_activo = 1');
+    [alerta] = alertas(await motor.estadoNotas({ hoy: '2026-11-07', ahora: '2026-11-07 15:00:00' }), 'para-firmar-atrasada');
+    assert.equal(alerta.nivel, 'advertencia');
+    assert.equal(alerta.mensaje, 'Hay 1 nota que sigue esperando la firma y hoy no es día hábil: sale en la próxima corrida de la mañana.');
+  });
+});
+
+describe('a las 14:00, sin nada para enviar', () => {
+  it('no toma el candado: con el interruptor apagado, las 14:00 son las de siempre', async () => {
+    await query('UPDATE notas_digitales_config SET firma_digital_activa = 0');
+    const conexion = await db().getConnection();
+    await conexion.query('SELECT GET_LOCK(?, 0)', [BLOQUEO]);
+    try {
+      const resumen = await motor.enviarLasQueEsperanFirma({ hoy: '2026-11-02', ahora: '2026-11-02 14:00:00', calendario: CALENDARIO_FIJO, intentos: 2, esperaMs: 1 });
+      assert.deepEqual([resumen.ejecutado, resumen.ocupado, resumen.enviadas, resumen.errores.length], [false, false, 0, 0]);
+    } finally {
+      await conexion.query('SELECT RELEASE_LOCK(?)', [BLOQUEO]);
+      conexion.release();
+    }
+  });
+});
+
 describe('las 14:00 por el controlador (nunca /api/cron/*)', () => {
   const corridaDeLas14 = async (momento) => {
     const controlador = await import('../controllers/notificacionesController.js');

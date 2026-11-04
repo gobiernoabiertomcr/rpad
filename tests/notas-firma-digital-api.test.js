@@ -295,7 +295,7 @@ describe('lo demás de Correos', () => {
   it('«Reintentar» no sirve de atajo: 409 con una nota que espera', async () => {
     const id = await notaQueEspera();
     const res = await api.post(`/notificaciones/notas-digitales/${id}/reintentar`, {}, comoAdmin());
-    assert.deepEqual([res.status, res.body.error], [409, 'Esta nota espera la firma digital: sale sola a las 14:00.']);
+    assert.deepEqual([res.status, res.body.error], [409, 'Esta nota espera la firma digital: sale sola en la próxima corrida.']);
     assert.equal((await fila(id)).estado, 'pendiente');
   });
 

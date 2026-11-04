@@ -175,9 +175,9 @@ En gestión externa, el RPAD avisa a la DGMIT y a la Dirección Administrativa, 
 La firma digital remota no se puede integrar: el Firmador firma aparte. Por eso, con el interruptor de Correos → Estado prendido (arranca apagado), cada nota se baja, se firma y se vuelve a subir antes de salir.
 
 1. A las **8:05** el RPAD genera las notas. No se envían: le llegan por mail a quien firma (el firmante titular o, durante su licencia, la persona autorizada), adjuntas.
-2. Quien firma las firma y, en **Correos → Libro**, sube cada una **en su fila**, con el nombre que venga (`document.pdf`). El RPAD comprueba que sea esa nota, firmada y sin ningún cambio, y la muestra en un modal para leerla y confirmar. Si es otra nota, lo dice y no guarda nada.
+2. Quien firma las firma y, en **Correos → Libro**, sube cada una **en su fila**, con el nombre que venga (`document.pdf`). El RPAD comprueba que sea esa nota, que no se haya guardado otra versión antes de firmarla y que la firma corresponda a sus bytes, y la muestra en un modal para leerla y confirmar. Si es otra nota, lo dice y no guarda nada.
 3. **«Enviar las N firmadas»** las envía con su nombre de siempre (`Nota-Digital-8-26.pdf`). El Libro las guarda firmadas.
-4. A las **14:00** sale lo que quede: firmada si se subió; si no, con la imagen de la firma, como antes. Una nota nunca se queda sin salir porque nadie la firmó.
+4. A las **14:00** sale lo que quede: firmada si se subió y se confirmó; si no, con la imagen de la firma, como antes. Una nota nunca se queda sin salir porque nadie la firmó. Si esa corrida no corre, Correos → Estado lo avisa en rojo y la nota sale en la corrida de la mañana siguiente.
 
 El RPAD comprueba que el PDF sea esa nota y que la firma corresponda a sus bytes; la cadena de confianza es del validador oficial. Con el interruptor apagado, todo sale como siempre, a las 8:05. Detalle de diseño: `docs/superpowers/specs/2026-11-03-notas-firma-digital-design.md`.
 

@@ -35,7 +35,7 @@ import { leerCalendario } from './feriadosDatos.js';
 import { MENSAJE_CORRIDA_SIN_FERIADOS, MENSAJE_ESTADO_SIN_FERIADOS } from './feriadosReglas.js';
 import {
   debeEsperarFirma, paso14, conLineaDeFirma, verificarNotaFirmada, mensajeDelRechazo, archivoDeLaNota, numeroDeLaNota,
-  MENSAJE_FIRMADA_GUARDADA, MENSAJE_NOTA_YA_SALIO, MENSAJE_NOTA_YA_NO_ESPERA
+  MENSAJE_FIRMADA_GUARDADA, MENSAJE_NOTA_YA_SALIO, MENSAJE_NOTA_YA_NO_ESPERA, esperaDeMas
 } from './notasFirmaDigital.js';
 import { notasParaFirmarTemplate } from './emailTemplates.js';
 
@@ -383,7 +383,7 @@ const avisarLasQueEsperan = async (resumen, hoy) => {
 };
 
 /**
- * A las 14:00 sale lo que quede (spec, 4.9): las que esperan, con la copia firmada si se subió y no se confirmó y, si no, con la imagen, y
+ * A las 14:00 sale lo que quede (spec, 4.9): las que esperan, con la copia firmada si se guardó y no se envió y, si no, con la imagen, y
  * las firmadas que fallaron. Solo a partir de esa hora (la ruta manual de los recordatorios se puede llamar antes), en un día hábil, con
  * el envío automático activo y la configuración completa, como la corrida: si no, esperan y las toma la corrida de la mañana. Bajo el mismo
  * candado: como alguien puede estar enviando justo antes de esa hora (el SMTP tarda), lo intenta unas veces antes de darlo por ocupado, y
@@ -400,14 +400,13 @@ export const enviarLasQueEsperanFirma = async ({
   const config = await obtenerConfig();
   if (!config.envio_activo || !calendario.esDiaHabil(hoy)) return resumen;
   if (configuracionCompleta(config, await firmaTitularDe(config)).length > 0) return resumen;
+  const CUALES = `estado IN ('pendiente', 'fallida') AND es_prueba = 0 AND intentos < ? AND (espera_firma = 1 OR pdf_firmado IS NOT NULL)`;
+  // Sin nada para enviar no se toma el candado: con el interruptor apagado, las 14:00 son las de siempre
+  const [hay] = await pool.query(`SELECT 1 FROM notas_digitales WHERE ${CUALES} LIMIT 1`, [MAX_INTENTOS]);
+  if (hay.length === 0) return resumen;
   const enviarTodas = async () => {
     resumen.ejecutado = true;
-    const [filas] = await pool.query(
-      `SELECT id FROM notas_digitales
-       WHERE estado IN ('pendiente', 'fallida') AND es_prueba = 0 AND intentos < ? AND (espera_firma = 1 OR pdf_firmado IS NOT NULL)
-       ORDER BY id`,
-      [MAX_INTENTOS]
-    );
+    const [filas] = await pool.query(`SELECT id FROM notas_digitales WHERE ${CUALES} ORDER BY id`, [MAX_INTENTOS]);
     for (const { id } of filas) {
       try {
         const resultado = await enviarNota(id);
@@ -518,6 +517,20 @@ const notasParaFirmar = async () => {
      WHERE n.espera_firma = 1 AND n.estado = 'pendiente' AND n.es_prueba = 0 ORDER BY n.id DESC`
   );
   return filas;
+};
+
+// Las que ya tendrían que haber salido (spec, 6): la corrida de las 14:00 dejó de ser una más, y si no corre, nadie se enteraría. No se
+// nombra a nadie. Un día no hábil no salen por regla, así que es una advertencia
+const alertaDeLasAtrasadas = (notas, { envioActivo, diaHabil }) => {
+  const una = notas.length === 1;
+  const sujeto = una ? 'Hay 1 nota que sigue esperando la firma' : `Hay ${notas.length} notas que siguen esperando la firma`;
+  const tipo = 'para-firmar-atrasada';
+  if (!envioActivo) return { tipo, nivel: 'error', mensaje: `${sujeto} y el envío automático está apagado: ${una ? 'no sale' : 'no salen'} hasta que se active.` };
+  if (!diaHabil) return { tipo, nivel: 'advertencia', mensaje: `${sujeto} y hoy no es día hábil: ${una ? 'sale' : 'salen'} en la próxima corrida de la mañana.` };
+  return {
+    tipo, nivel: 'error',
+    mensaje: `${sujeto} y ya pasaron las 14:00: revisá la Tarea Cron de /api/cron/cambios-pendientes. ${una ? 'Sale' : 'Salen'} en la próxima corrida de la mañana.`
+  };
 };
 
 const textoDeLaAlertaDeFirma = (notas) => {
@@ -1478,7 +1491,7 @@ const proximasFechas = async ({ config, hoy, calendario }) => {
  * leer la tabla. Si la tabla no se pudo leer (calendario.error, nunca por el origen: un test puede pasar CALENDARIO_FIJO), las
  * fechas cuentan solo los 9 fijos y suma la alerta feriados-sin-leer (spec 2026-10-27-feriados-en-notas, 2).
  */
-export const estadoNotas = async ({ hoy = hoyArgentina(), calendario } = {}) => {
+export const estadoNotas = async ({ hoy = hoyArgentina(), ahora = ahoraArgentina(), calendario } = {}) => {
   const conElCalendario = calendario ?? await leerCalendario();
   const config = await obtenerConfig();
   const firmaTitular = await firmaTitularDe(config);
@@ -1489,6 +1502,8 @@ export const estadoNotas = async ({ hoy = hoyArgentina(), calendario } = {}) => 
   );
   const ultimaCorrida = await leerUltimaCorrida();
   const paraFirmar = await notasParaFirmar();
+  const atrasadas = paraFirmar.filter(nota => esperaDeMas(nota.fecha, hoy, ahora));
+  const aTiempo = paraFirmar.filter(nota => !atrasadas.includes(nota));
   return {
     envio_activo: Boolean(config.envio_activo),
     firma_digital_activa: Boolean(config.firma_digital_activa),
@@ -1503,7 +1518,8 @@ export const estadoNotas = async ({ hoy = hoyArgentina(), calendario } = {}) => 
       // Las fechas de esta pantalla cuentan solo los 9 fijos
       ...(conElCalendario.error !== null ? [{ tipo: 'feriados-sin-leer', nivel: 'error', mensaje: MENSAJE_ESTADO_SIN_FERIADOS }] : []),
       ...alertasDeCorrida(config, ultimaCorrida, hoy, conElCalendario),
-      ...(paraFirmar.length > 0 ? [{ tipo: 'para-firmar', nivel: 'advertencia', mensaje: textoDeLaAlertaDeFirma(paraFirmar) }] : []),
+      ...(atrasadas.length > 0 ? [alertaDeLasAtrasadas(atrasadas, { envioActivo: Boolean(config.envio_activo), diaHabil: conElCalendario.esDiaHabil(hoy) })] : []),
+      ...(aTiempo.length > 0 ? [{ tipo: 'para-firmar', nivel: 'advertencia', mensaje: textoDeLaAlertaDeFirma(aTiempo) }] : []),
       // Advertencias que no bloquean el envío (las imágenes no están en configuracionCompleta)
       // La imagen de la firma que usan las notas: la del titular, si hay uno elegido
       ...((config.firmante_usuario_id ? firmaTitular?.imagen : config.firma_imagen) ? [] : [{

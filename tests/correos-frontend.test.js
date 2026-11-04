@@ -2743,6 +2743,12 @@ describe('correos.js: la firma digital', () => {
       assert.ok(h.includes('<span class="co-pastilla para-firmar">Para firmar</span><small>hasta las 14:00</small>'));
       assert.ok(!h.includes('Reintentar'));
       assert.ok((await fila({ ...BASE, estado: 'pendiente', espera_firma: true, firmado_por: 'X' })).includes('Firmada, sin enviar'));
+      // Una de un día anterior ya no sale «hasta las 14:00»
+      assert.ok((await fila({ ...BASE, fecha: '2020-01-02', estado: 'pendiente', espera_firma: true })).includes('<small>sale en la próxima corrida</small>'));
+      // Una que ya salió con la marca puesta (una vuelta atrás a medias) no es para firmar
+      const salio = await fila({ ...BASE, estado: 'enviada', enviada_at: '2026-12-01 09:15', espera_firma: true });
+      assert.ok(!salio.includes('Para firmar'));
+      assert.ok(salio.includes('co-pastilla enviada'));
     });
 
     it('la enviada firmada lo dice debajo del estado, escapado; una pendiente común sigue con «Reintentar»', async () => {

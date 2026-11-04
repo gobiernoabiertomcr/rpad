@@ -17,7 +17,7 @@ La solución es una **ventana de firma el mismo día**, que se prende con un int
    comprueba que el archivo sea esa nota: si no, lo rechaza y dice cuál es.
 3. Si es esa nota, se abre un modal con el PDF, para leerlo, y ahí se confirma (decisión del usuario). Al confirmar, la fila muestra quién firmó y «Ver». Todavía no sale nada.
 4. Con «Enviar las N firmadas» salen, con el nombre de siempre, y quedan archivadas firmadas en el Libro.
-5. A las **14:00** sale lo que quede: firmada, si se subió y no se confirmó; si no, con la imagen de la firma, como hoy.
+5. A las **14:00** sale lo que quede: firmada, si se guardó y no se envió; si no, con la imagen de la firma, como hoy.
 
 Con el interruptor apagado (de entrada), todo sigue igual, salvo la hora de la corrida (sección 5).
 
@@ -75,6 +75,8 @@ Con la ventana, nada de eso pasa: toda nota sale el día en que se generó. El u
 descartó porque la nota quedaría congelada hasta 3 días: un dataset actualizado esa tarde, una licencia o un asueto cargados ese
 día, un cambio aprobado. Y todas las reglas del motor correrían con «mañana» como «hoy».
 
+Una nota que espera sale con lo que se generó a las 8:05: un dataset actualizado o un cambio aprobado a las 10:00 no la cambia, igual que una nota que ya salió.
+
 Lo que cambia con la ventana: las notas salen más tarde dentro del mismo día. `enviada_at` y el Seguimiento dicen la hora real,
 Métricas cuenta por día, y entre las 8:05 y la subida la nota figura como «Pendiente de envío» en el Seguimiento. El anexo de la
 reiteración dice «enviada» con la hora de generación, como hoy.
@@ -130,12 +132,13 @@ para todas (decisión del usuario). Da un resultado por nota: «enviada, firmada
 
 **El nombre del archivo.** El nombre con que llega el archivo (`document.pdf`, `documento.pdf`, lo que sea) no se usa ni se guarda. El email adjunta siempre `Nota-Digital-N-AA.pdf` y el Libro baja ese mismo nombre, firmada o no.
 
-**Ver.** Toda fila tiene «Ver» (decisión del usuario: para saber qué nota es): sin firmar, abre la nota que generó el RPAD, con «Bajar PDF» en el pie; firmada, lo que se subió. Con `GET …/:id/pdf` (`pdf_firmado ?? pdf`), en un `<iframe>` con un `blob:`, como Proyectos (la CSP ya lo permite: `frameSrc` incluye `blob:`), dentro de un modal con «Firmada digitalmente por X el dd/mm a las hh:mm», «Descargar» (en el teléfono un PDF no siempre se ve en el marco) y «Cerrar».
+**Ver.** Toda fila tiene «Ver» (decisión del usuario: para saber qué nota es): sin firmar, abre la nota que generó el RPAD, con «Bajar PDF» en el pie; firmada, lo que se subió. Con `GET …/:id/pdf` (`pdf_firmado ?? pdf`), en un `<iframe>` con un `blob:`, como Proyectos (la CSP ya lo permite: `frameSrc` incluye `blob:`), dentro de un modal con «Firmada digitalmente por X el dd/mm a las hh:mm», «Bajar PDF» (en el teléfono un PDF no siempre se ve en el marco) y «Cerrar».
 
 **4.6 Cómo sabe el RPAD que está firmada** (`services/notasFirmaDigital.js`, puro, sin dependencias nuevas; nunca tira):
 1. El archivo empieza con los bytes exactos del `pdf` guardado de la nota y es más largo. Con eso se identifica la nota.
 2. En lo agregado hay un `/ByteRange [0 b c d]` (el último), con `b` ≥ el largo del original y `c + d` igual al largo del archivo:
-   la firma cubre todo, y no hay nada después.
+   la firma cubre todo, y no hay nada después. Y lo agregado es una sola actualización (un solo `%%EOF`): si no, alguien guardó el PDF antes de firmarlo
+   (un comentario, «Fill & Sign») y la hoja puede ser otra. Se rechaza, sin culpar a nadie (revisión final del 04/11: evita un error sin querer, no un fraude).
 3. `/Contents` es un CMS `SignedData` que se puede leer (un lector de DER chico, que lee el largo del primer elemento e ignora los ceros de relleno que siguen): el `messageDigest` es el hash de los rangos, y la
    firma verifica con la clave pública de su certificado (`crypto`). SHA-256, SHA-384 o SHA-512.
 4. Del certificado salen `firmado_por` (el `CN`, tal cual) y, de `signingTime`, `firmado_at`.
@@ -152,7 +155,7 @@ texto: «La nota está firmada digitalmente por X.», escapada. Se arma al envia
 Word no cambia.
 
 **4.9 A las 14:00.** Antes de los recordatorios, en un día hábil y con el envío automático activo, bajo el candado:
-se envían las que esperan (`espera_firma = 1`: con su `pdf_firmado` si se subió y no se confirmó, decisión del usuario; si no, con la imagen) y las firmadas que fallaron (`pdf_firmado` con `estado` distinto de `enviada` e
+se envían las que esperan (`espera_firma = 1`: con su `pdf_firmado` si se guardó y no se envió, decisión del usuario; si no, con la imagen) y las firmadas que fallaron (`pdf_firmado` con `estado` distinto de `enviada` e
 `intentos` < 5). Va aislado: un error se anota en la última corrida y no frena los recordatorios. Ocupado o caído, las recupera
 la corrida de la mañana siguiente (punto 4.10). Ningún aviso a quien no firmó.
 
@@ -160,7 +163,7 @@ la corrida de la mañana siguiente (punto 4.10). Ningún aviso a quien no firmó
 (`NOT (espera_firma = 1 AND fecha = hoy)`). Una que esperaba de un día anterior sale con la imagen: nunca queda colgada.
 
 **4.11 «Reintentar» no sirve de atajo.** Con `espera_firma = 1` el botón no se muestra y la API responde 409 («Esta nota espera la
-firma digital: sale sola a las 14:00.»). `enviarNota` pone `espera_firma = 0` en los dos resultados. Una nota de prueba no pasa por nada de esto.
+firma digital: sale sola en la próxima corrida.»). `enviarNota` pone `espera_firma = 0` en los dos resultados. Una nota de prueba no pasa por nada de esto.
 
 **4.12 Apagar el interruptor** no suelta las que ya esperan: cada nota sigue su bandera y sale a las 14:00.
 
@@ -181,7 +184,7 @@ Como en la maqueta:
 - **Filas del Libro:** «Para firmar» (o «Firmada, sin enviar») + «hasta las 14:00» en las que esperan, sin «Reintentar». En las ya enviadas firmadas, debajo del estado,
   «Firmada digitalmente por X», con la fecha y la hora en el `title`.
 - **Estado:** el interruptor «Firma digital de las notas», debajo de «Envío automático», con su texto. Lo pueden cambiar los mismos
-  que el envío automático. La alerta `para-firmar` (advertencia): «Hay 2 notas para firmar. Las que no se suban antes de las 14:00
+  que el envío automático. Si una nota sigue esperando pasadas las 14:15, o es de un día anterior, la alerta `para-firmar-atrasada` lo dice: `error` (revisar la Tarea Cron de `/api/cron/cambios-pendientes`, o el envío automático apagado) o, un día no hábil, advertencia; es lo único que avisa si la corrida de las 14:00 no corre (revisión final del 04/11). «Reintentar» sigue sin servir: la spec 4.11 no cambia. La alerta `para-firmar` (advertencia): «Hay 2 notas para firmar. Las que no se suban antes de las 14:00
   salen con la imagen de la firma.» o, si todas están firmadas, «Hay 2 notas firmadas sin enviar. Salen solas a las 14:00.». La última corrida suma «, N para firmar» si hay alguna.
 
 ## 7. Lo que se deja afuera

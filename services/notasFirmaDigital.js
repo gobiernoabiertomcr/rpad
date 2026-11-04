@@ -1,5 +1,5 @@
 // La firma digital de las Notas Digitales, puro (spec 2026-11-03-notas-firma-digital, 4): qué nota espera la firma, si un PDF subido
-// es esa nota firmada y la línea que lo dice en el email. Sin pool ni dependencias nuevas; nada de acá tira.
+// es esa nota firmada y la línea que lo dice en el email. Sin pool ni dependencias nuevas; verificarNotaFirmada y leerFirmaAgregada nunca tiran.
 //
 // Cómo firma el Firmador: agrega la firma al final del PDF, como una actualización incremental (el archivo empieza con los bytes
 // exactos del original). `/ByteRange [0 b c d]` dice qué cubre la firma: todo, menos el `/Contents` que va entre b y c; ahí, en
@@ -23,6 +23,14 @@ export const paso14 = (ahora) => !(typeof ahora === 'string' && /^\d{4}-\d{2}-\d
  */
 export const debeEsperarFirma = ({ activa, ahora, quienFirma }) => (activa === 1 || activa === true)
   && !paso14(ahora) && Boolean(quienFirma);
+
+// Hasta esta hora no se dice que la corrida de las 14:00 no pasó: puede estar terminando (spec, 6)
+export const HORA_DE_LA_ALERTA_DE_FIRMA = '14:15';
+
+// ¿La nota que espera ya tendría que haber salido? Una de un día anterior, o una de hoy pasada esa hora. ahora: el momento de hoy, en hora
+// argentina; si es de otro día, de hoy no se sabe la hora
+export const esperaDeMas = (fecha, hoy, ahora) => fecha < hoy
+  || (fecha === hoy && typeof ahora === 'string' && ahora.startsWith(hoy) && ahora.slice(11, 16) >= HORA_DE_LA_ALERTA_DE_FIRMA);
 
 // ---------- Un lector de DER chico, solo con largos definidos: lo que se sale del buffer tira, y lo ataja leerFirmaAgregada ----------
 const elemento = (der, inicio) => {
@@ -91,14 +99,17 @@ const certificadoSiVerifica = (bytes, digest, firmados, firma) => {
 
 /**
  * La firma que `subido` agrega después de los primeros `largoDelOriginal` bytes (spec, 4.6, pasos 2 a 4):
- * { ok: true, firmado_por, firmado_at } o { ok: false, motivo }. motivo: 'sin_firma' (no hay ningún /ByteRange en lo agregado) o
- * 'invalida'. Nunca tira.
+ * { ok: true, firmado_por, firmado_at } o { ok: false, motivo }. motivo: 'sin_firma' (no hay ningún /ByteRange en lo agregado),
+ * 'con_cambios' (lo agregado es más de una actualización: alguien guardó el PDF antes de firmarlo, por ejemplo con un comentario, y la
+ * hoja puede ser otra) o 'invalida'. Nunca tira.
  */
 export const leerFirmaAgregada = (subido, largoDelOriginal) => {
   try {
     const agregado = subido.subarray(largoDelOriginal).toString('latin1');
     const rangos = [...agregado.matchAll(/\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]/g)];
     if (rangos.length === 0) return { ok: false, motivo: 'sin_firma' };
+    // El Firmador agrega una sola actualización, con su %%EOF. Evita un error sin querer, no un fraude
+    if (agregado.split('%%EOF').length > 2) return { ok: false, motivo: 'con_cambios' };
     const [inicio, hastaContents, desdeContents, resto] = rangos.at(-1).slice(1).map(Number);
     // La firma cubre todo y es nueva: empieza en 0, llega al final y su /Contents está en lo agregado
     if (inicio !== 0 || hastaContents < largoDelOriginal || desdeContents <= hastaContents + 1
@@ -159,6 +170,7 @@ const empiezaCon = (archivo, pdf) => Buffer.isBuffer(pdf) && pdf.length > 0 && a
  * - 'firmada': es esta nota, con una firma que verifica (con quién firmó y cuándo);
  * - 'sin_firma': es esta nota, sin nada agregado o sin firma en lo agregado;
  * - 'firma_invalida': es esta nota, con una firma que no verifica;
+ * - 'con_cambios': es esta nota, pero se guardó otra versión antes de firmarla;
  * - 'otra_nota': empieza con el PDF de una de `otras` (va en `otra`);
  * - 'no_es': nada de lo anterior. Lo que no es un Buffer, también. Nunca tira.
  */
@@ -171,6 +183,7 @@ export const verificarNotaFirmada = (subido, nota, otras = []) => {
   if (subido.length === nota.pdf.length) return { resultado: 'sin_firma' };
   const firma = leerFirmaAgregada(subido, nota.pdf.length);
   if (firma.ok) return { resultado: 'firmada', firmado_por: firma.firmado_por, firmado_at: firma.firmado_at };
+  if (firma.motivo === 'con_cambios') return { resultado: 'con_cambios' };
   return { resultado: firma.motivo === 'sin_firma' ? 'sin_firma' : 'firma_invalida' };
 };
 
@@ -185,12 +198,13 @@ export const mensajeDelRechazo = ({ resultado, otra }, nota) => {
   }
   if (resultado === 'sin_firma') return 'Ese PDF es esta nota, pero no tiene firma digital. Firmala y volvé a subirla.';
   if (resultado === 'firma_invalida') return 'La firma de ese PDF no se pudo verificar. Volvé a firmarla.';
+  if (resultado === 'con_cambios') return 'Ese PDF se guardó con cambios antes de firmarlo. Firmá la nota tal como te llegó. No se guardó nada.';
   return 'Ese PDF no es esta nota. No se guardó nada.';
 };
 export const MENSAJE_FIRMADA_GUARDADA = 'Guardada. Falta enviarla.';
 export const MENSAJE_NOTA_YA_SALIO = 'Esta nota ya salió.';
 export const MENSAJE_NOTA_YA_NO_ESPERA = 'Esta nota ya no espera la firma: está en el Libro.';
-export const MENSAJE_ESPERA_FIRMA = 'Esta nota espera la firma digital: sale sola a las 14:00.';
+export const MENSAJE_ESPERA_FIRMA = 'Esta nota espera la firma digital: sale sola en la próxima corrida.';
 export const MENSAJE_CORRIDA_EN_CURSO = 'Hay una corrida de Notas Digitales en curso. Probá de nuevo en unos minutos.';
 
 // La línea del email a los destinatarios de una nota firmada (spec, 4.8). Texto plano

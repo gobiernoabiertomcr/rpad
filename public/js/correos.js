@@ -255,7 +255,7 @@ function htmlDeParaFirmar(notas, { avisos = {}, enviadas = [] } = {}) {
   };
   return `<h2>${notas.length ? 'Notas para firmar hoy' : 'No quedan notas para firmar'}</h2>
     <p class="co-ayuda">${notas.length
-    ? 'Subí cada nota firmada en su fila, revisala y envialas. A las 14:00 sale lo que quede: firmada si la subiste; si no, con la imagen de la firma.'
+    ? 'Subí cada nota firmada en su fila, revisala y envialas. A las 14:00 sale lo que quede: firmada si la subiste y la confirmaste; si no, con la imagen de la firma.'
     : enviadas.some(e => !e.bien) ? 'La que no salió se vuelve a intentar en la próxima corrida, firmada.' : 'Ya salieron todas las de hoy.'}</p>
     ${notas.length ? `<ul class="co-para-firmar-lista">${notas.map(fila).join('')}</ul>` : ''}
     ${enviadas.length ? `<ul class="co-subidas">${enviadas.map(e => `<li class="${e.bien ? 'bien' : 'mal'}">${esc(e.texto)}</li>`).join('')}</ul>` : ''}
@@ -663,8 +663,8 @@ function filaDelLibro(n) {
     <td>${n.gestion ? `<span class="co-gestion">${textoGestion(n.gestion)}</span>` : textoGestion(n.gestion)}</td>
     <td class="co-cant">${celdaCantidad(n)}</td>
     <td class="co-para ocultable">${esc(n.para)}${n.cc ? `<small>CC: ${esc(n.cc)}</small>` : ''}</td>
-    <td><span class="co-estado">${n.espera_firma === true
-    ? `<span class="co-pastilla para-firmar">${n.firmado_por ? 'Firmada, sin enviar' : 'Para firmar'}</span><small>hasta las 14:00</small>`
+    <td><span class="co-estado">${n.espera_firma === true && n.estado === 'pendiente'
+    ? `<span class="co-pastilla para-firmar">${n.firmado_por ? 'Firmada, sin enviar' : 'Para firmar'}</span><small>${n.fecha < (Utils.hoyEnArgentina?.() ?? '') ? 'sale en la próxima corrida' : 'hasta las 14:00'}</small>`
     : `<span class="co-pastilla ${esc(n.estado)}" title="${esc(detalleEstado)}">${ETIQUETAS[n.estado]}</span>${n.enviada_at ? `<small>${esc(fechaHora(n.enviada_at))}</small>` : ''}${
       n.firmado_por ? `<span class="co-firmada" title="${esc(`Firmada${cuandoFirmo(n.firmado_at)}`)}">${TILDE_DE_FIRMA} Firmada digitalmente por ${esc(n.firmado_por)}</span>` : ''}`}</span></td>
     <td><div class="co-acciones">

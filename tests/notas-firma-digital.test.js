@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  HORA_LIMITE_DE_FIRMA, paso14, debeEsperarFirma, leerFirmaAgregada, verificarNotaFirmada, mensajeDelRechazo, numeroDeLaNota, archivoDeLaNota,
+  HORA_LIMITE_DE_FIRMA, HORA_DE_LA_ALERTA_DE_FIRMA, esperaDeMas, paso14, debeEsperarFirma, leerFirmaAgregada, verificarNotaFirmada, mensajeDelRechazo, numeroDeLaNota, archivoDeLaNota,
   textoDeLaLineaDeFirma, conLineaDeFirma
 } from '../services/notasFirmaDigital.js';
 import { bloquesDeNotaDigital } from '../services/notasDigitalesWord.js';
@@ -134,6 +134,27 @@ describe('verificarNotaFirmada', () => {
     assert.equal(verificarNotaFirmada(conRango(0, b, c, d - 1), A).resultado, 'firma_invalida', 'no llega al final');
     assert.equal(verificarNotaFirmada(conRango(0, 100, c, d), A).resultado, 'firma_invalida', 'corta dentro del original');
     assert.equal(verificarNotaFirmada(conRango(0, b, b, d), A).resultado, 'firma_invalida', 'al revés');
+  });
+
+  it('otra versión guardada antes de firmar (más de un %%EOF en lo agregado): con cambios, aunque la firma verifique', () => {
+    // Una actualización más entre el original y la firma, como la deja un comentario o «Fill & Sign»
+    const conOtra = Buffer.concat([A.pdf, Buffer.from('\n99 0 obj\n<<>>\nendobj\nstartxref\n1\n%%EOF\n', 'latin1'), FIRMADA_A.subarray(A.pdf.length)]);
+    assert.deepEqual(verificarNotaFirmada(conOtra, A), { resultado: 'con_cambios' });
+    assert.equal(leerFirmaAgregada(conOtra, A.pdf.length).motivo, 'con_cambios');
+    assert.equal(mensajeDelRechazo({ resultado: 'con_cambios' }, A), 'Ese PDF se guardó con cambios antes de firmarlo. Firmá la nota tal como te llegó. No se guardó nada.');
+    // Sin firma, sigue diciendo que no tiene firma; la firmada de verdad tiene uno solo
+    assert.deepEqual(verificarNotaFirmada(Buffer.concat([A.pdf, Buffer.from('\nstartxref\n1\n%%EOF\n', 'latin1')]), A), { resultado: 'sin_firma' });
+    assert.equal(FIRMADA_A.subarray(A.pdf.length).toString('latin1').split('%%EOF').length, 2);
+    assert.equal(verificarNotaFirmada(FIRMADA_A, A).resultado, 'firmada');
+  });
+
+  it('esperaDeMas: de un día anterior, o de hoy pasadas las 14:15', () => {
+    assert.equal(HORA_DE_LA_ALERTA_DE_FIRMA, '14:15');
+    assert.equal(esperaDeMas('2026-12-01', '2026-12-02', '2026-12-02 07:00:00'), true);
+    assert.equal(esperaDeMas('2026-12-02', '2026-12-02', '2026-12-02 14:14:59'), false);
+    assert.equal(esperaDeMas('2026-12-02', '2026-12-02', '2026-12-02 14:15:00'), true);
+    assert.equal(esperaDeMas('2026-12-02', '2026-12-02', '2026-11-04 20:00:00'), false, 'un ahora de otro día no dice la hora de hoy');
+    assert.equal(esperaDeMas('2026-12-02', '2026-12-02', null), false);
   });
 
   it('bytes agregados después de la firma no verifican', () => {
