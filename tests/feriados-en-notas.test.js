@@ -818,11 +818,11 @@ describe('vista previa y prueba con la fecha real', () => {
     assert.equal(del04.generadas.filter((g) => g.tipo === 'auditoria').length, 1);
   };
 
-  it('la reiteración muestra la del 01/12 si la de noviembre ya salió', async () => {
+  it('la reiteración muestra la del 04/01 si la de noviembre ya salió', async () => {
     await crearDataset({ titulo: 'Venció en octubre', vencimiento: '2026-10-31' });
     await evaluadas('2026-11');
     const vista = await motor.previewNota({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-04' });
-    assert.deepEqual(loQueMuestra(vista), ['2026-12-01', null, true]);
+    assert.deepEqual(loQueMuestra(vista), ['2027-01-04', null, true]);
     // Es la que anuncia el Estado, con lo que se seleccionaría ese día
     const { reiteracion } = (await motor.estadoNotas({ hoy: '2026-11-04' })).proximas.interna;
     assert.deepEqual([vista.fecha, vista.ejemplo, vista.cantidad], [reiteracion.fecha, false, reiteracion.cantidad]);
@@ -831,6 +831,29 @@ describe('vista previa y prueba con la fecha real', () => {
     await evaluadas('2026-10');
     assert.deepEqual(loQueMuestra(await motor.previewNota({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-04' })),
       ['2026-11-04', null, false]);
+  });
+
+  // Spec 2026-11-03-reiteracion-bimestral, 4: en un mes que no toca, la del próximo que toca, también si hoy no se generan notas
+  it('en un mes que no toca, la vista previa y la prueba de la reiteración son las del próximo mes que toca', async () => {
+    await crearDataset({ titulo: 'Venció en octubre', vencimiento: '2026-10-31' });
+    await evaluadas('2026-11');
+    const vista = await motor.previewNota({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-12-15' });
+    assert.deepEqual(loQueMuestra(vista), ['2027-01-04', null, true]);
+    assert.ok(vista.html.includes('4 de enero de 2027'));
+    assert.ok(vista.html.includes('Venció en octubre'));
+    const { reiteracion } = (await motor.estadoNotas({ hoy: '2026-12-15' })).proximas.interna;
+    assert.deepEqual([vista.fecha, vista.ejemplo, vista.cantidad], [reiteracion.fecha, false, reiteracion.cantidad]);
+    assert.deepEqual(loQueMuestra(await motor.previewNota({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-12-19' })),
+      ['2027-01-04', 'día no hábil', true]);
+
+    const prueba = await motor.enviarPrueba({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-12-15' });
+    assert.equal(prueba.success, true);
+    assert.deepEqual(loQueMuestra(prueba), ['2027-01-04', null, true]);
+    assert.ok(motor.mensajeDePrueba(prueba).endsWith('como saldría el 04/01/2027)'), motor.mensajeDePrueba(prueba));
+    // La prueba no gasta un número ni escribe la marca
+    assert.deepEqual(await query('SELECT numero, es_prueba FROM notas_digitales'), [{ numero: null, es_prueba: 1 }]);
+    const [marcas] = await query('SELECT reiteracion_evaluada_interna AS interna, reiteracion_evaluada_externa AS externa FROM notas_digitales_config');
+    assert.deepEqual(marcas, { interna: '2026-11', externa: '2026-11' });
   });
 
   it('el aviso, el primer día con notas', async () => {
@@ -872,8 +895,8 @@ describe('vista previa y prueba con la fecha real', () => {
     await evaluadas('2026-11');
     const prueba = await motor.enviarPrueba({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-04' });
     assert.equal(prueba.success, true);
-    assert.deepEqual(loQueMuestra(prueba), ['2026-12-01', null, true]);
-    assert.ok(motor.mensajeDePrueba(prueba).endsWith('como saldría el 01/12/2026)'), motor.mensajeDePrueba(prueba));
+    assert.deepEqual(loQueMuestra(prueba), ['2027-01-04', null, true]);
+    assert.ok(motor.mensajeDePrueba(prueba).endsWith('como saldría el 04/01/2027)'), motor.mensajeDePrueba(prueba));
 
     // El controlador (con el reloj del 04/11 a las 09:00) lo manda en data y lo dice en el mensaje
     const res = respuestaFalsa();
@@ -884,8 +907,8 @@ describe('vista previa y prueba con la fecha real', () => {
       mock.timers.reset();
     }
     assert.equal(res.body.success, true, JSON.stringify(res.body));
-    assert.deepEqual([res.body.data.fecha, res.body.data.motivo, res.body.data.otro_dia], ['2026-12-01', null, true]);
-    assert.ok(res.body.message.endsWith('como saldría el 01/12/2026)'), res.body.message);
+    assert.deepEqual([res.body.data.fecha, res.body.data.motivo, res.body.data.otro_dia], ['2027-01-04', null, true]);
+    assert.ok(res.body.message.endsWith('como saldría el 04/01/2027)'), res.body.message);
   });
 
   it('mensajeDePrueba', () => {
@@ -916,7 +939,8 @@ describe('vista previa y prueba con la fecha real', () => {
     ];
     const consola = mock.method(console, 'error', () => {});
     try {
-      for (const hoy of ['2026-12-04', '2026-12-14']) {
+      // En diciembre la reiteración busca la del próximo mes que toca; el 04/01, que toca, la de ese día
+      for (const hoy of ['2026-12-04', '2026-12-14', '2027-01-04']) {
         for (const [nombre, pedir] of pedidos(hoy)) {
           const antes = lecturasFallidas(consola);
           await conLaTablaRenombrada(pedir);
@@ -1285,5 +1309,82 @@ describe('Mi espacio con la precarga', () => {
     assert.equal(elJueves.statusCode, 200, JSON.stringify(elJueves.body));
     const [deConfiguracion] = await query('SELECT autorizado_id, anulada FROM usuarios_licencias WHERE usuario_id = ?', [titular.id]);
     assert.deepEqual([deConfiguracion.autorizado_id, Number(deConfiguracion.anulada)], [null, 0]);
+  });
+});
+
+// Lo que anuncia el Estado de la reiteración bimestral, con la precarga (spec 2026-11-03-reiteracion-bimestral, 4): el primer día con
+// notas de un mes que toca, mirando el resultado y no el punto de partida
+describe('los meses de la reiteración, con los feriados de la tabla', () => {
+  const correr = (hoy) => motor.ejecutarNotasDigitales({ hoy });
+  const evaluadas = (periodo) => configurarNotas({ reiteracion_evaluada_interna: periodo, reiteracion_evaluada_externa: periodo });
+  const anunciada = async (hoy) => (await motor.estadoNotas({ hoy })).proximas;
+
+  for (const [hoy, marca, esperada, por] of [
+    ['2026-12-15', '2026-11', '2027-01-04', 'diciembre no toca; el 01/01 es feriado y el 2 y el 3 son fin de semana'],
+    ['2027-01-04', '2026-11', '2027-01-04', 'antes de la corrida'],
+    ['2027-01-04', '2027-01', '2027-03-01', 'después de la corrida'],
+    ['2027-01-30', '2026-11', '2027-03-01', 'un sábado sin evaluar enero: el primer día con notas sería el 01/02'],
+    ['2027-02-01', '2027-01', '2027-03-01', 'febrero no toca'],
+    ['2027-04-15', '2027-03', '2027-05-03', 'el 01/05 es feriado y sábado'],
+    ['2027-10-15', '2027-09', '2027-11-02', 'el 01/11/2027 es feriado de la tabla'],
+    ['2027-11-02', '2027-11', '2028-01-03', 'cruza el año']
+  ]) {
+    it(`hoy ${hoy}, con la marca ${marca}: ${esperada} (${por})`, async () => {
+      await evaluadas(marca);
+      const proximas = await anunciada(hoy);
+      assert.equal(proximas.interna.reiteracion.fecha, esperada);
+      assert.equal(proximas.externa.reiteracion.fecha, esperada);
+    });
+  }
+
+  it('con la licencia sin persona autorizada del 21/12 al 05/02, la vuelta es el 10/02 (Carnaval) y la próxima, el 01/03', async () => {
+    const titular = await crearUsuario('superadmin');
+    await query('UPDATE notas_digitales_config SET firmante_usuario_id = ? WHERE id = 1', [titular.id]);
+    await licencia(titular, '2026-12-21', '2027-02-05');
+    await evaluadas('2026-11');
+    // El primer día con notas es el 10/02 (el 08 y el 09 son Carnaval): cae en febrero, que no toca
+    assert.equal((await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2027-01-15' })).fecha, '2027-02-10');
+    assert.equal((await anunciada('2027-01-15')).interna.reiteracion.fecha, '2027-03-01');
+  });
+
+  it('cada gestión anuncia con su marca: una evaluada en enero y la otra no', async () => {
+    await configurarNotas({ reiteracion_evaluada_interna: '2027-01', reiteracion_evaluada_externa: '2026-11' });
+    const proximas = await anunciada('2027-01-05');
+    assert.equal(proximas.interna.reiteracion.fecha, '2027-03-01');
+    assert.equal(proximas.externa.reiteracion.fecha, '2027-01-05');
+  });
+
+  it('un día con notas de un mes que toca, con la marca sin escribir, sigue siendo ese día', async () => {
+    await evaluadas('2026-11');
+    assert.equal((await anunciada('2027-01-05')).interna.reiteracion.fecha, '2027-01-05');
+  });
+
+  it('la cantidad es lo que se seleccionaría ese día', async () => {
+    await crearDataset({ titulo: 'Vencido', vencimiento: '2026-09-30' });
+    await evaluadas('2026-11');
+    assert.deepEqual((await anunciada('2026-12-15')).interna.reiteracion, { fecha: '2027-01-04', cantidad: 1 });
+  });
+
+  it('lo anunciado se cumple, mes a mes de diciembre de 2026 a diciembre de 2027', async () => {
+    const calendario = calendarioCon(FILAS_PRECARGA);
+    await crearDataset({ titulo: 'Vencido', vencimiento: '2026-09-30' });
+    await evaluadas('2026-11');
+    let anuncio = (await anunciada('2026-11-04')).interna.reiteracion.fecha;
+    const salieron = [];
+    for (const mes of ['2026-12', '2027-01', '2027-02', '2027-03', '2027-04', '2027-05', '2027-06', '2027-07', '2027-08', '2027-09', '2027-10', '2027-11', '2027-12']) {
+      const dia = calendario.primerDiaHabilDelMes(mes);
+      const resumen = await correr(dia);
+      assert.deepEqual(resumen.errores, [], dia);
+      const tipos = resumen.generadas.map((g) => g.tipo);
+      if (dia === anuncio) {
+        assert.deepEqual(tipos, ['reiteracion'], dia);
+        salieron.push(dia);
+        anuncio = (await anunciada(dia)).interna.reiteracion.fecha;
+      } else {
+        assert.deepEqual(tipos, [], `${dia}: el Estado anunciaba ${anuncio}`);
+      }
+    }
+    assert.deepEqual(salieron, ['2027-01-04', '2027-03-01', '2027-05-03', '2027-07-01', '2027-09-01', '2027-11-02']);
+    assert.equal(anuncio, '2028-01-03');
   });
 });

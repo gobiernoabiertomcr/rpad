@@ -624,9 +624,10 @@ describe('reportes.js: los resultados del año', () => {
       const sin = { ...RESULTADOS, textos: { ...RESULTADOS.textos, reiteraciones: { ...RESULTADOS.textos.reiteraciones, aclaracion: valor } } };
       assert.doesNotMatch(ctx.htmlDeResultados({ resultados: sin }), /mt-aclaracion|Hasta el 12\/10/, String(valor));
     }
-    // Con los resultados reales, la del servidor
-    assert.equal(VISTA.resultados.textos.reiteraciones.aclaracion, aclaracion);
-    assert.ok(ctx.htmlDeResultados(VISTA).includes(`<p class="mt-pie mt-aclaracion">${aclaracion}</p>`));
+    // Con los resultados reales, la del servidor: las dos juntas (spec 2026-11-03-reiteracion-bimestral, 6)
+    const delServidor = `${aclaracion} Desde diciembre de 2026, la reiteración sale cada dos meses.`;
+    assert.equal(VISTA.resultados.textos.reiteraciones.aclaracion, delServidor);
+    assert.ok(ctx.htmlDeResultados(VISTA).includes(`<p class="mt-pie mt-aclaracion">${delServidor}</p>`));
   });
 
   it('con notas DGMIT, los dos grupos de la DGMIT; sin cifras, los vacíos del servidor y ningún medidor', () => {

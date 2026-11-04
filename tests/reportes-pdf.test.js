@@ -770,6 +770,18 @@ describe('Métricas del año con el diseño del anexo', () => {
     }
   });
 
+  // Spec 2026-11-03-reiteracion-bimestral, 6: las dos aclaraciones juntas, con los resultados en una hoja y la columna de las
+  // reiteraciones sin pisar nada (las variantes de abajo, con los casos reales y con 10 que faltan en la cobertura)
+  it('la aclaración de la frecuencia va con la de los emails, debajo de las reiteraciones del RPAD y antes de las de la DGMIT', async () => {
+    for (const datos of [metricasDeLosCasos(), conFaltan(10)]) {
+      const hoja = lineasPorHoja(await renderMetricas(datos)).find(lineas => lineas.includes('RESULTADOS DEL AÑO'));
+      const texto = hoja.join(' ');
+      const posicion = (buscado) => { const i = texto.indexOf(buscado); assert.ok(i !== -1, `sin «${buscado}»: ${texto}`); return i; };
+      assert.ok(posicion('Del RPAD a la DGMIT (') < posicion('Hasta el 12/10'));
+      assert.ok(posicion('se sumaban a cada ciclo. Desde diciembre de 2026, la reiteración sale cada dos meses.') < posicion('De la DGMIT al área'));
+    }
+  });
+
   const variantes = [
     ['los casos reales, mediana y días hábiles', () => metricasDeLosCasos()],
     ['con 10 que faltan en la cobertura y 30 métricas manuales', () => ({ ...conFaltan(10), manuales: muchasManuales() })],
@@ -1883,33 +1895,36 @@ const hashesPorHoja = (pdf) => contenidoPorHoja(pdf).map((contenido) => createHa
 // La hoja 1 de los PDF con días hábiles (todos menos el de «promedio en días corridos») se volvió a tomar por la bajada de los días
 // hábiles, «… sin feriados ni días no laborables.» (feriados en todo el sistema, tanda 2; spec 2026-10-27-feriados-en-notas, 6): su
 // único cambio es el párrafo de la bajada, que corre una palabra al renglón siguiente, comprobado con el diff de texto hoja por hoja
+// La hoja de los resultados de cada PDF (la 1; la 2 en «con una nota DGMIT») se volvió a tomar por la aclaración de la reiteración
+// cada dos meses (spec 2026-11-03-reiteracion-bimestral, 6): su único cambio es ese párrafo, debajo de las reiteraciones del RPAD,
+// comprobado con el diff de texto hoja por hoja contra el código de antes
 const REFERENCIA_DE_LOS_PDF = {
   'Métricas: los casos, con las métricas manuales': [
-    'd1f0cdde7e355017d56e490b5fbacf977afda45cd4806895e6a1703baa030628',
+    'a11f3dd9362874adb8b7a0305c606a6aeb74c14bece1319fced68887f343d511',
     '596d156d8dc0c1317dd895d1b762c2b6abae85400ac43c0e1659f89d71651e07',
     'c4bed0f2a9f3e9e868c2e7331572bc3f1d5d23c07f979b094f8c8b477624cb5b',
     'ba74bcbe58b1843ae77d30ec527cf3c0e4faa0a43d119ba71dfa4a99945316b3'
   ],
   'Métricas: con una nota DGMIT, promedio en días corridos y dos destildados': [
     'b0cfd809863b2485984cd4e8d2ae3eef24f652c1d5c25e1faaf540c03aed2cad',
-    'bcd0d261255a81fb983a8b5ae61823b1cec2711dededa31bb1152ac17dfd4628',
+    'de9baea351b336e82f0c234d8f9f16bd087e104f2e1e286d59f5a665f1cff89f',
     '9b8a9a9a787f38c907662660e367f25fb19f31359c9f135dc2b2b5cabcfe2b0c',
     '68ca4866667a23170de2a3f33342c6b0b25b83eb9042d0f403979173f7cfc6cf',
     '64dfb481191d59fd35d552da99b6432ace0e31e8ee271445cf188e39ba1746ad'
   ],
   'Métricas: un año cerrado sin foto': [
-    '56d36f9a63b663cb87920a271fae55dec7ce2ed1d08b61edd505e7bcb04b6897',
+    '63787b06d0a55670d7aaf1195caa960faaf60e3a5ffad6d714ecb21cc8a96513',
     '9ba43c0cb18799abffdbe57a60ea6a8e7d05e460d3cd9dd5dfff4090a0d22d32',
     '644352bcf71cba6e2b853d7d5900563625fc059a88403cd946ded88b7e0370f6',
     'b41f65872e8c92ff1ce1dfb7cbf89e4229f663ca2b9c8449b9427b852e6c4168'
   ],
   'Informe anual: el primer año con foto': [
-    '86ecc7055dee102c64af353f37eca24aefeb70b103c7cf3952a554088487b474',
+    'e55832388cdde98ce4bf334f4d65e6f63002c4054c7172b6a1cccfbce022f78d',
     '4502cbd20b01bae423e78651304946d30368c2368f6accb5ed27d73b66a6e502',
     'e185bd524c985140c2b6a206eea3b2a8a49e57e082d1a391b99b949c056bf53a'
   ],
   'Informe anual: con el año anterior y los logros': [
-    '86ecc7055dee102c64af353f37eca24aefeb70b103c7cf3952a554088487b474',
+    'e55832388cdde98ce4bf334f4d65e6f63002c4054c7172b6a1cccfbce022f78d',
     '4502cbd20b01bae423e78651304946d30368c2368f6accb5ed27d73b66a6e502',
     '7794fdd5f3bfc3011d0d06ad65ff5bcfc1ef4e89025a7de01e15609639e41c33'
   ]

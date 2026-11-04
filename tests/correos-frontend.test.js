@@ -182,7 +182,7 @@ describe('correos.js: texto de la vista previa (spec 2026-10-15, 7.7)', () => {
     }
   });
 
-  // Hoy hay notas, pero esta sale otro día (por ejemplo, la reiteración del mes ya salió): lo dice con su propia primera línea, y la
+  // Hoy hay notas, pero esta sale otro día (por ejemplo, la reiteración de este mes ya salió o el mes no toca): lo dice con su propia primera línea, y la
   // segunda habla de ese día (spec 2026-10-27-feriados-en-notas, 6)
   it('sin motivo y con otro_dia, antepone que esta nota no sale hoy y qué día saldría', () => {
     const { contexto } = cargarCorreos();
@@ -257,7 +257,7 @@ describe('correos.js: firmante titular (spec 2026-10-15-dias-habiles-licencias-a
     const texto = (l) => vm.runInContext(`textoLicenciaFirmante(${JSON.stringify(l)})`, contexto);
     assert.equal(texto(null), '');
     assert.match(texto({ desde: '2026-11-26', hasta: '2027-01-14', en_curso: false, autorizado: null, vispera: '2026-11-25', vuelta: '2027-01-15' }),
-      /los avisos se anticipan el 25\/11\/2026 y las reiteraciones se postergan al 15\/01\/2027/);
+      /los avisos se anticipan el 25\/11\/2026 y las notas vuelven el 15\/01\/2027\. La reiteración que toque sale ese día si es un mes de reiteración; si no, en el próximo\./);
     assert.match(texto({ desde: '2026-11-26', hasta: '2027-01-14', en_curso: false, autorizado: 'Persona Autorizada', vispera: '2026-11-25' }),
       /los avisos se anticipan el 25\/11\/2026 con la autorización a Persona Autorizada/);
     assert.match(texto({ desde: '2026-11-26', hasta: '2027-01-14', en_curso: true, autorizado: 'Persona Autorizada', nota_autorizacion: { numero: 15, anio: 2026 } }),
@@ -287,7 +287,8 @@ describe('correos.js: firmante titular (spec 2026-10-15-dias-habiles-licencias-a
     };
     assert.equal(texto(base),
       'Licencia del firmante del 04/01/2027 al 08/01/2027, sin autorizado: empieza a continuación de otra licencia, así que los '
-      + 'avisos no se adelantan, y las reiteraciones se postergan al 11/01/2027.');
+      + 'avisos no se adelantan y las notas vuelven el 11/01/2027. La reiteración que toque sale ese día si es un mes de reiteración; '
+      + 'si no, en el próximo.');
     assert.equal(texto({ ...base, autorizado: 'Persona Autorizada' }),
       'Licencia del firmante del 04/01/2027 al 08/01/2027: empieza a continuación de otra licencia, así que los avisos no se '
       + 'adelantan. Persona Autorizada presenta las notas por autorización, con las dos firmas, desde el primer día.');
@@ -296,7 +297,7 @@ describe('correos.js: firmante titular (spec 2026-10-15-dias-habiles-licencias-a
     const conAnticipo = { ...base, sin_anticipo: false, vispera: '2026-12-31' };
     assert.equal(texto(conAnticipo),
       'Licencia del firmante del 04/01/2027 al 08/01/2027, sin autorizado: los avisos se anticipan el 31/12/2026 y las '
-      + 'reiteraciones se postergan al 11/01/2027.');
+      + 'notas vuelven el 11/01/2027. La reiteración que toque sale ese día si es un mes de reiteración; si no, en el próximo.');
     assert.equal(texto({ ...conAnticipo, autorizado: 'Persona Autorizada' }),
       'Licencia del firmante del 04/01/2027 al 08/01/2027: los avisos se anticipan el 31/12/2026 con la autorización a Persona '
       + 'Autorizada, que durante la licencia presenta las demás notas y vuelve a presentar cada aviso en su fecha.');
@@ -304,8 +305,12 @@ describe('correos.js: firmante titular (spec 2026-10-15-dias-habiles-licencias-a
     assert.equal(texto({ ...conAnticipo, sin_anticipo: 'true' }), texto(conAnticipo));
     // En curso, los de siempre
     assert.equal(texto({ ...base, en_curso: true }),
-      'Licencia del firmante del 04/01/2027 al 08/01/2027, sin autorizado: no se generan notas hasta la vuelta y las reiteraciones '
-      + 'se postergan al 11/01/2027.');
+      'Licencia del firmante del 04/01/2027 al 08/01/2027, sin autorizado: no se generan notas hasta la vuelta, el 11/01/2027. '
+      + 'La reiteración que toque sale ese día si es un mes de reiteración; si no, en el próximo.');
+    // Con la vuelta en un mes que no toca, dice lo mismo: no promete esa fecha para la reiteración
+    assert.equal(texto({ ...base, desde: '2027-02-05', hasta: '2027-02-20', sin_anticipo: false, vispera: '2027-02-04', vuelta: '2027-02-22' }),
+      'Licencia del firmante del 05/02/2027 al 20/02/2027, sin autorizado: los avisos se anticipan el 04/02/2027 y las '
+      + 'notas vuelven el 22/02/2027. La reiteración que toque sale ese día si es un mes de reiteración; si no, en el próximo.');
     // Sin días hábiles, lo de siempre
     assert.equal(texto({ ...base, sin_dias_habiles: true }),
       'Licencia del firmante del 04/01/2027 al 08/01/2027: no tiene días hábiles, las notas no cambian.');
@@ -1370,7 +1375,7 @@ describe('correos.html: la pestaña Estado (spec 2026-10-17-correos-pestanas, 7)
     }
     return bloques;
   };
-  const REGLA_DE_AVISOS = 'Aviso de gestión interna 60 días antes del vencimiento y de gestión externa 40 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Reiteración el primer día hábil de cada mes para los datasets avisados hace 20 días o más que siguen pendientes. Solo en días hábiles.';
+  const REGLA_DE_AVISOS = 'Aviso de gestión interna 60 días antes del vencimiento y de gestión externa 40 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Reiteración el primer día hábil de enero, marzo, mayo, julio, septiembre y noviembre para los datasets avisados hace 20 días o más que siguen pendientes. Solo en días hábiles.';
   const REGLA_DE_AUDITORIA = 'Nota de auditoría: pide a la Dirección General que audite los cambios pendientes que el firmante no puede auditar y que ya tuvieron sus dos recordatorios por email (el primero fue hace dos días hábiles o más). Sale una por día y se reitera cada 5 días hábiles mientras sigan pendientes.';
 
   it('cuatro tarjetas, en este orden: Envío automático, Próximas notas, Conexión del correo y Cómo funcionan', () => {

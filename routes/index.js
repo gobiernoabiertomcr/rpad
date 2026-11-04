@@ -171,15 +171,15 @@ router.get('/catalogos/formatos', getFormatos);
 router.get('/areas', sesionOpcional, getAreas);
 router.get('/areas/:id', sesionOpcional, getAreaById);
 
-// Andino (Portal de Datos Abiertos)
-router.get('/andino/fetch', fetchFromAndino);
-
 // Contacto (público con rate limiting)
 router.post('/contacto', enviarContacto);
 
 // =====================================================
 // Rutas protegidas (requieren autenticación)
 // =====================================================
+
+// Andino (Portal de Datos Abiertos): solo lo usa Gestión de Datasets
+router.get('/andino/fetch', authMiddleware, adminOnly, fetchFromAndino);
 
 // Auth
 router.get('/auth/verify', authMiddleware, verifySession);

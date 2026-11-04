@@ -647,7 +647,9 @@ const notaDe = (recibida, datos = {}) => ({ numero: '45/26', tipo: 'solicitud', 
 // Qué dice la cobertura del aviso de los que sí lo tuvieron (con los días de la regla: 40 en externa y 60 en interna)
 const REGLA_DEL_AVISO = 'El RPAD avisó con la anticipación de la regla (40 días en externa, 60 en interna).';
 // La aclaración de las reiteraciones del RPAD, la de la maqueta 4 (Ruling 21)
-const ACLARACION_DE_LOS_EMAILS = 'Hasta el 12/10, el email de los 5 días y el resumen mensual de vencidos se sumaban a cada ciclo.';
+// La de la frecuencia (spec 2026-11-03-reiteracion-bimestral, 6) va siempre que haya ciclos y, con las dos, después de la de los emails
+const ACLARACION_DE_LA_FRECUENCIA = 'Desde diciembre de 2026, la reiteración sale cada dos meses.';
+const LAS_DOS_ACLARACIONES = 'Hasta el 12/10, el email de los 5 días y el resumen mensual de vencidos se sumaban a cada ciclo. Desde diciembre de 2026, la reiteración sale cada dos meses.';
 
 // Los textos que muestra la vista nunca son null; ningún string dice null, undefined, NaN o Infinity, y ningún número es NaN
 const CLAVES_DE_TEXTO = new Set(['nombre', 'desde_hasta', 'responsable', 'texto', 'unidad', 'debajo', 'ciclos_texto', 'que', 'motivo']);
@@ -1253,7 +1255,7 @@ describe('vistaDe', () => {
       cobertura: { de: 'de 15 vencimientos', medidor: 87, regla: REGLA_DEL_AVISO, faltan: 'Los 2 que faltan:', vacio: '' },
       reiteraciones: {
         rpad: 'Del RPAD a la DGMIT (16 ciclos)', rpad_vacio: '', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.',
-        aclaracion: ACLARACION_DE_LOS_EMAILS
+        aclaracion: LAS_DOS_ACLARACIONES
       }
     });
     // En singular: uno cargado tarde (0 de 1, el medidor en 0), un vencimiento avisado y un ciclo
@@ -1262,7 +1264,7 @@ describe('vistaDe', () => {
       cobertura: { de: 'de 1 vencimiento', medidor: 100, regla: REGLA_DEL_AVISO, faltan: '', vacio: '' },
       reiteraciones: {
         rpad: 'Del RPAD a la DGMIT (1 ciclo)', rpad_vacio: '', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.',
-        aclaracion: null
+        aclaracion: ACLARACION_DE_LA_FRECUENCIA
       }
     });
     // Uno solo que falta
@@ -1281,30 +1283,32 @@ describe('vistaDe', () => {
     assert.equal(vistaDe([], { anio: 2027, al: '2027-03-01' }).resultados.textos.a_tiempo.vacio, 'Sin actualizaciones registradas en 2027.');
   });
 
-  it('la aclaración de las reiteraciones (Ruling 21): solo si algún ciclo que cuenta del RPAD a la DGMIT tuvo un email a la DGMIT después del aviso', () => {
+  it('la aclaración de las reiteraciones: la de la frecuencia con ciclos y, si algún ciclo que cuenta del RPAD a la DGMIT tuvo un email a la DGMIT después del aviso, antes la de los emails (Ruling 21)', () => {
     const aclaracion = (lista, opciones) => vista(lista, opciones).resultados.textos.reiteraciones.aclaracion;
     // Con un email posterior al aviso de la regla (el de 5 días o el de vencidos: una reiteración por email), va
-    assert.equal(aclaracion([cerrado({ avisos_rpad: ['2026-02-19', '2026-03-26'], emails_rpad: ['2026-02-19', '2026-03-26'] })]), ACLARACION_DE_LOS_EMAILS);
+    assert.equal(aclaracion([cerrado({ avisos_rpad: ['2026-02-19', '2026-03-26'], emails_rpad: ['2026-02-19', '2026-03-26'] })]), LAS_DOS_ACLARACIONES);
     assert.equal(aclaracion([caso(), caso({ dataset_id: 901, avisos_rpad: ['2026-02-19', '2026-03-26'], emails_rpad: ['2026-03-26'] })]),
-      ACLARACION_DE_LOS_EMAILS);
+      LAS_DOS_ACLARACIONES);
     // Revisión final (A-4): un ciclo cuyo único email es el de la regla (el de 40 o 60 días, que no es una reiteración) no la muestra, ni
     // uno con otro email del mismo día
-    assert.equal(aclaracion([cerrado({ emails_rpad: ['2026-02-19'] })]), null);
-    assert.equal(aclaracion([cerrado({ avisos_rpad: ['2026-02-19', '2026-02-19'], emails_rpad: ['2026-02-19', '2026-02-19'] })]), null);
+    assert.equal(aclaracion([cerrado({ emails_rpad: ['2026-02-19'] })]), ACLARACION_DE_LA_FRECUENCIA);
+    assert.equal(aclaracion([cerrado({ avisos_rpad: ['2026-02-19', '2026-02-19'], emails_rpad: ['2026-02-19', '2026-02-19'] })]), ACLARACION_DE_LA_FRECUENCIA);
     // Ni uno con una reiteración por Nota Digital, que no es un email
-    assert.equal(aclaracion([cerrado({ avisos_rpad: ['2026-02-19', '2026-03-26'], emails_rpad: ['2026-02-19'] })]), null);
+    assert.equal(aclaracion([cerrado({ avisos_rpad: ['2026-02-19', '2026-03-26'], emails_rpad: ['2026-02-19'] })]), ACLARACION_DE_LA_FRECUENCIA);
     // Solo con Notas Digitales (sin emails), no
-    assert.equal(aclaracion([cerrado(), caso({ dataset_id: 901 })]), null);
+    assert.equal(aclaracion([cerrado(), caso({ dataset_id: 901 })]), ACLARACION_DE_LA_FRECUENCIA);
     // El email es de un ciclo que no cuenta del RPAD a la DGMIT (sin inicio de los tramos, o cerrado en otro año): no
     assert.equal(aclaracion([caso({ aviso_regla: null, inicio_tramos: null, reiteraciones_rpad: null, emails_rpad: ['2026-02-19'] })]), null);
     assert.equal(aclaracion([cerrado({ cierre: '2025-12-16', carga: '2025-12-16', emails_rpad: ['2025-10-22'] })]), null);
     // Un destildado no cuenta; un email posterior a al todavía no pasó
     const reiteradoPorEmail = cerrado({ avisos_rpad: ['2026-02-19', '2026-03-26'], emails_rpad: ['2026-02-19', '2026-03-26'] });
-    assert.equal(aclaracion([reiteradoPorEmail, cerrado({ dataset_id: 901 })]), ACLARACION_DE_LOS_EMAILS);
-    assert.equal(aclaracion([reiteradoPorEmail, cerrado({ dataset_id: 901 })], { sin: [900] }), null);
-    assert.equal(aclaracion([caso({ emails_rpad: ['2026-11-02'] })], { al: '2026-10-31' }), null);
+    assert.equal(aclaracion([reiteradoPorEmail, cerrado({ dataset_id: 901 })]), LAS_DOS_ACLARACIONES);
+    assert.equal(aclaracion([reiteradoPorEmail, cerrado({ dataset_id: 901 })], { sin: [900] }), ACLARACION_DE_LA_FRECUENCIA);
+    assert.equal(aclaracion([caso({ emails_rpad: ['2026-11-02'] })], { al: '2026-10-31' }), ACLARACION_DE_LA_FRECUENCIA);
     // Con los casos reales (los ciclos de 2026 tuvieron emails hasta el 12/10)
-    assert.equal(aclaracion(casosReales()), ACLARACION_DE_LOS_EMAILS);
+    assert.equal(aclaracion(casosReales()), LAS_DOS_ACLARACIONES);
+    // Sin ciclos del RPAD a la DGMIT, ninguna
+    assert.equal(aclaracion([]), null);
   });
 
   it('los casos: los de aviso o carga en el año, por vencimiento, con los días o el estado debajo de cada fecha', () => {

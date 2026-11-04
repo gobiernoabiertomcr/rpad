@@ -421,7 +421,7 @@ const intervaloCentrado = (doc, texto, cx, tamano, fuente) => {
   return [x0, x0 + ancho];
 };
 
-// El texto de un grupo de etiquetas, unidas con " y ". Si no entra en el ancho de la hoja (un año de reiteraciones mensuales), se
+// El texto de un grupo de etiquetas, unidas con " y ". Si no entra en el ancho de la hoja (un año de reiteraciones), se
 // sacan etiquetas del medio, de a una, y en su lugar va "…": siempre quedan la primera y las últimas ("Nota 2/27 y … y Nota 56/27")
 const textoDelGrupo = (doc, textos, tamano) => {
   const entra = (texto) => anchoDe(doc, texto, tamano, NEGRITA) + 2 <= CONTENIDO;

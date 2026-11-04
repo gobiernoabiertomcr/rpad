@@ -12,7 +12,7 @@ import { renderPdf } from './notasDigitalesPdf.js';
 import { renderAnexo } from './notasDigitalesAnexo.js';
 import { fuentesDeLaNota, seguimientosDeLaNota, renderAnexoDeReiteracion } from './notasDigitalesSeguimiento.js';
 import {
-  hoyArgentina, ahoraArgentina, esFechaIso, periodoDe, periodoSiguiente, sumarDias, formatoCorto, diasEntre
+  hoyArgentina, ahoraArgentina, esFechaIso, periodoDe, periodoSiguiente, esMesDeReiteracion, sumarDias, formatoCorto, diasEntre
 } from './notasDigitalesCalendario.js';
 import {
   GESTIONES, VENTANA_DIAS, obtenerConfig, configuracionCompleta, seleccionarParaAviso, seleccionarParaReiteracion,
@@ -39,9 +39,10 @@ const BLOQUEO = 'rpad_notas_digitales';
 
 export class ErrorDeUso extends Error {}
 
-// A un dataset adelantado ya le toca la reiteración ese día: su aviso anticipado se envió y pasaron DIAS_PARA_REITERAR días
+// A un dataset adelantado ya le toca entrar en la reiteración ese día: su aviso anticipado se envió y pasaron DIAS_PARA_REITERAR días
 // corridos desde su cuenta_desde (inclusive), las mismas condiciones que seleccionarParaReiteracion, que solo toma avisos
-// enviados. No entra en el aviso en su fecha y lo informa la reiteración, citando la nota anticipada (spec 2026-10-15, 7.6).
+// enviados. No entra en el aviso en su fecha y lo informa la próxima reiteración, citando la nota anticipada (spec 2026-10-15, 7.6): en
+// un mes que no toca, la del próximo que toca (spec 2026-11-03-reiteracion-bimestral, 7).
 // Es permanente mientras el aviso siga enviado: así un dataset nunca sale el mismo día en un aviso y en una reiteración ni
 // vuelve como aviso después de reiterado. Si el anticipado no salió (pendiente o fallido), la reiteración no lo tomaría y
 // el dataset se quedaría sin nada: entra en el aviso en su fecha aunque los 20 días ya hayan pasado (spec 2026-10-15, 7.6).
@@ -618,9 +619,10 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario) => {
   // registrada en la licencia, la corrida siguiente genera la nota de autorización (autorización tardía).
   if (anticipo && autorizacion && !avisoConAutorizacion) await generarAutorizacion();
 
-  // 3. Reiteraciones: una evaluación por mes y gestión
+  // 3. Reiteraciones: una evaluación por mes y gestión, solo en los meses que tocan (spec 2026-11-03-reiteracion-bimestral, 3). En un mes
+  // que no toca no se escribe la marca, que sigue diciendo el último mes evaluado (3.2)
   const periodo = periodoDe(hoy);
-  for (const gestion of GESTIONES) {
+  for (const gestion of esMesDeReiteracion(periodo) ? GESTIONES : []) {
     if (config[`reiteracion_evaluada_${gestion}`] === periodo) continue;
     try {
       const [[existente]] = await pool.query(
@@ -859,7 +861,8 @@ const firmaDeVistaPrevia = ({ modo, firma, licencia, pendiente }) => {
  * Una sola vez por pedido: el HTML, el PDF, el anexo y la prueba se arman con lo mismo. La fecha es la que anuncia Correos → Estado
  * para ese tipo y esa gestión (spec 2026-10-27-feriados-en-notas, 4: una sola función da las fechas al Estado y a la vista previa):
  * - el aviso, la de fechaDeVistaPrevia (el primer día con notas desde hoy);
- * - la reiteración, la de proximasFechas (si la del mes ya salió, la del mes siguiente) o, si no tiene, la de fechaDeVistaPrevia;
+ * - la reiteración, la de proximasFechas (si la del mes ya salió o el mes no toca, la del próximo mes que toca) o, si no tiene, la de
+ *   fechaDeVistaPrevia;
  * - la nota de auditoría, la próxima de proximasFechas o, si no hay ninguna, la de fechaDeVistaPrevia.
  * motivo: el de fechaDeVistaPrevia (por qué hoy no se generan notas, o null). otro_dia: la fecha no es hoy (también si hoy hay notas
  * pero esta sale otro día). calendario: el del pedido, obligatorio; llega a todo lo de adentro y vuelve en el contexto.
@@ -946,7 +949,7 @@ const TIPOS_CON_ANEXO = ['aviso', 'reiteracion'];
 // siempre) o 'reiteracion' (spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5): una hoja del Seguimiento por dataset, con las
 // fuentes de la base o, con datos de ejemplo, las de ejemplo. Cada hoja suma la reiteración de la vista previa, «XX», con los
 // destinatarios de la gestión y quien la firmaría (spec 2026-10-24-reiteracion-en-su-anexo); si la real de ese día ya salió, la
-// reemplaza: nunca van las dos (con la del mes ya evaluada, el día es el del mes siguiente: diaDeVistaPrevia). calendario: como en
+// reemplaza: nunca van las dos (con la del mes ya evaluada, el día es el del próximo mes que toca: diaDeVistaPrevia). calendario: como en
 // previewNota.
 export const previewAnexo = async ({ tipo = 'aviso', gestion, hoy = hoyArgentina(), calendario }) => {
   if (!TIPOS_CON_ANEXO.includes(tipo)) throw new ErrorDeUso(`La nota de tipo ${tipo} no lleva anexo`);
@@ -1065,7 +1068,7 @@ const licenciaDelFirmante = async (config, hoy, calendario) => {
  * adelantó, el día en que la persona autorizada los vuelve a presentar. Cada uno sale el primer día con notas (primerDiaConNotas,
  * con el calendario: spec 2026-10-27-feriados-en-notas, 4) desde su día, o desde la próxima corrida si su día ya pasó (la corrida
  * no se hizo, o ella faltaba), solo dentro de la licencia del titular: pasada la licencia no hay aviso en su fecha (lo toma la
- * reiteración). Un dataset al que ese día ya le toca la reiteración (yaTocaReiterar) no cuenta: lo informa la reiteración, como
+ * reiteración). Un dataset que ese día ya tiene que entrar en la reiteración (yaTocaReiterar) no cuenta: lo informa la próxima, como
  * en la corrida. { fecha, cantidad } o null: la cantidad es lo que sale ese día, sumando a los que vuelven a presentarse lo que
  * seleccionarParaAviso elige para esa fecha.
  * corrida: el día de la próxima corrida posible. { titular, ausencias }: lo que devuelve licenciaDelFirmante (la licencia del
@@ -1164,6 +1167,22 @@ const anticipoQueIncluye = async (config, candidato, corrida, calendario) => {
   return anticipo && candidato <= anticipo.hasta ? { vispera, hasta: anticipo.hasta } : null;
 };
 
+// El día de la próxima reiteración desde `desde`: el primer día con notas de un mes que toca (spec 2026-11-03-reiteracion-bimestral, 4).
+// primerDiaConNotas no sabe de meses: si el resultado cae en un mes que no toca (también desde un sábado de fin de mes, o con una licencia
+// que termina en él), se vuelve a buscar desde el 1° del mes siguiente. Se mira el resultado, no el punto de partida. Doce vueltas
+// alcanzan de sobra: después de la última licencia, todo día hábil tiene notas. null: no se encontró ninguno (primerDiaConNotas mira
+// hasta 366 días desde donde arranca): licencias sin persona autorizada encadenadas por más de un año
+const VUELTAS_DE_LA_REITERACION = 12;
+const primerDiaDeReiteracion = async (config, desde, calendario) => {
+  let inicio = desde;
+  for (let vuelta = 0; vuelta < VUELTAS_DE_LA_REITERACION; vuelta++) {
+    const fecha = await primerDiaConNotas(config, inicio, calendario);
+    if (fecha === null || esMesDeReiteracion(periodoDe(fecha))) return fecha;
+    inicio = `${periodoSiguiente(periodoDe(fecha))}-01`;
+  }
+  return null;
+};
+
 /**
  * Las fechas que anuncia Correos → Estado, en un solo lugar, con el calendario de quien llama y la regla de la corrida, el primer
  * día con notas (primerDiaConNotas; spec 2026-10-27-feriados-en-notas, 4). La vista previa y la prueba de la reiteración y de la
@@ -1175,8 +1194,8 @@ const anticipoQueIncluye = async (config, candidato, corrida, calendario) => {
  *   Estado: también una posterior) lo anticipa (anticipoQueIncluye), la víspera, con lo que anticipa; si no, el primer día con
  *   notas desde el candidato (null: sin aviso), con lo que se seleccionaría ese día. Con persona autorizada, el aviso en su fecha
  *   (proximoAvisoEnSuFecha) si es antes o el mismo día (su cantidad ya suma los dos);
- * - la reiteración, { fecha, cantidad }: evaluada este mes, el primer día con notas desde el 1° del mes siguiente; si no, desde
- *   hoy. Sin fecha, { fecha: null, cantidad: 0 };
+ * - la reiteración, { fecha, cantidad }: el primer día con notas de un mes que toca (primerDiaDeReiteracion), desde el 1° del mes
+ *   siguiente si este mes ya se evaluó; si no, desde hoy. Sin fecha, { fecha: null, cantidad: 0 };
  * - auditoria: estadoAuditoria.
  */
 const proximasFechas = async ({ config, hoy, calendario }) => {
@@ -1212,9 +1231,9 @@ const proximasFechas = async ({ config, hoy, calendario }) => {
       if (enSuFecha && (!aviso || enSuFecha.fecha <= aviso.fecha)) aviso = enSuFecha;
     }
 
-    // Una evaluación por mes: el primer día con notas del mes que corresponde
+    // Una evaluación por mes: el primer día con notas de un mes que toca, sin contar este si ya se evaluó
     const evaluado = config[`reiteracion_evaluada_${gestion}`] === periodoActual;
-    const fechaReiteracion = await primerDiaConNotas(config, evaluado ? `${periodoSiguiente(periodoActual)}-01` : hoy, calendario);
+    const fechaReiteracion = await primerDiaDeReiteracion(config, evaluado ? `${periodoSiguiente(periodoActual)}-01` : hoy, calendario);
     proximas[gestion] = {
       aviso,
       reiteracion: fechaReiteracion === null
