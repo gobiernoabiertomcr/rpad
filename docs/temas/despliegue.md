@@ -10,6 +10,7 @@ cPanel sin terminal: el SQL se corre en phpMyAdmin (pestaña SQL o Importar), lo
 El zip se carga en `/home/datospublicos/rpad` y se extrae ahí mismo.
 Las Tareas Cron son tres, todos los días: 8:05 `/api/cron/notificaciones`, 14:00 `/api/cron/cambios-pendientes` y `*/30` `/api/cron/eventos`.
 El respaldo y el despliegue, fuera del horario de los crons (8:05, 14:00 y las medias horas), por ejemplo a las 10:10.
+Con el interruptor de la firma digital prendido (lo está desde el 04/11/2026), tampoco entre las 8:05 y las 14:00, porque puede haber una nota esperando la firma: por ejemplo, a las 15:10.
 Run NPM Install, solo si cambia `package.json`.
 
 ## El kit
@@ -94,10 +95,5 @@ Lo que cambie esos textos o el calendario de Métricas, del Ciclo de vida o del 
 
 Se borran al cumplirse.
 
-- La leyenda de la firma digital (spec 2026-11-04-firma-digital-leyenda; kit `RPAD-deploy-notas-firma-leyenda`):
-  antes, comprobar que Correos pida `correos.js?v=20261213` y mirar en Correos → Libro que no haya una nota esperando la firma, tampoco de un día anterior;
-  primero, en phpMyAdmin, `migracion-notas-firma-leyenda.sql` **antes** de subir el código (obligatoria), los archivos y Restart, fuera del horario de los crons y no entre las 8:05 y las 14:00, porque el interruptor de la firma digital está prendido (dump de producción del 04/11/2026);
-  sin Run NPM Install, sin variables de entorno nuevas y sin Tarea Cron nueva.
-  Una nota que igual espere al desplegar sigue andando con su `pdf`, sin leyenda.
 - **Antes del 10/01/2027:** las notas DGMIT de 2026 cargadas a mano desde el Seguimiento (decisión del usuario, 25/10/2026: no hay SQL de importación) y `database/privado/metricas-recibido-datos-25-38-39.sql`.
 - El 10/01/2027 (domingo) o el 11/01, mirar en Métricas y Reportes que 2026 ya no diga «La foto de 2026 se saca …» ni «… todavía no se sacó» y que se descargue el Informe anual de 2026, y que la última corrida de Correos → Estado no diga «No se pudo sacar la foto del año» (si lo dice, la tabla no se pudo leer: la corrida del día siguiente la vuelve a intentar).

@@ -359,11 +359,14 @@ describe('a las 14:00', () => {
     try {
       const respuesta = { status(c) { this.codigo = c; return this; }, json(c) { this.cuerpo = c; return this; } };
       const pedido = ejecutarNotificacionCambiosPendientes({ query: {}, user: undefined }, respuesta);
-      // Los 5 intentos de espera, de a 5 segundos, sin esperar de verdad
-      for (let i = 0; i < 200 && !respuesta.cuerpo; i++) {
+      // Los 5 intentos de espera, de a 5 segundos, sin esperar de verdad. El tope es de tiempo real (`performance` no está simulado), nunca de
+      // vueltas: si las vueltas se acaban antes de la última espera, por una base lenta, el pedido se queda para siempre en un setTimeout simulado
+      const limite = performance.now() + 30000;
+      while (!respuesta.cuerpo && performance.now() < limite) {
         mock.timers.tick(5000);
         await new Promise(resolver => setImmediate(resolver));
       }
+      assert.ok(respuesta.cuerpo, 'El controlador de las 14:00 no respondió en 30 segundos');
       await pedido;
       assert.equal(respuesta.codigo, 207);
       assert.equal(respuesta.cuerpo.data.firma_digital.ocupado, true);
