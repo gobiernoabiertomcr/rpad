@@ -434,8 +434,7 @@ describe('la reiteración bimestral', () => {
 });
 
 describe('vencidos sin aviso (14/10/2026)', () => {
-  it('no salen en ningún aviso y sí en la reiteración del primer día hábil del mes siguiente, como "Sin aviso previo"', async () => {
-    await ejecutar('2026-10-01'); // octubre no toca reiteración
+  it('no salen en ningún aviso y sí en la reiteración del próximo mes que toca, como "Sin aviso previo"', async () => {
     const id = await crearDataset({ titulo: 'Cargado vencido', gestion: 'externa', vencimiento: '2026-09-30', ultima: '2025-09-30' });
     await crearEmailViejo({ tipo: 'externo-vencido', datasetIds: [id], enviado: '2026-01-01 08:00:00' });
     await crearEmailViejo({ tipo: 'externo-vencido', datasetIds: [id], enviado: '2026-10-01 08:00:00' });
@@ -461,7 +460,6 @@ describe('vencidos sin aviso (14/10/2026)', () => {
   });
 
   it('se reiteran en cada mes que toca con "Sin aviso previo – reiterado N veces", hasta que se actualiza', async () => {
-    await ejecutar('2026-10-01');
     const id = await crearDataset({ gestion: 'interna', vencimiento: '2026-09-30' });
     await ejecutar('2026-11-02');
     await mailpit.vaciar();
@@ -479,7 +477,7 @@ describe('vencidos sin aviso (14/10/2026)', () => {
   });
 
   it('el estado cuenta el vencido sin aviso en la próxima reiteración y no en el próximo aviso', async () => {
-    await ejecutar('2026-10-01'); // octubre no toca: la próxima reiteración es la de noviembre
+    // Octubre no toca: la próxima reiteración es la de noviembre
     await crearDataset({ gestion: 'externa', vencimiento: '2026-09-30' });
     const { proximas } = await motor.estadoNotas({ hoy: '2026-10-14' });
     assert.equal(proximas.externa.aviso, null);

@@ -96,7 +96,8 @@ como hoy. En diciembre, la vista previa de una reiteración muestra la del 04/01
 valiendo en un día hábil de un mes que toca.
 
 **La cantidad** de Correos → Estado es lo que se seleccionaría ese día con los datos de hoy, como siempre. Ahora proyecta hasta dos
-meses, así que es un piso: un dataset que todavía no tuvo su aviso no cuenta y puede sumarse.
+meses, así que es un piso: un dataset que todavía no tuvo su aviso no cuenta y puede sumarse. Con cantidad 0, el Estado sigue diciendo
+«sin datasets pendientes» y la vista previa, «Ese día no saldría ninguna nota de este tipo», con los datos de hoy, como siempre.
 
 La pantalla no cambia: «Próxima reiteración» sigue diciendo la fecha y la cantidad que manda el servidor.
 
@@ -200,7 +201,8 @@ mismos, en los mismos días, con los mismos datasets. Lo que anuncia el Estado e
 ## 10. El despliegue
 
 Sin SQL, sin Tarea Cron, sin variables de entorno y sin Run NPM Install: los archivos y Restart, fuera del horario de los crons, **antes del martes
-01/12/2026**. Después, Correos → Estado dice «Próxima reiteración 04/01/2027» en las dos gestiones.
+01/12/2026**. Después, Correos → Estado dice «Próxima reiteración 04/01/2027» en las dos gestiones (si una gestión no tuviera nada para
+reiterar, «sin datasets pendientes», como siempre; al 03/11/2026, las dos tienen vencidos).
 
 La vuelta atrás: los archivos de 3949aae y Restart. En un mes par, la corrida siguiente genera la reiteración de ese mes; si no se la quiere, el SQL
 opcional del kit antes de las 8:15.

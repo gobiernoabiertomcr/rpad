@@ -1342,7 +1342,16 @@ describe('los meses de la reiteración, con los feriados de la tabla', () => {
     await query('UPDATE notas_digitales_config SET firmante_usuario_id = ? WHERE id = 1', [titular.id]);
     await licencia(titular, '2026-12-21', '2027-02-05');
     await evaluadas('2026-11');
+    // El primer día con notas es el 10/02 (el 08 y el 09 son Carnaval): cae en febrero, que no toca
+    assert.equal((await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2027-01-15' })).fecha, '2027-02-10');
     assert.equal((await anunciada('2027-01-15')).interna.reiteracion.fecha, '2027-03-01');
+  });
+
+  it('cada gestión anuncia con su marca: una evaluada en enero y la otra no', async () => {
+    await configurarNotas({ reiteracion_evaluada_interna: '2027-01', reiteracion_evaluada_externa: '2026-11' });
+    const proximas = await anunciada('2027-01-05');
+    assert.equal(proximas.interna.reiteracion.fecha, '2027-03-01');
+    assert.equal(proximas.externa.reiteracion.fecha, '2027-01-05');
   });
 
   it('un día con notas de un mes que toca, con la marca sin escribir, sigue siendo ese día', async () => {

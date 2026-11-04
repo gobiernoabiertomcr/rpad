@@ -39,9 +39,10 @@ const BLOQUEO = 'rpad_notas_digitales';
 
 export class ErrorDeUso extends Error {}
 
-// A un dataset adelantado ya le toca la reiteración ese día: su aviso anticipado se envió y pasaron DIAS_PARA_REITERAR días
+// A un dataset adelantado ya le toca entrar en la reiteración ese día: su aviso anticipado se envió y pasaron DIAS_PARA_REITERAR días
 // corridos desde su cuenta_desde (inclusive), las mismas condiciones que seleccionarParaReiteracion, que solo toma avisos
-// enviados. No entra en el aviso en su fecha y lo informa la reiteración, citando la nota anticipada (spec 2026-10-15, 7.6).
+// enviados. No entra en el aviso en su fecha y lo informa la próxima reiteración, citando la nota anticipada (spec 2026-10-15, 7.6): en
+// un mes que no toca, la del próximo que toca (spec 2026-11-03-reiteracion-bimestral, 7).
 // Es permanente mientras el aviso siga enviado: así un dataset nunca sale el mismo día en un aviso y en una reiteración ni
 // vuelve como aviso después de reiterado. Si el anticipado no salió (pendiente o fallido), la reiteración no lo tomaría y
 // el dataset se quedaría sin nada: entra en el aviso en su fecha aunque los 20 días ya hayan pasado (spec 2026-10-15, 7.6).
@@ -1067,7 +1068,7 @@ const licenciaDelFirmante = async (config, hoy, calendario) => {
  * adelantó, el día en que la persona autorizada los vuelve a presentar. Cada uno sale el primer día con notas (primerDiaConNotas,
  * con el calendario: spec 2026-10-27-feriados-en-notas, 4) desde su día, o desde la próxima corrida si su día ya pasó (la corrida
  * no se hizo, o ella faltaba), solo dentro de la licencia del titular: pasada la licencia no hay aviso en su fecha (lo toma la
- * reiteración). Un dataset al que ese día ya le toca la reiteración (yaTocaReiterar) no cuenta: lo informa la reiteración, como
+ * reiteración). Un dataset que ese día ya tiene que entrar en la reiteración (yaTocaReiterar) no cuenta: lo informa la próxima, como
  * en la corrida. { fecha, cantidad } o null: la cantidad es lo que sale ese día, sumando a los que vuelven a presentarse lo que
  * seleccionarParaAviso elige para esa fecha.
  * corrida: el día de la próxima corrida posible. { titular, ausencias }: lo que devuelve licenciaDelFirmante (la licencia del
@@ -1168,8 +1169,9 @@ const anticipoQueIncluye = async (config, candidato, corrida, calendario) => {
 
 // El día de la próxima reiteración desde `desde`: el primer día con notas de un mes que toca (spec 2026-11-03-reiteracion-bimestral, 4).
 // primerDiaConNotas no sabe de meses: si el resultado cae en un mes que no toca (también desde un sábado de fin de mes, o con una licencia
-// que termina en él), se vuelve a buscar desde el 1° del mes siguiente. Se mira el resultado, no el punto de partida. Un año de vueltas
-// alcanza: después de la última licencia, todo día hábil tiene notas. null: no hay ninguno
+// que termina en él), se vuelve a buscar desde el 1° del mes siguiente. Se mira el resultado, no el punto de partida. Doce vueltas
+// alcanzan de sobra: después de la última licencia, todo día hábil tiene notas. null: no se encontró ninguno (primerDiaConNotas mira
+// hasta 366 días desde donde arranca): licencias sin persona autorizada encadenadas por más de un año
 const VUELTAS_DE_LA_REITERACION = 12;
 const primerDiaDeReiteracion = async (config, desde, calendario) => {
   let inicio = desde;

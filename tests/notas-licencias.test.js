@@ -1097,7 +1097,8 @@ describe('persona autorizada con una licencia que se superpone en parte (del 22/
 
 // Decisión del usuario (27/10/2026): la persona autorizada puede tomarse licencia aunque no le quede ningún día hábil de la del
 // titular («Si no está, no se presentarán notas»). El motor no cambia: cada día mira si ella está (firmaParaFecha), y si no
-// está ese día es «sin autorizado»: no se presenta ninguna nota y lo pendiente sale a la vuelta
+// está ese día es «sin autorizado»: no se presenta ninguna nota. Lo que toque avisar sale a la vuelta, y la reiteración, en el primer
+// día con notas de un mes que toca (spec 2026-11-03-reiteracion-bimestral, 3.1)
 describe('persona autorizada de licencia todos los días hábiles de la del titular (del 01/03 al 31/03/2027)', () => {
   const PARRAFO_MARZO = 'Asimismo, por medio de la presente autorizo expresamente a Firma admin, Cargo admin, a presentar en mi nombre las Notas Digitales durante mi licencia, del 01/03/2027 al 31/03/2027, con el objetivo de mantener el correcto flujo de trabajo.';
   const SIN_AUTORIZADO = 'Licencia del firmante del 01/03/2027 al 31/03/2027 sin autorizado: no se generan notas';
@@ -1834,5 +1835,11 @@ describe('licencia sin persona autorizada y los meses de la reiteración', () =>
     assert.equal(await anunciada('2027-01-15'), '2027-03-01');
     assert.deepEqual((await correr('2027-01-21')).generadas, []);
     assert.deepEqual((await reiteraciones()).map(n => n.fecha), ['2027-01-04']);
+  });
+
+  it('con licencias encadenadas por más de un año no hay fecha que anunciar, sin error', async () => {
+    await licencia(titular, '2027-03-01', '2028-03-31');
+    await crearDataset({ vencimiento: '2026-09-30' });
+    assert.deepEqual((await motor.estadoNotas({ hoy: '2027-02-15' })).proximas.interna.reiteracion, { fecha: null, cantidad: 0 });
   });
 });
