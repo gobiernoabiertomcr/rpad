@@ -3052,7 +3052,6 @@ function htmlDePersonasDelEvento(personas, valores, { sinLista = null, motivo = 
   const todos = 'Todos';
   const botones = [`<button type="button" class="me-persona" data-persona="todos" aria-pressed="${String(paraTodos)}">`
     + `<i aria-hidden="true">${ICONO_DE_TODOS}</i>${todos}</button>`];
-  if (tipoDelEvento(datos) === 'laboral') botones.push(`<button type="button" class="me-persona" data-persona="administracion" aria-pressed="false"${paraTodos ? ' disabled' : ''}><i aria-hidden="true">${ICONO_DE_TODOS}</i>Toda la administración</button>`);
   for (const persona of listaDe(personas)) {
     const id = idDeLaPersona(persona.id);
     if (id === null) continue;
@@ -3073,7 +3072,6 @@ function elegirPersona(valores, valor) {
   const datos = esObjeto(valores) ? valores : {};
   const personas = Array.isArray(datos.personas) ? datos.personas : [];
   if (valor === 'todos') return { ...datos, para_todos: datos.para_todos !== true, personas: [] };
-  if (valor === 'administracion') return { ...datos, para_todos: false, personas: [...new Set([...personas, ...window.MQ.administracion])] };
   const id = idDeLaPersona(valor);
   if (id === null || datos.para_todos === true) return { ...datos, personas: [...personas] };
   return { ...datos, personas: personas.includes(id) ? personas.filter((otra) => otra !== id) : [...personas, id] };

@@ -45,7 +45,7 @@
   }).observe(document.body, { childList: true });
 
   document.getElementById('mq-agenda-mail')?.addEventListener('change', (e) => {
-    showToast(e.target.checked ? 'Te va a llegar tu agenda por mail.' : 'Ya no te llega tu agenda por mail. Lo que dependa de vos te llega igual.', 'success');
+    showToast(e.target.checked ? 'Te va a llegar tu agenda por mail.' : 'Ya no te llega tu agenda por mail. Lo de quienes dependen de vos te llega igual.', 'success');
   });
 
   const panel = M.panel('agenda', `

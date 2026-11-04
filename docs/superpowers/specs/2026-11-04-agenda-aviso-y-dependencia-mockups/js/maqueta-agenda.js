@@ -22,7 +22,6 @@
     variante,
     frase: (tipo) => FRASES[tipo],
     iconos: window.MAQUETA.ICONOS,
-    administracion: [1, 3],
     jefes: rol === 'editor' ? [1, 3] : [3],
     // La frase, y en «Yo y quienes elija», el mail y la agenda bien separados (window.MAQUETA.piezas, según la opción del panel)
     adornarFrase(nodo, tipo) {
