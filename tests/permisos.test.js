@@ -26,6 +26,7 @@ after(async () => {
 
 // Rutas que solo un admin puede usar. Los IDs no importan: el rol se valida antes.
 const RUTAS_SOLO_ADMIN = [
+  ['GET', '/andino/fetch'],
   ['POST', '/datasets'],
   ['PUT', '/datasets/1'],
   ['DELETE', '/datasets/1'],
@@ -435,6 +436,13 @@ for (const clave of ['adminA', 'superadmin']) {
         assert.equal(res.status, 200);
       });
     }
+
+    // Sin url no sale a la red: alcanza para ver que pasa los dos controles
+    it('llega a GET /andino/fetch', async () => {
+      const res = await api.get('/andino/fetch', { token: usuarios[clave].token });
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error, 'Se requiere el parámetro url');
+    });
   });
 }
 

@@ -98,4 +98,32 @@ describe('formulario de contacto', () => {
     const res = await api.post('/contacto', { ...mensajeValido, tipo: 'cualquiera' });
     assert.equal(res.status, 400);
   });
+
+  // Con su IP: el límite de 5 envíos por hora se cuenta antes de validar
+  it('un campo que no es un texto da 400, no un error del servidor', async () => {
+    const headers = { 'X-Forwarded-For': '203.0.113.100' };
+    const res = await api.post('/contacto', { ...mensajeValido, nombre: 12345, email: ['persona@rpad.test'], mensaje: { a: 1 } }, { headers });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.success, false);
+    assert.match(res.body.error, /El nombre debe tener al menos 2 caracteres/);
+    assert.match(res.body.error, /Ingrese un email válido/);
+    assert.match(res.body.error, /El mensaje debe tener al menos 10 caracteres/);
+  });
+
+  it('en un formulario, también', async () => {
+    const respuesta = await fetch(`${servidor.url}/api/contacto`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': '203.0.113.101' },
+      body: 'nombre[a]=Persona&email[]=persona@rpad.test&tipo=consulta-general&mensaje[a]=Mensaje de prueba'
+    });
+    assert.equal(respuesta.status, 400);
+    assert.match((await respuesta.json()).error, /Ingrese un email válido/);
+  });
+
+  it('un email más largo que el tope da 400', async () => {
+    const headers = { 'X-Forwarded-For': '203.0.113.102' };
+    const res = await api.post('/contacto', { ...mensajeValido, email: `${'a'.repeat(100)}@rpad.test` }, { headers });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.error, 'Ingrese un email válido');
+  });
 });
