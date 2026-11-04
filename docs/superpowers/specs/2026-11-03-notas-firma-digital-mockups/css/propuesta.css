@@ -1,0 +1,38 @@
+/* MAQUETA de la firma digital (03/11/2026): lo nuevo de Correos y la barra de la maqueta. Datos inventados. */
+body { padding-bottom: 70px; }
+.mq-barra { position: fixed; left: 0; right: 0; bottom: 0; z-index: 900; background: #2D2A4A; color: #fff; padding: 10px 16px; display: flex; flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; align-items: center; gap: 8px 12px; font-size: .85rem; }
+.mq-barra b { font-weight: 700; margin-right: 4px; }
+.mq-barra a, .mq-barra button { font: inherit; font-size: .8rem; font-weight: 600; color: #fff; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.35); border-radius: 8px; padding: 5px 10px; cursor: pointer; text-decoration: none; }
+.mq-barra a:hover, .mq-barra button:hover { background: rgba(255,255,255,.26); }
+
+.co-para-firmar { margin-bottom: 16px; border-color: #E3C77A; background: #FFFBEF; }
+.co-para-firmar-cabeza { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.co-para-firmar-cabeza .co-ayuda { margin: 0; max-width: 60ch; }
+.co-para-firmar-lista { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.co-para-firmar-lista li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #fff; border: 1px solid var(--pf-linea); border-radius: 10px; padding: 9px 12px; }
+.co-para-firmar-lista .co-numero { min-width: 3.2em; }
+.co-para-firmar-quien { color: var(--pf-suave); font-size: .85rem; }
+.co-para-firmar-lista .co-btn { margin-left: auto; }
+.co-subidas { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: .88rem; }
+.co-subidas li { padding: 7px 11px; border-radius: 8px; }
+.co-subidas .bien { background: var(--pf-verde-fondo); color: var(--pf-verde); }
+.co-subidas .mal { background: var(--pf-rojo-fondo); color: var(--pf-rojo); }
+.co-subidas code { font-size: .85em; }
+.co-pastilla.para-firmar { background: var(--pf-ambar-fondo); color: var(--pf-ambar); }
+.co-firmada { display: inline-flex; align-items: center; gap: 4px; color: var(--pf-verde); font-size: .75rem; font-weight: 600; white-space: normal; max-width: 16em; line-height: 1.25; }
+.co-firmada svg { flex: none; }
+.co-envio + .co-envio { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--pf-linea); }
+
+.mq-elegir { margin-top: 12px; padding: 12px; border: 1px dashed #6B5FA8; border-radius: 10px; background: #F4F2FB; font-size: .85rem; }
+.mq-elegir p { margin: 0 0 8px; color: #3D3566; }
+.mq-elegir .co-btn { margin: 0 6px 6px 0; }
+.co-enviar-firmadas { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+.co-para-firmar-lista .co-firmada { max-width: none; }
+.mq-ver { max-width: 860px; width: calc(100vw - 32px); }
+.mq-ver iframe { width: 100%; height: 62vh; border: 1px solid var(--pf-linea); border-radius: 8px; margin-top: 10px; background: #fff; }
+.co-fila-botones { margin-left: auto; display: inline-flex; gap: 6px; }
+.co-para-firmar-lista .co-fila-botones .co-btn { margin-left: 0; }
+.co-fila-aviso { flex: 1 0 100%; margin: 2px 0 0; padding: 7px 11px; border-radius: 8px; font-size: .88rem; }
+.co-fila-aviso.bien { background: var(--pf-verde-fondo); color: var(--pf-verde); }
+.co-fila-aviso.mal { background: var(--pf-rojo-fondo); color: var(--pf-rojo); }
+.co-para-firmar-lista .mq-elegir { flex: 1 0 100%; margin-top: 2px; }

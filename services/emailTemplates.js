@@ -359,6 +359,39 @@ export const plantillaSimple = ({ titulo, parrafos, boton: botonDelEmail = null,
   ]
 });
 
+// Las notas del día, a quien las firma, con las notas adjuntas (spec 2026-11-03-notas-firma-digital, 4.4; el texto, el de la maqueta que
+// aprobó el usuario). notas: [{ numero, anio, tipo, gestion }]. El primer nombre sale de nombre_completo
+const CLASE_DE_NOTA = { aviso: 'aviso', reiteracion: 'reiteración', autorizacion: 'autorización', auditoria: 'auditoría' };
+export const notasParaFirmarTemplate = ({ nombre, notas, url = `${RPAD_URL}/correos.html#libro` }) => {
+  const primerNombre = String(nombre ?? '').trim().split(/\s+/)[0];
+  const saludo = primerNombre ? `Buen día, ${primerNombre}.` : 'Buen día.';
+  const cuantas = notas.length === 1 ? '1 nota' : `${notas.length} notas`;
+  const renglon = (n) => `${CLASE_DE_NOTA[n.tipo] ?? n.tipo}${n.gestion ? `, gestión ${n.gestion}` : ''}`;
+  const numero = (n) => `Nota Digital N° ${n.numero}/${String(n.anio).slice(-2)}`;
+  const adjuntas = notas.length === 1 ? 'Te la adjuntamos para que no tengas que bajarla:' : 'Te las adjuntamos para que no tengas que bajarlas:';
+  const pasos = notas.length === 1
+    ? 'Firmala en el Firmador de firmar.gob.ar y subila en su fila, en la pantalla que abre el botón de abajo. Si el archivo no es esa nota, el RPAD te avisa. Antes de enviarla vas a poder mirarla.'
+    : 'Firmalas en el Firmador de firmar.gob.ar, de a una, y subí cada una en su fila, en la pantalla que abre el botón de abajo. Si un archivo no es esa nota, el RPAD te avisa. Antes de enviarlas vas a poder mirarlas.';
+  const cierre = 'A las 14:00 sale lo que quede: firmada si la subiste y la confirmaste; si no, con la imagen de tu firma, como siempre. Si hoy no podés, no hace falta que hagas nada. ¡Gracias!';
+  return {
+    subject: `RPAD: hoy tenés ${cuantas} para firmar`,
+    html: plantillaSimple({
+      titulo: 'Notas para firmar hoy',
+      parrafos: [
+        escapeHtml(saludo),
+        `Hoy tenés <strong>${cuantas} para firmar</strong>. ${adjuntas}`,
+        notas.map(n => `<strong>${numero(n)}</strong>: ${escapeHtml(renglon(n))}.`).join('<br>'),
+        pasos
+      ],
+      boton: { texto: notas.length === 1 ? 'Subir la nota firmada' : 'Subir las notas firmadas', url },
+      notas: [cierre]
+    }),
+    text: [
+      saludo, '', `Hoy tenés ${cuantas} para firmar. ${adjuntas}`, ...notas.map(n => `${numero(n)}: ${renglon(n)}.`), '', pasos, '', `Subirlas: ${url}`, '', cierre
+    ].join('\n')
+  };
+};
+
 // Invitación: el usuario elige su contraseña por primera vez (spec 10.1). vence: texto de fecha y hora
 export const invitacionTemplate = ({ nombre_completo, username, rol, link, vence }) => {
   const rolTexto = TEXTO_ROL[rol] || rol;

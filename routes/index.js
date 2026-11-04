@@ -46,6 +46,8 @@ import {
   descargarAnexo,
   descargarWord,
   reintentarNota,
+  subirNotaFirmada,
+  enviarNotasFirmadas,
   verEstado,
   verPreview,
   verPreviewPdf,
@@ -137,7 +139,7 @@ import {
 import { listarSeguimiento, verSeguimiento, descargarSeguimientoPdf } from '../controllers/seguimientoController.js';
 import { verMetricas, descargarMetricasPdf } from '../controllers/metricasController.js';
 import { cargarNotaDgmit, corregirNotaDgmit, anularNotaDgmit } from '../controllers/notasDgmitController.js';
-import { subida } from '../config/upload.js';
+import { subida, subidaDeNotaFirmada } from '../config/upload.js';
 
 const router = Router();
 
@@ -325,6 +327,8 @@ router.get('/notificaciones/notas-digitales/:id/pdf', authMiddleware, adminOnly,
 router.get('/notificaciones/notas-digitales/:id/anexo', authMiddleware, adminOnly, descargarAnexo);
 router.get('/notificaciones/notas-digitales/:id/word', authMiddleware, adminOnly, descargarWord);
 router.post('/notificaciones/notas-digitales/:id/reintentar', authMiddleware, adminOnly, reintentarNota);
+router.post('/notificaciones/notas-digitales/firmadas/enviar', authMiddleware, adminOnly, enviarNotasFirmadas);
+router.post('/notificaciones/notas-digitales/:id/firmada', authMiddleware, adminOnly, subidaDeNotaFirmada, subirNotaFirmada);
 
 // =====================================================
 // Reportes PDF (protegidas, para todos los roles con sesión: spec 2026-10-24-metricas-y-reportes, 5 y 6). Avisos del RPAD reemplaza

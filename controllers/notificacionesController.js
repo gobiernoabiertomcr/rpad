@@ -1,6 +1,6 @@
 import { sendEmailToArea, verifyConnection, listaDeCorreos } from '../services/emailService.js';
 import * as templates from '../services/emailTemplates.js';
-import { ejecutarNotasDigitales, anotarEnLaUltimaCorrida } from '../services/notasDigitales.js';
+import { ejecutarNotasDigitales, anotarEnLaUltimaCorrida, enviarLasQueEsperanFirma } from '../services/notasDigitales.js';
 import { sacarFotoSiCorresponde } from '../services/metricasFoto.js';
 import { enviarAvisosDeVencimiento } from '../services/miEspacioAvisos.js';
 import { ejecutarRecordatoriosDeEventos as correrLosRecordatorios } from '../services/miEspacioEventosCorrida.js';
@@ -233,6 +233,22 @@ export const previewEmail = async (req, res) => {
   }
 };
 
+// A las 14:00 sale lo que quede de la firma digital. Da lo que pasó, o null si no hubo nada (así, con la firma digital apagada, la respuesta
+// es la de siempre). Una falla se anota en la última corrida, con el motivo fijo: nunca tira
+const lasQueEsperanFirma = async (calendario) => {
+  try {
+    const resumen = await enviarLasQueEsperanFirma({ hoy: hoyArgentina(), calendario });
+    if (resumen.errores.length > 0 || resumen.fallidas > 0 || resumen.ocupado) {
+      await anotarEnLaUltimaCorrida('No se pudieron enviar todas las notas que esperaban la firma digital: se reintenta en la próxima corrida').catch(() => {});
+    }
+    return resumen.enviadas + resumen.fallidas + resumen.errores.length > 0 || resumen.ocupado ? resumen : null;
+  } catch (error) {
+    console.error('Error enviando las notas que esperaban la firma digital:', error?.stack ?? error);
+    await anotarEnLaUltimaCorrida('No se pudieron enviar las notas que esperaban la firma digital: se reintenta en la próxima corrida').catch(() => {});
+    return { ejecutado: false, ocupado: false, enviadas: 0, fallidas: 0, errores: [{ mensaje: 'No se pudieron enviar las notas que esperaban la firma digital' }] };
+  }
+};
+
 /**
  * Ejecuta el recordatorio de cambios pendientes
  * Llamado por cron (14:00); solo envía en días hábiles (spec 4.1), con el calendario de los feriados de la tabla, leído una
@@ -249,14 +265,19 @@ export const ejecutarNotificacionCambiosPendientes = async (req, res) => {
     const calendario = await leerCalendario();
     const sinFeriados = calendario.error !== null;
     if (sinFeriados) await anotarEnLaUltimaCorrida(MENSAJE_CORRIDA_SIN_FERIADOS).catch(() => {});
+    // Primero, las notas que esperaban la firma digital (spec 2026-11-03-notas-firma-digital, 4.9): aisladas, un error no frena los recordatorios
+    const firmaDigital = await lasQueEsperanFirma(calendario);
     const resultados = await enviarCambiosPendientes({ hoy: hoyArgentina(), calendario });
-    const data = { ...resultados, calendario: calendario.origen };
+    const data = { ...resultados, calendario: calendario.origen, ...(firmaDigital ? { firma_digital: firmaDigital } : {}) };
+    const sinErroresDeFirma = !firmaDigital || (firmaDigital.errores.length === 0 && !firmaDigital.ocupado);
     if (!resultados.dia_habil) {
-      return res.status(sinFeriados ? 207 : 200)
-        .json({ success: !sinFeriados, message: 'Hoy no es día hábil: no se envían recordatorios.', data });
+      // Las que esperaban la firma no salen un día no hábil (salen en la corrida siguiente), pero un error al mirarlas se dice igual
+      const bien = !sinFeriados && sinErroresDeFirma;
+      return res.status(bien ? 200 : 207)
+        .json({ success: bien, message: 'Hoy no es día hábil: no se envían recordatorios.', data });
     }
     const sinErrores = resultados.errores.length === 0;
-    const success = sinErrores && !sinFeriados;
+    const success = sinErrores && !sinFeriados && sinErroresDeFirma;
     res.status(success ? 200 : 207).json({
       success,
       message: sinErrores

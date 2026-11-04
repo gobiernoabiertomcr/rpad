@@ -10,6 +10,8 @@ import { listaDeCorreos } from '../services/emailService.js';
 import { decodificarImagenSubida, ImagenSubidaInvalida } from '../services/imagenesSubidas.js';
 import { firmaDeUsuario } from '../services/firmasService.js';
 import { bloquesDeNotaDigital, NotaNoReconocida } from '../services/notasDigitalesWord.js';
+import { MENSAJE_ESPERA_FIRMA, MENSAJE_CORRIDA_EN_CURSO } from '../services/notasFirmaDigital.js';
+import { idsPositivos } from '../services/proyectosReglas.js';
 import { renderDocx, membreteParaWord } from '../services/notasWord.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { estadoDeLosRecordatorios } from '../services/miEspacioEventosCorrida.js';
@@ -78,6 +80,7 @@ const configPublica = async ({ firma_imagen, membrete_imagen, ...resto }) => {
   return {
     ...resto,
     envio_activo: Boolean(resto.envio_activo),
+    firma_digital_activa: Boolean(resto.firma_digital_activa),
     tiene_firma: firmante ? firmante.tiene_imagen : Boolean(firma_imagen),
     tiene_membrete: Boolean(membrete_imagen),
     firmante
@@ -112,7 +115,8 @@ export const listarNotas = async (req, res) => {
     const [filas] = await pool.query(
       `SELECT n.id, n.numero, n.anio, n.tipo, n.gestion, DATE_FORMAT(n.fecha, '%Y-%m-%d') AS fecha, n.es_prueba,
               n.asunto, n.para, n.cc, n.cco, n.estado, n.intentos, n.ultimo_error, n.respuesta_smtp,
-              DATE_FORMAT(n.enviada_at, '%Y-%m-%d %H:%i') AS enviada_at,
+              DATE_FORMAT(n.enviada_at, '%Y-%m-%d %H:%i') AS enviada_at, n.espera_firma, n.firmado_por,
+              DATE_FORMAT(n.firmado_at, '%Y-%m-%d %H:%i') AS firmado_at,
               (SELECT COUNT(*) FROM notas_digitales_datasets c WHERE c.nota_id = n.id) AS cantidad_datasets,
               (SELECT COUNT(*) FROM notas_digitales_cambios k WHERE k.nota_id = n.id) AS cantidad_cambios,
               (n.anexo_pdf IS NOT NULL) AS tiene_anexo
@@ -122,7 +126,7 @@ export const listarNotas = async (req, res) => {
        LIMIT 500`,
       datasetId ? [datasetId, ...parametros] : parametros
     );
-    res.json({ success: true, data: filas.map(fila => ({ ...fila, tiene_anexo: Boolean(fila.tiene_anexo) })) });
+    res.json({ success: true, data: filas.map(fila => ({ ...fila, tiene_anexo: Boolean(fila.tiene_anexo), espera_firma: Boolean(fila.espera_firma) })) });
   } catch (error) {
     errorInterno(res, 'Error al obtener el libro de notas', error);
   }
@@ -134,6 +138,7 @@ export const obtenerNota = async (req, res) => {
     const [[nota]] = await pool.query(
       `SELECT id, numero, anio, tipo, gestion, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, es_prueba, asunto, para, cc, cco,
               html, estado, intentos, ultimo_error, message_id, respuesta_smtp, DATE_FORMAT(enviada_at, '%Y-%m-%d %H:%i') AS enviada_at,
+              espera_firma, firmado_por, DATE_FORMAT(firmado_at, '%Y-%m-%d %H:%i') AS firmado_at,
               (anexo_pdf IS NOT NULL) AS tiene_anexo
        FROM notas_digitales WHERE id = ?`, [id]
     );
@@ -165,7 +170,7 @@ export const obtenerNota = async (req, res) => {
         registro_actualizacion: cambio.tipo_cambio === 'editar' && datos?.registro_actualizacion === true
       };
     });
-    res.json({ success: true, data: { ...nota, tiene_anexo: Boolean(nota.tiene_anexo), datasets, cambios } });
+    res.json({ success: true, data: { ...nota, tiene_anexo: Boolean(nota.tiene_anexo), espera_firma: Boolean(nota.espera_firma), datasets, cambios } });
   } catch (error) {
     errorInterno(res, 'Error al obtener la nota', error);
   }
@@ -173,12 +178,13 @@ export const obtenerNota = async (req, res) => {
 
 export const descargarPdf = async (req, res) => {
   try {
-    const [[nota]] = await pool.query('SELECT numero, anio, es_prueba, pdf FROM notas_digitales WHERE id = ?', [idDe(req.params.id)]);
+    // Con firma digital, la copia firmada, con el mismo nombre (spec 2026-11-03-notas-firma-digital, 4.7): también desde el Seguimiento
+    const [[nota]] = await pool.query('SELECT numero, anio, es_prueba, pdf, pdf_firmado FROM notas_digitales WHERE id = ?', [idDe(req.params.id)]);
     if (!nota) return res.status(404).json({ success: false, error: 'Nota no encontrada' });
     const archivo = nota.es_prueba ? 'Nota-Digital-PRUEBA.pdf' : `Nota-Digital-${nota.numero}-${String(nota.anio).slice(-2)}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${archivo}"`);
-    res.send(nota.pdf);
+    res.send(nota.pdf_firmado ?? nota.pdf);
   } catch (error) {
     errorInterno(res, 'Error al descargar el PDF', error);
   }
@@ -228,11 +234,44 @@ export const descargarWord = async (req, res) => {
   }
 };
 
+// El PDF firmado de una nota, en su fila (spec 2026-11-03-notas-firma-digital, 4.5). Con solo_verificar ('1'), no guarda nada: es el paso antes
+// del modal de revisión. Nunca envía
+export const subirNotaFirmada = async (req, res) => {
+  try {
+    const id = idDe(req.params.id);
+    if (!id) return res.status(404).json({ success: false, error: 'Nota no encontrada' });
+    if (!req.file) return res.status(400).json({ success: false, error: 'Elegí el PDF firmado.' });
+    const resultado = await notas.subirNotaFirmada({
+      id, archivo: req.file.buffer, usuarioId: req.user?.userId ?? null, soloVerificar: req.body?.solo_verificar === '1'
+    });
+    if (resultado.ocupado) return res.status(409).json({ success: false, error: MENSAJE_CORRIDA_EN_CURSO });
+    if (!resultado.ok) return res.status(resultado.status).json({ success: false, error: resultado.mensaje });
+    res.json({ success: true, message: resultado.mensaje, data: resultado.data });
+  } catch (error) {
+    errorInterno(res, 'Error al subir la nota firmada', error);
+  }
+};
+
+// «Enviar las N firmadas»: los ids que mostraba la pantalla (spec, 4.5). Cada una da su resultado, también si el email no sale
+export const enviarNotasFirmadas = async (req, res) => {
+  try {
+    const ids = idsPositivos(req.body?.ids);
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ success: false, error: 'Elegí las notas que querés enviar.' });
+    const resultado = await notas.enviarNotasFirmadas({ ids });
+    if (resultado.ocupado) return res.status(409).json({ success: false, error: MENSAJE_CORRIDA_EN_CURSO });
+    res.json({ success: true, data: resultado });
+  } catch (error) {
+    errorInterno(res, 'Error al enviar las notas firmadas', error);
+  }
+};
+
 export const reintentarNota = async (req, res) => {
   try {
-    const [[nota]] = await pool.query('SELECT id, estado FROM notas_digitales WHERE id = ?', [idDe(req.params.id)]);
+    const [[nota]] = await pool.query('SELECT id, estado, espera_firma FROM notas_digitales WHERE id = ?', [idDe(req.params.id)]);
     if (!nota) return res.status(404).json({ success: false, error: 'Nota no encontrada' });
     if (nota.estado === 'enviada') return res.status(400).json({ success: false, error: 'La nota ya fue enviada' });
+    // «Reintentar» no sirve de atajo: una nota que espera la firma sale al enviarla firmada o a las 14:00 (spec 2026-11-03-notas-firma-digital, 4.11)
+    if (nota.espera_firma) return res.status(409).json({ success: false, error: MENSAJE_ESPERA_FIRMA });
     // Comparte el bloqueo con la corrida diaria: si hay una en curso, no se envía para no duplicar la nota
     const resultado = await notas.reintentarNota(nota.id);
     if (resultado.enCurso) return res.status(409).json({ success: false, error: resultado.error });
@@ -390,6 +429,9 @@ export const guardarConfig = async (req, res) => {
         errores.push('membrete_pie: no entra en una línea al pie del PDF ni con la letra más chica (7 puntos); acortalo');
       } else cambios[campo] = texto;
     }
+    if (cuerpo.firma_digital_activa !== undefined) {
+      cambios.firma_digital_activa = [true, 1, '1', 'true'].includes(cuerpo.firma_digital_activa) ? 1 : 0;
+    }
     if (cuerpo.envio_activo !== undefined) {
       cambios.envio_activo = [true, 1, '1', 'true'].includes(cuerpo.envio_activo) ? 1 : 0;
     }
@@ -403,7 +445,7 @@ export const guardarConfig = async (req, res) => {
       return res.status(400).json({ success: false, error: `No se puede activar el envío automático: falta ${faltan.join(', ')}` });
     }
 
-    // Las columnas salen de LISTAS, TEXTOS y envio_activo: listas fijas del código
+    // Las columnas salen de LISTAS, TEXTOS, envio_activo y firma_digital_activa: listas fijas del código
     const columnas = Object.keys(cambios);
     await pool.query(
       `UPDATE notas_digitales_config SET ${columnas.map(c => `${c} = ?`).join(', ')}, updated_by = ? WHERE id = 1`,

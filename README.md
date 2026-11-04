@@ -170,6 +170,17 @@ En gestión externa, el RPAD avisa a la DGMIT y a la Dirección Administrativa, 
 - **Dónde está la regla:** `services/notasDgmitReglas.js` (validación, pura), `controllers/notasDgmitController.js` (la API) y `services/seguimientoReglas.js` (cómo se ve en el Seguimiento). Ver [Migración: Notas DGMIT](#migración-notas-dgmit).
 - **Detalle de diseño:** `docs/superpowers/specs/2026-10-24-notas-dgmit-design.md`.
 
+## Firma digital de las Notas Digitales
+
+La firma digital remota no se puede integrar: el Firmador firma aparte. Por eso, con el interruptor de Correos → Estado prendido (arranca apagado), cada nota se baja, se firma y se vuelve a subir antes de salir.
+
+1. A las **8:05** el RPAD genera las notas. No se envían: le llegan por mail a quien firma (el firmante titular o, durante su licencia, la persona autorizada), adjuntas.
+2. Quien firma las firma y, en **Correos → Libro**, sube cada una **en su fila**, con el nombre que venga (`document.pdf`). El RPAD comprueba que sea esa nota, que no se haya guardado otra versión antes de firmarla y que la firma corresponda a sus bytes, y la muestra en un modal para leerla y confirmar. Si es otra nota, lo dice y no guarda nada.
+3. **«Enviar las N firmadas»** las envía con su nombre de siempre (`Nota-Digital-8-26.pdf`). El Libro las guarda firmadas.
+4. A las **14:00** sale lo que quede: firmada si se subió y se confirmó; si no, con la imagen de la firma, como antes. Una nota nunca se queda sin salir porque nadie la firmó. Si esa corrida no corre, Correos → Estado lo avisa en rojo y la nota sale en la corrida de la mañana siguiente.
+
+El RPAD comprueba que el PDF sea esa nota y que la firma corresponda a sus bytes; la cadena de confianza es del validador oficial. Con el interruptor apagado, todo sale como siempre, a las 8:05. Detalle de diseño: `docs/superpowers/specs/2026-11-03-notas-firma-digital-design.md`.
+
 ## Métricas y Reportes
 
 **Herramientas → Métricas y Reportes** (`reportes.html`, antes "Reportes") tiene dos pestañas: **Métricas** (la inicial) y **Reportes**. La ven todos los roles con sesión, el lector incluido; no es pública. Sirve para un informe a superiores, para mejorar el trabajo de Datos Públicos, para tener respaldo con datos cuando un dataset figura vencido y para conversar con la DGMIT y ajustar el proceso juntos.
@@ -260,7 +271,7 @@ rpad/
 │   ├── andinoController.js        # Integración con portal de datos
 │   ├── cambiosPendientesController.js  # Sistema de doble verificación
 │   ├── contactoController.js      # Formulario de contacto público
-│   ├── notificacionesController.js  # Crons: aviso a áreas y Notas Digitales (8:15), cambios pendientes (14:00) y recordatorios de la agenda (cada media hora)
+│   ├── notificacionesController.js  # Crons: aviso a áreas y Notas Digitales (8:05), cambios pendientes y notas que esperaban la firma digital (14:00) y recordatorios de la agenda (cada media hora)
 │   ├── notasDigitalesController.js  # API de Notas Digitales (libro, prueba, configuración)
 │   ├── notasController.js         # Generador de Notas: las áreas, la vista previa y el Word (administración y el colaborador)
 │   ├── seguimientoController.js   # Seguimiento del dataset: lista, ficha y PDF (solo lectura)
@@ -863,6 +874,21 @@ En lugar del comando `mysql`, cada script se puede aplicar desde **phpMyAdmin �
 
 **Si algo sale mal:** subir de nuevo los archivos del backup → Restart. La columna nueva puede quedar (es aditiva y el código anterior no la usa). Para sacarla, phpMyAdmin → pegar `database/updates/rollback-mi-espacio-horas-acumuladas.sql` **después** del Restart: borra la columna; las licencias quedan, con sus horas, pero **se pierde qué parte de cada día era acumulada**: esas cargas cuentan enteras contra su mes y pueden quedar con el aviso ámbar de lo que falta en el Resumen, sin frenar nada (exportar la tabla antes si hace falta conservar esa parte). Lo demás de Mi espacio, los usuarios y el resto de los datos no se tocan. Si también se deshacen los días restituidos, `rollback-mi-espacio-horas-acumuladas.sql` va **antes** que `rollback-mi-espacio-restituciones.sql`. Para volver a la versión nueva, se corre otra vez la migración.
 
+### Migración: La firma digital de las Notas Digitales
+
+⚠️ Requisito: las migraciones anteriores aplicadas y el código desplegado hasta la entrega anterior. Sin dependencias nuevas de npm ni variables de entorno nuevas.
+
+1. **SQL:** pegar `database/updates/migracion-notas-firma-digital.sql` → **Continuar**, **antes** de subir el código. Suma a `notas_digitales` las columnas de la firma y a la configuración el interruptor, apagado. Se puede repetir. Sin ellas, las Notas Digitales no se generan. Verificación:
+   ```sql
+   SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'notas_digitales' AND column_name IN ('espera_firma', 'pdf_firmado', 'firmado_por', 'firmado_at', 'firma_subida_por');
+   ```
+   Tiene que dar 5.
+2. **Subir los archivos** (lo dice el kit) → **Restart**, fuera del horario de los crons.
+3. **Mover la Tarea Cron** de `/api/cron/notificaciones` de las 8:15 a las 8:05 (fuera de las 8:00–8:15: ver [Configurar Cron Job](#configurar-cron-job-notificaciones-automáticas)).
+4. **Verificar** (Ctrl+F5; solo mirar): Correos → Estado muestra «Firma digital de las notas», desactivada, y el día siguiente la última corrida, sin errores. **El interruptor queda apagado** hasta que se quiera probar.
+
+**Si algo sale mal:** subir de nuevo los archivos del backup → Restart, y volver la Tarea Cron a las 8:15. Las columnas pueden quedar (el código anterior no las usa). Para sacarlas, `database/updates/rollback-notas-firma-digital.sql` **después** del Restart: se pierden las copias firmadas (las notas que ya salieron quedan como enviadas, con su PDF sin firmar en el Libro).
+
 ### Migración desde v1.4.0 a v1.5.0
 
 ⚠️ Requisito: Ejecutar esto si su sistema está en la versión 1.4.0.
@@ -1000,7 +1026,7 @@ Cada una responde un JSON. La de los recordatorios de la agenda (`/api/cron/even
 
 | Minuto | Hora | Día | Mes | Día semana | Comando |
 |--------|------|-----|-----|------------|---------|
-| 15 | 8 | * | * | * | `curl -s "https://tu-dominio.com/api/cron/notificaciones?secret=TU_CRON_SECRET" > /dev/null` |
+| 5 | 8 | * | * | * | `curl -s "https://tu-dominio.com/api/cron/notificaciones?secret=TU_CRON_SECRET" > /dev/null` |
 | 0 | 14 | * | * | * | `curl -s "https://tu-dominio.com/api/cron/cambios-pendientes?secret=TU_CRON_SECRET" > /dev/null` |
 | */30 | * | * | * | * | `curl -s "https://tu-dominio.com/api/cron/eventos?secret=TU_CRON_SECRET" > /dev/null` |
 
@@ -1008,7 +1034,7 @@ Las tres corren todos los días: cPanel no conoce los feriados y el sistema deci
 
 Si se cambia el horario de una tarea existente, hacerlo fuera de las 8:00–8:15 y de las 13:00–14:00: editada en ese intervalo, la tarea puede correr dos veces ese día y repetir los emails. La de los recordatorios de la agenda se puede editar a cualquier hora: un recordatorio nunca sale dos veces.
 
-El de las **8:15** envía el aviso directo a las áreas y las **Notas Digitales**:
+El de las **8:05** (hasta la firma digital, a las 8:15) envía el aviso directo a las áreas y las **Notas Digitales** (con la [firma digital](#firma-digital-de-las-notas-digitales) prendida, las notas esperan hasta las 14:00):
 
 - **Aviso a las áreas**: email a las áreas de gestión externa 40 días antes del vencimiento (sin los datasets con "Requiere nota DGMIT" en "No": ese email anticipa una nota formal que no les llega). Cada día hábil avisa también lo que vence 40 días después de los días no hábiles que siguen (un viernes avisa lo del viernes, el sábado y el domingo): se anticipa, nunca se atrasa.
 - **Aviso**: gestión interna 60 días antes del vencimiento y gestión externa 40 días antes, junto con los demás datasets de esa gestión que vencen el mismo mes. Informa **solo datasets a vencer** (todavía no vencidos) y se envía con dos PDF: la nota y el **anexo** (una hoja A4 por dataset).
@@ -1020,7 +1046,7 @@ El de las **8:15** envía el aviso directo a las áreas y las **Notas Digitales*
 - **La foto del año** (Métricas y Reportes): desde el 10/01, la primera corrida guarda las métricas del año anterior al 31/12, sea o no día hábil, y no las vuelve a tocar nunca. Cuenta los días hábiles con los feriados que ya leyó la corrida y los guarda con la foto; si no se pudieron leer, no la saca ("No se pudo sacar la foto del año: no se pudieron leer los feriados de Configuración → Feriados"). Va aparte del resto: si falla, no frena las notas, queda en Correos → Estado ("Última corrida diaria") y la corrida del día siguiente la vuelve a intentar.
 - **El aviso de vencimiento de Mi espacio**: al final, a cada persona con algo por vencer en su Mi espacio (un franco o unas horas a favor del mes, o días de la licencia que vence el 31/12), un solo email, una sola vez por cosa y nunca a quien está de licencia ese día. Sale solo en días hábiles contando también los feriados de la pestaña Feriados (en Carnaval, por ejemplo, no sale). Va aparte del resto: si falla, no frena nada, queda en Correos → Estado ("Última corrida diaria") y lo que no salió sale en una corrida siguiente.
 
-El de las **14:00** envía el **recordatorio** de cambios pendientes: a cada persona que puede auditar un cambio (los auditores disponibles o, si no hay ninguno, los editores, de respaldo), los cambios propuestos hace una hora o más que no van por nota de auditoría (nunca los propios; con el envío automático apagado o sin Para de auditoría, ningún cambio va por nota y todos llegan por acá). Quien está de licencia no lo recibe.
+El de las **14:00** envía, primero, las notas que todavía esperaban la firma digital, y después el **recordatorio** de cambios pendientes: a cada persona que puede auditar un cambio (los auditores disponibles o, si no hay ninguno, los editores, de respaldo), los cambios propuestos hace una hora o más que no van por nota de auditoría (nunca los propios; con el envío automático apagado o sin Para de auditoría, ningún cambio va por nota y todos llegan por acá). Quien está de licencia no lo recibe.
 
 En el mismo recorrido, **aviso de días sin auditor**: si un cambio que entra en el recordatorio no tiene a nadie que pueda auditarlo (ningún auditor ni editor de respaldo disponible que no sea quien lo propuso), quien lo propuso recibe un solo email con todos sus cambios en esa situación: hasta cuándo no hay auditor disponible y que el conjunto de datos sigue bloqueado. Sale una vez por cambio (queda registrado en `cambios_pendientes.aviso_sin_auditores_at`); si quien propuso está de licencia, sale a su vuelta, mientras siga sin auditor. Apenas vuelve a haber un auditor disponible, llega el recordatorio de siempre.
 
@@ -1090,6 +1116,8 @@ La de **cada media hora** manda los **recordatorios de la agenda de [Mi espacio]
 | GET | `/api/notas/membrete` | Generador de Notas: el membrete y el pie de la hoja de la vista previa |
 | POST | `/api/notas/vista-previa` | Generador de Notas: el HTML de la nota y el nombre del Word (`{ fecha, numero, tipo, pedido, anteriores, area_id, datasets }`) |
 | POST | `/api/notas/generar` | Generador de Notas: el Word (lo mismo que la vista previa) |
+| POST | `/api/notificaciones/notas-digitales/:id/firmada` | Sube el PDF firmado de una nota que espera la firma (administración; multipart, campo `archivo`, con `solo_verificar=1` no guarda) |
+| POST | `/api/notificaciones/notas-digitales/firmadas/enviar` | Envía las notas firmadas que todavía esperan (`{ ids }`, administración) |
 | GET | `/api/notificaciones/notas-digitales/:id/word` | Una Nota Digital en Word, en la hoja membretada y sin firma (administración; 422 si no se reconoce la nota) |
 | GET | `/api/feriados` | Los feriados de un año (`?anio=AAAA`, por defecto el en curso), con los 9 fijos, y los años del selector (cualquier rol con sesión) |
 | POST | `/api/feriados` | Cargar un feriado (`{ fecha, nombre, tipo, trasladado_de, se_repite }`; administración); trae `avisos` que no frenan nada |
@@ -1182,6 +1210,13 @@ La de **cada media hora** manda los **recordatorios de la agenda de [Mi espacio]
 ---
 
 ## Changelog
+
+### La firma digital de las Notas Digitales (2026-11)
+- **Las notas se pueden firmar con la firma digital remota antes de salir:** a las 8:05 le llegan a quien firma, las sube firmadas en su fila de Correos → Libro, con el nombre que venga, las lee en un modal y las envía. A las 14:00 sale lo que quede: firmada si se subió; si no, con la imagen
+- **El RPAD reconoce cada nota por su contenido** y no acepta otra: «Ese PDF es la Nota Digital N° 9/26, no la 8/26. No se guardó nada.»
+- **La corrida de las 8:15 pasa a las 8:05**, también con el interruptor apagado (arranca apagado: las notas salen como siempre)
+- Con migración (`migracion-notas-firma-digital.sql`, antes del código), sin Tarea Cron nueva (se mueve la de las 8:15), sin variables de entorno nuevas y sin Run NPM Install
+- Detalle de diseño: `docs/superpowers/specs/2026-11-03-notas-firma-digital-design.md`
 
 ### La reiteración bimestral (2026-11)
 - **La reiteración de las Notas Digitales sale solo en enero, marzo, mayo, julio, septiembre y noviembre**, el primer día hábil con notas de ese mes, y cada gestión sigue con su nota. Los avisos, la regla de los 20 días, la nota de auditoría y el contenido de las notas no cambian

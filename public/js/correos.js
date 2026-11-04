@@ -103,6 +103,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-verificar-smtp').addEventListener('click', verificarConexionSMTP);
   document.getElementById('envio-activo').addEventListener('change', cambiarEnvioAutomatico);
+  document.getElementById('firma-activa').addEventListener('change', cambiarFirmaDigital);
+  document.getElementById('nd-para-firmar').addEventListener('click', accionDeParaFirmar);
+  document.getElementById('nd-firmada-archivo').addEventListener('change', alElegirFirmada);
+  document.getElementById('modal-firmada-cerrar').addEventListener('click', cerrarModalFirmada);
+  document.getElementById('modal-firmada-secundario').addEventListener('click', cerrarModalFirmada);
+  document.getElementById('modal-firmada-principal').addEventListener('click', alTocarPrincipalDelModal);
+  document.getElementById('modal-firmada').addEventListener('mousedown', presionEnVelo);
+  document.getElementById('modal-firmada').addEventListener('click', clicAfueraDeLaFirmada);
   ['filtro-anio', 'filtro-tipo', 'filtro-gestion', 'filtro-estado', 'filtro-dataset', 'filtro-pruebas']
     .forEach(id => document.getElementById(id).addEventListener('change', cargarLibro));
   document.getElementById('libro-cuerpo').addEventListener('click', accionDelLibro);
@@ -204,6 +212,286 @@ async function verificarConexionSMTP() {
   }
 }
 
+// =====================================================
+// LA FIRMA DIGITAL (spec 2026-11-03-notas-firma-digital, 4.5 y 6)
+// =====================================================
+const TILDE_DE_FIRMA = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+const numeroCortoDe = (n) => `${n.numero}/${String(n.anio).slice(-2)}`;
+const archivoDeNota = (n) => `Nota-Digital-${n.numero}-${String(n.anio).slice(-2)}.pdf`;
+// 'AAAA-MM-DD HH:MM[:SS]' → ' el dd/mm a las HH:MM', o '' sin un momento
+const cuandoFirmo = (momento) => (momento ? ` el ${momento.slice(8, 10)}/${momento.slice(5, 7)} a las ${momento.slice(11, 16)}` : '');
+
+// Lo que dice el modal (textContent: sin escapar). Al subir, lo que dijo el servidor del archivo elegido
+const textoDeLaRevision = ({ numero_texto: numero, firmado_por: nombre, firmado_at: momento, archivo }) =>
+  `Es la Nota Digital N° ${numero}, firmada digitalmente por ${nombre}${cuandoFirmo(momento)}. La firma no se ve en la hoja. Sale como ${archivo}.`;
+const textoDeVerFirmada = (n) => (n.firmado_por
+  ? `Firmada digitalmente por ${n.firmado_por}${cuandoFirmo(n.firmado_at)}. La firma no se ve en la hoja. Sale como ${archivoDeNota(n)}.`
+  : 'Todavía sin firmar. Es la misma nota que llegó adjunta al mail: bajala para firmarla.');
+const MENSAJE_YA_NO_ESPERABAN = 'Esas notas ya no esperan la firma: están en el Libro.';
+const textoDelBotonDeEnviar = (cantidad) => (cantidad === 1 ? 'Enviar la firmada' : `Enviar las ${cantidad} firmadas`);
+
+// La tarjeta «Notas para firmar hoy». notas: las de estado.para_firmar; avisos: lo último que dijo cada fila, por id; enviadas: lo que dijo
+// el último envío, [{ bien, texto }]. '' si no hay nada que mostrar. Lo que hay que anunciar va aparte, en #nd-firmada-anuncio: esto se reescribe
+function htmlDeParaFirmar(notas, { avisos = {}, enviadas = [] } = {}) {
+  if (notas.length === 0 && enviadas.length === 0) return '';
+  const esc = (texto) => Utils.escapeHtml(String(texto ?? ''));
+  const firmadas = notas.filter(n => n.firmado_por).length;
+  const fila = (n) => {
+    const numero = esc(numeroCortoDe(n));
+    const aviso = avisos[n.id];
+    return `<li>
+      <span class="co-numero">${numero}</span>
+      <span class="co-chip ${esc(n.tipo)}">${esc(ETIQUETAS[n.tipo])}</span>
+      ${n.gestion ? `<span class="co-gestion">${esc(textoGestion(n.gestion))}</span>` : ''}
+      ${n.firmado_por
+    ? `<span class="co-firmada">${TILDE_DE_FIRMA} Firmada por ${esc(n.firmado_por)}</span>`
+    : `<span class="co-para-firmar-quien">Falta firmar${n.firma_nombre ? ` · la firma ${esc(n.firma_nombre)}` : ''}</span>`}
+      <span class="co-fila-botones">
+        <button type="button" class="co-btn" data-ver-firmada="${n.id}" aria-label="Ver la Nota Digital N° ${numero}">Ver</button>
+        <button type="button" class="co-btn${n.firmado_por ? '' : ' primario'}" data-subir-firmada="${n.id}" aria-label="${n.firmado_por ? 'Reemplazar el PDF firmado de' : 'Subir firmada'} la Nota Digital N° ${numero}">${n.firmado_por ? 'Reemplazar' : 'Subir firmada'}</button>
+      </span>
+      ${aviso ? `<p class="co-fila-aviso ${aviso.bien ? 'bien' : 'mal'}">${esc(aviso.texto)}</p>` : ''}
+    </li>`;
+  };
+  return `<h2>${notas.length ? 'Notas para firmar hoy' : 'No quedan notas para firmar'}</h2>
+    <p class="co-ayuda">${notas.length
+    ? 'Subí cada nota firmada en su fila, revisala y envialas. A las 14:00 sale lo que quede: firmada si la subiste y la confirmaste; si no, con la imagen de la firma.'
+    : enviadas.some(e => !e.bien) ? 'La que no salió se vuelve a intentar en la próxima corrida, firmada.' : 'Ya salieron todas las de hoy.'}</p>
+    ${notas.length ? `<ul class="co-para-firmar-lista">${notas.map(fila).join('')}</ul>` : ''}
+    ${enviadas.length ? `<ul class="co-subidas">${enviadas.map(e => `<li class="${e.bien ? 'bien' : 'mal'}">${esc(e.texto)}</li>`).join('')}</ul>` : ''}
+    ${firmadas ? `<div class="co-enviar-firmadas"><button type="button" class="co-btn primario" id="btn-enviar-firmadas">${textoDelBotonDeEnviar(firmadas)}</button><span class="co-para-firmar-quien">Si no las enviás, salen solas a las 14:00, firmadas.</span></div>` : ''}`;
+}
+
+// El estado de lo que se ve: las notas que dijo el Estado, lo último que dijo cada fila, a qué fila va el archivo que se elige y lo que muestra el modal
+const firmaDigital = { notas: [], avisos: {}, enviadas: [], filaElegida: null, modal: null, url: null, guardando: false, pintado: null };
+
+function pintarParaFirmar() {
+  const caja = document.getElementById('nd-para-firmar');
+  const html = htmlDeParaFirmar(firmaDigital.notas, firmaDigital);
+  // role="status": si se reescribe con lo mismo, el lector de pantalla lo repite
+  if (html !== firmaDigital.pintado) {
+    caja.innerHTML = html;
+    firmaDigital.pintado = html;
+  }
+  caja.hidden = html === '';
+}
+
+// Lo que sube un archivo: un POST con FormData, con el token en el encabezado y sin Content-Type (lo pone el navegador). api.js no cambió.
+// Con un 401, al login. Da { ok, status, cuerpo }
+async function subirFirmada(id, archivo, { soloVerificar = false } = {}) {
+  const datos = new FormData();
+  if (soloVerificar) datos.append('solo_verificar', '1');
+  datos.append('archivo', archivo, archivo.name);
+  const { 'Content-Type': _tipo, ...encabezados } = Auth.getAuthHeaders();
+  const respuesta = await fetch(`${CONFIG.API_URL}/notificaciones/notas-digitales/${id}/firmada`, { method: 'POST', headers: encabezados, body: datos });
+  if (respuesta.status === 401) {
+    Auth.clearSession();
+    window.location.href = 'login.html';
+  }
+  const cuerpo = await respuesta.json().catch(() => ({}));
+  return { ok: respuesta.ok, status: respuesta.status, cuerpo };
+}
+
+const MENSAJE_SUBIDA_FALLIDA = 'No se pudo subir el PDF. Probá de nuevo en unos minutos.';
+// La única región viva de la tarjeta, fija en la página: lo que se inserta con su texto puede no anunciarse. Un texto igual al anterior
+// lleva un espacio al final, para que se vuelva a leer
+const anunciarFirmada = (texto) => {
+  const anuncio = document.getElementById('nd-firmada-anuncio');
+  anuncio.textContent = anuncio.textContent === texto ? `${texto} ` : texto;
+};
+const avisarEnFila = (id, bien, texto) => {
+  firmaDigital.avisos[id] = { bien, texto };
+  pintarParaFirmar();
+  anunciarFirmada(texto);
+};
+// Si la fila ya no está (la nota salió mientras tanto), lo que dijo no se vería: se avisa aparte
+const avisarSiYaNoEstaLaFila = (id, texto) => {
+  if (!firmaDigital.notas.some(n => n.id === id)) avisar(texto, 'error');
+};
+const volverAlBotonDeLaFila = (id, boton = 'subir-firmada') => document.querySelector?.(`[data-${boton}="${id}"]`)?.focus?.();
+// Después de enviar, el botón ya no está: el foco va al próximo botón de la tarjeta o, sin ninguno, a la tarjeta
+const volverALaTarjeta = () => {
+  const caja = document.getElementById('nd-para-firmar');
+  const destino = document.querySelector?.('#btn-enviar-firmadas') ?? document.querySelector?.('[data-subir-firmada]') ?? (caja.hidden ? null : caja);
+  destino?.focus?.();
+};
+
+// Abre el modal con un PDF: el que se elige (revisar, con Confirmar) o el de la nota (ver, con Bajar PDF). Siempre un blob: de tipo PDF.
+// estado: lo que queda en firmaDigital.modal. Mientras se guarda no abre nada: una respuesta que llega tarde no cambia lo que se está mirando
+function abrirModalFirmada({ titulo, texto, blob, principal, secundario, principalVisible = true, estado }) {
+  if (firmaDigital.guardando) return;
+  cerrarModalFirmada();
+  firmaDigital.url = URL.createObjectURL(blob);
+  document.getElementById('modal-firmada-titulo').textContent = titulo;
+  document.getElementById('modal-firmada-texto').textContent = texto;
+  document.getElementById('modal-firmada-marco').src = firmaDigital.url;
+  const boton = document.getElementById('modal-firmada-principal');
+  boton.textContent = principal;
+  boton.hidden = !principalVisible;
+  boton.disabled = false;
+  document.getElementById('modal-firmada-secundario').textContent = secundario;
+  document.getElementById('modal-firmada').classList.add('active');
+  (principalVisible ? boton : document.getElementById('modal-firmada-secundario')).focus();
+  firmaDigital.modal = estado;
+}
+
+function cerrarModalFirmada() {
+  if (firmaDigital.guardando) return;
+  document.getElementById('modal-firmada').classList.remove('active');
+  document.getElementById('modal-firmada-marco').src = 'about:blank';
+  if (firmaDigital.url) URL.revokeObjectURL(firmaDigital.url);
+  firmaDigital.url = null;
+  const antes = firmaDigital.modal;
+  firmaDigital.modal = null;
+  if (antes?.id) volverAlBotonDeLaFila(antes.id, antes.modo === 'ver' ? 'ver-firmada' : 'subir-firmada');
+}
+
+// Se eligió un archivo para una fila: el servidor lo verifica sin guardar nada. Si es esa nota, se abre para leerlo; si no, lo dice la fila
+async function alElegirFirmada(evento) {
+  const entrada = evento.target;
+  const archivo = entrada.files?.[0];
+  const id = firmaDigital.filaElegida;
+  if (!archivo || id === null) return;
+  firmaDigital.enviadas = [];
+  delete firmaDigital.avisos[id];
+  // El rechazo anterior se va ya: si no, seguiría a la vista detrás del modal de esta nota
+  pintarParaFirmar();
+  const boton = document.querySelector?.(`[data-subir-firmada="${id}"]`);
+  if (boton) boton.disabled = true;
+  try {
+    const { ok, cuerpo } = await subirFirmada(id, archivo, { soloVerificar: true });
+    if (!ok) {
+      const motivo = cuerpo.error || MENSAJE_SUBIDA_FALLIDA;
+      avisarEnFila(id, false, motivo);
+      await refrescarFirmaDigital();
+      avisarSiYaNoEstaLaFila(id, motivo);
+      volverAlBotonDeLaFila(id);
+      return;
+    }
+    abrirModalFirmada({
+      titulo: 'Revisá la nota firmada',
+      texto: textoDeLaRevision(cuerpo.data),
+      blob: new Blob([archivo], { type: 'application/pdf' }),
+      principal: 'Confirmar',
+      secundario: 'Cancelar',
+      estado: { modo: 'revisar', id, archivo }
+    });
+  } catch {
+    avisarEnFila(id, false, MENSAJE_SUBIDA_FALLIDA);
+  } finally {
+    if (boton) boton.disabled = false;
+    entrada.value = '';
+  }
+}
+
+// «Confirmar»: manda el mismo archivo, que el servidor vuelve a verificar y guarda. No envía nada
+async function confirmarFirmada() {
+  const { id, archivo } = firmaDigital.modal ?? {};
+  if (!archivo || firmaDigital.guardando) return;
+  const boton = document.getElementById('modal-firmada-principal');
+  boton.disabled = true;
+  firmaDigital.guardando = true;
+  let aviso;
+  try {
+    const { ok, cuerpo } = await subirFirmada(id, archivo);
+    aviso = ok ? { bien: true, texto: cuerpo.message } : { bien: false, texto: cuerpo.error || MENSAJE_SUBIDA_FALLIDA };
+  } catch {
+    aviso = { bien: false, texto: MENSAJE_SUBIDA_FALLIDA };
+  }
+  firmaDigital.guardando = false;
+  firmaDigital.avisos[id] = aviso;
+  cerrarModalFirmada();
+  await refrescarFirmaDigital();
+  anunciarFirmada(aviso.texto);
+  if (!aviso.bien) avisarSiYaNoEstaLaFila(id, aviso.texto);
+  volverAlBotonDeLaFila(id);
+}
+
+// «Ver»: la nota como está: la copia firmada, si se subió; si no, la que generó el RPAD
+async function verNotaParaFirmar(id) {
+  const nota = firmaDigital.notas.find(n => n.id === id);
+  if (!nota) return;
+  try {
+    const blob = await API.getNotaPdf(id);
+    abrirModalFirmada({
+      titulo: `Nota Digital N° ${numeroCortoDe(nota)}`,
+      texto: textoDeVerFirmada(nota),
+      blob: new Blob([blob], { type: 'application/pdf' }),
+      principal: 'Bajar PDF',
+      secundario: 'Cerrar',
+      estado: { modo: 'ver', id, nota, blob }
+    });
+  } catch (error) {
+    avisar(error.message, 'error');
+  }
+}
+
+function alTocarPrincipalDelModal() {
+  const modal = firmaDigital.modal;
+  if (modal?.modo === 'revisar') return confirmarFirmada();
+  if (modal?.modo === 'ver') descargarBlob(modal.blob, archivoDeNota(modal.nota));
+  return undefined;
+}
+
+async function enviarLasFirmadas(boton) {
+  const ids = firmaDigital.notas.filter(n => n.firmado_por).map(n => n.id);
+  if (ids.length === 0) return;
+  await conBotonBloqueado(boton, async () => {
+    try {
+      const { data } = await API.pedirJson('POST', '/notificaciones/notas-digitales/firmadas/enviar', { ids });
+      firmaDigital.enviadas = data.resultados.map(r => ({ bien: r.ok === true, texto: r.mensaje }));
+      firmaDigital.avisos = {};
+      if (data.resultados.length === 0) avisar(MENSAJE_YA_NO_ESPERABAN, 'error');
+      else anunciarFirmada(data.resultados.map(r => r.mensaje).join(' '));
+    } catch (error) {
+      avisar(error.message, 'error');
+    }
+  });
+  await refrescarFirmaDigital();
+  volverALaTarjeta();
+}
+
+async function refrescarFirmaDigital() {
+  await Promise.all([cargarEstado(), cargarLibro()]);
+}
+
+function accionDeParaFirmar(evento) {
+  const objetivo = evento.target;
+  if (objetivo.closest?.('#btn-enviar-firmadas')) return enviarLasFirmadas(objetivo.closest('#btn-enviar-firmadas'));
+  const ver = objetivo.closest?.('[data-ver-firmada]');
+  if (ver) return verNotaParaFirmar(Number(ver.dataset.verFirmada));
+  const subir = objetivo.closest?.('[data-subir-firmada]');
+  if (subir) {
+    firmaDigital.filaElegida = Number(subir.dataset.subirFirmada);
+    document.getElementById('nd-firmada-archivo').click();
+  }
+  return undefined;
+}
+
+function clicAfueraDeLaFirmada(evento) {
+  if (esClicAfuera(evento)) cerrarModalFirmada();
+}
+
+async function cambiarFirmaDigital(evento) {
+  const activar = evento.target.checked;
+  if (activar && !(await confirmar({
+    titulo: '¿Activar la firma digital?',
+    texto: 'Desde la próxima corrida, las notas esperan hasta las 14:00 a que las suban firmadas. Las que no se suban salen con la imagen de la firma.',
+    accion: 'Activar'
+  }))) {
+    evento.target.checked = false;
+    return;
+  }
+  try {
+    await API.guardarConfigNotas({ firma_digital_activa: activar });
+    avisar(activar ? 'Firma digital activada' : 'Firma digital desactivada', 'success');
+  } catch (error) {
+    evento.target.checked = !activar;
+    avisar(error.message, 'error');
+  }
+  cargarEstado();
+}
+
 // El punto de la pestaña Estado: 'error' si alguna alerta no es una advertencia; si no, 'advertencia' si hay alguna advertencia o
 // cambios que hoy no tienen a nadie que los audite (#nd-sin-quien-audite); si no, '' (sin punto)
 function marcaDelEstado(alertas, auditoria) {
@@ -222,6 +510,12 @@ async function cargarEstado() {
     const texto = document.getElementById('envio-activo-texto');
     texto.textContent = estado.envio_activo ? 'Activado' : 'Desactivado';
     texto.className = `badge ${estado.envio_activo ? 'badge-success' : 'badge-secondary'}`;
+    document.getElementById('firma-activa').checked = estado.firma_digital_activa === true;
+    const textoFirma = document.getElementById('firma-activa-texto');
+    textoFirma.textContent = estado.firma_digital_activa === true ? 'Activada' : 'Desactivada';
+    textoFirma.className = `badge ${estado.firma_digital_activa === true ? 'badge-success' : 'badge-secondary'}`;
+    firmaDigital.notas = Array.isArray(estado.para_firmar) ? estado.para_firmar : [];
+    pintarParaFirmar();
 
     const alertas = [];
     if (estado.configuracion_faltante.length) {
@@ -290,7 +584,7 @@ async function cambiarEnvioAutomatico(evento) {
   // Al activar se pregunta; si no se confirma (Cancelar, Escape o clic afuera), el interruptor vuelve a apagado y no se guarda nada
   if (activar && !(await confirmar({
     titulo: '¿Activar el envío automático?',
-    texto: 'Desde la próxima corrida diaria (08:15) se enviarán Notas Digitales reales a los destinatarios configurados.',
+    texto: 'Desde la próxima corrida diaria (08:05) se enviarán Notas Digitales reales a los destinatarios configurados.',
     accion: 'Activar'
   }))) {
     evento.target.checked = false;
@@ -369,13 +663,16 @@ function filaDelLibro(n) {
     <td>${n.gestion ? `<span class="co-gestion">${textoGestion(n.gestion)}</span>` : textoGestion(n.gestion)}</td>
     <td class="co-cant">${celdaCantidad(n)}</td>
     <td class="co-para ocultable">${esc(n.para)}${n.cc ? `<small>CC: ${esc(n.cc)}</small>` : ''}</td>
-    <td><span class="co-estado"><span class="co-pastilla ${esc(n.estado)}" title="${esc(detalleEstado)}">${ETIQUETAS[n.estado]}</span>${n.enviada_at ? `<small>${esc(fechaHora(n.enviada_at))}</small>` : ''}</span></td>
+    <td><span class="co-estado">${n.espera_firma === true && n.estado === 'pendiente'
+    ? `<span class="co-pastilla para-firmar">${n.firmado_por ? 'Firmada, sin enviar' : 'Para firmar'}</span><small>${n.fecha < (Utils.hoyEnArgentina?.() ?? '') ? 'sale en la próxima corrida' : 'hasta las 14:00'}</small>`
+    : `<span class="co-pastilla ${esc(n.estado)}" title="${esc(detalleEstado)}">${ETIQUETAS[n.estado]}</span>${n.enviada_at ? `<small>${esc(fechaHora(n.enviada_at))}</small>` : ''}${
+      n.firmado_por ? `<span class="co-firmada" title="${esc(`Firmada${cuandoFirmo(n.firmado_at)}`)}">${TILDE_DE_FIRMA} Firmada digitalmente por ${esc(n.firmado_por)}</span>` : ''}`}</span></td>
     <td><div class="co-acciones">
       <button type="button" class="co-btn" data-accion="ver" data-id="${n.id}">Ver</button>
       <button type="button" class="co-btn" data-accion="pdf" data-id="${n.id}" data-archivo="${esc(archivo)}">PDF</button>
       <button type="button" class="co-btn" data-accion="word" data-id="${n.id}" data-archivo="${esc(archivoWord)}">Word</button>
       ${n.tiene_anexo ? `<button type="button" class="co-btn" data-accion="anexo" data-id="${n.id}" data-archivo="${esc(archivoAnexo)}">Anexo</button>` : ''}
-      ${n.estado !== 'enviada' ? `<button type="button" class="co-btn reintentar" data-accion="reintentar" data-id="${n.id}">Reintentar</button>` : ''}
+      ${n.estado !== 'enviada' && n.espera_firma !== true ? `<button type="button" class="co-btn reintentar" data-accion="reintentar" data-id="${n.id}">Reintentar</button>` : ''}
     </div></td>
   </tr>`;
 }
@@ -393,7 +690,8 @@ async function accionDelLibro(evento) {
         nota.cc ? `CC: ${nota.cc}` : '',
         nota.cco ? `CCO: ${nota.cco}` : '',
         `Estado: ${ETIQUETAS[nota.estado]} (${nota.intentos} intento/s)`,
-        nota.respuesta_smtp ? `Servidor: ${nota.respuesta_smtp}` : ''
+        nota.respuesta_smtp ? `Servidor: ${nota.respuesta_smtp}` : '',
+        nota.firmado_por ? `Firmada digitalmente por ${nota.firmado_por}${cuandoFirmo(nota.firmado_at)}` : ''
       ].filter(Boolean).join(' · ');
       // El error del último envío, visible también en pantallas táctiles (en el libro solo está en el tooltip)
       const errorNota = document.getElementById('modal-nota-error');
@@ -784,9 +1082,12 @@ function teclaEnPagina(evento) {
   if (confirmacionPendiente) {
     if (evento.repeat && (evento.key === 'Enter' || evento.key === ' ')) evento.preventDefault();
     else if (evento.key === 'Tab') retenerFocoEnConfirmacion(evento);
+  } else if (evento.key === 'Tab' && document.getElementById('modal-firmada').classList.contains('active')) {
+    retenerFocoEnFirmada(evento);
   }
   if (evento.key !== 'Escape') return;
   if (confirmacionPendiente) cerrarConfirmacion(false);
+  else if (document.getElementById('modal-firmada').classList.contains('active')) cerrarModalFirmada();
   else if (document.getElementById('modal-nota').classList.contains('active')) cerrarModalNota();
 }
 
@@ -799,6 +1100,22 @@ function retenerFocoEnConfirmacion(evento) {
   if (enfocado === cancelar && evento.shiftKey) aceptar.focus();
   else if (enfocado === aceptar && !evento.shiftKey) cancelar.focus();
   else if (enfocado !== cancelar && enfocado !== aceptar) aceptar.focus();
+  else return;
+  evento.preventDefault();
+}
+
+// El modal de la nota firmada: Tab no sale a la página de atrás. Se interviene solo en los bordes (la × y el último botón); con el foco
+// en otro lado de la página, va al botón principal. Dentro del iframe, Tab no llega acá: del marco, el navegador sigue a los botones
+function retenerFocoEnFirmada(evento) {
+  const primero = document.getElementById('modal-firmada-cerrar');
+  const principal = document.getElementById('modal-firmada-principal');
+  const secundario = document.getElementById('modal-firmada-secundario');
+  const ultimo = principal.hidden ? secundario : principal;
+  const enfocado = document.activeElement;
+  const adentro = [primero, secundario, principal, document.getElementById('modal-firmada-marco')].includes(enfocado);
+  if (!adentro) ultimo.focus();
+  else if (enfocado === primero && evento.shiftKey) ultimo.focus();
+  else if (enfocado === ultimo && !evento.shiftKey) primero.focus();
   else return;
   evento.preventDefault();
 }

@@ -79,8 +79,8 @@ const efectoEnNotas = (licencia, autorizadoNombre, hoy = datosLicencias.hoy) => 
   }
   const cuando = licencia?.vispera ? `el ${fechaCorta(licencia.vispera)}` : 'el último día hábil anterior';
   return autorizadoNombre
-    ? `Los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:15), en una nota que comunica la autorización a ${autorizadoNombre}. Durante la licencia, ${autorizadoNombre} presenta las demás notas con las dos firmas, citando esa nota, y vuelve a presentar cada aviso en su fecha.`
-    : `Sin persona autorizada: los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:15). La reiteración que toque durante la licencia sale a la vuelta, si es un mes de reiteración; si no, en el próximo. Cargá la licencia antes de ese día.`;
+    ? `Los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:05), en una nota que comunica la autorización a ${autorizadoNombre}. Durante la licencia, ${autorizadoNombre} presenta las demás notas con las dos firmas, citando esa nota, y vuelve a presentar cada aviso en su fecha.`
+    : `Sin persona autorizada: los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:05). La reiteración que toque durante la licencia sale a la vuelta, si es un mes de reiteración; si no, en el próximo. Cargá la licencia antes de ese día.`;
 };
 
 // Días sin auditor (spec 9.5). "A", "A y B", "A, B y C"

@@ -63,6 +63,18 @@ export const casosDeEmail = (t) => {
   return [
     { nombre: 'cambios pendientes', email: t.cambiosPendientesTemplate(cambios), boton: true },
     { nombre: 'cambios pendientes de respaldo', email: t.cambiosPendientesTemplate(cambios.slice(0, 1), { respaldo: true }), boton: true },
+    {
+      nombre: 'notas para firmar (una)',
+      email: t.notasParaFirmarTemplate({ nombre: 'Julieta <b>Ferreyra</b>', notas: [{ numero: 12, anio: 2026, tipo: 'reiteracion', gestion: 'externa' }] }),
+      boton: true
+    },
+    {
+      nombre: 'notas para firmar (varias)',
+      email: t.notasParaFirmarTemplate({ nombre: 'Julieta Ferreyra', notas: [
+        { numero: 12, anio: 2026, tipo: 'reiteracion', gestion: 'externa' }, { numero: 1, anio: 2027, tipo: 'auditoria', gestion: null }
+      ] }),
+      boton: true
+    },
     { nombre: 'sin auditor (uno)', email: t.sinAuditorTemplate(sinAuditor.slice(0, 1), { hasta: null }), boton: false },
     { nombre: 'sin auditor (varios)', email: t.sinAuditorTemplate(sinAuditor, { hasta: '2027-01-11' }), boton: false },
     { nombre: 'aviso a las áreas', email: t.areaAviso40dias(area), boton: false },

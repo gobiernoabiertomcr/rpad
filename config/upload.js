@@ -247,4 +247,16 @@ export const subida = (tipo) => {
   };
 };
 
+// El PDF firmado de una Nota Digital (spec 2026-11-03-notas-firma-digital, 4.5): un solo archivo, en memoria (va a la base), de hasta 10 MB.
+// Cuál es lo decide su contenido: ni el nombre ni el MIME cuentan. Los errores, en español, como los de arriba
+export const MENSAJE_UN_SOLO_PDF = 'Subí un solo PDF por nota.';
+const leerNotaFirmada = multer({ storage: multer.memoryStorage(), limits: { fileSize: TAMANO_MAXIMO, files: 1 } }).single('archivo');
+export const subidaDeNotaFirmada = (req, res, next) => {
+  leerNotaFirmada(req, res, (error) => {
+    if (!error) return next();
+    const [status, cuerpo] = respuestaDeError(error, 'nota firmada', MENSAJE_UN_SOLO_PDF);
+    responderAlTerminarDeLeer(req, res, status, cuerpo);
+  });
+};
+
 export { UPLOADS_BASE };
