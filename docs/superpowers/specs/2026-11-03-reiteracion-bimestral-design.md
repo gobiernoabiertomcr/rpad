@@ -1,6 +1,6 @@
 # La reiteración de las Notas Digitales pasa a ser bimestral
 
-Fecha: 03/11/2026. Decisiones del usuario del 03/11/2026. Lo que se ve y los contratos van acá; los textos, al pie de la letra.
+Fecha: 03/11/2026. Decisiones del usuario del 03/11/2026; el usuario aprobó este diseño el 03/11/2026. Lo que se ve y los contratos van acá; los textos, al pie de la letra.
 
 ## 1. Por qué
 

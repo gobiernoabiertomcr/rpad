@@ -9,7 +9,7 @@ una aclaración en `textos.reiteraciones.aclaracion` de Métricas.
 
 **Tech Stack:** Node 22, Express 4, MariaDB 10.6+ (mysql2/promise), vanilla JS, `node --test`.
 
-**Spec:** `docs/superpowers/specs/2026-11-03-reiteracion-bimestral-design.md`. El executor la lee entera. Los textos son los de su sección 5 y 6, al pie
+**Spec:** `docs/superpowers/specs/2026-11-03-reiteracion-bimestral-design.md` (aprobada el 03/11/2026; el usuario aprobó este plan el 03/11/2026). El executor la lee entera. Los textos son los de su sección 5 y 6, al pie
 de la letra.
 
 **Turno:** este plan se implementa cuando la coordinadora da el turno. Antes de la Task 1: traer el main de ese momento, ver qué cambió en los archivos
