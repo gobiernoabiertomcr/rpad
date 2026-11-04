@@ -10,7 +10,8 @@ RPAD_BFA_*.md
 INSTRUCCIONES_*.md
 prompt_*.md
 multiarchivo.md
-.claude/
+.claude/*
+!.claude/rules/
 # Dump local de la base de producción (datos personales, NO subir)
 database/dump-local/
 # Archivos de los datasets del portal (solo local, para redactar "Qué se solicita")
