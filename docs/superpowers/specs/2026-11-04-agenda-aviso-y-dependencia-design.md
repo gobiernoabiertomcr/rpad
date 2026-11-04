@@ -41,7 +41,8 @@ Sin ayuda dentro de cada botón: lo demás lo dice la frase. El color nunca es l
 En el teléfono la barra sigue en una fila, y «Yo y quienes elija» ocupa tres renglones (el usuario lo vio y le pareció bien).
 
 `MENSAJES_EVENTO.tipo` pasa a «Elegí quién lo ve.». Guardar sin elegir marca la barra en rojo, pone ese error debajo y lleva el foco al primer botón, sin pedido al servidor.
-**Una pestaña con la página anterior** sigue mandando su cuerpo sin `tipo`: el servidor lo sigue leyendo como hoy (Privado, o Laboral con `compartido` en el `true` literal).
+**Una pestaña con la página anterior** sigue mandando su cuerpo y se sigue leyendo como lo quiso decir: sin `tipo`, Privado, o Laboral con `compartido` en el `true` literal.
+La página nueva no manda `compartido`. Por eso, un Laboral con `compartido: true` y `para_todos: true` es el «Toda la administración» de una pestaña vieja: se guarda con la administración activa como personas elegidas, no como «Todos». Si no, le llegaría el título, el detalle y un mail a todos los lectores, sin confirmación.
 
 ### 2.2 La frase debajo de la barra
 
@@ -66,7 +67,7 @@ Cada cosa en su lugar, la opción 1 que eligió el usuario («aca estamos mezcla
 
 Con una sola persona: «De quien dependés: le llega la notificación por mail {cuándo}.»
 
-**El cuándo es la fecha exacta**, la calcula el servidor y cambia al elegir la fecha (`GET /mi-espacio/eventos/aviso-de-la-cadena?fecha=`, sección 7), con `cuandoLlegaElAviso` (sección 5.4):
+**El cuándo es la fecha exacta**, la calcula el servidor y cambia al elegir la fecha (`GET /mi-espacio/eventos/aviso-de-la-cadena?fecha=&desde=`, sección 7), con `cuandoLlegaElAviso` (sección 5.4):
 
 | Caso, con ahora el miércoles 04/11 a las 10:30 | Termina la frase |
 |---|---|
@@ -77,6 +78,7 @@ Con una sola persona: «De quien dependés: le llega la notificación por mail {
 | Mañana, con ahora después de las 14:00 | les llega la notificación por mail el jueves 05/11 a las 8:05. |
 | Hoy | como es para hoy, no les llega ningún mail. |
 | Un sábado o un feriado, con el aviso de ese día ya salido | como ya salió el aviso de ese día, no les llega ningún mail. |
+| Mañana a las 7:30, con ahora después de las 14:00 | como empieza antes de las 8:05, no les llega ningún mail. |
 | Una fecha que ya pasó | como ya pasó, no les llega ningún mail. |
 
 **Abajo**, en el grupo de personas (la maqueta, al bajar):
@@ -115,7 +117,7 @@ El aviso de éxito nombra el resultado, y lo arma el servidor (`message` del POS
 |---|---|
 | Privado | Evento guardado. Solo vos lo ves. |
 | Público | Evento guardado. {quien_texto} en su agenda, y a Federico y Graciela les llega antes del evento. |
-| Público de quien no depende de nadie, o para hoy | Evento guardado. {quien_texto} en su agenda. |
+| Público de quien no depende de nadie, o que no llega en ningún aviso (`llega` de 5.4) | Evento guardado. {quien_texto} en su agenda. |
 | Laboral | Evento guardado. {quien_texto}. |
 
 En un cambio, «Evento cambiado.» en lugar de «Evento guardado.». Si el texto de `quien_texto` trae «como «…»», va tal cual.
@@ -147,6 +149,8 @@ La ayuda:
 
 En la lista de usuarios, en el detalle de cada fila: «Depende de Graciela Paz».
 
+El servidor manda: cada usuario de `GET /usuarios` y `GET /usuarios/:id` trae `depende_de`, `depende_de_nombre`, `no_elegibles` (los ids que no se le ofrecen) y `al_desactivar` (`{ dependen, suben_a }`, con los nombres). El navegador no recorre la cadena.
+
 **Quién lo cambia:** quien ya puede modificar a esa persona (`rechazoParaEditor` y la protección de la cuenta del superadmin no cambian). El editor, sobre lectores y colaboradores; el superadmin, el suyo.
 Un cambio queda en el historial, con el nombre, y no le avisa al superadmin, como el cargo o el vínculo (decisión por defecto que el usuario aceptó).
 
@@ -177,7 +181,7 @@ Ejemplos, todos con Micaela, que depende de Federico, que depende de Graciela:
 - El jueves a las 14:02, Micaela carga un Público para el viernes a las 8:15. El mail de las 14:00 ya salió: el viernes a las 8:05 les llega a Federico y a Graciela.
 - El viernes a las 11:15, carga algo para las 14:00 de ese viernes: no se avisa con la agenda.
 - El viernes a las 15:00, carga algo para el lunes a las 9:00: el lunes a las 8:05.
-- Le cambia la fecha, ya informada, a un día ya informado: nada. A un día todavía sin informar: entra como no informado para esa fecha.
+- Le cambia la fecha a otra: entra como no informado para esa fecha, aunque otro aviso ya haya cubierto ese día. Si vuelve a una fecha que ya se le informó de ese evento: nada.
 - Un Privado que pasa a Público después de las 14:00 cuenta como cargado en ese momento.
 
 ## 5. Las reglas
@@ -217,15 +221,15 @@ Una fila en `mi_espacio_evento_informados` por evento, persona y **fecha del eve
 - A las 8:05, el mail le sale a un jefe solo si tiene por lo menos un rezagado. Una vez que sale, trae toda la agenda de hoy: lo propio con la casilla y todo lo de hoy de su gente. «Nuevo:» va en lo sin informar, también en uno que ya empezó (que solo no dispara el mail).
 - Salir bien marca como informados todos los Públicos de su gente que trae el mail.
 
-`cuandoLlegaElAviso({ fecha, ahora, calendario })`, puro, con la tabla de 2.3: sin fecha, el genérico; `fecha <= hoy`, que no llega; si el día hábil anterior a `fecha` es después de hoy, ese día a las 14:00; si es hoy y todavía no son las 14:00, «hoy a las 14:00»; si ya pasaron y `fecha` es hábil, esa fecha a las 8:05; si no, que no llega.
+`cuandoLlegaElAviso({ fecha, desde, ahora, calendario })`, puro, con la tabla de 2.3, devuelve `{ llega, cuando }`, y `fraseDelAviso(aviso, cantidad)` arma el singular o el plural: sin fecha, el genérico; `fecha <= hoy`, que no llega; si el día hábil anterior a `fecha` es después de hoy, ese día a las 14:00; si es hoy y todavía no son las 14:00, «hoy a las 14:00»; si no (hoy puede no ser hábil: un sábado para el lunes), con `fecha` hábil, esa fecha a las 8:05, salvo que `desde` sea antes de las 8:05 o igual, que no llega; con `fecha` no hábil, que no llega.
 
 ## 6. La corrida
 
 Tres archivos nuevos, como los recordatorios: `services/miEspacioEventosDiarioReglas.js` (puro), `miEspacioEventosDiarioDatos.js` (consultas en lote, sin N+1) y `miEspacioEventosDiario.js` (la corrida). En el código no se llama «agenda» (regla del proyecto).
 
-`ejecutarAvisoDiarioDeEventos({ momento, ahora, calendario })`, con `momento` `'tarde'` o `'manana'`, nunca tira hacia afuera y devuelve `{ ocupada, dia_habil, enviados, fallidos, errores }`:
+`ejecutarAvisoDiarioDeEventos({ momento, ahora, calendario })`, con `momento` `'tarde'` o `'manana'`, devuelve `{ ocupada, dia_habil, enviados, fallidos, errores }`. **Nunca tira:** ni si no consigue el candado, porque a las 8:05 corre sin esperarlo y un rechazo sin manejar tumbaría el proceso con las Notas a mitad. Lo envuelve `avisoDiarioAislado`, con `try/catch` total, y disparado lleva su `.catch`:
 
-- **Su propio candado**, `rpad_mi_espacio_diario`, ni el de las Notas ni el de los recordatorios. Ocupado, termina «ocupada» sin escribir.
+- **Su propio candado**, `rpad_mi_espacio_diario`, ni el de las Notas ni el de los recordatorios. Ocupado, termina «ocupada» sin escribir, y no es un error: no da 207.
 - **Sin feriados** (`calendario.error !== null`, nunca `origen`): no manda y lo anota: lo sin informar de los jefes sale en la corrida siguiente. Un día no hábil, tampoco, y se anota igual.
 - `'tarde'` solo a partir de las 14:00 (`paso14`): las rutas manuales se pueden llamar antes.
 - **Nunca dos veces, a lo sumo una**, el patrón de los recordatorios: se reserva cada mail en `mi_espacio_diario_envios` (`INSERT IGNORE` sobre `usuario_id`, `dia`, `momento`, o un `UPDATE` que retoma uno fallido y terminado), se manda solo si la reserva es de esta corrida y se anotan `success` y `enviado_at`. Una reserva sin terminar no se repite.
@@ -243,10 +247,10 @@ Tres archivos nuevos, como los recordatorios: `services/miEspacioEventosDiarioRe
 | Ruta | Qué hace |
 |---|---|
 | `GET /mi-espacio/eventos` | Suma `ve_companeros` (`esAdmin`: prende «Compañeros que no están»), `eventos_por_mail` y `alguien_depende`. Sale `puede_compartir`. |
-| `GET /mi-espacio/eventos/aviso-de-la-cadena?fecha=` | `{ texto, llega }`, de `cuandoLlegaElAviso`, con el calendario de la tabla leído en ese pedido. |
+| `GET /mi-espacio/eventos/aviso-de-la-cadena?fecha=&desde=` | `{ texto, llega }`, de `cuandoLlegaElAviso` y `fraseDelAviso`, con el calendario de la tabla leído en ese pedido. |
 | `PUT /mi-espacio/eventos-por-mail` | `{ recibir: true \| false }`. Otro valor, 400 en `recibir`. |
 | `GET /mi-espacio/personas` | Pasa a ser para todos los roles: todos los activos sin quien pide. |
-| `GET /mi-espacio/personas/publico` | Suma `es_superior` en cada persona, con la cadena primero y por nombre dentro de cada grupo. |
+| `GET /mi-espacio/personas/publico` | Suma `es_superior` y `nombre_corto` en cada persona, con la cadena primero y por nombre dentro de cada grupo. Con ellos arma la página «Federico y Graciela». |
 | `POST` y `PUT /mi-espacio/eventos` | Los mensajes de 2.5, y sin `sinPermiso`. `publicado_at`, como dice 5.4. |
 | `GET`, `POST` y `PUT /usuarios` | `depende_de`, con lo de la sección 3. |
 
@@ -264,10 +268,11 @@ Renglón de un evento: `09:30 · Turno con la kinesióloga`, debajo el detalle y
 | | 14:00, con lo propio | 14:00, solo lo de su gente | 8:05 |
 |---|---|---|---|
 | Asunto | RPAD: tu agenda del jueves 05/11 — o «hasta el lunes 09/11», si cubre más de un día | RPAD: agenda del jueves 05/11 de quienes dependen de vos — o «hasta el lunes 09/11» | RPAD: se sumó algo a tu agenda de hoy |
-| Título | Tu agenda del jueves 05/11 | Agenda del jueves 05/11 de quienes dependen de vos | Tu agenda de hoy, actualizada |
+| Título | Tu agenda del jueves 05/11 — o «Tu agenda hasta el lunes 09/11» | Agenda del jueves 05/11 de quienes dependen de vos — o «Agenda hasta el lunes 09/11 de quienes dependen de vos» | Tu agenda de hoy, actualizada |
 | Abre | Micaela, esto es lo que tenés para el próximo día hábil. — «hasta el próximo día hábil.», si cubre más de un día | Federico, esto es lo que publicaron para el próximo día hábil. | Graciela, después del último aviso se sumó algo a la agenda de hoy, viernes 06/11. Lo nuevo dice «Nuevo». |
 
 Lo de su gente va al final, bajo **«De quienes dependen de vos»**. Lo nuevo: `08:15 · **Nuevo:** Micaela: Fuera de la oficina`.
+Un mail de las 14:00 que solo trae el grupo «Hoy» de 5.3 usa los textos de la columna de las 8:05.
 
 Las notas, al pie:
 
@@ -284,7 +289,8 @@ Migración `migracion-mi-espacio-eventos-diario.sql`, fila 36 de `docs/temas/des
 - `mi_espacio_eventos.publicado_at`, `datetime` nula, en hora argentina. Sin completar las viejas: NULL cuenta como anterior a hoy.
 - `mi_espacio_evento_informados`: `evento_id`, `usuario_id`, `fecha` (date), `informado_at`, con clave primaria en los tres primeros y las dos claves foráneas `ON DELETE CASCADE`.
 - `mi_espacio_diario_envios`: `id`, `usuario_id`, `dia` (date), `momento` (`enum('tarde','manana')`), `enviado_at`, `success`, único en `usuario_id`, `dia`, `momento`.
-- **Los Laborales «para todos» de antes** querían decir «la administración», y con el código nuevo pasarían a ser «todos». La migración los convierte, sin cambiar quién los ve: suma una fila por cada administración activa (`INSERT IGNORE`, conservando las de quienes apagaron su recordatorio) y los deja con `para_todos = 0`. Corre antes que el código y el código viejo los sigue mostrando igual.
+- **Los Laborales «para todos» de antes** querían decir «la administración», y con el código nuevo pasarían a ser «todos». La migración los convierte, sin cambiar quién los ve: suma una fila por cada administración activa (`INSERT IGNORE`, conservando las de quienes apagaron su recordatorio), **borra antes las filas de quien hoy no es administración**, y los deja con `para_todos = 0`. Esas filas son de un recordatorio apagado por alguien que dejó de ser administración: hoy no le dan acceso, y convertidas le mostrarían el título y el detalle. Corre antes que el código y el código viejo los sigue mostrando igual.
+Se puede volver a correr **solo antes de subir el código**: después, achicaría a la administración los «Todos» nuevos. Lo dice el encabezado.
 
 Vuelta atrás, `rollback-mi-espacio-eventos-diario.sql`: primero los archivos, después el SQL. Saca las columnas y las tablas. Un Laboral «Todos» creado con el código nuevo queda para la administración, y uno con filas de lector sigue viéndose por sus filas: se dice en el encabezado. Lo cargado en «Depende de» se pierde.
 
