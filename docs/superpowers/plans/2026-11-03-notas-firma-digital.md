@@ -155,7 +155,8 @@ Con una copia de la base local (recargada con el último dump de producción si 
 4. **Con las firmas reales, solo en local y sin copiarlas:**
    - Los 4 pares de `~/Downloads/` (`Original Nota-Digital-N-26.pdf` y `document*.pdf`): `verificarNotaFirmada` da `firmada` en su fila y `otra_nota` en las demás.
    - **Volver a generar las notas del ensayo con el main de ese momento** (la reiteración bimestral cambia qué notas salen y sus números: el usuario decidió el 03/11 no firmar las del ensayo con 3949aae). Recién entonces el usuario firma las suyas, las deja en `firmadas/` y se suben por la pantalla, con el modal y «Enviar», en la base de simulación que tiene esos mismos PDF.
-5. Cero intentos de red, cero errores. Dejar el cierre en `~/rpad-notas/firma-digital-simulacion-cierre.md`, sin nombres en el repo.
+5. **La pausa para firmar (decisión del usuario, 03/11):** al llegar acá, con todo lo anterior hecho, generar las notas, dejar en `~/rpad-notas/firma-digital-simulacion/para-firmar/` las que le tocan al usuario, con su lista, y **frenar**: terminar el turno con un reporte `FRENADO a propósito: esperando que el usuario firme` y la ruta. La base de la simulación se conserva tal cual: esos PDF son los únicos que el RPAD va a aceptar. Sin merge todavía. Cuando el usuario las deje en `firmadas/`, subirlas por la pantalla y seguir.
+6. Cero intentos de red, cero errores. Dejar el cierre en `~/rpad-notas/firma-digital-simulacion-cierre.md`, sin nombres en el repo.
 
 ## Task 8: Docs, revisión, merge y kit
 
