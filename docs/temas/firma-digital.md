@@ -13,7 +13,7 @@ Historia y motivos, en las specs:
 
 - Qué es: quien firma tiene firma digital remota, sin token, y el Firmador no se puede integrar: la nota se baja, se firma y se vuelve a subir, todo antes de que salga el email.
   El archivo vuelve como `document.pdf`: el RPAD la reconoce por su contenido y la envía con el nombre de la nota (`Nota-Digital-8-26.pdf`).
-  Un interruptor en Correos → Estado, «Firma digital de las notas» (`firma_digital_activa`, apagado de entrada): apagado, ninguna nota espera y salen las mismas notas que sin la firma digital, con sus números, datasets, destinatarios y fechas.
+  Un interruptor en Correos → Estado, «Firma digital de las notas» (`firma_digital_activa`, apagado de entrada): apagado, ninguna nota nueva espera y salen las mismas notas que sin la firma digital, con sus números, datasets, destinatarios y fechas; apagarlo no suelta las que ya esperan: cada una sigue su bandera y sale a las 14:00 (spec, 4.12).
   Antiobjetivos: que salga una nota que no es la que se quiso firmar, que una nota se quede sin salir porque nadie la firmó, y que lo ya enviado cambie.
   La verificación evita errores, no un fraude (quien sube ya es de administración): no comprueba la cadena de confianza ni la revocación, ni que haya firmado quien debía (el nombre del certificado se muestra).
 - La ventana, el mismo día (decisión del usuario): la corrida es a las 8:05 (la Tarea Cron; en producción, a las 8:15 hasta que se despliegue el kit de la firma digital: `docs/temas/despliegue.md`) y a las 14:00 sale lo que quede.
@@ -38,7 +38,7 @@ Historia y motivos, en las specs:
   Un día no hábil (un feriado cargado con la nota ya generada), con el envío apagado o con la configuración incompleta no envía nada a las 14:00: una nota de un día anterior sale en la corrida siguiente, firmada si se subió y si no con la imagen.
   `enviarNota` adjunta `pdf_firmado ?? pdf` con el mismo nombre (`Nota-Digital-8-26.pdf`), suma al email, sin guardarla, la línea «La nota está firmada digitalmente por X.» (`conLineaDeFirma`) y pone `espera_firma = 0`, salga o no.
   El Libro baja la firmada (`descargarPdf`) y dice «Firmada digitalmente por X»; el Word sale del `html` guardado, y «Reintentar» de una que espera da 409 (`MENSAJE_ESPERA_FIRMA`).
-  Sin nada para enviar, las 14:00 no toman el candado: con el interruptor apagado, esa corrida solo manda los recordatorios de cambios pendientes y su respuesta no trae `firma_digital`.
+  Sin nada para enviar, las 14:00 no toman el candado: con el interruptor apagado y ninguna nota esperando, esa corrida solo manda los recordatorios de cambios pendientes y su respuesta no trae `firma_digital`.
 - Lo demás:
   Correos → Estado trae `firma_digital_activa`, `para_firmar` y la alerta `para-firmar` («Hay 2 notas para firmar.
   Las que no se suban antes de las 14:00 salen con la imagen de la firma.», `textoDeLaAlertaDeFirma`, que cuenta aparte las firmadas sin enviar) y, si una sigue esperando pasadas las 14:15 (`esperaDeMas`, `HORA_DE_LA_ALERTA_DE_FIRMA`) o es de un día anterior, `para-firmar-atrasada` (`alertaDeLasAtrasadas`):

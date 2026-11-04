@@ -9,7 +9,7 @@ Despliega el usuario, desde cPanel y sin terminal; acá se arma el kit.
 cPanel sin terminal: el SQL se corre en phpMyAdmin (pestaña SQL o Importar), los archivos se suben con el Administrador de archivos, y las variables de entorno, "Run NPM Install" y Restart se manejan en Setup Node.js App.
 El zip se carga en `/home/datospublicos/rpad` y se extrae ahí mismo.
 Las Tareas Cron son tres, todos los días: 8:05 `/api/cron/notificaciones` (a las 8:15 hasta que se despliegue la firma digital; ver los pendientes), 14:00 `/api/cron/cambios-pendientes` y `*/30` `/api/cron/eventos`.
-El respaldo y el despliegue, fuera del horario de los crons (8:05, 14:00 y las medias horas), por ejemplo a las 10:10.
+El respaldo y el despliegue, fuera del horario de los crons (8:05, u 8:15 hasta la firma digital; 14:00 y las medias horas), por ejemplo a las 10:10.
 Run NPM Install, solo si cambia `package.json`.
 
 ## El kit
@@ -22,9 +22,9 @@ Un kit no se escribe acá: lo que dice cada uno queda en su `PASOS.txt`.
 ## Los pasos
 
 1. Comprobar con Ctrl+U los `?v=` que pide cada página: tienen que ser los que dejó el kit anterior; si no, no se sigue.
-2. Respaldo: la base (Exportar) y `config`, `controllers`, `services`, `routes` y `public`, sin `uploads/`.
+2. Respaldo: la base (Exportar) y `config`, `controllers`, `services`, `routes`, `middleware` y `public`, sin `uploads/`.
 3. El SQL en phpMyAdmin, con su verificación.
-4. Los archivos; si van sueltos, primero `services` y `config`, después `controllers` y `routes`, `public/js` y al final los `.html`.
+4. Los archivos; si van sueltos, primero `middleware`, `services` y `config`, después `controllers`, `routes` y `app.js`, `public/js` y al final los `.html`.
 5. Restart, enseguida.
 6. Ctrl+F5 y solo mirar: no se guarda nada en la base real, porque un evento Laboral de prueba manda invitaciones de verdad.
 7. Al día siguiente, la última corrida en Correos → Estado, sin errores.
@@ -37,7 +37,7 @@ Las migraciones van antes que el código: sin ellas, lo que las lee da 500 (`doc
 `migracion-fechas-datasets-textos.sql` es la excepción: va después de subir los archivos y antes del Restart.
 `migracion-metricas-recibido-datos.sql` va después de `migracion-metricas.sql` y puede ir antes o después de los archivos.
 `database/schema.sql` cambia, pero no se corre.
-Un archivo nuevo de `services/` que falte no deja arrancar la app.
+Un archivo nuevo de `services/` o de `middleware/` que falte no deja arrancar la app.
 Las cargas de datos de personas (roles, cargos) van en `database/privado/` (no versionado) y se corren después del código.
 Después de `migracion-notas-dgmit.sql` no se vuelven a correr `migracion-editor-auditoria.sql` ni `migracion-usuarios-superadmin.sql`: fijan el rol sin `colaborador` (fallan o dejan el rol de un colaborador vacío).
 
@@ -57,7 +57,7 @@ La última columna dice qué tiene que correr antes esa vuelta atrás: sin eso, 
 | 9 | `migracion-que-se-solicita.sql` | — | |
 | 10 | `migracion-que-se-solicita-datos.sql` | — | |
 | 11 | `migracion-notas-digitales-anexo.sql` | — | |
-| 12 | `migracion-usuarios-superadmin.sql` | `rollback-usuarios-superadmin.sql` | |
+| 12 | `migracion-usuarios-superadmin.sql` | `rollback-usuarios-superadmin.sql` | `rollback-licencias-firmas.sql` y `rollback-editor-auditoria.sql`, si están |
 | 13 | `migracion-licencias-firmas.sql` | `rollback-licencias-firmas.sql` | `rollback-mi-espacio.sql`, si está Mi espacio |
 | 14 | `migracion-editor-auditoria.sql` | `rollback-editor-auditoria.sql` | `rollback-editor-sin-responsabilidad.sql` y `rollback-notas-dgmit.sql`, si están |
 | 15 | `migracion-fechas-datasets.sql` | — | |
@@ -65,7 +65,7 @@ La última columna dice qué tiene que correr antes esa vuelta atrás: sin eso, 
 | 17 | `migracion-fechas-datasets-textos.sql` | — | |
 | 18 | `migracion-requiere-nota.sql` | — | |
 | 19 | `migracion-requiere-nota-datos.sql` | — | |
-| 20 | `migracion-editor-sin-responsabilidad.sql` | `rollback-editor-sin-responsabilidad.sql` | `rollback-notas-dgmit.sql`, si está |
+| 20 | `migracion-editor-sin-responsabilidad.sql` | `rollback-editor-sin-responsabilidad.sql` | |
 | 21 | `migracion-notas-dgmit.sql` | `rollback-notas-dgmit.sql` | |
 | 22 | `migracion-metricas.sql` | `rollback-metricas.sql` | |
 | 23 | `migracion-metricas-recibido-datos.sql` | — (la borra `rollback-metricas.sql`) | |
@@ -79,7 +79,7 @@ La última columna dice qué tiene que correr antes esa vuelta atrás: sin eso, 
 | 31 | `migracion-mi-espacio-horas-mes-anterior.sql` | `rollback-mi-espacio-horas-mes-anterior.sql` | |
 | 32 | `migracion-mi-espacio-restituciones.sql` | `rollback-mi-espacio-restituciones.sql` | |
 | 33 | `migracion-mi-espacio-horas-acumuladas.sql` | `rollback-mi-espacio-horas-acumuladas.sql` | |
-| 34 | `migracion-notas-firma-digital.sql` | `rollback-notas-firma-digital.sql` | |
+| 34 | `migracion-notas-firma-digital.sql` | `rollback-notas-firma-digital.sql` | Volver la Tarea Cron de `/api/cron/notificaciones` a las 8:15 |
 
 `database/privado/rollback-mi-espacio-evento-publico-datos.sql` devuelve el evento real a compartido con toda la administración (su verificación, `devuelto` 1).
 Está fuera del repositorio y no aparece en la Mac de trabajo: solo viajó en su kit, `RPAD-deploy-mi-espacio-evento-para-todos`.

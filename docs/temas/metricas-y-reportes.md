@@ -33,7 +33,7 @@ reportesController: los reportes PDF, con sus consultas.
   40 días en externa y 60 en interna, `VENTANA_DE_LA_REGLA` = `VENTANA_DIAS` del calendario, Ruling 30), el primer aviso, si se avisó ya vencido (`heredado`: solo si el RPAD no pudo avisarlo a tiempo —la fecha de la regla es anterior al 06/12/2025, `INICIO_DEL_REGISTRO`, o al alta— y el primer aviso llegó después del vencimiento), la primera nota DGMIT vigente, el «Recibido el» y el origen de la actualización que cerró el ciclo y la carga.
   Los tramos: aviso anticipado (aviso de la regla → vencimiento;
   DDPC), redacción y entrega de nota (aviso → nota DGMIT recibida;
-  DGMIT y DA; su clave interna es `tramite`) y respuesta del área (nota → datos recibidos;
+  DGMIT y DA; su clave interna es `tramite`; el nombre, «Redacción y entrega de nota», con «redactan» en la descripción del Ciclo de vida, es decisión del usuario del 28/10/2026) y respuesta del área (nota → datos recibidos;
   Área), los dos solo en externa con «Requiere nota» Sí o sin dato, o con una nota DGMIT cargada; producción del relevamiento (aviso → datos;
   DGMIT y DIT; interna); preparación y carga (datos → carga;
   DDPC; las dos).

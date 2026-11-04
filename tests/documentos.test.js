@@ -76,6 +76,7 @@ export const controlarCitas = ({ claude, temas, reglas }, nombresDeTemas) => {
     for (const nombre of citados) if (!existentes.has(nombre)) problemas.push(`${ruta} cita docs/temas/${nombre}, que no existe`);
   };
   revisar('CLAUDE.md', claude, false);
+  revisar('CLAUDE.md', seccionDelMapa(claude), true);
   for (const [ruta, texto] of Object.entries(temas)) revisar(ruta, texto, false);
   for (const [ruta, texto] of Object.entries(reglas)) revisar(ruta, texto, true);
   return problemas;
@@ -95,6 +96,14 @@ export const globsDeUnaRegla = (texto) => {
     globs.push(m[1] ?? m[2] ?? m[3]);
   }
   return globs;
+};
+
+// Las alternativas de un glob con llaves: `a/{b,c}.js` son `a/b.js` y `a/c.js`. Cada una tiene que coincidir con algún archivo
+export const expandirLlaves = (glob) => {
+  const abre = glob.indexOf('{');
+  const cierra = glob.indexOf('}', abre);
+  if (abre === -1 || cierra === -1) return [glob];
+  return glob.slice(abre + 1, cierra).split(',').flatMap((parte) => expandirLlaves(glob.slice(0, abre) + parte + glob.slice(cierra + 1)));
 };
 
 // Un glob a expresión regular: entiende **, *, ?, {a,b} y [abc]
@@ -128,7 +137,7 @@ export const controlarReglas = (reglas, nombresDeTemas, archivosDelRepo) => {
     const globs = globsDeUnaRegla(texto);
     if (!globs || globs.length === 0) problemas.push(`${ruta} no tiene paths:`);
     else {
-      for (const glob of globs) {
+      for (const glob of globs.flatMap(expandirLlaves)) {
         const regex = globARegex(glob);
         if (!archivosDelRepo.some((archivo) => regex.test(archivo))) problemas.push(`${ruta}: el glob «${glob}» no coincide con ningún archivo`);
       }
@@ -325,6 +334,17 @@ describe('los controles con copias en memoria', () => {
   it('una regla que cruza todos los temas puede mandar a «El mapa» en lugar de citar un documento', () => {
     const regla = '---\npaths:\n  - "services/*.js"\n---\n# Una\n\nMirá «El mapa» de `CLAUDE.md`.\n';
     assert.deepEqual(controlarReglas({ r: regla }, ['uno.md'], ['services/a.js']), []);
+  });
+
+  it('un glob con llaves falla si una de sus alternativas no coincide con ningún archivo', () => {
+    const regla = '---\npaths:\n  - "services/{a,fantasma}.js"\n---\nleé `docs/temas/uno.md`';
+    assert.equal(controlarReglas({ r: regla }, ['uno.md'], ['services/a.js']).length, 1);
+    assert.deepEqual(expandirLlaves('x/{a,b*}.js'), ['x/a.js', 'x/b*.js']);
+  });
+
+  it('una fila del mapa con un documento que no existe falla', () => {
+    const claude = '## El mapa\n\n| Tema | Documento |\n|---|---|\n| Uno | `uno.md` |\n| Otro | `fantasma.md` |\n\n## Otra\n';
+    assert.equal(controlarCitas({ claude, temas: {}, reglas: {} }, ['uno.md']).length, 1);
   });
 
   it('una regla que no cita ningún documento falla', () => {

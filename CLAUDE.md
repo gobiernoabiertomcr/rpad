@@ -37,7 +37,7 @@ Un subagente con `isolation: worktree` no recibe esas reglas: pasale los documen
 - Nunca `docker compose` desde un worktree: recrea `rpad-db` y corta lo que esté corriendo. Nunca `down -v`: el único volumen tiene todas las bases.
 - Un worktree no trae lo que está en `.gitignore`: hay que copiar el `.env`, con `RPAD_TESTS_DB_LOCAL=1`.
 - `tests/schema.test.js` y `tests/permisos.test.js` leen la base del `.env`: una migración nueva también tiene que correr en la base local antes de la suite.
-- Un test nuevo llama al servicio con un hoy fijo, no a `/api/cron/*`: la corrida real escribe en la base del `.env` (`tests/notificaciones.test.js` es la excepción que queda).
+- Un test nuevo llama al servicio con un hoy fijo, no a `/api/cron/*`: la corrida real escribe en la base del `.env` (`tests/notificaciones.test.js` y `tests/permisos.test.js` son las excepciones que quedan).
 
 ## Estructura
 
@@ -80,7 +80,7 @@ Si tocás esto, leé este documento de `docs/temas/`:
 | Métricas, foto del 31/12 y reportes PDF | `metricas-y-reportes.md` |
 | Ciclo de vida del dato | `ciclo-de-vida.md` |
 | Generador de Notas y el Word de las notas | `generador-de-notas.md` |
-| Configuración: usuarios, licencias, áreas | `configuracion.md` |
+| Configuración: usuarios, licencias, áreas, login, contraseñas y links | `configuracion.md` |
 | Feriados | `feriados.md` |
 | Proyectos | `proyectos.md` |
 | Carga de páginas, versiones, CSS, carcasa, sitio público | `frontend.md` |
@@ -138,10 +138,10 @@ Si tocás esto, leé este documento de `docs/temas/`:
 - Siempre `<script src="js/X.js…"></script>` a secas, sin `defer` ni otros atributos (lo lee `tests/paginas.test.js`).
 - Cada `?v=` está atado a una constante de `tests/paginas.test.js`: al cambiar un script, se suben las dos. Tocar `auth.js`, `main.js` o `api.js` sube `VERSION` en todas las páginas que los cargan (`docs/temas/frontend.md`).
 - La carcasa está copiada a mano en las 14 páginas: un cambio va en las 14.
-- Los scripts de cada página, al cargarse, solo declaran (los tests los cargan en un `vm`): lo que arma HTML es puro y recibe quién mira por parámetro; lo que toca el DOM o la API va aparte, al final, con los eventos delegados en contenedores fijos.
+- Los scripts de cada página, al cargarse, solo declaran y enganchan `DOMContentLoaded`; `contacto.js` suma un `<style>` (los tests los cargan en un `vm`): lo que arma HTML es puro y recibe quién mira por parámetro; lo que toca el DOM o la API va aparte, al final, con los eventos delegados en contenedores fijos.
 - `API.pedirJson` tira error ante una respuesta de error, pero no da los `errores` de un 400. `API.pedirArchivo` es solo GET y no da el estado ni el `Content-Disposition`: por eso hay `fetch` propios, con JWT en el encabezado, nunca en la URL.
 - «Guardar» y confirmar deshabilitan su botón hasta la respuesta (un doble clic manda un solo pedido).
-- Los textos no llevan `maxlength` (cuenta unidades de UTF-16: un emoji son dos): se cuenta con `Array.from`, como el servidor.
+- En Mi espacio y Proyectos, los textos no llevan `maxlength` (cuenta unidades de UTF-16: un emoji son dos): se cuenta con `Array.from`, como el servidor.
 - Ningún nombre de clase ni id empieza con `ad-` (de «admin»): los bloqueadores de anuncios ocultan muchos (`tests/paginas.test.js` lo controla).
 - Foco visible, 4,5:1 o más en todo texto y el color nunca es lo único que distingue; con `prefers-reduced-motion`, nada se mueve.
 
@@ -151,6 +151,7 @@ Si tocás esto, leé este documento de `docs/temas/`:
 
 - Fechas en el navegador: texto `'AAAA-MM-DD'`, cortado como texto; nunca `Utils.formatDate` para una fecha sola (en el navegador argentino muestra el día anterior) ni `toISOString()` para "hoy" (después de las 21 da mañana: `Utils.hoyEnArgentina()`).
 - En el servidor, hoy es `hoyArgentina()`. Las reglas puras no usan pool ni `Date` local y reciben hoy por parámetro.
+- `Date`, `CURDATE()` y `setMonth` no se usan para fechas de negocio; `controllers/gestionController.js` los usa solo en sus ventanas de meses, que no avisan nada.
 - Un TIMESTAMP está en UTC: se pasa a hora argentina con `UNIX_TIMESTAMP` y `ahoraArgentina`, y una antigüedad se mide en SQL. `NOW()` da hora argentina en producción y UTC en el Docker local.
 - Hay un solo calendario de días hábiles: los 9 fijos y la tabla `feriados`.
   Una sola lectura de la tabla por corrida o por pedido.
@@ -171,6 +172,7 @@ Si tocás esto, leé este documento de `docs/temas/`:
 - Lo ya enviado no cambia: una nota queda en bytes, y su PDF y su anexo nunca se regeneran.
 - La foto del 31/12 (`metricas_fotos`) no se modifica nunca y guarda textos ya armados. Cambiar su forma obliga a subir su versión o a leer con tolerancia.
 - Las migraciones van antes que el código, y todo lo nuevo va también en `database/schema.sql`. `estadosDe` lee las tablas de Mi espacio que hacen al estado de una persona: una columna sin migrar en ellas da 500 en todo Mi espacio.
+- Una pestaña con la página anterior manda el cuerpo de antes: se sigue leyendo, y lo nuevo solo se activa con el `true` literal.
 - Sin `CHECK` en la base para las reglas de negocio: valida la API.
 - `aprobarCambio` es el único que aplica un cambio a un dataset. La forma de `datos_nuevos` y `datos_anteriores` la leen el Seguimiento, Métricas y las notas de auditoría: es un contrato.
 
@@ -179,7 +181,8 @@ Si tocás esto, leé este documento de `docs/temas/`:
 - El tipo de una licencia solo sale para su dueño: a Configuración pasan solo las fechas y a los compañeros, solo «no está».
 - Un id de otra persona da el mismo 404 que uno que no existe.
 - Un evento Personal (Público) le llega a otra persona recortado desde la consulta, y el orden no delata el título.
-- Sin destinatario, `sendEmail` va a las casillas por defecto de la DGMIT: nunca se llama con una lista vacía.
+- Sin `to`, `sendEmail` va a las casillas por defecto de la DGMIT: siempre se le pasa. Con una lista vacía, no sale nada.
+- Mi espacio trabaja siempre sobre `req.user.userId`.
 - El texto de nodemailer, que puede traer la dirección, no va a un resultado que se muestre.
 - Repositorio público: ningún nombre real, tampoco en ejemplos ni citas, y ningún dato de producción (Ruling 3). Las cargas de personas van en `database/privado/`, que no se versiona.
 
@@ -188,6 +191,7 @@ Si tocás esto, leé este documento de `docs/temas/`:
 - Lenguaje neutro: nunca «tardanza», «demora», «atraso», «sin respuesta», «sin entregar» ni «no mandó». El atraso muchas veces no depende del área.
 - En Mi espacio, lo que no se usó es «no utilizado previamente» y una licencia «vence el …». «Perdés» es la excepción, para lo que ya no se puede usar.
 - En el código, la agenda es `evento` o `mi_espacio_`, **nunca «agenda» a secas**, para no confundirla con la Agenda de pedidos de Reportes.
+- «de» + «el» es «del» y «a» + «el» es «al» en todo lo que arma el sistema.
 - Hay dos `nombreCorto`, en archivos distintos: `miEspacioReglas.js` y `seguimientoReglas.js`. Un archivo que necesite las dos usa un alias.
 
 ### Qué frena una licencia
@@ -217,6 +221,7 @@ Todo cambio a datasets pasa por doble verificación:
 - **editor:** todo lo de admin, pero audita cambios de respaldo o, los de un auditor, sin responsabilidad por la auditoría y en el panel de usuarios solo crea y modifica lectores y colaboradores, y solo pasa a alguien de lector a colaborador o al revés (`ROLES_DEL_EDITOR` y `rechazoParaEditor` en services/usuariosReglas.js; nunca cambia el suyo).
   Puede tener licencia, cargar su firma y ser la persona autorizada del firmante, pero no firmante titular.
 - **colaborador:** lo mismo que un lector y, además, carga notas DGMIT en Herramientas → Seguimiento y corrige o anula las que cargó, y usa el Generador de Notas (Herramientas → Notas).
+  Pensado para el personal de la DGMIT.
   No es de administración (`esAdmin` y `Auth.isAdmin()` no lo incluyen), no audita, no cuenta para el mínimo de auditores y no tiene licencias ni firma.
   Lo asignan el admin y el superadmin, y el editor (entre lector y colaborador).
   Un cambio de rol le avisa al superadmin (también de lector a colaborador); crear un colaborador no, como crear un lector.
@@ -242,7 +247,7 @@ Todo cambio a datasets pasa por doble verificación:
 - JWT_SECRET obligatorio al iniciar (process.exit(1) si falta)
 - Rate limiting (`middleware/rateLimit.js`): login, 10 fallidos por usuario e IP y 50 por IP cada 15 minutos; recuperar, 5 por hora por IP y 3 por identificador; links de acceso, 20 cada 15 minutos por IP. Contacto: 5 por hora por IP, en memoria.
 - El cuerpo de un pedido (`middleware/cuerpo.js`): un JSON roto da 400 y uno de más de 1 MB, 413, con el formato de la API y un texto fijo, sin repetir lo que llegó ni dejarlo en la consola.
-  `datosComunes`, después de los dos lectores, rechaza con el mismo 400, en todas las rutas, las claves de `CLAVES_RESERVADAS`, que pisan lo que todo objeto trae de fábrica, en el cuerpo y en la query, y un cuerpo de más de 32 niveles (un multipart no pasa por ahí: esas subidas no leen `req.body`).
+  `datosComunes`, después de los dos lectores, rechaza con el mismo 400, en todas las rutas, las claves de `CLAVES_RESERVADAS`, que pisan lo que todo objeto trae de fábrica, en el cuerpo y en la query, y un cuerpo de más de 32 niveles (un multipart no pasa por ahí: Proyectos no lee `req.body` y la nota firmada solo compara `solo_verificar`).
   Los demás errores siguen en 500 (`tests/errores-del-cuerpo.test.js`)
 - Contacto, login y «¿Olvidaste tu contraseña?» miran primero que cada campo sea un texto; en el email de contacto, el largo antes que el formato (`tests/contacto-validacion.test.js` y `tests/auth-tipos.test.js`).
   `GET /api/andino/fetch` pide sesión de administración y su pedido al portal tiene tiempo límite: 504 si vence (`tests/andino.test.js`)
