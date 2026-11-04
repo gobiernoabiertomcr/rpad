@@ -5,6 +5,7 @@
 
 import { sendEmail } from '../services/emailService.js';
 import { contactoTemplate } from '../services/emailTemplates.js';
+import { emailValido } from '../services/usuariosReglas.js';
 
 // Rate limiting en memoria (máximo 5 envíos por IP por hora)
 const rateLimitMap = new Map();
@@ -61,22 +62,25 @@ const verificarRateLimit = (ip) => {
  */
 const obtenerIP = (req) => req.ip || 'unknown';
 
+// Lo que el cliente mandó en un campo: un JSON o un formulario también traen números, listas y objetos, que cuentan como vacío
+const textoRecortado = (valor) => (typeof valor === 'string' ? valor.trim() : '');
+
 /**
- * Validaciones del formulario
+ * Validaciones del formulario. Cada campo, en este orden: que sea un texto, su largo y su formato
  */
 const validarFormulario = (data) => {
   const errores = [];
   
   // Nombre: requerido, 2-100 caracteres
-  if (!data.nombre || data.nombre.trim().length < 2) {
+  const nombre = textoRecortado(data.nombre);
+  if (nombre.length < 2) {
     errores.push('El nombre debe tener al menos 2 caracteres');
-  } else if (data.nombre.trim().length > 100) {
+  } else if (nombre.length > 100) {
     errores.push('El nombre no puede superar los 100 caracteres');
   }
   
-  // Email: requerido, formato válido
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!data.email || !emailRegex.test(data.email.trim())) {
+  // Email: requerido, hasta 100 caracteres, formato válido (la regla de los usuarios)
+  if (!emailValido(textoRecortado(data.email))) {
     errores.push('Ingrese un email válido');
   }
   
@@ -93,9 +97,10 @@ const validarFormulario = (data) => {
   }
   
   // Mensaje: requerido, 10-2000 caracteres
-  if (!data.mensaje || data.mensaje.trim().length < 10) {
+  const mensaje = textoRecortado(data.mensaje);
+  if (mensaje.length < 10) {
     errores.push('El mensaje debe tener al menos 10 caracteres');
-  } else if (data.mensaje.trim().length > 2000) {
+  } else if (mensaje.length > 2000) {
     errores.push('El mensaje no puede superar los 2000 caracteres');
   }
   
