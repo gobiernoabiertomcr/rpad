@@ -27,15 +27,15 @@ Historia y motivos, en las specs:
     esa salida no suma hasta que se pone la entrada) y un día en que después se cargó una licencia de día entero («Revisá tus horas extras del viernes 09/10: ese día tenés una licencia de día entero.» y «Ese día tenés una licencia de día entero: revisá esta salida.»; esa salida sigue sumando, así no cambian las horas a favor del mes siguiente, hasta que se la quita).
     **Nunca frenan nada**: van aparte de `faltantes`, así `problemaDeLaCarga` no los ve y una licencia nunca se rechaza por una salida («el sistema no frena licencias», del usuario).
     La baja de un feriado no deja aviso: el día pasa a ser hábil y la salida cuenta desde las 15:00.
-    Desde «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 3; decisiones del usuario, 30/10/2026: a una persona de contrato la pueden autorizar a sumar las horas de unos días a las del mes anterior, para llegar al día entero), cada salida tiene la marca `al_mes_anterior` (el tilde «Sumar a {mes anterior}», en cualquier día de cualquier mes;
+    Con «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 3; decisiones del usuario, 30/10/2026: a una persona de contrato la pueden autorizar a sumar las horas de unos días a las del mes anterior, para llegar al día entero), cada salida tiene la marca `al_mes_anterior` (el tilde «Sumar a {mes anterior}», en cualquier día de cualquier mes;
     Mi espacio no controla la autorización ni la fecha de hoy): marcada, sus horas (las de siempre, `horasDeLaSalida`) suman enteras al mes anterior al de su fecha.
-    Es el único cambio de la cuenta:
+    En la cuenta:
     `mesDeLaSalida(fila)` (el 'AAAA-MM' de la fecha o, con el `true` literal, `mesMas(ese, -1)`; null sin una fecha) es el mes en que cuenta cada salida y `horasPorMesDeSalidas` suma ahí, así `horasAFavorDe`, `noUtilizadasDe`, los faltantes, el Resumen, «Vence pronto», «Cargar licencia» y el email de vencimiento se acomodan solos (un día que se destilda después de usar sus horas deja el faltante ámbar de siempre: no frena nada).
     `repartoDelMes(salidas, mes, feriados)` → `{ propias, entran, van }`: las horas de los días sin marcar del mes, los marcados del mes siguiente que suman a él y los marcados del mes que suman al anterior (las dos listas por fecha, `{ fecha, horas, fila }`, con `horas` null si no dan horas), con `propias` más las horas de `entran` igual a lo de `horasPorMesDeSalidas` para ese mes.
     `textoDeLoQueSeMueve(mes, entran, van)` es la segunda línea de la banda:
     «Incluye 1,5 h de febrero.» y «1,5 h del martes 02/02 suman a enero.» («suma» con 1 h; con dos días, «… del martes 02/02 y del jueves 04/02 suman a enero.»; con tres o más, «4 h de 3 días suman a enero.»), separadas por un espacio y solo con los días que dan horas; sin nada, ''.
-    `textoDeLaSumaDelMes` cambia el verbo: mira el mes en que se usan las horas, el siguiente al de la planilla («tuviste» si ya pasó, «tenés» si es el de hoy, «vas a tener» si todavía no llegó: la planilla de enero mirada en febrero dice «En febrero tenés 1 día de franco.»); sin horas, como antes.
-    `validarSalida` suma `al_mes_anterior` a `datos`:
+    `textoDeLaSumaDelMes` elige el verbo mirando el mes en que se usan las horas, el siguiente al de la planilla («tuviste» si ya pasó, «tenés» si es el de hoy, «vas a tener» si todavía no llegó: la planilla de enero mirada en febrero dice «En febrero tenés 1 día de franco.»); sin horas, dice lo mismo que arriba («Todavía no sumaste horas extras en octubre.», «En septiembre no hiciste horas extras.»).
+    `validarSalida` trae `al_mes_anterior` en `datos`:
     `true` o `false`, tal cual; sin la clave, null (el guardado conserva lo guardado); en un borrado, false; cualquier otro valor (también null, 1 o 'true'), 400 `alMesAnterior`, «Elegí si este día suma al mes anterior.», en `al_mes_anterior`, controlado después de la nota.
 
 ## La planilla en la API
@@ -57,16 +57,16 @@ Historia y motivos, en las specs:
   `guardados` cuenta los días del pedido).
   Un 500, «Error al guardar las horas extras» (en la consola, solo la pila).
   No toca Configuración ni manda emails.
-  Las rutas de antes:
+  Las rutas de los horarios sueltos:
   `POST` y `PUT /mi-espacio/horas-extras…` a una persona de contrato dan 400 `contratoEnLaPlanilla` («Las personas de contrato cargan sus horas en la planilla.», `campo` null; después del 404 de la corrección y de los frenos de la modalidad y el arranque), así nadie de contrato crea horarios que ya no cuentan;
-  `DELETE` no cambia (un horario viejo se puede quitar); y `GET /mi-espacio/horas-extras` da, en contrato, el `dias_por_mes` de las salidas (`diasDeLasSalidas`:
-  cada una `{ id, fecha, fecha_texto, tipo_texto, horario, entrada_texto, horas, horas_texto, cero, nota, aviso }`, de la más nueva a la más vieja, con `tipo_texto` 'Feriado', 'Sábado', 'Domingo' o '', `horario` «Salida 16:20» en un día hábil —y «Entrada 08:02» en `entrada_texto`— o «De 09:21 a 12:10» en uno que no lo es, y `cero` en las que dan 0), `totales_por_mes` con lo que suman sus salidas y `a_favor_detalle` en cada mes; planta, como antes.
-  Desde «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 4, 5, 8 y 9; sin rutas nuevas): la planilla suma `sumar_a` después de `siguiente` (el nombre del mes anterior, en minúscula y sin año, el del tilde: 'enero'; en todos los meses, también en el primero del rango) y `entran` después de `fines_de_semana` (los días tildados del mes siguiente que suman a este, por fecha, con la forma de los días de la planilla y los nombres de los feriados de su año;
-  [] si el mes siguiente todavía no llegó); cada día suma `al_mes_anterior` después de `nota` (false sin salida); y `suma` pasa a `{ horas, cifra, texto, detalle }`, con `horas` las de `repartoDelMes` (las propias más las que entran: las que dan las horas a favor), el verbo nuevo en `texto` y en `detalle` la segunda línea (`textoDeLoQueSeMueve`, o '').
+  `DELETE` sigue andando (un horario viejo se puede quitar); y `GET /mi-espacio/horas-extras` da, en contrato, el `dias_por_mes` de las salidas (`diasDeLasSalidas`:
+  cada una `{ id, fecha, fecha_texto, tipo_texto, horario, entrada_texto, horas, horas_texto, cero, nota, aviso }`, de la más nueva a la más vieja, con `tipo_texto` 'Feriado', 'Sábado', 'Domingo' o '', `horario` «Salida 16:20» en un día hábil —y «Entrada 08:02» en `entrada_texto`— o «De 09:21 a 12:10» en uno que no lo es, y `cero` en las que dan 0), `totales_por_mes` con lo que suman sus salidas y `a_favor_detalle` en cada mes; planta, el de sus horarios sueltos.
+  Con «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 4, 5, 8 y 9; sin rutas nuevas), la planilla trae `sumar_a` después de `siguiente` (el nombre del mes anterior, en minúscula y sin año, el del tilde: 'enero'; en todos los meses, también en el primero del rango) y `entran` después de `fines_de_semana` (los días tildados del mes siguiente que suman a este, por fecha, con la forma de los días de la planilla y los nombres de los feriados de su año;
+  [] si el mes siguiente todavía no llegó); cada día trae `al_mes_anterior` después de `nota` (false sin salida); y `suma` es `{ horas, cifra, texto, detalle }`, con `horas` las de `repartoDelMes` (las propias más las que entran: las que dan las horas a favor), el verbo nuevo en `texto` y en `detalle` la segunda línea (`textoDeLoQueSeMueve`, o '').
   El `PUT` recibe en cada día `al_mes_anterior`, opcional (`true` o `false`; sin él, se conserva lo guardado y un día nuevo queda en 0; un borrado lo deja en 0; otro valor, el 400 de `validarSalida`, con su fecha, y no se guarda ningún día).
-  En `GET /mi-espacio/horas-extras` de contrato, cada fila de la tabla suma `horas_detalle` después de `horas_texto`, de dónde salen sus horas cuando algo se mueve entre meses («5,5 h + 1,5 h de febrero», «1,5 h de febrero» sin horas propias, «1,5 h suman a enero» o «1 h suma a enero», las dos partes con « · »; si nada se mueve, ''), y un mes con salidas tiene siempre su fila (`mesesConSalidasSinHoras`; respuesta del usuario:
+  En `GET /mi-espacio/horas-extras` de contrato, cada fila de la tabla trae `horas_detalle` después de `horas_texto`, de dónde salen sus horas cuando algo se mueve entre meses («5,5 h + 1,5 h de febrero», «1,5 h de febrero» sin horas propias, «1,5 h suman a enero» o «1 h suma a enero», las dos partes con « · »; si nada se mueve, ''), y un mes con salidas tiene siempre su fila (`mesesConSalidasSinHoras`; respuesta del usuario:
   «Sí, con salidas hay fila»), aunque sume 0 o todas sus horas pasen al anterior:
-  «0 h», el mes de uso sin detalle, «—» y «El mes sigue sumando» mientras el mes no terminó y, después, sin horas ni usos, `estado` 'sin_horas', «Sin horas a favor» (con usos de más, lo de siempre), así sus días se ven y se editan desde la pestaña (las horas a favor, el Resumen, «Vence pronto» y el email siguen sin un mes en 0); en el día por día (`diasDeLasSalidas`), cada día suma `suma_a` («Suma a enero» si está tildado;
+  «0 h», el mes de uso sin detalle, «—» y «El mes sigue sumando» mientras el mes no terminó y, después, sin horas ni usos, `estado` 'sin_horas', «Sin horas a favor» (con usos de más, lo de siempre), así sus días se ven y se editan desde la pestaña (las horas a favor, el Resumen, «Vence pronto» y el email siguen sin un mes en 0); en el día por día (`diasDeLasSalidas`), cada día trae `suma_a` («Suma a enero» si está tildado;
   si no, '') y, al final de su mes de las horas y por fecha, van los días tildados del mes siguiente, con `tipo_texto` «De febrero», `suma_a` '' y `de_otro_mes: true` (solo ellos llevan la clave);
   `totales_por_mes` es lo de `horasPorMesDeSalidas` (el mismo número de la fila).
 
@@ -92,19 +92,19 @@ Historia y motivos, en las specs:
   En 720 px o menos, el modal casi a pantalla completa y cada día una tarjeta (la fecha y las horas arriba; la entrada y la salida lado a lado, con su rótulo y de 44 px; la nota abajo).
   Los textos, con 4,5:1 o más, y el borde de los campos, con 3:1 o más sobre el fondo de cada fila.
   En la pestaña, el día por día de contrato muestra cada salida del mes elegido («Lun 05/10 · Salida 16:20 · Entrada 08:02 · 1,5 h», «Lun 12/10 *Feriado* · De 09:21 a 12:10 · 2,5 h», con la nota en cursiva; las que dan 0, también, en gris y con «No llega a media hora»; una con aviso, con su aviso en ámbar), y «Editar» (`aria-label` «Editar el lunes 05/10») abre la planilla en ese mes con el foco en la salida de ese día (o en su «Quitar»); después de guardar, el foco vuelve a su «Editar» nuevo.
-  Desde «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 4 y 5; la maqueta que aprobó el usuario, en `docs/superpowers/specs/2026-10-30-mi-espacio-horas-mes-anterior-mockups/`): cada día con salida tiene, entre sus horas y «Nota», el tilde «Sumar a enero» (el mes anterior, en minúscula; en la planilla de enero, «Sumar a diciembre»), que sin salida no se ve pero conserva su lugar; tildar o destildar es un cambio sin guardar más (la raya y el pie lo cuentan).
+  Con «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior, 4 y 5; la maqueta que aprobó el usuario, en `docs/superpowers/specs/2026-10-30-mi-espacio-horas-mes-anterior-mockups/`): cada día con salida tiene, entre sus horas y «Nota», el tilde «Sumar a enero» (el mes anterior, en minúscula; en la planilla de enero, «Sumar a diciembre»), que sin salida no se ve pero conserva su lugar; tildar o destildar es un cambio sin guardar más (la raya y el pie lo cuentan).
   Un día tildado lleva su pastilla blanca y punteada, con «→ enero» al lado.
   La banda suma lo del mes sin los días tildados más los tildados del mes siguiente (el total de cada semana no cuenta sus tildados) y, debajo de la frase, en un renglón que tiene siempre el alto de dos (tildar no corre la planilla), «Incluye 1,5 h de febrero.» y «1,5 h del martes 02/02 suman a enero.».
   La planilla de un mes cuyo siguiente ya llegó termina con el bloque «De febrero»: su total y cada día tildado de febrero, de solo lectura, con «Ver en febrero», que abre febrero con el foco en el tilde de ese día.
   Los dos meses se miran con lo que no se guardó (tildar el 02/02 y, sin guardar, ir a enero: la banda y el bloque de enero ya lo muestran) y «Guardar» manda todo junto, como siempre.
-  «Cómo se cuentan las horas» suma, antes del renglón del mes (`#mp-como-mes`), «Si te autorizan a sumar las horas de un día al mes anterior, tildá «Sumar a enero»: cuentan como horas extras de enero.» (`#mp-como-anterior`).
+  «Cómo se cuentan las horas» incluye, antes del renglón del mes (`#mp-como-mes`), «Si te autorizan a sumar las horas de un día al mes anterior, tildá «Sumar a enero»: cuentan como horas extras de enero.» (`#mp-como-anterior`).
   En 720 px o menos, el tilde va en la tarjeta, debajo de la entrada y la salida, al lado de «Nota», con 44 px de alto.
   En la pestaña, la tabla dice debajo de las horas de dónde salen («5,5 h + 1,5 h de febrero», «1,5 h suman a enero»), un mes con salidas tiene siempre su fila («Sin horas a favor», en gris, si terminó sin horas ni usos) y, en el día por día, un día tildado lleva su pastilla punteada y «Suma a enero», y los tildados del mes siguiente van al final de su mes de las horas, con «De febrero» debajo de la fecha; su «Editar» abre la planilla de su mes (febrero) con el foco en ese día.
-  Planta no cambia.
+  Planta no tiene el tilde.
 
 ## La página
 
-Desde la planilla de horas extras de contrato (ver «Mi espacio: licencias y horas extras»), lo puro, con su modelo en el comentario de su sección: la planilla de un mes es la de `GET /mi-espacio/salidas?mes=` y encima van `cambios` (un Map de cada fecha tocada a su estado completo `{ entrada, salida, nota }` —todo vacío es un borrado— o a `{ quitar: true }`), `agregados` (un Set de los sábados y domingos sumados:
+La planilla de horas extras de contrato (ver `docs/temas/mi-espacio.md`), lo puro, con su modelo en el comentario de su sección: la planilla de un mes es la de `GET /mi-espacio/salidas?mes=` y encima van `cambios` (un Map de cada fecha tocada a su estado completo `{ entrada, salida, nota }` —todo vacío es un borrado— o a `{ quitar: true }`), `agregados` (un Set de los sábados y domingos sumados:
 «Quitar» saca el día de ahí, y volver a sumar uno guardado que se quitó lo trae con lo guardado), `errores` (un Map de cada fecha a `{ campo, mensaje }`) y `notasAbiertas`; los Map y los Set se reconocen por lo que saben hacer, no por su clase (los tests los arman fuera del `vm`).
 Las funciones:
 `htmlDeLaPlanilla(planilla, { cambios, agregados, errores, notasAbiertas })` (las semanas de lunes a domingo con su renglón, `textoDeLaSemana` —«5 al 9 de octubre»— y su total en `.mp-semana-total`, y las filas de `htmlDeLaFilaDeLaPlanilla`, todo en `<div>`, sin semántica de lista; cada día que se carga es un `role="group"` con `aria-labelledby` a su fecha y cada campo lleva su `aria-label`, «Salida del lunes 05/10», «Entrada (opcional) del lunes 05/10»;
@@ -114,18 +114,18 @@ un error va debajo de su fila, con `aria-invalid` y `aria-describedby` en su cam
 un día que volvió a como estaba no cuenta, ni un sábado sumado sin nada), `erroresDeLaPlanilla`, `cuerpoDeLaPlanilla` (`{ dias: [{ fecha, entrada, salida, nota }] }`, las horas cortadas a `HH:MM` —un `<input type="time">` puede dar `'16:46:00'`— y lo vacío como ''), `diasPorFechaDe`, `diasVisiblesDeLaPlanilla`, `finesDeSemanaParaSumar`, `horasDeLosDias` y los textos planos `textoDeSalirSinGuardar`, `textoDeLosErroresDeLaPlanilla` y `textoDeComoSeCuentan`;
 en la pestaña, `htmlDeDiaPorDiaDeSalidas` (el día por día de contrato:
 «Editar» con `data-editar-salida` y la fecha, y el `aria-label` «Editar el lunes 05/10», con `diaLargoDe`) y el `<small>` con `a_favor_detalle` de `htmlDeTablaDeHorasAFavor`.
-`textoDeLaSuma` (el modal de planta) perdió su rama de contrato (Ruling 8 del plan): fuera de planta da solo las horas.
+`textoDeLaSuma` (el modal de planta) no tiene rama de contrato (Ruling 8 del plan): fuera de planta da solo las horas.
 Lo que toca el DOM, en su propia sección:
 `abrirCargaDeHoras` (los dos «Cargar horas extras»: en contrato, la planilla; si no, `abrirHorasExtras`), `abrirPlanilla({ mes, fecha, volverA })` (sin el saldo inicial, «Mis vacaciones y saldos»), `cargarMesDeLaPlanilla` (cada mes, una vez por apertura; el primero, sin `mes` si no se pidió uno —el servidor da el en curso: con el reloj del teléfono adelantado, el del teléfono daría 400— y el mes es el que llega; una respuesta vieja, por `pedido` o de otra apertura, se descarta;
 mientras llega, `aria-busy` y las flechas quietas; si falla, `MENSAJE_SIN_LA_PLANILLA` en `#mp-error`, y con un 401, al login), `alEscribirEnLaPlanilla` (cambia la fila sin volver a dibujarla —ni el foco ni una hora a medio escribir se pierden—, y la semana, la banda y el pie), `alApretarEnLaPlanilla` (Enter), `alTocarLaPlanilla`, `alternarLaNota`, `quitarElDia`, `sumarElDia`, `irAlMesDeLaPlanilla` (anuncia el mes en `#mp-anuncio`;
-si la flecha que se usó se apaga, el foco pasa a la otra), `guardarPlanilla` (`marcarLosDias` con los errores de las copias, sin pedir nada; si no, un solo `PUT`), `pedirGuardarLaPlanilla` (un `fetch` PUT propio con `Auth.getAuthHeaders()`, como `pedirWordDeLicencia`, porque `API.pedirJson` no da los `errores` de un 400;
-`api.js` no cambió) y `pedirSalirDeLaPlanilla` (la ×, «Cancelar» y Escape pasan por `pedirCerrarModal`).
+si la flecha que se usó se apaga, el foco pasa a la otra), `guardarPlanilla` (`marcarLosDias` con los errores de las copias, sin pedir nada; si no, un solo `PUT`), `pedirGuardarLaPlanilla` (un `fetch` PUT propio con `Auth.getAuthHeaders()`, como `pedirWordDeLicencia`, porque `API.pedirJson` no da los `errores` de un 400)
+y `pedirSalirDeLaPlanilla` (la ×, «Cancelar» y Escape pasan por `pedirCerrarModal`).
 Su estado, `pagina.planilla` (`{ mes, meses, cambios, agregados, errores, notasAbiertas, guardando, pedido, cargando, aviso, avisoDeLosDias, foco }`, o null con el modal cerrado): no se cruza con el de los otros formularios.
 Mientras guarda, `estaOcupado('modal-planilla')` no deja cerrarla y la planilla no acepta cambios (`pintarElGuardadoDeLaPlanilla`:
 `#mp-cuerpo` inerte y las flechas y «Guardar» apagados, y cada función que cambia algo no hace nada con `guardando`: lo escrito mientras tanto no iría en el `PUT`); al responder, todo vuelve antes de mostrar el error.
 Un «Guardar» que vuelve a fallar con el mismo aviso lo vuelve a anunciar (`avisoQueSeAnuncia`, con un espacio al final, como `anunciar`), y `marcarLosDias` descarta el mes que se estaba pidiendo (`soltarElMesPedido`).
-`pedirConfirmacion` suma `textoSi` y `textoNo` (los dos botones; de entrada, «Borrar» y «Cancelar», repuestos en cada llamada) y `alConfirmar` (en lugar de `borrar`: cierra la confirmación y corre, sin pedir nada); quien ya la llamaba no cambió.
-`IDENTIDADES_DEL_FOCO` suma `data-editar-salida`.
+`pedirConfirmacion` recibe `textoSi` y `textoNo` (los dos botones; de entrada, «Borrar» y «Cancelar», repuestos en cada llamada) y `alConfirmar` (en lugar de `borrar`: cierra la confirmación y corre, sin pedir nada).
+`IDENTIDADES_DEL_FOCO` incluye `data-editar-salida`.
 Copias mínimas, atadas por tests de paridad:
 `SALIDA_DE_LA_JORNADA`, `TOLERANCIA_DIA_HABIL`, `TOLERANCIA_DIA_INHABIL` y `MAXIMO_DIAS_POR_GUARDADO`; las claves de la planilla en `MENSAJES_FORMULARIOS` (`horaSalida`, `salidaQueCuenta`, `salidaFalta`, `entradaFeriado`, `entradaFinde`, `salidaAntes` y `muchosDias`, con el nombre del servidor, más `nota`);
 `minutosDeLaSalida` (copia de `horaSalidaValida`);
@@ -135,15 +135,14 @@ Copias mínimas, atadas por tests de paridad:
 Solo del navegador, con tests de comportamiento:
 `TIPOS_DE_DIA`, las semanas y sus totales (de presentación, como `diasDeLaGrilla`), el pie, «Sumar el día» y los textos de salir y de los errores.
 Los estilos, con el prefijo `.mp-` de la maqueta (y `.me-dia-horas` y `.me-fila-aviso` del día por día), en el `<style>` de `mi-espacio.html`, solo con los tokens `--sg-*` de ese `<style>` y `--f-titulo` y `--f-texto` de main.css.
-`VERSION_MI_ESPACIO` pasó a `'20261213'`.
 
 ## La página: sumar al mes anterior
 
-Desde «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior; ver «Mi espacio: licencias y horas extras»), cada día con salida de la planilla de contrato tiene el tilde «Sumar a {mes anterior}».
+Con «Sumar al mes anterior» (spec 2026-10-30-mi-espacio-horas-mes-anterior; ver `docs/temas/mi-espacio.md`), cada día con salida de la planilla de contrato tiene el tilde «Sumar a {mes anterior}».
 Lo puro:
-`valoresDeLaSalida` y `valorDelDia` suman `al_mes_anterior` (solo el `true` literal y, en `valoresDeLaSalida`, solo con una salida; un «Quitar», false), así `fechasCambiadas` cuenta un cambio solo del tilde y `cuerpoDeLaPlanilla` lo manda siempre, como booleano;
+`valoresDeLaSalida` y `valorDelDia` traen `al_mes_anterior` (solo el `true` literal y, en `valoresDeLaSalida`, solo con una salida; un «Quitar», false), así `fechasCambiadas` cuenta un cambio solo del tilde y `cuerpoDeLaPlanilla` lo manda siempre, como booleano;
 `salidaDelDia` y `horasDelDiaConCambios`;
-`horasDeLosDias` (la banda y el total de cada semana) ya no suma los días tildados;
+`horasDeLosDias` (la banda y el total de cada semana) no suma los días tildados;
 `diasQueSumanAlAnterior(dias, cambios)` (los tildados de una lista, `[{ dia, fecha, horas }]`, también los de 0 h) y `diasQueEntran(planilla, estado)` (los tildados del mes siguiente que suman a este, por fecha: los de ese mes con `cambios` si ya se pidió;
 si no, los de `planilla.entran` con `cambios`), con los que la página arma, también con lo que no se guardó de los dos meses, la cifra de la banda (los días sin tildar del mes más los que entran) y su segunda línea (`textoDeLoQueSeMueve(mes, entran, van)`);
 `htmlDelTilde(dia, valor, sumarA)` (un `<label class="mp-tilde" id="mp-t-AAAA-MM-DD">` con su casilla, `data-campo="al_mes_anterior"` y el `aria-label` «Sumar a enero el martes 02/02», que empieza con el texto visible; sin salida, con la clase `vacio` —`visibility: hidden`: conserva su lugar— y `tabindex="-1"`; sin `sumar_a`, solo el lugar;
@@ -153,39 +152,23 @@ la clase no es `mp-anterior`, el id de la flecha del mes, ni `mp-sumar`, la de �
 `htmlDelBloqueDelMesSiguiente(planilla, estado)` y `htmlDelDiaDeOtroMes` (al final de `htmlDeLaPlanilla`:
 «De febrero» con su total, como el renglón de una semana pero sin `data-fechas`, y cada día tildado de febrero, de solo lectura, en `mp-dia de-otro-mes` con los ids `mp-otro-` y `mp-of-`, con su salida, sus horas y «Ver en febrero», `data-ver-en` con su fecha y el `aria-label` «Ver en febrero el martes 02/02»); y `textoDeSumarAlAnterior(mes, sumarA)` (el renglón de «Cómo se cuentan las horas», texto plano).
 En la pestaña, `htmlDeTablaDeHorasAFavor` pone `horas_detalle` en un `<small>` debajo de las horas, y `htmlDeDiaPorDiaDeSalidas` le da a un día con `suma_a` la pastilla `me-dia-horas otro-mes` y «Suma a enero» (`me-fila-otro-mes`) y a uno con `de_otro_mes` en el `true` literal la clase `de-otro-mes` (su «De febrero» llega en `tipo_texto`);
-`CLASE_DE_LA_SITUACION` y `SITUACIONES_EN_GRIS` suman `sin_horas` («Sin horas a favor», en gris).
+`CLASE_DE_LA_SITUACION` y `SITUACIONES_EN_GRIS` incluyen `sin_horas` («Sin horas a favor», en gris).
 Lo que toca el DOM:
 `alEscribirEnLaPlanilla` atiende también la casilla (`campo.checked === true`; la fila no se redibuja, el foco queda en ella y no se anuncia nada);
 `actualizarLaFilaDeLaPlanilla` cambia la pastilla y el `vacio` y el `tabindex` del tilde (borrar la salida lo oculta y escribirla de nuevo lo trae tildado como estaba);
 `pintarLaSumaDeLaPlanilla` arma la cifra y la segunda línea y reescribe solo los totales de `.mp-semana[data-fechas]` (no el de «De febrero»);
 `pintarElRenglonDelTilde` escribe `#mp-como-anterior` con `textContent` (vacío y oculto mientras llega el mes o sin texto); y «Ver en febrero» (`[data-ver-en]`, en `alTocarLaPlanilla`) llama a `irAlMesDeLaPlanilla('siguiente', { fecha })`, que, después de mostrar ese mes (sin pedirlo si ya está) y anunciarlo en `#mp-anuncio`, lleva el foco al tilde de ese día, con su fila centrada.
 Copias atadas por tests de paridad:
-`mesMas` y `textoDeLoQueSeMueve` (de `services/miEspacioReglas.js`; esta lee solo `fecha` y `horas` y nombra solo los días con horas) y el verbo nuevo de `textoDeLaSumaDelMes` (en `fraseDeLaSumaDelMes`).
+`mesMas` y `textoDeLoQueSeMueve` (de `services/miEspacioReglas.js`; esta lee solo `fecha` y `horas` y nombra solo los días con horas) y el verbo de `textoDeLaSumaDelMes` (en `fraseDeLaSumaDelMes`).
 Solo del navegador, con tests de comportamiento:
 `textoDeSumarAlAnterior` y el «De febrero» del bloque (`nombreDelMes` del mes siguiente).
 Los estilos, en el `<style>` de `mi-espacio.html`, solo con los tokens `--sg-*`: la fila con seis columnas (la del tilde;
 las acciones, siempre en la última, también en una fila sin tilde), `.mp-tilde`, la pastilla punteada (`.mp-horas b.otro-mes` y `.me-dia-horas.otro-mes`, con su borde también en alto contraste), la segunda línea con el alto fijo de dos renglones (`.mp-suma-aparte`, `height: 2.7em` con `line-clamp` 2: tildar no cambia el alto de la banda, que está fuera de `#mp-cuerpo`, y lo que no entra se corta con «…»;
 la frase reserva dos renglones de 900 px para abajo y tres de 384 px para abajo), el bloque, el corte de 721 a 860 px y, en 720 px, el tilde de 44 px en la tarjeta, al lado de «Nota».
-`VERSION_MI_ESPACIO` pasó a `'20261219'` (de `'20261218'`, la del evento Personal (Público)).
 
-## Tests
+## Reglas de los tests
 
-Desde la planilla de contrato: en `mi-espacio-reglas.test.js`, `horasDeLaSalida` con los 19 renglones del CSV del usuario (mayo de 2026)
-y los ejemplos del feriado, el sábado y el domingo, un fijo, uno de la tabla, uno dado de baja y las horas raras, `tipoDeDia`, `horasPorMesDeSalidas`, `enDiasDeFranco`, `textoDeLaSumaDelMes`, `mesDeLaPlanilla`, `licenciaDeDiaEnteroEn`, `validarSalida` en su orden y en sus bordes (hoy sí, mañana no, la licencia de día entero y la de 2 horas, el borrado), las horas a favor desde las salidas (con su paridad con las horas extras de antes), el mes que suma 0, los avisos de las salidas,
-que nunca frenan una licencia, y que planta no cambia; en `mi-espacio-resumen.test.js`, `planillaDelMes` (los tipos de día, los nombres de los feriados, las licencias, los días que no llegaron, hoy, los sábados y domingos —también uno feriado—, la suma, los meses vecinos y lo que da null), los avisos al final de los faltantes y la tabla de contrato (`a_favor_detalle` y el día por día de las salidas; planta, igual);
-`mi-espacio-salidas-api.test.js` (Docker, base `rpad_test_mi_espacio_salidas`, con personas inventadas: sin sesión; el GET —contrato, con lo guardado y con un feriado cargado después, planta, sin vínculo, los meses raros antes de leer nada y el 500—;
-el PUT —alta, corrección, borrado y vuelta a cargar en la misma fila, varios días de dos meses con un sábado, todo o nada, los frenos en orden, la lista vacía y la de 101 días, los repetidos, cada 400 de un día con su fecha y su campo, un feriado de la tabla, el doble envío y el 500 sin guardar nada—; las horas a favor desde las salidas en el Resumen, la pestaña y el cálculo de «Cargar licencia»; y las rutas de horas extras de antes, a contrato);
-en `mi-espacio-api.test.js`, lo que llega de la base (`estado.salidas`, con la entrada null, cortadas a 'HH:MM', sin las dadas de baja, también en lote) y `feriadosPara`, que estira el rango con las salidas;
-en `mi-espacio-frontend.test.js`, la planilla pura (las paridades, las filas de cada tipo, los errores, el pie, la banda, «Sumar el día», el cuerpo y el escapado), el día por día de las salidas y, con el DOM y el `fetch` falsos, abrir desde los dos botones y desde «Editar», escribir, el aviso del servidor, cambiar de mes y las respuestas viejas, sumar y quitar, la nota, Enter, guardar con errores (también en otro mes y con más de 100 días)
-y bien, los 400 del servidor, el doble clic, lo que no se acepta mientras guarda, el mes que llega tarde después de marcar los errores, el aviso que se vuelve a anunciar, el reloj del teléfono adelantado, cerrar con cambios, planta, que sigue con `#modal-horas`, y el contraste de los estilos;
-`schema.test.js` (`mi_espacio_salidas` con su clave única y su FK, las 42 tablas, la migración dos veces desde la estructura de main, la vuelta atrás dos veces sin tocar las horas extras de planta, y una fila por persona y día);
-`permisos.test.js` (las dos rutas en `RUTAS_MI_ESPACIO` y `GET /mi-espacio/salidas` en las lecturas del lector y del colaborador); y `paginas.test.js` (`VERSION_MI_ESPACIO` en `'20261213'`, `#modal-planilla` y sus ids, `#mp-anuncio` y los estilos `.mp-` con el corte de 720 px).
-Desde «Sumar al mes anterior» (con los datos inventados de la maqueta: enero de 2027 con 5,5 h, el martes 02/02/2027 con salida a las 16:20 —1,5 h— tildado y el miércoles 03/02 a las 15:50 —1 h— sin tildar):
-en `mi-espacio-reglas.test.js`, `mesDeLaSalida`, `horasPorMesDeSalidas` con días tildados (enero 7 h y febrero 1 h, cruzando el año, y que ninguna hora se cuenta dos veces), `repartoDelMes` (y su igualdad con `horasPorMesDeSalidas`), `textoDeLoQueSeMueve`, los tres verbos de `textoDeLaSumaDelMes` y `validarSalida` con la marca (los valores que dan el 400 y el borrado);
-en `mi-espacio-resumen.test.js`, la planilla de enero y la de febrero (`sumar_a`, `entran`, la cifra y `suma.detalle`), diciembre que recibe de enero, la tabla con `horas_detalle`, las filas de 0 h y «Sin horas a favor», y el día por día con «Suma a enero» y «De febrero»;
-en `mi-espacio-salidas-api.test.js` (Docker), guardar con `true` y con `false`, que sin el campo se conserva lo guardado y un día nuevo queda en 0, que el borrado la deja en 0, los 400 sin guardar nada y el GET de los dos meses; en `mi-espacio-api.test.js`, `al_mes_anterior` como booleano en `estadosDe`;
-en `mi-espacio-frontend.test.js`, las paridades nuevas, el tilde con su nombre accesible, la pastilla, la banda con lo no guardado de otro mes, el pie, el bloque y «Ver en febrero», el escapado y, con el DOM falso, tildar, destildar, borrar la salida, ir al otro mes sin guardar y «Guardar», con los contrastes nuevos; en `schema.test.js`, la columna, la migración dos veces desde la estructura de main y la vuelta atrás;
-y en `paginas.test.js`, `VERSION_MI_ESPACIO` en `'20261219'`, `#mp-como-anterior`, las seis columnas, los estilos del tilde y que tildar no cambia el alto de la banda.
+Los tests de la planilla usan personas y datos inventados, nunca nombres reales; `tests/mi-espacio-salidas-api.test.js` usa la base `rpad_test_mi_espacio_salidas`.
 
 ## Archivos de tests
 
