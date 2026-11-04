@@ -15,7 +15,8 @@ export const login = async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    if (!username || !password) {
+    // Solo textos: un JSON o un formulario también traen números, listas y objetos, que no llegan a la base ni a bcrypt
+    if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
       return res.status(400).json({
         success: false,
         error: 'Usuario y contraseña son requeridos'
@@ -31,7 +32,7 @@ export const login = async (req, res) => {
     const usuario = rows[0];
 
     // Siempre se compara, aunque el usuario no exista o tenga la invitación pendiente (password_hash NULL)
-    const passwordValid = await bcrypt.compare(String(password), usuario?.password_hash || HASH_DE_REFERENCIA);
+    const passwordValid = await bcrypt.compare(password, usuario?.password_hash || HASH_DE_REFERENCIA);
 
     if (!usuario || !usuario.password_hash || !passwordValid) {
       return res.status(401).json({
@@ -334,7 +335,8 @@ const MENSAJE_RECUPERAR = 'Si los datos corresponden a una cuenta activa, te env
 // "¿Olvidaste tu contraseña?": siempre la misma respuesta, exista o no la cuenta.
 // Se responde antes de buscar y enviar: el tiempo de respuesta tampoco revela si la cuenta existe.
 export const recuperarContrasena = async (req, res) => {
-  const identificador = String(req.body?.identificador ?? '').trim();
+  // Solo un texto: un JSON o un formulario también traen números, listas y objetos, que cuentan como vacío
+  const identificador = typeof req.body?.identificador === 'string' ? req.body.identificador.trim() : '';
   res.json({ success: true, message: MENSAJE_RECUPERAR });
 
   if (!identificador || identificador.length > 100) return;

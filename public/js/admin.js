@@ -250,9 +250,10 @@ function nombreDeLaFrecuencia(catalogo, id) {
   return typeof frecuencia?.nombre === 'string' ? frecuencia.nombre : '';
 }
 
-// El error del portal en el paso 1, con la salida: seguir con la carga manual
-function textoDeErrorDelPortal(mensaje) {
+// El error del portal en el paso 1, con la salida: seguir con la carga manual. Sin sesión no hay salida: la carga manual también la pide
+function textoDeErrorDelPortal(mensaje, status) {
   const texto = String(mensaje ?? '').trim() || 'No se pudo obtener información del portal';
+  if (status === 401 || status === 403) return texto;
   return `${texto}${/[.!?]$/.test(texto) ? '' : '.'} Podés seguir con la carga manual.`;
 }
 
@@ -724,9 +725,9 @@ async function fetchAndContinue(evento) {
   let importado = null;
   let error = null;
   try {
-    const response = await fetch(`${CONFIG.API_URL}/andino/fetch?url=${encodeURIComponent(url)}`);
+    const response = await fetch(`${CONFIG.API_URL}/andino/fetch?url=${encodeURIComponent(url)}`, { headers: Auth.getAuthHeaders() });
     const result = await response.json();
-    if (!response.ok || !result.success) error = textoDeErrorDelPortal(result.error);
+    if (!response.ok || !result.success) error = textoDeErrorDelPortal(result.error, response.status);
     else importado = result.data;
   } catch (falla) {
     console.error('Error consultando Andino:', falla);
@@ -1278,7 +1279,7 @@ async function confirmUpdateFromAndino() {
   let importado = null;
   let error = null;
   try {
-    const response = await fetch(`${CONFIG.API_URL}/andino/fetch?url=${encodeURIComponent(url)}`);
+    const response = await fetch(`${CONFIG.API_URL}/andino/fetch?url=${encodeURIComponent(url)}`, { headers: Auth.getAuthHeaders() });
     const result = await response.json();
     if (!response.ok || !result.success) error = result.error || 'No se pudo obtener información del portal';
     else importado = result.data;

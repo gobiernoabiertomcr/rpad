@@ -1,5 +1,8 @@
 // Controller para integración con API de Andino (Portal de Datos Abiertos)
 
+// Vale para toda la respuesta: también si el portal contesta los encabezados y no termina el cuerpo
+const TIEMPO_LIMITE_DEL_PORTAL = 10000;
+
 /**
  * Mapa de normalización de formatos de Andino a RPAD
  * Andino devuelve formatos en MAYÚSCULAS
@@ -53,7 +56,8 @@ export const fetchFromAndino = async (req, res) => {
   try {
     const { url } = req.query;
 
-    if (!url) {
+    // req.query también puede traer una lista o un objeto
+    if (!url || typeof url !== 'string') {
       return res.status(400).json({
         success: false,
         error: 'Se requiere el parámetro url'
@@ -79,7 +83,7 @@ export const fetchFromAndino = async (req, res) => {
         'Accept': 'application/json',
         'User-Agent': 'RPAD-MCR/1.4.0'
       },
-      timeout: 10000 // 10 segundos de timeout
+      signal: AbortSignal.timeout(TIEMPO_LIMITE_DEL_PORTAL)
     });
 
     if (!response.ok) {
@@ -146,8 +150,15 @@ export const fetchFromAndino = async (req, res) => {
 
   } catch (error) {
     console.error('Error consultando API de Andino:', error);
-    
-    // Errores de red/timeout
+
+    if (error.name === 'TimeoutError') {
+      return res.status(504).json({
+        success: false,
+        error: 'El portal de datos abiertos no respondió a tiempo. Probá de nuevo en unos minutos.'
+      });
+    }
+
+    // Errores de red
     if (error.name === 'TypeError' || error.message.includes('fetch')) {
       return res.status(503).json({
         success: false,
