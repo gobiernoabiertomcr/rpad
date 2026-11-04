@@ -78,3 +78,30 @@
 .mq-iniciales { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--sg-tinta); color: #fff; font-size: 0.68rem; font-weight: 700; }
 [data-forma="4"] .me-opciones[aria-invalid="true"] { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
 [data-forma="4"] .me-opciones[aria-invalid="true"] .me-opcion { border-color: transparent; }
+
+/* El mail de los jefes y la agenda, separados: las cuatro opciones */
+.mq-ico-chico { display: inline-flex; flex: none; color: var(--sg-tinta); margin-top: 1px; }
+.mq-ico-chico svg { width: 18px; height: 18px; }
+.mq-renglon { display: flex; gap: 10px; align-items: flex-start; line-height: 1.45; }
+.mq-renglon b { color: var(--sg-tinta); }
+.mq-renglon-abajo { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--sg-linea); }
+.mq-renglon .mq-jefes { margin: 6px 0; }
+.mq-dos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.mq-mitad { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 10px; background: #fff; border: 1px solid var(--sg-linea); min-width: 0; }
+.mq-mitad b { color: var(--sg-tinta); }
+.mq-mitad small { color: var(--sg-suave); font-size: 0.78rem; line-height: 1.35; }
+.mq-mitad .mq-jefes { margin: 0; }
+.mq-nadie { color: var(--sg-suave); font-size: 0.82rem; }
+.mq-pie-resumen { display: flex; flex-direction: column; gap: 6px; padding: 10px 24px; background: #F3F7FC; border-top: 1px solid var(--sg-linea); color: var(--sg-texto); font-size: 0.86rem; }
+.mq-pie-fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mq-pie-fila b { color: var(--sg-tinta); }
+.mq-pie-fila .mq-jefes { margin: 0; }
+#ev-personas-ayuda:empty, .mq-ayuda:empty { display: none; }
+.mq-salto { margin: 10px 0; padding: 6px; border-radius: 8px; background: var(--sg-sutil); color: var(--sg-suave); font-size: 0.78rem; text-align: center; }
+.mq-grupo-personas { border: 0; padding: 0; margin: 0; }
+.mq-carta .mq-pie-resumen { margin: 12px -18px 0; padding: 10px 18px; }
+.mq-botones-falsos { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.mq-botones-falsos .mq-probar { margin: 0; }
+.mq-carta .me-opcion { pointer-events: none; }
+.mq-carta .mq-frase { padding: 10px 12px; }
+.mq-carta .mq-renglon, .mq-carta .mq-mitad { font-size: 0.86rem; }

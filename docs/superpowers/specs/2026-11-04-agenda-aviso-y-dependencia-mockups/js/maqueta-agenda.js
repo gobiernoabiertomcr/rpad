@@ -7,8 +7,8 @@
   const yo = { ...D.fijos['GET /auth/verify'].json.data.user, rol };
   D.fijos['GET /auth/verify'].json.data.user = yo;
   M.sesion(yo);
-  const puedeCompartir = rol === 'editor';
-  const variante = M.leer('mq-variante', 'B');
+  const puedeCompartir = true;
+  const variante = 'B';
   const JEFES = rol === 'editor' ? 'Federico y Graciela' : 'Graciela';
 
   const FRASES = {
@@ -16,28 +16,37 @@
     ninguno: 'Elegí una opción para ver a quién le llega.',
     publico: `Lo ven en su agenda las personas que elijas, solo con el texto corto. A ${JEFES}, de quienes dependés, les llega ese texto por mail antes del evento, salvo que lo cargues para hoy.`.replace('de quienes dependés, les llega', rol === 'editor' ? 'de quienes dependés, les llega' : 'de quien dependés, le llega'),
     publico_corta: 'Lo ven en su agenda las personas que elijas, solo con el texto corto.',
-    laboral: 'Lo ve la administración que elijas, con todo el detalle.'
+    laboral: 'Lo ven las personas que elijas, con todo el detalle. A esas personas les llega un mail.'
   };
   window.MQ = {
     variante,
     frase: (tipo) => FRASES[tipo],
     iconos: window.MAQUETA.ICONOS,
-    // La frase con su ícono y, en «Yo y quienes elija», las iniciales de quienes reciben el mail
+    administracion: [1, 3],
+    // La frase, y en «Yo y quienes elija», el mail y la agenda bien separados (window.MAQUETA.piezas, según la opción del panel)
     adornarFrase(nodo, tipo) {
+      const legend = document.querySelector('#ev-grupo-personas legend');
+      legend.childNodes[0].nodeValue = 'Con quién ';
+      const pie = document.getElementById('mq-pie-resumen');
+      if (pie) pie.hidden = true;
       nodo.classList.toggle('mq-frase-apagada', !['privado', 'publico', 'laboral'].includes(tipo));
       if (!['privado', 'publico', 'laboral'].includes(tipo) || nodo.hidden) return;
-      const fila = (texto) => `<span class="mq-frase-fila"><span class="mq-frase-ico" data-de="${tipo}" aria-hidden="true">${window.MAQUETA.ICONOS[tipo]}</span><span>${Utils.escapeHtml(texto)}</span></span>`;
-      if (tipo !== 'publico') { nodo.innerHTML = fila(FRASES[tipo]); return; }
+      if (tipo !== 'publico') {
+        nodo.innerHTML = `<span class="mq-frase-fila"><span class="mq-frase-ico" data-de="${tipo}" aria-hidden="true">${M.ICONOS[tipo]}</span><span>${Utils.escapeHtml(FRASES[tipo])}</span></span>`;
+        return;
+      }
       const jefes = rol === 'editor' ? [['FR', 'Federico'], ['GP', 'Graciela']] : [['GP', 'Graciela']];
-      const chips = jefes.map(([ini, nombre]) => `<span class="mq-jefe"><span class="mq-iniciales" aria-hidden="true">${ini}</span>${nombre}</span>`).join('');
-      const texto = jefes.length > 1 ? 'De quienes dependés: les llega ese texto por mail antes del evento, salvo que lo cargues para hoy.'
-        : 'De quien dependés: le llega ese texto por mail antes del evento, salvo que lo cargues para hoy.';
-      nodo.innerHTML = `${fila(FRASES.publico_corta)}<span class="mq-frase-cadena"><span class="mq-jefes">${chips}</span><span>${texto}</span></span>`;
+      const piezas = M.piezas(M.leer('mq-frase', '1'), jefes);
+      nodo.innerHTML = piezas.arriba;
+      legend.childNodes[0].nodeValue = `${piezas.rotulo} `;
+      document.getElementById('ev-personas-ayuda').innerHTML = piezas.ayuda;
+      if (pie) { pie.innerHTML = piezas.pie; pie.hidden = piezas.pie === ''; }
+      window.MQ.vivo?.();
     },
     opciones: variante === 'B' ? Object.freeze({
       privado: Object.freeze({ nombre: 'Solo yo', ayuda: 'Nadie más lo ve' }),
       publico: Object.freeze({ nombre: 'Yo y quienes elija', ayuda: 'Ven un texto corto' }),
-      laboral: Object.freeze({ nombre: 'Laboral', ayuda: 'Con la administración que elijas' })
+      laboral: Object.freeze({ nombre: 'Laboral', ayuda: 'Con quienes elijas' })
     }) : null,
     ultimoGuardado: null
   };
@@ -95,7 +104,7 @@
       if (ruta === '/mi-espacio/eventos/aviso') return M.respuesta(200, { success: true, data: { texto: '' } });
       if (ruta.startsWith('/mi-espacio/ausentes')) return M.respuesta(200, { success: true, data: { puede_ver: true, ausentes: [] } });
       if (ruta === '/mi-espacio/personas/publico') return M.respuesta(200, { success: true, data: M.PERSONAS.filter((p) => p.id !== 2).map((p) => ({ id: p.id, nombre: p.nombre_completo })) });
-      if (ruta === '/mi-espacio/personas') return M.respuesta(200, { success: true, data: M.PERSONAS.filter((p) => [1, 3].includes(p.id)).map((p) => ({ id: p.id, nombre: p.nombre_completo })) });
+      if (ruta === '/mi-espacio/personas') return M.respuesta(200, { success: true, data: M.PERSONAS.filter((p) => p.id !== 2).map((p) => ({ id: p.id, nombre: p.nombre_completo })) });
       if (ruta.startsWith('/usuarios/licencias/sin-auditor')) return M.respuesta(200, { success: true, data: { periodos: [] } });
       return M.respuesta(200, { success: true, data: null });
     }

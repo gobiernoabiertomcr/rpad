@@ -42,17 +42,28 @@
   });
 
   const panel = M.panel('agenda', `
-    <label>Diseño del selector
-      <select id="mq-forma"><option value="4">4. Barra compacta (elegida)</option><option value="1">1. Tarjetas con ícono</option><option value="2">2. Íconos grandes</option><option value="3">3. Lista de alcance</option></select></label>
+    <label>Aviso de «Yo y quienes elija»
+      <select id="mq-frase"><option value="1">1. Cada cosa en su lugar</option><option value="2">2. Dos renglones arriba</option><option value="3">3. Dos tarjetas</option><option value="4">4. Resumen antes de Guardar</option></select></label>
     <label>Quién carga
       <select id="mq-rol"><option value="editor">Editor (dos personas arriba)</option><option value="lector">Lector (una persona arriba)</option></select></label>
     <a href="#" id="mq-reiniciar">Volver a los eventos de ejemplo</a>`);
   const grupo = document.getElementById('ev-grupo-tipo');
-  const forma = M.leer('mq-forma', '4');
-  grupo.dataset.forma = forma;
-  panel.querySelector('#mq-forma').value = forma;
+  grupo.dataset.forma = '4';
+  panel.querySelector('#mq-frase').value = M.leer('mq-frase', '1');
   panel.querySelector('#mq-rol').value = rol;
-  panel.querySelector('#mq-forma').addEventListener('change', (e) => { M.guardar('mq-forma', e.target.value); grupo.dataset.forma = e.target.value; });
+  panel.querySelector('#mq-frase').addEventListener('change', (e) => {
+    M.guardar('mq-frase', e.target.value);
+    if (tipos.querySelector('[aria-pressed="true"]')?.dataset.tipo === 'publico') window.MQ.adornarFrase(document.getElementById('ev-tipo-ayuda'), 'publico');
+  });
+  // El resumen, sobre los botones del pie, y lo que cambia con las personas elegidas
+  const pie = document.createElement('div');
+  pie.id = 'mq-pie-resumen';
+  pie.className = 'mq-pie-resumen';
+  pie.hidden = true;
+  document.querySelector('#modal-evento .modal-footer').before(pie);
+  const personas = document.getElementById('ev-personas');
+  window.MQ.vivo = () => M.pintarVivo(document.getElementById('modal-evento'), M.elegidasDe(personas));
+  new MutationObserver(window.MQ.vivo).observe(personas, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-pressed'] });
   panel.querySelector('#mq-rol').addEventListener('change', (e) => { M.guardar('mq-rol', e.target.value); location.reload(); });
   panel.querySelector('#mq-reiniciar').addEventListener('click', (e) => { e.preventDefault(); sessionStorage.removeItem('mq-eventos'); location.reload(); });
   if (!location.hash) location.hash = '#agenda';
