@@ -191,7 +191,7 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
     assert.match(conAutorizado, /vuelve a presentar en su fecha cada aviso que se adelantó/);
     const sinAutorizado = evaluar(contexto, `efectoEnNotas(${licencia}, null, '2026-12-02')`);
     assert.match(sinAutorizado, /no se generan notas hasta la vuelta/);
-    assert.match(sinAutorizado, /las reiteraciones salen el primer día hábil después de la licencia/);
+    assert.match(sinAutorizado, /Lo que toque avisar sale el primer día hábil después de la licencia\. La reiteración que toque, ese día si es un mes de reiteración; si no, en el próximo\./);
     for (const texto of [conAutorizado, sinAutorizado]) assert.doesNotMatch(texto, /por adelantado|Cargá la licencia/);
     // Una licencia que empieza hoy ya está en curso; una futura, como siempre
     assert.match(evaluar(contexto, `efectoEnNotas(${licencia}, null, '2026-11-26')`), /Licencia en curso/);
@@ -273,7 +273,7 @@ describe('licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)', ()
     const { contexto } = cargarPanel();
     const seguida = "{ desde: '2027-01-04', vispera: null, sin_anticipo: true }";
     assert.equal(evaluar(contexto, `efectoEnNotas(${seguida}, null, '2026-12-21')`),
-      'Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.');
+      'Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar sale el primer día hábil después de la licencia. La reiteración que toque, ese día si es un mes de reiteración; si no, en el próximo.');
     assert.equal(evaluar(contexto, `efectoEnNotas(${seguida}, 'Persona Autorizada', '2026-12-21')`),
       'Empieza a continuación de otra licencia: los avisos no se adelantan. Desde el primer día, Persona Autorizada presenta las notas con las dos firmas, después de la nota que comunica la autorización.');
     const sinDias = "{ desde: '2026-11-07', vispera: null, sin_dias_habiles: true }";

@@ -1032,18 +1032,18 @@ const efectoEnNotas = (licencia, autorizadoNombre, hoy) => {
   if (hoy && licencia?.desde && licencia.desde <= hoy) {
     return autorizadoNombre
       ? `Licencia en curso: ${autorizadoNombre} presenta las notas con las dos firmas, citando la nota que comunica la autorización (si todavía no salió, la próxima corrida la genera primero), y vuelve a presentar en su fecha cada aviso que se adelantó.`
-      : 'Licencia en curso sin persona autorizada: no se generan notas hasta la vuelta. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.';
+      : 'Licencia en curso sin persona autorizada: no se generan notas hasta la vuelta. Lo que toque avisar sale el primer día hábil después de la licencia. La reiteración que toque, ese día si es un mes de reiteración; si no, en el próximo.';
   }
   if (licencia?.sin_dias_habiles === true) return 'No tiene días hábiles: las notas no cambian.';
   if (licencia?.sin_anticipo === true) {
     return autorizadoNombre
       ? `Empieza a continuación de otra licencia: los avisos no se adelantan. Desde el primer día, ${autorizadoNombre} presenta las notas con las dos firmas, después de la nota que comunica la autorización.`
-      : 'Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.';
+      : 'Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar sale el primer día hábil después de la licencia. La reiteración que toque, ese día si es un mes de reiteración; si no, en el próximo.';
   }
   const cuando = licencia?.vispera ? `el ${fechaCorta(licencia.vispera)}` : 'el último día hábil anterior';
   return autorizadoNombre
     ? `Los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:15), en una nota que comunica la autorización a ${autorizadoNombre}. Durante la licencia, ${autorizadoNombre} presenta las demás notas con las dos firmas, citando esa nota, y vuelve a presentar cada aviso en su fecha.`
-    : `Sin persona autorizada: los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:15) y las reiteraciones se postergan a la vuelta. Cargá la licencia antes de ese día.`;
+    : `Sin persona autorizada: los avisos que tocarían durante la licencia salen por adelantado ${cuando} (corrida de las 8:15). La reiteración que toque durante la licencia sale a la vuelta, si es un mes de reiteración; si no, en el próximo. Cargá la licencia antes de ese día.`;
 };
 const listaConY = (nombres) => (nombres.length > 1 ? `${nombres.slice(0, -1).join(', ')} y ${nombres.at(-1)}` : nombres.join(''));
 const textoSinAuditor = ({ desde, hasta, vuelve, respaldo }) => {

@@ -271,7 +271,7 @@ describe('los textos', () => {
     assert.equal(AVISO_DEL_PASO_SUPERADMIN, 'Los avisos al superadmin se guardan y te llegan en un resumen a la vuelta.');
     assert.equal(AVISO_NOTAS_DE_HOY, 'Las notas de hoy ya salieron a las 8:15 con tu firma.');
     assert.equal(AVISO_SIN_PERSONA_A_CARGO,
-      'Sin persona a cargo: esos días no se generan Notas Digitales y lo que venza se reitera cuando vuelvas.');
+      'Sin persona a cargo: esos días no se generan Notas Digitales y lo que venza entra en la próxima reiteración.');
     assert.equal(textoSuperpuestaConConfiguracion('2026-11-03', '2026-11-05'),
       'Se superpone con una licencia de Configuración del 03/11 al 05/11: revisala con administración');
     assert.equal(textoNoPaso('La licencia puede durar como máximo 365 días'),

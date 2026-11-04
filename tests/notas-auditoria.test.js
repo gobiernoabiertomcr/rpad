@@ -354,3 +354,16 @@ describe('Correos: Estado, vista previa y prueba (spec 10.4)', () => {
     assert.equal((await auditorias()).length, 1);
   });
 });
+
+// En un mes que no toca reiteración, la corrida salta solo ese paso (spec 2026-11-03-reiteracion-bimestral, 3)
+describe('la nota de auditoría en un mes sin reiteración', () => {
+  it('el 03/12/2026 sale la nota de auditoría y ninguna reiteración, sin errores', async () => {
+    await crearDataset({ titulo: 'Vencido', vencimiento: '2026-09-30' });
+    const id = await proponer(titular, { creado: '2026-12-01 10:00:00', primer: '2026-12-01 14:00:00' });
+    const resumen = await correr('2026-12-03');
+    assert.deepEqual(resumen.errores, []);
+    assert.deepEqual(resumen.generadas.map(g => g.tipo), ['auditoria']);
+    const [nota] = await auditorias();
+    assert.deepEqual(await incluidos(nota.id), [{ cambio_id: id, seccion: 'nuevo' }]);
+  });
+});

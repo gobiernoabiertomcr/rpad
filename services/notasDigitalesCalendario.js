@@ -162,6 +162,13 @@ export const periodoSiguiente = (periodo) => {
   return mes === 12 ? `${anio + 1}-01` : `${anio}-${String(mes + 1).padStart(2, '0')}`;
 };
 
+// Los meses en que sale la reiteración de las Notas Digitales (spec 2026-11-03-reiteracion-bimestral, 3)
+export const MESES_DE_REITERACION = Object.freeze([1, 3, 5, 7, 9, 11]);
+
+// Un período 'AAAA-MM' de esos meses. Lo que no es un período, false
+export const esMesDeReiteracion = (periodo) => typeof periodo === 'string' && /^\d{4}-\d{2}$/.test(periodo)
+  && MESES_DE_REITERACION.includes(Number(periodo.slice(5, 7)));
+
 export const formatoCorto = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—');
 
 export const formatoLargo = (iso) => {

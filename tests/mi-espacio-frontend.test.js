@@ -3334,7 +3334,7 @@ describe('los formularios: lo puro', () => {
     // A continuación de otra licencia (sin anticipo) o sin días hábiles: lo que dice Configuración (spec 2026-10-27-feriados-en-notas, 6)
     const sinAnticipo = { ...paso, firmante: { ...paso.firmante, vispera: null, sin_anticipo: true } };
     assert.ok(textoDe(M.htmlDelPaso(sinAnticipo, { ...opciones, autorizado: null })).includes(
-      'Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar y las reiteraciones salen el primer día hábil después de la licencia.'));
+      'Empieza a continuación de otra licencia: los avisos no se adelantan. Lo que toque avisar sale el primer día hábil después de la licencia. La reiteración que toque, ese día si es un mes de reiteración; si no, en el próximo.'));
     assert.ok(textoDe(M.htmlDelPaso(sinAnticipo, opciones)).includes(
       'Empieza a continuación de otra licencia: los avisos no se adelantan. Desde el primer día, Martín Ríos presenta las notas con las dos firmas, después de la nota que comunica la autorización.'));
     const sinDias = { ...paso, firmante: { ...paso.firmante, vispera: null, sin_dias_habiles: true } };

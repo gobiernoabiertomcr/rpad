@@ -23,9 +23,10 @@ const VERSION = '20261204';
 // feriados.js, spec 2026-10-26-feriados, 4; la insignia «Cargada desde Mi espacio» en la lista de Licencias, spec
 // 2026-10-26-mi-espacio-licencias-y-horas, 6; el efecto en las notas de una licencia del firmante sin anticipo o sin días
 // hábiles, spec 2026-10-27-feriados-en-notas, 6; la confirmación de «Anular» que avisa que una licencia cargada desde Mi espacio
-// también se borra de ahí, spec 2026-10-28-mi-espacio-licencia-anulada, 2.1): su versión es propia (solo la usa
-// configuracion.html; es independiente de VERSION_FERIADOS)
-const VERSION_PANTALLAS = '20261211';
+// también se borra de ahí, spec 2026-10-28-mi-espacio-licencia-anulada, 2.1; lo que dice de la reiteración una licencia sin persona
+// autorizada, spec 2026-11-03-reiteracion-bimestral, 5): su versión es propia (solo la usa configuracion.html; es independiente de
+// VERSION_FERIADOS)
+const VERSION_PANTALLAS = '20261212';
 // areas.js (reescrito para la pestaña Áreas de Configuración, spec 2026-10-24-configuracion, 4 y 6), que en areas.html cargaba
 // ?v=20261204: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
 // configuracion.html)
@@ -40,8 +41,9 @@ const VERSION_FERIADOS = '20261210';
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
 // reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6;
 // la línea de los recordatorios de la agenda en el Estado, spec 2026-10-26-mi-espacio-agenda, 5; la licencia del firmante sin
-// anticipo y la vista previa de otro día, spec 2026-10-27-feriados-en-notas, 6): su versión es propia
-const VERSION_CORREOS = '20261211';
+// anticipo y la vista previa de otro día, spec 2026-10-27-feriados-en-notas, 6; lo que dice de la reiteración una licencia sin
+// persona autorizada, spec 2026-11-03-reiteracion-bimestral, 5): su versión es propia
+const VERSION_CORREOS = '20261212';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas; "Requiere nota DGMIT" en la
 // comparación, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; el editor que audita sin responsabilidad, spec
 // 2026-10-20-editor-sin-responsabilidad; la vista previa de la firma con el nombre en negrita y el cargo un punto menos; el
@@ -101,8 +103,10 @@ const VERSION_PROYECTOS = '20261206';
 // «Sumar a {mes anterior}» en la planilla de horas extras de contrato —la pastilla punteada, la segunda línea de la banda, el bloque
 // «De febrero» y la pestaña—, spec 2026-10-30-mi-espacio-horas-mes-anterior, 4 y 5; y los días que restituye un asueto —el aviso
 // entre la banda y el resto, la línea de la fila, «Días restituidos» en «Cargar licencia» con el «Hasta» que pone Mi espacio y
-// «Pedir la restitución», con su nota—, spec 2026-10-31-mi-espacio-dias-restituidos, 9). Su versión es propia
-const VERSION_MI_ESPACIO = '20261221';
+// «Pedir la restitución», con su nota—, spec 2026-10-31-mi-espacio-dias-restituidos, 9; las horas acumuladas de contrato, spec
+// 2026-11-03-mi-espacio-horas-acumuladas, 5 y 10; y lo que dice de la reiteración una licencia sin persona autorizada, spec
+// 2026-11-03-reiteracion-bimestral, 5). Su versión es propia
+const VERSION_MI_ESPACIO = '20261222';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');

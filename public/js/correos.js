@@ -447,7 +447,7 @@ function ocultarVistaPrevia() {
 
 // Lo que dice arriba de la vista previa. Con `motivo`, hoy no se generan notas y lo que se muestra es la nota de la próxima
 // corrida con notas (spec 2026-10-15, 7.7); sin él y con `otro_dia` (el true literal), hoy hay notas pero esta sale otro día, por
-// ejemplo la reiteración del mes que ya salió (spec 2026-10-27-feriados-en-notas, 6). En los dos casos lo avisa en su propia línea y
+// ejemplo la reiteración de un mes que ya salió o que no toca (spec 2026-10-27-feriados-en-notas, 6). En los dos casos lo avisa en su propia línea y
 // la segunda línea habla de ese día, no de hoy
 function textoDeVistaPrevia({ ejemplo, tipo, cantidad, asunto, fecha: f, motivo, otro_dia: otroDia }) {
   const unidad = tipo === 'auditoria' ? 'cambio(s)' : 'dataset(s)';
@@ -607,6 +607,10 @@ async function elegirFirmante(evento) {
 
 // Licencia del firmante para el Estado (spec 7.5). Una futura que empieza a continuación de otra (sin_anticipo: su víspera cae
 // en la otra) no adelanta los avisos (spec 2026-10-27-feriados-en-notas, 6)
+// La reiteración que se pierde por una licencia sin persona autorizada espera a un mes de reiteración (spec
+// 2026-11-03-reiteracion-bimestral, 3.1 y 5). La fecha exacta está en «Próxima reiteración», en esta misma pantalla
+const REITERACION_A_LA_VUELTA = 'La reiteración que toque sale ese día si es un mes de reiteración; si no, en el próximo.';
+
 function textoLicenciaFirmante(l) {
   if (!l) return '';
   const periodo = `del ${fecha(l.desde)} al ${fecha(l.hasta)}`;
@@ -614,7 +618,7 @@ function textoLicenciaFirmante(l) {
   if (!l.en_curso && l.sin_anticipo === true) {
     return l.autorizado
       ? `Licencia del firmante ${periodo}: empieza a continuación de otra licencia, así que los avisos no se adelantan. ${l.autorizado} presenta las notas por autorización, con las dos firmas, desde el primer día.`
-      : `Licencia del firmante ${periodo}, sin autorizado: empieza a continuación de otra licencia, así que los avisos no se adelantan, y las reiteraciones se postergan al ${fecha(l.vuelta)}.`;
+      : `Licencia del firmante ${periodo}, sin autorizado: empieza a continuación de otra licencia, así que los avisos no se adelantan y las notas vuelven el ${fecha(l.vuelta)}. ${REITERACION_A_LA_VUELTA}`;
   }
   if (l.autorizado) {
     const nota = l.nota_autorizacion ? ` (autorización comunicada en la Nota Digital N° ${l.nota_autorizacion.numero}/${String(l.nota_autorizacion.anio).slice(-2)})` : '';
@@ -625,8 +629,10 @@ function textoLicenciaFirmante(l) {
       ? `Licencia del firmante ${periodo}: ${autorizado} presenta las notas por autorización, con las dos firmas${nota}.`
       : `Licencia del firmante ${periodo}: los avisos se anticipan el ${fecha(l.vispera)} con la autorización a ${autorizado}, que durante la licencia presenta las demás notas y vuelve a presentar cada aviso en su fecha.`;
   }
-  const avisos = l.en_curso ? 'no se generan notas hasta la vuelta' : `los avisos se anticipan el ${fecha(l.vispera)}`;
-  return `Licencia del firmante ${periodo}, sin autorizado: ${avisos} y las reiteraciones se postergan al ${fecha(l.vuelta)}.`;
+  const avisos = l.en_curso
+    ? `no se generan notas hasta la vuelta, el ${fecha(l.vuelta)}`
+    : `los avisos se anticipan el ${fecha(l.vispera)} y las notas vuelven el ${fecha(l.vuelta)}`;
+  return `Licencia del firmante ${periodo}, sin autorizado: ${avisos}. ${REITERACION_A_LA_VUELTA}`;
 }
 
 // Libera el blob URL de la imagen mostrada antes de reemplazarla u ocultarla
