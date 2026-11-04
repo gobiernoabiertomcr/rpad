@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import { fileURLToPath } from 'url';
 import { testConnection } from './config/database.js';
 import routes from './routes/index.js';
+import { sinClavesReservadas, erroresDelCuerpo } from './middleware/cuerpo.js';
 
 // Para ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -51,6 +52,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(sinClavesReservadas);
 
 // Las direcciones viejas de Usuarios y de Áreas llevan a Configuración (spec 2026-10-24-configuracion, 3). Van antes del
 // estático, así un usuarios.html o un areas.html que haya quedado en el servidor nunca se sirve; sin ellas, el comodín del final
@@ -103,6 +105,7 @@ app.use((req, res) => {
 });
 
 // Manejo de errores global
+app.use(erroresDelCuerpo);
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   res.status(500).json({
