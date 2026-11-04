@@ -469,13 +469,20 @@ CREATE TABLE `notas_digitales` (
   `creado_por` int(11) DEFAULT NULL,
   `firmante_id` int(11) DEFAULT NULL,
   `presentada_por_id` int(11) DEFAULT NULL,
+  `espera_firma` tinyint(1) NOT NULL DEFAULT 0,
+  `pdf_firmado` mediumblob DEFAULT NULL,
+  `firmado_por` varchar(255) DEFAULT NULL,
+  `firmado_at` datetime DEFAULT NULL,
+  `firma_subida_por` int(11) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_notas_numero` (`anio`,`numero`),
   KEY `idx_notas_tipo_periodo` (`tipo`,`gestion`,`periodo`),
   KEY `idx_notas_estado` (`estado`),
   KEY `fk_notas_creado_por` (`creado_por`),
-  CONSTRAINT `fk_notas_creado_por` FOREIGN KEY (`creado_por`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+  KEY `fk_notas_firma_subida_por` (`firma_subida_por`),
+  CONSTRAINT `fk_notas_creado_por` FOREIGN KEY (`creado_por`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_notas_firma_subida_por` FOREIGN KEY (`firma_subida_por`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `notas_digitales_datasets` (
@@ -523,6 +530,7 @@ CREATE TABLE `notas_digitales_config` (
   `ultima_corrida_con_errores` tinyint(1) NOT NULL DEFAULT 0,
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `updated_by` int(11) DEFAULT NULL,
+  `firma_digital_activa` tinyint(1) NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

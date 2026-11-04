@@ -3204,3 +3204,116 @@ describe('migracion-mi-espacio-restituciones.sql', () => {
     });
   }
 });
+
+// La firma digital de las Notas Digitales (spec 2026-11-03-notas-firma-digital, 8): cinco columnas de notas_digitales y el interruptor de
+// notas_digitales_config. La migración y su vuelta atrás, sobre una base descartable creada con schema.sql
+describe('migracion-notas-firma-digital.sql', () => {
+  const BASE_FIRMA = 'rpad_schema_notas_firma_digital_test';
+  const MIGRACION = 'migracion-notas-firma-digital.sql';
+  const ROLLBACK = 'rollback-notas-firma-digital.sql';
+  const TABLAS = ['notas_digitales', 'notas_digitales_config'];
+  const NUEVAS = ['notas_digitales.espera_firma', 'notas_digitales.pdf_firmado', 'notas_digitales.firmado_por', 'notas_digitales.firmado_at',
+    'notas_digitales.firma_subida_por', 'notas_digitales_config.firma_digital_activa'];
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const enLaBase = (tabla) => `\`${BASE_FIRMA}\`.\`${tabla}\``;
+  const esLoNuevo = (c) => NUEVAS.some(n => c.startsWith(`${n} `));
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main)
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_FIRMA}\``);
+    await root.query(`CREATE DATABASE \`${BASE_FIRMA}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_FIRMA}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) {
+      await root.query(`ALTER TABLE notas_digitales DROP FOREIGN KEY fk_notas_firma_subida_por, DROP KEY fk_notas_firma_subida_por,
+        DROP COLUMN firma_subida_por, DROP COLUMN firmado_at, DROP COLUMN firmado_por, DROP COLUMN pdf_firmado, DROP COLUMN espera_firma`);
+      await root.query('ALTER TABLE notas_digitales_config DROP COLUMN firma_digital_activa');
+    }
+  };
+  // Una nota, como la escribe el código de antes (sin nombrar lo nuevo)
+  const cargarNota = () => root.query(
+    `INSERT INTO ${enLaBase('notas_digitales')} (numero, anio, tipo, gestion, fecha, asunto, para, html, texto, pdf)
+     VALUES (1, 2026, 'aviso', 'interna', '2026-12-01', 'Nota', 'a@ejemplo.gob.ar', '<p>x</p>', 'x', 'bytes')`);
+  const comoSchema = async () => {
+    assert.deepEqual(await columnas(root, BASE_FIRMA), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_FIRMA, TABLAS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS));
+    assert.deepEqual(await indicesDe(root, BASE_FIRMA, TABLAS), await indicesDe(root, BASE_TEMPORAL, TABLAS));
+    assert.deepEqual(await motoresDe(root, BASE_FIRMA, TABLAS), await motoresDe(root, BASE_TEMPORAL, TABLAS));
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_FIRMA}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE, y la migración solo agrega', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+    assert.match(codigo(MIGRACION), /^SET NAMES utf8mb4;/);
+    assert.match(codigo(ROLLBACK), /^SET NAMES utf8mb4;/);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DROP TABLE|DELETE|UPDATE|TRUNCATE|INSERT|RENAME)\b/i);
+  });
+
+  it('las cabeceras dicen la spec, el orden, que es obligatoria, que se puede repetir y qué se pierde', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-11-03-notas-firma-digital-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    assert.match(cabecera(MIGRACION), /el código anterior sigue funcionando/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código nuevo, después de migracion-mi-espacio-horas-acumuladas\.sql/);
+    assert.match(cabecera(MIGRACION), /Es obligatoria/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-notas-firma-digital\.sql/);
+    assert.match(cabecera(ROLLBACK), /migracion-notas-firma-digital\.sql/);
+    assert.match(cabecera(ROLLBACK), /ORDEN: primero volver a subir los archivos anteriores y hacer Restart; después correr esto/);
+    assert.match(cabecera(ROLLBACK), /se pierden las copias firmadas/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('las columnas están en schema.sql y en la base del .env, una vez cada una, con el interruptor apagado de entrada', async () => {
+    for (const base of [BASE_TEMPORAL, process.env.DB_NAME]) {
+      const nuevas = (await columnas(root, base)).filter(esLoNuevo);
+      assert.equal(nuevas.length, NUEVAS.length, `${base}\n${nuevas.join('\n')}`);
+      assert.ok(nuevas.includes('notas_digitales.espera_firma tinyint(1) null=NO default=0 key='), nuevas.join('\n'));
+      assert.ok(nuevas.includes('notas_digitales_config.firma_digital_activa tinyint(1) null=NO default=0 key='), nuevas.join('\n'));
+      assert.ok(nuevas.includes('notas_digitales.pdf_firmado mediumblob null=YES default=NULL key='), nuevas.join('\n'));
+    }
+  });
+
+  it('desde la estructura de main deja la de schema.sql, se puede repetir y lo ya cargado no cambia', async () => {
+    await crearBase({ conLoNuevo: false });
+    assert.ok(!(await columnas(root, BASE_FIRMA)).some(esLoNuevo), 'la base de partida ya tiene lo nuevo');
+    await cargarNota();
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    const [[nota]] = await root.query(`SELECT espera_firma, pdf_firmado, firmado_por, firmado_at, firma_subida_por, CAST(pdf AS CHAR) AS pdf FROM ${enLaBase('notas_digitales')}`);
+    assert.deepEqual({ ...nota }, { espera_firma: 0, pdf_firmado: null, firmado_por: null, firmado_at: null, firma_subida_por: null, pdf: 'bytes' });
+    const [[config]] = await root.query(`SELECT firma_digital_activa FROM ${enLaBase('notas_digitales_config')}`);
+    assert.equal(config.firma_digital_activa, 0);
+    // Lo que escribe el código de antes, con lo nuevo puesto, también queda como no esperando
+    await root.query(`UPDATE ${enLaBase('notas_digitales')} SET numero = 2`);
+    await cargarNota();
+    const [filas] = await root.query(`SELECT espera_firma FROM ${enLaBase('notas_digitales')}`);
+    assert.deepEqual(filas.map(f => f.espera_firma), [0, 0]);
+  });
+
+  it('la FK deja la nota si se borra quien la subió, y el rollback se puede repetir sin tocar las notas', async () => {
+    await crearBase({ conLoNuevo: true });
+    await cargarNota();
+    const [{ insertId: usuario }] = await root.query(
+      `INSERT INTO ${enLaBase('usuarios')} (username, password_hash, nombre_completo, email, rol) VALUES ('t_firma', 'x', 'Sofía Paz', 't_firma@ejemplo.gob.ar', 'admin')`);
+    await root.query(`UPDATE ${enLaBase('notas_digitales')} SET firma_subida_por = ?, pdf_firmado = 'firmado'`, [usuario]);
+    await root.query(`DELETE FROM ${enLaBase('usuarios')} WHERE id = ?`, [usuario]);
+    const [[conFirma]] = await root.query(`SELECT firma_subida_por, CAST(pdf_firmado AS CHAR) AS firmado FROM ${enLaBase('notas_digitales')}`);
+    assert.deepEqual({ ...conFirma }, { firma_subida_por: null, firmado: 'firmado' });
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esLoNuevo(c));
+    assert.deepEqual(await columnas(root, BASE_FIRMA), deMain);
+    const [[nota]] = await root.query(`SELECT numero, CAST(pdf AS CHAR) AS pdf FROM ${enLaBase('notas_digitales')}`);
+    assert.deepEqual({ ...nota }, { numero: 1, pdf: 'bytes' });
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+  });
+});
