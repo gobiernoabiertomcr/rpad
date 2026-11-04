@@ -41,8 +41,8 @@ los usernames y nombres de la tabla `usuarios`.
 **Las fixtures:** `generar.mjs` (se corre una sola vez, a mano; los tests no lo llaman) arma con PDFKit dos PDF con texto inventado, un certificado
 autofirmado con `openssl` (`CN=Julieta Ferreyra`, `serialNumber=CUIL 00000000000`) en una carpeta temporal, y agrega la firma como la agrega el
 Firmador: una actualización incremental con `/Type/Sig`, `/Filter/Adobe.PPKLite`, `/SubFilter/adbe.pkcs7.detached`, `/ByteRange`, `/Contents` de 30000
-hexadecimales y un widget con `/Rect [0 0 0 0]`, y el CMS de `openssl cms -sign -binary -outform DER -nodetach` sin contenido (detached), SHA-256. **La clave privada no se
-guarda en ningún lado.** Comparar la forma con una nota real (solo en local) antes de commitear.
+hexadecimales (el CMS y **ceros de relleno hasta completarlos**, como el Firmador) y un widget con `/Rect [0 0 0 0]`, y el CMS de `openssl cms -sign -binary -outform DER -nodetach` sin contenido (detached), SHA-256. **La clave privada no se
+guarda en ningún lado.** Comparar la forma con las notas reales (solo en local) antes de commitear. El prototipo que ya pasó con las cuatro firmas reales está en `~/rpad-notas/firma-digital-prototipo.mjs` (no va al repo).
 
 **La API del módulo** (puro; nunca tira; lo que no se pudo leer es un resultado):
 ```js
@@ -60,7 +60,7 @@ export const HORA_LIMITE_DE_FIRMA = '14:00';
 ```
 - El orden: ¿empieza con los bytes de `nota.pdf`? (`Buffer.equals` sobre `subarray`). Si no, ¿con los de alguna de `otras`? (`otra_nota`); si no, `no_es`. Dos notas nunca empiezan igual, porque
   llevan su fecha de creación y su número. Igual largo o sin nada agregado: `sin_firma`.
-- Un lector de DER chico, solo con largos definidos, que rechaza lo que se sale del buffer. Lee `SignedData`: `digestAlgorithms`, `certificates` (el primero), `signerInfos`,
+- Un lector de DER chico, solo con largos definidos, que rechaza lo que se sale del buffer e ignora los ceros que siguen al primer elemento de `/Contents` (cualquier otro byte ahí: `firma_invalida`). Lee `SignedData`: `digestAlgorithms`, `certificates` (el primero), `signerInfos`,
   `signedAttrs`, `messageDigest`, `signingTime` (UTCTime o GeneralizedTime) y la firma. Para verificar, los `signedAttrs` se vuelven a etiquetar con SET (0x31), como manda CMS, y se usa
   `crypto.createVerify` con la clave de `new X509Certificate(der)`. Sin `signedAttrs`: `firma_invalida`.
 - `firmado_at`: el `signingTime` pasado a hora argentina, `'AAAA-MM-DD HH:MM:SS'`. Sin él, null.
@@ -151,8 +151,10 @@ Con una copia de la base local (recargada con el último dump de producción si 
 
 1. **Apagada:** dos meses de corridas, contra main sin esta rama: las mismas notas, con sus números, datasets, destinatarios y fechas.
 2. **Prendida:** los mismos dos meses. Una parte se firma (con el certificado de prueba), se sube y se envía; otra se sube y no se confirma (sale firmada a las 14:00); otra no se sube (sale con la imagen a las 14:00). Las mismas notas, con sus números, el mismo día. Mirar Seguimiento, Métricas y el reporte de avisos.
-3. **Licencia del titular con persona autorizada,** una auditoría y un feriado cargado a último momento.
-4. **Con la nota real, solo en local y sin copiarla:** `verificarNotaFirmada(document.pdf, [Nota-Digital-7-26.pdf])` da `firmada`.
+3. **El caso del usuario:** el 01/12 el titular carga vacaciones del 10/12/2026 al 08/01/2027 con la persona autorizada a cargo, y el 04/12 ella carga las suyas, del 11/01 al 22/01/2027. Partir de `~/rpad-notas/firma-digital-simulacion/` (el ensayo del 03/11, con el arnés en `~/rpad-notas/firma-digital-sim/`) y comparar: quién recibe cada mail, quién firma cada nota, y que del 10/12 al 08/01 el mail le llegue a ella y nunca al titular. Sumar una nota de auditoría y un feriado cargado a último momento.
+4. **Con las firmas reales, solo en local y sin copiarlas:**
+   - Los 4 pares de `~/Downloads/` (`Original Nota-Digital-N-26.pdf` y `document*.pdf`): `verificarNotaFirmada` da `firmada` en su fila y `otra_nota` en las demás.
+   - Las que firme el usuario de `~/rpad-notas/firma-digital-simulacion/firmadas/`: poner esos PDF originales en la base de simulación, como notas que esperan, y subirlas por la pantalla, con el modal y «Enviar». Si la reiteración bimestral cambió qué notas salen, sirven igual para esta prueba; no se comparan con las notas nuevas.
 5. Cero intentos de red, cero errores. Dejar el cierre en `~/rpad-notas/firma-digital-simulacion-cierre.md`, sin nombres en el repo.
 
 ## Task 8: Docs, revisión, merge y kit

@@ -49,14 +49,16 @@ Con el interruptor apagado (de entrada), todo sigue igual, salvo la hora de la c
 - La [Ley 5.366 de Chubut](https://www.informatica-juridica.com/anexos/legislacion-informatica-de-argentina-chubut-ley-5-366-de-5-de-julio-de-2005-sobre-adhesion-provincial-a-la-ley-nacional-25506-sobre-firma-digital/)
   adhiere para los tres Poderes provinciales y no nombra a los municipios. No se halló una ordenanza de Comodoro.
 
-**Una nota real firmada por el usuario** (no se versiona). Comparada con el PDF que generó el RPAD:
-- Es una **actualización incremental**: sus primeros bytes son idénticos al PDF original, y la firma va agregada al final.
-  Comprobado con sha256.
+**Cuatro notas reales firmadas por el usuario, con sus originales** (no se versionan). Comparadas con el PDF que generó el RPAD:
+- Son una **actualización incremental**: sus primeros bytes son idénticos al PDF original, y la firma va agregada al final.
+  Comprobado byte por byte. Cada firmada coincide con una sola nota, también la que todavía está en la hoja vieja (216 × 330).
+- **Los nombres no dicen cuál es:** `document.pdf` era la 5/26 y `document-1.pdf`, la 4/26. Las cuatro se firmaron en menos de 2 minutos.
 - `adbe.pkcs7.detached`, `Adobe.PPKLite`, agregada con iText 2.1.7. RSA con SHA-256. La firma verifica contra los rangos de `/ByteRange`.
 - **Es invisible:** el widget tiene `/Rect [0 0 0 0]`. La hoja no cambia y sigue en oficio (612 × 1008).
 - Sin sello de tiempo (`unsignedAttrs` ausente): la fecha es el `signingTime` que declara la firma.
 - Un solo certificado en el CMS, emitido por `AC MODERNIZACION-PFDR`, con el nombre de la persona en `CN`.
-- Crece unos 32 KB por el espacio reservado para la firma.
+- Crece unos 32 KB por el espacio reservado para la firma: `/Contents` tiene siempre 30000 hexadecimales y el CMS, unos 2200 bytes, seguidos de ceros de relleno.
+- Un prototipo de la verificación de la sección 4.6 pasó con las cuatro: el `messageDigest` y la firma RSA verifican, el certificado se lee con `crypto`, y un byte cambiado se rechaza.
 
 ## 3. Por qué el mismo día
 
@@ -86,7 +88,7 @@ reiteración dice «enviada» con la hora de generación, como hoy.
 - Hay quien la firme: `presentada_por_id ?? firmante_id` (la persona autorizada durante la licencia del titular; si no, el
   titular), activa, con un email válido y sin licencia hoy.
 
-Si no, la nota sale como hoy. Por ejemplo: con la firma de Correos sin titular elegido, o una autorización tardía con el titular
+La persona autorizada firma con su propia firma digital: el usuario confirmó que la tiene o la va a tener. Si no, la nota sale como hoy. Por ejemplo: con la firma de Correos sin titular elegido, o una autorización tardía con el titular
 ya de licencia. Valen para las cuatro clases: aviso, reiteración, autorización y auditoría (decisión del usuario).
 
 **4.2 Solo se firma la nota.** El anexo viaja adjunto, como hoy, sin firma propia (decisión del usuario).
@@ -134,7 +136,7 @@ para todas (decisión del usuario). Da un resultado por nota: «enviada, firmada
 1. El archivo empieza con los bytes exactos del `pdf` guardado de la nota y es más largo. Con eso se identifica la nota.
 2. En lo agregado hay un `/ByteRange [0 b c d]` (el último), con `b` ≥ el largo del original y `c + d` igual al largo del archivo:
    la firma cubre todo, y no hay nada después.
-3. `/Contents` es un CMS `SignedData` que se puede leer (un lector de DER chico): el `messageDigest` es el hash de los rangos, y la
+3. `/Contents` es un CMS `SignedData` que se puede leer (un lector de DER chico, que lee el largo del primer elemento e ignora los ceros de relleno que siguen): el `messageDigest` es el hash de los rangos, y la
    firma verifica con la clave pública de su certificado (`crypto`). SHA-256, SHA-384 o SHA-512.
 4. Del certificado salen `firmado_por` (el `CN`, tal cual) y, de `signingTime`, `firmado_at`.
 
@@ -213,5 +215,7 @@ cuando el usuario quiera. Sin Run NPM Install: `multer` ya está y no hay depend
   clave privada no se versiona.
 - La nota real se comprueba solo en local, sin copiarla, en la simulación.
 - **Simulación obligatoria** antes del merge, con una copia de producción y sin envíos reales: con el interruptor apagado, las mismas
-  notas que sin esta entrega; prendido, subir una, dejar otra para las 14:00, una licencia del titular con persona autorizada y una
-  nota de auditoría.
+  notas que sin esta entrega; prendido, subir una, dejar otra para las 14:00 y una nota de auditoría.
+- **El caso que pidió el usuario:** a principios de diciembre el titular carga su licencia del 10/12/2026 al 08/01/2027 con la persona autorizada a cargo,
+  y unos días después ella carga la suya, del 11/01 al 22/01/2027. Con el código de 3949aae (ensayo del 03/11, sin errores): reiteraciones el 01/12 y avisos anticipados el 09/12, del titular; avisos el 22/12 y el 30/12 y reiteraciones el 04/01, de la persona autorizada, con las dos imágenes. La licencia de ella no cambia ninguna nota: no se pisa con la del titular.
+- **Firma real de punta a punta:** el usuario firma notas de ese ensayo con su firma y las copias firmadas se suben por la pantalla, en una base de simulación que tenga esos mismos PDF. Fuera del repo.
