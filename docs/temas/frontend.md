@@ -6,6 +6,11 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-18-rediseno-publico-design.md`
 - `docs/superpowers/specs/2026-10-19-indice-portada-design.md`
 
+## Archivos
+
+img/compartir.png # Imagen de la vista previa al compartir un link (1200×630)
+robots.txt # Cerrado a todos, salvo a los robots de vista previa de un link
+
 ## Carga de las páginas y versiones
 
 - Cada página con carcasa carga: config.js → auth.js → main.js → api.js → página.js (admin, además, `admin-fechas.js` entre `api.js` y `admin.js`;

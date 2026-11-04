@@ -16,7 +16,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-03-mi-espacio-horas-acumuladas-design.md`
 - `docs/superpowers/specs/2026-11-03-notas-firma-digital-design.md`
 
-## General
+## Base de datos
 
 - 45 tablas (ver `database/schema.sql`).
   Usuarios:

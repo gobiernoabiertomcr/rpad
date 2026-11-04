@@ -9,6 +9,7 @@ Historia y motivos, en las specs:
 
 notasController: el Generador de Notas, con sus áreas, la vista previa y el Word;
 notasGeneradorReglas (la validación del pedido de una nota de la DGMIT, qué datasets se pueden pedir y su orden, puro), notasGeneradorContenido (la nota de la DGMIT como bloques y su HTML, puro), notasGeneradorDatos (las consultas del generador, solo lectura), notasWord (el Word en la hoja membretada, desde los bloques) y notasDigitalesWord (los bloques de una Nota Digital, desde su HTML guardado, puro);
+img/membrete-isotipo-aclarado.png # Marca de agua del Word de las notas (el isotipo de Comodoro Rivadavia, ya aclarado)
 
 ## Generador de Notas (spec 2026-10-24-generador-de-notas)
 

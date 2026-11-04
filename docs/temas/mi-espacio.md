@@ -21,6 +21,7 @@ desde los días restituidos, también la foto y los pedidos en el estado de cada
 miEspacioRestituciones (desde los días restituidos, las escrituras de la foto y de los pedidos, siempre con la conexión de una transacción ajena:
 `sacarLaFoto` y `acomodarLaFotoDelFeriado`, en la del feriado, y `registrarPedido`, `soltarPedido` y `soltarLosPedidosDeLasCargas`, en las de Mi espacio y en la de la anulación en Configuración), miEspacioAvisos (el email de vencimiento de la corrida de las 8:15, con los dos avisos de cada grupo de días por restituir), miEspacioNota (la nota de licencia en Word:
 la nota de una licencia como estructura, su HTML para el segundo paso, la aclaración y el nombre del archivo, con los números y las horas en letras y, desde los días restituidos, la nota de una carga de días restituidos y la de un pedido de restitución, `notaDeRestitucion`, puro) y miEspacioNotaWord (el .docx de esa misma nota, en A4 blanca, Arial 11 e interlineado 1,15);
+mi-espacio.html # Mi espacio (Mi cuenta): pestañas Resumen, Licencias, Horas extras y Agenda (mi-espacio.js), el panel personal de cada usuario, con su agenda personal y compartida
 
 ## Mi espacio: licencias y horas extras (spec 2026-10-26-mi-espacio-licencias-y-horas)
 

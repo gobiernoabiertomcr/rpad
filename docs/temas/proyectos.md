@@ -9,6 +9,7 @@ Historia y motivos, en las specs:
 
 proyectosController: los proyectos, los hitos, los logros, la línea de tiempo y los archivos;
 proyectosReglas (la validación de un proyecto, un hito y un logro con sus mensajes, evidenciaTipo, el nombre de un archivo subido, idPositivo e idsPositivos —una lista de ids sin repetidos: las áreas de un proyecto y, desde la agenda, las personas de un evento—, puro);
+proyectos.html # Proyectos: pestañas Proyectos (carriles), Línea de tiempo y Logros del área, y el detalle ?id=N (proyectos.js); reemplaza a gestion.html
 
 ## Proyectos (spec 2026-10-25-proyectos)
 

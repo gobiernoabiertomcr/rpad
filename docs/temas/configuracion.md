@@ -11,6 +11,7 @@ Historia y motivos, en las specs:
 
 areasReglas (la validación de un área y sus mensajes, los datos de contacto que solo ve administración y por qué no se puede borrar, puro);
 licenciasOficialesService (el alta, la edición y la anulación de una licencia de Configuración → Licencias con sus reglas, dentro de una transacción ajena: las comparten Configuración y Mi espacio);
+configuracion.html # Configuración: pestañas Usuarios, Licencias, Áreas y Feriados (usuarios.js, areas.js y feriados.js); reemplaza a usuarios.html y areas.html
 
 ## Configuración: Usuarios, Licencias, Áreas y Feriados (spec 2026-10-24-configuracion)
 

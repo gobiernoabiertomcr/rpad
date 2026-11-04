@@ -4,6 +4,7 @@ Las reglas de fechas, «Registrar actualización», «Requiere nota DGMIT», los
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-24-metricas-y-reportes-design.md`
+- `docs/superpowers/specs/2026-10-20-editor-sin-responsabilidad-design.md`
 
 ## Archivos
 
@@ -138,11 +139,19 @@ Se calculan una sola vez, en el servidor (`estadoDelDataset`), según `proxima_a
 
 ## Mi Perfil
 
-- Días sin auditor (spec 9.5): un día hábil en que ningún superadmin ni admin está disponible (los editores no cuentan: son el respaldo).
-  `periodosSinAuditor` (`services/auditoriaService.js`) agrupa los días hábiles seguidos en períodos `{ desde, hasta, vuelve, respaldo }` (la regla pura es `agruparDiasSinAuditor`, en `auditoriaReglas.js`;
-  `vuelve` es el primer día hábil con algún auditor, hasta 366 días, o `null`).
-  La disponibilidad sigue en un solo lugar (`disponibilidad`, usada por `personasDeAuditoria` y `personasPorDia`).
-  Se muestra en tres lugares: el formulario de licencias (`GET /api/usuarios/licencias/sin-auditor` simula la licencia sin guardarla, con `usuario_id` y `excluir`; la pestaña Licencias lo pide sin parámetros, de hoy a hoy + 60 días), el aviso a quien propone y Correos → Estado (`sin_quien_audite` y `periodos_sin_auditor`).
+- Mi Perfil en pestañas:
+  Para revisar, Mis cambios, Mis datos y Mi firma (el email de las 14:00 abre `perfil.html#para-revisar`; el lector solo ve Mis datos).
+  Cada cambio es una fila que se despliega con la comparación (lo viejo tachado, lo nuevo resaltado; palabra por palabra en los textos largos) y se aprueba (con confirmación en la fila) o se rechaza (con motivo) ahí mismo.
+  Las listas `GET /cambios-pendientes/para-revisar` y `/mis-cambios` traen la comparación (`campos_modificados`), los datos enriquecidos y `dataset_url`;
+  `para-revisar`, además, `auditoria` con `auditan` (quiénes lo auditan hoy, para la marca del editor).
+  `GET /:id` devuelve `auditoria` como `{ puede, respaldo, sin_responsabilidad, mensaje }` (con `sin_responsabilidad`, `mensaje` es el aviso «Este cambio lo auditan … Si lo aprobás o lo rechazás vos, queda registrado sin responsabilidad por la auditoría.»).
+  Auditar sin responsabilidad (spec 2026-10-20-editor-sin-responsabilidad): la fila muestra «Lo auditan …», la nota ámbar con el aviso (`notaSinResponsabilidad`, `id="aviso-N"`, que describe los botones, la confirmación y el motivo) y los botones habilitados; la pregunta es «¿Aprobar sin responsabilidad por la auditoría? El cambio se aplica al dataset ahora.».
+  `perfil.js` aprueba y rechaza con `API.pedirJson` (no con `API.aprobarCambio`/`rechazarCambio`, para no tocar `api.js`) y manda `sin_responsabilidad` con lo que la fila mostró; el servidor responde **409** («La situación de este cambio cambió.
+  Revisá el aviso y volvé a confirmar.», `MENSAJE_SITUACION_CAMBIADA`) si no coincide con lo de hoy (solo cuenta el `true` literal: una página vieja que no lo manda no puede auditar sin responsabilidad), y Mi Perfil vuelve a abrir la fila.
+  Revisados y Mis cambios dicen «Aprobado por X (sin responsabilidad por la auditoría)» (`textoRevisor`).
+  La marca no se muestra en ningún otro lugar: el Seguimiento, sus PDF y el anexo no la leen (tampoco el «(respaldo)»).
+  `calcularCambios` compara por día `ultima_actualizacion` (rótulo "Cargado en el portal"), `datos_al`, `proxima_actualizacion` y `recibido_el`; un registro de actualización se titula "Actualización registrada".
+  La UI solo refleja el permiso del servidor (`permisoDeAuditoria` falla cerrado), que vuelve a validar al aprobar o rechazar.
 
 ## La página: perfil.js
 
