@@ -52,7 +52,7 @@ perjuicio; hay que corregir entonces el mes de la aclaración de la sección 6.
 
 ### 3.1 Un mes que toca y se pierde
 
-**Decisión del usuario: espera al próximo mes que toca.** Una reiteración nunca sale en un mes par, tampoco a la vuelta de una licencia.
+**Decisión del usuario: espera al próximo mes que toca.** Una reiteración nunca se genera en un mes par, tampoco a la vuelta de una licencia.
 
 - Licencia del firmante sin persona autorizada del 21/12/2026 al 05/02/2027: no hay notas en todo enero. La vuelta es en febrero, así
   que la próxima reiteración es la del 01/03/2027.
@@ -95,8 +95,11 @@ como hoy. En diciembre, la vista previa de una reiteración muestra la del 04/01
 04/01/2027.». La prueba dice «Prueba enviada a … (como saldría el 04/01/2027)». «Con la marca sin escribir, la del mismo día» sigue
 valiendo en un día hábil de un mes que toca.
 
-**La cantidad** de Correos → Estado es lo que se seleccionaría ese día con los datos de hoy, como siempre. Ahora proyecta hasta dos
-meses, así que es un piso: un dataset que todavía no tuvo su aviso no cuenta y puede sumarse. Con cantidad 0, el Estado sigue diciendo
+**La cantidad** de Correos → Estado y lo que muestra la vista previa son lo que se seleccionaría ese día con los datos de hoy, como
+siempre. Ahora proyectan hasta dos meses, así que son una aproximación, no un compromiso: un dataset que todavía no tuvo su aviso y vence
+después de esa fecha no cuenta y se puede sumar, y uno que vence antes aparece como «Sin aviso previo» aunque llegado el día ya tenga su
+aviso (el 05/01/2027, con la próxima el 01/03, un externo que vence el 28/02 y se avisa el 19/01). La nota real dice lo que corresponde: la
+selección no cambia (decisión conservadora de la implementación). Con cantidad 0, el Estado sigue diciendo
 «sin datasets pendientes» y la vista previa, «Ese día no saldría ninguna nota de este tipo», con los datos de hoy, como siempre.
 
 La pantalla no cambia: «Próxima reiteración» sigue diciendo la fecha y la cantidad que manda el servidor.

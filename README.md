@@ -1186,7 +1186,7 @@ La de **cada media hora** manda los **recordatorios de la agenda de [Mi espacio]
 ### La reiteración bimestral (2026-11)
 - **La reiteración de las Notas Digitales sale solo en enero, marzo, mayo, julio, septiembre y noviembre**, el primer día hábil con notas de ese mes, y cada gestión sigue con su nota. Los avisos, la regla de los 20 días, la nota de auditoría y el contenido de las notas no cambian
 - **Correos → Estado, la vista previa y la prueba anuncian la fecha real:** en diciembre de 2026, la del 04/01/2027
-- **Un mes que toca y se pierde** (una licencia del firmante sin persona autorizada que lo cubre entero, el envío apagado) **espera al próximo que toca**: una reiteración nunca sale en un mes par. Configuración → Licencias, Mi espacio y Correos lo dicen con un texto general; la fecha exacta es la de "Próxima reiteración"
+- **Un mes que toca y se pierde** (una licencia del firmante sin persona autorizada que lo cubre entero, el envío apagado) **espera al próximo que toca**: una reiteración nunca se genera en un mes par (una que ya se generó y falló sí se sigue reintentando). Configuración → Licencias, Mi espacio y Correos lo dicen con un texto general; la fecha exacta es la de "Próxima reiteración"
 - **Métricas** suma, debajo de las reiteraciones del RPAD, "Desde diciembre de 2026, la reiteración sale cada dos meses.": va a haber más ciclos con "Ninguna" sin que nada haya mejorado
 - Sin SQL, sin Tarea Cron nueva, sin variables de entorno nuevas y sin Run NPM Install. Hay que desplegarla **antes del martes 01/12/2026**; si llega después, la de diciembre sale como siempre y hay que corregir el mes de la aclaración
 - Detalle de diseño: `docs/superpowers/specs/2026-11-03-reiteracion-bimestral-design.md`
