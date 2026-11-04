@@ -20,67 +20,87 @@
     return html;
   };
 
-  const resultados = [];
+  // Lo último que dijo cada nota al subir su PDF: { id: { bien, texto } }. Y lo que se envió
+  const avisos = {};
+  const enviadas = [];
+  let eligiendo = null;
   const esperan = () => MQ.notas.filter((n) => n.espera_firma);
   const pintarParaFirmar = () => {
     const caja = document.getElementById('nd-para-firmar');
     const lista = esperan();
-    if (!lista.length && !resultados.length) { caja.hidden = true; return; }
+    if (!lista.length && !enviadas.length) { caja.hidden = true; return; }
     const firmadas = lista.filter((n) => n.firmado_por);
     caja.hidden = false;
     caja.innerHTML = `
       <div class="co-para-firmar-cabeza">
         <div>
           <h2>${lista.length ? 'Notas para firmar hoy' : 'No quedan notas para firmar'}</h2>
-          <p class="co-ayuda">${lista.length ? 'Subilas firmadas, revisalas y envialas. A las 14:00 sale lo que quede: firmada si la subiste; si no, con la imagen de la firma.' : 'Ya salieron todas las de hoy.'}</p>
+          <p class="co-ayuda">${lista.length ? 'Subí cada nota firmada en su fila, revisala y envialas. A las 14:00 sale lo que quede: firmada si la subiste; si no, con la imagen de la firma.' : 'Ya salieron todas las de hoy.'}</p>
         </div>
-        ${lista.length ? '<button type="button" class="co-btn" id="btn-subir-firmadas">Subir firmadas</button>' : ''}
       </div>
       ${lista.length ? `<ul class="co-para-firmar-lista">${lista.map((n) => `<li>
         <span class="co-numero">${n.numero}/26</span>
         <span class="co-chip ${esc(n.tipo)}">${TIPO[n.tipo]}</span>
         <span>${n.gestion ? GESTION[n.gestion] : ''}</span>
         ${n.firmado_por
-          ? `<span class="co-firmada">${TILDE} Firmada por ${esc(n.firmado_por)}</span><button type="button" class="co-btn" data-ver="${n.id}">Ver</button>`
-          : `<span class="co-para-firmar-quien">Falta firmar · la firma ${esc(FIRMANTE)}</span><button type="button" class="co-btn" data-bajar="${n.id}">Bajar PDF</button>`}
+          ? `<span class="co-firmada">${TILDE} Firmada por ${esc(n.firmado_por)}</span>
+             <span class="co-fila-botones"><button type="button" class="co-btn" data-ver="${n.id}">Ver</button><button type="button" class="co-btn" data-subir="${n.id}">Reemplazar</button></span>`
+          : `<span class="co-para-firmar-quien">Falta firmar · la firma ${esc(FIRMANTE)}</span>
+             <span class="co-fila-botones"><button type="button" class="co-btn" data-ver="${n.id}">Ver</button><button type="button" class="co-btn primario" data-subir="${n.id}">Subir firmada</button></span>`}
+        ${avisos[n.id] ? `<p class="co-fila-aviso ${avisos[n.id].bien ? 'bien' : 'mal'}" role="status">${esc(avisos[n.id].texto)}</p>` : ''}
+        ${eligiendo === n.id ? `<div class="mq-elegir">
+          <p><b>Maqueta:</b> acá se abre el selector de archivos para la nota ${n.numero}/26. Probá qué pasa con cada caso:</p>
+          <button type="button" class="co-btn" data-caso="bien" data-id="${n.id}">Su PDF firmado</button>
+          <button type="button" class="co-btn" data-caso="otra" data-id="${n.id}">El PDF firmado de la otra nota</button>
+          <button type="button" class="co-btn" data-caso="sin" data-id="${n.id}">Sin firmar</button>
+          <button type="button" class="co-btn" data-caso="otro" data-id="${n.id}">Otro PDF</button>
+        </div>` : ''}
       </li>`).join('')}</ul>` : ''}
-      <div id="mq-elegir" class="mq-elegir" hidden>
-        <p><b>Maqueta:</b> acá se abre el selector de archivos, donde elegís uno o varios PDF. Probá qué pasa con cada caso:</p>
-        <button type="button" class="co-btn" data-caso="bien">La 12/26 firmada (<code>document.pdf</code>)</button>
-        <button type="button" class="co-btn" data-caso="dos">Las dos, firmadas</button>
-        <button type="button" class="co-btn" data-caso="sin">Una sin firmar</button>
-        <button type="button" class="co-btn" data-caso="otro">Otro PDF</button>
-      </div>
-      ${resultados.length ? `<ul class="co-subidas" role="status">${resultados.map((r) => `<li class="${r.bien ? 'bien' : 'mal'}"><code>${esc(r.archivo)}</code>${esc(r.texto)}</li>`).join('')}</ul>` : ''}
+      ${enviadas.length ? `<ul class="co-subidas" role="status">${enviadas.map((t) => `<li class="bien">${esc(t)}</li>`).join('')}</ul>` : ''}
       ${firmadas.length ? `<div class="co-enviar-firmadas"><button type="button" class="co-btn primario" id="btn-enviar-firmadas">${firmadas.length === 1 ? 'Enviar la firmada' : `Enviar las ${firmadas.length} firmadas`}</button><span class="co-para-firmar-quien">Si no las enviás, salen solas a las 14:00, firmadas.</span></div>` : ''}`;
   };
 
-  const guardar = (id, archivo) => {
+  const subir = (id, caso) => {
     const n = MQ.notas.find((x) => x.id === id);
-    if (!n || !n.espera_firma) return;
-    Object.assign(n, { firmado_por: FIRMANTE, firmado_at: `${MQ.HOY} 09:12` });
-    resultados.push({ bien: true, archivo, texto: `: es la Nota Digital N° ${n.numero}/26, firmada digitalmente por ${FIRMANTE}. Revisala y enviala.` });
+    const otra = esperan().find((x) => x.id !== id) ?? MQ.notas.find((x) => x.id !== id);
+    eligiendo = null;
+    delete avisos[id];
+    if (caso === 'bien') { pintarParaFirmar(); revisar(n); return; }
+    if (caso === 'otra') avisos[id] = { bien: false, texto: `Ese PDF es la Nota Digital N° ${otra.numero}/26, no la ${n.numero}/26. No se guardó nada.` };
+    if (caso === 'sin') avisos[id] = { bien: false, texto: 'Ese PDF es esta nota, pero no tiene firma digital. Firmala y volvé a subirla.' };
+    if (caso === 'otro') avisos[id] = { bien: false, texto: 'Ese PDF no es esta nota. No se guardó nada.' };
+    pintarParaFirmar(); cargarLibro(); cargarEstado();
   };
-  const subir = (caso) => {
-    resultados.length = 0;
-    if (caso === 'bien') guardar(12, 'document.pdf');
-    if (caso === 'dos') esperan().forEach((n, i) => guardar(n.id, i ? `document (${i}).pdf` : 'document.pdf'));
-    if (caso === 'sin') resultados.push({ bien: false, archivo: 'Nota-Digital-13-26.pdf', texto: ': es la Nota Digital N° 13/26, pero no tiene firma digital. Firmala y volvé a subirla.' });
-    if (caso === 'otro') resultados.push({ bien: false, archivo: 'document.pdf', texto: ': no es ninguna de las notas para firmar hoy.' });
+  // Al subir: se abre con el archivo, para leerlo y confirmar. Hasta «Confirmar» no se guarda nada
+  let revisando = null;
+  const revisar = (n) => {
+    revisando = n;
+    document.getElementById('mq-revisar-texto').textContent = `Es la Nota Digital N° ${n.numero}/26, firmada digitalmente por ${FIRMANTE} el 01/12 a las 09:12. La firma no se ve en la hoja. Sale como Nota-Digital-${n.numero}-26.pdf.`;
+    document.getElementById('mq-revisar-marco').src = `nota-${n.numero}.pdf`;
+    document.getElementById('mq-revisar').classList.add('active');
+  };
+  const confirmar = () => {
+    Object.assign(revisando, { firmado_por: FIRMANTE, firmado_at: `${MQ.HOY} 09:12` });
+    avisos[revisando.id] = { bien: true, texto: 'Guardada. Falta enviarla.' };
+    revisando = null;
+    document.getElementById('mq-revisar').classList.remove('active');
     pintarParaFirmar(); cargarLibro(); cargarEstado();
   };
   const enviar = () => {
-    resultados.length = 0;
     esperan().filter((n) => n.firmado_por).forEach((n) => {
       Object.assign(n, { espera_firma: false, estado: 'enviada', enviada_at: `${MQ.HOY} 09:15:40`, intentos: 1 });
-      resultados.push({ bien: true, archivo: `Nota Digital N° ${n.numero}/26`, texto: ': enviada, firmada digitalmente.' });
+      delete avisos[n.id];
+      enviadas.push(`Nota Digital N° ${n.numero}/26: enviada, firmada digitalmente.`);
     });
     pintarParaFirmar(); cargarLibro(); cargarEstado();
   };
   const ver = (id) => {
     const n = MQ.notas.find((x) => x.id === Number(id));
     document.getElementById('mq-ver-titulo').textContent = `Nota Digital N° ${n.numero}/26`;
-    document.getElementById('mq-ver-firma').textContent = `Firmada digitalmente por ${n.firmado_por} el ${fechaCorta(n.firmado_at)} a las ${n.firmado_at.slice(11, 16)}. La firma no se ve en la hoja: la imagen es la de siempre.`;
+    document.getElementById('mq-ver-firma').textContent = n.firmado_por
+      ? `Firmada digitalmente por ${n.firmado_por} el ${fechaCorta(n.firmado_at)} a las ${n.firmado_at.slice(11, 16)}. La firma no se ve en la hoja: la imagen es la de siempre. Sale como Nota-Digital-${n.numero}-26.pdf.`
+      : `Todavía sin firmar. Es la misma nota que llegó adjunta al mail: bajala para firmarla.`;
+    document.getElementById('mq-ver-bajar').hidden = Boolean(n.firmado_por);
     document.getElementById('mq-ver-marco').src = `nota-${n.numero}.pdf`;
     document.getElementById('mq-ver').classList.add('active');
   };
@@ -100,24 +120,34 @@
     document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay" id="mq-ver"><div class="modal mq-ver" role="dialog" aria-modal="true" aria-labelledby="mq-ver-titulo">
       <div class="modal-header"><h3 id="mq-ver-titulo"></h3><button type="button" class="modal-close" data-cerrar-ver aria-label="Cerrar">&times;</button></div>
       <div class="modal-body"><p id="mq-ver-firma" class="co-ayuda"></p><iframe id="mq-ver-marco" title="La nota firmada"></iframe></div>
-      <div class="modal-footer"><button type="button" class="co-btn" data-cerrar-ver>Cerrar</button></div>
+      <div class="modal-footer"><button type="button" class="co-btn" data-cerrar-ver>Cerrar</button><button type="button" class="co-btn primario" id="mq-ver-bajar" onclick="alert('En la maqueta no se baja ningún archivo.')">Bajar PDF</button></div>
     </div></div>`);
     document.getElementById('mq-ver').addEventListener('click', (e) => {
       if (e.target.closest('[data-cerrar-ver]')) document.getElementById('mq-ver').classList.remove('active');
+    });
+
+    // Lo que se abre al subir
+    document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay" id="mq-revisar"><div class="modal mq-ver" role="dialog" aria-modal="true" aria-labelledby="mq-revisar-titulo">
+      <div class="modal-header"><h3 id="mq-revisar-titulo">Revisá la nota firmada</h3><button type="button" class="modal-close" data-cancelar-revision aria-label="Cancelar">&times;</button></div>
+      <div class="modal-body"><p id="mq-revisar-texto" class="co-ayuda"></p><iframe id="mq-revisar-marco" title="El archivo que elegiste"></iframe></div>
+      <div class="modal-footer"><button type="button" class="co-btn" data-cancelar-revision>Cancelar</button><button type="button" class="co-btn primario" id="mq-revisar-confirmar">Confirmar</button></div>
+    </div></div>`);
+    document.getElementById('mq-revisar').addEventListener('click', (e) => {
+      if (e.target.closest('#mq-revisar-confirmar')) confirmar();
+      else if (e.target.closest('[data-cancelar-revision]')) { revisando = null; document.getElementById('mq-revisar').classList.remove('active'); }
     });
 
     // La tarjeta «Notas para firmar hoy», arriba del Libro
     document.getElementById('vista-libro').insertAdjacentHTML('afterbegin', '<div class="co-tarjeta co-para-firmar" id="nd-para-firmar" hidden></div>');
     pintarParaFirmar();
     document.getElementById('nd-para-firmar').addEventListener('click', (e) => {
-      if (e.target.closest('#btn-subir-firmadas')) { const c = document.getElementById('mq-elegir'); c.hidden = !c.hidden; return; }
       if (e.target.closest('#btn-enviar-firmadas')) { enviar(); return; }
       const v = e.target.closest('[data-ver]');
       if (v) { ver(v.dataset.ver); return; }
-      const bajar = e.target.closest('[data-bajar]');
-      if (bajar) { alert('Baja la misma nota que llegó adjunta al mail.'); return; }
+      const sub = e.target.closest('[data-subir]');
+      if (sub) { const id = Number(sub.dataset.subir); eligiendo = eligiendo === id ? null : id; pintarParaFirmar(); return; }
       const caso = e.target.closest('[data-caso]');
-      if (caso) subir(caso.dataset.caso);
+      if (caso) subir(Number(caso.dataset.id), caso.dataset.caso);
     });
 
     // El interruptor, en la tarjeta del envío automático

@@ -1,6 +1,6 @@
 /* MAQUETA de la firma digital (03/11/2026): lo nuevo de Correos y la barra de la maqueta. Datos inventados. */
 body { padding-bottom: 70px; }
-.mq-barra { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2000; background: #2D2A4A; color: #fff; padding: 10px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: .85rem; }
+.mq-barra { position: fixed; left: 0; right: 0; bottom: 0; z-index: 900; background: #2D2A4A; color: #fff; padding: 10px 16px; display: flex; flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; align-items: center; gap: 8px 12px; font-size: .85rem; }
 .mq-barra b { font-weight: 700; margin-right: 4px; }
 .mq-barra a, .mq-barra button { font: inherit; font-size: .8rem; font-weight: 600; color: #fff; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.35); border-radius: 8px; padding: 5px 10px; cursor: pointer; text-decoration: none; }
 .mq-barra a:hover, .mq-barra button:hover { background: rgba(255,255,255,.26); }
@@ -30,3 +30,9 @@ body { padding-bottom: 70px; }
 .co-para-firmar-lista .co-firmada { max-width: none; }
 .mq-ver { max-width: 860px; width: calc(100vw - 32px); }
 .mq-ver iframe { width: 100%; height: 62vh; border: 1px solid var(--pf-linea); border-radius: 8px; margin-top: 10px; background: #fff; }
+.co-fila-botones { margin-left: auto; display: inline-flex; gap: 6px; }
+.co-para-firmar-lista .co-fila-botones .co-btn { margin-left: 0; }
+.co-fila-aviso { flex: 1 0 100%; margin: 2px 0 0; padding: 7px 11px; border-radius: 8px; font-size: .88rem; }
+.co-fila-aviso.bien { background: var(--pf-verde-fondo); color: var(--pf-verde); }
+.co-fila-aviso.mal { background: var(--pf-rojo-fondo); color: var(--pf-rojo); }
+.co-para-firmar-lista .mq-elegir { flex: 1 0 100%; margin-top: 2px; }

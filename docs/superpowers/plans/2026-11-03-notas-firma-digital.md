@@ -46,10 +46,10 @@ guarda en ningún lado.** Comparar la forma con una nota real (solo en local) an
 
 **La API del módulo** (puro; nunca tira; lo que no se pudo leer es un resultado):
 ```js
-// El PDF subido, contra las notas candidatas [{ id, numero, anio, pdf, estado, espera_firma }]
-export const verificarNotaFirmada = (subido, notas) => ({
-  resultado: 'firmada' | 'sin_firma' | 'firma_invalida' | 'ya_salio' | 'otra',
-  nota,                  // la que empieza con los mismos bytes, o null
+// El PDF subido a la fila de `nota` ({ id, numero, anio, pdf }), contra las `otras` de hoy, para poder nombrarla
+export const verificarNotaFirmada = (subido, nota, otras = []) => ({
+  resultado: 'firmada' | 'sin_firma' | 'firma_invalida' | 'otra_nota' | 'no_es',
+  otra,                   // con 'otra_nota', la nota cuyo PDF coincide
   firmado_por, firmado_at // solo con 'firmada'
 });
 export const leerFirmaAgregada = (subido, largoDelOriginal) => /* { ok, firmado_por, firmado_at } | { ok: false, motivo } */;
@@ -58,8 +58,8 @@ export const textoDeLaLineaDeFirma = (nombre) => `La nota está firmada digitalm
 export const debeEsperarFirma = ({ activa, esPrueba, ahora, quienFirma }) => /* boolean */;
 export const HORA_LIMITE_DE_FIRMA = '14:00';
 ```
-- El orden: identificar por prefijo (`Buffer.equals` sobre `subarray`, el más largo primero no hace falta: dos notas nunca empiezan igual, porque
-  llevan su fecha de creación y su número). Igual largo o sin nada agregado: `sin_firma`. Una nota con `estado` `enviada`: `ya_salio`.
+- El orden: ¿empieza con los bytes de `nota.pdf`? (`Buffer.equals` sobre `subarray`). Si no, ¿con los de alguna de `otras`? (`otra_nota`); si no, `no_es`. Dos notas nunca empiezan igual, porque
+  llevan su fecha de creación y su número. Igual largo o sin nada agregado: `sin_firma`.
 - Un lector de DER chico, solo con largos definidos, que rechaza lo que se sale del buffer. Lee `SignedData`: `digestAlgorithms`, `certificates` (el primero), `signerInfos`,
   `signedAttrs`, `messageDigest`, `signingTime` (UTCTime o GeneralizedTime) y la firma. Para verificar, los `signedAttrs` se vuelven a etiquetar con SET (0x31), como manda CMS, y se usa
   `crypto.createVerify` con la clave de `new X509Certificate(der)`. Sin `signedAttrs`: `firma_invalida`.
@@ -68,11 +68,10 @@ export const HORA_LIMITE_DE_FIRMA = '14:00';
 - `debeEsperarFirma` usa `ahora` como texto (`'AAAA-MM-DD HH:MM:SS'`), solo el `true` literal de `activa` o el 1 de la base.
 
 **Tests, puros, sobre las fixtures:**
-- La firmada de A contra A y B: `firmada`, A, con el nombre y la fecha. Con la lista al revés, igual.
-- El PDF original tal cual: `sin_firma`. Otro PDF: `otra`. Vacío, null, un texto: `otra`, sin tirar.
-- Un byte cambiado: en lo original (`otra`), en lo agregado dentro de los rangos (`firma_invalida`) y en el CMS (`firma_invalida`). Un `/ByteRange` que no llega al final, uno que
+- La firmada de A en la fila de A: `firmada`, con el nombre y la fecha. La firmada de B en la fila de A, con B en `otras`: `otra_nota`, B; sin B en `otras`: `no_es`.
+- El PDF original tal cual: `sin_firma`. Otro PDF: `no_es`. Vacío, null, un texto: `no_es`, sin tirar.
+- Un byte cambiado: en lo original (`no_es`), en lo agregado dentro de los rangos (`firma_invalida`) y en el CMS (`firma_invalida`). Un `/ByteRange` que no llega al final, uno que
   empieza después de 0, uno que corta dentro del original: `firma_invalida`. Bytes agregados después de la firma: `firma_invalida`. Sin `/ByteRange`: `sin_firma`. El DER cortado: `firma_invalida`.
-- `ya_salio`.
 - `conLineaDeFirma`: va después del primer `</p>` y del primer renglón; escapa `<b>"x"</b>` en el HTML y no en el texto; contra el HTML real de `renderHtml` (`notas-digitales-word`: `bloquesDeNotaDigital` sobre el HTML guardado sigue igual, porque no se guarda).
 - `debeEsperarFirma` en sus bordes: 13:59:59 sí y 14:00:00 no.
 
@@ -117,30 +116,30 @@ export const HORA_LIMITE_DE_FIRMA = '14:00';
 
 **Archivos:** `routes/index.js`, `controllers/notasDigitalesController.js`, `services/notasDigitales.js`, `config/upload.js` (el multer en memoria), `tests/notas-firma-digital-api.test.js` (Docker), `tests/permisos.test.js`, `tests/notas-api.test.js`.
 
-- `subirNotasFirmadas({ archivos, usuarioId })` en el servicio, con `conBloqueo`: lee las candidatas (las que esperan, y las notas de hoy para decir «ya salió»), `verificarNotaFirmada` por archivo y, con `firmada`, guarda (`pdf_firmado`, `firmado_por`, `firmado_at`, `firma_subida_por`) en un `UPDATE … WHERE id = ? AND espera_firma = 1` (si no cambió ninguna fila, `ya_salio`). **No envía.** Ninguna falla de un archivo frena a los demás. Arma los mensajes de la tabla de la spec 4.5.
+- `subirNotaFirmada({ id, archivo, usuarioId, soloVerificar })` en el servicio, con `conBloqueo`: lee la nota (404 si no existe o es de prueba; con `estado` `enviada` o sin `espera_firma`, 409 «Esta nota ya salió.») y las otras notas de los últimos días para poder nombrarlas, llama a `verificarNotaFirmada` y, con `firmada` y sin `soloVerificar`, guarda (`pdf_firmado`, `firmado_por`, `firmado_at`, `firma_subida_por`) en un `UPDATE … WHERE id = ? AND espera_firma = 1`. **No envía.** Arma los mensajes de la tabla de la spec 4.5.
 - `enviarNotasFirmadas({ ids })`, con `conBloqueo`: de esa lista, las que siguen con `espera_firma = 1` y `pdf_firmado`, llama a `enviarNota`. Da un resultado por nota.
-- Ruta `POST /notificaciones/notas-digitales/firmadas`, antes de las que llevan `:id`, con `authMiddleware`, `adminOnly` y `subidaEnMemoria` (`multer.memoryStorage()`, 10 archivos de 10 MB; el nombre con `nombreOriginal`, exportado). Los errores de multer, 400 en español; sin archivos, 400 «Elegí al menos un PDF.». Ocupado, 409 «Hay una corrida de Notas Digitales en curso. Probá de nuevo en unos minutos.». Si no, 200 `{ success: true, data: { resultados: [{ archivo, nota_id, ok, mensaje }] }, message }`, también con todos mal.
-- Ruta `POST /notificaciones/notas-digitales/firmadas/enviar`, también antes de las de `:id`, con los mismos permisos: `{ ids }` con `idsPositivos`; una lista vacía o que no sirve, 400; ocupado, 409; si no, 200 con `resultados: [{ nota_id, ok, mensaje }]`.
+- Ruta `POST /notificaciones/notas-digitales/:id/firmada`, con `authMiddleware`, `adminOnly` y `subidaEnMemoria` (`multer.memoryStorage()`, `single('archivo')`, 10 MB). Los errores de multer, 400 en español; sin archivo, 400 «Elegí el PDF firmado.». Ocupado, 409 «Hay una corrida de Notas Digitales en curso. Probá de nuevo en unos minutos.». Un PDF que no sirve, 400 con el mensaje. Bien, 200 `{ success: true, data: { numero, anio, firmado_por, firmado_at, archivo: 'Nota-Digital-N-AA.pdf', guardada }, message }`. `solo_verificar` es un campo del multipart: solo cuenta `'1'`.
+- Ruta `POST /notificaciones/notas-digitales/firmadas/enviar`, antes de las de `:id`, con los mismos permisos: `{ ids }` con `idsPositivos`; una lista vacía o que no sirve, 400; ocupado, 409; si no, 200 con `resultados: [{ nota_id, ok, mensaje }]`.
 - `listarNotas` y `obtenerNota` suman `espera_firma` (booleano), `firmado_por` y `firmado_at`. **Nunca** `pdf_firmado` en una lista.
 - `descargarPdf`: `pdf_firmado ?? pdf`. El nombre, igual.
 - `reintentarNota`: 409 con `espera_firma` (spec 4.11).
 - `guardarConfig` y `configPublica`: `firma_digital_activa`, con los mismos valores que `envio_activo`; las columnas siguen saliendo de una lista fija.
 - `estadoNotas`: `firma_digital_activa` y `para_firmar: [{ id, numero, anio, tipo, gestion, firma_nombre }]`, y la alerta `para-firmar` (advertencia) al principio de las del servidor.
 
-**Tests:** cada fila de la tabla de la spec 4.5; varios archivos con un resultado cada uno, también `document.pdf` repetido; **subir no envía nada** (Mailpit vacío para esa nota, `estado` `pendiente`, `espera_firma` 1); subir de nuevo reemplaza; subida y sin confirmar, a las 14:00 sale firmada con la línea; `enviar` solo manda las de `ids`, firmadas y que esperan (una sin firmar, una ya enviada o de otra lista, no), y dos veces no la manda dos veces; el email lleva el firmado, con el nombre de siempre y la línea, y `pdf` queda igual; `firma_subida_por`; el SMTP que falla (queda `fallida`, con el firmado; «Reintentar» y la corrida siguiente lo mandan firmado); los límites de multer; `RUTAS_SOLO_ADMIN` (lector y colaborador, 403; sin sesión, 401; el editor, sí); la lista sin los bytes; «PDF» de una firmada; el 409 de «Reintentar»; el interruptor; el Estado con y sin notas para firmar.
+**Tests:** el adjunto y la descarga se llaman `Nota-Digital-N-AA.pdf` aunque se suba como `document.pdf` o `documento.pdf`; cada fila de la tabla de la spec 4.5, también el `document.pdf` de otra nota en una fila (lo rechaza y la nombra, y no guarda nada en ninguna de las dos); **`solo_verificar` no escribe nada** (la fila igual, también `firmado_por`) y dice lo mismo que la confirmación; **subir no envía nada** (Mailpit vacío para esa nota, `estado` `pendiente`, `espera_firma` 1); subir de nuevo reemplaza; subida y sin confirmar, a las 14:00 sale firmada con la línea; `enviar` solo manda las de `ids`, firmadas y que esperan (una sin firmar, una ya enviada o de otra lista, no), y dos veces no la manda dos veces; el email lleva el firmado, con el nombre de siempre y la línea, y `pdf` queda igual; `firma_subida_por`; el SMTP que falla (queda `fallida`, con el firmado; «Reintentar» y la corrida siguiente lo mandan firmado); los límites de multer; `RUTAS_SOLO_ADMIN` (lector y colaborador, 403; sin sesión, 401; el editor, sí); la lista sin los bytes; «PDF» de una firmada; el 409 de «Reintentar»; el interruptor; el Estado con y sin notas para firmar.
 
 ## Task 5: La pantalla
 
 **Archivos:** `public/correos.html`, `public/js/correos.js`, `tests/correos-frontend.test.js`, `tests/paginas.test.js`.
 
 - Lo puro, testeable en el `vm`: `htmlDeParaFirmar(notas)`, `htmlDeLasSubidas(resultados)`, `textoDeLaFirma(n)`, `textoDelBotonDeEnviar(n)`, y `filaDelLibro` con «Para firmar» o «Firmada, sin enviar», sin «Reintentar» y con «Firmada digitalmente por X». Todo texto del servidor con `Utils.escapeHtml`.
-- Lo del DOM: `#nd-para-firmar` arriba de los filtros, dibujado desde `cargarEstado`, con un `<input type="file" multiple accept="application/pdf">` oculto detrás del botón; `#nd-subidas` con `role="status"`; `subirFirmadas(archivos)`, un `fetch` POST propio con `FormData` y `Auth.getAuthHeaders()` sin `Content-Type`, como `proyectos.js` (con un 401, al login; `api.js` no cambia). El botón deshabilitado mientras sube; un 409 o un error, con `avisar`. Después, `cargarLibro` y `cargarEstado`; el foco queda en el botón. «Bajar PDF» con `API.getNotaPdf` y `descargarBlob`. `#nd-enviar-firmadas`, con el POST de los ids que muestra la tarjeta. «Ver»: `#modal-firmada` (`.modal-overlay`, `aria-modal`, foco, Escape), con `API.getNotaPdf`, `URL.createObjectURL` en un `<iframe>` (se revoca al cerrar), la línea de la firma, «Descargar» y «Cerrar». `estado.para_firmar` suma `firmado_por` y `firmado_at`.
+- Lo del DOM: `#nd-para-firmar` arriba de los filtros, dibujado desde `cargarEstado`, con un `<input type="file" accept="application/pdf">` único, que se abre desde el botón de cada fila y recuerda de qué nota es; el resultado en su fila, con `role="status"`; `subirFirmada(id, archivo, { soloVerificar })`, un `fetch` POST propio con `FormData` y `Auth.getAuthHeaders()` sin `Content-Type`, como `proyectos.js` (con un 401, al login; `api.js` no cambia). El botón de esa fila deshabilitado mientras sube; un error con mensaje del servidor, en su fila; un 409, con `avisar`. Después, `cargarLibro` y `cargarEstado`, sin perder el mensaje de cada fila; el foco vuelve al botón de esa nota. Al elegir el archivo: `soloVerificar`; si es esa nota, `#modal-revisar-firmada` (`.modal-overlay`, `aria-modal`, foco en «Confirmar», Escape cancela; `URL.createObjectURL(archivo)` en el `<iframe>`, revocado al cerrar, y sin `sandbox`, como «Ver»; el texto, con lo que dijo el servidor); «Confirmar», deshabilitado mientras guarda, manda el mismo `File`. `#nd-enviar-firmadas`, con el POST de los ids que muestra la tarjeta. «Ver», en toda fila: `#modal-firmada` (`.modal-overlay`, `aria-modal`, foco, Escape), con `API.getNotaPdf`, `URL.createObjectURL` en un `<iframe>` (se revoca al cerrar), el texto de cada caso, «Bajar PDF» (`descargarBlob`, con `Nota-Digital-N-AA.pdf`) y «Cerrar». `estado.para_firmar` suma `firmado_por` y `firmado_at`.
 - El interruptor debajo de «Envío automático», con `cambiarFirmaDigital` y una confirmación al prender (`pedirConfirmacion`: «Desde la próxima corrida, las notas esperan hasta las 14:00 a que las suban firmadas.»). Si la activación falla, vuelve atrás.
 - `ETIQUETAS` no cambia: «Para firmar» lo dice la fila.
 - Estilos en el `<style>` de `correos.html`, con los tokens `--pf-*` de la página y las medidas de la maqueta, sin ningún nombre que empiece con `ad-`.
 - `VERSION_CORREOS` sube.
 
-**Tests:** cada función pura con su escapado (`<b>"x"</b>`); con un DOM y un `fetch` falsos: la tarjeta solo con notas, subir, el botón deshabilitado, los resultados en la región y sin escribirlos dos veces, «Enviar las N» solo con firmadas y con los ids de la pantalla, el doble clic que manda un solo pedido, «Ver» con el `blob:` que se revoca, el 401 y el 409, «Reintentar» que no aparece, el interruptor que vuelve atrás; y en `paginas.test.js`, los ids nuevos, el `role="status"` y la versión.
+**Tests:** cada función pura con su escapado (`<b>"x"</b>`); con un DOM y un `fetch` falsos: la tarjeta solo con notas, subir desde cada fila (el POST lleva el id de esa fila), el modal con su archivo y «Cancelar», que no guarda nada, «Confirmar», que manda el mismo archivo sin `solo_verificar`, y un archivo rechazado, que no abre el modal, el botón deshabilitado, el resultado en su fila y sin escribirlo dos veces, «Enviar las N» solo con firmadas y con los ids de la pantalla, el doble clic que manda un solo pedido, «Ver» con el `blob:` que se revoca, el 401 y el 409, «Reintentar» que no aparece, el interruptor que vuelve atrás; y en `paginas.test.js`, los ids nuevos, el `role="status"` y la versión.
 
 ## Task 6: La hora en los textos (Sonnet)
 

@@ -13,9 +13,9 @@ que el RPAD tiene que esperarla.
 La solución es una **ventana de firma el mismo día**, que se prende con un interruptor:
 
 1. A las **8:05** el RPAD genera las notas. Las que llevan firma digital no se envían: le llegan por mail a quien firma, adjuntas.
-2. Esa persona las firma en el Firmador, de a una, y las sube juntas al RPAD. Cada archivo se reconoce por su contenido, se llame
-   como se llame.
-3. El RPAD las verifica y no envía nada todavía: muestra una fila por nota, con quién firmó y «Ver», para mirarla en pantalla.
+2. Esa persona las firma en el Firmador, de a una, y sube cada una **en la fila de su nota** (decisión del usuario). El RPAD
+   comprueba que el archivo sea esa nota: si no, lo rechaza y dice cuál es.
+3. Si es esa nota, se abre un modal con el PDF, para leerlo, y ahí se confirma (decisión del usuario). Al confirmar, la fila muestra quién firmó y «Ver». Todavía no sale nada.
 4. Con «Enviar las N firmadas» salen, con el nombre de siempre, y quedan archivadas firmadas en el Libro.
 5. A las **14:00** sale lo que quede: firmada, si se subió y no se confirmó; si no, con la imagen de la firma, como hoy.
 
@@ -99,31 +99,36 @@ con el nombre `Nota-Digital-N-AA.pdf`), con `remitente()` y el marco de siempre.
 («1 nota»). Texto, el de `mail-firmante.html`, con el botón «Subir las notas firmadas» → `correos.html#libro`, que abre la pestaña Libro. Si el mail no sale,
 la nota sigue esperando y el error queda en la última corrida. No hay recordatorio.
 
-**4.5 La subida.** `POST /api/notificaciones/notas-digitales/firmadas`, multipart, campo `archivos`, hasta 10 archivos de 10 MB,
-en memoria. `authMiddleware` + `adminOnly`: cualquiera de administración (decisión del usuario). Toma el candado de las notas; con
-otra corrida en curso, 409 y no guarda nada. **Verifica y guarda, pero no envía** (decisión del usuario: confirmar siempre, también
-con una sola nota). Volver a subir una nota que ya tiene su firmada la reemplaza, mientras no haya salido. Cada archivo, por separado, da un resultado:
+**4.5 La subida.** `POST /api/notificaciones/notas-digitales/:id/firmada`, multipart, campo `archivo`, un archivo de hasta 10 MB, en memoria.
+`authMiddleware` + `adminOnly`: cualquiera de administración (decisión del usuario). Toma el candado de las notas; con otra corrida en
+curso, 409 y no guarda nada. **Cada nota tiene su botón** (decisión del usuario: que elija la persona y el RPAD controle; no hay una
+subida de varios juntos). **No guarda hasta confirmar, y no envía:** la página manda el archivo con `solo_verificar=1` (el servidor no escribe nada) y, si es esa nota, abre el modal «Revisá la nota firmada»: el archivo elegido en un `<iframe>` con un `blob:` del archivo local, «Es la Nota Digital N° 12/26, firmada digitalmente por X el dd/mm a las hh:mm. La firma no se ve en la hoja. Sale como Nota-Digital-12-26.pdf.», «Cancelar» y «Confirmar». «Confirmar» manda el mismo archivo sin `solo_verificar`: el servidor lo vuelve a verificar y lo guarda (sin archivos temporales ni estado entre los dos pedidos). Un archivo que no sirve no abre el modal: el mensaje va a la fila.
+Volver a subir una nota que ya tiene su firmada la reemplaza («Reemplazar»), mientras no haya salido. Los resultados:
 
-| Caso | Mensaje (después del nombre del archivo) | Qué hace |
+| Caso | Mensaje | Qué hace |
 |------|-----------|----------|
-| Bien | «es la Nota Digital N° 12/26, firmada digitalmente por X. Revisala y enviala.» | guarda, sin enviar |
-| Es la nota, sin firma | «es la Nota Digital N° 13/26, pero no tiene firma digital. Firmala y volvé a subirla.» | nada |
-| Firma que no verifica | «es la Nota Digital N° 13/26, pero su firma no se pudo verificar. Volvé a firmarla.» | nada |
-| Ya salió | «es la Nota Digital N° 12/26, que ya salió.» | nada |
-| Otra cosa | «no es ninguna de las notas para firmar hoy.» | nada |
+| Bien, al verificar | abre el modal | nada |
+| Bien, al confirmar | «Guardada. Falta enviarla.» | guarda, sin enviar |
+| El PDF de otra nota | «Ese PDF es la Nota Digital N° 13/26, no la 12/26. No se guardó nada.» | nada |
+| Es esta nota, sin firma | «Ese PDF es esta nota, pero no tiene firma digital. Firmala y volvé a subirla.» | nada |
+| Firma que no verifica | «La firma de ese PDF no se pudo verificar. Volvé a firmarla.» | nada |
+| Otra cosa | «Ese PDF no es esta nota. No se guardó nada.» | nada |
+| La nota ya salió, o no existe | 409 «Esta nota ya salió.» / 404 | nada |
 
 Un archivo con otro firmador que reescriba el PDF cae en «otra cosa»: el RPAD solo acepta firmas agregadas al final, que es lo que
 hace el Firmador.
 
-**¿Se puede confundir de nota?** No: no mira el nombre ni el orden, sino que compara el archivo con el PDF guardado de cada nota, byte por
-byte, y cada PDF lleva su número y su fecha de creación. La confirmación no es por eso: sirve para ver quién firmó y mirar la nota antes de
+**¿Se puede equivocar de nota?** No puede guardar una por otra: la persona elige la fila y el RPAD compara el archivo con el PDF guardado de esa nota, byte por
+byte (cada PDF lleva su número y su fecha de creación). Si no coincide, no guarda nada, y si coincide con otra nota de las que se pueden nombrar, lo dice. El modal y «Ver» sirven para leerla y ver quién firmó antes de
 que salga.
 
 **El envío.** `POST /api/notificaciones/notas-digitales/firmadas/enviar` con `{ ids: [12, 13] }`, las que mostraba la pantalla (así no sale una
 que se subió desde otra sesión y nadie vio). Bajo el candado, envía las de esa lista que siguen con `espera_firma = 1` y `pdf_firmado`. Un botón
 para todas (decisión del usuario). Da un resultado por nota: «enviada, firmada digitalmente.» o «quedó firmada, pero el email no salió. Se vuelve a intentar en la próxima corrida.»
 
-**Ver.** Con `GET …/:id/pdf` (`pdf_firmado ?? pdf`), en un `<iframe>` con un `blob:`, como Proyectos (la CSP ya lo permite: `frameSrc` incluye `blob:`), dentro de un modal con «Firmada digitalmente por X el dd/mm a las hh:mm», «Descargar» (en el teléfono un PDF no siempre se ve en el marco) y «Cerrar».
+**El nombre del archivo.** El nombre con que llega el archivo (`document.pdf`, `documento.pdf`, lo que sea) no se usa ni se guarda. El email adjunta siempre `Nota-Digital-N-AA.pdf` y el Libro baja ese mismo nombre, firmada o no.
+
+**Ver.** Toda fila tiene «Ver» (decisión del usuario: para saber qué nota es): sin firmar, abre la nota que generó el RPAD, con «Bajar PDF» en el pie; firmada, lo que se subió. Con `GET …/:id/pdf` (`pdf_firmado ?? pdf`), en un `<iframe>` con un `blob:`, como Proyectos (la CSP ya lo permite: `frameSrc` incluye `blob:`), dentro de un modal con «Firmada digitalmente por X el dd/mm a las hh:mm», «Descargar» (en el teléfono un PDF no siempre se ve en el marco) y «Cerrar».
 
 **4.6 Cómo sabe el RPAD que está firmada** (`services/notasFirmaDigital.js`, puro, sin dependencias nuevas; nunca tira):
 1. El archivo empieza con los bytes exactos del `pdf` guardado de la nota y es más largo. Con eso se identifica la nota.
@@ -169,9 +174,8 @@ También salen 10 minutos antes el email a las áreas y los avisos de Mi espacio
 ## 6. La pantalla (Correos)
 
 Como en la maqueta:
-- **Libro:** arriba de los filtros, la tarjeta «Notas para firmar hoy», solo si hay alguna, con su texto, «Subir firmadas» (el
-  selector de archivos, varios), una fila por nota (número, tipo, gestión y, sin firmar, «Falta firmar · la firma <nombre>» con «Bajar PDF»;
-  firmada, «Firmada por X» con «Ver»), los resultados de la última subida en una región `role="status"` y, con alguna firmada, «Enviar las N firmadas» (o «Enviar la firmada») con «Si no las enviás, salen solas a las 14:00, firmadas.».
+- **Libro:** arriba de los filtros, la tarjeta «Notas para firmar hoy», solo si hay alguna, con su texto, una fila por nota (número, tipo, gestión y, sin firmar, «Falta firmar · la firma <nombre>» con «Ver» y
+  «Subir firmada», que abre el selector de archivos para esa nota; firmada, «Firmada por X» con «Ver» y «Reemplazar»), el resultado de la subida en esa misma fila (`role="status"`) y, con alguna firmada, «Enviar las N firmadas» (o «Enviar la firmada») con «Si no las enviás, salen solas a las 14:00, firmadas.».
 - **Filas del Libro:** «Para firmar» (o «Firmada, sin enviar») + «hasta las 14:00» en las que esperan, sin «Reintentar». En las ya enviadas firmadas, debajo del estado,
   «Firmada digitalmente por X», con la fecha y la hora en el `title`.
 - **Estado:** el interruptor «Firma digital de las notas», debajo de «Envío automático», con su texto. Lo pueden cambiar los mismos
