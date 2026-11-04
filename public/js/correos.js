@@ -554,7 +554,7 @@ async function cambiarEnvioAutomatico(evento) {
   // Al activar se pregunta; si no se confirma (Cancelar, Escape o clic afuera), el interruptor vuelve a apagado y no se guarda nada
   if (activar && !(await confirmar({
     titulo: '¿Activar el envío automático?',
-    texto: 'Desde la próxima corrida diaria (08:15) se enviarán Notas Digitales reales a los destinatarios configurados.',
+    texto: 'Desde la próxima corrida diaria (08:05) se enviarán Notas Digitales reales a los destinatarios configurados.',
     accion: 'Activar'
   }))) {
     evento.target.checked = false;

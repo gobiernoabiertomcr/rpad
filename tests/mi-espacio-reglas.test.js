@@ -269,7 +269,7 @@ describe('los textos', () => {
       + 'para auditar y no te llegan los recordatorios de cambios para auditar ni los avisos de cambios sin auditor. El tipo '
       + 'no pasa.');
     assert.equal(AVISO_DEL_PASO_SUPERADMIN, 'Los avisos al superadmin se guardan y te llegan en un resumen a la vuelta.');
-    assert.equal(AVISO_NOTAS_DE_HOY, 'Las notas de hoy ya salieron a las 8:15 con tu firma.');
+    assert.equal(AVISO_NOTAS_DE_HOY, 'Las notas de hoy ya se generaron a las 8:05 con tu firma.');
     assert.equal(AVISO_SIN_PERSONA_A_CARGO,
       'Sin persona a cargo: esos días no se generan Notas Digitales y lo que venza entra en la próxima reiteración.');
     assert.equal(textoSuperpuestaConConfiguracion('2026-11-03', '2026-11-05'),

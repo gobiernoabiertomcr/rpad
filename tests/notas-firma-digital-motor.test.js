@@ -465,6 +465,6 @@ describe('Correos → Estado', () => {
     estado = await motor.estadoNotas({ hoy: '2026-11-23' });
     assert.equal(estado.alertas.find(a => a.tipo === 'para-firmar').mensaje,
       'Hay 1 nota para firmar y 1 nota firmada sin enviar. Las que no se suban antes de las 14:00 salen con la imagen de la firma.');
-    assert.equal(estado.para_firmar[0].firmado_at, '2026-11-02 09:12');
+    assert.equal(estado.para_firmar.at(-1).firmado_at, '2026-11-02 09:12');
   });
 });

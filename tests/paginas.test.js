@@ -26,7 +26,7 @@ const VERSION = '20261204';
 // también se borra de ahí, spec 2026-10-28-mi-espacio-licencia-anulada, 2.1; lo que dice de la reiteración una licencia sin persona
 // autorizada, spec 2026-11-03-reiteracion-bimestral, 5): su versión es propia (solo la usa configuracion.html; es independiente de
 // VERSION_FERIADOS)
-const VERSION_PANTALLAS = '20261212';
+const VERSION_PANTALLAS = '20261213';
 // areas.js (reescrito para la pestaña Áreas de Configuración, spec 2026-10-24-configuracion, 4 y 6), que en areas.html cargaba
 // ?v=20261204: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
 // configuracion.html)
@@ -106,7 +106,7 @@ const VERSION_PROYECTOS = '20261206';
 // «Pedir la restitución», con su nota—, spec 2026-10-31-mi-espacio-dias-restituidos, 9; las horas acumuladas de contrato, spec
 // 2026-11-03-mi-espacio-horas-acumuladas, 5 y 10; y lo que dice de la reiteración una licencia sin persona autorizada, spec
 // 2026-11-03-reiteracion-bimestral, 5). Su versión es propia
-const VERSION_MI_ESPACIO = '20261222';
+const VERSION_MI_ESPACIO = '20261223';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');

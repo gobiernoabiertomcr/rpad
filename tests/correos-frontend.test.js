@@ -1395,7 +1395,7 @@ describe('correos.html: la pestaña Estado (spec 2026-10-17-correos-pestanas, 7)
   it('Envío automático: título, ayuda y, a la derecha, el interruptor con su texto', () => {
     assert.ok(ESTADO.includes('<div class="co-envio">'));
     assert.ok(ESTADO.includes('<h2>Envío automático de Notas Digitales</h2>'));
-    assert.ok(ESTADO.includes('<p class="co-ayuda">Las notas salen solas a las 8:15 de cada día hábil.</p>'));
+    assert.ok(ESTADO.includes('<p class="co-ayuda">Las notas salen solas a las 8:05 de cada día hábil.</p>'));
     assert.match(ESTADO, /<label class="co-switch" for="envio-activo">\s*<input [^>]*id="envio-activo"[^>]*>\s*<span id="envio-activo-texto" class="badge badge-secondary">Desactivado<\/span>\s*<\/label>/);
     const interruptor = etiqueta('envio-activo');
     assert.match(interruptor, /^<input\b[^>]*type="checkbox"/, 'sigue siendo una casilla de verdad');
@@ -1844,7 +1844,7 @@ describe('correos: arreglos chicos de la revisión de la tarea 4', () => {
 describe('correos.js: confirmación propia y cierre del Ver (spec 2026-10-17-correos-pestanas, 9)', () => {
   const CODIGO = fs.readFileSync(new URL('../public/js/correos.js', import.meta.url), 'utf8');
   const PAGINA = fs.readFileSync(new URL('../public/correos.html', import.meta.url), 'utf8');
-  const TEXTO_ACTIVAR = 'Desde la próxima corrida diaria (08:15) se enviarán Notas Digitales reales a los destinatarios configurados.';
+  const TEXTO_ACTIVAR = 'Desde la próxima corrida diaria (08:05) se enviarán Notas Digitales reales a los destinatarios configurados.';
   // Un panel cuya API cuenta lo que se guarda y las dos pruebas que salen
   const armar = (globales = {}) => {
     const llamadas = { guardar: [], prueba: [], pruebaArea: [], estado: 0 };
