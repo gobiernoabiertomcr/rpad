@@ -1,13 +1,14 @@
-// Leer el cuerpo de un pedido, con la app de verdad (spec 2026-11-03-validacion-api-publica): lo que no se puede leer es un error del
+// Leer el cuerpo de un pedido, con la app de verdad (spec 2026-11-03-validacion-api-publica): lo que no se puede usar es un error del
 // pedido, con un texto fijo que no repite lo que llegó, y los demás errores no cambian
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { iniciarServidor, cerrarDb } from './helpers.js';
-import { tieneClaveReservada } from '../middleware/cuerpo.js';
+import { motivoDeRechazo, TOPE_DE_NIVELES } from '../middleware/cuerpo.js';
 
 const NO_SE_PUEDE_LEER = { success: false, error: 'Los datos enviados no tienen un formato válido.' };
 const DEMASIADO_GRANDE = { success: false, error: 'Los datos enviados superan el tamaño permitido.' };
 const UN_MEGABYTE = 1024 * 1024;
+const FORMULARIO = 'application/x-www-form-urlencoded';
 
 let servidor;
 
@@ -29,6 +30,15 @@ const enviar = async (ruta, cuerpo, { tipo = 'application/json', ip = '203.0.113
   return { status: res.status, body: await res.json() };
 };
 
+// Los logs llegan por otro caño que la respuesta. Cada test usa su ruta, porque la lectura del cuerpo corre antes de las rutas
+const aparecioEnLosLogs = async (texto) => {
+  for (let i = 0; i < 50 && !servidor.logs().includes(texto); i++) await new Promise((resolver) => setTimeout(resolver, 20));
+  return servidor.logs().includes(texto);
+};
+
+// Un JSON con tantos contenedores uno dentro del otro
+const anidado = (cuantos) => JSON.parse(`${'['.repeat(cuantos)}${']'.repeat(cuantos)}`);
+
 describe('un cuerpo que no se puede leer', () => {
   it('un JSON roto da 400 con el formato de la API', async () => {
     const res = await enviar('/contacto', '{"nombre": roto');
@@ -49,34 +59,31 @@ describe('un cuerpo que no se puede leer', () => {
   });
 
   it('un formulario de más de 1 MB da 413', async () => {
-    const res = await enviar('/contacto', `mensaje=${'x'.repeat(UN_MEGABYTE)}`, { tipo: 'application/x-www-form-urlencoded' });
+    const res = await enviar('/contacto', `mensaje=${'x'.repeat(UN_MEGABYTE)}`, { tipo: FORMULARIO });
     assert.equal(res.status, 413);
     assert.deepEqual(res.body, DEMASIADO_GRANDE);
   });
 
   it('un formulario con demasiados campos da 413', async () => {
     const campos = Array.from({ length: 1001 }, (_, i) => `c${i}=1`).join('&');
-    const res = await enviar('/contacto', campos, { tipo: 'application/x-www-form-urlencoded' });
+    const res = await enviar('/contacto', campos, { tipo: FORMULARIO });
     assert.equal(res.status, 413);
     assert.deepEqual(res.body, DEMASIADO_GRANDE);
   });
 
   it('la respuesta y los logs no repiten lo que llegó: queda un renglón con el tipo, el método y la ruta', async () => {
     const marca = 'marca-del-cuerpo-roto-7f3a';
-    const res = await enviar('/auth/login', `{"username":"nadie","password":${marca}}`);
+    const res = await enviar('/prueba-del-json-roto', `{"dato":${marca}}`);
     assert.equal(res.status, 400);
     assert.doesNotMatch(JSON.stringify(res.body), new RegExp(marca));
-    const logs = servidor.logs();
-    assert.doesNotMatch(logs, new RegExp(marca));
-    assert.match(logs, /Pedido rechazado \(entity\.parse\.failed\): POST \/api\/auth\/login/);
+    assert.ok(await aparecioEnLosLogs('Pedido rechazado (entity.parse.failed): POST /api/prueba-del-json-roto'));
+    assert.doesNotMatch(servidor.logs(), new RegExp(marca));
   });
 
-  it('un cuerpo de más de 1 MB tampoco queda en los logs', async () => {
-    const marca = 'marca-del-cuerpo-grande-9c1d';
-    const res = await enviar('/contacto', JSON.stringify({ mensaje: marca.repeat(40000) }));
+  it('un cuerpo de más de 1 MB deja su renglón en los logs', async () => {
+    const res = await enviar('/prueba-del-cuerpo-grande', JSON.stringify({ mensaje: 'x'.repeat(UN_MEGABYTE) }));
     assert.equal(res.status, 413);
-    assert.doesNotMatch(servidor.logs(), new RegExp(marca));
-    assert.match(servidor.logs(), /Pedido rechazado \(entity\.too\.large\): POST \/api\/contacto/);
+    assert.ok(await aparecioEnLosLogs('Pedido rechazado (entity.too.large): POST /api/prueba-del-cuerpo-grande'));
   });
 
   it('no cuenta como un envío del formulario de contacto', async () => {
@@ -88,9 +95,9 @@ describe('un cuerpo que no se puede leer', () => {
   });
 });
 
-describe('las claves que pisan lo que todo objeto trae de fábrica', () => {
+describe('un cuerpo que no es un dato común', () => {
   for (const clave of ['__proto__', 'constructor', 'toString', 'valueOf']) {
-    it(`${clave} da 400, en cualquier nivel`, async () => {
+    it(`la clave ${clave} da 400, en cualquier nivel`, async () => {
       for (const cuerpo of [`{"${clave}":1}`, `{"dato":{"${clave}":1}}`, `{"lista":[{"${clave}":{"otro":1}}]}`]) {
         const res = await enviar('/contacto', cuerpo);
         assert.equal(res.status, 400, cuerpo);
@@ -100,10 +107,10 @@ describe('las claves que pisan lo que todo objeto trae de fábrica', () => {
   }
 
   it('en un formulario, también', async () => {
-    const res = await enviar('/contacto', 'nombre[toString]=1', { tipo: 'application/x-www-form-urlencoded' });
+    const res = await enviar('/prueba-de-la-clave', 'dato[toString]=1', { tipo: FORMULARIO });
     assert.equal(res.status, 400);
     assert.deepEqual(res.body, NO_SE_PUEDE_LEER);
-    assert.match(servidor.logs(), /Pedido rechazado \(clave reservada\): POST \/api\/contacto/);
+    assert.ok(await aparecioEnLosLogs('Pedido rechazado (clave reservada): POST /api/prueba-de-la-clave'));
   });
 
   it('escrita con escapes, también', async () => {
@@ -118,27 +125,42 @@ describe('las claves que pisan lo que todo objeto trae de fábrica', () => {
     assert.match(res.body.error, /El nombre debe tener al menos 2 caracteres/);
   });
 
-  it('un JSON muy anidado se responde y el proceso sigue vivo', async () => {
-    const hondo = 200000;
-    const res = await enviar('/contacto', `${'['.repeat(hondo)}${']'.repeat(hondo)}`, { ip: '203.0.113.203' });
-    assert.equal(res.status, 400);
-    const salud = await fetch(`${servidor.url}/api/health`);
-    assert.equal(salud.status, 200);
+  it('más niveles que el tope dan 400, y hasta el tope llegan a la ruta', async () => {
+    const demasiados = await enviar('/prueba-de-los-niveles', JSON.stringify(anidado(TOPE_DE_NIVELES + 2)));
+    assert.equal(demasiados.status, 400);
+    assert.deepEqual(demasiados.body, NO_SE_PUEDE_LEER);
+    assert.ok(await aparecioEnLosLogs('Pedido rechazado (demasiados niveles): POST /api/prueba-de-los-niveles'));
+
+    const justo = await enviar('/contacto', JSON.stringify(anidado(TOPE_DE_NIVELES + 1)), { ip: '203.0.113.203' });
+    assert.equal(justo.status, 400);
+    assert.match(justo.body.error, /El nombre debe tener al menos 2 caracteres/);
   });
 });
 
-describe('tieneClaveReservada', () => {
-  it('lo que no es un objeto, o no trae ninguna, da false', () => {
+describe('motivoDeRechazo', () => {
+  it('lo que no es un objeto, o es un dato común, se admite', () => {
     for (const valor of [undefined, null, 0, 'constructor', true, {}, [], { a: 1 }, ['constructor'], { a: { b: ['toString'] } }]) {
-      assert.equal(tieneClaveReservada(valor), false, JSON.stringify(valor));
+      assert.equal(motivoDeRechazo(valor), null, JSON.stringify(valor));
     }
   });
 
-  it('la encuentra en cualquier nivel, también después de muchos niveles', () => {
-    assert.equal(tieneClaveReservada(JSON.parse('{"a":[1,{"b":[{"__proto__":null}]}]}')), true);
-    const hondo = 100000;
-    assert.equal(tieneClaveReservada(JSON.parse(`${'{"a":['.repeat(hondo)}{"valueOf":1}${']}'.repeat(hondo)}`)), true);
-    assert.equal(tieneClaveReservada(JSON.parse(`${'{"a":['.repeat(hondo)}{"valor":1}${']}'.repeat(hondo)}`)), false);
+  it('encuentra una clave reservada en cualquier nivel', () => {
+    assert.equal(motivoDeRechazo(JSON.parse('{"a":[1,{"b":[{"__proto__":null}]}]}')), 'clave reservada');
+    assert.equal(motivoDeRechazo(JSON.parse('[[[{"valueOf":1}]]]')), 'clave reservada');
+  });
+
+  it('cuenta los niveles, en listas y en objetos', () => {
+    assert.equal(motivoDeRechazo(anidado(TOPE_DE_NIVELES + 1)), null);
+    assert.equal(motivoDeRechazo(anidado(TOPE_DE_NIVELES + 2)), 'demasiados niveles');
+    const objetos = (cuantos) => JSON.parse(`${'{"a":'.repeat(cuantos)}1${'}'.repeat(cuantos)}`);
+    assert.equal(motivoDeRechazo(objetos(TOPE_DE_NIVELES + 1)), null);
+    assert.equal(motivoDeRechazo(objetos(TOPE_DE_NIVELES + 2)), 'demasiados niveles');
+  });
+
+  it('un valor suelto en el último nivel no suma uno', () => {
+    let cuerpo = 'un-texto';
+    for (let i = 0; i <= TOPE_DE_NIVELES; i++) cuerpo = [cuerpo];
+    assert.equal(motivoDeRechazo(cuerpo), null);
   });
 });
 
