@@ -38,7 +38,7 @@
     return M.respuesta(400, { success: false, error: '(Maqueta) Esto no se guarda en la maqueta.' });
   };
 
-  const AYUDA = 'A esta persona y a quien esté más arriba les llegan por mail los Personal (Público) de quien depende de ellas, solo con el texto corto. No ven nada más de su Mi espacio.';
+  const AYUDA = 'A esta persona y a quien esté más arriba les llega por mail el texto corto de los eventos que quien depende de ellas deja a la vista de otros. No ven nada más de su Mi espacio.';
   // Alguien no puede depender de sí mismo ni de quien ya depende de él o ella (un ciclo): esas opciones no se ofrecen
   const debajoDe = (id, usuarios) => {
     const hijos = usuarios.filter((p) => p.depende === id).map((p) => p.id);

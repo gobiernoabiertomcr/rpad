@@ -31,7 +31,7 @@ iframe { width: 100%; height: 640px; border: 1px solid #DAE3ED; border-top: 0; b
 const MAILS = {
   persona: { para: 'mojeda@ejemplo.test', asunto: 'RPAD: tu agenda del jueves 05/11', nota: 'Miércoles 04/11, 14:00. Micaela tiene un Privado y un Público suyos. Acá se ve si un evento quedó como «Solo vos lo ves» por error, con tiempo para cambiarlo.' },
   jefe: { para: 'gpaz@ejemplo.test', asunto: 'RPAD: tu agenda hasta el lunes 09/11', nota: 'Viernes 06/11, 14:00. Trae sábado, domingo y lunes. Lo de su gente va aparte y solo con el texto corto. El de Micaela le llega por la cadena, aunque Micaela no la haya elegido.' },
-  manana: { para: 'gpaz@ejemplo.test', asunto: 'RPAD: se sumó algo a tu agenda de hoy', nota: 'Viernes 06/11, 8:05. Micaela cargó a las 14:02 del jueves un turno para hoy a las 8:15. Solo sale a los jefes, y solo si hay algo sin informar. Trae todo el día, con lo nuevo marcado. En esta maqueta incluye lo propio del jefe, si tiene prendida la casilla.' },
+  manana: { para: 'gpaz@ejemplo.test', asunto: 'RPAD: se sumó algo a tu agenda de hoy', nota: 'Viernes 06/11, 8:05. Micaela cargó a las 14:02 del jueves un turno para hoy a las 8:15. Solo sale a los jefes, solo en días hábiles, y solo si hay algo cargado antes de hoy sin informar. Lo que se carga para el mismo día no entra. Trae todo el día, con lo nuevo marcado. En esta maqueta incluye lo propio del jefe, si tiene prendida la casilla.' },
   'solo-jefe': { para: 'frios@ejemplo.test', asunto: 'RPAD: agenda del jueves 05/11 de quienes dependen de vos', nota: 'Federico no tiene nada suyo ese día, o apagó su casilla: le llega igual lo de quienes dependen de Federico.' }
 };
 const mostrar = (m) => {
