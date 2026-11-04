@@ -33,7 +33,7 @@ Si algo sale mal: primero los archivos anteriores y Restart; después, si hace f
 
 ## Las migraciones
 
-Las migraciones van antes que el código: sin ellas, lo que las lee da 500 (`docs/temas/base-de-datos.md` dice qué pasa sin cada una).
+Las migraciones van antes que el código: sin ellas, lo que las lee da 500 (`docs/temas/base-de-datos.md` describe cada una).
 `migracion-fechas-datasets-textos.sql` es la excepción: va después de subir los archivos y antes del Restart.
 `migracion-metricas-recibido-datos.sql` va después de `migracion-metricas.sql` y puede ir antes o después de los archivos.
 `database/schema.sql` cambia, pero no se corre.

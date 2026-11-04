@@ -15,7 +15,7 @@ Historia y motivos, en las specs:
   `docs/superpowers/specs/2026-10-27-mi-espacio-licencia-word-mockups/`), y cada licencia de la lista tiene «Word» al lado de «Editar» (decisión del usuario).
   Se arma en el momento, con lo que hay en la base al pedirla, y **nunca se guarda**: ni el archivo, ni el texto, ni cuándo se bajó o quién la bajó (decisión del usuario: guardada, una licencia corregida saldría con datos viejos).
   El RPAD no sigue la nota (si se presentó, se firmó o se autorizó):
-  Mi espacio sigue sin aprobaciones, firmas ni expedientes; el Word es un papel que la persona imprime y firma.
+  Mi espacio no tiene aprobaciones, firmas ni expedientes; el Word es un papel que la persona imprime y firma.
   Sin membrete, sin PDF y sin firma digital (decisión del usuario: hoja blanca).
   Antiobjetivos: que la vista del segundo paso diga una cosa y el Word otra (salen de la misma estructura), que la nota salga con datos viejos, que un nombre real o un dato de producción llegue al repositorio, que el modal diga «Licencia cargada» sin un 2xx del guardado y que un carácter raro deje el Word dañado.
 - Quién y qué licencias (sección 1): cualquier persona con sesión, cualquiera sea su rol, y solo las suyas: las activas de los nueve tipos con nota
@@ -23,7 +23,7 @@ Historia y motivos, en las specs:
   El uso autorizado y las horas extras no tienen nota (decisión del usuario, «por ahora»).
   Una persona sin modalidad arma la nota igual: la lista no muestra sus licencias, pero el texto no depende de la modalidad (sin vínculo, la firma va como la de planta).
 - La nota (`services/miEspacioNota.js`, puro: sin pool ni `Date` local, fechas `'AAAA-MM-DD'`, ninguna función tira):
-  `notaDeLicencia(licencia, { fecha, persona, feriados, salidas })` (`salidas`, las de la planilla (para «Sumar al mes anterior»), opcional: sin ellas, []; solo las usan las horas a favor) → `{ nota }` o `{ error }` con una clave de `MENSAJES_NOTA` (`sinNota`, `sinDiasHabiles` o `error`: una licencia, una fecha o una persona que no sirven);
+  `notaDeLicencia(licencia, { fecha, persona, feriados, salidas })` (`salidas`, las de la planilla (para «Sumar al mes anterior»), opcional: sin ellas, []; solo las usan las horas a favor) → `{ nota }` o `{ error }` con una clave de `MENSAJES_NOTA` (`sinNota`: el uso autorizado o un tipo que no está en `TIPOS_CON_NOTA`; `sinDiasHabiles`; o `error`: una licencia, una fecha o una persona que no sirven);
   `nota` = `{ fecha, destinatario, sd, saludo, cuerpo, cierre, firma: [{ texto, chico }], nombre }`, armada una sola vez, y de ahí salen la vista (`htmlDeLaNota`, escapada ahí mismo, con las clases `me-hoja`, `me-hoja-texto`, `derecha`, `sangria`, `justificado`, `sd`, `firma` y `chico`) y el Word.
   Lo fijo, sin nombres de personas:
   «Comodoro Rivadavia, <fecha larga>», «Al Señor Director General de» / «Modernización e Investigación Territorial» (dirigida al cargo, nunca a una persona: decisión del usuario, el repositorio es público;
@@ -99,19 +99,20 @@ Historia y motivos, en las specs:
 - Los días restituidos (spec 2026-10-31-mi-espacio-dias-restituidos, 12; los textos los aprobó el usuario en la ronda 4; la regla, en `docs/temas/mi-espacio-restituidos.md`): con el mismo encabezado, saludo, cierre y firma, en la misma hoja A4 y sin membrete.
   Unas vacaciones (y una carga de días restituidos) suman a sus días hábiles sus días restituibles (`restituibles`, opcional, los de `restituiblesDe`, que pasa `leerLaNota`; los que caen dentro de sus fechas), así la nota sigue diciendo los días que se presentaron («diecinueve (19)» aunque después un asueto caiga en ellas: la nota no cambia).
   La nota A, la de una carga de días restituidos (su fecha, la de la carga, `updated_at`), necesita `restitucion` = `{ anio, fechas, durante }` (la licencia de origen, los asuetos y el tipo de la carga en la que cayeron, del pedido guardado —`durante`, el `licencia.tipo` del pedido: 'restituidos' en la recursión y si no 'vacaciones'— y de las filas de la foto que sostiene:
-  `restitucionDeLaCarga` del controlador; sin ella, o con un año o unas fechas que no sirven, `{ error: 'error' }`; sin `durante`, o con otro valor, «vacaciones»):
+  `restitucionDeLaCarga` del controlador; sin ella, o con un año o unas fechas que no sirven, `{ error: 'error' }`; sin `durante`, o con otro valor, «vacaciones»; los demás tipos no la miran):
   «Me dirijo a Ud. a fin de solicitarle tenga a bien autorizar el usufructo de dos (2) días hábiles de mi licencia anual ordinaria 2024, restituidos por los asuetos de los días jueves 24 y jueves 31 de diciembre de 2026, declarados durante mis vacaciones, a partir del día lunes 12 de abril de 2027.» (de un día, «… el usufructo de un (1)
   día hábil de mi licencia anual ordinaria 2024, restituido por el asueto del día jueves 24 de diciembre de 2026, declarado durante mis vacaciones, el día lunes 12 de abril de 2027.»).
   En la recursión (el asueto cayó en una carga de días restituidos y sus días se toman en otra), «declarado durante mis días restituidos» («declarados», con varios asuetos), como el aviso y el email («cayeron en tus días restituidos»).
   La nota B, la de un pedido de restitución, es `notaDeRestitucion(pedido, { fecha, persona })` (`pedido` = `{ anio, dias, fechas }`, con los días guardados en el pedido; su fecha, el día del pedido; la misma estructura que `notaDeLicencia`, así `htmlDeLaNota` y `renderNotaDocx` sirven para las dos; nunca tira):
   «Me dirijo a Ud. a fin de solicitarle tenga a bien autorizar la restitución a mi licencia anual ordinaria 2025 de dos (2) días hábiles, correspondientes a los asuetos de los días jueves 24 y jueves 31 de diciembre de 2026, declarados durante mis vacaciones.» (de un día, «… de un (1) día hábil, correspondiente al asueto del día jueves 24 de diciembre de 2026, declarado durante mis vacaciones.»).
-  Los asuetos van con `textoDeLosAsuetos(fechas)`, por fecha y sin repetir:
+  Los asuetos van con `textoDeLosAsuetos(fechas)`, por fecha y sin repetir (lo que no es una fecha no va; sin ninguna, ''):
   «de los días jueves 24 y jueves 31 de diciembre de 2026»; con varios meses o años, «de los días miércoles 24, viernes 26 y miércoles 31 de diciembre de 2025 y viernes 2 de enero de 2026»; uno, «del día jueves 24 de diciembre de 2026».
   Los archivos (17.9):
   «Nota de licencia - Días restituidos - 2027-04-12.docx» (con el «Desde») y «Nota de restitución - Licencia 2025 - 2027-04-01.docx» (con el día del pedido), y la aclaración de la B, `aclaracionDeLaRestitucion(fecha)`:
   «Lleva la fecha del 01/04/2027, el día en que pediste la restitución.
   Se baja en Word, para imprimir y firmar.».
   La nota A sale por `GET …/licencias/:id/nota` y `…/word`; la B, por `GET /mi-espacio/restituciones/:id/nota` y `…/word`, con la firma de `firmaDe` (`services/miEspacioDatos.js`: la de la persona, que no depende de la carga, que puede estar dada de baja).
+  `tests/mi-espacio-nota-word.test.js` compara las notas A y B, renglón por renglón, con los Word de la maqueta (`docs/superpowers/specs/2026-10-31-mi-espacio-dias-restituidos-mockups/word/`, armados con `renderNotaDocx`): un cambio a propósito en esas notas tiene que volver a armarlos.
 - Las horas acumuladas (spec 2026-11-03-mi-espacio-horas-acumuladas, 9; la regla, en `docs/temas/mi-espacio-acumuladas.md`): solo la nota de unas horas a favor que usa horas acumuladas lleva esa parte (`notaDeLicencia` le pasa a `CUERPOS.horas_a_favor` la parte acumulada, `horasAcumuladasDe(licencia)`;
   `leerLaNota` pasa la licencia entera).
   Las demás, también la de unas horas a favor sin acumuladas, no llevan esa parte; el nombre del archivo, la fecha y la firma salen igual que en cualquier otra.

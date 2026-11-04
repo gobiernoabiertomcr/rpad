@@ -48,10 +48,10 @@ registroReglas («Recibido el» y el origen de los datos, puro);
   `MENSAJE_FALTA_REQUIERE_NOTA` (copia de la de `services/requiereNotaReglas.js`:
   "Indicá si el dataset requiere nota DGMIT."), `textoDeRequiereNota` (copia de `textoRequiereNota`:
   Sí, No o "—", para la vista previa), `errorDeRequiereNota` y `requiereNotaDe` (un externo sin elegir; el 0 es un valor, nunca `valor || null`); en `admin.js`, `mesesDeLaFrecuencia` (la Eventual es la frecuencia sin meses, como `esFrecuenciaEventual`); en `perfil.js`, `esFinDeMesTexto` (la marca "No es el último día del mes") y `textoDeRequiereNota` (copia de `textoRequiereNota`, vacío donde el servidor dice "sin dato": el renglón no se lista);
-  en `seguimiento.js`, `textoDeRequiereNota` (copia de `textoRequiereNota(valor, 'Sin dato')`) y lo del formulario de las notas DGMIT (`TIPOS_NOTA_DGMIT`, `TIPOS_NOTA_DGMIT_LARGOS`, `MENSAJES_NOTA_DGMIT` con sus largos y la fecha mínima, `erroresDelFormularioDeNota`, `datasetsParaElegir` y `esFechaDeTexto`: ver la convención de `seguimiento.js`); en `correos.js`, `TIPOS_CON_ANEXO` (copia de la de `services/notasDigitales.js`: los tipos de nota que llevan anexo, el aviso y la reiteración);
+  en `seguimiento.js`, `textoDeRequiereNota` (copia de `textoRequiereNota(valor, 'Sin dato')`) y lo del formulario de las notas DGMIT (`TIPOS_NOTA_DGMIT`, `TIPOS_NOTA_DGMIT_LARGOS`, `MENSAJES_NOTA_DGMIT` con sus largos y la fecha mínima, `erroresDelFormularioDeNota`, `datasetsParaElegir` y `esFechaDeTexto`: ver `docs/temas/seguimiento.md`); en `correos.js`, `TIPOS_CON_ANEXO` (copia de la de `services/notasDigitales.js`: los tipos de nota que llevan anexo, el aviso y la reiteración);
   en `auth.js`, `Auth.puedeCargarNotasDgmit()` (copia de `puedeCargarNotasDgmit` de `services/usuariosReglas.js`); en `usuarios.js`, `ROLES_DEL_EDITOR` (copia de la de `services/usuariosReglas.js`: lector y colaborador) y `TEXTO_SE_BORRA_DE_MI_ESPACIO` (copia de la de `services/licenciasReglas.js`: lo que suma la confirmación de «Anular» de una licencia cargada desde Mi espacio);
-  en `areas.js`, `MENSAJE_NOMBRE_AREA` (copia de `MENSAJES_AREA.nombre` de `services/areasReglas.js`) y `articuloDelArea` y `deArticuloArea` (copias de `articuloDe` y `deArticulo` de `services/notasGeneradorContenido.js`); en `api.js`, el respaldo `Utils.calcularEstado`; en `notas.js`, las del Generador de Notas (ver «Generador de Notas»); en `proyectos.js`, las de Proyectos (ver la convención de `proyectos.js`); en `feriados.js`, las de Feriados (ver la convención de `feriados.js`);
-  en `mi-espacio.js`, las de Mi espacio (ver la convención de `mi-espacio.js`).
+  en `areas.js`, `MENSAJE_NOMBRE_AREA` (copia de `MENSAJES_AREA.nombre` de `services/areasReglas.js`) y `articuloDelArea` y `deArticuloArea` (copias de `articuloDe` y `deArticulo` de `services/notasGeneradorContenido.js`); en `api.js`, el respaldo `Utils.calcularEstado`; en `notas.js`, las del Generador de Notas (ver `docs/temas/generador-de-notas.md`); en `proyectos.js`, las de Proyectos (ver `docs/temas/proyectos.md`); en `feriados.js`, las de Feriados (ver `docs/temas/feriados.md`);
+  en `mi-espacio.js`, las de Mi espacio (ver `docs/temas/mi-espacio.md`).
   Se comparan contra el servidor en un test:
   `tipoSugeridoDe` (con `tipoSugerido`), `TIPOS_DE_PEDIDO` (con `TIPOS_PEDIDO` y `NOMBRES_TIPO_PEDIDO`), `frecuenciaEnNotaDe` (con `frecuenciaEnNota`), `Utils.calcularEstado` (con `estadoDelDataset`), el texto por defecto (con `QUE_SE_SOLICITA_POR_DEFECTO` de `notasDigitalesContenido.js`), `MENSAJE_FALTA_REQUIERE_NOTA` (con la del servidor) y los tres `textoDeRequiereNota` (el de `admin-fechas.js`, con `textoRequiereNota`; el de `perfil.js`, con `textoRequiereNota(valor, '')`;
   el de `seguimiento.js`, con `textoRequiereNota(valor, 'Sin dato')`), `Auth.puedeCargarNotasDgmit()` (con `puedeCargarNotasDgmit`, para cada rol;
@@ -59,20 +59,20 @@ registroReglas («Recibido el» y el origen de los datos, puro);
   `tests/usuarios-frontend.test.js`), `MENSAJE_NOMBRE_AREA`, `articuloDelArea` y `deArticuloArea` de `areas.js` (con `MENSAJES_AREA.nombre`, `articuloDe` y `deArticulo`;
   `tests/areas-frontend.test.js`), en `tests/seguimiento-frontend.test.js`, `TIPOS_NOTA_DGMIT` y `TIPOS_NOTA_DGMIT_LARGOS` (con `TEXTO_TIPO_NOTA_DGMIT`), `MENSAJES_NOTA_DGMIT` y sus constantes (con las de `services/notasDgmitReglas.js`), `erroresDelFormularioDeNota` (con `validarNotaDgmit` y `validarMotivo`, en los casos de borde)
   y `ESTADOS_DE_NOTA` (con `ESTADO_DE_NOTA`), en `tests/admin-frontend.test.js`, `MENSAJE_FALTA_RECIBIDO`, `MENSAJE_FALTA_ORIGEN` y `MENSAJE_EDICION_REGISTRA` (con los de `registroReglas.js` y con el texto escrito a mano), `OPCIONES_ORIGEN`, `origenSugeridoDe` (con `origenSugerido`)
-  y `rotuloDeLaFechaDe` (con `rotuloDeLaFecha`), en `tests/reportes-frontend.test.js`, las copias de `reportes.js` (ver su convención), en `tests/notas-frontend.test.js`, las de `notas.js` (ver «Generador de Notas»), en `tests/proyectos-frontend.test.js`, las de `proyectos.js`, en `tests/feriados-frontend.test.js`, las de `feriados.js`, y en `tests/mi-espacio-frontend.test.js`, las de `mi-espacio.js`.
+  y `rotuloDeLaFechaDe` (con `rotuloDeLaFecha`), en `tests/reportes-frontend.test.js`, las copias de `reportes.js` (ver `docs/temas/metricas-y-reportes.md`), en `tests/notas-frontend.test.js`, las de `notas.js` (ver `docs/temas/generador-de-notas.md`), en `tests/proyectos-frontend.test.js`, las de `proyectos.js`, en `tests/feriados-frontend.test.js`, las de `feriados.js`, y en `tests/mi-espacio-frontend.test.js`, las de `mi-espacio.js`.
   El resto (`tiposPermitidos`, `esEventual`, `mesesDeLaFrecuencia`, `esFinDeMesTexto`, `topeDeDatosAl`, `finDeMesDe`, `problemaDeFechasDelRegistro`, `problemasDelFormulario`, `errorDeRequiereNota`, `requiereNotaDe`, `TIPOS_CON_ANEXO`, `datasetsParaElegir`, `esFechaDeTexto`, `abreLaCargaPorElHash`, …) solo tiene tests de comportamiento, y los mensajes copiados, tests con el texto escrito a mano: si cambia una regla o un mensaje del servidor, hay que cambiarlos a mano.
 - Admin: la lista filtra por estado, gestión, tipo de pedido y "Requiere nota" (Todos, Sí y No;
-  Sí y No muestran solo externos); el formulario tiene la sección "Actualización y pedido", con la vista previa "Así va a salir en la próxima nota" (Conjunto de datos, Frecuencia y Datos solicitados, como en la tabla del aviso; en un externo suma "Requiere nota DGMIT" entre Frecuencia y Datos solicitados).
+  Sí y No muestran solo externos); el formulario tiene la sección "Actualización y pedido", con la vista previa "Así va a salir en la próxima nota" (Conjunto de datos, Frecuencia y Datos solicitados, como en la tabla del aviso; en un externo trae "Requiere nota DGMIT" entre Frecuencia y Datos solicitados).
   La lista dice, por ejemplo, "Acumulado.
   Vence el 31/01/2027".
   "Registrar actualización" dice "Vence" o "Vencido desde" (la marca del ciclo, "Vence"), propone las opciones de próxima y no elige ninguna de antemano; en el paso 2 pide «Recibido el» (obligatorio) y, en gestión externa, «¿Quién entregó los datos?» (ver «Registrar una actualización»); el aviso de lo que falta aparece recién cuando la persona pasó por el campo (`revisionDelRegistro`, `tocados`).
   Un dataset con cambio pendiente queda bloqueado también ahí, antes de abrir el modal.
   El formulario de edición avisa, antes de enviar, si la edición cambia a la vez «Cargado en el portal» y la próxima (`#form-error-edicion`).
-- Sitio público: el detalle muestra "Datos al", "Cargado en el portal" y "Próxima actualización prevista" (mes y año); la tarjeta y la fila del listado, "Datos al" y "Próxima"; el CSV suma "Cargado en el portal".
+- Sitio público: el detalle muestra "Datos al", "Cargado en el portal" y "Próxima actualización prevista" (mes y año); la tarjeta y la fila del listado, "Datos al" y "Próxima"; el CSV trae "Cargado en el portal".
 
 ### Registrar una actualización
 
-- `POST /datasets/:id/actualizar` recibe `datos_al`, `cargado_el` (o `fecha_actualizacion`, por compatibilidad; por defecto hoy), `recibido_el` (obligatorio desde «Métricas y Reportes»), `origen_datos` (obligatorio en gestión externa), `proxima_actualizacion` y `notas`.
+- `POST /datasets/:id/actualizar` recibe `datos_al`, `cargado_el` (o `fecha_actualizacion`, por compatibilidad; por defecto hoy), `recibido_el` (obligatorio), `origen_datos` (obligatorio en gestión externa), `proxima_actualizacion` y `notas`.
   Respeta la próxima que eligió la persona y valida fin de mes, que ninguna fecha sea futura (`datos_al`, hasta `topeDatosAl`) y que `recibido_el` no sea posterior a la carga.
   Crea un cambio `editar` con `registro_actualizacion: true`: pasa por la doble verificación.
 - «Recibido el» y el origen de los datos (spec 2026-10-24-metricas-y-reportes, 4; los mensajes, `ORIGENES_DATOS`, `OPCIONES_ORIGEN`, `normalizarOrigen`, `origenSugerido`, `rotuloDeLaFecha` y `textoOrigen` en `services/registroReglas.js`, puro):
@@ -80,7 +80,7 @@ registroReglas («Recibido el» y el origen de los datos, puro);
   El origen (`ORIGENES_DATOS`:
   `'area'`, los entregó el área, o `'fuente_publica'`, Datos Públicos los obtuvo de una fuente pública: el digesto, el Boletín Oficial, la web de Vialidad…) pasa por `normalizarOrigen` (null, undefined y '' son sin dato; otro valor tira `TypeError` y el controlador responde 400 «El origen de los datos no es válido.», también en interna); en gestión interna no se pregunta y queda null aunque llegue.
   Viaja en el cambio (`datos_nuevos.origen_datos`, junto con `recibido_el`):
-  `aprobarCambio` no cambió y no hay columna nueva en el historial.
+  `historial_actualizaciones` no tiene columna para el origen.
   Vale también para los externos con «Requiere nota:
   No» (la fecha es el día en que Datos Públicos obtuvo la fuente).
   El modal:
@@ -89,7 +89,7 @@ registroReglas («Recibido el» y el origen de los datos, puro);
   No» (`origenSugerido`; se puede cambiar), y la fecha se llama «Recibido el» u «Obtenido el» (`rotuloDeLaFecha`).
   Se ve como «Origen de los datos» (`textoOrigen`:
   «Los entregó el área», «Fuente pública» o la raya) en la comparación de Mi Perfil (`enriquecerDatos` arma `origen_datos_texto` solo si el cambio trae la clave; en interna queda vacío y el renglón no se lista) y en el detalle del movimiento del Seguimiento.
-  Sin romper lo anterior: un cambio pendiente sin el dato se aprueba igual y las filas viejas no se tocan; los «Recibido el» viejos se importaron a `actualizaciones_recibido` (ver «Base de datos») y `fuentesDe` los suma al cambio sin pisar lo que guardó (`conImportado`, consulta aislada `importadosDe`).
+  Sin romper lo anterior: un cambio pendiente sin el dato se aprueba igual y las filas viejas no se tocan; los «Recibido el» viejos se importaron a `actualizaciones_recibido` (ver `docs/temas/base-de-datos.md`) y `fuentesDe` los suma al cambio sin pisar lo que guardó (`conImportado`, consulta aislada `importadosDe`).
 - La edición no registra actualizaciones:
   `updateDataset` responde 400 `MENSAJE_EDICION_REGISTRA` («Para registrar una actualización, usá «Registrar actualización».») si una edición cambia a la vez «Cargado en el portal» y la próxima (así toda actualización pide la fecha y el origen y escribe el historial).
   Corregir una sola de las dos sigue siendo posible.
@@ -100,7 +100,7 @@ registroReglas («Recibido el» y el origen de los datos, puro);
   `fecha_actualizacion` es la carga.
 - `historial_actualizaciones.vencimiento` es la clave del ciclo, la misma que `notas_digitales_datasets.vencimiento`: sirve a la futura "vida del dataset".
   El historial anterior no se reconstruyó.
-  `gestionController` ("Operador más activo") no cuenta dos veces un registro que ahora está en las dos tablas.
+  `gestionController` ("Operador más activo") no cuenta dos veces un registro que está en las dos tablas.
 
 ## Requiere nota DGMIT
 
@@ -108,7 +108,7 @@ registroReglas («Recibido el» y el origen de los datos, puro);
   `datasets.requiere_nota` dice si la DGMIT tiene que mandarle una nota formal al área (1 = Sí) o si los datos se sacan de una fuente pública y no hace falta (0 = No; por ejemplo el TMDA, de la web de Vialidad, y la cantidad de empleados municipales, del Boletín Oficial);
   NULL = sin dato, y en gestión interna siempre NULL.
   El 0 es un valor: sobre este campo nunca `x || null`, siempre `??`.
-  Un externo en NULL se comporta como "Sí" en todo menos en mostrar el dato ("—" en la nota, "Sin dato" en el Seguimiento); después de la carga inicial no queda ninguno.
+  Un externo en NULL se comporta como "Sí" en todo menos en mostrar el dato ("—" en la nota, "Sin dato" en el Seguimiento).
   No cambia quién recibe las notas ni cuándo salen, y no se muestra en la pantalla pública.
 - Reglas (`services/requiereNotaReglas.js`, puro):
   `MENSAJE_FALTA_REQUIERE_NOTA` ("Indicá si el dataset requiere nota DGMIT."), `normalizarRequiereNota` (1, true y '1' son Sí; 0, false y '0', No; null y '' son sin dato; otro valor tira `TypeError` y el controlador responde 400), `requiereNotaResultante` (NULL si la gestión es interna) y `textoRequiereNota(valor, sinDato = '—')` (Sí, No o `sinDato`; nunca tira).
@@ -160,7 +160,7 @@ Se calculan una sola vez, en el servidor (`estadoDelDataset`), según `proxima_a
 
 ## La página: admin-fechas.js
 
-- `admin-fechas.js`: lo puro de la lista de admin y de "Registrar actualización" (`htmlDeFila`, `htmlDeOpciones`, `htmlDeCiclo`, `textoEstado`, selectores de mes y año, `hoyEnArgentina`, y desde «Métricas y Reportes» el origen de los datos:
+- `admin-fechas.js`: lo puro de la lista de admin y de "Registrar actualización" (`htmlDeFila`, `htmlDeOpciones`, `htmlDeCiclo`, `textoEstado`, selectores de mes y año, `hoyEnArgentina`, y el origen de los datos:
   `htmlDeOpcionesDeOrigen`, `origenSugeridoDe`, `rotuloDeLaFechaDe`, `problemaDeFechasDelRegistro` y `revisionDelRegistro`); lo que toca el DOM o la API va en `admin.js`.
   Como `perfil.js` y `correos.js`, al cargarse solo declara (`tests/admin-frontend.test.js` lo carga en un `vm`).
 

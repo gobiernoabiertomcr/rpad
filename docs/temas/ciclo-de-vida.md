@@ -7,17 +7,17 @@ Historia y motivos, en las specs:
 
 ## Ciclo de vida del dato (spec 2026-10-25-ciclo-de-vida-del-dato)
 
-- Qué es: un PDF de la pestaña Reportes de «Métricas y Reportes» que dice cuánto tarda el dato en cada etapa del circuito, del aviso del RPAD a la carga en el portal, de cualquier año con métricas (el en curso al día de hoy; uno cerrado, al 31/12).
+- Qué es: un PDF de la pestaña Reportes de «Métricas y Reportes» (`docs/temas/metricas-y-reportes.md`) que dice cuánto tarda el dato en cada etapa del circuito, del aviso del RPAD a la carga en el portal, de cualquier año con métricas (el en curso al día de hoy; uno cerrado, al 31/12).
   Siempre dos hojas A4: la 1, la gestión externa (aviso anticipado, redacción y entrega de nota, respuesta del área y preparación y carga), y la 2, la interna (aviso anticipado, producción del relevamiento y preparación y carga), con un bloque por etapa: qué se hace y cómo se mide, la mediana y el promedio (en días hábiles, con los corridos al lado), los dos extremos con su dataset, cuántos ciclos se midieron, los en curso, las notas pendientes de carga y la mediana del año anterior.
   Lo ven todos los roles con sesión, también el lector y el colaborador.
-  Cuenta siempre todos los ciclos, como el Informe anual: no sigue a los destildados ni a los selectores de la pestaña Métricas (decisión del usuario), y la pestaña no cambió.
-  La tarjeta va segunda en «Para presentar», después de Métricas del año (el grupo pasa a `rp-grilla g4`), con el ícono `route` de Lucide, el texto «Cuánto tarda cada etapa del circuito, del aviso del RPAD a la carga en el portal: la mediana, el promedio y los casos más largo y más corto de cada una.
-  Una hoja para cada gestión.», el selector Año (los de `fotos`, con el en curso arriba y elegido de entrada, independiente del año de la pestaña: ver la convención de `reportes.js`) y «2 hojas: la gestión externa y la interna» debajo del botón.
-  Sin SQL: la foto es JSON y solo suma una clave.
+  Cuenta siempre todos los ciclos, como el Informe anual: no sigue a los destildados ni a los selectores de la pestaña Métricas (decisión del usuario).
+  La tarjeta va segunda en «Para presentar», después de Métricas del año (el grupo lleva `rp-grilla g4`), con el ícono `route` de Lucide, el texto «Cuánto tarda cada etapa del circuito, del aviso del RPAD a la carga en el portal: la mediana, el promedio y los casos más largo y más corto de cada una.
+  Una hoja para cada gestión.», el selector Año (los de `fotos`, con el en curso arriba y elegido de entrada, independiente del año de la pestaña: ver `docs/temas/metricas-y-reportes.md`) y «2 hojas: la gestión externa y la interna» debajo del botón.
+  Sin SQL: la foto es JSON y `etapas` es una clave más.
   Antiobjetivos: los de Métricas (nada que se lea como un reproche o un control a la DGMIT o a un área: sin nota cargada, «pendiente de carga»; los extremos nombran el dataset, no el área; nunca «tardanza», «demora», «atraso», «sin respuesta», «sin entregar» ni «no mandó»), que un caso que todavía no terminó desaparezca, que el reporte diga una cosa y la pestaña Métricas otra para el mismo año y la misma combinación, y que una cifra de un año cerrado cambie después de su foto.
 - Las reglas (`etapasDe(casos, { anio, al, calendario })`, `services/metricasReglas.js`, pura; nunca tira, salvo con un calendario mal armado, y da null sin año o con `al` anterior a él;
   el `calendario`, el mismo en sus dos contextos, es el de los días hábiles: sin él, o con null, `CALENDARIO_FIJO`): las etapas son los tramos del circuito (`TRAMOS_DE_LA_GESTION`), en su orden, con sus nombres, su «desde → hasta» y su insignia, y cuentan exactamente los ciclos de la cifra de cada tramo de `vistaDe` con todos los ciclos (`sin` = []).
-  No copia ninguna regla: dos contextos (`contextoDe`, en días hábiles y en corridos, con mediana), `hechosDe` una vez por caso, `medir` una vez por unidad, `cifraDe` para la mediana y el promedio y `tramoDelCircuito` (en hábiles, con mediana) para el vacío, el en curso, los pendientes y el orientativo; las cuentas de las aclaraciones son las de `aclaracionesDe`, sacada de `vistaDe` sin cambios (es su `circuito.aclaraciones`).
+  No copia ninguna regla: dos contextos (`contextoDe`, en días hábiles y en corridos, con mediana), `hechosDe` una vez por caso, `medir` una vez por unidad, `cifraDe` para la mediana y el promedio y `tramoDelCircuito` (en hábiles, con mediana) para el vacío, el en curso, los pendientes y el orientativo; las cuentas de las aclaraciones son las de `aclaracionesDe`, la misma de `vistaDe` (es su `circuito.aclaraciones`).
   Devuelve `{ anio, al, externa:
   Etapa[4], interna:
   Etapa[3], aclaracion_de_la_hoja: { externa, interna } }`.
@@ -46,19 +46,16 @@ Historia y motivos, en las specs:
   Es un dato: sin flechas ni colores de mejor o peor.
 - La foto del 31/12 (`services/metricasFoto.js`):
   `datosDeLaFoto` guarda también `etapas`, el `etapasDe` de los casos del año (entre `areas` y `generada`; se calcula una sola vez, porque ya trae las dos unidades y los dos estadísticos, y sin `conAnterior`).
-  `VERSION_DE_LA_FOTO` sigue en 1 y la clave es opcional:
+  `VERSION_DE_LA_FOTO` es 1 y la clave es opcional:
   `PARTES_DE_LA_FOTO` no la exige y `datosLeidos` acepta claves de más.
-  Se lee con `etapasDeLaFoto({ anio, datos })` (pura, recibe lo que da `leerFoto`): las guardadas, tal cual (sus `feriados` no se miran);
-  una foto sin `etapas` (sacada con el código anterior) las calcula con sus `casos` al 31/12 (son exactamente las entradas de las cifras: con el mismo código dan lo mismo que la foto nueva) y, desde la tanda 2 de los feriados en todo el sistema, con el calendario con el que se sacó: el de sus `feriados` (`calendarioDeFechas`) o, sin la clave, el de los 9 fijos (una foto sacada antes de la tanda 2 contó con ellos);
+  Se lee con `etapasDeLaFoto({ anio, datos })` (pura, recibe lo que da `leerFoto`): las guardadas, tal cual (sus `feriados` no se miran); una foto sin `etapas` (sacada con el código anterior) las calcula con sus `casos` al 31/12 (son exactamente las entradas de las cifras: con el mismo código dan lo mismo que la foto nueva) y con el calendario con el que se sacó: el de sus `feriados` (`calendarioDeFechas`) o, sin la clave, el de los 9 fijos (una foto sin esa clave contó con ellos);
   unos `feriados` que no son una lista de fechas tiran «La foto de AAAA no se puede leer».
-  Es la única excepción a Ruling 16 y solo cubre una foto sacada antes del despliegue (o una en la que calcularlas falló:
-  `etapasParaLaFoto` deja la parte vacía y manda el error a `console.error`, así el reporte nuevo nunca frena la foto); si lo guardado no son etapas, tira «La foto de AAAA no se puede leer», como una foto rota.
-  **Plazo: en producción antes del 10/01/2027**, el día en que se saca la foto de 2026, para que salga con sus `etapas`.
-  Volver a los archivos anteriores no rompe nada: el código anterior lee igual una foto con `etapas` de más.
+  Es la única excepción a Ruling 16 y solo cubre una foto sacada con el código anterior (o una en la que calcularlas falló:
+  `etapasParaLaFoto` deja la parte vacía y manda el error a `console.error`, así este reporte nunca frena la foto); si lo guardado no son etapas, tira «La foto de AAAA no se puede leer», como una foto rota.
 - Los datos (`cicloDeVidaDe(query, { hoy })`, `controllers/metricasController.js`): el año se lee con `opcionesDeMetricas`, como en `metricasDe` (solo cuenta `anio`; un año anterior a 2026 o futuro da null): en vivo, `etapasDe(casosDe(fuentesDe(null), { hoy: al, calendario }), { anio, al, calendario })`; con foto, `etapasDeLaFoto`.
   El año anterior se lee igual, con `opcionesDeMetricas({ anio: anio - 1 })` (de su foto o, cerrado sin foto, en vivo al 31/12; antes de 2026, null).
-  `fuentesDe(null)` se pide una sola vez, y ninguna si los dos años salen de su foto; desde la tanda 2 de los feriados en todo el sistema, el calendario también (`leerCalendario().then(exigirLaTabla)`, una promesa guardada para los dos años: el 05/01/2027, pidiendo 2027, 2026 todavía no tiene foto y los dos van en vivo con una sola lectura), y un año con foto no lee la tabla.
-  Sin la tabla, lo que va en vivo tira y el reporte responde el 500 de siempre.
+  `fuentesDe(null)` se pide una sola vez, y ninguna si los dos años salen de su foto; el calendario también (`leerCalendario().then(exigirLaTabla)`, una promesa guardada para los dos años: el 05/01/2027, pidiendo 2027, 2026 todavía no tiene foto y los dos van en vivo con una sola lectura), y un año con foto no lee la tabla.
+  Sin la tabla, lo que va en vivo tira y el reporte responde el 500 «Error al generar el Ciclo de vida del dato».
   Devuelve `{ anio, al, en_vivo, aviso_foto, etapas }`, con `conAnterior` aplicado a las etapas y el `aviso_foto` de `opcionesDeMetricas` (para la píldora del sol).
 - API (`controllers/reportesController.js`):
   `GET /api/reportes/ciclo-de-vida?anio=` (`reporteCicloDeVida`, `authMiddleware` sin `adminOnly`: lector y colaborador, 200; sin sesión, 401;
@@ -82,20 +79,13 @@ Historia y motivos, en las specs:
   5 pt más para las notas; los bloques que entran no cambian).
   Solo con más de tres renglones, que no da el servidor, pasan a un renglón, cortadas con «…», y después las de más abajo no van: el orientativo en ámbar (`#7A5200`), el en curso en ámbar y negrita, los pendientes en violeta (`#5B4691`) y negrita, y la aclaración y el año anterior en gris.
   Los textos fijos (qué se hace en cada etapa, cómo se mide y «Cómo se cuenta», con las ventanas de 40 y 60 días de `VENTANA_DE_LA_REGLA`) están en `TEXTOS_DEL_CICLO` (congelada:
-  `descripciones` y `seMide`, por gestión y clave, y `comoSeCuenta(anio)`, que empieza con «Días hábiles: de lunes a viernes, sin feriados ni días no laborables; entre paréntesis, los corridos.», desde la tanda 2 de los feriados en todo el sistema, y en `PRIMER_ANIO` termina con «La comparación con el año anterior empieza en 2027.»); el resto lo manda el servidor y el PDF no recalcula nada.
+  `descripciones` y `seMide`, por gestión y clave, y `comoSeCuenta(anio)`, que empieza con «Días hábiles: de lunes a viernes, sin feriados ni días no laborables; entre paréntesis, los corridos.» y en `PRIMER_ANIO` termina con «La comparación con el año anterior empieza en 2027.»); el resto lo manda el servidor y el PDF no recalcula nada.
   Todo texto que puede no entrar se corta antes de escribirse (`ajustar` del anexo: con el `ellipsis` de PDFKit el test mediría el texto entero), y el nombre de un extremo conserva « y N más» entero (`ajusteDelNombre`).
   Ningún texto baja de 6,2 pt; la descripción baja de 7,2 a 6,4 y, si ni así entra, se corta.
-  Las formas que van adentro de otra (los nodos, las insignias y el mosaico) se dibujan con `contorno`, y los nodos con `NODOS`, los dos exportados de `reportesMetricasPdf.js` sin cambiar nada más: solo el índice, cada bloque y «Cómo se cuenta» son `roundedRect` (los bloques de `pdf-diagramacion.js`).
-  El PDF de Métricas y el Informe anual quedan idénticos: el test «el PDF de Métricas y el Informe anual no cambian» (`tests/reportes-pdf.test.js`) compara el sha256 del contenido de cada hoja (`contenidoPorHoja`, que no mira la fecha de creación) de cinco de esos PDF contra la referencia tomada antes de tocar `reportesMetricasPdf.js` (`REFERENCIA_DE_LOS_PDF`); un cambio a propósito en esos PDF (por ejemplo, un texto del Informe anual) tiene que volver a tomar la referencia.
-  Desde la tanda 2 de los feriados en todo el sistema, la hoja 1 de los PDF con días hábiles (los de esa lista, menos el de «promedio en días corridos») se volvió a tomar por la bajada «Los días son hábiles: de lunes a viernes, sin feriados ni días no laborables.»: su único cambio es ese párrafo, comprobado con el diff de texto hoja por hoja.
-- Tests:
-  `metricas-reglas.test.js` (puro:
-  `etapasDe` y `conAnterior`, con la forma, la paridad con `vistaDe`, los extremos y los empates, el sufijo aparte, los nombres de los extremos, los vacíos, que nada desaparece, las notas en orden, la aclaración de la hoja y que no tira), `metricas-foto.test.js` (Docker:
-  la foto guarda `etapas`, las claves exactas, la paridad con sus vistas, una foto sin `etapas` que da lo mismo aunque después cambie la base y, si calcularlas tira, la foto sin la clave, que se lee igual), `metricas-api.test.js` (Docker:
-  `cicloDeVidaDe` en vivo con la paridad de `metricasDe`, el 404, el año anterior de su foto o en vivo y un año cerrado sin foto entre el 01/01 y el 09/01), `reportes-pdf.test.js` (puro:
-  dos hojas A4, el encabezado, el título, las píldoras, el pie, el índice, los textos de cada bloque, `TEXTOS_DEL_CICLO`, los vacíos, «El único caso», un título de 250 caracteres, las cuatro etapas externas llenas con dos renglones de notas por bloque, la hoja más apretada (las dos píldoras, al lado o una debajo de la otra según el aviso de la foto, y las notas de un año real:
-  entran todas, enteras, los pendientes siguen en la redacción y entrega de nota, y cada extremo conserva sus corridos), «en curso» según `en_vivo` y `aviso_foto`, que nada se pise ni pase de `LIMITE` en seis variantes, ningún texto bajo 6,2 pt, sin NaN, null ni undefined ni las palabras de la lista de tono, y la referencia de Métricas y del Informe anual), `reportes.test.js` (por HTTP:
-  el lector lo descarga, el nombre del archivo, las dos hojas, el 404, el 401 y el 500 con su mensaje fijo), `reportes-frontend.test.js` (ocho tarjetas, la nueva segunda en «Para presentar» con `g4`, el selector de año independiente de la pestaña, la ruta, el nombre y su paridad), `permisos.test.js` (la ruta en las listas del lector, del colaborador y del 401) y `paginas.test.js` (`VERSION_REPORTES`).
+  Las formas que van adentro de otra (los nodos, las insignias y el mosaico) se dibujan con `contorno`, y los nodos con `NODOS`, los dos exportados de `reportesMetricasPdf.js`: solo el índice, cada bloque y «Cómo se cuenta» son `roundedRect` (los bloques de `pdf-diagramacion.js`).
+  El Ciclo de vida reusa piezas de `reportesMetricasPdf.js`, y el PDF de Métricas y el Informe anual no cambian por eso: el test «el PDF de Métricas y el Informe anual no cambian» (`tests/reportes-pdf.test.js`) compara el sha256 del contenido de cada hoja (`contenidoPorHoja`, que no mira la fecha de creación) de cinco de esos PDF contra la referencia (`REFERENCIA_DE_LOS_PDF`);
+  un cambio a propósito en esos PDF (por ejemplo, un texto del Informe anual) tiene que volver a tomar la referencia, comprobando con el diff de texto hoja por hoja que cambió solo eso.
+- Para los tests:
   Los números de la base real no van en los tests versionados (Ruling 3).
 
 ## Archivos de tests

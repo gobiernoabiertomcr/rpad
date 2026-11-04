@@ -22,6 +22,7 @@ Historia y motivos, en las specs:
   Al pasar a otro tipo se borran las filas que ya no van: las de `mi_espacio_evento_personas` al dejar de ser Laboral (`guardarPersonas`, también los recordatorios apagados) y las de `mi_espacio_evento_vistas` al dejar de ser Público (`guardarVistas`, que deja exactamente las elegidas, por diferencia y por la clave; con «Todos», ninguna), y `texto_publico` queda NULL.
   - La validación (`validarEvento`):
     `datos` trae `tipo`, `publico`, `publico_todos` y `texto_publico`; el primer error, en el orden título, fecha, desde, hasta, detalle, tipo (`campo: 'tipo'`, «Elegí el tipo de evento.»), texto público (`campo: 'texto_publico'`: vacío, solo espacios o algo que no es un texto, «Elegí qué ven los demás.»; de más de 60, «Lo que ven los demás puede tener hasta 60 caracteres.»), personas y recordatorio.
+    El texto público se guarda tal cual, recortado, también con `<b>` o comillas: lo escapa quien lo dibuja.
     Las personas de un Público sin «Todos» ni ninguna dan «Elegí con quién lo compartís, o «Todos».» (`personasPublico`), y las de un Laboral, «Elegí con quién lo compartís, o «Toda la administración».» (`personas`), las dos en `personas`.
     **Un cuerpo de antes** (sin `tipo`, o con `tipo: null`: una pestaña que quedó abierta con la página anterior) se lee así: con `compartido` en el `true` literal, Laboral; si no, Privado; con `tipo`, el `compartido` del cuerpo no cuenta.
     Un Privado descarta las personas, el «Todos» y el texto que lleguen.
@@ -29,7 +30,7 @@ Historia y motivos, en las specs:
     Las personas de un Público se validan contra `personasParaElPublico` (todos los activos sin quien pide) más las `vistas` que ya tenía, si ya era Público (`personasDelPedido(…, { tipo: 'publico' })`): una persona que se desactivó sigue al guardar sin tocarla y nadie la suma de nuevo; el id propio se saca sin error.
   - Quién lo ve (spec 6.2;
     `VISTA_PUBLICA` de `services/miEspacioEventosDatos.js`, sumada a `VISIBLES` y a `VISIBLES_CON_TODOS`, para todos los roles;
-    `eventosVisibles` y `eventoVisible` pasan el id de quien pide una vez más): un Público activo, de quien sigue activo, si es para todos o tiene una fila de quien mira en `mi_espacio_evento_vistas`.
+    `eventosVisibles` y `eventoVisible` pasan el id de quien pide una vez por cada `?` de la condición, tres en total): un Público activo, de quien sigue activo, si es para todos o tiene una fila de quien mira en `mi_espacio_evento_vistas`.
     **A quien no lo creó le llega recortado desde la consulta** (spec 6.3: no basta con no dibujarlo):
     `leerEventos` con `quienMira` (lo pasan `eventosVisibles` y `eventoVisible`;
     `eventoPropio` no recorta) lo arma desde cero con un literal, `{ id, creado_por, creador, fecha, desde, hasta, compartido: 0, publico: 1, texto_publico }`, sin leer sus personas ni sus vistas, y uno de una cuenta que ya no está activa no sale (`c.activo AS creador_activo`, que no se expone: la defensa en JS, además de la de la consulta).
@@ -44,11 +45,11 @@ Historia y motivos, en las specs:
     «Lo ven …» las nombra, como a los invitados del Laboral).
   - La API:
     `GET /mi-espacio/eventos` trae `mi_nombre_corto` (el nombre corto de quien pide, contra todos los activos, para la vista previa del formulario; null si no está) y lee `usuariosActivos` en el mismo `Promise.all`.
-    **`GET /api/mi-espacio/personas/publico`** (`listarPersonasParaElPublico`, con `authMiddleware`, para todos los roles con sesión): todos los usuarios activos sin quien pide, `{ id, nombre, iniciales }`, por nombre, ni el email ni el rol (`personasParaElPublico`; la primera vez que el lector y el colaborador ven la lista de los usuarios del RPAD, solo los nombres).
+    **`GET /api/mi-espacio/personas/publico`** (`listarPersonasParaElPublico`, con `authMiddleware`, para todos los roles con sesión): todos los usuarios activos sin quien pide, `{ id, nombre, iniciales }`, por nombre, ni el email ni el rol (`personasParaElPublico`; así el lector y el colaborador ven la lista de los usuarios del RPAD, solo los nombres).
     `GET /mi-espacio/personas` es la de la administración, para el Laboral (403 al lector y al colaborador); el Público tiene una ruta aparte en lugar de un parámetro, que mezclaría el 403 con el 200 (decisión de la spec, 10.7).
     El cuerpo del guardado trae `tipo` y, en un Público, `para_todos` (su «Todos»), `personas` y `texto_publico`; el INSERT y el UPDATE escriben `publico`, `publico_todos` y `texto_publico`.
     **`PUT …/mi-recordatorio` sobre un Público de otra persona** da 400 `sinRecordatorio` («Este evento no tiene recordatorio para vos.», `campo` null), después del 404 y de `esTuyo` y antes de validar `sin_aviso`, de escribir nada y de `itemDeEvento` (decisión de la spec, 10.8: 400 y no 404, porque quien pide lo ve).
-    El Resumen lee `usuariosActivos` aislado (`usuariosDelResumen`: si falla, [] y la consola, y el Resumen sale igual) y «Hoy y mañana» trae `publico` a cada evento: un Público ajeno, con su `titulo` «Carla:
+    El Resumen lee `usuariosActivos` aislado (`usuariosDelResumen`: si falla, [] y la consola, y el Resumen sale igual) y «Hoy y mañana» trae `publico` en cada evento: un Público ajeno, con su `titulo` «Carla:
     Turno médico», `quien` '' y `detalle` «Hoy» o «Mañana»; uno tuyo, su título y `quien` «lo ven todos como «Turno médico»».
     La frase del mes cuenta también los Públicos de otros que ve quien mira.
   - Cómo se ve (spec 4 y 5): en el formulario hay **«Tipo de evento»**, para todos los roles (tres opciones grandes; el lector y el colaborador ven dos), y un Público trae «Qué ven los demás» (las pastillas de la lista y «Otro», con su campo y su contador, «0 de 60 caracteres»), «Así lo ven los demás:» (la pastilla del evento tal como se va a ver en la agenda de los demás, rosada y con el ojo, «10:00 Carla:
@@ -68,6 +69,7 @@ Historia y motivos, en las specs:
     Turno médico», cuándo es, la insignia rosada «Personal (Público)» con el ojo y «Es un evento personal de Carla: se ve solo lo que eligió mostrar.», sin el detalle ni «Mi recordatorio», con «Cerrar».
     El rosado (tokens del `<style>` de `mi-espacio.html`):
     `--sg-rosado` (#8A3B5C: 6,00:1 sobre su fondo y 7,34:1 sobre blanco), `--sg-rosado-fondo` (#F7E3EC) y `--sg-rosado-borde` (#B5577F: 3,70:1 contra su fondo; el anillo del teléfono, 3:1 o más contra cada celda).
+    El texto rosado da 4,5:1 o más sobre su fondo, también desaturado en un día que pasó (`.me-celda.paso .me-cosas`), y el borde de la pastilla, 3:1 o más contra cada celda: lo mide `tests/mi-espacio-frontend.test.js`.
     A los antiobjetivos de la agenda se suman: que el título o el detalle de un Público lleguen al navegador de otra persona (aunque no se dibujen), que a alguien que no sea quien lo creó le llegue un email por un evento personal, que un Público de una persona desactivada se siga viendo, que el Laboral cambie de comportamiento, que el rosado o el ojo sean lo único que distingue un Público de otra persona y que un nombre real o el turno real queden en el repo.
 
 ## La página
@@ -85,10 +87,10 @@ Turno médico», escapados, con el `mi_nombre_corto` del servidor o, sin él, `N
 `ayudasDelEvento(valores, { puedeCompartir })` (texto plano para `textContent`: en un Público, `AYUDA_DE_LAS_PERSONAS_DEL_PUBLICO` y `AYUDA_DEL_RECORDATORIO_PUBLICO`, «Te llega solo a vos.»; en un Laboral, `AYUDA_DE_LAS_PERSONAS_DEL_LABORAL` y `AYUDA_DEL_RECORDATORIO_COMPARTIDO`; un Laboral sin poder compartir, `MENSAJE_LABORAL_SIN_PERMISO` como ayuda del tipo); y `htmlDePersonasDelEvento`, cuyo primer botón dice «Toda la administración» en un Laboral y «Todos» en lo demás.
 Después, cómo se ve:
 `ICONO_DEL_OJO` (Lucide `eye`, decorativo, al lado de `iconoDelMes`) e `ICONOS_DEL_MES`, que trae `ojo` y `'publico-otro'`, los dos con ese ojo (siete claves);
-`iconoDe(clase, icono)` e `iconoOPunto(clase, icono)` (el ícono que pide `icono`, si es una clave de `ICONOS_DEL_MES`; si no, el de la clase, o '' si no tiene);
+`iconoDe(clase, icono)` e `iconoOPunto(clase, icono)` (el ícono que pide `icono`, si es una clave de `ICONOS_DEL_MES`; si no, el de la clase; si la clase no tiene, `iconoDe` da '' e `iconoOPunto`, el de las listas, un punto, `<i></i>`);
 `claseDelEvento` ('publico-otro' un Público de otra persona, 'compartido' un Laboral, tuyo o ajeno, y 'propio' lo tuyo que no es Laboral: un Privado y un Público tuyo);
 `iconoDelEvento(evento)` (`{ icono: 'ojo' }` un Público tuyo, que se suma a su cosa en `cosasPorDia`, a la fila del día elegido y a la cosa de `gruposDeProximos`;
-`{}` lo demás, así los ítems que no son de un Público no cambian de forma);
+`{}` lo demás, así el resto de los ítems no lleva la clave `icono`);
 `htmlDeProximo` (un Público tuyo lleva `<span class="me-lo-ven">` con el ojo y su `quien_texto`, sin insignia; uno de otra persona nunca lleva quién, aunque llegara); y `htmlDelEventoAjeno` (un Público: la insignia `.me-insignia.rosado` con el ojo y «Personal (Público)» y «Es un evento personal de Carla: se ve solo lo que eligió mostrar.» —sin creador, «de otra persona»—, sin `detalle` aunque llegara y sin `opciones`; un Laboral, la insignia «Laboral»; los nombres, de `OPCIONES_DEL_TIPO`).
 El ítem recortado de un Público ajeno no rompe ningún dibujo: todo se lee con `?.`, `esObjeto` y `comoTexto` (Ruling 5 del plan, con un test armado con el `itemDeEvento` real).
 Lo que toca el DOM:

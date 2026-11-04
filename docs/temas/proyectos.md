@@ -8,19 +8,18 @@ Historia y motivos, en las specs:
 ## Archivos
 
 proyectosController: los proyectos, los hitos, los logros, la línea de tiempo y los archivos;
-proyectosReglas (la validación de un proyecto, un hito y un logro con sus mensajes, evidenciaTipo, el nombre de un archivo subido, idPositivo e idsPositivos —una lista de ids sin repetidos: las áreas de un proyecto y, desde la agenda, las personas de un evento—, puro);
+proyectosReglas (la validación de un proyecto, un hito y un logro con sus mensajes, evidenciaTipo, el nombre de un archivo subido, idPositivo e idsPositivos —una lista de ids sin repetidos: las áreas de un proyecto y, en la agenda, las personas de un evento—, puro);
 proyectos.html # Proyectos: pestañas Proyectos (carriles), Línea de tiempo y Logros del área, y el detalle ?id=N (proyectos.js); reemplaza a gestion.html
 
 ## Proyectos (spec 2026-10-25-proyectos)
 
 - Qué es:
-  Herramientas → Proyectos (`proyectos.html` + `js/proyectos.js`, con su `<style>` y los tokens `--sg-*`, sin `publico.css`), la página que reemplazó a Gestión: los proyectos de la DDPC con sus hitos y documentos, y los logros del área (hitos con `proyecto_id` NULL), en las pestañas Proyectos (carriles de 3 años), Línea de tiempo (`#linea`) y Logros del área (`#logros`), y el detalle `?id=N`.
-  Los hitos de cada año salen en el Informe anual (`hitosDelAnio`, sin cambios).
-  Sin tablas nuevas ni migración.
+  Herramientas → Proyectos (`proyectos.html` + `js/proyectos.js`, con su `<style>` y los tokens `--sg-*`, sin `publico.css`), los proyectos de la DDPC con sus hitos y documentos, y los logros del área (hitos con `proyecto_id` NULL), en las pestañas Proyectos (carriles de 3 años), Línea de tiempo (`#linea`) y Logros del área (`#logros`), y el detalle `?id=N`.
+  Los hitos de cada año salen en el Informe anual (`hitosDelAnio`).
   Los textos, las medidas y el dibujo están en la spec; acá, los contratos.
 - Quién: la ven todos los roles con sesión; el lector y el colaborador ven todo y bajan y previsualizan los documentos y los archivos (decisión del usuario).
   Escribe solo administración (la página muestra los botones con `Auth.isAdmin()`; el servidor valida igual).
-- API (`controllers/proyectosController.js`; la validación, pura, en `services/proyectosReglas.js`; las direcciones siguen en `/api/gestion/…`): con `authMiddleware`, las lecturas (`GET /gestion/proyectos`, `/gestion/proyectos/:id`, `/gestion/timeline`) y las descargas (`GET …/documentos/:docId/descargar`, `…/archivos/:archivoId/descargar`); con `authMiddleware` + `adminOnly` (lector y colaborador, 403;
+- API (`controllers/proyectosController.js`; la validación, pura, en `services/proyectosReglas.js`; las direcciones están en `/api/gestion/…`): con `authMiddleware`, las lecturas (`GET /gestion/proyectos`, `/gestion/proyectos/:id`, `/gestion/timeline`) y las descargas (`GET …/documentos/:docId/descargar`, `…/archivos/:archivoId/descargar`); con `authMiddleware` + `adminOnly` (lector y colaborador, 403;
   `RUTAS_SOLO_ADMIN` de `tests/permisos.test.js`), las escrituras:
   `POST`, `PUT` y `DELETE /gestion/proyectos[/:id]`, `POST /gestion/logros`, `POST /gestion/proyectos/:proyecto_id/hitos`, `PUT` y `DELETE /gestion/hitos/:id`, las subidas (`POST /gestion/proyectos/:id/documentos` y `/gestion/hitos/:id/archivos`, campo `archivos`) y los `DELETE` de documentos y archivos.
   Fechas como texto `'AAAA-MM-DD'` (`DATE_FORMAT`;
@@ -54,7 +53,7 @@ proyectos.html # Proyectos: pestañas Proyectos (carriles), Línea de tiempo y L
     Una subida bien hecha: 201 con «1 documento subido», «3 archivos subidos».
   - Anotado, sin migración:
     `proyectos.created_by` tiene `ON DELETE CASCADE`, pero los usuarios no se borran.
-- La página (las copias del servidor y sus paridades, en la convención de `proyectos.js`;
+- La página (las copias del servidor y sus paridades, en «La página: proyectos.js»;
   `mensajeMimeNoPermitido` y `MENSAJE_SUBIDA_ILEGIBLE` no se copian: el navegador no controla el MIME y muestra el mensaje del servidor):
   - Lo elegido en la lista viaja en la dirección (`history.replaceState`, solo lo que no es de entrada) y el detalle lo conserva.
     El buscador se dibuja una vez y no se le cambia el valor mientras tiene el foco (el redibujo del `ResizeObserver` pisaba una letra con tilde a medias).
@@ -67,28 +66,26 @@ proyectos.html # Proyectos: pestañas Proyectos (carriles), Línea de tiempo y L
     «Ver» (imágenes y PDF, desde un `blob:`) tiene «Descargar» en el pie: en el teléfono un PDF no se ve en el `<iframe>`.
 - El renombre:
   `GET /gestion.html` → 302 a `/proyectos.html` (`app.js`, antes de `express.static`), sin fragmento: el navegador conserva `#metricas`, que abre Proyectos con el aviso «Las métricas de Gestión ahora están en Herramientas → Métricas y Reportes.» y lo saca de la dirección.
-  Métricas y Reportes conserva «CSV de Gestión (últimos 12 meses)» y «…que estaban en Gestión.» (el CSV de `/gestion/metricas/csv` no cambió:
+  `tests/paginas.test.js` controla que no existan `gestion.html` ni `gestion.js`.
+  Métricas y Reportes conserva «CSV de Gestión (últimos 12 meses)» y «…que estaban en Gestión.» (el CSV sale de `/gestion/metricas/csv`, una API que conserva ese nombre:
   R18).
+  `tests/reportes-pdf.test.js`, `tests/reportes-frontend.test.js` y `tests/usuarios-frontend.test.js` controlan los textos que nombran a Proyectos: el Informe anual, su tarjeta en Reportes y la ayuda de los roles.
 - Otras decisiones:
   R3, «Subido el dd/mm/aaaa» con `subido_el`;
   R11, la frase del año cuenta los logros dentro de «N hitos»;
   R12 y R13, un hito sin nada dice «Sin descripción, enlace ni archivos.» y la banda de la cinta nunca arranca antes del primer evento, y su parte clara llega al último posterior a hoy;
   R14, el ícono de un proyecto nuevo es `folder`, uno desconocido se edita como `clipboard-list`, el color guardado se conserva tal cual, los repetidos se comparan en NFC y los textos no llevan `maxlength`.
-- Tests:
-  `proyectos-reglas.test.js` (puro), `proyectos-api.test.js` (Docker y candado; base `rpad_test_proyectos_api`, `UPLOADS_DIR` en una temporal:
-  CRUD, cada 400, los 404, transacciones, permisos, subidas —el CSV de Excel y el MIME rechazado—, descargas, «una subida que falla» deja la carpeta como estaba y la dirección vieja), `upload-subida.test.js` (sin base ni candado: el `subida()` de verdad mientras multer lee:
-  la carrera de los huérfanos, los MIME del CSV, el pedido ilegible), `proyectos-frontend.test.js` (`proyectos.js` en un `vm` con los datos de la maqueta, anonimizados, de `tests/fixtures/proyectos-maqueta.json`, y un DOM y un `fetch` falsos), `permisos.test.js`, `paginas.test.js` (`VERSION_PROYECTOS`, sin `gestion.html` ni `gestion.js`, el menú) y los textos en `reportes-pdf`, `reportes-frontend` y `usuarios-frontend`.
 
 ## La página: proyectos.js
 
-- `proyectos.js` (Herramientas → Proyectos; ver «Proyectos»): al cargarse solo declara (`tests/proyectos-frontend.test.js` lo carga en un `vm` después del `main.js` de verdad —`getIconSvg` e `ICON_SELECTOR_MAP`— y del `api.js` de verdad, como la página, y también con un DOM falso y un `fetch` falso que anota cada pedido y puede tardar).
+- `proyectos.js` (Herramientas → Proyectos): al cargarse solo declara (`tests/proyectos-frontend.test.js` lo carga en un `vm` después del `main.js` de verdad —`getIconSvg` e `ICON_SELECTOR_MAP`— y del `api.js` de verdad, como la página, y también con un DOM falso y un `fetch` falso que anota cada pedido y puede tardar).
   Lo que arma HTML y lo que calcula es puro y recibe por parámetro quién mira (`esAdmin`: solo el `true` literal) y "hoy":
   la dirección (`estadoDeLaUrl`, `urlDeEstado`, `estadoConVentana`, `estadoDeLaLista`, `urlDeLaLista`), la ventana (`extremosDeAnios`, `ventanaDe`), los filtros y el orden (`filtrarProyectos`, `cantidadesDeFiltros`, `ordenarProyectos`), los puntos de un carril (`puntosDelCarril`, que recibe el ancho de la pista en px), la frase del año (`fraseDelAnio`), los filtros en tres partes (`htmlDelBuscador`, que se dibuja una sola vez, `htmlDeChipsDeEstado` y `htmlDeSegundaFila`),
   los carriles (`htmlDeCarriles`), la ficha (`htmlDeFicha`), la cinta (`cintaDelProyecto`, con sus x y sus filas de etiquetas, y `svgDeCinta`), las filas (`htmlDeHito`, `htmlDeArchivos`, `htmlDeDocumentos`), el detalle, la línea de tiempo y los logros (`htmlDeDetalle`, `htmlDeLinea`, `htmlDeLogros`), los formularios (`valoresDelProyecto`, `valoresDelHito`, `erroresDelProyecto`, `erroresDelHito`, `htmlDeColores`, `htmlDeIconos`, `htmlDeAreas`, `htmlDeMuestra`),
   los archivos elegidos (`problemaDeArchivo`, `htmlDePendientes`, `htmlDeVistaPrevia`, solo con un `blob:`) y las confirmaciones (`textoDeConfirmacion`, texto plano para `textContent`).
   Lo que toca el DOM o la API va aparte, al final (`iniciarProyectos`, enganchado a `DOMContentLoaded`, con los eventos delegados en contenedores fijos: volver a dibujar no engancha nada).
   Pide los datos con `API.pedirJson`, los archivos con `API.pedirArchivo` + `descargarBlob` (local, copiado de `seguimiento.js`;
-  JWT en el encabezado, nunca en la URL) y sube con `subirArchivos`, un `fetch` POST propio con `FormData` (el campo `archivos`) y `Auth.getAuthHeaders()` sin `Content-Type` (`api.js` no cambió); con un 401, `Auth.clearSession()` y al login (en `API.pedirArchivo`, que no da el estado, si `Auth.isTokenExpired()`).
+  JWT en el encabezado, nunca en la URL) y sube con `subirArchivos`, un `fetch` POST propio con `FormData` (el campo `archivos`) y `Auth.getAuthHeaders()` sin `Content-Type`; con un 401, `Auth.clearSession()` y al login (en `API.pedirArchivo`, que no da el estado, si `Auth.isTokenExpired()`).
   Las fechas llegan como texto `'AAAA-MM-DD'` (también `subido_el`) y se cortan como texto; los días se cuentan con `Date.UTC` sobre sus partes;
   "hoy" es `Utils.hoyEnArgentina()`.
   Todo texto del servidor pasa por `Utils.escapeHtml` (también en los `title` y los `aria-label`), un color llega a un `style` solo si es `#RRGGBB` (si no, `#1A365D`) y un número se escribe con `String`.
@@ -99,6 +96,7 @@ proyectos.html # Proyectos: pestañas Proyectos (carriles), Línea de tiempo y L
   `PALETA` se compara con los 10 colores de la spec.
   Solo del navegador, con tests de comportamiento: los repetidos de `problemaDeArchivo` («Ya hay un archivo llamado <nombre>.», en la misma tanda o con lo que ya tiene el hito o el proyecto, comparados en NFC: el servidor no rechaza nombres repetidos, los guarda con un nombre único en el disco).
   Los textos no llevan `maxlength` (cuenta unidades de UTF-16: un emoji son dos).
+  `tests/proyectos-frontend.test.js` usa los datos de la maqueta de `tests/fixtures/proyectos-maqueta.json`, anonimizados: los datos reales no se versionan (Ruling 3).
 
 ## Archivos de tests
 
