@@ -639,9 +639,9 @@ const resultadosDe = (cuentan, ctx, hayNotas) => {
 // Los textos de los resultados (Ruling 19: la página los imprime): lo que va al lado de la cifra («de 33 ciclos», «de 1 vencimiento»), el
 // medidor (el porcentaje; null sin total) y lo de cuando no hay casos; en la cobertura, qué es estar avisado (con los días de la regla) y
 // el título de los que faltan («El que falta:», «Los 2 que faltan:»); en las reiteraciones, el título de cada grupo con sus ciclos y, si
-// no hay nada que mostrar, por qué (sin notas DGMIT: «Todavía no hay notas DGMIT cargadas.»); `aclaracion`, la de los emails viejos
-// (Ruling 21), solo si alguno de los ciclos que cuentan del RPAD a la DGMIT tuvo una reiteración por email, un email a la DGMIT de un
-// día posterior al inicio de sus tramos (si no, null)
+// no hay nada que mostrar, por qué (sin notas DGMIT: «Todavía no hay notas DGMIT cargadas.»); `aclaracion`, debajo de las del RPAD, con
+// ciclos (si no, null): la de los emails viejos (Ruling 21), solo si alguno de los que cuentan tuvo una reiteración por email, un email
+// a la DGMIT de un día posterior al inicio de sus tramos, y siempre la de la frecuencia (spec 2026-11-03-reiteracion-bimestral, 6)
 const textosDeResultados = ({ aTiempo, actualizados, si, vencimientos, faltan, rpad, dgmit, conEmails }, ctx) => ({
   a_tiempo: {
     de: `de ${cantidadDeCiclos(actualizados)}`, medidor: porcentajeDe(aTiempo, actualizados),
@@ -657,13 +657,15 @@ const textosDeResultados = ({ aTiempo, actualizados, si, vencimientos, faltan, r
     rpad: `Del RPAD a la DGMIT (${cantidadDeCiclos(rpad)})`, rpad_vacio: rpad === 0 ? `Sin ciclos en ${ctx.anio}.` : '',
     dgmit: dgmit === null ? 'De la DGMIT al área' : `De la DGMIT al área (${cantidadDeCiclos(dgmit.total)})`,
     dgmit_vacio: dgmit === null ? `${SIN_NOTAS_DGMIT}.` : dgmit.total === 0 ? `Sin ciclos con nota DGMIT en ${ctx.anio}.` : '',
-    aclaracion: conEmails ? ACLARACION_DE_LOS_EMAILS : null
+    aclaracion: rpad === 0 ? null : [conEmails ? ACLARACION_DE_LOS_EMAILS : null, ACLARACION_DE_LA_FRECUENCIA].filter(Boolean).join(' ')
   }
 });
 
 // Hasta el 12/10/2026 el RPAD avisaba por email: además del de 40 o 60 días, el de los 5 días y el resumen mensual de vencidos, que
 // suman reiteraciones del RPAD a la DGMIT en los ciclos de entonces
 const ACLARACION_DE_LOS_EMAILS = 'Hasta el 12/10, el email de los 5 días y el resumen mensual de vencidos se sumaban a cada ciclo.';
+// Desde que la reiteración es bimestral, va a haber más ciclos con «Ninguna» sin que nada haya mejorado (spec 2026-11-03-reiteracion-bimestral, 6)
+const ACLARACION_DE_LA_FRECUENCIA = 'Desde diciembre de 2026, la reiteración sale cada dos meses.';
 
 const textoDeDias = (valor) => (valor === null ? '' : valor === 0 ? 'en el día' : String(valor));
 
