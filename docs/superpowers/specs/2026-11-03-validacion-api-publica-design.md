@@ -21,13 +21,13 @@ Cada campo se valida en este orden: que sea un texto, su largo y su formato. Un 
 
 - Login: `username` y `password` tienen que ser textos; si no, el 400 de siempre, «Usuario y contraseña son requeridos». Antes de consultar la base.
 - `/auth/recuperar`: un `identificador` que no es un texto cuenta como vacío y da la misma respuesta de siempre (no revela nada ni busca).
-- Las claves de los límites de intentos (`limiteLoginPorUsuario`, `limiteRecuperarPorIdentificador`) toman solo un texto, con un tope de 100 caracteres: lo que el límite guarda en memoria queda acotado. Un valor que no es un texto cuenta como vacío.
+- Las claves de los límites de intentos (`limiteLoginPorUsuario`, `limiteRecuperarPorIdentificador`) toman solo un texto, con un tope de 100 caracteres, que no le llega a ninguna cuenta. Un valor que no es un texto cuenta como vacío.
 
 ### Portal de datos abiertos (`controllers/andinoController.js`, `routes/index.js`, `public/js/admin.js`)
 
 - El pedido al portal tiene un tiempo límite real, con `AbortSignal.timeout`, que vale también si el portal contesta los encabezados y no termina el cuerpo. Si vence: 504, «El portal de datos abiertos no respondió a tiempo. Probá de nuevo en unos minutos.». El navegador ya muestra `result.error`.
 - Un `url` que no es un texto da el 400 de siempre, «Se requiere el parámetro url».
-- **Decisión del usuario (03/11/2026): `GET /api/andino/fetch` pasa a pedir sesión de administración** (`authMiddleware` + `adminOnly`). Solo la usa Gestión de Datasets, así que `admin.js` manda el token en sus dos pedidos y `admin.html` pide `admin-fechas.js` y `admin.js` con una versión nueva.
+- **Decisión del usuario (03/11/2026): `GET /api/andino/fetch` pasa a pedir sesión de administración** (`authMiddleware` + `adminOnly`). Solo la usa Gestión de Datasets, así que `admin.js` manda el token en sus dos pedidos y `admin.html` pide `admin-fechas.js` y `admin.js` con una versión nueva. Con un 401 o un 403, el paso 1 no ofrece seguir con la carga manual, que también pide sesión.
 
 ## Antiobjetivos
 
