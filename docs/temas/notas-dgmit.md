@@ -18,7 +18,7 @@ notasDgmitReglas (la validación de una nota DGMIT y de su motivo, pura).
   No es un aviso del RPAD ni una Nota Digital (esa la manda el RPAD a la DGMIT): no cuenta en "Avisos del ciclo abierto" ni en la columna de avisos de la lista y no cambia `avisosDelCiclo`, `ultimoAviso`, `ciclosDe`, `hitosDe` ni el estado.
   No sale ningún email y no cambia ninguna Nota Digital.
   Gestión interna no tiene nota formal (el relevamiento sigue "por fuera del RPAD").
-  Las tablas arrancan vacías; las notas anteriores se importarán con un SQL aparte (spec, sección 9).
+  Las tablas arrancan vacías; las notas anteriores se cargan a mano desde el Seguimiento (decisión del usuario, 25/10/2026): no hay SQL de importación.
   Antiobjetivo: que algo se lea como un reproche o un control sobre la DGMIT.
 - Quién: carga el colaborador y administración (`puedeCargarNotasDgmit`; el middleware `cargaNotasDgmit` responde 403 "No tenés permiso para cargar notas DGMIT.").
   Corrige y anula quien la cargó (`creado_por`; si dejó de tener un rol que carga, el middleware la frena antes) o administración (si no, 403 "Solo quien cargó la nota o administración pueden corregirla o anularla.").

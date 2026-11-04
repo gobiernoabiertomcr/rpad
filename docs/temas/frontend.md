@@ -10,6 +10,7 @@ Historia y motivos, en las specs:
 
 img/compartir.png # Imagen de la vista previa al compartir un link (1200×630)
 robots.txt # Cerrado a todos, salvo a los robots de vista previa de un link
+contactoController: el formulario de contacto público.
 
 ## Carga de las páginas y versiones
 
@@ -42,8 +43,8 @@ robots.txt # Cerrado a todos, salvo a los robots de vista previa de un link
 ## Las páginas públicas
 
 - `dashboard.js`, `datasets.js`, `dataset-detail.js` y `calendario.js`: al cargarse solo declaran (`tests/publico-frontend.test.js` los carga en un `vm`;
-  `main.js`, igual, en `tests/main-frontend.test.js`); lo que cuenta, ordena y arma el HTML es puro, y lo que toca el DOM o la API va aparte.
-  Piden los datos con `API.pedirJson` (tira error ante una respuesta de error), no con `API.getDatasets()` ni `getEstadisticas()` (devuelven `[]` o `undefined`; los sigue usando administración): así un error no se dibuja como una lista vacía o con ceros.
+  `main.js` también se carga en un `vm`, en `tests/main-frontend.test.js`, pero no solo declara: crea un `<style>` para los toasts y engancha `DOMContentLoaded`, y el test le da un `document` falso); lo que cuenta, ordena y arma el HTML es puro, y lo que toca el DOM o la API va aparte.
+  Piden los datos con `API.pedirJson` (tira error ante una respuesta de error), no con `API.getDatasets()` ni `getEstadisticas()` (devuelven `[]` o `undefined`; `getDatasets` lo usan `admin.js` y `correos.js`, y `getEstadisticas` no lo llama nadie): así un error no se dibuja como una lista vacía o con ceros.
 
 ## CSS
 

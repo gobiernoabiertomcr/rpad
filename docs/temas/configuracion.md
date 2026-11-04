@@ -6,12 +6,15 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-24-configuracion-design.md`
 - `docs/superpowers/specs/2026-10-28-mi-espacio-licencia-anulada-design.md`
 - `docs/superpowers/specs/2026-10-27-feriados-en-notas-design.md`
+- `docs/superpowers/specs/2026-10-26-mi-espacio-licencias-y-horas-design.md`
 
 ## Archivos
 
 areasReglas (la validación de un área y sus mensajes, los datos de contacto que solo ve administración y por qué no se puede borrar, puro);
 licenciasOficialesService (el alta, la edición y la anulación de una licencia de Configuración → Licencias con sus reglas, dentro de una transacción ajena: las comparten Configuración y Mi espacio);
 configuracion.html # Configuración: pestañas Usuarios, Licencias, Áreas y Feriados (usuarios.js, areas.js y feriados.js); reemplaza a usuarios.html y areas.html
+usuariosController (el panel de usuarios), licenciasController (las licencias de Configuración), areasController (las áreas) y authController (login y contraseña).
+usuariosReglas (roles, puro), usuariosAuditoriaService (el historial de cambios sobre usuarios), accesoService (los links de un solo uso), licenciasReglas (puro) y licenciasService (lecturas).
 
 ## Configuración: Usuarios, Licencias, Áreas y Feriados (spec 2026-10-24-configuracion)
 
@@ -85,7 +88,7 @@ configuracion.html # Configuración: pestañas Usuarios, Licencias, Áreas y Fer
   Con ella, `/areas` y `/areas/:id` traen `datasets_dados_de_baja`, `datasets_externos_con_nota` (la regla del aviso), `cambios_pendientes_que_la_usan` y `vista: 'administracion'`, al lado de `data` (la vista no se deduce porque falte un campo): sin la marca (por ejemplo, con la sesión vencida con la página abierta) no dibuja la tabla ni el aviso, dice "Tu sesión ya no permite ver las áreas.
   Volvé a ingresar." y deshabilita "Nueva área".
   El resto (el calendario, el selector de `admin.js`, el Generador, Métricas y Reportes y Proyectos) usa solo el id y el nombre.
-  Lo que ve el lector con sesión en el Seguimiento (los emails del área en un "Email al área") y en el reporte "Por área" no cambió.
+  El lector con sesión ve los emails del área en el Seguimiento (en un "Email al área", y también el para y el cc de las notas y los destinatarios de los emails: decisión del usuario) y en el reporte "Por área".
 - Guardar y borrar (`controllers/areasController.js`, con las reglas puras de `services/areasReglas.js`):
   `validarArea(entrada, anterior)` → `{ datos, error }` (ninguna función tira): el nombre recortado, obligatorio en el alta y, en una edición, si viene, no vacío (hasta 200 caracteres, contados con `Array.from`); los artículos 'la' o 'el' (el de la dependencia, también null; en el alta, sin artículo, 'la'); los demás textos recortados, '' o solo espacios como NULL, con los largos del varchar (`LARGOS_AREA`);
   uno que llega como número finito se pasa a texto (`String(n)`, el 0 es "0") y se valida como texto (`opcionalComoTexto`: un teléfono mandado sin comillas no borra lo guardado, y en un email da el error de formato);

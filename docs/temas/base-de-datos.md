@@ -64,7 +64,7 @@ Historia y motivos, en las specs:
 - Fechas de los datasets (sin tablas propias):
   `datasets.datos_al` y `datasets.tipo_pedido`, `frecuencias.meses`, las columnas `cambio_id`, `vencimiento`, `datos_al`, `recibido_el` y `proxima_nueva` de `historial_actualizaciones`, y `datos_desde`, `datos_hasta` y `datos_solicitados` de `notas_digitales_datasets`.
   Migraciones aditivas, en este orden:
-  `migracion-fechas-datasets.sql` (estructura), `migracion-fechas-datasets-datos.sql` (carga de "Datos al" y tipo de pedido de los datasets) y `migracion-fechas-datasets-textos.sql` (saca el período de los "Qué se solicita"; va después de subir el código y antes del Restart, y cada `UPDATE` cambia el texto solo si sigue siendo el original del 17/10/2026).
+  `migracion-fechas-datasets.sql` (estructura), `migracion-fechas-datasets-datos.sql` (carga de "Datos al" y tipo de pedido de los datasets; se corre una sola vez) y `migracion-fechas-datasets-textos.sql` (saca el período de los "Qué se solicita"; va después de subir el código y antes del Restart, y cada `UPDATE` cambia el texto solo si sigue siendo el original del 17/10/2026).
   Sin `CHECK` en la base: valida la API.
 - Requiere nota DGMIT (sin tablas propias):
   `datasets.requiere_nota` (`TINYINT(1) NULL DEFAULT NULL`, después de `tipo_gestion`; 1 = Sí, 0 = No, NULL = sin dato; en gestión interna, siempre NULL).
@@ -97,7 +97,7 @@ Historia y motivos, en las specs:
   Los 9 fijos no se guardan: salen de `FERIADOS_FIJOS`.
   Sin índice único: el mismo día puede tener dos feriados (el Jueves Santo de 2026 cae el día de Malvinas; la API avisa y no lo impide).
   Sin `CHECK` en la base: valida la API (ver `docs/temas/feriados.md`).
-  `migracion-feriados.sql` (aditiva y repetible: dos `CREATE TABLE IF NOT EXISTS`) va **antes** del código (sin las tablas, `GET /api/feriados` da 500 y la pestaña dice que no se pudieron cargar; nada más las lee).
+  `migracion-feriados.sql` (aditiva y repetible: dos `CREATE TABLE IF NOT EXISTS`) va **antes** del código (sin las tablas, `GET /api/feriados` da 500 y la pestaña dice que no se pudieron cargar; también las leen `services/feriadosDatos.js` y `services/miEspacioDatos.js`).
   `migracion-feriados-datos.sql` (la precarga de 2026 y 2027: 28 `INSERT … SELECT … WHERE NOT EXISTS` con la misma fecha y el mismo nombre, 19 de 2026 y 9 de 2027, con `creado_por` NULL y, arriba de cada uno, su fuente en un renglón `-- Fuente:` propio —`tests/schema.test.js` lee como código todo lo que va en el renglón del `INSERT`—, sacadas de `docs/superpowers/specs/2026-10-26-feriados-fuentes.md`; las tres que se repiten, el 23/2, el 28/7 y el 8/11, van una vez, con la fecha de 2026;
   lo que todavía no está decretado se carga desde la pestaña) va después de la estructura y antes de subir el código (el código anterior no lee la tabla: después también anda).
   Se puede volver a correr (no vuelve a cargar una con la misma fecha y el mismo nombre, aunque se haya dado de baja), salvo que desde la pestaña se haya corregido la fecha o el nombre de una de las 28 (la vuelve a cargar con los de acá); la consulta comentada del final da 28 filas, 19 de 2026, 9 de 2027 y 3 que se repiten (cuenta las de `creado_por` NULL).

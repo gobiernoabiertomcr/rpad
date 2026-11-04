@@ -10,12 +10,14 @@ Historia y motivos, en las specs:
 ## Archivos
 
 seguimientoReglas (movimientos, ciclos y avisos, puro), seguimientoCinta (la cinta como datos, pura), seguimientoDatos (las consultas, solo lectura) y seguimientoPdf (el PDF de una hoja, o de N hojas para un anexo).
+seguimientoController: solo lectura, para todos los roles con sesión.
 
 ## Seguimiento del dataset (spec 2026-10-20-seguimiento-dataset)
 
 - Qué es:
   Herramientas → Seguimiento (`seguimiento.html` + `js/seguimiento.js`, una de las 14 páginas con carcasa; sin `publico.css`, sin `aria-current`, con su `<style>`).
   Para todos los roles con sesión (el lector también; sin sesión, al login).
+  El lector recibe también el para y el cc de las notas y los destinatarios de los emails (decisión del usuario: está bien); solo se le saca el texto técnico del error de un email (`sinErroresTecnicos`).
   Es el registro de todos los movimientos de un dataset y la prueba de cada vez que el RPAD avisó que había que pedir la información.
   Muestra lo que registró el sistema y las notas DGMIT, lo único que se carga a mano, desde esta misma página (administración y el colaborador: ver `docs/temas/notas-dgmit.md`).
   Todo lo demás es de solo lectura.
@@ -58,7 +60,7 @@ seguimientoReglas (movimientos, ciclos y avisos, puro), seguimientoCinta (la cin
   también las pendientes y fallidas, que se muestran con su estado y no cuentan como aviso) + `notas_digitales_cambios` (las notas de auditoría), y las notas DGMIT (`notas_dgmit` y sus dos tablas, en una consulta aislada: ver `docs/temas/notas-dgmit.md`).
   También trae lo importado de `actualizaciones_recibido` (ver `docs/temas/base-de-datos.md`; el «Recibido el» y el origen de las actualizaciones viejas: completan `nuevos` del cambio solo donde el cambio no trae el valor, `conImportado`, en otra consulta aislada, `importadosDe`: si falla, los cambios salen sin lo importado) y `dataset.tema_principal` (el nombre del tema principal).
   TIMESTAMP (`created_at`, `revisado_at`, `enviado_at`) en UTC, pasados a hora argentina con `UNIX_TIMESTAMP` y `ahoraArgentina`;
-  `notas_digitales.fecha` es DATE y `enviada_at` ya está en hora argentina.
+  `notas_digitales.fecha` es DATE y `enviada_at` se escribe con `NOW()`: en producción da hora argentina (la nota 3/26, creada 11:15 UTC, enviada 08:15) y en el Docker local, UTC.
   Los `crear` aprobados quedan con `dataset_id` NULL: se unen al dataset al leer, por el título de `datos_nuevos` y por `revisado_at` a 5 segundos o menos de `datasets.created_at` (si el título cambió después, solo por la hora); no se toca `aprobarCambio`.
   Las fechas viejas de `datos_anteriores` (`2025-07-31T03:00:00.000Z`) se normalizan a `AAAA-MM-DD`.
   El área del email al área es la del momento del envío (`notificaciones_log.area_id`), no la actual.
@@ -87,7 +89,7 @@ seguimientoReglas (movimientos, ciclos y avisos, puro), seguimientoCinta (la cin
   Devuelve `{ meses, tramos, textos, vencimientos, marcas, hoy }`; la pantalla la dibuja en SVG y el PDF con PDFKit, con los mismos números.
   Tres filas de marcas: arriba las notas y los emails a DGMIT, sobre la banda el alta, las actualizaciones, los cambios en la ficha y sus pendientes, y abajo las notas DGMIT sin anular, los emails al área y las propuestas rechazadas.
   En una fila, las marcas a menos de 11 unidades (12 en el PDF) se juntan en una con la cantidad, y se dibuja la de más prioridad (nota, email, actualización, actualización pendiente, cambio, cambio pendiente, alta, nota DGMIT, rechazo, email al área).
-  Los textos de la banda ("Vencido hace N días", "Estuvo vencido N días", "Vencido desde el dd/mm/aaaa (hace N días)", "Frecuencia eventual: sin vencimiento", "Sin fecha de próxima actualización", "Todavía no estaba en el RPAD") van en el hueco libre más grande entre las marcas; si no entra, no va.
+  Los textos de la banda ("Vencido hace N días", "Estuvo vencido N días", "Vencido desde el dd/mm/aaaa (hace N días)", "Frecuencia eventual: sin vencimiento", "Sin fecha de próxima actualización") van en el hueco libre más grande entre las marcas; si no entra, no va. "Todavía no estaba en el RPAD" va al centro de su tramo, solo si el tramo mide más que `LARGO_PARA_TEXTO_ANTES`.
   En el teléfono la cinta conserva su ancho mínimo (unos 640 px) dentro de un contenedor con desplazamiento horizontal: el resto de la página no se desplaza de costado.
 - El PDF (`services/seguimientoPdf.js`, `renderSeguimiento`):
   A4, una hoja por dataset (nunca pasa a una segunda: las secciones tienen lugar fijo y se completan solas), con el lenguaje del ANEXO:

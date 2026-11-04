@@ -13,12 +13,13 @@ metricasController:
 GET /api/metricas y su PDF, y los datos del Ciclo de vida del dato;
 gestionController: solo las métricas de /gestion/metricas, el CSV y las métricas manuales;
 metricasReglas (los casos, la vista, el contexto, el trabajo, las áreas y las etapas del Ciclo de vida del dato, puro), metricasCinta (la cinta del recorrido típico, pura), metricasOpciones (los años, la foto que toca y los parámetros, puro) y metricasFoto (la foto del 31/12);
-reportesPdfBase (la base de los PDF) y un archivo por reporte (reportesMetricasPdf, reportesCicloDeVidaPdf, reportesInformeAnualPdf, reportesEstadoGeneralPdf, reportesPorAreaPdf, reportesAvisosPdf, reportesAgenda + reportesAgendaPdf y reportesParaCompletarPdf), y reportesNombres (los nombres de los PDF);
+reportesPdfBase (la base de los PDF) y un archivo por reporte (reportesMetricasPdf, reportesCicloDeVidaPdf, reportesInformeAnualPdf, reportesEstadoGeneralPdf, reportesPorAreaPdf, reportesAvisosPdf, reportesAgenda + reportesAgendaPdf y reportesParaCompletarPdf), y reportesNombres (los nombres de los PDF).
+reportesController: los reportes PDF, con sus consultas.
 
 ## Métricas y Reportes (spec 2026-10-24-metricas-y-reportes)
 
 - Qué es:
-  Herramientas → **Métricas y Reportes** (`reportes.html` + `js/reportes.js`; el archivo conserva su nombre; con su `<style>` y los tokens del Seguimiento, sin `publico.css`), para todos los roles con sesión (sin sesión, al login).
+  Herramientas → **Métricas y Reportes** (`reportes.html` + `js/reportes.js`; el archivo se llama así aunque la página diga «Métricas y Reportes»; con su `<style>` y los tokens del Seguimiento, sin `publico.css`), para todos los roles con sesión (sin sesión, al login).
   Dos pestañas con hash y `aria-selected`, como Correos:
   Métricas (la inicial, `#metricas`) y Reportes (`#reportes`).
   Solo escribe administración: las métricas manuales («Cargar el mes»).
@@ -46,7 +47,7 @@ reportesPdfBase (la base de los PDF) y un archivo por reporte (reportesMetricasP
 - `vistaDe(casos, { anio, al, estadistico, dias, sin, calendario })` (`al`: hoy en el año en curso, el 31/12 en uno cerrado; lo de después no cuenta):
   `circuito` (los tramos de cada gestión y las aclaraciones: los avisados ya vencidos, los resueltos con una fuente pública y, si los hay, los de «Requiere nota:
   No», «N ciclos son de datasets que no requieren nota DGMIT: cuentan solo en el aviso anticipado y en la carga.»), `resultados` (actualizados a tiempo: los cerrados por actualización en el año con carga ≤ vencimiento, con el desglose por gestión y cuánto después se cargaron los otros;
-  cobertura del aviso: el denominador son los ciclos con vencimiento en el año que ya esperaban el aviso de la regla (`esperabaElAviso`: el día del aviso —la fecha de la regla o, si no es hábil, el hábil siguiente, `proximoDiaHabil` del calendario, el mismo con que lo dicen la Agenda de pedidos y el envío, con los feriados de la tabla— ya pasó, y ese mismo día cuenta solo si el aviso ya salió, porque la corrida es a las 8:15;
+  cobertura del aviso: el denominador son los ciclos con vencimiento en el año que ya esperaban el aviso de la regla (`esperabaElAviso`: el día del aviso —la fecha de la regla o, si no es hábil, el hábil siguiente, `proximoDiaHabil` del calendario, el mismo con que lo dicen la Agenda de pedidos y el envío, con los feriados de la tabla— ya pasó, y ese mismo día cuenta solo si el aviso ya salió, porque la corrida es a las 8:05;
   y el ciclo regía en el RPAD ese día: uno que dejó de regir antes —por la aprobación que lo cerró, no por la carga, o por la baja— no lo esperaba y no está en el denominador ni falta), sin los de antes del 06/12/2025 —Ruling 5—, y los que faltan van con su motivo —«el email no se pudo enviar», «se dio de alta con el vencimiento ya cerca» (o «se dio de alta ya vencido», si el alta fue después del vencimiento), «se avisó ya vencido», «sin el aviso de la regla»:
   Ruling 7—; reiteraciones del RPAD a la DGMIT —Ninguna, 1, 2 o más— y de la DGMIT al área —Ninguna, 1 o más—, de los ciclos que terminaron en el año y de los abiertos a `al`, con la aclaración «Hasta el 12/10, el email de los 5 días y el resumen mensual de vencidos se sumaban a cada ciclo.» si algún ciclo tuvo una reiteración por email —un email a la DGMIT posterior al inicio de sus tramos:
   el de la regla no lo es—, Ruling 21, y, con ciclos, en el mismo campo y después de ella, «Desde diciembre de 2026, la reiteración sale cada dos meses.», spec 2026-11-03-reiteracion-bimestral, 6), `casos` (una fila por ciclo que toca el año, Ruling 9) y `para_completar` (las notas DGMIT pendientes de carga —externos activos con nota requerida, avisados y sin nota, en un ciclo abierto o cerrado en el año por actualización con origen `area` o sin dato, o por reprogramación;
@@ -65,10 +66,10 @@ reportesPdfBase (la base de los PDF) y un archivo por reporte (reportesMetricasP
   Destildar: la casilla «Contar» de una fila de los casos saca el dataset entero de todas las cuentas de la pestaña y del PDF de Métricas (también del índice y del ranking), con la franja ámbar «Calculado sin 1 dataset:
   Parque Automotor.» y «Volver a todos», el chip «Casos: todos menos 1» y, en el PDF, la píldora; las filas destildadas se ven tachadas y en gris.
   Todo viaja en la URL y no se guarda:
-  `?anio=&estadistico=&dias=&gestion=&sin=12,45#reportes` (los de entrada no se escriben; la API recibe el año, los selectores y `sin`, no la gestión ni la pestaña).
+  `?anio=&estadistico=&dias=&gestion=&sin=12,45#reportes` (los de entrada no se escriben; la página le manda a la API el año, los selectores y `sin`, no la gestión ni la pestaña; si llega `gestion`, `opcionesDeMetricas` la lee y nadie la usa).
   `opcionesDeMetricas` (`services/metricasOpciones.js`, puro) los lee con tolerancia: lo que no sirve cae al de entrada o se ignora (un destildado que no es un entero positivo); un año anterior a 2026 o futuro da 404.
 - La foto del 31/12 (spec 3;
-  `services/metricasFoto.js`, tabla `metricas_fotos`): la saca sola la corrida de las 8:15 (`sacarFotoSiCorresponde({ hoy, calendario })`, después de las Notas Digitales y aislada: un error no frena nada; con el calendario de la corrida, que mira solo si toca sacar una) desde el 10/01 del año siguiente (`DIA_DE_LA_FOTO`), sea o no día hábil, «al 31/12»: hoy = 31/12 y todos los datasets; cuenta lo que tiene fecha del año aunque se haya registrado hasta el 10/01, y nada de después.
+  `services/metricasFoto.js`, tabla `metricas_fotos`): la saca sola la corrida de la mañana (`sacarFotoSiCorresponde({ hoy, calendario })`, después de las Notas Digitales y aislada: un error no frena nada; con el calendario de la corrida, que mira solo si toca sacar una) desde el 10/01 del año siguiente (`DIA_DE_LA_FOTO`), sea o no día hábil, «al 31/12»: hoy = 31/12 y todos los datasets; cuenta lo que tiene fecha del año aunque se haya registrado hasta el 10/01, y nada de después.
   Cada corrida saca la del año cerrado más viejo (desde 2026) que todavía no la tiene (`fotoQueToca`, Ruling 18: una por corrida), con `INSERT IGNORE`: una foto nunca se pisa ni se modifica, y no hay botón para rehacerla (lo registrado después del 10/01 con fecha del año anterior ya no entra).
   Cuenta los días hábiles con los 9 fijos y los feriados de la tabla (spec 2026-10-27-feriados-en-notas, 2 y 5) y nunca con los 9 fijos por una falla: si la corrida cayó a los 9 fijos (`calendario.error !== null`), `exigirLaTabla` tira antes de leer las fuentes y no se guarda nada;
   la última corrida de Correos → Estado dice «No se pudo sacar la foto del año: no se pudieron leer los feriados de Configuración → Feriados» (`MENSAJE_METRICAS_SIN_FERIADOS`), la corrida responde 207 y la del día siguiente la vuelve a intentar (con los 9 fijos, la foto quedaría así para siempre).
@@ -111,6 +112,7 @@ reportesPdfBase (la base de los PDF) y un archivo por reporte (reportesMetricasP
   **Para presentar** (`rp-grilla g4`):
   Métricas del año (`GET /api/metricas/pdf`, `services/reportesMetricasPdf.js`: el circuito con los resultados, las cintas y los destildados, el contexto y el trabajo, y las áreas y temas, cada parte desde una hoja nueva, «Unas 5 hojas», Ruling 24; la píldora dice lo elegido;
   un año con foto sale de la foto), Ciclo de vida del dato (`GET /api/reportes/ciclo-de-vida?anio=`, `reportesCicloDeVidaPdf.js`: cuánto tarda cada etapa del circuito, con todos los ciclos, en dos hojas, la gestión externa y la interna; ver `docs/temas/ciclo-de-vida.md`), Informe anual (`GET /api/reportes/informe-anual?anio=`, `reportesInformeAnualPdf.js`: solo para un año con foto —sin ella, 404—, con mediana en días hábiles, la comparación con la foto del año anterior —`comparacionDe`;
+  El Informe anual: las cifras salen de la foto y los logros, de los hitos en vivo (un hito borrado o cargado después cambia el PDF de un año cerrado).
   «Primer año con foto» si no hay— y los logros del año: los hitos de Herramientas → Proyectos con fecha en el año —los de los proyectos activos y los logros del área—, por proyecto, `logrosPorProyecto`, con «Los hitos de AAAA cargados en Proyectos» a la derecha;
   sin las métricas manuales, que no están en la foto) y Estado general de los datasets (`GET /api/reportes/estado-general`, `reportesEstadoGeneralPdf.js`: la píldora del índice, las cinco tarjetas, la tasa con sus aclaraciones y la tabla de todos los datasets activos —Título, Área, Frecuencia, Datos al, Próx. Act. y Estado—).
   **Para trabajar:** Por área (`GET /api/reportes/por-area/:areaId`, `reportesPorAreaPdf.js`: una portada con el área, sus contactos —los de `CAMPOS_CONTACTO`, Ruling 25—, las cinco tarjetas y sus datasets por grupo, y detrás una hoja del Seguimiento por cada dataset activo; sin hojas de los dados de baja;
@@ -123,7 +125,7 @@ reportesPdfBase (la base de los PDF) y un archivo por reporte (reportesMetricasP
   Un 500 de estos reportes dice un mensaje fijo por reporte (`ERROR_AL_GENERAR`); el error completo, solo en `console.error`.
   El Estado general dice «El 82% de los que tienen vencimiento están al día:
   A de B» (sin espacio, Ruling 38).
-  No existen el reporte de Cumplimiento (tarjeta, `GET /reportes/cumplimiento`: el ranking está en Métricas) ni el Historial de notificaciones (`GET /reportes/historial-notificaciones`), ni `API.getReporteHistorialUrl` ni `getReporteCumplimientoUrl` (los dos dan 404:
+  No existen el reporte de Cumplimiento (tarjeta, `GET /reportes/cumplimiento`: el ranking está en Métricas) ni el Historial de notificaciones (`GET /reportes/historial-notificaciones`: lo cubre Avisos del RPAD), ni `API.getReporteHistorialUrl` ni `getReporteCumplimientoUrl` (las dos rutas dan 404:
   `tests/reportes.test.js`).
   Los nombres de los archivos, en `nombreDelReporte` (`services/reportesNombres.js`, con hoy en Argentina):
   `Metricas-RPAD-AAAA.pdf`, `Ciclo-de-vida-del-dato-AAAA.pdf`, `Informe-anual-RPAD-AAAA.pdf`, `estado-general-dd-mm-aaaa.pdf`, `Reporte-area-<id>-AAAA-MM-DD.pdf`, `Avisos-RPAD-AAAA-MM-DD.pdf`, `Agenda-de-pedidos-AAAA-MM-DD.pdf` y `Datos-para-completar-AAAA-MM-DD.pdf` (`Content-Disposition` con `disposicionDeAdjunto`).
@@ -138,7 +140,10 @@ reportesPdfBase (la base de los PDF) y un archivo por reporte (reportesMetricasP
 - `textoPorcentaje` y `htmlDelRanking` arman el ranking de áreas; los temas y las frecuencias van en barras, sin Chart.js (`tests/paginas.test.js`).
   `gestionController` arma la tasa y el ranking con `cumplimientoPorArea`.
   `gestion.html` redirige a Herramientas → Proyectos (ver `docs/temas/proyectos.md`): un link viejo a `gestion.html#metricas` llega por la redirección y avisa «Las métricas de Gestión ahora están en Herramientas → Métricas y Reportes.» (link a `reportes.html#metricas`).
-  Los tests de la foto llaman al servicio con un hoy fijo, nunca a `/api/cron/*`.
+  Los tests de la foto, con un hoy fijo, llaman al servicio o al controlador de la corrida, o la guardan con `datosDeLaFoto` y un `INSERT`: nunca a `/api/cron/*`.
+  `tests/reportes-pdf.test.js` compara el contenido de cada hoja del PDF de Métricas y del Informe anual contra `REFERENCIA_DE_LOS_PDF`: un cambio a propósito en esos PDF (por ejemplo, un texto del Informe anual) tiene que volver a tomar la referencia (ver `docs/temas/ciclo-de-vida.md`).
+  `metricas-reglas.test.js` corre sobre `tests/metricas-casos.js` (los casos de `tests/seguimiento-casos.js` más lo importado) y casos sintéticos, y `reportes-pdf.test.js` lee los ocho PDF con `tests/pdf-lector.js` y `tests/pdf-diagramacion.js`.
+  Los tests con los feriados de la tabla están en `tests/feriados-en-metricas.test.js` (ver `docs/temas/calendario-y-corridas.md`).
   Los números de la base real no van en tests versionados (Ruling 3: los datos reales no se versionan).
 
 ## La página: reportes.js

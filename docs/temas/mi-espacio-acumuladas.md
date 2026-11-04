@@ -60,7 +60,7 @@ Historia y motivos, en las specs:
     «1 acumulada.»; o «Todas acumuladas.», con su punto, como los demás textos de ese campo, que la página pone uno detrás del otro; sin parte acumulada, ''); la insignia sigue siendo «Horas a favor», y el segundo paso muestra la fila así.
     La fila del saldo inicial (`saldoInicialDe`) dice «Tenías 1,5 horas acumuladas.» («1 hora acumulada»), y el campo de contrato de «Mis vacaciones y saldos» (`camposDelSaldoInicial`) se llama «Horas acumuladas» (el mismo concepto `horas_no_utilizadas`, de 0 a 200, de a media hora).
     «Vence pronto» y el email de vencimiento no avisan de las acumuladas: no vencen.
-  - Nada de esto toca (spec, 11): planta entera, la planilla, «Sumar al mes anterior», cómo se cuentan las horas extras y las horas a favor del mes (vencen al final de su mes de uso y avisan), las demás licencias, las vacaciones, los días restituidos, la regla de un día, una licencia, Configuración, las Notas Digitales, la agenda y la corrida de las 8:15.
+  - Nada de esto toca (spec, 11): planta entera, la planilla, «Sumar al mes anterior», cómo se cuentan las horas extras y las horas a favor del mes (vencen al final de su mes de uso y avisan), las demás licencias, las vacaciones, los días restituidos, la regla de un día, una licencia, Configuración, las Notas Digitales, la agenda y la corrida de la mañana.
 
 ## La página
 

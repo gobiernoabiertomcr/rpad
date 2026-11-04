@@ -19,6 +19,7 @@ img/membrete-isotipo-aclarado.png # Marca de agua del Word de las notas (el isot
   **interna** (a la Subsecretaría de Modernización y Transparencia, para que gestione ante un área del municipio) y **externa** (directo al organismo), cada una como solicitud o reiteración.
   **No registra nada**: ni el número, ni la nota, ni quién la generó (la nota DGMIT se sigue cargando en el Seguimiento cuando el área la recibe).
   No cambia ninguna Nota Digital ni el circuito.
+  No existen la nota escalonada (DDPC → DGMIT → Subsecretaría: `tipo` 'escalonada' da 400), el sello con iniciales y fojas fijas en el código, el período escrito a mano ni el modal "Buscar Área por Dataset" (en su lugar, el buscador del paso 1): `tests/notas-frontend.test.js` controla que `notas.html` no traiga la escalonada ni el modal.
   Antiobjetivos: que la nota pida otro período u otra frecuencia que la Nota Digital del mismo dataset (los "Datos solicitados" salen del mismo cálculo), que la vista previa diga una cosa y el Word otra, y que se lea como un reproche al área (la reiteración dice que "no se ha recibido la información", en impersonal).
 - Quién: administración y el colaborador (`puedeCargarNotasDgmit`).
   Las cinco rutas llevan `authMiddleware` + `usaGeneradorDeNotas` (`middleware/auth.js`: la regla de `cargaNotasDgmit`, con su propio 403, "No tenés permiso para usar el generador de notas."; sin sesión, 401).
@@ -43,6 +44,7 @@ img/membrete-isotipo-aclarado.png # Marca de agua del Word de las notas (el isot
 - "Nota anterior" de la reiteración: solo números (sin fecha), como etiquetas que se quitan, cada uno de hasta 40 caracteres y sin repetidos.
   Viene completada con las notas DGMIT cargadas: de cada dataset tildado, la original de su ciclo abierto (la primera de `notasDgmitDelCicloAbierto`, `services/seguimientoReglas.js`: las vigentes del ciclo abierto de la más vieja a la más nueva —por `recibida`, después la carga y después el id—, con la misma asignación al ciclo que `notaDgmitDelCiclo`, R7 incluido;
   sin ciclos —eventual o sin fecha—, las vigentes que no son anteriores a la última carga en el portal, también por R7, mientras que `notaDgmitDelCiclo` y el Seguimiento siguen con la más reciente), con los números distintos ordenados por recepción (`numerosTraidos`) y "Traída de las notas DGMIT cargadas en el Seguimiento.".
+  La última de `notasDgmitDelCicloAbierto` es la de `notaDgmitDelCiclo`, salvo sin ciclos y con todas anteriores a la última carga: ahí difieren a propósito (`tests/seguimiento-reglas.test.js`).
   Mientras nadie la toque, se vuelve a completar al cambiar los tildados; quitar o agregar un número la deja "Editada a mano." (con "Volver a traer las cargadas").
   Sin notas cargadas para los elegidos:
   "No hay notas DGMIT cargadas para estos datasets: escribila si la sabés.".
@@ -91,6 +93,7 @@ img/membrete-isotipo-aclarado.png # Marca de agua del Word de las notas (el isot
   Desde 4 columnas, `sinPartirPalabras` (cada columna mide al menos su palabra más ancha, como `calcularAnchos` del PDF); los anchos, los del PDF (`PROPORCIONES`, `PROPORCIONES_CON_SEGUNDA` y `PROPORCIONES_EXTERNA`, exportados para esto; otra cantidad de columnas, parejos).
   "Del" o "al" con su fecha, y "N°" con su número, van unidos por un espacio duro, como en el PDF.
   Los HTML de prueba de las Notas Digitales están en `tests/fixtures/notas-digitales-html/`, con los nombres cambiados.
+  En los tests, un Word se abre con JSZip, que llega con `docx` (`tests/notas-word.test.js`).
 - API (`controllers/notasController.js`; las consultas, de solo lectura, en `services/notasGeneradorDatos.js`, y la validación, pura, en `services/notasGeneradorReglas.js`):
   `GET /api/notas/areas` (las áreas del paso 1, cada una con sus datasets que se pueden elegir y el estado de hoy), `GET /api/notas/areas/:id?fecha=` (el área con sus datasets a la fecha de la nota:
   `estado`, `dias`, `frecuencia`, `datos_solicitados`, `que_se_solicita`, `se_puede_pedir` y `notas_dgmit`, con una sola llamada a `fuentesDe`; un id que no es un entero positivo o que no existe, 404; una fecha que no sirve, el 400 de la fecha; un área sin datasets que se puedan elegir, 200 con la lista vacía), `GET /api/notas/membrete` (`{ imagen, pie }`), `POST /api/notas/vista-previa` (`{ html, nombre }`) y `POST /api/notas/generar` (el Word).

@@ -4,12 +4,15 @@ Las reglas de fechas, «Registrar actualización», «Requiere nota DGMIT», los
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-24-metricas-y-reportes-design.md`
+- `docs/superpowers/specs/2026-10-17-fechas-datasets-design.md`
 - `docs/superpowers/specs/2026-10-20-editor-sin-responsabilidad-design.md`
 
 ## Archivos
 
 requiereNotaReglas («Requiere nota DGMIT», puro) y notasDigitalesSeguimiento (el anexo de la reiteración: el Seguimiento de cada dataset de la nota);
-registroReglas («Recibido el» y el origen de los datos, puro);
+registroReglas («Recibido el» y el origen de los datos, puro).
+datasetController (alta, edición y lecturas), cambiosPendientesController (la doble verificación), catalogController (temas, frecuencias y formatos) y andinoController (el pedido al portal).
+fechasDatasetReglas (qué datos se piden para un vencimiento, qué próximas se ofrecen y en qué estado está el dataset, puro).
 
 ## Fechas de los datasets
 
@@ -35,7 +38,7 @@ registroReglas («Recibido el» y el origen de los datos, puro);
   `services/fechasDatasetReglas.js`, puro (sin pool ni `Date` local; las fechas son texto `'AAAA-MM-DD'`, hoy = `hoyArgentina()`):
   `pedido`, `cubre`, `opcionesDeProxima`, `estadoDelDataset`, `tasaDeActualizacion`, `topeDatosAl`, `tipoSugerido`, `tipoEfectivo`, `frecuenciaEnNota`.
   Ninguna tira error: con una entrada inválida devuelven null, false o una lista vacía (`frecuenciaEnNota` devuelve la frecuencia tal cual).
-- La API (`GET /datasets` y `/:id`) devuelve `datos_al`, `tipo_pedido` (el efectivo), `tipo_pedido_nombre`, `frecuencia_meses`, `pedido` (`{ desde, hasta, texto }`), `estado` y `dias_para_vencer`.
+- La API (`GET /datasets` y `/:id`) devuelve `datos_al`, `tipo_pedido` (el efectivo), `tipo_pedido_nombre`, `tipo_pedido_guardado` (el de la columna, aunque sea NULL: `tipoAEnviar` de `admin-fechas.js` lo manda si el selector no cambió; sin él, editar guardaría el efectivo), `frecuencia_meses`, `pedido` (`{ desde, hasta, texto }`), `estado` y `dias_para_vencer`.
   Para la pantalla de admin:
   `GET /datasets/:id/opciones-proxima?datos_al=` y `GET /datasets/calculo-pedido` (`API.opcionesDeProxima`, `API.calculoPedido`).
 - El navegador no recalcula las reglas: las pide al servidor.
@@ -98,7 +101,7 @@ registroReglas («Recibido el» y el origen de los datos, puro);
   Si el cambio lleva `registro_actualizacion`, en la misma transacción escribe `historial_actualizaciones`:
   `cambio_id`, `vencimiento` (la próxima que se cumplió), `datos_al`, `recibido_el`, `proxima_nueva`;
   `fecha_actualizacion` es la carga.
-- `historial_actualizaciones.vencimiento` es la clave del ciclo, la misma que `notas_digitales_datasets.vencimiento`: sirve a la futura "vida del dataset".
+- `historial_actualizaciones.vencimiento` es la clave del ciclo, la misma que `notas_digitales_datasets.vencimiento`; se guarda para la línea de tiempo de cada dataset (spec 2026-10-17-fechas-datasets, 16), y hoy ningún código la lee: el Seguimiento arma los ciclos sin esta columna.
   El historial anterior no se reconstruyó.
   `gestionController` ("Operador más activo") no cuenta dos veces un registro que está en las dos tablas.
 
@@ -108,8 +111,8 @@ registroReglas («Recibido el» y el origen de los datos, puro);
   `datasets.requiere_nota` dice si la DGMIT tiene que mandarle una nota formal al área (1 = Sí) o si los datos se sacan de una fuente pública y no hace falta (0 = No; por ejemplo el TMDA, de la web de Vialidad, y la cantidad de empleados municipales, del Boletín Oficial);
   NULL = sin dato, y en gestión interna siempre NULL.
   El 0 es un valor: sobre este campo nunca `x || null`, siempre `??`.
-  Un externo en NULL se comporta como "Sí" en todo menos en mostrar el dato ("—" en la nota, "Sin dato" en el Seguimiento).
-  No cambia quién recibe las notas ni cuándo salen, y no se muestra en la pantalla pública.
+  Un externo en NULL se comporta como "Sí" en todo menos en mostrar el dato ("—" en la nota, "Sin dato" en el Seguimiento); después de la carga inicial no queda ninguno.
+  No cambia quién recibe las notas ni cuándo salen, y no se muestra en la pantalla pública (la API pública lo entrega: el SELECT trae `d.*`).
 - Reglas (`services/requiereNotaReglas.js`, puro):
   `MENSAJE_FALTA_REQUIERE_NOTA` ("Indicá si el dataset requiere nota DGMIT."), `normalizarRequiereNota` (1, true y '1' son Sí; 0, false y '0', No; null y '' son sin dato; otro valor tira `TypeError` y el controlador responde 400), `requiereNotaResultante` (NULL si la gestión es interna) y `textoRequiereNota(valor, sinDato = '—')` (Sí, No o `sinDato`; nunca tira).
 - Alta y edición (doble verificación): el formulario tiene el select "Requiere nota DGMIT" junto a "Tipo de gestión", solo con gestión externa; en el alta de un externo y al pasar un dataset a externo viene vacío y es obligatorio.

@@ -13,9 +13,9 @@ auditoriaReglas (quién audita cada cambio y por qué canal, puro) y auditoriaSe
 ## Auditoría de cambios pendientes
 
 - Disponible (un día dado) = activo, con contraseña y sin licencia: la única definición es `disponibilidad` (`services/auditoriaReglas.js`), que usan `personasDeAuditoria` y `personasPorDia` (`services/auditoriaService.js`).
-  El canal de cada cambio lo decide una sola función pura, `canalDelCambio` (`services/auditoriaReglas.js`), igual para el recordatorio de las 14:00 y la nota de las 8:15.
+  El canal de cada cambio lo decide una sola función pura, `canalDelCambio` (`services/auditoriaReglas.js`), igual para el recordatorio de las 14:00 y la nota de la mañana.
 - Canal **nota** (spec 2026-10-15-dias-habiles-licencias-auditoria, 9.1): ya tuvo sus dos recordatorios por email:
-  su primer recordatorio (`cambios_pendientes.primer_recordatorio_at`) fue hace `RECORDATORIOS_ANTES_DE_LA_NOTA` (2) días hábiles o más, o sea recordatorio el día 1 y el día 2 a las 14:00 y nota el día 3 a las 8:15, el firmante titular (sin titular, el superadmin) no puede auditarlo, hay auditores disponibles y la nota puede salir (envío automático activo, configuración de Notas Digitales completa, Para de auditoría cargado y hay quién firme).
+  su primer recordatorio (`cambios_pendientes.primer_recordatorio_at`) fue hace `RECORDATORIOS_ANTES_DE_LA_NOTA` (2) días hábiles o más, o sea recordatorio el día 1 y el día 2 a las 14:00 y nota el día 3 a las 8:05, el firmante titular (sin titular, el superadmin) no puede auditarlo, hay auditores disponibles y la nota puede salir (envío automático activo, configuración de Notas Digitales completa, Para de auditoría cargado y hay quién firme).
   Si no, canal **recordatorio**.
 - Recordatorio: solo días hábiles, los cambios propuestos hace una hora o más.
   `created_at` es TIMESTAMP y la base puede estar en UTC: la antigüedad se mide en SQL con `TIMESTAMPDIFF(SECOND, created_at, NOW())` (reloj y zona de la base en los dos extremos), nunca comparando su texto con `ahoraArgentina()`.

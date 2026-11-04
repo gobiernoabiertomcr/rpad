@@ -125,7 +125,7 @@ Historia y motivos, en las specs:
     Un 500:
     «Error al armar la nota» (la vista, la nota y el Word), «Error al pedir la restitución» y «Error al borrar el pedido de restitución».
     Nunca tocan Configuración ni mandan emails.
-  - El email (spec, 10; la corrida de las 8:15, `services/miEspacioAvisos.js`):
+  - El email (spec, 10; la corrida de la mañana, `services/miEspacioAvisos.js`):
     `avisosDeVencimiento` incluye, después de los demás avisos y por plazo, dos avisos por grupo por restituir, cada uno una sola vez:
     `restitucion-<carga>-<anio>-<tanda>-1` desde que el grupo aparece y `…-2` desde 5 días hábiles antes del plazo (`restarDiasHabilesCon`, con los feriados), los dos hasta el plazo, con `restitucion: { grupo, partes, primero }` y, en `texto`, los párrafos en texto plano.
     Las dos claves entran en `mi_espacio_avisos.clave`, `varchar(40)`: con los ids, los años y las tandas más grandes, 35 caracteres.

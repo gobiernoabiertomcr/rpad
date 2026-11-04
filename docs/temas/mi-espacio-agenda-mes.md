@@ -57,7 +57,8 @@ Historia y motivos, en las specs:
   «N eventos» (los eventos con fecha del mes, cualquier día;
   «1 evento»), «N feriados» (las fechas distintas del mes con algún feriado, también en un fin de semana: cuenta días, no nombres;
   «1 feriado») y cada una de tus licencias que toca el mes, por `desde`, con su nombre y su artículo (`FRASE_DE_LA_LICENCIA`, congelada, por tipo:
-  «tus vacaciones», «tus horas a favor», «tu franquicia», «tu licencia por estudios», «tu licencia médica», «tu licencia médica extraordinaria», «tu licencia por el grupo familiar», «tu franco compensatorio» y «tu uso autorizado»; un tipo de licencia nuevo tiene que sumarse ahí, o no va en la frase) y sus fechas recortadas al mes, «tu franquicia el 4» o «tus vacaciones del 16 al 27» (unas del 21/12 al 08/01, en enero, «del 1 al 8»; una que toca el mes solo en días no hábiles se nombra igual:
+  «tus vacaciones», «tus horas a favor», «tus días restituidos», «tu franquicia», «tu licencia por estudios», «tu licencia médica», «tu licencia médica extraordinaria», «tu licencia por el grupo familiar», «tu franco compensatorio» y «tu uso autorizado»; un tipo de licencia nuevo tiene que sumarse ahí, o no va en la frase) y sus fechas recortadas al mes, «tu franquicia el 4» o «tus vacaciones del 16 al 27» (unas del 21/12 al 08/01, en enero, «del 1 al 8»;
+  una que toca el mes solo en días no hábiles se nombra igual:
   «toca el mes», por fecha); todo junto con comas y «y», con mayúscula al principio y punto al final:
   «8 eventos, 4 feriados, tu franquicia el 4 y tus vacaciones del 16 al 27.»; sin nada, «Nada cargado en noviembre.
   Tocá un día para agendar algo.».
