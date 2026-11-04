@@ -262,7 +262,7 @@ Las frases de Windows en `docs/superpowers/` son historia y no se tocan. La menc
 - ningún renglón de más de 600 caracteres en los tres;
 - cada `docs/temas/*.md` aparece en el mapa de `CLAUDE.md`;
 - cada `docs/temas/…` citado en `CLAUDE.md`, en una regla o en otro documento existe;
-- cada regla tiene `paths:`, cita al menos un documento y cada glob coincide con algún archivo;
+- cada regla tiene `paths:`, cita al menos un documento (o, si cruza todos los temas como `emails.md` y `rutas-y-permisos.md`, manda a «El mapa» de `CLAUDE.md`) y cada glob coincide con algún archivo;
 - ningún documento dice «pasó a» seguido de una versión;
 - `.gitignore` deja versionar `.claude/rules/`.
 
