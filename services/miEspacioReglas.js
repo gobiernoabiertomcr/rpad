@@ -316,7 +316,7 @@ export const AVISO_DEL_PASO = 'Las fechas pasan a Configuración → Licencias. 
 export const AVISO_DEL_PASO_SUPERADMIN = 'Los avisos al superadmin se guardan y te llegan en un resumen a la vuelta.';
 export const AVISO_NOTAS_DE_HOY = 'Las notas de hoy ya salieron a las 8:15 con tu firma.';
 export const AVISO_SIN_PERSONA_A_CARGO =
-  'Sin persona a cargo: esos días no se generan Notas Digitales y lo que venza se reitera cuando vuelvas.';
+  'Sin persona a cargo: esos días no se generan Notas Digitales y lo que venza entra en la próxima reiteración.';
 // A la persona autorizada del firmante, por cada licencia de él con la que se pisa la suya: no la frena (decisión del usuario,
 // 27/10/2026)
 export const textoAutorizadaDelFirmante = (desde, hasta) =>
