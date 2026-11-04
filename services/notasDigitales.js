@@ -33,6 +33,11 @@ import {
 import { DIAS_HABILES_PARA_REITERAR_AUDITORIA, quienesAuditan } from './auditoriaReglas.js';
 import { leerCalendario } from './feriadosDatos.js';
 import { MENSAJE_CORRIDA_SIN_FERIADOS, MENSAJE_ESTADO_SIN_FERIADOS } from './feriadosReglas.js';
+import {
+  debeEsperarFirma, paso14, conLineaDeFirma, verificarNotaFirmada, mensajeDelRechazo, archivoDeLaNota, numeroDeLaNota,
+  MENSAJE_FIRMADA_GUARDADA, MENSAJE_NOTA_YA_SALIO
+} from './notasFirmaDigital.js';
+import { notasParaFirmarTemplate } from './emailTemplates.js';
 
 export const MAX_INTENTOS = 5;
 const BLOQUEO = 'rpad_notas_digitales';
@@ -243,10 +248,13 @@ export const generarNota = async ({
   }
 };
 
-// Envía el contenido guardado de la nota (un reintento manda exactamente lo mismo)
+// Envía el contenido guardado de la nota (un reintento manda exactamente lo mismo). Con firma digital, la copia firmada en lugar del
+// pdf, con el mismo nombre, y la línea que lo dice en el email, armada acá y sin guardarla: `html` sigue como se generó y el Word no
+// cambia (spec 2026-11-03-notas-firma-digital, 4.7 y 4.8). Salga o no, deja de esperar: ya no le toca a nadie firmarla
 export const enviarNota = async (id) => {
   const [[nota]] = await pool.query(
-    'SELECT id, numero, anio, es_prueba, asunto, para, cc, cco, html, texto, pdf, anexo_pdf, estado FROM notas_digitales WHERE id = ?', [id]
+    `SELECT id, numero, anio, es_prueba, asunto, para, cc, cco, html, texto, pdf, anexo_pdf, estado, pdf_firmado, firmado_por
+     FROM notas_digitales WHERE id = ?`, [id]
   );
   if (!nota) throw new ErrorDeUso(`No existe la nota ${id}`);
   if (nota.estado === 'enviada') return { success: true, yaEnviada: true };
@@ -255,8 +263,9 @@ export const enviarNota = async (id) => {
   // guardados al generarla, que nunca se regeneran. Las notas sin anexo (autorización, auditoría y las reiteraciones anteriores al
   // anexo de seguimiento) van con la nota sola
   const sufijo = nota.es_prueba ? 'PRUEBA' : `${nota.numero}-${String(nota.anio).slice(-2)}`;
-  const adjuntos = [{ filename: `Nota-Digital-${sufijo}.pdf`, content: nota.pdf, contentType: 'application/pdf' }];
+  const adjuntos = [{ filename: `Nota-Digital-${sufijo}.pdf`, content: nota.pdf_firmado ?? nota.pdf, contentType: 'application/pdf' }];
   if (nota.anexo_pdf) adjuntos.push({ filename: `Anexo-Nota-Digital-${sufijo}.pdf`, content: nota.anexo_pdf, contentType: 'application/pdf' });
+  const cuerpo = nota.pdf_firmado ? conLineaDeFirma(nota, nota.firmado_por) : nota;
   const resultado = await sendEmail({
     from: remitente(),
     replyTo: process.env.SMTP_USER,
@@ -264,20 +273,20 @@ export const enviarNota = async (id) => {
     cc: nota.cc,
     bcc: nota.cco,
     subject: nota.asunto,
-    html: nota.html,
-    text: nota.texto,
+    html: cuerpo.html,
+    text: cuerpo.texto,
     attachments: adjuntos
   });
 
   if (resultado.success) {
     await pool.query(
-      `UPDATE notas_digitales SET estado = 'enviada', intentos = intentos + 1, enviada_at = NOW(),
+      `UPDATE notas_digitales SET estado = 'enviada', intentos = intentos + 1, enviada_at = NOW(), espera_firma = 0,
          message_id = ?, respuesta_smtp = ?, ultimo_error = NULL WHERE id = ?`,
       [resultado.messageId ?? null, String(resultado.response ?? '').slice(0, 500), id]
     );
   } else {
     await pool.query(
-      "UPDATE notas_digitales SET estado = 'fallida', intentos = intentos + 1, ultimo_error = ? WHERE id = ?",
+      "UPDATE notas_digitales SET estado = 'fallida', intentos = intentos + 1, espera_firma = 0, ultimo_error = ? WHERE id = ?",
       [resultado.error, id]
     );
   }
@@ -326,6 +335,183 @@ export const reintentarNota = async (id) => {
 };
 
 // =====================================================
+// La firma digital (spec 2026-11-03-notas-firma-digital, 4)
+// =====================================================
+// Quién firma una nota generada: quien la presenta (la persona autorizada, durante la licencia del titular) o, si no, el titular. Con
+// { id, nombre, email } si está activa, con un email válido y sin licencia ese día; si no, null: nadie la va a firmar y sale como siempre
+// (la firma de Correos sin titular elegido, una autorización tardía con el titular ya de licencia)
+const quienFirmaLaNota = async (id, hoy) => {
+  const [[fila]] = await pool.query(
+    `SELECT u.id, u.nombre_completo AS nombre, u.email, u.activo,
+            EXISTS (SELECT 1 FROM usuarios_licencias l WHERE l.usuario_id = u.id AND l.anulada = 0 AND l.desde <= ? AND l.hasta >= ?) AS de_licencia
+     FROM notas_digitales n JOIN usuarios u ON u.id = COALESCE(n.presentada_por_id, n.firmante_id)
+     WHERE n.id = ?`,
+    [hoy, hoy, id]
+  );
+  if (!fila || !fila.activo || Number(fila.de_licencia) === 1 || !emailValido(fila.email)) return null;
+  return { id: fila.id, nombre: fila.nombre, email: fila.email };
+};
+
+// El mail a quien firma, con todas sus notas de esta corrida adjuntas (spec, 4.4): uno por persona. Un error no frena nada: la nota sigue
+// esperando y queda en la última corrida, con un texto fijo (el de nodemailer puede traer la dirección)
+const avisarLasQueEsperan = async (resumen, hoy) => {
+  if (resumen.para_firmar.length === 0) return;
+  const porPersona = new Map();
+  for (const id of resumen.para_firmar) {
+    try {
+      const persona = await quienFirmaLaNota(id, hoy);
+      if (persona === null) throw new Error('Ya no hay quién firme esta nota');
+      const [[nota]] = await pool.query('SELECT id, numero, anio, tipo, gestion, pdf FROM notas_digitales WHERE id = ?', [id]);
+      if (!porPersona.has(persona.id)) porPersona.set(persona.id, { persona, notas: [] });
+      porPersona.get(persona.id).notas.push(nota);
+    } catch (error) {
+      anotarError(resumen, { tipo: 'para-firmar', id }, error);
+    }
+  }
+  for (const { persona, notas } of porPersona.values()) {
+    try {
+      const { subject, html, text } = notasParaFirmarTemplate({ nombre: persona.nombre, notas });
+      const resultado = await sendEmail({
+        from: remitente(), replyTo: process.env.SMTP_USER, to: [persona.email], subject, html, text,
+        attachments: notas.map(n => ({ filename: archivoDeLaNota(n), content: n.pdf, contentType: 'application/pdf' }))
+      });
+      if (!resultado.success) throw new Error('No se pudo enviar el mail con las notas para firmar');
+    } catch (error) {
+      anotarError(resumen, { tipo: 'para-firmar' }, error);
+    }
+  }
+};
+
+/**
+ * A las 14:00 sale lo que quede (spec, 4.9): las que esperan, con la copia firmada si se subió y no se confirmó y, si no, con la imagen, y
+ * las firmadas que fallaron. Solo a partir de esa hora (la ruta manual de los recordatorios se puede llamar antes), en un día hábil, con
+ * el envío automático activo y la configuración completa, como la corrida: si no, esperan y las toma la corrida de la mañana. Bajo el mismo
+ * candado. Da { ejecutado, ocupado, enviadas, fallidas, errores }; los errores van con un id y un texto, como en la corrida.
+ */
+export const enviarLasQueEsperanFirma = async ({ hoy = hoyArgentina(), ahora = ahoraArgentina(), calendario }) => {
+  const resumen = { ejecutado: false, ocupado: false, enviadas: 0, fallidas: 0, errores: [] };
+  if (!paso14(ahora)) return resumen;
+  const config = await obtenerConfig();
+  if (!config.envio_activo || !calendario.esDiaHabil(hoy)) return resumen;
+  if (configuracionCompleta(config, await firmaTitularDe(config)).length > 0) return resumen;
+  const corrida = await conBloqueo(async () => {
+    resumen.ejecutado = true;
+    const [filas] = await pool.query(
+      `SELECT id FROM notas_digitales
+       WHERE estado IN ('pendiente', 'fallida') AND es_prueba = 0 AND intentos < ? AND (espera_firma = 1 OR pdf_firmado IS NOT NULL)
+       ORDER BY id`,
+      [MAX_INTENTOS]
+    );
+    for (const { id } of filas) {
+      try {
+        const resultado = await enviarNota(id);
+        if (resultado.success) resumen.enviadas++;
+        else resumen.fallidas++;
+      } catch (error) {
+        console.error(`❌ Notas Digitales, las que esperaban la firma (nota ${id}):`, error?.stack ?? error);
+        resumen.errores.push({ id, mensaje: String(error?.message ?? error) });
+      }
+    }
+  });
+  if (corrida.ocupado) resumen.ocupado = true;
+  return resumen;
+};
+
+// Las notas que se pueden nombrar cuando se sube un PDF que no es el de esa fila: las de los últimos días y las que esperan, más cortas
+// que lo subido (si no, no pueden ser su comienzo)
+const DIAS_DE_LAS_OTRAS_NOTAS = 31;
+const otrasNotasPara = async (id, largo, hoy) => {
+  const [filas] = await pool.query(
+    `SELECT numero, anio, pdf FROM notas_digitales
+     WHERE id <> ? AND es_prueba = 0 AND LENGTH(pdf) <= ? AND (espera_firma = 1 OR fecha >= ?)`,
+    [id, largo, sumarDias(hoy, -DIAS_DE_LAS_OTRAS_NOTAS)]
+  );
+  return filas;
+};
+
+/**
+ * Un PDF subido a la fila de una nota (spec, 4.5). Con soloVerificar, no escribe nada: lo que dice es lo que dirá al confirmar. Si no,
+ * guarda la copia firmada, bajo el candado (así no se cruza con la corrida o las 14:00), y no envía.
+ * Da { status, ok, mensaje, data }; con otra corrida en curso, { ocupado: true }. status: 404 (no es una nota real o no existe), 409 (ya
+ * no espera), 400 (el PDF no sirve), 200.
+ */
+export const subirNotaFirmada = async ({ id, archivo, usuarioId, soloVerificar = false, hoy = hoyArgentina() }) => {
+  const [[nota]] = await pool.query(
+    'SELECT id, numero, anio, pdf, espera_firma, estado FROM notas_digitales WHERE id = ? AND es_prueba = 0', [id]
+  );
+  if (!nota) return { status: 404, ok: false, mensaje: 'Nota no encontrada' };
+  if (!nota.espera_firma || nota.estado !== 'pendiente') return { status: 409, ok: false, mensaje: MENSAJE_NOTA_YA_SALIO };
+  const verificacion = verificarNotaFirmada(archivo, nota, await otrasNotasPara(id, archivo.length, hoy));
+  if (verificacion.resultado !== 'firmada') return { status: 400, ok: false, mensaje: mensajeDelRechazo(verificacion, nota) };
+  const data = {
+    numero: nota.numero, anio: nota.anio, numero_texto: numeroDeLaNota(nota), archivo: archivoDeLaNota(nota),
+    firmado_por: verificacion.firmado_por, firmado_at: verificacion.firmado_at, guardada: !soloVerificar
+  };
+  if (soloVerificar) return { status: 200, ok: true, mensaje: '', data };
+  const corrida = await conBloqueo(async () => {
+    const [resultado] = await pool.query(
+      `UPDATE notas_digitales SET pdf_firmado = ?, firmado_por = ?, firmado_at = ?, firma_subida_por = ?
+       WHERE id = ? AND espera_firma = 1 AND estado = 'pendiente'`,
+      [archivo, verificacion.firmado_por, verificacion.firmado_at, usuarioId, id]
+    );
+    return resultado.affectedRows === 1
+      ? { status: 200, ok: true, mensaje: MENSAJE_FIRMADA_GUARDADA, data }
+      : { status: 409, ok: false, mensaje: MENSAJE_NOTA_YA_SALIO };
+  });
+  return corrida.ocupado ? { ocupado: true } : corrida.resultado;
+};
+
+/**
+ * «Enviar las N firmadas» (spec, 4.5): de los ids que mostraba la pantalla, las que siguen esperando y tienen su copia firmada. Da
+ * { resultados: [{ nota_id, numero_texto, ok, mensaje }] }; con otra corrida en curso, { ocupado: true }. Un id que ya no cumple no da resultado.
+ */
+export const enviarNotasFirmadas = async ({ ids }) => {
+  const corrida = await conBloqueo(async () => {
+    const [notas] = await pool.query(
+      `SELECT id, numero, anio FROM notas_digitales
+       WHERE id IN (?) AND es_prueba = 0 AND espera_firma = 1 AND estado = 'pendiente' AND pdf_firmado IS NOT NULL ORDER BY id`,
+      [ids]
+    );
+    const resultados = [];
+    for (const nota of notas) {
+      const numero = numeroDeLaNota(nota);
+      let salio = false;
+      try {
+        salio = (await enviarNota(nota.id)).success === true;
+      } catch (error) {
+        console.error(`❌ Notas Digitales, enviar la firmada (nota ${nota.id}):`, error?.stack ?? error);
+      }
+      resultados.push({
+        nota_id: nota.id, numero_texto: numero, ok: salio,
+        mensaje: salio
+          ? `Nota Digital N° ${numero}: enviada, firmada digitalmente.`
+          : `Nota Digital N° ${numero}: quedó firmada, pero el email no salió. Se vuelve a intentar en la próxima corrida.`
+      });
+    }
+    return { resultados };
+  });
+  return corrida.ocupado ? { ocupado: true } : corrida.resultado;
+};
+
+// Lo que dice Correos → Estado de las que esperan (spec, 6): sin los bytes ni direcciones
+const notasParaFirmar = async () => {
+  const [filas] = await pool.query(
+    `SELECT n.id, n.numero, n.anio, n.tipo, n.gestion, DATE_FORMAT(n.fecha, '%Y-%m-%d') AS fecha, n.firmado_por,
+            DATE_FORMAT(n.firmado_at, '%Y-%m-%d %H:%i') AS firmado_at, u.nombre_completo AS firma_nombre
+     FROM notas_digitales n LEFT JOIN usuarios u ON u.id = COALESCE(n.presentada_por_id, n.firmante_id)
+     WHERE n.espera_firma = 1 AND n.estado = 'pendiente' AND n.es_prueba = 0 ORDER BY n.id DESC`
+  );
+  return filas;
+};
+
+const textoDeLaAlertaDeFirma = (notas) => {
+  const n = notas.length;
+  return notas.every(nota => nota.firmado_por)
+    ? `Hay ${n === 1 ? '1 nota firmada' : `${n} notas firmadas`} sin enviar. ${n === 1 ? 'Sale sola' : 'Salen solas'} a las 14:00.`
+    : `Hay ${n === 1 ? '1 nota' : `${n} notas`} para firmar. Las que no se suban antes de las 14:00 salen con la imagen de la firma.`;
+};
+
+// =====================================================
 // Corrida diaria
 // =====================================================
 const LARGO_RESULTADO = 1000;
@@ -343,7 +529,8 @@ const anotarError = (resumen, contexto, error) => {
 
 // Texto legible para el Estado: el motivo por el que no corrió, o lo enviado y los errores
 const textoResultado = (resumen) => {
-  const base = resumen.motivo ?? `${resumen.enviadas} enviada(s), ${resumen.fallidas} fallida(s)`;
+  const base = resumen.motivo
+    ?? `${resumen.enviadas} enviada(s), ${resumen.fallidas} fallida(s)${resumen.para_firmar?.length ? `, ${resumen.para_firmar.length} para firmar` : ''}`;
   const licencia = resumen.licencia ? `. ${resumen.licencia}` : '';
   const errores = resumen.errores.length
     ? `. ${resumen.errores.length} error(es): ${resumen.errores.map(describirError).join('; ')}`
@@ -477,7 +664,7 @@ const hayNotaDeAuditoria = async (fecha) => {
 // (spec 2026-10-15, 9.3). Cada reintento, cada aviso, cada reiteración y la nota de auditoría van aislados.
 // calendario: el de la corrida (spec 2026-10-27-feriados-en-notas, 3), con el que se cuentan todos los días hábiles: la puerta
 // del día, la víspera y el anticipo, el aviso en su fecha y el canal de la nota de auditoría.
-const correrPasos = async (resumen, hoy, usuarioId, calendario) => {
+const correrPasos = async (resumen, hoy, usuarioId, calendario, ahora) => {
   // Con una fecha en otro formato las consultas no seleccionarían nada, en silencio: se registra como error
   if (!esFechaIso(hoy)) {
     resumen.motivo = 'Fecha de corrida inválida';
@@ -511,12 +698,33 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario) => {
     }
   };
 
-  // 1. Reintentos de notas pendientes o fallidas
+  // Una nota recién generada, con la firma digital prendida, espera que la suban firmada (spec 2026-11-03-notas-firma-digital, 4.1), si hay
+  // quién la firme y todavía no son las 14:00. Si se corta entre generar y marcar, queda como una pendiente común y sale al otro día. Si
+  // no se puede saber quién firma, se anota y sale: la firma digital no frena una nota
+  const enviarOEsperar = async (id, contexto) => {
+    if (config.firma_digital_activa) {
+      try {
+        const quienFirma = await quienFirmaLaNota(id, hoy);
+        if (debeEsperarFirma({ activa: config.firma_digital_activa, ahora, quienFirma })) {
+          await pool.query('UPDATE notas_digitales SET espera_firma = 1 WHERE id = ?', [id]);
+          resumen.para_firmar.push(id);
+          return;
+        }
+      } catch (error) {
+        anotarError(resumen, { ...contexto, id }, error);
+      }
+    }
+    await enviar(id, contexto);
+  };
+
+  // 1. Reintentos de notas pendientes o fallidas. Una que espera la firma, de hoy, no: sale al subirla o a las 14:00. Una de un día
+  // anterior (no se pudo mandar a las 14:00) sí: nunca queda colgada (spec, 4.10)
   let pendientes = [];
   try {
     [pendientes] = await pool.query(
-      "SELECT id FROM notas_digitales WHERE estado IN ('pendiente', 'fallida') AND es_prueba = 0 AND intentos < ? ORDER BY id",
-      [MAX_INTENTOS]
+      `SELECT id FROM notas_digitales
+       WHERE estado IN ('pendiente', 'fallida') AND es_prueba = 0 AND intentos < ? AND NOT (espera_firma = 1 AND fecha = ?) ORDER BY id`,
+      [MAX_INTENTOS, hoy]
     );
   } catch (error) {
     anotarError(resumen, { tipo: 'reintento' }, error);
@@ -564,7 +772,7 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario) => {
       return;
     }
     await registrarAutorizacion(id);
-    await enviar(id, { tipo: 'autorizacion' });
+    await enviarOEsperar(id, { tipo: 'autorizacion' });
   };
 
   // En la víspera de una licencia del firmante, el aviso suma lo que se habría avisado durante la licencia
@@ -612,7 +820,7 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario) => {
       avisoConAutorizacion = true;
       await registrarAutorizacion(id);
     }
-    await enviar(id, { tipo: 'aviso', gestion });
+    await enviarOEsperar(id, { tipo: 'aviso', gestion });
   }
 
   // Víspera sin avisos que lleven la autorización: sale igual, en su nota (spec 7.2). Si un aviso la llevó pero no quedó
@@ -635,7 +843,7 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario) => {
           // Si la generación lanza una excepción se sale al catch sin marcar el mes: se reintenta en la próxima corrida
           const id = await generarNota({ tipo: 'reiteracion', gestion, fecha: hoy, datasets, config, usuarioId, firma });
           resumen.generadas.push({ id, tipo: 'reiteracion', gestion, datasets: datasets.length });
-          await enviar(id, { tipo: 'reiteracion', gestion });
+          await enviarOEsperar(id, { tipo: 'reiteracion', gestion });
         }
       }
       // Generada (aunque el envío haya fallado) o sin datasets: el mes queda evaluado.
@@ -660,7 +868,7 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario) => {
           auditoria: { nuevos, reiterados, catalogos: await catalogosParaAuditoria() }
         });
         resumen.generadas.push({ id, tipo: 'auditoria', gestion: null, datasets: 0, cambios: nuevos.length + reiterados.length });
-        await enviar(id, { tipo: 'auditoria' });
+        await enviarOEsperar(id, { tipo: 'auditoria' });
       }
     }
   } catch (error) {
@@ -676,22 +884,24 @@ const correrPasos = async (resumen, hoy, usuarioId, calendario) => {
  * antes de tomar el bloqueo: así queda también con el envío apagado o un día no hábil, lo escribe registrarFin en la última
  * corrida y, si la corrida termina «ocupada», queda solo en lo que devuelve (y en la consola).
  */
-export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId = null, calendario } = {}) => {
+export const ejecutarNotasDigitales = async ({ hoy = hoyArgentina(), usuarioId = null, calendario, ahora = ahoraArgentina() } = {}) => {
   const conElCalendario = calendario ?? await leerCalendario();
   const resumen = {
     fecha: hoy, calendario: conElCalendario.origen, ejecutado: false, motivo: null, licencia: null, generadas: [], enviadas: 0,
-    fallidas: 0, errores: []
+    fallidas: 0, para_firmar: [], errores: []
   };
   if (conElCalendario.error !== null) anotarError(resumen, { tipo: 'feriados' }, new Error(MENSAJE_CORRIDA_SIN_FERIADOS));
   // Con el bloqueo ocupado no se registra nada: la corrida que lo tiene es la que registra
   const corrida = await conBloqueo(async () => {
     await registrarInicio(hoy);
     try {
-      await correrPasos(resumen, hoy, usuarioId, conElCalendario);
+      await correrPasos(resumen, hoy, usuarioId, conElCalendario, ahora);
     } catch (error) {
       // Lo que falla fuera de los pasos aislados (por ejemplo, leer la configuración)
       anotarError(resumen, { tipo: 'corrida' }, error);
     }
+    // También si la corrida cortó antes de terminar: lo que ya quedó esperando, le llega a quien firma
+    await avisarLasQueEsperan(resumen, hoy).catch(error => anotarError(resumen, { tipo: 'para-firmar' }, error));
     await registrarFin(resumen);
     return resumen;
   });
@@ -1260,8 +1470,11 @@ export const estadoNotas = async ({ hoy = hoyArgentina(), calendario } = {}) => 
     "SELECT COUNT(*) AS fallidas FROM notas_digitales WHERE estado = 'fallida' AND es_prueba = 0"
   );
   const ultimaCorrida = await leerUltimaCorrida();
+  const paraFirmar = await notasParaFirmar();
   return {
     envio_activo: Boolean(config.envio_activo),
+    firma_digital_activa: Boolean(config.firma_digital_activa),
+    para_firmar: paraFirmar,
     configuracion_faltante: configuracionCompleta(config, firmaTitular),
     fallidas: Number(fallidas),
     proximas,
@@ -1272,6 +1485,7 @@ export const estadoNotas = async ({ hoy = hoyArgentina(), calendario } = {}) => 
       // Las fechas de esta pantalla cuentan solo los 9 fijos
       ...(conElCalendario.error !== null ? [{ tipo: 'feriados-sin-leer', nivel: 'error', mensaje: MENSAJE_ESTADO_SIN_FERIADOS }] : []),
       ...alertasDeCorrida(config, ultimaCorrida, hoy, conElCalendario),
+      ...(paraFirmar.length > 0 ? [{ tipo: 'para-firmar', nivel: 'advertencia', mensaje: textoDeLaAlertaDeFirma(paraFirmar) }] : []),
       // Advertencias que no bloquean el envío (las imágenes no están en configuracionCompleta)
       // La imagen de la firma que usan las notas: la del titular, si hay uno elegido
       ...((config.firmante_usuario_id ? firmaTitular?.imagen : config.firma_imagen) ? [] : [{

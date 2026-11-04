@@ -321,6 +321,9 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     'vencimiento de Mi espacio': 'RPAD: lo que vence pronto en Mi espacio',
     // Nuevo con los días restituidos de Mi espacio (spec 2026-10-31-mi-espacio-dias-restituidos, 10): solo, su propio asunto
     'días para restituir': 'RPAD: tenés días para restituir en Mi espacio',
+    // Nuevos con la firma digital de las notas (spec 2026-11-03-notas-firma-digital, 4.4)
+    'notas para firmar (una)': 'RPAD: hoy tenés 1 nota para firmar',
+    'notas para firmar (varias)': 'RPAD: hoy tenés 2 notas para firmar',
     // Nuevos con la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, 4)
     'evento: invitación': 'RPAD: te sumaron a un evento',
     'evento: cambio': 'RPAD: cambió un evento',
@@ -352,6 +355,9 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     'vencimiento de Mi espacio': `${RPAD} Lo que vence pronto Hola, Persona de Prueba. Tenés 1 franco compensatorio para usar en octubre: el último día hábil es el viernes 30/10. Tenés 3 días de la licencia 2024: vence el 31/12/2026. Ver en Mi espacio Este aviso te llega una sola vez por cada cosa. Lo que cargás en Mi espacio lo ves solo vos. ${PIE}`,
     // Nuevo con los días restituidos de Mi espacio (spec 2026-10-31-mi-espacio-dias-restituidos, 10): el email de la maqueta
     'días para restituir': `${RPAD} Días para restituir Hola, Julieta Ferreyra. Los asuetos del 24 y el 31/12/2026 cayeron en tus vacaciones del 11/12/2026 al 08/01/2027: tenés 2 días restituidos de la licencia 2024. Como esa licencia ya venció, tomalos todos juntos, empezando a más tardar el viernes 30/04/2027, con la nota al Director General. Si no, se pierden. En Mi espacio podés cargarlos y bajar la nota en Word. Ver en Mi espacio Te va a llegar otro aviso 5 días hábiles antes del plazo. Lo que cargás en Mi espacio lo ves solo vos. ${PIE}`,
+    // Nuevos con la firma digital de las notas (spec 2026-11-03-notas-firma-digital, 4.4): el nombre, escapado; el primero, solo
+    'notas para firmar (una)': `${RPAD} Notas para firmar hoy Buen día, Julieta. Hoy tenés 1 nota para firmar. Te la adjuntamos para que no tengas que bajarla: Nota Digital N° 12/26: reiteración, gestión externa. Firmala en el Firmador de firmar.gob.ar y subila en su fila, en la pantalla que abre el botón de abajo. Si el archivo no es esa nota, el RPAD te avisa. Antes de enviarla vas a poder mirarla. Subir la nota firmada A las 14:00 sale lo que quede: firmada si la subiste; si no, con la imagen de tu firma, como siempre. Si hoy no podés, no hace falta que hagas nada. ¡Gracias! ${PIE}`,
+    'notas para firmar (varias)': `${RPAD} Notas para firmar hoy Buen día, Julieta. Hoy tenés 2 notas para firmar. Te las adjuntamos para que no tengas que bajarlas: Nota Digital N° 12/26: reiteración, gestión externa. Nota Digital N° 1/27: auditoría. Firmalas en el Firmador de firmar.gob.ar, de a una, y subí cada una en su fila, en la pantalla que abre el botón de abajo. Si un archivo no es esa nota, el RPAD te avisa. Antes de enviarlas vas a poder mirarlas. Subir las notas firmadas A las 14:00 sale lo que quede: firmada si la subiste; si no, con la imagen de tu firma, como siempre. Si hoy no podés, no hace falta que hagas nada. ¡Gracias! ${PIE}`,
     // Nuevos con la agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, 4): el detalle va en su párrafo, después de la
     // línea del evento
     'evento: invitación': `${RPAD} Te sumaron a un evento Persona de Prueba te sumó a un evento: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00. Sala de reuniones del 2.º piso. Ver en Mi espacio Solo quien lo creó lo puede cambiar. Si cambia o se cancela, te llega otro email. ${PIE}`,
