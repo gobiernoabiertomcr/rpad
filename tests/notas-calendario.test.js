@@ -94,6 +94,24 @@ describe('aritmética de fechas', () => {
     assert.equal(cal.periodoSiguiente('2026-12'), '2027-01');
     assert.equal(cal.periodoSiguiente('2026-03'), '2026-04');
   });
+
+  // Los meses de la reiteración (spec 2026-11-03-reiteracion-bimestral, 3), cada uno escrito a mano
+  it('los meses de la reiteración: enero, marzo, mayo, julio, septiembre y noviembre', () => {
+    for (const periodo of ['2027-01', '2027-03', '2027-05', '2027-07', '2027-09', '2027-11']) {
+      assert.equal(cal.esMesDeReiteracion(periodo), true, periodo);
+    }
+    for (const periodo of ['2027-02', '2027-04', '2027-06', '2027-08', '2027-10', '2027-12']) {
+      assert.equal(cal.esMesDeReiteracion(periodo), false, periodo);
+    }
+    assert.deepEqual(cal.MESES_DE_REITERACION, [1, 3, 5, 7, 9, 11]);
+    assert.ok(Object.isFrozen(cal.MESES_DE_REITERACION));
+  });
+
+  it('lo que no es un período no es un mes de la reiteración, y no tira', () => {
+    for (const raro of [null, undefined, '', '2027', '2027-13', '2027-00', '2027-1', '2027-01-04', 'enero', 202701, {}, []]) {
+      assert.equal(cal.esMesDeReiteracion(raro), false, String(raro));
+    }
+  });
 });
 
 describe('formatos', () => {
