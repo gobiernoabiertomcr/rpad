@@ -5,7 +5,7 @@ import { crearBaseDePrueba, cerrarDb, query, mailpit, db, MAILPIT_URL } from './
 import { crearDataset, crearNota, crearEmailViejo, limpiarBase, configurarNotas, crearArea, conFallaSimulada, asegurarBaseDePrueba } from './notas-fixtures.js';
 import { pngRgba, pngRgb, pngsDanados } from './firma-fixtures.js';
 import { textosPorHoja, imagenesPorHoja, lineasPorHoja, tamanosPorHoja, HOJA_A4, HOJA_OFICIO, todasDelTamano } from './pdf-lector.js';
-import { formatoCorto, hoyArgentina, proximoDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { formatoCorto, proximoDiaHabil, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { esFinDeMes, sumarMeses, vencimientoDelMes } from '../services/fechasDatasetReglas.js';
 import { construirNota } from '../services/notasDigitalesContenido.js';
 import { seguimientoDe } from '../services/seguimientoReglas.js';
@@ -217,19 +217,19 @@ describe('avisos', () => {
 
 describe('reiteraciones', () => {
   it('el primer día hábil reitera los avisados hace 20 días o más', async () => {
-    await crearDataset({ titulo: 'Avisado temprano', vencimiento: '2026-12-31' });
-    await ejecutar('2026-11-02');
-    await crearDataset({ titulo: 'Avisado tarde', vencimiento: '2027-01-19' });
-    await ejecutar('2026-11-20');
+    await crearDataset({ titulo: 'Avisado temprano', vencimiento: '2026-11-30' });
+    await ejecutar('2026-10-01');
+    await crearDataset({ titulo: 'Avisado tarde', vencimiento: '2026-12-19' });
+    await ejecutar('2026-10-20');
     await mailpit.vaciar();
 
-    await ejecutar('2026-12-01');
+    await ejecutar('2026-11-02');
     const [mensaje] = await mailpit.mensajes();
     assert.match(mensaje.Subject, /^Nota Digital N° 3\/26 – Ref\.: Reiteración – /);
     const html = await mailpit.html(mensaje.ID);
     assert.ok(html.includes('Avisado temprano'));
     assert.ok(!html.includes('Avisado tarde'));
-    assert.ok(html.includes('Nota Digital N° 1/26 (02/11/2026)'));
+    assert.ok(html.includes('Nota Digital N° 1/26 (01/10/2026)'));
   });
 
   it('los avisos del 13/10/2026 se reiteran el 02/11/2026 (20 días); los del 14/10/2026, no', async () => {
@@ -270,13 +270,13 @@ describe('reiteraciones', () => {
   });
 
   it('se evalúa una sola vez por mes y la primera de enero es N° 1 del año nuevo', async () => {
-    await crearDataset({ titulo: 'Avisado temprano', vencimiento: '2026-12-31' });
+    await crearDataset({ titulo: 'Avisado temprano', vencimiento: '2026-11-30' });
+    await ejecutar('2026-10-01');
+    await crearDataset({ titulo: 'Avisado tarde', vencimiento: '2026-12-19' });
+    await ejecutar('2026-10-20');
     await ejecutar('2026-11-02');
-    await crearDataset({ titulo: 'Avisado tarde', vencimiento: '2027-01-19' });
-    await ejecutar('2026-11-20');
-    await ejecutar('2026-12-01');
-    await ejecutar('2026-12-02');
-    await ejecutar('2026-12-11');
+    await ejecutar('2026-11-03');
+    await ejecutar('2026-11-11');
     assert.equal((await notas()).filter(n => n.tipo === 'reiteracion').length, 1);
 
     await mailpit.vaciar();
@@ -285,21 +285,21 @@ describe('reiteraciones', () => {
     assert.match(mensaje.Subject, /^Nota Digital N° 1\/27 – Ref\.: Reiteración – /);
     const html = await mailpit.html(mensaje.ID);
     assert.ok(html.includes('Avisado tarde'));
-    assert.ok(html.includes('Nota Digital N° 1/26 (02/11/2026) – reiterado 1 vez'));
+    assert.ok(html.includes('Nota Digital N° 1/26 (01/10/2026) – reiterado 1 vez'));
   });
 
   it('si el primer día hábil no hubo corrida, la reiteración sale en la siguiente', async () => {
     await crearDataset({ vencimiento: '2026-12-31' });
     await ejecutar('2026-11-02');
-    await ejecutar('2026-12-02');
+    await ejecutar('2027-01-05');
     assert.deepEqual((await notas()).map(n => n.tipo), ['aviso', 'reiteracion']);
   });
 
   it('un mes sin datasets para reiterar queda evaluado: no se reitera más tarde en ese mismo mes', async () => {
-    await crearDataset({ titulo: 'Avisado tarde', vencimiento: '2027-01-19' });
-    await ejecutar('2026-11-20');
-    await ejecutar('2026-12-01'); // solo pasaron 11 días: nada para reiterar, pero diciembre queda evaluado
-    await ejecutar('2026-12-11'); // ya pasaron más de 20 días, pero diciembre ya fue evaluado
+    await crearDataset({ titulo: 'Avisado tarde', vencimiento: '2026-12-19' });
+    await ejecutar('2026-10-20');
+    await ejecutar('2026-11-02'); // solo pasaron 13 días: nada para reiterar, pero noviembre queda evaluado
+    await ejecutar('2026-11-20'); // ya pasaron más de 20 días, pero noviembre ya fue evaluado
     assert.deepEqual((await notas()).map(n => n.tipo), ['aviso']);
 
     await ejecutar('2027-01-04');
@@ -309,16 +309,133 @@ describe('reiteraciones', () => {
   it('nunca genera dos reiteraciones de la misma gestión en el mismo mes', async () => {
     await crearDataset({ vencimiento: '2026-12-31' });
     await ejecutar('2026-11-02');
-    await ejecutar('2026-12-01');
+    await ejecutar('2027-01-04');
     await query('UPDATE notas_digitales_config SET reiteracion_evaluada_interna = NULL WHERE id = 1');
-    await ejecutar('2026-12-02');
+    await ejecutar('2027-01-05');
     assert.equal((await notas()).filter(n => n.tipo === 'reiteracion').length, 1);
+  });
+});
+
+// La reiteración sale solo en enero, marzo, mayo, julio, septiembre y noviembre (spec 2026-11-03-reiteracion-bimestral, 3). Lo que anuncia
+// el Estado con los feriados de la tabla, en tests/feriados-en-notas.test.js; con una licencia del firmante, en tests/notas-licencias.test.js
+describe('la reiteración bimestral', () => {
+  const marcas = async () => (await query(
+    'SELECT reiteracion_evaluada_interna AS interna, reiteracion_evaluada_externa AS externa FROM notas_digitales_config WHERE id = 1'
+  ))[0];
+  const reiteraciones = async () => (await query(
+    "SELECT numero, anio, gestion, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, html FROM notas_digitales WHERE tipo = 'reiteracion' ORDER BY id"
+  ));
+
+  it('en un mes que no toca no genera nada ni escribe la marca, y no es un error', async () => {
+    await crearDataset({ titulo: 'Avisado en noviembre', vencimiento: '2026-12-31' });
+    await crearDataset({ titulo: 'Vencido sin aviso', gestion: 'externa', vencimiento: '2026-09-30' });
+    await ejecutar('2026-11-02');
+    assert.deepEqual(await marcas(), { interna: '2026-11', externa: '2026-11' });
+    assert.equal((await reiteraciones()).length, 1, 'la de noviembre, del vencido');
+    await mailpit.vaciar();
+
+    const resumen = await ejecutar('2026-12-01');
+    assert.equal(resumen.ejecutado, true);
+    assert.equal(resumen.motivo ?? null, null);
+    assert.deepEqual(resumen.errores, []);
+    assert.deepEqual(resumen.generadas, []);
+    assert.equal(resumen.enviadas, 0);
+    assert.equal((await mailpit.mensajes()).length, 0);
+    assert.deepEqual(await marcas(), { interna: '2026-11', externa: '2026-11' });
+    assert.equal((await query("SELECT COUNT(*) AS n FROM notas_digitales WHERE periodo = '2026-12'"))[0].n, 0);
+    assert.equal((await reiteraciones()).length, 1);
+    assert.equal((await ultimaCorrida()).con_errores, 0);
+  });
+
+  it('un mes que no toca no gasta números del libro', async () => {
+    await crearDataset({ vencimiento: '2026-12-31' });
+    // Externa a 40 días: el 30/01/2027 se avisa el 21/12/2026
+    await crearDataset({ gestion: 'externa', vencimiento: '2027-01-30' });
+    await ejecutar('2026-11-02');
+    await ejecutar('2026-12-01');
+    await ejecutar('2026-12-21');
+    assert.deepEqual((await notas()).map(n => [n.tipo, n.gestion, n.numero, n.anio]),
+      [['aviso', 'interna', 1, 2026], ['aviso', 'externa', 2, 2026]]);
+  });
+
+  it('en un mes que no toca salen igual un aviso y el reintento de una reiteración que falló', async () => {
+    const fallida = await crearNota({ tipo: 'reiteracion', fecha: '2026-11-03', numero: 5, estado: 'fallida', intentos: 1 });
+    // Externa a 40 días: el 10/01/2027 se avisa el 01/12/2026
+    await crearDataset({ gestion: 'externa', vencimiento: '2027-01-10' });
+    const resumen = await ejecutar('2026-12-01');
+    assert.deepEqual(resumen.errores, []);
+    assert.deepEqual(resumen.generadas.map(g => [g.tipo, g.gestion]), [['aviso', 'externa']]);
+    assert.equal(resumen.enviadas, 2);
+    assert.equal((await query('SELECT estado FROM notas_digitales WHERE id = ?', [fallida]))[0].estado, 'enviada');
+  });
+
+  it('en un mes que toca sale una por gestión, con su número, y se evalúa una sola vez', async () => {
+    await crearDataset({ titulo: 'Interno vencido', vencimiento: '2026-09-30' });
+    await crearDataset({ titulo: 'Externo vencido', gestion: 'externa', vencimiento: '2026-09-30' });
+    const resumen = await ejecutar('2027-01-04');
+    assert.deepEqual(resumen.errores, []);
+    assert.deepEqual(resumen.generadas.map(g => [g.tipo, g.gestion]), [['reiteracion', 'interna'], ['reiteracion', 'externa']]);
+    assert.deepEqual(await marcas(), { interna: '2027-01', externa: '2027-01' });
+    assert.deepEqual((await query("SELECT periodo FROM notas_digitales WHERE tipo = 'reiteracion'")).map(n => n.periodo), ['2027-01', '2027-01']);
+
+    assert.deepEqual((await ejecutar('2027-01-05')).generadas, []);
+    assert.deepEqual((await reiteraciones()).map(r => [r.gestion, r.numero, r.anio]), [['interna', 1, 2027], ['externa', 2, 2027]]);
+  });
+
+  it('los 20 días se miran el día que toca: el avisado el 15/12 entra el 04/01 y el del 16/12 espera a marzo', async () => {
+    const a = await crearDataset({ titulo: 'Avisado el 15', gestion: 'externa', vencimiento: '2027-01-31' });
+    const b = await crearDataset({ titulo: 'Avisado el 16', gestion: 'externa', vencimiento: '2027-01-31' });
+    await crearNota({ gestion: 'externa', fecha: '2026-12-15', numero: 1, datasets: [{ id: a, vencimiento: '2027-01-31' }] });
+    await crearNota({ gestion: 'externa', fecha: '2026-12-16', numero: 2, datasets: [{ id: b, vencimiento: '2027-01-31' }] });
+
+    await ejecutar('2027-01-04');
+    const [enero, ...otras] = await reiteraciones();
+    assert.equal(otras.length, 0);
+    assert.ok(enero.html.includes('Avisado el 15') && !enero.html.includes('Avisado el 16'), enero.html);
+
+    await ejecutar('2027-03-01');
+    const [, marzo] = await reiteraciones();
+    assert.ok(marzo.html.includes('Avisado el 15') && marzo.html.includes('Avisado el 16'), marzo.html);
+  });
+
+  it('con enero sin ninguna corrida, el 01/02 no sale nada y el 01/03 sí', async () => {
+    await crearDataset({ vencimiento: '2026-09-30' });
+    await ejecutar('2026-11-02');
+    const febrero = await ejecutar('2027-02-01');
+    assert.deepEqual([febrero.ejecutado, febrero.generadas, febrero.errores], [true, [], []]);
+    await ejecutar('2027-03-01');
+    assert.deepEqual((await reiteraciones()).map(r => r.fecha), ['2026-11-02', '2027-03-01']);
+  });
+
+  it('una generación que falla en todas las corridas de enero no se reintenta en febrero: espera a marzo', async () => {
+    await crearDataset({ vencimiento: '2026-09-30' });
+    await conFallaSimulada('INSERT', "NEW.tipo = 'reiteracion'", async () => {
+      for (const dia of ['2027-01-04', '2027-01-29']) {
+        const resumen = await ejecutar(dia);
+        assert.deepEqual(resumen.errores.map(e => [e.tipo, e.gestion]), [['reiteracion', 'interna']], dia);
+      }
+    });
+    assert.deepEqual(await marcas(), { interna: null, externa: '2027-01' });
+
+    const febrero = await ejecutar('2027-02-01');
+    assert.deepEqual([febrero.generadas, febrero.errores], [[], []]);
+    assert.deepEqual(await marcas(), { interna: null, externa: '2027-01' });
+
+    await ejecutar('2027-03-01');
+    assert.deepEqual((await reiteraciones()).map(r => r.fecha), ['2027-03-01']);
+    assert.deepEqual(await marcas(), { interna: '2027-03', externa: '2027-03' });
+  });
+
+  it('cruza el año: noviembre sí, diciembre no y enero sí', async () => {
+    await crearDataset({ vencimiento: '2026-09-30' });
+    for (const dia of ['2027-11-01', '2027-12-01', '2028-01-03']) await ejecutar(dia);
+    assert.deepEqual((await reiteraciones()).map(r => [r.fecha, r.numero, r.anio]), [['2027-11-01', 1, 2027], ['2028-01-03', 1, 2028]]);
   });
 });
 
 describe('vencidos sin aviso (14/10/2026)', () => {
   it('no salen en ningún aviso y sí en la reiteración del primer día hábil del mes siguiente, como "Sin aviso previo"', async () => {
-    await ejecutar('2026-10-01'); // octubre queda evaluado sin nada para reiterar
+    await ejecutar('2026-10-01'); // octubre no toca reiteración
     const id = await crearDataset({ titulo: 'Cargado vencido', gestion: 'externa', vencimiento: '2026-09-30', ultima: '2025-09-30' });
     await crearEmailViejo({ tipo: 'externo-vencido', datasetIds: [id], enviado: '2026-01-01 08:00:00' });
     await crearEmailViejo({ tipo: 'externo-vencido', datasetIds: [id], enviado: '2026-10-01 08:00:00' });
@@ -343,12 +460,12 @@ describe('vencidos sin aviso (14/10/2026)', () => {
     assert.deepEqual(fila, { seccion: 'vencido', vencimiento: '2026-09-30' });
   });
 
-  it('se reiteran todos los meses con "Sin aviso previo – reiterado N veces", hasta que se actualiza', async () => {
+  it('se reiteran en cada mes que toca con "Sin aviso previo – reiterado N veces", hasta que se actualiza', async () => {
     await ejecutar('2026-10-01');
     const id = await crearDataset({ gestion: 'interna', vencimiento: '2026-09-30' });
     await ejecutar('2026-11-02');
     await mailpit.vaciar();
-    await ejecutar('2026-12-01');
+    await ejecutar('2027-01-04');
     const [mensaje] = await mailpit.mensajes();
     const html = await mailpit.html(mensaje.ID);
     assert.ok(html.includes('Sin aviso previo – reiterado 1 vez'));
@@ -356,13 +473,13 @@ describe('vencidos sin aviso (14/10/2026)', () => {
 
     await query('UPDATE datasets SET proxima_actualizacion = ? WHERE id = ?', ['2027-10-31', id]);
     await mailpit.vaciar();
-    await ejecutar('2027-01-04');
+    await ejecutar('2027-03-01');
     assert.deepEqual((await notas()).map(n => n.tipo), ['reiteracion', 'reiteracion']);
     assert.equal((await mailpit.mensajes()).length, 0);
   });
 
   it('el estado cuenta el vencido sin aviso en la próxima reiteración y no en el próximo aviso', async () => {
-    await ejecutar('2026-10-01'); // octubre ya evaluado: la próxima reiteración es la de noviembre
+    await ejecutar('2026-10-01'); // octubre no toca: la próxima reiteración es la de noviembre
     await crearDataset({ gestion: 'externa', vencimiento: '2026-09-30' });
     const { proximas } = await motor.estadoNotas({ hoy: '2026-10-14' });
     assert.equal(proximas.externa.aviso, null);
@@ -608,12 +725,12 @@ describe('registro de la corrida y aislamiento de fallas', () => {
     await crearDataset({ vencimiento: '2026-12-31' });
     await ejecutar('2026-11-02');
 
-    const resumen = await conFallaSimulada('INSERT', "NEW.tipo = 'reiteracion'", () => ejecutar('2026-12-01'));
+    const resumen = await conFallaSimulada('INSERT', "NEW.tipo = 'reiteracion'", () => ejecutar('2027-01-04'));
     assert.deepEqual(resumen.errores.map(e => [e.tipo, e.gestion]), [['reiteracion', 'interna']]);
     const [marcas] = await query('SELECT reiteracion_evaluada_interna AS interna, reiteracion_evaluada_externa AS externa FROM notas_digitales_config WHERE id = 1');
-    assert.deepEqual(marcas, { interna: '2026-11', externa: '2026-12' });
+    assert.deepEqual(marcas, { interna: '2026-11', externa: '2027-01' });
 
-    await ejecutar('2026-12-02');
+    await ejecutar('2027-01-05');
     assert.deepEqual((await notas()).map(n => [n.tipo, n.estado]), [['aviso', 'enviada'], ['reiteracion', 'enviada']]);
     assert.equal((await ultimaCorrida()).con_errores, 0);
   });
@@ -1509,8 +1626,9 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
   });
 
   // Desde los feriados en las notas (spec 2026-10-27-feriados-en-notas, 4), la vista previa de la reiteración es la que anuncia el
-  // Estado: con la del mes ya evaluada, la del mes siguiente. La del mismo día solo se ve si la marca del mes no quedó escrita
-  it('previewAnexo abierto después de la reiteración real del mismo día muestra la del mes siguiente, con la real una vez y la «XX»', async () => {
+  // Estado: con la del mes ya evaluada, la del próximo mes que toca (spec 2026-11-03-reiteracion-bimestral, 4). La del mismo día solo se
+  // ve si la marca del mes no quedó escrita
+  it('previewAnexo abierto después de la reiteración real del mismo día muestra la del próximo mes que toca, con la real una vez y la «XX»', async () => {
     await reiteracionDel0211();
     await ejecutar('2026-11-02');
     const [reiteracion] = await laReiteracion();
@@ -1518,11 +1636,11 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
     const hojas = lineasPorHoja(await motor.previewAnexo({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-11-02' }));
     assert.equal(hojas.length, 2);
     for (const lineas of hojas) {
-      assert.ok(lineas.includes('1 de diciembre de 2026'), lineas.join(' | '));
+      assert.ok(lineas.includes('4 de enero de 2027'), lineas.join(' | '));
       assert.equal(vecesDelTitulo(lineas, 'XX'), 1, lineas.join(' | '));
       assert.equal(vecesDelTitulo(lineas, '2/26'), 1, lineas.join(' | '));
     }
-    // El 01/12 los dos están vencidos: van por vencimiento, primero el del 31/10 (la lista de los avisos puede ocupar dos renglones)
+    // El 04/01 los dos están vencidos: van por vencimiento, primero el del 31/10 (la lista de los avisos puede ocupar dos renglones)
     const conAvisos = (lineas, titulo, cantidad, lista) =>
       lineas.includes(titulo) && lineas.includes(cantidad) && lineas.join(' ').includes(lista);
     assert.ok(conAvisos(hojas[0], 'Vencido sin aviso', '2 avisos', 'Las Notas Digitales N° 2/26 y XX'), hojas[0].join(' | '));
@@ -1651,9 +1769,10 @@ describe('anexo de la reiteración (spec 2026-10-20-requiere-nota-y-anexo-reiter
 });
 
 // Lo que pidió cada nota, congelado en notas_digitales_datasets (spec 2026-10-17-fechas-datasets, 6 y 9). El pedido depende
-// del día (R7): las fechas se arman desde el hoy real y los textos esperados, con formatoCorto (Ruling 7)
+// del día (R7): las fechas se arman desde HOY y los textos esperados, con formatoCorto (Ruling 7). HOY es un día fijo de un mes de
+// reiteración: con el reloj real, estos tests fallarían en los meses que no tocan (spec 2026-11-03-reiteracion-bimestral, 8)
 describe('datos solicitados guardados con cada nota (spec 2026-10-17-fechas-datasets, 6 y 9)', () => {
-  const HOY = proximoDiaHabil(hoyArgentina());
+  const HOY = '2026-11-03';
   // Vence a fin del mes del día siguiente a la corrida, entre ese día y 31 días después: entra en el aviso de las dos
   // gestiones. Con el mes de la corrida, un 29/02 vencería el 28/02 (febrero va siempre en 28) y ya estaría vencido
   const VENCE = vencimientoDelMes(sumarDias(HOY, 1));

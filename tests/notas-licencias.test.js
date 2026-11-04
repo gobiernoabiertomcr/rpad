@@ -226,8 +226,8 @@ describe('licencia con autorizado (spec 7.2)', () => {
     await crearNota({ tipo: 'aviso', fecha: '2026-10-01', numero: 50, anio: 2026, datasets: [{ id: vencido, vencimiento: '2026-11-30' }] });
     await correr('2026-11-25');
     const [autorizacion] = await query('SELECT numero FROM notas_digitales WHERE id = ?', [await notaDeAutorizacionDe(licenciaId)]);
-    await correr('2026-12-01');
-    const [reiteracion] = (await notas()).filter(n => n.tipo === 'reiteracion' && n.fecha === '2026-12-01');
+    await correr('2027-01-04');
+    const [reiteracion] = (await notas()).filter(n => n.tipo === 'reiteracion' && n.fecha === '2027-01-04');
     assert.equal(reiteracion.firmante_id, titular.id);
     assert.equal(reiteracion.presentada_por_id, autorizado.id);
     assert.ok(reiteracion.html.includes(`Nota presentada por Firma admin, Cargo admin, en nombre de Firma superadmin, Cargo superadmin, conforme a la autorización conferida mediante Nota Digital N° ${autorizacion.numero}/26 (licencia del 26/11/2026 al 14/01/2027).`));
@@ -352,7 +352,7 @@ describe('aviso en su fecha con persona autorizada (spec 7.6), licencia del 10/1
       (texto, prefijo, numero) => (Number(numero) === enSuFecha.numero ? `${prefijo} XX` : texto)));
   });
 
-  it('la reiteración del 01/02/2027 muestra el dataset una sola vez, con las dos notas en "Informado en"', async () => {
+  it('la reiteración del 01/03/2027 muestra el dataset una sola vez, con las dos notas en "Informado en"', async () => {
     const anticipado = await vispera();
     await correr('2026-12-22');
     const enSuFecha = (await notas())[1];
@@ -360,7 +360,7 @@ describe('aviso en su fecha con persona autorizada (spec 7.6), licencia del 10/1
     assert.deepEqual(del04.generadas, []);
     assert.equal((await notas()).filter(n => n.tipo === 'reiteracion' && n.gestion === 'externa').length, 0, 'el 04/01 no hay reiteración externa');
 
-    const resumen = await correr('2027-02-01');
+    const resumen = await correr('2027-03-01');
     assert.deepEqual(resumen.errores, []);
     const reiteraciones = (await notas()).filter(n => n.tipo === 'reiteracion' && n.gestion === 'externa');
     assert.equal(reiteraciones.length, 1);
@@ -841,10 +841,10 @@ describe('persona autorizada contratada (pedido del usuario el 16/10/2026)', () 
     await crearNota({ tipo: 'aviso', fecha: '2026-10-01', numero: 50, anio: 2026, datasets: [{ id: vencido, vencimiento: '2026-11-30' }] });
     await correr('2026-11-25');
     const [autorizacion] = await query('SELECT numero FROM notas_digitales WHERE id = ?', [await notaDeAutorizacionDe(licenciaId)]);
-    const { firma } = await firmas.firmaParaFecha(await config(), '2026-12-01');
+    const { firma } = await firmas.firmaParaFecha(await config(), '2027-01-04');
     assert.deepEqual([firma.titular.contratado, firma.presentante.contratado], [false, true]);
-    await correr('2026-12-01');
-    const [reiteracion] = (await notas()).filter(n => n.tipo === 'reiteracion' && n.fecha === '2026-12-01');
+    await correr('2027-01-04');
+    const [reiteracion] = (await notas()).filter(n => n.tipo === 'reiteracion' && n.fecha === '2027-01-04');
     assert.equal(reiteracion.presentada_por_id, autorizado.id);
     assert.ok(reiteracion.html.includes(`Nota presentada por ${CONTRATADA}, en nombre de Firma superadmin, Cargo superadmin, conforme a la autorización conferida mediante Nota Digital N° ${autorizacion.numero}/26 (licencia del 26/11/2026 al 14/01/2027).`));
     assert.ok(reiteracion.html.includes(`><b>Firma admin</b><br><span style="font-size:11px">${RENGLON}</span><br><span style="font-size:14px">Cargo admin</span></td>`));
@@ -871,8 +871,8 @@ describe('persona autorizada con una licencia que se superpone en parte (del 22/
   beforeEach(async () => {
     licenciaId = await licencia(titular, '2027-03-01', '2027-03-31', autorizado);
     licenciaDelAutorizado = await licencia(autorizado, '2027-02-22', '2027-03-03');
-    // La reiteración de febrero ya se evaluó (el 01/02): la víspera no saca ninguna
-    await query("UPDATE notas_digitales_config SET reiteracion_evaluada_interna = '2027-02', reiteracion_evaluada_externa = '2027-02'");
+    // La última reiteración evaluada es la de enero y febrero no toca: la víspera no saca ninguna
+    await query("UPDATE notas_digitales_config SET reiteracion_evaluada_interna = '2027-01', reiteracion_evaluada_externa = '2027-01'");
   });
   // Un dataset avisado el 15/01, que vence el 15/02: se reitera en marzo
   const conReiterable = async () => {
@@ -935,7 +935,7 @@ describe('persona autorizada con una licencia que se superpone en parte (del 22/
       assert.deepEqual(resumen.generadas, [], dia);
     }
     assert.equal((await notas()).length, antes);
-    assert.equal((await config()).reiteracion_evaluada_interna, '2027-02');
+    assert.equal((await config()).reiteracion_evaluada_interna, '2027-01');
   });
 
   it('el 04/03, de vuelta la persona autorizada, la reiteración sale con las dos firmas y cita la nota de la víspera, sin otra nota de autorización', async () => {
@@ -1106,8 +1106,8 @@ describe('persona autorizada de licencia todos los días hábiles de la del titu
   let licenciaId;
   beforeEach(async () => {
     licenciaId = await licencia(titular, '2027-03-01', '2027-03-31', autorizado);
-    // La reiteración de febrero ya se evaluó (el 01/02): la víspera no saca ninguna
-    await query("UPDATE notas_digitales_config SET reiteracion_evaluada_interna = '2027-02', reiteracion_evaluada_externa = '2027-02'");
+    // La última reiteración evaluada es la de enero y febrero no toca: la víspera no saca ninguna
+    await query("UPDATE notas_digitales_config SET reiteracion_evaluada_interna = '2027-01', reiteracion_evaluada_externa = '2027-01'");
     // Uno avisado el 15/01 que venció el 15/02 (se reitera) y otro que la víspera se adelanta
     ids.reiterable = await crearDataset({ titulo: 'Reiterable', vencimiento: '2027-02-15' });
     await crearNota({ tipo: 'aviso', fecha: '2027-01-15', numero: 50, anio: 2027, datasets: [{ id: ids.reiterable, vencimiento: '2027-02-15' }] });
@@ -1157,22 +1157,24 @@ describe('persona autorizada de licencia todos los días hábiles de la del titu
     assert.equal((await query('SELECT estado FROM notas_digitales WHERE numero = 99'))[0].estado, 'enviada');
     assert.ok(!(await notas()).some(n => n.presentada_por_id === autorizado.id));
     const { reiteracion_evaluada_interna: interna, reiteracion_evaluada_externa: externa } = await config();
-    assert.deepEqual([interna, externa], ['2027-02', '2027-02']);
+    assert.deepEqual([interna, externa], ['2027-01', '2027-01']);
   });
 
-  it('a la vuelta (01/04), como sin persona autorizada: la reiteración la firma solo el titular y lo adelantado no vuelve a salir', async () => {
+  it('marzo se pierde: a la vuelta (01/04, que no toca) no hay reiteración; la del 03/05, como sin persona autorizada, la firma solo el titular y lo adelantado no vuelve a salir', async () => {
     await licencia(autorizado, '2027-03-01', '2027-03-31');
     await correr('2027-02-26');
     await enMarzoNoSePresentaNada();
     const resumen = await correr('2027-04-01');
     assert.deepEqual(resumen.errores, []);
     assert.equal(resumen.licencia, null);
+    assert.deepEqual((await notas()).filter(n => n.tipo === 'reiteracion'), []);
+    assert.deepEqual((await correr('2027-05-03')).errores, []);
     const todas = await notas();
     assert.ok(!todas.some(n => n.tipo === 'autorizacion'));
     assert.ok(!todas.some(n => n.presentada_por_id !== null));
     const [reiteracion, ...otras] = todas.filter(n => n.tipo === 'reiteracion');
     assert.equal(otras.length, 0);
-    assert.equal(reiteracion.fecha, '2027-04-01');
+    assert.equal(reiteracion.fecha, '2027-05-03');
     assert.equal(reiteracion.firmante_id, titular.id);
     assert.doesNotMatch(reiteracion.html, /Nota presentada por/);
     assert.ok((await datasetsDe(reiteracion.id)).some(d => d.dataset_id === ids.reiterable));
@@ -1192,12 +1194,15 @@ describe('persona autorizada de licencia todos los días hábiles de la del titu
     await licencia(autorizado, '2027-03-01', '2027-03-31');
     await enMarzoNoSePresentaNada();
     assert.deepEqual((await notas()).filter(n => n.fecha >= '2027-03-01').map(n => n.tipo), []);
+    // A la vuelta, abril no toca: la reiteración que se perdió en marzo sale en mayo
     const vuelta = await correr('2027-04-01');
     assert.deepEqual(vuelta.errores, []);
+    assert.deepEqual((await notas()).filter(n => n.tipo === 'reiteracion'), []);
+    assert.deepEqual((await correr('2027-05-03')).errores, []);
     const todas = await notas();
     const [reiteracion, ...demas] = todas.filter(n => n.tipo === 'reiteracion');
     assert.equal(demas.length, 0);
-    assert.equal(reiteracion.fecha, '2027-04-01');
+    assert.equal(reiteracion.fecha, '2027-05-03');
     assert.equal(reiteracion.firmante_id, titular.id);
     assert.equal(reiteracion.presentada_por_id, null);
     assert.doesNotMatch(reiteracion.html, /Nota presentada por/);
@@ -1396,12 +1401,13 @@ describe('vista previa y prueba de Correos: la nota como saldría (spec 7.7)', (
     assert.deepEqual([vista.fecha, vista.motivo, vista.cantidad, vista.ejemplo], ['2026-12-21', 'día no hábil', 1, false]);
     assert.ok(vista.html.includes('21 de diciembre de 2026'));
     assert.match(vista.asunto, /gestión interna – diciembre 2026\)$/);
-    // La reiteración y la nota de auditoría usan la misma fecha
-    for (const tipo of ['reiteracion', 'auditoria']) {
-      const otra = await motor.previewNota({ tipo, gestion: 'interna', hoy: '2026-12-19' });
-      assert.deepEqual([otra.fecha, otra.motivo], ['2026-12-21', 'día no hábil'], tipo);
-      assert.ok(otra.html.includes('21 de diciembre de 2026'), tipo);
-    }
+    // La nota de auditoría usa la misma fecha; la reiteración, la del próximo mes que toca, con el mismo motivo
+    const auditoria = await motor.previewNota({ tipo: 'auditoria', gestion: 'interna', hoy: '2026-12-19' });
+    assert.deepEqual([auditoria.fecha, auditoria.motivo], ['2026-12-21', 'día no hábil']);
+    assert.ok(auditoria.html.includes('21 de diciembre de 2026'));
+    const reiteracion = await motor.previewNota({ tipo: 'reiteracion', gestion: 'interna', hoy: '2026-12-19' });
+    assert.deepEqual([reiteracion.fecha, reiteracion.motivo], ['2027-01-04', 'día no hábil']);
+    assert.ok(reiteracion.html.includes('4 de enero de 2027'));
     // Un día hábil sin licencia: hoy, sin motivo
     const habil = await motor.previewNota({ tipo: 'aviso', gestion: 'interna', hoy: '2026-12-21' });
     assert.deepEqual([habil.fecha, habil.motivo], ['2026-12-21', null]);
@@ -1753,7 +1759,7 @@ describe('Estado de Correos (spec 7.5)', () => {
     assert.equal(estado.licencia_firmante.autorizado, 'Firma admin');
     const [nota] = await query('SELECT numero, anio FROM notas_digitales WHERE id = ?', [await notaDeAutorizacionDe(licenciaId)]);
     assert.deepEqual(estado.licencia_firmante.nota_autorizacion, { numero: nota.numero, anio: nota.anio });
-    assert.equal(estado.proximas.interna.reiteracion.fecha, '2026-12-02');
+    assert.equal(estado.proximas.interna.reiteracion.fecha, '2027-01-04');
   });
 
   it('autorizado que ya no cumple las condiciones: alerta de error', async () => {
@@ -1780,5 +1786,53 @@ describe('Estado de Correos (spec 7.5)', () => {
 
   it('titular con imagen de firma: no hay advertencia sin-firma aunque la configuración no tenga imagen', async () => {
     assert.ok(!(await motor.estadoNotas({ hoy: '2026-11-02' })).alertas.some(a => a.tipo === 'sin-firma'));
+  });
+});
+
+// Un mes que toca y se pierde espera al próximo mes que toca (spec 2026-11-03-reiteracion-bimestral, 3.1). Esta base no tiene la
+// precarga de feriados: los de Carnaval, en tests/feriados-en-notas.test.js
+describe('licencia sin persona autorizada y los meses de la reiteración', () => {
+  const reiteraciones = async () => (await notas()).filter(n => n.tipo === 'reiteracion');
+  const anunciada = async (hoy) => (await motor.estadoNotas({ hoy })).proximas.interna.reiteracion.fecha;
+
+  it('del 21/12/2026 al 05/02/2027: nada en enero ni a la vuelta, en febrero; sale el 01/03', async () => {
+    await licencia(titular, '2026-12-21', '2027-02-05');
+    await crearDataset({ vencimiento: '2026-09-30' });
+    await query("UPDATE notas_digitales_config SET reiteracion_evaluada_interna = '2026-11', reiteracion_evaluada_externa = '2026-11'");
+    assert.equal(await anunciada('2026-12-15'), '2027-03-01');
+
+    const enero = await correr('2027-01-04');
+    assert.deepEqual(enero.generadas, []);
+    assert.equal(await anunciada('2027-01-15'), '2027-03-01');
+    assert.equal((await config()).reiteracion_evaluada_interna, '2026-11');
+
+    const vuelta = await correr('2027-02-08');
+    assert.deepEqual([vuelta.licencia, vuelta.generadas, vuelta.errores], [null, [], []]);
+    assert.equal(await anunciada('2027-02-08'), '2027-03-01');
+
+    await correr('2027-03-01');
+    const [reiteracion, ...otras] = await reiteraciones();
+    assert.equal(otras.length, 0);
+    assert.equal(reiteracion.fecha, '2027-03-01');
+    assert.equal(reiteracion.firmante_id, titular.id);
+  });
+
+  it('del 28/12/2026 al 15/01/2027: sale a la vuelta, el 18/01, que todavía es enero', async () => {
+    await licencia(titular, '2026-12-28', '2027-01-15');
+    await crearDataset({ vencimiento: '2026-09-30' });
+    assert.equal(await anunciada('2026-12-30'), '2027-01-18');
+    assert.deepEqual((await correr('2027-01-04')).generadas, []);
+    assert.deepEqual((await correr('2027-01-18')).generadas.map(g => g.tipo), ['reiteracion']);
+    assert.deepEqual((await reiteraciones()).map(n => n.fecha), ['2027-01-18']);
+    assert.equal(await anunciada('2027-01-18'), '2027-03-01');
+  });
+
+  it('del 11/01 al 20/01/2027, con enero ya evaluado: la licencia no toca ninguna reiteración', async () => {
+    await licencia(titular, '2027-01-11', '2027-01-20');
+    await crearDataset({ vencimiento: '2026-09-30' });
+    assert.deepEqual((await correr('2027-01-04')).generadas.map(g => g.tipo), ['reiteracion']);
+    assert.equal(await anunciada('2027-01-15'), '2027-03-01');
+    assert.deepEqual((await correr('2027-01-21')).generadas, []);
+    assert.deepEqual((await reiteraciones()).map(n => n.fecha), ['2027-01-04']);
   });
 });

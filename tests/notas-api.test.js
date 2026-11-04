@@ -478,12 +478,14 @@ describe('vista previa y prueba', () => {
 
   // Spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5: «Ver anexo» también para la reiteración
   it('GET preview/anexo?tipo=reiteracion devuelve un PDF con una hoja por dataset', async () => {
-    // Un próximo a vencer avisado hace más de 20 días y un vencido sin aviso (más uno de la otra gestión, que no entra)
-    const proximo = await crearDataset({ titulo: 'Real avisado', gestion: 'externa', vencimiento: hoyMasDias(20) });
+    // Un próximo a vencer avisado hace más de 20 días y un vencido sin aviso (más uno de la otra gestión, que no entra). La vista previa
+    // muestra la del próximo mes que toca, hasta dos meses después de hoy: el próximo vence más adelante, así sigue siendo el primero
+    // en cualquier mes en que corra este test (spec 2026-11-03-reiteracion-bimestral, 8)
+    const proximo = await crearDataset({ titulo: 'Real avisado', gestion: 'externa', vencimiento: hoyMasDias(90) });
     await crearDataset({ titulo: 'Real vencido', gestion: 'externa', vencimiento: hoyMasDias(-10) });
     await crearDataset({ titulo: 'Real interno vencido', gestion: 'interna', vencimiento: hoyMasDias(-10) });
     await crearNota({
-      tipo: 'aviso', gestion: 'externa', fecha: hoyMasDias(-25), numero: 1, datasets: [{ id: proximo, vencimiento: hoyMasDias(20) }]
+      tipo: 'aviso', gestion: 'externa', fecha: hoyMasDias(-25), numero: 1, datasets: [{ id: proximo, vencimiento: hoyMasDias(90) }]
     });
     const res = await api.get('/notificaciones/notas-digitales/preview/anexo?gestion=externa&tipo=reiteracion', comoAdmin());
     assert.equal(res.status, 200);
@@ -598,9 +600,9 @@ describe('libro', () => {
   // Un aviso y, un mes después, su reiteración, generados por el motor: los dos con su anexo (el de la reiteración, con el
   // Seguimiento de cada dataset: spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2)
   const avisoYReiteracion = async () => {
-    await crearDataset({ titulo: 'Dataset avisado', vencimiento: '2026-12-31' });
+    await crearDataset({ titulo: 'Dataset avisado', vencimiento: '2026-11-30' });
+    await motor.ejecutarNotasDigitales({ hoy: '2026-10-01' });
     await motor.ejecutarNotasDigitales({ hoy: '2026-11-02' });
-    await motor.ejecutarNotasDigitales({ hoy: '2026-12-01' });
     const [aviso, reiteracion] = await query('SELECT id, tipo, anexo_pdf FROM notas_digitales ORDER BY id');
     assert.equal(aviso.tipo, 'aviso');
     assert.ok(aviso.anexo_pdf);
@@ -670,7 +672,7 @@ describe('libro', () => {
     const [hoja] = lineasPorHoja(res.body);
     assert.ok(hoja.includes('Dataset avisado'), hoja.join(' | '));
     assert.ok(hoja.includes('Anexo de la Nota Digital N° 2/26 · Hoja 1 de 1'), hoja.join(' | '));
-    assert.ok(hoja.includes('1 de diciembre de 2026'), hoja.join(' | '));
+    assert.ok(hoja.includes('2 de noviembre de 2026'), hoja.join(' | '));
   });
 
   it('una nota sin anexo (anterior al anexo de la reiteración): 404 con el mensaje "La nota no tiene anexo"', async () => {
