@@ -17,8 +17,10 @@
 -- El código anterior sigue funcionando con todo esto: no conoce lo nuevo y a esos Laborales los lee como elegidas.
 -- ORDEN: correr ANTES de subir el código nuevo, después de migracion-notas-firma-leyenda.sql (phpMyAdmin > base del RPAD > pestaña
 -- SQL, pegar y Continuar). Es obligatoria: el código nuevo lee las columnas en cada pedido de la agenda y del panel de usuarios.
--- Se puede volver a correr SOLO ANTES de subir el código: lo que ya existe se saltea, pero después achicaría a la administración los
--- Laborales «Todos» que se creen con el código nuevo.
+-- Se puede volver a correr SOLO ANTES del Restart del código nuevo: lo que ya existe se saltea, pero después achicaría a la administración
+-- los Laborales «Todos» que se creen con el código nuevo. Y conviene: correrla otra vez justo antes del Restart convierte también un
+-- Laboral «para todos» que alguien haya creado con el código anterior mientras se subían los archivos.
+-- La conversión es una foto: una persona de la administración que hoy está desactivada no queda en esos eventos, aunque se la reactive.
 -- Para deshacer: rollback-mi-espacio-eventos-diario.sql
 -- =====================================================
 
@@ -70,5 +72,5 @@ UPDATE `mi_espacio_eventos` SET `para_todos` = 0 WHERE `compartido` = 1 AND `par
 -- Para verificar, en la misma pestaña SQL: la primera tiene que dar 2 filas, la segunda 1, la tercera 2 y la cuarta, 0
 --   SHOW COLUMNS FROM usuarios WHERE Field IN ('depende_de', 'eventos_por_mail');
 --   SHOW COLUMNS FROM mi_espacio_eventos WHERE Field = 'publicado_at';
---   SHOW TABLES WHERE Tables_in_datospublicos_mcr_rpad IN ('mi_espacio_evento_informados', 'mi_espacio_diario_envios');
+--   SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('mi_espacio_evento_informados', 'mi_espacio_diario_envios');
 --   SELECT COUNT(*) FROM mi_espacio_eventos WHERE compartido = 1 AND para_todos = 1;

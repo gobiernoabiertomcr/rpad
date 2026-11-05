@@ -82,7 +82,7 @@ La última columna dice qué tiene que correr antes esa vuelta atrás: sin eso, 
 | 33 | `migracion-mi-espacio-horas-acumuladas.sql` | `rollback-mi-espacio-horas-acumuladas.sql` | |
 | 34 | `migracion-notas-firma-digital.sql` | `rollback-notas-firma-digital.sql` | Volver la Tarea Cron de `/api/cron/notificaciones` a las 8:15 |
 | 35 | `migracion-notas-firma-leyenda.sql` | `rollback-notas-firma-leyenda.sql` | |
-| 36 | `migracion-mi-espacio-eventos-diario.sql` | `rollback-mi-espacio-eventos-diario.sql` | Va antes que `rollback-mi-espacio-evento-publico.sql` y `rollback-mi-espacio-agenda.sql`, si se deshacen. Se repite solo antes de subir el código: después achicaría los Laborales «Todos» nuevos |
+| 36 | `migracion-mi-espacio-eventos-diario.sql` | `rollback-mi-espacio-eventos-diario.sql` | Va antes que `rollback-mi-espacio-evento-publico.sql` y `rollback-mi-espacio-agenda.sql`, si se deshacen. Se corre otra vez justo antes del Restart, para convertir lo que se haya creado mientras se subían los archivos; después del Restart ya no: achicaría los Laborales «Todos» nuevos |
 
 `database/privado/rollback-mi-espacio-evento-publico-datos.sql` devuelve el evento real a compartido con toda la administración (su verificación, `devuelto` 1).
 Está fuera del repositorio y no aparece en la Mac de trabajo: solo viajó en su kit, `RPAD-deploy-mi-espacio-evento-para-todos`.

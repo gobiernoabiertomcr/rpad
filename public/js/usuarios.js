@@ -370,13 +370,17 @@ async function verUsuario(id) {
 
 // «Depende de» (spec 2026-11-04-agenda-aviso-y-dependencia, 3): «Nadie» y las personas activas que el servidor no descarta
 // (`no_elegibles`: la persona y quienes dependen de ella). Quien se desactivó y ya estaba cargada se sigue mostrando: guardar sin tocarla
-// no da error, pero nadie la elige de nuevo. Los nombres van escapados
+// no da error, pero nadie la elige de nuevo. Quien ya estaba cargada y no llegó en la lista (se creó después de abrir la pestaña) también
+// va, con el nombre que trajo el detalle: si no, el selector caería en «Nadie» y guardar borraría el dato sin avisar. Los nombres, escapados
 function opcionesDeDependencia(u, lista) {
   const fuera = new Set(u?.no_elegibles ?? []);
-  const opciones = (lista ?? []).filter(persona => !fuera.has(persona.id) && (persona.estado !== 'desactivado' || persona.id === u?.depende_de));
+  const personas = lista ?? [];
+  const opciones = personas.filter(persona => !fuera.has(persona.id) && (persona.estado !== 'desactivado' || persona.id === u?.depende_de));
+  const faltaLaCargada = Boolean(u?.depende_de) && !personas.some(persona => persona.id === u.depende_de);
   return [
     '<option value="">Nadie</option>',
-    ...opciones.map(persona => `<option value="${esc(persona.id)}">${esc(persona.nombre_completo)}${persona.estado === 'desactivado' ? ' (desactivado)' : ''}</option>`)
+    ...opciones.map(persona => `<option value="${esc(persona.id)}">${esc(persona.nombre_completo)}${persona.estado === 'desactivado' ? ' (desactivado)' : ''}</option>`),
+    ...(faltaLaCargada ? [`<option value="${esc(u.depende_de)}">${esc(u.depende_de_nombre ?? 'Otro usuario')}</option>`] : [])
   ].join('');
 }
 
@@ -617,8 +621,8 @@ async function recargarAbierto() {
 // =====================================================
 // ERRORES E HISTORIAL
 // =====================================================
-// Lo que describe a un campo además de su error: la ayuda del rol sigue unida al selector cuando el rol tiene un error
-const AYUDA_DEL_CAMPO = { 'u-rol': 'u-rol-ayuda' };
+// Lo que describe a un campo además de su error: la ayuda del rol y la de «Depende de» siguen unidas a su selector cuando tiene un error
+const AYUDA_DEL_CAMPO = { 'u-rol': 'u-rol-ayuda', 'u-depende': 'u-depende-ayuda' };
 
 function limpiarErrores() {
   document.getElementById('usuario-error').hidden = true;

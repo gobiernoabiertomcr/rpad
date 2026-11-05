@@ -358,7 +358,19 @@ describe('de quién depende', () => {
     assert.equal(rechazo.body.error, 'Elegí una persona de la lista.');
   });
 
-  it('la lista trae la cadena sin N+1 ni datos de más', async () => {
+  it('cargárselo a un admin o a un editor tampoco le avisa al superadmin, y queda en el historial', async () => {
+    const jefa = await crear('jefaaviso', 'admin');
+    for (const [clave, rol] of [['adminaviso', 'admin'], ['editoraviso', 'editor']]) {
+      const persona = await crear(clave, rol);
+      await mailpit.vaciar();
+      assert.equal((await api.put(`/usuarios/${persona.id}`, { depende_de: jefa.id }, comoA())).status, 200, clave);
+      assert.deepEqual(await mailpit.mensajes(), [], clave);
+      const [fila] = await auditoria(persona.id, 'edicion');
+      assert.deepEqual(detalleDe(fila).campos, { depende_de: { antes: null, despues: jefa.id } }, clave);
+    }
+  });
+
+  it('la lista trae lo de la cadena de cada uno y nada de más', async () => {
     const lista = (await api.get('/usuarios', comoA())).body.data.usuarios;
     for (const persona of lista) {
       assert.ok(Array.isArray(persona.no_elegibles), persona.username);

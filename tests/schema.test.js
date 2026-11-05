@@ -3474,7 +3474,7 @@ describe('migracion-mi-espacio-eventos-diario.sql', () => {
   it('las cabeceras dicen la spec, el orden, hasta cuándo se puede repetir y qué se pierde', () => {
     assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-11-04-agenda-aviso-y-dependencia-design\.md/);
     assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código nuevo, después de migracion-notas-firma-leyenda\.sql/);
-    assert.match(cabecera(MIGRACION), /Se puede volver a correr SOLO ANTES de subir el código/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr SOLO ANTES del Restart del código nuevo/);
     assert.match(cabecera(MIGRACION), /Para deshacer: rollback-mi-espacio-eventos-diario\.sql/);
     assert.match(cabecera(ROLLBACK), /primero volver a subir los archivos anteriores/);
     assert.match(cabecera(ROLLBACK), /Se pierden/);

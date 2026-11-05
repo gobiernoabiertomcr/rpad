@@ -156,11 +156,10 @@ describe('lector', () => {
 
   llegaAlControlador('lector');
 
-  // La agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, sección 1): solo administración comparte eventos
-  it('recibe 403 en GET /mi-espacio/personas', async () => {
+  // La agenda de Mi espacio (spec 2026-11-04-agenda-aviso-y-dependencia, 2.4): cualquier rol crea un Laboral, con cualquier persona
+  it('puede usar GET /mi-espacio/personas', async () => {
     const res = await api.get('/mi-espacio/personas', { token: usuarios.lector.token });
-    assert.equal(res.status, 403);
-    assert.equal(res.body.error, 'No tenés permiso para compartir eventos.');
+    assert.equal(res.status, 200);
   });
 
   // El Seguimiento de un dataset lo ve cualquier rol con sesión (spec 2026-10-20-seguimiento-dataset)
@@ -311,10 +310,9 @@ describe('colaborador', () => {
 
   llegaAlControlador('colaborador');
 
-  it('recibe 403 en GET /mi-espacio/personas', async () => {
+  it('puede usar GET /mi-espacio/personas', async () => {
     const res = await api.get('/mi-espacio/personas', { token: usuarios.colaborador.token });
-    assert.equal(res.status, 403);
-    assert.equal(res.body.error, 'No tenés permiso para compartir eventos.');
+    assert.equal(res.status, 200);
   });
 
   it('puede usar GET /seguimiento/:id', async () => {

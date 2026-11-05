@@ -107,7 +107,7 @@ const VERSION_PROYECTOS = '20261206';
 // «Pedir la restitución», con su nota—, spec 2026-10-31-mi-espacio-dias-restituidos, 9; las horas acumuladas de contrato, spec
 // 2026-11-03-mi-espacio-horas-acumuladas, 5 y 10; y lo que dice de la reiteración una licencia sin persona autorizada, spec
 // 2026-11-03-reiteracion-bimestral, 5). Su versión es propia
-const VERSION_MI_ESPACIO = '20261223';
+const VERSION_MI_ESPACIO = '20261224';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -129,6 +129,14 @@ describe('páginas', () => {
   // pestaña en la dirección), con el renombre de Gestión a Proyectos (la ayuda del lector), con la cuarta pestaña, Feriados, con
   // la insignia «Cargada desde Mi espacio» en la lista de Licencias, con el efecto en las notas de una licencia del firmante sin
   // anticipo o sin días hábiles y, por último, con la confirmación de «Anular» de una licencia cargada desde Mi espacio
+  it('configuracion.html: «Depende de» va después de «Vínculo», con su ayuda (spec 2026-11-04-agenda-aviso-y-dependencia, 3)', () => {
+    const html = leer('configuracion.html');
+    assert.ok(html.indexOf('id="u-vinculo"') < html.indexOf('id="u-depende"'));
+    assert.ok(html.indexOf('id="u-depende"') < html.indexOf('id="acciones-form"'));
+    assert.match(html, /<select id="u-depende" class="form-input" aria-describedby="u-depende-ayuda"><\/select>/);
+    assert.match(html, /<p class="rol-ayuda" id="u-depende-ayuda">A esta persona y a quien esté más arriba les llega por mail el texto corto de los eventos que quien depende de ellas deja a la vista de otros\. No ven nada más de su Mi espacio\.<\/p>/);
+  });
+
   for (const [pagina, script] of [['configuracion.html', 'usuarios']]) {
     it(`${pagina}: ${script}.js con la versión ${VERSION_PANTALLAS}`, () => {
       assert.ok(leer(pagina).includes(`js/${script}.js?v=${VERSION_PANTALLAS}"`));
@@ -758,7 +766,7 @@ describe('páginas', () => {
       assert.ok(vista, 'la vista');
       const ids = [...vista.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
       assert.deepEqual(ids, ['vista-agenda', 'ag-mes-titulo', 'ag-anterior', 'ag-siguiente', 'ag-finde', 'ag-finde-cuenta', 'ag-hoy',
-        'ag-nuevo-evento', 'ag-frase', 'ag-mes', 'ag-leyenda-laborales', 'ag-leyenda-ausentes', 'ag-elegido', 'ag-proximos-titulo',
+        'ag-nuevo-evento', 'ag-frase', 'ag-mes', 'ag-leyenda-ausentes', 'ag-elegido', 'ag-proximos-titulo',
         'ag-proximos']);
       // La banda, primero y fuera de las tarjetas, con la ola del Resumen (el mismo dibujo que OLA_DE_LA_BANDA de mi-espacio.js)
       const banda = vista.match(/<div class="me-banda-del-mes">[\s\S]*?<\/svg>\s*<\/div>/)?.[0] ?? '';
@@ -782,15 +790,15 @@ describe('páginas', () => {
       // desde el evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 5.2), siete: «Tuyos, a la vista», «Personales
       // de otros» y «Laborales» (eran «Compartidos»). «Laborales» y «Compañeros que no están», ocultos hasta saber que quien mira los ve
       const leyenda = vista.match(/<ul class="me-leyenda"[^>]*>([\s\S]*?)<\/ul>/)?.[1] ?? '';
-      const muestras = [...leyenda.matchAll(/<li( id="ag-leyenda-(?:laborales|ausentes)" hidden)?><span class="me-color ([\w-]+)" aria-hidden="true">((?:<svg [\s\S]*?<\/svg>)?)<\/span>([^<]+)<\/li>/g)]
+      const muestras = [...leyenda.matchAll(/<li( id="ag-leyenda-ausentes" hidden)?><span class="me-color ([\w-]+)" aria-hidden="true">((?:<svg [\s\S]*?<\/svg>)?)<\/span>([^<]+)<\/li>/g)]
         .map(([, oculto, clase, icono, texto]) => [clase, texto, Boolean(oculto), icono === '' ? '' : 'svg']);
       assert.deepEqual(muestras, [
         ['propio', 'Solo vos', false, ''], ['propio', 'Tuyos, a la vista', false, 'svg'], ['publico-otro', 'Personales de otros', false, 'svg'],
-        ['compartido', 'Laborales', true, 'svg'], ['licencia', 'Tus licencias y francos', false, 'svg'], ['feriado', 'Feriados', false, 'svg'],
+        ['compartido', 'Laborales', false, 'svg'], ['licencia', 'Tus licencias y francos', false, 'svg'], ['feriado', 'Feriados', false, 'svg'],
         ['ausente', 'Compañeros que no están', true, 'svg']
       ]);
       assert.equal(leyenda.match(/<li\b/g)?.length, 7);
-      assert.ok(leyenda.includes('<li id="ag-leyenda-laborales" hidden><span class="me-color compartido" aria-hidden="true">'));
+      assert.ok(leyenda.includes('<li><span class="me-color compartido" aria-hidden="true">'));
       // El día elegido del teléfono: vacío (lo dibuja mi-espacio.js), en la tarjeta del mes, después de la leyenda
       assert.ok(vista.includes('<section class="me-elegido" id="ag-elegido" aria-labelledby="ag-elegido-titulo"></section>'));
       assert.ok(vista.indexOf('<ul class="me-leyenda"') < vista.indexOf('id="ag-elegido"'));

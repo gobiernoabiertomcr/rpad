@@ -1418,6 +1418,43 @@ describe('de quién depende', () => {
     assert.equal(guardarNadie.pedidos.find((p) => p.nombre === 'actualizarUsuario').args[1].depende_de, null);
   });
 
+  it('quien ya estaba cargada y no llegó en la lista se muestra con el nombre del detalle: guardar no la borra', () => {
+    const { contexto } = cargarPanel();
+    assert.match(contexto.opcionesDeDependencia({ id: 3, no_elegibles: [3], depende_de: 50, depende_de_nombre: 'Sofía Paz' }, LISTA),
+      /<option value="50">Sofía Paz<\/option>/);
+    assert.match(contexto.opcionesDeDependencia({ id: 3, no_elegibles: [3], depende_de: 50 }, LISTA), /<option value="50">Otro usuario<\/option>/);
+  });
+
+  it('la fila dice de quién depende, escapado; sin dato, nada', () => {
+    const { contexto } = cargarPanel();
+    contexto.Utils.escapeHtml = (texto) => String(texto).replaceAll('<', '&lt;');
+    Object.assign(contexto.Utils, { textoCargo: () => '', textoVinculo: () => '' });
+    contexto.getInitials = () => 'PP';
+    const fila = vm.runInContext('filaUsuario', contexto);
+    const base = { ...USUARIO, estado: 'activo', licencia: null, ultimo_ingreso: null };
+    assert.match(fila({ ...base, depende_de_nombre: '<b>Graciela</b> Paz' }), /<span>Depende de &lt;b>Graciela&lt;\/b> Paz<\/span>/);
+    assert.doesNotMatch(fila({ ...base, depende_de_nombre: null }), /Depende de/);
+  });
+
+  it('un rechazo en el campo lo marca sin perder su ayuda, y limpiar errores la deja', () => {
+    const { contexto, elemento } = cargarPanel();
+    const atributos = {};
+    Object.assign(elemento('u-depende'), {
+      setAttribute(nombre, valor) { atributos[nombre] = valor; }, insertAdjacentElement() {}, focus() {}
+    });
+    assert.equal(vm.runInContext("AYUDA_DEL_CAMPO['u-depende']", contexto), 'u-depende-ayuda');
+    assert.equal(vm.runInContext("CAMPO_A_INPUT.depende_de", contexto), 'u-depende');
+  });
+
+  it('una cuenta que no se puede modificar deja el campo deshabilitado', () => {
+    const panel = cargarPanel(USUARIO, () => {}, 'editor');
+    panel.elemento('u-rol').options = [];
+    panel.contexto.abrirModal({ ...USUARIO, id: 20, rol: 'admin' });
+    assert.equal(panel.elemento('u-depende').disabled, true);
+    panel.contexto.abrirModal({ ...USUARIO, id: 21, rol: 'lector' });
+    assert.equal(panel.elemento('u-depende').disabled, false);
+  });
+
   it('el historial muestra el nombre, no el id', () => {
     const { contexto } = cargarPanel();
     vm.runInContext('usuarios = __lista', Object.assign(contexto, { __lista: LISTA }));

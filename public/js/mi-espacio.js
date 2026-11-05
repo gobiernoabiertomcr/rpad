@@ -39,9 +39,8 @@
  *   2026-10-29-mi-espacio-evento-publico, 4), «Tipo de evento», para todos los roles: Personal (Privado), que no ve nadie más;
  *   Personal (Público), que ven quienes se elijan («Todos» o las personas de GET /mi-espacio/personas/publico, todos los usuarios
  *   activos, pedidas una vez) solo con el nombre corto de quien lo carga y un texto de la lista u «Otro», con su vista previa; y
- *   Laboral, el compartido con la administración («Toda la administración» o las personas de GET /mi-espacio/personas, pedidas una
- *   vez), solo de administración (Auth.isAdmin(), el true literal: un Laboral de quien ya no lo es se ve elegido y deshabilitado,
- *   y hay que elegir otro tipo). Cuándo sale el recordatorio lo dice el servidor (GET /mi-espacio/eventos/aviso, 300 ms después
+ *   Laboral, el compartido con quienes se elijan, para cualquier rol («Todos» o las personas de GET /mi-espacio/personas, todos los
+ *   usuarios activos, pedidas una vez: spec 2026-11-04-agenda-aviso-y-dependencia, 2.4). Cuándo sale el recordatorio lo dice el servidor (GET /mi-espacio/eventos/aviso, 300 ms después
  *   del último cambio; una respuesta vieja se descarta).
  * Los formularios (secciones 4, 6 y 8; maqueta 2), modales que un clic en el velo no cierra: «Cargar licencia» (los tipos de la
  * modalidad con lo que queda de cada uno, el cálculo del servidor 300 ms después del último cambio, «Mostrar a mis compañeros»,
@@ -2803,14 +2802,13 @@ const MENSAJES_EVENTO = Object.freeze({
   desde: 'Elegí a qué hora empieza.',
   hasta: 'La hora de fin tiene que ser después de la de inicio, el mismo día.',
   detalle: 'El detalle puede tener hasta 1000 caracteres.',
-  tipo: 'Elegí el tipo de evento.',
+  tipo: 'Elegí quién lo ve.',
   textoPublico: 'Elegí qué ven los demás.',
   textoPublicoLargo: 'Lo que ven los demás puede tener hasta 60 caracteres.',
-  personas: 'Elegí con quién lo compartís, o «Toda la administración».',
+  personas: 'Elegí con quién lo compartís, o «Todos».',
   personasPublico: 'Elegí con quién lo compartís, o «Todos».',
   personasInvalidas: 'Solo podés compartirlo con las personas de la lista.',
   recordatorio: 'Elegí cuándo te llega el recordatorio.',
-  sinPermiso: 'No tenés permiso para compartir eventos.',
   noEncontrado: 'Evento no encontrado',
   miRecordatorio: 'Elegí si querés el recordatorio.',
   esTuyo: 'El recordatorio de tu evento se cambia en el evento.',
@@ -2843,10 +2841,8 @@ const tipoDelEvento = (datos) => {
 
 // ---- Solo del navegador (con tests de comportamiento) ----
 
-// «Otro» vacío (el servidor dice el de un texto vacío, MENSAJES_EVENTO.textoPublico) y un Laboral de quien ya no es de
-// administración (el servidor lo rechaza con sinPermiso en `compartido`, sin control: spec, decisión 10.3)
+// «Otro» vacío (el servidor dice el de un texto vacío, MENSAJES_EVENTO.textoPublico)
 const MENSAJE_OTRO_VACIO = 'Escribí qué ven los demás.';
-const MENSAJE_LABORAL_SIN_PERMISO = 'Ya no podés compartir eventos laborales. Elegí otro tipo para guardarlo.';
 // Las ayudas de con quién y del recordatorio de un Público y de un Laboral
 const AYUDA_DE_LAS_PERSONAS_DEL_PUBLICO = 'No les llega ningún email: lo ven en su agenda y en el Resumen.';
 const AYUDA_DEL_RECORDATORIO_PUBLICO = 'Te llega solo a vos.';
@@ -2857,7 +2853,7 @@ const AYUDA_DEL_RECORDATORIO_COMPARTIDO = 'Les llega a todas las personas del ev
 const OPCIONES_DEL_TIPO = Object.freeze({
   privado: Object.freeze({ nombre: 'Personal (Privado)', ayuda: 'Nadie más lo ve' }),
   publico: Object.freeze({ nombre: 'Personal (Público)', ayuda: 'Lo ven quienes elijas, con un texto corto' }),
-  laboral: Object.freeze({ nombre: 'Laboral', ayuda: 'Con la administración que elijas' })
+  laboral: Object.freeze({ nombre: 'Laboral', ayuda: 'Con quienes elijas' })
 });
 // En la vista previa, mientras no llegó el nombre de quien carga (o si no llegó)
 const NOMBRE_DE_LA_VISTA_PREVIA = 'Tu nombre';
@@ -2896,18 +2892,17 @@ const conMayuscula = (texto) => texto.charAt(0).toUpperCase() + texto.slice(1);
 
 /**
  * Los errores de un evento antes de pedir nada (`{ campo: mensaje }`, todos, en el orden del formulario; sin ninguno, {}), con los
- * controles y los mensajes de validarEvento (el primero es el suyo, con `puedeCompartir`: test de paridad en sus bordes). `valores`
+ * controles y los mensajes de validarEvento (el primero es el suyo: test de paridad en sus bordes). `valores`
  * tiene las claves del cuerpo (titulo, fecha, desde, hasta, detalle, tipo, para_todos, personas, texto_publico y recordatorio; o,
  * de antes, compartido en lugar de tipo) y `otro`: el título y el detalle recortados y contados con Array.from; la fecha de
  * FECHA_MINIMA_EVENTO a fechaMaximaEvento(hoy); las horas 'HH:MM' y la de fin, si viene, después de la de inicio; el tipo
- * (tipoDelEvento: uno que no es de la lista, `tipo`), y un Laboral sin `puedeCompartir` (solo el true literal: administración) da
- * MENSAJE_LABORAL_SIN_PERMISO en `tipo` (quien lo creó ya no es de administración: tiene que elegir otro tipo); lo que ven los demás
+ * (tipoDelEvento: uno que no es de la lista, `tipo`); lo que ven los demás
  * de un Público, recortado (sin texto, `textoPublico`, o MENSAJE_OTRO_VACIO con «Otro» elegido; de más de 60, `textoPublicoLargo`);
- * las personas de un Público o de un Laboral que se puede guardar, sin «Todos» (solo el true literal), que sean ids (una lista que
+ * las personas de un Público o de un Laboral, sin «Todos» (solo el true literal), que sean ids (una lista que
  * falta o vacía, `personasPublico` o `personas`; un id que no sirve, `personasInvalidas`; todos en `personas`), y con «Todos» no
  * cuentan; y el recordatorio (sin él, o null, 2 horas antes) de la lista. Que las personas sean de la lista, el servidor.
  */
-function erroresDelEvento(valores, hoy, { puedeCompartir = false } = {}) {
+function erroresDelEvento(valores, hoy) {
   const datos = esObjeto(valores) ? valores : {};
   const errores = {};
   const titulo = comoTexto(datos.titulo).trim();
@@ -2925,9 +2920,8 @@ function erroresDelEvento(valores, hoy, { puedeCompartir = false } = {}) {
   if (Array.from(comoTexto(datos.detalle).trim()).length > LARGO_DETALLE_EVENTO) errores.detalle = MENSAJES_EVENTO.detalle;
   const tipo = tipoDelEvento(datos);
   const publico = tipo === 'publico';
-  const laboral = tipo === 'laboral' && puedeCompartir === true;
+  const laboral = tipo === 'laboral';
   if (tipo === null) errores.tipo = MENSAJES_EVENTO.tipo;
-  else if (tipo === 'laboral' && !laboral) errores.tipo = MENSAJE_LABORAL_SIN_PERMISO;
   if (publico) {
     const texto = comoTexto(datos.texto_publico).trim();
     if (texto === '') errores.texto_publico = datos.otro === true ? MENSAJE_OTRO_VACIO : MENSAJES_EVENTO.textoPublico;
@@ -2948,9 +2942,9 @@ function erroresDelEvento(valores, hoy, { puedeCompartir = false } = {}) {
  * Los valores del formulario del evento: los de un evento propio (un ítem de GET /mi-espacio/eventos, con `personas_ids`) o, sin él,
  * los de uno nuevo (un Personal (Privado)), con la `fecha` que se le pasa (hoy) y «2 horas antes». Las horas y el detalle, como texto
  * ('' sin ellos); `tipo`, 'laboral' si es compartido, 'publico' si es un Personal (Público) y si no 'privado'; `para_todos`, el
- * «Todos» de su tipo (el de la administración en un Laboral, `publico_todos` en un Público); `personas`, los ids elegidos ([] con
+ * «Todos» de su tipo (`para_todos` en un Laboral, `publico_todos` en un Público); `personas`, los ids elegidos ([] con
  * «Todos»); `conocidas`, las personas del evento con su nombre (`{ id, nombre }`), así una que ya no está en la lista para elegir
- * (dejó de ser administración) se ve y no se saca sin querer; y, en un Público, `texto_publico`, lo que ven los demás, con `otro`
+ * (se desactivó) se ve y no se saca sin querer; y, en un Público, `texto_publico`, lo que ven los demás, con `otro`
  * si no es uno de TEXTOS_PUBLICOS (lo escribió en «Otro»).
  */
 function valoresDelEvento(item, { fecha = '' } = {}) {
@@ -2999,11 +2993,11 @@ function valoresConElTipo(valores, tipo, original) {
  * El cuerpo de POST /mi-espacio/eventos y PUT /mi-espacio/eventos/:id (el formulario entero; spec
  * 2026-10-29-mi-espacio-evento-publico, 6.5): el título y el detalle recortados, la fecha, las horas (sin hora de fin, null), el
  * recordatorio y siempre `tipo`. Un Público suma `para_todos` (su «Todos»: solo el true literal), `personas` (con «Todos», []) y
- * `texto_publico`, recortado, y nunca `compartido`; un Laboral, solo con `puedeCompartir` (administración; el true literal),
- * `compartido: true`, `para_todos` y `personas`. Un Privado (y un Laboral sin poder compartir, que erroresDelEvento no deja llegar
- * acá), solo el tipo.
+ * `texto_publico`, recortado; un Laboral, `para_todos` y `personas`. Ninguno trae `compartido`: el servidor lee un Laboral con
+ * `compartido` en el true literal y «Todos» como el «Toda la administración» de una pestaña con la página anterior. Un Privado, solo
+ * el tipo.
  */
-function cuerpoDelEvento(valores, { puedeCompartir = false } = {}) {
+function cuerpoDelEvento(valores) {
   const datos = esObjeto(valores) ? valores : {};
   const tipo = tipoDelEvento(datos) ?? datos.tipo;
   const cuerpo = {
@@ -3013,7 +3007,7 @@ function cuerpoDelEvento(valores, { puedeCompartir = false } = {}) {
   const paraTodos = datos.para_todos === true;
   const personas = !paraTodos && Array.isArray(datos.personas) ? [...datos.personas] : [];
   if (tipo === 'publico') return { ...cuerpo, para_todos: paraTodos, personas, texto_publico: comoTexto(datos.texto_publico).trim() };
-  if (tipo === 'laboral' && puedeCompartir === true) return { ...cuerpo, compartido: true, para_todos: paraTodos, personas };
+  if (tipo === 'laboral') return { ...cuerpo, para_todos: paraTodos, personas };
   return cuerpo;
 }
 
@@ -3034,20 +3028,19 @@ const ICONO_DE_TODOS = '<svg xmlns="http://www.w3.org/2000/svg" width="16" heigh
 const MENSAJE_SIN_PERSONAS = 'No se pudo cargar la lista de personas. Probá de nuevo en unos minutos.';
 
 /**
- * Con quién se comparte: el «Todos» del tipo primero (`data-persona="todos"`: «Toda la administración» en un Laboral y «Todos» en un
- * Público, que son todos los usuarios activos; spec 2026-10-29-mi-espacio-evento-publico, 2.7) y cada persona (`data-persona="<id>"`,
+ * Con quién se comparte: «Todos» primero (`data-persona="todos"`: todos los usuarios activos; spec
+ * 2026-10-29-mi-espacio-evento-publico, 2.7) y cada persona (`data-persona="<id>"`,
  * con sus iniciales, decorativas, y su nombre), botones con aria-pressed. Con «Todos» elegido, las demás van deshabilitadas (todos ya
  * están). `sinLista`: 'cargando' o 'fallo' dice por qué todavía no está la lista (las del evento y «Todos» se pueden elegir igual);
- * con 'fallo', `motivo` es el mensaje del servidor que lo explica (el 403 de un rol viejo en el navegador), escapado, y sin él,
+ * con 'fallo', `motivo` es el mensaje del servidor que lo explica (un 403), escapado, y sin él,
  * «Probá de nuevo…».
  */
 function htmlDePersonasDelEvento(personas, valores, { sinLista = null, motivo = '' } = {}) {
   const datos = esObjeto(valores) ? valores : {};
   const paraTodos = datos.para_todos === true;
   const elegidas = Array.isArray(datos.personas) ? datos.personas : [];
-  const todos = tipoDelEvento(datos) === 'laboral' ? 'Toda la administración' : 'Todos';
   const botones = [`<button type="button" class="me-persona" data-persona="todos" aria-pressed="${String(paraTodos)}">`
-    + `<i aria-hidden="true">${ICONO_DE_TODOS}</i>${todos}</button>`];
+    + `<i aria-hidden="true">${ICONO_DE_TODOS}</i>Todos</button>`];
   for (const persona of listaDe(personas)) {
     const id = idDeLaPersona(persona.id);
     if (id === null) continue;
@@ -3083,22 +3076,15 @@ function textoDeCuantasPersonas(valores) {
 
 // ---- Los tres tipos (spec 2026-10-29-mi-espacio-evento-publico, 4 y 7; la maqueta aprobada) ----
 
-// Los tipos que ofrece el formulario, en su orden: los tres con `puedeCompartir` (administración; el true literal); sin él, los dos
-// personales, salvo que el evento sea un Laboral (lo creó cuando era de administración): entonces los tres, y el Laboral, elegido y
-// deshabilitado (htmlDeTiposDeEvento), dice que hay que elegir otro
-const tiposQueSeVen = (valores, { puedeCompartir = false } = {}) => (puedeCompartir === true || valores?.tipo === 'laboral'
-  ? [...TIPOS_DE_EVENTO] : TIPOS_DE_EVENTO.filter((tipo) => tipo !== 'laboral'));
-
 /**
- * «Tipo de evento»: una opción grande por cada tipo de tiposQueSeVen (`.me-opcion`, con `data-tipo` y aria-pressed en el elegido), con
- * su nombre y lo que dice debajo. Sin `puedeCompartir`, el Laboral (si está) va deshabilitado.
+ * «Tipo de evento»: una opción grande por cada tipo (`.me-opcion`, con `data-tipo` y aria-pressed en el elegido), con
+ * su nombre y lo que dice debajo.
  */
-function htmlDeTiposDeEvento(valores, { puedeCompartir = false } = {}) {
+function htmlDeTiposDeEvento(valores) {
   const datos = esObjeto(valores) ? valores : {};
-  return tiposQueSeVen(datos, { puedeCompartir }).map((tipo) => {
+  return TIPOS_DE_EVENTO.map((tipo) => {
     const { nombre, ayuda } = OPCIONES_DEL_TIPO[tipo];
-    const deshabilitado = tipo === 'laboral' && puedeCompartir !== true ? ' disabled' : '';
-    return `<button type="button" class="me-opcion" data-tipo="${tipo}" aria-pressed="${String(datos.tipo === tipo)}"${deshabilitado}>`
+    return `<button type="button" class="me-opcion" data-tipo="${tipo}" aria-pressed="${String(datos.tipo === tipo)}">`
       + `<span><b>${esc(nombre)}</b><small>${esc(ayuda)}</small></span></button>`;
   }).join('');
 }
@@ -3150,13 +3136,11 @@ function htmlDeLaVistaPrevia(valores, { nombre = '' } = {}) {
 
 // Las ayudas de cada tipo, texto plano para textContent ('' sin ayuda): la del tipo (un Laboral sin poder compartir: que elija otro),
 // la de con quién y la del recordatorio (en un Público le llega solo a quien lo crea; en un Laboral, a todos los del evento)
-function ayudasDelEvento(valores, { puedeCompartir = false } = {}) {
+function ayudasDelEvento(valores) {
   const tipo = esObjeto(valores) ? valores.tipo : null;
   if (tipo === 'publico') return { tipo: '', personas: AYUDA_DE_LAS_PERSONAS_DEL_PUBLICO, recordatorio: AYUDA_DEL_RECORDATORIO_PUBLICO };
-  if (tipo === 'laboral' && puedeCompartir === true) {
-    return { tipo: '', personas: AYUDA_DE_LAS_PERSONAS_DEL_LABORAL, recordatorio: AYUDA_DEL_RECORDATORIO_COMPARTIDO };
-  }
-  return { tipo: tipo === 'laboral' ? MENSAJE_LABORAL_SIN_PERMISO : '', personas: '', recordatorio: '' };
+  if (tipo === 'laboral') return { tipo: '', personas: AYUDA_DE_LAS_PERSONAS_DEL_LABORAL, recordatorio: AYUDA_DEL_RECORDATORIO_COMPARTIDO };
+  return { tipo: '', personas: '', recordatorio: '' };
 }
 
 // Los recordatorios, en el orden de RECORDATORIOS, con el elegido (uno que no es de la lista, el de entrada)
@@ -3227,7 +3211,7 @@ function htmlDelEventoAjeno(item) {
 /**
  * La confirmación del borrado de un evento propio, en texto plano (va con textContent): «¿Borrar «Reunión de equipo» del martes
  * 27/10/2026?» y, si es compartido, a quiénes les llega la cancelación: « A las 4 personas les llega un email que dice que se
- * canceló.», «A la persona…» o «A toda la administración…». Uno de antes de hoy (`hoy`) no la manda: el servidor no avisa de un
+ * canceló.», «A la persona…» o «A todas las personas…». Uno de antes de hoy (`hoy`) no la manda: el servidor no avisa de un
  * evento que ya empezó.
  */
 function textoDeConfirmacionDeEvento(item, { hoy = '' } = {}) {
@@ -3237,7 +3221,7 @@ function textoDeConfirmacionDeEvento(item, { hoy = '' } = {}) {
   const yaPaso = esFechaDeTexto(hoy) && esFechaDeTexto(datos.fecha) && datos.fecha < hoy;
   if (datos.compartido !== true || yaPaso) return pregunta;
   const cancelacion = 'un email que dice que se canceló.';
-  if (datos.para_todos === true) return `${pregunta} A toda la administración le llega ${cancelacion}`;
+  if (datos.para_todos === true) return `${pregunta} A todas las personas les llega ${cancelacion}`;
   const cuantas = Array.isArray(datos.personas) ? datos.personas.length : 0;
   if (cuantas === 0) return pregunta;
   return cuantas === 1 ? `${pregunta} A la persona le llega ${cancelacion}` : `${pregunta} A las ${String(cuantas)} personas les llega ${cancelacion}`;
@@ -3928,9 +3912,8 @@ const numeroDelDia = (fecha) => (esFechaDeTexto(fecha) ? porId('ag-mes').querySe
 // lo que hace cada número en esta pantalla), la frase de la banda (la del servidor, como texto; sin ella o mientras se pide el mes,
 // vacía), «Sábado y domingo» y, siempre, el día elegido (en la compu no se ve, pero su título nombra la sección; sin datos, solo el
 // título y «Nuevo evento»).
-// «Compañeros que no están», en la leyenda, solo para quien los ve (decisión del usuario, 27/10/2026), y también «Laborales» (spec
-// 2026-10-29-mi-espacio-evento-publico, 5.2: el lector y el colaborador no pueden ver ni uno ni otro): lo dice el servidor
-// (`puede_compartir`, administración) y, hasta que llega, quedan ocultos. Un mes que se vuelve a dibujar llega quieto (sin data-animar);
+// «Compañeros que no están», en la leyenda, solo para quien los ve (decisión del usuario, 27/10/2026): lo dice el servidor
+// (`ve_companeros`, administración) y, hasta que llega, queda oculto. Un mes que se vuelve a dibujar llega quieto (sin data-animar);
 // la primera vez que se ve con sus datos, se mueve (moverElMes). Si el foco estaba en un número del mes, pasa al número del foco del
 // mes nuevo (el botón viejo ya no está)
 function pintarMesDeEventos() {
@@ -3951,8 +3934,7 @@ function pintarMesDeEventos() {
   pintarElFinDeSemana();
   porId('ag-elegido').innerHTML = htmlDelDiaElegido(semana.elegido, delMes, hoy);
   if (esObjeto(delMes)) {
-    porId('ag-leyenda-laborales').hidden = delMes.puede_compartir !== true;
-    porId('ag-leyenda-ausentes').hidden = delMes.puede_compartir !== true;
+    porId('ag-leyenda-ausentes').hidden = delMes.ve_companeros !== true;
   }
   if (conFoco) numeroDelDia(semana.foco)?.focus?.();
 }
@@ -6339,8 +6321,8 @@ function pedirUnaListaDePersonas(clave, ruta) {
   );
   return pagina[clave];
 }
-// Las de un Laboral: la administración (GET /mi-espacio/personas, solo para administración). Las de un Público: todos los usuarios
-// activos, de cualquier rol (GET /mi-espacio/personas/publico, para todos)
+// Las de un Laboral y las de un Público: todos los usuarios activos, de cualquier rol (GET /mi-espacio/personas y
+// GET /mi-espacio/personas/publico, para todos)
 const personasParaCompartir = () => pedirUnaListaDePersonas('personas', '/mi-espacio/personas');
 const personasParaElPublico = () => pedirUnaListaDePersonas('personasPublico', '/mi-espacio/personas/publico');
 
@@ -6382,17 +6364,15 @@ function pedirMiNombre() {
 /**
  * Abre el formulario del evento: «Nuevo evento» (hoy, o la `fecha` del día que se tocó en el mes, Personal (Privado) y «2 horas
  * antes») o «Editar evento» con uno propio (`item`, de lo que llegó de GET /mi-espacio/eventos). Sin modalidad se abre igual
- * (decisión del usuario, 27/10/2026). «Tipo de evento» se ve para todos los roles; el Laboral, solo con Auth.isAdmin() (el true
- * literal), que además pide la lista de la administración (como antes de los tres tipos); un Laboral propio de quien ya no es de
- * administración se ve elegido y deshabilitado. Un Público pide su lista (y, sin la agenda, el nombre). El foco va a «Qué» y, al
+ * (decisión del usuario, 27/10/2026). «Tipo de evento» se ve para todos los roles. Un Laboral pide su lista, y un Público, la suya (y,
+ * sin la agenda, el nombre). El foco va a «Qué» y, al
  * cerrar, vuelve a `volverA`
  */
 function abrirEvento({ item = null, volverA = null, fecha = null } = {}) {
   if (pagina.evento !== null) return;
-  const puedeCompartir = Auth.isAdmin?.() === true;
   const valores = valoresDelEvento(item, { fecha: esFechaDeTexto(fecha) ? fecha : Utils.hoyEnArgentina() });
   const formulario = {
-    item, valores, original: valores, puedeCompartir, guardando: false, temporizador: null, pedidoDelAviso: 0, listas: {}
+    item, valores, original: valores, guardando: false, temporizador: null, pedidoDelAviso: 0, listas: {}
   };
   pagina.evento = formulario;
   porId('modal-evento-titulo').textContent = item ? 'Editar evento' : 'Nuevo evento';
@@ -6403,7 +6383,7 @@ function abrirEvento({ item = null, volverA = null, fecha = null } = {}) {
   porId('ev-borrar').hidden = item === null;
   porId('ev-guardar').disabled = false;
   limpiarErrores('evento');
-  if (puedeCompartir) pedirLasPersonas(formulario, 'laboral');
+  if (valores.tipo === 'laboral') pedirLasPersonas(formulario, 'laboral');
   if (valores.tipo === 'publico') {
     pedirLasPersonas(formulario, 'publico');
     pedirMiNombre();
@@ -6434,13 +6414,10 @@ const valoresDelFormularioDeEvento = (formulario) => ({
 // ocultarse, se vacían
 function pintarQuienLoVe() {
   const formulario = pagina.evento;
-  const { valores, puedeCompartir } = formulario;
+  const { valores } = formulario;
   const tipos = porId('ev-tipos');
-  tipos.innerHTML = htmlDeTiposDeEvento(valores, { puedeCompartir });
-  const tres = tiposQueSeVen(valores, { puedeCompartir }).length === 3;
-  tipos.classList.toggle('tres', tres);
-  tipos.classList.toggle('dos', !tres);
-  const ayudas = ayudasDelEvento(valores, { puedeCompartir });
+  tipos.innerHTML = htmlDeTiposDeEvento(valores);
+  const ayudas = ayudasDelEvento(valores);
   for (const [id, texto] of [['ev-tipo-ayuda', ayudas.tipo], ['ev-recordatorio-ayuda', ayudas.recordatorio]]) {
     porId(id).textContent = texto;
     porId(id).hidden = texto === '';
@@ -6594,9 +6571,9 @@ async function guardarEvento() {
   const boton = porId('ev-guardar');
   if (!formulario || formulario.guardando) return;
   const valores = valoresDelFormularioDeEvento(formulario);
-  const errores = erroresDelEvento(valores, Utils.hoyEnArgentina(), { puedeCompartir: formulario.puedeCompartir });
+  const errores = erroresDelEvento(valores, Utils.hoyEnArgentina());
   if (mostrarErrores('evento', conSusControles('evento', errores))) return;
-  const cuerpo = cuerpoDelEvento(valores, { puedeCompartir: formulario.puedeCompartir });
+  const cuerpo = cuerpoDelEvento(valores);
   formulario.guardando = true;
   boton.disabled = true;
   try {

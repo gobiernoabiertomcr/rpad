@@ -286,9 +286,9 @@ describe('eventosParaLaCorrida: los eventos de la corrida, en lote', () => {
     const adminB = await persona({ clave: 'adminB' });
     const editor = await persona({ clave: 'editor', rol: 'editor' });
     const superadmin = await persona({ clave: 'superadmin', rol: 'superadmin' });
-    await persona({ clave: 'lector', rol: 'lector' });
-    await persona({ clave: 'colab', rol: 'colaborador' });
-    // Dejó de ser administración: sigue en los eventos en que la eligieron, no en los «para todos»
+    const lector = await persona({ clave: 'lector', rol: 'lector' });
+    const colab = await persona({ clave: 'colab', rol: 'colaborador' });
+    // Un lector: en los eventos en que lo eligieron y en los «para todos», como cualquiera
     const exAdmin = await persona({ clave: 'exAdmin', rol: 'lector' });
     const desactivada = await persona({ clave: 'desactivada', activo: 0 });
     const apagada = await persona({ clave: 'apagada' });
@@ -303,7 +303,7 @@ describe('eventosParaLaCorrida: los eventos de la corrida, en lote', () => {
     const eventos = await datos.eventosParaLaCorrida('2026-11-03');
     assert.deepEqual(eventos.map((e) => e.id), ids);
     const porId = (lista) => [...lista].sort((a, b) => a.usuario_id - b.usuario_id);
-    const activos = new Set([adminA, adminB, editor, superadmin, exAdmin, apagada].map((quien) => quien.id));
+    const activos = new Set([adminA, adminB, editor, superadmin, lector, colab, exAdmin, apagada].map((quien) => quien.id));
     for (const e of eventos) {
       const creador = activos.has(e.creado_por)
         ? [{ usuario_id: e.creado_por, email: (await query('SELECT email FROM usuarios WHERE id = ?', [e.creado_por]))[0].email,
@@ -319,10 +319,10 @@ describe('eventosParaLaCorrida: los eventos de la corrida, en lote', () => {
     assert.deepEqual(quienes(eventos[0]), [[adminA.id, false]]);
     assert.deepEqual(quienes(eventos[1]), ordenar([[adminA.id, false], [adminB.id, false], [exAdmin.id, false], [apagada.id, true]]));
     assert.deepEqual(quienes(eventos[2]), ordenar([[adminA.id, false], [adminB.id, false], [editor.id, false],
-      [superadmin.id, false], [apagada.id, true]]));
+      [superadmin.id, false], [lector.id, false], [colab.id, false], [exAdmin.id, true], [apagada.id, true]]));
     assert.deepEqual(quienes(eventos[3]), ordenar([[adminA.id, false], [adminB.id, false]]));
     assert.deepEqual(quienes(eventos[4]), ordenar([[adminA.id, false], [adminB.id, false], [editor.id, false],
-      [superadmin.id, false], [apagada.id, false]]));
+      [superadmin.id, false], [lector.id, false], [colab.id, false], [exAdmin.id, false], [apagada.id, false]]));
   });
 });
 
@@ -636,7 +636,7 @@ describe('la corrida de los recordatorios', () => {
       for (const casilla of CASILLAS_POR_DEFECTO) assert.ok(!casillas.includes(casilla), casilla);
     });
 
-    it('«Todos»: a quien lo creó y a la administración activa, menos a quien lo apagó; ni al lector ni al colaborador',
+    it('«Todos»: a quien lo creó y a todos los activos, también al lector y al colaborador, menos a quien lo apagó',
       async () => {
         const adminA = await persona({ clave: 'adminA' });
         const adminB = await persona({ clave: 'adminB' });
@@ -648,11 +648,11 @@ describe('la corrida de los recordatorios', () => {
         const desactivada = await persona({ clave: 'desactivada', activo: 0 });
         const id = await evento({ creador: adminA, paraTodos: true, apagados: [apagada] });
 
-        assert.deepEqual(await corridaA('2026-11-03 08:00'), resultado({ enviados: 4 }));
-        const reciben = [adminA, adminB, editor, superadmin];
+        assert.deepEqual(await corridaA('2026-11-03 08:00'), resultado({ enviados: 6 }));
+        const reciben = [adminA, adminB, editor, superadmin, lector, colab];
         assert.deepEqual((await enviosDe(id)).map((envio) => envio.usuario_id), reciben.map((q) => q.id).sort((a, b) => a - b));
         for (const quien of reciben) assert.equal((await esperarDe(quien.email)).length, 1);
-        for (const quien of [apagada, lector, colab, desactivada]) assert.deepEqual(await recibidos(quien.email), []);
+        for (const quien of [apagada, desactivada]) assert.deepEqual(await recibidos(quien.email), []);
       });
 
     it('si quien lo creó está desactivada, no lo recibe; sus invitadas, sí', async () => {

@@ -53,9 +53,9 @@ export const LARGO_TITULO_EVENTO = 150;
 export const LARGO_DETALLE_EVENTO = 1000;
 // La fecha más vieja de un evento; la más nueva es la de fechaMaximaEvento
 export const FECHA_MINIMA_EVENTO = '2025-01-01';
-// Quienes comparten eventos, aparecen en la lista de personas y ven los «para todos»: administración (los de esAdmin de
-// services/usuariosReglas.js, atados por un test)
-export const ROLES_QUE_COMPARTEN = Object.freeze(['superadmin', 'admin', 'editor']);
+// Los roles de la administración, la regla de «los compañeros» (los de esAdmin de services/usuariosReglas.js, atados por un test).
+// Un Laboral no los mira: lo crea cualquier rol, con cualquier persona (spec 2026-11-04-agenda-aviso-y-dependencia, 2.4)
+export const ROLES_DE_ADMINISTRACION = Object.freeze(['superadmin', 'admin', 'editor']);
 // Los días de la lista de próximos, desde hoy
 export const DIAS_DE_PROXIMOS = 30;
 
@@ -72,8 +72,8 @@ export const HORA_DE_CIERRE_DE_LOS_ATRASADOS = '20:00';
 
 // Los tipos de evento (spec 2026-10-29-mi-espacio-evento-publico, 2 y 3), en el orden del formulario: Personal (Privado), que
 // no ve nadie más (el «Solo yo» de antes); Personal (Público), que ven quienes elija quien lo carga, de cualquier rol, solo con
-// su nombre y un texto corto («Carla: Turno médico»); y Laboral, el compartido con la administración (el «Compartido» de
-// antes). Un Público se guarda como uno personal (compartido y para_todos en 0) con sus columnas propias (publico,
+// su nombre y un texto corto («Carla: Turno médico»); y Laboral, el compartido con quienes elija, con todo el detalle (el
+// «Compartido» de antes). Un Público se guarda como uno personal (compartido y para_todos en 0) con sus columnas propias (publico,
 // publico_todos y texto_publico) y su audiencia en mi_espacio_evento_vistas: así ningún camino de los emails lo toca
 export const TIPOS_DE_EVENTO = Object.freeze(['privado', 'publico', 'laboral']);
 // Lo que ven los demás de un Público, de la lista del formulario (las cuatro del usuario y «Capacitación o curso»; «Otro» lo
@@ -85,8 +85,8 @@ export const LARGO_TEXTO_PUBLICO = 60;
 
 // Los mensajes de cada error, los mismos en el servidor y en la página. En el error, `campo` es el del pedido: tituloLargo
 // va en `titulo`, textoPublico y textoPublicoLargo en `texto_publico`, y personasPublico (el de un Público sin personas, con
-// el «Todos» de todos los usuarios) y personasInvalidas en `personas` (personas es el de un Laboral, con el «Toda la
-// administración» de su botón). sinRecordatorio, sin campo: «mi recordatorio» de un Público de otra persona. La fecha fuera del
+// el «Todos» de todos los usuarios) y personasInvalidas en `personas` (personas es el de un Laboral, con el mismo texto).
+// sinRecordatorio, sin campo: «mi recordatorio» de un Público de otra persona. La fecha fuera del
 // rango es textoRangoEvento
 export const MENSAJES_EVENTO = Object.freeze({
   titulo: 'Escribí qué es el evento.',
@@ -94,14 +94,13 @@ export const MENSAJES_EVENTO = Object.freeze({
   desde: 'Elegí a qué hora empieza.',
   hasta: 'La hora de fin tiene que ser después de la de inicio, el mismo día.',
   detalle: 'El detalle puede tener hasta 1000 caracteres.',
-  tipo: 'Elegí el tipo de evento.',
+  tipo: 'Elegí quién lo ve.',
   textoPublico: 'Elegí qué ven los demás.',
   textoPublicoLargo: 'Lo que ven los demás puede tener hasta 60 caracteres.',
-  personas: 'Elegí con quién lo compartís, o «Toda la administración».',
+  personas: 'Elegí con quién lo compartís, o «Todos».',
   personasPublico: 'Elegí con quién lo compartís, o «Todos».',
   personasInvalidas: 'Solo podés compartirlo con las personas de la lista.',
   recordatorio: 'Elegí cuándo te llega el recordatorio.',
-  sinPermiso: 'No tenés permiso para compartir eventos.',
   noEncontrado: 'Evento no encontrado',
   miRecordatorio: 'Elegí si querés el recordatorio.',
   esTuyo: 'El recordatorio de tu evento se cambia en el evento.',
@@ -205,8 +204,7 @@ const personasElegidas = (valor, ninguna) => {
  * `publico_todos` en false, `texto_publico` null); un Público, `compartido` y `para_todos` en false (se guarda como uno
  * personal: ningún camino de los emails lo toca), `publico` en true, `publico_todos` con su «Todos» y el texto; un Privado,
  * todo lo de compartir en false, [] y null. Los caracteres se cuentan con Array.from. Una entrada que no es un objeto
- * cuenta como `{}`. Quién puede compartir un Laboral y que las personas sean de la lista los controla la API (`sinPermiso`
- * y `personasInvalidas`), con la base.
+ * cuenta como `{}`. Que las personas sean de la lista lo controla la API (`personasInvalidas`), con la base.
  */
 export const validarEvento = (entrada, hoy) => {
   const fuente = esObjeto(entrada) ? entrada : {};
@@ -788,25 +786,23 @@ const itemDelPublicoAjeno = (fuente, usuarios) => {
  *   - `recordatorio` y `recordatorio_texto`: los del evento, los que eligió quien lo creó; `mi_recordatorio`: 'ninguno' si
  *     quien lo pide (y no lo creó) lo apagó en su fila, y si no, el del evento; `aviso` (`avisoDe`) va sobre
  *     `mi_recordatorio`;
- *   - `quien_texto`: si es suyo, «Solo vos» (Privado), «Con toda la administración», «Con Carla» (una sola persona: spec,
+ *   - `quien_texto`: si es suyo, «Solo vos» (Privado), «Con todos», «Con Carla» (una sola persona: spec,
  *     decisión 9.4) o «Con 4 personas» (Laboral) o el de `textoDeQuienVeElPublico` (Público: «Lo ven todos como «Turno
  *     médico»»); si no, «De <creador>». `quien_largo`, solo si no es suyo: «Lo creó Julián. Están: vos, Carla B. y Carla R.»
- *     (vos primero, si está) o «Lo creó Julián. Es para toda la administración.». Los nombres de los dos, cortos (el punto de
- *     una inicial cierra también la oración: «Lo creó Carla R. Es para toda la administración.»). Sin quien lo creó (un
+ *     (vos primero, si está) o «Lo creó Julián. Es para todos.». Los nombres de los dos, cortos (el punto de
+ *     una inicial cierra también la oración: «Lo creó Carla R. Es para todos.»). Sin quien lo creó (un
  *     creado_por en NULL, o sin nombre), la raya en su lugar.
  * Nada tira: lo que no es un objeto cuenta como `{}`, y una persona sin un id que sirva no cuenta.
  */
 export const itemDeEvento = (evento, contexto) => {
   const fuente = esObjeto(evento) ? evento : {};
-  const { usuarioId, ahora, feriados, administracion = [], usuarios = [] } = esObjeto(contexto) ? contexto : {};
+  const { usuarioId, ahora, feriados, usuarios = [] } = esObjeto(contexto) ? contexto : {};
   const yo = idPositivo(usuarioId);
   const esMio = yo !== null && idPositivo(fuente.creado_por) === yo;
   const publico = esSi(fuente.publico);
   // Antes de leer nada más del evento: de un Público de otra persona no se lee el título ni el detalle
   if (publico && !esMio) return itemDelPublicoAjeno(fuente, usuarios);
 
-  // Desde acá, un Público es de quien lo pide: los nombres, contra todos los usuarios
-  const nombresContra = publico ? usuarios : administracion;
   const compartido = !publico && esSi(fuente.compartido);
   const paraTodos = compartido && esSi(fuente.para_todos);
   const publicoTodos = publico && esSi(fuente.publico_todos);
@@ -814,10 +810,11 @@ export const itemDeEvento = (evento, contexto) => {
   let elegidas = [];
   if (publico) elegidas = publicoTodos ? [] : conId(fuente.vistas);
   else if (compartido && !paraTodos) elegidas = filas;
-  const creador = nombreCorto({ id: fuente.creado_por, nombre: fuente.creador }, nombresContra) || null;
+  // Los nombres, contra todos los usuarios activos: un Laboral y un Público los puede crear y ver cualquier rol
+  const creador = nombreCorto({ id: fuente.creado_por, nombre: fuente.creador }, usuarios) || null;
   const nombreDelCreador = creador ?? '—';
   const nombre = (persona) => (typeof persona.nombre === 'string' ? persona.nombre : '');
-  const corto = (persona) => nombreCorto({ id: persona.id, nombre: persona.nombre }, nombresContra);
+  const corto = (persona) => nombreCorto({ id: persona.id, nombre: persona.nombre }, usuarios);
   const esYo = (persona) => idPositivo(persona.id) === yo;
 
   const recordatorio = esRecordatorio(fuente.recordatorio) ? fuente.recordatorio : null;
@@ -827,7 +824,7 @@ export const itemDeEvento = (evento, contexto) => {
   let quienTexto = `De ${nombreDelCreador}`;
   if (esMio && publico) quienTexto = textoDeQuienVeElPublico(fuente, usuarios);
   else if (esMio && !compartido) quienTexto = 'Solo vos';
-  else if (esMio && paraTodos) quienTexto = 'Con toda la administración';
+  else if (esMio && paraTodos) quienTexto = 'Con todos';
   else if (esMio) quienTexto = conPersonas(elegidas.map(corto));
 
   const item = {
@@ -855,7 +852,7 @@ export const itemDeEvento = (evento, contexto) => {
   if (!esMio) {
     const nombres = [...(elegidas.some(esYo) ? ['vos'] : []), ...elegidas.filter((persona) => !esYo(persona)).map(corto)];
     const loCreo = conPunto(`Lo creó ${nombreDelCreador}`);
-    if (paraTodos) item.quien_largo = `${loCreo} Es para toda la administración.`;
+    if (paraTodos) item.quien_largo = `${loCreo} Es para todos.`;
     else if (nombres.length > 0) item.quien_largo = `${loCreo} Están: ${conPunto(listaConY(nombres))}`;
     else item.quien_largo = loCreo;
   }
