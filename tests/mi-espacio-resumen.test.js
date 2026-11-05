@@ -855,6 +855,89 @@ describe('sin modalidad y sin arranque', () => {
   it('con arranque, no se abre', () => {
     assert.equal(resumenDel(CONTRATO).abrir_saldos, false);
   });
+
+  // Spec 2026-11-04-mi-espacio-sin-saldos, 5: la bienvenida, solo sin arranque; todo lo demás, como antes
+  it('sin arranque, la bienvenida, y sigue todo lo de antes', () => {
+    const hoyYManana = { ...HOY_Y_MANANA, eventos: [] };
+    const resumen = resumenDel(PLANTA, { estado: { ...PLANTA.estado, arranque: null }, hoyYManana });
+    assert.deepEqual(resumen.sin_saldos, {
+      encabezado: 'Lunes 26 de octubre, planta permanente',
+      saludo: 'Hola, Laura',
+      texto: 'Para usar todas las funcionalidades de Mi espacio, primero tenés que cargar tus saldos. Mientras tanto, podés usar la Agenda.'
+    });
+    assert.equal(resumen.abrir_saldos, true);
+    assert.equal(resumen.mensaje, MENSAJES_MI_ESPACIO.sinArranque);
+    assert.equal(resumen.tanques, null);
+    assert.equal(resumen.titular, null);
+    assert.deepEqual(resumen.tipos, []);
+    assert.deepEqual(resumen.hoy_y_manana, hoyYManana);
+
+    const deContrato = resumenDel(CONTRATO, { estado: { ...CONTRATO.estado, arranque: null } });
+    assert.deepEqual(deContrato.sin_saldos, {
+      encabezado: 'Lunes 26 de octubre, contrato',
+      saludo: 'Hola, Sofía',
+      texto: 'Para usar todas las funcionalidades de Mi espacio, primero tenés que cargar tus saldos. Mientras tanto, podés usar la Agenda.'
+    });
+  });
+
+  it('el saludo es el primer nombre; sin un nombre, «Hola»', () => {
+    const estado = { ...PLANTA.estado, arranque: null };
+    const conNombre = (nombre) => resumenDel(PLANTA, { estado, persona: { ...PLANTA.persona, nombre_completo: nombre } }).sin_saldos.saludo;
+    assert.equal(conNombre('Ana'), 'Hola, Ana');
+    assert.equal(conNombre('  Ana   María  Díaz '), 'Hola, Ana');
+    for (const sinNombre of ['', '   ', null, undefined, 7]) assert.equal(conNombre(sinNombre), 'Hola');
+  });
+
+  it('sin un hoy válido, sin modalidad o con arranque, no hay bienvenida', () => {
+    const sinArranque = { ...PLANTA.estado, arranque: null };
+    const sinHoy = resumenDe({ persona: PLANTA.persona, estado: sinArranque, calculo: calculoDe(sinArranque) });
+    assert.equal(Object.hasOwn(sinHoy, 'sin_saldos'), false);
+    assert.equal(sinHoy.abrir_saldos, true);
+    const sinModalidad = resumenDel(PLANTA, { estado: { ...sinArranque, modalidad: null }, persona: { ...PLANTA.persona, vinculo: null } });
+    assert.equal(Object.hasOwn(sinModalidad, 'sin_saldos'), false);
+    assert.equal(Object.hasOwn(resumenDel(PLANTA), 'sin_saldos'), false);
+    assert.equal(Object.hasOwn(resumenDel(CONTRATO), 'sin_saldos'), false);
+  });
+
+  it('con arranque, el encabezado de la frase no cambia', () => {
+    assert.equal(resumenDel(PLANTA).titular.encabezado, 'Lunes 26 de octubre, planta permanente');
+    assert.equal(resumenDel(CONTRATO).titular.encabezado, 'Lunes 26 de octubre, contrato');
+  });
+});
+
+describe('sin arranque, las pestañas dicen qué falta (spec 2026-11-04-mi-espacio-sin-saldos, 5)', () => {
+  const sinArranque = (caso) => ({ ...caso.estado, arranque: null });
+
+  it('la lista de licencias', () => {
+    for (const caso of [PLANTA, CONTRATO]) {
+      const lista = filasDel(caso, { estado: sinArranque(caso) });
+      assert.deepEqual(lista.sin_saldos, { texto: 'Para usar Licencias, primero tenés que cargar tus saldos.' });
+      assert.equal(lista.saldo_inicial, null);
+    }
+  });
+
+  it('la tabla de horas extras', () => {
+    for (const caso of [PLANTA, CONTRATO]) {
+      const tabla = tablaDel(caso, { estado: sinArranque(caso) });
+      assert.deepEqual(tabla.sin_saldos, { texto: 'Para usar Horas extras, primero tenés que cargar tus saldos.' });
+    }
+  });
+
+  it('con arranque o sin modalidad, sin la clave', () => {
+    for (const caso of [PLANTA, CONTRATO]) {
+      assert.equal(Object.hasOwn(filasDel(caso), 'sin_saldos'), false);
+      assert.equal(Object.hasOwn(tablaDel(caso), 'sin_saldos'), false);
+      const sinNada = { ...caso.estado, arranque: null, modalidad: null };
+      assert.equal(Object.hasOwn(filasDel(caso, { estado: sinNada }), 'sin_saldos'), false);
+      assert.equal(Object.hasOwn(tablaDel(caso, { estado: sinNada }), 'sin_saldos'), false);
+    }
+  });
+
+  it('con un año o un hoy que no sirven, sin la clave', () => {
+    const estado = sinArranque(PLANTA);
+    assert.equal(Object.hasOwn(filasDeLicencias(estado, calculoDe(estado), { anio: 'x', persona: PLANTA.persona }), 'sin_saldos'), false);
+    assert.equal(Object.hasOwn(tablaDeHorasExtras(estado, calculoDe(estado), { anio: 'x' }), 'sin_saldos'), false);
+  });
 });
 
 describe('la lista de licencias', () => {

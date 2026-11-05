@@ -421,6 +421,19 @@ describe('el Resumen', () => {
     assert.deepEqual(data.persona, { nombre: 'Laura Gómez', ve_companeros: true, audita: true, es_superadmin: false });
   });
 
+  // Spec 2026-11-04-mi-espacio-sin-saldos, 4 y 5: la bienvenida y los avisos son datos; el servidor sigue frenando las cargas
+  it('sin arranque, la bienvenida y los avisos de las dos pestañas, y una carga sigue frenada', async () => {
+    const resumen = await api.get('/mi-espacio/resumen', como('adminA'));
+    assert.equal(resumen.body.data.sin_saldos.saludo, 'Hola, Laura');
+    const licencias = await api.get('/mi-espacio/licencias', como('adminA'));
+    assert.deepEqual(licencias.body.data.sin_saldos, { texto: 'Para usar Licencias, primero tenés que cargar tus saldos.' });
+    const horas = await api.get('/mi-espacio/horas-extras', como('adminA'));
+    assert.deepEqual(horas.body.data.sin_saldos, { texto: 'Para usar Horas extras, primero tenés que cargar tus saldos.' });
+    const carga = await api.post('/mi-espacio/licencias', { tipo: 'medica', desde: '2027-03-01', hasta: '2027-03-01' }, como('adminA'));
+    assert.equal(carga.status, 400);
+    assert.deepEqual(carga.body, rechazo(MENSAJES_MI_ESPACIO.sinArranque, null));
+  });
+
   it('con arranque, los tanques; «Hoy y mañana», sin ausentes y con el próximo feriado de la tabla', async () => {
     await conArranque('editor', hoy);
     await conAnio('editor', ANIO, 20);
