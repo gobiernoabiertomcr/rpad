@@ -30,6 +30,7 @@ mi-espacio.html # Mi espacio (Mi cuenta): pestañas Resumen, Licencias, Horas ex
   Pestañas con hash y `aria-selected` (`#resumen`, la inicial, `#licencias`, `#horas` y `#agenda`, escritas con `history.replaceState`).
   Para todos los roles con sesión; sin sesión, al login.
   Lo cargado lo ve solo su dueño: ni administración, ni un jefe, ni el superadmin (decisión del usuario).
+  La única excepción es un evento Personal (Público): a quienes están en la cadena de quien lo cargó les llega su texto corto, y nada más (`docs/temas/mi-espacio-aviso-diario.md`).
   No es un sistema de Recursos Humanos (sin aprobaciones ni certificados), no hay medio día de licencia y no hay horas extras al 50 % (se cobran).
   Antiobjetivos: que el tipo de una licencia se vea fuera del panel de su dueño (una médica es un dato sensible: a Configuración pasan solo las fechas y a los compañeros, solo «no está»); que algo diga «perdiste» (lo que no se usó es «no utilizado previamente» y una licencia «vence el …»; salvo «Perdés …» de las vacaciones: decisión del usuario, 27/10/2026, y el de las horas de franquicia y «Con esta licencia perdés …» del cálculo: spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.2 y 3.6);
   que cargar algo cambie el sistema sin que la persona lo sepa (el formulario dice antes el efecto del paso a Configuración); y que algo se cuente dos veces (lo anterior al saldo inicial no descuenta).
@@ -155,9 +156,9 @@ mi-espacio.html # Mi espacio (Mi cuenta): pestañas Resumen, Licencias, Horas ex
 ## Seguridad
 
 - Mi espacio: cada ruta trabaja sobre `req.user.userId` y un id de otra persona da el mismo 404 que uno que no existe; el tipo de una licencia solo sale para su dueño (a Configuración pasan las fechas y «Hoy no están» dice solo quién no está y cuándo vuelve).
-  En la agenda, la API nunca devuelve un evento a quien no lo creó ni fue invitado (un «para todos», solo a administración), un evento ajeno da el mismo 404 que uno que no existe, la lista para compartir trae solo id, nombre e iniciales (ni email ni rol), y a los compañeros se los ve sin el tipo ni la nota (ver `docs/temas/mi-espacio-agenda.md`).
+  En la agenda, la API nunca devuelve un evento a quien no lo creó ni fue invitado (un «para todos», a todos los usuarios activos), un evento ajeno da el mismo 404 que uno que no existe, la lista para elegir trae solo id, nombre e iniciales (ni email ni rol), y a los compañeros se los ve sin el tipo ni la nota (ver `docs/temas/mi-espacio-agenda.md`).
   Un Público solo se devuelve a quien lo creó y a quienes se les muestra («Todos» o una fila suya en `mi_espacio_evento_vistas`), y a ellos **recortado desde la consulta** (`leerEventos` con `quienMira` y la rama propia de `itemDeEvento`): cuándo es, el nombre corto de quien lo creó y el texto público, nunca el título, el detalle, el recordatorio ni con quién más está, y en un orden que no depende del título oculto (`ORDEN_PARA_QUIEN_MIRA`);
-  la lista para elegirlos (`GET /mi-espacio/personas/publico`) es la de todos los usuarios activos, para cualquier rol con sesión, también con solo `{ id, nombre, iniciales }` (ni email ni rol); y de un Público no sale ningún email a nadie más que a quien lo creó.
+  la lista para elegirlos (`GET /mi-espacio/personas/publico`) es la de todos los usuarios activos, para cualquier rol con sesión, también con solo `{ id, nombre, iniciales }` (ni email ni rol); y de un Público no sale ningún email a nadie más que a quien lo creó, salvo el aviso diario a su cadena, con el nombre corto y el texto corto (`docs/temas/mi-espacio-aviso-diario.md`).
   Un pedido de restitución ajeno da el mismo 404 «Restitución no encontrada», un grupo de otra persona es uno que no está para restituir, y Configuración → Feriados dice solo cuántas vacaciones quedan con días para restituir y su plazo, nunca de quién.
 
 ## La página

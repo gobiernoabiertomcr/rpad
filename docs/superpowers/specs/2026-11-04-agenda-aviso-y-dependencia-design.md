@@ -90,6 +90,7 @@ Con una sola persona: «De quien dependés: le llega la notificación por mail {
 > Federico y Graciela ya están en la lista, porque dependés de esas personas. Si les sacás la marca, no lo ven en su agenda, pero igual les llega el mail.
 
 La segunda oración, solo si depende de alguien; con una sola persona: «Federico ya está en la lista, porque dependés de esa persona. Si le sacás la marca, no lo ve en su agenda, pero igual le llega el mail.»
+Esa oración solo vale si están todas marcadas: si se sacó una, hay «Todos» o se edita un evento, dice «A Federico y Graciela, de quienes dependés, les llega el mail aunque no tengan la marca.», o «A Federico, de quien dependés, le llega el mail aunque no tenga la marca.». Decir «ya está» de alguien sin la marca sería falso (agregado al implementar).
 
 **Quienes están en la cadena vienen marcados y primeros en la lista**, solo en un evento nuevo y solo la primera vez que se elige este tipo: se les puede sacar la marca (decisión del usuario).
 Al editar un evento se respeta lo que tiene.
@@ -103,6 +104,8 @@ Sale «Toda la administración». Queda un solo atajo, **«Todos»**: todos los 
 **Confirmación antes de guardar**, con el modal chico de la página (`pedirConfirmacion`), si con ese guardado entran por lo menos 5 personas que no estaban (`PERSONAS_PARA_CONFIRMAR`) o si pasa a «Todos» sin estarlo:
 
 > Título: ¿Guardar? Texto: Les va a llegar un mail a {N} personas. Botones: Guardar y Cancelar.
+
+Con una sola persona, que solo puede darse con «Todos» y una lista de una: «Le va a llegar un mail a 1 persona.» (agregado al implementar).
 
 Con «Todos», N es el largo de la lista de personas de la página.
 

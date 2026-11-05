@@ -673,9 +673,8 @@ export const emailsDelGuardado = (entrada) => {
 
 /**
  * Las personas de un Laboral o un Personal (Público) sin «Todos», al guardarlo (las de `validarEvento`, ya ids sin
- * repetidos), contra las que se pueden elegir (`permitidas`: una lista o un Set de ids; en un Laboral, las de
- * `personasParaCompartir`, la administración, y en un Público, todos los usuarios activos, más las que ya estaban en el
- * evento). `tipo`, 'laboral' (el de entrada) o 'publico': dice el mensaje de «ninguna». Devuelve `{ personas, error }`: el id
+ * repetidos), contra las que se pueden elegir (`permitidas`: una lista o un Set de ids: las de `personasParaElegir`,
+ * todos los usuarios activos, más las que ya estaban en el evento). `tipo`, 'laboral' (el de entrada) o 'publico': dice el mensaje de «ninguna». Devuelve `{ personas, error }`: el id
  * de quien lo guarda (`usuarioId`) se saca sin error; si no queda ninguna (también sin una lista), el error `personas` en un
  * Laboral (o con otro tipo) y `personasPublico` en un Público; si alguna no es un id o no está entre las permitidas,
  * `personasInvalidas` (todos en `personas`). Si no, `personas` son las que quedan, en su orden, y `error` es null.

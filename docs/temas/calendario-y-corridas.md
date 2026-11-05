@@ -5,10 +5,11 @@ El calendario único de días hábiles y los tres crons: 8:05, 14:00 y cada medi
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-27-feriados-en-notas-design.md`
 - `docs/superpowers/specs/2026-10-26-mi-espacio-agenda-design.md`
+- `docs/superpowers/specs/2026-11-04-agenda-aviso-y-dependencia-design.md`
 
 ## Archivos
 
-notificacionesController: también la corrida de los recordatorios de la agenda, `GET /api/cron/eventos`.
+notificacionesController: también la corrida de los recordatorios de la agenda, `GET /api/cron/eventos`, y el aviso diario de la agenda, en las corridas de las 8:05 y de las 14:00 (`docs/temas/mi-espacio-aviso-diario.md`).
 notasDigitalesCalendario (el calendario de días hábiles, puro:
 `esDiaHabil` y `FERIADOS_FIJOS`, los 9 fijos;
 `derivadasDe`, las derivadas escritas una sola vez sobre un predicado, con el tope `TOPE_DE_VUELTAS`, 366, y `CALENDARIO_FIJO`, las de los 9 fijos;
@@ -76,6 +77,10 @@ emailService y emailTemplates: `sendEmail`, `remitente` y `marcoEmail`; cada pla
 - Cron 14:00 (`/api/cron/cambios-pendientes`): primero, aisladas, las notas que esperaban la firma digital (ver `docs/temas/firma-digital.md`); después, el recordatorio de cambios pendientes (`enviarCambiosPendientes({ hoy, ahora, calendario })`) a quienes pueden auditarlos.
   Lee el calendario una vez (`leerCalendario`) y el mismo cuenta el «hoy es hábil», el canal de cada cambio (`contextoDeCanal` lo lleva a `canalDelCambio`: el mismo calendario que la nota de auditoría de la corrida de la mañana, así un cambio no se queda un día sin recordatorio y sin nota, salvo que falle la nota de autorización tardía: `correrPasos` corta ahí y `hayQuienFirme` no lo ve), el aviso a quien propone y su «hasta» (`proximoDiaConQuienAudite`);
   `data.calendario` dice de dónde salió, también un día no hábil.
+- El aviso diario de la agenda viaja en las dos corridas, sin Tarea Cron propia y sin frenarlas ni al revés (`docs/temas/mi-espacio-aviso-diario.md`).
+  A las 8:05, `avisoDiarioAislado('manana', calendario)` se dispara antes de los demás pasos, sin esperarlo, y se espera al final: la mañana tarda minutos y tiene que salir antes de los eventos de la primera hora.
+  A las 14:00 corre después de los recordatorios y también si `enviarCambiosPendientes` tira: ese 500 se responde después del paso.
+  Sus errores van a `resultados.errores`, con `tipo: 'mi-espacio-diario'`, a las 8:05, y a `data.diario`, a las 14:00; `ocupada` no da 207.
 - Cron cada media hora (`GET /api/cron/eventos`, con `cronAuth`: sin la clave, o con una que no es, 403; spec 2026-10-26-mi-espacio-agenda, 5): los recordatorios de la agenda (`ejecutarRecordatoriosDeEventos` de `controllers/notificacionesController.js`, que llama al servicio del mismo nombre de `services/miEspacioEventosCorrida.js`; qué manda, en `docs/temas/mi-espacio-agenda.md`).
   Una Tarea Cron de cPanel propia, `*/30` todos los días (decisión del usuario:
   «1 hora antes» con una corrida por hora podía avisar con muy poco margen).

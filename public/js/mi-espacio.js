@@ -36,7 +36,7 @@
  *   dirección. «Hoy y mañana» del Resumen suma los eventos de hoy y de mañana. Un evento propio (de la grilla o de los próximos) abre
  *   su formulario; uno de otra persona, su detalle con «Mi recordatorio» (que se guarda al elegirlo); los dos «Nuevo evento», el
  *   formulario vacío (hoy y «2 horas antes»), también sin modalidad. Desde el evento Personal (Público) (spec
- *   2026-10-29-mi-espacio-evento-publico, 4), «Tipo de evento», para todos los roles: Personal (Privado), que no ve nadie más;
+ *   2026-10-29-mi-espacio-evento-publico, 4), «¿Quién lo ve?», para todos los roles: Personal (Privado), que no ve nadie más;
  *   Personal (Público), que ven quienes se elijan («Todos» o las personas de GET /mi-espacio/personas/publico, todos los usuarios
  *   activos, pedidas una vez) solo con el nombre corto de quien lo carga y un texto de la lista u «Otro», con su vista previa; y
  *   Laboral, el compartido con quienes se elijan, para cualquier rol («Todos» o las personas de GET /mi-espacio/personas, todos los
@@ -6478,9 +6478,9 @@ function pedirMiNombre() {
 }
 
 /**
- * Abre el formulario del evento: «Nuevo evento» (hoy, o la `fecha` del día que se tocó en el mes, Personal (Privado) y «2 horas
+ * Abre el formulario del evento: «Nuevo evento» (hoy, o la `fecha` del día que se tocó en el mes, sin ningún tipo elegido y «2 horas
  * antes») o «Editar evento» con uno propio (`item`, de lo que llegó de GET /mi-espacio/eventos). Sin modalidad se abre igual
- * (decisión del usuario, 27/10/2026). «Tipo de evento» se ve para todos los roles. Un Laboral pide su lista, y un Público, la suya (y,
+ * (decisión del usuario, 27/10/2026). «¿Quién lo ve?» se ve para todos los roles. Un Laboral pide su lista, y un Público, la suya (y,
  * sin la agenda, el nombre). El foco va a «Qué» y, al
  * cerrar, vuelve a `volverA`
  */
