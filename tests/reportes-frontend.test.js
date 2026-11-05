@@ -16,7 +16,7 @@ import { cintaDeMetricas, cintasDeLaVista } from '../services/metricasCinta.js';
 import { mapaDeLosCasos, mapaDe, fuentesDelCaso, con, notaDgmit, HOY_DE_LAS_METRICAS as HOY } from './metricas-casos.js';
 import {
   TEXTOS_DE_LA_PESTANA as T, textoDelDesglose, textoDeLoQueFalta, textoDeDondeSale, textoDelMesManual, textoSinManuales,
-  textoDelPieDeLosCasos, textoDeLaPildora
+  textoDeLaPildora
 } from '../services/reportesMetricasPdf.js';
 import {
   TEXTOS_DE_PARA_COMPLETAR, debajoDeLaNota, queDeLaNota, debajoDelRecibido, queDelRecibido
@@ -527,14 +527,16 @@ describe('reportes.js: los casos', () => {
     // Con la nota DGMIT, su número y su tipo; con los datos, el origen
     const conTodo = {
       dataset_id: 5, titulo: 'Un dataset', area: 'Un área', gestion: 'externa', contar: true, vencimiento: '2026-07-31',
-      aviso: { fecha: '2026-06-21', texto: '29 antes', que: 'Nota Digital 2/26' }, nota: { numero: '156/26', tipo: 'Solicitud', texto: '3' },
-      recibido: { fecha: '2026-08-04', texto: 'en el día', origen: 'Los entregó el área' }, carga: { fecha: '2026-08-05', texto: '1' }
+      aviso: { fecha: '2026-06-21', texto: '40 días corridos antes del vencimiento', que: 'Nota Digital 2/26' },
+      nota: { numero: '156/26', tipo: 'Solicitud', texto: '3 días corridos desde el aviso' },
+      recibido: { fecha: '2026-08-04', texto: 'en el día', origen: 'Los entregó el área' },
+      carga: { fecha: '2026-08-05', texto: '1 día corrido desde que se recibió' }
     };
     const fila = ctx.htmlDeCasos({ casos: [conTodo] }, POR_DEFECTO, { anio: 2026, editable: true });
-    assert.ok(fila.includes('<td>21/06/2026<span class="d">29 antes · Nota Digital 2/26</span></td>'));
-    assert.ok(fila.includes('<td>156/26<span class="d">Solicitud · 3</span></td>'));
+    assert.ok(fila.includes('<td>21/06/2026<span class="d">40 días corridos antes del vencimiento · Nota Digital 2/26</span></td>'));
+    assert.ok(fila.includes('<td>156/26<span class="d">Solicitud · 3 días corridos desde el aviso</span></td>'));
     assert.ok(fila.includes('<td>04/08/2026<span class="d">en el día · Los entregó el área</span></td>'));
-    assert.ok(fila.includes('<td>05/08/2026<span class="d">1</span></td>'));
+    assert.ok(fila.includes('<td>05/08/2026<span class="d">1 día corrido desde que se recibió</span></td>'));
   });
 
   it('el título de los casos y la lista vacía', () => {
@@ -544,11 +546,11 @@ describe('reportes.js: los casos', () => {
     assert.doesNotMatch(vacia, /<table/);
   });
 
-  it('la aclaración de los casos dice los días elegidos y, con foto, que no se destilda', () => {
+  it('el pie de los casos dice lo de destildar y, con foto, que no se destilda: los días los dice cada fila', () => {
     const habiles = ctx.htmlDeCasos(VISTA, POR_DEFECTO, { anio: 2026, editable: true });
-    assert.match(habiles, /Debajo de cada fecha, los días hábiles del tramo o su estado\./);
-    assert.match(habiles, /Destildar un dataset lo saca de todas las cuentas de esta página/);
-    assert.match(ctx.htmlDeCasos(VISTA, { ...POR_DEFECTO, dias: 'corridos' }, { anio: 2026, editable: true }), /los días corridos del tramo/);
+    assert.match(habiles, /<p class="mt-pie">Destildar un dataset lo saca de todas las cuentas de esta página/);
+    assert.doesNotMatch(habiles, /Debajo de cada fecha/);
+    assert.doesNotMatch(ctx.htmlDeCasos(VISTA, { ...POR_DEFECTO, dias: 'corridos' }, { anio: 2026, editable: true }), /Debajo de cada fecha/);
     assert.match(ctx.htmlDeCasos(VISTA, POR_DEFECTO, { anio: 2026, editable: false }), /se calculó con todos los datasets: no se puede destildar/);
   });
 });
@@ -1734,9 +1736,6 @@ describe('reportes.js y el PDF de Métricas: los mismos textos', () => {
     const areas = ctx.htmlDeAreas(AREAS);
     assert.ok(areas.includes(`<span>${T.alDia}</span>`));
     assert.ok(areas.includes(`>${T.titulos.ranking}</h3>`));
-    for (const dias of ['habiles', 'corridos']) {
-      assert.ok(ctx.htmlDeCasos(VISTA, { ...POR_DEFECTO, dias }).includes(`<p class="mt-pie">${textoDelPieDeLosCasos(dias)}`), dias);
-    }
     const cerrado = { anio: 2026, anios: [2026, 2027], al: '2026-12-31', en_vivo: false, aviso_foto: null };
     assert.ok(ctx.htmlDeBarra(cerrado, { ...POR_DEFECTO, anio: 2026 }).includes(`>${textoDeDondeSale(cerrado)}</p>`), textoDeDondeSale(cerrado));
     const sinFoto = { ...cerrado, en_vivo: true, aviso_foto: 'La foto de 2026 se saca el 10/01/2027' };

@@ -966,8 +966,8 @@ describe('vistaDe', () => {
     const tarde = [cerrado({ dataset_id: 905 }), cerrado({ dataset_id: 906, carga: '2026-04-30', cierre: '2026-04-30' })];
     assert.equal(vista(tarde, { estadistico: 'promedio', dias: 'corridos' }).resultados.a_tiempo.despues.texto,
       `Los 2 se cargaron un promedio de ${cifraDe([8, 30]).promedio} días corridos después.`);
-    assert.equal(vista([casos[0]], { dias: 'corridos' }).casos[0].aviso.texto, '40 antes');
-    assert.equal(vista([casos[0]]).casos[0].aviso.texto, '27 antes');
+    assert.equal(vista([casos[0]], { dias: 'corridos' }).casos[0].aviso.texto, '40 días corridos antes del vencimiento');
+    assert.equal(vista([casos[0]]).casos[0].aviso.texto, '27 días hábiles antes del vencimiento');
   });
 
   it('con 4 casos, orientativo; con 0, «Sin casos en 2026» y nada null en los textos', () => {
@@ -1047,7 +1047,7 @@ describe('vistaDe', () => {
     assert.equal(foto.resultados.a_tiempo.total, 0);
     assert.deepEqual(foto.para_completar.recibido, []);
     const [fila] = foto.casos;
-    assert.deepEqual([fila.recibido, fila.carga], [{ fecha: null, texto: `en curso, hace ${hace}`, origen: '' }, { fecha: null, texto: '' }]);
+    assert.deepEqual([fila.recibido, fila.carga], [{ fecha: null, texto: `en curso, ${hace} días hábiles desde la nota`, origen: '' }, { fecha: null, texto: '' }]);
     // En las reiteraciones cuenta abierto al 31/12, como en el circuito (en curso)
     assert.deepEqual(foto.resultados.reiteraciones.rpad, { ninguna: 1, una: 0, dos_o_mas: 0, total: 1 });
     // En 2027 terminó: la respuesta y la carga cuentan ahí
@@ -1323,28 +1323,28 @@ describe('vistaDe', () => {
     const d = (desde, hasta) => String(duracion(desde, hasta, 'habiles'));
     assert.deepEqual(filasDe(v, 52)[0], {
       dataset_id: 52, titulo: DEL_52.titulo, area: DEL_52.area, gestion: 'externa', contar: true, vencimiento: '2026-01-31',
-      aviso: { fecha: '2025-12-22', texto: `${d('2025-12-22', '2026-01-31')} antes`, que: 'email de 40 días' },
+      aviso: { fecha: '2025-12-22', texto: `${d('2025-12-22', '2026-01-31')} días hábiles antes del vencimiento`, que: 'email de 40 días' },
       nota: { numero: null, tipo: '', texto: 'pendiente de carga' },
       recibido: { fecha: '2026-02-04', texto: '', origen: 'Los entregó el área' },
       carga: { fecha: '2026-02-04', texto: 'en el día' }
     });
     // El abierto del 52: sin datos, en curso desde el aviso
-    assert.deepEqual(filasDe(v, 52)[1].recibido, { fecha: null, texto: `en curso, hace ${d('2026-06-21', AL)}`, origen: '' });
+    assert.deepEqual(filasDe(v, 52)[1].recibido, { fecha: null, texto: `en curso, ${d('2026-06-21', AL)} días hábiles desde el aviso`, origen: '' });
     // Avisado ya vencido (el 11) y sin el aviso de la regla (el 33, que se avisó ya vencido)
     assert.deepEqual(filasDe(v, 11)[0].aviso, { fecha: '2025-12-06', texto: 'avisado ya vencido', que: 'email mensual de vencidos' });
-    assert.equal(filasDe(v, 11)[0].recibido.texto, `en curso, hace ${d('2025-12-06', AL)}`);
+    assert.equal(filasDe(v, 11)[0].recibido.texto, `en curso, ${d('2025-12-06', AL)} días hábiles desde el aviso`);
     assert.deepEqual(filasDe(v, 33)[0].aviso, { fecha: '2026-06-21', texto: 'se avisó ya vencido', que: 'email de 40 días' });
     // Con nota DGMIT: su número y su tipo, los días de la redacción, y los de la respuesta debajo de «Recibido el»
     const conNota = vista([cerrado({ nota_dgmit: notaDe('2026-03-02', { tipo: 'reiteracion' }) })]).casos[0];
     assert.deepEqual([conNota.nota, conNota.recibido], [
-      { numero: '45/26', tipo: 'Reiteración', texto: d('2026-02-19', '2026-03-02') },
-      { fecha: '2026-04-06', texto: d('2026-03-02', '2026-04-06'), origen: 'Los entregó el área' }
+      { numero: '45/26', tipo: 'Reiteración', texto: `${d('2026-02-19', '2026-03-02')} días hábiles desde el aviso` },
+      { fecha: '2026-04-06', texto: `${d('2026-03-02', '2026-04-06')} días hábiles desde la nota`, origen: 'Los entregó el área' }
     ]);
     // Interna: sin nota DGMIT, y la producción debajo de «Recibido el» (el 38 del 31/03/2026, con los datos del 10/02/2026)
     const interno = filasDe(vista(casosReales({ importados: { 12: { recibido_el: '2026-02-10' } } })), 38)[0];
     assert.deepEqual([interno.nota, interno.recibido, interno.carga], [
-      { numero: null, tipo: '', texto: '' }, { fecha: '2026-02-10', texto: d('2026-01-30', '2026-02-10'), origen: '' },
-      { fecha: '2026-02-12', texto: d('2026-02-10', '2026-02-12') }
+      { numero: null, tipo: '', texto: '' }, { fecha: '2026-02-10', texto: `${d('2026-01-30', '2026-02-10')} días hábiles desde el aviso`, origen: '' },
+      { fecha: '2026-02-12', texto: `${d('2026-02-10', '2026-02-12')} días hábiles desde que se recibió` }
     ]);
     // Fuente pública: el origen, y sin días de respuesta
     assert.deepEqual(vista([cerrado({ nota_dgmit: notaDe('2026-03-02'), origen: 'fuente_publica' })]).casos[0].recibido,
@@ -2738,5 +2738,110 @@ describe('con los feriados de la tabla (feriados en todo el sistema, tanda 2)', 
     const fijo = etapaDe(etapas(casosReales()), 'externa', 'aviso');
     assert.deepEqual([fijo.habiles.mediana, fijo.textos.indice], [27, '27']);
     assert.deepEqual(aviso.corridos, fijo.corridos);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// «Los casos»: lo de debajo de cada fecha (spec 2026-11-05-metricas-frase-en-los-casos, 4)
+// ---------------------------------------------------------------------------------------------------------------------
+
+describe('«Los casos»: cada número dice su unidad y desde cuándo cuenta (spec 2026-11-05-metricas-frase-en-los-casos)', () => {
+  const filaCon = (datos, dias) => vista([datos], { dias }).casos[0];
+  const frase = (desde, hasta, dias, sufijo) => {
+    const valor = duracion(desde, hasta, dias);
+    return `${valor} ${unidadDe(valor, dias)} ${sufijo}`;
+  };
+  // Un interno: vence el 31/03/2026, avisado por la regla el 30/01/2026
+  const INTERNO = Object.freeze({
+    gestion: 'interna', requiere_nota: null, aviso_regla: '2026-01-30', primer_aviso: '2026-01-30', inicio_tramos: '2026-01-30',
+    fecha_regla: '2026-01-30', avisos_rpad: ['2026-01-30'], origen: null, aviso_que: 'email de 60 días'
+  });
+  const SIN_INICIO = Object.freeze({ aviso_regla: null, primer_aviso: null, inicio_tramos: null, avisos_rpad: [] });
+  const CON_NOTA = () => ({ nota_dgmit: notaDe('2026-03-02') });
+
+  for (const dias of DIAS) {
+    describe(`con los días ${dias}`, () => {
+      it('el aviso: los días antes del vencimiento; el mismo día y los ya vencidos no cambian', () => {
+        assert.equal(filaCon(caso(), dias).aviso.texto, frase('2026-02-19', '2026-03-31', dias, 'antes del vencimiento'));
+        const elMismoDia = { aviso_regla: '2026-03-31', primer_aviso: '2026-03-31', inicio_tramos: '2026-03-31' };
+        assert.equal(filaCon(caso(elMismoDia), dias).aviso.texto, 'el día del vencimiento');
+        const heredado = { venc: '2025-06-30', aviso_regla: null, primer_aviso: '2026-02-02', inicio_tramos: '2026-02-02', heredado: true };
+        assert.equal(filaCon(caso(heredado), dias).aviso.texto, 'avisado ya vencido');
+      });
+
+      it('la nota: los días desde el aviso; sin inicio o sin nota, como siempre', () => {
+        const fila = filaCon(cerrado(CON_NOTA()), dias);
+        assert.equal(fila.nota.texto, frase('2026-02-19', '2026-03-02', dias, 'desde el aviso'));
+        assert.equal(fila.nota.tipo, 'Solicitud');
+        assert.equal(filaCon(cerrado({ ...CON_NOTA(), ...SIN_INICIO }), dias).nota.texto, '');
+        assert.equal(filaCon(caso(), dias).nota.texto, 'pendiente de carga');
+      });
+
+      it('«Recibido el» en la interna: los días desde el aviso; sin inicio, nada', () => {
+        const datos = { ...INTERNO, recibido: '2026-03-02', carga: '2026-03-04', cierre: '2026-03-04' };
+        assert.equal(filaCon(cerrado(datos), dias).recibido.texto, frase('2026-01-30', '2026-03-02', dias, 'desde el aviso'));
+        assert.equal(filaCon(cerrado({ ...datos, ...SIN_INICIO }), dias).recibido.texto, '');
+      });
+
+      it('«Recibido el» en la externa: los días desde la nota; sin nota o con una fuente pública, nada', () => {
+        assert.equal(filaCon(cerrado(CON_NOTA()), dias).recibido.texto, frase('2026-03-02', '2026-04-06', dias, 'desde la nota'));
+        assert.equal(filaCon(cerrado(), dias).recibido.texto, '');
+        assert.equal(filaCon(cerrado({ ...CON_NOTA(), origen: 'fuente_publica' }), dias).recibido.texto, '');
+      });
+
+      it('un ciclo abierto: en curso, con los días desde la nota o desde el aviso; sin días, solo en curso', () => {
+        assert.equal(filaCon(caso(CON_NOTA()), dias).recibido.texto, `en curso, ${frase('2026-03-02', AL, dias, 'desde la nota')}`);
+        assert.equal(filaCon(caso(), dias).recibido.texto, `en curso, ${frase('2026-02-19', AL, dias, 'desde el aviso')}`);
+        assert.equal(filaCon(caso(INTERNO), dias).recibido.texto, `en curso, ${frase('2026-01-30', AL, dias, 'desde el aviso')}`);
+        // Se pudo avisar a tiempo y se avisó ya vencido: entra en la lista, pero no tiene desde cuándo contar
+        const sinInicio = { aviso_regla: null, primer_aviso: '2026-06-21', inicio_tramos: null, avisos_rpad: ['2026-06-21'] };
+        assert.equal(filaCon(caso(sinInicio), dias).recibido.texto, 'en curso');
+        const hoy = { venc: '2026-12-31', aviso_regla: AL, primer_aviso: AL, inicio_tramos: AL };
+        assert.equal(filaCon(caso(hoy), dias).recibido.texto, 'en curso');
+      });
+
+      it('un ciclo cerrado sin datos: nada debajo de «Recibido el» ni de la carga', () => {
+        const fila = filaCon(cerrado({ recibido: null }), dias);
+        assert.deepEqual([fila.recibido.texto, fila.carga.texto], ['', '']);
+      });
+
+      it('la carga: los días desde que se recibió o, con una fuente pública, desde que se obtuvo', () => {
+        const recibido = frase('2026-04-06', '2026-04-08', dias, 'desde que se recibió');
+        assert.equal(filaCon(cerrado(), dias).carga.texto, recibido);
+        assert.equal(filaCon(cerrado({ origen: null }), dias).carga.texto, recibido);
+        const interno = { ...INTERNO, recibido: '2026-04-06', carga: '2026-04-08' };
+        assert.equal(filaCon(cerrado(interno), dias).carga.texto, recibido);
+        assert.equal(filaCon(cerrado({ origen: 'fuente_publica' }), dias).carga.texto, frase('2026-04-06', '2026-04-08', dias, 'desde que se obtuvo'));
+      });
+
+      it('el 0 sigue siendo «en el día»', () => {
+        const fila = filaCon(cerrado({ nota_dgmit: notaDe('2026-02-19'), recibido: '2026-02-19', carga: '2026-02-19', cierre: '2026-02-19' }), dias);
+        assert.deepEqual([fila.nota.texto, fila.recibido.texto, fila.carga.texto], ['en el día', 'en el día', 'en el día']);
+      });
+    });
+  }
+
+  it('los textos, al pie de la letra, y el singular', () => {
+    assert.equal(filaCon(caso(), 'corridos').aviso.texto, '40 días corridos antes del vencimiento');
+    assert.equal(filaCon(caso(), 'habiles').aviso.texto, '27 días hábiles antes del vencimiento');
+    const unDia = { carga: '2026-04-07', cierre: '2026-04-07' };
+    assert.equal(filaCon(cerrado(unDia), 'corridos').carga.texto, '1 día corrido desde que se recibió');
+    assert.equal(filaCon(cerrado(unDia), 'habiles').carga.texto, '1 día hábil desde que se recibió');
+    const unoAntes = { aviso_regla: '2026-03-30', primer_aviso: '2026-03-30', inicio_tramos: '2026-03-30' };
+    assert.equal(filaCon(caso(unoAntes), 'corridos').aviso.texto, '1 día corrido antes del vencimiento');
+    assert.equal(filaCon(caso(unoAntes), 'habiles').aviso.texto, '1 día hábil antes del vencimiento');
+    const conLaNota = { nota_dgmit: notaDe('2026-04-03'), recibido: '2026-04-06' };
+    assert.equal(filaCon(cerrado(conLaNota), 'habiles').recibido.texto, '1 día hábil desde la nota');
+  });
+
+  it('un ciclo heredado dice desde el aviso, con la misma cifra: su primer aviso, no el vencimiento (decisión del usuario, 05/11/2026)', () => {
+    const heredado = cerrado({
+      ...INTERNO, venc: '2025-06-30', aviso_regla: null, primer_aviso: '2026-02-02', inicio_tramos: '2026-02-02', heredado: true,
+      pudo_avisar: false, fecha_regla: '2025-05-01', avisos_rpad: ['2026-02-02'], recibido: '2026-09-10', carga: '2026-09-10', cierre: '2026-09-10'
+    });
+    const v = vista([heredado], { dias: 'corridos' });
+    assert.equal(v.casos[0].recibido.texto, '220 días corridos desde el aviso');
+    assert.equal(v.casos[0].carga.texto, 'en el día');
+    assert.equal(cifraDel(v, 'interna', 'produccion').valor, 220);
   });
 });

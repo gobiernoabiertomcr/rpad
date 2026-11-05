@@ -70,7 +70,7 @@ export const INSIGNIAS = Object.freeze({
 // Las tarjetas: el valor arriba del rótulo (en hasta dos líneas), con un borde fino
 const TARJETA = { separacion: 6, relleno: 7, entre: 4, abajo: 5.5, radio: 6 };
 // La tabla: relleno a los costados de cada celda y arriba y abajo de cada fila; el encabezado va en hasta 2 líneas y cada celda en
-// hasta LINEAS_POR_CELDA (si no entra, se corta con "…"), así ninguna fila es más alta que una hoja
+// hasta LINEAS_POR_CELDA, salvo que la tabla pida otras (si no entra, se corta con "…"), así ninguna fila es más alta que una hoja
 const TABLA = { relleno: 3, arriba: 5, abajo: 4.5 };
 const LINEAS_DEL_ENCABEZADO = 2;
 const LINEAS_POR_CELDA = 4;
@@ -335,7 +335,8 @@ const prepararInsignia = (doc, texto, colores, ancho) => {
 
 // Una tabla de grilla fina (el encabezado en negrita en el acento y una línea fina debajo de cada fila) que ocupa el ancho útil.
 // - columnas: [{ titulo, ancho }]: el ancho es la parte del ancho útil que le toca (se reparte en proporción).
-// - filas: [[texto de cada celda]]; cada celda va en hasta LINEAS_POR_CELDA líneas (si no entra, se corta con "…").
+// - filas: [[texto de cada celda]]; cada celda va en hasta `lineas` líneas, de entrada LINEAS_POR_CELDA (si no entra, se corta con "…");
+//   el encabezado sigue siempre con LINEAS_DEL_ENCABEZADO.
 // - estados (opcional): uno por fila, la clave de INSIGNIAS de esa fila; con una, la última celda se dibuja como la insignia de ese
 //   estado (sin estado, o con uno que no está en INSIGNIAS, como texto).
 // - cabeza (opcional): un elemento preparado ({ alto, dibujar(y) → y }: la cabeza de su sección o el título de su grupo) que la tabla
@@ -348,7 +349,7 @@ const prepararInsignia = (doc, texto, colores, ancho) => {
 // primera es también la última: lo que tiene que entrar junto con lo de antes, por ejemplo con dibujarJuntos); si una fila no entra en
 // la hoja, sigue en una hoja nueva (con el encabezado de la última que agregó agregarHoja) y repite la cabeza, si la hay, y el
 // encabezado de la tabla. Sin filas no dibuja nada, tampoco la aclaración (alto 0).
-export const prepararTabla = (doc, { columnas, filas, estados = [], cabeza = null, aclaracion = null }) => {
+export const prepararTabla = (doc, { columnas, filas, estados = [], cabeza = null, aclaracion = null, lineas = LINEAS_POR_CELDA }) => {
   const pesos = columnas.map(c => (Number(c.ancho) > 0 ? Number(c.ancho) : 1));
   const anchos = pesos.map(p => (CONTENIDO * p) / suma(pesos));
   const xs = anchos.map((_, i) => IZQUIERDA + suma(anchos.slice(0, i)));
@@ -369,7 +370,7 @@ export const prepararTabla = (doc, { columnas, filas, estados = [], cabeza = nul
     const colores = typeof clave === 'string' && Object.hasOwn(INSIGNIAS, clave) ? INSIGNIAS[clave] : null;
     const celdas = columnas.map((_, i) => (i === ultima && colores
       ? prepararInsignia(doc, String(fila[i] ?? ''), colores, anchoTexto(i))
-      : celdaDeTexto(fila[i], i, { fuente: NORMAL, tamano: LETRA.celda, lineas: LINEAS_POR_CELDA, color: COLOR.tinta })));
+      : celdaDeTexto(fila[i], i, { fuente: NORMAL, tamano: LETRA.celda, lineas, color: COLOR.tinta })));
     return { celdas, alto: altoDe(celdas) };
   });
 

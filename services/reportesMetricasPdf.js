@@ -45,7 +45,7 @@ const COLOR_DE_LA_CINTA = Object.freeze({ tinta: COLOR.tinta, violeta: VIOLETA, 
 
 // Los textos fijos de la pestaña (public/reportes.html y public/js/reportes.js): la página los escribe en su HTML y en reportes.js, y el
 // PDF los toma de acá (también las funciones de abajo que arman lo mismo que la pestaña: textoDelDesglose, textoDeLoQueFalta,
-// textoDeDondeSale, textoDelMesManual, textoSinManuales y textoDelPieDeLosCasos). tests/reportes-frontend.test.js comprueba que son los
+// textoDeDondeSale, textoDelMesManual y textoSinManuales). tests/reportes-frontend.test.js comprueba que son los
 // de la pestaña: si cambia uno allá, falla
 export const TEXTOS_DE_LA_PESTANA = Object.freeze({
   estadisticos: Object.freeze({ mediana: 'Mediana', promedio: 'Promedio' }),
@@ -193,9 +193,6 @@ export const textoDelMesManual = (mes, anio) => {
 
 // Sin métricas manuales en el año: «Todavía no hay métricas manuales cargadas en 2026.»
 export const textoSinManuales = (anio) => `Todavía no hay métricas manuales cargadas en ${anio}.`;
-
-// Lo que va debajo de la lista de casos: «Debajo de cada fecha, los días hábiles del tramo o su estado.»
-export const textoDelPieDeLosCasos = (dias) => `Debajo de cada fecha, los ${T.dias[elegido(dias, DIAS)]} del tramo o su estado.`;
 
 // =====================================================
 // Piezas: lo que va adentro de un recuadro o de una columna ({ alto, dibujar(y, x) })
@@ -679,12 +676,18 @@ const celdaDeFecha = (dia, textos) => {
   return debajo ? `${fechaCorta(dia)}\n${debajo}` : fechaCorta(dia);
 };
 
+// Las líneas de una celda de los destildados: la fecha y, debajo, la frase del servidor («221 días hábiles desde que se recibió», con
+// su origen o lo que fue el aviso), que no se corta (spec 2026-11-05-metricas-frase-en-los-casos, 9). Con 5, un título y un área largos
+// ya se cortan. Las de las otras tablas, las de siempre
+const LINEAS_DE_LOS_DESTILDADOS = 6;
+
 // Los casos destildados (los ciclos de los datasets que no cuentan: vista.casos con `contar` false), de las dos gestiones, con las
 // columnas de la lista de casos de la pestaña y la gestión; sin destildados, nada
-const elementosDeLosDestildados = (doc, vista, dias) => {
+const elementosDeLosDestildados = (doc, vista) => {
   const filas = lista(vista.casos).filter((fila) => esObjeto(fila) && fila.contar === false);
   if (filas.length === 0) return [];
   const tabla = prepararTabla(doc, {
+    lineas: LINEAS_DE_LOS_DESTILDADOS,
     columnas: [
       { titulo: 'Dataset', ancho: 2.9 }, { titulo: 'Gestión', ancho: 0.95 }, { titulo: 'Vencimiento', ancho: 1.15 }, { titulo: 'Aviso', ancho: 2 },
       { titulo: 'Nota DGMIT', ancho: 1.35 }, { titulo: 'Recibido el', ancho: 1.45 }, { titulo: 'Carga', ancho: 1.1 }
@@ -708,10 +711,7 @@ const elementosDeLosDestildados = (doc, vista, dias) => {
       ];
     })
   });
-  return [
-    [prepararSeccion(doc, { titulo: `Los casos destildados (${filas.length})`, derecha: 'No cuentan en ninguna cifra de este PDF' }), tabla],
-    [prepararParrafo(doc, textoDelPieDeLosCasos(dias), { tamano: LETRA.pie })]
-  ];
+  return [[prepararSeccion(doc, { titulo: `Los casos destildados (${filas.length})`, derecha: 'No cuentan en ninguna cifra de este PDF' }), tabla]];
 };
 
 // =====================================================
@@ -960,7 +960,7 @@ export const renderMetricasDelAnio = async (datos, { generado }) => {
       const aviso = lista(circuito[gestion]).find((t) => esObjeto(t) && t.clave === 'aviso');
       return [seccion, prepararParrafo(doc, texto(objeto(aviso?.vacio).titulo) || `Sin casos en ${anio}`, { color: COLOR.tinta })];
     }),
-    ...elementosDeLosDestildados(doc, vista, dias)
+    ...elementosDeLosDestildados(doc, vista)
   ]);
 
   // 3. El contexto y el trabajo del RPAD
