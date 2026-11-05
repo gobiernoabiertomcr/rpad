@@ -2200,7 +2200,10 @@ describe('Correos → Estado: la última corrida de los recordatorios', () => {
       try {
         const data = await pedirEstado();
         assert.equal(data.eventos, null);
-        assert.deepEqual(data.alertas.at(-1), SIN_ESTADO);
+        // Después va la del aviso diario, que usa la misma tabla (spec 2026-11-04-agenda-aviso-y-dependencia, 6)
+        assert.equal(data.diario, null);
+        assert.deepEqual(data.alertas.at(-2), SIN_ESTADO);
+        assert.equal(data.alertas.at(-1).tipo, 'diario-sin-estado');
         assert.deepEqual(data.alertas.filter(esDeEventos), [SIN_ESTADO]);
       } finally {
         await query('ALTER TABLE mi_espacio_eventos_corridas_oculta RENAME TO mi_espacio_eventos_corridas');

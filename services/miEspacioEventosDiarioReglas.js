@@ -3,9 +3,9 @@
  * calendario por parámetro. El mail sale a las 14:00 de un día hábil y, a los superiores de quien cargó algo después, a las 8:05 del
  * día del evento. En el código no se llama «agenda» a secas: es otra cosa que la Agenda de pedidos de Reportes.
  */
-import { esFechaIso } from './notasDigitalesCalendario.js';
+import { esFechaIso, sumarDias } from './notasDigitalesCalendario.js';
 import { diaLargo } from './miEspacioResumen.js';
-import { listaConY } from './miEspacioEventosReglas.js';
+import { cuandoFue, itemDeEvento, listaConY } from './miEspacioEventosReglas.js';
 import { nombreCorto } from './miEspacioReglas.js';
 import { superioresDe } from './usuariosReglas.js';
 
@@ -78,3 +78,120 @@ export const mensajeDeLaCasilla = ({ recibir, alguienDepende }) => {
     ? 'Ya no te llega tu agenda por mail. Lo de quienes dependen de vos te llega igual.'
     : 'Ya no te llega tu agenda por mail.';
 };
+
+/**
+ * Los días que cubre el mail de las 14:00 (spec, 5.3): de mañana al próximo día hábil inclusive, cada uno. Un viernes trae el sábado, el
+ * domingo y el lunes; antes de un feriado, también ese feriado.
+ */
+export const diasDelAviso = (hoy, calendario) => {
+  const hasta = calendario.proximoDiaHabil(sumarDias(hoy, 1));
+  const dias = [];
+  for (let dia = sumarDias(hoy, 1); dia <= hasta; dia = sumarDias(dia, 1)) dias.push(dia);
+  return dias;
+};
+
+// La clave de lo que ya se le informó a una persona de un evento para una fecha
+export const claveDeInformado = (eventoId, usuarioId, fecha) => `${eventoId}|${usuarioId}|${fecha}`;
+
+// Un Público se distingue antes que nada, aunque los datos vinieran mal (con `compartido` también)
+const esPublico = (evento) => evento.publico === true;
+const conMinuscula = (texto) => texto.charAt(0).toLowerCase() + texto.slice(1);
+
+// Lo que dice debajo de un evento propio: de quién es o quién lo ve, con el texto del servidor (itemDeEvento, que es una sola fuente)
+const marcaDe = (evento, contexto) => {
+  const { quien_texto: quien } = itemDeEvento(evento, contexto);
+  if (esPublico(evento)) return quien;
+  return evento.compartido === true ? `Laboral, ${conMinuscula(quien)}` : 'Solo vos lo ves';
+};
+
+/**
+ * Lo que recibe una persona en un aviso (spec 2026-11-04-agenda-aviso-y-dependencia, 5.2 a 5.4), o null si no le toca ningún mail.
+ * `persona` y `usuarios` son las filas de `usuariosDelAviso`; `eventos`, los de `eventosDelAviso`, de hoy a la última fecha del aviso, por
+ * fecha y hora; `informados`, un Set de `claveDeInformado`; `momento`, 'tarde' (14:00) o 'manana' (8:05); `ahora`, 'AAAA-MM-DD HH:MM[:SS]'.
+ * Devuelve `{ propios, gente, informa, dias, soloHoy }`:
+ * - `propios`, solo con la casilla: los que creó, de los tres tipos, y los Laborales de otra persona en los que está (haber apagado su
+ *   recordatorio no los saca), `{ fecha, desde, titulo, detalle, marca }`;
+ * - `gente`, siempre: los Públicos de quien tiene a esta persona en su cadena, sean o no de los que marcó, `{ fecha, desde, hasta, texto,
+ *   nuevo }`. De un Público de otra persona, **ni el título ni el detalle: acá no se leen**, y por eso los Públicos ajenos se separan
+ *   antes de hacer nada más con el evento. Uno que no es de su gente no entra, aunque se lo muestren: a quien solo fue elegida no le llega
+ *   nada;
+ * - `informa`: lo que queda informado si el mail sale, `{ evento_id, fecha }`.
+ * A las 14:00 trae los días de `diasDelAviso` y, a un superior, los rezagados de hoy. A las 8:05, solo si tiene un rezagado: entonces trae
+ * todo hoy, con `nuevo` en lo sin informar. Un rezagado es un Público de su gente, de hoy, sin informar, publicado antes de hoy (o sin dato:
+ * los de antes de esta entrega) y que no empezó: lo que se carga y se realiza en el mismo día no pasa por la agenda.
+ */
+export const mailDeLaPersona = ({ persona, eventos, informados, momento, ahora, calendario, usuarios }) => {
+  const hoy = ahora.slice(0, 10);
+  const hora = ahora.slice(11, 16);
+  const activos = usuarios.filter((fila) => fila.activo).map((fila) => ({ id: fila.id, nombre: fila.nombre_completo }));
+  const contexto = { usuarioId: persona.id, ahora, feriados: new Set(), usuarios: activos };
+  const dias = momento === 'tarde' ? diasDelAviso(hoy, calendario) : [hoy];
+  const enLosDias = new Set(dias);
+  const sinInformar = (evento) => !informados.has(claveDeInformado(evento.id, persona.id, evento.fecha));
+
+  const gente = [];
+  const propios = [];
+  const rezagados = [];
+  for (const evento of eventos) {
+    if (esPublico(evento) && evento.creado_por !== persona.id) {
+      if (!evento.creador_activo || !superioresDe(evento.creado_por, usuarios).some((fila) => fila.id === persona.id)) continue;
+      const rezagado = evento.fecha === hoy && sinInformar(evento) && evento.desde > hora
+        && (evento.publicado_at === null || evento.publicado_at.slice(0, 10) < hoy);
+      const item = {
+        evento_id: evento.id, fecha: evento.fecha, desde: evento.desde, hasta: evento.hasta,
+        texto: `${nombreCorto({ id: evento.creado_por, nombre: evento.creador }, activos)}: ${evento.texto_publico}`,
+        nuevo: momento === 'tarde' ? rezagado : sinInformar(evento)
+      };
+      if (rezagado) rezagados.push(item);
+      if (rezagado || enLosDias.has(evento.fecha)) gente.push(item);
+      continue;
+    }
+    if (!persona.eventos_por_mail || !enLosDias.has(evento.fecha)) continue;
+    const esSuyo = evento.creado_por === persona.id;
+    const estaEnElLaboral = evento.compartido === true
+      && (evento.para_todos === true || evento.personas.some((fila) => fila.id === persona.id));
+    if (!esSuyo && !estaEnElLaboral) continue;
+    propios.push({
+      evento_id: evento.id, fecha: evento.fecha, desde: evento.desde, hasta: evento.hasta, titulo: evento.titulo, detalle: evento.detalle,
+      marca: marcaDe(evento, contexto)
+    });
+  }
+
+  if (momento === 'manana' && rezagados.length === 0) return null;
+  if (propios.length === 0 && gente.length === 0) return null;
+  return {
+    propios, gente, dias,
+    soloHoy: momento === 'manana' || (propios.length === 0 && gente.every((item) => item.fecha === hoy)),
+    informa: gente.map((item) => ({ evento_id: item.evento_id, fecha: item.fecha }))
+  };
+};
+
+// El resultado de una corrida, para Correos → Estado: «Enviados: 3.», «Día no hábil: no se manda.», con « Fallidos: 1.» y « Errores: …»
+const LARGO_DEL_RESULTADO = 1000;
+export const textoDelResultadoDelDiario = ({ dia_habil: diaHabil, enviados = 0, fallidos = 0, errores = [] }) => {
+  const partes = [diaHabil === false ? 'Día no hábil: no se manda.' : `Enviados: ${enviados}.`];
+  if (fallidos > 0) partes.push(`Fallidos: ${fallidos}.`);
+  if (errores.length > 0) {
+    partes.push(`Errores: ${errores.map(({ usuario_id: id, error }) => (id ? `persona ${id}: ${error}` : error)).join('; ')}`);
+  }
+  return partes.join(' ').slice(0, LARGO_DEL_RESULTADO);
+};
+
+// La línea de Correos → Estado (spec, 6). `corrida`: la de `leerCorridaDelDiario`, o null
+export const textoDeLaCorridaDelDiario = (corrida, ahora) => {
+  if (corrida === null || corrida === undefined) return 'Aviso diario de la agenda: sin registro todavía.';
+  const cuando = cuandoFue(corrida.inicio, ahora);
+  if (corrida.en_curso === true) return `Aviso diario de la agenda: corrida en curso, desde ${cuando}.`;
+  const linea = `Aviso diario de la agenda: última corrida ${cuando}.`;
+  return typeof corrida.resultado === 'string' && corrida.resultado !== '' ? `${linea} ${corrida.resultado}` : linea;
+};
+
+// La alerta de Correos → Estado, si la última corrida terminó con errores
+export const alertasDeLaCorridaDelDiario = (corrida, ahora) => (corrida?.con_errores === true ? [{
+  tipo: 'diario-con-errores', nivel: 'error',
+  mensaje: `La última corrida del aviso diario de la agenda (${cuandoFue(corrida.inicio, ahora)}) terminó con errores: ${corrida.resultado ?? 'sin detalle'}`
+}] : []);
+
+export const alertaSinEstadoDelDiario = () => ({
+  tipo: 'diario-sin-estado', nivel: 'advertencia', mensaje: 'No se pudo leer la última corrida del aviso diario de la agenda.'
+});

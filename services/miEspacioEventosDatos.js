@@ -62,7 +62,7 @@ const VISTA_PUBLICA = `(e.publico = 1 AND e.compartido = 0 AND c.activo = 1 AND 
 const VISIBLES = `(e.creado_por = ? OR ${ELEGIDA} OR (e.compartido = 1 AND e.para_todos = 1) OR ${VISTA_PUBLICA})`;
 
 // Las personas de varios eventos, en una consulta: un Map de cada id a sus filas, por nombre
-const personasDe = async (eventoIds, conexion) => {
+export const personasDe = async (eventoIds, conexion) => {
   const porEvento = new Map(eventoIds.map((id) => [id, []]));
   if (eventoIds.length === 0) return porEvento;
   const [filas] = await conexion.query(

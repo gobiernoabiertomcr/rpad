@@ -11,6 +11,18 @@ let servidor, api, usuarios;
 // El 404 del Informe anual de un año sin foto (1999 nunca la tiene)
 const SIN_FOTO_DEL_ANIO = 'Todavía no hay foto de ese año: se saca el 10/01 del año siguiente.';
 
+// El aviso diario de la agenda viaja en /cron/cambios-pendientes: este archivo usa la base del .env, así que corre con su candado tomado en otra
+// conexión: termina «ocupado», sin escribir ni mandar nada (spec 2026-11-04-agenda-aviso-y-dependencia, 6)
+let conexionDelDiario;
+before(async () => {
+  conexionDelDiario = await db().getConnection();
+  await conexionDelDiario.query("SELECT GET_LOCK('rpad_mi_espacio_diario', 10)");
+});
+after(async () => {
+  await conexionDelDiario?.query("SELECT RELEASE_LOCK('rpad_mi_espacio_diario')");
+  conexionDelDiario?.release();
+});
+
 before(async () => {
   servidor = await iniciarServidor();
   api = crearCliente(servidor.url);
