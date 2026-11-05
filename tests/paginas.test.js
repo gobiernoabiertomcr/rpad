@@ -68,8 +68,9 @@ const VERSION_CSS = '20261109';
 // ficha, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; las últimas subidas, solo comentarios sobre requiere nota y el anexo
 // de la reiteración; las notas DGMIT en la lista, el circuito, la cinta y los movimientos, y después cargar, corregir y anular notas
 // DGMIT desde la página, spec 2026-10-24-notas-dgmit; después, #cargar-nota abre el formulario con el dataset, el link de «Para
-// completar» de Métricas, spec 2026-10-24-metricas-y-reportes, 2.2): su versión es propia
-const VERSION_SEGUIMIENTO = '20261129';
+// completar» de Métricas, spec 2026-10-24-metricas-y-reportes, 2.2; el estado del área en su propia tarjeta, spec
+// 2026-11-05-circuito-diseno, 6): su versión es propia
+const VERSION_SEGUIMIENTO = '20261130';
 // reportes.js (la página pasa a ser «Métricas y Reportes», con la pestaña Métricas: spec 2026-10-24-metricas-y-reportes), que hasta
 // ahora se cargaba sin ?v=; después, los resultados, el contexto, el trabajo, las áreas y «Para completar»; después, la tarjeta Avisos
 // del RPAD en lugar del Historial y sin la del Cumplimiento; después, la pestaña Reportes con los siete reportes en dos grupos;
