@@ -6,6 +6,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-27-feriados-en-notas-design.md`
 - `docs/superpowers/specs/2026-10-24-metricas-y-reportes-design.md`
 - `docs/superpowers/specs/2026-11-03-reiteracion-bimestral-design.md`
+- `docs/superpowers/specs/2026-11-05-metricas-frase-en-los-casos-design.md`
 
 ## Archivos
 
@@ -40,6 +41,9 @@ reportesController: los reportes PDF, con sus consultas.
   `duracion(desde, hasta, dias, calendario)` con piso 0 (`diasHabilesTranscurridos` del calendario o `diasEntre`).
   Un avisado ya vencido no cuenta en la anticipación (el resto se cuenta desde ese primer aviso); un ciclo sin el aviso de la regla que no estaba vencido en su primer aviso no cuenta en los tramos que empiezan en el aviso; con origen `fuente_publica` no cuenta la respuesta del área (y la carga cuenta desde que se obtuvo la fuente);
   `venc` null no cuenta en nada que necesite el vencimiento; una reprogramación no tiene datos ni carga.
+  Cada número de «Los casos» dice su unidad y desde cuándo cuenta («308 días corridos desde el aviso», «45 días corridos desde la nota», «3 días corridos desde que se recibió», «en curso, 20 días corridos desde la nota»; lo arma `filaDe`).
+  Un ciclo `heredado` (sin aviso de la regla, que el RPAD no pudo avisar a tiempo y cuyo primer aviso llegó después del vencimiento) cuenta desde ese primer aviso, no desde el vencimiento (decisión del usuario del 05/11/2026): contarlo desde el vencimiento le atribuiría a la DGMIT y a la DIT días anteriores a todo aviso, incluso de antes del alta.
+  Por eso un número de Métricas puede ser menor que los días del Seguimiento para el mismo ciclo: el Seguimiento mide del vencimiento a la carga o, en un ciclo abierto, a hoy, y esa medida en Métricas es la mediana o el promedio de «Actualizados a tiempo».
   Un tramo terminado cuenta en el año de su hito final; en curso, solo la respuesta y la producción, en un ciclo abierto («4 sin datos registrados todavía, hace 41 días hábiles (mediana)», siempre con la unidad:
   Ruling 11;
   «Preparación y carga» nunca está en curso); el tramo de la DGMIT sin nota es «pendiente de carga», sin días, y sin ninguna nota DGMIT vigente en todo el RPAD dice «Todavía no hay notas DGMIT cargadas» (`SIN_NOTAS_DGMIT`).
