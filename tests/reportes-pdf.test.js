@@ -1969,38 +1969,144 @@ const hashesPorHoja = (pdf) => contenidoPorHoja(pdf).map((contenido) => createHa
 // comprobado con el diff de texto hoja por hoja contra el código de antes.
 // La hoja 3 de «con una nota DGMIT» se volvió a tomar por la frase de los casos destildados (spec 2026-11-05-metricas-frase-en-los-casos,
 // 4, 5 y 9): sus únicos cambios son los textos de esas filas y el párrafo «Debajo de cada fecha…», que ya no va, comprobado con el diff de
-// texto hoja por hoja contra el código de antes
+// texto hoja por hoja contra el código de antes.
+// La hoja 1 de los cinco PDF, y las siguientes de «con una nota DGMIT», se volvieron a tomar por el diseño del circuito (spec
+// 2026-11-05-circuito-diseno, 7): cada PDF tiene las mismas palabras que antes, sin el encabezado y el pie de cada hoja, y en «con una
+// nota DGMIT» los resultados vuelven a la hoja 1, de 5 hojas a 4, comprobado con el diff de texto contra el código de antes
 const REFERENCIA_DE_LOS_PDF = {
   'Métricas: los casos, con las métricas manuales': [
-    'a11f3dd9362874adb8b7a0305c606a6aeb74c14bece1319fced68887f343d511',
+    '17a60a1c9e4c1a59decae2a74a13ed8db094e4483810d55127d82dd8d5e060b8',
     '596d156d8dc0c1317dd895d1b762c2b6abae85400ac43c0e1659f89d71651e07',
     'c4bed0f2a9f3e9e868c2e7331572bc3f1d5d23c07f979b094f8c8b477624cb5b',
     'ba74bcbe58b1843ae77d30ec527cf3c0e4faa0a43d119ba71dfa4a99945316b3'
   ],
   'Métricas: con una nota DGMIT, promedio en días corridos y dos destildados': [
-    'b0cfd809863b2485984cd4e8d2ae3eef24f652c1d5c25e1faaf540c03aed2cad',
-    'de9baea351b336e82f0c234d8f9f16bd087e104f2e1e286d59f5a665f1cff89f',
-    'a3078b4d38813d41ff31e4273c9d7a434c4e086e0c68eda87cbdff88035229f8',
-    '68ca4866667a23170de2a3f33342c6b0b25b83eb9042d0f403979173f7cfc6cf',
-    '64dfb481191d59fd35d552da99b6432ace0e31e8ee271445cf188e39ba1746ad'
+    '96141344e97d6d5c3a961bb42c2e4a466ec9465e29b46017d86f099d328f7c9e',
+    'abdec38a5a2474666328eb2fcdbe6bcda3d77b52b73eb125ba8a912cb4feec32',
+    '75b86eb2a535db8e19ca9ac126e3c1da96bce10e542ad4a35262a6862289d999',
+    '544eef87525383ac55995246ccdc8a93775ae9e597c965983009852f41adb003'
   ],
   'Métricas: un año cerrado sin foto': [
-    '63787b06d0a55670d7aaf1195caa960faaf60e3a5ffad6d714ecb21cc8a96513',
+    '2627c69e982243c91edd5ec4e0b35e70d56c75b83ef515cbed63d9b293b93c56',
     '9ba43c0cb18799abffdbe57a60ea6a8e7d05e460d3cd9dd5dfff4090a0d22d32',
     '644352bcf71cba6e2b853d7d5900563625fc059a88403cd946ded88b7e0370f6',
     'b41f65872e8c92ff1ce1dfb7cbf89e4229f663ca2b9c8449b9427b852e6c4168'
   ],
   'Informe anual: el primer año con foto': [
-    'e55832388cdde98ce4bf334f4d65e6f63002c4054c7172b6a1cccfbce022f78d',
+    '844a9bc4cfe1913e5236436b6faecbd3e16ba65eb7314be6669306a30066dbd0',
     '4502cbd20b01bae423e78651304946d30368c2368f6accb5ed27d73b66a6e502',
     'e185bd524c985140c2b6a206eea3b2a8a49e57e082d1a391b99b949c056bf53a'
   ],
   'Informe anual: con el año anterior y los logros': [
-    'e55832388cdde98ce4bf334f4d65e6f63002c4054c7172b6a1cccfbce022f78d',
+    '844a9bc4cfe1913e5236436b6faecbd3e16ba65eb7314be6669306a30066dbd0',
     '4502cbd20b01bae423e78651304946d30368c2368f6accb5ed27d73b66a6e502',
     '7794fdd5f3bfc3011d0d06ad65ff5bcfc1ef4e89025a7de01e15609639e41c33'
   ]
 };
+
+// =====================================================
+// El circuito: la banda de quién actúa y la tarjeta de cada etapa (spec 2026-11-05-circuito-diseno, 7)
+// =====================================================
+
+describe('el circuito: la banda y la etapa (spec 2026-11-05-circuito-diseno)', () => {
+  // Las letras del dibujante: las siglas también salen en la insignia, en letra más chica
+  const LETRA_DE_LA_BANDA = 8;
+  const LETRA_DEL_NOMBRE = 7.8;
+  const LETRA_DE_LA_CIFRA = 13;
+  const BANDA_EXTERNA = ['RPAD', 'DGMIT y DA', 'Área', 'DDPC', 'Portal'];
+  const BANDA_INTERNA = ['RPAD', 'DGMIT y DIT', 'DDPC', 'Portal'];
+  const NOMBRES_EXTERNA = ['Aviso anticipado', 'Redacción y entrega de', 'Respuesta del área', 'Preparación y carga'];
+  const NOMBRES_INTERNA = ['Aviso anticipado', 'Producción del relevamiento', 'Preparación y carga'];
+  const SIGLAS = new Set([...BANDA_EXTERNA, ...BANDA_INTERNA]);
+
+  // Lo de cada gestión en la hoja: la banda, de izquierda a derecha, y lo que hay entre esa banda y la siguiente. `base` se mide desde
+  // abajo: «más abajo en la hoja» es una base menor
+  const gestiones = (textos) => {
+    const bandas = textos.filter(t => t.tamano === LETRA_DE_LA_BANDA && t.fuente.includes('Bold') && SIGLAS.has(t.texto));
+    const externa = bandas.slice(0, BANDA_EXTERNA.length);
+    const interna = bandas.slice(BANDA_EXTERNA.length);
+    const entre = (arriba, abajo) => textos.filter(t => t.base < arriba && t.base > abajo);
+    return {
+      externa: { banda: externa, debajo: entre(externa[0].base, interna[0].base) },
+      interna: { banda: interna, debajo: entre(interna[0].base, 0) }
+    };
+  };
+
+  const controlarLaHoja = (textos) => {
+    const { externa, interna } = gestiones(textos);
+    assert.deepEqual(externa.banda.map(t => t.texto), BANDA_EXTERNA);
+    assert.deepEqual(interna.banda.map(t => t.texto), BANDA_INTERNA);
+    for (const [g, nombres] of [[externa, NOMBRES_EXTERNA], [interna, NOMBRES_INTERNA]]) {
+      assert.equal(new Set(g.banda.map(t => t.base)).size, 1, 'la banda, a una misma altura');
+      for (let i = 1; i < g.banda.length; i++) assert.ok(g.banda[i].x > g.banda[i - 1].x, 'la banda, de izquierda a derecha');
+      const etapas = nombres.map((nombre, i) => {
+        const t = g.debajo.find(l => l.texto === nombre && l.tamano === LETRA_DEL_NOMBRE);
+        assert.ok(t, `falta la etapa "${nombre}"`);
+        assert.ok(Math.abs(t.x - g.banda[i].x) < 12, `"${nombre}" va debajo de "${g.banda[i].texto}"`);
+        return t;
+      });
+      assert.equal(new Set(etapas.map(t => t.base)).size, 1, 'los nombres de las etapas, a una misma altura');
+      const cifras = g.debajo.filter(t => t.tamano === LETRA_DE_LA_CIFRA);
+      assert.ok(cifras.length > 0);
+      assert.equal(new Set(cifras.map(t => t.base)).size, 1, 'las cifras, a una misma altura');
+      assert.ok(cifras[0].base < etapas[0].base, 'el nombre, arriba de la cifra');
+      // Debajo del Portal no hay tarjeta: nada en su columna hasta el pie de las tarjetas, aparte de lo que dice su banda
+      const portal = g.banda.at(-1);
+      const pie = g.debajo.find(t => t.texto === 'DDPC' && t.tamano < LETRA_DE_LA_BANDA).base;
+      assert.deepEqual(g.debajo.filter(t => t.x >= portal.x - 1 && t.base < portal.base - 15 && t.base >= pie).map(t => t.texto), []);
+    }
+  };
+
+  it('en el PDF de Métricas: la banda arriba y, debajo de cada sigla, su etapa', async () => {
+    const [primera] = textosPorHoja(await renderMetricas(metricasDeLosCasos()));
+    controlarLaHoja(primera);
+  });
+
+  it('el Informe anual imprime la misma banda y las mismas etapas', async () => {
+    const [primera] = textosPorHoja(await renderInforme());
+    controlarLaHoja(primera);
+  });
+
+  it('un tramo que no llega no tira: esa columna queda sin etapa', async () => {
+    const datos = metricasDeLosCasos();
+    datos.vista.circuito.externa = datos.vista.circuito.externa.filter(t => t.clave !== 'respuesta');
+    const [primera] = lineasPorHoja(await renderMetricas(datos));
+    assert.ok(primera.includes('Prepara los datos'), 'la banda del Área sigue');
+    assert.ok(!primera.includes('Respuesta del área'));
+  });
+
+  // Lo más largo de cada campo: los textos de vistaDe con tres cifras
+  const conLoMasLargo = () => {
+    const datos = metricasDeLosCasos({ estadistico: 'promedio', dias: 'corridos' });
+    const cifra = { valor: 144, texto: '144', unidad: 'días corridos', debajo: 'promedio de 100 ciclos', ciclos: 100, ciclos_texto: '100 ciclos', en_el_dia: false, orientativo: true };
+    const enCurso = { n: 100, valor: 155, texto: '100 sin datos registrados todavía, hace menos de 1 día corrido (promedio)' };
+    const tramoDe = (gestion, clave) => datos.vista.circuito[gestion].find(t => t.clave === clave);
+    Object.assign(tramoDe('externa', 'aviso'), { cifra });
+    Object.assign(tramoDe('externa', 'tramite'), {
+      cifra: null, pendientes_texto: null,
+      vacio: { titulo: 'Todavía no hay notas DGMIT cargadas', texto: 'Se empieza a contar cuando haya notas DGMIT cargadas' }
+    });
+    Object.assign(tramoDe('externa', 'respuesta'), { cifra, vacio: null, en_curso: enCurso });
+    Object.assign(tramoDe('externa', 'carga'), { cifra: { ...cifra, texto: 'En el día', unidad: '', valor: 0, en_el_dia: true, debajo: 'promedio en días corridos' } });
+    Object.assign(tramoDe('interna', 'produccion'), { cifra, vacio: null, en_curso: enCurso });
+    return datos;
+  };
+
+  it('con lo más largo de cada campo: ninguna línea se corta y nada se pisa ni se sale', async () => {
+    const pdf = await renderMetricas(conLoMasLargo());
+    const [primera] = lineasPorHoja(pdf);
+    assert.deepEqual(primera.filter(l => l.endsWith('…')), []);
+    for (const t of ['Todavía no hay notas', 'Se empieza a contar cuando', 'promedio de 100 ciclos']) assert.ok(primera.some(l => l.includes(t)), `falta "${t}"`);
+    verificarDiagramacion(await diagramacion(() => renderMetricas(conLoMasLargo())));
+  });
+
+  it('las insignias siguen diciendo quién está a cargo, en letra más chica que la banda', async () => {
+    const [primera] = textosPorHoja(await renderMetricas(metricasDeLosCasos()));
+    for (const quien of ['DDPC', 'DGMIT y DA', 'Área', 'DGMIT y DIT']) {
+      assert.ok(primera.some(t => t.texto === quien && t.tamano < LETRA_DE_LA_BANDA), `falta la insignia "${quien}"`);
+    }
+  });
+});
 
 describe('el PDF de Métricas y el Informe anual no cambian', () => {
   const pdfs = [
@@ -2496,7 +2602,7 @@ describe('el nombre de la etapa de la DGMIT y la Dirección Administrativa en lo
     for (const [donde, armar] of circuitos) {
       const [primera] = lineasPorHoja(await armar());
       assert.ok(!primera.some(l => /trámite/i.test(l)), `${donde}: ${primera.filter(l => /trámite/i.test(l)).join(' | ')}`);
-      for (const t of ['Redacción y', 'entrega de nota']) assert.ok(primera.includes(t), `${donde}: falta "${t}" en ${primera.join(' | ')}`);
+      for (const t of ['Redacción y entrega de', 'nota']) assert.ok(primera.includes(t), `${donde}: falta "${t}" en ${primera.join(' | ')}`);
     }
     for (const [donde, datos] of [['Ciclo de vida', cicloDeLosCasos()], ['Ciclo de vida, con una nota DGMIT', cicloDeLosCasos({ mapa: conNotaDgmit() })]]) {
       const [externa] = lineasPorHoja(await renderCiclo(datos));
