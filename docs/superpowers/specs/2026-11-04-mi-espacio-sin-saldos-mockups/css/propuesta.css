@@ -1,0 +1,14 @@
+/* MAQUETA (04/11/2026): lo nuevo de la spec y la barra de la maqueta */
+body { padding-bottom: 72px; }
+.mq-nuevo { outline: 2px dashed #B86E00; outline-offset: 4px; border-radius: 6px; }
+.mq-sin-marcas .mq-nuevo { outline: none; }
+/* Lo que va a la página real: el botón debajo del texto de la bienvenida */
+.me-banda-bienvenida .me-frase-bajada { max-width: 62ch; }
+.me-banda-bienvenida .sg-btn { margin-top: 14px; }
+/* La barra */
+.mq-barra { position: fixed; left: 0; right: 0; bottom: 0; z-index: 3000; padding: 8px 14px; background: #14243B; color: #fff; font-size: .82rem; }
+.mq-barra > #mq-controles { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.mq-grupo { display: inline-flex; align-items: center; gap: 4px; }
+.mq-grupo b { margin-right: 4px; }
+.mq-barra button { padding: 3px 8px; border: 1px solid #fff; border-radius: 4px; background: transparent; color: #fff; font: inherit; cursor: pointer; }
+.mq-barra button[aria-pressed="true"] { background: #fff; color: #14243B; font-weight: 700; }
