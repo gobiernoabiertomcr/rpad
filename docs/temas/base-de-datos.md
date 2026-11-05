@@ -185,7 +185,7 @@ Historia y motivos, en las specs:
   `mi_espacio_diario_envios` (`id`, `usuario_id`, `dia`, `momento` enum('tarde','manana'), `enviado_at`, `success`, único en persona, día y momento, FK con CASCADE): la reserva del mail de cada persona, como la de los recordatorios.
   `mi_espacio_eventos_corridas` suma la fila `id = 2`, la del aviso diario, sin cambiar de forma.
   **Los datos:** un Laboral con `para_todos` 1 quería decir «toda la administración» y con el código nuevo quiere decir todos los usuarios activos: la migración lo pasa a filas sin cambiar quién lo ve y lo deja con `para_todos` 0.
-  Antes borra las filas de quien hoy no es administración: son de un recordatorio apagado, hoy no le dan acceso y convertidas sí.
+  Antes borra las filas de quien hoy no es administración activa: son de un recordatorio apagado, hoy no le dan acceso y convertidas sí.
   Por eso se puede repetir solo antes del Restart del código nuevo: después achicaría a la administración los «Todos» nuevos.
   `rollback-mi-espacio-eventos-diario.sql` va después de volver a los archivos anteriores y antes de los del Público y la agenda: los «para todos» viejos no vuelven y un «Todos» nuevo queda solo para la administración.
 

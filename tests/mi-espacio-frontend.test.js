@@ -7492,6 +7492,10 @@ describe('¿Quién lo ve?: en la página (DOM falso)', () => {
     assert.ok(pagina.estado.toasts.some(([mensaje]) => mensaje === 'Ya no te llega tu agenda por mail.'));
     await pagina.tocar(pagina.el('ag-finde'));
     assert.equal(casilla.checked, false, 'no vuelve a prendida');
+    // Tampoco con un mes que llega después: la respuesta de esta prueba sigue diciendo que está prendida
+    await pagina.tocar(pagina.el('ag-siguiente'));
+    await pagina.correr();
+    assert.equal(casilla.checked, false, 'otro mes no la vuelve atrás');
   });
 
   it('la casilla: si falla, vuelve a como estaba y avisa', async () => {

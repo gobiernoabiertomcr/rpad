@@ -3137,7 +3137,7 @@ function htmlDeLaFraseDelTipo(valores, { superiores = [], aviso = '' } = {}) {
 /**
  * La ayuda debajo de las personas (spec, 2.3), en HTML escapado. La de un Público, con el calendario, dice que quienes se marcan no reciben
  * mail y, si depende de alguien, que el mail les llega igual: si están todas marcadas, «ya están en la lista»; si no (una que se sacó, «Todos»
- * o un evento que se edita), solo que les llega. Decir «ya está» de alguien sin la marca sería falso. La de un Laboral, la suya.
+ * o un evento que se edita y no las tenía), solo que les llega. Decir «ya está» de alguien sin la marca sería falso. La de un Laboral, la suya.
  */
 function htmlDeLaAyudaDeLasPersonas(valores, { superiores = [] } = {}) {
   const tipo = esObjeto(valores) ? valores.tipo : null;
@@ -3364,7 +3364,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // y, ya pedida, el id del pedido; null con el modal cerrado
 const pagina = {
   pestana: PESTANAS[0], resumen: null, licencias: null, filtro: 'todas', horas: null, mes: null, bandaAnimada: false,
-  anioDeLicencias: null, mesDeEventos: null, delMes: null, proximos: null,
+  anioDeLicencias: null, mesDeEventos: null, delMes: null, eventosPorMail: null, proximos: null,
   semana: { finde: false, elegido: null, foco: null, animado: false },
   cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0, nota: 0, topes: 0 },
   modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null,
@@ -6409,8 +6409,7 @@ async function confirmarElBorrado() {
 // 4 y 7) ----
 
 // Una lista de personas para elegir, una sola vez por página (en `pagina[clave]`; si falla, se vuelve a pedir la próxima): `{ lista,
-// motivo }`, con quiénes se puede elegir o, si no llegó, `lista` null y, con un 403 (un rol viejo en el navegador: ya no es
-// administración), el mensaje del servidor en `motivo` («No tenés permiso para compartir eventos.»); con otra falla, ''
+// motivo }`, con quiénes se puede elegir o, si no llegó, `lista` null y, con un 403, el mensaje del servidor en `motivo`; con otra falla, ''
 function pedirUnaListaDePersonas(clave, ruta) {
   pagina[clave] ??= API.pedirJson('GET', ruta).then(
     ({ data }) => ({ lista: listaDe(data), motivo: '' }),
@@ -6602,7 +6601,7 @@ function pintarVistaPrevia() {
 function pintarLaCasilla(delMes) {
   const casilla = porId('ag-eventos-por-mail');
   if (casilla.disabled) return;
-  casilla.checked = delMes.eventos_por_mail === true;
+  casilla.checked = (pagina.eventosPorMail ?? delMes.eventos_por_mail) === true;
   porId('ag-eventos-por-mail-ayuda').textContent = ayudaDeLaCasilla(delMes.alguien_depende);
   porId('ag-por-mail').hidden = false;
 }
@@ -6614,8 +6613,8 @@ async function alCambiarLaCasilla() {
   casilla.disabled = true;
   try {
     const respuesta = await API.pedirJson('PUT', '/mi-espacio/eventos-por-mail', { recibir });
-    // Lo que se vuelve a dibujar (por ejemplo, «Sábado y domingo») no tiene que traer el valor de antes
-    if (esObjeto(pagina.delMes)) pagina.delMes = { ...pagina.delMes, eventos_por_mail: recibir };
+    // Lo que se vuelva a dibujar («Sábado y domingo», o una respuesta del mes pedida antes de tocarla) no tiene que traer el valor de antes
+    pagina.eventosPorMail = recibir;
     avisarLaRespuesta(respuesta);
   } catch (error) {
     casilla.checked = !recibir;

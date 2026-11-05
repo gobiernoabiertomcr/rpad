@@ -12,8 +12,8 @@
 --   mi_espacio_diario_envios: el mail de cada persona, cada día y cada momento (14:00 o 8:05): nunca sale dos veces.
 -- Datos: los Laborales «para todos» querían decir «la administración», y con el código nuevo «para todos» quiere decir todos los
 -- usuarios activos. Se convierten sin cambiar quién los ve: la administración activa pasa a tener su fila y quedan con para_todos en 0.
--- Antes se borran las filas de quien hoy no es administración: son de un recordatorio apagado por alguien que dejó de serlo, hoy no le
--- dan acceso y convertidas le mostrarían el título y el detalle. Las de quien apagó su recordatorio y sigue, se conservan.
+-- Antes se borran las filas de quien hoy no es administración activa: son de un recordatorio apagado por alguien que dejó de serlo o se
+-- desactivó, hoy no le dan acceso y convertidas le mostrarían el título y el detalle. Las de quien apagó su recordatorio y sigue, se conservan.
 -- El código anterior sigue funcionando con todo esto: no conoce lo nuevo y a esos Laborales los lee como elegidas.
 -- ORDEN: correr ANTES de subir el código nuevo, después de migracion-notas-firma-leyenda.sql (phpMyAdmin > base del RPAD > pestaña
 -- SQL, pegar y Continuar). Es obligatoria: el código nuevo lee las columnas en cada pedido de la agenda y del panel de usuarios.
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS `mi_espacio_diario_envios` (
 
 DELETE p FROM `mi_espacio_evento_personas` p
   JOIN `mi_espacio_eventos` e ON e.id = p.evento_id AND e.compartido = 1 AND e.para_todos = 1
-  JOIN `usuarios` u ON u.id = p.usuario_id AND u.rol NOT IN ('superadmin', 'admin', 'editor');
+  JOIN `usuarios` u ON u.id = p.usuario_id AND (u.activo = 0 OR u.rol NOT IN ('superadmin', 'admin', 'editor'));
 
 INSERT IGNORE INTO `mi_espacio_evento_personas` (`evento_id`, `usuario_id`)
   SELECT e.id, u.id FROM `mi_espacio_eventos` e

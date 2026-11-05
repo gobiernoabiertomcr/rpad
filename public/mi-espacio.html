@@ -547,9 +547,8 @@
         .me-persona:disabled { opacity: 0.55; cursor: default; }
         .me-personas[aria-invalid="true"] .me-persona { border-color: var(--sg-rojo); }
         .me-personas-estado { font-size: 0.84rem; color: var(--sg-suave); }
-        /* El tipo de evento (spec 2026-10-29-mi-espacio-evento-publico, 4; la maqueta aprobada): tres opciones para administración y
-           dos (los personales) para un lector o un colaborador; el Laboral de quien ya no es de administración, elegido y
-           deshabilitado (con sus colores: no pierde contraste) */
+        /* Las opciones en dos o tres columnas (spec 2026-10-29-mi-espacio-evento-publico, 4; la barra de «¿Quién lo ve?» es .me-barra-tipos):
+           una deshabilitada conserva sus colores, para no perder contraste */
         .me-opciones.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
         button.me-opcion:disabled { cursor: default; }
         .me-opciones[aria-invalid="true"] .me-opcion { border-color: var(--sg-rojo); }

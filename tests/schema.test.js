@@ -3507,15 +3507,16 @@ describe('migracion-mi-espacio-eventos-diario.sql', () => {
     const exAdministracion = await persona('ex', 'lector');
     const lector = await persona('lector', 'lector');
     const paraTodos = await evento(creadora);
-    await root.query(`INSERT INTO ${enLaBase('mi_espacio_evento_personas')} (evento_id, usuario_id, sin_recordatorio) VALUES (?, ?, 1), (?, ?, 1)`,
-      [paraTodos, apagada, paraTodos, exAdministracion]);
+    await root.query(`INSERT INTO ${enLaBase('mi_espacio_evento_personas')} (evento_id, usuario_id, sin_recordatorio) VALUES (?, ?, 1), (?, ?, 1), (?, ?, 1)`,
+      [paraTodos, apagada, paraTodos, exAdministracion, paraTodos, inactiva]);
     const conPersonas = await evento(creadora, { paraTodos: 0 });
     await root.query(`INSERT INTO ${enLaBase('mi_espacio_evento_personas')} (evento_id, usuario_id) VALUES (?, ?)`, [conPersonas, lector]);
     const privado = await evento(creadora, { compartido: 0, paraTodos: 0 });
 
     await root.query(sql(MIGRACION));
 
-    // Ni quien lo creó, ni la desactivada; quien dejó de ser administración, afuera: hoy no lo ve y no tiene que empezar a verlo
+    // Ni quien lo creó, ni la desactivada, aunque hubiera apagado su recordatorio; quien dejó de ser administración, afuera: hoy no lo ve y no
+    // tiene que empezar a verlo
     assert.deepEqual(await filasDe(paraTodos), [[editor, 0], [apagada, 1]].sort((a, b) => a[0] - b[0]));
     assert.ok(!(await filasDe(paraTodos)).some(([id]) => [creadora, inactiva, exAdministracion, lector].includes(id)));
     const [[fila]] = await root.query(`SELECT compartido, para_todos FROM ${enLaBase('mi_espacio_eventos')} WHERE id = ?`, [paraTodos]);

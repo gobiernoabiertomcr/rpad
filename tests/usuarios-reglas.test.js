@@ -280,6 +280,9 @@ describe('la cadena', () => {
     // Solo quienes están activas, y sin filas no se rompe
     const conDesactivada = CADENA.map((persona) => (persona.id === 3 ? { ...persona, activo: 0 } : persona));
     assert.deepEqual(dependenciaDe(2, conDesactivada).al_desactivar.dependen, []);
+    // Quien depende de ella por encima de alguien ya desactivado también sube: se la nombra
+    const sinElDelMedio = CADENA.map((persona) => (persona.id === 2 ? { ...persona, activo: 0 } : persona));
+    assert.deepEqual(dependenciaDe(1, sinElDelMedio).al_desactivar.dependen, ['Micaela Ojeda', 'Lucía Ortiz']);
     assert.deepEqual(dependenciaDe(7, []), { depende_de_nombre: null, no_elegibles: [7], al_desactivar: { dependen: [], suben_a: null } });
   });
 

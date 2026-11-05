@@ -32,8 +32,10 @@ Historia y motivos, en las specs:
 - Haber apagado «Mi recordatorio» de un evento no lo saca de este mail.
 - Lo de su gente, siempre: los Públicos activos de quien la tiene en su cadena, de un creador activo, solo con el nombre corto y el texto corto, «Micaela: Fuera de la oficina», con la hora y «Hasta las 10:00» si tiene fin.
 - Quien solo fue elegida para ver un Público no recibe nada: el mail es para que los jefes estén enterados, no para quienes lo ven en su agenda (decisión del usuario).
-- Un jefe no ve el título aunque esté marcado para verlo: la marca decide la agenda, y la cadena, el mail. Tampoco lo ve en su agenda, donde un Público siempre llega recortado.
-- De un Público ajeno, `mailDeLaPersona` no lee `titulo`, `detalle`, `personas` ni `vistas`: los tests lo prueban con getters que tiran. No se relaja «para simplificar».
+- Un jefe no ve el título aunque esté marcado para verlo: la marca decide la agenda, y la cadena, el mail.
+  Tampoco lo ve en su agenda, donde un Público siempre llega recortado.
+- De un Público ajeno, `mailDeLaPersona` no lee `titulo`, `detalle`, `personas` ni `vistas`: los tests lo prueban con getters que tiran.
+  No se relaja «para simplificar».
 - Un Laboral no le llega a los jefes de quien lo creó, salvo que los inviten.
 
 ## Lo sin informar
@@ -58,13 +60,18 @@ Historia y motivos, en las specs:
 - `avisoDiarioAislado(momento, calendario, { ahora })` la envuelve y nunca rechaza: a las 8:05 corre sin esperarla, y un rechazo sin manejar tumbaría el proceso con las Notas a mitad.
 - Candado propio, `rpad_mi_espacio_diario`, ni el de las Notas ni el de los recordatorios: ocupado, termina «ocupada» sin escribir, y no da 207.
 - `tests/notificaciones.test.js` y `tests/permisos.test.js` llaman a los crons reales y escribirían en la base del `.env`: toman ese candado en otra conexión antes de todo el archivo.
-- `calendario.error !== null`: no manda y lo anota, y lo sin informar de los jefes sale en la corrida siguiente. Un día no hábil tampoco manda y se anota igual.
+- `calendario.error !== null`: no manda y lo anota, y lo sin informar de los jefes sale en la corrida siguiente.
+  Un día no hábil tampoco manda y se anota igual.
 - `'tarde'` solo a partir de las 14:00 (`paso14`): las rutas manuales se pueden llamar antes.
 - Nunca dos veces y a lo sumo una, el patrón de los recordatorios: se reserva cada mail en `mi_espacio_diario_envios` (`INSERT IGNORE` sobre `usuario_id`, `dia`, `momento`, o un `UPDATE` que retoma uno fallido y terminado), se manda solo si la reserva es de esta corrida y se anotan `success` y `enviado_at`.
   Una reserva sin terminar no se repite.
-- Uno por persona, siempre con `to: [email]`. El texto de nodemailer no va al resultado.
-- La licencia es `deLicenciaOficial`, solo `usuarios_licencias` con `anulada = 0`, y no `ausentesEn`: lo cargado en Mi espacio no frena este mail, que es lo que el usuario leyó al decidirlo. Sus superiores lo siguen recibiendo.
-- Registro: `mi_espacio_eventos_corridas`, fila `id = 2`. Correos → Estado suma su línea en `#nd-diario` y la alerta `diario-con-errores`, de nivel `error`. Sin alerta de «no corrió»: viaja en corridas que ya tienen la suya.
+- Uno por persona, siempre con `to: [email]`.
+  El texto de nodemailer no va al resultado.
+- La licencia es `deLicenciaOficial`, solo `usuarios_licencias` con `anulada = 0`, y no `ausentesEn`: lo cargado en Mi espacio no frena este mail, que es lo que el usuario leyó al decidirlo.
+  Sus superiores lo siguen recibiendo.
+- Registro: `mi_espacio_eventos_corridas`, fila `id = 2`.
+  Correos → Estado suma su línea en `#nd-diario` y la alerta `diario-con-errores`, de nivel `error`.
+  Sin alerta de «no corrió»: viaja en corridas que ya tienen la suya.
 
 ## Sin frenar nada, ni al revés
 
@@ -83,7 +90,8 @@ Historia y motivos, en las specs:
 
 ## Los mails
 
-- Con `plantillaSimple`, en el marco único, sin emojis y con el botón «Ver en Mi espacio» a `mi-espacio.html#agenda`. Cada parte se escapa una sola vez, con `parrafoDelEvento`.
+- Con `plantillaSimple`, en el marco único, sin emojis y con el botón «Ver en Mi espacio» a `mi-espacio.html#agenda`.
+  Cada parte se escapa una sola vez, con `parrafoDelEvento`.
 - Los asuntos, los títulos, las aperturas y las notas al pie, con sus tres variantes, están en la spec, sección 8, y en `avisoDiarioTemplate`.
 - Un mail de las 14:00 que solo trae el grupo «Hoy» usa los textos del de las 8:05.
 

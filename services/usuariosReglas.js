@@ -129,7 +129,8 @@ export const dependenciaDe = (id, usuarios) => {
   const filas = porId(usuarios);
   const fila = filas.get(Number(id));
   const superior = fila && idDelSuperior(fila) !== null ? filas.get(idDelSuperior(fila)) : undefined;
-  const directas = [...filas.values()].filter((otra) => idDelSuperior(otra) === Number(id) && Number(otra.id) !== Number(id) && estaActiva(otra));
+  // Quienes hoy le llegan a esta persona primero: también por encima de alguien ya desactivado, porque lo suyo también sube
+  const directas = [...filas.values()].filter((otra) => estaActiva(otra) && Number(superioresDe(otra.id, usuarios)[0]?.id) === Number(id));
   return {
     depende_de_nombre: superior?.nombre_completo ?? null,
     no_elegibles: [Number(id), ...quienesDependenDe(id, usuarios).map((persona) => Number(persona.id))],
