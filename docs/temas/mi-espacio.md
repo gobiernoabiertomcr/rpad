@@ -98,7 +98,9 @@ mi-espacio.html # Mi espacio (Mi cuenta): pestañas Resumen, Licencias, Horas ex
     Con un error, [].
     La página los muestra en ámbar, debajo del cálculo, y el segundo paso no los repite.
 - El saldo inicial («Mis vacaciones y saldos», sección 4;
-  `camposDelSaldoInicial`, `validarSaldoInicial`, `validarAnio`): el modal se abre solo la primera vez que entra una persona con modalidad (`abrir_saldos` del Resumen); después, desde el Resumen y desde la pestaña Licencias («Cambiar»).
+  `camposDelSaldoInicial`, `validarSaldoInicial`, `validarAnio`): el modal se abre con su botón, nunca solo: en la bienvenida del Resumen, en el aviso de Licencias y de Horas extras y, con el saldo cargado, en el Resumen y en la pestaña Licencias («Cambiar»).
+  Sin el saldo no se carga nada y solo se usan la Agenda y el Resumen con la bienvenida: decisión del usuario, 04/11/2026, para no tocar las reglas (spec 2026-11-04-mi-espacio-sin-saldos).
+  Si alguna vez se quiere cargar sin saldos, antes hay que resolver lo que esa spec lista en su sección 8.
   Tiene los días de vacaciones y los estudios del año (`PUT /anio/:anio`, de dos años antes al siguiente del de hoy, con su texto de las mitades) y «Para arrancar»: lo que quedaba sin usar de cada licencia ordinaria no vencida (las dos anteriores y la del año, sobre lo habilitado ese día: antes del 1/7 la del año no tiene campo), lo usado en el año de franquicias, estudios, atención médica y grupo familiar y, en contrato, las horas no utilizadas («Horas acumuladas», que valen para siempre:
   ver `docs/temas/mi-espacio-acumuladas.md`).
   El primer guardado fija el arranque (`mi_espacio_arranque.fecha` = hoy; corregir el saldo después no lo cambia) y pide los días del año del arranque cargados (si no, 400 en `dias_vacaciones`).
@@ -110,7 +112,8 @@ mi-espacio.html # Mi espacio (Mi cuenta): pestañas Resumen, Licencias, Horas ex
   El 1/1/2027 se habilitan 10.»; los demás años, «Se habilitan en dos mitades: 10 el 1/7/2026 y 10 el 1/1/2027 (con 15, 8 y 7; con 25, 13 y 12). Cada licencia vence el 31/12 de dos años después.».
 - El panel como datos (`services/miEspacioResumen.js`, puro;
   Ruling 19: la página no recalcula nada):
-  `resumenDe` (el Resumen «Titular», spec 2026-10-27-mi-espacio-resumen, 4; la modalidad, el año y `al_texto`, `vence_pronto` —un franco o unas horas a favor del mes en curso sin usar, con el último día hábil del mes, y, desde el 1/10, en planta, las horas de franquicia del año que todavía entran en algún día libre («22 horas de franquicia», con el botón «Cargar franquicia», que abre «Cargar licencia» con ese tipo: los `disponibles` de `calculo.franquicia`, sin las perdidas;
+  `resumenDe` (con modalidad, sin arranque y con un hoy válido: `abrir_saldos`, `hoy_y_manana` y `sin_saldos`, `{ encabezado, saludo, texto }`, sin los números; `filasDeLicencias` y `tablaDeHorasExtras`, en ese caso, suman `sin_saldos: { texto }`; con arranque, la clave `sin_saldos` no existe en ninguna de las tres.
+  El Resumen «Titular», spec 2026-10-27-mi-espacio-resumen, 4; la modalidad, el año y `al_texto`, `vence_pronto` —un franco o unas horas a favor del mes en curso sin usar, con el último día hábil del mes, y, desde el 1/10, en planta, las horas de franquicia del año que todavía entran en algún día libre («22 horas de franquicia», con el botón «Cargar franquicia», que abre «Cargar licencia» con ese tipo: los `disponibles` de `calculo.franquicia`, sin las perdidas;
   spec 2026-10-28-mi-espacio-vacaciones-en-la-carga, 3.6) y los días disponibles de la licencia ordinaria que vence el 31/12 (sin los cargados ni los que se pierden); cada cosa `{ fecha, dia, mes, titulo, texto, accion }` (un franco o unas horas a favor sin ningún día libre en todo su mes, `diasLibresDelMes`, sigue, con `accion` null y por qué en `sin_dias_libres`, la única cosa que lleva esa clave:
   «No te quedan días libres este mes para usarlo.», «usarlos», «usarla» o «usarlas», como el botón; 3.7), con una sola línea en `texto` según los días corridos de hoy a su fecha:
   «Vence el viernes 30/10, en 4 días.», «Vence mañana.», «Vence hoy.» o, ya pasada —el franco o las horas a favor después del último día hábil del mes, que siguen en la lista hasta que termina el mes—, «Venció el viernes 30/10.», en singular solo con una cantidad de 1 («Vencen», «Vencieron»; decisión del usuario, 27/10/2026:
@@ -216,7 +219,12 @@ mi-espacio.html # Mi espacio (Mi cuenta): pestañas Resumen, Licencias, Horas ex
   «Cargar licencia» (los tipos de la modalidad como opciones grandes con lo que queda de cada uno, sus campos, el cálculo del servidor —con lo que se habilita, hasta dónde llega y, debajo y en ámbar, lo que la carga hace perder o les cambia a otras, que nunca frena el guardado;
   con un error de días, solo los días, y el error debajo de «Hasta» o, si no entra ni el primer día, de «Desde»—, «Mostrar a mis compañeros» —solo administración—, la persona a cargo del titular, el aviso del paso y los días sin auditor), «Cargar horas extras» (en planta; con lo que suma el mes:
   «En octubre llevás 14 horas: 2 francos para diciembre»; en contrato, la planilla: ver `docs/temas/mi-espacio-planilla.md`), «Mis vacaciones y saldos» (con la ayuda de cada tope de «Para arrancar» debajo de su campo), «Registrar un uso autorizado» y la confirmación de un borrado, que se abre sobre el formulario; con el foco, Escape, `aria-invalid` y los mensajes debajo de cada campo.
-  Sin vínculo, el Resumen, Licencias y Horas extras muestran el mensaje del servidor (la Agenda funciona igual: decisión del usuario, 27/10/2026); con vínculo y sin arranque, «Para empezar, completá «Mis vacaciones y saldos».» con su botón.
+  Sin vínculo, el Resumen, Licencias y Horas extras muestran el mensaje del servidor (la Agenda funciona igual: decisión del usuario, 27/10/2026); con vínculo y sin arranque, no se abre nada al entrar, por ningún hash, y se ocultan «Cargar licencia» y «Cargar horas extras» (queda «Nuevo evento»).
+  El Resumen muestra la bienvenida (`htmlDeLaBienvenida`, con `sin_saldos`: la banda celeste con el día, el saludo, el texto y «Mis vacaciones y saldos», y debajo «Hoy y mañana»), y Licencias y Horas extras, solo el aviso con ese botón (`htmlDelAvisoDeSaldos`, con el `sin_saldos` de cada una).
+  Esa banda no gasta el movimiento: la de verdad se mueve al guardar los saldos.
+  En el modal, sin arranque, el botón del pie dice «Lo completo después» en lugar de «Cancelar».
+  Los frenos de `abrir_saldos` quedan en `abrirLicencia`, `abrirUso`, `abrirHorasExtras` y `abrirPlanilla`, para cualquier camino que llegue sin los botones, y el servidor sigue frenando las cargas.
+  Una página con un Resumen sin `sin_saldos` muestra `htmlSinArranque`, «Para empezar, completá «Mis vacaciones y saldos».».
 
 ## La página: vacaciones al cargar
 

@@ -5,7 +5,9 @@
  * números y los textos los arma el servidor (GET /api/mi-espacio/resumen, /mi-espacio/licencias?anio=, /mi-espacio/horas-extras?anio=
  * y /mi-espacio/eventos?desde=&hasta=, con services/miEspacioResumen.js y services/miEspacioEventosReglas.js) y la página los imprime
  * tal cual: no recalcula nada (Ruling 19). Sin la modalidad cargada, las tres primeras pestañas muestran el mensaje del servidor y no
- * dejan cargar nada; la agenda se ve igual (decisión del usuario, 27/10/2026).
+ * dejan cargar nada; la agenda se ve igual (decisión del usuario, 27/10/2026). Con la modalidad y sin el saldo inicial, tampoco se
+ * carga nada: el Resumen da la bienvenida, Licencias y Horas extras dicen que falta y la agenda se ve igual (decisión del usuario,
+ * 04/11/2026; spec 2026-11-04-mi-espacio-sin-saldos).
  * - Resumen «Titular» (spec 2026-10-27-mi-espacio-resumen): los faltantes en un aviso ámbar; la banda celeste, con la frase («Te
  *   quedan 33 días de vacaciones», con el día y la modalidad arriba y la bajada debajo), «Vence pronto» (cada cosa como una entrada
  *   amarilla con su talón, su línea y el botón que la resuelve) y la regla (los días por licencia, un tramo por capa, con su lista);
@@ -45,8 +47,8 @@
  * Los formularios (secciones 4, 6 y 8; maqueta 2), modales que un clic en el velo no cierra: «Cargar licencia» (los tipos de la
  * modalidad con lo que queda de cada uno, el cálculo del servidor 300 ms después del último cambio, «Mostrar a mis compañeros»,
  * el aviso del paso a Configuración, la persona a cargo del firmante en sus vacaciones y los días sin auditor), «Cargar horas
- * extras» (con lo que suman en el mes; en contrato, la planilla del mes), «Mis vacaciones y saldos» (se abre solo sin el saldo
- * inicial), «Registrar un uso autorizado» y la confirmación de un borrado (o de salir de la planilla con cambios), que se abre sobre
+ * extras» (con lo que suman en el mes; en contrato, la planilla del mes), «Mis vacaciones y saldos» (con su botón, nunca solo: sin
+ * el saldo inicial, el Resumen da la bienvenida y Licencias y Horas extras lo piden), «Registrar un uso autorizado» y la confirmación de un borrado (o de salir de la planilla con cambios), que se abre sobre
  * el formulario. Los abren los botones del encabezado y los data-* de las pestañas (data-cargar, data-abrir, data-editar-licencia,
  * data-editar-horas, data-editar-salida y, en «Vence pronto», data-accion con su data-tipo). Al guardar una licencia (no un uso
  * autorizado), «Cargar licencia» no se cierra: pasa al segundo paso (spec
@@ -181,10 +183,15 @@ function htmlDeMensaje(texto) {
   return `<p class="me-aviso me-aviso-gris">${esc(texto)}</p>`;
 }
 
-// Con la modalidad y sin el saldo inicial: el botón abre «Mis vacaciones y saldos»
-function htmlSinArranque() {
-  return `<div class="me-aviso me-aviso-azul"><p>${esc(TEXTO_SIN_ARRANQUE)}</p>`
+// Un aviso de lo que falta para usar algo, con el botón que abre «Mis vacaciones y saldos»
+function htmlDelAvisoDeSaldos(texto) {
+  return `<div class="me-aviso me-aviso-azul"><p>${esc(texto)}</p>`
     + '<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" data-abrir="saldos">Mis vacaciones y saldos</button></div>';
+}
+
+// Con la modalidad y sin el saldo inicial, si el servidor no manda la bienvenida
+function htmlSinArranque() {
+  return htmlDelAvisoDeSaldos(TEXTO_SIN_ARRANQUE);
 }
 
 // Un error de una carga, en la pestaña
@@ -520,8 +527,24 @@ function htmlDeRestituciones(lista) {
 }
 
 /**
+ * La bienvenida sin el saldo inicial (spec 2026-11-04-mi-espacio-sin-saldos, 6; los textos, los de `sin_saldos`): la banda celeste
+ * con su ola, sin regla ni «Vence pronto», con el día, el saludo, el texto y el botón que abre «Mis vacaciones y saldos»; debajo,
+ * «Hoy y mañana». No es la banda que se mueve (animarLaBanda la saltea).
+ */
+function htmlDeLaBienvenida(resumen) {
+  const { encabezado, saludo, texto } = resumen.sin_saldos;
+  return '<section class="me-banda me-banda-bienvenida" aria-labelledby="me-frase"><div class="me-banda-cuerpo sin-vence"><div class="me-titular">'
+    + `${conTexto(encabezado) ? `<p class="me-banda-dia">${esc(encabezado)}</p>` : ''}`
+    + `<h2 class="me-frase" id="me-frase">${esc(saludo)}</h2>`
+    + `${conTexto(texto) ? `<p class="me-frase-bajada">${esc(texto)}</p>` : ''}`
+    + '<button type="button" class="sg-btn sg-btn-tinta sg-btn-chico" data-abrir="saldos">Mis vacaciones y saldos</button>'
+    + `</div></div>${OLA_DE_LA_BANDA}</section>`
+    + htmlDeHoyYManana(resumen.hoy_y_manana, esObjeto(resumen.persona) ? resumen.persona.ve_companeros : false);
+}
+
+/**
  * La pestaña Resumen (lo que manda GET /api/mi-espacio/resumen). Sin modalidad, el mensaje del servidor; sin el saldo inicial,
- * la invitación a «Mis vacaciones y saldos»; si no, los faltantes con lo que hay que revisar, la banda (la frase, «Vence pronto» y
+ * la bienvenida; si no, los faltantes con lo que hay que revisar, la banda (la frase, «Vence pronto» y
  * la regla), los avisos de los días por restituir (entre la banda y el resto: decisión 9 de la spec
  * 2026-10-31-mi-espacio-dias-restituidos, sección 3; en #me-restituciones, el lugar de sus botones: el de «Vence pronto» del mismo
  * grupo tiene el mismo data-grupo, y así el foco vuelve al que se usó), «El resto de 2026» y «Hoy y mañana».
@@ -529,7 +552,7 @@ function htmlDeRestituciones(lista) {
 function htmlDelResumen(resumen) {
   if (!esObjeto(resumen)) return '';
   if (!esObjeto(resumen.modalidad)) return htmlDeMensaje(resumen.mensaje);
-  if (resumen.abrir_saldos === true) return htmlSinArranque();
+  if (resumen.abrir_saldos === true) return esObjeto(resumen.sin_saldos) ? htmlDeLaBienvenida(resumen) : htmlSinArranque();
   const restituciones = htmlDeRestituciones(resumen.restituciones);
   return htmlDeFaltantes(resumen.faltantes, resumen.para_revisar) + htmlDeLaBanda(resumen)
     + (restituciones === '' ? '' : `<div id="me-restituciones">${restituciones}</div>`)
@@ -650,6 +673,7 @@ function htmlDeOtrosAnios(otros) {
 function htmlDeListaDeLicencias(datos, filtro) {
   if (!esObjeto(datos)) return '';
   if (datos.modalidad === null) return htmlDeMensaje(datos.mensaje);
+  if (esObjeto(datos.sin_saldos)) return htmlDelAvisoDeSaldos(datos.sin_saldos.texto);
   const anio = Number.isInteger(datos.anio) ? datos.anio : null;
   const licencias = listaDe(datos.licencias);
   const actual = filtroElegido(datos.filtros, filtro);
@@ -820,6 +844,7 @@ function htmlDeNoUtilizadas(tabla) {
  */
 function htmlDeHorasExtras(tabla, mes) {
   if (!esObjeto(tabla)) return '';
+  if (esObjeto(tabla.sin_saldos)) return htmlDelAvisoDeSaldos(tabla.sin_saldos.texto);
   const elegido = mesDeLaTabla(tabla, mes);
   if (tabla.modalidad === 'planta') return htmlDeTablaDeFrancos(tabla, elegido) + htmlDeDiaPorDia(tabla, elegido);
   if (tabla.modalidad === 'contrato') {
@@ -3346,7 +3371,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // pedido del Resumen en vuelo. `bandaAnimada`: la banda del Resumen ya se movió (pasa una sola vez). Los formularios:
 // `modales`, los abiertos, del de abajo al de arriba (la confirmación se abre sobre el formulario); `formulario`, el de «Cargar
 // licencia» o del uso autorizado abierto; `horasExtras`, el de las horas extras; `saldos`, el de «Mis vacaciones y saldos»
-// (`saldosAbiertosSolos`: ya se abrió solo una vez); `confirmacion`, el borrado que se confirma; y `firmante`, el pedido de
+// (se abre con su botón, nunca solo); `confirmacion`, el borrado que se confirma; y `firmante`, el pedido de
 // GET /mi-espacio/firmante (una sola vez). El segundo paso de «Cargar licencia» (la licencia ya guardada, con la nota a la vista):
 // `segundoPaso`, `{ id, corregida, avisos }` mientras se ve (si no, null), y `pedidos.nota` numera cada GET …/nota (también al
 // cerrar: la respuesta que llega con el modal cerrado o después de otro guardado se descarta). La agenda: `evento`, el formulario
@@ -3367,7 +3392,7 @@ const pagina = {
   anioDeLicencias: null, mesDeEventos: null, delMes: null, eventosPorMail: null, proximos: null,
   semana: { finde: false, elegido: null, foco: null, animado: false },
   cargandoResumen: false, pedidos: { resumen: 0, licencias: 0, horas: 0, mes: 0, proximos: 0, nota: 0, topes: 0 },
-  modales: [], formulario: null, horasExtras: null, saldos: null, saldosAbiertosSolos: false, confirmacion: null, firmante: null,
+  modales: [], formulario: null, horasExtras: null, saldos: null, confirmacion: null, firmante: null,
   segundoPaso: null, evento: null, eventoAjeno: null, personas: null, personasPublico: null, miNombre: null, pidiendoMiNombre: false,
   planilla: null, restitucion: null
 };
@@ -3512,7 +3537,8 @@ function teclaEnPestanas(evento) {
 // ---- El Resumen ----
 
 // El Resumen dice la modalidad: sin ella, no se carga nada (los botones del encabezado quedan ocultos) y la pestaña muestra el
-// mensaje; con ella y sin el saldo inicial, invita a completar «Mis vacaciones y saldos» y lo abre solo (una vez); si no,
+// mensaje; con ella y sin el saldo inicial, tampoco se carga nada y da la bienvenida, sin abrir «Mis vacaciones y saldos» (spec
+// 2026-11-04-mi-espacio-sin-saldos); si no,
 // «Titular», con la marca en la pestaña si algo vence pronto. Si falla, volver a la pestaña lo pide otra vez. Cada pedido tiene su
 // número (`pagina.pedidos.resumen`; una respuesta de uno que otro reemplazó se descarta), y al terminar lo devuelve: quien lo espera
 // sabe si el Resumen que quedó es el suyo (hayElGrupo). Los demás que la llaman no lo miran
@@ -3539,9 +3565,9 @@ async function cargarResumen() {
 
 function pintarResumen() {
   const { resumen } = pagina;
-  const conModalidad = esObjeto(resumen.modalidad);
-  porId('btn-cargar-horas').hidden = !conModalidad;
-  porId('btn-cargar-licencia').hidden = !conModalidad;
+  const sinCargas = !esObjeto(resumen.modalidad) || resumen.abrir_saldos === true;
+  porId('btn-cargar-horas').hidden = sinCargas;
+  porId('btn-cargar-licencia').hidden = sinCargas;
   const vista = porId('vista-resumen');
   // Un Resumen que se vuelve a dibujar (por ejemplo, al guardar una licencia) llega quieto, aunque la banda vieja todavía se
   // estuviera moviendo: sin data-animar, sus tramos y sus líneas se dibujan llenos
@@ -3550,15 +3576,10 @@ function pintarResumen() {
   porId('me-marca').innerHTML = htmlDeMarca(resumen.marca);
   // La primera vez que la banda se dibuja y se ve, se mueve (una sola vez)
   animarLaBanda();
-  // La primera vez, sin el saldo inicial, «Mis vacaciones y saldos» se abre solo (el foco vuelve a su botón del Resumen)
-  if (conModalidad && resumen.abrir_saldos === true && !pagina.saldosAbiertosSolos && pagina.modales.length === 0) {
-    pagina.saldosAbiertosSolos = true;
-    abrirSaldos(vista.querySelector('[data-abrir="saldos"]'));
-  }
 }
 
 // El único movimiento de la página (spec 2026-10-27-mi-espacio-resumen, 3), una sola vez por carga: la primera vez que la banda
-// está dibujada y se ve (también si aparece recién al guardar «Mis vacaciones y saldos», desde la invitación). Le pone data-animar
+// está dibujada y se ve (también si aparece recién al guardar «Mis vacaciones y saldos», desde la bienvenida). Le pone data-animar
 // a #vista-resumen, que en el <style> deja vacíos los tramos de la regla y las líneas del resto, y se lo saca dos cuadros después:
 // en el primero el navegador los dibuja vacíos y en el segundo empiezan las transiciones, cada una con su --demora y su --duracion
 // (quietas con prefers-reduced-motion). Al mismo tiempo suben los números: el de la frase con la regla y cada uno del resto con su
@@ -3566,7 +3587,9 @@ function pintarResumen() {
 // nada: todo queda en su valor final
 function animarLaBanda() {
   const vista = porId('vista-resumen');
-  if (pagina.bandaAnimada || vista.hidden || !vista.querySelector('.me-banda')) return;
+  const banda = vista.querySelector('.me-banda');
+  // La de la bienvenida no se mueve ni gasta la única vez: la de verdad se mueve cuando aparece, al guardar los saldos
+  if (pagina.bandaAnimada || vista.hidden || !banda || banda.classList.contains('me-banda-bienvenida')) return;
   if (typeof window.requestAnimationFrame !== 'function') return;
   pagina.bandaAnimada = true;
   vista.setAttribute('data-animar', '');
@@ -3870,6 +3893,11 @@ function pintarHoras() {
 // por día sin pedir nada)
 async function alTocarHoras(evento) {
   const objetivo = evento.target;
+  const saldos = objetivo?.closest?.('[data-abrir="saldos"]');
+  if (saldos) {
+    abrirSaldos(saldos);
+    return;
+  }
   if (objetivo?.closest?.('[data-cargar="horas"]')) {
     abrirCargaDeHoras({ volverA: objetivo.closest('[data-cargar="horas"]') });
     return;
@@ -4661,6 +4689,12 @@ async function recargarLaListaConElFocoEn(control, pedidoAlTocar = pagina.pedido
   devolverElFoco(respaldo);
 }
 
+// Una pestaña oculta con el aviso de que faltan los saldos, que acaban de guardarse: se pide de nuevo recién al abrirla y, hasta
+// que llegue, no puede seguir diciendo que faltan. Lo de una pestaña con sus datos queda a la vista, como siempre
+function soltarElAvisoDeSaldos(vista, datos, cargando) {
+  if (esObjeto(datos?.sin_saldos)) porId(vista).innerHTML = `<p class="me-estado">${cargando}</p>`;
+}
+
 // Después de guardar o de borrar: el Resumen y las pestañas que ya se cargaron (la que se ve, enseguida y con el año que tenía
 // y, en Horas extras, el mes del día por día, y en la agenda, el mes que se ve, sin anunciarlo: se anuncia lo que se guardó; las
 // otras, cuando se vuelvan a abrir). La lista de Licencias, en el año pendiente si hay uno (pagina.anioDeLicencias: el de la licencia
@@ -4673,11 +4707,17 @@ async function volverAPedirTodo() {
   if (pagina.pestana === 'licencias' && (pagina.licencias !== null || pagina.anioDeLicencias !== null)) {
     const anio = pagina.anioDeLicencias !== null ? tomarElAnioDeLicencias() : anioQueTenia(pagina.licencias);
     cargas.push(cargarLicencias(anio, { conAnuncio: false }));
-  } else if (pagina.pestana !== 'licencias') pagina.licencias = null;
+  } else if (pagina.pestana !== 'licencias') {
+    soltarElAvisoDeSaldos('vista-licencias', pagina.licencias, 'Cargando tus licencias…');
+    pagina.licencias = null;
+  }
   if (pagina.horas !== null) {
     if (pagina.pestana === 'horas') {
       cargas.push(cargarHorasExtras(anioQueTenia(pagina.horas), { conAnuncio: false, mes: pagina.mes }));
-    } else pagina.horas = null;
+    } else {
+      soltarElAvisoDeSaldos('vista-horas', pagina.horas, 'Cargando tus horas extras…');
+      pagina.horas = null;
+    }
   }
   if (pagina.pestana === 'agenda') cargas.push(cargarEventos({ forzar: true, conAnuncio: false }));
   else {
@@ -6218,8 +6258,8 @@ function pedirSalirDeLaPlanilla(desde = null) {
 // ---- «Mis vacaciones y saldos» ----
 
 // Abre «Mis vacaciones y saldos» (spec, sección 4) con lo que vale para el año en curso (GET /anio/:anio) y los campos de «Para
-// arrancar» (GET /saldo-inicial). Si no se puede, un aviso lo dice (sin el saldo inicial, los botones de carga llevan acá: nunca
-// quedan sin responder). `recargarAlCerrar`: el año se guardó y el saldo no; al cerrarlo, la página se vuelve a pedir
+// arrancar» (GET /saldo-inicial). Si no se puede, un aviso lo dice (sin el saldo inicial, los botones de los avisos y los frenos
+// llevan acá: nunca quedan sin responder). `recargarAlCerrar`: el año se guardó y el saldo no; al cerrarlo, la página se vuelve a pedir
 async function abrirSaldos(volverA = null) {
   if (pagina.saldos !== null) return;
   const anio = anioDeHoy();
@@ -6257,6 +6297,8 @@ async function abrirSaldos(volverA = null) {
   pintarCamposDelSaldo(valoresDelSaldo(saldo.campos));
   limpiarErrores('saldos');
   porId('ms-guardar').disabled = false;
+  // Sin el saldo inicial, salir no es cancelar: se sigue usando Mi espacio y se completa después
+  porId('modal-saldos').querySelector('.modal-footer [data-cerrar]').textContent = saldo.arranque === null ? 'Lo completo después' : 'Cancelar';
   abrirModal('modal-saldos', { volverA, foco: () => controlDeFoco('ms-dias'), alCerrar: cerrarSaldos });
 }
 

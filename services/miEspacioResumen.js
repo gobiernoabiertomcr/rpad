@@ -34,7 +34,7 @@ import {
   repartoDelMes, textoDeLoQueSeMueve, diasDeLaCarga, fechasDeLosAsuetos, textoDelAvisoDeRestitucion,
   textoDelBotonDeRestitucion, textoDeLaFilaDeRestitucion, bajadaDeRestituciones, tituloDeRestitucionQueVence,
   DIAS_DEL_AVISO_DE_RESTITUCION, textoDeLaAyudaDeRestituidos, textoDelHastaDeRestituidos, TIPOS_CON_RESTITUIBLES,
-  horasAcumuladasDe, horasDelMesDe
+  horasAcumuladasDe, horasDelMesDe, nombreCorto
 } from './miEspacioReglas.js';
 
 // Los dos formatos que ya estaban en las reglas: el panel los usa sin copiarlos
@@ -401,6 +401,10 @@ const fraseDeLosDias = (numero) => {
   return ['No te quedan días de vacaciones', '', ''];
 };
 
+// El día y la modalidad, arriba de la frase y de la bienvenida: «Lunes 26 de octubre, planta permanente»
+const encabezadoDelDia = (hoy, modalidad) => `${mayuscula(diaDeLaSemana(hoy))} ${Number(hoy.slice(8, 10))} de `
+  + `${nombreDelMes(hoy.slice(0, 7))}, ${minuscula(modalidad.texto)}`;
+
 /**
  * La frase de la banda: `{ encabezado, antes, cifra, despues, bajada }`. `encabezado` es el día de hoy sin el año y la
  * modalidad en minúscula («Lunes 26 de octubre, planta permanente»); `antes`, `cifra` y `despues`, la frase partida alrededor
@@ -415,8 +419,7 @@ const titularDe = (panel, modalidad, vacaciones, grupos) => {
   const [primerMes] = vacaciones.capas.some((capa) => capa.clase === 'cargadas') ? mesesCargados(panel) : [];
   const [antes, cifra, despues] = fraseDeLosDias(numero);
   return {
-    encabezado: `${mayuscula(diaDeLaSemana(hoy))} ${Number(hoy.slice(8, 10))} de ${nombreDelMes(hoy.slice(0, 7))}, `
-      + minuscula(modalidad.texto),
+    encabezado: encabezadoDelDia(hoy, modalidad),
     antes,
     cifra,
     despues,
@@ -693,6 +696,26 @@ const paraRevisarDeRestituciones = (grupos, { datos, hoy }) => {
     });
 };
 
+// Sin el saldo inicial solo se usan la Agenda y el Resumen con la bienvenida: el servidor sigue frenando las cargas y la página lo
+// explica con estos textos, en lugar de lo que no se puede usar (spec 2026-11-04-mi-espacio-sin-saldos; decisión del usuario,
+// 04/11/2026, para no tocar las reglas)
+const TEXTO_DE_LA_BIENVENIDA = 'Para usar todas las funcionalidades de Mi espacio, primero tenés que cargar tus saldos. Mientras tanto, '
+  + 'podés usar la Agenda.';
+const TEXTO_SIN_SALDOS_LICENCIAS = 'Para usar Licencias, primero tenés que cargar tus saldos.';
+const TEXTO_SIN_SALDOS_HORAS = 'Para usar Horas extras, primero tenés que cargar tus saldos.';
+
+// Con una modalidad válida y sin arranque
+const faltanLosSaldos = (datos) => MODALIDADES.includes(datos.modalidad) && !esFechaIso(datos.arranque);
+
+// La bienvenida del Resumen: el día y la modalidad, «Hola, Laura» (el primer nombre: sin compararlo con nadie, porque se lo dice a
+// la persona misma; sin un nombre, «Hola») y el texto. `modalidad` es la del Resumen, `{ clave, texto }`
+const bienvenidaDe = (hoy, persona, modalidad) => {
+  const nombre = nombreCorto({ id: persona.id, nombre: persona.nombre_completo }, []);
+  return {
+    encabezado: encabezadoDelDia(hoy, modalidad), saludo: nombre === '' ? 'Hola' : `Hola, ${nombre}`, texto: TEXTO_DE_LA_BIENVENIDA
+  };
+};
+
 /**
  * El Resumen «Titular» (spec, secciones 3.9 y 8, y spec 2026-10-27-mi-espacio-resumen, sección 4), todo lo de
  * `GET /api/mi-espacio/resumen`. Recibe `{ persona, estado, calculo, hoy, feriados, hoyYManana, vinculos }`: `persona` es
@@ -703,7 +726,9 @@ const paraRevisarDeRestituciones = (grupos, { datos, hoy }) => {
  * audita, es_superadmin }, marca, vence_pronto, faltantes, para_revisar, tanques: { vacaciones, otros } | null, titular,
  * restituciones, pastillas, extraordinaria, tipos, hoy_y_manana }`:
  * - sin modalidad, `mensaje` es `sinModalidad` y no hay nada que mostrar ni cargar;
- * - con modalidad y sin arranque, `mensaje` es `sinArranque` y `abrir_saldos` es true (se abre «Mis vacaciones y saldos»);
+ * - con modalidad y sin arranque, `mensaje` es `sinArranque` y `abrir_saldos` es true (no se puede cargar nada hasta completar
+ *   «Mis vacaciones y saldos») y, con un hoy válido, llega además `sin_saldos`, la bienvenida del Resumen (`bienvenidaDe`, spec
+ *   2026-11-04-mi-espacio-sin-saldos, 5): la clave solo va en este caso;
  * - si no, `marca` dice si hay algo en `vence_pronto` (cada cosa `{ fecha, dia, mes, titulo, texto, accion }`, con su línea en
  *   `texto`: «Vence el viernes 30/10, en 4 días.»; un franco o unas horas a favor sin ningún día libre en su mes, con
  *   `accion` null y además `sin_dias_libres`), `faltantes` son los textos de `faltantesDe` y, al final, los de
@@ -753,7 +778,10 @@ export const resumenDe = (entrada) => {
     hoy_y_manana: esObjeto(hoyYManana) ? { ...hoyYManana } : { ausentes_hoy: [], ausentes_manana: [], proximo_feriado: null }
   };
   if (modalidad === null) return { ...resumen, mensaje: MENSAJES_MI_ESPACIO.sinModalidad };
-  if (!esFechaIso(datos.arranque)) return { ...resumen, mensaje: MENSAJES_MI_ESPACIO.sinArranque, abrir_saldos: true };
+  if (!esFechaIso(datos.arranque)) {
+    const sinArranque = { ...resumen, mensaje: MENSAJES_MI_ESPACIO.sinArranque, abrir_saldos: true };
+    return deHoy === null ? sinArranque : { ...sinArranque, sin_saldos: bienvenidaDe(deHoy, quien, resumen.modalidad) };
+  }
   if (deHoy === null) return resumen;
 
   const panel = {
@@ -1135,6 +1163,8 @@ export const otrosAniosDe = (licencias, opciones) => {
  *   de días restituidos suma `restituciones`, la línea de cada grupo de días por restituir de esa carga, y una de días
  *   restituidos, de qué licencia son y `restituidos` (spec 2026-10-31-mi-espacio-dias-restituidos, 9: ver `filaDeLicencia`).
  * - `otros_anios`: las de otros años del selector que todavía no terminaron (`otrosAniosDe`), para ir a esos años.
+ * - `sin_saldos`: `{ texto }`, solo con modalidad y sin arranque (spec 2026-11-04-mi-espacio-sin-saldos, 5): la página muestra ese
+ *   aviso en lugar de la lista.
  */
 export const filasDeLicencias = (estado, calculo, opciones) => {
   const datos = esObjeto(estado) ? estado : {};
@@ -1160,7 +1190,7 @@ export const filasDeLicencias = (estado, calculo, opciones) => {
       tipo, nombre: NOMBRES_DE_LOS_FILTROS[tipo], cantidad: delAnio.filter((fila) => fila.tipo === tipo).length
     }))
     .filter((filtro) => filtro.cantidad > 0);
-  return {
+  const lista = {
     anio: elAnio,
     anios,
     filtros: [{ tipo: 'todas', nombre: 'Todas', cantidad: delAnio.length }, ...filtros],
@@ -1168,6 +1198,7 @@ export const filasDeLicencias = (estado, calculo, opciones) => {
     saldo_inicial: saldoInicialDe(datos, elAnio),
     otros_anios: otrosAniosDe(datos.licencias, { anio: elAnio, anios, hoy: deHoy })
   };
+  return faltanLosSaldos(datos) ? { ...lista, sin_saldos: { texto: TEXTO_SIN_SALDOS_LICENCIAS } } : lista;
 };
 
 /**
@@ -1458,7 +1489,8 @@ const mesesConSalidasSinHoras = (datos, cuenta, delAnio, trabajados) => {
  *   ni usos, `sin_horas`, «Sin horas a favor» (con usos de más, la de siempre). El día por día suma, en cada día tildado,
  *   `suma_a` («Suma a enero») y, al final de cada mes, los días tildados del mes siguiente que suman a él («De febrero»); el
  *   total de cada mes es el de su fila.
- * Sin modalidad, `modalidad` es null y lo demás va vacío.
+ * Con modalidad y sin arranque, suma `sin_saldos`: `{ texto }` (spec 2026-11-04-mi-espacio-sin-saldos, 5): la página muestra ese
+ * aviso en lugar de la tabla. Sin modalidad, `modalidad` es null y lo demás va vacío.
  */
 export const tablaDeHorasExtras = (estado, calculo, opciones) => {
   const datos = esObjeto(estado) ? estado : {};
@@ -1477,6 +1509,7 @@ export const tablaDeHorasExtras = (estado, calculo, opciones) => {
     mes_en_curso: deHoy !== null && anioDe(deHoy) === elAnio ? deHoy.slice(0, 7) : null
   };
   if (modalidad === null) return tabla;
+  if (faltanLosSaldos(datos)) tabla.sin_saldos = { texto: TEXTO_SIN_SALDOS_HORAS };
 
   const delAnio = `${elAnio}-`;
   const { diasPorMes, totales } = modalidad === 'planta'

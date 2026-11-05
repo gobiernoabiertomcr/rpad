@@ -512,12 +512,14 @@ describe('el Resumen «Titular»', () => {
     assert.equal(M.htmlDelResumen(planta).includes('me-aviso-ambar'), false);
   });
 
-  it('sin modalidad, el mensaje; sin arranque, la invitación a «Mis vacaciones y saldos»', () => {
+  it('sin modalidad, el mensaje; sin arranque, la bienvenida o, si el servidor no la manda, la invitación a «Mis vacaciones y saldos»', () => {
     const sinModalidad = resumenDel(PLANTA, { estado: { ...PLANTA.estado, modalidad: null } });
     assert.equal(M.htmlDelResumen(sinModalidad), M.htmlDeMensaje(MENSAJES_MI_ESPACIO.sinModalidad));
     const sinArranque = resumenDel(PLANTA, { estado: { ...PLANTA.estado, arranque: null } });
     assert.equal(sinArranque.abrir_saldos, true);
-    assert.equal(M.htmlDelResumen(sinArranque), M.htmlSinArranque());
+    assert.equal(M.htmlDelResumen(sinArranque), M.htmlDeLaBienvenida(sinArranque));
+    assert.equal(M.htmlDelResumen({ ...sinArranque, sin_saldos: undefined }), M.htmlSinArranque());
+    assert.equal(M.htmlDelAvisoDeSaldos(MENSAJES_MI_ESPACIO.sinArranque), M.htmlSinArranque());
     assert.equal(M.htmlDelResumen(null), '');
   });
 
@@ -2614,12 +2616,14 @@ describe('mi-espacio.js: la página (DOM falso)', () => {
     assert.equal(pagina.el('btn-cargar-licencia').hidden, true);
   });
 
-  it('con modalidad y sin arranque, el Resumen invita a completar «Mis vacaciones y saldos»', async () => {
+  it('con modalidad y sin arranque, la bienvenida, sin los botones de carga y sin abrir nada', async () => {
     const resumen = resumenDel(PLANTA, { estado: { ...PLANTA.estado, arranque: null } });
     const pagina = montarPagina({ responder: (metodo, ruta) => (ruta === '/api/mi-espacio/resumen' ? ok(resumen) : RESPUESTAS_DE_ENTRADA(metodo, ruta)) });
     await pagina.iniciar();
-    assert.equal(pagina.el('vista-resumen').innerHTML, M.htmlSinArranque());
-    assert.equal(pagina.el('btn-cargar-licencia').hidden, false);
+    assert.equal(pagina.el('vista-resumen').innerHTML, M.htmlDeLaBienvenida(resumen));
+    assert.equal(pagina.el('btn-cargar-licencia').hidden, true);
+    assert.equal(pagina.el('btn-cargar-horas').hidden, true);
+    assert.equal(pagina.abierto('modal-saldos'), false);
   });
 
   it('una carga que falla lo dice en su pestaña y en #me-anuncio; volver a la pestaña la pide otra vez', async () => {
@@ -2812,7 +2816,7 @@ describe('el movimiento del Resumen «Titular» (DOM falso)', () => {
     }
   });
 
-  it('sin el saldo inicial, el primer Resumen es la invitación: la banda aparece al guardar «Mis vacaciones y saldos» y se mueve (es la primera vez)', async () => {
+  it('sin el saldo inicial, el primer Resumen es la bienvenida, quieta: la banda de verdad aparece al guardar «Mis vacaciones y saldos» y se mueve (es la primera vez)', async () => {
     let guardado = false;
     const pagina = montarPagina({
       cuadros: true,
@@ -2829,9 +2833,11 @@ describe('el movimiento del Resumen «Titular» (DOM falso)', () => {
     });
     await pagina.iniciar();
     await pagina.correr();
+    await abrirLosSaldos(pagina);
     const vista = pagina.el('vista-resumen');
     assert.equal(pagina.abierto('modal-saldos'), true);
-    assert.equal(vista.querySelector('.me-banda'), null, 'la invitación, sin la banda');
+    assert.ok(vista.querySelector('.me-banda-bienvenida'), 'la bienvenida');
+    assert.equal(vista.querySelector('.me-regla'), null, 'sin la regla');
     assert.equal(vista.getAttribute('data-animar'), null);
     assert.equal(pagina.estado.cuadros.length, 0);
     await pagina.elegir('ms-dia', '20');
@@ -2840,7 +2846,8 @@ describe('el movimiento del Resumen «Titular» (DOM falso)', () => {
     await pagina.tocar(pagina.el('ms-guardar'));
     await pagina.esperar();
     assert.equal(pagina.abierto('modal-saldos'), false);
-    assert.ok(vista.querySelector('.me-banda'), 'la banda, al guardar');
+    assert.equal(vista.querySelector('.me-banda-bienvenida'), null);
+    assert.ok(vista.querySelector('.me-regla'), 'la banda de verdad, al guardar');
     assert.equal(vista.getAttribute('data-animar'), '');
     assert.equal(cifraDe(pagina).textContent, '0');
     pagina.cuadro();
@@ -4621,7 +4628,7 @@ const cargarLicencia = async (pagina, { tipo = 'vacaciones', desde = VACACIONES.
   await pagina.correr();
 };
 const calculos = (pagina) => pagina.pedidosA('POST', '/api/mi-espacio/licencias/calculo');
-// La persona de planta sin el saldo inicial: «Mis vacaciones y saldos» se abre solo, con lo que mandan GET /anio y GET /saldo-inicial;
+// La persona de planta sin el saldo inicial, con lo que mandan GET /anio y GET /saldo-inicial para «Mis vacaciones y saldos»;
 // `extra`, como en conFormularios
 const conSaldosParaArrancar = ({ extra = () => undefined } = {}) => {
   const resumen = resumenDel(PLANTA, { estado: { ...PLANTA.estado, arranque: null, anios: [], saldos: [] } });
@@ -4641,6 +4648,12 @@ const conSaldosParaArrancar = ({ extra = () => undefined } = {}) => {
       return undefined;
     }
   });
+};
+
+// Abre «Mis vacaciones y saldos» con el botón de la bienvenida: nunca se abre solo
+const abrirLosSaldos = async (pagina) => {
+  await pagina.tocar(pagina.el('vista-resumen').querySelector('[data-abrir="saldos"]'));
+  await pagina.correr();
 };
 
 describe('los formularios en la página (DOM falso)', () => {
@@ -4842,6 +4855,7 @@ describe('los formularios en la página (DOM falso)', () => {
     });
     await saldos.iniciar();
     await saldos.correr();
+    await abrirLosSaldos(saldos);
     await saldos.elegir('ms-dia', '20');
     await saldos.elegir('ms-estudio', '');
     for (const campo of saldos.el('ms-campos').querySelectorAll('input')) campo.value = '0';
@@ -4854,6 +4868,7 @@ describe('los formularios en la página (DOM falso)', () => {
     const pagina = montarPagina({ responder: conSaldosParaArrancar() });
     await pagina.iniciar();
     await pagina.correr();
+    await abrirLosSaldos(pagina);
     assert.equal(pagina.abierto('modal-saldos'), true);
     for (const [grupo, nombre] of [['ms-dias', 'ms-dia'], ['ms-estudios', 'ms-estudio']]) {
       const radios = pagina.documento.querySelectorAll(`input[name="${nombre}"]`);
@@ -5296,7 +5311,7 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.equal(pagina.el('mh-desde-error').textContent, 'Se superpone con las horas extras de 19:00 a 22:00 de ese día.');
   });
 
-  it('«Mis vacaciones y saldos»: se abre solo sin el saldo inicial, guarda el año y después el saldo; si el saldo falla, queda abierto', async () => {
+  it('«Mis vacaciones y saldos»: se abre con su botón, guarda el año y después el saldo; si el saldo falla, queda abierto', async () => {
     let saldo = respuesta(400, { success: false, error: 'De 0 a 30, el máximo de una licencia.', campo: 'vacaciones-2024' });
     const pagina = montarPagina({
       responder: conSaldosParaArrancar({
@@ -5309,6 +5324,7 @@ describe('los formularios en la página (DOM falso)', () => {
     });
     await pagina.iniciar();
     await pagina.correr();
+    await abrirLosSaldos(pagina);
     assert.equal(pagina.abierto('modal-saldos'), true);
     assert.equal(pagina.el('ms-modalidad').textContent, 'Modalidad: Planta permanente (la carga administración en Configuración → Usuarios)');
     assert.equal(pagina.documento.activeElement, pagina.el('ms-dias').querySelector('input'));
@@ -5357,6 +5373,7 @@ describe('los formularios en la página (DOM falso)', () => {
     });
     await pagina.iniciar();
     await pagina.correr();
+    await abrirLosSaldos(pagina);
     // Con 15 días, la primera mitad de la 2026 es 8: «De 0 a 8»
     await pagina.elegir('ms-dia', '15');
     await pagina.elegir('ms-estudio', '');
@@ -5375,6 +5392,7 @@ describe('los formularios en la página (DOM falso)', () => {
     const pagina = montarPagina({ responder: conSaldosParaArrancar() });
     await pagina.iniciar();
     await pagina.correr();
+    await abrirLosSaldos(pagina);
     assert.equal(pagina.abierto('modal-saldos'), true);
     const ayuda = (clave) => pagina.el(`ms-campo-${clave}-ayuda`)?.textContent ?? null;
     // Sin días elegidos, los que mandó el servidor (sin ningún año cargado, 30 y la primera mitad de 30)
@@ -5516,7 +5534,7 @@ describe('los formularios en la página (DOM falso)', () => {
     assert.deepEqual(pagina.estado.toasts.at(-1), ['Licencia borrada.', 'success']);
   });
 
-  // Sin el saldo inicial, los tres botones llevan acá: una persona nueva nunca queda frente a botones que no responden
+  // Sin el saldo inicial, los botones de los avisos y los frenos llevan acá: nunca quedan sin responder
   it('si «Mis vacaciones y saldos» no se puede abrir (GET /anio o GET /saldo-inicial fallan), un aviso lo dice cada vez', async () => {
     let falla = true;
     const pagina = montarPagina({
@@ -5528,6 +5546,8 @@ describe('los formularios en la página (DOM falso)', () => {
     await pagina.iniciar();
     await pagina.correr();
     const texto = 'No se pudo abrir «Mis vacaciones y saldos». Probá de nuevo en unos minutos.';
+    assert.deepEqual(pagina.estado.toasts, [], 'al entrar no se intenta');
+    await abrirLosSaldos(pagina);
     assert.equal(pagina.abierto('modal-saldos'), false);
     assert.deepEqual(pagina.estado.toasts, [[texto, 'error']]);
     assert.equal(pagina.el('me-anuncio').textContent, texto);
@@ -5598,6 +5618,7 @@ describe('los formularios en la página (DOM falso)', () => {
       });
       await pagina.iniciar();
       await pagina.correr();
+      await abrirLosSaldos(pagina);
       await pagina.elegir('ms-dia', '20');
       await pagina.elegir('ms-estudio', '');
       for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
@@ -9964,15 +9985,16 @@ describe('la planilla de horas extras en la página (DOM falso)', () => {
     assert.ok(!pagina.rutas().some((ruta) => ruta.includes('/salidas')));
   });
 
-  it('sin el saldo inicial, «Cargar horas extras» de contrato abre «Mis vacaciones y saldos», como siempre, sin pedir la planilla', async () => {
+  it('sin el saldo inicial, «Cargar horas extras» de contrato, oculto, si igual llega, abre «Mis vacaciones y saldos» sin pedir la planilla', async () => {
     const sinArranque = resumenDel(CONTRATO, { estado: { ...CONTRATO.estado, arranque: null, anios: [], saldos: [] } });
     assert.equal(sinArranque.abrir_saldos, true);
     const pagina = montarPagina({ responder: conLaPlanilla({ resumen: sinArranque }) });
     await pagina.iniciar();
-    // Se abrió solo y no pudo (el servidor falso no tiene GET /anio): lo vuelve a intentar desde el botón
-    const antes = pagina.pedidosA('GET', '/api/mi-espacio/anio/2026').length;
+    assert.equal(pagina.el('btn-cargar-horas').hidden, true);
+    assert.equal(pagina.pedidosA('GET', '/api/mi-espacio/anio/2026').length, 0, 'al entrar no se abre');
+    // El freno queda, para cualquier camino que llegue sin el botón (el servidor falso no tiene GET /anio: no se llega a abrir)
     await pagina.tocar(pagina.el('btn-cargar-horas'));
-    assert.equal(pagina.pedidosA('GET', '/api/mi-espacio/anio/2026').length, antes + 1);
+    assert.equal(pagina.pedidosA('GET', '/api/mi-espacio/anio/2026').length, 1);
     assert.equal(pagina.abierto('modal-planilla'), false);
     assert.ok(!pagina.rutas().some((ruta) => ruta.includes('/salidas')));
   });
@@ -13173,5 +13195,350 @@ describe('mi-espacio.html: los dos campos de las horas a favor', () => {
     assert.ok(color, '.me-dos-horas-total { color }');
     assert.ok(contraste(token(color), '#FFFFFF') >= 4.5);
     assert.ok(contraste(token('--sg-suave'), '#FFFFFF') >= 4.5, 'los topes y la ayuda');
+  });
+});
+
+// =====================================================================================================================================
+// Sin el saldo inicial (spec 2026-11-04-mi-espacio-sin-saldos): se entra sin que se abra nada; lo único habilitado es la Agenda, y
+// el Resumen da la bienvenida. Con lo que arma el servidor, pasado por JSON como lo manda la API.
+const sinArranqueDe = (caso) => ({ ...caso.estado, arranque: null, anios: [], saldos: [], licencias: [], horasExtras: [], salidas: [] });
+const paraSinSaldos = (caso, extra = () => undefined) => {
+  const estado = sinArranqueDe(caso);
+  const licencias = licenciasDe(caso, { estado });
+  const horas = horasDe(caso, { estado });
+  return conSaldosParaArrancar({
+    extra: (metodo, ruta, cuerpo) => {
+      const propia = extra(metodo, ruta, cuerpo);
+      if (propia !== undefined) return propia;
+      if (ruta === '/api/mi-espacio/resumen') return ok(resumenDel(caso, { estado }));
+      if (ruta === '/api/mi-espacio/licencias') return ok(licencias);
+      if (ruta === '/api/mi-espacio/horas-extras') return ok(horas);
+      return undefined;
+    }
+  });
+};
+const AVISO_DE_LICENCIAS = 'Para usar Licencias, primero tenés que cargar tus saldos.';
+const AVISO_DE_HORAS = 'Para usar Horas extras, primero tenés que cargar tus saldos.';
+
+describe('sin el saldo inicial: lo puro', () => {
+  it('la bienvenida: el día, el saludo, el texto, el botón y «Hoy y mañana»; sin regla ni números', () => {
+    const resumen = resumenDel(PLANTA, { estado: sinArranqueDe(PLANTA) });
+    const html = M.htmlDeLaBienvenida(resumen);
+    assert.match(html, /^<section class="me-banda me-banda-bienvenida" aria-labelledby="me-frase">/);
+    assert.match(html, /<div class="me-banda-cuerpo sin-vence">/);
+    assert.match(html, /<p class="me-banda-dia">Lunes 26 de octubre, planta permanente<\/p>/);
+    assert.match(html, /<h2 class="me-frase" id="me-frase">Hola, Laura<\/h2>/);
+    assert.match(html, /<p class="me-frase-bajada">Para usar todas las funcionalidades de Mi espacio, primero tenés que cargar tus saldos\. Mientras tanto, podés usar la Agenda\.<\/p>/);
+    assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [atributos['data-abrir'], texto]), [['saldos', 'Mis vacaciones y saldos']]);
+    assert.match(html, /class="me-ola"/);
+    assert.ok(html.endsWith(M.htmlDeHoyYManana(resumen.hoy_y_manana, true)));
+    for (const ausente of ['me-regla', 'me-cifra', 'me-vence', 'me-resto', 'data-contar']) assert.ok(!html.includes(ausente), ausente);
+  });
+
+  it('la bienvenida escapa lo que manda el servidor y ve a los compañeros solo con el true literal', () => {
+    const resumen = resumenDel(PLANTA, { estado: sinArranqueDe(PLANTA) });
+    const conMarcas = { encabezado: '<i>d</i>', saludo: 'Hola, <b>x</b>', texto: 'a & b <script>' };
+    const html = M.htmlDeLaBienvenida({ ...resumen, sin_saldos: conMarcas });
+    for (const crudo of ['<i>d</i>', '<b>x</b>', '<script>']) assert.ok(!html.includes(crudo), crudo);
+    assert.match(html, /Hola, &lt;b&gt;x&lt;\/b&gt;/);
+    const hoy = { ...resumen.hoy_y_manana, ausentes_hoy: [{ texto: 'Carla no está', vuelve_texto: 'Vuelve el lunes' }] };
+    assert.ok(M.htmlDeLaBienvenida({ ...resumen, hoy_y_manana: hoy }).includes('Carla no está'));
+    const lector = { ...resumen, hoy_y_manana: hoy, persona: { ...resumen.persona, ve_companeros: 'true' } };
+    assert.ok(!M.htmlDeLaBienvenida(lector).includes('Carla no está'));
+    assert.ok(!M.htmlDeLaBienvenida({ ...resumen, hoy_y_manana: hoy, persona: null }).includes('Carla no está'));
+  });
+
+  it('Licencias y Horas extras, en planta y en contrato: solo el aviso, sin selector, filtros, tablas ni botones de carga', () => {
+    for (const caso of [PLANTA, CONTRATO]) {
+      const estado = sinArranqueDe(caso);
+      assert.equal(M.htmlDeListaDeLicencias(licenciasDe(caso, { estado }), 'todas'), M.htmlDelAvisoDeSaldos(AVISO_DE_LICENCIAS));
+      assert.equal(M.htmlDeHorasExtras(horasDe(caso, { estado })), M.htmlDelAvisoDeSaldos(AVISO_DE_HORAS));
+    }
+    const html = M.htmlDelAvisoDeSaldos('a <b>');
+    assert.match(html, /^<div class="me-aviso me-aviso-azul"><p>a &lt;b&gt;<\/p>/);
+    assert.deepEqual(botonesDe(html).map(({ atributos, texto }) => [atributos['data-abrir'], texto]), [['saldos', 'Mis vacaciones y saldos']]);
+  });
+
+  it('con el saldo inicial, las pestañas traen sus botones de carga y no el aviso', () => {
+    const licencias = M.htmlDeListaDeLicencias(licenciasDe(PLANTA), 'todas');
+    const horas = M.htmlDeHorasExtras(horasDe(PLANTA));
+    assert.ok(licencias.includes('data-cargar="licencia"'));
+    assert.ok(horas.includes('data-cargar="horas"'));
+    assert.ok(!licencias.includes(AVISO_DE_LICENCIAS));
+    assert.ok(!horas.includes(AVISO_DE_HORAS));
+  });
+});
+
+describe('sin el saldo inicial: la página (DOM falso)', () => {
+  for (const hash of ['', '#resumen', '#licencias', '#horas', '#agenda']) {
+    it(`al entrar por «${hash}» no se abre nada ni se pide el formulario`, async () => {
+      const pagina = montarPagina({ hash, responder: paraSinSaldos(PLANTA) });
+      await pagina.iniciar();
+      await pagina.correr();
+      assert.equal(pagina.documento.querySelectorAll('.modal-overlay.active').length, 0);
+      assert.equal(pagina.pedidosA('GET', '/api/mi-espacio/saldo-inicial').length, 0);
+      assert.equal(pagina.el('btn-cargar-licencia').hidden, true);
+      assert.equal(pagina.el('btn-cargar-horas').hidden, true);
+      assert.equal(pagina.el('btn-nuevo-evento').hidden, false);
+    });
+  }
+
+  it('la bienvenida no gasta el movimiento', async () => {
+    const pagina = montarPagina({ cuadros: true, responder: paraSinSaldos(PLANTA) });
+    await pagina.iniciar();
+    await pagina.correr();
+    assert.ok(pagina.el('vista-resumen').querySelector('.me-banda-bienvenida'));
+    assert.equal(pagina.el('vista-resumen').getAttribute('data-animar'), null);
+    assert.equal(pagina.estado.cuadros.length, 0);
+  });
+
+  for (const [hash, vista, texto] of [['#licencias', 'vista-licencias', AVISO_DE_LICENCIAS], ['#horas', 'vista-horas', AVISO_DE_HORAS]]) {
+    for (const caso of [PLANTA, CONTRATO]) {
+      it(`${hash} de ${caso.estado.modalidad}: el aviso; su botón abre el formulario y, al cerrarlo, el foco vuelve a él`, async () => {
+        const pagina = montarPagina({ hash, responder: paraSinSaldos(caso) });
+        await pagina.iniciar();
+        await pagina.correr();
+        assert.equal(pagina.el(vista).innerHTML, M.htmlDelAvisoDeSaldos(texto));
+        const boton = pagina.el(vista).querySelector('[data-abrir="saldos"]');
+        await pagina.tocar(boton);
+        await pagina.correr();
+        assert.equal(pagina.abierto('modal-saldos'), true);
+        await pagina.tocar(pagina.el('modal-saldos').querySelector('.modal-footer [data-cerrar]'));
+        assert.equal(pagina.abierto('modal-saldos'), false);
+        assert.equal(pagina.documento.activeElement, boton);
+      });
+    }
+  }
+
+  it('«Lo completo después» sin el saldo inicial, también al volver a abrirlo, y «Cancelar» con él', async () => {
+    const pagina = montarPagina({ responder: paraSinSaldos(PLANTA) });
+    await pagina.iniciar();
+    await pagina.correr();
+    await abrirLosSaldos(pagina);
+    const cancelar = () => pagina.el('modal-saldos').querySelector('.modal-footer [data-cerrar]');
+    assert.equal(cancelar().textContent, 'Lo completo después');
+    await pagina.tocar(cancelar());
+    await abrirLosSaldos(pagina);
+    assert.equal(cancelar().textContent, 'Lo completo después');
+
+    const conSaldo = montarPagina({
+      responder: conFormularios({
+        extra: (metodo, ruta) => {
+          if (metodo === 'GET' && ruta === '/api/mi-espacio/anio/2026') {
+            return ok({ anio: 2026, dias_vacaciones: 20, estudios: null, heredado: false, texto_mitades: '', textos_mitades: {} });
+          }
+          if (metodo === 'GET' && ruta === '/api/mi-espacio/saldo-inicial') return ok({ arranque: HOY, modalidad: 'planta', campos: [] });
+          return undefined;
+        }
+      })
+    });
+    await conSaldo.iniciar();
+    await conSaldo.correr();
+    await conSaldo.tocar(conSaldo.el('vista-resumen').querySelector('[data-abrir="saldos"]'));
+    await conSaldo.correr();
+    assert.equal(conSaldo.abierto('modal-saldos'), true);
+    assert.equal(conSaldo.el('modal-saldos').querySelector('.modal-footer [data-cerrar]').textContent, 'Cancelar');
+    assert.equal(conSaldo.el('btn-cargar-licencia').hidden, false);
+  });
+
+  it('al guardar los saldos, los botones de carga aparecen y la pestaña abierta muestra su lista, sin recargar', async () => {
+    let guardado = false;
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: paraSinSaldos(PLANTA, (metodo, ruta) => {
+        if (metodo === 'PUT' && ruta === '/api/mi-espacio/anio/2026') return ok({ anio: 2026 }, 'Días del año guardados.');
+        if (metodo === 'PUT' && ruta === '/api/mi-espacio/saldo-inicial') {
+          guardado = true;
+          return ok({ arranque: HOY }, 'Saldo inicial guardado.');
+        }
+        if (!guardado) return undefined;
+        if (ruta === '/api/mi-espacio/resumen') return ok(RESUMEN_DE_PLANTA);
+        if (ruta.startsWith('/api/mi-espacio/licencias')) return ok(licenciasDe(PLANTA));
+        if (ruta.startsWith('/api/mi-espacio/horas-extras')) return ok(horasDe(PLANTA));
+        return undefined;
+      })
+    });
+    await pagina.iniciar();
+    await pagina.correr();
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-abrir="saldos"]'));
+    await pagina.correr();
+    await pagina.elegir('ms-dia', '20');
+    await pagina.elegir('ms-estudio', 'universitario');
+    for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
+    await pagina.tocar(pagina.el('ms-guardar'));
+    await pagina.esperar();
+    assert.equal(pagina.abierto('modal-saldos'), false);
+    assert.equal(pagina.el('btn-cargar-licencia').hidden, false);
+    assert.equal(pagina.el('btn-cargar-horas').hidden, false);
+    assert.ok(pagina.el('vista-licencias').querySelector('[data-cargar="licencia"]'), 'la lista');
+    assert.equal(pagina.el('vista-resumen').querySelector('.me-banda-bienvenida'), null);
+    assert.ok(pagina.el('vista-resumen').querySelector('.me-regla'), 'la banda de verdad');
+  });
+
+  // Lo que queda de cada caso con «Mis vacaciones y saldos» ya guardado (Review Focus 3 y 5)
+  const guardarLosSaldos = async (pagina, vista) => {
+    await pagina.tocar(pagina.el(vista).querySelector('[data-abrir="saldos"]'));
+    await pagina.correr();
+    assert.equal(pagina.abierto('modal-saldos'), true);
+    await pagina.elegir('ms-dia', '20');
+    await pagina.elegir('ms-estudio', '');
+    for (const campo of pagina.el('ms-campos').querySelectorAll('input')) campo.value = '0';
+    await pagina.tocar(pagina.el('ms-guardar'));
+    await pagina.esperar();
+    await pagina.correr();
+  };
+  const conElGuardado = (caso, { falla = () => false } = {}) => {
+    let guardado = false;
+    return paraSinSaldos(caso, (metodo, ruta) => {
+      if (metodo === 'PUT' && ruta === '/api/mi-espacio/anio/2026') return ok({ anio: 2026 }, 'Días del año guardados.');
+      if (metodo === 'PUT' && ruta === '/api/mi-espacio/saldo-inicial') {
+        if (falla()) return respuesta(400, { success: false, error: 'De 0 a 30, el máximo de una licencia.', campo: 'vacaciones-2024' });
+        guardado = true;
+        return ok({ arranque: HOY }, 'Saldo inicial guardado.');
+      }
+      if (!guardado) return undefined;
+      if (metodo === 'GET' && ruta === '/api/mi-espacio/saldo-inicial') return ok({ arranque: HOY, modalidad: caso.estado.modalidad, campos: [] });
+      if (ruta === '/api/mi-espacio/resumen') return ok(resumenDel(caso));
+      if (ruta.startsWith('/api/mi-espacio/licencias')) return ok(licenciasDe(caso));
+      if (ruta.startsWith('/api/mi-espacio/horas-extras')) return ok(horasDe(caso));
+      return undefined;
+    });
+  };
+
+  it('guardados desde Licencias, Horas extras ya visitada no vuelve a decir que faltan: «Cargando tus horas extras…» y su tabla', async () => {
+    const pagina = montarPagina({ hash: '#horas', responder: conElGuardado(PLANTA) });
+    await pagina.iniciar();
+    await pagina.correr();
+    assert.equal(pagina.el('vista-horas').innerHTML, M.htmlDelAvisoDeSaldos(AVISO_DE_HORAS));
+    await pagina.tocar(pagina.el('tab-licencias'));
+    await pagina.correr();
+    await guardarLosSaldos(pagina, 'vista-licencias');
+    assert.ok(pagina.el('vista-licencias').querySelector('[data-cargar="licencia"]'));
+    assert.equal(pagina.el('vista-horas').innerHTML, '<p class="me-estado">Cargando tus horas extras…</p>');
+    const antes = pagina.pedidosA('GET', '/api/mi-espacio/horas-extras').length;
+    await pagina.tocar(pagina.el('tab-horas'));
+    await pagina.esperar();
+    assert.equal(pagina.pedidosA('GET', '/api/mi-espacio/horas-extras').length, antes + 1);
+    assert.ok(pagina.el('vista-horas').querySelector('[data-cargar="horas"]'));
+  });
+
+  it('guardados desde Horas extras, Licencias ya visitada tampoco', async () => {
+    const pagina = montarPagina({ hash: '#licencias', responder: conElGuardado(PLANTA) });
+    await pagina.iniciar();
+    await pagina.correr();
+    await pagina.tocar(pagina.el('tab-horas'));
+    await pagina.correr();
+    await guardarLosSaldos(pagina, 'vista-horas');
+    assert.equal(pagina.el('vista-licencias').innerHTML, '<p class="me-estado">Cargando tus licencias…</p>');
+    await pagina.tocar(pagina.el('tab-licencias'));
+    await pagina.esperar();
+    assert.ok(pagina.el('vista-licencias').querySelector('[data-cargar="licencia"]'));
+  });
+
+  it('con el saldo inicial, una pestaña oculta sigue con lo suyo a la vista hasta que llegue lo nuevo', async () => {
+    const pagina = montarPagina({
+      hash: '#licencias',
+      responder: conFormularios({
+        extra: (metodo, ruta) => {
+          if (metodo === 'GET' && ruta === '/api/mi-espacio/anio/2026') {
+            return ok({ anio: 2026, dias_vacaciones: 20, estudios: null, heredado: false, texto_mitades: '', textos_mitades: {} });
+          }
+          if (metodo === 'GET' && ruta === '/api/mi-espacio/saldo-inicial') return ok({ arranque: HOY, modalidad: 'planta', campos: [] });
+          if (metodo === 'PUT') return ok({ arranque: HOY }, 'Guardado.');
+          return undefined;
+        }
+      })
+    });
+    await pagina.iniciar();
+    await pagina.correr();
+    await pagina.tocar(pagina.el('tab-horas'));
+    await pagina.correr();
+    assert.ok(pagina.el('vista-horas').querySelector('[data-cargar="horas"]'));
+    await pagina.tocar(pagina.el('tab-licencias'));
+    await pagina.correr();
+    const horas = pagina.el('vista-horas').innerHTML;
+    await pagina.tocar(pagina.el('vista-licencias').querySelector('[data-abrir="saldos"]'));
+    await pagina.correr();
+    await pagina.elegir('ms-dia', '20');
+    await pagina.elegir('ms-estudio', '');
+    await pagina.tocar(pagina.el('ms-guardar'));
+    await pagina.esperar();
+    assert.equal(pagina.abierto('modal-saldos'), false);
+    assert.equal(pagina.el('vista-horas').innerHTML, horas);
+  });
+
+  for (const caso of [PLANTA, CONTRATO]) {
+    it(`guardados desde Horas extras, en ${caso.estado.modalidad}: la tabla, en su lugar, y los botones de arriba`, async () => {
+      const pagina = montarPagina({ hash: '#horas', responder: conElGuardado(caso) });
+      await pagina.iniciar();
+      await pagina.correr();
+      await guardarLosSaldos(pagina, 'vista-horas');
+      assert.equal(pagina.abierto('modal-saldos'), false);
+      assert.ok(pagina.el('vista-horas').querySelector('[data-cargar="horas"]'));
+      assert.equal(pagina.el('btn-cargar-horas').hidden, false);
+      assert.equal(pagina.el('btn-cargar-licencia').hidden, false);
+    });
+  }
+
+  it('guardados con el Resumen oculto, la banda de verdad queda quieta y se mueve al verla', async () => {
+    const pagina = montarPagina({ hash: '#licencias', cuadros: true, responder: conElGuardado(PLANTA) });
+    await pagina.iniciar();
+    await pagina.correr();
+    await guardarLosSaldos(pagina, 'vista-licencias');
+    const vista = pagina.el('vista-resumen');
+    assert.equal(vista.hidden, true);
+    assert.ok(vista.querySelector('.me-regla'));
+    assert.equal(vista.getAttribute('data-animar'), null);
+    await pagina.tocar(pagina.el('tab-resumen'));
+    assert.equal(vista.getAttribute('data-animar'), '', 'se mueve al verse');
+  });
+
+  it('ir y volver de otra pestaña con la bienvenida no gasta el movimiento: se mueve al guardar', async () => {
+    const pagina = montarPagina({ cuadros: true, responder: conElGuardado(PLANTA) });
+    await pagina.iniciar();
+    await pagina.correr();
+    await pagina.tocar(pagina.el('tab-licencias'));
+    await pagina.correr();
+    await pagina.tocar(pagina.el('tab-resumen'));
+    await pagina.correr();
+    assert.equal(pagina.el('vista-resumen').getAttribute('data-animar'), null);
+    assert.equal(pagina.estado.cuadros.length, 0);
+    await guardarLosSaldos(pagina, 'vista-resumen');
+    assert.equal(pagina.el('vista-resumen').getAttribute('data-animar'), '');
+  });
+
+  it('guardado a medias: sigue «Lo completo después» y, al cerrar, la bienvenida; al completar y volver a abrir, «Cancelar»', async () => {
+    let falla = true;
+    const pagina = montarPagina({ responder: conElGuardado(PLANTA, { falla: () => falla }) });
+    await pagina.iniciar();
+    await pagina.correr();
+    const cancelar = () => pagina.el('modal-saldos').querySelector('.modal-footer [data-cerrar]');
+    await guardarLosSaldos(pagina, 'vista-resumen');
+    assert.equal(pagina.abierto('modal-saldos'), true, 'queda abierto');
+    assert.equal(cancelar().textContent, 'Lo completo después');
+    await pagina.tocar(cancelar());
+    await pagina.esperar();
+    assert.ok(pagina.el('vista-resumen').querySelector('.me-banda-bienvenida'));
+    falla = false;
+    await guardarLosSaldos(pagina, 'vista-resumen');
+    assert.equal(pagina.abierto('modal-saldos'), false);
+    assert.ok(pagina.el('vista-resumen').querySelector('.me-regla'));
+    await pagina.tocar(pagina.el('vista-resumen').querySelector('[data-abrir="saldos"]'));
+    await pagina.correr();
+    assert.equal(pagina.abierto('modal-saldos'), true);
+    assert.equal(cancelar().textContent, 'Cancelar');
+  });
+
+  it('Escape cierra el formulario abierto desde un aviso, sin guardar, y el foco vuelve a su botón', async () => {
+    const pagina = montarPagina({ hash: '#horas', responder: conElGuardado(PLANTA) });
+    await pagina.iniciar();
+    await pagina.correr();
+    const boton = pagina.el('vista-horas').querySelector('[data-abrir="saldos"]');
+    await pagina.tocar(boton);
+    await pagina.correr();
+    await pagina.tecla('Escape');
+    assert.equal(pagina.abierto('modal-saldos'), false);
+    assert.equal(pagina.documento.activeElement, boton);
+    assert.equal(pagina.pedidosA('PUT', '/api/mi-espacio/saldo-inicial').length, 0);
   });
 });
