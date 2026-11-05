@@ -299,6 +299,7 @@ export const mailpit = {
   vaciar: () => fetch(`${MAILPIT_URL}/api/v1/messages`, { method: 'DELETE' }),
   mensajes: async () => (await (await fetch(`${MAILPIT_URL}/api/v1/messages`)).json()).messages,
   html: async (id) => (await (await fetch(`${MAILPIT_URL}/api/v1/message/${id}`)).json()).HTML,
+  texto: async (id) => (await (await fetch(`${MAILPIT_URL}/api/v1/message/${id}`)).json()).Text,
   // Espera (hasta ~5 s) a que llegue algún mensaje que cumpla la condición; devuelve los que la cumplen
   esperar: async (condicion, { intentos = 50, ms = 100 } = {}) => {
     for (let i = 0; i < intentos; i++) {

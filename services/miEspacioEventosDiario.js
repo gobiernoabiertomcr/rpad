@@ -117,10 +117,16 @@ const mandarUno = async ({ persona, mail, dia, momento }, resultado) => {
   }
   try {
     await terminar(persona.id, dia, momento, success);
-    if (success) await marcarInformados(persona.id, mail.informa, ahoraArgentina());
   } catch (error) {
     // Queda reservado y sin terminar: no se repite (pudo haber salido)
     conError('Error al anotar el aviso diario:', error);
+  }
+  if (!success) return;
+  // Aparte: el mail ya salió, y sin esto le volvería a llegar como «Nuevo:» a las 8:05, aunque no se haya podido anotar el envío
+  try {
+    await marcarInformados(persona.id, mail.informa, ahoraArgentina());
+  } catch (error) {
+    conError('Error al anotar lo informado del aviso diario:', error);
   }
 };
 

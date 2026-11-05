@@ -3169,10 +3169,9 @@ function cuantosMailsParaConfirmar(valores, original, largoDeLaLista = null) {
   const datos = esObjeto(valores) ? valores : {};
   if (tipoDelEvento(datos) !== 'laboral') return 0;
   const era = esObjeto(original) && original.tipo === 'laboral' ? original : null;
-  if (datos.para_todos === true) {
-    if (era?.para_todos === true) return 0;
-    return Number.isInteger(largoDeLaLista) && largoDeLaLista > 0 ? largoDeLaLista : null;
-  }
+  // Era para todos: ya estaban todas, con «Todos» o eligiendo de la lista
+  if (era?.para_todos === true) return 0;
+  if (datos.para_todos === true) return Number.isInteger(largoDeLaLista) && largoDeLaLista > 0 ? largoDeLaLista : null;
   const estaban = new Set(Array.isArray(era?.personas) ? era.personas : []);
   const entran = (Array.isArray(datos.personas) ? datos.personas : []).filter((id) => !estaban.has(id)).length;
   return entran >= PERSONAS_PARA_CONFIRMAR ? entran : 0;
@@ -6766,6 +6765,7 @@ function sumarCambiarAlAviso(id, fecha) {
   boton.className = 'sg-link me-cambiar-del-aviso';
   boton.textContent = 'Cambiar';
   boton.addEventListener('click', () => abrirElEventoGuardado(id, fecha, aviso));
+  aviso.classList.add('me-aviso-guardado');
   aviso.appendChild(boton);
 }
 

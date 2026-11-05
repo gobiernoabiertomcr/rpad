@@ -7313,6 +7313,8 @@ describe('¿Quién lo ve?: lo puro', () => {
     assert.equal(M.cuantosMailsParaConfirmar(laboral([1, 2, 3, 4, 5, 6, 7, 8, 9]), laboral([1, 2, 3, 4]), 9), 5);
     // Ya era «Todos»: no entra nadie nuevo
     assert.equal(M.cuantosMailsParaConfirmar(laboral([], { para_todos: true }), laboral([], { para_todos: true }), 8), 0);
+    // De «Todos» a una lista: ya estaban todas, no le llega a nadie otra invitación
+    assert.equal(M.cuantosMailsParaConfirmar(laboral([1, 2, 3, 4, 5, 6]), laboral([], { para_todos: true }), 8), 0);
     // De un Público a un Laboral, todas entran
     assert.equal(M.cuantosMailsParaConfirmar(laboral([1, 2, 3, 4, 5]), { tipo: 'publico', personas: [1, 2, 3, 4, 5] }), 5);
     // Solo un Laboral

@@ -131,10 +131,15 @@ describe('a las 14:00', () => {
       assert.equal(mensajes.length, 1);
       assert.equal(mensajes[0].Subject, 'RPAD: agenda del viernes 06/11 de quienes dependen de vos');
       const html = await mailpit.html(mensajes[0].ID);
+      const texto = await mailpit.texto(mensajes[0].ID);
       assert.match(html, /Fuera de la oficina/);
       assert.match(html, /Hasta las 11:00/);
-      // **Ni el título ni el detalle de un Público, ni nada de un Privado**
-      for (const secreto of [privado.titulo, delPublico.titulo, 'Detalle del evento']) assert.ok(!html.includes(secreto), secreto);
+      assert.match(texto, /Fuera de la oficina/);
+      // **Ni el título ni el detalle de un Público, ni nada de un Privado, en ninguna de las dos partes del mail**
+      for (const secreto of [privado.titulo, delPublico.titulo, 'Detalle del evento']) {
+        assert.ok(!html.includes(secreto), secreto);
+        assert.ok(!texto.includes(secreto), secreto);
+      }
     }
     // A quien solo fue elegida no le llega nada
     assert.deepEqual(await recibidos(lucia.email), []);
@@ -178,12 +183,48 @@ describe('a las 14:00', () => {
     assert.equal((await corrida('tarde', JUEVES_14)).enviados, 2);
     assert.deepEqual(await recibidos(federico.email), []);
     assert.equal((await esperarDe(graciela.email)).length, 1);
+  });
 
+  it('una licencia anulada no frena el mail', async () => {
+    const { federico, micaela } = await cadena();
+    await publico({ creador: micaela });
+    await query("INSERT INTO usuarios_licencias (usuario_id, desde, hasta, anulada) VALUES (?, '2026-11-02', '2026-11-20', 1)", [federico.id]);
+    assert.equal((await corrida('tarde', JUEVES_14)).enviados, 3);
+    assert.equal((await esperarDe(federico.email)).length, 1);
+  });
+
+  it('sin un email que sirva, o desactivada, no le sale nada y no es un error', async () => {
     const sinEmail = await persona({ clave: 'sinemail', email: `sin-arroba-${sufijo()}` });
     await evento({ creador: sinEmail });
     const inactiva = await persona({ clave: 'inactiva', activo: 0 });
     await evento({ creador: inactiva });
-    assert.equal((await corrida('tarde', VIERNES_14, calendario)).enviados, 0, 'el viernes no hay nada para el lunes');
+    const conEmail = await persona({ clave: 'conemail' });
+    await evento({ creador: conEmail });
+    assert.deepEqual(await corrida('tarde', JUEVES_14), resultado({ enviados: 1 }));
+    assert.equal((await esperarDe(conEmail.email)).length, 1);
+    assert.deepEqual(await recibidos(inactiva.email), []);
+    assert.deepEqual((await envios()).map(([usuario]) => usuario), [conEmail.id]);
+  });
+
+  it('si no se puede anotar el envío, lo informado queda: el mail ya salió y no vuelve a llegar como «Nuevo:»', async () => {
+    const { graciela, federico, micaela } = await cadena();
+    const delTurno = await publico({ creador: micaela, desde: '08:15', publicado: '2026-11-05 14:02:00' });
+    const errorEnConsola = mock.method(console, 'error', () => {});
+    const original = pool.query;
+    pool.query = function (sql, ...resto) {
+      return String(sql).includes('SET success') ? Promise.reject(new Error('Sin base')) : original.call(this, sql, ...resto);
+    };
+    try {
+      const salida = await corrida('manana', VIERNES_8);
+      assert.equal(salida.enviados, 2);
+      assert.equal(salida.errores.length, 2);
+    } finally {
+      pool.query = original;
+      errorEnConsola.mock.restore();
+    }
+    assert.deepEqual(await informados(), [[delTurno.id, graciela.id, '2026-11-06'], [delTurno.id, federico.id, '2026-11-06']]);
+    // La reserva quedó sin terminar: no se repite
+    assert.deepEqual(await corrida('manana', VIERNES_8), resultado());
   });
 
   it('lo cargado en Mi espacio no frena el mail: solo la licencia oficial', async () => {
@@ -263,7 +304,13 @@ describe('a las 8:05', () => {
     }
     assert.deepEqual(await recibidos(micaela.email), [], 'quien lo cargó ya lo sabe');
     assert.deepEqual(await corrida('manana', VIERNES_8), resultado());
-    assert.equal((await corrida('tarde', VIERNES_14)).enviados, 0, 'a las 14:00 ya no es nuevo');
+  });
+
+  it('lo informado a las 8:05 que todavía no empezó no vuelve a salir a las 14:00', async () => {
+    const { micaela } = await cadena();
+    await publico({ creador: micaela, desde: '16:00', publicado: '2026-11-05 14:02:00' });
+    assert.equal((await corrida('manana', VIERNES_8)).enviados, 2);
+    assert.deepEqual(await corrida('tarde', VIERNES_14), resultado());
   });
 
   it('lo informado a las 14:00 no vuelve a salir a las 8:05', async () => {
@@ -285,11 +332,15 @@ describe('a las 8:05', () => {
   it('un mail de las 8:05 que falló sale a las 14:00, solo si no empezó', async () => {
     const { federico, micaela } = await cadena();
     await publico({ creador: micaela, desde: '16:00', publicado: '2026-11-05 15:00:00' });
+    await publico({ creador: micaela, desde: '09:00', texto: 'Ya empezó', publicado: '2026-11-05 15:00:00' });
     const fallida = await sinBarrera(() => corrida('manana', VIERNES_8));
     assert.equal(fallida.fallidos, 2);
     assert.equal((await corrida('tarde', VIERNES_14)).enviados, 2);
     const [mensaje] = await esperarDe(federico.email);
     assert.equal(mensaje.Subject, 'RPAD: se sumó algo a tu agenda de hoy');
+    const html = await mailpit.html(mensaje.ID);
+    assert.match(html, /Fuera de la oficina/);
+    assert.doesNotMatch(html, /Ya empezó/);
   });
 
   it('un día no hábil no manda nada: lo cargado para el sábado no se avisa nunca', async () => {
@@ -354,7 +405,7 @@ describe('sin frenar nada, ni al revés', () => {
     assert.equal((await esperarDe(federico.email)).length, 1);
   });
 
-  it('si el paso falla, salen los recordatorios y la respuesta es 207, con el mensaje de siempre', async () => {
+  it('si el paso falla, los recordatorios corren igual y la respuesta es 207, con el mensaje de siempre', async () => {
     const { micaela } = await cadena();
     await publico({ creador: micaela });
     const errorEnConsola = mock.method(console, 'error', () => {});
@@ -386,7 +437,7 @@ describe('sin frenar nada, ni al revés', () => {
     }
   });
 
-  it('a las 8:05 sale antes que lo demás y va en la respuesta; un error suyo da 207, con su tipo', async () => {
+  it('a las 8:05 va en la respuesta; un error suyo da 207, con su tipo', async () => {
     const { micaela, federico } = await cadena();
     await publico({ creador: micaela, desde: '08:15', publicado: '2026-11-05 14:02:00' });
     const res = await lasDe8();
@@ -420,6 +471,36 @@ describe('sin frenar nada, ni al revés', () => {
       pool.getConnection = original;
       errorEnConsola.mock.restore();
     }
+  });
+
+  it('a las 8:05, con el paso colgado, las Notas corren y terminan igual; se responde recién cuando termina', async () => {
+    const { graciela, micaela } = await cadena();
+    await publico({ creador: micaela, desde: '08:15', publicado: '2026-11-05 14:02:00' });
+    await query('UPDATE notas_digitales_config SET ultima_corrida_fecha = NULL, ultima_corrida_fin = NULL');
+    // Una fila sin confirmar cuelga la reserva de la primera persona: el paso queda esperando, como con un SMTP colgado
+    const conexion = await db().getConnection();
+    await conexion.beginTransaction();
+    await conexion.query(
+      "INSERT INTO mi_espacio_diario_envios (usuario_id, dia, momento, enviado_at, success) VALUES (?, '2026-11-06', 'manana', NULL, 0)",
+      [graciela.id]
+    );
+    const res = respuestaFalsa();
+    const enCurso = conReloj(VIERNES_8, () => controlador.ejecutarNotificacionesDiarias({}, res));
+    try {
+      let terminaron = false;
+      for (let intento = 0; intento < 200 && !terminaron; intento++) {
+        const [fila] = await query("SELECT 1 AS si FROM notas_digitales_config WHERE ultima_corrida_fecha = '2026-11-06' AND ultima_corrida_fin IS NOT NULL");
+        terminaron = fila !== undefined;
+        if (!terminaron) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.ok(terminaron, 'las Notas no esperan al paso');
+      assert.equal(res.body, null, 'la respuesta sí');
+    } finally {
+      await conexion.rollback();
+      conexion.release();
+    }
+    await enCurso;
+    assert.equal(res.body.data.diario.enviados, 2);
   });
 
   it('a las 8:05 se dispara antes de los demás pasos y sin esperarlo; se espera recién antes de responder', () => {
