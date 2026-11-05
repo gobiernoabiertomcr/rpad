@@ -109,6 +109,19 @@ export const casosDeEmail = (t) => {
       email: t.vencimientoMiEspacioTemplate({ nombre_completo: 'Julieta Ferreyra', avisos: [AVISO_DE_RESTITUCION] }),
       boton: true
     },
+    // El aviso diario de la agenda (spec 2026-11-04-agenda-aviso-y-dependencia, 8), con lo propio y lo de su gente
+    {
+      nombre: 'aviso diario de la agenda',
+      email: t.avisoDiarioTemplate({
+        persona: { nombre_completo: 'Graciela Paz' }, hoy: '2026-11-06',
+        mail: {
+          dias: ['2026-11-07', '2026-11-08', '2026-11-09'], soloHoy: false, informa: [],
+          propios: [{ fecha: '2026-11-09', desde: '11:00', titulo: 'Reunión de portal de datos', detalle: 'Revisar la lista.', marca: 'Laboral, de Federico' }],
+          gente: [{ fecha: '2026-11-09', desde: '08:00', hasta: '10:00', texto: 'Micaela: Fuera de la oficina', nuevo: false }]
+        }
+      }),
+      boton: true
+    },
     { nombre: 'evento: invitación', email: t.eventoInvitacionTemplate({ creador: 'Persona de Prueba', evento }), boton: true },
     {
       nombre: 'evento: cambio',

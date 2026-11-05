@@ -1,0 +1,107 @@
+/* MAQUETA: lo que suma la propuesta y el panel para recorrerla. No es del RPAD. */
+#ev-tipo-ayuda { margin: 8px 0 0; padding: 10px 12px; border-radius: 10px; background: #F3F7FC; border: 1px solid #DAE3ED; color: #22324A; font-size: 0.86rem; line-height: 1.45; }
+.mq-sin-elegir { display: block; margin-top: 6px; color: #56677F; font-size: 0.82rem; }
+.mq-casilla-mail { margin-top: 14px; padding-top: 12px; border-top: 1px solid #DAE3ED; }
+.mq-casilla-mail .form-hint { margin: 4px 0 0 25px; }
+.me-tilde-mq { display: flex; gap: 8px; align-items: center; cursor: pointer; color: #1A365D; font-size: 0.9rem; }
+.me-tilde-mq input { width: 17px; height: 17px; accent-color: #1A365D; }
+.mq-depende { color: #24507A; }
+.mq-panel { position: fixed; left: 12px; bottom: 12px; z-index: 5000; width: 250px; background: #FFF4D6; color: #3F2F00; border: 2px solid #E3B63C; border-radius: 12px; padding: 10px 12px; font: 13px/1.4 Figtree, system-ui, sans-serif; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.mq-panel b { display: block; margin-bottom: 4px; }
+.mq-panel a { display: block; color: #3F2F00; font-weight: 600; padding: 2px 0; }
+.mq-panel a[aria-current="page"] { text-decoration: none; opacity: .65; }
+.mq-panel label { display: block; margin-top: 6px; font-weight: 600; }
+.mq-panel select { width: 100%; margin-top: 2px; padding: 4px; font: inherit; }
+.mq-panel button.mq-plegar { position: absolute; top: 6px; right: 8px; background: none; border: 0; cursor: pointer; font: inherit; font-weight: 700; color: #3F2F00; }
+.mq-panel.plegado > :not(b):not(.mq-plegar) { display: none; }
+.mq-panel.plegado b { margin: 0; }
+.toast .mq-cambiar { margin-left: 8px; background: none; border: 0; padding: 0; font: inherit; font-weight: 700; color: inherit; text-decoration: underline; cursor: pointer; }
+@media (max-width: 767px) { .mq-panel { width: 180px; } }
+
+/* El selector de «¿Quién lo ve?»: los íconos de la grilla, con sus colores (tinta, rosado y violeta) y cuatro formas */
+.mq-ico { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; flex: none; }
+.me-opcion[data-tipo="privado"] .mq-ico { color: var(--sg-tinta); background: var(--sg-azul-fondo); }
+.me-opcion[data-tipo="publico"] .mq-ico { color: var(--sg-rosado); background: var(--sg-rosado-fondo); }
+.me-opcion[data-tipo="laboral"] .mq-ico { color: var(--sg-violeta); background: var(--sg-violeta-fondo); }
+[data-forma] .me-opcion { position: relative; }
+[data-forma] .me-opcion[aria-pressed="true"]::after { content: '✓'; position: absolute; top: 7px; right: 8px; width: 20px; height: 20px; border-radius: 50%; background: var(--sg-tinta); color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; }
+/* 1. Tarjetas: el ícono arriba, con el nombre y su ayuda */
+[data-forma="1"] .me-opcion { flex-direction: column; gap: 8px; }
+/* 2. Íconos grandes: solo el ícono y el nombre; lo demás lo dice la frase */
+[data-forma="2"] .me-opciones { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+[data-forma="2"] .me-opcion { flex-direction: column; align-items: center; gap: 8px; padding: 14px 8px; text-align: center; }
+[data-forma="2"] .mq-ico { width: 46px; height: 46px; border-radius: 50%; }
+[data-forma="2"] .mq-ico svg { width: 24px; height: 24px; }
+[data-forma="2"] .me-opcion small { display: none; }
+/* 3. Lista de alcance: de lo más cerrado a lo más abierto, con un círculo a la derecha */
+[data-forma="3"] .me-opciones { grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; }
+[data-forma="3"] .me-opcion { align-items: center; gap: 12px; padding-right: 44px; }
+[data-forma="3"] .me-opcion::after { content: ''; position: absolute; top: 50%; right: 14px; width: 20px; height: 20px; margin-top: -10px; border-radius: 50%; box-sizing: border-box; border: 2px solid var(--sg-borde-control); }
+[data-forma="3"] .me-opcion[aria-pressed="true"]::after { content: '✓'; top: 50%; right: 14px; border: 0; }
+/* 4. Barra compacta: una sola pieza, sin ayudas; lo demás lo dice la frase */
+[data-forma="4"] .me-opciones { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; padding: 4px; border: 1px solid var(--sg-borde-control); border-radius: 14px; background: var(--sg-sutil); }
+[data-forma="4"] .me-opcion { align-items: center; justify-content: center; gap: 6px; padding: 8px 6px; border: 0; border-radius: 10px; background: transparent; text-align: left; }
+[data-forma="4"] .me-opcion:hover { background: #fff; }
+[data-forma="4"] .me-opcion[aria-pressed="true"] { background: #fff; box-shadow: inset 0 0 0 2px var(--sg-tinta); }
+[data-forma="4"] .me-opcion[aria-pressed="true"]::after { display: none; }
+[data-forma="4"] .mq-ico { width: 24px; height: 24px; background: none !important; }
+[data-forma="4"] .me-opcion small { display: none; }
+[data-forma="4"] .me-opcion b { font-size: 0.82rem; line-height: 1.2; }
+
+/* La página para compararlas */
+.mq-opciones-pagina { max-width: 1120px; margin: 0 auto; padding: 16px 16px 120px; }
+.mq-opciones-pagina h1 { margin: 8px 0 4px; color: var(--sg-tinta); font-size: 1.4rem; }
+.mq-opciones-pagina > p { margin: 0 0 16px; color: var(--sg-suave); max-width: 76ch; }
+.mq-cuadricula { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr)); gap: 16px; align-items: start; }
+.mq-carta { background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 16px 18px; }
+.mq-carta h2 { margin: 0 0 2px; color: var(--sg-tinta); font-size: 1rem; }
+.mq-carta > p { margin: 0 0 14px; color: var(--sg-suave); font-size: 0.86rem; line-height: 1.4; }
+.mq-carta .form-group { margin-top: 14px; margin-bottom: 0; }
+.mq-carta .mq-probar { display: inline-block; margin-top: 12px; color: var(--sg-tinta); font-size: 0.86rem; font-weight: 600; }
+.mq-frase { margin: 8px 0 0; padding: 10px 12px; border-radius: 10px; background: #F3F7FC; border: 1px solid #DAE3ED; color: #22324A; font-size: 0.86rem; line-height: 1.45; }
+.mq-frase.apagada { background: none; border-style: dashed; color: var(--sg-suave); }
+@media (max-width: 767px) { [data-forma="1"] .me-opciones { grid-template-columns: minmax(0, 1fr); } }
+/* En la comparación se ven como en el modal de la compu; en el teléfono de verdad, la 1 se apila y la 2 y la 4 siguen en una fila */
+.mq-carta [data-forma="1"] .me-opciones { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* La frase: con el ícono de lo elegido y, en «Yo y quienes elija», las iniciales de quienes reciben el mail */
+#ev-tipo-ayuda.mq-frase-apagada { background: none; border-style: dashed; color: var(--sg-suave); }
+.mq-frase-fila { display: flex; gap: 8px; align-items: flex-start; }
+.mq-frase-ico { display: inline-flex; flex: none; margin-top: 1px; }
+.mq-frase-ico svg { width: 18px; height: 18px; }
+.mq-frase-ico[data-de="privado"] { color: var(--sg-tinta); }
+.mq-frase-ico[data-de="publico"] { color: var(--sg-rosado); }
+.mq-frase-ico[data-de="laboral"] { color: var(--sg-violeta); }
+.mq-frase-cadena { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--sg-linea); }
+.mq-jefes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.mq-jefe { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 2px; border-radius: 999px; background: #fff; border: 1px solid var(--sg-linea); font-weight: 600; color: var(--sg-tinta); font-size: 0.82rem; }
+.mq-iniciales { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--sg-tinta); color: #fff; font-size: 0.68rem; font-weight: 700; }
+[data-forma="4"] .me-opciones[aria-invalid="true"] { border-color: var(--sg-rojo); box-shadow: 0 0 0 3px var(--sg-rojo-fondo); }
+[data-forma="4"] .me-opciones[aria-invalid="true"] .me-opcion { border-color: transparent; }
+
+/* El mail de los jefes y la agenda, separados: las cuatro opciones */
+.mq-ico-chico { display: inline-flex; flex: none; color: var(--sg-tinta); margin-top: 1px; }
+.mq-ico-chico svg { width: 18px; height: 18px; }
+.mq-renglon { display: flex; gap: 10px; align-items: flex-start; line-height: 1.45; }
+.mq-renglon b { color: var(--sg-tinta); }
+.mq-renglon-abajo { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--sg-linea); }
+.mq-renglon .mq-jefes { margin: 6px 0; }
+.mq-dos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.mq-mitad { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 10px; background: #fff; border: 1px solid var(--sg-linea); min-width: 0; }
+.mq-mitad b { color: var(--sg-tinta); }
+.mq-mitad small { color: var(--sg-suave); font-size: 0.78rem; line-height: 1.35; }
+.mq-mitad .mq-jefes { margin: 0; }
+.mq-nadie { color: var(--sg-suave); font-size: 0.82rem; }
+.mq-pie-resumen { display: flex; flex-direction: column; gap: 6px; padding: 10px 24px; background: #F3F7FC; border-top: 1px solid var(--sg-linea); color: var(--sg-texto); font-size: 0.86rem; }
+.mq-pie-fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mq-pie-fila b { color: var(--sg-tinta); }
+.mq-pie-fila .mq-jefes { margin: 0; }
+#ev-personas-ayuda:empty, .mq-ayuda:empty { display: none; }
+.mq-salto { margin: 10px 0; padding: 6px; border-radius: 8px; background: var(--sg-sutil); color: var(--sg-suave); font-size: 0.78rem; text-align: center; }
+.mq-grupo-personas { border: 0; padding: 0; margin: 0; }
+.mq-carta .mq-pie-resumen { margin: 12px -18px 0; padding: 10px 18px; }
+.mq-botones-falsos { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.mq-botones-falsos .mq-probar { margin: 0; }
+.mq-carta .me-opcion { pointer-events: none; }
+.mq-carta .mq-frase { padding: 10px 12px; }
+.mq-carta .mq-renglon, .mq-carta .mq-mitad { font-size: 0.86rem; }

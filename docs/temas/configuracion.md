@@ -14,7 +14,7 @@ areasReglas (la validación de un área y sus mensajes, los datos de contacto qu
 licenciasOficialesService (el alta, la edición y la anulación de una licencia de Configuración → Licencias con sus reglas, dentro de una transacción ajena: las comparten Configuración y Mi espacio);
 configuracion.html # Configuración: pestañas Usuarios, Licencias, Áreas y Feriados (usuarios.js, areas.js y feriados.js); reemplaza a usuarios.html y areas.html
 usuariosController (el panel de usuarios), licenciasController (las licencias de Configuración), areasController (las áreas) y authController (login y contraseña).
-usuariosReglas (roles, puro), usuariosAuditoriaService (el historial de cambios sobre usuarios), accesoService (los links de un solo uso), licenciasReglas (puro) y licenciasService (lecturas).
+usuariosReglas (roles y la cadena de «Depende de», puro), usuariosAuditoriaService (el historial de cambios sobre usuarios), accesoService (los links de un solo uso), licenciasReglas (puro) y licenciasService (lecturas).
 
 ## Configuración: Usuarios, Licencias, Áreas y Feriados (spec 2026-10-24-configuracion)
 
@@ -104,6 +104,22 @@ usuariosReglas (roles, puro), usuariosAuditoriaService (el historial de cambios 
   `textoNoSePuedeBorrar` da el 400 ("No se puede borrar el área: tiene N datasets (M dados de baja).
   Primero hay que pasarlos a otra área.", o el de los pendientes); un `ER_ROW_IS_REFERENCED_2` por una carrera, el 400 de `MENSAJES_AREA.enUso`.
   Un id que no es un entero positivo o que no existe da 404 "Área no encontrada" (en el GET, el PUT y el DELETE).
+
+## De quién depende cada uno
+
+- «Depende de», en el panel de Usuarios, después de «Vínculo»: «Nadie» y la lista de los activos, sin la propia persona ni quienes ya dependen de ella (spec 2026-11-04-agenda-aviso-y-dependencia, 3).
+- Sirve para una sola cosa: a esa persona y a quien esté más arriba les llega por mail el texto corto de lo que su gente deja a la vista (`docs/temas/mi-espacio-aviso-diario.md`).
+  No ven nada más de su Mi espacio.
+- `superioresDe(id, usuarios)` de `services/usuariosReglas.js` es la única que recorre la cadena: sube por `depende_de`, salta a los desactivados sin cortar, termina en quien no depende de nadie, sin repetidos, nunca incluye a la persona y se corta si encuentra un ciclo.
+  El navegador no la copia: cada usuario de `GET /usuarios` y `GET /usuarios/:id` trae `depende_de`, `depende_de_nombre`, `no_elegibles` y `al_desactivar` (`{ dependen, suben_a }`, con los nombres).
+- Validación (`rechazoDeDependencia`, en `depende_de`): null o el id de un usuario activo o el que ya tenía, «Elegí una persona de la lista.»; no la misma persona, «No puede depender de sí misma.»; sin cerrar un ciclo, «Esa persona ya depende de quien estás editando.».
+- Un cuerpo sin `depende_de`, una pestaña con la página anterior, no lo toca.
+- Lo cambia quien ya puede modificar a esa persona: `rechazoParaEditor` y la protección de la cuenta del superadmin no cambian.
+- Un cambio queda en el historial, con el nombre, y no le avisa al superadmin, como el cargo o el vínculo.
+- Quien estaba cargada y se desactivó se sigue mostrando, con «(desactivado)» al lado (`opcionesDeDependencia`), y nadie la elige de nuevo.
+- Desactivar a alguien no se frena: lo que dependía de esa persona sube al siguiente activo de la cadena y el dato queda cargado por si se la reactiva.
+  La confirmación lo dice (`textoAlDesactivar`).
+- La carga inicial va en un SQL de `database/privado/`, que no se versiona: el repositorio es público y son nombres reales.
 
 ## La página: areas.js
 

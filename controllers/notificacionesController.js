@@ -1,4 +1,5 @@
 import { sendEmailToArea, verifyConnection, listaDeCorreos } from '../services/emailService.js';
+import { avisoDiarioAislado } from '../services/miEspacioEventosDiario.js';
 import * as templates from '../services/emailTemplates.js';
 import { ejecutarNotasDigitales, anotarEnLaUltimaCorrida, enviarLasQueEsperanFirma } from '../services/notasDigitales.js';
 import { sacarFotoSiCorresponde } from '../services/metricasFoto.js';
@@ -73,13 +74,22 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
   const hoy = hoyArgentina();
   const resultados = {
     fecha: new Date().toISOString(), calendario: null, enviados: [], errores: [], sinDatasets: [], notasDigitales: null,
-    dia_habil: null, avisos_retenidos: null, foto: null, miEspacio: null
+    dia_habil: null, avisos_retenidos: null, foto: null, miEspacio: null, diario: null
   };
 
   try {
     // Nunca tira: si la tabla no se puede leer, devuelve el de los 9 fijos con su error
     const calendario = await leerCalendario();
     resultados.calendario = calendario.origen;
+
+    // El aviso diario de la agenda (spec 2026-11-04-agenda-aviso-y-dependencia, 6): lo que se sumó para hoy, a los superiores. Se dispara
+    // antes que todo y sin esperarlo: la mañana tarda minutos y tiene que salir antes del evento, y un SMTP colgado acá no demora las
+    // Notas. Nunca rechaza (y lleva su .catch, por las dudas: un rechazo sin manejar tumbaría el proceso con las Notas a mitad). No escribe en
+    // la última corrida de las Notas, que registrarInicio borra: sus errores, en la respuesta y en su fila
+    const diario = avisoDiarioAislado('manana', calendario).catch((error) => {
+      console.error('Error en el aviso diario:', error?.stack ?? error);
+      return { ocupada: false, dia_habil: null, enviados: 0, fallidos: 0, errores: [{ usuario_id: null, error: 'Error en el aviso diario' }] };
+    });
 
     // Aviso directo a las áreas de gestión externa (40 días antes, solo en días hábiles). Va aislado: un error acá
     // no saltea las Notas Digitales
@@ -160,6 +170,9 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
       resultados.errores.push({ tipo: 'mi-espacio', error: mensaje });
       await anotarEnLaUltimaCorrida(textoFallaDeMiEspacio(mensaje)).catch(() => {});
     }
+
+    resultados.diario = await diario;
+    for (const fallo of resultados.diario.errores) resultados.errores.push({ tipo: 'mi-espacio-diario', ...fallo });
 
     const success = resultados.errores.length === 0;
     res.status(success ? 200 : 207).json({
@@ -267,17 +280,29 @@ export const ejecutarNotificacionCambiosPendientes = async (req, res) => {
     if (sinFeriados) await anotarEnLaUltimaCorrida(MENSAJE_CORRIDA_SIN_FERIADOS).catch(() => {});
     // Primero, las notas que esperaban la firma digital (spec 2026-11-03-notas-firma-digital, 4.9): aisladas, un error no frena los recordatorios
     const firmaDigital = await lasQueEsperanFirma(calendario);
-    const resultados = await enviarCambiosPendientes({ hoy: hoyArgentina(), calendario });
-    const data = { ...resultados, calendario: calendario.origen, ...(firmaDigital ? { firma_digital: firmaDigital } : {}) };
+    // Los recordatorios tampoco frenan el aviso diario de la agenda (spec 2026-11-04-agenda-aviso-y-dependencia, 6): enviarCambiosPendientes
+    // no tiene try, y su 500 se sigue respondiendo después del paso. El paso no tira, y sus errores dan 207 sin cambiar el mensaje; una
+    // corrida «ocupada» no es un error
+    let resultados;
+    let fallaDeLosRecordatorios = null;
+    try {
+      resultados = await enviarCambiosPendientes({ hoy: hoyArgentina(), calendario });
+    } catch (error) {
+      fallaDeLosRecordatorios = error;
+    }
+    const diario = await avisoDiarioAislado('tarde', calendario);
+    if (fallaDeLosRecordatorios) throw fallaDeLosRecordatorios;
+    const sinErroresDelDiario = diario.errores.length === 0 && diario.fallidos === 0;
+    const data = { ...resultados, calendario: calendario.origen, diario, ...(firmaDigital ? { firma_digital: firmaDigital } : {}) };
     const sinErroresDeFirma = !firmaDigital || (firmaDigital.errores.length === 0 && !firmaDigital.ocupado);
     if (!resultados.dia_habil) {
       // Las que esperaban la firma no salen un día no hábil (salen en la corrida siguiente), pero un error al mirarlas se dice igual
-      const bien = !sinFeriados && sinErroresDeFirma;
+      const bien = !sinFeriados && sinErroresDeFirma && sinErroresDelDiario;
       return res.status(bien ? 200 : 207)
         .json({ success: bien, message: 'Hoy no es día hábil: no se envían recordatorios.', data });
     }
     const sinErrores = resultados.errores.length === 0;
-    const success = sinErrores && !sinFeriados && sinErroresDeFirma;
+    const success = sinErrores && !sinFeriados && sinErroresDeFirma && sinErroresDelDiario;
     res.status(success ? 200 : 207).json({
       success,
       message: sinErrores

@@ -72,7 +72,8 @@ import {
 } from '../controllers/miEspacioController.js';
 import {
   listarEventos, verAvisoDelEvento, listarPersonasParaCompartir, listarPersonasParaElPublico, crearEvento, cambiarEvento,
-  borrarEvento, cambiarMiRecordatorio
+  borrarEvento, cambiarMiRecordatorio,
+  verAvisoDeLaCadena, cambiarEventosPorMail
 } from '../controllers/miEspacioEventosController.js';
 import {
   reporteEstadoGeneral,
@@ -233,10 +234,12 @@ router.put('/mi-espacio/saldo-inicial', authMiddleware, guardarSaldoInicial);
 router.get('/mi-espacio/ausentes', authMiddleware, listarAusentes);
 router.get('/mi-espacio/firmante', authMiddleware, verFirmante);
 // La agenda (spec 2026-10-26-mi-espacio-agenda, sección 7): los eventos de cada persona, los compartidos con ella y los «para
-// todos»; lo cambia y lo borra solo quien lo creó. Las personas para compartir, solo administración (al resto, 403). …/aviso va
+// todos»; lo cambia y lo borra solo quien lo creó. Las personas para compartir, para todos los roles. …/aviso va
 // antes que las rutas con :id
 router.get('/mi-espacio/eventos', authMiddleware, listarEventos);
 router.get('/mi-espacio/eventos/aviso', authMiddleware, verAvisoDelEvento);
+router.get('/mi-espacio/eventos/aviso-de-la-cadena', authMiddleware, verAvisoDeLaCadena);
+router.put('/mi-espacio/eventos-por-mail', authMiddleware, cambiarEventosPorMail);
 router.get('/mi-espacio/personas', authMiddleware, listarPersonasParaCompartir);
 // A quiénes se les puede mostrar un Personal (Público): todos los usuarios activos, para cualquier rol con sesión (spec
 // 2026-10-29-mi-espacio-evento-publico, 6.4)

@@ -31,7 +31,7 @@ Historia y motivos, en las specs:
   `feriados` y `feriados_no_rige` (ver abajo).
   Mi espacio:
   `mi_espacio_anios`, `mi_espacio_arranque`, `mi_espacio_saldos`, `mi_espacio_licencias`, `mi_espacio_horas_extras`, `mi_espacio_salidas` (la planilla de contrato) y `mi_espacio_avisos`, los días restituidos (`mi_espacio_restituciones`, los pedidos, y `mi_espacio_restituibles`, la foto) y su agenda:
-  `mi_espacio_eventos`, `mi_espacio_evento_personas`, `mi_espacio_evento_vistas` (a quién se le muestra un Personal (Público)), `mi_espacio_evento_envios` y `mi_espacio_eventos_corridas` (ver abajo)
+  `mi_espacio_eventos`, `mi_espacio_evento_personas`, `mi_espacio_evento_vistas` (a quién se le muestra un Personal (Público)), `mi_espacio_evento_informados`, `mi_espacio_evento_envios`, `mi_espacio_eventos_corridas` y `mi_espacio_diario_envios` (ver abajo)
 - Campos JSON validados en `cambios_pendientes` (datos_nuevos, datos_anteriores)
 - Foreign keys con CASCADE en deletes relevantes
 
@@ -169,7 +169,7 @@ Historia y motivos, en las specs:
 - El evento Personal (Público) de la agenda (spec 2026-10-29-mi-espacio-evento-publico, 6.1 y 8):
   `mi_espacio_eventos` trae, después de `para_todos`, `publico` tinyint(1) NOT NULL DEFAULT 0 (1 en un Personal (Público)), `publico_todos` tinyint(1) NOT NULL DEFAULT 0 (1 si se les muestra a todos los usuarios activos:
   una marca, también para quien se da de alta después) y `texto_publico` varchar(60) NULL (lo que ven los demás en lugar del título), y hay otra tabla, `mi_espacio_evento_vistas` (`evento_id` y `usuario_id`, PK compuesta, las dos FK ON DELETE CASCADE, con el índice `fk_mi_espacio_evento_vistas_usuario`: a quién se le muestra un Público con personas elegidas, una fila por persona; sin `sin_recordatorio`, porque el recordatorio de un Público le llega solo a quien lo creó).
-  Un Público se guarda con `compartido` 0 y `para_todos` 0 (`para_todos` quiere decir solo «toda la administración»), `texto_publico` de 1 a 60 caracteres y `publico_todos` 1 o al menos una fila en `mi_espacio_evento_vistas`; un Privado o un Laboral, `publico` 0, `publico_todos` 0, `texto_publico` NULL y ninguna fila en ella (decisión de la spec, 10.1: así todo lo que decide emails y visibilidad por `compartido` y `para_todos` lo trata como un evento personal de quien lo creó).
+  Un Público se guarda con `compartido` 0 y `para_todos` 0 (`para_todos` es el «Todos» del Laboral), `texto_publico` de 1 a 60 caracteres y `publico_todos` 1 o al menos una fila en `mi_espacio_evento_vistas`; un Privado o un Laboral, `publico` 0, `publico_todos` 0, `texto_publico` NULL y ninguna fila en ella (decisión de la spec, 10.1: así todo lo que decide emails y visibilidad por `compartido` y `para_todos` lo trata como un evento personal de quien lo creó).
   `migracion-mi-espacio-evento-publico.sql` (aditiva y repetible: tres `ADD COLUMN IF NOT EXISTS`, cada uno con su `AFTER`, y un `CREATE TABLE IF NOT EXISTS`) va después de `migracion-mi-espacio-horas.sql` y **antes** del código, obligatoria: toda consulta de los eventos lee `e.publico` (y las de quien mira, `mi_espacio_evento_vistas`), así que sin ella da «Unknown column»:
   la pestaña Agenda no carga (`GET /mi-espacio/eventos` da 500), no se puede crear, cambiar ni borrar ningún evento, la corrida de los recordatorios de un día hábil termina con errores (Correos → Estado lo marca) y «Hoy y mañana» del Resumen sale sin los eventos (va aislado); lo demás de Mi espacio sigue andando.
   El código anterior anda con la estructura nueva (no la lee, y lo que guarda queda con `publico` en 0).
@@ -178,6 +178,16 @@ Historia y motivos, en las specs:
   La vuelta atrás del SQL privado del evento real (`database/privado/rollback-mi-espacio-evento-publico-datos.sql`, ver `docs/temas/despliegue.md`) va **antes**: necesita las columnas.
   **Si también se deshace la agenda, este va antes que `rollback-mi-espacio-agenda.sql`, que no se puede correr solo mientras esté `migracion-mi-espacio-evento-publico.sql`**: borra las tablas de los envíos, de las personas y de la última corrida, falla en `DROP TABLE mi_espacio_eventos` con ERROR 1451 (`mi_espacio_evento_vistas` le apunta) y deja la base a medias; se recupera corriendo `rollback-mi-espacio-evento-publico.sql` y repitiendo el de la agenda (comprobado sobre una copia del dump;
   `tests/schema.test.js` los corre en ese orden).
+- **El aviso diario de la agenda y de quién depende cada usuario** (`migracion-mi-espacio-eventos-diario.sql`; spec 2026-11-04-agenda-aviso-y-dependencia, 9; las reglas, en `docs/temas/mi-espacio-aviso-diario.md`):
+  `usuarios.depende_de` int(11) NULL, con FK a `usuarios(id)` ON DELETE SET NULL y `usuarios.eventos_por_mail` tinyint(1) NOT NULL DEFAULT 1.
+  `mi_espacio_eventos.publicado_at` datetime NULL, en hora argentina: cuándo quedó Público con esa fecha; NULL, los de antes, cuenta como anterior a hoy.
+  `mi_espacio_evento_informados` (`evento_id`, `usuario_id`, `fecha`, `informado_at`, PK en los tres primeros, las dos FK con CASCADE): a quién ya se le informó cada Público y para qué fecha, escrita solo cuando el mail salió bien.
+  `mi_espacio_diario_envios` (`id`, `usuario_id`, `dia`, `momento` enum('tarde','manana'), `enviado_at`, `success`, único en persona, día y momento, FK con CASCADE): la reserva del mail de cada persona, como la de los recordatorios.
+  `mi_espacio_eventos_corridas` suma la fila `id = 2`, la del aviso diario, sin cambiar de forma.
+  **Los datos:** un Laboral con `para_todos` 1 quería decir «toda la administración» y con el código nuevo quiere decir todos los usuarios activos: la migración lo pasa a filas sin cambiar quién lo ve y lo deja con `para_todos` 0.
+  Antes borra las filas de quien hoy no es administración activa: son de un recordatorio apagado, hoy no le dan acceso y convertidas sí.
+  Por eso se puede repetir solo antes del Restart del código nuevo: después achicaría a la administración los «Todos» nuevos.
+  `rollback-mi-espacio-eventos-diario.sql` va después de volver a los archivos anteriores y antes de los del Público y la agenda: los «para todos» viejos no vuelven y un «Todos» nuevo queda solo para la administración.
 
 ## Los días restituidos
 

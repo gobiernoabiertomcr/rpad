@@ -37,7 +37,7 @@ Un subagente con `isolation: worktree` no recibe esas reglas: pasale los documen
 - Nunca `docker compose` desde un worktree: recrea `rpad-db` y corta lo que esté corriendo. Nunca `down -v`: el único volumen tiene todas las bases.
 - Un worktree no trae lo que está en `.gitignore`: hay que copiar el `.env`, con `RPAD_TESTS_DB_LOCAL=1`.
 - `tests/schema.test.js` y `tests/permisos.test.js` leen la base del `.env`: una migración nueva también tiene que correr en la base local antes de la suite.
-- Un test nuevo llama al servicio con un hoy fijo, no a `/api/cron/*`: la corrida real escribe en la base del `.env` (`tests/notificaciones.test.js` y `tests/permisos.test.js` son las excepciones que quedan).
+- Un test nuevo llama al servicio con un hoy fijo, no a `/api/cron/*`: la corrida real escribe en la base del `.env` (`tests/notificaciones.test.js` y `tests/permisos.test.js` son las excepciones que quedan, con el candado del aviso diario de la agenda tomado en otra conexión).
 
 ## Estructura
 
@@ -92,6 +92,7 @@ Si tocás esto, leé este documento de `docs/temas/`:
 | Mi espacio: horas acumuladas | `mi-espacio-acumuladas.md` |
 | Mi espacio: días restituidos | `mi-espacio-restituidos.md` |
 | Mi espacio: agenda, eventos, recordatorios | `mi-espacio-agenda.md` |
+| Mi espacio: el mail diario de la agenda, lo que le llega a un jefe | `mi-espacio-aviso-diario.md` |
 | Mi espacio: el mes de la agenda, nombre corto | `mi-espacio-agenda-mes.md` |
 | Mi espacio: evento Personal (Público) | `mi-espacio-evento-publico.md` |
 | Mi espacio: nota de licencia en Word | `mi-espacio-nota-word.md` |
@@ -181,6 +182,7 @@ Si tocás esto, leé este documento de `docs/temas/`:
 - El tipo de una licencia solo sale para su dueño: a Configuración pasan solo las fechas y a los compañeros, solo «no está».
 - Un id de otra persona da el mismo 404 que uno que no existe.
 - Un evento Personal (Público) le llega a otra persona recortado desde la consulta, y el orden no delata el título.
+  A un jefe, en el aviso diario, solo el nombre corto y el texto corto: de uno ajeno, `mailDeLaPersona` no lee el título ni el detalle, y quien solo fue elegida para verlo no recibe ningún mail.
 - Sin `to`, `sendEmail` va a las casillas por defecto de la DGMIT: siempre se le pasa. Con una lista vacía, no sale nada.
 - Mi espacio trabaja siempre sobre `req.user.userId`.
 - El texto de nodemailer, que puede traer la dirección, no va a un resultado que se muestre.
@@ -229,12 +231,12 @@ Todo cambio a datasets pasa por doble verificación:
   No tiene Notas: el menú lateral no la muestra y `notas.html` dice "No tenés permiso para usar el generador de notas.".
   La ayuda del rol en Usuarios lo dice (`usuarios.js`; la del colaborador suma el generador)
 - **Licencias:** superadmin, admins (y editores) pueden tener licencias (pestaña Licencias de Configuración).
-  Durante la licencia no reciben emails del sistema (salvo los de la agenda de Mi espacio, que van al mail laboral); los avisos al superadmin se retienen y le llega un resumen a la vuelta.
+  Durante la licencia no reciben emails del sistema (salvo los cuatro de un evento de Mi espacio, que van al mail laboral; el aviso diario, no); los avisos al superadmin se retienen y le llega un resumen a la vuelta.
   Ver services/licenciasReglas.js y services/avisosSuperadminService.js.
   El alta, la edición y la anulación con sus reglas están en `services/licenciasOficialesService.js`, que comparten Configuración y Mi espacio.
 - **Mi espacio:** todos los roles con sesión usan su propio panel de licencias y horas extras, que no ve nadie más (ni administración, ni el superadmin).
   «Los compañeros» son administración (`esAdmin`: superadmin, admin y editor): solo ellos tienen la casilla «Mostrar a mis compañeros» y ven «Hoy no están», y solo se muestran sus ausencias.
-  Solo administración comparte eventos Laborales; cualquier rol carga un Personal (Público).
+  Cualquier rol crea un evento Laboral, con cualquier usuario activo, y carga un Personal (Público).
 - El rol y el estado activo se leen de la base en cada pedido (`authMiddleware`, y `sesionOpcional` en las rutas públicas que muestran más con una sesión; las dos sobre `verificarSesion`): desactivar o cambiar un rol tiene efecto inmediato.
 - `esAdmin(rol)` (services/usuariosReglas.js) y `Auth.isAdmin()` incluyen al superadmin y al editor (acceso a la administración);
   `esAuditor(rol)` y `Auth.isAuditor()` (superadmin o admin) deciden quién audita y quién cuenta para el mínimo;
