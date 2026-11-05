@@ -9,7 +9,7 @@
 
 **Tech Stack:** Node 22, vanilla JS, `node --test`.
 
-**Spec:** `docs/superpowers/specs/2026-11-05-metricas-frase-en-los-casos-design.md`. Los textos, los de la spec, al pie de la letra.
+**Spec:** `docs/superpowers/specs/2026-11-05-metricas-frase-en-los-casos-design.md` (aprobada el 05/11/2026; el usuario aprobó este plan el 05/11/2026). Los textos, los de la spec, al pie de la letra.
 
 ## Global Constraints
 
