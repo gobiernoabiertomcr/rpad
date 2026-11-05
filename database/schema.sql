@@ -327,6 +327,8 @@ CREATE TABLE `usuarios` (
   `rol` enum('superadmin','admin','editor','colaborador','lector') NOT NULL DEFAULT 'lector',
   `cargo` varchar(200) DEFAULT NULL,
   `vinculo` enum('planta_permanente','planta_politica','contrato') DEFAULT NULL,
+  `depende_de` int(11) DEFAULT NULL,
+  `eventos_por_mail` tinyint(1) NOT NULL DEFAULT 1,
   `activo` tinyint(1) DEFAULT 1,
   `ultimo_ingreso` timestamp NULL DEFAULT NULL,
   `sesion_version` int(11) NOT NULL DEFAULT 0,
@@ -334,7 +336,9 @@ CREATE TABLE `usuarios` (
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`),
-  UNIQUE KEY `email` (`email`)
+  UNIQUE KEY `email` (`email`),
+  KEY `fk_usuarios_depende_de` (`depende_de`),
+  CONSTRAINT `fk_usuarios_depende_de` FOREIGN KEY (`depende_de`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -888,6 +892,7 @@ CREATE TABLE `mi_espacio_eventos` (
   `publico` tinyint(1) NOT NULL DEFAULT 0,
   `publico_todos` tinyint(1) NOT NULL DEFAULT 0,
   `texto_publico` varchar(60) DEFAULT NULL,
+  `publicado_at` datetime DEFAULT NULL,
   `recordatorio` enum('ninguno','1h','2h','dia_anterior') NOT NULL DEFAULT '2h',
   `activo` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
@@ -915,6 +920,29 @@ CREATE TABLE `mi_espacio_evento_vistas` (
   KEY `fk_mi_espacio_evento_vistas_usuario` (`usuario_id`),
   CONSTRAINT `fk_mi_espacio_evento_vistas_evento` FOREIGN KEY (`evento_id`) REFERENCES `mi_espacio_eventos` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_mi_espacio_evento_vistas_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `mi_espacio_evento_informados` (
+  `evento_id` int(11) NOT NULL,
+  `usuario_id` int(11) NOT NULL,
+  `fecha` date NOT NULL,
+  `informado_at` datetime NOT NULL,
+  PRIMARY KEY (`evento_id`,`usuario_id`,`fecha`),
+  KEY `fk_mi_espacio_evento_informados_usuario` (`usuario_id`),
+  CONSTRAINT `fk_mi_espacio_evento_informados_evento` FOREIGN KEY (`evento_id`) REFERENCES `mi_espacio_eventos` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mi_espacio_evento_informados_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `mi_espacio_diario_envios` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `usuario_id` int(11) NOT NULL,
+  `dia` date NOT NULL,
+  `momento` enum('tarde','manana') NOT NULL,
+  `enviado_at` datetime DEFAULT NULL,
+  `success` tinyint(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mi_espacio_diario_envios` (`usuario_id`,`dia`,`momento`),
+  CONSTRAINT `fk_mi_espacio_diario_envios_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `mi_espacio_evento_envios` (

@@ -91,17 +91,16 @@ const responder = async (res, mensaje, operacion) => {
  * los que la persona (`{ id, rol }`) ve hoy y mañana, como en la agenda (`eventosVisibles` e `itemDeEvento`), en
  * `eventosDeHoyYManana`, cada uno con su `dia` y su `quien`. El mismo `ahora` (`ahoraArgentina()`) da el aviso de cada evento
  * y saca los de hoy que ya terminaron (decisión del usuario, 27/10/2026). `feriados`: el Set del cálculo (cubre el aviso de
- * cada evento); `administracion`: la del contexto (`administracionActiva`, sin leerla otra vez), que da el nombre corto de
- * quien lo creó y de quién está («de Julián», «con Carla»; spec 2026-10-28-mi-espacio-agenda-onda, 5.1); `usuarios`: todos los
- * usuarios activos (`usuariosActivos`), contra los que va el nombre corto de un Personal (Público) («Carla: Turno médico»,
- * «lo ven Julián y Tomás como «…»»; spec 2026-10-29-mi-espacio-evento-publico, 5.4 y 6.3). Aislado: si leerlos falla, el
+ * cada evento); `usuarios`: todos los usuarios activos (`usuariosActivos`), contra los que va el nombre corto de quien lo creó y de
+ * quién está («de Julián», «con Carla», «Carla: Turno médico», «lo ven Julián y Tomás como «…»»; spec
+ * 2026-10-29-mi-espacio-evento-publico, 5.4 y 6.3, y 2026-11-04-agenda-aviso-y-dependencia, 7). Aislado: si leerlos falla, el
  * Resumen sale igual, con [], y el error queda en la consola.
  */
-const eventosDelResumen = async (usuario, hoy, { feriados, administracion, usuarios }) => {
+const eventosDelResumen = async (usuario, hoy, { feriados, usuarios }) => {
   try {
     const eventos = await eventosVisibles(usuario, hoy, sumarDias(hoy, 1));
     const ahora = ahoraArgentina();
-    const contexto = { usuarioId: usuario.id, ahora, feriados, administracion, usuarios };
+    const contexto = { usuarioId: usuario.id, ahora, feriados, usuarios };
     return eventosDeHoyYManana(eventos.map((evento) => itemDeEvento(evento, contexto)), hoy, ahora);
   } catch (error) {
     console.error('Error al obtener los eventos de hoy y mañana:', error?.stack ?? error);
@@ -151,7 +150,7 @@ export const verResumen = (req, res) => responder(res, 'Error al obtener el Resu
   const [{ ausentes }, eventos, vinculos] = await Promise.all([
     ausentesPara(persona, { desde: hoy, hasta: sumarDias(hoy, 1), hoy, filasFeriados, administracion }),
     usuariosDelResumen().then((usuarios) =>
-      eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, { feriados, administracion, usuarios })),
+      eventosDelResumen({ id: req.user.userId, rol: req.user.rol }, hoy, { feriados, usuarios })),
     vinculosDelResumen(persona, estado, hoy)
   ]);
   const hoyYManana = {

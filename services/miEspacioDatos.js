@@ -18,7 +18,7 @@
  */
 import pool from '../config/database.js';
 import { calcular, modalidadDe, esDiaEntero, nombreCorto, plazoDeRestitucion } from './miEspacioReglas.js';
-import { ROLES_QUE_COMPARTEN } from './miEspacioEventosReglas.js';
+import { ROLES_DE_ADMINISTRACION } from './miEspacioEventosReglas.js';
 import { filasDeFeriados } from './feriadosDatos.js';
 import {
   feriadosDelRango, fechasQueCambianDiasHabiles, fechasDelFeriado, fotosDelFeriado, TIPOS_CON_FOTO
@@ -249,14 +249,14 @@ export const feriadosPara = async (estados, hoy, filas = null) => {
 };
 
 /**
- * La administración activa (superadmin, admin y editor con `activo = 1`: ROLES_QUE_COMPARTEN, la regla de «los compañeros»),
+ * La administración activa (superadmin, admin y editor con `activo = 1`: ROLES_DE_ADMINISTRACION, la regla de «los compañeros»),
  * contra la que se arma el nombre corto de cada uno (`nombreCorto`, spec 2026-10-28-mi-espacio-agenda-onda, 5.1):
  * `[{ id, nombre }]`, por id. Solo el id y el nombre completo: ni el email ni el rol.
  * @returns {Promise<{ id: number, nombre: string }[]>}
  */
 export const administracionActiva = async (conexion = pool) => {
   const [filas] = await conexion.query(
-    'SELECT id, nombre_completo FROM usuarios WHERE activo = 1 AND rol IN (?) ORDER BY id', [ROLES_QUE_COMPARTEN]
+    'SELECT id, nombre_completo FROM usuarios WHERE activo = 1 AND rol IN (?) ORDER BY id', [ROLES_DE_ADMINISTRACION]
   );
   return filas.map((fila) => ({ id: Number(fila.id), nombre: fila.nombre_completo }));
 };

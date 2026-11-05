@@ -35,8 +35,8 @@ const TEXTO_ACCION = {
   perfil_editado: 'Editó su perfil',
   ...ACCION_LICENCIA
 };
-const NOMBRE_CAMPO = { nombre_completo: 'Nombre', username: 'Usuario', email: 'Email', cargo: 'Cargo', vinculo: 'Vínculo' };
-const CAMPO_A_INPUT = { nombre_completo: 'u-nombre', username: 'u-username', email: 'u-email', rol: 'u-rol', cargo: 'u-cargo', vinculo: 'u-vinculo' };
+const NOMBRE_CAMPO = { nombre_completo: 'Nombre', username: 'Usuario', email: 'Email', cargo: 'Cargo', vinculo: 'Vínculo', depende_de: 'Depende de' };
+const CAMPO_A_INPUT = { nombre_completo: 'u-nombre', username: 'u-username', email: 'u-email', rol: 'u-rol', cargo: 'u-cargo', vinculo: 'u-vinculo', depende_de: 'u-depende' };
 
 // Licencias (spec 2026-10-15-dias-habiles-licencias-auditoria, 5.5)
 let datosLicencias = { hoy: '', firmante_titular_id: null, soy_titular: false, licencias: [], usuarios: [], autorizables: [] };
@@ -301,6 +301,7 @@ const filaUsuario = (u) => {
           <span class="usuario-username">${esc(u.username)}</span>
           ${cargo ? `<span>${esc(cargo)}</span>` : ''}
           ${vinculo ? `<span class="text-muted">${esc(vinculo)}</span>` : ''}
+          ${u.depende_de_nombre ? `<span>Depende de ${esc(u.depende_de_nombre)}</span>` : ''}
         </div>
         <div class="usuario-ingreso text-muted">Último ingreso: ${esc(textoIngreso(u.ultimo_ingreso))}</div>
       </div>
@@ -367,6 +368,32 @@ async function verUsuario(id) {
   }
 }
 
+// «Depende de» (spec 2026-11-04-agenda-aviso-y-dependencia, 3): «Nadie» y las personas activas que el servidor no descarta
+// (`no_elegibles`: la persona y quienes dependen de ella). Quien se desactivó y ya estaba cargada se sigue mostrando: guardar sin tocarla
+// no da error, pero nadie la elige de nuevo. Quien ya estaba cargada y no llegó en la lista (se creó después de abrir la pestaña) también
+// va, con el nombre que trajo el detalle: si no, el selector caería en «Nadie» y guardar borraría el dato sin avisar. Los nombres, escapados
+function opcionesDeDependencia(u, lista) {
+  const fuera = new Set(u?.no_elegibles ?? []);
+  const personas = lista ?? [];
+  const opciones = personas.filter(persona => !fuera.has(persona.id) && (persona.estado !== 'desactivado' || persona.id === u?.depende_de));
+  const faltaLaCargada = Boolean(u?.depende_de) && !personas.some(persona => persona.id === u.depende_de);
+  return [
+    '<option value="">Nadie</option>',
+    ...opciones.map(persona => `<option value="${esc(persona.id)}">${esc(persona.nombre_completo)}${persona.estado === 'desactivado' ? ' (desactivado)' : ''}</option>`),
+    ...(faltaLaCargada ? [`<option value="${esc(u.depende_de)}">${esc(u.depende_de_nombre ?? 'Otro usuario')}</option>`] : [])
+  ].join('');
+}
+
+// Lo que suma la confirmación de desactivar a alguien de quien dependen otras personas (lo arma el servidor: `al_desactivar`), o ''
+function textoAlDesactivar(alDesactivar) {
+  const dependen = alDesactivar?.dependen ?? [];
+  if (dependen.length === 0) return '';
+  const quienes = `De esta persona ${dependen.length === 1 ? 'depende' : 'dependen'}: ${dependen.join(', ')}.`;
+  return alDesactivar.suben_a
+    ? `${quienes} Mientras esté desactivada, lo suyo le va a llegar a ${alDesactivar.suben_a}.`
+    : `${quienes} Lo suyo no le va a llegar a nadie hasta que le cargues de quién depende.`;
+}
+
 function abrirModal(u) {
   abierto = u;
   usernameTocado = Boolean(u);
@@ -388,6 +415,8 @@ function abrirModal(u) {
   escribir('u-email', u?.email);
   escribir('u-cargo', u?.cargo);
   document.getElementById('u-vinculo').value = u?.vinculo || '';
+  document.getElementById('u-depende').innerHTML = opcionesDeDependencia(u, usuarios);
+  document.getElementById('u-depende').value = u?.depende_de ? String(u.depende_de) : '';
   const selectRol = document.getElementById('u-rol');
   // Las opciones que no se ofrecen, además de ocultas, deshabilitadas (hay navegadores que no ocultan un <option>)
   const visibles = rolesVisibles(u?.rol ?? null);
@@ -473,7 +502,8 @@ async function guardarUsuario(evento) {
     username: leer('u-username'),
     email: leer('u-email'),
     cargo: leer('u-cargo'),
-    vinculo: document.getElementById('u-vinculo').value || null
+    vinculo: document.getElementById('u-vinculo').value || null,
+    depende_de: Number(document.getElementById('u-depende').value) || null
   };
   const selectRol = document.getElementById('u-rol');
   // En el alta el rol va siempre (el del editor, Lector o Colaborador)
@@ -509,23 +539,25 @@ async function guardarUsuario(evento) {
 const MENSAJE_SIN_GUARDAR = 'Guardá los cambios antes de continuar.';
 
 // Los datos de un usuario como los guarda el servidor, para comparar el formulario con lo guardado
-const normalizados = ({ nombre, username, email, cargo, vinculo }) => ({
+const normalizados = ({ nombre, username, email, cargo, vinculo, dependeDe }) => ({
   nombre: String(nombre ?? '').trim(),
   username: String(username ?? '').trim().toUpperCase(),
   email: String(email ?? '').trim().toLowerCase(),
   cargo: String(cargo ?? '').trim() || null,
-  vinculo: vinculo || null
+  vinculo: vinculo || null,
+  dependeDe: Number(dependeDe) || null
 });
 
 // ¿El formulario del usuario abierto tiene cambios sin guardar? (en el alta no aplica)
 function hayCambiosSinGuardar() {
   if (!abierto) return false;
   const guardado = normalizados({
-    nombre: abierto.nombre_completo, username: abierto.username, email: abierto.email, cargo: abierto.cargo, vinculo: abierto.vinculo
+    nombre: abierto.nombre_completo, username: abierto.username, email: abierto.email, cargo: abierto.cargo, vinculo: abierto.vinculo,
+    dependeDe: abierto.depende_de
   });
   const formulario = normalizados({
     nombre: leer('u-nombre'), username: leer('u-username'), email: leer('u-email'), cargo: leer('u-cargo'),
-    vinculo: document.getElementById('u-vinculo').value
+    vinculo: document.getElementById('u-vinculo').value, dependeDe: document.getElementById('u-depende').value
   });
   return Object.keys(guardado).some(campo => guardado[campo] !== formulario[campo]);
 }
@@ -563,6 +595,8 @@ async function cambiarEstado() {
     if (u.cambios_pendientes_propuestos > 0) {
       partes.push(`Tiene ${plural(u.cambios_pendientes_propuestos, 'cambio pendiente', 'cambios pendientes')} que otros admins todavía pueden aprobar o rechazar.`);
     }
+    const dependen = textoAlDesactivar(u.al_desactivar);
+    if (dependen) partes.push(dependen);
     if (!confirm(`${partes.join('\n\n')}\n\n¿Desactivar?`)) return;
   }
   try {
@@ -587,8 +621,8 @@ async function recargarAbierto() {
 // =====================================================
 // ERRORES E HISTORIAL
 // =====================================================
-// Lo que describe a un campo además de su error: la ayuda del rol sigue unida al selector cuando el rol tiene un error
-const AYUDA_DEL_CAMPO = { 'u-rol': 'u-rol-ayuda' };
+// Lo que describe a un campo además de su error: la ayuda del rol y la de «Depende de» siguen unidas a su selector cuando tiene un error
+const AYUDA_DEL_CAMPO = { 'u-rol': 'u-rol-ayuda', 'u-depende': 'u-depende-ayuda' };
 
 function limpiarErrores() {
   document.getElementById('usuario-error').hidden = true;
@@ -622,6 +656,7 @@ function mostrarError(error) {
 
 const textoValor = (campo, valor) => {
   if (valor === null || valor === '') return '(vacío)';
+  if (campo === 'depende_de') return (usuarios ?? []).find(u => u.id === valor)?.nombre_completo ?? 'otro usuario';
   return campo === 'vinculo' ? Utils.textoVinculo(valor) : valor;
 };
 

@@ -9,6 +9,7 @@ import { TEXTO_ROL } from './usuariosReglas.js';
 import { formatoCorto } from './notasDigitalesCalendario.js';
 import { frecuenciaEnNota } from './fechasDatasetReglas.js';
 import { cuandoDelEvento, cuandoCortoDelEvento, cuandoEsElEvento, textoDelEvento } from './miEspacioEventosReglas.js';
+import { diaLargo } from './miEspacioResumen.js';
 
 // Paleta de los emails
 const COLORES = {
@@ -640,6 +641,98 @@ const parrafoDelEvento = (...partes) => ({
 const parrafoDelDetalle = (evento) => {
   const detalle = campoDelEvento(evento, 'detalle');
   return detalle === '' ? null : { html: escapeHtml(detalle).replace(/\r\n|\r|\n/g, '<br>'), texto: detalle };
+};
+
+// =====================================================
+// MI ESPACIO: el aviso diario de la agenda (spec 2026-11-04-agenda-aviso-y-dependencia, 8)
+// =====================================================
+
+const NOTA_DEL_AVISO_SIN_GENTE = 'Si algo no está como querías, lo podés cambiar desde el evento. Para dejar de recibir este mail, destildá «Recibir mi agenda por mail» en la Agenda de Mi espacio.';
+const NOTA_DEL_AVISO_CON_GENTE = 'De quienes dependen de vos, te llega solo el texto corto de lo que publican. Lo tuyo lo podés apagar desde la Agenda de Mi espacio; lo demás te llega siempre.';
+const NOTA_DEL_AVISO_SOLO_GENTE = 'De quienes dependen de vos, te llega solo el texto corto de lo que publican.';
+
+const conMayuscula = (texto) => texto.charAt(0).toUpperCase() + texto.slice(1);
+const estiloSecundario = () => `color: ${COLORES.secundario}; font-size: 13px;`;
+// Un título de grupo en negrita, en el color de los títulos
+const tituloDelAviso = (texto) => ({
+  html: `<strong style="color: ${COLORES.titulo};">${escapeHtml(texto)}</strong>`, texto
+});
+// Un día, como título de un grupo: «Jueves 05/11», u «Hoy, viernes 06/11»
+const diaDelAviso = (fecha, hoy) => tituloDelAviso(fecha === hoy ? `Hoy, ${diaLargo(fecha)}` : conMayuscula(diaLargo(fecha)));
+// Un evento propio: la hora, el título, y debajo el detalle (con sus renglones) y la marca, en gris. Cada parte se escapa una sola vez
+const renglonPropio = ({ desde, titulo, detalle, marca }) => {
+  const detalleDelEvento = parrafoDelDetalle({ detalle });
+  return {
+    html: `<strong>${escapeHtml(desde)}</strong> · ${escapeHtml(titulo)}`
+      + `${detalleDelEvento ? `<br><span style="${estiloSecundario()}">${detalleDelEvento.html}</span>` : ''}`
+      + `<br><span style="${estiloSecundario()}">${escapeHtml(marca)}</span>`,
+    texto: [`${desde} · ${titulo}`, ...(detalleDelEvento ? [detalleDelEvento.texto] : []), marca].join('\n')
+  };
+};
+// Un Público de su gente: la hora, «Nuevo:» si no se le informó, nombre y texto corto, y «Hasta las 10:00» si tiene fin
+const renglonDeGente = ({ desde, hasta, texto, nuevo }) => ({
+  html: `<strong>${escapeHtml(desde)}</strong> · ${nuevo ? '<strong>Nuevo:</strong> ' : ''}${escapeHtml(texto)}`
+    + `${hasta ? `<br><span style="${estiloSecundario()}">Hasta las ${escapeHtml(hasta)}</span>` : ''}`,
+  texto: `${desde} · ${nuevo ? 'Nuevo: ' : ''}${texto}${hasta ? `\nHasta las ${hasta}` : ''}`
+});
+
+// Los párrafos de una lista de eventos, agrupados por día. Sin `conDias`, solo los renglones (todos son del mismo día)
+const parrafosPorDia = (items, hoy, renglon, { conDias = true } = {}) => {
+  const parrafos = [];
+  let diaAnterior = null;
+  for (const item of items) {
+    if (conDias && item.fecha !== diaAnterior) parrafos.push(diaDelAviso(item.fecha, hoy));
+    diaAnterior = item.fecha;
+    parrafos.push(renglon(item));
+  }
+  return parrafos;
+};
+
+/**
+ * El mail del aviso diario de una persona (`persona`, con `nombre_completo`; `mail`, el de `mailDeLaPersona`): `{ subject, html, text }`. Con
+ * el marco único y el botón «Ver en Mi espacio». A las 14:00, con lo propio o solo lo de su gente; a las 8:05, o a las 14:00 si solo trae
+ * lo rezagado de hoy, «se sumó algo». De un Público ajeno llega solo su texto: el título y el detalle ni siquiera están en `mail`.
+ */
+export const avisoDiarioTemplate = ({ persona, mail, hoy }) => {
+  const primerNombre = String(persona?.nombre_completo ?? '').trim().split(/\s+/)[0];
+  const { propios, gente, dias, soloHoy } = mail;
+  const conPropios = propios.length > 0;
+  const conGente = gente.length > 0;
+  const ultimo = dias.at(-1);
+  const cuando = dias.length === 1 ? `del ${diaLargo(ultimo)}` : `hasta el ${diaLargo(ultimo)}`;
+  let titulo;
+  let asunto;
+  let apertura;
+  if (soloHoy) {
+    titulo = 'Tu agenda de hoy, actualizada';
+    asunto = 'RPAD: se sumó algo a tu agenda de hoy';
+    apertura = `${primerNombre}, después del último aviso se sumó algo a la agenda de hoy, ${diaLargo(hoy)}. Lo nuevo dice «Nuevo».`;
+  } else if (conPropios) {
+    titulo = `Tu agenda ${cuando}`;
+    asunto = `RPAD: tu agenda ${cuando}`;
+    apertura = `${primerNombre}, esto es lo que tenés ${dias.length === 1 ? 'para' : 'hasta'} el próximo día hábil.`;
+  } else {
+    titulo = `Agenda ${cuando} de quienes dependen de vos`;
+    asunto = `RPAD: agenda ${cuando} de quienes dependen de vos`;
+    apertura = `${primerNombre}, esto es lo que publicaron ${dias.length === 1 ? 'para' : 'hasta'} el próximo día hábil.`;
+  }
+  const parrafos = [
+    { html: escapeHtml(apertura), texto: apertura },
+    ...parrafosPorDia(propios, hoy, renglonPropio),
+    ...(conGente ? [tituloDelAviso('De quienes dependen de vos'), ...parrafosPorDia(gente, hoy, renglonDeGente, { conDias: !soloHoy })] : [])
+  ];
+  let nota = NOTA_DEL_AVISO_SIN_GENTE;
+  if (conGente) nota = conPropios ? NOTA_DEL_AVISO_CON_GENTE : NOTA_DEL_AVISO_SOLO_GENTE;
+  return {
+    subject: asunto,
+    html: plantillaSimple({
+      titulo,
+      parrafos: parrafos.map((parrafoDelAviso) => parrafoDelAviso.html),
+      boton: { texto: 'Ver en Mi espacio', url: URL_DE_LOS_EVENTOS },
+      notas: [escapeHtml(nota)]
+    }),
+    text: [...parrafos.map((parrafoDelAviso) => parrafoDelAviso.texto), `Ver en Mi espacio: ${URL_DE_LOS_EVENTOS}`, nota].join('\n\n')
+  };
 };
 
 // Uno de los emails de un evento: el título, los párrafos (los null no van; el detalle, después de la línea del evento, y en el

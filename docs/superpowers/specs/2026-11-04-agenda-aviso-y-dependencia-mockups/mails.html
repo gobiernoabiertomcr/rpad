@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Mails de la agenda - Maqueta</title>
+<link rel="stylesheet" href="css/propuesta.css">
+<style>
+body { margin: 0; background: #EEF1F5; color: #22324A; font: 15px/1.5 Figtree, system-ui, sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 16px 16px 200px; }
+h1 { font-size: 1.3rem; color: #1A365D; margin: 8px 0; }
+.pestanas { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.pestanas button { padding: 8px 14px; border-radius: 999px; border: 1px solid #76879F; background: #fff; color: #1A365D; font: inherit; font-weight: 600; cursor: pointer; }
+.pestanas button[aria-pressed="true"] { background: #1A365D; color: #fff; }
+.datos { background: #fff; border: 1px solid #DAE3ED; border-radius: 12px 12px 0 0; padding: 10px 14px; font-size: 0.9rem; }
+.datos div { overflow-wrap: anywhere; }
+iframe { width: 100%; height: 640px; border: 1px solid #DAE3ED; border-top: 0; background: #fff; display: block; }
+.explica { font-size: 0.92rem; color: #56677F; }
+</style></head>
+<body><main>
+<h1>Los mails de la agenda</h1>
+<p class="explica">A las 14:00 de un día hábil sale un mail por persona, si tiene algo. A las 8:05 sale otro, solo a los jefes y solo si se sumó algo después de las 14:00. Se hace con el marco real de los emails del RPAD.</p>
+<div class="pestanas">
+<button type="button" data-m="persona" aria-pressed="true">Una persona con su agenda</button>
+<button type="button" data-m="jefe" aria-pressed="false">Un viernes, con gente a cargo</button>
+<button type="button" data-m="solo-jefe" aria-pressed="false">Solo lo de su gente</button>
+<button type="button" data-m="manana" aria-pressed="false">A las 8:05: se sumó algo</button>
+</div>
+<div class="datos"><div><b>De:</b> Dir. de Datos Públicos y Comunicación</div><div><b>Para:</b> <span id="para"></span></div><div><b>Asunto:</b> <span id="asunto"></span></div></div>
+<iframe id="mail" title="El mail"></iframe>
+<p class="explica" id="nota"></p>
+</main>
+<script src="js/maqueta-comun.js"></script>
+<script>
+const MAILS = {
+  persona: { para: 'mojeda@ejemplo.test', asunto: 'RPAD: tu agenda del jueves 05/11', nota: 'Miércoles 04/11, 14:00. Micaela tiene un Privado y un Público suyos. Acá se ve si un evento quedó como «Solo vos lo ves» por error, con tiempo para cambiarlo.' },
+  jefe: { para: 'gpaz@ejemplo.test', asunto: 'RPAD: tu agenda hasta el lunes 09/11', nota: 'Viernes 06/11, 14:00. Trae sábado, domingo y lunes. Lo de su gente va aparte y solo con el texto corto. El de Micaela le llega por la cadena, aunque Micaela no la haya elegido.' },
+  manana: { para: 'gpaz@ejemplo.test', asunto: 'RPAD: se sumó algo a tu agenda de hoy', nota: 'Viernes 06/11, 8:05. Micaela cargó a las 14:02 del jueves un turno para hoy a las 8:15. Solo sale a los jefes, solo en días hábiles, y solo si hay algo cargado antes de hoy sin informar. Lo que se carga para el mismo día no entra. Trae todo el día, con lo nuevo marcado. En esta maqueta incluye lo propio del jefe, si tiene prendida la casilla.' },
+  'solo-jefe': { para: 'frios@ejemplo.test', asunto: 'RPAD: agenda del jueves 05/11 de quienes dependen de vos', nota: 'Federico no tiene nada suyo ese día, o apagó su casilla: le llega igual lo de quienes dependen de Federico.' }
+};
+const mostrar = (m) => {
+  document.getElementById('mail').src = `mails/${m}.html`;
+  document.getElementById('para').textContent = MAILS[m].para;
+  document.getElementById('asunto').textContent = MAILS[m].asunto;
+  document.getElementById('nota').textContent = MAILS[m].nota;
+  document.querySelectorAll('[data-m]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.m === m)));
+};
+document.querySelector('.pestanas').addEventListener('click', (e) => { const b = e.target.closest('[data-m]'); if (b) mostrar(b.dataset.m); });
+mostrar('persona');
+window.MAQUETA.panel('mails');
+</script>
+</body></html>

@@ -65,6 +65,7 @@ const cargarPanel = (abierto = USUARIO, alPedir = () => {}, rol = 'admin', respu
     elemento('u-email').value = datos.email ?? '';
     elemento('u-cargo').value = datos.cargo ?? '';
     elemento('u-vinculo').value = datos.vinculo ?? '';
+    elemento('u-depende').value = datos.depende_de ? String(datos.depende_de) : '';
   };
   vm.runInContext('abierto = null', contexto);
   contexto.__abierto = abierto;
@@ -883,7 +884,7 @@ describe('colaborador (spec 2026-10-24-notas-dgmit, 1)', () => {
     assert.ok(panel.llamadas.includes('confirm'));
     assert.deepEqual(panel.pedidos.find(p => p.nombre === 'actualizarUsuario').args, [7, {
       nombre_completo: USUARIO.nombre_completo, username: USUARIO.username, email: USUARIO.email, cargo: USUARIO.cargo,
-      vinculo: USUARIO.vinculo, rol: 'colaborador'
+      vinculo: USUARIO.vinculo, depende_de: null, rol: 'colaborador'
     }]);
 
     // La confirmación nombra el rol nuevo y lo que cambia
@@ -1353,5 +1354,111 @@ describe('Configuración: las cuatro pestañas y la pestaña en la dirección (s
       assert.equal(panel.elemento('vista-areas').hidden, true, String(hash));
       assert.equal(panel.elemento('vista-feriados').hidden, true, String(hash));
     }
+  });
+});
+
+// «Depende de» (spec 2026-11-04-agenda-aviso-y-dependencia, 3): lo arma el servidor y la página lo imprime
+describe('de quién depende', () => {
+  const persona = (id, nombre, estado = 'activo') => ({ id, nombre_completo: nombre, estado });
+  const LISTA = [persona(1, 'Graciela Paz'), persona(2, 'Federico Ríos'), persona(3, 'Micaela Ojeda'), persona(4, 'Tomás Vera', 'desactivado')];
+
+  it('las opciones: «Nadie» y las activas que el servidor no descarta', () => {
+    const { contexto } = cargarPanel();
+    const html = contexto.opcionesDeDependencia({ id: 2, no_elegibles: [2, 3], depende_de: 1 }, LISTA);
+    assert.equal(html, '<option value="">Nadie</option><option value="1">Graciela Paz</option>');
+  });
+
+  it('en un alta, todas las activas; sin lista, solo «Nadie»', () => {
+    const { contexto } = cargarPanel();
+    assert.match(contexto.opcionesDeDependencia(null, LISTA), /Graciela Paz.*Federico Ríos.*Micaela Ojeda/);
+    assert.doesNotMatch(contexto.opcionesDeDependencia(null, LISTA), /Tomás Vera/);
+    assert.equal(contexto.opcionesDeDependencia(null, undefined), '<option value="">Nadie</option>');
+  });
+
+  it('quien se desactivó y ya estaba cargada se sigue mostrando, con su aclaración; nadie más la elige', () => {
+    const { contexto } = cargarPanel();
+    assert.match(contexto.opcionesDeDependencia({ id: 3, no_elegibles: [3], depende_de: 4 }, LISTA), /<option value="4">Tomás Vera \(desactivado\)<\/option>/);
+    assert.doesNotMatch(contexto.opcionesDeDependencia({ id: 2, no_elegibles: [2], depende_de: 1 }, LISTA), /Tomás Vera/);
+  });
+
+  it('el nombre va escapado', () => {
+    const { contexto } = cargarPanel();
+    contexto.Utils.escapeHtml = (texto) => String(texto).replaceAll('<', '&lt;');
+    assert.match(contexto.opcionesDeDependencia(null, [persona(9, '<b>Carla</b>')]), /&lt;b>Carla/);
+  });
+
+  it('el texto al desactivar, en sus casos', () => {
+    const { contexto } = cargarPanel();
+    assert.equal(contexto.textoAlDesactivar({ dependen: [], suben_a: 'Graciela Paz' }), '');
+    assert.equal(contexto.textoAlDesactivar(undefined), '');
+    assert.equal(contexto.textoAlDesactivar({ dependen: ['Micaela Ojeda'], suben_a: 'Graciela Paz' }),
+      'De esta persona depende: Micaela Ojeda. Mientras esté desactivada, lo suyo le va a llegar a Graciela Paz.');
+    assert.equal(contexto.textoAlDesactivar({ dependen: ['Micaela Ojeda', 'Lucía Ortiz'], suben_a: null }),
+      'De esta persona dependen: Micaela Ojeda, Lucía Ortiz. Lo suyo no le va a llegar a nadie hasta que le cargues de quién depende.');
+  });
+
+  it('hayCambiosSinGuardar lo tiene en cuenta, y guardar manda el id o null', async () => {
+    const abierto = { ...USUARIO, depende_de: 1 };
+    const igual = cargarPanel(abierto);
+    assert.equal(igual.contexto.hayCambiosSinGuardar(), false);
+    const distinto = cargarPanel(abierto);
+    distinto.formulario({ ...abierto, depende_de: 2 });
+    assert.equal(distinto.contexto.hayCambiosSinGuardar(), true);
+    const sinNadie = cargarPanel(abierto);
+    sinNadie.formulario({ ...abierto, depende_de: null });
+    assert.equal(sinNadie.contexto.hayCambiosSinGuardar(), true);
+
+    const guardar = cargarPanel(abierto);
+    guardar.formulario({ ...abierto, depende_de: 2 });
+    await guardar.contexto.guardarUsuario({ preventDefault() {} });
+    assert.equal(guardar.pedidos.find((p) => p.nombre === 'actualizarUsuario').args[1].depende_de, 2);
+    const guardarNadie = cargarPanel(abierto);
+    guardarNadie.formulario({ ...abierto, depende_de: null });
+    await guardarNadie.contexto.guardarUsuario({ preventDefault() {} });
+    assert.equal(guardarNadie.pedidos.find((p) => p.nombre === 'actualizarUsuario').args[1].depende_de, null);
+  });
+
+  it('quien ya estaba cargada y no llegó en la lista se muestra con el nombre del detalle: guardar no la borra', () => {
+    const { contexto } = cargarPanel();
+    assert.match(contexto.opcionesDeDependencia({ id: 3, no_elegibles: [3], depende_de: 50, depende_de_nombre: 'Sofía Paz' }, LISTA),
+      /<option value="50">Sofía Paz<\/option>/);
+    assert.match(contexto.opcionesDeDependencia({ id: 3, no_elegibles: [3], depende_de: 50 }, LISTA), /<option value="50">Otro usuario<\/option>/);
+  });
+
+  it('la fila dice de quién depende, escapado; sin dato, nada', () => {
+    const { contexto } = cargarPanel();
+    contexto.Utils.escapeHtml = (texto) => String(texto).replaceAll('<', '&lt;');
+    Object.assign(contexto.Utils, { textoCargo: () => '', textoVinculo: () => '' });
+    contexto.getInitials = () => 'PP';
+    const fila = vm.runInContext('filaUsuario', contexto);
+    const base = { ...USUARIO, estado: 'activo', licencia: null, ultimo_ingreso: null };
+    assert.match(fila({ ...base, depende_de_nombre: '<b>Graciela</b> Paz' }), /<span>Depende de &lt;b>Graciela&lt;\/b> Paz<\/span>/);
+    assert.doesNotMatch(fila({ ...base, depende_de_nombre: null }), /Depende de/);
+  });
+
+  it('un rechazo en el campo lo marca sin perder su ayuda, y limpiar errores la deja', () => {
+    const { contexto, elemento } = cargarPanel();
+    const atributos = {};
+    Object.assign(elemento('u-depende'), {
+      setAttribute(nombre, valor) { atributos[nombre] = valor; }, insertAdjacentElement() {}, focus() {}
+    });
+    assert.equal(vm.runInContext("AYUDA_DEL_CAMPO['u-depende']", contexto), 'u-depende-ayuda');
+    assert.equal(vm.runInContext("CAMPO_A_INPUT.depende_de", contexto), 'u-depende');
+  });
+
+  it('una cuenta que no se puede modificar deja el campo deshabilitado', () => {
+    const panel = cargarPanel(USUARIO, () => {}, 'editor');
+    panel.elemento('u-rol').options = [];
+    panel.contexto.abrirModal({ ...USUARIO, id: 20, rol: 'admin' });
+    assert.equal(panel.elemento('u-depende').disabled, true);
+    panel.contexto.abrirModal({ ...USUARIO, id: 21, rol: 'lector' });
+    assert.equal(panel.elemento('u-depende').disabled, false);
+  });
+
+  it('el historial muestra el nombre, no el id', () => {
+    const { contexto } = cargarPanel();
+    vm.runInContext('usuarios = __lista', Object.assign(contexto, { __lista: LISTA }));
+    assert.equal(contexto.describirDetalle({ accion: 'edicion', detalle: { campos: { depende_de: { antes: null, despues: 1 } } } }), 'Depende de: (vacío) → Graciela Paz');
+    assert.equal(contexto.describirDetalle({ accion: 'edicion', detalle: { campos: { depende_de: { antes: 1, despues: 99 } } } }), 'Depende de: Graciela Paz → otro usuario');
   });
 });

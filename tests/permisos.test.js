@@ -11,6 +11,18 @@ let servidor, api, usuarios;
 // El 404 del Informe anual de un año sin foto (1999 nunca la tiene)
 const SIN_FOTO_DEL_ANIO = 'Todavía no hay foto de ese año: se saca el 10/01 del año siguiente.';
 
+// El aviso diario de la agenda viaja en /cron/cambios-pendientes: este archivo usa la base del .env, así que corre con su candado tomado en otra
+// conexión: termina «ocupado», sin escribir ni mandar nada (spec 2026-11-04-agenda-aviso-y-dependencia, 6)
+let conexionDelDiario;
+before(async () => {
+  conexionDelDiario = await db().getConnection();
+  await conexionDelDiario.query("SELECT GET_LOCK('rpad_mi_espacio_diario', 10)");
+});
+after(async () => {
+  await conexionDelDiario?.query("SELECT RELEASE_LOCK('rpad_mi_espacio_diario')");
+  conexionDelDiario?.release();
+});
+
 before(async () => {
   servidor = await iniciarServidor();
   api = crearCliente(servidor.url);
@@ -156,11 +168,10 @@ describe('lector', () => {
 
   llegaAlControlador('lector');
 
-  // La agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, sección 1): solo administración comparte eventos
-  it('recibe 403 en GET /mi-espacio/personas', async () => {
+  // La agenda de Mi espacio (spec 2026-11-04-agenda-aviso-y-dependencia, 2.4): cualquier rol crea un Laboral, con cualquier persona
+  it('puede usar GET /mi-espacio/personas', async () => {
     const res = await api.get('/mi-espacio/personas', { token: usuarios.lector.token });
-    assert.equal(res.status, 403);
-    assert.equal(res.body.error, 'No tenés permiso para compartir eventos.');
+    assert.equal(res.status, 200);
   });
 
   // El Seguimiento de un dataset lo ve cualquier rol con sesión (spec 2026-10-20-seguimiento-dataset)
@@ -262,6 +273,9 @@ const RUTAS_MI_ESPACIO = [
   // La agenda (spec 2026-10-26-mi-espacio-agenda, sección 7)
   ['GET', '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27'],
   ['GET', '/mi-espacio/eventos/aviso?fecha=2026-10-27&desde=10:00&recordatorio=2h'],
+  // El aviso diario (spec 2026-11-04-agenda-aviso-y-dependencia, 7)
+  ['GET', '/mi-espacio/eventos/aviso-de-la-cadena?fecha=2026-10-27'],
+  ['PUT', '/mi-espacio/eventos-por-mail'],
   ['GET', '/mi-espacio/personas'],
   // El evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 6.4): la lista de todos los usuarios activos, para
   // cualquier rol con sesión
@@ -311,10 +325,9 @@ describe('colaborador', () => {
 
   llegaAlControlador('colaborador');
 
-  it('recibe 403 en GET /mi-espacio/personas', async () => {
+  it('puede usar GET /mi-espacio/personas', async () => {
     const res = await api.get('/mi-espacio/personas', { token: usuarios.colaborador.token });
-    assert.equal(res.status, 403);
-    assert.equal(res.body.error, 'No tenés permiso para compartir eventos.');
+    assert.equal(res.status, 200);
   });
 
   it('puede usar GET /seguimiento/:id', async () => {

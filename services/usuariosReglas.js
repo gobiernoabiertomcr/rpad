@@ -54,6 +54,93 @@ export const validarContrasena = (password) => {
   return null;
 };
 
+// De quién depende cada uno (spec 2026-11-04-agenda-aviso-y-dependencia, 3 y 5.1), sobre filas `{ id, activo, depende_de }`: nada más
+// recorre la cadena, y por eso lo demás se arma con estas funciones. No se le puede cargar a alguien a sí mismo ni a quien ya depende de
+// esa persona, pero los datos podrían venir mal: todas se cortan ante un ciclo
+export const MENSAJES_DEPENDENCIA = Object.freeze({
+  invalida: 'Elegí una persona de la lista.',
+  ellaMisma: 'No puede depender de sí misma.',
+  ciclo: 'Esa persona ya depende de quien estás editando.'
+});
+const estaActiva = (fila) => fila.activo === true || Number(fila.activo) === 1;
+const porId = (usuarios) => new Map((Array.isArray(usuarios) ? usuarios : []).map((fila) => [Number(fila.id), fila]));
+const idDelSuperior = (fila) => (fila.depende_de === null || fila.depende_de === undefined ? null : Number(fila.depende_de));
+
+/**
+ * Las personas activas de las que depende alguien, de la más cercana a la más lejana. Sube por `depende_de`, salta a las desactivadas
+ * sin cortar la cadena (lo suyo sube a la siguiente) y nunca incluye a la persona, ni repite. Con un id que no está, [].
+ */
+export const superioresDe = (id, usuarios) => {
+  const filas = porId(usuarios);
+  const inicio = Number(id);
+  const vistos = new Set([inicio]);
+  const superiores = [];
+  let actual = filas.get(inicio);
+  while (actual) {
+    const siguiente = idDelSuperior(actual);
+    if (siguiente === null || vistos.has(siguiente)) break;
+    vistos.add(siguiente);
+    actual = filas.get(siguiente);
+    if (actual && estaActiva(actual)) superiores.push(actual);
+  }
+  return superiores;
+};
+
+/** Todas las personas que dependen de alguien, directa o indirectamente, también las desactivadas, y sin la persona misma. */
+export const quienesDependenDe = (id, usuarios) => {
+  const filas = [...porId(usuarios).values()];
+  const inicio = Number(id);
+  const vistos = new Set([inicio]);
+  const dependen = [];
+  const pendientes = [inicio];
+  while (pendientes.length > 0) {
+    const actual = pendientes.pop();
+    for (const fila of filas) {
+      if (idDelSuperior(fila) === actual && !vistos.has(Number(fila.id))) {
+        vistos.add(Number(fila.id));
+        dependen.push(fila);
+        pendientes.push(Number(fila.id));
+      }
+    }
+  }
+  return dependen;
+};
+
+/**
+ * El mensaje de por qué alguien no puede depender de `dependeDe`, o null. `id`: quien se edita (null en un alta); `antes`: de quién
+ * dependía. Se elige a una persona activa o se deja la que ya estaba, aunque se haya desactivado: guardar sin tocarla no da error.
+ */
+export const rechazoDeDependencia = ({ id = null, dependeDe, antes = null, usuarios }) => {
+  if (dependeDe === null || dependeDe === undefined) return null;
+  if (id !== null && dependeDe === id) return MENSAJES_DEPENDENCIA.ellaMisma;
+  const fila = porId(usuarios).get(dependeDe);
+  if (!fila) return MENSAJES_DEPENDENCIA.invalida;
+  if (!estaActiva(fila) && dependeDe !== antes) return MENSAJES_DEPENDENCIA.invalida;
+  if (id !== null && quienesDependenDe(id, usuarios).some((persona) => Number(persona.id) === dependeDe)) return MENSAJES_DEPENDENCIA.ciclo;
+  return null;
+};
+
+/**
+ * Lo que el panel muestra de la cadena de alguien (spec, sección 3: el navegador no la recorre). `usuarios` también trae `nombre_completo`:
+ * el nombre de quien depende; los ids que no se le pueden ofrecer (la persona y quienes dependen de ella); y, para confirmar al
+ * desactivarla, quiénes dependen directamente de ella y están activos, y a quién le va a llegar lo de ellos.
+ */
+export const dependenciaDe = (id, usuarios) => {
+  const filas = porId(usuarios);
+  const fila = filas.get(Number(id));
+  const superior = fila && idDelSuperior(fila) !== null ? filas.get(idDelSuperior(fila)) : undefined;
+  // Quienes hoy le llegan a esta persona primero: también por encima de alguien ya desactivado, porque lo suyo también sube
+  const directas = [...filas.values()].filter((otra) => estaActiva(otra) && Number(superioresDe(otra.id, usuarios)[0]?.id) === Number(id));
+  return {
+    depende_de_nombre: superior?.nombre_completo ?? null,
+    no_elegibles: [Number(id), ...quienesDependenDe(id, usuarios).map((persona) => Number(persona.id))],
+    al_desactivar: {
+      dependen: directas.map((persona) => persona.nombre_completo),
+      suben_a: superioresDe(id, usuarios)[0]?.nombre_completo ?? null
+    }
+  };
+};
+
 /**
  * Normaliza y valida los datos del formulario del panel (spec 8.3).
  * parcial: en la edición, los campos que no vienen no se validan ni se tocan.
@@ -95,6 +182,11 @@ export const validarDatosUsuario = (entrada, { parcial = false } = {}) => {
   if (!parcial || viene('rol')) {
     if (!ROLES_ASIGNABLES.includes(entrada.rol)) error('rol', 'El rol debe ser admin, editor, colaborador o lector');
     else datos.rol = entrada.rol;
+  }
+  if (viene('depende_de')) {
+    const dependeDe = entrada.depende_de === '' ? null : entrada.depende_de;
+    if (dependeDe !== null && !(Number.isInteger(dependeDe) && dependeDe > 0)) error('depende_de', MENSAJES_DEPENDENCIA.invalida);
+    else datos.depende_de = dependeDe;
   }
   return { errores, datos };
 };

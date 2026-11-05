@@ -5,7 +5,7 @@ import {
   esAdmin, esAuditor, estadoDeUsuario, esAprobadorActivo, violaMinimoAprobadores, emailValido,
   validarContrasena, validarDatosUsuario, camposCambiados, TEXTO_ROL,
   ROLES_ASIGNABLES, ROLES_DEL_EDITOR, rechazoParaEditor, puedeCargarNotasDgmit, MENSAJE_EDITOR_SOLO_LECTORES,
-  MENSAJE_EDITOR_SIN_ROLES
+  MENSAJE_EDITOR_SIN_ROLES, superioresDe, quienesDependenDe, rechazoDeDependencia, dependenciaDe, MENSAJES_DEPENDENCIA
 } from '../services/usuariosReglas.js';
 
 const u = (id, rol, activo = 1, tieneContrasena = 1) => ({ id, rol, activo, tiene_contrasena: tieneContrasena });
@@ -208,5 +208,92 @@ describe('colaborador (spec 2026-10-24-notas-dgmit, 1)', () => {
     assert.deepEqual(errores, []);
     assert.equal(datos.rol, 'colaborador');
     assert.ok(ROLES_ASIGNABLES.includes('colaborador'));
+  });
+});
+
+// De quién depende cada uno (spec 2026-11-04-agenda-aviso-y-dependencia, 3 y 5.1). Micaela depende de Federico, que depende de Graciela
+describe('la cadena', () => {
+  const fila = (id, nombre, dependeDe = null, activo = 1) => ({ id, nombre_completo: nombre, depende_de: dependeDe, activo });
+  const CADENA = [fila(1, 'Graciela Paz'), fila(2, 'Federico Ríos', 1), fila(3, 'Micaela Ojeda', 2), fila(4, 'Lucía Ortiz', 1)];
+  const ids = (filas) => filas.map((persona) => persona.id);
+
+  it('superioresDe: del más cercano al más lejano', () => {
+    assert.deepEqual(ids(superioresDe(3, CADENA)), [2, 1]);
+    assert.deepEqual(ids(superioresDe(2, CADENA)), [1]);
+    assert.deepEqual(ids(superioresDe(1, CADENA)), []);
+    assert.deepEqual(superioresDe(99, CADENA), []);
+    assert.deepEqual(superioresDe(3, null), []);
+  });
+
+  it('superioresDe: una persona desactivada no corta la cadena, y lo suyo sube a la siguiente', () => {
+    const conDesactivada = CADENA.map((persona) => (persona.id === 2 ? { ...persona, activo: 0 } : persona));
+    assert.deepEqual(ids(superioresDe(3, conDesactivada)), [1]);
+    // Quien está arriba de todo y desactivada no aparece: lo suyo no le llega a nadie
+    assert.deepEqual(ids(superioresDe(4, CADENA.map((persona) => (persona.id === 1 ? { ...persona, activo: false } : persona)))), []);
+  });
+
+  it('superioresDe: se corta ante un ciclo, sin repetir y sin la persona', () => {
+    const ciclo = [fila(1, 'A', 2), fila(2, 'B', 3), fila(3, 'C', 1)];
+    assert.deepEqual(ids(superioresDe(1, ciclo)), [2, 3]);
+    assert.deepEqual(ids(superioresDe(5, [fila(5, 'Sola', 5)])), []);
+  });
+
+  it('quienesDependenDe: directa e indirectamente, también las desactivadas, y se corta ante un ciclo', () => {
+    assert.deepEqual(ids(quienesDependenDe(1, CADENA)).sort(), [2, 3, 4]);
+    assert.deepEqual(ids(quienesDependenDe(2, CADENA)), [3]);
+    assert.deepEqual(ids(quienesDependenDe(3, CADENA)), []);
+    assert.deepEqual(ids(quienesDependenDe(1, [fila(1, 'A'), fila(2, 'B', 1, 0), fila(3, 'C', 2)])).sort(), [2, 3]);
+    assert.deepEqual(ids(quienesDependenDe(1, [fila(1, 'A', 2), fila(2, 'B', 1)])), [2]);
+  });
+
+  it('rechazoDeDependencia: cada caso, con su mensaje', () => {
+    const usuarios = [...CADENA, fila(5, 'Tomás Vera', null, 0)];
+    assert.equal(rechazoDeDependencia({ id: 3, dependeDe: null, usuarios }), null);
+    assert.equal(rechazoDeDependencia({ id: 3, dependeDe: 1, usuarios }), null);
+    assert.equal(rechazoDeDependencia({ dependeDe: 1, usuarios }), null, 'en un alta');
+    assert.equal(rechazoDeDependencia({ id: 3, dependeDe: 3, usuarios }), MENSAJES_DEPENDENCIA.ellaMisma);
+    assert.equal(rechazoDeDependencia({ id: 3, dependeDe: 99, usuarios }), MENSAJES_DEPENDENCIA.invalida);
+    assert.equal(rechazoDeDependencia({ id: 3, dependeDe: 5, usuarios }), MENSAJES_DEPENDENCIA.invalida, 'una desactivada no se elige');
+    assert.equal(rechazoDeDependencia({ id: 3, dependeDe: 5, antes: 5, usuarios }), null, 'la que ya estaba se deja');
+    assert.equal(rechazoDeDependencia({ id: 1, dependeDe: 3, usuarios }), MENSAJES_DEPENDENCIA.ciclo, 'directa o indirectamente');
+    assert.equal(rechazoDeDependencia({ id: 2, dependeDe: 3, usuarios }), MENSAJES_DEPENDENCIA.ciclo);
+  });
+
+  it('los mensajes, al pie de la letra', () => {
+    assert.deepEqual({ ...MENSAJES_DEPENDENCIA }, {
+      invalida: 'Elegí una persona de la lista.',
+      ellaMisma: 'No puede depender de sí misma.',
+      ciclo: 'Esa persona ya depende de quien estás editando.'
+    });
+  });
+
+  it('dependenciaDe: el nombre, a quiénes no se ofrece y lo que se dice al desactivar', () => {
+    assert.deepEqual(dependenciaDe(2, CADENA), {
+      depende_de_nombre: 'Graciela Paz',
+      no_elegibles: [2, 3],
+      al_desactivar: { dependen: ['Micaela Ojeda'], suben_a: 'Graciela Paz' }
+    });
+    const arriba = dependenciaDe(1, CADENA);
+    assert.equal(arriba.depende_de_nombre, null);
+    assert.equal(arriba.al_desactivar.suben_a, null);
+    assert.deepEqual(arriba.al_desactivar.dependen, ['Federico Ríos', 'Lucía Ortiz']);
+    // Solo quienes están activas, y sin filas no se rompe
+    const conDesactivada = CADENA.map((persona) => (persona.id === 3 ? { ...persona, activo: 0 } : persona));
+    assert.deepEqual(dependenciaDe(2, conDesactivada).al_desactivar.dependen, []);
+    // Quien depende de ella por encima de alguien ya desactivado también sube: se la nombra
+    const sinElDelMedio = CADENA.map((persona) => (persona.id === 2 ? { ...persona, activo: 0 } : persona));
+    assert.deepEqual(dependenciaDe(1, sinElDelMedio).al_desactivar.dependen, ['Micaela Ojeda', 'Lucía Ortiz']);
+    assert.deepEqual(dependenciaDe(7, []), { depende_de_nombre: null, no_elegibles: [7], al_desactivar: { dependen: [], suben_a: null } });
+  });
+
+  it('validarDatosUsuario: vacío o null, nadie; un entero positivo, esa persona; otra cosa, error; sin el campo, no lo toca', () => {
+    const conDepende = (valor) => validarDatosUsuario({ depende_de: valor }, { parcial: true });
+    assert.equal(conDepende('').datos.depende_de, null);
+    assert.equal(conDepende(null).datos.depende_de, null);
+    assert.equal(conDepende(7).datos.depende_de, 7);
+    for (const valor of [0, -1, 1.5, '7', true, {}, []]) {
+      assert.deepEqual(conDepende(valor).errores, [{ campo: 'depende_de', error: MENSAJES_DEPENDENCIA.invalida }], JSON.stringify(valor));
+    }
+    assert.equal('depende_de' in validarDatosUsuario({ cargo: 'x' }, { parcial: true }).datos, false);
   });
 });

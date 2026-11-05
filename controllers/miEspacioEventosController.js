@@ -1,11 +1,11 @@
 // La agenda de Mi espacio (spec 2026-10-26-mi-espacio-agenda, secciones 1, 2, 3 y 7): los eventos de cada persona, los que
 // compartieron con ella y los «para todos». Todas las rutas llevan authMiddleware y trabajan sobre req.user.userId, con su
 // rol de la base (verificarSesion lo lee en cada pedido: quien deja de ser administración deja de compartir enseguida).
-// Lo ve quien lo creó, las personas elegidas y, si es para todos, la administración (services/miEspacioEventosDatos.js); lo
+// Lo ve quien lo creó, las personas elegidas y, si es para todos, todos los usuarios (services/miEspacioEventosDatos.js); lo
 // cambia y lo borra solo quien lo creó, y una invitada solo apaga o prende su recordatorio. Un id que no sirve, ajeno, que no
-// existe o dado de baja responde 404, el mismo: no se revela que existe. Comparte solo administración (`esAdmin`), y solo con
-// administración activa o con quien ya estaba en el evento (Review Focus 4: una invitada que dejó de ser administración o se
-// desactivó sigue, pero nadie la suma de nuevo). Cuándo sale cada aviso se calcula en cada pedido con los feriados de ese
+// existe o dado de baja responde 404, el mismo: no se revela que existe. Cualquier rol crea un Laboral, con cualquier usuario activo
+// o con quien ya estaba en el evento (spec 2026-11-04-agenda-aviso-y-dependencia, 2.4; una invitada que se desactivó sigue, pero
+// nadie la suma de nuevo). Cuándo sale cada aviso se calcula en cada pedido con los feriados de ese
 // momento, nunca se guarda (Review Focus 3). Las reglas y los textos son puros (services/miEspacioEventosReglas.js): la
 // página los imprime tal cual. El listado suma lo demás de la agenda: tus licencias de Mi espacio (con el tipo), los
 // feriados y los compañeros que no están (sin el tipo, como «Hoy no están»). Respuestas { success, data?, error?, campo?,
@@ -20,16 +20,21 @@
 // recordatorio» (400 sinRecordatorio). Los nombres cortos de un Público van contra todos los usuarios activos
 // (`usuariosActivos`).
 import pool from '../config/database.js';
-import { ahoraArgentina, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { ahoraArgentina, esFechaIso, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_EVENTO, validarEvento, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento, itemDeLicencia,
-  itemDeAusencia, itemsDeFeriados, emailsDelGuardado, companerosPorDia, mesDeLaFrase, fraseDelMes
+  itemDeAusencia, itemsDeFeriados, emailsDelGuardado, companerosPorDia, mesDeLaFrase, fraseDelMes, textoRangoEvento, fechaMaximaEvento
 } from '../services/miEspacioEventosReglas.js';
 import {
-  eventosVisibles, eventoVisible, eventoPropio, personasParaCompartir, personasParaElPublico, licenciasPropiasEntre, audienciaDe
+  eventosVisibles, eventoVisible, eventoPropio, personasParaElegir, licenciasPropiasEntre, audienciaDe
 } from '../services/miEspacioEventosDatos.js';
 import { enviarEmailsDelGuardado } from '../services/miEspacioEventosEmails.js';
-import { feriadosEntre, filasDeFeriados } from '../services/feriadosDatos.js';
+import {
+  cuandoLlegaElAviso, fraseDelAviso, superioresConNombre, mensajeDelGuardado, mensajeDeLaCasilla, MENSAJE_EVENTOS_POR_MAIL
+} from '../services/miEspacioEventosDiarioReglas.js';
+import { usuariosDelAviso } from '../services/miEspacioEventosDiarioDatos.js';
+import { superioresDe, quienesDependenDe } from '../services/usuariosReglas.js';
+import { feriadosEntre, filasDeFeriados, leerCalendario } from '../services/feriadosDatos.js';
 import { feriadosDelRango } from '../services/feriadosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
 import { administracionActiva, usuariosActivos } from '../services/miEspacioDatos.js';
@@ -141,32 +146,54 @@ const conLasPersonas = (datos, { usuario, lista, yaEstaban, tipo }) => {
 
 /**
  * Lo que se guarda de un alta o un cambio (`entrada`, el formulario entero), o lo que lo frena, en este orden:
- * validarEvento (con el tipo: Personal (Privado), Personal (Público) o Laboral; un cuerpo sin `tipo` es el de antes);
- * compartir un Laboral sin ser administración (`sinPermiso`, en `compartido`: también a quien lo creó y dejó de serlo); y las
- * personas (`personasDelPedido`), sin quien lo guarda:
- * - de un Laboral sin «Todos», las de `personasParaCompartir` (la administración) o las que ya estaban elegidas en el evento
- *   (`anterior`, el de antes de un cambio; las filas de un «para todos» son de recordatorios apagados, no de elegidas);
- * - de un Personal (Público) sin «Todos», las de `personasParaElPublico` (todos los usuarios activos, de cualquier rol) o las
- *   que ya estaban en sus vistas (una invitada que se desactivó sigue, pero nadie la suma de nuevo), con el mensaje de
- *   «ninguna» del Público (`personasPublico`).
+ * validarEvento (con el tipo: Personal (Privado), Personal (Público) o Laboral; un cuerpo sin `tipo` es el de antes); y las
+ * personas (`personasDelPedido`), sin quien lo guarda, las de `personasParaElegir` (todos los usuarios activos, de cualquier rol) o:
+ * - de un Laboral sin «Todos», las que ya estaban elegidas en el evento (`anterior`, el de antes de un cambio; las filas de un
+ *   «para todos» son de recordatorios apagados, no de elegidas);
+ * - de un Personal (Público) sin «Todos», las que ya estaban en sus vistas (una invitada que se desactivó sigue, pero nadie la suma
+ *   de nuevo), con el mensaje de «ninguna» del Público (`personasPublico`).
+ * Un Laboral con `compartido` en el true literal y «Todos» es el «Toda la administración» de una pestaña con la página anterior: la
+ * página nueva no manda `compartido`. Se guarda con la administración activa como personas, que es lo que quiso decir: como «Todos»
+ * les llegarían el título, el detalle y un mail a todos los lectores, sin confirmación (spec 2026-11-04-agenda-aviso-y-dependencia, 2.1).
  * Devuelve `{ datos }` o `{ error }`.
  */
 const datosDelGuardado = async (entrada, { usuario, anterior = null }, conexion) => {
   const { datos, error } = validarEvento(entrada, hoyArgentina());
   if (error) return { error };
-  if (datos.compartido && !esAdmin(usuario.rol)) {
-    return { error: { campo: 'compartido', mensaje: MENSAJES_EVENTO.sinPermiso } };
-  }
   if (datos.publico) {
     if (datos.publico_todos) return { datos };
     const yaEstaban = anterior?.publico ? (anterior.vistas ?? []).map((persona) => persona.id) : [];
     return conLasPersonas(datos,
-      { usuario, lista: await personasParaElPublico(usuario.id, conexion), yaEstaban, tipo: 'publico' });
+      { usuario, lista: await personasParaElegir(usuario.id, conexion), yaEstaban, tipo: 'publico' });
   }
-  if (!datos.compartido || datos.para_todos) return { datos };
+  if (!datos.compartido) return { datos };
+  if (datos.para_todos) {
+    if (entrada?.compartido !== true) return { datos };
+    const administracion = (await administracionActiva(conexion)).map((persona) => persona.id);
+    return conLasPersonas({ ...datos, para_todos: false, personas: administracion },
+      { usuario, lista: administracion.map((id) => ({ id })), yaEstaban: [], tipo: 'laboral' });
+  }
   const yaEstaban = anterior?.compartido && !anterior.para_todos ? anterior.personas.map((persona) => persona.id) : [];
   return conLasPersonas(datos,
-    { usuario, lista: await personasParaCompartir(usuario.id, conexion), yaEstaban, tipo: 'laboral' });
+    { usuario, lista: await personasParaElegir(usuario.id, conexion), yaEstaban, tipo: 'laboral' });
+};
+
+// El mensaje de un alta o un cambio (spec 2026-11-04-agenda-aviso-y-dependencia, 2.5), con todo leído en la transacción: el calendario y las
+// filas de usuarios, una vez cada uno. `evento`, el guardado, de eventoPropio
+const mensajeDe = async (conexion, evento, usuarioId, verbo) => {
+  const filas = await usuariosDelAviso(conexion);
+  const usuarios = filas.filter((fila) => fila.activo).map((fila) => ({ id: fila.id, nombre: fila.nombre_completo }));
+  const ahora = ahoraArgentina();
+  const { quien_texto: quienTexto } = itemDeEvento(evento, { usuarioId, ahora, feriados: new Set(), usuarios });
+  if (!evento.publico) {
+    return mensajeDelGuardado({ tipo: evento.compartido ? 'laboral' : 'privado', verbo, quienTexto });
+  }
+  const calendario = await leerCalendario(conexion);
+  const aviso = calendario.error === null
+    ? cuandoLlegaElAviso({ fecha: evento.fecha, desde: evento.desde, ahora, calendario })
+    : { llega: true };
+  const superiores = superioresConNombre(usuarioId, filas).map((persona) => persona.nombre_corto);
+  return mensajeDelGuardado({ tipo: 'publico', verbo, quienTexto, superiores, aviso });
 };
 
 // Las columnas que se guardan de un evento, en el orden de INSERT y de UPDATE (un Público lleva compartido y para_todos en 0:
@@ -230,7 +257,9 @@ const miNombreCorto = (usuarioId, usuarios) => {
 
 /**
  * GET /api/mi-espacio/eventos?desde=AAAA-MM-DD&hasta=AAAA-MM-DD: lo que ve la persona en un rango de hasta 93 días (las
- * fechas, como «Hoy no están»: 400 en `fechas`, antes de leer nada). `puede_compartir`: si el formulario ofrece Laboral;
+ * fechas, como «Hoy no están»: 400 en `fechas`, antes de leer nada). `ve_companeros`: si la leyenda dice «Compañeros que no están»;
+ * `eventos_por_mail` y `alguien_depende`: la casilla «Recibir mi agenda por mail» y si alguien depende de quien pide, directa o
+ * indirectamente, activo (spec 2026-11-04-agenda-aviso-y-dependencia, 2.7);
  * `mi_nombre_corto`: el nombre de quien pide como lo ven los demás (contra todos los usuarios activos), el de la vista previa de
  * un Personal (Público). Además de los eventos (por fecha, hora y título, cada uno como itemDeEvento: un Público de otra
  * persona, solo «Carla: Turno médico», con el nombre corto contra todos los usuarios activos, `usuariosActivos`), lo demás de
@@ -255,22 +284,25 @@ export const listarEventos = (req, res) => responder(res, 'Error al obtener los 
   const usuario = quienPide(req);
   const ahora = ahoraArgentina();
   const hoy = ahora.slice(0, 10);
-  const [eventos, licencias, filasFeriados, administracion, usuarios] = await Promise.all([
+  const [eventos, licencias, filasFeriados, administracion, usuarios, delAviso] = await Promise.all([
     eventosVisibles(usuario, desde, hasta), licenciasPropiasEntre(usuario.id, desde, hasta), filasDeFeriados(),
-    administracionActiva(), usuariosActivos()
+    administracionActiva(), usuariosActivos(), usuariosDelAviso()
   ]);
   const { ausentes } = await ausentesPara(usuario, { desde, hasta, hoy, filasFeriados, administracion });
   const feriados = feriadosDelRango(filasFeriados, desdeDeLosFeriados(desde), hasta);
   const rango = { desde, hasta, feriados };
   const items = {
-    eventos: eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados, administracion, usuarios })),
+    eventos: eventos.map((evento) => itemDeEvento(evento, { usuarioId: usuario.id, ahora, feriados, usuarios })),
     licencias: licencias.map((licencia) => itemDeLicencia(licencia, rango)),
     feriados: itemsDeFeriados(filasFeriados, desde, hasta),
     ausentes: ausentes.map((ausente) => itemDeAusencia(ausente, rango))
   };
   const mes = mesDeLaFrase(req.query?.mes, { desde, hasta });
   return conDatos({
-    desde, hasta, hoy, puede_compartir: esAdmin(usuario.rol), mi_nombre_corto: miNombreCorto(usuario.id, usuarios),
+    desde, hasta, hoy, ve_companeros: esAdmin(usuario.rol),
+    eventos_por_mail: delAviso.find((fila) => fila.id === usuario.id)?.eventos_por_mail === true,
+    alguien_depende: quienesDependenDe(usuario.id, delAviso).some((fila) => fila.activo),
+    mi_nombre_corto: miNombreCorto(usuario.id, usuarios),
     ...items,
     companeros_por_dia: companerosPorDia(items.ausentes),
     frase_del_mes: mes === null ? null : fraseDelMes({ mes, ...items })
@@ -287,18 +319,47 @@ export const verAvisoDelEvento = (req, res) => responder(res, 'Error al calcular
   return conDatos({ momento, texto });
 });
 
-// GET /api/mi-espacio/personas: con quiénes se puede compartir (`personasParaCompartir`: id, nombre e iniciales), sin quien
-// pide. Solo administración comparte: al resto, 403
-export const listarPersonasParaCompartir = (req, res) => responder(res, 'Error al obtener las personas', async () => {
-  if (!esAdmin(req.user.rol)) return [403, { success: false, error: MENSAJES_EVENTO.sinPermiso }];
-  return conDatos(await personasParaCompartir(req.user.userId));
+// GET /api/mi-espacio/eventos/aviso-de-la-cadena?fecha=&desde=: cuándo les llega el mail de un Público a las personas de las que depende
+// quien pide (spec 2026-11-04-agenda-aviso-y-dependencia, 2.3 y 7): `{ texto, llega }`, con el calendario de la tabla leído en este pedido.
+// Sin fecha, o sin poder leer los feriados, el genérico. Una fecha que no es una fecha, 400; una hora que no sirve no cuenta
+export const verAvisoDeLaCadena = (req, res) => responder(res, 'Error al calcular el aviso', async () => {
+  const { fecha, desde } = req.query ?? {};
+  const ahora = ahoraArgentina();
+  const sinFecha = fecha === undefined || fecha === '';
+  if (!sinFecha && !esFechaIso(fecha)) return rechazo({ campo: 'fecha', mensaje: textoRangoEvento(fechaMaximaEvento(ahora.slice(0, 10))) });
+  const [filas, calendario] = await Promise.all([usuariosDelAviso(), leerCalendario()]);
+  const aviso = cuandoLlegaElAviso({ fecha: calendario.error === null ? fecha : undefined, desde, ahora, calendario });
+  return conDatos({ texto: fraseDelAviso(aviso, superioresDe(req.user.userId, filas).length), llega: aviso.llega });
 });
 
-// GET /api/mi-espacio/personas/publico: a quiénes se les puede mostrar un Personal (Público) (`personasParaElPublico`: todos los
+// PUT /api/mi-espacio/eventos-por-mail (`{ recibir: true | false }`): la casilla «Recibir mi agenda por mail». Apaga solo lo propio: lo
+// que le llega como superior no se apaga (spec 2026-11-04-agenda-aviso-y-dependencia, 2.7). Trabaja siempre sobre quien pide
+export const cambiarEventosPorMail = (req, res) => responder(res, 'Error al cambiar tu agenda por mail', async () => {
+  const { recibir } = cuerpoDe(req);
+  if (typeof recibir !== 'boolean') return rechazo({ campo: 'recibir', mensaje: MENSAJE_EVENTOS_POR_MAIL });
+  await pool.query('UPDATE usuarios SET eventos_por_mail = ? WHERE id = ?', [recibir ? 1 : 0, req.user.userId]);
+  const alguienDepende = quienesDependenDe(req.user.userId, await usuariosDelAviso()).some((fila) => fila.activo);
+  return [200, { success: true, data: { eventos_por_mail: recibir }, message: mensajeDeLaCasilla({ recibir, alguienDepende }) }];
+});
+
+// GET /api/mi-espacio/personas: con quiénes se puede compartir un Laboral (`personasParaElegir`: todos los usuarios activos, con id,
+// nombre e iniciales), sin quien pide. Para cualquier rol con sesión (spec 2026-11-04-agenda-aviso-y-dependencia, 2.4)
+export const listarPersonasParaCompartir = (req, res) => responder(res, 'Error al obtener las personas', async () =>
+  conDatos(await personasParaElegir(req.user.userId)));
+
+// GET /api/mi-espacio/personas/publico: a quiénes se les puede mostrar un Personal (Público) (`personasParaElegir`: todos los
 // usuarios activos, de cualquier rol, con id, nombre e iniciales), sin quien pide. Para cualquier rol con sesión (spec
-// 2026-10-29-mi-espacio-evento-publico, 6.4)
-export const listarPersonasParaElPublico = (req, res) => responder(res, 'Error al obtener las personas', async () =>
-  conDatos(await personasParaElPublico(req.user.userId)));
+// 2026-10-29-mi-espacio-evento-publico, 6.4). Suma `es_superior` y `nombre_corto`, con la cadena de quien pide primero (spec
+// 2026-11-04-agenda-aviso-y-dependencia, 2.3 y 7): vienen marcadas y la página arma con ellas el aviso por mail
+export const listarPersonasParaElPublico = (req, res) => responder(res, 'Error al obtener las personas', async () => {
+  const [personas, filas] = await Promise.all([personasParaElegir(req.user.userId), usuariosDelAviso()]);
+  const superiores = new Map(superioresConNombre(req.user.userId, filas).map((persona) => [persona.id, persona.nombre_corto]));
+  const usuarios = filas.filter((fila) => fila.activo).map((fila) => ({ id: fila.id, nombre: fila.nombre_completo }));
+  const conSuCadena = personas.map((persona) => ({
+    ...persona, es_superior: superiores.has(persona.id), nombre_corto: nombreCorto(persona, usuarios)
+  }));
+  return conDatos([...conSuCadena.filter((persona) => persona.es_superior), ...conSuCadena.filter((persona) => !persona.es_superior)]);
+});
 
 // POST /api/mi-espacio/eventos: un evento nuevo de la persona, con sus personas (o, un Público, sus vistas). Después de
 // responder, la invitación a su audiencia (el evento se vuelve a leer, ya guardado: el de los emails; un Público no tiene)
@@ -308,14 +369,14 @@ export const crearEvento = (req, res) => guardarEvento(res, 'Error al guardar el
   if (error) return rechazo(error);
   const [resultado] = await conexion.query(
     `INSERT INTO mi_espacio_eventos (titulo, detalle, fecha, desde, hasta, compartido, para_todos, publico, publico_todos,
-       texto_publico, recordatorio, creado_por)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [...valoresDelEvento(datos), usuario.id]
+       texto_publico, recordatorio, creado_por, publicado_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [...valoresDelEvento(datos), usuario.id, datos.publico ? ahoraArgentina() : null]
   );
   await guardarPersonas(conexion, resultado.insertId, datos, []);
   await guardarVistas(conexion, resultado.insertId, datos, []);
   const despues = await eventoPropio(resultado.insertId, usuario.id, conexion);
-  return [201, { success: true, data: { id: resultado.insertId }, message: 'Evento guardado.' },
+  return [201, { success: true, data: { id: resultado.insertId }, message: await mensajeDe(conexion, despues, usuario.id, 'guardado') },
     await emailsDelEvento(conexion, { despues })];
 });
 
@@ -330,17 +391,19 @@ export const cambiarEvento = (req, res) => guardarEvento(res, 'Error al cambiar 
   const { datos, error } = await datosDelGuardado(cuerpoDe(req), { usuario, anterior: antes }, conexion);
   if (error) return rechazo(error);
   const audienciaAntes = await audienciaDe(antes, conexion);
+  // Cuándo quedó Público con esa fecha (spec 2026-11-04-agenda-aviso-y-dependencia, 5.4): un cambio de título, de hora o de texto no lo toca
+  const yaEraPublicoConEsaFecha = datos.publico && antes.publico && antes.fecha === datos.fecha;
   await conexion.query(
     `UPDATE mi_espacio_eventos
      SET titulo = ?, detalle = ?, fecha = ?, desde = ?, hasta = ?, compartido = ?, para_todos = ?, publico = ?,
-       publico_todos = ?, texto_publico = ?, recordatorio = ?
+       publico_todos = ?, texto_publico = ?, recordatorio = ?${yaEraPublicoConEsaFecha ? '' : ', publicado_at = ?'}
      WHERE id = ?`,
-    [...valoresDelEvento(datos), antes.id]
+    [...valoresDelEvento(datos), ...(yaEraPublicoConEsaFecha ? [] : [datos.publico ? ahoraArgentina() : null]), antes.id]
   );
   await guardarPersonas(conexion, antes.id, datos, antes.personas);
   await guardarVistas(conexion, antes.id, datos, antes.vistas ?? []);
   const despues = await eventoPropio(antes.id, usuario.id, conexion);
-  return [200, { success: true, data: { id: antes.id }, message: 'Evento cambiado.' },
+  return [200, { success: true, data: { id: antes.id }, message: await mensajeDe(conexion, despues, usuario.id, 'cambiado') },
     await emailsDelEvento(conexion, { antes, audienciaAntes, despues })];
 });
 

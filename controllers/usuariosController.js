@@ -4,7 +4,7 @@
 import pool from '../config/database.js';
 import {
   validarDatosUsuario, violaMinimoAprobadores, estadoDeUsuario, esAprobadorActivo, esAdmin, esAuditor, emailValido, camposCambiados,
-  rechazoParaEditor, ROLES_DEL_EDITOR, MENSAJE_EDITOR_SOLO_LECTORES, MINIMO_APROBADORES, TEXTO_ROL
+  rechazoParaEditor, ROLES_DEL_EDITOR, MENSAJE_EDITOR_SOLO_LECTORES, MINIMO_APROBADORES, TEXTO_ROL, rechazoDeDependencia, dependenciaDe
 } from '../services/usuariosReglas.js';
 import { registrarAuditoria, historialDe } from '../services/usuariosAuditoriaService.js';
 import { enviarLinkDeAcceso } from '../services/accesoService.js';
@@ -16,18 +16,19 @@ const MENSAJE_MINIMO = 'No se puede: quedarían menos de 2 usuarios que puedan a
 const MENSAJE_SIN_ENVIO = 'El usuario se guardó, pero no se pudo enviar el email. Podés reenviarlo desde Enviar link de acceso.';
 const MENSAJE_ERROR = 'Error interno del servidor';
 const MENSAJE_FIRMANTE = 'Es el firmante titular de las Notas Digitales: primero hay que elegir a otra persona en Correos.';
-const CAMPOS_EDITABLES = ['nombre_completo', 'username', 'email', 'cargo', 'vinculo'];
+const CAMPOS_EDITABLES = ['nombre_completo', 'username', 'email', 'cargo', 'vinculo', 'depende_de'];
 
 // Columnas del panel: nunca password_hash, solo si existe
 const COLUMNAS = `
-  u.id, u.username, u.nombre_completo, u.email, u.rol, u.cargo, u.vinculo, u.activo, u.ultimo_ingreso, u.created_at,
+  u.id, u.username, u.nombre_completo, u.email, u.rol, u.cargo, u.vinculo, u.depende_de, u.activo, u.ultimo_ingreso, u.created_at,
   (u.password_hash IS NOT NULL) AS tiene_contrasena,
   (SELECT MAX(t.expira_at) FROM usuarios_tokens t
     WHERE t.usuario_id = u.id AND t.tipo = 'invitacion' AND t.usado_at IS NULL AND t.anulado_at IS NULL
       AND t.expira_at > NOW()) AS invitacion_vence,
   (SELECT COUNT(*) FROM cambios_pendientes cp WHERE cp.usuario_id = u.id AND cp.estado = 'pendiente') AS cambios_pendientes_propuestos`;
 
-const aRespuesta = (u, licencias = new Map()) => ({
+// `filas`: las de todos los usuarios, `{ id, nombre_completo, activo, depende_de }`, para lo que el panel muestra de la cadena
+const aRespuesta = (u, licencias = new Map(), filas = []) => ({
   id: u.id,
   username: u.username,
   nombre_completo: u.nombre_completo,
@@ -36,6 +37,8 @@ const aRespuesta = (u, licencias = new Map()) => ({
   rol: u.rol,
   cargo: u.cargo,
   vinculo: u.vinculo,
+  depende_de: u.depende_de,
+  ...dependenciaDe(u.id, filas),
   estado: estadoDeUsuario(u),
   ultimo_ingreso: u.ultimo_ingreso,
   invitacion_vence: u.invitacion_vence,
@@ -55,6 +58,12 @@ const idDeRuta = (req) => {
 const buscarUsuario = async (conexion, id) => {
   const [filas] = await conexion.execute(`SELECT ${COLUMNAS} FROM usuarios u WHERE u.id = ?`, [id]);
   return filas[0] || null;
+};
+
+// Las filas de la cadena de todos los usuarios (spec 2026-11-04-agenda-aviso-y-dependencia, 3): una sola consulta por pedido
+const filasDeLaCadena = async (conexion = pool) => {
+  const [filas] = await conexion.execute('SELECT id, nombre_completo, activo, depende_de FROM usuarios ORDER BY id');
+  return filas;
 };
 
 // ¿Es quien firma las Notas Digitales? Tiene que seguir siendo superadmin o admin (spec 2026-10-15, 6.2)
@@ -83,7 +92,7 @@ const licenciasVisibles = async () => {
 // trabarse, y la segunda cuenta con lo que dejó la primera (spec 8.1).
 const bloquearUsuarios = async (conexion) => {
   const [filas] = await conexion.execute(
-    'SELECT id, rol, activo, (password_hash IS NOT NULL) AS tiene_contrasena FROM usuarios ORDER BY id FOR UPDATE'
+    'SELECT id, rol, activo, depende_de, (password_hash IS NOT NULL) AS tiene_contrasena FROM usuarios ORDER BY id FOR UPDATE'
   );
   return filas;
 };
@@ -113,7 +122,7 @@ export const listarUsuarios = async (req, res) => {
     res.json({
       success: true,
       data: {
-        usuarios: filas.map(u => aRespuesta(u, licencias)),
+        usuarios: filas.map(u => aRespuesta(u, licencias, filas)),
         resumen: { aprobadores_activos: filas.filter(esAprobadorActivo).length, minimo: MINIMO_APROBADORES }
       }
     });
@@ -129,7 +138,8 @@ export const obtenerUsuario = async (req, res) => {
   try {
     const usuario = id && await buscarUsuario(pool, id);
     if (!usuario) return responderError(res, 404, 'Usuario no encontrado');
-    res.json({ success: true, data: { ...aRespuesta(usuario, await licenciasVisibles()), historial: await historialDe(id) } });
+    const filas = await filasDeLaCadena();
+    res.json({ success: true, data: { ...aRespuesta(usuario, await licenciasVisibles(), filas), historial: await historialDe(id) } });
   } catch (error) {
     console.error('Error obteniendo usuario:', error);
     responderError(res, 500, MENSAJE_ERROR);
@@ -157,10 +167,15 @@ export const crearUsuario = async (req, res) => {
       await conexion.rollback();
       return responderError(res, 409, MENSAJE_REPETIDO[repetido], repetido);
     }
+    const rechazoDeLaCadena = rechazoDeDependencia({ dependeDe: datos.depende_de ?? null, usuarios: await filasDeLaCadena(conexion) });
+    if (rechazoDeLaCadena) {
+      await conexion.rollback();
+      return responderError(res, 400, rechazoDeLaCadena, 'depende_de');
+    }
     const [resultado] = await conexion.execute(
-      `INSERT INTO usuarios (username, password_hash, nombre_completo, email, rol, cargo, vinculo, activo)
-       VALUES (?, NULL, ?, ?, ?, ?, ?, TRUE)`,
-      [datos.username, datos.nombre_completo, datos.email, datos.rol, datos.cargo ?? null, datos.vinculo ?? null]
+      `INSERT INTO usuarios (username, password_hash, nombre_completo, email, rol, cargo, vinculo, depende_de, activo)
+       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, TRUE)`,
+      [datos.username, datos.nombre_completo, datos.email, datos.rol, datos.cargo ?? null, datos.vinculo ?? null, datos.depende_de ?? null]
     );
     id = resultado.insertId;
     auditoriaId = await registrarAuditoria(conexion, {
@@ -169,7 +184,7 @@ export const crearUsuario = async (req, res) => {
       accion: 'alta',
       detalle: {
         username: datos.username, nombre_completo: datos.nombre_completo, email: datos.email,
-        rol: datos.rol, cargo: datos.cargo ?? null, vinculo: datos.vinculo ?? null
+        rol: datos.rol, cargo: datos.cargo ?? null, vinculo: datos.vinculo ?? null, depende_de: datos.depende_de ?? null
       }
     });
     await conexion.commit();
@@ -259,6 +274,15 @@ export const actualizarUsuario = async (req, res) => {
       return responderError(res, 409, MENSAJE_REPETIDO[repetido], repetido);
     }
 
+    // Una pestaña con la página anterior no manda el campo: no se toca (spec 2026-11-04-agenda-aviso-y-dependencia, 3)
+    if (datos.depende_de !== undefined) {
+      const rechazoDeLaCadena = rechazoDeDependencia({ id, dependeDe: datos.depende_de, antes: antes.depende_de, usuarios: todos });
+      if (rechazoDeLaCadena) {
+        await conexion.rollback();
+        return responderError(res, 400, rechazoDeLaCadena, 'depende_de');
+      }
+    }
+
     campos = camposCambiados(antes, datos, CAMPOS_EDITABLES);
     sinCambios = Object.keys(campos).length === 0 && !rolNuevo;
     if (sinCambios) {
@@ -305,7 +329,7 @@ export const actualizarUsuario = async (req, res) => {
     if (rolNuevo) avisos.push(`${TEXTO_ROL[antes.rol]} → ${TEXTO_ROL[rolNuevo]}`);
     if (campos.email && esAdmin(despues.rol)) avisos.push(`Email: ${campos.email.antes ?? '(vacío)'} → ${campos.email.despues}`);
     if (avisos.length > 0) await avisar(req, despues, avisos.join('; '), auditoriaId);
-    res.json({ success: true, data: aRespuesta(despues), message: sinCambios ? 'Sin cambios' : 'Cambios guardados' });
+    res.json({ success: true, data: aRespuesta(despues, new Map(), await filasDeLaCadena()), message: sinCambios ? 'Sin cambios' : 'Cambios guardados' });
   } catch (error) {
     console.error('Error respondiendo la actualización del usuario:', error);
     responderError(res, 500, MENSAJE_ERROR);

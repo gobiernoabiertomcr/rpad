@@ -15,6 +15,8 @@ import { idsPositivos } from '../services/proyectosReglas.js';
 import { renderDocx, membreteParaWord } from '../services/notasWord.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { estadoDeLosRecordatorios } from '../services/miEspacioEventosCorrida.js';
+import { estadoDelAvisoDiario } from '../services/miEspacioEventosDiario.js';
+import { alertaSinEstadoDelDiario } from '../services/miEspacioEventosDiarioReglas.js';
 import { alertaSinEstadoDeEventos } from '../services/miEspacioEventosReglas.js';
 import { leerCalendario } from '../services/feriadosDatos.js';
 
@@ -307,16 +309,31 @@ const estadoDeLosEventos = async () => {
   }
 };
 
+// El aviso diario de la agenda en el Estado (spec 2026-11-04-agenda-aviso-y-dependencia, 6): `diario` = { texto, corrida } y su alerta. Nunca
+// tira: si no se puede leer, `diario` es null y va una advertencia
+const estadoDelDiario = async () => {
+  try {
+    const { texto, corrida, alertas } = await estadoDelAvisoDiario();
+    return { diario: { texto, corrida }, alertas };
+  } catch (error) {
+    console.error('Error al leer la última corrida del aviso diario:', error?.stack ?? error);
+    return { diario: null, alertas: [alertaSinEstadoDelDiario()] };
+  }
+};
+
 // El estado de las Notas Digitales (estadoNotas) con los recordatorios de la agenda: `eventos` y sus alertas al final de las de
 // siempre (cargarEstado de correos.js las dibuja todas y prende el punto de la pestaña con ellas). El calendario se lee una vez por
 // pedido y llega a todo lo que calcula estadoNotas (spec 2026-10-27-feriados-en-notas, 2 y 4); leerCalendario nunca tira
 export const verEstado = async (req, res) => {
   try {
     const calendario = await leerCalendario();
-    const [estado, deLosEventos] = await Promise.all([notas.estadoNotas({ calendario }), estadoDeLosEventos()]);
+    const [estado, deLosEventos, delDiario] = await Promise.all([notas.estadoNotas({ calendario }), estadoDeLosEventos(), estadoDelDiario()]);
     res.json({
       success: true,
-      data: { ...estado, eventos: deLosEventos.eventos, alertas: [...estado.alertas, ...deLosEventos.alertas] }
+      data: {
+        ...estado, eventos: deLosEventos.eventos, diario: delDiario.diario,
+        alertas: [...estado.alertas, ...deLosEventos.alertas, ...delDiario.alertas]
+      }
     });
   } catch (error) {
     errorInterno(res, 'Error al obtener el estado de las notas', error);
