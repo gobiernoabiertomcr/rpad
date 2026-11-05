@@ -166,6 +166,9 @@
         .me-cifra-final { visibility: hidden; }
         .me-frase-bajada { margin: 12px 0 0; font-size: 1.05rem; line-height: 1.5; color: var(--sg-texto); max-width: 52ch; overflow-wrap: anywhere; }
         .me-frase-bajada b { font-weight: 700; }
+        /* La bienvenida sin el saldo inicial (spec 2026-11-04-mi-espacio-sin-saldos, 6): la banda, con el botón debajo del texto */
+        .me-banda-bienvenida .me-frase-bajada { max-width: 62ch; }
+        .me-banda-bienvenida .sg-btn { margin-top: 14px; }
         .me-frase-bajada .vence { color: var(--sg-ambar); }
         /* La oración de lo cargado lleva a Licencias de su año (spec 2026-10-28-mi-espacio-licencia-anulada, 2.3): con el color de la
            frase, subrayada */
@@ -996,7 +999,7 @@
                         Mi espacio
                     </h1>
                     <!-- «Nuevo evento» se ve siempre: la agenda no depende de la modalidad (decisión del usuario, 27/10/2026). «Cargar
-                         horas extras» y «Cargar licencia», solo con la modalidad cargada: mi-espacio.js los muestra -->
+                         horas extras» y «Cargar licencia», solo con la modalidad y el saldo inicial cargados: mi-espacio.js los muestra -->
                     <div class="me-acciones">
                         <button type="button" class="sg-btn sg-btn-borde" id="btn-nuevo-evento">Nuevo evento</button>
                         <button type="button" class="sg-btn sg-btn-borde" id="btn-cargar-horas" hidden>Cargar horas extras</button>
@@ -1566,6 +1569,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/mi-espacio.js?v=20261225"></script>
+    <script src="js/mi-espacio.js?v=20261226"></script>
 </body>
 </html>

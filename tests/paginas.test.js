@@ -107,7 +107,7 @@ const VERSION_PROYECTOS = '20261206';
 // «Pedir la restitución», con su nota—, spec 2026-10-31-mi-espacio-dias-restituidos, 9; las horas acumuladas de contrato, spec
 // 2026-11-03-mi-espacio-horas-acumuladas, 5 y 10; y lo que dice de la reiteración una licencia sin persona autorizada, spec
 // 2026-11-03-reiteracion-bimestral, 5). Su versión es propia
-const VERSION_MI_ESPACIO = '20261225';
+const VERSION_MI_ESPACIO = '20261226';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
