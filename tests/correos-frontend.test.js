@@ -975,6 +975,18 @@ describe('correos.js: la línea de los recordatorios de la agenda en el Estado',
     assert.equal(elemento('marca-estado-advertencia').hidden, true);
   });
 
+  it('con estado.diario, #nd-diario se ve con su texto; sin él, oculta (spec 2026-11-04-agenda-aviso-y-dependencia, 6)', async () => {
+    const texto = 'Aviso diario de la agenda: última corrida hoy a las 14:00. Enviados: 3.';
+    const { elemento } = await cargarCon({ eventos: EVENTOS, diario: { texto, corrida: null } });
+    assert.equal(elemento('nd-diario').hidden, false);
+    assert.equal(elemento('nd-diario').textContent, texto);
+    for (const cambios of [{ diario: null }, {}]) {
+      const sinDiario = await cargarCon(cambios);
+      assert.equal(sinDiario.elemento('nd-diario').hidden, true, JSON.stringify(cambios));
+      assert.equal(sinDiario.elemento('nd-diario').textContent, '', JSON.stringify(cambios));
+    }
+  });
+
   it('la advertencia de que no se pudo leer la corrida se dibuja ámbar y prende el punto ámbar', async () => {
     const { elemento } = await cargarCon({ eventos: null, alertas: [SIN_ESTADO] });
     assert.equal(elemento('nd-alertas').innerHTML, `<div class="nd-alerta nd-advertencia">${SIN_ESTADO.mensaje}</div>`);
@@ -1408,11 +1420,12 @@ describe('correos.html: la pestaña Estado (spec 2026-10-17-correos-pestanas, 7)
     const lineas = ESTADO.match(/<div class="co-lineas">([\s\S]*?)<\/div>\s*<\/div>/)?.[1] ?? '';
     assert.ok(lineas, 'hay un .co-lineas dentro de la primera tarjeta');
     assert.deepEqual([...lineas.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]),
-      ['nd-ultima-corrida', 'nd-eventos', 'nd-licencia', 'nd-auditoria', 'nd-sin-quien-audite', 'nd-periodos-sin-auditor']);
+      ['nd-ultima-corrida', 'nd-eventos', 'nd-diario', 'nd-licencia', 'nd-auditoria', 'nd-sin-quien-audite', 'nd-periodos-sin-auditor']);
     assert.match(etiqueta('nd-ultima-corrida'), /^<p\b/);
     assert.doesNotMatch(etiqueta('nd-ultima-corrida'), /\bhidden\b/);
     // La de los recordatorios de la agenda (spec 2026-10-26-mi-espacio-agenda, 5): oculta hasta que llega el estado
     assert.match(etiqueta('nd-eventos'), /^<p id="nd-eventos" hidden>$/);
+    assert.match(etiqueta('nd-diario'), /^<p id="nd-diario" hidden>$/);
     assert.match(etiqueta('nd-licencia'), /^<p\b[^>]*\bhidden\b/);
     assert.match(etiqueta('nd-auditoria'), /^<p\b/);
     assert.doesNotMatch(etiqueta('nd-auditoria'), /\bhidden\b/);

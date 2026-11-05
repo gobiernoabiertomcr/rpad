@@ -556,6 +556,10 @@ async function cargarEstado() {
     const eventos = document.getElementById('nd-eventos');
     eventos.textContent = typeof estado.eventos?.texto === 'string' ? estado.eventos.texto : '';
     eventos.hidden = eventos.textContent === '';
+    // El aviso diario de la agenda (spec 2026-11-04-agenda-aviso-y-dependencia, 6), igual: la línea la arma el servidor
+    const diario = document.getElementById('nd-diario');
+    diario.textContent = typeof estado.diario?.texto === 'string' ? estado.diario.texto : '';
+    diario.hidden = diario.textContent === '';
     const licencia = document.getElementById('nd-licencia');
     licencia.textContent = textoLicenciaFirmante(estado.licencia_firmante);
     licencia.hidden = !estado.licencia_firmante;
