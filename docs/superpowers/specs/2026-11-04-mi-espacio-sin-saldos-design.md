@@ -1,6 +1,6 @@
 # Mi espacio sin el paso obligatorio de los saldos
 
-Fecha: 04/11/2026. Decisiones del usuario del 04/11/2026.
+Fecha: 04/11/2026. Decisiones del usuario del 04/11/2026; el usuario aprobó este diseño el 04/11/2026.
 La maqueta, con personas inventadas, está en `docs/superpowers/specs/2026-11-04-mi-espacio-sin-saldos-mockups/` (`python3 -m http.server` en esa carpeta; la barra de abajo cambia de persona y de situación).
 Lo que se ve y los contratos van acá; los textos, al pie de la letra.
 

@@ -9,11 +9,11 @@
 
 **Tech Stack:** Node 22, vanilla JS, `node --test`.
 
-**Spec:** `docs/superpowers/specs/2026-11-04-mi-espacio-sin-saldos-design.md`. La maqueta: `docs/superpowers/specs/2026-11-04-mi-espacio-sin-saldos-mockups/`. El executor lee las dos, y `docs/temas/mi-espacio.md` y `docs/temas/frontend.md`.
+**Spec:** `docs/superpowers/specs/2026-11-04-mi-espacio-sin-saldos-design.md` (aprobada el 04/11/2026; el usuario aprobó este plan el 04/11/2026). La maqueta: `docs/superpowers/specs/2026-11-04-mi-espacio-sin-saldos-mockups/`. El executor lee las dos, y `docs/temas/mi-espacio.md` y `docs/temas/frontend.md`.
 
 ## Global Constraints
 
-- **Esta feature va después de `claude/agenda-aviso-y-dependencia-e474f8`.** Antes de empezar, traer main (`sync_with_base_branch`). Se pisan `public/js/mi-espacio.js`, `public/mi-espacio.html` y el `?v=`: se ubica todo por el nombre de la función; los números de línea de este plan son de hoy y solo orientan.
+- **Esta feature va después de `claude/agenda-aviso-y-dependencia-e474f8`, y el código no empieza hasta que la coordinadora dé el turno** (orden del usuario, 04/11/2026). Con el turno: traer main (`sync_with_base_branch`), escanearlo y contrastar este plan con lo que trajo, y seguir las líneas de la coordinadora. Se pisan `public/js/mi-espacio.js`, `public/mi-espacio.html` y el `?v=`: se ubica todo por el nombre de la función; los números de línea de este plan son de hoy y solo orientan.
 - **Al traer main,** si trajo una migración, correrla en la base local antes de la suite (`tests/schema.test.js` y `tests/permisos.test.js` leen la base del `.env`).
 - **`VERSION_MI_ESPACIO`:** la siguiente a la que deje main (hoy `'20261223'`), en `tests/paginas.test.js` y `public/mi-espacio.html`.
 - **No se cambia `services/miEspacioReglas.js` ni `controllers/miEspacioController.js`.** Si una tarea parece pedirlo, frenar y preguntar.
