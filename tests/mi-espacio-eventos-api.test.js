@@ -161,12 +161,12 @@ describe('un evento personal', () => {
     const res = await api.post('/mi-espacio/eventos',
       formulario({ detalle: '  Sala de reuniones del 2.º piso.  ', recordatorio: '2h' }), como('adminA'));
     assert.equal(res.status, 201, JSON.stringify(res.body));
-    assert.deepEqual(res.body, { success: true, data: { id: res.body.data.id }, message: 'Evento guardado.' });
+    assert.deepEqual(res.body, { success: true, data: { id: res.body.data.id }, message: 'Evento guardado. Solo vos lo ves.' });
     const { id } = res.body.data;
     assert.ok(Number.isInteger(id) && id > 0);
 
     const data = await listado('adminA');
-    assert.deepEqual(Object.keys(data), ['desde', 'hasta', 'hoy', 've_companeros', 'mi_nombre_corto', 'eventos', 'licencias',
+    assert.deepEqual(Object.keys(data), ['desde', 'hasta', 'hoy', 've_companeros', 'eventos_por_mail', 'alguien_depende', 'mi_nombre_corto', 'eventos', 'licencias',
       'feriados', 'ausentes', 'companeros_por_dia', 'frase_del_mes']);
     // El nombre de quien pide como lo ven los demás (el de la vista previa de un Personal (Público)): adminA y adminB empiezan
     // con «Test» y comparten la inicial del último apellido, así que va completo
@@ -427,7 +427,7 @@ describe('solo quien lo creó lo cambia o lo borra', () => {
       { titulo: 'Reunión de equipo, segunda parte', fecha: q(2), desde: '15:30', hasta: '', detalle: 'Otra sala.',
         recordatorio: 'dia_anterior' });
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.deepEqual(res.body, { success: true, data: { id }, message: 'Evento cambiado.' });
+    assert.deepEqual(res.body, { success: true, data: { id }, message: 'Evento cambiado. Solo vos lo ves.' });
     assert.deepEqual(await filaDelEvento(id), {
       titulo: 'Reunión de equipo, segunda parte', detalle: 'Otra sala.', fecha: q(2), desde: '15:30', hasta: null,
       compartido: 0, para_todos: 0, recordatorio: 'dia_anterior', activo: 1, creado_por: idDe('adminA')
@@ -638,6 +638,166 @@ describe('Review Focus 4: una invitada que dejó de ser administración o se des
     assert.equal(solo.status, 200, JSON.stringify(solo.body));
     assert.deepEqual(await filasDe(id), []);
     assert.equal((await listado('adminA')).ve_companeros, false);
+  });
+});
+
+// El aviso diario (spec 2026-11-04-agenda-aviso-y-dependencia, 2.3, 2.5, 2.7, 5.4 y 7). adminB depende de adminA, que depende del superadmin
+describe('el aviso diario: la cadena en la API', () => {
+  const dependeDe = (clave, deQuien) => query('UPDATE usuarios SET depende_de = ? WHERE id = ?', [deQuien === null ? null : idDe(deQuien), idDe(clave)]);
+  const conCadena = async () => {
+    await dependeDe('adminB', 'adminA');
+    await dependeDe('adminA', 'superadmin');
+  };
+  const publicadoDe = async (id) => (await query("SELECT DATE_FORMAT(publicado_at, '%Y-%m-%d %H:%i:%s') AS publicado FROM mi_espacio_eventos WHERE id = ?", [id]))[0].publicado;
+  const ponerPublicado = (id, valor) => query('UPDATE mi_espacio_eventos SET publicado_at = ? WHERE id = ?', [valor, id]);
+  const PUBLICO_A = Object.freeze({ tipo: 'publico', texto_publico: 'Trámite personal', personas: [] });
+  const publicoCon = (...claves) => ({ ...PUBLICO_A, personas: claves.map(idDe) });
+
+  beforeEach(async () => {
+    await query('UPDATE usuarios SET depende_de = NULL, eventos_por_mail = 1 WHERE id IN (?)', [Object.keys(ROLES).map(idDe)]);
+  });
+
+  describe('GET /eventos/aviso-de-la-cadena', () => {
+    const pedir = (clave, consulta) => api.get(`/mi-espacio/eventos/aviso-de-la-cadena${consulta}`, como(clave));
+
+    it('la frase con la fecha exacta, en plural y en singular', async () => {
+      await conCadena();
+      const lejos = await pedir('adminB', `?fecha=${q(2)}`);
+      assert.equal(lejos.status, 200, JSON.stringify(lejos.body));
+      assert.deepEqual(Object.keys(lejos.body.data), ['texto', 'llega']);
+      assert.match(lejos.body.data.texto, /^De quienes dependés: les llega la notificación por mail el martes \d{2}\/\d{2} a las 14:00\.$/);
+      assert.equal(lejos.body.data.llega, true);
+      const uno = await pedir('adminA', `?fecha=${q(2)}`);
+      assert.match(uno.body.data.texto, /^De quien dependés: le llega la notificación por mail el martes/);
+    });
+
+    it('para hoy no llega; sin fecha, el genérico; sin nadie arriba, sin frase', async () => {
+      await conCadena();
+      const hoyMismo = await pedir('adminB', `?fecha=${hoy}`);
+      assert.deepEqual(hoyMismo.body.data, { texto: 'De quienes dependés: como es para hoy, no les llega ningún mail.', llega: false });
+      for (const consulta of ['', '?fecha=']) {
+        assert.deepEqual((await pedir('adminB', consulta)).body.data,
+          { texto: 'De quienes dependés: les llega la notificación por mail el día hábil anterior a las 14:00.', llega: true }, consulta);
+      }
+      assert.equal((await pedir('superadmin', `?fecha=${q(2)}`)).body.data.texto, '');
+      assert.equal((await pedir('lector', `?fecha=${q(2)}`)).body.data.texto, '');
+    });
+
+    it('una fecha que no es una fecha, 400 en fecha; una hora que no sirve no cuenta', async () => {
+      const res = await pedir('adminB', '?fecha=mañana');
+      assert.equal(res.status, 400);
+      assert.equal(res.body.campo, 'fecha');
+      assert.equal((await pedir('adminB', `?fecha=${q(2)}&desde=cualquiera`)).status, 200);
+    });
+
+    it('un feriado en la tabla lo mueve, en este mismo pedido', async () => {
+      await conCadena();
+      await query("INSERT INTO feriados (fecha, nombre, tipo, se_repite) VALUES (?, 'Feriado de prueba', 'nacional', 0)", [q(1)]);
+      const res = await pedir('adminB', `?fecha=${q(2)}`);
+      assert.match(res.body.data.texto, /el lunes \d{2}\/\d{2} a las 14:00/);
+    });
+  });
+
+  describe('PUT /eventos-por-mail y lo que trae el listado', () => {
+    const cambiarCasilla = (clave, cuerpo) => api.put('/mi-espacio/eventos-por-mail', cuerpo, como(clave));
+
+    it('de entrada prendida; se apaga y se prende, siempre la de quien pide', async () => {
+      assert.equal((await listado('lector')).eventos_por_mail, true);
+      const apagar = await cambiarCasilla('lector', { recibir: false });
+      assert.equal(apagar.status, 200, JSON.stringify(apagar.body));
+      assert.deepEqual(apagar.body, { success: true, data: { eventos_por_mail: false }, message: 'Ya no te llega tu agenda por mail.' });
+      assert.equal((await listado('lector')).eventos_por_mail, false);
+      assert.equal((await listado('colab')).eventos_por_mail, true);
+      const prender = await cambiarCasilla('lector', { recibir: true });
+      assert.equal(prender.body.message, 'Te va a llegar tu agenda por mail.');
+      assert.equal((await listado('lector')).eventos_por_mail, true);
+    });
+
+    it('con alguien a cargo, el mensaje lo dice; y alguien_depende cuenta a quien depende indirectamente y está activo', async () => {
+      await conCadena();
+      assert.equal((await listado('adminA')).alguien_depende, true);
+      assert.equal((await listado('superadmin')).alguien_depende, true);
+      assert.equal((await listado('adminB')).alguien_depende, false);
+      assert.equal((await cambiarCasilla('adminA', { recibir: false })).body.message,
+        'Ya no te llega tu agenda por mail. Lo de quienes dependen de vos te llega igual.');
+    });
+
+    it('otro valor, 400 en recibir, sin cambiar nada', async () => {
+      for (const cuerpo of [{}, { recibir: 'no' }, { recibir: 1 }, { recibir: null }]) {
+        const res = await cambiarCasilla('lector', cuerpo);
+        assert.equal(res.status, 400, JSON.stringify(cuerpo));
+        assert.equal(res.body.campo, 'recibir');
+      }
+      assert.equal((await listado('lector')).eventos_por_mail, true);
+    });
+  });
+
+  it('GET /personas/publico: la cadena de quien pide primero, marcada y con su nombre corto', async () => {
+    await conCadena();
+    const res = await api.get('/mi-espacio/personas/publico', como('adminB'));
+    assert.deepEqual(res.body.data.slice(0, 2).map((persona) => [persona.id, persona.es_superior]),
+      [[idDe('adminA'), true], [idDe('superadmin'), true]]);
+    assert.ok(res.body.data.slice(2).every((persona) => persona.es_superior === false));
+    assert.equal(res.body.data[1].nombre_corto, 'Test s.');
+    // Una desactivada no se ofrece, y la siguiente sigue siendo superior
+    await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [idDe('adminA')]);
+    try {
+      const sinElla = await api.get('/mi-espacio/personas/publico', como('adminB'));
+      assert.deepEqual(sinElla.body.data.filter((persona) => persona.es_superior).map((persona) => persona.id), [idDe('superadmin')]);
+      assert.ok(!sinElla.body.data.some((persona) => persona.id === idDe('adminA')));
+    } finally {
+      await query('UPDATE usuarios SET activo = 1 WHERE id = ?', [idDe('adminA')]);
+    }
+  });
+
+  describe('el mensaje al guardar', () => {
+    it('un Privado, un Laboral y un Público, con la cadena y sin ella', async () => {
+      await conCadena();
+      const guardar = async (clave, cuerpo) => (await api.post('/mi-espacio/eventos', formulario(cuerpo), como(clave))).body.message;
+      assert.equal(await guardar('adminB', {}), 'Evento guardado. Solo vos lo ves.');
+      assert.equal(await guardar('adminB', compartidoCon('editor')), 'Evento guardado. Con Test e.');
+      assert.equal(await guardar('adminB', PARA_TODOS), 'Evento guardado. Con todos.');
+      assert.equal(await guardar('adminB', publicoCon('lector')),
+        'Evento guardado. Lo ve Test l. como «Trámite personal» en su agenda, y a Test adminA y Test s. les llega antes del evento.');
+      assert.equal(await guardar('adminA', publicoCon('lector')),
+        'Evento guardado. Lo ve Test l. como «Trámite personal» en su agenda, y a Test s. le llega antes del evento.');
+      assert.equal(await guardar('lector', publicoCon('adminB')), 'Evento guardado. Lo ve Test adminB como «Trámite personal» en su agenda.');
+    });
+
+    it('un Público para hoy no nombra a los superiores; y al cambiar, dice «cambiado»', async () => {
+      await conCadena();
+      const paraHoy = await api.post('/mi-espacio/eventos', formulario({ ...publicoCon('lector'), fecha: hoy, desde: '23:58', hasta: '23:59' }), como('adminB'));
+      assert.equal(paraHoy.body.message, 'Evento guardado. Lo ve Test l. como «Trámite personal» en su agenda.');
+      const id = await crear('adminB');
+      assert.equal((await cambiar('adminB', id, publicoCon('lector'))).body.message,
+        'Evento cambiado. Lo ve Test l. como «Trámite personal» en su agenda, y a Test adminA y Test s. les llega antes del evento.');
+    });
+  });
+
+  describe('publicado_at (spec, 5.4)', () => {
+    const VIEJO = '2026-01-01 10:00:00';
+    it('se escribe al crear un Público, y no en un Privado o un Laboral', async () => {
+      assert.match(await publicadoDe(await crear('adminB', publicoCon('lector'))), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+      assert.equal(await publicadoDe(await crear('adminB')), null);
+      assert.equal(await publicadoDe(await crear('adminB', compartidoCon('editor'))), null);
+    });
+
+    it('un cambio de título, hora, texto o personas no lo toca; un cambio de fecha, sí', async () => {
+      const id = await crear('adminB', publicoCon('lector'));
+      await ponerPublicado(id, VIEJO);
+      assert.equal((await cambiar('adminB', id, { ...publicoCon('colab'), titulo: 'Otro título', desde: '09:00', texto_publico: 'Asunto familiar' })).status, 200);
+      assert.equal(await publicadoDe(id), VIEJO);
+      assert.equal((await cambiar('adminB', id, { ...publicoCon('colab'), fecha: q(2) })).status, 200);
+      assert.notEqual(await publicadoDe(id), VIEJO);
+    });
+
+    it('pasar a Público lo escribe; dejar de serlo lo borra', async () => {
+      const id = await crear('adminB');
+      assert.equal((await cambiar('adminB', id, publicoCon('lector'))).status, 200);
+      assert.ok(await publicadoDe(id));
+      assert.equal((await cambiar('adminB', id, { tipo: 'privado' })).status, 200);
+      assert.equal(await publicadoDe(id), null);
+    });
   });
 });
 
@@ -1447,7 +1607,7 @@ describe('Personal (Público)', () => {
     const res = await api.post('/mi-espacio/eventos', formulario({ ...TURNO, ...PUBLICO_TODOS, recordatorio: '1h' }),
       como('superadmin'));
     assert.equal(res.status, 201, JSON.stringify(res.body));
-    assert.deepEqual(res.body, { success: true, data: { id: res.body.data.id }, message: 'Evento guardado.' });
+    assert.deepEqual(res.body, { success: true, data: { id: res.body.data.id }, message: 'Evento guardado. Lo ven todos como «Turno médico» en su agenda.' });
     const { id } = res.body.data;
 
     for (const clave of ['lector', 'colab', 'adminA', 'adminB', 'editor']) {
@@ -1821,8 +1981,11 @@ describe('Personal (Público)', () => {
         const res = await api.get('/mi-espacio/personas/publico', como(clave));
         assert.equal(res.status, 200, JSON.stringify(res.body));
         assert.equal(res.body.success, true);
-        assert.deepEqual(res.body.data, TODOS.filter((persona) => persona.id !== idDe(clave)), clave);
-        for (const persona of res.body.data) assert.deepEqual(Object.keys(persona), ['id', 'nombre', 'iniciales']);
+        assert.deepEqual(res.body.data.map(({ id, nombre, iniciales }) => ({ id, nombre, iniciales })), TODOS.filter((persona) => persona.id !== idDe(clave)), clave);
+        for (const persona of res.body.data) {
+          assert.deepEqual(Object.keys(persona), ['id', 'nombre', 'iniciales', 'es_superior', 'nombre_corto']);
+          assert.equal(persona.es_superior, false);
+        }
       }
     } finally {
       await limpiarDatosPrueba(nuevos);

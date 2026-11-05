@@ -72,7 +72,8 @@ import {
 } from '../controllers/miEspacioController.js';
 import {
   listarEventos, verAvisoDelEvento, listarPersonasParaCompartir, listarPersonasParaElPublico, crearEvento, cambiarEvento,
-  borrarEvento, cambiarMiRecordatorio
+  borrarEvento, cambiarMiRecordatorio,
+  verAvisoDeLaCadena, cambiarEventosPorMail
 } from '../controllers/miEspacioEventosController.js';
 import {
   reporteEstadoGeneral,
@@ -237,6 +238,8 @@ router.get('/mi-espacio/firmante', authMiddleware, verFirmante);
 // antes que las rutas con :id
 router.get('/mi-espacio/eventos', authMiddleware, listarEventos);
 router.get('/mi-espacio/eventos/aviso', authMiddleware, verAvisoDelEvento);
+router.get('/mi-espacio/eventos/aviso-de-la-cadena', authMiddleware, verAvisoDeLaCadena);
+router.put('/mi-espacio/eventos-por-mail', authMiddleware, cambiarEventosPorMail);
 router.get('/mi-espacio/personas', authMiddleware, listarPersonasParaCompartir);
 // A quiénes se les puede mostrar un Personal (Público): todos los usuarios activos, para cualquier rol con sesión (spec
 // 2026-10-29-mi-espacio-evento-publico, 6.4)

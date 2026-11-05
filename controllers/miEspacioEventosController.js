@@ -20,16 +20,21 @@
 // recordatorio» (400 sinRecordatorio). Los nombres cortos de un Público van contra todos los usuarios activos
 // (`usuariosActivos`).
 import pool from '../config/database.js';
-import { ahoraArgentina, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
+import { ahoraArgentina, esFechaIso, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_EVENTO, validarEvento, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento, itemDeLicencia,
-  itemDeAusencia, itemsDeFeriados, emailsDelGuardado, companerosPorDia, mesDeLaFrase, fraseDelMes
+  itemDeAusencia, itemsDeFeriados, emailsDelGuardado, companerosPorDia, mesDeLaFrase, fraseDelMes, textoRangoEvento, fechaMaximaEvento
 } from '../services/miEspacioEventosReglas.js';
 import {
   eventosVisibles, eventoVisible, eventoPropio, personasParaElegir, licenciasPropiasEntre, audienciaDe
 } from '../services/miEspacioEventosDatos.js';
 import { enviarEmailsDelGuardado } from '../services/miEspacioEventosEmails.js';
-import { feriadosEntre, filasDeFeriados } from '../services/feriadosDatos.js';
+import {
+  cuandoLlegaElAviso, fraseDelAviso, superioresConNombre, mensajeDelGuardado, mensajeDeLaCasilla, MENSAJE_EVENTOS_POR_MAIL
+} from '../services/miEspacioEventosDiarioReglas.js';
+import { usuariosDelAviso } from '../services/miEspacioEventosDiarioDatos.js';
+import { superioresDe, quienesDependenDe } from '../services/usuariosReglas.js';
+import { feriadosEntre, filasDeFeriados, leerCalendario } from '../services/feriadosDatos.js';
 import { feriadosDelRango } from '../services/feriadosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
 import { administracionActiva, usuariosActivos } from '../services/miEspacioDatos.js';
@@ -173,6 +178,24 @@ const datosDelGuardado = async (entrada, { usuario, anterior = null }, conexion)
     { usuario, lista: await personasParaElegir(usuario.id, conexion), yaEstaban, tipo: 'laboral' });
 };
 
+// El mensaje de un alta o un cambio (spec 2026-11-04-agenda-aviso-y-dependencia, 2.5), con todo leído en la transacción: el calendario y las
+// filas de usuarios, una vez cada uno. `evento`, el guardado, de eventoPropio
+const mensajeDe = async (conexion, evento, usuarioId, verbo) => {
+  const filas = await usuariosDelAviso(conexion);
+  const usuarios = filas.filter((fila) => fila.activo).map((fila) => ({ id: fila.id, nombre: fila.nombre_completo }));
+  const ahora = ahoraArgentina();
+  const { quien_texto: quienTexto } = itemDeEvento(evento, { usuarioId, ahora, feriados: new Set(), usuarios });
+  if (!evento.publico) {
+    return mensajeDelGuardado({ tipo: evento.compartido ? 'laboral' : 'privado', verbo, quienTexto });
+  }
+  const calendario = await leerCalendario(conexion);
+  const aviso = calendario.error === null
+    ? cuandoLlegaElAviso({ fecha: evento.fecha, desde: evento.desde, ahora, calendario })
+    : { llega: true };
+  const superiores = superioresConNombre(usuarioId, filas).map((persona) => persona.nombre_corto);
+  return mensajeDelGuardado({ tipo: 'publico', verbo, quienTexto, superiores, aviso });
+};
+
 // Las columnas que se guardan de un evento, en el orden de INSERT y de UPDATE (un Público lleva compartido y para_todos en 0:
 // lo dice validarEvento)
 const valoresDelEvento = (datos) => [datos.titulo, datos.detalle, datos.fecha, datos.desde, datos.hasta,
@@ -235,6 +258,8 @@ const miNombreCorto = (usuarioId, usuarios) => {
 /**
  * GET /api/mi-espacio/eventos?desde=AAAA-MM-DD&hasta=AAAA-MM-DD: lo que ve la persona en un rango de hasta 93 días (las
  * fechas, como «Hoy no están»: 400 en `fechas`, antes de leer nada). `ve_companeros`: si la leyenda dice «Compañeros que no están»;
+ * `eventos_por_mail` y `alguien_depende`: la casilla «Recibir mi agenda por mail» y si alguien depende de quien pide, directa o
+ * indirectamente, activo (spec 2026-11-04-agenda-aviso-y-dependencia, 2.7);
  * `mi_nombre_corto`: el nombre de quien pide como lo ven los demás (contra todos los usuarios activos), el de la vista previa de
  * un Personal (Público). Además de los eventos (por fecha, hora y título, cada uno como itemDeEvento: un Público de otra
  * persona, solo «Carla: Turno médico», con el nombre corto contra todos los usuarios activos, `usuariosActivos`), lo demás de
@@ -259,9 +284,9 @@ export const listarEventos = (req, res) => responder(res, 'Error al obtener los 
   const usuario = quienPide(req);
   const ahora = ahoraArgentina();
   const hoy = ahora.slice(0, 10);
-  const [eventos, licencias, filasFeriados, administracion, usuarios] = await Promise.all([
+  const [eventos, licencias, filasFeriados, administracion, usuarios, delAviso] = await Promise.all([
     eventosVisibles(usuario, desde, hasta), licenciasPropiasEntre(usuario.id, desde, hasta), filasDeFeriados(),
-    administracionActiva(), usuariosActivos()
+    administracionActiva(), usuariosActivos(), usuariosDelAviso()
   ]);
   const { ausentes } = await ausentesPara(usuario, { desde, hasta, hoy, filasFeriados, administracion });
   const feriados = feriadosDelRango(filasFeriados, desdeDeLosFeriados(desde), hasta);
@@ -274,7 +299,10 @@ export const listarEventos = (req, res) => responder(res, 'Error al obtener los 
   };
   const mes = mesDeLaFrase(req.query?.mes, { desde, hasta });
   return conDatos({
-    desde, hasta, hoy, ve_companeros: esAdmin(usuario.rol), mi_nombre_corto: miNombreCorto(usuario.id, usuarios),
+    desde, hasta, hoy, ve_companeros: esAdmin(usuario.rol),
+    eventos_por_mail: delAviso.find((fila) => fila.id === usuario.id)?.eventos_por_mail === true,
+    alguien_depende: quienesDependenDe(usuario.id, delAviso).some((fila) => fila.activo),
+    mi_nombre_corto: miNombreCorto(usuario.id, usuarios),
     ...items,
     companeros_por_dia: companerosPorDia(items.ausentes),
     frase_del_mes: mes === null ? null : fraseDelMes({ mes, ...items })
@@ -291,6 +319,29 @@ export const verAvisoDelEvento = (req, res) => responder(res, 'Error al calcular
   return conDatos({ momento, texto });
 });
 
+// GET /api/mi-espacio/eventos/aviso-de-la-cadena?fecha=&desde=: cuándo les llega el mail de un Público a las personas de las que depende
+// quien pide (spec 2026-11-04-agenda-aviso-y-dependencia, 2.3 y 7): `{ texto, llega }`, con el calendario de la tabla leído en este pedido.
+// Sin fecha, o sin poder leer los feriados, el genérico. Una fecha que no es una fecha, 400; una hora que no sirve no cuenta
+export const verAvisoDeLaCadena = (req, res) => responder(res, 'Error al calcular el aviso', async () => {
+  const { fecha, desde } = req.query ?? {};
+  const ahora = ahoraArgentina();
+  const sinFecha = fecha === undefined || fecha === '';
+  if (!sinFecha && !esFechaIso(fecha)) return rechazo({ campo: 'fecha', mensaje: textoRangoEvento(fechaMaximaEvento(ahora.slice(0, 10))) });
+  const [filas, calendario] = await Promise.all([usuariosDelAviso(), leerCalendario()]);
+  const aviso = cuandoLlegaElAviso({ fecha: calendario.error === null ? fecha : undefined, desde, ahora, calendario });
+  return conDatos({ texto: fraseDelAviso(aviso, superioresDe(req.user.userId, filas).length), llega: aviso.llega });
+});
+
+// PUT /api/mi-espacio/eventos-por-mail (`{ recibir: true | false }`): la casilla «Recibir mi agenda por mail». Apaga solo lo propio: lo
+// que le llega como superior no se apaga (spec 2026-11-04-agenda-aviso-y-dependencia, 2.7). Trabaja siempre sobre quien pide
+export const cambiarEventosPorMail = (req, res) => responder(res, 'Error al cambiar tu agenda por mail', async () => {
+  const { recibir } = cuerpoDe(req);
+  if (typeof recibir !== 'boolean') return rechazo({ campo: 'recibir', mensaje: MENSAJE_EVENTOS_POR_MAIL });
+  await pool.query('UPDATE usuarios SET eventos_por_mail = ? WHERE id = ?', [recibir ? 1 : 0, req.user.userId]);
+  const alguienDepende = quienesDependenDe(req.user.userId, await usuariosDelAviso()).some((fila) => fila.activo);
+  return [200, { success: true, data: { eventos_por_mail: recibir }, message: mensajeDeLaCasilla({ recibir, alguienDepende }) }];
+});
+
 // GET /api/mi-espacio/personas: con quiénes se puede compartir un Laboral (`personasParaElegir`: todos los usuarios activos, con id,
 // nombre e iniciales), sin quien pide. Para cualquier rol con sesión (spec 2026-11-04-agenda-aviso-y-dependencia, 2.4)
 export const listarPersonasParaCompartir = (req, res) => responder(res, 'Error al obtener las personas', async () =>
@@ -298,9 +349,17 @@ export const listarPersonasParaCompartir = (req, res) => responder(res, 'Error a
 
 // GET /api/mi-espacio/personas/publico: a quiénes se les puede mostrar un Personal (Público) (`personasParaElegir`: todos los
 // usuarios activos, de cualquier rol, con id, nombre e iniciales), sin quien pide. Para cualquier rol con sesión (spec
-// 2026-10-29-mi-espacio-evento-publico, 6.4)
-export const listarPersonasParaElPublico = (req, res) => responder(res, 'Error al obtener las personas', async () =>
-  conDatos(await personasParaElegir(req.user.userId)));
+// 2026-10-29-mi-espacio-evento-publico, 6.4). Suma `es_superior` y `nombre_corto`, con la cadena de quien pide primero (spec
+// 2026-11-04-agenda-aviso-y-dependencia, 2.3 y 7): vienen marcadas y la página arma con ellas el aviso por mail
+export const listarPersonasParaElPublico = (req, res) => responder(res, 'Error al obtener las personas', async () => {
+  const [personas, filas] = await Promise.all([personasParaElegir(req.user.userId), usuariosDelAviso()]);
+  const superiores = new Map(superioresConNombre(req.user.userId, filas).map((persona) => [persona.id, persona.nombre_corto]));
+  const usuarios = filas.filter((fila) => fila.activo).map((fila) => ({ id: fila.id, nombre: fila.nombre_completo }));
+  const conSuCadena = personas.map((persona) => ({
+    ...persona, es_superior: superiores.has(persona.id), nombre_corto: nombreCorto(persona, usuarios)
+  }));
+  return conDatos([...conSuCadena.filter((persona) => persona.es_superior), ...conSuCadena.filter((persona) => !persona.es_superior)]);
+});
 
 // POST /api/mi-espacio/eventos: un evento nuevo de la persona, con sus personas (o, un Público, sus vistas). Después de
 // responder, la invitación a su audiencia (el evento se vuelve a leer, ya guardado: el de los emails; un Público no tiene)
@@ -310,14 +369,14 @@ export const crearEvento = (req, res) => guardarEvento(res, 'Error al guardar el
   if (error) return rechazo(error);
   const [resultado] = await conexion.query(
     `INSERT INTO mi_espacio_eventos (titulo, detalle, fecha, desde, hasta, compartido, para_todos, publico, publico_todos,
-       texto_publico, recordatorio, creado_por)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [...valoresDelEvento(datos), usuario.id]
+       texto_publico, recordatorio, creado_por, publicado_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [...valoresDelEvento(datos), usuario.id, datos.publico ? ahoraArgentina() : null]
   );
   await guardarPersonas(conexion, resultado.insertId, datos, []);
   await guardarVistas(conexion, resultado.insertId, datos, []);
   const despues = await eventoPropio(resultado.insertId, usuario.id, conexion);
-  return [201, { success: true, data: { id: resultado.insertId }, message: 'Evento guardado.' },
+  return [201, { success: true, data: { id: resultado.insertId }, message: await mensajeDe(conexion, despues, usuario.id, 'guardado') },
     await emailsDelEvento(conexion, { despues })];
 });
 
@@ -332,17 +391,19 @@ export const cambiarEvento = (req, res) => guardarEvento(res, 'Error al cambiar 
   const { datos, error } = await datosDelGuardado(cuerpoDe(req), { usuario, anterior: antes }, conexion);
   if (error) return rechazo(error);
   const audienciaAntes = await audienciaDe(antes, conexion);
+  // Cuándo quedó Público con esa fecha (spec 2026-11-04-agenda-aviso-y-dependencia, 5.4): un cambio de título, de hora o de texto no lo toca
+  const yaEraPublicoConEsaFecha = datos.publico && antes.publico && antes.fecha === datos.fecha;
   await conexion.query(
     `UPDATE mi_espacio_eventos
      SET titulo = ?, detalle = ?, fecha = ?, desde = ?, hasta = ?, compartido = ?, para_todos = ?, publico = ?,
-       publico_todos = ?, texto_publico = ?, recordatorio = ?
+       publico_todos = ?, texto_publico = ?, recordatorio = ?${yaEraPublicoConEsaFecha ? '' : ', publicado_at = ?'}
      WHERE id = ?`,
-    [...valoresDelEvento(datos), antes.id]
+    [...valoresDelEvento(datos), ...(yaEraPublicoConEsaFecha ? [] : [datos.publico ? ahoraArgentina() : null]), antes.id]
   );
   await guardarPersonas(conexion, antes.id, datos, antes.personas);
   await guardarVistas(conexion, antes.id, datos, antes.vistas ?? []);
   const despues = await eventoPropio(antes.id, usuario.id, conexion);
-  return [200, { success: true, data: { id: antes.id }, message: 'Evento cambiado.' },
+  return [200, { success: true, data: { id: antes.id }, message: await mensajeDe(conexion, despues, usuario.id, 'cambiado') },
     await emailsDelEvento(conexion, { antes, audienciaAntes, despues })];
 });
 

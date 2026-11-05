@@ -261,6 +261,9 @@ const RUTAS_MI_ESPACIO = [
   // La agenda (spec 2026-10-26-mi-espacio-agenda, sección 7)
   ['GET', '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27'],
   ['GET', '/mi-espacio/eventos/aviso?fecha=2026-10-27&desde=10:00&recordatorio=2h'],
+  // El aviso diario (spec 2026-11-04-agenda-aviso-y-dependencia, 7)
+  ['GET', '/mi-espacio/eventos/aviso-de-la-cadena?fecha=2026-10-27'],
+  ['PUT', '/mi-espacio/eventos-por-mail'],
   ['GET', '/mi-espacio/personas'],
   // El evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 6.4): la lista de todos los usuarios activos, para
   // cualquier rol con sesión
