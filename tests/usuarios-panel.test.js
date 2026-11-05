@@ -253,6 +253,121 @@ describe('edición', () => {
   });
 });
 
+// De quién depende cada uno (spec 2026-11-04-agenda-aviso-y-dependencia, 3)
+describe('de quién depende', () => {
+  const crear = (clave, rol = 'lector') => crearUsuariosPrueba(api, { [clave]: rol }).then((creados) => creados[clave]);
+  const dependeDe = async (id) => (await query('SELECT depende_de FROM usuarios WHERE id = ?', [id]))[0].depende_de;
+
+  it('un admin lo carga y lo saca, queda en el historial sin avisarle al superadmin, y la lista y el detalle lo traen', async () => {
+    const jefa = await crear('jefa', 'admin');
+    const gente = await crear('gente');
+    await mailpit.vaciar();
+    const res = await api.put(`/usuarios/${gente.id}`, { depende_de: jefa.id }, comoA());
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.depende_de, jefa.id);
+    assert.equal(res.body.data.depende_de_nombre, 'Test jefa');
+    assert.equal(await dependeDe(gente.id), jefa.id);
+    const [fila] = await auditoria(gente.id, 'edicion');
+    assert.deepEqual(detalleDe(fila).campos, { depende_de: { antes: null, despues: jefa.id } });
+    assert.deepEqual(await mailpit.mensajes(), [], 'el cambio no le avisa al superadmin');
+
+    const detalle = (await api.get(`/usuarios/${jefa.id}`, comoA())).body.data;
+    assert.deepEqual(detalle.no_elegibles, [jefa.id, gente.id]);
+    assert.deepEqual(detalle.al_desactivar, { dependen: ['Test gente'], suben_a: null });
+    const lista = (await api.get('/usuarios', comoA())).body.data.usuarios;
+    assert.equal(lista.find((u) => u.id === gente.id).depende_de_nombre, 'Test jefa');
+
+    assert.equal((await api.put(`/usuarios/${gente.id}`, { depende_de: null }, comoA())).status, 200);
+    assert.equal(await dependeDe(gente.id), null);
+  });
+
+  it('el alta lo carga, y sin el campo queda en nadie', async () => {
+    const jefa = await crear('jefaalta', 'admin');
+    const con = await api.post('/usuarios', nuevo({ nombre_completo: 'Con Jefa', username: 'CONJEFA', email: 'conjefa@rpad.test', depende_de: jefa.id }), comoA());
+    assert.equal(con.status, 201);
+    assert.equal(await dependeDe(con.body.data.usuario.id), jefa.id);
+    const sin = await api.post('/usuarios', nuevo({ nombre_completo: 'Sin Jefa', username: 'SINJEFA', email: 'sinjefa@rpad.test' }), comoA());
+    assert.equal(await dependeDe(sin.body.data.usuario.id), null);
+    const mal = await api.post('/usuarios', nuevo({ nombre_completo: 'Mal Jefa', username: 'MALJEFA', email: 'maljefa@rpad.test', depende_de: 999999 }), comoA());
+    assert.equal(mal.status, 400);
+    assert.equal(mal.body.campo, 'depende_de');
+    assert.equal(mal.body.error, 'Elegí una persona de la lista.');
+  });
+
+  it('cada rechazo, en depende_de y sin tocar nada', async () => {
+    const arriba = await crear('arriba', 'admin');
+    const medio = await crear('medio');
+    const abajo = await crear('abajo');
+    await api.put(`/usuarios/${medio.id}`, { depende_de: arriba.id }, comoA());
+    await api.put(`/usuarios/${abajo.id}`, { depende_de: medio.id }, comoA());
+    const casos = [
+      [abajo.id, abajo.id, 'No puede depender de sí misma.'],
+      [arriba.id, abajo.id, 'Esa persona ya depende de quien estás editando.'],
+      [medio.id, abajo.id, 'Esa persona ya depende de quien estás editando.'],
+      [abajo.id, 999999, 'Elegí una persona de la lista.'],
+      [abajo.id, 'no', 'Elegí una persona de la lista.']
+    ];
+    for (const [id, valor, mensaje] of casos) {
+      const res = await api.put(`/usuarios/${id}`, { depende_de: valor }, comoA());
+      assert.equal(res.status, 400, mensaje);
+      assert.equal(res.body.campo, 'depende_de');
+      assert.equal(res.body.error, mensaje);
+    }
+    assert.equal(await dependeDe(abajo.id), medio.id);
+  });
+
+  it('el editor, sobre lectores y colaboradores; una cuenta del superadmin, solo su titular', async () => {
+    const editor = await crear('editorcadena', 'editor');
+    const comoEditor = { token: editor.token ?? await api.login(editor.username, editor.password) };
+    const lector = await crear('lectorcadena');
+    const colaborador = await crear('colaboradorcadena', 'colaborador');
+    const admin = await crear('admincadena', 'admin');
+    assert.equal((await api.put(`/usuarios/${lector.id}`, { depende_de: admin.id }, comoEditor)).status, 200);
+    assert.equal((await api.put(`/usuarios/${colaborador.id}`, { depende_de: admin.id }, comoEditor)).status, 200);
+    assert.equal((await api.put(`/usuarios/${admin.id}`, { depende_de: lector.id }, comoEditor)).status, 403);
+    assert.equal(await dependeDe(admin.id), null);
+
+    const { id } = usuarios.superadmin;
+    assert.equal((await api.put(`/usuarios/${id}`, { depende_de: admin.id }, comoA())).status, 403);
+    assert.equal((await api.put(`/usuarios/${id}`, { depende_de: admin.id }, comoSuper())).status, 200);
+    assert.equal((await api.put(`/usuarios/${id}`, { depende_de: null }, comoSuper())).status, 200);
+  });
+
+  it('una pestaña con la página anterior no manda el campo y no lo toca', async () => {
+    const jefa = await crear('jefavieja', 'admin');
+    const gente = await crear('gentevieja');
+    await api.put(`/usuarios/${gente.id}`, { depende_de: jefa.id }, comoA());
+    assert.equal((await api.put(`/usuarios/${gente.id}`, { cargo: 'Otro cargo' }, comoA())).status, 200);
+    assert.equal(await dependeDe(gente.id), jefa.id);
+  });
+
+  it('desactivar no lo frena ni borra el dato: lo suyo sube al siguiente; y se puede guardar sin tocar a quien se desactivó', async () => {
+    const arriba = await crear('arribadesactiva', 'admin');
+    const medio = await crear('mediodesactiva');
+    const abajo = await crear('abajodesactiva');
+    await api.put(`/usuarios/${medio.id}`, { depende_de: arriba.id }, comoA());
+    await api.put(`/usuarios/${abajo.id}`, { depende_de: medio.id }, comoA());
+    const antes = (await api.get(`/usuarios/${medio.id}`, comoA())).body.data.al_desactivar;
+    assert.deepEqual(antes, { dependen: ['Test abajodesactiva'], suben_a: 'Test arribadesactiva' });
+    assert.equal((await api.post(`/usuarios/${medio.id}/desactivar`, {}, comoA())).status, 200);
+    assert.equal(await dependeDe(abajo.id), medio.id);
+    assert.equal((await api.put(`/usuarios/${abajo.id}`, { depende_de: medio.id, cargo: 'Cargo' }, comoA())).status, 200);
+    const otra = await crear('otradesactiva');
+    const rechazo = await api.put(`/usuarios/${otra.id}`, { depende_de: medio.id }, comoA());
+    assert.equal(rechazo.status, 400);
+    assert.equal(rechazo.body.error, 'Elegí una persona de la lista.');
+  });
+
+  it('la lista trae la cadena sin N+1 ni datos de más', async () => {
+    const lista = (await api.get('/usuarios', comoA())).body.data.usuarios;
+    for (const persona of lista) {
+      assert.ok(Array.isArray(persona.no_elegibles), persona.username);
+      assert.equal(persona.no_elegibles[0], persona.id);
+      assert.equal('password_hash' in persona, false);
+    }
+  });
+});
+
 describe('cuenta del superadmin', () => {
   it('un admin no puede editarla, desactivarla ni enviarle links', async () => {
     const id = usuarios.superadmin.id;

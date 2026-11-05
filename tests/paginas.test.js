@@ -26,7 +26,7 @@ const VERSION = '20261204';
 // también se borra de ahí, spec 2026-10-28-mi-espacio-licencia-anulada, 2.1; lo que dice de la reiteración una licencia sin persona
 // autorizada, spec 2026-11-03-reiteracion-bimestral, 5): su versión es propia (solo la usa configuracion.html; es independiente de
 // VERSION_FERIADOS)
-const VERSION_PANTALLAS = '20261213';
+const VERSION_PANTALLAS = '20261224';
 // areas.js (reescrito para la pestaña Áreas de Configuración, spec 2026-10-24-configuracion, 4 y 6), que en areas.html cargaba
 // ?v=20261204: un areas.js viejo en la caché con el HTML nuevo rompería la pestaña. Su versión es propia (solo la usa
 // configuracion.html)
