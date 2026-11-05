@@ -70,7 +70,7 @@ export const INSIGNIAS = Object.freeze({
 // Las tarjetas: el valor arriba del rótulo (en hasta dos líneas), con un borde fino
 const TARJETA = { separacion: 6, relleno: 7, entre: 4, abajo: 5.5, radio: 6 };
 // La tabla: relleno a los costados de cada celda y arriba y abajo de cada fila; el encabezado va en hasta 2 líneas y cada celda en
-// hasta LINEAS_POR_CELDA (si no entra, se corta con "…"), así ninguna fila es más alta que una hoja
+// hasta LINEAS_POR_CELDA, salvo que la tabla pida otras (si no entra, se corta con "…"), así ninguna fila es más alta que una hoja
 const TABLA = { relleno: 3, arriba: 5, abajo: 4.5 };
 const LINEAS_DEL_ENCABEZADO = 2;
 const LINEAS_POR_CELDA = 4;
@@ -335,7 +335,8 @@ const prepararInsignia = (doc, texto, colores, ancho) => {
 
 // Una tabla de grilla fina (el encabezado en negrita en el acento y una línea fina debajo de cada fila) que ocupa el ancho útil.
 // - columnas: [{ titulo, ancho }]: el ancho es la parte del ancho útil que le toca (se reparte en proporción).
-// - filas: [[texto de cada celda]]; cada celda va en hasta `lineas` líneas, de entrada LINEAS_POR_CELDA (si no entra, se corta con "…").
+// - filas: [[texto de cada celda]]; cada celda va en hasta `lineas` líneas, de entrada LINEAS_POR_CELDA (si no entra, se corta con "…");
+//   el encabezado sigue siempre con LINEAS_DEL_ENCABEZADO.
 // - estados (opcional): uno por fila, la clave de INSIGNIAS de esa fila; con una, la última celda se dibuja como la insignia de ese
 //   estado (sin estado, o con uno que no está en INSIGNIAS, como texto).
 // - cabeza (opcional): un elemento preparado ({ alto, dibujar(y) → y }: la cabeza de su sección o el título de su grupo) que la tabla

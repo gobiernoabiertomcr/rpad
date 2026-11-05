@@ -467,8 +467,6 @@ describe('la base de los reportes: medidas, lugar y recuadros', () => {
     }));
   });
 
-  // La aclaración de una tabla (como la de la diferencia en la comparación del Informe anual) viaja con su última fila: nunca queda sola
-  // arriba de una hoja
   it('una celda de una tabla llega hasta 4 líneas y lo demás se corta, salvo que la tabla pida otras', async () => {
     const columnas = [{ titulo: 'Columna A', ancho: 1 }, { titulo: 'Columna B', ancho: 6 }];
     const filas = [[`${'palabra '.repeat(30)}final`, 'corta']];
@@ -484,6 +482,8 @@ describe('la base de los reportes: medidas, lugar y recuadros', () => {
     assert.ok(conLugar.includes('final') && !conLugar.includes('…'), conLugar);
   });
 
+  // La aclaración de una tabla (como la de la diferencia en la comparación del Informe anual) viaja con su última fila: nunca queda sola
+  // arriba de una hoja
   it('la aclaración de una tabla viaja con su última fila: si no entran las dos, la última fila pasa a la hoja siguiente', async () => {
     const columnas = [{ titulo: 'Columna A', ancho: 1 }, { titulo: 'Columna B', ancho: 1 }];
     const filas = [['uno', 'dos'], ['tres', 'cuatro'], ['cinco', 'seis']];
