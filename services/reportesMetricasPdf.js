@@ -212,11 +212,11 @@ export const textoSinManuales = (anio) => `Todavía no hay métricas manuales ca
 // =====================================================
 
 // Un texto ajustado a `ancho` en hasta `lineas` líneas (se achica hasta `min`; si no entra, se corta con "…"). Sin texto, null
-const pieza = (doc, valor, { ancho, tamano, min = tamano, fuente = NORMAL, color = COLOR.gris, lineas = 2, align = 'left' }) => {
+const pieza = (doc, valor, { ancho, tamano, min = tamano, fuente = NORMAL, color = COLOR.gris, lineas = 2 }) => {
   const t = texto(valor);
   if (!t) return null;
   const ajuste = ajustar(doc, t, { ancho, lineas, max: tamano, min, fuente });
-  return { alto: ajuste.alto, dibujar: (y, x) => escribir(doc, ajuste, x, y, color, align === 'left' ? {} : { align }) };
+  return { alto: ajuste.alto, dibujar: (y, x) => escribir(doc, ajuste, x, y, color) };
 };
 
 // Las piezas una debajo de la otra, con `entre` puntos entre cada dos (las null no van)
@@ -285,8 +285,8 @@ const piezaDeCifra = (doc, { numero, lado }, { ancho, tamano, min, tamanoLado, c
   };
 };
 
-// La insignia de quién está a cargo de un tramo (nunca solo el color): el texto en negrita en una píldora, de entrada blanca
-const piezaDeInsignia = (doc, valor, { ancho, color, fondo = COLOR.blanco }) => {
+// La insignia de quién está a cargo de un tramo (nunca solo el color): el texto en negrita en una píldora del color de la etapa
+const piezaDeInsignia = (doc, valor, { ancho, color, fondo }) => {
   const t = texto(valor);
   if (!t) return null;
   const tamano = LETRA.insignia;

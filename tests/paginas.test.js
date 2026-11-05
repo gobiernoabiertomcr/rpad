@@ -1721,17 +1721,44 @@ describe('el circuito: el mismo diseño en Métricas, el Seguimiento y el PDF (s
     for (const pagina of ['reportes.html', 'seguimiento.html']) assert.ok(leer(pagina).includes(`--sg-del-area: ${COLOR_DEL_AREA};`), pagina);
   });
 
-  it('en alto contraste, la banda vuelve a ser una caja con borde', () => {
-    for (const [pagina, clase] of [['reportes.html', '.mt-nodo'], ['seguimiento.html', '.sg-nodo']]) {
-      const html = leer(pagina);
-      const bloque = html.slice(html.indexOf('@media (forced-colors: active)'));
-      assert.ok(bloque.includes(clase) && bloque.includes('clip-path: none'), pagina);
+  // Un bloque del <style>, hasta su llave de cierre
+  const bloqueDe = (html, inicio) => {
+    const desde = html.indexOf(inicio);
+    assert.notEqual(desde, -1, inicio);
+    let abiertas = 0;
+    for (let i = html.indexOf('{', desde); i < html.length; i++) {
+      if (html[i] === '{') abiertas++;
+      if (html[i] === '}' && --abiertas === 0) return html.slice(desde, i + 1);
     }
+    assert.fail(`${inicio}: sin cierre`);
+  };
+
+  it('en alto contraste, cada banda vuelve a ser una caja con borde', () => {
+    for (const [pagina, selectores] of [
+      ['reportes.html', ['.mt-nodo,', '.mt-nodo:first-child', '.mt-nodo.fin']],
+      ['seguimiento.html', ['.sg-nodo,', '.sg-tramos > .sg-nodo:nth-child(1)', '.sg-tramos > .sg-nodo:nth-child(5)']]
+    ]) {
+      const bloque = bloqueDe(leer(pagina), '@media (forced-colors: active) {');
+      for (const selector of selectores) assert.ok(bloque.includes(selector), `${pagina}: ${selector}`);
+      assert.ok(bloque.includes('clip-path: none') && bloque.includes('border: 1px solid CanvasText'), pagina);
+      assert.ok(leer(pagina).includes('@media (forced-colors: active) and (min-width: 961px)'), `${pagina}: el margen, solo con las bandas en fila`);
+    }
+  });
+
+  it('el color del Área va en el nodo y la tarjeta que le tocan', () => {
+    const metricas = leer('reportes.html');
+    assert.ok(metricas.includes('.mt-tramos.externa > .mt-nodo:nth-child(5) { background: var(--sg-del-area); }'));
+    assert.ok(metricas.includes('.mt-tramos.externa > .mt-flecha:nth-child(6) { background: var(--sg-del-area-fondo);'));
+    const seguimiento = leer('seguimiento.html');
+    assert.ok(seguimiento.includes('.sg-tramos > .sg-nodo:nth-child(3) { background: var(--sg-violeta); }'));
+    assert.ok(seguimiento.includes('.sg-tramos > .sg-nodo:nth-child(5) { background: var(--sg-del-area); }'));
   });
 
   it('.sg-estado sigue siendo la de los estados de la página: la tarjeta del área es otra clase', () => {
     const html = leer('seguimiento.html');
-    assert.ok(html.includes('class="sg-estado" id="loading"'));
-    assert.ok(!/\.sg-estado[ ,][^{]*\{[^}]*grid-row/.test(html), '.sg-estado no entra en la grilla del circuito');
+    for (const id of ['loading', 'not-found', 'sg-error']) assert.ok(html.includes(`class="sg-estado" id="${id}"`), id);
+    const reglas = [...html.matchAll(/\.sg-estado(?![-\w])[^{]*\{/g)].map(m => m[0].trim());
+    assert.deepEqual(reglas, ['.sg-estado {', '.sg-estado h2 {', '.sg-estado p {']);
+    for (const regla of ['.sg-estado-area {', '.sg-estado-area .e {', '.sg-estado-area.vencido {', '.sg-estado-area.vencido .e {']) assert.ok(html.includes(regla), regla);
   });
 });

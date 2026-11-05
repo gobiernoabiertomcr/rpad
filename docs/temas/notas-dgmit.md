@@ -58,8 +58,8 @@ notasDgmitReglas (la validación de una nota DGMIT y de su motivo, pura).
   Una fuente sin `notasDgmit` es una lista vacía.
 - El circuito (`circuitoDe`;
   `tramoFuera` = `{ titulo, texto, registrada, nota, tituloPdf, textoPdf }`), solo en gestión externa.
-  Con nota en el ciclo abierto: en la página, la tarjeta en violeta y, en el PDF del Seguimiento, la línea llena violeta (`--sg-violeta` #5B4691, `sg-flecha registrada`), "Nota DGMIT N° 156/26" / "Solicitud recibida por el área el 22/10/2026, hace 2 días" ("hoy", "hace 1 día";
-  "Reiteración recibida…"); con «Requiere nota DGMIT» en No la nota se muestra igual y el recuadro del medio vuelve a "Mandan la nota formal al área".
+  Con nota en el ciclo abierto: en la página, la tarjeta en violeta (`--sg-violeta` #5B4691, `sg-flecha registrada`) y, en el PDF del Seguimiento, la línea llena violeta, "Nota DGMIT N° 156/26" / "Solicitud recibida por el área el 22/10/2026, hace 2 días" ("hoy", "hace 1 día";
+  "Reiteración recibida…"); con «Requiere nota DGMIT» en No la nota se muestra igual y la banda del medio (el recuadro, en el PDF) vuelve a "Mandan la nota formal al área".
   Sin nota: el borde punteado gris en la página y la línea punteada gris en el PDF, "Nota formal" con "Pendiente de carga" (el ciclo abierto ya tuvo algún aviso del RPAD o ya venció: falta el registro, no la nota), "Todavía no hizo falta" (sin avisos y sin vencer, o sin ciclos) o "Ya no se pide" (dado de baja); con «No» y sin nota, "Sin nota formal" con "Los datos se obtienen de la fuente".
   Nunca "la DGMIT no mandó la nota".
   El renglón "Al área" de la pantalla es el del email de los 40 días (`alArea.texto`): solo el PDF usa `alArea.textoPdf`.

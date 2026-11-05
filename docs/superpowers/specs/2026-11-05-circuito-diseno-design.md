@@ -60,6 +60,7 @@ Los textos sobre esos fondos cumplen 4,5:1: `--sg-suave` da 4,89 sobre `--sg-vio
 El color nunca es lo único que distingue: la banda dice el nombre y la tarjeta conserva su insignia.
 
 Con alto contraste (`forced-colors`) la banda pierde el fondo: la forma de flecha se saca y queda una caja con borde, como la de hoy, separada de la siguiente.
+Al imprimir la página, la banda conserva su fondo (`print-color-adjust`): sin él, el texto blanco no se vería.
 
 ## 5. La página de Métricas
 
@@ -103,13 +104,12 @@ El tramo de la nota conserva sus dos estados, ahora como tarjeta: `.registrada` 
 
 - La banda es un contorno de líneas y curvas, y la tarjeta usa `contorno`: `tests/pdf-diagramacion.js` no admite un `roundedRect` adentro de un recuadro.
 - La tarjeta común va en blanco, porque el recuadro ya es celeste.
-  La de la DGMIT va en `#F5F2FB` y la del Área en `#F0F8F9`, cada una con su insignia sobre un fondo de su color (`piezaDeInsignia` suma `fondo`, de entrada blanco).
+  La de la DGMIT va en `#F5F2FB` y la del Área en `#F0F8F9`, cada una con su insignia sobre un fondo de su color (`piezaDeInsignia` suma `fondo`).
 - El color del Área es una constante nueva del circuito, `COLOR_DEL_AREA`, no un cambio en `NODOS`: si no, cambiaría el Ciclo de vida.
 - Las medidas son las de la maqueta aprobada: letra del nombre 7,8; cifra 13; banda de 24 de alto como mínimo.
 
-Con los datos del dump, el circuito de las dos gestiones juntas baja de 394,5 a 372,7 puntos.
-La externa baja de 233,2 a 200,6 y la interna sube de 161,3 a 172,1.
-Nada cambia de hoja: el PDF de Métricas sigue con 6 hojas.
+Con los datos del dump, el circuito de las dos gestiones juntas queda más bajo: la externa baja y la interna sube unos puntos.
+Nada cambia de hoja.
 
 Con los casos de los tests, baja de 344,3 a 331,2, y el Informe anual sigue con 3 hojas.
 En el PDF de «con una nota DGMIT» los resultados vuelven a la hoja 1, porque ahora entran: de 5 hojas pasa a 4, con las mismas palabras.

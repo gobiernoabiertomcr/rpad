@@ -208,6 +208,14 @@ describe('seguimiento.js: la ficha y el circuito', () => {
     assert.match(alDia, /<div class="sg-estado-area[^"]*"><div class="e">[^<]*<\/div><\/div>\s*<\/div>/, 'la tarjeta va al final de la grilla');
   });
 
+  it('los seis hijos del circuito, en el orden en que los ubica el CSS (por lugar): RPAD, avisos, DGMIT, nota, área y su estado', () => {
+    const html = ctx.htmlDelCircuito(seguimientoDe(f(52), HOY).circuito);
+    const hijos = [...html.matchAll(/<div class="(sg-nodo[^"]*|sg-flecha[^"]*|sg-estado-area[^"]*)">/g)].map(m => m[1]);
+    assert.deepEqual(hijos, ['sg-nodo', 'sg-flecha', 'sg-nodo', 'sg-flecha fuera', 'sg-nodo area', 'sg-estado-area vencido']);
+    assert.ok(html.indexOf('>RPAD<') < html.indexOf('DGMIT y Dirección Administrativa'));
+    assert.ok(html.indexOf('DGMIT y Dirección Administrativa') < html.indexOf('>Área responsable<'));
+  });
+
   it('el encabezado del circuito: desde cuándo se cuentan los avisos y el vencimiento, con los textos del servidor', () => {
     assert.equal(ctx.textoDeCabezaDelCircuito(seguimientoDe(f(58), HOY).circuito), 'Desde la actualización del 16/12/2025 · Vencimiento del 30/11/2026');
     assert.equal(ctx.textoDeCabezaDelCircuito({ desde: null, vencimiento: { texto: 'Vencimiento del 31/07/2026' } }), 'Vencimiento del 31/07/2026');

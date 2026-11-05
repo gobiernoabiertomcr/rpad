@@ -82,7 +82,8 @@
            toca. El HTML sigue yendo nodo, flecha, nodo…: en el teléfono se leen así, en una columna, y desde 961 px la grilla los reparte
            en dos filas. La flecha de color es el nodo; `.l`, la línea de antes, ya no se dibuja */
         .mt-tramos { display: grid; align-items: stretch; grid-template-columns: minmax(0, 1fr); }
-        .mt-nodo { background: var(--sg-tinta); border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; justify-content: center; }
+        /* Al imprimir, el fondo no se saca: sin él, el texto blanco de la banda no se ve */
+        .mt-nodo { background: var(--sg-tinta); border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; justify-content: center; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .mt-nodo .q { font-family: var(--f-titulo); font-weight: 700; color: #fff; line-height: 1.18; font-size: 0.9rem; }
         .mt-nodo .r { font-size: 0.76rem; color: #fff; margin-top: 2px; line-height: 1.25; }
         .mt-nodo.dgmit { background: var(--sg-violeta); }
@@ -134,6 +135,8 @@
         /* En alto contraste la banda pierde el fondo: sin la forma de flecha, queda una caja con borde */
         @media (forced-colors: active) {
             .mt-nodo, .mt-nodo:first-child, .mt-nodo.fin { clip-path: none; padding: 10px 14px; border: 1px solid CanvasText; border-radius: 12px; }
+        }
+        @media (forced-colors: active) and (min-width: 961px) {
             .mt-nodo, .mt-nodo:first-child { margin-right: 8px; }
             .mt-nodo.fin { margin-right: 0; }
         }

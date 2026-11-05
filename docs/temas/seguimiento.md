@@ -41,10 +41,10 @@ seguimientoController: solo lectura, para todos los roles con sesión.
   La ficha de un externo trae "Requiere nota DGMIT:
   Sí / No / Sin dato" (en el PDF, "Datos que se piden" comparte el renglón con este dato:
   `celdasDelPedido`); la interna no lo muestra.
-  Circuito de un externo con "No" y sin nota DGMIT en el ciclo abierto (`circuitoDe`; con una nota, se muestra la nota: ver `docs/temas/notas-dgmit.md`): el recuadro del medio dice "DGMIT y Dirección Administrativa", con el rol "No hace falta nota formal"; el tramo punteado se titula "Sin nota formal", con el texto "Los datos se obtienen de la fuente";
+  Circuito de un externo con "No" y sin nota DGMIT en el ciclo abierto (`circuitoDe`; con una nota, se muestra la nota: ver `docs/temas/notas-dgmit.md`): la banda del medio (el recuadro, en el PDF) dice "DGMIT y Dirección Administrativa", con el rol "No hace falta nota formal"; el tramo punteado se titula "Sin nota formal", con el texto "Los datos se obtienen de la fuente";
   y `alArea` es null (el renglón "Al área" no se dibuja), salvo que en el ciclo abierto el RPAD ya le haya mandado al área el email de los 40 días (el dataset estaba en "Sí" y pasó a "No"): ese email existió y se muestra con sus fechas.
   Con "No" nunca aparece "todavía no se le envió el email que anticipa la nota formal".
-  Con "Sí" o sin dato, el recuadro del medio dice "Mandan la nota formal al área" y `alArea` no es null: la pantalla muestra `alArea.texto` solo si ya salió el email de los 40 días y el PDF dibuja `alArea.textoPdf` si hay vencimiento; sin ese email, dice "Al área: en este ciclo todavía no se le envió el email que anticipa la nota formal.".
+  Con "Sí" o sin dato, la banda del medio (el recuadro, en el PDF) dice "Mandan la nota formal al área" y `alArea` no es null: la pantalla muestra `alArea.texto` solo si ya salió el email de los 40 días y el PDF dibuja `alArea.textoPdf` si hay vencimiento; sin ese email, dice "Al área: en este ciclo todavía no se le envió el email que anticipa la nota formal.".
   En los movimientos, un cambio dice "Cambió: requiere nota DGMIT" y el valor vacío es "—" (no "Sin dato": ese es solo de la ficha).
 - Lenguaje neutro (pedido del usuario): el atraso muchas veces no depende del área sino de que no se mandó la nota formal.
   Se describe el estado del dataset:

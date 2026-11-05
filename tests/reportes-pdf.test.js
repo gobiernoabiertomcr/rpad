@@ -2013,6 +2013,7 @@ describe('el circuito: la banda y la etapa (spec 2026-11-05-circuito-diseno)', (
   const LETRA_DE_LA_BANDA = 8;
   const LETRA_DEL_NOMBRE = 7.8;
   const LETRA_DE_LA_CIFRA = 13;
+  const LETRA_DE_LA_INSIGNIA = 6.2;
   const BANDA_EXTERNA = ['RPAD', 'DGMIT y DA', 'Área', 'DDPC', 'Portal'];
   const BANDA_INTERNA = ['RPAD', 'DGMIT y DIT', 'DDPC', 'Portal'];
   const NOMBRES_EXTERNA = ['Aviso anticipado', 'Redacción y entrega de', 'Respuesta del área', 'Preparación y carga'];
@@ -2052,7 +2053,7 @@ describe('el circuito: la banda y la etapa (spec 2026-11-05-circuito-diseno)', (
       assert.ok(cifras[0].base < etapas[0].base, 'el nombre, arriba de la cifra');
       // Debajo del Portal no hay tarjeta: nada en su columna hasta el pie de las tarjetas, aparte de lo que dice su banda
       const portal = g.banda.at(-1);
-      const pie = g.debajo.find(t => t.texto === 'DDPC' && t.tamano < LETRA_DE_LA_BANDA).base;
+      const pie = g.debajo.find(t => t.texto === 'DDPC' && t.tamano === LETRA_DE_LA_INSIGNIA).base;
       assert.deepEqual(g.debajo.filter(t => t.x >= portal.x - 1 && t.base < portal.base - 15 && t.base >= pie).map(t => t.texto), []);
     }
   };
@@ -2067,12 +2068,20 @@ describe('el circuito: la banda y la etapa (spec 2026-11-05-circuito-diseno)', (
     controlarLaHoja(primera);
   });
 
-  it('un tramo que no llega no tira: esa columna queda sin etapa', async () => {
-    const datos = metricasDeLosCasos();
-    datos.vista.circuito.externa = datos.vista.circuito.externa.filter(t => t.clave !== 'respuesta');
-    const [primera] = lineasPorHoja(await renderMetricas(datos));
-    assert.ok(primera.includes('Prepara los datos'), 'la banda del Área sigue');
-    assert.ok(!primera.includes('Respuesta del área'));
+  it('un tramo que no llega no tira: la banda sigue y su tarjeta queda vacía', async () => {
+    for (const [como, quitar] of [
+      ['no está en la lista', (tramos) => tramos.filter(t => t.clave !== 'respuesta')],
+      ['llega null', (tramos) => tramos.map(t => (t.clave === 'respuesta' ? null : t))]
+    ]) {
+      const datos = metricasDeLosCasos();
+      datos.vista.circuito.externa = quitar(datos.vista.circuito.externa);
+      const [primera] = textosPorHoja(await renderMetricas(datos));
+      const { externa } = gestiones(primera);
+      assert.deepEqual(externa.banda.map(t => t.texto), BANDA_EXTERNA, como);
+      assert.ok(primera.some(t => t.texto === 'Prepara los datos'), `${como}: la banda del Área sigue`);
+      assert.ok(!primera.some(t => t.texto === 'Respuesta del área'), como);
+      assert.ok(primera.some(t => t.texto === 'Preparación y carga'), `${como}: las otras etapas siguen`);
+    }
   });
 
   // Lo más largo de cada campo: los textos de vistaDe con tres cifras
@@ -2092,18 +2101,38 @@ describe('el circuito: la banda y la etapa (spec 2026-11-05-circuito-diseno)', (
     return datos;
   };
 
+  // Lo mismo, con la etapa de la DGMIT con cifra y los pendientes de carga
+  const conLosPendientes = () => {
+    const datos = conLoMasLargo();
+    const cifra = datos.vista.circuito.externa.find(t => t.clave === 'aviso').cifra;
+    Object.assign(datos.vista.circuito.externa.find(t => t.clave === 'tramite'), { cifra, vacio: null, pendientes_texto: '100 notas pendientes de carga' });
+    return datos;
+  };
+
   it('con lo más largo de cada campo: ninguna línea se corta y nada se pisa ni se sale', async () => {
-    const pdf = await renderMetricas(conLoMasLargo());
-    const [primera] = lineasPorHoja(pdf);
-    assert.deepEqual(primera.filter(l => l.endsWith('…')), []);
-    for (const t of ['Todavía no hay notas', 'Se empieza a contar cuando', 'promedio de 100 ciclos']) assert.ok(primera.some(l => l.includes(t)), `falta "${t}"`);
-    verificarDiagramacion(await diagramacion(() => renderMetricas(conLoMasLargo())));
+    for (const [armar, textos] of [
+      [conLoMasLargo, ['Todavía no hay notas', 'Se empieza a contar cuando', 'promedio de 100 ciclos', '100 sin datos registrados']],
+      [conLosPendientes, ['100 notas pendientes de carga', '100 sin datos registrados']]
+    ]) {
+      const [primera] = lineasPorHoja(await renderMetricas(armar()));
+      assert.deepEqual(primera.filter(l => l.endsWith('…')), []);
+      for (const t of textos) assert.ok(primera.some(l => l.includes(t)), `falta "${t}"`);
+      verificarDiagramacion(await diagramacion(() => renderMetricas(armar())));
+    }
+  });
+
+  it('las bandas y las tarjetas no salen de los márgenes (el test de diagramación no ve los contornos)', async () => {
+    const [primera] = contenidoPorHoja(await renderMetricas(conLoMasLargo()));
+    const xs = [...primera.matchAll(/(-?[\d.]+) -?[\d.]+ [ml]\n/g)].map(m => Number(m[1]));
+    assert.ok(xs.length > 0);
+    const MM = 72 / 25.4;
+    for (const x of xs) assert.ok(x >= 15 * MM - 0.01 && x <= 195 * MM + 0.01, `x = ${x}`);
   });
 
   it('las insignias siguen diciendo quién está a cargo, en letra más chica que la banda', async () => {
     const [primera] = textosPorHoja(await renderMetricas(metricasDeLosCasos()));
     for (const quien of ['DDPC', 'DGMIT y DA', 'Área', 'DGMIT y DIT']) {
-      assert.ok(primera.some(t => t.texto === quien && t.tamano < LETRA_DE_LA_BANDA), `falta la insignia "${quien}"`);
+      assert.ok(primera.some(t => t.texto === quien && t.tamano === LETRA_DE_LA_INSIGNIA), `falta la insignia "${quien}"`);
     }
   });
 });
