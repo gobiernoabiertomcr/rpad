@@ -7,6 +7,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-24-metricas-y-reportes-design.md`
 - `docs/superpowers/specs/2026-11-03-reiteracion-bimestral-design.md`
 - `docs/superpowers/specs/2026-11-05-metricas-frase-en-los-casos-design.md`
+- `docs/superpowers/specs/2026-11-05-circuito-diseno-design.md`
 
 ## Archivos
 
@@ -85,8 +86,8 @@ reportesController: los reportes PDF, con sus consultas.
   también opcional y con la versión en 1: una foto sin ellos se sacó con los 9 fijos) y `generada` (Ruling 16): un año con foto se lee de ahí, nunca se recalcula y no se destilda (`sin` = []).
   Un cambio de forma de la foto después del despliegue tiene que subir la versión o leer con tolerancia: una foto que no se puede leer tira (500), no pasa por «no hay foto».
   Un año cerrado sin foto se ve en vivo «al 31/12», con el aviso «La foto de 2026 se saca el 10/01/2027» y, pasado ese día, «La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.» (Ruling 17: un año cerrado nunca desaparece del selector).
-- La pestaña Métricas (la página dibuja lo que manda el servidor: ver «La página: reportes.js»): la barra (el año, los selectores, «Casos: todos» y «Descargar PDF»), la franja de lo destildado, «En esta página» (El circuito, Resultados del año, Contexto, El trabajo del RPAD, Áreas y temas y Para completar (N), con el `total` del servidor), el circuito (nodos y flechas como en el Seguimiento: lo de la DGMIT en violeta `#5B4691` y el Portal en verde;
-  en el teléfono, en una columna), la cinta del recorrido típico, los casos («Ver los casos»), los resultados, el contexto (el índice y la antigüedad en SVG y HTML, sin Chart.js, con los valores también en texto), el trabajo (columnas por mes con chips para la serie, las métricas manuales de `/gestion/metricas-manuales` con «Cargar el mes» solo para administración y el CSV `/gestion/metricas/csv` (Tipo, Año, Mes y Cantidad por mes)),
+- La pestaña Métricas (la página dibuja lo que manda el servidor: ver «La página: reportes.js»): la barra (el año, los selectores, «Casos: todos» y «Descargar PDF»), la franja de lo destildado, «En esta página» (El circuito, Resultados del año, Contexto, El trabajo del RPAD, Áreas y temas y Para completar (N), con el `total` del servidor), el circuito (una banda de flechas con quién actúa y, debajo, la tarjeta de cada etapa; lo de la DGMIT en violeta `#5B4691`, el Área en verde azulado `#1F6B73` y el Portal en verde;
+  en el teléfono, en una columna; solo CSS, sobre el HTML de nodos y flechas: `.mt-flecha` sigue siendo la etapa y `.l` no se dibuja), la cinta del recorrido típico, los casos («Ver los casos»), los resultados, el contexto (el índice y la antigüedad en SVG y HTML, sin Chart.js, con los valores también en texto), el trabajo (columnas por mes con chips para la serie, las métricas manuales de `/gestion/metricas-manuales` con «Cargar el mes» solo para administración y el CSV `/gestion/metricas/csv` (Tipo, Año, Mes y Cantidad por mes)),
   áreas y temas y «Para completar» (con el link «Cargar nota DGMIT» → `seguimiento.html?id=N#cargar-nota`, solo con `Auth.puedeCargarNotasDgmit()`, y el link al Seguimiento de cada actualización sin «Recibido el»).
 - La cinta (`services/metricasCinta.js`, `cintaDeMetricas` y `cintasDeLaVista`, pura, como `seguimientoCinta.js`): las cifras del circuito una detrás de la otra alrededor del vencimiento, en un espacio de 1000 × 156 (línea útil de x = 30 a x = 970;
   `ALTURAS_DE_LA_CINTA`), con el eje en los días elegidos, la banda celeste antes del vencimiento, el rayado después y las marcas (aviso, nota DGMIT, datos y carga).
@@ -142,6 +143,7 @@ reportesController: los reportes PDF, con sus consultas.
   El pie, «Generado el dd/mm/aaaa a las hh:mm por <nombre corto>» y «<Reporte> · Hoja k de N», se dibuja al cerrar (`cerrarReporte`;
   `hojasDe` numera las hojas que suma otro dibujante, como las del Seguimiento).
   Los dibujantes son puros (sin pool) y leen lo del servidor con `esObjeto`, `objeto`, `lista`, `esNumero` y `texto`.
+  El circuito de Métricas y del Informe anual (`piezaDelCircuito`) dibuja la misma banda que la página, con las siglas; el color del Área, `COLOR_DEL_AREA`, no está en `NODOS` para no cambiar el Ciclo de vida.
 - `textoPorcentaje` y `htmlDelRanking` arman el ranking de áreas; los temas y las frecuencias van en barras, sin Chart.js (`tests/paginas.test.js`).
   `gestionController` arma la tasa y el ranking con `cumplimientoPorArea`.
   `gestion.html` redirige a Herramientas → Proyectos (ver `docs/temas/proyectos.md`): un link viejo a `gestion.html#metricas` llega por la redirección y avisa «Las métricas de Gestión ahora están en Herramientas → Métricas y Reportes.» (link a `reportes.html#metricas`).

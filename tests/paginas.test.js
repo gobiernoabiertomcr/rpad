@@ -1714,3 +1714,24 @@ describe('páginas', () => {
     assert.ok(leer('login.html').includes('src="img/logo-2025-blanco.png"'));
   });
 });
+
+describe('el circuito: el mismo diseño en Métricas, el Seguimiento y el PDF (spec 2026-11-05-circuito-diseno)', () => {
+  it('el color del Área es uno solo', async () => {
+    const { COLOR_DEL_AREA } = await import('../services/reportesMetricasPdf.js');
+    for (const pagina of ['reportes.html', 'seguimiento.html']) assert.ok(leer(pagina).includes(`--sg-del-area: ${COLOR_DEL_AREA};`), pagina);
+  });
+
+  it('en alto contraste, la banda vuelve a ser una caja con borde', () => {
+    for (const [pagina, clase] of [['reportes.html', '.mt-nodo'], ['seguimiento.html', '.sg-nodo']]) {
+      const html = leer(pagina);
+      const bloque = html.slice(html.indexOf('@media (forced-colors: active)'));
+      assert.ok(bloque.includes(clase) && bloque.includes('clip-path: none'), pagina);
+    }
+  });
+
+  it('.sg-estado sigue siendo la de los estados de la página: la tarjeta del área es otra clase', () => {
+    const html = leer('seguimiento.html');
+    assert.ok(html.includes('class="sg-estado" id="loading"'));
+    assert.ok(!/\.sg-estado[ ,][^{]*\{[^}]*grid-row/.test(html), '.sg-estado no entra en la grilla del circuito');
+  });
+});
