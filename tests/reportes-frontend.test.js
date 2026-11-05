@@ -16,7 +16,7 @@ import { cintaDeMetricas, cintasDeLaVista } from '../services/metricasCinta.js';
 import { mapaDeLosCasos, mapaDe, fuentesDelCaso, con, notaDgmit, HOY_DE_LAS_METRICAS as HOY } from './metricas-casos.js';
 import {
   TEXTOS_DE_LA_PESTANA as T, textoDelDesglose, textoDeLoQueFalta, textoDeDondeSale, textoDelMesManual, textoSinManuales,
-  textoDelPieDeLosCasos, textoDeLaPildora
+  textoDeLaPildora
 } from '../services/reportesMetricasPdf.js';
 import {
   TEXTOS_DE_PARA_COMPLETAR, debajoDeLaNota, queDeLaNota, debajoDelRecibido, queDelRecibido
@@ -1734,9 +1734,6 @@ describe('reportes.js y el PDF de Métricas: los mismos textos', () => {
     const areas = ctx.htmlDeAreas(AREAS);
     assert.ok(areas.includes(`<span>${T.alDia}</span>`));
     assert.ok(areas.includes(`>${T.titulos.ranking}</h3>`));
-    for (const dias of ['habiles', 'corridos']) {
-      assert.ok(ctx.htmlDeCasos(VISTA, { ...POR_DEFECTO, dias }).includes(`<p class="mt-pie">${textoDelPieDeLosCasos(dias)}`), dias);
-    }
     const cerrado = { anio: 2026, anios: [2026, 2027], al: '2026-12-31', en_vivo: false, aviso_foto: null };
     assert.ok(ctx.htmlDeBarra(cerrado, { ...POR_DEFECTO, anio: 2026 }).includes(`>${textoDeDondeSale(cerrado)}</p>`), textoDeDondeSale(cerrado));
     const sinFoto = { ...cerrado, en_vivo: true, aviso_foto: 'La foto de 2026 se saca el 10/01/2027' };

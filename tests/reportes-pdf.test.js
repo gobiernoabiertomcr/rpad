@@ -469,6 +469,21 @@ describe('la base de los reportes: medidas, lugar y recuadros', () => {
 
   // La aclaración de una tabla (como la de la diferencia en la comparación del Informe anual) viaja con su última fila: nunca queda sola
   // arriba de una hoja
+  it('una celda de una tabla llega hasta 4 líneas y lo demás se corta, salvo que la tabla pida otras', async () => {
+    const columnas = [{ titulo: 'Columna A', ancho: 1 }, { titulo: 'Columna B', ancho: 6 }];
+    const filas = [[`${'palabra '.repeat(30)}final`, 'corta']];
+    const dibujar = async (opciones) => {
+      const doc = nuevoReporte({ titulo: 'Reporte de prueba' });
+      prepararTabla(doc, { columnas, filas, ...opciones }).dibujar(hojaDePrueba(doc));
+      return lineasPorHoja(await cerrar(doc)).flat().join(' ');
+    };
+    const siempre = await dibujar({});
+    assert.ok(siempre.includes('…') && !siempre.includes('final'), siempre);
+    assert.equal(await dibujar({ lineas: 4 }), siempre);
+    const conLugar = await dibujar({ lineas: 40 });
+    assert.ok(conLugar.includes('final') && !conLugar.includes('…'), conLugar);
+  });
+
   it('la aclaración de una tabla viaja con su última fila: si no entran las dos, la última fila pasa a la hoja siguiente', async () => {
     const columnas = [{ titulo: 'Columna A', ancho: 1 }, { titulo: 'Columna B', ancho: 1 }];
     const filas = [['uno', 'dos'], ['tres', 'cuatro'], ['cinco', 'seis']];
@@ -552,6 +567,37 @@ const conNotaDgmit = () => {
   const fuentes = [...mapa.values()].find(f => f.dataset.id === 61);
   fuentes.notasDgmit = [notaDgmit({ recibida: '2026-02-10', datasets: [{ id: 61, titulo: fuentes.dataset.titulo }] })];
   return mapa;
+};
+
+// Los destildados con lo más largo que puede decir cada celda de la lista de casos (spec 2026-11-05-metricas-frase-en-los-casos, 9):
+// tres cifras, «Reiteración», el origen, «email mensual de vencidos», un título y un área como los más largos que hay
+const FILAS_LARGAS = [
+  {
+    dataset_id: 901, titulo: 'Relevamiento de los espacios reservados para motos en la vía pública municipal',
+    area: 'Dirección General de Promoción de Derechos de los Adultos y Adultas Mayores', gestion: 'externa', contar: false,
+    vencimiento: '2025-03-31', aviso: { fecha: '2025-12-06', texto: 'avisado ya vencido', que: 'email mensual de vencidos' },
+    nota: { numero: '1234/26', tipo: 'Reiteración', texto: '221 días hábiles desde el aviso' },
+    recibido: { fecha: '2026-09-10', texto: '221 días hábiles desde la nota', origen: 'Los entregó el área' },
+    carga: { fecha: '2026-09-30', texto: '221 días hábiles desde que se recibió' }
+  },
+  {
+    dataset_id: 902, titulo: 'Un dataset interno', area: 'Un área', gestion: 'interna', contar: false, vencimiento: '2026-03-31',
+    aviso: { fecha: '2026-01-30', texto: '221 días corridos antes del vencimiento', que: 'email de 60 días' },
+    nota: { numero: null, tipo: '', texto: '' },
+    recibido: { fecha: null, texto: 'en curso, 308 días corridos desde el aviso', origen: '' },
+    carga: { fecha: null, texto: '' }
+  },
+  {
+    dataset_id: 903, titulo: 'Un dataset de una fuente pública', area: 'Un área', gestion: 'externa', contar: false, vencimiento: '2026-03-31',
+    aviso: { fecha: '2026-02-19', texto: 'se dio de alta con el vencimiento ya cerca', que: 'Nota Digital 12/26' },
+    nota: { numero: null, tipo: '', texto: 'pendiente de carga' },
+    recibido: { fecha: '2026-03-25', texto: '', origen: 'Fuente pública' },
+    carga: { fecha: '2026-09-30', texto: '221 días corridos desde que se obtuvo' }
+  }
+];
+const conFilasLargas = () => {
+  const datos = metricasDeLosCasos({ estadistico: 'promedio', dias: 'corridos', sin: [11] });
+  return { ...datos, vista: { ...datos.vista, casos: FILAS_LARGAS } };
 };
 
 // Un circuito con todo lo que puede decir una flecha (cifras grandes y orientativas, en curso, pendientes), para ver que entra
@@ -666,6 +712,28 @@ describe('Métricas del año con el diseño del anexo', () => {
     assert.ok(hojas[1].some(l => /^LOS CASOS DESTILDADOS \(\d+\)$/.test(l)), hojas[1].join(' | '));
     for (const t of ['Parque Automotor (Patentamiento)', 'Pauta Publicitaria']) assert.ok(segunda.includes(t), t);
     assert.ok(!lineasPorHoja(conTodos).flat().some(l => l.startsWith('LOS CASOS DESTILDADOS')));
+  });
+
+  it('los casos destildados dicen las frases, sin la oración que ya dice cada fila (spec 2026-11-05-metricas-frase-en-los-casos, 5 y 9)', async () => {
+    const hojas = lineasPorHoja(await renderMetricas(metricasDeLosCasos({ estadistico: 'promedio', dias: 'corridos', sin: [11, 10] })));
+    const texto = hojas.flat().join(' ');
+    assert.ok(texto.includes('días corridos desde el aviso'), texto);
+    assert.ok(!texto.includes('Debajo de cada fecha'), texto);
+  });
+
+  it('los casos destildados no se cortan: la fila más larga entra entera', async () => {
+    const hojas = lineasPorHoja(await renderMetricas(conFilasLargas()));
+    const hoja = hojas.find(lineas => lineas.some(l => l.startsWith('LOS CASOS DESTILDADOS')));
+    const tabla = hoja.slice(hoja.findIndex(l => l.startsWith('LOS CASOS DESTILDADOS')));
+    assert.deepEqual(tabla.filter(l => l.endsWith('…')), []);
+    const texto = tabla.join(' ');
+    for (const frase of [FILAS_LARGAS[0].titulo, FILAS_LARGAS[0].area, 'avisado ya vencido · email mensual de vencidos',
+      'Reiteración · 221 días hábiles desde el aviso', '221 días hábiles desde la nota · Los entregó el área',
+      '221 días hábiles desde que se recibió', '221 días corridos antes del vencimiento · email de 60 días',
+      'en curso, 308 días corridos desde el aviso', 'se dio de alta con el vencimiento ya cerca · Nota Digital 12/26',
+      '221 días corridos desde que se obtuvo']) {
+      assert.ok(texto.includes(frase), `falta "${frase}" en ${texto}`);
+    }
   });
 
   it('el circuito sin notas DGMIT dice «Todavía no hay notas DGMIT cargadas»', async () => {
@@ -789,6 +857,7 @@ describe('Métricas del año con el diseño del anexo', () => {
     ['promedio y días hábiles', () => metricasDeLosCasos({ estadistico: 'promedio' })],
     ['promedio y días corridos, con dos destildados', () => metricasDeLosCasos({ estadistico: 'promedio', dias: 'corridos', sin: [11, 10] })],
     ['con una nota DGMIT', () => metricasDeLosCasos({ mapa: conNotaDgmit() })],
+    ['los casos destildados con las filas más largas', conFilasLargas],
     ['un circuito con todos los textos y cifras de cuatro cifras', conCircuitoCompleto],
     ['un año sin ningún caso (la base vacía)', () => metricasDeLosCasos({ mapa: new Map() })],
     ['un año cerrado con su foto', () => anioCerrado(true)],
@@ -1897,7 +1966,10 @@ const hashesPorHoja = (pdf) => contenidoPorHoja(pdf).map((contenido) => createHa
 // único cambio es el párrafo de la bajada, que corre una palabra al renglón siguiente, comprobado con el diff de texto hoja por hoja
 // La hoja de los resultados de cada PDF (la 1; la 2 en «con una nota DGMIT») se volvió a tomar por la aclaración de la reiteración
 // cada dos meses (spec 2026-11-03-reiteracion-bimestral, 6): su único cambio es ese párrafo, debajo de las reiteraciones del RPAD,
-// comprobado con el diff de texto hoja por hoja contra el código de antes
+// comprobado con el diff de texto hoja por hoja contra el código de antes.
+// La hoja 3 de «con una nota DGMIT» se volvió a tomar por la frase de los casos destildados (spec 2026-11-05-metricas-frase-en-los-casos,
+// 4, 5 y 9): sus únicos cambios son los textos de esas filas y el párrafo «Debajo de cada fecha…», que ya no va, comprobado con el diff de
+// texto hoja por hoja contra el código de antes
 const REFERENCIA_DE_LOS_PDF = {
   'Métricas: los casos, con las métricas manuales': [
     'a11f3dd9362874adb8b7a0305c606a6aeb74c14bece1319fced68887f343d511',
@@ -1908,7 +1980,7 @@ const REFERENCIA_DE_LOS_PDF = {
   'Métricas: con una nota DGMIT, promedio en días corridos y dos destildados': [
     'b0cfd809863b2485984cd4e8d2ae3eef24f652c1d5c25e1faaf540c03aed2cad',
     'de9baea351b336e82f0c234d8f9f16bd087e104f2e1e286d59f5a665f1cff89f',
-    '9b8a9a9a787f38c907662660e367f25fb19f31359c9f135dc2b2b5cabcfe2b0c',
+    'a3078b4d38813d41ff31e4273c9d7a434c4e086e0c68eda87cbdff88035229f8',
     '68ca4866667a23170de2a3f33342c6b0b25b83eb9042d0f403979173f7cfc6cf',
     '64dfb481191d59fd35d552da99b6432ace0e31e8ee271445cf188e39ba1746ad'
   ],

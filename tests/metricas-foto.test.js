@@ -313,7 +313,7 @@ describe('la foto del 31/12', () => {
     const tramoDe = (gestion, clave) => v.circuito[gestion].find((t) => t.clave === clave);
 
     // A: la carga del 30/12, aprobada el 05/01, entra en 2026: un día hábil después de los datos del 29/12, y después del vencimiento
-    assert.deepEqual([filaDe(a).recibido.fecha, filaDe(a).carga], ['2026-12-29', { fecha: '2026-12-30', texto: '1' }]);
+    assert.deepEqual([filaDe(a).recibido.fecha, filaDe(a).carga], ['2026-12-29', { fecha: '2026-12-30', texto: '1 día hábil desde que se recibió' }]);
     assert.deepEqual([tramoDe('externa', 'carga').cifra.valor, tramoDe('externa', 'carga').cifra.ciclos], [1, 1]);
     assert.deepEqual([v.resultados.a_tiempo.a_tiempo, v.resultados.a_tiempo.total, v.resultados.a_tiempo.externa], [0, 1, [0, 1]]);
     assert.equal(datos.trabajo.mediana.actualizaciones, 1);
@@ -326,7 +326,7 @@ describe('la foto del 31/12', () => {
       { n: 1, valor: hace, texto: `1 sin datos registrados todavía, hace ${hace} días hábiles (mediana)` });
     assert.equal(tramoDe('interna', 'produccion').cifra, null);
     assert.equal(tramoDe('interna', 'carga').cifra, null);
-    assert.deepEqual([filaDe(b).recibido, filaDe(b).carga], [{ fecha: null, texto: `en curso, hace ${hace}`, origen: '' }, { fecha: null, texto: '' }]);
+    assert.deepEqual([filaDe(b).recibido, filaDe(b).carga], [{ fecha: null, texto: `en curso, ${hace} días hábiles desde el aviso`, origen: '' }, { fecha: null, texto: '' }]);
     assert.deepEqual([v.resultados.a_tiempo.interna], [[0, 0]]);
 
     // El contexto va con el reloj del RPAD (Ruling 12): al 31/12 la actualización de A todavía no estaba aprobada, así que A figuraba

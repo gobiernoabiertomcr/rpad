@@ -667,7 +667,18 @@ const ACLARACION_DE_LOS_EMAILS = 'Hasta el 12/10, el email de los 5 días y el r
 // Desde que la reiteración es bimestral, va a haber más ciclos con «Ninguna» sin que nada haya mejorado (spec 2026-11-03-reiteracion-bimestral, 6)
 const ACLARACION_DE_LA_FRECUENCIA = 'Desde diciembre de 2026, la reiteración sale cada dos meses.';
 
-const textoDeDias = (valor) => (valor === null ? '' : valor === 0 ? 'en el día' : String(valor));
+// Una cantidad de días con su unidad: «308 días corridos», «1 día hábil»
+const cantidadDeDias = (valor, dias) => `${valor} ${unidadDe(valor, dias)}`;
+
+// Lo que va debajo de una fecha de la lista de casos: los días con su unidad y desde cuándo cuentan
+// (spec 2026-11-05-metricas-frase-en-los-casos, 4). 0 es «en el día»; sin días, nada
+const textoDeDias = (valor, dias, desde) => {
+  if (valor === null) return '';
+  return valor === 0 ? 'en el día' : `${cantidadDeDias(valor, dias)} ${desde}`;
+};
+
+const DESDE_EL_AVISO = 'desde el aviso';
+const DESDE_LA_NOTA = 'desde la nota';
 
 // Una fila de la lista de casos (spec, 2.2): cada fecha con, debajo, los días del tramo que termina ahí o su estado
 const filaDe = (m, ctx) => {
@@ -678,21 +689,22 @@ const filaDe = (m, ctx) => {
   if (h.heredado && h.inicioTramos !== null) textoDelAviso = 'avisado ya vencido';
   else if (h.avisoRegla !== null && h.venc !== null) {
     const antes = dias(h.avisoRegla, h.venc);
-    textoDelAviso = antes === null ? '' : antes === 0 ? 'el día del vencimiento' : `${antes} antes`;
+    textoDelAviso = antes === null ? '' : antes === 0 ? 'el día del vencimiento' : `${cantidadDeDias(antes, ctx.dias)} antes del vencimiento`;
   } else if (h.caso.aviso_regla == null && h.caso.motivo_sin_aviso != null && esperabaElAviso(h, ctx.al)) {
     textoDelAviso = textoDelMotivo(h);
   }
   const nota = h.nota !== null
-    ? { numero: h.nota.numero, tipo: TEXTO_TIPO_NOTA_DGMIT[h.nota.tipo] ?? '', texto: h.inicioTramos === null ? '' : textoDeDias(dias(h.inicioTramos, h.nota.recibida)) }
+    ? { numero: h.nota.numero, tipo: TEXTO_TIPO_NOTA_DGMIT[h.nota.tipo] ?? '', texto: h.inicioTramos === null ? '' : textoDeDias(dias(h.inicioTramos, h.nota.recibida), ctx.dias, DESDE_EL_AVISO) }
     : { numero: null, tipo: '', texto: notaPendiente(h, ctx) ? 'pendiente de carga' : '' };
   let textoDeRecibido = '';
   if (h.recibido !== null) {
-    if (h.aplicaNota && h.nota !== null && h.origen !== 'fuente_publica') textoDeRecibido = textoDeDias(dias(h.nota.recibida, h.recibido));
-    else if (!h.externa && h.inicioTramos !== null) textoDeRecibido = textoDeDias(dias(h.inicioTramos, h.recibido));
+    if (h.aplicaNota && h.nota !== null && h.origen !== 'fuente_publica') textoDeRecibido = textoDeDias(dias(h.nota.recibida, h.recibido), ctx.dias, DESDE_LA_NOTA);
+    else if (!h.externa && h.inicioTramos !== null) textoDeRecibido = textoDeDias(dias(h.inicioTramos, h.recibido), ctx.dias, DESDE_EL_AVISO);
   } else if (h.abierto) {
-    const desde = h.externa && h.nota !== null ? h.nota.recibida : h.inicioTramos;
+    const conNota = h.externa && h.nota !== null;
+    const desde = conNota ? h.nota.recibida : h.inicioTramos;
     const hace = desde === null ? null : dias(desde, ctx.al);
-    textoDeRecibido = hace === null || hace === 0 ? 'en curso' : `en curso, hace ${hace}`;
+    textoDeRecibido = hace === null || hace === 0 ? 'en curso' : `en curso, ${cantidadDeDias(hace, ctx.dias)} ${conNota ? DESDE_LA_NOTA : DESDE_EL_AVISO}`;
   }
   return {
     dataset_id: h.caso.dataset_id ?? null, titulo: h.caso.titulo ?? null, area: h.caso.area ?? null, gestion: h.gestion,
@@ -700,7 +712,11 @@ const filaDe = (m, ctx) => {
     aviso: { fecha: aviso.dia, texto: textoDelAviso, que: aviso.que },
     nota,
     recibido: { fecha: h.recibido, texto: textoDeRecibido, origen: h.recibido !== null || h.carga !== null ? textoOrigen(h.origen, '') : '' },
-    carga: { fecha: h.carga, texto: h.carga !== null && h.recibido !== null ? textoDeDias(dias(h.recibido, h.carga)) : '' }
+    carga: {
+      fecha: h.carga,
+      texto: h.carga !== null && h.recibido !== null
+        ? textoDeDias(dias(h.recibido, h.carga), ctx.dias, h.origen === 'fuente_publica' ? 'desde que se obtuvo' : 'desde que se recibió') : ''
+    }
   };
 };
 
@@ -798,8 +814,9 @@ const textoDeNotasPendientes = (abiertas, cerradas, anio) => {
 // - casos: las filas de los ciclos de las dos gestiones (cada una con su `gestion`) con algún aviso o la carga en el año, o que cuentan
 //   en algún tramo, por vencimiento: { dataset_id, titulo, area, gestion, contar, vencimiento, aviso: { fecha, texto, que }, nota:
 //   { numero, tipo, texto }, recibido: { fecha, texto, origen }, carga: { fecha, texto } }. Los `texto` son lo de debajo de cada fecha:
-//   los días del tramo que termina ahí ('27 antes' en el aviso, 'en el día' con 0), o su estado ('avisado ya vencido', el motivo sin
-//   el aviso de la regla, 'pendiente de carga', 'en curso, hace 89').
+//   los días del tramo que termina ahí, con su unidad y desde cuándo cuentan ('27 días hábiles antes del vencimiento' en el aviso,
+//   '45 días hábiles desde la nota', 'en el día' con 0), o su estado ('avisado ya vencido', el motivo sin el aviso de la regla,
+//   'pendiente de carga', 'en curso, 89 días hábiles desde el aviso').
 // - para_completar: { notas: [{ dataset_id, titulo, area, abierto, aviso, que, carga, situacion }], recibido: [{ dataset_id, titulo,
 //   gestion, carga, falta: 'recibido' | 'origen', falta_texto }], total, textos: { notas, notas_vacio, recibido, recibido_vacio } }
 //   (paraCompletarDe; `total`, las dos listas juntas: el «Para completar (N)» del índice de la página).
