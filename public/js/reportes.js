@@ -46,7 +46,6 @@ const BAJADA_DE_LOS_DIAS = {
   habiles: 'Los días son hábiles: de lunes a viernes, sin feriados ni días no laborables.',
   corridos: 'Los días son corridos: todos los días del calendario.'
 };
-const NOMBRE_DE_LOS_DIAS = { habiles: 'días hábiles', corridos: 'días corridos' };
 
 // Los nodos del circuito (spec, 2.2): quién es, qué hace y su color (lo de la DGMIT en violeta, el Portal en verde)
 const NODOS = {
@@ -489,8 +488,8 @@ function htmlDeFilaDeCaso(fila, i, { externa, editable }) {
 }
 
 // La lista de casos de la gestión elegida (spec 2.2): una fila por ciclo del año, en el orden del servidor, y la aclaración de
-// debajo (con los días elegidos y, en un año con foto, que no se destilda). `opciones`: { anio, editable } (editable: el año se
-// calcula en vivo y se puede destildar)
+// debajo (qué hace destildar o, en un año con foto, que no se destilda; los días los dice cada fila). `opciones`: { anio, editable }
+// (editable: el año se calcula en vivo y se puede destildar)
 function htmlDeCasos(vista, estado, { anio = null, editable = true } = {}) {
   const e = esObjeto(estado) ? estado : ESTADO_POR_DEFECTO;
   const g = elegido(e.gestion, GESTIONES);
@@ -505,7 +504,7 @@ function htmlDeCasos(vista, estado, { anio = null, editable = true } = {}) {
   return `<div class="mt-tabla-marco" tabindex="0" role="group" aria-label="Los casos"><table class="mt-tabla">`
     + `<thead><tr>${columnas.map((columna) => `<th scope="col">${columna}</th>`).join('')}</tr></thead>`
     + `<tbody>${filas.map((fila, i) => htmlDeFilaDeCaso(fila, i, { externa, editable })).join('')}</tbody></table></div>`
-    + `<p class="mt-pie">Debajo de cada fecha, los ${NOMBRE_DE_LOS_DIAS[elegido(e.dias, DIAS)]} del tramo o su estado. ${destildar}</p>`;
+    + `<p class="mt-pie">${destildar}</p>`;
 }
 
 // =====================================================

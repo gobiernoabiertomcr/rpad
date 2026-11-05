@@ -78,8 +78,10 @@ const VERSION_SEGUIMIENTO = '20261129';
 // tarjeta «Ciclo de vida del dato», la octava, segunda en «Para presentar» (spec 2026-10-25-ciclo-de-vida-del-dato, 4); después, desde
 // los feriados en todo el sistema, tanda 2, la bajada de los días hábiles dice «sin feriados ni días no laborables» (spec
 // 2026-10-27-feriados-en-notas, 6), con el número siguiente (no más: VERSION_FERIADOS tiene que seguir siendo mayor): su versión es
-// propia (mayor que todas las de este archivo cuando se sumó)
-const VERSION_REPORTES = '20261208';
+// propia (mayor que todas las de este archivo cuando se sumó); después, el pie de los casos sin la oración de los días, que ya dice cada
+// fila (spec 2026-11-05-metricas-frase-en-los-casos, 5): con 20261209 no queda margen, y el próximo cambio de reportes.js también
+// tiene que subir VERSION_FERIADOS
+const VERSION_REPORTES = '20261209';
 // notas.js (el Generador de Notas de la DGMIT en tres pasos, con la vista previa en la hoja membretada y la descarga del Word, spec
 // 2026-10-24-generador-de-notas, 3), que hasta ahora se cargaba sin ?v=: cambió por completo y un notas.js viejo en la caché con el
 // HTML nuevo rompería la página. Su versión es propia
