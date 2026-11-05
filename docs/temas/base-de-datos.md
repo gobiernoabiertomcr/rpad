@@ -31,7 +31,7 @@ Historia y motivos, en las specs:
   `feriados` y `feriados_no_rige` (ver abajo).
   Mi espacio:
   `mi_espacio_anios`, `mi_espacio_arranque`, `mi_espacio_saldos`, `mi_espacio_licencias`, `mi_espacio_horas_extras`, `mi_espacio_salidas` (la planilla de contrato) y `mi_espacio_avisos`, los días restituidos (`mi_espacio_restituciones`, los pedidos, y `mi_espacio_restituibles`, la foto) y su agenda:
-  `mi_espacio_eventos`, `mi_espacio_evento_personas`, `mi_espacio_evento_vistas` (a quién se le muestra un Personal (Público)), `mi_espacio_evento_envios` y `mi_espacio_eventos_corridas` (ver abajo)
+  `mi_espacio_eventos`, `mi_espacio_evento_personas`, `mi_espacio_evento_vistas` (a quién se le muestra un Personal (Público)), `mi_espacio_evento_informados`, `mi_espacio_evento_envios`, `mi_espacio_eventos_corridas` y `mi_espacio_diario_envios` (ver abajo)
 - Campos JSON validados en `cambios_pendientes` (datos_nuevos, datos_anteriores)
 - Foreign keys con CASCADE en deletes relevantes
 
@@ -178,6 +178,16 @@ Historia y motivos, en las specs:
   La vuelta atrás del SQL privado del evento real (`database/privado/rollback-mi-espacio-evento-publico-datos.sql`, ver `docs/temas/despliegue.md`) va **antes**: necesita las columnas.
   **Si también se deshace la agenda, este va antes que `rollback-mi-espacio-agenda.sql`, que no se puede correr solo mientras esté `migracion-mi-espacio-evento-publico.sql`**: borra las tablas de los envíos, de las personas y de la última corrida, falla en `DROP TABLE mi_espacio_eventos` con ERROR 1451 (`mi_espacio_evento_vistas` le apunta) y deja la base a medias; se recupera corriendo `rollback-mi-espacio-evento-publico.sql` y repitiendo el de la agenda (comprobado sobre una copia del dump;
   `tests/schema.test.js` los corre en ese orden).
+- **El aviso diario de la agenda y de quién depende cada usuario** (`migracion-mi-espacio-eventos-diario.sql`; spec 2026-11-04-agenda-aviso-y-dependencia, 9):
+  `usuarios.depende_de` int(11) NULL, con FK a `usuarios(id)` ON DELETE SET NULL y `usuarios.eventos_por_mail` tinyint(1) NOT NULL DEFAULT 1.
+  `mi_espacio_eventos.publicado_at` datetime NULL, en hora argentina: cuándo quedó Público con esa fecha; NULL, los de antes, cuenta como anterior a hoy.
+  `mi_espacio_evento_informados` (`evento_id`, `usuario_id`, `fecha`, `informado_at`, PK en los tres primeros, las dos FK con CASCADE): a quién ya se le informó cada Público y para qué fecha, escrita solo cuando el mail salió bien.
+  `mi_espacio_diario_envios` (`id`, `usuario_id`, `dia`, `momento` enum('tarde','manana'), `enviado_at`, `success`, único en persona, día y momento, FK con CASCADE): la reserva del mail de cada persona, como la de los recordatorios.
+  `mi_espacio_eventos_corridas` suma la fila `id = 2`, la del aviso diario, sin cambiar de forma.
+  **Los datos:** un Laboral con `para_todos` 1 quería decir «toda la administración» y con el código nuevo quiere decir todos los usuarios activos: la migración lo pasa a filas sin cambiar quién lo ve y lo deja con `para_todos` 0.
+  Antes borra las filas de quien hoy no es administración: son de un recordatorio apagado, hoy no le dan acceso y convertidas sí.
+  Por eso se puede repetir solo antes de subir el código: después achicaría a la administración los «Todos» nuevos.
+  `rollback-mi-espacio-eventos-diario.sql` va después de volver a los archivos anteriores y antes de los del Público y la agenda: los «para todos» viejos no vuelven y un «Todos» nuevo queda solo para la administración.
 
 ## Los días restituidos
 
