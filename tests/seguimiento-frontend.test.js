@@ -192,9 +192,28 @@ describe('seguimiento.js: la ficha y el circuito', () => {
   it('el circuito de 52, con los textos del servidor', () => {
     const s = seguimientoDe(f(52), HOY), html = ctx.htmlDelCircuito(s.circuito);
     for (const t of ['6 avisos', '5 emails y la Nota Digital N° 2/26', 'DGMIT y Dirección Administrativa', 'Vencido hace 81 días']) assert.ok(html.includes(t), t);
-    assert.ok(html.includes('<div class="sg-nodo area">'), 'el área vencida, en rojo');
+    assert.ok(html.includes('<div class="sg-nodo area">'), 'el nodo marca al área vencida');
     assert.ok(html.includes('Además, el 21/06/2026 el RPAD le anticipó por email al área que iba a recibir una nota formal.'));
     assert.ok(html.includes('class="sg-flecha fuera"') && html.includes('Pendiente de carga'));
+  });
+
+  it('el estado del área va en su propia tarjeta, debajo de la banda (spec 2026-11-05-circuito-diseno, 6)', () => {
+    const vencido = ctx.htmlDelCircuito(seguimientoDe(f(52), HOY).circuito);
+    assert.ok(vencido.includes('<div class="sg-estado-area vencido"><div class="e">Vencido hace 81 días</div></div>'));
+    assert.ok(vencido.includes('<div class="sg-nodo area">'), 'el nodo sigue marcando al vencido');
+    assert.ok(!/class="sg-nodo[^"]*">(?:(?!class="sg-(?:flecha|estado)).)*class="e"/s.test(vencido), 'ningún nodo lleva el estado adentro');
+    const alDia = ctx.htmlDelCircuito(seguimientoDe(f(10), HOY).circuito);
+    assert.ok(alDia.includes('<div class="sg-estado-area"><div class="e">Vence en 103 días</div></div>'));
+    assert.ok(!alDia.includes('sg-estado-area vencido'));
+    assert.match(alDia, /<div class="sg-estado-area[^"]*"><div class="e">[^<]*<\/div><\/div>\s*<\/div>/, 'la tarjeta va al final de la grilla');
+  });
+
+  it('los seis hijos del circuito, en el orden en que los ubica el CSS (por lugar): RPAD, avisos, DGMIT, nota, área y su estado', () => {
+    const html = ctx.htmlDelCircuito(seguimientoDe(f(52), HOY).circuito);
+    const hijos = [...html.matchAll(/<div class="(sg-nodo[^"]*|sg-flecha[^"]*|sg-estado-area[^"]*)">/g)].map(m => m[1]);
+    assert.deepEqual(hijos, ['sg-nodo', 'sg-flecha', 'sg-nodo', 'sg-flecha fuera', 'sg-nodo area', 'sg-estado-area vencido']);
+    assert.ok(html.indexOf('>RPAD<') < html.indexOf('DGMIT y Dirección Administrativa'));
+    assert.ok(html.indexOf('DGMIT y Dirección Administrativa') < html.indexOf('>Área responsable<'));
   });
 
   it('el encabezado del circuito: desde cuándo se cuentan los avisos y el vencimiento, con los textos del servidor', () => {

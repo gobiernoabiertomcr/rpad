@@ -332,9 +332,9 @@ function textoDeCabezaDelCircuito(circuito) {
 // «Requiere nota DGMIT» en «No», solo si en el ciclo abierto ya se le mandó el email de los 40 días (si no, el servidor manda
 // `alArea` en null y no se dibuja). Con «No» el servidor también manda el medio («No hace falta nota formal») y el tramo («Sin
 // nota formal»): esta función los dibuja como vienen.
-// Con una nota DGMIT cargada en el ciclo abierto (`tramoFuera.registrada`, spec 2026-10-24-notas-dgmit, 6) el tramo es una línea llena
-// violeta (`sg-flecha registrada`); sin nota, la punteada gris de siempre (`sg-flecha fuera`). En alto contraste se distinguen por el
-// trazo (lleno o punteado).
+// Con una nota DGMIT cargada en el ciclo abierto (`tramoFuera.registrada`, spec 2026-10-24-notas-dgmit, 6) la tarjeta del tramo va en
+// violeta (`sg-flecha registrada`); sin nota, con el borde punteado gris (`sg-flecha fuera`). En alto contraste se distinguen por el
+// trazo (lleno o punteado). El estado del área va en su propia tarjeta, debajo de la banda (spec 2026-11-05-circuito-diseno, 6).
 function htmlDelCircuito(circuito) {
   if (!circuito || typeof circuito !== 'object') return '';
   const avisos = circuito.avisos ?? {};
@@ -348,7 +348,8 @@ function htmlDelCircuito(circuito) {
       <div class="sg-flecha"><div class="n">${escaparTexto(avisos.titulo)}</div><div class="l" aria-hidden="true"></div><div class="c">${escaparTexto(avisos.texto)}</div></div>
       <div class="sg-nodo"><div class="q">${escaparTexto(medio.nombre)}</div><div class="r">${escaparTexto(medio.rol)}</div></div>
       <div class="sg-flecha ${fuera.registrada === true ? 'registrada' : 'fuera'}"><div class="n">${escaparTexto(fuera.titulo)}</div><div class="l" aria-hidden="true"></div><div class="c">${escaparTexto(fuera.texto)}</div></div>
-      <div class="sg-nodo${area.vencido ? ' area' : ''}"><div class="q">${escaparTexto(area.nombre) || Utils.SIN_DATO}</div><div class="r">Área responsable</div><div class="e">${escaparTexto(area.texto)}</div></div>
+      <div class="sg-nodo${area.vencido ? ' area' : ''}"><div class="q">${escaparTexto(area.nombre) || Utils.SIN_DATO}</div><div class="r">Área responsable</div></div>
+      <div class="sg-estado-area${area.vencido ? ' vencido' : ''}"><div class="e">${escaparTexto(area.texto)}</div></div>
     </div>${alArea}`;
 }
 

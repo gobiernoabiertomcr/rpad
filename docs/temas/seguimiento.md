@@ -6,6 +6,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-20-seguimiento-dataset-design.md`
 - `docs/superpowers/specs/2026-10-20-requiere-nota-y-anexo-reiteracion-design.md`
 - `docs/superpowers/specs/2026-10-24-reiteracion-en-su-anexo-design.md`
+- `docs/superpowers/specs/2026-11-05-circuito-diseno-design.md`
 
 ## Archivos
 
@@ -23,8 +24,10 @@ seguimientoController: solo lectura, para todos los roles con sesión.
   Todo lo demás es de solo lectura.
 - Pantallas: sin `id`, la lista "Sin elegir" (todos los datasets, activos y dados de baja; buscador por título o área; filtros por estado como botones con cantidad:
   Vencidos —el inicial—, Próximos a vencer, Actualizados, Eventuales, Sin fecha y Dados de baja —estos dos solo si hay— y Todos —solo los activos: los dados de baja están en su botón—; los vencidos por días de vencido, el resto por vencimiento; la columna "Última nota DGMIT al área"; cada fila abre `?id=N`).
-  Con `?id=N`: ficha (insignia, área, "Requiere nota DGMIT" en un externo, "Descargar PDF", "Ver en el portal" solo con URL http/https), avisos del ciclo abierto (el circuito dibujado), la cinta de los últimos 12 meses y los movimientos (filtros por tipo con cantidad, filas que se despliegan, hitos de vencimiento entre las filas, 10 primero y tandas de 20, y la aclaración fija de desde cuándo hay registro).
+  Con `?id=N`: ficha (insignia, área, "Requiere nota DGMIT" en un externo, "Descargar PDF", "Ver en el portal" solo con URL http/https), avisos del ciclo abierto (el circuito dibujado, con la banda y las tarjetas del circuito de Métricas), la cinta de los últimos 12 meses y los movimientos (filtros por tipo con cantidad, filas que se despliegan, hitos de vencimiento entre las filas, 10 primero y tandas de 20, y la aclaración fija de desde cuándo hay registro).
   "Descargar la nota y su anexo" en una nota (aviso o reiteración; las reiteraciones anteriores al anexo no lo tienen) lo ve solo administración (usa los endpoints `adminOnly` de `/api/notificaciones/notas-digitales/:id/pdf` y `/:id/anexo`).
+  En los avisos del ciclo abierto, el estado del Área va en su tarjeta, `.sg-estado-area`; `.sg-estado` a secas es la de cargando, no encontrado y error.
+  El PDF del Seguimiento, el Reporte por área y los anexos conservan el dibujo de nodos y flechas (decisión del usuario del 05/11/2026): la hoja tiene alturas fijas y sale en los anexos de las notas.
   También se llega desde Gestión de Datasets (`admin.html`): cada fila trae el ícono "Ver seguimiento" (`htmlDeAcciones` de `admin-fechas.js`; no se bloquea con un cambio pendiente: ver no cambia nada).
   Estados de la página como `dataset-detail.js` (cargando, no encontrado —los dados de baja sí existen— y error, cada uno con su `h2`: la página conserva su `h1` "Seguimiento de datasets").
 - El circuito que cuenta: el RPAD no le pide los datos al área.
@@ -38,10 +41,10 @@ seguimientoController: solo lectura, para todos los roles con sesión.
   La ficha de un externo trae "Requiere nota DGMIT:
   Sí / No / Sin dato" (en el PDF, "Datos que se piden" comparte el renglón con este dato:
   `celdasDelPedido`); la interna no lo muestra.
-  Circuito de un externo con "No" y sin nota DGMIT en el ciclo abierto (`circuitoDe`; con una nota, se muestra la nota: ver `docs/temas/notas-dgmit.md`): el recuadro del medio dice "DGMIT y Dirección Administrativa", con el rol "No hace falta nota formal"; el tramo punteado se titula "Sin nota formal", con el texto "Los datos se obtienen de la fuente";
+  Circuito de un externo con "No" y sin nota DGMIT en el ciclo abierto (`circuitoDe`; con una nota, se muestra la nota: ver `docs/temas/notas-dgmit.md`): la banda del medio (el recuadro, en el PDF) dice "DGMIT y Dirección Administrativa", con el rol "No hace falta nota formal"; el tramo punteado se titula "Sin nota formal", con el texto "Los datos se obtienen de la fuente";
   y `alArea` es null (el renglón "Al área" no se dibuja), salvo que en el ciclo abierto el RPAD ya le haya mandado al área el email de los 40 días (el dataset estaba en "Sí" y pasó a "No"): ese email existió y se muestra con sus fechas.
   Con "No" nunca aparece "todavía no se le envió el email que anticipa la nota formal".
-  Con "Sí" o sin dato, el recuadro del medio dice "Mandan la nota formal al área" y `alArea` no es null: la pantalla muestra `alArea.texto` solo si ya salió el email de los 40 días y el PDF dibuja `alArea.textoPdf` si hay vencimiento; sin ese email, dice "Al área: en este ciclo todavía no se le envió el email que anticipa la nota formal.".
+  Con "Sí" o sin dato, la banda del medio (el recuadro, en el PDF) dice "Mandan la nota formal al área" y `alArea` no es null: la pantalla muestra `alArea.texto` solo si ya salió el email de los 40 días y el PDF dibuja `alArea.textoPdf` si hay vencimiento; sin ese email, dice "Al área: en este ciclo todavía no se le envió el email que anticipa la nota formal.".
   En los movimientos, un cambio dice "Cambió: requiere nota DGMIT" y el valor vacío es "—" (no "Sin dato": ese es solo de la ficha).
 - Lenguaje neutro (pedido del usuario): el atraso muchas veces no depende del área sino de que no se mandó la nota formal.
   Se describe el estado del dataset:

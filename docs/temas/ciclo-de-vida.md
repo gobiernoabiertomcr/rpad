@@ -4,6 +4,7 @@ El PDF de dos hojas que dice cuánto tarda el dato en cada etapa del circuito.
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-25-ciclo-de-vida-del-dato-design.md`
+- `docs/superpowers/specs/2026-11-05-circuito-diseno-design.md`
 
 ## Ciclo de vida del dato (spec 2026-10-25-ciclo-de-vida-del-dato)
 
@@ -83,6 +84,7 @@ Historia y motivos, en las specs:
   Todo texto que puede no entrar se corta antes de escribirse (`ajustar` del anexo: con el `ellipsis` de PDFKit el test mediría el texto entero), y el nombre de un extremo conserva « y N más» entero (`ajusteDelNombre`).
   Ningún texto baja de 6,2 pt; la descripción baja de 7,2 a 6,4 y, si ni así entra, se corta.
   Las formas que van adentro de otra (los nodos, las insignias y el mosaico) se dibujan con `contorno`, y los nodos con `NODOS`, los dos exportados de `reportesMetricasPdf.js`: solo el índice, cada bloque y «Cómo se cuenta» son `roundedRect` (los bloques de `pdf-diagramacion.js`).
+  Conserva su dibujo y el Área en el acento (decisión del usuario del 05/11/2026): la banda de flechas y el verde azulado son solo del circuito de Métricas y del Informe anual.
   El Ciclo de vida reusa piezas de `reportesMetricasPdf.js`, y el PDF de Métricas y el Informe anual no cambian por eso: el test «el PDF de Métricas y el Informe anual no cambian» (`tests/reportes-pdf.test.js`) compara el sha256 del contenido de cada hoja (`contenidoPorHoja`, que no mira la fecha de creación) de cinco de esos PDF contra la referencia (`REFERENCIA_DE_LOS_PDF`);
   un cambio a propósito en esos PDF (por ejemplo, un texto del Informe anual) tiene que volver a tomar la referencia, comprobando con el diff de texto hoja por hoja que cambió solo eso.
 - Para los tests:

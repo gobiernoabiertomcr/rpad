@@ -22,7 +22,9 @@
             --sg-rojo: #8A3434; --sg-rojo-fondo: #F8E1E1;
             --sg-gris: #8A97A8;
             /* Las notas DGMIT al área (spec 2026-10-24-notas-dgmit, 6): contraste mayor a 7:1 sobre blanco */
-            --sg-violeta: #5B4691;
+            --sg-violeta: #5B4691; --sg-violeta-fondo: #EFEAF8;
+            /* El Área en el circuito (spec 2026-11-05-circuito-diseno, 4): el mismo color en Métricas y en el PDF (COLOR_DEL_AREA) */
+            --sg-del-area: #1F6B73; --sg-del-area-fondo: #E8F4F5;
         }
 
         /* Lo oculto con el atributo hidden no vuelve por una regla de display más específica */
@@ -82,28 +84,52 @@
         .sg-dato dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--sg-texto); }
         .sg-dato dd.alerta { color: var(--sg-rojo); }
 
-        /* Circuito */
-        .sg-tramos { display: grid; grid-template-columns: 1fr 1.2fr 1fr 1.2fr 1fr; }
-        .sg-nodo { border: 1.5px solid var(--sg-tinta); border-radius: 14px; padding: 12px 14px; background: #fff; display: flex; flex-direction: column; justify-content: center; }
-        .sg-nodo .q { font-weight: 700; color: var(--sg-tinta); line-height: 1.2; }
-        .sg-nodo .r { font-size: 0.82rem; color: var(--sg-suave); margin-top: 3px; }
-        .sg-nodo.area { border-color: var(--sg-rojo); background: #FFFBFB; }
-        .sg-nodo .e { margin-top: 8px; font-size: 0.82rem; font-weight: 700; color: var(--sg-tinta); }
-        .sg-nodo.area .e { color: var(--sg-rojo); }
-        .sg-flecha { display: flex; flex-direction: column; justify-content: center; padding: 0 12px; }
-        .sg-flecha .l { position: relative; border-top: 3px solid var(--sg-tinta); margin: 8px 8px 8px 0; }
-        .sg-flecha .l::after { content: ''; position: absolute; right: -8px; top: -8.5px; border: 7px solid transparent; border-left: 10px solid var(--sg-tinta); }
-        .sg-flecha.fuera .l { border-top-style: dashed; border-top-color: var(--sg-gris); }
-        .sg-flecha.fuera .l::after { border-left-color: var(--sg-gris); }
-        .sg-flecha .n { font-family: var(--f-titulo); font-weight: 750; font-size: 1.1rem; color: var(--sg-tinta); line-height: 1.15; }
+        /* Circuito (spec 2026-11-05-circuito-diseno): una banda de flechas con quién actúa y, debajo de cada una, lo que le toca. El HTML
+           sigue yendo nodo, flecha, nodo…: en el teléfono se leen así, y desde 961 px la grilla los reparte en dos filas. Son siempre seis:
+           el RPAD, los avisos, la DGMIT, la nota, el área y su estado. `.l`, la línea de antes, ya no se dibuja */
+        .sg-tramos { display: grid; grid-template-columns: minmax(0, 1fr); }
+        /* Al imprimir, el fondo no se saca: sin él, el texto blanco de la banda no se ve */
+        .sg-nodo { background: var(--sg-tinta); border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; justify-content: center; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .sg-nodo .q { font-family: var(--f-titulo); font-weight: 700; color: #fff; line-height: 1.18; font-size: 0.95rem; overflow-wrap: anywhere; }
+        .sg-nodo .r { font-size: 0.8rem; color: #fff; margin-top: 3px; line-height: 1.25; }
+        .sg-tramos > .sg-nodo:nth-child(3) { background: var(--sg-violeta); }
+        .sg-tramos > .sg-nodo:nth-child(5) { background: var(--sg-del-area); }
+        .sg-flecha, .sg-estado-area { min-width: 0; display: flex; flex-direction: column; justify-content: flex-start; margin: 6px 0 14px; padding: 12px; background: #F4F8FC; border: 1px solid #CFE0EF; border-radius: 12px; }
+        .sg-flecha .l { display: none; }
+        .sg-flecha .n { font-family: var(--f-titulo); font-weight: 750; font-size: 1.25rem; color: var(--sg-tinta); line-height: 1.15; }
+        .sg-flecha .c { font-size: 0.82rem; color: var(--sg-suave); margin-top: 6px; }
+        /* La nota formal: sin nota DGMIT, el borde punteado gris; con una nota cargada, en violeta (en alto contraste se distinguen por el
+           trazo, lleno o punteado) */
+        .sg-flecha.fuera { background: var(--sg-sutil); border: 1px dashed var(--sg-gris); }
         .sg-flecha.fuera .n { color: var(--sg-suave); font-weight: 650; }
-        .sg-flecha .c { font-size: 0.82rem; color: var(--sg-suave); }
-        /* El tramo de la nota formal con una nota DGMIT cargada: línea llena violeta (en alto contraste se distingue de la punteada
-           por el trazo, que sigue lleno) */
-        .sg-flecha.registrada .l { border-top-color: var(--sg-violeta); }
-        .sg-flecha.registrada .l::after { border-left-color: var(--sg-violeta); }
+        .sg-flecha.registrada { background: var(--sg-violeta-fondo); border-color: #D6CCEB; }
         .sg-flecha.registrada .n { color: var(--sg-violeta); }
         .sg-flecha.registrada .c { color: var(--sg-texto); font-weight: 600; }
+        .sg-estado-area { background: var(--sg-del-area-fondo); border-color: #BFDDE0; }
+        .sg-estado-area .e { font-family: var(--f-titulo); font-weight: 750; font-size: 1.25rem; line-height: 1.15; color: var(--sg-del-area); }
+        .sg-estado-area.vencido { background: var(--sg-rojo-fondo); border-color: #EFCACA; }
+        .sg-estado-area.vencido .e { color: var(--sg-rojo); }
+        @media (min-width: 961px) {
+            .sg-tramos { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.1fr); }
+            /* La flecha: `--punta` es lo que sale a la derecha y la muesca donde entra la anterior */
+            .sg-nodo { --punta: 16px; grid-row: 1; border-radius: 0; min-height: 76px; margin-right: -10px; padding: 10px calc(var(--punta) + 8px) 10px calc(var(--punta) + 10px);
+                clip-path: polygon(0 0, calc(100% - var(--punta)) 0, 100% 50%, calc(100% - var(--punta)) 100%, 0 100%, var(--punta) 50%); }
+            .sg-tramos > .sg-nodo:nth-child(1) { padding-left: 14px; border-radius: 12px 0 0 12px; clip-path: polygon(0 0, calc(100% - var(--punta)) 0, 100% 50%, calc(100% - var(--punta)) 100%, 0 100%); }
+            .sg-tramos > .sg-nodo:nth-child(5) { margin-right: 0; padding-right: 12px; border-radius: 0 12px 12px 0; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, var(--punta) 50%); }
+            .sg-flecha, .sg-estado-area { grid-row: 2; margin: 10px 8px 0 0; }
+            .sg-estado-area { margin-right: 0; }
+            .sg-tramos > :nth-child(1), .sg-tramos > :nth-child(2) { grid-column: 1; }
+            .sg-tramos > :nth-child(3), .sg-tramos > :nth-child(4) { grid-column: 2; }
+            .sg-tramos > :nth-child(5), .sg-tramos > :nth-child(6) { grid-column: 3; }
+        }
+        /* En alto contraste la banda pierde el fondo: sin la forma de flecha, queda una caja con borde */
+        @media (forced-colors: active) {
+            .sg-nodo, .sg-tramos > .sg-nodo:nth-child(1), .sg-tramos > .sg-nodo:nth-child(5) { clip-path: none; padding: 10px 14px; border: 1px solid CanvasText; border-radius: 12px; }
+        }
+        @media (forced-colors: active) and (min-width: 961px) {
+            .sg-nodo, .sg-tramos > .sg-nodo:nth-child(1) { margin-right: 8px; }
+            .sg-tramos > .sg-nodo:nth-child(5) { margin-right: 0; }
+        }
         .sg-directo { margin-top: 14px; display: flex; gap: 10px; align-items: center; padding: 10px 14px; border: 1px dashed var(--sg-borde-control); border-radius: 12px; font-size: 0.9rem; }
         .sg-directo .i { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--sg-cielo); display: grid; place-items: center; color: var(--sg-tinta); }
 
@@ -306,7 +332,6 @@
         @media (max-width: 960px) {
             .sg-ficha { grid-template-columns: 1fr; } .sg-acciones { flex-direction: row; flex-wrap: wrap; }
             .sg-datos { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; } .sg-dato:nth-child(4) { border-left: 0; padding-left: 0; }
-            .sg-tramos { grid-template-columns: 1fr; } .sg-flecha { padding: 8px 0 8px 18px; } .sg-flecha .l { display: none; }
             .sg-fila { grid-template-columns: 92px 20px minmax(0, 1fr) 20px; } .sg-fila .p { grid-column: 3; text-align: left; margin-top: 4px; }
             .sg-cuerpo { margin-left: 4px; margin-right: 4px; } .sg-cuerpo dl { grid-template-columns: 1fr; }
         }
@@ -602,6 +627,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/seguimiento.js?v=20261129"></script>
+    <script src="js/seguimiento.js?v=20261130"></script>
 </body>
 </html>

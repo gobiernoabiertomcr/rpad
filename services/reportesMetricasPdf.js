@@ -31,7 +31,7 @@ const U = CONTENIDO / 1000;
 
 // Letras (en puntos)
 const LETRA = {
-  nodo: 7.4, nodoRol: 6.2, cifra: 12, cifraMin: 9, unidad: 6.6, vacio: 7.4, vacioMin: 6.6, debajo: 6.4, orientativo: 6.2, nombre: 7,
+  nodo: 8, nodoRol: 6.2, cifra: 13, cifraMin: 9, unidad: 6.6, vacio: 8, vacioMin: 6.6, debajo: 6.4, orientativo: 6.2, nombre: 7.8,
   chico: 6.4, insignia: 6.2, aclaracion: 7, columna: 8, heroe: 16, heroeMin: 12, de: 7.5, texto: 7, mini: 7, barra: 7, pie: 7,
   cinta: 7, eje: 6.8, leyenda: 7, indice: 6.5
 };
@@ -101,7 +101,8 @@ export const TITULO_DEL_CIRCUITO = 'El circuito, del aviso del RPAD a la carga e
 export const TITULO_DEL_CONTEXTO = 'El contexto y el trabajo del RPAD';
 
 // Los nodos del circuito (spec 2.2), con la sigla de quien es (la maqueta de los PDF) y qué hace: lo de la DGMIT en violeta, el Portal en
-// verde y el resto en el acento (también los dibuja el Ciclo de vida del dato, services/reportesCicloDeVidaPdf.js)
+// verde y el resto en el acento (en el circuito de Métricas, el Área lleva COLOR_DEL_AREA; también los dibuja el Ciclo de vida del dato,
+// services/reportesCicloDeVidaPdf.js)
 export const NODOS = Object.freeze({
   rpad: { nombre: 'RPAD', rol: T.roles.rpad, color: COLOR.acento },
   da: { nombre: 'DGMIT y DA', rol: T.roles.da, color: VIOLETA },
@@ -110,15 +111,27 @@ export const NODOS = Object.freeze({
   ddpc: { nombre: 'DDPC', rol: T.roles.ddpc, color: COLOR.acento },
   portal: { nombre: 'Portal', rol: T.roles.portal, color: VERDE }
 });
-// El circuito de cada gestión: cada nodo con la clave del tramo que sale de él (la flecha se busca por esa clave entre los tramos del
-// servidor), y la parte del ancho de cada nodo y de cada flecha (la de la maqueta)
+// El circuito de cada gestión: cada nodo con la clave de su tramo (la etapa que le toca, debajo de él) y la parte del ancho de cada
+// columna. El Portal va más angosto y sin etapa
 const CIRCUITO_DE_LA_GESTION = Object.freeze({
-  externa: { pasos: [['rpad', 'aviso'], ['da', 'tramite'], ['area', 'respuesta'], ['ddpc', 'carga'], ['portal', null]], nodos: [0.8, 1, 0.85, 0.85, 0.75], flecha: 1.35 },
-  interna: { pasos: [['rpad', 'aviso'], ['dit', 'produccion'], ['ddpc', 'carga'], ['portal', null]], nodos: [0.8, 1.1, 0.85, 0.75], flecha: 1.6 }
+  externa: { pasos: [['rpad', 'aviso'], ['da', 'tramite'], ['area', 'respuesta'], ['ddpc', 'carga'], ['portal', null]], pesos: [1, 1, 1, 1, 0.62] },
+  interna: { pasos: [['rpad', 'aviso'], ['dit', 'produccion'], ['ddpc', 'carga'], ['portal', null]], pesos: [1, 1, 1, 0.62] }
 });
-// El nodo: el relleno, el alto mínimo y el radio; la flecha: el margen a cada lado de sus textos y el aire sobre y bajo la línea
-const NODO = { relleno: 3.5, alto: 30, radio: 5 };
-const FLECHA = { margen: 4, sobre: 3, bajo: 4 };
+// La banda: el aire, el alto mínimo, la punta de cada flecha, lo que queda entre dos, el radio de las puntas redondeadas y el aire debajo.
+// La etapa: el aire, el radio, lo que queda entre dos y lo que queda debajo del nombre y arriba de la insignia
+const BANDA = { relleno: 3, alto: 24, punta: 7, luz: 2, radio: 4, bajo: 3 };
+const ETAPA = { relleno: 4, radio: 4, separacion: 3, bajoNombre: 2, sobreInsignia: 3 };
+// El Área tiene color propio en el circuito. No está en NODOS: si no, cambiaría el Ciclo de vida del dato, que también los dibuja
+export const COLOR_DEL_AREA = '#1F6B73';
+// Los colores de una etapa: el fondo y el borde de la tarjeta, el nombre y la cifra, y la insignia (su fondo y su letra). El recuadro ya es
+// celeste: la tarjeta común va en blanco
+const TONOS_DE_LA_ETAPA = Object.freeze({
+  comun: { fondo: COLOR.blanco, borde: '#C9D7E6', tinta: COLOR.tinta, fondoInsignia: COLOR.acentoSuave, letraInsignia: COLOR.acento },
+  dgmit: { fondo: '#F5F2FB', borde: '#D6CCEB', tinta: VIOLETA, fondoInsignia: '#E6DFF3', letraInsignia: VIOLETA },
+  area: { fondo: '#F0F8F9', borde: '#BFDDE0', tinta: COLOR_DEL_AREA, fondoInsignia: '#D5ECEE', letraInsignia: COLOR_DEL_AREA }
+});
+// Una etapa sin cifra va en gris, con el borde punteado
+const FONDO_SIN_CIFRA = '#F8F9FB';
 
 // La cinta: la leyenda (las marcas, como se dibujan, y el rayado, en un orden fijo; qué es cada una, en T.leyenda)
 const LEYENDA_DE_LA_CINTA = ['aviso', 'nota', 'datos', 'carga', 'datos-y-carga', 'rayado'];
@@ -199,11 +212,11 @@ export const textoSinManuales = (anio) => `Todavía no hay métricas manuales ca
 // =====================================================
 
 // Un texto ajustado a `ancho` en hasta `lineas` líneas (se achica hasta `min`; si no entra, se corta con "…"). Sin texto, null
-const pieza = (doc, valor, { ancho, tamano, min = tamano, fuente = NORMAL, color = COLOR.gris, lineas = 2, align = 'left' }) => {
+const pieza = (doc, valor, { ancho, tamano, min = tamano, fuente = NORMAL, color = COLOR.gris, lineas = 2 }) => {
   const t = texto(valor);
   if (!t) return null;
   const ajuste = ajustar(doc, t, { ancho, lineas, max: tamano, min, fuente });
-  return { alto: ajuste.alto, dibujar: (y, x) => escribir(doc, ajuste, x, y, color, align === 'left' ? {} : { align }) };
+  return { alto: ajuste.alto, dibujar: (y, x) => escribir(doc, ajuste, x, y, color) };
 };
 
 // Las piezas una debajo de la otra, con `entre` puntos entre cada dos (las null no van)
@@ -231,7 +244,7 @@ const comoElemento = (p) => ({
   }
 });
 
-// El contorno de un rectángulo redondeado, con líneas y curvas: los nodos del circuito, las insignias y los tramos de la cinta van
+// El contorno de un rectángulo redondeado, con líneas y curvas: las tarjetas del circuito, las insignias y los tramos de la cinta van
 // adentro de otro dibujo, y un roundedRect sería, para el test de diagramación, un bloque encimado con su recuadro (la marca del
 // Seguimiento tampoco lo usa). Devuelve el documento, para pintarlo. También lo usa el Ciclo de vida del dato
 // (services/reportesCicloDeVidaPdf.js)
@@ -272,8 +285,8 @@ const piezaDeCifra = (doc, { numero, lado }, { ancho, tamano, min, tamanoLado, c
   };
 };
 
-// La insignia de quién está a cargo de un tramo (nunca solo el color): el texto en negrita en una píldora blanca
-const piezaDeInsignia = (doc, valor, { ancho, color }) => {
+// La insignia de quién está a cargo de un tramo (nunca solo el color): el texto en negrita en una píldora del color de la etapa
+const piezaDeInsignia = (doc, valor, { ancho, color, fondo }) => {
   const t = texto(valor);
   if (!t) return null;
   const tamano = LETRA.insignia;
@@ -283,7 +296,7 @@ const piezaDeInsignia = (doc, valor, { ancho, color }) => {
     alto,
     dibujar: (y, x) => {
       doc.save();
-      contorno(doc, x, y, anchoTexto + 8, alto, alto / 2).fill(COLOR.blanco);
+      contorno(doc, x, y, anchoTexto + 8, alto, alto / 2).fill(fondo);
       doc.restore();
       renglon(doc, t, x + 4, y + (alto - ASCENDENTE * tamano) / 2, { ancho: anchoTexto, tamano, fuente: NEGRITA, color });
     }
@@ -333,43 +346,53 @@ const piezaDeMedidor = (doc, porcentaje, ancho) => {
 // El circuito
 // =====================================================
 
-// Un nodo: su sigla en su color y lo que hace, centrados
-const nodoDe = (doc, clave, ancho) => {
+// La forma de una banda: una flecha, con la muesca donde entra la anterior. La primera y la última van con las puntas redondeadas. Con
+// líneas y curvas, como `contorno`: un roundedRect sería, para el test de diagramación, un bloque encimado con su recuadro
+const contornoDeBanda = (doc, x, y, ancho, alto, { primera, ultima }) => {
+  const r = BANDA.radio;
+  const c = r * (1 - KAPPA);
+  const p = BANDA.punta;
+  const d = x + ancho;
+  doc.moveTo(primera ? x + r : x, y);
+  if (ultima) doc.lineTo(d - r, y).bezierCurveTo(d - c, y, d, y + c, d, y + r).lineTo(d, y + alto - r).bezierCurveTo(d, y + alto - c, d - c, y + alto, d - r, y + alto);
+  else doc.lineTo(d - p, y).lineTo(d, y + alto / 2).lineTo(d - p, y + alto);
+  if (primera) doc.lineTo(x + r, y + alto).bezierCurveTo(x + c, y + alto, x, y + alto - c, x, y + alto - r).lineTo(x, y + r).bezierCurveTo(x, y + c, x + c, y, x + r, y);
+  else doc.lineTo(x, y + alto).lineTo(x + p, y + alto / 2);
+  return doc.closePath();
+};
+
+// Una banda: la sigla de quién actúa y qué hace, en blanco sobre su color. `anchoColumna`: la flecha sale de ahí hasta la muesca de la
+// siguiente
+const bandaDe = (doc, clave, anchoColumna, { primera, ultima }) => {
   const nodo = NODOS[clave];
-  const anchoTexto = ancho - 2 * NODO.relleno;
+  const izquierda = primera ? BANDA.relleno : BANDA.punta + BANDA.relleno;
+  const derecha = ultima ? BANDA.relleno : BANDA.relleno + BANDA.luz;
+  const anchoTexto = anchoColumna - izquierda - derecha;
   return {
-    color: nodo.color,
+    color: clave === 'area' ? COLOR_DEL_AREA : nodo.color,
+    izquierda,
+    ancho: ultima ? anchoColumna : anchoColumna + BANDA.punta - BANDA.luz,
     contenido: apilar([
-      pieza(doc, nodo.nombre, { ancho: anchoTexto, tamano: LETRA.nodo, min: LETRA.nodo - 1, fuente: NEGRITA, color: nodo.color, lineas: 2, align: 'center' }),
-      pieza(doc, nodo.rol, { ancho: anchoTexto, tamano: LETRA.nodoRol, min: LETRA.nodoRol - 0.5, color: COLOR.gris, lineas: 3, align: 'center' })
-    ], 1.5)
+      pieza(doc, nodo.nombre, { ancho: anchoTexto, tamano: LETRA.nodo, min: LETRA.nodo - 1.5, fuente: NEGRITA, color: COLOR.blanco, lineas: 2 }),
+      pieza(doc, nodo.rol, { ancho: anchoTexto, tamano: LETRA.nodoRol, min: LETRA.nodoRol - 0.5, color: COLOR.blanco, lineas: 2 })
+    ], 1)
   };
 };
 
-// La flecha de un tramo (un Tramo de vistaDe), con lo que manda el servidor, como htmlDeFlecha de la pestaña: arriba de la línea, la
-// cifra con su unidad al lado y el estadístico con los ciclos debajo («27» + «días hábiles», «mediana de 32 ciclos»; con 0, «En el día»
-// y «mediana en días hábiles», con los ciclos debajo de la línea), «con tan pocos casos, es orientativo» o, sin cifra, por qué
-// (`vacio.titulo`), y el nombre del tramo; debajo, «desde → hasta», los pendientes de carga de la DGMIT, los en curso (con «Se cuenta
-// hasta que se registra la actualización.») y la insignia de quién está a cargo. Lo de la DGMIT en violeta; sin cifra, la línea punteada
-const flechaDe = (doc, tramo, ancho) => {
+// La etapa de un tramo (un Tramo de vistaDe), con lo que manda el servidor, como htmlDeFlecha de la pestaña: el nombre arriba; la cifra con
+// su unidad al lado y el estadístico con los ciclos debajo («27» + «días hábiles», «mediana de 32 ciclos»; con 0, «En el día» y «mediana en
+// días hábiles», con los ciclos más abajo), «con tan pocos casos, es orientativo» o, sin cifra, por qué (`vacio.titulo`); «desde → hasta»,
+// los pendientes de carga de la DGMIT, los en curso (con «Se cuenta hasta que se registra la actualización.») y, al pie, la insignia de
+// quién está a cargo. Lo de la DGMIT en violeta y lo del área en su color; sin cifra, el borde punteado
+const etapaDe = (doc, clave, tramo, ancho) => {
   const t = objeto(tramo);
   const cifra = esObjeto(t.cifra) ? t.cifra : null;
   const vacio = cifra === null && esObjeto(t.vacio) ? t.vacio : null;
   const dgmit = t.dgmit === true;
-  const tinta = cifra === null ? COLOR.gris : dgmit ? VIOLETA : COLOR.tinta;
-  const anchoTexto = ancho - 2 * FLECHA.margen;
+  const tono = dgmit ? TONOS_DE_LA_ETAPA.dgmit : clave === 'respuesta' ? TONOS_DE_LA_ETAPA.area : TONOS_DE_LA_ETAPA.comun;
+  const anchoTexto = ancho - 2 * ETAPA.relleno;
   const chico = (valor, { color = COLOR.gris, fuente = NORMAL, lineas = 3, tamano = LETRA.chico } = {}) =>
     pieza(doc, valor, { ancho: anchoTexto, tamano, fuente, color, lineas });
-  const arriba = apilar([
-    cifra
-      ? piezaDeCifra(doc, { numero: cifra.texto, lado: cifra.unidad }, {
-        ancho: anchoTexto, tamano: LETRA.cifra, min: LETRA.cifraMin, tamanoLado: LETRA.unidad, color: tinta
-      })
-      : pieza(doc, vacio?.titulo, { ancho: anchoTexto, tamano: LETRA.vacio, min: LETRA.vacioMin, fuente: NEGRITA, color: COLOR.gris, lineas: 3 }),
-    cifra ? chico(cifra.debajo, { fuente: NEGRITA, color: dgmit ? VIOLETA : COLOR.gris, tamano: LETRA.debajo, lineas: 2 }) : null,
-    cifra?.orientativo === true ? chico(T.orientativo, { fuente: NEGRITA, color: AMBAR, tamano: LETRA.orientativo }) : null,
-    pieza(doc, t.nombre, { ancho: anchoTexto, tamano: LETRA.nombre, fuente: NEGRITA, color: tinta, lineas: 2 })
-  ], 1);
   const deLaDgmit = t.clave === 'tramite';
   let pendientes = null;
   if (vacio && texto(vacio.texto)) {
@@ -379,60 +402,73 @@ const flechaDe = (doc, tramo, ancho) => {
   }
   const enCurso = esObjeto(t.en_curso) && texto(t.en_curso.texto)
     ? [chico(t.en_curso.texto, { color: AMBAR, fuente: NEGRITA, lineas: 6 }), chico(T.seCuentaHasta)] : [];
-  const abajo = apilar([
-    chico(t.desde_hasta, { lineas: 2 }),
-    cifra?.en_el_dia === true ? chico(cifra.ciclos_texto, { color: COLOR.tinta, fuente: NEGRITA, lineas: 1 }) : null,
-    pendientes,
-    ...enCurso,
-    piezaDeInsignia(doc, t.responsable, { ancho: anchoTexto, color: dgmit ? VIOLETA : COLOR.acento })
-  ], 1);
-  return { arriba, abajo, color: cifra === null ? COLOR.grisClaro : dgmit ? VIOLETA : COLOR.acento, punteada: cifra === null };
+  return {
+    tono,
+    punteada: cifra === null,
+    nombre: pieza(doc, t.nombre, { ancho: anchoTexto, tamano: LETRA.nombre, fuente: NEGRITA, color: tono.tinta, lineas: 2 }),
+    cuerpo: apilar([
+      cifra
+        ? piezaDeCifra(doc, { numero: cifra.texto, lado: cifra.unidad }, {
+          ancho: anchoTexto, tamano: LETRA.cifra, min: LETRA.cifraMin, tamanoLado: LETRA.unidad, color: tono.tinta
+        })
+        : pieza(doc, vacio?.titulo, { ancho: anchoTexto, tamano: LETRA.vacio, min: LETRA.vacioMin, fuente: NEGRITA, color: COLOR.gris, lineas: 3 }),
+      cifra ? chico(cifra.debajo, { fuente: NEGRITA, color: dgmit ? VIOLETA : COLOR.gris, tamano: LETRA.debajo, lineas: 2 }) : null,
+      cifra?.orientativo === true ? chico(T.orientativo, { fuente: NEGRITA, color: AMBAR, tamano: LETRA.orientativo }) : null,
+      chico(t.desde_hasta, { lineas: 2 }),
+      cifra?.en_el_dia === true ? chico(cifra.ciclos_texto, { color: COLOR.tinta, fuente: NEGRITA, lineas: 1 }) : null,
+      pendientes,
+      ...enCurso
+    ], 1),
+    insignia: piezaDeInsignia(doc, t.responsable, { ancho: anchoTexto, color: tono.letraInsignia, fondo: tono.fondoInsignia })
+  };
 };
 
-// El circuito de una gestión (spec 2.2), del ancho de adentro de un recuadro: los nodos y, entre cada dos, la flecha de su tramo, con
-// todas las líneas a la misma altura y los nodos centrados en ella. `tramos`: los de vistaDe para la gestión
+// El circuito de una gestión (spec 2026-11-05-circuito-diseno, 7), del ancho de adentro de un recuadro: arriba, la banda de flechas con
+// quién actúa; debajo de cada una, la etapa que le toca. Los nombres de las etapas y sus cifras quedan a la misma altura y las tarjetas
+// tienen el mismo alto. `tramos`: los de vistaDe para la gestión
 const piezaDelCircuito = (doc, tramos, gestion) => {
-  const { pasos, nodos: pesos, flecha } = CIRCUITO_DE_LA_GESTION[gestion];
-  const unidad = ANCHO_DEL_RECUADRO / (pesos.reduce((total, p) => total + p, 0) + flecha * (pasos.length - 1));
+  const { pasos, pesos } = CIRCUITO_DE_LA_GESTION[gestion];
+  const unidad = ANCHO_DEL_RECUADRO / pesos.reduce((total, p) => total + p, 0);
   const tramoDe = (clave) => lista(tramos).find((t) => esObjeto(t) && t.clave === clave) ?? null;
-  const nodos = [];
-  const flechas = [];
+  const columnas = [];
   let x = 0;
   pasos.forEach(([nodo, clave], i) => {
-    const anchoNodo = pesos[i] * unidad;
-    nodos.push({ x, ancho: anchoNodo, ...nodoDe(doc, nodo, anchoNodo) });
-    x += anchoNodo;
-    if (clave === null) return;
-    const anchoFlecha = flecha * unidad;
-    flechas.push({ x, ancho: anchoFlecha, ...flechaDe(doc, tramoDe(clave), anchoFlecha) });
-    x += anchoFlecha;
+    const ancho = pesos[i] * unidad;
+    const lugar = { primera: i === 0, ultima: clave === null };
+    columnas.push({ x, ancho, lugar, banda: bandaDe(doc, nodo, ancho, lugar), etapa: clave === null ? null : etapaDe(doc, clave, tramoDe(clave), ancho - ETAPA.separacion) });
+    x += ancho;
   });
-  const altoNodo = Math.max(NODO.alto, ...nodos.map((n) => n.contenido.alto + 2 * NODO.relleno));
-  const yLinea = Math.max(Math.max(...flechas.map((f) => f.arriba.alto)) + FLECHA.sobre, altoNodo / 2);
-  const alto = Math.max(yLinea + FLECHA.bajo + Math.max(...flechas.map((f) => f.abajo.alto)), yLinea + altoNodo / 2);
+  const etapas = columnas.filter((c) => c.etapa).map((c) => c.etapa);
+  const altoBanda = Math.max(BANDA.alto, ...columnas.map((c) => c.banda.contenido.alto + 2 * BANDA.relleno));
+  const altoNombre = Math.max(0, ...etapas.map((e) => e.nombre?.alto ?? 0));
+  const altoCuerpo = Math.max(0, ...etapas.map((e) => e.cuerpo.alto));
+  const altoInsignia = Math.max(0, ...etapas.map((e) => e.insignia?.alto ?? 0));
+  const altoEtapa = 2 * ETAPA.relleno + altoNombre + ETAPA.bajoNombre + altoCuerpo + ETAPA.sobreInsignia + altoInsignia;
   return {
-    alto,
+    alto: altoBanda + BANDA.bajo + altoEtapa,
     dibujar: (y, x0) => {
-      const linea = y + yLinea;
-      for (const n of nodos) {
-        const yNodo = linea - altoNodo / 2;
+      for (const c of columnas) {
+        const xc = x0 + c.x;
         doc.save();
-        contorno(doc, x0 + n.x, yNodo, n.ancho, altoNodo, NODO.radio).lineWidth(0.9).fillAndStroke(COLOR.blanco, n.color);
+        contornoDeBanda(doc, xc, y, c.banda.ancho, altoBanda, c.lugar).fill(c.banda.color);
         doc.restore();
-        n.contenido.dibujar(yNodo + (altoNodo - n.contenido.alto) / 2, x0 + n.x + NODO.relleno);
-      }
-      for (const f of flechas) {
-        const xFlecha = x0 + f.x;
-        f.arriba.dibujar(linea - FLECHA.sobre - f.arriba.alto, xFlecha + FLECHA.margen);
-        const desde = xFlecha + 2;
-        const hasta = xFlecha + f.ancho - 2;
+        c.banda.contenido.dibujar(y + (altoBanda - c.banda.contenido.alto) / 2, xc + c.banda.izquierda);
+        if (!c.etapa) continue;
+        const e = c.etapa;
+        const yEtapa = y + altoBanda + BANDA.bajo;
+        const anchoEtapa = c.ancho - ETAPA.separacion;
         doc.save();
-        doc.lineWidth(1.4);
-        if (f.punteada) doc.dash(3, { space: 2 });
-        doc.moveTo(desde, linea).lineTo(hasta - 5, linea).stroke(f.color);
+        contorno(doc, xc, yEtapa, anchoEtapa, altoEtapa, ETAPA.radio).fill(e.punteada ? FONDO_SIN_CIFRA : e.tono.fondo);
         doc.restore();
-        doc.polygon([hasta, linea], [hasta - 5.5, linea - 3], [hasta - 5.5, linea + 3]).fill(f.color);
-        f.abajo.dibujar(linea + FLECHA.bajo, xFlecha + FLECHA.margen);
+        doc.save();
+        doc.lineWidth(0.7);
+        if (e.punteada) doc.dash(3, { space: 2 });
+        contorno(doc, xc, yEtapa, anchoEtapa, altoEtapa, ETAPA.radio).stroke(e.punteada ? COLOR.grisClaro : e.tono.borde);
+        doc.restore();
+        const xTexto = xc + ETAPA.relleno;
+        e.nombre?.dibujar(yEtapa + ETAPA.relleno, xTexto);
+        e.cuerpo.dibujar(yEtapa + ETAPA.relleno + altoNombre + ETAPA.bajoNombre, xTexto);
+        e.insignia?.dibujar(yEtapa + altoEtapa - ETAPA.relleno - e.insignia.alto, xTexto);
       }
     }
   };

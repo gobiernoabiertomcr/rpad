@@ -24,6 +24,8 @@
             --sg-gris: #8A97A8;
             /* Lo de la DGMIT (spec 2026-10-24-notas-dgmit, 6): contraste mayor a 7:1 sobre blanco */
             --sg-violeta: #5B4691; --sg-violeta-fondo: #EFEAF8;
+            /* El Área en el circuito (spec 2026-11-05-circuito-diseno, 4): el mismo color en el Seguimiento y en el PDF (COLOR_DEL_AREA) */
+            --sg-del-area: #1F6B73; --sg-del-area-fondo: #E8F4F5;
         }
 
         /* Lo oculto con el atributo hidden no vuelve por una regla de display más específica */
@@ -76,43 +78,68 @@
         .mt-tarjeta h2 { margin: 0; font-family: var(--f-titulo); font-weight: 650; letter-spacing: -0.01em; font-size: 1.12rem; color: var(--sg-tinta); }
         .mt-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 16px; }
 
-        /* El circuito: nodos y flechas, como «Avisos del ciclo abierto» del Seguimiento */
-        .mt-tramos { display: grid; align-items: stretch; }
-        .mt-tramos.externa { grid-template-columns: 0.8fr 1.25fr 1fr 1.25fr 1fr 1.25fr 0.9fr 1.25fr 0.8fr; }
-        .mt-tramos.interna { grid-template-columns: 0.9fr 1.4fr 1.3fr 1.4fr 1fr 1.4fr 0.9fr; }
-        /* Un nodo no se achica más que su palabra más larga («Administrativa»): las que se achican son las flechas */
-        .mt-nodo { border: 1.5px solid var(--sg-tinta); border-radius: 14px; padding: 12px; background: #fff; display: flex; flex-direction: column; justify-content: center; }
-        .mt-nodo .q { font-weight: 700; color: var(--sg-tinta); line-height: 1.2; font-size: 0.95rem; }
-        .mt-nodo .r { font-size: 0.78rem; color: var(--sg-suave); margin-top: 3px; line-height: 1.3; }
-        .mt-nodo.dgmit { border-color: var(--sg-violeta); }
-        .mt-nodo.dgmit .q { color: var(--sg-violeta); }
-        .mt-nodo.fin { border-color: var(--sg-verde); background: #FAFDFB; }
-        .mt-nodo.fin .q { color: var(--sg-verde); }
-        .mt-flecha { min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 10px; }
-        .mt-flecha .n { font-family: var(--f-titulo); font-weight: 750; font-size: 1.55rem; color: var(--sg-tinta); line-height: 1.05; letter-spacing: -0.02em; }
+        /* El circuito (spec 2026-11-05-circuito-diseno): una banda de flechas con quién actúa y, debajo de cada una, la etapa que le
+           toca. El HTML sigue yendo nodo, flecha, nodo…: en el teléfono se leen así, en una columna, y desde 961 px la grilla los reparte
+           en dos filas. La flecha de color es el nodo; `.l`, la línea de antes, ya no se dibuja */
+        .mt-tramos { display: grid; align-items: stretch; grid-template-columns: minmax(0, 1fr); }
+        /* Al imprimir, el fondo no se saca: sin él, el texto blanco de la banda no se ve */
+        .mt-nodo { background: var(--sg-tinta); border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; justify-content: center; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .mt-nodo .q { font-family: var(--f-titulo); font-weight: 700; color: #fff; line-height: 1.18; font-size: 0.9rem; }
+        .mt-nodo .r { font-size: 0.76rem; color: #fff; margin-top: 2px; line-height: 1.25; }
+        .mt-nodo.dgmit { background: var(--sg-violeta); }
+        .mt-nodo.fin { background: var(--sg-verde); }
+        .mt-flecha { min-width: 0; display: flex; flex-direction: column; justify-content: flex-start; margin: 6px 0 14px; padding: 12px; background: #F4F8FC; border: 1px solid #CFE0EF; border-radius: 12px; }
+        .mt-flecha .t { order: -1; margin: 0 0 6px; font-family: var(--f-titulo); font-size: 0.92rem; font-weight: 700; color: var(--sg-tinta); line-height: 1.22; }
+        .mt-flecha .n { font-family: var(--f-titulo); font-weight: 750; font-size: 1.75rem; color: var(--sg-tinta); line-height: 1.05; letter-spacing: -0.02em; }
         /* La unidad va al lado de la cifra y no se corta en dos renglones */
-        .mt-flecha .n small { white-space: nowrap; font-family: var(--f-texto); font-size: 0.78rem; font-weight: 600; letter-spacing: 0; color: var(--sg-suave); }
-        .mt-flecha .u { font-size: 0.74rem; font-weight: 600; color: var(--sg-suave); line-height: 1.2; margin-top: 2px; }
-        .mt-flecha .o { font-size: 0.74rem; font-weight: 600; color: var(--sg-ambar); line-height: 1.25; margin-top: 2px; }
-        .mt-flecha .t { font-size: 0.82rem; font-weight: 700; color: var(--sg-texto); margin-top: 4px; line-height: 1.25; }
-        .mt-flecha .l { position: relative; border-top: 3px solid var(--sg-tinta); margin: 9px 9px 8px 0; }
-        .mt-flecha .l::after { content: ''; position: absolute; right: -8px; top: -8.5px; border: 7px solid transparent; border-left: 10px solid var(--sg-tinta); }
-        .mt-flecha .c { font-size: 0.78rem; color: var(--sg-suave); line-height: 1.35; }
-        .mt-flecha .c + .c { margin-top: 2px; }
+        .mt-flecha .n small { white-space: nowrap; font-family: var(--f-texto); font-size: 0.8rem; font-weight: 600; letter-spacing: 0; color: var(--sg-suave); }
+        .mt-flecha .u { font-size: 0.76rem; font-weight: 600; color: var(--sg-suave); line-height: 1.2; margin-top: 3px; }
+        .mt-flecha .o { font-size: 0.76rem; font-weight: 600; color: var(--sg-ambar); line-height: 1.25; margin-top: 3px; }
+        .mt-flecha .l { display: none; }
+        .mt-flecha .c { font-size: 0.8rem; color: var(--sg-suave); line-height: 1.35; margin-top: 6px; }
         .mt-flecha .c b { color: var(--sg-texto); font-weight: 600; }
         .mt-flecha .c.curso { color: var(--sg-ambar); font-weight: 600; }
         .mt-flecha .c.pend { color: var(--sg-violeta); font-weight: 600; }
+        .mt-flecha.dgmit { background: var(--sg-violeta-fondo); border-color: #D6CCEB; }
         .mt-flecha.dgmit .n, .mt-flecha.dgmit .u, .mt-flecha.dgmit .t { color: var(--sg-violeta); }
-        .mt-flecha.dgmit .l { border-top-color: var(--sg-violeta); }
-        .mt-flecha.dgmit .l::after { border-left-color: var(--sg-violeta); }
-        /* Sin cifra: el porqué en lugar del número y la línea punteada gris (también en la DGMIT) */
-        .mt-flecha.vacia .n { font-size: 1rem; font-weight: 650; letter-spacing: -0.01em; line-height: 1.2; color: var(--sg-suave); }
-        .mt-flecha.vacia .t { color: var(--sg-suave); }
-        .mt-flecha.vacia .l { border-top-style: dashed; border-top-color: var(--sg-gris); }
-        .mt-flecha.vacia .l::after { border-left-color: var(--sg-gris); }
-        /* Quién está a cargo: nunca solo el color */
-        .mt-resp { align-self: flex-start; margin-top: 6px; padding: 1px 8px; border-radius: 999px; background: var(--sg-cielo); color: var(--sg-tinta); font-size: 0.72rem; font-weight: 700; }
-        .mt-flecha.dgmit .mt-resp { background: var(--sg-violeta-fondo); color: var(--sg-violeta); }
+        /* Sin cifra: el porqué en lugar del número y el borde punteado gris (también en la DGMIT) */
+        .mt-flecha.vacia { background: var(--sg-sutil); border: 1px dashed var(--sg-gris); }
+        .mt-flecha.vacia .n { font-size: 1.05rem; font-weight: 650; letter-spacing: -0.01em; line-height: 1.2; color: var(--sg-suave); }
+        /* Quién está a cargo, al pie de la tarjeta: nunca solo el color */
+        .mt-flecha > :nth-last-child(2) { margin-bottom: 10px; }
+        .mt-resp { align-self: flex-start; margin-top: auto; padding: 1px 8px; border-radius: 999px; background: #fff; color: var(--sg-tinta); font-size: 0.72rem; font-weight: 700; }
+        .mt-flecha.dgmit .mt-resp { color: var(--sg-violeta); }
+        /* El Área tiene color propio: solo está en la gestión externa, y son el quinto y el sexto de la grilla */
+        .mt-tramos.externa > .mt-nodo:nth-child(5) { background: var(--sg-del-area); }
+        .mt-tramos.externa > .mt-flecha:nth-child(6) { background: var(--sg-del-area-fondo); border-color: #BFDDE0; }
+        .mt-tramos.externa > .mt-flecha.vacia:nth-child(6) { background: #F1F8F9; border-color: var(--sg-del-area); }
+        .mt-tramos.externa > .mt-flecha:nth-child(6) .t, .mt-tramos.externa > .mt-flecha:nth-child(6) .mt-resp { color: var(--sg-del-area); }
+        .mt-tramos.externa > .mt-flecha:not(.vacia):nth-child(6) .n, .mt-tramos.externa > .mt-flecha:nth-child(6) .u { color: var(--sg-del-area); }
+        @media (min-width: 961px) {
+            .mt-tramos.externa { grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 0.62fr); }
+            .mt-tramos.interna { grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 0.62fr); }
+            /* La flecha: `--punta` es lo que sale a la derecha y la muesca donde entra la anterior */
+            .mt-nodo { --punta: 16px; grid-row: 1; border-radius: 0; min-height: 76px; margin-right: -10px; padding: 10px calc(var(--punta) + 8px) 10px calc(var(--punta) + 10px);
+                clip-path: polygon(0 0, calc(100% - var(--punta)) 0, 100% 50%, calc(100% - var(--punta)) 100%, 0 100%, var(--punta) 50%); }
+            .mt-nodo:first-child { padding-left: 14px; border-radius: 12px 0 0 12px; clip-path: polygon(0 0, calc(100% - var(--punta)) 0, 100% 50%, calc(100% - var(--punta)) 100%, 0 100%); }
+            .mt-nodo.fin { margin-right: 0; padding-right: 12px; border-radius: 0 12px 12px 0; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, var(--punta) 50%); }
+            .mt-flecha { grid-row: 2; margin: 10px 8px 0 0; }
+            /* El nombre reserva dos renglones: las cifras quedan a la misma altura */
+            .mt-flecha .t { min-height: 2.44em; }
+            .mt-tramos > :nth-child(1), .mt-tramos > :nth-child(2) { grid-column: 1; }
+            .mt-tramos > :nth-child(3), .mt-tramos > :nth-child(4) { grid-column: 2; }
+            .mt-tramos > :nth-child(5), .mt-tramos > :nth-child(6) { grid-column: 3; }
+            .mt-tramos > :nth-child(7), .mt-tramos > :nth-child(8) { grid-column: 4; }
+            .mt-tramos > :nth-child(9) { grid-column: 5; }
+        }
+        /* En alto contraste la banda pierde el fondo: sin la forma de flecha, queda una caja con borde */
+        @media (forced-colors: active) {
+            .mt-nodo, .mt-nodo:first-child, .mt-nodo.fin { clip-path: none; padding: 10px 14px; border: 1px solid CanvasText; border-radius: 12px; }
+        }
+        @media (forced-colors: active) and (min-width: 961px) {
+            .mt-nodo, .mt-nodo:first-child { margin-right: 8px; }
+            .mt-nodo.fin { margin-right: 0; }
+        }
         .mt-directo { margin-top: 14px; display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border: 1px dashed var(--sg-borde-control); border-radius: 12px; font-size: 0.88rem; }
         .mt-directo .i { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--sg-cielo); display: grid; place-items: center; color: var(--sg-tinta); font-weight: 700; }
         .mt-directo p { margin: 3px 0; }
@@ -304,17 +331,8 @@
             .rp-grilla.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
 
-        /* En el teléfono y la tableta: el circuito en una columna (nodo, flecha hacia abajo, nodo…); la cinta y las tablas se
-           desplazan de costado sin mover la página */
+        /* En el teléfono y la tableta: la cinta y las tablas se desplazan de costado sin mover la página */
         @media (max-width: 960px) {
-            .mt-tramos.externa, .mt-tramos.interna { grid-template-columns: minmax(0, 1fr); }
-            .mt-flecha { position: relative; padding: 12px 0 18px 32px; }
-            .mt-flecha .l { position: absolute; left: 12px; top: 6px; bottom: 14px; margin: 0; border-top: 0; border-left: 3px solid var(--sg-tinta); }
-            .mt-flecha .l::after { right: auto; top: auto; left: -8.5px; bottom: -12px; border: 7px solid transparent; border-top: 10px solid var(--sg-tinta); }
-            .mt-flecha.dgmit .l { border-left-color: var(--sg-violeta); }
-            .mt-flecha.dgmit .l::after { border-left-color: transparent; border-top-color: var(--sg-violeta); }
-            .mt-flecha.vacia .l { border-left-style: dashed; border-left-color: var(--sg-gris); }
-            .mt-flecha.vacia .l::after { border-left-color: transparent; border-top-color: var(--sg-gris); }
             .mt-grilla.g3, .mt-grilla.g-areas { grid-template-columns: minmax(0, 1fr); }
             .mt-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .mt-kpis > div + div { border-left: 0; }

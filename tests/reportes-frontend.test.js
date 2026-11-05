@@ -360,6 +360,9 @@ describe('reportes.js: el circuito', () => {
     assert.match(externa, /^<div class="mt-tramos externa" role="group" aria-label="El circuito de la gestión externa">/);
     assert.match(externa, /<div class="mt-nodo dgmit"><span class="q">DGMIT y Dirección Administrativa/);
     assert.match(externa, /<div class="mt-nodo fin"><span class="q">Portal/);
+    // El CSS ubica cada hijo por su lugar (spec 2026-11-05-circuito-diseno, 5): el Área es el quinto y su etapa, el sexto
+    const hijos = [...externa.matchAll(/<div class="(mt-nodo|mt-flecha)[^"]*">/g)].map((m) => m[1]);
+    assert.deepEqual(hijos, ['mt-nodo', 'mt-flecha', 'mt-nodo', 'mt-flecha', 'mt-nodo', 'mt-flecha', 'mt-nodo', 'mt-flecha', 'mt-nodo']);
     // Cada flecha entre sus dos nodos: el aviso anticipado va del RPAD a la DGMIT
     assert.ok(externa.indexOf('Datos Públicos avisa') < externa.indexOf('Aviso anticipado') && externa.indexOf('Aviso anticipado') < externa.indexOf('Mandan la nota formal'));
     const interna = ctx.htmlDeCircuito(VISTA, 'interna');
