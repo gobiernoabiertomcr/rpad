@@ -1,6 +1,6 @@
 # El circuito: quién y qué, juntos
 
-Fecha: 05/11/2026. Decisiones del usuario del 05/11/2026.
+Fecha: 05/11/2026. Decisiones del usuario del 05/11/2026; el usuario aprobó este diseño el 05/11/2026.
 La maqueta se vio con las páginas reales y los datos del dump del 05/11/2026, fuera del repo; los ejemplos de acá son inventados.
 Lo que se ve y los contratos van acá.
 

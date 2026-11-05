@@ -9,7 +9,7 @@
 
 **Tech Stack:** Node 22, vanilla JS, CSS, PDFKit, `node --test`.
 
-**Spec:** `docs/superpowers/specs/2026-11-05-circuito-diseno-design.md`.
+**Spec:** `docs/superpowers/specs/2026-11-05-circuito-diseno-design.md` (aprobada el 05/11/2026; el usuario aprobó este plan el 05/11/2026).
 
 ## Global Constraints
 
