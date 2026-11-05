@@ -1,6 +1,6 @@
 # El aviso diario de la agenda, de quién depende cada uno y un formulario que no se equivoca
 
-Fecha: 04/11/2026. Decisiones del usuario del 04/11/2026, tomadas en varias rondas y mirando la maqueta navegable, con datos inventados, en `docs/superpowers/specs/2026-11-04-agenda-aviso-y-dependencia-mockups/` (`mi-espacio.html#agenda`, `configuracion.html#usuarios` y `mails.html`).
+Fecha: 04/11/2026. El usuario aprobó este diseño y su plan el 04/11/2026. Decisiones del usuario del 04/11/2026, tomadas en varias rondas y mirando la maqueta navegable, con datos inventados, en `docs/superpowers/specs/2026-11-04-agenda-aviso-y-dependencia-mockups/` (`mi-espacio.html#agenda`, `configuracion.html#usuarios` y `mails.html`).
 Los textos van al pie de la letra. Las personas de los ejemplos son inventadas.
 
 Sigue a `2026-10-26-mi-espacio-agenda-design.md` y `2026-10-29-mi-espacio-evento-publico-design.md`: lo que acá no se dice, sigue como dicen ellas. Cambia lo que dicen en cuatro puntos, y por eso va aparte (sección 12).

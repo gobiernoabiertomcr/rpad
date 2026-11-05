@@ -6,7 +6,7 @@
 
 **Tech Stack:** Node 22, Express 4, MariaDB 10.6+ (mysql2/promise), vanilla JS, `node --test`.
 
-**Spec:** `docs/superpowers/specs/2026-11-04-agenda-aviso-y-dependencia-design.md`. El executor la lee entera, con su maqueta (`...-mockups/`), y también `docs/temas/mi-espacio-agenda.md`, `mi-espacio-evento-publico.md`, `configuracion.md`, `calendario-y-corridas.md` y `base-de-datos.md`. Los textos son los de la spec, al pie de la letra.
+**Spec:** `docs/superpowers/specs/2026-11-04-agenda-aviso-y-dependencia-design.md` (el usuario aprobó la spec y este plan el 04/11/2026). El executor la lee entera, con su maqueta (`...-mockups/`), y también `docs/temas/mi-espacio-agenda.md`, `mi-espacio-evento-publico.md`, `configuracion.md`, `calendario-y-corridas.md` y `base-de-datos.md`. Los textos son los de la spec, al pie de la letra.
 
 **Turno:** se implementa cuando la coordinadora da el turno. Antes de la Task 1: `sync_with_base_branch`, ver qué cambió en estos archivos y ajustar el plan. Las líneas citadas son de d6de459.
 
