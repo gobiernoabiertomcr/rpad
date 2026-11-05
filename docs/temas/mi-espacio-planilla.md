@@ -75,7 +75,7 @@ Historia y motivos, en las specs:
 ## La planilla en la página
 
 - La planilla en la página (spec 2026-10-27-mi-espacio-horas, secciones 4 y 5; la maqueta que aprobó el usuario; el código, en «La página» de este documento): en contrato, «Cargar horas extras» (el del encabezado, `#btn-cargar-horas`, y el de la tarjeta, `data-cargar="horas"`) abre `#modal-planilla` en lugar de `#modal-horas`, que sigue para planta («Planta queda como está»: decisión del usuario);
-  como siempre, sin el saldo inicial abre antes «Mis vacaciones y saldos» y sin modalidad los botones no se ven.
+  como siempre, sin modalidad o sin el saldo inicial los botones no se ven (sin el saldo inicial, si se llega igual, abre antes «Mis vacaciones y saldos»).
   Es un modal de administración más ancho (900 px) y alto, que un clic en el velo no cierra, con su propia región viva, `#mp-anuncio` (con `aria-modal`, la de la página puede no leerse), y arriba, fijos, el mes con sus flechas (no va a un mes que no llegó ni antes de enero de hace dos años) y la banda celeste con el total del mes en grande y la frase de `suma.texto`, que cambia mientras se escribe.
   En el cuerpo, que se desplaza:
   «Cómo se cuentan las horas» (un `<details>` cerrado, con las dos reglas y «Las horas de octubre son horas a favor en noviembre.»), las columnas (Día, Entrada *(opcional)*, Salida y Horas extras), los días por semana («5 al 9 de octubre», con lo que suma) y «¿Trabajaste un sábado o un domingo?» (los sábados y domingos del mes hasta hoy que no están, y «Sumar el día»: un sábado o un domingo se carga como un feriado y se puede quitar; decisión del usuario).

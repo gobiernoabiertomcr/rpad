@@ -401,6 +401,10 @@ const fraseDeLosDias = (numero) => {
   return ['No te quedan días de vacaciones', '', ''];
 };
 
+// El día y la modalidad, arriba de la frase y de la bienvenida: «Lunes 26 de octubre, planta permanente»
+const encabezadoDelDia = (hoy, modalidad) => `${mayuscula(diaDeLaSemana(hoy))} ${Number(hoy.slice(8, 10))} de `
+  + `${nombreDelMes(hoy.slice(0, 7))}, ${minuscula(modalidad.texto)}`;
+
 /**
  * La frase de la banda: `{ encabezado, antes, cifra, despues, bajada }`. `encabezado` es el día de hoy sin el año y la
  * modalidad en minúscula («Lunes 26 de octubre, planta permanente»); `antes`, `cifra` y `despues`, la frase partida alrededor
@@ -409,10 +413,6 @@ const fraseDeLosDias = (numero) => {
  * final lo que se pierde de las ordinarias del reparto (`textoDePerdidos`), en la oración de lo cargado, el año del primer
  * mes con días cargados (`mesesCargados`, solo si hay algo cargado), y las oraciones de los días por restituir (`grupos`).
  */
-// El día y la modalidad, arriba de la frase y de la bienvenida: «Lunes 26 de octubre, planta permanente»
-const encabezadoDelDia = (hoy, modalidad) => `${mayuscula(diaDeLaSemana(hoy))} ${Number(hoy.slice(8, 10))} de `
-  + `${nombreDelMes(hoy.slice(0, 7))}, ${minuscula(modalidad.texto)}`;
-
 const titularDe = (panel, modalidad, vacaciones, grupos) => {
   const { hoy, cuenta } = panel;
   const { numero } = vacaciones;

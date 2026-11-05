@@ -4689,6 +4689,12 @@ async function recargarLaListaConElFocoEn(control, pedidoAlTocar = pagina.pedido
   devolverElFoco(respaldo);
 }
 
+// Una pestaña oculta con el aviso de que faltan los saldos, que acaban de guardarse: se pide de nuevo recién al abrirla y, hasta
+// que llegue, no puede seguir diciendo que faltan. Lo de una pestaña con sus datos queda a la vista, como siempre
+function soltarElAvisoDeSaldos(vista, datos, cargando) {
+  if (esObjeto(datos?.sin_saldos)) porId(vista).innerHTML = `<p class="me-estado">${cargando}</p>`;
+}
+
 // Después de guardar o de borrar: el Resumen y las pestañas que ya se cargaron (la que se ve, enseguida y con el año que tenía
 // y, en Horas extras, el mes del día por día, y en la agenda, el mes que se ve, sin anunciarlo: se anuncia lo que se guardó; las
 // otras, cuando se vuelvan a abrir). La lista de Licencias, en el año pendiente si hay uno (pagina.anioDeLicencias: el de la licencia
@@ -4701,11 +4707,17 @@ async function volverAPedirTodo() {
   if (pagina.pestana === 'licencias' && (pagina.licencias !== null || pagina.anioDeLicencias !== null)) {
     const anio = pagina.anioDeLicencias !== null ? tomarElAnioDeLicencias() : anioQueTenia(pagina.licencias);
     cargas.push(cargarLicencias(anio, { conAnuncio: false }));
-  } else if (pagina.pestana !== 'licencias') pagina.licencias = null;
+  } else if (pagina.pestana !== 'licencias') {
+    soltarElAvisoDeSaldos('vista-licencias', pagina.licencias, 'Cargando tus licencias…');
+    pagina.licencias = null;
+  }
   if (pagina.horas !== null) {
     if (pagina.pestana === 'horas') {
       cargas.push(cargarHorasExtras(anioQueTenia(pagina.horas), { conAnuncio: false, mes: pagina.mes }));
-    } else pagina.horas = null;
+    } else {
+      soltarElAvisoDeSaldos('vista-horas', pagina.horas, 'Cargando tus horas extras…');
+      pagina.horas = null;
+    }
   }
   if (pagina.pestana === 'agenda') cargas.push(cargarEventos({ forzar: true, conAnuncio: false }));
   else {
@@ -6246,8 +6258,8 @@ function pedirSalirDeLaPlanilla(desde = null) {
 // ---- «Mis vacaciones y saldos» ----
 
 // Abre «Mis vacaciones y saldos» (spec, sección 4) con lo que vale para el año en curso (GET /anio/:anio) y los campos de «Para
-// arrancar» (GET /saldo-inicial). Si no se puede, un aviso lo dice (sin el saldo inicial, los botones de carga llevan acá: nunca
-// quedan sin responder). `recargarAlCerrar`: el año se guardó y el saldo no; al cerrarlo, la página se vuelve a pedir
+// arrancar» (GET /saldo-inicial). Si no se puede, un aviso lo dice (sin el saldo inicial, los botones de los avisos y los frenos
+// llevan acá: nunca quedan sin responder). `recargarAlCerrar`: el año se guardó y el saldo no; al cerrarlo, la página se vuelve a pedir
 async function abrirSaldos(volverA = null) {
   if (pagina.saldos !== null) return;
   const anio = anioDeHoy();
