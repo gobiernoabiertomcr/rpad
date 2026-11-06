@@ -58,44 +58,44 @@ Este plan espera su turno en la fila de la sesión coordinadora.
 
 - [ ] **Paso 1: escribí los tests que fallan**
 
-Con `solo`, `email`, `nota`, `cambio`, `notaDgmit` y `con` de `tests/metricas-casos.js`, y el `casosDel(fuentes, hoy)` del archivo. El dataset de ejemplo vencía el 31/03/2026 y un cambio aprobado el 04/03/2026 lo pasó al 30/06/2026, cuya fecha de la regla es el 21/05/2026:
+Con `solo`, `email`, `nota`, `cambio`, `notaDgmit` y `con` de `tests/metricas-casos.js`, y el `casosDel(fuentes, hoy)` del archivo. El dataset inventado vencía el 31/05/2026 y un cambio aprobado el 05/05/2026 lo pasó al 31/08/2026, cuya fecha de la regla es el 22/07/2026:
 
 ```js
 const reprogramado = (extra = {}) => solo(
-  { id: 900, titulo: 'Reprogramado', alta: '2026-01-05 09:00:00', proxima: '2026-06-30', ultima: '2025-12-31' },
-  { cambios: [cambio({ id: 70, creado: '2026-03-04 10:00:00', revisado: '2026-03-04 11:00:00', dataset_id: 900,
-      nuevos: { proxima_actualizacion: '2026-06-30', ultima_actualizacion: '2025-12-31' },
-      anteriores: { proxima_actualizacion: '2026-03-31', ultima_actualizacion: '2025-12-31' } })], ...extra });
+  { id: 900, titulo: 'Reprogramado', alta: '2026-01-05 09:00:00', proxima: '2026-08-31', ultima: '2025-12-31' },
+  { cambios: [cambio({ id: 70, creado: '2026-05-05 10:00:00', revisado: '2026-05-05 11:00:00', dataset_id: 900,
+      nuevos: { proxima_actualizacion: '2026-08-31', ultima_actualizacion: '2025-12-31' },
+      anteriores: { proxima_actualizacion: '2026-05-31', ultima_actualizacion: '2025-12-31' } })], ...extra });
 const de40 = (id, enviado, datos = {}) => email({ id, tipo: 'externo-40', enviado, ...datos });
 
 it('el aviso de la regla de un ciclo reprogramado es el del vencimiento que rige', () => {
-  const [caso] = casosDel(reprogramado({ emails: [de40(901, '2026-02-19 08:00:00'), de40(902, '2026-05-21 08:00:00')] }), '2026-06-01');
+  const [caso] = casosDel(reprogramado({ emails: [de40(901, '2026-04-21 08:00:00'), de40(902, '2026-07-22 08:00:00')] }), '2026-08-01');
   assert.deepEqual([caso.venc, caso.fecha_regla, caso.aviso_regla, caso.inicio_tramos, caso.primer_aviso, caso.reiteraciones_rpad, caso.aviso_que],
-    ['2026-06-30', '2026-05-21', '2026-05-21', '2026-05-21', '2026-02-19', 0, 'email de 40 días']);
-  assert.deepEqual(caso.avisos_rpad, ['2026-02-19', '2026-05-21']);
+    ['2026-08-31', '2026-07-22', '2026-07-22', '2026-07-22', '2026-04-21', 0, 'email de 40 días']);
+  assert.deepEqual(caso.avisos_rpad, ['2026-04-21', '2026-07-22']);
 });
-it('un aviso el mismo día de la fecha de la regla sí cuenta', () => { /* solo el 902: aviso_regla '2026-05-21' */ });
+it('un aviso el mismo día de la fecha de la regla sí cuenta', () => { /* solo el 902: aviso_regla '2026-07-22' */ });
 it('sin el aviso nuevo no hay aviso de la regla', () => {
-  // Solo el 901, al 01/04: aviso_regla null, inicio_tramos null, motivo_sin_aviso null (su regla todavía no llegó)
-  // Solo el 901, al 01/06: aviso_regla null, motivo_sin_aviso 'sin-aviso'
+  // Solo el 901, al 10/05: aviso_regla null, inicio_tramos null, motivo_sin_aviso null (su regla todavía no llegó)
+  // Solo el 901, al 01/08: aviso_regla null, motivo_sin_aviso 'sin-aviso'
 });
 it('una Nota Digital de aviso anterior a la fecha de la regla tampoco es el aviso', () => {
-  // nota({ id: 903, tipo: 'aviso', seccion: 'proximo', fecha: '2026-02-19', enviada: '2026-02-19 08:15:00', vencimiento: '2026-03-31' }): aviso_regla null
+  // nota({ id: 903, tipo: 'aviso', seccion: 'proximo', fecha: '2026-04-21', enviada: '2026-04-21 08:15:00', vencimiento: '2026-05-31' }): aviso_regla null
 });
 it('un email de la regla anterior que no se pudo enviar no da el motivo', () => {
-  // de40(904, '2026-02-19 08:00:00', { success: false }), al 01/06: motivo_sin_aviso 'sin-aviso', no 'email-fallido'
+  // de40(904, '2026-04-21 08:00:00', { success: false }), al 01/08: motivo_sin_aviso 'sin-aviso', no 'email-fallido'
 });
 it('una nota DGMIT anterior al aviso nuevo', () => {
-  // notaDgmit({ id: 5, recibida: '2026-03-10' }) con el 901: al 01/04, nota_dgmit cargada, inicio_tramos null;
-  // vistaDe al 01/04: tramite sin cifra de este ciclo y pendientes 0
-  // Con el 902, al 01/06: vistaDe da cifra.valor 0 y cifra.en_el_dia true en tramite
+  // notaDgmit({ id: 5, recibida: '2026-05-02' }) con el 901: al 10/05, nota_dgmit cargada, inicio_tramos null;
+  // vistaDe al 10/05: tramite sin cifra de este ciclo y pendientes 0
+  // Con el 902, al 01/08: vistaDe da cifra.valor 0 y cifra.en_el_dia true en tramite
 });
 ```
 
 - [ ] **Paso 2: comprobá que fallan**
 
 Run: `node --test tests/metricas-reglas.test.js`
-Expected: FAIL en estos tests; el primero, con `aviso_regla` en `'2026-02-19'`.
+Expected: FAIL en estos tests; el primero, con `aviso_regla` en `'2026-04-21'`.
 
 - [ ] **Paso 3: implementá la regla**
 
