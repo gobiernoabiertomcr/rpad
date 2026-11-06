@@ -112,7 +112,7 @@ Conserva su dibujo, y lo grande pasa a estar en corridos.
 - `textos.indice`, el número del circuito chico, es la mediana en corridos. Su rótulo dice «El circuito · mediana en días corridos».
 - Con los dos en 0, «En el día». Con corridos y 0 hábiles, el número en corridos y «En el día, en días hábiles».
 - Los extremos se siguen eligiendo por días hábiles, y con empate por corridos: el orden entre ellos no cambia, aunque lo grande sea el otro número.
-- La nota del en curso usa `textoEnCursoDeLosDos`, y `etapasDe` guarda también el en curso en corridos.
+- La nota del en curso usa `textoEnCursoDeLosDos`, y `etapasDe` mide también el en curso en corridos.
 - «Año anterior» es la mediana en días corridos: «Año anterior: mediana de 45 días corridos».
 - «Cómo se cuenta» empieza: «Días corridos: todos los días del calendario. Junto a ellos, los hábiles: de lunes a viernes, sin feriados ni días no laborables.».
 
@@ -139,7 +139,7 @@ DDPC
 ```
 
 - **El número** tiene la letra y el lugar de la cifra de los otros cajones, y sigue el selector en la página: «53» y «días hábiles de anticipación».
-- **«De anticipación»** lo manda el servidor: `anticipacion_texto` del tramo `aviso`, `${unidad} de anticipación` («1 día hábil de anticipación»). Con «En el día», sin cifra o en otro tramo, no está. Se guarda en la foto con el resto de la vista, y `VERSION_DE_LA_FOTO` sigue en 1 porque es una clave más.
+- **«De anticipación»** lo manda el servidor: `anticipacion_texto` del tramo `aviso`, `${unidad} de anticipación` («1 día hábil de anticipación»). Con «En el día», sin cifra o en otro tramo, es null. Se guarda en la foto con el resto de la vista, y `VERSION_DE_LA_FOTO` sigue en 1 porque es una clave más.
 - **La línea** es un dibujo fijo, no una escala: no mide los días. Empieza con un punto lleno y termina en un aro chico, en el color de la etapa.
 - **«Aviso» y «vencimiento»** van debajo de cada punta. En la página, el lector de pantalla las lee; la línea, no.
 - **«Del aviso al vencimiento» no va,** porque ahora lo dice el dibujo.
@@ -175,7 +175,7 @@ DDPC
 ## 10. Despliegue
 
 Sin SQL, sin Tarea Cron y sin variables nuevas, con Restart. Tiene que estar en producción antes del 10/01/2027, fuera del horario de los crons.
-`reportes.js` sube su `?v=` y `VERSION_REPORTES`; `VERSION_FERIADOS` sigue siendo mayor.
+`reportes.js` sube su `?v=` y `VERSION_REPORTES` a `20261211`. `VERSION_FERIADOS` tiene que seguir siendo mayor (`tests/paginas.test.js`), así que sube a `20261212`, con el `feriados.js?v=` de `configuracion.html`.
 El kit va contra `3a55679`, y su comprobación previa mira `reportes.js?v=20261210`, `seguimiento.js?v=20261133` y `notas.js?v=20261205`.
 Los documentos: `docs/temas/metricas-y-reportes.md` y `docs/temas/ciclo-de-vida.md`.
 
