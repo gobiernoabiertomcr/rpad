@@ -43,8 +43,10 @@ const hojasDelPdf = (pdf) => {
 // Tamaño de cada hoja en puntos, en el orden de las hojas: { ancho, alto } (A4: 595,28 × 841,89; oficio: 612 × 1008)
 export const tamanosPorHoja = (pdf) => hojasDelPdf(pdf).map(({ ancho, alto }) => ({ ancho, alto }));
 
-// Las dos hojas de los PDF, en puntos: A4 (los anexos y el Seguimiento) y oficio (Legal, 8½ × 14 pulgadas: la Nota Digital)
+// Las hojas de los PDF, en puntos: A4 (los anexos y el Seguimiento), A4 apaisado (Métricas y el Informe anual) y oficio (Legal, 8½ × 14
+// pulgadas: la Nota Digital)
 export const HOJA_A4 = { ancho: 595.28, alto: 841.89 };
+export const HOJA_A4_APAISADA = { ancho: 841.89, alto: 595.28 };
 export const HOJA_OFICIO = { ancho: 612, alto: 1008 };
 // Si una hoja (un tamaño de tamanosPorHoja) mide lo que la hoja dada, con 0,01 puntos de tolerancia en el ancho y en el alto
 export const esDelTamano = (tamano, hoja) => Math.abs(tamano.ancho - hoja.ancho) <= 0.01 && Math.abs(tamano.alto - hoja.alto) <= 0.01;

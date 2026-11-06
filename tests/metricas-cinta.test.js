@@ -4,7 +4,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { cintaDeMetricas, cintasDeLaVista, ALTURAS_DE_LA_CINTA as ALTURAS } from '../services/metricasCinta.js';
-import { OPCIONES_CINTA_PDF } from '../services/reportesMetricasPdf.js';
 import { SIN_NOTAS_DGMIT, unidadDe, casosDe, vistaDe } from '../services/metricasReglas.js';
 import { mapaDeLosCasos, HOY_DE_LAS_METRICAS } from './metricas-casos.js';
 
@@ -422,9 +421,9 @@ describe('cintaDeMetricas', () => {
   });
 });
 
-// La cinta del PDF (services/reportesMetricasPdf.js): el dibujo es el de la pantalla escalado al ancho útil de la hoja, y las letras
-// de la pantalla escaladas no se leerían. Como en el Seguimiento (OPCIONES_CINTA_PDF de seguimientoPdf.js), la cinta se calcula con la
-// letra del PDF, más ancha, y así la letra del PDF entra en lo que la cinta midió
+// La opción `letra` de cintaDeMetricas. El PDF de Métricas ya no dibuja la cinta (spec 2026-11-05-metricas-pdf-apaisado): la opción queda
+// sin uso en producción, y estos tests siguen comprobando que hace lo que dice, con la letra que usaba el PDF
+const OPCIONES_CINTA_PDF = Object.freeze({ letra: 8 });
 describe('cintaDeMetricas con la letra del PDF', () => {
   const { letra } = OPCIONES_CINTA_PDF;
   const delPdf = (tramos, opciones) => cintaDeMetricas(tramos, { ...opciones, ...OPCIONES_CINTA_PDF });

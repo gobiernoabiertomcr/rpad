@@ -8,6 +8,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-03-reiteracion-bimestral-design.md`
 - `docs/superpowers/specs/2026-11-05-metricas-frase-en-los-casos-design.md`
 - `docs/superpowers/specs/2026-11-05-circuito-diseno-design.md`
+- `docs/superpowers/specs/2026-11-05-metricas-pdf-apaisado-design.md`
 
 ## Archivos
 
@@ -95,8 +96,8 @@ reportesController: los reportes PDF, con sus consultas.
   «Entrega y carga juntas»), con el rótulo de lo que pasó («Entrega y carga, el mismo día» solo si la cifra es 0).
   Ningún texto se sale del dibujo ni se pisa (a la izquierda de su marca si no entra a la derecha; si no, otra fila o no va).
   Si a la cadena le falta un tramo sin cifra, se dibuja hasta donde se sabe y el resto va en gris con «La cinta se completa cuando haya …».
-  La pantalla la dibuja en SVG y el PDF con PDFKit, con los mismos números (el PDF, con su letra:
-  `OPCIONES_CINTA_PDF` de `reportesMetricasPdf.js`).
+  Solo la dibuja la página, en SVG: el PDF de Métricas y el Informe anual no la llevan, porque sus cifras ya están en el circuito (decisión del usuario del 05/11/2026).
+  La foto la sigue guardando y la API la sigue mandando; la opción `letra` de `cintaDeMetricas` queda sin uso en producción.
   Es orientativa, no un ciclo real, y lo dice.
 - Los textos los arma el servidor (Ruling 19): las cifras y sus textos, los plurales, los en curso y pendientes, las aclaraciones, lo que se dice sin casos o sin datos, los textos del índice, de la antigüedad, del trabajo y de «Para completar», y el botón del Informe anual sin foto (Ruling 34).
   La página y los PDF los imprimen tal cual.
@@ -116,11 +117,11 @@ reportesController: los reportes PDF, con sus consultas.
 - Los reportes (spec 5;
   `controllers/reportesController.js`, todos con `authMiddleware` sin `adminOnly`): ocho tarjetas en dos grupos (`htmlDeReportes`, `pedidoDeReporte`), cada una baja su PDF con `API.pedirArchivo` + `descargarBlob`.
   **Para presentar** (`rp-grilla g4`):
-  Métricas del año (`GET /api/metricas/pdf`, `services/reportesMetricasPdf.js`: el circuito con los resultados, las cintas y los destildados, el contexto y el trabajo, y las áreas y temas, cada parte desde una hoja nueva, «Unas 5 hojas», Ruling 24; la píldora dice lo elegido;
-  un año con foto sale de la foto), Ciclo de vida del dato (`GET /api/reportes/ciclo-de-vida?anio=`, `reportesCicloDeVidaPdf.js`: cuánto tarda cada etapa del circuito, con todos los ciclos, en dos hojas, la gestión externa y la interna; ver `docs/temas/ciclo-de-vida.md`), Informe anual (`GET /api/reportes/informe-anual?anio=`, `reportesInformeAnualPdf.js`: solo para un año con foto —sin ella, 404—, con mediana en días hábiles, la comparación con la foto del año anterior —`comparacionDe`;
+  Métricas del año (`GET /api/metricas/pdf`, `services/reportesMetricasPdf.js`: en A4 apaisado, el circuito; los resultados con «Cómo se cuenta» y los destildados; el contexto y el trabajo; y las áreas y temas, cada parte desde una hoja nueva, «Unas 5 hojas», Ruling 24; la píldora dice lo elegido;
+  un año con foto sale de la foto; ver «El PDF apaisado»), Ciclo de vida del dato (`GET /api/reportes/ciclo-de-vida?anio=`, `reportesCicloDeVidaPdf.js`: cuánto tarda cada etapa del circuito, con todos los ciclos, en dos hojas, la gestión externa y la interna; ver `docs/temas/ciclo-de-vida.md`), Informe anual (`GET /api/reportes/informe-anual?anio=`, `reportesInformeAnualPdf.js`: solo para un año con foto —sin ella, 404—, con mediana en días hábiles, las mismas hojas que Métricas del año, la comparación con la foto del año anterior —`comparacionDe`;
   El Informe anual: las cifras salen de la foto y los logros, de los hitos en vivo (un hito borrado o cargado después cambia el PDF de un año cerrado).
-  «Primer año con foto» si no hay— y los logros del año: los hitos de Herramientas → Proyectos con fecha en el año —los de los proyectos activos y los logros del área—, por proyecto, `logrosPorProyecto`, con «Los hitos de AAAA cargados en Proyectos» a la derecha;
-  sin las métricas manuales, que no están en la foto) y Estado general de los datasets (`GET /api/reportes/estado-general`, `reportesEstadoGeneralPdf.js`: la píldora del índice, las cinco tarjetas, la tasa con sus aclaraciones y la tabla de todos los datasets activos —Título, Área, Frecuencia, Datos al, Próx. Act. y Estado—).
+  sin foto del año anterior, la hoja se llama «Logros del año», con la píldora «Primer año con foto»— y los logros del año: los hitos de Herramientas → Proyectos con fecha en el año —los de los proyectos activos y los logros del área—, por proyecto, `logrosPorProyecto`, en dos columnas, con «Los hitos de AAAA cargados en Proyectos» a la derecha;
+  sin las métricas manuales, que no están en la foto; ver «El PDF apaisado») y Estado general de los datasets (`GET /api/reportes/estado-general`, `reportesEstadoGeneralPdf.js`: la píldora del índice, las cinco tarjetas, la tasa con sus aclaraciones y la tabla de todos los datasets activos —Título, Área, Frecuencia, Datos al, Próx. Act. y Estado—).
   **Para trabajar:** Por área (`GET /api/reportes/por-area/:areaId`, `reportesPorAreaPdf.js`: una portada con el área, sus contactos —los de `CAMPOS_CONTACTO`, Ruling 25—, las cinco tarjetas y sus datasets por grupo, y detrás una hoja del Seguimiento por cada dataset activo; sin hojas de los dados de baja;
   pie «Reporte por área · Hoja k de N»), Avisos del RPAD (`GET /api/reportes/avisos?desde=&hasta=`, por defecto del 1/1 a hoy, `reportesAvisosPdf.js`: los emails viejos a la DGMIT y al área y las Notas Digitales de aviso y de reiteración, con la fecha, qué fue —los títulos del Seguimiento:
   `tituloDeEmail`, `tituloDeNotaADgmit`—, la gestión, los datasets —«24 datasets: …», Ruling 29— y el estado —`ESTADO_DE_NOTA`, `RESULTADO_DE_EMAIL`—; el título, los totales y la píldora cuentan solo lo enviado, con la regla del Seguimiento, y lo que no salió va en la tabla con su estado y un renglón aparte, Ruling 28; sin direcciones de email, sin las notas de prueba, sin el texto técnico de los errores y sin las de auditoría y autorización;
@@ -137,13 +138,13 @@ reportesController: los reportes PDF, con sus consultas.
   `Metricas-RPAD-AAAA.pdf`, `Ciclo-de-vida-del-dato-AAAA.pdf`, `Informe-anual-RPAD-AAAA.pdf`, `estado-general-dd-mm-aaaa.pdf`, `Reporte-area-<id>-AAAA-MM-DD.pdf`, `Avisos-RPAD-AAAA-MM-DD.pdf`, `Agenda-de-pedidos-AAAA-MM-DD.pdf` y `Datos-para-completar-AAAA-MM-DD.pdf` (`Content-Disposition` con `disposicionDeAdjunto`).
 - La base de los PDF (`services/reportesPdfBase.js`, spec 5.1), el lenguaje de los anexos:
   A4 explícito (`nuevoReporte`:
-  `DocumentoNota` no tiene tamaño y sin él saldría LETTER), Helvetica, márgenes de 15 mm, `COLOR` y los ayudantes de `notasDigitalesAnexo.js`, y el encabezado, el pie y la cabeza de sección del Seguimiento, sin copiarlos.
+  `DocumentoNota` no tiene tamaño y sin él saldría LETTER), vertical de entrada u `hoja: HOJA_APAISADA`, una sola forma por documento (`hojaDe`, `limiteDe`, `anchoDelRecuadro`; `LIMITE` y `ANCHO_DEL_RECUADRO` son los de la vertical y `HOJA_*` salen de 210 × 297 mm, no de `doc.page`, que redondea y cambiaría los bytes de los demás PDF), Helvetica, márgenes de 15 mm, `COLOR` y los ayudantes de `notasDigitalesAnexo.js`, y el encabezado, el pie y la cabeza de sección del Seguimiento, sin copiarlos.
   Los elementos se miden antes de dibujarse (`prepararTitulo`, `prepararPildora` —con su `ancho`, y su `dibujar(y, x)` la pone en una x, de entrada el margen—, `prepararTarjetas`, `prepararSeccion`, `prepararParrafo`, `prepararRecuadro` —gris o con el borde azul a la izquierda— y `prepararTabla`, que corta de hoja, repite su encabezado y su `cabeza` y lleva su `aclaracion` con la última fila;
-  `lugarPara` y `dibujarJuntos`): nada pasa de `LIMITE` y un título nunca queda solo al final de una hoja (Ruling 22).
+  `lugarPara`, `dibujarJuntos` y `nuevoFlujo`, dos columnas que siguen en otra hoja, con su cabeza arriba de cada una): nada pasa de `limiteDe` y un título nunca queda solo al final de una hoja (Ruling 22).
   El pie, «Generado el dd/mm/aaaa a las hh:mm por <nombre corto>» y «<Reporte> · Hoja k de N», se dibuja al cerrar (`cerrarReporte`;
   `hojasDe` numera las hojas que suma otro dibujante, como las del Seguimiento).
   Los dibujantes son puros (sin pool) y leen lo del servidor con `esObjeto`, `objeto`, `lista`, `esNumero` y `texto`.
-  El circuito de Métricas y del Informe anual (`piezaDelCircuito`) dibuja la misma banda que la página, con las siglas; el color del Área, `COLOR_DEL_AREA`, no está en `NODOS` para no cambiar el Ciclo de vida.
+  `tests/pdf-diagramacion.js` controla los márgenes de cada hoja por su tamaño: un texto cortado por `renglon` lo mide entero, y por eso `prepararPildora` con `anchoMaximo` corta con `ajustar`.
 - `textoPorcentaje` y `htmlDelRanking` arman el ranking de áreas; los temas y las frecuencias van en barras, sin Chart.js (`tests/paginas.test.js`).
   `gestionController` arma la tasa y el ranking con `cumplimientoPorArea`.
   `gestion.html` redirige a Herramientas → Proyectos (ver `docs/temas/proyectos.md`): un link viejo a `gestion.html#metricas` llega por la redirección y avisa «Las métricas de Gestión ahora están en Herramientas → Métricas y Reportes.» (link a `reportes.html#metricas`).
@@ -152,6 +153,34 @@ reportesController: los reportes PDF, con sus consultas.
   `metricas-reglas.test.js` corre sobre `tests/metricas-casos.js` (los casos de `tests/seguimiento-casos.js` más lo importado) y casos sintéticos, y `reportes-pdf.test.js` lee los ocho PDF con `tests/pdf-lector.js` y `tests/pdf-diagramacion.js`.
   Los tests con los feriados de la tabla están en `tests/feriados-en-metricas.test.js` (ver `docs/temas/calendario-y-corridas.md`).
   Los números de la base real no van en tests versionados (Ruling 3: los datos reales no se versionan).
+
+## El PDF apaisado
+
+Métricas del año y el Informe anual, en A4 apaisado (spec 2026-11-05-metricas-pdf-apaisado).
+Son solo del PDF: la página no cambia.
+
+- **El circuito** (`dibujarElCircuito`): las dos gestiones juntas en la hoja 1.
+  Cada una con su solapa, su frase y su panel (`prepararGestion`): la externa llena y la interna hueca, en `COLOR.tinta`, para que se distingan en blanco y negro sin usar un color de actor.
+  Las frases son del dibujo (`FRASES_DE_LA_GESTION`), no de la pestaña.
+  El Portal mide lo justo para su texto y las demás columnas son iguales dentro de cada gestión.
+  Dibuja la misma banda que la página, con las siglas; el color del Área, `COLOR_DEL_AREA`, no está en `NODOS` para no cambiar el Ciclo de vida.
+- **La letra** (`LETRAS_DEL_CIRCUITO`): tres escalones, y va el más grande con el que las dos gestiones entran en la hoja.
+  Hay escalones porque, al cargar las notas DGMIT, «Respuesta del área» pasa a tener cifra y sigue con sus en curso, y la tarjeta crece tres renglones: sin ellos, la interna se iría de hoja, y el usuario las quiere juntas.
+  Si con la más chica tampoco entran, la interna pasa entera a la hoja siguiente.
+- **Los días corridos:** con «Días hábiles», debajo de cada cifra de la hoja 1, entre paréntesis (`textoDeCorridos`).
+  Salen de `datos.circuito_en_corridos`: en vivo, la misma regla (`vistaDe`) con los mismos casos, sin volver a leer la base; con foto, de la foto, que ya guarda las cuatro combinaciones (una foto sin esa combinación no tira, y sale sin los paréntesis).
+  Solo lo piden los PDF: `GET /api/metricas` no lo manda.
+- **Los resultados** (`dibujarLosResultados`): las aclaraciones de cada gestión (`aclaracionesDe`) van en «Cómo se cuenta», con su nombre.
+  No se sacan del PDF, aunque parezcan de más: son lo único que avisa que hay ciclos que no cuentan en una cifra, y sin eso un número se puede tomar por el total.
+  «Cómo se cuenta» no viaja con los resultados, porque juntos pueden no entrar en una hoja; si no entra, salta con el título repetido.
+- **El contexto** (`elementosDelContexto`): el índice a la izquierda; la antigüedad y la doble verificación a la derecha.
+  El Informe lleva su propio pie del índice (`TEXTOS_DEL_INFORME.pieDelIndice`), sin «el de hoy».
+- **Las áreas** (`dibujarLasAreas`): el ranking en dos columnas (`nuevoFlujo`), con los temas y las frecuencias en la columna libre o en otra hoja.
+- **Sin cintas:** ver «La cinta», arriba.
+
+Un hito del Informe lleva hasta 35 renglones de descripción, para que el nombre del proyecto y el hito más alto entren debajo del título de la hoja.
+`nuevoFlujo` no corta una pieza: los temas y las frecuencias son catálogos cortos (hoy, 12 temas, sin API que los cargue); una lista de más de unos 35 renglones se saldría de la hoja.
+La cantidad de hojas de la tarjeta de Reportes, «Unas 5 hojas», es la de los datos del 05/11/2026.
 
 ## La página: reportes.js
 

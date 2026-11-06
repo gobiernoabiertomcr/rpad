@@ -29,6 +29,13 @@ export const IZQUIERDA = MARGEN;
 export const DERECHA = ANCHO - MARGEN;
 export const ABAJO = ALTO - MARGEN;
 export const CONTENIDO = ANCHO - 2 * MARGEN;
+// Las dos formas de la hoja A4, con las medidas de arriba (no las de doc.page, que redondea: cambiaría los bytes de los demás PDF). Las usan
+// los reportes (services/reportesPdfBase.js), que eligen una al crear el documento; las constantes de arriba son las de la vertical
+const armarHoja = (ancho, alto) => Object.freeze({
+  ancho, alto, izquierda: MARGEN, derecha: ancho - MARGEN, abajo: alto - MARGEN, contenido: ancho - 2 * MARGEN
+});
+export const HOJA_VERTICAL = armarHoja(ANCHO, ALTO);
+export const HOJA_APAISADA = armarHoja(ALTO, ANCHO);
 export const NORMAL = 'Helvetica';
 export const NEGRITA = 'Helvetica-Bold';
 // Monocromático: gris oscuro para el texto, grises claros para fondos y líneas y un único acento azul suave.

@@ -1,47 +1,52 @@
 // El PDF «Métricas del año» (spec 2026-10-24-metricas-y-reportes, 5 y 2): lo mismo que la pestaña Métricas para el año elegido, con el
-// diseño de los anexos (5.1; maqueta 6-reportes-datos-reales.html). Son cuatro partes, cada una desde una hoja nueva:
-// 1. el circuito de cada gestión, en un recuadro con el borde azul, los resultados del año y «Cómo se cuenta»;
-// 2. las cintas del recorrido típico de las dos gestiones y, si hay, los casos destildados;
+// diseño de los anexos (5.1; maqueta 6-reportes-datos-reales.html), en A4 apaisado (spec 2026-11-05-metricas-pdf-apaisado). Son cuatro partes, cada una
+// desde una hoja nueva:
+// 1. el circuito de cada gestión, con su solapa y su panel;
+// 2. los resultados del año, «Cómo se cuenta» y, si hay, los casos destildados;
 // 3. el contexto (el índice mes a mes y la antigüedad de los vencidos) y el trabajo del RPAD;
 // 4. el ranking de áreas y los datasets por tema y por frecuencia.
 // La píldora dice la combinación de los selectores y lo destildado («Mediana en días hábiles · con todos los datasets»); el pie,
 // «Métricas del RPAD · AAAA · Hoja k de N». Dibuja con la base de los reportes (reportesPdfBase.js) lo que manda el servidor: los datos
 // de metricasDe (controllers/metricasController.js, los de GET /api/metricas) con los mismos textos que imprime la pestaña
-// (public/js/reportes.js). No recalcula ninguna regla: solo arma las cintas desde el circuito de la vista, con la letra del PDF
-// (OPCIONES_CINTA_PDF), también en un año con foto (la foto guarda las de la pantalla). Puro: sin pool (los tests lo llaman sin base).
-// El Informe anual (services/reportesInformeAnualPdf.js) repite las partes 1 y 3 con los mismos dibujantes (elementosDelCircuito,
-// elementosDelContexto, elementosDelTrabajo y dibujarParte).
+// (public/js/reportes.js). No recalcula ninguna regla. Las cintas del recorrido típico están solo en la pestaña: sus cifras ya están en
+// el circuito (spec 2026-11-05-metricas-pdf-apaisado). Puro: sin pool (los tests lo llaman sin base).
+// El Informe anual (services/reportesInformeAnualPdf.js) repite las cuatro partes con los mismos dibujantes (dibujarElCircuito,
+// dibujarLosResultados, elementosDelContexto, elementosDelTrabajo, dibujarLasAreas y dibujarParte).
 import {
-  COLOR, IZQUIERDA, CONTENIDO, NORMAL, NEGRITA, ASCENDENTE, DESCENDENTE, desdeBase, ajustar, escribir, renglon, filete
+  COLOR, IZQUIERDA, HOJA_APAISADA, NORMAL, NEGRITA, ASCENDENTE, DESCENDENTE, desdeBase, ajustar, escribir, renglon, filete
 } from './notasDigitalesAnexo.js';
 import { mesYAnio } from './notasDigitalesCalendario.js';
-import { COLORES, VIOLETA, dibujarRayado } from './seguimientoPdf.js';
-import { cintasDeLaVista } from './metricasCinta.js';
+import { COLORES, VIOLETA } from './seguimientoPdf.js';
 import { ESTADISTICOS, DIAS, GESTIONES, TOTALES_DEL_TRABAJO, sinLosDestildados } from './metricasReglas.js';
 import {
   nuevoReporte, agregarHoja, cerrarReporte, dibujarJuntos, prepararTitulo, prepararPildora, prepararTarjetas, prepararSeccion,
-  prepararParrafo, prepararRecuadro, prepararTabla, fechaCorta, ENTRE, ANCHO_DEL_RECUADRO, esObjeto, objeto, lista, esNumero, texto
+  prepararParrafo, prepararRecuadro, prepararTabla, nuevoFlujo, fechaCorta, ENTRE, anchoDelRecuadroEn, limiteDe, esObjeto, objeto, lista, esNumero, texto
 } from './reportesPdfBase.js';
 
-// La cinta del PDF se calcula con esta letra (la opción de cintaDeMetricas, services/metricasCinta.js): el dibujo de 1000 de ancho se
-// escala al ancho útil de la hoja (U puntos por unidad) y las letras de la pantalla (6,6 por letra) escaladas no se leerían; con 8 por
-// letra, la de LETRA.cinta entra en lo que la cinta midió. Como OPCIONES_CINTA_PDF del Seguimiento (services/seguimientoPdf.js)
-export const OPCIONES_CINTA_PDF = Object.freeze({ letra: 8 });
-const U = CONTENIDO / 1000;
+// La hoja de este PDF y del Informe anual (spec 2026-11-05-metricas-pdf-apaisado, 4): A4 apaisado. Lo que dibujan los otros reportes sigue en
+// la vertical
+const HOJA = HOJA_APAISADA;
+const CONTENIDO = HOJA.contenido;
+const ANCHO_DEL_RECUADRO = anchoDelRecuadroEn(HOJA);
 
 // Letras (en puntos)
 const LETRA = {
-  nodo: 8, nodoRol: 6.2, cifra: 13, cifraMin: 9, unidad: 6.6, vacio: 8, vacioMin: 6.6, debajo: 6.4, orientativo: 6.2, nombre: 7.8,
-  chico: 6.4, insignia: 6.2, aclaracion: 7, columna: 8, heroe: 16, heroeMin: 12, de: 7.5, texto: 7, mini: 7, barra: 7, pie: 7,
-  cinta: 7, eje: 6.8, leyenda: 7, indice: 6.5
+  aclaracion: 8.4, rotuloDeGestion: 6.6, columna: 10, heroe: 26, heroeMin: 14, de: 9, texto: 8.4, mini: 8.4, barra: 8.4, pie: 7.4, notaDeColumna: 7.6, indice: 7
 };
+// La letra del circuito, de mayor a menor (spec 2026-11-05-metricas-pdf-apaisado, 5): va la más grande con la que las dos gestiones entran en
+// la hoja, la misma en las dos. Hay escalones porque una tarjeta crece tres renglones cuando se cargan las notas DGMIT («Respuesta del área»
+// pasa a tener cifra y sigue con sus en curso): sin ellos, la interna se iría a otra hoja, y el usuario las quiere juntas
+const LETRAS_DEL_CIRCUITO = Object.freeze([
+  Object.freeze({ nodo: 11, nodoRol: 8.4, cifra: 21, cifraMin: 11, unidad: 9.2, vacio: 12, vacioMin: 8.6, debajo: 8.6, orientativo: 8.4, nombre: 11, chico: 8.6, insignia: 8 }),
+  Object.freeze({ nodo: 10.4, nodoRol: 8, cifra: 19, cifraMin: 10, unidad: 8.6, vacio: 10.8, vacioMin: 8, debajo: 8.3, orientativo: 8, nombre: 10.2, chico: 8.3, insignia: 7.6 }),
+  Object.freeze({ nodo: 9.8, nodoRol: 7.5, cifra: 17, cifraMin: 10, unidad: 8, vacio: 10, vacioMin: 7.6, debajo: 7.7, orientativo: 7.5, nombre: 9.4, chico: 7.7, insignia: 7 })
+]);
 
 const OJO = ASCENDENTE + DESCENDENTE;
 const VERDE = COLORES.verde;
 const AMBAR = COLORES.ambar;
 // La barra de la antigüedad de los vencidos, en ámbar (la de la pantalla: .mt-barras i.ambar)
 const BARRA_AMBAR = '#E2B23A';
-const COLOR_DE_LA_CINTA = Object.freeze({ tinta: COLOR.tinta, violeta: VIOLETA, verde: VERDE });
 
 // Los textos fijos de la pestaña (public/reportes.html y public/js/reportes.js): la página los escribe en su HTML y en reportes.js, y el
 // PDF los toma de acá (también las funciones de abajo que arman lo mismo que la pestaña: textoDelDesglose, textoDeLoQueFalta,
@@ -61,12 +66,6 @@ export const TEXTOS_DE_LA_PESTANA = Object.freeze({
   roles: Object.freeze({
     rpad: 'Datos Públicos avisa', da: 'Mandan la nota formal', dit: 'Hacen el relevamiento', area: 'Prepara los datos',
     ddpc: 'Limpia y estructura', portal: 'Datos publicados'
-  }),
-  // Qué es cada marca de la cinta, en su leyenda
-  leyenda: Object.freeze({
-    aviso: 'Aviso del RPAD', nota: 'Nota DGMIT recibida por el área',
-    datos: Object.freeze({ externa: 'Datos entregados', interna: 'Relevamiento entregado' }),
-    carga: 'Carga en el portal', 'datos-y-carga': 'Entrega y carga juntas', rayado: 'Después del vencimiento'
   }),
   titulos: Object.freeze({
     resultados: 'Resultados del año', aTiempo: 'Actualizados a tiempo', cobertura: 'Cobertura del aviso', reiteraciones: 'Reiteraciones por ciclo',
@@ -96,8 +95,8 @@ const T = TEXTOS_DE_LA_PESTANA;
 // enteros) y desde cuándo cuenta un tramo
 const SIGLAS = 'En los circuitos, DA es la Dirección Administrativa; DIT, la Dirección de Investigación Territorial, y DDPC, la Dirección de Datos Públicos y Comunicación.';
 const EN_EL_ANIO = 'Un tramo cuenta en el año en que terminó.';
-// Los títulos de las partes 1 y 3, que el Informe anual repite (services/reportesInformeAnualPdf.js)
-export const TITULO_DEL_CIRCUITO = 'El circuito, del aviso del RPAD a la carga en el portal';
+// Los títulos de las hojas; el del contexto lo usa también el Informe anual (services/reportesInformeAnualPdf.js)
+const TITULO_DEL_CIRCUITO = 'El circuito, del aviso del RPAD a la carga en el portal';
 export const TITULO_DEL_CONTEXTO = 'El contexto y el trabajo del RPAD';
 
 // Los nodos del circuito (spec 2.2), con la sigla de quien es (la maqueta de los PDF) y qué hace: lo de la DGMIT en violeta, el Portal en
@@ -111,15 +110,15 @@ export const NODOS = Object.freeze({
   ddpc: { nombre: 'DDPC', rol: T.roles.ddpc, color: COLOR.acento },
   portal: { nombre: 'Portal', rol: T.roles.portal, color: VERDE }
 });
-// El circuito de cada gestión: cada nodo con la clave de su tramo (la etapa que le toca, debajo de él) y la parte del ancho de cada
-// columna. El Portal va más angosto y sin etapa
+// El circuito de cada gestión: cada nodo con la clave de su tramo (la etapa que le toca, debajo de él). El Portal va sin etapa y mide lo justo
+// para su texto; las demás columnas son iguales dentro de cada gestión
 const CIRCUITO_DE_LA_GESTION = Object.freeze({
-  externa: { pasos: [['rpad', 'aviso'], ['da', 'tramite'], ['area', 'respuesta'], ['ddpc', 'carga'], ['portal', null]], pesos: [1, 1, 1, 1, 0.62] },
-  interna: { pasos: [['rpad', 'aviso'], ['dit', 'produccion'], ['ddpc', 'carga'], ['portal', null]], pesos: [1, 1, 1, 0.62] }
+  externa: { pasos: [['rpad', 'aviso'], ['da', 'tramite'], ['area', 'respuesta'], ['ddpc', 'carga'], ['portal', null]] },
+  interna: { pasos: [['rpad', 'aviso'], ['dit', 'produccion'], ['ddpc', 'carga'], ['portal', null]] }
 });
 // La banda: el aire, el alto mínimo, la punta de cada flecha, lo que queda entre dos, el radio de las puntas redondeadas y el aire debajo.
 // La etapa: el aire, el radio, lo que queda entre dos y lo que queda debajo del nombre y arriba de la insignia
-const BANDA = { relleno: 3, alto: 24, punta: 7, luz: 2, radio: 4, bajo: 3 };
+const BANDA = { relleno: 3, alto: 28, punta: 7, luz: 2, radio: 4, bajo: 3 };
 const ETAPA = { relleno: 4, radio: 4, separacion: 3, bajoNombre: 2, sobreInsignia: 3 };
 // El Área tiene color propio en el circuito. No está en NODOS: si no, cambiaría el Ciclo de vida del dato, que también los dibuja
 export const COLOR_DEL_AREA = '#1F6B73';
@@ -133,9 +132,23 @@ const TONOS_DE_LA_ETAPA = Object.freeze({
 // Una etapa sin cifra va en gris, con el borde punteado
 const FONDO_SIN_CIFRA = '#F8F9FB';
 
-// La cinta: la leyenda (las marcas, como se dibujan, y el rayado, en un orden fijo; qué es cada una, en T.leyenda)
-const LEYENDA_DE_LA_CINTA = ['aviso', 'nota', 'datos', 'carga', 'datos-y-carga', 'rayado'];
-const TIPOS_DE_MARCA = ['aviso', 'nota', 'datos', 'carga', 'datos-y-carga'];
+// Cada gestión lleva una solapa con su nombre y un panel con su circuito (spec 2026-11-05-metricas-pdf-apaisado, 5): la externa, llena; la
+// interna, hueca. Así se distinguen también impresas en blanco y negro. Van en COLOR.tinta, neutro: el azul, el violeta y los verdes dicen
+// quién actúa. Las frases son del dibujo y no de la pestaña, que no las tiene: por eso no están en TEXTOS_DE_LA_PESTANA
+const FRASES_DE_LA_GESTION = Object.freeze({
+  externa: 'La DGMIT y la DA mandan la nota formal; el área prepara los datos.',
+  interna: 'La DGMIT y la DIT hacen el relevamiento.'
+});
+const SOLAPA = { alto: 17, aire: 20, texto: 10, sobreTexto: 5.5, letra: 8.6, espaciado: 0.8, luz: 8, letraDeAlLado: 7.6, anchoDeLaDerecha: 160, radio: 4 };
+const PANEL = { arriba: 6, abajo: 7, radio: 5, borde: 1.2 };
+// El aire debajo de la externa, que separa las dos gestiones
+const AIRE_ENTRE_GESTIONES = 18;
+// El rótulo más largo («INFORME ANUAL · AÑO 2026, AL 31/12/2026») y su aire: la píldora de arriba a la derecha nunca lo toca
+const LUGAR_DEL_ROTULO = 242;
+// Lo que va a la derecha del título de la hoja 1, debajo de la píldora: de dónde sale un año cerrado
+const DE_DONDE_SALE = { ancho: 245, letra: 7.2, sobre: 19 };
+// La bajada a la derecha del título de los resultados
+const BAJADA = { ancho: 330, letra: 8.4, sobre: 22 };
 
 // Los resultados: tres columnas, con su separación; la lista de los que no tuvieron el aviso de la regla se corta en este alto (con
 // muchísimos, «y N más.»: así los resultados entran siempre en una hoja)
@@ -244,7 +257,7 @@ const comoElemento = (p) => ({
   }
 });
 
-// El contorno de un rectángulo redondeado, con líneas y curvas: las tarjetas del circuito, las insignias y los tramos de la cinta van
+// El contorno de un rectángulo redondeado, con líneas y curvas: las tarjetas del circuito y las insignias van
 // adentro de otro dibujo, y un roundedRect sería, para el test de diagramación, un bloque encimado con su recuadro (la marca del
 // Seguimiento tampoco lo usa). Devuelve el documento, para pintarlo. También lo usa el Ciclo de vida del dato
 // (services/reportesCicloDeVidaPdf.js)
@@ -286,10 +299,9 @@ const piezaDeCifra = (doc, { numero, lado }, { ancho, tamano, min, tamanoLado, c
 };
 
 // La insignia de quién está a cargo de un tramo (nunca solo el color): el texto en negrita en una píldora del color de la etapa
-const piezaDeInsignia = (doc, valor, { ancho, color, fondo }) => {
+const piezaDeInsignia = (doc, valor, { ancho, color, fondo, tamano }) => {
   const t = texto(valor);
   if (!t) return null;
-  const tamano = LETRA.insignia;
   const alto = 10;
   const anchoTexto = Math.min(ancho - 8, doc.font(NEGRITA).fontSize(tamano).widthOfString(t) + 1);
   return {
@@ -363,7 +375,7 @@ const contornoDeBanda = (doc, x, y, ancho, alto, { primera, ultima }) => {
 
 // Una banda: la sigla de quién actúa y qué hace, en blanco sobre su color. `anchoColumna`: la flecha sale de ahí hasta la muesca de la
 // siguiente
-const bandaDe = (doc, clave, anchoColumna, { primera, ultima }) => {
+const bandaDe = (doc, clave, anchoColumna, { primera, ultima }, letra) => {
   const nodo = NODOS[clave];
   const izquierda = primera ? BANDA.relleno : BANDA.punta + BANDA.relleno;
   const derecha = ultima ? BANDA.relleno : BANDA.relleno + BANDA.luz;
@@ -373,25 +385,33 @@ const bandaDe = (doc, clave, anchoColumna, { primera, ultima }) => {
     izquierda,
     ancho: ultima ? anchoColumna : anchoColumna + BANDA.punta - BANDA.luz,
     contenido: apilar([
-      pieza(doc, nodo.nombre, { ancho: anchoTexto, tamano: LETRA.nodo, min: LETRA.nodo - 1.5, fuente: NEGRITA, color: COLOR.blanco, lineas: 2 }),
-      pieza(doc, nodo.rol, { ancho: anchoTexto, tamano: LETRA.nodoRol, min: LETRA.nodoRol - 0.5, color: COLOR.blanco, lineas: 2 })
+      pieza(doc, nodo.nombre, { ancho: anchoTexto, tamano: letra.nodo, min: letra.nodo - 1.5, fuente: NEGRITA, color: COLOR.blanco, lineas: 2 }),
+      pieza(doc, nodo.rol, { ancho: anchoTexto, tamano: letra.nodoRol, min: letra.nodoRol - 0.5, color: COLOR.blanco, lineas: 2 })
     ], 1)
   };
 };
 
+// «(83 días corridos)»: la cifra del mismo tramo en días corridos, con el texto y la unidad del servidor (spec 2026-11-05-metricas-pdf-apaisado, 5). Nada si
+// no se eligieron días hábiles, si falta alguna de las dos o si las dos son «En el día». `cifra` y `corrida`: las cifras de vistaDe; `dias`: lo elegido
+export const textoDeCorridos = (cifra, corrida, dias) => {
+  if (dias !== 'habiles' || !esObjeto(cifra) || !esObjeto(corrida)) return '';
+  if (corrida.en_el_dia === true) return cifra.en_el_dia === true ? '' : `(${texto(corrida.texto)})`;
+  return `(${texto(corrida.texto)} ${texto(corrida.unidad)})`;
+};
+
 // La etapa de un tramo (un Tramo de vistaDe), con lo que manda el servidor, como htmlDeFlecha de la pestaña: el nombre arriba; la cifra con
-// su unidad al lado y el estadístico con los ciclos debajo («27» + «días hábiles», «mediana de 32 ciclos»; con 0, «En el día» y «mediana en
+// su unidad al lado, con «Días hábiles» los días corridos entre paréntesis y el estadístico con los ciclos debajo («27» + «días hábiles», «mediana de 32 ciclos»; con 0, «En el día» y «mediana en
 // días hábiles», con los ciclos más abajo), «con tan pocos casos, es orientativo» o, sin cifra, por qué (`vacio.titulo`); «desde → hasta»,
 // los pendientes de carga de la DGMIT, los en curso (con «Se cuenta hasta que se registra la actualización.») y, al pie, la insignia de
 // quién está a cargo. Lo de la DGMIT en violeta y lo del área en su color; sin cifra, el borde punteado
-const etapaDe = (doc, clave, tramo, ancho) => {
+const etapaDe = (doc, clave, tramo, ancho, letra, { dias, corrido }) => {
   const t = objeto(tramo);
   const cifra = esObjeto(t.cifra) ? t.cifra : null;
   const vacio = cifra === null && esObjeto(t.vacio) ? t.vacio : null;
   const dgmit = t.dgmit === true;
   const tono = dgmit ? TONOS_DE_LA_ETAPA.dgmit : clave === 'respuesta' ? TONOS_DE_LA_ETAPA.area : TONOS_DE_LA_ETAPA.comun;
   const anchoTexto = ancho - 2 * ETAPA.relleno;
-  const chico = (valor, { color = COLOR.gris, fuente = NORMAL, lineas = 3, tamano = LETRA.chico } = {}) =>
+  const chico = (valor, { color = COLOR.gris, fuente = NORMAL, lineas = 3, tamano = letra.chico } = {}) =>
     pieza(doc, valor, { ancho: anchoTexto, tamano, fuente, color, lineas });
   const deLaDgmit = t.clave === 'tramite';
   let pendientes = null;
@@ -405,37 +425,43 @@ const etapaDe = (doc, clave, tramo, ancho) => {
   return {
     tono,
     punteada: cifra === null,
-    nombre: pieza(doc, t.nombre, { ancho: anchoTexto, tamano: LETRA.nombre, fuente: NEGRITA, color: tono.tinta, lineas: 2 }),
+    nombre: pieza(doc, t.nombre, { ancho: anchoTexto, tamano: letra.nombre, fuente: NEGRITA, color: tono.tinta, lineas: 2 }),
     cuerpo: apilar([
       cifra
         ? piezaDeCifra(doc, { numero: cifra.texto, lado: cifra.unidad }, {
-          ancho: anchoTexto, tamano: LETRA.cifra, min: LETRA.cifraMin, tamanoLado: LETRA.unidad, color: tono.tinta
+          ancho: anchoTexto, tamano: letra.cifra, min: letra.cifraMin, tamanoLado: letra.unidad, color: tono.tinta
         })
-        : pieza(doc, vacio?.titulo, { ancho: anchoTexto, tamano: LETRA.vacio, min: LETRA.vacioMin, fuente: NEGRITA, color: COLOR.gris, lineas: 3 }),
-      cifra ? chico(cifra.debajo, { fuente: NEGRITA, color: dgmit ? VIOLETA : COLOR.gris, tamano: LETRA.debajo, lineas: 2 }) : null,
-      cifra?.orientativo === true ? chico(T.orientativo, { fuente: NEGRITA, color: AMBAR, tamano: LETRA.orientativo }) : null,
+        : pieza(doc, vacio?.titulo, { ancho: anchoTexto, tamano: letra.vacio, min: letra.vacioMin, fuente: NEGRITA, color: COLOR.gris, lineas: 3 }),
+      chico(textoDeCorridos(cifra, objeto(corrido).cifra, dias), { fuente: NEGRITA, color: tono.tinta, tamano: letra.debajo, lineas: 1 }),
+      cifra ? chico(cifra.debajo, { fuente: NEGRITA, color: dgmit ? VIOLETA : COLOR.gris, tamano: letra.debajo, lineas: 2 }) : null,
+      cifra?.orientativo === true ? chico(T.orientativo, { fuente: NEGRITA, color: AMBAR, tamano: letra.orientativo }) : null,
       chico(t.desde_hasta, { lineas: 2 }),
       cifra?.en_el_dia === true ? chico(cifra.ciclos_texto, { color: COLOR.tinta, fuente: NEGRITA, lineas: 1 }) : null,
       pendientes,
       ...enCurso
     ], 1),
-    insignia: piezaDeInsignia(doc, t.responsable, { ancho: anchoTexto, color: tono.letraInsignia, fondo: tono.fondoInsignia })
+    insignia: piezaDeInsignia(doc, t.responsable, { ancho: anchoTexto, color: tono.letraInsignia, fondo: tono.fondoInsignia, tamano: letra.insignia })
   };
 };
 
 // El circuito de una gestión (spec 2026-11-05-circuito-diseno, 7), del ancho de adentro de un recuadro: arriba, la banda de flechas con
 // quién actúa; debajo de cada una, la etapa que le toca. Los nombres de las etapas y sus cifras quedan a la misma altura y las tarjetas
 // tienen el mismo alto. `tramos`: los de vistaDe para la gestión
-const piezaDelCircuito = (doc, tramos, gestion) => {
-  const { pasos, pesos } = CIRCUITO_DE_LA_GESTION[gestion];
-  const unidad = ANCHO_DEL_RECUADRO / pesos.reduce((total, p) => total + p, 0);
+const piezaDelCircuito = (doc, tramos, gestion, letra, { dias, enCorridos }) => {
+  const { pasos } = CIRCUITO_DE_LA_GESTION[gestion];
+  const anchoDelPortal = Math.max(
+    doc.font(NEGRITA).fontSize(letra.nodo).widthOfString(NODOS.portal.nombre),
+    doc.font(NORMAL).fontSize(letra.nodoRol).widthOfString(NODOS.portal.rol)
+  ) + BANDA.punta + 2 * BANDA.relleno + 1.5;
+  const unidad = (ANCHO_DEL_RECUADRO - anchoDelPortal) / pasos.filter(([, clave]) => clave !== null).length;
   const tramoDe = (clave) => lista(tramos).find((t) => esObjeto(t) && t.clave === clave) ?? null;
+  const corridoDe = (clave) => lista(enCorridos).find((t) => esObjeto(t) && t.clave === clave) ?? null;
   const columnas = [];
   let x = 0;
   pasos.forEach(([nodo, clave], i) => {
-    const ancho = pesos[i] * unidad;
+    const ancho = clave === null ? anchoDelPortal : unidad;
     const lugar = { primera: i === 0, ultima: clave === null };
-    columnas.push({ x, ancho, lugar, banda: bandaDe(doc, nodo, ancho, lugar), etapa: clave === null ? null : etapaDe(doc, clave, tramoDe(clave), ancho - ETAPA.separacion) });
+    columnas.push({ x, ancho, lugar, banda: bandaDe(doc, nodo, ancho, lugar, letra), etapa: clave === null ? null : etapaDe(doc, clave, tramoDe(clave), ancho - ETAPA.separacion, letra, { dias, corrido: corridoDe(clave) }) });
     x += ancho;
   });
   const etapas = columnas.filter((c) => c.etapa).map((c) => c.etapa);
@@ -474,15 +500,65 @@ const piezaDelCircuito = (doc, tramos, gestion) => {
   };
 };
 
-// Lo de adentro del recuadro de una gestión: el circuito y, debajo, sus aclaraciones (las del servidor: los avisados ya vencidos y, en
-// la externa, los resueltos con una fuente pública y los de datasets que no requieren nota DGMIT; las vacías no van)
-const piezaDeLaGestion = (doc, circuito, gestion) => {
-  const aclaraciones = objeto(objeto(circuito.aclaraciones)[gestion]);
-  const textos = [aclaraciones.ya_vencidos, aclaraciones.fuente_publica, aclaraciones.no_requieren_nota].map((a) => texto(objeto(a).texto));
-  return apilar([
-    piezaDelCircuito(doc, circuito[gestion], gestion),
-    ...textos.map((t) => pieza(doc, t, { ancho: ANCHO_DEL_RECUADRO, tamano: LETRA.aclaracion, color: COLOR.gris, lineas: 4 }))
-  ], 5);
+// Las aclaraciones de una gestión, las del servidor (los avisados ya vencidos y, en la externa, los resueltos con una fuente pública y los de
+// datasets que no requieren nota DGMIT; las vacías no van). Van en «Cómo se cuenta», en la hoja de los resultados, y no debajo del circuito:
+// así la hoja 1 lleva la letra más grande. No se sacan del PDF: son lo único que avisa que hay ciclos que no cuentan en una cifra
+const aclaracionesDe = (circuito, gestion) => {
+  const a = objeto(objeto(circuito.aclaraciones)[gestion]);
+  return [a.ya_vencidos, a.fuente_publica, a.no_requieren_nota].map((x) => texto(objeto(x).texto)).filter(Boolean);
+};
+
+// El recuadro de una gestión (spec 2026-11-05-metricas-pdf-apaisado, 5): la solapa, con su nombre, su frase a la derecha y la combinación sobre el
+// margen, y debajo el panel con el circuito. `contenido`: la pieza del circuito, del ancho ANCHO_DEL_RECUADRO. El panel es un roundedRect, para que
+// el test de diagramación controle que nada cruza su borde; la solapa, un contorno. El aire debajo de la externa no cuenta en `alto`: no hace falta
+// que entre en la hoja, si no sigue nada
+const prepararGestion = (doc, { gestion, combinacion, contenido }) => {
+  const llena = gestion === 'externa';
+  const nombre = `Gestión ${gestion}`.toUpperCase();
+  const altoDelPanel = PANEL.arriba + contenido.alto + PANEL.abajo;
+  const alto = SOLAPA.alto + altoDelPanel;
+  const medio = PANEL.borde / 2;
+  return {
+    alto,
+    dibujar: (y) => {
+      const anchoDeLaSolapa = doc.font(NEGRITA).fontSize(SOLAPA.letra).widthOfString(nombre, { characterSpacing: SOLAPA.espaciado }) + SOLAPA.aire;
+      const yPanel = y + SOLAPA.alto;
+      const yTexto = y + SOLAPA.sobreTexto;
+      // La solapa nace del panel: la esquina del panel debajo de ella es recta (se tapa la curva) y su borde de abajo no se ve
+      const x = llena ? IZQUIERDA : IZQUIERDA + medio;
+      const d = x + anchoDeLaSolapa;
+      const r = SOLAPA.radio;
+      const c = r * (1 - KAPPA);
+      const arriba = llena ? y : y + medio;
+      const contornoDeLaSolapa = (yAbajo) => doc.moveTo(x, yAbajo).lineTo(x, arriba + r).bezierCurveTo(x, arriba + c, x + c, arriba, x + r, arriba)
+        .lineTo(d - r, arriba).bezierCurveTo(d - c, arriba, d, arriba + c, d, arriba + r).lineTo(d, yPanel);
+      const tapaLaEsquina = [[x, yPanel], [x + PANEL.radio, yPanel], [x + PANEL.radio, yPanel + PANEL.radio], [x, yPanel + PANEL.radio]];
+      doc.save();
+      if (llena) {
+        doc.roundedRect(IZQUIERDA, yPanel, CONTENIDO, altoDelPanel, PANEL.radio).fill(COLOR.acentoSuave);
+        doc.polygon(...tapaLaEsquina).fill(COLOR.acentoSuave);
+        contornoDeLaSolapa(yPanel).closePath().fill(COLOR.tinta);
+      } else {
+        doc.lineWidth(PANEL.borde);
+        doc.roundedRect(x, yPanel, CONTENIDO - PANEL.borde, altoDelPanel, PANEL.radio).fillAndStroke(COLOR.blanco, COLOR.tinta);
+        doc.polygon(...tapaLaEsquina.map(([px, py], i) => [i === 0 || i === 3 ? px - medio : px, i < 2 ? py - PANEL.borde : py])).fill(COLOR.blanco);
+        doc.polygon([x, yPanel - PANEL.borde], [d - medio, yPanel - PANEL.borde], [d - medio, yPanel + PANEL.borde], [x, yPanel + PANEL.borde]).fill(COLOR.blanco);
+        contornoDeLaSolapa(yPanel + PANEL.radio).stroke(COLOR.tinta);
+      }
+      doc.restore();
+      renglon(doc, nombre, IZQUIERDA + SOLAPA.texto, yTexto, {
+        ancho: anchoDeLaSolapa, tamano: SOLAPA.letra, fuente: NEGRITA, color: llena ? COLOR.blanco : COLOR.tinta, espaciado: SOLAPA.espaciado
+      });
+      const xFrase = IZQUIERDA + anchoDeLaSolapa + SOLAPA.luz;
+      const anchoDeLaFrase = CONTENIDO - anchoDeLaSolapa - SOLAPA.luz - SOLAPA.anchoDeLaDerecha;
+      renglon(doc, FRASES_DE_LA_GESTION[gestion], xFrase, yTexto, { ancho: anchoDeLaFrase, tamano: SOLAPA.letraDeAlLado, color: COLOR.gris });
+      renglon(doc, combinacion, IZQUIERDA + CONTENIDO - SOLAPA.anchoDeLaDerecha, yTexto, {
+        ancho: SOLAPA.anchoDeLaDerecha, tamano: SOLAPA.letraDeAlLado, color: COLOR.gris, align: 'right'
+      });
+      contenido.dibujar(yPanel + PANEL.arriba, IZQUIERDA + (CONTENIDO - ANCHO_DEL_RECUADRO) / 2);
+      return y + alto + (llena ? AIRE_ENTRE_GESTIONES : ENTRE);
+    }
+  };
 };
 
 // =====================================================
@@ -516,7 +592,7 @@ const columnaDeCobertura = (doc, c, t) => {
   const items = [];
   let alto = 0;
   for (const [i, f] of faltan.entries()) {
-    const item = textoDeColumna(doc, textoDeLoQueFalta(f), { lineas: 2 });
+    const item = textoDeColumna(doc, textoDeLoQueFalta(f), { lineas: 3 });
     if (alto + item.alto > ALTO_MAXIMO_DE_LA_LISTA && i < faltan.length - 1) {
       items.push(textoDeColumna(doc, `y ${faltan.length - i} más.`, { color: COLOR.gris }));
       break;
@@ -541,8 +617,8 @@ const columnaDeReiteraciones = (doc, r, t) => {
   const deLaDgmit = texto(t.dgmit_vacio) || dgmit === null ? textoDeColumna(doc, t.dgmit_vacio, { color: COLOR.gris }) : barras(T.gruposDeLaDgmit, dgmit);
   return apilar([
     tituloDeColumna(doc, T.titulos.reiteraciones),
-    mini(t.rpad, COLOR.tinta), delRpad, textoDeColumna(doc, t.aclaracion, { color: COLOR.gris, tamano: LETRA.chico }),
-    mini(t.dgmit, VIOLETA), deLaDgmit, textoDeColumna(doc, T.pieDeLasReiteraciones, { color: COLOR.gris, tamano: LETRA.chico })
+    mini(t.rpad, COLOR.tinta), delRpad, textoDeColumna(doc, t.aclaracion, { color: COLOR.gris, tamano: LETRA.notaDeColumna }),
+    mini(t.dgmit, VIOLETA), deLaDgmit, textoDeColumna(doc, T.pieDeLasReiteraciones, { color: COLOR.gris, tamano: LETRA.notaDeColumna })
   ], 4);
 };
 
@@ -563,143 +639,6 @@ const piezaDeResultados = (doc, resultados) => {
       columna.dibujar(y + sobre, xColumna);
     })
   };
-};
-
-// =====================================================
-// La cinta del recorrido típico (cintaDeMetricas, en el espacio de 1000 de ancho, escalada al ancho útil)
-// =====================================================
-
-// Un texto de la cinta en el lugar que le dio la cinta: (x, y) en sus unidades, con su anclaje, en la caja que midió con la letra del PDF
-// (largo × OPCIONES_CINTA_PDF.letra); si la letra no entra en esa caja, se achica hasta que entre. Helvetica no tiene el signo menos de
-// los números del eje: va una raya
-const textoDeLaCinta = (doc, valor, x, y, anclaje, yCinta, { fuente = NEGRITA, tamano = LETRA.cinta, color = COLOR.tinta } = {}) => {
-  const t = texto(valor).replace(/−/g, '–');
-  if (!t) return;
-  const caja = t.length * OPCIONES_CINTA_PDF.letra;
-  const x0 = anclaje === 'start' ? x : anclaje === 'end' ? x - caja : x - caja / 2;
-  const ancho = doc.font(fuente).fontSize(tamano).widthOfString(t);
-  const letra = ancho > caja * U ? (tamano * caja * U) / ancho : tamano;
-  const align = anclaje === 'start' ? 'left' : anclaje === 'end' ? 'right' : 'center';
-  renglon(doc, t, IZQUIERDA + x0 * U, desdeBase(yCinta + y * U, letra), { ancho: caja * U + 0.5, tamano: letra, fuente, color, align });
-};
-
-// Una marca de la cinta centrada en (cx, cy), en puntos, como en la pantalla y en la maqueta 7 (`s`: puntos por unidad): el rombo del
-// aviso, el cuadrado violeta de la nota DGMIT, el aro de los datos, el punto verde de la carga y, si la entrega y la carga van juntas, el
-// punto verde con el aro tinta
-const dibujarMarca = (doc, tipo, cx, cy, s) => {
-  doc.save();
-  switch (tipo) {
-    case 'aviso': {
-      const d = 7 * Math.SQRT2 * s;
-      doc.polygon([cx, cy - d], [cx + d, cy], [cx, cy + d], [cx - d, cy]).fill(COLOR.tinta);
-      break;
-    }
-    case 'nota': contorno(doc, cx - 6 * s, cy - 6 * s, 12 * s, 12 * s, 3 * s).lineWidth(1.5 * s).fillAndStroke(VIOLETA, COLOR.blanco); break;
-    case 'datos': doc.circle(cx, cy, 6.5 * s).lineWidth(2.5 * s).fillAndStroke(COLOR.blanco, COLOR.tinta); break;
-    case 'carga': doc.circle(cx, cy, 7 * s).lineWidth(2 * s).fillAndStroke(VERDE, COLOR.blanco); break;
-    default: doc.circle(cx, cy, 8.5 * s).lineWidth(2.5 * s).fillAndStroke(VERDE, COLOR.tinta); break;
-  }
-  doc.restore();
-};
-
-const conX = (valor) => esObjeto(valor) && esNumero(valor.x0) && esNumero(valor.x1);
-
-// La cinta con su tope en y (en puntos), con los datos de cintaDeMetricas tal como llegan: la línea del eje y sus números, la banda
-// celeste, el rayado, el gris donde se corta la cadena (con su texto), el vencimiento, los tramos, las marcas, los rótulos y el del eje.
-// Sin texto dentro de la banda (spec 2.2). Lo que no se puede leer no se dibuja
-const dibujarLaCinta = (doc, cinta, y) => {
-  const A = objeto(cinta.alturas);
-  const banda = objeto(A.banda);
-  const segmentos = objeto(A.segmentos);
-  const vencimiento = objeto(A.vencimiento);
-  const X = (x) => IZQUIERDA + x * U;
-  const Y = (v) => y + v * U;
-  if (conX(cinta.linea) && esNumero(A.linea)) {
-    doc.save();
-    doc.lineWidth(Math.max(0.5, U)).moveTo(X(cinta.linea.x0), Y(A.linea)).lineTo(X(cinta.linea.x1), Y(A.linea)).stroke(COLOR.linea);
-    doc.restore();
-  }
-  for (const tick of lista(cinta.ticks).filter((t) => esObjeto(t) && esNumero(t.x))) {
-    textoDeLaCinta(doc, tick.texto, tick.x, A.ticks, 'middle', y, { fuente: NORMAL, color: COLOR.gris });
-  }
-  if (conX(cinta.banda)) doc.rect(X(cinta.banda.x0), Y(banda.y), (cinta.banda.x1 - cinta.banda.x0) * U, banda.alto * U).fill(COLOR.acentoSuave);
-  if (conX(cinta.rayado)) {
-    dibujarRayado(doc, X(cinta.rayado.x0), Y(banda.y), (cinta.rayado.x1 - cinta.rayado.x0) * U, banda.alto * U, 7 * U * Math.SQRT2, 3 * U);
-  }
-  if (conX(cinta.gris)) {
-    doc.save();
-    doc.rect(X(cinta.gris.x0), Y(banda.y), (cinta.gris.x1 - cinta.gris.x0) * U, banda.alto * U).lineWidth(U).fillAndStroke(COLOR.fondo, COLOR.linea);
-    doc.restore();
-    textoDeLaCinta(doc, cinta.gris.texto, (cinta.gris.x0 + cinta.gris.x1) / 2, A.textoDelGris, 'middle', y, { color: COLOR.gris });
-  }
-  if (esObjeto(cinta.vencimiento) && esNumero(cinta.vencimiento.x)) {
-    const x = X(cinta.vencimiento.x);
-    doc.save();
-    doc.lineWidth(1.5 * U).dash(3 * U, { space: 3 * U }).moveTo(x, Y(vencimiento.desde)).lineTo(x, Y(vencimiento.hasta)).stroke(COLOR.tinta);
-    doc.restore();
-    textoDeLaCinta(doc, 'vencimiento', cinta.vencimiento.x, vencimiento.texto, 'middle', y);
-  }
-  for (const s of lista(cinta.segmentos).filter(conX)) {
-    doc.save();
-    contorno(doc, X(s.x0), Y(segmentos.y), (s.x1 - s.x0) * U, segmentos.alto * U, 4 * U).fill(COLOR_DE_LA_CINTA[s.color] ?? COLOR.tinta);
-    doc.restore();
-  }
-  for (const m of lista(cinta.marcas).filter((marca) => esObjeto(marca) && esNumero(marca.x) && TIPOS_DE_MARCA.includes(marca.tipo))) {
-    dibujarMarca(doc, m.tipo, X(m.x), Y(A.marcas), U);
-  }
-  for (const r of lista(cinta.rotulos).filter((rotulo) => esObjeto(rotulo) && esNumero(rotulo.x) && esNumero(rotulo.y))) {
-    textoDeLaCinta(doc, r.texto, r.x, r.y, r.anclaje, y, { color: COLOR_DE_LA_CINTA[r.color] ?? COLOR.tinta });
-  }
-  if (esObjeto(cinta.eje) && esNumero(cinta.eje.x) && esNumero(cinta.eje.y)) {
-    textoDeLaCinta(doc, cinta.eje.texto, cinta.eje.x, cinta.eje.y, cinta.eje.anclaje, y, { fuente: NORMAL, tamano: LETRA.eje, color: COLOR.gris });
-  }
-};
-
-// La leyenda de la cinta: solo lo que se dibuja (las marcas, como se dibujan, y el rayado), en un orden fijo, en los renglones que
-// hagan falta
-const piezaDeLeyenda = (doc, cinta, gestion) => {
-  const hay = new Set(lista(cinta.marcas).filter(esObjeto).map((marca) => marca.tipo));
-  if (conX(cinta.rayado)) hay.add('rayado');
-  const items = LEYENDA_DE_LA_CINTA.filter((tipo) => hay.has(tipo)).map((tipo) => {
-    const nombre = T.leyenda[tipo];
-    const t = esObjeto(nombre) ? nombre[gestion] : nombre;
-    return { tipo, texto: t, ancho: (tipo === 'rayado' ? 16 : 10) + 4 + doc.font(NORMAL).fontSize(LETRA.leyenda).widthOfString(t) + 1 };
-  });
-  const renglonDeLeyenda = 11;
-  const lugares = [];
-  let x = 0;
-  let fila = 0;
-  for (const item of items) {
-    if (x > 0 && x + item.ancho > CONTENIDO) {
-      fila += 1;
-      x = 0;
-    }
-    lugares.push({ ...item, x, fila });
-    x += item.ancho + 12;
-  }
-  return {
-    alto: lugares.length === 0 ? 0 : (fila + 1) * renglonDeLeyenda,
-    dibujar: (y, x0) => {
-      for (const l of lugares) {
-        const top = y + l.fila * renglonDeLeyenda;
-        const centro = top + (ASCENDENTE * LETRA.leyenda) / 2;
-        const anchoIcono = l.tipo === 'rayado' ? 16 : 10;
-        if (l.tipo === 'rayado') dibujarRayado(doc, x0 + l.x, centro - 3.5, 16, 7, 3.5, 1.4);
-        else dibujarMarca(doc, l.tipo, x0 + l.x + 5, centro, 0.55);
-        renglon(doc, l.texto, x0 + l.x + anchoIcono + 4, top, { ancho: l.ancho - anchoIcono - 4, tamano: LETRA.leyenda, color: COLOR.gris });
-      }
-    }
-  };
-};
-
-// La cinta de una gestión como elemento de la base: la cinta, la leyenda y la aclaración del servidor
-const elementoDeLaCinta = (doc, cinta, gestion) => {
-  const leyenda = piezaDeLeyenda(doc, cinta, gestion);
-  const aclaracion = prepararParrafo(doc, cinta.aclaracion, { tamano: LETRA.pie });
-  const altoCinta = (esNumero(cinta.alto) ? cinta.alto : 0) * U;
-  const piezas = [{ alto: altoCinta, dibujar: (y) => dibujarLaCinta(doc, cinta, y) }, leyenda.alto > 0 ? leyenda : null,
-    texto(cinta.aclaracion) ? aclaracion : null];
-  return comoElemento(apilar(piezas, 6));
 };
 
 // =====================================================
@@ -758,7 +697,7 @@ const elementosDeLosDestildados = (doc, vista) => {
 // servidor (el primero de cada mes y hoy), los que no tienen tasa no se dibujan y cortan la línea. El PDF no tiene el mouse de la
 // pestaña: cada punto lleva su valor arriba (si se pisaría con el de al lado, va el más nuevo) y debajo su mes (si se pisa con el
 // anterior, un renglón más abajo)
-const piezaDelIndice = (doc, indice) => {
+const piezaDelIndice = (doc, indice, anchoDelGrafico) => {
   const puntos = lista(indice).filter((p) => esObjeto(p) && typeof p.dia === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.dia));
   const conTasa = puntos.filter((p) => esNumero(p.tasa));
   if (conTasa.length === 0) return null;
@@ -767,7 +706,7 @@ const piezaDelIndice = (doc, indice) => {
     alto,
     dibujar: (y, x) => {
       const x0 = x + GRAFICO.izquierda;
-      const x1 = x + CONTENIDO;
+      const x1 = x + anchoDelGrafico;
       const xDelDia = (dia) => x0 + GRAFICO.aire
         + ((Number(dia.slice(5, 7)) - 1 + (Number(dia.slice(8, 10)) - 1) / 31) / 12) * (x1 - x0 - 2 * GRAFICO.aire);
       const cero = y + GRAFICO.arriba + GRAFICO.alto;
@@ -820,31 +759,47 @@ const piezaDelIndice = (doc, indice) => {
   };
 };
 
-// El contexto (spec 2.2): el índice mes a mes (con el valor de hoy a la derecha del título; si no hay nada que dibujar, lo que dice el
-// servidor) y la antigüedad de los vencidos, en barras ámbar, con los textos del servidor. Los grupos de dibujarParte (también los usa
-// el Informe anual, services/reportesInformeAnualPdf.js)
-export const elementosDelContexto = (doc, contexto) => {
+// El contexto (spec 2.2; spec 2026-11-05-metricas-pdf-apaisado, 5), en dos columnas: a la izquierda, el índice mes a mes (con el valor de hoy a la
+// derecha del título; si no hay nada que dibujar, lo que dice el servidor) con su pie; a la derecha, la antigüedad de los vencidos, en barras
+// ámbar, y debajo la doble verificación, con los textos del servidor. Los grupos de dibujarParte (también los usa el Informe anual, que lleva su
+// propio pie del índice: services/reportesInformeAnualPdf.js)
+const CONTEXTO = { indice: 470, luz: 16, entre: 5, entreBloques: 12 };
+export const elementosDelContexto = (doc, contexto, trabajo, { pieDelIndice = T.pieDelIndice } = {}) => {
   const indice = lista(contexto.indice).filter(esObjeto);
   const vacio = texto(contexto.indice_vacio);
-  const grafico = vacio ? null : piezaDelIndice(doc, indice);
+  const anchoDerecha = CONTENIDO - CONTEXTO.indice - CONTEXTO.luz;
+  const grafico = vacio ? null : piezaDelIndice(doc, indice, CONTEXTO.indice);
   const antiguedad = objeto(contexto.antiguedad);
   const textos = objeto(antiguedad.textos);
   const grupos = [antiguedad.menos_de_3_meses, antiguedad.de_3_a_12, antiguedad.mas_de_un_anio].map((n, i) => [T.antiguedad[i], n]);
-  return [
-    [
-      prepararSeccion(doc, { titulo: T.titulos.indice, derecha: texto(indice.at(-1)?.texto) }),
-      grafico ? comoElemento(grafico) : prepararParrafo(doc, vacio || 'No hay datos para dibujar el índice.', { color: COLOR.tinta })
-    ],
-    [prepararParrafo(doc, T.pieDelIndice, { tamano: LETRA.pie })],
-    [
-      prepararSeccion(doc, { titulo: T.titulos.antiguedad, derecha: texto(textos.titulo) }),
-      comoElemento(piezaDeBarras(doc, grupos, { ancho: CONTENIDO, anchoTexto: 110, color: BARRA_AMBAR }))
-    ],
-    [comoElemento(apilar([
-      pieza(doc, textos.inicio, { ancho: CONTENIDO, tamano: LETRA.texto + 0.8, color: COLOR.tinta, lineas: 2 }),
-      pieza(doc, T.pieDeLaAntiguedad, { ancho: CONTENIDO, tamano: LETRA.pie, color: COLOR.gris, lineas: 2 })
-    ], 4))]
-  ];
+  const delTrabajo = objeto(objeto(trabajo).textos);
+  const izquierda = apilar([
+    prepararSeccion(doc, { titulo: T.titulos.indice, derecha: texto(indice.at(-1)?.texto), ancho: CONTEXTO.indice }),
+    grafico ?? pieza(doc, vacio || 'No hay datos para dibujar el índice.', { ancho: CONTEXTO.indice, tamano: LETRA.texto, color: COLOR.tinta, lineas: 4 }),
+    pieza(doc, pieDelIndice, { ancho: CONTEXTO.indice, tamano: LETRA.pie, color: COLOR.gris, lineas: 3 })
+  ], CONTEXTO.entre);
+  const derecha = apilar([
+    apilar([
+      prepararSeccion(doc, { titulo: T.titulos.antiguedad, derecha: texto(textos.titulo), ancho: anchoDerecha }),
+      piezaDeBarras(doc, grupos, { ancho: anchoDerecha, anchoTexto: 78, color: BARRA_AMBAR }),
+      pieza(doc, textos.inicio, { ancho: anchoDerecha, tamano: LETRA.texto, color: COLOR.tinta, lineas: 3 }),
+      pieza(doc, T.pieDeLaAntiguedad, { ancho: anchoDerecha, tamano: LETRA.pie, color: COLOR.gris, lineas: 3 })
+    ], CONTEXTO.entre),
+    apilar([
+      prepararSeccion(doc, { titulo: T.titulos.auditoria, ancho: anchoDerecha }),
+      pieza(doc, delTrabajo.auditoria, { ancho: anchoDerecha, tamano: LETRA.texto, color: COLOR.tinta, lineas: 3 }),
+      pieza(doc, T.pieDeLaAuditoria, { ancho: anchoDerecha, tamano: LETRA.pie, color: COLOR.gris, lineas: 2 })
+    ], CONTEXTO.entre)
+  ], CONTEXTO.entreBloques);
+  const alto = Math.max(izquierda.alto, derecha.alto);
+  return [[{
+    alto,
+    dibujar: (y) => {
+      izquierda.dibujar(y, IZQUIERDA);
+      derecha.dibujar(y, IZQUIERDA + CONTEXTO.indice + CONTEXTO.luz);
+      return y + alto + ENTRE;
+    }
+  }]];
 };
 
 // =====================================================
@@ -865,8 +820,8 @@ const elementoDeLasManuales = (doc, manuales, anio) => {
 };
 
 // Los cinco totales en tarjetas, con su texto del servidor (en singular o en plural); por mes, las tres series de la pestaña en una
-// tabla (la pestaña muestra una por vez, con chips), con los meses que manda el servidor; las métricas manuales y la doble verificación.
-// Los grupos de dibujarParte. El Informe anual (services/reportesInformeAnualPdf.js) los dibuja sin las métricas manuales
+// tabla (la pestaña muestra una por vez, con chips), con los meses que manda el servidor, y las métricas manuales. La doble verificación va
+// con el contexto. Los grupos de dibujarParte. El Informe anual (services/reportesInformeAnualPdf.js) los dibuja sin las métricas manuales
 // (`conManuales` false: no están en la foto del 31/12)
 export const elementosDelTrabajo = (doc, trabajo, manuales, anio, { conManuales = true } = {}) => {
   const textos = objeto(trabajo.textos);
@@ -883,14 +838,7 @@ export const elementosDelTrabajo = (doc, trabajo, manuales, anio, { conManuales 
       prepararTarjetas(doc, TOTALES.map((clave) => ({ valor: cuenta(trabajo[clave]), rotulo: texto(totales[clave]) })))
     ],
     ...(meses.length ? [[prepararSeccion(doc, { titulo: T.titulos.porMes }), tabla]] : []),
-    ...(conManuales ? [[prepararSeccion(doc, { titulo: T.titulos.manuales }), elementoDeLasManuales(doc, manuales, anio)]] : []),
-    [
-      prepararSeccion(doc, { titulo: T.titulos.auditoria }),
-      comoElemento(apilar([
-        pieza(doc, textos.auditoria, { ancho: CONTENIDO, tamano: LETRA.texto + 0.8, color: COLOR.tinta, lineas: 2 }),
-        pieza(doc, T.pieDeLaAuditoria, { ancho: CONTENIDO, tamano: LETRA.pie, color: COLOR.gris, lineas: 1 })
-      ], 4))
-    ]
+    ...(conManuales ? [[prepararSeccion(doc, { titulo: T.titulos.manuales }), elementoDeLasManuales(doc, manuales, anio)]] : [])
   ];
 };
 
@@ -901,26 +849,61 @@ export const elementosDelTrabajo = (doc, trabajo, manuales, anio, { conManuales 
 // "83%", o una raya si no hay nada que medir (null: el área solo tiene eventuales; la de la pestaña)
 const textoPorcentaje = (valor) => (esNumero(valor) ? `${valor}%` : '—');
 
-// El ranking de áreas (la regla de cumplimientoPorArea, del servidor) y los datasets por tema y por frecuencia en barras (la pestaña
-// los muestra de a uno, con un chip); si una lista está vacía, lo que dice el servidor
-const elementosDeLasAreas = (doc, areas) => {
-  const ranking = lista(areas.ranking).filter(esObjeto);
-  const vacios = objeto(areas.vacios);
-  const barras = (clave) => {
-    const filas = lista(areas[clave]).filter((fila) => Array.isArray(fila) && esNumero(fila[1]));
-    return texto(vacios[clave]) || filas.length === 0
-      ? prepararParrafo(doc, texto(vacios[clave]) || 'Sin datasets.', { color: COLOR.tinta })
-      : comoElemento(piezaDeBarras(doc, filas, { ancho: CONTENIDO, anchoTexto: 190 }));
+// Lo que va en cada fila del ranking y en su encabezado (spec 2026-11-05-metricas-pdf-apaisado, 5). «Cumplimiento» en negrita mide unos 51 puntos
+const RANKING = { letra: 7.6, letraDelEncabezado: 6.6, aire: 3.5, altoDelEncabezado: 13, lineas: 4, numero: 18, datasets: 122, alDia: 84, cumplimiento: 54 };
+const COLUMNAS_DEL_RANKING = Object.freeze(['#', 'Área', 'Datasets', 'Al día', 'Cumplimiento']);
+// Lo que queda debajo de los temas, antes de las frecuencias
+const AIRE_ENTRE_BARRAS = 12;
+
+// Las hojas de las áreas, que también dibuja el Informe anual: el ranking (la regla de cumplimientoPorArea, del servidor) en dos columnas, que sigue en
+// otra hoja si hace falta, con su encabezado arriba de cada una, y los datasets por tema y por frecuencia en barras (la pestaña los muestra de a uno,
+// con un chip), en la columna libre o en una hoja nueva; si una lista está vacía, lo que dice el servidor. `titulo(texto)`: el título de la hoja, con su rótulo
+export const dibujarLasAreas = (doc, hoja, areas, { titulo }) => {
+  const a = objeto(areas);
+  const ranking = lista(a.ranking).filter(esObjeto);
+  const vacios = objeto(a.vacios);
+  const flujo = nuevoFlujo(doc, dibujarParte(doc, hoja, titulo(T.titulos.areas), [[prepararSeccion(doc, { titulo: T.titulos.ranking, derecha: T.alDia })]]));
+  const { ancho } = flujo;
+  const xs = [0, RANKING.numero, ancho - RANKING.datasets, ancho - RANKING.alDia, ancho - RANKING.cumplimiento];
+  const celda = (valor, x, y, ancho_) => renglon(doc, valor, x, y, { ancho: ancho_, tamano: RANKING.letra });
+  const fila = (area, i) => {
+    const nombre = ajustar(doc, texto(area.area), { ancho: xs[2] - xs[1] - 6, lineas: RANKING.lineas, max: RANKING.letra, min: RANKING.letra });
+    const alto = nombre.alto + 2 * RANKING.aire;
+    return {
+      alto,
+      dibujar: (y, x) => {
+        const yTexto = y + RANKING.aire;
+        celda(String(i + 1), x + xs[0], yTexto, xs[1] - xs[0] - 2);
+        escribir(doc, nombre, x + xs[1], yTexto, COLOR.tinta);
+        celda(cuenta(area.total_datasets), x + xs[2], yTexto, xs[3] - xs[2] - 2);
+        celda(cuenta(area.al_dia), x + xs[3], yTexto, xs[4] - xs[3] - 2);
+        celda(textoPorcentaje(area.porcentaje), x + xs[4], yTexto, ancho - xs[4]);
+        filete(doc, x, y + alto, ancho);
+      }
+    };
   };
-  const tabla = ranking.length === 0 ? prepararParrafo(doc, T.sinAreas, { color: COLOR.tinta }) : prepararTabla(doc, {
-    columnas: [{ titulo: '#', ancho: 0.5 }, { titulo: 'Área', ancho: 6 }, { titulo: 'Datasets', ancho: 1.3 }, { titulo: 'Al día', ancho: 1.1 }, { titulo: 'Cumplimiento', ancho: 1.6 }],
-    filas: ranking.map((area, i) => [String(i + 1), texto(area.area), cuenta(area.total_datasets), cuenta(area.al_dia), textoPorcentaje(area.porcentaje)])
+  flujo.cabeza({
+    alto: RANKING.altoDelEncabezado,
+    dibujar: (y, x) => {
+      COLUMNAS_DEL_RANKING.forEach((t, k) => renglon(doc, t, x + xs[k], y, {
+        ancho: (xs[k + 1] ?? ancho) - xs[k] - (k === COLUMNAS_DEL_RANKING.length - 1 ? 0 : 2), tamano: RANKING.letraDelEncabezado, fuente: NEGRITA, color: COLOR.acento
+      }));
+      filete(doc, x, y + RANKING.altoDelEncabezado - 1, ancho, COLOR.grisClaro);
+    }
   });
-  return [
-    [prepararSeccion(doc, { titulo: T.titulos.ranking, derecha: T.alDia }), tabla],
-    [prepararSeccion(doc, { titulo: 'Datasets por tema' }), barras('temas')],
-    [prepararSeccion(doc, { titulo: 'Datasets por frecuencia' }), barras('frecuencias')]
-  ];
+  if (ranking.length === 0) flujo.poner(pieza(doc, T.sinAreas, { ancho, tamano: LETRA.texto, color: COLOR.tinta, lineas: 2 }), { sinCabeza: true });
+  ranking.forEach((area, i) => flujo.poner(fila(area, i)));
+  const barras = (clave, tituloDeLaSeccion) => {
+    const filas = lista(a[clave]).filter((f) => Array.isArray(f) && esNumero(f[1]));
+    const cuerpo = texto(vacios[clave]) || filas.length === 0
+      ? pieza(doc, texto(vacios[clave]) || 'Sin datasets.', { ancho, tamano: LETRA.texto, color: COLOR.tinta, lineas: 3 })
+      : piezaDeBarras(doc, filas, { ancho, anchoTexto: 130 });
+    return apilar([prepararSeccion(doc, { titulo: tituloDeLaSeccion, ancho }), cuerpo, { alto: AIRE_ENTRE_BARRAS - 5, dibujar: () => {} }], 5);
+  };
+  flujo.cabeza(null);
+  flujo.saltarColumna();
+  flujo.poner(barras('temas', 'Datasets por tema'));
+  flujo.poner(barras('frecuencias', 'Datasets por frecuencia'));
 };
 
 // =====================================================
@@ -935,78 +918,113 @@ export const dibujarParte = (doc, hoja, titulo, grupos) => {
   return [[titulo, ...primero], ...resto].reduce((yGrupo, grupo) => dibujarJuntos(doc, yGrupo, grupo), agregarHoja(doc, hoja));
 };
 
-// Los grupos de la parte 1 (los de dibujarParte): la píldora con la combinación y lo destildado, de dónde sale un año cerrado, el
-// circuito de cada gestión en un recuadro con el borde azul y los resultados del año, con «Cómo se cuenta», que viaja con lo último de
-// antes (los resultados): nunca queda solo en una hoja. `datos`: los de renderMetricasDelAnio; `anio`, `estadistico` y `dias`, ya
-// leídos. También los usa el Informe anual (services/reportesInformeAnualPdf.js)
-export const elementosDelCircuito = (doc, datos, { anio, estadistico, dias }) => {
+// El elemento del título de una hoja con lo que va arriba a la derecha: `dibujarDerecha(y)` recibe la y del título. También lo usa el Informe anual
+export const tituloConDerecha = (elTitulo, dibujarDerecha) => ({
+  alto: elTitulo.alto,
+  dibujar: (y) => {
+    dibujarDerecha(y);
+    return elTitulo.dibujar(y);
+  }
+});
+
+// La píldora arriba a la derecha, en la línea del rótulo, sobre el margen
+export const ponerArribaALaDerecha = (pildora, y) => pildora.dibujar(y - 6, IZQUIERDA + CONTENIDO - pildora.ancho);
+
+// La hoja del circuito (spec 2026-11-05-metricas-pdf-apaisado, 5), que también dibuja el Informe anual: el título, la píldora con la combinación y lo
+// destildado, de dónde sale un año cerrado y los recuadros de las dos gestiones, con la letra más grande con la que entran en la hoja. Si con la más
+// chica tampoco entran, la interna pasa entera a la hoja siguiente. `datos`: los de renderMetricasDelAnio; `estadistico` y `dias`, ya leídos;
+// `titulo(texto)`: el título de la hoja, con su rótulo
+export const dibujarElCircuito = (doc, hoja, datos, { estadistico, dias, titulo }) => {
+  const d = objeto(datos);
+  const circuito = objeto(objeto(d.vista).circuito);
+  const combinacion = `${T.estadisticos[estadistico]} en ${T.dias[dias]}`;
+  const destildados = lista(d.sin_titulos).some((t) => typeof t === 'string' && t);
+  const pildora = prepararPildora(doc, textoDeLaPildora({ ...d, estadistico, dias }), {
+    tono: destildados ? 'sol' : 'azul', anchoMaximo: CONTENIDO - LUGAR_DEL_ROTULO
+  });
+  const origen = textoDeDondeSale(d);
+  const deDondeSale = origen ? ajustar(doc, origen, {
+    ancho: DE_DONDE_SALE.ancho, lineas: 2, max: DE_DONDE_SALE.letra, min: DE_DONDE_SALE.letra, opciones: { align: 'right' }
+  }) : null;
+  const cabezal = tituloConDerecha(titulo(TITULO_DEL_CIRCUITO), (y) => {
+    ponerArribaALaDerecha(pildora, y);
+    if (deDondeSale) escribir(doc, deDondeSale, IZQUIERDA + CONTENIDO - DE_DONDE_SALE.ancho, y + DE_DONDE_SALE.sobre, COLOR.tinta);
+  });
+  const gestiones = GESTIONES.filter((gestion) => Array.isArray(circuito[gestion]));
+  const recuadrosCon = (letra) => gestiones.map((gestion) => prepararGestion(doc, {
+    gestion, combinacion, contenido: piezaDelCircuito(doc, circuito[gestion], gestion, letra, { dias, enCorridos: objeto(d.circuito_en_corridos)[gestion] })
+  }));
+  const yHoja = agregarHoja(doc, hoja);
+  const entran = (recuadros) => yHoja + cabezal.alto + ENTRE
+    + recuadros.reduce((total, r, i) => total + r.alto + (i < recuadros.length - 1 ? AIRE_ENTRE_GESTIONES : 0), 0) <= limiteDe(doc);
+  const recuadros = LETRAS_DEL_CIRCUITO.map(recuadrosCon).find(entran) ?? recuadrosCon(LETRAS_DEL_CIRCUITO.at(-1));
+  const [primero, ...resto] = recuadros;
+  return resto.reduce((y, recuadro) => dibujarJuntos(doc, y, [recuadro]), dibujarJuntos(doc, yHoja, primero ? [cabezal, primero] : [cabezal]));
+};
+
+// «Cómo se cuenta»: el texto de siempre y, debajo, los comentarios de cada gestión, con su nombre. Una gestión sin comentarios no lleva su nombre
+const prepararComoSeCuenta = (doc, circuito, dias) => {
+  const deLaGestion = (gestion) => {
+    const textos = aclaracionesDe(circuito, gestion);
+    if (textos.length === 0) return null;
+    return apilar([
+      pieza(doc, `Gestión ${gestion}`.toUpperCase(), { ancho: ANCHO_DEL_RECUADRO, tamano: LETRA.rotuloDeGestion, fuente: NEGRITA, color: COLOR.tinta, lineas: 1 }),
+      ...textos.map((t) => pieza(doc, t, { ancho: ANCHO_DEL_RECUADRO, tamano: LETRA.aclaracion, color: COLOR.gris, lineas: 4 }))
+    ], 2);
+  };
+  return prepararRecuadro(doc, {
+    rotulo: 'Cómo se cuenta',
+    contenido: apilar([
+      prepararParrafo(doc, `${T.bajada[dias]} ${T.pieDelCircuito} ${EN_EL_ANIO} ${SIGLAS}`, { ancho: ANCHO_DEL_RECUADRO, tamano: LETRA.aclaracion }),
+      ...GESTIONES.map(deLaGestion)
+    ], 7)
+  }, { tono: 'gris' });
+};
+
+// La hoja de los resultados, que también dibuja el Informe anual: el título con su bajada, las tres columnas, «Cómo se cuenta» y, con `conDestildados`, los
+// casos destildados. Si «Cómo se cuenta» no entra debajo de los resultados, pasa a la hoja siguiente con el título repetido: no viaja con ellos porque
+// juntos pueden no entrar en una hoja, y un grupo más alto que una hoja se saldría. `titulo(texto)`: el título de la hoja, con su rótulo
+export const dibujarLosResultados = (doc, hoja, datos, { anio, dias, titulo, conDestildados }) => {
   const d = objeto(datos);
   const vista = objeto(d.vista);
-  const circuito = objeto(vista.circuito);
-  const combinacion = `${estadistico} en ${T.dias[dias]}`;
-  const destildados = lista(d.sin_titulos).some((t) => typeof t === 'string' && t);
-  const origen = textoDeDondeSale(d);
-  const circuitos = [
-    ...(origen ? [[prepararParrafo(doc, origen, { color: COLOR.tinta })]] : []),
-    ...GESTIONES.filter((gestion) => Array.isArray(circuito[gestion])).map((gestion) => [prepararRecuadro(doc, {
-      rotulo: `Gestión ${gestion} · ${combinacion}`, contenido: piezaDeLaGestion(doc, circuito, gestion)
-    })]),
-    ...(esObjeto(vista.resultados) ? [[
-      prepararSeccion(doc, { titulo: T.titulos.resultados, derecha: T.bajadaDeResultados(anio) }), comoElemento(piezaDeResultados(doc, vista.resultados))
-    ]] : [])
-  ];
-  const comoSeCuenta = prepararRecuadro(doc, {
-    rotulo: 'Cómo se cuenta',
-    contenido: prepararParrafo(doc, `${T.bajada[dias]} ${T.pieDelCircuito} ${EN_EL_ANIO} ${SIGLAS}`, { ancho: ANCHO_DEL_RECUADRO, tamano: LETRA.aclaracion })
-  }, { tono: 'gris' });
-  const pildora = prepararPildora(doc, textoDeLaPildora({ ...d, estadistico, dias }), { tono: destildados ? 'sol' : 'azul' });
-  const grupos = [[pildora], ...circuitos];
-  grupos[grupos.length - 1] = [...grupos.at(-1), comoSeCuenta];
-  return grupos;
+  const cabezal = tituloConDerecha(titulo(T.titulos.resultados), (y) => renglon(doc, T.bajadaDeResultados(anio), IZQUIERDA + CONTENIDO - BAJADA.ancho, y + BAJADA.sobre, {
+    ancho: BAJADA.ancho, tamano: BAJADA.letra, color: COLOR.gris, align: 'right'
+  }));
+  const yResultados = dibujarParte(doc, hoja, cabezal, esObjeto(vista.resultados) ? [[comoElemento(piezaDeResultados(doc, vista.resultados))]] : []);
+  const como = prepararComoSeCuenta(doc, objeto(vista.circuito), dias);
+  const yComo = yResultados + como.alto <= limiteDe(doc) ? como.dibujar(yResultados) : dibujarParte(doc, hoja, titulo(T.titulos.resultados), [[como]]);
+  return (conDestildados ? elementosDeLosDestildados(doc, vista) : []).reduce((y, grupo) => dibujarJuntos(doc, y, grupo), yComo);
 };
 
 // El PDF de Métricas del año. `datos`: lo de metricasDe (controllers/metricasController.js: anio, al, en_vivo, aviso_foto, anios, vista,
-// cinta, contexto, trabajo, areas y sin_titulos) más la combinación con que se pidió (`estadistico` y `dias`, las de la consulta) y las
+// cinta, contexto, trabajo, areas y sin_titulos) más la combinación con que se pidió (`estadistico` y `dias`, las de la consulta), con
+// «Días hábiles» el circuito en días corridos (`circuito_en_corridos`, que GET /api/metricas no manda) y las
 // métricas manuales de Gestión del año (`manuales`: [{ tipo, anio, mes, cantidad }], que no son de metricasDe); `generado`: { momento: 'AAAA-MM-DD HH:MM:SS' (hora argentina; su día va en el encabezado), por: nombre corto o null } (el pie).
-// Las cintas no salen de `datos.cinta` (las de la pantalla, o las que guardó la foto): se arman con el circuito de la vista y la letra
-// del PDF.
 export const renderMetricasDelAnio = async (datos, { generado }) => {
   const d = objeto(datos);
   const anio = Number.isInteger(d.anio) ? d.anio : Number(texto(d.al).slice(0, 4));
   const estadistico = elegido(d.estadistico, ESTADISTICOS);
   const dias = elegido(d.dias, DIAS);
-  const vista = objeto(d.vista);
-  const circuito = objeto(vista.circuito);
-  const cintas = cintasDeLaVista(vista, { estadistico, dias, ...OPCIONES_CINTA_PDF });
   const nombre = `Métricas del RPAD · ${anio}`;
-  const doc = nuevoReporte({ titulo: `Métricas del RPAD ${anio}` });
+  const doc = nuevoReporte({ titulo: `Métricas del RPAD ${anio}`, hoja: HOJA });
   const hoja = { derecha: nombre, fecha: texto(generado?.momento).slice(0, 10) };
   const rotulo = rotuloDelAnio({ ...d, anio });
   const titulo = (t) => prepararTitulo(doc, { rotulo, titulo: t });
 
-  // 1. El circuito de las dos gestiones, los resultados y «Cómo se cuenta»
-  const grupos = elementosDelCircuito(doc, d, { anio, estadistico, dias });
-  dibujarParte(doc, hoja, titulo(TITULO_DEL_CIRCUITO), grupos);
+  // 1. El circuito de las dos gestiones
+  dibujarElCircuito(doc, hoja, d, { estadistico, dias, titulo });
 
-  // 2. Las cintas del recorrido típico y los casos destildados
-  dibujarParte(doc, hoja, titulo('El recorrido típico de un pedido'), [
-    ...GESTIONES.map((gestion) => {
-      const seccion = prepararSeccion(doc, { titulo: `Gestión ${gestion} · recorrido típico`, derecha: `${T.estadisticos[estadistico]} en ${T.dias[dias]}` });
-      if (cintas[gestion]) return [seccion, elementoDeLaCinta(doc, cintas[gestion], gestion)];
-      const aviso = lista(circuito[gestion]).find((t) => esObjeto(t) && t.clave === 'aviso');
-      return [seccion, prepararParrafo(doc, texto(objeto(aviso?.vacio).titulo) || `Sin casos en ${anio}`, { color: COLOR.tinta })];
-    }),
-    ...elementosDeLosDestildados(doc, vista)
-  ]);
+  // 2. Los resultados, «Cómo se cuenta» y los casos destildados
+  dibujarLosResultados(doc, hoja, d, { anio, dias, titulo, conDestildados: true });
 
   // 3. El contexto y el trabajo del RPAD
   dibujarParte(doc, hoja, titulo(TITULO_DEL_CONTEXTO), [
-    ...elementosDelContexto(doc, objeto(d.contexto)),
+    ...elementosDelContexto(doc, objeto(d.contexto), objeto(d.trabajo)),
     ...elementosDelTrabajo(doc, objeto(d.trabajo), d.manuales, anio)
   ]);
 
   // 4. Áreas y temas
-  dibujarParte(doc, hoja, titulo(T.titulos.areas), elementosDeLasAreas(doc, objeto(d.areas)));
+  dibujarLasAreas(doc, hoja, d.areas, { titulo });
 
   return cerrarReporte(doc, { generado, pieDe: (k, n) => `${nombre} · Hoja ${k} de ${n}` });
 };

@@ -17,7 +17,7 @@ import {
 import { opcionesDeMetricas } from '../services/metricasOpciones.js';
 import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
-import { lineasPorHoja, HOJA_A4, todasDelTamano } from './pdf-lector.js';
+import { lineasPorHoja, HOJA_A4_APAISADA, todasDelTamano } from './pdf-lector.js';
 
 const AL = '2026-12-31';
 const CLAVES_DE_DATA = ['anio', 'al', 'en_vivo', 'aviso_foto', 'anios', 'fotos', 'vista', 'cinta', 'contexto', 'trabajo', 'areas', 'sin_titulos', 'sin_texto'];
@@ -227,7 +227,7 @@ describe('GET /metricas', () => {
     assert.match(res.headers.get('content-type'), /^application\/pdf/);
     assert.equal(res.headers.get('content-disposition'), disposicionDeAdjunto(`Metricas-RPAD-${anio}.pdf`));
     assert.equal(res.body.subarray(0, 5).toString(), '%PDF-');
-    assert.ok(todasDelTamano(res.body, HOJA_A4));
+    assert.ok(todasDelTamano(res.body, HOJA_A4_APAISADA));
     const hojas = lineasPorHoja(res.body);
     hojas.forEach((lineas, k) => {
       assert.ok(lineas.includes(`Métricas del RPAD · ${anio} · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}: ${lineas.join(' | ')}`);
@@ -392,6 +392,65 @@ describe('metricasDe con un hoy fijo', () => {
     assert.deepEqual([enCurso.anio, enCurso.al, enCurso.en_vivo, enCurso.aviso_foto], [2027, '2027-03-01', true, null]);
     // El año en curso también dice qué años tienen foto
     assert.deepEqual(enCurso.fotos.map((f) => [f.anio, f.con_foto]), [[2026, true], [2027, false]]);
+  });
+
+  // Spec 2026-11-05-metricas-pdf-apaisado, 5: el PDF suma el circuito en días corridos; la pestaña no lo usa, y sumarlo no vuelve a leer la base
+  it('el PDF escribe los días corridos entre paréntesis, sin más consultas que con días corridos; metricasDe no los manda', async () => {
+    await prepararElAnio();
+    const pool = (await import('../config/database.js')).default;
+    const hoy = '2026-11-05';
+    const generado = { momento: `${hoy} 10:00:00`, por: 'Usuario Ejemplo' };
+    const data = await controlador.metricasDe({ anio: '2026' }, { hoy });
+    assert.equal(data.circuito_en_corridos, undefined);
+    const contando = async (consulta) => {
+      const consultas = [];
+      const { query: q, execute: e } = pool;
+      pool.query = function (sql, ...resto) { consultas.push(String(sql?.sql ?? sql)); return q.call(this, sql, ...resto); };
+      pool.execute = function (sql, ...resto) { consultas.push(String(sql?.sql ?? sql)); return e.call(this, sql, ...resto); };
+      try {
+        return { resultado: await controlador.pdfDeMetricas(consulta, generado), consultas };
+      } finally {
+        pool.query = q;
+        pool.execute = e;
+      }
+    };
+    const habiles = await contando({ anio: '2026' });
+    const corridos = await contando({ anio: '2026', dias: 'corridos' });
+    assert.equal(habiles.consultas.filter((c) => /FROM feriados\b/.test(c)).length, 1, 'una sola lectura de los feriados');
+    assert.equal(habiles.consultas.length, corridos.consultas.length, 'las mismas consultas');
+    const parentesis = (pdf) => lineasPorHoja(pdf)[0].filter((l) => /^\((\d+ días? corridos?|En el día)\)$/.test(l));
+    assert.ok(parentesis(habiles.resultado.pdf).length > 0, lineasPorHoja(habiles.resultado.pdf)[0].join(' | '));
+    assert.deepEqual(parentesis(corridos.resultado.pdf), []);
+  });
+
+  it('con destildados, los días corridos salen de la vista sin ese dataset', async () => {
+    const ids = await prepararElAnio();
+    const hoy = '2026-11-05';
+    const conSin = await controlador.metricasDe({ anio: '2026', dias: 'corridos', sin: String(ids[0]) }, { hoy });
+    const conTodos = await controlador.metricasDe({ anio: '2026', dias: 'corridos' }, { hoy });
+    const carga = (data) => tramoDe(data, 'externa', 'carga').cifra;
+    assert.notEqual(carga(conSin).texto, carga(conTodos).texto, 'el destildado cambia la cifra: si no, el test no prueba nada');
+    const { pdf } = await controlador.pdfDeMetricas({ anio: '2026', sin: String(ids[0]) }, { momento: `${hoy} 10:00:00`, por: 'Usuario Ejemplo' });
+    const [primera] = lineasPorHoja(pdf);
+    assert.ok(primera.includes(`(${carga(conSin).texto} ${carga(conSin).unidad})`), primera.join(' | '));
+    assert.ok(!primera.includes(`(${carga(conTodos).texto} ${carga(conTodos).unidad})`), primera.join(' | '));
+  });
+
+  it('una foto sin la combinación en días corridos no tira: el PDF sale sin los paréntesis', async () => {
+    await prepararElAnio();
+    const guardada = await guardarFoto();
+    delete guardada.vistas['mediana-corridos'];
+    await query('UPDATE metricas_fotos SET datos = ? WHERE anio = 2026', [JSON.stringify(guardada)]);
+    const resultado = await controlador.pdfDeMetricas({ anio: '2026' }, { momento: '2027-03-01 10:00:00', por: 'Usuario Ejemplo' });
+    assert.deepEqual(lineasPorHoja(resultado.pdf)[0].filter((l) => /^\(\d+ días? corridos?\)$/.test(l)), []);
+  });
+
+  it('un año con foto toma los días corridos de la foto', async () => {
+    await prepararElAnio();
+    const guardada = await guardarFoto();
+    const resultado = await controlador.pdfDeMetricas({ anio: '2026' }, { momento: '2027-03-01 10:00:00', por: 'Usuario Ejemplo' });
+    const carga = guardada.vistas['mediana-corridos'].circuito.externa.find((t) => t.clave === 'carga').cifra;
+    assert.ok(lineasPorHoja(resultado.pdf)[0].includes(`(${carga.texto} ${carga.unidad})`), lineasPorHoja(resultado.pdf)[0].join(' | '));
   });
 
   // Spec 5: el PDF de un año con foto sale de la foto. El servidor de los tests corre con el reloj de verdad (en 2026 no hay ningún año
@@ -750,7 +809,7 @@ describe('GET /reportes/informe-anual', () => {
       assert.match(res.headers.get('content-type'), /^application\/pdf/);
       assert.equal(res.headers.get('content-disposition'), disposicionDeAdjunto('Informe-anual-RPAD-2026.pdf'));
       assert.equal(res.body.subarray(0, 5).toString(), '%PDF-');
-      assert.ok(todasDelTamano(res.body, HOJA_A4), 'todas las hojas son A4');
+      assert.ok(todasDelTamano(res.body, HOJA_A4_APAISADA), 'todas las hojas son A4 apaisado');
       const hojas = lineasPorHoja(res.body);
       hojas.forEach((lineas, k) => {
         assert.ok(lineas.includes(`Informe anual 2026 · Hoja ${k + 1} de ${hojas.length}`), `hoja ${k + 1}: ${lineas.join(' | ')}`);
@@ -771,6 +830,9 @@ describe('GET /reportes/informe-anual', () => {
       assert.ok(primera.includes(`${carga.texto} ${carga.unidad}`) && primera.includes(carga.debajo), primera);
       // Sin hitos en 2026
       assert.ok(todo.includes('Sin hitos registrados en 2026.'));
+      // Los días corridos entre paréntesis, de lo que guarda la foto
+      const enCorridos = guardada.vistas['mediana-corridos'].circuito.externa.find((t) => t.clave === 'carga').cifra;
+      assert.ok(hojas[0].includes(`(${enCorridos.texto} ${enCorridos.unidad})`), primera);
     }
   });
 
@@ -794,11 +856,11 @@ describe('GET /reportes/informe-anual', () => {
     fila('Actualizados a tiempo', 'Sin actualizaciones registradas en 2025.', '2 de 3 ciclos (67%)', '—');
     fila('Índice de actualización', 'Al 31/12/2025: sin datasets con vencimiento', 'Al 31/12/2026: 100% al día (3 de 3)', '—');
     fila('Datasets en el registro', '0', '3', '+3');
-    // El Informe de 2025 compara con 2024, que no tiene foto
+    // El Informe de 2025 no tiene con qué comparar: 2024 no tiene foto
     const de2025 = await pedirInforme('?anio=2025', 'lector');
     assert.equal(de2025.status, 200);
     const lineas2025 = lineasPorHoja(de2025.body).flat();
-    assert.ok(lineas2025.includes('COMPARACIÓN CON 2024') && lineas2025.includes('Primer año con foto'), lineas2025.join(' | '));
+    assert.ok(!lineas2025.includes('COMPARACIÓN CON 2024') && lineas2025.includes('Primer año con foto') && lineas2025.includes('Logros del año'), lineas2025.join(' | '));
   });
 
   it('los logros de 2026 por proyecto', async () => {
@@ -817,7 +879,7 @@ describe('GET /reportes/informe-anual', () => {
     const res = await pedirInforme('?anio=2026', 'lector');
     assert.equal(res.status, 200);
     const todo = lineasPorHoja(res.body).flat();
-    const logros = todo.slice(todo.indexOf('LOGROS DEL AÑO'));
+    const logros = todo.slice(todo.indexOf('Logros del año'));
     // Los proyectos en el orden de Gestión → Proyectos (por categoría), cada hito por fecha, y los logros del área al final
     const orden = ['Portal de prueba', '03/02/2026', 'Primer hito del portal', 'Con su descripción.', '30/11/2026', 'Segundo hito del portal',
       'Difusión de prueba', '01/08/2026', 'Taller con las áreas', 'Se hizo en el salón.', 'Logros del Área', '15/06/2026', 'Logro sin proyecto'];

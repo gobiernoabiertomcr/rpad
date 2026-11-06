@@ -18,8 +18,8 @@ import { esFechaIso, formatoCorto, formatoLargo } from './notasDigitalesCalendar
 import { ventanaDe } from './seguimientoCinta.js';
 import { textoRequiereNota } from './requiereNotaReglas.js';
 import {
-  COLOR, MM, MARGEN, IZQUIERDA, DERECHA, CONTENIDO, ABAJO, NORMAL, NEGRITA, ASCENDENTE, DESCENDENTE,
-  desdeBase, ajustar, escribir, renglon, rotulo, filete, etiquetaDeCabecera, prepararGrilla, cargarQrcode, dibujarTarjetaQr
+  COLOR, MM, MARGEN, IZQUIERDA, DERECHA, CONTENIDO, NORMAL, NEGRITA, ASCENDENTE, DESCENDENTE,
+  desdeBase, ajustar, escribir, renglon, rotulo, filete, etiquetaDeCabecera, prepararGrilla, cargarQrcode, dibujarTarjetaQr, HOJA_VERTICAL
 } from './notasDigitalesAnexo.js';
 
 // Los movimientos que muestra la tabla (los más nuevos); el resto se cuenta debajo
@@ -75,12 +75,12 @@ const centrado = (doc, texto, cx, base, { tamano, fuente = NORMAL, color = COLOR
 // secciones de los reportes PDF (prepararSeccion, services/reportesPdfBase.js), que ocupa ALTO_DE_LA_CABEZA_DE_SECCION: de y a los
 // descendentes del texto de la derecha
 export const ALTO_DE_LA_CABEZA_DE_SECCION = OJO * LETRA.cabeza;
-export const dibujarCabezaDeSeccion = (doc, titulo, derecha, y) => {
+export const dibujarCabezaDeSeccion = (doc, titulo, derecha, y, { x = IZQUIERDA, ancho = CONTENIDO } = {}) => {
   const base = y + ASCENDENTE * LETRA.cabeza;
-  const mitad = CONTENIDO / 2;
-  rotulo(doc, titulo, IZQUIERDA, desdeBase(base, LETRA.rotulo), { ancho: mitad, tamano: LETRA.rotulo, color: COLOR.acento });
+  const mitad = ancho / 2;
+  rotulo(doc, titulo, x, desdeBase(base, LETRA.rotulo), { ancho: mitad, tamano: LETRA.rotulo, color: COLOR.acento });
   if (derecha) {
-    renglon(doc, derecha, IZQUIERDA + mitad, desdeBase(base, LETRA.cabeza), { ancho: mitad, tamano: LETRA.cabeza, color: COLOR.gris, align: 'right' });
+    renglon(doc, derecha, x + mitad, desdeBase(base, LETRA.cabeza), { ancho: mitad, tamano: LETRA.cabeza, color: COLOR.gris, align: 'right' });
   }
 };
 
@@ -91,8 +91,8 @@ export const dibujarCabezaDeSeccion = (doc, titulo, derecha, y) => {
 // A la izquierda la Dirección y la Municipalidad; a la derecha `derecha` ("Seguimiento del dataset"; en los reportes PDF, el nombre del
 // reporte: services/reportesPdfBase.js) y la fecha larga de hoy (si `hoy` no es una fecha, sin fecha), sobre una línea fina con un tramo
 // del acento. Devuelve la y donde termina.
-export const dibujarEncabezado = (doc, hoy, derecha = 'Seguimiento del dataset') => {
-  const mitad = CONTENIDO / 2;
+export const dibujarEncabezado = (doc, hoy, derecha = 'Seguimiento del dataset', hoja = HOJA_VERTICAL) => {
+  const mitad = hoja.contenido / 2;
   const base1 = MARGEN + ASCENDENTE * 9.5;
   const base2 = base1 + 11.5;
   renglon(doc, 'DIRECCIÓN DE DATOS PÚBLICOS Y COMUNICACIÓN', IZQUIERDA, desdeBase(base1, 7.5),
@@ -101,7 +101,7 @@ export const dibujarEncabezado = (doc, hoy, derecha = 'Seguimiento del dataset')
   renglon(doc, derecha, IZQUIERDA + mitad, desdeBase(base1, 9.5), { ancho: mitad, tamano: 9.5, fuente: NEGRITA, align: 'right' });
   renglon(doc, esFechaIso(hoy) ? formatoLargo(hoy) : '', IZQUIERDA + mitad, desdeBase(base2, 7.5), { ancho: mitad, tamano: 7.5, color: COLOR.gris, align: 'right' });
   const yLinea = base2 + 9;
-  filete(doc, IZQUIERDA, yLinea, CONTENIDO);
+  filete(doc, IZQUIERDA, yLinea, hoja.contenido);
   doc.rect(IZQUIERDA, yLinea - 1, 28, 2).fill(COLOR.acento);
   return yLinea + 1;
 };
@@ -115,20 +115,21 @@ const textoDeGenerado = (momento, por) => {
 
 // El pie: la y de sus textos (el borde superior: sus descendentes quedan sobre el margen inferior) y la de su línea fina, el límite de
 // todo lo que va arriba (los reportes PDF, services/reportesPdfBase.js, no dibujan nada debajo)
-const Y_DEL_PIE = desdeBase(ABAJO - DESCENDENTE * LETRA.pie, LETRA.pie);
-export const LINEA_DEL_PIE = Y_DEL_PIE - 8;
+const yDelPie = (hoja) => desdeBase(hoja.abajo - DESCENDENTE * LETRA.pie, LETRA.pie);
+export const lineaDelPie = (hoja) => yDelPie(hoja) - 8;
+export const LINEA_DEL_PIE = lineaDelPie(HOJA_VERTICAL);
 
 // Pie: línea fina, quién y cuándo lo generó a la izquierda y, a la derecha, `derecha` ("Seguimiento del dataset · Hoja 1 de 1" en la
 // descarga de una hoja; "Anexo de la Nota Digital N° … · Hoja k de N" en el anexo), con los descendentes sobre el margen inferior.
 // Si el texto no entra en su ancho, se corta con "…". Devuelve la y de la línea (LINEA_DEL_PIE), el límite de todo lo que va arriba.
 // Es también el pie de los reportes PDF (services/reportesPdfBase.js, «<Reporte> · Hoja k de N»).
-export const dibujarPie = (doc, generado, derecha) => {
-  const y = Y_DEL_PIE;
-  const yLinea = LINEA_DEL_PIE;
-  const izquierda = CONTENIDO * 0.6;
-  filete(doc, IZQUIERDA, yLinea, CONTENIDO);
+export const dibujarPie = (doc, generado, derecha, hoja = HOJA_VERTICAL) => {
+  const y = yDelPie(hoja);
+  const yLinea = lineaDelPie(hoja);
+  const izquierda = hoja.contenido * 0.6;
+  filete(doc, IZQUIERDA, yLinea, hoja.contenido);
   renglon(doc, textoDeGenerado(generado?.momento, generado?.por), IZQUIERDA, y, { ancho: izquierda, tamano: LETRA.pie, color: COLOR.gris });
-  renglon(doc, derecha, IZQUIERDA + izquierda, y, { ancho: CONTENIDO - izquierda, tamano: LETRA.pie, color: COLOR.gris, align: 'right' });
+  renglon(doc, derecha, IZQUIERDA + izquierda, y, { ancho: hoja.contenido - izquierda, tamano: LETRA.pie, color: COLOR.gris, align: 'right' });
   return yLinea;
 };
 

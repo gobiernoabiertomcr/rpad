@@ -177,8 +177,7 @@ const adentro = (caja) => caja.x0 >= MARGEN && caja.x1 <= ANCHO - MARGEN && caja
 // Ninguno sale del dibujo ni se pisa con otro texto (los números del eje, «vencimiento», el rótulo del eje, el del gris y los otros
 // rótulos). `tramos`: los de vistaDe para la gestión (circuito.externa o circuito.interna); `opciones`: { gestion: 'externa' (la de
 // entrada) | 'interna', dias: 'habiles' (los de entrada) | 'corridos', estadistico: 'mediana' (el de entrada) | 'promedio', letra:
-// cuánto mide una letra (6,6, la de la pantalla, si no es un número positivo; el PDF pasa la suya: OPCIONES_CINTA_PDF de
-// services/reportesMetricasPdf.js) }. null si el aviso anticipado no tiene cifra (sin casos: la cinta no se dibuja) o si `tramos` no es
+// cuánto mide una letra (6,6, la de la pantalla, si no es un número positivo) }. null si el aviso anticipado no tiene cifra (sin casos: la cinta no se dibuja) o si `tramos` no es
 // una lista.
 export const cintaDeMetricas = (tramos, opciones) => {
   if (!Array.isArray(tramos)) return null;

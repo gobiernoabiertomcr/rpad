@@ -17,7 +17,7 @@ import { renderCicloDeVida } from '../services/reportesCicloDeVidaPdf.js';
 import { leerFoto } from '../services/metricasFoto.js';
 import { nombreDelReporte } from '../services/reportesNombres.js';
 import { ESTADISTICOS, DIAS } from '../services/metricasReglas.js';
-import { metricasDe, deLaFoto, cicloDeVidaDe, SIN_METRICAS } from './metricasController.js';
+import { metricasDe, deLaFoto, circuitoEnCorridosDeLaFoto, cicloDeVidaDe, SIN_METRICAS } from './metricasController.js';
 
 // Los reportes PDF (spec 2026-10-24-metricas-y-reportes, 5), todos con la base de los reportes (services/reportesPdfBase.js): acá van
 // las consultas y lo que les toca a los dibujantes. El Cumplimiento ya no está (el ranking de áreas está en Métricas) y el Historial de
@@ -343,8 +343,8 @@ const SIN_FOTO_DEL_ANIO = Object.freeze({ success: false, error: 'Todavía no ha
 // viene repetido o con otra forma)
 const anioDelInforme = (valor) => (typeof valor === 'string' && /^\d{4}$/.test(valor) && Number(valor) >= 1000 ? Number(valor) : null);
 
-// Lo de una foto que lee el Informe: el año, el día y, con la combinación por defecto, lo de deLaFoto (la vista, el contexto y el
-// trabajo, como en Métricas). null sin foto
+// Lo de una foto que lee el Informe: el año, el día y, con la combinación por defecto, lo de deLaFoto (la vista, el contexto, el trabajo y
+// las áreas, como en Métricas). null sin foto
 const COMBINACION_DEL_INFORME = Object.freeze({ estadistico: ESTADISTICOS[0], dias: DIAS[0] });
 const delInforme = (foto) => (foto === null ? null
   : { anio: foto.anio, al: foto.al, ...COMBINACION_DEL_INFORME, ...deLaFoto(foto, COMBINACION_DEL_INFORME) });
@@ -378,7 +378,8 @@ export const reporteInformeAnual = async (req, res) => {
       leerFoto(anio - 1),
       hitosDelAnio(anio)
     ]);
-    const pdf = await renderInformeAnual({ foto: delInforme(foto), anterior: delInforme(anterior), logros: logrosPorProyecto(hitos) },
+    const delAnio = { ...delInforme(foto), circuito_en_corridos: circuitoEnCorridosDeLaFoto(foto, COMBINACION_DEL_INFORME.estadistico) };
+    const pdf = await renderInformeAnual({ foto: delAnio, anterior: delInforme(anterior), logros: logrosPorProyecto(hitos) },
       { generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', disposicionDeAdjunto(nombreDelReporte('informe', { anio })));

@@ -39,10 +39,13 @@ const titulosDe = (fuentesPorDataset, sin) => sin.map((id) => fuentesPorDataset.
 // Las métricas de un año en vivo, con las fuentes de la base de hoy y las mismas cuentas que la foto (datosDeLaFoto): los casos al día
 // `al` (hoy, o el 31/12) y, con ellos, la vista, sus cintas, el contexto, el trabajo del RPAD y las áreas, sin los destildados.
 // `calendario`: el de la tabla (exigirLaTabla), con el que los casos y la vista cuentan los días hábiles (el contexto, el trabajo y las
-// áreas no cuentan días hábiles)
-const enVivo = (fuentesPorDataset, { anio, al, estadistico, dias, sin, calendario }) => {
+// áreas no cuentan días hábiles). `conCorridos`: suma, para el PDF con días hábiles, el circuito en días corridos, con los mismos casos: no vuelve a
+// leer la base
+const enVivo = (fuentesPorDataset, { anio, al, estadistico, dias, sin, calendario, conCorridos = false }) => {
   const casos = casosDe(fuentesPorDataset, { hoy: al, calendario });
   const vista = vistaDe(casos, { anio, al, estadistico, dias, sin, calendario });
+  const enCorridos = conCorridos && dias === 'habiles'
+    ? { circuito_en_corridos: vistaDe(casos, { anio, al, estadistico, dias: 'corridos', sin, calendario }).circuito } : {};
   const opciones = { anio, al, sin };
   const titulos = titulosDe(fuentesPorDataset, sin);
   return {
@@ -52,7 +55,8 @@ const enVivo = (fuentesPorDataset, { anio, al, estadistico, dias, sin, calendari
     trabajo: trabajoDelAnio(fuentesPorDataset, casos, { ...opciones, estadistico }),
     areas: areasYTemas(fuentesPorDataset, opciones),
     sin_titulos: titulos,
-    sin_texto: textoDeLaFranja(titulos)
+    sin_texto: textoDeLaFranja(titulos),
+    ...enCorridos
   };
 };
 
@@ -68,6 +72,10 @@ export const deLaFoto = ({ anio, datos }, { estadistico, dias }) => {
   if (!vista || !cinta || !trabajo) throw new Error(`La foto de ${anio} no se puede leer`);
   return { vista, cinta, contexto: datos.contexto, trabajo, areas: datos.areas, sin_titulos: [], sin_texto: '' };
 };
+
+// El circuito en días corridos de una foto, para los PDF (spec 2026-11-05-metricas-pdf-apaisado, 5). `foto`: la de leerFoto. Una foto sin esa combinación no
+// tira: el PDF sale sin los paréntesis (también lo usa el Informe anual, controllers/reportesController.js)
+export const circuitoEnCorridosDeLaFoto = ({ datos }, estadistico) => datos.vistas[claveDeLaVista(estadistico, 'corridos')]?.circuito ?? null;
 
 // Todo lo que muestra la pestaña Métricas para `query` (los parámetros de la URL; ver opcionesDeMetricas), o null si ese año no tiene
 // métricas (un año anterior a 2026 o futuro). `hoy`: el día de hoy (por defecto, el de Argentina). Lee la base: los años con foto y,
@@ -89,8 +97,9 @@ export const metricasDe = async (query, { hoy = hoyArgentina() } = {}) => (await
 
 // Lo de metricasDe (`data`) y las opciones con que se calculó (`opciones`, las de opcionesDeMetricas: el PDF dice en su píldora el
 // estadístico y los días), o null si ese año no tiene métricas. El calendario se lee solo en vivo, después de saber que el año va en
-// vivo (un año con foto no lee la tabla) y antes de las fuentes; sin la tabla, tira (exigirLaTabla)
-const metricasConOpciones = async (query, { hoy }) => {
+// vivo (un año con foto no lee la tabla) y antes de las fuentes; sin la tabla, tira (exigirLaTabla). `conCorridos`: lo que suma el PDF, el circuito en
+// días corridos (`circuito_en_corridos`, solo con días hábiles; spec 2026-11-05-metricas-pdf-apaisado, 5); la pestaña no lo usa
+const metricasConOpciones = async (query, { hoy, conCorridos = false }) => {
   const aniosConFoto = await leerAniosConFoto();
   const opciones = opcionesDeMetricas(query, { hoy, aniosConFoto });
   if (opciones === null) return null;
@@ -100,11 +109,12 @@ const metricasConOpciones = async (query, { hoy }) => {
   };
   if (opciones.en_vivo) {
     const calendario = exigirLaTabla(await leerCalendario());
-    return { opciones, data: { ...periodo, ...enVivo(await fuentesDe(null), { ...opciones, calendario }) } };
+    return { opciones, data: { ...periodo, ...enVivo(await fuentesDe(null), { ...opciones, calendario, conCorridos }) } };
   }
   const foto = await leerFoto(opciones.anio);
   if (foto === null) return null;
-  return { opciones, data: { ...periodo, ...deLaFoto(foto, opciones) } };
+  const enCorridos = conCorridos && opciones.dias === 'habiles' ? { circuito_en_corridos: circuitoEnCorridosDeLaFoto(foto, opciones.estadistico) } : {};
+  return { opciones, data: { ...periodo, ...deLaFoto(foto, opciones), ...enCorridos } };
 };
 
 // Las etapas del Ciclo de vida del dato de un año leído como lo lee la pestaña (`periodo`: las opciones de opcionesDeMetricas). En vivo,
@@ -185,7 +195,7 @@ const metricasManualesDe = async (anio) => {
 // foto sale de la foto), con la combinación elegida y lo destildado en su píldora y las métricas manuales del año. `generado`: { momento:
 // 'AAAA-MM-DD HH:MM:SS' (hora argentina: su día es hoy), por: nombre corto o null }. { anio, pdf }, o null si ese año no tiene métricas
 export const pdfDeMetricas = async (query, generado) => {
-  const calculadas = await metricasConOpciones(query, { hoy: generado.momento.slice(0, 10) });
+  const calculadas = await metricasConOpciones(query, { hoy: generado.momento.slice(0, 10), conCorridos: true });
   if (calculadas === null) return null;
   const { opciones, data } = calculadas;
   const manuales = await metricasManualesDe(data.anio);

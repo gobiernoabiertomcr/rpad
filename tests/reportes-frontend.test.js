@@ -1677,19 +1677,24 @@ describe('reportes.js y el PDF de Métricas: los mismos textos', () => {
     assert.ok(flecha.includes(`<span class="c">${T.seCuentaHasta}</span>`));
   });
 
+  // El PDF ya no dibuja las cintas (spec 2026-11-05-metricas-pdf-apaisado): los textos de la leyenda son solo de la página
   it('la leyenda de la cinta', () => {
+    const LEYENDA = {
+      aviso: 'Aviso del RPAD', nota: 'Nota DGMIT recibida por el área', datos: { externa: 'Datos entregados', interna: 'Relevamiento entregado' },
+      carga: 'Carga en el portal', 'datos-y-carga': 'Entrega y carga juntas', rayado: 'Después del vencimiento'
+    };
     const conDatosYCarga = cintaDeMetricas([tramo('aviso', 41), tramo('produccion', 45), tramo('carga', 30)], { gestion: 'interna' });
     const vistos = new Set();
     for (const [cinta, gestion] of [[CINTA_EXTERNA, 'externa'], [CINTA_INTERNA, 'interna'], [conDatosYCarga, 'interna']]) {
       const leyenda = ctx.htmlDeLeyendaDeCinta(cinta, gestion);
       const tipos = [...new Set(cinta.marcas.map((m) => m.tipo)), ...(cinta.rayado ? ['rayado'] : [])];
       for (const tipo of tipos) {
-        const nombre = typeof T.leyenda[tipo] === 'string' ? T.leyenda[tipo] : T.leyenda[tipo][gestion];
+        const nombre = typeof LEYENDA[tipo] === 'string' ? LEYENDA[tipo] : LEYENDA[tipo][gestion];
         assert.ok(leyenda.includes(`</i>${nombre}</span>`), `${gestion} ${tipo}: ${nombre}`);
         vistos.add(`${tipo} ${gestion}`);
       }
     }
-    // Están todos los de la leyenda del PDF, menos la nota en la interna (no tiene)
+    // Están todos los de la leyenda, menos la nota en la interna (no tiene)
     for (const esperado of ['aviso externa', 'nota externa', 'datos externa', 'carga externa', 'rayado externa', 'datos-y-carga interna', 'datos interna']) {
       assert.ok(vistos.has(esperado), esperado);
     }

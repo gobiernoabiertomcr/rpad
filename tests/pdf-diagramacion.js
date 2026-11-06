@@ -18,14 +18,19 @@ const MM = 72 / 25.4;
 // - acentos: los filetes verticales del acento en el borde izquierdo (en el anexo, el del recuadro destacado, la descripción, y
 //   el de los datos solicitados; el Seguimiento no tiene).
 // Cada uno: { hoja, texto, x0, y0, x1, y1 }, con y desde el borde superior.
+// - tamanos: el tamaño de cada hoja, { ancho, alto }, en el orden en que aparecen.
 export const diagramacion = async (render) => {
   const textos = [];
   const bloques = [];
   const lineas = [];
   const acentos = [];
   const hojas = [];
+  const tamanos = [];
   const indice = (hoja) => {
-    if (!hojas.includes(hoja)) hojas.push(hoja);
+    if (!hojas.includes(hoja)) {
+      hojas.push(hoja);
+      tamanos.push({ ancho: hoja.width, alto: hoja.height });
+    }
     return hojas.indexOf(hoja);
   };
   const original = DocumentoNota.prototype.text;
@@ -67,19 +72,28 @@ export const diagramacion = async (render) => {
     delete DocumentoNota.prototype.roundedRect;
     delete DocumentoNota.prototype.rect;
   }
-  return { textos, bloques, lineas, acentos };
+  return { textos, bloques, lineas, acentos, tamanos };
 };
 
 export const seCruzan = (a, b) => a.x0 < b.x1 - 0.1 && b.x0 < a.x1 - 0.1 && a.y0 < b.y1 - 0.1 && b.y0 < a.y1 - 0.1;
 export const contiene = (a, b) => b.x0 >= a.x0 - 0.01 && b.x1 <= a.x1 + 0.01 && b.y0 >= a.y0 - 0.01 && b.y1 <= a.y1 + 0.01;
 export const nombre = (c) => `"${c.texto.slice(0, 40)}" (${[c.x0, c.y0, c.x1, c.y1].map(v => v.toFixed(1)).join(', ')})`;
 
-// Textos, bloques y líneas dentro de los márgenes de 15 mm de la hoja A4; ningún texto encima de otro ni bloques encimados; cada
-// texto, dentro de un bloque o fuera de él (ninguno cruza un borde); y ninguna línea fina cruza un texto o un bloque
-export const verificarDiagramacion = ({ textos, bloques, lineas }) => {
+// Las dos formas de la hoja A4, en puntos
+const A4 = { corto: 210 * MM, largo: 297 * MM };
+const esA4 = ({ ancho, alto }, a, b) => Math.abs(ancho - a) <= 0.01 && Math.abs(alto - b) <= 0.01;
+
+// Textos, bloques y líneas dentro de los márgenes de 15 mm de su hoja, A4 vertical o apaisada (`tamanos`, sin él, vertical); ningún texto
+// encima de otro ni bloques encimados; cada texto, dentro de un bloque o fuera de él (ninguno cruza un borde); y ninguna línea fina cruza un
+// texto o un bloque
+export const verificarDiagramacion = ({ textos, bloques, lineas, tamanos = [] }) => {
+  tamanos.forEach((tamano, i) => assert.ok(esA4(tamano, A4.corto, A4.largo) || esA4(tamano, A4.largo, A4.corto),
+    `la hoja ${i + 1} no es A4: ${tamano.ancho} × ${tamano.alto}`));
+  const medidas = (c) => tamanos[c.hoja] ?? { ancho: A4.corto, alto: A4.largo };
   for (const c of [...textos, ...bloques, ...lineas]) {
-    assert.ok(c.x0 >= 15 * MM - 0.01 && c.x1 <= 195 * MM + 0.01, `${nombre(c)} sale de los márgenes laterales`);
-    assert.ok(c.y0 >= 15 * MM - 0.01 && c.y1 <= 282 * MM + 0.01, `${nombre(c)} sale de los márgenes superior o inferior`);
+    const { ancho, alto } = medidas(c);
+    assert.ok(c.x0 >= 15 * MM - 0.01 && c.x1 <= ancho - 15 * MM + 0.01, `${nombre(c)} sale de los márgenes laterales`);
+    assert.ok(c.y0 >= 15 * MM - 0.01 && c.y1 <= alto - 15 * MM + 0.01, `${nombre(c)} sale de los márgenes superior o inferior`);
   }
   const deLaMismaHoja = (lista, otra = lista) => lista.flatMap((a, i) => otra.slice(otra === lista ? i + 1 : 0)
     .filter(b => a.hoja === b.hoja).map(b => [a, b]));
