@@ -2845,3 +2845,26 @@ describe('«Los casos»: cada número dice su unidad y desde cuándo cuenta (spe
     assert.equal(cifraDel(v, 'interna', 'produccion').valor, 220);
   });
 });
+
+describe('una nota DGMIT anterior a la carga que el dataset tenía al empezar su primer ciclo (spec 2026-11-06-editar-notas-dgmit, 3)', () => {
+  const ACTUALIZACION = {
+    id: 1, tipo: 'editar', estado: 'aprobado', revisado: '2031-04-18 14:30:00',
+    anteriores: { proxima_actualizacion: '2031-03-31', ultima_actualizacion: '2030-08-14' },
+    nuevos: { proxima_actualizacion: '2032-02-28', ultima_actualizacion: '2031-04-17', recibido_el: '2031-04-16', origen_datos: 'area' }
+  };
+  const fuentes = (notasDgmit) => new Map([[900, {
+    dataset: { id: 900, titulo: 'Dataset de prueba', area: 'Área de prueba', meses: 12, proxima: '2032-02-28', ultima: '2031-04-17', alta: '2030-12-03 10:00:00', tipo_gestion: 'externa', requiere_nota: 1, activo: true },
+    cambios: [ACTUALIZACION], historial: [], emails: [], notas: [], notasDgmit, catalogos: {}
+  }]]);
+  const nota = (recibida) => ({ id: 1, numero: '1/26', tipo: 'solicitud', recibida, anulada: false, cargada: '2031-11-06 10:00:00', por: null, por_id: null, datasets: [], historial: [] });
+  const respuesta = (notasDgmit) => vistaDe(casosDe(fuentes(notasDgmit), { hoy: '2031-11-06', calendario: null }), { anio: 2031, al: '2031-11-06', calendario: null })
+    .circuito.externa.find((tramo) => tramo.clave === 'respuesta');
+
+  it('no entra en «Respuesta del área»; una posterior a esa carga, sí', () => {
+    const casos = (notasDgmit) => casosDe(fuentes(notasDgmit), { hoy: '2031-11-06', calendario: null });
+    assert.equal(casos([nota('2030-07-22')])[0].nota_dgmit, null);
+    assert.equal(respuesta([nota('2030-07-22')]).cifra, null);
+    assert.equal(casos([nota('2030-11-17')])[0].nota_dgmit.recibida, '2030-11-17');
+    assert.equal(respuesta([nota('2030-11-17')]).cifra.ciclos, 1);
+  });
+});

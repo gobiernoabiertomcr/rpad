@@ -757,7 +757,7 @@ const metricasDeLosCasos = ({ estadistico = 'mediana', dias = 'habiles', sin = [
   };
 };
 
-// Los casos reales con una nota DGMIT recibida por el área para Comercios habilitados por rubro (el 61, avisado y vencido): el tramo
+// Los casos reales con una nota DGMIT entregada al área para Comercios habilitados por rubro (el 61, avisado y vencido): el tramo
 // de la DGMIT y el del área ya se cuentan
 const conNotaDgmit = () => {
   const mapa = mapaDeLosCasos();
@@ -2679,9 +2679,9 @@ describe('Ciclo de vida del dato con el diseño del anexo', () => {
     assert.equal(d.externa.aviso, 'El RPAD avisa a la DGMIT y a la Dirección Administrativa qué conjuntos de datos vencen en los próximos 40 días y qué datos hay que pedir de cada uno, por Nota Digital (hasta el 12/10/2026, por email).');
     assert.equal(m.externa.aviso, 'Se mide del aviso al vencimiento: cuanto más grande, más anticipación.');
     assert.equal(d.externa.tramite, 'La DGMIT y la Dirección Administrativa redactan la nota formal que le pide los datos al área y se la hacen llegar.');
-    assert.equal(m.externa.tramite, 'Se mide del aviso del RPAD al día en que el área recibió la nota, con las notas DGMIT cargadas en el Seguimiento.');
+    assert.equal(m.externa.tramite, 'Se mide del aviso del RPAD al día en que se le entregó la nota al área, con las notas DGMIT cargadas en el Seguimiento.');
     assert.equal(d.externa.respuesta, 'El área reúne y prepara los datos pedidos y se los entrega a Datos Públicos.');
-    assert.equal(m.externa.respuesta, 'Se mide del día en que el área recibió la nota al «Recibido el». Con datos de una fuente pública, no se cuenta.');
+    assert.equal(m.externa.respuesta, 'Se mide del día en que se le entregó la nota al área al «Recibido el». Con datos de una fuente pública, no se cuenta.');
     assert.equal(d.externa.carga, 'Los datos llegan en PDF, en papel o desordenados: Datos Públicos los transcribe, los ordena y los normaliza (que «Palazzo», «P. Palazzo» y «Próspero Palazzo» queden como un solo nombre) y los publica en el portal en formato abierto.');
     assert.equal(m.externa.carga, 'Se mide del «Recibido el» al día de la carga en el portal.');
     assert.equal(d.interna.aviso, 'El RPAD avisa a la DGMIT y a la Dirección de Investigación Territorial qué conjuntos de datos vencen en los próximos 60 días y qué hay que relevar.');

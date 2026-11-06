@@ -192,6 +192,7 @@ describe('lector', () => {
 // Notas DGMIT (spec 2026-10-24-notas-dgmit, sección 8): las cargan administración y el colaborador, no el lector. Los IDs no
 // importan: el rol se valida antes
 const RUTAS_NOTAS_DGMIT = [
+  ['GET', '/notas-dgmit'],
   ['POST', '/notas-dgmit'],
   ['PUT', '/notas-dgmit/1'],
   ['POST', '/notas-dgmit/1/anular']
@@ -344,7 +345,14 @@ describe('colaborador', () => {
 
   // Con el cuerpo vacío, el middleware lo deja pasar y contesta el controlador (la validación, o la nota que no existe o no es suya):
   // nunca el 403 del middleware ni un 401. Nada se guarda
-  for (const [metodo, ruta] of RUTAS_NOTAS_DGMIT) {
+  it('GET /notas-dgmit le da la lista', async () => {
+    const res = await pedir('GET', '/notas-dgmit', usuarios.colaborador.token);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.success, true);
+    assert.ok(Array.isArray(res.body.data));
+  });
+
+  for (const [metodo, ruta] of RUTAS_NOTAS_DGMIT.filter(([verbo]) => verbo !== 'GET')) {
     it(`llega al controlador en ${metodo} ${ruta}`, async () => {
       const res = await pedir(metodo, ruta, usuarios.colaborador.token);
       assert.ok([400, 403, 404].includes(res.status), `${res.status} ${JSON.stringify(res.body)}`);

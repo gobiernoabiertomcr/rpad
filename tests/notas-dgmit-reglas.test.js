@@ -2,7 +2,7 @@
 // anulación. Sin base ni Date local: hoy llega por parámetro como texto 'AAAA-MM-DD'.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import {
+import { textoDeLaSecuencia,
   LARGO_NUMERO, LARGO_MOTIVO, FECHA_MINIMA, TIPOS_NOTA_DGMIT, MENSAJES_NOTA_DGMIT, TEXTO_TIPO_NOTA_DGMIT,
   validarNotaDgmit, validarMotivo, textoNumeroRepetido, textoNoSePuedeElegir, sePuedeElegir, idsDeDatasets
 } from '../services/notasDgmitReglas.js';
@@ -27,9 +27,9 @@ describe('constantes y textos', () => {
     assert.deepEqual({ ...MENSAJES_NOTA_DGMIT }, {
       numero: 'Escribí el número de la nota.',
       numeroLargo: 'El número de la nota puede tener hasta 40 caracteres.',
-      recibida: 'Elegí la fecha en que el área recibió la nota.',
-      recibidaFutura: 'La fecha de recepción no puede ser posterior a hoy.',
-      recibidaVieja: 'La fecha de recepción no puede ser anterior al 01/01/2025.',
+      recibida: 'Elegí la fecha en que se le entregó la nota al área.',
+      recibidaFutura: 'La fecha de entrega no puede ser posterior a hoy.',
+      recibidaVieja: 'La fecha de entrega no puede ser anterior al 01/01/2025.',
       tipo: 'Elegí si es una solicitud o una reiteración.',
       datasets: 'Elegí al menos un dataset.',
       motivo: 'Escribí el motivo.',
@@ -210,5 +210,33 @@ describe('entradas raras', () => {
       assert.deepEqual(validarMotivo(valor), { motivo: null, error: MENSAJES_NOTA_DGMIT.motivo }, String(valor));
     }
     assert.deepEqual(validarMotivo(), { motivo: null, error: MENSAJES_NOTA_DGMIT.motivo });
+  });
+});
+
+describe('textoDeLaSecuencia (spec 2026-11-06-editar-notas-dgmit, 4)', () => {
+  const dataset = { id: 1, titulo: 'Dataset de prueba' };
+  const solicitud = { numero: '301/26', tipo: 'solicitud', recibida: '2031-03-11' };
+  const reiteracion = { numero: '302/26', tipo: 'reiteracion', recibida: '2031-08-19' };
+  const REGLA = 'La primera nota de un ciclo es la solicitud y las demás son reiteraciones.';
+
+  it('una segunda solicitud nombra a la que ya está', () => {
+    assert.equal(textoDeLaSecuencia({ dataset, nota: { numero: 'NUEVA', tipo: 'solicitud', recibida: '2031-03-16' }, motivo: 'no-es-la-primera', primera: solicitud, esLaQueCambia: true }),
+      `«Dataset de prueba» ya tiene la nota DGMIT N° 301/26 (solicitud, entregada el 11/03/2031) en ese ciclo. ${REGLA}`);
+    assert.equal(textoDeLaSecuencia({ dataset, nota: solicitud, motivo: 'no-es-la-primera', primera: { numero: 'NUEVA' }, esLaQueCambia: false }),
+      `«Dataset de prueba» ya tiene la nota DGMIT N° 301/26 (solicitud, entregada el 11/03/2031) en ese ciclo. ${REGLA}`);
+  });
+
+  it('una reiteración sin solicitud: la que se guarda o la que quedaría', () => {
+    assert.equal(textoDeLaSecuencia({ dataset, nota: reiteracion, motivo: 'sin-solicitud', primera: null, esLaQueCambia: true }),
+      '«Dataset de prueba» no tiene una solicitud anterior en ese ciclo. La primera nota de un ciclo es la solicitud: cargala primero.');
+    assert.equal(textoDeLaSecuencia({ dataset, nota: reiteracion, motivo: 'sin-solicitud', primera: null, esLaQueCambia: false }),
+      'En «Dataset de prueba», la nota DGMIT N° 302/26 (reiteración, entregada el 19/08/2031) quedaría sin una solicitud anterior en su ciclo.');
+  });
+
+  it('una anulación dice qué hacer, y los datasets que siguen se cuentan', () => {
+    assert.equal(textoDeLaSecuencia({ dataset, nota: reiteracion, motivo: 'sin-solicitud', primera: null, esLaQueCambia: false }, { anular: true }),
+      'No se puede anular: en «Dataset de prueba», la nota DGMIT N° 302/26 (reiteración, entregada el 19/08/2031) quedaría sin una solicitud anterior en su ciclo. Anulá primero las reiteraciones de ese ciclo o corregí esta nota.');
+    assert.ok(textoDeLaSecuencia({ dataset, nota: reiteracion, motivo: 'sin-solicitud', esLaQueCambia: true, mas: 1 }).endsWith(' También en 1 dataset más.'));
+    assert.ok(textoDeLaSecuencia({ dataset, nota: reiteracion, motivo: 'sin-solicitud', esLaQueCambia: true, mas: 3 }).endsWith(' También en 3 datasets más.'));
   });
 });

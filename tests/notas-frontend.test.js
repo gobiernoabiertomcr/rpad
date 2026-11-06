@@ -283,7 +283,7 @@ describe('notas.js: el paso 2 (los datasets y la nota)', () => {
   it('htmlDeDataset: las notas DGMIT del ciclo, en violeta y por fecha de recepción', () => {
     const reclamos = DATASETS_DE_LA_COOPERATIVA().find((d) => d.id === 69);
     assert.ok(ctx.htmlDeDataset(reclamos, true).includes(
-      '<span class="ds-dgmit">Notas DGMIT del ciclo: N° 102/26 (solicitud, recibida el 15/07/2026) · N° 131/26 (reiteración, recibida el 10/09/2026)</span>'));
+      '<span class="ds-dgmit">Notas DGMIT del ciclo: N° 102/26 (solicitud, entregada el 15/07/2026) · N° 131/26 (reiteración, entregada el 10/09/2026)</span>'));
   });
 
   it('htmlDeDataset escapa el título, la frecuencia, los datos solicitados y los números de las notas', () => {
@@ -294,7 +294,7 @@ describe('notas.js: el paso 2 (los datasets y la nota)', () => {
     assert.ok(html.includes('Con &lt;b&gt;negrita&lt;/b&gt;'));
     assert.ok(!html.includes('<b>negrita') && !html.includes('<i>x') && !html.includes('<u>1') && !html.includes('<script>'));
     assert.ok(html.includes('&lt;i&gt;x&lt;/i&gt; · Datos solicitados: <b>&quot;y&quot; &amp; &lt;z&gt;</b>'));
-    assert.ok(html.includes('N° &lt;u&gt;1&lt;/u&gt; (solicitud, recibida el 02/01/2026)'));
+    assert.ok(html.includes('N° &lt;u&gt;1&lt;/u&gt; (solicitud, entregada el 02/01/2026)'));
     assert.ok(html.includes('value="1&quot;&gt;&lt;script&gt;"'));
     const alDia = ctx.htmlDeDataset(DATASET({ titulo: 'Con <b>negrita</b>', se_puede_pedir: false }), false);
     assert.ok(alDia.includes('aria-label="Con &lt;b&gt;negrita&lt;/b&gt;: al día, no se puede pedir"'));

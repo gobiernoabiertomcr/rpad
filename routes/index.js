@@ -139,7 +139,7 @@ import {
 } from '../controllers/proyectosController.js';
 import { listarSeguimiento, verSeguimiento, descargarSeguimientoPdf } from '../controllers/seguimientoController.js';
 import { verMetricas, descargarMetricasPdf } from '../controllers/metricasController.js';
-import { cargarNotaDgmit, corregirNotaDgmit, anularNotaDgmit } from '../controllers/notasDgmitController.js';
+import { listarNotasDgmit, cargarNotaDgmit, corregirNotaDgmit, anularNotaDgmit } from '../controllers/notasDgmitController.js';
 import { subida, subidaDeNotaFirmada } from '../config/upload.js';
 
 const router = Router();
@@ -361,6 +361,7 @@ router.get('/metricas/pdf', authMiddleware, descargarMetricasPdf);
 // =====================================================
 // Notas DGMIT (protegidas: administración y el colaborador; corregir y anular, quien la cargó o administración)
 // =====================================================
+router.get('/notas-dgmit', authMiddleware, cargaNotasDgmit, listarNotasDgmit);
 router.post('/notas-dgmit', authMiddleware, cargaNotasDgmit, cargarNotaDgmit);
 router.put('/notas-dgmit/:id', authMiddleware, cargaNotasDgmit, corregirNotaDgmit);
 router.post('/notas-dgmit/:id/anular', authMiddleware, cargaNotasDgmit, anularNotaDgmit);

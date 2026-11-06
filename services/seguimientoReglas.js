@@ -2,7 +2,7 @@
 // cuenta de un dataset y con qué textos. Funciones puras, sin base de datos ni Date local para "hoy": las fechas son
 // strings 'AAAA-MM-DD' y los momentos 'AAAA-MM-DD HH:MM:SS' en hora argentina. Las fuentes (`Fuentes`) las arma
 // services/seguimientoDatos.js. Ninguna función tira error: con datos raros ignoran lo que no pueden leer.
-import { esFechaIso, formatoCorto, diasEntre } from './notasDigitalesCalendario.js';
+import { esFechaIso, formatoCorto, diasEntre, sumarDias } from './notasDigitalesCalendario.js';
 import { NOMBRES_TIPO_PEDIDO, estadoDelDataset, tipoEfectivo, pedido as calcularPedido } from './fechasDatasetReglas.js';
 import { cintaDe } from './seguimientoCinta.js';
 import { normalizarRequiereNota, textoRequiereNota } from './requiereNotaReglas.js';
@@ -381,7 +381,7 @@ const movimientoDeNotaDgmit = (nota, dataset) => {
   const otros = datasets.filter((d) => Number(d.id) !== Number(propio.id) && !textoVacio(d.titulo)).map((d) => String(d.titulo).trim());
   const historial = lista(nota.historial).filter((h) => h && typeof h === 'object')
     .map((h) => ({ accion: h.accion ?? null, motivo: h.motivo ?? null, por: nombreCorto(h.por), momento: momentoDe(h.momento) }));
-  const frases = [`Recibida por el área el ${formatoCorto(leida.recibida)}.`];
+  const frases = [`Entregada al área el ${formatoCorto(leida.recibida)}.`];
   if (otros.length) frases.push(`La misma nota pide también ${unirConY(otros)}.`);
   if (leida.anulada) frases.push(textoDeAnulacion(historial));
   const titulo = `Nota DGMIT N° ${leida.numero} al área: ${TEXTO_TIPO_NOTA_DGMIT[leida.tipo].toLowerCase()}`;
@@ -461,6 +461,34 @@ const unirConY = (items) => (items.length <= 1 ? items.join('') : `${items.slice
 const mayuscula = (texto) => texto.charAt(0).toUpperCase() + texto.slice(1);
 const porMomentoYId = (a, b) => comparar(a.momento, b.momento) || a.id - b.id;
 
+// Los cambios aprobados de un tipo, en el orden en que pasaron
+const aprobadosDe = (fuentes, tipo) => lista(fuentes.cambios)
+  .filter((c) => c && typeof c === 'object' && c.tipo === tipo && c.estado === 'aprobado' && momentoDe(c.revisado) !== null)
+  .map((c) => ({ cambio: c, momento: momentoDe(c.revisado), id: Number(c.id) || 0 }))
+  .sort(porMomentoYId);
+
+// Las actualizaciones simples (el botón de antes de la doble verificación): una por día, la primera, como en los movimientos. Una que
+// después se deshizo por fuera del sistema (la carga que siguió, la anterior del primer cambio aprobado posterior que la trae o, si no
+// hay, la de hoy, es anterior a ella) no cortó nada
+const simplesDe = (fuentes, ediciones) => {
+  const cargaSiguiente = (momento) => {
+    const siguiente = ediciones.find((e) => e.momento > momento && diaDe(objeto(e.cambio.anteriores).ultima_actualizacion) !== null);
+    return siguiente ? diaDe(objeto(siguiente.cambio.anteriores).ultima_actualizacion) : diaDe(objeto(fuentes.dataset).ultima);
+  };
+  const vistas = new Set();
+  return lista(fuentes.historial)
+    .filter((h) => h && typeof h === 'object' && (h.cambio_id === null || h.cambio_id === undefined))
+    .sort((a, b) => comparar(String(a.creado ?? ''), String(b.creado ?? '')))
+    .flatMap((h) => {
+      const fecha = diaDe(h.fecha);
+      if (fecha === null || vistas.has(fecha)) return [];
+      vistas.add(fecha);
+      const momento = momentoDe(h.creado) ?? `${fecha} 00:00:00`;
+      const despues = cargaSiguiente(momento);
+      return despues !== null && despues < fecha ? [] : [{ simple: fecha, momento, id: 0 }];
+    });
+};
+
 // Un ciclo es el tiempo en que rige un vencimiento (spec, "Ciclos"). Se reconstruye con los cambios 'editar' aprobados y las
 // actualizaciones anteriores a la doble verificación (las filas del historial sin cambio_id, una por día), en el orden en que pasaron,
 // y el último, el abierto, vence siempre en la próxima actual del dataset. Cada ciclo:
@@ -478,31 +506,9 @@ export const ciclosDe = (fuentes, hoy) => {
   const proxima = diaDe(dataset.proxima);
   if (!esMeses(dataset.meses) || proxima === null) return null;
 
-  const aprobados = (tipo) => lista(fuentes.cambios)
-    .filter((c) => c && typeof c === 'object' && c.tipo === tipo && c.estado === 'aprobado' && momentoDe(c.revisado) !== null)
-    .map((c) => ({ cambio: c, momento: momentoDe(c.revisado), id: Number(c.id) || 0 }))
-    .sort(porMomentoYId);
-  const ediciones = aprobados('editar');
-  const baja = aprobados('eliminar').pop();
-  // La carga que siguió a un momento: la anterior del primer cambio aprobado posterior que la trae o, si no hay, la de hoy
-  const cargaSiguiente = (momento) => {
-    const siguiente = ediciones.find((e) => e.momento > momento && diaDe(objeto(e.cambio.anteriores).ultima_actualizacion) !== null);
-    return siguiente ? diaDe(objeto(siguiente.cambio.anteriores).ultima_actualizacion) : diaDe(dataset.ultima);
-  };
-  // Las actualizaciones simples (el botón de antes de la doble verificación): una por día, la primera, como en los movimientos.
-  // Una que después se deshizo por fuera del sistema (la carga que siguió es anterior a ella) no cortó nada
-  const vistas = new Set();
-  const simples = lista(fuentes.historial)
-    .filter((h) => h && typeof h === 'object' && (h.cambio_id === null || h.cambio_id === undefined))
-    .sort((a, b) => comparar(String(a.creado ?? ''), String(b.creado ?? '')))
-    .flatMap((h) => {
-      const fecha = diaDe(h.fecha);
-      if (fecha === null || vistas.has(fecha)) return [];
-      vistas.add(fecha);
-      const momento = momentoDe(h.creado) ?? `${fecha} 00:00:00`;
-      const despues = cargaSiguiente(momento);
-      return despues !== null && despues < fecha ? [] : [{ simple: fecha, momento, id: 0 }];
-    });
+  const ediciones = aprobadosDe(fuentes, 'editar');
+  const baja = aprobadosDe(fuentes, 'eliminar').pop();
+  const simples = simplesDe(fuentes, ediciones);
   const eventos = [...ediciones, ...simples].sort(porMomentoYId);
 
   // El vencimiento con el que nació el dataset: la próxima anterior del primer cambio que la trae; sin cambios, la próxima actual.
@@ -649,28 +655,48 @@ const notasDgmitVigentes = (fuentes, hoy) => lista(fuentes.notasDgmit).map(notaD
   .filter((n) => n && !n.anulada && n.recibida <= hoy)
   .sort((a, b) => comparar(a.recibida, b.recibida) || comparar(a.cargada ?? '', b.cargada ?? '') || a.id - b.id);
 
+// La carga que el dataset tenía al empezar su primer ciclo: la anterior del primer cambio aprobado que trae ese dato, de antes de la
+// primera actualización simple (la carga de antes de una simple no quedó guardada). null si no se conoce o si el dataset no tenía ninguna
+const cargaAntesDelPrimerCiclo = (fuentes) => {
+  const ediciones = aprobadosDe(fuentes, 'editar');
+  const simples = simplesDe(fuentes, ediciones);
+  const anteriores = simples.length === 0 ? ediciones : ediciones.filter((e) => e.momento < simples[0].momento);
+  const primero = anteriores.find(({ cambio }) => Object.hasOwn(objeto(cambio.anteriores), 'ultima_actualizacion'));
+  return primero ? diaDe(objeto(primero.cambio.anteriores).ultima_actualizacion) : null;
+};
+
+// Por qué una nota vigente no es de ningún ciclo: { carga } (el día de la carga que ya la respondió) o { baja: true }; null si es de un
+// ciclo. Solo pasa si ninguno regía el día en que se entregó. Con un solo ciclo, si es anterior a la última carga en el portal (`dataset.ultima`;
+// sin ella, o si no es una fecha, es del ciclo: ruling R7 de la revisión final). Con varios, si es posterior a la baja o anterior a la carga
+// que el dataset tenía al empezar el primero (spec 2026-11-06-editar-notas-dgmit, 3): si esa carga no se conoce, es del primero.
+const fueraDeLosCiclos = (nota, fuentes, ciclos) => {
+  const momento = `${nota.recibida} 00:00:00`;
+  if (algunCicloRige(ciclos, momento)) return null;
+  if (ciclos.length === 1) {
+    const ultima = diaDe(objeto(fuentes.dataset).ultima);
+    return ultima !== null && nota.recibida < ultima ? { carga: ultima } : null;
+  }
+  const { hasta } = ciclos[ciclos.length - 1];
+  if (hasta && momento >= hasta) return { baja: true };
+  const carga = cargaAntesDelPrimerCiclo(fuentes);
+  return carga !== null && nota.recibida < carga ? { carga } : null;
+};
+
 // Las notas DGMIT de cada ciclo (spec 2026-10-24-notas-dgmit, 5; las métricas las ubican igual que el Seguimiento: spec
 // 2026-10-24-metricas-y-reportes, 1.2). Una nota DGMIT no es un aviso del RPAD: no cuenta en avisosDelCiclo ni en ultimoAviso, y no
 // cambia los ciclos, los hitos ni el estado. Cuentan las vigentes. Cada una es del ciclo que regía el día en que el área la recibió,
 // a las 00:00 (cicloDelAviso), así que si ese mismo día se aprobó la actualización que cerró un ciclo, la nota es de ese ciclo (se
 // mandó antes de que llegaran los datos). Si ningún ciclo regía ese día (anterior al primero, o posterior a la baja), cicloDelAviso
-// da el 0; si ese 0 es el abierto (un solo ciclo), la nota es suya solo si no es anterior a la última carga en el portal
-// (`dataset.ultima`; sin ella, o si no es una fecha, lo es), porque una nota anterior ya la respondió esa carga o una anterior
-// (ruling R7 de la revisión final); si no, no es de ningún ciclo. Una lista por ciclo, en el orden de `ciclos`, cada una con sus
+// da el 0, salvo lo que dice fueraDeLosCiclos: ahí no es de ningún ciclo. Una lista por ciclo, en el orden de `ciclos`, cada una con sus
 // notas { id, numero, tipo, recibida, anulada, cargada } de la más vieja a la más nueva (por recibida, después por el momento de
 // la carga y después por id). Sin ciclos (eventual o sin fecha), [].
 export const notasDgmitPorCiclo = (fuentes, ciclos, hoy) => {
   if (!Array.isArray(ciclos)) return [];
   const porCiclo = ciclos.map(() => []);
   if (ciclos.length === 0 || !fuentes || typeof fuentes !== 'object' || !esFechaIso(hoy)) return porCiclo;
-  const abierto = ciclos.length - 1;
-  const ultima = diaDe(objeto(fuentes.dataset).ultima);
   for (const nota of notasDgmitVigentes(fuentes, hoy)) {
-    const momento = `${nota.recibida} 00:00:00`;
-    const indice = cicloDelAviso(ciclos, momento);
-    // R7: el ciclo 0 de respaldo, cuando es el abierto, no se queda con una nota anterior a la última carga
-    if (indice === abierto && !algunCicloRige(ciclos, momento) && ultima !== null && nota.recibida < ultima) continue;
-    porCiclo[indice].push(nota);
+    if (fueraDeLosCiclos(nota, fuentes, ciclos) !== null) continue;
+    porCiclo[cicloDelAviso(ciclos, `${nota.recibida} 00:00:00`)].push(nota);
   }
   return porCiclo;
 };
@@ -682,6 +708,22 @@ export const notaDgmitDelCiclo = (fuentes, ciclos, hoy) => {
   const hayCiclos = Array.isArray(ciclos) && ciclos.length > 0;
   const nota = (hayCiclos ? notasDgmitPorCiclo(fuentes, ciclos, hoy).at(-1) : notasDgmitVigentes(fuentes, hoy)).at(-1);
   return nota ? { numero: nota.numero, tipo: nota.tipo, recibida: nota.recibida } : null;
+};
+
+// Desde qué día una nota DGMIT sería del ciclo abierto: el primero cuyas 00:00 caen en el ciclo (el mismo criterio de notasDgmitPorCiclo).
+// Con un solo ciclo también entra lo anterior, si no es anterior a la última carga en el portal (R7): sin esa carga, cualquier fecha.
+// 'AAAA-MM-DD', o null si no hay un día que los separe (sin ciclos o con cualquier fecha). Lo usa el aviso de solicitud repetida; no mira la
+// baja, porque un dado de baja no se elige.
+const notasDelCicloAbiertoDesde = (fuentes, ciclos) => {
+  if (!Array.isArray(ciclos) || ciclos.length === 0) return null;
+  const desde = momentoDe(ciclos[ciclos.length - 1].desde);
+  if (desde === null) return null;
+  const dia = desde.slice(0, 10);
+  const primero = desde.endsWith(' 00:00:00') ? dia : sumarDias(dia, 1);
+  if (ciclos.length > 1) return primero;
+  const ultima = diaDe(objeto(fuentes?.dataset).ultima);
+  if (ultima === null) return null;
+  return ultima < primero ? ultima : primero;
 };
 
 // Las notas DGMIT del ciclo abierto, todas (spec 2026-10-24-generador-de-notas, 3.2): las de notaDgmitDelCiclo, que da la última, de
@@ -847,13 +889,13 @@ const tramoDeLaNota = (nota, hoy) => {
   const tipo = TEXTO_TIPO_NOTA_DGMIT[nota.tipo];
   const dia = formatoCorto(nota.recibida);
   return {
-    titulo: `Nota DGMIT N° ${nota.numero}`, texto: `${tipo} recibida por el área el ${dia}, ${haceDias(nota.recibida, hoy)}`,
-    registrada: true, nota: { ...nota }, tituloPdf: 'Nota DGMIT', textoPdf: `${tipo} ${nota.numero}. Recibida el ${dia}`
+    titulo: `Nota DGMIT N° ${nota.numero}`, texto: `${tipo} entregada al área el ${dia}, ${haceDias(nota.recibida, hoy)}`,
+    registrada: true, nota: { ...nota }, tituloPdf: 'Nota DGMIT', textoPdf: `${tipo} ${nota.numero}. Entregada el ${dia}`
   };
 };
 
 const textoPdfAlAreaDeLaNota = (nota) =>
-  `Al área: el ${formatoCorto(nota.recibida)} recibió la nota DGMIT N° ${nota.numero} (${TEXTO_TIPO_NOTA_DGMIT[nota.tipo].toLowerCase()}), que pide los datos de este dataset.`;
+  `Al área: el ${formatoCorto(nota.recibida)} se le entregó la nota DGMIT N° ${nota.numero} (${TEXTO_TIPO_NOTA_DGMIT[nota.tipo].toLowerCase()}), que pide los datos de este dataset.`;
 
 export const circuitoDe = (fuentes, ciclos, hoy, opciones = {}) => {
   const dataset = fuentes?.dataset;
@@ -972,18 +1014,135 @@ export const sinErroresTecnicos = (seguimiento) => {
 // o anularla (quien la cargó o administración) y `extra.por_id` sale de la respuesta. `usuarioId`: el id de quien mira;
 // `administracion`: si es de administración (esAdmin); falla cerrado, solo cuenta el `true` literal. Una nota sin quién la cargó solo
 // la edita administración. Devuelve una copia (no toca la que recibe) y deja todo lo demás igual.
+const esEditablePor = (porId, quien) => {
+  const { usuarioId, administracion } = objeto(quien);
+  const esSuya = porId !== null && porId !== undefined && usuarioId !== null && usuarioId !== undefined && String(porId) === String(usuarioId);
+  return administracion === true || esSuya;
+};
+
 export const conNotasDgmitEditables = (seguimiento, quien = {}) => {
   if (!seguimiento || typeof seguimiento !== 'object' || !Array.isArray(seguimiento.movimientos)) return seguimiento;
-  const { usuarioId, administracion } = objeto(quien);
-  const esSuya = (porId) => porId !== null && porId !== undefined && usuarioId !== null && usuarioId !== undefined && String(porId) === String(usuarioId);
   return {
     ...seguimiento,
     movimientos: seguimiento.movimientos.map((m) => {
       if (m?.tipo !== 'dgmit' || !m.extra || typeof m.extra !== 'object') return m;
       const { por_id: porId, ...extra } = m.extra;
-      return { ...m, extra: { ...extra, editable: administracion === true || esSuya(porId) } };
+      return { ...m, extra: { ...extra, editable: esEditablePor(porId, quien) } };
     })
   };
+};
+
+// El ciclo de una nota en un dataset, para «Editar notas DGMIT» (spec 2026-11-06-editar-notas-dgmit, 2): { clase, texto }, con clase
+// 'abierto', 'cerrado' o 'sin' (no es de ningún ciclo)
+const textoDelCicloDeLaNota = (ciclo, hoy) => {
+  const venc = ciclo.venc === null ? null : formatoCorto(ciclo.venc);
+  if (ciclo.como === null) {
+    if (venc === null) return { clase: 'abierto', texto: 'Ciclo abierto' };
+    return { clase: 'abierto', texto: `Ciclo abierto · ${ciclo.venc < hoy ? 'venció' : 'vence'} el ${venc}` };
+  }
+  const como = { actualizacion: 'actualizado', reprogramacion: 'reprogramado', baja: 'dado de baja' }[ciclo.como];
+  const cierre = `${como} el ${formatoCorto(ciclo.cierre)}`;
+  if (venc === null) return { clase: 'cerrado', texto: `${cierre[0].toUpperCase()}${cierre.slice(1)}` };
+  return { clase: 'cerrado', texto: `${ciclo.venc > ciclo.cierre ? 'Vencía' : 'Venció'} el ${venc} · ${cierre}` };
+};
+
+const textoSinCiclo = (motivo) => {
+  if (motivo?.baja) return { clase: 'sin', texto: 'No cuenta en ningún ciclo: es posterior a la baja del dataset' };
+  if (motivo?.carga) return { clase: 'sin', texto: `No cuenta en ningún ciclo: ya la respondió la carga del ${formatoCorto(motivo.carga)}` };
+  return { clase: 'sin', texto: 'No cuenta en ningún ciclo' };
+};
+
+// El año y el número de 'N/AA'; un número que no termina así va después de todos
+const claveDelNumero = (numero) => {
+  const partes = /(\d+)\s*\/\s*(\d{2,4})\s*$/.exec(String(numero));
+  return partes ? { anio: Number(partes[2]) % 100, numero: Number(partes[1]) } : { anio: -1, numero: -1 };
+};
+
+const porNumeroDeNota = (a, b) => {
+  const x = claveDelNumero(a.numero);
+  const y = claveDelNumero(b.numero);
+  return y.anio - x.anio || y.numero - x.numero || comparar(a.numero, b.numero) || comparar(b.recibida, a.recibida) || b.id - a.id;
+};
+
+// Todas las notas DGMIT de `fuentesPorDataset` (el Map de fuentesDe), una vez cada una, para «Editar notas DGMIT» (spec
+// 2026-11-06-editar-notas-dgmit): por número, de la más nueva a la más vieja, y cada una con sus datasets y el ciclo al que fue en cada
+// uno (`ciclo`: { clase, texto }; null en una anulada, que no cuenta). `editable`, como en conNotasDgmitEditables. Sin `por_id`.
+export const listaDeNotasDgmit = (fuentesPorDataset, hoy, quien = {}) => {
+  const notas = new Map();
+  for (const fuentes of fuentesPorDataset?.values?.() ?? []) {
+    const dataset = objeto(fuentes?.dataset);
+    const ciclos = ciclosDe(fuentes, hoy);
+    const hayCiclos = Array.isArray(ciclos) && ciclos.length > 0;
+    const porCiclo = hayCiclos ? notasDgmitPorCiclo(fuentes, ciclos, hoy) : [];
+    for (const cruda of lista(fuentes?.notasDgmit)) {
+      const leida = notaDgmitLeida(cruda);
+      if (!leida) continue;
+      if (!notas.has(leida.id)) {
+        notas.set(leida.id, {
+          ...leida, por: nombreCorto(cruda.por), editable: esEditablePor(cruda.por_id, quien), datasets: [],
+          historial: lista(cruda.historial).filter((h) => h && typeof h === 'object')
+            .map((h) => ({ accion: h.accion ?? null, motivo: h.motivo ?? null, por: nombreCorto(h.por), momento: momentoDe(h.momento) }))
+        });
+      }
+      let ciclo = null;
+      if (!leida.anulada) {
+        const indice = porCiclo.findIndex((delCiclo) => delCiclo.some((n) => n.id === leida.id));
+        if (!hayCiclos) ciclo = { clase: 'sin', texto: 'Sin ciclos: este dataset no tiene vencimiento' };
+        else if (indice >= 0) ciclo = textoDelCicloDeLaNota(ciclos[indice], hoy);
+        else ciclo = textoSinCiclo(fueraDeLosCiclos(leida, fuentes, ciclos));
+      }
+      notas.get(leida.id).datasets.push({ id: dataset.id ?? null, titulo: dataset.titulo ?? null, area: dataset.area ?? null, ciclo });
+    }
+  }
+  const todas = [...notas.values()].sort(porNumeroDeNota);
+  for (const nota of todas) nota.datasets.sort((a, b) => comparar(String(a.titulo ?? ''), String(b.titulo ?? '')));
+  return todas;
+};
+
+// Las notas de un ciclo que no cumplen la regla (spec 2026-11-06-editar-notas-dgmit, 4): la primera es la solicitud y las que siguen son
+// reiteraciones. En orden de entrega y, en el mismo día, primero la solicitud. [{ nota, motivo, primera }]: 'no-es-la-primera' (una
+// solicitud con otra nota antes, `primera`) o 'sin-solicitud' (una reiteración sin una solicitud antes)
+const fueraDeLaSecuencia = (notasDelCiclo) => {
+  const orden = [...notasDelCiclo].sort((a, b) => comparar(a.recibida, b.recibida)
+    || Number(a.tipo !== 'solicitud') - Number(b.tipo !== 'solicitud') || comparar(a.cargada ?? '', b.cargada ?? '') || a.id - b.id);
+  let haySolicitud = false;
+  return orden.flatMap((nota, i) => {
+    if (nota.tipo === 'solicitud') {
+      haySolicitud = true;
+      return i > 0 ? [{ nota, motivo: 'no-es-la-primera', primera: orden[0] }] : [];
+    }
+    return haySolicitud ? [] : [{ nota, motivo: 'sin-solicitud', primera: null }];
+  });
+};
+
+// ¿Un cambio en una nota DGMIT rompe la regla del ciclo en algún dataset? `fuentesPorDataset`: el Map de fuentesDe de los datasets que
+// toca, antes del cambio; `idNota`: la que cambia (null si es nueva); `despues`: { numero, tipo, recibida, datasets: [ids] } o null si se
+// anula. Solo cuenta lo que el cambio empeora, antes contra después: una nota que ya no cumplía no traba nada. Las notas que no son de
+// ningún ciclo no entran. El primer dataset con un problema: { dataset: { id, titulo }, nota, motivo, primera, esLaQueCambia, mas } (`mas`:
+// en cuántos datasets más), o null.
+export const problemaDeLaSecuencia = (fuentesPorDataset, idNota, despues, hoy) => {
+  const problemas = [];
+  const delCambio = idNota ?? 0;
+  for (const fuentes of fuentesPorDataset?.values?.() ?? []) {
+    const dataset = objeto(fuentes?.dataset);
+    const ciclos = ciclosDe(fuentes, hoy);
+    if (!Array.isArray(ciclos) || ciclos.length === 0) continue;
+    const malas = (notasDgmit) => notasDgmitPorCiclo({ ...fuentes, notasDgmit }, ciclos, hoy)
+      .flatMap((delCiclo, ciclo) => fueraDeLaSecuencia(delCiclo).map((mala) => ({ ...mala, clave: `${ciclo}:${mala.nota.id}` })));
+    const antes = lista(fuentes.notasDgmit);
+    const sinLaNota = antes.filter((n) => Number(n?.id) !== delCambio);
+    const entra = despues !== null && lista(despues?.datasets).some((id) => Number(id) === Number(dataset.id));
+    // La corregida conserva el momento de su carga, que desempata en el mismo día; una nueva va última
+    const cargada = antes.find((n) => Number(n?.id) === delCambio)?.cargada ?? `${hoy} 23:59:59`;
+    const conLaNota = entra ? [...sinLaNota, { ...despues, id: delCambio, anulada: false, cargada }] : sinLaNota;
+    const yaEstaban = new Set(malas(antes).map(({ clave }) => clave));
+    const nueva = malas(conLaNota).find(({ clave }) => !yaEstaban.has(clave));
+    if (nueva) {
+      const { nota, motivo, primera } = nueva;
+      problemas.push({ dataset: { id: dataset.id ?? null, titulo: dataset.titulo ?? null }, nota, motivo, primera, esLaQueCambia: nota.id === delCambio });
+    }
+  }
+  return problemas.length === 0 ? null : { ...problemas[0], mas: problemas.length - 1 };
 };
 
 // Una fila de la lista de "Sin elegir": el estado (la clave corta de estadoDeSeguimiento), los días (negativos si ya venció), los
@@ -1007,6 +1166,7 @@ export const resumenParaLista = (fuentes, hoy) => {
     avisos: { total: delCiclo.emails + delCiclo.notas.length, emails: delCiclo.emails, notas: delCiclo.notas.length },
     ultimo_aviso: delCiclo.ultimo ?? null,
     nota_dgmit: notaDgmitDelCiclo(fuentes, ciclos, hoy),
+    notas_del_ciclo_desde: notasDelCicloAbiertoDesde(fuentes, ciclos),
     pendiente: lista(fuentes?.cambios).some((cambio) => cambio?.estado === 'pendiente')
   };
 };

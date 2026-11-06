@@ -486,7 +486,7 @@ describe('reportes.js: la cinta', () => {
     const leyenda = (cinta, gestion) => [...ctx.htmlDeLeyendaDeCinta(cinta, gestion).matchAll(/<i class="mk mk-([a-z-]+)" aria-hidden="true"><\/i>([^<]+)/g)].map((m) => `${m[1]}: ${m[2]}`);
     assert.deepEqual(leyenda(cintasDeLaVista(VISTA, {}).externa, 'externa'), ['aviso: Aviso del RPAD']);
     assert.deepEqual(leyenda(CINTA_INTERNA, 'interna'), ['aviso: Aviso del RPAD', 'datos-y-carga: Entrega y carga juntas', 'rayado: Después del vencimiento']);
-    assert.deepEqual(leyenda(CINTA_EXTERNA, 'externa'), ['aviso: Aviso del RPAD', 'nota: Nota DGMIT recibida por el área', 'datos: Datos entregados',
+    assert.deepEqual(leyenda(CINTA_EXTERNA, 'externa'), ['aviso: Aviso del RPAD', 'nota: Nota DGMIT entregada al área', 'datos: Datos entregados',
       'carga: Carga en el portal', 'rayado: Después del vencimiento']);
     assert.equal(ctx.htmlDeLeyendaDeCinta(null, 'externa'), '');
   });
@@ -1680,7 +1680,7 @@ describe('reportes.js y el PDF de Métricas: los mismos textos', () => {
   // El PDF ya no dibuja las cintas (spec 2026-11-05-metricas-pdf-apaisado): los textos de la leyenda son solo de la página
   it('la leyenda de la cinta', () => {
     const LEYENDA = {
-      aviso: 'Aviso del RPAD', nota: 'Nota DGMIT recibida por el área', datos: { externa: 'Datos entregados', interna: 'Relevamiento entregado' },
+      aviso: 'Aviso del RPAD', nota: 'Nota DGMIT entregada al área', datos: { externa: 'Datos entregados', interna: 'Relevamiento entregado' },
       carga: 'Carga en el portal', 'datos-y-carga': 'Entrega y carga juntas', rayado: 'Después del vencimiento'
     };
     const conDatosYCarga = cintaDeMetricas([tramo('aviso', 41), tramo('produccion', 45), tramo('carga', 30)], { gestion: 'interna' });

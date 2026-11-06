@@ -524,7 +524,7 @@ describe('renderAnexoDeSeguimiento: una hoja por dataset, en un solo PDF', () =>
 });
 
 // Notas DGMIT (spec 2026-10-24-notas-dgmit, 7): la nota formal que la DGMIT le manda al área, cargada a mano. Con una nota en el
-// ciclo abierto, el tramo de afuera va en violeta y con línea llena («Nota DGMIT» / «Solicitud 156/26. Recibida el …», sin «hace N
+// ciclo abierto, el tramo de afuera va en violeta y con línea llena («Nota DGMIT» / «Solicitud 156/26. Entregada el …», sin «hace N
 // días»: el anexo queda guardado y se lee después) y el renglón «Al área» la nombra. Los movimientos de la hoja llevan las vigentes
 // (las anuladas no van, ni en la cuenta) y la cinta, su marca violeta, con su renglón en la leyenda. En el anexo de la reiteración,
 // sin nota, el tramo es neutral: «Nota formal» / «La manda la DGMIT al área».
@@ -557,19 +557,19 @@ describe('renderSeguimiento: notas DGMIT (spec 2026-10-24-notas-dgmit, 7)', () =
     return lineas.slice(i + 1, i + 3).join(' ');
   };
 
-  it('con nota: el tramo dice Nota DGMIT / Solicitud 156/26. Recibida el …, en violeta y lleno', async () => {
+  it('con nota: el tramo dice Nota DGMIT / Solicitud 156/26. Entregada el …, en violeta y lleno', async () => {
     const s = conNotas(58, [notaDgmit()]);
     const pdf = await render(s);
     const lineas = lineasPorHoja(pdf)[0];
     assert.ok(lineas.includes('Nota DGMIT'), lineas.join(' | '));
     // El texto entra entero en las dos líneas del tramo (sin «…»), y sin «hace N días» (el de la pantalla)
-    assert.ok(textoDelTramo(lineas, 'Nota DGMIT').includes('Solicitud 156/26. Recibida el 15/10/2026'), lineas.join(' | '));
+    assert.ok(textoDelTramo(lineas, 'Nota DGMIT').includes('Solicitud 156/26. Entregada el 15/10/2026'), lineas.join(' | '));
     assert.ok(!lineas.some(l => l.includes('…') && /Solicitud|Recibida/.test(l)), lineas.join(' | '));
-    assert.ok(!unidas(lineas).includes('recibida por el área el 15/10/2026, hace'), lineas.join(' | '));
+    assert.ok(!unidas(lineas).includes('entregada al área el 15/10/2026, hace'), lineas.join(' | '));
     for (const t of ['Nota formal', 'Pendiente de carga', 'Nota DGMIT N° 156/26']) assert.ok(!lineas.includes(t), `sobra "${t}": ${lineas.join(' | ')}`);
     // Una reiteración lo dice
     const reiteracion = lineasPorHoja(await render(conNotas(58, [notaDgmit({ numero: '160/26', tipo: 'reiteracion' })])))[0];
-    assert.ok(textoDelTramo(reiteracion, 'Nota DGMIT').includes('Reiteración 160/26. Recibida el 15/10/2026'), reiteracion.join(' | '));
+    assert.ok(textoDelTramo(reiteracion, 'Nota DGMIT').includes('Reiteración 160/26. Entregada el 15/10/2026'), reiteracion.join(' | '));
     // En violeta (el título y la punta, rellenos; la línea, trazada) y con línea llena
     const contenido = contenidoPorHoja(pdf)[0];
     const violetas = trazos(contenido, VIOLETA);
@@ -583,15 +583,15 @@ describe('renderSeguimiento: notas DGMIT (spec 2026-10-24-notas-dgmit, 7)', () =
 
   it('con nota: el renglón Al área nombra la nota', async () => {
     const lineas = lineasPorHoja(await render(conNotas(58, [notaDgmit()])))[0];
-    assert.ok(lineas.includes('Al área: el 15/10/2026 recibió la nota DGMIT N° 156/26 (solicitud), que pide los datos de este dataset.'), lineas.join(' | '));
+    assert.ok(lineas.includes('Al área: el 15/10/2026 se le entregó la nota DGMIT N° 156/26 (solicitud), que pide los datos de este dataset.'), lineas.join(' | '));
     assert.ok(!lineas.some(l => /todavía no se le envió|le anticipó por email/.test(l)), lineas.join(' | '));
     // Con el email de los 40 días en el ciclo (el 52), la nota reemplaza al email en el renglón
     const del52 = lineasPorHoja(await render(conNotas(52, [notaDgmit({ numero: '120/26', tipo: 'reiteracion', recibida: '2026-08-10' })])))[0];
-    assert.ok(del52.includes('Al área: el 10/08/2026 recibió la nota DGMIT N° 120/26 (reiteración), que pide los datos de este dataset.'), del52.join(' | '));
+    assert.ok(del52.includes('Al área: el 10/08/2026 se le entregó la nota DGMIT N° 120/26 (reiteración), que pide los datos de este dataset.'), del52.join(' | '));
     assert.ok(!del52.some(l => l.startsWith('Al área: el 21/06/2026')), del52.join(' | '));
     // Un externo sin vencimiento (eventual) con una nota: el renglón la nombra igual
     const eventual = lineasPorHoja(await render(conNotas(66, [notaDgmit({ recibida: '2026-09-01' })], { tipo_gestion: 'externa' })))[0];
-    assert.ok(eventual.includes('Al área: el 01/09/2026 recibió la nota DGMIT N° 156/26 (solicitud), que pide los datos de este dataset.'), eventual.join(' | '));
+    assert.ok(eventual.includes('Al área: el 01/09/2026 se le entregó la nota DGMIT N° 156/26 (solicitud), que pide los datos de este dataset.'), eventual.join(' | '));
   });
 
   it('sin nota: Nota formal / Pendiente de carga', async () => {
@@ -620,7 +620,7 @@ describe('renderSeguimiento: notas DGMIT (spec 2026-10-24-notas-dgmit, 7)', () =
     assert.equal(s.movimientos[0].extra.anulada, true, 'la anulada es la más nueva');
     const pdf = await render(s);
     const lineas = lineasPorHoja(pdf)[0];
-    for (const t of ['Nota DGMIT N° 156/26 al área: solicitud', 'Recibida por el área el 15/10/2026. La misma nota pide también Presupuesto Municipal.',
+    for (const t of ['Nota DGMIT N° 156/26 al área: solicitud', 'Entregada al área el 15/10/2026. La misma nota pide también Presupuesto Municipal.',
       'Cargó Diego Cuatro', '8 de 17, del más nuevo al más viejo',
       'Hay 9 movimientos anteriores: el seguimiento completo está en el RPAD (Herramientas, Seguimiento).']) {
       assert.ok(lineas.includes(t), `falta "${t}" en ${lineas.join(' | ')}`);
@@ -701,8 +701,8 @@ describe('renderSeguimiento: notas DGMIT (spec 2026-10-24-notas-dgmit, 7)', () =
     const hojas = lineasPorHoja(pdf);
     assert.equal(hojas.length, 2);
     // La hoja con nota, en violeta y con la nota, como el PDF de la descarga
-    assert.ok(textoDelTramo(hojas[0], 'Nota DGMIT').includes('Solicitud 156/26. Recibida el 15/10/2026'), hojas[0].join(' | '));
-    assert.ok(hojas[0].includes('Al área: el 15/10/2026 recibió la nota DGMIT N° 156/26 (solicitud), que pide los datos de este dataset.'), hojas[0].join(' | '));
+    assert.ok(textoDelTramo(hojas[0], 'Nota DGMIT').includes('Solicitud 156/26. Entregada el 15/10/2026'), hojas[0].join(' | '));
+    assert.ok(hojas[0].includes('Al área: el 15/10/2026 se le entregó la nota DGMIT N° 156/26 (solicitud), que pide los datos de este dataset.'), hojas[0].join(' | '));
     assert.ok(hojas[0].includes('Nota DGMIT al área'), hojas[0].join(' | '));
     assert.ok(!hojas[0].includes('Nota formal'), hojas[0].join(' | '));
     const [contenidoCon, contenidoSin] = contenidoPorHoja(pdf);

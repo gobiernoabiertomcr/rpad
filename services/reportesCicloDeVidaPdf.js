@@ -55,8 +55,8 @@ export const TEXTOS_DEL_CICLO = Object.freeze({
   seMide: Object.freeze({
     externa: Object.freeze({
       aviso: SE_MIDE_EL_AVISO,
-      tramite: 'Se mide del aviso del RPAD al día en que el área recibió la nota, con las notas DGMIT cargadas en el Seguimiento.',
-      respuesta: 'Se mide del día en que el área recibió la nota al «Recibido el». Con datos de una fuente pública, no se cuenta.',
+      tramite: 'Se mide del aviso del RPAD al día en que se le entregó la nota al área, con las notas DGMIT cargadas en el Seguimiento.',
+      respuesta: 'Se mide del día en que se le entregó la nota al área al «Recibido el». Con datos de una fuente pública, no se cuenta.',
       carga: SE_MIDE_LA_CARGA
     }),
     interna: Object.freeze({ aviso: SE_MIDE_EL_AVISO, produccion: 'Se mide del aviso del RPAD al «Recibido el».', carga: SE_MIDE_LA_CARGA })

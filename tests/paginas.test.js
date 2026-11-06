@@ -36,7 +36,7 @@ const VERSION_AREAS = '20261205';
 // licencias de Mi espacio incluye la fecha, en el modal del feriado, spec 2026-10-26-mi-espacio-licencias-y-horas; y, de esas,
 // cuántas vacaciones quedan con ese día para restituir y hasta cuándo, spec 2026-10-31-mi-espacio-dias-restituidos, 9). Su versión
 // es propia (solo la usa configuracion.html)
-const VERSION_FERIADOS = '20261210';
+const VERSION_FERIADOS = '20261211';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
 // reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6;
@@ -69,8 +69,8 @@ const VERSION_CSS = '20261109';
 // de la reiteración; las notas DGMIT en la lista, el circuito, la cinta y los movimientos, y después cargar, corregir y anular notas
 // DGMIT desde la página, spec 2026-10-24-notas-dgmit; después, #cargar-nota abre el formulario con el dataset, el link de «Para
 // completar» de Métricas, spec 2026-10-24-metricas-y-reportes, 2.2; el estado del área en su propia tarjeta, spec
-// 2026-11-05-circuito-diseno, 6): su versión es propia
-const VERSION_SEGUIMIENTO = '20261130';
+// 2026-11-05-circuito-diseno, 6; el aviso de solicitud repetida mira la fecha de la nota; «Editar notas DGMIT», spec 2026-11-06-editar-notas-dgmit): su versión es propia
+const VERSION_SEGUIMIENTO = '20261133';
 // reportes.js (la página pasa a ser «Métricas y Reportes», con la pestaña Métricas: spec 2026-10-24-metricas-y-reportes), que hasta
 // ahora se cargaba sin ?v=; después, los resultados, el contexto, el trabajo, las áreas y «Para completar»; después, la tarjeta Avisos
 // del RPAD en lugar del Historial y sin la del Cumplimiento; después, la pestaña Reportes con los siete reportes en dos grupos;
@@ -82,11 +82,11 @@ const VERSION_SEGUIMIENTO = '20261130';
 // propia (mayor que todas las de este archivo cuando se sumó); después, el pie de los casos sin la oración de los días, que ya dice cada
 // fila (spec 2026-11-05-metricas-frase-en-los-casos, 5): con 20261209 no queda margen, y el próximo cambio de reportes.js también
 // tiene que subir VERSION_FERIADOS
-const VERSION_REPORTES = '20261209';
+const VERSION_REPORTES = '20261210';
 // notas.js (el Generador de Notas de la DGMIT en tres pasos, con la vista previa en la hoja membretada y la descarga del Word, spec
 // 2026-10-24-generador-de-notas, 3), que hasta ahora se cargaba sin ?v=: cambió por completo y un notas.js viejo en la caché con el
 // HTML nuevo rompería la página. Su versión es propia
-const VERSION_NOTAS = '20261204';
+const VERSION_NOTAS = '20261205';
 // proyectos.js (la página nueva de Proyectos, con el estilo del Seguimiento: los carriles de 3 años, la línea de tiempo y los logros
 // del área, spec 2026-10-25-proyectos, 1, 2 y 10): el número siguiente al más alto de este archivo cuando se creó (con el renombre,
 // VERSION_REPORTES y VERSION_PANTALLAS subieron al mismo número; siguen siendo independientes). Su versión es propia

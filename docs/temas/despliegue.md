@@ -97,5 +97,6 @@ Lo que cambie esos textos o el calendario de Métricas, del Ciclo de vida o del 
 Se borran al cumplirse.
 
 - **Antes del 10/01/2027:** las notas DGMIT de 2026 cargadas a mano desde el Seguimiento (decisión del usuario, 25/10/2026: no hay SQL de importación) y `database/privado/metricas-recibido-datos-25-38-39.sql`.
+- **Antes del 10/01/2027:** «Editar notas DGMIT», la regla del ciclo y la nota anterior al primer ciclo (spec 2026-11-06-editar-notas-dgmit): si no, una nota vieja puede inflar «Respuesta del área» en la foto de 2026.
 - **Antes del 10/01/2027:** la frase en «Los casos» de Métricas (spec 2026-11-05-metricas-frase-en-los-casos, 7): si no, la foto de 2026 guarda el número solo.
 - El 10/01/2027 (domingo) o el 11/01, mirar en Métricas y Reportes que 2026 ya no diga «La foto de 2026 se saca …» ni «… todavía no se sacó» y que se descargue el Informe anual de 2026, y que la última corrida de Correos → Estado no diga «No se pudo sacar la foto del año» (si lo dice, la tabla no se pudo leer: la corrida del día siguiente la vuelve a intentar).

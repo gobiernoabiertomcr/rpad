@@ -301,14 +301,14 @@ function idsElegidos(datasets, elegidos) {
     .map((dataset) => Number(dataset.id));
 }
 
-// "Notas DGMIT del ciclo: N° 97/26 (solicitud, recibida el 02/07/2026) · …": las vigentes del ciclo abierto, como las manda el
-// servidor (por fecha de recepción). Sin notas, nada
+// "Notas DGMIT del ciclo: N° 97/26 (solicitud, entregada el 02/07/2026) · …": las vigentes del ciclo abierto, como las manda el
+// servidor (por fecha de entrega). Sin notas, nada
 function htmlDeNotasDgmitDelDataset(notas) {
   const lista = comoLista(notas).filter((nota) => esObjeto(nota) && String(nota.numero ?? '').trim());
   if (lista.length === 0) return '';
   const textos = lista.map((nota) => {
     const tipo = Object.prototype.hasOwnProperty.call(TIPOS_NOTA_DGMIT, nota.tipo) ? `${TIPOS_NOTA_DGMIT[nota.tipo].toLowerCase()}, ` : '';
-    return `N° ${escaparTexto(nota.numero)} (${tipo}recibida el ${Utils.fechaCorta(nota.recibida)})`;
+    return `N° ${escaparTexto(nota.numero)} (${tipo}entregada el ${Utils.fechaCorta(nota.recibida)})`;
   });
   return `<span class="ds-dgmit">Notas DGMIT del ciclo: ${textos.join(' · ')}</span>`;
 }
@@ -364,7 +364,7 @@ function textoDelTipo(ambito, tipo) {
 }
 
 // La nota anterior que se trae de las notas DGMIT cargadas: la original del ciclo abierto de cada elegido (la primera de las que
-// manda el servidor, que van por fecha de recepción), con los números distintos ordenados por recepción
+// manda el servidor, que van por fecha de entrega), con los números distintos ordenados por entrega
 function numerosTraidos(datasets, elegidos) {
   const ids = new Set(idsElegidos(datasets, elegidos).map(String));
   const originales = comoLista(datasets)

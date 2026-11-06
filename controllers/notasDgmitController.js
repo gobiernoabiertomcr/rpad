@@ -3,15 +3,18 @@
 // que sea quien la cargó o administración. Se guarda directo, sin doble verificación (no es un cambio a un dataset), y cada
 // operación es una transacción: cabecera, datasets e historial juntos. No manda emails.
 // La validación de los campos es pura (services/notasDgmitReglas.js); acá se chequea lo que necesita la base: que la nota
-// exista y se pueda tocar, que los datasets se puedan elegir y que el número no esté repetido.
+// exista y se pueda tocar, que los datasets se puedan elegir, que el número no esté repetido y que cumpla la regla del ciclo.
 import pool from '../config/database.js';
 import { hoyArgentina } from '../services/notasDigitalesCalendario.js';
 import { esAdmin } from '../services/usuariosReglas.js';
 import {
-  validarNotaDgmit, validarMotivo, textoNumeroRepetido, textoNoSePuedeElegir, TEXTO_TIPO_NOTA_DGMIT, sePuedeElegir
+  validarNotaDgmit, validarMotivo, textoNumeroRepetido, textoNoSePuedeElegir, textoDeLaSecuencia, TEXTO_TIPO_NOTA_DGMIT, sePuedeElegir
 } from '../services/notasDgmitReglas.js';
+import { fuentesDe } from '../services/seguimientoDatos.js';
+import { listaDeNotasDgmit, problemaDeLaSecuencia } from '../services/seguimientoReglas.js';
 
 const ERROR_AL_GUARDAR = 'Error al guardar la nota DGMIT';
+const ERROR_AL_LISTAR = 'Error al obtener las notas DGMIT';
 const NO_ENCONTRADA = 'Nota DGMIT no encontrada';
 const SOLO_QUIEN_LA_CARGO = 'Solo quien cargó la nota o administración pueden corregirla o anularla.';
 const NOTA_ANULADA = 'La nota está anulada: no se puede corregir ni volver a anular.';
@@ -92,6 +95,17 @@ const numeroRepetido = async (conexion, numero, idPropio = 0) => {
   return filas.length > 0;
 };
 
+// La regla del ciclo (spec 2026-11-06-editar-notas-dgmit, 4). Bloquea los datasets hasta el fin de la transacción, en orden: dos cargas
+// simultáneas se esperan y la segunda ve lo que dejó la primera. Las fuentes se leen con el pool, fuera de la transacción: ven lo último
+// confirmado, y lo que se está guardando va por parámetro. `campo`: dónde va el error (409)
+const rechazoDeLaSecuencia = async (conexion, ids, idNota, despues, hoy, campo) => {
+  const orden = ascendente(new Set(ids));
+  if (orden.length === 0) return null;
+  await conexion.query('SELECT id FROM datasets WHERE id IN (?) ORDER BY id FOR UPDATE', [orden]);
+  const problema = problemaDeLaSecuencia(await fuentesDe(orden, { notasEstrictas: true }), idNota, despues, hoy);
+  return problema ? rechazoEnCampo(409, campo, textoDeLaSecuencia(problema, { anular: despues === null })) : null;
+};
+
 const insertarDatasets = async (conexion, notaId, ids) => {
   if (ids.length === 0) return;
   await conexion.query('INSERT INTO notas_dgmit_datasets (nota_id, dataset_id) VALUES ?', [ids.map((id) => [notaId, id])]);
@@ -138,14 +152,30 @@ const responder = async (res, etiqueta, operacion) => {
   }
 };
 
+// GET /api/notas-dgmit: todas las notas, para «Editar notas DGMIT» (spec 2026-11-06-editar-notas-dgmit): por número, con sus datasets, el
+// ciclo al que fue en cada uno y si quien mira la puede corregir o anular. Si no se pueden leer las notas, 500: nunca «no hay notas»
+export const listarNotasDgmit = async (req, res) => {
+  try {
+    const fuentes = await fuentesDe(null, { notasEstrictas: true });
+    const data = listaDeNotasDgmit(fuentes, hoyArgentina(), { usuarioId: req.user.userId, administracion: esAdmin(req.user.rol) === true });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error al listar las notas DGMIT:', error);
+    res.status(500).json({ success: false, error: ERROR_AL_LISTAR });
+  }
+};
+
 // POST /api/notas-dgmit: { numero, recibida, tipo, datasets: [ids] }. 201 con { id, numero, tipo, recibida, datasets }
 export const cargarNotaDgmit = (req, res) => {
-  const { datos, errores } = validarNotaDgmit(req.body, hoyArgentina());
+  const hoy = hoyArgentina();
+  const { datos, errores } = validarNotaDgmit(req.body, hoy);
   if (Object.keys(errores).length > 0) return res.status(400).json(rechazoDeValidacion(errores)[1]);
   return responder(res, 'cargar', () => enTransaccion(async (conexion) => {
     const datasetsRechazados = await rechazoDeLosDatasets(conexion, datos.datasets);
     if (datasetsRechazados) return datasetsRechazados;
     if (await numeroRepetido(conexion, datos.numero)) return rechazoEnCampo(409, 'numero', textoNumeroRepetido(datos.numero));
+    const fueraDeLaRegla = await rechazoDeLaSecuencia(conexion, datos.datasets, null, datos, hoy, 'tipo');
+    if (fueraDeLaRegla) return fueraDeLaRegla;
     const [resultado] = await conexion.query(
       'INSERT INTO notas_dgmit (numero, tipo, recibida, creado_por) VALUES (?, ?, ?, ?)',
       [datos.numero, datos.tipo, datos.recibida, req.user.userId]
@@ -179,6 +209,8 @@ export const corregirNotaDgmit = (req, res) => {
     const datasetsRechazados = await rechazoDeLosDatasets(conexion, datos.datasets, nota.datasets);
     if (datasetsRechazados) return datasetsRechazados;
     if (await numeroRepetido(conexion, datos.numero, id)) return rechazoEnCampo(409, 'numero', textoNumeroRepetido(datos.numero));
+    const fueraDeLaRegla = await rechazoDeLaSecuencia(conexion, [...nota.datasets, ...datos.datasets], id, datos, hoy, 'tipo');
+    if (fueraDeLaRegla) return fueraDeLaRegla;
 
     const anteriores = { numero: nota.numero, tipo: nota.tipo, recibida: nota.recibida, datasets: ascendente(nota.datasets) };
     await conexion.query(
@@ -207,6 +239,8 @@ export const anularNotaDgmit = (req, res) => {
     if (noSePuede) return noSePuede;
     const { motivo, error } = validarMotivo(req.body?.motivo);
     if (error) return rechazoDeValidacion({ motivo: error });
+    const fueraDeLaRegla = await rechazoDeLaSecuencia(conexion, nota.datasets, id, null, hoyArgentina(), 'motivo');
+    if (fueraDeLaRegla) return fueraDeLaRegla;
     await conexion.query('UPDATE notas_dgmit SET anulada = 1 WHERE id = ?', [id]);
     await conexion.query(
       'INSERT INTO notas_dgmit_historial (nota_id, accion, motivo, anteriores, usuario_id) VALUES (?, ?, ?, NULL, ?)',

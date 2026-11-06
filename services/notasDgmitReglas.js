@@ -4,16 +4,17 @@
  * 'AAAA-MM-DD' y se comparan como texto. Ninguna función tira error: una entrada rara da los errores de sus campos.
  *
  * La usa la API (`controllers/notasDgmitController.js`), que además chequea en la base que los datasets se puedan elegir
- * (`sePuedeElegir`) y que el número no esté repetido (con los textos de `textoNoSePuedeElegir` y `textoNumeroRepetido`).
+ * (`sePuedeElegir`), que el número no esté repetido y la regla del ciclo (con los textos de `textoNoSePuedeElegir`, `textoNumeroRepetido` y
+ * `textoDeLaSecuencia`).
  * El formulario del Seguimiento tiene una copia, atada por un test de paridad: si cambia una regla o un mensaje, cambia en
  * los dos.
  */
-import { esFechaIso } from './notasDigitalesCalendario.js';
+import { esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
 
 // Largo máximo del número (varchar(40)) y del motivo (varchar(500)), sin los espacios de los extremos
 export const LARGO_NUMERO = 40;
 export const LARGO_MOTIVO = 500;
-// La fecha de recepción más vieja que se acepta (la del Excel de la Dirección Administrativa)
+// La fecha de entrega más vieja que se acepta (la del Excel de la Dirección Administrativa)
 export const FECHA_MINIMA = '2025-01-01';
 
 export const TIPOS_NOTA_DGMIT = Object.freeze(['solicitud', 'reiteracion']);
@@ -25,9 +26,9 @@ export const TEXTO_TIPO_NOTA_DGMIT = Object.freeze({ solicitud: 'Solicitud', rei
 export const MENSAJES_NOTA_DGMIT = Object.freeze({
   numero: 'Escribí el número de la nota.',
   numeroLargo: 'El número de la nota puede tener hasta 40 caracteres.',
-  recibida: 'Elegí la fecha en que el área recibió la nota.',
-  recibidaFutura: 'La fecha de recepción no puede ser posterior a hoy.',
-  recibidaVieja: 'La fecha de recepción no puede ser anterior al 01/01/2025.',
+  recibida: 'Elegí la fecha en que se le entregó la nota al área.',
+  recibidaFutura: 'La fecha de entrega no puede ser posterior a hoy.',
+  recibidaVieja: 'La fecha de entrega no puede ser anterior al 01/01/2025.',
   tipo: 'Elegí si es una solicitud o una reiteración.',
   datasets: 'Elegí al menos un dataset.',
   motivo: 'Escribí el motivo.',
@@ -48,7 +49,7 @@ const textoObligatorio = (valor, largo, mensajeVacio, mensajeLargo) => {
   return { valor: recortado, error: null };
 };
 
-// La fecha de recepción: 'AAAA-MM-DD' que existe, entre FECHA_MINIMA y hoy. Sin un hoy válido no pasa (no se puede saber
+// La fecha de entrega: 'AAAA-MM-DD' que existe, entre FECHA_MINIMA y hoy. Sin un hoy válido no pasa (no se puede saber
 // si es posterior)
 const errorDeRecibida = (recibida, hoy) => {
   if (!esFechaIso(recibida)) return MENSAJES_NOTA_DGMIT.recibida;
@@ -129,6 +130,24 @@ export const validarMotivo = (valor) => {
 // El 409 de un número que ya tiene otra nota sin anular
 export const textoNumeroRepetido = (numero) =>
   `Ya hay una nota DGMIT N° ${numero} cargada. Para sumarle datasets o cambiar algo, corregila.`;
+
+// El 409 de la regla del ciclo (spec 2026-11-06-editar-notas-dgmit, 4): `problema`, el de problemaDeLaSecuencia (services/seguimientoReglas.js);
+// `anular`, si lo que se frena es una anulación
+export const textoDeLaSecuencia = ({ dataset, nota, motivo, primera, esLaQueCambia, mas = 0 }, { anular = false } = {}) => {
+  const titulo = dataset?.titulo;
+  const citar = (n) => `N° ${n.numero} (${TEXTO_TIPO_NOTA_DGMIT[n.tipo].toLowerCase()}, entregada el ${formatoCorto(n.recibida)})`;
+  const otros = mas === 0 ? '' : ` También en ${mas === 1 ? '1 dataset más' : `${mas} datasets más`}.`;
+  if (anular) {
+    return `No se puede anular: en «${titulo}», la nota DGMIT ${citar(nota)} quedaría sin una solicitud anterior en su ciclo. `
+      + `Anulá primero las reiteraciones de ese ciclo o corregí esta nota.${otros}`;
+  }
+  if (motivo === 'no-es-la-primera') {
+    return `«${titulo}» ya tiene la nota DGMIT ${citar(esLaQueCambia ? primera : nota)} en ese ciclo. `
+      + `La primera nota de un ciclo es la solicitud y las demás son reiteraciones.${otros}`;
+  }
+  if (esLaQueCambia) return `«${titulo}» no tiene una solicitud anterior en ese ciclo. La primera nota de un ciclo es la solicitud: cargala primero.${otros}`;
+  return `En «${titulo}», la nota DGMIT ${citar(nota)} quedaría sin una solicitud anterior en su ciclo.${otros}`;
+};
 
 // Se pueden elegir los datasets activos, de gestión externa y con «Requiere nota DGMIT» en Sí o sin dato (el 0 es No). Recibe
 // la fila de la base (activo, tipo_gestion, requiere_nota). La usan la carga de notas DGMIT (controllers/notasDgmitController.js)

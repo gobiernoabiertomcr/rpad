@@ -74,7 +74,7 @@ const TIPOS_DE_MARCA = ['aviso', 'nota', 'datos', 'carga', 'datos-y-carga'];
 // Qué es cada hito, para el <title> de su marca (en minúscula: se juntan con «y») y la leyenda
 const NOMBRES_DE_LOS_HITOS = {
   aviso: 'aviso del RPAD',
-  nota: 'nota DGMIT recibida por el área',
+  nota: 'nota DGMIT entregada al área',
   datos: { externa: 'datos entregados', interna: 'relevamiento entregado' },
   carga: 'carga en el portal'
 };

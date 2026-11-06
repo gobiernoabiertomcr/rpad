@@ -21,9 +21,9 @@ const sufijo = crypto.randomBytes(3).toString('hex');
 const MENSAJE = {
   numero: 'Escribí el número de la nota.',
   numeroLargo: 'El número de la nota puede tener hasta 40 caracteres.',
-  recibida: 'Elegí la fecha en que el área recibió la nota.',
-  recibidaFutura: 'La fecha de recepción no puede ser posterior a hoy.',
-  recibidaVieja: 'La fecha de recepción no puede ser anterior al 01/01/2025.',
+  recibida: 'Elegí la fecha en que se le entregó la nota al área.',
+  recibidaFutura: 'La fecha de entrega no puede ser posterior a hoy.',
+  recibidaVieja: 'La fecha de entrega no puede ser anterior al 01/01/2025.',
   tipo: 'Elegí si es una solicitud o una reiteración.',
   datasets: 'Elegí al menos un dataset.',
   motivo: 'Escribí el motivo.',
@@ -39,12 +39,12 @@ const noSePuede = (titulo) =>
   `«${titulo}» no se puede elegir: solo los datasets activos de gestión externa que requieren nota DGMIT.`;
 
 // Un dataset de prueba por SQL. requiereNota es lo que queda guardado (en gestión interna, siempre NULL)
-const cargarDataset = async (nombre, { gestion = 'externa', requiereNota = 1, activo = 1 } = {}) => {
+const cargarDataset = async (nombre, { gestion = 'externa', requiereNota = 1, activo = 1, proxima = null } = {}) => {
   const titulo = `${PREFIJO_TEST} nota DGMIT ${nombre} ${sufijo}`;
   const resultado = await query(
-    `INSERT INTO datasets (titulo, area_id, frecuencia_id, tema_principal_id, tipo_gestion, requiere_nota, url_dataset, activo)
-     VALUES (?, ?, ?, ?, ?, ?, 'https://datos.comodoro.gov.ar/dataset/test', ?)`,
-    [titulo, cat.areaId, cat.frecuenciaId, cat.temaId, gestion, gestion === 'interna' ? null : requiereNota, activo]
+    `INSERT INTO datasets (titulo, area_id, frecuencia_id, tema_principal_id, tipo_gestion, requiere_nota, url_dataset, activo, proxima_actualizacion)
+     VALUES (?, ?, ?, ?, ?, ?, 'https://datos.comodoro.gov.ar/dataset/test', ?, ?)`,
+    [titulo, cat.areaId, cat.frecuenciaId, cat.temaId, gestion, gestion === 'interna' ? null : requiereNota, activo, proxima]
   );
   creados.push(resultado.insertId);
   return { id: resultado.insertId, titulo };
@@ -417,5 +417,136 @@ describe('otros', () => {
     assert.equal(res.body.data.recibida, '2025-01-01');
     assert.equal((await notaEnDb(original.id)).recibida, '2025-01-01');
     assert.equal((await historialDe(original.id))[0].anteriores.recibida, '2026-01-01');
+  });
+});
+
+// Estos datasets tienen próxima, así que tienen ciclos: los de arriba no, y por eso la regla no los alcanza. Sin más cambios, un solo ciclo
+describe('la regla del ciclo (spec 2026-11-06-editar-notas-dgmit, 4)', () => {
+  const REGLA = 'La primera nota de un ciclo es la solicitud y las demás son reiteraciones.';
+  const conCiclos = (nombre) => cargarDataset(`con ciclos ${nombre}`, { proxima: '2027-11-30' });
+
+  it('primero la solicitud y después reiteraciones; lo demás da 409 en el tipo y no guarda nada', async () => {
+    const dataset = await conCiclos('carga');
+    const datos = (extra) => ({ recibida: '2026-08-01', datasets: [dataset.id], ...extra });
+    const sinSolicitud = cuerpo(datos({ tipo: 'reiteracion' }));
+    esperarRechazo(await api.post('/notas-dgmit', sinSolicitud, como('colab')), 409,
+      `«${dataset.titulo}» no tiene una solicitud anterior en ese ciclo. La primera nota de un ciclo es la solicitud: cargala primero.`, 'tipo');
+    assert.equal(await vigentesConNumero(sinSolicitud.numero), 0);
+
+    const solicitud = await cargada('colab', datos({ tipo: 'solicitud' }));
+    esperarRechazo(await cargar('colab', datos({ tipo: 'solicitud', recibida: '2026-08-02' })), 409,
+      `«${dataset.titulo}» ya tiene la nota DGMIT N° ${solicitud.numero} (solicitud, entregada el 01/08/2026) en ese ciclo. ${REGLA}`, 'tipo');
+    const reiteracion = await cargar('colab', datos({ tipo: 'reiteracion', recibida: '2026-08-02' }));
+    assert.equal(reiteracion.status, 201, JSON.stringify(reiteracion.body));
+  });
+
+  it('con varios datasets: el primero que no cumple y cuántos más; una que pide uno sin ciclos no se traba por él', async () => {
+    const uno = await conCiclos('varios 1');
+    const dos = await conCiclos('varios 2');
+    esperarRechazo(await cargar('colab', { tipo: 'reiteracion', datasets: [uno.id, dos.id] }), 409,
+      `«${uno.titulo}» no tiene una solicitud anterior en ese ciclo. La primera nota de un ciclo es la solicitud: cargala primero. También en 1 dataset más.`, 'tipo');
+    const conUnoSinCiclos = await cargar('colab', { tipo: 'solicitud', datasets: [uno.id, ds.si2.id] });
+    assert.equal(conUnoSinCiclos.status, 201, JSON.stringify(conUnoSinCiclos.body));
+  });
+
+  it('corregir: no deja romperla, y sí cambiar lo que no la toca', async () => {
+    const dataset = await conCiclos('corregir');
+    const solicitud = await cargada('colab', { recibida: '2026-08-01', datasets: [dataset.id] });
+    const reiteracion = await cargada('colab', { recibida: '2026-08-10', tipo: 'reiteracion', datasets: [dataset.id] });
+    const motivo = 'Prueba';
+    const [{ n: antes }] = await query('SELECT COUNT(*) AS n FROM notas_dgmit_historial WHERE nota_id = ?', [solicitud.id]);
+    const res = await corregir(solicitud.id, { ...solicitud.enviado, tipo: 'reiteracion', motivo });
+    assert.equal(res.status, 409, JSON.stringify(res.body));
+    assert.equal(res.body.campo, 'tipo');
+    const tarde = await corregir(solicitud.id, { ...solicitud.enviado, recibida: '2026-08-20', motivo });
+    assert.equal(tarde.status, 409, JSON.stringify(tarde.body));
+    assert.equal(tarde.body.error, `En «${dataset.titulo}», la nota DGMIT N° ${reiteracion.numero} (reiteración, entregada el 10/08/2026) quedaría sin una solicitud anterior en su ciclo.`);
+    const sinDataset = await corregir(solicitud.id, { ...solicitud.enviado, datasets: [ds.si1.id], motivo });
+    assert.equal(sinDataset.status, 409, JSON.stringify(sinDataset.body));
+    const [{ n: despues }] = await query('SELECT COUNT(*) AS n FROM notas_dgmit_historial WHERE nota_id = ?', [solicitud.id]);
+    assert.equal(despues, antes);
+    const numero = await corregir(solicitud.id, { ...solicitud.enviado, numero: numeroNuevo(), motivo });
+    assert.equal(numero.status, 200, JSON.stringify(numero.body));
+    const fecha = await corregir(solicitud.id, { ...solicitud.enviado, recibida: '2026-08-05', numero: numero.body.data.numero, motivo });
+    assert.equal(fecha.status, 200, JSON.stringify(fecha.body));
+  });
+
+  it('anular: la solicitud con reiteraciones, no; primero las reiteraciones', async () => {
+    const dataset = await conCiclos('anular');
+    const solicitud = await cargada('colab', { recibida: '2026-08-01', datasets: [dataset.id] });
+    const reiteracion = await cargada('colab', { recibida: '2026-08-10', tipo: 'reiteracion', datasets: [dataset.id] });
+    esperarRechazo(await anular(solicitud.id, 'No va'), 409,
+      `No se puede anular: en «${dataset.titulo}», la nota DGMIT N° ${reiteracion.numero} (reiteración, entregada el 10/08/2026) quedaría sin una solicitud anterior en su ciclo. Anulá primero las reiteraciones de ese ciclo o corregí esta nota.`, 'motivo');
+    assert.equal((await notaEnDb(solicitud.id)).anulada, 0);
+    assert.equal((await anular(reiteracion.id, 'No va')).status, 200);
+    assert.equal((await anular(solicitud.id, 'No va')).status, 200);
+    // Anulada, la solicitud deja de contar: se puede cargar otra
+    const otra = await cargar('colab', { recibida: '2026-08-01', datasets: [dataset.id] });
+    assert.equal(otra.status, 201, JSON.stringify(otra.body));
+  });
+
+  it('una nota ya cargada que no cumple, como las de antes de la regla, se puede corregir y anular', async () => {
+    const dataset = await conCiclos('de antes');
+    const directa = async (tipo, recibida) => {
+      const [fila] = [await query('INSERT INTO notas_dgmit (numero, tipo, recibida, creado_por) VALUES (?, ?, ?, ?)', [numeroNuevo(), tipo, recibida, usuarios.colab.id])];
+      await query('INSERT INTO notas_dgmit_datasets (nota_id, dataset_id) VALUES (?, ?)', [fila.insertId, dataset.id]);
+      const [{ numero }] = await query('SELECT numero FROM notas_dgmit WHERE id = ?', [fila.insertId]);
+      return { id: fila.insertId, numero, recibida, tipo };
+    };
+    const primera = await directa('reiteracion', '2026-08-03');
+    const segunda = await directa('reiteracion', '2026-08-05');
+    const motivo = 'Prueba';
+    const conDatos = (nota, extra = {}) => ({ numero: nota.numero, recibida: nota.recibida, tipo: nota.tipo, datasets: [dataset.id], motivo, ...extra });
+    const numero = await corregir(segunda.id, conDatos(segunda, { numero: numeroNuevo() }), 'adminA');
+    assert.equal(numero.status, 200, JSON.stringify(numero.body));
+    const aSolicitud = await corregir(primera.id, conDatos(primera, { tipo: 'solicitud' }), 'adminA');
+    assert.equal(aSolicitud.status, 200, JSON.stringify(aSolicitud.body));
+    const otra = await directa('reiteracion', '2026-08-02');
+    const anulada = await anular(otra.id, 'Estaba de más', 'adminA');
+    assert.equal(anulada.status, 200, JSON.stringify(anulada.body));
+  });
+
+  it('dos solicitudes al mismo tiempo: pasa una sola', async () => {
+    const dataset = await conCiclos('simultaneas');
+    const [a, b] = await Promise.all([cargar('colab', { datasets: [dataset.id] }), cargar('adminA', { datasets: [dataset.id] })]);
+    assert.deepEqual([a.status, b.status].sort(), [201, 409], JSON.stringify([a.body, b.body]));
+  });
+});
+
+describe('GET /api/notas-dgmit (spec 2026-11-06-editar-notas-dgmit)', () => {
+  const listar = (quien) => api.get('/notas-dgmit', como(quien));
+  const deLaLista = (res, id) => res.body.data.find((n) => n.id === id);
+
+  it('todas las notas, con sus datasets y su ciclo, sin por_id; el colaborador edita solo las suyas', async () => {
+    const dataset = await cargarDataset('lista', { proxima: '2027-11-30' });
+    const propia = await cargada('colab', { recibida: '2026-08-01', datasets: [dataset.id, ds.si2.id] });
+    const res = await listar('colab');
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const nota = deLaLista(res, propia.id);
+    assert.equal(nota.editable, true);
+    assert.equal(Object.hasOwn(nota, 'por_id'), false);
+    assert.equal(nota.tipo, 'solicitud');
+    assert.equal(nota.recibida, '2026-08-01');
+    const delDataset = nota.datasets.find((d) => d.id === dataset.id);
+    assert.deepEqual(delDataset.ciclo, { clase: 'abierto', texto: 'Ciclo abierto · vence el 30/11/2027' });
+    assert.deepEqual(nota.datasets.find((d) => d.id === ds.si2.id).ciclo, { clase: 'sin', texto: 'Sin ciclos: este dataset no tiene vencimiento' });
+    assert.equal(deLaLista(await listar('colab2'), propia.id).editable, false);
+    assert.equal(deLaLista(await listar('adminA'), propia.id).editable, true);
+    assert.equal(deLaLista(await listar('editor'), propia.id).editable, true);
+  });
+
+  it('una anulada sigue en la lista, sin ciclo y con su anulación', async () => {
+    const original = await cargada('colab');
+    await anular(original.id, 'Se cargó dos veces');
+    const nota = deLaLista(await listar('adminA'), original.id);
+    assert.equal(nota.anulada, true);
+    assert.equal(nota.datasets[0].ciclo, null);
+    assert.equal(nota.historial[0].accion, 'anulacion');
+    assert.equal(nota.historial[0].motivo, 'Se cargó dos veces');
+  });
+
+  it('sin sesión, 401; el lector, 403', async () => {
+    assert.equal((await api.get('/notas-dgmit')).status, 401);
+    esperarRechazo(await listar('lector'), 403, SIN_PERMISO);
   });
 });

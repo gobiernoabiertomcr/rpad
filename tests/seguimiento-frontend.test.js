@@ -480,9 +480,9 @@ describe('seguimiento.js: las notas DGMIT', () => {
     assert.deepEqual(columnas, ['Dataset y área', 'Vencimiento', 'Vencido hace', 'Avisos a DGMIT en el ciclo', 'Último aviso', 'Última nota DGMIT al área']);
     const conNota = ctx.htmlDeFilaDeLista(resumenParaLista(conNotasDgmit(58, [notaDgmit({})]), HOY));
     assert.equal(cuantas(conNota, /<td[ >]/g), columnas.length);
-    assert.match(conNota, /<td class="nota-dgmit"><b>N° 156\/26<\/b><small>Solicitud, recibida el 15\/10\/2026<\/small><\/td>\s*<\/tr>$/);
+    assert.match(conNota, /<td class="nota-dgmit"><b>N° 156\/26<\/b><small>Solicitud, entregada el 15\/10\/2026<\/small><\/td>\s*<\/tr>$/);
     const reiteracion = ctx.htmlDeFilaDeLista(resumenParaLista(conNotasDgmit(58, [notaDgmit({ tipo: 'reiteracion', numero: '305/26' })]), HOY));
-    assert.ok(reiteracion.includes('<td class="nota-dgmit"><b>N° 305/26</b><small>Reiteración, recibida el 15/10/2026</small></td>'));
+    assert.ok(reiteracion.includes('<td class="nota-dgmit"><b>N° 305/26</b><small>Reiteración, entregada el 15/10/2026</small></td>'));
     // Sin nota (o con la nota anulada), una raya
     for (const fila of [resumenParaLista(f(52), HOY), resumenParaLista(conNotasDgmit(58, [notaDgmit({ anulada: true })]), HOY)]) {
       const html = ctx.htmlDeFilaDeLista(fila);
@@ -491,7 +491,7 @@ describe('seguimiento.js: las notas DGMIT', () => {
     }
     // Lo que manda el servidor tal cual: con un tipo que no conoce, sin el tipo; con algo raro, la raya
     assert.ok(ctx.htmlDeFilaDeLista({ ...resumenParaLista(f(52), HOY), nota_dgmit: { numero: '9/26', tipo: 'otra', recibida: '2026-10-01' } })
-      .includes('<td class="nota-dgmit"><b>N° 9/26</b><small>Recibida el 01/10/2026</small></td>'));
+      .includes('<td class="nota-dgmit"><b>N° 9/26</b><small>Entregada el 01/10/2026</small></td>'));
     for (const raro of [null, undefined, 'x', {}, { numero: '  ' }]) {
       assert.match(ctx.htmlDeFilaDeLista({ ...resumenParaLista(f(52), HOY), nota_dgmit: raro }), /<td class="nota-dgmit">—<\/td>/, String(raro));
     }
@@ -500,7 +500,7 @@ describe('seguimiento.js: las notas DGMIT', () => {
   it('el circuito con nota usa sg-flecha registrada; sin nota, fuera, con Pendiente de carga', () => {
     const con = ctx.htmlDelCircuito(comoLoVe(conNotasDgmit(58, [notaDgmit({})])).circuito);
     assert.ok(con.includes('<div class="sg-flecha registrada"><div class="n">Nota DGMIT N° 156/26</div><div class="l" aria-hidden="true"></div>'
-      + '<div class="c">Solicitud recibida por el área el 15/10/2026, hace 5 días</div></div>'));
+      + '<div class="c">Solicitud entregada al área el 15/10/2026, hace 5 días</div></div>'));
     assert.ok(!con.includes('sg-flecha fuera'));
     assert.equal(cuantas(con, /class="sg-flecha"/g), 1, 'el tramo de los avisos sigue igual');
     const sin = ctx.htmlDelCircuito(seguimientoDe(f(52), HOY).circuito);
@@ -556,7 +556,7 @@ describe('seguimiento.js: las notas DGMIT', () => {
     assert.deepEqual(pares, [
       ['Número de nota DGMIT', '156/26'],
       ['Tipo de nota', 'Solicitud: la primera vez que se le piden los datos al área'],
-      ['Recibida por el área', '15/10/2026'],
+      ['Entregada al área', '15/10/2026'],
       ['Área', AREA_58],
       ['Datasets de la nota', 'Áreas específicas de género<br>Hotelería en Comodoro Rivadavia'],
       ['Cargada', '16/10/2026 a las 09:30, por Diego Cuatro'],
@@ -588,7 +588,7 @@ describe('seguimiento.js: las notas DGMIT', () => {
     assert.equal(m.extra.editable, true);
     const html = ctx.htmlDeMovimiento(m, 2, {});
     assert.match(html, /^<li class="sg-mov anulada"><button type="button" class="sg-fila" aria-expanded="false" aria-controls="sg-cuerpo-2">/);
-    assert.ok(html.includes('<span class="d">Recibida por el área el 15/10/2026. Anulada el 18/10/2026 por Elena Cuatro: Se cargó dos veces.</span>'));
+    assert.ok(html.includes('<span class="d">Entregada al área el 15/10/2026. Anulada el 18/10/2026 por Elena Cuatro: Se cargó dos veces.</span>'));
     assert.ok(!html.includes('data-accion=') && !html.includes('sg-acciones-nota'));
     // La fila "Anulada", en rojo y negrita como en la maqueta (ruling R6): su <dd> lleva la clase motivo-anulacion
     assert.ok(html.includes('<dt>Anulada</dt><dd class="motivo-anulacion">18/10/2026 a las 09:30, por Elena Cuatro: Se cargó dos veces</dd>'
@@ -785,11 +785,11 @@ describe('seguimiento.js: el formulario de las notas DGMIT', () => {
     filas = conNota(filas, 61, { numero: '305/26', tipo: 'reiteracion', recibida: '2026-10-19' });
     const REITERACION = 'Si se le vuelven a pedir los datos, es una reiteración.';
     assert.equal(ctx.textoDePistaDeSolicitud(filas, [58, 52], 'solicitud'),
-      `«Áreas específicas de género» ya tiene la nota DGMIT N° 156/26 (solicitud, recibida el 15/10/2026) en este ciclo.\n${REITERACION}`);
+      `«Áreas específicas de género» ya tiene la nota DGMIT N° 156/26 (solicitud, entregada el 15/10/2026) en este ciclo.\n${REITERACION}`);
     // Con más de uno, un renglón por dataset, en el orden de la lista
     assert.equal(ctx.textoDePistaDeSolicitud(filas, ['58', '61'], 'solicitud'),
-      '«Comercios habilitados por rubro» ya tiene la nota DGMIT N° 305/26 (reiteración, recibida el 19/10/2026) en este ciclo.\n'
-      + `«Áreas específicas de género» ya tiene la nota DGMIT N° 156/26 (solicitud, recibida el 15/10/2026) en este ciclo.\n${REITERACION}`);
+      '«Comercios habilitados por rubro» ya tiene la nota DGMIT N° 305/26 (reiteración, entregada el 19/10/2026) en este ciclo.\n'
+      + `«Áreas específicas de género» ya tiene la nota DGMIT N° 156/26 (solicitud, entregada el 15/10/2026) en este ciclo.\n${REITERACION}`);
     // Con Reiteración (o sin tipo), nada; sin nota en el ciclo, nada
     for (const tipo of ['reiteracion', '', null]) assert.equal(ctx.textoDePistaDeSolicitud(filas, [58, 61], tipo), '', String(tipo));
     assert.equal(ctx.textoDePistaDeSolicitud(filas, [52, 1], 'solicitud'), '');
@@ -801,8 +801,22 @@ describe('seguimiento.js: el formulario de las notas DGMIT', () => {
     assert.ok(ctx.textoDePistaDeSolicitud(filas, [58, 61], 'solicitud', '156/26').startsWith('«Comercios habilitados por rubro» ya tiene'));
     // Es texto plano (va con textContent): el título no se escapa; un tipo desconocido no se nombra
     const raro = [{ id: 4, titulo: '<b>x</b>', area: 'A', nota_dgmit: { numero: '1/26', tipo: 'otra', recibida: '2026-10-01' } }];
-    assert.equal(ctx.textoDePistaDeSolicitud(raro, [4], 'solicitud'), `«<b>x</b>» ya tiene la nota DGMIT N° 1/26 (recibida el 01/10/2026) en este ciclo.\n${REITERACION}`);
+    assert.equal(ctx.textoDePistaDeSolicitud(raro, [4], 'solicitud'), `«<b>x</b>» ya tiene la nota DGMIT N° 1/26 (entregada el 01/10/2026) en este ciclo.\n${REITERACION}`);
     assert.equal(ctx.textoDePistaDeSolicitud([{ id: 4, titulo: 'x', nota_dgmit: { numero: '  ' } }], [4], 'solicitud'), '');
+    // Con Reiteración, el aviso al revés: uno sin ninguna nota en el ciclo abierto; sin ciclos, nada
+    const sinNota = [{ id: 7, titulo: 'y', area: 'A', estado: 'vencido', nota_dgmit: null, notas_del_ciclo_desde: '2026-04-19' }];
+    const PRIMERA = 'La primera nota de un ciclo es la solicitud.';
+    assert.equal(ctx.textoDePistaDeSolicitud(sinNota, [7], 'reiteracion'), `«y» todavía no tiene una nota DGMIT en este ciclo.\n${PRIMERA}`);
+    assert.equal(ctx.textoDePistaDeSolicitud(sinNota, [7], 'reiteracion', null, '2026-04-18'), '');
+    assert.equal(ctx.textoDePistaDeSolicitud([{ ...sinNota[0], estado: 'eventual' }], [7], 'reiteracion'), '');
+    assert.equal(ctx.textoDePistaDeSolicitud([{ ...sinNota[0], estado: 'sin-fecha' }], [7], 'reiteracion'), '');
+    assert.equal(ctx.textoDePistaDeSolicitud(sinNota, [7], 'solicitud'), '');
+    // Con la fecha del formulario: una nota de un ciclo anterior no repite la del ciclo abierto; sin fecha o sin el dato del servidor, se avisa
+    const conDesde = [{ id: 4, titulo: 'x', notas_del_ciclo_desde: '2026-04-19', nota_dgmit: { numero: '1/26', tipo: 'solicitud', recibida: '2026-10-01' } }];
+    assert.equal(ctx.textoDePistaDeSolicitud(conDesde, [4], 'solicitud', null, '2026-04-18'), '');
+    assert.ok(ctx.textoDePistaDeSolicitud(conDesde, [4], 'solicitud', null, '2026-04-19').startsWith('«x» ya tiene'));
+    for (const fecha of ['', null, 'cualquiera']) assert.ok(ctx.textoDePistaDeSolicitud(conDesde, [4], 'solicitud', null, fecha).startsWith('«x» ya tiene'), String(fecha));
+    assert.ok(ctx.textoDePistaDeSolicitud(raro, [4], 'solicitud', null, '2025-01-01').startsWith('«<b>x</b>» ya tiene'));
   });
 
   it('erroresDelFormularioDeNota da lo mismo que validarNotaDgmit en los casos de borde', () => {
@@ -901,7 +915,10 @@ describe('seguimiento.js: el formulario de las notas DGMIT', () => {
       assert.ok(todos.includes(id), id);
     }
     // Los diálogos, como los de administración: role, aria-modal y el título
-    assert.match(html, /<div class="modal-overlay" id="modal-nota">\s*<div class="modal sg-modal" role="dialog" aria-modal="true" aria-labelledby="modal-nota-titulo">/);
+    assert.match(html, /<div class="modal-overlay" id="modal-nota">\s*<div class="modal sg-modal sg-modal-alto" role="dialog" aria-modal="true" aria-labelledby="modal-nota-titulo">/);
+    assert.match(html, /<div class="modal-overlay" id="modal-editar-notas">\s*<div class="modal sg-modal sg-modal-alto" role="dialog" aria-modal="true" aria-labelledby="modal-editar-notas-titulo">/);
+    assert.match(cabecera, /<button type="button" class="sg-btn sg-btn-borde" id="sg-editar-notas" hidden>[\s\S]*Editar notas DGMIT<\/button>/);
+    for (const id of ['nl-buscar', 'nl-alcance', 'nl-notas', 'nl-paginas', 'nl-cuerpo', 'nd-volver']) assert.ok(todos.includes(id), id);
     assert.match(html, /<div class="modal-overlay" id="modal-anular">\s*<div class="modal sg-modal sg-modal-chico" role="dialog" aria-modal="true" aria-labelledby="modal-anular-titulo">/);
     // Los campos, con sus límites, obligatorios y con su ayuda y su error unidos
     assert.match(html, /<input type="text" id="nd-numero" class="form-input" maxlength="40" placeholder="Ej\.: 156\/26" autocomplete="off" aria-required="true" aria-describedby="nd-numero-ayuda nd-numero-error">/);
@@ -911,7 +928,7 @@ describe('seguimiento.js: el formulario de las notas DGMIT', () => {
     assert.match(html, /<textarea id="nd-motivo" class="form-input" rows="2" maxlength="500" aria-required="true" aria-describedby="nd-motivo-error"><\/textarea>/);
     assert.match(html, /<textarea id="an-motivo" class="form-input" rows="3" maxlength="500" aria-required="true" aria-describedby="an-motivo-error"><\/textarea>/);
     assert.ok(html.includes('<div class="form-group sg-motivo" id="nd-motivo-grupo" hidden>'));
-    for (const texto of ['Número de nota DGMIT', 'Como figura en la nota.', 'Fecha de recepción', 'El día en que el área recibió la nota.', 'Tipo de nota',
+    for (const texto of ['Número de nota DGMIT', 'Como figura en la nota.', 'Fecha de entrega', 'El día en que se le entregó la nota al área.', 'Tipo de nota',
       '<b>Solicitud</b><small>La primera vez que se le piden los datos al área.</small>', '<b>Reiteración</b><small>Ya se le habían pedido y se le vuelven a pedir.</small>',
       'Datasets asociados', 'Motivo de la corrección', 'Motivo de la anulación', '>Guardar nota</button>', '>Anular nota</button>',
       'Se guarda al confirmar y queda registrado quién la cargó y cuándo.']) {
@@ -937,7 +954,7 @@ const elementoFalso = (id, alEnfocar = () => {}) => {
     classList: { add: (c) => clases.add(c), remove: (c) => clases.delete(c), contains: (c) => clases.has(c), toggle: (c, si = !clases.has(c)) => (si ? clases.add(c) : clases.delete(c), si) },
     setAttribute(nombre, valor) { atributos[nombre] = String(valor); }, removeAttribute(nombre) { delete atributos[nombre]; },
     getAttribute: (nombre) => atributos[nombre] ?? null,
-    addEventListener() {}, insertAdjacentHTML(_donde, html) { this.innerHTML += html; }, querySelector: () => null, querySelectorAll: () => [],
+    addEventListener() {}, insertAdjacentHTML(_donde, html) { this.innerHTML += html; }, querySelector: () => null, querySelectorAll: () => [], contains: () => true,
     closest: () => null, focus() { alEnfocar(id); }
   };
 };
@@ -1240,7 +1257,7 @@ describe('seguimiento.js: cargar, corregir y anular desde la página', () => {
     assert.equal(el('nd-numero-error').textContent, 'Escribí el número de la nota.');
     assert.equal(el('nd-numero-error').hidden, false);
     assert.equal(el('nd-numero').getAttribute('aria-invalid'), 'true');
-    assert.equal(el('nd-fecha-error').textContent, 'Elegí la fecha en que el área recibió la nota.');
+    assert.equal(el('nd-fecha-error').textContent, 'Elegí la fecha en que se le entregó la nota al área.');
     assert.equal(el('nd-tipo-error').textContent, 'Elegí si es una solicitud o una reiteración.');
     assert.equal(el('nd-tipo-solicitud').getAttribute('aria-invalid'), 'true');
     assert.ok(el('nd-tipos').classList.contains('invalido'));
@@ -1254,7 +1271,7 @@ describe('seguimiento.js: cargar, corregir y anular desde la página', () => {
     await pagina.guardarNotaDgmit();
     assert.equal(el('nd-numero-error').hidden, true);
     assert.equal(el('nd-numero').getAttribute('aria-invalid'), null);
-    assert.equal(el('nd-fecha-error').textContent, 'La fecha de recepción no puede ser posterior a hoy.');
+    assert.equal(el('nd-fecha-error').textContent, 'La fecha de entrega no puede ser posterior a hoy.');
     assert.equal(enfocados.at(-1), 'nd-fecha');
 
     // Completo: POST con el número recortado y el dataset elegido
@@ -1341,7 +1358,7 @@ describe('seguimiento.js: cargar, corregir y anular desde la página', () => {
     el('nd-tipo-solicitud').checked = true;
     pagina.alElegirTipoDeNota();
     assert.equal(el('nd-pista').hidden, false);
-    assert.equal(el('nd-pista').textContent, '«Áreas específicas de género» ya tiene la nota DGMIT N° 156/26 (solicitud, recibida el 15/10/2026) en este ciclo.\n'
+    assert.equal(el('nd-pista').textContent, '«Áreas específicas de género» ya tiene la nota DGMIT N° 156/26 (solicitud, entregada el 15/10/2026) en este ciclo.\n'
       + 'Si se le vuelven a pedir los datos, es una reiteración.');
     el('nd-tipo-solicitud').checked = false;
     el('nd-tipo-reiteracion').checked = true;
@@ -1553,3 +1570,210 @@ describe('seguimiento.js: lenguaje neutro', () => {
     assert.doesNotMatch(leer('js/seguimiento.js'), /sin entregar|sin respuesta|atrasad/i);
   });
 });
+
+describe('seguimiento.js: Editar notas DGMIT (spec 2026-11-06-editar-notas-dgmit)', () => {
+  const nota = (extra = {}) => ({
+    id: 5, numero: '301/26', tipo: 'solicitud', recibida: '2026-05-21', anulada: false, cargada: '2026-11-02 17:00:00', por: 'Nombre Uno', editable: true, historial: [],
+    datasets: [{ id: 9, titulo: 'Dataset <b>de</b> prueba', area: 'Área de prueba', ciclo: { clase: 'cerrado', texto: 'Venció el 31/03/2031 · actualizado el 17/04/2031' } }],
+    ...extra
+  });
+  const LAS_NOTAS = () => ({ success: true, data: [nota(), nota({ id: 6, numero: '302/26', datasets: [{ id: 3, titulo: 'Otro', area: 'Tránsito', ciclo: null }], anulada: true, historial: [{ accion: 'anulacion', motivo: 'Se cargó dos veces', por: 'Nombre Dos', momento: '2026-10-13 09:00:00' }] })] });
+  const muchas = (n) => Array.from({ length: n }, (_, i) => nota({ id: i + 1, numero: `${400 + n - i}/26` }));
+
+  it('la búsqueda: número, dataset o área, sin tildes ni mayúsculas', () => {
+    const ctx = cargar();
+    const notas = LAS_NOTAS().data;
+    assert.deepEqual(plano(ctx.notasBuscadas(notas, '301/').map((n) => n.id)), [5]);
+    assert.deepEqual(plano(ctx.notasBuscadas(notas, 'TRANSITO').map((n) => n.id)), [6]);
+    assert.deepEqual(plano(ctx.notasBuscadas(notas, 'área de').map((n) => n.id)), [5]);
+    assert.deepEqual(plano(ctx.notasBuscadas(notas, '  ').map((n) => n.id)), [5, 6]);
+    assert.equal(ctx.notasBuscadas(notas, 'nada').length, 0);
+    assert.equal(ctx.notasBuscadas(null, 'x').length, 0);
+  });
+
+  it('el alcance: Vigentes, Anuladas y Todas, con su cantidad', () => {
+    const ctx = cargar();
+    const notas = LAS_NOTAS().data;
+    assert.deepEqual(plano(ctx.notasDelAlcance(notas, 'vigentes').map((n) => n.id)), [5]);
+    assert.deepEqual(plano(ctx.notasDelAlcance(notas, 'anuladas').map((n) => n.id)), [6]);
+    assert.deepEqual(plano(ctx.notasDelAlcance(notas, 'todas').map((n) => n.id)), [5, 6]);
+    const html = ctx.htmlDeAlcanceDeNotas(notas, 'anuladas');
+    assert.ok(html.includes('data-alcance="anuladas" aria-pressed="true">Anuladas <b>1</b>'));
+    assert.ok(html.includes('data-alcance="vigentes" aria-pressed="false">Vigentes <b>1</b>'));
+    assert.ok(html.includes('data-alcance="todas" aria-pressed="false">Todas <b>2</b>'));
+  });
+
+  it('la página: de a 10, corrida a la última que existe; con una sola, sin botones', () => {
+    const ctx = cargar();
+    const notas = muchas(14);
+    const primera = ctx.paginaDeNotas(notas, 1);
+    assert.deepEqual([primera.notas.length, primera.pagina, primera.paginas, primera.desde, primera.hasta, primera.total], [10, 1, 2, 1, 10, 14]);
+    const segunda = ctx.paginaDeNotas(notas, 9);
+    assert.deepEqual([segunda.notas.length, segunda.pagina, segunda.desde, segunda.hasta], [4, 2, 11, 14]);
+    assert.equal(ctx.paginaDeNotas(notas, 'x').pagina, 1);
+    const html = ctx.htmlDePaginasDeNotas(primera);
+    assert.ok(html.includes('data-pagina="0" data-direccion="anterior" disabled>Anterior'));
+    assert.ok(html.includes('data-pagina="2" data-direccion="siguiente">Siguiente'));
+    assert.ok(html.includes('Página 1 de 2<small>Mostrando 1–10 de 14</small>'));
+    assert.ok(ctx.htmlDePaginasDeNotas(segunda).includes('data-direccion="siguiente" disabled>Siguiente'));
+    assert.equal(ctx.htmlDePaginasDeNotas(ctx.paginaDeNotas(muchas(10), 1)), '');
+    assert.equal(ctx.htmlDePaginasDeNotas(ctx.paginaDeNotas([], 1)), '');
+  });
+
+  it('una nota: el número, «Entregada el», el dataset con su ciclo y los botones, todo escapado', () => {
+    const ctx = cargar();
+    const html = ctx.htmlDeNotaDeLaLista(nota());
+    assert.ok(html.includes('<span class="nl-rotulo">Nota DGMIT N°</span><span class="nl-numero">301/26</span><span class="nl-tipo solicitud">Solicitud</span>'));
+    assert.ok(html.includes('Entregada el <b>21/05/2026</b>'));
+    assert.ok(html.includes('<a href="seguimiento.html?id=9">Dataset &lt;b&gt;de&lt;/b&gt; prueba</a><span class="nl-ciclo cerrado">Venció el 31/03/2031 · actualizado el 17/04/2031</span>'));
+    assert.ok(html.includes('Cargó Nombre Uno el 02/11/2026'));
+    assert.ok(html.includes('data-corregir="5" aria-label="Corregir la nota DGMIT N° 301/26">Corregir'));
+    assert.ok(html.includes('data-anular="5" aria-label="Anular la nota DGMIT N° 301/26">Anular'));
+    assert.ok(ctx.htmlDeNotaDeLaLista(nota({ tipo: 'reiteracion' })).includes('<span class="nl-tipo reiteracion">Reiteración</span>'));
+    assert.ok(ctx.htmlDeNotaDeLaLista(nota({ numero: '<img>' })).includes('<span class="nl-numero">&lt;img&gt;</span>'));
+  });
+
+  it('sin `editable` literal o anulada, sin botones; la anulación y las correcciones se dicen', () => {
+    const ctx = cargar();
+    assert.ok(!ctx.htmlDeNotaDeLaLista(nota({ editable: false })).includes('data-corregir'));
+    assert.ok(!ctx.htmlDeNotaDeLaLista(nota({ editable: 'true' })).includes('data-corregir'));
+    const anulada = ctx.htmlDeNotaDeLaLista(LAS_NOTAS().data[1]);
+    assert.ok(!anulada.includes('data-corregir'));
+    assert.ok(anulada.includes('class="nl-nota anulada"'));
+    assert.ok(anulada.includes('Anulada el 13/10/2026 por Nombre Dos: Se cargó dos veces.'));
+    assert.ok(ctx.htmlDeNotaDeLaLista(nota({ historial: [{ accion: 'correccion' }] })).includes('· Corregida 1 vez'));
+    assert.ok(ctx.htmlDeNotaDeLaLista(nota({ historial: [{ accion: 'correccion' }, { accion: 'correccion' }] })).includes('· Corregida 2 veces'));
+    assert.ok(ctx.htmlDeNotaDeLaLista(nota({ por: null })).includes('Cargada el 02/11/2026'));
+    // El motivo no repite su punto; lo que falta se omite
+    const conAnulacion = (anulacion) => ctx.htmlDeNotaDeLaLista(nota({ anulada: true, historial: [{ accion: 'anulacion', ...anulacion }] }));
+    assert.ok(conAnulacion({ motivo: 'Cargada por error.', por: 'Nombre Dos', momento: '2026-10-13 09:00:00' }).includes('Anulada el 13/10/2026 por Nombre Dos: Cargada por error.</p>'));
+    assert.ok(conAnulacion({ motivo: 'Error', por: null, momento: '2026-10-13 09:00:00' }).includes('Anulada el 13/10/2026: Error.</p>'));
+    assert.ok(ctx.htmlDeNotaDeLaLista(nota({ anulada: true })).includes('<p class="nl-anulada">Anulada.</p>'));
+  });
+
+  it('con más de 3 datasets, se ven 2 y «Ver los N datasets»; abierta, todos', () => {
+    const ctx = cargar();
+    const datasets = Array.from({ length: 4 }, (_, i) => ({ id: i + 1, titulo: `D${i + 1}`, ciclo: null }));
+    const plegada = ctx.htmlDeNotaDeLaLista(nota({ datasets }));
+    assert.equal(cuantas(plegada, /<li>/g), 2);
+    assert.ok(plegada.includes('data-mas="5" aria-expanded="false">Ver los 4 datasets'));
+    const abierta = ctx.htmlDeNotaDeLaLista(nota({ datasets }), true);
+    assert.equal(cuantas(abierta, /<li>/g), 4);
+    assert.ok(abierta.includes('aria-expanded="true">Ver menos'));
+    assert.equal(cuantas(ctx.htmlDeNotaDeLaLista(nota({ datasets: datasets.slice(0, 3) })), /<li>/g), 3);
+  });
+
+  it('los mensajes sin notas', () => {
+    const ctx = cargar();
+    assert.ok(ctx.htmlDeNotasDeLaLista([]).includes('Todavía no hay notas DGMIT cargadas.'));
+    assert.ok(ctx.htmlDeNotasDeLaLista([], { hayBusqueda: true }).includes('Ninguna nota coincide con la búsqueda.'));
+    assert.ok(ctx.htmlDeNotasDeLaLista([], { alcance: 'anuladas' }).includes('No hay notas anuladas.'));
+    assert.ok(ctx.htmlDeNotasDeLaLista([], { hayAlguna: true }).includes('No hay notas vigentes.'));
+  });
+
+  it('el botón solo para quien carga; las notas se piden al abrir, nunca al iniciar', async () => {
+    const lector = preparar({ respuestas: { '/seguimiento': LISTA() } });
+    await lector.pagina.iniciarSeguimiento();
+    assert.equal(lector.el('sg-editar-notas').hidden, true);
+    await lector.pagina.abrirEdicionDeNotas();
+    assert.equal(lector.el('modal-editar-notas').classList.contains('active'), false);
+    assert.deepEqual(lector.pedidos, ['GET /seguimiento']);
+
+    const { pagina, el, pedidos } = preparar({ puedeCargar: true, respuestas: { '/seguimiento': LISTA(), '/notas-dgmit': LAS_NOTAS() } });
+    await pagina.iniciarSeguimiento();
+    assert.equal(el('sg-editar-notas').hidden, false);
+    assert.deepEqual(pedidos, ['GET /seguimiento']);
+    await pagina.abrirEdicionDeNotas();
+    assert.deepEqual(pedidos, ['GET /seguimiento', 'GET /notas-dgmit']);
+    assert.equal(el('modal-editar-notas').classList.contains('active'), true);
+    assert.equal(cuantas(el('nl-notas').innerHTML, /<article /g), 1);
+  });
+
+  it('si no llegan las notas, lo dice: nunca «no hay notas»', async () => {
+    const { pagina, el } = preparar({ puedeCargar: true, respuestas: { '/seguimiento': LISTA() }, errores: { '/notas-dgmit': conEstado(500) } });
+    await pagina.iniciarSeguimiento();
+    await pagina.abrirEdicionDeNotas();
+    assert.ok(el('nl-notas').innerHTML.includes('No se pudieron cargar las notas DGMIT.'));
+    assert.equal(el('nl-paginas').innerHTML, '');
+  });
+
+  it('volver a abrir la lista después de una falla no la sigue mostrando', async () => {
+    const errores = { '/notas-dgmit': conEstado(500) };
+    const { pagina, el } = preparar({ puedeCargar: true, respuestas: { '/seguimiento': LISTA(), '/notas-dgmit': LAS_NOTAS() }, errores });
+    await pagina.iniciarSeguimiento();
+    await pagina.abrirEdicionDeNotas();
+    assert.ok(el('nl-notas').innerHTML.includes('No se pudieron cargar'));
+    delete errores['/notas-dgmit'];
+    const abriendo = pagina.abrirEdicionDeNotas();
+    assert.ok(el('nl-notas').innerHTML.includes('Cargando las notas DGMIT'));
+    await abriendo;
+    assert.equal(cuantas(el('nl-notas').innerHTML, /<article /g), 1);
+  });
+
+  it('con un dataset abierto, Corregir desde la lista usa la nota de la lista, que se acaba de pedir', async () => {
+    const movimiento = { tipo: 'dgmit', extra: { nota_id: 5, numero: 'VIEJO/26', tipo: 'solicitud', recibida: '2026-05-21', anulada: false, editable: true, datasets: [{ id: 9, titulo: 'x' }] } };
+    const { pagina, el } = preparar({
+      id: '52', puedeCargar: true,
+      respuestas: { '/seguimiento': LISTA(), '/seguimiento/52': { success: true, data: { ...DE(52).data, movimientos: [movimiento] } }, '/notas-dgmit': LAS_NOTAS() }
+    });
+    await pagina.iniciarSeguimiento();
+    await pagina.abrirEdicionDeNotas();
+    await pagina.corregirDesdeLaLista('5');
+    assert.equal(el('nd-numero').value, '301/26');
+    pagina.cerrarFormularioDeNota();
+    pagina.cerrarEdicionDeNotas();
+    await pagina.abrirFormularioDeNota(el('sg-cargar-nota'), '5');
+    assert.equal(el('nd-numero').value, 'VIEJO/26');
+  });
+
+  it('Corregir pasa al formulario, con «Volver a la lista»; cerrar vuelve a la lista', async () => {
+    const { pagina, el } = preparar({ puedeCargar: true, respuestas: { '/seguimiento': LISTA(), '/notas-dgmit': LAS_NOTAS() } });
+    await pagina.iniciarSeguimiento();
+    await pagina.abrirEdicionDeNotas();
+    await pagina.corregirDesdeLaLista('5');
+    assert.equal(el('modal-editar-notas').classList.contains('active'), false);
+    assert.equal(el('modal-nota').classList.contains('active'), true);
+    assert.equal(el('nd-volver').hidden, false);
+    assert.equal(el('nd-numero').value, '301/26');
+    assert.equal(el('nd-fecha').value, '2026-05-21');
+    assert.equal(el('modal-nota-titulo').textContent, 'Corregir nota DGMIT N° 301/26');
+    pagina.cerrarFormularioDeNota();
+    assert.equal(el('modal-nota').classList.contains('active'), false);
+    assert.equal(el('modal-editar-notas').classList.contains('active'), true);
+    assert.equal(el('nd-volver').hidden, true);
+  });
+
+  it('guardar desde la lista vuelve a la lista y la vuelve a pedir; una nota anulada no abre el formulario', async () => {
+    const { pagina, el, pedidos, cuerpos, avisos } = preparar({
+      puedeCargar: true,
+      respuestas: { '/seguimiento': LISTA(), '/notas-dgmit': LAS_NOTAS(), '/notas-dgmit/5': { success: true, message: 'Nota DGMIT N° 301/26 corregida.' } }
+    });
+    await pagina.iniciarSeguimiento();
+    await pagina.abrirEdicionDeNotas();
+    await pagina.corregirDesdeLaLista('6');
+    assert.equal(el('modal-nota').classList.contains('active'), false);
+    assert.equal(el('modal-editar-notas').classList.contains('active'), true);
+    await pagina.corregirDesdeLaLista('5');
+    el('nd-tipo-solicitud').checked = true;
+    el('nd-motivo').value = 'Estaba mal la fecha';
+    el('nd-fecha').value = '2026-05-24';
+    await pagina.guardarNotaDgmit();
+    assert.deepEqual(cuerpos.map(([ruta]) => ruta), ['PUT /notas-dgmit/5']);
+    assert.deepEqual(avisos.at(-1), ['success', 'Nota DGMIT N° 301/26 corregida.']);
+    assert.equal(el('modal-editar-notas').classList.contains('active'), true);
+    assert.equal(pedidos.filter((p) => p === 'GET /notas-dgmit').length, 2);
+  });
+
+  it('el cambio de filtro y de búsqueda vuelve a la primera página', async () => {
+    const { pagina, el } = preparar({ puedeCargar: true, respuestas: { '/seguimiento': LISTA(), '/notas-dgmit': { success: true, data: muchas(14) } } });
+    await pagina.iniciarSeguimiento();
+    await pagina.abrirEdicionDeNotas();
+    assert.equal(cuantas(el('nl-notas').innerHTML, /<article /g), 10);
+    pagina.alCambiarDePagina({ target: { closest: () => ({ disabled: false, dataset: { pagina: '2', direccion: 'siguiente' } }) } });
+    assert.equal(cuantas(el('nl-notas').innerHTML, /<article /g), 4);
+    assert.ok(el('nl-paginas').innerHTML.includes('Página 2 de 2'));
+    pagina.alElegirAlcanceDeNotas({ target: { closest: () => ({ dataset: { alcance: 'todas' } }) } });
+    assert.ok(el('nl-paginas').innerHTML.includes('Página 1 de 2'));
+  });
+});
+

@@ -7,7 +7,7 @@ import {
   REGISTRO_DESDE, ASUNTOS_EMAIL, QUE_PEDIA, FALTABAN, diaDe, nombreCorto, unirAlta, movimientosDe,
   ciclosDe, cicloDelAviso, avisosDelCiclo, ultimoAviso, hitosDe, estadoDeSeguimiento, circuitoDe,
   seguimientoDe, resumenParaLista, nombreDelPdf, disposicionDeAdjunto, sinErroresTecnicos, notaDgmitDelCiclo, conNotasDgmitEditables,
-  notasDgmitPorCiclo, notasDgmitDelCicloAbierto, tituloDeEmail, tituloDeNotaADgmit, ESTADO_DE_NOTA, RESULTADO_DE_EMAIL
+  notasDgmitPorCiclo, notasDgmitDelCicloAbierto, listaDeNotasDgmit, problemaDeLaSecuencia, tituloDeEmail, tituloDeNotaADgmit, ESTADO_DE_NOTA, RESULTADO_DE_EMAIL
 } from '../services/seguimientoReglas.js';
 import { cintaDe } from '../services/seguimientoCinta.js';
 
@@ -1592,7 +1592,7 @@ describe('resumenParaLista', () => {
     const { dataset } = CASOS[52];
     const r = resumenParaLista(f(52), HOY);
     assert.deepEqual(Object.keys(r), ['id', 'titulo', 'area', 'tipo_gestion', 'requiere_nota', 'activo', 'estado', 'dias', 'proxima', 'avisos',
-      'ultimo_aviso', 'nota_dgmit', 'pendiente']);
+      'ultimo_aviso', 'nota_dgmit', 'notas_del_ciclo_desde', 'pendiente']);
     assert.equal(r.id, 52);
     assert.equal(r.titulo, dataset.titulo);
     assert.equal(r.area, dataset.area);
@@ -1658,6 +1658,48 @@ describe('resumenParaLista', () => {
     assert.doesNotThrow(() => resumenParaLista(null, HOY));
     assert.doesNotThrow(() => resumenParaLista({}, HOY));
     assert.doesNotThrow(() => resumenParaLista({ dataset: CASOS[52].dataset }, 'mañana'));
+  });
+});
+
+describe('resumenParaLista: desde qué día una nota es del ciclo abierto', () => {
+  const momento = '2031-04-18 14:30:00';
+  const conCiclos = (ultima, cambios) => ({
+    dataset: { id: 900, titulo: 'x', meses: 6, proxima: '2031-10-31', ultima, alta: '2030-12-03 10:00:00', tipo_gestion: 'externa', activo: true },
+    cambios, historial: [], emails: [], notas: [], notasDgmit: []
+  });
+  const actualizacion = {
+    id: 1, tipo: 'editar', estado: 'aprobado', revisado: momento,
+    anteriores: { proxima_actualizacion: '2031-03-31', ultima_actualizacion: '2030-08-14' },
+    nuevos: { proxima_actualizacion: '2031-10-31', ultima_actualizacion: '2031-04-17' }
+  };
+
+  it('con dos ciclos, el día siguiente a la aprobación; a las 00:00, ese mismo día', () => {
+    assert.equal(resumenParaLista(conCiclos('2031-04-17', [actualizacion]), '2031-11-06').notas_del_ciclo_desde, '2031-04-19');
+    const justo = { ...actualizacion, revisado: '2031-04-18 00:00:00' };
+    assert.equal(resumenParaLista(conCiclos('2031-04-17', [justo]), '2031-11-06').notas_del_ciclo_desde, '2031-04-18');
+  });
+
+  it('con un solo ciclo, la última carga si es anterior al ciclo; sin ella, ninguna fecha lo separa', () => {
+    assert.equal(resumenParaLista(conCiclos('2030-08-14', []), '2031-11-06').notas_del_ciclo_desde, '2030-08-14');
+    assert.equal(resumenParaLista(conCiclos('2031-03-09', []), '2031-11-06').notas_del_ciclo_desde, '2030-12-04');
+    assert.equal(resumenParaLista(conCiclos(null, []), '2031-11-06').notas_del_ciclo_desde, null);
+  });
+
+  it('sin ciclos, null', () => {
+    const eventual = conCiclos('2030-08-14', []);
+    eventual.dataset.meses = null;
+    assert.equal(resumenParaLista(eventual, '2031-11-06').notas_del_ciclo_desde, null);
+  });
+
+  it('dice lo mismo que notasDgmitPorCiclo, día por día', () => {
+    for (const fuentes of [conCiclos('2031-04-17', [actualizacion]), conCiclos('2030-08-14', []), conCiclos('2031-03-09', [])]) {
+      const desde = resumenParaLista(fuentes, '2031-11-06').notas_del_ciclo_desde;
+      for (const recibida of ['2030-08-13', '2030-08-14', '2030-12-02', '2030-12-03', '2030-12-04', '2031-03-09', '2031-04-17', '2031-04-18', '2031-04-19', '2031-09-08']) {
+        const conNota = { ...fuentes, notasDgmit: [{ id: 1, numero: '1/26', tipo: 'solicitud', recibida, anulada: false, cargada: '2031-11-06 10:00:00' }] };
+        const delAbierto = notaDgmitDelCiclo(conNota, ciclosDe(conNota, '2031-11-06'), '2031-11-06') !== null;
+        assert.equal(recibida >= desde, delAbierto, `${fuentes.dataset.ultima} ${recibida}`);
+      }
+    }
   });
 });
 
@@ -1761,7 +1803,7 @@ describe('movimientosDe: notas DGMIT', () => {
     assert.deepEqual(dgmit[0], {
       tipo: 'dgmit', filtro: 'dgmit', fecha: '2026-10-15', momento: '2026-10-15 00:00:00',
       titulo: 'Nota DGMIT N° 156/26 al área: solicitud',
-      detalle: 'Recibida por el área el 15/10/2026. La misma nota pide también Hotelería en Comodoro Rivadavia y Presupuesto Municipal.',
+      detalle: 'Entregada al área el 15/10/2026. La misma nota pide también Hotelería en Comodoro Rivadavia y Presupuesto Municipal.',
       quien: ['Cargó Diego Cuatro'],
       extra: {
         nota_id: 1, numero: '156/26', tipo: 'solicitud', recibida: '2026-10-15', anulada: false, cargada: '2026-10-16 09:30:00',
@@ -1777,13 +1819,13 @@ describe('movimientosDe: notas DGMIT', () => {
     const uno = (datos) => deTipo(movimientosDe(conNotasDgmit(58, [notaDgmit(datos)]), HOY), 'dgmit')[0];
     const r = uno({ tipo: 'reiteracion', por: null, por_id: null });
     assert.equal(r.titulo, 'Nota DGMIT N° 156/26 al área: reiteración');
-    assert.equal(r.detalle, 'Recibida por el área el 15/10/2026.');
+    assert.equal(r.detalle, 'Entregada al área el 15/10/2026.');
     assert.deepEqual(r.quien, []);
     assert.equal(r.extra.por, null);
     assert.equal(r.extra.por_id, null);
-    assert.equal(uno({ datasets: [HOTELERIA, PROPIO] }).detalle, 'Recibida por el área el 15/10/2026. La misma nota pide también Hotelería en Comodoro Rivadavia.');
+    assert.equal(uno({ datasets: [HOTELERIA, PROPIO] }).detalle, 'Entregada al área el 15/10/2026. La misma nota pide también Hotelería en Comodoro Rivadavia.');
     const tres = uno({ datasets: [PROPIO, HOTELERIA, PRESUPUESTO, { id: 9, titulo: 'Pedidos de Acceso a la Información Pública' }] });
-    assert.equal(tres.detalle, 'Recibida por el área el 15/10/2026. La misma nota pide también Hotelería en Comodoro Rivadavia, Presupuesto Municipal y Pedidos de Acceso a la Información Pública.');
+    assert.equal(tres.detalle, 'Entregada al área el 15/10/2026. La misma nota pide también Hotelería en Comodoro Rivadavia, Presupuesto Municipal y Pedidos de Acceso a la Información Pública.');
     // El número y el nombre, recortados
     const espacios = uno({ numero: '  156/26 ', por: '  Diego  Martín   Cuatro ' });
     assert.equal(espacios.titulo, 'Nota DGMIT N° 156/26 al área: solicitud');
@@ -1803,20 +1845,20 @@ describe('movimientosDe: notas DGMIT', () => {
     const correccion = { accion: 'correccion', motivo: 'Otra fecha', por: 'Diego Martín Cuatro', momento: '2026-10-17 10:00:00' };
     const uno = (datos) => deTipo(movimientosDe(conNotasDgmit(58, [notaDgmit({ anulada: true, ...datos })]), HOY), 'dgmit')[0];
     const m = uno({ historial: [anulacion, correccion] });
-    assert.equal(m.detalle, 'Recibida por el área el 15/10/2026. Anulada el 18/10/2026 por Elena Cuatro: Se cargó dos veces.');
+    assert.equal(m.detalle, 'Entregada al área el 15/10/2026. Anulada el 18/10/2026 por Elena Cuatro: Se cargó dos veces.');
     assert.equal(m.extra.anulada, true);
     assert.equal(m.titulo, 'Nota DGMIT N° 156/26 al área: solicitud');
     assert.deepEqual(m.extra.historial.map((h) => [h.accion, h.por]), [['anulacion', 'Elena Cuatro'], ['correccion', 'Diego Cuatro']]);
     // Si el motivo ya termina en punto no se repite; con otros datasets, la anulación va al final
     assert.equal(uno({ datasets: [PROPIO, HOTELERIA], historial: [{ ...anulacion, motivo: 'Era de otro dataset.' }] }).detalle,
-      'Recibida por el área el 15/10/2026. La misma nota pide también Hotelería en Comodoro Rivadavia. Anulada el 18/10/2026 por Elena Cuatro: Era de otro dataset.');
+      'Entregada al área el 15/10/2026. La misma nota pide también Hotelería en Comodoro Rivadavia. Anulada el 18/10/2026 por Elena Cuatro: Era de otro dataset.');
     assert.match(uno({ historial: [{ ...anulacion, motivo: '¿Era otra nota?' }] }).detalle, /Elena Cuatro: ¿Era otra nota\?$/);
     // Sin nombre de quien la anuló, sin motivo, o sin la fila de la anulación
-    assert.equal(uno({ historial: [{ ...anulacion, por: null }] }).detalle, 'Recibida por el área el 15/10/2026. Anulada el 18/10/2026: Se cargó dos veces.');
-    assert.equal(uno({ historial: [{ ...anulacion, motivo: null }] }).detalle, 'Recibida por el área el 15/10/2026. Anulada el 18/10/2026 por Elena Cuatro.');
-    assert.equal(uno({ historial: [correccion] }).detalle, 'Recibida por el área el 15/10/2026. Anulada.');
+    assert.equal(uno({ historial: [{ ...anulacion, por: null }] }).detalle, 'Entregada al área el 15/10/2026. Anulada el 18/10/2026: Se cargó dos veces.');
+    assert.equal(uno({ historial: [{ ...anulacion, motivo: null }] }).detalle, 'Entregada al área el 15/10/2026. Anulada el 18/10/2026 por Elena Cuatro.');
+    assert.equal(uno({ historial: [correccion] }).detalle, 'Entregada al área el 15/10/2026. Anulada.');
     // Una que no está anulada no lo dice aunque traiga correcciones
-    assert.equal(uno({ anulada: false, historial: [correccion] }).detalle, 'Recibida por el área el 15/10/2026.');
+    assert.equal(uno({ anulada: false, historial: [correccion] }).detalle, 'Entregada al área el 15/10/2026.');
   });
 
   it('una nota con recibida posterior a hoy no aparece', () => {
@@ -1855,9 +1897,9 @@ describe('movimientosDe: notas DGMIT', () => {
     assert.doesNotThrow(() => resumenParaLista(fuentes, HOY));
     const movs = deTipo(seguimientoDe(fuentes, HOY).movimientos, 'dgmit');
     assert.deepEqual(movs.map((m) => m.extra.nota_id), [7, 6]);
-    assert.equal(movs[1].detalle, 'Recibida por el área el 15/10/2026.');
+    assert.equal(movs[1].detalle, 'Entregada al área el 15/10/2026.');
     assert.deepEqual([movs[1].extra.cargada, movs[1].extra.por, movs[1].extra.datasets, movs[1].extra.historial], [null, null, [], []]);
-    assert.equal(movs[0].detalle, 'Recibida por el área el 15/10/2026. Anulada.');
+    assert.equal(movs[0].detalle, 'Entregada al área el 15/10/2026. Anulada.');
     assert.equal(notaDgmitDelCiclo(fuentes, ciclosDe(fuentes, HOY), HOY).numero, '156/26');
   });
 });
@@ -1958,7 +2000,7 @@ describe('notaDgmitDelCiclo', () => {
     assert.deepEqual(del([notaDgmit({ recibida: '2026-02-04' })]), { numero: '156/26', tipo: 'solicitud', recibida: '2026-02-04' });
     const antesDelVencimiento = notaDgmit({ id: 2, numero: '60/26', recibida: '2026-06-15' });
     assert.deepEqual(del([vieja, antesDelVencimiento]), { numero: '60/26', tipo: 'solicitud', recibida: '2026-06-15' });
-    assert.equal(circuitoDe(fuentes([vieja, antesDelVencimiento]), ciclos, HOY).tramoFuera.texto, 'Solicitud recibida por el área el 15/06/2026, hace 127 días');
+    assert.equal(circuitoDe(fuentes([vieja, antesDelVencimiento]), ciclos, HOY).tramoFuera.texto, 'Solicitud entregada al área el 15/06/2026, hace 127 días');
     assert.deepEqual(resumenParaLista(fuentes([vieja, antesDelVencimiento]), HOY).nota_dgmit, { numero: '60/26', tipo: 'solicitud', recibida: '2026-06-15' });
     // Desde el vencimiento, el ciclo rige: el camino de siempre
     assert.deepEqual(del([vieja, notaDgmit({ id: 3, numero: '90/26', tipo: 'reiteracion', recibida: '2026-08-15' })]),
@@ -2241,17 +2283,17 @@ describe('circuitoDe: notas DGMIT', () => {
   it('circuito con nota: textos de pantalla y PDF, registrada, hace N días (hoy, 1 día, N días)', () => {
     const c = circuito(conNotasDgmit(58, [notaDgmit({ recibida: HOY })]));
     assert.deepEqual(c.tramoFuera, {
-      titulo: 'Nota DGMIT N° 156/26', texto: 'Solicitud recibida por el área el 20/10/2026, hoy', registrada: true,
-      nota: { numero: '156/26', tipo: 'solicitud', recibida: '2026-10-20' }, tituloPdf: 'Nota DGMIT', textoPdf: 'Solicitud 156/26. Recibida el 20/10/2026'
+      titulo: 'Nota DGMIT N° 156/26', texto: 'Solicitud entregada al área el 20/10/2026, hoy', registrada: true,
+      nota: { numero: '156/26', tipo: 'solicitud', recibida: '2026-10-20' }, tituloPdf: 'Nota DGMIT', textoPdf: 'Solicitud 156/26. Entregada el 20/10/2026'
     });
     assert.deepEqual(c.nodoMedio, { nombre: 'DGMIT y Dirección Administrativa', rol: 'Mandan la nota formal al área' });
     const texto = (recibida, tipo = 'solicitud') => circuito(conNotasDgmit(58, [notaDgmit({ recibida, tipo })])).tramoFuera.texto;
-    assert.equal(texto('2026-10-19'), 'Solicitud recibida por el área el 19/10/2026, hace 1 día');
-    assert.equal(texto('2026-10-10'), 'Solicitud recibida por el área el 10/10/2026, hace 10 días');
+    assert.equal(texto('2026-10-19'), 'Solicitud entregada al área el 19/10/2026, hace 1 día');
+    assert.equal(texto('2026-10-10'), 'Solicitud entregada al área el 10/10/2026, hace 10 días');
     // Los días se cuentan de calendario, cruzando meses y años
-    assert.equal(texto('2025-12-20', 'reiteracion'), 'Reiteración recibida por el área el 20/12/2025, hace 304 días');
+    assert.equal(texto('2025-12-20', 'reiteracion'), 'Reiteración entregada al área el 20/12/2025, hace 304 días');
     const r = circuito(conNotasDgmit(58, [notaDgmit({ numero: '160/26', tipo: 'reiteracion', recibida: '2026-10-10' })])).tramoFuera;
-    assert.deepEqual([r.titulo, r.tituloPdf, r.textoPdf, r.registrada], ['Nota DGMIT N° 160/26', 'Nota DGMIT', 'Reiteración 160/26. Recibida el 10/10/2026', true]);
+    assert.deepEqual([r.titulo, r.tituloPdf, r.textoPdf, r.registrada], ['Nota DGMIT N° 160/26', 'Nota DGMIT', 'Reiteración 160/26. Entregada el 10/10/2026', true]);
     assert.deepEqual(r.nota, { numero: '160/26', tipo: 'reiteracion', recibida: '2026-10-10' });
     // Los avisos, el área, el vencimiento y desde cuándo se cuentan no cambian
     const sin = circuito(f(58));
@@ -2315,10 +2357,10 @@ describe('circuitoDe: notas DGMIT', () => {
     const con = circuito(conNotasDgmit(81, [nota], { requiere_nota: 0 }));
     assert.deepEqual(con.nodoMedio, { nombre: 'DGMIT y Dirección Administrativa', rol: 'Mandan la nota formal al área' });
     assert.deepEqual(con.tramoFuera, {
-      titulo: 'Nota DGMIT N° 160/26', texto: 'Solicitud recibida por el área el 20/10/2026, hoy', registrada: true,
-      nota: { numero: '160/26', tipo: 'solicitud', recibida: '2026-10-20' }, tituloPdf: 'Nota DGMIT', textoPdf: 'Solicitud 160/26. Recibida el 20/10/2026'
+      titulo: 'Nota DGMIT N° 160/26', texto: 'Solicitud entregada al área el 20/10/2026, hoy', registrada: true,
+      nota: { numero: '160/26', tipo: 'solicitud', recibida: '2026-10-20' }, tituloPdf: 'Nota DGMIT', textoPdf: 'Solicitud 160/26. Entregada el 20/10/2026'
     });
-    assert.deepEqual(con.alArea, { fechas: [], texto: null, textoPdf: 'Al área: el 20/10/2026 recibió la nota DGMIT N° 160/26 (solicitud), que pide los datos de este dataset.' });
+    assert.deepEqual(con.alArea, { fechas: [], texto: null, textoPdf: 'Al área: el 20/10/2026 se le entregó la nota DGMIT N° 160/26 (solicitud), que pide los datos de este dataset.' });
     assert.deepEqual([con.avisos, con.area, con.vencimiento, con.desde], [sin.avisos, sin.area, sin.vencimiento, sin.desde]);
     // Con «Sí» y la misma nota, el mismo circuito
     assert.deepEqual(circuito(conNotasDgmit(81, [nota], { requiere_nota: 1 })), con);
@@ -2330,11 +2372,11 @@ describe('circuitoDe: notas DGMIT', () => {
     assert.equal(sin.textoPdf, 'Al área: el 21/06/2026 el RPAD le anticipó por email que iba a recibir una nota formal.');
     const con = circuito(conNotasDgmit(52, [notaDgmit({ numero: '120/26', tipo: 'reiteracion', recibida: '2026-08-10' })])).alArea;
     assert.deepEqual(con, { fechas: ['2026-06-21'], texto: sin.texto,
-      textoPdf: 'Al área: el 10/08/2026 recibió la nota DGMIT N° 120/26 (reiteración), que pide los datos de este dataset.' });
+      textoPdf: 'Al área: el 10/08/2026 se le entregó la nota DGMIT N° 120/26 (reiteración), que pide los datos de este dataset.' });
     // 58: sin emails al área en el ciclo
     assert.equal(circuito(f(58)).alArea.textoPdf, 'Al área: en este ciclo todavía no se le envió el email que anticipa la nota formal.');
     assert.deepEqual(circuito(conNotasDgmit(58, [notaDgmit()])).alArea,
-      { fechas: [], texto: null, textoPdf: 'Al área: el 15/10/2026 recibió la nota DGMIT N° 156/26 (solicitud), que pide los datos de este dataset.' });
+      { fechas: [], texto: null, textoPdf: 'Al área: el 15/10/2026 se le entregó la nota DGMIT N° 156/26 (solicitud), que pide los datos de este dataset.' });
     // Una nota de un ciclo anterior no cambia el renglón
     assert.deepEqual(circuito(conNotasDgmit(52, [notaDgmit({ recibida: '2026-01-20' })])).alArea, sin);
   });
@@ -2439,5 +2481,238 @@ describe('resumenParaLista y conNotasDgmitEditables: notas DGMIT', () => {
     assert.deepEqual(conNotasDgmitEditables({}, {}), {});
     const raros = { movimientos: [null, { tipo: 'dgmit' }, { tipo: 'dgmit', extra: null }] };
     assert.deepEqual(conNotasDgmitEditables(raros, { administracion: true }), { movimientos: [null, { tipo: 'dgmit' }, { tipo: 'dgmit', extra: null }] });
+  });
+});
+
+// Un dataset inventado: alta el 03/12/2030 y dos ciclos, el primero vence el 31/03/2031 y lo cierra una actualización aprobada el 18/04/2031
+const HOY_EDITAR = '2031-11-06';
+const ACTUALIZACION = {
+  id: 1, tipo: 'editar', estado: 'aprobado', revisado: '2031-04-18 14:30:00',
+  anteriores: { proxima_actualizacion: '2031-03-31', ultima_actualizacion: '2030-08-14' },
+  nuevos: { proxima_actualizacion: '2031-10-31', ultima_actualizacion: '2031-04-17' }
+};
+const conDosCiclos = ({ dataset = {}, cambios = [ACTUALIZACION], historial = [], notasDgmit = [] } = {}) => ({
+  dataset: {
+    id: 900, titulo: 'Dataset de prueba', area: 'Área de prueba', meses: 6, proxima: '2031-10-31', ultima: '2031-04-17',
+    alta: '2030-12-03 10:00:00', tipo_gestion: 'externa', activo: true, ...dataset
+  },
+  cambios, historial, emails: [], notas: [], notasDgmit
+});
+const notaInventada = (id, recibida, tipo = 'solicitud', extra = {}) => ({
+  id, numero: `${id}/26`, tipo, recibida, anulada: false, cargada: '2031-11-06 10:00:00', por: 'Nombre Inventado Uno', por_id: 7,
+  datasets: [], historial: [], ...extra
+});
+const cicloDeLaNota = (fuentes) => notasDgmitPorCiclo(fuentes, ciclosDe(fuentes, HOY_EDITAR), HOY_EDITAR).findIndex((l) => l.length > 0);
+
+describe('notasDgmitPorCiclo: una nota anterior al primer ciclo, con varios ciclos (spec 2026-11-06-editar-notas-dgmit, 3)', () => {
+  it('anterior a la carga que el dataset tenía al empezar: no es de ningún ciclo', () => {
+    assert.equal(cicloDeLaNota(conDosCiclos({ notasDgmit: [notaInventada(1, '2030-07-22')] })), -1);
+    assert.equal(cicloDeLaNota(conDosCiclos({ notasDgmit: [notaInventada(1, '2030-08-13')] })), -1);
+  });
+
+  it('desde esa carga hasta el alta: es del primero, aunque sea anterior al alta', () => {
+    assert.equal(cicloDeLaNota(conDosCiclos({ notasDgmit: [notaInventada(1, '2030-08-14')] })), 0);
+    assert.equal(cicloDeLaNota(conDosCiclos({ notasDgmit: [notaInventada(1, '2030-11-17')] })), 0);
+  });
+
+  it('un vencimiento anterior al alta: la nota de ese ciclo sigue contando', () => {
+    const anterior = { ...ACTUALIZACION, anteriores: { proxima_actualizacion: '2030-06-30', ultima_actualizacion: '2030-05-19' } };
+    assert.equal(cicloDeLaNota(conDosCiclos({ cambios: [anterior], notasDgmit: [notaInventada(1, '2030-09-16')] })), 0);
+    assert.equal(cicloDeLaNota(conDosCiclos({ cambios: [anterior], notasDgmit: [notaInventada(1, '2030-05-02')] })), -1);
+  });
+
+  it('un dataset que no tenía ninguna carga al empezar: sigue en el primero, aunque una carga posterior sea más nueva', () => {
+    const sinCarga = { ...ACTUALIZACION, anteriores: { proxima_actualizacion: '2031-03-31', ultima_actualizacion: null } };
+    const otro = { ...ACTUALIZACION, id: 2, revisado: '2031-05-20 10:00:00', anteriores: { proxima_actualizacion: '2031-10-31', ultima_actualizacion: '2031-04-17' }, nuevos: { proxima_actualizacion: '2032-02-29', ultima_actualizacion: '2031-05-19' } };
+    assert.equal(cicloDeLaNota(conDosCiclos({ cambios: [sinCarga, otro], notasDgmit: [notaInventada(1, '2030-11-20')] })), 0);
+  });
+
+  it('si la carga no se conoce (el primer ciclo lo cerró una simple), sigue en el primero', () => {
+    const fuentes = conDosCiclos({
+      cambios: [], dataset: { ultima: '2030-12-23' }, historial: [{ cambio_id: null, fecha: '2030-12-23', creado: '2030-12-23 10:00:00' }],
+      notasDgmit: [notaInventada(1, '2030-06-03')]
+    });
+    assert.equal(ciclosDe(fuentes, HOY_EDITAR).length, 2);
+    assert.equal(cicloDeLaNota(fuentes), 0);
+  });
+
+  it('posterior a la baja, con varios ciclos: de ninguno; dentro de un ciclo, como siempre', () => {
+    const baja = { id: 2, tipo: 'eliminar', estado: 'aprobado', revisado: '2031-06-09 10:00:00', anteriores: {}, nuevos: {} };
+    assert.equal(cicloDeLaNota(conDosCiclos({ cambios: [ACTUALIZACION, baja], notasDgmit: [notaInventada(1, '2031-07-07')] })), -1);
+    assert.equal(cicloDeLaNota(conDosCiclos({ cambios: [ACTUALIZACION, baja], notasDgmit: [notaInventada(1, '2031-05-13')] })), 1);
+    assert.equal(cicloDeLaNota(conDosCiclos({ notasDgmit: [notaInventada(1, '2031-03-16')] })), 0);
+    assert.equal(cicloDeLaNota(conDosCiclos({ notasDgmit: [notaInventada(1, '2031-04-18')] })), 0);
+    assert.equal(cicloDeLaNota(conDosCiclos({ notasDgmit: [notaInventada(1, '2031-04-19')] })), 1);
+  });
+});
+
+describe('listaDeNotasDgmit (spec 2026-11-06-editar-notas-dgmit, 1 y 2)', () => {
+  const mapa = (...fuentes) => new Map(fuentes.map((f) => [f.dataset.id, f]));
+
+  it('una vez cada nota, con sus datasets por título y el ciclo en cada uno; sin por_id', () => {
+    const nota = notaInventada(5, '2031-05-21');
+    const otro = { id: 901, titulo: 'Algo anterior', area: 'Otra área', proxima: '2032-02-28', ultima: '2031-02-03', alta: '2030-12-03 10:00:00', meses: 12 };
+    const [primera, ...resto] = listaDeNotasDgmit(mapa(conDosCiclos({ notasDgmit: [nota] }), conDosCiclos({ dataset: otro, cambios: [], notasDgmit: [nota] })), HOY_EDITAR);
+    assert.deepEqual(resto, []);
+    assert.deepEqual(primera.datasets, [
+      { id: 901, titulo: 'Algo anterior', area: 'Otra área', ciclo: { clase: 'abierto', texto: 'Ciclo abierto · vence el 28/02/2032' } },
+      { id: 900, titulo: 'Dataset de prueba', area: 'Área de prueba', ciclo: { clase: 'abierto', texto: 'Ciclo abierto · venció el 31/10/2031' } }
+    ]);
+    assert.equal(primera.por, 'Nombre Uno');
+    assert.equal(Object.hasOwn(primera, 'por_id'), false);
+  });
+
+  it('los textos del ciclo', () => {
+    const ciclo = (fuentes) => listaDeNotasDgmit(mapa(fuentes), HOY_EDITAR)[0].datasets[0].ciclo;
+    assert.deepEqual(ciclo(conDosCiclos({ notasDgmit: [notaInventada(1, '2031-03-16')] })),
+      { clase: 'cerrado', texto: 'Venció el 31/03/2031 · actualizado el 17/04/2031' });
+    assert.deepEqual(ciclo(conDosCiclos({ notasDgmit: [notaInventada(1, '2030-07-22')] })),
+      { clase: 'sin', texto: 'No cuenta en ningún ciclo: ya la respondió la carga del 14/08/2030' });
+    assert.deepEqual(ciclo(conDosCiclos({ cambios: [], dataset: { ultima: '2030-08-14' }, notasDgmit: [notaInventada(1, '2030-07-22')] })),
+      { clase: 'sin', texto: 'No cuenta en ningún ciclo: ya la respondió la carga del 14/08/2030' });
+    assert.deepEqual(ciclo(conDosCiclos({ dataset: { meses: null }, notasDgmit: [notaInventada(1, '2031-03-16')] })),
+      { clase: 'sin', texto: 'Sin ciclos: este dataset no tiene vencimiento' });
+    assert.equal(ciclo(conDosCiclos({ notasDgmit: [notaInventada(1, '2031-03-16', 'solicitud', { anulada: true })] })), null);
+    // Actualizado antes de vencer: todavía no había vencido
+    const antes = { ...ACTUALIZACION, anteriores: { proxima_actualizacion: '2031-05-31', ultima_actualizacion: '2030-08-14' } };
+    assert.equal(ciclo(conDosCiclos({ cambios: [antes], notasDgmit: [notaInventada(1, '2031-03-16')] })).texto, 'Vencía el 31/05/2031 · actualizado el 17/04/2031');
+    const baja = { id: 2, tipo: 'eliminar', estado: 'aprobado', revisado: '2031-06-09 10:00:00', anteriores: {}, nuevos: {} };
+    assert.equal(ciclo(conDosCiclos({ cambios: [ACTUALIZACION, baja], notasDgmit: [notaInventada(1, '2031-07-07')] })).texto, 'No cuenta en ningún ciclo: es posterior a la baja del dataset');
+    assert.equal(ciclo(conDosCiclos({ cambios: [ACTUALIZACION, baja], notasDgmit: [notaInventada(1, '2031-05-13')] })).texto, 'Vencía el 31/10/2031 · dado de baja el 09/06/2031');
+  });
+
+  it('por número, de la más nueva a la más vieja; lo que no termina en N/AA, al final', () => {
+    const notas = [
+      notaInventada(1, '2031-03-16', 'solicitud', { numero: '7/26' }), notaInventada(2, '2031-03-20', 'solicitud', { numero: '120/26' }),
+      notaInventada(3, '2031-03-22', 'solicitud', { numero: '30/25' }), notaInventada(4, '2031-03-24', 'solicitud', { numero: 'Sin número' }),
+      notaInventada(5, '2031-03-26', 'solicitud', { numero: 'DGMIT-11/2026' })
+    ];
+    assert.deepEqual(listaDeNotasDgmit(mapa(conDosCiclos({ notasDgmit: notas })), HOY_EDITAR).map((n) => n.numero),
+      ['120/26', 'DGMIT-11/2026', '7/26', '30/25', 'Sin número']);
+  });
+
+  it('editable: quien la cargó o administración, como en los movimientos', () => {
+    const lista = (quien) => listaDeNotasDgmit(mapa(conDosCiclos({ notasDgmit: [notaInventada(1, '2031-03-16')] })), HOY_EDITAR, quien)[0].editable;
+    assert.equal(lista({ usuarioId: 7 }), true);
+    assert.equal(lista({ usuarioId: 8 }), false);
+    assert.equal(lista({ usuarioId: 8, administracion: true }), true);
+    assert.equal(lista({ usuarioId: 8, administracion: 'true' }), false);
+    assert.equal(lista(), false);
+  });
+
+  it('datos raros: nada que mostrar, sin error', () => {
+    assert.deepEqual(listaDeNotasDgmit(null, HOY_EDITAR), []);
+    assert.deepEqual(listaDeNotasDgmit(new Map(), HOY_EDITAR), []);
+    assert.deepEqual(listaDeNotasDgmit(mapa(conDosCiclos({ notasDgmit: [null, { id: 1 }] })), HOY_EDITAR), []);
+  });
+});
+
+describe('problemaDeLaSecuencia: la primera nota de un ciclo es la solicitud y las demás, reiteraciones (spec 2026-11-06-editar-notas-dgmit, 4)', () => {
+  const mapa = (...fuentes) => new Map(fuentes.map((f) => [f.dataset.id, f]));
+  const nueva = (recibida, tipo, datasets = [900]) => ({ numero: 'NUEVA/26', tipo, recibida, datasets });
+  const carga = (notasDgmit, recibida, tipo) => problemaDeLaSecuencia(mapa(conDosCiclos({ notasDgmit })), null, nueva(recibida, tipo), HOY_EDITAR);
+
+  it('la primera, una solicitud; después, reiteraciones; también el mismo día', () => {
+    assert.equal(carga([], '2031-03-16', 'solicitud'), null);
+    assert.equal(carga([notaInventada(1, '2031-03-11')], '2031-03-16', 'reiteracion'), null);
+    assert.equal(carga([notaInventada(1, '2031-03-11')], '2031-03-11', 'reiteracion'), null);
+    assert.equal(carga([notaInventada(1, '2031-03-11', 'reiteracion')].concat(notaInventada(2, '2031-03-06')), '2031-03-16', 'reiteracion'), null);
+  });
+
+  it('una reiteración sin solicitud antes: la que se carga', () => {
+    const problema = carga([], '2031-03-16', 'reiteracion');
+    assert.equal(problema.motivo, 'sin-solicitud');
+    assert.equal(problema.esLaQueCambia, true);
+    assert.deepEqual(problema.dataset, { id: 900, titulo: 'Dataset de prueba' });
+    assert.equal(carga([notaInventada(1, '2031-03-21')], '2031-03-16', 'reiteracion').motivo, 'sin-solicitud');
+  });
+
+  it('una segunda solicitud, antes o después de la que está', () => {
+    const despues = carga([notaInventada(1, '2031-03-11')], '2031-03-16', 'solicitud');
+    assert.equal(despues.motivo, 'no-es-la-primera');
+    assert.equal(despues.esLaQueCambia, true);
+    assert.equal(despues.primera.numero, '1/26');
+    const antes = carga([notaInventada(1, '2031-03-11')], '2031-03-06', 'solicitud');
+    assert.equal(antes.motivo, 'no-es-la-primera');
+    assert.equal(antes.esLaQueCambia, false);
+    assert.equal(antes.nota.numero, '1/26');
+  });
+
+  it('cada ciclo tiene la suya: otro ciclo no cuenta; una anulada, tampoco', () => {
+    assert.equal(carga([notaInventada(1, '2031-03-11')], '2031-05-05', 'solicitud'), null);
+    assert.equal(carga([notaInventada(1, '2031-03-11')], '2031-05-05', 'reiteracion').motivo, 'sin-solicitud');
+    assert.equal(carga([notaInventada(1, '2031-03-11', 'solicitud', { anulada: true })], '2031-03-16', 'solicitud'), null);
+  });
+
+  it('anular: no se puede dejar a una reiteración sin su solicitud', () => {
+    const notas = [notaInventada(1, '2031-03-11'), notaInventada(2, '2031-03-16', 'reiteracion')];
+    const problema = problemaDeLaSecuencia(mapa(conDosCiclos({ notasDgmit: notas })), 1, null, HOY_EDITAR);
+    assert.equal(problema.motivo, 'sin-solicitud');
+    assert.equal(problema.nota.numero, '2/26');
+    assert.equal(problema.esLaQueCambia, false);
+    assert.equal(problemaDeLaSecuencia(mapa(conDosCiclos({ notasDgmit: notas })), 2, null, HOY_EDITAR), null);
+    assert.equal(problemaDeLaSecuencia(mapa(conDosCiclos({ notasDgmit: [notas[0]] })), 1, null, HOY_EDITAR), null);
+  });
+
+  it('corregir: la fecha, el tipo o sacarle un dataset también cuentan', () => {
+    const notas = [notaInventada(1, '2031-03-11'), notaInventada(2, '2031-03-16', 'reiteracion')];
+    const corregir = (id, despues) => problemaDeLaSecuencia(mapa(conDosCiclos({ notasDgmit: notas })), id, despues, HOY_EDITAR);
+    assert.equal(corregir(1, { numero: '1/26', tipo: 'solicitud', recibida: '2031-03-13', datasets: [900] }), null);
+    assert.equal(corregir(1, { numero: '1/26', tipo: 'solicitud', recibida: '2031-03-21', datasets: [900] }).nota.numero, '2/26');
+    assert.equal(corregir(1, { numero: '1/26', tipo: 'reiteracion', recibida: '2031-03-11', datasets: [900] }).motivo, 'sin-solicitud');
+    assert.equal(corregir(1, { numero: '1/26', tipo: 'solicitud', recibida: '2031-03-11', datasets: [] }).nota.numero, '2/26');
+    assert.equal(corregir(2, { numero: '2/26', tipo: 'solicitud', recibida: '2031-03-16', datasets: [900] }).motivo, 'no-es-la-primera');
+  });
+
+  it('solo cuenta lo que el cambio empeora: una que ya no cumplía no traba una corrección', () => {
+    const rota = [notaInventada(1, '2031-03-11', 'reiteracion'), notaInventada(2, '2031-03-16', 'reiteracion')];
+    const fuentes = mapa(conDosCiclos({ notasDgmit: rota }));
+    assert.equal(problemaDeLaSecuencia(fuentes, 2, { numero: 'OTRO/26', tipo: 'reiteracion', recibida: '2031-03-16', datasets: [900] }, HOY_EDITAR), null);
+    assert.equal(problemaDeLaSecuencia(fuentes, null, nueva('2031-03-06', 'solicitud'), HOY_EDITAR), null);
+    assert.equal(problemaDeLaSecuencia(fuentes, null, nueva('2031-03-21', 'reiteracion'), HOY_EDITAR).esLaQueCambia, true);
+  });
+
+  it('una nota ya cargada que no cumple se puede corregir y anular', () => {
+    const dosSolicitudes = mapa(conDosCiclos({ notasDgmit: [notaInventada(1, '2031-03-11'), notaInventada(2, '2031-03-20')] }));
+    assert.equal(problemaDeLaSecuencia(dosSolicitudes, 2, null, HOY_EDITAR), null);
+    assert.equal(problemaDeLaSecuencia(dosSolicitudes, 1, null, HOY_EDITAR), null);
+    assert.equal(problemaDeLaSecuencia(dosSolicitudes, 2, { numero: '2/26', tipo: 'reiteracion', recibida: '2031-03-20', datasets: [900] }, HOY_EDITAR), null);
+    const sinSolicitud = mapa(conDosCiclos({ notasDgmit: [notaInventada(1, '2031-03-11', 'reiteracion'), notaInventada(2, '2031-03-20', 'reiteracion')] }));
+    assert.equal(problemaDeLaSecuencia(sinSolicitud, 1, null, HOY_EDITAR), null);
+    assert.equal(problemaDeLaSecuencia(sinSolicitud, 2, null, HOY_EDITAR), null);
+    assert.equal(problemaDeLaSecuencia(sinSolicitud, 1, { numero: '1/26', tipo: 'solicitud', recibida: '2031-03-11', datasets: [900] }, HOY_EDITAR), null);
+    // Moverla a otro ciclo, donde tampoco cumpliría, sí se frena: ahí es nuevo
+    assert.equal(problemaDeLaSecuencia(sinSolicitud, 1, { numero: '1/26', tipo: 'reiteracion', recibida: '2031-05-05', datasets: [900] }, HOY_EDITAR).motivo, 'sin-solicitud');
+  });
+
+  it('dos solicitudes del mismo día, de antes de la regla: corregir el número de cualquiera no se frena', () => {
+    const dos = mapa(conDosCiclos({ notasDgmit: [notaInventada(10, '2031-03-11'), notaInventada(11, '2031-03-11')] }));
+    assert.equal(problemaDeLaSecuencia(dos, 10, { numero: 'OTRO/31', tipo: 'solicitud', recibida: '2031-03-11', datasets: [900] }, HOY_EDITAR), null);
+    assert.equal(problemaDeLaSecuencia(dos, 11, { numero: 'OTRO/31', tipo: 'solicitud', recibida: '2031-03-11', datasets: [900] }, HOY_EDITAR), null);
+  });
+
+  it('un ciclo viejo que empieza con una reiteración: una reiteración después de su solicitud pasa', () => {
+    const viejo = mapa(conDosCiclos({ notasDgmit: [notaInventada(1, '2031-03-06', 'reiteracion'), notaInventada(2, '2031-03-11')] }));
+    assert.equal(problemaDeLaSecuencia(viejo, null, nueva('2031-03-16', 'reiteracion'), HOY_EDITAR), null);
+  });
+
+  it('la salida para una solicitud anterior a la que ya está: se corrige la que está y la otra entra como reiteración', () => {
+    const fuentes = conDosCiclos({ notasDgmit: [notaInventada(1, '2031-03-11')] });
+    assert.equal(problemaDeLaSecuencia(mapa(fuentes), 1, { numero: 'ANTERIOR/26', tipo: 'solicitud', recibida: '2031-03-06', datasets: [900] }, HOY_EDITAR), null);
+    const corregida = conDosCiclos({ notasDgmit: [notaInventada(1, '2031-03-06')] });
+    assert.equal(problemaDeLaSecuencia(mapa(corregida), null, nueva('2031-03-11', 'reiteracion'), HOY_EDITAR), null);
+  });
+
+  it('no alcanza a lo que no es de ningún ciclo, ni a los que no tienen ciclos', () => {
+    assert.equal(carga([], '2030-07-22', 'reiteracion'), null);
+    const eventual = mapa(conDosCiclos({ dataset: { meses: null }, notasDgmit: [notaInventada(1, '2031-03-11')] }));
+    assert.equal(problemaDeLaSecuencia(eventual, null, nueva('2031-03-16', 'solicitud'), HOY_EDITAR), null);
+  });
+
+  it('con varios datasets, el primero con problema y en cuántos más', () => {
+    const otro = (id) => conDosCiclos({ dataset: { id, titulo: `Dataset ${id}` } });
+    const problema = problemaDeLaSecuencia(mapa(otro(900), otro(901), otro(902)), null, nueva('2031-03-16', 'reiteracion', [900, 901, 902]), HOY_EDITAR);
+    assert.equal(problema.dataset.id, 900);
+    assert.equal(problema.mas, 2);
   });
 });
