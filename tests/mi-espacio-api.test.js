@@ -4487,7 +4487,10 @@ describe('las horas a favor con horas acumuladas (spec 2026-11-03-mi-espacio-hor
       const vacia = await topes('colab', '?fecha=');
       assert.deepEqual(vacia.body, conHoy.body);
 
-      const res = await topes('colab', `?fecha=${MES_DE_USO}-06`);
+      // El último día del mes de uso: otro que hoy (salvo que hoy lo sea) y nunca anterior al arranque, que es hoy (con una fecha
+      // anterior al arranque, las acumuladas dan 0)
+      const ultimoDelMes = sumarDias(`${mesMas(MES_DE_USO, 1)}-01`, -1);
+      const res = await topes('colab', `?fecha=${ultimoDelMes}`);
       assert.equal(res.status, 200, JSON.stringify(res.body));
       assert.deepEqual(res.body, { success: true, data: topesDe(MES_DE_USO, 6.5, 1.5) });
     });
