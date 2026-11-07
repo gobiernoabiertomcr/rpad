@@ -1,6 +1,7 @@
 // El PDF «Informe anual» (spec 2026-10-24-metricas-y-reportes, 5, Para presentar, punto 2, y 3), en A4 apaisado (spec 2026-11-05-metricas-pdf-apaisado, 6):
 // solo para un año con foto, y todo sale de la foto del 31/12 (services/metricasFoto.js), que no se recalcula nunca, con la combinación por defecto
-// (mediana en días hábiles) y todos los datasets (una foto no se destilda). Son cinco partes, cada una desde una hoja nueva:
+// (mediana en días hábiles; la hoja 1, en días corridos y hábiles) y todos los datasets (una foto no se destilda). Son cinco partes, cada
+// una desde una hoja nueva:
 // 1. el circuito de cada gestión;
 // 2. los resultados del año y «Cómo se cuenta»;
 // 3. el contexto (el índice mes a mes y la antigüedad de los vencidos) y el trabajo del RPAD, sin las métricas manuales (no están en la
@@ -248,7 +249,7 @@ const dibujarLogros = (doc, y, logros, anio, { conCabeza }) => {
 // =====================================================
 
 // El Informe anual. `foto`: la del año, como la lee el controlador ({ anio, al, estadistico, dias } y lo de deLaFoto,
-// controllers/metricasController.js: vista, contexto, trabajo y áreas; y circuito_en_corridos; las cintas no van); `anterior`: lo mismo de la foto del año
+// controllers/metricasController.js: vista, contexto, trabajo y áreas; y circuito_en_corridos y circuito_en_habiles; las cintas no van); `anterior`: lo mismo de la foto del año
 // anterior, o null (sin foto: «Primer año con foto»); `logros`: los de logrosPorProyecto. `generado`: { momento: 'AAAA-MM-DD HH:MM:SS'
 // (hora argentina; su día va en el encabezado), por: nombre corto o null } (el pie).
 export const renderInformeAnual = async ({ foto, anterior = null, logros = [] }, { generado }) => {

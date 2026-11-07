@@ -301,12 +301,119 @@ describe('reportes.js: el circuito', () => {
     const sinMarca = tramo('carga', 0);
     assert.doesNotMatch(ctx.htmlDeFlecha({ ...sinMarca, cifra: { ...sinMarca.cifra, en_el_dia: false } }), /<b>/);
 
-    // Con la cifra real: «27 días hábiles» y «mediana de 11 ciclos» (los casos de las pruebas)
-    const real = tramoDe(VISTA, 'externa', 'aviso');
+    // Con la cifra real: la redacción de la nota, con una nota DGMIT cargada (los casos de las pruebas). El aviso real lleva su cajón
+    const conNota = con(fuentesDelCaso(52, { importados: { 7: { recibido_el: '2026-02-02', origen_datos: 'area' } } }), {
+      notasDgmit: [notaDgmit({ recibida: '2026-01-05' })]
+    });
+    const real = tramoDe(vistaDe(casosDe(mapaDe(conNota), { hoy: HOY }), { anio: 2026, al: HOY }), 'externa', 'tramite');
     assert.match(ctx.htmlDeFlecha(real), new RegExp(`<span class="n">${real.cifra.texto} <small>${real.cifra.unidad}</small></span><span class="u">${real.cifra.debajo}</span>`));
     // El singular y los días corridos los manda el servidor tal cual
     assert.match(ctx.htmlDeFlecha(tramo('aviso', 1, { dias: 'corridos', estadistico: 'promedio', ciclos: 5 })), /1 <small>día corrido<\/small><\/span><span class="u">promedio de 5 ciclos/);
     assert.match(ctx.htmlDeFlecha(tramo('aviso', 40, { ciclos: 3 })), /<span class="o">con tan pocos casos, es orientativo<\/span>/);
+  });
+
+  // El cajón «Aviso anticipado» (spec 2026-11-06-metricas-anticipacion-y-corridos, 7)
+  const CLASES_DEL_CAJON = /mt-anticipa|class="mt-flecha anticipa"/;
+
+  it('htmlDeFlecha: el cajón del aviso con su frase y su línea', () => {
+    const html = ctx.htmlDeFlecha({ ...tramo('aviso', 53, { ciclos: 32 }), anticipacion_texto: 'días hábiles de anticipación' });
+    assert.match(html, /class="mt-flecha anticipa"/);
+    assert.match(html, /<span class="n">53<\/span><span class="mt-anticipa-frase">días hábiles de anticipación<\/span><div class="mt-anticipa-tramo" aria-hidden="true">/);
+    // La línea es un dibujo fijo: un punto, el trazo y un aro. El lector de pantalla la salta y lee las puntas
+    assert.match(html, /<div class="mt-anticipa-tramo" aria-hidden="true"><span class="mt-anticipa-punto"><\/span><span class="mt-anticipa-linea"><\/span><span class="mt-anticipa-aro"><\/span><\/div>/);
+    assert.match(html, /<div class="mt-anticipa-pie"><span>aviso<\/span><span>vencimiento<\/span><\/div><span class="u">mediana de 32 ciclos<\/span>/);
+    assert.doesNotMatch(html, /<small>/);
+    assert.doesNotMatch(html, /Del aviso al vencimiento/);
+    assert.match(html, /<span class="t">Aviso anticipado<\/span>/);
+    assert.match(html, /mt-resp/);
+    // Después del estadístico, lo de siempre y en el orden de siempre
+    assert.match(html, /<span class="u">mediana de 32 ciclos<\/span><span class="t">Aviso anticipado<\/span><div class="l" aria-hidden="true"><\/div><span class="mt-resp">DDPC<\/span><\/div>$/);
+    assert.doesNotMatch(html, /orientativo/);
+  });
+
+  it('htmlDeFlecha: sin anticipacion_texto, el cajón de siempre', () => {
+    const conCifra = tramo('aviso', 27, { ciclos: 32 });
+    for (const t of [conCifra, { ...conCifra, anticipacion_texto: null }, { ...conCifra, anticipacion_texto: '' }, { ...conCifra, anticipacion_texto: true }]) {
+      const html = ctx.htmlDeFlecha(t);
+      assert.match(html, /^<div class="mt-flecha">/);
+      assert.doesNotMatch(html, CLASES_DEL_CAJON);
+      assert.match(html, /<span class="n">27 <small>días hábiles<\/small><\/span><span class="u">mediana de 32 ciclos<\/span>/);
+      assert.match(html, /<span class="c">Del aviso al vencimiento<\/span>/);
+    }
+    // Sin cifra no hay número que acompañar, aunque llegue el texto
+    const sinCifra = ctx.htmlDeFlecha({ ...tramo('aviso', null), anticipacion_texto: 'días hábiles de anticipación' });
+    assert.match(sinCifra, /^<div class="mt-flecha vacia">/);
+    assert.doesNotMatch(sinCifra, CLASES_DEL_CAJON);
+    assert.doesNotMatch(sinCifra, /de anticipación/);
+    assert.match(sinCifra, /<span class="n">Sin casos en 2026<\/span>/);
+    assert.match(sinCifra, /<span class="c">Del aviso al vencimiento<\/span>/);
+  });
+
+  it('htmlDeFlecha: un aviso de 1 día lleva el singular del servidor y uno de 0, el cajón de siempre', () => {
+    const unDia = ctx.htmlDeFlecha({ ...tramo('aviso', 1, { dias: 'corridos' }), anticipacion_texto: 'día corrido de anticipación' });
+    assert.match(unDia, /<span class="n">1<\/span><span class="mt-anticipa-frase">día corrido de anticipación<\/span>/);
+    const enElDia = ctx.htmlDeFlecha({ ...tramo('aviso', 0, { ciclos: 9 }), anticipacion_texto: null });
+    assert.doesNotMatch(enElDia, CLASES_DEL_CAJON);
+    assert.match(enElDia, /<span class="n">En el día<\/span><span class="u">mediana en días hábiles<\/span>/);
+    assert.match(enElDia, /<span class="c">Del aviso al vencimiento<\/span><span class="c"><b>9 ciclos<\/b><\/span>/);
+  });
+
+  it('htmlDeFlecha: escapa lo del servidor en el cajón', () => {
+    const malo = '<b>x</b>';
+    const base = tramo('aviso', 53);
+    const html = ctx.htmlDeFlecha({ ...base, nombre: malo, responsable: malo, anticipacion_texto: malo, cifra: { ...base.cifra, texto: malo, debajo: malo } });
+    assert.doesNotMatch(html, /<b>/);
+    assert.match(html, /<span class="n">&lt;b&gt;x&lt;\/b&gt;<\/span><span class="mt-anticipa-frase">&lt;b&gt;x&lt;\/b&gt;<\/span>/);
+    assert.equal(cuantas(html, /&lt;b&gt;x&lt;\/b&gt;/g), 5, 'el número, la frase, el estadístico, el nombre y quién está a cargo');
+  });
+
+  it('el orientativo sigue debajo del estadístico', () => {
+    const html = ctx.htmlDeFlecha({ ...tramo('aviso', 40, { ciclos: 3 }), anticipacion_texto: 'días hábiles de anticipación' });
+    assert.match(html, /<\/div><span class="u">mediana de 3 ciclos<\/span><span class="o">con tan pocos casos, es orientativo<\/span><span class="t">/);
+  });
+
+  it('el circuito: el cajón nuevo solo en el aviso de cada gestión', () => {
+    for (const g of ['externa', 'interna']) {
+      const html = ctx.htmlDeCircuito(VISTA, g);
+      assert.equal(cuantas(html, /class="mt-flecha anticipa"/g), 1, g);
+      assert.equal(cuantas(html, /class="mt-anticipa-tramo"/g), 1, g);
+      assert.equal(html.match(/class="mt-flecha[^"]*"/)[0], 'class="mt-flecha anticipa"', `${g}: es la primera etapa`);
+    }
+  });
+
+  it('el CSS: la letra de los otros cajones y el alto contraste', () => {
+    const pagina = leer('reportes.html');
+    const regla = (selector) => {
+      const desde = pagina.indexOf(`${selector} {`);
+      assert.notEqual(desde, -1, selector);
+      return pagina.slice(desde, pagina.indexOf('}', desde));
+    };
+    // Bordes y no fondos: con forced-colors, el navegador saca los fondos y deja los bordes
+    assert.match(regla('.mt-anticipa-linea'), /border-top: 2px solid currentColor/);
+    assert.doesNotMatch(regla('.mt-anticipa-linea'), /background/);
+    assert.match(regla('.mt-anticipa-punto'), /width: 9px; height: 9px;/);
+    assert.match(regla('.mt-anticipa-punto'), /border: 2px solid currentColor/);
+    assert.match(regla('.mt-anticipa-aro'), /width: 11px; height: 11px;/);
+    assert.match(regla('.mt-anticipa-aro'), /border: 2px solid currentColor/);
+    assert.match(regla('.mt-anticipa-aro'), /background: #F4F8FC/);
+    // El punto sigue lleno en alto contraste, con el color del sistema: después de su regla, que tiene la misma especificidad
+    const altoContraste = pagina.indexOf('@media (forced-colors: active) {');
+    assert.ok(pagina.indexOf('.mt-anticipa-punto {') < altoContraste);
+    const bloque = pagina.slice(altoContraste, pagina.indexOf('@media (forced-colors: active) and', altoContraste));
+    assert.match(bloque, /\.mt-anticipa-punto \{[^}]*forced-color-adjust: none;[^}]*background: CanvasText;[^}]*border-color: CanvasText;[^}]*\}/);
+    // La cifra conserva su letra: el cajón no pisa .n
+    assert.doesNotMatch(pagina, /\.anticipa \.n\b/);
+    assert.doesNotMatch(pagina, /\.anticipa \.n small/);
+    // Los dos tienen la misma especificidad: va después, para que el aire del estadístico sea el del cajón
+    assert.ok(pagina.indexOf('.mt-flecha .u {') < pagina.indexOf('.anticipa .u {'));
+    assert.match(regla('.anticipa .u'), /margin-top: 8px/);
+    assert.match(regla('.mt-anticipa-pie'), /justify-content: space-between/);
+    // Este cajón no lleva «desde → hasta»: .l queda anteúltima, y mostrada, sin alto, le da a la insignia el aire de las otras tarjetas
+    assert.ok(pagina.includes('.mt-flecha > :nth-last-child(2) { margin-bottom: 10px; }'));
+    assert.ok(pagina.indexOf('.mt-flecha .l {') < pagina.indexOf('.anticipa .l {'));
+    assert.match(regla('.anticipa .l'), /display: block/);
+    // Si la frase va en dos renglones, no se separan más que los de abajo
+    assert.match(regla('.mt-anticipa-frase'), /line-height: 1\.25/);
   });
 
   it('los en curso, con su texto y la aclaración, y la DGMIT en violeta', () => {
@@ -331,7 +438,7 @@ describe('reportes.js: el circuito', () => {
     assert.match(html, /^<div class="mt-flecha dgmit vacia">/);
     assert.match(html, /<span class="n">Todavía no hay notas DGMIT cargadas<\/span>/);
     assert.ok(html.includes(`<span class="c pend">${tramite.vacio.texto}</span>`));
-    assert.match(tramite.vacio.texto, /^\d+ notas pendientes de carga$/);
+    assert.match(tramite.vacio.texto, /^\d+ notas pendientes de carga de ciclos abiertos$/);
     assert.equal(cuantas(html, /pendientes? de carga/g), 1, 'los pendientes no se repiten');
     assert.doesNotMatch(html, /<span class="u">/, 'sin cifra no hay estadístico');
     // El del área, mientras tanto
@@ -344,8 +451,8 @@ describe('reportes.js: el circuito', () => {
       notasDgmit: [notaDgmit({ recibida: '2026-01-05' })]
     });
     const conNotas = tramoDe(vistaDe(casosDe(mapaDe(conNota), { hoy: HOY }), { anio: 2026, al: HOY }), 'externa', 'tramite');
-    assert.equal(conNotas.pendientes_texto, '1 nota pendiente de carga');
-    assert.match(ctx.htmlDeFlecha(conNotas), /8 <small>días hábiles<\/small>[\s\S]*<span class="c pend">1 nota pendiente de carga<\/span>/);
+    assert.equal(conNotas.pendientes_texto, '1 nota pendiente de carga de un ciclo abierto');
+    assert.match(ctx.htmlDeFlecha(conNotas), /8 <small>días hábiles<\/small>[\s\S]*<span class="c pend">1 nota pendiente de carga de un ciclo abierto<\/span>/);
     // La página escribe lo que manda el servidor, sin mirar la cantidad; sin texto, nada
     assert.match(ctx.htmlDeFlecha(tramo('tramite', 12, { pendientes: 3, pendientes_texto: 'Texto del servidor' })), /<span class="c pend">Texto del servidor<\/span>/);
     assert.doesNotMatch(ctx.htmlDeFlecha(tramo('tramite', 12, { pendientes: 3 })), /pendiente/);
@@ -946,8 +1053,8 @@ describe('reportes.js: lo que llega del servidor', () => {
     assert.ok(svg.includes(`<text x="0" y="${cinta.alturas.ticks}" class="tick">−40</text>`));
     assert.ok(svg.includes('<text x="0" y="26" text-anchor="start" class="rotulo r-tinta">r</text>'));
     // Los textos con un 0 que manda el servidor van tal cual
-    const flecha = ctx.htmlDeFlecha({ ...tramo('tramite', null), vacio: { titulo: SIN_NOTAS_DGMIT, texto: '0 notas pendientes de carga' } });
-    assert.match(flecha, /<span class="c pend">0 notas pendientes de carga<\/span>/);
+    const flecha = ctx.htmlDeFlecha({ ...tramo('tramite', null), vacio: { titulo: SIN_NOTAS_DGMIT, texto: '0 notas pendientes de carga de ciclos abiertos' } });
+    assert.match(flecha, /<span class="c pend">0 notas pendientes de carga de ciclos abiertos<\/span>/);
     const caso = { ...VISTA.casos[0], carga: { fecha: '2026-03-02', texto: '0' } };
     assert.match(ctx.htmlDeCasos({ casos: [caso] }, POR_DEFECTO, { anio: 2026, editable: true }), /<td>02\/03\/2026<span class="d">0<\/span><\/td>/);
     // Y nada dice NaN, null ni undefined con datos que faltan
@@ -1675,6 +1782,23 @@ describe('reportes.js y el PDF de Métricas: los mismos textos', () => {
     const flecha = ctx.htmlDeFlecha(tramo('produccion', 3, { ciclos: 2, en_curso: { n: 1, valor: 9, texto: '1 sin datos registrados todavía, hace 9 días hábiles (mediana)' } }));
     assert.ok(flecha.includes(`<span class="o">${T.orientativo}</span>`));
     assert.ok(flecha.includes(`<span class="c">${T.seCuentaHasta}</span>`));
+  });
+
+  it('el cajón del aviso: las dos puntas de la línea y el tramo real con su frase', () => {
+    assert.ok(fuente.includes(`const ANTICIPACION_DESDE = '${T.anticipacion.desde}';`));
+    assert.ok(fuente.includes(`const ANTICIPACION_HASTA = '${T.anticipacion.hasta}';`));
+    for (const dias of ['habiles', 'corridos']) {
+      for (const estadistico of ['mediana', 'promedio']) {
+        for (const g of ['externa', 'interna']) {
+          const real = tramoDe(vistaReal({ dias, estadistico }), g, 'aviso');
+          assert.ok(real.anticipacion_texto.endsWith(' de anticipación'), `${dias} ${estadistico} ${g}`);
+          const html = ctx.htmlDeFlecha(real);
+          assert.ok(html.includes(`<span class="n">${real.cifra.texto}</span><span class="mt-anticipa-frase">${real.anticipacion_texto}</span>`), `${dias} ${estadistico} ${g}`);
+          assert.ok(html.includes(`<div class="mt-anticipa-pie"><span>${T.anticipacion.desde}</span><span>${T.anticipacion.hasta}</span></div>`), `${dias} ${estadistico} ${g}`);
+          assert.ok(html.includes(`<span class="u">${real.cifra.debajo}</span>`), `${dias} ${estadistico} ${g}`);
+        }
+      }
+    }
   });
 
   // El PDF ya no dibuja las cintas (spec 2026-11-05-metricas-pdf-apaisado): los textos de la leyenda son solo de la página

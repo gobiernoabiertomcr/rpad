@@ -60,7 +60,8 @@ const enNumero = (n, singular, plural) => (n === 1 ? singular : plural);
 // Lo destildado, en palabras (spec 1.5: la franja de la pestaña y la píldora del PDF de Métricas llevan la misma leyenda; revisión
 // final, B-6): «sin 1 dataset: Parque Automotor», «sin 2 datasets: Parque Automotor, Pauta Publicitaria»; sin títulos, ''. `titulos`:
 // los de los destildados que existen, en el orden pedido (sin_titulos de GET /api/metricas). La franja dice «Calculado sin …»
-// (textoDeLaFranja) y la píldora, «Mediana en días hábiles · calculado sin …» (textoDeLaPildora, services/reportesMetricasPdf.js)
+// (textoDeLaFranja) y la píldora, «Mediana en días corridos y hábiles · calculado sin …» (textoDeLaPildora,
+// services/reportesMetricasPdf.js)
 export const sinLosDestildados = (titulos) => {
   const cuales = lista(titulos).filter((titulo) => typeof titulo === 'string' && titulo !== '');
   if (cuales.length === 0) return '';
@@ -137,13 +138,14 @@ const queDeLaNota = (nota) => (tieneValor(nota.numero) && tieneValor(nota.anio) 
 // (`enviado` false: solo sirven para el motivo 'email-fallido'). Cada uno va al ciclo que dice cicloDelAviso, como en avisosDelCiclo:
 // el email, por el momento del envío; la nota, por su vencimiento (y, si hace falta, por cuándo se envió). `regla`: si es de la clase
 // del aviso de la regla, el email de 40 o de 60 días o la Nota Digital de aviso en la sección de próximos a vencer. `que`: qué fue
-// ('email de 40 días', 'Nota Digital 4/26'); `clase`: 'email' o 'nota'. Lo de después de `hoy` no entra: todavía no pasó (la foto del
-// año se calcula al 31/12).
+// ('email de 40 días', 'Nota Digital 4/26'); `clase`: 'email' o 'nota'; `vencimiento`: el día del vencimiento que dice el aviso, leído
+// como en cicloDelAviso (null en los emails, que no lo dicen). Lo de después de `hoy` no entra: todavía no pasó (la foto del año se
+// calcula al 31/12).
 const avisosPorCiclo = (fuentes, ciclos, hoy) => {
   const porCiclo = ciclos.map(() => []);
   const sumar = (momento, vencimiento, aviso) => {
     if (momento === null || momento.slice(0, 10) > hoy) return;
-    porCiclo[cicloDelAviso(ciclos, momento, vencimiento)].push({ ...aviso, momento, dia: momento.slice(0, 10) });
+    porCiclo[cicloDelAviso(ciclos, momento, vencimiento)].push({ ...aviso, momento, dia: momento.slice(0, 10), vencimiento: diaDe(vencimiento) });
   };
   for (const email of lista(fuentes.emails)) {
     const enviado = esEmailADgmit(email);
@@ -198,18 +200,22 @@ const motivoSinAviso = ({ avisos, deLaRegla, fechaRegla, altaDia, primerAviso, v
 };
 
 // El caso de un ciclo (ver casosDe). `datos`: los del dataset (casosDelDataset), con el `calendario` del día del aviso; `avisos`: los
-// del ciclo (avisosPorCiclo); `notasDgmit`: las suyas (notasDgmitPorCiclo); `cerro`: el cambio que lo cerró, o null
+// del ciclo (avisosPorCiclo); `notasDgmit`: las suyas (notasDgmitPorCiclo); `cerro`: el cambio que lo cerró, o null. El aviso de la regla
+// es del vencimiento que rige: un cambio que mueve la próxima antes de vencer sigue en el mismo ciclo, y el aviso del vencimiento
+// anterior mediría una anticipación que nadie tuvo. La Nota Digital dice de qué vencimiento es y puede adelantarse (la licencia del
+// firmante, la persona autorizada): con ese vencimiento, cuenta aunque salga antes de la fecha de la regla. El email no lo dice: le
+// queda la ventana, de la fecha de la regla al vencimiento (spec 2026-11-06-metricas-anticipacion-y-corridos, 3)
 const casoDelCiclo = (datos, ciclo, avisos, notasDgmit, cerro, hoy) => {
   const { dataset, gestion, requiereNota, altaDia, calendario } = datos;
   const venc = esFechaIso(ciclo.venc) ? ciclo.venc : null;
   const enviados = avisos.filter((a) => a.enviado);
   const avisosRpad = enviados.map((a) => a.dia);
   const primerAviso = avisosRpad[0] ?? null;
-  const deLaRegla = (a) => a.regla && venc !== null && a.dia <= venc;
+  const fechaRegla = venc === null ? null : sumarDias(venc, -VENTANA_DE_LA_REGLA[gestion]);
+  const deLaRegla = (a) => a.regla && venc !== null && a.dia <= venc && (a.vencimiento === venc || a.dia >= fechaRegla);
   const avisoRegla = enviados.find(deLaRegla)?.dia ?? null;
   // El aviso que muestran la lista de casos y «Para completar»: el de la regla o, si no lo hubo, el primero
   const avisoQueSeMuestra = enviados.find(deLaRegla) ?? enviados[0] ?? null;
-  const fechaRegla = venc === null ? null : sumarDias(venc, -VENTANA_DE_LA_REGLA[gestion]);
   const pudoAvisar = fechaRegla !== null && fechaRegla >= INICIO_DEL_REGISTRO && (altaDia === null || fechaRegla >= altaDia);
   // Avisado ya vencido: el RPAD no pudo avisarlo a tiempo y su primer aviso llegó después del vencimiento (spec, 1.2)
   const heredado = avisoRegla === null && primerAviso !== null && venc !== null && primerAviso > venc && !pudoAvisar;
@@ -267,9 +273,10 @@ const casosDelDataset = (fuentes, hoy, calendario) => {
 //   interna), activo y tema (el principal);
 // - del ciclo (ciclosDe): venc (null si no se conoce), inicio, cierre, como ('actualizacion', 'reprogramacion', 'baja' o null),
 //   abierto (como null) y aprobado (el `hasta` del ciclo: el momento en que dejó de regir en el RPAD);
-// - el aviso: aviso_regla (el día del primer aviso de la regla del ciclo con fecha ≤ venc: el email de 40 o 60 días que se envió, o
-//   la Nota Digital de aviso en próximos a vencer), primer_aviso (el día del primer aviso del ciclo, de cualquier clase), fecha_regla
-//   (venc − 40 o 60 días corridos), pudo_avisar (fecha_regla ≥ INICIO_DEL_REGISTRO y ≥ el día del alta), heredado (avisado ya
+// - el aviso: aviso_regla (el día del primer aviso de la regla del ciclo con fecha ≤ venc que dice ser de ese venc o tiene fecha desde
+//   fecha_regla, spec 2026-11-06-metricas-anticipacion-y-corridos, 3: el email de 40 o 60 días que se envió, o la Nota Digital de aviso
+//   en próximos a vencer, también adelantada), primer_aviso (el día del primer aviso del ciclo, de cualquier clase), fecha_regla (venc
+//   − 40 o 60 días corridos), pudo_avisar (fecha_regla ≥ INICIO_DEL_REGISTRO y ≥ el día del alta), heredado (avisado ya
 //   vencido: sin aviso de la regla, con el primer aviso después del venc y sin poder avisarse a tiempo), inicio_tramos (desde dónde
 //   se cuentan los tramos que empiezan en el aviso: el primer aviso si es heredado; si no, el aviso de la regla o null) y
 //   motivo_sin_aviso ('email-fallido', 'alta-cercana', 'ya-vencido' o 'sin-aviso': ver motivoSinAviso; en todo ciclo sin aviso de la
@@ -479,22 +486,41 @@ const cifraDelTramo = (valores, ctx) => {
   };
 };
 
+const cuantoHace = (valor, dias) => (valor === 0 ? `menos de 1 ${unidadDe(1, dias)}` : `${valor} ${unidadDe(valor, dias)}`);
+
 // Los que están en curso (spec, 1.4), con la unidad (con «Días corridos» el número solo no se entiende): «4 sin datos registrados
 // todavía, hace 41 días hábiles (mediana)», «… hace 1 día corrido (promedio)»; con 0, «hace menos de 1 día hábil». null sin ninguno
 const enCursoDelTramo = (valores, ctx) => {
   const { n, ...estadisticos } = cifraDe(valores);
   if (n === 0) return null;
   const valor = estadisticos[ctx.estadistico];
-  const hace = valor === 0 ? `menos de 1 ${unidadDe(1, ctx.dias)}` : `${valor} ${unidadDe(valor, ctx.dias)}`;
-  return { n, valor, texto: `${n} sin datos registrados todavía, hace ${hace} (${ctx.estadistico})` };
+  return { n, valor, texto: `${n} sin datos registrados todavía, hace ${cuantoHace(valor, ctx.dias)} (${ctx.estadistico})` };
 };
 
-const notasPendientes = (n) => `${n} ${n === 1 ? 'nota pendiente' : 'notas pendientes'} de carga`;
+// Los en curso con las dos unidades, para los PDF (spec 2026-11-06-metricas-anticipacion-y-corridos, 6): «4 sin datos registrados
+// todavía, hace 116 días corridos (76 hábiles, mediana)». Lee solo `n` y `valor` del `en_curso` de cada vista, que la foto ya guarda:
+// el Informe la arma sin cambiar la forma de la foto. Sin los hábiles, la frase de los corridos tal cual; sin los corridos, ''.
+// Una foto rota no le hace decir «hace undefined días»: sin `n` o `valor` finitos en los corridos, su frase (o ''); sin `valor`
+// finito en los hábiles, como sin los hábiles.
+export const textoEnCursoDeLosDos = (enCorridos, enHabiles, estadistico) => {
+  if (!enCorridos) return '';
+  const { n, valor: corridos } = enCorridos;
+  if (!Number.isFinite(n) || !Number.isFinite(corridos) || !Number.isFinite(enHabiles?.valor)) return enCorridos.texto ?? '';
+  const { valor: habiles } = enHabiles;
+  const enHabilesTexto = habiles === 0 ? 'menos de 1 hábil' : `${habiles} ${habiles === 1 ? 'hábil' : 'hábiles'}`;
+  // Con los dos en 0, «menos de 1 día corrido» ya lo dice todo
+  const parentesis = corridos === 0 && habiles === 0 ? estadistico : `${enHabilesTexto}, ${estadistico}`;
+  return `${n} sin datos registrados todavía, hace ${cuantoHace(corridos, 'corridos')} (${parentesis})`;
+};
+
+// La tarjeta y el vacío cuentan solo los ciclos abiertos; «Para completar» suma los cerrados en el año, y por eso cada una dice los suyos
+const notasPendientes = (n) => (n === 1 ? '1 nota pendiente de carga de un ciclo abierto' : `${n} notas pendientes de carga de ciclos abiertos`);
 
 // Un tramo del circuito: su cifra (o, sin ella, por qué está vacío), los que están en curso (la respuesta y la producción) y los
-// pendientes de carga (la DGMIT), con su texto para la página (`pendientes_texto`: «3 notas pendientes de carga», «1 nota pendiente
-// de carga»; null si no hay ninguno o si el tramo no es el de la DGMIT). `medidas`: las que cuentan (sin los destildados), de su
-// gestión
+// pendientes de carga (la DGMIT), con su texto para la página (`pendientes_texto`: «3 notas pendientes de carga de ciclos abiertos»,
+// «1 nota pendiente de carga de un ciclo abierto»; null si no hay ninguno o si el tramo no es el de la DGMIT). `anticipacion_texto`: lo
+// que va debajo del número en el aviso anticipado («días corridos de anticipación», «día hábil de anticipación»; null con «En el día»,
+// sin cifra y en los demás tramos). `medidas`: las que cuentan (sin los destildados), de su gestión
 const tramoDelCircuito = (clave, medidas, ctx, hayNotas) => {
   const de = (que) => medidas.map((m) => m[que][clave]).filter((valor) => valor !== undefined);
   const cifra = cifraDelTramo(de('terminados'), ctx);
@@ -505,7 +531,8 @@ const tramoDelCircuito = (clave, medidas, ctx, hayNotas) => {
   else if (cifra === null) vacio = { titulo: `Sin casos en ${ctx.anio}`, texto: '' };
   return {
     clave, ...TRAMOS[clave], cifra, vacio, en_curso: enCursoDelTramo(de('enCurso'), ctx), pendientes,
-    pendientes_texto: pendientes > 0 ? notasPendientes(pendientes) : null
+    pendientes_texto: pendientes > 0 ? notasPendientes(pendientes) : null,
+    anticipacion_texto: clave === 'aviso' && cifra !== null && !cifra.en_el_dia ? `${cifra.unidad} de anticipación` : null
   };
 };
 
@@ -797,13 +824,14 @@ const textoDeNotasPendientes = (abiertas, cerradas, anio) => {
 // - circuito: { externa: Tramo[4] (aviso, tramite, respuesta, carga), interna: Tramo[3] (aviso, produccion, carga), aclaraciones:
 //   { externa: { ya_vencidos, fuente_publica, no_requieren_nota }, interna: { ya_vencidos } } }, cada aclaración { n, texto } ('' con
 //   0; no_requieren_nota: los ciclos de externos con «Requiere nota» No y sin nota DGMIT). Tramo:
-//   { clave, nombre, desde_hasta, responsable, dgmit, cifra, vacio, en_curso, pendientes, pendientes_texto }:
+//   { clave, nombre, desde_hasta, responsable, dgmit, cifra, vacio, en_curso, pendientes, pendientes_texto, anticipacion_texto }:
 //   - cifra: { valor, texto, unidad, debajo, ciclos, ciclos_texto, en_el_dia, orientativo } (cifraDelTramo) o null; vacio:
 //     { titulo, texto } si no hay cifra
 //     (sin ninguna nota DGMIT vigente entre todos los casos, también destildados: «Todavía no hay notas DGMIT cargadas» con los
 //     pendientes en la DGMIT y «Sin datos todavía» en el área; si no, «Sin casos en 2026»);
 //   - en_curso: { n, valor, texto } o null (solo la respuesta y la producción); pendientes: los ciclos «pendientes de carga» (solo la
-//     DGMIT; en los demás, null) y pendientes_texto, su texto (null sin ninguno y en los demás tramos).
+//     DGMIT; en los demás, null) y pendientes_texto, su texto (null sin ninguno y en los demás tramos); anticipacion_texto: lo que va
+//     debajo del número en el aviso anticipado («días corridos de anticipación»; null con «En el día», sin cifra y en los demás tramos).
 //   Los tramos de la DGMIT y del área son de los externos con «Requiere nota» Sí o sin dato, o con una nota DGMIT; un ciclo con los
 //   datos de una fuente pública no cuenta en la respuesta del área.
 // - resultados: { a_tiempo: { a_tiempo, total, externa: [a, t], interna: [a, t], despues: { valor, texto } }, cobertura: { si, total,
@@ -880,20 +908,26 @@ const PIE_SIN_NOTAS_DGMIT = 'Se empieza a contar cuando se carguen en el Seguimi
 const SIN_TITULO = 'Sin título';
 const ANTERIOR_NO_HAY = 'Año anterior: no hay';
 
-// Unos días hábiles con su unidad y sus corridos, como los escribe el reporte (spec, 1.3): { numero: '27', unidad: 'días hábiles',
-// corridos: '40 días corridos' } ('1 día hábil', '1 día corrido'); un 0 es «En el día», sin unidad ni corridos, como en Métricas
+// Unos días como los escribe el reporte, primero los corridos y junto a ellos los hábiles (spec 2026-11-06-metricas-anticipacion-y-corridos, 6):
+// { numero: '83', unidad: 'días corridos', habiles: '53 días hábiles' } ('1 día corrido', '1 día hábil'). Con los dos en 0, «En el día»,
+// sin unidad ni hábiles; con corridos y 0 hábiles, el número en corridos y «En el día, en días hábiles». Sin los corridos, los hábiles
+// en lo grande: no pasa con los casos, que miden las dos unidades con las mismas fechas
 const diasEnPalabras = (habiles, corridos) => {
-  if (habiles === 0) return { numero: 'En el día', unidad: '', corridos: '' };
+  const conCorridos = Number.isFinite(corridos);
+  if (habiles === 0 && (!conCorridos || corridos === 0)) return { numero: 'En el día', unidad: '', habiles: '' };
+  if (!conCorridos) return { numero: String(habiles), unidad: unidadDe(habiles, 'habiles'), habiles: '' };
   return {
-    numero: String(habiles), unidad: unidadDe(habiles, 'habiles'),
-    corridos: Number.isFinite(corridos) ? `${corridos} ${unidadDe(corridos, 'corridos')}` : ''
+    numero: String(corridos), unidad: unidadDe(corridos, 'corridos'),
+    habiles: habiles === 0 ? 'En el día, en días hábiles' : `${habiles} ${unidadDe(habiles, 'habiles')}`
   };
 };
 
 // Un extremo de una etapa (spec, 1.3): el ciclo con más días hábiles (`largo`) o con menos. Con un empate en días hábiles, el de más
 // corridos (o el de menos) y después el primero por título; `mas`, los otros ciclos empatados en días hábiles (el mismo dataset puede
-// estar en ciclos distintos). `valores`: [{ h, habiles, corridos }], uno por ciclo terminado de la etapa (no vacío). Los corridos que se
-// muestran son los del mismo ciclo. { rotulo, habiles, corridos, dataset_id, titulo, mas, numero, unidad, corridos_texto,
+// estar en ciclos distintos). Se elige por hábiles aunque lo grande sean los corridos: el orden de los extremos no cambia, y por eso el
+// más largo puede tener menos corridos que otro (spec 2026-11-06-metricas-anticipacion-y-corridos, 6). `valores`: [{ h, habiles,
+// corridos }], uno por ciclo terminado de la etapa (no vacío). Los dos números son del mismo ciclo. { rotulo, habiles, corridos,
+// dataset_id, titulo, mas, numero, unidad, habiles_texto,
 // dataset_texto: 'Castraciones de Animales y 14 más', mas_texto: ' y 14 más' ('' sin empate: el PDF puede cortar el título con «…» y
 // sumarle el sufijo entero) }
 const extremoDe = (valores, largo, rotulo) => {
@@ -902,12 +936,12 @@ const extremoDe = (valores, largo, rotulo) => {
   const [elegido] = [...valores].sort((a, b) => signo * (a.habiles - b.habiles) || signo * (a.corridos - b.corridos)
     || tituloDe(a).localeCompare(tituloDe(b), 'es') || comparar(a.h.id, b.h.id));
   const mas = valores.filter((v) => v.habiles === elegido.habiles).length - 1;
-  const { numero, unidad, corridos } = diasEnPalabras(elegido.habiles, elegido.corridos);
+  const { numero, unidad, habiles: habilesTexto } = diasEnPalabras(elegido.habiles, elegido.corridos);
   const titulo = typeof elegido.h.caso.titulo === 'string' ? elegido.h.caso.titulo : null;
   const masTexto = mas > 0 ? ` y ${mas} más` : '';
   return {
     rotulo, habiles: elegido.habiles, corridos: elegido.corridos, dataset_id: elegido.h.caso.dataset_id ?? null, titulo, mas,
-    numero, unidad, corridos_texto: corridos, dataset_texto: `${titulo || SIN_TITULO}${masTexto}`, mas_texto: masTexto
+    numero, unidad, habiles_texto: habilesTexto, dataset_texto: `${titulo || SIN_TITULO}${masTexto}`, mas_texto: masTexto
   };
 };
 
@@ -931,11 +965,13 @@ const aclaracionDeLaEtapa = (gestion, clave, aclaraciones) => {
 };
 
 // Una etapa del reporte (ver etapasDe). `medidas`: las de su gestión, cada una con `terminados`, `enCurso` y `pendiente` en días hábiles
-// (medir) y `corridos` (los terminados de medir en días corridos); `ctx`: { habiles, corridos }, los dos contextos (mediana)
+// (medir), y `corridos` y `corridosEnCurso` (los terminados y los en curso de medir en días corridos); `ctx`: { habiles, corridos }, los
+// dos contextos (mediana)
 const etapaDelReporte = (gestion, clave, indice, medidas, ctx, { hayNotas, aclaraciones }) => {
   const { nombre, desde_hasta: desdeHasta, responsable, dgmit } = TRAMOS[clave];
   // El tramo de Métricas en días hábiles y con mediana: el vacío, el en curso, los pendientes y si es orientativo
   const tramo = tramoDelCircuito(clave, medidas, ctx.habiles, hayNotas);
+  const enCursoEnCorridos = enCursoDelTramo(medidas.map((m) => m.corridosEnCurso[clave]).filter((valor) => valor !== undefined), ctx.corridos);
   const habiles = cifraDe(medidas.map((m) => m.terminados[clave]).filter((valor) => valor !== undefined));
   const corridos = cifraDe(medidas.map((m) => m.corridos[clave]).filter((valor) => valor !== undefined));
   const { n } = habiles;
@@ -950,12 +986,12 @@ const etapaDelReporte = (gestion, clave, indice, medidas, ctx, { hayNotas, aclar
   // pendientes en violeta y la aclaración en gris
   const notas = [
     { tipo: 'orientativo', texto: tramo.cifra?.orientativo === true ? TEXTO_ORIENTATIVO : '' },
-    { tipo: 'en_curso', texto: tramo.en_curso !== null ? `En curso: ${tramo.en_curso.texto}` : '' },
+    { tipo: 'en_curso', texto: tramo.en_curso !== null ? `En curso: ${textoEnCursoDeLosDos(enCursoEnCorridos, tramo.en_curso, 'mediana')}` : '' },
     // Decisión del Ciclo de vida del dato: si el vacío ya dice los pendientes («Todavía no hay notas DGMIT cargadas»), no se repiten
     { tipo: 'pendientes', texto: tramo.pendientes_texto !== null && vacio?.titulo !== SIN_NOTAS_DGMIT ? tramo.pendientes_texto : '' },
     { tipo: 'aclaracion', texto: aclaracionDeLaEtapa(gestion, clave, aclaraciones) }
   ].filter((nota) => nota.texto !== '');
-  const enPalabras = (estadistico) => (n === 0 ? { numero: '—', unidad: '', corridos: '' }
+  const enPalabras = (estadistico) => (n === 0 ? { numero: '—', unidad: '', habiles: '' }
     : diasEnPalabras(habiles[estadistico], corridos.n === 0 ? null : corridos[estadistico]));
   const mediana = enPalabras('mediana');
   const promedio = enPalabras('promedio');
@@ -968,7 +1004,7 @@ const etapaDelReporte = (gestion, clave, indice, medidas, ctx, { hayNotas, aclar
     largo, corto, vacio,
     textos: {
       indice: mediana.numero, mediana,
-      promedio: { ...promedio, corridos: promedio.corridos === '' ? '' : `(${promedio.corridos})` },
+      promedio: { ...promedio, habiles: promedio.habiles === '' ? '' : `(${promedio.habiles})` },
       ciclos: n === 0 ? '' : `de ${cantidadDeCiclos(n)}`,
       notas
     }
@@ -978,8 +1014,8 @@ const etapaDelReporte = (gestion, clave, indice, medidas, ctx, { hayNotas, aclar
 // Las cifras de cada etapa del circuito, para el reporte «Ciclo de vida del dato» (spec 2026-10-25-ciclo-de-vida-del-dato, 1 y 3.1), a
 // partir de los casos de casosDe (o los de la foto del año). Las etapas son los tramos del circuito de vistaDe, en su orden, y cuentan
 // exactamente los ciclos de la cifra de cada tramo con todos los ciclos (sin destildados): las cifras salen de hechosDe, medir y cifraDe,
-// una pasada en días hábiles y otra en corridos (hechosDe no depende de los días), y el vacío, el en curso (en días hábiles, con
-// mediana), los pendientes y el orientativo, de tramoDelCircuito. `opciones`: { anio, al, calendario }, como en vistaDe (`al`: hoy en
+// una pasada en días hábiles y otra en corridos (hechosDe no depende de los días), y el vacío, los pendientes y el orientativo, de
+// tramoDelCircuito; el en curso, de las dos pasadas, con mediana. `opciones`: { anio, al, calendario }, como en vistaDe (`al`: hoy en
 // el año en curso y el 31/12 en uno cerrado; `calendario`: el de los días hábiles, el mismo en las dos pasadas: sin él, o con null, el
 // de los 9 fijos). Devuelve null si no hay año o si `al` es anterior a él. Nunca tira, salvo con un calendario mal armado.
 // { anio, al, externa: Etapa[4] (aviso, tramite, respuesta, carga), interna: Etapa[3] (aviso, produccion, carga),
@@ -989,9 +1025,9 @@ const etapaDelReporte = (gestion, clave, indice, medidas, ctx, { hayNotas, aclar
 // - n: los ciclos terminados en el año; habiles y corridos: { mediana, promedio } (los de cifraDe) o null sin ciclos;
 // - largo y corto: los extremos (extremoDe), null sin ciclos; con uno solo, `largo` es «El único caso» y `corto`, null;
 // - vacio: { titulo, texto, pie } solo sin ciclos (vacioDeLaEtapa);
-// - textos (Ruling 19: el PDF los imprime): indice (la mediana en días hábiles del circuito de arriba: '27', 'En el día' o '—'), mediana
-//   y promedio ({ numero, unidad, corridos }: '27', 'días hábiles', '40 días corridos'; el promedio, con los corridos entre
-//   paréntesis; un 0 es 'En el día', '', ''; sin ciclos, '—', '', ''), ciclos ('de 32 ciclos'; '' sin ciclos) y notas (los renglones
+// - textos (Ruling 19: el PDF los imprime): indice (la mediana en días corridos del circuito de arriba: '83', 'En el día' o '—'), mediana
+//   y promedio ({ numero, unidad, habiles }: '83', 'días corridos', '53 días hábiles'; el promedio, con los hábiles entre paréntesis;
+//   con los dos en 0, 'En el día', '', ''; sin ciclos, '—', '', ''), ciclos ('de 32 ciclos'; '' sin ciclos) y notas (los renglones
 //   chicos, [{ tipo, texto }], en orden y solo los que haya: 'orientativo', 'en_curso' («En curso: …»), 'pendientes' (las notas
 //   pendientes de carga, salvo que ya las diga el vacío: decisión del Ciclo de vida del dato) y 'aclaracion', la de la etapa). «Año
 //   anterior: …» lo suma conAnterior.
@@ -1003,7 +1039,8 @@ export const etapasDe = (casos, opciones) => {
   const medidas = lista(casos).filter((caso) => caso && typeof caso === 'object' && !Array.isArray(caso)).map((caso) => {
     const h = hechosDe(caso, ctx.habiles);
     const m = medir(h, ctx.habiles);
-    return { h, ...m, corridos: medir(h, ctx.corridos).terminados, enLista: entraEnLaLista(h, m, ctx.habiles) };
+    const enCorridos = medir(h, ctx.corridos);
+    return { h, ...m, corridos: enCorridos.terminados, corridosEnCurso: enCorridos.enCurso, enLista: entraEnLaLista(h, m, ctx.habiles) };
   });
   const extra = { hayNotas: medidas.some((m) => m.h.nota !== null), aclaraciones: aclaracionesDe(medidas, ctx.habiles) };
   const deLaGestion = (gestion) => {
@@ -1016,8 +1053,8 @@ export const etapasDe = (casos, opciones) => {
   };
 };
 
-// «Año anterior: …» de cada etapa (spec 2026-10-25-ciclo-de-vida-del-dato, 3.4): la mediana en días hábiles de la misma etapa (por
-// gestión y clave) en `anteriores`, otro resultado de etapasDe (o null): «Año anterior: mediana de 29 días hábiles», «Año anterior:
+// «Año anterior: …» de cada etapa (spec 2026-10-25-ciclo-de-vida-del-dato, 3.4): la mediana en días corridos de la misma etapa (por
+// gestión y clave) en `anteriores`, otro resultado de etapasDe (o null): «Año anterior: mediana de 45 días corridos», «Año anterior:
 // mediana en el día»; sin la etapa, o si no tuvo ciclos, «Año anterior: no hay». Es un dato: no dice si es mejor o peor. Devuelve una
 // copia de `etapas` con `textos.anterior` en cada etapa (no cambia lo que recibe); con algo que no son etapas, lo que recibió (null en
 // lugar de undefined). Nunca tira.
@@ -1026,9 +1063,9 @@ export const conAnterior = (etapas, anteriores) => {
   const previas = objeto(anteriores);
   const textoDe = (gestion, clave) => {
     const etapa = lista(previas[gestion]).find((e) => e && typeof e === 'object' && e.clave === clave);
-    const { mediana } = objeto(etapa?.habiles);
+    const { mediana } = objeto(etapa?.corridos);
     if (!Number.isFinite(mediana)) return ANTERIOR_NO_HAY;
-    return mediana === 0 ? 'Año anterior: mediana en el día' : `Año anterior: mediana de ${mediana} ${unidadDe(mediana, 'habiles')}`;
+    return mediana === 0 ? 'Año anterior: mediana en el día' : `Año anterior: mediana de ${mediana} ${unidadDe(mediana, 'corridos')}`;
   };
   const conTexto = (gestion) => lista(etapas[gestion]).map((etapa) => (etapa && typeof etapa === 'object' && !Array.isArray(etapa)
     ? { ...etapa, textos: { ...objeto(etapa.textos), anterior: textoDe(gestion, etapa.clave) } } : etapa));

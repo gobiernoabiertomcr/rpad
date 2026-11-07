@@ -65,6 +65,9 @@ const CIRCUITO_DE_LA_GESTION = {
 
 const ORIENTATIVO = 'con tan pocos casos, es orientativo';
 const SE_CUENTA_HASTA = 'Se cuenta hasta que se registra la actualización.';
+// Las dos puntas de la línea del cajón «Aviso anticipado»
+const ANTICIPACION_DESDE = 'aviso';
+const ANTICIPACION_HASTA = 'vencimiento';
 
 // La cinta: todo llega con ella (las x, la línea del eje, las alturas, los textos y los anclajes); estas listas solo dicen qué se
 // puede escribir en un atributo
@@ -284,21 +287,32 @@ function htmlDeFranjaSin(datos, estado = ESTADO_POR_DEFECTO) {
 // - el nombre, la línea, «desde → hasta», los en curso (con «Se cuenta hasta que se registra la actualización.») y los pendientes de
 //   carga de la DGMIT (el texto del vacío o, con cifra, `pendientes_texto`); al final, la insignia de quién está a cargo (nunca solo
 //   el color). Lo de la DGMIT va en violeta. La página no compara números ni arma textos: los escribe como llegan.
+// Con `anticipacion_texto` (solo el aviso con cifra), el cajón «Aviso anticipado»: el número solo, la frase, la línea de aviso a
+// vencimiento y sus dos puntas en lugar de «desde → hasta». La línea es un dibujo fijo que no mide los días, y por eso el lector de
+// pantalla la salta y lee las puntas.
 function htmlDeFlecha(tramo) {
   if (!esObjeto(tramo)) return '<div class="mt-flecha vacia"><div class="l" aria-hidden="true"></div></div>';
   const cifra = esObjeto(tramo.cifra) ? tramo.cifra : null;
   const vacio = cifra === null && esObjeto(tramo.vacio) ? tramo.vacio : null;
-  const clases = ['mt-flecha', tramo.dgmit === true ? 'dgmit' : '', cifra === null ? 'vacia' : ''].filter(Boolean).join(' ');
+  const anticipa = cifra !== null && escaparTexto(tramo.anticipacion_texto) !== '';
+  const clases = ['mt-flecha', tramo.dgmit === true ? 'dgmit' : '', cifra === null ? 'vacia' : '', anticipa ? 'anticipa' : ''].filter(Boolean).join(' ');
   const partes = [];
-  if (cifra) {
+  if (anticipa) {
+    partes.push(`<span class="n">${escaparTexto(cifra.texto)}</span><span class="mt-anticipa-frase">${escaparTexto(tramo.anticipacion_texto)}</span>`
+      + '<div class="mt-anticipa-tramo" aria-hidden="true"><span class="mt-anticipa-punto"></span><span class="mt-anticipa-linea"></span><span class="mt-anticipa-aro"></span></div>'
+      + `<div class="mt-anticipa-pie"><span>${ANTICIPACION_DESDE}</span><span>${ANTICIPACION_HASTA}</span></div>`);
+  } else if (cifra) {
     const unidad = escaparTexto(cifra.unidad);
-    partes.push(`<span class="n">${escaparTexto(cifra.texto)}${unidad ? ` <small>${unidad}</small>` : ''}</span><span class="u">${escaparTexto(cifra.debajo)}</span>`);
-    if (cifra.orientativo === true) partes.push(`<span class="o">${ORIENTATIVO}</span>`);
+    partes.push(`<span class="n">${escaparTexto(cifra.texto)}${unidad ? ` <small>${unidad}</small>` : ''}</span>`);
   } else {
     partes.push(`<span class="n">${escaparTexto(vacio?.titulo)}</span>`);
   }
+  if (cifra) {
+    partes.push(`<span class="u">${escaparTexto(cifra.debajo)}</span>`);
+    if (cifra.orientativo === true) partes.push(`<span class="o">${ORIENTATIVO}</span>`);
+  }
   partes.push(`<span class="t">${escaparTexto(tramo.nombre)}</span><div class="l" aria-hidden="true"></div>`);
-  if (escaparTexto(tramo.desde_hasta)) partes.push(`<span class="c">${escaparTexto(tramo.desde_hasta)}</span>`);
+  if (!anticipa && escaparTexto(tramo.desde_hasta)) partes.push(`<span class="c">${escaparTexto(tramo.desde_hasta)}</span>`);
   if (cifra && cifra.en_el_dia === true && escaparTexto(cifra.ciclos_texto)) partes.push(`<span class="c"><b>${escaparTexto(cifra.ciclos_texto)}</b></span>`);
   const esDeLaDgmit = tramo.clave === 'tramite';
   if (vacio && escaparTexto(vacio.texto)) partes.push(`<span class="c${esDeLaDgmit ? ' pend' : ''}">${escaparTexto(vacio.texto)}</span>`);

@@ -17,7 +17,7 @@ import { renderCicloDeVida } from '../services/reportesCicloDeVidaPdf.js';
 import { leerFoto } from '../services/metricasFoto.js';
 import { nombreDelReporte } from '../services/reportesNombres.js';
 import { ESTADISTICOS, DIAS } from '../services/metricasReglas.js';
-import { metricasDe, deLaFoto, circuitoEnCorridosDeLaFoto, cicloDeVidaDe, SIN_METRICAS } from './metricasController.js';
+import { metricasDe, deLaFoto, circuitosDeLaFoto, cicloDeVidaDe, SIN_METRICAS } from './metricasController.js';
 
 // Los reportes PDF (spec 2026-10-24-metricas-y-reportes, 5), todos con la base de los reportes (services/reportesPdfBase.js): acá van
 // las consultas y lo que les toca a los dibujantes. El Cumplimiento ya no está (el ranking de áreas está en Métricas) y el Historial de
@@ -334,8 +334,8 @@ export const reporteParaCompletar = async (req, res) => {
 // Solo para un año con foto (spec 2026-10-24-metricas-y-reportes, 5, Para presentar, punto 2, y 3): la foto del 31/12 de ese año, la
 // del año anterior para la comparación (o, sin ella, «Primer año con foto») y los logros del año, los hitos de Herramientas →
 // Proyectos. Las fotos se leen como las lee Métricas (leerFoto y deLaFoto: nunca se recalculan), con la combinación por defecto
-// (mediana en días hábiles) y todos los datasets. El PDF lo dibuja services/reportesInformeAnualPdf.js. Acá van las consultas y el
-// pie, con el nombre corto de quien lo pide y la hora argentina.
+// (mediana en días hábiles; la hoja 1, en días corridos y hábiles) y todos los datasets. El PDF lo dibuja
+// services/reportesInformeAnualPdf.js. Acá van las consultas y el pie, con el nombre corto de quien lo pide y la hora argentina.
 
 const SIN_FOTO_DEL_ANIO = Object.freeze({ success: false, error: 'Todavía no hay foto de ese año: se saca el 10/01 del año siguiente.' });
 
@@ -378,7 +378,7 @@ export const reporteInformeAnual = async (req, res) => {
       leerFoto(anio - 1),
       hitosDelAnio(anio)
     ]);
-    const delAnio = { ...delInforme(foto), circuito_en_corridos: circuitoEnCorridosDeLaFoto(foto, COMBINACION_DEL_INFORME.estadistico) };
+    const delAnio = { ...delInforme(foto), ...circuitosDeLaFoto(foto, COMBINACION_DEL_INFORME.estadistico) };
     const pdf = await renderInformeAnual({ foto: delAnio, anterior: delInforme(anterior), logros: logrosPorProyecto(hitos) },
       { generado: { momento, por: nombreCorto(usuario?.nombre_completo) } });
     res.setHeader('Content-Type', 'application/pdf');

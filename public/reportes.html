@@ -105,6 +105,17 @@
         /* Sin cifra: el porqué en lugar del número y el borde punteado gris (también en la DGMIT) */
         .mt-flecha.vacia { background: var(--sg-sutil); border: 1px dashed var(--sg-gris); }
         .mt-flecha.vacia .n { font-size: 1.05rem; font-weight: 650; letter-spacing: -0.01em; line-height: 1.2; color: var(--sg-suave); }
+        /* El cajón «Aviso anticipado»: la línea es un dibujo fijo, de aviso a vencimiento. La cifra conserva la letra de los otros cajones */
+        .mt-anticipa-frase { font-size: 0.8rem; font-weight: 600; color: var(--sg-suave); line-height: 1.25; margin-top: 3px; }
+        .mt-anticipa-tramo { display: flex; align-items: center; margin-top: 10px; color: var(--sg-tinta); }
+        /* Con bordes: en alto contraste se van los fondos, y al imprimir también si no se le pide */
+        .mt-anticipa-punto { flex: none; width: 9px; height: 9px; border: 2px solid currentColor; border-radius: 50%; background: currentColor; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .mt-anticipa-linea { flex: 1; border-top: 2px solid currentColor; }
+        .mt-anticipa-aro { flex: none; width: 11px; height: 11px; border: 2px solid currentColor; border-radius: 50%; background: #F4F8FC; }
+        .mt-anticipa-pie { display: flex; justify-content: space-between; font-size: 0.72rem; font-weight: 600; color: var(--sg-suave); margin-top: 3px; }
+        .anticipa .u { margin-top: 8px; }
+        /* Sin «desde → hasta», la anteúltima es .l: sin alto y mostrada, da el aire de la insignia que da el texto en las otras tarjetas */
+        .anticipa .l { display: block; }
         /* Quién está a cargo, al pie de la tarjeta: nunca solo el color */
         .mt-flecha > :nth-last-child(2) { margin-bottom: 10px; }
         .mt-resp { align-self: flex-start; margin-top: auto; padding: 1px 8px; border-radius: 999px; background: #fff; color: var(--sg-tinta); font-size: 0.72rem; font-weight: 700; }
@@ -135,6 +146,8 @@
         /* En alto contraste la banda pierde el fondo: sin la forma de flecha, queda una caja con borde */
         @media (forced-colors: active) {
             .mt-nodo, .mt-nodo:first-child, .mt-nodo.fin { clip-path: none; padding: 10px 14px; border: 1px solid CanvasText; border-radius: 12px; }
+            /* El punto sigue lleno, para que no se confunda con el aro: la línea y el aro son bordes y se ven solos */
+            .mt-anticipa-punto { forced-color-adjust: none; background: CanvasText; border-color: CanvasText; }
         }
         @media (forced-colors: active) and (min-width: 961px) {
             .mt-nodo, .mt-nodo:first-child { margin-right: 8px; }
@@ -617,6 +630,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/reportes.js?v=20261210"></script>
+    <script src="js/reportes.js?v=20261211"></script>
 </body>
 </html>

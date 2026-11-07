@@ -3,7 +3,7 @@
 // - el encabezado de los reportes («Ciclo de vida del dato» y la fecha larga de hoy);
 // - el título, con el rótulo «Ciclo de vida del dato · 2026, en curso» (en un año cerrado, sin «en curso»);
 // - la píldora del período y, en un año cerrado que todavía no tiene foto, otra en el sol con el aviso de la foto (al lado, si entran);
-// - el circuito en chico: la sigla de cada nodo y, en cada flecha, el número de la etapa y su mediana en días hábiles;
+// - el circuito en chico: la sigla de cada nodo y, en cada flecha, el número de la etapa y su mediana en días corridos;
 // - un bloque por etapa: a la izquierda el número, el nombre y la insignia, el tramo (los dos nodos y la flecha) y la descripción
 //   seguida de cómo se mide (TEXTOS_DEL_CICLO); a la derecha las estadísticas: el mosaico de la mediana, el promedio y los extremos (o el
 //   vacío) y los renglones de notas;
@@ -29,11 +29,11 @@ import {
 
 const SE_MIDE_EL_AVISO = 'Se mide del aviso al vencimiento: cuanto más grande, más anticipación.';
 const SE_MIDE_LA_CARGA = 'Se mide del «Recibido el» al día de la carga en el portal.';
-const COMO_SE_CUENTA = 'Días hábiles: de lunes a viernes, sin feriados ni días no laborables; entre paréntesis, los corridos. La mediana es el '
-  + 'valor del medio: la mitad de los ciclos tardó eso o menos. El caso más largo y el más corto (en el aviso, el de más y el de menos '
-  + 'anticipación) son los ciclos de los extremos de cada etapa. Cada ciclo cuenta en el año en que terminó la etapa; el aviso, en el año '
-  + 'de su vencimiento, aunque todavía no haya llegado. Los que todavía no terminaron la respuesta o el relevamiento van aparte, como '
-  + '«en curso».';
+const COMO_SE_CUENTA = 'Días corridos: todos los días del calendario. Junto a ellos, los hábiles: de lunes a viernes, sin feriados ni días no '
+  + 'laborables. La mediana es el valor del medio: la mitad de los ciclos tardó eso o menos. El caso más largo y el más corto (en el aviso, '
+  + 'el de más y el de menos anticipación) son los ciclos de los extremos de cada etapa. Cada ciclo cuenta en el año en que terminó la etapa; '
+  + 'el aviso, en el año de su vencimiento, aunque todavía no haya llegado. Los que todavía no terminaron la respuesta o el relevamiento van '
+  + 'aparte, como «en curso».';
 
 // Lo que se hace en cada etapa y cómo se mide, por gestión y por la clave de su tramo (las redactó el usuario: spec 2.4; las ventanas
 // de 40 y 60 días son las de la regla, VENTANA_DE_LA_REGLA), y «Cómo se cuenta» (spec 2.3), sin su título («Cómo se cuenta.», que va
@@ -68,7 +68,7 @@ export const TEXTOS_DEL_CICLO = Object.freeze({
 const TITULO = 'Ciclo de vida del dato';
 const TITULO_DE_COMO_SE_CUENTA = 'Cómo se cuenta.';
 const TITULO_DE_LA_HOJA = Object.freeze({ externa: 'Gestión externa', interna: 'Gestión interna' });
-const ROTULO_DEL_INDICE = 'EL CIRCUITO · MEDIANA EN DÍAS HÁBILES';
+const ROTULO_DEL_INDICE = 'EL CIRCUITO · MEDIANA EN DÍAS CORRIDOS';
 const ROTULO_DE_LAS_ESTADISTICAS = 'ESTADÍSTICAS DE LA ETAPA';
 
 // =====================================================
@@ -84,8 +84,8 @@ const OJO = ASCENDENTE + DESCENDENTE;
 const LETRA = {
   rotulo: 6.6, sigla: 7.6, siglaMin: 6.4, indice: 10, indiceMin: 6.4, numero: 6.6, nombre: 9.6, nombreMin: 8.4, insignia: 6.6,
   desdeHasta: 6.2, descripcion: 7.2, descripcionMin: 6.4, rotuloMediana: 6.8, mediana: 24, medianaEnElDia: 16, medianaMin: 12,
-  unidadMediana: 7.6, corridosMediana: 6.4, ciclos: 6.6, rotuloPromedio: 6.6, anterior: 6.4, promedio: 15, promedioEnElDia: 13,
-  unidadPromedio: 7.4, corridosPromedio: 6.6, rotuloExtremo: 6.4, extremo: 12, unidadExtremo: 7, dataset: 6.2, nota: 6.6,
+  unidadMediana: 7.6, habilesMediana: 6.4, ciclos: 6.6, rotuloPromedio: 6.6, anterior: 6.4, promedio: 15, promedioEnElDia: 13,
+  unidadPromedio: 7.4, habilesPromedio: 6.6, rotuloExtremo: 6.4, extremo: 12, unidadExtremo: 7, dataset: 6.2, nota: 6.6,
   vacioTitulo: 10.5, vacioTexto: 8, vacioPie: 7, hoja: 6.8
 };
 
@@ -117,10 +117,10 @@ const AIRE_DE_SIEMPRE = Object.freeze({ mosaico: DERECHA.mosaico, sobreNotas: DE
 const AIRE_JUSTO = Object.freeze({ mosaico: 15.5, sobreNotas: 1.5, abajo: 2.5 });
 // Un extremo: el aire de arriba, el de abajo, el del número y el de cada renglón chico
 const EXTREMO = { arriba: 4, abajo: 3, sobreValor: 2.6, entre: 1.6 };
-// Lo menos que mide un extremo (su rótulo, su número, los corridos y un renglón del dataset) y el mosaico: las notas no le quitan más
-// que eso, así ningún extremo pierde «N días corridos». Si las notas no entran, primero el aire se hace más justo (AIRE_JUSTO); solo si
-// ni así entran (más de tres renglones: no pasa con los textos del servidor), pasan a un renglón, cortadas con «…», y después las de más
-// abajo no van
+// Lo menos que mide un extremo (su rótulo, su número, los hábiles y un renglón del dataset) y el mosaico: las notas no le quitan más
+// que eso, así ningún extremo pierde «N días hábiles». Si las notas no entran, primero el aire se hace más justo (AIRE_JUSTO); solo si
+// ni así entran (más de tres renglones: con los textos del servidor, solo un en curso que ocupa dos, «menos de 1 hábil», junto al
+// orientativo y la fuente pública), pasan a un renglón, cortadas con «…», y después las de más abajo no van
 const EXTREMO_MINIMO = EXTREMO.arriba + OJO * LETRA.rotuloExtremo + EXTREMO.sobreValor + OJO * LETRA.extremo
   + 2 * (EXTREMO.entre + OJO * LETRA.dataset) + EXTREMO.abajo;
 const MOSAICO_MINIMO = DERECHA.promedio + DERECHA.entre + EXTREMO_MINIMO;
@@ -150,7 +150,7 @@ const linea = (doc, valor, x, y, { ancho, tamano, min = tamano, fuente = NORMAL,
   return ajuste;
 };
 
-// Piezas en un mismo renglón, sobre la misma línea de base (el número grande y su unidad, y los corridos): cada una a continuación de
+// Piezas en un mismo renglón, sobre la misma línea de base (el número grande y su unidad, y los hábiles): cada una a continuación de
 // la anterior; la que no entra se corta con «…» y las que siguen no van. Devuelve la y del borde inferior del renglón
 const enLinea = (doc, piezas, x, y, ancho) => {
   const hay = piezas.filter((p) => texto(p.texto));
@@ -311,7 +311,7 @@ const dibujarFlecha = (doc, x0, x1, y, color, punteada) => {
 const nodosDe = (etapas) => (etapas.length === 0 ? [] : [lista(etapas[0].nodos)[0], ...etapas.map((e) => lista(e.nodos)[1])]);
 
 // El circuito entero, en chico (spec 2.1, 4), en un recuadro: los nodos con su sigla y, en cada flecha, el número de la etapa (violeta
-// si es de la DGMIT) y su mediana en días hábiles (`textos.indice`: «27», «En el día» o «—»). Devuelve la y de lo que sigue
+// si es de la DGMIT) y su mediana en días corridos (`textos.indice`: «83», «En el día» o «—»). Devuelve la y de lo que sigue
 const dibujarIndice = (doc, etapas, y) => {
   doc.save();
   doc.lineWidth(0.8).strokeColor(COLOR.linea).roundedRect(IZQUIERDA, y, CONTENIDO, INDICE.alto, 5).stroke();
@@ -384,7 +384,8 @@ const dibujarIzquierda = (doc, etapa, gestion, x, y, alto) => {
 };
 
 // La mediana (spec 2.2), en la primera columna del mosaico y a todo su alto, con el fondo suave del color de la etapa: el rótulo, el
-// número grande, la unidad y los corridos (lo que entre) y, abajo, «de 32 ciclos». «En el día» va sin unidad, en una letra más chica
+// número grande en días corridos, la unidad y los hábiles (lo que entre) y, abajo, «de 32 ciclos» (su lugar se aparta antes, para que
+// lo demás no lo pise, y se escribe al final, como se lee). «En el día» va sin unidad, en una letra más chica
 const dibujarMediana = (doc, mediana, ciclos, x, y, ancho, alto, { fondo, color }) => {
   contorno(doc, x, y, ancho, alto, 5).fill(fondo);
   const xt = x + 7;
@@ -397,15 +398,15 @@ const dibujarMediana = (doc, mediana, ciclos, x, y, ancho, alto, { fondo, color 
   const yNumero = sitio.arriba(OJO * tamano, 0.7);
   if (yNumero !== null) linea(doc, mediana.numero, xt, yNumero, { ancho: wt, tamano, min: LETRA.medianaMin, fuente: NEGRITA, color });
   const yCiclos = ciclos ? sitio.abajo(OJO * LETRA.ciclos) : null;
-  if (yCiclos !== null) linea(doc, ciclos, xt, yCiclos, { ancho: wt, tamano: LETRA.ciclos, fuente: NEGRITA });
   const yUnidad = conUnidad ? sitio.arriba(OJO * LETRA.unidadMediana, 0.8) : null;
   if (yUnidad !== null) linea(doc, mediana.unidad, xt, yUnidad, { ancho: wt, tamano: LETRA.unidadMediana, fuente: NEGRITA, color });
-  const yCorridos = texto(mediana.corridos) ? sitio.arriba(OJO * LETRA.corridosMediana, 1.5) : null;
-  if (yCorridos !== null) linea(doc, mediana.corridos, xt, yCorridos, { ancho: wt, tamano: LETRA.corridosMediana, color: COLOR.gris });
+  const yHabiles = texto(mediana.habiles) ? sitio.arriba(OJO * LETRA.habilesMediana, 1.5) : null;
+  if (yHabiles !== null) linea(doc, mediana.habiles, xt, yHabiles, { ancho: wt, tamano: LETRA.habilesMediana, color: COLOR.gris });
+  if (yCiclos !== null) linea(doc, ciclos, xt, yCiclos, { ancho: wt, tamano: LETRA.ciclos, fuente: NEGRITA });
 };
 
 // El promedio (spec 2.2), arriba en las otras dos columnas, con el fondo gris: el rótulo y, a la derecha, el año anterior; debajo, el
-// número, la unidad y «(41 días corridos)» en un renglón
+// número en días corridos, la unidad y «(57 días hábiles)» en un renglón
 const dibujarPromedio = (doc, promedio, anterior, x, y, ancho, alto) => {
   contorno(doc, x, y, ancho, alto, 5).fill(COLOR.fondo);
   const xt = x + 7;
@@ -417,11 +418,11 @@ const dibujarPromedio = (doc, promedio, anterior, x, y, ancho, alto) => {
   enLinea(doc, [
     { texto: promedio.numero, tamano: conUnidad ? LETRA.promedio : LETRA.promedioEnElDia, fuente: NEGRITA, color: COLOR.tinta },
     { texto: promedio.unidad, tamano: LETRA.unidadPromedio, fuente: NEGRITA, color: COLOR.tinta },
-    { texto: promedio.corridos, tamano: LETRA.corridosPromedio, fuente: NORMAL, color: COLOR.gris }
+    { texto: promedio.habiles, tamano: LETRA.habilesPromedio, fuente: NORMAL, color: COLOR.gris }
   ], xt, y + 11.5, wt);
 };
 
-// Un extremo (spec 2.2), con un borde fino: el rótulo, el número con su unidad, los corridos y, abajo, el título del dataset en uno o
+// Un extremo (spec 2.2), con un borde fino: el rótulo, el número con su unidad, los hábiles y, abajo, el título del dataset en uno o
 // dos renglones, según el alto que haya
 const dibujarExtremo = (doc, extremo, x, y, ancho, alto) => {
   const e = objeto(extremo);
@@ -439,11 +440,11 @@ const dibujarExtremo = (doc, extremo, x, y, ancho, alto) => {
     { texto: e.numero, tamano: LETRA.extremo, fuente: NEGRITA, color: COLOR.tinta },
     { texto: e.unidad, tamano: LETRA.unidadExtremo, fuente: NEGRITA, color: COLOR.tinta }
   ], xt, yValor, wt);
-  // Debajo, los corridos y el dataset (en dos renglones si hay lugar); si no entran los dos, el dataset solo
+  // Debajo, los hábiles y el dataset (en dos renglones si hay lugar); si no entran los dos, el dataset solo
   const renglones = (n) => EXTREMO.entre + altoDeRenglones(doc, n, LETRA.dataset);
-  const corridos = texto(e.corridos_texto);
-  if (corridos && sitio.libre() >= 2 * renglones(1) - 0.01) {
-    linea(doc, corridos, xt, sitio.arriba(renglones(1) - EXTREMO.entre, EXTREMO.entre), { ancho: wt, tamano: LETRA.dataset, color: COLOR.gris });
+  const habiles = texto(e.habiles_texto);
+  if (habiles && sitio.libre() >= 2 * renglones(1) - 0.01) {
+    linea(doc, habiles, xt, sitio.arriba(renglones(1) - EXTREMO.entre, EXTREMO.entre), { ancho: wt, tamano: LETRA.dataset, color: COLOR.gris });
   }
   if (!texto(e.dataset_texto) || sitio.libre() < renglones(1) - 0.01) return;
   const ajuste = ajusteDelNombre(doc, e, { ancho: wt, lineas: sitio.libre() >= renglones(2) - 0.01 ? 2 : 1 });

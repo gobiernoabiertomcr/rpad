@@ -382,9 +382,10 @@ describe('la foto del 31/12', () => {
     // B: al 31/12, la producción del relevamiento estaba en curso desde el aviso del 01/10: sin ciclos terminados, con su renglón
     const produccion = datos.etapas.interna.find((etapa) => etapa.clave === 'produccion');
     const hace = duracion('2026-10-01', AL, 'habiles');
+    const haceEnCorridos = duracion('2026-10-01', AL, 'corridos');
     assert.deepEqual([produccion.n, produccion.habiles, produccion.largo], [0, null, null]);
     assert.deepEqual(produccion.textos.notas.filter((nota) => nota.tipo === 'en_curso'),
-      [{ tipo: 'en_curso', texto: `En curso: 1 sin datos registrados todavía, hace ${hace} días hábiles (mediana)` }]);
+      [{ tipo: 'en_curso', texto: `En curso: 1 sin datos registrados todavía, hace ${haceEnCorridos} días corridos (${hace} hábiles, mediana)` }]);
   });
 
   // Foco 4 (spec 2026-10-25-ciclo-de-vida-del-dato, 3.3): una foto sacada antes de este despliegue no tiene etapas. Se calculan con los
@@ -466,6 +467,24 @@ describe('la foto del 31/12', () => {
     const conNumero = foto.datosDeLaFoto(new Map(), { ...opciones, anio: 2026 });
     assert.deepEqual(conNumero.feriados, ['2026-11-02', '2027-03-15']);
     assert.deepEqual(foto.datosDeLaFoto(new Map(), { ...opciones, anio: '2026' }).feriados, conNumero.feriados);
+  });
+
+  // Spec 2026-11-06-metricas-anticipacion-y-corridos, 7 y 9: una clave más del tramo, con la unidad de cada vista; la versión sigue en 1
+  it('guarda lo que va debajo del número en el aviso anticipado, en cada una de sus vistas', async () => {
+    await prepararElAnio();
+    const datos = foto.datosDeLaFoto(await seguimientoDatos.fuentesDe(null), { anio: 2026, generada: '2027-01-10 08:15:00' });
+    assert.equal(datos.version, 1);
+    for (const estadistico of ESTADISTICOS) {
+      for (const [dias, frase] of [['habiles', 'días hábiles de anticipación'], ['corridos', 'días corridos de anticipación']]) {
+        const { circuito } = datos.vistas[foto.claveDeLaVista(estadistico, dias)];
+        for (const gestion of ['externa', 'interna']) {
+          const [aviso, ...otros] = circuito[gestion];
+          assert.equal(aviso.clave, 'aviso');
+          assert.equal(aviso.anticipacion_texto, frase, `${estadistico}, ${dias}, ${gestion}`);
+          assert.deepEqual(otros.map((t) => t.anticipacion_texto), otros.map(() => null), `${estadistico}, ${dias}, ${gestion}`);
+        }
+      }
+    }
   });
 
   // El reporte nuevo nunca frena la foto del 31/12, que no se vuelve a sacar: si calcular las etapas tira, la parte de las etapas

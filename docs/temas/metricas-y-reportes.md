@@ -9,6 +9,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-05-metricas-frase-en-los-casos-design.md`
 - `docs/superpowers/specs/2026-11-05-circuito-diseno-design.md`
 - `docs/superpowers/specs/2026-11-05-metricas-pdf-apaisado-design.md`
+- `docs/superpowers/specs/2026-11-06-metricas-anticipacion-y-corridos-design.md`
 
 ## Archivos
 
@@ -32,8 +33,14 @@ reportesController: los reportes PDF, con sus consultas.
   Nombres neutros: nunca «tardanza», «demora» ni «atraso».
 - Reglas (`services/metricasReglas.js`, puro: sin pool ni `Date` local, fechas `'AAAA-MM-DD'`, ninguna tira, salvo con un calendario mal armado; los días hábiles se cuentan con el calendario que reciben —`calendario` en las opciones de `casosDe`, `vistaDe` y `etapasDe`, y adentro, en el contexto de `contextoDe`; sin él, o con null, `CALENDARIO_FIJO`;
   las internas, `diaDelAvisoDe` y `casosDelDataset`, sin valor por defecto—): la unidad es el ciclo del Seguimiento, con su código (`ciclosDe`, `cicloDelAviso`, `notasDgmitPorCiclo` con R7, `esEmailADgmit`, `esNotaEnviada`, `momentoDeEnvioDeNota`, `unirAlta`: no hay copias de esas reglas; las métricas y el Seguimiento ubican cada aviso y cada nota DGMIT en el mismo ciclo).
-  `casosDe(fuentesPorDataset, { hoy, calendario })` da un caso por ciclo (también de los dados de baja y con `venc` null; nunca de eventuales ni sin fecha) con sus hitos: el aviso de la regla (el email `externo-40` o `interno-60` con `success`, o la Nota Digital de aviso enviada con ese `vencimiento`, el primero, con fecha ≤ vencimiento;
+  `casosDe(fuentesPorDataset, { hoy, calendario })` da un caso por ciclo (también de los dados de baja y con `venc` null; nunca de eventuales ni sin fecha) con sus hitos: el aviso de la regla (el primero de su clase —el email `externo-40` o `interno-60` con `success`, o la Nota Digital de aviso enviada— con fecha hasta el vencimiento y que, además, dice ese vencimiento o tiene fecha desde la fecha de la regla;
   40 días en externa y 60 en interna, `VENTANA_DE_LA_REGLA` = `VENTANA_DIAS` del calendario, Ruling 30), el primer aviso, si se avisó ya vencido (`heredado`: solo si el RPAD no pudo avisarlo a tiempo —la fecha de la regla es anterior al 06/12/2025, `INICIO_DEL_REGISTRO`, o al alta— y el primer aviso llegó después del vencimiento), la primera nota DGMIT vigente, el «Recibido el» y el origen de la actualización que cerró el ciclo y la carga.
+  El aviso de la regla es el del vencimiento que rige (`casoDelCiclo`, decisión del usuario del 06/11/2026; spec 2026-11-06-metricas-anticipacion-y-corridos, 3): `dia <= venc && (vencimiento === venc || dia >= fecha_regla)`.
+  Un cambio que solo mueve la próxima antes de vencer sigue en el mismo ciclo (`docs/temas/seguimiento.md`): sin esa condición, el email del vencimiento anterior quedaría como el aviso del nuevo, y la anticipación mediría días que nadie tuvo.
+  La Nota Digital dice de qué vencimiento es (`vencimiento`, en `avisosPorCiclo`) y puede salir antes de la fecha de la regla, adelantada por la licencia del firmante o para que la firme la persona autorizada: sigue siendo el aviso de su ciclo, y sin ella el ciclo figuraría sin aviso.
+  El email no dice su vencimiento, y por eso le queda la ventana: de la fecha de la regla al vencimiento.
+  Un ciclo al que le movieron la próxima antes de vencer y que todavía no tuvo el aviso del vencimiento nuevo no tiene aviso de la regla: no cuenta en la anticipación ni en los tramos que empiezan en el aviso hasta que salga y, si su fecha de la regla todavía no llegó, tampoco falta en la cobertura.
+  Con el aviso nuevo, lo que muestran «Los casos» y «Para completar» es ese, las reiteraciones del RPAD se cuentan desde él, un email anterior que no se pudo enviar no da el motivo «el email no se pudo enviar» y una nota DGMIT anterior a él deja la redacción en «En el día», por el piso de 0.
   Los tramos: aviso anticipado (aviso de la regla → vencimiento;
   DDPC), redacción y entrega de nota (aviso → nota DGMIT recibida;
   DGMIT y DA; su clave interna es `tramite`; el nombre, «Redacción y entrega de nota», con «redactan» en la descripción del Ciclo de vida, es decisión del usuario del 28/10/2026) y respuesta del área (nota → datos recibidos;
@@ -50,7 +57,11 @@ reportesController: los reportes PDF, con sus consultas.
   Un tramo terminado cuenta en el año de su hito final; en curso, solo la respuesta y la producción, en un ciclo abierto («4 sin datos registrados todavía, hace 41 días hábiles (mediana)», siempre con la unidad:
   Ruling 11;
   «Preparación y carga» nunca está en curso); el tramo de la DGMIT sin nota es «pendiente de carga», sin días, y sin ninguna nota DGMIT vigente en todo el RPAD dice «Todavía no hay notas DGMIT cargadas» (`SIN_NOTAS_DGMIT`).
+  La tarjeta y el vacío del tramo de la DGMIT (`pendientes_texto` y `vacio.texto`, los dos de `notasPendientes`) cuentan las notas pendientes de carga de los ciclos abiertos, y lo dicen: «7 notas pendientes de carga de ciclos abiertos», «1 nota pendiente de carga de un ciclo abierto», «0 notas pendientes de carga de ciclos abiertos».
+  «Para completar» suma los ciclos cerrados en el año y su título dice cuántas son de cada clase: las dos cuentas son a propósito (spec 2026-11-06-metricas-anticipacion-y-corridos, 4).
   La cifra (`cifraDe`): la mediana (con n par, el promedio de las dos del medio) o el promedio, redondeados, con la unidad al lado («27 días hábiles»; singular solo con 1, `unidadDe`) y debajo «mediana de 32 ciclos»; 0 es «En el día»; sin casos, «Sin casos en 2026»; con 4 o menos, «con tan pocos casos, es orientativo».
+  El tramo del aviso trae además `anticipacion_texto`, lo que va debajo del número en el cajón «Aviso anticipado»: la unidad y «de anticipación» («días corridos de anticipación», «día hábil de anticipación»; el número va aparte), o null con «En el día», sin cifra y en los demás tramos.
+  La foto lo guarda con el resto de la vista: es una clave más, y `VERSION_DE_LA_FOTO` sigue en 1.
 - `vistaDe(casos, { anio, al, estadistico, dias, sin, calendario })` (`al`: hoy en el año en curso, el 31/12 en uno cerrado; lo de después no cuenta):
   `circuito` (los tramos de cada gestión y las aclaraciones: los avisados ya vencidos, los resueltos con una fuente pública y, si los hay, los de «Requiere nota:
   No», «N ciclos son de datasets que no requieren nota DGMIT: cuentan solo en el aviso anticipado y en la carga.»), `resultados` (actualizados a tiempo: los cerrados por actualización en el año con carga ≤ vencimiento, con el desglose por gestión y cuánto después se cargaron los otros;
@@ -117,8 +128,9 @@ reportesController: los reportes PDF, con sus consultas.
 - Los reportes (spec 5;
   `controllers/reportesController.js`, todos con `authMiddleware` sin `adminOnly`): ocho tarjetas en dos grupos (`htmlDeReportes`, `pedidoDeReporte`), cada una baja su PDF con `API.pedirArchivo` + `descargarBlob`.
   **Para presentar** (`rp-grilla g4`):
-  Métricas del año (`GET /api/metricas/pdf`, `services/reportesMetricasPdf.js`: en A4 apaisado, el circuito; los resultados con «Cómo se cuenta» y los destildados; el contexto y el trabajo; y las áreas y temas, cada parte desde una hoja nueva, «Unas 5 hojas», Ruling 24; la píldora dice lo elegido;
-  un año con foto sale de la foto; ver «El PDF apaisado»), Ciclo de vida del dato (`GET /api/reportes/ciclo-de-vida?anio=`, `reportesCicloDeVidaPdf.js`: cuánto tarda cada etapa del circuito, con todos los ciclos, en dos hojas, la gestión externa y la interna; ver `docs/temas/ciclo-de-vida.md`), Informe anual (`GET /api/reportes/informe-anual?anio=`, `reportesInformeAnualPdf.js`: solo para un año con foto —sin ella, 404—, con mediana en días hábiles, las mismas hojas que Métricas del año, la comparación con la foto del año anterior —`comparacionDe`;
+  Métricas del año (`GET /api/metricas/pdf`, `services/reportesMetricasPdf.js`: en A4 apaisado, el circuito; los resultados con «Cómo se cuenta» y los destildados; el contexto y el trabajo; y las áreas y temas, cada parte desde una hoja nueva, «Unas 5 hojas», Ruling 24; la píldora dice el estadístico y lo destildado;
+  un año con foto sale de la foto; ver «El PDF apaisado»), Ciclo de vida del dato (`GET /api/reportes/ciclo-de-vida?anio=`, `reportesCicloDeVidaPdf.js`: cuánto tarda cada etapa del circuito, con todos los ciclos, en dos hojas, la gestión externa y la interna; ver `docs/temas/ciclo-de-vida.md`),
+  Informe anual (`GET /api/reportes/informe-anual?anio=`, `reportesInformeAnualPdf.js`: solo para un año con foto —sin ella, 404—, con mediana en días hábiles salvo en la hoja 1, que va en días corridos y hábiles, las mismas hojas que Métricas del año, la comparación con la foto del año anterior —`comparacionDe`;
   El Informe anual: las cifras salen de la foto y los logros, de los hitos en vivo (un hito borrado o cargado después cambia el PDF de un año cerrado).
   sin foto del año anterior, la hoja se llama «Logros del año», con la píldora «Primer año con foto»— y los logros del año: los hitos de Herramientas → Proyectos con fecha en el año —los de los proyectos activos y los logros del área—, por proyecto, `logrosPorProyecto`, en dos columnas, con «Los hitos de AAAA cargados en Proyectos» a la derecha;
   sin las métricas manuales, que no están en la foto; ver «El PDF apaisado») y Estado general de los datasets (`GET /api/reportes/estado-general`, `reportesEstadoGeneralPdf.js`: la píldora del índice, las cinco tarjetas, la tasa con sus aclaraciones y la tabla de todos los datasets activos —Título, Área, Frecuencia, Datos al, Próx. Act. y Estado—).
@@ -167,10 +179,21 @@ Son solo del PDF: la página no cambia.
 - **La letra** (`LETRAS_DEL_CIRCUITO`): tres escalones, y va el más grande con el que las dos gestiones entran en la hoja.
   Hay escalones porque, al cargar las notas DGMIT, «Respuesta del área» pasa a tener cifra y sigue con sus en curso, y la tarjeta crece tres renglones: sin ellos, la interna se iría de hoja, y el usuario las quiere juntas.
   Si con la más chica tampoco entran, la interna pasa entera a la hoja siguiente.
-- **Los días corridos:** con «Días hábiles», debajo de cada cifra de la hoja 1, entre paréntesis (`textoDeCorridos`).
-  Salen de `datos.circuito_en_corridos`: en vivo, la misma regla (`vistaDe`) con los mismos casos, sin volver a leer la base; con foto, de la foto, que ya guarda las cuatro combinaciones (una foto sin esa combinación no tira, y sale sin los paréntesis).
-  Solo lo piden los PDF: `GET /api/metricas` no lo manda.
+- **Los días corridos primero** (spec 2026-11-06-metricas-anticipacion-y-corridos, 6): la hoja 1 es igual con los dos selectores de días (decisión del usuario del 06/11/2026); en las otras hojas manda el selector.
+  Cada cifra va en días corridos y, pegados debajo, los hábiles entre paréntesis (`textoDeHabiles(cifra, habil)`: «(53 días hábiles)»; con corridos y 0 hábiles, «(En el día, en días hábiles)»; nada si las dos son «En el día» o si falta una).
+  El aire va entre los hábiles y «mediana de…», no entre las dos cifras: `grupoDeLaCifra` le resta a los hábiles lo que la cifra deja debajo de su letra y lo suma después, y la tarjeta mide lo mismo.
+  La solapa de cada gestión y la píldora dicen «Mediana en días corridos y hábiles» («Promedio en…»); la píldora sigue diciendo lo destildado.
+  Salen de `datos.circuito_en_corridos` y `datos.circuito_en_habiles`, con la forma de `vista.circuito` (`circuitoDeLaHoja`).
+  En vivo, `enVivo` con `conCircuitos`: la misma regla (`vistaDe`) con los mismos casos y destildados, sin volver a leer la base, y la vista de la unidad elegida no se calcula de nuevo.
+  Con foto, `circuitosDeLaFoto` (`controllers/metricasController.js`, que usa también el Informe anual), de las cuatro combinaciones que la foto ya guarda.
+  Si falta una de las dos (una foto sin esa combinación), no tira: se dibuja lo elegido, sin paréntesis, y la solapa dice lo elegido.
+  Solo las piden los PDF: `GET /api/metricas` no las manda.
+  Los en curso dicen los dos: `textoEnCursoDeLosDos(enCorridos, enHabiles, estadistico)` (`metricasReglas.js`, pura), «4 sin datos registrados todavía, hace 116 días corridos (76 hábiles, mediana)» («menos de 1 hábil»; con los dos en 0, «hace menos de 1 día corrido (mediana)»).
+  Lee solo `n` y `valor` de cada `en_curso`, que la foto ya guarda: el Informe la arma sin cambiar la forma de la foto.
+  La página no cambia: dice la frase de los días elegidos.
+- **El aviso anticipado:** su cajón tiene otro cuerpo; ver la sección del cajón «Aviso anticipado», abajo.
 - **Los resultados** (`dibujarLosResultados`): las aclaraciones de cada gestión (`aclaracionesDe`) van en «Cómo se cuenta», con su nombre.
+  «Cómo se cuenta» dice también «Un tramo cuenta en el año en que terminó; el aviso, en el año de su vencimiento.» (`EN_EL_ANIO`): es del dibujo y no queda en la foto.
   No se sacan del PDF, aunque parezcan de más: son lo único que avisa que hay ciclos que no cuentan en una cifra, y sin eso un número se puede tomar por el total.
   «Cómo se cuenta» no viaja con los resultados, porque juntos pueden no entrar en una hoja; si no entra, salta con el título repetido.
 - **El contexto** (`elementosDelContexto`): el índice a la izquierda; la antigüedad y la doble verificación a la derecha.
@@ -181,6 +204,24 @@ Son solo del PDF: la página no cambia.
 Un hito del Informe lleva hasta 35 renglones de descripción, para que el nombre del proyecto y el hito más alto entren debajo del título de la hoja.
 `nuevoFlujo` no corta una pieza: los temas y las frecuencias son catálogos cortos (hoy, 12 temas, sin API que los cargue); una lista de más de unos 35 renglones se saldría de la hoja.
 La cantidad de hojas de la tarjeta de Reportes, «Unas 5 hojas», es la de los datos del 05/11/2026.
+
+## El cajón «Aviso anticipado»
+
+En la página, el PDF de Métricas y el Informe anual, en las dos gestiones (spec 2026-11-06-metricas-anticipacion-y-corridos, 7); el Ciclo de vida no lo lleva.
+Es la única etapa donde más días es mejor, y por eso se lee distinto.
+Va cuando el tramo trae `anticipacion_texto`; con «En el día» o sin cifra, el cajón es el de siempre, sin línea.
+
+- De arriba abajo: el número, con la letra y el lugar de la cifra de los otros cajones; la frase del servidor («días corridos de anticipación»); en los PDF, los hábiles entre paréntesis; la línea, con «aviso» y «vencimiento» debajo de cada punta; el estadístico y, si corresponde, el orientativo.
+- La línea es un dibujo fijo, no una escala: mide lo mismo con 3 días que con 83.
+  El número ya dice los días; una línea que creciera con ellos se leería como una escala, y eso es un antiobjetivo de la spec.
+  Empieza en un punto lleno y termina en un aro chico, en la tinta de la tarjeta.
+- No lleva «Del aviso al vencimiento», porque lo dice el dibujo.
+- En la página (`htmlDeFlecha`, con la clase `anticipa`), el número y la frase siguen al selector («53», «días hábiles de anticipación»), sin los paréntesis.
+  La línea son bordes (`.mt-anticipa-punto`, `.mt-anticipa-linea` y `.mt-anticipa-aro`), para que se vea con `forced-colors`, donde el punto sigue lleno con `CanvasText`.
+  El lector de pantalla la salta (`aria-hidden`) y lee «aviso» y «vencimiento» (`ANTICIPACION_DESDE` y `ANTICIPACION_HASTA`, atadas a `TEXTOS_DE_LA_PESTANA.anticipacion`).
+  Hasta 960 píxeles va en una columna, como las demás tarjetas, y «La cinta» no cambia.
+- En el PDF, `etapaDe` dibuja `cuerpoDeLaAnticipacion`: todo se mide antes de dibujarse, como lo demás, para que `LETRAS_DEL_CIRCUITO` elija el escalón, y los textos pasan por `pieza`.
+  La línea va con `moveTo` y `lineTo`: un `rect` fino sería, para `tests/pdf-diagramacion.js`, una línea que cruza la tarjeta.
 
 ## La página: reportes.js
 

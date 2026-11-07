@@ -360,9 +360,10 @@ describe('Métricas, el Ciclo de vida y la Agenda', () => {
     const ciclo = await lecturasDeLaTabla(() => metricas.cicloDeVidaDe({ anio: '2027' }, { hoy: '2027-01-05' }));
     assert.equal(ciclo.resultado.anio, 2027);
     assert.equal(ciclo.resultado.en_vivo, true);
-    // El año anterior también se contó con la tabla
-    assert.equal(ciclo.resultado.etapas.externa[0].textos.anterior, 'Año anterior: mediana de 25 días hábiles');
-    assert.equal(ciclo.resultado.etapas.interna[0].textos.anterior, 'Año anterior: mediana de 38 días hábiles');
+    // «Año anterior» es la mediana en días corridos, que no depende del calendario: A se avisó 40 días antes y B, 60. Lo que cuenta con
+    // la tabla son los días hábiles de las etapas (los tests de arriba)
+    assert.equal(ciclo.resultado.etapas.externa[0].textos.anterior, 'Año anterior: mediana de 40 días corridos');
+    assert.equal(ciclo.resultado.etapas.interna[0].textos.anterior, 'Año anterior: mediana de 60 días corridos');
     assert.equal(ciclo.lecturas, 1);
 
     const delAnio = await lecturasDeLaTabla(() => metricas.metricasDe({ anio: '2026' }, { hoy: AL_2026 }));
