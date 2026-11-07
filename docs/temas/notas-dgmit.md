@@ -61,7 +61,7 @@ notasDgmitReglas (la validación de una nota DGMIT y de su motivo, pura).
   Una corrección que le saca un dataset hace que la nota deje de aparecer en su Seguimiento.
 - «Editar notas DGMIT» (`#modal-editar-notas`, botón `#sg-editar-notas` al lado de «Cargar nota DGMIT»; los mismos permisos): todas las notas, en un modal que mide lo mismo que el de la carga (`.sg-modal-alto`, 90vh).
   Las pide al abrir (`GET /api/notas-dgmit`, `listaDeNotasDgmit`), nunca al iniciar la página: las ordena el servidor por número, de la más nueva a la más vieja (el año y el número de `N/AA`; el que no termina así va al final).
-  El navegador busca (número, dataset o área), filtra (Vigentes, Anuladas, Todas) y pagina de a 10 (`NOTAS_POR_PAGINA`; con una sola página, nada).
+  El navegador busca (número, dataset o área), filtra (Vigentes, Anuladas, Todas) y pagina de a 20 (`NOTAS_POR_PAGINA`; con una sola página, nada).
   Cada dataset dice a qué ciclo fue la nota, con el texto que arma el servidor (`textoDelCicloDeLaNota`).
   «Corregir» pasa al formulario de siempre, con «Volver a la lista» (`#nd-volver`), y cerrar o guardar vuelve a la lista; «Anular» abre encima el modal de siempre. Los botones, con `editable`, la regla de siempre.
 - Las reglas (`services/seguimientoReglas.js`): vigentes son las no anuladas recibidas hasta hoy (el anexo usa la fecha de la nota como hoy).

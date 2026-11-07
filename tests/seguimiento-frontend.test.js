@@ -1603,21 +1603,31 @@ describe('seguimiento.js: Editar notas DGMIT (spec 2026-11-06-editar-notas-dgmit
     assert.ok(html.includes('data-alcance="todas" aria-pressed="false">Todas <b>2</b>'));
   });
 
-  it('la página: de a 10, corrida a la última que existe; con una sola, sin botones', () => {
+  it('la página: de a 20, corrida a la última que existe; con una sola, sin botones', () => {
     const ctx = cargar();
-    const notas = muchas(14);
+    const notas = muchas(24);
     const primera = ctx.paginaDeNotas(notas, 1);
-    assert.deepEqual([primera.notas.length, primera.pagina, primera.paginas, primera.desde, primera.hasta, primera.total], [10, 1, 2, 1, 10, 14]);
+    assert.deepEqual([primera.notas.length, primera.pagina, primera.paginas, primera.desde, primera.hasta, primera.total], [20, 1, 2, 1, 20, 24]);
     const segunda = ctx.paginaDeNotas(notas, 9);
-    assert.deepEqual([segunda.notas.length, segunda.pagina, segunda.desde, segunda.hasta], [4, 2, 11, 14]);
+    assert.deepEqual([segunda.notas.length, segunda.pagina, segunda.desde, segunda.hasta], [4, 2, 21, 24]);
     assert.equal(ctx.paginaDeNotas(notas, 'x').pagina, 1);
     const html = ctx.htmlDePaginasDeNotas(primera);
     assert.ok(html.includes('data-pagina="0" data-direccion="anterior" disabled>Anterior'));
     assert.ok(html.includes('data-pagina="2" data-direccion="siguiente">Siguiente'));
-    assert.ok(html.includes('Página 1 de 2<small>Mostrando 1–10 de 14</small>'));
+    assert.ok(html.includes('Página 1 de 2<small>Mostrando 1–20 de 24</small>'));
     assert.ok(ctx.htmlDePaginasDeNotas(segunda).includes('data-direccion="siguiente" disabled>Siguiente'));
-    assert.equal(ctx.htmlDePaginasDeNotas(ctx.paginaDeNotas(muchas(10), 1)), '');
+    assert.equal(ctx.htmlDePaginasDeNotas(ctx.paginaDeNotas(muchas(20), 1)), '');
     assert.equal(ctx.htmlDePaginasDeNotas(ctx.paginaDeNotas([], 1)), '');
+  });
+
+  it('con 21 notas hay dos páginas: 20 y 1', () => {
+    const ctx = cargar();
+    const notas = muchas(21);
+    const primera = ctx.paginaDeNotas(notas, 1);
+    assert.deepEqual([primera.notas.length, primera.paginas, primera.hasta], [20, 2, 20]);
+    const segunda = ctx.paginaDeNotas(notas, 2);
+    assert.deepEqual([segunda.notas.length, segunda.desde, segunda.hasta, segunda.total], [1, 21, 21, 21]);
+    assert.ok(ctx.htmlDePaginasDeNotas(segunda).includes('Página 2 de 2<small>Mostrando 21–21 de 21</small>'));
   });
 
   it('una nota: el número, «Entregada el», el dataset con su ciclo y los botones, todo escapado', () => {
@@ -1765,10 +1775,10 @@ describe('seguimiento.js: Editar notas DGMIT (spec 2026-11-06-editar-notas-dgmit
   });
 
   it('el cambio de filtro y de búsqueda vuelve a la primera página', async () => {
-    const { pagina, el } = preparar({ puedeCargar: true, respuestas: { '/seguimiento': LISTA(), '/notas-dgmit': { success: true, data: muchas(14) } } });
+    const { pagina, el } = preparar({ puedeCargar: true, respuestas: { '/seguimiento': LISTA(), '/notas-dgmit': { success: true, data: muchas(24) } } });
     await pagina.iniciarSeguimiento();
     await pagina.abrirEdicionDeNotas();
-    assert.equal(cuantas(el('nl-notas').innerHTML, /<article /g), 10);
+    assert.equal(cuantas(el('nl-notas').innerHTML, /<article /g), 20);
     pagina.alCambiarDePagina({ target: { closest: () => ({ disabled: false, dataset: { pagina: '2', direccion: 'siguiente' } }) } });
     assert.equal(cuantas(el('nl-notas').innerHTML, /<article /g), 4);
     assert.ok(el('nl-paginas').innerHTML.includes('Página 2 de 2'));

@@ -879,7 +879,7 @@ function textoDePistaDeSolicitud(filas, ids, tipo, excluirNumero = null, recibid
 
 // ---- Editar notas DGMIT (spec 2026-11-06-editar-notas-dgmit): la lista la ordena y la arma el servidor; acá se busca, se filtra y se pagina ----
 
-const NOTAS_POR_PAGINA = 10;
+const NOTAS_POR_PAGINA = 20;
 const ALCANCES_DE_NOTAS = [['vigentes', 'Vigentes'], ['anuladas', 'Anuladas'], ['todas', 'Todas']];
 // Con más datasets que estos, se ven 2 y «Ver los N datasets»
 const DATASETS_SIN_PLEGAR = 3;
@@ -914,7 +914,7 @@ function paginaDeNotas(notas, pedida) {
   return { notas: deLaPagina, pagina, paginas, desde: inicio + 1, hasta: inicio + deLaPagina.length, total };
 }
 
-// Anterior, «Página 1 de 2», «Mostrando 1–10 de 14» y Siguiente; con una sola página, nada, como en el resto del sitio
+// Anterior, «Página 1 de 2», «Mostrando 1–20 de 24» y Siguiente; con una sola página, nada, como en el resto del sitio
 function htmlDePaginasDeNotas({ pagina, paginas, desde, hasta, total }) {
   if (paginas <= 1) return '';
   const boton = (destino, direccion, texto, apagado) => `<button type="button" class="sg-btn sg-btn-borde nl-pag" data-pagina="${String(destino)}" `
