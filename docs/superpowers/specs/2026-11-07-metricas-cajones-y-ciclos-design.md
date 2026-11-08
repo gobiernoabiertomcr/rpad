@@ -186,7 +186,7 @@ Dataset de ejemplo            02/03/2026   05/05/2026        64 días corridos (
   Sin cifra, el título y el texto del vacío («Todavía no hay notas DGMIT cargadas», «Sin datos todavía», «Sin casos en 2026»).
 - **La leyenda:** cuántos ciclos cuentan en la cifra, cuántos están en curso y cuántas notas están pendientes de carga, cada una con su marca (lleno, aro con flecha, punteado): nunca solo el color. Solo las que tienen ciclos.
 - **El gráfico** (desde 800 píxeles de ancho; en el teléfono no va):
-  Los 800 son una decisión del controlador del 08/11/2026, durante la implementación y con el usuario ausente, pendiente de su confirmación: entre 600 y unos 760 píxeles el gráfico se achica con el modal y su letra queda en 8 o 9 píxeles, que no se leen; la lista tiene los mismos datos.
+  Los 800 los propuso el controlador durante la implementación y el usuario los confirmó el 08/11/2026: entre 600 y unos 760 píxeles el gráfico se achica con el modal y su letra queda en 8 o 9 píxeles, que no se leen; la lista tiene los mismos datos.
   - un punto lleno por ciclo que cuenta, en el color del tramo; un aro ámbar con una flecha por ciclo en curso, en «hace …»; las notas pendientes no van, porque no tienen días;
   - el eje en días corridos, con sus marcas y «días corridos» al final;
   - la mediana (o el promedio) como una línea con su rótulo («mediana: 64 días corridos», «mediana: en el día»); sin cifra (solo en curso), sin línea;

@@ -117,7 +117,7 @@ reportesController: los reportes PDF, con sus consultas.
   «Entrega y carga juntas»), con el rótulo de lo que pasó («Entrega y carga, el mismo día» solo si la cifra es 0).
   Ningún texto se sale del dibujo ni se pisa (a la izquierda de su marca si no entra a la derecha; si no, otra fila o no va).
   Los rótulos y los segmentos dicen los hábiles del tramo entre paréntesis (`tramo.habiles`, con `cantidadDeLasDos`): «Aviso · 51 días corridos (35 hábiles) antes», «Respuesta del área · 64 días corridos (45 hábiles)», «Entrega y carga, 3 días corridos (1 hábil) después»; con 0 corridos, «el mismo día», sin paréntesis.
-  El paréntesis va después del rótulo (ruling del 07/11/2026): un rótulo, también el del aviso y el de la carga, que con los hábiles no entra en ningún lado, o que con ellos le saca el lugar a otro, va con el texto sin el paréntesis, y solo si así tampoco entra, no va.
+  El paréntesis va después del rótulo (decisión del usuario del 08/11/2026): un rótulo, también el del aviso y el de la carga, que con los hábiles no entra en ningún lado, o que con ellos le saca el lugar a otro, va con el texto sin el paréntesis, y solo si así tampoco entra, no va.
   Así la cinta nunca escribe menos rótulos que sin los hábiles: soltar el paréntesis antes que el rótulo es a propósito, porque los hábiles ya están en el cajón, en el modal y en el `<title>` de cada segmento.
   Sin `habiles` en los tramos (una foto sin esa clave), los rótulos van sin paréntesis.
   Si a la cadena le falta un tramo sin cifra, se dibuja hasta donde se sabe y el resto va en gris con «La cinta se completa cuando haya …».
@@ -282,7 +282,7 @@ Solo en la página (spec 2026-11-07-metricas-cajones-y-ciclos, 5): el PDF no lo 
   Van primero los que cuentan (de más días corridos a menos; con empate, de más hábiles a menos y después por título), después los en curso (igual) y al final las notas pendientes (por la fecha del aviso).
   Cada fila: el dataset con el link a su Seguimiento y su área debajo; las dos fechas de la etapa, con el nombre de cada punta (`puntas`: «Aviso» y «Vencimiento», «Aviso» y «Nota DGMIT», «Nota DGMIT» y «Datos recibidos», «Aviso» y «Datos recibidos», «Datos recibidos» y «Carga en el portal»); y los días en las dos unidades («64 días corridos (45 hábiles)», «En el día», «hace 150 días corridos (102 hábiles)» en curso, «—» en una pendiente).
   Sin ciclos, «Sin ciclos en 2026.» y sin tabla.
-- «avisado ya vencido: desde ese primer aviso» va debajo del aviso solo en las filas con días (las que cuentan y las en curso) de la redacción y de la producción (ruling del 07/11/2026): una nota pendiente de carga no tiene días contados desde ningún lado.
+- «avisado ya vencido: desde ese primer aviso» va debajo del aviso solo en las filas con días (las que cuentan y las en curso) de la redacción y de la producción (decisión del usuario del 08/11/2026): una nota pendiente de carga no tiene días contados desde ningún lado.
   La línea «N ciclos se avisaron ya vencidos: se cuentan desde ese primer aviso.» de «Cómo se cuenta» cuenta esas mismas filas.
 - «Cómo se cuenta» del modal, con las cantidades del tramo (no las de toda la gestión), cada línea con su singular y sin las de 0:
   aviso, los avisados ya vencidos que vencen en el año y los vencimientos de la cobertura sin el aviso de la regla;
@@ -296,7 +296,7 @@ Solo en la página (spec 2026-11-07-metricas-cajones-y-ciclos, 5): el PDF no lo 
   Los puntos que se tocarían se apilan, y una columna de más de 8 dice «+N».
   Toda la geometría (las x, los niveles, el eje con sus marcas y «días corridos», el rótulo de la línea y los «+N») la arma el servidor en un espacio de `GRAFICO.ancho` de ancho, y nada se sale ni se pisa, salvo la línea con los puntos de su columna (`tests/metricas-grafico.test.js`).
 - Cuando la línea cruza la columna de un «+N», el «+N» va al lado de la línea y no arriba (ruling del 07/11/2026): la spec pide las dos cosas y no pueden valer juntas; gana que nada se pise.
-- El gráfico se muestra desde 800 píxeles de ancho de pantalla (`@media (max-width: 799px)` lo oculta; ruling del 08/11/2026): más abajo, el SVG se achica y su letra queda en 8 o 9 píxeles, que no se leen.
+- El gráfico se muestra desde 800 píxeles de ancho de pantalla (`@media (max-width: 799px)` lo oculta; decisión del usuario del 08/11/2026): más abajo, el SVG se achica y su letra queda en 8 o 9 píxeles, que no se leen.
   La lista tiene los mismos datos, y el gráfico tiene un nombre para el lector de pantalla que lo dice.
 - Cómo se usa: el modal de siempre (`.modal-overlay` y `.modal` de `css/main.css`; `#mt-modal-tramo`, hijo de `body` después de `.app-container`), con `role="dialog"`, `aria-modal` y el título como nombre.
   Mientras está abierto, `.app-container` queda `inert` (ni el foco ni el lector de pantalla salen del modal) y `body` no se desplaza.
