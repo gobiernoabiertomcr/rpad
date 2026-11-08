@@ -11,6 +11,7 @@ paths:
 
 Antes de cambiar una cifra, la foto o un PDF de reportes, leé `docs/temas/metricas-y-reportes.md`.
 Si toca las etapas, también `docs/temas/ciclo-de-vida.md`.
+Si toca el modal de cada tramo (la tabla de los ciclos, sus rótulos o el gráfico), también `docs/temas/metricas-modal.md`.
 
 - La foto del 31/12 no se modifica nunca y guarda textos ya armados: lo que cambie esos textos tiene que estar en producción antes del 10/01.
 - Cambiar la forma de la foto obliga a subir `VERSION_DE_LA_FOTO` o a leer con tolerancia.
