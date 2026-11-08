@@ -449,6 +449,24 @@ describe('guardar una edición', () => {
     assert.equal(otro.status, 422, JSON.stringify(otro.body));
     assert.deepEqual(otro.body.errores, [{ campo: 'fecha_edicion', mensaje: MENSAJES_VALIDACION.fechaEdicion }]);
   });
+
+  // Grok Bot archiva la edición aunque el correo no haya salido
+  it('una regular con el correo no enviado: 201 y el detalle lo dice; con la hora del correo puesta, 422 y nada guardado', async () => {
+    const conHora = edicionDePrueba({ fecha_edicion: '2026-11-08', correo: { estado: 'no_enviado', enviado_at: '2026-11-08T11:12:00Z' } });
+    const antes = await cuentas(TABLAS_DEL_DATO);
+    const mal = await enviar(partesDePrueba(conHora), { ip: 7 });
+    assert.equal(mal.status, 422, JSON.stringify(mal.body));
+    assert.deepEqual(mal.body.errores, [{ campo: 'correo.enviado_at', mensaje: MENSAJES_VALIDACION.enviadoAtSinCorreo }]);
+    assert.deepEqual(await cuentas(TABLAS_DEL_DATO), antes);
+
+    const sinCorreo = edicionDePrueba({ fecha_edicion: '2026-11-08', correo: { estado: 'no_enviado', enviado_at: null } });
+    const res = await enviar(partesDePrueba(sinCorreo), { ip: 7 });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data.clave, 'dq:regular:2026-11-08');
+    const detalle = await leer(`/dato-quincena/ediciones/${res.body.data.id}`);
+    assert.equal(detalle.status, 200, JSON.stringify(detalle.body));
+    assert.equal(detalle.body.data.correo, 'Grok Bot archivó esta edición sin que saliera el correo.');
+  });
 });
 
 describe('un pedido que no se puede leer: 400 y nada guardado', () => {

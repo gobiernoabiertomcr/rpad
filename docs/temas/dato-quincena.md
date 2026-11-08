@@ -16,7 +16,8 @@ dato-quincena.html # El dato de la quincena: la lista de un año y el detalle ?i
 
 - Qué es:
   Herramientas → El dato de la quincena, el archivo de las ediciones que arma Grok Bot, un agente externo: hasta cinco propuestas de comunicación con su infografía, el texto del correo que le mandó a la Dirección y su nota de cálculos.
-  Grok Bot manda cada edición después de confirmar que salió su correo, con un POST y un token propio: el RPAD nunca lo llama.
+  Grok Bot manda cada edición después de su correo, con un POST y un token propio: el RPAD nunca lo llama.
+  Si el correo no salió, la manda igual, con `correo.estado` en `no_enviado` (decisión del usuario: el archivo no depende del mail).
   Las ediciones anteriores a la activación las manda después, con su fecha original.
   Guardar una edición no la aprueba ni la publica: son propuestas internas, con sus marcas de «Validar».
   Inmutable (decisión del usuario): nadie edita ni borra una edición desde el RPAD, y la misma clave con otro contenido se rechaza; un caso raro se arregla con un SQL a mano.
@@ -81,12 +82,13 @@ dato-quincena.html # El dato de la quincena: la lista de un año y el detalle ?i
   `referencia_piloto`, null en una regular y `piloto-N` en un piloto (N de 1 a 999, sin ceros a la izquierda);
   `titulo` (200);
   `generado_at`, un instante o null;
-  `correo`, `{ estado: 'enviado', enviado_at }`, con un instante o null;
+  `correo`, `{ estado, enviado_at }`: `enviado` con un instante o null, o `no_enviado` con null;
   `nota_archivo` (4000) o null;
   `agenda`, de 0 a 20 `{ titulo (200), fecha, detalle (4000), url }`;
   `propuestas`, de 1 a 5;
   y `adjuntos`, el manifiesto, de 2 o 3 entradas.
-  En una regular, `generado_at` y `enviado_at` son obligatorios; en un piloto pueden ser null.
+  En una regular, `generado_at` es obligatorio y también `enviado_at` si el correo salió; en un piloto pueden ser null.
+  Con `no_enviado`, `enviado_at` con algo que no es null da 422 «Con el correo no enviado, la hora del correo va null.».
 - `nota_archivo` puede llegar vacía o con solo espacios (solo los textos obligatorios no pueden), y el detalle la da como null.
   `ckan_slug`, como todo texto que admite null, también puede llegar vacío.
 - Cada propuesta: `orden` (1, 2, 3… en su orden, sin saltos);
@@ -162,6 +164,7 @@ dato-quincena.html # El dato de la quincena: la lista de un año y el detalle ?i
 - `GET /api/dato-quincena/ediciones/:id`, el detalle, con los textos ya armados (`detalleDeLaEdicion`): `{ id, fecha_texto, marca, titulo, nota_archivo, llegada, correo, cantidad, agenda, propuestas, archivos }`.
   `llegada`, «Llegó al RPAD el dd/mm/aaaa a las HH:MM.», de `recibida_at`;
   `correo`, «Correo enviado el dd/mm/aaaa a las HH:MM, según Grok Bot.» con la hora pasada a Argentina sea cual sea la zona del bot, o «Correo enviado según Grok Bot, sin la hora.»;
+  sin el correo, «Grok Bot archivó esta edición sin que saliera el correo.», que sigue siendo cierto si el correo sale después: la edición no cambia y Grok Bot no la vuelve a mandar (sería un 409);
   `cantidad`, «1 propuesta» o «5 propuestas»;
   `agenda`, cada evento `{ fecha_texto, titulo, detalle, url }`, con la fecha dd/mm/aaaa.
   Cada propuesta: `orden_texto` («Propuesta 1»), `etiquetas`, `principal`, sus textos tal como llegaron, `dataset` (`{ nombre, id_enlace, url }`, con `id_enlace` el id solo si el dataset existe y está activo), `foto`, `para_copiar` y `borrador_para_copiar`.

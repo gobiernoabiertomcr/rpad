@@ -48,8 +48,9 @@ export const MENSAJES_VALIDACION = Object.freeze({
   referenciaRegular: 'Una edición regular no lleva referencia de piloto: va null.',
   referenciaPiloto: 'La referencia de un piloto tiene que ser piloto-N, con N de 1 a 999 y sin ceros a la izquierda.',
   generadoAt: 'Una edición regular tiene que traer la hora en que se generó.',
-  correoEstado: 'El estado del correo tiene que ser enviado.',
+  correoEstado: 'El estado del correo tiene que ser enviado o no_enviado.',
   enviadoAt: 'Una edición regular tiene que traer la hora en que salió el correo.',
+  enviadoAtSinCorreo: 'Con el correo no enviado, la hora del correo va null.',
   texto: 'Tiene que ser un texto.',
   vacio: 'El texto no puede quedar vacío ni con solo espacios.',
   caracterNulo: 'El texto no puede llevar el carácter nulo.',
@@ -292,6 +293,18 @@ const referenciaPiloto = (tipo) => (valor, ruta, agregar) => {
   }
 };
 
+// Grok Bot archiva la edición aunque el correo no haya salido (decisión del usuario): 'no_enviado' lleva la hora en null
+const ESTADOS_DEL_CORREO = Object.freeze(['enviado', 'no_enviado']);
+
+// La hora del correo: null con el correo no enviado; si no, un instante, que solo un piloto puede dejar en null
+const horaDelCorreo = (estado, regular) => (valor, ruta, agregar) => {
+  if (estado === 'no_enviado') {
+    if (valor !== null) agregar(ruta, 'enviadoAtSinCorreo');
+    return;
+  }
+  instante({ oNull: !regular, siNull: 'enviadoAt' })(valor, ruta, agregar);
+};
+
 const edicion = (hoy) => objeto((valor) => {
   const regular = valor.tipo === 'regular';
   return {
@@ -302,10 +315,10 @@ const edicion = (hoy) => objeto((valor) => {
     referencia_piloto: referenciaPiloto(valor.tipo),
     titulo: texto(200),
     generado_at: instante({ oNull: !regular, siNull: 'generadoAt' }),
-    correo: objeto({
-      estado: igual('enviado', 'correoEstado'),
-      enviado_at: instante({ oNull: !regular, siNull: 'enviadoAt' })
-    }),
+    correo: objeto((correo) => ({
+      estado: unoDe(ESTADOS_DEL_CORREO, 'correoEstado'),
+      enviado_at: horaDelCorreo(correo.estado, regular)
+    })),
     nota_archivo: texto(4000, { oNull: true }),
     agenda: lista(0, 20, 'agenda', objeto(EVENTO)),
     propuestas,
@@ -533,8 +546,10 @@ export const textoDeLlegada = (unix) => {
   return hora === null ? null : `Llegó al RPAD el ${hora.fecha} a las ${hora.hora}.`;
 };
 
-// El correo del bot, con la hora pasada a Argentina sea cual sea la zona que mandó; sin enviado_at, sin la hora
-export const textoDelCorreo = (enviadoAt) => {
+// El correo del bot, con la hora pasada a Argentina sea cual sea la zona que mandó; sin enviado_at, sin la hora. Sin el correo,
+// un texto que sigue siendo cierto aunque el correo salga después: la edición guardada no cambia
+export const textoDelCorreo = (enviadoAt, estado) => {
+  if (estado === 'no_enviado') return 'Grok Bot archivó esta edición sin que saliera el correo.';
   const hora = horaArgentina(enviadoAt);
   return hora === null
     ? 'Correo enviado según Grok Bot, sin la hora.'
@@ -778,7 +793,7 @@ export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos }) => {
     titulo: fila.titulo,
     nota_archivo: typeof nota === 'string' && nota.trim() !== '' ? nota : null,
     llegada: textoDeLlegada(fila.recibida_ts),
-    correo: textoDelCorreo(edicion.correo.enviado_at),
+    correo: textoDelCorreo(edicion.correo.enviado_at, edicion.correo.estado),
     cantidad: textoDeCantidad(edicion.propuestas.length),
     agenda: edicion.agenda.map(({ titulo, fecha, detalle, url }) => ({ fecha_texto: diaArgentino(fecha), titulo, detalle, url })),
     propuestas: edicion.propuestas.map((propuesta) => propuestaDelDetalle(propuesta, enlaces)),

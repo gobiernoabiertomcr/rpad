@@ -113,8 +113,9 @@ describe('las constantes', () => {
       referenciaRegular: 'Una edición regular no lleva referencia de piloto: va null.',
       referenciaPiloto: 'La referencia de un piloto tiene que ser piloto-N, con N de 1 a 999 y sin ceros a la izquierda.',
       generadoAt: 'Una edición regular tiene que traer la hora en que se generó.',
-      correoEstado: 'El estado del correo tiene que ser enviado.',
+      correoEstado: 'El estado del correo tiene que ser enviado o no_enviado.',
       enviadoAt: 'Una edición regular tiene que traer la hora en que salió el correo.',
+      enviadoAtSinCorreo: 'Con el correo no enviado, la hora del correo va null.',
       texto: 'Tiene que ser un texto.',
       vacio: 'El texto no puede quedar vacío ni con solo espacios.',
       caracterNulo: 'El texto no puede llevar el carácter nulo.',
@@ -377,10 +378,33 @@ describe('validarEdicion: la cabecera', () => {
     assert.deepEqual(erroresCon('correo.enviado_at', '2026-11-02T10:00:00Z', pilotoDePrueba), []);
   });
 
-  it('el correo tiene el estado enviado', () => {
-    for (const valor of ['pendiente', 'Enviado', null]) {
-      assert.deepEqual(erroresCon('correo.estado', valor), [error('correo.estado', 'correoEstado')]);
+  it('el correo tiene el estado enviado o no_enviado', () => {
+    for (const valor of ['pendiente', 'Enviado', 'no enviado', 'NO_ENVIADO', 'no-enviado', '', null, false]) {
+      assert.deepEqual(erroresCon('correo.estado', valor), [error('correo.estado', 'correoEstado')], String(valor));
     }
+  });
+
+  // Grok Bot archiva la edición aunque el correo no haya salido: la regular también pasa sin la hora del correo
+  it('con el correo no enviado, la hora del correo va null, en una regular y en un piloto', () => {
+    const sinCorreo = { estado: 'no_enviado', enviado_at: null };
+    assert.deepEqual(erroresCon('correo', sinCorreo), []);
+    assert.deepEqual(erroresCon('correo', { ...sinCorreo }, pilotoDePrueba), []);
+    for (const valor of ['2026-11-02T11:12:00Z', '2026-11-02T08:12:00-03:00', 'x', '', 0]) {
+      for (const base of [edicionDePrueba, pilotoDePrueba]) {
+        assert.deepEqual(erroresCon('correo', { estado: 'no_enviado', enviado_at: valor }, base),
+          [error('correo.enviado_at', 'enviadoAtSinCorreo')], String(valor));
+      }
+    }
+    assert.deepEqual(validar(sin(edicionDePrueba({ correo: { ...sinCorreo } }), 'correo.enviado_at')),
+      [error('correo.enviado_at', 'falta')]);
+  });
+
+  it('con el correo enviado, una regular sigue pidiendo la hora; con un estado que no vale, la hora se revisa igual', () => {
+    assert.deepEqual(erroresCon('correo', { estado: 'enviado', enviado_at: null }), [error('correo.enviado_at', 'enviadoAt')]);
+    assert.deepEqual(erroresCon('correo', { estado: 'otro', enviado_at: null }),
+      [error('correo.estado', 'correoEstado'), error('correo.enviado_at', 'enviadoAt')]);
+    assert.deepEqual(erroresCon('correo', { estado: 'otro', enviado_at: '2026-11-02T11:12:00Z' }),
+      [error('correo.estado', 'correoEstado')]);
   });
 });
 
@@ -1142,6 +1166,12 @@ describe('los textos del detalle y de la lista', () => {
     assert.equal(textoDelCorreo(edicionDePrueba().correo.enviado_at), 'Correo enviado el 02/11/2026 a las 08:12, según Grok Bot.');
     assert.equal(textoDelCorreo(null), 'Correo enviado según Grok Bot, sin la hora.');
     assert.equal(textoDelCorreo(pilotoDePrueba().correo.enviado_at), 'Correo enviado según Grok Bot, sin la hora.');
+    assert.equal(textoDelCorreo('2026-11-23T11:12:00Z', 'enviado'), 'Correo enviado el 23/11/2026 a las 08:12, según Grok Bot.');
+  });
+
+  it('el correo no enviado: siempre el mismo texto, cierto aunque el correo salga después', () => {
+    assert.equal(textoDelCorreo(null, 'no_enviado'), 'Grok Bot archivó esta edición sin que saliera el correo.');
+    assert.equal(textoDelCorreo('2026-11-23T11:12:00Z', 'no_enviado'), 'Grok Bot archivó esta edición sin que saliera el correo.');
   });
 
   it('la cantidad de propuestas', () => {
@@ -1674,6 +1704,8 @@ describe('detalleDeLaEdicion', () => {
     assert.equal(d.llegada, 'Llegó al RPAD el 02/11/2026 a las 23:05.');
     const otraZona = edicionDePrueba({ correo: { estado: 'enviado', enviado_at: '2026-11-02T14:12:00+03:00' } });
     assert.equal(detalle({ edicion: otraZona }).correo, 'Correo enviado el 02/11/2026 a las 08:12, según Grok Bot.');
+    const sinCorreo = edicionDePrueba({ correo: { estado: 'no_enviado', enviado_at: null } });
+    assert.equal(detalle({ edicion: sinCorreo }).correo, 'Grok Bot archivó esta edición sin que saliera el correo.');
   });
 
   it('la agenda con su fecha dd/mm/aaaa, en su orden; sin agenda, una lista vacía', () => {
