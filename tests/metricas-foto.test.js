@@ -213,7 +213,7 @@ describe('la foto del 31/12', () => {
         }
       }
     }
-    assert.ok(guardada.datos.cintas['mediana-habiles'].externa, 'la cinta externa se dibuja (hay aviso anticipado)');
+    assert.ok(guardada.datos.cintas['mediana-habiles'].externa, 'la cinta externa se dibuja (algún tramo de la externa, además del aviso, tiene cifra)');
     assert.deepEqual(guardada.datos.contexto, {
       indice: indiceMesAMes(fuentes, opciones), indice_vacio: null, antiguedad: antiguedadDeVencidos(fuentes, opciones),
       estados: estadosAl(fuentes, opciones)

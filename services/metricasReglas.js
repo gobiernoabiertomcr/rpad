@@ -357,7 +357,8 @@ const TRAMOS_DE_LA_GESTION = Object.freeze({
 const NOMBRE_DE_LOS_DIAS = Object.freeze({ habiles: 'días hábiles', corridos: 'días corridos' });
 
 // Mientras no haya ninguna nota DGMIT cargada en el RPAD (spec, 1.4): la DGMIT no tiene cifra («pendiente de carga», sin días) y el
-// área todavía no se puede contar. La cinta (services/metricasCinta.js) lo usa para saber por qué se corta la cadena
+// área todavía no se puede contar. El recorrido típico (services/metricasCinta.js) lo usa para que la redacción, en gris, diga «se
+// completa cuando haya notas DGMIT cargadas»
 export const SIN_NOTAS_DGMIT = 'Todavía no hay notas DGMIT cargadas';
 const SIN_DATOS_DEL_AREA = Object.freeze({ titulo: 'Sin datos todavía', texto: 'Se empieza a contar cuando haya notas DGMIT cargadas' });
 

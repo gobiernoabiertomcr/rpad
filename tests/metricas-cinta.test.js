@@ -1,689 +1,477 @@
-// La cinta del «recorrido típico» de la pestaña Métricas (spec 2026-10-24-metricas-y-reportes, 2.2): datos puros, probados con los
-// tramos de los números reales al 24/10/2026 (los de la maqueta 7, armados a mano: sin base) y con cadenas armadas a mano. Lo que
-// importa es lo que pidió el usuario: ningún texto de la cinta sale del dibujo ni se pisa con otro.
+// El recorrido típico de la pestaña Métricas (spec 2026-11-08-metricas-recorrido-tipico, 4 y 5): datos puros, probados con cadenas
+// armadas a mano con cifras inventadas (el repo es público: ninguna es de producción) y, para cintasDeLaVista, con la vista de los casos
+// de tests/metricas-casos.js. Lo que importa: los textos de la spec al pie de la letra, los anchos que suman 100, los porcentajes por el
+// resto mayor, el vencimiento y la regla del aviso, cada caso borde, y que nunca tira.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { cintaDeMetricas, cintasDeLaVista, ALTURAS_DE_LA_CINTA as ALTURAS } from '../services/metricasCinta.js';
-import { SIN_NOTAS_DGMIT, unidadDe, cantidadDeLasDos, casosDe, vistaDe } from '../services/metricasReglas.js';
+import * as moduloDeLaCinta from '../services/metricasCinta.js';
+import { cintaDeMetricas, cintasDeLaVista, FORMA_DE_LA_CINTA } from '../services/metricasCinta.js';
+import { SIN_NOTAS_DGMIT, casosDe, vistaDe } from '../services/metricasReglas.js';
 import { mapaDeLosCasos, HOY_DE_LAS_METRICAS } from './metricas-casos.js';
 
-const GRIS_DGMIT = 'La cinta se completa cuando haya notas DGMIT cargadas';
-const PASOS = [5, 10, 20, 30, 50, 100];
-
-// Los tramos de vistaDe (Task 7), armados a mano: el nombre, el texto de la flecha, quién está a cargo y si es de la DGMIT
-const DE_LA_CLAVE = {
-  aviso: { nombre: 'Aviso anticipado', desde_hasta: 'Del aviso al vencimiento', responsable: 'DDPC', dgmit: false },
-  tramite: { nombre: 'Redacción y entrega de nota', desde_hasta: 'Del aviso a la nota en el área', responsable: 'DGMIT y DA', dgmit: true },
-  respuesta: { nombre: 'Respuesta del área', desde_hasta: 'De la nota a la entrega', responsable: 'Área', dgmit: false },
-  produccion: { nombre: 'Producción del relevamiento', desde_hasta: 'Del aviso a la entrega', responsable: 'DGMIT y DIT', dgmit: true },
-  carga: { nombre: 'Preparación y carga', desde_hasta: 'De la entrega a la carga', responsable: 'DDPC', dgmit: false }
-};
-
-// Una cifra como la de cifraDelTramo («En el día» con 0)
-const cifra = (valor, { dias, estadistico, ciclos }) => ({
-  valor, texto: valor === 0 ? 'En el día' : String(valor), unidad: valor === 0 ? '' : unidadDe(valor, dias),
-  debajo: valor === 0 ? `${estadistico} en días ${dias === 'corridos' ? 'corridos' : 'hábiles'}` : `${estadistico} de ${ciclos} ciclos`,
-  ciclos, orientativo: ciclos <= 4
+// Los nombres de los tramos, como los arma vistaDe
+const NOMBRE = Object.freeze({
+  aviso: 'Aviso anticipado',
+  tramite: 'Redacción y entrega de nota',
+  respuesta: 'Respuesta del área',
+  produccion: 'Producción del relevamiento',
+  carga: 'Preparación y carga'
 });
 
-// Un tramo con su cifra, o sin cifra con `vacio`. Con `habiles`, la cifra en días hábiles que trae en la vista en corridos (como
-// loNuevoDelTramo: con la forma de `cifra`, o null); sin `habiles`, sin esa clave (como en una foto que no la tiene)
-const tramo = (clave, valor, { dias = 'habiles', estadistico = 'mediana', ciclos = 12, vacio = null, habiles } = {}) => ({
-  clave, ...DE_LA_CLAVE[clave],
-  cifra: valor === null ? null : cifra(valor, { dias, estadistico, ciclos }),
-  vacio: valor === null ? (vacio ?? { titulo: 'Sin casos en 2026', texto: '' }) : null,
-  en_curso: null,
-  pendientes: clave === 'tramite' ? 0 : null,
-  ...(habiles === undefined ? {} : { habiles: habiles === null ? null : cifra(habiles, { dias: 'habiles', estadistico, ciclos }) })
+// Un tramo como los de vistaDe, con lo que lee la cinta: su cifra (null: sin casos, con el vacío de vistaDe), sus hábiles (los que trae
+// en la vista en corridos; null si no los trae) y lo que se quiera pisar (`extra`)
+const tramo = (clave, nombre, valor, habiles = null, extra = {}) => ({
+  clave,
+  nombre,
+  cifra: valor === null ? null : { valor, orientativo: false },
+  vacio: valor === null ? { titulo: 'Sin casos en 2026', texto: '' } : null,
+  habiles: habiles === null ? null : { valor: habiles },
+  ...extra
 });
+const aviso = (valor, habiles, extra) => tramo('aviso', NOMBRE.aviso, valor, habiles, extra);
+const redaccion = (valor, habiles, extra) => tramo('tramite', NOMBRE.tramite, valor, habiles, extra);
+const respuesta = (valor, habiles, extra) => tramo('respuesta', NOMBRE.respuesta, valor, habiles, extra);
+const produccion = (valor, habiles, extra) => tramo('produccion', NOMBRE.produccion, valor, habiles, extra);
+const carga = (valor, habiles, extra) => tramo('carga', NOMBRE.carga, valor, habiles, extra);
 
-// Los tramos de la DGMIT y del área mientras no hay ninguna nota DGMIT cargada (como hoy)
-const SIN_NOTAS = {
-  tramite: { titulo: SIN_NOTAS_DGMIT, texto: '10 notas pendientes de carga' },
-  respuesta: { titulo: 'Sin datos todavía', texto: 'Se empieza a contar cuando haya notas DGMIT cargadas' }
+const EXTERNA = Object.freeze({ gestion: 'externa', dias: 'corridos', estadistico: 'mediana' });
+const INTERNA = Object.freeze({ gestion: 'interna', dias: 'corridos', estadistico: 'mediana' });
+
+// La externa completa del ejemplo de la spec, en días corridos con los hábiles (cifras inventadas)
+const externaCompleta = () => [aviso(35, 24), redaccion(38, 25), respuesta(47, 32), carga(0, 0)];
+
+const BAJADA_EXTERNA = 'Cuánto lleva un pedido de la gestión externa, desde el pedido de la DDPC hasta la publicación en el portal.';
+const BAJADA_INTERNA = 'Cuánto lleva un pedido de la gestión interna, desde el pedido de la DDPC hasta la publicación en el portal.';
+const ACLARACION_MEDIANA = 'El total suma las medianas de cada tramo: es una referencia, no la duración de un caso.';
+const ACLARACION_PROMEDIO = 'El total suma los promedios de cada tramo: es una referencia, no la duración de un caso.';
+const SIN_TOTAL = { antes: 'El total se completa cuando haya casos de todos los tramos', cifra: '', despues: '' };
+
+// Todos los textos y todos los números de un objeto, recorrido entero
+const textosDe = (valor) => {
+  if (typeof valor === 'string') return [valor];
+  return valor !== null && typeof valor === 'object' ? Object.values(valor).flatMap(textosDe) : [];
+};
+const numerosDe = (valor) => {
+  if (typeof valor === 'number') return [valor];
+  return valor !== null && typeof valor === 'object' ? Object.values(valor).flatMap(numerosDe) : [];
+};
+// Ningún texto dice NaN, undefined ni null, y todo número es finito
+const sinRarezas = (cinta, cual) => {
+  for (const texto of textosDe(cinta)) assert.doesNotMatch(texto, /NaN|undefined|null|Infinity/, `${cual}: «${texto}»`);
+  for (const numero of numerosDe(cinta)) assert.ok(Number.isFinite(numero), `${cual}: ${numero}`);
+};
+const sinPorcentajes = (cinta, cual) => {
+  for (const texto of textosDe(cinta)) assert.ok(!texto.includes('%'), `${cual}: «${texto}»`);
 };
 
-// Los números reales al 24/10/2026 (maqueta 7): días hábiles y corridos, con la mediana y con el promedio
-const REALES = {
-  externa: {
-    mediana: { habiles: { aviso: 27, carga: 0 }, corridos: { aviso: 40, carga: 0 } },
-    promedio: { habiles: { aviso: 28, carga: 1 }, corridos: { aviso: 41, carga: 1 } }
-  },
-  interna: {
-    mediana: { habiles: { aviso: 41, produccion: 45, carga: 0 }, corridos: { aviso: 60, produccion: 62, carga: 0 } },
-    promedio: { habiles: { aviso: 42, produccion: 56, carga: 1 }, corridos: { aviso: 60, produccion: 80, carga: 1 } }
-  }
+// El número de una cifra grande con porcentaje ('45 %' es 45 y 'menos del 1 %', 0); null si no es un porcentaje
+const numeroDelPorcentaje = (grande) => {
+  if (grande === 'menos del 1 %') return 0;
+  return /^\d+ %$/.test(grande) ? Number.parseInt(grande, 10) : null;
 };
+const sumar = (valores) => valores.reduce((total, valor) => total + valor, 0);
 
-// Los tramos de una gestión con los números reales (la externa, sin notas DGMIT). Como en vistaDe: en días corridos, cada tramo con su
-// cifra en hábiles (null sin cifra); en días hábiles, `habiles` null
-const tramosReales = (gestion, estadistico, dias) => {
-  const v = REALES[gestion][estadistico][dias];
-  const enHabiles = REALES[gestion][estadistico].habiles;
-  const de = (clave, valor, ciclos) => tramo(clave, valor, {
-    dias, estadistico, ciclos, vacio: SIN_NOTAS[clave], habiles: dias === 'corridos' && valor !== null ? enHabiles[clave] : null
-  });
-  return gestion === 'externa'
-    ? [de('aviso', v.aviso, 32), de('tramite', null), de('respuesta', null), de('carga', v.carga, 23)]
-    : [de('aviso', v.aviso, 3), de('produccion', v.produccion, 5), de('carga', v.carga, 5)];
-};
-const real = (gestion, estadistico, dias) => cintaDeMetricas(tramosReales(gestion, estadistico, dias), { gestion, dias, estadistico });
-
-// Los días de un tramo real (todos de más de 1 día) como los dice la cinta: en días corridos, con los hábiles entre paréntesis (spec
-// 2026-11-07-metricas-cajones-y-ciclos, 4)
-const diasReales = (gestion, estadistico, dias, clave) => {
-  const { habiles, corridos } = REALES[gestion][estadistico];
-  return dias === 'corridos' ? `${corridos[clave]} días corridos (${habiles[clave]} hábiles)` : `${habiles[clave]} días hábiles`;
-};
-
-const COMBINACIONES = ['externa', 'interna'].flatMap((gestion) =>
-  ['mediana', 'promedio'].flatMap((estadistico) => ['habiles', 'corridos'].map((dias) => ({ gestion, estadistico, dias }))));
-
-// Lo que ocupa un texto, con la misma aproximación que la cinta: 6,6 por letra (o la letra de las opciones, la del PDF), 10 sobre la
-// línea de base y 3 debajo
-const LETRA = 6.6;
-const caja = (x, y, texto, anclaje, letra = LETRA) => {
-  const ancho = texto.length * letra;
-  const x0 = anclaje === 'start' ? x : anclaje === 'end' ? x - ancho : x - ancho / 2;
-  return { texto, x0, x1: x0 + ancho, y0: y - 10, y1: y + 3 };
-};
-const seTocan = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
-
-// Todos los textos que se escriben en la cinta: las marcas del eje, «vencimiento», el rótulo del eje, el del gris y los rótulos
-const textosDe = (cinta, letra = LETRA) => [
-  ...cinta.ticks.map((t) => caja(t.x, ALTURAS.ticks, t.texto, 'middle', letra)),
-  caja(cinta.vencimiento.x, ALTURAS.vencimiento.texto, 'vencimiento', 'middle', letra),
-  caja(cinta.eje.x, cinta.eje.y, cinta.eje.texto, cinta.eje.anclaje, letra),
-  ...(cinta.gris?.texto ? [caja((cinta.gris.x0 + cinta.gris.x1) / 2, ALTURAS.textoDelGris, cinta.gris.texto, 'middle', letra)] : []),
-  ...cinta.rotulos.map((r) => caja(r.x, r.y, r.texto, r.anclaje, letra))
-];
-
-// Ningún texto sale del dibujo (0 a 1000 y 0 a 156) ni se pisa con otro; ningún rótulo lo cruza la línea del vencimiento; el texto
-// del gris queda adentro del gris, sin tocar la última marca
-const sinPisadas = (cinta, cual, letra = LETRA) => {
-  const textos = textosDe(cinta, letra);
-  for (const t of textos) {
-    assert.ok(t.x0 >= 0 && t.x1 <= cinta.ancho && t.y0 >= 0 && t.y1 <= cinta.alto, `${cual}: «${t.texto}» sale del dibujo (${t.x0}–${t.x1})`);
-  }
-  for (let i = 0; i < textos.length; i++) {
-    for (let j = i + 1; j < textos.length; j++) {
-      assert.ok(!seTocan(textos[i], textos[j]), `${cual}: «${textos[i].texto}» se pisa con «${textos[j].texto}»`);
-    }
-  }
-  for (const r of cinta.rotulos) {
-    const c = caja(r.x, r.y, r.texto, r.anclaje, letra);
-    if (c.y1 > ALTURAS.vencimiento.desde) {
-      assert.ok(c.x1 < cinta.vencimiento.x || c.x0 > cinta.vencimiento.x, `${cual}: la línea del vencimiento cruza «${r.texto}»`);
-    }
-  }
-  if (cinta.gris?.texto) {
-    const c = caja((cinta.gris.x0 + cinta.gris.x1) / 2, ALTURAS.textoDelGris, cinta.gris.texto, 'middle', letra);
-    assert.ok(c.x0 >= cinta.gris.x0 + 10 && c.x1 <= cinta.gris.x1, `${cual}: el texto del gris no entra en el gris`);
-  }
-};
-
-// Las marcas no se tocan: dos marcas que quedan separadas están a 18 o más (con el tamaño de la maqueta 7, un rombo al lado de un
-// círculo necesita unos 18), y cada una dice todo lo que junta, en el orden de la cadena
-const ORDEN_DE_LA_CADENA = ['aviso', 'nota', 'datos', 'carga'];
-const marcasSinTocarse = (cinta, cual) => {
-  for (let i = 1; i < cinta.marcas.length; i++) {
-    assert.ok(cinta.marcas[i].x - cinta.marcas[i - 1].x >= 18, `${cual}: las marcas ${i - 1} y ${i} se tocan`);
-  }
-  for (const m of cinta.marcas) {
-    assert.ok(m.tipos.length >= 1 && m.tipos.includes(m.tipo === 'datos-y-carga' ? 'datos' : m.tipo), `${cual}: ${JSON.stringify(m)}`);
-    assert.deepEqual(m.tipos, ORDEN_DE_LA_CADENA.filter((tipo) => m.tipos.includes(tipo)), cual);
-  }
-  assert.deepEqual(cinta.marcas.flatMap((m) => m.tipos), ORDEN_DE_LA_CADENA.filter((tipo) => cinta.marcas.some((m) => m.tipos.includes(tipo))), cual);
-};
-
-// Qué rótulos escribe la cinta, por tramo y sin mirar el paréntesis: 'aviso', 'carga' («Entrega y carga…» o «Carga · …») y la clave de
-// cada tramo con rótulo propio. Y que con los hábiles escriba todos los que escribe sin ellos (ruling del 07/11: el paréntesis va
-// después del rótulo); sin la clave `habiles`, la cinta es la de antes (lo fija «sin los hábiles…»)
-const DE_QUE_TRAMO = [['Aviso · ', 'aviso'], ['Entrega y carga', 'carga'], ['Carga · ', 'carga'],
-  ...['tramite', 'respuesta', 'produccion'].map((clave) => [`${DE_LA_CLAVE[clave].nombre} · `, clave])];
-const clavesDeLosRotulos = (cinta) => cinta.rotulos.map((r) => DE_QUE_TRAMO.find(([inicio]) => r.texto.startsWith(inicio))?.[1] ?? r.texto);
-const ningunoMenos = (conHabiles, sinHabiles, cual) => {
-  const escritos = clavesDeLosRotulos(conHabiles);
-  assert.deepEqual(clavesDeLosRotulos(sinHabiles).filter((clave) => !escritos.includes(clave)), [], `${cual}: con los hábiles falta un rótulo`);
-};
-
-// Los días de las marcas del eje, leídos de su texto («−40», «+10»)
-const diasDeLosTicks = (cinta) => cinta.ticks.map((t) => Number(t.texto.replace('−', '-').replace('+', '')));
-
-const casi = (real, esperado, cual) => assert.ok(Math.abs(real - esperado) < 1e-9, `${cual}: ${real} ≠ ${esperado}`);
-
-describe('cintaDeMetricas', () => {
-  it('externa sin notas: banda hasta el vencimiento, gris con el texto y solo la marca del aviso', () => {
-    const cinta = real('externa', 'mediana', 'habiles');
-    assert.equal(cinta.ancho, 1000);
-    assert.equal(cinta.alto, 156);
-    // Del aviso (27 días hábiles antes) a 0,9 × 27 después, con el aire: de −40 a +40 de a 10
-    assert.deepEqual(cinta.ticks.map((t) => t.texto), ['−40', '−30', '−20', '−10', '+10', '+20', '+30', '+40']);
-    casi(cinta.ticks[0].x, 30, 'la primera marca del eje');
-    casi(cinta.ticks[7].x, 970, 'la última marca del eje');
-    // La línea del eje viaja con la cinta, de punta a punta de la línea útil: la página y el PDF no la copian
-    assert.deepEqual(cinta.linea, { x0: 30, x1: 970 });
-    casi(cinta.vencimiento.x, 500, 'el vencimiento');
-    const xAviso = 30 + (13 / 80) * 940;
-    assert.deepEqual(cinta.marcas.map((m) => m.tipo), ['aviso']);
-    casi(cinta.marcas[0].x, xAviso, 'la marca del aviso');
-    casi(cinta.banda.x0, xAviso, 'la banda empieza en el aviso');
-    assert.equal(cinta.banda.x1, cinta.vencimiento.x);
-    assert.deepEqual(cinta.gris, { x0: cinta.vencimiento.x, x1: 970, texto: GRIS_DGMIT });
-    assert.equal(cinta.rayado, null);
-    assert.deepEqual(cinta.segmentos, []);
-    assert.deepEqual(cinta.rotulos.map((r) => [r.texto, r.color]), [['Aviso · 27 días hábiles antes', 'tinta']]);
-    assert.deepEqual(cinta.eje, { x: 30, y: 152, texto: 'días hábiles respecto del vencimiento', anclaje: 'start' });
-    assert.equal(cinta.aclaracion, 'La cinta pone las medianas una detrás de la otra: es orientativa, no un ciclo real.');
-    // Las alturas viajan con la cinta: la página no las copia
-    assert.deepEqual(cinta.alturas, ALTURAS);
-    assert.deepEqual(cinta.marcas[0].tipos, ['aviso']);
-  });
-
-  it('interna con carga 0: una sola marca datos-y-carga con «Entrega y carga, el mismo día»', () => {
-    for (const dias of ['habiles', 'corridos']) {
-      const cinta = real('interna', 'mediana', dias);
-      const { aviso, produccion } = REALES.interna.mediana[dias];
-      assert.deepEqual(cinta.marcas.map((m) => m.tipo), ['aviso', 'datos-y-carga'], dias);
-      const juntas = cinta.marcas[1];
-      assert.deepEqual(juntas.tipos, ['datos', 'carga'], dias);
-      // La producción en violeta, del aviso a la entrega; la carga (0 días) no tiene largo: no va entre los segmentos
-      assert.deepEqual(cinta.segmentos.map((s) => s.color), ['violeta'], dias);
-      assert.equal(cinta.segmentos[0].x0, cinta.marcas[0].x);
-      assert.equal(cinta.segmentos[0].x1, juntas.x);
-      assert.equal(cinta.segmentos[0].texto, `Producción del relevamiento · ${diasReales('interna', 'mediana', dias, 'produccion')}`);
-      const rotulo = cinta.rotulos.find((r) => r.texto.startsWith('Entrega y carga'));
-      assert.equal(rotulo.texto, 'Entrega y carga, el mismo día', dias);
-      assert.equal(rotulo.color, 'verde');
-      // Los datos llegan después del vencimiento: del vencimiento a la carga, rayado; la cadena está entera, sin gris
-      assert.ok(aviso < produccion);
-      assert.deepEqual(cinta.rayado, { x0: cinta.vencimiento.x, x1: juntas.x });
-      assert.equal(cinta.gris, null);
-      assert.ok(cinta.rotulos.some((r) => r.texto === `Aviso · ${diasReales('interna', 'mediana', dias, 'aviso')} antes`), dias);
-    }
-  });
-
-  it('interna con promedio: «Entrega y carga, 1 día corrido después»', () => {
-    const corridos = real('interna', 'promedio', 'corridos');
-    assert.deepEqual(corridos.marcas.map((m) => m.tipo), ['aviso', 'datos-y-carga']);
-    // Con «(1 hábil)» no entra en ningún lado (se pisaría con el rótulo del aviso o lo cruzaría la línea del vencimiento): va sin él
-    assert.ok(corridos.rotulos.some((r) => r.texto === 'Entrega y carga, 1 día corrido después'));
-    assert.ok(!corridos.rotulos.some((r) => r.texto.includes('(1 hábil)')));
-    assert.ok(!corridos.rotulos.some((r) => r.texto.includes('el mismo día')), 'nunca dice «el mismo día» si no lo fue');
-    assert.equal(corridos.aclaracion, 'La cinta pone los promedios uno detrás del otro: es orientativa, no un ciclo real.');
-    // En días hábiles, la entrega y la carga quedan a 11,75: con el tamaño de las marcas se pisarían, así que se juntan
-    const habiles = real('interna', 'promedio', 'habiles');
-    assert.deepEqual(habiles.marcas.map((m) => [m.tipo, m.tipos]), [['aviso', ['aviso']], ['datos-y-carga', ['datos', 'carga']]]);
-    assert.ok(habiles.rotulos.some((r) => r.texto === 'Entrega y carga, 1 día hábil después'));
-    assert.ok(!habiles.rotulos.some((r) => r.texto.startsWith('Carga · ')));
-    // A 18 o más, ya no se pisan: dos marcas, y el rótulo de la carga sola
-    const separadas = cintaDeMetricas([tramo('aviso', 41), tramo('produccion', 20), tramo('carga', 2)], { gestion: 'interna' });
-    assert.deepEqual(separadas.marcas.map((m) => m.tipo), ['aviso', 'datos', 'carga']);
-    assert.ok(separadas.marcas[2].x - separadas.marcas[1].x >= 18);
-    assert.ok(separadas.rotulos.some((r) => r.texto === 'Carga · 2 días hábiles después'));
-  });
-
-  it('marcas que se juntan con el aviso o con la nota: la marca dice todo lo que junta y el rótulo de la carga coincide', () => {
-    // Todo el mismo día del vencimiento: el aviso, la entrega y la carga en una sola marca (se dibuja el aviso)
-    const interna = cintaDeMetricas([tramo('aviso', 0), tramo('produccion', 0), tramo('carga', 0)], { gestion: 'interna' });
-    assert.deepEqual(interna.marcas, [{ x: interna.vencimiento.x, tipo: 'aviso', tipos: ['aviso', 'datos', 'carga'] }]);
-    assert.deepEqual(interna.segmentos, []);
-    const textos = interna.rotulos.map((r) => r.texto);
-    assert.ok(textos.includes('Aviso · el mismo día del vencimiento'));
-    assert.ok(textos.includes('Entrega y carga, el mismo día'));
-    sinPisadas(interna, 'todo el mismo día');
-    // La nota, la entrega y la carga el mismo día (se dibuja la nota), y la carga al lado de esa marca
-    const externa = cintaDeMetricas([tramo('aviso', 27), tramo('tramite', 10), tramo('respuesta', 0), tramo('carga', 0)], { gestion: 'externa' });
-    assert.deepEqual(externa.marcas.map((m) => [m.tipo, m.tipos]), [['aviso', ['aviso']], ['nota', ['nota', 'datos', 'carga']]]);
-    const carga = externa.rotulos.find((r) => r.texto === 'Entrega y carga, el mismo día');
-    assert.ok(carga);
-    casi(Math.abs(carga.x - externa.marcas[1].x), 12, 'el rótulo de la carga, al lado de la marca de la nota');
-    assert.deepEqual(externa.segmentos.map((s) => s.color), ['violeta']);
-    sinPisadas(externa, 'la nota, la entrega y la carga juntas');
-    marcasSinTocarse(interna, 'todo el mismo día');
-    marcasSinTocarse(externa, 'la nota, la entrega y la carga juntas');
-  });
-
-  it('en las cuatro combinaciones y las dos gestiones de los casos reales, ningún rótulo sale del dibujo ni se pisa con otro', () => {
-    for (const { gestion, estadistico, dias } of COMBINACIONES) {
-      const cual = `${gestion}, ${estadistico}, ${dias}`;
-      const cinta = real(gestion, estadistico, dias);
-      sinPisadas(cinta, cual);
-      marcasSinTocarse(cinta, cual);
-      // Los rótulos que pide la spec están todos: el del aviso siempre (en días corridos, con los hábiles) y, en la interna, el de la
-      // carga y el de la producción
-      const textos = cinta.rotulos.map((r) => r.texto);
-      assert.ok(textos.includes(`Aviso · ${diasReales(gestion, estadistico, dias, 'aviso')} antes`), cual);
-      if (gestion === 'interna') {
-        assert.ok(textos.some((t) => t.startsWith('Entrega y carga') || t.startsWith('Carga · ')), cual);
-        assert.ok(textos.some((t) => t.startsWith('Producción del relevamiento · ')), cual);
-      } else {
-        assert.equal(cinta.gris.texto, GRIS_DGMIT, cual);
-      }
-      assert.equal(cinta.eje.texto, `${dias === 'corridos' ? 'días corridos' : 'días hábiles'} respecto del vencimiento`, cual);
-      assert.ok(cinta.ticks.length <= 8, cual);
-      assert.deepEqual(cinta.linea, { x0: 30, x1: 970 }, cual);
-    }
-  });
-
-  it('sin cifra del aviso devuelve null', () => {
-    const sinAviso = tramosReales('interna', 'mediana', 'habiles').map((t) => (t.clave === 'aviso' ? tramo('aviso', null) : t));
-    assert.equal(cintaDeMetricas(sinAviso, { gestion: 'interna', dias: 'habiles', estadistico: 'mediana' }), null);
-    assert.equal(cintaDeMetricas(sinAviso.filter((t) => t.clave !== 'aviso'), { gestion: 'interna' }), null);
-    // Un año sin ningún caso: vistaDe no da cifras, y la cinta no se dibuja
-    const vacia = vistaDe([], { anio: 2026, al: HOY_DE_LAS_METRICAS });
-    assert.equal(cintaDeMetricas(vacia.circuito.externa, { gestion: 'externa' }), null);
-    assert.equal(cintaDeMetricas(vacia.circuito.interna, { gestion: 'interna' }), null);
-    for (const raro of [undefined, null, 'tramos', 3, {}]) assert.equal(cintaDeMetricas(raro, { gestion: 'externa' }), null);
-  });
-
-  it('con la vista de los casos reales: la externa se corta en la DGMIT y la interna en la producción, que no tiene casos', () => {
-    const casos = casosDe(mapaDeLosCasos(), { hoy: HOY_DE_LAS_METRICAS });
-    const vista = vistaDe(casos, { anio: 2026, al: HOY_DE_LAS_METRICAS });
-    const externa = cintaDeMetricas(vista.circuito.externa, { gestion: 'externa', dias: 'habiles', estadistico: 'mediana' });
-    assert.equal(externa.gris.texto, GRIS_DGMIT);
-    assert.deepEqual(externa.marcas.map((m) => m.tipo), ['aviso']);
-    const interna = cintaDeMetricas(vista.circuito.interna, { gestion: 'interna', dias: 'habiles', estadistico: 'mediana' });
-    assert.equal(interna.gris.texto, 'Producción del relevamiento: sin casos en 2026');
-    assert.deepEqual(interna.segmentos, []);
-    assert.deepEqual(interna.marcas.map((m) => m.tipo), ['aviso']);
-    sinPisadas(externa, 'externa de la vista');
-    sinPisadas(interna, 'interna de la vista');
-  });
-
-  it('externa con notas DGMIT: la cadena entera, con los tramos en violeta, tinta y verde, y el rayado hasta la carga', () => {
-    // La de la maqueta 1: 28 días hábiles de anticipación, 12 de redacción, 35 de respuesta y 2 de carga
-    const tramos = [tramo('aviso', 28), tramo('tramite', 12), tramo('respuesta', 35), tramo('carga', 2)];
-    const cinta = cintaDeMetricas(tramos, { gestion: 'externa', dias: 'habiles', estadistico: 'mediana' });
-    assert.deepEqual(diasDeLosTicks(cinta), [-40, -30, -20, -10, 10, 20, 30]);
-    const x = (d) => 30 + ((d + 40) / 70) * 940;
-    assert.deepEqual(cinta.marcas.map((m) => m.tipo), ['aviso', 'nota', 'datos', 'carga']);
-    [-28, -16, 19, 21].forEach((d, i) => casi(cinta.marcas[i].x, x(d), cinta.marcas[i].tipo));
-    assert.deepEqual(cinta.segmentos.map((s) => [s.color, s.texto]), [
-      ['violeta', 'Redacción y entrega de nota · 12 días hábiles'],
-      ['tinta', 'Respuesta del área · 35 días hábiles'],
-      ['verde', 'Preparación y carga · 2 días hábiles']
+describe('cintaDeMetricas: el recorrido típico', () => {
+  it('la externa completa: el total, los porcentajes, los anchos y el vencimiento', () => {
+    const cinta = cintaDeMetricas(externaCompleta(), EXTERNA);
+    assert.equal(FORMA_DE_LA_CINTA, 'recorrido');
+    assert.deepEqual(Object.keys(cinta), ['forma', 'titulo', 'bajada', 'total', 'partes', 'carga', 'portal', 'vencimiento', 'aviso',
+      'orientativos', 'lista', 'lista_siempre', 'aclaracion', 'descripcion']);
+    assert.equal(cinta.forma, 'recorrido');
+    assert.equal(cinta.titulo, 'El recorrido típico');
+    assert.equal(cinta.bajada, BAJADA_EXTERNA);
+    assert.deepEqual(cinta.total, { antes: 'En total, unos ', cifra: '85 días corridos', despues: ' (57 hábiles)' });
+    assert.deepEqual(cinta.partes.map((p) => [p.clave, p.actor, p.ancho, p.grande, p.dias]), [
+      ['tramite', 'dgmit', 44.71, '45 %', '38 días corridos (25 hábiles)'],
+      ['respuesta', 'area', 55.29, '55 %', '47 días corridos (32 hábiles)']
     ]);
-    casi(cinta.rayado.x0, x(0), 'el rayado empieza en el vencimiento');
-    casi(cinta.rayado.x1, x(21), 'y termina en la carga');
-    assert.equal(cinta.gris, null);
-    assert.deepEqual(cinta.rotulos.map((r) => r.texto).sort(), [
-      'Aviso · 28 días hábiles antes', 'Carga · 2 días hábiles después', 'Redacción y entrega de nota · 12 días hábiles',
-      'Respuesta del área · 35 días hábiles'
+    assert.deepEqual(cinta.partes.map((p) => [p.nombre, p.angosta]), [[NOMBRE.tramite, false], [NOMBRE.respuesta, false]]);
+    assert.deepEqual(cinta.partes.map((p) => Object.keys(p)), [0, 1].map(() => ['clave', 'actor', 'ancho', 'angosta', 'grande', 'nombre', 'dias']));
+    assert.deepEqual(cinta.carga, { clave: 'carga', actor: 'ddpc', grande: 'En el día', nombre: 'Preparación y carga', dias: '' });
+    assert.deepEqual(cinta.portal, { nombre: 'Portal', texto: 'datos publicados' });
+    assert.deepEqual(cinta.vencimiento, { x: 41.18 });
+    assert.deepEqual(cinta.aviso, {
+      rotulo: 'Aviso anticipado:', texto: '35 días corridos (24 hábiles)', ancho: 41.18, sigue: false, vencimiento: 'vencimiento'
+    });
+    assert.deepEqual(cinta.orientativos, []);
+    assert.deepEqual(cinta.lista, [
+      { actor: 'dgmit', nombre: NOMBRE.tramite, texto: '38 días corridos (25 hábiles) · 45 %' },
+      { actor: 'area', nombre: NOMBRE.respuesta, texto: '47 días corridos (32 hábiles) · 55 %' },
+      { actor: 'ddpc', nombre: NOMBRE.carga, texto: 'en el día' }
     ]);
-    // La carga no entra a la derecha de su marca: va a la izquierda, con anclaje end
-    const carga = cinta.rotulos.find((r) => r.texto.startsWith('Carga'));
-    assert.equal(carga.anclaje, 'end');
-    assert.ok(carga.x < cinta.marcas[3].x);
-    // La respuesta cruza el vencimiento: su rótulo se corre a un costado de la línea, sin dejar su tramo
-    const respuesta = cinta.rotulos.find((r) => r.texto.startsWith('Respuesta'));
-    assert.equal(respuesta.y, ALTURAS.filaDeLosTramos);
-    sinPisadas(cinta, 'externa completa');
+    assert.equal(cinta.lista_siempre, false);
+    assert.equal(cinta.aclaracion, ACLARACION_MEDIANA);
+    sinRarezas(cinta, 'la externa completa');
   });
 
-  it('cortada en otro tramo: dibuja hasta donde se sabe (con el rayado, si ya pasó el vencimiento) y el gris dice qué falta', () => {
-    // Con notas DGMIT, una redacción de 40 días hábiles y la respuesta sin casos en el año
-    const tramos = [tramo('aviso', 27), tramo('tramite', 40), tramo('respuesta', null), tramo('carga', 1)];
-    const cinta = cintaDeMetricas(tramos, { gestion: 'externa', dias: 'habiles', estadistico: 'mediana' });
-    assert.deepEqual(cinta.marcas.map((m) => m.tipo), ['aviso', 'nota']);
-    assert.deepEqual(cinta.segmentos.map((s) => s.color), ['violeta']);
-    assert.deepEqual(cinta.rayado, { x0: cinta.vencimiento.x, x1: cinta.marcas[1].x });
-    assert.deepEqual(cinta.gris, { x0: cinta.marcas[1].x, x1: 970, texto: 'Respuesta del área: sin casos en 2026' });
-    sinPisadas(cinta, 'cortada en la respuesta');
-    // Si la DGMIT tiene casos pero el área no, no se culpa a la falta de notas DGMIT
-    assert.ok(!cinta.gris.texto.includes('DGMIT'));
-  });
-
-  it('el rótulo del eje va abajo a la izquierda, y a la derecha si a la izquierda se pisaría con «vencimiento»', () => {
-    // Una cadena que termina mucho después del vencimiento deja el vencimiento cerca del borde izquierdo
-    const tramos = [tramo('aviso', 27), tramo('tramite', 60), tramo('respuesta', 150), tramo('carga', 3)];
-    const cinta = cintaDeMetricas(tramos, { gestion: 'externa', dias: 'habiles', estadistico: 'mediana' });
-    assert.ok(cinta.vencimiento.x < 300);
-    assert.deepEqual(cinta.eje, { x: 970, y: 152, texto: 'días hábiles respecto del vencimiento', anclaje: 'end' });
-    sinPisadas(cinta, 'larga');
-    assert.equal(real('interna', 'mediana', 'corridos').eje.anclaje, 'start');
-  });
-
-  it('la escala: paso de 5, 10, 20, 30, 50 o 100, como mucho 8 marcas, de x = 30 a x = 970, y nada se pisa (interna y externa con notas)', () => {
-    // Cadenas internas y externas con las cifras de la DGMIT y del área (con notas DGMIT cargadas)
-    const cadenas = [];
-    for (const dias of ['habiles', 'corridos']) {
-      for (const aviso of [0, 1, 5, 27, 41, 60, 90]) {
-        for (const produccion of [0, 1, 3, 20, 45, 80, 150, 300, 700]) {
-          for (const carga of [0, 1, 2, 5, 30]) {
-            cadenas.push({ gestion: 'interna', dias, cifras: { aviso, produccion, carga } });
-          }
-        }
-      }
-      for (const aviso of [0, 1, 27, 41]) {
-        for (const tramite of [0, 1, 12, 60]) {
-          for (const respuesta of [0, 3, 35, 150, 400]) {
-            for (const carga of [0, 1, 5]) cadenas.push({ gestion: 'externa', dias, cifras: { aviso, tramite, respuesta, carga } });
-          }
-        }
-      }
-    }
-    assert.equal(cadenas.length, 630 + 480);
-    // En días corridos, cada tramo con sus hábiles (unos 5 de cada 7): los rótulos son más largos
-    for (const { gestion, dias, cifras } of cadenas) {
-      const cual = `${gestion}, ${dias}, ${JSON.stringify(cifras)}`;
-      const habiles = (valor) => (dias === 'corridos' ? Math.round((valor * 5) / 7) : undefined);
-      const tramos = Object.entries(cifras).map(([clave, valor]) => tramo(clave, valor, { dias, habiles: habiles(valor) }));
-      const cinta = cintaDeMetricas(tramos, { gestion, dias, estadistico: 'mediana' });
-      // Todos los rótulos que van sin los hábiles (por tramo, sin mirar el paréntesis) van también con ellos
-      ningunoMenos(cinta, cintaDeMetricas(Object.entries(cifras).map(([clave, valor]) => tramo(clave, valor, { dias })), { gestion, dias }), cual);
-      const enDias = diasDeLosTicks(cinta);
-      assert.ok(enDias.length >= 1 && enDias.length <= 8, `${cual}: ${enDias.length} marcas`);
-      const conCero = [...enDias, 0].sort((a, b) => a - b);
-      const paso = conCero[1] - conCero[0];
-      assert.ok(PASOS.includes(paso) || (paso > 100 && paso % 100 === 0), `${cual}: paso ${paso}`);
-      for (let i = 1; i < conCero.length; i++) assert.equal(conCero[i] - conCero[i - 1], paso, cual);
-      casi(Math.min(...cinta.ticks.map((t) => t.x)), 30, cual);
-      casi(Math.max(...cinta.ticks.map((t) => t.x)), 970, cual);
-      for (const m of cinta.marcas) assert.ok(m.x > 30 && m.x < 970, `${cual}: la marca ${m.tipo} sale de la línea`);
-      assert.ok(cinta.vencimiento.x > 30 && cinta.vencimiento.x < 970, cual);
-      assert.ok(cinta.segmentos.every((s) => s.x1 > s.x0), `${cual}: un segmento sin largo`);
-      assert.equal(cinta.gris, null, cual);
-      sinPisadas(cinta, cual);
-      marcasSinTocarse(cinta, cual);
-      assert.ok(cinta.rotulos.some((r) => r.texto.startsWith('Aviso · ')), `${cual}: falta el rótulo del aviso`);
-    }
-  });
-
-  it('singular y plural: «1 día hábil», «1 día corrido» y «2 días hábiles»; un aviso de 0 días es el día del vencimiento', () => {
-    // Los textos de los rótulos y de los tramos
-    const textos = (aviso, produccion, carga, dias) => {
-      const cinta = cintaDeMetricas(
-        [tramo('aviso', aviso, { dias }), tramo('produccion', produccion, { dias }), tramo('carga', carga, { dias })],
-        { gestion: 'interna', dias }
-      );
-      return [...cinta.rotulos, ...cinta.segmentos].map((r) => r.texto);
+  it('los porcentajes suman 100 por el resto mayor', () => {
+    // Las cadenas salen de un generador con semilla fija (Park y Miller), siempre las mismas: la redacción y la respuesta, de 0 a 60
+    // días, y la carga, de 0 a 3
+    let semilla = 20261108;
+    const azar = (n) => {
+      semilla = (semilla * 48271) % 2147483647;
+      return semilla % n;
     };
-    assert.ok(textos(1, 30, 1, 'habiles').includes('Aviso · 1 día hábil antes'));
-    assert.ok(textos(1, 30, 1, 'corridos').includes('Aviso · 1 día corrido antes'));
-    assert.ok(textos(2, 30, 2, 'habiles').includes('Aviso · 2 días hábiles antes'));
-    assert.ok(textos(0, 30, 0, 'habiles').includes('Aviso · el mismo día del vencimiento'));
-    assert.ok(textos(41, 1, 0, 'habiles').includes('Producción del relevamiento · 1 día hábil'));
-    assert.ok(textos(41, 45, 1, 'corridos').includes('Preparación y carga · 1 día corrido'));
-    assert.ok(textos(41, 45, 2, 'habiles').includes('Preparación y carga · 2 días hábiles'));
-  });
-
-  it('no tira con datos raros: lo que no sirve corta la cadena, y las opciones raras son las de entrada', () => {
-    const raros = [
-      [tramo('aviso', 27), null, 'x', { clave: 'tramite', cifra: { valor: Number.NaN } }, { clave: 'respuesta', cifra: 'mucho' }],
-      [tramo('aviso', 27), { clave: 'tramite', cifra: { valor: -3 } }],
-      [{ ...tramo('aviso', 27), nombre: undefined }, { clave: 'tramite' }]
-    ];
-    for (const tramos of raros) {
-      const cinta = cintaDeMetricas(tramos, { gestion: 'externa' });
-      assert.deepEqual(cinta.marcas.map((m) => m.tipo), ['aviso']);
-      assert.ok(cinta.gris.texto.length > 0);
-      sinPisadas(cinta, JSON.stringify(tramos));
+    for (let vuelta = 0; vuelta < 200; vuelta++) {
+      const valores = [azar(61), azar(61), azar(4)];
+      const cual = valores.join(', ');
+      const cinta = cintaDeMetricas([aviso(10), redaccion(valores[0]), respuesta(valores[1]), carga(valores[2])], EXTERNA);
+      const total = sumar(valores);
+      const grandes = [...cinta.partes.map((p) => p.grande), cinta.carga.grande];
+      if (total > 0) {
+        const porcentajes = grandes.map(numeroDelPorcentaje);
+        assert.equal(sumar(porcentajes.map((p) => p ?? 0)), 100, cual);
+        valores.forEach((valor, i) => {
+          // Un tramo de 0 días no lleva porcentaje; los otros, a menos de 1 de su parte exacta
+          if (valor === 0) assert.equal(grandes[i], 'En el día', cual);
+          else assert.ok(Math.abs(porcentajes[i] - (100 * valor) / total) < 1, `${cual}: ${grandes[i]}`);
+        });
+      } else sinPorcentajes(cinta, cual);
+      for (const parte of cinta.partes) assert.ok(parte.ancho >= 0, `${cual}: ${parte.ancho}`);
+      assert.ok(Math.abs(sumar(cinta.partes.map((p) => p.ancho)) - 100) < 0.011, cual);
+      sinRarezas(cinta, cual);
     }
-    assert.equal(cintaDeMetricas([tramo('aviso', -1)], {}), null);
-    assert.equal(cintaDeMetricas([tramo('aviso', Number.POSITIVE_INFINITY)], {}), null);
-    // Sin opciones: externa, días hábiles y mediana
-    const porDefecto = cintaDeMetricas(tramosReales('externa', 'mediana', 'habiles'));
-    assert.deepEqual(porDefecto, real('externa', 'mediana', 'habiles'));
-    assert.deepEqual(cintaDeMetricas(tramosReales('externa', 'mediana', 'habiles'), { gestion: 'x', dias: 'y', estadistico: 'z' }), porDefecto);
-    // Un número enorme no cuelga la escala: el paso sigue en múltiplos de 100 y con 8 marcas o menos; un número del eje que no
-    // entraría en el dibujo no va, y nada se pisa
-    for (const tramos of [
-      [tramo('aviso', 27), tramo('produccion', 1e9), tramo('carga', 0)],
-      [tramo('aviso', 1e9), tramo('produccion', 3), tramo('carga', 1e9)],
-      [tramo('aviso', 27), tramo('produccion', 1e15), tramo('carga', 1e15)]
-    ]) {
-      const enorme = cintaDeMetricas(tramos, { gestion: 'interna' });
-      const cual = `enorme ${tramos.map((t) => t.cifra.valor).join(', ')}`;
-      assert.ok(enorme.ticks.length <= 8, cual);
-      sinPisadas(enorme, cual);
-      marcasSinTocarse(enorme, cual);
-    }
+    // A igual resto, el punto que falta va al primero en la cadena
+    const tercios = cintaDeMetricas([redaccion(1), respuesta(1), carga(1)], EXTERNA);
+    assert.deepEqual([...tercios.partes.map((p) => p.grande), tercios.carga.grande], ['34 %', '33 %', '33 %']);
+    const otros = cintaDeMetricas([redaccion(2), respuesta(1), carga(4)], EXTERNA);
+    assert.deepEqual([...otros.partes.map((p) => p.grande), otros.carga.grande], ['29 %', '14 %', '57 %']);
   });
 
-  it('las alturas fijas del dibujo son las de la maqueta, y viajan con la cinta', () => {
-    const esperadas = {
-      filaDeArriba: 26, filaDeLosTramos: 42, segmentos: { y: 50, alto: 8 }, banda: { y: 74, alto: 26 }, marcas: 87, textoDelGris: 91,
-      linea: 118, ticks: 136, vencimiento: { desde: 30, hasta: 118, texto: 148 }, textoDelEje: 152
-    };
-    assert.deepEqual(ALTURAS, esperadas);
-    assert.ok(Object.isFrozen(ALTURAS));
-    for (const { gestion, estadistico, dias } of COMBINACIONES) assert.deepEqual(real(gestion, estadistico, dias).alturas, esperadas);
-    // Lo que manda el servidor es JSON: las alturas llegan enteras a la página
-    assert.deepEqual(JSON.parse(JSON.stringify(real('interna', 'mediana', 'habiles'))).alturas, esperadas);
-  });
-});
-
-// En la vista en días corridos, cada tramo trae su cifra en hábiles (`habiles`, loNuevoDelTramo) y los rótulos la dicen entre paréntesis
-// (spec 2026-11-07-metricas-cajones-y-ciclos, 4): el eje, las marcas y los segmentos siguen en días corridos
-describe('cintaDeMetricas en días corridos, con los hábiles', () => {
-  const enCorridos = (clave, valor, habiles) => tramo(clave, valor, { dias: 'corridos', habiles });
-  const sinHabiles = (tramos) => tramos.map(({ habiles, ...resto }) => resto);
-  // Lo que se dibuja, sin los textos de los rótulos y de los segmentos (de los rótulos, solo cuántos van)
-  const dibujo = (cinta) => ({ ...cinta, rotulos: cinta.rotulos.length, segmentos: cinta.segmentos.map(({ texto, ...resto }) => resto) });
-  const enLaInterna = (tramos, opciones) => cintaDeMetricas(tramos, { gestion: 'interna', dias: 'corridos', ...opciones });
-  const EXTERNA = [enCorridos('aviso', 51, 35), enCorridos('tramite', 12, 8), enCorridos('respuesta', 64, 45), enCorridos('carga', 3, 0)];
-  const INTERNA = [enCorridos('aviso', 51, 35), enCorridos('produccion', 150, 104), enCorridos('carga', 3, 1)];
-
-  it('los rótulos y los segmentos dicen los días corridos y, entre paréntesis, los hábiles', () => {
-    const externa = cintaDeMetricas(EXTERNA, { gestion: 'externa', dias: 'corridos' });
-    assert.deepEqual(externa.marcas.map((m) => m.tipo), ['aviso', 'nota', 'datos', 'carga']);
-    assert.deepEqual(externa.rotulos.map((r) => r.texto), [
-      'Aviso · 51 días corridos (35 hábiles) antes', 'Carga · 3 días corridos (en el día, en días hábiles) después',
-      'Redacción y entrega de nota · 12 días corridos (8 hábiles)', 'Respuesta del área · 64 días corridos (45 hábiles)'
-    ]);
-    assert.deepEqual(externa.segmentos.map((s) => s.texto), [
-      'Redacción y entrega de nota · 12 días corridos (8 hábiles)', 'Respuesta del área · 64 días corridos (45 hábiles)',
-      'Preparación y carga · 3 días corridos (en el día, en días hábiles)'
-    ]);
-    // La entrega y la carga a 3 días corridos, juntas en una marca
-    const interna = cintaDeMetricas(INTERNA, { gestion: 'interna', dias: 'corridos' });
-    assert.deepEqual(interna.marcas.map((m) => m.tipo), ['aviso', 'datos-y-carga']);
-    assert.deepEqual(interna.rotulos.map((r) => r.texto), [
-      'Aviso · 51 días corridos (35 hábiles) antes', 'Entrega y carga, 3 días corridos (1 hábil) después',
-      'Producción del relevamiento · 150 días corridos (104 hábiles)'
-    ]);
-    for (const [cinta, tramos, gestion] of [[externa, EXTERNA, 'externa'], [interna, INTERNA, 'interna']]) {
-      sinPisadas(cinta, gestion);
-      marcasSinTocarse(cinta, gestion);
-      // El eje, las marcas y los segmentos siguen en días corridos: lo único que cambia son los textos
-      assert.deepEqual(dibujo(cinta), dibujo(cintaDeMetricas(sinHabiles(tramos), { gestion, dias: 'corridos' })), gestion);
-      assert.equal(cinta.eje.texto, 'días corridos respecto del vencimiento', gestion);
-    }
-    // En singular, «1 día corrido (1 hábil)»
-    const uno = enLaInterna([enCorridos('aviso', 1, 1), enCorridos('produccion', 30, 21), enCorridos('carga', 1, 1)]);
-    assert.ok(uno.rotulos.some((r) => r.texto === 'Aviso · 1 día corrido (1 hábil) antes'), JSON.stringify(uno.rotulos));
+  it('la carga de unos días: su porcentaje y sus días, a ancho fijo', () => {
+    const cinta = cintaDeMetricas([aviso(35, 24), redaccion(38, 25), respuesta(47, 32), carga(2, 1)], EXTERNA);
+    assert.equal(cinta.carga.grande, '2 %');
+    assert.equal(cinta.carga.dias, '2 días corridos (1 hábil)');
+    assert.equal(cinta.carga.actor, 'ddpc');
+    // La carga no está en la línea a escala, y los anchos son los mismos que con la carga en el día
+    assert.deepEqual(cinta.partes.map((p) => p.clave), ['tramite', 'respuesta']);
+    assert.deepEqual(cinta.partes.map((p) => p.ancho), [44.71, 55.29]);
+    assert.deepEqual(cinta.partes.map((p) => p.grande), ['44 %', '54 %']);
+    assert.deepEqual(cinta.total, { antes: 'En total, unos ', cifra: '87 días corridos', despues: ' (58 hábiles)' });
+    assert.equal(cinta.lista[2].texto, '2 días corridos (1 hábil) · 2 %');
+    // En la interna, sus días
+    const interna = cintaDeMetricas([aviso(20, 14), produccion(90, 61), carga(2, 1)], INTERNA);
+    assert.deepEqual(interna.carga, { clave: 'carga', actor: 'ddpc', grande: '2 días corridos', nombre: NOMBRE.carga, dias: '(1 hábil)' });
+    assert.equal(interna.lista[1].texto, '2 días corridos (1 hábil)');
   });
 
-  it('con 0 días corridos, «el mismo día», como hoy', () => {
-    const cinta = enLaInterna([enCorridos('aviso', 0, 0), enCorridos('produccion', 30, 21), enCorridos('carga', 0, 0)]);
-    assert.deepEqual(cinta.rotulos.map((r) => r.texto), [
-      'Aviso · el mismo día del vencimiento', 'Entrega y carga, el mismo día', 'Producción del relevamiento · 30 días corridos (21 hábiles)'
-    ]);
-    sinPisadas(cinta, 'con 0 días corridos');
+  it('menos del 1 %', () => {
+    const cinta = cintaDeMetricas([aviso(35), redaccion(300), respuesta(300), carga(1)], EXTERNA);
+    assert.equal(cinta.carga.grande, 'menos del 1 %');
+    assert.equal(cinta.carga.dias, '1 día corrido');
+    assert.deepEqual(cinta.partes.map((p) => p.grande), ['50 %', '50 %']);
+    assert.equal(cinta.lista[2].texto, '1 día corrido · menos del 1 %');
+    assert.ok(cinta.descripcion.includes('Preparación y carga: 1 día corrido, menos del 1 %.'), cinta.descripcion);
   });
 
-  it('sin los hábiles (una vista en hábiles o una foto sin la clave), los textos de hoy', () => {
-    const sinLaClave = cintaDeMetricas(sinHabiles(EXTERNA), { gestion: 'externa', dias: 'corridos' });
-    assert.deepEqual(sinLaClave.rotulos.map((r) => r.texto), [
-      'Aviso · 51 días corridos antes', 'Carga · 3 días corridos después', 'Redacción y entrega de nota · 12 días corridos',
-      'Respuesta del área · 64 días corridos'
+  it('la interna: los días en grande, sin porcentajes', () => {
+    const cinta = cintaDeMetricas([aviso(20, 14), produccion(90, 61), carga(0, 0)], INTERNA);
+    assert.equal(cinta.bajada, BAJADA_INTERNA);
+    assert.deepEqual(cinta.partes, [{
+      clave: 'produccion', actor: 'dgmit', ancho: 100, angosta: false, grande: '90 días corridos', nombre: NOMBRE.produccion,
+      dias: '(61 hábiles)'
+    }]);
+    assert.equal(cinta.partes[0].grande, '90 días corridos');
+    assert.equal(cinta.partes[0].dias, '(61 hábiles)');
+    assert.equal(cinta.partes[0].ancho, 100);
+    assert.deepEqual(cinta.carga, { clave: 'carga', actor: 'ddpc', grande: 'En el día', nombre: NOMBRE.carga, dias: '' });
+    assert.deepEqual(cinta.lista, [
+      { actor: 'dgmit', nombre: NOMBRE.produccion, texto: '90 días corridos (61 hábiles)' },
+      { actor: 'ddpc', nombre: NOMBRE.carga, texto: 'en el día' }
     ]);
-    assert.deepEqual(sinLaClave.segmentos.map((s) => s.texto), [
-      'Redacción y entrega de nota · 12 días corridos', 'Respuesta del área · 64 días corridos', 'Preparación y carga · 3 días corridos'
-    ]);
-    // Con `habiles` null o raro, lo mismo que sin la clave
-    for (const raro of [null, 'x', 3, [], {}, { valor: 'x' }, { valor: -2 }, { valor: Number.NaN }, { valor: Number.POSITIVE_INFINITY }]) {
-      const tramos = sinHabiles(EXTERNA).map((t) => ({ ...t, habiles: raro }));
-      assert.deepEqual(cintaDeMetricas(tramos, { gestion: 'externa', dias: 'corridos' }), sinLaClave, JSON.stringify(raro));
-    }
-    // En la vista en días hábiles, aunque un tramo trajera `habiles`, sin paréntesis
-    const enHabiles = (tramos) => tramos.map((t) => ({ ...t, cifra: t.cifra && { ...t.cifra, unidad: unidadDe(t.cifra.valor, 'habiles') } }));
+    assert.equal(cinta.lista[0].texto, '90 días corridos (61 hábiles)');
+    assert.deepEqual(cinta.total, { antes: 'En total, unos ', cifra: '90 días corridos', despues: ' (61 hábiles)' });
+    assert.deepEqual(cinta.vencimiento, { x: 22.22 });
+    assert.equal(cinta.aviso.ancho, 22.22);
+    assert.equal(cinta.aclaracion, ACLARACION_MEDIANA);
+    sinPorcentajes(cinta, 'la interna');
+    sinRarezas(cinta, 'la interna');
+  });
+
+  it('un tramo sin casos: gris, sin total ni porcentajes ni vencimiento', () => {
+    const cinta = cintaDeMetricas([aviso(35, 24), redaccion(38, 25), respuesta(null), carga(0, 0)], EXTERNA);
+    assert.equal(cinta.partes[0].grande, '38 días corridos');
+    assert.equal(cinta.partes[0].dias, '(25 hábiles)');
+    assert.equal(cinta.partes[0].actor, 'dgmit');
     assert.deepEqual(
-      cintaDeMetricas(enHabiles(EXTERNA), { gestion: 'externa', dias: 'habiles' }),
-      cintaDeMetricas(enHabiles(sinHabiles(EXTERNA)), { gestion: 'externa', dias: 'habiles' })
+      [cinta.partes[1].actor, cinta.partes[1].grande, cinta.partes[1].dias],
+      ['gris', 'Sin casos', 'se completa cuando haya casos']
     );
+    assert.deepEqual(cinta.total, SIN_TOTAL);
+    assert.equal(cinta.total.antes, 'El total se completa cuando haya casos de todos los tramos');
+    assert.equal(cinta.total.cifra, '');
+    assert.equal(cinta.vencimiento, null);
+    assert.equal(cinta.aviso.ancho, null);
+    assert.equal(cinta.aviso.texto, '35 días corridos (24 hábiles) antes del vencimiento');
+    assert.deepEqual([cinta.aviso.sigue, cinta.aviso.vencimiento], [false, '']);
+    // El gris ocupa el 70 % de lo que suman los tramos con cifra
+    const gris = Math.round(((100 * Math.max(0.7 * 38, 1)) / (38 + 26.6)) * 100) / 100;
+    assert.equal(cinta.partes[1].ancho, gris);
+    assert.equal(cinta.partes[0].ancho, Math.round((100 - gris) * 100) / 100);
+    assert.equal(cinta.aclaracion, '');
+    assert.equal(cinta.lista[1].texto, 'sin casos todavía');
+    assert.equal(cinta.lista[1].actor, 'gris');
+    sinPorcentajes(cinta, 'un tramo sin casos');
+    sinRarezas(cinta, 'un tramo sin casos');
+
+    // La carga sin casos: va en gris y, como con cualquier tramo sin casos, no hay total, ni regla del aviso, ni vencimiento (aunque los
+    // tramos a escala tengan cifra)
+    const sinCarga = cintaDeMetricas([aviso(35, 24), redaccion(38, 25), respuesta(47, 32), carga(null)], EXTERNA);
+    assert.deepEqual(sinCarga.carga, { clave: 'carga', actor: 'gris', grande: 'Sin casos', nombre: NOMBRE.carga, dias: 'se completa cuando haya casos' });
+    assert.deepEqual(sinCarga.total, SIN_TOTAL);
+    assert.deepEqual(sinCarga.partes.map((p) => p.grande), ['38 días corridos', '47 días corridos']);
+    assert.equal(sinCarga.vencimiento, null);
+    assert.deepEqual(sinCarga.aviso, {
+      rotulo: 'Aviso anticipado:', texto: '35 días corridos (24 hábiles) antes del vencimiento', ancho: null, sigue: false, vencimiento: ''
+    });
+    assert.ok(sinCarga.descripcion.endsWith('Aviso anticipado: 35 días corridos (24 hábiles) antes del vencimiento.'), sinCarga.descripcion);
+    sinPorcentajes(sinCarga, 'la carga sin casos');
+    sinRarezas(sinCarga, 'la carga sin casos');
+    // Lo mismo con un aviso más largo que los tramos a escala: sin total no hay `sigue` ni «la publicación llega…»
+    const largoSinCarga = cintaDeMetricas([aviso(95, 66), redaccion(38, 25), respuesta(47, 32), carga(null)], EXTERNA);
+    assert.equal(largoSinCarga.vencimiento, null);
+    assert.deepEqual(largoSinCarga.aviso, {
+      rotulo: 'Aviso anticipado:', texto: '95 días corridos (66 hábiles) antes del vencimiento', ancho: null, sigue: false, vencimiento: ''
+    });
+    assert.ok(largoSinCarga.descripcion.endsWith('Aviso anticipado: 95 días corridos (66 hábiles) antes del vencimiento.'), largoSinCarga.descripcion);
   });
 
-  it('el rótulo del aviso con los hábiles, si no entra en ningún lado, va sin ellos', () => {
-    // Con la letra de la pantalla y cifras que se puedan escribir, entra siempre: la marca del aviso queda cerca del borde izquierdo o,
-    // con una cadena corta, cerca del medio, con lugar a un lado. Con una letra grande (la opción `letra`, que solo mide los textos) el
-    // de «1 día corrido (1 hábil)» no entra ni a la derecha ni a la izquierda de su marca, y el de «1 día corrido» sí. Con esa letra los
-    // textos del eje se pisan entre ellos (el rótulo del eje no se mide), así que aquí se mira solo el del aviso
-    const letra = 18;
-    const tramos = [enCorridos('aviso', 1, 1), enCorridos('produccion', 0, 0), enCorridos('carga', 0, 0)];
-    const cinta = enLaInterna(tramos, { letra });
-    const conHabiles = 'Aviso · 1 día corrido (1 hábil) antes'.length * letra;
-    const xDelAviso = cinta.marcas[0].x;
-    assert.ok(xDelAviso + 12 + conHabiles > 996 && xDelAviso - 12 - conHabiles < 4, 'con los hábiles no entra a ningún lado');
-    assert.equal(cinta.rotulos[0].texto, 'Aviso · 1 día corrido antes');
-    assert.ok(!cinta.rotulos.some((r) => r.texto.includes('hábil')));
-    assert.deepEqual(cinta.rotulos[0], enLaInterna(sinHabiles(tramos), { letra }).rotulos[0]);
-    const { x0, x1 } = caja(cinta.rotulos[0].x, cinta.rotulos[0].y, cinta.rotulos[0].texto, cinta.rotulos[0].anclaje, letra);
-    assert.ok(x0 >= 0 && x1 <= cinta.ancho, `${x0}–${x1}`);
-  });
-
-  it('el rótulo de un tramo que con los hábiles no entra en ningún lado va sin ellos', () => {
-    // «Respuesta del área · 20 días corridos (14 hábiles)» no entra ni sobre su tramo, ni a un costado de la línea del vencimiento, ni en
-    // la fila de arriba; sin «(14 hábiles)», sí. Los demás, con los suyos; el segmento lo sigue diciendo con ellos
-    const tramos = [enCorridos('aviso', 30, 21), enCorridos('tramite', 10, 7), enCorridos('respuesta', 20, 14), enCorridos('carga', 3, 2)];
-    const cinta = cintaDeMetricas(tramos, { gestion: 'externa', dias: 'corridos' });
-    assert.deepEqual(cinta.rotulos.map((r) => r.texto), [
-      'Aviso · 30 días corridos (21 hábiles) antes', 'Carga · 3 días corridos (2 hábiles) después',
-      'Redacción y entrega de nota · 10 días corridos (7 hábiles)', 'Respuesta del área · 20 días corridos'
+  it('sin notas DGMIT: la redacción dice que falta cargarlas', () => {
+    const sinNotas = { vacio: { titulo: SIN_NOTAS_DGMIT, texto: '10 notas pendientes de carga' } };
+    const cinta = cintaDeMetricas([aviso(35, 24), redaccion(null, null, sinNotas), respuesta(null), carga(0, 0)], EXTERNA);
+    assert.deepEqual(cinta.partes.map((p) => [p.actor, p.grande, p.dias]), [
+      ['gris', 'Sin casos', 'se completa cuando haya notas DGMIT cargadas'],
+      ['gris', 'Sin casos', 'se completa cuando haya casos']
     ]);
-    assert.ok(cinta.segmentos.some((s) => s.texto === 'Respuesta del área · 20 días corridos (14 hábiles)'));
-    sinPisadas(cinta, 'la respuesta sin sus hábiles');
-    ningunoMenos(cinta, cintaDeMetricas(sinHabiles(tramos), { gestion: 'externa', dias: 'corridos' }), 'la respuesta sin sus hábiles');
+    assert.equal(cinta.partes[0].dias, 'se completa cuando haya notas DGMIT cargadas');
+    // Los dos sin cifra se reparten el ancho
+    assert.deepEqual(cinta.partes.map((p) => p.ancho), [50, 50]);
+    assert.deepEqual(cinta.total, SIN_TOTAL);
   });
 
-  it('el de la carga, sin los hábiles si con ellos no entra; y si no entra ni así, el aviso también va sin ellos', () => {
-    // Los casos reales de la interna con el promedio: «Entrega y carga, 1 día corrido (1 hábil) después» no entra; sin «(1 hábil)», sí
-    const promedio = real('interna', 'promedio', 'corridos');
-    assert.deepEqual(promedio.rotulos.map((r) => r.texto), [
-      'Aviso · 60 días corridos (42 hábiles) antes', 'Entrega y carga, 1 día corrido después',
-      'Producción del relevamiento · 80 días corridos (56 hábiles)'
+  it('el aviso más largo que el circuito', () => {
+    const cinta = cintaDeMetricas([aviso(50, 34), produccion(31, 21), carga(1, 1)], INTERNA);
+    assert.deepEqual(cinta.aviso, {
+      rotulo: 'Aviso anticipado:',
+      texto: '50 días corridos (34 hábiles); la publicación llega 18 días corridos antes del vencimiento',
+      ancho: 100,
+      sigue: true,
+      vencimiento: ''
+    });
+    assert.equal(cinta.vencimiento, null);
+    assert.deepEqual([cinta.carga.grande, cinta.carga.dias], ['1 día corrido', '(1 hábil)']);
+    assert.ok(cinta.descripcion.endsWith(
+      'Aviso anticipado: 50 días corridos (34 hábiles); la publicación llega 18 días corridos antes del vencimiento.'
+    ), cinta.descripcion);
+    // El vencimiento dentro de la carga (el aviso, más largo que los tramos a escala pero no que el total): al final de la zona a escala
+    const enLaCarga = cintaDeMetricas([aviso(32, 22), produccion(31, 21), carga(1, 1)], INTERNA);
+    assert.deepEqual(enLaCarga.vencimiento, { x: 100 });
+    assert.deepEqual(enLaCarga.aviso, {
+      rotulo: 'Aviso anticipado:', texto: '32 días corridos (22 hábiles)', ancho: 100, sigue: false, vencimiento: 'vencimiento'
+    });
+  });
+
+  it('el aviso en los bordes', () => {
+    // De 0 días: la regla no tiene largo
+    const enElDia = cintaDeMetricas([aviso(0, 0), redaccion(12, 8), respuesta(18, 12), carga(0, 0)], EXTERNA);
+    assert.equal(enElDia.aviso.texto, 'el mismo día del vencimiento');
+    assert.equal(enElDia.vencimiento.x, 0);
+    assert.deepEqual([enElDia.aviso.ancho, enElDia.aviso.sigue, enElDia.aviso.vencimiento], [0, false, 'vencimiento']);
+    assert.ok(enElDia.descripcion.endsWith('Aviso anticipado: el mismo día del vencimiento.'), enElDia.descripcion);
+    // Igual a la suma de los tramos a escala, con la carga en el día: el vencimiento al final, sin `sigue`
+    const igual = cintaDeMetricas([aviso(30, 20), redaccion(12, 8), respuesta(18, 12), carga(0, 0)], EXTERNA);
+    assert.equal(igual.vencimiento.x, 100);
+    assert.equal(igual.aviso.sigue, false);
+    assert.deepEqual([igual.aviso.ancho, igual.aviso.vencimiento], [100, 'vencimiento']);
+    // Sin cifra: un renglón sin regla, y la cinta se dibuja igual
+    const sinCasos = cintaDeMetricas([aviso(null), redaccion(12, 8), respuesta(18, 12), carga(0, 0)], EXTERNA);
+    assert.notEqual(sinCasos, null);
+    assert.equal(sinCasos.aviso.texto, 'sin casos todavía');
+    assert.equal(sinCasos.aviso.ancho, null);
+    assert.deepEqual([sinCasos.aviso.sigue, sinCasos.aviso.vencimiento, sinCasos.vencimiento], [false, '', null]);
+    assert.ok(sinCasos.descripcion.endsWith('Aviso anticipado: sin casos todavía.'), sinCasos.descripcion);
+    // Sin el tramo del aviso, lo mismo
+    assert.deepEqual(cintaDeMetricas([redaccion(12, 8), respuesta(18, 12), carga(0, 0)], EXTERNA), sinCasos);
+  });
+
+  it('ceros', () => {
+    const cinta = cintaDeMetricas([aviso(0, 0), redaccion(0, 0), respuesta(0, 0), carga(0, 0)], EXTERNA);
+    assert.deepEqual(cinta.partes.map((p) => p.ancho), [50, 50]);
+    assert.deepEqual([...cinta.partes.map((p) => [p.grande, p.dias]), [cinta.carga.grande, cinta.carga.dias]],
+      [['En el día', ''], ['En el día', ''], ['En el día', '']]);
+    assert.deepEqual(cinta.total, { antes: 'En total, ', cifra: 'en el día', despues: '' });
+    assert.deepEqual(cinta.lista.map((l) => l.texto), ['en el día', 'en el día', 'en el día']);
+    assert.deepEqual(cinta.vencimiento, { x: 100 });
+    assert.equal(cinta.aviso.texto, 'el mismo día del vencimiento');
+    assert.equal(cinta.aclaracion, ACLARACION_MEDIANA);
+    assert.ok(cinta.descripcion.startsWith('El recorrido típico de un pedido de la gestión externa: en total, en el día. '), cinta.descripcion);
+    sinPorcentajes(cinta, 'ceros');
+    sinRarezas(cinta, 'ceros');
+    // En la interna y en días hábiles, lo mismo
+    const interna = cintaDeMetricas([aviso(0), produccion(0), carga(0)], { gestion: 'interna' });
+    assert.deepEqual(interna.partes.map((p) => [p.ancho, p.grande, p.dias]), [[100, 'En el día', '']]);
+    assert.deepEqual(interna.total, { antes: 'En total, ', cifra: 'en el día', despues: '' });
+    sinRarezas(interna, 'ceros en la interna');
+    // Un tramo en 0 al lado de uno sin casos: el sin casos ocupa todo
+    const conGris = cintaDeMetricas([redaccion(0), respuesta(null), carga(0)], EXTERNA);
+    assert.deepEqual(conGris.partes.map((p) => [p.ancho, p.grande]), [[0, 'En el día'], [100, 'Sin casos']]);
+    sinRarezas(conGris, 'un cero y un gris');
+  });
+
+  it('un tramo angosto', () => {
+    const cinta = cintaDeMetricas([aviso(35), redaccion(2), respuesta(50), carga(0)], EXTERNA);
+    assert.equal(cinta.partes[0].angosta, true);
+    assert.equal(cinta.partes[1].angosta, false);
+    assert.equal(cinta.lista_siempre, true);
+    // Con el 12 % justo, no es angosto
+    const justo = cintaDeMetricas([aviso(35), redaccion(12), respuesta(88), carga(0)], EXTERNA);
+    assert.deepEqual(justo.partes.map((p) => [p.ancho, p.angosta]), [[12, false], [88, false]]);
+    assert.equal(justo.lista_siempre, false);
+  });
+
+  it('orientativo', () => {
+    const conPocos = { cifra: { valor: 35, orientativo: true } };
+    const cinta = cintaDeMetricas([aviso(35, 24, conPocos), redaccion(38, 25), respuesta(47, 32), carga(0, 0)], EXTERNA);
+    assert.deepEqual(cinta.orientativos, ['Aviso anticipado: con tan pocos casos, es orientativo.']);
+    // Uno por tramo, con el aviso primero y después en el orden de la cadena
+    const varios = cintaDeMetricas([
+      carga(0, 0, { cifra: { valor: 0, orientativo: true } }), respuesta(47, 32, { cifra: { valor: 47, orientativo: true } }),
+      redaccion(38, 25), aviso(35, 24, conPocos)
+    ], EXTERNA);
+    assert.deepEqual(varios.orientativos, [
+      'Aviso anticipado: con tan pocos casos, es orientativo.',
+      'Respuesta del área: con tan pocos casos, es orientativo.',
+      'Preparación y carga: con tan pocos casos, es orientativo.'
     ]);
-    // Un aviso corto y una entrega cerca del vencimiento: con el aviso entre paréntesis, la carga no entraría en ningún lado; el aviso va
-    // sin ellos, y la carga entra con los suyos
-    const tramos = [enCorridos('aviso', 5, 4), enCorridos('produccion', 1, 1), enCorridos('carga', 3, 2)];
-    const cinta = enLaInterna(tramos);
-    const textos = cinta.rotulos.map((r) => r.texto);
-    assert.equal(textos[0], 'Aviso · 5 días corridos antes');
-    assert.ok(textos.some((t) => t.startsWith('Carga · 3 días corridos')), JSON.stringify(textos));
-    sinPisadas(cinta, 'el aviso corto');
-    // Si la carga no entra tampoco con el aviso sin los hábiles (todo el mismo día del aviso, junto a la línea del vencimiento: tampoco
-    // entraba sin los hábiles), el aviso los dice
-    const todoJunto = [enCorridos('aviso', 1, 1), enCorridos('produccion', 0, 0), enCorridos('carga', 0, 0)];
-    const sinLaCarga = enLaInterna(todoJunto);
-    assert.deepEqual(sinLaCarga.marcas.map((m) => m.tipos), [['aviso', 'datos', 'carga']]);
-    assert.deepEqual(sinLaCarga.rotulos.map((r) => r.texto), ['Aviso · 1 día corrido (1 hábil) antes']);
-    assert.deepEqual(enLaInterna(sinHabiles(todoJunto)).rotulos.map((r) => r.texto), ['Aviso · 1 día corrido antes']);
-    sinPisadas(sinLaCarga, 'todo junto');
+    // Solo con `true`
+    const casi = cintaDeMetricas([aviso(35, 24, { cifra: { valor: 35, orientativo: 'true' } }), redaccion(38, 25), respuesta(47, 32),
+      carga(0, 0)], EXTERNA);
+    assert.deepEqual(casi.orientativos, []);
   });
 
-  it('con la vista de los casos reales en días corridos, el rótulo del aviso dice sus hábiles', () => {
-    const casos = casosDe(mapaDeLosCasos(), { hoy: HOY_DE_LAS_METRICAS });
-    for (const estadistico of ['mediana', 'promedio']) {
-      const vista = vistaDe(casos, { anio: 2026, al: HOY_DE_LAS_METRICAS, estadistico, dias: 'corridos' });
-      const cintas = cintasDeLaVista(vista, { estadistico, dias: 'corridos' });
-      for (const gestion of ['externa', 'interna']) {
-        const aviso = vista.circuito[gestion].find((t) => t.clave === 'aviso');
-        assert.ok(Number.isFinite(aviso.habiles.valor), `${estadistico}, ${gestion}`);
-        const texto = `Aviso · ${cantidadDeLasDos(aviso.cifra.valor, aviso.habiles.valor)} antes`;
-        assert.ok(cintas[gestion].rotulos.some((r) => r.texto === texto), `${estadistico}, ${gestion}: ${texto}`);
-        sinPisadas(cintas[gestion], `${estadistico}, ${gestion}`);
-      }
-    }
-  });
-});
-
-// La opción `letra` de cintaDeMetricas. El PDF de Métricas ya no dibuja la cinta (spec 2026-11-05-metricas-pdf-apaisado): la opción queda
-// sin uso en producción, y estos tests siguen comprobando que hace lo que dice, con la letra que usaba el PDF
-const OPCIONES_CINTA_PDF = Object.freeze({ letra: 8 });
-describe('cintaDeMetricas con la letra del PDF', () => {
-  const { letra } = OPCIONES_CINTA_PDF;
-  const delPdf = (tramos, opciones) => cintaDeMetricas(tramos, { ...opciones, ...OPCIONES_CINTA_PDF });
-
-  it('mide los textos con la letra que le dicen: la de la pantalla no alcanza para el PDF', () => {
-    assert.ok(letra > LETRA, `${letra}`);
-    // Cortada en la respuesta, con la redacción que cruza el vencimiento: en la pantalla su rótulo entra al lado de la línea; con la letra
-    // del PDF no entra en ningún lado y no va (como en la cinta del Seguimiento)
-    const tramos = [tramo('aviso', 27), tramo('tramite', 40), tramo('respuesta', null), tramo('carga', 1)];
-    const pantalla = cintaDeMetricas(tramos, { gestion: 'externa' });
-    const pdf = delPdf(tramos, { gestion: 'externa' });
-    assert.deepEqual(pantalla.rotulos.map((r) => r.texto), ['Aviso · 27 días hábiles antes', 'Redacción y entrega de nota · 40 días hábiles']);
-    assert.deepEqual(pdf.rotulos.map((r) => r.texto), ['Aviso · 27 días hábiles antes']);
-    // Con la letra del PDF, la cinta de la pantalla se pisaría o se saldría; la del PDF, no
-    assert.throws(() => sinPisadas(pantalla, 'la de la pantalla, con la letra del PDF', letra));
-    sinPisadas(pdf, 'la del PDF', letra);
-    // Una letra que no es un número positivo es la de la pantalla
-    for (const rara of [0, -3, 'x', null, Number.NaN, Number.POSITIVE_INFINITY]) {
-      assert.deepEqual(cintaDeMetricas(tramos, { gestion: 'externa', letra: rara }), pantalla, String(rara));
-    }
+  it('la vista en hábiles y el promedio', () => {
+    // En días hábiles (los de entrada), «N días hábiles», sin paréntesis aunque los tramos traigan hábiles
+    const cinta = cintaDeMetricas([aviso(24, 17), redaccion(25, 18), respuesta(32, 22), carga(0, 0)], { gestion: 'externa' });
+    assert.deepEqual(cinta, cintaDeMetricas([aviso(24), redaccion(25), respuesta(32), carga(0)], { gestion: 'externa', dias: 'habiles' }));
+    assert.deepEqual(cinta.total, { antes: 'En total, unos ', cifra: '57 días hábiles', despues: '' });
+    assert.deepEqual(cinta.partes.map((p) => [p.grande, p.dias]), [['44 %', '25 días hábiles'], ['56 %', '32 días hábiles']]);
+    assert.equal(cinta.aviso.texto, '24 días hábiles');
+    assert.deepEqual(cinta.lista.map((l) => l.texto), ['25 días hábiles · 44 %', '32 días hábiles · 56 %', 'en el día']);
+    for (const texto of textosDe(cinta)) assert.doesNotMatch(texto, /días? corridos?|\(/, texto);
+    // La interna en días hábiles: los días en grande, sin nada debajo
+    const interna = cintaDeMetricas([aviso(14), produccion(61), carga(1)], { gestion: 'interna', dias: 'habiles' });
+    assert.deepEqual([interna.partes[0].grande, interna.partes[0].dias], ['61 días hábiles', '']);
+    assert.deepEqual([interna.carga.grande, interna.carga.dias], ['1 día hábil', '']);
+    assert.deepEqual(interna.total, { antes: 'En total, unos ', cifra: '62 días hábiles', despues: '' });
+    // El aviso más largo que el circuito, en días hábiles
+    const sigue = cintaDeMetricas([aviso(34), produccion(21), carga(1)], { gestion: 'interna', dias: 'habiles' });
+    assert.equal(sigue.aviso.texto, '34 días hábiles; la publicación llega 12 días hábiles antes del vencimiento');
+    // En la vista en hábiles, un tramo de 0 días también es «En el día»
+    assert.deepEqual([cinta.carga.grande, cinta.carga.dias, cinta.lista[2].texto], ['En el día', '', 'en el día']);
+    // Con el promedio, la frase de abajo dice «los promedios»
+    const promedio = cintaDeMetricas(externaCompleta(), { ...EXTERNA, estadistico: 'promedio' });
+    assert.equal(promedio.aclaracion, ACLARACION_PROMEDIO);
+    assert.equal(cintaDeMetricas(externaCompleta(), EXTERNA).aclaracion, ACLARACION_MEDIANA);
+    // Sin total, ninguna frase
+    assert.equal(cintaDeMetricas([aviso(35), redaccion(38), respuesta(null), carga(0)], { ...EXTERNA, estadistico: 'promedio' }).aclaracion, '');
   });
 
-  it('en las cuatro combinaciones y las dos gestiones, ningún rótulo sale del dibujo ni se pisa con otro, con la letra del PDF', () => {
-    for (const { gestion, estadistico, dias } of COMBINACIONES) {
-      const cual = `${gestion}, ${estadistico}, ${dias}`;
-      const cinta = delPdf(tramosReales(gestion, estadistico, dias), { gestion, dias, estadistico });
-      sinPisadas(cinta, cual, letra);
-      marcasSinTocarse(cinta, cual);
-      // El del aviso, en días corridos con los hábiles; en la interna con el promedio, con ellos la carga no entraría ni sin los suyos:
-      // el aviso va sin ellos y la carga entra, como antes
-      const sinLosHabiles = gestion === 'interna' && estadistico === 'promedio' && dias === 'corridos';
-      const { aviso } = REALES[gestion][estadistico][dias];
-      const delAviso = sinLosHabiles ? `Aviso · ${aviso} días corridos antes` : `Aviso · ${diasReales(gestion, estadistico, dias, 'aviso')} antes`;
-      assert.ok(cinta.rotulos.some((r) => r.texto === delAviso), cual);
-      if (gestion === 'interna') assert.ok(cinta.rotulos.some((r) => r.texto.startsWith('Entrega y carga')), cual);
-      const sinLaClave = tramosReales(gestion, estadistico, dias).map(({ habiles, ...resto }) => resto);
-      ningunoMenos(cinta, delPdf(sinLaClave, { gestion, dias, estadistico }), cual);
+  it('descripcion', () => {
+    assert.equal(cintaDeMetricas(externaCompleta(), EXTERNA).descripcion,
+      'El recorrido típico de un pedido de la gestión externa: en total, unos 85 días corridos (57 hábiles). '
+      + 'Redacción y entrega de nota: 38 días corridos (25 hábiles), 45 %. Respuesta del área: 47 días corridos (32 hábiles), 55 %. '
+      + 'Preparación y carga: en el día. Aviso anticipado: 35 días corridos (24 hábiles) antes del vencimiento.');
+    // Con un tramo sin casos, el aviso dice «antes del vencimiento» una sola vez
+    assert.equal(cintaDeMetricas([aviso(35, 24), redaccion(38, 25), respuesta(null), carga(0, 0)], EXTERNA).descripcion,
+      'El recorrido típico de un pedido de la gestión externa: el total se completa cuando haya casos de todos los tramos. '
+      + 'Redacción y entrega de nota: 38 días corridos (25 hábiles). Respuesta del área: sin casos todavía. '
+      + 'Preparación y carga: en el día. Aviso anticipado: 35 días corridos (24 hábiles) antes del vencimiento.');
+    assert.equal(cintaDeMetricas([aviso(20, 14), produccion(90, 61), carga(0, 0)], INTERNA).descripcion,
+      'El recorrido típico de un pedido de la gestión interna: en total, unos 90 días corridos (61 hábiles). '
+      + 'Producción del relevamiento: 90 días corridos (61 hábiles). Preparación y carga: en el día. '
+      + 'Aviso anticipado: 20 días corridos (14 hábiles) antes del vencimiento.');
+  });
+
+  it('datos raros: nunca tira', () => {
+    for (const raro of [null, undefined, {}, [], 'x', 3]) assert.equal(cintaDeMetricas(raro), null, String(raro));
+    // Sin ningún tramo del circuito con cifra (el aviso no alcanza), no se dibuja
+    assert.equal(cintaDeMetricas([aviso(35), redaccion(null), respuesta(null), carga(null)], EXTERNA), null);
+    assert.equal(cintaDeMetricas([aviso(35), produccion(null), carga(null)], INTERNA), null);
+    assert.equal(cintaDeMetricas([
+      tramo('tramite', NOMBRE.tramite, -3), tramo('respuesta', NOMBRE.respuesta, Number.NaN), tramo('carga', NOMBRE.carga, '2')
+    ], EXTERNA), null);
+    assert.equal(cintaDeMetricas([null, 3, 'x', [], {}, { clave: 'carga', cifra: 'x' }, { clave: 'tramite', cifra: { valor: Infinity } }],
+      EXTERNA), null);
+    // Un aviso que no se puede leer cuenta como sin cifra
+    const conAvisoRaro = [tramo('aviso', NOMBRE.aviso, 'x', null, { cifra: { valor: 'x', orientativo: true } }), redaccion(10), respuesta(10),
+      carga(0)];
+    let cinta;
+    assert.doesNotThrow(() => { cinta = cintaDeMetricas(conAvisoRaro, EXTERNA); });
+    assert.notEqual(cinta, null);
+    assert.deepEqual(cinta.aviso, { rotulo: 'Aviso anticipado:', texto: 'sin casos todavía', ancho: null, sigue: false, vencimiento: '' });
+    assert.equal(cinta.vencimiento, null);
+    assert.deepEqual(cinta.orientativos, []);
+    assert.deepEqual(cinta, cintaDeMetricas([redaccion(10), respuesta(10), carga(0)], EXTERNA));
+    // Unos hábiles que no se pueden leer: los días sin paréntesis
+    const habilesRaros = cintaDeMetricas([aviso(35, 'x'), redaccion(10, -1), respuesta(10, Number.NaN), carga(0, 0)], EXTERNA);
+    assert.deepEqual(habilesRaros.partes.map((p) => p.dias), ['10 días corridos', '10 días corridos']);
+    assert.deepEqual(habilesRaros.total, { antes: 'En total, unos ', cifra: '20 días corridos', despues: '' });
+    assert.equal(habilesRaros.aviso.texto, '35 días corridos; la publicación llega 15 días corridos antes del vencimiento');
+    // Una gestión sin carga: va en gris, sin total ni regla del aviso
+    const sinCarga = cintaDeMetricas([aviso(35), redaccion(38), respuesta(47)], EXTERNA);
+    assert.deepEqual([sinCarga.carga.actor, sinCarga.carga.grande, sinCarga.total.cifra], ['gris', 'Sin casos', '']);
+    assert.deepEqual([sinCarga.vencimiento, sinCarga.aviso.ancho], [null, null]);
+    // Un tramo sin nombre: ningún texto empieza con «: »
+    const sinNombre = cintaDeMetricas([{ clave: 'tramite', cifra: { valor: 10, orientativo: true } }, respuesta(10), carga(0)], EXTERNA);
+    assert.equal(sinNombre.partes[0].nombre, '');
+    assert.deepEqual(sinNombre.orientativos, ['Con tan pocos casos, es orientativo.']);
+    assert.ok(sinNombre.descripcion.includes(': en total, unos 20 días corridos. 10 días corridos, 50 %. Respuesta del área'), sinNombre.descripcion);
+    // Opciones raras: las de entrada (externa, días hábiles, mediana)
+    const tramos = externaCompleta();
+    for (const opciones of [null, 'x', 3, [], { gestion: 3, dias: [], estadistico: {} }, { gestion: 'EXTERNA', dias: 'Corridos' }]) {
+      assert.deepEqual(cintaDeMetricas(tramos, opciones), cintaDeMetricas(tramos), JSON.stringify(opciones));
     }
-    // También con la cadena entera, cortada en otro tramo y con números enormes
-    for (const [tramos, gestion] of [
-      [[tramo('aviso', 28), tramo('tramite', 12), tramo('respuesta', 35), tramo('carga', 2)], 'externa'],
-      [[tramo('aviso', 27), tramo('tramite', 40), tramo('respuesta', null), tramo('carga', 1)], 'externa'],
-      [[tramo('aviso', 41), tramo('produccion', 45), tramo('carga', 0)], 'interna'],
-      [[tramo('aviso', 27), tramo('produccion', 1e9), tramo('carga', 0)], 'interna'],
-      [[tramo('aviso', 1e9), tramo('produccion', 3), tramo('carga', 1e9)], 'interna']
-    ]) {
-      const cual = tramos.map((t) => t.cifra?.valor ?? 'sin cifra').join(', ');
-      const cinta = delPdf(tramos, { gestion });
-      sinPisadas(cinta, cual, letra);
-      marcasSinTocarse(cinta, cual);
-    }
+    assert.deepEqual(cintaDeMetricas(tramos), cintaDeMetricas(tramos, { gestion: 'externa', dias: 'habiles', estadistico: 'mediana' }));
+    // La opción `letra` ya no existe: no cambia nada
+    assert.deepEqual(cintaDeMetricas(tramos, { ...EXTERNA, letra: 8 }), cintaDeMetricas(tramos, EXTERNA));
+    for (const c of [cinta, habilesRaros, sinCarga, sinNombre]) sinRarezas(c, JSON.stringify(c));
   });
 });
 
 describe('cintasDeLaVista', () => {
-  it('pasa la letra a las dos cintas', () => {
-    const vista = { circuito: {
-      externa: [tramo('aviso', 27), tramo('tramite', 40), tramo('respuesta', null), tramo('carga', 1)],
-      interna: [tramo('aviso', 42), tramo('produccion', 56), tramo('carga', 1)]
-    } };
-    const conLetra = cintasDeLaVista(vista, { estadistico: 'mediana', dias: 'habiles', ...OPCIONES_CINTA_PDF });
-    assert.deepEqual(conLetra, {
-      externa: cintaDeMetricas(vista.circuito.externa, { gestion: 'externa', dias: 'habiles', estadistico: 'mediana', ...OPCIONES_CINTA_PDF }),
-      interna: cintaDeMetricas(vista.circuito.interna, { gestion: 'interna', dias: 'habiles', estadistico: 'mediana', ...OPCIONES_CINTA_PDF })
+  it('cintasDeLaVista', () => {
+    // Con la vista de los casos de tests/metricas-casos.js, en las cuatro combinaciones
+    const casos = casosDe(mapaDeLosCasos(), { hoy: HOY_DE_LAS_METRICAS });
+    for (const estadistico of ['mediana', 'promedio']) {
+      for (const dias of ['habiles', 'corridos']) {
+        const vista = vistaDe(casos, { anio: 2026, al: HOY_DE_LAS_METRICAS, estadistico, dias });
+        const cintas = cintasDeLaVista(vista, { estadistico, dias });
+        assert.deepEqual(Object.keys(cintas), ['externa', 'interna']);
+        for (const gestion of ['externa', 'interna']) {
+          assert.deepEqual(cintas[gestion], cintaDeMetricas(vista.circuito[gestion], { gestion, dias, estadistico }), `${gestion}, ${estadistico}, ${dias}`);
+        }
+      }
+    }
+    // Con una vista armada a mano, las dos se dibujan
+    const vista = { circuito: { externa: externaCompleta(), interna: [aviso(20, 14), produccion(90, 61), carga(0, 0)] } };
+    const cintas = cintasDeLaVista(vista, { estadistico: 'promedio', dias: 'corridos' });
+    assert.deepEqual(cintas, {
+      externa: cintaDeMetricas(vista.circuito.externa, { gestion: 'externa', dias: 'corridos', estadistico: 'promedio' }),
+      interna: cintaDeMetricas(vista.circuito.interna, { gestion: 'interna', dias: 'corridos', estadistico: 'promedio' })
     });
-    assert.notDeepEqual(conLetra.externa, cintasDeLaVista(vista).externa);
-    assert.notDeepEqual(conLetra.interna, cintasDeLaVista(vista).interna);
+    assert.deepEqual([cintas.externa.bajada, cintas.interna.bajada], [BAJADA_EXTERNA, BAJADA_INTERNA]);
+    assert.equal(cintas.interna.aclaracion, ACLARACION_PROMEDIO);
+    // Sin opciones (o con unas raras), las de entrada; `letra` no cambia nada
+    assert.deepEqual(cintasDeLaVista(vista), cintasDeLaVista(vista, { estadistico: 'mediana', dias: 'habiles' }));
+    assert.deepEqual(cintasDeLaVista(vista, null), cintasDeLaVista(vista));
+    assert.deepEqual(cintasDeLaVista(vista, { estadistico: 'mediana', dias: 'habiles', letra: 8 }), cintasDeLaVista(vista));
+    // Sin vista, las dos null
+    for (const rara of [null, undefined, 'x', [], {}, { circuito: null }, { circuito: { externa: 'x' } }]) {
+      assert.deepEqual(cintasDeLaVista(rara, { estadistico: 'mediana', dias: 'habiles' }), { externa: null, interna: null }, JSON.stringify(rara));
+    }
   });
 
-  it('las dos cintas de una vista, cada una la de cintaDeMetricas con el circuito de su gestión; sin vista, las dos null', () => {
-    const casos = casosDe(mapaDeLosCasos(), { hoy: HOY_DE_LAS_METRICAS });
-    for (const { estadistico, dias } of COMBINACIONES.filter((c) => c.gestion === 'externa')) {
-      const vista = vistaDe(casos, { anio: 2026, al: HOY_DE_LAS_METRICAS, estadistico, dias });
-      assert.deepEqual(cintasDeLaVista(vista, { estadistico, dias }), {
-        externa: cintaDeMetricas(vista.circuito.externa, { gestion: 'externa', dias, estadistico }),
-        interna: cintaDeMetricas(vista.circuito.interna, { gestion: 'interna', dias, estadistico })
-      }, `${estadistico}-${dias}`);
-    }
-    for (const vista of [null, undefined, 'x', [], {}, { circuito: null }, { circuito: { externa: 'x' } }]) {
-      assert.deepEqual(cintasDeLaVista(vista, { estadistico: 'mediana', dias: 'habiles' }), { externa: null, interna: null }, JSON.stringify(vista));
-    }
-    // Sin opciones, las de entrada
-    const vista = vistaDe(casos, { anio: 2026, al: HOY_DE_LAS_METRICAS });
-    assert.deepEqual(cintasDeLaVista(vista), cintasDeLaVista(vista, { estadistico: 'mediana', dias: 'habiles' }));
+  it('el módulo exporta la forma, la cinta y las de la vista (sin las alturas)', () => {
+    assert.deepEqual(Object.keys(moduloDeLaCinta).sort(), ['FORMA_DE_LA_CINTA', 'cintaDeMetricas', 'cintasDeLaVista']);
   });
 });

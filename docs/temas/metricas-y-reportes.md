@@ -11,13 +11,14 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-05-metricas-pdf-apaisado-design.md`
 - `docs/superpowers/specs/2026-11-06-metricas-anticipacion-y-corridos-design.md`
 - `docs/superpowers/specs/2026-11-07-metricas-cajones-y-ciclos-design.md`
+- `docs/superpowers/specs/2026-11-08-metricas-recorrido-tipico-design.md`
 
 ## Archivos
 
 metricasController:
 GET /api/metricas y su PDF, y los datos del Ciclo de vida del dato;
 gestionController: solo las métricas de /gestion/metricas, el CSV y las métricas manuales;
-metricasReglas (los casos, la vista, el modal de cada tramo, el contexto, el trabajo, las áreas y las etapas del Ciclo de vida del dato, puro), metricasCinta (la cinta del recorrido típico, pura), metricasGrafico (el gráfico de los ciclos de un tramo, en su modal, puro), metricasOpciones (los años, la foto que toca y los parámetros, puro) y metricasFoto (la foto del 31/12);
+metricasReglas (los casos, la vista, el modal de cada tramo, el contexto, el trabajo, las áreas y las etapas del Ciclo de vida del dato, puro), metricasCinta (el recorrido típico, puro), metricasGrafico (el gráfico de los ciclos de un tramo, en su modal, puro), metricasOpciones (los años, la foto que toca y los parámetros, puro) y metricasFoto (la foto del 31/12);
 reportesPdfBase (la base de los PDF) y un archivo por reporte (reportesMetricasPdf, reportesCicloDeVidaPdf, reportesInformeAnualPdf, reportesEstadoGeneralPdf, reportesPorAreaPdf, reportesAvisosPdf, reportesAgenda + reportesAgendaPdf y reportesParaCompletarPdf), y reportesNombres (los nombres de los PDF).
 reportesController: los reportes PDF, con sus consultas.
 
@@ -109,21 +110,42 @@ reportesController: los reportes PDF, con sus consultas.
   Un cambio de forma de la foto después del despliegue tiene que subir la versión o leer con tolerancia: una foto que no se puede leer tira (500), no pasa por «no hay foto».
   Un año cerrado sin foto se ve en vivo «al 31/12», con el aviso «La foto de 2026 se saca el 10/01/2027» y, pasado ese día, «La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.» (Ruling 17: un año cerrado nunca desaparece del selector).
 - La pestaña Métricas (la página dibuja lo que manda el servidor: ver «La página: reportes.js»): la barra (el año, los selectores, «Casos: todos» y «Descargar PDF»), la franja de lo destildado, «En esta página» (El circuito, Resultados del año, Contexto, El trabajo del RPAD, Áreas y temas y Para completar (N), con el `total` del servidor), el circuito (una banda de flechas con quién actúa, donde cada nodo con tramo es un botón que abre su modal, y, debajo, la tarjeta de cada etapa; lo de la DGMIT en violeta `#5B4691`, el Área en verde azulado `#1F6B73` y el Portal en verde;
-  en el teléfono, en una columna; solo CSS, sobre el HTML de nodos y flechas: `.mt-flecha` sigue siendo la etapa y `.l` no se dibuja), la cinta del recorrido típico, los casos («Ver los casos»), los resultados, el contexto (el índice y la antigüedad en SVG y HTML, sin Chart.js, con los valores también en texto), el trabajo (columnas por mes con chips para la serie, las métricas manuales de `/gestion/metricas-manuales` con «Cargar el mes» solo para administración y el CSV `/gestion/metricas/csv` (Tipo, Año, Mes y Cantidad por mes)),
+  en el teléfono, en una columna; solo CSS, sobre el HTML de nodos y flechas: `.mt-flecha` sigue siendo la etapa y `.l` no se dibuja), el recorrido típico, los casos («Ver los casos»), los resultados, el contexto (el índice y la antigüedad en SVG y HTML, sin Chart.js, con los valores también en texto), el trabajo (columnas por mes con chips para la serie, las métricas manuales de `/gestion/metricas-manuales` con «Cargar el mes» solo para administración y el CSV `/gestion/metricas/csv` (Tipo, Año, Mes y Cantidad por mes)),
   áreas y temas y «Para completar» (con el link «Cargar nota DGMIT» → `seguimiento.html?id=N#cargar-nota`, solo con `Auth.puedeCargarNotasDgmit()`, y el link al Seguimiento de cada actualización sin «Recibido el»).
-- La cinta (`services/metricasCinta.js`, `cintaDeMetricas` y `cintasDeLaVista`, pura, como `seguimientoCinta.js`): las cifras del circuito una detrás de la otra alrededor del vencimiento, en un espacio de 1000 × 156 (línea útil de x = 30 a x = 970;
-  `ALTURAS_DE_LA_CINTA`), con el eje en días corridos, la banda celeste antes del vencimiento, el rayado después y las marcas (aviso, nota DGMIT, datos y carga).
-  Las marcas a menos de 18 unidades se juntan en una (Ruling 14: no es el 11 del Seguimiento;
-  «Entrega y carga juntas»), con el rótulo de lo que pasó («Entrega y carga, el mismo día» solo si la cifra es 0).
-  Ningún texto se sale del dibujo ni se pisa (a la izquierda de su marca si no entra a la derecha; si no, otra fila o no va).
-  Los rótulos y los segmentos dicen los hábiles del tramo entre paréntesis (`tramo.habiles`, con `cantidadDeLasDos`): «Aviso · 51 días corridos (35 hábiles) antes», «Respuesta del área · 64 días corridos (45 hábiles)», «Entrega y carga, 3 días corridos (1 hábil) después»; con 0 corridos, «el mismo día», sin paréntesis.
-  El paréntesis va después del rótulo (decisión del usuario del 08/11/2026): un rótulo, también el del aviso y el de la carga, que con los hábiles no entra en ningún lado, o que con ellos le saca el lugar a otro, va con el texto sin el paréntesis, y solo si así tampoco entra, no va.
-  Así la cinta nunca escribe menos rótulos que sin los hábiles: soltar el paréntesis antes que el rótulo es a propósito, porque los hábiles ya están en el cajón, en el modal y en el `<title>` de cada segmento.
-  Sin `habiles` en los tramos (una foto sin esa clave), los rótulos van sin paréntesis.
-  Si a la cadena le falta un tramo sin cifra, se dibuja hasta donde se sabe y el resto va en gris con «La cinta se completa cuando haya …».
-  Solo la dibuja la página, en SVG: el PDF de Métricas y el Informe anual no la llevan, porque sus cifras ya están en el circuito (decisión del usuario del 05/11/2026).
-  La foto la sigue guardando y la API la sigue mandando; la opción `letra` de `cintaDeMetricas` queda sin uso en producción.
-  Es orientativa, no un ciclo real, y lo dice.
+- El recorrido típico (`services/metricasCinta.js`, `cintaDeMetricas` y `cintasDeLaVista`, pura, nunca tira): cuánto lleva un pedido, desde el pedido de la DDPC hasta la publicación en el portal, con las cifras del circuito una detrás de la otra.
+  Es una sección propia, «El recorrido típico», debajo de las tarjetas de «El circuito» y antes de «Los casos», con su bajada, y cambia con los chips de gestión y con «Mediana» o «Promedio».
+  Dibuja, de arriba abajo, el total entre dos líneas finas, la línea y, debajo, el aviso anticipado.
+  - **La línea**: los tramos a escala (la redacción y la respuesta en la externa, la producción en la interna), cada uno de un ancho proporcional a sus días y con un hito al empezar; al final, de ancho fijo y fuera de escala, la preparación y carga con su hito y el Portal.
+    La carga va fuera de escala porque es siempre de pocos días: a escala no se leería.
+    Cada tramo lleva el color de su actor, el mismo de la banda de «El circuito»: DGMIT en violeta (la redacción y la producción), Área en verde azulado, Datos Públicos en tinta (la carga) y el Portal en verde; un tramo sin cifra va en gris punteado.
+    Arriba de cada tramo van su cifra grande, su nombre y sus días; la cifra grande se parte en renglones por palabras si no entra.
+  - **El total** es la suma de las cifras de los tramos (medianas o promedios), con los hábiles si todos los traen, y una frase de abajo que dice que es una referencia, no la duración de un caso.
+    Se descartó la mediana de los ciclos completos, caso por caso (decisión del usuario del 08/11/2026): no cierra con la suma de las partes.
+    Con un tramo sin cifra, el renglón del total dice «El total se completa cuando haya casos de todos los tramos» y no hay frase.
+  - **Los porcentajes** (redondeados por el resto mayor, para que sumen 100) van solo en la externa con todos los tramos con cifra y un total de más de 0; en la interna, la cifra grande son los días.
+    Un tramo de 0 días dice «En el día» y no lleva porcentaje; uno que redondea a 0, «menos del 1 %».
+    Con la vista en hábiles, los días dicen «N días hábiles», sin paréntesis, y con la externa completa la cifra grande sigue siendo el porcentaje.
+  - **El aviso anticipado** va por fuera, no se suma al total: es el tiempo que se avisa para que hagan los trámites, no parte del ciclo.
+    Es una regla debajo de la línea, del inicio al vencimiento, que corre junto con el primer tramo; el vencimiento cae donde termina el aviso, contado desde el inicio, y la página lo marca con una línea punteada y «vencimiento» al lado del tope.
+    Casos: de 0 días, «el mismo día del vencimiento»; sin casos o sin regla (falta un tramo, y la carga también cuenta), un renglón sin regla; más largo que el total (`sigue`), la regla llega al final con una flecha, sin vencimiento y con cuántos días llega la publicación antes; si cae dentro de la carga, el vencimiento va al final de la zona a escala.
+    Si el texto no entra dentro de la regla, baja debajo de ella: es una consulta de contenedor de CSS (`@container`) sobre la regla, no una medida del servidor, y el teléfono usa el mismo mecanismo.
+    El corte está en unos 420 px de regla (unos 720 con `sigue`, que dice más) y el texto baja de a un renglón hasta 280 px de ancho y de ahí en más corta; nunca pasa por «vencimiento».
+    Ahí el tope va fuera de la grilla, contra el final de la regla: su borde cae en el vencimiento a cualquier ancho de regla, también 0.
+  - **Un tramo angosto** (`angosta`, menos del 12 % del ancho) no lleva nada arriba de su línea, ni la cifra grande, que tampoco entra: sus cifras están en la lista de los tramos, que entonces se ve siempre (`lista_siempre`).
+    La lista (el color, el nombre y «38 días corridos (25 hábiles) · 45 %») se ve en el teléfono, hasta 700 px, donde arriba de cada tramo queda solo la cifra grande.
+    En el teléfono, un tramo a escala de menos de 56 px no muestra ni eso: cada tramo a escala es un contenedor de CSS (`@container`) y esconde sus textos sin sacar la caja, para que la línea quede a la misma altura; la carga, de ancho fijo, no.
+    Todos los tramos a escala en 0 días se reparten el ancho en partes iguales; un tramo sin cifra ocupa el 70 % de lo que suman los demás (al menos 1 día).
+  - **Sin notas DGMIT cargadas**, la redacción se dibuja en gris, con su nombre y «se completa cuando haya notas DGMIT cargadas»; otro tramo sin casos dice «se completa cuando haya casos».
+    Cada tramo con `orientativo` suma un renglón «<nombre>: con tan pocos casos, es orientativo.» (el aviso, «Aviso anticipado: …»).
+    Sin ningún tramo del circuito con cifra (el aviso no cuenta), no hay recorrido y la sección no se muestra.
+  - **La forma**: `{ forma: 'recorrido', titulo, bajada, total: { antes, cifra, despues }, partes, carga, portal, vencimiento: { x } | null, aviso: { rotulo, texto, ancho, sigue, vencimiento }, orientativos, lista, lista_siempre, aclaracion, descripcion }`.
+    Los anchos de `partes` suman 100 (el último absorbe el redondeo) y `descripcion` es el `aria-label` del dibujo.
+    `actor` es 'dgmit', 'area', 'ddpc' o 'gris'.
+    `FORMA_DE_LA_CINTA` es `'recorrido'`: la página no dibuja una cinta sin ella.
+  - Solo la dibuja la página, en HTML y CSS (la línea y los hitos son bordes, para que se vean con `forced-colors` y al imprimir): el PDF de Métricas y el Informe anual no la llevan, porque sus cifras ya están en el circuito (decisión del usuario del 05/11/2026).
+    La página no tiene el recuadro «i» de las aclaraciones del circuito ni el pie «Con «Mediana», el número grande es el del medio…» (decisión del usuario del 08/11/2026); el PDF de Métricas los conserva (`vista.circuito.aclaraciones` se sigue mandando, y `TEXTOS_DE_LA_PESTANA.pieDelCircuito` sigue en el PDF).
+  - La foto guarda las cuatro cintas ya armadas con esta forma, y el servidor no lee una cinta de otra forma.
+    La página, ante una sin `forma: 'recorrido'`, no dibuja nada y oculta la sección, sin error.
 - Los textos los arma el servidor (Ruling 19): las cifras y sus textos en las dos unidades, los plurales, los en curso y pendientes, las aclaraciones, las frases de los cajones, el modal de cada tramo con la geometría de su gráfico, lo que se dice sin casos o sin datos, los textos del índice, de la antigüedad, del trabajo y de «Para completar», y el botón del Informe anual sin foto (Ruling 34).
   La página y los PDF los imprimen tal cual.
 - API (`controllers/metricasController.js`;
@@ -217,7 +239,7 @@ Son solo del PDF: la página no cambia.
 - **El contexto** (`elementosDelContexto`): el índice a la izquierda; la antigüedad y la doble verificación a la derecha.
   El Informe lleva su propio pie del índice (`TEXTOS_DEL_INFORME.pieDelIndice`), sin «el de hoy».
 - **Las áreas** (`dibujarLasAreas`): el ranking en dos columnas (`nuevoFlujo`), con los temas y las frecuencias en la columna libre o en otra hoja.
-- **Sin cintas:** ver «La cinta», arriba.
+- **Sin recorrido típico:** ver «El recorrido típico», arriba.
 
 Un hito del Informe lleva hasta 35 renglones de descripción, para que el nombre del proyecto y el hito más alto entren debajo del título de la hoja.
 `nuevoFlujo` no corta una pieza: los temas y las frecuencias son catálogos cortos (hoy, 12 temas, sin API que los cargue); una lista de más de unos 35 renglones se saldría de la hoja.
@@ -237,7 +259,7 @@ Va cuando el tramo trae `anticipacion_texto`; con «En el día» o sin cifra, el
 - En la página (`htmlDeFlecha`, con la clase `anticipa`), el número, la frase («días corridos de anticipación») y los hábiles entre paréntesis (`.h`).
   La línea son bordes (`.mt-anticipa-punto`, `.mt-anticipa-linea` y `.mt-anticipa-aro`), para que se vea con `forced-colors`, donde el punto sigue lleno con `CanvasText`.
   El lector de pantalla la salta (`aria-hidden`) y lee «aviso» y «vencimiento» (`ANTICIPACION_DESDE` y `ANTICIPACION_HASTA`, atadas a `TEXTOS_DE_LA_PESTANA.anticipacion`).
-  Hasta 960 píxeles va en una columna, como las demás tarjetas, y «La cinta» no cambia.
+  Hasta 960 píxeles va en una columna, como las demás tarjetas, y «El recorrido típico» no cambia.
 - En el PDF, `etapaDe` dibuja `cuerpoDeLaAnticipacion`: todo se mide antes de dibujarse, como lo demás, para que `LETRAS_DEL_CIRCUITO` elija el escalón, y los textos pasan por `pieza`.
   La línea va con `moveTo` y `lineTo`: un `rect` fino sería, para `tests/pdf-diagramacion.js`, una línea que cruza la tarjeta.
 
@@ -272,11 +294,14 @@ Ver `docs/temas/metricas-modal.md`: la banda, lo que arma el servidor, la tabla 
 ## La página: reportes.js
 
 - `reportes.js` («Métricas y Reportes»): al cargarse solo declara (`tests/reportes-frontend.test.js` lo carga en un `vm`).
-  Lo que arma HTML (la barra, la franja de lo destildado, «En esta página», el circuito, el SVG de la cinta y el del índice, los casos, los resultados, el contexto, el trabajo, las áreas, «Para completar» y las tarjetas de Reportes:
-  `htmlDeBarra`, `htmlDeFlecha`, `htmlDeNodo`, `tramoDeLaGestion`, `htmlDelModal`, `svgDelGrafico`, `svgDeCinta`, `htmlDeReportes`, `pedidoDeReporte`, …) es puro y recibe quién mira por parámetro; lo que toca el DOM o la API va aparte, al final.
+  Lo que arma HTML (la barra, la franja de lo destildado, «En esta página», el circuito, el recorrido típico y el SVG del índice, los casos, los resultados, el contexto, el trabajo, las áreas, «Para completar» y las tarjetas de Reportes:
+  `htmlDeBarra`, `htmlDeFlecha`, `htmlDeNodo`, `tramoDeLaGestion`, `htmlDelModal`, `svgDelGrafico`, `htmlDeCinta`, `htmlDeReportes`, `pedidoDeReporte`, …) es puro y recibe quién mira por parámetro; lo que toca el DOM o la API va aparte, al final.
   Lo elegido viaja en la URL (`estadoDeLaUrl`, `urlDeEstado`: los de entrada no se escriben).
   Pide los datos con `API.pedirJson` y los PDF con `API.pedirArchivo` + `descargarBlob` (JWT en el encabezado).
-  No recalcula nada: cifras, textos (plurales, «En el día», los vacíos, las dos unidades), en curso, pendientes, la cinta (con sus x, su línea, sus alturas, sus rótulos y sus anclajes), el modal de cada tramo (con la geometría de su gráfico) y el índice los manda el servidor (Ruling 19); todo texto del servidor pasa por `Utils.escapeHtml` y un número se escribe con `String` (un 0 es «0»).
+  No recalcula nada: cifras, textos (plurales, «En el día», los vacíos, las dos unidades), en curso, pendientes, el recorrido típico (sus anchos, la x del vencimiento, el largo de la regla del aviso, los porcentajes y los textos), el modal de cada tramo (con la geometría de su gráfico) y el índice los manda el servidor (Ruling 19); todo texto del servidor pasa por `Utils.escapeHtml` y un número se escribe con `String` (un 0 es «0»).
+  `htmlDeCinta(cinta)` dibuja el recorrido típico con `htmlDeParteDelRecorrido` (un tramo) y `htmlDelAviso` (la regla): imprime lo del servidor con `escaparTexto`, los anchos, la x del vencimiento y el largo de la regla en `style="width:…%"` y `style="left:…%"` (con `coordenada`), y deja pasar `actor` solo si es 'dgmit', 'area', 'ddpc' o 'gris' (otro se dibuja gris).
+  Una cinta sin `forma: 'recorrido'` da '' y `dibujarElCircuito` oculta `#mt-cinta` y vacía `#mt-aclaracion-cinta`, que lleva `cinta.aclaracion`.
+  La sección no tiene `tabindex` ni `role` en `#mt-cinta` (no se desplaza de costado), ni `#mt-leyenda`, ni `#mt-aclaraciones`.
   Las fechas, con `Utils.fechaCorta`;
   «hoy», con `Utils.hoyEnArgentina()`.
   La franja de lo destildado imprime `sin_texto` de la API (la arma `textoDeLaFranja`).
@@ -291,7 +316,7 @@ Ver `docs/temas/metricas-modal.md`: la banda, lo que arma el servidor, la tabla 
   `TARJETAS_CON_ANIO`, `CONTROLES_DE_REPORTES` (`'rp-ciclo'`) y `conReporteElegido` la conocen (ver `docs/temas/ciclo-de-vida.md`).
   Los textos fijos de la pestaña que repite el PDF de Métricas (`TEXTOS_DE_LA_PESTANA` de `services/reportesMetricasPdf.js`) y los del de «Datos para completar» (`TEXTOS_DE_PARA_COMPLETAR` de `services/reportesParaCompletarPdf.js`) están atados al HTML y a `reportes.js` por los tests «reportes.js y el PDF de Métricas: los mismos textos» y «… de Datos para completar: los mismos textos»: si cambia uno de la pestaña, fallan.
   La oración de los días (`BAJADA_DE_LOS_DIAS`, el final de `#mt-bajada` de `reportes.html` y `TEXTOS_DE_LA_PESTANA.bajada`, con que empieza «Cómo se cuenta» del PDF de Métricas y del Informe anual) dice «Los días van corridos y, entre paréntesis, hábiles: de lunes a viernes, sin feriados ni días no laborables.».
-  El pie del circuito (`TEXTOS_DE_LA_PESTANA.pieDelCircuito`, también en el HTML) dice «Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio», cada cifra lo dice debajo.».
+  El pie del circuito (`TEXTOS_DE_LA_PESTANA.pieDelCircuito`) está solo en el PDF de Métricas, no en la página, y dice «Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio», cada cifra lo dice debajo.».
   `tests/paginas.test.js` exige que `VERSION_FERIADOS` sea mayor que `VERSION_REPORTES`.
 
 ## Archivos de tests

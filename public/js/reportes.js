@@ -3,14 +3,14 @@
  * Dos pestañas con hash, como Correos: Métricas (la inicial; #metricas) y Reportes (#reportes).
  * Métricas dibuja lo que manda GET /api/metricas: la barra (el año, «Mediana | Promedio», los casos y el PDF; los días van siempre
  * corridos, con los hábiles entre paréntesis, sin selector), la franja de lo destildado, el índice de la página, el circuito de cada
- * gestión (cada nodo con tramo abre el modal de ese tramo, con sus ciclos y su gráfico), la cinta del recorrido típico y la lista de casos, donde se destilda un dataset; debajo, los resultados del año, el contexto
+ * gestión (cada nodo con tramo abre el modal de ese tramo, con sus ciclos y su gráfico), el recorrido típico y la lista de casos, donde se destilda un dataset; debajo, los resultados del año, el contexto
  * (el índice mes a mes y la antigüedad de los vencidos), el trabajo del RPAD (con las métricas manuales y el CSV de Gestión, su API de
  * siempre), las áreas y los temas (el ranking de Gestión) y «Para completar» (con «Cargar nota DGMIT», que abre el formulario del
  * Seguimiento). Lo elegido viaja en la URL
  * (?anio=&estadistico=&gestion=&sin=12,45#reportes) y no se guarda; la serie del trabajo por mes y el agrupado de los datasets,
  * tampoco (son de la página).
  * La página no recalcula ninguna regla: las cifras, sus textos (también los plurales y lo que dice cuando no hay casos), los en curso,
- * la cinta (con sus x, sus rótulos y sus anclajes), el modal de cada tramo (con la geometría de su gráfico) y los textos de los casos los
+ * el recorrido típico (con sus anchos, la x del vencimiento y sus textos), el modal de cada tramo (con la geometría de su gráfico) y los textos de los casos los
  * manda el servidor (services/metricasReglas.js, metricasCinta.js y metricasGrafico.js); acá solo se dibujan. Las fechas se leen como texto (Utils.fechaCorta). Todo texto que llega del servidor pasa
  * por Utils.escapeHtml, y un número se escribe con String (un 0 es «0»: Utils.escapeHtml(0) da '').
  * Al cargarse el archivo solo declara: lo que arma HTML es puro (tests/reportes-frontend.test.js lo carga en un vm) y lo que toca
@@ -66,20 +66,12 @@ const ORIENTATIVO = 'con tan pocos casos, es orientativo';
 const ANTICIPACION_DESDE = 'aviso';
 const ANTICIPACION_HASTA = 'vencimiento';
 
-// La cinta: todo llega con ella (las x, la línea del eje, las alturas, los textos y los anclajes); estas listas solo dicen qué se
-// puede escribir en un atributo
+// El recorrido típico: todo llega con él (los anchos, la x del vencimiento, el largo de la regla y los textos); esta lista solo dice
+// qué actor se puede escribir en una clase (el primero es el de lo que no se conoce), y la forma es la de cintaDeMetricas (atada por un test)
+const ACTORES = ['gris', 'dgmit', 'area', 'ddpc'];
+const FORMA_DE_LA_CINTA = 'recorrido';
+// Los anclajes de un texto del gráfico del modal (el primero, para uno que no se conoce); lo demás del gráfico llega del servidor
 const ANCLAJES = ['start', 'middle', 'end'];
-const COLORES = ['tinta', 'violeta', 'verde'];
-const TIPOS_DE_MARCA = ['aviso', 'nota', 'datos', 'carga', 'datos-y-carga'];
-// Qué es cada hito, para el <title> de su marca (en minúscula: se juntan con «y») y la leyenda
-const NOMBRES_DE_LOS_HITOS = {
-  aviso: 'aviso del RPAD',
-  nota: 'nota DGMIT entregada al área',
-  datos: { externa: 'datos entregados', interna: 'relevamiento entregado' },
-  carga: 'carga en el portal'
-};
-const LEYENDA_DE_LA_CINTA = ['aviso', 'nota', 'datos', 'carga', 'datos-y-carga', 'rayado'];
-const LEYENDA_FIJA = { 'datos-y-carga': 'Entrega y carga juntas', rayado: 'Después del vencimiento' };
 
 const ICONO_DESCARGA = '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>';
 // Lucide «circle-plus», debajo del rol de cada nodo que abre el modal de su tramo
@@ -119,12 +111,6 @@ function esNumero(valor) {
 // dd/mm/aaaa del texto 'AAAA-MM-DD' (o '—')
 function fecha(valor) {
   return Utils.fechaCorta(typeof valor === 'string' ? valor : null);
-}
-
-// «A», «A y B», «A, B y C»
-function enumerar(textos) {
-  if (textos.length <= 1) return textos[0] ?? '';
-  return `${textos.slice(0, -1).join(', ')} y ${textos.at(-1)}`;
 }
 
 function conMayuscula(texto) {
@@ -364,119 +350,79 @@ function htmlDeCircuito(vista, gestion) {
   return `<div class="mt-tramos ${g}" role="group" aria-label="El circuito de la gestión ${g}">${partes.join('')}</div>`;
 }
 
-// Las aclaraciones del circuito de la gestión, todas del servidor: los avisados ya vencidos y, en la externa, los resueltos con una
-// fuente pública y los de datasets que no requieren nota DGMIT (las que no tienen ciclos llegan vacías y no van). Sin ninguna, nada
-function htmlDeAclaraciones(vista, gestion) {
-  const g = elegido(gestion, GESTIONES);
-  const aclaraciones = esObjeto(vista) && esObjeto(vista.circuito) && esObjeto(vista.circuito.aclaraciones) ? vista.circuito.aclaraciones[g] : null;
-  const delServidor = esObjeto(aclaraciones) ? [aclaraciones.ya_vencidos, aclaraciones.fuente_publica, aclaraciones.no_requieren_nota] : [];
-  const textos = delServidor.map((a) => (esObjeto(a) ? escaparTexto(a.texto) : '')).filter(Boolean);
-  if (textos.length === 0) return '';
-  return `<div class="mt-directo"><span class="i" aria-hidden="true">i</span><div>${textos.map((texto) => `<p>${texto}</p>`).join('')}</div></div>`;
-}
-
 // =====================================================
-// La cinta (pura)
+// El recorrido típico (puro)
 // =====================================================
-
-// Lo que junta una marca, en palabras («Datos entregados y carga en el portal»)
-function nombreDeLaMarca(tipos, gestion) {
-  const nombres = comoLista(tipos).map((tipo) => {
-    const nombre = NOMBRES_DE_LOS_HITOS[tipo];
-    return esObjeto(nombre) ? nombre[gestion] : nombre;
-  }).filter((nombre) => typeof nombre === 'string');
-  return conMayuscula(enumerar(nombres));
-}
-
-// El dibujo de una marca centrada en (cx, cy), como en la maqueta 7: el rombo del aviso, el cuadrado violeta de la nota DGMIT, el
-// aro de los datos, el punto verde de la carga y, si la entrega y la carga van juntas, el punto verde con el aro azul
-function iconoDeLaMarca(tipo, cx, cy) {
-  const x = coordenada(cx);
-  const y = coordenada(cy);
-  switch (tipo) {
-    case 'aviso': return `<rect x="${coordenada(cx - 7)}" y="${coordenada(cy - 7)}" width="14" height="14" transform="rotate(45 ${x} ${y})" class="i-aviso"/>`;
-    case 'nota': return `<rect x="${coordenada(cx - 6)}" y="${coordenada(cy - 6)}" width="12" height="12" rx="3" class="i-nota"/>`;
-    case 'datos': return `<circle cx="${x}" cy="${y}" r="6.5" class="i-datos"/>`;
-    case 'carga': return `<circle cx="${x}" cy="${y}" r="7" class="i-carga"/>`;
-    default: return `<circle cx="${x}" cy="${y}" r="8.5" class="i-datos-y-carga"/>`;
-  }
-}
-
-// Un rectángulo de la cinta, de x0 a x1 (el ancho, con dos decimales)
-function rectangulo(x0, x1, y, alto, extra) {
-  return `<rect x="${coordenada(x0)}" y="${coordenada(y)}" width="${coordenada(x1 - x0)}" height="${coordenada(alto)}"${extra}`;
-}
-
-// La cinta del recorrido típico como SVG (spec 2.2), con los datos de cintaDeMetricas tal como llegan: las alturas (`alturas`), la
-// línea del eje (`linea`; sin ella, no se inventa), los números del eje, la banda celeste, el rayado, el gris donde se corta la
-// cadena (con su texto en el medio, el lugar que reserva el servidor), el vencimiento, los segmentos (cada uno con su <title>), las
-// marcas (dibujadas en su x: la de un grupo, en la de su primera), los rótulos y el del eje con sus anclajes. Sin texto dentro de la
-// banda. Lo que no se puede leer no se dibuja; sin cinta, nada. Los colores están en el <style> de reportes.html. `gestion`: para
-// los nombres de las marcas
-function svgDeCinta(cinta, gestion = 'externa') {
-  if (!esObjeto(cinta) || !esObjeto(cinta.alturas) || !esNumero(cinta.ancho) || !esNumero(cinta.alto)) return '';
-  const g = elegido(gestion, GESTIONES);
-  const A = cinta.alturas;
-  const banda = esObjeto(A.banda) ? A.banda : {};
-  const conX = (valor) => esObjeto(valor) && esNumero(valor.x0) && esNumero(valor.x1);
-  const partes = [];
-
-  if (conX(cinta.linea)) {
-    partes.push(`<line x1="${coordenada(cinta.linea.x0)}" y1="${coordenada(A.linea)}" x2="${coordenada(cinta.linea.x1)}" y2="${coordenada(A.linea)}" class="l-eje"/>`);
-  }
-  for (const tick of comoLista(cinta.ticks).filter((t) => esObjeto(t) && esNumero(t.x))) {
-    partes.push(`<text x="${coordenada(tick.x)}" y="${coordenada(A.ticks)}" class="tick">${escaparTexto(tick.texto)}</text>`);
-  }
-  if (conX(cinta.banda)) partes.push(`${rectangulo(cinta.banda.x0, cinta.banda.x1, banda.y, banda.alto, '')} class="banda"/>`);
-  if (conX(cinta.rayado)) partes.push(`${rectangulo(cinta.rayado.x0, cinta.rayado.x1, banda.y, banda.alto, '')} class="rayado"/>`);
-  if (conX(cinta.gris)) {
-    partes.push(`${rectangulo(cinta.gris.x0, cinta.gris.x1, banda.y, banda.alto, '')} class="gris"/>`);
-    const texto = escaparTexto(cinta.gris.texto);
-    if (texto) partes.push(`<text x="${coordenada((cinta.gris.x0 + cinta.gris.x1) / 2)}" y="${coordenada(A.textoDelGris)}" class="t-gris">${texto}</text>`);
-  }
-  const vencimiento = esObjeto(cinta.vencimiento) && esNumero(cinta.vencimiento.x) ? coordenada(cinta.vencimiento.x) : null;
-  const lineaDelVencimiento = esObjeto(A.vencimiento) ? A.vencimiento : {};
-  if (vencimiento !== null) {
-    partes.push(`<line x1="${vencimiento}" y1="${coordenada(lineaDelVencimiento.desde)}" x2="${vencimiento}" y2="${coordenada(lineaDelVencimiento.hasta)}" class="l-vence"/>`);
-    partes.push(`<text x="${vencimiento}" y="${coordenada(lineaDelVencimiento.texto)}" class="vence">vencimiento</text>`);
-  }
-  const segmentos = esObjeto(A.segmentos) ? A.segmentos : {};
-  for (const s of comoLista(cinta.segmentos).filter(conX)) {
-    partes.push(`${rectangulo(s.x0, s.x1, segmentos.y, segmentos.alto, ' rx="4"')} class="s-${elegidoDe(s.color, COLORES)}"><title>${escaparTexto(s.texto)}</title></rect>`);
-  }
-  for (const m of comoLista(cinta.marcas).filter((marca) => esObjeto(marca) && esNumero(marca.x) && TIPOS_DE_MARCA.includes(marca.tipo))) {
-    partes.push(`<g class="marca m-${m.tipo}" data-x="${coordenada(m.x)}"><title>${escaparTexto(nombreDeLaMarca(m.tipos, g))}</title>${iconoDeLaMarca(m.tipo, m.x, A.marcas)}</g>`);
-  }
-  const conTexto = (r) => esObjeto(r) && esNumero(r.x) && esNumero(r.y) && escaparTexto(r.texto);
-  for (const r of comoLista(cinta.rotulos).filter(conTexto)) {
-    partes.push(`<text x="${coordenada(r.x)}" y="${coordenada(r.y)}" text-anchor="${elegidoDe(r.anclaje, ANCLAJES)}" class="rotulo r-${elegidoDe(r.color, COLORES)}">${escaparTexto(r.texto)}</text>`);
-  }
-  if (conTexto(cinta.eje)) {
-    partes.push(`<text x="${coordenada(cinta.eje.x)}" y="${coordenada(cinta.eje.y)}" text-anchor="${elegidoDe(cinta.eje.anclaje, ANCLAJES)}" class="eje">${escaparTexto(cinta.eje.texto)}</text>`);
-  }
-
-  // El nombre del dibujo: los rótulos y los tramos, con los textos del servidor
-  const descripcion = [...comoLista(cinta.rotulos).filter(conTexto).map((r) => r.texto), ...comoLista(cinta.segmentos).filter(conX).map((s) => s.texto)]
-    .filter((texto) => typeof texto === 'string' && texto);
-  const etiqueta = `Recorrido típico de un pedido de la gestión ${g}${descripcion.length ? `: ${descripcion.join('; ')}` : ''}`;
-  return `<svg class="mt-cinta-svg" viewBox="0 0 ${coordenada(cinta.ancho)} ${coordenada(cinta.alto)}" role="img" aria-label="${escaparTexto(etiqueta)}" xmlns="http://www.w3.org/2000/svg">`
-    + '<defs><pattern id="mt-rayado" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" class="r-fondo"/><rect width="3" height="7" class="r-raya"/></pattern></defs>'
-    + `${partes.join('')}</svg>`;
-}
 
 // Uno de `validos` (una lista de textos) o el primero
 function elegidoDe(valor, validos) {
   return validos.includes(valor) ? valor : validos[0];
 }
 
-// La leyenda de la cinta: solo lo que se dibuja (las marcas, como se dibujan, y el rayado), en un orden fijo
-function htmlDeLeyendaDeCinta(cinta, gestion) {
-  if (!esObjeto(cinta)) return '';
-  const g = elegido(gestion, GESTIONES);
-  const hay = new Set(comoLista(cinta.marcas).filter(esObjeto).map((marca) => marca.tipo));
-  if (esObjeto(cinta.rayado)) hay.add('rayado');
-  return LEYENDA_DE_LA_CINTA.filter((tipo) => hay.has(tipo))
-    .map((tipo) => `<span><i class="mk mk-${tipo}" aria-hidden="true"></i>${LEYENDA_FIJA[tipo] ?? nombreDeLaMarca([tipo], g)}</span>`).join('');
+// Un número que manda el servidor, como porcentaje de un `style` (coordenada: lo que no es un número es 0)
+function porcentaje(valor) {
+  return `${coordenada(valor)}%`;
+}
+
+// Un tramo a escala (spec 2026-11-08-metricas-recorrido-tipico, 3): arriba, sus textos (su cifra grande, su nombre y sus días, juntos, con el aire hasta la línea), en el color de su
+// actor; abajo, su pedazo de línea con el hito del comienzo. Un tramo angosto no lleva nada arriba de su línea (lo dice el CSS: sus textos
+// están en la lista, que entonces se ve siempre). `aEscala`: el tramo lleva su ancho (la carga, de ancho fijo, no)
+function htmlDeParteDelRecorrido(parte, { aEscala = false, extra = '' } = {}) {
+  const p = esObjeto(parte) ? parte : {};
+  const clases = ['mt-rec-parte', elegidoDe(p.actor, ACTORES), p.angosta === true ? 'angosta' : ''].filter(Boolean).join(' ');
+  const estilo = aEscala ? ` style="width:${porcentaje(p.ancho)}"` : '';
+  return `<div class="${clases}"${estilo}><div class="mt-rec-textos"><p class="mt-rec-grande">${escaparTexto(p.grande)}</p><p class="mt-rec-nombre">${escaparTexto(p.nombre)}</p>`
+    + `<p class="mt-rec-dias">${escaparTexto(p.dias)}</p></div><div class="mt-rec-pista"><i class="mt-rec-hito" aria-hidden="true"></i>${extra}</div></div>`;
+}
+
+// La regla del aviso anticipado, por fuera de la línea (spec 2026-11-08-metricas-recorrido-tipico, 3 y 4). Con `ancho`, del rombo al
+// tope (o a la flecha, si la publicación llega antes del vencimiento), con su texto en el medio; sin él (falta un tramo o el aviso no
+// tiene cifra), todo en un renglón, con el rótulo y el texto en un solo `<span>` (el renglón es flex: sueltos, el espacio entre los dos
+// sería el `gap`). La regla es un contenedor (el CSS le mira el ancho): si el texto no entra, baja debajo de la regla;
+// «vencimiento» es hermano de la fila de la regla, para quedar a su altura en los dos casos
+function htmlDelAviso(aviso) {
+  const a = esObjeto(aviso) ? aviso : {};
+  const texto = `<b>${escaparTexto(a.rotulo)}</b> ${escaparTexto(a.texto)}`;
+  if (!esNumero(a.ancho)) return `<p class="mt-rec-aviso-solo"><i class="mt-rec-rombo" aria-hidden="true"></i><span>${texto}</span></p>`;
+  const vencimiento = escaparTexto(a.vencimiento);
+  const cierre = a.sigue === true ? '<i class="mt-rec-flechita" aria-hidden="true"></i>' : '<i class="mt-rec-tope" aria-hidden="true"></i>';
+  const aparte = a.sigue !== true && vencimiento ? `<em class="mt-rec-aviso-venc">${vencimiento}</em>` : '';
+  return `<div class="mt-rec-aviso${a.sigue === true ? ' sigue' : ''}" style="width:${porcentaje(a.ancho)}"><div class="mt-rec-aviso-fila">`
+    + '<i class="mt-rec-rombo" aria-hidden="true"></i><span class="mt-rec-riel" aria-hidden="true"></span>'
+    + `<span class="mt-rec-aviso-txt">${texto}</span><span class="mt-rec-riel" aria-hidden="true"></span>${cierre}</div>${aparte}</div>`;
+}
+
+// El recorrido típico de una gestión (spec 2026-11-08-metricas-recorrido-tipico, 3 y 5), con los datos de cintaDeMetricas tal como
+// llegan: el título y la bajada, el dibujo (el total, los tramos a escala con su ancho, la carga y el Portal al final, la línea del
+// vencimiento y la regla del aviso), los avisos de «orientativo» y la lista de los tramos, que se ve en el teléfono (y, con un tramo
+// angosto, en todos los anchos). Los anchos, la x del vencimiento y el largo de la regla van en un `style`, como las barras de
+// Resultados. El dibujo es un `role="img"` con la descripción del servidor. HTML y CSS, sin SVG: la línea y los hitos son bordes, para
+// que se vean en alto contraste y al imprimir. Sin cinta, o con una que no es de esta forma (la de antes), '' y la sección no se muestra
+function htmlDeCinta(cinta) {
+  if (!esObjeto(cinta) || cinta.forma !== FORMA_DE_LA_CINTA) return '';
+  const total = esObjeto(cinta.total) ? cinta.total : {};
+  const cifraDelTotal = escaparTexto(total.cifra);
+  const partes = comoLista(cinta.partes).filter(esObjeto);
+  const vence = esObjeto(cinta.vencimiento) && esNumero(cinta.vencimiento.x)
+    ? `<span class="mt-rec-vence" style="left:${porcentaje(cinta.vencimiento.x)}" aria-hidden="true"></span>` : '';
+  const portal = esObjeto(cinta.portal) ? cinta.portal : {};
+  const meta = '<i class="mt-rec-meta" aria-hidden="true"></i>';
+  const lista = comoLista(cinta.lista).filter(esObjeto).map((renglon) => `<li><i class="mt-rec-sw ${elegidoDe(renglon.actor, ACTORES)}" aria-hidden="true"></i>`
+    + `<b>${escaparTexto(renglon.nombre)}</b><span>${escaparTexto(renglon.texto)}</span></li>`);
+  const orientativos = comoLista(cinta.orientativos).map(escaparTexto).filter(Boolean).map((texto) => `<p class="mt-rec-orientativo">${texto}</p>`);
+
+  return '<div class="mt-rec">'
+    + `<h3 class="mt-rec-titulo">${escaparTexto(cinta.titulo)}</h3><p class="mt-rec-bajada">${escaparTexto(cinta.bajada)}</p>`
+    + `<div class="mt-rec-dibujo" role="img" aria-label="${escaparTexto(cinta.descripcion)}">`
+    + `<div class="mt-rec-total"><i></i><span>${escaparTexto(total.antes)}${cifraDelTotal ? `<b>${cifraDelTotal}</b>` : ''}${escaparTexto(total.despues)}</span><i></i></div>`
+    + `<div class="mt-rec-fila"><div class="mt-rec-escala">${partes.map((parte) => htmlDeParteDelRecorrido(parte, { aEscala: true })).join('')}${vence}</div>`
+    + `<div class="mt-rec-fin">${htmlDeParteDelRecorrido(cinta.carga, { extra: meta })}`
+    + `<p class="mt-rec-portal"><b>${escaparTexto(portal.nombre)}</b> ${escaparTexto(portal.texto)}</p></div></div>`
+    + `<div class="mt-rec-bajo"><div class="mt-rec-bajo-escala">${htmlDelAviso(cinta.aviso)}</div><div class="mt-rec-hueco"></div></div>`
+    + '</div>'
+    + orientativos.join('')
+    + `<ul class="mt-rec-lista${cinta.lista_siempre === true ? ' siempre' : ''}">${lista.join('')}</ul>`
+    + '</div>';
 }
 
 // =====================================================
@@ -1661,17 +1607,17 @@ function dibujarLasSeccionesDeAbajo(datos) {
   if (Number.isInteger(datos.anio) && pagina.manuales.anio !== datos.anio) cargarMetricasManuales(datos.anio);
 }
 
-// El circuito, la cinta y las aclaraciones de la gestión elegida
+// El circuito y el recorrido típico de la gestión elegida
 function dibujarElCircuito(datos) {
   const { estado } = pagina;
   const cinta = esObjeto(datos.cinta) && esObjeto(datos.cinta[estado.gestion]) ? datos.cinta[estado.gestion] : null;
   conElFoco(porId('mt-gestiones'), htmlDeGestiones(estado.gestion));
   conElFoco(porId('mt-circuito'), htmlDeCircuito(datos.vista, estado.gestion));
-  porId('mt-cinta').innerHTML = svgDeCinta(cinta, estado.gestion);
-  porId('mt-cinta').hidden = cinta === null;
-  porId('mt-leyenda').innerHTML = htmlDeLeyendaDeCinta(cinta, estado.gestion);
-  porId('mt-aclaracion-cinta').textContent = typeof cinta?.aclaracion === 'string' ? cinta.aclaracion : '';
-  porId('mt-aclaraciones').innerHTML = htmlDeAclaraciones(datos.vista, estado.gestion);
+  // Sin recorrido, o con uno de otra forma (la de antes), la sección no se muestra y su frase tampoco
+  const recorrido = htmlDeCinta(cinta);
+  porId('mt-cinta').innerHTML = recorrido;
+  porId('mt-cinta').hidden = recorrido === '';
+  porId('mt-aclaracion-cinta').textContent = recorrido !== '' && typeof cinta.aclaracion === 'string' ? cinta.aclaracion : '';
 }
 
 function dibujarLosCasos(datos) {

@@ -37,8 +37,8 @@ const VERSION_AREAS = '20261205';
 // licencias de Mi espacio incluye la fecha, en el modal del feriado, spec 2026-10-26-mi-espacio-licencias-y-horas; y, de esas,
 // cuántas vacaciones quedan con ese día para restituir y hasta cuándo, spec 2026-10-31-mi-espacio-dias-restituidos, 9). Su versión
 // es propia (solo la usa configuracion.html). Subió sin que cambie el archivo, con VERSION_REPORTES, porque tiene que seguir siendo
-// mayor (spec 2026-11-06-metricas-anticipacion-y-corridos, 7; y otra vez, spec 2026-11-07-metricas-cajones-y-ciclos, 4; y otra vez, spec 2026-11-08-metricas-modal-rotulos)
-const VERSION_FERIADOS = '20261215';
+// mayor (spec 2026-11-06-metricas-anticipacion-y-corridos, 7; y otra vez, spec 2026-11-07-metricas-cajones-y-ciclos, 4; y otra vez, spec 2026-11-08-metricas-modal-rotulos; y otra vez, spec 2026-11-08-metricas-recorrido-tipico)
+const VERSION_FERIADOS = '20261216';
 // correos.js cambió después (Correos en pestañas; "Actualización" en el detalle del Libro; el aviso en su fecha en el texto de la
 // licencia del firmante; la vista previa y la prueba como saldrían en la próxima corrida con notas; "Ver anexo" también para la
 // reiteración, spec 2026-10-20-requiere-nota-y-anexo-reiteracion, 2.5; el botón "Word" del Libro, spec 2026-10-24-generador-de-notas, 6;
@@ -85,8 +85,8 @@ const VERSION_SEGUIMIENTO = '20261134';
 // fila (spec 2026-11-05-metricas-frase-en-los-casos, 5); después, el cajón «Aviso anticipado», con su frase y su línea (spec
 // 2026-11-06-metricas-anticipacion-y-corridos, 7); después, sin el selector de días: todo en días corridos con los hábiles entre
 // paréntesis (spec 2026-11-07-metricas-cajones-y-ciclos, 4; también los cajones y el modal de cada tramo, en el mismo kit): sigue sin
-// quedar margen; después, los rótulos de la tabla del modal y el número de la nota DGMIT (spec 2026-11-08-metricas-modal-rotulos); y el próximo cambio de reportes.js también tiene que subir VERSION_FERIADOS
-const VERSION_REPORTES = '20261214';
+// quedar margen; después, los rótulos de la tabla del modal y el número de la nota DGMIT (spec 2026-11-08-metricas-modal-rotulos); después, el recorrido típico en lugar de la cinta (spec 2026-11-08-metricas-recorrido-tipico); y el próximo cambio de reportes.js también tiene que subir VERSION_FERIADOS
+const VERSION_REPORTES = '20261215';
 // notas.js (el Generador de Notas de la DGMIT en tres pasos, con la vista previa en la hoja membretada y la descarga del Word, spec
 // 2026-10-24-generador-de-notas, 3), que hasta ahora se cargaba sin ?v=: cambió por completo y un notas.js viejo en la caché con el
 // HTML nuevo rompería la página. Su versión es propia

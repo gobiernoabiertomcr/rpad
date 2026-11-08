@@ -1056,11 +1056,14 @@ describe('Métricas del año con el diseño del anexo', () => {
   // Spec 2026-11-05-metricas-pdf-apaisado, 2 y 3: la página y los datos las siguen teniendo
   it('el PDF no dibuja las cintas del recorrido típico, y los datos las siguen trayendo', async () => {
     const datos = metricasDeLosCasos();
-    assert.ok(datos.cinta.externa && datos.cinta.interna);
+    // La interna de estos casos no tiene ningún tramo con cifra (solo el aviso): no se dibuja (spec 2026-11-08-metricas-recorrido-tipico, 4)
+    assert.deepEqual(Object.keys(datos.cinta), ['externa', 'interna']);
+    assert.equal(datos.cinta.externa?.forma, 'recorrido');
+    assert.equal(datos.cinta.interna, null);
     for (const opciones of [{}, { dias: 'corridos' }, { estadistico: 'promedio' }]) {
       const todo = lineasPorHoja(await renderMetricas(metricasDeLosCasos(opciones))).flat();
       for (const t of ['El recorrido típico de un pedido', 'RECORRIDO TÍPICO', 'respecto del vencimiento', 'La cinta pone las medianas', 'La cinta se completa',
-        'Aviso del RPAD', 'Después del vencimiento', 'Aviso · ']) {
+        'Aviso del RPAD', 'Después del vencimiento', 'Aviso · ', 'El recorrido típico', 'En total, unos']) {
         assert.ok(!todo.some(l => l.includes(t)), `no tendría que decir «${t}»`);
       }
       // Helvetica no tiene el signo menos: nada sale como «?»

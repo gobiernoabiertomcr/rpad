@@ -12,7 +12,7 @@ import {
   casosDe, vistaDe, unidadDe, SIN_NOTAS_DGMIT, contextoDelAnio, trabajoDelAnio, areasYTemas, sinLosDestildados, textoDeLaFranja,
   ESTADISTICOS as ESTADISTICOS_DEL_SERVIDOR, DIAS as DIAS_DEL_SERVIDOR, GESTIONES as GESTIONES_DEL_SERVIDOR
 } from '../services/metricasReglas.js';
-import { cintaDeMetricas, cintasDeLaVista } from '../services/metricasCinta.js';
+import { cintaDeMetricas, cintasDeLaVista, FORMA_DE_LA_CINTA } from '../services/metricasCinta.js';
 import { graficoDelTramo, GRAFICO } from '../services/metricasGrafico.js';
 import { mapaDeLosCasos, mapaDe, fuentesDelCaso, con, notaDgmit, HOY_DE_LAS_METRICAS as HOY } from './metricas-casos.js';
 import {
@@ -78,8 +78,9 @@ const DE_LA_CLAVE = {
   produccion: { nombre: 'Producción del relevamiento', desde_hasta: 'Del aviso a la entrega', responsable: 'DGMIT y DIT', dgmit: true },
   carga: { nombre: 'Preparación y carga', desde_hasta: 'De la entrega a la carga', responsable: 'DDPC', dgmit: false }
 };
-const tramo = (clave, valor, { dias = 'habiles', estadistico = 'mediana', ciclos = 12, vacio = null, en_curso = null, pendientes, pendientes_texto = null } = {}) => ({
+const tramo = (clave, valor, { dias = 'habiles', estadistico = 'mediana', ciclos = 12, vacio = null, en_curso = null, pendientes, pendientes_texto = null, habiles } = {}) => ({
   clave, ...DE_LA_CLAVE[clave],
+  ...(habiles === undefined ? {} : { habiles: { valor: habiles } }),
   cifra: valor === null ? null : {
     valor, texto: valor === 0 ? 'En el día' : String(valor), unidad: valor === 0 ? '' : unidadDe(valor, dias),
     debajo: valor === 0 ? `${estadistico} en días ${dias === 'corridos' ? 'corridos' : 'hábiles'}` : `${estadistico} de ${ciclos} ${ciclos === 1 ? 'ciclo' : 'ciclos'}`,
@@ -91,10 +92,12 @@ const tramo = (clave, valor, { dias = 'habiles', estadistico = 'mediana', ciclos
   pendientes_texto
 });
 
-// Una cinta con la cadena completa: la interna con la producción y la entrega y la carga juntas (0 días), y la externa con todos sus
-// tramos (con notas DGMIT cargadas)
-const CINTA_INTERNA = cintaDeMetricas([tramo('aviso', 41), tramo('produccion', 45), tramo('carga', 0)], { gestion: 'interna' });
-const CINTA_EXTERNA = cintaDeMetricas([tramo('aviso', 27), tramo('tramite', 12), tramo('respuesta', 20), tramo('carga', 3)], { gestion: 'externa' });
+// Una cinta con la cadena completa, en días corridos con sus hábiles (cifras inventadas): la interna con la producción y la entrega y la
+// carga juntas (0 días), y la externa con todos sus tramos (con notas DGMIT cargadas). El aviso cae dentro de la zona a escala
+const CINTA_INTERNA = cintaDeMetricas([tramo('aviso', 30, { dias: 'corridos', habiles: 21 }), tramo('produccion', 33, { dias: 'corridos', habiles: 23 }),
+  tramo('carga', 0, { dias: 'corridos', habiles: 0 })], { gestion: 'interna', dias: 'corridos' });
+const CINTA_EXTERNA = cintaDeMetricas([tramo('aviso', 29, { dias: 'corridos', habiles: 20 }), tramo('tramite', 12, { dias: 'corridos', habiles: 9 }),
+  tramo('respuesta', 20, { dias: 'corridos', habiles: 14 }), tramo('carga', 3, { dias: 'corridos', habiles: 2 })], { gestion: 'externa', dias: 'corridos' });
 
 describe('reportes.js: el estado de la URL', () => {
   it('estadoDeLaUrl ignora valores inválidos y urlDeEstado omite los de por defecto', () => {
@@ -647,32 +650,6 @@ describe('reportes.js: el circuito', () => {
     assert.equal(ctx.htmlDeCircuito(null, 'externa'), '');
     assert.equal(ctx.htmlDeCircuito({}, 'externa'), '');
   });
-
-  it('htmlDeAclaraciones: las del servidor, de la gestión elegida, y la de «Requiere nota DGMIT: No» en la externa', () => {
-    const externa = ctx.htmlDeAclaraciones(VISTA, 'externa');
-    assert.ok(externa.includes(VISTA.circuito.aclaraciones.externa.ya_vencidos.texto));
-    // La de «Requiere nota DGMIT: No» también la arma el servidor (el 81 con «No» y sin nota DGMIT); sin ciclos así, no va
-    const sinNota = vistaDe(casosDe(mapaDe(fuentesDelCaso(81, { dataset: { requiere_nota: 0 } })), { hoy: HOY }), { anio: 2026, al: HOY });
-    const noRequieren = sinNota.circuito.aclaraciones.externa.no_requieren_nota;
-    assert.match(noRequieren.texto, /^1 ciclo es de un dataset que no requiere nota DGMIT: cuenta solo en el aviso anticipado y en la carga\.$/);
-    assert.ok(ctx.htmlDeAclaraciones(sinNota, 'externa').includes(`<p>${noRequieren.texto}</p>`));
-    assert.equal(VISTA.circuito.aclaraciones.externa.no_requieren_nota.n, 0);
-    assert.doesNotMatch(externa, /requiere/);
-    const fuente = { ...VISTA, circuito: { ...VISTA.circuito, aclaraciones: { ...VISTA.circuito.aclaraciones,
-      externa: { ya_vencidos: { n: 0, texto: '' }, fuente_publica: { n: 2, texto: '2 ciclos se resolvieron con datos de una fuente pública: no cuentan en la respuesta del área.' },
-        no_requieren_nota: { n: 0, texto: '' } } } } };
-    const conFuente = ctx.htmlDeAclaraciones(fuente, 'externa');
-    assert.match(conFuente, /2 ciclos se resolvieron con datos de una fuente pública: no cuentan en la respuesta del área\./);
-    assert.doesNotMatch(conFuente, /ya estaban vencidos/);
-    const interna = ctx.htmlDeAclaraciones(VISTA, 'interna');
-    assert.ok(interna.includes(VISTA.circuito.aclaraciones.interna.ya_vencidos.texto));
-    assert.doesNotMatch(interna, /requiere/);
-    // Sin ninguna aclaración, no hay recuadro
-    const sinNada = { circuito: { aclaraciones: { interna: { ya_vencidos: { n: 0, texto: '' } } } } };
-    assert.equal(ctx.htmlDeAclaraciones(sinNada, 'interna'), '');
-    assert.equal(ctx.htmlDeAclaraciones({ circuito: { aclaraciones: { externa: { ya_vencidos: { n: 0, texto: '' }, fuente_publica: { n: 0, texto: '' },
-      no_requieren_nota: { n: 0, texto: '' } } } } }, 'externa'), '');
-  });
 });
 
 // La banda abre el modal de cada tramo (spec 2026-11-07-metricas-cajones-y-ciclos, 5): cada nodo con tramo es un botón y el modal lo arma
@@ -1177,88 +1154,154 @@ describe('reportes.js: la banda y el modal de cada tramo', () => {
     assert.equal(d.enfocados.at(-1), 'el botón nuevo');
     assert.equal(d.porId('mt-contenido').hidden, false);
   });
+
+  // Spec 2026-11-08-metricas-recorrido-tipico, 5: una cinta con la forma de antes (la de una foto vieja) no se dibuja ni deja su frase
+  it('dibujarElCircuito: con la cinta de antes oculta la sección y vacía su frase; con la de ahora, la muestra', () => {
+    const d = conDocumento();
+    const vieja = { ancho: 1000, alto: 156, segmentos: [], aclaracion: 'Una frase de la cinta de antes.' };
+    const pagina = cargar({ document: d.documento, __vista: VISTA, __cinta: { externa: vieja, interna: CINTA_INTERNA }, __nueva: { externa: CINTA_EXTERNA } });
+    const dibujar = (cinta, gestion) => vm.runInContext(`pagina.estado = { ...pagina.estado, gestion: '${gestion}' }; dibujarElCircuito({ vista: __vista, cinta: ${cinta} })`, pagina);
+    // La cinta de ahora: se muestra, con su frase
+    dibujar('__nueva', 'externa');
+    assert.equal(d.porId('mt-cinta').hidden, false);
+    assert.equal(d.porId('mt-cinta').innerHTML, ctx.htmlDeCinta(CINTA_EXTERNA));
+    assert.equal(d.porId('mt-aclaracion-cinta').textContent, CINTA_EXTERNA.aclaracion);
+    assert.notEqual(CINTA_EXTERNA.aclaracion, '');
+    // La de antes: oculta, sin nada adentro y sin frase (aunque la traiga)
+    dibujar('__cinta', 'externa');
+    assert.equal(d.porId('mt-cinta').hidden, true);
+    assert.equal(d.porId('mt-cinta').innerHTML, '');
+    assert.equal(d.porId('mt-aclaracion-cinta').textContent, '');
+    // Sin cinta de esa gestión, lo mismo
+    dibujar('__nueva', 'interna');
+    assert.equal(d.porId('mt-cinta').hidden, true);
+    assert.equal(d.porId('mt-aclaracion-cinta').textContent, '');
+  });
 });
 
-describe('reportes.js: la cinta', () => {
-  it('svgDeCinta dibuja lo que manda el servidor (x, rótulos y anclajes)', () => {
-    for (const [cinta, gestion] of [[CINTA_INTERNA, 'interna'], [CINTA_EXTERNA, 'externa']]) {
-      const svg = ctx.svgDeCinta(cinta, gestion);
-      const A = cinta.alturas;
-      assert.match(svg, new RegExp(`^<svg class="mt-cinta-svg" viewBox="0 0 ${cinta.ancho} ${cinta.alto}" role="img" aria-label="Recorrido típico de un pedido de la gestión ${gestion}[^"]*"`));
-      for (const tick of cinta.ticks) {
-        assert.ok(svg.includes(`<text x="${coord(tick.x)}" y="${A.ticks}" class="tick">${tick.texto}</text>`), `tick ${tick.texto}`);
+// El recorrido típico (spec 2026-11-08-metricas-recorrido-tipico, 3 y 5): la página imprime lo que arma cintaDeMetricas (los textos, los
+// anchos, la x del vencimiento y el largo de la regla) sin calcular nada. Las cifras de los tramos son inventadas
+describe('reportes.js: el recorrido típico', () => {
+  const escapado = (texto) => ctx.Utils.escapeHtml(texto);
+  // Lo que lee una persona: sin las etiquetas y con los espacios juntos
+  const sinEtiquetas = (html) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+  // Un recorrido de la gestión externa en días corridos, con hábiles: el aviso, la redacción, la respuesta y la carga
+  const externa = (aviso, tramite, respuesta, carga, opciones = {}) => cintaDeMetricas([
+    tramo('aviso', aviso[0], { dias: 'corridos', habiles: aviso[1] }), tramo('tramite', tramite[0], { dias: 'corridos', habiles: tramite[1] }),
+    tramo('respuesta', respuesta[0], { dias: 'corridos', habiles: respuesta[1] }), tramo('carga', carga[0], { dias: 'corridos', habiles: carga[1] })
+  ], { gestion: 'externa', dias: 'corridos', ...opciones });
+
+  it('htmlDeCinta imprime lo que manda el servidor', () => {
+    for (const cinta of [CINTA_INTERNA, CINTA_EXTERNA]) {
+      const html = ctx.htmlDeCinta(cinta);
+      assert.ok(html.startsWith('<div class="mt-rec"><h3 class="mt-rec-titulo">El recorrido típico</h3>'));
+      assert.ok(html.includes(`<p class="mt-rec-bajada">${cinta.bajada}</p>`));
+      assert.ok(html.includes(`<div class="mt-rec-dibujo" role="img" aria-label="${escapado(cinta.descripcion)}">`));
+      // El total, con la cifra en negrita
+      assert.ok(html.includes(`<span>${cinta.total.antes}<b>${cinta.total.cifra}</b>${cinta.total.despues}</span>`), 'total');
+      // Cada tramo a escala: su ancho, su actor, su cifra grande, su nombre y sus días
+      assert.equal(cuantas(html, /class="mt-rec-parte /g), cinta.partes.length + 1, 'los tramos y la carga');
+      for (const p of cinta.partes) {
+        assert.ok(html.includes(`<div class="mt-rec-parte ${p.actor}${p.angosta ? ' angosta' : ''}" style="width:${coord(p.ancho)}%">`
+          + `<div class="mt-rec-textos"><p class="mt-rec-grande">${p.grande}</p><p class="mt-rec-nombre">${p.nombre}</p><p class="mt-rec-dias">${p.dias}</p></div>`
+          + '<div class="mt-rec-pista"><i class="mt-rec-hito" aria-hidden="true"></i></div></div>'), p.clave);
       }
-      assert.ok(svg.includes(`<rect x="${coord(cinta.banda.x0)}" y="${A.banda.y}" width="${coord(cinta.banda.x1 - cinta.banda.x0)}" height="${A.banda.alto}" class="banda"/>`), 'banda');
-      const v = coord(cinta.vencimiento.x);
-      assert.ok(svg.includes(`<line x1="${v}" y1="${A.vencimiento.desde}" x2="${v}" y2="${A.vencimiento.hasta}" class="l-vence"/>`));
-      assert.ok(svg.includes(`<text x="${v}" y="${A.vencimiento.texto}" class="vence">vencimiento</text>`));
-      for (const s of cinta.segmentos) {
-        assert.ok(svg.includes(`<rect x="${coord(s.x0)}" y="${A.segmentos.y}" width="${coord(s.x1 - s.x0)}" height="${A.segmentos.alto}" rx="4" class="s-${s.color}"><title>${s.texto}</title></rect>`), s.texto);
+      // La carga, de ancho fijo y con el círculo del Portal; el Portal al lado
+      const c = cinta.carga;
+      assert.ok(html.includes(`<div class="mt-rec-fin"><div class="mt-rec-parte ${c.actor}"><div class="mt-rec-textos"><p class="mt-rec-grande">${c.grande}</p><p class="mt-rec-nombre">${c.nombre}</p>`
+        + `<p class="mt-rec-dias">${c.dias}</p></div><div class="mt-rec-pista"><i class="mt-rec-hito" aria-hidden="true"></i><i class="mt-rec-meta" aria-hidden="true"></i></div></div>`), 'carga');
+      assert.ok(html.includes(`<p class="mt-rec-portal"><b>${cinta.portal.nombre}</b> ${cinta.portal.texto}</p>`), 'portal');
+      // El vencimiento y la regla del aviso
+      assert.ok(html.includes(`<span class="mt-rec-vence" style="left:${coord(cinta.vencimiento.x)}%" aria-hidden="true"></span>`), 'vencimiento');
+      const a = cinta.aviso;
+      assert.ok(html.includes(`<div class="mt-rec-aviso" style="width:${coord(a.ancho)}%">`), 'regla');
+      assert.ok(html.includes(`<b>${a.rotulo}</b> ${a.texto}</span>`), 'texto del aviso');
+      assert.ok(html.includes(`<i class="mt-rec-tope" aria-hidden="true"></i></div><em class="mt-rec-aviso-venc">${a.vencimiento}</em></div>`), 'tope y «vencimiento»');
+      // La regla es el contenedor (el CSS le mira el ancho) y la fila va adentro; «vencimiento» es hermano de la fila, no hijo: el texto que baja
+      // no lo mueve. El texto está entre los dos rieles, para que el CSS pueda esconder el segundo
+      assert.ok(html.includes(`<div class="mt-rec-aviso" style="width:${coord(a.ancho)}%"><div class="mt-rec-aviso-fila"><i class="mt-rec-rombo" aria-hidden="true"></i>`
+        + '<span class="mt-rec-riel" aria-hidden="true"></span><span class="mt-rec-aviso-txt"><b>'), 'contenedor, fila y texto');
+      assert.ok(html.includes('</span><span class="mt-rec-riel" aria-hidden="true"></span><i class="mt-rec-tope"'), 'el segundo riel, después del texto');
+      // Lo que no es el dibujo (los avisos de «orientativo» y la lista) queda fuera del role="img": se lee aparte
+      const [dibujo, fuera] = html.split('<div class="mt-rec-hueco"></div></div></div>');
+      assert.ok(fuera !== undefined && fuera.startsWith('<ul class="mt-rec-lista'), 'la lista, justo después de cerrarse el dibujo');
+      assert.doesNotMatch(dibujo, /<ul|mt-rec-orientativo/);
+      assert.equal(a.vencimiento, 'vencimiento');
+      // La lista del teléfono: un renglón por tramo
+      assert.equal(cuantas(html, /<li>/g), cinta.lista.length);
+      for (const renglon of cinta.lista) {
+        assert.ok(html.includes(`<li><i class="mt-rec-sw ${renglon.actor}" aria-hidden="true"></i><b>${renglon.nombre}</b><span>${renglon.texto}</span></li>`), renglon.nombre);
       }
-      for (const r of cinta.rotulos) {
-        assert.ok(svg.includes(`<text x="${coord(r.x)}" y="${r.y}" text-anchor="${r.anclaje}" class="rotulo r-${r.color}">${r.texto}</text>`), r.texto);
-      }
-      assert.ok(svg.includes(`<text x="${coord(cinta.eje.x)}" y="${cinta.eje.y}" text-anchor="${cinta.eje.anclaje}" class="eje">${cinta.eje.texto}</text>`));
-      assert.equal(cuantas(svg, /<g class="marca m-/g), cinta.marcas.length);
-      for (const m of cinta.marcas) assert.ok(svg.includes(`<g class="marca m-${m.tipo}" data-x="${coord(m.x)}">`), m.tipo);
+      assert.ok(html.includes('<ul class="mt-rec-lista">'), 'sin tramo angosto, la lista es solo del teléfono');
+      // Es solo HTML y CSS: ningún SVG
+      assert.doesNotMatch(html, /<svg|<rect|<text/);
     }
-    // La interna: la entrega y la carga juntas, con su rótulo; la producción en violeta
-    assert.deepEqual(CINTA_INTERNA.marcas.map((m) => m.tipo), ['aviso', 'datos-y-carga']);
-    const interna = ctx.svgDeCinta(CINTA_INTERNA, 'interna');
-    assert.match(interna, /Entrega y carga, el mismo día<\/text>/);
-    assert.match(interna, /class="s-violeta"><title>Producción del relevamiento · 45 días hábiles<\/title>/);
-    // El rayado: del vencimiento a la carga
-    const r = CINTA_INTERNA.rayado;
-    assert.ok(interna.includes(`<rect x="${coord(r.x0)}" y="${CINTA_INTERNA.alturas.banda.y}" width="${coord(r.x1 - r.x0)}" height="${CINTA_INTERNA.alturas.banda.alto}" class="rayado"/>`));
-    assert.equal(ctx.svgDeCinta(null), '');
-    assert.equal(ctx.svgDeCinta({}), '');
   });
 
-  it('la cadena cortada: el gris con su texto, y sin rayado ni segmentos', () => {
-    const cinta = cintasDeLaVista(VISTA, {}).externa;
-    assert.ok(cinta.gris && cinta.gris.texto);
-    const svg = ctx.svgDeCinta(cinta, 'externa');
-    const A = cinta.alturas;
-    assert.ok(svg.includes(`<rect x="${coord(cinta.gris.x0)}" y="${A.banda.y}" width="${coord(cinta.gris.x1 - cinta.gris.x0)}" height="${A.banda.alto}" class="gris"/>`));
-    assert.ok(svg.includes(`<text x="${coord((cinta.gris.x0 + cinta.gris.x1) / 2)}" y="${A.textoDelGris}" class="t-gris">La cinta se completa cuando haya notas DGMIT cargadas</text>`));
-    assert.doesNotMatch(svg, /class="rayado"|class="s-/);
-    // Un gris sin lugar para su texto no lleva texto
-    assert.doesNotMatch(ctx.svgDeCinta({ ...cinta, gris: { ...cinta.gris, texto: '' } }, 'externa'), /class="t-gris"/);
-  });
-
-  it('la línea del eje es la que manda el servidor (cinta.linea), no una copia', () => {
-    for (const cinta of [CINTA_INTERNA, CINTA_EXTERNA, cintasDeLaVista(VISTA, {}).interna]) {
-      const { x0, x1 } = cinta.linea;
-      assert.ok(ctx.svgDeCinta(cinta).includes(`<line x1="${coord(x0)}" y1="${cinta.alturas.linea}" x2="${coord(x1)}" y2="${cinta.alturas.linea}" class="l-eje"/>`));
+  it('los actores y la forma son los del servidor', () => {
+    assert.deepEqual(plano(vm.runInContext('ACTORES', ctx)), ['gris', 'dgmit', 'area', 'ddpc']);
+    assert.equal(vm.runInContext('FORMA_DE_LA_CINTA', ctx), FORMA_DE_LA_CINTA);
+    const cintas = [CINTA_INTERNA, CINTA_EXTERNA, cintasDeLaVista(VISTA, {}).externa, cintasDeLaVista(VISTA, {}).interna,
+      externa([35, 24], [12, 9], [null, null], [3, 2])].filter(Boolean);
+    for (const cinta of cintas) {
+      const actores = [...cinta.partes, cinta.carga, ...cinta.lista].map((p) => p.actor);
+      for (const actor of actores) assert.ok(['gris', 'dgmit', 'area', 'ddpc'].includes(actor), actor);
     }
-    const otra = ctx.svgDeCinta({ ...CINTA_EXTERNA, linea: { x0: 50, x1: 900 } });
-    assert.ok(otra.includes(`<line x1="50" y1="${CINTA_EXTERNA.alturas.linea}" x2="900" y2="${CINTA_EXTERNA.alturas.linea}" class="l-eje"/>`));
-    // Sin la línea (una cinta vieja o rara), no se inventa
-    assert.doesNotMatch(ctx.svgDeCinta({ ...CINTA_EXTERNA, linea: undefined }), /class="l-eje"/);
+    // Un tramo sin casos es gris y punteado (el CSS), con su porqué en lugar de los días
+    const sinRespuesta = externa([35, 24], [12, 9], [null, null], [3, 2]);
+    assert.ok(ctx.htmlDeCinta(sinRespuesta).includes('<div class="mt-rec-parte gris" style="width:'));
   });
 
-  it('las marcas: el rombo del aviso, el cuadrado violeta de la nota, el aro de los datos, el punto verde de la carga y el de los dos juntos', () => {
-    const A = CINTA_EXTERNA.alturas;
-    const marcas = [{ x: 100, tipo: 'aviso', tipos: ['aviso'] }, { x: 300, tipo: 'nota', tipos: ['nota'] }, { x: 500, tipo: 'datos', tipos: ['datos'] },
-      { x: 700, tipo: 'carga', tipos: ['carga'] }, { x: 900, tipo: 'datos-y-carga', tipos: ['datos', 'carga'] }];
-    const svg = ctx.svgDeCinta({ ...CINTA_EXTERNA, marcas }, 'externa');
-    const y = A.marcas;
-    assert.ok(svg.includes(`<rect x="93" y="${y - 7}" width="14" height="14" transform="rotate(45 100 ${y})" class="i-aviso"/>`));
-    assert.ok(svg.includes(`<rect x="294" y="${y - 6}" width="12" height="12" rx="3" class="i-nota"/>`));
-    assert.ok(svg.includes(`<circle cx="500" cy="${y}" r="6.5" class="i-datos"/>`));
-    assert.ok(svg.includes(`<circle cx="700" cy="${y}" r="7" class="i-carga"/>`));
-    assert.ok(svg.includes(`<circle cx="900" cy="${y}" r="8.5" class="i-datos-y-carga"/>`));
-    assert.match(svg, /<g class="marca m-datos-y-carga" data-x="900"><title>Datos entregados y carga en el portal<\/title>/);
-    assert.match(ctx.svgDeCinta({ ...CINTA_EXTERNA, marcas }, 'interna'), /<title>Relevamiento entregado y carga en el portal<\/title>/);
+  it('sin regla: el aviso en un renglón; con «sigue», la regla termina en flecha y no dice «vencimiento»', () => {
+    const sinRegla = externa([35, 24], [12, 9], [null, null], [3, 2]);
+    assert.equal(sinRegla.aviso.ancho, null);
+    const html = ctx.htmlDeCinta(sinRegla);
+    // El rótulo y el texto, juntos en un `<span>`: el renglón es flex, y el `gap` va solo entre el rombo y el texto
+    assert.ok(html.includes(`<p class="mt-rec-aviso-solo"><i class="mt-rec-rombo" aria-hidden="true"></i><span><b>${sinRegla.aviso.rotulo}</b> ${sinRegla.aviso.texto}</span></p>`));
+    assert.ok(sinEtiquetas(html).includes(`${sinRegla.aviso.rotulo} ${sinRegla.aviso.texto}`));
+    assert.doesNotMatch(html, /mt-rec-aviso"|mt-rec-riel|mt-rec-tope|mt-rec-aviso-venc|mt-rec-vence/);
+    // Con el aviso más largo que el circuito: la regla llega al final de la zona a escala y termina en una flecha
+    const sigue = externa([50, 34], [12, 9], [20, 14], [3, 2]);
+    assert.equal(sigue.aviso.sigue, true);
+    const conFlecha = ctx.htmlDeCinta(sigue);
+    assert.ok(conFlecha.includes('<div class="mt-rec-aviso sigue" style="width:100%">'));
+    assert.ok(conFlecha.includes('<i class="mt-rec-flechita" aria-hidden="true"></i></div></div>'));
+    assert.doesNotMatch(conFlecha, /mt-rec-tope|mt-rec-aviso-venc|mt-rec-vence/);
+    assert.ok(sinEtiquetas(conFlecha).includes(`${sigue.aviso.rotulo} ${sigue.aviso.texto}`));
   });
 
-  it('la leyenda trae solo lo que se dibuja', () => {
-    const leyenda = (cinta, gestion) => [...ctx.htmlDeLeyendaDeCinta(cinta, gestion).matchAll(/<i class="mk mk-([a-z-]+)" aria-hidden="true"><\/i>([^<]+)/g)].map((m) => `${m[1]}: ${m[2]}`);
-    assert.deepEqual(leyenda(cintasDeLaVista(VISTA, {}).externa, 'externa'), ['aviso: Aviso del RPAD']);
-    assert.deepEqual(leyenda(CINTA_INTERNA, 'interna'), ['aviso: Aviso del RPAD', 'datos-y-carga: Entrega y carga juntas', 'rayado: Después del vencimiento']);
-    assert.deepEqual(leyenda(CINTA_EXTERNA, 'externa'), ['aviso: Aviso del RPAD', 'nota: Nota DGMIT entregada al área', 'datos: Datos entregados',
-      'carga: Carga en el portal', 'rayado: Después del vencimiento']);
-    assert.equal(ctx.htmlDeLeyendaDeCinta(null, 'externa'), '');
+  it('la lista también en la computadora con un tramo angosto', () => {
+    const angosta = externa([35, 24], [1, 1], [30, 21], [3, 2]);
+    assert.equal(angosta.lista_siempre, true);
+    assert.equal(angosta.partes[0].angosta, true);
+    const html = ctx.htmlDeCinta(angosta);
+    assert.ok(html.includes('<ul class="mt-rec-lista siempre">'));
+    assert.match(html, /<div class="mt-rec-parte dgmit angosta" style="width:/);
+    assert.equal(cuantas(html, / angosta"/g), 1);
+    // Sin tramo angosto, ni la clase ni la lista siempre
+    for (const cinta of [CINTA_INTERNA, CINTA_EXTERNA]) assert.doesNotMatch(ctx.htmlDeCinta(cinta), /angosta|lista siempre/);
+  });
+
+  it('los avisos de «orientativo» van entre el dibujo y la lista', () => {
+    const cinta = { ...CINTA_EXTERNA, orientativos: ['Aviso anticipado: con tan pocos casos, es orientativo.'] };
+    const html = ctx.htmlDeCinta(cinta);
+    assert.ok(html.includes('<p class="mt-rec-orientativo">Aviso anticipado: con tan pocos casos, es orientativo.</p>'));
+    assert.ok(html.indexOf('mt-rec-dibujo') < html.indexOf('mt-rec-orientativo') && html.indexOf('mt-rec-orientativo') < html.indexOf('mt-rec-lista'));
+    // Y los dos, fuera del role="img" (que se lee como una sola imagen): después de que se cierra
+    const [dibujo, fuera] = html.split('<div class="mt-rec-hueco"></div></div></div>');
+    assert.doesNotMatch(dibujo, /mt-rec-orientativo|<ul/);
+    assert.ok(fuera.startsWith('<p class="mt-rec-orientativo">') && fuera.includes('<ul class="mt-rec-lista'));
+    assert.doesNotMatch(ctx.htmlDeCinta({ ...CINTA_EXTERNA, orientativos: [] }), /mt-rec-orientativo/);
+  });
+
+  it('sin cinta o con la forma de antes, nada', () => {
+    assert.equal(ctx.htmlDeCinta(null), '');
+    assert.equal(ctx.htmlDeCinta(undefined), '');
+    assert.equal(ctx.htmlDeCinta({}), '');
+    assert.equal(ctx.htmlDeCinta([]), '');
+    assert.equal(ctx.htmlDeCinta({ ancho: 1000, alto: 156, segmentos: [] }), '');
+    assert.equal(ctx.htmlDeCinta({ ...CINTA_EXTERNA, forma: 'cinta' }), '');
+    assert.equal(ctx.htmlDeCinta({ ...CINTA_EXTERNA, forma: undefined }), '');
   });
 });
 
@@ -1677,14 +1720,25 @@ describe('reportes.js: lo que llega del servidor', () => {
     sinMalo(ctx.htmlDeCasos({ casos: [caso] }, POR_DEFECTO, { anio: 2026, editable: true }), 'casos');
     sinMalo(ctx.htmlDeFranjaSin({ sin_texto: textoDeLaFranja([malo]) }, { ...POR_DEFECTO, sin: [5] }), 'franja');
     sinMalo(ctx.htmlDeBarra({ anio: 2026, anios: [2026], en_vivo: true, aviso_foto: malo, sin_titulos: [] }, POR_DEFECTO), 'barra');
-    sinMalo(ctx.htmlDeAclaraciones({ circuito: { aclaraciones: { interna: { ya_vencidos: { n: 1, texto: malo } } } } }, 'interna'), 'aclaraciones');
-    const cinta = { ...CINTA_EXTERNA, ticks: [{ x: 30, texto: malo }], rotulos: [{ x: 40, y: 26, texto: malo, anclaje: 'start', color: 'tinta' }],
-      segmentos: [{ x0: 40, x1: 80, texto: malo, color: 'violeta' }], gris: { x0: 500, x1: 970, texto: malo }, eje: { ...CINTA_EXTERNA.eje, texto: malo } };
-    sinMalo(ctx.svgDeCinta(cinta, 'externa'), 'cinta');
-    // Un anclaje o un color que no es de la lista no se escribe en un atributo
-    const raro = ctx.svgDeCinta({ ...CINTA_EXTERNA, rotulos: [{ x: 40, y: 26, texto: 'r', anclaje: '"><script>', color: '"><x' }],
-      segmentos: [{ x0: 40, x1: 80, texto: 's', color: '"><x' }], marcas: [{ x: 50, tipo: '"><x', tipos: [] }] }, 'externa');
-    assert.doesNotMatch(raro, /<script>|"><x/);
+    // El recorrido típico: todo texto del servidor, escapado (también el de la descripción, que va en un atributo); un actor que no está en la
+    // lista no se escribe en una clase y se dibuja como gris
+    const recorrido = {
+      ...CINTA_EXTERNA, titulo: malo, bajada: malo, descripcion: '"><b>x</b>', total: { antes: malo, cifra: malo, despues: malo },
+      partes: CINTA_EXTERNA.partes.map((p) => ({ ...p, actor: '"><x', grande: malo, nombre: malo, dias: malo })),
+      carga: { ...CINTA_EXTERNA.carga, actor: '"><x', grande: malo, nombre: malo, dias: malo }, portal: { nombre: malo, texto: malo },
+      aviso: { ...CINTA_EXTERNA.aviso, rotulo: malo, texto: malo, vencimiento: malo }, orientativos: [malo],
+      lista: [{ actor: '"><x', nombre: malo, texto: malo }]
+    };
+    const html = ctx.htmlDeCinta(recorrido);
+    sinMalo(html, 'recorrido');
+    assert.doesNotMatch(html, /<script>|"><x/);
+    // La descripción va en un atributo: la comilla y el «<» se escapan, y el atributo no se cierra antes de tiempo
+    assert.ok(html.includes(`role="img" aria-label="${ctx.Utils.escapeHtml('"><b>x</b>')}">`));
+    assert.doesNotMatch(html, /aria-label="[^"]*"[^>]*><b>x<\/b>/);
+    assert.equal(cuantas(html, /class="mt-rec-parte gris/g), CINTA_EXTERNA.partes.length + 1, 'los tramos y la carga, como gris');
+    assert.match(html, /<i class="mt-rec-sw gris" aria-hidden="true"><\/i>/);
+    // Un aviso en un renglón, sin regla, también escapa
+    sinMalo(ctx.htmlDeCinta({ ...recorrido, aviso: { rotulo: malo, texto: malo, ancho: null, sigue: false, vencimiento: '' } }), 'aviso sin regla');
 
     // Las secciones de abajo: los resultados, el contexto, el trabajo, las áreas y «Para completar»
     const textosMalos = (objeto) => Object.fromEntries(Object.entries(objeto).map(([clave, valor]) => [clave, typeof valor === 'string' ? malo : valor]));
@@ -1717,11 +1771,21 @@ describe('reportes.js: lo que llega del servidor', () => {
   it('un 0 se escribe como 0', () => {
     // La cantidad de casos, una coordenada y un ancho de 0
     assert.equal(ctx.textoDeLosCasos({ casos: [] }, 'externa', 2026), 'Los casos de 2026 (0)');
-    const cinta = { ...CINTA_EXTERNA, banda: { x0: 0, x1: 0 }, ticks: [{ x: 0, texto: '−40' }], rotulos: [{ x: 0, y: 26, texto: 'r', anclaje: 'start', color: 'tinta' }] };
-    const svg = ctx.svgDeCinta(cinta, 'externa');
-    assert.ok(svg.includes(`<rect x="0" y="${cinta.alturas.banda.y}" width="0" height="${cinta.alturas.banda.alto}" class="banda"/>`));
-    assert.ok(svg.includes(`<text x="0" y="${cinta.alturas.ticks}" class="tick">−40</text>`));
-    assert.ok(svg.includes('<text x="0" y="26" text-anchor="start" class="rotulo r-tinta">r</text>'));
+    const ceros = ctx.htmlDeCinta({ ...CINTA_EXTERNA, partes: CINTA_EXTERNA.partes.map((p) => ({ ...p, ancho: 0 })), vencimiento: { x: 0 },
+      aviso: { ...CINTA_EXTERNA.aviso, ancho: 0 } });
+    assert.equal(cuantas(ceros, /style="width:0%"/g), CINTA_EXTERNA.partes.length + 1, 'los anchos y la regla');
+    assert.ok(ceros.includes('<span class="mt-rec-vence" style="left:0%" aria-hidden="true"></span>'));
+    assert.ok(ceros.includes('<div class="mt-rec-aviso" style="width:0%">'));
+    // Todo en 0 días: partes iguales y «En el día»
+    const todoEnElDia = cintaDeMetricas([tramo('aviso', 0, { dias: 'corridos', habiles: 0 }), tramo('tramite', 0, { dias: 'corridos', habiles: 0 }),
+      tramo('respuesta', 0, { dias: 'corridos', habiles: 0 }), tramo('carga', 0, { dias: 'corridos', habiles: 0 })], { gestion: 'externa', dias: 'corridos' });
+    const enElDia = ctx.htmlDeCinta(todoEnElDia);
+    assert.ok(enElDia.includes('<span>En total, <b>en el día</b></span>'));
+    assert.ok(enElDia.includes(`style="width:${coord(todoEnElDia.partes[0].ancho)}%"`));
+    // Y nada dice NaN, null ni undefined con datos que faltan
+    const sinDatos = [ceros, enElDia, ctx.htmlDeCinta(CINTA_EXTERNA), ctx.htmlDeCinta(CINTA_INTERNA), ctx.htmlDeCinta({ forma: FORMA_DE_LA_CINTA }),
+      ctx.htmlDeCinta({ ...CINTA_EXTERNA, partes: [null, {}], carga: null, portal: null, aviso: null, total: null, vencimiento: { x: 'x' }, lista: [null, {}], orientativos: [null, 3] })].join('');
+    assert.doesNotMatch(sinDatos, /NaN|null|undefined/);
     // Los textos con un 0 que manda el servidor van tal cual
     const flecha = ctx.htmlDeFlecha({ ...tramo('respuesta', null), vacio: { titulo: 'Sin datos todavía', texto: '0' }, como_se_cuenta: '0' });
     assert.match(flecha, /<span class="c">0<\/span><span class="c">0<\/span>/);
@@ -1729,7 +1793,7 @@ describe('reportes.js: lo que llega del servidor', () => {
     assert.match(ctx.htmlDeCasos({ casos: [caso] }, POR_DEFECTO, { anio: 2026, editable: true }), /<td>02\/03\/2026<span class="d">0<\/span><\/td>/);
     // Y nada dice NaN, null ni undefined con datos que faltan
     const vacio = [ctx.htmlDeCircuito({ circuito: { externa: [{}, null, { clave: 'tramite' }] } }, 'externa'),
-      ctx.htmlDeCasos({ casos: [{}, null] }, POR_DEFECTO, { anio: 2026, editable: true }), ctx.svgDeCinta({ ...CINTA_EXTERNA, marcas: [{}], rotulos: [{}] }, 'externa'),
+      ctx.htmlDeCasos({ casos: [{}, null] }, POR_DEFECTO, { anio: 2026, editable: true }),
       ctx.htmlDeBarra({}, POR_DEFECTO), ctx.htmlDeFranjaSin({ sin_titulos: [null], sin_texto: null }, POR_DEFECTO)].join('');
     assert.doesNotMatch(vacio, /NaN|null|undefined/);
   });
@@ -2359,17 +2423,62 @@ describe('reportes.html', () => {
     assert.match(html, /role="status">Cargando las métricas…</);
     assert.match(html, /role="alert" hidden>\s*<p>No se pudieron cargar las métricas\. Probá de nuevo en unos minutos\.<\/p>/);
     for (const id of ['mt-bajada', 'mt-barra', 'mt-franja', 'mt-cargando', 'mt-error', 'mt-sin-datos', 'mt-contenido', 'mt-gestiones', 'mt-circuito', 'mt-cinta',
-      'mt-leyenda', 'mt-aclaracion-cinta', 'mt-aclaraciones', 'mt-ver-casos', 'mt-titulo-casos', 'mt-casos', 'mt-indice', 'mt-resultados', 'mt-bajada-resultados',
+      'mt-aclaracion-cinta', 'mt-ver-casos', 'mt-titulo-casos', 'mt-casos', 'mt-indice', 'mt-resultados', 'mt-bajada-resultados',
       'mt-contexto', 'mt-trabajo', 'mt-bajada-trabajo', 'mt-manuales', 'mt-auditoria', 'mt-csv', 'mt-areas', 'mt-completar']) {
       assert.equal(cuantas(html, new RegExp(`id="${id}"`, 'g')), 1, id);
     }
-    // El pie del circuito, sin «Días corridos», que ya no es un selector (spec 2026-11-07-metricas-cajones-y-ciclos, 4)
-    assert.ok(html.includes('<p class="mt-pie">Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio», cada cifra lo dice debajo.</p>'));
+    // Sin «Días corridos», que ya no es un selector (spec 2026-11-07-metricas-cajones-y-ciclos, 4), y sin la leyenda de la cinta, el recuadro
+    // de las aclaraciones ni el pie de la mediana (spec 2026-11-08-metricas-recorrido-tipico)
     assert.doesNotMatch(html, /«Días corridos»|«Días hábiles»/);
+    assert.doesNotMatch(html, /id="mt-leyenda"|id="mt-aclaraciones"|Con «Mediana», el número grande/);
+    // El recorrido típico: el lugar del dibujo y, debajo, su frase; los dos antes de «Los casos». Sin foco, sin rol y sin desplazarse de costado
+    const dibujo = html.indexOf('id="mt-cinta"');
+    assert.ok(dibujo > html.indexOf('id="mt-circuito"') && dibujo < html.indexOf('id="mt-aclaracion-cinta"'));
+    assert.ok(html.indexOf('id="mt-aclaracion-cinta"') < html.indexOf('class="mt-casos-cab"'));
+    assert.match(html, /<div id="mt-cinta" hidden><\/div>\s*<p class="mt-pie" id="mt-aclaracion-cinta"><\/p>/);
+    assert.doesNotMatch(html, /mt-cinta-marco|mt-cinta-svg|class="mk |\.mk-/);
     // «No hay métricas de ese año» no escribe un año a mano
     const sinDatos = html.match(/<div class="mt-estado" id="mt-sin-datos"[\s\S]*?<\/div>/)?.[0] ?? '';
     assert.match(sinDatos, /<h2>No hay métricas de ese año<\/h2>/);
     assert.doesNotMatch(sinDatos, /\d{4}/);
+  });
+
+  // El recorrido típico (spec 2026-11-08-metricas-recorrido-tipico): lo que el dibujo necesita del CSS, sin medirlo (eso se mira en el navegador)
+  it('el CSS del recorrido típico: la regla del aviso es un contenedor, el tramo angosto no lleva nada arriba y sin clases con «ad-»', () => {
+    const regla = (selector) => {
+      const desde = html.indexOf(`${selector} {`);
+      assert.notEqual(desde, -1, selector);
+      return html.slice(desde, html.indexOf('}', desde));
+    };
+    assert.match(regla('.mt-rec-aviso'), /container-type: inline-size/);
+    // En el caso angosto la fila es una grilla (el rombo y el riel siempre en un renglón) y el texto va en el segundo. El tope queda fuera de la
+    // grilla, contra el final de la regla: su borde cae donde termina la regla a cualquier ancho (también 0), sin el margen de -8 px de la fila
+    // flex, que en la grilla lo corría a la izquierda del vencimiento
+    assert.match(html, /@container \(max-width: 419px\) \{[^@]*\.mt-rec-aviso:not\(\.sigue\) \.mt-rec-aviso-fila \{[^}]*display: grid;[^}]*grid-template-columns: auto minmax\(0, 1fr\);/);
+    assert.match(html, /@container \(max-width: 419px\) \{[^@]*\.mt-rec-aviso:not\(\.sigue\) \.mt-rec-aviso-txt \{[^}]*grid-row: 2;[^}]*grid-column: 1 \/ -1;[^}]*max-width: 280px;[^}]*white-space: normal;[^}]*text-wrap: balance;/);
+    assert.match(html, /@container \(max-width: 419px\) \{[^@]*\.mt-rec-aviso:not\(\.sigue\) \.mt-rec-riel \{ min-width: 0; \}/);
+    assert.match(html, /@container \(max-width: 419px\) \{[^@]*\.mt-rec-aviso:not\(\.sigue\) \.mt-rec-tope \{[^}]*position: absolute;[^}]*right: 0;[^}]*margin-left: 0;/);
+    assert.match(regla('.mt-rec-aviso'), /position: relative/);
+    assert.match(html, /@container \(max-width: 719px\) \{[^@]*\.mt-rec-aviso\.sigue \.mt-rec-aviso-fila \{[^}]*display: grid;/);
+    assert.match(html, /@container \(max-width: 719px\) \{[^@]*\.mt-rec-aviso\.sigue \.mt-rec-aviso-txt \{[^}]*grid-row: 2;[^}]*white-space: normal;[^}]*text-wrap: balance;/);
+    // El texto del aviso y el del total, donde se parten en renglones, van parejos (`text-wrap: balance`, después de `white-space: normal`)
+    assert.match(regla('.mt-rec-aviso.sigue .mt-rec-aviso-txt'), /white-space: normal; text-wrap: balance;/);
+    assert.match(regla('.mt-rec-aviso-solo > span'), /text-wrap: balance/);
+    assert.match(html, /@media \(max-width: 700px\) \{[^@]*\.mt-rec-total span \{[^}]*white-space: normal; text-wrap: balance;/);
+    // La cifra grande se puede partir por palabras; en el teléfono, cada tramo a escala (no la carga) es un contenedor y, con menos de 56 px
+    // (50 de contenido), esconde sus textos sin sacar la caja
+    assert.doesNotMatch(regla('.mt-rec-grande'), /nowrap/);
+    assert.match(html, /@media \(max-width: 700px\) \{[^@]*\.mt-rec-escala > \.mt-rec-parte \{ container-type: inline-size; container-name: mt-rec-tramo; \}/);
+    assert.match(html, /@container mt-rec-tramo \(width < 50px\) \{\s*\.mt-rec-escala > \.mt-rec-parte > \.mt-rec-textos \{ visibility: hidden; \}/);
+    assert.equal(cuantas(html, /container-name: mt-rec-tramo/g), 1);
+    // El aire hasta la línea es de los textos juntos (no de uno que el teléfono esconde); un tramo angosto esconde todos
+    assert.match(regla('.mt-rec-parte .mt-rec-textos'), /margin-bottom: 10px/);
+    assert.match(regla('.mt-rec-parte.angosta .mt-rec-textos'), /display: none/);
+    assert.match(regla('.mt-rec-pista'), /margin: auto -6px 0 0/);
+    // «vencimiento» deja lugar para el rombo de una regla de ancho 0
+    assert.match(regla('.mt-rec-aviso-venc'), /left: calc\(100% \+ 18px\)/);
+    assert.match(regla('.mt-rec .gris'), /--c: var\(--sg-gris\)/);
+    assert.doesNotMatch(html, /mt-directo/);
   });
 
   it('el índice «En esta página» lleva a las seis secciones, cada una con su título alcanzable con el foco', () => {
@@ -2554,10 +2663,10 @@ describe('reportes.js y el PDF de Métricas: los mismos textos', () => {
     assert.equal(T.bajada, 'Los días van corridos y, entre paréntesis, hábiles: de lunes a viernes, sin feriados ni días no laborables.');
     assert.ok(ctx.textoDeLaBajada().endsWith(` ${T.bajada}`));
     assert.ok(html.includes(`<p class="mt-bajada" id="mt-bajada">${ctx.textoDeLaBajada()}</p>`));
-    // El pie del circuito, sin «Días corridos»
+    // El pie del circuito sigue en el PDF de Métricas, pero ya no está en la página (spec 2026-11-08-metricas-recorrido-tipico)
     assert.equal(T.pieDelCircuito, 'Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio», cada cifra lo dice debajo.');
-    assert.ok(html.includes(`<p class="mt-pie">${T.pieDelCircuito}</p>`));
-    for (const t of [T.pieDelCircuito, T.pieDeLaAuditoria, T.titulos.manuales, T.titulos.auditoria, T.titulos.resultados, T.titulos.contexto,
+    assert.ok(!html.includes(T.pieDelCircuito));
+    for (const t of [T.pieDeLaAuditoria, T.titulos.manuales, T.titulos.auditoria, T.titulos.resultados, T.titulos.contexto,
       T.titulos.trabajo, T.titulos.areas]) {
       assert.ok(html.includes(t), t);
     }
@@ -2597,29 +2706,6 @@ describe('reportes.js y el PDF de Métricas: los mismos textos', () => {
           assert.ok(html.includes(`<span class="u">${real.cifra.debajo}</span>`), `${dias} ${estadistico} ${g}`);
         }
       }
-    }
-  });
-
-  // El PDF ya no dibuja las cintas (spec 2026-11-05-metricas-pdf-apaisado): los textos de la leyenda son solo de la página
-  it('la leyenda de la cinta', () => {
-    const LEYENDA = {
-      aviso: 'Aviso del RPAD', nota: 'Nota DGMIT entregada al área', datos: { externa: 'Datos entregados', interna: 'Relevamiento entregado' },
-      carga: 'Carga en el portal', 'datos-y-carga': 'Entrega y carga juntas', rayado: 'Después del vencimiento'
-    };
-    const conDatosYCarga = cintaDeMetricas([tramo('aviso', 41), tramo('produccion', 45), tramo('carga', 30)], { gestion: 'interna' });
-    const vistos = new Set();
-    for (const [cinta, gestion] of [[CINTA_EXTERNA, 'externa'], [CINTA_INTERNA, 'interna'], [conDatosYCarga, 'interna']]) {
-      const leyenda = ctx.htmlDeLeyendaDeCinta(cinta, gestion);
-      const tipos = [...new Set(cinta.marcas.map((m) => m.tipo)), ...(cinta.rayado ? ['rayado'] : [])];
-      for (const tipo of tipos) {
-        const nombre = typeof LEYENDA[tipo] === 'string' ? LEYENDA[tipo] : LEYENDA[tipo][gestion];
-        assert.ok(leyenda.includes(`</i>${nombre}</span>`), `${gestion} ${tipo}: ${nombre}`);
-        vistos.add(`${tipo} ${gestion}`);
-      }
-    }
-    // Están todos los de la leyenda, menos la nota en la interna (no tiene)
-    for (const esperado of ['aviso externa', 'nota externa', 'datos externa', 'carga externa', 'rayado externa', 'datos-y-carga interna', 'datos interna']) {
-      assert.ok(vistos.has(esperado), esperado);
     }
   });
 

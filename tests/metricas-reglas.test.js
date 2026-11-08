@@ -2930,8 +2930,9 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
 describe('el nombre de la etapa de la DGMIT y la Dirección Administrativa', () => {
   it('ninguna etapa se llama «trámite»: el circuito, las cintas y el Ciclo de vida dicen «Redacción y entrega de nota»', () => {
     const NOMBRE = 'Redacción y entrega de nota';
-    // Con notas DGMIT la etapa tiene cifras, y su segmento y su rótulo van en la cinta externa; sin notas, la cinta se corta antes
-    for (const [casos, enLaCinta] of [[casosConNotas(), true], [casosReales(), false]]) {
+    // Con notas DGMIT la etapa tiene cifras: el recorrido típico de la externa la nombra con su porcentaje y sus días en la unidad de la
+    // vista. Sin notas, va en gris con su nombre y dice, debajo, que se completa cuando haya notas DGMIT cargadas
+    for (const [casos, conNotas] of [[casosConNotas(), true], [casosReales(), false]]) {
       for (const dias of DIAS) {
         for (const estadistico of ESTADISTICOS) {
           const v = vistaDe(casos, { anio: 2026, al: AL, estadistico, dias, sin: [] });
@@ -2942,17 +2943,21 @@ describe('el nombre de la etapa de la DGMIT y la Dirección Administrativa', () 
           const cintas = cintasDeLaVista(v, { estadistico, dias });
           const deLasCintas = JSON.stringify(cintas);
           assert.doesNotMatch(deLasCintas, /trámite/i, `las cintas, ${donde}`);
-          assert.equal(deLasCintas.includes(NOMBRE), enLaCinta, `las cintas, ${donde}`);
-          if (enLaCinta) assert.ok(cintas.externa.segmentos.some((s) => s.texto.startsWith(`${NOMBRE} · `)), `${donde}: ${deLasCintas}`);
+          const redaccion = cintas.externa.partes[0];
+          assert.equal(redaccion.nombre, NOMBRE, `${donde}: ${deLasCintas}`);
+          if (conNotas) {
+            assert.equal(redaccion.actor, 'dgmit', donde);
+            assert.ok(redaccion.grande.endsWith(' %'), `${donde}: ${redaccion.grande}`);
+            assert.ok(redaccion.dias.includes(dias === 'habiles' ? 'días hábiles' : 'días corridos'), `${donde}: ${redaccion.dias}`);
+          } else {
+            assert.deepEqual([redaccion.actor, redaccion.dias], ['gris', 'se completa cuando haya notas DGMIT cargadas'], donde);
+          }
         }
       }
       const deLasEtapas = JSON.stringify(etapas(casos));
       assert.doesNotMatch(deLasEtapas, /trámite/i, 'las etapas');
       assert.ok(deLasEtapas.includes(NOMBRE), 'las etapas');
     }
-    // Con la mediana en días hábiles, el rótulo también entra en el dibujo
-    const cintas = cintasDeLaVista(vista(casosConNotas()), { estadistico: 'mediana', dias: 'habiles' });
-    assert.ok(cintas.externa.rotulos.some((r) => r.texto.startsWith(`${NOMBRE} · `)), JSON.stringify(cintas.externa.rotulos));
   });
 });
 
