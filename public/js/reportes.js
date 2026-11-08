@@ -500,7 +500,8 @@ const MARCAS_DEL_MODAL = {
   en_curso: '<svg class="mt-ley-curso" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="12" viewBox="0 0 24 12"><circle cx="6" cy="6" r="4.5"/><path d="M12 6h9M17.5 2.5 21 6l-3.5 3.5"/></svg>',
   pendiente: '<svg class="mt-ley-pend" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5"/></svg>'
 };
-// Las columnas de la lista de los ciclos que no son las dos puntas de la etapa (esas las manda el servidor)
+// Las columnas de la lista de los ciclos que no son las dos puntas de la etapa (esas las manda el servidor). «Días» es el encabezado de
+// una foto sin `rotulo_de_los_dias`: con el rótulo del servidor, ese es el que se imprime
 const COLUMNA_DEL_DATASET = 'Dataset';
 const COLUMNA_DE_LOS_DIAS = 'Días';
 
@@ -580,7 +581,8 @@ function htmlDeLaLeyendaDelModal(leyenda) {
 }
 
 // Una fila de «Los ciclos (N)»: el dataset con el link a su Seguimiento (si su id puede ir en una dirección) y su área debajo, las dos fechas
-// de la etapa (debajo de la primera, la marca del avisado ya vencido) y los días en las dos unidades. En curso o pendiente, la fecha final
+// de la etapa (con el número de la nota DGMIT que manda el servidor, en un renglón, junto a la fecha; debajo de la primera, la marca del
+// avisado ya vencido) y los días en las dos unidades. En curso o pendiente, la fecha final
 // es lo que dice el servidor («en curso», «pendiente de carga»), en ámbar o en violeta y con su texto (nunca solo el color)
 function htmlDeFilaDelModal(ciclo) {
   const id = idDeDataset(ciclo.dataset_id);
@@ -590,10 +592,15 @@ function htmlDeFilaDelModal(ciclo) {
   const enCurso = ciclo.estado === 'en_curso';
   const estado = enCurso ? 'mt-curso' : ciclo.estado === 'pendiente' ? 'mt-pend' : '';
   const hastaTexto = escaparTexto(ciclo.hasta_texto);
-  let hasta = fecha(ciclo.hasta);
+  // El número viene armado («(N° 7/26)»): la página solo lo pega a la fecha, sin partirlo, y una foto vieja no lo trae
+  const conNumero = (dia, texto) => {
+    const numero = escaparTexto(texto);
+    return numero ? `<span class="nro">${dia} ${numero}</span>` : dia;
+  };
+  let hasta = typeof ciclo.hasta === 'string' ? conNumero(fecha(ciclo.hasta), ciclo.hasta_nota_dgmit) : fecha(ciclo.hasta);
   if (typeof ciclo.hasta !== 'string' && hastaTexto) hasta = estado ? `<span class="${estado}">${hastaTexto}</span>` : hastaTexto;
   return `<tr><td class="t">${id === null ? titulo : `<a href="seguimiento.html?id=${String(id)}">${titulo}</a>`}${area ? `<small>${area}</small>` : ''}</td>`
-    + `<td>${fecha(ciclo.desde)}${nota ? `<span class="d">${nota}</span>` : ''}</td><td>${hasta}</td>`
+    + `<td>${conNumero(fecha(ciclo.desde), ciclo.desde_nota_dgmit)}${nota ? `<span class="d">${nota}</span>` : ''}</td><td>${hasta}</td>`
     + `<td${enCurso ? ' class="mt-curso"' : ''}>${escaparTexto(ciclo.dias_texto) || Utils.SIN_DATO}</td></tr>`;
 }
 
@@ -621,7 +628,7 @@ function htmlDelModal(tramo, { sinTexto = '' } = {}) {
     lista = `<p class="mt-vacio">${vacio}</p>`;
   } else if (ciclos.length > 0) {
     lista = '<div class="mt-modal-tabla" tabindex="0" role="group" aria-labelledby="mt-modal-lista"><table class="mt-tabla">'
-      + `<thead><tr>${[COLUMNA_DEL_DATASET, desde, hasta, COLUMNA_DE_LOS_DIAS].map((columna) => `<th scope="col">${columna}</th>`).join('')}</tr></thead>`
+      + `<thead><tr>${[COLUMNA_DEL_DATASET, desde, hasta, escaparTexto(m.rotulo_de_los_dias) || COLUMNA_DE_LOS_DIAS].map((columna) => `<th scope="col">${columna}</th>`).join('')}</tr></thead>`
       + `<tbody>${ciclos.map(htmlDeFilaDelModal).join('')}</tbody></table></div>`;
   }
   const cuerpo = (frase ? `<p class="mt-modal-frase">${frase}</p>` : '')

@@ -751,7 +751,7 @@ describe('reportes.js: la banda y el modal de cada tramo', () => {
     assert.deepEqual([...ctx.htmlDeCircuito({ circuito: { interna: [tramoDe(VISTA, 'interna', 'carga')] } }, 'interna').matchAll(BOTON)].map((m) => m[2]), ['carga']);
   });
 
-  it('htmlDelModal: el título, quién, la frase, la cifra con sus hábiles, la leyenda, el gráfico, «Cómo se cuenta» y los ciclos, en ese orden', () => {
+  it('htmlDelModal: el título, quién, la frase, la cifra con sus hábiles, la leyenda, el gráfico, «Cómo se cuenta» y los ciclos, en ese orden; sin las claves nuevas (una foto vieja), «Días» y la fecha sola', () => {
     const t = tramoConModal();
     const html = ctx.htmlDelModal(t);
     assert.ok(html.startsWith('<div class="modal-header"><div class="mt-modal-cabeza"><h2 class="modal-title" id="mt-modal-titulo">Respuesta del área</h2>'
@@ -781,6 +781,30 @@ describe('reportes.js: la banda y el modal de cada tramo', () => {
     assert.ok(html.endsWith('</tbody></table></div></div>'), html.slice(-80));
     // Sin el modal, nada
     for (const sinModal of [null, undefined, {}, { ...t, modal: null }, { ...t, modal: [] }]) assert.equal(ctx.htmlDelModal(sinModal), '');
+  });
+
+  it('htmlDelModal: el rótulo de los días del servidor y el número de la nota DGMIT junto a su fecha, en un renglón', () => {
+    const conNotas = (primero) => CICLOS.map((c, i) => ({ ...c, desde_nota_dgmit: i === 0 ? primero.desde : '', hasta_nota_dgmit: i === 0 ? primero.hasta : '' }));
+    const modalCon = (ciclos) => tramoConModal({ modal: modalAMano({ puntas: ['Entrega de nota DGMIT', 'Datos recibidos'], rotulo_de_los_dias: 'Días de circuito y producción', ciclos }) });
+    const html = ctx.htmlDelModal(modalCon(conNotas({ desde: '(N° 7/26)', hasta: '' })));
+    assert.ok(html.includes('<thead><tr><th scope="col">Dataset</th><th scope="col">Entrega de nota DGMIT</th><th scope="col">Datos recibidos</th><th scope="col">Días de circuito y producción</th></tr></thead>'), html);
+    const filas = filasDe(html);
+    assert.ok(filas[0].includes('<td><span class="nro">02/03/2026 (N° 7/26)</span></td><td>05/05/2026</td>'), filas[0]);
+    assert.ok(filas[1].includes('<td>01/04/2026</td><td>21/05/2026</td>'));
+    assert.ok(filas[2].includes('<td>10/06/2026</td><td>10/06/2026</td>'));
+    assert.ok(filas[3].includes('<td>14/08/2026</td><td><span class="mt-curso">en curso</span></td>'));
+    assert.doesNotMatch(filas.slice(1).join(''), /nro/);
+    const hasta = filasDe(ctx.htmlDelModal(modalCon(conNotas({ desde: '', hasta: '(N° 9/26)' }))));
+    assert.ok(hasta[0].includes('<td>02/03/2026</td><td><span class="nro">05/05/2026 (N° 9/26)</span></td>'), hasta[0]);
+    const curso = conNotas({ desde: '', hasta: '' });
+    curso[3].hasta_nota_dgmit = '(N° 9/26)';
+    const enCurso = filasDe(ctx.htmlDelModal(modalCon(curso)))[3];
+    assert.ok(enCurso.includes('<td><span class="mt-curso">en curso</span></td>'), enCurso);
+    assert.doesNotMatch(enCurso, /nro|N° 9/);
+  });
+
+  it('reportes.html: el número de la nota DGMIT no se parte', () => {
+    assert.match(leer('reportes.html'), /\.mt-modal-tabla \.nro \{ white-space: nowrap; \}/);
   });
 
   it('htmlDelModal: la nota pendiente de carga, el avisado ya vencido y un dataset sin id; lo de la DGMIT en violeta', () => {
@@ -943,21 +967,21 @@ describe('reportes.js: la banda y el modal de cada tramo', () => {
   it('todo lo del servidor escapado: un título <b>"x"</b> en la tabla y en el <title> de su punto, y en el nombre del botón', () => {
     const malo = '<b>"x"</b>';
     const escapado = '&lt;b&gt;&quot;x&quot;&lt;/b&gt;';
-    const ciclos = [{ ...CICLOS[0], titulo: malo, area: malo, dias_texto: malo, nota: malo }, { ...CICLOS[3], hasta_texto: malo, dias_texto: malo }];
+    const ciclos = [{ ...CICLOS[0], titulo: malo, area: malo, dias_texto: malo, nota: malo, desde_nota_dgmit: malo }, { ...CICLOS[3], hasta_texto: malo, dias_texto: malo }];
     const grafico = graficoDe(ciclos, { valor: 64, texto: malo });
     grafico.eje.marcas[0].texto = malo;
     grafico.eje.rotulo.texto = malo;
     grafico.mas = [{ x: 30, y: 40, texto: malo }];
     const t = tramoConModal({ nombre: malo, como_se_cuenta: malo, habiles_texto: malo, cifra: { ...tramo('respuesta', 64).cifra, texto: malo, unidad: malo, debajo: malo },
-      modal: modalAMano({ quien: malo, leyenda: [{ marca: 'cuenta', texto: malo }], como_se_cuenta: [malo], lista: malo, puntas: [malo, malo], ciclos, grafico }) });
+      modal: modalAMano({ quien: malo, leyenda: [{ marca: 'cuenta', texto: malo }], como_se_cuenta: [malo], lista: malo, puntas: [malo, malo], rotulo_de_los_dias: malo, ciclos, grafico }) });
     const html = ctx.htmlDelModal(t, { sinTexto: malo });
     assert.doesNotMatch(html, /<b>|"x"/);
     assert.ok(html.includes(`<a href="seguimiento.html?id=7">${escapado}</a>`));
     assert.ok(html.includes(`<title>${escapado}: ${escapado}</title>`));
     // El nombre, quién, la franja, la frase, la cifra (tres), los hábiles, la leyenda, «Cómo se cuenta», la lista, las dos puntas, el rótulo de
     // la línea, el primer número y el rótulo del eje, el «+N», los dos <title> (el primero con dos) y, en la tabla, el título, el área, la
-    // nota, los días (dos) y «en curso»
-    assert.equal(cuantas(html, /&lt;b&gt;&quot;x&quot;&lt;\/b&gt;/g), 26);
+    // nota, los días (dos) y «en curso», más el rótulo de los días y el número de la nota
+    assert.equal(cuantas(html, /&lt;b&gt;&quot;x&quot;&lt;\/b&gt;/g), 28);
     // El vacío del cajón y el del servidor, con el nombre y la frase
     const vacio = ctx.htmlDelModal({ ...t, cifra: null, vacio: { titulo: malo, texto: malo }, modal: modalAMano({ vacio: malo }) });
     assert.doesNotMatch(vacio, /<b>/);
@@ -977,7 +1001,7 @@ describe('reportes.js: la banda y el modal de cada tramo', () => {
     const cero = ctx.htmlDelModal(tramoConModal({ modal: modalAMano({ lista: '0', vacio: '0', leyenda: [{ marca: 'cuenta', texto: '0' }] }) }));
     assert.ok(cero.includes('<h3 class="mt-modal-h3" id="mt-modal-lista">0</h3><p class="mt-vacio">0</p>'));
     assert.match(cero, /<\/svg>0<\/li>/);
-    const vacios = [ctx.htmlDelModal({ modal: {} }), ctx.htmlDelModal({ clave: 'respuesta', modal: { ciclos: [{}, null], leyenda: [null, {}], como_se_cuenta: [null, 3], puntas: [] } }),
+    const vacios = [ctx.htmlDelModal({ modal: {} }), ctx.htmlDelModal({ clave: 'respuesta', modal: { ciclos: [{}, null, { desde: '2026-01-02', desde_nota_dgmit: null, hasta_nota_dgmit: 0 }], rotulo_de_los_dias: null, leyenda: [null, {}], como_se_cuenta: [null, 3], puntas: [] } }),
       ctx.svgDelGrafico({ ancho: 760, alto: 100, eje: {}, puntos: [{}, null], mas: [{}], linea: {} })].join('');
     assert.doesNotMatch(vacios, /NaN|null|undefined|\[object/);
   });

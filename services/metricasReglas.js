@@ -613,26 +613,54 @@ const valoresEn = (medidas, que, clave, dias, ctx) => medidas
 // El modal de cada tramo (spec 2026-11-07-metricas-cajones-y-ciclos, 5 y 7): la página lo abre desde la flecha de la banda
 // ---------------------------------------------------------------------------------------------------------------------
 
-// Quién actúa en cada tramo (con el nombre entero: en el modal hay lugar), el nombre de las dos puntas de la etapa y de dónde sale cada
-// fecha, en los hechos del ciclo (hechosDe): las mismas que cuenta medir
+// Los rótulos de las puntas que se repiten entre tramos (spec 2026-11-08-metricas-modal-rotulos, 3): donde termina una etapa empieza la
+// siguiente, con el mismo rótulo
+const PEDIDO_DDPC = 'Pedido DDPC vía RPAD';
+const ENTREGA_DE_NOTA = 'Entrega de nota DGMIT';
+const ENTREGA_DEL_RELEVAMIENTO = 'Entrega del relevamiento';
+
+// Quién actúa en cada tramo (con el nombre entero: en el modal hay lugar), los rótulos de la tabla del modal (spec 2026-11-08, 3: las
+// dos puntas de la etapa y la columna de los días), de dónde sale cada fecha, en los hechos del ciclo (hechosDe): las mismas que cuenta
+// medir, y en qué punta va el número de la nota DGMIT (spec 2026-11-08, 4: junto a su fecha; sin `numero`, en ninguna). La carga es el
+// único tramo cuyas puntas cambian con la gestión: las de la interna van aparte (puntasDelModal)
 const DEL_MODAL = Object.freeze({
-  aviso: Object.freeze({ quien: 'RPAD', puntas: Object.freeze(['Aviso', 'Vencimiento']), desde: (h) => h.avisoRegla, hasta: (h) => h.venc }),
+  aviso: Object.freeze({
+    quien: 'RPAD', puntas: Object.freeze([PEDIDO_DDPC, 'Vencimiento del dato']), dias: 'Días de anticipación',
+    desde: (h) => h.avisoRegla, hasta: (h) => h.venc
+  }),
   tramite: Object.freeze({
-    quien: 'DGMIT y Dirección Administrativa', puntas: Object.freeze(['Aviso', 'Nota DGMIT']),
-    desde: (h) => h.inicioTramos, hasta: (h) => h.nota?.recibida ?? null
+    quien: 'DGMIT y Dirección Administrativa', puntas: Object.freeze([PEDIDO_DDPC, ENTREGA_DE_NOTA]), dias: 'Días de redacción y entrega',
+    desde: (h) => h.inicioTramos, hasta: (h) => h.nota?.recibida ?? null, numero: 'hasta'
   }),
   respuesta: Object.freeze({
-    quien: 'Área responsable', puntas: Object.freeze(['Nota DGMIT', 'Datos recibidos']),
-    desde: (h) => h.nota?.recibida ?? null, hasta: (h) => h.recibido
+    quien: 'Área responsable', puntas: Object.freeze([ENTREGA_DE_NOTA, 'Datos recibidos']), dias: 'Días de circuito y producción',
+    desde: (h) => h.nota?.recibida ?? null, hasta: (h) => h.recibido, numero: 'desde'
   }),
   produccion: Object.freeze({
-    quien: 'DGMIT y Dirección de Investigación Territorial', puntas: Object.freeze(['Aviso', 'Datos recibidos']),
-    desde: (h) => h.inicioTramos, hasta: (h) => h.recibido
+    quien: 'DGMIT y Dirección de Investigación Territorial', puntas: Object.freeze([PEDIDO_DDPC, ENTREGA_DEL_RELEVAMIENTO]),
+    dias: 'Días de producción', desde: (h) => h.inicioTramos, hasta: (h) => h.recibido
   }),
   carga: Object.freeze({
-    quien: 'Datos Públicos', puntas: Object.freeze(['Datos recibidos', 'Carga en el portal']), desde: (h) => h.recibido, hasta: (h) => h.carga
+    quien: 'Datos Públicos', puntas: Object.freeze(['Datos recibidos', 'Carga en el portal']), dias: 'Días de preparación y carga',
+    desde: (h) => h.recibido, hasta: (h) => h.carga
   })
 });
+
+// En la interna, la carga empieza donde termina la producción, y lleva su mismo rótulo (spec 2026-11-08, 3). «Entrega del relevamiento»
+// vale también para un ciclo resuelto con datos de una fuente pública: la producción ya cuenta así todo dato recibido (medir)
+const PUNTAS_DE_LA_CARGA_INTERNA = Object.freeze([ENTREGA_DEL_RELEVAMIENTO, 'Carga en el portal']);
+
+// Los dos rótulos de las fechas de la tabla del modal, según el tramo y la gestión
+const puntasDelModal = (clave, gestion) => (clave === 'carga' && gestion === 'interna'
+  ? PUNTAS_DE_LA_CARGA_INTERNA : DEL_MODAL[clave].puntas);
+
+// El número de la nota DGMIT que da la fecha (la primera vigente del ciclo, h.nota), tal como está cargado, con el «N°» del Seguimiento:
+// «(N° 7/26)». Sin número (no debería pasar: la columna es obligatoria), '' y la celda dice solo la fecha; uno de solo espacios tampoco
+// es un número
+const numeroDeLaNotaDgmit = (h) => {
+  const numero = tieneValor(h.nota?.numero) ? String(h.nota.numero).trim() : '';
+  return numero === '' ? '' : `(N° ${numero})`;
+};
 
 // Lo que dice debajo de su aviso un avisado ya vencido en los tramos que empiezan en el aviso (la redacción y la producción): ahí se
 // cuenta desde ese primer aviso, porque no tuvo el de la regla. Solo en las filas con días (las que cuentan y las en curso; spec
@@ -661,10 +689,13 @@ const porDias = (a, b) => b.corridos - a.corridos || (b.habiles ?? -1) - (a.habi
 // finitos, como cifraDe, y los pendientes de `medidas`. `medidas`: las que cuentan de la gestión, en la vista en días corridos, con su
 // `otra` en hábiles
 const filasDelModal = (clave, medidas) => {
-  const { desde, hasta } = DEL_MODAL[clave];
+  const { desde, hasta, numero } = DEL_MODAL[clave];
+  // El número de la nota DGMIT, en la punta de su fecha: una nota pendiente de carga no tiene ni número ni fecha
+  const numeroEn = (punta, h, estado) => (punta === numero && estado !== 'pendiente' ? numeroDeLaNotaDgmit(h) : '');
   const ciclo = (h, estado, [desdeDia, hastaDia, hastaTexto, diasTexto]) => ({
     dataset_id: h.caso.dataset_id ?? null, titulo: h.caso.titulo ?? null, area: h.caso.area ?? null, estado,
-    desde: desdeDia, hasta: hastaDia, hasta_texto: hastaTexto, dias_texto: diasTexto,
+    desde: desdeDia, desde_nota_dgmit: numeroEn('desde', h, estado), hasta: hastaDia, hasta_nota_dgmit: numeroEn('hasta', h, estado),
+    hasta_texto: hastaTexto, dias_texto: diasTexto,
     nota: estado !== 'pendiente' && MARCAN_LOS_YA_VENCIDOS.includes(clave) && avisadoYaVencido(h) ? AVISADO_YA_VENCIDO : ''
   });
   // Lo que cuenta (`que`: 'terminados' o 'enCurso'), con sus días en las dos unidades, ya ordenado
@@ -746,12 +777,13 @@ const lineaDelGrafico = (cifra, ctx) => (cifra === null ? null : {
 });
 
 // El modal de un tramo, solo en la vista en días corridos (las fechas son las mismas; los días, en las dos unidades): { quien, leyenda:
-// [{ marca, texto }], como_se_cuenta: string[], lista, puntas: [desde, hasta], ciclos: [{ dataset_id, titulo, area, estado ('cuenta',
-// 'en_curso' o 'pendiente'), desde, hasta ('AAAA-MM-DD' o null), hasta_texto ('', 'en curso' o 'pendiente de carga'), dias_texto,
-// nota }], vacio, grafico (graficoDelTramo, services/metricasGrafico.js, con los que cuentan y los en curso; o null) }. Los ciclos son
-// los de la cifra: los destildados no están. `medidas`: las que cuentan de la gestión; `tramo`: el de tramoDelCircuito
+// [{ marca, texto }], como_se_cuenta: string[], lista, puntas: [desde, hasta] (los rótulos de las dos fechas), rotulo_de_los_dias,
+// ciclos: [{ dataset_id, titulo, area, estado ('cuenta', 'en_curso' o 'pendiente'), desde, desde_nota_dgmit, hasta ('AAAA-MM-DD' o
+// null), hasta_nota_dgmit ('(N° 7/26)' o ''), hasta_texto ('', 'en curso' o 'pendiente de carga'), dias_texto, nota }], vacio, grafico
+// (graficoDelTramo, services/metricasGrafico.js, con los que cuentan y los en curso; o null) }. Los ciclos son los de la cifra: los
+// destildados no están. `medidas`: las que cuentan de la gestión; `tramo`: el de tramoDelCircuito
 const modalDelTramo = (clave, gestion, medidas, ctx, tramo) => {
-  const { quien, puntas } = DEL_MODAL[clave];
+  const { quien, dias } = DEL_MODAL[clave];
   const filas = filasDelModal(clave, medidas);
   const ciclos = filas.map((f) => f.ciclo);
   const cuantosHay = (estado) => ciclos.filter((c) => c.estado === estado).length;
@@ -763,7 +795,8 @@ const modalDelTramo = (clave, gestion, medidas, ctx, tramo) => {
       .map(([marca, texto]) => ({ marca, texto: texto(cuantosHay(marca)) })),
     como_se_cuenta: comoSeCuentaEnElModal(clave, medidas, ctx, tramo, ciclos),
     lista: `Los ciclos (${ciclos.length})`,
-    puntas: [...puntas],
+    puntas: [...puntasDelModal(clave, gestion)],
+    rotulo_de_los_dias: dias,
     ciclos,
     vacio: ciclos.length === 0 ? `Sin ciclos en ${ctx.anio}.` : '',
     grafico: graficoDelTramo(puntos, { linea: lineaDelGrafico(tramo.cifra, ctx) })

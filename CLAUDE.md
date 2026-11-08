@@ -78,6 +78,7 @@ Si tocás esto, leé este documento de `docs/temas/`:
 | Seguimiento del dataset: ciclos, avisos, cinta, PDF | `seguimiento.md` |
 | Notas DGMIT | `notas-dgmit.md` |
 | Métricas, foto del 31/12 y reportes PDF | `metricas-y-reportes.md` |
+| Métricas: el modal de cada tramo (la tabla de los ciclos, sus rótulos, el gráfico) | `metricas-modal.md` |
 | Ciclo de vida del dato | `ciclo-de-vida.md` |
 | Generador de Notas y el Word de las notas | `generador-de-notas.md` |
 | Configuración: usuarios, licencias, áreas, login, contraseñas y links | `configuracion.md` |

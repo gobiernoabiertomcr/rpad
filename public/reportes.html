@@ -392,6 +392,8 @@
         .mt-modal-tabla table.mt-tabla { min-width: 600px; }
         /* Los días, en un renglón: angosta, la tabla se desplaza en lugar de partirlos en tres */
         .mt-modal-tabla td:last-child { white-space: nowrap; }
+        /* La fecha con el número de su nota, en un renglón: no se parte entre «(N°» y el número */
+        .mt-modal-tabla .nro { white-space: nowrap; }
         .mt-modal-tabla td.t a { color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; }
         .mt-modal-tabla .mt-curso { color: var(--sg-ambar); font-weight: 600; }
         .mt-modal-tabla .mt-pend { color: var(--sg-violeta); font-weight: 600; }
@@ -735,6 +737,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/reportes.js?v=20261213"></script>
+    <script src="js/reportes.js?v=20261214"></script>
 </body>
 </html>

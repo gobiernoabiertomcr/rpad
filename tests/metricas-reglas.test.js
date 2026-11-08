@@ -3433,13 +3433,15 @@ describe('el modal de cada tramo (spec 2026-11-07, 5 y 7)', () => {
           for (const [gestion, t] of tramosDe(enCorridos(casos, { estadistico, sin }))) {
             const donde = `${gestion}, ${t.clave}, ${estadistico}, sin ${sin}`;
             const { modal } = t;
-            assert.deepEqual(Object.keys(modal), ['quien', 'leyenda', 'como_se_cuenta', 'lista', 'puntas', 'ciclos', 'vacio', 'grafico'], donde);
+            assert.deepEqual(Object.keys(modal), ['quien', 'leyenda', 'como_se_cuenta', 'lista', 'puntas', 'rotulo_de_los_dias', 'ciclos', 'vacio', 'grafico'], donde);
             assert.equal(cuantos(modal, 'cuenta'), t.cifra?.ciclos ?? 0, donde);
             assert.equal(cuantos(modal, 'en_curso'), t.en_curso?.n ?? 0, donde);
             assert.equal(cuantos(modal, 'pendiente'), t.pendientes ?? 0, donde);
             assert.ok(modal.ciclos.every((c) => ESTADOS.includes(c.estado) && !sin.includes(c.dataset_id)), donde);
             for (const c of modal.ciclos) {
-              assert.deepEqual(Object.keys(c), ['dataset_id', 'titulo', 'area', 'estado', 'desde', 'hasta', 'hasta_texto', 'dias_texto', 'nota'], donde);
+              assert.deepEqual(Object.keys(c), [
+                'dataset_id', 'titulo', 'area', 'estado', 'desde', 'desde_nota_dgmit', 'hasta', 'hasta_nota_dgmit', 'hasta_texto', 'dias_texto', 'nota'
+              ], donde);
             }
             assert.equal(modal.lista, `Los ciclos (${modal.ciclos.length})`, donde);
             assert.equal(modal.vacio, modal.ciclos.length === 0 ? 'Sin ciclos en 2026.' : '', donde);
@@ -3515,30 +3517,70 @@ describe('el modal de cada tramo (spec 2026-11-07, 5 y 7)', () => {
     ]);
   });
 
-  it('las dos fechas de la etapa, con el nombre de cada punta, y quién actúa', () => {
+  it('las dos fechas de la etapa, con el rótulo de cada punta y de los días, y quién actúa', () => {
     const v = enCorridos([cerrado({ nota_dgmit: notaDe('2026-03-02') }), cerrado({ dataset_id: 901, gestion: 'interna', requiere_nota: null })]);
+    // Los rótulos de la spec 2026-11-08-metricas-modal-rotulos, 3: la carga es el único que cambia con la gestión
+    const PEDIDO = 'Pedido DDPC vía RPAD';
+    const NOTA = 'Entrega de nota DGMIT';
+    const RELEVAMIENTO = 'Entrega del relevamiento';
+    const AVISO = (g) => [`RPAD · gestión ${g}`, [PEDIDO, 'Vencimiento del dato'], 'Días de anticipación', '2026-02-19', '2026-03-31'];
     const ESPERADO = {
       externa: {
-        aviso: ['RPAD · gestión externa', ['Aviso', 'Vencimiento'], '2026-02-19', '2026-03-31'],
-        tramite: ['DGMIT y Dirección Administrativa · gestión externa', ['Aviso', 'Nota DGMIT'], '2026-02-19', '2026-03-02'],
-        respuesta: ['Área responsable · gestión externa', ['Nota DGMIT', 'Datos recibidos'], '2026-03-02', '2026-04-06'],
-        carga: ['Datos Públicos · gestión externa', ['Datos recibidos', 'Carga en el portal'], '2026-04-06', '2026-04-08']
+        aviso: AVISO('externa'),
+        tramite: ['DGMIT y Dirección Administrativa · gestión externa', [PEDIDO, NOTA], 'Días de redacción y entrega', '2026-02-19', '2026-03-02'],
+        respuesta: ['Área responsable · gestión externa', [NOTA, 'Datos recibidos'], 'Días de circuito y producción', '2026-03-02', '2026-04-06'],
+        carga: ['Datos Públicos · gestión externa', ['Datos recibidos', 'Carga en el portal'], 'Días de preparación y carga', '2026-04-06', '2026-04-08']
       },
       interna: {
-        aviso: ['RPAD · gestión interna', ['Aviso', 'Vencimiento'], '2026-02-19', '2026-03-31'],
-        produccion: ['DGMIT y Dirección de Investigación Territorial · gestión interna', ['Aviso', 'Datos recibidos'], '2026-02-19', '2026-04-06'],
-        carga: ['Datos Públicos · gestión interna', ['Datos recibidos', 'Carga en el portal'], '2026-04-06', '2026-04-08']
+        aviso: AVISO('interna'),
+        produccion: ['DGMIT y Dirección de Investigación Territorial · gestión interna', [PEDIDO, RELEVAMIENTO], 'Días de producción', '2026-02-19', '2026-04-06'],
+        carga: ['Datos Públicos · gestión interna', [RELEVAMIENTO, 'Carga en el portal'], 'Días de preparación y carga', '2026-04-06', '2026-04-08']
       }
     };
     for (const [gestion, t] of tramosDe(v)) {
       assert.equal(t.modal.ciclos.length, 1, `${gestion}, ${t.clave}`);
       const [c] = t.modal.ciclos;
-      assert.deepEqual([t.modal.quien, t.modal.puntas, c.desde, c.hasta, c.hasta_texto, c.estado], [...ESPERADO[gestion][t.clave], '', 'cuenta'], `${gestion}, ${t.clave}`);
+      assert.deepEqual([t.modal.quien, t.modal.puntas, t.modal.rotulo_de_los_dias, c.desde, c.hasta, c.hasta_texto, c.estado],
+        [...ESPERADO[gestion][t.clave], '', 'cuenta'], `${gestion}, ${t.clave}`);
     }
-    // Sin ciclos, también dice quién actúa y las puntas
+    // Sin ciclos, también dice quién actúa, las puntas y los días
     for (const [gestion, t] of tramosDe(enCorridos([]))) {
-      assert.deepEqual([t.modal.quien, t.modal.puntas], ESPERADO[gestion][t.clave].slice(0, 2), `${gestion}, ${t.clave}`);
+      assert.deepEqual([t.modal.quien, t.modal.puntas, t.modal.rotulo_de_los_dias], ESPERADO[gestion][t.clave].slice(0, 3), `${gestion}, ${t.clave}`);
     }
+  });
+
+  it('el número de la nota DGMIT junto a su fecha: en la redacción, donde termina; en la respuesta, donde empieza; cada ciclo con el de su nota', () => {
+    // Números inventados. Uno cerrado y uno abierto con su nota, una nota pendiente de carga y dos con la nota sin número (no debería
+    // pasar: la columna es obligatoria)
+    const casos = [
+      cerrado({ dataset_id: 930, titulo: 'Cerrado', nota_dgmit: notaDe('2026-03-02', { numero: '7/26' }) }),
+      caso({ dataset_id: 931, titulo: 'Abierto', nota_dgmit: notaDe('2026-05-04', { numero: '12/26' }) }),
+      avisado('2026-03-10', { dataset_id: 932, titulo: 'Pendiente' }),
+      cerrado({ dataset_id: 933, titulo: 'Sin número', nota_dgmit: notaDe('2026-03-03', { numero: '' }) }),
+      cerrado({ dataset_id: 934, titulo: 'Número nulo', nota_dgmit: notaDe('2026-03-04', { numero: null }) })
+    ];
+    const v = enCorridos(casos);
+    const numeros = (clave) => Object.fromEntries(modalDe(v, 'externa', clave).ciclos.map((c) => [c.titulo, [c.estado, c.desde_nota_dgmit, c.hasta_nota_dgmit]]));
+    // En la redacción, las que cuentan, en la punta donde termina; la pendiente, sin número
+    assert.deepEqual(numeros('tramite'), {
+      Cerrado: ['cuenta', '', '(N° 7/26)'], Abierto: ['cuenta', '', '(N° 12/26)'], Pendiente: ['pendiente', '', ''],
+      'Sin número': ['cuenta', '', ''], 'Número nulo': ['cuenta', '', '']
+    });
+    // En la respuesta, las que cuentan y las en curso, en la punta donde empieza
+    assert.deepEqual(numeros('respuesta'), {
+      Cerrado: ['cuenta', '(N° 7/26)', ''], Abierto: ['en_curso', '(N° 12/26)', ''],
+      'Sin número': ['cuenta', '', ''], 'Número nulo': ['cuenta', '', '']
+    });
+    // En los demás tramos, nunca
+    for (const [gestion, t] of tramosDe(v)) {
+      if (gestion === 'externa' && ['tramite', 'respuesta'].includes(t.clave)) continue;
+      assert.ok(t.modal.ciclos.every((c) => c.desde_nota_dgmit === '' && c.hasta_nota_dgmit === ''), `${gestion}, ${t.clave}`);
+    }
+    // Un número de solo espacios tampoco es un número; uno con espacios alrededor va sin ellos
+    const conEspacios = (numero) => enCorridos([cerrado({ dataset_id: 935, nota_dgmit: notaDe('2026-03-02', { numero }) })]);
+    const losDos = (w) => [modalDe(w, 'externa', 'tramite').ciclos[0].hasta_nota_dgmit, modalDe(w, 'externa', 'respuesta').ciclos[0].desde_nota_dgmit];
+    assert.deepEqual(losDos(conEspacios('   ')), ['', '']);
+    assert.deepEqual(losDos(conEspacios(' 7/26 ')), ['(N° 7/26)', '(N° 7/26)']);
   });
 
   it('los días de cada ciclo: las dos unidades, «En el día», «hace …» en curso y «—» en una pendiente', () => {
@@ -3553,12 +3595,12 @@ describe('el modal de cada tramo (spec 2026-11-07, 5 y 7)', () => {
     const v = enCorridos(casos, { al: '2026-06-01' });
     assert.deepEqual(modalDe(v, 'externa', 'respuesta').ciclos, [
       {
-        dataset_id: 901, titulo: 'Uno', area: 'Área de prueba', estado: 'cuenta', desde: '2026-01-26', hasta: '2026-03-31', hasta_texto: '',
-        dias_texto: '64 días corridos (45 hábiles)', nota: ''
+        dataset_id: 901, titulo: 'Uno', area: 'Área de prueba', estado: 'cuenta', desde: '2026-01-26', desde_nota_dgmit: '(N° 45/26)',
+        hasta: '2026-03-31', hasta_nota_dgmit: '', hasta_texto: '', dias_texto: '64 días corridos (45 hábiles)', nota: ''
       },
       {
-        dataset_id: 902, titulo: 'Dos', area: 'Área de prueba', estado: 'en_curso', desde: '2026-01-02', hasta: null, hasta_texto: 'en curso',
-        dias_texto: 'hace 150 días corridos (102 hábiles)', nota: ''
+        dataset_id: 902, titulo: 'Dos', area: 'Área de prueba', estado: 'en_curso', desde: '2026-01-02', desde_nota_dgmit: '(N° 45/26)',
+        hasta: null, hasta_nota_dgmit: '', hasta_texto: 'en curso', dias_texto: 'hace 150 días corridos (102 hábiles)', nota: ''
       }
     ]);
     assert.deepEqual(modalDe(v, 'externa', 'tramite').ciclos.map((c) => [c.titulo, c.estado, c.desde, c.hasta, c.hasta_texto, c.dias_texto]), [
