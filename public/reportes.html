@@ -88,20 +88,29 @@
         .mt-nodo .r { font-size: 0.76rem; color: #fff; margin-top: 2px; line-height: 1.25; }
         .mt-nodo.dgmit { background: var(--sg-violeta); }
         .mt-nodo.fin { background: var(--sg-verde); }
+        /* Cada nodo con tramo es un botón que abre el modal de su tramo (spec 2026-11-07-metricas-cajones-y-ciclos, 5): con la letra, el
+           fondo y el lugar del <div>. Ocupa su celda entera (un <div> se estira solo; un botón, no siempre) y, desde 961 px, también lo que
+           entra en la muesca del siguiente. Al pasar el mouse, un poco más claro (el blanco sigue con más de 5:1) */
+        button.mt-nodo { font: inherit; text-align: left; border: 0; width: 100%; color: #fff; cursor: pointer; }
+        button.mt-nodo:hover { filter: brightness(1.12); }
+        /* «Ver los ciclos», debajo del rol: subrayado y en blanco, con el círculo con un + */
+        .mt-ver { display: inline-flex; align-self: flex-start; align-items: center; gap: 5px; margin-top: 6px; font-size: 0.76rem; font-weight: 700; line-height: 1.2; color: #fff; }
+        .mt-ver svg { flex: none; }
+        .mt-ver span { text-decoration: underline; text-underline-offset: 2px; }
         .mt-flecha { min-width: 0; display: flex; flex-direction: column; justify-content: flex-start; margin: 6px 0 14px; padding: 12px; background: #F4F8FC; border: 1px solid #CFE0EF; border-radius: 12px; }
         .mt-flecha .t { order: -1; margin: 0 0 6px; font-family: var(--f-titulo); font-size: 0.92rem; font-weight: 700; color: var(--sg-tinta); line-height: 1.22; }
         .mt-flecha .n { font-family: var(--f-titulo); font-weight: 750; font-size: 1.75rem; color: var(--sg-tinta); line-height: 1.05; letter-spacing: -0.02em; }
         /* La unidad va al lado de la cifra y no se corta en dos renglones */
         .mt-flecha .n small { white-space: nowrap; font-family: var(--f-texto); font-size: 0.8rem; font-weight: 600; letter-spacing: 0; color: var(--sg-suave); }
+        /* Los hábiles entre paréntesis, pegados al número y en su tinta (spec 2026-11-07-metricas-cajones-y-ciclos, 3) */
+        .mt-flecha .h { font-size: 0.8rem; font-weight: 700; color: var(--sg-tinta); line-height: 1.2; margin-top: 2px; }
         .mt-flecha .u { font-size: 0.76rem; font-weight: 600; color: var(--sg-suave); line-height: 1.2; margin-top: 3px; }
         .mt-flecha .o { font-size: 0.76rem; font-weight: 600; color: var(--sg-ambar); line-height: 1.25; margin-top: 3px; }
         .mt-flecha .l { display: none; }
         .mt-flecha .c { font-size: 0.8rem; color: var(--sg-suave); line-height: 1.35; margin-top: 6px; }
         .mt-flecha .c b { color: var(--sg-texto); font-weight: 600; }
-        .mt-flecha .c.curso { color: var(--sg-ambar); font-weight: 600; }
-        .mt-flecha .c.pend { color: var(--sg-violeta); font-weight: 600; }
         .mt-flecha.dgmit { background: var(--sg-violeta-fondo); border-color: #D6CCEB; }
-        .mt-flecha.dgmit .n, .mt-flecha.dgmit .u, .mt-flecha.dgmit .t { color: var(--sg-violeta); }
+        .mt-flecha.dgmit .n, .mt-flecha.dgmit .h, .mt-flecha.dgmit .u, .mt-flecha.dgmit .t { color: var(--sg-violeta); }
         /* Sin cifra: el porqué en lugar del número y el borde punteado gris (también en la DGMIT) */
         .mt-flecha.vacia { background: var(--sg-sutil); border: 1px dashed var(--sg-gris); }
         .mt-flecha.vacia .n { font-size: 1.05rem; font-weight: 650; letter-spacing: -0.01em; line-height: 1.2; color: var(--sg-suave); }
@@ -114,7 +123,7 @@
         .mt-anticipa-aro { flex: none; width: 11px; height: 11px; border: 2px solid currentColor; border-radius: 50%; background: #F4F8FC; }
         .mt-anticipa-pie { display: flex; justify-content: space-between; font-size: 0.72rem; font-weight: 600; color: var(--sg-suave); margin-top: 3px; }
         .anticipa .u { margin-top: 8px; }
-        /* Sin «desde → hasta», la anteúltima es .l: sin alto y mostrada, da el aire de la insignia que da el texto en las otras tarjetas */
+        /* Sin la frase de cómo se cuenta (la dice el dibujo), la anteúltima es .l: sin alto y mostrada, da el aire de la insignia que da el texto en las otras tarjetas */
         .anticipa .l { display: block; }
         /* Quién está a cargo, al pie de la tarjeta: nunca solo el color */
         .mt-flecha > :nth-last-child(2) { margin-bottom: 10px; }
@@ -125,7 +134,7 @@
         .mt-tramos.externa > .mt-flecha:nth-child(6) { background: var(--sg-del-area-fondo); border-color: #BFDDE0; }
         .mt-tramos.externa > .mt-flecha.vacia:nth-child(6) { background: #F1F8F9; border-color: var(--sg-del-area); }
         .mt-tramos.externa > .mt-flecha:nth-child(6) .t, .mt-tramos.externa > .mt-flecha:nth-child(6) .mt-resp { color: var(--sg-del-area); }
-        .mt-tramos.externa > .mt-flecha:not(.vacia):nth-child(6) .n, .mt-tramos.externa > .mt-flecha:nth-child(6) .u { color: var(--sg-del-area); }
+        .mt-tramos.externa > .mt-flecha:not(.vacia):nth-child(6) .n, .mt-tramos.externa > .mt-flecha:nth-child(6) .h, .mt-tramos.externa > .mt-flecha:nth-child(6) .u { color: var(--sg-del-area); }
         @media (min-width: 961px) {
             .mt-tramos.externa { grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 0.62fr); }
             .mt-tramos.interna { grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 0.62fr); }
@@ -134,6 +143,8 @@
                 clip-path: polygon(0 0, calc(100% - var(--punta)) 0, 100% 50%, calc(100% - var(--punta)) 100%, 0 100%, var(--punta) 50%); }
             .mt-nodo:first-child { padding-left: 14px; border-radius: 12px 0 0 12px; clip-path: polygon(0 0, calc(100% - var(--punta)) 0, 100% 50%, calc(100% - var(--punta)) 100%, 0 100%); }
             .mt-nodo.fin { margin-right: 0; padding-right: 12px; border-radius: 0 12px 12px 0; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, var(--punta) 50%); }
+            /* El botón, como el <div>: su celda más los 10 px de margin-right: -10px */
+            button.mt-nodo { width: calc(100% + 10px); }
             .mt-flecha { grid-row: 2; margin: 10px 8px 0 0; }
             /* El nombre reserva dos renglones: las cifras quedan a la misma altura */
             .mt-flecha .t { min-height: 2.44em; }
@@ -146,12 +157,15 @@
         /* En alto contraste la banda pierde el fondo: sin la forma de flecha, queda una caja con borde */
         @media (forced-colors: active) {
             .mt-nodo, .mt-nodo:first-child, .mt-nodo.fin { clip-path: none; padding: 10px 14px; border: 1px solid CanvasText; border-radius: 12px; }
+            /* El botón conserva su borde: su `border: 0` gana a `.mt-nodo` */
+            button.mt-nodo { border: 1px solid CanvasText; }
             /* El punto sigue lleno, para que no se confunda con el aro: la línea y el aro son bordes y se ven solos */
             .mt-anticipa-punto { forced-color-adjust: none; background: CanvasText; border-color: CanvasText; }
         }
         @media (forced-colors: active) and (min-width: 961px) {
             .mt-nodo, .mt-nodo:first-child { margin-right: 8px; }
             .mt-nodo.fin { margin-right: 0; }
+            button.mt-nodo { width: calc(100% - 8px); }
         }
         .mt-directo { margin-top: 14px; display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border: 1px dashed var(--sg-borde-control); border-radius: 12px; font-size: 0.88rem; }
         .mt-directo .i { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--sg-cielo); display: grid; place-items: center; color: var(--sg-tinta); font-weight: 700; }
@@ -319,6 +333,89 @@
         /* Foco visible: anillo --tinta de 3 px con halo --sol-fuerte */
         .mt-pagina a:focus-visible, .mt-pagina button:focus-visible, .mt-pagina select:focus-visible, .mt-pagina input:focus-visible, .mt-pagina [tabindex]:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
         .mt-pagina .mt-pestana:focus-visible { outline-offset: -3px; border-radius: 6px 6px 0 0; }
+        /* Un nodo de la banda: el foco se ve adentro de la flecha (el recorte de la punta taparía un contorno de afuera), en blanco sobre el
+           fondo del nodo (más de 5:1 en los tres colores) */
+        .mt-pagina button.mt-nodo:focus-visible { outline: 3px solid #fff; outline-offset: -6px; box-shadow: none; }
+
+        /* El modal de cada tramo (spec 2026-11-07-metricas-cajones-y-ciclos, 5): el de main.css, más ancho, con la letra y los colores de la
+           página. Va fuera de .mt-pagina: lleva el foco visible de la carcasa. El cuerpo se desplaza adentro (el encabezado, con la ×, queda a
+           la vista) sin arrastrar la página de atrás, que además queda quieta (reportes.js le pone overflow: hidden a body) */
+        #mt-modal-tramo { overscroll-behavior: contain; }
+        .modal.mt-modal { max-width: 900px; border-radius: 18px; }
+        .mt-modal :focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        .mt-modal .modal-header { align-items: flex-start; gap: 12px 16px; padding: 18px 24px 14px; }
+        .mt-modal-cabeza { min-width: 0; }
+        .mt-modal .modal-title { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.01em; line-height: 1.2; color: var(--sg-tinta); }
+        .mt-modal-quien { margin: 3px 0 0; color: var(--sg-suave); font-size: 0.88rem; }
+        .mt-modal-franja { margin: 10px 0 0; font-size: 0.86rem; }
+        /* La × de main.css (--gray-400) no llega a 3:1 sobre el blanco: esta, 5,8:1; al pasar el mouse, la tinta sobre el gris claro */
+        .mt-modal .modal-close { flex: none; color: var(--sg-suave); }
+        .mt-modal .modal-close:hover { color: var(--sg-tinta); background: var(--sg-sutil); }
+        .mt-modal .modal-body { padding: 16px 24px 22px; overscroll-behavior: contain; color: var(--sg-texto); }
+        /* El color del tramo (el de su tarjeta): la cifra, los puntos que cuentan y su marca en la leyenda */
+        .mt-color-tinta { --mt-color: var(--sg-tinta); }
+        .mt-color-violeta { --mt-color: var(--sg-violeta); }
+        .mt-color-area { --mt-color: var(--sg-del-area); }
+        .mt-modal-frase { margin: 0 0 14px; font-size: 0.95rem; line-height: 1.45; max-width: 70ch; }
+        .mt-modal-arriba { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 28px; }
+        .mt-modal-cifra { display: flex; flex-direction: column; color: var(--mt-color); }
+        .mt-modal-cifra .n { font-family: var(--f-titulo); font-weight: 750; font-size: 2rem; line-height: 1.05; letter-spacing: -0.02em; }
+        .mt-modal-cifra .n small { white-space: nowrap; font-family: var(--f-texto); font-size: 0.9rem; font-weight: 600; letter-spacing: 0; color: var(--sg-suave); }
+        .mt-modal-cifra .h { font-size: 0.86rem; font-weight: 700; line-height: 1.25; margin-top: 3px; }
+        .mt-modal-cifra .u { font-size: 0.82rem; font-weight: 600; line-height: 1.25; margin-top: 3px; color: var(--sg-suave); }
+        .mt-modal-cifra .o { font-size: 0.82rem; font-weight: 600; line-height: 1.25; margin-top: 3px; color: var(--sg-ambar); }
+        .mt-modal-cifra.vacia .n { font-size: 1.15rem; font-weight: 650; letter-spacing: -0.01em; line-height: 1.25; color: var(--sg-suave); }
+        .mt-modal-leyenda { display: flex; flex-direction: column; gap: 6px; font-size: 0.84rem; line-height: 1.3; }
+        .mt-modal-leyenda li { display: flex; align-items: center; gap: 8px; }
+        .mt-modal-leyenda svg { flex: none; }
+        .mt-ley-cuenta circle { fill: var(--mt-color); }
+        .mt-ley-curso circle { fill: #fff; stroke: var(--sg-ambar); stroke-width: 2; }
+        .mt-ley-curso path { fill: none; stroke: var(--sg-ambar); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+        .mt-ley-pend circle { fill: none; stroke: var(--sg-suave); stroke-width: 1.5; stroke-dasharray: 2 2; }
+        /* El gráfico: el servidor mide sus textos con la letra de 12 (GRAFICO.letra) y su base en su y */
+        .mt-grafico { display: block; width: 100%; height: auto; margin: 16px 0 4px; }
+        .mt-grafico text { font-family: var(--f-texto); font-size: 12px; }
+        .mt-grafico .eje { stroke: var(--sg-borde-control); stroke-width: 1; }
+        .mt-grafico .eje-n, .mt-grafico .eje-r { fill: var(--sg-suave); }
+        .mt-grafico .linea { stroke: var(--sg-tinta); stroke-width: 2; }
+        .mt-grafico .linea-r { fill: var(--sg-tinta); font-weight: 700; }
+        .mt-grafico .p-cuenta circle { fill: var(--mt-color); stroke: #fff; stroke-width: 2; }
+        .mt-grafico .p-curso circle { fill: #fff; stroke: var(--sg-ambar); stroke-width: 2; }
+        .mt-grafico .p-curso path { fill: none; stroke: var(--sg-ambar); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+        .mt-grafico .mas { fill: var(--sg-texto); font-weight: 700; }
+        .mt-grafico g { cursor: help; }
+        .mt-modal-h3 { margin: 20px 0 6px; font-family: var(--f-titulo); font-weight: 650; font-size: 1rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
+        .mt-modal-como { list-style: disc; margin: 0; padding-left: 20px; font-size: 0.88rem; line-height: 1.45; }
+        .mt-modal-como li + li { margin-top: 4px; }
+        /* La lista de los ciclos: en el teléfono se desplaza de costado dentro de su marco, como la de «Los casos» */
+        .mt-modal-tabla { overflow-x: auto; }
+        .mt-modal-tabla table.mt-tabla { min-width: 600px; }
+        /* Los días, en un renglón: angosta, la tabla se desplaza en lugar de partirlos en tres */
+        .mt-modal-tabla td:last-child { white-space: nowrap; }
+        .mt-modal-tabla td.t a { color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; }
+        .mt-modal-tabla .mt-curso { color: var(--sg-ambar); font-weight: 600; }
+        .mt-modal-tabla .mt-pend { color: var(--sg-violeta); font-weight: 600; }
+        /* El gráfico, desde 800 px: más angosto, su letra (12 en un ancho fijo de 760) baja de 9 px. La lista tiene los mismos datos */
+        @media (max-width: 799px) {
+            .mt-grafico { display: none; }
+        }
+        /* En el teléfono, con menos margen */
+        @media (max-width: 599px) {
+            .mt-modal .modal-header, .mt-modal .modal-body { padding-left: 16px; padding-right: 16px; }
+        }
+        /* Sin movimiento: el modal aparece sin achicarse ni agrandarse */
+        @media (prefers-reduced-motion: reduce) {
+            .mt-modal, .modal-overlay.active .mt-modal { transform: none; transition: none; }
+        }
+        /* En alto contraste, el gráfico y las marcas con los colores del sistema: lo lleno sigue lleno y el aro sigue siendo un aro */
+        @media (forced-colors: active) {
+            .mt-grafico, .mt-modal-leyenda svg { forced-color-adjust: none; }
+            .mt-grafico .eje-n, .mt-grafico .eje-r, .mt-grafico .linea-r, .mt-grafico .mas { fill: CanvasText; }
+            .mt-grafico .eje, .mt-grafico .linea { stroke: CanvasText; }
+            .mt-grafico .p-cuenta circle, .mt-ley-cuenta circle { fill: CanvasText; stroke: Canvas; }
+            .mt-grafico .p-curso circle, .mt-ley-curso circle { fill: Canvas; stroke: CanvasText; }
+            .mt-grafico .p-curso path, .mt-ley-curso path, .mt-ley-pend circle { stroke: CanvasText; }
+        }
 
         /* La pestaña Reportes (maqueta 4): dos grupos de tarjetas, cada una con su PDF */
         .rp-grupo + .rp-grupo { margin-top: 30px; }
@@ -444,8 +541,8 @@
                         Métricas y Reportes
                     </h1>
                 </div>
-                <!-- reportes.js la cambia con «Días hábiles | Días corridos» -->
-                <p class="mt-bajada" id="mt-bajada">Cuánto tarda cada paso del circuito, desde el aviso del RPAD hasta la carga en el portal, y los reportes en PDF. Los días son hábiles: de lunes a viernes, sin feriados ni días no laborables.</p>
+                <!-- Sin selector de días: los días van corridos y, entre paréntesis, hábiles (la misma oración con que empieza «Cómo se cuenta» en los PDF) -->
+                <p class="mt-bajada" id="mt-bajada">Cuánto tarda cada paso del circuito, desde el aviso del RPAD hasta la carga en el portal, y los reportes en PDF. Los días van corridos y, entre paréntesis, hábiles: de lunes a viernes, sin feriados ni días no laborables.</p>
 
                 <div id="message-container"></div>
 
@@ -482,7 +579,8 @@
                             <div class="mt-leyenda" id="mt-leyenda"></div>
                             <p class="mt-pie" id="mt-aclaracion-cinta"></p>
                             <div id="mt-aclaraciones"></div>
-                            <p class="mt-pie">Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio» o «Días corridos», cada cifra lo dice debajo.</p>
+                            <!-- El pie del circuito: el mismo texto que el PDF de Métricas (TEXTOS_DE_LA_PESTANA.pieDelCircuito) -->
+                            <p class="mt-pie">Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio», cada cifra lo dice debajo.</p>
 
                             <div class="mt-casos-cab">
                                 <h3 id="mt-titulo-casos" tabindex="-1">Los casos</h3>
@@ -625,11 +723,17 @@
         </main>
     </div>
 
+    <!-- El modal de cada tramo del circuito (spec 2026-11-07-metricas-cajones-y-ciclos, 5): reportes.js lo llena con lo que manda el servidor
+         (htmlDelModal) y lo abre desde la banda; mientras está abierto, .app-container queda inerte -->
+    <div class="modal-overlay" id="mt-modal-tramo">
+        <div class="modal mt-modal" role="dialog" aria-modal="true" aria-labelledby="mt-modal-titulo" id="mt-modal-contenido"></div>
+    </div>
+
     <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/reportes.js?v=20261211"></script>
+    <script src="js/reportes.js?v=20261213"></script>
 </body>
 </html>

@@ -13,6 +13,7 @@ import {
   ESTADISTICOS as ESTADISTICOS_DEL_SERVIDOR, DIAS as DIAS_DEL_SERVIDOR, GESTIONES as GESTIONES_DEL_SERVIDOR
 } from '../services/metricasReglas.js';
 import { cintaDeMetricas, cintasDeLaVista } from '../services/metricasCinta.js';
+import { graficoDelTramo, GRAFICO } from '../services/metricasGrafico.js';
 import { mapaDeLosCasos, mapaDe, fuentesDelCaso, con, notaDgmit, HOY_DE_LAS_METRICAS as HOY } from './metricas-casos.js';
 import {
   TEXTOS_DE_LA_PESTANA as T, textoDelDesglose, textoDeLoQueFalta, textoDeDondeSale, textoDelMesManual, textoSinManuales,
@@ -50,11 +51,11 @@ const cuantas = (texto, patron) => (texto.match(patron) ?? []).length;
 // Una coordenada como la escribe la página (dos decimales)
 const coord = (valor) => String(Math.round(valor * 100) / 100);
 
-// La vista y las cintas de los casos reales al 24/10/2026, como las manda GET /api/metricas, y el resto de la pestaña (el contexto, el
-// trabajo del RPAD y las áreas)
+// La vista y las cintas de los casos reales al 24/10/2026, como las manda GET /api/metricas (siempre en días corridos: en la de hábiles,
+// el modal de cada tramo es null), y el resto de la pestaña (el contexto, el trabajo del RPAD y las áreas)
 const MAPA = mapaDeLosCasos();
 const CASOS = casosDe(MAPA, { hoy: HOY });
-const vistaReal = (opciones = {}) => vistaDe(CASOS, { anio: 2026, al: HOY, ...opciones });
+const vistaReal = (opciones = {}) => vistaDe(CASOS, { anio: 2026, al: HOY, dias: 'corridos', ...opciones });
 const VISTA = vistaReal();
 const DEL_ANIO = { anio: 2026, al: HOY };
 const CONTEXTO = contextoDelAnio(MAPA, DEL_ANIO);
@@ -64,10 +65,12 @@ const TRABAJO = trabajoDelAnio(MAPA, CASOS, { ...DEL_ANIO, estadistico: 'mediana
 const AREAS = areasYTemas(MAPA, DEL_ANIO);
 const tramoDe = (vista, gestion, clave) => vista.circuito[gestion].find((t) => t.clave === clave);
 
-const POR_DEFECTO = { anio: null, estadistico: 'mediana', dias: 'habiles', gestion: 'externa', sin: [], pestana: 'metricas' };
+// Sin `dias`: no hay selector de días (spec 2026-11-07-metricas-cajones-y-ciclos, 4)
+const POR_DEFECTO = { anio: null, estadistico: 'mediana', gestion: 'externa', sin: [], pestana: 'metricas' };
 
 // Los tramos de vistaDe armados a mano (como en tests/metricas-cinta.test.js): el nombre, el texto de la flecha, quién está a cargo
-// y si es de la DGMIT
+// y si es de la DGMIT. Sin las claves de la spec 2026-11-07-metricas-cajones-y-ciclos (como_se_cuenta, habiles_texto…), como los de una
+// foto vieja: el cajón dice «desde → hasta». Los tests de la frase y de los hábiles las suman
 const DE_LA_CLAVE = {
   aviso: { nombre: 'Aviso anticipado', desde_hasta: 'Del aviso al vencimiento', responsable: 'DDPC', dgmit: false },
   tramite: { nombre: 'Redacción y entrega de nota', desde_hasta: 'Del aviso a la nota en el área', responsable: 'DGMIT y DA', dgmit: true },
@@ -103,8 +106,8 @@ describe('reportes.js: el estado de la URL', () => {
     assert.equal(ctx.estadoDeLaUrl('?anio=0000').anio, null);
     assert.equal(ctx.estadoDeLaUrl('?anio=0999').anio, null);
     assert.equal(ctx.estadoDeLaUrl('?anio=1000').anio, 1000);
-    const todo = '?anio=2026&estadistico=promedio&dias=corridos&gestion=interna&sin=12,45#reportes';
-    const estado = { anio: 2026, estadistico: 'promedio', dias: 'corridos', gestion: 'interna', sin: [12, 45], pestana: 'reportes' };
+    const todo = '?anio=2026&estadistico=promedio&gestion=interna&sin=12,45#reportes';
+    const estado = { anio: 2026, estadistico: 'promedio', gestion: 'interna', sin: [12, 45], pestana: 'reportes' };
     assert.deepEqual(plano(ctx.estadoDeLaUrl(todo)), estado);
     // Sin el «?» también, y un parámetro repetido suma sus destildados
     assert.deepEqual(plano(ctx.estadoDeLaUrl('sin=3&sin=4,3#metricas')), { ...POR_DEFECTO, sin: [3, 4] });
@@ -112,7 +115,7 @@ describe('reportes.js: el estado de la URL', () => {
 
     // urlDeEstado: lo que está en su valor por defecto no se escribe (tampoco la pestaña Métricas); el resto, en este orden
     assert.equal(ctx.urlDeEstado(POR_DEFECTO), '');
-    assert.equal(ctx.urlDeEstado({ ...POR_DEFECTO, dias: 'corridos' }), '?dias=corridos');
+    assert.equal(ctx.urlDeEstado({ ...POR_DEFECTO, estadistico: 'promedio' }), '?estadistico=promedio');
     assert.equal(ctx.urlDeEstado({ ...POR_DEFECTO, pestana: 'reportes' }), '#reportes');
     assert.equal(ctx.urlDeEstado({ ...POR_DEFECTO, sin: [11] }), '?sin=11');
     assert.equal(ctx.urlDeEstado(estado), todo);
@@ -122,19 +125,38 @@ describe('reportes.js: el estado de la URL', () => {
     assert.equal(ctx.urlDeEstado(undefined), '');
   });
 
+  // Spec 2026-11-07-metricas-cajones-y-ciclos, 4: sin selector de días. Un link viejo con ?dias= (un marcador guardado) se abre igual, y
+  // la dirección nunca lo vuelve a escribir (Review Focus 1)
+  it('sin dias: estadoDeLaUrl no lo lee y urlDeEstado no lo escribe', () => {
+    for (const dias of ['habiles', 'corridos', 'x']) {
+      assert.deepEqual(plano(ctx.estadoDeLaUrl(`?dias=${dias}`)), POR_DEFECTO, dias);
+      assert.deepEqual(plano(ctx.estadoDeLaUrl(`?anio=2026&estadistico=promedio&dias=${dias}&sin=4#reportes`)),
+        { ...POR_DEFECTO, anio: 2026, estadistico: 'promedio', sin: [4], pestana: 'reportes' }, dias);
+      // Un estado que todavía lo traiga (una pestaña con la página de antes) no lo escribe
+      assert.equal(ctx.urlDeEstado({ ...POR_DEFECTO, dias }), '', dias);
+      assert.equal(ctx.urlDeEstado({ ...POR_DEFECTO, dias, sin: [4] }), '?sin=4', dias);
+    }
+    assert.ok(!('dias' in ctx.estadoDeLaUrl('?dias=habiles')));
+  });
+
   // Copias de los selectores del servidor (ESTADISTICOS, DIAS y GESTIONES de services/metricasReglas.js) y de sus valores de entrada
   // (los de opcionesDeMetricas, services/metricasOpciones.js: el primero de cada lista, ningún destildado). Si cambia uno, falla
-  it('ESTADISTICOS, DIAS, GESTIONES y los de entrada de ESTADO_POR_DEFECTO son los del servidor', () => {
+  it('ESTADISTICOS, GESTIONES y los de entrada de ESTADO_POR_DEFECTO son los del servidor; los días no son un selector', () => {
     const valores = (nombre) => plano(vm.runInContext(nombre, ctx)).map(([valor]) => valor);
     assert.deepEqual(valores('ESTADISTICOS'), [...ESTADISTICOS_DEL_SERVIDOR]);
-    assert.deepEqual(valores('DIAS'), [...DIAS_DEL_SERVIDOR]);
     assert.deepEqual(valores('GESTIONES'), [...GESTIONES_DEL_SERVIDOR]);
     const porDefecto = plano(vm.runInContext('ESTADO_POR_DEFECTO', ctx));
     const delServidor = opcionesDeMetricas({}, { hoy: HOY, aniosConFoto: [] });
     assert.deepEqual(
-      { estadistico: porDefecto.estadistico, dias: porDefecto.dias, gestion: porDefecto.gestion, sin: porDefecto.sin },
-      { estadistico: delServidor.estadistico, dias: delServidor.dias, gestion: delServidor.gestion, sin: delServidor.sin }
+      { estadistico: porDefecto.estadistico, gestion: porDefecto.gestion, sin: porDefecto.sin },
+      { estadistico: delServidor.estadistico, gestion: delServidor.gestion, sin: delServidor.sin }
     );
+    // Sin selector de días (spec 2026-11-07-metricas-cajones-y-ciclos, 4): el servidor va siempre en días corridos, que es una de las
+    // unidades de DIAS, y la página no los tiene ni en su estado ni como constante
+    assert.equal(delServidor.dias, 'corridos');
+    assert.ok(DIAS_DEL_SERVIDOR.includes(delServidor.dias));
+    assert.ok(!('dias' in porDefecto));
+    assert.equal(vm.runInContext('typeof DIAS', ctx), 'undefined');
     // El año de entrada es el que dice el servidor (null en la página: no se manda y el servidor usa el de hoy)
     assert.equal(porDefecto.anio, null);
     assert.equal(delServidor.anio, Number(HOY.slice(0, 4)));
@@ -142,20 +164,25 @@ describe('reportes.js: el estado de la URL', () => {
     assert.deepEqual(plano(ctx.estadoDeLaUrl('')), porDefecto);
   });
 
-  it('la consulta de la API lleva el año, los selectores y los destildados, pero no la gestión ni la pestaña', () => {
+  it('la consulta de la API lleva el año, el estadístico y los destildados, pero no los días, la gestión ni la pestaña', () => {
     assert.equal(ctx.consultaDeLaApi(POR_DEFECTO), '');
-    assert.equal(ctx.consultaDeLaApi({ anio: 2026, estadistico: 'promedio', dias: 'corridos', gestion: 'interna', sin: [12, 45], pestana: 'reportes' }),
-      'anio=2026&estadistico=promedio&dias=corridos&sin=12,45');
+    // Un estado que todavía trae `dias` (de la página de antes) no lo manda
+    for (const dias of ['corridos', 'habiles']) {
+      assert.equal(ctx.consultaDeLaApi({ anio: 2026, estadistico: 'promedio', dias, gestion: 'interna', sin: [12, 45], pestana: 'reportes' }),
+        'anio=2026&estadistico=promedio&sin=12,45', dias);
+      assert.equal(ctx.consultaDeLaApi({ ...POR_DEFECTO, dias }), '', dias);
+    }
   });
 
   it('cambiar un selector: lo que no sirve no cambia nada, y el año en curso vuelve a ser el de entrada', () => {
     const anios = [2026, 2027];
     assert.deepEqual(plano(ctx.conSelector(POR_DEFECTO, 'estadistico', 'promedio', anios)), { ...POR_DEFECTO, estadistico: 'promedio' });
-    assert.deepEqual(plano(ctx.conSelector(POR_DEFECTO, 'dias', 'corridos', anios)), { ...POR_DEFECTO, dias: 'corridos' });
     assert.deepEqual(plano(ctx.conSelector(POR_DEFECTO, 'gestion', 'interna', anios)), { ...POR_DEFECTO, gestion: 'interna' });
     assert.deepEqual(plano(ctx.conSelector(POR_DEFECTO, 'anio', '2026', anios)), { ...POR_DEFECTO, anio: 2026 });
     assert.deepEqual(plano(ctx.conSelector({ ...POR_DEFECTO, anio: 2026 }, 'anio', '2027', anios)), POR_DEFECTO, 'el último es el en curso');
-    for (const [clave, valor] of [['estadistico', 'foo'], ['dias', ''], ['gestion', null], ['anio', '1999'], ['anio', 'abc'], ['otra', 'x']]) {
+    // Los días ya no son un selector: no cambian nada
+    for (const [clave, valor] of [['estadistico', 'foo'], ['dias', 'corridos'], ['dias', 'habiles'], ['dias', ''], ['gestion', null], ['anio', '1999'],
+      ['anio', 'abc'], ['otra', 'x']]) {
       assert.deepEqual(plano(ctx.conSelector(POR_DEFECTO, clave, valor, anios)), POR_DEFECTO, `${clave}=${valor}`);
     }
   });
@@ -167,40 +194,41 @@ describe('reportes.js: el estado de la URL', () => {
     assert.deepEqual(plano(ctx.conDestildado([12], 'x')), [12], 'un id que no es un id no cambia nada');
   });
 
-  // Desde los feriados en todo el sistema, tanda 2 (spec 2026-10-27-feriados-en-notas, 6): los días hábiles no cuentan los feriados
-  // de Configuración → Feriados, además de los 9 fijos
-  it('la bajada dice cómo se cuentan los días', () => {
+  // Spec 2026-11-07-metricas-cajones-y-ciclos, 4: los días van corridos y, entre paréntesis, hábiles (los hábiles no cuentan los
+  // feriados de Configuración → Feriados, además de los 9 fijos: spec 2026-10-27-feriados-en-notas, 6)
+  it('la bajada dice cómo se cuentan los días: corridos y, entre paréntesis, hábiles', () => {
     const base = 'Cuánto tarda cada paso del circuito, desde el aviso del RPAD hasta la carga en el portal, y los reportes en PDF.';
-    assert.equal(ctx.textoDeLaBajada('habiles'), `${base} Los días son hábiles: de lunes a viernes, sin feriados ni días no laborables.`);
-    assert.equal(ctx.textoDeLaBajada('corridos'), `${base} Los días son corridos: todos los días del calendario.`);
+    assert.equal(ctx.textoDeLaBajada(), `${base} Los días van corridos y, entre paréntesis, hábiles: de lunes a viernes, sin feriados ni días no laborables.`);
   });
 
-  it('la bajada que trae reportes.html, antes de que reportes.js la cambie, es la de los días hábiles', () => {
+  it('la bajada que trae reportes.html es la de reportes.js', () => {
     const bajada = leer('reportes.html').match(/<p class="mt-bajada" id="mt-bajada">([^<]*)<\/p>/);
     assert.ok(bajada, 'la bajada');
-    assert.equal(bajada[1], ctx.textoDeLaBajada('habiles'));
-    assert.ok(bajada[1].endsWith(' Los días son hábiles: de lunes a viernes, sin feriados ni días no laborables.'));
+    assert.equal(bajada[1], ctx.textoDeLaBajada());
+    assert.doesNotMatch(leer('reportes.html'), /Días hábiles \| Días corridos/);
   });
 });
 
 describe('reportes.js: la barra y la franja de lo destildado', () => {
   const DATOS = { anio: 2026, al: HOY, en_vivo: true, aviso_foto: null, anios: [2026], vista: VISTA, sin_titulos: [] };
 
-  it('htmlDeBarra: el año, los selectores con aria-pressed, «Casos: todos» y «Descargar PDF»', () => {
+  it('htmlDeBarra: el año, el estadístico con aria-pressed, «Casos: todos» y «Descargar PDF»', () => {
     const html = ctx.htmlDeBarra(DATOS, POR_DEFECTO);
     assert.match(html, /<select[^>]*id="mt-anio"[^>]*>/);
     assert.match(html, /<option value="2026" selected>2026 \(en curso\)<\/option>/);
-    for (const [selector, valor, texto, pulsado] of [['estadistico', 'mediana', 'Mediana', true], ['estadistico', 'promedio', 'Promedio', false],
-      ['dias', 'habiles', 'Días hábiles', true], ['dias', 'corridos', 'Días corridos', false]]) {
+    for (const [selector, valor, texto, pulsado] of [['estadistico', 'mediana', 'Mediana', true], ['estadistico', 'promedio', 'Promedio', false]]) {
       assert.match(html, new RegExp(`<button type="button" class="mt-chip" data-selector="${selector}" data-valor="${valor}" aria-pressed="${pulsado}">${texto}</button>`));
     }
+    // Sin el selector de días (spec 2026-11-07-metricas-cajones-y-ciclos, 4): un solo grupo de chips, el del estadístico
+    assert.equal(cuantas(html, /role="group"/g), 1);
+    assert.doesNotMatch(html, /data-selector="dias"|Cómo se cuentan los días|Días hábiles|Días corridos/);
     assert.match(html, /Casos: <b>todos<\/b>/);
     assert.match(html, /data-accion="pdf"[^>]*>[\s\S]*Descargar PDF<\/button>/);
     assert.doesNotMatch(html, /mt-aviso-foto/);
 
     const otra = ctx.htmlDeBarra({ ...DATOS, sin_titulos: ['Parque Automotor (Patentamiento)'] }, { ...POR_DEFECTO, estadistico: 'promedio', dias: 'corridos', sin: [11] });
     assert.match(otra, /data-valor="promedio" aria-pressed="true"/);
-    assert.match(otra, /data-valor="corridos" aria-pressed="true"/);
+    assert.doesNotMatch(otra, /data-selector="dias"/);
     assert.match(otra, /Casos: <b>todos menos 1<\/b>/);
   });
 
@@ -222,10 +250,10 @@ describe('reportes.js: la barra y la franja de lo destildado', () => {
     assert.equal(ctx.htmlDeFranjaSin({}, POR_DEFECTO), '');
     // Sin el texto del servidor no hay franja, aunque lleguen títulos: la página no arma la leyenda
     assert.equal(ctx.htmlDeFranjaSin({ sin_titulos: ['Parque Automotor'] }, POR_DEFECTO), '');
-    const html = ctx.htmlDeFranjaSin({ sin_texto: textoDeLaFranja(['Parque Automotor']) }, { ...POR_DEFECTO, dias: 'corridos', sin: [11] });
+    const html = ctx.htmlDeFranjaSin({ sin_texto: textoDeLaFranja(['Parque Automotor']) }, { ...POR_DEFECTO, estadistico: 'promedio', sin: [11] });
     assert.match(html, /<span>Calculado sin 1 dataset: Parque Automotor\.<\/span>/);
     // El link conserva todo lo demás y saca los destildados
-    assert.match(html, /<a href="reportes\.html\?dias=corridos" class="mt-franja-link" data-accion="todos">Volver a todos<\/a>/);
+    assert.match(html, /<a href="reportes\.html\?estadistico=promedio" class="mt-franja-link" data-accion="todos">Volver a todos<\/a>/);
     const dos = ctx.htmlDeFranjaSin({ sin_texto: textoDeLaFranja(['Parque Automotor', 'Pauta Publicitaria']) }, { ...POR_DEFECTO, sin: [11, 10] });
     assert.match(dos, /<span>Calculado sin 2 datasets: Parque Automotor, Pauta Publicitaria\.<\/span>/);
     assert.match(dos, /href="reportes\.html"/);
@@ -266,15 +294,40 @@ describe('reportes.js: la barra y la franja de lo destildado', () => {
     vm.runInContext(`
       API.pedirJson = (metodo, ruta) => { __pedidos.push(ruta); return new Promise(() => {}); };
       pagina.datos = { anio: 2026, anios: [2026], sin_titulos: ['Vencido'], sin_texto: 'Calculado sin 1 dataset: Vencido.' };
-      pagina.estado = { ...pagina.estado, dias: 'corridos', sin: [5] };`, pagina);
+      pagina.estado = { ...pagina.estado, estadistico: 'promedio', sin: [5] };`, pagina);
     pagina.volverATodos();
     assert.deepEqual(enfocados, ['[data-accion="casos"]']);
     assert.deepEqual(plano(vm.runInContext('pagina.estado.sin', pagina)), []);
-    assert.deepEqual(urls, ['/reportes.html?dias=corridos']);
-    assert.deepEqual(pedidos, ['/metricas?dias=corridos']);
+    assert.deepEqual(urls, ['/reportes.html?estadistico=promedio']);
+    assert.deepEqual(pedidos, ['/metricas?estadistico=promedio']);
     // Al redibujar la barra, el foco vuelve al mismo chip
     assert.equal(cargar({ document: { addEventListener() {}, getElementById: () => null, activeElement: chip } })
       .claveDelFoco({ contains: () => true }), '[data-accion="casos"]');
+  });
+
+  // Review Focus 1 (spec 2026-11-07-metricas-cajones-y-ciclos, 4): un marcador guardado con ?dias=habiles abre la pestaña en las dos
+  // unidades. Al entrar, la dirección queda sin los días (mostrarPestana la vuelve a escribir con lo elegido) y la API se pide sin ellos
+  it('un link viejo con ?dias=habiles: la dirección queda sin dias y la API se pide sin dias', () => {
+    const urls = [];
+    const pedidos = [];
+    const elemento = (id) => ({
+      id, innerHTML: '', textContent: '', hidden: false, dataset: {}, classList: { add() {}, remove() {}, toggle() {} },
+      setAttribute() {}, removeAttribute() {}, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, contains: () => false
+    });
+    const elementos = {};
+    const pagina = cargar({
+      __pedidos: pedidos,
+      document: { addEventListener() {}, getElementById: (id) => (elementos[id] ??= elemento(id)), activeElement: null },
+      history: { replaceState: (estado, titulo, url) => urls.push(url) },
+      location: { pathname: '/reportes.html', search: '?estadistico=promedio&dias=habiles&sin=4', hash: '' }
+    });
+    vm.runInContext('API.pedirJson = (metodo, ruta) => { __pedidos.push(ruta); return new Promise(() => {}); };', pagina);
+    pagina.iniciarReportes();
+    assert.deepEqual(plano(vm.runInContext('pagina.estado', pagina)), { ...POR_DEFECTO, estadistico: 'promedio', sin: [4] });
+    assert.deepEqual(urls, ['/reportes.html?estadistico=promedio&sin=4']);
+    assert.ok(pedidos.includes('/metricas?estadistico=promedio&sin=4'), JSON.stringify(pedidos));
+    assert.deepEqual(pedidos.filter((ruta) => ruta.includes('dias')), [], JSON.stringify(pedidos));
+    assert.equal(elementos['mt-bajada'].textContent, ctx.textoDeLaBajada());
   });
 });
 
@@ -408,7 +461,7 @@ describe('reportes.js: el circuito', () => {
     assert.ok(pagina.indexOf('.mt-flecha .u {') < pagina.indexOf('.anticipa .u {'));
     assert.match(regla('.anticipa .u'), /margin-top: 8px/);
     assert.match(regla('.mt-anticipa-pie'), /justify-content: space-between/);
-    // Este cajón no lleva «desde → hasta»: .l queda anteúltima, y mostrada, sin alto, le da a la insignia el aire de las otras tarjetas
+    // Este cajón no lleva la frase de cómo se cuenta: .l queda anteúltima, y mostrada, sin alto, le da a la insignia el aire de las otras tarjetas
     assert.ok(pagina.includes('.mt-flecha > :nth-last-child(2) { margin-bottom: 10px; }'));
     assert.ok(pagina.indexOf('.mt-flecha .l {') < pagina.indexOf('.anticipa .l {'));
     assert.match(regla('.anticipa .l'), /display: block/);
@@ -416,62 +469,168 @@ describe('reportes.js: el circuito', () => {
     assert.match(regla('.mt-anticipa-frase'), /line-height: 1\.25/);
   });
 
-  it('los en curso, con su texto y la aclaración, y la DGMIT en violeta', () => {
-    const real = tramoDe(VISTA, 'interna', 'produccion');
-    const html = ctx.htmlDeFlecha(real);
-    assert.match(html, /^<div class="mt-flecha dgmit vacia">/);
-    assert.match(html, /<span class="n">Sin casos en 2026<\/span>/);
-    assert.ok(html.includes(`<span class="c curso">${real.en_curso.texto}</span>`), real.en_curso.texto);
-    assert.match(real.en_curso.texto, /^1 sin datos registrados todavía, hace 206 días hábiles \(mediana\)$/);
-    assert.match(html, /<span class="c">Se cuenta hasta que se registra la actualización\.<\/span>/);
-    assert.match(html, /<span class="mt-resp">DGMIT y DIT<\/span>/);
-    const conCifra = ctx.htmlDeFlecha(tramo('produccion', 45, { en_curso: { n: 3, valor: 206, texto: '3 sin datos registrados todavía, hace 206 días hábiles (mediana)' } }));
-    assert.match(conCifra, /^<div class="mt-flecha dgmit">/);
-    assert.match(conCifra, /45 <small>días hábiles<\/small>/);
-    assert.match(conCifra, /3 sin datos registrados todavía, hace 206 días hábiles \(mediana\)/);
+  // Spec 2026-11-07-metricas-cajones-y-ciclos, 3: los hábiles, en la tinta de su tarjeta (como el número), y sin las clases de lo que salió
+  it('el CSS: los hábiles en la tinta de la tarjeta; sin los pendientes ni los en curso', () => {
+    const pagina = leer('reportes.html');
+    const desde = pagina.indexOf('.mt-flecha .h {');
+    assert.notEqual(desde, -1);
+    const regla = pagina.slice(desde, pagina.indexOf('}', desde));
+    assert.match(regla, /font-size: 0\.8rem;/);
+    assert.match(regla, /font-weight: 700;/);
+    assert.match(regla, /color: var\(--sg-tinta\);/);
+    // En la DGMIT, violeta; en la del área, su color: con las reglas del número
+    assert.match(pagina, /\.mt-flecha\.dgmit \.n, \.mt-flecha\.dgmit \.h, \.mt-flecha\.dgmit \.u, \.mt-flecha\.dgmit \.t \{ color: var\(--sg-violeta\); \}/);
+    assert.match(pagina, /\.mt-tramos\.externa > \.mt-flecha:nth-child\(6\) \.h(, [^{]*)? \{ color: var\(--sg-del-area\); \}/);
+    // Después de la regla común, que tiene menos especificidad
+    assert.ok(desde < pagina.indexOf('.mt-flecha.dgmit .n, .mt-flecha.dgmit .h'));
+    assert.doesNotMatch(pagina, /\.mt-flecha \.c\.(pend|curso)/);
   });
 
-  it('el tramo vacío de la DGMIT dice «Todavía no hay notas DGMIT cargadas» y los pendientes', () => {
-    const tramite = tramoDe(VISTA, 'externa', 'tramite');
+  // Review Focus 2 (spec 2026-11-07-metricas-cajones-y-ciclos, 3): un tramo con solo ciclos en curso, sin cifra, dice el vacío y la frase.
+  // Los en curso ya no van en el cajón: van en el modal de su tramo
+  it('un tramo con solo ciclos en curso: el vacío y la frase, sin los en curso; la DGMIT en violeta', () => {
+    const real = tramoDe(vistaReal({ dias: 'corridos' }), 'interna', 'produccion');
+    assert.ok(real.en_curso && real.en_curso.n > 0 && real.cifra === null, JSON.stringify(real.en_curso));
+    const html = ctx.htmlDeFlecha(real);
+    assert.match(html, /^<div class="mt-flecha dgmit vacia">/);
+    assert.ok(html.includes(`<span class="n">${real.vacio.titulo}</span><span class="t">Producción del relevamiento</span><div class="l" aria-hidden="true"></div>`
+      + `<span class="c">${real.como_se_cuenta}</span><span class="mt-resp">DGMIT y DIT</span></div>`), html);
+    assert.equal(real.como_se_cuenta, 'Se cuenta desde que la DGMIT y la DIT reciben el aviso hasta que entregan el relevamiento a la DDPC.');
+    assert.doesNotMatch(html, /sin datos registrados|Se cuenta hasta|class="c curso"|class="h"/);
+    // Con cifra, tampoco: la cifra, sus hábiles y la frase
+    const conCifra = ctx.htmlDeFlecha({ ...tramo('produccion', 45, { dias: 'corridos', en_curso: { n: 3, valor: 206, texto: '3 sin datos registrados todavía, hace 206 días corridos (mediana)' } }),
+      como_se_cuenta: real.como_se_cuenta, habiles_texto: '(31 días hábiles)' });
+    assert.match(conCifra, /^<div class="mt-flecha dgmit">/);
+    assert.match(conCifra, /45 <small>días corridos<\/small><\/span><span class="h">\(31 días hábiles\)<\/span>/);
+    assert.ok(conCifra.includes(`<span class="c">${real.como_se_cuenta}</span>`));
+    assert.doesNotMatch(conCifra, /sin datos registrados|Se cuenta hasta|class="c curso"/);
+  });
+
+  it('el tramo vacío de la DGMIT dice «Todavía no hay notas DGMIT cargadas» y la frase; los pendientes van en el modal', () => {
+    const tramite = tramoDe(vistaReal({ dias: 'corridos' }), 'externa', 'tramite');
     assert.equal(tramite.vacio.titulo, SIN_NOTAS_DGMIT);
+    assert.match(tramite.vacio.texto, /^\d+ notas pendientes de carga de ciclos abiertos$/);
     const html = ctx.htmlDeFlecha(tramite);
     assert.match(html, /^<div class="mt-flecha dgmit vacia">/);
-    assert.match(html, /<span class="n">Todavía no hay notas DGMIT cargadas<\/span>/);
-    assert.ok(html.includes(`<span class="c pend">${tramite.vacio.texto}</span>`));
-    assert.match(tramite.vacio.texto, /^\d+ notas pendientes de carga de ciclos abiertos$/);
-    assert.equal(cuantas(html, /pendientes? de carga/g), 1, 'los pendientes no se repiten');
+    assert.ok(html.includes(`<span class="n">Todavía no hay notas DGMIT cargadas</span><span class="t">Redacción y entrega de nota</span><div class="l" aria-hidden="true"></div>`
+      + `<span class="c">${tramite.como_se_cuenta}</span><span class="mt-resp">DGMIT y DA</span></div>`), html);
+    assert.equal(cuantas(html, /pendientes? de carga/g), 0, 'los pendientes no van en el cajón');
     assert.doesNotMatch(html, /<span class="u">/, 'sin cifra no hay estadístico');
-    // El del área, mientras tanto
-    const area = ctx.htmlDeFlecha(tramoDe(VISTA, 'externa', 'respuesta'));
-    assert.match(area, /<span class="n">Sin datos todavía<\/span>/);
-    assert.match(area, /Se empieza a contar cuando haya notas DGMIT cargadas/);
-    // Con notas cargadas, la cifra y los pendientes, con el texto del servidor (el 52 con una nota DGMIT del 05/01/2026: su ciclo
-    // abierto sigue pendiente de carga)
+    // El del área, mientras tanto, con su porqué después de la frase
+    const respuesta = tramoDe(vistaReal({ dias: 'corridos' }), 'externa', 'respuesta');
+    const area = ctx.htmlDeFlecha(respuesta);
+    assert.ok(area.includes(`<span class="n">Sin datos todavía</span><span class="t">Respuesta del área</span><div class="l" aria-hidden="true"></div>`
+      + `<span class="c">${respuesta.como_se_cuenta}</span><span class="c">Se empieza a contar cuando haya notas DGMIT cargadas</span>`), area);
+    // Con notas cargadas, la cifra y sus hábiles, sin los pendientes (el 52 con una nota DGMIT del 05/01/2026: su ciclo abierto sigue
+    // pendiente de carga)
     const conNota = con(fuentesDelCaso(52, { importados: { 7: { recibido_el: '2026-02-02', origen_datos: 'area' } } }), {
       notasDgmit: [notaDgmit({ recibida: '2026-01-05' })]
     });
-    const conNotas = tramoDe(vistaDe(casosDe(mapaDe(conNota), { hoy: HOY }), { anio: 2026, al: HOY }), 'externa', 'tramite');
+    const conNotas = tramoDe(vistaDe(casosDe(mapaDe(conNota), { hoy: HOY }), { anio: 2026, al: HOY, dias: 'corridos' }), 'externa', 'tramite');
     assert.equal(conNotas.pendientes_texto, '1 nota pendiente de carga de un ciclo abierto');
-    assert.match(ctx.htmlDeFlecha(conNotas), /8 <small>días hábiles<\/small>[\s\S]*<span class="c pend">1 nota pendiente de carga de un ciclo abierto<\/span>/);
-    // La página escribe lo que manda el servidor, sin mirar la cantidad; sin texto, nada
-    assert.match(ctx.htmlDeFlecha(tramo('tramite', 12, { pendientes: 3, pendientes_texto: 'Texto del servidor' })), /<span class="c pend">Texto del servidor<\/span>/);
-    assert.doesNotMatch(ctx.htmlDeFlecha(tramo('tramite', 12, { pendientes: 3 })), /pendiente/);
+    const conCifra = ctx.htmlDeFlecha(conNotas);
+    assert.ok(conCifra.includes(`<span class="n">${conNotas.cifra.texto} <small>${conNotas.cifra.unidad}</small></span><span class="h">${conNotas.habiles_texto}</span>`), conCifra);
+    assert.doesNotMatch(conCifra, /pendientes? de carga|class="c pend"/);
+    // Con o sin el texto, la página no lo escribe
+    assert.doesNotMatch(ctx.htmlDeFlecha(tramo('tramite', 12, { pendientes: 3, pendientes_texto: 'Texto del servidor' })), /Texto del servidor|class="c pend"/);
+    // Sin cifra y con el texto del vacío, tampoco: lo distingue la clave del tramo
+    assert.doesNotMatch(ctx.htmlDeFlecha({ ...tramo('tramite', null), vacio: { titulo: SIN_NOTAS_DGMIT, texto: 'Texto del servidor' } }), /Texto del servidor/);
+  });
+
+  // Spec 2026-11-07-metricas-cajones-y-ciclos, 3: una sola frase por cajón, «Se cuenta desde … hasta …», en lugar de «desde → hasta»; los
+  // hábiles entre paréntesis debajo del número
+  it('htmlDeFlecha: la frase del servidor y los hábiles debajo del número, en cada tramo real', () => {
+    for (const estadistico of ['mediana', 'promedio']) {
+      for (const vista of [vistaReal({ dias: 'corridos', estadistico }), vistaDe(casosDe(mapaDe(con(fuentesDelCaso(52, {
+        importados: { 7: { recibido_el: '2026-02-02', origen_datos: 'area' } }
+      }), { notasDgmit: [notaDgmit({ recibida: '2026-01-05' })] })), { hoy: HOY }), { anio: 2026, al: HOY, dias: 'corridos', estadistico })]) {
+        for (const g of ['externa', 'interna']) {
+          for (const t of vista.circuito[g]) {
+            const html = ctx.htmlDeFlecha(t);
+            const donde = `${estadistico} ${g} ${t.clave}`;
+            assert.ok(t.como_se_cuenta.startsWith('Se cuenta desde '), donde);
+            const anticipa = t.cifra !== null && typeof t.anticipacion_texto === 'string' && t.anticipacion_texto !== '';
+            // El aviso con su línea no lleva la frase: lo dice el dibujo
+            assert.equal(html.includes(`<span class="c">${t.como_se_cuenta}</span>`), !anticipa, donde);
+            assert.ok(!html.includes(t.desde_hasta), `${donde}: sin «desde → hasta»`);
+            assert.doesNotMatch(html, /class="c pend"|class="c curso"|Se cuenta hasta|sin datos registrados/, donde);
+            if (t.habiles_texto === '') {
+              assert.doesNotMatch(html, /class="h"/, donde);
+            } else if (anticipa) {
+              assert.ok(html.includes(`<span class="mt-anticipa-frase">${t.anticipacion_texto}</span><span class="h">${t.habiles_texto}</span><div class="mt-anticipa-tramo"`), donde);
+            } else {
+              assert.ok(html.includes(`<small>${t.cifra.unidad}</small></span><span class="h">${t.habiles_texto}</span><span class="u">${t.cifra.debajo}</span>`), donde);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('htmlDeFlecha: el cajón entero, en su orden, con la frase y los hábiles', () => {
+    const FRASE = 'Se cuenta desde que la DGMIT y la DA entregan la nota hasta que la DDPC recibe la actualización.';
+    const respuesta = { ...tramo('respuesta', 64, { dias: 'corridos', ciclos: 3, en_curso: { n: 2, valor: 9, texto: '2 sin datos registrados todavía, hace 9 días corridos (mediana)' } }),
+      como_se_cuenta: FRASE, habiles_texto: '(45 días hábiles)' };
+    assert.equal(ctx.htmlDeFlecha(respuesta), '<div class="mt-flecha"><span class="n">64 <small>días corridos</small></span><span class="h">(45 días hábiles)</span>'
+      + '<span class="u">mediana de 3 ciclos</span><span class="o">con tan pocos casos, es orientativo</span><span class="t">Respuesta del área</span>'
+      + `<div class="l" aria-hidden="true"></div><span class="c">${FRASE}</span><span class="mt-resp">Área</span></div>`);
+    // Con «En el día», sin paréntesis (el servidor manda '') y con los ciclos después de la frase
+    const enElDia = { ...tramo('carga', 0, { dias: 'corridos', ciclos: 9 }), como_se_cuenta: 'Se cuenta desde X hasta Y.', habiles_texto: '' };
+    assert.match(ctx.htmlDeFlecha(enElDia), /<span class="n">En el día<\/span><span class="u">mediana en días corridos<\/span>[\s\S]*<span class="c">Se cuenta desde X hasta Y\.<\/span><span class="c"><b>9 ciclos<\/b><\/span><span class="mt-resp">/);
+    // Con corridos y 0 hábiles, lo que dice el servidor
+    assert.match(ctx.htmlDeFlecha({ ...enElDia, cifra: { ...tramo('carga', 3, { dias: 'corridos' }).cifra }, habiles_texto: '(En el día, en días hábiles)' }),
+      /<small>días corridos<\/small><\/span><span class="h">\(En el día, en días hábiles\)<\/span><span class="u">/);
+    // Sin cifra, el paréntesis no va aunque llegue
+    assert.doesNotMatch(ctx.htmlDeFlecha({ ...tramo('carga', null), como_se_cuenta: 'Se cuenta desde X hasta Y.', habiles_texto: '(3 días hábiles)' }), /class="h"|3 días hábiles/);
+  });
+
+  it('htmlDeFlecha: el aviso con su línea lleva los hábiles y no la frase; sin la línea, la frase', () => {
+    const FRASE = 'Se cuenta desde que el RPAD avisa hasta el vencimiento.';
+    const html = ctx.htmlDeFlecha({ ...tramo('aviso', 51, { dias: 'corridos', ciclos: 32 }), anticipacion_texto: 'días corridos de anticipación', como_se_cuenta: FRASE, habiles_texto: '(35 días hábiles)' });
+    assert.match(html, /<span class="n">51<\/span><span class="mt-anticipa-frase">días corridos de anticipación<\/span><span class="h">\(35 días hábiles\)<\/span><div class="mt-anticipa-tramo" aria-hidden="true">/);
+    assert.match(html, /<span class="u">mediana de 32 ciclos<\/span><span class="t">Aviso anticipado<\/span><div class="l" aria-hidden="true"><\/div><span class="mt-resp">DDPC<\/span><\/div>$/);
+    assert.doesNotMatch(html, /Se cuenta desde|Del aviso al vencimiento/);
+    // Con «En el día» o sin cifra no hay línea: la frase, como cualquier cajón
+    for (const t of [{ ...tramo('aviso', 0, { dias: 'corridos' }), anticipacion_texto: null }, tramo('aviso', null)]) {
+      const sinLinea = ctx.htmlDeFlecha({ ...t, como_se_cuenta: FRASE, habiles_texto: '' });
+      assert.doesNotMatch(sinLinea, /mt-anticipa/);
+      assert.ok(sinLinea.includes(`<span class="c">${FRASE}</span>`), sinLinea);
+      assert.doesNotMatch(sinLinea, /Del aviso al vencimiento/);
+    }
+  });
+
+  // Review Focus 5 (spec 2026-11-07-metricas-cajones-y-ciclos, 7): una foto sacada antes de las claves nuevas
+  it('htmlDeFlecha: sin como_se_cuenta (una foto vieja), «desde → hasta»; sin habiles_texto, sin paréntesis', () => {
+    const viejo = tramo('respuesta', 64, { dias: 'corridos' });
+    assert.ok(!('como_se_cuenta' in viejo) && !('habiles_texto' in viejo));
+    const html = ctx.htmlDeFlecha(viejo);
+    assert.ok(html.includes('<span class="c">De la nota a la entrega</span>'), html);
+    assert.doesNotMatch(html, /class="h"/);
+    // Lo que no es un texto tampoco se escribe
+    for (const raro of [null, true, {}, '']) {
+      const conRaro = ctx.htmlDeFlecha({ ...viejo, como_se_cuenta: raro, habiles_texto: raro });
+      assert.ok(conRaro.includes('<span class="c">De la nota a la entrega</span>'), String(raro));
+      assert.doesNotMatch(conRaro, /class="h"|null|undefined|object/, String(raro));
+    }
   });
 
   it('htmlDeCircuito: los nodos de cada gestión, en orden, con las flechas entre ellos', () => {
-    const nodos = (html) => [...html.matchAll(/<div class="mt-nodo[^"]*"><span class="q">([^<]+)<\/span><span class="r">([^<]+)<\/span><\/div>/g)].map((m) => `${m[1]} / ${m[2]}`);
+    // Un nodo con tramo es un botón (el modal de su tramo); el Portal, un <div>
+    const nodos = (html) => [...html.matchAll(/<(?:div|button)[^>]* class="mt-nodo[^"]*"[^>]*><span class="q">([^<]+)<\/span><span class="r">([^<]+)<\/span>/g)].map((m) => `${m[1]} / ${m[2]}`);
     const externa = ctx.htmlDeCircuito(VISTA, 'externa');
     assert.deepEqual(nodos(externa), ['RPAD / Datos Públicos avisa', 'DGMIT y Dirección Administrativa / Mandan la nota formal',
       'Área responsable / Prepara los datos', 'Datos Públicos / Limpia y estructura', 'Portal / Datos publicados']);
     assert.equal(cuantas(externa, /<div class="mt-flecha/g), 4);
     assert.match(externa, /^<div class="mt-tramos externa" role="group" aria-label="El circuito de la gestión externa">/);
-    assert.match(externa, /<div class="mt-nodo dgmit"><span class="q">DGMIT y Dirección Administrativa/);
+    assert.match(externa, /<button type="button" class="mt-nodo dgmit" data-tramo="tramite" data-gestion="externa" [^>]*><span class="q">DGMIT y Dirección Administrativa/);
     assert.match(externa, /<div class="mt-nodo fin"><span class="q">Portal/);
     // El CSS ubica cada hijo por su lugar (spec 2026-11-05-circuito-diseno, 5): el Área es el quinto y su etapa, el sexto
-    const hijos = [...externa.matchAll(/<div class="(mt-nodo|mt-flecha)[^"]*">/g)].map((m) => m[1]);
+    const hijos = [...externa.matchAll(/<(?:div|button type="button") class="(mt-nodo|mt-flecha)[^"]*"/g)].map((m) => m[1]);
     assert.deepEqual(hijos, ['mt-nodo', 'mt-flecha', 'mt-nodo', 'mt-flecha', 'mt-nodo', 'mt-flecha', 'mt-nodo', 'mt-flecha', 'mt-nodo']);
-    // Cada flecha entre sus dos nodos: el aviso anticipado va del RPAD a la DGMIT
-    assert.ok(externa.indexOf('Datos Públicos avisa') < externa.indexOf('Aviso anticipado') && externa.indexOf('Aviso anticipado') < externa.indexOf('Mandan la nota formal'));
+    // Cada flecha entre sus dos nodos: el aviso anticipado va del RPAD a la DGMIT (el título de la tarjeta: el nombre del tramo también
+    // está en el nombre del botón de su nodo)
+    const delAviso = externa.indexOf('<span class="t">Aviso anticipado</span>');
+    assert.ok(externa.indexOf('Datos Públicos avisa') < delAviso && delAviso < externa.indexOf('Mandan la nota formal'));
     const interna = ctx.htmlDeCircuito(VISTA, 'interna');
     assert.deepEqual(nodos(interna), ['RPAD / Datos Públicos avisa', 'DGMIT y Dirección de Investigación Territorial / Hacen el relevamiento',
       'Datos Públicos / Limpia y estructura', 'Portal / Datos publicados']);
@@ -513,6 +672,486 @@ describe('reportes.js: el circuito', () => {
     assert.equal(ctx.htmlDeAclaraciones(sinNada, 'interna'), '');
     assert.equal(ctx.htmlDeAclaraciones({ circuito: { aclaraciones: { externa: { ya_vencidos: { n: 0, texto: '' }, fuente_publica: { n: 0, texto: '' },
       no_requieren_nota: { n: 0, texto: '' } } } } }, 'externa'), '');
+  });
+});
+
+// La banda abre el modal de cada tramo (spec 2026-11-07-metricas-cajones-y-ciclos, 5): cada nodo con tramo es un botón y el modal lo arma
+// entero el servidor (tramo.modal, modalDelTramo de services/metricasReglas.js, con el gráfico de services/metricasGrafico.js); la página
+// solo lo dibuja. Los tramos y los ciclos a mano son inventados
+describe('reportes.js: la banda y el modal de cada tramo', () => {
+  const BOTON = /<button type="button" class="mt-nodo([^"]*)" data-tramo="([a-z]+)" data-gestion="([a-z]+)" aria-haspopup="dialog" aria-label="([^"]*)">/g;
+  const FRASE_DE_LA_RESPUESTA = 'Se cuenta desde que la DGMIT y la DA entregan la nota hasta que la DDPC recibe la actualización.';
+  const SIN_TEXTO = 'Calculado sin 1 dataset: Dataset de ejemplo.';
+  const ETIQUETA_DEL_GRAFICO = 'Un punto por ciclo según sus días corridos. La lista de abajo tiene los mismos datos.';
+  // Tres ciclos que cuentan (uno en el día) y uno en curso, con la forma de los de modalDelTramo
+  const CICLOS = [
+    { dataset_id: 7, titulo: 'Dataset de ejemplo', area: 'Área de ejemplo', estado: 'cuenta', desde: '2026-03-02', hasta: '2026-05-05', hasta_texto: '',
+      dias_texto: '64 días corridos (45 hábiles)', nota: '' },
+    { dataset_id: 8, titulo: 'Otro dataset', area: 'Otra área', estado: 'cuenta', desde: '2026-04-01', hasta: '2026-05-21', hasta_texto: '',
+      dias_texto: '50 días corridos (34 hábiles)', nota: '' },
+    { dataset_id: 9, titulo: 'Un tercer dataset', area: 'Área de ejemplo', estado: 'cuenta', desde: '2026-06-10', hasta: '2026-06-10', hasta_texto: '',
+      dias_texto: 'En el día', nota: '' },
+    { dataset_id: 12, titulo: 'Dataset abierto', area: 'Otra área', estado: 'en_curso', desde: '2026-08-14', hasta: null, hasta_texto: 'en curso',
+      dias_texto: 'hace 71 días corridos (49 hábiles)', nota: '' }
+  ];
+  const DIAS_DE_LOS_CICLOS = [64, 50, 0, 71];
+  const graficoDe = (ciclos, linea) => graficoDelTramo(ciclos.map((c, i) => ({ valor: DIAS_DE_LOS_CICLOS[i], estado: c.estado, titulo: `${c.titulo}: ${c.dias_texto}` })), { linea });
+  const modalAMano = (cambios = {}) => ({
+    quien: 'Área responsable · gestión externa',
+    leyenda: [{ marca: 'cuenta', texto: '3 ciclos cuentan en la cifra' }, { marca: 'en_curso', texto: '1 en curso, todavía no cuenta' }],
+    como_se_cuenta: ['1 ciclo abierto todavía no tiene datos registrados, hace 71 días corridos (49 hábiles, mediana): cuenta cuando se registra la actualización.'],
+    lista: 'Los ciclos (4)',
+    puntas: ['Nota DGMIT', 'Datos recibidos'],
+    ciclos: CICLOS,
+    vacio: '',
+    grafico: graficoDe(CICLOS, { valor: 50, texto: 'mediana: 50 días corridos' }),
+    ...cambios
+  });
+  const tramoConModal = (cambios = {}) => ({
+    ...tramo('respuesta', 50, { dias: 'corridos', ciclos: 3 }), como_se_cuenta: FRASE_DE_LA_RESPUESTA, habiles: null, habiles_texto: '(34 días hábiles)',
+    modal: modalAMano(), ...cambios
+  });
+  // Las filas de la tabla del modal (sin la de los títulos)
+  const filasDe = (html) => [...(html.match(/<tbody>([\s\S]*?)<\/tbody>/)?.[1] ?? '').matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map((m) => m[1]);
+
+  it('htmlDeCircuito: cada nodo con tramo es un botón «Ver los ciclos»; el Portal sigue siendo un <div>', () => {
+    for (const [g, claves] of [['externa', ['aviso', 'tramite', 'respuesta', 'carga']], ['interna', ['aviso', 'produccion', 'carga']]]) {
+      const html = ctx.htmlDeCircuito(VISTA, g);
+      const botones = [...html.matchAll(BOTON)];
+      // Todos, también el de un tramo sin ciclos (la respuesta del área): el modal dice por qué
+      assert.deepEqual(botones.map((m) => m[2]), claves, g);
+      assert.deepEqual(botones.map((m) => m[3]), claves.map(() => g), g);
+      assert.deepEqual(botones.map((m) => m[4]), claves.map((clave) => `Ver los ciclos de ${tramoDe(VISTA, g, clave).nombre}`), g);
+      // Lo de la DGMIT sigue en violeta
+      assert.deepEqual(botones.map((m) => m[1]), claves.map((clave) => (['tramite', 'produccion'].includes(clave) ? ' dgmit' : '')), g);
+      // Cada uno: quién, qué hace y «Ver los ciclos», con su ícono fuera del lector de pantalla
+      const enteros = [...html.matchAll(/<button type="button" class="mt-nodo[\s\S]*?<\/button>/g)].map((m) => m[0]);
+      assert.equal(enteros.length, claves.length, g);
+      for (const boton of enteros) {
+        assert.match(boton, /<span class="q">[^<]+<\/span><span class="r">[^<]+<\/span><span class="mt-ver"><svg aria-hidden="true" [^>]*>(?:(?!<\/svg>)[\s\S])*<\/svg><span>Ver los ciclos<\/span><\/span><\/button>$/, boton);
+      }
+      assert.match(html, /<div class="mt-nodo fin"><span class="q">Portal<\/span><span class="r">Datos publicados<\/span><\/div><\/div>$/, g);
+      // El orden de los hijos de .mt-tramos no cambió: la grilla los ubica por su lugar (nth-child)
+      const hijos = [...html.matchAll(/<(?:div|button type="button") class="(mt-nodo|mt-flecha)[^"]*"/g)].map((m) => m[1]);
+      assert.deepEqual(hijos, [...claves.flatMap(() => ['mt-nodo', 'mt-flecha']), 'mt-nodo'], g);
+    }
+  });
+
+  // Review Focus 5: una foto sacada antes de las claves nuevas (y la vista en hábiles, que no trae modal)
+  it('un tramo sin modal: su nodo es el <div> de siempre, sin botón', () => {
+    for (const modal of [undefined, null, 'x', [], 0]) {
+      const html = ctx.htmlDeCircuito({ circuito: { externa: VISTA.circuito.externa.map((t) => ({ ...t, modal })) } }, 'externa');
+      assert.doesNotMatch(html, /<button|data-tramo|Ver los ciclos|aria-haspopup/, String(modal));
+      assert.equal(cuantas(html, /<div class="mt-nodo[^"]*"><span class="q">[^<]+<\/span><span class="r">[^<]+<\/span><\/div>/g), 5, String(modal));
+    }
+    const sinElDelTramite = { circuito: { externa: VISTA.circuito.externa.map((t) => (t.clave === 'tramite' ? { ...t, modal: null } : t)) } };
+    assert.deepEqual([...ctx.htmlDeCircuito(sinElDelTramite, 'externa').matchAll(BOTON)].map((m) => m[2]), ['aviso', 'respuesta', 'carga']);
+    assert.doesNotMatch(ctx.htmlDeCircuito(vistaReal({ dias: 'habiles' }), 'externa'), /<button/);
+    // Sin el tramo, tampoco
+    assert.deepEqual([...ctx.htmlDeCircuito({ circuito: { interna: [tramoDe(VISTA, 'interna', 'carga')] } }, 'interna').matchAll(BOTON)].map((m) => m[2]), ['carga']);
+  });
+
+  it('htmlDelModal: el título, quién, la frase, la cifra con sus hábiles, la leyenda, el gráfico, «Cómo se cuenta» y los ciclos, en ese orden', () => {
+    const t = tramoConModal();
+    const html = ctx.htmlDelModal(t);
+    assert.ok(html.startsWith('<div class="modal-header"><div class="mt-modal-cabeza"><h2 class="modal-title" id="mt-modal-titulo">Respuesta del área</h2>'
+      + '<p class="mt-modal-quien">Área responsable · gestión externa</p></div>'
+      + '<button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button></div><div class="modal-body mt-color-area">'), html);
+    assert.doesNotMatch(html, /mt-franja/);
+    const piezas = [`<p class="mt-modal-frase">${FRASE_DE_LA_RESPUESTA}</p>`,
+      '<div class="mt-modal-cifra"><span class="n">50 <small>días corridos</small></span><span class="h">(34 días hábiles)</span>'
+        + '<span class="u">mediana de 3 ciclos</span><span class="o">con tan pocos casos, es orientativo</span></div>',
+      '<ul class="mt-modal-leyenda"><li><svg class="mt-ley-cuenta" aria-hidden="true"', '3 ciclos cuentan en la cifra</li><li><svg class="mt-ley-curso" aria-hidden="true"',
+      '1 en curso, todavía no cuenta</li></ul>',
+      ctx.svgDelGrafico(t.modal.grafico),
+      `<h3 class="mt-modal-h3">Cómo se cuenta</h3><ul class="mt-modal-como"><li>${t.modal.como_se_cuenta[0]}</li></ul>`,
+      '<h3 class="mt-modal-h3" id="mt-modal-lista">Los ciclos (4)</h3><div class="mt-modal-tabla" tabindex="0" role="group" aria-labelledby="mt-modal-lista"><table class="mt-tabla">'
+        + '<thead><tr><th scope="col">Dataset</th><th scope="col">Nota DGMIT</th><th scope="col">Datos recibidos</th><th scope="col">Días</th></tr></thead>'];
+    const lugares = piezas.map((pieza) => html.indexOf(pieza));
+    assert.ok(lugares.every((lugar, i) => lugar !== -1 && (i === 0 || lugar > lugares[i - 1])), JSON.stringify(lugares));
+    assert.ok(t.modal.grafico !== null && piezas[5].startsWith('<svg class="mt-grafico"'));
+    // Cada ciclo con el link a su Seguimiento y su área debajo, las dos fechas y los días; el en curso, «en curso» y «hace …»
+    assert.deepEqual(filasDe(html), [
+      '<td class="t"><a href="seguimiento.html?id=7">Dataset de ejemplo</a><small>Área de ejemplo</small></td><td>02/03/2026</td><td>05/05/2026</td><td>64 días corridos (45 hábiles)</td>',
+      '<td class="t"><a href="seguimiento.html?id=8">Otro dataset</a><small>Otra área</small></td><td>01/04/2026</td><td>21/05/2026</td><td>50 días corridos (34 hábiles)</td>',
+      '<td class="t"><a href="seguimiento.html?id=9">Un tercer dataset</a><small>Área de ejemplo</small></td><td>10/06/2026</td><td>10/06/2026</td><td>En el día</td>',
+      '<td class="t"><a href="seguimiento.html?id=12">Dataset abierto</a><small>Otra área</small></td><td>14/08/2026</td><td><span class="mt-curso">en curso</span></td>'
+        + '<td class="mt-curso">hace 71 días corridos (49 hábiles)</td>'
+    ]);
+    assert.ok(html.endsWith('</tbody></table></div></div>'), html.slice(-80));
+    // Sin el modal, nada
+    for (const sinModal of [null, undefined, {}, { ...t, modal: null }, { ...t, modal: [] }]) assert.equal(ctx.htmlDelModal(sinModal), '');
+  });
+
+  it('htmlDelModal: la nota pendiente de carga, el avisado ya vencido y un dataset sin id; lo de la DGMIT en violeta', () => {
+    const ciclos = [
+      { dataset_id: 21, titulo: 'Dataset avisado', area: 'Área de ejemplo', estado: 'cuenta', desde: '2026-01-02', hasta: '2026-02-10', hasta_texto: '',
+        dias_texto: '39 días corridos (26 hábiles)', nota: 'avisado ya vencido: desde ese primer aviso' },
+      { dataset_id: '3#x', titulo: 'Dataset sin id', area: null, estado: 'cuenta', desde: '2026-02-02', hasta: '2026-02-20', hasta_texto: '',
+        dias_texto: '18 días corridos (14 hábiles)', nota: '' },
+      { dataset_id: 22, titulo: 'Dataset sin nota', area: 'Otra área', estado: 'pendiente', desde: '2026-05-04', hasta: null, hasta_texto: 'pendiente de carga',
+        dias_texto: '—', nota: '' }
+    ];
+    const t = { ...tramo('tramite', 39, { dias: 'corridos', ciclos: 2 }), como_se_cuenta: 'Se cuenta desde que la DGMIT y la DA reciben el aviso hasta que entregan la nota.',
+      habiles_texto: '(26 días hábiles)', modal: modalAMano({ quien: 'DGMIT y Dirección Administrativa · gestión externa', puntas: ['Aviso', 'Nota DGMIT'], ciclos,
+        leyenda: [{ marca: 'cuenta', texto: '2 ciclos cuentan en la cifra' }, { marca: 'pendiente', texto: '1 nota pendiente de carga, sin días' }], lista: 'Los ciclos (3)' }) };
+    const html = ctx.htmlDelModal(t);
+    assert.match(html, /<div class="modal-body mt-color-violeta">/);
+    assert.match(html, /<li><svg class="mt-ley-pend" aria-hidden="true"[^>]*>(?:(?!<\/svg>)[\s\S])*<\/svg>1 nota pendiente de carga, sin días<\/li>/);
+    assert.ok(html.includes('<th scope="col">Aviso</th><th scope="col">Nota DGMIT</th>'));
+    assert.deepEqual(filasDe(html), [
+      '<td class="t"><a href="seguimiento.html?id=21">Dataset avisado</a><small>Área de ejemplo</small></td><td>02/01/2026<span class="d">avisado ya vencido: desde ese primer aviso</span></td>'
+        + '<td>10/02/2026</td><td>39 días corridos (26 hábiles)</td>',
+      '<td class="t">Dataset sin id</td><td>02/02/2026</td><td>20/02/2026</td><td>18 días corridos (14 hábiles)</td>',
+      '<td class="t"><a href="seguimiento.html?id=22">Dataset sin nota</a><small>Otra área</small></td><td>04/05/2026</td><td><span class="mt-pend">pendiente de carga</span></td><td>—</td>'
+    ]);
+    // Las marcas de la leyenda son tres formas (lleno, aro con flecha, punteado): nunca solo el color; una marca que no es de la lista no va
+    const marcas = ctx.htmlDelModal(tramoConModal({ modal: modalAMano({ leyenda: [{ marca: 'cuenta', texto: 'a' }, { marca: 'en_curso', texto: 'b' },
+      { marca: 'pendiente', texto: 'c' }, { marca: '__proto__', texto: 'd' }, { marca: 'cuenta', texto: '' }] }) }));
+    const leyenda = marcas.match(/<ul class="mt-modal-leyenda">([\s\S]*?)<\/ul>/)[1];
+    assert.deepEqual([...leyenda.matchAll(/<li>(?:<svg class="([a-z-]+)"[\s\S]*?<\/svg>)?([^<]*)<\/li>/g)].map((m) => `${m[1] ?? ''}:${m[2]}`),
+      ['mt-ley-cuenta:a', 'mt-ley-curso:b', 'mt-ley-pend:c', ':d']);
+    assert.match(leyenda, /<svg class="mt-ley-curso"[^>]*><circle [^>]*\/><path [^>]*\/><\/svg>/);
+    assert.doesNotMatch(marcas, /\[object|undefined|null/);
+  });
+
+  it('htmlDelModal: la cifra del aviso con su anticipación; sin cifra, el título y el texto del vacío; sin ciclos, el vacío del servidor y ninguna tabla', () => {
+    // El aviso real: el número con «días corridos de anticipación» y sus hábiles
+    const aviso = tramoDe(VISTA, 'externa', 'aviso');
+    assert.ok(aviso.cifra && aviso.anticipacion_texto && aviso.habiles_texto);
+    assert.ok(ctx.htmlDelModal(aviso).includes(`<div class="mt-modal-cifra"><span class="n">${aviso.cifra.texto} <small>${aviso.anticipacion_texto}</small></span>`
+      + `<span class="h">${aviso.habiles_texto}</span><span class="u">${aviso.cifra.debajo}</span>`));
+    assert.match(ctx.htmlDelModal(aviso), /<div class="modal-body mt-color-tinta">/);
+    // La respuesta real: sin cifra y sin ciclos
+    const respuesta = tramoDe(VISTA, 'externa', 'respuesta');
+    assert.ok(respuesta.cifra === null && respuesta.modal.ciclos.length === 0 && respuesta.modal.vacio !== '');
+    const sinCiclos = ctx.htmlDelModal(respuesta);
+    assert.ok(sinCiclos.includes(`<div class="mt-modal-cifra vacia"><span class="n">${respuesta.vacio.titulo}</span><span class="u">${respuesta.vacio.texto}</span></div>`), sinCiclos);
+    assert.ok(sinCiclos.includes(`<h3 class="mt-modal-h3" id="mt-modal-lista">${respuesta.modal.lista}</h3><p class="mt-vacio">${respuesta.modal.vacio}</p></div>`), sinCiclos);
+    assert.doesNotMatch(sinCiclos, /<table|mt-modal-tabla|Cómo se cuenta|<svg|mt-modal-leyenda/);
+    // La redacción real sin notas cargadas: el título y el texto del vacío (spec 5: «Sin cifra, el título y el texto del vacío»), también
+    // aunque los pendientes estén en la leyenda y en «Cómo se cuenta» (en el cajón, no: ahí van en el modal)
+    const tramite = tramoDe(VISTA, 'externa', 'tramite');
+    assert.ok(tramite.cifra === null && tramite.vacio.texto !== '');
+    const deLaDgmit = ctx.htmlDelModal(tramite);
+    assert.ok(deLaDgmit.includes(`<div class="mt-modal-cifra vacia"><span class="n">${tramite.vacio.titulo}</span><span class="u">${tramite.vacio.texto}</span></div>`), deLaDgmit);
+    assert.ok(deLaDgmit.includes(`${tramite.modal.leyenda[0].texto}</li>`) && deLaDgmit.includes(`<li>${tramite.modal.como_se_cuenta[0]}</li>`));
+    // Con datos a mano: la redacción y la respuesta sin cifra, cada una con su título y su texto; sin texto, solo el título
+    for (const [clave, titulo, texto] of [['tramite', SIN_NOTAS_DGMIT, '4 notas pendientes de carga de ciclos abiertos'],
+      ['respuesta', 'Sin datos todavía', 'Se empieza a contar cuando haya notas DGMIT cargadas']]) {
+      const html = ctx.htmlDelModal({ ...tramoConModal(), ...tramo(clave, null), vacio: { titulo, texto } });
+      assert.ok(html.includes(`<div class="mt-modal-cifra vacia"><span class="n">${titulo}</span><span class="u">${texto}</span></div>`), clave);
+      assert.ok(ctx.htmlDelModal({ ...tramoConModal(), ...tramo(clave, null), vacio: { titulo, texto: '' } })
+        .includes(`<div class="mt-modal-cifra vacia"><span class="n">${titulo}</span></div>`), `${clave} sin texto`);
+    }
+    // Sin pendientes ni ciclos con días, sin gráfico; con ciclos, la tabla
+    assert.equal(tramite.modal.grafico, null);
+    assert.equal(filasDe(deLaDgmit).length, tramite.modal.ciclos.length);
+    // Un vacío del servidor gana aunque lleguen ciclos; sin ninguna línea, sin «Cómo se cuenta»
+    const conVacio = ctx.htmlDelModal(tramoConModal({ modal: modalAMano({ vacio: 'Sin ciclos en 2026.', como_se_cuenta: [] }) }));
+    assert.doesNotMatch(conVacio, /<table|Cómo se cuenta/);
+    assert.ok(conVacio.includes('<p class="mt-vacio">Sin ciclos en 2026.</p>'));
+  });
+
+  // Review Focus 2: un tramo con solo ciclos en curso (sin cifra): los aros, sin la línea del estadístico
+  it('un tramo con solo ciclos en curso: el vacío y los aros con su flecha, sin la línea', () => {
+    const produccion = tramoDe(VISTA, 'interna', 'produccion');
+    assert.ok(produccion.cifra === null && produccion.modal.grafico !== null && produccion.modal.grafico.linea === null);
+    const html = ctx.htmlDelModal(produccion);
+    assert.ok(html.includes(`<div class="mt-modal-cifra vacia"><span class="n">${produccion.vacio.titulo}</span></div>`));
+    assert.equal(cuantas(html, /<g class="p-curso">/g), produccion.modal.grafico.puntos.length);
+    assert.doesNotMatch(html, /class="p-cuenta"|class="linea|mt-ley-cuenta/);
+    // La lista dice «en curso» y «hace …», con la marca del avisado ya vencido
+    const [fila] = filasDe(html);
+    const [ciclo] = produccion.modal.ciclos;
+    assert.ok(fila.endsWith(`<span class="d">${ciclo.nota}</span></td><td><span class="mt-curso">en curso</span></td><td class="mt-curso">${ciclo.dias_texto}</td>`), fila);
+  });
+
+  // Review Focus 3: los destildados no están en el modal, como no están en la cifra, y el modal repite la franja
+  it('con destildados: el modal no los lista, cuenta lo de la cifra y repite la franja «Calculado sin…»', () => {
+    const aviso = tramoDe(VISTA, 'externa', 'aviso');
+    const id = aviso.modal.ciclos[0].dataset_id;
+    const sin = tramoDe(vistaReal({ sin: [id] }), 'externa', 'aviso');
+    assert.ok(sin.modal.ciclos.every((c) => c.dataset_id !== id));
+    assert.equal(sin.modal.ciclos.filter((c) => c.estado === 'cuenta').length, sin.cifra.ciclos);
+    const html = ctx.htmlDelModal(sin, { sinTexto: SIN_TEXTO });
+    assert.ok(!html.includes(`seguimiento.html?id=${id}"`));
+    assert.equal(filasDe(html).length, sin.modal.ciclos.length);
+    assert.ok(html.includes(`<p class="mt-modal-quien">${sin.modal.quien}</p><p class="mt-franja mt-modal-franja">${SIN_TEXTO}</p></div>`), html.slice(0, 400));
+    // Sin el link «Volver a todos» (es de la pestaña); sin destildados, sin franja
+    assert.doesNotMatch(html, /Volver a todos|data-accion/);
+    for (const sinTexto of ['', null, undefined, {}]) assert.doesNotMatch(ctx.htmlDelModal(sin, { sinTexto }), /mt-franja/, String(sinTexto));
+  });
+
+  it('svgDelGrafico: los puntos, los aros con su flecha, la línea, los «+N» y el eje, con las coordenadas del servidor', () => {
+    for (const nada of [null, undefined, {}, 'x', { ancho: 760 }]) assert.equal(ctx.svgDelGrafico(nada), '', String(nada));
+    // Una columna de 11 que cuentan con 30 días (8 dibujados y «+3»), uno de 12 y dos en curso
+    const puntos = [...Array.from({ length: 11 }, (_, i) => ({ valor: 30, estado: 'cuenta', titulo: `Dataset ${String(i)}: 30 días corridos (21 hábiles)` })),
+      { valor: 12, estado: 'cuenta', titulo: 'Dataset A: 12 días corridos (8 hábiles)' },
+      { valor: 95, estado: 'en_curso', titulo: 'Dataset B: hace 95 días corridos (66 hábiles)' },
+      { valor: 140, estado: 'en_curso', titulo: 'Dataset C: hace 140 días corridos (97 hábiles)' }];
+    const g = graficoDelTramo(puntos, { linea: { valor: 30, texto: 'mediana: 30 días corridos' } });
+    assert.ok(g.mas.length === 1 && g.linea !== null);
+    const svg = ctx.svgDelGrafico(g);
+    assert.ok(svg.startsWith(`<svg class="mt-grafico" viewBox="0 0 ${coord(g.ancho)} ${coord(g.alto)}" role="img" aria-label="${ETIQUETA_DEL_GRAFICO}" xmlns="http://www.w3.org/2000/svg">`), svg.slice(0, 200));
+    assert.ok(svg.endsWith('</svg>'));
+    const R = GRAFICO.radio;
+    // Un círculo lleno por punto que cuenta (el anillo blanco lo da el CSS: el trazo de 2 sale 1 afuera, lo que mide el servidor)
+    const cuentan = g.puntos.filter((p) => p.estado === 'cuenta');
+    assert.equal(cuantas(svg, /<g class="p-cuenta">/g), cuentan.length);
+    for (const p of cuentan) assert.ok(svg.includes(`<g class="p-cuenta"><title>${p.titulo}</title><circle cx="${coord(p.x)}" cy="${coord(p.y)}" r="${coord(R)}"/></g>`), p.titulo);
+    // Un aro por punto en curso, con su flecha a la derecha: de afuera del aro hasta GRAFICO.flecha, donde termina lo que mide el servidor
+    const enCurso = g.puntos.filter((p) => p.estado === 'en_curso');
+    assert.equal(enCurso.length, 2);
+    assert.equal(cuantas(svg, /<g class="p-curso">/g), 2);
+    for (const p of enCurso) {
+      const punta = p.x + R + GRAFICO.flecha;
+      assert.ok(svg.includes(`<g class="p-curso"><title>${p.titulo}</title><circle cx="${coord(p.x)}" cy="${coord(p.y)}" r="${coord(R)}"/>`
+        + `<path d="M${coord(p.x + R + 1)} ${coord(p.y)}H${coord(punta)}M${coord(punta - 3.5)} ${coord(p.y - 3.5)}L${coord(punta)} ${coord(p.y)}L${coord(punta - 3.5)} ${coord(p.y + 3.5)}"/></g>`), p.titulo);
+    }
+    // La línea del estadístico con su rótulo; el «+N»; el eje de la primera marca a la última, con una rayita y su número en cada una, y «días corridos»
+    const { linea, eje } = g;
+    assert.ok(svg.includes(`<line x1="${coord(linea.x)}" y1="${coord(linea.y0)}" x2="${coord(linea.x)}" y2="${coord(linea.y1)}" class="linea"/>`));
+    assert.ok(svg.includes(`<text x="${coord(linea.rotulo.x)}" y="${coord(linea.rotulo.y)}" text-anchor="${linea.rotulo.anclaje}" class="linea-r">mediana: 30 días corridos</text>`));
+    assert.ok(svg.includes(`<text x="${coord(g.mas[0].x)}" y="${coord(g.mas[0].y)}" text-anchor="middle" class="mas">+3</text>`));
+    assert.ok(svg.includes(`<line x1="${coord(eje.marcas[0].x)}" y1="${coord(eje.y)}" x2="${coord(eje.marcas.at(-1).x)}" y2="${coord(eje.y)}" class="eje"/>`));
+    for (const m of eje.marcas) {
+      assert.ok(svg.includes(`<line x1="${coord(m.x)}" y1="${coord(eje.y)}" x2="${coord(m.x)}" y2="${coord(eje.y + 5)}" class="eje"/>`), m.texto);
+      assert.ok(svg.includes(`<text x="${coord(m.x)}" y="${coord(m.y)}" text-anchor="middle" class="eje-n">${m.texto}</text>`), m.texto);
+    }
+    assert.ok(svg.includes(`<text x="${coord(eje.rotulo.x)}" y="${coord(eje.rotulo.y)}" text-anchor="end" class="eje-r">días corridos</text>`));
+    // La línea, antes que los puntos: los de su columna la tapan con su anillo blanco
+    assert.ok(svg.indexOf('class="linea"') < svg.indexOf('<g class="p-'));
+    // Sin cifra, sin línea
+    const sinLinea = ctx.svgDelGrafico(graficoDelTramo(puntos.slice(-2), { linea: null }));
+    assert.doesNotMatch(sinLinea, /class="linea/);
+    assert.equal(cuantas(sinLinea, /<g class="p-curso">/g), 2);
+    // Lo que no se puede leer no se dibuja: un punto sin x, un estado que no es de la lista, un «+N» sin texto
+    const raro = ctx.svgDelGrafico({ ...g, puntos: [{ x: 'a', y: 1, estado: 'cuenta', titulo: 't' }, { x: 1, y: 2, estado: '"><x', titulo: 't' }],
+      mas: [{ x: 1, y: 2, texto: '' }], linea: { ...linea, rotulo: { ...linea.rotulo, anclaje: '"><script>' } } });
+    assert.doesNotMatch(raro, /<g class="p-|class="mas"|<script>|"><x|NaN|undefined|null/);
+    assert.match(raro, /text-anchor="start" class="linea-r"/);
+  });
+
+  it('la página dibuja los puntos con el radio y la flecha del servidor (copias de GRAFICO, atadas)', () => {
+    assert.equal(vm.runInContext('RADIO_DEL_PUNTO', ctx), GRAFICO.radio);
+    assert.equal(vm.runInContext('FLECHA_DEL_EN_CURSO', ctx), GRAFICO.flecha);
+    // La rayita del eje entra en el lugar que deja el servidor (los números, con su base 18 debajo de la línea: hasta 6)
+    assert.ok(vm.runInContext('RAYITA_DEL_EJE', ctx) <= 6);
+  });
+
+  it('todo lo del servidor escapado: un título <b>"x"</b> en la tabla y en el <title> de su punto, y en el nombre del botón', () => {
+    const malo = '<b>"x"</b>';
+    const escapado = '&lt;b&gt;&quot;x&quot;&lt;/b&gt;';
+    const ciclos = [{ ...CICLOS[0], titulo: malo, area: malo, dias_texto: malo, nota: malo }, { ...CICLOS[3], hasta_texto: malo, dias_texto: malo }];
+    const grafico = graficoDe(ciclos, { valor: 64, texto: malo });
+    grafico.eje.marcas[0].texto = malo;
+    grafico.eje.rotulo.texto = malo;
+    grafico.mas = [{ x: 30, y: 40, texto: malo }];
+    const t = tramoConModal({ nombre: malo, como_se_cuenta: malo, habiles_texto: malo, cifra: { ...tramo('respuesta', 64).cifra, texto: malo, unidad: malo, debajo: malo },
+      modal: modalAMano({ quien: malo, leyenda: [{ marca: 'cuenta', texto: malo }], como_se_cuenta: [malo], lista: malo, puntas: [malo, malo], ciclos, grafico }) });
+    const html = ctx.htmlDelModal(t, { sinTexto: malo });
+    assert.doesNotMatch(html, /<b>|"x"/);
+    assert.ok(html.includes(`<a href="seguimiento.html?id=7">${escapado}</a>`));
+    assert.ok(html.includes(`<title>${escapado}: ${escapado}</title>`));
+    // El nombre, quién, la franja, la frase, la cifra (tres), los hábiles, la leyenda, «Cómo se cuenta», la lista, las dos puntas, el rótulo de
+    // la línea, el primer número y el rótulo del eje, el «+N», los dos <title> (el primero con dos) y, en la tabla, el título, el área, la
+    // nota, los días (dos) y «en curso»
+    assert.equal(cuantas(html, /&lt;b&gt;&quot;x&quot;&lt;\/b&gt;/g), 26);
+    // El vacío del cajón y el del servidor, con el nombre y la frase
+    const vacio = ctx.htmlDelModal({ ...t, cifra: null, vacio: { titulo: malo, texto: malo }, modal: modalAMano({ vacio: malo }) });
+    assert.doesNotMatch(vacio, /<b>/);
+    assert.equal(cuantas(vacio, /&lt;b&gt;/g), 5);
+    // El nombre del botón de la banda
+    const banda = ctx.htmlDeCircuito({ circuito: { externa: [{ ...tramoConModal(), clave: 'aviso', nombre: malo }] } }, 'externa');
+    assert.ok(banda.includes(`aria-label="Ver los ciclos de ${escapado}"`), banda);
+    assert.doesNotMatch(banda, /<b>/);
+  });
+
+  it('un 0 se escribe como 0, y nada dice NaN, null ni undefined', () => {
+    const g = graficoDe(CICLOS, null);
+    const svg = ctx.svgDelGrafico({ ...g, puntos: [{ x: 0, y: 0, estado: 'cuenta', titulo: '0' }], mas: [{ x: 0, y: 0, texto: '0' }] });
+    assert.ok(svg.includes('<g class="p-cuenta"><title>0</title><circle cx="0" cy="0" r="5.5"/></g>'));
+    assert.ok(svg.includes('<text x="0" y="0" text-anchor="middle" class="mas">0</text>'));
+    assert.ok(svg.includes(`text-anchor="middle" class="eje-n">0</text>`));
+    const cero = ctx.htmlDelModal(tramoConModal({ modal: modalAMano({ lista: '0', vacio: '0', leyenda: [{ marca: 'cuenta', texto: '0' }] }) }));
+    assert.ok(cero.includes('<h3 class="mt-modal-h3" id="mt-modal-lista">0</h3><p class="mt-vacio">0</p>'));
+    assert.match(cero, /<\/svg>0<\/li>/);
+    const vacios = [ctx.htmlDelModal({ modal: {} }), ctx.htmlDelModal({ clave: 'respuesta', modal: { ciclos: [{}, null], leyenda: [null, {}], como_se_cuenta: [null, 3], puntas: [] } }),
+      ctx.svgDelGrafico({ ancho: 760, alto: 100, eje: {}, puntos: [{}, null], mas: [{}], linea: {} })].join('');
+    assert.doesNotMatch(vacios, /NaN|null|undefined|\[object/);
+  });
+
+  // Un document de mentira con lo que tocan el modal y la pestaña: cada elemento guarda sus oyentes y sus clases, y anota a quién va el foco
+  const conDocumento = () => {
+    const enfocados = [];
+    const oyentes = {};
+    const elementos = {};
+    const elemento = (id) => {
+      const clases = new Set();
+      return {
+        id, innerHTML: '', textContent: '', hidden: false, dataset: {},
+        classList: { add: (clase) => clases.add(clase), remove: (clase) => clases.delete(clase), toggle() {}, contains: (clase) => clases.has(clase) },
+        setAttribute() {}, removeAttribute() {}, querySelectorAll: () => [], querySelector: () => null, contains: () => false, closest: () => null,
+        focus: () => enfocados.push(id), addEventListener: (tipo, fn) => (oyentes[`${id}:${tipo}`] ??= []).push(fn)
+      };
+    };
+    const app = { inert: false };
+    const body = { style: { overflow: '' } };
+    const documento = {
+      addEventListener: (tipo, fn) => (oyentes[`document:${tipo}`] ??= []).push(fn),
+      getElementById: (id) => (elementos[id] ??= elemento(id)),
+      querySelector: (selector) => (selector === '.app-container' ? app : null),
+      activeElement: null, body
+    };
+    const disparar = (clave, evento) => { for (const fn of oyentes[clave] ?? []) fn(evento); };
+    return { enfocados, elementos, app, body, documento, disparar, porId: documento.getElementById };
+  };
+
+  it('abrir y cerrar: la página inerte y quieta, el foco a la × y de vuelta al botón de la banda (o al chip de la gestión)', () => {
+    const d = conDocumento();
+    const pagina = cargar({ document: d.documento, setTimeout: (fn) => fn(), __vista: VISTA, __sin: SIN_TEXTO });
+    const consultas = [];
+    let boton = { focus: () => d.enfocados.push('botón') };
+    d.porId('mt-modal-contenido').querySelector = (selector) => (selector === '.modal-close' ? { focus: () => d.enfocados.push('×') } : null);
+    d.porId('mt-circuito').querySelector = (selector) => { consultas.push(selector); return boton; };
+    d.porId('mt-gestiones').querySelector = (selector) => { consultas.push(selector); return { focus: () => d.enfocados.push('chip') }; };
+    const velo = d.porId('mt-modal-tramo');
+    vm.runInContext('pagina.datos = { vista: __vista, sin_texto: __sin };', pagina);
+
+    pagina.abrirModalDelTramo('externa', 'respuesta');
+    assert.ok(velo.classList.contains('active'));
+    assert.equal(d.app.inert, true);
+    assert.equal(d.body.style.overflow, 'hidden');
+    assert.equal(d.porId('mt-modal-contenido').innerHTML, ctx.htmlDelModal(tramoDe(VISTA, 'externa', 'respuesta'), { sinTexto: SIN_TEXTO }));
+    assert.deepEqual(d.enfocados, ['×']);
+    assert.deepEqual(plano(vm.runInContext('pagina.modal', pagina)), { gestion: 'externa', clave: 'respuesta' });
+
+    pagina.cerrarModalDelTramo();
+    assert.ok(!velo.classList.contains('active'));
+    assert.equal(d.app.inert, false);
+    assert.equal(d.body.style.overflow, '');
+    assert.deepEqual(d.enfocados, ['×', 'botón']);
+    assert.deepEqual(consultas, ['button[data-tramo="respuesta"][data-gestion="externa"]']);
+    assert.equal(vm.runInContext('pagina.modal', pagina), null);
+    // Cerrar sin un modal abierto no hace nada
+    pagina.cerrarModalDelTramo();
+    assert.deepEqual(d.enfocados, ['×', 'botón']);
+
+    // Si el botón ya no está, el foco va al chip de la gestión elegida
+    boton = null;
+    vm.runInContext("pagina.estado.gestion = 'interna';", pagina);
+    pagina.abrirModalDelTramo('interna', 'produccion');
+    pagina.cerrarModalDelTramo();
+    assert.deepEqual(d.enfocados.slice(-1), ['chip']);
+    assert.deepEqual(consultas.slice(-2), ['button[data-tramo="produccion"][data-gestion="interna"]', 'button[data-selector="gestion"][data-valor="interna"]']);
+
+    // Sin modal no abre: el Portal, un tramo de la otra gestión, uno que no es del circuito y uno sin modal
+    for (const [gestion, clave] of [['externa', 'portal'], ['interna', 'tramite'], ['externa', '"]x'], ['otra', 'aviso']]) {
+      pagina.abrirModalDelTramo(gestion, clave);
+      assert.ok(!velo.classList.contains('active'), `${gestion} ${clave}`);
+    }
+    vm.runInContext('pagina.datos = { vista: { circuito: { externa: [{ ...__vista.circuito.externa[0], modal: null }] } } };', pagina);
+    pagina.abrirModalDelTramo('externa', 'aviso');
+    assert.ok(!velo.classList.contains('active'));
+    assert.equal(d.app.inert, false);
+  });
+
+  it('la banda abre el modal; la ×, un clic que empieza y termina en el velo y Escape lo cierran', () => {
+    const d = conDocumento();
+    const pagina = cargar({ document: d.documento, setTimeout: (fn) => fn(), history: { replaceState() {} },
+      location: { pathname: '/reportes.html', search: '', hash: '' }, __vista: VISTA });
+    vm.runInContext('API.pedirJson = () => new Promise(() => {});', pagina);
+    pagina.iniciarReportes();
+    vm.runInContext("pagina.datos = { vista: __vista, sin_texto: '' };", pagina);
+    const velo = d.porId('mt-modal-tramo');
+    const abierto = () => velo.classList.contains('active');
+    const enLaBanda = (dataset) => ({ target: { closest: (selector) => (selector === 'button[data-tramo]' && dataset ? { dataset } : null) } });
+    const adentro = { closest: () => null };
+    const abrir = () => {
+      d.disparar('mt-circuito:click', enLaBanda({ tramo: 'carga', gestion: 'externa' }));
+      assert.ok(abierto());
+      assert.deepEqual(plano(vm.runInContext('pagina.modal', pagina)), { gestion: 'externa', clave: 'carga' });
+    };
+    // Un clic en la banda fuera de un botón no abre nada
+    d.disparar('mt-circuito:click', enLaBanda(null));
+    assert.ok(!abierto());
+
+    abrir();
+    d.disparar('document:keydown', { key: 'Enter' });
+    assert.ok(abierto());
+    d.disparar('document:keydown', { key: 'Escape' });
+    assert.ok(!abierto());
+
+    abrir();
+    d.disparar('mt-modal-tramo:mousedown', { target: adentro });
+    d.disparar('mt-modal-tramo:click', { target: { closest: (selector) => (selector === '[data-cerrar]' ? {} : null) } });
+    assert.ok(!abierto(), 'la ×');
+
+    abrir();
+    d.disparar('mt-modal-tramo:mousedown', { target: adentro });
+    d.disparar('mt-modal-tramo:click', { target: adentro });
+    assert.ok(abierto(), 'un clic adentro');
+    d.disparar('mt-modal-tramo:mousedown', { target: adentro });
+    d.disparar('mt-modal-tramo:click', { target: velo });
+    assert.ok(abierto(), 'soltar en el velo una selección que empezó adentro');
+    d.disparar('mt-modal-tramo:mousedown', { target: velo });
+    d.disparar('mt-modal-tramo:click', { target: velo });
+    assert.ok(!abierto(), 'un clic en el velo');
+  });
+
+  it('un Escape antes de que termine la entrada: el foco queda en el botón de la banda, no va a la × del modal cerrado', () => {
+    const d = conDocumento();
+    const esperando = [];
+    const pagina = cargar({ document: d.documento, setTimeout: (fn) => esperando.push(fn), history: { replaceState() {} },
+      location: { pathname: '/reportes.html', search: '', hash: '' }, __vista: VISTA });
+    vm.runInContext('API.pedirJson = () => new Promise(() => {});', pagina);
+    pagina.iniciarReportes();
+    vm.runInContext("pagina.datos = { vista: __vista, sin_texto: '' };", pagina);
+    d.porId('mt-modal-contenido').querySelector = (selector) => (selector === '.modal-close' ? { focus: () => d.enfocados.push('×') } : null);
+    d.porId('mt-circuito').querySelector = () => ({ focus: () => d.enfocados.push('botón') });
+    const velo = d.porId('mt-modal-tramo');
+
+    pagina.abrirModalDelTramo('externa', 'respuesta');
+    assert.equal(esperando.length, 1);
+    d.disparar('document:keydown', { key: 'Escape' });
+    assert.ok(!velo.classList.contains('active'));
+    esperando.shift()();
+    assert.deepEqual(d.enfocados, ['botón']);
+
+    // Abierto, el foco va a la × cuando termina la entrada
+    pagina.abrirModalDelTramo('externa', 'respuesta');
+    esperando.shift()();
+    assert.deepEqual(d.enfocados, ['botón', '×']);
+  });
+
+  it('cargarMetricas cierra el modal antes de dibujar y el foco va al botón nuevo del mismo tramo', async () => {
+    const d = conDocumento();
+    const datos = { anio: 2026, anios: [2026], al: HOY, en_vivo: true, aviso_foto: null, fotos: [], vista: VISTA, cinta: cintasDeLaVista(VISTA, {}),
+      contexto: CONTEXTO, trabajo: TRABAJO, areas: AREAS, sin_titulos: [], sin_texto: '' };
+    const pagina = cargar({ document: d.documento, setTimeout: (fn) => fn(), history: { replaceState() {} },
+      location: { pathname: '/reportes.html', search: '', hash: '' }, __datos: datos });
+    const velo = d.porId('mt-modal-tramo');
+    // La banda anota si se dibujó con el modal abierto, y tiene el botón del aviso solo después de dibujarse
+    const circuito = d.porId('mt-circuito');
+    const dibujos = [];
+    let banda = '';
+    Object.defineProperty(circuito, 'innerHTML', {
+      get: () => banda,
+      set: (html) => { dibujos.push(velo.classList.contains('active') ? 'con el modal abierto' : 'con el modal cerrado'); banda = html; }
+    });
+    circuito.querySelector = (selector) => (selector === 'button[data-tramo="aviso"][data-gestion="externa"]' && banda.includes('data-tramo="aviso"')
+      ? { focus: () => d.enfocados.push('el botón nuevo') } : null);
+    vm.runInContext('API.pedirJson = async (metodo, ruta) => ({ data: ruta.startsWith("/metricas") ? __datos : [] }); pagina.datos = __datos;', pagina);
+    pagina.abrirModalDelTramo('externa', 'aviso');
+    assert.ok(velo.classList.contains('active'));
+    await pagina.cargarMetricas();
+    assert.ok(!velo.classList.contains('active'));
+    assert.equal(d.app.inert, false);
+    assert.equal(d.body.style.overflow, '');
+    assert.deepEqual(dibujos, ['con el modal cerrado']);
+    assert.equal(d.enfocados.at(-1), 'el botón nuevo');
+    assert.equal(d.porId('mt-contenido').hidden, false);
   });
 });
 
@@ -634,19 +1273,20 @@ describe('reportes.js: los casos', () => {
     assert.ok(html.includes(`<td>${caso.aviso.fecha.split('-').reverse().join('/')}<span class="d">avisado ya vencido · ${caso.aviso.que}</span></td>`));
     assert.ok(html.includes('<td>—<span class="d pend">pendiente de carga</span></td>'));
     assert.ok(html.includes(`<td>—<span class="d curso">${caso.recibido.texto}</span></td>`), caso.recibido.texto);
-    // Con la nota DGMIT, su número y su tipo; con los datos, el origen
+    // Con la nota DGMIT, su número y su tipo; con los datos, el origen. Los días, como los arma el servidor: corridos y, entre paréntesis,
+    // hábiles (spec 2026-11-07-metricas-cajones-y-ciclos, 4)
     const conTodo = {
       dataset_id: 5, titulo: 'Un dataset', area: 'Un área', gestion: 'externa', contar: true, vencimiento: '2026-07-31',
-      aviso: { fecha: '2026-06-21', texto: '40 días corridos antes del vencimiento', que: 'Nota Digital 2/26' },
-      nota: { numero: '156/26', tipo: 'Solicitud', texto: '3 días corridos desde el aviso' },
+      aviso: { fecha: '2026-06-21', texto: '40 días corridos (29 hábiles) antes del vencimiento', que: 'Nota Digital 2/26' },
+      nota: { numero: '156/26', tipo: 'Solicitud', texto: '3 días corridos (en el día, en días hábiles) desde el aviso' },
       recibido: { fecha: '2026-08-04', texto: 'en el día', origen: 'Los entregó el área' },
-      carga: { fecha: '2026-08-05', texto: '1 día corrido desde que se recibió' }
+      carga: { fecha: '2026-08-05', texto: '1 día corrido (1 hábil) desde que se recibió' }
     };
     const fila = ctx.htmlDeCasos({ casos: [conTodo] }, POR_DEFECTO, { anio: 2026, editable: true });
-    assert.ok(fila.includes('<td>21/06/2026<span class="d">40 días corridos antes del vencimiento · Nota Digital 2/26</span></td>'));
-    assert.ok(fila.includes('<td>156/26<span class="d">Solicitud · 3 días corridos desde el aviso</span></td>'));
+    assert.ok(fila.includes('<td>21/06/2026<span class="d">40 días corridos (29 hábiles) antes del vencimiento · Nota Digital 2/26</span></td>'));
+    assert.ok(fila.includes('<td>156/26<span class="d">Solicitud · 3 días corridos (en el día, en días hábiles) desde el aviso</span></td>'));
     assert.ok(fila.includes('<td>04/08/2026<span class="d">en el día · Los entregó el área</span></td>'));
-    assert.ok(fila.includes('<td>05/08/2026<span class="d">1 día corrido desde que se recibió</span></td>'));
+    assert.ok(fila.includes('<td>05/08/2026<span class="d">1 día corrido (1 hábil) desde que se recibió</span></td>'));
   });
 
   it('el título de los casos y la lista vacía', () => {
@@ -660,7 +1300,6 @@ describe('reportes.js: los casos', () => {
     const habiles = ctx.htmlDeCasos(VISTA, POR_DEFECTO, { anio: 2026, editable: true });
     assert.match(habiles, /<p class="mt-pie">Destildar un dataset lo saca de todas las cuentas de esta página/);
     assert.doesNotMatch(habiles, /Debajo de cada fecha/);
-    assert.doesNotMatch(ctx.htmlDeCasos(VISTA, { ...POR_DEFECTO, dias: 'corridos' }, { anio: 2026, editable: true }), /Debajo de cada fecha/);
     assert.match(ctx.htmlDeCasos(VISTA, POR_DEFECTO, { anio: 2026, editable: false }), /se calculó con todos los datasets: no se puede destildar/);
   });
 });
@@ -686,11 +1325,12 @@ describe('reportes.js: el índice de la página', () => {
 });
 
 describe('reportes.js: los resultados del año', () => {
-  // Los resultados de la maqueta 4 (datos reales al 24/10/2026), con los textos como los arma el servidor
+  // Los resultados de la maqueta 4 (datos reales al 24/10/2026), con los textos como los arma el servidor; los 88 días corridos del
+  // «después» son inventados
   const RESULTADOS = {
     a_tiempo: {
       a_tiempo: 5, total: 33, externa: [4, 27], interna: [1, 6],
-      despues: { valor: 61, texto: 'Los otros 28 se cargaron una mediana de 61 días hábiles después.' }
+      despues: { valor: 61, texto: 'Los otros 28 se cargaron una mediana de 88 días corridos (61 hábiles) después.' }
     },
     cobertura: { si: 34, total: 35, faltan: [{ titulo: 'Listado de Proveedores', venc: '2026-01-31', motivo: 'sin el aviso de la regla' }] },
     reiteraciones: { rpad: { ninguna: 5, una: 3, dos_o_mas: 39, total: 47 }, dgmit: null },
@@ -707,12 +1347,12 @@ describe('reportes.js: los resultados del año', () => {
     }
   };
 
-  it('htmlDeResultados: «5 de 33 ciclos» y «una mediana de 61 días hábiles después»', () => {
+  it('htmlDeResultados: «5 de 33 ciclos» y «una mediana de 88 días corridos (61 hábiles) después»', () => {
     const html = ctx.htmlDeResultados({ resultados: RESULTADOS });
     // Actualizados a tiempo: la cifra con «de 33 ciclos» del servidor, el medidor, el texto de después y el desglose
     assert.match(html, /<h3 id="mt-res-a-tiempo">Actualizados a tiempo<\/h3>/);
     assert.match(html, /<div class="mt-heroe">5 <small>de 33 ciclos<\/small><\/div><div class="mt-medidor" aria-hidden="true"><i style="width:15%"><\/i><\/div>/);
-    assert.ok(html.includes('<p class="mt-texto">Cargados en el portal hasta el día del vencimiento. Los otros 28 se cargaron una mediana de 61 días hábiles después.</p>'));
+    assert.ok(html.includes('<p class="mt-texto">Cargados en el portal hasta el día del vencimiento. Los otros 28 se cargaron una mediana de 88 días corridos (61 hábiles) después.</p>'));
     assert.ok(html.includes('<p class="mt-texto s">Externa: 4 de 27 · Interna: 1 de 6</p>'));
     // La cobertura: la cifra, la regla y el que falta, con su vencimiento y su motivo
     assert.match(html, /<div class="mt-heroe">34 <small>de 35 vencimientos<\/small><\/div><div class="mt-medidor" aria-hidden="true"><i style="width:97%"><\/i><\/div>/);
@@ -998,6 +1638,12 @@ describe('reportes.js: lo que llega del servidor', () => {
     const t = { ...tramo('aviso', 27), nombre: malo, desde_hasta: malo, responsable: malo };
     t.cifra = { ...t.cifra, texto: malo, unidad: malo, debajo: malo };
     sinMalo(ctx.htmlDeFlecha(t), 'flecha');
+    // La frase y los hábiles (spec 2026-11-07-metricas-cajones-y-ciclos, 3), también en el cajón del aviso
+    const conFrase = ctx.htmlDeFlecha({ ...tramo('respuesta', 64), como_se_cuenta: malo, habiles_texto: malo });
+    sinMalo(conFrase, 'frase y hábiles');
+    assert.equal(cuantas(conFrase, /&lt;b&gt;x&lt;\/b&gt;/g), 2, 'la frase y los hábiles');
+    sinMalo(ctx.htmlDeFlecha({ ...tramo('aviso', 51), anticipacion_texto: 'días corridos de anticipación', habiles_texto: malo }), 'hábiles del aviso');
+    sinMalo(ctx.htmlDeFlecha({ ...tramo('respuesta', null), como_se_cuenta: malo }), 'frase sin cifra');
     sinMalo(ctx.htmlDeFlecha({ ...tramo('tramite', null), vacio: { titulo: malo, texto: malo }, en_curso: { n: 1, valor: 1, texto: malo } }), 'flecha vacía');
     const caso = {
       dataset_id: 5, titulo: malo, area: malo, gestion: 'externa', contar: false, vencimiento: malo,
@@ -1053,8 +1699,8 @@ describe('reportes.js: lo que llega del servidor', () => {
     assert.ok(svg.includes(`<text x="0" y="${cinta.alturas.ticks}" class="tick">−40</text>`));
     assert.ok(svg.includes('<text x="0" y="26" text-anchor="start" class="rotulo r-tinta">r</text>'));
     // Los textos con un 0 que manda el servidor van tal cual
-    const flecha = ctx.htmlDeFlecha({ ...tramo('tramite', null), vacio: { titulo: SIN_NOTAS_DGMIT, texto: '0 notas pendientes de carga de ciclos abiertos' } });
-    assert.match(flecha, /<span class="c pend">0 notas pendientes de carga de ciclos abiertos<\/span>/);
+    const flecha = ctx.htmlDeFlecha({ ...tramo('respuesta', null), vacio: { titulo: 'Sin datos todavía', texto: '0' }, como_se_cuenta: '0' });
+    assert.match(flecha, /<span class="c">0<\/span><span class="c">0<\/span>/);
     const caso = { ...VISTA.casos[0], carga: { fecha: '2026-03-02', texto: '0' } };
     assert.match(ctx.htmlDeCasos({ casos: [caso] }, POR_DEFECTO, { anio: 2026, editable: true }), /<td>02\/03\/2026<span class="d">0<\/span><\/td>/);
     // Y nada dice NaN, null ni undefined con datos que faltan
@@ -1216,11 +1862,12 @@ describe('reportes.js: la pestaña Reportes', () => {
     assert.equal(select(ELEGIDO), '<select id="rp-metricas-anio" class="mt-select" data-selector="rp-metricas"><option value="2027" selected>2027 (en curso)</option><option value="2026">2026</option></select>');
     assert.match(select({ ...ELEGIDO, metricas: 2026 }), /<option value="2027">2027 \(en curso\)<\/option><option value="2026" selected>2026<\/option>/);
     // El pedido: lo de la pestaña (consultaDeLaApi) con el año de la tarjeta; el en curso no se escribe
-    const estado = { ...POR_DEFECTO, estadistico: 'promedio', dias: 'corridos', gestion: 'interna', sin: [12, 45] };
+    // (sin los días, que no son un selector: un estado que todavía los trae no los manda)
+    const estado = { ...POR_DEFECTO, estadistico: 'promedio', dias: 'habiles', gestion: 'interna', sin: [12, 45] };
     assert.deepEqual(pedido('metricas', ELEGIDO, { estado, anios: dosAnios }),
-      { ruta: '/metricas/pdf?estadistico=promedio&dias=corridos&sin=12,45', nombre: 'Metricas-RPAD-2027.pdf' });
+      { ruta: '/metricas/pdf?estadistico=promedio&sin=12,45', nombre: 'Metricas-RPAD-2027.pdf' });
     assert.deepEqual(pedido('metricas', { ...ELEGIDO, metricas: 2026 }, { estado, anios: dosAnios }),
-      { ruta: '/metricas/pdf?anio=2026&estadistico=promedio&dias=corridos&sin=12,45', nombre: 'Metricas-RPAD-2026.pdf' });
+      { ruta: '/metricas/pdf?anio=2026&estadistico=promedio&sin=12,45', nombre: 'Metricas-RPAD-2026.pdf' });
     assert.deepEqual(pedido('metricas', { ...ELEGIDO, metricas: 2027 }, { anios: dosAnios }), { ruta: '/metricas/pdf', nombre: 'Metricas-RPAD-2027.pdf' });
     // Un año que no es de los del servidor no vale: el en curso
     assert.deepEqual(pedido('metricas', { ...ELEGIDO, metricas: 2020 }, { anios: dosAnios }), { ruta: '/metricas/pdf', nombre: 'Metricas-RPAD-2027.pdf' });
@@ -1289,7 +1936,7 @@ describe('reportes.js: la pestaña Reportes', () => {
     // Un año que no es de los del servidor no vale: el en curso
     assert.deepEqual(pedido('ciclo', { ...ELEGIDO, ciclo: 2020 }, { anios: dosAnios }), { ruta: '/reportes/ciclo-de-vida', nombre: 'Ciclo-de-vida-del-dato-2027.pdf' });
     // Lo de la pestaña Métricas no llega: ni su año (el de Métricas del año), ni la combinación, ni los destildados
-    const estado = { ...POR_DEFECTO, anio: 2026, estadistico: 'promedio', dias: 'corridos', gestion: 'interna', sin: [12, 45] };
+    const estado = { ...POR_DEFECTO, anio: 2026, estadistico: 'promedio', gestion: 'interna', sin: [12, 45] };
     assert.deepEqual(pedido('ciclo', { ...ELEGIDO, metricas: 2026 }, { estado, anios: dosAnios }), { ruta: '/reportes/ciclo-de-vida', nombre: 'Ciclo-de-vida-del-dato-2027.pdf' });
     assert.match(select({ ...ELEGIDO, metricas: 2026 }, dosAnios), /<option value="2027" selected>2027 \(en curso\)<\/option>/);
     // Lo elegido en la tarjeta: el año como número; lo que no es un año no cambia nada. De entrada, ninguno (el en curso)
@@ -1692,7 +2339,9 @@ describe('reportes.html', () => {
       'mt-contexto', 'mt-trabajo', 'mt-bajada-trabajo', 'mt-manuales', 'mt-auditoria', 'mt-csv', 'mt-areas', 'mt-completar']) {
       assert.equal(cuantas(html, new RegExp(`id="${id}"`, 'g')), 1, id);
     }
-    assert.ok(html.includes('Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio» o «Días corridos», cada cifra lo dice debajo.'));
+    // El pie del circuito, sin «Días corridos», que ya no es un selector (spec 2026-11-07-metricas-cajones-y-ciclos, 4)
+    assert.ok(html.includes('<p class="mt-pie">Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio», cada cifra lo dice debajo.</p>'));
+    assert.doesNotMatch(html, /«Días corridos»|«Días hábiles»/);
     // «No hay métricas de ese año» no escribe un año a mano
     const sinDatos = html.match(/<div class="mt-estado" id="mt-sin-datos"[\s\S]*?<\/div>/)?.[0] ?? '';
     assert.match(sinDatos, /<h2>No hay métricas de ese año<\/h2>/);
@@ -1751,6 +2400,121 @@ describe('reportes.html', () => {
     assert.match(html, /--sg-tinta: #1A365D;/);
     assert.match(html, /--sg-violeta: #5B4691;/);
   });
+
+  // El modal de cada tramo (spec 2026-11-07-metricas-cajones-y-ciclos, 5): el de main.css, vacío (lo llena reportes.js), hijo de <body>
+  // después de .app-container (que queda inerte mientras está abierto) y antes de los scripts
+  it('el modal de cada tramo: después de .app-container y antes de los scripts, con su título como nombre', () => {
+    assert.match(html, /<\/main>\s*<\/div>\s*(?:<!--(?:(?!-->)[\s\S])*-->\s*)?<div class="modal-overlay" id="mt-modal-tramo">\s*<div class="modal mt-modal" role="dialog" aria-modal="true" aria-labelledby="mt-modal-titulo" id="mt-modal-contenido"><\/div>\s*<\/div>\s*<!-- Scripts -->/);
+    for (const id of ['mt-modal-tramo', 'mt-modal-contenido']) assert.equal(cuantas(html, new RegExp(`id="${id}"`, 'g')), 1, id);
+    // El título lo pone reportes.js (htmlDelModal): el HTML no lo trae
+    assert.doesNotMatch(html, /id="mt-modal-titulo"/);
+  });
+
+  describe('el CSS de la banda y del modal', () => {
+    // Una regla del <style>, de su selector a su llave de cierre; un bloque @media entero
+    const regla = (selector) => {
+      const desde = html.indexOf(`${selector} {`);
+      assert.notEqual(desde, -1, selector);
+      return html.slice(desde, html.indexOf('}', desde));
+    };
+    const bloque = (inicio) => {
+      const desde = html.indexOf(inicio);
+      assert.notEqual(desde, -1, inicio);
+      let abiertas = 0;
+      for (let i = html.indexOf('{', desde); i < html.length; i++) {
+        if (html[i] === '{') abiertas++;
+        if (html[i] === '}' && --abiertas === 0) return html.slice(desde, i + 1);
+      }
+      return assert.fail(`${inicio}: sin cierre`);
+    };
+    // Un color: un #RRGGBB o un token --sg- de :root
+    const hexDe = (valor) => {
+      const token = /^var\((--[\w-]+)\)$/.exec(valor.trim());
+      return token ? new RegExp(`${token[1]}: (#[0-9A-Fa-f]{6});`).exec(html)[1] : valor.trim();
+    };
+    // El contraste de dos colores #RRGGBB (WCAG 2.1)
+    const luminancia = (hex) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+        .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contraste = (uno, otro) => {
+      const [claro, oscuro] = [luminancia(uno), luminancia(otro)].sort((a, b) => b - a);
+      return (claro + 0.05) / (oscuro + 0.05);
+    };
+
+    it('el botón de la banda tiene la letra y el lugar del nodo, y su foco se ve adentro de la flecha', () => {
+      const boton = regla('button.mt-nodo');
+      for (const declaracion of ['font: inherit;', 'text-align: left;', 'border: 0;', 'width: 100%;']) assert.ok(boton.includes(declaracion), declaracion);
+      // Gana a la regla común del foco de la página (.mt-pagina button:focus-visible) por especificidad: el contorno de afuera no va
+      assert.match(regla('.mt-pagina button.mt-nodo:focus-visible'), /outline: 3px solid #fff; outline-offset: -\d+px; box-shadow: none;/);
+      // Desde 961 px el nodo entra 10 px en la muesca del siguiente (margin-right: -10px): el botón también (un <div> se estira solo)
+      assert.match(bloque('@media (min-width: 961px) {'), /button\.mt-nodo \{ width: calc\(100% \+ 10px\); \}/);
+      // «Ver los ciclos», subrayado y en blanco
+      assert.match(regla('.mt-ver span'), /text-decoration: underline;/);
+      assert.match(regla('.mt-ver'), /color: #fff;/);
+    });
+
+    it('con forced-colors, el botón conserva su borde', () => {
+      const altoContraste = bloque('@media (forced-colors: active) {');
+      assert.match(altoContraste, /button\.mt-nodo \{ border: 1px solid CanvasText; \}/);
+      // En fila, con el margen de 8 px de los nodos en alto contraste
+      assert.match(bloque('@media (forced-colors: active) and (min-width: 961px) {'), /button\.mt-nodo \{ width: calc\(100% - 8px\); \}/);
+      // El gráfico y las marcas de la leyenda, con los colores del sistema: lo lleno sigue lleno y el aro, aro; los textos, con la misma
+      // especificidad que sus reglas de color (van después)
+      const delModal = /@media \(forced-colors: active\) \{\s*\.mt-grafico, \.mt-modal-leyenda svg \{ forced-color-adjust: none; \}[^@]*?\n {8}\}/.exec(html)?.[0] ?? '';
+      assert.match(delModal, /\.mt-grafico \.eje-n, \.mt-grafico \.eje-r, \.mt-grafico \.linea-r, \.mt-grafico \.mas \{ fill: CanvasText; \}/);
+      assert.match(delModal, /\.mt-grafico \.p-cuenta circle, \.mt-ley-cuenta circle \{ fill: CanvasText; stroke: Canvas; \}/);
+      assert.match(delModal, /\.mt-grafico \.p-curso circle, \.mt-ley-curso circle \{ fill: Canvas; stroke: CanvasText; \}/);
+      assert.ok(html.indexOf('.mt-grafico .eje-n, .mt-grafico .eje-r {') < html.indexOf(delModal));
+    });
+
+    it('el modal: de 900 px, la × con 4,5:1 sobre el blanco, el cuerpo se desplaza adentro y la página de atrás no se mueve', () => {
+      assert.match(regla('.modal.mt-modal'), /max-width: 900px;/);
+      const color = /(?:^|[ ;{])color: ([^;]+);/.exec(regla('.mt-modal .modal-close'))[1];
+      assert.ok(contraste(hexDe(color), '#FFFFFF') >= 4.5, `${color}: ${contraste(hexDe(color), '#FFFFFF').toFixed(2)}:1`);
+      const alPasar = /(?:^|[ ;{])color: ([^;]+);/.exec(regla('.mt-modal .modal-close:hover'))[1];
+      assert.ok(contraste(hexDe(alPasar), hexDe(/background: ([^;]+);/.exec(regla('.mt-modal .modal-close:hover'))[1])) >= 4.5, alPasar);
+      assert.match(regla('.mt-modal .modal-body'), /overscroll-behavior: contain;/);
+      assert.match(regla('#mt-modal-tramo'), /overscroll-behavior: contain;/);
+      // El foco visible de la carcasa: el modal va fuera de .mt-pagina
+      assert.match(regla('.mt-modal :focus-visible'), /outline: 3px solid var\(--tinta\); outline-offset: 2px; box-shadow: 0 0 0 5px var\(--sol-fuerte\);/);
+    });
+
+    // El gráfico, desde 800 px de ancho: más angosto, su letra (12 en un ancho fijo de 760) baja de 9 px
+    it('por debajo de 800 px, sin el gráfico; en el teléfono, la tabla se desplaza de costado en su marco', () => {
+      const sinGrafico = bloque('@media (max-width: 799px) {');
+      assert.match(sinGrafico, /\.mt-grafico \{ display: none; \}/);
+      assert.doesNotMatch(html, /@media \(max-width: 599px\) \{[^@]*\.mt-grafico/);
+      assert.equal(cuantas(html, /\.mt-grafico \{ display: none; \}/g), 1);
+      assert.match(regla('.mt-modal-tabla'), /overflow-x: auto;/);
+      assert.match(regla('.mt-modal-tabla table.mt-tabla'), /min-width: \d+px;/);
+      assert.match(regla('.mt-modal-tabla td:last-child'), /white-space: nowrap;/);
+    });
+
+    it('con prefers-reduced-motion, el modal aparece sin achicarse ni agrandarse', () => {
+      const quieto = bloque('@media (prefers-reduced-motion: reduce) {');
+      assert.match(quieto, /\.mt-modal, \.modal-overlay\.active \.mt-modal \{ transform: none; transition: none; \}/);
+    });
+
+    it('los textos del modal y sus marcas: 4,5:1 o más sobre el blanco; las marcas y los puntos, 3:1', () => {
+      for (const [selector, propiedad] of [['.mt-modal-quien', 'color'], ['.mt-modal-cifra .n small', 'color'], ['.mt-modal-cifra .u', 'color'],
+        ['.mt-modal-cifra .o', 'color'], ['.mt-modal-tabla .mt-curso', 'color'], ['.mt-modal-tabla .mt-pend', 'color'], ['.mt-grafico .eje-n, .mt-grafico .eje-r', 'fill'],
+        ['.mt-grafico .linea-r', 'fill'], ['.mt-grafico .mas', 'fill']]) {
+        const valor = new RegExp(`(?:^|[ ;{])${propiedad}: ([^;]+);`).exec(regla(selector))[1];
+        assert.ok(contraste(hexDe(valor), '#FFFFFF') >= 4.5, `${selector}: ${valor}`);
+      }
+      // Los colores de los tramos (el número de la cifra, los puntos y la marca de la leyenda) y el aro ámbar
+      for (const token of ['--sg-tinta', '--sg-violeta', '--sg-del-area', '--sg-ambar']) assert.ok(contraste(hexDe(`var(${token})`), '#FFFFFF') >= 4.5, token);
+      for (const color of ['tinta', 'violeta', 'area']) assert.ok(html.includes(`.mt-color-${color} { --mt-color: var(--sg-${color === 'area' ? 'del-area' : color}); }`), color);
+      assert.match(regla('.mt-grafico .p-cuenta circle'), /fill: var\(--mt-color\); stroke: #fff; stroke-width: 2;/);
+      assert.match(regla('.mt-grafico .p-curso circle'), /fill: #fff; stroke: var\(--sg-ambar\); stroke-width: 2;/);
+      // La línea del eje: 3:1 sobre el blanco
+      assert.ok(contraste(hexDe(/stroke: ([^;]+);/.exec(regla('.mt-grafico .eje'))[1]), '#FFFFFF') >= 3);
+      // El gráfico usa la letra con que lo mide el servidor
+      assert.match(regla('.mt-grafico text'), new RegExp(`font-size: ${GRAFICO.letra}px;`));
+    });
+  });
 });
 
 // El PDF de Métricas (services/reportesMetricasPdf.js) escribe los textos fijos de la pestaña: la página los tiene en su HTML y en
@@ -1761,7 +2525,14 @@ describe('reportes.js y el PDF de Métricas: los mismos textos', () => {
   const fuente = leer('js/reportes.js');
 
   it('la bajada, el pie del circuito, los nombres de las secciones y lo de la doble verificación', () => {
-    for (const dias of ['habiles', 'corridos']) assert.ok(ctx.textoDeLaBajada(dias).endsWith(` ${T.bajada[dias]}`), dias);
+    // La bajada de los días (spec 2026-11-07-metricas-cajones-y-ciclos, 4): la de la pestaña termina con la oración con que empieza
+    // «Cómo se cuenta» del PDF
+    assert.equal(T.bajada, 'Los días van corridos y, entre paréntesis, hábiles: de lunes a viernes, sin feriados ni días no laborables.');
+    assert.ok(ctx.textoDeLaBajada().endsWith(` ${T.bajada}`));
+    assert.ok(html.includes(`<p class="mt-bajada" id="mt-bajada">${ctx.textoDeLaBajada()}</p>`));
+    // El pie del circuito, sin «Días corridos»
+    assert.equal(T.pieDelCircuito, 'Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio», cada cifra lo dice debajo.');
+    assert.ok(html.includes(`<p class="mt-pie">${T.pieDelCircuito}</p>`));
     for (const t of [T.pieDelCircuito, T.pieDeLaAuditoria, T.titulos.manuales, T.titulos.auditoria, T.titulos.resultados, T.titulos.contexto,
       T.titulos.trabajo, T.titulos.areas]) {
       assert.ok(html.includes(t), t);
@@ -1776,12 +2547,16 @@ describe('reportes.js y el PDF de Métricas: los mismos textos', () => {
     assert.equal(T.bajadaDelTrabajo(2026), 'Lo que hizo el sistema y el equipo de Datos Públicos en 2026.');
   });
 
-  it('el circuito: los roles de los nodos, «con tan pocos casos, es orientativo» y «Se cuenta hasta…»', () => {
+  // «Se cuenta hasta que se registra la actualización.» ya no va: cada cajón dice su frase, que arma el servidor (spec
+  // 2026-11-07-metricas-cajones-y-ciclos, 3), y los en curso van en el modal de la página y en «Cómo se cuenta» del PDF
+  it('el circuito: los roles de los nodos y «con tan pocos casos, es orientativo»; sin «Se cuenta hasta…»', () => {
     const circuitos = ctx.htmlDeCircuito(VISTA, 'externa') + ctx.htmlDeCircuito(VISTA, 'interna');
     for (const rol of Object.values(T.roles)) assert.ok(circuitos.includes(`<span class="r">${rol}</span>`), rol);
     const flecha = ctx.htmlDeFlecha(tramo('produccion', 3, { ciclos: 2, en_curso: { n: 1, valor: 9, texto: '1 sin datos registrados todavía, hace 9 días hábiles (mediana)' } }));
     assert.ok(flecha.includes(`<span class="o">${T.orientativo}</span>`));
-    assert.ok(flecha.includes(`<span class="c">${T.seCuentaHasta}</span>`));
+    assert.equal(T.seCuentaHasta, undefined);
+    assert.doesNotMatch(fuente, /SE_CUENTA_HASTA|Se cuenta hasta/);
+    assert.doesNotMatch(flecha, /Se cuenta hasta/);
   });
 
   it('el cajón del aviso: las dos puntas de la línea y el tramo real con su frase', () => {

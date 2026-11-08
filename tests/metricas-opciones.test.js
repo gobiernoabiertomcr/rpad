@@ -11,7 +11,8 @@ const SE_REINTENTA = 'La foto de 2026 todavía no se sacó: se reintenta en la p
 
 describe('opcionesDeMetricas', () => {
   const opciones = (query, hoy = '2026-10-24', aniosConFoto = []) => opcionesDeMetricas(query, { hoy, aniosConFoto });
-  const DE_ENTRADA = { anio: 2026, al: '2026-10-24', en_vivo: true, aviso_foto: null, estadistico: 'mediana', dias: 'habiles', gestion: 'externa' };
+  // Los días van siempre corridos (spec 2026-11-07-metricas-cajones-y-ciclos, 4: sin selector; los hábiles van entre paréntesis)
+  const DE_ENTRADA = { anio: 2026, al: '2026-10-24', en_vivo: true, aviso_foto: null, estadistico: 'mediana', dias: 'corridos', gestion: 'externa' };
 
   // Review Focus 2
   it('los valores inválidos caen a los de entrada y sin acepta solo enteros positivos, sin repetidos', () => {
@@ -29,10 +30,22 @@ describe('opcionesDeMetricas', () => {
   });
 
   it('los valores válidos pasan, y sin conserva el orden pedido', () => {
-    assert.deepEqual(opciones({ anio: '2026', sin: '45,12,45', estadistico: 'promedio', dias: 'corridos', gestion: 'interna' }), {
-      ...DE_ENTRADA, estadistico: 'promedio', dias: 'corridos', gestion: 'interna', sin: [45, 12]
+    assert.deepEqual(opciones({ anio: '2026', sin: '45,12,45', estadistico: 'promedio', gestion: 'interna' }), {
+      ...DE_ENTRADA, estadistico: 'promedio', gestion: 'interna', sin: [45, 12]
     });
     assert.equal(opciones({ anio: 2026 }).anio, 2026);
+  });
+
+  // Spec 2026-11-07-metricas-cajones-y-ciclos, 4: sin selector de días. `dias` no se lee: un link viejo con ?dias=habiles se abre igual,
+  // en días corridos con los hábiles entre paréntesis (Review Focus 1)
+  it('dias es siempre corridos: no se lee de la consulta', () => {
+    for (const query of [{ dias: 'habiles' }, { dias: 'corridos' }, { dias: 'x' }, { dias: ['habiles'] }, {}, undefined]) {
+      assert.equal(opciones(query).dias, 'corridos', JSON.stringify(query));
+    }
+    assert.deepEqual(opciones({ dias: 'habiles', estadistico: 'promedio' }), { ...DE_ENTRADA, estadistico: 'promedio', sin: [] });
+    // También en un año cerrado, con foto o sin ella
+    assert.equal(opciones({ anio: '2026', dias: 'habiles' }, '2027-03-01', [2026]).dias, 'corridos');
+    assert.equal(opciones({ anio: '2026', dias: 'habiles' }, '2027-03-01').dias, 'corridos');
   });
 
   it('sin: dígitos y nada más (con espacios alrededor), un número seguro y mayor que 0; también repetido en la URL', () => {

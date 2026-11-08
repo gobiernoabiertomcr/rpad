@@ -24,6 +24,7 @@ import { estadoDelDataset, tasaDeActualizacion, cumplimientoPorArea } from './fe
 import { normalizarRequiereNota, requiereNotaResultante } from './requiereNotaReglas.js';
 import { ORIGENES_DATOS, textoOrigen } from './registroReglas.js';
 import { TEXTO_TIPO_NOTA_DGMIT } from './notasDgmitReglas.js';
+import { graficoDelTramo } from './metricasGrafico.js';
 
 // Los selectores de la página (spec, 1.7): el primero de cada uno es el de entrada
 export const ESTADISTICOS = Object.freeze(['mediana', 'promedio']);
@@ -108,6 +109,27 @@ export const unidadDe = (valor, dias) => {
   const corridos = dias === 'corridos';
   if (valor === 1) return corridos ? 'día corrido' : 'día hábil';
   return corridos ? 'días corridos' : 'días hábiles';
+};
+
+// Las dos unidades juntas (spec 2026-11-07-metricas-cajones-y-ciclos, 4): primero los corridos y, entre paréntesis, los hábiles, contados
+// con las mismas fechas. «En el día» se decide con los corridos: los hábiles nunca son más. Sin los hábiles (null), los corridos solos.
+const corridosDe = (corridos) => `${corridos} ${unidadDe(corridos, 'corridos')}`;
+const habilesDe = (habiles) => `${habiles} ${habiles === 1 ? 'hábil' : 'hábiles'}`;
+
+// Una duración terminada: «64 días corridos (45 hábiles)», «1 día corrido (1 hábil)»; con corridos y 0 hábiles, «3 días corridos (en
+// el día, en días hábiles)»; con 0 corridos, «en el día»
+export const cantidadDeLasDos = (corridos, habiles) => {
+  if (corridos === 0) return 'en el día';
+  if (!Number.isFinite(habiles)) return corridosDe(corridos);
+  return `${corridosDe(corridos)} (${habiles === 0 ? 'en el día, en días hábiles' : habilesDe(habiles)})`;
+};
+
+// Lo que lleva en curso: «150 días corridos (102 hábiles)»; con 0 hábiles, «3 días corridos (menos de 1 hábil)»; con 0 corridos,
+// «menos de 1 día corrido»
+export const haceDeLasDos = (corridos, habiles) => {
+  if (corridos === 0) return `menos de 1 ${unidadDe(1, 'corridos')}`;
+  if (!Number.isFinite(habiles)) return corridosDe(corridos);
+  return `${corridosDe(corridos)} (${habiles === 0 ? 'menos de 1 hábil' : habilesDe(habiles)})`;
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -316,6 +338,16 @@ const TRAMOS = Object.freeze({
   carga: Object.freeze({ nombre: 'Preparación y carga', desde_hasta: 'De la entrega a la carga', responsable: 'DDPC', dgmit: false })
 });
 
+// Cómo se cuenta cada tramo, la frase del cajón (spec 2026-11-07-metricas-cajones-y-ciclos, 3), con las siglas con artículo. No va en
+// TRAMOS: tramoDelCircuito lo copia entero y lo lee el Ciclo de vida del dato, que sigue con `desde_hasta`
+export const COMO_SE_CUENTA = Object.freeze({
+  aviso: 'Se cuenta desde que el RPAD avisa hasta el vencimiento.',
+  tramite: 'Se cuenta desde que la DGMIT y la DA reciben el aviso hasta que entregan la nota.',
+  respuesta: 'Se cuenta desde que la DGMIT y la DA entregan la nota hasta que la DDPC recibe la actualización.',
+  produccion: 'Se cuenta desde que la DGMIT y la DIT reciben el aviso hasta que entregan el relevamiento a la DDPC.',
+  carga: 'Se cuenta desde que la DDPC recibe la actualización hasta la carga en el portal.'
+});
+
 // Los tramos de cada gestión, en el orden del circuito
 const TRAMOS_DE_LA_GESTION = Object.freeze({
   externa: Object.freeze(['aviso', 'tramite', 'respuesta', 'carga']),
@@ -402,6 +434,14 @@ const hechosDe = (caso, ctx) => {
 };
 
 const enElAnio = (dia, ctx) => dia !== null && dia >= ctx.inicio && dia <= ctx.al;
+// El vencimiento es del año (también después de `al`: el aviso anticipado se conoce entero cuando sale el aviso)
+const venceEnElAnio = (h, ctx) => h.venc !== null && h.venc >= ctx.inicio && h.venc <= ctx.fin;
+
+// Un vencimiento de la cobertura del aviso (Ruling 5): del año y que ya esperaba el aviso de la regla en `al` (esperabaElAviso: su día,
+// el hábil desde la fecha de la regla, ya pasó y el ciclo regía en el RPAD ese día; revisión final, A-1 y A-2), desde que hay registro de
+// los avisos. Lo usan la cobertura de resultadosDe y «Cómo se cuenta» del aviso anticipado, en el modal del tramo
+const esDeLaCobertura = (h, ctx) => venceEnElAnio(h, ctx) && h.fechaRegla !== null && h.fechaRegla >= INICIO_DEL_REGISTRO
+  && esperabaElAviso(h, ctx.al);
 
 // Lo que un caso aporta a cada tramo (spec, 1.3 y 1.4), con los días del selector: `terminados`, los días de cada tramo cuyo hito
 // final cayó en el año (entre el 1/1 y `al`), y `enCurso`, los que lleva hasta `al` la respuesta o la producción que empezó y no
@@ -463,9 +503,9 @@ const textoDelMotivo = (h) => {
   return Object.hasOwn(MOTIVOS, motivo) ? MOTIVOS[motivo] : MOTIVOS['sin-aviso'];
 };
 
-// Por vencimiento (los que no lo tienen, al final), después por título y por dataset
-const porVencimiento = (a, b) => comparar(a.venc ?? '9999-12-31', b.venc ?? '9999-12-31')
-  || String(a.caso.titulo ?? '').localeCompare(String(b.caso.titulo ?? ''), 'es') || comparar(a.id, b.id);
+// Por título y por dataset; por vencimiento (los que no lo tienen, al final), después por título y por dataset
+const porTitulo = (a, b) => String(a.caso.titulo ?? '').localeCompare(String(b.caso.titulo ?? ''), 'es') || comparar(a.id, b.id);
+const porVencimiento = (a, b) => comparar(a.venc ?? '9999-12-31', b.venc ?? '9999-12-31') || porTitulo(a, b);
 
 const cantidadDeCiclos = (n) => (n === 1 ? '1 ciclo' : `${n} ciclos`);
 
@@ -484,6 +524,21 @@ const cifraDelTramo = (valores, ctx) => {
     debajo: cero ? `${ctx.estadistico} en ${NOMBRE_DE_LOS_DIAS[ctx.dias]}` : `${ctx.estadistico} de ${cantidadDeCiclos(n)}`,
     ciclos: n, ciclos_texto: cantidadDeCiclos(n), en_el_dia: cero, orientativo: n <= 4
   };
+};
+
+// Para leer una cifra que puede venir de una foto rota (los mismos que esObjeto y texto de services/reportesPdfBase.js, que dibuja con
+// PDFKit y no se importa desde estas reglas puras)
+const esObjeto = (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
+const comoTexto = (valor) => (typeof valor === 'string' ? valor : typeof valor === 'number' && Number.isFinite(valor) ? String(valor) : '');
+
+// «(53 días hábiles)»: la cifra del mismo tramo en días hábiles, con el texto y la unidad de cifraDelTramo (spec
+// 2026-11-06-metricas-anticipacion-y-corridos, 6; el PDF de Métricas la importa de acá). Nada si falta alguna de las dos o si las
+// dos son «En el día»; con días corridos y 0 hábiles, «(En el día, en días hábiles)». `cifra` y `habil`: las cifras de vistaDe en días
+// corridos y en hábiles
+export const textoDeHabiles = (cifra, habil) => {
+  if (!esObjeto(cifra) || !esObjeto(habil)) return '';
+  if (habil.en_el_dia === true) return cifra.en_el_dia === true ? '' : `(${comoTexto(habil.texto)}, en días hábiles)`;
+  return `(${comoTexto(habil.texto)} ${comoTexto(habil.unidad)})`;
 };
 
 const cuantoHace = (valor, dias) => (valor === 0 ? `menos de 1 ${unidadDe(1, dias)}` : `${valor} ${unidadDe(valor, dias)}`);
@@ -506,11 +561,21 @@ export const textoEnCursoDeLosDos = (enCorridos, enHabiles, estadistico) => {
   if (!enCorridos) return '';
   const { n, valor: corridos } = enCorridos;
   if (!Number.isFinite(n) || !Number.isFinite(corridos) || !Number.isFinite(enHabiles?.valor)) return enCorridos.texto ?? '';
-  const { valor: habiles } = enHabiles;
-  const enHabilesTexto = habiles === 0 ? 'menos de 1 hábil' : `${habiles} ${habiles === 1 ? 'hábil' : 'hábiles'}`;
+  return `${n} sin datos registrados todavía, ${haceEnCursoDeLosDos(enCorridos, enHabiles, estadistico)}`;
+};
+
+// La parte de «hace» de los en curso con las dos unidades (spec 2026-11-07-metricas-cajones-y-ciclos, 4), la de textoEnCursoDeLosDos
+// después de «4 sin datos registrados todavía, »: «hace 116 días corridos (76 hábiles, mediana)»; con 0 hábiles, «… (menos de 1 hábil,
+// mediana)»; con los dos en 0, «hace menos de 1 día corrido (mediana)». Lee solo el `valor` de cada uno: sin uno finito en los
+// corridos, ''; en los hábiles, los corridos con el estadístico
+export const haceEnCursoDeLosDos = (enCorridos, enHabiles, estadistico) => {
+  const corridos = enCorridos?.valor;
+  if (!Number.isFinite(corridos)) return '';
+  const habiles = enHabiles?.valor;
   // Con los dos en 0, «menos de 1 día corrido» ya lo dice todo
-  const parentesis = corridos === 0 && habiles === 0 ? estadistico : `${enHabilesTexto}, ${estadistico}`;
-  return `${n} sin datos registrados todavía, hace ${cuantoHace(corridos, 'corridos')} (${parentesis})`;
+  const parentesis = !Number.isFinite(habiles) || (corridos === 0 && habiles === 0) ? estadistico
+    : `${habiles === 0 ? 'menos de 1 hábil' : habilesDe(habiles)}, ${estadistico}`;
+  return `hace ${cuantoHace(corridos, 'corridos')} (${parentesis})`;
 };
 
 // La tarjeta y el vacío cuentan solo los ciclos abiertos; «Para completar» suma los cerrados en el año, y por eso cada una dice los suyos
@@ -533,6 +598,192 @@ const tramoDelCircuito = (clave, medidas, ctx, hayNotas) => {
     clave, ...TRAMOS[clave], cifra, vacio, en_curso: enCursoDelTramo(de('enCurso'), ctx), pendientes,
     pendientes_texto: pendientes > 0 ? notasPendientes(pendientes) : null,
     anticipacion_texto: clave === 'aviso' && cifra !== null && !cifra.en_el_dia ? `${cifra.unidad} de anticipación` : null
+  };
+};
+
+// La otra unidad de los días: cada medida de vistaDe se mide también en ella (`otra`), con las mismas fechas y el mismo calendario
+const otraUnidad = (dias) => (dias === 'corridos' ? 'habiles' : 'corridos');
+
+// Los días de un tramo en la unidad `dias`, de lo que cuenta (`que`: 'terminados' o 'enCurso'): los de la medida, si es la de la
+// vista, o los de su `otra`
+const valoresEn = (medidas, que, clave, dias, ctx) => medidas
+  .map((m) => (dias === ctx.dias ? m : m.otra)[que][clave]).filter((valor) => valor !== undefined);
+
+// ---------------------------------------------------------------------------------------------------------------------
+// El modal de cada tramo (spec 2026-11-07-metricas-cajones-y-ciclos, 5 y 7): la página lo abre desde la flecha de la banda
+// ---------------------------------------------------------------------------------------------------------------------
+
+// Quién actúa en cada tramo (con el nombre entero: en el modal hay lugar), el nombre de las dos puntas de la etapa y de dónde sale cada
+// fecha, en los hechos del ciclo (hechosDe): las mismas que cuenta medir
+const DEL_MODAL = Object.freeze({
+  aviso: Object.freeze({ quien: 'RPAD', puntas: Object.freeze(['Aviso', 'Vencimiento']), desde: (h) => h.avisoRegla, hasta: (h) => h.venc }),
+  tramite: Object.freeze({
+    quien: 'DGMIT y Dirección Administrativa', puntas: Object.freeze(['Aviso', 'Nota DGMIT']),
+    desde: (h) => h.inicioTramos, hasta: (h) => h.nota?.recibida ?? null
+  }),
+  respuesta: Object.freeze({
+    quien: 'Área responsable', puntas: Object.freeze(['Nota DGMIT', 'Datos recibidos']),
+    desde: (h) => h.nota?.recibida ?? null, hasta: (h) => h.recibido
+  }),
+  produccion: Object.freeze({
+    quien: 'DGMIT y Dirección de Investigación Territorial', puntas: Object.freeze(['Aviso', 'Datos recibidos']),
+    desde: (h) => h.inicioTramos, hasta: (h) => h.recibido
+  }),
+  carga: Object.freeze({
+    quien: 'Datos Públicos', puntas: Object.freeze(['Datos recibidos', 'Carga en el portal']), desde: (h) => h.recibido, hasta: (h) => h.carga
+  })
+});
+
+// Lo que dice debajo de su aviso un avisado ya vencido en los tramos que empiezan en el aviso (la redacción y la producción): ahí se
+// cuenta desde ese primer aviso, porque no tuvo el de la regla. Solo en las filas con días (las que cuentan y las en curso; spec
+// 2026-11-07, 5: «los avisados ya vencidos que cuentan»): una nota pendiente de carga no tiene días contados desde ningún lado
+const AVISADO_YA_VENCIDO = 'avisado ya vencido: desde ese primer aviso';
+const MARCAN_LOS_YA_VENCIDOS = Object.freeze(['tramite', 'produccion']);
+const avisadoYaVencido = (h) => h.heredado && h.inicioTramos !== null;
+
+// La leyenda, en el orden de la lista: cuántos hay de cada estado, con su singular (la página dibuja la marca: lleno, aro con flecha o
+// punteado; nunca solo el color)
+const LEYENDA_DEL_MODAL = Object.freeze({
+  cuenta: (n) => (n === 1 ? '1 ciclo cuenta en la cifra' : `${n} ciclos cuentan en la cifra`),
+  en_curso: (n) => (n === 1 ? '1 en curso, todavía no cuenta' : `${n} en curso, todavía no cuentan`),
+  pendiente: (n) => (n === 1 ? '1 nota pendiente de carga, sin días' : `${n} notas pendientes de carga, sin días`)
+});
+
+// Los días de un ciclo que cuenta, como la cifra: «64 días corridos (45 hábiles)» y, con 0 corridos, «En el día»
+const diasQueCuentan = (corridos, habiles) => (corridos === 0 ? 'En el día' : cantidadDeLasDos(corridos, habiles));
+
+// De más días corridos a menos; con empate, de más hábiles a menos (sin ellos, al final) y después por título
+const porDias = (a, b) => b.corridos - a.corridos || (b.habiles ?? -1) - (a.habiles ?? -1) || porTitulo(a.h, b.h);
+
+// Las filas de la lista del modal, en su orden, cada una con su ciclo (lo que va en `ciclos`) y sus días corridos (null en una pendiente,
+// que no tiene días: no va en el gráfico). Primero los que cuentan en la cifra, después los en curso y al final, en la redacción, las
+// notas pendientes de carga (por la fecha del aviso que se muestra). Son los mismos que cuenta tramoDelCircuito: los que tienen días
+// finitos, como cifraDe, y los pendientes de `medidas`. `medidas`: las que cuentan de la gestión, en la vista en días corridos, con su
+// `otra` en hábiles
+const filasDelModal = (clave, medidas) => {
+  const { desde, hasta } = DEL_MODAL[clave];
+  const ciclo = (h, estado, [desdeDia, hastaDia, hastaTexto, diasTexto]) => ({
+    dataset_id: h.caso.dataset_id ?? null, titulo: h.caso.titulo ?? null, area: h.caso.area ?? null, estado,
+    desde: desdeDia, hasta: hastaDia, hasta_texto: hastaTexto, dias_texto: diasTexto,
+    nota: estado !== 'pendiente' && MARCAN_LOS_YA_VENCIDOS.includes(clave) && avisadoYaVencido(h) ? AVISADO_YA_VENCIDO : ''
+  });
+  // Lo que cuenta (`que`: 'terminados' o 'enCurso'), con sus días en las dos unidades, ya ordenado
+  const conDias = (que) => medidas.filter((m) => Number.isFinite(m[que][clave]))
+    .map((m) => ({ h: m.h, corridos: m[que][clave], habiles: Number.isFinite(m.otra[que][clave]) ? m.otra[que][clave] : null }))
+    .sort(porDias);
+  const cuentan = conDias('terminados').map(({ h, corridos, habiles }) => ({
+    corridos, ciclo: ciclo(h, 'cuenta', [desde(h), hasta(h), '', diasQueCuentan(corridos, habiles)])
+  }));
+  const enCurso = conDias('enCurso').map(({ h, corridos, habiles }) => ({
+    corridos, ciclo: ciclo(h, 'en_curso', [desde(h), null, 'en curso', `hace ${haceDeLasDos(corridos, habiles)}`])
+  }));
+  const pendientes = clave !== 'tramite' ? [] : medidas.filter((m) => m.pendiente)
+    .map((m) => ({ h: m.h, dia: avisoMostrado(m.h).dia }))
+    .sort((a, b) => comparar(a.dia ?? '9999-12-31', b.dia ?? '9999-12-31') || porTitulo(a.h, b.h))
+    .map(({ h, dia }) => ({ corridos: null, ciclo: ciclo(h, 'pendiente', [dia, null, 'pendiente de carga', '—']) }));
+  return [...cuentan, ...enCurso, ...pendientes];
+};
+
+// Las líneas de «Cómo se cuenta» del modal, cada una con su singular; '' con 0
+const lineaDe = (n, uno, varios) => (n === 0 ? '' : n === 1 ? uno : varios);
+const LINEAS_DEL_MODAL = Object.freeze({
+  yaVencidosDelAviso: (n) => lineaDe(n, '1 ciclo se avisó cuando ya estaba vencido: no cuenta en la anticipación.',
+    `${n} ciclos se avisaron cuando ya estaban vencidos: no cuentan en la anticipación.`),
+  sinElAvisoDeLaRegla: (n) => lineaDe(n, '1 ciclo no tuvo el aviso de la regla: no cuenta en la anticipación.',
+    `${n} ciclos no tuvieron el aviso de la regla: no cuentan en la anticipación.`),
+  pendientes: (n) => lineaDe(n, '1 nota DGMIT de un ciclo abierto está pendiente de carga: cuenta cuando se carga.',
+    `${n} notas DGMIT de ciclos abiertos están pendientes de carga: cuentan cuando se cargan.`),
+  yaVencidos: (n) => lineaDe(n, '1 ciclo se avisó ya vencido: se cuenta desde ese primer aviso.',
+    `${n} ciclos se avisaron ya vencidos: se cuentan desde ese primer aviso.`),
+  noRequierenNota: (n) => lineaDe(n, '1 ciclo es de un dataset que no requiere nota DGMIT: no cuenta en este tramo.',
+    `${n} ciclos son de datasets que no requieren nota DGMIT: no cuentan en este tramo.`),
+  enCurso: (n, hace) => lineaDe(n, `1 ciclo abierto todavía no tiene datos registrados, ${hace}: cuenta cuando se registra la actualización.`,
+    `${n} ciclos abiertos todavía no tienen datos registrados, ${hace}: cuentan cuando se registra la actualización.`),
+  fuentePublica: (n) => lineaDe(n, '1 ciclo se resolvió con datos de una fuente pública: no cuenta en este tramo.',
+    `${n} ciclos se resolvieron con datos de una fuente pública: no cuentan en este tramo.`),
+  fuentePublicaEnLaCarga: (n) => lineaDe(n, '1 ciclo se resolvió con datos de una fuente pública: la carga se cuenta desde que se obtuvo.',
+    `${n} ciclos se resolvieron con datos de una fuente pública: la carga se cuenta desde que se obtuvo.`)
+});
+
+// «Cómo se cuenta» del modal (spec 2026-11-07, 5): lo que no está en la cifra del tramo y cómo se cuentan algunos de los que sí, con las
+// cantidades del tramo (las de `medidas`, sin los destildados), en el orden de la spec; las líneas en 0 no van. Los que no requieren nota
+// y los resueltos con una fuente pública, con los filtros de aclaracionesDe (que no cambia: el Ciclo de vida usa sus cuentas; un test ata
+// las cantidades); los avisados ya vencidos de la redacción y de la producción son las filas que marca la lista (`ciclos`)
+const comoSeCuentaEnElModal = (clave, medidas, ctx, tramo, ciclos) => {
+  const L = LINEAS_DEL_MODAL;
+  const cuantos = (filtro) => medidas.filter(filtro).length;
+  const yaVencidosDeLaLista = () => L.yaVencidos(ciclos.filter((c) => c.nota !== '').length);
+  const noRequierenNota = () => L.noRequierenNota(cuantos((m) => m.enLista && !m.h.aplicaNota));
+  // Los en curso, con el «hace» de los PDF en las dos unidades (tramo.en_curso es el de la vista en corridos)
+  const enCurso = () => {
+    const n = tramo.en_curso?.n ?? 0;
+    if (n === 0) return '';
+    const enHabiles = enCursoDelTramo(valoresEn(medidas, 'enCurso', clave, 'habiles', ctx), { ...ctx, dias: 'habiles' });
+    return L.enCurso(n, haceEnCursoDeLosDos(tramo.en_curso, enHabiles, ctx.estadistico));
+  };
+  const lineas = {
+    // Los avisados ya vencidos que vencen en el año, y los vencimientos de la cobertura sin el aviso de la regla que no son de esos
+    aviso: () => [
+      L.yaVencidosDelAviso(cuantos((m) => avisadoYaVencido(m.h) && venceEnElAnio(m.h, ctx))),
+      L.sinElAvisoDeLaRegla(cuantos((m) => esDeLaCobertura(m.h, ctx) && m.h.avisoRegla === null && !avisadoYaVencido(m.h)))
+    ],
+    tramite: () => [L.pendientes(tramo.pendientes ?? 0), yaVencidosDeLaLista(), noRequierenNota()],
+    respuesta: () => [
+      enCurso(),
+      L.fuentePublica(cuantos((m) => m.enLista && m.h.aplicaNota && m.h.origen === 'fuente_publica' && enElAnio(m.h.carga, ctx))),
+      noRequierenNota()
+    ],
+    produccion: () => [enCurso(), yaVencidosDeLaLista()],
+    carga: () => [L.fuentePublicaEnLaCarga(cuantos((m) => Number.isFinite(m.terminados.carga) && m.h.origen === 'fuente_publica'))]
+  };
+  return lineas[clave]().filter((linea) => linea !== '');
+};
+
+// La línea del estadístico en el gráfico, en días corridos, con su rótulo («mediana: 64 días corridos», «mediana: en el día»); sin
+// cifra (solo en curso), null
+const lineaDelGrafico = (cifra, ctx) => (cifra === null ? null : {
+  valor: cifra.valor, texto: `${ctx.estadistico}: ${cifra.en_el_dia ? 'en el día' : `${cifra.texto} ${cifra.unidad}`}`
+});
+
+// El modal de un tramo, solo en la vista en días corridos (las fechas son las mismas; los días, en las dos unidades): { quien, leyenda:
+// [{ marca, texto }], como_se_cuenta: string[], lista, puntas: [desde, hasta], ciclos: [{ dataset_id, titulo, area, estado ('cuenta',
+// 'en_curso' o 'pendiente'), desde, hasta ('AAAA-MM-DD' o null), hasta_texto ('', 'en curso' o 'pendiente de carga'), dias_texto,
+// nota }], vacio, grafico (graficoDelTramo, services/metricasGrafico.js, con los que cuentan y los en curso; o null) }. Los ciclos son
+// los de la cifra: los destildados no están. `medidas`: las que cuentan de la gestión; `tramo`: el de tramoDelCircuito
+const modalDelTramo = (clave, gestion, medidas, ctx, tramo) => {
+  const { quien, puntas } = DEL_MODAL[clave];
+  const filas = filasDelModal(clave, medidas);
+  const ciclos = filas.map((f) => f.ciclo);
+  const cuantosHay = (estado) => ciclos.filter((c) => c.estado === estado).length;
+  const puntos = filas.filter((f) => f.corridos !== null)
+    .map(({ corridos, ciclo }) => ({ valor: corridos, estado: ciclo.estado, titulo: `${ciclo.titulo ?? SIN_TITULO}: ${ciclo.dias_texto}` }));
+  return {
+    quien: `${quien} · gestión ${gestion}`,
+    leyenda: Object.entries(LEYENDA_DEL_MODAL).filter(([marca]) => cuantosHay(marca) > 0)
+      .map(([marca, texto]) => ({ marca, texto: texto(cuantosHay(marca)) })),
+    como_se_cuenta: comoSeCuentaEnElModal(clave, medidas, ctx, tramo, ciclos),
+    lista: `Los ciclos (${ciclos.length})`,
+    puntas: [...puntas],
+    ciclos,
+    vacio: ciclos.length === 0 ? `Sin ciclos en ${ctx.anio}.` : '',
+    grafico: graficoDelTramo(puntos, { linea: lineaDelGrafico(tramo.cifra, ctx) })
+  };
+};
+
+// Lo que el tramo suma a lo de tramoDelCircuito (spec 2026-11-07-metricas-cajones-y-ciclos, 3, 4 y 7), en claves nuevas: lo de hoy lo
+// lee el Ciclo de vida y no cambia. `como_se_cuenta`: la frase del cajón; `habiles`: la cifra del mismo tramo en días hábiles, con la
+// forma de `cifra` (los mismos ciclos, contados de lo que dio medir en hábiles), solo en la vista en corridos (null sin cifra y en la
+// vista en hábiles); `habiles_texto`: lo de debajo de la cifra, «(45 días hábiles)» ('' sin `habiles`); `modal`: el de modalDelTramo,
+// solo en la vista en corridos (en la de hábiles, null: la foto guarda las dos y el modal pesa). `medidas`: las que cuentan (sin los
+// destildados), de su gestión, con su `otra`; `tramo`: el de tramoDelCircuito
+const loNuevoDelTramo = (clave, gestion, medidas, ctx, tramo) => {
+  const enCorridos = ctx.dias === 'corridos';
+  const habiles = enCorridos ? cifraDelTramo(valoresEn(medidas, 'terminados', clave, 'habiles', ctx), { ...ctx, dias: 'habiles' }) : null;
+  return {
+    como_se_cuenta: COMO_SE_CUENTA[clave],
+    habiles,
+    habiles_texto: habiles === null ? '' : textoDeHabiles(tramo.cifra, habiles),
+    modal: enCorridos ? modalDelTramo(clave, gestion, medidas, ctx, tramo) : null
   };
 };
 
@@ -599,11 +850,53 @@ const aclaracionesDe = (cuentan, ctx) => {
   };
 };
 
-// «Los otros 28 se cargaron una mediana de 61 días hábiles después.» (spec, 2.2), o «El otro se cargó …» si es uno; sin ninguno a
-// tiempo, «Los 3 se cargaron …» o «Se cargó …». Un 0 (después del vencimiento, sin que pasara un día hábil) es «menos de 1 día hábil».
-const textoDeDespues = (n, valor, aTiempo, ctx) => {
+// Lo que sale de los cajones y va en «Cómo se cuenta» de los PDF (spec 2026-11-07-metricas-cajones-y-ciclos, 6): las notas DGMIT
+// pendientes de carga de los ciclos abiertos (sin días) y los ciclos abiertos sin datos registrados, con las dos unidades. '' con 0
+const textoPendientesDeCarga = (n) => {
   if (n === 0) return '';
-  const cuanto = valor === 0 ? `menos de 1 ${unidadDe(1, ctx.dias)}` : `${valor} ${unidadDe(valor, ctx.dias)}`;
+  return n === 1
+    ? '1 nota DGMIT de un ciclo abierto está pendiente de carga: cuenta en la redacción y entrega de nota cuando se carga.'
+    : `${n} notas DGMIT de ciclos abiertos están pendientes de carga: cuentan en la redacción y entrega de nota cuando se cargan.`;
+};
+
+const textoSinDatosRegistrados = (n, hace, enElTramo) => {
+  if (n === 0) return '';
+  return n === 1
+    ? `1 ciclo abierto todavía no tiene datos registrados, ${hace}: cuenta en ${enElTramo} cuando se registra la actualización.`
+    : `${n} ciclos abiertos todavía no tienen datos registrados, ${hace}: cuentan en ${enElTramo} cuando se registra la actualización.`;
+};
+
+// El tramo de cada gestión que puede estar en curso, y cómo se nombra en la frase
+const EN_CURSO_DE_LA_GESTION = Object.freeze({
+  externa: Object.freeze({ clave: 'respuesta', enElTramo: 'la respuesta del área' }),
+  interna: Object.freeze({ clave: 'produccion', enElTramo: 'la producción del relevamiento' })
+});
+
+// Las aclaraciones que vistaDe suma a las de aclaracionesDe (que no cambia: el Ciclo de vida usa sus cuentas): `externa.pendientes`
+// (las del tramo de la DGMIT) y `en_curso` en las dos gestiones (los del tramo, con el «hace» de enCursoDelTramo en las dos unidades),
+// cada una { n, texto } ('' con 0). Los textos son los mismos en la vista en hábiles y en la de corridos. `circuito`: los tramos de
+// cada gestión; `deLaGestion`: las medidas que cuentan de una gestión, con su `otra`
+const aclaracionesNuevas = (circuito, deLaGestion, ctx) => {
+  const enCurso = (gestion) => {
+    const { clave, enElTramo } = EN_CURSO_DE_LA_GESTION[gestion];
+    const n = circuito[gestion].find((t) => t.clave === clave)?.en_curso?.n ?? 0;
+    if (n === 0) return { n, texto: '' };
+    const en = (dias) => enCursoDelTramo(valoresEn(deLaGestion(gestion), 'enCurso', clave, dias, ctx), { ...ctx, dias });
+    return { n, texto: textoSinDatosRegistrados(n, haceEnCursoDeLosDos(en('corridos'), en('habiles'), ctx.estadistico), enElTramo) };
+  };
+  const pendientes = circuito.externa.find((t) => t.clave === 'tramite')?.pendientes ?? 0;
+  return {
+    externa: { pendientes: { n: pendientes, texto: textoPendientesDeCarga(pendientes) }, en_curso: enCurso('externa') },
+    interna: { en_curso: enCurso('interna') }
+  };
+};
+
+// «Los otros 28 se cargaron una mediana de 90 días corridos (61 hábiles) después.» (spec, 2.2, y 2026-11-07-metricas-cajones-y-ciclos,
+// 4), o «El otro se cargó …» si es uno; sin ninguno a tiempo, «Los 3 se cargaron …» o «Se cargó …». Las dos cifras, con el estadístico
+// elegido, cualquiera sean los días de la vista; 0 hábiles (después del vencimiento, sin que pasara un día hábil) es «menos de 1 hábil».
+const textoDeDespues = (n, corridos, habiles, aTiempo, ctx) => {
+  if (n === 0) return '';
+  const cuanto = haceDeLasDos(corridos, habiles);
   if (n === 1) return `${aTiempo > 0 ? 'El otro se cargó' : 'Se cargó'} ${cuanto} después.`;
   const estadistico = ctx.estadistico === 'promedio' ? 'un promedio' : 'una mediana';
   return `${aTiempo > 0 ? 'Los otros' : 'Los'} ${n} se cargaron ${estadistico} de ${cuanto} después.`;
@@ -619,15 +912,16 @@ const resultadosDe = (cuentan, ctx, hayNotas) => {
     const hechos = actualizados.filter((h) => h.gestion === gestion);
     return [aTiempo(hechos), hechos.length];
   };
-  const { n: tarde, ...despues } = cifraDe(actualizados.filter((h) => h.carga > h.venc)
-    .map((h) => duracion(h.venc, h.carga, ctx.dias, ctx.calendario)));
-  const valor = tarde === 0 ? null : despues[ctx.estadistico];
+  // Los cargados después del vencimiento: cuántos días después, en las dos unidades; el valor, en la de la vista
+  const cargadosDespues = actualizados.filter((h) => h.carga > h.venc);
+  const despuesEn = (dias) => cifraDe(cargadosDespues.map((h) => duracion(h.venc, h.carga, dias, ctx.calendario)));
+  const despues = { corridos: despuesEn('corridos'), habiles: despuesEn('habiles') };
+  const { n: tarde } = despues.corridos;
+  const valor = tarde === 0 ? null : despues[ctx.dias][ctx.estadistico];
 
-  // Cobertura (Ruling 5): los vencimientos del año que ya esperaban el aviso de la regla en `al` (esperabaElAviso: su día, el hábil
-  // desde la fecha de la regla, ya pasó y el ciclo regía en el RPAD ese día; revisión final, A-1 y A-2), desde que hay registro de los
-  // avisos; los cubiertos tuvieron el aviso de la regla antes de vencer
-  const vencimientos = cuentan.map((m) => m.h).filter((h) => h.venc !== null && h.venc >= ctx.inicio && h.venc <= ctx.fin
-    && h.fechaRegla !== null && h.fechaRegla >= INICIO_DEL_REGISTRO && esperabaElAviso(h, ctx.al));
+  // Cobertura (Ruling 5): los vencimientos del año que ya esperaban el aviso de la regla en `al` (esDeLaCobertura); los cubiertos
+  // tuvieron el aviso de la regla antes de vencer
+  const vencimientos = cuentan.map((m) => m.h).filter((h) => esDeLaCobertura(h, ctx));
   const faltan = vencimientos.filter((h) => h.avisoRegla === null).sort(porVencimiento)
     .map((h) => ({ titulo: h.caso.titulo ?? null, venc: h.venc, motivo: textoDelMotivo(h) }));
 
@@ -649,7 +943,7 @@ const resultadosDe = (cuentan, ctx, hayNotas) => {
   return {
     a_tiempo: {
       a_tiempo: cuentas.aTiempo, total: cuentas.actualizados, externa: deLaGestion('externa'), interna: deLaGestion('interna'),
-      despues: { valor, texto: textoDeDespues(tarde, valor, cuentas.aTiempo, ctx) }
+      despues: { valor, texto: textoDeDespues(tarde, despues.corridos[ctx.estadistico], despues.habiles[ctx.estadistico], cuentas.aTiempo, ctx) }
     },
     cobertura: { si: cuentas.si, total: cuentas.vencimientos, faltan },
     reiteraciones: {
@@ -694,44 +988,47 @@ const ACLARACION_DE_LOS_EMAILS = 'Hasta el 12/10, el email de los 5 días y el r
 // Desde que la reiteración es bimestral, va a haber más ciclos con «Ninguna» sin que nada haya mejorado (spec 2026-11-03-reiteracion-bimestral, 6)
 const ACLARACION_DE_LA_FRECUENCIA = 'Desde diciembre de 2026, la reiteración sale cada dos meses.';
 
-// Una cantidad de días con su unidad: «308 días corridos», «1 día hábil»
-const cantidadDeDias = (valor, dias) => `${valor} ${unidadDe(valor, dias)}`;
-
-// Lo que va debajo de una fecha de la lista de casos: los días con su unidad y desde cuándo cuentan
-// (spec 2026-11-05-metricas-frase-en-los-casos, 4). 0 es «en el día»; sin días, nada
-const textoDeDias = (valor, dias, desde) => {
-  if (valor === null) return '';
-  return valor === 0 ? 'en el día' : `${cantidadDeDias(valor, dias)} ${desde}`;
+// Lo que va debajo de una fecha de la lista de casos: los días en las dos unidades y desde cuándo cuentan
+// (spec 2026-11-05-metricas-frase-en-los-casos, 4, y 2026-11-07-metricas-cajones-y-ciclos, 4). 0 días corridos es «en el día»; sin
+// días, nada. `lasDos`: { corridos, habiles }, de enLasDos
+const textoDeDias = (lasDos, desde) => {
+  if (lasDos.corridos === null) return '';
+  return lasDos.corridos === 0 ? 'en el día' : `${cantidadDeLasDos(lasDos.corridos, lasDos.habiles)} ${desde}`;
 };
 
 const DESDE_EL_AVISO = 'desde el aviso';
 const DESDE_LA_NOTA = 'desde la nota';
 
-// Una fila de la lista de casos (spec, 2.2): cada fecha con, debajo, los días del tramo que termina ahí o su estado
+// Una fila de la lista de casos (spec, 2.2): cada fecha con, debajo, los días del tramo que termina ahí o su estado. Los días se cuentan
+// en las dos unidades, con las mismas fechas y el mismo calendario, cualquiera sean los días de la vista (spec 2026-11-07, 4)
 const filaDe = (m, ctx) => {
   const { h } = m;
-  const dias = (desde, hasta) => duracion(desde, hasta, ctx.dias, ctx.calendario);
+  const enLasDos = (desde, hasta) => ({
+    corridos: duracion(desde, hasta, 'corridos', ctx.calendario), habiles: duracion(desde, hasta, 'habiles', ctx.calendario)
+  });
   const aviso = avisoMostrado(h);
   let textoDelAviso = '';
   if (h.heredado && h.inicioTramos !== null) textoDelAviso = 'avisado ya vencido';
   else if (h.avisoRegla !== null && h.venc !== null) {
-    const antes = dias(h.avisoRegla, h.venc);
-    textoDelAviso = antes === null ? '' : antes === 0 ? 'el día del vencimiento' : `${cantidadDeDias(antes, ctx.dias)} antes del vencimiento`;
+    const antes = enLasDos(h.avisoRegla, h.venc);
+    textoDelAviso = antes.corridos === null ? '' : antes.corridos === 0 ? 'el día del vencimiento'
+      : `${cantidadDeLasDos(antes.corridos, antes.habiles)} antes del vencimiento`;
   } else if (h.caso.aviso_regla == null && h.caso.motivo_sin_aviso != null && esperabaElAviso(h, ctx.al)) {
     textoDelAviso = textoDelMotivo(h);
   }
   const nota = h.nota !== null
-    ? { numero: h.nota.numero, tipo: TEXTO_TIPO_NOTA_DGMIT[h.nota.tipo] ?? '', texto: h.inicioTramos === null ? '' : textoDeDias(dias(h.inicioTramos, h.nota.recibida), ctx.dias, DESDE_EL_AVISO) }
+    ? { numero: h.nota.numero, tipo: TEXTO_TIPO_NOTA_DGMIT[h.nota.tipo] ?? '', texto: h.inicioTramos === null ? '' : textoDeDias(enLasDos(h.inicioTramos, h.nota.recibida), DESDE_EL_AVISO) }
     : { numero: null, tipo: '', texto: notaPendiente(h, ctx) ? 'pendiente de carga' : '' };
   let textoDeRecibido = '';
   if (h.recibido !== null) {
-    if (h.aplicaNota && h.nota !== null && h.origen !== 'fuente_publica') textoDeRecibido = textoDeDias(dias(h.nota.recibida, h.recibido), ctx.dias, DESDE_LA_NOTA);
-    else if (!h.externa && h.inicioTramos !== null) textoDeRecibido = textoDeDias(dias(h.inicioTramos, h.recibido), ctx.dias, DESDE_EL_AVISO);
+    if (h.aplicaNota && h.nota !== null && h.origen !== 'fuente_publica') textoDeRecibido = textoDeDias(enLasDos(h.nota.recibida, h.recibido), DESDE_LA_NOTA);
+    else if (!h.externa && h.inicioTramos !== null) textoDeRecibido = textoDeDias(enLasDos(h.inicioTramos, h.recibido), DESDE_EL_AVISO);
   } else if (h.abierto) {
     const conNota = h.externa && h.nota !== null;
     const desde = conNota ? h.nota.recibida : h.inicioTramos;
-    const hace = desde === null ? null : dias(desde, ctx.al);
-    textoDeRecibido = hace === null || hace === 0 ? 'en curso' : `en curso, ${cantidadDeDias(hace, ctx.dias)} ${conNota ? DESDE_LA_NOTA : DESDE_EL_AVISO}`;
+    const hace = desde === null ? null : enLasDos(desde, ctx.al);
+    textoDeRecibido = hace === null || hace.corridos === null || hace.corridos === 0 ? 'en curso'
+      : `en curso, ${haceDeLasDos(hace.corridos, hace.habiles)} ${conNota ? DESDE_LA_NOTA : DESDE_EL_AVISO}`;
   }
   return {
     dataset_id: h.caso.dataset_id ?? null, titulo: h.caso.titulo ?? null, area: h.caso.area ?? null, gestion: h.gestion,
@@ -742,7 +1039,7 @@ const filaDe = (m, ctx) => {
     carga: {
       fecha: h.carga,
       texto: h.carga !== null && h.recibido !== null
-        ? textoDeDias(dias(h.recibido, h.carga), ctx.dias, h.origen === 'fuente_publica' ? 'desde que se obtuvo' : 'desde que se recibió') : ''
+        ? textoDeDias(enLasDos(h.recibido, h.carga), h.origen === 'fuente_publica' ? 'desde que se obtuvo' : 'desde que se recibió') : ''
     }
   };
 };
@@ -822,19 +1119,25 @@ const textoDeNotasPendientes = (abiertas, cerradas, anio) => {
 // cuando sale el aviso, así que cuenta todo el año), la nota DGMIT recibida (la redacción), los datos recibidos (la respuesta y la
 // producción) y la carga. Está en curso si empezó y no terminó en un ciclo abierto en `al` (solo la respuesta y la producción).
 // - circuito: { externa: Tramo[4] (aviso, tramite, respuesta, carga), interna: Tramo[3] (aviso, produccion, carga), aclaraciones:
-//   { externa: { ya_vencidos, fuente_publica, no_requieren_nota }, interna: { ya_vencidos } } }, cada aclaración { n, texto } ('' con
-//   0; no_requieren_nota: los ciclos de externos con «Requiere nota» No y sin nota DGMIT). Tramo:
-//   { clave, nombre, desde_hasta, responsable, dgmit, cifra, vacio, en_curso, pendientes, pendientes_texto, anticipacion_texto }:
+//   { externa: { ya_vencidos, fuente_publica, no_requieren_nota, pendientes, en_curso }, interna: { ya_vencidos, en_curso } } }, cada
+//   aclaración { n, texto } ('' con 0; no_requieren_nota: los ciclos de externos con «Requiere nota» No y sin nota DGMIT; pendientes y
+//   en_curso, lo que sale de los cajones, aclaracionesNuevas, con los mismos textos en las dos unidades de la vista). Tramo:
+//   { clave, nombre, desde_hasta, responsable, dgmit, cifra, vacio, en_curso, pendientes, pendientes_texto, anticipacion_texto,
+//   como_se_cuenta, habiles, habiles_texto, modal } (las de hoy, que lee el Ciclo de vida, y después las de loNuevoDelTramo):
 //   - cifra: { valor, texto, unidad, debajo, ciclos, ciclos_texto, en_el_dia, orientativo } (cifraDelTramo) o null; vacio:
 //     { titulo, texto } si no hay cifra
 //     (sin ninguna nota DGMIT vigente entre todos los casos, también destildados: «Todavía no hay notas DGMIT cargadas» con los
 //     pendientes en la DGMIT y «Sin datos todavía» en el área; si no, «Sin casos en 2026»);
 //   - en_curso: { n, valor, texto } o null (solo la respuesta y la producción); pendientes: los ciclos «pendientes de carga» (solo la
 //     DGMIT; en los demás, null) y pendientes_texto, su texto (null sin ninguno y en los demás tramos); anticipacion_texto: lo que va
-//     debajo del número en el aviso anticipado («días corridos de anticipación»; null con «En el día», sin cifra y en los demás tramos).
+//     debajo del número en el aviso anticipado («días corridos de anticipación»; null con «En el día», sin cifra y en los demás tramos);
+//   - como_se_cuenta: la frase del cajón (COMO_SE_CUENTA); habiles: la cifra en días hábiles, con la forma de `cifra`, solo en la vista
+//     en corridos (null sin cifra y en la vista en hábiles); habiles_texto: «(45 días hábiles)» ('' sin habiles); modal: los ciclos del
+//     tramo, cómo se cuenta y el gráfico (modalDelTramo), solo en la vista en corridos (null en la de hábiles).
 //   Los tramos de la DGMIT y del área son de los externos con «Requiere nota» Sí o sin dato, o con una nota DGMIT; un ciclo con los
 //   datos de una fuente pública no cuenta en la respuesta del área.
-// - resultados: { a_tiempo: { a_tiempo, total, externa: [a, t], interna: [a, t], despues: { valor, texto } }, cobertura: { si, total,
+// - resultados: { a_tiempo: { a_tiempo, total, externa: [a, t], interna: [a, t], despues: { valor, texto } } (`valor` en los días de la
+//   vista; `texto`, con las dos unidades), cobertura: { si, total,
 //   faltan: [{ titulo, venc, motivo }] }, reiteraciones: { rpad: { ninguna, una, dos_o_mas, total }, dgmit: { ninguna, una_o_mas,
 //   total } (null sin notas DGMIT) }, textos }. Las reiteraciones son las de los ciclos que terminaron en el año y las de los abiertos a
 //   `al`. textos (textosDeResultados): { a_tiempo: { de, medidor, vacio }, cobertura: { de, medidor, regla, faltan, vacio },
@@ -842,9 +1145,10 @@ const textoDeNotasPendientes = (abiertas, cerradas, anio) => {
 // - casos: las filas de los ciclos de las dos gestiones (cada una con su `gestion`) con algún aviso o la carga en el año, o que cuentan
 //   en algún tramo, por vencimiento: { dataset_id, titulo, area, gestion, contar, vencimiento, aviso: { fecha, texto, que }, nota:
 //   { numero, tipo, texto }, recibido: { fecha, texto, origen }, carga: { fecha, texto } }. Los `texto` son lo de debajo de cada fecha:
-//   los días del tramo que termina ahí, con su unidad y desde cuándo cuentan ('27 días hábiles antes del vencimiento' en el aviso,
-//   '45 días hábiles desde la nota', 'en el día' con 0), o su estado ('avisado ya vencido', el motivo sin el aviso de la regla,
-//   'pendiente de carga', 'en curso, 89 días hábiles desde el aviso').
+//   los días del tramo que termina ahí, en días corridos y, entre paréntesis, hábiles, con cualquiera de los días de la vista, y desde
+//   cuándo cuentan ('40 días corridos (27 hábiles) antes del vencimiento' en el aviso, '64 días corridos (45 hábiles) desde la nota',
+//   'en el día' con 0 corridos), o su estado ('avisado ya vencido', el motivo sin el aviso de la regla, 'pendiente de carga', 'en curso,
+//   130 días corridos (89 hábiles) desde el aviso').
 // - para_completar: { notas: [{ dataset_id, titulo, area, abierto, aviso, que, carga, situacion }], recibido: [{ dataset_id, titulo,
 //   gestion, carga, falta: 'recibido' | 'origen', falta_texto }], total, textos: { notas, notas_vacio, recibido, recibido_vacio } }
 //   (paraCompletarDe; `total`, las dos listas juntas: el «Para completar (N)» del índice de la página).
@@ -852,18 +1156,28 @@ const textoDeNotasPendientes = (abiertas, cerradas, anio) => {
 export const vistaDe = (casos, opciones) => {
   const ctx = contextoDe(opciones);
   if (ctx === null) return null;
+  // Cada caso se mide también en la otra unidad (`otra`): las mismas fechas, contadas en corridos y en hábiles
+  const enLaOtra = { ...ctx, dias: otraUnidad(ctx.dias) };
   const medidas = lista(casos).filter((caso) => caso && typeof caso === 'object' && !Array.isArray(caso)).map((caso) => {
     const h = hechosDe(caso, ctx);
-    const m = { h, ...medir(h, ctx), contar: !ctx.sin.has(h.id) };
+    const m = { h, ...medir(h, ctx), otra: medir(h, enLaOtra), contar: !ctx.sin.has(h.id) };
     return { ...m, enLista: entraEnLaLista(h, m, ctx) };
   });
   const cuentan = medidas.filter((m) => m.contar);
   const hayNotas = medidas.some((m) => m.h.nota !== null);
   const deLaGestion = (gestion) => cuentan.filter((m) => m.h.gestion === gestion);
-  const circuito = Object.fromEntries(Object.entries(TRAMOS_DE_LA_GESTION).map(([gestion, claves]) =>
-    [gestion, claves.map((clave) => tramoDelCircuito(clave, deLaGestion(gestion), ctx, hayNotas))]));
+  const circuito = Object.fromEntries(Object.entries(TRAMOS_DE_LA_GESTION).map(([gestion, claves]) => {
+    const suyas = deLaGestion(gestion);
+    return [gestion, claves.map((clave) => {
+      const tramo = tramoDelCircuito(clave, suyas, ctx, hayNotas);
+      return { ...tramo, ...loNuevoDelTramo(clave, gestion, suyas, ctx, tramo) };
+    })];
+  }));
+  const deHoy = aclaracionesDe(cuentan, ctx);
+  const nuevas = aclaracionesNuevas(circuito, deLaGestion, ctx);
+  const aclaraciones = { externa: { ...deHoy.externa, ...nuevas.externa }, interna: { ...deHoy.interna, ...nuevas.interna } };
   return {
-    circuito: { ...circuito, aclaraciones: aclaracionesDe(cuentan, ctx) },
+    circuito: { ...circuito, aclaraciones },
     resultados: resultadosDe(cuentan, ctx, hayNotas),
     casos: medidas.filter((m) => m.enLista).sort((a, b) => porVencimiento(a.h, b.h)).map((m) => filaDe(m, ctx)),
     para_completar: paraCompletarDe(medidas, ctx)

@@ -173,7 +173,8 @@ export const cicloDeVidaDe = async (query, { hoy = hoyArgentina() } = {}) => {
   };
 };
 
-// GET /api/metricas?anio=&estadistico=&dias=&gestion=&sin=: lo de metricasDe. Un año sin métricas da 404 en JSON
+// GET /api/metricas?anio=&estadistico=&gestion=&sin=: lo de metricasDe, en días corridos (un `dias` de un link viejo no se lee:
+// opcionesDeMetricas). Un año sin métricas da 404 en JSON
 export const verMetricas = async (req, res) => {
   try {
     const data = await metricasDe(req.query);
@@ -206,9 +207,9 @@ export const pdfDeMetricas = async (query, generado) => {
   return { anio: data.anio, pdf };
 };
 
-// GET /api/metricas/pdf?anio=&estadistico=&dias=&sin=: el PDF de pdfDeMetricas, con el nombre corto de quien lo genera y la hora
-// (argentina) en el pie. Un año sin métricas da el mismo 404 en JSON. El archivo se llama «Metricas-RPAD-AAAA.pdf» (disposicionDeAdjunto
-// lo deja apto para el encabezado HTTP).
+// GET /api/metricas/pdf?anio=&estadistico=&sin=: el PDF de pdfDeMetricas (un `dias` no se lee, como en la API), con el nombre corto de
+// quien lo genera y la hora (argentina) en el pie. Un año sin métricas da el mismo 404 en JSON. El archivo se llama
+// «Metricas-RPAD-AAAA.pdf» (disposicionDeAdjunto lo deja apto para el encabezado HTTP).
 export const descargarMetricasPdf = async (req, res) => {
   try {
     // Un solo instante para el pie y para "hoy" (que no queden en días distintos a la medianoche)

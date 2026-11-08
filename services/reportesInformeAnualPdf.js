@@ -257,7 +257,8 @@ export const renderInformeAnual = async ({ foto, anterior = null, logros = [] },
   const anio = Number.isInteger(f.anio) ? f.anio : Number(texto(f.al).slice(0, 4));
   const al = esFechaIso(f.al) ? f.al : `${anio}-12-31`;
   const estadistico = ESTADISTICOS.includes(f.estadistico) ? f.estadistico : ESTADISTICOS[0];
-  const dias = DIAS.includes(f.dias) ? f.dias : DIAS[0];
+  // Sin `dias`, los corridos (los de COMBINACION_DEL_INFORME, controllers/reportesController.js), no DIAS[0], que son los hábiles
+  const dias = DIAS.includes(f.dias) ? f.dias : 'corridos';
   const nombre = `Informe anual ${anio}`;
   const doc = nuevoReporte({ titulo: `Informe anual del RPAD ${anio}`, hoja: HOJA_APAISADA });
   const hoja = { derecha: nombre, fecha: texto(generado?.momento).slice(0, 10) };
@@ -267,7 +268,7 @@ export const renderInformeAnual = async ({ foto, anterior = null, logros = [] },
 
   // 1. El circuito de las dos gestiones, los resultados y «Cómo se cuenta» (los de Métricas del año, sin destildados: una foto no se destilda)
   dibujarElCircuito(doc, hoja, datos, { estadistico, dias, titulo });
-  dibujarLosResultados(doc, hoja, datos, { anio, dias, titulo, conDestildados: false });
+  dibujarLosResultados(doc, hoja, datos, { anio, titulo, conDestildados: false });
 
   // 2. El contexto y el trabajo del RPAD (los de Métricas del año, sin las métricas manuales)
   dibujarParte(doc, hoja, titulo(TITULO_DEL_CONTEXTO), [

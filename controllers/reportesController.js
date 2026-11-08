@@ -16,7 +16,7 @@ import { renderInformeAnual, logrosPorProyecto } from '../services/reportesInfor
 import { renderCicloDeVida } from '../services/reportesCicloDeVidaPdf.js';
 import { leerFoto } from '../services/metricasFoto.js';
 import { nombreDelReporte } from '../services/reportesNombres.js';
-import { ESTADISTICOS, DIAS } from '../services/metricasReglas.js';
+import { ESTADISTICOS } from '../services/metricasReglas.js';
 import { metricasDe, deLaFoto, circuitosDeLaFoto, cicloDeVidaDe, SIN_METRICAS } from './metricasController.js';
 
 // Los reportes PDF (spec 2026-10-24-metricas-y-reportes, 5), todos con la base de los reportes (services/reportesPdfBase.js): acá van
@@ -334,7 +334,7 @@ export const reporteParaCompletar = async (req, res) => {
 // Solo para un año con foto (spec 2026-10-24-metricas-y-reportes, 5, Para presentar, punto 2, y 3): la foto del 31/12 de ese año, la
 // del año anterior para la comparación (o, sin ella, «Primer año con foto») y los logros del año, los hitos de Herramientas →
 // Proyectos. Las fotos se leen como las lee Métricas (leerFoto y deLaFoto: nunca se recalculan), con la combinación por defecto
-// (mediana en días hábiles; la hoja 1, en días corridos y hábiles) y todos los datasets. El PDF lo dibuja
+// (mediana en días corridos, con los hábiles entre paréntesis en todas las hojas) y todos los datasets. El PDF lo dibuja
 // services/reportesInformeAnualPdf.js. Acá van las consultas y el pie, con el nombre corto de quien lo pide y la hora argentina.
 
 const SIN_FOTO_DEL_ANIO = Object.freeze({ success: false, error: 'Todavía no hay foto de ese año: se saca el 10/01 del año siguiente.' });
@@ -344,8 +344,9 @@ const SIN_FOTO_DEL_ANIO = Object.freeze({ success: false, error: 'Todavía no ha
 const anioDelInforme = (valor) => (typeof valor === 'string' && /^\d{4}$/.test(valor) && Number(valor) >= 1000 ? Number(valor) : null);
 
 // Lo de una foto que lee el Informe: el año, el día y, con la combinación por defecto, lo de deLaFoto (la vista, el contexto, el trabajo y
-// las áreas, como en Métricas). null sin foto
-const COMBINACION_DEL_INFORME = Object.freeze({ estadistico: ESTADISTICOS[0], dias: DIAS[0] });
+// las áreas, como en Métricas). null sin foto. La combinación: la mediana en días corridos, la vista que lee la pestaña Métricas, cuyos
+// textos ya traen los hábiles entre paréntesis (spec 2026-11-07-metricas-cajones-y-ciclos, 4)
+const COMBINACION_DEL_INFORME = Object.freeze({ estadistico: ESTADISTICOS[0], dias: 'corridos' });
 const delInforme = (foto) => (foto === null ? null
   : { anio: foto.anio, al: foto.al, ...COMBINACION_DEL_INFORME, ...deLaFoto(foto, COMBINACION_DEL_INFORME) });
 

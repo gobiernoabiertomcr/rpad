@@ -4,7 +4,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { cintaDeMetricas, cintasDeLaVista, ALTURAS_DE_LA_CINTA as ALTURAS } from '../services/metricasCinta.js';
-import { SIN_NOTAS_DGMIT, unidadDe, casosDe, vistaDe } from '../services/metricasReglas.js';
+import { SIN_NOTAS_DGMIT, unidadDe, cantidadDeLasDos, casosDe, vistaDe } from '../services/metricasReglas.js';
 import { mapaDeLosCasos, HOY_DE_LAS_METRICAS } from './metricas-casos.js';
 
 const GRIS_DGMIT = 'La cinta se completa cuando haya notas DGMIT cargadas';
@@ -19,17 +19,22 @@ const DE_LA_CLAVE = {
   carga: { nombre: 'Preparación y carga', desde_hasta: 'De la entrega a la carga', responsable: 'DDPC', dgmit: false }
 };
 
-// Un tramo con su cifra (como cifraDelTramo: «En el día» con 0), o sin cifra con `vacio`
-const tramo = (clave, valor, { dias = 'habiles', estadistico = 'mediana', ciclos = 12, vacio = null } = {}) => ({
+// Una cifra como la de cifraDelTramo («En el día» con 0)
+const cifra = (valor, { dias, estadistico, ciclos }) => ({
+  valor, texto: valor === 0 ? 'En el día' : String(valor), unidad: valor === 0 ? '' : unidadDe(valor, dias),
+  debajo: valor === 0 ? `${estadistico} en días ${dias === 'corridos' ? 'corridos' : 'hábiles'}` : `${estadistico} de ${ciclos} ciclos`,
+  ciclos, orientativo: ciclos <= 4
+});
+
+// Un tramo con su cifra, o sin cifra con `vacio`. Con `habiles`, la cifra en días hábiles que trae en la vista en corridos (como
+// loNuevoDelTramo: con la forma de `cifra`, o null); sin `habiles`, sin esa clave (como en una foto que no la tiene)
+const tramo = (clave, valor, { dias = 'habiles', estadistico = 'mediana', ciclos = 12, vacio = null, habiles } = {}) => ({
   clave, ...DE_LA_CLAVE[clave],
-  cifra: valor === null ? null : {
-    valor, texto: valor === 0 ? 'En el día' : String(valor), unidad: valor === 0 ? '' : unidadDe(valor, dias),
-    debajo: valor === 0 ? `${estadistico} en días ${dias === 'corridos' ? 'corridos' : 'hábiles'}` : `${estadistico} de ${ciclos} ciclos`,
-    ciclos, orientativo: ciclos <= 4
-  },
+  cifra: valor === null ? null : cifra(valor, { dias, estadistico, ciclos }),
   vacio: valor === null ? (vacio ?? { titulo: 'Sin casos en 2026', texto: '' }) : null,
   en_curso: null,
-  pendientes: clave === 'tramite' ? 0 : null
+  pendientes: clave === 'tramite' ? 0 : null,
+  ...(habiles === undefined ? {} : { habiles: habiles === null ? null : cifra(habiles, { dias: 'habiles', estadistico, ciclos }) })
 });
 
 // Los tramos de la DGMIT y del área mientras no hay ninguna nota DGMIT cargada (como hoy)
@@ -50,15 +55,26 @@ const REALES = {
   }
 };
 
-// Los tramos de una gestión con los números reales (la externa, sin notas DGMIT)
+// Los tramos de una gestión con los números reales (la externa, sin notas DGMIT). Como en vistaDe: en días corridos, cada tramo con su
+// cifra en hábiles (null sin cifra); en días hábiles, `habiles` null
 const tramosReales = (gestion, estadistico, dias) => {
   const v = REALES[gestion][estadistico][dias];
-  const de = (clave, valor, ciclos) => tramo(clave, valor, { dias, estadistico, ciclos, vacio: SIN_NOTAS[clave] });
+  const enHabiles = REALES[gestion][estadistico].habiles;
+  const de = (clave, valor, ciclos) => tramo(clave, valor, {
+    dias, estadistico, ciclos, vacio: SIN_NOTAS[clave], habiles: dias === 'corridos' && valor !== null ? enHabiles[clave] : null
+  });
   return gestion === 'externa'
     ? [de('aviso', v.aviso, 32), de('tramite', null), de('respuesta', null), de('carga', v.carga, 23)]
     : [de('aviso', v.aviso, 3), de('produccion', v.produccion, 5), de('carga', v.carga, 5)];
 };
 const real = (gestion, estadistico, dias) => cintaDeMetricas(tramosReales(gestion, estadistico, dias), { gestion, dias, estadistico });
+
+// Los días de un tramo real (todos de más de 1 día) como los dice la cinta: en días corridos, con los hábiles entre paréntesis (spec
+// 2026-11-07-metricas-cajones-y-ciclos, 4)
+const diasReales = (gestion, estadistico, dias, clave) => {
+  const { habiles, corridos } = REALES[gestion][estadistico];
+  return dias === 'corridos' ? `${corridos[clave]} días corridos (${habiles[clave]} hábiles)` : `${habiles[clave]} días hábiles`;
+};
 
 const COMBINACIONES = ['externa', 'interna'].flatMap((gestion) =>
   ['mediana', 'promedio'].flatMap((estadistico) => ['habiles', 'corridos'].map((dias) => ({ gestion, estadistico, dias }))));
@@ -120,6 +136,17 @@ const marcasSinTocarse = (cinta, cual) => {
   assert.deepEqual(cinta.marcas.flatMap((m) => m.tipos), ORDEN_DE_LA_CADENA.filter((tipo) => cinta.marcas.some((m) => m.tipos.includes(tipo))), cual);
 };
 
+// Qué rótulos escribe la cinta, por tramo y sin mirar el paréntesis: 'aviso', 'carga' («Entrega y carga…» o «Carga · …») y la clave de
+// cada tramo con rótulo propio. Y que con los hábiles escriba todos los que escribe sin ellos (ruling del 07/11: el paréntesis va
+// después del rótulo); sin la clave `habiles`, la cinta es la de antes (lo fija «sin los hábiles…»)
+const DE_QUE_TRAMO = [['Aviso · ', 'aviso'], ['Entrega y carga', 'carga'], ['Carga · ', 'carga'],
+  ...['tramite', 'respuesta', 'produccion'].map((clave) => [`${DE_LA_CLAVE[clave].nombre} · `, clave])];
+const clavesDeLosRotulos = (cinta) => cinta.rotulos.map((r) => DE_QUE_TRAMO.find(([inicio]) => r.texto.startsWith(inicio))?.[1] ?? r.texto);
+const ningunoMenos = (conHabiles, sinHabiles, cual) => {
+  const escritos = clavesDeLosRotulos(conHabiles);
+  assert.deepEqual(clavesDeLosRotulos(sinHabiles).filter((clave) => !escritos.includes(clave)), [], `${cual}: con los hábiles falta un rótulo`);
+};
+
 // Los días de las marcas del eje, leídos de su texto («−40», «+10»)
 const diasDeLosTicks = (cinta) => cinta.ticks.map((t) => Number(t.texto.replace('−', '-').replace('+', '')));
 
@@ -164,7 +191,7 @@ describe('cintaDeMetricas', () => {
       assert.deepEqual(cinta.segmentos.map((s) => s.color), ['violeta'], dias);
       assert.equal(cinta.segmentos[0].x0, cinta.marcas[0].x);
       assert.equal(cinta.segmentos[0].x1, juntas.x);
-      assert.equal(cinta.segmentos[0].texto, `Producción del relevamiento · ${produccion} ${unidadDe(produccion, dias)}`);
+      assert.equal(cinta.segmentos[0].texto, `Producción del relevamiento · ${diasReales('interna', 'mediana', dias, 'produccion')}`);
       const rotulo = cinta.rotulos.find((r) => r.texto.startsWith('Entrega y carga'));
       assert.equal(rotulo.texto, 'Entrega y carga, el mismo día', dias);
       assert.equal(rotulo.color, 'verde');
@@ -172,14 +199,16 @@ describe('cintaDeMetricas', () => {
       assert.ok(aviso < produccion);
       assert.deepEqual(cinta.rayado, { x0: cinta.vencimiento.x, x1: juntas.x });
       assert.equal(cinta.gris, null);
-      assert.ok(cinta.rotulos.some((r) => r.texto === `Aviso · ${aviso} ${unidadDe(aviso, dias)} antes`), dias);
+      assert.ok(cinta.rotulos.some((r) => r.texto === `Aviso · ${diasReales('interna', 'mediana', dias, 'aviso')} antes`), dias);
     }
   });
 
   it('interna con promedio: «Entrega y carga, 1 día corrido después»', () => {
     const corridos = real('interna', 'promedio', 'corridos');
     assert.deepEqual(corridos.marcas.map((m) => m.tipo), ['aviso', 'datos-y-carga']);
+    // Con «(1 hábil)» no entra en ningún lado (se pisaría con el rótulo del aviso o lo cruzaría la línea del vencimiento): va sin él
     assert.ok(corridos.rotulos.some((r) => r.texto === 'Entrega y carga, 1 día corrido después'));
+    assert.ok(!corridos.rotulos.some((r) => r.texto.includes('(1 hábil)')));
     assert.ok(!corridos.rotulos.some((r) => r.texto.includes('el mismo día')), 'nunca dice «el mismo día» si no lo fue');
     assert.equal(corridos.aclaracion, 'La cinta pone los promedios uno detrás del otro: es orientativa, no un ciclo real.');
     // En días hábiles, la entrega y la carga quedan a 11,75: con el tamaño de las marcas se pisarían, así que se juntan
@@ -221,10 +250,10 @@ describe('cintaDeMetricas', () => {
       const cinta = real(gestion, estadistico, dias);
       sinPisadas(cinta, cual);
       marcasSinTocarse(cinta, cual);
-      // Los rótulos que pide la spec están todos: el del aviso siempre y, en la interna, el de la carga y el de la producción
-      const { aviso } = REALES[gestion][estadistico][dias];
+      // Los rótulos que pide la spec están todos: el del aviso siempre (en días corridos, con los hábiles) y, en la interna, el de la
+      // carga y el de la producción
       const textos = cinta.rotulos.map((r) => r.texto);
-      assert.ok(textos.includes(`Aviso · ${aviso} ${unidadDe(aviso, dias)} antes`), cual);
+      assert.ok(textos.includes(`Aviso · ${diasReales(gestion, estadistico, dias, 'aviso')} antes`), cual);
       if (gestion === 'interna') {
         assert.ok(textos.some((t) => t.startsWith('Entrega y carga') || t.startsWith('Carga · ')), cual);
         assert.ok(textos.some((t) => t.startsWith('Producción del relevamiento · ')), cual);
@@ -335,10 +364,14 @@ describe('cintaDeMetricas', () => {
       }
     }
     assert.equal(cadenas.length, 630 + 480);
+    // En días corridos, cada tramo con sus hábiles (unos 5 de cada 7): los rótulos son más largos
     for (const { gestion, dias, cifras } of cadenas) {
       const cual = `${gestion}, ${dias}, ${JSON.stringify(cifras)}`;
-      const tramos = Object.entries(cifras).map(([clave, valor]) => tramo(clave, valor, { dias }));
+      const habiles = (valor) => (dias === 'corridos' ? Math.round((valor * 5) / 7) : undefined);
+      const tramos = Object.entries(cifras).map(([clave, valor]) => tramo(clave, valor, { dias, habiles: habiles(valor) }));
       const cinta = cintaDeMetricas(tramos, { gestion, dias, estadistico: 'mediana' });
+      // Todos los rótulos que van sin los hábiles (por tramo, sin mirar el paréntesis) van también con ellos
+      ningunoMenos(cinta, cintaDeMetricas(Object.entries(cifras).map(([clave, valor]) => tramo(clave, valor, { dias })), { gestion, dias }), cual);
       const enDias = diasDeLosTicks(cinta);
       assert.ok(enDias.length >= 1 && enDias.length <= 8, `${cual}: ${enDias.length} marcas`);
       const conCero = [...enDias, 0].sort((a, b) => a - b);
@@ -421,6 +454,150 @@ describe('cintaDeMetricas', () => {
   });
 });
 
+// En la vista en días corridos, cada tramo trae su cifra en hábiles (`habiles`, loNuevoDelTramo) y los rótulos la dicen entre paréntesis
+// (spec 2026-11-07-metricas-cajones-y-ciclos, 4): el eje, las marcas y los segmentos siguen en días corridos
+describe('cintaDeMetricas en días corridos, con los hábiles', () => {
+  const enCorridos = (clave, valor, habiles) => tramo(clave, valor, { dias: 'corridos', habiles });
+  const sinHabiles = (tramos) => tramos.map(({ habiles, ...resto }) => resto);
+  // Lo que se dibuja, sin los textos de los rótulos y de los segmentos (de los rótulos, solo cuántos van)
+  const dibujo = (cinta) => ({ ...cinta, rotulos: cinta.rotulos.length, segmentos: cinta.segmentos.map(({ texto, ...resto }) => resto) });
+  const enLaInterna = (tramos, opciones) => cintaDeMetricas(tramos, { gestion: 'interna', dias: 'corridos', ...opciones });
+  const EXTERNA = [enCorridos('aviso', 51, 35), enCorridos('tramite', 12, 8), enCorridos('respuesta', 64, 45), enCorridos('carga', 3, 0)];
+  const INTERNA = [enCorridos('aviso', 51, 35), enCorridos('produccion', 150, 104), enCorridos('carga', 3, 1)];
+
+  it('los rótulos y los segmentos dicen los días corridos y, entre paréntesis, los hábiles', () => {
+    const externa = cintaDeMetricas(EXTERNA, { gestion: 'externa', dias: 'corridos' });
+    assert.deepEqual(externa.marcas.map((m) => m.tipo), ['aviso', 'nota', 'datos', 'carga']);
+    assert.deepEqual(externa.rotulos.map((r) => r.texto), [
+      'Aviso · 51 días corridos (35 hábiles) antes', 'Carga · 3 días corridos (en el día, en días hábiles) después',
+      'Redacción y entrega de nota · 12 días corridos (8 hábiles)', 'Respuesta del área · 64 días corridos (45 hábiles)'
+    ]);
+    assert.deepEqual(externa.segmentos.map((s) => s.texto), [
+      'Redacción y entrega de nota · 12 días corridos (8 hábiles)', 'Respuesta del área · 64 días corridos (45 hábiles)',
+      'Preparación y carga · 3 días corridos (en el día, en días hábiles)'
+    ]);
+    // La entrega y la carga a 3 días corridos, juntas en una marca
+    const interna = cintaDeMetricas(INTERNA, { gestion: 'interna', dias: 'corridos' });
+    assert.deepEqual(interna.marcas.map((m) => m.tipo), ['aviso', 'datos-y-carga']);
+    assert.deepEqual(interna.rotulos.map((r) => r.texto), [
+      'Aviso · 51 días corridos (35 hábiles) antes', 'Entrega y carga, 3 días corridos (1 hábil) después',
+      'Producción del relevamiento · 150 días corridos (104 hábiles)'
+    ]);
+    for (const [cinta, tramos, gestion] of [[externa, EXTERNA, 'externa'], [interna, INTERNA, 'interna']]) {
+      sinPisadas(cinta, gestion);
+      marcasSinTocarse(cinta, gestion);
+      // El eje, las marcas y los segmentos siguen en días corridos: lo único que cambia son los textos
+      assert.deepEqual(dibujo(cinta), dibujo(cintaDeMetricas(sinHabiles(tramos), { gestion, dias: 'corridos' })), gestion);
+      assert.equal(cinta.eje.texto, 'días corridos respecto del vencimiento', gestion);
+    }
+    // En singular, «1 día corrido (1 hábil)»
+    const uno = enLaInterna([enCorridos('aviso', 1, 1), enCorridos('produccion', 30, 21), enCorridos('carga', 1, 1)]);
+    assert.ok(uno.rotulos.some((r) => r.texto === 'Aviso · 1 día corrido (1 hábil) antes'), JSON.stringify(uno.rotulos));
+  });
+
+  it('con 0 días corridos, «el mismo día», como hoy', () => {
+    const cinta = enLaInterna([enCorridos('aviso', 0, 0), enCorridos('produccion', 30, 21), enCorridos('carga', 0, 0)]);
+    assert.deepEqual(cinta.rotulos.map((r) => r.texto), [
+      'Aviso · el mismo día del vencimiento', 'Entrega y carga, el mismo día', 'Producción del relevamiento · 30 días corridos (21 hábiles)'
+    ]);
+    sinPisadas(cinta, 'con 0 días corridos');
+  });
+
+  it('sin los hábiles (una vista en hábiles o una foto sin la clave), los textos de hoy', () => {
+    const sinLaClave = cintaDeMetricas(sinHabiles(EXTERNA), { gestion: 'externa', dias: 'corridos' });
+    assert.deepEqual(sinLaClave.rotulos.map((r) => r.texto), [
+      'Aviso · 51 días corridos antes', 'Carga · 3 días corridos después', 'Redacción y entrega de nota · 12 días corridos',
+      'Respuesta del área · 64 días corridos'
+    ]);
+    assert.deepEqual(sinLaClave.segmentos.map((s) => s.texto), [
+      'Redacción y entrega de nota · 12 días corridos', 'Respuesta del área · 64 días corridos', 'Preparación y carga · 3 días corridos'
+    ]);
+    // Con `habiles` null o raro, lo mismo que sin la clave
+    for (const raro of [null, 'x', 3, [], {}, { valor: 'x' }, { valor: -2 }, { valor: Number.NaN }, { valor: Number.POSITIVE_INFINITY }]) {
+      const tramos = sinHabiles(EXTERNA).map((t) => ({ ...t, habiles: raro }));
+      assert.deepEqual(cintaDeMetricas(tramos, { gestion: 'externa', dias: 'corridos' }), sinLaClave, JSON.stringify(raro));
+    }
+    // En la vista en días hábiles, aunque un tramo trajera `habiles`, sin paréntesis
+    const enHabiles = (tramos) => tramos.map((t) => ({ ...t, cifra: t.cifra && { ...t.cifra, unidad: unidadDe(t.cifra.valor, 'habiles') } }));
+    assert.deepEqual(
+      cintaDeMetricas(enHabiles(EXTERNA), { gestion: 'externa', dias: 'habiles' }),
+      cintaDeMetricas(enHabiles(sinHabiles(EXTERNA)), { gestion: 'externa', dias: 'habiles' })
+    );
+  });
+
+  it('el rótulo del aviso con los hábiles, si no entra en ningún lado, va sin ellos', () => {
+    // Con la letra de la pantalla y cifras que se puedan escribir, entra siempre: la marca del aviso queda cerca del borde izquierdo o,
+    // con una cadena corta, cerca del medio, con lugar a un lado. Con una letra grande (la opción `letra`, que solo mide los textos) el
+    // de «1 día corrido (1 hábil)» no entra ni a la derecha ni a la izquierda de su marca, y el de «1 día corrido» sí. Con esa letra los
+    // textos del eje se pisan entre ellos (el rótulo del eje no se mide), así que aquí se mira solo el del aviso
+    const letra = 18;
+    const tramos = [enCorridos('aviso', 1, 1), enCorridos('produccion', 0, 0), enCorridos('carga', 0, 0)];
+    const cinta = enLaInterna(tramos, { letra });
+    const conHabiles = 'Aviso · 1 día corrido (1 hábil) antes'.length * letra;
+    const xDelAviso = cinta.marcas[0].x;
+    assert.ok(xDelAviso + 12 + conHabiles > 996 && xDelAviso - 12 - conHabiles < 4, 'con los hábiles no entra a ningún lado');
+    assert.equal(cinta.rotulos[0].texto, 'Aviso · 1 día corrido antes');
+    assert.ok(!cinta.rotulos.some((r) => r.texto.includes('hábil')));
+    assert.deepEqual(cinta.rotulos[0], enLaInterna(sinHabiles(tramos), { letra }).rotulos[0]);
+    const { x0, x1 } = caja(cinta.rotulos[0].x, cinta.rotulos[0].y, cinta.rotulos[0].texto, cinta.rotulos[0].anclaje, letra);
+    assert.ok(x0 >= 0 && x1 <= cinta.ancho, `${x0}–${x1}`);
+  });
+
+  it('el rótulo de un tramo que con los hábiles no entra en ningún lado va sin ellos', () => {
+    // «Respuesta del área · 20 días corridos (14 hábiles)» no entra ni sobre su tramo, ni a un costado de la línea del vencimiento, ni en
+    // la fila de arriba; sin «(14 hábiles)», sí. Los demás, con los suyos; el segmento lo sigue diciendo con ellos
+    const tramos = [enCorridos('aviso', 30, 21), enCorridos('tramite', 10, 7), enCorridos('respuesta', 20, 14), enCorridos('carga', 3, 2)];
+    const cinta = cintaDeMetricas(tramos, { gestion: 'externa', dias: 'corridos' });
+    assert.deepEqual(cinta.rotulos.map((r) => r.texto), [
+      'Aviso · 30 días corridos (21 hábiles) antes', 'Carga · 3 días corridos (2 hábiles) después',
+      'Redacción y entrega de nota · 10 días corridos (7 hábiles)', 'Respuesta del área · 20 días corridos'
+    ]);
+    assert.ok(cinta.segmentos.some((s) => s.texto === 'Respuesta del área · 20 días corridos (14 hábiles)'));
+    sinPisadas(cinta, 'la respuesta sin sus hábiles');
+    ningunoMenos(cinta, cintaDeMetricas(sinHabiles(tramos), { gestion: 'externa', dias: 'corridos' }), 'la respuesta sin sus hábiles');
+  });
+
+  it('el de la carga, sin los hábiles si con ellos no entra; y si no entra ni así, el aviso también va sin ellos', () => {
+    // Los casos reales de la interna con el promedio: «Entrega y carga, 1 día corrido (1 hábil) después» no entra; sin «(1 hábil)», sí
+    const promedio = real('interna', 'promedio', 'corridos');
+    assert.deepEqual(promedio.rotulos.map((r) => r.texto), [
+      'Aviso · 60 días corridos (42 hábiles) antes', 'Entrega y carga, 1 día corrido después',
+      'Producción del relevamiento · 80 días corridos (56 hábiles)'
+    ]);
+    // Un aviso corto y una entrega cerca del vencimiento: con el aviso entre paréntesis, la carga no entraría en ningún lado; el aviso va
+    // sin ellos, y la carga entra con los suyos
+    const tramos = [enCorridos('aviso', 5, 4), enCorridos('produccion', 1, 1), enCorridos('carga', 3, 2)];
+    const cinta = enLaInterna(tramos);
+    const textos = cinta.rotulos.map((r) => r.texto);
+    assert.equal(textos[0], 'Aviso · 5 días corridos antes');
+    assert.ok(textos.some((t) => t.startsWith('Carga · 3 días corridos')), JSON.stringify(textos));
+    sinPisadas(cinta, 'el aviso corto');
+    // Si la carga no entra tampoco con el aviso sin los hábiles (todo el mismo día del aviso, junto a la línea del vencimiento: tampoco
+    // entraba sin los hábiles), el aviso los dice
+    const todoJunto = [enCorridos('aviso', 1, 1), enCorridos('produccion', 0, 0), enCorridos('carga', 0, 0)];
+    const sinLaCarga = enLaInterna(todoJunto);
+    assert.deepEqual(sinLaCarga.marcas.map((m) => m.tipos), [['aviso', 'datos', 'carga']]);
+    assert.deepEqual(sinLaCarga.rotulos.map((r) => r.texto), ['Aviso · 1 día corrido (1 hábil) antes']);
+    assert.deepEqual(enLaInterna(sinHabiles(todoJunto)).rotulos.map((r) => r.texto), ['Aviso · 1 día corrido antes']);
+    sinPisadas(sinLaCarga, 'todo junto');
+  });
+
+  it('con la vista de los casos reales en días corridos, el rótulo del aviso dice sus hábiles', () => {
+    const casos = casosDe(mapaDeLosCasos(), { hoy: HOY_DE_LAS_METRICAS });
+    for (const estadistico of ['mediana', 'promedio']) {
+      const vista = vistaDe(casos, { anio: 2026, al: HOY_DE_LAS_METRICAS, estadistico, dias: 'corridos' });
+      const cintas = cintasDeLaVista(vista, { estadistico, dias: 'corridos' });
+      for (const gestion of ['externa', 'interna']) {
+        const aviso = vista.circuito[gestion].find((t) => t.clave === 'aviso');
+        assert.ok(Number.isFinite(aviso.habiles.valor), `${estadistico}, ${gestion}`);
+        const texto = `Aviso · ${cantidadDeLasDos(aviso.cifra.valor, aviso.habiles.valor)} antes`;
+        assert.ok(cintas[gestion].rotulos.some((r) => r.texto === texto), `${estadistico}, ${gestion}: ${texto}`);
+        sinPisadas(cintas[gestion], `${estadistico}, ${gestion}`);
+      }
+    }
+  });
+});
+
 // La opción `letra` de cintaDeMetricas. El PDF de Métricas ya no dibuja la cinta (spec 2026-11-05-metricas-pdf-apaisado): la opción queda
 // sin uso en producción, y estos tests siguen comprobando que hace lo que dice, con la letra que usaba el PDF
 const OPCIONES_CINTA_PDF = Object.freeze({ letra: 8 });
@@ -452,8 +629,15 @@ describe('cintaDeMetricas con la letra del PDF', () => {
       const cinta = delPdf(tramosReales(gestion, estadistico, dias), { gestion, dias, estadistico });
       sinPisadas(cinta, cual, letra);
       marcasSinTocarse(cinta, cual);
+      // El del aviso, en días corridos con los hábiles; en la interna con el promedio, con ellos la carga no entraría ni sin los suyos:
+      // el aviso va sin ellos y la carga entra, como antes
+      const sinLosHabiles = gestion === 'interna' && estadistico === 'promedio' && dias === 'corridos';
       const { aviso } = REALES[gestion][estadistico][dias];
-      assert.ok(cinta.rotulos.some((r) => r.texto === `Aviso · ${aviso} ${unidadDe(aviso, dias)} antes`), cual);
+      const delAviso = sinLosHabiles ? `Aviso · ${aviso} días corridos antes` : `Aviso · ${diasReales(gestion, estadistico, dias, 'aviso')} antes`;
+      assert.ok(cinta.rotulos.some((r) => r.texto === delAviso), cual);
+      if (gestion === 'interna') assert.ok(cinta.rotulos.some((r) => r.texto.startsWith('Entrega y carga')), cual);
+      const sinLaClave = tramosReales(gestion, estadistico, dias).map(({ habiles, ...resto }) => resto);
+      ningunoMenos(cinta, delPdf(sinLaClave, { gestion, dias, estadistico }), cual);
     }
     // También con la cadena entera, cortada en otro tramo y con números enormes
     for (const [tramos, gestion] of [

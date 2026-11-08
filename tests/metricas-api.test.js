@@ -170,12 +170,12 @@ describe('GET /metricas', () => {
     const deEntrada = await api.get('/metricas', como('lector'));
     const raro = await api.get('/metricas?anio=abc&sin=x,1e3,-2,5,5&estadistico=foo&dias=bar&gestion=z', como('lector'));
     assert.equal(raro.status, 200);
-    // Lo mismo que pedir solo ?sin=5: el año en curso, mediana, días hábiles y el 5 destildado una vez
+    // Lo mismo que pedir solo ?sin=5: el año en curso, mediana, días corridos y el 5 destildado una vez
     assert.deepEqual(raro.body, (await api.get('/metricas?sin=5', como('lector'))).body);
     const { data } = raro.body;
     assert.deepEqual([data.anio, data.al, data.en_vivo, data.sin_titulos], [anio, hoy, true, ['Vencido']]);
     assert.equal(tramoDe(data, 'externa', 'carga').cifra.debajo, 'mediana de 3 ciclos');
-    assert.deepEqual(tramoDe(data, 'externa', 'carga').cifra.valor, cifraEsperada(hoy, 'mediana', 'habiles'));
+    assert.deepEqual(tramoDe(data, 'externa', 'carga').cifra.valor, cifraEsperada(hoy, 'mediana', 'corridos'));
     // Sin el vencido, el contexto cuenta 3 y todos al día; sin destildar, 4 y el 75 %
     assert.deepEqual([data.contexto.estados.total, data.contexto.estados.tasa], [3, 100]);
     assert.deepEqual([deEntrada.body.data.contexto.estados.total, deEntrada.body.data.contexto.estados.tasa], [4, 75]);
@@ -185,28 +185,56 @@ describe('GET /metricas', () => {
     assert.deepEqual(repetidos.body, deEntrada.body);
   });
 
-  it('?estadistico=promedio&dias=corridos cambia las cifras', async () => {
+  // Spec 2026-11-07-metricas-cajones-y-ciclos, 4 y 7: sin selector de días. La vista va siempre en días corridos, con la cifra en hábiles
+  // de cada tramo al lado; un link viejo con ?dias=habiles da lo mismo que sin dias (Review Focus 1)
+  it('?estadistico=promedio cambia las cifras; ?dias= no cambia nada: todo en días corridos, con los hábiles de cada tramo', async () => {
     const { hoy } = await prepararHoy();
-    const carga = {};
-    for (const { estadistico, dias } of COMBINACIONES) {
-      const res = await api.get(`/metricas?estadistico=${estadistico}&dias=${dias}`, como('lector'));
-      assert.equal(res.status, 200);
-      carga[`${estadistico}-${dias}`] = tramoDe(res.body.data, 'externa', 'carga').cifra;
+    for (const estadistico of ESTADISTICOS) {
+      const sinDias = await api.get(estadistico === 'mediana' ? '/metricas' : `/metricas?estadistico=${estadistico}`, como('lector'));
+      assert.equal(sinDias.status, 200);
+      for (const dias of [...DIAS, 'x']) {
+        const res = await api.get(`/metricas?estadistico=${estadistico}&dias=${dias}`, como('lector'));
+        assert.equal(res.status, 200);
+        assert.deepEqual(res.body, sinDias.body, `${estadistico}-${dias}`);
+      }
+      const tramo = tramoDe(sinDias.body.data, 'externa', 'carga');
+      // La cifra, en días corridos; sus hábiles, de los mismos ciclos
+      assert.deepEqual([tramo.cifra.valor, tramo.cifra.unidad], [cifraEsperada(hoy, estadistico, 'corridos'), 'días corridos'], estadistico);
+      assert.equal(tramo.habiles.valor, cifraEsperada(hoy, estadistico, 'habiles'), estadistico);
+      assert.equal(tramo.habiles.ciclos, tramo.cifra.ciclos, estadistico);
+      // Con la frase del tramo y su modal
+      assert.equal(tramo.como_se_cuenta, 'Se cuenta desde que la DDPC recibe la actualización hasta la carga en el portal.');
+      assert.equal(typeof tramo.habiles_texto, 'string');
+      assert.ok(tramo.modal !== null && typeof tramo.modal === 'object', estadistico);
+      assert.equal(tramo.modal.ciclos.filter((c) => c.estado === 'cuenta').length, tramo.cifra.ciclos, estadistico);
     }
-    // En días corridos, la mediana de 2, 5 y 30 es 5 y el promedio, 12; en hábiles, otra cosa (5 días corridos son como mucho 5 hábiles)
-    assert.deepEqual([carga['promedio-corridos'].valor, carga['promedio-corridos'].unidad, carga['promedio-corridos'].debajo],
-      [12, 'días corridos', 'promedio de 3 ciclos']);
-    assert.deepEqual([carga['mediana-corridos'].valor, carga['mediana-corridos'].debajo], [5, 'mediana de 3 ciclos']);
-    for (const { estadistico, dias } of COMBINACIONES) {
-      assert.equal(carga[`${estadistico}-${dias}`].valor, cifraEsperada(hoy, estadistico, dias), `${estadistico}-${dias}`);
+    // En días corridos, la mediana de 2, 5 y 30 es 5 y el promedio, 12
+    const promedio = tramoDe((await api.get('/metricas?estadistico=promedio', como('lector'))).body.data, 'externa', 'carga').cifra;
+    assert.deepEqual([promedio.valor, promedio.unidad, promedio.debajo], [12, 'días corridos', 'promedio de 3 ciclos']);
+    const mediana = tramoDe((await api.get('/metricas', como('lector'))).body.data, 'externa', 'carga').cifra;
+    assert.deepEqual([mediana.valor, mediana.debajo], [5, 'mediana de 3 ciclos']);
+  });
+
+  // Review Focus 1: un marcador viejo con ?dias=habiles (o ?dias=corridos) baja el mismo PDF que sin dias (el pie dice la hora: puede
+  // cambiar de minuto)
+  it('el PDF pedido con ?dias= es el mismo que sin dias', async () => {
+    await prepararHoy();
+    const sinElPie = (pdf) => lineasPorHoja(pdf).map((lineas) => lineas.filter((l) => !l.startsWith('Generado el ')));
+    for (const sin of ['/metricas/pdf', '/metricas/pdf?estadistico=promedio']) {
+      const sinDias = await api.get(sin, como('lector'));
+      assert.equal(sinDias.status, 200, sin);
+      for (const dias of ['habiles', 'corridos']) {
+        const con = `${sin}${sin.includes('?') ? '&' : '?'}dias=${dias}`;
+        const conDias = await api.get(con, como('lector'));
+        assert.equal(conDias.status, 200, con);
+        assert.deepEqual(sinElPie(conDias.body), sinElPie(sinDias.body), con);
+      }
     }
-    assert.notEqual(carga['mediana-habiles'].valor, carga['promedio-corridos'].valor);
-    assert.ok(carga['promedio-habiles'].valor < 12, JSON.stringify(carga));
   });
 
   it('?sin= destilda: no cuenta en las cifras, sus filas quedan con contar false y sin_titulos dice cuáles, en el orden pedido', async () => {
     const { hoy, ids, vencido } = await prepararHoy();
-    const res = await api.get(`/metricas?sin=${ids[2]},999999,${vencido},${ids[2]}&estadistico=promedio&dias=corridos`, como('lector'));
+    const res = await api.get(`/metricas?sin=${ids[2]},999999,${vencido},${ids[2]}&estadistico=promedio`, como('lector'));
     assert.equal(res.status, 200);
     const { data } = res.body;
     // El que no existe no va; los demás, en el orden pedido y una sola vez. La franja, ya armada (revisión final, B-6)
@@ -237,7 +265,7 @@ describe('GET /metricas', () => {
     assert.ok(hojas[0].includes('Mediana en días corridos y hábiles · con todos los datasets'), hojas[0].join(' | '));
     assert.ok(hojas[0].includes(`MÉTRICAS · AÑO ${anio}, EN CURSO`));
     // Con lo elegido y un destildado: lo dice la píldora y las cifras son las de GET /metricas con la misma consulta
-    const consulta = `estadistico=promedio&dias=corridos&sin=${vencido}`;
+    const consulta = `estadistico=promedio&sin=${vencido}`;
     const [pdf, json] = await Promise.all([api.get(`/metricas/pdf?${consulta}`, como('lector')), api.get(`/metricas?${consulta}`, como('lector'))]);
     assert.equal(pdf.status, 200);
     const primera = lineasPorHoja(pdf.body)[0];
@@ -357,23 +385,33 @@ describe('metricasDe con un hoy fijo', () => {
     await query('DELETE FROM datasets WHERE id = ?', [ids[2]]);
     const fuentesDeHoy = await seguimientoDatos.fuentesDe(null);
 
+    // Cada combinación de antes da la vista en días corridos de su estadístico: `dias` no se lee (spec 2026-11-07-metricas-cajones-y-ciclos, 4)
     for (const { estadistico, dias } of COMBINACIONES) {
-      const clave = foto.claveDeLaVista(estadistico, dias);
+      const clave = foto.claveDeLaVista(estadistico, 'corridos');
+      const donde = `${estadistico}-${dias}`;
       // Con destildados en la URL: en un año con foto no se destilda
       const data = await metricas({ anio: '2026', estadistico, dias, sin: `${ids[0]},${ids[1]}` }, '2027-03-01');
-      assert.deepEqual(Object.keys(data), CLAVES_DE_DATA, clave);
-      assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto, data.anios, data.sin_titulos], [2026, AL, false, null, [2026, 2027], []], clave);
-      assert.deepEqual(data.fotos, [{ anio: 2026, con_foto: true, aviso_informe: null }, sinFoto(2027, '2027-03-01')], clave);
-      assert.deepEqual(data.vista, guardada.vistas[clave], clave);
-      assert.deepEqual(data.cinta, guardada.cintas[clave], clave);
-      assert.deepEqual(data.contexto, guardada.contexto, clave);
-      assert.deepEqual(data.trabajo, guardada.trabajo[estadistico], clave);
-      assert.deepEqual(data.areas, guardada.areas, clave);
-      assert.ok(data.vista.casos.every((fila) => fila.contar), clave);
+      assert.deepEqual(Object.keys(data), CLAVES_DE_DATA, donde);
+      assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto, data.anios, data.sin_titulos], [2026, AL, false, null, [2026, 2027], []], donde);
+      assert.deepEqual(data.fotos, [{ anio: 2026, con_foto: true, aviso_informe: null }, sinFoto(2027, '2027-03-01')], donde);
+      assert.deepEqual(data.vista, guardada.vistas[clave], donde);
+      assert.deepEqual(data.cinta, guardada.cintas[clave], donde);
+      assert.deepEqual(data.contexto, guardada.contexto, donde);
+      assert.deepEqual(data.trabajo, guardada.trabajo[estadistico], donde);
+      assert.deepEqual(data.areas, guardada.areas, donde);
+      assert.ok(data.vista.casos.every((fila) => fila.contar), donde);
+      // Con las claves nuevas de cada tramo, que la foto guardó: la frase, la cifra en hábiles y el modal
+      for (const gestion of ['externa', 'interna']) {
+        for (const t of data.vista.circuito[gestion]) {
+          assert.equal(typeof t.como_se_cuenta, 'string', `${donde} ${gestion} ${t.clave}`);
+          assert.ok('habiles' in t && 'habiles_texto' in t, `${donde} ${gestion} ${t.clave}`);
+          assert.ok(t.modal !== null && typeof t.modal === 'object', `${donde} ${gestion} ${t.clave}`);
+        }
+      }
       // No se recalculó: con la base de hoy da otra cosa
-      const deHoy = metricasDeLasReglas(fuentesDeHoy, { estadistico, dias });
-      assert.notDeepEqual(data.vista, deHoy.vista, clave);
-      assert.notDeepEqual(data.areas, deHoy.areas, clave);
+      const deHoy = metricasDeLasReglas(fuentesDeHoy, { estadistico, dias: 'corridos' });
+      assert.notDeepEqual(data.vista, deHoy.vista, donde);
+      assert.notDeepEqual(data.areas, deHoy.areas, donde);
     }
     const data = await metricas({ anio: '2026' }, '2027-03-01');
     assert.deepEqual(data.vista.casos.map((fila) => [fila.dataset_id, fila.titulo]),
@@ -381,12 +419,13 @@ describe('metricasDe con un hoy fijo', () => {
     assert.equal(tramoDe(data, 'externa', 'tramite').cifra, null);
     assert.ok(data.cinta.externa, 'la cinta externa se dibuja');
 
-    // Las cifras de la foto también cambian con los selectores: la preparación y carga de 2, 7 y 30 días corridos
-    const promedioCorridos = await metricas({ anio: '2026', estadistico: 'promedio', dias: 'corridos' }, '2027-03-01');
-    assert.deepEqual([tramoDe(promedioCorridos, 'externa', 'carga').cifra.valor, tramoDe(data, 'externa', 'carga').cifra.valor],
-      [13, cifraDe(CARGAS.map(([recibido, carga]) => duracion(recibido, carga, 'habiles'))).mediana]);
+    // Las cifras de la foto también cambian con el estadístico: la preparación y carga de 2, 7 y 30 días corridos, con sus hábiles
+    const promedio = await metricas({ anio: '2026', estadistico: 'promedio', dias: 'habiles' }, '2027-03-01');
+    assert.deepEqual([tramoDe(promedio, 'externa', 'carga').cifra.valor, tramoDe(data, 'externa', 'carga').cifra.valor],
+      [13, cifraDe(CARGAS.map(([recibido, carga]) => duracion(recibido, carga, 'corridos'))).mediana]);
+    assert.equal(tramoDe(data, 'externa', 'carga').habiles.valor, cifraDe(CARGAS.map(([recibido, carga]) => duracion(recibido, carga, 'habiles'))).mediana);
     assert.notEqual(tramoDe(data, 'externa', 'carga').cifra.valor, 13);
-    assert.notDeepEqual(promedioCorridos.trabajo, data.trabajo);
+    assert.notDeepEqual(promedio.trabajo, data.trabajo);
     // El año en curso, en vivo con la base de hoy
     const enCurso = await metricas({}, '2027-03-01');
     assert.deepEqual([enCurso.anio, enCurso.al, enCurso.en_vivo, enCurso.aviso_foto], [2027, '2027-03-01', true, null]);
@@ -464,37 +503,86 @@ describe('metricasDe con un hoy fijo', () => {
     });
   });
 
-  it('una foto sin una de las dos vistas no tira: el PDF y el Informe salen con lo elegido, sin paréntesis', async () => {
+  // Spec 2026-11-07-metricas-cajones-y-ciclos, 4 y 7: lo que se lee es la vista en días corridos. Sin la de los hábiles (y sin los hábiles
+  // de sus tramos), el PDF y el Informe salen en corridos, sin paréntesis; sin la de corridos, deLaFoto tira, como con cualquier
+  // combinación que falte (el 500)
+  it('una foto sin la vista en días hábiles no tira: el PDF y el Informe salen en días corridos, sin paréntesis', async () => {
     await prepararElAnio();
     const guardada = await guardarFoto();
     const { 'mediana-corridos': enCorridos, ...sinCorridos } = guardada.vistas;
-    const { 'mediana-habiles': enHabiles, ...sinHabiles } = guardada.vistas;
+    const { 'mediana-habiles': _enHabiles, ...sinHabiles } = guardada.vistas;
     const generado = { momento: '2027-03-01 10:00:00', por: 'Usuario Ejemplo' };
-    const controlar = (pdf, unidad, carga) => {
+    const controlar = (pdf, carga) => {
       const [primera] = lineasPorHoja(pdf);
       assert.deepEqual(parentesisDeHabiles(pdf), [], primera.join(' | '));
-      assert.equal(primera.filter((l) => l === `Mediana en ${unidad}`).length, 2, primera.join(' | '));
-      assert.ok(primera.includes(`Mediana en ${unidad} · con todos los datasets`), primera.join(' | '));
+      assert.equal(primera.filter((l) => l === 'Mediana en días corridos').length, 2, primera.join(' | '));
+      assert.ok(primera.includes('Mediana en días corridos · con todos los datasets'), primera.join(' | '));
       const i = primera.indexOf('Preparación y carga');
       assert.deepEqual(primera.slice(i + 1, i + 4), [carga.texto, carga.unidad, carga.debajo], primera.join(' | '));
     };
     const cargaDe = (vista) => vista.circuito.externa.find((t) => t.clave === 'carga').cifra;
-
-    await query('UPDATE metricas_fotos SET datos = ? WHERE anio = 2026', [JSON.stringify({ ...guardada, vistas: sinCorridos })]);
-    controlar((await controlador.pdfDeMetricas({ anio: '2026' }, generado)).pdf, 'días hábiles', cargaDe(enHabiles));
+    // «Sin los hábiles»: sin la vista en días hábiles y sin la cifra en hábiles de cada tramo
+    const sinLosHabiles = (vista) => ({
+      ...vista,
+      circuito: {
+        ...vista.circuito,
+        ...Object.fromEntries(['externa', 'interna'].map((g) => [g, vista.circuito[g].map(({ habiles: _h, habiles_texto: _t, ...t }) => t)]))
+      }
+    });
+    const vistas = { ...sinHabiles, 'mediana-corridos': sinLosHabiles(enCorridos) };
+    await query('UPDATE metricas_fotos SET datos = ? WHERE anio = 2026', [JSON.stringify({ ...guardada, vistas })]);
+    for (const consulta of [{ anio: '2026' }, { anio: '2026', dias: 'habiles' }]) {
+      controlar((await controlador.pdfDeMetricas(consulta, generado)).pdf, cargaDe(enCorridos));
+    }
     const informe = await pedirInforme('?anio=2026', 'lector');
     assert.equal(informe.status, 200);
-    controlar(informe.body, 'días hábiles', cargaDe(enHabiles));
+    controlar(informe.body, cargaDe(enCorridos));
 
-    // Sin los hábiles, con «Días corridos»: lo elegido son los corridos
-    await query('UPDATE metricas_fotos SET datos = ? WHERE anio = 2026', [JSON.stringify({ ...guardada, vistas: sinHabiles })]);
-    controlar((await controlador.pdfDeMetricas({ anio: '2026', dias: 'corridos' }, generado)).pdf, 'días corridos', cargaDe(enCorridos));
+    // Sin la vista en días corridos, la que se lee: tira, también pidiendo ?dias=habiles, y el Informe da su 500
+    await query('UPDATE metricas_fotos SET datos = ? WHERE anio = 2026', [JSON.stringify({ ...guardada, vistas: sinCorridos })]);
+    for (const consulta of [{ anio: '2026' }, { anio: '2026', dias: 'habiles' }]) {
+      await assert.rejects(metricas(consulta, '2027-03-01'), { message: 'La foto de 2026 no se puede leer' }, JSON.stringify(consulta));
+    }
+    assert.equal((await pedirInforme('?anio=2026', 'lector')).status, 500);
   });
 
-  it('un año con foto toma las dos vistas de la foto, con cualquiera de los dos selectores', async () => {
+  // Review Focus 5: una foto sacada antes de las claves nuevas (sin la frase, la cifra en hábiles ni el modal de cada tramo, ni las
+  // aclaraciones de los pendientes y los en curso) se lee igual: metricasDe la manda como está, y el PDF y el Informe salen, con el
+  // paréntesis de los hábiles sacado de la otra vista
+  it('una foto sin las claves nuevas se lee igual: metricasDe responde y el PDF y el Informe salen', async () => {
     await prepararElAnio();
     const guardada = await guardarFoto();
-    for (const dias of ['habiles', 'corridos']) {
+    const sinLoNuevo = (vista) => {
+      const { pendientes: _p, en_curso: _e, ...externa } = vista.circuito.aclaraciones.externa;
+      const { en_curso: _i, ...interna } = vista.circuito.aclaraciones.interna;
+      const deHoy = ({ como_se_cuenta: _c, habiles: _h, habiles_texto: _t, modal: _m, ...t }) => t;
+      return {
+        ...vista,
+        circuito: {
+          externa: vista.circuito.externa.map(deHoy), interna: vista.circuito.interna.map(deHoy), aclaraciones: { externa, interna }
+        }
+      };
+    };
+    const vistas = Object.fromEntries(Object.entries(guardada.vistas).map(([clave, vista]) => [clave, sinLoNuevo(vista)]));
+    assert.notDeepEqual(vistas['mediana-corridos'], guardada.vistas['mediana-corridos'], 'se quitaron las claves');
+    await query('UPDATE metricas_fotos SET datos = ? WHERE anio = 2026', [JSON.stringify({ ...guardada, vistas })]);
+    const data = await metricas({ anio: '2026' }, '2027-03-01');
+    assert.deepEqual(data.vista, vistas['mediana-corridos']);
+    const generado = { momento: '2027-03-01 10:00:00', por: 'Usuario Ejemplo' };
+    const habil = guardada.vistas['mediana-habiles'].circuito.externa.find((t) => t.clave === 'carga').cifra;
+    const informe = await pedirInforme('?anio=2026', 'lector');
+    assert.equal(informe.status, 200);
+    for (const pdf of [(await controlador.pdfDeMetricas({ anio: '2026' }, generado)).pdf, informe.body]) {
+      const [primera] = lineasPorHoja(pdf);
+      assert.ok(primera.includes('Mediana en días corridos y hábiles · con todos los datasets'), primera.join(' | '));
+      assert.ok(primera.includes(textoDeHabilesDe(habil)), primera.join(' | '));
+    }
+  });
+
+  it('un año con foto toma las dos vistas de la foto, también pedido con ?dias=', async () => {
+    await prepararElAnio();
+    const guardada = await guardarFoto();
+    for (const dias of [undefined, 'habiles', 'corridos']) {
       const resultado = await controlador.pdfDeMetricas({ anio: '2026', dias }, { momento: '2027-03-01 10:00:00', por: 'Usuario Ejemplo' });
       const [primera] = lineasPorHoja(resultado.pdf);
       const carga = guardada.vistas['mediana-corridos'].circuito.externa.find((t) => t.clave === 'carga').cifra;
@@ -512,7 +600,7 @@ describe('metricasDe con un hoy fijo', () => {
     const guardada = await guardarFoto();
     await query('DELETE FROM datasets WHERE id = ?', [ids[2]]);
     const generado = { momento: '2027-03-01 10:00:00', por: 'Usuario Ejemplo' };
-    const resultado = await controlador.pdfDeMetricas({ anio: '2026', estadistico: 'promedio', dias: 'corridos', sin: String(ids[0]) }, generado);
+    const resultado = await controlador.pdfDeMetricas({ anio: '2026', estadistico: 'promedio', sin: String(ids[0]) }, generado);
     assert.equal(resultado.anio, 2026);
     const hojas = lineasPorHoja(resultado.pdf);
     const primera = hojas[0].join(' ');
@@ -539,14 +627,17 @@ describe('metricasDe con un hoy fijo', () => {
     const SE_REINTENTA = 'La foto de 2026 todavía no se sacó: se reintenta en la próxima corrida.';
     for (const [hoy, aviso, anios] of [['2027-01-01', SE_SACA, [2026, 2027]], ['2027-01-05', SE_SACA, [2026, 2027]],
       ['2027-01-10', SE_SACA, [2026, 2027]], ['2027-01-11', SE_REINTENTA, [2026, 2027]], ['2028-03-01', SE_REINTENTA, [2026, 2027, 2028]]]) {
+      // Cada combinación de antes da la vista en días corridos de su estadístico, la que la foto va a guardar con sus claves nuevas
       for (const { estadistico, dias } of COMBINACIONES) {
-        const clave = `${hoy} ${foto.claveDeLaVista(estadistico, dias)}`;
+        const enCorridos = foto.claveDeLaVista(estadistico, 'corridos');
+        const clave = `${hoy} ${estadistico}-${dias}`;
         const data = await metricas({ anio: '2026', estadistico, dias }, hoy);
         assert.deepEqual([data.anio, data.al, data.en_vivo, data.aviso_foto, data.anios, data.sin_titulos],
           [2026, AL, true, aviso, anios, []], clave);
         assert.deepEqual(data.fotos, anios.map((a) => sinFoto(a, hoy)), clave);
-        assert.deepEqual(data.vista, laQueSeVaASacar.vistas[foto.claveDeLaVista(estadistico, dias)], clave);
-        assert.deepEqual(data.cinta, laQueSeVaASacar.cintas[foto.claveDeLaVista(estadistico, dias)], clave);
+        assert.deepEqual(data.vista, laQueSeVaASacar.vistas[enCorridos], clave);
+        assert.deepEqual(data.cinta, laQueSeVaASacar.cintas[enCorridos], clave);
+        assert.ok(data.vista.circuito.externa.every((t) => typeof t.como_se_cuenta === 'string' && 'habiles' in t && t.modal !== null), clave);
         assert.deepEqual(data.contexto, laQueSeVaASacar.contexto, clave);
         assert.deepEqual(data.trabajo, laQueSeVaASacar.trabajo[estadistico], clave);
         assert.deepEqual(data.areas, laQueSeVaASacar.areas, clave);
@@ -558,7 +649,7 @@ describe('metricasDe con un hoy fijo', () => {
       assert.deepEqual(sinUno.sin_titulos, ['Dataset 1 de prueba'], hoy);
       assert.deepEqual(sinUno.vista.casos.filter((fila) => fila.dataset_id === ids[0]).map((fila) => fila.contar), [false], hoy);
       assert.equal(tramoDe(sinUno, 'externa', 'carga').cifra.ciclos, 2, hoy);
-      assert.deepEqual(sinUno.vista, vistaDe(casosDe(fuentes, { hoy: AL }), { anio: 2026, al: AL, sin: [ids[0]] }), hoy);
+      assert.deepEqual(sinUno.vista, vistaDe(casosDe(fuentes, { hoy: AL }), { anio: 2026, al: AL, sin: [ids[0]], dias: 'corridos' }), hoy);
     }
     // El año en curso es el de entrada
     const enCurso = await metricas({}, '2027-01-05');
@@ -578,7 +669,7 @@ describe('metricasDe con un hoy fijo', () => {
       const data = await metricas({ anio: '2026', sin: String(ids[0]) }, hoy);
       assert.deepEqual([data.en_vivo, data.aviso_foto, data.anios, data.sin_titulos], [false, null, [2026, 2027], []], hoy);
       assert.deepEqual(data.fotos.map((f) => [f.anio, f.con_foto]), [[2026, true], [2027, false]], hoy);
-      assert.deepEqual(data.vista, guardada.vistas['mediana-habiles'], hoy);
+      assert.deepEqual(data.vista, guardada.vistas['mediana-corridos'], hoy);
     }
   });
 
@@ -616,9 +707,11 @@ describe('metricasDe con un hoy fijo', () => {
     const datos = foto.datosDeLaFoto(new Map(), { anio: 2026, generada: '2027-01-10 08:15:00' });
     delete datos.vistas['promedio-corridos'];
     await query('UPDATE metricas_fotos SET datos = ? WHERE anio = 2026', [JSON.stringify(datos)]);
-    await assert.rejects(metricas({ anio: '2026', estadistico: 'promedio', dias: 'corridos' }, '2027-03-01'),
-      { message: 'La foto de 2026 no se puede leer' });
-    // Las otras combinaciones sí
+    for (const dias of [undefined, 'corridos', 'habiles']) {
+      await assert.rejects(metricas({ anio: '2026', estadistico: 'promedio', dias }, '2027-03-01'),
+        { message: 'La foto de 2026 no se puede leer' }, String(dias));
+    }
+    // La mediana, sí
     assert.equal((await metricas({ anio: '2026' }, '2027-03-01')).en_vivo, false);
   });
 });
@@ -682,18 +775,19 @@ describe('cicloDeVidaDe', () => {
     // Hay cifras en las dos gestiones: la carga de los tres externos y la del interno
     assert.deepEqual([etapaDe(data.etapas, 'externa', 'carga').n, etapaDe(data.etapas, 'interna', 'carga').n], [3, 1]);
     assert.equal(etapaDe(data.etapas, 'externa', 'carga').habiles.mediana, MEDIANA_DE_LA_CARGA);
-    // La paridad con la pestaña Métricas, con cada combinación de los selectores
-    for (const { estadistico, dias } of COMBINACIONES) {
-      const metricas = await controlador.metricasDe({ anio: '2026', estadistico, dias }, { hoy });
+    // La paridad con la pestaña Métricas, con cada estadístico: la cifra en días corridos y, al lado, la del mismo tramo en hábiles
+    for (const estadistico of ESTADISTICOS) {
+      const metricas = await controlador.metricasDe({ anio: '2026', estadistico }, { hoy });
       for (const gestion of ['externa', 'interna']) {
         assert.deepEqual(data.etapas[gestion].map((etapa) => etapa.clave), metricas.vista.circuito[gestion].map((t) => t.clave));
         for (const etapa of data.etapas[gestion]) {
-          const { cifra } = tramoDe(metricas, gestion, etapa.clave);
-          const donde = `${gestion}, ${etapa.clave}, ${estadistico}, ${dias}`;
+          const { cifra, habiles } = tramoDe(metricas, gestion, etapa.clave);
+          const donde = `${gestion}, ${etapa.clave}, ${estadistico}`;
           if (cifra === null) {
-            assert.deepEqual([etapa.n, etapa.habiles, etapa.corridos], [0, null, null], donde);
+            assert.deepEqual([etapa.n, etapa.habiles, etapa.corridos, habiles], [0, null, null, null], donde);
           } else {
-            assert.equal(etapa[dias][estadistico], cifra.valor, donde);
+            assert.equal(etapa.corridos[estadistico], cifra.valor, donde);
+            assert.equal(etapa.habiles[estadistico], habiles.valor, donde);
             assert.equal(etapa.n, cifra.ciclos, donde);
           }
         }
@@ -887,11 +981,35 @@ describe('GET /reportes/informe-anual', () => {
       // Los días hábiles entre paréntesis, de lo que guarda la foto
       const enHabiles = guardada.vistas['mediana-habiles'].circuito.externa.find((t) => t.clave === 'carga').cifra;
       assert.ok(hojas[0].includes(`(${enHabiles.texto} ${enHabiles.unidad})`), primera);
+      // La hoja de los resultados, de la vista en días corridos (spec 2026-11-07-metricas-cajones-y-ciclos, 4 y 6): el «después» de
+      // «Actualizados a tiempo» y «Cómo se cuenta», que empieza con los días corridos y, entre paréntesis, hábiles
+      const segunda = hojas[1].join(' ');
+      const { despues } = guardada.vistas['mediana-corridos'].resultados.a_tiempo;
+      assert.match(despues.texto, /\d+ días corridos \(\d+ hábiles\) después\.$/);
+      assert.ok(segunda.includes(despues.texto), segunda);
+      assert.ok(segunda.includes('Los días van corridos y, entre paréntesis, hábiles: de lunes a viernes, sin feriados ni días no laborables.'), segunda);
     }
   });
 
-  // Spec 2026-11-06-metricas-anticipacion-y-corridos, 6 y 9: con los números que la foto ya guarda en cada vista; no se le suma ningún texto
-  it('los dos en curso se arman de lo que guarda la foto', async () => {
+  // Spec 2026-11-07-metricas-cajones-y-ciclos, 4: el Informe lee la foto en días corridos (COMBINACION_DEL_INFORME). Con un texto de la
+  // vista en días hábiles cambiado a mano, el Informe no lo dice: dice el de la vista en corridos
+  it('el Informe lee la vista en días corridos de la foto', async () => {
+    await prepararElAnio();
+    const guardada = await guardarFoto(2026);
+    const OTRO = 'Este texto es de la vista en días hábiles.';
+    const vistas = structuredClone(guardada.vistas);
+    vistas['mediana-habiles'].resultados.a_tiempo.despues.texto = OTRO;
+    await query('UPDATE metricas_fotos SET datos = ? WHERE anio = 2026', [JSON.stringify({ ...guardada, vistas })]);
+    const res = await pedirInforme('?anio=2026', 'lector');
+    assert.equal(res.status, 200);
+    const todo = lineasPorHoja(res.body).flat().join(' ');
+    assert.ok(!todo.includes(OTRO), todo);
+    assert.ok(todo.includes(guardada.vistas['mediana-corridos'].resultados.a_tiempo.despues.texto), todo);
+  });
+
+  // Spec 2026-11-06-metricas-anticipacion-y-corridos, 6 y 9, y 2026-11-07-metricas-cajones-y-ciclos, 6: los en curso, con las dos unidades, van en
+  // «Cómo se cuenta» con el texto que la foto ya guarda (aclaraciones.interna.en_curso); no se le suma ningún texto, y la hoja 1 no los lleva
+  it('los dos en curso salen de lo que guarda la foto, en «Cómo se cuenta»', async () => {
     await prepararElAnio();
     // Un interno avisado que todavía no tiene sus datos: queda en curso en la producción del relevamiento
     const interno = await crearDataset({ titulo: 'Dataset en curso de prueba', gestion: 'interna', vencimiento: '2026-11-30', ultima: '2025-11-30' });
@@ -904,11 +1022,17 @@ describe('GET /reportes/informe-anual', () => {
     const frase = textoEnCursoDeLosDos(produccion('corridos'), produccion('habiles'), 'mediana');
     assert.notEqual(frase, produccion('corridos').texto);
     assert.notEqual(frase, produccion('habiles').texto);
+    // El texto guardado dice el mismo «hace …» con las dos unidades que decía el cajón
+    const { texto } = guardada.vistas['mediana-corridos'].circuito.aclaraciones.interna.en_curso;
+    assert.ok(texto.includes(frase.replace(/^\d+ sin datos registrados todavía, /, '')), `${texto} / ${frase}`);
     const res = await pedirInforme('?anio=2026', 'lector');
     assert.equal(res.status, 200);
-    const primera = lineasPorHoja(res.body)[0].join(' ');
-    assert.ok(primera.includes(frase), primera);
-    assert.ok(!primera.includes(produccion('habiles').texto), primera);
+    const hojas = lineasPorHoja(res.body);
+    const como = hojas.find((lineas) => lineas.includes('CÓMO SE CUENTA')).join(' ');
+    assert.ok(como.includes(texto), como);
+    const primera = hojas[0].join(' ');
+    assert.ok(!primera.includes(texto) && !primera.includes(frase), primera);
+    assert.ok(!hojas.flat().join(' ').includes(produccion('habiles').texto));
   });
 
   it('con la foto de 2025, la comparación con los números de las dos fotos', async () => {

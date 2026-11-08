@@ -19,7 +19,8 @@ Historia y motivos, en las specs:
   Antiobjetivos: los de Métricas (nada que se lea como un reproche o un control a la DGMIT o a un área: sin nota cargada, «pendiente de carga»; los extremos nombran el dataset, no el área; nunca «tardanza», «demora», «atraso», «sin respuesta», «sin entregar» ni «no mandó»), que un caso que todavía no terminó desaparezca, que el reporte diga una cosa y la pestaña Métricas otra para el mismo año y la misma combinación, y que una cifra de un año cerrado cambie después de su foto.
 - Las reglas (`etapasDe(casos, { anio, al, calendario })`, `services/metricasReglas.js`, pura; nunca tira, salvo con un calendario mal armado, y da null sin año o con `al` anterior a él;
   el `calendario`, el mismo en sus dos contextos, es el de los días hábiles: sin él, o con null, `CALENDARIO_FIJO`): las etapas son los tramos del circuito (`TRAMOS_DE_LA_GESTION`), en su orden, con sus nombres, su «desde → hasta» y su insignia, y cuentan exactamente los ciclos de la cifra de cada tramo de `vistaDe` con todos los ciclos (`sin` = []).
-  No copia ninguna regla: dos contextos (`contextoDe`, en días hábiles y en corridos, con mediana), `hechosDe` una vez por caso, `medir` una vez por unidad, `cifraDe` para la mediana y el promedio, `tramoDelCircuito` (en hábiles, con mediana) para el vacío, los pendientes y el orientativo, y las dos pasadas para el en curso: el de `tramoDelCircuito`, en hábiles, y el de `enCursoDelTramo`, en corridos, juntos en `textoEnCursoDeLosDos`; las cuentas de las aclaraciones son las de `aclaracionesDe`, la misma de `vistaDe` (es su `circuito.aclaraciones`).
+  No copia ninguna regla: dos contextos (`contextoDe`, en días hábiles y en corridos, con mediana), `hechosDe` una vez por caso, `medir` una vez por unidad, `cifraDe` para la mediana y el promedio, `tramoDelCircuito` (en hábiles, con mediana) para el vacío, los pendientes y el orientativo, y las dos pasadas para el en curso: el de `tramoDelCircuito`, en hábiles, y el de `enCursoDelTramo`, en corridos, juntos en `textoEnCursoDeLosDos`.
+  Las cuentas de las aclaraciones son las de `aclaracionesDe`, la misma de `vistaDe`, que pone en `circuito.aclaraciones` sus claves y, aparte, `pendientes` y `en_curso` (las de «Cómo se cuenta» de los PDF de Métricas, que el Ciclo de vida no lee).
   Devuelve `{ anio, al, externa:
   Etapa[4], interna:
   Etapa[3], aclaracion_de_la_hoja: { externa, interna } }`.
@@ -40,7 +41,7 @@ Historia y motivos, en las specs:
   Con los dos en 0, «En el día», sin unidad ni hábiles, como en Métricas; con corridos y 0 hábiles, el número en corridos y «En el día, en días hábiles».
   Los en curso no entran en los extremos: son solo de los terminados.
 - Sin ciclos terminados, el bloque no tiene cifras y lleva el vacío (`vacioDeLaEtapa`, con los textos del reporte): sin ninguna nota DGMIT en el RPAD, la redacción y entrega de nota dice «Todavía no hay notas DGMIT cargadas», «N notas pendientes de carga de ciclos abiertos» (decisión del Ciclo de vida del dato: con 0 pendientes, sin texto;
-  Métricas sigue diciendo «0 notas pendientes de carga de ciclos abiertos») y «Se empieza a contar cuando se carguen en el Seguimiento.», y la respuesta del área, «Sin datos todavía» y «Se empieza a contar cuando haya notas DGMIT cargadas.» (con punto, a diferencia de Métricas); cualquier otra, «Sin casos en 2026».
+  en Métricas, el cajón no dice los pendientes y el modal de la redacción dice el vacío entero, también «0 notas pendientes de carga de ciclos abiertos») y «Se empieza a contar cuando se carguen en el Seguimiento.», y la respuesta del área, «Sin datos todavía» y «Se empieza a contar cuando haya notas DGMIT cargadas.» (con punto, a diferencia de Métricas); cualquier otra, «Sin casos en 2026».
   Nada desaparece: un bloque vacío lleva igual sus notas y «Año anterior: …».
   Las notas (`textos.notas`, `[{ tipo, texto }]`, en este orden y solo las que hay;
   el tipo le dice al PDF el color): 'orientativo' («Con tan pocos casos, es orientativo.», con 4 ciclos o menos), 'en_curso' («En curso: 3 sin datos registrados todavía, hace 83 días corridos (53 hábiles, mediana)»: solo en la respuesta y la producción, con las dos unidades y la mediana, de `textoEnCursoDeLosDos`; `etapasDe` mide también los en curso en corridos), 'pendientes' (el texto de Métricas, salvo que ya lo diga el vacío: decisión del Ciclo de vida del dato, el vacío ya dice los pendientes) y 'aclaracion' (la de la etapa, que dice «en esta etapa»:
@@ -100,4 +101,4 @@ Historia y motivos, en las specs:
 
 ## Archivos de tests
 
-`permisos.test.js`, `reportes-pdf.test.js`, `metricas-reglas.test.js`, `metricas-foto.test.js`, `metricas-api.test.js`, `reportes.test.js`, `reportes-frontend.test.js`, `paginas.test.js`
+`permisos.test.js`, `reportes-pdf.test.js`, `metricas-reglas.test.js`, `metricas-huellas.test.js`, `metricas-foto.test.js`, `metricas-api.test.js`, `reportes.test.js`, `reportes-frontend.test.js`, `paginas.test.js`

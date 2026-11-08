@@ -1,16 +1,17 @@
 /**
  * Métricas y Reportes - RPAD (spec 2026-10-24-metricas-y-reportes, 1.4 a 1.7, 2 y 6)
  * Dos pestañas con hash, como Correos: Métricas (la inicial; #metricas) y Reportes (#reportes).
- * Métricas dibuja lo que manda GET /api/metricas: la barra (el año, «Mediana | Promedio», «Días hábiles | Días corridos», los casos
- * y el PDF), la franja de lo destildado, el índice de la página, el circuito de cada gestión, la cinta del recorrido típico y la lista
- * de casos, donde se destilda un dataset; debajo, los resultados del año, el contexto (el índice mes a mes y la antigüedad de los
- * vencidos), el trabajo del RPAD (con las métricas manuales y el CSV de Gestión, su API de siempre), las áreas y los temas (el ranking
- * de Gestión) y «Para completar» (con «Cargar nota DGMIT», que abre el formulario del Seguimiento). Lo elegido viaja en la URL
- * (?anio=&estadistico=&dias=&gestion=&sin=12,45#reportes) y no se guarda; la serie del trabajo por mes y el agrupado de los datasets,
+ * Métricas dibuja lo que manda GET /api/metricas: la barra (el año, «Mediana | Promedio», los casos y el PDF; los días van siempre
+ * corridos, con los hábiles entre paréntesis, sin selector), la franja de lo destildado, el índice de la página, el circuito de cada
+ * gestión (cada nodo con tramo abre el modal de ese tramo, con sus ciclos y su gráfico), la cinta del recorrido típico y la lista de casos, donde se destilda un dataset; debajo, los resultados del año, el contexto
+ * (el índice mes a mes y la antigüedad de los vencidos), el trabajo del RPAD (con las métricas manuales y el CSV de Gestión, su API de
+ * siempre), las áreas y los temas (el ranking de Gestión) y «Para completar» (con «Cargar nota DGMIT», que abre el formulario del
+ * Seguimiento). Lo elegido viaja en la URL
+ * (?anio=&estadistico=&gestion=&sin=12,45#reportes) y no se guarda; la serie del trabajo por mes y el agrupado de los datasets,
  * tampoco (son de la página).
  * La página no recalcula ninguna regla: las cifras, sus textos (también los plurales y lo que dice cuando no hay casos), los en curso,
- * la cinta (con sus x, sus rótulos y sus anclajes) y los textos de los casos los manda el servidor (services/metricasReglas.js y
- * metricasCinta.js); acá solo se dibujan. Las fechas se leen como texto (Utils.fechaCorta). Todo texto que llega del servidor pasa
+ * la cinta (con sus x, sus rótulos y sus anclajes), el modal de cada tramo (con la geometría de su gráfico) y los textos de los casos los
+ * manda el servidor (services/metricasReglas.js, metricasCinta.js y metricasGrafico.js); acá solo se dibujan. Las fechas se leen como texto (Utils.fechaCorta). Todo texto que llega del servidor pasa
  * por Utils.escapeHtml, y un número se escribe con String (un 0 es «0»: Utils.escapeHtml(0) da '').
  * Al cargarse el archivo solo declara: lo que arma HTML es puro (tests/reportes-frontend.test.js lo carga en un vm) y lo que toca
  * el DOM o la API va aparte, al final. La pestaña Reportes (spec 5) tiene ocho tarjetas en dos grupos, «Para presentar» (Métricas del
@@ -32,20 +33,17 @@ document.addEventListener('DOMContentLoaded', () => {
 // Constantes
 // =====================================================
 
-// Los selectores (spec, 1.7 y 2.2): el primero de cada uno es el de entrada
+// Los selectores (spec, 1.7 y 2.2): el primero de cada uno es el de entrada. Los días no son un selector: van siempre corridos y, entre
+// paréntesis, hábiles (spec 2026-11-07-metricas-cajones-y-ciclos, 4); un link viejo con ?dias= se abre igual y la dirección lo pierde
 const ESTADISTICOS = [['mediana', 'Mediana'], ['promedio', 'Promedio']];
-const DIAS = [['habiles', 'Días hábiles'], ['corridos', 'Días corridos']];
 const GESTIONES = [['externa', 'Gestión externa'], ['interna', 'Gestión interna']];
 const PESTANAS = ['metricas', 'reportes'];
-// Lo que se ve al entrar, sin parámetros: el año en curso (`anio` null: el servidor sabe cuál es), mediana, días hábiles, la gestión
-// externa, todos los datasets y la pestaña Métricas
-const ESTADO_POR_DEFECTO = Object.freeze({ anio: null, estadistico: 'mediana', dias: 'habiles', gestion: 'externa', sin: Object.freeze([]), pestana: 'metricas' });
+// Lo que se ve al entrar, sin parámetros: el año en curso (`anio` null: el servidor sabe cuál es), mediana, la gestión externa, todos
+// los datasets y la pestaña Métricas
+const ESTADO_POR_DEFECTO = Object.freeze({ anio: null, estadistico: 'mediana', gestion: 'externa', sin: Object.freeze([]), pestana: 'metricas' });
 
 const BAJADA = 'Cuánto tarda cada paso del circuito, desde el aviso del RPAD hasta la carga en el portal, y los reportes en PDF.';
-const BAJADA_DE_LOS_DIAS = {
-  habiles: 'Los días son hábiles: de lunes a viernes, sin feriados ni días no laborables.',
-  corridos: 'Los días son corridos: todos los días del calendario.'
-};
+const BAJADA_DE_LOS_DIAS = 'Los días van corridos y, entre paréntesis, hábiles: de lunes a viernes, sin feriados ni días no laborables.';
 
 // Los nodos del circuito (spec, 2.2): quién es, qué hace y su color (lo de la DGMIT en violeta, el Portal en verde)
 const NODOS = {
@@ -64,7 +62,6 @@ const CIRCUITO_DE_LA_GESTION = {
 };
 
 const ORIENTATIVO = 'con tan pocos casos, es orientativo';
-const SE_CUENTA_HASTA = 'Se cuenta hasta que se registra la actualización.';
 // Las dos puntas de la línea del cajón «Aviso anticipado»
 const ANTICIPACION_DESDE = 'aviso';
 const ANTICIPACION_HASTA = 'vencimiento';
@@ -85,6 +82,8 @@ const LEYENDA_DE_LA_CINTA = ['aviso', 'nota', 'datos', 'carga', 'datos-y-carga',
 const LEYENDA_FIJA = { 'datos-y-carga': 'Entrega y carga juntas', rayado: 'Después del vencimiento' };
 
 const ICONO_DESCARGA = '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>';
+// Lucide «circle-plus», debajo del rol de cada nodo que abre el modal de su tramo
+const ICONO_VER_LOS_CICLOS = '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>';
 
 // =====================================================
 // Ayudantes (puros)
@@ -162,7 +161,6 @@ function estadoDeLaUrl(texto) {
   return {
     anio: anioDe(parametros.get('anio')),
     estadistico: elegido(parametros.get('estadistico'), ESTADISTICOS),
-    dias: elegido(parametros.get('dias'), DIAS),
     gestion: elegido(parametros.get('gestion'), GESTIONES),
     sin: idsDestildados(parametros.getAll('sin')),
     pestana: PESTANAS.includes(hash) ? hash : ESTADO_POR_DEFECTO.pestana
@@ -175,7 +173,7 @@ function parametrosDe(estado, conGestion) {
   const e = esObjeto(estado) ? estado : ESTADO_POR_DEFECTO;
   const pares = [];
   if (Number.isInteger(e.anio) && anioDe(String(e.anio)) !== null) pares.push(['anio', String(e.anio)]);
-  for (const [clave, validos] of [['estadistico', ESTADISTICOS], ['dias', DIAS], ...(conGestion ? [['gestion', GESTIONES]] : [])]) {
+  for (const [clave, validos] of [['estadistico', ESTADISTICOS], ...(conGestion ? [['gestion', GESTIONES]] : [])]) {
     const valor = elegido(e[clave], validos);
     if (valor !== validos[0][0]) pares.push([clave, valor]);
   }
@@ -192,15 +190,16 @@ function urlDeEstado(estado) {
   return `${consulta}${esObjeto(estado) && estado.pestana === 'reportes' ? '#reportes' : ''}`;
 }
 
-// La consulta de GET /api/metricas (y de su PDF), sin el «?»: el año, los selectores y los destildados
+// La consulta de GET /api/metricas (y de su PDF), sin el «?»: el año, el estadístico y los destildados (nunca los días)
 function consultaDeLaApi(estado) {
   return parametrosDe(estado, false).map(([clave, valor]) => `${clave}=${valor}`).join('&');
 }
 
-// El estado con un selector cambiado: `clave` 'anio', 'estadistico', 'dias' o 'gestion'; lo que no sirve no cambia nada. El año
-// tiene que estar en `anios` (los que manda el servidor, del más viejo al en curso); el en curso vuelve a ser el de entrada (null)
+// El estado con un selector cambiado: `clave` 'anio', 'estadistico' o 'gestion'; lo que no sirve (también 'dias', que ya no es un
+// selector) no cambia nada. El año tiene que estar en `anios` (los que manda el servidor, del más viejo al en curso); el en curso vuelve
+// a ser el de entrada (null)
 function conSelector(estado, clave, valor, anios) {
-  const validos = { estadistico: ESTADISTICOS, dias: DIAS, gestion: GESTIONES }[clave];
+  const validos = { estadistico: ESTADISTICOS, gestion: GESTIONES }[clave];
   if (validos) return validos.some(([v]) => v === valor) ? { ...estado, [clave]: valor } : { ...estado };
   if (clave !== 'anio') return { ...estado };
   const lista = comoLista(anios);
@@ -217,9 +216,10 @@ function conDestildado(sin, id) {
   return lista.includes(elegidoId) ? lista.filter((otro) => otro !== elegidoId) : [...lista, elegidoId];
 }
 
-// La bajada de la página, con cómo se cuentan los días
-function textoDeLaBajada(dias) {
-  return `${BAJADA} ${BAJADA_DE_LOS_DIAS[elegido(dias, DIAS)]}`;
+// La bajada de la página, con cómo se cuentan los días: corridos y, entre paréntesis, hábiles (la misma oración con que empieza
+// «Cómo se cuenta» en los PDF)
+function textoDeLaBajada() {
+  return `${BAJADA} ${BAJADA_DE_LOS_DIAS}`;
 }
 
 // =====================================================
@@ -240,7 +240,7 @@ function htmlDeGestiones(gestion) {
   return htmlDeChips('gestion', GESTIONES, elegido(gestion, GESTIONES), 'Gestión del circuito');
 }
 
-// La barra de arriba (spec 2.1): el año (el en curso arriba, «2026 (en curso)», y debajo los anteriores), los dos selectores, el chip
+// La barra de arriba (spec 2.1): el año (el en curso arriba, «2026 (en curso)», y debajo los anteriores), el estadístico, el chip
 // de los casos («todos» o «todos menos 1») y «Descargar PDF». Debajo, si el año no es el en curso, de dónde sale: el aviso de la foto
 // que falta (el del servidor) o la foto del 31/12. `datos`: los de GET /api/metricas; `estado`: lo elegido
 function htmlDeBarra(datos, estado) {
@@ -258,7 +258,6 @@ function htmlDeBarra(datos, estado) {
   else if (d.en_vivo === false) aviso = `Sale de la foto del ${fecha(d.al)}, calculada con todos los datasets.`;
   return `<select id="mt-anio" class="mt-select" data-selector="anio" aria-label="Año">${opciones}</select>`
     + htmlDeChips('estadistico', ESTADISTICOS, elegido(e.estadistico, ESTADISTICOS), 'Cómo se resume cada tramo')
-    + htmlDeChips('dias', DIAS, elegido(e.dias, DIAS), 'Cómo se cuentan los días')
     + `<button type="button" class="mt-chip" data-accion="casos" aria-controls="mt-casos">Casos: <b>${casos}</b></button>`
     + `<div class="mt-derecha"><button type="button" class="mt-btn mt-btn-tinta" data-accion="pdf">${ICONO_DESCARGA}Descargar PDF</button></div>`
     + (aviso ? `<p class="mt-aviso-foto" role="note">${aviso}</p>` : '');
@@ -279,31 +278,36 @@ function htmlDeFranjaSin(datos, estado = ESTADO_POR_DEFECTO) {
 // El circuito (puro)
 // =====================================================
 
-// La flecha de un tramo (un Tramo de vistaDe), con lo que manda el servidor:
-// - con cifra, el número con su unidad al lado («27» + «días hábiles»; sin «antes») y debajo el estadístico con la cantidad de ciclos
-//   («mediana de 32 ciclos»); un 0 llega como «En el día» (`en_el_dia`), sin unidad, con «mediana en días hábiles» debajo, y la
-//   cantidad de ciclos (`ciclos_texto`) va en el texto de la flecha; con 4 casos o menos, «con tan pocos casos, es orientativo»;
-// - sin cifra, por qué (`vacio`: «Todavía no hay notas DGMIT cargadas» con los pendientes, «Sin datos todavía», «Sin casos en 2026»);
-// - el nombre, la línea, «desde → hasta», los en curso (con «Se cuenta hasta que se registra la actualización.») y los pendientes de
-//   carga de la DGMIT (el texto del vacío o, con cifra, `pendientes_texto`); al final, la insignia de quién está a cargo (nunca solo
-//   el color). Lo de la DGMIT va en violeta. La página no compara números ni arma textos: los escribe como llegan.
-// Con `anticipacion_texto` (solo el aviso con cifra), el cajón «Aviso anticipado»: el número solo, la frase, la línea de aviso a
-// vencimiento y sus dos puntas en lugar de «desde → hasta». La línea es un dibujo fijo que no mide los días, y por eso el lector de
-// pantalla la salta y lee las puntas.
+// La flecha de un tramo (un Tramo de vistaDe), con lo que manda el servidor (spec 2026-11-07-metricas-cajones-y-ciclos, 3):
+// - con cifra, el número con su unidad al lado («64» + «días corridos»), debajo los hábiles entre paréntesis (`habiles_texto`: «(45 días
+//   hábiles)»; '' cuando no va nada) y el estadístico con la cantidad de ciclos («mediana de 32 ciclos»); un 0 llega como «En el día»
+//   (`en_el_dia`), sin unidad, con «mediana en días corridos» debajo, y la cantidad de ciclos (`ciclos_texto`) va después de la frase;
+//   con 4 casos o menos, «con tan pocos casos, es orientativo»;
+// - sin cifra, por qué (`vacio.titulo`: «Todavía no hay notas DGMIT cargadas», «Sin datos todavía», «Sin casos en 2026»);
+// - el nombre, la línea y la frase de cómo se cuenta (`como_se_cuenta`: «Se cuenta desde … hasta …»; una foto sacada antes de esa clave,
+//   «desde → hasta»); sin cifra, debajo, el texto del vacío («Se empieza a contar cuando haya notas DGMIT cargadas»), salvo en la
+//   redacción, donde son los pendientes de carga; al final, la insignia de quién está a cargo (nunca solo el color). Los pendientes y los
+//   en curso no van en el cajón: van en el modal de su tramo. Lo de la DGMIT va en violeta. La página no compara números ni arma textos:
+//   los escribe como llegan.
+// Con `anticipacion_texto` (solo el aviso con cifra), el cajón «Aviso anticipado»: el número solo, la frase, los hábiles, la línea de aviso a
+// vencimiento y sus dos puntas en lugar de la frase de cómo se cuenta, que dice el dibujo. La línea es un dibujo fijo que no mide los días,
+// y por eso el lector de pantalla la salta y lee las puntas.
 function htmlDeFlecha(tramo) {
   if (!esObjeto(tramo)) return '<div class="mt-flecha vacia"><div class="l" aria-hidden="true"></div></div>';
   const cifra = esObjeto(tramo.cifra) ? tramo.cifra : null;
   const vacio = cifra === null && esObjeto(tramo.vacio) ? tramo.vacio : null;
   const anticipa = cifra !== null && escaparTexto(tramo.anticipacion_texto) !== '';
   const clases = ['mt-flecha', tramo.dgmit === true ? 'dgmit' : '', cifra === null ? 'vacia' : '', anticipa ? 'anticipa' : ''].filter(Boolean).join(' ');
+  const habiles = escaparTexto(tramo.habiles_texto);
+  const deLosHabiles = habiles ? `<span class="h">${habiles}</span>` : '';
   const partes = [];
   if (anticipa) {
-    partes.push(`<span class="n">${escaparTexto(cifra.texto)}</span><span class="mt-anticipa-frase">${escaparTexto(tramo.anticipacion_texto)}</span>`
+    partes.push(`<span class="n">${escaparTexto(cifra.texto)}</span><span class="mt-anticipa-frase">${escaparTexto(tramo.anticipacion_texto)}</span>${deLosHabiles}`
       + '<div class="mt-anticipa-tramo" aria-hidden="true"><span class="mt-anticipa-punto"></span><span class="mt-anticipa-linea"></span><span class="mt-anticipa-aro"></span></div>'
       + `<div class="mt-anticipa-pie"><span>${ANTICIPACION_DESDE}</span><span>${ANTICIPACION_HASTA}</span></div>`);
   } else if (cifra) {
     const unidad = escaparTexto(cifra.unidad);
-    partes.push(`<span class="n">${escaparTexto(cifra.texto)}${unidad ? ` <small>${unidad}</small>` : ''}</span>`);
+    partes.push(`<span class="n">${escaparTexto(cifra.texto)}${unidad ? ` <small>${unidad}</small>` : ''}</span>${deLosHabiles}`);
   } else {
     partes.push(`<span class="n">${escaparTexto(vacio?.titulo)}</span>`);
   }
@@ -312,32 +316,51 @@ function htmlDeFlecha(tramo) {
     if (cifra.orientativo === true) partes.push(`<span class="o">${ORIENTATIVO}</span>`);
   }
   partes.push(`<span class="t">${escaparTexto(tramo.nombre)}</span><div class="l" aria-hidden="true"></div>`);
-  if (!anticipa && escaparTexto(tramo.desde_hasta)) partes.push(`<span class="c">${escaparTexto(tramo.desde_hasta)}</span>`);
+  const frase = escaparTexto(tramo.como_se_cuenta) || escaparTexto(tramo.desde_hasta);
+  if (!anticipa && frase) partes.push(`<span class="c">${frase}</span>`);
   if (cifra && cifra.en_el_dia === true && escaparTexto(cifra.ciclos_texto)) partes.push(`<span class="c"><b>${escaparTexto(cifra.ciclos_texto)}</b></span>`);
-  const esDeLaDgmit = tramo.clave === 'tramite';
-  if (vacio && escaparTexto(vacio.texto)) partes.push(`<span class="c${esDeLaDgmit ? ' pend' : ''}">${escaparTexto(vacio.texto)}</span>`);
-  else if (escaparTexto(tramo.pendientes_texto)) partes.push(`<span class="c pend">${escaparTexto(tramo.pendientes_texto)}</span>`);
-  if (esObjeto(tramo.en_curso) && escaparTexto(tramo.en_curso.texto)) {
-    partes.push(`<span class="c curso">${escaparTexto(tramo.en_curso.texto)}</span><span class="c">${SE_CUENTA_HASTA}</span>`);
-  }
+  if (vacio && tramo.clave !== 'tramite' && escaparTexto(vacio.texto)) partes.push(`<span class="c">${escaparTexto(vacio.texto)}</span>`);
   if (escaparTexto(tramo.responsable)) partes.push(`<span class="mt-resp">${escaparTexto(tramo.responsable)}</span>`);
   return `<div class="${clases}">${partes.join('')}</div>`;
 }
 
-function htmlDeNodo(clave) {
-  const [nombre, rol, clase] = NODOS[clave];
-  return `<div class="mt-nodo${clase ? ` ${clase}` : ''}"><span class="q">${nombre}</span><span class="r">${rol}</span></div>`;
+// Un nodo de la banda: quién y qué hace. Si su tramo (el que sale de él) trae el modal del servidor, es un botón que lo abre (spec
+// 2026-11-07-metricas-cajones-y-ciclos, 5: «Ver los ciclos», con un círculo con un + que el lector de pantalla salta, y el nombre del tramo
+// en el nombre del botón), también sin ciclos: el modal dice por qué. Sin modal (el Portal, o un año con una foto sacada antes), el <div>
+// de siempre. `tramo`: el del servidor (o null); `gestion`: la del circuito; data-tramo es la clave del nodo, no la que llega
+function htmlDeNodo(nodo, tramo = null, gestion = 'externa') {
+  const [nombre, rol, clase] = NODOS[nodo];
+  const clases = `mt-nodo${clase ? ` ${clase}` : ''}`;
+  const g = elegido(gestion, GESTIONES);
+  const clave = CIRCUITO_DE_LA_GESTION[g].find(([n]) => n === nodo)?.[1] ?? null;
+  if (clave === null || !esObjeto(tramo) || tramo.clave !== clave || !esObjeto(tramo.modal)) {
+    return `<div class="${clases}"><span class="q">${nombre}</span><span class="r">${rol}</span></div>`;
+  }
+  const delTramo = escaparTexto(tramo.nombre);
+  return `<button type="button" class="${clases}" data-tramo="${clave}" data-gestion="${g}" aria-haspopup="dialog"`
+    + ` aria-label="Ver los ciclos${delTramo ? ` de ${delTramo}` : ''}"><span class="q">${nombre}</span><span class="r">${rol}</span>`
+    + `<span class="mt-ver">${ICONO_VER_LOS_CICLOS}<span>Ver los ciclos</span></span></button>`;
 }
 
-// El circuito de una gestión (spec 2.2): los nodos y, entre cada dos, la flecha de su tramo (buscado por su clave entre los que manda
-// el servidor; si falta, una flecha vacía), como en «Avisos del ciclo abierto» del Seguimiento. `vista`: la de GET /api/metricas; sin
-// su circuito, nada
+// El tramo `clave` de la gestión `gestion` de la vista (buscado por su clave entre los que manda el servidor, no por su lugar), o null
+function tramoDeLaGestion(vista, gestion, clave) {
+  const circuito = esObjeto(vista) && esObjeto(vista.circuito) ? vista.circuito : null;
+  const g = elegido(gestion, GESTIONES);
+  if (!circuito || !Array.isArray(circuito[g])) return null;
+  return circuito[g].find((tramo) => esObjeto(tramo) && tramo.clave === clave) ?? null;
+}
+
+// El circuito de una gestión (spec 2.2): los nodos y, entre cada dos, la flecha de su tramo (si falta, una flecha vacía), como en
+// «Avisos del ciclo abierto» del Seguimiento. Cada nodo con tramo abre el modal de ese tramo. El orden de los hijos no cambia: la grilla
+// los ubica por su lugar (nth-child). `vista`: la de GET /api/metricas; sin su circuito, nada
 function htmlDeCircuito(vista, gestion) {
   const circuito = esObjeto(vista) && esObjeto(vista.circuito) ? vista.circuito : null;
   const g = elegido(gestion, GESTIONES);
   if (!circuito || !Array.isArray(circuito[g])) return '';
-  const tramoDe = (clave) => circuito[g].find((tramo) => esObjeto(tramo) && tramo.clave === clave) ?? null;
-  const partes = CIRCUITO_DE_LA_GESTION[g].map(([nodo, clave]) => htmlDeNodo(nodo) + (clave === null ? '' : htmlDeFlecha(tramoDe(clave))));
+  const partes = CIRCUITO_DE_LA_GESTION[g].map(([nodo, clave]) => {
+    const tramo = clave === null ? null : tramoDeLaGestion(vista, g, clave);
+    return htmlDeNodo(nodo, tramo, g) + (clave === null ? '' : htmlDeFlecha(tramo));
+  });
   return `<div class="mt-tramos ${g}" role="group" aria-label="El circuito de la gestión ${g}">${partes.join('')}</div>`;
 }
 
@@ -454,6 +477,159 @@ function htmlDeLeyendaDeCinta(cinta, gestion) {
   if (esObjeto(cinta.rayado)) hay.add('rayado');
   return LEYENDA_DE_LA_CINTA.filter((tipo) => hay.has(tipo))
     .map((tipo) => `<span><i class="mk mk-${tipo}" aria-hidden="true"></i>${LEYENDA_FIJA[tipo] ?? nombreDeLaMarca([tipo], g)}</span>`).join('');
+}
+
+// =====================================================
+// El modal de cada tramo (puro)
+// =====================================================
+
+// Lo que el gráfico del modal dibuja de su lado: el radio de un punto (con un trazo blanco de 2, que sale 1 afuera: el anillo que mide el
+// servidor) y el largo de la flecha de un en curso, copias de GRAFICO.radio y GRAFICO.flecha de services/metricasGrafico.js (atadas por
+// un test), y la rayita de cada marca del eje (el servidor deja lugar para una de hasta 6). La punta de la flecha, en sus 3,5 de cada lado,
+// queda adentro del nivel del punto
+const RADIO_DEL_PUNTO = 5.5;
+const FLECHA_DEL_EN_CURSO = 11;
+const RAYITA_DEL_EJE = 5;
+const PUNTA_DE_LA_FLECHA = 3.5;
+// El nombre del gráfico para el lector de pantalla: lo mismo está en la lista de abajo, que sí se lee
+const NOMBRE_DEL_GRAFICO = 'Un punto por ciclo según sus días corridos. La lista de abajo tiene los mismos datos.';
+// Las marcas de la leyenda del modal, con la forma de su punto en el gráfico (nunca solo el color): lleno, aro con flecha y punteado (las
+// notas pendientes de carga no tienen días y no van en el gráfico)
+const MARCAS_DEL_MODAL = {
+  cuenta: '<svg class="mt-ley-cuenta" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5"/></svg>',
+  en_curso: '<svg class="mt-ley-curso" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="12" viewBox="0 0 24 12"><circle cx="6" cy="6" r="4.5"/><path d="M12 6h9M17.5 2.5 21 6l-3.5 3.5"/></svg>',
+  pendiente: '<svg class="mt-ley-pend" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5"/></svg>'
+};
+// Las columnas de la lista de los ciclos que no son las dos puntas de la etapa (esas las manda el servidor)
+const COLUMNA_DEL_DATASET = 'Dataset';
+const COLUMNA_DE_LOS_DIAS = 'Días';
+
+// El gráfico de los ciclos de un tramo como SVG (spec 2026-11-07-metricas-cajones-y-ciclos, 5), con la geometría de graficoDelTramo
+// (services/metricasGrafico.js) tal como llega: el eje de la primera marca a la última, con una rayita y su número en cada una y «días
+// corridos» al final; la línea del estadístico con su rótulo (antes que los puntos: los de su columna la tapan con su anillo blanco); un
+// punto lleno por ciclo que cuenta y un aro con su flecha a la derecha por ciclo en curso, cada uno con su <title> (el dataset y los días en
+// las dos unidades, del servidor); y los «+N». Cada texto, con su base en su y; los números y el «+N», centrados en su x; los rótulos, con
+// su anclaje. Lo que no se puede leer no se dibuja; sin gráfico (ningún ciclo con días), nada. Los colores están en el <style>
+function svgDelGrafico(grafico) {
+  if (!esObjeto(grafico) || !esNumero(grafico.ancho) || !esNumero(grafico.alto)) return '';
+  const eje = esObjeto(grafico.eje) ? grafico.eje : {};
+  const conXY = (valor) => esObjeto(valor) && esNumero(valor.x) && esNumero(valor.y);
+  const texto = (t, clase, anclaje = 'middle') => `<text x="${coordenada(t.x)}" y="${coordenada(t.y)}" text-anchor="${anclaje}" class="${clase}">${escaparTexto(t.texto)}</text>`;
+  const partes = [];
+
+  const marcas = comoLista(eje.marcas).filter(conXY);
+  if (esNumero(eje.y) && marcas.length > 0) {
+    const y = coordenada(eje.y);
+    partes.push(`<line x1="${coordenada(marcas[0].x)}" y1="${y}" x2="${coordenada(marcas.at(-1).x)}" y2="${y}" class="eje"/>`);
+    for (const m of marcas) partes.push(`<line x1="${coordenada(m.x)}" y1="${y}" x2="${coordenada(m.x)}" y2="${coordenada(eje.y + RAYITA_DEL_EJE)}" class="eje"/>`);
+  }
+  for (const m of marcas.filter((marca) => escaparTexto(marca.texto))) partes.push(texto(m, 'eje-n'));
+  if (conXY(eje.rotulo) && escaparTexto(eje.rotulo.texto)) partes.push(texto(eje.rotulo, 'eje-r', elegidoDe(eje.rotulo.anclaje, ['end', 'start', 'middle'])));
+
+  const linea = esObjeto(grafico.linea) && esNumero(grafico.linea.x) && esNumero(grafico.linea.y0) && esNumero(grafico.linea.y1) ? grafico.linea : null;
+  if (linea !== null) {
+    const x = coordenada(linea.x);
+    partes.push(`<line x1="${x}" y1="${coordenada(linea.y0)}" x2="${x}" y2="${coordenada(linea.y1)}" class="linea"/>`);
+    if (conXY(linea.rotulo) && escaparTexto(linea.rotulo.texto)) partes.push(texto(linea.rotulo, 'linea-r', elegidoDe(linea.rotulo.anclaje, ANCLAJES)));
+  }
+
+  for (const p of comoLista(grafico.puntos).filter((punto) => conXY(punto) && ['cuenta', 'en_curso'].includes(punto.estado))) {
+    const [x, y] = [coordenada(p.x), coordenada(p.y)];
+    const circulo = `<circle cx="${x}" cy="${y}" r="${coordenada(RADIO_DEL_PUNTO)}"/>`;
+    const titulo = `<title>${escaparTexto(p.titulo)}</title>`;
+    if (p.estado === 'cuenta') {
+      partes.push(`<g class="p-cuenta">${titulo}${circulo}</g>`);
+    } else {
+      const punta = p.x + RADIO_DEL_PUNTO + FLECHA_DEL_EN_CURSO;
+      const flecha = `M${coordenada(p.x + RADIO_DEL_PUNTO + 1)} ${y}H${coordenada(punta)}`
+        + `M${coordenada(punta - PUNTA_DE_LA_FLECHA)} ${coordenada(p.y - PUNTA_DE_LA_FLECHA)}L${coordenada(punta)} ${y}L${coordenada(punta - PUNTA_DE_LA_FLECHA)} ${coordenada(p.y + PUNTA_DE_LA_FLECHA)}`;
+      partes.push(`<g class="p-curso">${titulo}${circulo}<path d="${flecha}"/></g>`);
+    }
+  }
+  for (const m of comoLista(grafico.mas).filter((mas) => conXY(mas) && escaparTexto(mas.texto))) partes.push(texto(m, 'mas'));
+
+  return `<svg class="mt-grafico" viewBox="0 0 ${coordenada(grafico.ancho)} ${coordenada(grafico.alto)}" role="img" aria-label="${NOMBRE_DEL_GRAFICO}" xmlns="http://www.w3.org/2000/svg">`
+    + `${partes.join('')}</svg>`;
+}
+
+// La cifra del modal, la del cajón: el número con su unidad (en el aviso con su línea, «días corridos de anticipación»), los hábiles entre
+// paréntesis, el estadístico y, con 4 casos o menos, el orientativo. Sin cifra, el título y el texto del vacío (spec 5), en todos los
+// tramos: también en la redacción, donde el texto son los pendientes de carga aunque los digan la leyenda y «Cómo se cuenta» (en el cajón
+// no van, porque van acá)
+function htmlDeLaCifraDelModal(tramo) {
+  const cifra = esObjeto(tramo.cifra) ? tramo.cifra : null;
+  if (cifra === null) {
+    const vacio = esObjeto(tramo.vacio) ? tramo.vacio : {};
+    const porque = escaparTexto(vacio.texto);
+    return `<div class="mt-modal-cifra vacia"><span class="n">${escaparTexto(vacio.titulo)}</span>${porque ? `<span class="u">${porque}</span>` : ''}</div>`;
+  }
+  const unidad = escaparTexto(tramo.anticipacion_texto) || escaparTexto(cifra.unidad);
+  const habiles = escaparTexto(tramo.habiles_texto);
+  const debajo = escaparTexto(cifra.debajo);
+  return `<div class="mt-modal-cifra"><span class="n">${escaparTexto(cifra.texto)}${unidad ? ` <small>${unidad}</small>` : ''}</span>`
+    + `${habiles ? `<span class="h">${habiles}</span>` : ''}${debajo ? `<span class="u">${debajo}</span>` : ''}`
+    + `${cifra.orientativo === true ? `<span class="o">${ORIENTATIVO}</span>` : ''}</div>`;
+}
+
+// La leyenda del modal: cuántos ciclos hay de cada estado (las que tienen ciclos, como las manda el servidor), cada una con su marca
+function htmlDeLaLeyendaDelModal(leyenda) {
+  const items = comoLista(leyenda).filter((item) => esObjeto(item) && escaparTexto(item.texto));
+  if (items.length === 0) return '';
+  const marca = (item) => (Object.hasOwn(MARCAS_DEL_MODAL, item.marca) ? MARCAS_DEL_MODAL[item.marca] : '');
+  return `<ul class="mt-modal-leyenda">${items.map((item) => `<li>${marca(item)}${escaparTexto(item.texto)}</li>`).join('')}</ul>`;
+}
+
+// Una fila de «Los ciclos (N)»: el dataset con el link a su Seguimiento (si su id puede ir en una dirección) y su área debajo, las dos fechas
+// de la etapa (debajo de la primera, la marca del avisado ya vencido) y los días en las dos unidades. En curso o pendiente, la fecha final
+// es lo que dice el servidor («en curso», «pendiente de carga»), en ámbar o en violeta y con su texto (nunca solo el color)
+function htmlDeFilaDelModal(ciclo) {
+  const id = idDeDataset(ciclo.dataset_id);
+  const titulo = escaparTexto(ciclo.titulo) || Utils.SIN_DATO;
+  const area = escaparTexto(ciclo.area);
+  const nota = escaparTexto(ciclo.nota);
+  const enCurso = ciclo.estado === 'en_curso';
+  const estado = enCurso ? 'mt-curso' : ciclo.estado === 'pendiente' ? 'mt-pend' : '';
+  const hastaTexto = escaparTexto(ciclo.hasta_texto);
+  let hasta = fecha(ciclo.hasta);
+  if (typeof ciclo.hasta !== 'string' && hastaTexto) hasta = estado ? `<span class="${estado}">${hastaTexto}</span>` : hastaTexto;
+  return `<tr><td class="t">${id === null ? titulo : `<a href="seguimiento.html?id=${String(id)}">${titulo}</a>`}${area ? `<small>${area}</small>` : ''}</td>`
+    + `<td>${fecha(ciclo.desde)}${nota ? `<span class="d">${nota}</span>` : ''}</td><td>${hasta}</td>`
+    + `<td${enCurso ? ' class="mt-curso"' : ''}>${escaparTexto(ciclo.dias_texto) || Utils.SIN_DATO}</td></tr>`;
+}
+
+// El modal de un tramo (spec 2026-11-07-metricas-cajones-y-ciclos, 5), con lo que arma el servidor en tramo.modal (modalDelTramo de
+// services/metricasReglas.js): el encabezado (el nombre del tramo, que es el nombre del diálogo; quién y la gestión; con destildados, la
+// franja «Calculado sin…» de la pestaña, `sinTexto`, sin su link; y la ×) y el cuerpo: la frase de cómo se cuenta, la cifra del cajón con
+// la leyenda al lado, el gráfico (desde 800 px), «Cómo se cuenta» (solo con líneas) y «Los ciclos (N)», la tabla en su marco, que se
+// desplaza de costado en el teléfono, o, con `vacio`, el vacío del servidor. Los ciclos son los de la cifra: los destildados no están. Los
+// puntos, la cifra y las marcas van en el color del tramo (lo de la DGMIT en violeta, el Área en el suyo). Sin modal, nada
+function htmlDelModal(tramo, { sinTexto = '' } = {}) {
+  if (!esObjeto(tramo) || !esObjeto(tramo.modal)) return '';
+  const m = tramo.modal;
+  const color = tramo.clave === 'respuesta' ? 'area' : tramo.dgmit === true ? 'violeta' : 'tinta';
+  const franja = escaparTexto(sinTexto);
+  const cabeza = `<div class="modal-header"><div class="mt-modal-cabeza"><h2 class="modal-title" id="mt-modal-titulo">${escaparTexto(tramo.nombre)}</h2>`
+    + `<p class="mt-modal-quien">${escaparTexto(m.quien)}</p>${franja ? `<p class="mt-franja mt-modal-franja">${franja}</p>` : ''}</div>`
+    + '<button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button></div>';
+  const frase = escaparTexto(tramo.como_se_cuenta) || escaparTexto(tramo.desde_hasta);
+  const como = comoLista(m.como_se_cuenta).map(escaparTexto).filter(Boolean);
+  const ciclos = comoLista(m.ciclos).filter(esObjeto);
+  const vacio = escaparTexto(m.vacio);
+  const [desde, hasta] = [0, 1].map((i) => escaparTexto(comoLista(m.puntas)[i]));
+  let lista = '';
+  if (vacio) {
+    lista = `<p class="mt-vacio">${vacio}</p>`;
+  } else if (ciclos.length > 0) {
+    lista = '<div class="mt-modal-tabla" tabindex="0" role="group" aria-labelledby="mt-modal-lista"><table class="mt-tabla">'
+      + `<thead><tr>${[COLUMNA_DEL_DATASET, desde, hasta, COLUMNA_DE_LOS_DIAS].map((columna) => `<th scope="col">${columna}</th>`).join('')}</tr></thead>`
+      + `<tbody>${ciclos.map(htmlDeFilaDelModal).join('')}</tbody></table></div>`;
+  }
+  const cuerpo = (frase ? `<p class="mt-modal-frase">${frase}</p>` : '')
+    + `<div class="mt-modal-arriba">${htmlDeLaCifraDelModal(tramo)}${htmlDeLaLeyendaDelModal(m.leyenda)}</div>`
+    + svgDelGrafico(m.grafico)
+    + (como.length > 0 ? `<h3 class="mt-modal-h3">Cómo se cuenta</h3><ul class="mt-modal-como">${como.map((linea) => `<li>${linea}</li>`).join('')}</ul>` : '')
+    + `<h3 class="mt-modal-h3" id="mt-modal-lista">${escaparTexto(m.lista)}</h3>${lista}`;
+  return `${cabeza}<div class="modal-body mt-color-${color}">${cuerpo}</div>`;
 }
 
 // =====================================================
@@ -1139,7 +1315,8 @@ function htmlDeReportes(datos, opciones = {}) {
 // ruta del PDF (todas con authMiddleware) y el nombre del archivo (nombreDelReporte, con `hoy`, el día de hoy en Argentina); { error,
 // foco } si falta algo (el aviso, con el mensaje del servidor, y el id del control que recibe el foco), sin pedir nada; null si no hay
 // nada que pedir (el Informe anual de un año sin foto, o un reporte que no es de los ocho). Métricas del año lleva lo elegido en la
-// pestaña Métricas (`estado`: la combinación y los destildados, consultaDeLaApi) con el año de la tarjeta; el en curso no se escribe
+// pestaña Métricas (`estado`: el estadístico y los destildados, consultaDeLaApi; nunca los días) con el año de la tarjeta; el en curso no
+// se escribe
 function pedidoDeReporte(clave, datos, { estado = ESTADO_POR_DEFECTO, anios = null, hoy = Utils.hoyEnArgentina() } = {}) {
   const e = { ...REPORTES_POR_DEFECTO, ...(esObjeto(datos) ? datos : {}) };
   const lista = aniosDeReportes(anios);
@@ -1193,11 +1370,12 @@ function pedidoDeReporte(clave, datos, { estado = ESTADO_POR_DEFECTO, anios = nu
 // =====================================================
 
 // Lo elegido, las métricas que llegaron, si la lista de casos está abierta, el número de pedido (una respuesta que llega después de
-// otra más nueva se descarta), la serie del trabajo por mes, cómo se agrupan los datasets y las métricas manuales del año (con su
-// propio número de pedido). La pestaña Reportes: lo elegido en sus tarjetas, los años (los de `fotos` de GET /api/metricas; null
-// mientras llegan), las áreas (null mientras llegan), las descargas en curso y el pedido de respaldo de los años (pedirLosAniosDeReportes)
+// otra más nueva se descarta), la serie del trabajo por mes, cómo se agrupan los datasets, el modal del tramo abierto ({ gestion, clave },
+// o null) y las métricas manuales del año (con su propio número de pedido). La pestaña Reportes: lo elegido en sus tarjetas, los años (los
+// de `fotos` de GET /api/metricas; null mientras llegan), las áreas (null mientras llegan), las descargas en curso y el pedido de respaldo
+// de los años (pedirLosAniosDeReportes)
 const pagina = {
-  estado: { ...ESTADO_POR_DEFECTO }, datos: null, casosAbiertos: false, pedido: 0, serie: SERIES[0][0], agrupar: AGRUPAR[0][0],
+  estado: { ...ESTADO_POR_DEFECTO }, datos: null, casosAbiertos: false, pedido: 0, serie: SERIES[0][0], agrupar: AGRUPAR[0][0], modal: null,
   manuales: { anio: null, lista: [], pedido: 0 },
   reportes: { elegido: { ...REPORTES_POR_DEFECTO }, anios: null, areas: null, descargando: [], pedidoDeAnios: null }
 };
@@ -1246,9 +1424,12 @@ function iniciarReportes() {
   conectarEventos();
   iniciarMetricasManuales();
   mostrarPestana(pagina.estado.pestana);
-  // El hash de la dirección (el botón atrás, un enlace a #reportes) cambia de pestaña
-  window.addEventListener('hashchange', () => mostrarPestana(estadoDeLaUrl(location.hash).pestana));
-  porId('mt-bajada').textContent = textoDeLaBajada(pagina.estado.dias);
+  // El hash de la dirección (el botón atrás, un enlace a #reportes) cambia de pestaña; un modal abierto se cierra antes
+  window.addEventListener('hashchange', () => {
+    cerrarModalDelTramo();
+    mostrarPestana(estadoDeLaUrl(location.hash).pestana);
+  });
+  porId('mt-bajada').textContent = textoDeLaBajada();
   // Las tarjetas de Reportes primero: cuando llegan las métricas, traen los años de Métricas del año y del Informe anual
   iniciarTarjetasDeReportes();
   cargarMetricas();
@@ -1355,6 +1536,15 @@ function conectarEventos() {
     conElFoco(porId('mt-areas'), htmlDeAreas(pagina.datos.areas, pagina.agrupar));
   });
   porId('mt-csv').addEventListener('click', (evento) => descargarCsv(evento.currentTarget));
+  // La banda abre el modal de su tramo; la ×, un clic en el velo y Escape lo cierran
+  porId('mt-circuito').addEventListener('click', (evento) => {
+    const boton = evento.target.closest('button[data-tramo]');
+    if (boton) abrirModalDelTramo(boton.dataset.gestion, boton.dataset.tramo);
+  });
+  conectarCierreDelModal();
+  document.addEventListener('keydown', (evento) => {
+    if (evento.key === 'Escape' && pagina.modal !== null) cerrarModalDelTramo();
+  });
 }
 
 // Uno solo de los estados de la pestaña: cargando, el error, sin datos (un año sin métricas) o el contenido. La franja de lo
@@ -1373,8 +1563,9 @@ function sonMetricas(datos) {
 
 // GET /api/metricas con lo elegido. Con métricas ya dibujadas, quedan a la vista (atenuadas) hasta que llegan las nuevas. Un 404 es
 // un año sin métricas; otro error, el aviso de error. El dibujo va dentro del mismo try: si un dato raro lo rompe, queda el aviso de
-// error y no «Cargando…» para siempre. Las métricas nuevas pasan a ser las de la página recién cuando se dibujaron enteras. Al final,
-// con la respuesta (o sin ella), las tarjetas de Reportes con los años
+// error y no «Cargando…» para siempre. Las métricas nuevas pasan a ser las de la página recién cuando se dibujaron enteras. Un modal de
+// un tramo abierto (con los números de antes) se cierra antes de dibujar, y el foco va al botón nuevo de su tramo. Al final, con la
+// respuesta (o sin ella), las tarjetas de Reportes con los años
 async function cargarMetricas() {
   const pedido = ++pagina.pedido;
   const contenido = porId('mt-contenido');
@@ -1387,12 +1578,15 @@ async function cargarMetricas() {
     const datos = (await API.pedirJson('GET', `/metricas?${consulta}`))?.data;
     if (pedido !== pagina.pedido) return;
     if (!sonMetricas(datos)) throw new TypeError('La respuesta no son las métricas');
+    const cerrado = cerrarModalDelTramo({ enfocar: false });
     dibujarMetricas(datos);
     pagina.datos = datos;
     fotos = datos.fotos;
     mostrarEstadoDeMetricas('mt-contenido');
+    if (cerrado !== null) enfocarElBotonDelTramo(cerrado);
   } catch (error) {
     if (pedido !== pagina.pedido) return;
+    cerrarModalDelTramo();
     if (error?.status === 404) {
       pagina.datos = null;
       mostrarEstadoDeMetricas('mt-sin-datos');
@@ -1419,6 +1613,7 @@ function claveDelFoco(contenedor) {
   if (d.fila) return `[data-fila="${d.fila}"]`;
   if (d.accion) return `[data-accion="${d.accion}"]`;
   if (d.reporte) return `[data-reporte="${d.reporte}"]`;
+  if (d.tramo) return `[data-tramo="${d.tramo}"][data-gestion="${d.gestion}"]`;
   return null;
 }
 
@@ -1435,7 +1630,6 @@ function dibujarLaBarra(datos) {
 
 // Todo lo de la pestaña con `datos` (las métricas que llegaron)
 function dibujarMetricas(datos) {
-  porId('mt-bajada').textContent = textoDeLaBajada(pagina.estado.dias);
   dibujarLaBarra(datos);
   porId('mt-franja').innerHTML = htmlDeFranjaSin(datos, pagina.estado);
   porId('mt-indice').innerHTML = htmlDelIndiceDeLaPagina(datos.vista);
@@ -1465,7 +1659,7 @@ function dibujarElCircuito(datos) {
   const { estado } = pagina;
   const cinta = esObjeto(datos.cinta) && esObjeto(datos.cinta[estado.gestion]) ? datos.cinta[estado.gestion] : null;
   conElFoco(porId('mt-gestiones'), htmlDeGestiones(estado.gestion));
-  porId('mt-circuito').innerHTML = htmlDeCircuito(datos.vista, estado.gestion);
+  conElFoco(porId('mt-circuito'), htmlDeCircuito(datos.vista, estado.gestion));
   porId('mt-cinta').innerHTML = svgDeCinta(cinta, estado.gestion);
   porId('mt-cinta').hidden = cinta === null;
   porId('mt-leyenda').innerHTML = htmlDeLeyendaDeCinta(cinta, estado.gestion);
@@ -1482,6 +1676,61 @@ function dibujarLosCasos(datos) {
   porId('mt-casos').hidden = !pagina.casosAbiertos;
   boton.textContent = pagina.casosAbiertos ? 'Ocultar los casos' : 'Ver los casos';
   boton.setAttribute('aria-expanded', String(pagina.casosAbiertos));
+}
+
+// ---- El modal de cada tramo (spec 2026-11-07-metricas-cajones-y-ciclos, 5) ----
+
+// Abre el modal del tramo `clave` de la gestión `gestion` con las métricas de la página (htmlDelModal, con la franja de lo destildado). El
+// resto de la página queda inerte (como en Configuración: ni el foco ni el lector de pantalla salen del modal) y quieta (sin desplazarse
+// detrás), y el foco pasa a la × cuando termina la entrada (como en el Seguimiento), si el modal sigue abierto: un Escape antes deja el
+// foco donde lo puso el cierre. Sin ese tramo en el circuito o sin su modal, nada
+function abrirModalDelTramo(gestion, clave) {
+  const g = elegido(gestion, GESTIONES);
+  const delCircuito = gestion === g && CIRCUITO_DE_LA_GESTION[g].some(([, otra]) => otra !== null && otra === clave);
+  const tramo = delCircuito ? tramoDeLaGestion(pagina.datos?.vista, g, clave) : null;
+  if (tramo === null || !esObjeto(tramo.modal)) return;
+  porId('mt-modal-contenido').innerHTML = htmlDelModal(tramo, { sinTexto: pagina.datos.sin_texto });
+  porId('mt-modal-tramo').classList.add('active');
+  document.querySelector('.app-container').inert = true;
+  document.body.style.overflow = 'hidden';
+  pagina.modal = { gestion: g, clave };
+  setTimeout(() => {
+    if (pagina.modal !== null) porId('mt-modal-contenido').querySelector('.modal-close')?.focus();
+  }, 100);
+}
+
+// Cierra el modal abierto y, con `enfocar`, devuelve el foco a su botón (enfocarElBotonDelTramo). Devuelve el que estaba abierto, o null
+function cerrarModalDelTramo({ enfocar = true } = {}) {
+  const abierto = pagina.modal;
+  if (abierto === null) return null;
+  pagina.modal = null;
+  porId('mt-modal-tramo').classList.remove('active');
+  document.querySelector('.app-container').inert = false;
+  document.body.style.overflow = '';
+  if (enfocar) enfocarElBotonDelTramo(abierto);
+  return abierto;
+}
+
+// El foco, al botón de la banda del mismo tramo y la misma gestión (si la banda se redibujó, al nuevo); si ya no está (un año con una foto
+// sacada antes no tiene botones), al chip de la gestión elegida
+function enfocarElBotonDelTramo({ gestion, clave }) {
+  const boton = porId('mt-circuito').querySelector(`button[data-tramo="${clave}"][data-gestion="${gestion}"]`);
+  (boton ?? porId('mt-gestiones').querySelector(`button[data-selector="gestion"][data-valor="${pagina.estado.gestion}"]`))?.focus();
+}
+
+// Cierran la × (data-cerrar) y el clic en el velo, solo si empezó en el velo: soltar ahí una selección de texto que empezó adentro no lo
+// cierra (como en el Seguimiento)
+function conectarCierreDelModal() {
+  const velo = porId('mt-modal-tramo');
+  let desdeElVelo = false;
+  velo.addEventListener('mousedown', (evento) => {
+    desdeElVelo = evento.target === velo;
+  });
+  velo.addEventListener('click', (evento) => {
+    if (evento.target.closest('[data-cerrar]')) cerrarModalDelTramo();
+    else if (evento.target === velo && desdeElVelo) cerrarModalDelTramo();
+    desdeElVelo = false;
+  });
 }
 
 // El chip «Casos: …»: abre la lista de casos y la trae a la vista
@@ -1505,7 +1754,6 @@ function alCambiarSelector(clave, valor) {
     dibujarLosCasos(pagina.datos);
     return;
   }
-  porId('mt-bajada').textContent = textoDeLaBajada(pagina.estado.dias);
   dibujarLaBarra(pagina.datos);
   cargarMetricas();
 }

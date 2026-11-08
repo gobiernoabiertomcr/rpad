@@ -6,7 +6,7 @@
 // alturas fijas de ALTURAS_DE_LA_CINTA (las de la maqueta 7). Los textos se miden con 6,6 por letra (la pantalla; el PDF, con su letra:
 // la opción `letra`, como en la cinta del Seguimiento), 10 sobre la línea de base y 3 debajo: ningún texto sale del dibujo ni se pisa con
 // otro (pedido del usuario). Ninguna función tira error: con datos raros devuelve null o corta la cadena.
-import { unidadDe, SIN_NOTAS_DGMIT, GESTIONES } from './metricasReglas.js';
+import { unidadDe, cantidadDeLasDos, SIN_NOTAS_DGMIT, GESTIONES } from './metricasReglas.js';
 
 const ANCHO = 1000;
 const ALTO = 156;
@@ -91,6 +91,21 @@ const nombreDe = (tramo) => (esObjeto(tramo) && typeof tramo.nombre === 'string'
 // «12 días hábiles», «1 día corrido» o, con 0, «en el día»
 const cuanto = (valor, dias) => (valor === 0 ? 'en el día' : `${valor} ${unidadDe(valor, dias)}`);
 
+// Los hábiles de un tramo (la cifra en días hábiles que trae en la vista en corridos: `habiles` de loNuevoDelTramo, en
+// services/metricasReglas.js), 0 o más; null si no los trae (la vista en hábiles o una foto sin esa clave) o si no se pueden leer
+const habilesDe = (tramo) => {
+  const valor = esObjeto(tramo) && esObjeto(tramo.habiles) ? tramo.habiles.valor : null;
+  return Number.isFinite(valor) && valor >= 0 ? valor : null;
+};
+
+// Los días de un eslabón ({ tramo, valor }) en su rótulo: en la vista en corridos, con los hábiles del tramo entre paréntesis (spec
+// 2026-11-07-metricas-cajones-y-ciclos, 4: «64 días corridos (45 hábiles)», «3 días corridos (en el día, en días hábiles)», y con 0
+// corridos, «en el día», como hoy); sin los hábiles, los de `cuanto`
+const cuantoDelTramo = (t, dias) => {
+  const habiles = dias === 'corridos' ? habilesDe(t.tramo) : null;
+  return habiles === null ? cuanto(t.valor, dias) : cantidadDeLasDos(t.valor, habiles);
+};
+
 // Lo que dice el gris. Mientras no haya notas DGMIT cargadas, la cadena se corta en la DGMIT o en el área: «La cinta se completa
 // cuando haya notas DGMIT cargadas». Si se corta en otro tramo sin casos, cuál y por qué: «Producción del relevamiento: sin casos en
 // 2026» (el «Sin casos en 2026» de vistaDe)
@@ -174,6 +189,12 @@ const adentro = (caja) => caja.x0 >= MARGEN && caja.x1 <= ANCHO - MARGEN && caja
 // - el de cada tramo (menos la carga, que lo dice su marca) va centrado sobre su segmento en la fila de los tramos (y = 42); si la línea
 //   del vencimiento lo cruza o se pisa con otro, a un costado de la línea sin dejar su tramo; y si no, pasa a la fila libre de arriba
 //   (y = 26). Si no entra en ningún lado, no va.
+// En la vista en días corridos, cada tramo trae también su cifra en hábiles (`habiles`) y los rótulos y los segmentos la dicen entre
+// paréntesis (spec 2026-11-07-metricas-cajones-y-ciclos, 4): «Aviso · 51 días corridos (35 hábiles) antes», «Respuesta del área · 64
+// días corridos (45 hábiles)», «Entrega y carga, 3 días corridos (1 hábil) después»; con 0 corridos, «el mismo día», como siempre. El
+// eje, las marcas y los segmentos siguen en días corridos. El paréntesis va después del rótulo: un rótulo que con los hábiles no entra
+// en ningún lado, o que con ellos deja sin lugar a otro, va sin ellos, y la cinta escribe siempre todos los rótulos que escribiría sin
+// los hábiles. Sin `habiles` (la vista en hábiles o una foto sin esa clave), los rótulos sin paréntesis.
 // Ninguno sale del dibujo ni se pisa con otro texto (los números del eje, «vencimiento», el rótulo del eje, el del gris y los otros
 // rótulos). `tramos`: los de vistaDe para la gestión (circuito.externa o circuito.interna); `opciones`: { gestion: 'externa' (la de
 // entrada) | 'interna', dias: 'habiles' (los de entrada) | 'corridos', estadistico: 'mediana' (el de entrada) | 'promedio', letra:
@@ -240,9 +261,11 @@ export const cintaDeMetricas = (tramos, opciones) => {
   }
   const marcas = grupos.map((grupo) => ({ x: grupo.x, tipo: tipoDelGrupo(grupo.tipos), tipos: grupo.tipos }));
 
-  const textoDelTramo = (t) => {
+  // El texto de un tramo, con los hábiles entre paréntesis si los trae o, con `conHabiles` false, sin ellos
+  const textoDelTramo = (t, conHabiles = true) => {
     const nombre = nombreDe(t.tramo);
-    return nombre === '' ? cuanto(t.valor, dias) : `${nombre} · ${cuanto(t.valor, dias)}`;
+    const dicho = conHabiles ? cuantoDelTramo(t, dias) : cuanto(t.valor, dias);
+    return nombre === '' ? dicho : `${nombre} · ${dicho}`;
   };
   // Un tramo de 0 días no tiene largo: no va entre los segmentos (lo dicen su marca y, si entra, su rótulo)
   const segmentos = cadena.filter((t) => t.valor > 0)
@@ -285,9 +308,10 @@ export const cintaDeMetricas = (tramos, opciones) => {
       if (libre(caja)) {
         ocupado.push(caja);
         rotulos.push({ x: lugar.x, y: lugar.y, texto, anclaje: lugar.anclaje, color });
-        return;
+        return true;
       }
     }
+    return false;
   };
   // Al lado de una marca: a la derecha si entra en el dibujo y si no a la izquierda; en la fila de arriba y, si ahí se pisa, en la de
   // los tramos
@@ -315,25 +339,57 @@ export const cintaDeMetricas = (tramos, opciones) => {
     return lugares;
   };
 
-  // Primero los rótulos de las marcas (el del aviso y el de la carga, que pide la spec) y después los de los tramos, en orden
-  const textoDelAviso = anticipacion === 0
-    ? 'Aviso · el mismo día del vencimiento'
-    : `Aviso · ${anticipacion} ${unidadDe(anticipacion, dias)} antes`;
-  colocar(textoDelAviso, 'tinta', alLadoDe(x(aviso), textoDelAviso));
+  // Los rótulos, en orden: primero los de las marcas (el del aviso y el de la carga, que pide la spec) y después los de los tramos.
+  // Cada uno con dos textos: con los hábiles entre paréntesis y sin ellos (los dos iguales sin los hábiles), y sus lugares
+  const delAviso = { tramo: tramoDe('aviso'), valor: anticipacion };
+  const rotuloDelAviso = (cuantoAntes) => (anticipacion === 0 ? 'Aviso · el mismo día del vencimiento' : `Aviso · ${cuantoAntes} antes`);
+  const pedidos = [{
+    clave: 'aviso', color: 'tinta', lugares: (texto) => alLadoDe(x(aviso), texto),
+    textos: [rotuloDelAviso(cuantoDelTramo(delAviso, dias)), rotuloDelAviso(cuanto(anticipacion, dias))]
+  }];
+  // El rótulo de la carga va al lado de la marca que la lleva y dice lo que esa marca junta: «Entrega y carga…» si también lleva la
+  // entrega (con 0 días, siempre), aunque se dibuje como el aviso o la nota que caen ahí mismo
   const carga = cadena.find((t) => t.clave === 'carga');
   if (carga) {
-    // El rótulo de la carga va al lado de la marca que la lleva y dice lo que esa marca junta: «Entrega y carga…» si también lleva la
-    // entrega (con 0 días, siempre), aunque se dibuje como el aviso o la nota que caen ahí mismo
     const marca = marcas.find((m) => m.tipos.includes('carga'));
-    const despues = `${carga.valor} ${unidadDe(carga.valor, dias)} después`;
-    const texto = !marca.tipos.includes('datos') ? `Carga · ${despues}`
-      : carga.valor === 0 ? 'Entrega y carga, el mismo día' : `Entrega y carga, ${despues}`;
-    colocar(texto, 'verde', alLadoDe(marca.x, texto));
+    const rotuloDeLaCarga = (cuantoDespues) => (!marca.tipos.includes('datos') ? `Carga · ${cuantoDespues} después`
+      : carga.valor === 0 ? 'Entrega y carga, el mismo día' : `Entrega y carga, ${cuantoDespues} después`);
+    pedidos.push({
+      clave: 'carga', color: 'verde', lugares: (texto) => alLadoDe(marca.x, texto),
+      textos: [rotuloDeLaCarga(cuantoDelTramo(carga, dias)), rotuloDeLaCarga(cuanto(carga.valor, dias))]
+    });
   }
   for (const t of cadena.filter((eslabon) => eslabon.clave !== 'carga')) {
-    const texto = textoDelTramo(t);
-    colocar(texto, t.color, sobreElTramo(x(t.desde), x(t.hasta), texto));
+    pedidos.push({
+      clave: t.clave, color: t.color, lugares: (texto) => sobreElTramo(x(t.desde), x(t.hasta), texto),
+      textos: [textoDelTramo(t), textoDelTramo(t, false)]
+    });
   }
+  // Pone los rótulos desde lo que ocupaba lugar antes de ellos: cada uno, con `conHabiles[i]`, primero con los hábiles y, si así no
+  // entra en ningún lado, sin ellos; si no, solo sin ellos. Devuelve las claves de los que entraron
+  const antesDeLosRotulos = ocupado.length;
+  const poner = (conHabiles) => {
+    ocupado.length = antesDeLosRotulos;
+    rotulos.length = 0;
+    const puestos = new Set();
+    pedidos.forEach((pedido, i) => {
+      const textos = new Set(conHabiles[i] ? pedido.textos : pedido.textos.slice(1));
+      if ([...textos].some((texto) => colocar(texto, pedido.color, pedido.lugares(texto)))) puestos.add(pedido.clave);
+    });
+    return puestos;
+  };
+  // El paréntesis va después del rótulo (spec 2026-11-07-metricas-cajones-y-ciclos, 4, y ruling del 07/11): la cinta nunca escribe
+  // menos rótulos que sin los hábiles. Sin ellos van los de siempre; después, en orden, cada rótulo prueba con los hábiles y se queda
+  // con ellos solo si así siguen entrando todos los de siempre (con los que vienen después, sin los hábiles)
+  const deSiempre = poner(pedidos.map(() => false));
+  const conHabiles = pedidos.map(() => false);
+  pedidos.forEach((pedido, i) => {
+    if (pedido.textos[0] === pedido.textos[1]) return;
+    conHabiles[i] = true;
+    const puestos = poner(conHabiles);
+    conHabiles[i] = [...deSiempre].every((clave) => puestos.has(clave));
+  });
+  poner(conHabiles);
 
   return {
     ancho: ANCHO,

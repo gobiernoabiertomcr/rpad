@@ -196,6 +196,23 @@ describe('la foto del 31/12', () => {
       }
     }
     assert.deepEqual([Object.keys(guardada.datos.vistas), Object.keys(guardada.datos.cintas)], [CLAVES, CLAVES]);
+    // Las vistas en días corridos, las que leen la página y los PDF, guardan lo nuevo de cada tramo (spec 2026-11-07-metricas-cajones-y-ciclos,
+    // 7): la frase, la cifra en hábiles y el modal; las de hábiles, sin modal (pesa, y nadie lo lee)
+    for (const estadistico of ESTADISTICOS) {
+      for (const gestion of ['externa', 'interna']) {
+        for (const t of guardada.datos.vistas[`${estadistico}-corridos`].circuito[gestion]) {
+          const donde = `${estadistico} ${gestion} ${t.clave}`;
+          assert.equal(typeof t.como_se_cuenta, 'string', donde);
+          assert.ok(t.como_se_cuenta.startsWith('Se cuenta desde '), donde);
+          assert.ok('habiles' in t && 'habiles_texto' in t, donde);
+          assert.equal(t.habiles === null, t.cifra === null, donde);
+          assert.ok(t.modal !== null && typeof t.modal === 'object' && Array.isArray(t.modal.ciclos), donde);
+        }
+        for (const t of guardada.datos.vistas[`${estadistico}-habiles`].circuito[gestion]) {
+          assert.deepEqual([t.habiles, t.habiles_texto, t.modal], [null, '', null], `${estadistico} ${gestion} ${t.clave}`);
+        }
+      }
+    }
     assert.ok(guardada.datos.cintas['mediana-habiles'].externa, 'la cinta externa se dibuja (hay aviso anticipado)');
     assert.deepEqual(guardada.datos.contexto, {
       indice: indiceMesAMes(fuentes, opciones), indice_vacio: null, antiguedad: antiguedadDeVencidos(fuentes, opciones),
@@ -312,8 +329,9 @@ describe('la foto del 31/12', () => {
     const filaDe = (id) => v.casos.find((f) => f.dataset_id === id && f.vencimiento === '2026-11-30');
     const tramoDe = (gestion, clave) => v.circuito[gestion].find((t) => t.clave === clave);
 
-    // A: la carga del 30/12, aprobada el 05/01, entra en 2026: un día hábil después de los datos del 29/12, y después del vencimiento
-    assert.deepEqual([filaDe(a).recibido.fecha, filaDe(a).carga], ['2026-12-29', { fecha: '2026-12-30', texto: '1 día hábil desde que se recibió' }]);
+    // A: la carga del 30/12, aprobada el 05/01, entra en 2026: un día después de los datos del 29/12 (corrido y hábil), y después del
+    // vencimiento
+    assert.deepEqual([filaDe(a).recibido.fecha, filaDe(a).carga], ['2026-12-29', { fecha: '2026-12-30', texto: '1 día corrido (1 hábil) desde que se recibió' }]);
     assert.deepEqual([tramoDe('externa', 'carga').cifra.valor, tramoDe('externa', 'carga').cifra.ciclos], [1, 1]);
     assert.deepEqual([v.resultados.a_tiempo.a_tiempo, v.resultados.a_tiempo.total, v.resultados.a_tiempo.externa], [0, 1, [0, 1]]);
     assert.equal(datos.trabajo.mediana.actualizaciones, 1);
@@ -326,7 +344,10 @@ describe('la foto del 31/12', () => {
       { n: 1, valor: hace, texto: `1 sin datos registrados todavía, hace ${hace} días hábiles (mediana)` });
     assert.equal(tramoDe('interna', 'produccion').cifra, null);
     assert.equal(tramoDe('interna', 'carga').cifra, null);
-    assert.deepEqual([filaDe(b).recibido, filaDe(b).carga], [{ fecha: null, texto: `en curso, ${hace} días hábiles desde el aviso`, origen: '' }, { fecha: null, texto: '' }]);
+    // En «Los casos», en días corridos y, entre paréntesis, hábiles (spec 2026-11-07-metricas-cajones-y-ciclos, 4)
+    const haceEnCorridos = duracion('2026-10-01', AL, 'corridos');
+    assert.deepEqual([filaDe(b).recibido, filaDe(b).carga],
+      [{ fecha: null, texto: `en curso, ${haceEnCorridos} días corridos (${hace} hábiles) desde el aviso`, origen: '' }, { fecha: null, texto: '' }]);
     assert.deepEqual([v.resultados.a_tiempo.interna], [[0, 0]]);
 
     // El contexto va con el reloj del RPAD (Ruling 12): al 31/12 la actualización de A todavía no estaba aprobada, así que A figuraba

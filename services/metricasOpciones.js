@@ -2,7 +2,7 @@
 // o de su foto del 31/12, con el aviso de la foto que falta), de qué año toca sacar la foto, y los parámetros de un pedido leídos con
 // tolerancia. Lo usan la API de métricas y su PDF (controllers/metricasController.js) y la foto (services/metricasFoto.js), que así
 // reintenta justo lo que dice el aviso. Puro: sin base de datos ni Date local (las fechas son 'AAAA-MM-DD'); ninguna función tira.
-import { ESTADISTICOS, DIAS, GESTIONES, PRIMER_ANIO } from './metricasReglas.js';
+import { ESTADISTICOS, GESTIONES, PRIMER_ANIO } from './metricasReglas.js';
 import { esFechaIso, formatoCorto } from './notasDigitalesCalendario.js';
 
 // Desde qué día del año ('MM-DD') se saca la foto del año anterior: el 10 de enero, para que entren los datos del año que se
@@ -91,13 +91,18 @@ const destildadosDe = (valor) => {
   return [...new Set(ids)];
 };
 
+// Los días de la pestaña y de los PDF: siempre corridos, con los hábiles entre paréntesis (spec 2026-11-07-metricas-cajones-y-ciclos, 4:
+// sin selector de días). `dias` no se lee de la consulta: un link viejo con ?dias=habiles se abre igual. La foto sigue guardando las
+// cuatro combinaciones (DIAS) y el Ciclo de vida usa la de hábiles
+const DIAS_DE_METRICAS = 'corridos';
+
 // Las opciones de un pedido de métricas (`query`: los parámetros de la URL, los de req.query), leídas con tolerancia (Review Focus 2
-// del plan): lo que no sirve cae al de entrada (el año de hoy, mediana, días hábiles y gestión externa) o se ignora (un destildado que
-// no es un entero positivo). `hoy`: 'AAAA-MM-DD'; `aniosConFoto`: los años con foto. Devuelve { anio, al, en_vivo, aviso_foto,
+// del plan): lo que no sirve cae al de entrada (el año de hoy, mediana y gestión externa) o se ignora (un destildado que no es un
+// entero positivo, y `dias`). `hoy`: 'AAAA-MM-DD'; `aniosConFoto`: los años con foto. Devuelve { anio, al, en_vivo, aviso_foto,
 // estadistico, dias, gestion, sin }: `al`, el día al que se calcula (hoy, o el 31/12 de un año cerrado); `en_vivo`, si se calcula con
-// la base de hoy (false: sale de la foto); `aviso_foto`, el aviso de un año cerrado que todavía no tiene foto (si no, null); `sin`, los
-// destildados (en un año con foto, ninguno: la foto se calculó con todos). null si el año pedido no tiene métricas (anterior a 2026 o
-// futuro: el 404) o si `hoy` no es una fecha.
+// la base de hoy (false: sale de la foto); `aviso_foto`, el aviso de un año cerrado que todavía no tiene foto (si no, null); `dias`,
+// siempre 'corridos' (DIAS_DE_METRICAS); `sin`, los destildados (en un año con foto, ninguno: la foto se calculó con todos). null si el
+// año pedido no tiene métricas (anterior a 2026 o futuro: el 404) o si `hoy` no es una fecha.
 export const opcionesDeMetricas = (query, { hoy, aniosConFoto } = {}) => {
   if (!esFechaIso(hoy)) return null;
   const q = objeto(query);
@@ -106,7 +111,7 @@ export const opcionesDeMetricas = (query, { hoy, aniosConFoto } = {}) => {
   if (periodo === null) return null;
   return {
     anio, ...periodo,
-    estadistico: elegido(q.estadistico, ESTADISTICOS), dias: elegido(q.dias, DIAS), gestion: elegido(q.gestion, GESTIONES),
+    estadistico: elegido(q.estadistico, ESTADISTICOS), dias: DIAS_DE_METRICAS, gestion: elegido(q.gestion, GESTIONES),
     sin: periodo.en_vivo ? destildadosDe(q.sin) : []
   };
 };

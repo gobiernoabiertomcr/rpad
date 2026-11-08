@@ -18,7 +18,7 @@ import {
 } from './notasDigitalesAnexo.js';
 import { mesYAnio } from './notasDigitalesCalendario.js';
 import { COLORES, VIOLETA } from './seguimientoPdf.js';
-import { ESTADISTICOS, DIAS, GESTIONES, TOTALES_DEL_TRABAJO, sinLosDestildados, textoEnCursoDeLosDos } from './metricasReglas.js';
+import { ESTADISTICOS, DIAS, GESTIONES, TOTALES_DEL_TRABAJO, sinLosDestildados, textoDeHabiles } from './metricasReglas.js';
 import {
   nuevoReporte, agregarHoja, cerrarReporte, dibujarJuntos, prepararTitulo, prepararPildora, prepararTarjetas, prepararSeccion,
   prepararParrafo, prepararRecuadro, prepararTabla, nuevoFlujo, fechaCorta, ENTRE, anchoDelRecuadroEn, limiteDe, esObjeto, objeto, lista, esNumero, texto
@@ -35,8 +35,10 @@ const LETRA = {
   aclaracion: 8.4, rotuloDeGestion: 6.6, columna: 10, heroe: 26, heroeMin: 14, de: 9, texto: 8.4, mini: 8.4, barra: 8.4, pie: 7.4, notaDeColumna: 7.6, indice: 7
 };
 // La letra del circuito, de mayor a menor (spec 2026-11-05-metricas-pdf-apaisado, 5): va la más grande con la que las dos gestiones entran en
-// la hoja, la misma en las dos. Hay escalones porque una tarjeta crece tres renglones cuando se cargan las notas DGMIT («Respuesta del área»
-// pasa a tener cifra y sigue con sus en curso): sin ellos, la interna se iría a otra hoja, y el usuario las quiere juntas
+// la hoja, la misma en las dos. Hay escalones porque una tarjeta crece cuando se cargan las notas DGMIT («Respuesta del área» pasa a tener
+// cifra): sin ellos, la interna se iría a otra hoja, y el usuario las quiere juntas. Con la frase en lugar de los pendientes y los en curso
+// (spec 2026-11-07-metricas-cajones-y-ciclos, 6) las tarjetas son más bajas, y con las notas DGMIT cargadas entra el primero (8,6 pt, lo
+// que pidió el usuario); una tarjeta con más renglones (el orientativo, o «En el día» con sus ciclos, junto a una frase de tres) baja uno
 const LETRAS_DEL_CIRCUITO = Object.freeze([
   Object.freeze({ nodo: 11, nodoRol: 8.4, cifra: 21, cifraMin: 11, unidad: 9.2, vacio: 12, vacioMin: 8.6, debajo: 8.6, orientativo: 8.4, nombre: 11, chico: 8.6, insignia: 8 }),
   Object.freeze({ nodo: 10.4, nodoRol: 8, cifra: 19, cifraMin: 10, unidad: 8.6, vacio: 10.8, vacioMin: 8, debajo: 8.3, orientativo: 8, nombre: 10.2, chico: 8.3, insignia: 7.6 }),
@@ -52,17 +54,17 @@ const BARRA_AMBAR = '#E2B23A';
 // Los textos fijos de la pestaña (public/reportes.html y public/js/reportes.js): la página los escribe en su HTML y en reportes.js, y el
 // PDF los toma de acá (también las funciones de abajo que arman lo mismo que la pestaña: textoDelDesglose, textoDeLoQueFalta,
 // textoDeDondeSale, textoDelMesManual y textoSinManuales). tests/reportes-frontend.test.js comprueba que son los
-// de la pestaña: si cambia uno allá, falla
+// de la pestaña: si cambia uno allá, falla. `dias` es la excepción (ver abajo)
 export const TEXTOS_DE_LA_PESTANA = Object.freeze({
   estadisticos: Object.freeze({ mediana: 'Mediana', promedio: 'Promedio' }),
+  // No es un texto de la pestaña (no tiene selector de días) ni lo ata la paridad: solo lo usan la solapa y la píldora del PDF, de
+  // respaldo, cuando no llegaron las dos vistas (textoDeLaCombinacion)
   dias: Object.freeze({ habiles: 'días hábiles', corridos: 'días corridos' }),
-  bajada: Object.freeze({
-    habiles: 'Los días son hábiles: de lunes a viernes, sin feriados ni días no laborables.',
-    corridos: 'Los días son corridos: todos los días del calendario.'
-  }),
-  pieDelCircuito: 'Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio» o «Días corridos», cada cifra lo dice debajo.',
+  // La oración de los días: la bajada de la pestaña termina con ella y «Cómo se cuenta» empieza con ella (spec
+  // 2026-11-07-metricas-cajones-y-ciclos, 4: sin selector de días)
+  bajada: 'Los días van corridos y, entre paréntesis, hábiles: de lunes a viernes, sin feriados ni días no laborables.',
+  pieDelCircuito: 'Con «Mediana», el número grande es el del medio: en la mitad de los casos, ese número o menos. Con «Promedio», cada cifra lo dice debajo.',
   orientativo: 'con tan pocos casos, es orientativo',
-  seCuentaHasta: 'Se cuenta hasta que se registra la actualización.',
   // Las dos puntas de la línea del cajón «Aviso anticipado»
   anticipacion: Object.freeze({ desde: 'aviso', hasta: 'vencimiento' }),
   // Lo que hace cada nodo del circuito
@@ -175,6 +177,9 @@ const GRAFICO = { alto: 100, izquierda: 24, arriba: 12, abajo: 20, aire: 10 };
 // (esObjeto, objeto, lista, esNumero y texto son los de la base de los reportes)
 const cuenta = (valor) => (esNumero(valor) ? String(valor) : '0');
 const elegido = (valor, validos) => (validos.includes(valor) ? valor : validos[0]);
+// Los días de lo que llega o, si no sirven, los corridos, los que pide siempre el servidor (opcionesDeMetricas; spec
+// 2026-11-07-metricas-cajones-y-ciclos, 4), no DIAS[0], que son los hábiles
+const diasDe = (valor) => (DIAS.includes(valor) ? valor : 'corridos');
 
 // =====================================================
 // La píldora y lo de arriba
@@ -191,7 +196,7 @@ const circuitoDeLaHoja = (d) => {
 
 // Lo que dice la solapa de cada gestión: «Mediana en días corridos y hábiles», o lo elegido si no llegaron las dos vistas
 const textoDeLaCombinacion = (d) =>
-  `${T.estadisticos[elegido(d.estadistico, ESTADISTICOS)]} en ${circuitoDeLaHoja(d).combinada ? LOS_DOS : T.dias[elegido(d.dias, DIAS)]}`;
+  `${T.estadisticos[elegido(d.estadistico, ESTADISTICOS)]} en ${circuitoDeLaHoja(d).combinada ? LOS_DOS : T.dias[diasDe(d.dias)]}`;
 
 // Lo de la solapa y lo destildado (spec 1.5 y 1.7), con lo que manda el servidor (`datos`: { estadistico, dias, sin_titulos, circuito_en_corridos, circuito_en_habiles }):
 // «Mediana en días corridos y hábiles · con todos los datasets» o «… · calculado sin 1 dataset: Parque Automotor». Lo destildado,
@@ -410,13 +415,8 @@ const bandaDe = (doc, clave, anchoColumna, { primera, ultima }, letra) => {
   };
 };
 
-// «(53 días hábiles)»: la cifra del mismo tramo en días hábiles, con el texto y la unidad del servidor (spec 2026-11-06-metricas-anticipacion-y-corridos, 6). Nada si
-// falta alguna de las dos o si las dos son «En el día»; con días corridos y 0 hábiles, «(En el día, en días hábiles)». `cifra` y `habil`: las cifras de vistaDe
-export const textoDeHabiles = (cifra, habil) => {
-  if (!esObjeto(cifra) || !esObjeto(habil)) return '';
-  if (habil.en_el_dia === true) return cifra.en_el_dia === true ? '' : `(${texto(habil.texto)}, en días hábiles)`;
-  return `(${texto(habil.texto)} ${texto(habil.unidad)})`;
-};
+// «(53 días hábiles)»: textoDeHabiles, de las reglas (services/metricasReglas.js); se exporta también desde acá, donde la buscan los tests del PDF
+export { textoDeHabiles };
 
 // La cifra con los hábiles pegados abajo (spec 2026-11-06-metricas-anticipacion-y-corridos, 6): se les resta lo que la cifra deja debajo de su letra y se suma después de ellos.
 // Así el aire queda antes del estadístico y la tarjeta mide lo mismo que con las dos piezas apiladas. `abajo`: la pieza de los hábiles (sin ella, la cifra sola)
@@ -465,13 +465,13 @@ const piezaDeLosRotulos = (doc, ancho, tamano) => {
 
 // El cuerpo del cajón «Aviso anticipado» (spec 2026-11-06-metricas-anticipacion-y-corridos, 7), la única etapa donde más días es mejor: pegados, el número solo (su unidad está en la frase), la frase del
 // servidor y los hábiles; después el aire que la cifra deja debajo, la línea, sus rótulos, el estadístico y el orientativo. Todo se mide antes de dibujarse, para que LETRAS_DEL_CIRCUITO elija el escalón.
-// `habil`: la cifra del mismo tramo en días hábiles (sin ella, sin paréntesis)
-const cuerpoDeLaAnticipacion = (doc, { tramo, cifra, habil, ancho, letra, tono, chico }) => apilar([
+// No lleva la frase de cómo se cuenta: lo dice el dibujo. `habiles`: el paréntesis de los hábiles, el de etapaDe ('' sin él)
+const cuerpoDeLaAnticipacion = (doc, { tramo, cifra, habiles, ancho, letra, tono, chico }) => apilar([
   grupoDeLaCifra(
     pieza(doc, cifra.texto, { ancho, tamano: letra.cifra, min: letra.cifraMin, fuente: NEGRITA, color: tono.tinta, lineas: 1 }),
     apilar([
       pieza(doc, tramo.anticipacion_texto, { ancho, tamano: letra.unidad, fuente: NEGRITA, lineas: 2 }),
-      chico(textoDeHabiles(cifra, habil), { fuente: NEGRITA, color: tono.tinta, tamano: letra.debajo, lineas: 1 })
+      chico(habiles, { fuente: NEGRITA, color: tono.tinta, tamano: letra.debajo, lineas: 1 })
     ], 0),
     letra
   ),
@@ -481,13 +481,15 @@ const cuerpoDeLaAnticipacion = (doc, { tramo, cifra, habil, ancho, letra, tono, 
   cifra.orientativo === true ? chico(T.orientativo, { fuente: NEGRITA, color: AMBAR, tamano: letra.orientativo }) : null
 ], 1);
 
-// La etapa de un tramo (un Tramo de vistaDe), con lo que manda el servidor, como htmlDeFlecha de la pestaña: el nombre arriba; la cifra con
-// su unidad al lado, debajo los días hábiles entre paréntesis y el estadístico con los ciclos («83» + «días corridos», «(53 días hábiles)», «mediana de 32 ciclos»; con 0, «En el día» y «mediana en
-// días corridos», con los ciclos más abajo), «con tan pocos casos, es orientativo» o, sin cifra, por qué (`vacio.titulo`); «desde → hasta»,
-// los pendientes de carga de la DGMIT, los en curso, con las dos unidades (con «Se cuenta hasta que se registra la actualización.») y, al pie, la insignia de
-// quién está a cargo. Con `anticipacion_texto`, el cuerpo es el de cuerpoDeLaAnticipacion. Lo de la DGMIT en violeta y lo del área en su color; sin cifra, el borde punteado. `habil`: el mismo tramo en días hábiles, o null (entonces, sin paréntesis y con la frase de
-// los en curso de `tramo`); `estadistico`: el que se pidió
-const etapaDe = (doc, clave, tramo, ancho, letra, { habil, estadistico }) => {
+// La etapa de un tramo (un Tramo de vistaDe), con lo que manda el servidor, como htmlDeFlecha de la pestaña (spec 2026-11-07-metricas-cajones-y-ciclos, 3): el nombre
+// arriba; la cifra con su unidad al lado, debajo los días hábiles entre paréntesis y el estadístico con los ciclos («83» + «días corridos», «(53 días hábiles)», «mediana de
+// 32 ciclos»; con 0, «En el día» y «mediana en días corridos», con los ciclos más abajo), «con tan pocos casos, es orientativo» o, sin cifra, por qué (`vacio.titulo`);
+// la frase de cómo se cuenta («Se cuenta desde … hasta …», hasta 4 renglones: las cinco entran enteras en la columna más angosta con cualquier escalón; una foto sin
+// ella, «desde → hasta») y, al pie, la insignia de quién está a cargo. Los pendientes de carga y los en curso no van: están en «Cómo se cuenta», en la hoja de los
+// resultados (aclaracionesDe). Sin cifra, el texto del vacío va debajo de la frase, salvo en la redacción, donde son los pendientes. Con `anticipacion_texto`, el
+// cuerpo es el de cuerpoDeLaAnticipacion. Lo de la DGMIT en violeta y lo del área en su color; sin cifra, el borde punteado. El paréntesis es `habiles_texto` del
+// tramo; una foto sin esa clave lo saca de `habil`, el mismo tramo en días hábiles (sin él, sin paréntesis)
+const etapaDe = (doc, clave, tramo, ancho, letra, { habil }) => {
   const t = objeto(tramo);
   const h = objeto(habil);
   const cifra = esObjeto(t.cifra) ? t.cifra : null;
@@ -497,35 +499,27 @@ const etapaDe = (doc, clave, tramo, ancho, letra, { habil, estadistico }) => {
   const anchoTexto = ancho - 2 * ETAPA.relleno;
   const chico = (valor, { color = COLOR.gris, fuente = NORMAL, lineas = 3, tamano = letra.chico } = {}) =>
     pieza(doc, valor, { ancho: anchoTexto, tamano, fuente, color, lineas });
-  const deLaDgmit = t.clave === 'tramite';
-  let pendientes = null;
-  if (vacio && texto(vacio.texto)) {
-    pendientes = chico(vacio.texto, deLaDgmit ? { color: VIOLETA, fuente: NEGRITA, lineas: 5 } : { lineas: 5 });
-  } else if (texto(t.pendientes_texto)) {
-    pendientes = chico(t.pendientes_texto, { color: VIOLETA, fuente: NEGRITA, lineas: 5 });
-  }
-  const textoEnCurso = esObjeto(t.en_curso) ? textoEnCursoDeLosDos(t.en_curso, esObjeto(h.en_curso) ? h.en_curso : null, estadistico) : '';
-  const enCurso = texto(textoEnCurso) ? [chico(textoEnCurso, { color: AMBAR, fuente: NEGRITA, lineas: 6 }), chico(T.seCuentaHasta)] : [];
+  const habiles = typeof t.habiles_texto === 'string' ? t.habiles_texto : textoDeHabiles(cifra, h.cifra);
+  const porQue = vacio && t.clave !== 'tramite' ? chico(vacio.texto, { lineas: 5 }) : null;
   return {
     tono,
     punteada: cifra === null,
     nombre: pieza(doc, t.nombre, { ancho: anchoTexto, tamano: letra.nombre, fuente: NEGRITA, color: tono.tinta, lineas: 2 }),
-    cuerpo: cifra && texto(cifra.texto) && texto(t.anticipacion_texto) ? cuerpoDeLaAnticipacion(doc, { tramo: t, cifra, habil: h.cifra, ancho: anchoTexto, letra, tono, chico }) : apilar([
+    cuerpo: cifra && texto(cifra.texto) && texto(t.anticipacion_texto) ? cuerpoDeLaAnticipacion(doc, { tramo: t, cifra, habiles, ancho: anchoTexto, letra, tono, chico }) : apilar([
       cifra
         ? grupoDeLaCifra(
           piezaDeCifra(doc, { numero: cifra.texto, lado: cifra.unidad }, {
             ancho: anchoTexto, tamano: letra.cifra, min: letra.cifraMin, tamanoLado: letra.unidad, color: tono.tinta
           }),
-          chico(textoDeHabiles(cifra, h.cifra), { fuente: NEGRITA, color: tono.tinta, tamano: letra.debajo, lineas: 1 }),
+          chico(habiles, { fuente: NEGRITA, color: tono.tinta, tamano: letra.debajo, lineas: 1 }),
           letra
         )
         : pieza(doc, vacio?.titulo, { ancho: anchoTexto, tamano: letra.vacio, min: letra.vacioMin, fuente: NEGRITA, color: COLOR.gris, lineas: 3 }),
       cifra ? chico(cifra.debajo, { fuente: NEGRITA, color: dgmit ? VIOLETA : COLOR.gris, tamano: letra.debajo, lineas: 2 }) : null,
       cifra?.orientativo === true ? chico(T.orientativo, { fuente: NEGRITA, color: AMBAR, tamano: letra.orientativo }) : null,
-      chico(t.desde_hasta, { lineas: 2 }),
+      chico(texto(t.como_se_cuenta) || t.desde_hasta, { lineas: 4 }),
       cifra?.en_el_dia === true ? chico(cifra.ciclos_texto, { color: COLOR.tinta, fuente: NEGRITA, lineas: 1 }) : null,
-      pendientes,
-      ...enCurso
+      porQue
     ], 1),
     insignia: piezaDeInsignia(doc, t.responsable, { ancho: anchoTexto, color: tono.letraInsignia, fondo: tono.fondoInsignia, tamano: letra.insignia })
   };
@@ -533,8 +527,8 @@ const etapaDe = (doc, clave, tramo, ancho, letra, { habil, estadistico }) => {
 
 // El circuito de una gestión (spec 2026-11-05-circuito-diseno, 7), del ancho de adentro de un recuadro: arriba, la banda de flechas con
 // quién actúa; debajo de cada una, la etapa que le toca. Los nombres de las etapas y sus cifras quedan a la misma altura y las tarjetas
-// tienen el mismo alto. `tramos`: los de vistaDe para la gestión; `enHabiles`: los mismos en días hábiles (sin ellos, sin paréntesis)
-const piezaDelCircuito = (doc, tramos, gestion, letra, { enHabiles, estadistico }) => {
+// tienen el mismo alto. `tramos`: los de vistaDe para la gestión; `enHabiles`: los mismos en días hábiles (el paréntesis de una foto sin `habiles_texto`)
+const piezaDelCircuito = (doc, tramos, gestion, letra, { enHabiles }) => {
   const { pasos } = CIRCUITO_DE_LA_GESTION[gestion];
   const anchoDelPortal = Math.max(
     doc.font(NEGRITA).fontSize(letra.nodo).widthOfString(NODOS.portal.nombre),
@@ -548,7 +542,7 @@ const piezaDelCircuito = (doc, tramos, gestion, letra, { enHabiles, estadistico 
   pasos.forEach(([nodo, clave], i) => {
     const ancho = clave === null ? anchoDelPortal : unidad;
     const lugar = { primera: i === 0, ultima: clave === null };
-    columnas.push({ x, ancho, lugar, banda: bandaDe(doc, nodo, ancho, lugar, letra), etapa: clave === null ? null : etapaDe(doc, clave, tramoDe(clave), ancho - ETAPA.separacion, letra, { habil: habilDe(clave), estadistico }) });
+    columnas.push({ x, ancho, lugar, banda: bandaDe(doc, nodo, ancho, lugar, letra), etapa: clave === null ? null : etapaDe(doc, clave, tramoDe(clave), ancho - ETAPA.separacion, letra, { habil: habilDe(clave) }) });
     x += ancho;
   });
   const etapas = columnas.filter((c) => c.etapa).map((c) => c.etapa);
@@ -587,12 +581,14 @@ const piezaDelCircuito = (doc, tramos, gestion, letra, { enHabiles, estadistico 
   };
 };
 
-// Las aclaraciones de una gestión, las del servidor (los avisados ya vencidos y, en la externa, los resueltos con una fuente pública y los de
-// datasets que no requieren nota DGMIT; las vacías no van). Van en «Cómo se cuenta», en la hoja de los resultados, y no debajo del circuito:
-// así la hoja 1 lleva la letra más grande. No se sacan del PDF: son lo único que avisa que hay ciclos que no cuentan en una cifra
+// Las aclaraciones de una gestión, las del servidor; las vacías no van. Primero lo que salió de los cajones (spec 2026-11-07-metricas-cajones-y-ciclos, 6):
+// en la externa, las notas DGMIT pendientes de carga, y en las dos, los ciclos abiertos sin datos registrados (en las dos unidades); después, los avisados
+// ya vencidos y, en la externa, los resueltos con una fuente pública y los de datasets que no requieren nota DGMIT. Van en «Cómo se cuenta», en la hoja de
+// los resultados, y no debajo del circuito: así la hoja 1 lleva la letra más grande. No se sacan del PDF: son lo único que avisa que hay ciclos que no
+// cuentan en una cifra. Una foto sin `pendientes` ni `en_curso` no las tiene
 const aclaracionesDe = (circuito, gestion) => {
   const a = objeto(objeto(circuito.aclaraciones)[gestion]);
-  return [a.ya_vencidos, a.fuente_publica, a.no_requieren_nota].map((x) => texto(objeto(x).texto)).filter(Boolean);
+  return [a.pendientes, a.en_curso, a.ya_vencidos, a.fuente_publica, a.no_requieren_nota].map((x) => texto(objeto(x).texto)).filter(Boolean);
 };
 
 // El recuadro de una gestión (spec 2026-11-05-metricas-pdf-apaisado, 5): la solapa, con su nombre, su frase a la derecha y la combinación sobre el
@@ -738,7 +734,7 @@ const celdaDeFecha = (dia, textos) => {
   return debajo ? `${fechaCorta(dia)}\n${debajo}` : fechaCorta(dia);
 };
 
-// Las líneas de una celda de los destildados: la fecha y, debajo, la frase del servidor («221 días hábiles desde que se recibió», con
+// Las líneas de una celda de los destildados: la fecha y, debajo, la frase del servidor («308 días corridos (221 hábiles) desde que se recibió», con
 // su origen o lo que fue el aviso), que no se corta (spec 2026-11-05-metricas-frase-en-los-casos, 9). Con 5, un título y un área largos
 // ya se cortan. Las de las otras tablas, las de siempre
 const LINEAS_DE_LOS_DESTILDADOS = 6;
@@ -1041,7 +1037,7 @@ export const dibujarElCircuito = (doc, hoja, datos, { estadistico, dias, titulo 
   });
   const gestiones = GESTIONES.filter((gestion) => Array.isArray(tramos[gestion]));
   const recuadrosCon = (letra) => gestiones.map((gestion) => prepararGestion(doc, {
-    gestion, combinacion, contenido: piezaDelCircuito(doc, tramos[gestion], gestion, letra, { enHabiles: objeto(habiles)[gestion], estadistico })
+    gestion, combinacion, contenido: piezaDelCircuito(doc, tramos[gestion], gestion, letra, { enHabiles: objeto(habiles)[gestion] })
   }));
   const yHoja = agregarHoja(doc, hoja);
   const entran = (recuadros) => yHoja + cabezal.alto + ENTRE
@@ -1051,8 +1047,9 @@ export const dibujarElCircuito = (doc, hoja, datos, { estadistico, dias, titulo 
   return resto.reduce((y, recuadro) => dibujarJuntos(doc, y, [recuadro]), dibujarJuntos(doc, yHoja, primero ? [cabezal, primero] : [cabezal]));
 };
 
-// «Cómo se cuenta»: el texto de siempre y, debajo, los comentarios de cada gestión, con su nombre. Una gestión sin comentarios no lleva su nombre
-const prepararComoSeCuenta = (doc, circuito, dias) => {
+// «Cómo se cuenta»: el texto de siempre, que empieza con la oración de los días (T.bajada), y, debajo, los comentarios de cada gestión, con
+// su nombre. Una gestión sin comentarios no lleva su nombre
+const prepararComoSeCuenta = (doc, circuito) => {
   const deLaGestion = (gestion) => {
     const textos = aclaracionesDe(circuito, gestion);
     if (textos.length === 0) return null;
@@ -1064,7 +1061,7 @@ const prepararComoSeCuenta = (doc, circuito, dias) => {
   return prepararRecuadro(doc, {
     rotulo: 'Cómo se cuenta',
     contenido: apilar([
-      prepararParrafo(doc, `${T.bajada[dias]} ${T.pieDelCircuito} ${EN_EL_ANIO} ${SIGLAS}`, { ancho: ANCHO_DEL_RECUADRO, tamano: LETRA.aclaracion }),
+      prepararParrafo(doc, `${T.bajada} ${T.pieDelCircuito} ${EN_EL_ANIO} ${SIGLAS}`, { ancho: ANCHO_DEL_RECUADRO, tamano: LETRA.aclaracion }),
       ...GESTIONES.map(deLaGestion)
     ], 7)
   }, { tono: 'gris' });
@@ -1073,27 +1070,28 @@ const prepararComoSeCuenta = (doc, circuito, dias) => {
 // La hoja de los resultados, que también dibuja el Informe anual: el título con su bajada, las tres columnas, «Cómo se cuenta» y, con `conDestildados`, los
 // casos destildados. Si «Cómo se cuenta» no entra debajo de los resultados, pasa a la hoja siguiente con el título repetido: no viaja con ellos porque
 // juntos pueden no entrar en una hoja, y un grupo más alto que una hoja se saldría. `titulo(texto)`: el título de la hoja, con su rótulo
-export const dibujarLosResultados = (doc, hoja, datos, { anio, dias, titulo, conDestildados }) => {
+export const dibujarLosResultados = (doc, hoja, datos, { anio, titulo, conDestildados }) => {
   const d = objeto(datos);
   const vista = objeto(d.vista);
   const cabezal = tituloConDerecha(titulo(T.titulos.resultados), (y) => renglon(doc, T.bajadaDeResultados(anio), IZQUIERDA + CONTENIDO - BAJADA.ancho, y + BAJADA.sobre, {
     ancho: BAJADA.ancho, tamano: BAJADA.letra, color: COLOR.gris, align: 'right'
   }));
   const yResultados = dibujarParte(doc, hoja, cabezal, esObjeto(vista.resultados) ? [[comoElemento(piezaDeResultados(doc, vista.resultados))]] : []);
-  const como = prepararComoSeCuenta(doc, objeto(vista.circuito), dias);
+  const como = prepararComoSeCuenta(doc, objeto(vista.circuito));
   const yComo = yResultados + como.alto <= limiteDe(doc) ? como.dibujar(yResultados) : dibujarParte(doc, hoja, titulo(T.titulos.resultados), [[como]]);
   return (conDestildados ? elementosDeLosDestildados(doc, vista) : []).reduce((y, grupo) => dibujarJuntos(doc, y, grupo), yComo);
 };
 
 // El PDF de Métricas del año. `datos`: lo de metricasDe (controllers/metricasController.js: anio, al, en_vivo, aviso_foto, anios, vista,
-// cinta, contexto, trabajo, areas y sin_titulos) más la combinación con que se pidió (`estadistico` y `dias`, las de la consulta), el circuito
+// cinta, contexto, trabajo, areas y sin_titulos) más la combinación con que se calculó (`estadistico` y `dias`, las de opcionesDeMetricas: los
+// días, siempre corridos), el circuito
 // en las dos unidades, para la hoja 1 (`circuito_en_corridos` y `circuito_en_habiles`, que GET /api/metricas no manda) y las
 // métricas manuales de Gestión del año (`manuales`: [{ tipo, anio, mes, cantidad }], que no son de metricasDe); `generado`: { momento: 'AAAA-MM-DD HH:MM:SS' (hora argentina; su día va en el encabezado), por: nombre corto o null } (el pie).
 export const renderMetricasDelAnio = async (datos, { generado }) => {
   const d = objeto(datos);
   const anio = Number.isInteger(d.anio) ? d.anio : Number(texto(d.al).slice(0, 4));
   const estadistico = elegido(d.estadistico, ESTADISTICOS);
-  const dias = elegido(d.dias, DIAS);
+  const dias = diasDe(d.dias);
   const nombre = `Métricas del RPAD · ${anio}`;
   const doc = nuevoReporte({ titulo: `Métricas del RPAD ${anio}`, hoja: HOJA });
   const hoja = { derecha: nombre, fecha: texto(generado?.momento).slice(0, 10) };
@@ -1104,7 +1102,7 @@ export const renderMetricasDelAnio = async (datos, { generado }) => {
   dibujarElCircuito(doc, hoja, d, { estadistico, dias, titulo });
 
   // 2. Los resultados, «Cómo se cuenta» y los casos destildados
-  dibujarLosResultados(doc, hoja, d, { anio, dias, titulo, conDestildados: true });
+  dibujarLosResultados(doc, hoja, d, { anio, titulo, conDestildados: true });
 
   // 3. El contexto y el trabajo del RPAD
   dibujarParte(doc, hoja, titulo(TITULO_DEL_CONTEXTO), [

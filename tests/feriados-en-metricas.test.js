@@ -333,16 +333,17 @@ describe('Métricas, el Ciclo de vida y la Agenda', () => {
     }
   };
 
-  // La cifra del aviso anticipado de cada gestión en el circuito de la vista (la mediana en días hábiles)
+  // La cifra en días hábiles del aviso anticipado de cada gestión en el circuito de la vista (la mediana): la vista va en días corridos
+  // y cada tramo trae al lado su cifra en hábiles (spec 2026-11-07-metricas-cajones-y-ciclos, 4 y 7), la que cuenta con la tabla
   const avisosDeLaVista = (vista) => ['externa', 'interna']
-    .map((gestion) => vista.circuito[gestion].find((tramo) => tramo.clave === 'aviso').cifra.valor);
+    .map((gestion) => vista.circuito[gestion].find((tramo) => tramo.clave === 'aviso').habiles.valor);
 
   it('Métricas en vivo cuenta con la tabla: el aviso anticipado, 25 y 38 días hábiles', async () => {
     await prepararElAnio();
     const data = await metricas.metricasDe({ anio: '2026' }, { hoy: AL_2026 });
     assert.deepEqual(avisosDeLaVista(data.vista), [25, 38]);
     const casos = casosDe(await seguimientoDatos.fuentesDe(null), { hoy: AL_2026, calendario: TABLA });
-    assert.deepEqual(data.vista, vistaDe(casos, { anio: 2026, al: AL_2026, calendario: TABLA }));
+    assert.deepEqual(data.vista, vistaDe(casos, { anio: 2026, al: AL_2026, dias: 'corridos', calendario: TABLA }));
   });
 
   it('el Ciclo de vida en vivo cuenta con la tabla: el aviso anticipado, 25 y 38 días hábiles', async () => {
