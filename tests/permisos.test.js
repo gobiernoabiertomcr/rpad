@@ -135,8 +135,14 @@ const LECTURAS_DE_LA_RESTITUCION = [
   ['/mi-espacio/restituciones/999999/nota', 404, [MENSAJES_MI_ESPACIO.restitucionNoEncontrada]],
   ['/mi-espacio/restituciones/999999/word', 404, [MENSAJES_MI_ESPACIO.restitucionNoEncontrada]]
 ];
+// Las lecturas del dato de la quincena (spec 2026-11-07-dato-quincena, 9): cualquier rol con sesión. Usan el id 999999, que no
+// tiene que existir en la base: el detalle y la descarga de una edición que no existe los contesta el controlador
+const LECTURAS_DEL_DATO_QUINCENA = [
+  ['/dato-quincena/ediciones/999999', 404, ['No existe esa edición.']],
+  ['/dato-quincena/ediciones/999999/archivos/infografia_png', 404, ['No existe esa edición.']]
+];
 const llegaAlControlador = (clave) => {
-  for (const [ruta, status, errores] of LECTURAS_DE_LA_RESTITUCION) {
+  for (const [ruta, status, errores] of [...LECTURAS_DE_LA_RESTITUCION, ...LECTURAS_DEL_DATO_QUINCENA]) {
     it(`llega al controlador en GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios[clave].token });
       assert.equal(res.status, status, JSON.stringify(res.body));
@@ -159,7 +165,7 @@ describe('lector', () => {
     '/feriados', '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial',
     '/mi-espacio/anio/2026', '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/firmante',
     '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/salidas', '/mi-espacio/personas/publico',
-    '/mi-espacio/horas-a-favor/topes']) {
+    '/mi-espacio/horas-a-favor/topes', '/dato-quincena/ediciones']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.lector.token });
       assert.equal(res.status, 200);
@@ -317,7 +323,7 @@ describe('colaborador', () => {
     '/mi-espacio/resumen', '/mi-espacio/licencias', '/mi-espacio/horas-extras', '/mi-espacio/saldo-inicial', '/mi-espacio/anio/2026',
     '/mi-espacio/ausentes?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/firmante',
     '/mi-espacio/eventos?desde=2026-10-26&hasta=2026-10-27', '/mi-espacio/salidas', '/mi-espacio/personas/publico',
-    '/mi-espacio/horas-a-favor/topes']) {
+    '/mi-espacio/horas-a-favor/topes', '/dato-quincena/ediciones']) {
     it(`puede usar GET ${ruta}`, async () => {
       const res = await api.get(ruta, { token: usuarios.colaborador.token });
       assert.equal(res.status, 200);
@@ -413,6 +419,15 @@ describe('visitante sin sesión', () => {
   it('recibe 401 en los reportes PDF', async () => {
     for (const ruta of ['/reportes/estado-general', '/reportes/avisos', '/reportes/agenda', '/reportes/para-completar', '/reportes/informe-anual?anio=2026',
       '/reportes/ciclo-de-vida']) {
+      const res = await api.get(ruta);
+      assert.equal(res.status, 401, ruta);
+      assert.equal(res.body.success, false, ruta);
+    }
+  });
+
+  // Las lecturas del dato de la quincena (spec 2026-11-07-dato-quincena, 9): para todos los roles con sesión, nunca sin ella
+  it('recibe 401 en las lecturas del dato de la quincena', async () => {
+    for (const ruta of ['/dato-quincena/ediciones', '/dato-quincena/ediciones/1', '/dato-quincena/ediciones/1/archivos/infografia_png']) {
       const res = await api.get(ruta);
       assert.equal(res.status, 401, ruta);
       assert.equal(res.body.success, false, ruta);

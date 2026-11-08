@@ -20,7 +20,7 @@ contactoController: el formulario de contacto público.
   `login.html`: config → auth → api;
   `establecer-contrasena.html`: config → la suya.
   Siempre `<script src="js/X.js…"></script>` a secas, sin `defer` ni otros atributos (lo lee `tests/paginas.test.js`), con `?v=` en los que lo llevan (`config.js` y `contacto.js` van sin versión; `establecer-contrasena.js` lleva `?v=` a mano, sin constante ni test).
-  `auth.js`, `main.js` y `api.js` comparten `VERSION`: tocar uno sube los tres en todas las páginas que los cargan (`auth.js` en 15, `main.js` y `api.js` en 14) y la lista de scripts de `proyectos.html` que `tests/proyectos-frontend.test.js` repite con los valores escritos (`VERSION` y `VERSION_PROYECTOS`).
+  `auth.js`, `main.js` y `api.js` comparten `VERSION`: tocar uno sube los tres en todas las páginas que los cargan (`auth.js` en 16, `main.js` y `api.js` en 15) y la lista de scripts de `proyectos.html` que `tests/proyectos-frontend.test.js` repite con los valores escritos (`VERSION` y `VERSION_PROYECTOS`).
   Cada `?v=` está atado a una constante de `tests/paginas.test.js`: son contadores, no fechas, y al cambiar un script se suben su constante y su `?v=` en las páginas que lo cargan.
   `VERSION_FERIADOS` tiene que ser mayor que `VERSION_REPORTES` (lo controla `tests/paginas.test.js`): al subir `VERSION_REPORTES`, se mira que `VERSION_FERIADOS` siga siendo mayor.
   Constante, script y página, según `tests/paginas.test.js` y los `.html`:
@@ -38,7 +38,8 @@ contactoController: el formulario de contacto público.
   - `VERSION_NOTAS`: `notas.js`, en `notas.html`.
   - `VERSION_PROYECTOS`: `proyectos.js`, en `proyectos.html`.
   - `VERSION_MI_ESPACIO`: `mi-espacio.js`, en `mi-espacio.html`.
-  - `VERSION_CSS`: `css/main.css` en las 14 páginas con carcasa y `css/publico.css` en las 5 públicas.
+  - `VERSION_DATO_QUINCENA`: `dato-quincena.js`, en `dato-quincena.html`.
+  - `VERSION_CSS`: `css/main.css` en las 15 páginas con carcasa y `css/publico.css` en las 5 públicas.
 
 ## Las páginas públicas
 
@@ -49,14 +50,14 @@ contactoController: el formulario de contacto público.
 ## CSS
 
 - Dos hojas, con `?v=` y la misma versión en todas las páginas (`VERSION_CSS` de `tests/paginas.test.js`):
-  `css/main.css`, en las 14 páginas con carcasa, y `css/publico.css`, solo en las 5 públicas y después de main.css (así las insignias pastel no llegan a administración).
+  `css/main.css`, en las 15 páginas con carcasa, y `css/publico.css`, solo en las 5 públicas y después de main.css (así las insignias pastel no llegan a administración).
   `styles.css`, `layout.css` y `perfil.css` no los carga ninguna página.
   Las de administración tienen además su `<style>`; las públicas, no.
 - main.css: la carcasa, las fuentes y los tokens:
   `--tinta` (#1A365D, el mismo color que `--primary`), `--tinta-honda`, `--texto`, `--suave` (secundario, ≥ 4,5:1 sobre blanco y bruma), `--bruma` (fondo público), `--papel`, `--linea`, `--cielo` (banda), `--cielo-medio`, `--sol`, `--sol-fuerte`, `--f-titulo` y `--f-texto`.
   Toda `var(--x)` de main.css se define en main.css (test).
   Las variables de administración (`--primary`, `--success`, `--warning`, `--danger`, `--gray-*`, `--shadow*`…) siguen en uso: administración conserva colores, tablas, formularios y modales (`.btn-primary`, `.badge-*`, `.form-*`, y `.alert-*` en el `<style>` de sus páginas).
-- Fuentes (un solo `<link>` de Google Fonts, igual en las 14):
+- Fuentes (un solo `<link>` de Google Fonts, igual en las 15):
   Figtree (texto, `body`) y Bricolage Grotesque con `-0.02em` (`h1`–`h4`, `.page-title`, la marca "RPAD"; en las públicas, peso 750).
 - publico.css: colores de estado (`--cuadro-*` del cuadrito, `--fondo-*` y `--texto-*` de la insignia, ≥ 4,5:1), `--borde-control` (#76879F, contorno de los controles ≥ 3:1;
   `--linea` queda para separadores y bordes decorativos) y radios (`--radio-panel` 22 px, `--radio-tarjeta` 16, `--radio-campo` 12, `--radio-cuadro` 5).
@@ -70,10 +71,10 @@ contactoController: el formulario de contacto público.
 
 ## Sitio público y carcasa (spec 2026-10-18-rediseno-publico)
 
-- Carcasa copiada a mano en las 14 páginas (admin, calendario, configuracion, contacto, correos, dataset, datasets, index, mi-espacio, notas, perfil, proyectos, reportes y seguimiento; `usuarios.html`, `areas.html` y `gestion.html` no existen: `app.js` redirige las dos primeras a `configuracion.html` y la tercera a `proyectos.html`;
-  los tests leen el HTML estático, así que un cambio va en las 14, y `tests/paginas.test.js` compara el encabezado, el menú lateral y el footer de cada una con los de `index.html`, sin `aria-current` ni sangría): encabezado de 72 px con el logo, "RPAD" y el nav Inicio, Datasets, Calendario y Contacto (`aria-current="page"` escrito en el HTML de la página actual;
-  `dataset.html` marca Datasets, administración, `seguimiento.html` y `mi-espacio.html` ninguna); menú lateral con Principal (solo cuando el nav del encabezado no entra), Administración (Gestión de Datasets —`admin.html`, con el ícono de capas, `layers` de Lucide—, Correos y Configuración —con la ruedita—), Herramientas (Métricas y Reportes —`reportes.html`—, Notas —solo con `Auth.puedeCargarNotasDgmit()`:
-  `updateSidebarAuth` la oculta—, Proyectos —`proyectos.html`, con la carpeta con tablero, `folder-kanban` de Lucide— y Seguimiento) y Mi cuenta (`#sidebarAccount`:
+- Carcasa copiada a mano en las 15 páginas (admin, calendario, configuracion, contacto, correos, dataset, datasets, dato-quincena, index, mi-espacio, notas, perfil, proyectos, reportes y seguimiento; `usuarios.html`, `areas.html` y `gestion.html` no existen: `app.js` redirige las dos primeras a `configuracion.html` y la tercera a `proyectos.html`;
+  los tests leen el HTML estático, así que un cambio va en las 15, y `tests/paginas.test.js` compara el encabezado, el menú lateral y el footer de cada una con los de `index.html`, sin `aria-current` ni sangría): encabezado de 72 px con el logo, "RPAD" y el nav Inicio, Datasets, Calendario y Contacto (`aria-current="page"` escrito en el HTML de la página actual;
+  `dataset.html` marca Datasets, administración, `seguimiento.html`, `mi-espacio.html` y `dato-quincena.html` ninguna); menú lateral con Principal (solo cuando el nav del encabezado no entra), Administración (Gestión de Datasets —`admin.html`, con el ícono de capas, `layers` de Lucide—, Correos y Configuración —con la ruedita—), Herramientas (cinco enlaces: Métricas y Reportes —`reportes.html`—, Notas —solo con `Auth.puedeCargarNotasDgmit()`:
+  `updateSidebarAuth` la oculta—, Proyectos —`proyectos.html`, con la carpeta con tablero, `folder-kanban` de Lucide—, Seguimiento y El dato de la quincena —`dato-quincena.html`, con el diario, `newspaper` de Lucide, escrito en el HTML como el de Mi espacio—) y Mi cuenta (`#sidebarAccount`:
   Mi Perfil y, después, Mi espacio —`mi-espacio.html`, con el `calendar-check` de Lucide escrito en el HTML, como los demás íconos del menú: no está en `ICON_SELECTOR_MAP`, donde aparecería como ícono elegible en Proyectos, ni en `Icons`, porque tocar `main.js` obliga a subir `VERSION` en todas las páginas; lo ven todos los roles con sesión, así que `updateSidebarAuth` no lo oculta—); footer azul con `<span>RPAD v2.0.0</span>` y el año en `#footer-anio`, que `main.js` pone en hora argentina.
   Con sesión, `initHeader` pone `.header--con-sesion` (sin `:has()`).
   Las transiciones del menú, del velo y del botón van en `.menu-animable`, que `initSidebar` pone después del primer cuadro (si Firefox calcula la página antes de que llegue la hoja, al aplicarla el menú se asomaba).

@@ -969,3 +969,53 @@ CREATE TABLE `mi_espacio_eventos_corridas` (
   `con_errores` tinyint(1) NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- El dato de la quincena (database/updates/migracion-dato-quincena.sql): las ediciones que manda Grok Bot, una por clave, con
+-- metadata tal como llegó y la huella del paquete; sus propuestas, en su orden, con el dataset si existe (borrarlo deja la
+-- propuesta con su nombre); y sus archivos, uno por campo. Borrar una edición (SQL a mano) borra lo suyo
+-- =====================================================
+CREATE TABLE `dato_quincena_ediciones` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `clave` varchar(80) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `tipo` enum('regular','piloto') NOT NULL,
+  `fecha_edicion` date NOT NULL,
+  `referencia_piloto` varchar(20) DEFAULT NULL,
+  `titulo` varchar(200) NOT NULL,
+  `metadata` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `huella` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `recibida_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_dato_quincena_clave` (`clave`),
+  KEY `idx_dato_quincena_fecha` (`fecha_edicion`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `dato_quincena_propuestas` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `edicion_id` int(11) NOT NULL,
+  `orden` tinyint(3) unsigned NOT NULL,
+  `titulo` varchar(200) NOT NULL,
+  `cifra_clave` varchar(1000) NOT NULL,
+  `principal` tinyint(1) NOT NULL DEFAULT 0,
+  `dataset_id` int(11) DEFAULT NULL,
+  `dataset_nombre` varchar(200) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_dato_quincena_orden` (`edicion_id`, `orden`),
+  KEY `idx_dato_quincena_dataset` (`dataset_id`),
+  CONSTRAINT `fk_dato_quincena_propuesta_edicion` FOREIGN KEY (`edicion_id`) REFERENCES `dato_quincena_ediciones` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_dato_quincena_propuesta_dataset` FOREIGN KEY (`dataset_id`) REFERENCES `datasets` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `dato_quincena_adjuntos` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `edicion_id` int(11) NOT NULL,
+  `campo` enum('infografia_png','correo_texto','calculos') NOT NULL,
+  `nombre` varchar(255) NOT NULL,
+  `mime` varchar(30) NOT NULL,
+  `bytes` int(10) unsigned NOT NULL,
+  `sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `contenido` mediumblob NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_dato_quincena_adjunto` (`edicion_id`, `campo`),
+  CONSTRAINT `fk_dato_quincena_adjunto_edicion` FOREIGN KEY (`edicion_id`) REFERENCES `dato_quincena_ediciones` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

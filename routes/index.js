@@ -1,6 +1,10 @@
 import { Router } from 'express';
-import { authMiddleware, sesionOpcional, adminOnly, cargaNotasDgmit, usaGeneradorDeNotas, cronAuth } from '../middleware/auth.js';
-import { limiteLoginPorIp, limiteLoginPorUsuario, limiteRecuperarPorIp, limiteRecuperarPorIdentificador, limiteLinkDeAcceso } from '../middleware/rateLimit.js';
+import {
+  authMiddleware, sesionOpcional, adminOnly, cargaNotasDgmit, usaGeneradorDeNotas, cronAuth, tokenDelDatoQuincena
+} from '../middleware/auth.js';
+import {
+  limiteLoginPorIp, limiteLoginPorUsuario, limiteRecuperarPorIp, limiteRecuperarPorIdentificador, limiteLinkDeAcceso, limiteDatoQuincena
+} from '../middleware/rateLimit.js';
 
 // Controladores
 import {
@@ -140,7 +144,8 @@ import {
 import { listarSeguimiento, verSeguimiento, descargarSeguimientoPdf } from '../controllers/seguimientoController.js';
 import { verMetricas, descargarMetricasPdf } from '../controllers/metricasController.js';
 import { listarNotasDgmit, cargarNotaDgmit, corregirNotaDgmit, anularNotaDgmit } from '../controllers/notasDgmitController.js';
-import { subida, subidaDeNotaFirmada } from '../config/upload.js';
+import { subida, subidaDeNotaFirmada, subidaDelDatoQuincena } from '../config/upload.js';
+import { recibirEdicion, listar, ver, descargar } from '../controllers/datoQuincenaController.js';
 
 const router = Router();
 
@@ -374,6 +379,16 @@ router.get('/notas/areas/:id', authMiddleware, usaGeneradorDeNotas, verAreaDelGe
 router.get('/notas/membrete', authMiddleware, usaGeneradorDeNotas, verMembreteDelGenerador);
 router.post('/notas/vista-previa', authMiddleware, usaGeneradorDeNotas, verVistaPrevia);
 router.post('/notas/generar', authMiddleware, usaGeneradorDeNotas, generarNota);
+
+// =====================================================
+// El dato de la quincena: el POST de Grok Bot (spec 2026-11-07-dato-quincena, 4), con su token y no con una sesión. El
+// límite de pedidos va antes del token, y el token antes de leer el multipart
+// =====================================================
+router.post('/dato-quincena/ediciones', limiteDatoQuincena, tokenDelDatoQuincena, subidaDelDatoQuincena, recibirEdicion);
+// Las lecturas (spec 9): cualquier rol con sesión, como las de Proyectos; el token del bot no es un JWT y acá no sirve
+router.get('/dato-quincena/ediciones', authMiddleware, listar);
+router.get('/dato-quincena/ediciones/:id', authMiddleware, ver);
+router.get('/dato-quincena/ediciones/:id/archivos/:campo', authMiddleware, descargar);
 
 // =====================================================
 // Cron (protegido por clave secreta)

@@ -1,0 +1,305 @@
+{
+  "lista": {
+    "success": true,
+    "data": {
+      "anios": [
+        {
+          "anio": 2026,
+          "cantidad": 3
+        }
+      ],
+      "anio": 2026,
+      "ediciones": [
+        {
+          "id": 14,
+          "fecha_texto": "Lunes 16 de noviembre de 2026",
+          "marca": null,
+          "principal": {
+            "titulo": "Un título inventado",
+            "cifra_clave": "1.234 casos · septiembre de 2026"
+          },
+          "resto": "Y 2 propuestas más: Dataset de prueba B y Dataset de prueba C."
+        },
+        {
+          "id": 13,
+          "fecha_texto": "Lunes 2 de noviembre de 2026",
+          "marca": "Piloto 4",
+          "principal": {
+            "titulo": "Un título inventado",
+            "cifra_clave": "1.234 casos · septiembre de 2026"
+          },
+          "resto": null
+        },
+        {
+          "id": 12,
+          "fecha_texto": "Lunes 2 de noviembre de 2026",
+          "marca": null,
+          "principal": {
+            "titulo": "Un título inventado",
+            "cifra_clave": "1.234 casos · septiembre de 2026"
+          },
+          "resto": "Y 1 propuesta más: Dataset de prueba B."
+        }
+      ]
+    }
+  },
+  "lista_dos_anios": {
+    "success": true,
+    "data": {
+      "anios": [
+        {
+          "anio": 2027,
+          "cantidad": 1
+        },
+        {
+          "anio": 2026,
+          "cantidad": 3
+        }
+      ],
+      "anio": 2026,
+      "ediciones": [
+        {
+          "id": 14,
+          "fecha_texto": "Lunes 16 de noviembre de 2026",
+          "marca": null,
+          "principal": {
+            "titulo": "Un título inventado",
+            "cifra_clave": "1.234 casos · septiembre de 2026"
+          },
+          "resto": "Y 2 propuestas más: Dataset de prueba B y Dataset de prueba C."
+        },
+        {
+          "id": 13,
+          "fecha_texto": "Lunes 2 de noviembre de 2026",
+          "marca": "Piloto 4",
+          "principal": {
+            "titulo": "Un título inventado",
+            "cifra_clave": "1.234 casos · septiembre de 2026"
+          },
+          "resto": null
+        },
+        {
+          "id": 12,
+          "fecha_texto": "Lunes 2 de noviembre de 2026",
+          "marca": null,
+          "principal": {
+            "titulo": "Un título inventado",
+            "cifra_clave": "1.234 casos · septiembre de 2026"
+          },
+          "resto": "Y 1 propuesta más: Dataset de prueba B."
+        }
+      ]
+    }
+  },
+  "lista_de_2027": {
+    "success": true,
+    "data": {
+      "anios": [
+        {
+          "anio": 2027,
+          "cantidad": 1
+        },
+        {
+          "anio": 2026,
+          "cantidad": 3
+        }
+      ],
+      "anio": 2027,
+      "ediciones": [
+        {
+          "id": 15,
+          "fecha_texto": "Lunes 11 de enero de 2027",
+          "marca": null,
+          "principal": {
+            "titulo": "Un título inventado",
+            "cifra_clave": "1.234 casos · septiembre de 2026"
+          },
+          "resto": "Y 1 propuesta más: Dataset de prueba B."
+        }
+      ]
+    }
+  },
+  "lista_vacia": {
+    "success": true,
+    "data": {
+      "anios": [],
+      "anio": null,
+      "ediciones": []
+    }
+  },
+  "detalle": {
+    "success": true,
+    "data": {
+      "id": 12,
+      "fecha_texto": "Lunes 2 de noviembre de 2026",
+      "marca": null,
+      "titulo": "El dato de la quincena: edición de prueba",
+      "nota_archivo": "Una nota de archivo inventada.",
+      "llegada": "Llegó al RPAD el 02/11/2026 a las 08:14.",
+      "correo": "Correo enviado el 02/11/2026 a las 08:12, según Grok Bot.",
+      "cantidad": "2 propuestas",
+      "agenda": [
+        {
+          "fecha_texto": "10/11/2026",
+          "titulo": "Evento de prueba",
+          "detalle": "Un evento inventado para las pruebas.",
+          "url": "https://datos.ejemplo.gob.ar/agenda/evento-de-prueba"
+        }
+      ],
+      "propuestas": [
+        {
+          "orden_texto": "Propuesta 1",
+          "etiquetas": [
+            "Principal",
+            "Validar"
+          ],
+          "principal": true,
+          "titulo": "Un título inventado",
+          "cifra_clave": "1.234 casos · septiembre de 2026",
+          "dataset": {
+            "nombre": "Dataset de prueba A",
+            "id_enlace": 1,
+            "url": "https://datos.ejemplo.gob.ar/dataset/prueba-a"
+          },
+          "foto": [
+            {
+              "rotulo": "En el RPAD ese día:",
+              "valor": "Actualizado"
+            },
+            {
+              "rotulo": "Datos al",
+              "valor": "30/09/2026"
+            },
+            {
+              "rotulo": "Última actualización",
+              "valor": "30/10/2026"
+            },
+            {
+              "rotulo": "Próxima en",
+              "valor": "29 días"
+            }
+          ],
+          "notas_validacion": [
+            "Primera nota.",
+            "Segunda nota."
+          ],
+          "calculo": "Un cálculo inventado: 1.000 casos más 234.",
+          "contexto_historico": "Un contexto histórico inventado.",
+          "por_que_hoy": "Una razón inventada para publicarlo hoy.",
+          "angulo": "Un ángulo inventado.",
+          "idea_placa": "Una idea de placa inventada.",
+          "texto_redes": "Un texto para redes inventado.\nCon un segundo renglón.",
+          "puntos_centrales": [
+            "Primer punto inventado.",
+            "Segundo punto inventado.",
+            "Tercer punto inventado."
+          ],
+          "borrador_nota": {
+            "titulo": "Un borrador inventado",
+            "parrafos": [
+              "Primer párrafo inventado.",
+              "Segundo párrafo inventado."
+            ]
+          },
+          "fuentes": [
+            "https://datos.ejemplo.gob.ar/a.csv",
+            "https://datos.ejemplo.gob.ar/b.csv"
+          ],
+          "para_copiar": "Un título inventado [Principal, Validar]\n\n1.234 casos · septiembre de 2026\n\nDataset: Dataset de prueba A\nhttps://datos.ejemplo.gob.ar/dataset/prueba-a\n\nEn el RPAD ese día: Actualizado. Datos al 30/09/2026. Última actualización 30/10/2026. Próxima en 29 días.\n\nPara validar antes de publicar\n- Primera nota.\n- Segunda nota.\n\nCómo se calculó\nUn cálculo inventado: 1.000 casos más 234.\n\nContexto histórico\nUn contexto histórico inventado.\n\nPor qué hoy\nUna razón inventada para publicarlo hoy.\n\nÁngulo\nUn ángulo inventado.\n\nIdea de placa\nUna idea de placa inventada.\n\nTexto para redes\nUn texto para redes inventado.\nCon un segundo renglón.\n\nPuntos centrales\n- Primer punto inventado.\n- Segundo punto inventado.\n- Tercer punto inventado.\n\nBorrador de nota\nUn borrador inventado\n\nPrimer párrafo inventado.\n\nSegundo párrafo inventado.\n\nFuentes\nhttps://datos.ejemplo.gob.ar/a.csv\nhttps://datos.ejemplo.gob.ar/b.csv",
+          "borrador_para_copiar": "Un borrador inventado\n\nPrimer párrafo inventado.\n\nSegundo párrafo inventado."
+        },
+        {
+          "orden_texto": "Propuesta 2",
+          "etiquetas": [
+            "Agenda"
+          ],
+          "principal": false,
+          "titulo": "Otro título inventado",
+          "cifra_clave": "56 casos · septiembre de 2026",
+          "dataset": {
+            "nombre": "Dataset de prueba B",
+            "id_enlace": null,
+            "url": "https://datos.ejemplo.gob.ar/dataset/prueba-b"
+          },
+          "foto": [
+            {
+              "rotulo": "En el RPAD ese día:",
+              "valor": "Próximo a vencer"
+            },
+            {
+              "rotulo": "Datos al",
+              "valor": "—"
+            },
+            {
+              "rotulo": "Última actualización",
+              "valor": "03/06/2026"
+            },
+            {
+              "rotulo": "Próxima en",
+              "valor": "4 días"
+            }
+          ],
+          "notas_validacion": [],
+          "calculo": "Otro cálculo inventado.",
+          "contexto_historico": "Otro contexto inventado.",
+          "por_que_hoy": "Otra razón inventada.",
+          "angulo": "Otro ángulo inventado.",
+          "idea_placa": "Otra placa inventada.",
+          "texto_redes": "Otro texto para redes inventado.",
+          "puntos_centrales": [
+            "Un punto.",
+            "Otro punto.",
+            "Un tercer punto."
+          ],
+          "borrador_nota": {
+            "titulo": "Otro borrador inventado",
+            "parrafos": [
+              "Un párrafo.",
+              "Otro párrafo.",
+              "Un tercer párrafo."
+            ]
+          },
+          "fuentes": [
+            "https://datos.ejemplo.gob.ar/c.csv"
+          ],
+          "para_copiar": "Otro título inventado [Agenda]\n\n56 casos · septiembre de 2026\n\nDataset: Dataset de prueba B\nhttps://datos.ejemplo.gob.ar/dataset/prueba-b\n\nEn el RPAD ese día: Próximo a vencer. Datos al —. Última actualización 03/06/2026. Próxima en 4 días.\n\nCómo se calculó\nOtro cálculo inventado.\n\nContexto histórico\nOtro contexto inventado.\n\nPor qué hoy\nOtra razón inventada.\n\nÁngulo\nOtro ángulo inventado.\n\nIdea de placa\nOtra placa inventada.\n\nTexto para redes\nOtro texto para redes inventado.\n\nPuntos centrales\n- Un punto.\n- Otro punto.\n- Un tercer punto.\n\nBorrador de nota\nOtro borrador inventado\n\nUn párrafo.\n\nOtro párrafo.\n\nUn tercer párrafo.\n\nFuentes\nhttps://datos.ejemplo.gob.ar/c.csv",
+          "borrador_para_copiar": "Otro borrador inventado\n\nUn párrafo.\n\nOtro párrafo.\n\nUn tercer párrafo."
+        }
+      ],
+      "archivos": [
+        {
+          "campo": "infografia_png",
+          "rotulo": "Infografía",
+          "nombre": "infografia-prueba.png",
+          "detalle": "PNG · 1 KB",
+          "se_puede_ver": false
+        },
+        {
+          "campo": "correo_texto",
+          "rotulo": "Texto del correo",
+          "nombre": "correo-prueba.txt",
+          "detalle": "1 KB",
+          "se_puede_ver": true
+        },
+        {
+          "campo": "calculos",
+          "rotulo": "Cálculos",
+          "nombre": "calculos-prueba.md",
+          "detalle": "1 KB",
+          "se_puede_ver": true
+        },
+        {
+          "campo": "metadata",
+          "rotulo": "La edición completa",
+          "nombre": "dato-quincena-regular-2026-11-02.json",
+          "detalle": "JSON · 3 KB",
+          "se_puede_ver": false
+        }
+      ]
+    }
+  },
+  "no_existe": {
+    "success": false,
+    "error": "No existe esa edición."
+  }
+}

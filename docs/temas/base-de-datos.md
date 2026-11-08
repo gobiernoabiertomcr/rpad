@@ -15,10 +15,11 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-31-mi-espacio-dias-restituidos-design.md`
 - `docs/superpowers/specs/2026-11-03-mi-espacio-horas-acumuladas-design.md`
 - `docs/superpowers/specs/2026-11-03-notas-firma-digital-design.md`
+- `docs/superpowers/specs/2026-11-07-dato-quincena-design.md`
 
 ## Base de datos
 
-- 45 tablas (ver `database/schema.sql`).
+- 50 tablas (ver `database/schema.sql`).
   Usuarios:
   `usuarios` (rol, cargo, vínculo, `sesion_version`), `usuarios_tokens` (links de acceso, solo el hash), `usuarios_auditoria` (historial del panel), `usuarios_licencias` (licencias; nunca se borran, se anulan) y `usuarios_firmas` (firma de cada usuario para las notas).
   Notas de auditoría:
@@ -32,6 +33,8 @@ Historia y motivos, en las specs:
   Mi espacio:
   `mi_espacio_anios`, `mi_espacio_arranque`, `mi_espacio_saldos`, `mi_espacio_licencias`, `mi_espacio_horas_extras`, `mi_espacio_salidas` (la planilla de contrato) y `mi_espacio_avisos`, los días restituidos (`mi_espacio_restituciones`, los pedidos, y `mi_espacio_restituibles`, la foto) y su agenda:
   `mi_espacio_eventos`, `mi_espacio_evento_personas`, `mi_espacio_evento_vistas` (a quién se le muestra un Personal (Público)), `mi_espacio_evento_informados`, `mi_espacio_evento_envios`, `mi_espacio_eventos_corridas` y `mi_espacio_diario_envios` (ver abajo)
+  El dato de la quincena:
+  `dato_quincena_ediciones`, `dato_quincena_propuestas` y `dato_quincena_adjuntos` (ver abajo).
 - Campos JSON validados en `cambios_pendientes` (datos_nuevos, datos_anteriores)
 - Foreign keys con CASCADE en deletes relevantes
 
@@ -256,6 +259,48 @@ Historia y motivos, en las specs:
   El código anterior anda con ella (no la lee).
   `tests/schema.test.js` la necesita: la base local también, antes de correr la suite.
   `rollback-notas-firma-leyenda.sql` va después de volver a los archivos anteriores, y antes de `rollback-notas-firma-digital.sql` si se deshacen las dos: una nota que espera en ese momento sale a las 14:00 y una firmada sobre la copia, sin subir, ya no se reconoce.
+
+## El dato de la quincena
+
+- El archivo de las ediciones que manda Grok Bot (spec 2026-11-07-dato-quincena, 8): tres tablas, sin `CHECK` (valida la API).
+  El contrato del POST, las lecturas y la página, en `docs/temas/dato-quincena.md`.
+  `dato_quincena_ediciones`, una por clave (`id`;
+  `clave` varchar(80) en `ascii_bin`, única con `uq_dato_quincena_clave`: `dq:regular:AAAA-MM-DD` o `dq:piloto:AAAA-MM-DD:piloto-N`;
+  `tipo` enum('regular','piloto');
+  `fecha_edicion` DATE;
+  `referencia_piloto` varchar(20) NULL, solo en un piloto;
+  `titulo` varchar(200);
+  `metadata` longtext en `utf8mb4_bin`, el texto tal como llegó: la descarga devuelve los mismos bytes;
+  `huella` char(64) en `ascii_bin`, el SHA-256 del paquete;
+  `recibida_at` TIMESTAMP, la llegada;
+  índice `idx_dato_quincena_fecha` `(fecha_edicion, id)`).
+  `dato_quincena_propuestas`, lo que lee la lista (`id`;
+  `edicion_id` FK `dato_quincena_ediciones` ON DELETE CASCADE;
+  `orden` tinyint unsigned, uno por edición con `uq_dato_quincena_orden` `(edicion_id, orden)`, que es también el índice de la FK;
+  `titulo` varchar(200);
+  `cifra_clave` varchar(1000);
+  `principal` tinyint(1) DEFAULT 0, 1 en la que lleva la etiqueta;
+  `dataset_id` FK `datasets` ON DELETE SET NULL, con el índice `idx_dato_quincena_dataset`: el `rpad_id` si existe en `datasets` y NULL si no;
+  `dataset_nombre` varchar(200)).
+  El contenido completo de cada propuesta está en `metadata`: no se copia.
+  `dato_quincena_adjuntos`, los archivos (`id`;
+  `edicion_id` FK `dato_quincena_ediciones` ON DELETE CASCADE;
+  `campo` enum('infografia_png','correo_texto','calculos'), uno por edición con `uq_dato_quincena_adjunto` `(edicion_id, campo)`, que es también el índice de la FK;
+  `nombre` varchar(255);
+  `mime` varchar(30);
+  `bytes` int unsigned;
+  `sha256` char(64) en `ascii_bin`;
+  `contenido` MEDIUMBLOB, los bytes tal como llegaron).
+  El RPAD no borra ediciones: los `ON DELETE CASCADE` son para el SQL a mano de un caso raro (borrar la edición borra sus propuestas y sus adjuntos).
+  La edición, sus propuestas y sus adjuntos se escriben en una sola transacción.
+  Los `INSERT` van con `execute` y no con `query`: los bytes viajan en binario y no en hexadecimal (el doble), y un error no trae la edición en `err.sql`.
+  Si el `INSERT` de la edición choca con el `UNIQUE` (`ER_DUP_ENTRY`), se deshace y se lee la que estaba: con la misma huella, 200; con otra, 409.
+  Van también en `schema.sql`.
+  `migracion-dato-quincena.sql` (aditiva y repetible: tres `CREATE TABLE IF NOT EXISTS`, primero las ediciones) va después de `migracion-mi-espacio-eventos-diario.sql` y **antes** del código, obligatoria: sin las tablas, la lista, el detalle y las descargas dan 500, y el POST de una edición válida también, con la recepción prendida.
+  El código anterior anda con ellas (no las lee).
+  Antes de correrla, `SELECT @@max_allowed_packet;` tiene que dar 16777216 o más: una infografía de hasta 5 MB necesita unos 6 MB en el `INSERT` y unos 11 MB al restaurar un respaldo de phpMyAdmin, que exporta los bytes en hexadecimal.
+  `tests/schema.test.js` (compara `schema.sql` con la base del `.env`) y `tests/permisos.test.js` (la lista, el detalle y la descarga, sobre esa base) la necesitan: la base local también necesita la migración antes de correr la suite.
+  `rollback-dato-quincena.sql` va después de volver a los archivos anteriores y borra las tres tablas, primero los adjuntos y las propuestas y al final las ediciones: se pierden las ediciones recibidas (si ya hay, exportar las tres tablas antes).
 
 ## Archivos de tests
 

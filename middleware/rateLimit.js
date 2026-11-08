@@ -1,4 +1,5 @@
 import { rateLimit, ipKeyGenerator } from 'express-rate-limit';
+import { responderAntesDeLeer } from '../config/upload.js';
 
 // Límites contra fuerza bruta en el login. Solo cuentan los intentos fallidos
 // (skipSuccessfulRequests), así un error de tipeo no bloquea a toda una oficina
@@ -72,4 +73,18 @@ export const limiteLinkDeAcceso = rateLimit({
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: { success: false, error: 'Demasiados intentos. Intente nuevamente en 15 minutos.' }
+});
+
+// El POST del dato de la quincena (spec 2026-11-07-dato-quincena, 4): 20 pedidos por hora por IP, todos (también los que dan
+// 401 o 400), antes del token. La ventana es fija: Retry-After (en segundos, lo pone express-rate-limit antes del handler)
+// puede ser menos de una hora. El handler responde como las otras respuestas antes de leer: un desconocido no hace leer sin fin
+export const limiteDatoQuincena = rateLimit({
+  windowMs: HORA_MS,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  handler: (req, res) => {
+    console.warn('Dato de la quincena: 429 (límite de pedidos)');
+    responderAntesDeLeer(req, res, 429, { success: false, error: 'Demasiados pedidos. Probá de nuevo más tarde.' });
+  }
 });

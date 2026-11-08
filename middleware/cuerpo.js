@@ -1,7 +1,7 @@
 // Lo que se responde cuando el cuerpo o la query de un pedido no se pueden usar (spec 2026-11-03-validacion-api-publica). Un texto fijo y un
 // renglón en la consola: err.message y err.body repiten lo que mandó el cliente, que puede ser una contraseña
 
-const MENSAJES_DEL_CUERPO = {
+export const MENSAJES_DEL_CUERPO = {
   400: 'Los datos enviados no tienen un formato válido.',
   413: 'Los datos enviados superan el tamaño permitido.'
 };

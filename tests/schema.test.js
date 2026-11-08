@@ -86,6 +86,10 @@ const TABLAS_MI_ESPACIO_HORAS = ['mi_espacio_salidas'];
 const TABLAS_MI_ESPACIO_RESTITUCIONES = ['mi_espacio_restituciones', 'mi_espacio_restituibles'];
 const esDeLosDiasRestituidos = (c) => TABLAS_MI_ESPACIO_RESTITUCIONES.some(tabla => c.startsWith(`${tabla}.`));
 
+// Las tres tablas del dato de la quincena (spec 2026-11-07-dato-quincena, 8), en el orden de su migración: las ediciones que manda
+// Grok Bot, sus propuestas y sus adjuntos, que apuntan a las ediciones
+const TABLAS_DATO_QUINCENA = ['dato_quincena_ediciones', 'dato_quincena_propuestas', 'dato_quincena_adjuntos'];
+
 // El tipo de una licencia de Mi espacio: desde los días restituidos, con 'restituidos' al final (diez valores); antes, nueve
 const TIPO_DE_LICENCIA_ANTES = "mi_espacio_licencias.tipo enum('vacaciones','franquicia','estudios','medica','medica_extraordinaria','familiar','franco','horas_a_favor','uso_autorizado') null=NO default=null key=";
 const TIPO_DE_LICENCIA = "mi_espacio_licencias.tipo enum('vacaciones','franquicia','estudios','medica','medica_extraordinaria','familiar','franco','horas_a_favor','uso_autorizado','restituidos') null=NO default=null key=";
@@ -96,8 +100,8 @@ const sinLosDiasRestituidos = (lista) => lista
   .map(c => (c === TIPO_DE_LICENCIA ? TIPO_DE_LICENCIA_ANTES : c));
 
 // Las tablas que crea schema.sql: 41 hasta la agenda de Mi espacio, 42 con la planilla de contrato, 43 con el evento Personal
-// (Público), 45 con los días restituidos y 47 con el aviso diario de la agenda
-const TOTAL_DE_TABLAS = 47;
+// (Público), 45 con los días restituidos, 47 con el aviso diario de la agenda y 50 con el dato de la quincena
+const TOTAL_DE_TABLAS = 50;
 
 // Las columnas generadas de unas tablas, con cómo se guardan y su expresión: `columnas` no lee EXTRA
 const generadasDe = async (conexion, base, tablas) => {
@@ -119,6 +123,18 @@ const motoresDe = async (conexion, base, tablas) => {
     [base, tablas]
   );
   return filas.map(f => `${f.tabla} ${f.motor} ${f.colacion}`);
+};
+
+// El juego de caracteres y la colación de cada columna de texto (o enum) de unas tablas: `columnas` y `motoresDe` no los ven
+const collationsDe = async (conexion, base, tablas) => {
+  const [filas] = await conexion.query(
+    `SELECT TABLE_NAME AS tabla, COLUMN_NAME AS columna, CHARACTER_SET_NAME AS juego, COLLATION_NAME AS colacion
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (?) AND CHARACTER_SET_NAME IS NOT NULL
+     ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+    [base, tablas]
+  );
+  return filas.map(f => `${f.tabla}.${f.columna} ${f.juego} ${f.colacion}`);
 };
 
 const contar = async (tabla) => {
@@ -666,6 +682,83 @@ describe('database/schema.sql', () => {
     assert.deepEqual(await generadasDe(root, BASE_TEMPORAL, TABLAS_MI_ESPACIO_RESTITUCIONES), []);
   });
 
+  it('El dato de la quincena: tres tablas con sus columnas, claves y FK (spec 2026-11-07-dato-quincena, 8)', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(c => TABLAS_DATO_QUINCENA.some(tabla => c.startsWith(`${tabla}.`)));
+    assert.deepEqual(lista, [
+      // Los adjuntos: uno por edición y campo, con sus bytes tal como llegaron
+      'dato_quincena_adjuntos.id int(11) null=NO default=null key=PRI',
+      // El primer campo de la clave única de dos: un mismo valor se repite (otro adjunto de la misma edición)
+      'dato_quincena_adjuntos.edicion_id int(11) null=NO default=null key=MUL',
+      "dato_quincena_adjuntos.campo enum('infografia_png','correo_texto','calculos') null=NO default=null key=",
+      'dato_quincena_adjuntos.nombre varchar(255) null=NO default=null key=',
+      'dato_quincena_adjuntos.mime varchar(30) null=NO default=null key=',
+      'dato_quincena_adjuntos.bytes int(10) unsigned null=NO default=null key=',
+      'dato_quincena_adjuntos.sha256 char(64) null=NO default=null key=',
+      'dato_quincena_adjuntos.contenido mediumblob null=NO default=null key=',
+      // Las ediciones: una por clave, con metadata tal como llegó, la huella del paquete y la llegada
+      'dato_quincena_ediciones.id int(11) null=NO default=null key=PRI',
+      'dato_quincena_ediciones.clave varchar(80) null=NO default=null key=UNI',
+      "dato_quincena_ediciones.tipo enum('regular','piloto') null=NO default=null key=",
+      'dato_quincena_ediciones.fecha_edicion date null=NO default=null key=MUL',
+      // Solo en un piloto
+      'dato_quincena_ediciones.referencia_piloto varchar(20) null=YES default=NULL key=',
+      'dato_quincena_ediciones.titulo varchar(200) null=NO default=null key=',
+      'dato_quincena_ediciones.metadata longtext null=NO default=null key=',
+      'dato_quincena_ediciones.huella char(64) null=NO default=null key=',
+      'dato_quincena_ediciones.recibida_at timestamp null=NO default=current_timestamp() key=',
+      // Las propuestas de cada edición, en su orden: lo que lee la lista (el resto está en metadata)
+      'dato_quincena_propuestas.id int(11) null=NO default=null key=PRI',
+      'dato_quincena_propuestas.edicion_id int(11) null=NO default=null key=MUL',
+      'dato_quincena_propuestas.orden tinyint(3) unsigned null=NO default=null key=',
+      'dato_quincena_propuestas.titulo varchar(200) null=NO default=null key=',
+      'dato_quincena_propuestas.cifra_clave varchar(1000) null=NO default=null key=',
+      // 1 en la que lleva la etiqueta
+      'dato_quincena_propuestas.principal tinyint(1) null=NO default=0 key=',
+      // El rpad_id si existe en datasets; NULL si no
+      'dato_quincena_propuestas.dataset_id int(11) null=YES default=NULL key=MUL',
+      'dato_quincena_propuestas.dataset_nombre varchar(200) null=NO default=null key='
+    ]);
+    // La clave, la huella y el sha256 en ASCII binario: se comparan byte a byte, sin igualar mayúsculas y minúsculas; metadata en
+    // utf8mb4_bin, tal como llegó. Lo demás, con la colación de la tabla
+    assert.deepEqual(await collationsDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA), [
+      'dato_quincena_adjuntos.campo utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_adjuntos.nombre utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_adjuntos.mime utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_adjuntos.sha256 ascii ascii_bin',
+      'dato_quincena_ediciones.clave ascii ascii_bin',
+      'dato_quincena_ediciones.tipo utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_ediciones.referencia_piloto utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_ediciones.titulo utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_ediciones.metadata utf8mb4 utf8mb4_bin',
+      'dato_quincena_ediciones.huella ascii ascii_bin',
+      'dato_quincena_propuestas.titulo utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_propuestas.cifra_clave utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_propuestas.dataset_nombre utf8mb4 utf8mb4_unicode_ci'
+    ]);
+    // Borrar una edición (SQL a mano: el RPAD no las borra) borra sus propuestas y sus adjuntos; borrar el dataset deja la propuesta
+    // sin el vínculo, con su nombre
+    assert.deepEqual(await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA), [
+      'dato_quincena_adjuntos.edicion_id -> dato_quincena_ediciones.id (fk_dato_quincena_adjunto_edicion) borrado=CASCADE',
+      'dato_quincena_propuestas.dataset_id -> datasets.id (fk_dato_quincena_propuesta_dataset) borrado=SET NULL',
+      'dato_quincena_propuestas.edicion_id -> dato_quincena_ediciones.id (fk_dato_quincena_propuesta_edicion) borrado=CASCADE'
+    ]);
+    // Las claves únicas son también los índices de las FK de edicion_id
+    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA), [
+      'dato_quincena_adjuntos.PRIMARY (id) repetible=0',
+      'dato_quincena_adjuntos.uq_dato_quincena_adjunto (edicion_id,campo) repetible=0',
+      'dato_quincena_ediciones.idx_dato_quincena_fecha (fecha_edicion,id) repetible=1',
+      'dato_quincena_ediciones.PRIMARY (id) repetible=0',
+      'dato_quincena_ediciones.uq_dato_quincena_clave (clave) repetible=0',
+      'dato_quincena_propuestas.idx_dato_quincena_dataset (dataset_id) repetible=1',
+      'dato_quincena_propuestas.PRIMARY (id) repetible=0',
+      'dato_quincena_propuestas.uq_dato_quincena_orden (edicion_id,orden) repetible=0'
+    ]);
+    assert.deepEqual(await motoresDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA),
+      [...TABLAS_DATO_QUINCENA].sort().map(tabla => `${tabla} InnoDB utf8mb4_unicode_ci`));
+    // Sin columnas generadas
+    assert.deepEqual(await generadasDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA), []);
+  });
+
   it('el tipo de una licencia de Mi espacio: el enum de schema.sql es TIPOS_LICENCIA de services/miEspacioReglas.js, en su orden', () => {
     const schema = fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8');
     const tabla = schema.match(/CREATE TABLE `mi_espacio_licencias` \(([\s\S]*?)\n\) ENGINE/);
@@ -707,7 +800,7 @@ describe('database/schema.sql', () => {
     assert.deepEqual({ ...fk }, { tabla: 'cambios_pendientes', columna: 'id', borrado: 'SET NULL' });
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO, ...TABLAS_MI_ESPACIO_AGENDA, ...TABLAS_MI_ESPACIO_HORAS, ...TABLAS_MI_ESPACIO_RESTITUCIONES]) {
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO, ...TABLAS_MI_ESPACIO_AGENDA, ...TABLAS_MI_ESPACIO_HORAS, ...TABLAS_MI_ESPACIO_RESTITUCIONES, ...TABLAS_DATO_QUINCENA]) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
@@ -3549,4 +3642,161 @@ describe('migracion-mi-espacio-eventos-diario.sql', () => {
       assert.equal(total, 0, tabla);
     }
   });
+});
+
+// El dato de la quincena (spec 2026-11-07-dato-quincena, 8 y 17): tres tablas nuevas, el archivo de las ediciones que manda Grok Bot.
+// La migración y su vuelta atrás, sobre una base descartable creada con schema.sql
+describe('migracion-dato-quincena.sql', () => {
+  const BASE_DATO_QUINCENA = 'rpad_schema_dato_quincena_test';
+  const MIGRACION = 'migracion-dato-quincena.sql';
+  const ROLLBACK = 'rollback-dato-quincena.sql';
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const esDeLasTablas = (c) => TABLAS_DATO_QUINCENA.some(tabla => c.startsWith(`${tabla}.`));
+  const enLaBase = (tabla) => `\`${BASE_DATO_QUINCENA}\`.\`${tabla}\``;
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main)
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_DATO_QUINCENA}\``);
+    await root.query(`CREATE DATABASE \`${BASE_DATO_QUINCENA}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_DATO_QUINCENA}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) {
+      await root.query([...TABLAS_DATO_QUINCENA].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
+    }
+  };
+  // Un área y un dataset (inventados) y un piloto con dos propuestas, una de ese dataset y otra de uno que no existe, y su infografía
+  const METADATA = '{"titulo":"Ejemplo inventado: ñandú, acentos y un emoji 📊"}';
+  const cargarDatos = async () => {
+    const [{ insertId: area }] = await root.query(`INSERT INTO ${enLaBase('areas')} (nombre) VALUES ('Área inventada')`);
+    const [{ insertId: dataset }] = await root.query(
+      `INSERT INTO ${enLaBase('datasets')} (titulo, area_id, frecuencia_id, tema_principal_id, tipo_gestion) VALUES ('Dataset inventado', ?, 6, 1, 'interna')`,
+      [area]);
+    const [{ insertId: edicion }] = await root.query(
+      `INSERT INTO ${enLaBase('dato_quincena_ediciones')} (clave, tipo, fecha_edicion, referencia_piloto, titulo, metadata, huella)
+       VALUES ('dq:piloto:2026-11-04:piloto-4', 'piloto', '2026-11-04', 'piloto-4', 'Edición inventada', ?, ?)`,
+      [METADATA, 'a'.repeat(64)]);
+    await root.query(
+      `INSERT INTO ${enLaBase('dato_quincena_propuestas')} (edicion_id, orden, titulo, cifra_clave, principal, dataset_id, dataset_nombre)
+       VALUES (?, 1, 'Propuesta uno', 'Una cifra inventada', 1, ?, 'Dataset inventado'), (?, 2, 'Propuesta dos', 'Otra cifra', 0, NULL, 'Uno que no existe')`,
+      [edicion, dataset, edicion]);
+    await root.query(
+      `INSERT INTO ${enLaBase('dato_quincena_adjuntos')} (edicion_id, campo, nombre, mime, bytes, sha256, contenido)
+       VALUES (?, 'infografia_png', 'infografia.png', 'image/png', 4, ?, ?)`,
+      [edicion, 'b'.repeat(64), Buffer.from([0x89, 0x50, 0x4e, 0x47])]);
+    return { dataset, edicion };
+  };
+  const contarEn = async (tabla) => {
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM ${enLaBase(tabla)}`);
+    return Number(total);
+  };
+  // La misma estructura que schema.sql: las columnas y también las claves foráneas, los índices, el motor y las colaciones, que las
+  // columnas no muestran
+  const comoSchema = async () => {
+    assert.deepEqual(await columnas(root, BASE_DATO_QUINCENA), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_DATO_QUINCENA, TABLAS_DATO_QUINCENA), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA));
+    assert.deepEqual(await indicesDe(root, BASE_DATO_QUINCENA, TABLAS_DATO_QUINCENA), await indicesDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA));
+    assert.deepEqual(await motoresDe(root, BASE_DATO_QUINCENA, TABLAS_DATO_QUINCENA), await motoresDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA));
+    assert.deepEqual(await collationsDe(root, BASE_DATO_QUINCENA, TABLAS_DATO_QUINCENA), await collationsDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA));
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_DATO_QUINCENA}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER, USE, DROP, RENAME ni CHECK, y solo crea las tres tablas, en su orden', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+    // Los acentos de los comentarios llegan bien desde phpMyAdmin
+    assert.match(codigo(MIGRACION), /^SET NAMES utf8mb4;/);
+    assert.match(codigo(ROLLBACK), /^SET NAMES utf8mb4;/);
+    // Lo único que se ejecuta, además de SET NAMES: las tres tablas, si todavía no están, primero a la que apuntan las otras dos
+    const sentencias = codigo(MIGRACION).split(';').map(s => s.trim()).filter(Boolean);
+    assert.equal(sentencias.length, 4, sentencias.join('\n---\n'));
+    assert.deepEqual(sentencias.slice(1).map(s => s.match(/^CREATE TABLE IF NOT EXISTS `(\w+)`/)?.[1]), TABLAS_DATO_QUINCENA);
+  });
+
+  it('las cabeceras dicen la spec, qué crea, el orden, que es obligatoria, que se puede repetir y cómo se deshace; el rollback, que se pierden las ediciones', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-11-07-dato-quincena-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    for (const tabla of TABLAS_DATO_QUINCENA) assert.match(cabecera(MIGRACION), new RegExp(`${tabla}:`), tabla);
+    assert.match(cabecera(MIGRACION), /El código anterior no las lee/);
+    // El paquete más grande entra en un INSERT (spec, secciones 8 y 17)
+    assert.match(cabecera(MIGRACION), /SELECT @@max_allowed_packet;/);
+    assert.match(cabecera(MIGRACION), /16777216 o más/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código nuevo, después de migracion-mi-espacio-eventos-diario\.sql/);
+    assert.match(cabecera(MIGRACION), /Es obligatoria/);
+    assert.match(cabecera(MIGRACION), /dan 500/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-dato-quincena\.sql/);
+    // Termina con la verificación de las tres tablas (spec, sección 17, paso 3), comentada: la migración se sigue pegando tal cual
+    assert.match(sql(MIGRACION), /\n-- Para verificar, en la misma pestaña SQL: tiene que dar 3 filas[^\n]*\n--   SHOW TABLES LIKE 'dato_quincena%';\s*$/);
+    assert.match(cabecera(ROLLBACK), /migracion-dato-quincena\.sql/);
+    assert.match(cabecera(ROLLBACK), /ORDEN: primero volver a subir los archivos anteriores y hacer Restart; después correr esto/);
+    // Lo que se pierde, dicho con su nombre, y cómo conservarlo
+    assert.match(cabecera(ROLLBACK), /se pierden las ediciones/);
+    assert.match(cabecera(ROLLBACK), /exportar las tres tablas antes/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('el rollback solo borra las tres tablas, de los adjuntos a las ediciones: no toca datasets ni ninguna otra', () => {
+    const borrados = [...codigo(ROLLBACK).matchAll(/DROP TABLE IF EXISTS `(\w+)`/gi)].map(m => m[1]);
+    assert.deepEqual(borrados, [...TABLAS_DATO_QUINCENA].reverse());
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELETE|UPDATE|ALTER|TRUNCATE|INSERT|RENAME)\b/i);
+  });
+
+  it('desde la estructura de main deja la de schema.sql y se puede repetir', async () => {
+    await crearBase({ conLoNuevo: false });
+    assert.ok(!(await columnas(root, BASE_DATO_QUINCENA)).some(esDeLasTablas), 'la base de partida ya tiene las tablas');
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+  });
+
+  it('el rollback se puede repetir, deja la estructura de main sin tocar el dataset de una propuesta, y la migración la recupera', async () => {
+    await crearBase({ conLoNuevo: true });
+    await cargarDatos();
+    assert.deepEqual(await Promise.all(TABLAS_DATO_QUINCENA.map(contarEn)), [1, 2, 1]);
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin las tres tablas
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
+    assert.deepEqual(await columnas(root, BASE_DATO_QUINCENA), deMain);
+    assert.equal(await contarEn('datasets'), 1);
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+  });
+
+  // Una edición por clave, una propuesta por orden y un adjunto por campo; metadata vuelve tal como entró; borrar la edición (SQL a mano)
+  // borra lo suyo, y borrar el dataset deja la propuesta sin el vínculo. Con la estructura de schema.sql y con la de la migración
+  for (const origen of ['schema.sql', 'la migración']) {
+    it(`una edición por clave, metadata tal como entró y los borrados de las FK (${origen})`, async () => {
+      await crearBase({ conLoNuevo: origen === 'schema.sql' });
+      if (origen === 'la migración') await root.query(sql(MIGRACION));
+      const { dataset, edicion } = await cargarDatos();
+      await assert.rejects(
+        root.query(`INSERT INTO ${enLaBase('dato_quincena_ediciones')} (clave, tipo, fecha_edicion, titulo, metadata, huella)
+                    VALUES ('dq:piloto:2026-11-04:piloto-4', 'piloto', '2026-11-04', 'Otra', '{}', ?)`, ['c'.repeat(64)]),
+        { code: 'ER_DUP_ENTRY' });
+      await assert.rejects(
+        root.query(`INSERT INTO ${enLaBase('dato_quincena_propuestas')} (edicion_id, orden, titulo, cifra_clave, dataset_nombre) VALUES (?, 2, 'Repetida', 'x', 'x')`, [edicion]),
+        { code: 'ER_DUP_ENTRY' });
+      await assert.rejects(
+        root.query(`INSERT INTO ${enLaBase('dato_quincena_adjuntos')} (edicion_id, campo, nombre, mime, bytes, sha256, contenido)
+                    VALUES (?, 'infografia_png', 'otra.png', 'image/png', 1, ?, ?)`, [edicion, 'd'.repeat(64), Buffer.from([0])]),
+        { code: 'ER_DUP_ENTRY' });
+      const [[fila]] = await root.query(`SELECT metadata, recibida_at IS NOT NULL AS con_llegada FROM ${enLaBase('dato_quincena_ediciones')} WHERE id = ?`, [edicion]);
+      assert.deepEqual({ ...fila }, { metadata: METADATA, con_llegada: 1 });
+      await root.query(`DELETE FROM ${enLaBase('datasets')} WHERE id = ?`, [dataset]);
+      const [propuestas] = await root.query(`SELECT orden, dataset_id, dataset_nombre FROM ${enLaBase('dato_quincena_propuestas')} ORDER BY orden`);
+      assert.deepEqual(propuestas.map(p => ({ ...p })), [
+        { orden: 1, dataset_id: null, dataset_nombre: 'Dataset inventado' },
+        { orden: 2, dataset_id: null, dataset_nombre: 'Uno que no existe' }
+      ]);
+      await root.query(`DELETE FROM ${enLaBase('dato_quincena_ediciones')} WHERE id = ?`, [edicion]);
+      assert.deepEqual(await Promise.all(TABLAS_DATO_QUINCENA.map(contarEn)), [0, 0, 0]);
+    });
+  }
 });

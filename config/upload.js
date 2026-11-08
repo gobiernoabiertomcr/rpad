@@ -20,6 +20,7 @@ import { randomUUID } from 'crypto';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { nombreDeArchivo } from '../services/proyectosReglas.js';
+import { TOPES, TOPE_DEL_PEDIDO, PARTES } from '../services/datoQuincenaReglas.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -123,6 +124,25 @@ export const responderAlTerminarDeLeer = (req, res, status, cuerpo) => {
   };
   if (req.readableEnded) return responder();
   req.once('end', responder);
+  req.resume();
+};
+
+// Un Content-Length que se puede comparar (Node ya rechaza uno mal formado; esto es solo por las dudas)
+const CONTENT_LENGTH = /^\d{1,16}$/;
+
+/**
+ * Responde [status, cuerpo] a un pedido que todavía no se leyó y puede ser de un desconocido: el 429, el 401 y el 503 del dato
+ * de la quincena, y los 400 y 413 de su lectura. Con un Content-Length de hasta TOPE_DEL_PEDIDO, como responderAlTerminarDeLeer
+ * (se termina de leer y se responde, así quien mandaba recibe la respuesta y no un corte). Sin Content-Length (chunked) o con
+ * uno mayor, no se lee sin fin: se responde enseguida con Connection: close (Node cierra la conexión al terminar la respuesta) y
+ * lo que llegue mientras tanto se descarta.
+ */
+export const responderAntesDeLeer = (req, res, status, cuerpo) => {
+  const largo = req.headers['content-length'];
+  if (typeof largo === 'string' && CONTENT_LENGTH.test(largo) && Number(largo) <= TOPE_DEL_PEDIDO) {
+    return responderAlTerminarDeLeer(req, res, status, cuerpo);
+  }
+  if (!res.headersSent) res.set('Connection', 'close').status(status).json(cuerpo);
   req.resume();
 };
 
@@ -256,6 +276,99 @@ export const subidaDeNotaFirmada = (req, res, next) => {
     if (!error) return next();
     const [status, cuerpo] = respuestaDeError(error, 'nota firmada', MENSAJE_UN_SOLO_PDF);
     responderAlTerminarDeLeer(req, res, status, cuerpo);
+  });
+};
+
+// =====================================================
+// El dato de la quincena (spec 2026-11-07-dato-quincena, 4 y 7): el POST de Grok Bot, un multipart de hasta cuatro partes, en
+// memoria (van a la base)
+// =====================================================
+
+// Las partes que tienen que llegar, en el orden en que se nombra la que falta, y cómo se nombra el tope de cada una (sección 4)
+const OBLIGATORIAS = Object.freeze(['metadata', 'infografia_png', 'correo_texto']);
+const TOPE_EN_TEXTO = Object.freeze({ metadata: '256 KB', infografia_png: '5 MB', correo_texto: '256 KB', calculos: '256 KB' });
+
+const noSePudoLeer = (motivo) => `No se pudo leer la edición: ${motivo}.`;
+const superaSuTope = (parte) => `La parte ${parte} supera el tamaño permitido (${TOPE_EN_TEXTO[parte]}).`;
+
+// [status, error, motivo corto para la consola] de un error de multer o de busboy. Su texto (en inglés) no se repite
+const rechazoDeLaLectura = (error) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE' && PARTES.includes(error.field)) return [413, superaSuTope(error.field), 'tope'];
+    if (error.code === 'LIMIT_FIELD_COUNT') return [400, noSePudoLeer('todas las partes van como archivo'), 'campo de texto'];
+    if (error.code === 'LIMIT_PART_COUNT' || error.code === 'LIMIT_FILE_COUNT') {
+      return [400, noSePudoLeer('sobran partes'), 'sobran partes'];
+    }
+  }
+  return [400, noSePudoLeer('el pedido está mal armado'), 'mal armado'];
+};
+
+// [status, error, motivo] de lo que se leyó sin errores de multer (`partes`, un Map del nombre a sus bytes), o null si sirve.
+// El primero que valga: una parte con otro nombre, una repetida, una obligatoria que falta, una que pasa su tope
+const rechazoDeLasPartes = (estado, partes) => {
+  if (estado.otra) return [400, noSePudoLeer('una parte no corresponde'), 'otra parte'];
+  if (estado.repetida !== null) return [400, noSePudoLeer(`la parte ${estado.repetida} llegó dos veces`), 'parte repetida'];
+  const falta = OBLIGATORIAS.find((parte) => !partes.has(parte));
+  if (falta !== undefined) return [400, noSePudoLeer(`falta la parte ${falta}`), 'falta una parte'];
+  const grande = PARTES.find((parte) => partes.has(parte) && partes.get(parte).length > TOPES[parte]);
+  if (grande !== undefined) return [413, superaSuTope(grande), 'tope'];
+  return null;
+};
+
+// El nombre de parte más largo que se mira: uno más largo es «otra», como uno que no es de PARTES
+const LARGO_MAXIMO_DEL_NOMBRE = 100;
+const esNombreDeParte = (nombre) => typeof nombre === 'string' && nombre.length > 0 && nombre.length <= LARGO_MAXIMO_DEL_NOMBRE
+  && PARTES.includes(nombre);
+
+// El filtro de un pedido: anota en su estado una parte con otro nombre o una repetida (la primera) y la descarta sin guardarla
+// (multer no da error: lee la parte y la tira); deja pasar la primera de cada nombre de PARTES. Una parte sin name o con
+// name="" llega con el nombre undefined: también es «otra»
+const filtroDelDatoQuincena = (estado) => (req, file, cb) => {
+  const { fieldname } = file;
+  if (!esNombreDeParte(fieldname)) {
+    estado.otra = true;
+  } else if (estado.vistas.has(fieldname)) {
+    estado.repetida ??= fieldname;
+  } else {
+    estado.vistas.add(fieldname);
+    return cb(null, true);
+  }
+  cb(null, false);
+};
+
+/**
+ * La lectura del POST del dato de la quincena (sección 4, paso 3 y 4), después del límite y del token. Sin un multipart/form-data,
+ * 400. Si no, multer en memoria, armado en cada pedido (el estado del filtro es de este pedido): todas las partes como archivo
+ * (fields: 0), hasta 4 y de hasta 5 MB cada una. Después, el primero que valga de los motivos de rechazoDeLaLectura y de
+ * rechazoDeLasPartes, con su 400 o su 413. Si todo sirve, deja `req.partes = { metadata, infografia_png, correo_texto,
+ * calculos? }`, cada una un Buffer.
+ *
+ * `parts` es 5 y no 4: busboy 1.6 avisa partsLimit al terminar la parte número `parts`, no al pasarla, así que con 4 un pedido
+ * con las cuatro partes daba LIMIT_PART_COUNT. Con 5, una quinta parte siempre es un error: de archivos (files: 4), de campos
+ * (fields: 0) o de partes, si no es ninguna de las dos.
+ *
+ * Sin fieldNameSize, a propósito: busboy entrega sin nombre una parte sin name o con name="", y multer 1.4.5 mide ese nombre
+ * con fieldNameSize dentro del flujo de busboy, donde el TypeError tira el proceso entero. El largo lo mira el filtro.
+ */
+export const subidaDelDatoQuincena = (req, res, next) => {
+  const rechazar = ([status, error, motivo]) => {
+    console.warn(`Dato de la quincena: ${status} (${motivo})`);
+    responderAntesDeLeer(req, res, status, { success: false, error });
+  };
+  if (!req.is('multipart/form-data')) return rechazar([400, noSePudoLeer('el pedido no es multipart/form-data'), 'no es multipart']);
+  const estado = { otra: false, repetida: null, vistas: new Set() };
+  const leer = multer({
+    storage: multer.memoryStorage(),
+    limits: { fields: 0, files: PARTES.length, parts: PARTES.length + 1, fileSize: TOPES.infografia_png },
+    fileFilter: filtroDelDatoQuincena(estado)
+  }).any();
+  leer(req, res, (error) => {
+    if (error) return rechazar(rechazoDeLaLectura(error));
+    const partes = new Map((req.files ?? []).map((archivo) => [archivo.fieldname, archivo.buffer]));
+    const rechazo = rechazoDeLasPartes(estado, partes);
+    if (rechazo !== null) return rechazar(rechazo);
+    req.partes = Object.fromEntries(partes);
+    next();
   });
 };
 

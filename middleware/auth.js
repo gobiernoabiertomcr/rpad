@@ -2,6 +2,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import pool from '../config/database.js';
 import { esAdmin, puedeCargarNotasDgmit } from '../services/usuariosReglas.js';
+import { estadoDelToken } from '../services/datoQuincenaReglas.js';
+import { responderAntesDeLeer } from '../config/upload.js';
 
 // Sin JWT_SECRET cualquiera podría firmar tokens válidos: no se permite iniciar
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -130,4 +132,21 @@ export const cronAuth = (req, res, next) => {
     return res.status(403).json({ success: false, error: 'Acceso denegado' });
   }
   next();
+};
+
+// El token de Grok Bot para el POST del dato de la quincena (spec 2026-11-07-dato-quincena, 12): no es un JWT ni una cuenta, y
+// solo sirve para esa ruta. La huella (DATO_QUINCENA_TOKEN_SHA256) se lee en cada pedido: sin ella, o mal formada, la recepción
+// está apagada (503); sin el token, o con otro, 401. Va antes de leer el multipart y responde como las otras respuestas antes de
+// leer (responderAntesDeLeer). La consola nunca registra el token
+const RESPUESTAS_DEL_TOKEN = Object.freeze({
+  apagado: [503, 'La recepción del dato de la quincena no está habilitada.', 'recepción apagada'],
+  rechazado: [401, 'Falta el token del dato de la quincena o no es válido.', 'token']
+});
+
+export const tokenDelDatoQuincena = (req, res, next) => {
+  const estado = estadoDelToken(req.headers.authorization, process.env.DATO_QUINCENA_TOKEN_SHA256);
+  if (estado === 'aceptado') return next();
+  const [status, error, motivo] = RESPUESTAS_DEL_TOKEN[estado];
+  console.warn(`Dato de la quincena: ${status} (${motivo})`);
+  responderAntesDeLeer(req, res, status, { success: false, error });
 };

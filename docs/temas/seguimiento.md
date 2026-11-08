@@ -16,7 +16,7 @@ seguimientoController: solo lectura, para todos los roles con sesión.
 ## Seguimiento del dataset (spec 2026-10-20-seguimiento-dataset)
 
 - Qué es:
-  Herramientas → Seguimiento (`seguimiento.html` + `js/seguimiento.js`, una de las 14 páginas con carcasa; sin `publico.css`, sin `aria-current`, con su `<style>`).
+  Herramientas → Seguimiento (`seguimiento.html` + `js/seguimiento.js`, una de las 15 páginas con carcasa; sin `publico.css`, sin `aria-current`, con su `<style>`).
   Para todos los roles con sesión (el lector también; sin sesión, al login).
   El lector recibe también el para y el cc de las notas y los destinatarios de los emails (decisión del usuario: está bien); solo se le saca el texto técnico del error de un email (`sinErroresTecnicos`).
   Es el registro de todos los movimientos de un dataset y la prueba de cada vez que el RPAD avisó que había que pedir la información.

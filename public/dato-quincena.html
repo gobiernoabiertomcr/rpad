@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>El dato de la quincena - RPAD</title>
+    <meta name="description" content="Las propuestas de comunicación que manda Grok Bot cada dos lunes, tal como llegaron">
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- CSS Global -->
+    <link rel="stylesheet" href="css/main.css?v=20261109">
+    <style>
+        /* El dato de la quincena (spec 2026-11-07-dato-quincena, 10): los tokens y las piezas de Proyectos, como la maqueta aprobada.
+           Las clases de la página empiezan con dq- */
+        :root {
+            --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA;
+            --sg-borde-control: #76879F; --sg-cielo: #DCEEF5;
+            --sg-sol: #FCE8A8; --sg-ambar: #7A5200;
+            --sg-azul: #24507A; --sg-azul-fondo: #DCEAF7;
+            --sg-rojo: #8A3434;
+        }
+
+        /* Lo oculto con el atributo hidden no vuelve por una regla de display más específica */
+        [hidden] { display: none !important; }
+        .main-content { min-width: 0; background: var(--gray-100); }
+        .dq-pagina { width: 100%; max-width: 1180px; margin: 0 auto; }
+        .dq-bajada { margin: -14px 0 20px; color: var(--sg-suave); max-width: 72ch; line-height: 1.5; }
+        .visualmente-oculto { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+        /* Foco visible: anillo de tinta con el halo de sol, como en Proyectos */
+        .dq-pagina a:focus-visible, .dq-pagina button:focus-visible, .dq-pagina summary:focus-visible, .dq-pagina [tabindex]:focus-visible,
+        .dq-modal :focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
+        .dq-pagina .dq-fila-enlace:focus-visible { outline-offset: -3px; border-radius: 8px; box-shadow: none; }
+
+        /* Estados de la página: cargando, error, vacío y una edición que no existe (uno a la vez) */
+        .dq-estado { margin: 0; background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 28px 24px; color: var(--sg-suave); }
+        .dq-estado h2 { margin: 0 0 6px; font-size: 1.3rem; font-weight: 700; color: var(--sg-tinta); }
+        .dq-estado p { margin: 0; }
+        .dq-estado h2 + p { margin-top: 10px; }
+        .dq-error { background: #FBEEEE; border-color: #EFCACA; color: var(--sg-rojo); }
+
+        /* Botones (los de Proyectos). Sin nowrap: «No se pudo copiar: seleccioná el texto.» tiene que entrar en un teléfono */
+        .dq-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 18px; border-radius: 999px; font: inherit; font-weight: 600; font-size: 0.9rem; border: 1px solid transparent; cursor: pointer; text-decoration: none; }
+        .dq-btn-tinta { background: var(--sg-tinta); color: #fff; }
+        .dq-btn-borde { background: #fff; color: var(--sg-tinta); border-color: var(--sg-borde-control); }
+        .dq-btn-chico { min-height: 34px; padding: 4px 14px; font-size: 0.86rem; }
+        .dq-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; text-align: left; }
+        .dq-btn:disabled, .dq-link:disabled { cursor: progress; }
+
+        /* Los años, como botones con su cantidad (solo si hay más de uno) */
+        .dq-anios { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+        .dq-chip { height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--sg-borde-control); background: #fff; color: var(--sg-tinta); font: inherit; font-weight: 600; font-size: 0.88rem; cursor: pointer; }
+        .dq-chip b { margin-left: 4px; font-weight: 700; color: var(--sg-suave); }
+        .dq-chip.dq-activo { background: var(--sg-tinta); border-color: var(--sg-tinta); color: #fff; }
+        .dq-chip.dq-activo b { color: var(--sg-cielo); }
+
+        /* La lista: una fila por edición, con la infografía como miniatura */
+        .dq-lista { list-style: none; margin: 0; padding: 0; background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; overflow: hidden; }
+        .dq-fila + .dq-fila { border-top: 1px solid var(--sg-linea); }
+        .dq-fila-enlace { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 18px; padding: 18px 20px; color: inherit; text-decoration: none; }
+        a.dq-fila-enlace:hover { background: var(--sg-sutil); }
+        a.dq-fila-enlace:hover .dq-fila-titulo { text-decoration: underline; text-underline-offset: 3px; }
+        .dq-mini { width: 104px; height: 104px; border-radius: 10px; border: 1px solid var(--sg-linea); object-fit: cover; background: #F7F3EA; display: block; }
+        .dq-fila-cuerpo { display: block; min-width: 0; }
+        .dq-fila-fecha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 2px; color: var(--sg-suave); font-size: 0.86rem; font-weight: 600; }
+        .dq-fila-titulo { display: block; font-family: var(--f-titulo); font-weight: 700; font-size: 1.12rem; letter-spacing: -0.01em; color: var(--sg-tinta); line-height: 1.25; overflow-wrap: anywhere; }
+        .dq-fila-cifra { display: block; margin-top: 6px; font-family: var(--f-titulo); font-weight: 600; font-size: 1rem; color: var(--sg-texto); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+        .dq-fila-resto { display: block; margin-top: 8px; color: var(--sg-suave); font-size: 0.86rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .dq-marca { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-family: var(--f-texto); font-size: 0.76rem; font-weight: 700; letter-spacing: 0; background: var(--sg-azul-fondo); color: var(--sg-azul); }
+
+        /* El detalle: la cabecera */
+        .dq-volver-caja { margin: 0 0 14px; }
+        .dq-volver { display: inline-flex; align-items: center; gap: 6px; }
+        .dq-cabecera { margin-bottom: 22px; }
+        .dq-fecha { margin: 0; font-family: var(--f-titulo); font-weight: 800; font-size: clamp(1.5rem, 1.1rem + 1.4vw, 2.1rem); letter-spacing: -0.02em; color: var(--sg-tinta); line-height: 1.1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        .dq-titulo-paquete { margin: 6px 0 0; color: var(--sg-texto); font-size: 1rem; overflow-wrap: anywhere; }
+        .dq-recibo { margin: 10px 0 0; color: var(--sg-suave); font-size: 0.88rem; line-height: 1.5; max-width: 80ch; }
+        .dq-nota-archivo { margin: 12px 0 0; padding: 10px 14px; border-left: 3px solid var(--sg-borde-control); background: #fff; color: var(--sg-texto); font-size: 0.88rem; line-height: 1.5; max-width: 80ch; white-space: pre-line; overflow-wrap: anywhere; }
+
+        /* El detalle: la infografía y los archivos a un costado (fijo al bajar) y la agenda y las propuestas al otro */
+        .dq-detalle { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 28px; align-items: start; }
+        .dq-lateral { position: sticky; top: calc(var(--header-height) + 16px); display: grid; gap: 14px; }
+        .dq-columna { min-width: 0; }
+        .dq-infografia { width: 100%; height: auto; aspect-ratio: auto 1 / 1; border-radius: 14px; border: 1px solid var(--sg-linea); background: #F7F3EA; display: block; object-fit: contain; }
+        .dq-infografia-pie { margin: -6px 0 0; color: var(--sg-suave); font-size: 0.8rem; }
+        .dq-archivos { background: #fff; border: 1px solid var(--sg-linea); border-radius: 14px; padding: 14px 16px; }
+        .dq-archivos h3 { margin: 0 0 8px; font-size: 0.95rem; font-weight: 700; color: var(--sg-tinta); }
+        .dq-archivos ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+        .dq-archivos li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 10px; padding: 6px 0; font-size: 0.9rem; color: var(--sg-texto); }
+        .dq-archivos li + li { border-top: 1px solid var(--sg-sutil); }
+        .dq-archivo { overflow-wrap: anywhere; }
+        .dq-archivos small { color: var(--sg-suave); }
+        .dq-acciones { display: flex; gap: 12px; flex: none; }
+
+        .dq-seccion-titulo { margin: 0 0 10px; font-family: var(--f-titulo); font-weight: 700; font-size: 1.2rem; color: var(--sg-tinta); }
+        .dq-agenda { margin: 0 0 26px; padding: 14px 18px; background: var(--sg-cielo); border-radius: 14px; }
+        .dq-agenda ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+        .dq-agenda li { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; font-size: 0.9rem; line-height: 1.45; color: var(--sg-texto); }
+        .dq-dia { font-weight: 700; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
+        .dq-evento { overflow-wrap: anywhere; }
+        .dq-evento b { color: var(--sg-tinta); }
+        .dq-agenda a { color: var(--sg-tinta); font-weight: 600; }
+
+        /* Cada propuesta: la principal con el borde de tinta más grueso; las etiquetas con su color y su texto (Validar, con su ícono) */
+        .dq-propuestas { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+        .dq-propuesta { min-width: 0; background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 20px 22px; }
+        .dq-propuesta.dq-principal { border: 2px solid var(--sg-tinta); }
+        .dq-prop-arriba { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .dq-orden { font-weight: 700; color: var(--sg-suave); font-size: 0.86rem; margin-right: 4px; }
+        .dq-etiqueta { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; background: var(--sg-sutil); color: var(--sg-texto); }
+        .dq-etiqueta svg { width: 14px; height: 14px; flex: none; }
+        .dq-et-principal { background: var(--sg-tinta); color: #fff; }
+        .dq-et-agenda { background: var(--sg-cielo); color: var(--sg-tinta); }
+        .dq-et-validar { background: var(--sg-sol); color: var(--sg-ambar); }
+        .dq-prop-titulo { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.25rem; letter-spacing: -0.01em; color: var(--sg-tinta); line-height: 1.25; overflow-wrap: anywhere; }
+        .dq-cifra { margin: 10px 0 0; font-family: var(--f-titulo); font-weight: 700; font-size: clamp(1.25rem, 1rem + 0.9vw, 1.6rem); line-height: 1.2; color: var(--sg-texto); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+        .dq-dataset { margin: 12px 0 0; font-size: 0.9rem; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .dq-dataset a { color: var(--sg-tinta); font-weight: 600; }
+        .dq-foto { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.84rem; color: var(--sg-suave); }
+        .dq-foto dt { display: inline; font-weight: 600; }
+        .dq-foto dd { display: inline; margin: 0 0 0 4px; color: var(--sg-texto); }
+        .dq-validar { margin: 14px 0 0; padding: 12px 14px; border-radius: 12px; background: #FFF6D6; border: 1px solid #F1D98A; color: #4A3500; font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
+        .dq-validar h5 { margin: 0 0 4px; font-size: 0.9rem; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+        .dq-validar svg { flex: none; }
+        .dq-validar ul { margin: 0; padding-left: 18px; list-style: disc; }
+
+        /* La propuesta completa, en un <details> (abierto en la principal) */
+        .dq-completa { margin-top: 14px; border-top: 1px solid var(--sg-linea); padding-top: 10px; }
+        .dq-completa > summary { cursor: pointer; font-weight: 600; color: var(--sg-tinta); padding: 6px 0; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+        .dq-completa > summary::-webkit-details-marker { display: none; }
+        .dq-completa > summary svg { transition: transform .15s; }
+        .dq-completa[open] > summary svg { transform: rotate(90deg); }
+        .dq-campos { margin: 8px 0 0; display: grid; gap: 16px; }
+        .dq-campo-cabeza { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin: 0 0 4px; }
+        .dq-campo h5 { margin: 0; font-size: 0.88rem; font-weight: 700; color: var(--sg-tinta); }
+        .dq-texto, .dq-campo li { margin: 0; color: var(--sg-texto); font-size: 0.93rem; line-height: 1.6; max-width: 75ch; overflow-wrap: anywhere; }
+        /* Los textos llegan con sus propios saltos de línea */
+        .dq-texto { white-space: pre-line; }
+        .dq-texto + .dq-texto { margin-top: 8px; }
+        .dq-campo ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; list-style: disc; }
+        .dq-campo a { color: var(--sg-tinta); }
+        .dq-nota, .dq-redes { padding: 12px 14px; border-radius: 12px; background: var(--sg-sutil); }
+        .dq-nota-titulo { margin: 0 0 6px; font-weight: 700; color: var(--sg-tinta); overflow-wrap: anywhere; }
+        .dq-copiar-todo { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--sg-linea); }
+
+        /* «Ver»: el texto del correo o los cálculos, en un <pre> */
+        .dq-modal { max-width: 760px; border-radius: 18px; }
+        .dq-modal .modal-title { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.3rem; color: var(--sg-tinta); overflow-wrap: anywhere; }
+        .dq-modal .modal-body { max-height: 62vh; overflow: auto; }
+        .dq-texto-plano { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 0.9rem/1.55 var(--f-texto); color: var(--sg-texto); }
+
+        /* En una pantalla angosta, una columna con el costado arriba; en una baja, el costado no queda fijo (no entraría) */
+        @media (max-width: 960px) {
+            .dq-detalle { grid-template-columns: minmax(0, 1fr); }
+            .dq-lateral { position: static; grid-template-columns: minmax(0, 340px); }
+        }
+        @media (max-height: 760px) {
+            .dq-lateral { position: static; }
+        }
+        @media (max-width: 560px) {
+            .dq-fila-enlace { grid-template-columns: 72px minmax(0, 1fr); gap: 12px; padding: 14px; }
+            .dq-mini { width: 72px; height: 72px; }
+            .dq-propuesta { padding: 16px; }
+            .dq-agenda li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+            .dq-modal .modal-footer { flex-wrap: wrap; }
+        }
+        /* Sin movimiento: la flecha de la propuesta completa no gira y el modal aparece sin achicarse ni agrandarse */
+        @media (prefers-reduced-motion: reduce) {
+            .dq-completa > summary svg { transition: none; }
+            #dq-modal, .dq-modal, .modal-overlay.active .dq-modal { transform: none; transition: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir el menú" aria-controls="sidebar" aria-expanded="false">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+                </button>
+                <a href="index.html" class="header-marca">
+                    <img src="img/logo.png" alt="Municipalidad de Comodoro Rivadavia" class="header-logo">
+                    <span class="header-marca-texto">
+                        <span class="header-title">RPAD</span>
+                        <span class="header-subtitle">Registro Permanente de Actualización de Datasets</span>
+                    </span>
+                </a>
+            </div>
+            <nav class="header-nav" aria-label="Principal">
+                <a href="index.html">Inicio</a>
+                <a href="datasets.html">Datasets</a>
+                <a href="calendario.html">Calendario</a>
+                <a href="contacto.html">Contacto</a>
+            </nav>
+            <div class="header-right" id="header-actions">
+                <a href="login.html" class="btn btn-primary btn-sm"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg> Ingresar</a>
+            </div>
+        </header>
+
+        <!-- Sidebar Overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar" aria-label="Menú">
+            <div class="sidebar-header">
+                <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="sidebar-logo">
+            </div>
+            <nav class="sidebar-nav">
+                <div class="sidebar-section hidden" id="sidebarPrincipal">
+                    <div class="sidebar-section-title">Principal</div>
+                    <a href="index.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Inicio</span></a>
+                    <a href="datasets.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg><span>Datasets</span></a>
+                    <a href="calendario.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg><span>Calendario</span></a>
+                    <a href="contacto.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Contacto</span></a>
+                </div>
+                <div class="sidebar-section hidden" id="sidebarAdmin">
+                    <div class="sidebar-section-title">Administración</div>
+                    <a href="admin.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg><span>Gestión de Datasets</span></a>
+                    <a href="correos.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Correos</span></a>
+                    <a href="configuracion.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Configuración</span></a>
+                </div>
+                <div class="sidebar-section hidden" id="sidebarTools">
+                    <div class="sidebar-section-title">Herramientas</div>
+                    <a href="reportes.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Métricas y Reportes</span></a>
+                    <a href="notas.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg><span>Notas</span></a>
+                    <a href="proyectos.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M8 10v4"/><path d="M12 10v2"/><path d="M16 10v6"/></svg><span>Proyectos</span></a>
+                    <a href="seguimiento.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span>Seguimiento</span></a>
+                    <a href="dato-quincena.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18h-5"/><path d="M18 14h-8"/><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="10" y="6" rx="1"/></svg><span>El dato de la quincena</span></a>
+                </div>
+                <div class="sidebar-section hidden" id="sidebarAccount">
+                    <div class="sidebar-section-title">Mi cuenta</div>
+                    <a href="perfil.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Mi Perfil</span></a>
+                    <a href="mi-espacio.html" class="sidebar-link"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg><span>Mi espacio</span></a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="dq-pagina">
+                <!-- Page Header -->
+                <div class="page-header">
+                    <h1 class="page-title">
+                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18h-5"/><path d="M18 14h-8"/><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="10" y="6" rx="1"/></svg>
+                        El dato de la quincena
+                    </h1>
+                </div>
+                <p class="dq-bajada">Las propuestas de comunicación que manda Grok Bot cada dos lunes, tal como llegaron. Son internas: guardarlas acá no las aprueba ni las publica.</p>
+
+                <!-- La región viva de la página: dato-quincena.js anuncia acá «Copiado» y los errores (lo que se vuelve a dibujar no la toca) -->
+                <p class="visualmente-oculto" id="dq-anuncio" role="status"></p>
+
+                <noscript><p class="dq-estado">Para ver las ediciones hace falta JavaScript.</p></noscript>
+                <!-- La lista (sin ?id=), el detalle (?id=N) o un estado: lo dibuja dato-quincena.js, con los clics delegados acá -->
+                <div id="dq-contenido"><p class="dq-estado" role="status">Cargando…</p></div>
+            </div>
+
+            <!-- Footer -->
+            <footer class="footer">
+                <div class="footer-cuerpo">
+                    <div class="footer-marca">
+                        <img src="img/logo-2025-blanco.png" alt="Municipalidad de Comodoro Rivadavia" class="footer-logo">
+                        <p class="footer-direccion">Dirección de Datos Públicos y Comunicación</p>
+                        <p>D. G. de Modernización e Investigación Territorial<br>Subsecretaría de Modernización y Transparencia</p>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">El registro</h2>
+                        <ul>
+                            <li><a href="index.html">Inicio</a></li>
+                            <li><a href="datasets.html">Datasets</a></li>
+                            <li><a href="calendario.html">Calendario</a></li>
+                            <li><a href="contacto.html">Contacto</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Datos abiertos</h2>
+                        <ul>
+                            <li><a href="https://datos.comodoro.gov.ar" target="_blank" rel="noopener">datos.comodoro.gov.ar</a></li>
+                            <li>Licencia CC BY-SA 4.0</li>
+                        </ul>
+                    </div>
+                    <div class="footer-columna">
+                        <h2 class="footer-titulo">Marco legal</h2>
+                        <ul>
+                            <li>Ordenanza N° 17.662/23, artículo 8°</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <span>© <span id="footer-anio">2026</span> Secretaría de Gobierno, Modernización y Transparencia. Municipalidad de Comodoro Rivadavia</span>
+                    <span>RPAD v2.0.0</span>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <!-- «Ver» el texto del correo o los cálculos (spec 10): dato-quincena.js pone el título y el texto con textContent, nunca como HTML.
+         «Descargar» baja el mismo archivo, con el nombre que manda el servidor -->
+    <div class="modal-overlay" id="dq-modal">
+        <div class="modal dq-modal" role="dialog" aria-modal="true" aria-labelledby="dq-modal-titulo">
+            <div class="modal-header">
+                <h2 class="modal-title" id="dq-modal-titulo"></h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body"><pre class="dq-texto-plano" id="dq-modal-texto" tabindex="0"></pre></div>
+            <div class="modal-footer">
+                <button type="button" class="dq-btn dq-btn-borde" data-cerrar>Cerrar</button>
+                <button type="button" class="dq-btn dq-btn-tinta" id="dq-modal-descargar">Descargar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts del RPAD -->
+    <script src="js/config.js"></script>
+    <script src="js/auth.js?v=20261204"></script>
+    <script src="js/main.js?v=20261204"></script>
+    <script src="js/api.js?v=20261204"></script>
+    <script src="js/dato-quincena.js?v=20261227"></script>
+</body>
+</html>

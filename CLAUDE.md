@@ -44,12 +44,12 @@ Un subagente con `isolation: worktree` no recibe esas reglas: pasale los documen
 ```
 app.js                    # Entry point Express (y las redirecciones de usuarios.html y areas.html a Configuración y de gestion.html a Proyectos)
 config/database.js        # Pool MySQL
-config/upload.js          # Las subidas de Proyectos: subida(tipo), multer armado en cada pedido con sus límites, rutaSegura y UPLOADS_DIR; y la de una nota firmada, subidaDeNotaFirmada (en memoria)
+config/upload.js          # Las subidas de Proyectos: subida(tipo), multer armado en cada pedido con sus límites, rutaSegura y UPLOADS_DIR; la de una nota firmada, subidaDeNotaFirmada (en memoria); y el POST del dato de la quincena, subidaDelDatoQuincena (en memoria), con responderAntesDeLeer
 controllers/              # Un controlador por tema: en la sección Archivos de cada documento
 services/                 # Reglas puras (*Reglas.js), consultas (*Datos.js) y dibujo (*Pdf.js): en la sección Archivos de cada documento
-middleware/auth.js         # JWT middleware (authMiddleware y sesionOpcional, las dos sobre verificarSesion; adminOnly, cargaNotasDgmit, usaGeneradorDeNotas, cronAuth)
+middleware/auth.js         # JWT middleware (authMiddleware y sesionOpcional, las dos sobre verificarSesion; adminOnly, cargaNotasDgmit, usaGeneradorDeNotas, cronAuth; y tokenDelDatoQuincena, el token de Grok Bot)
 middleware/cuerpo.js       # Lo que se responde cuando el cuerpo o la query de un pedido no se pueden usar (datosComunes y erroresDelCuerpo)
-middleware/rateLimit.js    # Los límites de pedidos de login, recuperar y links
+middleware/rateLimit.js    # Los límites de pedidos de login, recuperar, links y el dato de la quincena
 routes/index.js           # Todas las rutas
 database/schema.sql       # Schema completo
 database/updates/         # Migraciones SQL
@@ -59,7 +59,7 @@ public/                   # Frontend: una página HTML por pantalla
   js/auth.js              # Manejo de sesión JWT
   js/api.js               # Capa centralizada de fetch
   js/main.js              # Carcasa: encabezado, menú lateral, año del footer
-  css/main.css            # Carcasa, fuentes, tokens y estilos de administración (las 14 páginas con carcasa)
+  css/main.css            # Carcasa, fuentes, tokens y estilos de administración (las 15 páginas con carcasa)
   css/publico.css         # Solo las 5 páginas públicas (index, datasets, dataset, calendario, contacto)
   css/styles.css, layout.css, perfil.css  # Sin uso: no los carga ninguna página
 ```
@@ -83,6 +83,7 @@ Si tocás esto, leé este documento de `docs/temas/`:
 | Configuración: usuarios, licencias, áreas, login, contraseñas y links | `configuracion.md` |
 | Feriados | `feriados.md` |
 | Proyectos | `proyectos.md` |
+| El dato de la quincena: el archivo de Grok Bot, su token y su página | `dato-quincena.md` |
 | Carga de páginas, versiones, CSS, carcasa, sitio público | `frontend.md` |
 | Una tabla, una columna, una migración | `base-de-datos.md` |
 | Producción, kits, orden de migraciones y vueltas atrás, pendientes con fecha | `despliegue.md` |
@@ -138,7 +139,7 @@ Si tocás esto, leé este documento de `docs/temas/`:
 - Toast notifications: `showToast(message, type)`. No escapa: lo escapa quien lo llama.
 - Siempre `<script src="js/X.js…"></script>` a secas, sin `defer` ni otros atributos (lo lee `tests/paginas.test.js`).
 - Cada `?v=` está atado a una constante de `tests/paginas.test.js`: al cambiar un script, se suben las dos. Tocar `auth.js`, `main.js` o `api.js` sube `VERSION` en todas las páginas que los cargan (`docs/temas/frontend.md`).
-- La carcasa está copiada a mano en las 14 páginas: un cambio va en las 14.
+- La carcasa está copiada a mano en las 15 páginas: un cambio va en las 15.
 - Los scripts de cada página, al cargarse, solo declaran y enganchan `DOMContentLoaded`; `contacto.js` suma un `<style>` (los tests los cargan en un `vm`): lo que arma HTML es puro y recibe quién mira por parámetro; lo que toca el DOM o la API va aparte, al final, con los eventos delegados en contenedores fijos.
 - `API.pedirJson` tira error ante una respuesta de error, pero no da los `errores` de un 400. `API.pedirArchivo` es solo GET y no da el estado ni el `Content-Disposition`: por eso hay `fetch` propios, con JWT en el encabezado, nunca en la URL.
 - «Guardar» y confirmar deshabilitan su botón hasta la respuesta (un doble clic manda un solo pedido).
@@ -227,7 +228,7 @@ Todo cambio a datasets pasa por doble verificación:
   No es de administración (`esAdmin` y `Auth.isAdmin()` no lo incluyen), no audita, no cuenta para el mínimo de auditores y no tiene licencias ni firma.
   Lo asignan el admin y el superadmin, y el editor (entre lector y colaborador).
   Un cambio de rol le avisa al superadmin (también de lector a colaborador); crear un colaborador no, como crear un lector.
-- **lector:** solo lectura de datos públicos + perfil y Mi espacio, y las Herramientas: Métricas y Reportes (la pestaña Métricas y los ocho PDF, sin cargar las métricas manuales), Proyectos (ve todo y baja y previsualiza los documentos y los archivos, como el colaborador; no carga, edita ni borra) y Seguimiento (incluido quién propuso y quién aprobó cada cambio).
+- **lector:** solo lectura de datos públicos + perfil y Mi espacio, y las Herramientas: Métricas y Reportes (la pestaña Métricas y los ocho PDF, sin cargar las métricas manuales), Proyectos (ve todo y baja y previsualiza los documentos y los archivos, como el colaborador; no carga, edita ni borra), Seguimiento (incluido quién propuso y quién aprobó cada cambio) y El dato de la quincena (lee, baja y copia las ediciones de Grok Bot, como todos los roles).
   No tiene Notas: el menú lateral no la muestra y `notas.html` dice "No tenés permiso para usar el generador de notas.".
   La ayuda del rol en Usuarios lo dice (`usuarios.js`; la del colaborador suma el generador)
 - **Licencias:** superadmin, admins (y editores) pueden tener licencias (pestaña Licencias de Configuración).
@@ -247,7 +248,7 @@ Todo cambio a datasets pasa por doble verificación:
 ## Seguridad
 
 - JWT_SECRET obligatorio al iniciar (process.exit(1) si falta)
-- Rate limiting (`middleware/rateLimit.js`): login, 10 fallidos por usuario e IP y 50 por IP cada 15 minutos; recuperar, 5 por hora por IP y 3 por identificador; links de acceso, 20 cada 15 minutos por IP. Contacto: 5 por hora por IP, en memoria.
+- Rate limiting (`middleware/rateLimit.js`): login, 10 fallidos por usuario e IP y 50 por IP cada 15 minutos; recuperar, 5 por hora por IP y 3 por identificador; links de acceso, 20 cada 15 minutos por IP; el dato de la quincena, 20 por hora por IP. Contacto: 5 por hora por IP, en memoria.
 - El cuerpo de un pedido (`middleware/cuerpo.js`): un JSON roto da 400 y uno de más de 1 MB, 413, con el formato de la API y un texto fijo, sin repetir lo que llegó ni dejarlo en la consola.
   `datosComunes`, después de los dos lectores, rechaza con el mismo 400, en todas las rutas, las claves de `CLAVES_RESERVADAS`, que pisan lo que todo objeto trae de fábrica, en el cuerpo y en la query, y un cuerpo de más de 32 niveles (un multipart no pasa por ahí: Proyectos no lee `req.body` y la nota firmada solo compara `solo_verificar`).
   Los demás errores siguen en 500 (`tests/errores-del-cuerpo.test.js`)
@@ -270,6 +271,7 @@ SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
 APP_URL (links de los emails; por defecto la URL de producción)
 EMAIL_SOLO_A, RPAD_TESTS_DB_LOCAL, DB_ROOT_PASSWORD, MAILPIT_URL (solo desarrollo local)
 UPLOADS_DIR (opcional, absoluta: la carpeta de las subidas de Proyectos; sin ella, uploads/ junto a la app; los tests la apuntan a una temporal)
+DATO_QUINCENA_TOKEN_SHA256 (opcional: el SHA-256 del token de Grok Bot, nunca el token; sin ella, la recepción del dato de la quincena está apagada)
 ```
 
 ## Despliegue (producción)
