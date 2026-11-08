@@ -296,13 +296,15 @@ const referenciaPiloto = (tipo) => (valor, ruta, agregar) => {
 // Grok Bot archiva la edición aunque el correo no haya salido (decisión del usuario): 'no_enviado' lleva la hora en null
 const ESTADOS_DEL_CORREO = Object.freeze(['enviado', 'no_enviado']);
 
-// La hora del correo: null con el correo no enviado; si no, un instante, que solo un piloto puede dejar en null
+// La hora del correo: null con el correo no enviado; con el correo enviado, un instante, que solo un piloto puede dejar en null.
+// Con un estado que no vale no se sabe si hace falta: null o un instante, para que el bot no reciba un error que lo lleve a
+// poner una hora
 const horaDelCorreo = (estado, regular) => (valor, ruta, agregar) => {
   if (estado === 'no_enviado') {
     if (valor !== null) agregar(ruta, 'enviadoAtSinCorreo');
     return;
   }
-  instante({ oNull: !regular, siNull: 'enviadoAt' })(valor, ruta, agregar);
+  instante({ oNull: !(regular && estado === 'enviado'), siNull: 'enviadoAt' })(valor, ruta, agregar);
 };
 
 const edicion = (hoy) => objeto((valor) => {

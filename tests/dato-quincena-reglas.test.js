@@ -397,14 +397,21 @@ describe('validarEdicion: la cabecera', () => {
     }
     assert.deepEqual(validar(sin(edicionDePrueba({ correo: { ...sinCorreo } }), 'correo.enviado_at')),
       [error('correo.enviado_at', 'falta')]);
+    // La hora en que se generó la sigue pidiendo una regular, haya salido o no el correo
+    assert.deepEqual(validar(edicionDePrueba({ correo: { ...sinCorreo }, generado_at: null })), [error('generado_at', 'generadoAt')]);
   });
 
-  it('con el correo enviado, una regular sigue pidiendo la hora; con un estado que no vale, la hora se revisa igual', () => {
+  // Con un estado mal escrito, un solo error: pedir la hora podría llevar al bot a ponerla en un correo que no salió
+  it('con el correo enviado, una regular sigue pidiendo la hora; con un estado que no vale, solo ese error', () => {
     assert.deepEqual(erroresCon('correo', { estado: 'enviado', enviado_at: null }), [error('correo.enviado_at', 'enviadoAt')]);
-    assert.deepEqual(erroresCon('correo', { estado: 'otro', enviado_at: null }),
-      [error('correo.estado', 'correoEstado'), error('correo.enviado_at', 'enviadoAt')]);
-    assert.deepEqual(erroresCon('correo', { estado: 'otro', enviado_at: '2026-11-02T11:12:00Z' }),
-      [error('correo.estado', 'correoEstado')]);
+    for (const estado of ['otro', 'no enviado', null]) {
+      assert.deepEqual(erroresCon('correo', { estado, enviado_at: null }), [error('correo.estado', 'correoEstado')], String(estado));
+      assert.deepEqual(erroresCon('correo', { estado, enviado_at: '2026-11-02T11:12:00Z' }), [error('correo.estado', 'correoEstado')],
+        String(estado));
+      assert.deepEqual(erroresCon('correo', { estado, enviado_at: 'x' }),
+        [error('correo.estado', 'correoEstado'), error('correo.enviado_at', 'instante')], String(estado));
+    }
+    assert.deepEqual(validar(sin(edicionDePrueba(), 'correo.estado')), [error('correo.estado', 'falta')]);
   });
 });
 

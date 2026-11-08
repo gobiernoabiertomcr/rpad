@@ -15,7 +15,7 @@ dato-quincena.html # El dato de la quincena: la lista de un año y el detalle ?i
 ## El archivo
 
 - Qué es:
-  Herramientas → El dato de la quincena, el archivo de las ediciones que arma Grok Bot, un agente externo: hasta cinco propuestas de comunicación con su infografía, el texto del correo que le mandó a la Dirección y su nota de cálculos.
+  Herramientas → El dato de la quincena, el archivo de las ediciones que arma Grok Bot, un agente externo: hasta cinco propuestas de comunicación con su infografía, el texto del correo para la Dirección y su nota de cálculos.
   Grok Bot manda cada edición después de su correo, con un POST y un token propio: el RPAD nunca lo llama.
   Si el correo no salió, la manda igual, con `correo.estado` en `no_enviado` (decisión del usuario: el archivo no depende del mail).
   Las ediciones anteriores a la activación las manda después, con su fecha original.
@@ -89,6 +89,7 @@ dato-quincena.html # El dato de la quincena: la lista de un año y el detalle ?i
   y `adjuntos`, el manifiesto, de 2 o 3 entradas.
   En una regular, `generado_at` es obligatorio y también `enviado_at` si el correo salió; en un piloto pueden ser null.
   Con `no_enviado`, `enviado_at` con algo que no es null da 422 «Con el correo no enviado, la hora del correo va null.».
+  Con un estado que no vale, `enviado_at` puede ser null o un instante: el único error es el del estado, para no pedirle al bot una hora que quizá no existe.
 - `nota_archivo` puede llegar vacía o con solo espacios (solo los textos obligatorios no pueden), y el detalle la da como null.
   `ckan_slug`, como todo texto que admite null, también puede llegar vacío.
 - Cada propuesta: `orden` (1, 2, 3… en su orden, sin saltos);
