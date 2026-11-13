@@ -815,3 +815,243 @@ export const eventoRecordatorioTemplate = ({ evento, hoy }) => {
     nota: NOTA_DEL_RECORDATORIO
   });
 };
+
+// =====================================================
+// EL DATO DE LA QUINCENA (spec 2026-11-12-dato-quincena-correo, 2.8 y 10)
+// =====================================================
+
+// El Content-ID de la infografía en línea: el servicio adjunta el PNG con este cid y el HTML lo muestra con <img src="cid:…">
+export const CID_INFOGRAFIA = 'infografia-dato-quincena';
+
+// La nota del pie, con el nombre del bot que trae el modelo (`nombreDelBot`, el de NOMBRE_DEL_BOT: acá no se nombra, spec 2.10);
+// sin un nombre, «del bot»
+const notaDelDatoQuincena = (nombreDelBot) => {
+  const nombre = typeof nombreDelBot === 'string' ? nombreDelBot.trim() : '';
+  return `En el RPAD también están el texto del correo ${nombre === '' ? 'del bot' : `de ${nombre}`}, los cálculos y la edición `
+    + 'completa. Te llega porque estás en la lista del dato de la quincena; para dejar de recibirlo, avisale a la Dirección.';
+};
+const PIE_DE_LA_INFOGRAFIA = 'La infografía de la propuesta principal.';
+const BOTON_DEL_DATO_QUINCENA = 'Ver la edición en el RPAD';
+const PARA_VALIDAR = 'Para validar antes de publicar';
+
+// Las pastillas de las etiquetas de una propuesta (Principal va en la franja) y la de la agenda, la suave «Efeméride»; otra,
+// con los colores neutros. Siempre con su texto: el color nunca es lo único que las distingue
+const PASTILLAS_DEL_DATO_QUINCENA = Object.freeze({
+  Validar: { fondo: COLORES.respaldo.fondo, color: COLORES.respaldo.texto },
+  Agenda: { fondo: COLORES.encabezado, color: COLORES.titulo },
+  Efeméride: { fondo: COLORES.borde, color: COLORES.texto }
+});
+
+// Un texto de la edición: los que no son texto, vacíos (nada tira con un modelo raro)
+const textoDelDato = (valor) => (typeof valor === 'string' ? valor : '');
+// Escapado y con sus saltos de línea como <br>
+const conRenglones = (valor) => escapeHtml(textoDelDato(valor)).replace(/\r\n|\r|\n/g, '<br>');
+// Una dirección es enlace solo si es https:// (nunca javascript:, http: ni una relativa)
+const esHttps = (url) => typeof url === 'string' && url.startsWith('https://');
+const listaDelDato = (valor) => (Array.isArray(valor) ? valor : []);
+// La propuesta principal (la primera, si ninguna lo es), para el texto alternativo de la infografía
+const principalDe = (propuestas) => propuestas.find((propuesta) => propuesta?.principal === true) ?? propuestas[0] ?? null;
+// La foto del RPAD en un renglón: «En el RPAD ese día: Actualizado. Datos al 30/09/2026. …»
+const fotoEnUnRenglon = (foto) => `${foto.map((fila) => `${textoDelDato(fila?.rotulo)} ${textoDelDato(fila?.valor)}`).join('. ')}.`;
+// Las etiquetas que van en pastillas: todas menos Principal
+const etiquetasDelDato = (propuesta) => listaDelDato(propuesta?.etiquetas).filter((etiqueta) => etiqueta !== 'Principal');
+const pieDeLaInfografia = (conSvg) => `${PIE_DE_LA_INFOGRAFIA} ${conSvg ? 'Va adjunta en PNG y en SVG (para editarla).' : 'Va adjunta en PNG.'}`;
+
+// Una pastilla, con el estilo de la etiqueta del tipo de cambio (etiquetaDeTipo) y su margen
+const pastillaDelDato = (texto, margen) => {
+  const { fondo, color } = Object.hasOwn(PASTILLAS_DEL_DATO_QUINCENA, texto)
+    ? PASTILLAS_DEL_DATO_QUINCENA[texto]
+    : { fondo: COLORES.borde, color: COLORES.texto };
+  return `<span style="display: inline-block; margin: ${margen}; background-color: ${fondo}; color: ${color}; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 10px;">${escapeHtml(textoDelDato(texto))}</span>`;
+};
+
+// Un bloque con aire arriba, en una celda (Outlook de escritorio no respeta el margin de una tabla)
+const conAireArriba = (alto, html) => `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse;">
+                      <tr>
+                        <td style="padding: ${alto}px 0 0 0;">
+                          ${html}
+                        </td>
+                      </tr>
+                    </table>`;
+
+// Un campo de una propuesta: su título y su contenido (html: ya escapado)
+const campoDelDato = (titulo, html) =>
+  `<h3 style="margin: 14px 0 4px 0; color: ${COLORES.titulo}; font-size: 14px; font-weight: 600;">${escapeHtml(titulo)}</h3>${html}`;
+
+// Un evento de la agenda: la fecha en su columna; el título, la etiqueta, el detalle y «Ver» si la dirección es https://
+const eventoDelDato = (evento) => {
+  const etiqueta = typeof evento?.etiqueta === 'string' && evento.etiqueta !== '' ? ` ${pastillaDelDato(evento.etiqueta, '0')}` : '';
+  const detalle = textoDelDato(evento?.detalle).trim() === '' ? '' : `<br>${conRenglones(evento.detalle)}`;
+  const ver = esHttps(evento?.url) ? ` ${enlace(escapeHtml(evento.url), 'Ver')}` : '';
+  return `
+                      <tr>
+                        <td valign="top" style="padding: 4px 12px 4px 0; width: 84px; color: ${COLORES.titulo}; font-size: 13px; font-weight: 600; white-space: nowrap;">${escapeHtml(textoDelDato(evento?.fecha_texto))}</td>
+                        <td valign="top" style="padding: 4px 0; color: ${COLORES.texto}; font-size: 13px; line-height: 1.5;"><strong>${conRenglones(evento?.titulo)}</strong>${etiqueta}${detalle}${ver}</td>
+                      </tr>`;
+};
+
+const agendaDelDato = (agenda) => (agenda.length === 0 ? null : recuadro(`${tituloSeccion('Agenda de la quincena')}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse;">${agenda.map(eventoDelDato).join('')}
+                    </table>`));
+
+// La franja de una propuesta: «Propuesta N de M»; la principal, en el color del título, con «Principal»
+const franjaDelDato = (propuesta) => {
+  const principal = propuesta?.principal === true;
+  const fondo = principal ? COLORES.titulo : COLORES.encabezado;
+  return `<td bgcolor="${fondo}" style="padding: 10px 16px; background-color: ${fondo}; border-bottom: 1px solid ${principal ? COLORES.titulo : COLORES.bordeEncabezado};">`
+    + `<span style="color: ${principal ? '#FFFFFF' : COLORES.titulo}; font-size: 13px; font-weight: 700;">${escapeHtml(textoDelDato(propuesta?.franja))}</span>`
+    + `${principal ? '<span style="color: #FFFFFF; font-size: 13px;">&nbsp;&nbsp;Principal</span>' : ''}</td>`;
+};
+
+// Lo de adentro de la tarjeta de una propuesta, en el orden de la maqueta. Las listas vacías no van
+const contenidoDelDato = (propuesta) => {
+  const etiquetas = etiquetasDelDato(propuesta);
+  const { dataset, borrador_nota: borrador } = propuesta ?? {};
+  const nombre = conRenglones(dataset?.nombre);
+  const foto = listaDelDato(propuesta?.foto);
+  const notas = listaDelDato(propuesta?.notas_validacion);
+  const puntos = listaDelDato(propuesta?.puntos_centrales);
+  const parrafos = listaDelDato(borrador?.parrafos);
+  const fuentes = listaDelDato(propuesta?.fuentes);
+  return [
+    etiquetas.length > 0 ? `<p style="margin: 0 0 6px 0;">${etiquetas.map((etiqueta) => pastillaDelDato(etiqueta, '0 6px 6px 0')).join('')}</p>` : '',
+    `<h2 style="margin: 0; color: ${COLORES.titulo}; font-size: 17px; font-weight: 600; line-height: 1.3;">${conRenglones(propuesta?.titulo)}</h2>`,
+    `<p style="margin: 8px 0 0 0; color: ${COLORES.texto}; font-size: 16px; font-weight: 600; line-height: 1.4;">${conRenglones(propuesta?.cifra_clave)}</p>`,
+    parrafo(`Dataset: ${esHttps(dataset?.url) ? enlace(escapeHtml(dataset.url), nombre) : nombre}`, '10px 0 0 0'),
+    foto.length > 0 ? `<p style="margin: 4px 0 0 0; color: ${COLORES.secundario}; font-size: 12px; line-height: 1.5;">${conRenglones(fotoEnUnRenglon(foto))}</p>` : '',
+    notas.length > 0
+      ? conAireArriba(12, avisoDestacado(`<strong>${PARA_VALIDAR}</strong>${notas.map((nota) => `<br>• ${conRenglones(nota)}`).join('')}`))
+      : '',
+    campoDelDato('Por qué hoy', parrafo(conRenglones(propuesta?.por_que_hoy))),
+    campoDelDato('Ángulo', parrafo(conRenglones(propuesta?.angulo))),
+    campoDelDato('Idea de placa', parrafo(conRenglones(propuesta?.idea_placa))),
+    campoDelDato('Texto para redes', recuadro(parrafo(conRenglones(propuesta?.texto_redes)))),
+    puntos.length > 0
+      ? campoDelDato('Puntos centrales', `<ul style="margin: 0; padding-left: 18px; color: ${COLORES.texto}; font-size: 14px; line-height: 1.6;">${puntos.map((punto) => `<li>${conRenglones(punto)}</li>`).join('')}</ul>`)
+      : '',
+    campoDelDato('Borrador de nota', recuadro(`<p style="margin: 0 0 6px 0; color: ${COLORES.titulo}; font-size: 14px; font-weight: 600;">${conRenglones(borrador?.titulo)}</p>${parrafos.map((texto, i) => parrafo(conRenglones(texto), i === 0 ? '0' : '8px 0 0 0')).join('')}`)),
+    fuentes.length > 0
+      ? campoDelDato('Fuentes', `<p style="margin: 0; color: ${COLORES.texto}; font-size: 13px; line-height: 1.6; word-break: break-all;">${fuentes.map((fuente) => (esHttps(fuente) ? enlace(escapeHtml(fuente), escapeHtml(fuente)) : conRenglones(fuente))).join('<br>')}</p>`)
+      : ''
+  ].join('');
+};
+
+// La tarjeta de una propuesta: la franja arriba y el contenido; la principal, con borde de 2 px en el color del título
+const tarjetaDelDato = (propuesta) => `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; background-color: ${COLORES.tarjeta}; border: ${propuesta?.principal === true ? `2px solid ${COLORES.titulo}` : `1px solid ${COLORES.bordeRecuadro}`}; border-radius: 6px; border-collapse: separate; border-spacing: 0; overflow: hidden;">
+                      <tr>
+                        ${franjaDelDato(propuesta)}
+                      </tr>
+                      <tr>
+                        <td style="padding: 14px 16px 16px 16px;">
+                          ${contenidoDelDato(propuesta)}
+                        </td>
+                      </tr>
+                    </table>`;
+
+// Las propuestas, una por fila, con 28 px de aire entre una y otra (filas de alto fijo, como SEPARADOR_DE_TARJETAS)
+const SEPARADOR_DE_PROPUESTAS = `
+                <tr>
+                  <td height="28" style="height: 28px; font-size: 0; line-height: 0;">&nbsp;</td>
+                </tr>`;
+const propuestasDelDato = (propuestas) => (propuestas.length === 0 ? null : `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse;">${
+  propuestas.map((propuesta) => `
+                <tr>
+                  <td>
+                    ${tarjetaDelDato(propuesta)}
+                  </td>
+                </tr>`).join(SEPARADOR_DE_PROPUESTAS)}
+              </table>`);
+
+// La infografía en línea (cid), a lo ancho del cuerpo (600 menos 24 de cada lado), con su pie
+const infografiaDelDato = (propuestas, conSvg) => {
+  const principal = principalDe(propuestas);
+  const titulo = textoDelDato(principal?.titulo).replace(/\s+/g, ' ').trim();
+  const alternativo = titulo === '' ? PIE_DE_LA_INFOGRAFIA.slice(0, -1) : `Infografía de la propuesta principal: ${titulo}`;
+  return `<img src="cid:${CID_INFOGRAFIA}" width="552" alt="${escapeHtml(alternativo)}" style="display: block; width: 100%; max-width: 552px; height: auto; border: 1px solid ${COLORES.borde}; border-radius: 6px;">`
+    + `<p style="margin: 6px 0 0 0; color: ${COLORES.secundario}; font-size: 12px;">${escapeHtml(pieDeLaInfografia(conSvg))}</p>`;
+};
+
+// El texto plano de una propuesta, en bloques separados por un renglón en blanco: la franja (con «(principal)»), el título con
+// sus etiquetas y la cifra; el dataset (la dirección, solo si es https://) y la foto; cada campo con su título
+const textoDeLaPropuesta = (propuesta) => {
+  const etiquetas = etiquetasDelDato(propuesta);
+  const { dataset, borrador_nota: borrador } = propuesta ?? {};
+  const foto = listaDelDato(propuesta?.foto);
+  const notas = listaDelDato(propuesta?.notas_validacion);
+  const puntos = listaDelDato(propuesta?.puntos_centrales);
+  const fuentes = listaDelDato(propuesta?.fuentes);
+  const conGuiones = (titulo, elementos) => [titulo, ...elementos.map((elemento) => `- ${textoDelDato(elemento)}`)].join('\n');
+  return [
+    [
+      `${textoDelDato(propuesta?.franja)}${propuesta?.principal === true ? ' (principal)' : ''}`,
+      `${textoDelDato(propuesta?.titulo)}${etiquetas.length > 0 ? ` [${etiquetas.map(textoDelDato).join(', ')}]` : ''}`,
+      textoDelDato(propuesta?.cifra_clave)
+    ].join('\n'),
+    [
+      `Dataset: ${textoDelDato(dataset?.nombre)}`, ...(esHttps(dataset?.url) ? [dataset.url] : []),
+      ...(foto.length > 0 ? [fotoEnUnRenglon(foto)] : [])
+    ].join('\n'),
+    ...(notas.length > 0 ? [conGuiones(PARA_VALIDAR, notas)] : []),
+    `Por qué hoy\n${textoDelDato(propuesta?.por_que_hoy)}`,
+    `Ángulo\n${textoDelDato(propuesta?.angulo)}`,
+    `Idea de placa\n${textoDelDato(propuesta?.idea_placa)}`,
+    `Texto para redes\n${textoDelDato(propuesta?.texto_redes)}`,
+    ...(puntos.length > 0 ? [conGuiones('Puntos centrales', puntos)] : []),
+    ['Borrador de nota', [textoDelDato(borrador?.titulo), ...listaDelDato(borrador?.parrafos).map(textoDelDato)].join('\n\n')].join('\n'),
+    ...(fuentes.length > 0 ? [['Fuentes', ...fuentes.map(textoDelDato)].join('\n')] : [])
+  ].join('\n\n');
+};
+
+// Un evento de la agenda en el texto plano: «10/11/2026 · Título (Efeméride)», el detalle y la dirección, si es https://
+const eventoEnTexto = (evento) => [
+  `${textoDelDato(evento?.fecha_texto)} · ${textoDelDato(evento?.titulo)}${typeof evento?.etiqueta === 'string' && evento.etiqueta !== '' ? ` (${evento.etiqueta})` : ''}`,
+  ...(textoDelDato(evento?.detalle).trim() === '' ? [] : [evento.detalle]),
+  ...(esHttps(evento?.url) ? [evento.url] : [])
+].join('\n');
+
+/**
+ * El mail del dato de la quincena, a una persona (spec 2026-11-12-dato-quincena-correo, 10; la forma, la de la maqueta
+ * aprobada): `{ subject, html, text }`. `modelo`: el de `modeloDelMail` (services/datoQuincenaCorreoReglas.js), que esta
+ * plantilla no importa. `conSvg`: solo con true el pie de la infografía dice que va también en SVG (el servicio lo pasa si
+ * la edición lo trajo; ante la duda, no lo promete).
+ * Con el marco único: el título, el número y la bajada; «Buen día, <primer nombre>.»; la infografía en línea (CID_INFOGRAFIA);
+ * la agenda, si hay; una tarjeta por propuesta, en su orden, con su franja; el botón «Ver la edición en el RPAD» y la nota, con
+ * el nombre del bot del modelo.
+ * Todo texto de la edición va escapado y con sus saltos de línea como <br>; una dirección es enlace solo si es https://. El
+ * texto plano dice lo mismo, con los textos tal como llegaron.
+ */
+export const datoQuincenaTemplate = (modelo, { conSvg = false } = {}) => {
+  const conElSvg = conSvg === true;
+  const primerNombre = textoDelDato(modelo?.primerNombre);
+  const saludo = primerNombre === '' ? 'Buen día.' : `Buen día, ${primerNombre}.`;
+  const numero = textoDelDato(modelo?.numero);
+  const agenda = listaDelDato(modelo?.agenda);
+  const propuestas = listaDelDato(modelo?.propuestas);
+  const url = textoDelDato(modelo?.url);
+  const nota = notaDelDatoQuincena(modelo?.nombreDelBot);
+  return {
+    subject: textoDelDato(modelo?.asunto),
+    html: marcoEmail({
+      titulo: textoDelDato(modelo?.titulo),
+      cuerpo: [
+        tituloCuerpo(textoDelDato(modelo?.titulo))
+          + (numero === '' ? '' : `<p style="margin: 4px 0 0 0; color: ${COLORES.subtitulo}; font-size: 13px; font-weight: 600;">${escapeHtml(numero)}</p>`)
+          + `<p style="margin: 6px 0 0 0; color: ${COLORES.secundario}; font-size: 14px;">${escapeHtml(textoDelDato(modelo?.bajada))}</p>`
+          + parrafo(escapeHtml(saludo), '16px 0 0 0'),
+        infografiaDelDato(propuestas, conElSvg),
+        agendaDelDato(agenda),
+        propuestasDelDato(propuestas),
+        boton({ texto: BOTON_DEL_DATO_QUINCENA, url }),
+        `<p style="margin: 0; color: ${COLORES.secundario}; font-size: 12px; line-height: 1.5;">${escapeHtml(nota)}</p>`
+      ]
+    }),
+    text: [
+      saludo,
+      [textoDelDato(modelo?.titulo), ...(numero === '' ? [] : [numero]), textoDelDato(modelo?.bajada)].join('\n'),
+      pieDeLaInfografia(conElSvg),
+      ...(agenda.length > 0 ? [`Agenda de la quincena\n${agenda.map(eventoEnTexto).join('\n\n')}`] : []),
+      ...propuestas.map(textoDeLaPropuesta),
+      `${BOTON_DEL_DATO_QUINCENA}: ${url}`,
+      nota
+    ].join('\n\n')
+  };
+};

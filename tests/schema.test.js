@@ -87,8 +87,23 @@ const TABLAS_MI_ESPACIO_RESTITUCIONES = ['mi_espacio_restituciones', 'mi_espacio
 const esDeLosDiasRestituidos = (c) => TABLAS_MI_ESPACIO_RESTITUCIONES.some(tabla => c.startsWith(`${tabla}.`));
 
 // Las tres tablas del dato de la quincena (spec 2026-11-07-dato-quincena, 8), en el orden de su migración: las ediciones que manda
-// Grok Bot, sus propuestas y sus adjuntos, que apuntan a las ediciones
+// Datito, sus propuestas y sus adjuntos, que apuntan a las ediciones
 const TABLAS_DATO_QUINCENA = ['dato_quincena_ediciones', 'dato_quincena_propuestas', 'dato_quincena_adjuntos'];
+
+// Las cuatro tablas del correo que manda el RPAD (spec 2026-11-12-dato-quincena-correo, 7), en el orden de su migración: el
+// interruptor con la última corrida, quién lo recibe, el estado del correo de cada edición y cada envío a cada persona. Ninguna apunta a
+// otra de las cuatro: apuntan a usuarios y a las ediciones
+const TABLAS_DATO_QUINCENA_CORREO = ['dato_quincena_correo_config', 'dato_quincena_destinatarios', 'dato_quincena_correos', 'dato_quincena_envios'];
+const esDelCorreoDelDatoQuincena = (c) => TABLAS_DATO_QUINCENA_CORREO.some(tabla => c.startsWith(`${tabla}.`));
+
+// El campo de un adjunto del dato de la quincena: desde el correo, con 'infografia_svg' al final (cuatro valores); antes, tres
+const CAMPO_DEL_ADJUNTO_ANTES = "dato_quincena_adjuntos.campo enum('infografia_png','correo_texto','calculos') null=NO default=null key=";
+const CAMPO_DEL_ADJUNTO = "dato_quincena_adjuntos.campo enum('infografia_png','correo_texto','calculos','infografia_svg') null=NO default=null key=";
+
+// La estructura de schema.sql sin lo del correo del dato de la quincena: sin sus cuatro tablas y con el campo de tres valores
+const sinElCorreoDelDatoQuincena = (lista) => lista
+  .filter(c => !esDelCorreoDelDatoQuincena(c))
+  .map(c => (c === CAMPO_DEL_ADJUNTO ? CAMPO_DEL_ADJUNTO_ANTES : c));
 
 // El tipo de una licencia de Mi espacio: desde los días restituidos, con 'restituidos' al final (diez valores); antes, nueve
 const TIPO_DE_LICENCIA_ANTES = "mi_espacio_licencias.tipo enum('vacaciones','franquicia','estudios','medica','medica_extraordinaria','familiar','franco','horas_a_favor','uso_autorizado') null=NO default=null key=";
@@ -100,8 +115,8 @@ const sinLosDiasRestituidos = (lista) => lista
   .map(c => (c === TIPO_DE_LICENCIA ? TIPO_DE_LICENCIA_ANTES : c));
 
 // Las tablas que crea schema.sql: 41 hasta la agenda de Mi espacio, 42 con la planilla de contrato, 43 con el evento Personal
-// (Público), 45 con los días restituidos, 47 con el aviso diario de la agenda y 50 con el dato de la quincena
-const TOTAL_DE_TABLAS = 50;
+// (Público), 45 con los días restituidos, 47 con el aviso diario de la agenda, 50 con el dato de la quincena y 54 con su correo
+const TOTAL_DE_TABLAS = 54;
 
 // Las columnas generadas de unas tablas, con cómo se guardan y su expresión: `columnas` no lee EXTRA
 const generadasDe = async (conexion, base, tablas) => {
@@ -689,7 +704,8 @@ describe('database/schema.sql', () => {
       'dato_quincena_adjuntos.id int(11) null=NO default=null key=PRI',
       // El primer campo de la clave única de dos: un mismo valor se repite (otro adjunto de la misma edición)
       'dato_quincena_adjuntos.edicion_id int(11) null=NO default=null key=MUL',
-      "dato_quincena_adjuntos.campo enum('infografia_png','correo_texto','calculos') null=NO default=null key=",
+      // La infografía editable (SVG), con el correo (spec 2026-11-12-dato-quincena-correo, 7), al final: los valores de antes no cambian
+      CAMPO_DEL_ADJUNTO,
       'dato_quincena_adjuntos.nombre varchar(255) null=NO default=null key=',
       'dato_quincena_adjuntos.mime varchar(30) null=NO default=null key=',
       'dato_quincena_adjuntos.bytes int(10) unsigned null=NO default=null key=',
@@ -759,6 +775,96 @@ describe('database/schema.sql', () => {
     assert.deepEqual(await generadasDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA), []);
   });
 
+  // information_schema ordena los nombres sin distinguir mayúsculas: dato_quincena_correos va antes que dato_quincena_correo_config
+  // ('S' antes que '_'), y un índice idx_ antes que PRIMARY
+  it('El correo del dato de la quincena: cuatro tablas con sus columnas, claves y FK (spec 2026-11-12-dato-quincena-correo, 7)', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(esDelCorreoDelDatoQuincena);
+    assert.deepEqual(lista, [
+      // El correo de cada edición con envío: una fila por edición, con su estado y, si no se envió, el motivo
+      'dato_quincena_correos.edicion_id int(11) null=NO default=null key=PRI',
+      "dato_quincena_correos.estado enum('programada','enviada','parcial','fallida','no_enviada') null=NO default=null key=MUL",
+      "dato_quincena_correos.motivo enum('apagado','vieja','mas_nueva','sin_lista') null=YES default=NULL key=",
+      // La hora del primer envío que salió
+      'dato_quincena_correos.enviada_at datetime null=YES default=NULL key=',
+      'dato_quincena_correos.creada_at datetime null=NO default=null key=',
+      'dato_quincena_correos.ultima_corrida_at datetime null=YES default=NULL key=',
+      // Una sola fila (id = 1): el envío automático, quién y cuándo lo cambió, y la última corrida para Correos → Estado
+      'dato_quincena_correo_config.id tinyint(4) null=NO default=null key=PRI',
+      'dato_quincena_correo_config.envio_activo tinyint(1) null=NO default=0 key=',
+      'dato_quincena_correo_config.cambiado_por int(11) null=YES default=NULL key=MUL',
+      'dato_quincena_correo_config.cambiado_at datetime null=YES default=NULL key=',
+      'dato_quincena_correo_config.corrida_inicio_at datetime null=YES default=NULL key=',
+      'dato_quincena_correo_config.corrida_fin_at datetime null=YES default=NULL key=',
+      'dato_quincena_correo_config.corrida_resultado varchar(500) null=YES default=NULL key=',
+      'dato_quincena_correo_config.corrida_con_errores tinyint(1) null=NO default=0 key=',
+      // Quién recibe el correo: una fila por persona, con quién y cuándo la sumó
+      'dato_quincena_destinatarios.usuario_id int(11) null=NO default=null key=PRI',
+      'dato_quincena_destinatarios.agregado_por int(11) null=YES default=NULL key=MUL',
+      'dato_quincena_destinatarios.agregado_at datetime null=NO default=null key=',
+      // Cada envío a cada persona: el automático, un reenvío o una prueba
+      'dato_quincena_envios.id int(11) null=NO default=null key=PRI',
+      'dato_quincena_envios.edicion_id int(11) null=NO default=null key=MUL',
+      'dato_quincena_envios.usuario_id int(11) null=NO default=null key=MUL',
+      // La dirección usada, como usuarios.email
+      'dato_quincena_envios.email varchar(100) null=NO default=null key=',
+      "dato_quincena_envios.tipo enum('automatico','reenvio','prueba') null=NO default=null key=",
+      // Generada (STORED): 1 en el automático y NULL en un reenvío o una prueba; ver la clave única, abajo
+      'dato_quincena_envios.unico tinyint(1) null=YES default=NULL key=',
+      "dato_quincena_envios.estado enum('pendiente','enviando','enviado','fallido','licencia','omitido') null=NO default=null key=",
+      'dato_quincena_envios.intentos tinyint(3) unsigned null=NO default=0 key=',
+      'dato_quincena_envios.enviado_at datetime null=YES default=NULL key=',
+      'dato_quincena_envios.ultimo_intento_at datetime null=YES default=NULL key=',
+      // Un texto fijo, nunca el de nodemailer
+      'dato_quincena_envios.error varchar(200) null=YES default=NULL key=',
+      // Quién pidió un reenvío o una prueba
+      'dato_quincena_envios.creado_por int(11) null=YES default=NULL key=MUL',
+      'dato_quincena_envios.creado_at datetime null=NO default=null key='
+    ]);
+    // Los ENUM y los textos, con la colación de la tabla
+    assert.deepEqual(await collationsDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_CORREO), [
+      'dato_quincena_correos.estado utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_correos.motivo utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_correo_config.corrida_resultado utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_envios.email utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_envios.tipo utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_envios.estado utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_envios.error utf8mb4 utf8mb4_unicode_ci'
+    ]);
+    // Borrar a una persona la saca de la lista y borra sus envíos; quien cambió el interruptor, la sumó o pidió un reenvío queda en
+    // NULL. Borrar una edición (SQL a mano: el RPAD no las borra) borra su correo y sus envíos
+    assert.deepEqual(await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_CORREO), [
+      'dato_quincena_correos.edicion_id -> dato_quincena_ediciones.id (fk_dato_quincena_correo_edicion) borrado=CASCADE',
+      'dato_quincena_correo_config.cambiado_por -> usuarios.id (fk_dato_quincena_correo_config_usuario) borrado=SET NULL',
+      'dato_quincena_destinatarios.agregado_por -> usuarios.id (fk_dato_quincena_destinatario_agregado_por) borrado=SET NULL',
+      'dato_quincena_destinatarios.usuario_id -> usuarios.id (fk_dato_quincena_destinatario_usuario) borrado=CASCADE',
+      'dato_quincena_envios.creado_por -> usuarios.id (fk_dato_quincena_envio_creado_por) borrado=SET NULL',
+      'dato_quincena_envios.edicion_id -> dato_quincena_ediciones.id (fk_dato_quincena_envio_edicion) borrado=CASCADE',
+      'dato_quincena_envios.usuario_id -> usuarios.id (fk_dato_quincena_envio_usuario) borrado=CASCADE'
+    ]);
+    // Un solo automático por edición y persona: uq_dato_quincena_envio_automatico con unico, que es 1 en el automático y NULL en los
+    // reenvíos y las pruebas (dos NULL nunca chocan en un UNIQUE de MariaDB, así que esos se repiten). Es también el índice de la FK de
+    // edicion_id
+    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_CORREO), [
+      'dato_quincena_correos.idx_dato_quincena_correo_estado (estado) repetible=1',
+      'dato_quincena_correos.PRIMARY (edicion_id) repetible=0',
+      'dato_quincena_correo_config.fk_dato_quincena_correo_config_usuario (cambiado_por) repetible=1',
+      'dato_quincena_correo_config.PRIMARY (id) repetible=0',
+      'dato_quincena_destinatarios.fk_dato_quincena_destinatario_agregado_por (agregado_por) repetible=1',
+      'dato_quincena_destinatarios.PRIMARY (usuario_id) repetible=0',
+      'dato_quincena_envios.fk_dato_quincena_envio_creado_por (creado_por) repetible=1',
+      'dato_quincena_envios.fk_dato_quincena_envio_usuario (usuario_id) repetible=1',
+      'dato_quincena_envios.PRIMARY (id) repetible=0',
+      'dato_quincena_envios.uq_dato_quincena_envio_automatico (edicion_id,usuario_id,unico) repetible=0'
+    ]);
+    assert.deepEqual(await motoresDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_CORREO),
+      ['dato_quincena_correos', 'dato_quincena_correo_config', 'dato_quincena_destinatarios', 'dato_quincena_envios'].map(tabla => `${tabla} InnoDB utf8mb4_unicode_ci`));
+    // unico es la única columna generada, y se guarda (STORED): se calcula al escribir la fila, nadie la escribe, y así la clave vale
+    // aunque un INSERT se olvide de ella
+    const generadas = await generadasDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_CORREO);
+    assert.deepEqual(generadas.map(c => c.split(':')[0]), ['dato_quincena_envios.unico STORED GENERATED']);
+    assert.match(generadas[0], /`tipo` = 'automatico'/);
+  });
+
   it('el tipo de una licencia de Mi espacio: el enum de schema.sql es TIPOS_LICENCIA de services/miEspacioReglas.js, en su orden', () => {
     const schema = fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8');
     const tabla = schema.match(/CREATE TABLE `mi_espacio_licencias` \(([\s\S]*?)\n\) ENGINE/);
@@ -800,11 +906,20 @@ describe('database/schema.sql', () => {
     assert.deepEqual({ ...fk }, { tabla: 'cambios_pendientes', columna: 'id', borrado: 'SET NULL' });
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO, ...TABLAS_MI_ESPACIO_AGENDA, ...TABLAS_MI_ESPACIO_HORAS, ...TABLAS_MI_ESPACIO_RESTITUCIONES, ...TABLAS_DATO_QUINCENA]) {
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO, ...TABLAS_MI_ESPACIO_AGENDA, ...TABLAS_MI_ESPACIO_HORAS, ...TABLAS_MI_ESPACIO_RESTITUCIONES, ...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO.filter(tabla => tabla !== 'dato_quincena_correo_config')]) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
   }
+
+  // La lista de quién recibe el correo arranca vacía (lo comprueba el for de arriba): las personas se tildan en la página
+  it('trae la fila del correo del dato de la quincena: la 1, con el envío automático apagado y sin corridas', async () => {
+    const [filas] = await root.query(`SELECT * FROM \`${BASE_TEMPORAL}\`.dato_quincena_correo_config`);
+    assert.deepEqual(filas.map(fila => ({ ...fila })), [{
+      id: 1, envio_activo: 0, cambiado_por: null, cambiado_at: null,
+      corrida_inicio_at: null, corrida_fin_at: null, corrida_resultado: null, corrida_con_errores: 0
+    }]);
+  });
 
   it('trae la configuración inicial de Notas Digitales, sin firma, banner del membrete ni casillas de prueba', async () => {
     const [[config]] = await root.query(`SELECT * FROM \`${BASE_TEMPORAL}\`.notas_digitales_config`);
@@ -3644,12 +3759,16 @@ describe('migracion-mi-espacio-eventos-diario.sql', () => {
   });
 });
 
-// El dato de la quincena (spec 2026-11-07-dato-quincena, 8 y 17): tres tablas nuevas, el archivo de las ediciones que manda Grok Bot.
+// El dato de la quincena (spec 2026-11-07-dato-quincena, 8 y 17): tres tablas nuevas, el archivo de las ediciones que manda Datito.
 // La migración y su vuelta atrás, sobre una base descartable creada con schema.sql
 describe('migracion-dato-quincena.sql', () => {
   const BASE_DATO_QUINCENA = 'rpad_schema_dato_quincena_test';
   const MIGRACION = 'migracion-dato-quincena.sql';
   const ROLLBACK = 'rollback-dato-quincena.sql';
+  // Lo que se le sumó después, con el correo que manda el RPAD: dos de sus tablas apuntan a las ediciones. Su migración va después de
+  // esta, y su vuelta atrás, antes que la de esta: la base lo exige
+  const MIGRACION_CORREO = 'migracion-dato-quincena-correo.sql';
+  const ROLLBACK_CORREO = 'rollback-dato-quincena-correo.sql';
   // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
   const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
   // Sin los comentarios: lo que de verdad se ejecuta
@@ -3657,14 +3776,15 @@ describe('migracion-dato-quincena.sql', () => {
   const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
   const esDeLasTablas = (c) => TABLAS_DATO_QUINCENA.some(tabla => c.startsWith(`${tabla}.`));
   const enLaBase = (tabla) => `\`${BASE_DATO_QUINCENA}\`.\`${tabla}\``;
-  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main)
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main): primero las tablas del correo,
+  // que apuntan a las ediciones
   const crearBase = async ({ conLoNuevo }) => {
     await root.query(`DROP DATABASE IF EXISTS \`${BASE_DATO_QUINCENA}\``);
     await root.query(`CREATE DATABASE \`${BASE_DATO_QUINCENA}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
     await root.query(`USE \`${BASE_DATO_QUINCENA}\``);
     await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
     if (!conLoNuevo) {
-      await root.query([...TABLAS_DATO_QUINCENA].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
+      await root.query([...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
     }
   };
   // Un área y un dataset (inventados) y un piloto con dos propuestas, una de ese dataset y otra de uno que no existe, y su infografía
@@ -3739,6 +3859,8 @@ describe('migracion-dato-quincena.sql', () => {
     assert.match(cabecera(ROLLBACK), /se pierden las ediciones/);
     assert.match(cabecera(ROLLBACK), /exportar las tres tablas antes/);
     assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+    // Mientras esté el correo, su vuelta atrás va antes (dos de sus tablas apuntan a las ediciones)
+    assert.match(cabecera(ROLLBACK), /correr antes rollback-dato-quincena-correo\.sql/);
   });
 
   it('el rollback solo borra las tres tablas, de los adjuntos a las ediciones: no toca datasets ni ninguna otra', () => {
@@ -3752,6 +3874,8 @@ describe('migracion-dato-quincena.sql', () => {
     assert.ok(!(await columnas(root, BASE_DATO_QUINCENA)).some(esDeLasTablas), 'la base de partida ya tiene las tablas');
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION));
+    // Y lo que se le sumó después: el correo que manda el RPAD
+    await root.query(sql(MIGRACION_CORREO));
     await comoSchema();
   });
 
@@ -3759,13 +3883,17 @@ describe('migracion-dato-quincena.sql', () => {
     await crearBase({ conLoNuevo: true });
     await cargarDatos();
     assert.deepEqual(await Promise.all(TABLAS_DATO_QUINCENA.map(contarEn)), [1, 2, 1]);
+    // Primero la vuelta atrás del correo, como en el despliegue: con sus tablas puestas, la base no deja borrar las ediciones
+    await root.query(sql(ROLLBACK_CORREO));
     await root.query(sql(ROLLBACK));
     await root.query(sql(ROLLBACK));
-    // La estructura de main: la de schema.sql sin las tres tablas
-    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c));
+    // La estructura de main: la de schema.sql sin las tres tablas (ni las del correo)
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c) && !esDelCorreoDelDatoQuincena(c));
     assert.deepEqual(await columnas(root, BASE_DATO_QUINCENA), deMain);
     assert.equal(await contarEn('datasets'), 1);
+    // Las dos migraciones vuelven a dejar exactamente la estructura de schema.sql
     await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION_CORREO));
     await comoSchema();
   });
 
@@ -3797,6 +3925,252 @@ describe('migracion-dato-quincena.sql', () => {
       ]);
       await root.query(`DELETE FROM ${enLaBase('dato_quincena_ediciones')} WHERE id = ?`, [edicion]);
       assert.deepEqual(await Promise.all(TABLAS_DATO_QUINCENA.map(contarEn)), [0, 0, 0]);
+    });
+  }
+});
+
+// El correo del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 7): cuatro tablas nuevas y 'infografia_svg' al final del campo
+// de los adjuntos. La migración y su vuelta atrás, sobre una base descartable creada con schema.sql
+describe('migracion-dato-quincena-correo.sql', () => {
+  const BASE_CORREO = 'rpad_schema_dato_quincena_correo_test';
+  const MIGRACION = 'migracion-dato-quincena-correo.sql';
+  const ROLLBACK = 'rollback-dato-quincena-correo.sql';
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const sentencias = (archivo) => codigo(archivo).split(';').map(s => s.trim()).filter(Boolean);
+  const enLaBase = (tabla) => `\`${BASE_CORREO}\`.\`${tabla}\``;
+  const TODAS = [...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO];
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main): sin las cuatro tablas y con el
+  // campo de los adjuntos de tres valores
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_CORREO}\``);
+    await root.query(`CREATE DATABASE \`${BASE_CORREO}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_CORREO}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) {
+      await root.query([...TABLAS_DATO_QUINCENA_CORREO].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
+      await root.query("ALTER TABLE dato_quincena_adjuntos MODIFY campo enum('infografia_png','correo_texto','calculos') NOT NULL");
+    }
+  };
+  // Dos personas (inventadas): una administradora que prende el envío, se suma y suma a la otra, y pide un reenvío y una prueba. Una
+  // edición inventada con su PNG y su SVG, su correo enviado, el automático a la otra persona, el reenvío y la prueba
+  const persona = async (nombre, rol) => {
+    const [{ insertId }] = await root.query(
+      `INSERT INTO ${enLaBase('usuarios')} (username, password_hash, nombre_completo, email, rol) VALUES (?, 'x', ?, ?, ?)`,
+      [nombre, nombre, `${nombre}@rpad.test`, rol]);
+    return insertId;
+  };
+  // unico no se escribe: es una columna generada
+  const envio = async ({ edicion, usuario, tipo, creadoPor = null }) => {
+    const [{ insertId }] = await root.query(
+      `INSERT INTO ${enLaBase('dato_quincena_envios')} (edicion_id, usuario_id, email, tipo, estado, intentos, enviado_at, creado_por, creado_at)
+       VALUES (?, ?, 'inventada@rpad.test', ?, 'enviado', 1, '2026-11-23 08:05:10', ?, '2026-11-23 08:05:00')`,
+      [edicion, usuario, tipo, creadoPor]);
+    return insertId;
+  };
+  const cargarDatos = async () => {
+    const admin = await persona('t_admin_correo', 'admin');
+    const lectora = await persona('t_lectora_correo', 'lector');
+    const [{ insertId: edicion }] = await root.query(
+      `INSERT INTO ${enLaBase('dato_quincena_ediciones')} (clave, tipo, fecha_edicion, titulo, metadata, huella)
+       VALUES ('dq:regular:2026-11-23', 'regular', '2026-11-23', 'Edición inventada', '{}', ?)`, ['a'.repeat(64)]);
+    await root.query(
+      `INSERT INTO ${enLaBase('dato_quincena_adjuntos')} (edicion_id, campo, nombre, mime, bytes, sha256, contenido)
+       VALUES (?, 'infografia_png', 'infografia.png', 'image/png', 4, ?, ?), (?, 'infografia_svg', 'infografia.svg', 'image/svg+xml', 6, ?, ?)`,
+      [edicion, 'b'.repeat(64), Buffer.from([0x89, 0x50, 0x4e, 0x47]), edicion, 'c'.repeat(64), Buffer.from('<svg/>')]);
+    await root.query(`UPDATE ${enLaBase('dato_quincena_correo_config')} SET envio_activo = 1, cambiado_por = ?, cambiado_at = '2026-11-20 10:00:00' WHERE id = 1`, [admin]);
+    await root.query(
+      `INSERT INTO ${enLaBase('dato_quincena_destinatarios')} (usuario_id, agregado_por, agregado_at) VALUES (?, ?, '2026-11-20 10:00:00'), (?, ?, '2026-11-20 10:00:00')`,
+      [admin, admin, lectora, admin]);
+    await root.query(
+      `INSERT INTO ${enLaBase('dato_quincena_correos')} (edicion_id, estado, enviada_at, creada_at, ultima_corrida_at)
+       VALUES (?, 'enviada', '2026-11-23 08:05:10', '2026-11-23 08:05:00', '2026-11-23 08:05:00')`, [edicion]);
+    await envio({ edicion, usuario: lectora, tipo: 'automatico' });
+    await envio({ edicion, usuario: lectora, tipo: 'reenvio', creadoPor: admin });
+    await envio({ edicion, usuario: admin, tipo: 'prueba', creadoPor: admin });
+    return { admin, lectora, edicion };
+  };
+  const contarEn = async (tabla) => {
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM ${enLaBase(tabla)}`);
+    return Number(total);
+  };
+  const configDe = async () => {
+    const [filas] = await root.query(`SELECT id, envio_activo, cambiado_por FROM ${enLaBase('dato_quincena_correo_config')}`);
+    return filas.map(fila => ({ ...fila }));
+  };
+  // La misma estructura que schema.sql: las columnas y también las claves foráneas, los índices, el motor y las colaciones, que las
+  // columnas no muestran
+  const comoSchema = async () => {
+    assert.deepEqual(await columnas(root, BASE_CORREO), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_CORREO, TODAS), await clavesAjenasDe(root, BASE_TEMPORAL, TODAS));
+    assert.deepEqual(await indicesDe(root, BASE_CORREO, TODAS), await indicesDe(root, BASE_TEMPORAL, TODAS));
+    assert.deepEqual(await motoresDe(root, BASE_CORREO, TODAS), await motoresDe(root, BASE_TEMPORAL, TODAS));
+    assert.deepEqual(await collationsDe(root, BASE_CORREO, TODAS), await collationsDe(root, BASE_TEMPORAL, TODAS));
+    assert.deepEqual(await generadasDe(root, BASE_CORREO, TODAS), await generadasDe(root, BASE_TEMPORAL, TODAS));
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_CORREO}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER, USE, DROP, RENAME ni CHECK; el ENUM, las cuatro tablas en su orden y la fila 1', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+    // Los acentos de los comentarios llegan bien desde phpMyAdmin
+    assert.match(codigo(MIGRACION), /^SET NAMES utf8mb4;/);
+    assert.match(codigo(ROLLBACK), /^SET NAMES utf8mb4;/);
+    // Lo único que se ejecuta, además de SET NAMES: el valor nuevo al final del ENUM (los de antes no cambian), las cuatro tablas si
+    // todavía no están y la fila del interruptor, apagado, sin pisarla si ya está
+    const lista = sentencias(MIGRACION);
+    assert.equal(lista.length, 7, lista.join('\n---\n'));
+    assert.equal(lista[1], "ALTER TABLE `dato_quincena_adjuntos` MODIFY `campo` enum('infografia_png','correo_texto','calculos','infografia_svg') NOT NULL");
+    assert.deepEqual(lista.slice(2, 6).map(s => s.match(/^CREATE TABLE IF NOT EXISTS `(\w+)`/)?.[1]), TABLAS_DATO_QUINCENA_CORREO);
+    assert.equal(lista[6], 'INSERT IGNORE INTO `dato_quincena_correo_config` (`id`, `envio_activo`) VALUES (1, 0)');
+  });
+
+  it('las cabeceras dicen la spec, qué cambia, el orden, que es obligatoria, que se puede repetir y cómo se deshace; el rollback, qué se pierde', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-11-12-dato-quincena-correo-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    assert.match(cabecera(MIGRACION), /dato_quincena_adjuntos\.campo:/);
+    for (const tabla of TABLAS_DATO_QUINCENA_CORREO) assert.match(cabecera(MIGRACION), new RegExp(`${tabla}:`), tabla);
+    // Por qué unico: un solo automático por edición y persona, y los reenvíos y las pruebas se repiten
+    assert.match(cabecera(MIGRACION), /uq_dato_quincena_envio_automatico/);
+    assert.match(cabecera(MIGRACION), /El código anterior no las lee/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código nuevo, después de migracion-dato-quincena\.sql/);
+    assert.match(cabecera(MIGRACION), /Es obligatoria/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-dato-quincena-correo\.sql/);
+    // Termina con la verificación, comentada: la migración se sigue pegando tal cual
+    assert.match(sql(MIGRACION), /\n-- Para verificar, en la misma pestaña SQL: tiene que dar 7 filas[^\n]*\n--   SHOW TABLES LIKE 'dato_quincena%';\n-- [^\n]*'infografia_svg'\n--   SHOW COLUMNS FROM dato_quincena_adjuntos LIKE 'campo';\s*$/);
+    assert.match(cabecera(ROLLBACK), /migracion-dato-quincena-correo\.sql/);
+    assert.match(cabecera(ROLLBACK), /ORDEN: primero volver a subir los archivos anteriores y hacer Restart; después correr esto/);
+    // Lo que se pierde, dicho con su nombre, y cómo conservarlo
+    assert.match(cabecera(ROLLBACK), /se pierden los SVG/);
+    assert.match(cabecera(ROLLBACK), /el registro de los envíos/);
+    assert.match(cabecera(ROLLBACK), /exportar/);
+    // Va antes que la vuelta atrás del archivo de las ediciones, si también se deshace
+    assert.match(cabecera(ROLLBACK), /antes que rollback-dato-quincena\.sql/);
+    // Y si ya se corrió ese solo y quedó a medias: esto borra las cuatro tablas, frena en el DELETE, y se vuelve a correr el otro
+    assert.match(cabecera(ROLLBACK), /Si antes se corrió rollback-dato-quincena\.sql solo/);
+    assert.match(cabecera(ROLLBACK), /volver a correr rollback-dato-quincena\.sql/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  // Primero las tablas: si rollback-dato-quincena.sql se corrió solo y dejó la base sin los adjuntos, el DELETE frena phpMyAdmin, y lo
+  // que va antes ya se hizo
+  it('el rollback borra las cuatro tablas en el orden inverso, después los SVG, y vuelve el ENUM a tres valores: no toca nada más', () => {
+    const lista = sentencias(ROLLBACK);
+    assert.deepEqual(lista, [
+      'SET NAMES utf8mb4',
+      ...[...TABLAS_DATO_QUINCENA_CORREO].reverse().map(tabla => `DROP TABLE IF EXISTS \`${tabla}\``),
+      "DELETE FROM `dato_quincena_adjuntos` WHERE `campo` = 'infografia_svg'",
+      "ALTER TABLE `dato_quincena_adjuntos` MODIFY `campo` enum('infografia_png','correo_texto','calculos') NOT NULL"
+    ]);
+  });
+
+  it('desde la estructura de main deja la de schema.sql, con el envío apagado, y se puede repetir sin pisar el interruptor', async () => {
+    await crearBase({ conLoNuevo: false });
+    assert.deepEqual(await columnas(root, BASE_CORREO), sinElCorreoDelDatoQuincena(await columnas(root, BASE_TEMPORAL)), 'la base de partida no es la de main');
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.deepEqual(await configDe(), [{ id: 1, envio_activo: 0, cambiado_por: null }]);
+    // Prendido entre una corrida y la otra: la segunda no lo apaga
+    const admin = await persona('t_admin_correo', 'admin');
+    await root.query(`UPDATE ${enLaBase('dato_quincena_correo_config')} SET envio_activo = 1, cambiado_por = ? WHERE id = 1`, [admin]);
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.deepEqual(await configDe(), [{ id: 1, envio_activo: 1, cambiado_por: admin }]);
+  });
+
+  it('el rollback se puede repetir: borra los SVG y deja el PNG, la edición y las personas, con la estructura de main; la migración la recupera', async () => {
+    await crearBase({ conLoNuevo: true });
+    const { edicion } = await cargarDatos();
+    assert.deepEqual(await Promise.all(TABLAS_DATO_QUINCENA_CORREO.map(contarEn)), [1, 2, 1, 3]);
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin las cuatro tablas y con el campo de tres valores
+    assert.deepEqual(await columnas(root, BASE_CORREO), sinElCorreoDelDatoQuincena(await columnas(root, BASE_TEMPORAL)));
+    const [adjuntos] = await root.query(`SELECT edicion_id, campo FROM ${enLaBase('dato_quincena_adjuntos')}`);
+    assert.deepEqual(adjuntos.map(fila => ({ ...fila })), [{ edicion_id: edicion, campo: 'infografia_png' }]);
+    assert.equal(await contarEn('dato_quincena_ediciones'), 1);
+    assert.equal(await contarEn('usuarios'), 2);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql, con el interruptor apagado y la lista vacía
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.deepEqual(await configDe(), [{ id: 1, envio_activo: 0, cambiado_por: null }]);
+    assert.deepEqual(await Promise.all(TABLAS_DATO_QUINCENA_CORREO.map(contarEn)), [1, 0, 0, 0]);
+  });
+
+  // Si rollback-dato-quincena.sql se corrió solo (el orden equivocado), borra los adjuntos y las propuestas y falla en las ediciones. Esta
+  // vuelta atrás borra igual sus cuatro tablas y frena en el DELETE (ya no hay adjuntos); después, la otra se vuelve a correr y termina
+  it('si rollback-dato-quincena.sql quedó a medias, esto borra igual las cuatro tablas y la otra se puede terminar', async () => {
+    await crearBase({ conLoNuevo: true });
+    await cargarDatos();
+    await assert.rejects(root.query(sql('rollback-dato-quincena.sql')), { code: 'ER_ROW_IS_REFERENCED_2' });
+    const tablasDelDato = async () => (await root.query(
+      `SELECT TABLE_NAME AS tabla FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'dato\\_quincena\\_%' ORDER BY TABLE_NAME`,
+      [BASE_CORREO]))[0].map(fila => fila.tabla);
+    assert.deepEqual((await tablasDelDato()).sort(), [...TABLAS_DATO_QUINCENA_CORREO, 'dato_quincena_ediciones'].sort());
+    await assert.rejects(root.query(sql(ROLLBACK)), { code: 'ER_NO_SUCH_TABLE' });
+    assert.deepEqual(await tablasDelDato(), ['dato_quincena_ediciones']);
+    await root.query(sql('rollback-dato-quincena.sql'));
+    // La estructura de antes del dato de la quincena: la de schema.sql sin las siete tablas, sin tocar a las personas
+    const sinElDato = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDelCorreoDelDatoQuincena(c) && !TABLAS_DATO_QUINCENA.some(tabla => c.startsWith(`${tabla}.`)));
+    assert.deepEqual(await columnas(root, BASE_CORREO), sinElDato);
+    assert.equal(await contarEn('usuarios'), 2);
+  });
+
+  // Un correo por edición, una fila por persona en la lista y un solo automático por edición y persona (unico = 1); los reenvíos y las
+  // pruebas (unico NULL) se repiten. Borrar a una persona la saca de la lista y borra sus envíos, y deja sin autor lo que hizo; borrar la
+  // edición (SQL a mano) borra su correo y sus envíos. Con la estructura de schema.sql y con la de la migración
+  for (const origen of ['schema.sql', 'la migración']) {
+    it(`un solo automático por edición y persona, los reenvíos y las pruebas se repiten, y los borrados de las FK (${origen})`, async () => {
+      await crearBase({ conLoNuevo: origen === 'schema.sql' });
+      if (origen === 'la migración') await root.query(sql(MIGRACION));
+      const { admin, lectora, edicion } = await cargarDatos();
+      // Los INSERT no nombran unico: lo calcula la base
+      await assert.rejects(envio({ edicion, usuario: lectora, tipo: 'automatico' }), { code: 'ER_DUP_ENTRY' });
+      await envio({ edicion, usuario: lectora, tipo: 'reenvio', creadoPor: admin });
+      await envio({ edicion, usuario: lectora, tipo: 'prueba', creadoPor: lectora });
+      // El automático de otra persona, en la misma edición, sí entra
+      await envio({ edicion, usuario: admin, tipo: 'automatico' });
+      const [calculados] = await root.query(`SELECT usuario_id, tipo, unico FROM ${enLaBase('dato_quincena_envios')} ORDER BY id`);
+      assert.deepEqual(calculados.map(fila => ({ ...fila })), [
+        { usuario_id: lectora, tipo: 'automatico', unico: 1 },
+        { usuario_id: lectora, tipo: 'reenvio', unico: null },
+        { usuario_id: admin, tipo: 'prueba', unico: null },
+        { usuario_id: lectora, tipo: 'reenvio', unico: null },
+        { usuario_id: lectora, tipo: 'prueba', unico: null },
+        { usuario_id: admin, tipo: 'automatico', unico: 1 }
+      ]);
+      await assert.rejects(
+        root.query(`INSERT INTO ${enLaBase('dato_quincena_correos')} (edicion_id, estado, creada_at) VALUES (?, 'programada', '2026-11-23 08:05:00')`, [edicion]),
+        { code: 'ER_DUP_ENTRY' });
+      await assert.rejects(
+        root.query(`INSERT INTO ${enLaBase('dato_quincena_destinatarios')} (usuario_id, agregado_at) VALUES (?, '2026-11-21 09:00:00')`, [lectora]),
+        { code: 'ER_DUP_ENTRY' });
+      assert.equal(await contarEn('dato_quincena_envios'), 6);
+
+      await root.query(`DELETE FROM ${enLaBase('usuarios')} WHERE id = ?`, [admin]);
+      assert.deepEqual(await configDe(), [{ id: 1, envio_activo: 1, cambiado_por: null }]);
+      const [lista] = await root.query(`SELECT usuario_id, agregado_por FROM ${enLaBase('dato_quincena_destinatarios')}`);
+      assert.deepEqual(lista.map(fila => ({ ...fila })), [{ usuario_id: lectora, agregado_por: null }]);
+      const [envios] = await root.query(`SELECT usuario_id, tipo, creado_por FROM ${enLaBase('dato_quincena_envios')} ORDER BY id`);
+      assert.deepEqual(envios.map(fila => ({ ...fila })), [
+        { usuario_id: lectora, tipo: 'automatico', creado_por: null },
+        { usuario_id: lectora, tipo: 'reenvio', creado_por: null },
+        { usuario_id: lectora, tipo: 'reenvio', creado_por: null },
+        { usuario_id: lectora, tipo: 'prueba', creado_por: lectora }
+      ]);
+
+      await root.query(`DELETE FROM ${enLaBase('dato_quincena_ediciones')} WHERE id = ?`, [edicion]);
+      assert.deepEqual(await Promise.all(['dato_quincena_correos', 'dato_quincena_envios', 'dato_quincena_adjuntos'].map(contarEn)), [0, 0, 0]);
+      // La lista y el interruptor no dependen de las ediciones
+      assert.equal(await contarEn('dato_quincena_destinatarios'), 1);
+      assert.equal(await contarEn('dato_quincena_correo_config'), 1);
     });
   }
 });

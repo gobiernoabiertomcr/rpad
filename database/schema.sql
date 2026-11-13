@@ -971,7 +971,7 @@ CREATE TABLE `mi_espacio_eventos_corridas` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================
--- El dato de la quincena (database/updates/migracion-dato-quincena.sql): las ediciones que manda Grok Bot, una por clave, con
+-- El dato de la quincena (database/updates/migracion-dato-quincena.sql): las ediciones que manda Datito, una por clave, con
 -- metadata tal como llegó y la huella del paquete; sus propuestas, en su orden, con el dataset si existe (borrarlo deja la
 -- propuesta con su nombre); y sus archivos, uno por campo. Borrar una edición (SQL a mano) borra lo suyo
 -- =====================================================
@@ -1009,7 +1009,7 @@ CREATE TABLE `dato_quincena_propuestas` (
 CREATE TABLE `dato_quincena_adjuntos` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `edicion_id` int(11) NOT NULL,
-  `campo` enum('infografia_png','correo_texto','calculos') NOT NULL,
+  `campo` enum('infografia_png','correo_texto','calculos','infografia_svg') NOT NULL,
   `nombre` varchar(255) NOT NULL,
   `mime` varchar(30) NOT NULL,
   `bytes` int(10) unsigned NOT NULL,
@@ -1018,4 +1018,72 @@ CREATE TABLE `dato_quincena_adjuntos` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_dato_quincena_adjunto` (`edicion_id`, `campo`),
   CONSTRAINT `fk_dato_quincena_adjunto_edicion` FOREIGN KEY (`edicion_id`) REFERENCES `dato_quincena_ediciones` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- El correo del dato de la quincena (database/updates/migracion-dato-quincena-correo.sql): el interruptor del envío automático,
+-- en una sola fila (id = 1, apagado), con la última corrida; quién recibe el correo (vacía: las personas se tildan en la página);
+-- el correo de cada edición con envío; y cada envío a cada persona, con un solo automático por edición y persona (unico, generada,
+-- da 1 en el automático y NULL en los reenvíos y las pruebas, que se repiten). Borrar una edición (SQL a mano) borra su correo y sus
+-- envíos
+-- =====================================================
+CREATE TABLE `dato_quincena_correo_config` (
+  `id` tinyint(4) NOT NULL,
+  `envio_activo` tinyint(1) NOT NULL DEFAULT 0,
+  `cambiado_por` int(11) DEFAULT NULL,
+  `cambiado_at` datetime DEFAULT NULL,
+  `corrida_inicio_at` datetime DEFAULT NULL,
+  `corrida_fin_at` datetime DEFAULT NULL,
+  `corrida_resultado` varchar(500) DEFAULT NULL,
+  `corrida_con_errores` tinyint(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `fk_dato_quincena_correo_config_usuario` (`cambiado_por`),
+  CONSTRAINT `fk_dato_quincena_correo_config_usuario` FOREIGN KEY (`cambiado_por`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `dato_quincena_correo_config` (`id`, `envio_activo`) VALUES (1, 0);
+
+CREATE TABLE `dato_quincena_destinatarios` (
+  `usuario_id` int(11) NOT NULL,
+  `agregado_por` int(11) DEFAULT NULL,
+  `agregado_at` datetime NOT NULL,
+  PRIMARY KEY (`usuario_id`),
+  KEY `fk_dato_quincena_destinatario_agregado_por` (`agregado_por`),
+  CONSTRAINT `fk_dato_quincena_destinatario_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_dato_quincena_destinatario_agregado_por` FOREIGN KEY (`agregado_por`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `dato_quincena_correos` (
+  `edicion_id` int(11) NOT NULL,
+  `estado` enum('programada','enviada','parcial','fallida','no_enviada') NOT NULL,
+  `motivo` enum('apagado','vieja','mas_nueva','sin_lista') DEFAULT NULL,
+  `enviada_at` datetime DEFAULT NULL,
+  `creada_at` datetime NOT NULL,
+  `ultima_corrida_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`edicion_id`),
+  KEY `idx_dato_quincena_correo_estado` (`estado`),
+  CONSTRAINT `fk_dato_quincena_correo_edicion` FOREIGN KEY (`edicion_id`) REFERENCES `dato_quincena_ediciones` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `dato_quincena_envios` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `edicion_id` int(11) NOT NULL,
+  `usuario_id` int(11) NOT NULL,
+  `email` varchar(100) NOT NULL,
+  `tipo` enum('automatico','reenvio','prueba') NOT NULL,
+  `unico` tinyint(1) GENERATED ALWAYS AS (if(`tipo` = 'automatico',1,NULL)) STORED,
+  `estado` enum('pendiente','enviando','enviado','fallido','licencia','omitido') NOT NULL,
+  `intentos` tinyint(3) unsigned NOT NULL DEFAULT 0,
+  `enviado_at` datetime DEFAULT NULL,
+  `ultimo_intento_at` datetime DEFAULT NULL,
+  `error` varchar(200) DEFAULT NULL,
+  `creado_por` int(11) DEFAULT NULL,
+  `creado_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_dato_quincena_envio_automatico` (`edicion_id`, `usuario_id`, `unico`),
+  KEY `fk_dato_quincena_envio_usuario` (`usuario_id`),
+  KEY `fk_dato_quincena_envio_creado_por` (`creado_por`),
+  CONSTRAINT `fk_dato_quincena_envio_edicion` FOREIGN KEY (`edicion_id`) REFERENCES `dato_quincena_ediciones` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_dato_quincena_envio_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_dato_quincena_envio_creado_por` FOREIGN KEY (`creado_por`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

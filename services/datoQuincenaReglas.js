@@ -1,5 +1,5 @@
 /**
- * El dato de la quincena (spec 2026-11-07-dato-quincena): las reglas puras del archivo de las ediciones de Grok Bot, sin pool
+ * El dato de la quincena (spec 2026-11-07-dato-quincena): las reglas puras del archivo de las ediciones de Datito, sin pool
  * ni Date local (hoy llega por parámetro, `hoyArgentina()` en el servidor). Las validaciones, el token y el año de la lista
  * no tiran error con ninguna entrada: dan los errores de sus campos, 'rechazado' o `{ valido: false }`; las fechas y las
  * horas, '—' o null. Lo demás (la clave, los tamaños, las filas, los avisos, el recibo, lo que se copia, la lista y el
@@ -14,21 +14,32 @@
  * Argentina, la foto del RPAD de cada propuesta, la propuesta y el borrador para copiar, las filas que se guardan, los avisos
  * y el recibo. Lo mismo las lecturas (sección 9): el año de la lista, cada edición de la lista, el detalle y el nombre y el
  * Content-Type de cada descarga.
+ *
+ * De la spec 2026-11-12-dato-quincena-correo (11, 12 y 14): el SVG de la infografía (`esSvg`, su tope y su renglón en la huella),
+ * el tipo de un evento de la agenda (la efeméride), el número de edición y las partes de la fecha de la tarjeta, y el nombre del
+ * bot en una sola constante (`NOMBRE_DEL_BOT`).
  */
 import crypto from 'node:crypto';
 import { esFechaIso, sumarDias, ahoraArgentina, formatoLargo, formatoCorto } from './notasDigitalesCalendario.js';
 import { enLista } from './miEspacioReglas.js';
 import { RPAD_URL } from './emailTemplates.js';
 
-// El tope de cada parte del multipart y el del pedido entero (la suma más el margen del multipart), en bytes (sección 4)
-export const TOPES = Object.freeze({
-  metadata: 256 * 1024, infografia_png: 5 * 1024 * 1024, correo_texto: 256 * 1024, calculos: 256 * 1024
-});
-export const TOPE_DEL_PEDIDO = 6 * 1024 * 1024;
+// El nombre del bot en todo lo que arma el servidor (spec 2026-11-12-dato-quincena-correo, 14): es provisorio, así que está en
+// una sola constante, que usan también las ediciones ya archivadas
+export const NOMBRE_DEL_BOT = 'Datito';
 
-// Las partes del pedido, en el orden de la huella, y las que son archivos de la edición (las que describe el manifiesto)
-export const PARTES = Object.freeze(['metadata', 'infografia_png', 'correo_texto', 'calculos']);
-export const ARCHIVOS = Object.freeze(['infografia_png', 'correo_texto', 'calculos']);
+// El tope de cada parte del multipart y el del pedido entero (la suma más el margen del multipart), en bytes (sección 4). El del
+// SVG, 1 MB: lo sugirió el bot, cuyo SVG pesa unos 7 KB (spec 2026-11-12-dato-quincena-correo, 11)
+export const TOPES = Object.freeze({
+  metadata: 256 * 1024, infografia_png: 5 * 1024 * 1024, correo_texto: 256 * 1024, calculos: 256 * 1024,
+  infografia_svg: 1024 * 1024
+});
+export const TOPE_DEL_PEDIDO = 7 * 1024 * 1024;
+
+// Las partes del pedido, en el orden de la huella, y las que son archivos de la edición (las que describe el manifiesto). El SVG,
+// opcional como los cálculos, va al final: la huella de un paquete sin SVG no cambia
+export const PARTES = Object.freeze(['metadata', 'infografia_png', 'correo_texto', 'calculos', 'infografia_svg']);
+export const ARCHIVOS = Object.freeze(['infografia_png', 'correo_texto', 'calculos', 'infografia_svg']);
 
 // La primera fecha de edición que se acepta y cuántos errores devuelve la validación como mucho
 export const FECHA_MINIMA = '2026-11-01';
@@ -74,24 +85,28 @@ export const MENSAJES_VALIDACION = Object.freeze({
   diasParaVencer: 'Tiene que ser un número entero de -100000 a 100000.',
   sha256: 'Tiene que ser un SHA-256 en hexadecimal: 64 caracteres en minúsculas.',
   agenda: 'La agenda puede traer hasta 20 eventos.',
+  tipoDeEvento: 'El tipo de un evento de la agenda tiene que ser evento o efemeride.',
   propuestas: 'La edición tiene que traer de 1 a 5 propuestas.',
-  adjuntos: 'El manifiesto tiene que describir 2 o 3 archivos.',
+  adjuntos: 'El manifiesto tiene que describir de 2 a 4 archivos.',
   puntosCentrales: 'Tiene que traer de 3 a 5 puntos centrales.',
   parrafos: 'El borrador tiene que traer 2 o 3 párrafos.',
   notasValidacion: 'Puede traer hasta 20 notas de validación.',
   fuentes: 'Tiene que traer de 1 a 20 fuentes.',
-  campo: 'El campo tiene que ser infografia_png, correo_texto o calculos.',
+  campo: 'El campo tiene que ser infografia_png, correo_texto, calculos o infografia_svg.',
   campoRepetido: 'Este campo ya está en otra entrada del manifiesto.',
   sinParte: 'El pedido no trae la parte que describe esta entrada.',
   sinEntradaInfografia: 'El manifiesto no describe la parte infografia_png, que llegó en el pedido.',
   sinEntradaCorreo: 'El manifiesto no describe la parte correo_texto, que llegó en el pedido.',
   sinEntradaCalculos: 'El manifiesto no describe la parte calculos, que llegó en el pedido.',
+  sinEntradaSvg: 'El manifiesto no describe la parte infografia_svg, que llegó en el pedido.',
   nombre: 'El nombre del archivo tiene que tener de 1 a 255 caracteres, sin /, \\ ni caracteres de control.',
-  mime: 'El tipo tiene que ser image/png en la infografía, text/plain en el texto del correo y text/markdown o text/plain en '
-    + 'los cálculos.',
+  mime: 'El tipo tiene que ser image/png en la infografía, text/plain en el texto del correo, text/markdown o text/plain en '
+    + 'los cálculos e image/svg+xml en la infografía editable.',
   bytesDistintos: 'No coincide con el tamaño de la parte recibida.',
   sha256Distinto: 'No coincide con el SHA-256 de la parte recibida.',
   png: 'La infografía tiene que ser un PNG completo, de 1 a 4096 píxeles de ancho y de alto.',
+  svg: 'La infografía editable tiene que ser un SVG que empiece con <svg, sin scripts, sin foreignObject, sin atributos on… y '
+    + 'sin referencias externas.',
   utf8: 'Tiene que ser un texto UTF-8 válido, sin el carácter nulo.'
 });
 
@@ -270,7 +285,13 @@ const propuestas = (valor, ruta, agregar) => {
   if (principales.length !== 1) agregar(ruta, 'principal');
 };
 
-const EVENTO = Object.freeze({ titulo: texto(200), fecha, detalle: texto(4000), url: direccion });
+const TIPOS_DE_EVENTO = Object.freeze(['evento', 'efemeride']);
+const FORMA_DEL_EVENTO = Object.freeze({ titulo: texto(200), fecha, detalle: texto(4000), url: direccion });
+const FORMA_DEL_EVENTO_CON_TIPO = Object.freeze({ ...FORMA_DEL_EVENTO, tipo: unoDe(TIPOS_DE_EVENTO, 'tipoDeEvento') });
+
+// Un evento de la agenda. tipo es opcional (spec 2026-11-12-dato-quincena-correo, 11): sin él es un evento, con la forma de
+// antes, así lo que el bot mandaba sigue valiendo y schema_version sigue en 1.0
+const evento = (valor) => (Object.hasOwn(valor, 'tipo') ? FORMA_DEL_EVENTO_CON_TIPO : FORMA_DEL_EVENTO);
 
 // Del manifiesto, solo la forma: los valores contra las partes los mira la validación de los adjuntos
 const ENTRADA_DEL_MANIFIESTO = Object.freeze({
@@ -293,7 +314,7 @@ const referenciaPiloto = (tipo) => (valor, ruta, agregar) => {
   }
 };
 
-// Grok Bot archiva la edición aunque el correo no haya salido (decisión del usuario): 'no_enviado' lleva la hora en null
+// Datito archiva la edición aunque el correo no haya salido (decisión del usuario): 'no_enviado' lleva la hora en null
 const ESTADOS_DEL_CORREO = Object.freeze(['enviado', 'no_enviado']);
 
 // La hora del correo: null con el correo no enviado; con el correo enviado, un instante, que solo un piloto puede dejar en null.
@@ -322,9 +343,9 @@ const edicion = (hoy) => objeto((valor) => {
       enviado_at: horaDelCorreo(correo.estado, regular)
     })),
     nota_archivo: texto(4000, { oNull: true }),
-    agenda: lista(0, 20, 'agenda', objeto(EVENTO)),
+    agenda: lista(0, 20, 'agenda', objeto(evento)),
     propuestas,
-    adjuntos: lista(2, 3, 'adjuntos', objeto(ENTRADA_DEL_MANIFIESTO))
+    adjuntos: lista(2, 4, 'adjuntos', objeto(ENTRADA_DEL_MANIFIESTO))
   };
 });
 
@@ -396,6 +417,82 @@ export const esTextoUtf8 = (buffer) => {
   return texto !== null && !texto.includes('\u0000');
 };
 
+const ESPACIOS_DE_XML = /[ \t\r\n]/;
+
+// La primera posición desde i que no es un espacio de XML
+const despuesDeLosEspacios = (texto, i) => {
+  let j = i;
+  while (j < texto.length && ESPACIOS_DE_XML.test(texto[j])) j += 1;
+  return j;
+};
+
+// Si el primer elemento es <svg (seguido de un espacio o de >): delante, como mucho, espacios, una declaración <?xml …?> y
+// comentarios <!-- … -->. Se lee de corrido, con indexOf y sin una expresión regular, para que 1 MB de comentarios o de espacios
+// no la haga volver atrás
+const empiezaConSvg = (texto) => {
+  let i = despuesDeLosEspacios(texto, 0);
+  if (texto.startsWith('<?xml', i) && ESPACIOS_DE_XML.test(texto[i + '<?xml'.length] ?? '')) {
+    const fin = texto.indexOf('?>', i);
+    if (fin === -1) return false;
+    i = despuesDeLosEspacios(texto, fin + '?>'.length);
+  }
+  while (texto.startsWith('<!--', i)) {
+    const fin = texto.indexOf('-->', i + '<!--'.length);
+    if (fin === -1) return false;
+    i = despuesDeLosEspacios(texto, fin + '-->'.length);
+  }
+  return texto.startsWith('<svg', i) && /^[ \t\r\n>]$/.test(texto[i + '<svg'.length] ?? '');
+};
+
+// Lo que un SVG no puede traer en ningún lugar, sin distinguir mayúsculas: un script, un foreignObject (HTML adentro), un
+// atributo de evento (on… = ), un @import, y un href (también xlink:href) o un url( cuyo valor, con espacios y comillas
+// opcionales, no empieza con # (una referencia a su propio #id). Y, para que esas reglas no se esquiven con lo que XML permite:
+// el script o el foreignObject con un prefijo (<x:script), el espacio de nombres de HTML (un <iframe> o un <script> de HTML sin
+// foreignObject) y una animación que cambia un href o un on… (attributeName="href"). Un texto que solo se parece a esto también
+// se rechaza.
+// Ninguna tiene dos cuantificadores seguidos que puedan tomar los mismos caracteres: los espacios y la comilla opcional van como
+// \s*(?:["']\s*)? y no como \s*["']?\s*, que se reparte un tramo de espacios de n² maneras (1 MB de espacios después de href=
+// trababa el servidor media hora). No [\s"']*: aceptaría href="'#a"
+const PROHIBIDO_EN_SVG = Object.freeze([
+  /<([\w.-]+:)?script/i,
+  /<([\w.-]+:)?foreignobject/i,
+  /http:\/\/www\.w3\.org\/1999\/xhtml/i,
+  /[\s"'/]on\w+\s*=/i,
+  /attributename\s*=\s*(?:["']\s*)?([\w.-]+:)?(href|on\w+)/i,
+  /@import/i,
+  /href\s*=(?!\s*(?:["']\s*)?#)/i,
+  /url\((?!\s*(?:["']\s*)?#)/i
+]);
+
+// Las cinco entidades de XML
+const ENTIDADES_DE_XML = Object.freeze({ lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" });
+const MAXIMO_PUNTO_DE_CODIGO = 0x10ffff;
+
+// El texto con las referencias de carácter (&#N; y &#xH;) y las cinco entidades decodificadas una vez, como lo lee un lector
+// de XML: así una referencia externa no se esconde con un carácter escrito como entidad (url( con &#114; en lugar de la r).
+// Una referencia a un carácter que no existe queda como está
+const decodificarEntidades = (texto) => texto.replace(
+  /&#[xX]([0-9a-fA-F]+);|&#([0-9]+);|&(lt|gt|amp|quot|apos);/g,
+  (original, hexadecimal, decimal, nombre) => {
+    if (nombre !== undefined) return ENTIDADES_DE_XML[nombre];
+    const punto = hexadecimal !== undefined ? parseInt(hexadecimal, 16) : Number(decimal);
+    return punto <= MAXIMO_PUNTO_DE_CODIGO ? String.fromCodePoint(punto) : original;
+  }
+);
+
+/**
+ * La infografía editable (spec 2026-11-12-dato-quincena-correo, 11): el RPAD no la dibuja nunca (la adjunta a un mail y la deja
+ * descargar), pero igual tiene que ser un SVG sin scripts ni referencias externas. UTF-8 válido, sin el carácter nulo ni el BOM
+ * al principio; el primer elemento, <svg (empiezaConSvg); y nada de PROHIBIDO_EN_SVG en el texto con las entidades
+ * decodificadas. No se lee como XML: es un control conservador, que puede rechazar un texto que solo se parece a lo prohibido.
+ */
+export const esSvg = (buffer) => {
+  const texto = utf8(buffer);
+  if (texto === null || texto.includes('\u0000') || texto.startsWith('\uFEFF') || !empiezaConSvg(texto)) return false;
+  const decodificado = decodificarEntidades(texto);
+  return !PROHIBIDO_EN_SVG.some((prohibido) => prohibido.test(decodificado));
+};
+
 // Lo que se pide de cada archivo de la edición: los MIME que puede declarar su entrada, cómo se mira su contenido y los
 // mensajes
 const ARCHIVO = Object.freeze({
@@ -403,7 +500,8 @@ const ARCHIVO = Object.freeze({
   correo_texto: { mimes: ['text/plain'], contenido: esTextoUtf8, otroContenido: 'utf8', sinEntrada: 'sinEntradaCorreo' },
   calculos: {
     mimes: ['text/markdown', 'text/plain'], contenido: esTextoUtf8, otroContenido: 'utf8', sinEntrada: 'sinEntradaCalculos'
-  }
+  },
+  infografia_svg: { mimes: ['image/svg+xml'], contenido: esSvg, otroContenido: 'svg', sinEntrada: 'sinEntradaSvg' }
 });
 
 const LARGO_DEL_NOMBRE = 255;
@@ -450,7 +548,8 @@ const revisarAdjuntos = (adjuntos, partes, agregar) => {
 };
 
 /**
- * Los errores del manifiesto (edicion.adjuntos) contra las partes recibidas, `{ infografia_png, correo_texto, calculos? }`:
+ * Los errores del manifiesto (edicion.adjuntos) contra las partes recibidas, `{ infografia_png, correo_texto, calculos?,
+ * infografia_svg? }`:
  * primero cada entrada (campo, nombre, mime, bytes y sha256), después cada parte que no tiene entrada (campo 'adjuntos') o
  * cuyo contenido no es el que corresponde (campo, el nombre de la parte). Hasta MAXIMO_DE_ERRORES; [] si coinciden.
  */
@@ -468,9 +567,14 @@ export const erroresDeLaEdicion = (valor, partes, opciones) => {
   return errores;
 };
 
+// Las partes cuyo renglón va en la huella solo si llegaron (spec 2026-11-12-dato-quincena-correo, 11): así un paquete sin SVG
+// tiene la huella de antes del SVG, y reenviar algo ya archivado sigue dando 200 y no 409
+const SOLO_SI_LLEGO = Object.freeze(['infografia_svg']);
+
 // La huella del paquete (sección 6): el SHA-256 de un renglón por parte, en el orden de PARTES, con el SHA-256 de sus bytes
-// o - si no llegó. No depende del orden en que llegaron
+// o - si no llegó; el SVG, sin renglón si no llegó. No depende del orden en que llegaron
 export const huellaDelPaquete = (partes) => sha256(PARTES
+  .filter((parte) => !SOLO_SI_LLEGO.includes(parte) || Buffer.isBuffer(partes?.[parte]))
   .map((parte) => `${parte}:${Buffer.isBuffer(partes?.[parte]) ? sha256(partes[parte]) : '-'}\n`)
   .join(''));
 
@@ -498,12 +602,22 @@ export const estadoDelToken = (authorization, huellaConfigurada) => {
 
 const DIAS_DE_LA_SEMANA = Object.freeze(['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']);
 
-// 'Viernes 6 de noviembre de 2026': el día de la semana sale de las partes con Date.UTC, no del reloj local. Lo que no es
-// una fecha que existe, '—'
-export const fechaLarga = (iso) => {
-  if (!esFechaIso(iso)) return '—';
+// 'Viernes' de una fecha 'AAAA-MM-DD' que existe: sale de las partes con Date.UTC, no del reloj local
+const diaDeLaSemana = (iso) => {
   const [anio, mes, dia] = iso.split('-').map(Number);
-  return `${DIAS_DE_LA_SEMANA[new Date(Date.UTC(anio, mes - 1, dia)).getUTCDay()]} ${formatoLargo(iso)}`;
+  return DIAS_DE_LA_SEMANA[new Date(Date.UTC(anio, mes - 1, dia)).getUTCDay()];
+};
+
+// 'Viernes 6 de noviembre de 2026'. Lo que no es una fecha que existe, '—'
+export const fechaLarga = (iso) => (esFechaIso(iso) ? `${diaDeLaSemana(iso)} ${formatoLargo(iso)}` : '—');
+
+// La fecha de la tarjeta en tres renglones (spec 2026-11-12-dato-quincena-correo, 12): { dia: 'Lunes', fecha: '9 de noviembre',
+// anio: 'de 2026' }, las partes de fechaLarga. Lo que no es una fecha que existe, null
+const partesDeLaFecha = (iso) => {
+  if (!esFechaIso(iso)) return null;
+  const largo = formatoLargo(iso);
+  const corte = largo.lastIndexOf(' de ');
+  return { dia: diaDeLaSemana(iso), fecha: largo.slice(0, corte), anio: largo.slice(corte + 1) };
 };
 
 // 'Piloto N' en un piloto con su referencia piloto-N; null en una regular
@@ -551,15 +665,19 @@ export const textoDeLlegada = (unix) => {
 // El correo del bot, con la hora pasada a Argentina sea cual sea la zona que mandó; sin enviado_at, sin la hora. Sin el correo,
 // un texto que sigue siendo cierto aunque el correo salga después: la edición guardada no cambia
 export const textoDelCorreo = (enviadoAt, estado) => {
-  if (estado === 'no_enviado') return 'Grok Bot archivó esta edición sin que saliera el correo.';
+  if (estado === 'no_enviado') return `${NOMBRE_DEL_BOT} archivó esta edición sin que saliera el correo.`;
   const hora = horaArgentina(enviadoAt);
   return hora === null
-    ? 'Correo enviado según Grok Bot, sin la hora.'
-    : `Correo enviado el ${hora.fecha} a las ${hora.hora}, según Grok Bot.`;
+    ? `Correo enviado según ${NOMBRE_DEL_BOT}, sin la hora.`
+    : `Correo enviado el ${hora.fecha} a las ${hora.hora}, según ${NOMBRE_DEL_BOT}.`;
 };
 
 // «1 propuesta» o «5 propuestas»
 export const textoDeCantidad = (n) => (n === 1 ? '1 propuesta' : `${n} propuestas`);
+
+// El número de una edición regular (spec 2026-11-12-dato-quincena-correo, 12), «N.º 3», de lo que contó la consulta: cuántas
+// regulares hay con su fecha o antes. Lo que no es un entero positivo (null en un piloto), null
+export const textoDelNumero = (n) => (Number.isSafeInteger(n) && n > 0 ? `N.º ${n}` : null);
 
 // El resto de las propuestas de una edición en la lista, por el nombre de su dataset: «Y 3 propuestas más: A, B y C.».
 // Sin ninguna, null
@@ -673,9 +791,11 @@ export const avisosDeLaEdicion = (edicion, guardadas) => {
 /**
  * El recibo del 201 y del 200 (sección 7), de la edición guardada: `recibida_ts` son los segundos UNIX de recibida_at
  * (UNIX_TIMESTAMP), así el 201 y el 200 dicen lo mismo; `adjuntos`, sus archivos, que salen en el orden de ARCHIVOS y solo
- * con campo, bytes y sha256; `avisos`, los de avisosDeLaEdicion.
+ * con campo, bytes y sha256; `avisos`, los de avisosDeLaEdicion; y `envio` (spec 2026-11-12-dato-quincena-correo, 11), el de
+ * envioDelRecibo, que arma el controlador con el estado de ese momento (`{ estado, programado_at, texto }`, o null en una
+ * regular sin fila de correo).
  */
-export const reciboDe = ({ id, clave, tipo, fecha_edicion, huella, recibida_ts }, adjuntos, avisos, repetida) => ({
+export const reciboDe = ({ id, clave, tipo, fecha_edicion, huella, recibida_ts }, adjuntos, avisos, repetida, envio) => ({
   id,
   clave,
   tipo,
@@ -687,7 +807,8 @@ export const reciboDe = ({ id, clave, tipo, fecha_edicion, huella, recibida_ts }
     .filter((adjunto) => adjunto.campo === campo)
     .map(({ bytes, sha256: huellaDelArchivo }) => ({ campo, bytes, sha256: huellaDelArchivo }))),
   url: `${RPAD_URL}/dato-quincena.html?id=${id}`,
-  avisos
+  avisos,
+  envio: envio ?? null
 });
 
 // Las lecturas (sección 9): la lista, el detalle y las descargas, con los textos ya armados
@@ -713,17 +834,26 @@ export const nombreDeLaEdicion = (clave) => `dato-quincena-${clave.replace(/^dq:
 // El Content-Type de cada descarga, fijo por campo y no el MIME del manifiesto: los cálculos en Markdown también van como texto
 export const TIPO_DE_DESCARGA = Object.freeze({
   infografia_png: 'image/png',
+  infografia_svg: 'image/svg+xml',
   correo_texto: 'text/plain; charset=utf-8',
   calculos: 'text/plain; charset=utf-8',
   metadata: 'application/json; charset=utf-8'
 });
 
+// El número de la edición, de lo que contó la consulta (numero): solo una regular lo tiene, aunque la fila de un piloto
+// traiga uno
+const numeroDe = ({ tipo, numero }) => (tipo === 'regular' ? textoDelNumero(numero) : null);
+
 /**
  * Una edición de la lista, de una fila de listarEdiciones: la fecha larga, la marca del piloto, el título y la cifra de la
  * principal, y el resto de las propuestas por el nombre de su dataset, en su orden. Sin ninguna marcada como principal (el POST
- * no lo deja pasar), la primera; sin propuestas (solo un SQL a mano), principal null.
+ * no lo deja pasar), la primera; sin propuestas (solo un SQL a mano), principal null. Para la tarjeta (spec
+ * 2026-11-12-dato-quincena-correo, 12): el número de una regular, de `numero` de la fila (cuántas regulares hay con su fecha o
+ * antes), la fecha en partes, la cantidad de propuestas y `envio`, la pastilla del envío que arma el controlador con
+ * pastillaDelEnvio y lo de quien pide (`{ tipo, texto }`, o null si no lleva).
  */
-export const itemDeLaLista = ({ id, tipo, fecha_edicion, referencia_piloto, propuestas }) => {
+export const itemDeLaLista = (fila, envio = null) => {
+  const { id, tipo, fecha_edicion, referencia_piloto, propuestas } = fila;
   const enOrden = [...propuestas].sort((a, b) => a.orden - b.orden);
   const principal = enOrden.find((propuesta) => propuesta.principal) ?? enOrden[0] ?? null;
   return {
@@ -731,17 +861,27 @@ export const itemDeLaLista = ({ id, tipo, fecha_edicion, referencia_piloto, prop
     fecha_texto: fechaLarga(fecha_edicion),
     marca: marcaDePiloto(tipo, referencia_piloto),
     principal: principal === null ? null : { titulo: principal.titulo, cifra_clave: principal.cifra_clave },
-    resto: textoDelResto(enOrden.filter((propuesta) => propuesta !== principal).map((propuesta) => propuesta.dataset_nombre))
+    resto: textoDelResto(enOrden.filter((propuesta) => propuesta !== principal).map((propuesta) => propuesta.dataset_nombre)),
+    numero: numeroDe(fila),
+    fecha_partes: partesDeLaFecha(fecha_edicion),
+    cantidad: textoDeCantidad(propuestas.length),
+    envio: envio ?? null
   };
 };
 
-// Cada archivo del detalle: su rótulo, lo que va antes del tamaño y si la página lo deja ver
+// Cada archivo del detalle, en su orden (el SVG después de la infografía y la edición completa al final): su rótulo, lo que va
+// antes del tamaño y si la página lo deja ver. El SVG no se ve: el RPAD no lo dibuja nunca
 const ARCHIVOS_DEL_DETALLE = Object.freeze({
   infografia_png: Object.freeze({ rotulo: 'Infografía', formato: 'PNG · ', se_puede_ver: false }),
+  infografia_svg: Object.freeze({ rotulo: 'Infografía editable', formato: 'SVG · ', se_puede_ver: false }),
   correo_texto: Object.freeze({ rotulo: 'Texto del correo', formato: '', se_puede_ver: true }),
   calculos: Object.freeze({ rotulo: 'Cálculos', formato: '', se_puede_ver: true }),
   metadata: Object.freeze({ rotulo: 'La edición completa', formato: 'JSON · ', se_puede_ver: false })
 });
+const ORDEN_DE_LOS_ARCHIVOS_DEL_DETALLE = Object.freeze(Object.keys(ARCHIVOS_DEL_DETALLE).filter((campo) => campo !== 'metadata'));
+
+// La etiqueta de un evento de la agenda: «Efeméride» o null (un evento, con tipo o sin él)
+const etiquetaDelEvento = (tipo) => (tipo === 'efemeride' ? 'Efeméride' : null);
 
 const archivoDelDetalle = (campo, nombre, bytes) => {
   const { rotulo, formato, se_puede_ver } = ARCHIVOS_DEL_DETALLE[campo];
@@ -776,14 +916,17 @@ const propuestaDelDetalle = (propuesta, enlaces) => ({
 });
 
 /**
- * El detalle de una edición (sección 9), de leerEdicion: `fila` (con `metadata`, el texto guardado, y `recibida_ts`, los
- * segundos UNIX de recibida_at), `edicion` (el JSON.parse de metadata, que hace el controlador), `guardadas` (`orden`,
- * `dataset_id` y `dataset_activo` de cada propuesta) y `adjuntos` (`campo`, `nombre` y `bytes`). Los textos ya armados: la
- * fecha, la marca, la llegada, el correo en hora argentina y la cantidad; la nota de archivo, null si está vacía o con solo
- * espacios; la agenda con su fecha dd/mm/aaaa; cada propuesta con `id_enlace` solo si su dataset existe y está activo; y los
- * archivos en el orden de ARCHIVOS, con la edición completa al final y el nombre de cada descarga.
+ * El detalle de una edición (sección 9), de leerEdicion: `fila` (con `metadata`, el texto guardado, `recibida_ts`, los
+ * segundos UNIX de recibida_at, y `numero`, cuántas regulares hay con su fecha o antes), `edicion` (el JSON.parse de metadata,
+ * que hace el controlador), `guardadas` (`orden`, `dataset_id` y `dataset_activo` de cada propuesta) y `adjuntos` (`campo`,
+ * `nombre` y `bytes`). Los textos ya armados: la fecha, la marca, el número de una regular, la llegada, el correo en hora
+ * argentina y la cantidad; la nota de archivo, null si está vacía o con solo espacios; la agenda con su fecha dd/mm/aaaa y la
+ * etiqueta de una efeméride; cada propuesta con `id_enlace` solo si su dataset existe y está activo; y los archivos en el orden
+ * de ARCHIVOS_DEL_DETALLE, con la edición completa al final y el nombre de cada descarga.
+ * `correo` es `lineaDelCorreo`, la línea del envío del RPAD que arma el controlador (spec 2026-11-12-dato-quincena-correo, 6),
+ * tal cual. Sin ella, la del correo del bot (textoDelCorreo): el modelo del mail arma el detalle y no la usa.
  */
-export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos }) => {
+export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDelCorreo }) => {
   const enlaces = new Map(guardadas
     .filter((guardada) => guardada.dataset_activo === true && guardada.dataset_id !== null)
     .map((guardada) => [guardada.orden, guardada.dataset_id]));
@@ -792,15 +935,20 @@ export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos }) => {
     id: fila.id,
     fecha_texto: fechaLarga(fila.fecha_edicion),
     marca: marcaDePiloto(fila.tipo, fila.referencia_piloto),
+    numero: numeroDe(fila),
     titulo: fila.titulo,
     nota_archivo: typeof nota === 'string' && nota.trim() !== '' ? nota : null,
     llegada: textoDeLlegada(fila.recibida_ts),
-    correo: textoDelCorreo(edicion.correo.enviado_at, edicion.correo.estado),
+    correo: typeof lineaDelCorreo === 'string'
+      ? lineaDelCorreo
+      : textoDelCorreo(edicion.correo.enviado_at, edicion.correo.estado),
     cantidad: textoDeCantidad(edicion.propuestas.length),
-    agenda: edicion.agenda.map(({ titulo, fecha, detalle, url }) => ({ fecha_texto: diaArgentino(fecha), titulo, detalle, url })),
+    agenda: edicion.agenda.map(({ titulo, fecha, detalle, url, tipo }) => ({
+      fecha_texto: diaArgentino(fecha), titulo, detalle, url, etiqueta: etiquetaDelEvento(tipo)
+    })),
     propuestas: edicion.propuestas.map((propuesta) => propuestaDelDetalle(propuesta, enlaces)),
     archivos: [
-      ...ARCHIVOS.flatMap((campo) => adjuntos
+      ...ORDEN_DE_LOS_ARCHIVOS_DEL_DETALLE.flatMap((campo) => adjuntos
         .filter((adjunto) => adjunto.campo === campo)
         .map((adjunto) => archivoDelDetalle(campo, adjunto.nombre, adjunto.bytes))),
       archivoDelDetalle('metadata', nombreDeLaEdicion(fila.clave), bytesDeMetadata(fila.metadata))

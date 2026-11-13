@@ -1,6 +1,6 @@
 /**
  * El dato de la quincena (spec 2026-11-07-dato-quincena, sección 8): las consultas de las tres tablas del archivo de las
- * ediciones de Grok Bot, parametrizadas. Las reglas y los textos están en `services/datoQuincenaReglas.js`.
+ * ediciones de Datito, parametrizadas. Las reglas y los textos están en `services/datoQuincenaReglas.js`.
  *
  * Los INSERT van con `execute`: los bytes viajan en binario y no en hexadecimal (el doble), y un error no trae la edición en
  * `err.sql` (como el PDF de las Notas Digitales). Una lista en `IN (?)` va con `query` y solo si no está vacía.
@@ -10,6 +10,9 @@
  */
 import pool from '../config/database.js';
 import { ARCHIVOS, TIPO_DE_DESCARGA, nombreDeLaEdicion } from './datoQuincenaReglas.js';
+import { envioAlLlegar } from './datoQuincenaCorreoReglas.js';
+import { leerConfig, correoDe, enviosDe } from './datoQuincenaCorreoDatos.js';
+import { ahoraArgentina } from './notasDigitalesCalendario.js';
 
 // Los rpad_id que citan las filas, sin repetir y sin null
 const idsCitados = (filas) => [...new Set(filas.map((fila) => fila.rpad_id).filter((id) => id !== null))];
@@ -21,9 +24,14 @@ const idsCitados = (filas) => [...new Set(filas.map((fila) => fila.rpad_id).filt
  * de la edición choca (ER_DUP_ENTRY), se deshace todo y se lee la que estaba: 'repetida' si tiene la misma huella y
  * 'conflicto' si no, con su id. Resuelve `{ estado: 'creada' | 'repetida' | 'conflicto', id }`; otro error de la base, tira.
  * La conexión se devuelve siempre.
+ * El correo (spec 2026-11-12-dato-quincena-correo, 5): en la misma transacción, después de la edición, una regular queda
+ * programada o no enviada (envioAlLlegar, con el interruptor leído ahí mismo y `hoy`, 'AAAA-MM-DD' en Argentina), con
+ * `creada_at` = `ahora` ('AAAA-MM-DD HH:MM:SS', de ahoraArgentina, nunca NOW()). Un piloto no tiene fila. Si esa fila no se
+ * puede guardar, no se guarda nada: así no queda una regular que nunca salga. Una repetida o un conflicto no programan nada.
  */
 export const guardarEdicion = async ({
-  clave, tipo, fecha_edicion, referencia_piloto, titulo, metadataTexto, huella, filas, adjuntos
+  clave, tipo, fecha_edicion, referencia_piloto, titulo, metadataTexto, huella, filas, adjuntos, ahora = ahoraArgentina(),
+  hoy = ahora.slice(0, 10)
 }) => {
   const conexion = await pool.getConnection();
   try {
@@ -67,6 +75,14 @@ export const guardarEdicion = async ({
           [id, adjunto.campo, adjunto.nombre, adjunto.mime, adjunto.bytes, adjunto.sha256, adjunto.contenido]
         );
       }
+      const { envioActivo } = await leerConfig(conexion);
+      const envio = envioAlLlegar({ tipo, fecha_edicion, envioActivo, hoy });
+      if (envio !== null) {
+        await conexion.execute(
+          'INSERT INTO dato_quincena_correos (edicion_id, estado, motivo, creada_at) VALUES (?, ?, ?, ?)',
+          [id, envio.estado, envio.motivo ?? null, ahora]
+        );
+      }
       await conexion.commit();
       return { estado: 'creada', id };
     } catch (error) {
@@ -81,7 +97,8 @@ export const guardarEdicion = async ({
 /**
  * Lo que hace falta para el recibo de una edición guardada (sección 7), o null si no existe: la fila (`fecha_edicion` como
  * texto, `recibida_ts` los segundos UNIX de recibida_at y `metadata`, el texto guardado), sus adjuntos (`campo`, `bytes` y
- * `sha256`) y sus propuestas guardadas (`orden` y `dataset_id`, para armar los avisos desde lo guardado).
+ * `sha256`), sus propuestas guardadas (`orden` y `dataset_id`, para armar los avisos desde lo guardado) y su envío de ese
+ * momento (spec 2026-11-12-dato-quincena-correo, 11): `correo` (correoDe, null en un piloto) y `envios` (enviosDe).
  */
 export const leerRecibo = async (id) => {
   const [[fila]] = await pool.execute(
@@ -102,17 +119,26 @@ export const leerRecibo = async (id) => {
     adjuntos: adjuntos.map(({ campo, bytes, sha256 }) => ({ campo, bytes: Number(bytes), sha256 })),
     guardadas: guardadas.map(({ orden, dataset_id }) => ({
       orden: Number(orden), dataset_id: dataset_id === null ? null : Number(dataset_id)
-    }))
+    })),
+    correo: await correoDe(id),
+    envios: await enviosDe(id)
   };
 };
 
 // metadata es un longtext utf8mb4: el texto, aunque el driver lo diera en bytes
 const textoDe = (valor) => (Buffer.isBuffer(valor) ? valor.toString('utf8') : valor);
 
+// El número de una edición (spec 2026-11-12-dato-quincena-correo, 12), de la subconsulta `numero` de la lista y del detalle:
+// en una regular, cuántas regulares hay con su fecha o antes, de todos los años (contado al leer: si una regular atrasada llega
+// después, las posteriores corren); en un piloto, NULL. Un número y no un texto: textoDelNumero solo acepta un entero
+const numeroDeLaFila = (numero) => (numero === null || numero === undefined ? null : Number(numero));
+
 /**
  * La lista de las ediciones de un año (sección 9): `anios`, cada año con ediciones y su cantidad, del más nuevo al más viejo;
  * `anio`, el pedido o, sin él (null), el más reciente con ediciones (null con el archivo vacío); y `filas`, las ediciones de
- * ese año por fecha y, en el mismo día, por id descendentes, cada una con sus propuestas en su orden (`principal` booleano).
+ * ese año por fecha y, en el mismo día, por id descendentes, cada una con su `numero` (numeroDeLaFila), sus propuestas en su
+ * orden (`principal` booleano) y `correo_del_bot`, el correo que el bot dice haber mandado (`{ estado, enviado_at }` del JSON
+ * guardado, con JSON_VALUE: la lista no lee metadata entera), para la pastilla de una edición sin envío del RPAD.
  * Un año sin ediciones da `filas` vacía. Las propuestas, con `IN (?)` solo si hay ediciones.
  */
 export const listarEdiciones = async (anio) => {
@@ -127,7 +153,12 @@ export const listarEdiciones = async (anio) => {
   if (elegido === null) return { anios: lista, anio: null, filas: [] };
 
   const [ediciones] = await pool.execute(
-    `SELECT e.id, e.tipo, DATE_FORMAT(e.fecha_edicion, '%Y-%m-%d') AS fecha_edicion, e.referencia_piloto
+    `SELECT e.id, e.tipo, DATE_FORMAT(e.fecha_edicion, '%Y-%m-%d') AS fecha_edicion, e.referencia_piloto,
+            CASE WHEN e.tipo = 'regular' THEN (
+              SELECT COUNT(*) FROM dato_quincena_ediciones r WHERE r.tipo = 'regular' AND r.fecha_edicion <= e.fecha_edicion
+            ) END AS numero,
+            JSON_VALUE(e.metadata, '$.correo.estado') AS correo_estado,
+            JSON_VALUE(e.metadata, '$.correo.enviado_at') AS correo_enviado_at
      FROM dato_quincena_ediciones e
      WHERE e.fecha_edicion BETWEEN ? AND ?
      ORDER BY e.fecha_edicion DESC, e.id DESC`,
@@ -161,22 +192,27 @@ export const listarEdiciones = async (anio) => {
       tipo: edicion.tipo,
       fecha_edicion: edicion.fecha_edicion,
       referencia_piloto: edicion.referencia_piloto,
-      propuestas: porEdicion.get(Number(edicion.id))
+      numero: numeroDeLaFila(edicion.numero),
+      propuestas: porEdicion.get(Number(edicion.id)),
+      correo_del_bot: { estado: edicion.correo_estado ?? null, enviado_at: edicion.correo_enviado_at ?? null }
     }))
   };
 };
 
 /**
  * Lo que hace falta para el detalle de una edición (sección 9), o null si no existe: la fila (`fecha_edicion` como texto,
- * `metadata` el texto guardado y `recibida_ts` los segundos UNIX de recibida_at), sus propuestas guardadas (`orden`,
- * `dataset_id` y `dataset_activo`: true solo si el dataset existe y está activo) y sus adjuntos sin los bytes (`campo`,
- * `nombre`, `mime` y `bytes`).
+ * `metadata` el texto guardado, `recibida_ts` los segundos UNIX de recibida_at y `numero`, el de numeroDeLaFila), sus
+ * propuestas guardadas (`orden`, `dataset_id` y `dataset_activo`: true solo si el dataset existe y está activo) y sus adjuntos
+ * sin los bytes (`campo`, `nombre`, `mime` y `bytes`).
  */
 export const leerEdicion = async (id) => {
   const [[fila]] = await pool.execute(
-    `SELECT id, clave, tipo, DATE_FORMAT(fecha_edicion, '%Y-%m-%d') AS fecha_edicion, referencia_piloto, titulo, metadata,
-            UNIX_TIMESTAMP(recibida_at) AS recibida_ts
-     FROM dato_quincena_ediciones WHERE id = ?`,
+    `SELECT e.id, e.clave, e.tipo, DATE_FORMAT(e.fecha_edicion, '%Y-%m-%d') AS fecha_edicion, e.referencia_piloto, e.titulo,
+            e.metadata, UNIX_TIMESTAMP(e.recibida_at) AS recibida_ts,
+            CASE WHEN e.tipo = 'regular' THEN (
+              SELECT COUNT(*) FROM dato_quincena_ediciones r WHERE r.tipo = 'regular' AND r.fecha_edicion <= e.fecha_edicion
+            ) END AS numero
+     FROM dato_quincena_ediciones e WHERE e.id = ?`,
     [id]
   );
   if (!fila) return null;
@@ -192,7 +228,7 @@ export const leerEdicion = async (id) => {
     'SELECT campo, nombre, mime, bytes FROM dato_quincena_adjuntos WHERE edicion_id = ? ORDER BY id', [id]
   );
   return {
-    fila: { ...fila, id: Number(fila.id), metadata: textoDe(fila.metadata) },
+    fila: { ...fila, id: Number(fila.id), metadata: textoDe(fila.metadata), numero: numeroDeLaFila(fila.numero) },
     guardadas: guardadas.map(({ orden, dataset_id, dataset_activo }) => ({
       orden: Number(orden),
       dataset_id: dataset_id === null ? null : Number(dataset_id),

@@ -6,10 +6,11 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-27-feriados-en-notas-design.md`
 - `docs/superpowers/specs/2026-10-26-mi-espacio-agenda-design.md`
 - `docs/superpowers/specs/2026-11-04-agenda-aviso-y-dependencia-design.md`
+- `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
 
 ## Archivos
 
-notificacionesController: también la corrida de los recordatorios de la agenda, `GET /api/cron/eventos`, y el aviso diario de la agenda, en las corridas de las 8:05 y de las 14:00 (`docs/temas/mi-espacio-aviso-diario.md`).
+notificacionesController: también la corrida de los recordatorios de la agenda, `GET /api/cron/eventos`, y el aviso diario de la agenda, en las corridas de las 8:05 y de las 14:00 (`docs/temas/mi-espacio-aviso-diario.md`), y el correo del dato de la quincena, en las mismas dos (`docs/temas/dato-quincena-correo.md`).
 notasDigitalesCalendario (el calendario de días hábiles, puro:
 `esDiaHabil` y `FERIADOS_FIJOS`, los 9 fijos;
 `derivadasDe`, las derivadas escritas una sola vez sobre un predicado, con el tope `TOPE_DE_VUELTAS`, 366, y `CALENDARIO_FIJO`, las de los 9 fijos;
@@ -81,6 +82,12 @@ emailService y emailTemplates: `sendEmail`, `remitente` y `marcoEmail`; cada pla
   A las 8:05, `avisoDiarioAislado('manana', calendario)` se dispara antes de los demás pasos, sin esperarlo, y se espera al final: la mañana tarda minutos y tiene que salir antes de los eventos de la primera hora.
   A las 14:00 corre después de los recordatorios y también si `enviarCambiosPendientes` tira: ese 500 se responde después del paso.
   Sus errores van a `resultados.errores`, con `tipo: 'mi-espacio-diario'`, a las 8:05, y a `data.diario`, a las 14:00; `ocupada` no da 207.
+- El correo del dato de la quincena también viaja en las dos corridas, sin Tarea Cron propia y sin frenarlas (`docs/temas/dato-quincena-correo.md`).
+  A las 8:05 va al final, después del vencimiento de Mi espacio y antes de esperar el aviso diario (para darle unos segundos más al bot), y sus errores van a `resultados.errores` con `tipo: 'dato-quincena'`.
+  A las 14:00 corre después del aviso diario y también si `enviarCambiosPendientes` tira, y sus errores van a `data.dato_quincena.errores` y dan 207; `ocupada` no es un error.
+  Tiene su propio candado, `GET_LOCK('rpad_dato_quincena_correo', 0)` (`BLOQUEO_DATO_QUINCENA`, por `conBloqueo` con ese nombre), y su propio registro de la última corrida, que lee Correos → Estado.
+  `tests/notificaciones.test.js` y `tests/permisos.test.js`, que llaman a la corrida de las 14:00 sobre la base del `.env`, toman este candado además del del aviso diario.
+  Las rutas manuales de administración (`/api/notificaciones/ejecutar` y `/api/notificaciones/cambios-pendientes`) corren también el paso.
 - Cron cada media hora (`GET /api/cron/eventos`, con `cronAuth`: sin la clave, o con una que no es, 403; spec 2026-10-26-mi-espacio-agenda, 5): los recordatorios de la agenda (`ejecutarRecordatoriosDeEventos` de `controllers/notificacionesController.js`, que llama al servicio del mismo nombre de `services/miEspacioEventosCorrida.js`; qué manda, en `docs/temas/mi-espacio-agenda.md`).
   Una Tarea Cron de cPanel propia, `*/30` todos los días (decisión del usuario:
   «1 hora antes» con una corrida por hora podía avisar con muy poco margen).

@@ -83,7 +83,8 @@ La última columna dice qué tiene que correr antes esa vuelta atrás: sin eso, 
 | 34 | `migracion-notas-firma-digital.sql` | `rollback-notas-firma-digital.sql` | Volver la Tarea Cron de `/api/cron/notificaciones` a las 8:15 |
 | 35 | `migracion-notas-firma-leyenda.sql` | `rollback-notas-firma-leyenda.sql` | |
 | 36 | `migracion-mi-espacio-eventos-diario.sql` | `rollback-mi-espacio-eventos-diario.sql` | Va antes que `rollback-mi-espacio-evento-publico.sql` y `rollback-mi-espacio-agenda.sql`, si se deshacen. Se corre otra vez justo antes del Restart, para convertir lo que se haya creado mientras se subían los archivos; después del Restart ya no: achicaría los Laborales «Todos» nuevos |
-| 37 | `migracion-dato-quincena.sql` | `rollback-dato-quincena.sql` | |
+| 37 | `migracion-dato-quincena.sql` | `rollback-dato-quincena.sql` | `rollback-dato-quincena-correo.sql`, si está: sin eso no se puede correr solo (los correos y los envíos apuntan a las ediciones: falla en las ediciones y deja la base a medias) |
+| 38 | `migracion-dato-quincena-correo.sql` | `rollback-dato-quincena-correo.sql` | Se pierden los SVG, el registro de los envíos, la lista y el interruptor (exportarlos antes). Se corre primero que `rollback-dato-quincena.sql`. Si el código nuevo ya salió, antes los archivos anteriores y Restart |
 
 `database/privado/rollback-mi-espacio-evento-publico-datos.sql` devuelve el evento real a compartido con toda la administración (su verificación, `devuelto` 1).
 Está fuera del repositorio y no aparece en la Mac de trabajo: solo viajó en su kit, `RPAD-deploy-mi-espacio-evento-para-todos`.

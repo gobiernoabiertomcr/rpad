@@ -280,13 +280,17 @@ export const subidaDeNotaFirmada = (req, res, next) => {
 };
 
 // =====================================================
-// El dato de la quincena (spec 2026-11-07-dato-quincena, 4 y 7): el POST de Grok Bot, un multipart de hasta cuatro partes, en
-// memoria (van a la base)
+// El dato de la quincena (spec 2026-11-07-dato-quincena, 4 y 7): el POST del bot, un multipart de hasta cinco partes (la quinta,
+// el SVG de la infografía: spec 2026-11-12-dato-quincena-correo, 11), en memoria (van a la base)
 // =====================================================
 
-// Las partes que tienen que llegar, en el orden en que se nombra la que falta, y cómo se nombra el tope de cada una (sección 4)
+// Las partes que tienen que llegar, en el orden en que se nombra la que falta, y cómo se nombra el tope de cada una (sección 4):
+// sale de TOPES, así una parte nueva no puede quedar sin su texto ('256 KB', '5 MB', '1 MB')
 const OBLIGATORIAS = Object.freeze(['metadata', 'infografia_png', 'correo_texto']);
-const TOPE_EN_TEXTO = Object.freeze({ metadata: '256 KB', infografia_png: '5 MB', correo_texto: '256 KB', calculos: '256 KB' });
+const KB_DEL_TOPE = 1024;
+const MB_DEL_TOPE = 1024 * 1024;
+const enTexto = (bytes) => (bytes % MB_DEL_TOPE === 0 ? `${bytes / MB_DEL_TOPE} MB` : `${bytes / KB_DEL_TOPE} KB`);
+const TOPE_EN_TEXTO = Object.freeze(Object.fromEntries(PARTES.map((parte) => [parte, enTexto(TOPES[parte])])));
 
 const noSePudoLeer = (motivo) => `No se pudo leer la edición: ${motivo}.`;
 const superaSuTope = (parte) => `La parte ${parte} supera el tamaño permitido (${TOPE_EN_TEXTO[parte]}).`;
@@ -339,13 +343,13 @@ const filtroDelDatoQuincena = (estado) => (req, file, cb) => {
 /**
  * La lectura del POST del dato de la quincena (sección 4, paso 3 y 4), después del límite y del token. Sin un multipart/form-data,
  * 400. Si no, multer en memoria, armado en cada pedido (el estado del filtro es de este pedido): todas las partes como archivo
- * (fields: 0), hasta 4 y de hasta 5 MB cada una. Después, el primero que valga de los motivos de rechazoDeLaLectura y de
- * rechazoDeLasPartes, con su 400 o su 413. Si todo sirve, deja `req.partes = { metadata, infografia_png, correo_texto,
- * calculos? }`, cada una un Buffer.
+ * (fields: 0), hasta 5 (las de PARTES) y de hasta 5 MB cada una; el tope de cada parte (el del SVG, 1 MB) se mide después de
+ * leer. Después, el primero que valga de los motivos de rechazoDeLaLectura y de rechazoDeLasPartes, con su 400 o su 413. Si
+ * todo sirve, deja `req.partes = { metadata, infografia_png, correo_texto, calculos?, infografia_svg? }`, cada una un Buffer.
  *
- * `parts` es 5 y no 4: busboy 1.6 avisa partsLimit al terminar la parte número `parts`, no al pasarla, así que con 4 un pedido
- * con las cuatro partes daba LIMIT_PART_COUNT. Con 5, una quinta parte siempre es un error: de archivos (files: 4), de campos
- * (fields: 0) o de partes, si no es ninguna de las dos.
+ * `parts` es 6 (PARTES.length + 1) y no 5: busboy 1.6 avisa partsLimit al terminar la parte número `parts`, no al pasarla, así
+ * que con 5 un pedido con las cinco partes daba LIMIT_PART_COUNT. Con 6, una sexta parte siempre es un error: de archivos
+ * (files: 5), de campos (fields: 0) o de partes, si no es ninguna de las dos.
  *
  * Sin fieldNameSize, a propósito: busboy entrega sin nombre una parte sin name o con name="", y multer 1.4.5 mide ese nombre
  * con fieldNameSize dentro del flujo de busboy, donde el TypeError tira el proceso entero. El largo lo mira el filtro.

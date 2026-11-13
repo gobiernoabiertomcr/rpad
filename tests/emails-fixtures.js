@@ -22,6 +22,76 @@ export const AVISO_DE_RESTITUCION = Object.freeze({
   })
 });
 
+// El modelo del mail del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 10), con la forma que arma modeloDelMail
+// (services/datoQuincenaCorreoReglas.js): una regular inventada de dos propuestas, la primera la principal y con notas para
+// validar, y una agenda con un evento y una efeméride (el segundo renglón de su detalle es un salto de línea). Ningún dato sale
+// de una edición real. Cada llamada arma objetos nuevos: un test puede cambiarlos sin tocar el próximo
+export const modeloDelDatoQuincena = () => ({
+  asunto: 'Dato de la Quincena - 09/11/2026',
+  primerNombre: 'Persona',
+  titulo: 'Dato de la Quincena - 09/11/2026',
+  numero: 'Edición N.º 1',
+  bajada: '2 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas.',
+  agenda: [
+    {
+      fecha_texto: '12/11/2026', titulo: 'Jornada inventada', detalle: 'Un evento inventado para las pruebas.',
+      url: 'https://datos.ejemplo.test/agenda/jornada', etiqueta: null
+    },
+    {
+      fecha_texto: '20/11/2026', titulo: 'Efeméride inventada', detalle: 'Una fecha inventada.\nCon un segundo renglón.',
+      url: 'https://datos.ejemplo.test/agenda/efemeride', etiqueta: 'Efeméride'
+    }
+  ],
+  propuestas: [
+    {
+      franja: 'Propuesta 1 de 2',
+      etiquetas: ['Principal', 'Validar'],
+      principal: true,
+      titulo: 'Un título inventado',
+      cifra_clave: '1.234 casos · octubre de 2026',
+      dataset: { nombre: 'Dataset de prueba A', id_enlace: 1, url: 'https://datos.ejemplo.test/dataset/a' },
+      foto: [
+        { rotulo: 'En el RPAD ese día:', valor: 'Actualizado' }, { rotulo: 'Datos al', valor: '31/10/2026' },
+        { rotulo: 'Última actualización', valor: '05/11/2026' }, { rotulo: 'Próxima en', valor: '25 días' }
+      ],
+      notas_validacion: ['Confirmar la cifra con el área.', 'Revisar la fuente.'],
+      calculo: 'Un cálculo inventado.',
+      contexto_historico: 'Un contexto inventado.',
+      por_que_hoy: 'Una razón inventada.',
+      angulo: 'Un ángulo inventado.',
+      idea_placa: 'Una placa inventada.',
+      texto_redes: 'Un texto para redes inventado.\nCon un segundo renglón.',
+      puntos_centrales: ['Primer punto.', 'Segundo punto.', 'Tercer punto.'],
+      borrador_nota: { titulo: 'Un borrador inventado', parrafos: ['Primer párrafo.', 'Segundo párrafo.'] },
+      fuentes: ['https://datos.ejemplo.test/a.csv', 'https://datos.ejemplo.test/b.csv']
+    },
+    {
+      franja: 'Propuesta 2 de 2',
+      etiquetas: ['Agenda'],
+      principal: false,
+      titulo: 'Otro título inventado',
+      cifra_clave: '56 casos · octubre de 2026',
+      dataset: { nombre: 'Dataset de prueba B', id_enlace: null, url: 'https://datos.ejemplo.test/dataset/b' },
+      foto: [
+        { rotulo: 'En el RPAD ese día:', valor: 'Vencido' }, { rotulo: 'Datos al', valor: '—' },
+        { rotulo: 'Última actualización', valor: '03/06/2026' }, { rotulo: 'Venció hace', valor: '4 días' }
+      ],
+      notas_validacion: [],
+      calculo: 'Otro cálculo inventado.',
+      contexto_historico: 'Otro contexto inventado.',
+      por_que_hoy: 'Otra razón inventada.',
+      angulo: 'Otro ángulo inventado.',
+      idea_placa: 'Otra placa inventada.',
+      texto_redes: 'Otro texto para redes inventado.',
+      puntos_centrales: ['Un punto.', 'Otro punto.', 'Un tercer punto.'],
+      borrador_nota: { titulo: 'Otro borrador inventado', parrafos: ['Un párrafo.', 'Otro párrafo.', 'Un tercer párrafo.'] },
+      fuentes: ['https://datos.ejemplo.test/c.csv']
+    }
+  ],
+  url: 'https://rpad.test/dato-quincena.html?id=12',
+  nombreDelBot: 'Datito'
+});
+
 // Cada caso: { nombre, email: { subject, html, text? }, boton }. boton: si el email tiene un botón
 export const casosDeEmail = (t) => {
   const cambios = [
@@ -129,7 +199,9 @@ export const casosDeEmail = (t) => {
       boton: true
     },
     { nombre: 'evento: cancelación', email: t.eventoCancelacionTemplate({ creador: 'Persona de Prueba', evento }), boton: true },
-    { nombre: 'evento: recordatorio', email: t.eventoRecordatorioTemplate({ evento, hoy: '2026-10-27' }), boton: true }
+    { nombre: 'evento: recordatorio', email: t.eventoRecordatorioTemplate({ evento, hoy: '2026-10-27' }), boton: true },
+    // El dato de la quincena (spec 2026-11-12-dato-quincena-correo, 10): el mail de la maqueta, con el SVG adjunto
+    { nombre: 'dato de la quincena', email: t.datoQuincenaTemplate(modeloDelDatoQuincena(), { conSvg: true }), boton: true }
   ];
 };
 

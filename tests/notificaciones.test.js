@@ -26,14 +26,17 @@ let servidor, api, usuarios, cat;
 
 // El aviso diario de la agenda (spec 2026-11-04-agenda-aviso-y-dependencia, 6) viaja en /cron/cambios-pendientes: este archivo usa la base del
 // .env, así que corre con su candado tomado en otra conexión: termina «ocupado», sin escribir ni mandar nada. Se prueba en
-// tests/mi-espacio-eventos-diario.test.js
+// tests/mi-espacio-eventos-diario.test.js. El correo del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 8) viaja en la
+// misma corrida: su candado se toma en la misma conexión, y se prueba en tests/dato-quincena-correo.test.js
 let conexionDelDiario;
 before(async () => {
   conexionDelDiario = await db().getConnection();
   await conexionDelDiario.query("SELECT GET_LOCK('rpad_mi_espacio_diario', 10)");
+  await conexionDelDiario.query("SELECT GET_LOCK('rpad_dato_quincena_correo', 10)");
 });
 after(async () => {
   await conexionDelDiario?.query("SELECT RELEASE_LOCK('rpad_mi_espacio_diario')");
+  await conexionDelDiario?.query("SELECT RELEASE_LOCK('rpad_dato_quincena_correo')");
   conexionDelDiario?.release();
 });
 
@@ -108,6 +111,8 @@ describe('email de cambios pendientes', () => {
     await mailpit.vaciar();
     const res = await api.get('/cron/cambios-pendientes', { headers: { 'x-cron-secret': process.env.CRON_SECRET } });
     assert.equal(res.status, 200);
+    // Con su candado tomado arriba, el correo del dato de la quincena no escribe en la base del .env ni manda nada
+    assert.equal(res.body.data.dato_quincena.ocupada, true);
     // El mensaje habla de recordatorios y de personas (también los reciben los editores de respaldo)
     const enviados = res.body.data.enviados.length;
     assert.equal(res.body.message, `Recordatorios enviados a ${enviados} ${enviados === 1 ? 'persona' : 'personas'}.`);
@@ -161,6 +166,7 @@ describe('email de cambios pendientes', () => {
     assert.equal(res.body.success, true);
     assert.equal(res.body.message, 'Hoy no es día hábil: no se envían recordatorios.');
     assert.equal(res.body.data.dia_habil, false);
+    assert.equal(res.body.data.dato_quincena.ocupada, true);
     assert.deepEqual(res.body.data.enviados, []);
   });
 });

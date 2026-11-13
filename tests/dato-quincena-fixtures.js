@@ -1,5 +1,5 @@
 // El dato de la quincena (spec 2026-11-07-dato-quincena, 5 y 15): una edición inventada, sus partes y un PNG chico armado
-// byte a byte. Ningún dato sale de una edición real de Grok Bot.
+// byte a byte. Ningún dato sale de una edición real de Datito.
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 
@@ -31,6 +31,28 @@ export const pngDePrueba = ({ ancho = 2, alto = 2 } = {}) => {
     FIRMA_PNG, bloque('IHDR', cabecera), bloque('IDAT', zlib.deflateSync(filas)), bloque('IEND', Buffer.alloc(0))
   ]);
 };
+
+// Un SVG inventado y chico (spec 2026-11-12-dato-quincena-correo, 11), con la forma del que manda el bot: empieza directo con
+// <svg xmlns=…> de 1080 × 1080, en UTF-8, con textos en DejaVu Sans y sin scripts ni referencias externas; las únicas
+// referencias, a su propio #id (url(#fondo) y href="#marca")
+export const svgDePrueba = () => Buffer.from([
+  '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">',
+  '<defs><linearGradient id="fondo"><stop offset="0" stop-color="#e8f1fa"/><stop offset="1" stop-color="#ffffff"/>',
+  '</linearGradient><circle id="marca" r="12" fill="#1f3a5f"/></defs>',
+  '<rect width="1080" height="1080" fill="url(#fondo)"/>',
+  '<use href="#marca" x="80" y="120"/>',
+  '<text x="80" y="200" font-family="DejaVu Sans,Arial,sans-serif" font-size="64" fill="#1f3a5f">1.234 casos</text>',
+  '<text x="80" y="280" font-family="DejaVu Sans,Arial,sans-serif" font-size="32">Una infografía inventada: ñandú y cigüeña.</text>',
+  '</svg>',
+  ''
+].join('\n'), 'utf8');
+
+// Un evento de la agenda marcado como efeméride (spec 2026-11-12-dato-quincena-correo, 11): el de la edición de prueba no trae
+// tipo, como los del contrato de antes
+export const efemerideDePrueba = () => ({
+  titulo: 'Efeméride de prueba', fecha: '2026-11-20', detalle: 'Una efeméride inventada para las pruebas.',
+  url: 'https://datos.ejemplo.gob.ar/agenda/efemeride-de-prueba', tipo: 'efemeride'
+});
 
 const correoDePrueba = () => Buffer.from(
   'El dato de la quincena (prueba)\n\nUn correo inventado para las pruebas del RPAD: ñandú, cigüeña y 1.234 casos.\n', 'utf8'
@@ -121,14 +143,16 @@ export const pilotoDePrueba = (cambios = {}) => edicionDePrueba({
   ...cambios
 });
 
-// Las partes de un pedido: las de prueba o las que se pasan; con calculos: null, sin los cálculos. El manifiesto de una copia
-// de la edición pasa a describir esas partes (bytes y sha256; sin la entrada de los cálculos si no van) y metadata es su
-// JSON.stringify. La edición que se pasa no cambia
-export const partesDePrueba = (edicion, { infografia_png, correo_texto, calculos } = {}) => {
+// Las partes de un pedido: las de prueba o las que se pasan; con calculos: null, sin los cálculos; con infografia_svg (un
+// Buffer), también el SVG, que no va si no se pasa. El manifiesto de una copia de la edición pasa a describir esas partes (bytes
+// y sha256; sin la entrada de los cálculos si no van, y con la del SVG al final si llega y no la tenía) y metadata es su
+// JSON.stringify. La edición que se pasa no cambia; sin infografia_svg, las partes son las mismas de antes del SVG
+export const partesDePrueba = (edicion, { infografia_png, correo_texto, calculos, infografia_svg } = {}) => {
   const archivos = {
     infografia_png: infografia_png ?? pngDePrueba(),
     correo_texto: correo_texto ?? correoDePrueba(),
-    ...(calculos === null ? {} : { calculos: calculos ?? calculosDePrueba() })
+    ...(calculos === null ? {} : { calculos: calculos ?? calculosDePrueba() }),
+    ...(infografia_svg === undefined ? {} : { infografia_svg })
   };
   const copia = structuredClone(edicion);
   if (copia !== null && typeof copia === 'object' && Array.isArray(copia.adjuntos)) {
@@ -138,6 +162,9 @@ export const partesDePrueba = (edicion, { infografia_png, correo_texto, calculos
       .map((a) => (esEntrada(a) && Object.hasOwn(archivos, a.campo)
         ? { ...a, bytes: archivos[a.campo].length, sha256: sha256(archivos[a.campo]) }
         : a));
+    if (infografia_svg !== undefined && !copia.adjuntos.some((a) => esEntrada(a) && a.campo === 'infografia_svg')) {
+      copia.adjuntos.push(entrada('infografia_svg', 'infografia-prueba.svg', 'image/svg+xml', infografia_svg));
+    }
   }
   return { metadata: Buffer.from(JSON.stringify(copia), 'utf8'), ...archivos };
 };

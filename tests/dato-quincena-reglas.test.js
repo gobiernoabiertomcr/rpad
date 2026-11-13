@@ -9,17 +9,20 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import {
-  TOPES, TOPE_DEL_PEDIDO, PARTES, ARCHIVOS, FECHA_MINIMA, MAXIMO_DE_ERRORES, MENSAJES_VALIDACION,
-  validarEdicion, claveDeEdicion, sha256 as sha256DeLasReglas, esPng, esTextoUtf8, textoDeMetadata, validarAdjuntos,
+  NOMBRE_DEL_BOT, TOPES, TOPE_DEL_PEDIDO, PARTES, ARCHIVOS, FECHA_MINIMA, MAXIMO_DE_ERRORES, MENSAJES_VALIDACION,
+  validarEdicion, claveDeEdicion, sha256 as sha256DeLasReglas, esPng, esTextoUtf8, esSvg, textoDeMetadata, validarAdjuntos,
   erroresDeLaEdicion, huellaDelPaquete, estadoDelToken,
   fechaLarga, marcaDePiloto, horaArgentina, diaArgentino, textoDeLlegada, textoDelCorreo, textoDeCantidad, textoDelResto,
-  tamanoTexto, fotoDelDataset, textoParaCopiar, borradorParaCopiar, filasDeLaEdicion, avisosDeLaEdicion, reciboDe,
-  anioDeLaLista, nombreDeLaEdicion, TIPO_DE_DESCARGA, itemDeLaLista, detalleDeLaEdicion
+  textoDelNumero, tamanoTexto, fotoDelDataset, textoParaCopiar, borradorParaCopiar, filasDeLaEdicion, avisosDeLaEdicion,
+  reciboDe, anioDeLaLista, nombreDeLaEdicion, TIPO_DE_DESCARGA, itemDeLaLista, detalleDeLaEdicion
 } from '../services/datoQuincenaReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
 import { RPAD_URL } from '../services/emailTemplates.js';
+import { envioDelRecibo, lineaDelCorreo, pastillaDelEnvio } from '../services/datoQuincenaCorreoReglas.js';
+import { calendarioCon } from '../services/feriadosReglas.js';
+import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 import {
-  FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, pngDePrueba, partesDePrueba
+  FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, pngDePrueba, svgDePrueba, efemerideDePrueba, partesDePrueba
 } from './dato-quincena-fixtures.js';
 
 const validar = (edicion, hoy = FECHA_DE_PRUEBA) => validarEdicion(edicion, { hoy });
@@ -82,17 +85,24 @@ const textos = (n, texto = 'Un texto.') => Array.from({ length: n }, () => texto
 const direcciones = (n) => Array.from({ length: n }, (_, i) => `https://datos.ejemplo.gob.ar/${i}.csv`);
 
 describe('las constantes', () => {
+  // Provisorio (spec 2026-11-12-dato-quincena-correo, 14): una sola constante del servidor, que usan todos sus textos
+  it('el nombre del bot', () => {
+    assert.equal(NOMBRE_DEL_BOT, 'Datito');
+  });
+
   it('los topes de cada parte y del pedido', () => {
     assert.deepEqual({ ...TOPES }, {
-      metadata: 256 * 1024, infografia_png: 5 * 1024 * 1024, correo_texto: 256 * 1024, calculos: 256 * 1024
+      metadata: 256 * 1024, infografia_png: 5 * 1024 * 1024, correo_texto: 256 * 1024, calculos: 256 * 1024,
+      infografia_svg: 1024 * 1024
     });
-    assert.equal(TOPE_DEL_PEDIDO, 6 * 1024 * 1024);
+    assert.equal(TOPE_DEL_PEDIDO, 7 * 1024 * 1024);
+    assert.ok(Object.values(TOPES).reduce((suma, tope) => suma + tope, 0) < TOPE_DEL_PEDIDO, 'la suma y el margen del multipart');
     assert.ok(Object.isFrozen(TOPES));
   });
 
   it('las partes, los archivos, la fecha mínima y el tope de errores', () => {
-    assert.deepEqual([...PARTES], ['metadata', 'infografia_png', 'correo_texto', 'calculos']);
-    assert.deepEqual([...ARCHIVOS], ['infografia_png', 'correo_texto', 'calculos']);
+    assert.deepEqual([...PARTES], ['metadata', 'infografia_png', 'correo_texto', 'calculos', 'infografia_svg']);
+    assert.deepEqual([...ARCHIVOS], ['infografia_png', 'correo_texto', 'calculos', 'infografia_svg']);
     assert.ok(Object.isFrozen(PARTES) && Object.isFrozen(ARCHIVOS));
     assert.equal(FECHA_MINIMA, '2026-11-01');
     assert.equal(MAXIMO_DE_ERRORES, 50);
@@ -139,24 +149,28 @@ describe('las constantes', () => {
       diasParaVencer: 'Tiene que ser un número entero de -100000 a 100000.',
       sha256: 'Tiene que ser un SHA-256 en hexadecimal: 64 caracteres en minúsculas.',
       agenda: 'La agenda puede traer hasta 20 eventos.',
+      tipoDeEvento: 'El tipo de un evento de la agenda tiene que ser evento o efemeride.',
       propuestas: 'La edición tiene que traer de 1 a 5 propuestas.',
-      adjuntos: 'El manifiesto tiene que describir 2 o 3 archivos.',
+      adjuntos: 'El manifiesto tiene que describir de 2 a 4 archivos.',
       puntosCentrales: 'Tiene que traer de 3 a 5 puntos centrales.',
       parrafos: 'El borrador tiene que traer 2 o 3 párrafos.',
       notasValidacion: 'Puede traer hasta 20 notas de validación.',
       fuentes: 'Tiene que traer de 1 a 20 fuentes.',
-      campo: 'El campo tiene que ser infografia_png, correo_texto o calculos.',
+      campo: 'El campo tiene que ser infografia_png, correo_texto, calculos o infografia_svg.',
       campoRepetido: 'Este campo ya está en otra entrada del manifiesto.',
       sinParte: 'El pedido no trae la parte que describe esta entrada.',
       sinEntradaInfografia: 'El manifiesto no describe la parte infografia_png, que llegó en el pedido.',
       sinEntradaCorreo: 'El manifiesto no describe la parte correo_texto, que llegó en el pedido.',
       sinEntradaCalculos: 'El manifiesto no describe la parte calculos, que llegó en el pedido.',
+      sinEntradaSvg: 'El manifiesto no describe la parte infografia_svg, que llegó en el pedido.',
       nombre: 'El nombre del archivo tiene que tener de 1 a 255 caracteres, sin /, \\ ni caracteres de control.',
-      mime: 'El tipo tiene que ser image/png en la infografía, text/plain en el texto del correo y text/markdown o text/plain en '
-        + 'los cálculos.',
+      mime: 'El tipo tiene que ser image/png en la infografía, text/plain en el texto del correo, text/markdown o text/plain en '
+        + 'los cálculos e image/svg+xml en la infografía editable.',
       bytesDistintos: 'No coincide con el tamaño de la parte recibida.',
       sha256Distinto: 'No coincide con el SHA-256 de la parte recibida.',
       png: 'La infografía tiene que ser un PNG completo, de 1 a 4096 píxeles de ancho y de alto.',
+      svg: 'La infografía editable tiene que ser un SVG que empiece con <svg, sin scripts, sin foreignObject, sin atributos on… y '
+        + 'sin referencias externas.',
       utf8: 'Tiene que ser un texto UTF-8 válido, sin el carácter nulo.'
     });
     assert.ok(Object.isFrozen(MENSAJES_VALIDACION));
@@ -245,6 +259,37 @@ describe('los fixtures', () => {
     assert.deepEqual(metadata.adjuntos.map((a) => a.campo), ['infografia_png', 'correo_texto']);
     assert.equal(metadata.tipo, 'piloto');
     assert.deepEqual(validar(metadata), []);
+  });
+
+  it('svgDePrueba: chico, en UTF-8 y con la forma del que manda el bot', () => {
+    const svg = svgDePrueba();
+    assert.ok(svg.toString('utf8').startsWith(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">'
+    ));
+    assert.ok(svg.length < 1024, `${svg.length} bytes`);
+    assert.ok(svg.toString('utf8').includes('font-family="DejaVu Sans,Arial,sans-serif"'));
+    assert.ok(svg.toString('utf8').includes('ñandú'), 'con caracteres fuera de ASCII');
+  });
+
+  it('partesDePrueba: con infografia_svg suma la parte al final y su entrada al manifiesto; sin ella, nada cambia', () => {
+    const svg = svgDePrueba();
+    const partes = partesDePrueba(edicionDePrueba(), { infografia_svg: svg });
+    assert.deepEqual(Object.keys(partes), ['metadata', 'infografia_png', 'correo_texto', 'calculos', 'infografia_svg']);
+    assert.equal(partes.infografia_svg, svg);
+    const metadata = JSON.parse(partes.metadata.toString('utf8'));
+    assert.deepEqual(metadata.adjuntos.at(-1), {
+      campo: 'infografia_svg', nombre: 'infografia-prueba.svg', mime: 'image/svg+xml', bytes: svg.length, sha256: sha256(svg)
+    });
+    assert.equal(metadata.adjuntos.length, 4);
+    assert.deepEqual(validar(metadata), []);
+    // Si la entrada ya estaba, la actualiza sin repetirla
+    const otro = Buffer.from(`${svg.toString('utf8')}\n`, 'utf8');
+    const deNuevo = JSON.parse(partesDePrueba(metadata, { infografia_svg: otro }).metadata.toString('utf8'));
+    assert.deepEqual(deNuevo.adjuntos.map((a) => a.campo), ['infografia_png', 'correo_texto', 'calculos', 'infografia_svg']);
+    assert.equal(deNuevo.adjuntos.at(-1).bytes, otro.length);
+    // Sin el SVG, el paquete de siempre: los mismos bytes
+    assert.deepEqual(partesDePrueba(edicionDePrueba(), {}), partesDePrueba(edicionDePrueba()));
+    assert.ok(!Object.hasOwn(partesDePrueba(edicionDePrueba()), 'infografia_svg'));
   });
 });
 
@@ -384,7 +429,7 @@ describe('validarEdicion: la cabecera', () => {
     }
   });
 
-  // Grok Bot archiva la edición aunque el correo no haya salido: la regular también pasa sin la hora del correo
+  // Datito archiva la edición aunque el correo no haya salido: la regular también pasa sin la hora del correo
   it('con el correo no enviado, la hora del correo va null, en una regular y en un piloto', () => {
     const sinCorreo = { estado: 'no_enviado', enviado_at: null };
     assert.deepEqual(erroresCon('correo', sinCorreo), []);
@@ -583,6 +628,25 @@ describe('validarEdicion: las propuestas', () => {
     assert.deepEqual(erroresCon('agenda', Array.from({ length: 21 }, () => ({ ...evento }))), [error('agenda', 'agenda')]);
   });
 
+  // spec 2026-11-12-dato-quincena-correo, 11: tipo es opcional, y sin él el evento sigue valiendo (el contrato de antes)
+  it('agenda con tipo: evento o efemeride pasan, sin tipo pasa; otro valor da su error', () => {
+    assert.ok(!Object.hasOwn(edicionDePrueba().agenda[0], 'tipo'), 'el evento de prueba no trae tipo');
+    assert.deepEqual(validar(edicionDePrueba()), []);
+    for (const tipo of ['efemeride', 'evento']) {
+      assert.deepEqual(erroresCon('agenda[0].tipo', tipo), [], tipo);
+    }
+    assert.deepEqual(erroresCon('agenda', [edicionDePrueba().agenda[0], efemerideDePrueba()]), []);
+    for (const tipo of ['feriado', 'Efemeride', 'efeméride', 'EVENTO', '', null, 1, ['evento'], { tipo: 'evento' }]) {
+      assert.deepEqual(erroresCon('agenda[0].tipo', tipo), [error('agenda[0].tipo', 'tipoDeEvento')], JSON.stringify(tipo));
+    }
+    // Una clave de más sigue siendo de más, también con tipo; y con undefined, como cualquier clave, falta
+    assert.deepEqual(erroresCon('agenda[0]', { ...efemerideDePrueba(), color: 'rojo' }), [error('agenda[0].color', 'sobra')]);
+    assert.deepEqual(erroresCon('agenda[0]', { ...efemerideDePrueba(), tipo: undefined }), [error('agenda[0].tipo', 'falta')]);
+    // Va en su lugar, después de las claves de siempre
+    assert.deepEqual(erroresCon('agenda[1]', { ...efemerideDePrueba(), tipo: 'feriado', fecha: '2026-02-30' }),
+      [error('agenda[1].fecha', 'fecha'), error('agenda[1].tipo', 'tipoDeEvento')]);
+  });
+
   it('el dataset: rpad_id entero positivo o null', () => {
     const ruta = 'propuestas[1].dataset.rpad_id';
     for (const valor of [1, 2147483647, null]) assert.deepEqual(erroresCon(ruta, valor), [], String(valor));
@@ -650,11 +714,14 @@ describe('validarEdicion: los textos', () => {
 });
 
 describe('validarEdicion: el manifiesto (solo su forma)', () => {
-  it('de 2 o 3 entradas', () => {
+  it('de 2 a 4 entradas (la cuarta, el SVG)', () => {
     const edicion = edicionDePrueba();
+    const conSvg = JSON.parse(partesDePrueba(edicion, { infografia_svg: svgDePrueba() }).metadata.toString('utf8')).adjuntos;
+    assert.equal(conSvg.length, 4);
     assert.deepEqual(erroresCon('adjuntos', edicion.adjuntos.slice(0, 2)), []);
+    assert.deepEqual(erroresCon('adjuntos', conSvg), []);
     assert.deepEqual(erroresCon('adjuntos', edicion.adjuntos.slice(0, 1)), [error('adjuntos', 'adjuntos')]);
-    assert.deepEqual(erroresCon('adjuntos', [...edicion.adjuntos, { ...edicion.adjuntos[2] }]), [error('adjuntos', 'adjuntos')]);
+    assert.deepEqual(erroresCon('adjuntos', [...conSvg, { ...conSvg[3] }]), [error('adjuntos', 'adjuntos')]);
     assert.deepEqual(erroresCon('adjuntos', []), [error('adjuntos', 'adjuntos')]);
   });
 
@@ -791,6 +858,190 @@ describe('esTextoUtf8 y textoDeMetadata', () => {
   });
 });
 
+// spec 2026-11-12-dato-quincena-correo, 11: el SVG nunca se dibuja (se adjunta a un mail y se descarga), pero igual no puede
+// traer scripts ni referencias externas. Los SVG de acá son inventados
+describe('esSvg', () => {
+  const svg = (texto) => Buffer.from(texto, 'utf8');
+  const CUERPO = '<rect width="10" height="10"/></svg>';
+  const APERTURA = '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">';
+
+  it('acepta el SVG del bot: directo con <svg xmlns=…>, o con la declaración XML, comentarios y espacios delante', () => {
+    assert.equal(esSvg(svgDePrueba()), true);
+    for (const texto of [
+      `${APERTURA}${CUERPO}`,
+      `<?xml version="1.0"?>\n<!-- Una infografía inventada -->\n${APERTURA}${CUERPO}`,
+      `<?xml version="1.0" encoding="UTF-8" standalone="no"?><!-- uno --><!-- dos -->${APERTURA}${CUERPO}`,
+      `  \n\t${APERTURA}${CUERPO}`,
+      `<!-- solo un comentario -->\n<svg>${CUERPO}`,
+      `<svg\nxmlns="http://www.w3.org/2000/svg">${CUERPO}`
+    ]) {
+      assert.equal(esSvg(svg(texto)), true, texto.slice(0, 60));
+    }
+  });
+
+  it('acepta las referencias a su propio #id, con espacios y comillas', () => {
+    for (const texto of [
+      `${APERTURA}<use href="#a"/><rect fill="url(#grad)"/></svg>`,
+      `${APERTURA}<use xlink:href = '#a'/><rect style="fill: url( '#grad' )"/></svg>`,
+      `${APERTURA}<use HREF=#a /><rect fill="URL(&quot;#grad&quot;)"/><rect fill='url( "#g")'/></svg>`
+    ]) {
+      assert.equal(esSvg(svg(texto)), true, texto);
+    }
+  });
+
+  it('acepta textos que se parecen a lo prohibido sin serlo', () => {
+    for (const texto of [
+      `${APERTURA}<text font-family="DejaVu Sans" font-size="32">Personas con onda; version 2</text></svg>`,
+      `${APERTURA}<g requiredExtensions="x" id="icono1"><polygon points="0,0 1,1"/></g></svg>`,
+      `${APERTURA}<text>Descripción &amp; datos: &#241;and&#xFA;</text></svg>`
+    ]) {
+      assert.equal(esSvg(svg(texto)), true, texto);
+    }
+  });
+
+  it('rechaza un script, foreignObject, un atributo on…, @import y las referencias externas, con mayúsculas o espacios', () => {
+    for (const texto of [
+      `${APERTURA}<SCRIPT>alert(1)</SCRIPT></svg>`,
+      `${APERTURA}<script href="#a"/></svg>`,
+      '<svg ONLOAD = "x"></svg>',
+      `${APERTURA}<rect onclick="x"/></svg>`,
+      `${APERTURA}<rect\tOnMouseOver\n=\n'x'/></svg>`,
+      `${APERTURA}<g/onclick="x"/></svg>`,
+      `${APERTURA}<rect x="1"onload="x"/></svg>`,
+      `${APERTURA}<foreignObject><div/></foreignObject></svg>`,
+      `${APERTURA}<FOREIGNOBJECT/></svg>`,
+      `${APERTURA}<image xlink:href = "https://x.test/a.png"/></svg>`,
+      `${APERTURA}<image href='//x.test'/></svg>`,
+      `${APERTURA}<a href="javascript:alert(1)"><rect/></a></svg>`,
+      `${APERTURA}<image href=" https://x.test"/></svg>`,
+      `${APERTURA}<image HREF="data:image/png;base64,AAAA"/></svg>`,
+      `${APERTURA}<rect style="fill:url( http://x.test)"/></svg>`,
+      `${APERTURA}<rect style="fill:URL('https://x.test/a.svg#b')"/></svg>`,
+      `${APERTURA}<style>@import "https://x.test/a.css";</style></svg>`,
+      `${APERTURA}<style>@IMPORT url(#a);</style></svg>`
+    ]) {
+      assert.equal(esSvg(svg(texto)), false, texto);
+    }
+  });
+
+  // Lo que XML permite para esquivar las reglas de arriba: un prefijo, el espacio de nombres de HTML y una animación del href
+  it('rechaza un script o un foreignObject con prefijo, HTML por su espacio de nombres y una animación de un href o un on…', () => {
+    const HTML = 'http://www.w3.org/1999/xhtml';
+    for (const texto of [
+      `${APERTURA}<h:script xmlns:h="${HTML}">alert(1)</h:script></svg>`,
+      `${APERTURA}<svg:SCRIPT>alert(1)</svg:SCRIPT></svg>`,
+      `${APERTURA}<svg:foreignObject/></svg>`,
+      `${APERTURA}<g xmlns="${HTML}"><iframe/></g></svg>`,
+      `${APERTURA}<g xmlns="HTTP://WWW.W3.ORG/1999/XHTML"/></svg>`,
+      `${APERTURA}<a><animate attributeName="href" values="javascript:alert(1)"/></a></svg>`,
+      `${APERTURA}<a><set attributeName = 'xlink:href' to="https://x.test"/></a></svg>`,
+      `${APERTURA}<rect><set attributeName="onmouseover" to="alert(1)"/></rect></svg>`
+    ]) {
+      assert.equal(esSvg(svg(texto)), false, texto);
+    }
+    // Una animación de otra cosa, sí
+    assert.equal(esSvg(svg(`${APERTURA}<rect><animate attributeName="opacity" values="0;1" dur="1s"/></rect></svg>`)), true);
+  });
+
+  // Lo que el lector de XML decodifica (&#…; y las cinco entidades) se mira también decodificado: una referencia externa no se
+  // esconde con un carácter escrito como entidad
+  it('rechaza lo prohibido escrito con entidades de XML', () => {
+    for (const texto of [
+      `${APERTURA}<rect style="fill:u&#114;l(https://x.test/a.png)"/></svg>`,
+      `${APERTURA}<rect style="fill:&#x75;rl(https://x.test/a.png)"/></svg>`,
+      `${APERTURA}<style>&#64;import "https://x.test/a.css";</style></svg>`,
+      `${APERTURA}<text>&lt;script&gt;</text></svg>`
+    ]) {
+      assert.equal(esSvg(svg(texto)), false, texto);
+    }
+    // Una entidad que no es un carácter válido no rompe
+    assert.equal(esSvg(svg(`${APERTURA}<text>&#xFFFFFFF; &#99999999999; &#xD800;</text></svg>`)), true);
+  });
+
+  it('rechaza lo que no empieza con <svg: un BOM, otro elemento, un DOCTYPE, otra instrucción o un comentario sin cerrar', () => {
+    for (const texto of [
+      `\uFEFF${APERTURA}${CUERPO}`,
+      `<html><body>${APERTURA}${CUERPO}</body></html>`,
+      `<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "x.dtd">${APERTURA}${CUERPO}`,
+      `<?xml-stylesheet type="text/css" href="#a"?>${APERTURA}${CUERPO}`,
+      `<?xml version="1.0"?><?xml version="1.0"?>${APERTURA}${CUERPO}`,
+      `<!-- sin cerrar ${APERTURA}${CUERPO}`,
+      `<?xml version="1.0" ${APERTURA}${CUERPO}`,
+      `un texto${APERTURA}${CUERPO}`,
+      `<svgx>${CUERPO}`,
+      `<svg/>`,
+      `<SVG>${CUERPO}`,
+      '<svg',
+      '',
+      '   '
+    ]) {
+      assert.equal(esSvg(svg(texto)), false, JSON.stringify(texto.slice(0, 40)));
+    }
+  });
+
+  it('rechaza un nulo, un UTF-8 roto (latin1) y lo que no es un Buffer', () => {
+    assert.equal(esSvg(svg(`${APERTURA}<text>a\u0000b</text></svg>`)), false);
+    assert.equal(esSvg(Buffer.from(`${APERTURA}<text>ñandú</text></svg>`, 'latin1')), false);
+    assert.equal(esSvg(Buffer.from([0xef, 0xbb, 0xbf, ...svg(`${APERTURA}${CUERPO}`)])), false, 'el BOM en bytes');
+    for (const valor of [undefined, null, `${APERTURA}${CUERPO}`, [0x3c]]) assert.equal(esSvg(valor), false, String(valor));
+  });
+
+  // Ningún control vuelve atrás de más: el principio se lee de corrido, y una expresión con dos \s* separados por algo opcional
+  // se repartía los mismos espacios de n² maneras (1 MB de espacios después de href=, url( o attributeName= trababa el servidor
+  // media hora). Cada caso, primero con 32 KB, donde una vuelta atrás cuadrática ya pasa el tope y el test falla en segundos en
+  // lugar de trabarse, y después con 1 MB. Los topes son decenas de veces lo que tarda: no dependen de la máquina
+  it('1 MB armado para trabarlo se revisa en menos de 500 ms, en el principio, en cada control y en las entidades', () => {
+    const veces = (texto, n) => texto.repeat(Math.ceil(n / texto.length));
+    const espacios = (n) => ' '.repeat(n);
+    const en = (adentro) => `${APERTURA}${adentro}</svg>`;
+    // [qué, cómo se arma con unos n bytes, lo que tiene que dar]
+    const CASOS = [
+      ['el principio: espacios y otro elemento', (n) => `${espacios(n)}<x>`, false],
+      ['el principio: comentarios y otro elemento', (n) => `${veces('<!---->', n)}<x>`, false],
+      ['el principio: comentarios y el svg', (n) => `${veces('<!---->', n)}${APERTURA}${CUERPO}`, true],
+      ['el principio: la declaración sin cerrar', (n) => `<?xml ${espacios(n)}`, false],
+      ['el principio: un comentario sin cerrar', (n) => `<!--${espacios(n)}`, false],
+      ['el principio: una declaración larga y el svg', (n) => `<?xml ${espacios(n)}?>${APERTURA}${CUERPO}`, true],
+      ['comentarios adentro del svg', (n) => en(veces('<!-- a --> ', n)), true],
+      ['script: un < y un nombre largo', (n) => en(`<${'a'.repeat(n)}/>`), true],
+      ['script: muchos <a.', (n) => en(veces('<a.', n)), true],
+      ['script: muchos <', (n) => en(veces('<', n)), true],
+      ['on…: on y una palabra larga', (n) => en(`<text> on${'a'.repeat(n)}</text>`), true],
+      ['on…: onx y espacios', (n) => en(`<text> onx${espacios(n)}</text>`), true],
+      ['on…: muchos on', (n) => en(veces(' on', n)), true],
+      ['attributeName= y espacios', (n) => en(`<set attributeName=${espacios(n)}x/>`), true],
+      ['attributeName=" y espacios', (n) => en(`<set attributeName="${espacios(n)}x"/>`), true],
+      ['attributeName= espacios, comilla y espacios', (n) => en(`<set attributeName=${espacios(n / 2)}"${espacios(n / 2)}x"/>`), true],
+      ['attributeName= y un nombre largo', (n) => en(`<set attributeName="${'a'.repeat(n)}"/>`), true],
+      ['href= y espacios', (n) => en(`<use href=${espacios(n)}x/>`), false],
+      ['href=" y espacios', (n) => en(`<use href="${espacios(n)}x"/>`), false],
+      ['href= espacios, comilla y espacios', (n) => en(`<use href=${espacios(n / 2)}"${espacios(n / 2)}x"/>`), false],
+      ['href= espacios y #', (n) => en(`<use href=${espacios(n)}#a/>`), true],
+      ['href sin = y espacios', (n) => en(`<text>href${espacios(n)}x</text>`), true],
+      ['url( y espacios', (n) => en(`<rect fill="url(${espacios(n)}x)"/>`), false],
+      ['url(" y espacios', (n) => en(`<rect fill='url("${espacios(n)}x")'/>`), false],
+      ['url( espacios, comilla y espacios', (n) => en(`<rect fill='url(${espacios(n / 2)}"${espacios(n / 2)}x")'/>`), false],
+      ['url( espacios y #', (n) => en(`<rect fill="url(${espacios(n)}#g)"/>`), true],
+      ['entidades: &#x y muchas cifras sin ;', (n) => en(`<text>&#x${'a'.repeat(n)}</text>`), true],
+      ['entidades: &# y muchas cifras sin ;', (n) => en(`<text>&#${'1'.repeat(n)}</text>`), true],
+      ['entidades: &#x y muchas cifras con ;', (n) => en(`<text>&#x${'1'.repeat(n)};</text>`), true],
+      ['entidades: muchos &amp;', (n) => en(`<text>${veces('&amp;', n)}</text>`), true],
+      ['entidades: muchos &', (n) => en(`<text>${veces('&', n)}</text>`), true],
+      ['un SVG grande y sano', (n) => en(veces('<text x="1" y="2" font-family="DejaVu Sans">Un texto inventado.</text>', n)), true]
+    ];
+    for (const [bytes, tope] of [[32 * 1024, 100], [1024 * 1024, 500]]) {
+      for (const [nombre, armar, esperado] of CASOS) {
+        const entrada = svg(armar(bytes));
+        const inicio = performance.now();
+        const resultado = esSvg(entrada);
+        const ms = performance.now() - inicio;
+        assert.equal(resultado, esperado, `${nombre} (${bytes} bytes)`);
+        assert.ok(ms < tope, `${nombre} (${bytes} bytes): ${ms.toFixed(0)} ms, el tope es ${tope}`);
+      }
+    }
+  });
+});
+
 // El manifiesto de las partes, como lo lee el controlador de metadata
 const manifiestoDe = (partes) => JSON.parse(partes.metadata.toString('utf8')).adjuntos;
 
@@ -894,6 +1145,47 @@ describe('validarAdjuntos: el manifiesto contra las partes', () => {
     assert.deepEqual(revisar({ partes: { calculos: Buffer.from('a\u0000b', 'utf8') } }), [error('calculos', 'utf8')]);
   });
 
+  // spec 2026-11-12-dato-quincena-correo, 11: el SVG es una parte opcional; su entrada va solo si llegó
+  it('validarAdjuntos con SVG: la entrada image/svg+xml y la parte, sin errores', () => {
+    assert.deepEqual(revisar({ partes: { infografia_svg: svgDePrueba() } }), []);
+    assert.deepEqual(revisar({ partes: { infografia_svg: svgDePrueba(), calculos: null } }), []);
+    // El SVG puede ir en cualquier lugar del manifiesto
+    assert.deepEqual(revisar({ partes: { infografia_svg: svgDePrueba() }, manifiesto: (a) => a.unshift(a.pop()) }), []);
+  });
+
+  it('validarAdjuntos con SVG: la parte sin entrada, la entrada sin la parte y la entrada repetida', () => {
+    assert.deepEqual(revisar({ partes: { infografia_svg: svgDePrueba() }, manifiesto: (a) => a.pop() }),
+      [error('adjuntos', 'sinEntradaSvg')]);
+    const entradaDelSvg = manifiestoDe(partesDePrueba(edicionDePrueba(), { infografia_svg: svgDePrueba() })).at(-1);
+    assert.deepEqual(revisar({ manifiesto: (a) => a.push(entradaDelSvg) }), [error('adjuntos[3].campo', 'sinParte')]);
+    assert.deepEqual(revisar({ partes: { infografia_svg: svgDePrueba(), calculos: null }, manifiesto: (a) => a.push({ ...a[2] }) }),
+      [error('adjuntos[3].campo', 'campoRepetido')]);
+  });
+
+  it('validarAdjuntos con SVG: el mime es image/svg+xml', () => {
+    for (const valor of ['image/png', 'image/svg', 'IMAGE/SVG+XML', 'image/svg+xml; charset=utf-8', 'text/xml', '']) {
+      assert.deepEqual(revisar({ partes: { infografia_svg: svgDePrueba() }, manifiesto: (a) => { a[3].mime = valor; } }),
+        [error('adjuntos[3].mime', 'mime')], valor);
+    }
+    // image/svg+xml en otra parte, no
+    assert.deepEqual(revisar({ manifiesto: (a) => { a[0].mime = 'image/svg+xml'; } }), [error('adjuntos[0].mime', 'mime')]);
+  });
+
+  it('validarAdjuntos con SVG: bytes y sha256 contra la parte, y un contenido que no es un SVG', () => {
+    assert.deepEqual(revisar({ partes: { infografia_svg: svgDePrueba() }, manifiesto: (a) => { a[3].bytes += 1; } }),
+      [error('adjuntos[3].bytes', 'bytesDistintos')]);
+    for (const contenido of [
+      Buffer.from('<svg><script>alert(1)</script></svg>', 'utf8'), Buffer.from('<html></html>', 'utf8'), pngDePrueba(),
+      Buffer.from([0xff])
+    ]) {
+      assert.deepEqual(revisar({ partes: { infografia_svg: contenido } }),
+        [{ campo: 'infografia_svg', mensaje: MENSAJES_VALIDACION.svg }], contenido.toString('utf8').slice(0, 30));
+    }
+    // El PNG en la parte del SVG y el SVG en la del PNG: cada una con su error
+    assert.deepEqual(revisar({ partes: { infografia_png: svgDePrueba(), infografia_svg: pngDePrueba() } }),
+      [error('infografia_png', 'png'), error('infografia_svg', 'svg')]);
+  });
+
   it('un elemento que no es un objeto no rompe y se saltea (lo informa validarEdicion)', () => {
     for (const valor of [null, 'calculos', 3, []]) {
       assert.deepEqual(revisar({ partes: { calculos: null }, manifiesto: (a) => a.push(valor) }), [], JSON.stringify(valor));
@@ -943,6 +1235,14 @@ describe('erroresDeLaEdicion: la forma y las partes, con un solo tope', () => {
     assert.deepEqual(errores(...recibir(pilotoDePrueba(), { calculos: null })), []);
   });
 
+  it('con el SVG y una efeméride en la agenda, tampoco; con un SVG que no sirve, el error de su parte', () => {
+    const conEfemeride = edicionDePrueba({ agenda: [...edicionDePrueba().agenda, efemerideDePrueba()] });
+    assert.deepEqual(errores(...recibir(conEfemeride, { infografia_svg: svgDePrueba() })), []);
+    assert.deepEqual(errores(...recibir(pilotoDePrueba(), { calculos: null, infografia_svg: svgDePrueba() })), []);
+    const conScript = Buffer.from('<svg><script>alert(1)</script></svg>', 'utf8');
+    assert.deepEqual(errores(...recibir(conEfemeride, { infografia_svg: conScript })), [error('infografia_svg', 'svg')]);
+  });
+
   it('primero los de la forma y después los de las partes, sin repetir uno', () => {
     const [edicion, partes] = recibir();
     edicion.agente = 'otro';
@@ -987,12 +1287,14 @@ describe('erroresDeLaEdicion: la forma y las partes, con un solo tope', () => {
 });
 
 describe('huellaDelPaquete', () => {
-  // El texto de la sección 6, armado a mano: un renglón por parte, en su orden, con - si no llegó
+  // El texto de la sección 6, armado a mano: un renglón por parte, en su orden, con - si no llegó; el del SVG (spec
+  // 2026-11-12-dato-quincena-correo, 11), al final y solo si llegó
   const esperada = (partes) => sha256(Buffer.from(
     `metadata:${sha256(partes.metadata)}\n`
     + `infografia_png:${sha256(partes.infografia_png)}\n`
     + `correo_texto:${sha256(partes.correo_texto)}\n`
-    + `calculos:${partes.calculos === undefined ? '-' : sha256(partes.calculos)}\n`,
+    + `calculos:${partes.calculos === undefined ? '-' : sha256(partes.calculos)}\n`
+    + (partes.infografia_svg === undefined ? '' : `infografia_svg:${sha256(partes.infografia_svg)}\n`),
     'utf8'
   ));
 
@@ -1004,15 +1306,47 @@ describe('huellaDelPaquete', () => {
     assert.equal(huellaDelPaquete(sinCalculos), esperada(sinCalculos));
   });
 
+  // Un paquete sin SVG da la huella de antes del SVG, así un reenvío de algo ya archivado sigue dando 200. Los valores se
+  // calcularon con la regla anterior al SVG, sobre partes fijas (no con pngDePrueba: el deflate puede cambiar con zlib)
+  it('la huella sin SVG no cambia', () => {
+    const paquete = {
+      metadata: Buffer.from('{"edicion":"inventada"}', 'utf8'),
+      infografia_png: Buffer.from('una infografía inventada', 'utf8'),
+      correo_texto: Buffer.from('un correo inventado', 'utf8'),
+      calculos: Buffer.from('unos cálculos inventados', 'utf8')
+    };
+    const { calculos, ...sinCalculos } = paquete;
+    assert.equal(huellaDelPaquete(paquete), '33bb4bde5eac96a034b04bb80375230a9b3d1bd2ce84780d130bda32d423e0a8');
+    assert.equal(huellaDelPaquete(sinCalculos), 'c4d6f86fd0cdf20698734c813ebd2d2ef42b99e9e1be037393ac29e87e525772');
+    assert.equal(huellaDelPaquete({ ...paquete, infografia_svg: undefined }), huellaDelPaquete(paquete));
+    assert.equal(huellaDelPaquete({ ...paquete, infografia_svg: 'no es un Buffer' }), huellaDelPaquete(paquete));
+  });
+
+  it('con SVG suma su renglón, al final', () => {
+    const partes = partesDePrueba(edicionDePrueba(), { infografia_svg: svgDePrueba() });
+    assert.equal(huellaDelPaquete(partes), esperada(partes));
+    const { infografia_svg, ...sinSvg } = partes;
+    assert.notEqual(huellaDelPaquete(partes), huellaDelPaquete(sinSvg));
+    assert.notEqual(huellaDelPaquete(partes), huellaDelPaquete({ ...sinSvg, infografia_svg: Buffer.alloc(0) }));
+    // Sin cálculos y con SVG: el renglón de los cálculos con - y el del SVG después
+    const { calculos, ...sinCalculos } = partes;
+    assert.equal(huellaDelPaquete(sinCalculos), esperada(sinCalculos));
+    assert.ok(infografia_svg.length > 0 && calculos.length > 0);
+  });
+
   it('igual con las mismas partes, y no depende del orden en que llegaron', () => {
     const partes = partesDePrueba(edicionDePrueba());
     const copia = Object.fromEntries(Object.entries(partesDePrueba(edicionDePrueba())).reverse());
     assert.deepEqual(Object.keys(copia), ['calculos', 'correo_texto', 'infografia_png', 'metadata']);
     assert.equal(huellaDelPaquete(copia), huellaDelPaquete(partes));
+    const conSvg = partesDePrueba(edicionDePrueba(), { infografia_svg: svgDePrueba() });
+    const alReves = Object.fromEntries(Object.entries(conSvg).reverse());
+    assert.equal(Object.keys(alReves)[0], 'infografia_svg');
+    assert.equal(huellaDelPaquete(alReves), huellaDelPaquete(conSvg));
   });
 
   it('distinta si cambia un byte de cualquier parte', () => {
-    const partes = partesDePrueba(edicionDePrueba());
+    const partes = partesDePrueba(edicionDePrueba(), { infografia_svg: svgDePrueba() });
     const original = huellaDelPaquete(partes);
     for (const parte of PARTES) {
       for (const posicion of [0, partes[parte].length - 1]) {
@@ -1143,7 +1477,7 @@ describe('horaArgentina y diaArgentino', () => {
       assert.equal(resultado.hora, hora, valor);
       assert.match(resultado.iso, /^1899-12-31T\d{2}:\d{2}:\d{2}-03:00$/, valor);
       assert.equal(diaArgentino(valor), '31/12/1899', valor);
-      assert.equal(textoDelCorreo(valor), `Correo enviado el 31/12/1899 a las ${hora}, según Grok Bot.`, valor);
+      assert.equal(textoDelCorreo(valor), `Correo enviado el 31/12/1899 a las ${hora}, según Datito.`, valor);
     }
   });
 
@@ -1168,23 +1502,44 @@ describe('los textos del detalle y de la lista', () => {
   });
 
   it('el correo, con la hora pasada a Argentina, o sin la hora', () => {
-    assert.equal(textoDelCorreo('2026-11-23T11:12:00Z'), 'Correo enviado el 23/11/2026 a las 08:12, según Grok Bot.');
-    assert.equal(textoDelCorreo('2026-11-23T14:12:00+03:00'), 'Correo enviado el 23/11/2026 a las 08:12, según Grok Bot.');
-    assert.equal(textoDelCorreo(edicionDePrueba().correo.enviado_at), 'Correo enviado el 02/11/2026 a las 08:12, según Grok Bot.');
-    assert.equal(textoDelCorreo(null), 'Correo enviado según Grok Bot, sin la hora.');
-    assert.equal(textoDelCorreo(pilotoDePrueba().correo.enviado_at), 'Correo enviado según Grok Bot, sin la hora.');
-    assert.equal(textoDelCorreo('2026-11-23T11:12:00Z', 'enviado'), 'Correo enviado el 23/11/2026 a las 08:12, según Grok Bot.');
+    assert.equal(textoDelCorreo('2026-11-23T11:12:00Z'), 'Correo enviado el 23/11/2026 a las 08:12, según Datito.');
+    assert.equal(textoDelCorreo('2026-11-23T14:12:00+03:00'), 'Correo enviado el 23/11/2026 a las 08:12, según Datito.');
+    assert.equal(textoDelCorreo(edicionDePrueba().correo.enviado_at), 'Correo enviado el 02/11/2026 a las 08:12, según Datito.');
+    assert.equal(textoDelCorreo(null), 'Correo enviado según Datito, sin la hora.');
+    assert.equal(textoDelCorreo(pilotoDePrueba().correo.enviado_at), 'Correo enviado según Datito, sin la hora.');
+    assert.equal(textoDelCorreo('2026-11-23T11:12:00Z', 'enviado'), 'Correo enviado el 23/11/2026 a las 08:12, según Datito.');
   });
 
   it('el correo no enviado: siempre el mismo texto, cierto aunque el correo salga después', () => {
-    assert.equal(textoDelCorreo(null, 'no_enviado'), 'Grok Bot archivó esta edición sin que saliera el correo.');
-    assert.equal(textoDelCorreo('2026-11-23T11:12:00Z', 'no_enviado'), 'Grok Bot archivó esta edición sin que saliera el correo.');
+    assert.equal(textoDelCorreo(null, 'no_enviado'), 'Datito archivó esta edición sin que saliera el correo.');
+    assert.equal(textoDelCorreo('2026-11-23T11:12:00Z', 'no_enviado'), 'Datito archivó esta edición sin que saliera el correo.');
+  });
+
+  // spec 2026-11-12-dato-quincena-correo, 6 y 14: también en las ediciones ya archivadas, con el nombre de NOMBRE_DEL_BOT
+  it('textoDelCorreo dice Datito: las tres frases', () => {
+    assert.equal(textoDelCorreo('2026-11-09T11:00:00Z', 'enviado'), 'Correo enviado el 09/11/2026 a las 08:00, según Datito.');
+    assert.equal(textoDelCorreo(null, 'enviado'), 'Correo enviado según Datito, sin la hora.');
+    assert.equal(textoDelCorreo(null, 'no_enviado'), 'Datito archivó esta edición sin que saliera el correo.');
+    for (const texto of [textoDelCorreo('2026-11-09T11:00:00Z'), textoDelCorreo(null), textoDelCorreo(null, 'no_enviado')]) {
+      assert.ok(texto.includes(NOMBRE_DEL_BOT), texto);
+      assert.doesNotMatch(texto, /Grok/, texto);
+    }
   });
 
   it('la cantidad de propuestas', () => {
     assert.equal(textoDeCantidad(1), '1 propuesta');
     assert.equal(textoDeCantidad(2), '2 propuestas');
     assert.equal(textoDeCantidad(5), '5 propuestas');
+  });
+
+  // spec 2026-11-12-dato-quincena-correo, 12: el número de una regular (cuántas regulares hay con su fecha o antes)
+  it('el número de edición: «N.º 3»; null si no es un entero positivo', () => {
+    assert.equal(textoDelNumero(3), 'N.º 3');
+    assert.equal(textoDelNumero(1), 'N.º 1');
+    assert.equal(textoDelNumero(27), 'N.º 27');
+    for (const raro of [0, -1, 1.5, '3', null, undefined, NaN, Infinity, 2 ** 53, true, [3]]) {
+      assert.equal(textoDelNumero(raro), null, String(raro));
+    }
   });
 
   it('el resto de las propuestas de la lista', () => {
@@ -1464,23 +1819,46 @@ describe('reciboDe', () => {
   const correo = { campo: 'correo_texto', bytes: 17000, sha256: 'c'.repeat(64) };
   const calculos = { campo: 'calculos', bytes: 3000, sha256: 'd'.repeat(64) };
 
-  it('todas sus claves, en el orden de la sección 7', () => {
-    const recibo = reciboDe(edicion, [infografia, correo], [], false);
+  // El envío (spec 2026-11-12-dato-quincena-correo, 11), el de envioDelRecibo: una regular del lunes 23/11/2026 (feriado en la
+  // precarga) que llegó a las 8:14, programada para el martes a las 8:05
+  const ENVIO = envioDelRecibo({
+    tipo: 'regular', fecha_edicion: '2026-11-23', correo: { estado: 'programada', motivo: null, enviada_at: null }, envios: [],
+    envioActivo: true, ahora: '2026-11-23 08:14:02', calendario: calendarioCon(FILAS_PRECARGA)
+  });
+
+  it('todas sus claves, en el orden de la sección 7, con el envío al final', () => {
+    assert.deepEqual(ENVIO, {
+      estado: 'programada', programado_at: '2026-11-24T08:05:00-03:00', texto: 'Se envía el martes 24/11/2026 a las 8:05.'
+    });
+    const recibo = reciboDe(edicion, [infografia, correo], [], false, ENVIO);
     assert.deepEqual(recibo, {
       id: 12, clave: 'dq:regular:2026-11-23', tipo: 'regular', fecha_edicion: '2026-11-23', huella: 'a'.repeat(64),
       recibida_at: '2026-11-23T08:14:02-03:00', repetida: false, adjuntos: [infografia, correo],
-      url: `${RPAD_URL}/dato-quincena.html?id=12`, avisos: []
+      url: `${RPAD_URL}/dato-quincena.html?id=12`, avisos: [], envio: ENVIO
     });
     assert.deepEqual(Object.keys(recibo), [
-      'id', 'clave', 'tipo', 'fecha_edicion', 'huella', 'recibida_at', 'repetida', 'adjuntos', 'url', 'avisos'
+      'id', 'clave', 'tipo', 'fecha_edicion', 'huella', 'recibida_at', 'repetida', 'adjuntos', 'url', 'avisos', 'envio'
     ]);
+    assert.deepEqual(Object.keys(recibo.envio), ['estado', 'programado_at', 'texto']);
     assert.match(recibo.url, /^https?:\/\/[^/]+\/dato-quincena\.html\?id=12$/);
+  });
+
+  it('sin envío (una regular archivada antes, sin fila de correo), envio null: la clave va igual', () => {
+    for (const envio of [null, undefined]) {
+      const recibo = reciboDe(edicion, [infografia, correo], [], false, envio);
+      assert.equal(recibo.envio, null, String(envio));
+      assert.equal(Object.keys(recibo).at(-1), 'envio');
+    }
   });
 
   it('los adjuntos en el orden de ARCHIVOS y solo con campo, bytes y sha256', () => {
     const conMas = (adjunto) => ({ ...adjunto, nombre: 'x.txt', mime: 'text/plain', contenido: Buffer.from('x') });
     const recibo = reciboDe(edicion, [conMas(calculos), conMas(correo), conMas(infografia)], [], false);
     assert.deepEqual(recibo.adjuntos, [infografia, correo, calculos]);
+    // El SVG, al final, aunque haya llegado primero
+    const svg = { campo: 'infografia_svg', bytes: 7000, sha256: 'e'.repeat(64) };
+    assert.deepEqual(reciboDe(edicion, [conMas(svg), conMas(correo), conMas(infografia)], [], false).adjuntos,
+      [infografia, correo, svg]);
   });
 
   it('una repetida con sus avisos', () => {
@@ -1533,9 +1911,10 @@ describe('nombreDeLaEdicion y TIPO_DE_DESCARGA', () => {
     assert.equal(nombreDeLaEdicion('dq:piloto:2026-11-02:piloto-4'), 'dato-quincena-piloto-2026-11-02-piloto-4.json');
   });
 
-  it('el Content-Type fijo de cada descarga: el texto y los cálculos, como texto en UTF-8', () => {
+  it('el Content-Type fijo de cada descarga: el texto y los cálculos, como texto en UTF-8; el SVG, image/svg+xml', () => {
     assert.deepEqual({ ...TIPO_DE_DESCARGA }, {
       infografia_png: 'image/png',
+      infografia_svg: 'image/svg+xml',
       correo_texto: 'text/plain; charset=utf-8',
       calculos: 'text/plain; charset=utf-8',
       metadata: 'application/json; charset=utf-8'
@@ -1544,29 +1923,111 @@ describe('nombreDeLaEdicion y TIPO_DE_DESCARGA', () => {
   });
 });
 
-// Una fila de listarEdiciones: la primera propuesta es la principal (la del fixture) y las demás, una por nombre
-const filaDeLaLista = (id, tipo, fecha_edicion, referencia_piloto, nombres) => ({
+// Una fila de listarEdiciones: la primera propuesta es la principal (la del fixture) y las demás, una por nombre. numero, el de
+// la consulta: cuántas regulares hay con esa fecha o antes (null en un piloto)
+const filaDeLaLista = (id, tipo, fecha_edicion, referencia_piloto, nombres, numero = null) => ({
   id,
   tipo,
   fecha_edicion,
   referencia_piloto,
+  numero,
   propuestas: nombres.map((dataset_nombre, i) => (i === 0
     ? { orden: 1, titulo: 'Un título inventado', cifra_clave: '1.234 casos · septiembre de 2026', principal: true, dataset_nombre }
     : { orden: i + 1, titulo: `Otro título ${i + 1}`, cifra_clave: `${i + 1} casos`, principal: false, dataset_nombre }))
 });
 
+// La pastilla del envío de cada edición de las respuestas de la página (spec 2026-11-12-dato-quincena-correo, 6), armada con
+// pastillaDelEnvio para quien no es de administración, con el calendario de la precarga: la del 16/11, que el RPAD mandó ese
+// lunes a las 8:05; el piloto 4; la del 02/11, archivada con el envío automático apagado y con el correo de Datito (la de la
+// transición, como la guarda tests/dato-quincena-api.test.js); y la de enero de 2027, que espera la corrida de las 8:05 de ese
+// lunes
+const pastillaDe = (cambios) => pastillaDelEnvio({
+  tipo: 'regular', correo: null, envios: [], reenvios: [], lista: [], correoDelBot: null, envioActivo: true,
+  ahora: '2026-11-20 10:00:00', calendario: calendarioCon(FILAS_PRECARGA), admin: false, ...cambios
+});
+const PASTILLAS = Object.freeze({
+  14: pastillaDe({
+    fecha_edicion: '2026-11-16', correo: { estado: 'enviada', motivo: null, enviada_at: '2026-11-16 08:05:12' },
+    envios: [{ usuario_id: 1, tipo: 'automatico', estado: 'enviado', intentos: 1, enviado_at: '2026-11-16 08:05:12' }]
+  }),
+  13: pastillaDe({ tipo: 'piloto', fecha_edicion: '2026-11-02' }),
+  12: pastillaDe({
+    fecha_edicion: '2026-11-02', correo: { estado: 'no_enviada', motivo: 'apagado', enviada_at: null }, envioActivo: false,
+    correoDelBot: edicionDePrueba().correo
+  }),
+  15: pastillaDe({
+    fecha_edicion: '2027-01-11', correo: { estado: 'programada', motivo: null, enviada_at: null }, ahora: '2027-01-11 07:40:00'
+  })
+});
+
 describe('itemDeLaLista', () => {
-  it('las ediciones de las respuestas de la página, con las claves en su orden', () => {
+  it('las ediciones de las respuestas de la página, con las claves en su orden y la pastilla del envío al final', () => {
+    assert.deepEqual({ ...PASTILLAS }, {
+      14: { tipo: 'enviada', texto: 'Enviada el lun 16/11' },
+      13: { tipo: 'piloto', texto: 'Piloto: no se envía' },
+      12: { tipo: 'enviada', texto: 'Enviada por Datito el lun 02/11' },
+      15: { tipo: 'programada', texto: 'Sale hoy a las 8:05' }
+    });
     const items = [
-      filaDeLaLista(14, 'regular', '2026-11-16', null, ['Dataset de prueba A', 'Dataset de prueba B', 'Dataset de prueba C']),
+      filaDeLaLista(14, 'regular', '2026-11-16', null, ['Dataset de prueba A', 'Dataset de prueba B', 'Dataset de prueba C'], 2),
       filaDeLaLista(13, 'piloto', '2026-11-02', 'piloto-4', ['Dataset de prueba A']),
-      filaDeLaLista(12, 'regular', '2026-11-02', null, ['Dataset de prueba A', 'Dataset de prueba B'])
-    ].map(itemDeLaLista);
+      filaDeLaLista(12, 'regular', '2026-11-02', null, ['Dataset de prueba A', 'Dataset de prueba B'], 1)
+    ].map((fila) => itemDeLaLista(fila, PASTILLAS[fila.id]));
     assert.deepEqual(items, RESPUESTAS.lista.data.ediciones);
     assert.deepEqual(ordenDeLasClaves(items), ordenDeLasClaves(RESPUESTAS.lista.data.ediciones));
+    assert.deepEqual(items, RESPUESTAS.lista_dos_anios.data.ediciones);
+    assert.deepEqual(ordenDeLasClaves(items), ordenDeLasClaves(RESPUESTAS.lista_dos_anios.data.ediciones));
 
-    const deEnero = itemDeLaLista(filaDeLaLista(15, 'regular', '2027-01-11', null, ['Dataset de prueba A', 'Dataset de prueba B']));
+    const deEnero = itemDeLaLista(
+      filaDeLaLista(15, 'regular', '2027-01-11', null, ['Dataset de prueba A', 'Dataset de prueba B'], 3), PASTILLAS[15]
+    );
     assert.deepEqual(deEnero, RESPUESTAS.lista_de_2027.data.ediciones[0]);
+    assert.deepEqual(ordenDeLasClaves(deEnero), ordenDeLasClaves(RESPUESTAS.lista_de_2027.data.ediciones[0]));
+  });
+
+  // spec 2026-11-12-dato-quincena-correo, 12: la pastilla la arma el controlador (pastillaDelEnvio, con lo de quien pide) y la
+  // lista la pone tal cual; una edición sin pastilla (sin envío del RPAD y sin el correo del bot), null
+  it('el envío: la pastilla que recibe, al final; sin ella, null', () => {
+    const fila = filaDeLaLista(16, 'regular', '2026-11-09', null, ['A'], 3);
+    const pastilla = { tipo: 'parcial', texto: 'Enviada a 3 de 4' };
+    const item = itemDeLaLista(fila, pastilla);
+    assert.deepEqual(item.envio, pastilla);
+    assert.equal(Object.keys(item).at(-1), 'envio');
+    for (const sin of [null, undefined]) {
+      const otro = itemDeLaLista(fila, sin);
+      assert.equal(otro.envio, null, String(sin));
+      assert.equal(Object.keys(otro).at(-1), 'envio');
+    }
+    assert.equal(itemDeLaLista(fila).envio, null);
+  });
+
+  // spec 2026-11-12-dato-quincena-correo, 12: lo que lleva la tarjeta, con los textos ya armados
+  it('el número, las partes de la fecha y la cantidad de propuestas', () => {
+    const item = itemDeLaLista(filaDeLaLista(16, 'regular', '2026-11-09', null, ['A', 'B', 'C', 'D'], 3));
+    assert.equal(item.numero, 'N.º 3');
+    assert.deepEqual(item.fecha_partes, { dia: 'Lunes', fecha: '9 de noviembre', anio: 'de 2026' });
+    assert.equal(item.cantidad, '4 propuestas');
+    assert.equal(itemDeLaLista(filaDeLaLista(17, 'regular', '2026-11-23', null, ['A'], 4)).cantidad, '1 propuesta');
+    assert.deepEqual(itemDeLaLista(filaDeLaLista(18, 'regular', '2027-01-01', null, ['A'], 5)).fecha_partes,
+      { dia: 'Viernes', fecha: '1 de enero', anio: 'de 2027' });
+    assert.deepEqual(itemDeLaLista(filaDeLaLista(19, 'regular', '2026-12-09', null, ['A'], 6)).fecha_partes,
+      { dia: 'Miércoles', fecha: '9 de diciembre', anio: 'de 2026' });
+  });
+
+  it('el número: null en un piloto aunque la consulta traiga uno, y null si la fila no trae un entero positivo', () => {
+    assert.equal(itemDeLaLista(filaDeLaLista(13, 'piloto', '2026-11-02', 'piloto-4', ['A'], 2)).numero, null);
+    for (const numero of [null, undefined, 0, -1, '3', 1.5]) {
+      assert.equal(itemDeLaLista(filaDeLaLista(12, 'regular', '2026-11-02', null, ['A'], numero)).numero, null, String(numero));
+    }
+    const { numero, ...sinNumero } = filaDeLaLista(12, 'regular', '2026-11-02', null, ['A'], 1);
+    assert.equal(numero, 1);
+    assert.equal(itemDeLaLista(sinNumero).numero, null);
+  });
+
+  it('una fecha que no existe (solo con un SQL a mano): sin partes, como fecha_texto da «—»', () => {
+    const item = itemDeLaLista(filaDeLaLista(20, 'regular', '2026-02-30', null, ['A'], 1));
+    assert.equal(item.fecha_texto, '—');
+    assert.equal(item.fecha_partes, null);
   });
 
   it('la principal puede no ser la primera: el resto nombra las demás, en su orden aunque lleguen en otro', () => {
@@ -1582,7 +2043,11 @@ describe('itemDeLaLista', () => {
       fecha_texto: 'Lunes 23 de noviembre de 2026',
       marca: null,
       principal: { titulo: 'Título 2', cifra_clave: '2 casos' },
-      resto: 'Y 4 propuestas más: Dataset 1, Dataset 3, Dataset 4 y Dataset 5.'
+      resto: 'Y 4 propuestas más: Dataset 1, Dataset 3, Dataset 4 y Dataset 5.',
+      numero: null,
+      fecha_partes: { dia: 'Lunes', fecha: '23 de noviembre', anio: 'de 2026' },
+      cantidad: '5 propuestas',
+      envio: null
     });
   });
 
@@ -1601,8 +2066,9 @@ describe('itemDeLaLista', () => {
   });
 
   it('sin propuestas (solo con un SQL a mano), principal y resto null, sin tirar', () => {
-    assert.deepEqual(itemDeLaLista(filaDeLaLista(6, 'regular', '2026-11-23', null, [])), {
-      id: 6, fecha_texto: 'Lunes 23 de noviembre de 2026', marca: null, principal: null, resto: null
+    assert.deepEqual(itemDeLaLista(filaDeLaLista(6, 'regular', '2026-11-23', null, [], 2)), {
+      id: 6, fecha_texto: 'Lunes 23 de noviembre de 2026', marca: null, principal: null, resto: null, numero: 'N.º 2',
+      fecha_partes: { dia: 'Lunes', fecha: '23 de noviembre', anio: 'de 2026' }, cantidad: '0 propuestas', envio: null
     });
   });
 
@@ -1616,24 +2082,52 @@ describe('itemDeLaLista', () => {
 });
 
 describe('detalleDeLaEdicion', () => {
-  // La edición de prueba como la guarda el POST (metadata, el texto de partesDePrueba), con el id 12 de las respuestas de la
-  // página, recibida el 02/11/2026 a las 08:14 en Argentina; el dataset 1 activo y el 2 dado de baja
-  const metadata = partesDePrueba(edicionDePrueba()).metadata.toString('utf8');
+  // La edición de prueba con una efeméride en la agenda (después del evento de prueba, que no trae tipo) y con el SVG, como la
+  // guarda el POST (metadata, el texto de partesDePrueba), con el id 12 de las respuestas de la página, la primera regular
+  // (numero 1, el de la consulta), recibida el 02/11/2026 a las 08:14 en Argentina; el dataset 1 activo y el 2 dado de baja
+  const edicionDelDetalle = () => edicionDePrueba({ agenda: [...edicionDePrueba().agenda, efemerideDePrueba()] });
+  const metadata = partesDePrueba(edicionDelDetalle(), { infografia_svg: svgDePrueba() }).metadata.toString('utf8');
   const filaDePrueba = (cambios = {}) => ({
     id: 12, clave: 'dq:regular:2026-11-02', tipo: 'regular', fecha_edicion: '2026-11-02', referencia_piloto: null,
-    titulo: 'El dato de la quincena: edición de prueba', metadata, recibida_ts: segundosUtc(2026, 10, 2, 11, 14, 0), ...cambios
+    titulo: 'El dato de la quincena: edición de prueba', metadata, recibida_ts: segundosUtc(2026, 10, 2, 11, 14, 0), numero: 1,
+    ...cambios
   });
   const GUARDADAS = Object.freeze([
     { orden: 1, dataset_id: 1, dataset_activo: true }, { orden: 2, dataset_id: 2, dataset_activo: false }
   ]);
   const adjuntosDe = (edicion) => edicion.adjuntos.map(({ campo, nombre, mime, bytes }) => ({ campo, nombre, mime, bytes }));
-  const detalle = ({ fila = filaDePrueba(), edicion = JSON.parse(fila.metadata), guardadas = GUARDADAS, adjuntos } = {}) =>
-    detalleDeLaEdicion({ fila, edicion, guardadas, adjuntos: adjuntos ?? adjuntosDe(edicion) });
+  const detalle = ({ fila = filaDePrueba(), edicion = JSON.parse(fila.metadata), guardadas = GUARDADAS, adjuntos, linea } = {}) =>
+    detalleDeLaEdicion({ fila, edicion, guardadas, adjuntos: adjuntos ?? adjuntosDe(edicion), lineaDelCorreo: linea });
+
+  // La línea del correo de la edición de prueba (spec 2026-11-12-dato-quincena-correo, 6), la que arma el controlador: archivada
+  // con el envío automático apagado y con el correo de Datito, muestra el del bot (la transición)
+  const lineaDePrueba = (cambios = {}) => lineaDelCorreo({
+    tipo: 'regular', fecha_edicion: '2026-11-02', correo: { estado: 'no_enviada', motivo: 'apagado', enviada_at: null },
+    envios: [], reenvios: [], lista: [], correoDelBot: edicionDePrueba().correo, envioActivo: false,
+    ahora: '2026-11-12 10:00:00', calendario: calendarioCon(FILAS_PRECARGA), ...cambios
+  });
 
   it('la edición de prueba da el detalle de las respuestas de la página, entero y con las claves en su orden', () => {
-    const d = detalle();
+    const d = detalle({ linea: lineaDePrueba() });
     assert.deepEqual(d, RESPUESTAS.detalle.data);
     assert.deepEqual(ordenDeLasClaves(d), ordenDeLasClaves(RESPUESTAS.detalle.data));
+  });
+
+  // spec 2026-11-12-dato-quincena-correo, 6 y 12: la línea la arma el controlador con lineaDelCorreo (el envío del RPAD) y el
+  // detalle la pone tal cual. Sin ella (el modelo del mail no la usa), la del bot, como antes de esta entrega
+  it('la línea del correo: la que recibe, tal cual; sin ella, la del correo del bot', () => {
+    const programada = lineaDePrueba({
+      fecha_edicion: '2026-11-23', correo: { estado: 'programada', motivo: null, enviada_at: null }, envioActivo: true,
+      ahora: '2026-11-23 07:40:00'
+    });
+    assert.equal(programada, 'Se envía el martes 24/11/2026 a las 8:05.');
+    assert.equal(detalle({ linea: programada }).correo, programada);
+    const apagado = lineaDePrueba({ correoDelBot: { estado: 'no_enviado', enviado_at: null } });
+    assert.equal(apagado, 'No se envió: el envío automático estaba apagado.');
+    assert.equal(detalle({ linea: apagado }).correo, apagado);
+    assert.equal(detalle({ linea: 'Los pilotos no se envían por correo.' }).correo, 'Los pilotos no se envían por correo.');
+    assert.equal(detalle().correo, 'Correo enviado el 02/11/2026 a las 08:12, según Datito.');
+    assert.deepEqual(Object.keys(detalle({ linea: programada })), Object.keys(RESPUESTAS.detalle.data));
   });
 
   it('cada propuesta trae para_copiar y borrador_para_copiar armados por textoParaCopiar y borradorParaCopiar', () => {
@@ -1662,26 +2156,44 @@ describe('detalleDeLaEdicion', () => {
     assert.equal(detalle({ guardadas: [] }).propuestas[0].dataset.id_enlace, null);
   });
 
-  it('los archivos, en su orden aunque los adjuntos lleguen en otro; sin cálculos, tres', () => {
-    const edicion = edicionDePrueba();
+  it('los archivos, en su orden aunque los adjuntos lleguen en otro: el SVG después de la infografía; sin cálculos ni SVG, tres', () => {
+    const edicion = JSON.parse(metadata);
     const alReves = adjuntosDe(edicion).reverse();
+    assert.deepEqual(alReves.map((a) => a.campo), ['infografia_svg', 'calculos', 'correo_texto', 'infografia_png']);
     assert.deepEqual(detalle({ adjuntos: alReves }).archivos, RESPUESTAS.detalle.data.archivos);
+    assert.deepEqual(RESPUESTAS.detalle.data.archivos.map((a) => a.campo),
+      ['infografia_png', 'infografia_svg', 'correo_texto', 'calculos', 'metadata']);
+    assert.deepEqual(RESPUESTAS.detalle.data.archivos[1], {
+      campo: 'infografia_svg', rotulo: 'Infografía editable', nombre: 'infografia-prueba.svg', detalle: 'SVG · 1 KB',
+      se_puede_ver: false
+    });
 
     const sinCalculos = adjuntosDe(edicion).filter((a) => a.campo !== 'calculos');
-    assert.deepEqual(detalle({ adjuntos: sinCalculos }).archivos.map((a) => a.campo), ['infografia_png', 'correo_texto', 'metadata']);
+    assert.deepEqual(detalle({ adjuntos: sinCalculos }).archivos.map((a) => a.campo),
+      ['infografia_png', 'infografia_svg', 'correo_texto', 'metadata']);
+    const sinSvg = adjuntosDe(edicion).filter((a) => a.campo !== 'infografia_svg');
+    assert.deepEqual(detalle({ adjuntos: sinSvg }).archivos.map((a) => a.campo),
+      ['infografia_png', 'correo_texto', 'calculos', 'metadata']);
+    const ninguno = sinSvg.filter((a) => a.campo !== 'calculos');
+    assert.deepEqual(detalle({ adjuntos: ninguno }).archivos.map((a) => a.campo), ['infografia_png', 'correo_texto', 'metadata']);
   });
 
   it('el tamaño de cada archivo: el de sus bytes; el de la edición completa, el de metadata en UTF-8', () => {
     const adjuntos = [
       { campo: 'infografia_png', nombre: 'grande.png', mime: 'image/png', bytes: 1572864 },
       { campo: 'correo_texto', nombre: 'correo.txt', mime: 'text/plain', bytes: 1025 },
-      { campo: 'calculos', nombre: 'calculos.txt', mime: 'text/plain', bytes: 0 }
+      { campo: 'calculos', nombre: 'calculos.txt', mime: 'text/plain', bytes: 0 },
+      { campo: 'infografia_svg', nombre: 'editable.svg', mime: 'image/svg+xml', bytes: 7000 }
     ];
     // 1024 eñes son 2048 bytes en UTF-8: 2 KB, no 1
     const fila = filaDePrueba({ metadata: 'ñ'.repeat(1024) });
     const d = detalle({ fila, edicion: edicionDePrueba(), adjuntos });
-    assert.deepEqual(d.archivos.map((a) => a.detalle), ['PNG · 1,5 MB', '2 KB', '0 KB', 'JSON · 2 KB']);
-    assert.deepEqual(d.archivos.map((a) => a.nombre), ['grande.png', 'correo.txt', 'calculos.txt', 'dato-quincena-regular-2026-11-02.json']);
+    assert.deepEqual(d.archivos.map((a) => a.detalle), ['PNG · 1,5 MB', 'SVG · 7 KB', '2 KB', '0 KB', 'JSON · 2 KB']);
+    assert.deepEqual(d.archivos.map((a) => a.nombre),
+      ['grande.png', 'editable.svg', 'correo.txt', 'calculos.txt', 'dato-quincena-regular-2026-11-02.json']);
+    assert.deepEqual(d.archivos[1], {
+      campo: 'infografia_svg', rotulo: 'Infografía editable', nombre: 'editable.svg', detalle: 'SVG · 7 KB', se_puede_ver: false
+    });
   });
 
   it('un piloto: su marca, el correo sin la hora, sin nota de archivo y el nombre de su edición completa', () => {
@@ -1693,8 +2205,9 @@ describe('detalleDeLaEdicion', () => {
     const d = detalle({ fila });
     assert.equal(d.id, 13);
     assert.equal(d.marca, 'Piloto 4');
+    assert.equal(d.numero, null, 'un piloto no tiene número, aunque la fila traiga uno');
     assert.equal(d.titulo, 'El dato de la quincena: piloto de prueba');
-    assert.equal(d.correo, 'Correo enviado según Grok Bot, sin la hora.');
+    assert.equal(d.correo, 'Correo enviado según Datito, sin la hora.');
     assert.equal(d.nota_archivo, null);
     assert.equal(d.archivos.at(-1).nombre, 'dato-quincena-piloto-2026-11-02-piloto-4.json');
   });
@@ -1710,9 +2223,9 @@ describe('detalleDeLaEdicion', () => {
     const d = detalle({ fila: filaDePrueba({ recibida_ts: String(segundosUtc(2026, 10, 3, 2, 5, 0)) }) });
     assert.equal(d.llegada, 'Llegó al RPAD el 02/11/2026 a las 23:05.');
     const otraZona = edicionDePrueba({ correo: { estado: 'enviado', enviado_at: '2026-11-02T14:12:00+03:00' } });
-    assert.equal(detalle({ edicion: otraZona }).correo, 'Correo enviado el 02/11/2026 a las 08:12, según Grok Bot.');
+    assert.equal(detalle({ edicion: otraZona }).correo, 'Correo enviado el 02/11/2026 a las 08:12, según Datito.');
     const sinCorreo = edicionDePrueba({ correo: { estado: 'no_enviado', enviado_at: null } });
-    assert.equal(detalle({ edicion: sinCorreo }).correo, 'Grok Bot archivó esta edición sin que saliera el correo.');
+    assert.equal(detalle({ edicion: sinCorreo }).correo, 'Datito archivó esta edición sin que saliera el correo.');
   });
 
   it('la agenda con su fecha dd/mm/aaaa, en su orden; sin agenda, una lista vacía', () => {
@@ -1721,10 +2234,36 @@ describe('detalleDeLaEdicion', () => {
       { titulo: 'Primero', fecha: '2026-11-10', detalle: 'Otro inventado.', url: 'https://datos.ejemplo.gob.ar/a' }
     ];
     assert.deepEqual(detalle({ edicion: edicionDePrueba({ agenda }) }).agenda, [
-      { fecha_texto: '01/12/2026', titulo: 'Segundo', detalle: 'Uno inventado.', url: 'https://datos.ejemplo.gob.ar/b' },
-      { fecha_texto: '10/11/2026', titulo: 'Primero', detalle: 'Otro inventado.', url: 'https://datos.ejemplo.gob.ar/a' }
+      { fecha_texto: '01/12/2026', titulo: 'Segundo', detalle: 'Uno inventado.', url: 'https://datos.ejemplo.gob.ar/b', etiqueta: null },
+      { fecha_texto: '10/11/2026', titulo: 'Primero', detalle: 'Otro inventado.', url: 'https://datos.ejemplo.gob.ar/a', etiqueta: null }
     ]);
     assert.deepEqual(detalle({ edicion: edicionDePrueba({ agenda: [] }) }).agenda, []);
+  });
+
+  // spec 2026-11-12-dato-quincena-correo, 11: la etiqueta «Efeméride»; un evento, con tipo o sin él, no lleva
+  it('la agenda con una efeméride: etiqueta «Efeméride»; un evento, null', () => {
+    const agenda = [
+      { ...efemerideDePrueba() },
+      { titulo: 'Con tipo', fecha: '2026-11-25', detalle: 'Un evento inventado.', url: 'https://datos.ejemplo.gob.ar/c', tipo: 'evento' },
+      edicionDePrueba().agenda[0]
+    ];
+    const d = detalle({ edicion: edicionDePrueba({ agenda }) });
+    assert.deepEqual(d.agenda.map((e) => [e.titulo, e.etiqueta]),
+      [['Efeméride de prueba', 'Efeméride'], ['Con tipo', null], ['Evento de prueba', null]]);
+    assert.deepEqual(d.agenda[0], {
+      fecha_texto: '20/11/2026', titulo: 'Efeméride de prueba', detalle: 'Una efeméride inventada para las pruebas.',
+      url: 'https://datos.ejemplo.gob.ar/agenda/efemeride-de-prueba', etiqueta: 'Efeméride'
+    });
+    assert.deepEqual(RESPUESTAS.detalle.data.agenda.map((e) => e.etiqueta), [null, 'Efeméride']);
+  });
+
+  // spec 2026-11-12-dato-quincena-correo, 12: el número lo cuenta la consulta; la regla lo arma
+  it('el número de edición: «N.º N» de la fila en una regular; null sin un entero positivo', () => {
+    assert.equal(detalle().numero, 'N.º 1');
+    assert.equal(detalle({ fila: filaDePrueba({ numero: 3 }) }).numero, 'N.º 3');
+    for (const numero of [null, undefined, 0, '2']) {
+      assert.equal(detalle({ fila: filaDePrueba({ numero }) }).numero, null, String(numero));
+    }
   });
 
   it('la principal puede no ser la primera; la cantidad, en singular con una sola propuesta', () => {

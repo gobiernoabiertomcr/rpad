@@ -18,7 +18,18 @@
             "titulo": "Un título inventado",
             "cifra_clave": "1.234 casos · septiembre de 2026"
           },
-          "resto": "Y 2 propuestas más: Dataset de prueba B y Dataset de prueba C."
+          "resto": "Y 2 propuestas más: Dataset de prueba B y Dataset de prueba C.",
+          "numero": "N.º 2",
+          "fecha_partes": {
+            "dia": "Lunes",
+            "fecha": "16 de noviembre",
+            "anio": "de 2026"
+          },
+          "cantidad": "3 propuestas",
+          "envio": {
+            "tipo": "enviada",
+            "texto": "Enviada el lun 16/11"
+          }
         },
         {
           "id": 13,
@@ -28,7 +39,18 @@
             "titulo": "Un título inventado",
             "cifra_clave": "1.234 casos · septiembre de 2026"
           },
-          "resto": null
+          "resto": null,
+          "numero": null,
+          "fecha_partes": {
+            "dia": "Lunes",
+            "fecha": "2 de noviembre",
+            "anio": "de 2026"
+          },
+          "cantidad": "1 propuesta",
+          "envio": {
+            "tipo": "piloto",
+            "texto": "Piloto: no se envía"
+          }
         },
         {
           "id": 12,
@@ -38,7 +60,18 @@
             "titulo": "Un título inventado",
             "cifra_clave": "1.234 casos · septiembre de 2026"
           },
-          "resto": "Y 1 propuesta más: Dataset de prueba B."
+          "resto": "Y 1 propuesta más: Dataset de prueba B.",
+          "numero": "N.º 1",
+          "fecha_partes": {
+            "dia": "Lunes",
+            "fecha": "2 de noviembre",
+            "anio": "de 2026"
+          },
+          "cantidad": "2 propuestas",
+          "envio": {
+            "tipo": "enviada",
+            "texto": "Enviada por Datito el lun 02/11"
+          }
         }
       ]
     }
@@ -66,7 +99,18 @@
             "titulo": "Un título inventado",
             "cifra_clave": "1.234 casos · septiembre de 2026"
           },
-          "resto": "Y 2 propuestas más: Dataset de prueba B y Dataset de prueba C."
+          "resto": "Y 2 propuestas más: Dataset de prueba B y Dataset de prueba C.",
+          "numero": "N.º 2",
+          "fecha_partes": {
+            "dia": "Lunes",
+            "fecha": "16 de noviembre",
+            "anio": "de 2026"
+          },
+          "cantidad": "3 propuestas",
+          "envio": {
+            "tipo": "enviada",
+            "texto": "Enviada el lun 16/11"
+          }
         },
         {
           "id": 13,
@@ -76,7 +120,18 @@
             "titulo": "Un título inventado",
             "cifra_clave": "1.234 casos · septiembre de 2026"
           },
-          "resto": null
+          "resto": null,
+          "numero": null,
+          "fecha_partes": {
+            "dia": "Lunes",
+            "fecha": "2 de noviembre",
+            "anio": "de 2026"
+          },
+          "cantidad": "1 propuesta",
+          "envio": {
+            "tipo": "piloto",
+            "texto": "Piloto: no se envía"
+          }
         },
         {
           "id": 12,
@@ -86,7 +141,18 @@
             "titulo": "Un título inventado",
             "cifra_clave": "1.234 casos · septiembre de 2026"
           },
-          "resto": "Y 1 propuesta más: Dataset de prueba B."
+          "resto": "Y 1 propuesta más: Dataset de prueba B.",
+          "numero": "N.º 1",
+          "fecha_partes": {
+            "dia": "Lunes",
+            "fecha": "2 de noviembre",
+            "anio": "de 2026"
+          },
+          "cantidad": "2 propuestas",
+          "envio": {
+            "tipo": "enviada",
+            "texto": "Enviada por Datito el lun 02/11"
+          }
         }
       ]
     }
@@ -114,7 +180,18 @@
             "titulo": "Un título inventado",
             "cifra_clave": "1.234 casos · septiembre de 2026"
           },
-          "resto": "Y 1 propuesta más: Dataset de prueba B."
+          "resto": "Y 1 propuesta más: Dataset de prueba B.",
+          "numero": "N.º 3",
+          "fecha_partes": {
+            "dia": "Lunes",
+            "fecha": "11 de enero",
+            "anio": "de 2027"
+          },
+          "cantidad": "2 propuestas",
+          "envio": {
+            "tipo": "programada",
+            "texto": "Sale hoy a las 8:05"
+          }
         }
       ]
     }
@@ -127,23 +204,64 @@
       "ediciones": []
     }
   },
+  "lista_sin_envio": {
+    "success": true,
+    "data": {
+      "anios": [
+        {
+          "anio": 2026,
+          "cantidad": 1
+        }
+      ],
+      "anio": 2026,
+      "ediciones": [
+        {
+          "id": 11,
+          "fecha_texto": "Lunes 19 de octubre de 2026",
+          "marca": null,
+          "principal": {
+            "titulo": "Un título inventado",
+            "cifra_clave": "1.234 casos · septiembre de 2026"
+          },
+          "resto": null,
+          "numero": "N.º 1",
+          "fecha_partes": {
+            "dia": "Lunes",
+            "fecha": "19 de octubre",
+            "anio": "de 2026"
+          },
+          "cantidad": "1 propuesta",
+          "envio": null
+        }
+      ]
+    }
+  },
   "detalle": {
     "success": true,
     "data": {
       "id": 12,
       "fecha_texto": "Lunes 2 de noviembre de 2026",
       "marca": null,
+      "numero": "N.º 1",
       "titulo": "El dato de la quincena: edición de prueba",
       "nota_archivo": "Una nota de archivo inventada.",
       "llegada": "Llegó al RPAD el 02/11/2026 a las 08:14.",
-      "correo": "Correo enviado el 02/11/2026 a las 08:12, según Grok Bot.",
+      "correo": "Correo enviado el 02/11/2026 a las 08:12, según Datito.",
       "cantidad": "2 propuestas",
       "agenda": [
         {
           "fecha_texto": "10/11/2026",
           "titulo": "Evento de prueba",
           "detalle": "Un evento inventado para las pruebas.",
-          "url": "https://datos.ejemplo.gob.ar/agenda/evento-de-prueba"
+          "url": "https://datos.ejemplo.gob.ar/agenda/evento-de-prueba",
+          "etiqueta": null
+        },
+        {
+          "fecha_texto": "20/11/2026",
+          "titulo": "Efeméride de prueba",
+          "detalle": "Una efeméride inventada para las pruebas.",
+          "url": "https://datos.ejemplo.gob.ar/agenda/efemeride-de-prueba",
+          "etiqueta": "Efeméride"
         }
       ],
       "propuestas": [
@@ -275,6 +393,13 @@
           "se_puede_ver": false
         },
         {
+          "campo": "infografia_svg",
+          "rotulo": "Infografía editable",
+          "nombre": "infografia-prueba.svg",
+          "detalle": "SVG · 1 KB",
+          "se_puede_ver": false
+        },
+        {
           "campo": "correo_texto",
           "rotulo": "Texto del correo",
           "nombre": "correo-prueba.txt",
@@ -292,7 +417,7 @@
           "campo": "metadata",
           "rotulo": "La edición completa",
           "nombre": "dato-quincena-regular-2026-11-02.json",
-          "detalle": "JSON · 3 KB",
+          "detalle": "JSON · 4 KB",
           "se_puede_ver": false
         }
       ]

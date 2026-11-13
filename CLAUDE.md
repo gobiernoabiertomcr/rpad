@@ -37,7 +37,7 @@ Un subagente con `isolation: worktree` no recibe esas reglas: pasale los documen
 - Nunca `docker compose` desde un worktree: recrea `rpad-db` y corta lo que esté corriendo. Nunca `down -v`: el único volumen tiene todas las bases.
 - Un worktree no trae lo que está en `.gitignore`: hay que copiar el `.env`, con `RPAD_TESTS_DB_LOCAL=1`.
 - `tests/schema.test.js` y `tests/permisos.test.js` leen la base del `.env`: una migración nueva también tiene que correr en la base local antes de la suite.
-- Un test nuevo llama al servicio con un hoy fijo, no a `/api/cron/*`: la corrida real escribe en la base del `.env` (`tests/notificaciones.test.js` y `tests/permisos.test.js` son las excepciones que quedan, con el candado del aviso diario de la agenda tomado en otra conexión).
+- Un test nuevo llama al servicio con un hoy fijo, no a `/api/cron/*`: la corrida real escribe en la base del `.env` (`tests/notificaciones.test.js` y `tests/permisos.test.js` son las excepciones que quedan, con el candado del aviso diario de la agenda y el del correo del dato de la quincena, `rpad_dato_quincena_correo`, tomados en otra conexión).
 
 ## Estructura
 
@@ -47,7 +47,7 @@ config/database.js        # Pool MySQL
 config/upload.js          # Las subidas de Proyectos: subida(tipo), multer armado en cada pedido con sus límites, rutaSegura y UPLOADS_DIR; la de una nota firmada, subidaDeNotaFirmada (en memoria); y el POST del dato de la quincena, subidaDelDatoQuincena (en memoria), con responderAntesDeLeer
 controllers/              # Un controlador por tema: en la sección Archivos de cada documento
 services/                 # Reglas puras (*Reglas.js), consultas (*Datos.js) y dibujo (*Pdf.js): en la sección Archivos de cada documento
-middleware/auth.js         # JWT middleware (authMiddleware y sesionOpcional, las dos sobre verificarSesion; adminOnly, cargaNotasDgmit, usaGeneradorDeNotas, cronAuth; y tokenDelDatoQuincena, el token de Grok Bot)
+middleware/auth.js         # JWT middleware (authMiddleware y sesionOpcional, las dos sobre verificarSesion; adminOnly, cargaNotasDgmit, usaGeneradorDeNotas, cronAuth; y tokenDelDatoQuincena, el token de Datito)
 middleware/cuerpo.js       # Lo que se responde cuando el cuerpo o la query de un pedido no se pueden usar (datosComunes y erroresDelCuerpo)
 middleware/rateLimit.js    # Los límites de pedidos de login, recuperar, links y el dato de la quincena
 routes/index.js           # Todas las rutas
@@ -84,7 +84,8 @@ Si tocás esto, leé este documento de `docs/temas/`:
 | Configuración: usuarios, licencias, áreas, login, contraseñas y links | `configuracion.md` |
 | Feriados | `feriados.md` |
 | Proyectos | `proyectos.md` |
-| El dato de la quincena: el archivo de Grok Bot, su token y su página | `dato-quincena.md` |
+| El dato de la quincena: el archivo de Datito, su token y su página | `dato-quincena.md` |
+| El dato de la quincena: el correo, quién lo recibe, Reenviar, la prueba | `dato-quincena-correo.md` |
 | Carga de páginas, versiones, CSS, carcasa, sitio público | `frontend.md` |
 | Una tabla, una columna, una migración | `base-de-datos.md` |
 | Producción, kits, orden de migraciones y vueltas atrás, pendientes con fecha | `despliegue.md` |
@@ -229,7 +230,7 @@ Todo cambio a datasets pasa por doble verificación:
   No es de administración (`esAdmin` y `Auth.isAdmin()` no lo incluyen), no audita, no cuenta para el mínimo de auditores y no tiene licencias ni firma.
   Lo asignan el admin y el superadmin, y el editor (entre lector y colaborador).
   Un cambio de rol le avisa al superadmin (también de lector a colaborador); crear un colaborador no, como crear un lector.
-- **lector:** solo lectura de datos públicos + perfil y Mi espacio, y las Herramientas: Métricas y Reportes (la pestaña Métricas y los ocho PDF, sin cargar las métricas manuales), Proyectos (ve todo y baja y previsualiza los documentos y los archivos, como el colaborador; no carga, edita ni borra), Seguimiento (incluido quién propuso y quién aprobó cada cambio) y El dato de la quincena (lee, baja y copia las ediciones de Grok Bot, como todos los roles).
+- **lector:** solo lectura de datos públicos + perfil y Mi espacio, y las Herramientas: Métricas y Reportes (la pestaña Métricas y los ocho PDF, sin cargar las métricas manuales), Proyectos (ve todo y baja y previsualiza los documentos y los archivos, como el colaborador; no carga, edita ni borra), Seguimiento (incluido quién propuso y quién aprobó cada cambio) y El dato de la quincena (lee, baja y copia las ediciones de Datito, como todos los roles).
   No tiene Notas: el menú lateral no la muestra y `notas.html` dice "No tenés permiso para usar el generador de notas.".
   La ayuda del rol en Usuarios lo dice (`usuarios.js`; la del colaborador suma el generador)
 - **Licencias:** superadmin, admins (y editores) pueden tener licencias (pestaña Licencias de Configuración).
@@ -272,7 +273,7 @@ SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
 APP_URL (links de los emails; por defecto la URL de producción)
 EMAIL_SOLO_A, RPAD_TESTS_DB_LOCAL, DB_ROOT_PASSWORD, MAILPIT_URL (solo desarrollo local)
 UPLOADS_DIR (opcional, absoluta: la carpeta de las subidas de Proyectos; sin ella, uploads/ junto a la app; los tests la apuntan a una temporal)
-DATO_QUINCENA_TOKEN_SHA256 (opcional: el SHA-256 del token de Grok Bot, nunca el token; sin ella, la recepción del dato de la quincena está apagada)
+DATO_QUINCENA_TOKEN_SHA256 (opcional: el SHA-256 del token de Datito, nunca el token; sin ella, la recepción del dato de la quincena está apagada)
 ```
 
 ## Despliegue (producción)

@@ -134,7 +134,7 @@ export const cronAuth = (req, res, next) => {
   next();
 };
 
-// El token de Grok Bot para el POST del dato de la quincena (spec 2026-11-07-dato-quincena, 12): no es un JWT ni una cuenta, y
+// El token de Datito para el POST del dato de la quincena (spec 2026-11-07-dato-quincena, 12): no es un JWT ni una cuenta, y
 // solo sirve para esa ruta. La huella (DATO_QUINCENA_TOKEN_SHA256) se lee en cada pedido: sin ella, o mal formada, la recepción
 // está apagada (503); sin el token, o con otro, 401. Va antes de leer el multipart y responde como las otras respuestas antes de
 // leer (responderAntesDeLeer). La consola nunca registra el token

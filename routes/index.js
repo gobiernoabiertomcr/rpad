@@ -146,6 +146,9 @@ import { verMetricas, descargarMetricasPdf } from '../controllers/metricasContro
 import { listarNotasDgmit, cargarNotaDgmit, corregirNotaDgmit, anularNotaDgmit } from '../controllers/notasDgmitController.js';
 import { subida, subidaDeNotaFirmada, subidaDelDatoQuincena } from '../config/upload.js';
 import { recibirEdicion, listar, ver, descargar } from '../controllers/datoQuincenaController.js';
+import {
+  verCorreo, cambiarEnvio, cambiarDestinatarios, verCorreoDeLaEdicion, reenviarEdicion, mandarPruebaDeLaEdicion
+} from '../controllers/datoQuincenaCorreoController.js';
 
 const router = Router();
 
@@ -381,7 +384,7 @@ router.post('/notas/vista-previa', authMiddleware, usaGeneradorDeNotas, verVista
 router.post('/notas/generar', authMiddleware, usaGeneradorDeNotas, generarNota);
 
 // =====================================================
-// El dato de la quincena: el POST de Grok Bot (spec 2026-11-07-dato-quincena, 4), con su token y no con una sesión. El
+// El dato de la quincena: el POST de Datito (spec 2026-11-07-dato-quincena, 4), con su token y no con una sesión. El
 // límite de pedidos va antes del token, y el token antes de leer el multipart
 // =====================================================
 router.post('/dato-quincena/ediciones', limiteDatoQuincena, tokenDelDatoQuincena, subidaDelDatoQuincena, recibirEdicion);
@@ -389,6 +392,14 @@ router.post('/dato-quincena/ediciones', limiteDatoQuincena, tokenDelDatoQuincena
 router.get('/dato-quincena/ediciones', authMiddleware, listar);
 router.get('/dato-quincena/ediciones/:id', authMiddleware, ver);
 router.get('/dato-quincena/ediciones/:id/archivos/:campo', authMiddleware, descargar);
+// El correo (spec 2026-11-12-dato-quincena-correo, 9 y 12): la configuración, la lista, el estado por persona, reenviar y la
+// prueba, solo administración
+router.get('/dato-quincena/correo', authMiddleware, adminOnly, verCorreo);
+router.put('/dato-quincena/correo/envio', authMiddleware, adminOnly, cambiarEnvio);
+router.put('/dato-quincena/correo/destinatarios', authMiddleware, adminOnly, cambiarDestinatarios);
+router.get('/dato-quincena/ediciones/:id/correo', authMiddleware, adminOnly, verCorreoDeLaEdicion);
+router.post('/dato-quincena/ediciones/:id/reenvios', authMiddleware, adminOnly, reenviarEdicion);
+router.post('/dato-quincena/ediciones/:id/prueba', authMiddleware, adminOnly, mandarPruebaDeLaEdicion);
 
 // =====================================================
 // Cron (protegido por clave secreta)

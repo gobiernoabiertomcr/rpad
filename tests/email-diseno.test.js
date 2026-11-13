@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'fs';
 import * as plantillas from '../services/emailTemplates.js';
 import { remitente } from '../services/emailService.js';
-import { casosDeEmail, textoVisible, AVISO_DE_RESTITUCION } from './emails-fixtures.js';
+import { casosDeEmail, textoVisible, AVISO_DE_RESTITUCION, modeloDelDatoQuincena } from './emails-fixtures.js';
 
 const casos = casosDeEmail(plantillas);
 const fuente = (archivo) => readFileSync(new URL(`../services/${archivo}`, import.meta.url), 'utf8');
@@ -329,7 +329,9 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     'evento: invitación': 'RPAD: te sumaron a un evento',
     'evento: cambio': 'RPAD: cambió un evento',
     'evento: cancelación': 'RPAD: se canceló un evento',
-    'evento: recordatorio': 'RPAD: Reunión de equipo, hoy a las 10:00'
+    'evento: recordatorio': 'RPAD: Reunión de equipo, hoy a las 10:00',
+    // Nuevo con el correo del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 10): la fecha de la edición
+    'dato de la quincena': 'Dato de la Quincena - 09/11/2026'
   };
 
   it('el asunto de cada plantilla es el de antes', () => {
@@ -365,7 +367,10 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     'evento: invitación': `${RPAD} Te sumaron a un evento Persona de Prueba te sumó a un evento: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00. Sala de reuniones del 2.º piso. Ver en Mi espacio Solo quien lo creó lo puede cambiar. Si cambia o se cancela, te llega otro email. ${PIE}`,
     'evento: cambio': `${RPAD} Cambió un evento Cambió un evento: Reunión de equipo, miércoles 28/10/2026 de 10:00 a 11:00. Antes: Reunión de equipo, martes 27/10/2026 de 10:00 a 11:00 Sala de reuniones del 2.º piso. Lo cambió Persona de Prueba. Ver en Mi espacio ${PIE}`,
     'evento: cancelación': `${RPAD} Se canceló un evento Se canceló: Reunión de equipo, martes 27/10/2026 a las 10:00. Sala de reuniones del 2.º piso. Lo canceló Persona de Prueba. Ver en Mi espacio ${PIE}`,
-    'evento: recordatorio': `${RPAD} Recordatorio Hoy a las 10:00: Reunión de equipo Sala de reuniones del 2.º piso. Ver en Mi espacio Te llega porque el evento tiene un recordatorio por email. Lo podés apagar desde el evento, en la Agenda de Mi espacio. ${PIE}`
+    'evento: recordatorio': `${RPAD} Recordatorio Hoy a las 10:00: Reunión de equipo Sala de reuniones del 2.º piso. Ver en Mi espacio Te llega porque el evento tiene un recordatorio por email. Lo podés apagar desde el evento, en la Agenda de Mi espacio. ${PIE}`,
+    // Nuevo con el correo del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 10): el de la maqueta, con datos
+    // inventados. La infografía es una imagen: su texto alternativo no es texto visible
+    'dato de la quincena': `${RPAD} Dato de la Quincena - 09/11/2026 Edición N.º 1 2 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas. Buen día, Persona. La infografía de la propuesta principal. Va adjunta en PNG y en SVG (para editarla). Agenda de la quincena 12/11/2026 Jornada inventada Un evento inventado para las pruebas. Ver 20/11/2026 Efeméride inventada Efeméride Una fecha inventada. Con un segundo renglón. Ver Propuesta 1 de 2 Principal Validar Un título inventado 1.234 casos · octubre de 2026 Dataset: Dataset de prueba A En el RPAD ese día: Actualizado. Datos al 31/10/2026. Última actualización 05/11/2026. Próxima en 25 días. Para validar antes de publicar • Confirmar la cifra con el área. • Revisar la fuente. Por qué hoy Una razón inventada. Ángulo Un ángulo inventado. Idea de placa Una placa inventada. Texto para redes Un texto para redes inventado. Con un segundo renglón. Puntos centrales Primer punto. Segundo punto. Tercer punto. Borrador de nota Un borrador inventado Primer párrafo. Segundo párrafo. Fuentes https://datos.ejemplo.test/a.csv https://datos.ejemplo.test/b.csv Propuesta 2 de 2 Agenda Otro título inventado 56 casos · octubre de 2026 Dataset: Dataset de prueba B En el RPAD ese día: Vencido. Datos al —. Última actualización 03/06/2026. Venció hace 4 días. Por qué hoy Otra razón inventada. Ángulo Otro ángulo inventado. Idea de placa Otra placa inventada. Texto para redes Otro texto para redes inventado. Puntos centrales Un punto. Otro punto. Un tercer punto. Borrador de nota Otro borrador inventado Un párrafo. Otro párrafo. Un tercer párrafo. Fuentes https://datos.ejemplo.test/c.csv Ver la edición en el RPAD En el RPAD también están el texto del correo de Datito, los cálculos y la edición completa. Te llega porque estás en la lista del dato de la quincena; para dejar de recibirlo, avisale a la Dirección. ${PIE}`
   };
 
   for (const { nombre, email } of casos) {
@@ -731,6 +736,146 @@ describe('Los emails de los eventos de la agenda', () => {
     assert.equal(emails.recordatorio.subject, `RPAD: ${raro}, hoy a las 10:00`);
     assert.ok(emails.cambio.html.includes(`>Antes: <s>${escapado}, martes 27/10/2026 de 10:00 a 11:00</s></p>`));
     assert.ok(emails.invitacion.html.includes(`><strong>${escapado}</strong> te sumó a un evento: <strong>${escapado}</strong>,`));
+  });
+});
+
+// El mail del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 2.8 y 10), como la maqueta aprobada: el título, el
+// número y la bajada; el saludo; la infografía en línea; la agenda; una tarjeta por propuesta con su franja; el botón y la nota.
+// El texto plano y el nombre del bot, en tests/dato-quincena-correo-reglas.test.js
+describe('El mail del dato de la quincena', () => {
+  const { email: { html } } = casos.find(c => c.nombre === 'dato de la quincena');
+  const mail = (cambiar = () => {}, opciones = { conSvg: true }) => {
+    const modelo = modeloDelDatoQuincena();
+    cambiar(modelo);
+    return plantillas.datoQuincenaTemplate(modelo, opciones);
+  };
+  const veces = (texto, parte) => texto.split(parte).length - 1;
+  const ESCAPADO = '&lt;b&gt;x&lt;/b&gt;';
+
+  it('el asunto es el del modelo (con «[PRUEBA] » en una prueba) y el título del cuerpo va arriba, con el número y la bajada', () => {
+    assert.equal(mail((m) => { m.asunto = '[PRUEBA] Dato de la Quincena - 09/11/2026'; }).subject, '[PRUEBA] Dato de la Quincena - 09/11/2026');
+    assert.match(html, /<h2 style="[^"]*color: #1F3A5F; font-size: 18px;[^"]*">Dato de la Quincena - 09\/11\/2026<\/h2><p [^>]*>Edición N\.º 1<\/p><p [^>]*>2 propuestas de comunicación/);
+    assert.ok(textoVisible(html).includes('Son internas: todavía no están aprobadas ni publicadas. Buen día, Persona. La infografía'));
+  });
+
+  it('sin número (un piloto sin marca) no va el renglón; sin primer nombre, «Buen día.»', () => {
+    const otro = mail((m) => { m.numero = null; m.primerNombre = null; }).html;
+    assert.ok(textoVisible(otro).includes('Dato de la Quincena - 09/11/2026 2 propuestas de comunicación'));
+    assert.ok(textoVisible(otro).includes('publicadas. Buen día. La infografía'));
+    assert.ok(textoVisible(mail((m) => { m.numero = 'Piloto 4'; }).html).includes('09/11/2026 Piloto 4 2 propuestas'));
+  });
+
+  it('la infografía va en línea con el cid de CID_INFOGRAFIA, a 552 de ancho, con el título de la principal en el texto alternativo', () => {
+    assert.equal(plantillas.CID_INFOGRAFIA, 'infografia-dato-quincena');
+    assert.equal(veces(html, '<img '), 1);
+    assert.ok(html.includes('<img src="cid:infografia-dato-quincena" width="552" alt="Infografía de la propuesta principal: Un título inventado" style="display: block; width: 100%; max-width: 552px; height: auto;'));
+    // La principal no es siempre la primera
+    const segunda = mail((m) => { m.propuestas[0].principal = false; m.propuestas[1].principal = true; }).html;
+    assert.ok(segunda.includes('alt="Infografía de la propuesta principal: Otro título inventado"'));
+  });
+
+  it('el pie de la infografía dice que va el SVG solo con conSvg en true', () => {
+    assert.ok(html.includes('>La infografía de la propuesta principal. Va adjunta en PNG y en SVG (para editarla).</p>'));
+    for (const opciones of [{}, { conSvg: false }, { conSvg: 'true' }, undefined]) {
+      const sinSvg = plantillas.datoQuincenaTemplate(modeloDelDatoQuincena(), opciones);
+      assert.ok(sinSvg.html.includes('>La infografía de la propuesta principal. Va adjunta en PNG.</p>'), JSON.stringify(opciones));
+      assert.ok(!sinSvg.html.includes('SVG') && !sinSvg.text.includes('SVG'), JSON.stringify(opciones));
+    }
+  });
+
+  it('la agenda va en un recuadro, con la fecha en su columna, «Ver» si la dirección es https:// y la etiqueta suave «Efeméride»', () => {
+    assert.ok(html.includes('background-color: #F4F8FC; border: 1px solid #E1EAF3; border-radius: 6px'));
+    assert.match(html, /<h3 [^>]*>Agenda de la quincena<\/h3>/);
+    assert.match(html, /<td valign="top" style="[^"]*width: 84px;[^"]*white-space: nowrap;">20\/11\/2026<\/td>/);
+    assert.equal(veces(html, '>Efeméride</span>'), 1);
+    assert.match(html, /<strong>Efeméride inventada<\/strong> <span style="[^"]*background-color: #E4E9EF; color: #2B3A4A;[^"]*">Efeméride<\/span><br>Una fecha inventada\.<br>Con un segundo renglón\. <a href="https:\/\/datos\.ejemplo\.test\/agenda\/efemeride" style="color: #3E6B96;[^"]*">Ver<\/a>/);
+    const sinEnlace = mail((m) => { m.agenda[0].url = 'http://datos.ejemplo.test/agenda'; }).html;
+    assert.equal(veces(sinEnlace, '>Ver</a>'), 1);
+    assert.ok(!sinEnlace.includes('http://'));
+    const sinAgenda = mail((m) => { m.agenda = []; }).html;
+    assert.ok(!sinAgenda.includes('Agenda de la quincena'));
+    assert.ok(textoVisible(sinAgenda).includes('(para editarla). Propuesta 1 de 2'));
+  });
+
+  it('cada propuesta en su tarjeta con su franja: la principal en #1F3A5F, con «Principal» y borde de 2 px; las demás en el celeste del encabezado', () => {
+    assert.equal(veces(html, 'border: 2px solid #1F3A5F'), 1);
+    assert.match(html, /<td bgcolor="#1F3A5F" style="padding: 10px 16px; background-color: #1F3A5F; border-bottom: 1px solid #1F3A5F;"><span style="color: #FFFFFF; font-size: 13px; font-weight: 700;">Propuesta 1 de 2<\/span><span style="color: #FFFFFF; font-size: 13px;">&nbsp;&nbsp;Principal<\/span><\/td>/);
+    assert.match(html, /<td bgcolor="#E3EEF8" style="padding: 10px 16px; background-color: #E3EEF8; border-bottom: 1px solid #CFE0F0;"><span style="color: #1F3A5F; font-size: 13px; font-weight: 700;">Propuesta 2 de 2<\/span><\/td>/);
+    assert.equal(veces(html, 'background-color: #FFFFFF; border: 1px solid #E1EAF3; border-radius: 6px'), 1);
+    // 28 px entre una propuesta y la otra, con una fila de alto fijo (Outlook)
+    assert.equal(veces(html, '<td height="28" style="height: 28px; font-size: 0; line-height: 0;">&nbsp;</td>'), 1);
+    const tres = mail((m) => { m.propuestas.push({ ...modeloDelDatoQuincena().propuestas[1], franja: 'Propuesta 3 de 3' }); }).html;
+    assert.equal(veces(tres, '<td height="28"'), 2);
+  });
+
+  it('las etiquetas Validar y Agenda van en pastillas; Principal, solo en la franja', () => {
+    assert.match(html, /<span style="[^"]*background-color: #FBF1DC; color: #7A5A14;[^"]*border-radius: 10px;[^"]*">Validar<\/span>/);
+    assert.match(html, /<span style="[^"]*background-color: #E3EEF8; color: #1F3A5F;[^"]*border-radius: 10px;[^"]*">Agenda<\/span>/);
+    assert.equal(veces(html, 'Principal</span>'), 1);
+  });
+
+  it('la cifra en negrita de 16 px; el dataset con su enlace y la foto del RPAD en gris de 12 px', () => {
+    assert.match(html, /<p style="margin: 8px 0 0 0; color: #2B3A4A; font-size: 16px; font-weight: 600;[^"]*">1\.234 casos · octubre de 2026<\/p>/);
+    assert.ok(html.includes('Dataset: <a href="https://datos.ejemplo.test/dataset/a" style="color: #3E6B96; text-decoration: none;">Dataset de prueba A</a>'));
+    assert.match(html, /<p style="margin: 4px 0 0 0; color: #6B7A8C; font-size: 12px;[^"]*">En el RPAD ese día: Actualizado\. Datos al 31\/10\/2026\. Última actualización 05\/11\/2026\. Próxima en 25 días\.<\/p>/);
+  });
+
+  it('«Para validar antes de publicar» va en el aviso ámbar, solo en la propuesta que tiene notas', () => {
+    assert.equal(veces(html, 'Para validar antes de publicar'), 1);
+    assert.match(html, /background-color: #FBF1DC; border: 1px solid #F0DDB0;[^>]*>(\s*<(tr|td)[^>]*>)*\s*<p [^>]*color: #7A5A14;[^>]*><strong>Para validar antes de publicar<\/strong><br>• Confirmar la cifra con el área\.<br>• Revisar la fuente\.<\/p>/);
+  });
+
+  it('el texto para redes y el borrador van en recuadros; los puntos, en una lista; las fuentes https://, como enlaces', () => {
+    // La agenda y dos por propuesta
+    assert.equal(veces(html, 'background-color: #F4F8FC; border: 1px solid #E1EAF3; border-radius: 6px'), 5);
+    for (const titulo of ['Por qué hoy', 'Ángulo', 'Idea de placa', 'Texto para redes', 'Puntos centrales', 'Borrador de nota', 'Fuentes']) {
+      assert.equal(veces(html, `>${titulo}</h3>`), 2, titulo);
+    }
+    assert.ok(html.includes('<li>Primer punto.</li><li>Segundo punto.</li><li>Tercer punto.</li>'));
+    assert.ok(html.includes('<a href="https://datos.ejemplo.test/a.csv" style="color: #3E6B96; text-decoration: none;">https://datos.ejemplo.test/a.csv</a><br><a href="https://datos.ejemplo.test/b.csv"'));
+    assert.ok(html.includes('>Un texto para redes inventado.<br>Con un segundo renglón.</p>'));
+  });
+
+  it('la plantilla no nombra al bot: lo trae el modelo; sin nombre, la nota dice «del bot»', () => {
+    assert.ok(!fuente('emailTemplates.js').includes('Datito'));
+    for (const nombreDelBot of [null, '', '   ', 7]) {
+      const { html: sinNombre, text } = mail((m) => { m.nombreDelBot = nombreDelBot; });
+      const nota = 'En el RPAD también están el texto del correo del bot, los cálculos y la edición completa.';
+      assert.ok(sinNombre.includes(nota) && text.includes(nota), String(nombreDelBot));
+    }
+  });
+
+  it('el botón «Ver la edición en el RPAD» abre la edición y la nota del pie dice por qué llega', () => {
+    assert.ok(html.includes('<a href="https://rpad.test/dato-quincena.html?id=12" style="display: inline-block; color: #FFFFFF;'));
+    assert.ok(html.includes('>Ver la edición en el RPAD</a>'));
+    assert.match(html, /<p style="margin: 0; color: #6B7A8C; font-size: 12px; line-height: 1\.5;">En el RPAD también están el texto del correo de Datito, los cálculos y la edición completa\. Te llega porque estás en la lista del dato de la quincena; para dejar de recibirlo, avisale a la Dirección\.<\/p>/);
+  });
+
+  it('todo texto de la edición va escapado, con sus saltos de línea como <br>; una dirección es enlace solo si es https://', () => {
+    const raro = '<b>x</b>';
+    const { html: escapado, text } = mail((m) => {
+      m.primerNombre = raro;
+      m.agenda[0].titulo = raro;
+      m.agenda[0].detalle = `${raro}\r\n${raro}`;
+      const [p] = m.propuestas;
+      for (const campo of ['titulo', 'cifra_clave', 'por_que_hoy', 'angulo', 'idea_placa', 'texto_redes']) p[campo] = raro;
+      p.dataset = { nombre: raro, id_enlace: null, url: 'javascript:alert(1)' };
+      p.foto = [{ rotulo: raro, valor: raro }];
+      p.notas_validacion = [raro];
+      p.puntos_centrales = [raro];
+      p.borrador_nota = { titulo: raro, parrafos: [raro] };
+      p.fuentes = ['http://datos.ejemplo.test/sin-https.csv', 'https://datos.ejemplo.test/a.csv?b="c"&d=<e>'];
+    });
+    assert.ok(!escapado.includes(raro));
+    assert.ok(!escapado.includes('&amp;lt;'), 'escapado dos veces');
+    assert.ok(escapado.includes(`${ESCAPADO}<br>${ESCAPADO}`));
+    assert.ok(escapado.includes(`alt="Infografía de la propuesta principal: ${ESCAPADO}"`));
+    assert.ok(!escapado.includes('javascript:'));
+    assert.ok(escapado.includes(`Dataset: ${ESCAPADO}</p>`));
+    assert.ok(!escapado.includes('href="http://'));
+    assert.ok(escapado.includes('>http://datos.ejemplo.test/sin-https.csv<br><a href="https://datos.ejemplo.test/a.csv?b=&quot;c&quot;&amp;d=&lt;e&gt;"'));
+    // El texto plano lleva los textos tal cual
+    assert.ok(text.startsWith(`Buen día, ${raro}.`));
   });
 });
 

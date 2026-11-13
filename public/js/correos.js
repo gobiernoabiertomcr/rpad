@@ -560,6 +560,11 @@ async function cargarEstado() {
     const diario = document.getElementById('nd-diario');
     diario.textContent = typeof estado.diario?.texto === 'string' ? estado.diario.texto : '';
     diario.hidden = diario.textContent === '';
+    // El correo del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 13), igual: la línea la arma el servidor; sus alertas
+    // ya vienen en estado.alertas
+    const datoQuincena = document.getElementById('nd-dato-quincena');
+    datoQuincena.textContent = typeof estado.dato_quincena?.texto === 'string' ? estado.dato_quincena.texto : '';
+    datoQuincena.hidden = datoQuincena.textContent === '';
     const licencia = document.getElementById('nd-licencia');
     licencia.textContent = textoLicenciaFirmante(estado.licencia_firmante);
     licencia.hidden = !estado.licencia_firmante;

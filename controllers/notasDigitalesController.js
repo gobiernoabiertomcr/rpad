@@ -17,6 +17,8 @@ import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import { estadoDeLosRecordatorios } from '../services/miEspacioEventosCorrida.js';
 import { estadoDelAvisoDiario } from '../services/miEspacioEventosDiario.js';
 import { alertaSinEstadoDelDiario } from '../services/miEspacioEventosDiarioReglas.js';
+import { estadoDelCorreoDelDatoQuincena } from '../services/datoQuincenaCorreo.js';
+import { alertaSinEstadoDelCorreo } from '../services/datoQuincenaCorreoReglas.js';
 import { alertaSinEstadoDeEventos } from '../services/miEspacioEventosReglas.js';
 import { leerCalendario } from '../services/feriadosDatos.js';
 
@@ -321,18 +323,33 @@ const estadoDelDiario = async () => {
   }
 };
 
+// El correo del dato de la quincena en el Estado (spec 2026-11-12-dato-quincena-correo, 13): `dato_quincena` = { texto }, la línea
+// de la última corrida, y sus alertas (una corrida con errores y la última edición que no le llegó a alguien). Nunca tira: si no se
+// puede leer, `dato_quincena` es null y va una advertencia
+const estadoDelDatoQuincena = async () => {
+  try {
+    const { texto, alertas } = await estadoDelCorreoDelDatoQuincena();
+    return { dato_quincena: { texto }, alertas };
+  } catch (error) {
+    console.error('Error al leer la última corrida del dato de la quincena:', error?.code ?? '', error?.message ?? error);
+    return { dato_quincena: null, alertas: [alertaSinEstadoDelCorreo()] };
+  }
+};
+
 // El estado de las Notas Digitales (estadoNotas) con los recordatorios de la agenda: `eventos` y sus alertas al final de las de
 // siempre (cargarEstado de correos.js las dibuja todas y prende el punto de la pestaña con ellas). El calendario se lee una vez por
 // pedido y llega a todo lo que calcula estadoNotas (spec 2026-10-27-feriados-en-notas, 2 y 4); leerCalendario nunca tira
 export const verEstado = async (req, res) => {
   try {
     const calendario = await leerCalendario();
-    const [estado, deLosEventos, delDiario] = await Promise.all([notas.estadoNotas({ calendario }), estadoDeLosEventos(), estadoDelDiario()]);
+    const [estado, deLosEventos, delDiario, delDato] = await Promise.all([
+      notas.estadoNotas({ calendario }), estadoDeLosEventos(), estadoDelDiario(), estadoDelDatoQuincena()
+    ]);
     res.json({
       success: true,
       data: {
-        ...estado, eventos: deLosEventos.eventos, diario: delDiario.diario,
-        alertas: [...estado.alertas, ...deLosEventos.alertas, ...delDiario.alertas]
+        ...estado, eventos: deLosEventos.eventos, diario: delDiario.diario, dato_quincena: delDato.dato_quincena,
+        alertas: [...estado.alertas, ...deLosEventos.alertas, ...delDiario.alertas, ...delDato.alertas]
       }
     });
   } catch (error) {

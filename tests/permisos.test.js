@@ -12,14 +12,17 @@ let servidor, api, usuarios;
 const SIN_FOTO_DEL_ANIO = 'Todavía no hay foto de ese año: se saca el 10/01 del año siguiente.';
 
 // El aviso diario de la agenda viaja en /cron/cambios-pendientes: este archivo usa la base del .env, así que corre con su candado tomado en otra
-// conexión: termina «ocupado», sin escribir ni mandar nada (spec 2026-11-04-agenda-aviso-y-dependencia, 6)
+// conexión: termina «ocupado», sin escribir ni mandar nada (spec 2026-11-04-agenda-aviso-y-dependencia, 6). El correo del dato de la
+// quincena viaja en la misma corrida: su candado, en la misma conexión (spec 2026-11-12-dato-quincena-correo, 8)
 let conexionDelDiario;
 before(async () => {
   conexionDelDiario = await db().getConnection();
   await conexionDelDiario.query("SELECT GET_LOCK('rpad_mi_espacio_diario', 10)");
+  await conexionDelDiario.query("SELECT GET_LOCK('rpad_dato_quincena_correo', 10)");
 });
 after(async () => {
   await conexionDelDiario?.query("SELECT RELEASE_LOCK('rpad_mi_espacio_diario')");
+  await conexionDelDiario?.query("SELECT RELEASE_LOCK('rpad_dato_quincena_correo')");
   conexionDelDiario?.release();
 });
 
@@ -27,7 +30,7 @@ before(async () => {
   servidor = await iniciarServidor();
   api = crearCliente(servidor.url);
   usuarios = await crearUsuariosPrueba(api,
-    { adminA: 'admin', adminB: 'admin', lector: 'lector', superadmin: 'superadmin', colaborador: 'colaborador' });
+    { adminA: 'admin', adminB: 'admin', lector: 'lector', superadmin: 'superadmin', colaborador: 'colaborador', editor: 'editor' });
 });
 
 after(async () => {
@@ -35,6 +38,18 @@ after(async () => {
   await cerrarDb();
   await servidor?.detener();
 });
+
+// El correo del dato de la quincena, con lo que contesta su controlador a administración sin escribir ni mandar nada (este archivo
+// usa la base del .env): la configuración se lee; un cuerpo vacío no cambia el interruptor ni la lista (400), y el id 999999,
+// que no tiene que existir, da el 404 de la edición antes de mirar el cuerpo o tomar el candado
+const RUTAS_DEL_CORREO_DEL_DATO = [
+  ['GET', '/dato-quincena/correo', 200, null],
+  ['PUT', '/dato-quincena/correo/envio', 400, 'Elegí si el envío automático queda prendido o apagado.'],
+  ['PUT', '/dato-quincena/correo/destinatarios', 400, 'La lista de personas no es válida.'],
+  ['GET', '/dato-quincena/ediciones/999999/correo', 404, 'No existe esa edición.'],
+  ['POST', '/dato-quincena/ediciones/999999/reenvios', 404, 'No existe esa edición.'],
+  ['POST', '/dato-quincena/ediciones/999999/prueba', 404, 'No existe esa edición.']
+];
 
 // Rutas que solo un admin puede usar. Los IDs no importan: el rol se valida antes.
 const RUTAS_SOLO_ADMIN = [
@@ -116,7 +131,10 @@ const RUTAS_SOLO_ADMIN = [
   ['PUT', '/feriados/1'],
   ['PUT', '/feriados/1/rige'],
   ['DELETE', '/feriados/1'],
-  ['GET', '/feriados/afectadas?fecha=2026-02-16']
+  ['GET', '/feriados/afectadas?fecha=2026-02-16'],
+  // El correo del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 12): la configuración, la lista, el estado por persona,
+  // reenviar y la prueba, solo administración. Las ediciones las leen todos los roles (LECTURAS_DEL_DATO_QUINCENA)
+  ...RUTAS_DEL_CORREO_DEL_DATO
 ];
 
 const pedir = (metodo, ruta, token) => {
@@ -483,6 +501,20 @@ for (const clave of ['adminA', 'superadmin']) {
     });
   });
 }
+
+// Administración (superadmin, admin y editor) llega al controlador del correo del dato de la quincena
+describe('el correo del dato de la quincena', () => {
+  for (const clave of ['adminA', 'editor', 'superadmin']) {
+    for (const [metodo, ruta, status, error] of RUTAS_DEL_CORREO_DEL_DATO) {
+      it(`${clave === 'adminA' ? 'el admin' : `el ${clave}`} llega al controlador en ${metodo} ${ruta}`, async () => {
+        const res = await pedir(metodo, ruta, usuarios[clave].token);
+        assert.equal(res.status, status, JSON.stringify(res.body));
+        if (error === null) assert.equal(res.body.success, true);
+        else assert.deepEqual(res.body, { success: false, error });
+      });
+    }
+  }
+});
 
 describe('cron', () => {
   it('rechaza sin clave', async () => {

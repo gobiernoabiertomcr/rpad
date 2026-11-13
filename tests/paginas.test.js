@@ -46,7 +46,7 @@ const VERSION_FERIADOS = '20261216';
 // anticipo y la vista previa de otro día, spec 2026-10-27-feriados-en-notas, 6; lo que dice de la reiteración una licencia sin
 // persona autorizada, spec 2026-11-03-reiteracion-bimestral, 5; el certificado al revisar y «Reintentar» de una nota que espera, spec
 // 2026-11-04-firma-digital-leyenda, 2.5 y 2.6): su versión es propia
-const VERSION_CORREOS = '20261226';
+const VERSION_CORREOS = '20261227';
 // perfil.js cambió después (Mi Perfil en pestañas; "Datos al" y las actualizaciones registradas; "Requiere nota DGMIT" en la
 // comparación, spec 2026-10-20-requiere-nota-y-anexo-reiteracion; el editor que audita sin responsabilidad, spec
 // 2026-10-20-editor-sin-responsabilidad; la vista previa de la firma con el nombre en negrita y el cargo un punto menos; el
@@ -115,9 +115,9 @@ const VERSION_PROYECTOS = '20261206';
 // 2026-11-03-mi-espacio-horas-acumuladas, 5 y 10; y lo que dice de la reiteración una licencia sin persona autorizada, spec
 // 2026-11-03-reiteracion-bimestral, 5). Su versión es propia
 const VERSION_MI_ESPACIO = '20261226';
-// dato-quincena.js (la página nueva de El dato de la quincena, el archivo de las ediciones de Grok Bot, spec 2026-11-07-dato-quincena,
-// 10 y 11): el número siguiente al más alto de este archivo cuando se creó. Su versión es propia
-const VERSION_DATO_QUINCENA = '20261227';
+// dato-quincena.js (la página de El dato de la quincena, el archivo de las ediciones de Datito, spec 2026-11-07-dato-quincena, 10 y
+// 11; las tarjetas, la pestaña Correo y la caja del correo del detalle, spec 2026-11-12-dato-quincena-correo, 13). Su versión es propia
+const VERSION_DATO_QUINCENA = '20261230';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');

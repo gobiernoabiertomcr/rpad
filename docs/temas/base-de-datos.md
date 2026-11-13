@@ -16,10 +16,11 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-03-mi-espacio-horas-acumuladas-design.md`
 - `docs/superpowers/specs/2026-11-03-notas-firma-digital-design.md`
 - `docs/superpowers/specs/2026-11-07-dato-quincena-design.md`
+- `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
 
 ## Base de datos
 
-- 50 tablas (ver `database/schema.sql`).
+- 54 tablas (ver `database/schema.sql`).
   Usuarios:
   `usuarios` (rol, cargo, vínculo, `sesion_version`), `usuarios_tokens` (links de acceso, solo el hash), `usuarios_auditoria` (historial del panel), `usuarios_licencias` (licencias; nunca se borran, se anulan) y `usuarios_firmas` (firma de cada usuario para las notas).
   Notas de auditoría:
@@ -34,7 +35,8 @@ Historia y motivos, en las specs:
   `mi_espacio_anios`, `mi_espacio_arranque`, `mi_espacio_saldos`, `mi_espacio_licencias`, `mi_espacio_horas_extras`, `mi_espacio_salidas` (la planilla de contrato) y `mi_espacio_avisos`, los días restituidos (`mi_espacio_restituciones`, los pedidos, y `mi_espacio_restituibles`, la foto) y su agenda:
   `mi_espacio_eventos`, `mi_espacio_evento_personas`, `mi_espacio_evento_vistas` (a quién se le muestra un Personal (Público)), `mi_espacio_evento_informados`, `mi_espacio_evento_envios`, `mi_espacio_eventos_corridas` y `mi_espacio_diario_envios` (ver abajo)
   El dato de la quincena:
-  `dato_quincena_ediciones`, `dato_quincena_propuestas` y `dato_quincena_adjuntos` (ver abajo).
+  `dato_quincena_ediciones`, `dato_quincena_propuestas` y `dato_quincena_adjuntos`, y su correo:
+  `dato_quincena_correo_config`, `dato_quincena_destinatarios`, `dato_quincena_correos` y `dato_quincena_envios` (ver abajo).
 - Campos JSON validados en `cambios_pendientes` (datos_nuevos, datos_anteriores)
 - Foreign keys con CASCADE en deletes relevantes
 
@@ -262,7 +264,7 @@ Historia y motivos, en las specs:
 
 ## El dato de la quincena
 
-- El archivo de las ediciones que manda Grok Bot (spec 2026-11-07-dato-quincena, 8): tres tablas, sin `CHECK` (valida la API).
+- El archivo de las ediciones que manda Datito (spec 2026-11-07-dato-quincena, 8): tres tablas, sin `CHECK` (valida la API).
   El contrato del POST, las lecturas y la página, en `docs/temas/dato-quincena.md`.
   `dato_quincena_ediciones`, una por clave (`id`;
   `clave` varchar(80) en `ascii_bin`, única con `uq_dato_quincena_clave`: `dq:regular:AAAA-MM-DD` o `dq:piloto:AAAA-MM-DD:piloto-N`;
@@ -285,7 +287,7 @@ Historia y motivos, en las specs:
   El contenido completo de cada propuesta está en `metadata`: no se copia.
   `dato_quincena_adjuntos`, los archivos (`id`;
   `edicion_id` FK `dato_quincena_ediciones` ON DELETE CASCADE;
-  `campo` enum('infografia_png','correo_texto','calculos'), uno por edición con `uq_dato_quincena_adjunto` `(edicion_id, campo)`, que es también el índice de la FK;
+  `campo` enum('infografia_png','correo_texto','calculos','infografia_svg') —`infografia_svg`, la infografía editable, al final: ver el correo, abajo—, uno por edición con `uq_dato_quincena_adjunto` `(edicion_id, campo)`, que es también el índice de la FK;
   `nombre` varchar(255);
   `mime` varchar(30);
   `bytes` int unsigned;
@@ -301,6 +303,46 @@ Historia y motivos, en las specs:
   Antes de correrla, `SELECT @@max_allowed_packet;` tiene que dar 16777216 o más: una infografía de hasta 5 MB necesita unos 6 MB en el `INSERT` y unos 11 MB al restaurar un respaldo de phpMyAdmin, que exporta los bytes en hexadecimal.
   `tests/schema.test.js` (compara `schema.sql` con la base del `.env`) y `tests/permisos.test.js` (la lista, el detalle y la descarga, sobre esa base) la necesitan: la base local también necesita la migración antes de correr la suite.
   `rollback-dato-quincena.sql` va después de volver a los archivos anteriores y borra las tres tablas, primero los adjuntos y las propuestas y al final las ediciones: se pierden las ediciones recibidas (si ya hay, exportar las tres tablas antes).
+  No se puede correr solo mientras esté `migracion-dato-quincena-correo.sql`: va después de `rollback-dato-quincena-correo.sql` (ver abajo).
+- El correo que manda el RPAD (spec 2026-11-12-dato-quincena-correo, 7): cuatro tablas y un valor nuevo, sin `CHECK` (valida la API).
+  `dato_quincena_adjuntos.campo` suma `infografia_svg` al final del `ENUM` (la infografía editable que puede mandar Datito; los valores de antes no cambian).
+  `dato_quincena_correo_config`, una sola fila (`id` = 1, que cargan la migración con `INSERT IGNORE` y `schema.sql`):
+  `envio_activo` tinyint(1) DEFAULT 0, el envío automático, apagado al crearla;
+  `cambiado_por` FK `usuarios` ON DELETE SET NULL y `cambiado_at`, quién y cuándo lo cambió;
+  `corrida_inicio_at`, `corrida_fin_at`, `corrida_resultado` varchar(500) y `corrida_con_errores`, la última corrida, para Correos → Estado.
+  `dato_quincena_destinatarios`, quién recibe el correo (`usuario_id`, la clave, FK `usuarios` ON DELETE CASCADE;
+  `agregado_por` FK `usuarios` ON DELETE SET NULL y `agregado_at`).
+  Vacía al crearla: las personas se tildan en la página, y en el repositorio no va ninguna.
+  `dato_quincena_correos`, el correo de cada edición con envío (`edicion_id`, la clave, FK `dato_quincena_ediciones` ON DELETE CASCADE;
+  `estado` enum('programada','enviada','parcial','fallida','no_enviada'), con el índice `idx_dato_quincena_correo_estado`;
+  `motivo` enum('apagado','vieja','mas_nueva','sin_lista') NULL, solo si no se envió;
+  `enviada_at`, la hora del primer envío que salió; `creada_at`; `ultima_corrida_at`).
+  `dato_quincena_envios`, cada envío a cada persona (`id`;
+  `edicion_id` FK `dato_quincena_ediciones` ON DELETE CASCADE;
+  `usuario_id` FK `usuarios` ON DELETE CASCADE;
+  `email` varchar(100), la dirección usada;
+  `tipo` enum('automatico','reenvio','prueba');
+  `unico` tinyint(1), una columna generada STORED (`if(tipo = 'automatico', 1, NULL)`);
+  `estado` enum('pendiente','enviando','enviado','fallido','licencia','omitido');
+  `intentos` tinyint unsigned DEFAULT 0, `enviado_at` y `ultimo_intento_at`;
+  `error` varchar(200), un texto fijo, nunca el de nodemailer;
+  `creado_por` FK `usuarios` ON DELETE SET NULL, quién pidió un reenvío o una prueba;
+  `creado_at`).
+  **El automático es uno solo por edición y persona:** `uq_dato_quincena_envio_automatico` `(edicion_id, usuario_id, unico)`, con `unico` en 1 en el automático y NULL en los reenvíos y las pruebas.
+  Como en un `UNIQUE` de MariaDB dos NULL nunca chocan, un segundo automático da `ER_DUP_ENTRY` (una corrida doble no lo repite) y los reenvíos y las pruebas se repiten cuantas veces se pidan.
+  `unico` es generada, como `recordatorio_unico` de la agenda, para que la clave valga aunque un `INSERT` se olvide de ella: ningún `INSERT` la nombra (la calcula la base con el `tipo`).
+  Esa clave es también el índice de la FK de `edicion_id`.
+  Las horas son `DATETIME` escritas con `ahoraArgentina()`, nunca `NOW()` (en el Docker local da UTC).
+  Borrar a una persona la saca de la lista y borra sus envíos (lo que hizo queda sin autor); borrar una edición (SQL a mano) borra su correo y sus envíos.
+  Van también en `schema.sql`.
+  `migracion-dato-quincena-correo.sql` (aditiva y repetible: el `MODIFY` del `ENUM`, que deja lo mismo si se repite, cuatro `CREATE TABLE IF NOT EXISTS` y la fila 1 con `INSERT IGNORE`, que no apaga un envío ya prendido;
+  con la verificación comentada al final, `SHOW TABLES LIKE 'dato_quincena%';`, 7 filas, y `SHOW COLUMNS FROM dato_quincena_adjuntos LIKE 'campo';`, que termina en 'infografia_svg') va después de `migracion-dato-quincena.sql` y **antes** del código, obligatoria:
+  sin las tablas, la página del correo y la corrida dan error, y sin el valor nuevo una edición con la infografía editable no se puede guardar.
+  El código anterior anda con la estructura nueva (no lee las tablas y nunca guarda `infografia_svg`).
+  `tests/schema.test.js` (compara `schema.sql` con la base del `.env`) la necesita: la base local también necesita la migración antes de correr la suite.
+  `rollback-dato-quincena-correo.sql` va después de volver a los archivos anteriores: borra las cuatro tablas en el orden inverso, después los adjuntos `infografia_svg`, y vuelve el `ENUM` a tres valores (se pierden los SVG guardados, el registro de los envíos, la lista y el interruptor; las ediciones y sus otros archivos quedan).
+  Las tablas van primero a propósito: si `rollback-dato-quincena.sql` se corrió solo y quedó a medias (sin los adjuntos ni las propuestas), esta vuelta atrás igual borra sus cuatro tablas, frena en el `DELETE` (`dato_quincena_adjuntos` ya no existe) y después `rollback-dato-quincena.sql` se vuelve a correr y termina (la cabecera de esta vuelta atrás lo dice).
+  **Mientras esté esta migración, `rollback-dato-quincena.sql` no se puede correr solo**: los correos y los envíos apuntan a las ediciones, así que borra los adjuntos y las propuestas, falla en las ediciones y deja la base a medias; este va antes (su cabecera lo dice).
 
 ## Archivos de tests
 

@@ -1,5 +1,6 @@
 import { sendEmailToArea, verifyConnection, listaDeCorreos } from '../services/emailService.js';
 import { avisoDiarioAislado } from '../services/miEspacioEventosDiario.js';
+import { correoDelDatoQuincenaAislado } from '../services/datoQuincenaCorreo.js';
 import * as templates from '../services/emailTemplates.js';
 import { ejecutarNotasDigitales, anotarEnLaUltimaCorrida, enviarLasQueEsperanFirma } from '../services/notasDigitales.js';
 import { sacarFotoSiCorresponde } from '../services/metricasFoto.js';
@@ -63,8 +64,8 @@ export const fechaDelProximoAviso = (hoy, calendario) => calendario.proximoDiaHa
 const textoFallaDeMiEspacio = (mensaje) => `No se pudieron enviar los avisos de Mi espacio: ${mensaje}`;
 
 /**
- * Proceso diario (cron de las 8:15): aviso directo a las áreas, Notas Digitales, desde el 10/01 la foto del año anterior y
- * los avisos de vencimiento de Mi espacio.
+ * Proceso diario (cron de las 8:15): aviso directo a las áreas, Notas Digitales, desde el 10/01 la foto del año anterior,
+ * los avisos de vencimiento de Mi espacio y, al final, el correo del dato de la quincena (data.dato_quincena).
  * El calendario de días hábiles (con los feriados de la tabla) se lee una vez, al principio, y el mismo objeto va al aviso a
  * las áreas, al resumen al superadmin, a las Notas Digitales y a dia_habil (spec 2026-10-27-feriados-en-notas, 2 y 3); data
  * suma calendario: de dónde salió ('tabla' o 'fijos'). Si la tabla no se pudo leer, la corrida sigue con los 9 fijos y las
@@ -74,7 +75,7 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
   const hoy = hoyArgentina();
   const resultados = {
     fecha: new Date().toISOString(), calendario: null, enviados: [], errores: [], sinDatasets: [], notasDigitales: null,
-    dia_habil: null, avisos_retenidos: null, foto: null, miEspacio: null, diario: null
+    dia_habil: null, avisos_retenidos: null, foto: null, miEspacio: null, dato_quincena: null, diario: null
   };
 
   try {
@@ -170,6 +171,12 @@ export const ejecutarNotificacionesDiarias = async (req, res) => {
       resultados.errores.push({ tipo: 'mi-espacio', error: mensaje });
       await anotarEnLaUltimaCorrida(textoFallaDeMiEspacio(mensaje)).catch(() => {});
     }
+
+    // El correo del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 8): al final, para darle unos segundos más al bot,
+    // con el calendario de la corrida. Nunca rechaza y tiene su candado y su registro: no escribe en la última corrida de las
+    // Notas. Sus errores, con su tipo; «ocupada» no es un error
+    resultados.dato_quincena = await correoDelDatoQuincenaAislado(calendario);
+    for (const fallo of resultados.dato_quincena.errores) resultados.errores.push({ tipo: 'dato-quincena', ...fallo });
 
     resultados.diario = await diario;
     for (const fallo of resultados.diario.errores) resultados.errores.push({ tipo: 'mi-espacio-diario', ...fallo });
@@ -271,7 +278,8 @@ const lasQueEsperanFirma = async (calendario) => {
  * data suma calendario: de dónde salió ('tabla' o 'fijos'). Si la tabla no se pudo leer (calendario.error), la corrida sigue
  * con los 9 fijos, lo anota en la última corrida de las Notas Digitales (esta corrida no tiene registro propio: Correos >
  * Estado lo muestra en rojo hasta la corrida siguiente) y responde 207 con success false, también un día que no es hábil.
- * El mensaje no cambia: dice lo enviado o los errores del envío
+ * El mensaje no cambia: dice lo enviado o los errores del envío. Después del aviso diario, el correo del dato de la quincena
+ * (data.dato_quincena): sus errores dan 207 y «ocupada» no es un error
  */
 export const ejecutarNotificacionCambiosPendientes = async (req, res) => {
   try {
@@ -291,18 +299,25 @@ export const ejecutarNotificacionCambiosPendientes = async (req, res) => {
       fallaDeLosRecordatorios = error;
     }
     const diario = await avisoDiarioAislado('tarde', calendario);
+    // El correo del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 8): lo que llegó después de las 8:05 y los
+    // reintentos. Tampoco lo frenan los recordatorios, y nunca rechaza; sus errores dan 207 sin cambiar el mensaje
+    const datoQuincena = await correoDelDatoQuincenaAislado(calendario);
     if (fallaDeLosRecordatorios) throw fallaDeLosRecordatorios;
     const sinErroresDelDiario = diario.errores.length === 0 && diario.fallidos === 0;
-    const data = { ...resultados, calendario: calendario.origen, diario, ...(firmaDigital ? { firma_digital: firmaDigital } : {}) };
+    const sinErroresDelDato = datoQuincena.errores.length === 0 && datoQuincena.fallidos === 0;
+    const data = {
+      ...resultados, calendario: calendario.origen, diario, dato_quincena: datoQuincena,
+      ...(firmaDigital ? { firma_digital: firmaDigital } : {})
+    };
     const sinErroresDeFirma = !firmaDigital || (firmaDigital.errores.length === 0 && !firmaDigital.ocupado);
     if (!resultados.dia_habil) {
       // Las que esperaban la firma no salen un día no hábil (salen en la corrida siguiente), pero un error al mirarlas se dice igual
-      const bien = !sinFeriados && sinErroresDeFirma && sinErroresDelDiario;
+      const bien = !sinFeriados && sinErroresDeFirma && sinErroresDelDiario && sinErroresDelDato;
       return res.status(bien ? 200 : 207)
         .json({ success: bien, message: 'Hoy no es día hábil: no se envían recordatorios.', data });
     }
     const sinErrores = resultados.errores.length === 0;
-    const success = sinErrores && !sinFeriados && sinErroresDeFirma && sinErroresDelDiario;
+    const success = sinErrores && !sinFeriados && sinErroresDeFirma && sinErroresDelDiario && sinErroresDelDato;
     res.status(success ? 200 : 207).json({
       success,
       message: sinErrores

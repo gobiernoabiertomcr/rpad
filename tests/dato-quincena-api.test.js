@@ -1,4 +1,4 @@
-// El POST del dato de la quincena (spec 2026-11-07-dato-quincena, 4, 6, 7, 8, 12 y 15): Grok Bot manda cada edición como un
+// El POST del dato de la quincena (spec 2026-11-07-dato-quincena, 4, 6, 7, 8, 12 y 15): Datito manda cada edición como un
 // multipart con su token y el RPAD la guarda inmutable en tres tablas. Contra una base de prueba propia, con un área y dos
 // datasets inventados (el 2, dado de baja), y la app real: un servidor con la huella de un token generado acá y dos aparte para
 // el 503 (sin la huella, '' explícito para no heredar un .env local, y con una mal formada). Cada caso manda su propio
@@ -6,15 +6,23 @@
 // El token nunca va a un mensaje de error ni a la consola.
 // Las lecturas (spec 9), con una sesión de cualquier rol: la lista vacía antes del primer POST y, después, la lista, el detalle y
 // las descargas de lo guardado, con la forma de tests/fixtures/dato-quincena-respuestas.json (las respuestas que lee la página).
+// El SVG de la infografía (spec 2026-11-12-dato-quincena-correo, 11 y 12): la edición de prueba llega con las cinco partes (y una
+// efeméride en la agenda, como la del detalle de la página); un paquete de cuatro partes sigue teniendo la huella de antes del SVG.
+// El número de cada regular lo cuenta la consulta: la edición de prueba, la regular más vieja, es la N.º 1.
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, cerrarDb, query, mailpit } from './helpers.js';
-import { FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, partesDePrueba } from './dato-quincena-fixtures.js';
-import { MENSAJES_VALIDACION, TOPE_DEL_PEDIDO } from '../services/datoQuincenaReglas.js';
-import { hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
+import {
+  FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, partesDePrueba, svgDePrueba, efemerideDePrueba
+} from './dato-quincena-fixtures.js';
+import { isDeepStrictEqual } from 'node:util';
+import { MENSAJES_VALIDACION, TOPE_DEL_PEDIDO, TOPES } from '../services/datoQuincenaReglas.js';
+import { envioDelRecibo, lineaDelCorreo, pastillaDelEnvio } from '../services/datoQuincenaCorreoReglas.js';
+import { calendarioCon } from '../services/feriadosReglas.js';
+import { hoyArgentina, ahoraArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 
 const sha256 = (datos) => crypto.createHash('sha256').update(datos).digest('hex');
 
@@ -155,10 +163,21 @@ const enviarCrudo = (partes, { ip, token }) => {
   });
 };
 
-// La huella del paquete calculada acá, sin la regla del servidor (spec 6)
-const huellaDe = (partes) => sha256(['metadata', 'infografia_png', 'correo_texto', 'calculos']
-  .map((parte) => `${parte}:${partes[parte] ? sha256(partes[parte]) : '-'}\n`)
-  .join(''));
+// La huella del paquete calculada acá, sin la regla del servidor (spec 6): la de antes del SVG, cuatro renglones, y la de un
+// paquete con el SVG, que suma su renglón al final (spec 2026-11-12-dato-quincena-correo, 11)
+const renglones = (partes, nombres) => nombres.map((parte) => `${parte}:${partes[parte] ? sha256(partes[parte]) : '-'}\n`).join('');
+const huellaSinSvg = (partes) => sha256(renglones(partes, ['metadata', 'infografia_png', 'correo_texto', 'calculos']));
+const huellaDe = (partes) => sha256(renglones(partes, ['metadata', 'infografia_png', 'correo_texto', 'calculos',
+  ...(partes.infografia_svg === undefined ? [] : ['infografia_svg'])]));
+
+// La edición de prueba como la manda el bot ahora: con una efeméride en la agenda y, en el pedido, el SVG (las cinco partes).
+// Es la del detalle de tests/fixtures/dato-quincena-respuestas.json
+const edicionConEfemeride = (cambios = {}) => edicionDePrueba({
+  agenda: [...edicionDePrueba().agenda, efemerideDePrueba()], ...cambios
+});
+const partesConSvg = (cambios = {}, otras = {}) => partesDePrueba(edicionConEfemeride(cambios), {
+  infografia_svg: svgDePrueba(), ...otras
+});
 
 // recibida_at desde los segundos UNIX de la base: la hora argentina (UTC-3, sin cambio de hora) con su zona
 const isoArgentino = (segundos) => `${new Date((Number(segundos) - 3 * 3600) * 1000).toISOString().slice(0, 19)}-03:00`;
@@ -183,11 +202,30 @@ const adjuntosGuardados = (edicionId) => query(
 const todoLoGuardado = async () => ({
   ediciones: await query('SELECT id, clave, huella, UNIX_TIMESTAMP(recibida_at) AS recibida_ts FROM dato_quincena_ediciones ORDER BY id'),
   propuestas: await query('SELECT id, edicion_id, orden, dataset_id FROM dato_quincena_propuestas ORDER BY id'),
-  adjuntos: await query('SELECT id, edicion_id, campo, sha256 FROM dato_quincena_adjuntos ORDER BY id')
+  adjuntos: await query('SELECT id, edicion_id, campo, sha256 FROM dato_quincena_adjuntos ORDER BY id'),
+  correos: await query(
+    `SELECT edicion_id, estado, motivo, DATE_FORMAT(creada_at, '%Y-%m-%d %H:%i:%s') AS creada_at
+     FROM dato_quincena_correos ORDER BY edicion_id`
+  ),
+  envios: await query('SELECT id, edicion_id, usuario_id, tipo, estado FROM dato_quincena_envios ORDER BY id')
 });
 
-const CLAVES_DEL_RECIBO = ['id', 'clave', 'tipo', 'fecha_edicion', 'huella', 'recibida_at', 'repetida', 'adjuntos', 'url', 'avisos'];
+const CLAVES_DEL_RECIBO = [
+  'id', 'clave', 'tipo', 'fecha_edicion', 'huella', 'recibida_at', 'repetida', 'adjuntos', 'url', 'avisos', 'envio'
+];
+// El envío del recibo de una regular que llega con el envío automático apagado, como está en la base de prueba (spec
+// 2026-11-12-dato-quincena-correo, 5 y 11), y el de un piloto
+const ENVIO_APAGADO = Object.freeze({
+  estado: 'no_enviada', programado_at: null, texto: 'No se envía por correo: el envío automático está apagado.'
+});
+const ENVIO_DEL_PILOTO = Object.freeze({ estado: 'piloto', programado_at: null, texto: 'Los pilotos no se envían por correo.' });
 const RECIBIDA_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-03:00$/;
+
+// La regular de enero de 2027, escrita a mano en «las lecturas» (el POST no acepta una fecha posterior a mañana). «El envío por
+// correo» manda por POST regulares de hoy − 2 a hoy + 1: con la misma clave darían 409. Por eso su fecha es un lunes de enero
+// que nunca es ninguna de esas, con un día de margen de cada lado por si la suite cruza la medianoche
+const cercaDeHoy = (fecha) => fecha >= sumarDias(hoyArgentina(), -3) && fecha <= sumarDias(hoyArgentina(), 2);
+const FECHA_DE_ENERO = ['2027-01-11', '2027-01-25'].find((fecha) => !cercaDeHoy(fecha));
 
 // Las partes de prueba con un byte distinto en el texto del correo (el último salto de línea pasa a ser un signo)
 const correoConOtroByte = () => {
@@ -264,7 +302,7 @@ describe('el interruptor y el token', () => {
     assert.equal(res.headers.connection, 'close');
   });
 
-  it('un desconocido que declara más de 6 MB recibe el 401 enseguida, con Connection: close', async () => {
+  it('un desconocido que declara más del tope del pedido (7 MB) recibe el 401 enseguida, con Connection: close', async () => {
     const res = await pedirCrudo({
       ip: 5,
       token: null,
@@ -277,19 +315,34 @@ describe('el interruptor y el token', () => {
     assert.equal(res.headers.connection, 'close');
   });
 
-  it('un 401 con Content-Length de hasta 6 MB se responde después de leer el pedido, sin cortar la conexión', async () => {
+  it('un 401 con Content-Length de hasta 7 MB se responde después de leer el pedido, sin cortar la conexión', async () => {
     const res = await enviar(partesDePrueba(edicionDePrueba()), { ip: 6, token: null });
     assert.equal(res.status, 401);
     assert.notEqual(res.headers.get('connection'), 'close');
   });
+
+  // El tope del pedido suma el del SVG: el paquete más grande que puede llegar, con cada parte en su tope, pasa de 6 MB y se lee
+  it('el paquete más grande (cada una de las cinco partes en su tope) entra en el tope del pedido: el 401, después de leerlo', async () => {
+    const cuerpo = multipartCrudo(Object.entries(TOPES).map(([nombre, tope]) => ({ nombre, contenido: Buffer.alloc(tope, 0x61) })));
+    assert.ok(cuerpo.length > 6 * MB && cuerpo.length <= TOPE_DEL_PEDIDO, `${cuerpo.length} bytes`);
+    const res = await pedirCrudo({
+      ip: 9,
+      token: null,
+      headers: { 'Content-Type': `multipart/form-data; boundary=${LIMITE}`, 'Content-Length': String(cuerpo.length) },
+      trozos: [cuerpo]
+    });
+    assert.equal(res.status, 401);
+    assert.deepEqual(res.body, ERROR_401);
+    assert.notEqual(res.headers.connection, 'close');
+  });
 });
 
 describe('guardar una edición', () => {
-  const partes = partesDePrueba(edicionDePrueba());
+  const partes = partesConSvg();
   const clave = `dq:regular:${FECHA_DE_PRUEBA}`;
   let primero;
 
-  it('201: el recibo completo, con la hora de llegada de la base, los adjuntos y la dirección', async () => {
+  it('201 con las cinco partes: el recibo completo, con la hora de llegada de la base, los adjuntos (el SVG al final) y la dirección', async () => {
     const res = await enviar(partes, { ip: 10 });
     assert.equal(res.status, 201, JSON.stringify(res.body));
     assert.deepEqual(Object.keys(res.body), ['success', 'data']);
@@ -301,16 +354,20 @@ describe('guardar una edición', () => {
     assert.equal(primero.tipo, 'regular');
     assert.equal(primero.fecha_edicion, FECHA_DE_PRUEBA);
     assert.equal(primero.huella, huellaDe(partes));
+    assert.notEqual(primero.huella, huellaSinSvg(partes), 'el renglón del SVG cuenta en la huella');
     assert.match(primero.recibida_at, RECIBIDA_AT);
     assert.ok(Math.abs(Date.parse(primero.recibida_at) - Date.now()) < 60 * 1000, 'recibida_at está a menos de un minuto de ahora');
     assert.equal(primero.repetida, false);
     assert.deepEqual(primero.adjuntos, [
       { campo: 'infografia_png', bytes: partes.infografia_png.length, sha256: sha256(partes.infografia_png) },
       { campo: 'correo_texto', bytes: partes.correo_texto.length, sha256: sha256(partes.correo_texto) },
-      { campo: 'calculos', bytes: partes.calculos.length, sha256: sha256(partes.calculos) }
+      { campo: 'calculos', bytes: partes.calculos.length, sha256: sha256(partes.calculos) },
+      { campo: 'infografia_svg', bytes: partes.infografia_svg.length, sha256: sha256(partes.infografia_svg) }
     ]);
     assert.ok(primero.url.endsWith(`/dato-quincena.html?id=${primero.id}`), primero.url);
     assert.deepEqual(primero.avisos, []);
+    // El envío automático está apagado en la base de prueba (la fila 1 de la configuración nace así)
+    assert.deepEqual(primero.envio, ENVIO_APAGADO);
   });
 
   it('las filas de las tres tablas, con metadata y los archivos iguales byte a byte a lo enviado', async () => {
@@ -340,7 +397,9 @@ describe('guardar una edición', () => {
       { campo: 'correo_texto', nombre: 'correo-prueba.txt', mime: 'text/plain', bytes: partes.correo_texto.length,
         sha256: sha256(partes.correo_texto) },
       { campo: 'calculos', nombre: 'calculos-prueba.md', mime: 'text/markdown', bytes: partes.calculos.length,
-        sha256: sha256(partes.calculos) }
+        sha256: sha256(partes.calculos) },
+      { campo: 'infografia_svg', nombre: 'infografia-prueba.svg', mime: 'image/svg+xml', bytes: partes.infografia_svg.length,
+        sha256: sha256(partes.infografia_svg) }
     ]);
     for (const { campo, contenido } of adjuntos) assert.ok(contenido.equals(partes[campo]), `${campo} guardado igual byte a byte`);
   });
@@ -355,7 +414,7 @@ describe('guardar una edición', () => {
 
   it('200 también con las partes en otro orden', async () => {
     const antes = await todoLoGuardado();
-    const res = await enviar(partes, { ip: 12, orden: ['calculos', 'correo_texto', 'infografia_png', 'metadata'] });
+    const res = await enviar(partes, { ip: 12, orden: ['infografia_svg', 'calculos', 'correo_texto', 'infografia_png', 'metadata'] });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.deepEqual(res.body, { success: true, data: { ...primero, repetida: true } });
     assert.deepEqual(await todoLoGuardado(), antes);
@@ -363,11 +422,33 @@ describe('guardar una edición', () => {
 
   it('409 con un byte distinto en el texto del correo: la misma clave con otro contenido, sin cambios', async () => {
     const antes = await todoLoGuardado();
-    const res = await enviar(partesDePrueba(edicionDePrueba(), { correo_texto: correoConOtroByte() }), { ip: 13 });
+    const res = await enviar(partesConSvg({}, { correo_texto: correoConOtroByte() }), { ip: 13 });
     assert.equal(res.status, 409, JSON.stringify(res.body));
     assert.deepEqual(res.body, {
       success: false, error: `Ya hay una edición con la clave ${clave} y otro contenido. No se cambió nada.`
     });
+    assert.deepEqual(await todoLoGuardado(), antes);
+  });
+
+  it('el paquete de cuatro partes, sin el SVG: la huella de antes del SVG, 201 y después 200 con el mismo recibo', async () => {
+    const cuatro = partesDePrueba(edicionDePrueba({ fecha_edicion: '2026-11-09' }));
+    assert.deepEqual(Object.keys(cuatro), ['metadata', 'infografia_png', 'correo_texto', 'calculos']);
+    const res = await enviar(cuatro, { ip: 8 });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data.huella, huellaSinSvg(cuatro));
+    assert.deepEqual(res.body.data.adjuntos.map((a) => a.campo), ['infografia_png', 'correo_texto', 'calculos']);
+    const antes = await todoLoGuardado();
+    const repetida = await enviar(cuatro, { ip: 8 });
+    assert.equal(repetida.status, 200, JSON.stringify(repetida.body));
+    assert.deepEqual(repetida.body.data, { ...res.body.data, repetida: true });
+    assert.deepEqual(await todoLoGuardado(), antes);
+  });
+
+  it('el mismo paquete con un SVG agregado: otro contenido para la misma clave, 409 sin cambios', async () => {
+    const antes = await todoLoGuardado();
+    const res = await enviar(partesDePrueba(edicionDePrueba({ fecha_edicion: '2026-11-09' }), { infografia_svg: svgDePrueba() }),
+      { ip: 8 });
+    assert.equal(res.status, 409, JSON.stringify(res.body));
     assert.deepEqual(await todoLoGuardado(), antes);
   });
 
@@ -397,6 +478,7 @@ describe('guardar una edición', () => {
       assert.equal(res.body.data.clave, claveEsperada);
       assert.equal(res.body.data.tipo, edicion.tipo);
       assert.equal(res.body.data.fecha_edicion, dia);
+      assert.deepEqual(res.body.data.envio, edicion.tipo === 'regular' ? ENVIO_APAGADO : ENVIO_DEL_PILOTO);
       const guardada = await edicionGuardada(claveEsperada);
       assert.equal(guardada.id, res.body.data.id);
       assert.equal(guardada.referencia_piloto, referencia);
@@ -450,8 +532,10 @@ describe('guardar una edición', () => {
     assert.deepEqual(otro.body.errores, [{ campo: 'fecha_edicion', mensaje: MENSAJES_VALIDACION.fechaEdicion }]);
   });
 
-  // Grok Bot archiva la edición aunque el correo no haya salido
-  it('una regular con el correo no enviado: 201 y el detalle lo dice; con la hora del correo puesta, 422 y nada guardado', async () => {
+  // El bot archiva la edición aunque su correo no haya salido. Desde el correo del RPAD (spec 2026-11-12-dato-quincena-correo,
+  // 2.11 y 6), el detalle de una edición nueva habla del envío del RPAD: con el envío automático apagado y sin el correo del bot,
+  // que no se envió
+  it('una regular con el correo no enviado: 201 y el detalle dice que no se envió; con la hora del correo puesta, 422 y nada guardado', async () => {
     const conHora = edicionDePrueba({ fecha_edicion: '2026-11-08', correo: { estado: 'no_enviado', enviado_at: '2026-11-08T11:12:00Z' } });
     const antes = await cuentas(TABLAS_DEL_DATO);
     const mal = await enviar(partesDePrueba(conHora), { ip: 7 });
@@ -465,7 +549,7 @@ describe('guardar una edición', () => {
     assert.equal(res.body.data.clave, 'dq:regular:2026-11-08');
     const detalle = await leer(`/dato-quincena/ediciones/${res.body.data.id}`);
     assert.equal(detalle.status, 200, JSON.stringify(detalle.body));
-    assert.equal(detalle.body.data.correo, 'Grok Bot archivó esta edición sin que saliera el correo.');
+    assert.equal(detalle.body.data.correo, 'No se envió: el envío automático estaba apagado.');
   });
 });
 
@@ -557,9 +641,26 @@ describe('un pedido que no se puede leer: 400 y nada guardado', () => {
     assert.deepEqual(res.body, noSePudoLeer('la parte infografia_png llegó dos veces'));
   });
 
-  it('cinco partes', async () => {
+  it('dos infografia_svg', async () => {
+    const res = await enviar(partesConSvg({ fecha_edicion: '2026-11-01' }), {
+      ip: 36, orden: ['metadata', 'infografia_png', 'correo_texto', 'infografia_svg', 'infografia_svg']
+    });
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, noSePudoLeer('la parte infografia_svg llegó dos veces'));
+  });
+
+  // Con el SVG, cinco partes son una edición completa: una quinta con otro nombre es «otra», no una de más
+  it('cinco partes, la quinta con otro nombre', async () => {
     const res = await enviar({ ...partes(), correo_html: Buffer.from('<p>inventado</p>') }, {
       ip: 26, orden: ['metadata', 'infografia_png', 'correo_texto', 'calculos', 'correo_html']
+    });
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, noSePudoLeer('una parte no corresponde'));
+  });
+
+  it('seis partes: las cinco de una edición y una más', async () => {
+    const res = await enviar({ ...partesConSvg({ fecha_edicion: '2026-11-01' }), correo_html: Buffer.from('<p>inventado</p>') }, {
+      ip: 37, orden: ['metadata', 'infografia_png', 'correo_texto', 'calculos', 'infografia_svg', 'correo_html']
     });
     assert.equal(res.status, 400);
     assert.deepEqual(res.body, noSePudoLeer('sobran partes'));
@@ -654,12 +755,50 @@ describe('una parte que pasa su tope: 413', () => {
     }
   });
 
+  it('un SVG de 1 MB + 1', async () => {
+    const res = await enviar(partes({ infografia_svg: Buffer.alloc(MB + 1, 0x61) }), { ip: 45 });
+    assert.equal(res.status, 413);
+    assert.deepEqual(res.body, supera('infografia_svg', '1 MB'));
+  });
+
+  // El tope es del SVG y no del pedido: uno válido de 1 MB justo pasa la lectura y la validación, y el 422 es por otra cosa
+  it('un SVG válido de 1 MB justo no es 413: la edición sigue hasta su 422 (dos Principal)', async () => {
+    const svg = svgDePrueba();
+    const justo = Buffer.concat([svg, Buffer.alloc(TOPES.infografia_svg - svg.length, 0x20)]);
+    assert.equal(justo.length, MB);
+    const edicion = edicionDePrueba({ fecha_edicion: '2026-11-01' });
+    edicion.propuestas[1].etiquetas = ['Principal'];
+    const res = await enviar(partesDePrueba(edicion, { infografia_svg: justo }), { ip: 46 });
+    assert.equal(res.status, 422, JSON.stringify(res.body));
+    assert.deepEqual(res.body.errores, [{ campo: 'propuestas', mensaje: MENSAJES_VALIDACION.principal }]);
+  });
+
   it('nada quedó guardado', async () => {
     assert.deepEqual(await todoLoGuardado(), antes);
   });
 });
 
 describe('una edición con errores: 422', () => {
+  it('un SVG con un script o con una referencia externa: el error del SVG, y nada guardado', async () => {
+    const antes = await todoLoGuardado();
+    const svgs = [
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><rect width="10" height="10"/></svg>\n',
+      '<svg xmlns="http://www.w3.org/2000/svg"><image href="https://ejemplo.invalid/a.png" width="10" height="10"/></svg>\n'
+    ];
+    for (const texto of svgs) {
+      const res = await enviar(partesConSvg({ fecha_edicion: '2026-11-01' }, { infografia_svg: Buffer.from(texto, 'utf8') }), {
+        ip: 51
+      });
+      assert.equal(res.status, 422, JSON.stringify(res.body));
+      assert.deepEqual(res.body, {
+        success: false,
+        error: 'La edición tiene errores.',
+        errores: [{ campo: 'infografia_svg', mensaje: MENSAJES_VALIDACION.svg }]
+      }, texto);
+    }
+    assert.deepEqual(await todoLoGuardado(), antes);
+  });
+
   it('dos Principal y un manifiesto que no coincide con el texto del correo: los errores, y nada guardado', async () => {
     const antes = await todoLoGuardado();
     const edicion = edicionDePrueba({ fecha_edicion: '2026-11-01' });
@@ -714,7 +853,7 @@ const forma = (valor) => {
 };
 
 describe('las lecturas', () => {
-  const partes = partesDePrueba(edicionDePrueba());
+  const partes = partesConSvg();
   const clave = `dq:regular:${FECHA_DE_PRUEBA}`;
   // Las ediciones que guardaron los grupos de arriba y una de enero de 2027, escrita a mano: el POST no acepta una fecha posterior
   // a mañana
@@ -726,11 +865,11 @@ describe('las lecturas', () => {
     sinCalculos = await idDe('dq:regular:2026-11-07');
     piloto = await idDe('dq:piloto:2026-11-04:piloto-4');
     sinEnlace = await idDe('dq:regular:2026-11-06');
-    const enero = edicionDePrueba({ fecha_edicion: '2027-01-11' });
+    const enero = edicionDePrueba({ fecha_edicion: FECHA_DE_ENERO });
     deEnero = (await query(
       `INSERT INTO dato_quincena_ediciones (clave, tipo, fecha_edicion, referencia_piloto, titulo, metadata, huella)
-       VALUES ('dq:regular:2027-01-11', 'regular', '2027-01-11', NULL, ?, ?, ?)`,
-      [enero.titulo, JSON.stringify(enero), 'f'.repeat(64)]
+       VALUES (?, 'regular', ?, NULL, ?, ?, ?)`,
+      [`dq:regular:${FECHA_DE_ENERO}`, FECHA_DE_ENERO, enero.titulo, JSON.stringify(enero), 'f'.repeat(64)]
     )).insertId;
     await query(
       `INSERT INTO dato_quincena_propuestas (edicion_id, orden, titulo, cifra_clave, principal, dataset_id, dataset_nombre)
@@ -786,12 +925,37 @@ describe('las lecturas', () => {
     assert.equal(ediciones.at(-1).id, prueba, 'la del 02/11 es la más vieja');
   });
 
+  // El número se cuenta al leer, por la fecha y no por la llegada (spec 2026-11-12-dato-quincena-correo, 12): la del 09/11 llegó
+  // segunda, pero tiene antes todas las regulares de noviembre
+  it('el número: «N.º n» en una regular, con n las regulares de esa fecha o antes (también de otro año), y null en un piloto', async () => {
+    const guardadas = await query("SELECT id, tipo, DATE_FORMAT(fecha_edicion, '%Y-%m-%d') AS fecha FROM dato_quincena_ediciones");
+    const fechasRegulares = guardadas.filter((e) => e.tipo === 'regular').map((e) => e.fecha);
+    const esperado = new Map(guardadas.map(({ id, tipo, fecha }) => [id, tipo === 'regular'
+      ? `N.º ${fechasRegulares.filter((otra) => otra <= fecha).length}`
+      : null]));
+    assert.ok(guardadas.some((e) => e.tipo === 'piloto'));
+
+    const delAnio = async (anio) => (await leer(`/dato-quincena/ediciones?anio=${anio}`)).body.data.ediciones;
+    const enLaLista = [...await delAnio(2026), ...await delAnio(2027)];
+    assert.equal(enLaLista.length, guardadas.length);
+    for (const { id, numero } of enLaLista) assert.equal(numero, esperado.get(id), `la lista, edición ${id}`);
+
+    const delNueve = (await edicionGuardada('dq:regular:2026-11-09')).id;
+    assert.equal(esperado.get(prueba), 'N.º 1');
+    assert.equal(esperado.get(delNueve), `N.º ${fechasRegulares.filter((f) => f.startsWith('2026-11')).length}`);
+    assert.equal(esperado.get(deEnero), `N.º ${fechasRegulares.length}`);
+    for (const id of [prueba, delNueve, deEnero, piloto]) {
+      assert.equal((await leer(`/dato-quincena/ediciones/${id}`)).body.data.numero, esperado.get(id), `el detalle, edición ${id}`);
+    }
+    assert.equal(esperado.get(piloto), null);
+  });
+
   it('la forma de la lista, la del detalle y la del 404 son las de las respuestas que lee la página', async () => {
     const lista = await leer('/dato-quincena/ediciones?anio=2026');
     assert.deepEqual(forma(lista.body), forma(RESPUESTAS.lista));
     const deEneroLista = await leer('/dato-quincena/ediciones?anio=2027');
     assert.deepEqual(forma(deEneroLista.body), forma(RESPUESTAS.lista_de_2027));
-    // El piloto, sin nota de archivo, y la de los cálculos que no llegaron, con un archivo menos: la misma forma
+    // El piloto, sin nota de archivo, y las que llegaron sin el SVG o sin los cálculos, con menos archivos: la misma forma
     for (const id of [prueba, piloto, sinCalculos, sinEnlace]) {
       const detalle = await leer(`/dato-quincena/ediciones/${id}`);
       assert.deepEqual(forma(detalle.body), forma(RESPUESTAS.detalle), `la forma del detalle ${id}`);
@@ -831,12 +995,14 @@ describe('las lecturas', () => {
     );
   });
 
-  it('un piloto (sin la hora del correo ni nota de archivo) y una edición sin cálculos (tres archivos)', async () => {
+  // Un piloto nunca sale solo (spec 2026-11-12-dato-quincena-correo, 5 y 6): su línea lo dice, aunque el bot haya mandado su
+  // correo
+  it('un piloto (que no se envía por correo, sin nota de archivo) y una edición sin cálculos (tres archivos)', async () => {
     const delPiloto = (await leer(`/dato-quincena/ediciones/${piloto}`)).body.data;
     assert.equal(delPiloto.fecha_texto, 'Miércoles 4 de noviembre de 2026');
     assert.equal(delPiloto.marca, 'Piloto 4');
     assert.equal(delPiloto.titulo, 'El dato de la quincena: piloto de prueba');
-    assert.equal(delPiloto.correo, 'Correo enviado según Grok Bot, sin la hora.');
+    assert.equal(delPiloto.correo, 'Los pilotos no se envían por correo.');
     assert.equal(delPiloto.nota_archivo, null);
     assert.equal(delPiloto.archivos.at(-1).nombre, 'dato-quincena-piloto-2026-11-04-piloto-4.json');
 
@@ -854,9 +1020,10 @@ describe('las lecturas', () => {
     ]);
   });
 
-  it('cada descarga: los bytes enviados, su Content-Type y un Content-Disposition de adjunto con su nombre', async () => {
+  it('cada descarga, también la del SVG: los bytes enviados, su Content-Type y un Content-Disposition de adjunto con su nombre', async () => {
     const casos = [
       ['infografia_png', 'image/png', 'infografia-prueba.png', partes.infografia_png],
+      ['infografia_svg', 'image/svg+xml', 'infografia-prueba.svg', partes.infografia_svg],
       ['correo_texto', 'text/plain; charset=utf-8', 'correo-prueba.txt', partes.correo_texto],
       ['calculos', 'text/plain; charset=utf-8', 'calculos-prueba.md', partes.calculos],
       ['metadata', 'application/json; charset=utf-8', `dato-quincena-regular-${FECHA_DE_PRUEBA}.json`, partes.metadata]
@@ -888,15 +1055,17 @@ describe('las lecturas', () => {
     }
   });
 
-  it('404 «El archivo no existe.» con otro campo y con los cálculos que no llegaron', async () => {
-    for (const campo of ['correo_html', 'infografia_svg', 'contenido', 'constructor', '__proto__', 'METADATA']) {
+  it('404 «El archivo no existe.» con otro campo y con los cálculos o el SVG que no llegaron', async () => {
+    for (const campo of ['correo_html', 'infografia', 'svg', 'contenido', 'constructor', '__proto__', 'METADATA', 'INFOGRAFIA_SVG']) {
       const res = await bajar(prueba, campo);
       assert.equal(res.status, 404, campo);
       assert.deepEqual(res.body, SIN_ARCHIVO, campo);
     }
-    const res = await bajar(sinCalculos, 'calculos');
-    assert.equal(res.status, 404);
-    assert.deepEqual(res.body, SIN_ARCHIVO);
+    for (const campo of ['calculos', 'infografia_svg']) {
+      const res = await bajar(sinCalculos, campo);
+      assert.equal(res.status, 404, campo);
+      assert.deepEqual(res.body, SIN_ARCHIVO, campo);
+    }
   });
 
   it('401 sin sesión y con el token del bot (no es un JWT), en las tres', async () => {
@@ -955,6 +1124,297 @@ describe('las lecturas', () => {
   });
 });
 
+// El correo del RPAD (spec 2026-11-12-dato-quincena-correo, 5, 6, 11 y 12): al llegar, en la misma transacción, una regular queda
+// programada si el envío automático está prendido y es de los últimos 13 días, y si no, no enviada; un piloto no tiene envío.
+// El interruptor es la fila 1 de dato_quincena_correo_config de la base de prueba: se escribe acá y queda apagado al final.
+// El recibo trae el envío; la lista, la pastilla (la de administración dice si a alguien no le llegó); el detalle, la línea.
+// Lo que depende de la hora se compara con las reglas, con el ahora de antes y el de después del pedido (el del servidor queda
+// en el medio) y el calendario de la base de prueba, sin filas de feriados (los 9 fijos). Las personas y direcciones, inventadas.
+// Va después de las lecturas: suma regulares, y el número de las de arriba se cuenta con las que había.
+describe('el envío por correo', () => {
+  const CALENDARIO = calendarioCon([]);
+  const PROGRAMADA = Object.freeze({ estado: 'programada', motivo: null, enviada_at: null });
+  const prender = (activo) => query('UPDATE dato_quincena_correo_config SET envio_activo = ? WHERE id = 1', [activo ? 1 : 0]);
+  const correoGuardado = async (edicionId) => (await query(
+    `SELECT estado, motivo, DATE_FORMAT(enviada_at, '%Y-%m-%d %H:%i:%s') AS enviada_at,
+            DATE_FORMAT(creada_at, '%Y-%m-%d %H:%i:%s') AS creada_at, ultima_corrida_at
+     FROM dato_quincena_correos WHERE edicion_id = ?`,
+    [edicionId]
+  ))[0] ?? null;
+  const sinCreada = (fila) => ({ ...fila, creada_at: '·' });
+  // El valor tiene que ser lo que arman las reglas con el ahora de antes o con el de después
+  const unoDe = (valor, armar, antes, despues, mensaje) => {
+    const posibles = [armar(antes), armar(despues)];
+    assert.ok(posibles.some((posible) => isDeepStrictEqual(posible, valor)),
+      `${mensaje}: ${JSON.stringify(valor)} no es ninguno de ${JSON.stringify(posibles)}`);
+  };
+  // La pastilla de una edición en la lista de su año y la línea de su detalle, con la sesión de `rol`
+  const pastillaEnLaLista = async (id, fecha, rol = 'admin') => {
+    const res = await leer(`/dato-quincena/ediciones?anio=${fecha.slice(0, 4)}`, rol);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const edicion = res.body.data.ediciones.find((e) => e.id === id);
+    assert.ok(edicion, `la edición ${id} está en la lista de ${fecha.slice(0, 4)}`);
+    return edicion.envio;
+  };
+  const lineaDelDetalle = async (id, rol = 'admin') => {
+    const res = await leer(`/dato-quincena/ediciones/${id}`, rol);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return res.body.data.correo;
+  };
+  const envioDeLaProgramada = (fecha_edicion) => (ahora) => envioDelRecibo({
+    tipo: 'regular', fecha_edicion, correo: PROGRAMADA, envios: [], envioActivo: true, ahora, calendario: CALENDARIO
+  });
+
+  // La regular de hoy que queda programada, el ahora de antes de su POST y la persona inventada que suma el caso de «3 de 4»
+  let programada, fechaDeLaProgramada, antesDeLaProgramada, cuarta;
+
+  before(async () => {
+    assert.equal(await cuenta('feriados'), 0, 'la base de prueba no tiene filas de feriados: el calendario son los 9 fijos');
+  });
+  after(() => prender(false));
+
+  it('prendido, una regular de hoy: 201 programada, con el instante de su corrida y el texto; su fila, sin personas todavía', async () => {
+    await prender(true);
+    antesDeLaProgramada = ahoraArgentina();
+    fechaDeLaProgramada = antesDeLaProgramada.slice(0, 10);
+    const res = await enviar(partesDePrueba(edicionDePrueba({ fecha_edicion: fechaDeLaProgramada })), { ip: 40 });
+    const despues = ahoraArgentina();
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    programada = res.body.data;
+    assert.deepEqual(Object.keys(programada), CLAVES_DEL_RECIBO);
+    assert.deepEqual(Object.keys(programada.envio), ['estado', 'programado_at', 'texto']);
+    assert.equal(programada.envio.estado, 'programada');
+    assert.match(programada.envio.programado_at, /^\d{4}-\d{2}-\d{2}T(08:05|14:00):00-03:00$/);
+    assert.match(programada.envio.texto, /^Se envía (hoy|el [a-záéíóú]+ \d{2}\/\d{2}\/\d{4}) a las (8:05|14:00)\.$/);
+    unoDe(programada.envio, envioDeLaProgramada(fechaDeLaProgramada), antesDeLaProgramada, despues, 'el envío del recibo');
+
+    const fila = await correoGuardado(programada.id);
+    assert.deepEqual(sinCreada(fila),
+      { estado: 'programada', motivo: null, enviada_at: null, creada_at: '·', ultima_corrida_at: null });
+    assert.ok(fila.creada_at >= antesDeLaProgramada && fila.creada_at <= despues,
+      `creada_at (${fila.creada_at}): la hora argentina del POST`);
+    const [{ n }] = await query('SELECT COUNT(*) AS n FROM dato_quincena_envios WHERE edicion_id = ?', [programada.id]);
+    assert.equal(Number(n), 0);
+  });
+
+  it('el mismo paquete: 200 con el mismo envío; con otro contenido, 409: ninguna fila nueva ni cambiada', async () => {
+    const partes = partesDePrueba(edicionDePrueba({ fecha_edicion: fechaDeLaProgramada }));
+    const guardado = await todoLoGuardado();
+    const antes = ahoraArgentina();
+    const res = await enviar(partes, { ip: 41 });
+    const despues = ahoraArgentina();
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const { envio, ...resto } = res.body.data;
+    const { envio: delPrimero, ...restoDelPrimero } = programada;
+    assert.deepEqual(resto, { ...restoDelPrimero, repetida: true });
+    // El de ese momento: el mismo del 201, salvo que entre los dos pedidos haya pasado una corrida (las 8:05 o las 14:00)
+    unoDe(envio, envioDeLaProgramada(fechaDeLaProgramada), antes, despues, 'el envío del 200');
+    const armar = envioDeLaProgramada(fechaDeLaProgramada);
+    if (isDeepStrictEqual(armar(antesDeLaProgramada), armar(despues))) assert.deepEqual(envio, delPrimero);
+
+    const conOtroByte = partesDePrueba(edicionDePrueba({ fecha_edicion: fechaDeLaProgramada }),
+      { correo_texto: correoConOtroByte() });
+    const otro = await enviar(conOtroByte, { ip: 41 });
+    assert.equal(otro.status, 409, JSON.stringify(otro.body));
+    assert.deepEqual(await todoLoGuardado(), guardado);
+  });
+
+  it('apagado: una regular queda no enviada por «apagado»; el recibo, el detalle y la pastilla lo dicen, a todos los roles', async () => {
+    await prender(false);
+    const fecha = sumarDias(hoyArgentina(), -1);
+    const edicion = edicionDePrueba({ fecha_edicion: fecha, correo: { estado: 'no_enviado', enviado_at: null } });
+    const res = await enviar(partesDePrueba(edicion), { ip: 42 });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data.envio, ENVIO_APAGADO);
+    const { id } = res.body.data;
+    assert.deepEqual(sinCreada(await correoGuardado(id)),
+      { estado: 'no_enviada', motivo: 'apagado', enviada_at: null, creada_at: '·', ultima_corrida_at: null });
+    for (const rol of ['admin', 'lector', 'colaborador']) {
+      assert.equal(await lineaDelDetalle(id, rol), 'No se envió: el envío automático estaba apagado.', rol);
+      assert.deepEqual(await pastillaEnLaLista(id, fecha, rol), { tipo: 'no_enviada', texto: 'No se envió' }, rol);
+    }
+  });
+
+  it('sin la fila de la configuración, apagado; con el correo de Datito, su línea y su pastilla (la transición)', async () => {
+    await prender(true);
+    const fecha = sumarDias(hoyArgentina(), -2);
+    await query('DELETE FROM dato_quincena_correo_config WHERE id = 1');
+    let res;
+    try {
+      res = await enviar(partesDePrueba(edicionDePrueba({ fecha_edicion: fecha })), { ip: 43 });
+    } finally {
+      await query('INSERT INTO dato_quincena_correo_config (id, envio_activo) VALUES (1, 0)');
+    }
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data.envio, ENVIO_APAGADO);
+    const { id } = res.body.data;
+    assert.equal((await correoGuardado(id)).motivo, 'apagado');
+    assert.equal(await lineaDelDetalle(id), 'Correo enviado el 02/11/2026 a las 08:12, según Datito.');
+    assert.deepEqual(await pastillaEnLaLista(id, fecha), { tipo: 'enviada', texto: 'Enviada por Datito el lun 02/11' });
+  });
+
+  it('prendido, un piloto: el recibo dice que no se envía y no tiene fila de correo; el detalle y la pastilla, lo mismo', async () => {
+    await prender(true);
+    const fecha = hoyArgentina();
+    const piloto = pilotoDePrueba({ fecha_edicion: fecha, referencia_piloto: 'piloto-950' });
+    const res = await enviar(partesDePrueba(piloto), { ip: 44 });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data.envio, ENVIO_DEL_PILOTO);
+    const { id } = res.body.data;
+    assert.equal(await correoGuardado(id), null);
+    assert.equal(await lineaDelDetalle(id), 'Los pilotos no se envían por correo.');
+    assert.deepEqual(await pastillaEnLaLista(id, fecha), { tipo: 'piloto', texto: 'Piloto: no se envía' });
+  });
+
+  it('la programada, para cada rol: «Se envía…» y «Sale…» con la hora de la consulta; apagado, «En espera»', async () => {
+    await prender(true);
+    const parametros = (ahora) => ({
+      tipo: 'regular', fecha_edicion: fechaDeLaProgramada, correo: PROGRAMADA, envios: [], reenvios: [], lista: [],
+      correoDelBot: edicionDePrueba().correo, envioActivo: true, ahora, calendario: CALENDARIO
+    });
+    for (const rol of ['admin', 'lector', 'colaborador']) {
+      const antes = ahoraArgentina();
+      const linea = await lineaDelDetalle(programada.id, rol);
+      const pastilla = await pastillaEnLaLista(programada.id, fechaDeLaProgramada, rol);
+      const despues = ahoraArgentina();
+      unoDe(linea, (ahora) => lineaDelCorreo(parametros(ahora)), antes, despues, `la línea (${rol})`);
+      unoDe(pastilla, (ahora) => pastillaDelEnvio({ ...parametros(ahora), admin: rol === 'admin' }), antes, despues,
+        `la pastilla (${rol})`);
+      assert.equal(pastilla.tipo, 'programada', rol);
+    }
+    await prender(false);
+    // El recibo de un 200 dice lo de ese momento: con el envío apagado, en espera y sin instante
+    const repetida = await enviar(partesDePrueba(edicionDePrueba({ fecha_edicion: fechaDeLaProgramada })), { ip: 46 });
+    assert.equal(repetida.status, 200, JSON.stringify(repetida.body));
+    assert.deepEqual(repetida.body.data.envio,
+      { estado: 'programada', programado_at: null, texto: 'En espera: el envío automático está apagado.' });
+    for (const rol of ['admin', 'lector']) {
+      assert.equal(await lineaDelDetalle(programada.id, rol), 'En espera: el envío automático está apagado.', rol);
+      assert.deepEqual(await pastillaEnLaLista(programada.id, fechaDeLaProgramada, rol),
+        { tipo: 'espera', texto: 'En espera' }, rol);
+    }
+  });
+
+  it('una que salió y a una persona no le llegó: administración ve «Enviada a 3 de 4» y los demás roles, «Enviada el …»; sin direcciones', async () => {
+    const fecha = '2026-11-05';
+    const id = (await edicionGuardada(`dq:regular:${fecha}`)).id;
+    cuarta = (await query(
+      `INSERT INTO usuarios (username, password_hash, nombre_completo, email, rol, activo)
+       VALUES (?, 'sin-uso', 'Persona Cuatro Ejemplo', 'persona.cuatro@ejemplo.test', 'lector', 0)`,
+      [`test_cuarta_${crypto.randomBytes(4).toString('hex')}`]
+    )).insertId;
+    await query(
+      `UPDATE dato_quincena_correos SET estado = 'parcial', motivo = NULL, enviada_at = '2026-11-05 08:05:10'
+       WHERE edicion_id = ?`,
+      [id]
+    );
+    const automatico = (usuarioId, email, estado, intentos, enviadoAt) => [id, usuarioId, email, 'automatico', estado, intentos,
+      enviadoAt, enviadoAt ?? '2026-11-06 08:05:20', estado === 'fallido' ? 'No se pudo enviar el mail.' : null,
+      '2026-11-05 08:05:00'];
+    await query(
+      `INSERT INTO dato_quincena_envios
+         (edicion_id, usuario_id, email, tipo, estado, intentos, enviado_at, ultimo_intento_at, error, creado_at) VALUES ?`,
+      [[
+        automatico(usuarios.admin.id, 'persona.uno@ejemplo.test', 'enviado', 1, '2026-11-05 08:05:10'),
+        automatico(usuarios.lector.id, 'persona.dos@ejemplo.test', 'enviado', 1, '2026-11-05 08:05:11'),
+        automatico(usuarios.colaborador.id, 'persona.tres@ejemplo.test', 'enviado', 1, '2026-11-05 08:05:12'),
+        automatico(cuarta, 'persona.cuatro@ejemplo.test', 'fallido', 3, null)
+      ]]
+    );
+
+    assert.deepEqual(await pastillaEnLaLista(id, fecha, 'admin'), { tipo: 'parcial', texto: 'Enviada a 3 de 4' });
+    for (const rol of ['lector', 'colaborador']) {
+      assert.deepEqual(await pastillaEnLaLista(id, fecha, rol), { tipo: 'enviada', texto: 'Enviada el jue 05/11' }, rol);
+    }
+    for (const rol of ['admin', 'lector', 'colaborador']) {
+      assert.equal(await lineaDelDetalle(id, rol), 'Enviada por correo el jueves 05/11/2026 a las 8:05.', rol);
+    }
+    // La lista y el detalle no traen las direcciones ni los nombres de quienes lo recibieron (spec 12 y 15)
+    for (const rol of ['admin', 'lector']) {
+      const lista = JSON.stringify((await leer('/dato-quincena/ediciones?anio=2026', rol)).body);
+      const detalle = JSON.stringify((await leer(`/dato-quincena/ediciones/${id}`, rol)).body);
+      for (const [nombre, texto] of [['la lista', lista], ['el detalle', detalle]]) {
+        for (const dato of ['@ejemplo.test', 'Persona Cuatro', usuarios.admin.email, usuarios.lector.username]) {
+          assert.ok(!texto.includes(dato), `${nombre} (${rol}) no trae «${dato}»`);
+        }
+      }
+    }
+  });
+
+  it('una que el RPAD no mandó solo y se reenvió a toda la lista de hoy: «Reenviada…» para todos; quien está inactiva no cuenta', async () => {
+    const fecha = '2026-11-06';
+    const id = (await edicionGuardada(`dq:regular:${fecha}`)).id;
+    assert.equal(await lineaDelDetalle(id), 'Correo enviado el 02/11/2026 a las 08:12, según Datito.', 'antes del reenvío');
+    await query(
+      `INSERT INTO dato_quincena_destinatarios (usuario_id, agregado_por, agregado_at)
+       VALUES (?, ?, '2026-11-01 09:00:00'), (?, ?, '2026-11-01 09:00:00'), (?, ?, '2026-11-01 09:00:00')`,
+      [usuarios.lector.id, usuarios.admin.id, usuarios.colaborador.id, usuarios.admin.id, cuarta, usuarios.admin.id]
+    );
+    const reenvio = (usuarioId, email) => [id, usuarioId, email, 'reenvio', 'enviado', 1, '2026-11-10 10:12:00',
+      '2026-11-10 10:12:00', usuarios.admin.id, '2026-11-10 10:12:00'];
+    await query(
+      `INSERT INTO dato_quincena_envios
+         (edicion_id, usuario_id, email, tipo, estado, intentos, enviado_at, ultimo_intento_at, creado_por, creado_at) VALUES ?`,
+      [[reenvio(usuarios.lector.id, 'persona.dos@ejemplo.test'), reenvio(usuarios.colaborador.id, 'persona.tres@ejemplo.test')]]
+    );
+    for (const rol of ['admin', 'lector']) {
+      assert.equal(await lineaDelDetalle(id, rol), 'Reenviada por correo el martes 10/11/2026 a las 10:12.', rol);
+      assert.deepEqual(await pastillaEnLaLista(id, fecha, rol), { tipo: 'enviada', texto: 'Reenviada el mar 10/11' }, rol);
+    }
+    // La cuarta persona está en la lista pero inactiva: no se le puede reenviar, así que no cuenta. Activa, faltaría ella
+    await query('UPDATE usuarios SET activo = 1 WHERE id = ?', [cuarta]);
+    try {
+      assert.equal(await lineaDelDetalle(id), 'Correo enviado el 02/11/2026 a las 08:12, según Datito.', 'con la cuarta activa');
+    } finally {
+      await query('UPDATE usuarios SET activo = 0 WHERE id = ?', [cuarta]);
+    }
+  });
+
+  it('las archivadas antes del correo (sin fila): la línea y la pastilla del correo de Datito; si no salió, sin pastilla', async () => {
+    const deEnero = (await edicionGuardada(`dq:regular:${FECHA_DE_ENERO}`)).id;
+    assert.equal(await correoGuardado(deEnero), null);
+    for (const rol of ['admin', 'lector']) {
+      assert.deepEqual(await pastillaEnLaLista(deEnero, FECHA_DE_ENERO, rol),
+        { tipo: 'enviada', texto: 'Enviada por Datito el lun 02/11' }, rol);
+      assert.equal(await lineaDelDetalle(deEnero, rol), 'Correo enviado el 02/11/2026 a las 08:12, según Datito.');
+    }
+    const sinCorreo = edicionDePrueba({ fecha_edicion: '2026-10-26', correo: { estado: 'no_enviado', enviado_at: null } });
+    const id = (await query(
+      `INSERT INTO dato_quincena_ediciones (clave, tipo, fecha_edicion, referencia_piloto, titulo, metadata, huella)
+       VALUES ('dq:regular:2026-10-26', 'regular', '2026-10-26', NULL, ?, ?, ?)`,
+      [sinCorreo.titulo, JSON.stringify(sinCorreo), 'e'.repeat(64)]
+    )).insertId;
+    assert.equal(await pastillaEnLaLista(id, '2026-10-26'), null);
+    assert.equal(await lineaDelDetalle(id), 'Datito archivó esta edición sin que saliera el correo.');
+  });
+
+  it('si la fila del correo no se puede guardar, no se guarda nada: 500 «No se pudo guardar la edición.» (la misma transacción)', async () => {
+    await prender(true);
+    const fecha = sumarDias(hoyArgentina(), 1);
+    const partes = partesDePrueba(edicionDePrueba({ fecha_edicion: fecha }));
+    const guardado = await todoLoGuardado();
+    await query('RENAME TABLE dato_quincena_correos TO dato_quincena_correos_fuera');
+    let res;
+    try {
+      res = await enviar(partes, { ip: 45 });
+    } finally {
+      await query('RENAME TABLE dato_quincena_correos_fuera TO dato_quincena_correos');
+    }
+    assert.equal(res.status, 500, JSON.stringify(res.body));
+    assert.deepEqual(res.body, { success: false, error: 'No se pudo guardar la edición.' });
+    assert.deepEqual(await todoLoGuardado(), guardado);
+
+    // Con la tabla de vuelta, la misma entra: programada para la mañana del primer día hábil desde su fecha
+    const antes = ahoraArgentina();
+    const otra = await enviar(partes, { ip: 45 });
+    const despues = ahoraArgentina();
+    assert.equal(otra.status, 201, JSON.stringify(otra.body));
+    unoDe(otra.body.data.envio, envioDeLaProgramada(fecha), antes, despues, 'el envío de la de mañana');
+    assert.match(otra.body.data.envio.programado_at, /T08:05:00-03:00$/);
+    assert.equal((await correoGuardado(otra.body.data.id)).estado, 'programada');
+  });
+});
+
 describe('nada más cambió', () => {
   it('ningún mail, las mismas filas en las otras tablas y la consola sin el token ni lo recibido', async () => {
     assert.deepEqual(await mailpit.mensajes(), []);
@@ -971,7 +1431,8 @@ describe('nada más cambió', () => {
     for (const linea of esperadas) assert.ok(consola.includes(linea), `la consola registra «${linea}»`);
     assert.ok(!consola.includes(TOKEN), 'el token no aparece en la consola');
     assert.ok(!consola.includes(sha256(TOKEN)), 'la huella del token no aparece en la consola');
-    for (const recibido of ['Un título inventado', 'ñandú', 'Cálculos de prueba', 'infografia-prueba.png', 'inventado']) {
+    for (const recibido of ['Un título inventado', 'ñandú', 'Cálculos de prueba', 'infografia-prueba.png', 'infografia-prueba.svg',
+      'Efeméride de prueba', 'inventado']) {
       assert.ok(!consola.includes(recibido), 'la consola no repite lo recibido');
     }
   });
