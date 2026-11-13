@@ -11,5 +11,6 @@ El orden general y las vueltas atrás están en `docs/temas/despliegue.md`.
 - Una migración es aditiva y repetible, va antes que el código y lo nuevo va también en `database/schema.sql`.
 - Cada una lleva su `rollback-*.sql`, que corre después de volver a los archivos anteriores.
 - `rollback-mi-espacio.sql` y `rollback-feriados.sql` no se pueden correr solos mientras esté la de los días restituidos; `rollback-mi-espacio-agenda.sql`, mientras esté la del evento Personal (Público).
+- `rollback-dato-quincena.sql` no se puede correr solo mientras esté la del correo: primero va `rollback-dato-quincena-correo.sql`.
 - Después de `migracion-notas-dgmit.sql` no se vuelven a correr `migracion-editor-auditoria.sql` ni `migracion-usuarios-superadmin.sql`: fijan el rol sin `colaborador`.
 - `database/privado/` no se versiona: ahí van las cargas de datos de personas.
