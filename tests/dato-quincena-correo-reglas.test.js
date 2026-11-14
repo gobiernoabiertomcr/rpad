@@ -10,7 +10,7 @@ import {
   lineaDelCorreo, pastillaDelEnvio, envioDelRecibo, envioInicial, textoDeLaPersona, resumenDelCorreo, textoDelReenvio,
   sePuedeReenviar, proximasEdiciones, modeloDelMail, textoDelResultadoDelCorreo, textoDeLaCorridaDelCorreo, alertasDelCorreo,
   alertaSinEstadoDelCorreo, personasSinLlegar, listaDePersonas, aQuienReenviar, textoDeLaLicencia, textoDelEnvioAMano,
-  textoDelInterruptor, textoDeLaListaGuardada, textoDeLosQueReciben
+  textoDelInterruptor, textoDeLaListaGuardada, textoDeLosQueReciben, CUANTAS_EN_MI_ESPACIO, datoQuincenaEnMiEspacio
 } from '../services/datoQuincenaCorreoReglas.js';
 import { detalleDeLaEdicion, NOMBRE_DEL_BOT } from '../services/datoQuincenaReglas.js';
 import { datoQuincenaTemplate } from '../services/emailTemplates.js';
@@ -939,6 +939,248 @@ describe('proximasEdiciones: la serie cada 14 días (spec, 12)', () => {
 
   it('con la tabla de feriados caída, ninguna', () => {
     assert.deepEqual(proximas({ calendario: CALENDARIO_CAIDO }), []);
+  });
+});
+
+describe('datoQuincenaEnMiEspacio: las fechas de la agenda de Mi espacio (spec 2026-11-14-dato-quincena-en-mi-espacio)', () => {
+  const enMiEspacio = (cambios = {}) => datoQuincenaEnMiEspacio({
+    envioActivo: true, ultima: null, ahora: '2026-11-14 18:12:00', calendario: CALENDARIO, filasDeFeriados: FILAS_PRECARGA, ...cambios
+  });
+  const ultimaDel = (fecha_edicion, correoDeLa, envios = []) => ({ fecha_edicion, correo: correoDeLa, envios });
+  const SOBERANIA = 'Edición del lunes 23/11: no es hábil el lunes 23/11, Día de la Soberanía Nacional.';
+  const fechas = (items) => items.map(({ fecha }) => fecha);
+  // Lo que cambia de un caso a otro: el texto de la casilla y el title se miran entero en el primero
+  const resumen = ({ fecha, hora, nombre, detalle }) => ({ fecha, hora, nombre, detalle });
+  const SERIE_DESDE_EL_24_11 = ['2026-11-24', '2026-12-09', '2026-12-21', '2027-01-04', '2027-01-18'];
+  const SERIE_DESDE_EL_09_12 = ['2026-12-09', '2026-12-21', '2027-01-04', '2027-01-18', '2027-02-01'];
+  // La del 23/11 que salió sola el martes 24/11 a las 8:05
+  const salioEl24 = ultimaDel('2026-11-23', correo('enviada'), [enviado(1, '2026-11-24 08:05:12')]);
+
+  it('CUANTAS_EN_MI_ESPACIO: cinco fechas a lo sumo', () => {
+    assert.equal(CUANTAS_EN_MI_ESPACIO, 5);
+  });
+
+  it('desdeLaSalida: el martes 24/11 la serie sigue con la del lunes 23/11, que sale ese día; sin la opción, como la pestaña Correo', () => {
+    const delMartes = (cambios) => proximasEdiciones({
+      ultimaRegular: '2026-11-09', hoy: '2026-11-24', calendario: CALENDARIO, filasDeFeriados: FILAS_PRECARGA, cantidad: 1, ...cambios
+    });
+    assert.equal(delMartes({ desdeLaSalida: true })[0].edicion, '2026-11-23');
+    assert.equal(delMartes({ desdeLaSalida: true })[0].sale, '2026-11-24');
+    assert.equal(delMartes()[0].edicion, '2026-12-07');
+    assert.equal(delMartes({ desdeLaSalida: false })[0].edicion, '2026-12-07');
+    // El miércoles 25/11 la del 23/11 ya salió: la serie salta también con la opción
+    assert.equal(delMartes({ hoy: '2026-11-25', desdeLaSalida: true })[0].edicion, '2026-12-07');
+  });
+
+  it('con el envío automático apagado, ninguna', () => {
+    assert.deepEqual(enMiEspacio({ envioActivo: false }), []);
+    // Solo el true literal lo prende
+    assert.deepEqual(enMiEspacio({ envioActivo: 'true' }), []);
+    assert.deepEqual(enMiEspacio({ envioActivo: false, ultima: ultimaDel('2026-11-23', correo('programada')),
+      ahora: '2026-11-24 07:40:00' }), []);
+  });
+
+  it('con la tabla de feriados caída, ninguna', () => {
+    assert.deepEqual(enMiEspacio({ calendario: CALENDARIO_CAIDO }), []);
+    assert.deepEqual(enMiEspacio({ calendario: CALENDARIO_CAIDO, ultima: ultimaDel('2026-11-23', correo('programada')),
+      ahora: '2026-11-24 07:40:00' }), []);
+  });
+
+  it('sin ninguna regular, el sábado 14/11: las cinco de la serie desde el 09/11/2026, el día en que salen, a las 08:05', () => {
+    const items = enMiEspacio();
+    assert.deepEqual(fechas(items), SERIE_DESDE_EL_24_11);
+    assert.deepEqual(items[0], {
+      fecha: '2026-11-24',
+      hora: '08:05',
+      texto: 'Dato de la quincena',
+      nombre: 'Sale el dato de la quincena',
+      titulo: `Sale el dato de la quincena, a las 08:05. ${SOBERANIA}`,
+      detalle: SOBERANIA
+    });
+    assert.deepEqual(resumen(items[1]), {
+      fecha: '2026-12-09', hora: '08:05', nombre: 'Sale el dato de la quincena',
+      detalle: 'Edición del lunes 07/12: no son hábiles el lunes 07/12, Día no laborable con fines turísticos y el martes 08/12, '
+        + 'Inmaculada Concepción de María.'
+    });
+    assert.deepEqual(items[2], {
+      fecha: '2026-12-21',
+      hora: '08:05',
+      texto: 'Dato de la quincena',
+      nombre: 'Sale el dato de la quincena',
+      titulo: 'Sale el dato de la quincena, a las 08:05. Edición del lunes 21/12.',
+      detalle: 'Edición del lunes 21/12.'
+    });
+    assert.deepEqual(resumen(items[3]), {
+      fecha: '2027-01-04', hora: '08:05', nombre: 'Sale el dato de la quincena', detalle: 'Edición del lunes 04/01.'
+    });
+  });
+
+  it('una regular sin correo del RPAD (anterior al envío): no va, y la serie sigue desde ella', () => {
+    assert.deepEqual(fechas(enMiEspacio({ ultima: ultimaDel('2026-11-09', null) })), SERIE_DESDE_EL_24_11);
+  });
+
+  it('una fecha que no se puede leer cuenta como sin ninguna regular', () => {
+    assert.deepEqual(enMiEspacio({ ultima: ultimaDel(null, correo('programada')) }), enMiEspacio());
+    assert.deepEqual(enMiEspacio({ ultima: ultimaDel('23/11/2026', correo('programada')) }), enMiEspacio());
+  });
+
+  it('la del 23/11 ya llegó, el martes 24/11 a las 07:40: sale ese día a las 08:05, con el motivo de la serie', () => {
+    const items = enMiEspacio({ ultima: ultimaDel('2026-11-23', correo('programada')), ahora: '2026-11-24 07:40:00' });
+    assert.deepEqual(resumen(items[0]), {
+      fecha: '2026-11-24', hora: '08:05', nombre: 'Sale el dato de la quincena', detalle: SOBERANIA
+    });
+    assert.equal(items[0].titulo, `Sale el dato de la quincena, a las 08:05. ${SOBERANIA}`);
+    assert.deepEqual(fechas(items), SERIE_DESDE_EL_24_11);
+    assert.equal(items.length, CUANTAS_EN_MI_ESPACIO);
+  });
+
+  it('la del 23/11 salió hoy a las 08:05: «Salió…», con la hora de su primer envío, hasta que termina el día', () => {
+    const items = enMiEspacio({ ultima: salioEl24, ahora: '2026-11-24 10:30:00' });
+    assert.deepEqual(resumen(items[0]), {
+      fecha: '2026-11-24', hora: '08:05', nombre: 'Salió el dato de la quincena', detalle: SOBERANIA
+    });
+    assert.equal(items[0].texto, 'Dato de la quincena');
+    assert.equal(items[0].titulo, `Salió el dato de la quincena, a las 08:05. ${SOBERANIA}`);
+    assert.deepEqual(fechas(items), SERIE_DESDE_EL_24_11);
+    assert.deepEqual(fechas(enMiEspacio({ ultima: salioEl24, ahora: '2026-11-24 23:59:59' })), SERIE_DESDE_EL_24_11);
+  });
+
+  it('la hora es la del primer envío que salió: el de las 14:00 de un reintento no la cambia', () => {
+    const ultima = ultimaDel('2026-11-23', correo('enviada'), [
+      enviado(2, '2026-11-24 14:00:40'), enviado(1, '2026-11-24 08:05:12'), fallido(3, 2)
+    ]);
+    const [primero] = enMiEspacio({ ultima, ahora: '2026-11-24 15:00:00' });
+    assert.deepEqual(resumen(primero), {
+      fecha: '2026-11-24', hora: '08:05', nombre: 'Salió el dato de la quincena', detalle: SOBERANIA
+    });
+  });
+
+  it('la misma, el miércoles 25/11: ya salió ayer y no va', () => {
+    const items = enMiEspacio({ ultima: salioEl24, ahora: '2026-11-25 08:00:00' });
+    assert.deepEqual(fechas(items), SERIE_DESDE_EL_09_12);
+    assert.ok(items.every(({ nombre }) => nombre === 'Sale el dato de la quincena'));
+  });
+
+  it('enviada sin una hora que se pueda leer: no va (no se sabe si fue hoy)', () => {
+    const ultima = ultimaDel('2026-11-23', correo('enviada'), [{ usuario_id: 1, estado: 'enviado', intentos: 1, enviado_at: null }]);
+    assert.deepEqual(fechas(enMiEspacio({ ultima, ahora: '2026-11-24 10:30:00' })), SERIE_DESDE_EL_09_12);
+  });
+
+  it('la del 21/12 programada, a las 10:30 de ese lunes: sale a las 14:00, como dice su pastilla', () => {
+    const ultima = ultimaDel('2026-12-21', correo('programada'));
+    const [primero] = enMiEspacio({ ultima, ahora: '2026-12-21 10:30:00' });
+    assert.deepEqual(resumen(primero), {
+      fecha: '2026-12-21', hora: '14:00', nombre: 'Sale el dato de la quincena', detalle: 'Edición del lunes 21/12.'
+    });
+    assert.equal(primero.titulo, 'Sale el dato de la quincena, a las 14:00. Edición del lunes 21/12.');
+    assert.equal(pastilla({ fecha_edicion: '2026-12-21', ahora: '2026-12-21 10:30:00' }).texto, 'Sale hoy a las 14:00');
+  });
+
+  it('la del 21/12 en reintento a las 10:30: sale con la próxima corrida, a las 14:00', () => {
+    const ultima = ultimaDel('2026-12-21', correo('programada'), [fallido(1, 1)]);
+    assert.deepEqual(resumen(enMiEspacio({ ultima, ahora: '2026-12-21 10:30:00' })[0]), {
+      fecha: '2026-12-21', hora: '14:00', nombre: 'Sale el dato de la quincena', detalle: 'Edición del lunes 21/12.'
+    });
+  });
+
+  it('la del 21/12 a las 15:00: sale el martes 22/12 a las 08:05, otro día que el de la serie, sin motivo', () => {
+    const esperado = {
+      fecha: '2026-12-22', hora: '08:05', nombre: 'Sale el dato de la quincena', detalle: 'Edición del lunes 21/12.'
+    };
+    const programada = enMiEspacio({ ultima: ultimaDel('2026-12-21', correo('programada')), ahora: '2026-12-21 15:00:00' });
+    assert.deepEqual(resumen(programada[0]), esperado);
+    assert.deepEqual(fechas(programada), ['2026-12-22', '2027-01-04', '2027-01-18', '2027-02-01', '2027-02-15']);
+    const enReintento = enMiEspacio({
+      ultima: ultimaDel('2026-12-21', correo('programada'), [fallido(1, 1)]), ahora: '2026-12-21 15:00:00'
+    });
+    assert.deepEqual(resumen(enReintento[0]), esperado);
+  });
+
+  it('la del 23/11 que llegó el martes 24/11 después de las 14:00: sale el 25/11, sin el motivo del feriado', () => {
+    const [primero] = enMiEspacio({ ultima: ultimaDel('2026-11-23', correo('programada')), ahora: '2026-11-24 14:30:00' });
+    assert.deepEqual(resumen(primero), {
+      fecha: '2026-11-25', hora: '08:05', nombre: 'Sale el dato de la quincena', detalle: 'Edición del lunes 23/11.'
+    });
+  });
+
+  // Con las corridas paradas, una programada puede quedar fuera de los 13 días el día en que saldría: la corrida de ese día la da
+  // por vieja (decidirCorrida) y no sale. La vigencia se mira contra el día de la salida, no contra hoy
+  it('la del 23/11 programada, sin filas, el domingo 06/12 a las 10:00 (su día 13): saldría el 09/12, fuera de los 13 días, y no va', () => {
+    const items = enMiEspacio({ ultima: ultimaDel('2026-11-23', correo('programada')), ahora: '2026-12-06 10:00:00' });
+    assert.deepEqual(fechas(items), SERIE_DESDE_EL_09_12);
+    // El 09/12, una sola: la del 07/12, con su motivo
+    assert.deepEqual(items.filter(({ fecha }) => fecha === '2026-12-09').map(resumen), [{
+      fecha: '2026-12-09', hora: '08:05', nombre: 'Sale el dato de la quincena',
+      detalle: 'Edición del lunes 07/12: no son hábiles el lunes 07/12, Día no laborable con fines turísticos y el martes 08/12, '
+        + 'Inmaculada Concepción de María.'
+    }]);
+    // También en reintento: con la edición vencida, la corrida no reintenta
+    const enReintento = enMiEspacio({
+      ultima: ultimaDel('2026-11-23', correo('programada'), [fallido(1, 1)]), ahora: '2026-12-06 10:00:00'
+    });
+    assert.deepEqual(fechas(enReintento), SERIE_DESDE_EL_09_12);
+    // La corrida del 09/12 la da por vieja
+    assert.deepEqual(decidirCorrida({
+      programadas: [{ id: 1, fecha_edicion: '2026-11-23' }], envioActivo: true, hoy: '2026-12-09', calendario: CALENDARIO
+    }), { mandar: null, noEnviar: [{ id: 1, motivo: 'vieja' }] });
+  });
+
+  it('el día 13 de vigencia: antes de las 14:00 sale ese día; después, la salida del día siguiente cae fuera y no va', () => {
+    // Una regular del viernes 20/11 (la regla no mira el día de la semana): el jueves 03/12, hábil, es su día 13
+    const ultima = ultimaDel('2026-11-20', correo('programada'));
+    assert.deepEqual(resumen(enMiEspacio({ ultima, ahora: '2026-12-03 10:00:00' })[0]), {
+      fecha: '2026-12-03', hora: '14:00', nombre: 'Sale el dato de la quincena', detalle: 'Edición del viernes 20/11.'
+    });
+    const despues = enMiEspacio({ ultima, ahora: '2026-12-03 15:00:00' });
+    assert.ok(despues.every(({ detalle }) => detalle !== 'Edición del viernes 20/11.'), JSON.stringify(despues));
+    assert.deepEqual(fechas(despues), ['2026-12-04', '2026-12-18', '2027-01-04', '2027-01-15', '2027-01-29']);
+    // Las corridas dicen lo mismo: la del 03/12 la manda y la del 04/12 la da por vieja
+    const corrida = (hoy) => decidirCorrida({
+      programadas: [{ id: 1, fecha_edicion: '2026-11-20' }], envioActivo: true, hoy, calendario: CALENDARIO
+    });
+    assert.deepEqual(corrida('2026-12-03'), { mandar: 1, noEnviar: [] });
+    assert.deepEqual(corrida('2026-12-04'), { mandar: null, noEnviar: [{ id: 1, motivo: 'vieja' }] });
+  });
+
+  it('una no enviada no va: la serie sigue', () => {
+    const items = enMiEspacio({
+      ultima: ultimaDel('2026-11-23', correo('no_enviada', 'sin_lista')), ahora: '2026-11-24 10:30:00'
+    });
+    assert.deepEqual(fechas(items), SERIE_DESDE_EL_09_12);
+  });
+
+  it('una que no le llegó a nadie no va', () => {
+    const ultima = ultimaDel('2026-11-23', correo('programada'), [fallido(1, MAXIMO_DE_INTENTOS)]);
+    assert.deepEqual(fechas(enMiEspacio({ ultima, ahora: '2026-11-25 10:30:00' })), SERIE_DESDE_EL_09_12);
+  });
+
+  it('por fecha y a lo sumo cinco, en todos los casos', () => {
+    const casos = [
+      enMiEspacio(),
+      enMiEspacio({ ultima: ultimaDel('2026-11-23', correo('programada')), ahora: '2026-11-24 07:40:00' }),
+      enMiEspacio({ ultima: salioEl24, ahora: '2026-11-24 10:30:00' }),
+      enMiEspacio({ ultima: ultimaDel('2026-12-21', correo('programada')), ahora: '2026-12-21 15:00:00' })
+    ];
+    for (const items of casos) {
+      assert.equal(items.length, CUANTAS_EN_MI_ESPACIO);
+      assert.deepEqual(fechas(items), [...fechas(items)].sort());
+    }
+  });
+
+  it('ningún texto usa las palabras que el sistema no usa', () => {
+    const textos = [
+      enMiEspacio(),
+      enMiEspacio({ ultima: ultimaDel('2026-11-23', correo('programada')), ahora: '2026-11-24 07:40:00' }),
+      enMiEspacio({ ultima: salioEl24, ahora: '2026-11-24 10:30:00' }),
+      enMiEspacio({ ultima: salioEl24, ahora: '2026-11-25 08:00:00' }),
+      enMiEspacio({ ultima: ultimaDel('2026-12-21', correo('programada')), ahora: '2026-12-21 10:30:00' }),
+      enMiEspacio({ ultima: ultimaDel('2026-12-21', correo('programada'), [fallido(1, 1)]), ahora: '2026-12-21 15:00:00' }),
+      enMiEspacio({ ultima: ultimaDel('2026-11-23', correo('no_enviada', 'sin_lista')), ahora: '2026-11-24 10:30:00' })
+    ].flat().flatMap(({ texto, nombre, titulo, detalle }) => [texto, nombre, titulo, detalle]);
+    for (const texto of textos) {
+      assert.doesNotMatch(texto, PROHIBIDAS);
+      assert.doesNotMatch(texto, /\btarde\b/i);
+    }
   });
 });
 

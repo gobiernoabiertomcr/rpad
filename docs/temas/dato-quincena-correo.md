@@ -1,16 +1,17 @@
 # El dato de la quincena: el correo
 
-El mail «Dato de la Quincena» lo manda el RPAD, no el bot, siguiendo sus días hábiles: cuándo sale, a quién, con qué estados y textos, la corrida, Reenviar y la prueba, el mail, la pestaña Correo y la transición.
+El mail «Dato de la Quincena» lo manda el RPAD, no el bot, siguiendo sus días hábiles: cuándo sale, a quién, con qué estados y textos, la corrida, Reenviar y la prueba, las fechas en la agenda de Mi espacio, el mail, la pestaña Correo y la transición.
 El archivo de las ediciones (el POST de Datito, la clave, la huella, las lecturas) está en `docs/temas/dato-quincena.md`.
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
 - `docs/superpowers/specs/2026-11-14-dato-quincena-v1-3-design.md` (la pastilla Repite y la caja de la repetición)
 - `docs/superpowers/specs/2026-11-14-dato-quincena-agenda-grupos-design.md` (la agenda en tres grupos)
+- `docs/superpowers/specs/2026-11-14-dato-quincena-en-mi-espacio-design.md` (las fechas en la agenda de Mi espacio)
 
 ## Archivos
 
-datoQuincenaCorreoReglas (puro: cuándo sale, los estados y todos los textos del detalle, de la pastilla y del recibo, la caja de administración, las próximas ediciones, los avisos de Correos → Estado y `modeloDelMail`);
+datoQuincenaCorreoReglas (puro: cuándo sale, los estados y todos los textos del detalle, de la pastilla y del recibo, la caja de administración, las próximas ediciones, las fechas de la agenda de Mi espacio, los avisos de Correos → Estado y `modeloDelMail`);
 datoQuincenaCorreoDatos (las consultas y las escrituras: la configuración, la lista, las filas de cada envío, la reserva de cada persona);
 datoQuincenaCorreo (la corrida con su candado `BLOQUEO_DATO_QUINCENA`, `reenviar`, `mandarPrueba` y lo que muestra Correos → Estado);
 datoQuincenaCorreoController (las seis rutas de administración);
@@ -120,6 +121,23 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   `POST /api/dato-quincena/ediciones/:id/prueba`.
   Un id que no es entero positivo o no existe da 404 en JSON; un 500 dice un texto fijo por operación.
 - Las próximas ediciones de `GET /correo` son una estimación: cada 14 días desde la última regular (`CADENCIA`; sin ninguna, desde `PRIMERA_EDICION`), con el día en que saldrían y el motivo si se corren («no es hábil el lunes 23/11, Día de la Soberanía Nacional»).
+
+## En la agenda de Mi espacio
+
+- La agenda de Mi espacio muestra cuándo sale el mail, para todos los roles, con la misma serie: `proximasEdiciones({ …, desdeLaSalida: true })` salta las ediciones cuyo día de salida (`sale`) es anterior a hoy, no las de fecha anterior a hoy.
+  Decisión: el martes 24/11 la edición del lunes 23/11 feriado sale ese día aunque todavía no haya llegado, y sin la opción la serie ya la saltaría.
+  La pestaña Correo la llama sin la opción y no cambia.
+- `datoQuincenaEnMiEspacio({ envioActivo, ultima, ahora, calendario, filasDeFeriados })` arma las fechas, las mismas para todos: hasta 5 (`CUANTAS_EN_MI_ESPACIO`), por fecha, y ninguna con el envío automático apagado o la tabla de feriados caída.
+  `ultima` es la última regular con su correo y sus filas automáticas (`ultimaRegularConSuCorreo`, con la fecha como texto 'AAAA-MM-DD'), o null (la serie arranca en `PRIMERA_EDICION`).
+- Si la última ya llegó, va según su situación, la misma de la pastilla (`situacionDelEnvio`): programada, el día y la hora de la corrida que la manda (08:05 o 14:00), si ese día todavía está vigente; enviada, solo el día de su primer envío, con esa hora y «Salió el dato de la quincena»; las demás no van.
+  Decisión: la vigencia de una programada se mira con `estaVigente` contra el día de su salida, no contra hoy, porque con las corridas paradas la corrida de ese día la da por vieja y no sale (el día 13 después de las 14:00, la salida ya cae fuera).
+  Después, las de la serie, a las 08:05 del día en que salen.
+- Cada fecha es `{ fecha, hora, texto, nombre, titulo, detalle }`: «Dato de la quincena» para la casilla, «Sale el dato de la quincena» (o «Salió…»), el detalle «Edición del lunes 23/11: no es hábil el lunes 23/11, Día de la Soberanía Nacional.» y el `title`, «Sale el dato de la quincena, a las 08:05. » con el detalle.
+  El día de la edición va sin el año, y la hora con dos cifras, como los eventos de la agenda (la pestaña Correo dice «8:05»).
+- El motivo es el de la serie y va solo si la fecha es el día en que la serie la hace salir.
+  Decisión: una edición que ya llegó y sale otro día (en reintento, o porque llegó después de las 14:00) dice solo «Edición del lunes 23/11.»: la agenda no sabe la causa y no dice nada falso.
+- No se copia ninguna regla: la serie, la salida y el motivo son los de la pestaña Correo.
+  Lo que dibuja la agenda está en `docs/temas/mi-espacio-agenda-mes.md`.
 
 ## El mail
 

@@ -167,13 +167,16 @@ describe('un evento personal', () => {
 
     const data = await listado('adminA');
     assert.deepEqual(Object.keys(data), ['desde', 'hasta', 'hoy', 've_companeros', 'eventos_por_mail', 'alguien_depende', 'mi_nombre_corto', 'eventos', 'licencias',
-      'feriados', 'ausentes', 'companeros_por_dia', 'frase_del_mes']);
+      'feriados', 'ausentes', 'companeros_por_dia', 'frase_del_mes', 'dato_quincena', 'dato_quincena_activo']);
     // El nombre de quien pide como lo ven los demás (el de la vista previa de un Personal (Público)): adminA y adminB empiezan
     // con «Test» y comparten la inicial del último apellido, así que va completo
     assert.equal(data.mi_nombre_corto, 'Test adminA');
     // Sin `mes`, sin frase; sin compañeros que no están, ningún día
     assert.equal(data.frase_del_mes, null);
     assert.deepEqual(data.companeros_por_dia, []);
+    // La base de prueba nace con el envío automático del dato de la quincena apagado: ninguna fecha
+    assert.deepEqual(data.dato_quincena, []);
+    assert.equal(data.dato_quincena_activo, false);
     assert.equal(data.desde, q(0));
     assert.equal(data.hasta, q(20));
     assert.equal(data.hoy, hoyArgentina());
@@ -2210,4 +2213,116 @@ describe('Correos → Estado: la última corrida de los recordatorios', () => {
       }
     });
   });
+});
+
+// El dato de la quincena en la agenda (spec 2026-11-14-dato-quincena-en-mi-espacio, «El servidor»): GET /mi-espacio/eventos suma
+// las fechas del mail, las mismas para todos los roles, y si el envío automático está prendido. Las reglas (la serie, la salida de
+// la que ya llegó y los textos) se prueban en tests/dato-quincena-correo-reglas.test.js: acá, que la API las lee, las corta al rango
+// y que, si no puede leerlas, la agenda responde igual. Sin ninguna regular en la base, la serie arranca en PRIMERA_EDICION
+describe('el dato de la quincena en la agenda (spec 2026-11-14-dato-quincena-en-mi-espacio)', () => {
+  const CLAVES_DEL_DATO = ['fecha', 'hora', 'texto', 'nombre', 'titulo', 'detalle'];
+  // El interruptor del envío automático (la fila 1, que la base de prueba trae apagada)
+  const envioAutomatico = (prendido) =>
+    query('UPDATE dato_quincena_correo_config SET envio_activo = ? WHERE id = 1', [prendido ? 1 : 0]);
+  const esSabado = (fecha) => new Date(`${fecha}T12:00:00Z`).getUTCDay() === 6;
+
+  before(() => envioAutomatico(true));
+  after(() => envioAutomatico(false));
+
+  it('con el envío prendido, el lector, el colaborador y un admin reciben las mismas fechas: hasta 5, días hábiles del rango, a las 08:05',
+    async () => {
+      const desde = hoy;
+      const hasta = dia(70);
+      const deCadaRol = [];
+      for (const clave of ['lector', 'colab', 'adminA']) {
+        const data = await listado(clave, desde, hasta);
+        assert.equal(data.dato_quincena_activo, true);
+        const fechas = data.dato_quincena;
+        assert.ok(fechas.length >= 1 && fechas.length <= 5, JSON.stringify(fechas));
+        for (const item of fechas) {
+          assert.deepEqual(Object.keys(item), CLAVES_DEL_DATO);
+          assert.equal(item.texto, 'Dato de la quincena');
+          assert.equal(item.nombre, 'Sale el dato de la quincena');
+          assert.equal(item.hora, '08:05');
+          assert.match(item.detalle, /^Edición del lunes \d{2}\/\d{2}(: .+)?\.$/);
+          assert.equal(item.titulo, `Sale el dato de la quincena, a las 08:05. ${item.detalle}`);
+          assert.ok(item.fecha >= desde && item.fecha <= hasta, item.fecha);
+          // Sin feriados en la tabla (el beforeEach la vacía), un día hábil es uno de los 9 fijos
+          assert.ok(esDiaHabil(item.fecha), item.fecha);
+        }
+        const porFecha = fechas.map((item) => item.fecha);
+        assert.deepEqual(porFecha, [...porFecha].sort());
+        deCadaRol.push(fechas);
+      }
+      assert.deepEqual(deCadaRol[1], deCadaRol[0]);
+      assert.deepEqual(deCadaRol[2], deCadaRol[0]);
+    });
+
+  it('un rango sin ninguna (un sábado y su domingo: el dato sale un día hábil) da [], con el envío prendido', async () => {
+    let sabado = hoy;
+    while (!esSabado(sabado)) sabado = sumarDias(sabado, 1);
+    const data = await listado('lector', sabado, sumarDias(sabado, 1));
+    assert.deepEqual(data.dato_quincena, []);
+    assert.equal(data.dato_quincena_activo, true);
+  });
+
+  it('una regular que ya llegó: sin correo, no va; si espera su corrida, va el día y a la hora de esa corrida; no enviada, no va; la serie sigue 14 días después',
+    async () => {
+      const edicion = (await query(
+        `INSERT INTO dato_quincena_ediciones (clave, tipo, fecha_edicion, referencia_piloto, titulo, metadata, huella)
+         VALUES (?, 'regular', ?, NULL, 'Una edición inventada', '{}', ?)`,
+        [`dq:regular:${q(0)}`, q(0), 'a'.repeat(64)]
+      )).insertId;
+      try {
+        // Sin fila de correo (una anterior al correo del RPAD, como en producción el día del despliegue): no va, y la serie sigue
+        // desde ella, la primera 14 días después
+        const sinCorreo = (await listado('lector', hoy, dia(70))).dato_quincena;
+        assert.ok(sinCorreo.length >= 1, JSON.stringify(sinCorreo));
+        assert.ok(sinCorreo.every((item) => !item.detalle.startsWith(`Edición del lunes ${ddmm(q(0))}`)), JSON.stringify(sinCorreo));
+        assert.ok(sinCorreo.every((item) => item.fecha >= q(14)), JSON.stringify(sinCorreo));
+        assert.match(sinCorreo[0].detalle, new RegExp(`^Edición del lunes ${ddmm(q(14))}[:.]`), JSON.stringify(sinCorreo));
+
+        await query("INSERT INTO dato_quincena_correos (edicion_id, estado, creada_at) VALUES (?, 'programada', ?)",
+          [edicion, ahoraArgentina()]);
+        const fechas = (await listado('lector', hoy, dia(70))).dato_quincena;
+        const [primera, segunda] = fechas;
+        assert.equal(primera.fecha, q(0), JSON.stringify(fechas));
+        assert.equal(primera.hora, '08:05');
+        assert.equal(primera.nombre, 'Sale el dato de la quincena');
+        assert.equal(primera.detalle, `Edición del lunes ${ddmm(q(0))}.`);
+        assert.ok(segunda.fecha >= q(14), JSON.stringify(fechas));
+
+        // No enviada (el envío estaba apagado cuando llegó): no va, y la serie sigue desde ella, no desde PRIMERA_EDICION
+        await query("UPDATE dato_quincena_correos SET estado = 'no_enviada', motivo = 'apagado' WHERE edicion_id = ?", [edicion]);
+        const sinElla = (await listado('lector', hoy, dia(70))).dato_quincena;
+        assert.ok(sinElla.length >= 1, JSON.stringify(sinElla));
+        assert.ok(sinElla.every((item) => item.fecha >= q(14)), JSON.stringify(sinElla));
+      } finally {
+        await query('DELETE FROM dato_quincena_ediciones WHERE id = ?', [edicion]);
+      }
+    });
+
+  it('si no se puede leer el dato (el interruptor o las ediciones), la agenda responde igual: sin fechas y con el envío como apagado',
+    async () => {
+      await crear('lector', { titulo: 'Turno inventado' });
+      await conFeriado(q(2), 'Feriado inventado');
+      const sinElDato = ({ dato_quincena: _fechas, dato_quincena_activo: _activo, ...resto }) => resto;
+      for (const tabla of ['dato_quincena_correo_config', 'dato_quincena_ediciones']) {
+        const antes = await listado('lector');
+        assert.ok(antes.dato_quincena.length >= 1, JSON.stringify(antes.dato_quincena));
+        await query(`RENAME TABLE ${tabla} TO ${tabla}_fuera`);
+        let durante;
+        try {
+          durante = await listado('lector');
+        } finally {
+          await query(`RENAME TABLE ${tabla}_fuera TO ${tabla}`);
+        }
+        assert.deepEqual(durante.dato_quincena, [], tabla);
+        assert.equal(durante.dato_quincena_activo, false, tabla);
+        assert.equal(durante.eventos.length, 1, tabla);
+        // Con los fijos que caigan en el rango
+        assert.ok(durante.feriados.some((feriado) => feriado.fecha === q(2) && feriado.nombre === 'Feriado inventado'), tabla);
+        assert.deepEqual(sinElDato(durante), sinElDato(antes), tabla);
+      }
+    });
 });

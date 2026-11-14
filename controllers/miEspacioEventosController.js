@@ -35,11 +35,15 @@ import {
 import { usuariosDelAviso } from '../services/miEspacioEventosDiarioDatos.js';
 import { superioresDe, quienesDependenDe } from '../services/usuariosReglas.js';
 import { feriadosEntre, filasDeFeriados, leerCalendario } from '../services/feriadosDatos.js';
-import { feriadosDelRango } from '../services/feriadosReglas.js';
+import { feriadosDelRango, calendarioCon } from '../services/feriadosReglas.js';
 import { esAdmin } from '../services/usuariosReglas.js';
 import { administracionActiva, usuariosActivos } from '../services/miEspacioDatos.js';
 import { nombreCorto } from '../services/miEspacioReglas.js';
 import { rangoDelPedido, ausentesPara } from './miEspacioController.js';
+// Las reglas del correo del dato de la quincena se importan acá y no en miEspacioEventosReglas.js: datoQuincenaCorreoReglas.js
+// importa emailTemplates.js, que importa las reglas de eventos, y se cerraría un ciclo
+import { datoQuincenaEnMiEspacio } from '../services/datoQuincenaCorreoReglas.js';
+import { leerConfig, ultimaRegularConSuCorreo } from '../services/datoQuincenaCorreoDatos.js';
 
 // Cuántos días antes de un evento se leen los feriados: su aviso sale antes que él («El día hábil anterior» de un lunes) y
 // cada día que no es hábil lo corre uno más
@@ -256,6 +260,31 @@ const miNombreCorto = (usuarioId, usuarios) => {
 };
 
 /**
+ * El dato de la quincena en la agenda (spec 2026-11-14-dato-quincena-en-mi-espacio, «El servidor»): `{ dato_quincena,
+ * dato_quincena_activo }`. `dato_quincena`, las fechas del mail que caen entre `desde` y `hasta`, las mismas para todos los roles
+ * (`datoQuincenaEnMiEspacio`, con la serie de la pestaña Correo); `dato_quincena_activo`, si el envío automático está prendido,
+ * para la muestra de la leyenda. El calendario sale de las filas de feriados que el pedido ya leyó (`calendarioCon`): no se
+ * vuelve a leer la tabla. Lo que se lee de más (el interruptor y la última regular con su correo) va aislado, como «Hoy y
+ * mañana» del Resumen, junto con el armado: si la lectura o el armado fallan, sin fechas y como apagado, el error a la consola, y
+ * la agenda responde igual.
+ */
+const datoQuincenaDelListado = async ({ desde, hasta, ahora, filasFeriados }) => {
+  try {
+    const [{ envioActivo }, ultima] = await Promise.all([leerConfig(), ultimaRegularConSuCorreo()]);
+    const fechas = datoQuincenaEnMiEspacio({
+      envioActivo, ultima, ahora, calendario: calendarioCon(filasFeriados), filasDeFeriados: filasFeriados
+    });
+    return {
+      dato_quincena: fechas.filter((item) => item.fecha >= desde && item.fecha <= hasta),
+      dato_quincena_activo: envioActivo === true
+    };
+  } catch (error) {
+    console.error('Error al obtener el dato de la quincena de Mi espacio:', error?.stack ?? error);
+    return { dato_quincena: [], dato_quincena_activo: false };
+  }
+};
+
+/**
  * GET /api/mi-espacio/eventos?desde=AAAA-MM-DD&hasta=AAAA-MM-DD: lo que ve la persona en un rango de hasta 93 días (las
  * fechas, como «Hoy no están»: 400 en `fechas`, antes de leer nada). `ve_companeros`: si la leyenda dice «Compañeros que no están»;
  * `eventos_por_mail` y `alguien_depende`: la casilla «Recibir mi agenda por mail» y si alguien depende de quien pide, directa o
@@ -277,6 +306,9 @@ const miNombreCorto = (usuarioId, usuarios) => {
  * - `frase_del_mes`: con `mes=AAAA-MM` (el mes que muestra la página), la frase de su banda (fraseDelMes, con los eventos,
  *   los feriados y las licencias de la respuesta). Un `mes` que no es un texto 'AAAA-MM' (también repetido, que llega como
  *   lista) o que no cae entero en el rango pedido no es un error: es como si no viniera, y la frase es null.
+ * Y, aparte, el dato de la quincena (datoQuincenaDelListado, aislado: no lo cuenta la frase):
+ * - `dato_quincena`: las fechas del mail del rango, las mismas para todos los roles;
+ * - `dato_quincena_activo`: si el envío automático está prendido.
  */
 export const listarEventos = (req, res) => responder(res, 'Error al obtener los eventos', async () => {
   const { desde, hasta, rechazo: rechazoDelRango } = rangoDelPedido(req.query);
@@ -288,7 +320,10 @@ export const listarEventos = (req, res) => responder(res, 'Error al obtener los 
     eventosVisibles(usuario, desde, hasta), licenciasPropiasEntre(usuario.id, desde, hasta), filasDeFeriados(),
     administracionActiva(), usuariosActivos(), usuariosDelAviso()
   ]);
-  const { ausentes } = await ausentesPara(usuario, { desde, hasta, hoy, filasFeriados, administracion });
+  const [{ ausentes }, dato] = await Promise.all([
+    ausentesPara(usuario, { desde, hasta, hoy, filasFeriados, administracion }),
+    datoQuincenaDelListado({ desde, hasta, ahora, filasFeriados })
+  ]);
   const feriados = feriadosDelRango(filasFeriados, desdeDeLosFeriados(desde), hasta);
   const rango = { desde, hasta, feriados };
   const items = {
@@ -305,7 +340,8 @@ export const listarEventos = (req, res) => responder(res, 'Error al obtener los 
     mi_nombre_corto: miNombreCorto(usuario.id, usuarios),
     ...items,
     companeros_por_dia: companerosPorDia(items.ausentes),
-    frase_del_mes: mes === null ? null : fraseDelMes({ mes, ...items })
+    frase_del_mes: mes === null ? null : fraseDelMes({ mes, ...items }),
+    ...dato
   });
 });
 

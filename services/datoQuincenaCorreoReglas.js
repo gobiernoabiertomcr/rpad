@@ -658,16 +658,87 @@ const proximaEdicion = (edicion, calendario, filas) => {
  * el primer día hábil desde su fecha (a las 8:05: el bot la archiva antes) y `motivo`, por qué se corre, con el nombre de cada
  * feriado (`filasDeFeriados`, las de `filasDeFeriados()`, y los 9 fijos), o null si sale ese día. Con la tabla caída
  * (`calendario.error !== null`), ninguna: no se estima con los 9 fijos.
+ * `desdeLaSalida` (solo con true; la usa la agenda de Mi espacio, la pestaña Correo la llama sin ella): salta las ediciones cuyo
+ * `sale` es anterior a hoy, en lugar de las de fecha anterior a hoy. Así, el martes 24/11 la del lunes 23/11 feriado sigue en la
+ * serie aunque todavía no haya llegado: ese día es el del mail.
  */
-export const proximasEdiciones = ({ ultimaRegular, hoy, calendario, filasDeFeriados, cantidad = 4 }) => {
+export const proximasEdiciones = ({
+  ultimaRegular, hoy, calendario, filasDeFeriados, cantidad = 4, desdeLaSalida = false
+}) => {
   if (calendario.error !== null) return [];
+  const desde = desdeLaSalida === true ? (fecha) => calendario.proximoDiaHabil(fecha) : (fecha) => fecha;
   let edicion = esFechaIso(ultimaRegular) ? sumarDias(ultimaRegular, CADENCIA) : PRIMERA_EDICION;
-  while (edicion < hoy) edicion = sumarDias(edicion, CADENCIA);
+  while (desde(edicion) < hoy) edicion = sumarDias(edicion, CADENCIA);
   const proximas = [];
   for (let i = 0; i < cantidad; i++, edicion = sumarDias(edicion, CADENCIA)) {
     proximas.push(proximaEdicion(edicion, calendario, filasDeFeriados));
   }
   return proximas;
+};
+
+// El dato de la quincena en la agenda de Mi espacio (spec 2026-11-14-dato-quincena-en-mi-espacio)
+
+// Cuántas fechas muestra la agenda, entre la última edición y las de la serie
+export const CUANTAS_EN_MI_ESPACIO = 5;
+
+/**
+ * Un ítem de la agenda: `{ fecha, hora, texto, nombre, titulo, detalle }`, de la edición en la serie (`serie`, la de
+ * `proximaEdicion`). `fecha` es el día en que sale (o salió) y `hora`, 'HH:MM' con dos cifras, como los eventos de la agenda.
+ * El motivo es el de la serie y va solo si el ítem cae el día en que la serie la hace salir: una edición que ya llegó y sale otro
+ * día (en reintento, o llegó después de las 14:00) dice solo «Edición del lunes 23/11.», sin explicar por qué, para no decir
+ * nada falso. El día de la edición, sin el año.
+ */
+const itemDeLaAgenda = ({ serie, fecha, hora, salio }) => {
+  const nombre = salio ? 'Salió el dato de la quincena' : 'Sale el dato de la quincena';
+  const motivo = fecha === serie.sale ? serie.motivo : null;
+  const lunes = `${diaDeLaSemana(serie.edicion)} ${diaYMes(serie.edicion)}`;
+  const detalle = `Edición del ${lunes}${motivo === null ? '' : `: ${motivo}`}.`;
+  return { fecha, hora, texto: 'Dato de la quincena', nombre, titulo: `${nombre}, a las ${hora}. ${detalle}`, detalle };
+};
+
+/**
+ * Las fechas del dato de la quincena en la agenda de Mi espacio, las mismas para todos los roles: por fecha, hasta
+ * `CUANTAS_EN_MI_ESPACIO`. Con el envío automático apagado (`envioActivo !== true`) o la tabla de feriados caída, ninguna.
+ * `ultima` es la última edición regular con lo de su envío (`{ fecha_edicion, correo, envios }`: la fila de
+ * dato_quincena_correos o null, y sus filas automáticas) o null; `ahora`, 'AAAA-MM-DD HH:MM:SS' argentino.
+ * Si la última ya llegó, va según la situación de su pastilla (`situacionDelEnvio`): programada (también en curso sin ninguna
+ * fila enviada), el día y la hora de la corrida que la manda, si ese día todavía está vigente (`estaVigente`); enviada, solo el
+ * día de su primer envío, con esa hora y «Salió…».
+ * Las demás (no enviada, fallida, sin envío del RPAD) no van. Después, las de la serie (`proximasEdiciones` con `desdeLaSalida`),
+ * a las 8:05 del día en que salen. Es una estimación, como la pestaña Correo.
+ */
+export const datoQuincenaEnMiEspacio = ({ envioActivo, ultima, ahora, calendario, filasDeFeriados }) => {
+  if (envioActivo !== true || calendario.error !== null) return [];
+  const hoy = ahora.slice(0, 10);
+  // Una fecha que no se puede leer cuenta como sin ninguna regular, como en proximasEdiciones
+  const edicion = esFechaIso(ultima?.fecha_edicion) ? ultima.fecha_edicion : null;
+  const items = [];
+  if (edicion !== null) {
+    const situacion = situacionDelEnvio({
+      tipo: 'regular', fecha_edicion: edicion, correo: ultima.correo, envios: ultima.envios, reenvios: [], lista: [],
+      correoDelBot: null, envioActivo, ahora, calendario
+    });
+    const serie = proximaEdicion(edicion, calendario, filasDeFeriados);
+    if (situacion.clase === 'programada') {
+      const { salida } = situacion;
+      // Contra el día de la salida, no contra hoy (el día 13 después de las 14:00, la salida ya cae fuera): vencida, la corrida
+      // de ese día la da por vieja y no sale
+      if (estaVigente(edicion, salida.slice(0, 10))) {
+        items.push(itemDeLaAgenda({ serie, fecha: salida.slice(0, 10), hora: salida.slice(11, 16), salio: false }));
+      }
+    } else if (situacion.clase === 'enviada' && situacion.primero?.slice(0, 10) === hoy) {
+      const { primero } = situacion;
+      items.push(itemDeLaAgenda({ serie, fecha: hoy, hora: primero.slice(11, 16), salio: true }));
+    }
+  }
+  const proximas = proximasEdiciones({
+    ultimaRegular: edicion, hoy, calendario, filasDeFeriados, cantidad: CUANTAS_EN_MI_ESPACIO - items.length, desdeLaSalida: true
+  });
+  for (const proxima of proximas) {
+    items.push(itemDeLaAgenda({ serie: proxima, fecha: proxima.sale, hora: HORA_DE_LA_MANANA, salio: false }));
+  }
+  return items.sort((uno, otro) => (uno.fecha < otro.fecha ? -1 : Number(uno.fecha > otro.fecha)))
+    .slice(0, CUANTAS_EN_MI_ESPACIO);
 };
 
 // La corrida y Correos → Estado (secciones 8 y 13)

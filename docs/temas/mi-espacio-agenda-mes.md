@@ -4,6 +4,7 @@ Cómo se ve y se usa el mes: barras, renglones, fin de semana, teclado, día ele
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-28-mi-espacio-agenda-onda-design.md`
+- `docs/superpowers/specs/2026-11-14-dato-quincena-en-mi-espacio-design.md` (el dato de la quincena en el mes)
 
 ## El mes
 
@@ -63,6 +64,25 @@ Historia y motivos, en las specs:
   «8 eventos, 4 feriados, tu franquicia el 4 y tus vacaciones del 16 al 27.»; sin nada, «Nada cargado en noviembre.
   Tocá un día para agendar algo.».
   Los compañeros no van en la frase (decisión 9.8).
+
+## El dato de la quincena en el mes
+
+El servidor manda `dato_quincena` y `dato_quincena_activo` al final de `GET /mi-espacio/eventos` (ver `docs/temas/mi-espacio-agenda.md`); la página los dibuja sin recalcular nada.
+Cada fecha de la lista es un chip de clase `dato`, con el ícono de Lucide «newspaper» (`ICONOS_DEL_MES.dato`) y el texto del servidor.
+Su `title` es el `titulo` del servidor, entero; uno vacío o en blanco cae al texto, como en un feriado.
+En la casilla va después del feriado y antes de los eventos.
+En el día elegido y en «Próximos» va después de lo de todo el día y antes de los eventos, con la hora, el nombre y el detalle.
+Se ve igual para todos los roles.
+No abre nada propio: no es un botón, no lleva `data-evento` y el clic cae en la casilla, como un feriado (`tocarUnDia`: en la compu, «Nuevo evento» con esa fecha).
+La celda no cambia de fondo: solo el feriado la pinta.
+En el teléfono, un punto de su color.
+`frase_del_mes` no lo cuenta.
+La muestra de la leyenda, «El dato de la quincena» (`#ag-leyenda-dato`, oculta de entrada, después de «Feriados»), la muestra `pintarMesDeEventos` solo con `dato_quincena_activo === true`: con el envío apagado no hay chips y la muestra no se ve.
+Su ícono es el mismo SVG de `ICONOS_DEL_MES.dato`, y un test los compara.
+El color es el turquesa, con tres tokens en el `<style>` (`--sg-turquesa: #1E5C56`, `--sg-turquesa-borde: #2B7A73`, `--sg-turquesa-fondo: #DCF1EE`).
+El texto sobre su fondo da 6,57:1; el borde, el punto del teléfono y el ícono de «Próximos» dan 5,08:1 contra blanco y 4,26:1 contra el cielo.
+Las reglas son `.me-ev.dato, .me-leyenda .dato`, `.me-fila-del-dia.dato .me-elegido-cosa`, `.me-prox-icono.dato` y `.me-puntos .dato` (640 px); el alto contraste ya cubre los puntos.
+El color nunca es lo único que lo distingue: lleva su ícono y su texto.
 
 ## La página
 

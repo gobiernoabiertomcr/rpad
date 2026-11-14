@@ -398,6 +398,27 @@ export const ultimaRegular = async (conexion = pool) => {
   return fila?.fecha ?? null;
 };
 
+/**
+ * La última regular con lo de su envío, para la agenda de Mi espacio (spec 2026-11-14-dato-quincena-en-mi-espacio, «El
+ * servidor»; `datoQuincenaEnMiEspacio`): la de `fecha_edicion` más nueva (con la misma, la de id más alto), `{ id,
+ * fecha_edicion, correo, envios }`, con la fecha como texto 'AAAA-MM-DD' (las reglas toman cualquier otra forma como sin
+ * ninguna regular) y su fila de dato_quincena_correos y sus filas automáticas de correosDeLasEdiciones; o null si no hay ninguna.
+ * Sin direcciones de correo.
+ */
+export const ultimaRegularConSuCorreo = async (conexion = pool) => {
+  const [[fila]] = await conexion.query(
+    `SELECT d.id, DATE_FORMAT(d.fecha_edicion, '%Y-%m-%d') AS fecha_edicion
+     FROM dato_quincena_ediciones d
+     WHERE d.tipo = 'regular'
+     ORDER BY d.fecha_edicion DESC, d.id DESC
+     LIMIT 1`
+  );
+  if (fila === undefined) return null;
+  const id = Number(fila.id);
+  const { correo, envios } = (await correosDeLasEdiciones([id], conexion)).get(id);
+  return { id, fecha_edicion: fila.fecha_edicion, correo, envios };
+};
+
 /** Prende o apaga el envío automático (la fila 1, que crea si no está) y anota quién y cuándo. */
 export const guardarEnvioActivo = (activo, usuarioId, ahora, conexion = pool) => conexion.query(
   `INSERT INTO dato_quincena_correo_config (id, envio_activo, cambiado_por, cambiado_at) VALUES (1, ?, ?, ?)

@@ -2329,15 +2329,20 @@ const iconoDelEvento = (evento) => {
 const eventosEnOrden = (eventos) => listaDe(eventos).filter((evento) => esFechaDeTexto(evento.fecha))
   .sort((a, b) => a.fecha.localeCompare(b.fecha) || horaDelEvento(a).localeCompare(horaDelEvento(b))
     || comoTexto(a.titulo).localeCompare(comoTexto(b.titulo), 'es'));
+// Las fechas del dato de la quincena que manda el servidor (`dato_quincena`: `{ fecha, hora, texto, nombre, titulo, detalle }`, ya
+// armadas y filtradas al rango; las que no son un objeto con una fecha, no van). El navegador no decide nada: las imprime
+const datosDelDato = (fuente) => listaDe(fuente.dato_quincena).filter((dato) => esObjeto(dato) && esFechaDeTexto(dato.fecha));
 // Los días en que se pinta una licencia o un compañero: los hábiles dentro del rango (`dias`, del servidor)
 const diasPintados = (fila) => (Array.isArray(fila.dias) ? fila.dias.filter(esFechaDeTexto) : []);
 
 /**
  * Lo que va en cada día del mes que no es una barra (spec 2026-10-28-mi-espacio-agenda-onda, 3.5; tus licencias y los compañeros
  * que no están van en las barras: barrasDelMes), con lo que manda GET /mi-espacio/eventos para la grilla: `Map<fecha, [{ clase,
- * texto, evento_id? }]>`. En un día, en este orden: los feriados («Feriado: …») y los eventos por hora y título («10:00 Reunión de
- * equipo», con su `evento_id`). `clase` es el color: 'feriado', 'propio', 'compartido' o 'publico-otro' (claseDelEvento; un
- * Personal (Público) de otra persona, «10:00 Carla: Turno médico»), y uno tuyo Público suma `icono: 'ojo'`.
+ * texto, titulo?, evento_id? }]>`. En un día, en este orden: los feriados («Feriado: …»), el dato de la quincena (`dato_quincena`:
+ * clase 'dato', «Dato de la quincena», con su `titulo` para el title y sin `evento_id`: un clic cae en la celda, como en un
+ * feriado) y los eventos por hora y título («10:00 Reunión de equipo», con su `evento_id`). `clase` es el color: 'feriado',
+ * 'dato', 'propio', 'compartido' o 'publico-otro' (claseDelEvento; un Personal (Público) de otra persona, «10:00 Carla: Turno
+ * médico»), y uno tuyo Público suma `icono: 'ojo'`.
  */
 function cosasPorDia(datos) {
   const fuente = esObjeto(datos) ? datos : {};
@@ -2348,6 +2353,7 @@ function cosasPorDia(datos) {
     porDia.get(fecha).push(cosa);
   };
   for (const feriado of listaDe(fuente.feriados)) sumar(feriado.fecha, { clase: 'feriado', texto: comoTexto(feriado.texto) });
+  for (const dato of datosDelDato(fuente)) sumar(dato.fecha, { clase: 'dato', texto: comoTexto(dato.texto), titulo: comoTexto(dato.titulo) });
   for (const evento of eventosEnOrden(fuente.eventos)) {
     const texto = [horaDelEvento(evento), comoTexto(evento.titulo)].filter(conTexto).join(' ');
     sumar(evento.fecha, { clase: claseDelEvento(evento), ...iconoDelEvento(evento), texto, evento_id: evento.id ?? null });
@@ -2577,6 +2583,10 @@ const ICONOS_DEL_MES = Object.freeze({
     + '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
   ojo: ICONO_DEL_OJO,
   candado: ICONO_DEL_CANDADO,
+  // El dato de la quincena (Lucide «newspaper»), decorativo: la fecha en que sale (spec 2026-11-14-dato-quincena-en-mi-espacio)
+  dato: iconoDelMes('<path d="M15 18h-5"/><path d="M18 14h-8"/>'
+    + '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2"/>'
+    + '<rect width="8" height="4" x="10" y="6" rx="1"/>'),
   'publico-otro': ICONO_DEL_OJO,
   propio: ''
 });
@@ -2609,26 +2619,29 @@ const htmlDePieza = (pieza, demora) => {
 // El texto de un evento en el día es «HH:MM título» (cosasPorDia): la hora va en negrita
 const HORA_Y_TITULO = /^((?:[01]\d|2[0-3]):[0-5]\d)(?: ([\s\S]*))?$/;
 // Una cosa de un día, con sus renglones (`lineas`, data-lineas: renglonesDelDia) y su ícono (el de su clase o el que pide: el ojo de
-// un Público tuyo): un evento es un botón (lo abre, con su id); un feriado, un texto. Los dos con su title: en la celda se corta
+// un Público tuyo): un evento es un botón (lo abre, con su id); un feriado y el dato de la quincena, un texto. Todos con su title
+// (el del dato, el suyo, que dice la hora y la edición; los demás, su texto): en la celda se corta
 const htmlDeCosa = (cosa, lineas) => {
   const esEvento = Object.hasOwn(cosa, 'evento_id');
   const partes = esEvento ? HORA_Y_TITULO.exec(cosa.texto) : null;
   const texto = partes === null ? esc(cosa.texto) : `<b>${partes[1]}</b>${partes[2] === undefined ? '' : ` ${esc(partes[2])}`}`;
   const comun = `class="me-ev ${cosa.clase}" data-lineas="${String(lineas)}"`;
   const icono = iconoDe(cosa.clase, cosa.icono);
+  const titulo = conTexto(cosa.titulo) ? cosa.titulo : cosa.texto;
   return esEvento
     ? `<button type="button" ${comun} data-evento="${esc(cosa.evento_id)}" title="${esc(cosa.texto)}">${icono}${texto}</button>`
-    : `<span ${comun} title="${esc(cosa.texto)}">${icono}${texto}</span>`;
+    : `<span ${comun} title="${esc(titulo)}">${icono}${texto}</span>`;
 };
 
 /**
  * Un día de la grilla (spec 3.3 a 3.5 y 3.8): su número (un botón: en la compu, «Nuevo evento el jueves 22/10»; en el teléfono,
  * «Ver el jueves 22/10» y, el del día elegido, con aria-current="true": ahí lo de cada día no se ve y los puntos van con
  * aria-hidden, así que el anillo es lo único que lo marca a la vista y el lector de pantalla lo sabe por este atributo; con
- * tabindex="0" solo el del foco), su pedazo de cada carril de la semana, lo suyo (los feriados y los eventos, cosasPorDia) con los
- * renglones de renglonesDelDia —el resto, oculto, y «y N más», que lo muestra (data-ver-mas)— y sus puntos (los del teléfono, uno
- * por cosa, con su clase: el de un Público de otra persona, 'publico-otro', es un anillo). Hoy, con aria-current="date" en su
- * celda; los días del mes que ya pasaron, los de los meses vecinos, los fines de semana, los feriados y el elegido, con su clase.
+ * tabindex="0" solo el del foco), su pedazo de cada carril de la semana, lo suyo (los feriados, el dato de la quincena y los
+ * eventos, cosasPorDia) con los renglones de renglonesDelDia —el resto, oculto, y «y N más», que lo muestra (data-ver-mas)— y sus
+ * puntos (los del teléfono, uno por cosa, con su clase: el de un Público de otra persona, 'publico-otro', es un anillo). Hoy, con
+ * aria-current="date" en su celda; los días del mes que ya pasaron, los de los meses vecinos, los fines de semana, los feriados y
+ * el elegido, con su clase.
  */
 const htmlDeLaCelda = (dia, { cosas, piezas, lugares, hoy, foco, elegido, telefono, demora }) => {
   const { lineas, mas } = renglonesDelDia(cosas.length, lugares);
@@ -2708,9 +2721,10 @@ const tituloDelDiaElegido = (fecha, hoy) => (esFechaDeTexto(fecha) ? `${conMayus
  * El día elegido del teléfono (spec 3.8), con lo que manda GET /mi-espacio/eventos para la grilla (`datos`): su fecha
  * (tituloDelDiaElegido; el título está siempre: nombra la sección, #ag-elegido), «Nuevo evento» con esa fecha (data-nuevo-el) y lo
  * de ese día, de todo el día primero (los feriados, tu licencia y los compañeros que no están, con el texto del día de
- * `companeros_por_dia`) y después los eventos por hora, con quién está; sin nada, «No hay nada este día.». Sin lo del mes (`datos`
- * no es un objeto: mientras se pide, o si no se pudo cargar), no se sabe qué hay ese día: solo el título y «Nuevo evento», sin
- * lista ni «No hay nada este día.». Una fecha que no sirve, ''.
+ * `companeros_por_dia`), después el dato de la quincena (con su hora y la edición, sin ser un botón) y los eventos por hora, con
+ * quién está; sin nada, «No hay nada este día.». Sin lo del mes (`datos` no es un objeto: mientras se pide, o si no se pudo
+ * cargar), no se sabe qué hay ese día: solo el título y «Nuevo evento», sin lista ni «No hay nada este día.». Una fecha que no
+ * sirve, ''.
  */
 function htmlDelDiaElegido(fecha, datos, hoy) {
   if (!esFechaDeTexto(fecha)) return '';
@@ -2724,6 +2738,9 @@ function htmlDelDiaElegido(fecha, datos, hoy) {
   for (const licencia of listaDe(fuente.licencias)) if (diasPintados(licencia).includes(fecha)) deTodoElDia('licencia', licencia.texto);
   const companeros = listaDe(fuente.companeros_por_dia).find((dia) => dia.fecha === fecha && conTexto(dia.texto));
   if (companeros !== undefined) deTodoElDia('ausente', companeros.texto);
+  for (const dato of datosDelDato(fuente)) {
+    if (dato.fecha === fecha) filas.push({ clase: 'dato', hora: comoTexto(dato.hora), texto: comoTexto(dato.nombre), quien: comoTexto(dato.detalle) });
+  }
   for (const evento of eventosEnOrden(fuente.eventos)) {
     if (evento.fecha !== fecha) continue;
     filas.push({
@@ -2740,11 +2757,13 @@ function htmlDelDiaElegido(fecha, datos, hoy) {
  * Los próximos (lo que manda GET /mi-espacio/eventos de hoy a hoy + 30), agrupados en «Hoy, lunes 26/10», «Mañana, martes 27/10»,
  * «Esta semana» (hasta el domingo) y «Más adelante», sin grupos vacíos: `[{ titulo, items }]`. Cada ítem, `{ hora, titulo, detalle,
  * clase }` y, si es un evento, `quien` y `evento_id`. En un día, primero lo de todo el día (los feriados, tus licencias y los
- * compañeros, en ese orden) y después los eventos por hora y título. Hoy y mañana dicen la hora (o «Todo el día»); esta semana,
- * «Mié 28», y más adelante, «Mar 03/11», con la hora del evento en el título. Lo de varios días va una vez, el día en que empieza o
- * hoy, si ya empezó, con su «Hasta el …»; lo que terminó antes de hoy o es de después del rango no va. El detalle de un evento es su
- * aviso corto («Aviso 2 h antes») y `quien`, el «Solo vos», «Con 4 personas» o «De …» del servidor (en un Público tuyo, que suma
- * `icono: 'ojo'`, «Lo ven todos como «Turno médico»»; en uno de otra persona, ninguno de los dos). Con un hoy que no sirve, [].
+ * compañeros, en ese orden), después el dato de la quincena (con su hora, como un evento, y la edición de detalle; sin `evento_id`:
+ * no se abre) y después los eventos por hora y título. Hoy y mañana dicen la hora (o «Todo el día»); esta semana,
+ * «Mié 28», y más adelante, «Mar 03/11», con la hora del evento o del dato en el título. Lo de varios días va una vez, el día en
+ * que empieza o hoy, si ya empezó, con su «Hasta el …»; lo que terminó antes de hoy o es de después del rango no va. El detalle
+ * de un evento es su aviso corto («Aviso 2 h antes») y `quien`, el «Solo vos», «Con 4 personas» o «De …» del servidor (en un
+ * Público tuyo, que suma `icono: 'ojo'`, «Lo ven todos como «Turno médico»»; en uno de otra persona, ninguno de los dos). Con un
+ * hoy que no sirve, [].
  */
 function gruposDeProximos(datos, hoy) {
   const rango = rangoDeProximos(hoy);
@@ -2762,6 +2781,13 @@ function gruposDeProximos(datos, hoy) {
   for (const feriado of listaDe(fuente.feriados)) deTodoElDia(feriado.fecha, 'feriado', feriado.texto, '');
   for (const licencia of listaDe(fuente.licencias)) deVariosDias(licencia, 'licencia');
   for (const ausente of listaDe(fuente.ausentes)) deVariosDias(ausente, 'ausente');
+  for (const dato of datosDelDato(fuente)) {
+    if (enRango(dato.fecha)) {
+      cosas.push({
+        fecha: dato.fecha, clase: 'dato', hora: comoTexto(dato.hora), texto: comoTexto(dato.nombre), detalle: comoTexto(dato.detalle), conHora: true
+      });
+    }
+  }
   for (const evento of eventosEnOrden(fuente.eventos)) {
     if (!enRango(evento.fecha)) continue;
     cosas.push({
@@ -2784,9 +2810,11 @@ function gruposDeProximos(datos, hoy) {
   for (const cosa of cosas) {
     const grupo = grupos.find((uno) => uno.es(cosa.fecha));
     const esEvento = Object.hasOwn(cosa, 'evento_id');
+    // Un evento y el dato de la quincena tienen hora; lo de todo el día, no
+    const conHora = esEvento || cosa.conHora === true;
     const item = grupo.dia === null
-      ? { hora: esEvento ? cosa.hora : 'Todo el día', titulo: cosa.texto }
-      : { hora: grupo.dia(cosa.fecha), titulo: esEvento && cosa.hora ? `${cosa.hora} ${cosa.texto}` : cosa.texto };
+      ? { hora: conHora ? cosa.hora : 'Todo el día', titulo: cosa.texto }
+      : { hora: grupo.dia(cosa.fecha), titulo: conHora && cosa.hora ? `${cosa.hora} ${cosa.texto}` : cosa.texto };
     Object.assign(item, { detalle: cosa.detalle, clase: cosa.clase });
     if (Object.hasOwn(cosa, 'icono')) item.icono = cosa.icono;
     if (esEvento) Object.assign(item, { quien: cosa.quien, evento_id: cosa.evento_id });
@@ -4062,6 +4090,7 @@ function pintarMesDeEventos() {
   porId('ag-elegido').innerHTML = htmlDelDiaElegido(semana.elegido, delMes, hoy);
   if (esObjeto(delMes)) {
     porId('ag-leyenda-ausentes').hidden = delMes.ve_companeros !== true;
+    porId('ag-leyenda-dato').hidden = delMes.dato_quincena_activo !== true;
     pintarLaCasilla(delMes);
   }
   if (conFoco) numeroDelDia(semana.foco)?.focus?.();

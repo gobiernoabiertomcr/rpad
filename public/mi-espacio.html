@@ -15,7 +15,9 @@
         /* Mi espacio (spec 2026-10-26-mi-espacio-licencias-y-horas, 8): los tokens y las piezas del Seguimiento y de Proyectos, con
            los tres fondos que faltaban (ámbar, gris y violeta), desde el Resumen «Titular», el azul medio de la regla y, desde el evento
            Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 5.1), el rosado de un Público de otra persona: el texto,
-           #8A3B5C, da 6,00:1 sobre su fondo y 7,34:1 sobre blanco, y el borde, #B5577F, 3,70:1 contra su fondo y 4,53:1 contra blanco */
+           #8A3B5C, da 6,00:1 sobre su fondo y 7,34:1 sobre blanco, y el borde, #B5577F, 3,70:1 contra su fondo y 4,53:1 contra blanco;
+           y, desde el dato de la quincena en la agenda (spec 2026-11-14-dato-quincena-en-mi-espacio, 5), el turquesa: el texto,
+           #1E5C56, da 6,57:1 sobre su fondo, y el borde y el punto, #2B7A73, 5,08:1 contra blanco y 4,26:1 contra el cielo */
         :root {
             --sg-tinta: #1A365D; --sg-texto: #22324A; --sg-suave: #56677F; --sg-linea: #DAE3ED; --sg-sutil: #F4F7FA;
             --sg-borde-control: #76879F; --sg-cielo: #DCEEF5;
@@ -27,6 +29,7 @@
             --sg-gris: #8A97A8; --sg-gris-fondo: #EEF1F5;
             --sg-medio: #4C7AB0;
             --sg-rosado: #8A3B5C; --sg-rosado-fondo: #F7E3EC; --sg-rosado-borde: #B5577F;
+            --sg-turquesa: #1E5C56; --sg-turquesa-borde: #2B7A73; --sg-turquesa-fondo: #DCF1EE;
         }
 
         /* Lo oculto con el atributo hidden no vuelve por una regla de display más específica */
@@ -300,9 +303,10 @@
 
         /* La agenda (spec 2026-10-26-mi-espacio-agenda, 6; con más onda desde la spec 2026-10-28-mi-espacio-agenda-onda, 3 y 6, y la
            maqueta aprobada): arriba, la banda del mes; debajo, el mes y, al costado, los próximos. Los colores: lo tuyo en tinta, lo
-           compartido en violeta, tus licencias y francos en verde, los feriados en el sol y los compañeros en la pizarra (gris oscura
-           con letra blanca: la eligió el usuario, la gris clara «se pierde»). La regla del Resumen tiene sus propias clases (.me-barra
-           y .me-muestra): las barras de la agenda son .me-tira y la muestra de la leyenda, .me-color */
+           compartido en violeta, tus licencias y francos en verde, los feriados en el sol, el dato de la quincena en turquesa y los
+           compañeros en la pizarra (gris oscura con letra blanca: la eligió el usuario, la gris clara «se pierde»). La regla del
+           Resumen tiene sus propias clases (.me-barra y .me-muestra): las barras de la agenda son .me-tira y la muestra de la
+           leyenda, .me-color */
         .me-mes-y-proximos { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
         .me-mes-y-proximos > .me-tarjeta + .me-tarjeta { margin-top: 0; }
         .me-tarjeta-del-mes { padding: 14px 16px 18px; }
@@ -405,6 +409,7 @@
         .me-ev.publico-otro, .me-leyenda .publico-otro { background: var(--sg-rosado-fondo); border-color: var(--sg-rosado-borde); color: var(--sg-rosado); }
         .me-ev.licencia, .me-leyenda .licencia { background: var(--sg-verde-fondo); border-color: var(--sg-verde); color: var(--sg-verde); }
         .me-ev.feriado, .me-leyenda .feriado { background: var(--sg-sol); border-color: #C98A00; color: var(--sg-ambar); }
+        .me-ev.dato, .me-leyenda .dato { background: var(--sg-turquesa-fondo); border-color: var(--sg-turquesa-borde); color: var(--sg-turquesa); }
         .me-ev.ausente, .me-leyenda .ausente { background: var(--sg-gris-fondo); border-color: var(--sg-gris); color: var(--sg-suave); }
         .me-mas { align-self: flex-start; background: none; border: 0; padding: 0 0 0 6px; font: inherit; font-size: 0.74rem; font-weight: 600; color: var(--sg-suave); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
         .me-puntos { display: none; }
@@ -435,6 +440,7 @@
         .me-fila-del-dia.publico-otro .me-elegido-cosa { background: var(--sg-rosado-fondo); border-color: var(--sg-rosado-borde); color: var(--sg-rosado); }
         .me-fila-del-dia.licencia .me-elegido-cosa { background: var(--sg-verde-fondo); border-color: var(--sg-verde); color: var(--sg-verde); }
         .me-fila-del-dia.feriado .me-elegido-cosa { background: var(--sg-sol); border-color: #C98A00; color: var(--sg-ambar); }
+        .me-fila-del-dia.dato .me-elegido-cosa { background: var(--sg-turquesa-fondo); border-color: var(--sg-turquesa-borde); color: var(--sg-turquesa); }
         .me-fila-del-dia.ausente .me-elegido-cosa { background: var(--sg-gris-fondo); border-color: var(--sg-gris); color: var(--sg-suave); }
 
         /* Con prefers-reduced-motion, nada se mueve: las barras, su texto, el «+» y la llave, sin transición, y quietas aunque
@@ -458,6 +464,7 @@
         .me-prox-icono.publico-otro { color: var(--sg-rosado); }
         .me-prox-icono.licencia { color: var(--sg-verde); }
         .me-prox-icono.feriado { color: #9A6A00; }
+        .me-prox-icono.dato { color: var(--sg-turquesa-borde); }
         .me-prox-icono.ausente { color: var(--sg-suave); }
         .me-proximos h3 { margin: 14px 0 6px; font-family: inherit; font-size: 0.78rem; font-weight: 700; letter-spacing: 0; color: var(--sg-suave); }
         .me-proximos h3:first-child { margin-top: 0; }
@@ -888,6 +895,7 @@
             .me-puntos .compartido { background: var(--sg-violeta); }
             .me-puntos .publico-otro { background: #fff; box-shadow: inset 0 0 0 2px var(--sg-rosado-borde); }
             .me-puntos .feriado { background: #9A6A00; }
+            .me-puntos .dato { background: var(--sg-turquesa-borde); }
             .me-leyenda { gap: 6px 12px; font-size: 0.78rem; }
             .me-elegido { display: block; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--sg-linea); }
             .me-opciones.dos { grid-template-columns: minmax(0, 1fr); }
@@ -1052,8 +1060,8 @@
                         <div class="me-tarjeta me-tarjeta-del-mes">
                             <div id="ag-mes"></div>
                             <!-- Los colores, cada uno con su ícono (los de ICONOS_DEL_MES de mi-espacio.js; lo que es solo tuyo, sin ícono).
-                                 «Compañeros que no están», solo para quien los ve (administración: decisión del usuario, 27/10/2026);
-                                 mi-espacio.js la muestra. El ojo
+                                 «Compañeros que no están», solo para quien los ve (administración: decisión del usuario, 27/10/2026), y
+                                 «El dato de la quincena», solo con el envío automático prendido: mi-espacio.js las muestra. El ojo
                                  es «lo ven otros»: «Tuyos, a la vista» (lo tuyo con el ojo) y «Personales de otros» (en rosado) -->
                             <ul class="me-leyenda" aria-label="Los colores del mes">
                                 <li><span class="me-color propio" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>Solo vos</li>
@@ -1062,6 +1070,7 @@
                                 <li><span class="me-color compartido" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>Laborales</li>
                                 <li><span class="me-color licencia" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></span>Tus licencias y francos</li>
                                 <li><span class="me-color feriado" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg></span>Feriados</li>
+                                <li id="ag-leyenda-dato" hidden><span class="me-color dato" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18h-5"/><path d="M18 14h-8"/><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="10" y="6" rx="1"/></svg></span>El dato de la quincena</li>
                                 <li id="ag-leyenda-ausentes" hidden><span class="me-color ausente" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Compañeros que no están</li>
                             </ul>
                             <!-- El día elegido del teléfono (spec 3.8): su fecha, «Nuevo evento» y lo de ese día. Lo dibuja mi-espacio.js -->
@@ -1570,6 +1579,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/mi-espacio.js?v=20261226"></script>
+    <script src="js/mi-espacio.js?v=20261233"></script>
 </body>
 </html>

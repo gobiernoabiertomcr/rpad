@@ -67,8 +67,8 @@ Historia y motivos, en las specs:
     Turno médico» (también su nombre accesible, con la hora delante:
     «10:00 Carla:
     Turno médico»), sin quién lo ve, y en el teléfono es un **anillo** rosado en lugar de un punto (el color nunca es lo único que distingue: también el ojo, el anillo y el texto).
-    La leyenda tiene siete:
-    «Solo vos», «Tuyos, a la vista», «Personales de otros», «Laborales», «Tus licencias y francos», «Feriados» y «Compañeros que no están» («Compañeros que no están», solo para administración).
+    La leyenda tiene ocho:
+    «Solo vos», «Tuyos, a la vista», «Personales de otros», «Laborales», «Tus licencias y francos», «Feriados», «El dato de la quincena» y «Compañeros que no están» («El dato de la quincena», solo con el envío automático prendido, y «Compañeros que no están», solo para administración).
     El detalle de un Público de otra persona (`#modal-evento-ajeno`):
     «Carla:
     Turno médico», cuándo es, la insignia rosada «Personal (Público)» con el ojo y «Es un evento personal de Carla: se ve solo lo que eligió mostrar.», sin el detalle ni «Mi recordatorio», con «Cerrar».
@@ -92,7 +92,7 @@ Lo puro del evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-public
 Turno médico», escapados, con el `mi_nombre_corto` del servidor o, sin él, `NOMBRE_DE_LA_VISTA_PREVIA`, «Tu nombre», y «…» sin texto);
 `ayudasDelEvento(valores)` (texto plano para `textContent`: en un Público, `AYUDA_DE_LAS_PERSONAS_DEL_PUBLICO` y `AYUDA_DEL_RECORDATORIO_PUBLICO`, «Te llega solo a vos.»; en un Laboral, `AYUDA_DE_LAS_PERSONAS_DEL_LABORAL` y `AYUDA_DEL_RECORDATORIO_COMPARTIDO`); y `htmlDePersonasDelEvento`, cuyo primer botón dice «Todos».
 Después, cómo se ve:
-`ICONO_DEL_OJO` (Lucide `eye`, decorativo, al lado de `iconoDelMes`) e `ICONOS_DEL_MES`, que trae `ojo` y `'publico-otro'`, los dos con ese ojo (siete claves);
+`ICONO_DEL_OJO` (Lucide `eye`, decorativo, al lado de `iconoDelMes`) e `ICONOS_DEL_MES`, que trae `ojo` y `'publico-otro'`, los dos con ese ojo (nueve claves);
 `iconoDe(clase, icono)` e `iconoOPunto(clase, icono)` (el ícono que pide `icono`, si es una clave de `ICONOS_DEL_MES`; si no, el de la clase; si la clase no tiene, `iconoDe` da '' e `iconoOPunto`, el de las listas, un punto, `<i></i>`);
 `claseDelEvento` ('publico-otro' un Público de otra persona, 'compartido' un Laboral, tuyo o ajeno, y 'propio' lo tuyo que no es Laboral: un Privado y un Público tuyo);
 `iconoDelEvento(evento)` (`{ icono: 'ojo' }` un Público tuyo, que se suma a su cosa en `cosasPorDia`, a la fila del día elegido y a la cosa de `gruposDeProximos`;
@@ -117,7 +117,7 @@ Copias atadas por tests de paridad:
 Solo del navegador, con tests de comportamiento:
 `MENSAJE_OTRO_VACIO` («Escribí qué ven los demás.»), las cuatro ayudas, `OPCIONES_DEL_TIPO` y `NOMBRE_DE_LA_VISTA_PREVIA`.
 En el HTML están `#ev-grupo-tipo`, justo después de `#ev-error` (`role="group"`, con `aria-labelledby="ev-tipo-rotulo"` y `aria-describedby="ev-tipo-ayuda ev-tipo-error"`; se ve para todos), y `#ev-publico` (oculto), que tiene `#ev-grupo-texto` con `#ev-textos` y `#ev-texto-error`, `#ev-otro-grupo` con `#ev-otro` (con `aria-describedby="ev-otro-cuenta ev-otro-error"` y sin `maxlength`) y `#ev-otro-cuenta`, y `#ev-vista-previa` (`#ev-vista-previa-dia` y `#ev-vista-previa-evento`);
-la leyenda tiene siete muestras, con `#ag-leyenda-ausentes` oculta de entrada, y «Solo vos» lleva el candado;
+la leyenda tiene ocho muestras, con `#ag-leyenda-ausentes` y `#ag-leyenda-dato` ocultas de entrada, y «Solo vos» lleva el candado;
 en la tarjeta de Próximos están `#ag-por-mail`, `#ag-eventos-por-mail` y `#ag-eventos-por-mail-ayuda`.
 Los estilos, en el `<style>` de `mi-espacio.html` y sin ninguna clase `ag-`: los tokens `--sg-rosado` (#8A3B5C), `--sg-rosado-fondo` (#F7E3EC) y `--sg-rosado-borde` (#B5577F);
 `.me-ev.publico-otro, .me-leyenda .publico-otro`, `.me-insignia.rosado`, `.me-lo-ven`, `.me-prox-icono.publico-otro` (y `.me-prox-icono.propio`, en tinta) y `.me-fila-del-dia.publico-otro`;
