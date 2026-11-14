@@ -6,12 +6,13 @@ El correo que el RPAD manda con cada edición, su lista, Reenviar y la prueba es
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-07-dato-quincena-design.md`
 - `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
+- `docs/superpowers/specs/2026-11-14-dato-quincena-v1-3-design.md` (el contrato v1.3: Repite y Efemeride)
 
 ## Archivos
 
 datoQuincenaController: el POST de Datito (`recibirEdicion`) y las lecturas (`listar`, `ver` y `descargar`);
-datoQuincenaReglas (puro: los topes, la validación de la edición y del manifiesto, la clave, la huella del paquete, el token, `esPng`, `esSvg`, `esTextoUtf8`, `NOMBRE_DEL_BOT`, los textos de la lista y del detalle, la foto del RPAD, lo que se copia, las filas que se guardan, los avisos y el recibo);
-datoQuincenaDatos (las consultas y la transacción del guardado);
+datoQuincenaReglas (puro: los topes, la validación de la edición y del manifiesto, la clave, la huella del paquete, el token, `esPng`, `esSvg`, `esTextoUtf8`, `NOMBRE_DEL_BOT`, los textos de la lista y del detalle, la foto del RPAD, lo que se copia, las filas que se guardan, `fechasPrevias`, los avisos y el recibo);
+datoQuincenaDatos (las consultas, la transacción del guardado y `leerEdicionesPrevias`);
 dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el detalle ?id=N y la pestaña Correo (dato-quincena.js)
 
 ## El archivo
@@ -101,7 +102,7 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   `ckan_slug`, como todo texto que admite null, también puede llegar vacío.
 - Cada propuesta: `orden` (1, 2, 3… en su orden, sin saltos);
   `titulo` (200);
-  `etiquetas`, sin repetidos, de 'Principal', 'Validar' y 'Agenda' (exactamente una propuesta de la edición lleva 'Principal');
+  `etiquetas`, sin repetidos, de 'Principal', 'Validar', 'Agenda', 'Efemeride' (sin tilde, como la escribe el bot) y 'Repite' (exactamente una propuesta de la edición lleva 'Principal');
   `dataset`, `{ rpad_id, ckan_slug, nombre (200), url }`, con `rpad_id` un entero positivo o null y `ckan_slug` (200) o null;
   `rpad_snapshot`, la foto del RPAD (abajo);
   `cifra_clave` (1000);
@@ -110,7 +111,15 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   `puntos_centrales`, de 3 a 5 textos (2000);
   `borrador_nota`, `{ titulo (200), parrafos }`, con 2 o 3 párrafos (10000);
   `notas_validacion`, de 0 a 20 textos (10000);
-  y `fuentes`, de 1 a 20 direcciones.
+  `fuentes`, de 1 a 20 direcciones;
+  y, opcional, `repeticion` (abajo).
+- La repetición (contrato v1.3): Datito puede volver sobre un dataset o un tema de una edición anterior si hay datos nuevos o un hecho actual, y lo marca.
+  `repeticion` es opcional, como `tipo` en la agenda: sin la clave, la propuesta tiene la forma de antes (v1.2) y `schema_version` sigue en '1.0'.
+  Si está, vale null o un objeto cerrado con sus cuatro claves: `fecha_edicion_previa` (un día AAAA-MM-DD que exista), `motivo` (`datos_nuevos` o `hecho_actual`), `alcance` (`dataset` o `tema`) y `detalle` (1000).
+  Un valor que no es null ni un objeto da «Tiene que ser un objeto.».
+  La coherencia, después de los errores de cada propuesta y en su ruta: 'Repite' sin `repeticion` (o con null) da `propuestas[i].repeticion` «La propuesta tiene la etiqueta Repite pero no tiene repeticion.»; una `repeticion` objeto sin 'Repite' da `propuestas[i].etiquetas` «La propuesta tiene repeticion pero no tiene la etiqueta Repite.».
+  Datito copia esos dos textos tal cual: no se cambian.
+  La validación no compara la fecha con lo archivado: lo que depende de lo archivado da avisos en el recibo y nunca un 422 (anti-objetivo de la spec: que una edición quede sin archivar por eso).
 - La foto del RPAD (`rpad_snapshot`): `estado`, uno de los de `GET /api/datasets` (`actualizado`, `proximo`, `atrasado`, `sin-respuesta`, `sin-fecha` o `eventual`) o null;
   `datos_al` y `ultima_actualizacion`, una fecha 'AAAA-MM-DD', un instante o null (un instante porque `GET /api/datasets` manda `ultima_actualizacion` así y el bot copia lo que ve);
   `updated_at`, un instante o null;
@@ -142,6 +151,7 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   el nombre de la parte (`infografia_png`, `infografia_svg`, `correo_texto` o `calculos`) si su contenido no es el que corresponde;
   y `adjuntos` si una parte llegó sin su entrada en el manifiesto (el mensaje nombra la parte).
 - Un dataset que no existe no frena la edición: la propuesta se guarda sin enlace y el recibo trae un aviso.
+  Una edición previa que no está o que no cita el dataset, tampoco: el recibo trae su aviso.
 
 ## La clave, la huella y el guardado
 
@@ -159,7 +169,13 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
 - El recibo (201 y 200, `reciboDe`): `{ id, clave, tipo, fecha_edicion, huella, recibida_at, repetida, adjuntos, url, avisos, envio }`.
   `recibida_at` es la llegada en Argentina con la zona (`AAAA-MM-DDTHH:MM:SS-03:00`), leída de la base después del `commit` (`UNIX_TIMESTAMP` + `ahoraArgentina`): así el 201 y el 200 dicen lo mismo.
   `adjuntos` va en el orden infografía, texto, cálculos y SVG, cada uno `{ campo, bytes, sha256 }`; `url` es `<RPAD_URL>/dato-quincena.html?id=N` (de `APP_URL`).
-  `avisos`, uno por propuesta que cita un `rpad_id` que no está en el RPAD: «La propuesta N cita el dataset X, que no está en el RPAD: se guardó sin enlace.»; el 200 los arma de nuevo desde lo guardado.
+  `avisos`, por cada propuesta en su orden, primero el de su dataset y después el de su repetición; el 200 los arma de nuevo desde lo guardado.
+  El del dataset, si cita un `rpad_id` que no está en el RPAD: «La propuesta N cita el dataset X, que no está en el RPAD: se guardó sin enlace.».
+  El de la repetición (una `repeticion` objeto; F, la fecha en dd/mm/aaaa), el primero que valga: con F igual o posterior a la edición, «La propuesta N repite la edición del F, que no es anterior a esta: se guardó sin enlace.»;
+  sin una edición regular de esa fecha en el RPAD, «La propuesta N repite la edición del F, que no está en el RPAD: se guardó sin enlace.»;
+  y, con el alcance `dataset`, un `rpad_id` y una edición de esa fecha que no lo cita, «La propuesta N repite el dataset X de la edición del F, pero esa edición no lo tiene.».
+  Las ediciones previas las lee `edicionesPreviasSinFallar(fechasPrevias(edicion))` después de guardar, con una consulta (abajo, «Las lecturas»).
+  Si esa lectura falla, el recibo sale igual (201 o 200) sin los avisos de la repetición y con los del dataset: un aviso que depende de lo archivado podría ser falso, y la edición ya está guardada.
   `envio`, `{ estado, programado_at, texto }`, es el envío del RPAD en ese momento (`envioDelRecibo`): `programado_at` es la corrida en que sale, con zona (`2026-11-24T08:05:00-03:00`), solo si está programada; `texto` dice cuándo se envía o por qué no.
   Un piloto: `estado: 'piloto'` y «Los pilotos no se envían por correo.».
   Un 200 lo arma con el estado de ese momento; una regular archivada antes del correo (sin fila de envío) da `envio: null`.
@@ -188,7 +204,15 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   en una edición sin envío (archivada antes del correo), la de Datito: «Correo enviado el dd/mm/aaaa a las HH:MM, según Datito.» con la hora pasada a Argentina sea cual sea la zona del bot, «Correo enviado según Datito, sin la hora.» o «Datito archivó esta edición sin que saliera el correo.», que sigue siendo cierto si el correo sale después: la edición no cambia y Datito no la vuelve a mandar (sería un 409);
   `cantidad`, «1 propuesta» o «5 propuestas»;
   `agenda`, cada evento `{ fecha_texto, titulo, detalle, url, etiqueta }`, con la fecha dd/mm/aaaa y `etiqueta` «Efeméride» (de `tipo: 'efemeride'`) o null.
-  Cada propuesta: `orden_texto` («Propuesta 1»), `etiquetas`, `principal`, sus textos tal como llegaron, `dataset` (`{ nombre, id_enlace, url }`, con `id_enlace` el id solo si el dataset existe y está activo), `foto`, `para_copiar` y `borrador_para_copiar`.
+  Cada propuesta: `orden_texto` («Propuesta 1»), `etiquetas`, `principal`, sus textos tal como llegaron, `dataset` (`{ nombre, id_enlace, url }`, con `id_enlace` el id solo si el dataset existe y está activo), `foto`, `repeticion` (después de la foto), `para_copiar` y `borrador_para_copiar`.
+  `etiquetas` son las para mostrar: 'Efemeride' es «Efeméride» y las demás quedan igual; `principal` mira el valor del JSON.
+  `repeticion` es null (sin la clave o con null) o `{ texto, motivo, id_edicion }`: «Repite el dataset de la edición del dd/mm/aaaa.» o «Repite el tema de la edición del dd/mm/aaaa.»;
+  «Datos nuevos: <detalle>» o «Hecho actual: <detalle>», con el detalle tal como llegó;
+  e `id_edicion`, el id de la regular de esa fecha si existe y es anterior a la edición, o null (no depende de que cite el dataset: eso solo da el aviso).
+- Las ediciones previas (`leerEdicionesPrevias`, de las fechas de `fechasPrevias`: las de las repeticiones anteriores a la edición, sin repetir): una consulta con `tipo = 'regular' AND fecha_edicion IN (?)`, y un `Map` de la fecha a `{ id, rpad_ids }`, con los `rpad_id` que citan sus propuestas en su `metadata`.
+  Se mira lo que el bot citó y no el enlace que quedó guardado; sin fechas, no consulta.
+  La leen el recibo, `ver` y el mail (`docs/temas/dato-quincena-correo.md`); sin columnas nuevas ni migración: todo sale de `metadata`, que ya se guarda entera.
+  La llaman a través de `edicionesPreviasSinFallar`, que nunca tira: si la consulta falla, deja en la consola «Dato de la quincena: no se pudieron leer las ediciones previas» con el código del error (el mensaje de la base puede traer las fechas) y da null; el detalle y el mail salen con la repetición sin enlace.
 - `archivos`, cada uno `{ campo, rotulo, nombre, detalle, se_puede_ver }`, en este orden: «Infografía» («PNG · 97 KB»), «Texto del correo», «Cálculos» si llegaron, «Infografía editable» (el SVG, «SVG · 84 KB», si llegó) y «La edición completa» (`metadata`, «JSON · 24 KB»).
   `nombre` es el del manifiesto y, en la edición completa, `dato-quincena-<la clave sin dq:, con - en lugar de :>.json`: la página guarda con él, porque `API.pedirArchivo` no da el `Content-Disposition`.
   El tamaño va en KB hacia arriba y, desde 1 MB, en MB con un decimal y coma, también hacia arriba («1,5 MB»); `se_puede_ver` es true en el texto y los cálculos (el SVG se descarga y no se ve: la página no lo dibuja).
@@ -197,13 +221,13 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   y, si vino `dias_para_vencer`, «Próxima en» (0 o más) o «Venció hace» (negativo), con «N días» o «1 día».
   `atrasado` y `sin-respuesta` dicen los dos «Vencido»: `CLAUDE.md` pide lenguaje neutro en lo nuevo (el sitio público todavía muestra otro rótulo para el segundo).
 - Lo que se copia (`textoParaCopiar`): la propuesta entera en texto plano, en bloques separados por un renglón en blanco y con los textos tal como llegaron.
-  El título con sus etiquetas entre corchetes (sin etiquetas, solo), la cifra, «Dataset: <nombre>» con la dirección del portal, la foto en un renglón (cada fila como «<rotulo> <valor>.», separadas por un espacio), «Para validar antes de publicar» si hay notas, y cada campo de la propuesta completa con su título, como el ejemplo de la sección 9 de la spec.
+  El título con sus etiquetas para mostrar entre corchetes (sin etiquetas, solo), la cifra, «Dataset: <nombre>» con la dirección del portal, la foto en un renglón (cada fila como «<rotulo> <valor>.», separadas por un espacio), la repetición si hay («<texto>\n<motivo>»), «Para validar antes de publicar» si hay notas, y cada campo de la propuesta completa con su título, como el ejemplo de la sección 9 de la spec.
   `borrador_para_copiar` es el título del borrador y sus párrafos, separados por un renglón en blanco.
 - `GET /api/dato-quincena/ediciones/:id/archivos/:campo`, la descarga de `infografia_png`, `infografia_svg`, `correo_texto`, `calculos` o `metadata`: los bytes guardados, con un `Content-Type` fijo por campo y no el MIME del manifiesto (`TIPO_DE_DESCARGA`: `image/png`, `image/svg+xml`, `text/plain; charset=utf-8` en el texto y los cálculos, `application/json; charset=utf-8` en la edición) y un `Content-Disposition` de adjunto (`disposicionDeAdjunto`) con el `nombre` del detalle.
   El `no-store` y el `nosniff` los ponen `app.js` y Helmet.
   En una edición que existe, otro `campo`, unos cálculos o un SVG que no llegaron dan 404 «El archivo no existe.».
   Solo la descarga lee los bytes (`contenido`): la lista y el detalle nunca los traen.
-- `tests/fixtures/dato-quincena-respuestas.json`, inventado, es el contrato entre el servidor y la página: `tests/dato-quincena-reglas.test.js` le compara lo que arman las reglas, con las claves en su orden;
+- `tests/fixtures/dato-quincena-respuestas.json`, inventado, es el contrato entre el servidor y la página (`detalle_con_repeticion`, una edición con repeticiones, con y sin enlace): `tests/dato-quincena-reglas.test.js` le compara lo que arman las reglas, con las claves en su orden;
   `tests/dato-quincena-api.test.js`, la forma de las respuestas reales;
   y `tests/dato-quincena-frontend.test.js` dibuja la página con él y controla sus claves.
   Una clave que cambia en el servidor obliga a cambiar el fixture.
@@ -222,7 +246,9 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   El año y la página elegidos quedan en la dirección (`?anio=AAAA&pagina=N`, con `history.replaceState`); al cambiar de año, la página 1; uno pedido sin ediciones, con otros que sí tienen, vuelve a la lista sola.
 - El detalle (`?id=N`): «Todas las ediciones», la fecha grande con el N.º o la marca, el título, la llegada, el correo y la cantidad (el punto después de la cantidad lo pone la página) y, si hay, «Nota de Datito:» con la nota.
   A un costado (fijo al bajar, salvo en una pantalla angosta, donde va arriba, o en una pantalla baja), la infografía y «Archivos», con «Descargar» en cada uno y «Ver» en el texto y los cálculos; al otro, «Agenda de la quincena» (si hay) y «Las propuestas».
-- Cada propuesta: su número, sus etiquetas («Principal» en tinta, «Agenda» en cielo y «Validar» en sol con el `triangle-alert`: nunca solo el color), el título, la cifra, «Dataset:» (con enlace a `dataset.html?id=N` solo con `id_enlace`) y «en el portal», la foto del RPAD y, si hay, «Para validar antes de publicar», siempre a la vista.
+- Cada propuesta: su número, sus etiquetas («Principal» en tinta, «Agenda» en cielo, «Validar» en sol con el `triangle-alert` y «Repite» en blanco con un borde por dentro y el `history`; «Efeméride», el estilo neutro de `.dq-etiqueta`: nunca solo el color), el título, la cifra, «Dataset:» (con enlace a `dataset.html?id=N` solo con `id_enlace`) y «en el portal», la foto del RPAD y, si hay, la repetición y «Para validar antes de publicar», siempre a la vista.
+  La repetición (`.dq-repite`, neutra, con los márgenes de `.dq-validar`): el `history`, alineado con el primer renglón, y el `texto` en negrita, como enlace a `dato-quincena.html?id=<id_edicion>` solo si `idDeEdicion` lo acepta, y abajo el `motivo`.
+  El enlace va subrayado: `main.css` le saca el subrayado a todo `<a>` y el texto ya es negrita y tinta, así que sin él no se distinguiría del texto sin enlace.
   Después, en un `<details>` («La propuesta completa», abierto en la principal; «Ver la propuesta completa», cerrado en las otras), los campos en el orden de lo que se copia, y al pie, «Copiar la propuesta».
   La principal lleva el borde de tinta más grueso.
 - «Copiar», tres por propuesta, con el texto tal como llega del servidor: en el texto para redes (`texto_redes`), en el borrador (`borrador_para_copiar`) y al pie (`para_copiar`).

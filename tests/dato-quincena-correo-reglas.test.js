@@ -16,7 +16,7 @@ import { detalleDeLaEdicion, NOMBRE_DEL_BOT } from '../services/datoQuincenaRegl
 import { datoQuincenaTemplate } from '../services/emailTemplates.js';
 import { calendarioCon } from '../services/feriadosReglas.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
-import { edicionDePrueba, pilotoDePrueba, efemerideDePrueba } from './dato-quincena-fixtures.js';
+import { edicionDePrueba, pilotoDePrueba, efemerideDePrueba, repeticionDePrueba } from './dato-quincena-fixtures.js';
 
 // El calendario de la precarga: el lunes 09/11/2026 y el lunes 23/11/2026 son feriados, el 07/12 no laborable y el 08/12 fijo
 const CALENDARIO = calendarioCon(FILAS_PRECARGA);
@@ -1009,6 +1009,26 @@ describe('modeloDelMail: lo que recibe la plantilla (spec, 10)', () => {
     assert.equal(modelo({ detalle, prueba: true }).numero, 'Piloto 4');
   });
 
+  // spec 2026-11-14-dato-quincena-v1-3, 5: el modelo copia cada propuesta del detalle, así que la repetición llega sola
+  it('la repetición y las etiquetas para mostrar llegan solas, como las arma el detalle', () => {
+    const edicion = edicionDePrueba({ fecha_edicion: '2026-11-16' });
+    edicion.propuestas[0].etiquetas.push('Repite');
+    edicion.propuestas[0].repeticion = repeticionDePrueba();
+    edicion.propuestas[1].etiquetas = ['Efemeride'];
+    const detalle = detalleDeLaEdicion({
+      fila: fila(), edicion, guardadas: [], adjuntos: [], previas: new Map([['2026-11-02', { id: 12, rpad_ids: [1, 2] }]])
+    });
+    const { propuestas } = modelo({ detalle });
+    assert.deepEqual(propuestas[0].repeticion, {
+      texto: 'Repite el dataset de la edición del 02/11/2026.',
+      motivo: 'Datos nuevos: Llegaron los datos de octubre, que la edición anterior no tenía.',
+      id_edicion: 12
+    });
+    assert.equal(propuestas[1].repeticion, null);
+    assert.deepEqual(propuestas.map((p) => p.etiquetas), [['Principal', 'Validar', 'Repite'], ['Efeméride']]);
+    assert.deepEqual(modelo().propuestas.map((p) => p.repeticion), [null, null]);
+  });
+
   it('no cambia el detalle que recibe', () => {
     const detalle = detalleDe(edicionDePrueba());
     const antes = structuredClone(detalle);
@@ -1175,6 +1195,31 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
     assert.ok(text.includes('10/11/2026 · Evento de prueba\nUn evento inventado para las pruebas.\n\n'));
     assert.ok(text.includes('Dataset: Dataset de prueba A\nEn el RPAD ese día:'));
     assert.ok(text.includes('Fuentes\nhttp://datos.ejemplo.gob.ar/a.csv\n'));
+  });
+
+  // spec 2026-11-14-dato-quincena-v1-3, 5: el bloque de la repetición, «<texto>\n<motivo>», en el mismo lugar que en el HTML:
+  // después del dataset y la foto, antes de «Para validar»; las etiquetas, como se muestran
+  it('con repetición: su bloque después del dataset y la foto, y las etiquetas como se muestran; sin ella, el texto de siempre', () => {
+    const m = modelo();
+    m.propuestas[0].etiquetas = ['Principal', 'Validar', 'Repite'];
+    m.propuestas[0].repeticion = {
+      texto: 'Repite el dataset de la edición del 02/11/2026.', motivo: 'Datos nuevos: Uno.\nDos.', id_edicion: 12
+    };
+    m.propuestas[1].etiquetas = ['Agenda', 'Efeméride'];
+    const { text } = datoQuincenaTemplate(m, { conSvg: true });
+    assert.equal(text, TEXTO
+      .replace('Un título inventado [Validar]', 'Un título inventado [Validar, Repite]')
+      .replace('Próxima en 29 días.\n\nPara validar', 'Próxima en 29 días.\n\nRepite el dataset de la edición del 02/11/2026.\n'
+        + 'Datos nuevos: Uno.\nDos.\n\nPara validar')
+      .replace('Otro título inventado [Agenda]', 'Otro título inventado [Agenda, Efeméride]'));
+    // Sin un id, el mismo texto: el texto plano no lleva el enlace
+    m.propuestas[0].repeticion.id_edicion = null;
+    assert.equal(datoQuincenaTemplate(m, { conSvg: true }).text, text);
+    // Sin notas para validar, antes de «Por qué hoy»
+    m.propuestas[0].notas_validacion = [];
+    assert.ok(datoQuincenaTemplate(m, { conSvg: true }).text.includes('Próxima en 29 días.\n\nRepite el dataset de la edición del '
+      + '02/11/2026.\nDatos nuevos: Uno.\nDos.\n\nPor qué hoy\n'));
+    assert.equal(datoQuincenaTemplate(modelo(), { conSvg: true }).text, TEXTO);
   });
 
   // La plantilla no nombra al bot: la nota del pie dice el nombre que trae el modelo (modeloDelMail pone el de NOMBRE_DEL_BOT)

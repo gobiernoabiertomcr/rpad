@@ -29,8 +29,8 @@ import { datoQuincenaTemplate, CID_INFOGRAFIA } from './emailTemplates.js';
 import { emailValido } from './usuariosReglas.js';
 import { ahoraArgentina } from './notasDigitalesCalendario.js';
 import { deLicenciaOficial } from './miEspacioEventosDiarioDatos.js';
-import { leerEdicion, leerArchivo } from './datoQuincenaDatos.js';
-import { detalleDeLaEdicion } from './datoQuincenaReglas.js';
+import { leerEdicion, leerArchivo, edicionesPreviasSinFallar } from './datoQuincenaDatos.js';
+import { detalleDeLaEdicion, fechasPrevias } from './datoQuincenaReglas.js';
 import {
   MENSAJES_CORREO, decidirCorrida, envioInicial, estaVigente, estadoDeLaEdicion, modeloDelMail, textoDelResultadoDelCorreo,
   textoDeLaCorridaDelCorreo, alertasDelCorreo, personasSinLlegar, sePuedeReenviar
@@ -65,13 +65,16 @@ const problema = (resultado, nota, mensaje, usuarioId = null) => {
 
 /**
  * Lo que hace falta para el mail de una edición, una vez por corrida: la fecha, el detalle (el mismo de la página, sin la línea
- * del correo) y los adjuntos con sus bytes y los nombres del manifiesto: la infografía PNG en línea (con su cid) y como archivo,
- * y el SVG si llegó. `conSvg` le dice a la plantilla qué promete el pie de la infografía.
+ * del correo, con el enlace de cada repetición: spec 2026-11-14-dato-quincena-v1-3, 3) y los adjuntos con sus bytes y los
+ * nombres del manifiesto: la infografía PNG en línea (con su cid) y como archivo, y el SVG si llegó. `conSvg` le dice a la
+ * plantilla qué promete el pie de la infografía. Si las ediciones previas no se pueden leer, el mail sale igual, sin el enlace.
  */
 const prepararLaEdicion = async (edicionId) => {
   const leida = await leerEdicion(edicionId);
   if (leida === null) throw new Error('La edición no existe');
-  const detalle = detalleDeLaEdicion({ ...leida, edicion: JSON.parse(leida.fila.metadata) });
+  const edicion = JSON.parse(leida.fila.metadata);
+  const previas = await edicionesPreviasSinFallar(fechasPrevias(edicion));
+  const detalle = detalleDeLaEdicion({ ...leida, edicion, previas });
   const [png, svg] = await Promise.all([leerArchivo(edicionId, 'infografia_png'), leerArchivo(edicionId, 'infografia_svg')]);
   if (png.archivo == null) throw new Error('La edición no tiene la infografía');
   const { nombre, contenido } = png.archivo;

@@ -18,6 +18,10 @@
  * De la spec 2026-11-12-dato-quincena-correo (11, 12 y 14): el SVG de la infografía (`esSvg`, su tope y su renglón en la huella),
  * el tipo de un evento de la agenda (la efeméride), el número de edición y las partes de la fecha de la tarjeta, y el nombre del
  * bot en una sola constante (`NOMBRE_DEL_BOT`).
+ *
+ * Del contrato v1.3 (spec 2026-11-14-dato-quincena-v1-3): las etiquetas Efemeride y Repite, la repetición opcional de cada
+ * propuesta (`repeticion`) con su coherencia, y lo que depende de lo archivado (la edición previa y si cita el dataset), que nunca
+ * frena una edición: da avisos en el recibo (`fechasPrevias` y `avisosDeLaEdicion`) y el enlace del detalle.
  */
 import crypto from 'node:crypto';
 import { esFechaIso, sumarDias, ahoraArgentina, formatoLargo, formatoCorto } from './notasDigitalesCalendario.js';
@@ -77,9 +81,14 @@ export const MENSAJES_VALIDACION = Object.freeze({
   fechaOInstante: 'Tiene que ser una fecha AAAA-MM-DD o un instante con su zona.',
   direccion: 'Tiene que ser una dirección https:// válida, de hasta 2048 caracteres.',
   orden: 'Las propuestas van numeradas 1, 2, 3… en su orden, sin saltos.',
-  etiqueta: 'Las etiquetas posibles son Principal, Validar y Agenda.',
+  etiqueta: 'Las etiquetas posibles son Principal, Validar, Agenda, Efemeride y Repite.',
   etiquetaRepetida: 'Esta etiqueta ya está en la propuesta.',
   principal: 'Exactamente una propuesta tiene que llevar la etiqueta Principal.',
+  // La repetición (spec 2026-11-14-dato-quincena-v1-3, 1). Los dos de la coherencia los copia Datito tal cual: no se cambian
+  motivoDeRepeticion: 'El motivo de una repetición tiene que ser datos_nuevos o hecho_actual.',
+  alcanceDeRepeticion: 'El alcance de una repetición tiene que ser dataset o tema.',
+  repiteSinRepeticion: 'La propuesta tiene la etiqueta Repite pero no tiene repeticion.',
+  repeticionSinRepite: 'La propuesta tiene repeticion pero no tiene la etiqueta Repite.',
   enteroPositivo: 'Tiene que ser un número entero positivo.',
   estado: 'Tiene que ser uno de los estados de GET /api/datasets.',
   diasParaVencer: 'Tiene que ser un número entero de -100000 a 100000.',
@@ -111,7 +120,8 @@ export const MENSAJES_VALIDACION = Object.freeze({
 });
 
 const TIPOS = Object.freeze(['regular', 'piloto']);
-const ETIQUETAS = Object.freeze(['Principal', 'Validar', 'Agenda']);
+// Efemeride va sin tilde, como la escribe el bot: el detalle la muestra «Efeméride» (ETIQUETAS_PARA_MOSTRAR)
+const ETIQUETAS = Object.freeze(['Principal', 'Validar', 'Agenda', 'Efemeride', 'Repite']);
 // Los estados de GET /api/datasets, como los manda la API
 const ESTADOS = Object.freeze(['actualizado', 'proximo', 'atrasado', 'sin-respuesta', 'sin-fecha', 'eventual']);
 const DIAS_PARA_VENCER = 100000;
@@ -257,8 +267,24 @@ const FOTO_DEL_RPAD = Object.freeze({
 
 const BORRADOR = Object.freeze({ titulo: texto(200), parrafos: lista(2, 3, 'parrafos', texto(10000)) });
 
-// La propuesta i va con el orden i + 1
-const propuesta = (_, indice) => ({
+const MOTIVOS_DE_REPETICION = Object.freeze(['datos_nuevos', 'hecho_actual']);
+const ALCANCES_DE_REPETICION = Object.freeze(['dataset', 'tema']);
+const FORMA_DE_LA_REPETICION = Object.freeze({
+  fecha_edicion_previa: fecha,
+  motivo: unoDe(MOTIVOS_DE_REPETICION, 'motivoDeRepeticion'),
+  alcance: unoDe(ALCANCES_DE_REPETICION, 'alcanceDeRepeticion'),
+  detalle: texto(1000)
+});
+
+// La repetición de una propuesta (spec 2026-11-14-dato-quincena-v1-3, 1): null o un objeto cerrado de cuatro claves. La fecha no se
+// compara con lo archivado: eso es un aviso del recibo, nunca un 422
+const repeticion = (valor, ruta, agregar) => {
+  if (valor !== null) objeto(FORMA_DE_LA_REPETICION)(valor, ruta, agregar);
+};
+
+// La propuesta i va con el orden i + 1. repeticion es opcional, como tipo en la agenda: sin ella, la propuesta tiene la forma de
+// antes (v1.2), así lo que el bot mandaba sigue valiendo y schema_version sigue en 1.0
+const propuesta = (valor, indice) => ({
   orden: igual(indice + 1, 'orden'),
   titulo: texto(200),
   etiquetas,
@@ -274,12 +300,32 @@ const propuesta = (_, indice) => ({
   puntos_centrales: lista(3, 5, 'puntosCentrales', texto(2000)),
   borrador_nota: objeto(BORRADOR),
   notas_validacion: lista(0, 20, 'notasValidacion', texto(10000)),
-  fuentes: lista(1, 20, 'fuentes', direccion)
+  fuentes: lista(1, 20, 'fuentes', direccion),
+  ...(Object.hasOwn(valor, 'repeticion') ? { repeticion } : {})
 });
+
+// La repetición de una propuesta, si es un objeto; si no (sin la clave, null u otra cosa), null
+const repeticionDe = (unaPropuesta) => (Object.hasOwn(unaPropuesta, 'repeticion') && esObjeto(unaPropuesta.repeticion)
+  ? unaPropuesta.repeticion
+  : null);
+
+// Una propuesta con su forma y, después de sus errores, la coherencia entre la etiqueta Repite y la repetición. Solo con una lista
+// de etiquetas: un valor de repeticion que no es null ni un objeto ya tiene su error y no suma este
+const propuestaCoherente = (valor, ruta, agregar, indice) => {
+  objeto(propuesta)(valor, ruta, agregar, indice);
+  if (!esObjeto(valor) || !Array.isArray(valor.etiquetas)) return;
+  const valorDeRepeticion = Object.hasOwn(valor, 'repeticion') ? valor.repeticion : undefined;
+  const conRepite = valor.etiquetas.includes('Repite');
+  if (conRepite && (valorDeRepeticion === undefined || valorDeRepeticion === null)) {
+    agregar(unir(ruta, 'repeticion'), 'repiteSinRepeticion');
+  } else if (!conRepite && esObjeto(valorDeRepeticion)) {
+    agregar(unir(ruta, 'etiquetas'), 'repeticionSinRepite');
+  }
+};
 
 // Las propuestas y, si hay alguna, que exactamente una lleve Principal
 const propuestas = (valor, ruta, agregar) => {
-  lista(1, 5, 'propuestas', objeto(propuesta))(valor, ruta, agregar);
+  lista(1, 5, 'propuestas', propuestaCoherente)(valor, ruta, agregar);
   if (!Array.isArray(valor) || valor.length === 0) return;
   const principales = valor.filter((p) => esObjeto(p) && Array.isArray(p.etiquetas) && p.etiquetas.includes('Principal'));
   if (principales.length !== 1) agregar(ruta, 'principal');
@@ -732,6 +778,20 @@ export const fotoDelDataset = (snapshot) => {
 // Un bloque con su título y un renglón «- » por elemento
 const bloqueConGuiones = (titulo, elementos) => [titulo, ...elementos.map((elemento) => `- ${elemento}`)].join('\n');
 
+// Cómo se muestra cada etiqueta (spec 2026-11-14-dato-quincena-v1-3, 3): el bot escribe Efemeride sin tilde; las demás, igual
+const ETIQUETAS_PARA_MOSTRAR = Object.freeze({ Efemeride: 'Efeméride' });
+const etiquetaParaMostrar = (etiqueta) => (Object.hasOwn(ETIQUETAS_PARA_MOSTRAR, etiqueta) ? ETIQUETAS_PARA_MOSTRAR[etiqueta] : etiqueta);
+
+const TEXTO_DEL_ALCANCE = Object.freeze({ dataset: 'el dataset', tema: 'el tema' });
+const TEXTO_DEL_MOTIVO = Object.freeze({ datos_nuevos: 'Datos nuevos', hecho_actual: 'Hecho actual' });
+
+// Los dos textos de una repetición ya validada: «Repite el dataset de la edición del 02/11/2026.» y «Datos nuevos: <detalle>», con
+// el detalle tal como llegó
+const textosDeLaRepeticion = ({ fecha_edicion_previa: fechaPrevia, motivo, alcance, detalle }) => ({
+  texto: `Repite ${TEXTO_DEL_ALCANCE[alcance]} de la edición del ${formatoCorto(fechaPrevia)}.`,
+  motivo: `${TEXTO_DEL_MOTIVO[motivo]}: ${detalle}`
+});
+
 // El borrador para copiar (sección 9): el título y sus párrafos, separados por un renglón en blanco
 export const borradorParaCopiar = ({ titulo, parrafos }) => [titulo, ...parrafos].join('\n\n');
 
@@ -739,14 +799,19 @@ export const borradorParaCopiar = ({ titulo, parrafos }) => [titulo, ...parrafos
  * La propuesta entera para copiar (sección 9), en texto plano: bloques separados por un renglón en blanco, los renglones de
  * un bloque con \n y los textos tal como llegaron. Sin etiquetas, el título va solo; sin notas de validación, ese bloque no
  * va. La foto va en un renglón, cada fila como «<rotulo> <valor>.».
+ * Del contrato v1.3 (spec 2026-11-14-dato-quincena-v1-3, 3): las etiquetas van como se muestran («Efeméride») y, con repetición,
+ * su bloque («<texto>\n<motivo>») va después de la foto y antes de «Para validar antes de publicar».
  */
 export const textoParaCopiar = (propuesta) => {
   const { titulo, etiquetas, dataset, notas_validacion: notas } = propuesta;
+  const repeticionDeLaPropuesta = repeticionDe(propuesta);
+  const repetida = repeticionDeLaPropuesta === null ? null : textosDeLaRepeticion(repeticionDeLaPropuesta);
   return [
-    etiquetas.length > 0 ? `${titulo} [${etiquetas.join(', ')}]` : titulo,
+    etiquetas.length > 0 ? `${titulo} [${etiquetas.map(etiquetaParaMostrar).join(', ')}]` : titulo,
     propuesta.cifra_clave,
     `Dataset: ${dataset.nombre}\n${dataset.url}`,
     fotoDelDataset(propuesta.rpad_snapshot).map(({ rotulo, valor }) => `${rotulo} ${valor}.`).join(' '),
+    ...(repetida === null ? [] : [`${repetida.texto}\n${repetida.motivo}`]),
     ...(notas.length > 0 ? [bloqueConGuiones('Para validar antes de publicar', notas)] : []),
     `Cómo se calculó\n${propuesta.calculo}`,
     `Contexto histórico\n${propuesta.contexto_historico}`,
@@ -777,15 +842,54 @@ const textoDelAviso = (orden, rpadId) =>
   `La propuesta ${orden} cita el dataset ${rpadId}, que no está en el RPAD: se guardó sin enlace.`;
 
 /**
+ * Las fechas de las ediciones que repiten las propuestas de una edición ya validada (spec 2026-11-14-dato-quincena-v1-3, 2): las
+ * `fecha_edicion_previa` de las repeticiones que son un objeto y anteriores a `fecha_edicion`, sin repetir y en el orden de las
+ * propuestas. Son las que lee leerEdicionesPrevias (services/datoQuincenaDatos.js): una igual o posterior nunca se enlaza.
+ */
+export const fechasPrevias = (edicion) => [...new Set(edicion.propuestas
+  .map(repeticionDe)
+  .filter((repeticionDeLaPropuesta) => repeticionDeLaPropuesta !== null
+    && repeticionDeLaPropuesta.fecha_edicion_previa < edicion.fecha_edicion)
+  .map((repeticionDeLaPropuesta) => repeticionDeLaPropuesta.fecha_edicion_previa))];
+
+// El aviso de la repetición de una propuesta, si tiene uno: la edición previa no es anterior, no está en el RPAD (una regular de
+// esa fecha, en `previas`) o, si repite el dataset, no lo cita. [] o un aviso; con `previas` null (no se pudieron leer), ninguno
+const avisoDeLaRepeticion = (propuesta, fechaDeLaEdicion, previas) => {
+  const repeticionDeLaPropuesta = repeticionDe(propuesta);
+  if (repeticionDeLaPropuesta === null || previas === null) return [];
+  const { orden } = propuesta;
+  const fechaPrevia = repeticionDeLaPropuesta.fecha_edicion_previa;
+  const dia = formatoCorto(fechaPrevia);
+  if (fechaPrevia >= fechaDeLaEdicion) {
+    return [`La propuesta ${orden} repite la edición del ${dia}, que no es anterior a esta: se guardó sin enlace.`];
+  }
+  const previa = previas.get(fechaPrevia);
+  if (previa === undefined) return [`La propuesta ${orden} repite la edición del ${dia}, que no está en el RPAD: se guardó sin enlace.`];
+  const rpadId = propuesta.dataset.rpad_id;
+  if (repeticionDeLaPropuesta.alcance === 'dataset' && rpadId !== null && !previa.rpad_ids.includes(rpadId)) {
+    return [`La propuesta ${orden} repite el dataset ${rpadId} de la edición del ${dia}, pero esa edición no lo tiene.`];
+  }
+  return [];
+};
+
+/**
  * Los avisos del recibo (sección 7), en el orden de las propuestas: uno por cada propuesta que cita un dataset (rpad_id) y
  * quedó guardada sin enlace (dataset_id null en `guardadas = [{ orden, dataset_id }]`, las filas guardadas). Sirven igual
  * para el 201 y para el 200 de una repetida, que los arma de nuevo desde lo guardado.
+ * Del contrato v1.3 (spec 2026-11-14-dato-quincena-v1-3, 2): después del de su dataset, el de la repetición de cada propuesta
+ * (avisoDeLaRepeticion), con `previas`, el Map de fecha a `{ id, rpad_ids }` de leerEdicionesPrevias. Sin él (un Map vacío), es
+ * como si no hubiera ediciones previas: el controlador siempre lo pasa. Con null (edicionesPreviasSinFallar: no se pudieron leer),
+ * ningún aviso de la repetición, ni siquiera el de una fecha que no es anterior: los del dataset, sí. Un aviso que dependa de lo
+ * archivado podría ser falso, y el 200 de una repetida los arma de nuevo cuando se puedan leer.
  */
-export const avisosDeLaEdicion = (edicion, guardadas) => {
+export const avisosDeLaEdicion = (edicion, guardadas, previas = new Map()) => {
   const enlaces = new Map(guardadas.map(({ orden, dataset_id }) => [orden, dataset_id ?? null]));
-  return edicion.propuestas
-    .filter((propuesta) => propuesta.dataset.rpad_id !== null && (enlaces.get(propuesta.orden) ?? null) === null)
-    .map((propuesta) => textoDelAviso(propuesta.orden, propuesta.dataset.rpad_id));
+  return edicion.propuestas.flatMap((propuesta) => [
+    ...(propuesta.dataset.rpad_id !== null && (enlaces.get(propuesta.orden) ?? null) === null
+      ? [textoDelAviso(propuesta.orden, propuesta.dataset.rpad_id)]
+      : []),
+    ...avisoDeLaRepeticion(propuesta, edicion.fecha_edicion, previas)
+  ]);
 };
 
 /**
@@ -891,16 +995,28 @@ const archivoDelDetalle = (campo, nombre, bytes) => {
 // Los bytes de metadata en UTF-8 (el texto guardado, que la descarga devuelve tal cual)
 const bytesDeMetadata = (metadata) => (Buffer.isBuffer(metadata) ? metadata.length : Buffer.byteLength(String(metadata), 'utf8'));
 
-// Una propuesta del detalle: sus textos como llegaron, la foto del RPAD, lo que se copia y el enlace al dataset (`enlaces`: el
-// dataset_id de cada orden cuyo dataset existe y está activo)
-const propuestaDelDetalle = (propuesta, enlaces) => ({
+// La repetición de una propuesta en el detalle (spec 2026-11-14-dato-quincena-v1-3, 3): null sin ella; si no, sus dos textos y
+// `id_edicion`, el id de la regular de esa fecha solo si está en `previas` y es anterior a la edición (si no, null)
+const repeticionDelDetalle = (propuesta, fechaDeLaEdicion, previas) => {
+  const repeticionDeLaPropuesta = repeticionDe(propuesta);
+  if (repeticionDeLaPropuesta === null) return null;
+  const fechaPrevia = repeticionDeLaPropuesta.fecha_edicion_previa;
+  const previa = fechaPrevia < fechaDeLaEdicion ? previas.get(fechaPrevia) : undefined;
+  return { ...textosDeLaRepeticion(repeticionDeLaPropuesta), id_edicion: previa?.id ?? null };
+};
+
+// Una propuesta del detalle: sus textos como llegaron, las etiquetas como se muestran, la foto del RPAD, la repetición, lo que
+// se copia y el enlace al dataset (`enlaces`: el dataset_id de cada orden cuyo dataset existe y está activo). principal mira el
+// valor del JSON
+const propuestaDelDetalle = (propuesta, enlaces, fechaDeLaEdicion, previas) => ({
   orden_texto: `Propuesta ${propuesta.orden}`,
-  etiquetas: [...propuesta.etiquetas],
+  etiquetas: propuesta.etiquetas.map(etiquetaParaMostrar),
   principal: propuesta.etiquetas.includes('Principal'),
   titulo: propuesta.titulo,
   cifra_clave: propuesta.cifra_clave,
   dataset: { nombre: propuesta.dataset.nombre, id_enlace: enlaces.get(propuesta.orden) ?? null, url: propuesta.dataset.url },
   foto: fotoDelDataset(propuesta.rpad_snapshot),
+  repeticion: repeticionDelDetalle(propuesta, fechaDeLaEdicion, previas),
   notas_validacion: [...propuesta.notas_validacion],
   calculo: propuesta.calculo,
   contexto_historico: propuesta.contexto_historico,
@@ -925,8 +1041,11 @@ const propuestaDelDetalle = (propuesta, enlaces) => ({
  * de ARCHIVOS_DEL_DETALLE, con la edición completa al final y el nombre de cada descarga.
  * `correo` es `lineaDelCorreo`, la línea del envío del RPAD que arma el controlador (spec 2026-11-12-dato-quincena-correo, 6),
  * tal cual. Sin ella, la del correo del bot (textoDelCorreo): el modelo del mail arma el detalle y no la usa.
+ * `previas` (spec 2026-11-14-dato-quincena-v1-3, 3) es el Map de leerEdicionesPrevias(fechasPrevias(edicion)), que leen `ver` y el
+ * mail: da el id de la edición que repite cada propuesta. Sin él o con null (no se pudieron leer), ninguna repetición lleva enlace.
  */
-export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDelCorreo }) => {
+export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDelCorreo, previas }) => {
+  const lasPrevias = previas ?? new Map();
   const enlaces = new Map(guardadas
     .filter((guardada) => guardada.dataset_activo === true && guardada.dataset_id !== null)
     .map((guardada) => [guardada.orden, guardada.dataset_id]));
@@ -946,7 +1065,7 @@ export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDe
     agenda: edicion.agenda.map(({ titulo, fecha, detalle, url, tipo }) => ({
       fecha_texto: diaArgentino(fecha), titulo, detalle, url, etiqueta: etiquetaDelEvento(tipo)
     })),
-    propuestas: edicion.propuestas.map((propuesta) => propuestaDelDetalle(propuesta, enlaces)),
+    propuestas: edicion.propuestas.map((propuesta) => propuestaDelDetalle(propuesta, enlaces, edicion.fecha_edicion, lasPrevias)),
     archivos: [
       ...ORDEN_DE_LOS_ARCHIVOS_DEL_DETALLE.flatMap((campo) => adjuntos
         .filter((adjunto) => adjunto.campo === campo)

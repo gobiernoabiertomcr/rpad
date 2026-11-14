@@ -9,6 +9,8 @@
 // El SVG de la infografía (spec 2026-11-12-dato-quincena-correo, 11 y 12): la edición de prueba llega con las cinco partes (y una
 // efeméride en la agenda, como la del detalle de la página); un paquete de cuatro partes sigue teniendo la huella de antes del SVG.
 // El número de cada regular lo cuenta la consulta: la edición de prueba, la regular más vieja, es la N.º 1.
+// El contrato v1.3 (spec 2026-11-14-dato-quincena-v1-3): un piloto con repeticiones recibe sus avisos (en el 201 y en el 200) y su
+// detalle enlaza la edición previa; la coherencia entre Repite y repeticion da 422.
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -16,7 +18,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, cerrarDb, query, mailpit } from './helpers.js';
 import {
-  FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, partesDePrueba, svgDePrueba, efemerideDePrueba
+  FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, partesDePrueba, svgDePrueba, efemerideDePrueba, repeticionDePrueba
 } from './dato-quincena-fixtures.js';
 import { isDeepStrictEqual } from 'node:util';
 import { MENSAJES_VALIDACION, TOPE_DEL_PEDIDO, TOPES } from '../services/datoQuincenaReglas.js';
@@ -550,6 +552,149 @@ describe('guardar una edición', () => {
     const detalle = await leer(`/dato-quincena/ediciones/${res.body.data.id}`);
     assert.equal(detalle.status, 200, JSON.stringify(detalle.body));
     assert.equal(detalle.body.data.correo, 'No se envió: el envío automático estaba apagado.');
+  });
+});
+
+// spec 2026-11-14-dato-quincena-v1-3, 2 y 3: lo que depende de lo archivado da avisos y nunca un 422. Un piloto del 05/11 (así no
+// choca con ninguna regular ni cambia los números) con cinco propuestas: la 1 vuelve sobre el dataset 1 de la edición de prueba
+// (02/11, que lo cita), con enlace y sin aviso; la 2 es una efeméride sin repetición; la 3 vuelve sobre el tema de una edición del
+// 19/10 que no está en el RPAD; la 4 cita un dataset que no está y vuelve sobre él en la de prueba, que no lo tiene; y la 5 dice
+// repetir la de su mismo día
+describe('la repetición (contrato v1.3)', () => {
+  const FECHA = '2026-11-05';
+  const pilotoConRepeticiones = () => {
+    const piloto = pilotoDePrueba({ fecha_edicion: FECHA, referencia_piloto: 'piloto-30' });
+    const [primera, segunda] = piloto.propuestas;
+    primera.etiquetas.push('Repite');
+    primera.repeticion = repeticionDePrueba();
+    segunda.etiquetas = ['Agenda', 'Efemeride'];
+    const otra = (orden, cambios) => ({ ...structuredClone(segunda), orden, etiquetas: ['Repite'], ...cambios });
+    piloto.propuestas.push(
+      otra(3, { repeticion: repeticionDePrueba({ fecha_edicion_previa: '2026-10-19', alcance: 'tema', motivo: 'hecho_actual' }) }),
+      otra(4, { dataset: { ...segunda.dataset, rpad_id: 999 }, repeticion: repeticionDePrueba() }),
+      otra(5, { repeticion: repeticionDePrueba({ fecha_edicion_previa: FECHA }) })
+    );
+    return piloto;
+  };
+  const partes = partesDePrueba(pilotoConRepeticiones());
+  const AVISOS = [
+    'La propuesta 3 repite la edición del 19/10/2026, que no está en el RPAD: se guardó sin enlace.',
+    'La propuesta 4 cita el dataset 999, que no está en el RPAD: se guardó sin enlace.',
+    'La propuesta 4 repite el dataset 999 de la edición del 02/11/2026, pero esa edición no lo tiene.',
+    'La propuesta 5 repite la edición del 05/11/2026, que no es anterior a esta: se guardó sin enlace.'
+  ];
+  let recibo, prueba;
+
+  before(async () => {
+    prueba = (await edicionGuardada(`dq:regular:${FECHA_DE_PRUEBA}`)).id;
+  });
+
+  it('201 con sus avisos, en el orden de las propuestas (el del dataset antes que el de su repetición); nada da 422', async () => {
+    const res = await enviar(partes, { ip: 70 });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    recibo = res.body.data;
+    assert.deepEqual(Object.keys(recibo), CLAVES_DEL_RECIBO);
+    assert.equal(recibo.clave, `dq:piloto:${FECHA}:piloto-30`);
+    assert.deepEqual(recibo.avisos, AVISOS);
+    assert.deepEqual(recibo.envio, ENVIO_DEL_PILOTO);
+    const guardada = await edicionGuardada(recibo.clave);
+    assert.ok(guardada.metadata.equals(partes.metadata), 'metadata guardada igual byte a byte, con sus repeticiones');
+    assert.deepEqual((await propuestasGuardadas(guardada.id)).map((p) => p.dataset_id), [1, 2, 2, null, 2]);
+  });
+
+  it('200 al repetirla, con los mismos avisos armados de nuevo desde lo guardado', async () => {
+    const antes = await todoLoGuardado();
+    const res = await enviar(partes, { ip: 70 });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.data, { ...recibo, repetida: true });
+    assert.deepEqual(await todoLoGuardado(), antes);
+  });
+
+  it('el detalle: las etiquetas para mostrar y cada repetición, con el id de la edición previa solo si está y es anterior', async () => {
+    const res = await leer(`/dato-quincena/ediciones/${recibo.id}`, 'lector');
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const { propuestas } = res.body.data;
+    assert.deepEqual(propuestas.map((p) => p.etiquetas),
+      [['Principal', 'Validar', 'Repite'], ['Agenda', 'Efeméride'], ['Repite'], ['Repite'], ['Repite']]);
+    const datosNuevos = 'Datos nuevos: Llegaron los datos de octubre, que la edición anterior no tenía.';
+    assert.deepEqual(propuestas.map((p) => p.repeticion), [
+      { texto: 'Repite el dataset de la edición del 02/11/2026.', motivo: datosNuevos, id_edicion: prueba },
+      null,
+      { texto: 'Repite el tema de la edición del 19/10/2026.', motivo: 'Hecho actual: Llegaron los datos de octubre, que la edición '
+        + 'anterior no tenía.', id_edicion: null },
+      { texto: 'Repite el dataset de la edición del 02/11/2026.', motivo: datosNuevos, id_edicion: prueba },
+      { texto: 'Repite el dataset de la edición del 05/11/2026.', motivo: datosNuevos, id_edicion: null }
+    ]);
+    assert.ok(propuestas[0].para_copiar.includes(`Próxima en 29 días.\n\nRepite el dataset de la edición del 02/11/2026.\n${datosNuevos}`
+      + '\n\nPara validar antes de publicar\n'));
+    // La forma, la de la respuesta con repeticiones que lee la página
+    assert.deepEqual(forma(res.body), forma(RESPUESTAS.detalle_con_repeticion));
+  });
+
+  // La previa tiene que ser una regular (un piloto de esa fecha no cuenta); una metadata previa que no se puede leer no tira; y el
+  // aviso 3 compara con lo que el bot citó en la previa, no con el enlace que quedó guardado (el 06/11 citó el dataset 999, que
+  // no está en el RPAD y quedó sin enlace). Un piloto del 11/11 con tres propuestas
+  it('la previa es una regular; una metadata previa rara no tira; el aviso 3 mira lo que citó el bot', async () => {
+    // El 10/11 solo tiene un piloto
+    const soloPiloto = await enviar(partesDePrueba(pilotoDePrueba({ fecha_edicion: '2026-11-10', referencia_piloto: 'piloto-31' })),
+      { ip: 72 });
+    assert.equal(soloPiloto.status, 201, JSON.stringify(soloPiloto.body));
+    // Una regular del 30/10 escrita a mano con una metadata que no es una edición (solo un SQL a mano la deja así). Se borra al
+    // final: los demás grupos cuentan las regulares y esperan que la del 02/11 sea la más vieja
+    const rara = (await query(
+      `INSERT INTO dato_quincena_ediciones (clave, tipo, fecha_edicion, referencia_piloto, titulo, metadata, huella)
+       VALUES ('dq:regular:2026-10-30', 'regular', '2026-10-30', NULL, 'Una edición rara', 'null', ?)`,
+      ['d'.repeat(64)]
+    )).insertId;
+    const delSeis = (await edicionGuardada('dq:regular:2026-11-06')).id;
+    assert.deepEqual((await propuestasGuardadas(delSeis)).map((p) => p.dataset_id), [1, null], 'el 999 del 06/11 quedó sin enlace');
+    try {
+      const piloto = pilotoDePrueba({ fecha_edicion: '2026-11-11', referencia_piloto: 'piloto-32' });
+      const [primera, segunda] = piloto.propuestas;
+      primera.etiquetas.push('Repite');
+      primera.repeticion = repeticionDePrueba({ fecha_edicion_previa: '2026-11-10' });
+      segunda.etiquetas = ['Repite'];
+      segunda.repeticion = repeticionDePrueba({ fecha_edicion_previa: '2026-10-30' });
+      piloto.propuestas.push({
+        ...structuredClone(segunda), orden: 3, dataset: { ...segunda.dataset, rpad_id: 999 },
+        repeticion: repeticionDePrueba({ fecha_edicion_previa: '2026-11-06' })
+      });
+      const partesDelPiloto = partesDePrueba(piloto);
+      const avisos = [
+        'La propuesta 1 repite la edición del 10/11/2026, que no está en el RPAD: se guardó sin enlace.',
+        'La propuesta 2 repite el dataset 2 de la edición del 30/10/2026, pero esa edición no lo tiene.',
+        'La propuesta 3 cita el dataset 999, que no está en el RPAD: se guardó sin enlace.'
+      ];
+      const res = await enviar(partesDelPiloto, { ip: 72 });
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      assert.deepEqual(res.body.data.avisos, avisos);
+      const repetida = await enviar(partesDelPiloto, { ip: 72 });
+      assert.equal(repetida.status, 200, JSON.stringify(repetida.body));
+      assert.deepEqual(repetida.body.data.avisos, avisos);
+      const detalle = await leer(`/dato-quincena/ediciones/${res.body.data.id}`);
+      assert.equal(detalle.status, 200, JSON.stringify(detalle.body));
+      assert.deepEqual(detalle.body.data.propuestas.map((p) => p.repeticion.id_edicion), [null, rara, delSeis]);
+    } finally {
+      await query('DELETE FROM dato_quincena_ediciones WHERE id = ?', [rara]);
+    }
+  });
+
+  it('la coherencia entre Repite y repeticion: 422 con su campo y su mensaje, y nada guardado', async () => {
+    const antes = await todoLoGuardado();
+    const sinRepeticion = edicionDePrueba({ fecha_edicion: '2026-11-01' });
+    sinRepeticion.propuestas[1].etiquetas.push('Repite');
+    const sinEtiqueta = edicionDePrueba({ fecha_edicion: '2026-11-01' });
+    sinEtiqueta.propuestas[0].repeticion = repeticionDePrueba();
+    const casos = [
+      [sinRepeticion, { campo: 'propuestas[1].repeticion', mensaje: 'La propuesta tiene la etiqueta Repite pero no tiene repeticion.' }],
+      [sinEtiqueta, { campo: 'propuestas[0].etiquetas', mensaje: 'La propuesta tiene repeticion pero no tiene la etiqueta Repite.' }]
+    ];
+    for (const [edicion, esperado] of casos) {
+      const res = await enviar(partesDePrueba(edicion), { ip: 71 });
+      assert.equal(res.status, 422, JSON.stringify(res.body));
+      assert.deepEqual(res.body, { success: false, error: 'La edición tiene errores.', errores: [esperado] });
+    }
+    assert.deepEqual(await todoLoGuardado(), antes);
   });
 });
 

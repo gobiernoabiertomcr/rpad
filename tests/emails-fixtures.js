@@ -24,8 +24,9 @@ export const AVISO_DE_RESTITUCION = Object.freeze({
 
 // El modelo del mail del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 10), con la forma que arma modeloDelMail
 // (services/datoQuincenaCorreoReglas.js): una regular inventada de dos propuestas, la primera la principal y con notas para
-// validar, y una agenda con un evento y una efeméride (el segundo renglón de su detalle es un salto de línea). Ningún dato sale
-// de una edición real. Cada llamada arma objetos nuevos: un test puede cambiarlos sin tocar el próximo
+// validar, y una agenda con un evento y una efeméride (el segundo renglón de su detalle es un salto de línea); ninguna propuesta
+// repite otra edición (repeticion null, spec 2026-11-14-dato-quincena-v1-3). Ningún dato sale de una edición real. Cada llamada
+// arma objetos nuevos: un test puede cambiarlos sin tocar el próximo
 export const modeloDelDatoQuincena = () => ({
   asunto: 'Dato de la Quincena - 09/11/2026',
   primerNombre: 'Persona',
@@ -54,6 +55,7 @@ export const modeloDelDatoQuincena = () => ({
         { rotulo: 'En el RPAD ese día:', valor: 'Actualizado' }, { rotulo: 'Datos al', valor: '31/10/2026' },
         { rotulo: 'Última actualización', valor: '05/11/2026' }, { rotulo: 'Próxima en', valor: '25 días' }
       ],
+      repeticion: null,
       notas_validacion: ['Confirmar la cifra con el área.', 'Revisar la fuente.'],
       calculo: 'Un cálculo inventado.',
       contexto_historico: 'Un contexto inventado.',
@@ -76,6 +78,7 @@ export const modeloDelDatoQuincena = () => ({
         { rotulo: 'En el RPAD ese día:', valor: 'Vencido' }, { rotulo: 'Datos al', valor: '—' },
         { rotulo: 'Última actualización', valor: '03/06/2026' }, { rotulo: 'Venció hace', valor: '4 días' }
       ],
+      repeticion: null,
       notas_validacion: [],
       calculo: 'Otro cálculo inventado.',
       contexto_historico: 'Otro contexto inventado.',

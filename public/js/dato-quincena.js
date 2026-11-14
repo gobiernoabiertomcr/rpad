@@ -3,8 +3,9 @@
  * El archivo de las ediciones que arma Datito (el bot: NOMBRE_DEL_BOT), de solo lectura, para todos los roles con sesión: la lista
  * de un año (sin ?id=; ?anio=AAAA elige el año, &pagina=N la página de a 18), en tarjetas tipo diario con la pastilla del envío del
  * correo, y el detalle de una edición (?id=N), con la infografía y los archivos a un costado y la agenda y las propuestas al otro.
- * La principal va abierta y las otras, cerradas; las notas para validar, siempre a la vista; y tres «Copiar» por propuesta (el texto
- * para redes, el borrador y la propuesta entera).
+ * La principal va abierta y las otras, cerradas; las notas para validar y la repetición de otra edición (spec
+ * 2026-11-14-dato-quincena-v1-3, 4), siempre a la vista; y tres «Copiar» por propuesta (el texto para redes, el borrador y la
+ * propuesta entera).
  * Para la administración (Auth.isAdmin()) hay además dos pestañas, Ediciones y Correo (#correo en la dirección, junto a ?id, ?anio
  * y &pagina, que son de Ediciones): Correo tiene el interruptor del envío automático (se guarda al cambiarlo; al prenderlo,
  * pregunta), las próximas ediciones y quién lo recibe, con «Guardar»; y el detalle suma, debajo de «Archivos», la caja del correo
@@ -70,8 +71,11 @@ const TEXTOS_DEL_CORREO = Object.freeze({
   prueba: 'No se pudo mandar la prueba. Probá de nuevo en unos minutos.'
 });
 
-// Las etiquetas de una propuesta: «Principal» en tinta, «Agenda» en cielo y «Validar» en sol con un ícono (nunca solo el color)
-const CLASE_DE_LA_ETIQUETA = Object.freeze({ Principal: 'dq-et-principal', Agenda: 'dq-et-agenda', Validar: 'dq-et-validar' });
+// Las etiquetas de una propuesta: «Principal» en tinta, «Agenda» en cielo, «Validar» en sol con un ícono y «Repite» en blanco con
+// borde y su ícono (nunca solo el color). «Efeméride» y cualquier otra, sin clase: el estilo neutro de .dq-etiqueta
+const CLASE_DE_LA_ETIQUETA = Object.freeze({
+  Principal: 'dq-et-principal', Agenda: 'dq-et-agenda', Validar: 'dq-et-validar', Repite: 'dq-et-repite'
+});
 
 // Los campos de texto de la propuesta completa, en el orden de la sección 9 (el mismo de «Copiar la propuesta»); después van el texto
 // para redes, los puntos centrales, el borrador y las fuentes
@@ -83,9 +87,12 @@ const CAMPOS_DE_TEXTO = Object.freeze([
   ['idea_placa', 'Idea de placa']
 ]);
 
-// Los íconos de Lucide, decorativos: triangle-alert (Validar), chevron-right (la propuesta completa) y chevron-left (volver)
+// Los íconos de Lucide, decorativos: triangle-alert (Validar), history (Repite y la caja de la repetición), chevron-right (la
+// propuesta completa) y chevron-left (volver)
 const ATRIBUTOS_DEL_ICONO = 'aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
 const ICONO_VALIDAR = `<svg ${ATRIBUTOS_DEL_ICONO}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`;
+const ICONO_REPITE = `<svg ${ATRIBUTOS_DEL_ICONO}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>`;
+const ICONO_DE_LA_ETIQUETA = Object.freeze({ Validar: ICONO_VALIDAR, Repite: ICONO_REPITE });
 const ICONO_ABRIR = `<svg ${ATRIBUTOS_DEL_ICONO}><path d="m9 18 6-6-6-6"/></svg>`;
 // Los íconos de la pastilla del envío (la maqueta aprobada): el texto dice qué pasó y el ícono lo acompaña, nunca solo el color
 const ATRIBUTOS_PASTILLA = 'aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"';
@@ -299,8 +306,22 @@ function htmlDeLaFoto(foto) {
 
 const htmlDeEtiqueta = (etiqueta) => {
   const clase = typeof etiqueta === 'string' && Object.hasOwn(CLASE_DE_LA_ETIQUETA, etiqueta) ? ` ${CLASE_DE_LA_ETIQUETA[etiqueta]}` : '';
-  return `<span class="dq-etiqueta${clase}">${etiqueta === 'Validar' ? ICONO_VALIDAR : ''}${esc(etiqueta)}</span>`;
+  const icono = typeof etiqueta === 'string' && Object.hasOwn(ICONO_DE_LA_ETIQUETA, etiqueta) ? ICONO_DE_LA_ETIQUETA[etiqueta] : '';
+  return `<span class="dq-etiqueta${clase}">${icono}${esc(etiqueta)}</span>`;
 };
+
+/**
+ * La repetición de otra edición (spec 2026-11-14-dato-quincena-v1-3, 4), tal como la arma el servidor: el ícono y el texto en
+ * negrita, como enlace al detalle de esa edición solo con un id que sirve, y abajo el motivo. Sin repetición (null, sin la clave o
+ * algo que no es un objeto), nada.
+ */
+function htmlDeLaRepeticion(repeticion) {
+  if (repeticion === null || typeof repeticion !== 'object') return '';
+  const id = idDeEdicion(repeticion.id_edicion);
+  const texto = id === null ? esc(repeticion.texto) : `<a href="${PAGINA_DATO_QUINCENA}?id=${String(id)}">${esc(repeticion.texto)}</a>`;
+  return `<div class="dq-repite"><p class="dq-repite-texto">${ICONO_REPITE}<b>${texto}</b></p>`
+    + `<p class="dq-repite-motivo">${esc(repeticion.motivo)}</p></div>`;
+}
 
 // Un «Copiar» con el texto tal como llega del servidor. Su nombre (aria-label) dice qué copia: hay tres por propuesta y el texto del
 // botón cambia a «Copiado» (lo anuncia #dq-anuncio)
@@ -313,7 +334,8 @@ const htmlDeTexto = (texto) => `<p class="dq-texto">${esc(texto)}</p>`;
 
 /**
  * Una propuesta: el número y las etiquetas, el título, la cifra, el dataset (con enlace a su página solo con id_enlace, y «en el
- * portal» siempre, con enlace si es https://), la foto del RPAD y, si hay, «Para validar antes de publicar», siempre a la vista.
+ * portal» siempre, con enlace si es https://), la foto del RPAD y, si hay, la repetición de otra edición y «Para validar antes de
+ * publicar», siempre a la vista.
  * Después, en un <details> (abierto en la principal), la propuesta completa en el orden de la sección 9, y al pie, «Copiar la
  * propuesta».
  */
@@ -349,6 +371,7 @@ function htmlDePropuesta(propuesta) {
     + `<p class="dq-cifra">${esc(p.cifra_clave)}</p>`
     + `<p class="dq-dataset">Dataset: ${nombre} · ${portal}</p>`
     + htmlDeLaFoto(p.foto)
+    + htmlDeLaRepeticion(p.repeticion)
     + validar
     + `<details class="dq-completa"${principal ? ' open' : ''}><summary>${ICONO_ABRIR}<span>${principal ? 'La propuesta completa' : 'Ver la propuesta completa'}</span></summary>`
     + `<div class="dq-campos">${campos}</div></details>`

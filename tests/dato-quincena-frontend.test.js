@@ -19,6 +19,9 @@ const LISTA = () => respuesta('lista').data;
 const LISTA_DOS_ANIOS = () => respuesta('lista_dos_anios').data;
 const LISTA_VACIA = () => respuesta('lista_vacia').data;
 const DETALLE = () => respuesta('detalle').data;
+// La edición del 16/11 con repeticiones (spec 2026-11-14-dato-quincena-v1-3, 3): la principal repite la de prueba (con enlace), la
+// segunda es una efeméride y la tercera repite una edición que no está en el RPAD (sin enlace)
+const DETALLE_CON_REPETICION = () => respuesta('detalle_con_repeticion').data;
 
 // Las respuestas de administración (spec 2026-11-12-dato-quincena-correo, 12), inventadas, con la forma de
 // controllers/datoQuincenaCorreoController.js: GET /dato-quincena/correo y GET /dato-quincena/ediciones/:id/correo
@@ -162,25 +165,31 @@ describe('dato-quincena.js: las respuestas del servidor (spec, 9) son el contrat
   });
 
   it('el detalle: con su id y los textos ya armados, la agenda, las propuestas y los archivos', () => {
-    const detalle = DETALLE();
-    assert.deepEqual(Object.keys(detalle), [
-      'id', 'fecha_texto', 'marca', 'numero', 'titulo', 'nota_archivo', 'llegada', 'correo', 'cantidad', 'agenda', 'propuestas',
-      'archivos'
-    ]);
-    for (const evento of detalle.agenda) assert.deepEqual(Object.keys(evento), ['fecha_texto', 'titulo', 'detalle', 'url', 'etiqueta']);
-    for (const propuesta of detalle.propuestas) {
-      assert.deepEqual(Object.keys(propuesta), [
-        'orden_texto', 'etiquetas', 'principal', 'titulo', 'cifra_clave', 'dataset', 'foto', 'notas_validacion', 'calculo',
-        'contexto_historico', 'por_que_hoy', 'angulo', 'idea_placa', 'texto_redes', 'puntos_centrales', 'borrador_nota', 'fuentes',
-        'para_copiar', 'borrador_para_copiar'
+    for (const detalle of [DETALLE(), DETALLE_CON_REPETICION()]) {
+      assert.deepEqual(Object.keys(detalle), [
+        'id', 'fecha_texto', 'marca', 'numero', 'titulo', 'nota_archivo', 'llegada', 'correo', 'cantidad', 'agenda', 'propuestas',
+        'archivos'
       ]);
-      assert.deepEqual(Object.keys(propuesta.dataset), ['nombre', 'id_enlace', 'url']);
-      assert.deepEqual(Object.keys(propuesta.borrador_nota), ['titulo', 'parrafos']);
-      for (const fila of propuesta.foto) assert.deepEqual(Object.keys(fila), ['rotulo', 'valor']);
+      for (const evento of detalle.agenda) assert.deepEqual(Object.keys(evento), ['fecha_texto', 'titulo', 'detalle', 'url', 'etiqueta']);
+      for (const propuesta of detalle.propuestas) {
+        assert.deepEqual(Object.keys(propuesta), [
+          'orden_texto', 'etiquetas', 'principal', 'titulo', 'cifra_clave', 'dataset', 'foto', 'repeticion', 'notas_validacion',
+          'calculo', 'contexto_historico', 'por_que_hoy', 'angulo', 'idea_placa', 'texto_redes', 'puntos_centrales', 'borrador_nota',
+          'fuentes', 'para_copiar', 'borrador_para_copiar'
+        ]);
+        assert.deepEqual(Object.keys(propuesta.dataset), ['nombre', 'id_enlace', 'url']);
+        assert.deepEqual(Object.keys(propuesta.borrador_nota), ['titulo', 'parrafos']);
+        for (const fila of propuesta.foto) assert.deepEqual(Object.keys(fila), ['rotulo', 'valor']);
+        // La repetición (spec 2026-11-14-dato-quincena-v1-3, 3): null o { texto, motivo, id_edicion }
+        if (propuesta.repeticion !== null) assert.deepEqual(Object.keys(propuesta.repeticion), ['texto', 'motivo', 'id_edicion']);
+      }
+      assert.deepEqual(detalle.archivos.map((archivo) => Object.keys(archivo)), Array(5).fill(['campo', 'rotulo', 'nombre', 'detalle', 'se_puede_ver']));
+      assert.deepEqual(detalle.archivos.map((archivo) => archivo.campo),
+        ['infografia_png', 'infografia_svg', 'correo_texto', 'calculos', 'metadata']);
     }
-    assert.deepEqual(detalle.archivos.map((archivo) => Object.keys(archivo)), Array(5).fill(['campo', 'rotulo', 'nombre', 'detalle', 'se_puede_ver']));
-    assert.deepEqual(detalle.archivos.map((archivo) => archivo.campo),
-      ['infografia_png', 'infografia_svg', 'correo_texto', 'calculos', 'metadata']);
+    assert.deepEqual(DETALLE().propuestas.map((p) => p.repeticion), [null, null]);
+    assert.deepEqual(DETALLE_CON_REPETICION().propuestas.map((p) => p.repeticion?.id_edicion ?? null), [12, null, null]);
+    assert.deepEqual(DETALLE_CON_REPETICION().propuestas.map((p) => p.repeticion === null), [false, true, false]);
     assert.deepEqual(respuesta('no_existe'), { success: false, error: 'No existe esa edición.' });
   });
 });
@@ -535,6 +544,56 @@ describe('dato-quincena.js: el detalle (spec, 10)', () => {
     assert.ok(rara.includes(`<span class="dq-etiqueta">${XSS_ESCAPADO}</span>`));
   });
 
+  // spec 2026-11-14-dato-quincena-v1-3, 4: «Repite» con su clase y el history de Lucide (decorativo, como el de Validar);
+  // «Efeméride», el estilo neutro de .dq-etiqueta, sin clase propia. Las etiquetas dicen su nombre: nunca solo el color
+  it('las etiquetas Repite (con su clase y el history de Lucide) y Efeméride (la neutra, sin clase)', () => {
+    const [principal, segunda, tercera] = propuestasDe(ctx.htmlDelDetalle(DETALLE_CON_REPETICION()));
+    const REPITE = /<span class="dq-etiqueta dq-et-repite"><svg aria-hidden="true"[^>]*><path d="M3 12a9 9 0 1 0 9-9 9\.75 9\.75 0 0 0-6\.74 2\.74L3 8"\/><path d="M3 3v5h5"\/><path d="M12 7v5l4 2"\/><\/svg>Repite<\/span>/;
+    assert.match(principal, REPITE);
+    assert.match(tercera, REPITE);
+    assert.ok(principal.includes('<span class="dq-etiqueta dq-et-principal">Principal</span>'));
+    assert.match(principal, /<span class="dq-etiqueta dq-et-validar"><svg aria-hidden="true"/);
+    assert.ok(segunda.includes('<span class="dq-etiqueta dq-et-agenda">Agenda</span><span class="dq-etiqueta">Efeméride</span>'));
+    assert.ok(!segunda.includes('dq-et-repite'));
+    assert.deepEqual(constante('CLASE_DE_LA_ETIQUETA'),
+      { Principal: 'dq-et-principal', Agenda: 'dq-et-agenda', Validar: 'dq-et-validar', Repite: 'dq-et-repite' });
+  });
+
+  it('la caja de la repetición, después de la foto y antes de «Para validar»: el texto en negrita con el enlace a la edición y el motivo', () => {
+    const [principal, segunda, tercera] = propuestasDe(ctx.htmlDelDetalle(DETALLE_CON_REPETICION()));
+    const icono = '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" '
+      + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 '
+      + '2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>';
+    assert.ok(principal.includes(`<div class="dq-repite"><p class="dq-repite-texto">${icono}<b><a href="dato-quincena.html?id=12">`
+      + 'Repite el dataset de la edición del 02/11/2026.</a></b></p><p class="dq-repite-motivo">Datos nuevos: Llegaron los datos de '
+      + 'octubre, que la edición anterior no tenía.</p></div>'));
+    const foto = principal.indexOf('<dl class="dq-foto">');
+    const caja = principal.indexOf('<div class="dq-repite">');
+    assert.ok(foto > 0 && foto < caja && caja < principal.indexOf('<div class="dq-validar">'), 'entre la foto y Para validar');
+    assert.ok(caja < principal.indexOf('<details'), 'siempre a la vista');
+    // Sin un id que sirva, el texto sin enlace
+    assert.ok(tercera.includes(`<div class="dq-repite"><p class="dq-repite-texto">${icono}<b>Repite el tema de la edición del 19/10/2026.</b>`
+      + '</p><p class="dq-repite-motivo">Hecho actual: Esta quincena el tema volvió a estar en agenda.</p></div>'));
+    // Sin repetición, nada
+    assert.ok(!segunda.includes('dq-repite'));
+  });
+
+  it('htmlDeLaRepeticion: el enlace solo con un id que acepta idDeEdicion; null, sin la clave o algo raro, nada', () => {
+    const repeticion = DETALLE_CON_REPETICION().propuestas[0].repeticion;
+    for (const id_edicion of [null, undefined, 0, -12, 1.5, '12', Number.MAX_SAFE_INTEGER + 1]) {
+      const html = ctx.htmlDeLaRepeticion({ ...repeticion, id_edicion });
+      assert.ok(!html.includes('<a '), String(id_edicion));
+      assert.ok(html.includes('<b>Repite el dataset de la edición del 02/11/2026.</b>'), String(id_edicion));
+    }
+    assert.ok(ctx.htmlDeLaRepeticion({ ...repeticion, id_edicion: 7 }).includes('<a href="dato-quincena.html?id=7">'));
+    for (const valor of [null, undefined, 'sí', 3]) assert.equal(ctx.htmlDeLaRepeticion(valor), '', String(valor));
+    // Una edición v1.2 (repeticion null) y una propuesta sin la clave, como antes
+    const [primera] = DETALLE().propuestas;
+    const { repeticion: _, ...sinLaClave } = primera;
+    assert.equal(ctx.htmlDePropuesta(sinLaClave), ctx.htmlDePropuesta(primera));
+    assert.ok(!ctx.htmlDelDetalle(DETALLE()).includes('dq-repite'));
+  });
+
   it('«Para validar antes de publicar», con su ícono, fuera del <details> y siempre a la vista; sin notas, no va', () => {
     const [principal, otra] = propuestasDe(ctx.htmlDelDetalle(DETALLE()));
     assert.match(principal, /<div class="dq-validar"><h5><svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>Para validar antes de publicar<\/h5><ul><li>Primera nota\.<\/li><li>Segunda nota\.<\/li><\/ul><\/div>/);
@@ -690,6 +749,16 @@ describe('dato-quincena.js: todo texto del servidor va escapado', () => {
     assert.ok(html.includes(`data-nombre="${XSS_ESCAPADO}"`));
   });
 
+  it('la repetición: su texto y su motivo van escapados, también con el enlace', () => {
+    const datos = conTextos(DETALLE_CON_REPETICION(), XSS);
+    const html = ctx.htmlDelDetalle(datos);
+    assert.ok(!html.includes('<img'), html);
+    assert.ok(html.includes(`<b><a href="dato-quincena.html?id=12">${XSS_ESCAPADO}</a></b></p><p class="dq-repite-motivo">${XSS_ESCAPADO}</p>`));
+    assert.ok(html.includes(`<span class="dq-etiqueta">${XSS_ESCAPADO}</span>`));
+    // Ninguna dirección que no es de la página o https:// llega a un href
+    assert.ok(!/href="(?!dato-quincena\.html|dataset\.html\?id=\d+"|https:\/\/)/.test(html), html);
+  });
+
   it('una dirección https:// con comillas no se sale del atributo', () => {
     const [primera] = DETALLE().propuestas;
     const url = 'https://x.test/"><img src=x onerror=1>';
@@ -700,6 +769,7 @@ describe('dato-quincena.js: todo texto del servidor va escapado', () => {
 
   it('ninguna clase ni id empieza con «ad-» en lo que arma la página', () => {
     const todo = [ctx.htmlDeLaLista(LISTA_DOS_ANIOS(), 1), ctx.htmlDeLaLista(LISTA_VACIA(), 1), ctx.htmlDelDetalle(DETALLE()), ctx.htmlDePestanas('ediciones'),
+      ctx.htmlDelDetalle(DETALLE_CON_REPETICION()),
       ctx.htmlDelDetalle(DETALLE(), { admin: true }), ctx.htmlDelCorreo(CORREO()), ctx.htmlDelCorreo({ ...CORREO(), proximas: [] }),
       ctx.htmlDeLaCajaDelCorreo(CAJA()), ctx.htmlDeLaCajaDelCorreo(null), ctx.htmlDelReenvio(CAJA().lista_de_hoy), ctx.htmlDelReenvio([]),
       ctx.htmlDelEstado('error-correo'),
@@ -1306,6 +1376,24 @@ describe('dato-quincena.html: la página', () => {
     assert.match(bloque, /\.dq-pagina \.dq-tarjeta-enlace:focus-visible \{ outline: none; box-shadow: none; \}/);
     // Fuera de @supports, nada le saca el anillo al enlace
     assert.equal(cuantas(estilo, /dq-tarjeta-enlace:focus-visible \{ outline: none/g), 1);
+  });
+
+  // spec 2026-11-14-dato-quincena-v1-3, 4: Repite blanca con un borde de 1 px por dentro; la caja de la repetición con los márgenes
+  // de .dq-validar; Efeméride no tiene clase propia
+  it('el CSS de la etiqueta Repite y de la caja de la repetición', () => {
+    const estilo = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+    assert.match(estilo, /\.dq-et-repite \{ background: #fff; color: var\(--sg-texto\); box-shadow: inset 0 0 0 1px var\(--sg-borde-control\); \}/);
+    assert.match(estilo, /\.dq-repite \{ margin: 14px 0 0; padding: 12px 14px; border-radius: 12px; background: var\(--sg-sutil\); border: 1px solid var\(--sg-linea\);/);
+    assert.match(estilo, /\.dq-validar \{ margin: 14px 0 0; padding: 12px 14px; border-radius: 12px;/);
+    for (const clase of ['dq-repite-texto', 'dq-repite-motivo']) assert.ok(estilo.includes(`.${clase}`), clase);
+    assert.doesNotMatch(estilo, /dq-et-efemeride/);
+    // El enlace a la edición previa se ve como enlace: main.css saca el subrayado a todo <a> y el texto ya es negrita y tinta, así
+    // que sin subrayado no se distinguiría del texto sin enlace (el color nunca es lo único que distingue)
+    assert.match(estilo, /\.dq-repite-texto a \{ color: var\(--sg-tinta\); text-decoration: underline; text-underline-offset: 3px; \}/);
+    // El ícono, alineado con el primer renglón cuando el texto ocupa dos (como la maqueta)
+    assert.match(estilo, /\.dq-repite-texto \{[^}]*align-items: flex-start;/);
+    assert.doesNotMatch(estilo, /\.dq-repite-texto \{[^}]*align-items: center;/);
+    assert.match(estilo, /\.dq-repite-texto svg \{ flex: none; margin-top: 3px; \}/);
   });
 
   it('el CSS de la pestaña Correo y de la caja del detalle (la maqueta aprobada): el interruptor quieto con movimiento reducido', () => {

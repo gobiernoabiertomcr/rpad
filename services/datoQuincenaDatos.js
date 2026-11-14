@@ -199,6 +199,58 @@ export const listarEdiciones = async (anio) => {
   };
 };
 
+// Los rpad_id (enteros positivos) que citan las propuestas de una edición guardada, de su metadata. Una metadata que no se puede
+// leer (solo con un SQL a mano: el POST la valida) no cita ninguno
+const datasetsCitados = (metadata) => {
+  try {
+    const { propuestas } = JSON.parse(textoDe(metadata));
+    if (!Array.isArray(propuestas)) return [];
+    return [...new Set(propuestas.map((propuesta) => propuesta?.dataset?.rpad_id)
+      .filter((id) => Number.isSafeInteger(id) && id > 0))];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Las ediciones regulares de unas fechas (spec 2026-11-14-dato-quincena-v1-3, 2 y 3), las de fechasPrevias: un Map de la fecha
+ * ('AAAA-MM-DD') a `{ id, rpad_ids }`, con los rpad_id que citan sus propuestas en su metadata (lo guardado tal como llegó: la
+ * repetición se mira contra lo que el bot citó, no contra el enlace que quedó). Una sola consulta, con `IN (?)`; sin fechas, no
+ * consulta y da un Map vacío. Una regular por fecha: la clave lo garantiza.
+ */
+export const leerEdicionesPrevias = async (fechas) => {
+  const previas = new Map();
+  if (!Array.isArray(fechas) || fechas.length === 0) return previas;
+  const [ediciones] = await pool.query(
+    `SELECT id, DATE_FORMAT(fecha_edicion, '%Y-%m-%d') AS fecha_edicion, metadata
+     FROM dato_quincena_ediciones
+     WHERE tipo = 'regular' AND fecha_edicion IN (?)`,
+    [fechas]
+  );
+  for (const edicion of ediciones) {
+    previas.set(edicion.fecha_edicion, { id: Number(edicion.id), rpad_ids: datasetsCitados(edicion.metadata) });
+  }
+  return previas;
+};
+
+const MENSAJE_SIN_PREVIAS = 'Dato de la quincena: no se pudieron leer las ediciones previas';
+
+/**
+ * leerEdicionesPrevias sin tirar nunca (revisión final de la spec 2026-11-14-dato-quincena-v1-3): si la consulta falla, un renglón
+ * fijo en la consola, solo con el código del error (el mensaje de la base puede traer las fechas de la consulta), y null, que
+ * quiere decir «no se pudieron leer». Así una falla acá no da un 500 en el recibo, con la edición ya guardada, ni en el detalle, y
+ * no deja el mail sin salir: el recibo sale sin los avisos de la repetición y el detalle y el mail, sin el enlace.
+ */
+export const edicionesPreviasSinFallar = async (fechas) => {
+  try {
+    return await leerEdicionesPrevias(fechas);
+  } catch (error) {
+    // Sin código (un error que no es de la base), su tipo: así la línea dice algo sin repetir el mensaje
+    console.error(MENSAJE_SIN_PREVIAS, error?.code ?? error?.name ?? '');
+    return null;
+  }
+};
+
 /**
  * Lo que hace falta para el detalle de una edición (sección 9), o null si no existe: la fila (`fecha_edicion` como texto,
  * `metadata` el texto guardado, `recibida_ts` los segundos UNIX de recibida_at y `numero`, el de numeroDeLaFila), sus

@@ -834,13 +834,17 @@ const PIE_DE_LA_INFOGRAFIA = 'La infografía de la propuesta principal.';
 const BOTON_DEL_DATO_QUINCENA = 'Ver la edición en el RPAD';
 const PARA_VALIDAR = 'Para validar antes de publicar';
 
-// Las pastillas de las etiquetas de una propuesta (Principal va en la franja) y la de la agenda, la suave «Efeméride»; otra,
-// con los colores neutros. Siempre con su texto: el color nunca es lo único que las distingue
+// Las pastillas de las etiquetas de una propuesta (Principal va en la franja) y la de la agenda, la suave «Efeméride», que usan
+// también las propuestas; «Repite», blanca con un borde (spec 2026-11-14-dato-quincena-v1-3, 5); otra, con los colores neutros.
+// Siempre con su texto: el color nunca es lo único que las distingue
 const PASTILLAS_DEL_DATO_QUINCENA = Object.freeze({
   Validar: { fondo: COLORES.respaldo.fondo, color: COLORES.respaldo.texto },
   Agenda: { fondo: COLORES.encabezado, color: COLORES.titulo },
-  Efeméride: { fondo: COLORES.borde, color: COLORES.texto }
+  Efeméride: { fondo: COLORES.borde, color: COLORES.texto },
+  Repite: { fondo: COLORES.tarjeta, color: COLORES.texto, borde: '#76879F' }
 });
+// La caja de la repetición de una propuesta: un recuadro neutro, gris azulado, distinto del celeste de los campos
+const CAJA_DE_LA_REPETICION = Object.freeze({ fondo: '#F4F7FA', borde: '#DAE3ED' });
 
 // Un texto de la edición: los que no son texto, vacíos (nada tira con un modelo raro)
 const textoDelDato = (valor) => (typeof valor === 'string' ? valor : '');
@@ -857,12 +861,14 @@ const fotoEnUnRenglon = (foto) => `${foto.map((fila) => `${textoDelDato(fila?.ro
 const etiquetasDelDato = (propuesta) => listaDelDato(propuesta?.etiquetas).filter((etiqueta) => etiqueta !== 'Principal');
 const pieDeLaInfografia = (conSvg) => `${PIE_DE_LA_INFOGRAFIA} ${conSvg ? 'Va adjunta en PNG y en SVG (para editarla).' : 'Va adjunta en PNG.'}`;
 
-// Una pastilla, con el estilo de la etiqueta del tipo de cambio (etiquetaDeTipo) y su margen
+// Una pastilla, con el estilo de la etiqueta del tipo de cambio (etiquetaDeTipo) y su margen. Una con borde lleva un píxel menos
+// de relleno de cada lado: así mide lo mismo que las otras
 const pastillaDelDato = (texto, margen) => {
-  const { fondo, color } = Object.hasOwn(PASTILLAS_DEL_DATO_QUINCENA, texto)
+  const { fondo, color, borde } = Object.hasOwn(PASTILLAS_DEL_DATO_QUINCENA, texto)
     ? PASTILLAS_DEL_DATO_QUINCENA[texto]
     : { fondo: COLORES.borde, color: COLORES.texto };
-  return `<span style="display: inline-block; margin: ${margen}; background-color: ${fondo}; color: ${color}; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 10px;">${escapeHtml(textoDelDato(texto))}</span>`;
+  const conBorde = typeof borde === 'string' ? ` border: 1px solid ${borde};` : '';
+  return `<span style="display: inline-block; margin: ${margen}; background-color: ${fondo}; color: ${color};${conBorde} font-size: 12px; font-weight: 600; padding: ${conBorde === '' ? '2px 10px' : '1px 9px'}; border-radius: 10px;">${escapeHtml(textoDelDato(texto))}</span>`;
 };
 
 // Un bloque con aire arriba, en una celda (Outlook de escritorio no respeta el margin de una tabla)
@@ -873,6 +879,34 @@ const conAireArriba = (alto, html) => `<table role="presentation" width="100%" c
                         </td>
                       </tr>
                     </table>`;
+
+// La repetición de una propuesta (spec 2026-11-14-dato-quincena-v1-3, 5), si es un objeto; si no, null
+const repeticionDelModelo = (propuesta) => {
+  const repeticion = propuesta?.repeticion;
+  return repeticion !== null && typeof repeticion === 'object' && !Array.isArray(repeticion) ? repeticion : null;
+};
+// El enlace a la edición que repite, solo con un id entero positivo
+const idDeLaEdicionPrevia = (repeticion) => (Number.isSafeInteger(repeticion.id_edicion) && repeticion.id_edicion > 0
+  ? repeticion.id_edicion
+  : null);
+
+// La caja de la repetición, con aire arriba: el texto en negrita (enlace a la edición previa, si hay id) y abajo el motivo. Sin
+// repetición, nada. El enlace va subrayado, a diferencia de los otros del mail: el texto sin enlace también es negrita y el color
+// solo no los distingue
+const repeticionDelDato = (propuesta) => {
+  const repeticion = repeticionDelModelo(propuesta);
+  if (repeticion === null) return '';
+  const id = idDeLaEdicionPrevia(repeticion);
+  const texto = conRenglones(repeticion.texto);
+  const conEnlace = id === null
+    ? texto
+    : `<a href="${escapeHtml(`${RPAD_URL}/dato-quincena.html?id=${id}`)}" style="color: ${COLORES.acento}; text-decoration: underline;">${texto}</a>`;
+  return conAireArriba(12, caja(
+    `background-color: ${CAJA_DE_LA_REPETICION.fondo}; border: 1px solid ${CAJA_DE_LA_REPETICION.borde}; border-radius: 6px`,
+    `<p style="margin: 0; color: ${COLORES.texto}; font-size: 14px; line-height: 1.6;"><strong>${conEnlace}</strong></p>`
+      + `<p style="margin: 4px 0 0 0; color: ${COLORES.texto}; font-size: 14px; line-height: 1.6;">${conRenglones(repeticion.motivo)}</p>`
+  ));
+};
 
 // Un campo de una propuesta: su título y su contenido (html: ya escapado)
 const campoDelDato = (titulo, html) =>
@@ -918,6 +952,7 @@ const contenidoDelDato = (propuesta) => {
     `<p style="margin: 8px 0 0 0; color: ${COLORES.texto}; font-size: 16px; font-weight: 600; line-height: 1.4;">${conRenglones(propuesta?.cifra_clave)}</p>`,
     parrafo(`Dataset: ${esHttps(dataset?.url) ? enlace(escapeHtml(dataset.url), nombre) : nombre}`, '10px 0 0 0'),
     foto.length > 0 ? `<p style="margin: 4px 0 0 0; color: ${COLORES.secundario}; font-size: 12px; line-height: 1.5;">${conRenglones(fotoEnUnRenglon(foto))}</p>` : '',
+    repeticionDelDato(propuesta),
     notas.length > 0
       ? conAireArriba(12, avisoDestacado(`<strong>${PARA_VALIDAR}</strong>${notas.map((nota) => `<br>• ${conRenglones(nota)}`).join('')}`))
       : '',
@@ -971,10 +1006,12 @@ const infografiaDelDato = (propuestas, conSvg) => {
 };
 
 // El texto plano de una propuesta, en bloques separados por un renglón en blanco: la franja (con «(principal)»), el título con
-// sus etiquetas y la cifra; el dataset (la dirección, solo si es https://) y la foto; cada campo con su título
+// sus etiquetas y la cifra; el dataset (la dirección, solo si es https://) y la foto; la repetición, si hay («<texto>\n<motivo>»,
+// sin el enlace); cada campo con su título
 const textoDeLaPropuesta = (propuesta) => {
   const etiquetas = etiquetasDelDato(propuesta);
   const { dataset, borrador_nota: borrador } = propuesta ?? {};
+  const repeticion = repeticionDelModelo(propuesta);
   const foto = listaDelDato(propuesta?.foto);
   const notas = listaDelDato(propuesta?.notas_validacion);
   const puntos = listaDelDato(propuesta?.puntos_centrales);
@@ -990,6 +1027,7 @@ const textoDeLaPropuesta = (propuesta) => {
       `Dataset: ${textoDelDato(dataset?.nombre)}`, ...(esHttps(dataset?.url) ? [dataset.url] : []),
       ...(foto.length > 0 ? [fotoEnUnRenglon(foto)] : [])
     ].join('\n'),
+    ...(repeticion === null ? [] : [`${textoDelDato(repeticion.texto)}\n${textoDelDato(repeticion.motivo)}`]),
     ...(notas.length > 0 ? [conGuiones(PARA_VALIDAR, notas)] : []),
     `Por qué hoy\n${textoDelDato(propuesta?.por_que_hoy)}`,
     `Ángulo\n${textoDelDato(propuesta?.angulo)}`,
@@ -1014,8 +1052,9 @@ const eventoEnTexto = (evento) => [
  * plantilla no importa. `conSvg`: solo con true el pie de la infografía dice que va también en SVG (el servicio lo pasa si
  * la edición lo trajo; ante la duda, no lo promete).
  * Con el marco único: el título, el número y la bajada; «Buen día, <primer nombre>.»; la infografía en línea (CID_INFOGRAFIA);
- * la agenda, si hay; una tarjeta por propuesta, en su orden, con su franja; el botón «Ver la edición en el RPAD» y la nota, con
- * el nombre del bot del modelo.
+ * la agenda, si hay; una tarjeta por propuesta, en su orden, con su franja (y, si repite otra edición, la caja de la repetición
+ * después de la foto: spec 2026-11-14-dato-quincena-v1-3, 5); el botón «Ver la edición en el RPAD» y la nota, con el nombre del
+ * bot del modelo.
  * Todo texto de la edición va escapado y con sus saltos de línea como <br>; una dirección es enlace solo si es https://. El
  * texto plano dice lo mismo, con los textos tal como llegaron.
  */

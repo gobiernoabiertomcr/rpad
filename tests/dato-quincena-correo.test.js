@@ -10,12 +10,12 @@ import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { crearBaseDePrueba, correrSqlEnBaseDePrueba, cerrarDb, query, db, mailpit, paraCasilla, MAILPIT_URL } from './helpers.js';
 import { asegurarBaseDePrueba } from './notas-fixtures.js';
-import { edicionDePrueba, partesDePrueba, svgDePrueba } from './dato-quincena-fixtures.js';
+import { edicionDePrueba, pilotoDePrueba, partesDePrueba, svgDePrueba, repeticionDePrueba } from './dato-quincena-fixtures.js';
 import { claveDeEdicion, filasDeLaEdicion, huellaDelPaquete } from '../services/datoQuincenaReglas.js';
 import {
   MENSAJES_CORREO, estaVigente, textoDeLaPersona, sePuedeReenviar, pastillaDelEnvio
 } from '../services/datoQuincenaCorreoReglas.js';
-import { CID_INFOGRAFIA } from '../services/emailTemplates.js';
+import { CID_INFOGRAFIA, RPAD_URL } from '../services/emailTemplates.js';
 import { sendEmail } from '../services/emailService.js';
 
 const ASUNTO_23 = 'Dato de la Quincena - 23/11/2026';
@@ -85,9 +85,10 @@ const licencia = (quien, desde, hasta) => query(
 const prender = (activo) => query('UPDATE dato_quincena_correo_config SET envio_activo = ? WHERE id = 1', [activo ? 1 : 0]);
 
 // Llega una edición regular por el mismo camino que el POST (guardarEdicion): queda programada si el envío está prendido. Con el
-// SVG, salvo `svg: false`. Devuelve su id
-const llega = async (fecha_edicion, ahora, { svg = true } = {}) => {
+// SVG, salvo `svg: false`; `cambiar` recibe la edición antes de armar sus partes. Devuelve su id
+const llega = async (fecha_edicion, ahora, { svg = true, cambiar = () => {} } = {}) => {
   const edicion = edicionDePrueba({ fecha_edicion, titulo: `El dato de la quincena del ${fecha_edicion}` });
+  cambiar(edicion);
   const partes = partesDePrueba(edicion, svg ? { infografia_svg: svgDePrueba() } : {});
   const manifiesto = JSON.parse(partes.metadata.toString('utf8'));
   const { estado, id } = await datos.guardarEdicion({
@@ -234,6 +235,172 @@ describe('sale en la corrida de la mañana del primer día hábil (spec, 5 y 10)
     assert.deepEqual(await corrida('2026-12-09 08:05:00'), resultado({ edicion: id, enviados: 1 }));
     const [mensaje] = await esperarDe(uno.email);
     assert.equal(mensaje.Subject, 'Dato de la Quincena - 07/12/2026');
+  });
+});
+
+// spec 2026-11-14-dato-quincena-v1-3, 3 y 5: el mail arma el detalle con las ediciones previas, como la página
+describe('la repetición en el mail (contrato v1.3)', () => {
+  it('la propuesta que repite una edición archivada lleva su caja con el enlace; la que repite una que no está, sin enlace', async () => {
+    const uno = await persona({ clave: 'Uno' });
+    await aLaLista(uno);
+    // La previa llega con el envío apagado: no sale ni compite con la del 23/11
+    await prender(false);
+    const previa = await llega('2026-11-09', '2026-11-09 07:30:00');
+    await prender(true);
+    const id = await llega('2026-11-23', '2026-11-23 07:30:00', {
+      cambiar: (edicion) => {
+        edicion.propuestas[0].etiquetas.push('Repite');
+        edicion.propuestas[0].repeticion = repeticionDePrueba({ fecha_edicion_previa: '2026-11-09' });
+        edicion.propuestas[1].etiquetas = ['Efemeride', 'Repite'];
+        edicion.propuestas[1].repeticion = repeticionDePrueba({
+          fecha_edicion_previa: '2026-10-19', alcance: 'tema', motivo: 'hecho_actual', detalle: 'Un hecho inventado.'
+        });
+      }
+    });
+    assert.deepEqual(await corrida('2026-11-24 08:05:00'), resultado({ edicion: id, enviados: 1 }));
+    const [mensaje] = await esperarDe(uno.email);
+    const completo = await detalle(mensaje.ID);
+    assert.ok(completo.HTML.includes(`<strong><a href="${RPAD_URL}/dato-quincena.html?id=${previa}" style="color: #3E6B96; `
+      + 'text-decoration: underline;">Repite el dataset de la edición del 09/11/2026.</a></strong>'), 'con el enlace a la previa');
+    assert.ok(completo.HTML.includes('<strong>Repite el tema de la edición del 19/10/2026.</strong>'), 'sin enlace');
+    assert.ok(completo.HTML.includes('>Hecho actual: Un hecho inventado.</p>'));
+    assert.ok(completo.HTML.includes('>Efeméride</span>') && completo.HTML.includes('>Repite</span>'));
+    // El texto plano llega con los renglones de un mail (\r\n)
+    const texto = completo.Text.replace(/\r\n/g, '\n');
+    assert.ok(texto.includes('Repite el dataset de la edición del 09/11/2026.\nDatos nuevos: Llegaron los datos de octubre, '
+      + 'que la edición anterior no tenía.\n\nPara validar antes de publicar'));
+    assert.ok(texto.includes('Otro título inventado [Efeméride, Repite]'));
+  });
+});
+
+// Revisión final (Minor 5): si la lectura de las ediciones previas falla, nada se cae. El recibo sale sin los avisos de la
+// repetición (con los del dataset); el detalle y el mail, con la repetición sin enlace. En la consola, un renglón fijo con el
+// código del error y nada de lo que trae su mensaje. La falla se simula en pool.query, solo para la consulta de las previas: el
+// recibo, el detalle y la corrida se llaman acá mismo (el controlador con un req y un res armados a mano)
+describe('si no se pueden leer las ediciones previas (revisión final, Minor 5)', () => {
+  const RENGLON = 'Dato de la quincena: no se pudieron leer las ediciones previas';
+  const CODIGO = 'ER_PREVIAS_DE_PRUEBA';
+  // Un mensaje con datos, que nunca tiene que llegar a la consola
+  const MENSAJE_CON_DATOS = "caída inventada cerca de '2026-11-02'";
+  let archivo;
+
+  before(async () => {
+    archivo = await import('../controllers/datoQuincenaController.js');
+  });
+
+  // La consulta de leerEdicionesPrevias falla; las demás siguen. Devuelve la consola de errores, para mirarla
+  const fallanLasPrevias = () => {
+    const original = pool.query;
+    mock.method(pool, 'query', function consulta(sql, ...resto) {
+      if (String(sql).includes("tipo = 'regular' AND fecha_edicion IN (?)")) {
+        return Promise.reject(Object.assign(new Error(MENSAJE_CON_DATOS), { code: CODIGO }));
+      }
+      return original.call(this, sql, ...resto);
+    });
+    callado('log');
+    callado('warn');
+    return callado('error');
+  };
+  const renglonesDe = (consola) => consola.mock.calls.map((llamada) => llamada.arguments.map(String).join(' '));
+  const soloElRenglonFijo = (consola) => {
+    assert.deepEqual(renglonesDe(consola), [`${RENGLON} ${CODIGO}`]);
+    assert.ok(!renglonesDe(consola).some((renglon) => renglon.includes('2026-11-02') || renglon.includes('inventada')));
+  };
+  // Un res que guarda lo que se le responde
+  const respuesta = () => ({
+    headersSent: false,
+    status(codigo) { this.codigo = codigo; return this; },
+    json(cuerpo) { this.cuerpo = cuerpo; this.headersSent = true; return this; }
+  });
+
+  it('el recibo: 201 sin los avisos de la repetición, con los del dataset; el 200, con las previas de vuelta, los trae todos', async () => {
+    await llega('2026-11-02', '2026-11-02 07:30:00');
+    const piloto = pilotoDePrueba({ fecha_edicion: '2026-11-09', referencia_piloto: 'piloto-40' });
+    const [primera, segunda] = piloto.propuestas;
+    primera.dataset.rpad_id = null;
+    primera.etiquetas.push('Repite');
+    primera.repeticion = repeticionDePrueba({ fecha_edicion_previa: '2026-10-19', alcance: 'tema' });
+    segunda.dataset.rpad_id = 999;
+    segunda.etiquetas.push('Repite');
+    segunda.repeticion = repeticionDePrueba({ fecha_edicion_previa: '2026-11-02' });
+    const partes = partesDePrueba(piloto);
+    const DEL_DATASET = 'La propuesta 2 cita el dataset 999, que no está en el RPAD: se guardó sin enlace.';
+    let res = respuesta();
+    try {
+      const consola = fallanLasPrevias();
+      await archivo.recibirEdicion({ partes }, res);
+      assert.equal(res.codigo, 201, JSON.stringify(res.cuerpo));
+      assert.deepEqual(res.cuerpo.data.avisos, [DEL_DATASET]);
+      soloElRenglonFijo(consola);
+    } finally {
+      mock.restoreAll();
+    }
+    res = respuesta();
+    callado('log');
+    try {
+      await archivo.recibirEdicion({ partes }, res);
+    } finally {
+      mock.restoreAll();
+    }
+    assert.equal(res.codigo, 200, JSON.stringify(res.cuerpo));
+    assert.deepEqual(res.cuerpo.data.avisos, [
+      'La propuesta 1 repite la edición del 19/10/2026, que no está en el RPAD: se guardó sin enlace.',
+      DEL_DATASET,
+      'La propuesta 2 repite el dataset 999 de la edición del 02/11/2026, pero esa edición no lo tiene.'
+    ]);
+  });
+
+  it('el detalle (ver): 200 con la repetición sin enlace; con las previas de vuelta, con su enlace', async () => {
+    const previa = await llega('2026-11-02', '2026-11-02 07:30:00');
+    const id = await llega('2026-11-16', '2026-11-16 07:30:00', {
+      cambiar: (edicion) => {
+        edicion.propuestas[0].etiquetas.push('Repite');
+        edicion.propuestas[0].repeticion = repeticionDePrueba();
+      }
+    });
+    let res = respuesta();
+    try {
+      const consola = fallanLasPrevias();
+      await archivo.ver({ params: { id: String(id) } }, res);
+      assert.equal(res.codigo ?? 200, 200, JSON.stringify(res.cuerpo));
+      assert.equal(res.cuerpo.success, true);
+      assert.deepEqual(res.cuerpo.data.propuestas[0].repeticion, {
+        texto: 'Repite el dataset de la edición del 02/11/2026.',
+        motivo: 'Datos nuevos: Llegaron los datos de octubre, que la edición anterior no tenía.',
+        id_edicion: null
+      });
+      soloElRenglonFijo(consola);
+    } finally {
+      mock.restoreAll();
+    }
+    res = respuesta();
+    await archivo.ver({ params: { id: String(id) } }, res);
+    assert.equal(res.cuerpo.data.propuestas[0].repeticion.id_edicion, previa);
+  });
+
+  it('el mail: sale igual en su corrida, con la caja de la repetición sin enlace y sin errores', async () => {
+    const uno = await persona({ clave: 'Uno' });
+    await aLaLista(uno);
+    await prender(false);
+    await llega('2026-11-09', '2026-11-09 07:30:00');
+    await prender(true);
+    const id = await llega('2026-11-23', '2026-11-23 07:30:00', {
+      cambiar: (edicion) => {
+        edicion.propuestas[0].etiquetas.push('Repite');
+        edicion.propuestas[0].repeticion = repeticionDePrueba({ fecha_edicion_previa: '2026-11-09' });
+      }
+    });
+    try {
+      const consola = fallanLasPrevias();
+      assert.deepEqual(await corrida('2026-11-24 08:05:00'), resultado({ edicion: id, enviados: 1 }));
+      soloElRenglonFijo(consola);
+    } finally {
+      mock.restoreAll();
+    }
+    const [mensaje] = await esperarDe(uno.email);
+    const completo = await detalle(mensaje.ID);
+    assert.ok(completo.HTML.includes('<strong>Repite el dataset de la edición del 09/11/2026.</strong>'), 'sin enlace');
+    assert.ok(!completo.HTML.includes('text-decoration: underline'));
   });
 });
 

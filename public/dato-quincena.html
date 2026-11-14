@@ -145,7 +145,7 @@
         .dq-etiqueta-agenda { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; background: #fff; color: var(--sg-tinta); font-size: 0.74rem; font-weight: 700; vertical-align: 1px; }
         .dq-agenda a { color: var(--sg-tinta); font-weight: 600; }
 
-        /* Cada propuesta: la principal con el borde de tinta más grueso; las etiquetas con su color y su texto (Validar, con su ícono) */
+        /* Cada propuesta: la principal con el borde de tinta más grueso; las etiquetas con su color y su texto (Validar y Repite, con su ícono; Efeméride, la neutra) */
         .dq-propuestas { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
         .dq-propuesta { min-width: 0; background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 20px 22px; }
         .dq-propuesta.dq-principal { border: 2px solid var(--sg-tinta); }
@@ -156,6 +156,8 @@
         .dq-et-principal { background: var(--sg-tinta); color: #fff; }
         .dq-et-agenda { background: var(--sg-cielo); color: var(--sg-tinta); }
         .dq-et-validar { background: var(--sg-sol); color: var(--sg-ambar); }
+        /* El borde por dentro: la etiqueta mide lo mismo que las otras */
+        .dq-et-repite { background: #fff; color: var(--sg-texto); box-shadow: inset 0 0 0 1px var(--sg-borde-control); }
         .dq-prop-titulo { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.25rem; letter-spacing: -0.01em; color: var(--sg-tinta); line-height: 1.25; overflow-wrap: anywhere; }
         .dq-cifra { margin: 10px 0 0; font-family: var(--f-titulo); font-weight: 700; font-size: clamp(1.25rem, 1rem + 0.9vw, 1.6rem); line-height: 1.2; color: var(--sg-texto); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; overflow-wrap: anywhere; }
         .dq-dataset { margin: 12px 0 0; font-size: 0.9rem; color: var(--sg-texto); overflow-wrap: anywhere; }
@@ -167,6 +169,13 @@
         .dq-validar h5 { margin: 0 0 4px; font-size: 0.9rem; font-weight: 700; display: flex; align-items: center; gap: 6px; }
         .dq-validar svg { flex: none; }
         .dq-validar ul { margin: 0; padding-left: 18px; list-style: disc; }
+        /* La repetición de otra edición: neutra, con los márgenes de .dq-validar y el texto con su enlace, si hay. El ícono va con el primer
+           renglón; el enlace, subrayado: main.css se lo saca a todo <a> y el texto ya es negrita y tinta, así que no se distinguiría */
+        .dq-repite { margin: 14px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--sg-sutil); border: 1px solid var(--sg-linea); color: var(--sg-texto); font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
+        .dq-repite-texto { margin: 0; display: flex; align-items: flex-start; gap: 6px; color: var(--sg-tinta); }
+        .dq-repite-texto svg { flex: none; margin-top: 3px; }
+        .dq-repite-texto a { color: var(--sg-tinta); text-decoration: underline; text-underline-offset: 3px; }
+        .dq-repite-motivo { margin: 4px 0 0; white-space: pre-line; }
 
         /* La propuesta completa, en un <details> (abierto en la principal) */
         .dq-completa { margin-top: 14px; border-top: 1px solid var(--sg-linea); padding-top: 10px; }
@@ -437,6 +446,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/dato-quincena.js?v=20261230"></script>
+    <script src="js/dato-quincena.js?v=20261231"></script>
 </body>
 </html>

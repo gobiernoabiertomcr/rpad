@@ -54,6 +54,13 @@ export const efemerideDePrueba = () => ({
   url: 'https://datos.ejemplo.gob.ar/agenda/efemeride-de-prueba', tipo: 'efemeride'
 });
 
+// La repetición de una propuesta (spec 2026-11-14-dato-quincena-v1-3, 1): vuelve sobre el dataset de la edición de prueba, con datos
+// nuevos. La edición de prueba no la trae: tiene la forma de antes, sin la clave. cambios pisa sus claves
+export const repeticionDePrueba = (cambios = {}) => ({
+  fecha_edicion_previa: FECHA_DE_PRUEBA, motivo: 'datos_nuevos', alcance: 'dataset',
+  detalle: 'Llegaron los datos de octubre, que la edición anterior no tenía.', ...cambios
+});
+
 const correoDePrueba = () => Buffer.from(
   'El dato de la quincena (prueba)\n\nUn correo inventado para las pruebas del RPAD: ñandú, cigüeña y 1.234 casos.\n', 'utf8'
 );

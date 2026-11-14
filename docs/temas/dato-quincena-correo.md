@@ -5,6 +5,7 @@ El archivo de las ediciones (el POST de Datito, la clave, la huella, las lectura
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
+- `docs/superpowers/specs/2026-11-14-dato-quincena-v1-3-design.md` (la pastilla Repite y la caja de la repetición)
 
 ## Archivos
 
@@ -126,12 +127,18 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
 - Contenido: el título y debajo «Edición N.º N» y la cantidad («4 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas.»); «Buen día, <primer nombre>.»;
   la infografía en línea (`cid`) con su pie;
   «Agenda de la quincena», con la etiqueta «Efeméride» en las que lo son;
-  una tarjeta por propuesta, con su franja («Propuesta 1 de 4», «Principal» en la principal) y la cifra, el dataset, por qué hoy, el ángulo, la idea de placa, el texto para redes, los puntos, el borrador, lo que hay que validar y las fuentes;
+  una tarjeta por propuesta, con su franja («Propuesta 1 de 4», «Principal» en la principal) y la cifra, el dataset, la repetición si hay, por qué hoy, el ángulo, la idea de placa, el texto para redes, los puntos, el borrador, lo que hay que validar y las fuentes;
   el botón «Ver la edición en el RPAD» (`RPAD_URL/dato-quincena.html?id=N`);
   y una nota al pie con dónde están el texto del bot, los cálculos y la edición completa, por qué le llega y a quién avisar para dejar de recibirlo.
+- Las etiquetas van en pastillas, menos «Principal», que va en la franja: «Validar» en ámbar, «Agenda» en celeste, «Efeméride» en la suave de la agenda (también en una propuesta) y «Repite» blanca con un borde de 1 px `#76879F` (con un píxel menos de relleno: mide lo mismo que las otras); cada una dice su nombre.
+- La repetición (`docs/temas/dato-quincena.md`), en un recuadro neutro (fondo `#F4F7FA`, borde `#DAE3ED`) después del renglón de la foto y antes de «Para validar»: el `texto` en negrita y abajo el `motivo`.
+  El texto es un enlace a `RPAD_URL/dato-quincena.html?id=N` solo con un `id_edicion` entero positivo, subrayado a diferencia de los demás enlaces del mail: el texto sin enlace también es negrita y el color solo no los distingue.
+  La corrida arma el detalle con las ediciones previas (`edicionesPreviasSinFallar`), como la página; `modeloDelMail` copia cada propuesta del detalle, así que la repetición llega sola.
+  Si las previas no se pueden leer, el mail sale igual en esa corrida, con la repetición sin enlace.
 - El nombre del bot llega a la plantilla por el modelo (`modeloDelMail`): la plantilla no lo escribe.
 - Todo texto de la edición va escapado y con sus saltos como `<br>`; una dirección es enlace solo si es `https://`.
 - El texto plano lo arma el servidor con lo mismo: no es el `correo_texto` del bot, que trae el saludo de otros destinatarios.
+  La repetición va en él como un bloque «<texto>\n<motivo>», en el mismo lugar que en el HTML y sin el enlace.
 - Adjuntos: la infografía PNG en línea, la misma PNG como archivo y el SVG si llegó (`datoQuincenaTemplate(modelo, { conSvg })`), con los nombres del manifiesto.
 - Sin direcciones en lo que se muestra: ni la lista de ediciones ni el detalle traen emails ni nombres de quienes lo reciben; el texto de nodemailer, que puede traer la dirección, va a la consola solo con su código.
 

@@ -851,6 +851,79 @@ describe('El mail del dato de la quincena', () => {
     assert.match(html, /<p style="margin: 0; color: #6B7A8C; font-size: 12px; line-height: 1\.5;">En el RPAD también están el texto del correo de Datito, los cálculos y la edición completa\. Te llega porque estás en la lista del dato de la quincena; para dejar de recibirlo, avisale a la Dirección\.<\/p>/);
   });
 
+  // spec 2026-11-14-dato-quincena-v1-3, 5: «Repite» en una pastilla blanca con borde; «Efeméride» en una propuesta, la misma de la
+  // agenda; y la caja de la repetición, después de la foto y antes de «Para validar», con el enlace a la edición previa solo con un id
+  const REPETICION = Object.freeze({
+    texto: 'Repite el dataset de la edición del 02/11/2026.',
+    motivo: 'Datos nuevos: Llegaron los datos de octubre, que la edición anterior no tenía.',
+    id_edicion: 12
+  });
+  const repitiendo = (cambios = {}, i = 0) => (m) => {
+    m.propuestas[i].etiquetas.push('Repite');
+    m.propuestas[i].repeticion = { ...REPETICION, ...cambios };
+  };
+  const CAJA_DE_LA_REPETICION = 'background-color: #F4F7FA; border: 1px solid #DAE3ED; border-radius: 6px';
+
+  it('«Repite» va en una pastilla blanca con borde; «Efeméride» en una propuesta, la suave de la agenda; las demás, sin borde', () => {
+    const conEtiquetas = mail((m) => {
+      repitiendo({}, 1)(m);
+      m.propuestas[1].etiquetas = ['Agenda', 'Efeméride', 'Repite'];
+    }).html;
+    assert.match(conEtiquetas, /<span style="[^"]*background-color: #FFFFFF; color: #2B3A4A; border: 1px solid #76879F;[^"]*border-radius: 10px;[^"]*">Repite<\/span>/);
+    assert.equal(veces(conEtiquetas, '>Efeméride</span>'), 2, 'la de la agenda y la de la propuesta');
+    assert.equal(veces(conEtiquetas, 'background-color: #E4E9EF; color: #2B3A4A; font-size: 12px;'), 2);
+    assert.equal(veces(conEtiquetas, 'border: 1px solid #76879F'), 1);
+    assert.ok(!html.includes('#76879F'), 'sin Repite, ninguna pastilla con borde');
+    // La pastilla con borde mide lo mismo que las otras: un píxel menos de relleno de cada lado
+    assert.match(conEtiquetas, /border: 1px solid #76879F; font-size: 12px; font-weight: 600; padding: 1px 9px; border-radius: 10px;">Repite</);
+    assert.match(conEtiquetas, /color: #1F3A5F; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 10px;">Agenda</);
+  });
+
+  it('la caja de la repetición, después de la foto y antes de «Para validar»: el texto en negrita, con el enlace, y abajo el motivo', () => {
+    const conCaja = mail(repitiendo()).html;
+    assert.equal(veces(conCaja, CAJA_DE_LA_REPETICION), 1);
+    // Subrayado: es negrita, como el texto sin enlace, y el color solo no lo distingue (la maqueta lo tenía así)
+    const enlace = `<a href="${plantillas.RPAD_URL}/dato-quincena.html?id=12" style="color: #3E6B96; text-decoration: underline;">`
+      + 'Repite el dataset de la edición del 02/11/2026.</a>';
+    assert.match(conCaja, new RegExp(`${CAJA_DE_LA_REPETICION}[^>]*>(\\s*<(tr|td)[^>]*>)*\\s*<p style="margin: 0; color: #2B3A4A; `
+      + `font-size: 14px; line-height: 1\\.6;"><strong>${enlace.replace(/[.?]/g, '\\$&')}</strong></p><p style="margin: 4px 0 0 0; `
+      + 'color: #2B3A4A; font-size: 14px; line-height: 1\\.6;">Datos nuevos: Llegaron los datos de octubre, que la edición anterior no '
+      + 'tenía\\.</p>'));
+    const propuesta = conCaja.slice(conCaja.indexOf('Propuesta 1 de 2'), conCaja.indexOf('Propuesta 2 de 2'));
+    const foto = propuesta.indexOf('En el RPAD ese día:');
+    const caja = propuesta.indexOf(CAJA_DE_LA_REPETICION);
+    assert.ok(foto > 0 && foto < caja && caja < propuesta.indexOf('Para validar antes de publicar'), 'entre la foto y Para validar');
+    // Con aire arriba, en una celda (Outlook no respeta el margin de una tabla)
+    assert.match(propuesta, /<td style="padding: 12px 0 0 0;">\s*<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; background-color: #F4F7FA;/);
+  });
+
+  it('sin un id entero positivo, el texto sin enlace; sin repetición (null o sin la clave), ninguna caja', () => {
+    // Los demás enlaces del mail siguen sin subrayar: solo el de la repetición lo lleva
+    assert.equal(veces(mail(repitiendo()).html, 'text-decoration: underline'), 1);
+    assert.ok(!html.includes('text-decoration: underline'));
+    for (const id_edicion of [null, undefined, 0, -3, 1.5, '12', Number.MAX_SAFE_INTEGER + 1]) {
+      const sinEnlace = mail(repitiendo({ id_edicion })).html;
+      assert.ok(!sinEnlace.includes('text-decoration: underline'), String(id_edicion));
+      assert.ok(sinEnlace.includes('<strong>Repite el dataset de la edición del 02/11/2026.</strong>'), String(id_edicion));
+      assert.equal(veces(sinEnlace, '/dato-quincena.html?id='), 1, `solo el botón: ${String(id_edicion)}`);
+    }
+    assert.ok(!html.includes(CAJA_DE_LA_REPETICION), 'el modelo sin repetición');
+    assert.deepEqual(modeloDelDatoQuincena().propuestas.map((p) => p.repeticion), [null, null]);
+    const sinLaClave = mail((m) => { for (const p of m.propuestas) delete p.repeticion; }).html;
+    assert.equal(sinLaClave, html);
+    const conRaro = mail((m) => { m.propuestas[0].repeticion = 'sí'; }).html;
+    assert.ok(!conRaro.includes(CAJA_DE_LA_REPETICION));
+  });
+
+  it('la repetición va escapada, con sus saltos de línea como <br>', () => {
+    const raro = '<b>x</b>';
+    const { html: escapado, text } = mail(repitiendo({ texto: raro, motivo: `${raro}\n${raro}`, id_edicion: 12 }));
+    assert.ok(!escapado.includes(raro));
+    assert.ok(escapado.includes(`<strong><a href="${plantillas.RPAD_URL}/dato-quincena.html?id=12" style="color: #3E6B96; text-decoration: underline;">${ESCAPADO}</a></strong>`));
+    assert.ok(escapado.includes(`>${ESCAPADO}<br>${ESCAPADO}</p>`));
+    assert.ok(text.includes(`${raro}\n${raro}\n${raro}`), 'el texto plano, tal cual');
+  });
+
   it('todo texto de la edición va escapado, con sus saltos de línea como <br>; una dirección es enlace solo si es https://', () => {
     const raro = '<b>x</b>';
     const { html: escapado, text } = mail((m) => {

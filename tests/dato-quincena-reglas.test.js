@@ -14,7 +14,7 @@ import {
   erroresDeLaEdicion, huellaDelPaquete, estadoDelToken,
   fechaLarga, marcaDePiloto, horaArgentina, diaArgentino, textoDeLlegada, textoDelCorreo, textoDeCantidad, textoDelResto,
   textoDelNumero, tamanoTexto, fotoDelDataset, textoParaCopiar, borradorParaCopiar, filasDeLaEdicion, avisosDeLaEdicion,
-  reciboDe, anioDeLaLista, nombreDeLaEdicion, TIPO_DE_DESCARGA, itemDeLaLista, detalleDeLaEdicion
+  reciboDe, anioDeLaLista, nombreDeLaEdicion, TIPO_DE_DESCARGA, itemDeLaLista, detalleDeLaEdicion, fechasPrevias
 } from '../services/datoQuincenaReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
 import { RPAD_URL } from '../services/emailTemplates.js';
@@ -22,7 +22,7 @@ import { envioDelRecibo, lineaDelCorreo, pastillaDelEnvio } from '../services/da
 import { calendarioCon } from '../services/feriadosReglas.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 import {
-  FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, pngDePrueba, svgDePrueba, efemerideDePrueba, partesDePrueba
+  FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, pngDePrueba, svgDePrueba, efemerideDePrueba, partesDePrueba, repeticionDePrueba
 } from './dato-quincena-fixtures.js';
 
 const validar = (edicion, hoy = FECHA_DE_PRUEBA) => validarEdicion(edicion, { hoy });
@@ -141,9 +141,13 @@ describe('las constantes', () => {
       fechaOInstante: 'Tiene que ser una fecha AAAA-MM-DD o un instante con su zona.',
       direccion: 'Tiene que ser una dirección https:// válida, de hasta 2048 caracteres.',
       orden: 'Las propuestas van numeradas 1, 2, 3… en su orden, sin saltos.',
-      etiqueta: 'Las etiquetas posibles son Principal, Validar y Agenda.',
+      etiqueta: 'Las etiquetas posibles son Principal, Validar, Agenda, Efemeride y Repite.',
       etiquetaRepetida: 'Esta etiqueta ya está en la propuesta.',
       principal: 'Exactamente una propuesta tiene que llevar la etiqueta Principal.',
+      motivoDeRepeticion: 'El motivo de una repetición tiene que ser datos_nuevos o hecho_actual.',
+      alcanceDeRepeticion: 'El alcance de una repetición tiene que ser dataset o tema.',
+      repiteSinRepeticion: 'La propuesta tiene la etiqueta Repite pero no tiene repeticion.',
+      repeticionSinRepite: 'La propuesta tiene repeticion pero no tiene la etiqueta Repite.',
       enteroPositivo: 'Tiene que ser un número entero positivo.',
       estado: 'Tiene que ser uno de los estados de GET /api/datasets.',
       diasParaVencer: 'Tiene que ser un número entero de -100000 a 100000.',
@@ -581,13 +585,24 @@ describe('validarEdicion: las propuestas', () => {
     assert.deepEqual(erroresCon('propuestas[0].etiquetas', []), [error('propuestas', 'principal')]);
   });
 
-  it('las etiquetas: sin repetidos, solo Principal, Validar y Agenda', () => {
+  // spec 2026-11-14-dato-quincena-v1-3, 1: suman Efemeride (sin tilde, como la escribe el bot) y Repite, que pide su repeticion
+  it('las etiquetas: sin repetidos, solo Principal, Validar, Agenda, Efemeride y Repite', () => {
     assert.deepEqual(erroresCon('propuestas[0].etiquetas', ['Principal', 'Validar', 'Agenda']), []);
+    assert.deepEqual(erroresCon('propuestas[0].etiquetas', ['Principal', 'Validar', 'Agenda', 'Efemeride']), []);
+    const conLasCinco = con(edicionDePrueba(), 'propuestas[0].repeticion', repeticionDePrueba());
+    assert.deepEqual(validar(con(conLasCinco, 'propuestas[0].etiquetas', ['Principal', 'Validar', 'Agenda', 'Efemeride', 'Repite'])), []);
     assert.deepEqual(erroresCon('propuestas[1].etiquetas', []), []);
+    assert.deepEqual(erroresCon('propuestas[1].etiquetas', ['Efemeride']), []);
     assert.deepEqual(erroresCon('propuestas[1].etiquetas', ['Agenda', 'Agenda']), [error('propuestas[1].etiquetas[1]', 'etiquetaRepetida')]);
+    assert.deepEqual(erroresCon('propuestas[1].etiquetas', ['Efemeride', 'Efemeride']),
+      [error('propuestas[1].etiquetas[1]', 'etiquetaRepetida')]);
     assert.deepEqual(erroresCon('propuestas[1].etiquetas', ['Urgente']), [error('propuestas[1].etiquetas[0]', 'etiqueta')]);
     assert.deepEqual(erroresCon('propuestas[1].etiquetas', ['Validar', 'agenda', 3]),
       [error('propuestas[1].etiquetas[1]', 'etiqueta'), error('propuestas[1].etiquetas[2]', 'etiqueta')]);
+    // La etiqueta para mostrar no es un valor del JSON
+    for (const rara of ['Efeméride', 'efemeride', 'repite', 'Repetida']) {
+      assert.deepEqual(erroresCon('propuestas[1].etiquetas', [rara]), [error('propuestas[1].etiquetas[0]', 'etiqueta')], rara);
+    }
   });
 
   it('los puntos centrales, de 3 a 5', () => {
@@ -669,6 +684,145 @@ describe('validarEdicion: las propuestas', () => {
     for (const valor of [-100001, 100001, 1.5, '3']) {
       assert.deepEqual(erroresCon(ruta, valor), [error(ruta, 'diasParaVencer')], String(valor));
     }
+  });
+});
+
+// spec 2026-11-14-dato-quincena-v1-3, 1: repeticion es opcional, como tipo en la agenda; si está, null o un objeto cerrado de cuatro
+// claves. La etiqueta Repite y la repeticion van juntas, y los dos textos de la coherencia los copia Datito tal cual
+describe('validarEdicion: la repetición (contrato v1.3)', () => {
+  // La edición de prueba con la propuesta i repitiendo (la etiqueta Repite y su repeticion)
+  const repitiendo = (i = 1, cambios = {}) => {
+    const edicion = edicionDePrueba();
+    edicion.propuestas[i].etiquetas.push('Repite');
+    edicion.propuestas[i].repeticion = repeticionDePrueba(cambios);
+    return edicion;
+  };
+  const ruta = 'propuestas[1].repeticion';
+
+  it('una edición v1.2, sin la clave ni las etiquetas nuevas, sigue valiendo', () => {
+    const edicion = edicionDePrueba();
+    assert.ok(edicion.propuestas.every((p) => !Object.hasOwn(p, 'repeticion')), 'la edición de prueba no trae repeticion');
+    assert.deepEqual(validar(edicion), []);
+    assert.deepEqual(validar(pilotoDePrueba()), []);
+  });
+
+  it('sin la clave, con null (sin Repite) o con un objeto (con Repite), pasa', () => {
+    assert.deepEqual(erroresCon(ruta, null), []);
+    assert.deepEqual(validar(repitiendo()), []);
+    assert.deepEqual(validar(repitiendo(0)), []);
+    for (const motivo of ['datos_nuevos', 'hecho_actual']) {
+      for (const alcance of ['dataset', 'tema']) assert.deepEqual(validar(repitiendo(1, { motivo, alcance })), [], `${motivo} ${alcance}`);
+    }
+    // Una fecha posterior o la misma de la edición pasa: el RPAD no la compara con lo archivado (eso da un aviso, no un 422)
+    for (const fecha of ['2026-11-02', '2026-12-31', '2020-01-01']) {
+      assert.deepEqual(validar(repitiendo(1, { fecha_edicion_previa: fecha })), [], fecha);
+    }
+    // El detalle hasta 1000 caracteres, contados con Array.from, y con sus propios saltos de línea
+    assert.deepEqual(validar(repitiendo(1, { detalle: '😀'.repeat(1000) })), []);
+    assert.deepEqual(validar(repitiendo(1, { detalle: 'Primer renglón.\nSegundo renglón.' })), []);
+  });
+
+  it('lo que no es null ni un objeto: el error objeto de siempre', () => {
+    for (const valor of ['sí', 3, true, [], [repeticionDePrueba()]]) {
+      const edicion = repitiendo();
+      edicion.propuestas[1].repeticion = valor;
+      assert.deepEqual(validar(edicion), [error(ruta, 'objeto')], JSON.stringify(valor));
+    }
+  });
+
+  it('cada clave mal: la fecha, el motivo, el alcance y el detalle, en su ruta', () => {
+    for (const fecha of ['2026-02-30', '02/11/2026', '2026-11-02T00:00:00Z', null, 20261102]) {
+      assert.deepEqual(validar(repitiendo(1, { fecha_edicion_previa: fecha })), [error(`${ruta}.fecha_edicion_previa`, 'fecha')],
+        String(fecha));
+    }
+    for (const motivo of ['datos nuevos', 'Datos_nuevos', 'otro', '', null, 1]) {
+      assert.deepEqual(validar(repitiendo(1, { motivo })), [error(`${ruta}.motivo`, 'motivoDeRepeticion')], String(motivo));
+    }
+    for (const alcance of ['datasets', 'Tema', '', null, ['dataset']]) {
+      assert.deepEqual(validar(repitiendo(1, { alcance })), [error(`${ruta}.alcance`, 'alcanceDeRepeticion')], String(alcance));
+    }
+    const casosDelDetalle = [['', 'vacio'], ['   ', 'vacio'], [null, 'texto'], [7, 'texto'], ['a\u0000b', 'caracterNulo'],
+      ['x'.repeat(1001), 'hasta1000']];
+    for (const [detalle, clave] of casosDelDetalle) {
+      assert.deepEqual(validar(repitiendo(1, { detalle })), [error(`${ruta}.detalle`, clave)], JSON.stringify(detalle).slice(0, 20));
+    }
+  });
+
+  it('un objeto cerrado: cada clave que falta (también con undefined) y cada una de más, en su ruta', () => {
+    for (const clave of ['fecha_edicion_previa', 'motivo', 'alcance', 'detalle']) {
+      const edicion = repitiendo();
+      delete edicion.propuestas[1].repeticion[clave];
+      assert.deepEqual(validar(edicion), [error(`${ruta}.${clave}`, 'falta')], clave);
+      assert.deepEqual(validar(repitiendo(1, { [clave]: undefined })), [error(`${ruta}.${clave}`, 'falta')], clave);
+    }
+    assert.deepEqual(validar(repitiendo(1, { edicion_previa_id: 3 })), [error(`${ruta}.edicion_previa_id`, 'sobra')]);
+    assert.deepEqual(validar(repitiendo(1, { 'con espacio': 3 })), [error(ruta, 'sobraOtra')]);
+    // Con undefined, como cualquier clave, falta; y la coherencia lo cuenta como que no está
+    const sinValor = repitiendo();
+    sinValor.propuestas[1].repeticion = undefined;
+    assert.deepEqual(validar(sinValor), [error(ruta, 'falta'), error(ruta, 'repiteSinRepeticion')]);
+  });
+
+  it('la coherencia: Repite sin repeticion (o con null) y repeticion sin Repite, con las rutas desde 0', () => {
+    assert.equal(MENSAJES_VALIDACION.repiteSinRepeticion, 'La propuesta tiene la etiqueta Repite pero no tiene repeticion.');
+    assert.equal(MENSAJES_VALIDACION.repeticionSinRepite, 'La propuesta tiene repeticion pero no tiene la etiqueta Repite.');
+    const sinClave = repitiendo();
+    delete sinClave.propuestas[1].repeticion;
+    assert.deepEqual(validar(sinClave), [error(ruta, 'repiteSinRepeticion')]);
+    const conNull = repitiendo();
+    conNull.propuestas[1].repeticion = null;
+    assert.deepEqual(validar(conNull), [error(ruta, 'repiteSinRepeticion')]);
+    const sinEtiqueta = edicionDePrueba();
+    sinEtiqueta.propuestas[0].repeticion = repeticionDePrueba();
+    assert.deepEqual(validar(sinEtiqueta), [error('propuestas[0].etiquetas', 'repeticionSinRepite')]);
+    // Sin ninguna etiqueta, también
+    const sinEtiquetas = edicionDePrueba();
+    sinEtiquetas.propuestas[1].etiquetas = [];
+    sinEtiquetas.propuestas[1].repeticion = repeticionDePrueba();
+    assert.deepEqual(validar(sinEtiquetas), [error('propuestas[1].etiquetas', 'repeticionSinRepite')]);
+  });
+
+  it('la coherencia solo mira una lista de etiquetas y una repeticion que es objeto o falta o es null', () => {
+    // Un valor que no es un objeto ya tiene su error: no suma el de la coherencia, con Repite o sin ella
+    const rara = repitiendo();
+    rara.propuestas[1].repeticion = 'sí';
+    assert.deepEqual(validar(rara), [error(ruta, 'objeto')]);
+    const raraSinRepite = edicionDePrueba();
+    raraSinRepite.propuestas[1].repeticion = 'sí';
+    assert.deepEqual(validar(raraSinRepite), [error(ruta, 'objeto')]);
+    // Unas etiquetas que no son una lista tienen su error y no se miran
+    const sinLista = edicionDePrueba();
+    sinLista.propuestas[1].etiquetas = 'Repite';
+    sinLista.propuestas[1].repeticion = repeticionDePrueba();
+    assert.deepEqual(validar(sinLista), [error('propuestas[1].etiquetas', 'lista')]);
+    // Una repetición con una clave mal sigue siendo un objeto: con Repite no hay error de coherencia, sin Repite sí
+    const malSinRepite = edicionDePrueba();
+    malSinRepite.propuestas[1].repeticion = repeticionDePrueba({ motivo: 'otro' });
+    assert.deepEqual(validar(malSinRepite),
+      [error(`${ruta}.motivo`, 'motivoDeRepeticion'), error('propuestas[1].etiquetas', 'repeticionSinRepite')]);
+  });
+
+  it('el orden: los de cada propuesta (la coherencia al final de los suyos), y Principal después de todas', () => {
+    const edicion = edicionDePrueba();
+    edicion.propuestas[0].etiquetas = ['Validar', 'Repite'];
+    edicion.propuestas[0].titulo = '';
+    edicion.propuestas[1].repeticion = repeticionDePrueba({ alcance: 'otro' });
+    edicion.propuestas[1].cifra_clave = null;
+    assert.deepEqual(validar(edicion), [
+      error('propuestas[0].titulo', 'vacio'),
+      error('propuestas[0].repeticion', 'repiteSinRepeticion'),
+      error('propuestas[1].cifra_clave', 'texto'),
+      error('propuestas[1].repeticion.alcance', 'alcanceDeRepeticion'),
+      error('propuestas[1].etiquetas', 'repeticionSinRepite'),
+      error('propuestas', 'principal')
+    ]);
+  });
+
+  it('no cambia la edición que valida', () => {
+    const edicion = repitiendo();
+    const copia = structuredClone(edicion);
+    validar(edicion);
+    assert.deepEqual(edicion, copia);
   });
 });
 
@@ -1745,11 +1899,41 @@ describe('textoParaCopiar y borradorParaCopiar', () => {
     ].join('\n\n'));
   });
 
+  // spec 2026-11-14-dato-quincena-v1-3, 3: las etiquetas para mostrar (Efemeride es «Efeméride») y, con repetición, su bloque
+  // después del renglón de la foto y antes de «Para validar antes de publicar»
+  it('con Efemeride y Repite: el título con las etiquetas para mostrar y el bloque de la repetición después de la foto', () => {
+    const propuesta = {
+      ...propuestaDelEjemplo(), etiquetas: ['Principal', 'Validar', 'Efemeride', 'Repite'], repeticion: repeticionDePrueba()
+    };
+    assert.equal(textoParaCopiar(propuesta), EJEMPLO
+      .replace('[Principal, Validar]', '[Principal, Validar, Efeméride, Repite]')
+      .replace('Próxima en 25 días.\n\n', 'Próxima en 25 días.\n\nRepite el dataset de la edición del 02/11/2026.\n'
+        + 'Datos nuevos: Llegaron los datos de octubre, que la edición anterior no tenía.\n\n'));
+    // El tema, por un hecho actual, sin notas de validación: el bloque va antes de «Cómo se calculó», con el detalle tal cual
+    const tema = {
+      ...propuestaDelEjemplo(), etiquetas: ['Repite'], notas_validacion: [],
+      repeticion: repeticionDePrueba({ alcance: 'tema', motivo: 'hecho_actual', fecha_edicion_previa: '2026-10-19', detalle: 'Uno.\nDos.' })
+    };
+    assert.ok(textoParaCopiar(tema).includes('Próxima en 25 días.\n\nRepite el tema de la edición del 19/10/2026.\nHecho actual: Uno.\nDos.'
+      + '\n\nCómo se calculó\n'));
+    assert.ok(textoParaCopiar(tema).startsWith('Un título inventado [Repite]\n\n'));
+  });
+
+  it('sin repetición (sin la clave o con null), el texto de siempre', () => {
+    assert.equal(textoParaCopiar({ ...propuestaDelEjemplo(), repeticion: null }), EJEMPLO);
+    assert.equal(textoParaCopiar({ ...propuestaDelEjemplo(), etiquetas: ['Principal', 'Efemeride'] }),
+      EJEMPLO.replace('[Principal, Validar]', '[Principal, Efeméride]'));
+  });
+
   it('no cambia la propuesta', () => {
     const propuesta = propuestaDelEjemplo();
     const copia = structuredClone(propuesta);
     textoParaCopiar(propuesta);
     assert.deepEqual(propuesta, copia);
+    const conRepeticion = { ...propuestaDelEjemplo(), etiquetas: ['Efemeride', 'Repite'], repeticion: repeticionDePrueba() };
+    const otraCopia = structuredClone(conRepeticion);
+    textoParaCopiar(conRepeticion);
+    assert.deepEqual(conRepeticion, otraCopia);
   });
 
   it('el borrador: el título y sus párrafos, separados por un renglón en blanco', () => {
@@ -1807,6 +1991,123 @@ describe('filasDeLaEdicion y avisosDeLaEdicion', () => {
 
   it('los avisos no usan las palabras que el sistema evita', () => {
     for (const aviso of avisosDeLaEdicion(edicionDePrueba(), [])) assert.doesNotMatch(aviso, PALABRAS_EVITADAS);
+  });
+});
+
+// spec 2026-11-14-dato-quincena-v1-3, 2: lo que depende de lo archivado nunca da un 422, da un aviso. La edición de la quincena
+// siguiente (16/11) vuelve sobre la de prueba (02/11), que está en el RPAD con el id 12 y cita los datasets 1 y 2
+describe('fechasPrevias y los avisos de la repetición', () => {
+  const FECHA = '2026-11-16';
+  // La edición del 16/11 con la propuesta i repitiendo, con los cambios de su repetición
+  const conRepeticion = (repeticiones) => {
+    const edicion = edicionDePrueba({ fecha_edicion: FECHA });
+    for (const [i, cambios] of Object.entries(repeticiones)) {
+      edicion.propuestas[i].etiquetas.push('Repite');
+      edicion.propuestas[i].repeticion = repeticionDePrueba(cambios);
+    }
+    return edicion;
+  };
+  const ENLAZADAS = Object.freeze([{ orden: 1, dataset_id: 1 }, { orden: 2, dataset_id: 2 }]);
+  const PREVIAS = new Map([[FECHA_DE_PRUEBA, { id: 12, rpad_ids: [1, 2] }]]);
+
+  it('fechasPrevias: las de las repeticiones anteriores a la edición, sin repetir, en el orden de las propuestas', () => {
+    assert.deepEqual(fechasPrevias(edicionDePrueba()), []);
+    assert.deepEqual(fechasPrevias(conRepeticion({ 0: {}, 1: {} })), [FECHA_DE_PRUEBA]);
+    assert.deepEqual(fechasPrevias(conRepeticion({ 0: { fecha_edicion_previa: '2026-11-09' }, 1: {} })), ['2026-11-09', FECHA_DE_PRUEBA]);
+    // La misma fecha de la edición o una posterior no se busca; null tampoco
+    assert.deepEqual(fechasPrevias(conRepeticion({ 0: { fecha_edicion_previa: FECHA }, 1: { fecha_edicion_previa: '2026-11-30' } })), []);
+    const conNull = edicionDePrueba({ fecha_edicion: FECHA });
+    conNull.propuestas[1].repeticion = null;
+    assert.deepEqual(fechasPrevias(conNull), []);
+  });
+
+  it('sin aviso: la edición previa está, es anterior y cita el dataset; o el alcance es el tema; o la propuesta no cita dataset', () => {
+    assert.deepEqual(avisosDeLaEdicion(conRepeticion({ 0: {}, 1: {} }), ENLAZADAS, PREVIAS), []);
+    const otro = conRepeticion({ 1: { alcance: 'tema' } });
+    otro.propuestas[1].dataset.rpad_id = 999;
+    assert.deepEqual(avisosDeLaEdicion(otro, [{ orden: 1, dataset_id: 1 }, { orden: 2, dataset_id: null }], PREVIAS),
+      ['La propuesta 2 cita el dataset 999, que no está en el RPAD: se guardó sin enlace.']);
+    const sinDataset = conRepeticion({ 1: {} });
+    sinDataset.propuestas[1].dataset.rpad_id = null;
+    assert.deepEqual(avisosDeLaEdicion(sinDataset, [{ orden: 1, dataset_id: 1 }, { orden: 2, dataset_id: null }], PREVIAS), []);
+  });
+
+  it('1. una fecha igual o posterior a la de la edición: «no es anterior a esta», aunque esa edición esté en el RPAD', () => {
+    const misma = conRepeticion({ 1: { fecha_edicion_previa: FECHA } });
+    const previas = new Map([[FECHA, { id: 14, rpad_ids: [1, 2] }]]);
+    assert.deepEqual(avisosDeLaEdicion(misma, ENLAZADAS, previas),
+      ['La propuesta 2 repite la edición del 16/11/2026, que no es anterior a esta: se guardó sin enlace.']);
+    assert.deepEqual(avisosDeLaEdicion(conRepeticion({ 0: { fecha_edicion_previa: '2026-11-30' } }), ENLAZADAS, PREVIAS),
+      ['La propuesta 1 repite la edición del 30/11/2026, que no es anterior a esta: se guardó sin enlace.']);
+  });
+
+  it('2. sin una edición regular de esa fecha en el RPAD: «no está en el RPAD»', () => {
+    assert.deepEqual(avisosDeLaEdicion(conRepeticion({ 0: { fecha_edicion_previa: '2026-10-19', alcance: 'tema' } }), ENLAZADAS, PREVIAS),
+      ['La propuesta 1 repite la edición del 19/10/2026, que no está en el RPAD: se guardó sin enlace.']);
+  });
+
+  it('3. con el dataset como alcance y una edición que no lo cita: «esa edición no lo tiene»', () => {
+    const edicion = conRepeticion({ 1: {} });
+    edicion.propuestas[1].dataset.rpad_id = 3;
+    const guardadas = [{ orden: 1, dataset_id: 1 }, { orden: 2, dataset_id: 3 }];
+    assert.deepEqual(avisosDeLaEdicion(edicion, guardadas, PREVIAS),
+      ['La propuesta 2 repite el dataset 3 de la edición del 02/11/2026, pero esa edición no lo tiene.']);
+    // Una edición previa sin propuestas que citen datasets
+    assert.deepEqual(avisosDeLaEdicion(conRepeticion({ 0: {} }), ENLAZADAS, new Map([[FECHA_DE_PRUEBA, { id: 12, rpad_ids: [] }]])),
+      ['La propuesta 1 repite el dataset 1 de la edición del 02/11/2026, pero esa edición no lo tiene.']);
+  });
+
+  it('el orden: por propuesta, primero el del dataset y después el de la repetición', () => {
+    const edicion = conRepeticion({ 0: { fecha_edicion_previa: '2026-10-19' }, 1: {} });
+    edicion.propuestas[0].dataset.rpad_id = 998;
+    edicion.propuestas[1].dataset.rpad_id = 999;
+    assert.deepEqual(avisosDeLaEdicion(edicion, [{ orden: 1, dataset_id: null }, { orden: 2, dataset_id: null }], PREVIAS), [
+      'La propuesta 1 cita el dataset 998, que no está en el RPAD: se guardó sin enlace.',
+      'La propuesta 1 repite la edición del 19/10/2026, que no está en el RPAD: se guardó sin enlace.',
+      'La propuesta 2 cita el dataset 999, que no está en el RPAD: se guardó sin enlace.',
+      'La propuesta 2 repite el dataset 999 de la edición del 02/11/2026, pero esa edición no lo tiene.'
+    ]);
+  });
+
+  it('sin previas, como si no hubiera ediciones previas: el caso 1 se sabe igual', () => {
+    const edicion = conRepeticion({ 0: {}, 1: { fecha_edicion_previa: FECHA } });
+    const esperados = [
+      'La propuesta 1 repite la edición del 02/11/2026, que no está en el RPAD: se guardó sin enlace.',
+      'La propuesta 2 repite la edición del 16/11/2026, que no es anterior a esta: se guardó sin enlace.'
+    ];
+    assert.deepEqual(avisosDeLaEdicion(edicion, ENLAZADAS), esperados);
+    assert.deepEqual(avisosDeLaEdicion(edicion, ENLAZADAS, new Map()), esperados);
+  });
+
+  // Si las ediciones previas no se pudieron leer (null, lo que da edicionesPreviasSinFallar), el recibo no dice nada de las
+  // repeticiones, ni siquiera el caso 1: un aviso que dependa de lo archivado podría ser falso, y la edición ya se guardó
+  it('con previas null (no se pudieron leer): solo los avisos del dataset, sin ninguno de la repetición', () => {
+    const edicion = conRepeticion({ 0: { fecha_edicion_previa: '2026-10-19' }, 1: { fecha_edicion_previa: FECHA } });
+    edicion.propuestas[1].dataset.rpad_id = 999;
+    const guardadas = [{ orden: 1, dataset_id: 1 }, { orden: 2, dataset_id: null }];
+    assert.deepEqual(avisosDeLaEdicion(edicion, guardadas, null),
+      ['La propuesta 2 cita el dataset 999, que no está en el RPAD: se guardó sin enlace.']);
+    assert.deepEqual(avisosDeLaEdicion(conRepeticion({ 0: {}, 1: {} }), ENLAZADAS, null), []);
+    // Con un Map, los de siempre
+    assert.equal(avisosDeLaEdicion(edicion, guardadas, PREVIAS).length, 3);
+  });
+
+  it('una edición v1.2 da los avisos de siempre, con previas o sin ellas', () => {
+    const edicion = edicionDePrueba();
+    edicion.propuestas[1].dataset.rpad_id = 999;
+    const esperados = ['La propuesta 2 cita el dataset 999, que no está en el RPAD: se guardó sin enlace.'];
+    assert.deepEqual(avisosDeLaEdicion(edicion, [{ orden: 1, dataset_id: 1 }, { orden: 2, dataset_id: null }]), esperados);
+    assert.deepEqual(avisosDeLaEdicion(edicion, [{ orden: 1, dataset_id: 1 }, { orden: 2, dataset_id: null }], PREVIAS), esperados);
+  });
+
+  it('los avisos no usan las palabras que el sistema evita y no cambian lo que reciben', () => {
+    const edicion = conRepeticion({ 0: { fecha_edicion_previa: '2026-10-19' }, 1: { fecha_edicion_previa: FECHA } });
+    const antes = structuredClone(edicion);
+    const avisos = avisosDeLaEdicion(edicion, ENLAZADAS, PREVIAS);
+    assert.equal(avisos.length, 2);
+    for (const aviso of avisos) assert.doesNotMatch(aviso, PALABRAS_EVITADAS);
+    assert.deepEqual(edicion, antes);
+    assert.deepEqual([...PREVIAS], [[FECHA_DE_PRUEBA, { id: 12, rpad_ids: [1, 2] }]]);
   });
 });
 
@@ -2096,8 +2397,8 @@ describe('detalleDeLaEdicion', () => {
     { orden: 1, dataset_id: 1, dataset_activo: true }, { orden: 2, dataset_id: 2, dataset_activo: false }
   ]);
   const adjuntosDe = (edicion) => edicion.adjuntos.map(({ campo, nombre, mime, bytes }) => ({ campo, nombre, mime, bytes }));
-  const detalle = ({ fila = filaDePrueba(), edicion = JSON.parse(fila.metadata), guardadas = GUARDADAS, adjuntos, linea } = {}) =>
-    detalleDeLaEdicion({ fila, edicion, guardadas, adjuntos: adjuntos ?? adjuntosDe(edicion), lineaDelCorreo: linea });
+  const detalle = ({ fila = filaDePrueba(), edicion = JSON.parse(fila.metadata), guardadas = GUARDADAS, adjuntos, linea, previas } = {}) =>
+    detalleDeLaEdicion({ fila, edicion, guardadas, adjuntos: adjuntos ?? adjuntosDe(edicion), lineaDelCorreo: linea, previas });
 
   // La línea del correo de la edición de prueba (spec 2026-11-12-dato-quincena-correo, 6), la que arma el controlador: archivada
   // con el envío automático apagado y con el correo de Datito, muestra el del bot (la transición)
@@ -2280,6 +2581,140 @@ describe('detalleDeLaEdicion', () => {
     assert.equal(detalle({ edicion: una }).propuestas.length, 1);
   });
 
+  // spec 2026-11-14-dato-quincena-v1-3, 3: la edición del 16/11 de las respuestas de la página (id 14, la N.º 2, enviada por el
+  // RPAD ese lunes a las 8:05, como la pastilla de la lista), con tres propuestas: la principal vuelve sobre el dataset 1 de la de
+  // prueba (02/11, id 12, en las previas), con enlace; la segunda es una efeméride, sin repetición; la tercera vuelve sobre el tema
+  // de una edición del 19/10 que no está en el RPAD, sin enlace. Con el SVG, como la de prueba
+  const FECHA_CON_REPETICION = '2026-11-16';
+  const PREVIAS = new Map([[FECHA_DE_PRUEBA, { id: 12, rpad_ids: [1, 2] }]]);
+  const edicionConRepeticion = () => {
+    const edicion = edicionDePrueba({
+      fecha_edicion: FECHA_CON_REPETICION, titulo: 'El dato de la quincena: edición de prueba con repeticiones',
+      agenda: [...edicionDePrueba().agenda, efemerideDePrueba()]
+    });
+    const [principal, segunda] = edicion.propuestas;
+    principal.etiquetas.push('Repite');
+    principal.repeticion = repeticionDePrueba();
+    segunda.etiquetas = ['Agenda', 'Efemeride'];
+    edicion.propuestas.push({
+      ...structuredClone(segunda),
+      orden: 3,
+      titulo: 'Un tercer título inventado',
+      etiquetas: ['Repite'],
+      dataset: {
+        rpad_id: 3, ckan_slug: 'prueba-c', nombre: 'Dataset de prueba C', url: 'https://datos.ejemplo.gob.ar/dataset/prueba-c'
+      },
+      cifra_clave: '7 casos · octubre de 2026',
+      repeticion: repeticionDePrueba({
+        fecha_edicion_previa: '2026-10-19', motivo: 'hecho_actual', alcance: 'tema',
+        detalle: 'Esta quincena el tema volvió a estar en agenda.'
+      })
+    });
+    return edicion;
+  };
+  const metadataConRepeticion = partesDePrueba(edicionConRepeticion(), { infografia_svg: svgDePrueba() }).metadata.toString('utf8');
+  const detalleConRepeticion = (cambios = {}) => detalle({
+    fila: filaDePrueba({
+      id: 14, clave: `dq:regular:${FECHA_CON_REPETICION}`, fecha_edicion: FECHA_CON_REPETICION,
+      titulo: 'El dato de la quincena: edición de prueba con repeticiones', metadata: metadataConRepeticion,
+      recibida_ts: segundosUtc(2026, 10, 16, 10, 40, 0), numero: 2
+    }),
+    guardadas: [...GUARDADAS, { orden: 3, dataset_id: null, dataset_activo: false }],
+    linea: lineaDePrueba({
+      fecha_edicion: FECHA_CON_REPETICION, correo: { estado: 'enviada', motivo: null, enviada_at: '2026-11-16 08:05:12' },
+      envios: [{ usuario_id: 1, tipo: 'automatico', estado: 'enviado', intentos: 1, enviado_at: '2026-11-16 08:05:12' }],
+      correoDelBot: null, envioActivo: true, ahora: '2026-11-20 10:00:00'
+    }),
+    previas: PREVIAS,
+    ...cambios
+  });
+
+  it('la edición con repeticiones es válida y da el detalle de las respuestas de la página, entero y con las claves en su orden', () => {
+    assert.deepEqual(validar(edicionConRepeticion(), FECHA_CON_REPETICION), []);
+    const d = detalleConRepeticion();
+    assert.deepEqual(d, RESPUESTAS.detalle_con_repeticion.data);
+    assert.deepEqual(ordenDeLasClaves(d), ordenDeLasClaves(RESPUESTAS.detalle_con_repeticion.data));
+    assert.equal(RESPUESTAS.detalle_con_repeticion.success, true);
+    // La repetición va después de la foto, en todas las propuestas, también en la edición de prueba (null)
+    for (const respuesta of [RESPUESTAS.detalle, RESPUESTAS.detalle_con_repeticion]) {
+      for (const propuesta of respuesta.data.propuestas) {
+        const claves = Object.keys(propuesta);
+        assert.equal(claves.indexOf('repeticion'), claves.indexOf('foto') + 1);
+      }
+    }
+    assert.deepEqual(RESPUESTAS.detalle.data.propuestas.map((p) => p.repeticion), [null, null]);
+    assert.equal(d.correo, 'Enviada por correo el lunes 16/11/2026 a las 8:05.');
+  });
+
+  it('las etiquetas para mostrar: Efemeride es «Efeméride», las demás igual; principal mira el valor del JSON', () => {
+    const d = detalleConRepeticion();
+    assert.deepEqual(d.propuestas.map((p) => p.etiquetas), [['Principal', 'Validar', 'Repite'], ['Agenda', 'Efeméride'], ['Repite']]);
+    assert.deepEqual(d.propuestas.map((p) => p.principal), [true, false, false]);
+    // Una edición v1.2: sus etiquetas, tal cual
+    assert.deepEqual(detalle().propuestas.map((p) => p.etiquetas), [['Principal', 'Validar'], ['Agenda']]);
+  });
+
+  it('la repetición: el texto con el alcance y la fecha, el motivo con el detalle tal cual y el id de la edición previa', () => {
+    const [principal, segunda, tercera] = detalleConRepeticion().propuestas;
+    assert.deepEqual(principal.repeticion, {
+      texto: 'Repite el dataset de la edición del 02/11/2026.',
+      motivo: 'Datos nuevos: Llegaron los datos de octubre, que la edición anterior no tenía.',
+      id_edicion: 12
+    });
+    assert.equal(segunda.repeticion, null);
+    assert.deepEqual(tercera.repeticion, {
+      texto: 'Repite el tema de la edición del 19/10/2026.',
+      motivo: 'Hecho actual: Esta quincena el tema volvió a estar en agenda.',
+      id_edicion: null
+    });
+  });
+
+  it('id_edicion: solo si la edición previa está en las previas y es anterior; sin previas, null', () => {
+    assert.equal(detalleConRepeticion({ previas: undefined }).propuestas[0].repeticion.id_edicion, null);
+    assert.equal(detalleConRepeticion({ previas: new Map() }).propuestas[0].repeticion.id_edicion, null);
+    // Una repetición de la misma fecha de la edición no enlaza, aunque esa fecha esté en las previas
+    const misma = edicionConRepeticion();
+    misma.propuestas[0].repeticion.fecha_edicion_previa = FECHA_CON_REPETICION;
+    const previas = new Map([[FECHA_CON_REPETICION, { id: 14, rpad_ids: [1] }], ...PREVIAS]);
+    const [principal] = detalleConRepeticion({ edicion: misma, previas }).propuestas;
+    assert.deepEqual(principal.repeticion, {
+      texto: 'Repite el dataset de la edición del 16/11/2026.',
+      motivo: 'Datos nuevos: Llegaron los datos de octubre, que la edición anterior no tenía.',
+      id_edicion: null
+    });
+    // El id no depende de que la edición previa cite el dataset (eso solo da el aviso)
+    const sinElDataset = new Map([[FECHA_DE_PRUEBA, { id: 12, rpad_ids: [] }]]);
+    assert.equal(detalleConRepeticion({ previas: sinElDataset }).propuestas[0].repeticion.id_edicion, 12);
+  });
+
+  // Si las ediciones previas no se pudieron leer (null), el detalle sale igual: la repetición, sin enlace
+  it('con previas null (no se pudieron leer): el detalle sale igual, con las repeticiones sin enlace', () => {
+    const d = detalleConRepeticion({ previas: null });
+    assert.deepEqual(d.propuestas.map((p) => p.repeticion?.id_edicion ?? null), [null, null, null]);
+    assert.deepEqual(d, detalleConRepeticion({ previas: new Map() }));
+    assert.equal(d.propuestas[0].repeticion.texto, 'Repite el dataset de la edición del 02/11/2026.');
+  });
+
+  it('para_copiar suma el bloque de la repetición después de la foto y lleva las etiquetas para mostrar', () => {
+    const edicion = edicionConRepeticion();
+    const d = detalleConRepeticion();
+    assert.deepEqual(d.propuestas.map((p) => p.para_copiar), edicion.propuestas.map(textoParaCopiar));
+    assert.ok(d.propuestas[0].para_copiar.startsWith('Un título inventado [Principal, Validar, Repite]\n\n'));
+    assert.ok(d.propuestas[0].para_copiar.includes('Próxima en 29 días.\n\nRepite el dataset de la edición del 02/11/2026.\n'
+      + 'Datos nuevos: Llegaron los datos de octubre, que la edición anterior no tenía.\n\nPara validar antes de publicar\n'));
+    assert.ok(d.propuestas[1].para_copiar.startsWith('Otro título inventado [Agenda, Efeméride]\n\n'));
+    assert.ok(!d.propuestas[1].para_copiar.includes('Repite'));
+  });
+
+  it('una edición v1.2: repeticion null en cada propuesta y lo demás igual que siempre', () => {
+    const d = detalle({ previas: PREVIAS });
+    assert.deepEqual(d, detalle());
+    assert.deepEqual(d.propuestas.map((p) => p.repeticion), [null, null]);
+    const conNull = edicionDePrueba();
+    conNull.propuestas[1].repeticion = null;
+    assert.deepEqual(detalle({ edicion: conNull }).propuestas, detalle().propuestas);
+  });
+
   it('no cambia lo que recibe', () => {
     const fila = filaDePrueba();
     const edicion = JSON.parse(fila.metadata);
@@ -2288,5 +2723,11 @@ describe('detalleDeLaEdicion', () => {
     const antes = structuredClone({ fila, edicion, guardadas, adjuntos });
     detalleDeLaEdicion({ fila, edicion, guardadas, adjuntos });
     assert.deepEqual({ fila, edicion, guardadas, adjuntos }, antes);
+    const conRepeticion = edicionConRepeticion();
+    const otraAntes = structuredClone(conRepeticion);
+    const previas = new Map(PREVIAS);
+    detalleDeLaEdicion({ fila, edicion: conRepeticion, guardadas, adjuntos, previas });
+    assert.deepEqual(conRepeticion, otraAntes);
+    assert.deepEqual([...previas], [...PREVIAS]);
   });
 });

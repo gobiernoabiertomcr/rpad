@@ -15,6 +15,10 @@
  * administración solo si quien pide es de administración) y el detalle la línea (lineaDelCorreo). Cada pedido toma su hora una
  * vez (ahoraArgentina) y lee una vez el interruptor y el calendario (leerCalendario: con la tabla de feriados caída, los 9
  * fijos).
+ *
+ * El contrato v1.3 (spec 2026-11-14-dato-quincena-v1-3, 2 y 3): el recibo y el detalle leen, con una consulta, las ediciones que
+ * repiten las propuestas (edicionesPreviasSinFallar de fechasPrevias), para los avisos de la repetición y el enlace a la edición
+ * previa. Esa lectura nunca da un 500: si falla, el recibo sale sin los avisos de la repetición y el detalle, sin el enlace.
  */
 import { ahoraArgentina } from '../services/notasDigitalesCalendario.js';
 import { leerCalendario } from '../services/feriadosDatos.js';
@@ -24,10 +28,10 @@ import { idPositivo } from '../services/proyectosReglas.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import {
   textoDeMetadata, erroresDeLaEdicion, claveDeEdicion, huellaDelPaquete, filasDeLaEdicion, avisosDeLaEdicion, reciboDe, sha256,
-  anioDeLaLista, itemDeLaLista, detalleDeLaEdicion
+  anioDeLaLista, itemDeLaLista, detalleDeLaEdicion, fechasPrevias
 } from '../services/datoQuincenaReglas.js';
 import {
-  guardarEdicion, leerRecibo, listarEdiciones, leerEdicion, leerArchivo
+  guardarEdicion, leerRecibo, listarEdiciones, leerEdicion, leerArchivo, edicionesPreviasSinFallar
 } from '../services/datoQuincenaDatos.js';
 import { envioDelRecibo, lineaDelCorreo, pastillaDelEnvio } from '../services/datoQuincenaCorreoReglas.js';
 import { leerConfig, correosDeLasEdiciones, listaDeHoy } from '../services/datoQuincenaCorreoDatos.js';
@@ -53,7 +57,9 @@ const leerMetadata = (buffer) => {
  * demasiados niveles (lo que datosComunes no ve en un multipart), el 400 de middleware/cuerpo.js; una edición con errores,
  * 422 con `errores`. Si no, la guarda: 201 con el recibo, 200 con el de la primera vez si ya estaba igual, o 409 si la clave
  * tiene otro contenido. El recibo y sus avisos salen siempre de lo guardado, después del commit, y su envío, de lo guardado en
- * ese momento: un 200 dice el de ahora («Enviada por correo el …» si ya salió). Un error de la base, 500.
+ * ese momento: un 200 dice el de ahora («Enviada por correo el …» si ya salió). Los avisos de la repetición miran las ediciones
+ * previas de ese momento: lo archivado nunca da un 422, y si no se pueden leer, el recibo sale sin esos avisos. Otro error de la
+ * base, 500.
  */
 export const recibirEdicion = async (req, res) => {
   let clave = null;
@@ -97,7 +103,8 @@ export const recibirEdicion = async (req, res) => {
 
     const recibo = await leerRecibo(id);
     if (recibo === null) throw new Error('La edición guardada no se pudo leer');
-    const avisos = avisosDeLaEdicion(JSON.parse(recibo.fila.metadata), recibo.guardadas);
+    const guardada = JSON.parse(recibo.fila.metadata);
+    const avisos = avisosDeLaEdicion(guardada, recibo.guardadas, await edicionesPreviasSinFallar(fechasPrevias(guardada)));
     const repetida = estado === 'repetida';
     const [{ envioActivo }, calendario] = await Promise.all([leerConfig(), leerCalendario()]);
     const envio = envioDelRecibo({
@@ -169,7 +176,7 @@ export const listar = async (req, res) => {
 };
 
 // GET /api/dato-quincena/ediciones/:id: el detalle de una edición, con los textos ya armados. La línea del correo es la misma
-// para todos los roles
+// para todos los roles; las ediciones previas dan el enlace de cada repetición
 export const ver = async (req, res) => {
   const id = idPositivo(req.params.id);
   if (id === null) return noExiste(res);
@@ -177,8 +184,9 @@ export const ver = async (req, res) => {
     const leida = await leerEdicion(id);
     if (leida === null) return noExiste(res);
     const edicion = JSON.parse(leida.fila.metadata);
-    const linea = lineaDelCorreo(parametrosDelEnvio(await leerElEnvio([leida.fila.id]), leida.fila, edicion.correo));
-    res.json({ success: true, data: detalleDeLaEdicion({ ...leida, edicion, lineaDelCorreo: linea }) });
+    const [envio, previas] = await Promise.all([leerElEnvio([leida.fila.id]), edicionesPreviasSinFallar(fechasPrevias(edicion))]);
+    const linea = lineaDelCorreo(parametrosDelEnvio(envio, leida.fila, edicion.correo));
+    res.json({ success: true, data: detalleDeLaEdicion({ ...leida, edicion, lineaDelCorreo: linea, previas }) });
   } catch (error) {
     errorDeLectura(res, MENSAJE_AL_VER, error);
   }
