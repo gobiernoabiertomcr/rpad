@@ -987,6 +987,32 @@ const ORDEN_DE_LOS_ARCHIVOS_DEL_DETALLE = Object.freeze(Object.keys(ARCHIVOS_DEL
 // La etiqueta de un evento de la agenda: «Efeméride» o null (un evento, con tipo o sin él)
 const etiquetaDelEvento = (tipo) => (tipo === 'efemeride' ? 'Efeméride' : null);
 
+// Los grupos de la agenda (spec 2026-11-14-dato-quincena-agenda-grupos), en este orden y con estos títulos (decisión del
+// usuario). Un evento es uno sin tipo o con tipo evento; una efeméride va a su grupo cualquiera sea su fecha
+const esEfemeride = (evento) => evento.tipo === 'efemeride';
+const GRUPOS_DE_LA_AGENDA = Object.freeze([
+  Object.freeze({ titulo: 'Lo que pasó', es: (evento, fechaDeLaEdicion) => !esEfemeride(evento) && evento.fecha < fechaDeLaEdicion }),
+  Object.freeze({ titulo: 'Lo que viene', es: (evento, fechaDeLaEdicion) => !esEfemeride(evento) && evento.fecha >= fechaDeLaEdicion }),
+  Object.freeze({ titulo: 'Efemérides', es: esEfemeride })
+]);
+
+/**
+ * La agenda de una edición ya validada en sus grupos (spec 2026-11-14-dato-quincena-agenda-grupos), con lo que ya trae cada
+ * evento y la fecha de la edición ('AAAA-MM-DD', por parámetro): «Lo que pasó» (los eventos anteriores a la edición), «Lo que
+ * viene» (los del día de la edición o después) y «Efemérides». Cada grupo `{ titulo, eventos }`, por fecha de la más vieja a la
+ * más nueva y, con la misma fecha, en el orden en que llegaron; cada evento `{ fecha_texto, titulo, detalle, url }`, sin etiqueta:
+ * el título del grupo ya la dice. Un grupo vacío no va; sin eventos, una lista vacía. No cambia la agenda que recibe.
+ */
+export const gruposDeLaAgenda = (agenda, fechaDeLaEdicion) => GRUPOS_DE_LA_AGENDA
+  .map(({ titulo, es }) => ({
+    titulo,
+    eventos: agenda
+      .filter((evento) => es(evento, fechaDeLaEdicion))
+      .sort((a, b) => (a.fecha < b.fecha ? -1 : Number(a.fecha > b.fecha)))
+      .map(({ fecha, titulo: delEvento, detalle, url }) => ({ fecha_texto: diaArgentino(fecha), titulo: delEvento, detalle, url }))
+  }))
+  .filter((grupo) => grupo.eventos.length > 0);
+
 const archivoDelDetalle = (campo, nombre, bytes) => {
   const { rotulo, formato, se_puede_ver } = ARCHIVOS_DEL_DETALLE[campo];
   return { campo, rotulo, nombre, detalle: `${formato}${tamanoTexto(bytes)}`, se_puede_ver };
@@ -1037,8 +1063,10 @@ const propuestaDelDetalle = (propuesta, enlaces, fechaDeLaEdicion, previas) => (
  * que hace el controlador), `guardadas` (`orden`, `dataset_id` y `dataset_activo` de cada propuesta) y `adjuntos` (`campo`,
  * `nombre` y `bytes`). Los textos ya armados: la fecha, la marca, el número de una regular, la llegada, el correo en hora
  * argentina y la cantidad; la nota de archivo, null si está vacía o con solo espacios; la agenda con su fecha dd/mm/aaaa y la
- * etiqueta de una efeméride; cada propuesta con `id_enlace` solo si su dataset existe y está activo; y los archivos en el orden
- * de ARCHIVOS_DEL_DETALLE, con la edición completa al final y el nombre de cada descarga.
+ * etiqueta de una efeméride, en el orden en que llegó (para una pestaña abierta con la página anterior), y `agenda_grupos`, la
+ * misma agenda en sus grupos (gruposDeLaAgenda, con la fecha de la edición), que imprimen la página y el mail; cada propuesta con
+ * `id_enlace` solo si su dataset existe y está activo; y los archivos en el orden de ARCHIVOS_DEL_DETALLE, con la edición completa
+ * al final y el nombre de cada descarga.
  * `correo` es `lineaDelCorreo`, la línea del envío del RPAD que arma el controlador (spec 2026-11-12-dato-quincena-correo, 6),
  * tal cual. Sin ella, la del correo del bot (textoDelCorreo): el modelo del mail arma el detalle y no la usa.
  * `previas` (spec 2026-11-14-dato-quincena-v1-3, 3) es el Map de leerEdicionesPrevias(fechasPrevias(edicion)), que leen `ver` y el
@@ -1065,6 +1093,7 @@ export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDe
     agenda: edicion.agenda.map(({ titulo, fecha, detalle, url, tipo }) => ({
       fecha_texto: diaArgentino(fecha), titulo, detalle, url, etiqueta: etiquetaDelEvento(tipo)
     })),
+    agenda_grupos: gruposDeLaAgenda(edicion.agenda, edicion.fecha_edicion),
     propuestas: edicion.propuestas.map((propuesta) => propuestaDelDetalle(propuesta, enlaces, edicion.fecha_edicion, lasPrevias)),
     archivos: [
       ...ORDEN_DE_LOS_ARCHIVOS_DEL_DETALLE.flatMap((campo) => adjuntos

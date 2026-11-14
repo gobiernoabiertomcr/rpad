@@ -7,11 +7,12 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-07-dato-quincena-design.md`
 - `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
 - `docs/superpowers/specs/2026-11-14-dato-quincena-v1-3-design.md` (el contrato v1.3: Repite y Efemeride)
+- `docs/superpowers/specs/2026-11-14-dato-quincena-agenda-grupos-design.md` (la agenda en tres grupos)
 
 ## Archivos
 
 datoQuincenaController: el POST de Datito (`recibirEdicion`) y las lecturas (`listar`, `ver` y `descargar`);
-datoQuincenaReglas (puro: los topes, la validación de la edición y del manifiesto, la clave, la huella del paquete, el token, `esPng`, `esSvg`, `esTextoUtf8`, `NOMBRE_DEL_BOT`, los textos de la lista y del detalle, la foto del RPAD, lo que se copia, las filas que se guardan, `fechasPrevias`, los avisos y el recibo);
+datoQuincenaReglas (puro: los topes, la validación de la edición y del manifiesto, la clave, la huella del paquete, el token, `esPng`, `esSvg`, `esTextoUtf8`, `NOMBRE_DEL_BOT`, los textos de la lista y del detalle, los grupos de la agenda (`gruposDeLaAgenda`), la foto del RPAD, lo que se copia, las filas que se guardan, `fechasPrevias`, los avisos y el recibo);
 datoQuincenaDatos (las consultas, la transacción del guardado y `leerEdicionesPrevias`);
 dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el detalle ?id=N y la pestaña Correo (dato-quincena.js)
 
@@ -198,12 +199,19 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   `cantidad`, «4 propuestas»;
   y `envio`, `{ tipo, texto }`, la pastilla del envío (null si no lleva), con el texto de administración si quien pide lo es (`docs/temas/dato-quincena-correo.md`).
   La lista no trae las infografías ni ninguna dirección de correo.
-- `GET /api/dato-quincena/ediciones/:id`, el detalle, con los textos ya armados (`detalleDeLaEdicion`): `{ id, fecha_texto, marca, numero, titulo, nota_archivo, llegada, correo, cantidad, agenda, propuestas, archivos }`.
+- `GET /api/dato-quincena/ediciones/:id`, el detalle, con los textos ya armados (`detalleDeLaEdicion`): `{ id, fecha_texto, marca, numero, titulo, nota_archivo, llegada, correo, cantidad, agenda, agenda_grupos, propuestas, archivos }`.
   `llegada`, «Llegó al RPAD el dd/mm/aaaa a las HH:MM.», de `recibida_at`;
   `correo`, la línea del envío del RPAD (`docs/temas/dato-quincena-correo.md`);
   en una edición sin envío (archivada antes del correo), la de Datito: «Correo enviado el dd/mm/aaaa a las HH:MM, según Datito.» con la hora pasada a Argentina sea cual sea la zona del bot, «Correo enviado según Datito, sin la hora.» o «Datito archivó esta edición sin que saliera el correo.», que sigue siendo cierto si el correo sale después: la edición no cambia y Datito no la vuelve a mandar (sería un 409);
   `cantidad`, «1 propuesta» o «5 propuestas»;
-  `agenda`, cada evento `{ fecha_texto, titulo, detalle, url, etiqueta }`, con la fecha dd/mm/aaaa y `etiqueta` «Efeméride» (de `tipo: 'efemeride'`) o null.
+  `agenda`, cada evento `{ fecha_texto, titulo, detalle, url, etiqueta }`, en el orden en que llegó, con la fecha dd/mm/aaaa y `etiqueta` «Efeméride» (de `tipo: 'efemeride'`) o null.
+  Queda para una pestaña abierta con la página anterior: la página y el mail imprimen `agenda_grupos`.
+  `agenda_grupos`, la misma agenda en grupos `{ titulo, eventos }`, cada evento `{ fecha_texto, titulo, detalle, url }`, sin etiqueta (`gruposDeLaAgenda`, pura, con la `fecha_edicion` por parámetro).
+  Los grupos, en este orden y con estos títulos (decisión del usuario): «Lo que pasó», los eventos (sin `tipo` o con `evento`) anteriores a la edición;
+  «Lo que viene», los eventos del día de la edición o después;
+  y «Efemérides», cualquiera sea su fecha.
+  En cada grupo, por fecha, de la más vieja a la más nueva, y con la misma fecha, en el orden en que llegaron; un grupo vacío no va y, sin agenda, la lista es vacía.
+  Los grupos salen de la `fecha` y el `tipo` de cada evento y de la `fecha_edicion`, no del orden en que llegan: el contrato con Datito no cambia.
   Cada propuesta: `orden_texto` («Propuesta 1»), `etiquetas`, `principal`, sus textos tal como llegaron, `dataset` (`{ nombre, id_enlace, url }`, con `id_enlace` el id solo si el dataset existe y está activo), `foto`, `repeticion` (después de la foto), `para_copiar` y `borrador_para_copiar`.
   `etiquetas` son las para mostrar: 'Efemeride' es «Efeméride» y las demás quedan igual; `principal` mira el valor del JSON.
   `repeticion` es null (sin la clave o con null) o `{ texto, motivo, id_edicion }`: «Repite el dataset de la edición del dd/mm/aaaa.» o «Repite el tema de la edición del dd/mm/aaaa.»;
@@ -246,6 +254,8 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   El año y la página elegidos quedan en la dirección (`?anio=AAAA&pagina=N`, con `history.replaceState`); al cambiar de año, la página 1; uno pedido sin ediciones, con otros que sí tienen, vuelve a la lista sola.
 - El detalle (`?id=N`): «Todas las ediciones», la fecha grande con el N.º o la marca, el título, la llegada, el correo y la cantidad (el punto después de la cantidad lo pone la página) y, si hay, «Nota de Datito:» con la nota.
   A un costado (fijo al bajar, salvo en una pantalla angosta, donde va arriba, o en una pantalla baja), la infografía y «Archivos», con «Descargar» en cada uno y «Ver» en el texto y los cálculos; al otro, «Agenda de la quincena» (si hay) y «Las propuestas».
+- La agenda (`htmlDeLaAgenda`): `agenda_grupos` en el orden del servidor, cada grupo con su título en un `h4` (`.dq-agenda-grupo`) y su lista, sin la pastilla «Efeméride» (el título del grupo ya lo dice).
+  Cada evento, la fecha, el título, el detalle y «Ver» si la dirección es `https://`; un grupo sin eventos no se dibuja.
 - Cada propuesta: su número, sus etiquetas («Principal» en tinta, «Agenda» en cielo, «Validar» en sol con el `triangle-alert` y «Repite» en blanco con un borde por dentro y el `history`; «Efeméride», el estilo neutro de `.dq-etiqueta`: nunca solo el color), el título, la cifra, «Dataset:» (con enlace a `dataset.html?id=N` solo con `id_enlace`) y «en el portal», la foto del RPAD y, si hay, la repetición y «Para validar antes de publicar», siempre a la vista.
   La repetición (`.dq-repite`, neutra, con los márgenes de `.dq-validar`): el `history`, alineado con el primer renglón, y el `texto` en negrita, como enlace a `dato-quincena.html?id=<id_edicion>` solo si `idDeEdicion` lo acepta, y abajo el `motivo`.
   El enlace va subrayado: `main.css` le saca el subrayado a todo `<a>` y el texto ya es negrita y tinta, así que sin él no se distinguiría del texto sin enlace.

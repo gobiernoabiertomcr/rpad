@@ -137,12 +137,13 @@
 
         .dq-seccion-titulo { margin: 0 0 10px; font-family: var(--f-titulo); font-weight: 700; font-size: 1.2rem; color: var(--sg-tinta); }
         .dq-agenda { margin: 0 0 26px; padding: 14px 18px; background: var(--sg-cielo); border-radius: 14px; }
+        .dq-agenda-grupo { margin: 16px 0 8px; font-size: 0.95rem; font-weight: 700; color: var(--sg-tinta); }
+        .dq-seccion-titulo + .dq-agenda-grupo { margin-top: 0; }
         .dq-agenda ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
         .dq-agenda li { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; font-size: 0.9rem; line-height: 1.45; color: var(--sg-texto); }
         .dq-dia { font-weight: 700; color: var(--sg-tinta); font-variant-numeric: tabular-nums; }
         .dq-evento { overflow-wrap: anywhere; }
         .dq-evento b { color: var(--sg-tinta); }
-        .dq-etiqueta-agenda { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; background: #fff; color: var(--sg-tinta); font-size: 0.74rem; font-weight: 700; vertical-align: 1px; }
         .dq-agenda a { color: var(--sg-tinta); font-weight: 600; }
 
         /* Cada propuesta: la principal con el borde de tinta más grueso; las etiquetas con su color y su texto (Validar y Repite, con su ícono; Efeméride, la neutra) */
@@ -446,6 +447,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/dato-quincena.js?v=20261231"></script>
+    <script src="js/dato-quincena.js?v=20261232"></script>
 </body>
 </html>

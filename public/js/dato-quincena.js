@@ -2,7 +2,8 @@
  * El dato de la quincena - RPAD (specs 2026-11-07-dato-quincena, 9, 10 y 11, y 2026-11-12-dato-quincena-correo, 12 y 13)
  * El archivo de las ediciones que arma Datito (el bot: NOMBRE_DEL_BOT), de solo lectura, para todos los roles con sesión: la lista
  * de un año (sin ?id=; ?anio=AAAA elige el año, &pagina=N la página de a 18), en tarjetas tipo diario con la pastilla del envío del
- * correo, y el detalle de una edición (?id=N), con la infografía y los archivos a un costado y la agenda y las propuestas al otro.
+ * correo, y el detalle de una edición (?id=N), con la infografía y los archivos a un costado y la agenda (en sus grupos: spec
+ * 2026-11-14-dato-quincena-agenda-grupos) y las propuestas al otro.
  * La principal va abierta y las otras, cerradas; las notas para validar y la repetición de otra edición (spec
  * 2026-11-14-dato-quincena-v1-3, 4), siempre a la vista; y tres «Copiar» por propuesta (el texto para redes, el borrador y la
  * propuesta entera).
@@ -279,22 +280,25 @@ function htmlDeLaLista(datos, pagina = 1) {
 // Lo puro: el detalle
 // =====================================================
 
-// La agenda de la quincena: la fecha, el título, el detalle y, si es https://, el enlace. Sin eventos, nada
-function htmlDeLaAgenda(agenda) {
-  const eventos = listaDe(agenda);
-  if (eventos.length === 0) return '';
-  const filas = eventos.map((evento) => {
-    const enlace = esEnlaceSeguro(evento?.url)
-      ? ` ${enlaceDeAfuera(evento.url, `Ver<span class="visualmente-oculto"> ${esc(evento?.titulo)}</span>`)}`
-      : '';
-    const etiqueta = typeof evento?.etiqueta === 'string' && evento.etiqueta !== ''
-      ? ` <span class="dq-etiqueta-agenda">${esc(evento.etiqueta)}</span>`
-      : '';
-    return `<li><span class="dq-dia">${esc(evento?.fecha_texto)}</span>`
-      + `<span class="dq-evento"><b>${esc(evento?.titulo)}</b>${etiqueta} <span>${esc(evento?.detalle)}</span>${enlace}</span></li>`;
-  }).join('');
+// Un evento de la agenda: la fecha, el título, el detalle y, si es https://, el enlace
+function htmlDeEventoDeLaAgenda(evento) {
+  const enlace = esEnlaceSeguro(evento?.url)
+    ? ` ${enlaceDeAfuera(evento.url, `Ver<span class="visualmente-oculto"> ${esc(evento?.titulo)}</span>`)}`
+    : '';
+  return `<li><span class="dq-dia">${esc(evento?.fecha_texto)}</span>`
+    + `<span class="dq-evento"><b>${esc(evento?.titulo)}</b> <span>${esc(evento?.detalle)}</span>${enlace}</span></li>`;
+}
+
+// La agenda de la quincena en sus grupos (agenda_grupos del detalle, spec 2026-11-14-dato-quincena-agenda-grupos), en el orden
+// en que los manda el servidor: el título de cada uno y sus eventos. Sin la pastilla «Efeméride»: el título del grupo ya lo dice.
+// Un grupo sin eventos no va; sin ninguno, nada
+function htmlDeLaAgenda(grupos) {
+  const conEventos = listaDe(grupos).filter((grupo) => listaDe(grupo?.eventos).length > 0);
+  if (conEventos.length === 0) return '';
+  const html = conEventos.map((grupo) => `<h4 class="dq-agenda-grupo">${esc(grupo.titulo)}</h4>`
+    + `<ul>${grupo.eventos.map(htmlDeEventoDeLaAgenda).join('')}</ul>`).join('');
   return '<section class="dq-agenda" aria-labelledby="dq-agenda-titulo">'
-    + `<h3 class="dq-seccion-titulo" id="dq-agenda-titulo">Agenda de la quincena</h3><ul>${filas}</ul></section>`;
+    + `<h3 class="dq-seccion-titulo" id="dq-agenda-titulo">Agenda de la quincena</h3>${html}</section>`;
 }
 
 // La foto del RPAD de ese día, cada fila { rotulo, valor } tal como la arma el servidor. Sin filas, nada
@@ -447,7 +451,7 @@ function htmlDelDetalle(detalle, { admin = false } = {}) {
     + '<div class="dq-detalle">'
     + `${lateral}${infografia}${htmlDeArchivos(d.archivos, id)}${conCorreo ? LUGAR_DE_LA_CAJA_DEL_CORREO : ''}</aside>`
     + '<div class="dq-columna">'
-    + htmlDeLaAgenda(d.agenda)
+    + htmlDeLaAgenda(d.agenda_grupos)
     + '<section aria-labelledby="dq-propuestas-titulo"><h3 class="dq-seccion-titulo" id="dq-propuestas-titulo">Las propuestas</h3>'
     + `<ol class="dq-propuestas">${propuestas.map((propuesta) => htmlDePropuesta(propuesta)).join('')}</ol></section>`
     + '</div></div>';

@@ -264,6 +264,30 @@
           "etiqueta": "Efeméride"
         }
       ],
+      "agenda_grupos": [
+        {
+          "titulo": "Lo que viene",
+          "eventos": [
+            {
+              "fecha_texto": "10/11/2026",
+              "titulo": "Evento de prueba",
+              "detalle": "Un evento inventado para las pruebas.",
+              "url": "https://datos.ejemplo.gob.ar/agenda/evento-de-prueba"
+            }
+          ]
+        },
+        {
+          "titulo": "Efemérides",
+          "eventos": [
+            {
+              "fecha_texto": "20/11/2026",
+              "titulo": "Efeméride de prueba",
+              "detalle": "Una efeméride inventada para las pruebas.",
+              "url": "https://datos.ejemplo.gob.ar/agenda/efemeride-de-prueba"
+            }
+          ]
+        }
+      ],
       "propuestas": [
         {
           "orden_texto": "Propuesta 1",
@@ -451,6 +475,30 @@
           "detalle": "Una efeméride inventada para las pruebas.",
           "url": "https://datos.ejemplo.gob.ar/agenda/efemeride-de-prueba",
           "etiqueta": "Efeméride"
+        }
+      ],
+      "agenda_grupos": [
+        {
+          "titulo": "Lo que pasó",
+          "eventos": [
+            {
+              "fecha_texto": "10/11/2026",
+              "titulo": "Evento de prueba",
+              "detalle": "Un evento inventado para las pruebas.",
+              "url": "https://datos.ejemplo.gob.ar/agenda/evento-de-prueba"
+            }
+          ]
+        },
+        {
+          "titulo": "Efemérides",
+          "eventos": [
+            {
+              "fecha_texto": "20/11/2026",
+              "titulo": "Efeméride de prueba",
+              "detalle": "Una efeméride inventada para las pruebas.",
+              "url": "https://datos.ejemplo.gob.ar/agenda/efemeride-de-prueba"
+            }
+          ]
         }
       ],
       "propuestas": [

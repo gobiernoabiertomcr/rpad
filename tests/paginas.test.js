@@ -117,8 +117,9 @@ const VERSION_PROYECTOS = '20261206';
 const VERSION_MI_ESPACIO = '20261226';
 // dato-quincena.js (la página de El dato de la quincena, el archivo de las ediciones de Datito, spec 2026-11-07-dato-quincena, 10 y
 // 11; las tarjetas, la pestaña Correo y la caja del correo del detalle, spec 2026-11-12-dato-quincena-correo, 13; la etiqueta Repite
-// y la caja de la repetición, spec 2026-11-14-dato-quincena-v1-3, 4). Su versión es propia
-const VERSION_DATO_QUINCENA = '20261231';
+// y la caja de la repetición, spec 2026-11-14-dato-quincena-v1-3, 4; la agenda en sus grupos, spec
+// 2026-11-14-dato-quincena-agenda-grupos). Su versión es propia
+const VERSION_DATO_QUINCENA = '20261232';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');

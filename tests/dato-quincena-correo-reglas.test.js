@@ -964,7 +964,8 @@ describe('modeloDelMail: lo que recibe la plantilla (spec, 10)', () => {
     assert.equal(m.bajada, '2 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas.');
     assert.equal(m.primerNombre, 'Persona');
     assert.equal(m.url, URL_DE_PRUEBA);
-    assert.deepEqual(Object.keys(m), ['asunto', 'primerNombre', 'titulo', 'numero', 'bajada', 'agenda', 'propuestas', 'url', 'nombreDelBot']);
+    assert.deepEqual(Object.keys(m),
+      ['asunto', 'primerNombre', 'titulo', 'numero', 'bajada', 'agenda_grupos', 'propuestas', 'url', 'nombreDelBot']);
   });
 
   // El nombre del bot vive solo en NOMBRE_DEL_BOT (spec, 2.10): la plantilla lo recibe en el modelo para la nota del pie
@@ -992,9 +993,14 @@ describe('modeloDelMail: lo que recibe la plantilla (spec, 10)', () => {
     assert.deepEqual(propuestas[0], { franja: 'Propuesta 1 de 2', ...resto });
   });
 
-  it('la agenda tal como la arma el detalle, con su etiqueta', () => {
-    const detalle = detalleDe(edicionDePrueba());
-    assert.deepEqual(modelo({ detalle }).agenda, detalle.agenda);
+  // spec 2026-11-14-dato-quincena-agenda-grupos: el mail muestra la agenda en sus grupos, como la página; la lista sin agrupar no va
+  it('la agenda en sus grupos, tal como los arma el detalle', () => {
+    const edicion = edicionDePrueba();
+    edicion.agenda.push(efemerideDePrueba());
+    const detalle = detalleDe(edicion);
+    assert.deepEqual(modelo({ detalle }).agenda_grupos, detalle.agenda_grupos);
+    assert.deepEqual(modelo({ detalle }).agenda_grupos.map((grupo) => grupo.titulo), ['Lo que viene', 'Efemérides']);
+    assert.ok(!Object.hasOwn(modelo({ detalle }), 'agenda'));
   });
 
   it('una sola propuesta: «1 propuesta de comunicación…»', () => {
@@ -1034,7 +1040,8 @@ describe('modeloDelMail: lo que recibe la plantilla (spec, 10)', () => {
     const antes = structuredClone(detalle);
     const m = modelo({ detalle });
     m.propuestas[0].fuentes.push('otra');
-    m.agenda.push({});
+    m.agenda_grupos[0].eventos.push({});
+    m.agenda_grupos.push({});
     assert.deepEqual(detalle, antes);
   });
 });
@@ -1067,11 +1074,13 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
     'La infografía de la propuesta principal. Va adjunta en PNG y en SVG (para editarla).',
     '',
     'Agenda de la quincena',
+    'Lo que viene',
     '10/11/2026 · Evento de prueba',
     'Un evento inventado para las pruebas.',
     'https://datos.ejemplo.gob.ar/agenda/evento-de-prueba',
     '',
-    '20/11/2026 · Efeméride de prueba (Efeméride)',
+    'Efemérides',
+    '20/11/2026 · Efeméride de prueba',
     'Una efeméride inventada para las pruebas.',
     'https://datos.ejemplo.gob.ar/agenda/efemeride-de-prueba',
     '',
@@ -1178,7 +1187,7 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
 
   it('sin agenda no va el bloque; un piloto lleva su marca en lugar del número', () => {
     const m = modelo();
-    m.agenda = [];
+    m.agenda_grupos = [];
     m.numero = 'Piloto 4';
     const { text } = datoQuincenaTemplate(m, { conSvg: true });
     assert.ok(!text.includes('Agenda de la quincena'));
@@ -1188,11 +1197,11 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
 
   it('una dirección que no es https:// no va en el dataset ni en la agenda; en las fuentes, como llegó', () => {
     const m = modelo();
-    m.agenda[0].url = 'http://datos.ejemplo.gob.ar/agenda';
+    m.agenda_grupos[0].eventos[0].url = 'http://datos.ejemplo.gob.ar/agenda';
     m.propuestas[0].dataset.url = 'http://datos.ejemplo.gob.ar/dataset';
     m.propuestas[0].fuentes = ['http://datos.ejemplo.gob.ar/a.csv'];
     const { text } = datoQuincenaTemplate(m, { conSvg: true });
-    assert.ok(text.includes('10/11/2026 · Evento de prueba\nUn evento inventado para las pruebas.\n\n'));
+    assert.ok(text.includes('Lo que viene\n10/11/2026 · Evento de prueba\nUn evento inventado para las pruebas.\n\nEfemérides\n'));
     assert.ok(text.includes('Dataset: Dataset de prueba A\nEn el RPAD ese día:'));
     assert.ok(text.includes('Fuentes\nhttp://datos.ejemplo.gob.ar/a.csv\n'));
   });
@@ -1220,6 +1229,46 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
     assert.ok(datoQuincenaTemplate(m, { conSvg: true }).text.includes('Próxima en 29 días.\n\nRepite el dataset de la edición del '
       + '02/11/2026.\nDatos nuevos: Uno.\nDos.\n\nPor qué hoy\n'));
     assert.equal(datoQuincenaTemplate(modelo(), { conSvg: true }).text, TEXTO);
+  });
+
+  // spec 2026-11-14-dato-quincena-agenda-grupos: el título de cada grupo en su renglón y sus eventos debajo, por fecha, sin la
+  // etiqueta «Efeméride» (el título del grupo ya lo dice); los grupos, en su orden y separados por un renglón en blanco
+  it('la agenda en sus tres grupos: cada título en su renglón, sus eventos debajo y sin etiquetas', () => {
+    const edicion = edicionDePrueba({
+      fecha_edicion: '2026-11-16',
+      agenda: [
+        { titulo: 'Lo que viene después', fecha: '2026-11-25', detalle: 'Uno inventado.', url: 'https://datos.ejemplo.gob.ar/v2' },
+        { ...efemerideDePrueba() },
+        { titulo: 'Lo que viene antes', fecha: '2026-11-16', detalle: '', url: 'https://datos.ejemplo.gob.ar/v1', tipo: 'evento' },
+        { titulo: 'Lo que pasó', fecha: '2026-11-10', detalle: 'Otro inventado.', url: 'http://datos.ejemplo.gob.ar/p' }
+      ]
+    });
+    const detalle = detalleDeLaEdicion({ fila: { ...fila, fecha_edicion: '2026-11-16' }, edicion, guardadas: [], adjuntos: [] });
+    const { text } = datoQuincenaTemplate(modelo({ detalle, fecha_edicion: '2026-11-16' }), { conSvg: true });
+    assert.ok(text.includes([
+      '(para editarla).',
+      '',
+      'Agenda de la quincena',
+      'Lo que pasó',
+      '10/11/2026 · Lo que pasó',
+      'Otro inventado.',
+      '',
+      'Lo que viene',
+      '16/11/2026 · Lo que viene antes',
+      'https://datos.ejemplo.gob.ar/v1',
+      '',
+      '25/11/2026 · Lo que viene después',
+      'Uno inventado.',
+      'https://datos.ejemplo.gob.ar/v2',
+      '',
+      'Efemérides',
+      '20/11/2026 · Efeméride de prueba',
+      'Una efeméride inventada para las pruebas.',
+      'https://datos.ejemplo.gob.ar/agenda/efemeride-de-prueba',
+      '',
+      'Propuesta 1 de 2 (principal)'
+    ].join('\n')), text);
+    assert.ok(!text.includes('(Efeméride)'));
   });
 
   // La plantilla no nombra al bot: la nota del pie dice el nombre que trae el modelo (modeloDelMail pone el de NOMBRE_DEL_BOT)

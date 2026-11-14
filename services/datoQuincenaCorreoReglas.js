@@ -787,8 +787,9 @@ const FUERA_DEL_MAIL = Object.freeze(['orden_texto', 'para_copiar', 'borrador_pa
  * Lo que recibe la plantilla del mail (spec, 10), de `detalleDeLaEdicion` y la fecha de la edición: el asunto «Dato de la
  * Quincena - DD/MM/AAAA» (con «[PRUEBA] » delante en una prueba), el primer nombre de `nombreCompleto` (null sin nombre), el
  * título (el asunto sin la marca de la prueba), «Edición N.º N» (en un piloto, su marca), la bajada con la cantidad, la agenda
- * del detalle (con su etiqueta) y las propuestas en su orden con su franja «Propuesta N de M», la dirección de la edición y el
- * nombre del bot para la nota del pie (la plantilla no lo nombra: vive solo en NOMBRE_DEL_BOT, spec 2.10).
+ * en sus grupos, como los arma el detalle (`agenda_grupos`, spec 2026-11-14-dato-quincena-agenda-grupos), y las propuestas en su
+ * orden con su franja «Propuesta N de M», la dirección de la edición y el nombre del bot para la nota del pie (la plantilla no lo
+ * nombra: vive solo en NOMBRE_DEL_BOT, spec 2.10).
  * Copia todo: el detalle no cambia.
  */
 export const modeloDelMail = ({ detalle, fecha_edicion, nombreCompleto, url, prueba }) => {
@@ -802,7 +803,7 @@ export const modeloDelMail = ({ detalle, fecha_edicion, nombreCompleto, url, pru
     numero: detalle.numero != null ? `Edición ${detalle.numero}` : (detalle.marca ?? null),
     bajada: `${textoDeCantidad(total)} de comunicación que armó ${NOMBRE_DEL_BOT}. Son internas: todavía no están aprobadas ni `
       + 'publicadas.',
-    agenda: structuredClone(detalle.agenda),
+    agenda_grupos: structuredClone(detalle.agenda_grupos),
     propuestas: detalle.propuestas.map((propuesta, i) => ({
       franja: `Propuesta ${i + 1} de ${total}`,
       ...structuredClone(Object.fromEntries(Object.entries(propuesta).filter(([clave]) => !FUERA_DEL_MAIL.includes(clave))))

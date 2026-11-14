@@ -834,9 +834,9 @@ const PIE_DE_LA_INFOGRAFIA = 'La infografía de la propuesta principal.';
 const BOTON_DEL_DATO_QUINCENA = 'Ver la edición en el RPAD';
 const PARA_VALIDAR = 'Para validar antes de publicar';
 
-// Las pastillas de las etiquetas de una propuesta (Principal va en la franja) y la de la agenda, la suave «Efeméride», que usan
-// también las propuestas; «Repite», blanca con un borde (spec 2026-11-14-dato-quincena-v1-3, 5); otra, con los colores neutros.
-// Siempre con su texto: el color nunca es lo único que las distingue
+// Las pastillas de las etiquetas de una propuesta (Principal va en la franja): «Efeméride», la suave; «Repite», blanca con un
+// borde (spec 2026-11-14-dato-quincena-v1-3, 5); otra, con los colores neutros. Siempre con su texto: el color nunca es lo único
+// que las distingue. La agenda no lleva pastillas: el título de su grupo ya dice si es una efeméride
 const PASTILLAS_DEL_DATO_QUINCENA = Object.freeze({
   Validar: { fondo: COLORES.respaldo.fondo, color: COLORES.respaldo.texto },
   Agenda: { fondo: COLORES.encabezado, color: COLORES.titulo },
@@ -912,19 +912,29 @@ const repeticionDelDato = (propuesta) => {
 const campoDelDato = (titulo, html) =>
   `<h3 style="margin: 14px 0 4px 0; color: ${COLORES.titulo}; font-size: 14px; font-weight: 600;">${escapeHtml(titulo)}</h3>${html}`;
 
-// Un evento de la agenda: la fecha en su columna; el título, la etiqueta, el detalle y «Ver» si la dirección es https://
+// Los grupos de la agenda que traen eventos (spec 2026-11-14-dato-quincena-agenda-grupos), en el orden del modelo
+const gruposDelDato = (valor) => listaDelDato(valor).filter((grupo) => listaDelDato(grupo?.eventos).length > 0);
+
+// El título de un grupo de la agenda: una fila de la tabla de los eventos, a lo ancho de las dos columnas, en negrita; el
+// primero, sin aire arriba (en la celda: Outlook de escritorio no respeta el margin)
+const grupoDelDato = (grupo, primero) => `
+                      <tr>
+                        <td colspan="2" style="padding: ${primero ? '0' : '12px'} 0 2px 0; color: ${COLORES.titulo}; font-size: 14px; line-height: 1.5;"><strong>${escapeHtml(textoDelDato(grupo?.titulo))}</strong></td>
+                      </tr>`;
+
+// Un evento de la agenda: la fecha en su columna; el título, el detalle y «Ver» si la dirección es https://
 const eventoDelDato = (evento) => {
-  const etiqueta = typeof evento?.etiqueta === 'string' && evento.etiqueta !== '' ? ` ${pastillaDelDato(evento.etiqueta, '0')}` : '';
   const detalle = textoDelDato(evento?.detalle).trim() === '' ? '' : `<br>${conRenglones(evento.detalle)}`;
   const ver = esHttps(evento?.url) ? ` ${enlace(escapeHtml(evento.url), 'Ver')}` : '';
   return `
                       <tr>
                         <td valign="top" style="padding: 4px 12px 4px 0; width: 84px; color: ${COLORES.titulo}; font-size: 13px; font-weight: 600; white-space: nowrap;">${escapeHtml(textoDelDato(evento?.fecha_texto))}</td>
-                        <td valign="top" style="padding: 4px 0; color: ${COLORES.texto}; font-size: 13px; line-height: 1.5;"><strong>${conRenglones(evento?.titulo)}</strong>${etiqueta}${detalle}${ver}</td>
+                        <td valign="top" style="padding: 4px 0; color: ${COLORES.texto}; font-size: 13px; line-height: 1.5;"><strong>${conRenglones(evento?.titulo)}</strong>${detalle}${ver}</td>
                       </tr>`;
 };
 
-const agendaDelDato = (agenda) => (agenda.length === 0 ? null : recuadro(`${tituloSeccion('Agenda de la quincena')}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse;">${agenda.map(eventoDelDato).join('')}
+// La agenda en un recuadro, con sus grupos en una sola tabla: el título de cada uno y sus eventos. Sin grupos con eventos, nada
+const agendaDelDato = (grupos) => (grupos.length === 0 ? null : recuadro(`${tituloSeccion('Agenda de la quincena')}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse;">${grupos.map((grupo, i) => grupoDelDato(grupo, i === 0) + grupo.eventos.map(eventoDelDato).join('')).join('')}
                     </table>`));
 
 // La franja de una propuesta: «Propuesta N de M»; la principal, en el color del título, con «Principal»
@@ -1039,12 +1049,14 @@ const textoDeLaPropuesta = (propuesta) => {
   ].join('\n\n');
 };
 
-// Un evento de la agenda en el texto plano: «10/11/2026 · Título (Efeméride)», el detalle y la dirección, si es https://
+// Un evento de la agenda en el texto plano: «10/11/2026 · Título», el detalle y la dirección, si es https://
 const eventoEnTexto = (evento) => [
-  `${textoDelDato(evento?.fecha_texto)} · ${textoDelDato(evento?.titulo)}${typeof evento?.etiqueta === 'string' && evento.etiqueta !== '' ? ` (${evento.etiqueta})` : ''}`,
+  `${textoDelDato(evento?.fecha_texto)} · ${textoDelDato(evento?.titulo)}`,
   ...(textoDelDato(evento?.detalle).trim() === '' ? [] : [evento.detalle]),
   ...(esHttps(evento?.url) ? [evento.url] : [])
 ].join('\n');
+// Un grupo de la agenda en el texto plano: su título en un renglón y sus eventos debajo, separados por un renglón en blanco
+const grupoEnTexto = (grupo) => `${textoDelDato(grupo?.titulo)}\n${grupo.eventos.map(eventoEnTexto).join('\n\n')}`;
 
 /**
  * El mail del dato de la quincena, a una persona (spec 2026-11-12-dato-quincena-correo, 10; la forma, la de la maqueta
@@ -1052,9 +1064,10 @@ const eventoEnTexto = (evento) => [
  * plantilla no importa. `conSvg`: solo con true el pie de la infografía dice que va también en SVG (el servicio lo pasa si
  * la edición lo trajo; ante la duda, no lo promete).
  * Con el marco único: el título, el número y la bajada; «Buen día, <primer nombre>.»; la infografía en línea (CID_INFOGRAFIA);
- * la agenda, si hay; una tarjeta por propuesta, en su orden, con su franja (y, si repite otra edición, la caja de la repetición
- * después de la foto: spec 2026-11-14-dato-quincena-v1-3, 5); el botón «Ver la edición en el RPAD» y la nota, con el nombre del
- * bot del modelo.
+ * la agenda, si hay, en sus grupos (`agenda_grupos`, el título de cada uno y sus eventos: spec
+ * 2026-11-14-dato-quincena-agenda-grupos); una tarjeta por propuesta, en su orden, con su franja (y, si repite otra edición, la
+ * caja de la repetición después de la foto: spec 2026-11-14-dato-quincena-v1-3, 5); el botón «Ver la edición en el RPAD» y la
+ * nota, con el nombre del bot del modelo.
  * Todo texto de la edición va escapado y con sus saltos de línea como <br>; una dirección es enlace solo si es https://. El
  * texto plano dice lo mismo, con los textos tal como llegaron.
  */
@@ -1063,7 +1076,7 @@ export const datoQuincenaTemplate = (modelo, { conSvg = false } = {}) => {
   const primerNombre = textoDelDato(modelo?.primerNombre);
   const saludo = primerNombre === '' ? 'Buen día.' : `Buen día, ${primerNombre}.`;
   const numero = textoDelDato(modelo?.numero);
-  const agenda = listaDelDato(modelo?.agenda);
+  const agenda = gruposDelDato(modelo?.agenda_grupos);
   const propuestas = listaDelDato(modelo?.propuestas);
   const url = textoDelDato(modelo?.url);
   const nota = notaDelDatoQuincena(modelo?.nombreDelBot);
@@ -1087,7 +1100,7 @@ export const datoQuincenaTemplate = (modelo, { conSvg = false } = {}) => {
       saludo,
       [textoDelDato(modelo?.titulo), ...(numero === '' ? [] : [numero]), textoDelDato(modelo?.bajada)].join('\n'),
       pieDeLaInfografia(conElSvg),
-      ...(agenda.length > 0 ? [`Agenda de la quincena\n${agenda.map(eventoEnTexto).join('\n\n')}`] : []),
+      ...(agenda.length > 0 ? [`Agenda de la quincena\n${agenda.map(grupoEnTexto).join('\n\n')}`] : []),
       ...propuestas.map(textoDeLaPropuesta),
       `${BOTON_DEL_DATO_QUINCENA}: ${url}`,
       nota

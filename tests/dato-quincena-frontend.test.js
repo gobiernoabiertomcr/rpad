@@ -167,10 +167,15 @@ describe('dato-quincena.js: las respuestas del servidor (spec, 9) son el contrat
   it('el detalle: con su id y los textos ya armados, la agenda, las propuestas y los archivos', () => {
     for (const detalle of [DETALLE(), DETALLE_CON_REPETICION()]) {
       assert.deepEqual(Object.keys(detalle), [
-        'id', 'fecha_texto', 'marca', 'numero', 'titulo', 'nota_archivo', 'llegada', 'correo', 'cantidad', 'agenda', 'propuestas',
-        'archivos'
+        'id', 'fecha_texto', 'marca', 'numero', 'titulo', 'nota_archivo', 'llegada', 'correo', 'cantidad', 'agenda', 'agenda_grupos',
+        'propuestas', 'archivos'
       ]);
       for (const evento of detalle.agenda) assert.deepEqual(Object.keys(evento), ['fecha_texto', 'titulo', 'detalle', 'url', 'etiqueta']);
+      // La agenda en sus grupos (spec 2026-11-14-dato-quincena-agenda-grupos): { titulo, eventos }, cada evento sin etiqueta
+      for (const grupo of detalle.agenda_grupos) {
+        assert.deepEqual(Object.keys(grupo), ['titulo', 'eventos']);
+        for (const evento of grupo.eventos) assert.deepEqual(Object.keys(evento), ['fecha_texto', 'titulo', 'detalle', 'url']);
+      }
       for (const propuesta of detalle.propuestas) {
         assert.deepEqual(Object.keys(propuesta), [
           'orden_texto', 'etiquetas', 'principal', 'titulo', 'cifra_clave', 'dataset', 'foto', 'repeticion', 'notas_validacion',
@@ -483,33 +488,74 @@ describe('dato-quincena.js: el detalle (spec, 10)', () => {
     }
   });
 
-  it('con agenda: cada evento con su fecha, título, detalle y enlace; sin agenda, ese bloque no va', () => {
-    const [evento] = DETALLE().agenda;
-    const agenda = ctx.htmlDeLaAgenda([evento]);
-    assert.match(agenda, /^<section class="dq-agenda" aria-labelledby="dq-agenda-titulo"><h3 class="dq-seccion-titulo" id="dq-agenda-titulo">Agenda de la quincena<\/h3>/);
+  // spec 2026-11-14-dato-quincena-agenda-grupos: la agenda en sus grupos, como los arma el servidor (agenda_grupos): cada uno con su
+  // título en un h4 y su lista, en su orden; sin la pastilla «Efeméride» (el título del grupo ya lo dice)
+  const GRUPOS = () => [
+    { titulo: 'Lo que pasó', eventos: [
+      { fecha_texto: '06/11/2026', titulo: 'Feria inventada', detalle: 'Un evento que ya pasó.', url: 'https://datos.ejemplo.gob.ar/feria' }
+    ] },
+    { titulo: 'Lo que viene', eventos: [
+      { fecha_texto: '14/11/2026', titulo: 'Festival inventado', detalle: 'El día de la edición.', url: 'https://datos.ejemplo.gob.ar/festival' },
+      { fecha_texto: '23/11/2026', titulo: 'Jornada inventada', detalle: 'Más adelante.', url: 'https://datos.ejemplo.gob.ar/jornada' }
+    ] },
+    { titulo: 'Efemérides', eventos: [
+      { fecha_texto: '18/11/2026', titulo: 'Día inventado', detalle: 'Una efeméride inventada.', url: 'https://datos.ejemplo.gob.ar/dia' }
+    ] }
+  ];
+  const titulosDeLosGrupos = (html) => [...html.matchAll(/<h4 class="dq-agenda-grupo">([^<]*)<\/h4>/g)].map((encontrado) => encontrado[1]);
+
+  it('con agenda: el título de la sección y cada grupo con su título (h4) y su lista, en el orden del servidor', () => {
+    const agenda = ctx.htmlDeLaAgenda(GRUPOS());
+    assert.match(agenda, /^<section class="dq-agenda" aria-labelledby="dq-agenda-titulo"><h3 class="dq-seccion-titulo" id="dq-agenda-titulo">Agenda de la quincena<\/h3><h4 class="dq-agenda-grupo">Lo que pasó<\/h4><ul><li>/);
+    assert.deepEqual(titulosDeLosGrupos(agenda), ['Lo que pasó', 'Lo que viene', 'Efemérides']);
+    assert.equal(cuantas(agenda, /<ul>/g), 3);
+    // Cada evento en la lista de su grupo, en el orden en que llegó
+    const dias = [...agenda.matchAll(/<span class="dq-dia">([^<]*)<\/span>/g)].map((encontrado) => encontrado[1]);
+    assert.deepEqual(dias, ['06/11/2026', '14/11/2026', '23/11/2026', '18/11/2026']);
+    assert.ok(agenda.indexOf('Lo que viene</h4>') < agenda.indexOf('Festival inventado')
+      && agenda.indexOf('Jornada inventada') < agenda.indexOf('Efemérides</h4>'));
+    assert.deepEqual(titulosDeLosGrupos(ctx.htmlDeLaAgenda(GRUPOS().reverse())), ['Efemérides', 'Lo que viene', 'Lo que pasó']);
+    // Los del fixture: la edición del 02/11, con el evento que viene y la efeméride; la del 16/11, con el mismo evento ya pasado
+    assert.deepEqual(titulosDeLosGrupos(ctx.htmlDeLaAgenda(DETALLE().agenda_grupos)), ['Lo que viene', 'Efemérides']);
+    assert.deepEqual(titulosDeLosGrupos(ctx.htmlDeLaAgenda(DETALLE_CON_REPETICION().agenda_grupos)), ['Lo que pasó', 'Efemérides']);
+  });
+
+  it('cada evento con su fecha, título, detalle y enlace, como antes; sin la pastilla «Efeméride»', () => {
+    const [{ eventos: [evento] }] = DETALLE().agenda_grupos;
+    const agenda = ctx.htmlDeLaAgenda(DETALLE().agenda_grupos);
     assert.ok(agenda.includes('<span class="dq-dia">10/11/2026</span>'));
-    assert.ok(agenda.includes(`<b>${esc(evento.titulo)}</b>`));
-    assert.ok(agenda.includes(esc(evento.detalle)));
+    assert.ok(agenda.includes(`<span class="dq-evento"><b>${esc(evento.titulo)}</b> <span>${esc(evento.detalle)}</span> `));
     assert.ok(agenda.includes(`<a href="${esc(evento.url)}" target="_blank" rel="noopener noreferrer">Ver<span class="visualmente-oculto"> ${esc(evento.titulo)}</span></a>`));
-    assert.ok(ctx.htmlDelDetalle(DETALLE()).includes(ctx.htmlDeLaAgenda(DETALLE().agenda)), 'en el detalle');
-    assert.equal(ctx.htmlDeLaAgenda([]), '');
-    assert.equal(ctx.htmlDeLaAgenda(null), '');
-    assert.ok(!ctx.htmlDelDetalle({ ...DETALLE(), agenda: [] }).includes('dq-agenda'));
+    assert.ok(!agenda.includes('dq-etiqueta'), 'sin pastillas');
+    assert.ok(!agenda.includes('>Efeméride<'));
+    assert.ok(!ctx.htmlDelDetalle(DETALLE()).includes('dq-etiqueta-agenda'));
     // Una dirección que no es https://, sin enlace
-    const sinEnlace = ctx.htmlDeLaAgenda([{ ...evento, url: 'javascript:alert(1)' }]);
+    const sinEnlace = ctx.htmlDeLaAgenda([{ titulo: 'Lo que viene', eventos: [{ ...evento, url: 'javascript:alert(1)' }] }]);
     assert.ok(!sinEnlace.includes('<a '), sinEnlace);
     assert.ok(!sinEnlace.includes('javascript:'), sinEnlace);
   });
 
-  it('en la agenda, la etiqueta suave «Efeméride» (texto, no solo color) en los ítems que la traen', () => {
-    const [sin, con] = DETALLE().agenda;
-    assert.equal(sin.etiqueta, null);
-    assert.equal(con.etiqueta, 'Efeméride');
-    const html = ctx.htmlDeLaAgenda([sin, con]);
-    assert.equal(cuantas(html, /dq-etiqueta-agenda/g), 1);
-    assert.ok(html.includes('<span class="dq-etiqueta-agenda">Efeméride</span>'));
-    const raro = ctx.htmlDeLaAgenda([{ ...con, etiqueta: XSS }]);
-    assert.ok(raro.includes(`<span class="dq-etiqueta-agenda">${XSS_ESCAPADO}</span>`) && !raro.includes('<img'));
+  it('en el detalle, la agenda de agenda_grupos; sin grupos, o con grupos sin eventos, ese bloque no va', () => {
+    assert.ok(ctx.htmlDelDetalle(DETALLE()).includes(ctx.htmlDeLaAgenda(DETALLE().agenda_grupos)), 'en el detalle');
+    assert.ok(!ctx.htmlDelDetalle({ ...DETALLE(), agenda_grupos: [] }).includes('dq-agenda'));
+    assert.ok(ctx.htmlDelDetalle({ ...DETALLE(), agenda: [] }).includes('<section class="dq-agenda"'), 'sale de agenda_grupos, no de agenda');
+    assert.equal(ctx.htmlDeLaAgenda([]), '');
+    assert.equal(ctx.htmlDeLaAgenda(null), '');
+    assert.equal(ctx.htmlDeLaAgenda([{ titulo: 'Lo que pasó', eventos: [] }]), '');
+    const sinElPrimero = GRUPOS();
+    sinElPrimero[0].eventos = [];
+    assert.deepEqual(titulosDeLosGrupos(ctx.htmlDeLaAgenda(sinElPrimero)), ['Lo que viene', 'Efemérides']);
+  });
+
+  it('en la agenda, todo texto del servidor va escapado: el título del grupo y cada evento', () => {
+    const raro = ctx.htmlDeLaAgenda([{
+      titulo: XSS, eventos: [{ fecha_texto: XSS, titulo: XSS, detalle: XSS, url: 'https://datos.ejemplo.gob.ar/a?b="c"&d=<e>' }]
+    }]);
+    assert.ok(!raro.includes('<img'), raro);
+    assert.ok(raro.includes(`<h4 class="dq-agenda-grupo">${XSS_ESCAPADO}</h4>`));
+    assert.ok(raro.includes(`<span class="dq-dia">${XSS_ESCAPADO}</span>`));
+    assert.ok(raro.includes(`<b>${XSS_ESCAPADO}</b> <span>${XSS_ESCAPADO}</span>`));
+    assert.ok(raro.includes('href="https://datos.ejemplo.gob.ar/a?b=&quot;c&quot;&amp;d=&lt;e&gt;"'));
   });
 
   it('la infografía se pide desde un blob: (el lugar con su ruta y su texto alternativo) y la agenda va antes de las propuestas', () => {

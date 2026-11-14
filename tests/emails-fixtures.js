@@ -24,23 +24,37 @@ export const AVISO_DE_RESTITUCION = Object.freeze({
 
 // El modelo del mail del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 10), con la forma que arma modeloDelMail
 // (services/datoQuincenaCorreoReglas.js): una regular inventada de dos propuestas, la primera la principal y con notas para
-// validar, y una agenda con un evento y una efeméride (el segundo renglón de su detalle es un salto de línea); ninguna propuesta
-// repite otra edición (repeticion null, spec 2026-11-14-dato-quincena-v1-3). Ningún dato sale de una edición real. Cada llamada
-// arma objetos nuevos: un test puede cambiarlos sin tocar el próximo
+// validar, y la agenda en sus tres grupos (spec 2026-11-14-dato-quincena-agenda-grupos), con un evento en cada uno (el segundo
+// renglón del detalle de la efeméride es un salto de línea); ninguna propuesta repite otra edición (repeticion null, spec
+// 2026-11-14-dato-quincena-v1-3). Ningún dato sale de una edición real. Cada llamada arma objetos nuevos: un test puede cambiarlos
+// sin tocar el próximo
 export const modeloDelDatoQuincena = () => ({
   asunto: 'Dato de la Quincena - 09/11/2026',
   primerNombre: 'Persona',
   titulo: 'Dato de la Quincena - 09/11/2026',
   numero: 'Edición N.º 1',
   bajada: '2 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas.',
-  agenda: [
+  agenda_grupos: [
     {
-      fecha_texto: '12/11/2026', titulo: 'Jornada inventada', detalle: 'Un evento inventado para las pruebas.',
-      url: 'https://datos.ejemplo.test/agenda/jornada', etiqueta: null
+      titulo: 'Lo que pasó',
+      eventos: [{
+        fecha_texto: '05/11/2026', titulo: 'Feria inventada', detalle: 'Un evento que ya pasó.',
+        url: 'https://datos.ejemplo.test/agenda/feria'
+      }]
     },
     {
-      fecha_texto: '20/11/2026', titulo: 'Efeméride inventada', detalle: 'Una fecha inventada.\nCon un segundo renglón.',
-      url: 'https://datos.ejemplo.test/agenda/efemeride', etiqueta: 'Efeméride'
+      titulo: 'Lo que viene',
+      eventos: [{
+        fecha_texto: '12/11/2026', titulo: 'Jornada inventada', detalle: 'Un evento inventado para las pruebas.',
+        url: 'https://datos.ejemplo.test/agenda/jornada'
+      }]
+    },
+    {
+      titulo: 'Efemérides',
+      eventos: [{
+        fecha_texto: '20/11/2026', titulo: 'Efeméride inventada', detalle: 'Una fecha inventada.\nCon un segundo renglón.',
+        url: 'https://datos.ejemplo.test/agenda/efemeride'
+      }]
     }
   ],
   propuestas: [

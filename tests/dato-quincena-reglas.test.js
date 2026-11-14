@@ -14,7 +14,7 @@ import {
   erroresDeLaEdicion, huellaDelPaquete, estadoDelToken,
   fechaLarga, marcaDePiloto, horaArgentina, diaArgentino, textoDeLlegada, textoDelCorreo, textoDeCantidad, textoDelResto,
   textoDelNumero, tamanoTexto, fotoDelDataset, textoParaCopiar, borradorParaCopiar, filasDeLaEdicion, avisosDeLaEdicion,
-  reciboDe, anioDeLaLista, nombreDeLaEdicion, TIPO_DE_DESCARGA, itemDeLaLista, detalleDeLaEdicion, fechasPrevias
+  reciboDe, anioDeLaLista, nombreDeLaEdicion, TIPO_DE_DESCARGA, itemDeLaLista, detalleDeLaEdicion, fechasPrevias, gruposDeLaAgenda
 } from '../services/datoQuincenaReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
 import { RPAD_URL } from '../services/emailTemplates.js';
@@ -2382,6 +2382,107 @@ describe('itemDeLaLista', () => {
   });
 });
 
+// spec 2026-11-14-dato-quincena-agenda-grupos: la agenda en tres grupos, «Lo que pasó» (los eventos anteriores a la edición), «Lo que
+// viene» (los del día de la edición o después) y «Efemérides» (cualquiera sea su fecha), cada uno por fecha y, con la misma fecha,
+// en el orden de llegada; sin los vacíos. Los eventos, inventados
+describe('gruposDeLaAgenda', () => {
+  // Un evento inventado de la agenda: sin tipo, la clave no va (la forma de antes del contrato v1.3)
+  const eventoDeAgenda = (titulo, fecha, tipo) => ({
+    titulo, fecha, detalle: `Detalle inventado de ${titulo}.`, url: `https://datos.ejemplo.gob.ar/agenda/${encodeURIComponent(titulo)}`,
+    ...(tipo === undefined ? {} : { tipo })
+  });
+  // Cómo queda en un grupo: la fecha dd/mm/aaaa y los textos tal como llegaron, sin etiqueta
+  const enElGrupo = ({ titulo, fecha, detalle, url }) => ({
+    fecha_texto: `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}/${fecha.slice(0, 4)}`, titulo, detalle, url
+  });
+  const titulosPorGrupo = (grupos) => grupos.map((grupo) => [grupo.titulo, grupo.eventos.map((evento) => evento.titulo)]);
+
+  // La forma del piloto 14 (edición del 14/11/2026), como la manda Datito: lo que pasó, lo que viene y las efemérides, con dos
+  // eventos del mismo día de la edición. Los títulos y los detalles, inventados
+  const EDICION_DEL_PILOTO = '2026-11-14';
+  const agendaDelPiloto = () => [
+    eventoDeAgenda('Feria inventada', '2026-11-06', 'evento'),
+    eventoDeAgenda('Aniversario inventado', '2026-11-14', 'evento'),
+    eventoDeAgenda('Festival inventado', '2026-11-14', 'evento'),
+    eventoDeAgenda('Noche inventada', '2026-11-21', 'evento'),
+    eventoDeAgenda('Fin de semana inventado', '2026-11-23', 'evento'),
+    eventoDeAgenda('Día inventado de los mapas', '2026-11-18', 'efemeride'),
+    eventoDeAgenda('Día inventado de noviembre', '2026-11-20', 'efemeride'),
+    eventoDeAgenda('Otro día inventado', '2026-11-25', 'efemeride'),
+    eventoDeAgenda('Un día inventado más', '2026-11-26', 'efemeride')
+  ];
+
+  it('los tres grupos con la edición del piloto 14, en su orden y con sus títulos', () => {
+    const agenda = agendaDelPiloto();
+    assert.deepEqual(gruposDeLaAgenda(agenda, EDICION_DEL_PILOTO), [
+      { titulo: 'Lo que pasó', eventos: [enElGrupo(agenda[0])] },
+      { titulo: 'Lo que viene', eventos: agenda.slice(1, 5).map(enElGrupo) },
+      { titulo: 'Efemérides', eventos: agenda.slice(5).map(enElGrupo) }
+    ]);
+    const [{ eventos: [evento] }] = gruposDeLaAgenda(agenda, EDICION_DEL_PILOTO);
+    assert.deepEqual(Object.keys(evento), ['fecha_texto', 'titulo', 'detalle', 'url']);
+    assert.equal(evento.fecha_texto, '06/11/2026');
+  });
+
+  it('dentro de cada grupo, por fecha de la más vieja a la más nueva; con la misma fecha, en el orden en que llegaron', () => {
+    const agenda = [
+      eventoDeAgenda('Viene 25', '2026-11-25'),
+      eventoDeAgenda('Viene 20 primero', '2026-11-20'),
+      eventoDeAgenda('Efeméride 30', '2026-11-30', 'efemeride'),
+      eventoDeAgenda('Pasó 12 primero', '2026-11-12', 'evento'),
+      eventoDeAgenda('Viene 20 segundo', '2026-11-20', 'evento'),
+      eventoDeAgenda('Efeméride 18', '2026-11-18', 'efemeride'),
+      eventoDeAgenda('Pasó 03', '2026-11-03'),
+      eventoDeAgenda('Pasó 12 segundo', '2026-11-12'),
+      eventoDeAgenda('Efeméride 18 otra', '2026-11-18', 'efemeride'),
+      eventoDeAgenda('Viene en diciembre', '2026-12-02')
+    ];
+    assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-11-16')), [
+      ['Lo que pasó', ['Pasó 03', 'Pasó 12 primero', 'Pasó 12 segundo']],
+      ['Lo que viene', ['Viene 20 primero', 'Viene 20 segundo', 'Viene 25', 'Viene en diciembre']],
+      ['Efemérides', ['Efeméride 18', 'Efeméride 18 otra', 'Efeméride 30']]
+    ]);
+  });
+
+  it('un evento del mismo día de la edición va a «Lo que viene»; uno del día anterior, a «Lo que pasó»', () => {
+    const agenda = [eventoDeAgenda('Hoy', '2026-11-16'), eventoDeAgenda('Ayer', '2026-11-15')];
+    assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-11-16')),
+      [['Lo que pasó', ['Ayer']], ['Lo que viene', ['Hoy']]]);
+  });
+
+  it('una efeméride ya pasada va a «Efemérides», no a «Lo que pasó»', () => {
+    const agenda = [eventoDeAgenda('Efeméride pasada', '2026-11-02', 'efemeride'), eventoDeAgenda('Efeméride de hoy', '2026-11-16', 'efemeride')];
+    assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-11-16')),
+      [['Efemérides', ['Efeméride pasada', 'Efeméride de hoy']]]);
+  });
+
+  it('sin tipo es un evento, como con tipo evento', () => {
+    const agenda = [
+      eventoDeAgenda('Sin tipo, pasó', '2026-11-10'), eventoDeAgenda('Con tipo, pasó', '2026-11-10', 'evento'),
+      eventoDeAgenda('Sin tipo, viene', '2026-11-20'), eventoDeAgenda('Con tipo, viene', '2026-11-20', 'evento')
+    ];
+    assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-11-16')), [
+      ['Lo que pasó', ['Sin tipo, pasó', 'Con tipo, pasó']],
+      ['Lo que viene', ['Sin tipo, viene', 'Con tipo, viene']]
+    ]);
+  });
+
+  it('un grupo vacío no va; sin agenda, una lista vacía', () => {
+    assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda([eventoDeAgenda('Solo efeméride', '2026-11-20', 'efemeride')], '2026-11-16')),
+      [['Efemérides', ['Solo efeméride']]]);
+    assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda([eventoDeAgenda('Solo pasó', '2026-11-01')], '2026-11-16')),
+      [['Lo que pasó', ['Solo pasó']]]);
+    assert.deepEqual(gruposDeLaAgenda([], '2026-11-16'), []);
+  });
+
+  it('no cambia la agenda que recibe', () => {
+    const agenda = agendaDelPiloto().reverse();
+    const antes = structuredClone(agenda);
+    gruposDeLaAgenda(agenda, EDICION_DEL_PILOTO);
+    assert.deepEqual(agenda, antes);
+  });
+});
+
 describe('detalleDeLaEdicion', () => {
   // La edición de prueba con una efeméride en la agenda (después del evento de prueba, que no trae tipo) y con el SVG, como la
   // guarda el POST (metadata, el texto de partesDePrueba), con el id 12 de las respuestas de la página, la primera regular
@@ -2667,6 +2768,30 @@ describe('detalleDeLaEdicion', () => {
       motivo: 'Hecho actual: Esta quincena el tema volvió a estar en agenda.',
       id_edicion: null
     });
+  });
+
+  // spec 2026-11-14-dato-quincena-agenda-grupos: agenda_grupos, después de agenda, con la fecha de la edición; agenda queda igual,
+  // para una pestaña abierta con la página anterior
+  it('agenda_grupos: los grupos de la agenda con la fecha de la edición, después de agenda, que queda igual', () => {
+    const d = detalle();
+    assert.equal(Object.keys(d).indexOf('agenda_grupos'), Object.keys(d).indexOf('agenda') + 1);
+    // La edición de prueba es del 02/11: el evento del 10/11 viene
+    assert.deepEqual(d.agenda_grupos, [
+      { titulo: 'Lo que viene', eventos: [{
+        fecha_texto: '10/11/2026', titulo: 'Evento de prueba', detalle: 'Un evento inventado para las pruebas.',
+        url: 'https://datos.ejemplo.gob.ar/agenda/evento-de-prueba'
+      }] },
+      { titulo: 'Efemérides', eventos: [{
+        fecha_texto: '20/11/2026', titulo: 'Efeméride de prueba', detalle: 'Una efeméride inventada para las pruebas.',
+        url: 'https://datos.ejemplo.gob.ar/agenda/efemeride-de-prueba'
+      }] }
+    ]);
+    assert.deepEqual(d.agenda_grupos, gruposDeLaAgenda(edicionDelDetalle().agenda, FECHA_DE_PRUEBA));
+    assert.deepEqual(d.agenda.map((e) => [e.titulo, e.etiqueta]), [['Evento de prueba', null], ['Efeméride de prueba', 'Efeméride']]);
+    // La del 16/11: el mismo evento ya pasó
+    assert.deepEqual(detalleConRepeticion().agenda_grupos.map((g) => [g.titulo, g.eventos.map((e) => e.titulo)]),
+      [['Lo que pasó', ['Evento de prueba']], ['Efemérides', ['Efeméride de prueba']]]);
+    assert.deepEqual(detalle({ edicion: edicionDePrueba({ agenda: [] }) }).agenda_grupos, []);
   });
 
   it('id_edicion: solo si la edición previa está en las previas y es anterior; sin previas, null', () => {
