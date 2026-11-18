@@ -61,6 +61,44 @@ export const repeticionDePrueba = (cambios = {}) => ({
   detalle: 'Llegaron los datos de octubre, que la edición anterior no tenía.', ...cambios
 });
 
+// Una propuesta de dataset nuevo (spec 2026-11-18-dato-quincena-propuestas-datasets, 1), válida e inventada: la primera de la lista,
+// de valor alto y riesgo bajo (sin anonimización). La edición de prueba no trae propuestas_datasets: tiene la forma de la v1.3.
+// cambios pisa sus claves
+export const propuestaDatasetDePrueba = (cambios = {}) => ({
+  numero: 1,
+  titulo: 'Un dataset nuevo inventado',
+  origenes: ['Agenda', 'Pedidos de acceso'],
+  justificacion: 'Una justificación inventada: el tema aparece en la agenda de prueba y en dos pedidos de acceso inventados.',
+  datasets_relacionados: [
+    { ckan_slug: 'prueba-a', nombre: 'Dataset de prueba A' },
+    { ckan_slug: 'prueba_relacionada-2', nombre: 'Dataset relacionado de prueba' }
+  ],
+  valor: 'Alto',
+  riesgo: 'Bajo',
+  formato_sugerido: 'CSV',
+  campos_sugeridos: ['fecha', 'barrio', 'cantidad'],
+  anonimizacion: null,
+  fuentes: ['https://datos.ejemplo.gob.ar/fuentes/dataset-nuevo-de-prueba.csv'],
+  ...cambios
+});
+
+// Tres propuestas de datasets válidas, una de cada prioridad (spec 2026-11-18-dato-quincena-propuestas-datasets, 2): valor alto y
+// riesgo bajo (la de prueba, «Prioridad alta»); valor medio y riesgo medio, sin datasets relacionados («Publicar si hay
+// recursos»); y valor alto y riesgo alto, con los cuatro orígenes, una anonimización de dos renglones y cinco fuentes («Evaluar
+// riesgos»). Son las del detalle con datasets de las respuestas de la página
+export const propuestasDatasetsDePrueba = () => [
+  propuestaDatasetDePrueba(),
+  propuestaDatasetDePrueba({
+    numero: 2, titulo: 'Otro dataset nuevo inventado', origenes: ['Noticias'], datasets_relacionados: [], valor: 'Medio',
+    riesgo: 'Medio', formato_sugerido: 'GeoJSON', anonimizacion: 'Agrupar por barrio, sin direcciones exactas.'
+  }),
+  propuestaDatasetDePrueba({
+    numero: 3, titulo: 'Un tercer dataset nuevo inventado', origenes: ['Cruce de datasets', 'Pedidos de acceso', 'Agenda', 'Noticias'],
+    valor: 'Alto', riesgo: 'Alto', formato_sugerido: 'JSON', anonimizacion: 'Contar por mes y por zona.\nNunca por persona.',
+    fuentes: Array.from({ length: 5 }, (_, i) => `https://datos.ejemplo.gob.ar/${i}.csv`)
+  })
+];
+
 const correoDePrueba = () => Buffer.from(
   'El dato de la quincena (prueba)\n\nUn correo inventado para las pruebas del RPAD: ñandú, cigüeña y 1.234 casos.\n', 'utf8'
 );

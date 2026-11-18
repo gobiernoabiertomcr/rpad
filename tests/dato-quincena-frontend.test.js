@@ -164,12 +164,23 @@ describe('dato-quincena.js: las respuestas del servidor (spec, 9) son el contrat
     assert.deepEqual(LISTA_VACIA(), { anios: [], anio: null, ediciones: [] });
   });
 
-  it('el detalle: con su id y los textos ya armados, la agenda, las propuestas y los archivos', () => {
-    for (const detalle of [DETALLE(), DETALLE_CON_REPETICION()]) {
+  it('el detalle: con su id y los textos ya armados, la agenda, las propuestas, las de datasets y los archivos', () => {
+    const conDatasets = [respuesta('detalle_con_datasets').data, respuesta('detalle_datasets_vacia').data];
+    for (const detalle of [DETALLE(), DETALLE_CON_REPETICION(), ...conDatasets]) {
       assert.deepEqual(Object.keys(detalle), [
         'id', 'fecha_texto', 'marca', 'numero', 'titulo', 'nota_archivo', 'llegada', 'correo', 'cantidad', 'agenda', 'agenda_grupos',
-        'propuestas', 'archivos'
+        'propuestas', 'propuestas_datasets', 'archivos'
       ]);
+      // Las propuestas de datasets (spec 2026-11-18-dato-quincena-propuestas-datasets, 4): null sin la clave, [] o cada una con
+      // sus textos, la prioridad { clave, texto } y los relacionados { nombre, url }
+      for (const propuesta of detalle.propuestas_datasets ?? []) {
+        assert.deepEqual(Object.keys(propuesta), [
+          'numero_texto', 'titulo', 'origenes', 'justificacion', 'prioridad', 'valor_y_riesgo', 'formato', 'campos', 'anonimizacion',
+          'datasets_relacionados', 'fuentes'
+        ]);
+        assert.deepEqual(Object.keys(propuesta.prioridad), ['clave', 'texto']);
+        for (const relacionado of propuesta.datasets_relacionados) assert.deepEqual(Object.keys(relacionado), ['nombre', 'url']);
+      }
       for (const evento of detalle.agenda) assert.deepEqual(Object.keys(evento), ['fecha_texto', 'titulo', 'detalle', 'url', 'etiqueta']);
       // La agenda en sus grupos (spec 2026-11-14-dato-quincena-agenda-grupos): { titulo, eventos }, cada evento sin etiqueta
       for (const grupo of detalle.agenda_grupos) {
@@ -193,6 +204,9 @@ describe('dato-quincena.js: las respuestas del servidor (spec, 9) son el contrat
         ['infografia_png', 'infografia_svg', 'correo_texto', 'calculos', 'metadata']);
     }
     assert.deepEqual(DETALLE().propuestas.map((p) => p.repeticion), [null, null]);
+    assert.deepEqual([DETALLE().propuestas_datasets, DETALLE_CON_REPETICION().propuestas_datasets], [null, null]);
+    assert.deepEqual(conDatasets.map((d) => d.propuestas_datasets.map((p) => p.prioridad.clave)),
+      [['alta', 'si_hay_recursos', 'evaluar'], []]);
     assert.deepEqual(DETALLE_CON_REPETICION().propuestas.map((p) => p.repeticion?.id_edicion ?? null), [12, null, null]);
     assert.deepEqual(DETALLE_CON_REPETICION().propuestas.map((p) => p.repeticion === null), [false, true, false]);
     assert.deepEqual(respuesta('no_existe'), { success: false, error: 'No existe esa edición.' });
@@ -1453,5 +1467,100 @@ describe('dato-quincena.html: la página', () => {
     assert.match(estilo, /\.dq-pagina input:focus-visible, \.dq-pagina select:focus-visible/);
     // En un teléfono, la tabla sin la columna del correo
     assert.match(estilo, /@media \(max-width: 560px\) \{[\s\S]*?\.dq-tabla \.dq-col-correo \{ display: none; \}/);
+  });
+});
+
+// spec 2026-11-18-dato-quincena-propuestas-datasets, 5: «Propuestas de datasets nuevos», al final de la columna
+describe('dato-quincena.js: las propuestas de datasets nuevos (el detalle)', () => {
+  const CON_DATASETS = () => respuesta('detalle_con_datasets').data;
+  const VACIA = () => respuesta('detalle_datasets_vacia').data;
+  const tarjetas = (html) => html.split('<li class="dq-nuevo">').slice(1);
+
+  it('con null (la edición sin la clave) no hay sección', () => {
+    assert.equal(DETALLE().propuestas_datasets, null);
+    assert.ok(!ctx.htmlDelDetalle(DETALLE()).includes('dq-nuevos'));
+    assert.equal(ctx.htmlDeLosDatasetsNuevos(null), '');
+    assert.equal(ctx.htmlDeLosDatasetsNuevos(undefined), '');
+    assert.equal(ctx.htmlDeLosDatasetsNuevos('texto'), '');
+  });
+
+  it('con [] va el título y una línea, después de las propuestas', () => {
+    const html = ctx.htmlDelDetalle(VACIA());
+    assert.ok(html.includes('<section class="dq-nuevos"'));
+    assert.match(html, /<h3 class="dq-seccion-titulo"[^>]*>Propuestas de datasets nuevos<\/h3>/);
+    assert.ok(html.includes('<p class="dq-nuevos-vacia">Esta quincena no hay propuestas de datasets.</p>'));
+    assert.ok(html.indexOf('</ol></section><section class="dq-nuevos"') > 0);
+    assert.ok(!html.includes('<li class="dq-nuevo">'));
+  });
+
+  it('una tarjeta por propuesta, en orden, con las piezas en su orden', () => {
+    const html = ctx.htmlDelDetalle(CON_DATASETS());
+    assert.ok(html.indexOf('</ol></section><section class="dq-nuevos"') > 0);
+    const lista = tarjetas(html);
+    assert.equal(lista.length, 3);
+    lista.forEach((t, i) => assert.ok(t.includes(`Dataset nuevo ${i + 1}<`)));
+    const t = lista[0];
+    const orden = ['dq-orden', '<h4 class="dq-nuevo-titulo">', 'dq-prio-alta', 'Valor alto · Riesgo bajo', 'Por qué abrirlo', 'Formato sugerido',
+      'Campos sugeridos', 'Datasets relacionados en el portal', 'Fuentes'].map((x) => t.indexOf(x));
+    assert.ok(orden.every((n) => n >= 0), String(orden));
+    assert.deepEqual(orden, [...orden].sort((a, b) => a - b));
+    assert.ok(t.includes('<span class="dq-etiqueta">Agenda</span><span class="dq-etiqueta">Pedidos de acceso</span>'));
+    assert.ok(t.includes('<span class="dq-formato">CSV</span>'));
+    assert.ok(t.includes('<code>barrio</code>'));
+    assert.ok(!t.includes('Cómo anonimizar'));
+  });
+
+  it('la prioridad lleva su clase, su ícono y su texto; la caja de anonimizar va solo si hay', () => {
+    const [a, b, c] = tarjetas(ctx.htmlDelDetalle(CON_DATASETS()));
+    assert.match(a, /dq-etiqueta dq-prio-alta"><svg aria-hidden="true"[^>]*>.*<\/svg>Prioridad alta</);
+    assert.match(b, /dq-prio-si_hay_recursos"><svg aria-hidden="true"/);
+    assert.ok(b.includes('Publicar si hay recursos'));
+    assert.match(c, /dq-prio-evaluar"><svg aria-hidden="true"/);
+    assert.ok(!a.includes('Cómo anonimizar'));
+    assert.ok(b.includes('dq-validar dq-anonimizar') && b.includes('Cómo anonimizar'));
+    assert.ok(c.includes('<p class="dq-texto">Contar por mes y por zona.\nNunca por persona.</p>'));
+    assert.ok(!b.includes('Datasets relacionados en el portal'));
+    assert.ok(c.includes('Datasets relacionados en el portal'));
+    assert.equal(cuantas(c, /<li><a href="https:\/\/datos\.ejemplo\.gob\.ar\/\d\.csv"/g), 5);
+  });
+
+  it('una prioridad con una clave desconocida no lleva clase ni ícono, pero sí su texto', () => {
+    for (const clave of ['__proto__', 'constructor', 'urgente', 7, null]) {
+      const lista = CON_DATASETS().propuestas_datasets.slice(0, 1);
+      lista[0].prioridad = { clave, texto: 'Texto del servidor' };
+      const html = ctx.htmlDeLosDatasetsNuevos(lista);
+      assert.ok(html.includes('<span class="dq-etiqueta">Texto del servidor</span>'), String(clave));
+      assert.ok(!html.includes('dq-prio-'), String(clave));
+    }
+  });
+
+  it('todo texto del servidor sale escapado y un enlace que no es https:// va sin enlace', () => {
+    const lista = CON_DATASETS().propuestas_datasets.slice(2);
+    const t = lista[0];
+    Object.assign(t, { numero_texto: XSS, titulo: XSS, origenes: [XSS], justificacion: XSS, formato: XSS, campos: [XSS], anonimizacion: XSS,
+      valor_y_riesgo: XSS, fuentes: ['http://x.test/a', 'javascript:alert(1)', XSS] });
+    t.prioridad = { clave: 'evaluar', texto: XSS };
+    t.datasets_relacionados = [{ nombre: XSS, url: 'http://x.test/b' }, { nombre: 'Seguro', url: 'https://x.test/c?a=1&b=2' }];
+    const html = ctx.htmlDeLosDatasetsNuevos(lista);
+    assert.ok(!html.includes('<img'));
+    assert.ok(cuantas(html, new RegExp(XSS_ESCAPADO.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) >= 10);
+    assert.ok(!html.includes('href="http://') && !html.includes('href="javascript'));
+    assert.ok(html.includes('<a href="https://x.test/c?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">Seguro</a>'));
+  });
+
+  it('tolera una propuesta sin forma', () => {
+    assert.doesNotThrow(() => ctx.htmlDeLosDatasetsNuevos([null, {}, { campos: 'x', origenes: null, prioridad: null }]));
+  });
+
+  it('el <style>: tarjeta, texto con saltos, nada se desborda y los colores de la prioridad', () => {
+    const estilo = leer('dato-quincena.html').match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+    for (const clase of ['dq-nuevos', 'dq-nuevos-lista', 'dq-nuevo', 'dq-nuevo-titulo', 'dq-cuad', 'dq-cuad-eje', 'dq-formato', 'dq-campos-min',
+      'dq-anonimizar', 'dq-nuevos-vacia', 'dq-prio-alta', 'dq-prio-si_hay_recursos', 'dq-prio-evaluar']) assert.ok(estilo.includes(`.${clase}`), clase);
+    assert.match(estilo, /\.dq-nuevo \{[^}]*overflow-wrap: anywhere;/);
+    assert.match(estilo, /\.dq-nuevos \{[^}]*background: #EEF6F1;/);
+    assert.match(estilo, /\.dq-prio-alta \{[^}]*var\(--sg-verde-fondo\)[^}]*var\(--sg-verde\)/);
+    assert.match(estilo, /\.dq-prio-si_hay_recursos \{[^}]*var\(--sg-azul-fondo\)[^}]*var\(--sg-azul\)/);
+    assert.match(estilo, /\.dq-prio-evaluar \{[^}]*var\(--sg-sol\)[^}]*var\(--sg-ambar\)/);
+    assert.doesNotMatch(estilo, /(?<![A-Za-z0-9_-])\.ad-/);
   });
 });

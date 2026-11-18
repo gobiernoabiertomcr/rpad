@@ -11,6 +11,9 @@
 // El número de cada regular lo cuenta la consulta: la edición de prueba, la regular más vieja, es la N.º 1.
 // El contrato v1.3 (spec 2026-11-14-dato-quincena-v1-3): un piloto con repeticiones recibe sus avisos (en el 201 y en el 200) y su
 // detalle enlaza la edición previa; la coherencia entre Repite y repeticion da 422.
+// El contrato v1.4 (spec 2026-11-18-dato-quincena-propuestas-datasets): un piloto con tres propuestas de datasets entra con el recibo
+// de siempre y su detalle trae la prioridad de cada una, valor Bajo con riesgo Alto da 422 y una edición sin la clave sigue entrando
+// (con propuestas_datasets null en su detalle).
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -18,7 +21,8 @@ import fs from 'node:fs';
 import http from 'node:http';
 import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, cerrarDb, query, mailpit } from './helpers.js';
 import {
-  FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, partesDePrueba, svgDePrueba, efemerideDePrueba, repeticionDePrueba
+  FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, partesDePrueba, svgDePrueba, efemerideDePrueba, repeticionDePrueba,
+  propuestaDatasetDePrueba
 } from './dato-quincena-fixtures.js';
 import { isDeepStrictEqual } from 'node:util';
 import { MENSAJES_VALIDACION, TOPE_DEL_PEDIDO, TOPES } from '../services/datoQuincenaReglas.js';
@@ -695,6 +699,100 @@ describe('la repetición (contrato v1.3)', () => {
       assert.deepEqual(res.body, { success: false, error: 'La edición tiene errores.', errores: [esperado] });
     }
     assert.deepEqual(await todoLoGuardado(), antes);
+  });
+});
+
+// propuestas_datasets es opcional (spec 2026-11-18-dato-quincena-propuestas-datasets, 1 y 3): con la clave o sin ella, el recibo no
+// cambia. Pilotos del 12/11, para no correr el número de las regulares que miran «las lecturas»
+describe('propuestas_datasets (contrato v1.4)', () => {
+  const FECHA = '2026-11-12';
+  // Tres propuestas, una de cada prioridad: valor alto y riesgo bajo, valor medio y riesgo medio, y valor alto y riesgo alto
+  const tresPropuestas = () => [
+    propuestaDatasetDePrueba(),
+    propuestaDatasetDePrueba({
+      numero: 2, titulo: 'Otro dataset nuevo inventado', origenes: ['Noticias'], datasets_relacionados: [], valor: 'Medio',
+      riesgo: 'Medio', formato_sugerido: 'GeoJSON', anonimizacion: 'Agrupar por barrio, sin direcciones exactas.'
+    }),
+    propuestaDatasetDePrueba({
+      numero: 3, titulo: 'Un tercer dataset nuevo inventado', origenes: ['Cruce de datasets'], valor: 'Alto', riesgo: 'Alto',
+      formato_sugerido: 'JSON', anonimizacion: 'Contar por mes y por zona.\nNunca por persona.'
+    })
+  ];
+  const piloto = (referencia_piloto, cambios = {}) => pilotoDePrueba({ fecha_edicion: FECHA, referencia_piloto, ...cambios });
+  // Los ids del piloto con tres propuestas y del que llegó sin la clave, para su detalle
+  let conTres, sinLaClave;
+
+  it('201 con tres propuestas: el recibo de siempre, sin avisos, y la metadata guardada byte a byte', async () => {
+    const partes = partesDePrueba(piloto('piloto-40', { propuestas_datasets: tresPropuestas() }));
+    const res = await enviar(partes, { ip: 73 });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const recibo = res.body.data;
+    assert.deepEqual(Object.keys(recibo), CLAVES_DEL_RECIBO);
+    assert.equal(recibo.clave, `dq:piloto:${FECHA}:piloto-40`);
+    assert.deepEqual(recibo.avisos, []);
+    assert.deepEqual(recibo.envio, ENVIO_DEL_PILOTO);
+    const guardada = await edicionGuardada(recibo.clave);
+    assert.ok(guardada.metadata.equals(partes.metadata), 'metadata guardada igual byte a byte, con sus propuestas de datasets');
+    conTres = recibo.id;
+  });
+
+  it('una edición sin la clave (la v1.3) sigue dando 201; la misma después con la clave es otro contenido: 409', async () => {
+    const res = await enviar(partesDePrueba(piloto('piloto-41')), { ip: 73 });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(Object.keys(res.body.data), CLAVES_DEL_RECIBO);
+    assert.deepEqual(res.body.data.avisos, []);
+    sinLaClave = res.body.data.id;
+    const antes = await todoLoGuardado();
+    const conLaClave = await enviar(partesDePrueba(piloto('piloto-41', { propuestas_datasets: [] })), { ip: 73 });
+    assert.equal(conLaClave.status, 409, JSON.stringify(conLaClave.body));
+    assert.deepEqual(conLaClave.body, {
+      success: false, error: `Ya hay una edición con la clave dq:piloto:${FECHA}:piloto-41 y otro contenido. No se cambió nada.`
+    });
+    assert.deepEqual(await todoLoGuardado(), antes);
+  });
+
+  it('valor Bajo con riesgo Alto: 422 con su campo y el mensaje que copia Datito, y nada guardado', async () => {
+    const antes = await todoLoGuardado();
+    const propuestas = tresPropuestas();
+    Object.assign(propuestas[0], { valor: 'Bajo', riesgo: 'Alto' });
+    const res = await enviar(partesDePrueba(piloto('piloto-42', { propuestas_datasets: propuestas })), { ip: 73 });
+    assert.equal(res.status, 422, JSON.stringify(res.body));
+    assert.deepEqual(res.body, {
+      success: false,
+      error: 'La edición tiene errores.',
+      errores: [{
+        campo: 'propuestas_datasets[0].riesgo', mensaje: 'Un dataset de valor bajo y riesgo alto no se propone (matriz de priorización).'
+      }]
+    });
+    assert.deepEqual(await todoLoGuardado(), antes);
+    assert.equal(await edicionGuardada(`dq:piloto:${FECHA}:piloto-42`), undefined);
+  });
+
+  // spec 2026-11-18-dato-quincena-propuestas-datasets, 2 y 4: la prioridad y los textos se calculan al leer, de la metadata guardada
+  it('el detalle: con tres, cada una con su prioridad y sus textos, después de las propuestas; sin la clave, null', async () => {
+    const res = await leer(`/dato-quincena/ediciones/${conTres}`, 'lector');
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const claves = Object.keys(res.body.data);
+    assert.equal(claves.indexOf('propuestas_datasets'), claves.indexOf('propuestas') + 1);
+    const datasets = res.body.data.propuestas_datasets;
+    assert.deepEqual(datasets.map((p) => [p.numero_texto, p.prioridad, p.valor_y_riesgo]), [
+      ['Dataset nuevo 1', { clave: 'alta', texto: 'Prioridad alta' }, 'Valor alto · Riesgo bajo'],
+      ['Dataset nuevo 2', { clave: 'si_hay_recursos', texto: 'Publicar si hay recursos' }, 'Valor medio · Riesgo medio'],
+      ['Dataset nuevo 3', { clave: 'evaluar', texto: 'Evaluar riesgos' }, 'Valor alto · Riesgo alto']
+    ]);
+    assert.deepEqual(datasets[0].datasets_relacionados, [
+      { nombre: 'Dataset de prueba A', url: 'https://datos.comodoro.gov.ar/dataset/prueba-a' },
+      { nombre: 'Dataset relacionado de prueba', url: 'https://datos.comodoro.gov.ar/dataset/prueba_relacionada-2' }
+    ]);
+    assert.deepEqual(datasets.map((p) => p.anonimizacion),
+      [null, 'Agrupar por barrio, sin direcciones exactas.', 'Contar por mes y por zona.\nNunca por persona.']);
+    // La forma, la de la respuesta con datasets que lee la página
+    assert.deepEqual(forma(res.body), forma(RESPUESTAS.detalle_con_datasets));
+
+    const sin = await leer(`/dato-quincena/ediciones/${sinLaClave}`, 'lector');
+    assert.equal(sin.status, 200, JSON.stringify(sin.body));
+    assert.equal(sin.body.data.propuestas_datasets, null);
+    assert.deepEqual(forma(sin.body), forma(RESPUESTAS.detalle));
   });
 });
 

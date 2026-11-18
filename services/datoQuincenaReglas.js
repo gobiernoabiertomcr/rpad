@@ -22,6 +22,10 @@
  * Del contrato v1.3 (spec 2026-11-14-dato-quincena-v1-3): las etiquetas Efemeride y Repite, la repetición opcional de cada
  * propuesta (`repeticion`) con su coherencia, y lo que depende de lo archivado (la edición previa y si cita el dataset), que nunca
  * frena una edición: da avisos en el recibo (`fechasPrevias` y `avisosDeLaEdicion`) y el enlace del detalle.
+ *
+ * Del contrato v1.4 (spec 2026-11-18-dato-quincena-propuestas-datasets): las propuestas de datasets nuevos (`propuestas_datasets`),
+ * opcionales como la repetición, con sus repetidos y su coherencia entre el valor, el riesgo y la anonimización; y, en el detalle, su
+ * prioridad (la matriz de valor y riesgo) y sus textos, calculados al leer de la edición archivada.
  */
 import crypto from 'node:crypto';
 import { esFechaIso, sumarDias, ahoraArgentina, formatoLargo, formatoCorto } from './notasDigitalesCalendario.js';
@@ -69,6 +73,7 @@ export const MENSAJES_VALIDACION = Object.freeze({
   texto: 'Tiene que ser un texto.',
   vacio: 'El texto no puede quedar vacío ni con solo espacios.',
   caracterNulo: 'El texto no puede llevar el carácter nulo.',
+  hasta64: 'Puede tener hasta 64 caracteres.',
   hasta200: 'Puede tener hasta 200 caracteres.',
   hasta1000: 'Puede tener hasta 1000 caracteres.',
   hasta2000: 'Puede tener hasta 2000 caracteres.',
@@ -89,6 +94,29 @@ export const MENSAJES_VALIDACION = Object.freeze({
   alcanceDeRepeticion: 'El alcance de una repetición tiene que ser dataset o tema.',
   repiteSinRepeticion: 'La propuesta tiene la etiqueta Repite pero no tiene repeticion.',
   repeticionSinRepite: 'La propuesta tiene repeticion pero no tiene la etiqueta Repite.',
+  // Las propuestas de datasets nuevos (spec 2026-11-18-dato-quincena-propuestas-datasets, 1). Los escribió Datito y los copia tal
+  // cual en su chequeo: no se cambian
+  propuestasDatasets: 'Puede haber como mucho 3 propuestas de datasets.',
+  numeroDeDataset: 'Las propuestas de datasets se numeran desde 1 y sin saltos.',
+  de5a120: 'Tiene que tener de 5 a 120 caracteres.',
+  de20a600: 'Tiene que tener de 20 a 600 caracteres.',
+  tituloDeDatasetRepetido: 'Hay dos propuestas de datasets con el mismo título.',
+  origenes: 'Tiene que traer de 1 a 4 orígenes.',
+  origen: 'Los orígenes posibles son Agenda, Noticias, Pedidos de acceso y Cruce de datasets.',
+  origenRepetido: 'Este origen ya está en la propuesta.',
+  datasetsRelacionados: 'Puede traer hasta 5 datasets relacionados.',
+  slug: 'El slug tiene que tener de 2 a 100 caracteres: letras minúsculas sin tildes, números, - y _.',
+  slugRepetido: 'Este dataset ya está en la lista.',
+  valor: 'El valor tiene que ser Alto, Medio o Bajo.',
+  riesgo: 'El riesgo tiene que ser Alto, Medio o Bajo.',
+  bajoConAlto: 'Un dataset de valor bajo y riesgo alto no se propone (matriz de priorización).',
+  formatoSugerido: 'El formato sugerido tiene que ser CSV, GeoJSON, JSON, KML o XML.',
+  camposSugeridos: 'Tiene que traer de 3 a 15 campos sugeridos.',
+  campoSugeridoRepetido: 'Este campo ya está en la lista.',
+  sinAnonimizacion: 'Con riesgo Medio o Alto hace falta indicar la anonimización.',
+  anonimizacionDeMas: 'Con riesgo Bajo, anonimizacion va en null.',
+  fuentesDeDataset: 'Tiene que traer de 1 a 5 fuentes.',
+  fuenteRepetida: 'Esta fuente ya está en la lista.',
   enteroPositivo: 'Tiene que ser un número entero positivo.',
   estado: 'Tiene que ser uno de los estados de GET /api/datasets.',
   diasParaVencer: 'Tiene que ser un número entero de -100000 a 100000.',
@@ -159,13 +187,30 @@ const esDireccion = (valor) => {
 
 // Cada validador recibe (valor, ruta, agregar, indice) y agrega a lo sumo un error por valor, salvo las listas y los objetos
 
+// Lo que todo texto mira antes de su largo: que sea un texto, que no quede vacío ni con solo espacios (si es obligatorio) y que no
+// lleve el carácter nulo. La clave del mensaje, o null si pasa
+const errorDeTexto = (valor, { obligatorio }) => {
+  if (typeof valor !== 'string') return 'texto';
+  if (obligatorio && valor.trim() === '') return 'vacio';
+  if (valor.includes('\u0000')) return 'caracterNulo';
+  return null;
+};
+
 // Un texto con tope. Obligatorio: no vacío ni con solo espacios. Con oNull, null también vale (y un texto vacío)
 const texto = (tope, { oNull = false } = {}) => (valor, ruta, agregar) => {
   if (oNull && valor === null) return;
-  if (typeof valor !== 'string') return agregar(ruta, 'texto');
-  if (!oNull && valor.trim() === '') return agregar(ruta, 'vacio');
-  if (valor.includes('\u0000')) return agregar(ruta, 'caracterNulo');
+  const error = errorDeTexto(valor, { obligatorio: !oNull });
+  if (error !== null) return agregar(ruta, error);
   if (caracteres(valor) > tope) agregar(ruta, `hasta${tope}`);
+};
+
+// Un texto obligatorio de minimo a maximo caracteres, contados tal como llegó (los espacios de los extremos también): si no, el
+// mensaje que se pasa
+const textoEntre = (minimo, maximo, mensaje) => (valor, ruta, agregar) => {
+  const error = errorDeTexto(valor, { obligatorio: true });
+  if (error !== null) return agregar(ruta, error);
+  const largo = caracteres(valor);
+  if (largo < minimo || largo > maximo) agregar(ruta, mensaje);
 };
 
 const unTexto = (valor, ruta, agregar) => {
@@ -238,6 +283,32 @@ const objeto = (forma) => (valor, ruta, agregar, indice) => {
     if (CLAVE_NOMBRABLE.test(clave)) agregar(unir(ruta, clave), 'sobra');
     else agregar(ruta, 'sobraOtra');
   }
+};
+
+// Si el valor pasa el validador, sin agregar ningún error
+const pasa = (validar, valor) => {
+  let sinErrores = true;
+  validar(valor, '', () => {
+    sinErrores = false;
+  });
+  return sinErrores;
+};
+
+// Una lista y, después de sus errores, sus repetidos: cada elemento cuyo valor ya apareció antes en la lista (el segundo de cada par
+// y los que siguen) da el mensaje, en su ruta. Con clave, el valor es esa clave de cada elemento, y el error va en ella. Solo cuentan
+// los valores que pasan su validador, así ninguno suma un segundo error; se comparan exactos o como los deja comparable
+const sinRepetidos = (validarLista, { clave = null, validar, mensaje, comparable = (dato) => dato }) => (valor, ruta, agregar) => {
+  validarLista(valor, ruta, agregar);
+  if (!Array.isArray(valor)) return;
+  const vistos = new Set();
+  valor.forEach((elemento, i) => {
+    if (clave !== null && !(esObjeto(elemento) && Object.hasOwn(elemento, clave))) return;
+    const dato = clave === null ? elemento : elemento[clave];
+    if (!pasa(validar, dato)) return;
+    const comparado = comparable(dato);
+    if (vistos.has(comparado)) agregar(clave === null ? `${ruta}[${i}]` : unir(`${ruta}[${i}]`, clave), mensaje);
+    vistos.add(comparado);
+  });
 };
 
 const etiquetas = (valor, ruta, agregar) => {
@@ -331,6 +402,69 @@ const propuestas = (valor, ruta, agregar) => {
   if (principales.length !== 1) agregar(ruta, 'principal');
 };
 
+// Las propuestas de datasets nuevos (spec 2026-11-18-dato-quincena-propuestas-datasets, 1): los valores cerrados, como los escribe
+// Datito, y el nombre de un dataset de CKAN, que admite el guion bajo
+const ORIGENES = Object.freeze(['Agenda', 'Noticias', 'Pedidos de acceso', 'Cruce de datasets']);
+const NIVELES = Object.freeze(['Alto', 'Medio', 'Bajo']);
+const FORMATOS_SUGERIDOS = Object.freeze(['CSV', 'GeoJSON', 'JSON', 'KML', 'XML']);
+const SLUG_DE_CKAN = /^[a-z0-9_-]{2,100}$/;
+
+// El slug de un dataset del portal: un texto con la forma de los nombres de CKAN. Vacío, con espacios o con el carácter nulo no
+// tiene esa forma: el mensaje del slug, que dice cuál es
+const slugDeCkan = (valor, ruta, agregar) => {
+  if (typeof valor !== 'string') return agregar(ruta, 'texto');
+  if (!SLUG_DE_CKAN.test(valor)) agregar(ruta, 'slug');
+};
+
+// null o un texto de hasta 1000: a diferencia de texto(1000, { oNull: true }), uno vacío o con solo espacios no vale (la página y
+// el mail nunca muestran una caja vacía)
+const anonimizacion = (valor, ruta, agregar) => {
+  if (valor !== null) texto(1000)(valor, ruta, agregar);
+};
+
+const tituloDeDataset = textoEntre(5, 120, 'de5a120');
+const origen = unoDe(ORIGENES, 'origen');
+const campoSugerido = texto(64);
+const DATASET_RELACIONADO = Object.freeze({ ckan_slug: slugDeCkan, nombre: texto(200) });
+
+// La propuesta de dataset i va con el número i + 1. Los orígenes, los slugs de los datasets relacionados, los campos y las fuentes,
+// sin repetidos
+const propuestaDataset = (_, indice) => ({
+  numero: igual(indice + 1, 'numeroDeDataset'),
+  titulo: tituloDeDataset,
+  origenes: sinRepetidos(lista(1, 4, 'origenes', origen), { validar: origen, mensaje: 'origenRepetido' }),
+  justificacion: textoEntre(20, 600, 'de20a600'),
+  datasets_relacionados: sinRepetidos(lista(0, 5, 'datasetsRelacionados', objeto(DATASET_RELACIONADO)), {
+    clave: 'ckan_slug', validar: slugDeCkan, mensaje: 'slugRepetido'
+  }),
+  valor: unoDe(NIVELES, 'valor'),
+  riesgo: unoDe(NIVELES, 'riesgo'),
+  formato_sugerido: unoDe(FORMATOS_SUGERIDOS, 'formatoSugerido'),
+  campos_sugeridos: sinRepetidos(lista(3, 15, 'camposSugeridos', campoSugerido), {
+    validar: campoSugerido, mensaje: 'campoSugeridoRepetido'
+  }),
+  anonimizacion,
+  fuentes: sinRepetidos(lista(1, 5, 'fuentesDeDataset', direccion), { validar: direccion, mensaje: 'fuenteRepetida' })
+});
+
+// Una propuesta de dataset con su forma y, después de sus errores, la coherencia: solo con un valor y un riesgo válidos, y un solo
+// error. Valor Bajo con riesgo Alto no se propone (la matriz de priorización), y la anonimización ya no se mira; si no, y solo si
+// anonimizacion no tiene su propio error, va con riesgo Medio o Alto y no va con riesgo Bajo
+const propuestaDatasetCoherente = (valor, ruta, agregar, indice) => {
+  objeto(propuestaDataset)(valor, ruta, agregar, indice);
+  if (!esObjeto(valor) || !NIVELES.includes(valor.valor) || !NIVELES.includes(valor.riesgo)) return;
+  if (valor.valor === 'Bajo' && valor.riesgo === 'Alto') return agregar(unir(ruta, 'riesgo'), 'bajoConAlto');
+  if (!Object.hasOwn(valor, 'anonimizacion') || !pasa(anonimizacion, valor.anonimizacion)) return;
+  if (valor.riesgo !== 'Bajo' && valor.anonimizacion === null) agregar(unir(ruta, 'anonimizacion'), 'sinAnonimizacion');
+  else if (valor.riesgo === 'Bajo' && valor.anonimizacion !== null) agregar(unir(ruta, 'anonimizacion'), 'anonimizacionDeMas');
+};
+
+// De 0 a 3 propuestas de datasets y, después de las suyas, los títulos repetidos, sin mirar las mayúsculas ni los espacios de los
+// extremos (las tildes, sí)
+const propuestasDatasets = sinRepetidos(lista(0, 3, 'propuestasDatasets', propuestaDatasetCoherente), {
+  clave: 'titulo', validar: tituloDeDataset, mensaje: 'tituloDeDatasetRepetido', comparable: (titulo) => titulo.trim().toLowerCase()
+});
+
 const TIPOS_DE_EVENTO = Object.freeze(['evento', 'efemeride']);
 const FORMA_DEL_EVENTO = Object.freeze({ titulo: texto(200), fecha, detalle: texto(4000), url: direccion });
 const FORMA_DEL_EVENTO_CON_TIPO = Object.freeze({ ...FORMA_DEL_EVENTO, tipo: unoDe(TIPOS_DE_EVENTO, 'tipoDeEvento') });
@@ -391,6 +525,9 @@ const edicion = (hoy) => objeto((valor) => {
     nota_archivo: texto(4000, { oNull: true }),
     agenda: lista(0, 20, 'agenda', objeto(evento)),
     propuestas,
+    // Opcional, como repeticion (contrato v1.4): sin la clave, la edición tiene la forma de la v1.3 y sigue valiendo, así el plan B de
+    // Datito entra; schema_version sigue en 1.0
+    ...(Object.hasOwn(valor, 'propuestas_datasets') ? { propuestas_datasets: propuestasDatasets } : {}),
     adjuntos: lista(2, 4, 'adjuntos', objeto(ENTRADA_DEL_MANIFIESTO))
   };
 });
@@ -1057,6 +1194,59 @@ const propuestaDelDetalle = (propuesta, enlaces, fechaDeLaEdicion, previas) => (
   borrador_para_copiar: borradorParaCopiar(propuesta.borrador_nota)
 });
 
+// La prioridad de una propuesta de dataset (spec 2026-11-18-dato-quincena-propuestas-datasets, 2): la matriz de valor y riesgo de la
+// Guía Práctica de Apertura de Datos, por valor y después por riesgo. Valor Medio con riesgo Alto da «Evaluar riesgos»: lo decidió el
+// usuario, porque el borrador de Datito no lo cubría. Valor Bajo con riesgo Alto no llega (el POST lo rechaza): evaluar. Datito copia
+// la misma tabla en su chequeo: si cambia, cambia en los dos lados
+const TEXTO_DE_LA_PRIORIDAD = Object.freeze({
+  alta: 'Prioridad alta',
+  si_hay_recursos: 'Publicar si hay recursos',
+  evaluar: 'Evaluar riesgos'
+});
+const MATRIZ_DE_PRIORIDAD = Object.freeze({
+  Alto: Object.freeze({ Bajo: 'alta', Medio: 'evaluar', Alto: 'evaluar' }),
+  Medio: Object.freeze({ Bajo: 'si_hay_recursos', Medio: 'si_hay_recursos', Alto: 'evaluar' }),
+  Bajo: Object.freeze({ Bajo: 'si_hay_recursos', Medio: 'si_hay_recursos', Alto: 'evaluar' })
+});
+
+/**
+ * La prioridad de un valor y un riesgo ('Alto', 'Medio' o 'Bajo'): `{ clave, texto }`, con la clave `alta`, `si_hay_recursos` o
+ * `evaluar` (la página y el mail eligen el color por la clave, nunca por el texto). No se guarda: se calcula al mostrar, de la
+ * edición archivada. Un valor o un riesgo que no es de la tabla (no pasa el POST) da evaluar, sin tirar.
+ */
+export const prioridadDeDataset = (valor, riesgo) => {
+  const clave = NIVELES.includes(valor) && NIVELES.includes(riesgo) ? MATRIZ_DE_PRIORIDAD[valor][riesgo] : 'evaluar';
+  return { clave, texto: TEXTO_DE_LA_PRIORIDAD[clave] };
+};
+
+// La dirección de un dataset del portal: se arma solo con el slug, que el POST ya validó (letras minúsculas, números, - y _)
+const DATASET_DEL_PORTAL = 'https://datos.comodoro.gov.ar/dataset/';
+
+/**
+ * Las propuestas de datasets nuevos de una edición ya validada, para el detalle (spec 2026-11-18-dato-quincena-propuestas-datasets,
+ * 4): null si la edición no trae la clave (todas las archivadas antes de la v1.4 y las v1.3), [] si llegó vacía y, si no, cada una
+ * con sus textos ya armados: «Dataset nuevo N», la prioridad (`prioridadDeDataset`), «Valor alto · Riesgo bajo» con los dos en
+ * minúscula y cada dataset relacionado `{ nombre, url }`, con la dirección del portal y su slug. Los demás textos, como llegaron
+ * (el HTML lo escapa quien imprime). No cambia la edición: las listas y los objetos son copias.
+ */
+export const propuestasDatasetsDelDetalle = (edicion) => (Array.isArray(edicion.propuestas_datasets)
+  ? edicion.propuestas_datasets.map((propuesta) => ({
+    numero_texto: `Dataset nuevo ${propuesta.numero}`,
+    titulo: propuesta.titulo,
+    origenes: [...propuesta.origenes],
+    justificacion: propuesta.justificacion,
+    prioridad: prioridadDeDataset(propuesta.valor, propuesta.riesgo),
+    valor_y_riesgo: `Valor ${propuesta.valor.toLowerCase()} · Riesgo ${propuesta.riesgo.toLowerCase()}`,
+    formato: propuesta.formato_sugerido,
+    campos: [...propuesta.campos_sugeridos],
+    anonimizacion: propuesta.anonimizacion,
+    datasets_relacionados: propuesta.datasets_relacionados.map(({ ckan_slug, nombre }) => ({
+      nombre, url: `${DATASET_DEL_PORTAL}${ckan_slug}`
+    })),
+    fuentes: [...propuesta.fuentes]
+  }))
+  : null);
+
 /**
  * El detalle de una edición (sección 9), de leerEdicion: `fila` (con `metadata`, el texto guardado, `recibida_ts`, los
  * segundos UNIX de recibida_at, y `numero`, cuántas regulares hay con su fecha o antes), `edicion` (el JSON.parse de metadata,
@@ -1065,8 +1255,8 @@ const propuestaDelDetalle = (propuesta, enlaces, fechaDeLaEdicion, previas) => (
  * argentina y la cantidad; la nota de archivo, null si está vacía o con solo espacios; la agenda con su fecha dd/mm/aaaa y la
  * etiqueta de una efeméride, en el orden en que llegó (para una pestaña abierta con la página anterior), y `agenda_grupos`, la
  * misma agenda en sus grupos (gruposDeLaAgenda, con la fecha de la edición), que imprimen la página y el mail; cada propuesta con
- * `id_enlace` solo si su dataset existe y está activo; y los archivos en el orden de ARCHIVOS_DEL_DETALLE, con la edición completa
- * al final y el nombre de cada descarga.
+ * `id_enlace` solo si su dataset existe y está activo; después, las propuestas de datasets (propuestasDatasetsDelDetalle: null sin
+ * la clave); y los archivos en el orden de ARCHIVOS_DEL_DETALLE, con la edición completa al final y el nombre de cada descarga.
  * `correo` es `lineaDelCorreo`, la línea del envío del RPAD que arma el controlador (spec 2026-11-12-dato-quincena-correo, 6),
  * tal cual. Sin ella, la del correo del bot (textoDelCorreo): el modelo del mail arma el detalle y no la usa.
  * `previas` (spec 2026-11-14-dato-quincena-v1-3, 3) es el Map de leerEdicionesPrevias(fechasPrevias(edicion)), que leen `ver` y el
@@ -1095,6 +1285,7 @@ export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDe
     })),
     agenda_grupos: gruposDeLaAgenda(edicion.agenda, edicion.fecha_edicion),
     propuestas: edicion.propuestas.map((propuesta) => propuestaDelDetalle(propuesta, enlaces, edicion.fecha_edicion, lasPrevias)),
+    propuestas_datasets: propuestasDatasetsDelDetalle(edicion),
     archivos: [
       ...ORDEN_DE_LOS_ARCHIVOS_DEL_DETALLE.flatMap((campo) => adjuntos
         .filter((adjunto) => adjunto.campo === campo)

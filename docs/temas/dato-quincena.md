@@ -8,11 +8,12 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
 - `docs/superpowers/specs/2026-11-14-dato-quincena-v1-3-design.md` (el contrato v1.3: Repite y Efemeride)
 - `docs/superpowers/specs/2026-11-14-dato-quincena-agenda-grupos-design.md` (la agenda en tres grupos)
+- `docs/superpowers/specs/2026-11-18-dato-quincena-propuestas-datasets-design.md` (el contrato v1.4: las propuestas de datasets nuevos)
 
 ## Archivos
 
 datoQuincenaController: el POST de Datito (`recibirEdicion`) y las lecturas (`listar`, `ver` y `descargar`);
-datoQuincenaReglas (puro: los topes, la validación de la edición y del manifiesto, la clave, la huella del paquete, el token, `esPng`, `esSvg`, `esTextoUtf8`, `NOMBRE_DEL_BOT`, los textos de la lista y del detalle, los grupos de la agenda (`gruposDeLaAgenda`), la foto del RPAD, lo que se copia, las filas que se guardan, `fechasPrevias`, los avisos y el recibo);
+datoQuincenaReglas (puro: los topes, la validación de la edición y del manifiesto, la clave, la huella del paquete, el token, `esPng`, `esSvg`, `esTextoUtf8`, `NOMBRE_DEL_BOT`, los textos de la lista y del detalle, los grupos de la agenda (`gruposDeLaAgenda`), la prioridad y los textos de las propuestas de datasets (`prioridadDeDataset` y `propuestasDatasetsDelDetalle`), la foto del RPAD, lo que se copia, las filas que se guardan, `fechasPrevias`, los avisos y el recibo);
 datoQuincenaDatos (las consultas, la transacción del guardado y `leerEdicionesPrevias`);
 dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el detalle ?id=N y la pestaña Correo (dato-quincena.js)
 
@@ -95,12 +96,13 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   `nota_archivo` (4000) o null;
   `agenda`, de 0 a 20 `{ titulo (200), fecha, detalle (4000), url }` y, opcional, `tipo` (`evento` o `efemeride`; si falta, `evento`; otro valor, 422);
   `propuestas`, de 1 a 5;
+  `propuestas_datasets`, opcional, de 0 a 3 (abajo);
   y `adjuntos`, el manifiesto, de 2 a 4 entradas.
   En una regular, `generado_at` es obligatorio y también `enviado_at` si el correo salió; en un piloto pueden ser null.
   Con `no_enviado`, `enviado_at` con algo que no es null da 422 «Con el correo no enviado, la hora del correo va null.».
   Con un estado que no vale, `enviado_at` puede ser null o un instante: el único error es el del estado, para no pedirle al bot una hora que quizá no existe.
 - `nota_archivo` puede llegar vacía o con solo espacios (solo los textos obligatorios no pueden), y el detalle la da como null.
-  `ckan_slug`, como todo texto que admite null, también puede llegar vacío.
+  El `dataset.ckan_slug` de las propuestas, como todo texto que admite null, también puede llegar vacío (el `ckan_slug` de un dataset relacionado de las propuestas de datasets, no: abajo).
 - Cada propuesta: `orden` (1, 2, 3… en su orden, sin saltos);
   `titulo` (200);
   `etiquetas`, sin repetidos, de 'Principal', 'Validar', 'Agenda', 'Efemeride' (sin tilde, como la escribe el bot) y 'Repite' (exactamente una propuesta de la edición lleva 'Principal');
@@ -121,6 +123,30 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   La coherencia, después de los errores de cada propuesta y en su ruta: 'Repite' sin `repeticion` (o con null) da `propuestas[i].repeticion` «La propuesta tiene la etiqueta Repite pero no tiene repeticion.»; una `repeticion` objeto sin 'Repite' da `propuestas[i].etiquetas` «La propuesta tiene repeticion pero no tiene la etiqueta Repite.».
   Datito copia esos dos textos tal cual: no se cambian.
   La validación no compara la fecha con lo archivado: lo que depende de lo archivado da avisos en el recibo y nunca un 422 (anti-objetivo de la spec: que una edición quede sin archivar por eso).
+- Las propuestas de datasets nuevos (contrato v1.4): en cada edición Datito puede proponer hasta tres datasets para abrir en el portal, con la matriz de valor y riesgo de la Guía Práctica de Apertura de Datos del municipio.
+  `propuestas_datasets` es opcional, como `repeticion`: sin la clave, la edición tiene la forma de la v1.3 y sigue valiendo, y `schema_version` sigue en '1.0'.
+  El RPAD no la exige, a propósito: con `schema_version` en '1.0' no distingue una edición v1.4 de una v1.3, y exigirla rechazaría el plan B de Datito (mandar la edición con la v1.3); la exige el schema oficial v1.4, que Datito chequea antes de cada POST.
+  Si está, es una lista de 0 a 3 objetos cerrados: con más, `propuestas_datasets` «Puede haber como mucho 3 propuestas de datasets.»; con null u otra cosa, «Tiene que ser una lista.».
+- Cada propuesta de dataset: `numero`, su posición desde 1 («Las propuestas de datasets se numeran desde 1 y sin saltos.»);
+  `titulo`, de 5 a 120 caracteres («Tiene que tener de 5 a 120 caracteres.»);
+  `origenes`, de 1 a 4 («Tiene que traer de 1 a 4 orígenes.»), de 'Agenda', 'Noticias', 'Pedidos de acceso' y 'Cruce de datasets' («Los orígenes posibles son Agenda, Noticias, Pedidos de acceso y Cruce de datasets.»), sin repetidos («Este origen ya está en la propuesta.»);
+  `justificacion`, de 20 a 600 («Tiene que tener de 20 a 600 caracteres.»);
+  `datasets_relacionados`, hasta 5 («Puede traer hasta 5 datasets relacionados.»), cada uno `{ ckan_slug, nombre (200) }`, sin slugs repetidos («Este dataset ya está en la lista.», en el `ckan_slug` que repite);
+  `ckan_slug` sigue la regla de los nombres de CKAN, que admite el guion bajo: «El slug tiene que tener de 2 a 100 caracteres: letras minúsculas sin tildes, números, - y _.» (también si llega vacío, con espacios o con el carácter nulo; si no es un texto, «Tiene que ser un texto.»);
+  `valor` y `riesgo`, 'Alto', 'Medio' o 'Bajo' («El valor tiene que ser Alto, Medio o Bajo.» y «El riesgo tiene que ser Alto, Medio o Bajo.»);
+  `formato_sugerido`, 'CSV', 'GeoJSON', 'JSON', 'KML' o 'XML' («El formato sugerido tiene que ser CSV, GeoJSON, JSON, KML o XML.»);
+  `campos_sugeridos`, de 3 a 15 («Tiene que traer de 3 a 15 campos sugeridos.») textos de hasta 64 («Puede tener hasta 64 caracteres.»), sin repetidos («Este campo ya está en la lista.»);
+  `anonimizacion`, null o un texto de hasta 1000 que, a diferencia de `nota_archivo`, no puede quedar vacío ni con solo espacios: la página y el mail nunca muestran una caja vacía;
+  y `fuentes`, de 1 a 5 direcciones («Tiene que traer de 1 a 5 fuentes.»; una que no es `https://` da el mensaje de todas las direcciones), sin repetidas («Esta fuente ya está en la lista.»).
+  Los mínimos de 5 y de 20 se miden sobre el texto tal como llegó, con los espacios de los extremos.
+  Los repetidos se comparan exactos, después de los errores de la lista, y el error va en el que repite (el segundo, con su índice), solo si su valor no tiene ya su propio error.
+  La cantidad y los repetidos se suman, como la cantidad y los elementos de toda lista: cinco orígenes con uno repetido dan los dos errores.
+  Dos propuestas de datasets con el mismo `titulo`, sin mirar las mayúsculas ni los espacios de los extremos (las tildes sí cuentan), dan en la segunda `propuestas_datasets[N].titulo` «Hay dos propuestas de datasets con el mismo título.», después de los errores de todas.
+- La coherencia de cada propuesta de dataset va después de sus errores, solo con un `valor` y un `riesgo` válidos, y da a lo sumo un error:
+  valor 'Bajo' con riesgo 'Alto' no se propone: `propuestas_datasets[N].riesgo` «Un dataset de valor bajo y riesgo alto no se propone (matriz de priorización).», y la anonimización ya no se mira;
+  si no, y solo si `anonimizacion` no tiene su propio error, riesgo 'Medio' o 'Alto' con null da `propuestas_datasets[N].anonimizacion` «Con riesgo Medio o Alto hace falta indicar la anonimización.», y riesgo 'Bajo' con un texto, «Con riesgo Bajo, anonimizacion va en null.».
+  Datito escribió los mensajes de la v1.4 y los copia tal cual en su chequeo: no se cambian.
+  Nada de esto consulta la base ni el portal: un slug que no existe no da 422 ni aviso.
 - La foto del RPAD (`rpad_snapshot`): `estado`, uno de los de `GET /api/datasets` (`actualizado`, `proximo`, `atrasado`, `sin-respuesta`, `sin-fecha` o `eventual`) o null;
   `datos_al` y `ultima_actualizacion`, una fecha 'AAAA-MM-DD', un instante o null (un instante porque `GET /api/datasets` manda `ultima_actualizacion` así y el bot copia lo que ve);
   `updated_at`, un instante o null;
@@ -199,7 +225,7 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   `cantidad`, «4 propuestas»;
   y `envio`, `{ tipo, texto }`, la pastilla del envío (null si no lleva), con el texto de administración si quien pide lo es (`docs/temas/dato-quincena-correo.md`).
   La lista no trae las infografías ni ninguna dirección de correo.
-- `GET /api/dato-quincena/ediciones/:id`, el detalle, con los textos ya armados (`detalleDeLaEdicion`): `{ id, fecha_texto, marca, numero, titulo, nota_archivo, llegada, correo, cantidad, agenda, agenda_grupos, propuestas, archivos }`.
+- `GET /api/dato-quincena/ediciones/:id`, el detalle, con los textos ya armados (`detalleDeLaEdicion`): `{ id, fecha_texto, marca, numero, titulo, nota_archivo, llegada, correo, cantidad, agenda, agenda_grupos, propuestas, propuestas_datasets, archivos }`.
   `llegada`, «Llegó al RPAD el dd/mm/aaaa a las HH:MM.», de `recibida_at`;
   `correo`, la línea del envío del RPAD (`docs/temas/dato-quincena-correo.md`);
   en una edición sin envío (archivada antes del correo), la de Datito: «Correo enviado el dd/mm/aaaa a las HH:MM, según Datito.» con la hora pasada a Argentina sea cual sea la zona del bot, «Correo enviado según Datito, sin la hora.» o «Datito archivó esta edición sin que saliera el correo.», que sigue siendo cierto si el correo sale después: la edición no cambia y Datito no la vuelve a mandar (sería un 409);
@@ -217,6 +243,20 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   `repeticion` es null (sin la clave o con null) o `{ texto, motivo, id_edicion }`: «Repite el dataset de la edición del dd/mm/aaaa.» o «Repite el tema de la edición del dd/mm/aaaa.»;
   «Datos nuevos: <detalle>» o «Hecho actual: <detalle>», con el detalle tal como llegó;
   e `id_edicion`, el id de la regular de esa fecha si existe y es anterior a la edición, o null (no depende de que cite el dataset: eso solo da el aviso).
+- `propuestas_datasets` (`propuestasDatasetsDelDetalle`), después de `propuestas`: null si la edición no trae la clave (todas las archivadas antes de la v1.4 y las v1.3), una lista vacía si llegó vacía y, si no, cada propuesta de dataset `{ numero_texto, titulo, origenes, justificacion, prioridad, valor_y_riesgo, formato, campos, anonimizacion, datasets_relacionados, fuentes }`.
+  Se calcula al leer, de la `metadata` guardada, que no cambia: no se guarda nada más ni hay migración.
+  `numero_texto`, «Dataset nuevo N»;
+  `prioridad`, `{ clave, texto }` (abajo);
+  `valor_y_riesgo`, «Valor alto · Riesgo bajo», con los dos en minúscula;
+  `formato` y `campos`, el `formato_sugerido` y los `campos_sugeridos`;
+  cada dataset relacionado, `{ nombre, url }`, con `url` igual a `https://datos.comodoro.gov.ar/dataset/<ckan_slug>`: se arma solo con el slug, que el POST ya validó, y no consulta el portal;
+  el título, los orígenes, la justificación, la anonimización (null o el texto) y las fuentes, como llegaron.
+- La prioridad de una propuesta de dataset (`prioridadDeDataset`, pura) sale del valor y el riesgo, con la matriz de la Guía Práctica de Apertura de Datos: `alta`, «Prioridad alta», con valor Alto y riesgo Bajo;
+  `si_hay_recursos`, «Publicar si hay recursos», con valor Medio o Bajo y riesgo Bajo o Medio;
+  y `evaluar`, «Evaluar riesgos», con valor Alto y riesgo Medio o Alto, y con valor Medio y riesgo Alto.
+  Valor Medio con riesgo Alto da «Evaluar riesgos» porque lo decidió el usuario: el borrador de Datito no lo cubría.
+  Valor Bajo con riesgo Alto no llega, porque el POST lo rechaza: la función da `evaluar`, como con cualquier par que no es de la tabla, y no tira.
+  Datito copia la misma tabla en su chequeo: si cambia, cambia en los dos lados.
 - Las ediciones previas (`leerEdicionesPrevias`, de las fechas de `fechasPrevias`: las de las repeticiones anteriores a la edición, sin repetir): una consulta con `tipo = 'regular' AND fecha_edicion IN (?)`, y un `Map` de la fecha a `{ id, rpad_ids }`, con los `rpad_id` que citan sus propuestas en su `metadata`.
   Se mira lo que el bot citó y no el enlace que quedó guardado; sin fechas, no consulta.
   La leen el recibo, `ver` y el mail (`docs/temas/dato-quincena-correo.md`); sin columnas nuevas ni migración: todo sale de `metadata`, que ya se guarda entera.
@@ -235,7 +275,7 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   El `no-store` y el `nosniff` los ponen `app.js` y Helmet.
   En una edición que existe, otro `campo`, unos cálculos o un SVG que no llegaron dan 404 «El archivo no existe.».
   Solo la descarga lee los bytes (`contenido`): la lista y el detalle nunca los traen.
-- `tests/fixtures/dato-quincena-respuestas.json`, inventado, es el contrato entre el servidor y la página (`detalle_con_repeticion`, una edición con repeticiones, con y sin enlace): `tests/dato-quincena-reglas.test.js` le compara lo que arman las reglas, con las claves en su orden;
+- `tests/fixtures/dato-quincena-respuestas.json`, inventado, es el contrato entre el servidor y la página (`detalle_con_repeticion`, una edición con repeticiones, con y sin enlace; `detalle_con_datasets`, la edición de prueba con tres propuestas de datasets, una de cada prioridad; y `detalle_datasets_vacia`, la misma con la lista vacía): `tests/dato-quincena-reglas.test.js` le compara lo que arman las reglas, con las claves en su orden;
   `tests/dato-quincena-api.test.js`, la forma de las respuestas reales;
   y `tests/dato-quincena-frontend.test.js` dibuja la página con él y controla sus claves.
   Una clave que cambia en el servidor obliga a cambiar el fixture.
@@ -261,6 +301,14 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   El enlace va subrayado: `main.css` le saca el subrayado a todo `<a>` y el texto ya es negrita y tinta, así que sin él no se distinguiría del texto sin enlace.
   Después, en un `<details>` («La propuesta completa», abierto en la principal; «Ver la propuesta completa», cerrado en las otras), los campos en el orden de lo que se copia, y al pie, «Copiar la propuesta».
   La principal lleva el borde de tinta más grueso.
+- Las propuestas de datasets nuevos (`htmlDeLosDatasetsNuevos`), una sección propia (`.dq-nuevos`, verde muy claro) al final de la columna, después de «Las propuestas»: el título «Propuestas de datasets nuevos» y, por cada una, una tarjeta blanca en una lista ordenada.
+  Con `propuestas_datasets` en null (o algo que no es una lista), no hay sección (lo controla el resguardo); con `[]`, el título y «Esta quincena no hay propuestas de datasets.».
+  Cada tarjeta, en este orden: el número y los orígenes (etiquetas neutras), el título (`h4`), la prioridad con `valor_y_riesgo` al lado, «Por qué abrirlo», «Formato sugerido», «Campos sugeridos» (en monoespaciada) y, solo si hay, «Cómo anonimizar» (con el estilo de «Para validar») y «Datasets relacionados en el portal»; al final, «Fuentes».
+  La clase y el ícono de la prioridad salen de un mapa con la clave del servidor (`alta` verde con `check`, `si_hay_recursos` azul con `info`, `evaluar` ámbar con `shield`) y `Object.hasOwn`, nunca del texto: una clave desconocida va sin clase ni ícono, con su texto.
+  El texto de la prioridad la dice siempre, así que el color no es lo único que la distingue.
+  La justificación y la anonimización van en `.dq-texto` (respeta los saltos de línea) y la tarjeta lleva `overflow-wrap: anywhere`.
+  Un relacionado o una fuente es un enlace solo si empieza con `https://`; si no, va su texto.
+  Sin «Copiar»; la tarjeta de la lista no muestra las propuestas de datasets.
 - «Copiar», tres por propuesta, con el texto tal como llega del servidor: en el texto para redes (`texto_redes`), en el borrador (`borrador_para_copiar`) y al pie (`para_copiar`).
   Sus nombres (`aria-label`) dicen qué copian y contienen el texto que se ve, para quien maneja la página con la voz (WCAG 2.5.3): «Copiar el texto para redes», «Copiar el borrador» y «Copiar la propuesta (Propuesta N)».
   Con `navigator.clipboard.writeText`: el botón dice «Copiado» dos segundos; si falla, «No se pudo copiar: seleccioná el texto.» cinco segundos; los dos se anuncian en `#dq-anuncio`, la región viva que no se redibuja.

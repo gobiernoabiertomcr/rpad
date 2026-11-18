@@ -14,7 +14,8 @@ import {
   erroresDeLaEdicion, huellaDelPaquete, estadoDelToken,
   fechaLarga, marcaDePiloto, horaArgentina, diaArgentino, textoDeLlegada, textoDelCorreo, textoDeCantidad, textoDelResto,
   textoDelNumero, tamanoTexto, fotoDelDataset, textoParaCopiar, borradorParaCopiar, filasDeLaEdicion, avisosDeLaEdicion,
-  reciboDe, anioDeLaLista, nombreDeLaEdicion, TIPO_DE_DESCARGA, itemDeLaLista, detalleDeLaEdicion, fechasPrevias, gruposDeLaAgenda
+  reciboDe, anioDeLaLista, nombreDeLaEdicion, TIPO_DE_DESCARGA, itemDeLaLista, detalleDeLaEdicion, fechasPrevias, gruposDeLaAgenda,
+  prioridadDeDataset, propuestasDatasetsDelDetalle
 } from '../services/datoQuincenaReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
 import { RPAD_URL } from '../services/emailTemplates.js';
@@ -22,7 +23,8 @@ import { envioDelRecibo, lineaDelCorreo, pastillaDelEnvio } from '../services/da
 import { calendarioCon } from '../services/feriadosReglas.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
 import {
-  FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, pngDePrueba, svgDePrueba, efemerideDePrueba, partesDePrueba, repeticionDePrueba
+  FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, pngDePrueba, svgDePrueba, efemerideDePrueba, partesDePrueba, repeticionDePrueba,
+  propuestaDatasetDePrueba, propuestasDatasetsDePrueba
 } from './dato-quincena-fixtures.js';
 
 const validar = (edicion, hoy = FECHA_DE_PRUEBA) => validarEdicion(edicion, { hoy });
@@ -148,6 +150,28 @@ describe('las constantes', () => {
       alcanceDeRepeticion: 'El alcance de una repetición tiene que ser dataset o tema.',
       repiteSinRepeticion: 'La propuesta tiene la etiqueta Repite pero no tiene repeticion.',
       repeticionSinRepite: 'La propuesta tiene repeticion pero no tiene la etiqueta Repite.',
+      propuestasDatasets: 'Puede haber como mucho 3 propuestas de datasets.',
+      numeroDeDataset: 'Las propuestas de datasets se numeran desde 1 y sin saltos.',
+      de5a120: 'Tiene que tener de 5 a 120 caracteres.',
+      de20a600: 'Tiene que tener de 20 a 600 caracteres.',
+      tituloDeDatasetRepetido: 'Hay dos propuestas de datasets con el mismo título.',
+      origenes: 'Tiene que traer de 1 a 4 orígenes.',
+      origen: 'Los orígenes posibles son Agenda, Noticias, Pedidos de acceso y Cruce de datasets.',
+      origenRepetido: 'Este origen ya está en la propuesta.',
+      datasetsRelacionados: 'Puede traer hasta 5 datasets relacionados.',
+      slug: 'El slug tiene que tener de 2 a 100 caracteres: letras minúsculas sin tildes, números, - y _.',
+      slugRepetido: 'Este dataset ya está en la lista.',
+      valor: 'El valor tiene que ser Alto, Medio o Bajo.',
+      riesgo: 'El riesgo tiene que ser Alto, Medio o Bajo.',
+      bajoConAlto: 'Un dataset de valor bajo y riesgo alto no se propone (matriz de priorización).',
+      formatoSugerido: 'El formato sugerido tiene que ser CSV, GeoJSON, JSON, KML o XML.',
+      camposSugeridos: 'Tiene que traer de 3 a 15 campos sugeridos.',
+      hasta64: 'Puede tener hasta 64 caracteres.',
+      campoSugeridoRepetido: 'Este campo ya está en la lista.',
+      sinAnonimizacion: 'Con riesgo Medio o Alto hace falta indicar la anonimización.',
+      anonimizacionDeMas: 'Con riesgo Bajo, anonimizacion va en null.',
+      fuentesDeDataset: 'Tiene que traer de 1 a 5 fuentes.',
+      fuenteRepetida: 'Esta fuente ya está en la lista.',
       enteroPositivo: 'Tiene que ser un número entero positivo.',
       estado: 'Tiene que ser uno de los estados de GET /api/datasets.',
       diasParaVencer: 'Tiene que ser un número entero de -100000 a 100000.',
@@ -820,6 +844,361 @@ describe('validarEdicion: la repetición (contrato v1.3)', () => {
 
   it('no cambia la edición que valida', () => {
     const edicion = repitiendo();
+    const copia = structuredClone(edicion);
+    validar(edicion);
+    assert.deepEqual(edicion, copia);
+  });
+});
+
+// spec 2026-11-18-dato-quincena-propuestas-datasets, 1: propuestas_datasets es opcional, como repeticion; si está, una lista de 0 a 3
+// objetos cerrados de once claves. Datito copia los mensajes tal cual en su chequeo: sus literales están en «las constantes»
+describe('validarEdicion: propuestas_datasets (contrato v1.4)', () => {
+  const RAIZ = 'propuestas_datasets';
+  const NIVELES = ['Alto', 'Medio', 'Bajo'];
+  const ANONIMIZACION = 'Agrupar por barrio, sin direcciones exactas.';
+  const en = (clave, i = 0) => `${RAIZ}[${i}].${clave}`;
+  // La edición de prueba con estas propuestas de datasets
+  const conDatasets = (propuestas) => edicionDePrueba({ propuestas_datasets: propuestas });
+  // Las propuestas 1 a n, cada una con su número y un título distinto
+  const propuestasDeDatasets = (n) => Array.from({ length: n }, (_, i) => propuestaDatasetDePrueba({
+    numero: i + 1, titulo: `Un dataset nuevo inventado ${i + 1}`
+  }));
+  // Los errores de la edición de prueba con una sola propuesta de dataset: la de prueba, con los cambios
+  const erroresDeUna = (cambios) => validar(conDatasets([propuestaDatasetDePrueba(cambios)]));
+  // Tres válidas, una de cada prioridad: valor alto y riesgo bajo, valor medio y riesgo medio, y valor alto y riesgo alto (la
+  // tercera, con cinco fuentes, el tope)
+  const tresValidas = propuestasDatasetsDePrueba;
+  const relacionados = (n) => Array.from({ length: n }, (_, i) => ({ ckan_slug: `prueba-${i}`, nombre: `Dataset de prueba ${i}` }));
+  const campos = (n) => Array.from({ length: n }, (_, i) => `campo_${i}`);
+
+  it('sin la clave (una edición v1.3), con [], con una y con tres válidas: sin errores', () => {
+    assert.ok(!Object.hasOwn(edicionDePrueba(), RAIZ), 'la edición de prueba no trae propuestas_datasets');
+    assert.deepEqual(validar(edicionDePrueba()), []);
+    assert.deepEqual(validar(pilotoDePrueba()), []);
+    assert.deepEqual(validar(conDatasets([])), []);
+    assert.deepEqual(validar(conDatasets([propuestaDatasetDePrueba()])), []);
+    assert.deepEqual(validar(conDatasets(tresValidas())), []);
+    assert.deepEqual(validar(pilotoDePrueba({ propuestas_datasets: tresValidas() })), []);
+  });
+
+  it('lo que no es una lista: el error lista; cuatro: el de la cantidad; un elemento que no es un objeto: el error objeto', () => {
+    for (const valor of [null, 'ninguna', 3, {}, true]) {
+      assert.deepEqual(validar(conDatasets(valor)), [error(RAIZ, 'lista')], JSON.stringify(valor));
+    }
+    assert.deepEqual(validar(conDatasets(null)), [{ campo: 'propuestas_datasets', mensaje: 'Tiene que ser una lista.' }]);
+    // undefined cuenta como que falta, como en cualquier clave
+    assert.deepEqual(validar(conDatasets(undefined)), [error(RAIZ, 'falta')]);
+    assert.deepEqual(validar(conDatasets(propuestasDeDatasets(4))), [error(RAIZ, 'propuestasDatasets')]);
+    for (const valor of [null, 'una', 3, [propuestaDatasetDePrueba()]]) {
+      assert.deepEqual(validar(conDatasets([valor])), [error(`${RAIZ}[0]`, 'objeto')], JSON.stringify(valor));
+    }
+  });
+
+  it('un objeto cerrado: cada una de las once claves que falta (también con undefined) y cada una de más, en su ruta', () => {
+    const CLAVES = ['numero', 'titulo', 'origenes', 'justificacion', 'datasets_relacionados', 'valor', 'riesgo', 'formato_sugerido',
+      'campos_sugeridos', 'anonimizacion', 'fuentes'];
+    assert.deepEqual(Object.keys(propuestaDatasetDePrueba()), CLAVES);
+    for (const clave of CLAVES) {
+      const propuesta = propuestaDatasetDePrueba();
+      delete propuesta[clave];
+      assert.deepEqual(validar(conDatasets([propuesta])), [error(en(clave), 'falta')], clave);
+      assert.deepEqual(erroresDeUna({ [clave]: undefined }), [error(en(clave), 'falta')], clave);
+    }
+    assert.deepEqual(erroresDeUna({ prioridad: 'alta' }), [error(en('prioridad'), 'sobra')]);
+    assert.deepEqual(erroresDeUna({ 'con espacio': 1 }), [error(`${RAIZ}[0]`, 'sobraOtra')]);
+    // Cada dataset relacionado es un objeto cerrado { ckan_slug, nombre }
+    const relacionado = en('datasets_relacionados[1]');
+    for (const clave of ['ckan_slug', 'nombre']) {
+      const propuesta = propuestaDatasetDePrueba();
+      delete propuesta.datasets_relacionados[1][clave];
+      assert.deepEqual(validar(conDatasets([propuesta])), [error(`${relacionado}.${clave}`, 'falta')], clave);
+    }
+    const conUrl = propuestaDatasetDePrueba();
+    conUrl.datasets_relacionados[1].url = 'https://datos.ejemplo.gob.ar/dataset/prueba-a';
+    assert.deepEqual(validar(conDatasets([conUrl])), [error(`${relacionado}.url`, 'sobra')]);
+    for (const valor of [null, 'prueba-a', ['prueba-a']]) {
+      assert.deepEqual(erroresDeUna({ datasets_relacionados: [valor] }), [error(en('datasets_relacionados[0]'), 'objeto')],
+        JSON.stringify(valor));
+    }
+  });
+
+  it('cada clave con otro tipo: su error, y uno solo', () => {
+    const casos = [
+      ['numero', 'uno', 'numeroDeDataset'], ['titulo', 5, 'texto'], ['origenes', 'Agenda', 'lista'], ['justificacion', null, 'texto'],
+      ['datasets_relacionados', null, 'lista'], ['valor', 3, 'valor'], ['riesgo', true, 'riesgo'],
+      ['formato_sugerido', ['CSV'], 'formatoSugerido'], ['campos_sugeridos', {}, 'lista'], ['anonimizacion', 5, 'texto'],
+      ['fuentes', 'https://datos.ejemplo.gob.ar/a.csv', 'lista']
+    ];
+    for (const [clave, valor, mensaje] of casos) assert.deepEqual(erroresDeUna({ [clave]: valor }), [error(en(clave), mensaje)], clave);
+  });
+
+  it('numero: el índice más 1, sin saltos', () => {
+    for (const numero of [2, 0, '1', 1.5, null, [1]]) {
+      assert.deepEqual(erroresDeUna({ numero }), [error(en('numero'), 'numeroDeDataset')], JSON.stringify(numero));
+    }
+    const conSalto = propuestasDeDatasets(2);
+    conSalto[1].numero = 3;
+    assert.deepEqual(validar(conDatasets(conSalto)), [error(en('numero', 1), 'numeroDeDataset')]);
+    assert.deepEqual(validar(conDatasets(propuestasDeDatasets(3))), []);
+  });
+
+  it('el título, de 5 a 120 caracteres, y la justificación, de 20 a 600, medidos tal como llegaron', () => {
+    for (const largo of [5, 120]) assert.deepEqual(erroresDeUna({ titulo: 'é'.repeat(largo) }), [], `título de ${largo}`);
+    for (const largo of [4, 121]) {
+      assert.deepEqual(erroresDeUna({ titulo: 'é'.repeat(largo) }), [error(en('titulo'), 'de5a120')], `título de ${largo}`);
+    }
+    for (const largo of [20, 600]) assert.deepEqual(erroresDeUna({ justificacion: 'é'.repeat(largo) }), [], `justificación de ${largo}`);
+    for (const largo of [19, 601]) {
+      assert.deepEqual(erroresDeUna({ justificacion: 'é'.repeat(largo) }), [error(en('justificacion'), 'de20a600')],
+        `justificación de ${largo}`);
+    }
+    // Los espacios de los extremos cuentan para el mínimo
+    assert.deepEqual(erroresDeUna({ titulo: ' abc ' }), []);
+    assert.deepEqual(erroresDeUna({ titulo: ' abc' }), [error(en('titulo'), 'de5a120')]);
+  });
+
+  // Review Focus 3: un emoji es un carácter, contado con Array.from
+  it('un título de 120 emoji pasa; uno de 121 o de 4, no', () => {
+    for (const n of [5, 120]) assert.deepEqual(erroresDeUna({ titulo: '🧉'.repeat(n) }), [], `${n} emoji`);
+    for (const n of [4, 121]) {
+      assert.deepEqual(erroresDeUna({ titulo: '🧉'.repeat(n) }), [error(en('titulo'), 'de5a120')], `${n} emoji`);
+    }
+  });
+
+  it('las listas: de 1 a 4 orígenes, hasta 5 datasets relacionados, de 3 a 15 campos sugeridos y de 1 a 5 fuentes', () => {
+    const ORIGENES = ['Agenda', 'Noticias', 'Pedidos de acceso', 'Cruce de datasets'];
+    for (const n of [1, 4]) assert.deepEqual(erroresDeUna({ origenes: ORIGENES.slice(0, n) }), [], `${n} orígenes`);
+    assert.deepEqual(erroresDeUna({ origenes: [] }), [error(en('origenes'), 'origenes')]);
+    // Cinco orígenes repiten uno: el error de la cantidad y el del repetido se suman (abajo)
+    for (const n of [0, 5]) assert.deepEqual(erroresDeUna({ datasets_relacionados: relacionados(n) }), [], `${n} relacionados`);
+    assert.deepEqual(erroresDeUna({ datasets_relacionados: relacionados(6) }),
+      [error(en('datasets_relacionados'), 'datasetsRelacionados')]);
+    for (const n of [3, 15]) assert.deepEqual(erroresDeUna({ campos_sugeridos: campos(n) }), [], `${n} campos`);
+    for (const n of [2, 16]) {
+      assert.deepEqual(erroresDeUna({ campos_sugeridos: campos(n) }), [error(en('campos_sugeridos'), 'camposSugeridos')], `${n} campos`);
+    }
+    for (const n of [1, 5]) assert.deepEqual(erroresDeUna({ fuentes: direcciones(n) }), [], `${n} fuentes`);
+    for (const n of [0, 6]) {
+      assert.deepEqual(erroresDeUna({ fuentes: direcciones(n) }), [error(en('fuentes'), 'fuentesDeDataset')], `${n} fuentes`);
+    }
+  });
+
+  it('los textos de adentro: cada campo sugerido hasta 64, el nombre de un dataset relacionado hasta 200 y la anonimización hasta 1000',
+    () => {
+      assert.deepEqual(erroresDeUna({ campos_sugeridos: ['fecha', 'barrio', 'é'.repeat(64)] }), []);
+      assert.deepEqual(erroresDeUna({ campos_sugeridos: ['fecha', 'é'.repeat(65), 'barrio'] }),
+        [error(en('campos_sugeridos[1]'), 'hasta64')]);
+      const conNombre = (nombre) => erroresDeUna({ datasets_relacionados: [{ ckan_slug: 'prueba-a', nombre }] });
+      assert.deepEqual(conNombre('é'.repeat(200)), []);
+      assert.deepEqual(conNombre('é'.repeat(201)), [error(en('datasets_relacionados[0].nombre'), 'hasta200')]);
+      assert.deepEqual(erroresDeUna({ riesgo: 'Medio', anonimizacion: 'é'.repeat(1000) }), []);
+      assert.deepEqual(erroresDeUna({ riesgo: 'Medio', anonimizacion: '🧉'.repeat(1000) }), []);
+      assert.deepEqual(erroresDeUna({ riesgo: 'Medio', anonimizacion: 'é'.repeat(1001) }), [error(en('anonimizacion'), 'hasta1000')]);
+    });
+
+  it('un texto no queda vacío ni con solo espacios, no lleva el carácter nulo y no es otra cosa', () => {
+    const base = () => conDatasets([propuestaDatasetDePrueba({ riesgo: 'Medio', anonimizacion: ANONIMIZACION })]);
+    const rutas = [en('titulo'), en('justificacion'), en('campos_sugeridos[2]'), en('datasets_relacionados[0].nombre'),
+      en('anonimizacion')];
+    for (const ruta of rutas) {
+      for (const valor of ['', '   ', '\n\t ']) assert.deepEqual(erroresCon(ruta, valor, base), [error(ruta, 'vacio')], ruta);
+      assert.deepEqual(erroresCon(ruta, 'a\u0000b', base), [error(ruta, 'caracterNulo')], ruta);
+      for (const valor of [5, ['a'], { a: 1 }]) assert.deepEqual(erroresCon(ruta, valor, base), [error(ruta, 'texto')], ruta);
+    }
+    // null no es un texto, salvo en la anonimización (abajo, la coherencia)
+    for (const ruta of rutas.slice(0, 4)) assert.deepEqual(erroresCon(ruta, null, base), [error(ruta, 'texto')], ruta);
+  });
+
+  it('los valores cerrados: cada origen, valor, riesgo y formato que existe pasa; otro, su error', () => {
+    for (const origen of ['Agenda', 'Noticias', 'Pedidos de acceso', 'Cruce de datasets']) {
+      assert.deepEqual(erroresDeUna({ origenes: [origen] }), [], origen);
+    }
+    for (const origen of ['Prensa', 'agenda', 'Pedidos de Acceso', 'Agenda ', '', null, 3]) {
+      assert.deepEqual(erroresDeUna({ origenes: ['Agenda', origen] }), [error(en('origenes[1]'), 'origen')], String(origen));
+    }
+    for (const formato_sugerido of ['CSV', 'GeoJSON', 'JSON', 'KML', 'XML']) {
+      assert.deepEqual(erroresDeUna({ formato_sugerido }), [], formato_sugerido);
+    }
+    for (const formato_sugerido of ['XLSX', 'csv', 'Geojson', 'PDF', '', null]) {
+      assert.deepEqual(erroresDeUna({ formato_sugerido }), [error(en('formato_sugerido'), 'formatoSugerido')], String(formato_sugerido));
+    }
+    for (const valor of ['Muy alto', 'alto', 'ALTO', '', null]) {
+      assert.deepEqual(erroresDeUna({ valor }), [error(en('valor'), 'valor')], String(valor));
+    }
+    for (const riesgo of ['Ninguno', 'bajo', '', null]) {
+      assert.deepEqual(erroresDeUna({ riesgo }), [error(en('riesgo'), 'riesgo')], String(riesgo));
+    }
+  });
+
+  it('ckan_slug: de 2 a 100 caracteres, letras minúsculas sin tildes, números, - y _', () => {
+    const ruta = en('datasets_relacionados[0].ckan_slug');
+    const conSlug = (ckan_slug) => erroresDeUna({ datasets_relacionados: [{ ckan_slug, nombre: 'Dataset de prueba' }] });
+    for (const slug of ['playones_deportivos-2', 'ab', 'a'.repeat(100), '0-_', 'z9']) assert.deepEqual(conSlug(slug), [], slug);
+    for (const slug of ['Playones', 'a', 'a'.repeat(101), 'con espacio', 'ñandu', 'prueba.a', 'prueba/a', 'prueba-a\n', '', '   ',
+      'a\u0000b']) {
+      assert.deepEqual(conSlug(slug), [error(ruta, 'slug')], JSON.stringify(slug));
+    }
+    for (const slug of [null, 5, ['prueba-a']]) assert.deepEqual(conSlug(slug), [error(ruta, 'texto')], JSON.stringify(slug));
+  });
+
+  it('una fuente que no es https:// da el mensaje de todas las direcciones', () => {
+    for (const fuente of ['http://datos.ejemplo.gob.ar/a.csv', 'datos.ejemplo.gob.ar/a.csv', 'https://',
+      `https://datos.ejemplo.gob.ar/${'a'.repeat(2048)}`, null]) {
+      assert.deepEqual(erroresDeUna({ fuentes: [fuente] }), [error(en('fuentes[0]'), 'direccion')], String(fuente).slice(0, 40));
+    }
+  });
+
+  it('los repetidos: el error va en el segundo (y en los que siguen), con su índice; se comparan exactos', () => {
+    const [a, b] = direcciones(2);
+    assert.deepEqual(erroresDeUna({ origenes: ['Agenda', 'Noticias', 'Agenda'] }), [error(en('origenes[2]'), 'origenRepetido')]);
+    assert.deepEqual(erroresDeUna({ origenes: ['Noticias', 'Noticias', 'Agenda', 'Noticias'] }),
+      [error(en('origenes[1]'), 'origenRepetido'), error(en('origenes[3]'), 'origenRepetido')]);
+    assert.deepEqual(erroresDeUna({
+      datasets_relacionados: [{ ckan_slug: 'prueba-a', nombre: 'Dataset de prueba A' }, { ckan_slug: 'prueba-a', nombre: 'Otro nombre' }]
+    }), [error(en('datasets_relacionados[1].ckan_slug'), 'slugRepetido')]);
+    assert.deepEqual(erroresDeUna({ campos_sugeridos: ['fecha', 'barrio', 'fecha'] }),
+      [error(en('campos_sugeridos[2]'), 'campoSugeridoRepetido')]);
+    assert.deepEqual(erroresDeUna({ fuentes: [a, b, a] }), [error(en('fuentes[2]'), 'fuenteRepetida')]);
+    // Exactos: otras mayúsculas o un espacio hacen otro campo; el mismo nombre con otro slug, otro dataset
+    assert.deepEqual(erroresDeUna({ campos_sugeridos: ['fecha', 'Fecha', ' fecha'] }), []);
+    assert.deepEqual(erroresDeUna({ fuentes: [a, a.replace('datos', 'DATOS')] }), []);
+    assert.deepEqual(erroresDeUna({
+      datasets_relacionados: [{ ckan_slug: 'prueba-a', nombre: 'Un nombre' }, { ckan_slug: 'prueba_a', nombre: 'Un nombre' }]
+    }), []);
+  });
+
+  it('un valor repetido que ya tiene su propio error no suma el del repetido', () => {
+    assert.deepEqual(erroresDeUna({ origenes: ['Prensa', 'Prensa'] }),
+      [error(en('origenes[0]'), 'origen'), error(en('origenes[1]'), 'origen')]);
+    const http = 'http://datos.ejemplo.gob.ar/a.csv';
+    assert.deepEqual(erroresDeUna({ fuentes: [http, http] }),
+      [error(en('fuentes[0]'), 'direccion'), error(en('fuentes[1]'), 'direccion')]);
+    const largo = 'é'.repeat(65);
+    assert.deepEqual(erroresDeUna({ campos_sugeridos: [largo, 'fecha', largo] }),
+      [error(en('campos_sugeridos[0]'), 'hasta64'), error(en('campos_sugeridos[2]'), 'hasta64')]);
+    assert.deepEqual(erroresDeUna({
+      datasets_relacionados: [{ ckan_slug: 'Prueba', nombre: 'Uno' }, { ckan_slug: 'Prueba', nombre: 'Dos' }]
+    }), [error(en('datasets_relacionados[0].ckan_slug'), 'slug'), error(en('datasets_relacionados[1].ckan_slug'), 'slug')]);
+    const cortos = propuestasDeDatasets(2);
+    for (const propuesta of cortos) propuesta.titulo = 'Uno';
+    assert.deepEqual(validar(conDatasets(cortos)), [error(en('titulo', 0), 'de5a120'), error(en('titulo', 1), 'de5a120')]);
+  });
+
+  it('dos propuestas con el mismo título, sin mirar las mayúsculas ni los espacios de los extremos: el error en la segunda', () => {
+    const dos = propuestasDeDatasets(2);
+    dos[1].titulo = `  ${dos[0].titulo.toUpperCase()} `;
+    assert.deepEqual(validar(conDatasets(dos)), [error(en('titulo', 1), 'tituloDeDatasetRepetido')]);
+    assert.deepEqual(validar(conDatasets(dos)), [{
+      campo: 'propuestas_datasets[1].titulo', mensaje: 'Hay dos propuestas de datasets con el mismo título.'
+    }]);
+    const tres = propuestasDeDatasets(3);
+    for (const propuesta of tres) propuesta.titulo = 'Un título repetido';
+    assert.deepEqual(validar(conDatasets(tres)),
+      [error(en('titulo', 1), 'tituloDeDatasetRepetido'), error(en('titulo', 2), 'tituloDeDatasetRepetido')]);
+    // Review Focus 5: las tildes cuentan, y un espacio de adentro también
+    const conTildes = propuestasDeDatasets(2);
+    conTildes[0].titulo = 'Educación por barrio';
+    conTildes[1].titulo = 'Educacion por barrio';
+    assert.deepEqual(validar(conDatasets(conTildes)), []);
+    conTildes[1].titulo = 'Educación  por barrio';
+    assert.deepEqual(validar(conDatasets(conTildes)), []);
+  });
+
+  it('la cantidad y los repetidos se suman, como la cantidad y los elementos de cualquier lista', () => {
+    assert.deepEqual(erroresDeUna({ origenes: ['Agenda', 'Noticias', 'Pedidos de acceso', 'Cruce de datasets', 'Agenda'] }),
+      [error(en('origenes'), 'origenes'), error(en('origenes[4]'), 'origenRepetido')]);
+    assert.deepEqual(erroresDeUna({ datasets_relacionados: [...relacionados(5), relacionados(1)[0]] }),
+      [error(en('datasets_relacionados'), 'datasetsRelacionados'), error(en('datasets_relacionados[5].ckan_slug'), 'slugRepetido')]);
+    assert.deepEqual(erroresDeUna({ campos_sugeridos: [...campos(15), 'campo_3'] }),
+      [error(en('campos_sugeridos'), 'camposSugeridos'), error(en('campos_sugeridos[15]'), 'campoSugeridoRepetido')]);
+    assert.deepEqual(erroresDeUna({ fuentes: [...direcciones(5), direcciones(1)[0]] }),
+      [error(en('fuentes'), 'fuentesDeDataset'), error(en('fuentes[5]'), 'fuenteRepetida')]);
+    const cuatro = propuestasDeDatasets(4);
+    cuatro[3].titulo = cuatro[0].titulo;
+    assert.deepEqual(validar(conDatasets(cuatro)), [error(RAIZ, 'propuestasDatasets'), error(en('titulo', 3), 'tituloDeDatasetRepetido')]);
+  });
+
+  it('la coherencia: valor Bajo y riesgo Alto no se propone; la anonimización va con riesgo Medio o Alto y no con Bajo', () => {
+    for (const valor of NIVELES) {
+      for (const riesgo of NIVELES) {
+        if (valor === 'Bajo' && riesgo === 'Alto') continue;
+        const anonimizacion = riesgo === 'Bajo' ? null : ANONIMIZACION;
+        assert.deepEqual(erroresDeUna({ valor, riesgo, anonimizacion }), [], `${valor} ${riesgo}`);
+      }
+    }
+    // Con valor Bajo y riesgo Alto, solo ese error, en riesgo: la anonimización ya no se mira
+    for (const anonimizacion of [ANONIMIZACION, null]) {
+      assert.deepEqual(erroresDeUna({ valor: 'Bajo', riesgo: 'Alto', anonimizacion }), [{
+        campo: 'propuestas_datasets[0].riesgo', mensaje: 'Un dataset de valor bajo y riesgo alto no se propone (matriz de priorización).'
+      }], String(anonimizacion));
+    }
+    for (const [valor, riesgo] of [['Alto', 'Medio'], ['Alto', 'Alto'], ['Medio', 'Medio'], ['Medio', 'Alto'], ['Bajo', 'Medio']]) {
+      assert.deepEqual(erroresDeUna({ valor, riesgo, anonimizacion: null }), [error(en('anonimizacion'), 'sinAnonimizacion')],
+        `${valor} ${riesgo}`);
+    }
+    for (const valor of NIVELES) {
+      assert.deepEqual(erroresDeUna({ valor, riesgo: 'Bajo', anonimizacion: ANONIMIZACION }),
+        [error(en('anonimizacion'), 'anonimizacionDeMas')], valor);
+    }
+    // En su índice
+    const dos = propuestasDeDatasets(2);
+    dos[1].riesgo = 'Alto';
+    assert.deepEqual(validar(conDatasets(dos)), [error(en('anonimizacion', 1), 'sinAnonimizacion')]);
+  });
+
+  it('la coherencia no se mira con un valor o un riesgo inválidos ni con una anonimización que ya tiene su error', () => {
+    // "" y "   " dan vacío, con riesgo Bajo (sin anonimizacionDeMas) y con Medio
+    const conSuError = [['', 'vacio'], ['   ', 'vacio'], [5, 'texto'], [[], 'texto'], ['a\u0000b', 'caracterNulo'],
+      ['é'.repeat(1001), 'hasta1000']];
+    for (const riesgo of ['Bajo', 'Medio']) {
+      for (const [anonimizacion, mensaje] of conSuError) {
+        assert.deepEqual(erroresDeUna({ riesgo, anonimizacion }), [error(en('anonimizacion'), mensaje)],
+          `${riesgo} ${JSON.stringify(anonimizacion).slice(0, 20)}`);
+      }
+      const sinAnonimizacion = propuestaDatasetDePrueba({ riesgo });
+      delete sinAnonimizacion.anonimizacion;
+      assert.deepEqual(validar(conDatasets([sinAnonimizacion])), [error(en('anonimizacion'), 'falta')], riesgo);
+    }
+    assert.deepEqual(erroresDeUna({ valor: 'Muy alto', riesgo: 'Medio', anonimizacion: null }), [error(en('valor'), 'valor')]);
+    assert.deepEqual(erroresDeUna({ riesgo: 'Muy alto', anonimizacion: ANONIMIZACION }), [error(en('riesgo'), 'riesgo')]);
+    assert.deepEqual(erroresDeUna({ valor: 'bajo', riesgo: 'Alto', anonimizacion: null }), [error(en('valor'), 'valor')]);
+    assert.deepEqual(erroresDeUna({ valor: 'Bajo', riesgo: 'alto', anonimizacion: ANONIMIZACION }), [error(en('riesgo'), 'riesgo')]);
+  });
+
+  // La anonimización vacía tiene su propio error, en el orden de las claves; la coherencia va después y, con valor Bajo y riesgo
+  // Alto, da el suyo en riesgo: los dos se suman
+  it('valor Bajo, riesgo Alto y una anonimización vacía: el error de la anonimización y después el de la matriz', () => {
+    assert.deepEqual(erroresDeUna({ valor: 'Bajo', riesgo: 'Alto', anonimizacion: '' }), [
+      { campo: 'propuestas_datasets[0].anonimizacion', mensaje: 'El texto no puede quedar vacío ni con solo espacios.' },
+      { campo: 'propuestas_datasets[0].riesgo', mensaje: 'Un dataset de valor bajo y riesgo alto no se propone (matriz de priorización).' }
+    ]);
+  });
+
+  it('el orden: las propuestas, cada propuesta de dataset (su coherencia al final de los suyos), los títulos repetidos y el manifiesto',
+    () => {
+      const edicion = conDatasets(propuestasDeDatasets(2));
+      edicion.propuestas[0].titulo = '';
+      const [primera, segunda] = edicion.propuestas_datasets;
+      primera.justificacion = 'Muy corta.';
+      primera.riesgo = 'Medio';
+      primera.formato_sugerido = 'XLSX';
+      segunda.titulo = primera.titulo.toUpperCase();
+      segunda.fuentes = ['http://datos.ejemplo.gob.ar/a.csv'];
+      edicion.adjuntos[1].sha256 = 'A';
+      assert.deepEqual(validar(edicion), [
+        error('propuestas[0].titulo', 'vacio'),
+        error(en('justificacion'), 'de20a600'),
+        error(en('formato_sugerido'), 'formatoSugerido'),
+        error(en('anonimizacion'), 'sinAnonimizacion'),
+        error(en('fuentes[0]', 1), 'direccion'),
+        error(en('titulo', 1), 'tituloDeDatasetRepetido'),
+        error('adjuntos[1].sha256', 'sha256')
+      ]);
+    });
+
+  it('no cambia la edición que valida', () => {
+    const edicion = conDatasets(tresValidas());
+    edicion.propuestas_datasets[1].titulo = '  OTRO DATASET NUEVO INVENTADO ';
     const copia = structuredClone(edicion);
     validar(edicion);
     assert.deepEqual(edicion, copia);
@@ -2483,6 +2862,143 @@ describe('gruposDeLaAgenda', () => {
   });
 });
 
+// spec 2026-11-18-dato-quincena-propuestas-datasets, 2: la matriz de valor y riesgo de la guía, con su clave y su texto. Valor
+// Medio con riesgo Alto da «Evaluar riesgos» (decisión del usuario: el borrador de Datito no lo cubría); valor Bajo con riesgo Alto
+// no llega (el POST lo rechaza) y da evaluar
+describe('prioridadDeDataset', () => {
+  const ALTA = { clave: 'alta', texto: 'Prioridad alta' };
+  const SI_HAY_RECURSOS = { clave: 'si_hay_recursos', texto: 'Publicar si hay recursos' };
+  const EVALUAR = { clave: 'evaluar', texto: 'Evaluar riesgos' };
+
+  it('los 9 casos de la tabla: clave y texto', () => {
+    const casos = [
+      ['Alto', 'Bajo', ALTA], ['Alto', 'Medio', EVALUAR], ['Alto', 'Alto', EVALUAR],
+      ['Medio', 'Bajo', SI_HAY_RECURSOS], ['Medio', 'Medio', SI_HAY_RECURSOS], ['Medio', 'Alto', EVALUAR],
+      ['Bajo', 'Bajo', SI_HAY_RECURSOS], ['Bajo', 'Medio', SI_HAY_RECURSOS], ['Bajo', 'Alto', EVALUAR]
+    ];
+    assert.equal(casos.length, 9);
+    for (const [valor, riesgo, prioridad] of casos) {
+      assert.deepEqual(prioridadDeDataset(valor, riesgo), prioridad, `${valor} ${riesgo}`);
+      assert.deepEqual(Object.keys(prioridadDeDataset(valor, riesgo)), ['clave', 'texto']);
+    }
+  });
+
+  it('un valor o un riesgo que no es de la tabla (no pasa el POST): evaluar, sin tirar', () => {
+    for (const [valor, riesgo] of [['alto', 'Bajo'], ['Alto', 'bajo'], [undefined, 'Bajo'], [null, null], ['constructor', 'Bajo'],
+      ['Alto', '__proto__'], [{}, []]]) {
+      assert.deepEqual(prioridadDeDataset(valor, riesgo), EVALUAR, `${String(valor)} ${String(riesgo)}`);
+    }
+  });
+
+  it('cada vez un objeto nuevo: cambiar uno no cambia la tabla', () => {
+    const una = prioridadDeDataset('Alto', 'Bajo');
+    una.clave = 'otra';
+    una.texto = 'Otro texto';
+    assert.deepEqual(prioridadDeDataset('Alto', 'Bajo'), ALTA);
+  });
+});
+
+// spec 2026-11-18-dato-quincena-propuestas-datasets, 4: las propuestas de datasets del detalle, con los textos ya armados, de la
+// edición archivada (que no cambia): la página y el mail las imprimen tal cual
+describe('propuestasDatasetsDelDetalle', () => {
+  const CLAVES = ['numero_texto', 'titulo', 'origenes', 'justificacion', 'prioridad', 'valor_y_riesgo', 'formato', 'campos',
+    'anonimizacion', 'datasets_relacionados', 'fuentes'];
+  const conDatasets = (propuestas_datasets) => edicionDePrueba({ propuestas_datasets });
+
+  it('sin la clave (las archivadas antes de la v1.4 y las v1.3), null; con la lista vacía, []', () => {
+    assert.equal(propuestasDatasetsDelDetalle(edicionDePrueba()), null);
+    assert.equal(propuestasDatasetsDelDetalle(pilotoDePrueba()), null);
+    assert.deepEqual(propuestasDatasetsDelDetalle(conDatasets([])), []);
+  });
+
+  it('una propuesta: su número, la prioridad, el valor y el riesgo, los relacionados con el portal y lo demás como llegó', () => {
+    const [propuesta, ...otras] = propuestasDatasetsDelDetalle(conDatasets([propuestaDatasetDePrueba()]));
+    assert.deepEqual(otras, []);
+    assert.deepEqual(Object.keys(propuesta), CLAVES);
+    assert.deepEqual(propuesta, {
+      numero_texto: 'Dataset nuevo 1',
+      titulo: 'Un dataset nuevo inventado',
+      origenes: ['Agenda', 'Pedidos de acceso'],
+      justificacion: 'Una justificación inventada: el tema aparece en la agenda de prueba y en dos pedidos de acceso inventados.',
+      prioridad: { clave: 'alta', texto: 'Prioridad alta' },
+      valor_y_riesgo: 'Valor alto · Riesgo bajo',
+      formato: 'CSV',
+      campos: ['fecha', 'barrio', 'cantidad'],
+      anonimizacion: null,
+      datasets_relacionados: [
+        { nombre: 'Dataset de prueba A', url: 'https://datos.comodoro.gov.ar/dataset/prueba-a' },
+        { nombre: 'Dataset relacionado de prueba', url: 'https://datos.comodoro.gov.ar/dataset/prueba_relacionada-2' }
+      ],
+      fuentes: ['https://datos.ejemplo.gob.ar/fuentes/dataset-nuevo-de-prueba.csv']
+    });
+    assert.deepEqual(propuesta.datasets_relacionados.map((r) => Object.keys(r)), [['nombre', 'url'], ['nombre', 'url']]);
+  });
+
+  it('las tres de prueba, en su orden: una de cada prioridad, con su valor y su riesgo, y la anonimización tal cual', () => {
+    const tres = propuestasDatasetsDelDetalle(conDatasets(propuestasDatasetsDePrueba()));
+    assert.deepEqual(tres.map((p) => p.numero_texto), ['Dataset nuevo 1', 'Dataset nuevo 2', 'Dataset nuevo 3']);
+    assert.deepEqual(tres.map((p) => [p.prioridad, p.valor_y_riesgo]), [
+      [{ clave: 'alta', texto: 'Prioridad alta' }, 'Valor alto · Riesgo bajo'],
+      [{ clave: 'si_hay_recursos', texto: 'Publicar si hay recursos' }, 'Valor medio · Riesgo medio'],
+      [{ clave: 'evaluar', texto: 'Evaluar riesgos' }, 'Valor alto · Riesgo alto']
+    ]);
+    assert.deepEqual(tres.map((p) => p.anonimizacion),
+      [null, 'Agrupar por barrio, sin direcciones exactas.', 'Contar por mes y por zona.\nNunca por persona.']);
+    assert.deepEqual(tres.map((p) => p.formato), ['CSV', 'GeoJSON', 'JSON']);
+    assert.deepEqual(tres[1].datasets_relacionados, []);
+    assert.deepEqual(tres[2].origenes, ['Cruce de datasets', 'Pedidos de acceso', 'Agenda', 'Noticias']);
+    assert.deepEqual(tres[2].fuentes, [0, 1, 2, 3, 4].map((i) => `https://datos.ejemplo.gob.ar/${i}.csv`));
+  });
+
+  it('el valor y el riesgo de cada par que pasa el POST, en minúscula, con la prioridad de la tabla', () => {
+    const pares = [
+      ['Alto', 'Bajo', 'Valor alto · Riesgo bajo'], ['Alto', 'Medio', 'Valor alto · Riesgo medio'],
+      ['Alto', 'Alto', 'Valor alto · Riesgo alto'], ['Medio', 'Bajo', 'Valor medio · Riesgo bajo'],
+      ['Medio', 'Medio', 'Valor medio · Riesgo medio'], ['Medio', 'Alto', 'Valor medio · Riesgo alto'],
+      ['Bajo', 'Bajo', 'Valor bajo · Riesgo bajo'], ['Bajo', 'Medio', 'Valor bajo · Riesgo medio']
+    ];
+    for (const [valor, riesgo, texto] of pares) {
+      const anonimizacion = riesgo === 'Bajo' ? null : 'Agrupar por barrio, sin direcciones exactas.';
+      const edicion = conDatasets([propuestaDatasetDePrueba({ valor, riesgo, anonimizacion })]);
+      assert.deepEqual(validar(edicion), [], `${valor} ${riesgo}`);
+      const [propuesta] = propuestasDatasetsDelDetalle(edicion);
+      assert.equal(propuesta.valor_y_riesgo, texto);
+      assert.deepEqual(propuesta.prioridad, prioridadDeDataset(valor, riesgo));
+    }
+  });
+
+  // Review Focus 4: el HTML de Datito pasa tal cual (lo escapan la página y el mail, que lo imprimen) y la url de un relacionado
+  // se arma solo con el portal y el slug validado, nunca con el nombre
+  it('HTML en cualquier texto pasa tal cual; la url de un relacionado es solo el portal más el slug', () => {
+    const xss = '<img src=x onerror=1>';
+    const edicion = conDatasets([propuestaDatasetDePrueba({
+      titulo: `${xss} y algo más`, justificacion: `${xss}: una justificación inventada para la prueba.`,
+      datasets_relacionados: [{ ckan_slug: 'prueba-a', nombre: xss }], campos_sugeridos: [xss, 'barrio', 'cantidad'],
+      riesgo: 'Medio', anonimizacion: xss
+    })]);
+    assert.deepEqual(validar(edicion), []);
+    const [propuesta] = propuestasDatasetsDelDetalle(edicion);
+    assert.equal(propuesta.titulo, `${xss} y algo más`);
+    assert.equal(propuesta.justificacion, `${xss}: una justificación inventada para la prueba.`);
+    assert.deepEqual(propuesta.campos, [xss, 'barrio', 'cantidad']);
+    assert.equal(propuesta.anonimizacion, xss);
+    assert.deepEqual(propuesta.datasets_relacionados, [{ nombre: xss, url: 'https://datos.comodoro.gov.ar/dataset/prueba-a' }]);
+  });
+
+  it('no cambia la edición, y lo que da no comparte listas ni objetos con ella', () => {
+    const edicion = conDatasets(propuestasDatasetsDePrueba());
+    const antes = structuredClone(edicion);
+    const [primera] = propuestasDatasetsDelDetalle(edicion);
+    assert.deepEqual(edicion, antes);
+    primera.origenes.push('Otro');
+    primera.campos.push('otro');
+    primera.fuentes.push('https://datos.ejemplo.gob.ar/otra.csv');
+    primera.datasets_relacionados[0].nombre = 'Otro nombre';
+    primera.datasets_relacionados.push({ nombre: 'Uno más', url: 'https://datos.ejemplo.gob.ar/uno-mas' });
+    assert.deepEqual(edicion, antes);
+  });
+});
+
 describe('detalleDeLaEdicion', () => {
   // La edición de prueba con una efeméride en la agenda (después del evento de prueba, que no trae tipo) y con el SVG, como la
   // guarda el POST (metadata, el texto de partesDePrueba), con el id 12 de las respuestas de la página, la primera regular
@@ -2840,6 +3356,62 @@ describe('detalleDeLaEdicion', () => {
     assert.deepEqual(detalle({ edicion: conNull }).propuestas, detalle().propuestas);
   });
 
+  // spec 2026-11-18-dato-quincena-propuestas-datasets, 4: propuestas_datasets, después de propuestas. La edición de prueba (sin la
+  // clave), null; la misma con las tres propuestas de datasets de prueba (una de cada prioridad) o con la lista vacía, guardada en
+  // la misma fila con su metadata, da las dos respuestas con datasets de la página
+  const edicionConDatasets = (propuestas_datasets) => edicionDePrueba({
+    agenda: [...edicionDePrueba().agenda, efemerideDePrueba()], propuestas_datasets
+  });
+  const detalleConDatasets = (propuestas_datasets) => detalle({
+    fila: filaDePrueba({
+      metadata: partesDePrueba(edicionConDatasets(propuestas_datasets), { infografia_svg: svgDePrueba() }).metadata.toString('utf8')
+    }),
+    linea: lineaDePrueba()
+  });
+
+  it('propuestas_datasets va después de propuestas: null sin la clave, en la edición de prueba y en la de repeticiones', () => {
+    const d = detalle({ linea: lineaDePrueba() });
+    assert.equal(Object.keys(d).indexOf('propuestas_datasets'), Object.keys(d).indexOf('propuestas') + 1);
+    assert.equal(d.propuestas_datasets, null);
+    assert.equal(detalleConRepeticion().propuestas_datasets, null);
+    assert.equal(detalle({ fila: filaDePrueba({ tipo: 'piloto', referencia_piloto: 'piloto-4' }), edicion: pilotoDePrueba() })
+      .propuestas_datasets, null);
+    assert.deepEqual([RESPUESTAS.detalle.data.propuestas_datasets, RESPUESTAS.detalle_con_repeticion.data.propuestas_datasets],
+      [null, null]);
+  });
+
+  it('con tres propuestas de datasets, válida, da el detalle con datasets de la página, con las claves en su orden', () => {
+    assert.deepEqual(validar(edicionConDatasets(propuestasDatasetsDePrueba())), []);
+    const d = detalleConDatasets(propuestasDatasetsDePrueba());
+    assert.deepEqual(d, RESPUESTAS.detalle_con_datasets.data);
+    assert.deepEqual(ordenDeLasClaves(d), ordenDeLasClaves(RESPUESTAS.detalle_con_datasets.data));
+    assert.equal(RESPUESTAS.detalle_con_datasets.success, true);
+    assert.deepEqual(d.propuestas_datasets, propuestasDatasetsDelDetalle(edicionConDatasets(propuestasDatasetsDePrueba())));
+    assert.deepEqual(d.propuestas_datasets.map((p) => [p.numero_texto, p.prioridad.clave]),
+      [['Dataset nuevo 1', 'alta'], ['Dataset nuevo 2', 'si_hay_recursos'], ['Dataset nuevo 3', 'evaluar']]);
+  });
+
+  it('con la lista vacía, válida, da el detalle con [] de las respuestas de la página', () => {
+    assert.deepEqual(validar(edicionConDatasets([])), []);
+    const d = detalleConDatasets([]);
+    assert.deepEqual(d, RESPUESTAS.detalle_datasets_vacia.data);
+    assert.deepEqual(ordenDeLasClaves(d), ordenDeLasClaves(RESPUESTAS.detalle_datasets_vacia.data));
+    assert.equal(RESPUESTAS.detalle_datasets_vacia.success, true);
+    assert.deepEqual(d.propuestas_datasets, []);
+  });
+
+  it('las dos respuestas con datasets: lo demás, igual que el detalle de prueba, salvo el tamaño de la edición completa', () => {
+    const { propuestas_datasets: sinLaClave, archivos: losDeHoy, ...elRestoDeHoy } = RESPUESTAS.detalle.data;
+    assert.equal(sinLaClave, null);
+    for (const nombre of ['detalle_con_datasets', 'detalle_datasets_vacia']) {
+      const { propuestas_datasets, archivos, ...elResto } = RESPUESTAS[nombre].data;
+      assert.ok(Array.isArray(propuestas_datasets), nombre);
+      assert.deepEqual(elResto, elRestoDeHoy, nombre);
+      assert.deepEqual(archivos.slice(0, -1), losDeHoy.slice(0, -1), nombre);
+      assert.deepEqual({ ...archivos.at(-1), detalle: null }, { ...losDeHoy.at(-1), detalle: null }, nombre);
+    }
+  });
+
   it('no cambia lo que recibe', () => {
     const fila = filaDePrueba();
     const edicion = JSON.parse(fila.metadata);
@@ -2854,5 +3426,9 @@ describe('detalleDeLaEdicion', () => {
     detalleDeLaEdicion({ fila, edicion: conRepeticion, guardadas, adjuntos, previas });
     assert.deepEqual(conRepeticion, otraAntes);
     assert.deepEqual([...previas], [...PREVIAS]);
+    const conDatasets = edicionConDatasets(propuestasDatasetsDePrueba());
+    const conDatasetsAntes = structuredClone(conDatasets);
+    detalleDeLaEdicion({ fila, edicion: conDatasets, guardadas, adjuntos }).propuestas_datasets[0].origenes.push('Otro');
+    assert.deepEqual(conDatasets, conDatasetsAntes);
   });
 });

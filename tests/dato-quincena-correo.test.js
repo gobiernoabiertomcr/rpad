@@ -10,7 +10,9 @@ import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { crearBaseDePrueba, correrSqlEnBaseDePrueba, cerrarDb, query, db, mailpit, paraCasilla, MAILPIT_URL } from './helpers.js';
 import { asegurarBaseDePrueba } from './notas-fixtures.js';
-import { edicionDePrueba, pilotoDePrueba, partesDePrueba, svgDePrueba, repeticionDePrueba } from './dato-quincena-fixtures.js';
+import {
+  edicionDePrueba, pilotoDePrueba, partesDePrueba, svgDePrueba, repeticionDePrueba, propuestasDatasetsDePrueba
+} from './dato-quincena-fixtures.js';
 import { claveDeEdicion, filasDeLaEdicion, huellaDelPaquete } from '../services/datoQuincenaReglas.js';
 import {
   MENSAJES_CORREO, estaVigente, textoDeLaPersona, sePuedeReenviar, pastillaDelEnvio
@@ -85,9 +87,10 @@ const licencia = (quien, desde, hasta) => query(
 const prender = (activo) => query('UPDATE dato_quincena_correo_config SET envio_activo = ? WHERE id = 1', [activo ? 1 : 0]);
 
 // Llega una edición regular por el mismo camino que el POST (guardarEdicion): queda programada si el envío está prendido. Con el
-// SVG, salvo `svg: false`; `cambiar` recibe la edición antes de armar sus partes. Devuelve su id
-const llega = async (fecha_edicion, ahora, { svg = true, cambiar = () => {} } = {}) => {
-  const edicion = edicionDePrueba({ fecha_edicion, titulo: `El dato de la quincena del ${fecha_edicion}` });
+// SVG, salvo `svg: false`; `cambiar` recibe la edición antes de armar sus partes; con `piloto: true`, el piloto 4 de ese día (no
+// se programa: solo se le manda una prueba). Devuelve su id
+const llega = async (fecha_edicion, ahora, { svg = true, cambiar = () => {}, piloto = false } = {}) => {
+  const edicion = (piloto ? pilotoDePrueba : edicionDePrueba)({ fecha_edicion, titulo: `El dato de la quincena del ${fecha_edicion}` });
   cambiar(edicion);
   const partes = partesDePrueba(edicion, svg ? { infografia_svg: svgDePrueba() } : {});
   const manifiesto = JSON.parse(partes.metadata.toString('utf8'));
@@ -95,7 +98,7 @@ const llega = async (fecha_edicion, ahora, { svg = true, cambiar = () => {} } = 
     clave: claveDeEdicion(edicion),
     tipo: edicion.tipo,
     fecha_edicion,
-    referencia_piloto: null,
+    referencia_piloto: edicion.referencia_piloto,
     titulo: edicion.titulo,
     metadataTexto: partes.metadata.toString('utf8'),
     huella: huellaDelPaquete(partes),
@@ -270,6 +273,73 @@ describe('la repetición en el mail (contrato v1.3)', () => {
     assert.ok(texto.includes('Repite el dataset de la edición del 09/11/2026.\nDatos nuevos: Llegaron los datos de octubre, '
       + 'que la edición anterior no tenía.\n\nPara validar antes de publicar'));
     assert.ok(texto.includes('Otro título inventado [Efeméride, Repite]'));
+  });
+});
+
+// spec 2026-11-18-dato-quincena-propuestas-datasets, 6: el mail arma el detalle de la edición guardada, así que la sección
+// «Propuestas de datasets nuevos» llega sola, después de las propuestas y antes del botón; «Enviarme una prueba» de un piloto con
+// la clave, también (es la única forma de verla en el mail antes del 23/11: spec, 10)
+describe('las propuestas de datasets nuevos en el mail (contrato v1.4)', () => {
+  const SECCION = 'Propuestas de datasets nuevos';
+  const BOTON = 'Ver la edición en el RPAD';
+  const conDatasets = (lista) => (edicion) => { edicion.propuestas_datasets = lista; };
+  // Que cada parte esté, después de la última propuesta, y en ese orden
+  const enOrden = (texto, partes) => {
+    const lugares = partes.map((parte) => texto.indexOf(parte));
+    assert.ok(lugares.every((lugar) => lugar > texto.indexOf('Propuesta 2 de 2')), partes.join(' | '));
+    assert.deepEqual([...lugares].sort((a, b) => a - b), lugares, partes.join(' | '));
+  };
+  const TRES = [
+    'Dataset nuevo 1 de 3\nUn dataset nuevo inventado [Agenda, Pedidos de acceso]\nPrioridad alta (Valor alto · Riesgo bajo)\n',
+    'Dataset nuevo 2 de 3\nOtro dataset nuevo inventado [Noticias]\nPublicar si hay recursos (Valor medio · Riesgo medio)\n',
+    'Dataset nuevo 3 de 3\nUn tercer dataset nuevo inventado [Cruce de datasets, Pedidos de acceso, Agenda, Noticias]\n'
+      + 'Evaluar riesgos (Valor alto · Riesgo alto)\n'
+  ];
+
+  it('una regular con tres propuestas sale en la corrida de la mañana con la sección, en el HTML y en el texto', async () => {
+    const uno = await persona({ clave: 'Uno' });
+    await aLaLista(uno);
+    const id = await llega('2026-11-23', '2026-11-23 07:30:00', { cambiar: conDatasets(propuestasDatasetsDePrueba()) });
+    assert.deepEqual(await corrida('2026-11-24 08:05:00'), resultado({ edicion: id, enviados: 1 }));
+    const [mensaje] = await esperarDe(uno.email);
+    assert.equal(mensaje.Subject, ASUNTO_23);
+    const completo = await detalle(mensaje.ID);
+    enOrden(completo.HTML, [
+      `>${SECCION}</h3>`, '>Dataset nuevo 1 de 3</span>', '>Prioridad alta</span>', '>Dataset nuevo 2 de 3</span>',
+      '>Publicar si hay recursos</span>', '<strong>Cómo anonimizar</strong><br>Agrupar por barrio, sin direcciones exactas.',
+      '>Dataset nuevo 3 de 3</span>', '>Evaluar riesgos</span>', '<strong>Cómo anonimizar</strong><br>Contar por mes y por zona.<br>',
+      `>${BOTON}</a>`
+    ]);
+    assert.ok(completo.HTML.includes('<a href="https://datos.comodoro.gov.ar/dataset/prueba-a" style="color: #3E6B96; '
+      + 'text-decoration: none;">Dataset de prueba A</a>'));
+    // El texto plano llega con los renglones de un mail (\r\n)
+    const texto = completo.Text.replace(/\r\n/g, '\n');
+    enOrden(texto, [`\n\n${SECCION}\n\n`, ...TRES, `\n\n${BOTON}: `]);
+  });
+
+  it('«Enviarme una prueba» de un piloto con la clave también la trae; con [], el título y la línea', async () => {
+    const uno = await persona({ clave: 'Uno' });
+    const usuario = { id: uno.id, nombre_completo: 'PruebaUno Ejemplo', email: uno.email };
+    const conTres = await llega('2026-11-19', '2026-11-19 10:00:00', { piloto: true, cambiar: conDatasets(propuestasDatasetsDePrueba()) });
+    assert.equal(await correoDe(conTres), undefined, 'un piloto no se programa');
+    assert.deepEqual(await servicio.mandarPrueba({ edicion: { id: conTres, tipo: 'piloto' }, usuario, ahora: '2026-11-19 10:30:00' }),
+      { estado: 'hecho', enviado: true });
+    const [mensaje] = await esperarDe(uno.email);
+    assert.equal(mensaje.Subject, '[PRUEBA] Dato de la Quincena - 19/11/2026');
+    const completo = await detalle(mensaje.ID);
+    enOrden(completo.HTML, [`>${SECCION}</h3>`, '>Dataset nuevo 1 de 3</span>', '>Dataset nuevo 2 de 3</span>',
+      '>Dataset nuevo 3 de 3</span>', `>${BOTON}</a>`]);
+    enOrden(completo.Text.replace(/\r\n/g, '\n'), [`\n\n${SECCION}\n\n`, ...TRES, `\n\n${BOTON}: `]);
+
+    const vacia = await llega('2026-11-20', '2026-11-20 10:00:00', { piloto: true, cambiar: conDatasets([]) });
+    assert.deepEqual(await servicio.mandarPrueba({ edicion: { id: vacia, tipo: 'piloto' }, usuario, ahora: '2026-11-20 10:30:00' }),
+      { estado: 'hecho', enviado: true });
+    const otra = (await esperarDe(uno.email, 2)).find((recibido) => recibido.Subject === '[PRUEBA] Dato de la Quincena - 20/11/2026');
+    const completa = await detalle(otra.ID);
+    enOrden(completa.HTML, [`>${SECCION}</h3>`, '>Esta quincena no hay propuestas de datasets.</p>', `>${BOTON}</a>`]);
+    assert.ok(!completa.HTML.includes('Dataset nuevo'));
+    enOrden(completa.Text.replace(/\r\n/g, '\n'),
+      [`\n\n${SECCION}\nEsta quincena no hay propuestas de datasets.\n\n${BOTON}: `]);
   });
 });
 

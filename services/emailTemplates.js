@@ -843,6 +843,8 @@ const PASTILLAS_DEL_DATO_QUINCENA = Object.freeze({
   Efeméride: { fondo: COLORES.borde, color: COLORES.texto },
   Repite: { fondo: COLORES.tarjeta, color: COLORES.texto, borde: '#76879F' }
 });
+// La pastilla de una etiqueta que no está en PASTILLAS_DEL_DATO_QUINCENA, y la de los orígenes de un dataset nuevo
+const PASTILLA_NEUTRA = Object.freeze({ fondo: COLORES.borde, color: COLORES.texto });
 // La caja de la repetición de una propuesta: un recuadro neutro, gris azulado, distinto del celeste de los campos
 const CAJA_DE_LA_REPETICION = Object.freeze({ fondo: '#F4F7FA', borde: '#DAE3ED' });
 
@@ -861,14 +863,16 @@ const fotoEnUnRenglon = (foto) => `${foto.map((fila) => `${textoDelDato(fila?.ro
 const etiquetasDelDato = (propuesta) => listaDelDato(propuesta?.etiquetas).filter((etiqueta) => etiqueta !== 'Principal');
 const pieDeLaInfografia = (conSvg) => `${PIE_DE_LA_INFOGRAFIA} ${conSvg ? 'Va adjunta en PNG y en SVG (para editarla).' : 'Va adjunta en PNG.'}`;
 
-// Una pastilla, con el estilo de la etiqueta del tipo de cambio (etiquetaDeTipo) y su margen. Una con borde lleva un píxel menos
-// de relleno de cada lado: así mide lo mismo que las otras
-const pastillaDelDato = (texto, margen) => {
-  const { fondo, color, borde } = Object.hasOwn(PASTILLAS_DEL_DATO_QUINCENA, texto)
-    ? PASTILLAS_DEL_DATO_QUINCENA[texto]
-    : { fondo: COLORES.borde, color: COLORES.texto };
+// Una pastilla, con el estilo de la etiqueta del tipo de cambio (etiquetaDeTipo) y su margen. El estilo (`fondo`, `color` y, si
+// hay, `borde` y `peso`), el de su etiqueta (o el neutro), salvo que se pase: los orígenes de un dataset nuevo van siempre en la
+// neutra, aunque uno se llame «Agenda», y la prioridad, en la de su clave. Una con borde lleva un píxel menos de relleno de cada
+// lado: así mide lo mismo que las otras
+const pastillaDelDato = (texto, margen, estilo = Object.hasOwn(PASTILLAS_DEL_DATO_QUINCENA, texto)
+  ? PASTILLAS_DEL_DATO_QUINCENA[texto]
+  : PASTILLA_NEUTRA) => {
+  const { fondo, color, borde, peso = 600 } = estilo;
   const conBorde = typeof borde === 'string' ? ` border: 1px solid ${borde};` : '';
-  return `<span style="display: inline-block; margin: ${margen}; background-color: ${fondo}; color: ${color};${conBorde} font-size: 12px; font-weight: 600; padding: ${conBorde === '' ? '2px 10px' : '1px 9px'}; border-radius: 10px;">${escapeHtml(textoDelDato(texto))}</span>`;
+  return `<span style="display: inline-block; margin: ${margen}; background-color: ${fondo}; color: ${color};${conBorde} font-size: 12px; font-weight: ${peso}; padding: ${conBorde === '' ? '2px 10px' : '1px 9px'}; border-radius: 10px;">${escapeHtml(textoDelDato(texto))}</span>`;
 };
 
 // Un bloque con aire arriba, en una celda (Outlook de escritorio no respeta el margin de una tabla)
@@ -1006,6 +1010,103 @@ const propuestasDelDato = (propuestas) => (propuestas.length === 0 ? null : `<ta
                 </tr>`).join(SEPARADOR_DE_PROPUESTAS)}
               </table>`);
 
+// Las propuestas de datasets nuevos (spec 2026-11-18-dato-quincena-propuestas-datasets, 6): una sección más, después de las
+// propuestas y antes del botón, solo si la edición trae la clave. Sin ella el bloque es null, marcoEmail lo saltea y el mail queda
+// igual que antes de la v1.4, byte por byte (tests/dato-quincena-resguardo.test.js)
+const TITULO_DE_LOS_DATASETS_NUEVOS = 'Propuestas de datasets nuevos';
+const SIN_DATASETS_NUEVOS = 'Esta quincena no hay propuestas de datasets.';
+const COMO_ANONIMIZAR = 'Cómo anonimizar';
+const RELACIONADOS_EN_EL_PORTAL = 'Datasets relacionados en el portal';
+// La franja de cada una, en un verde muy claro, distinto del celeste de las propuestas de comunicación (el texto pasa el 4,5:1)
+const FRANJA_DEL_DATASET_NUEVO = Object.freeze({ fondo: '#EEF6F1', borde: '#D5E9DD', texto: '#2E6B4C' });
+// El color de la prioridad sale de la clave que arma el servidor (prioridadDeDataset), nunca del texto: alta, en el verde de
+// «Crear»; si hay recursos, en el azul de «Editar»; evaluar, en el ámbar del aviso. Una clave desconocida va en la neutra. La
+// pastilla dice siempre la prioridad: el color nunca es lo único que la distingue
+const PRIORIDADES_DEL_DATASET_NUEVO = Object.freeze({
+  alta: { fondo: ETIQUETAS.crear.fondo, color: ETIQUETAS.crear.color },
+  si_hay_recursos: { fondo: ETIQUETAS.editar.fondo, color: ETIQUETAS.editar.color },
+  evaluar: { fondo: COLORES.respaldo.fondo, color: COLORES.respaldo.texto }
+});
+// La pastilla de la prioridad, en negrita (700, como en la maqueta aprobada): es lo primero que se lee de cada propuesta
+const estiloDeLaPrioridad = (prioridad) => {
+  const clave = prioridad?.clave;
+  const colores = typeof clave === 'string' && Object.hasOwn(PRIORIDADES_DEL_DATASET_NUEVO, clave)
+    ? PRIORIDADES_DEL_DATASET_NUEVO[clave]
+    : PASTILLA_NEUTRA;
+  return { ...colores, peso: 700 };
+};
+
+// Una lista de direcciones, una por renglón (`{ url, html }`, html ya escapado): enlace solo si la dirección es https://; si no,
+// el texto solo. Con word-break: un slug o una fuente larga sin espacios no ensanchan el mail (Review Focus 2)
+const enlacesDelDatasetNuevo = (filas) => `<p style="margin: 0; color: ${COLORES.texto}; font-size: 13px; line-height: 1.6; word-break: break-word; overflow-wrap: anywhere; word-wrap: break-word;">${
+  filas.map(({ url, html }) => (esHttps(url) ? enlace(escapeHtml(url), html) : html)).join('<br>')}</p>`;
+
+// Lo de adentro de la tarjeta de un dataset nuevo, en el orden de la spec: los orígenes en pastillas neutras, el título, la
+// prioridad con su valor y su riesgo al lado, por qué abrirlo, el formato, los campos en monoespaciada (con word-break, como los
+// enlaces), la anonimización si hay (en el aviso ámbar, como «Para validar»), los datasets relacionados si hay y las fuentes
+const contenidoDelDatasetNuevo = (propuesta) => {
+  const origenes = listaDelDato(propuesta?.origenes);
+  const anonimizacion = textoDelDato(propuesta?.anonimizacion);
+  const relacionados = listaDelDato(propuesta?.datasets_relacionados);
+  const fuentes = listaDelDato(propuesta?.fuentes);
+  return [
+    origenes.length > 0
+      ? `<p style="margin: 0 0 6px 0;">${origenes.map((origen) => pastillaDelDato(origen, '0 6px 6px 0', PASTILLA_NEUTRA)).join('')}</p>`
+      : '',
+    `<h2 style="margin: 0; color: ${COLORES.titulo}; font-size: 16px; font-weight: 600; line-height: 1.3;">${conRenglones(propuesta?.titulo)}</h2>`,
+    `<p style="margin: 8px 0 0 0;">${pastillaDelDato(propuesta?.prioridad?.texto, '0 8px 0 0', estiloDeLaPrioridad(propuesta?.prioridad))}`
+      + `<span style="color: ${COLORES.subtitulo}; font-size: 12px;">${escapeHtml(textoDelDato(propuesta?.valor_y_riesgo))}</span></p>`,
+    campoDelDato('Por qué abrirlo', parrafo(conRenglones(propuesta?.justificacion))),
+    campoDelDato('Formato sugerido', parrafo(conRenglones(propuesta?.formato))),
+    campoDelDato('Campos sugeridos', `<p style="margin: 0; color: ${COLORES.texto}; font-size: 13px; line-height: 1.7; font-family: Consolas, Menlo, monospace; word-break: break-word; overflow-wrap: anywhere; word-wrap: break-word;">${listaDelDato(propuesta?.campos).map((campo) => conRenglones(campo)).join(', ')}</p>`),
+    anonimizacion.trim() === ''
+      ? ''
+      : conAireArriba(12, avisoDestacado(`<strong>${COMO_ANONIMIZAR}</strong><br>${conRenglones(anonimizacion)}`)),
+    relacionados.length > 0
+      ? campoDelDato(RELACIONADOS_EN_EL_PORTAL, enlacesDelDatasetNuevo(relacionados.map((relacionado) => ({
+        url: relacionado?.url, html: conRenglones(relacionado?.nombre)
+      }))))
+      : '',
+    fuentes.length > 0
+      ? campoDelDato('Fuentes', enlacesDelDatasetNuevo(fuentes.map((fuente) => ({ url: fuente, html: conRenglones(fuente) }))))
+      : ''
+  ].join('');
+};
+
+// La tarjeta de un dataset nuevo: la franja «Dataset nuevo N de M» arriba y el contenido, con el borde de las propuestas
+const tarjetaDelDatasetNuevo = (propuesta) => `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; background-color: ${COLORES.tarjeta}; border: 1px solid ${COLORES.bordeRecuadro}; border-radius: 6px; border-collapse: separate; border-spacing: 0; overflow: hidden;">
+                      <tr>
+                        <td bgcolor="${FRANJA_DEL_DATASET_NUEVO.fondo}" style="padding: 8px 16px; background-color: ${FRANJA_DEL_DATASET_NUEVO.fondo}; border-bottom: 1px solid ${FRANJA_DEL_DATASET_NUEVO.borde};"><span style="color: ${FRANJA_DEL_DATASET_NUEVO.texto}; font-size: 13px; font-weight: 700;">${escapeHtml(textoDelDato(propuesta?.franja))}</span></td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 14px 16px 16px 16px;">
+                          ${contenidoDelDatasetNuevo(propuesta)}
+                        </td>
+                      </tr>
+                    </table>`;
+
+// Los datasets nuevos, una tarjeta por fila, con 16 px de aire entre una y otra (filas de alto fijo, como SEPARADOR_DE_TARJETAS)
+const SEPARADOR_DE_DATASETS_NUEVOS = `
+                <tr>
+                  <td height="16" style="height: 16px; font-size: 0; line-height: 0;">&nbsp;</td>
+                </tr>`;
+
+// La sección: null si `propuestas_datasets` no es una lista (la edición no trae la clave); con [], el título y la línea; si no,
+// el título y una tarjeta por propuesta, en su orden
+const datasetsNuevosDelDato = (lista) => {
+  if (!Array.isArray(lista)) return null;
+  const titulo = tituloSeccion(TITULO_DE_LOS_DATASETS_NUEVOS);
+  if (lista.length === 0) return titulo + parrafo(escapeHtml(SIN_DATASETS_NUEVOS));
+  return `${titulo}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse;">${
+    lista.map((propuesta) => `
+                <tr>
+                  <td>
+                    ${tarjetaDelDatasetNuevo(propuesta)}
+                  </td>
+                </tr>`).join(SEPARADOR_DE_DATASETS_NUEVOS)}
+              </table>`;
+};
+
 // La infografía en línea (cid), a lo ancho del cuerpo (600 menos 24 de cada lado), con su pie
 const infografiaDelDato = (propuestas, conSvg) => {
   const principal = principalDe(propuestas);
@@ -1058,6 +1159,34 @@ const eventoEnTexto = (evento) => [
 // Un grupo de la agenda en el texto plano: su título en un renglón y sus eventos debajo, separados por un renglón en blanco
 const grupoEnTexto = (grupo) => `${textoDelDato(grupo?.titulo)}\n${grupo.eventos.map(eventoEnTexto).join('\n\n')}`;
 
+// Un dataset nuevo en el texto plano, en renglones seguidos y en el orden del HTML: la franja; el título con sus orígenes; la
+// prioridad con su valor y su riesgo; cada campo con su título; la anonimización, si hay; los relacionados («- nombre: dirección»,
+// con la dirección solo si es https://) y las fuentes, como llegaron
+const textoDelDatasetNuevo = (propuesta) => {
+  const origenes = listaDelDato(propuesta?.origenes);
+  const eje = textoDelDato(propuesta?.valor_y_riesgo);
+  const anonimizacion = textoDelDato(propuesta?.anonimizacion);
+  const relacionados = listaDelDato(propuesta?.datasets_relacionados);
+  const fuentes = listaDelDato(propuesta?.fuentes);
+  const relacionado = (dataset) => `- ${textoDelDato(dataset?.nombre)}${esHttps(dataset?.url) ? `: ${dataset.url}` : ''}`;
+  return [
+    textoDelDato(propuesta?.franja),
+    `${textoDelDato(propuesta?.titulo)}${origenes.length > 0 ? ` [${origenes.map(textoDelDato).join(', ')}]` : ''}`,
+    `${textoDelDato(propuesta?.prioridad?.texto)}${eje === '' ? '' : ` (${eje})`}`,
+    `Por qué abrirlo\n${textoDelDato(propuesta?.justificacion)}`,
+    `Formato sugerido: ${textoDelDato(propuesta?.formato)}`,
+    `Campos sugeridos: ${listaDelDato(propuesta?.campos).map(textoDelDato).join(', ')}`,
+    ...(anonimizacion.trim() === '' ? [] : [`${COMO_ANONIMIZAR}\n${anonimizacion}`]),
+    ...(relacionados.length > 0 ? [[RELACIONADOS_EN_EL_PORTAL, ...relacionados.map(relacionado)].join('\n')] : []),
+    ...(fuentes.length > 0 ? [['Fuentes', ...fuentes.map(textoDelDato)].join('\n')] : [])
+  ].join('\n');
+};
+// La sección en el texto plano: con [], el título y la línea; si no, el título y cada dataset nuevo, separados por un renglón en
+// blanco. Solo se llama con una lista
+const datasetsNuevosEnTexto = (lista) => (lista.length === 0
+  ? `${TITULO_DE_LOS_DATASETS_NUEVOS}\n${SIN_DATASETS_NUEVOS}`
+  : `${TITULO_DE_LOS_DATASETS_NUEVOS}\n\n${lista.map(textoDelDatasetNuevo).join('\n\n')}`);
+
 /**
  * El mail del dato de la quincena, a una persona (spec 2026-11-12-dato-quincena-correo, 10; la forma, la de la maqueta
  * aprobada): `{ subject, html, text }`. `modelo`: el de `modeloDelMail` (services/datoQuincenaCorreoReglas.js), que esta
@@ -1066,8 +1195,9 @@ const grupoEnTexto = (grupo) => `${textoDelDato(grupo?.titulo)}\n${grupo.eventos
  * Con el marco único: el título, el número y la bajada; «Buen día, <primer nombre>.»; la infografía en línea (CID_INFOGRAFIA);
  * la agenda, si hay, en sus grupos (`agenda_grupos`, el título de cada uno y sus eventos: spec
  * 2026-11-14-dato-quincena-agenda-grupos); una tarjeta por propuesta, en su orden, con su franja (y, si repite otra edición, la
- * caja de la repetición después de la foto: spec 2026-11-14-dato-quincena-v1-3, 5); el botón «Ver la edición en el RPAD» y la
- * nota, con el nombre del bot del modelo.
+ * caja de la repetición después de la foto: spec 2026-11-14-dato-quincena-v1-3, 5); si la edición trae la clave, las propuestas
+ * de datasets nuevos (`propuestas_datasets`: spec 2026-11-18-dato-quincena-propuestas-datasets, 6); el botón «Ver la edición en el
+ * RPAD» y la nota, con el nombre del bot del modelo.
  * Todo texto de la edición va escapado y con sus saltos de línea como <br>; una dirección es enlace solo si es https://. El
  * texto plano dice lo mismo, con los textos tal como llegaron.
  */
@@ -1078,6 +1208,8 @@ export const datoQuincenaTemplate = (modelo, { conSvg = false } = {}) => {
   const numero = textoDelDato(modelo?.numero);
   const agenda = gruposDelDato(modelo?.agenda_grupos);
   const propuestas = listaDelDato(modelo?.propuestas);
+  // null o una lista: sin la clave no se suma nada, ni en el HTML ni en el texto
+  const datasetsNuevos = Array.isArray(modelo?.propuestas_datasets) ? modelo.propuestas_datasets : null;
   const url = textoDelDato(modelo?.url);
   const nota = notaDelDatoQuincena(modelo?.nombreDelBot);
   return {
@@ -1092,6 +1224,7 @@ export const datoQuincenaTemplate = (modelo, { conSvg = false } = {}) => {
         infografiaDelDato(propuestas, conElSvg),
         agendaDelDato(agenda),
         propuestasDelDato(propuestas),
+        datasetsNuevosDelDato(datasetsNuevos),
         boton({ texto: BOTON_DEL_DATO_QUINCENA, url }),
         `<p style="margin: 0; color: ${COLORES.secundario}; font-size: 12px; line-height: 1.5;">${escapeHtml(nota)}</p>`
       ]
@@ -1102,6 +1235,7 @@ export const datoQuincenaTemplate = (modelo, { conSvg = false } = {}) => {
       pieDeLaInfografia(conElSvg),
       ...(agenda.length > 0 ? [`Agenda de la quincena\n${agenda.map(grupoEnTexto).join('\n\n')}`] : []),
       ...propuestas.map(textoDeLaPropuesta),
+      ...(datasetsNuevos === null ? [] : [datasetsNuevosEnTexto(datasetsNuevos)]),
       `${BOTON_DEL_DATO_QUINCENA}: ${url}`,
       nota
     ].join('\n\n')

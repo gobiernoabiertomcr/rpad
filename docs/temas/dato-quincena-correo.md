@@ -8,6 +8,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-14-dato-quincena-v1-3-design.md` (la pastilla Repite y la caja de la repetición)
 - `docs/superpowers/specs/2026-11-14-dato-quincena-agenda-grupos-design.md` (la agenda en tres grupos)
 - `docs/superpowers/specs/2026-11-14-dato-quincena-en-mi-espacio-design.md` (las fechas en la agenda de Mi espacio)
+- `docs/superpowers/specs/2026-11-18-dato-quincena-propuestas-datasets-design.md` (las propuestas de datasets nuevos)
 
 ## Archivos
 
@@ -147,6 +148,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   la infografía en línea (`cid`) con su pie;
   «Agenda de la quincena», en sus grupos («Lo que pasó», «Lo que viene» y «Efemérides», los de `agenda_grupos`: `docs/temas/dato-quincena.md`);
   una tarjeta por propuesta, con su franja («Propuesta 1 de 4», «Principal» en la principal) y la cifra, el dataset, la repetición si hay, por qué hoy, el ángulo, la idea de placa, el texto para redes, los puntos, el borrador, lo que hay que validar y las fuentes;
+  si la edición trae `propuestas_datasets`, «Propuestas de datasets nuevos» (abajo);
   el botón «Ver la edición en el RPAD» (`RPAD_URL/dato-quincena.html?id=N`);
   y una nota al pie con dónde están el texto del bot, los cálculos y la edición completa, por qué le llega y a quién avisar para dejar de recibirlo.
 - Las etiquetas de una propuesta van en pastillas, menos «Principal», que va en la franja: «Validar» en ámbar, «Agenda» en celeste, «Efeméride» en la suave gris y «Repite» blanca con un borde de 1 px `#76879F` (con un píxel menos de relleno: mide lo mismo que las otras); cada una dice su nombre.
@@ -157,11 +159,27 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   El texto es un enlace a `RPAD_URL/dato-quincena.html?id=N` solo con un `id_edicion` entero positivo, subrayado a diferencia de los demás enlaces del mail: el texto sin enlace también es negrita y el color solo no los distingue.
   La corrida arma el detalle con las ediciones previas (`edicionesPreviasSinFallar`), como la página; `modeloDelMail` copia cada propuesta del detalle, así que la repetición llega sola.
   Si las previas no se pueden leer, el mail sale igual en esa corrida, con la repetición sin enlace.
+- Las propuestas de datasets nuevos (`propuestas_datasets`, `docs/temas/dato-quincena.md`) van en su propia sección, «Propuestas de datasets nuevos», después de las propuestas y antes del botón.
+  `modeloDelMail` pasa la lista del detalle, copiada, con la franja «Dataset nuevo N de M» primero en cada una; si el detalle no trae una lista, null.
+  Con null no hay sección: el bloque es null, `marcoEmail` lo saltea y el texto plano no suma nada.
+  Sin la clave, el mail no lleva la sección y sale byte por byte como el del fixture: lo controla `tests/dato-quincena-resguardo.test.js`, cuyo fixture no se regenera nunca.
+  Con `[]`, el título y la línea «Esta quincena no hay propuestas de datasets.».
+- Cada una va en una tarjeta con el borde de las propuestas, con 16 px entre una y otra (una fila de alto fijo, por Outlook).
+  Arriba, la franja verde clara (fondo `#EEF6F1`, borde `#D5E9DD`, texto `#2E6B4C`) con «Dataset nuevo 1 de 3».
+  Después, en este orden: los orígenes en pastillas; el título; la prioridad en su pastilla y al lado «Valor alto · Riesgo bajo»; «Por qué abrirlo»; «Formato sugerido»; «Campos sugeridos», en monoespaciada y separados por comas; la anonimización, si hay, en el aviso ámbar «Cómo anonimizar»; «Datasets relacionados en el portal», si hay; y «Fuentes».
+  Los orígenes van todos en la pastilla neutra, también «Agenda», que en una propuesta de comunicación va en celeste: dicen de dónde salió la idea y no son una etiqueta de la propuesta.
+  El color de la prioridad sale de la clave del servidor, nunca del texto: `alta` en el verde de «Crear», `si_hay_recursos` en el azul de «Editar» y `evaluar` en el ámbar del aviso; una clave desconocida, en la neutra.
+  La pastilla de la prioridad va en negrita (700, como en la maqueta aprobada) y siempre dice la prioridad: el color nunca es lo único que la distingue.
+  Un dataset relacionado es enlace a su `url` y una fuente, a sí misma, solo si la dirección es `https://`; si no, el texto solo.
+  Los campos sugeridos y las listas de enlaces llevan `word-break: break-word` y `overflow-wrap: anywhere`: un campo de 64 caracteres, un slug de 100 o una fuente larga sin espacios no ensanchan el mail.
 - El nombre del bot llega a la plantilla por el modelo (`modeloDelMail`): la plantilla no lo escribe.
 - Todo texto de la edición va escapado y con sus saltos como `<br>`; una dirección es enlace solo si es `https://`.
 - El texto plano lo arma el servidor con lo mismo: no es el `correo_texto` del bot, que trae el saludo de otros destinatarios.
   La repetición va en él como un bloque «<texto>\n<motivo>», en el mismo lugar que en el HTML y sin el enlace.
   La agenda, «Agenda de la quincena» y cada grupo con su título en un renglón y sus eventos debajo («10/11/2026 · Título», el detalle y la dirección `https://`), separados por un renglón en blanco.
+  Las propuestas de datasets nuevos, en el mismo lugar que en el HTML: «Propuestas de datasets nuevos», un renglón en blanco y cada una en renglones seguidos, separadas por un renglón en blanco.
+  Cada una: la franja; el título con sus orígenes entre corchetes; la prioridad con «(Valor alto · Riesgo bajo)»; «Por qué abrirlo» y la justificación; «Formato sugerido: CSV»; «Campos sugeridos: fecha, barrio»; «Cómo anonimizar» y su texto, si hay; los relacionados, «- nombre: dirección» (la dirección solo si es `https://`); y las fuentes, como llegaron.
+  Con `[]`, «Propuestas de datasets nuevos» y en el renglón siguiente «Esta quincena no hay propuestas de datasets.».
 - Adjuntos: la infografía PNG en línea, la misma PNG como archivo y el SVG si llegó (`datoQuincenaTemplate(modelo, { conSvg })`), con los nombres del manifiesto.
 - Sin direcciones en lo que se muestra: ni la lista de ediciones ni el detalle traen emails ni nombres de quienes lo reciben; el texto de nodemailer, que puede traer la dirección, va a la consola solo con su código.
 

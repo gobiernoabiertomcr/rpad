@@ -16,7 +16,9 @@ import { detalleDeLaEdicion, NOMBRE_DEL_BOT } from '../services/datoQuincenaRegl
 import { datoQuincenaTemplate } from '../services/emailTemplates.js';
 import { calendarioCon } from '../services/feriadosReglas.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
-import { edicionDePrueba, pilotoDePrueba, efemerideDePrueba, repeticionDePrueba } from './dato-quincena-fixtures.js';
+import {
+  edicionDePrueba, pilotoDePrueba, efemerideDePrueba, repeticionDePrueba, propuestasDatasetsDePrueba, propuestaDatasetDePrueba
+} from './dato-quincena-fixtures.js';
 
 // El calendario de la precarga: el lunes 09/11/2026 y el lunes 23/11/2026 son feriados, el 07/12 no laborable y el 08/12 fijo
 const CALENDARIO = calendarioCon(FILAS_PRECARGA);
@@ -1206,8 +1208,10 @@ describe('modeloDelMail: lo que recibe la plantilla (spec, 10)', () => {
     assert.equal(m.bajada, '2 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas.');
     assert.equal(m.primerNombre, 'Persona');
     assert.equal(m.url, URL_DE_PRUEBA);
-    assert.deepEqual(Object.keys(m),
-      ['asunto', 'primerNombre', 'titulo', 'numero', 'bajada', 'agenda_grupos', 'propuestas', 'url', 'nombreDelBot']);
+    assert.deepEqual(Object.keys(m), [
+      'asunto', 'primerNombre', 'titulo', 'numero', 'bajada', 'agenda_grupos', 'propuestas', 'propuestas_datasets', 'url',
+      'nombreDelBot'
+    ]);
   });
 
   // El nombre del bot vive solo en NOMBRE_DEL_BOT (spec, 2.10): la plantilla lo recibe en el modelo para la nota del pie
@@ -1277,6 +1281,32 @@ describe('modeloDelMail: lo que recibe la plantilla (spec, 10)', () => {
     assert.deepEqual(modelo().propuestas.map((p) => p.repeticion), [null, null]);
   });
 
+  // spec 2026-11-18-dato-quincena-propuestas-datasets, 6: la lista del detalle, con la franja «Dataset nuevo N de M» primero en
+  // cada una; null si la edición no trae la clave (todas las archivadas antes de la v1.4 y las v1.3)
+  it('las propuestas de datasets: null sin la clave; si no, la lista del detalle con su franja «Dataset nuevo N de M» primero', () => {
+    assert.equal(modelo().propuestas_datasets, null);
+    const detalle = detalleDe(edicionDePrueba({ propuestas_datasets: propuestasDatasetsDePrueba() }));
+    const { propuestas_datasets: lista } = modelo({ detalle });
+    assert.deepEqual(lista.map((propuesta) => propuesta.franja), ['Dataset nuevo 1 de 3', 'Dataset nuevo 2 de 3', 'Dataset nuevo 3 de 3']);
+    lista.forEach((propuesta, i) => {
+      assert.deepEqual(Object.keys(propuesta), ['franja', ...Object.keys(detalle.propuestas_datasets[i])]);
+      const { franja, ...resto } = propuesta;
+      assert.deepEqual(resto, detalle.propuestas_datasets[i]);
+    });
+    const una = detalleDe(edicionDePrueba({ propuestas_datasets: [propuestaDatasetDePrueba()] }));
+    assert.equal(modelo({ detalle: una }).propuestas_datasets[0].franja, 'Dataset nuevo 1 de 1');
+    assert.deepEqual(modelo({ detalle: detalleDe(edicionDePrueba({ propuestas_datasets: [] })) }).propuestas_datasets, []);
+  });
+
+  it('las propuestas de datasets: un detalle sin la clave o con algo que no es una lista da null, sin tirar', () => {
+    for (const valor of [undefined, null, 'tres', 3, {}, { length: 1 }]) {
+      const detalle = detalleDe(edicionDePrueba());
+      if (valor === undefined) delete detalle.propuestas_datasets;
+      else detalle.propuestas_datasets = valor;
+      assert.equal(modelo({ detalle }).propuestas_datasets, null, String(valor));
+    }
+  });
+
   it('no cambia el detalle que recibe', () => {
     const detalle = detalleDe(edicionDePrueba());
     const antes = structuredClone(detalle);
@@ -1285,6 +1315,15 @@ describe('modeloDelMail: lo que recibe la plantilla (spec, 10)', () => {
     m.agenda_grupos[0].eventos.push({});
     m.agenda_grupos.push({});
     assert.deepEqual(detalle, antes);
+    // Ni las propuestas de datasets: el modelo las copia
+    const conDatasets = detalleDe(edicionDePrueba({ propuestas_datasets: propuestasDatasetsDePrueba() }));
+    const antesConDatasets = structuredClone(conDatasets);
+    const otro = modelo({ detalle: conDatasets });
+    otro.propuestas_datasets[0].campos.push('otro');
+    otro.propuestas_datasets[0].prioridad.clave = 'evaluar';
+    otro.propuestas_datasets[0].datasets_relacionados[0].nombre = 'Otro';
+    otro.propuestas_datasets.push({});
+    assert.deepEqual(conDatasets, antesConDatasets);
   });
 });
 
@@ -1522,6 +1561,312 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
     assert.ok(html.includes(nota));
     assert.ok(text.includes(nota));
     assert.ok(!html.includes(`correo de ${NOMBRE_DEL_BOT}`) && !text.includes(`correo de ${NOMBRE_DEL_BOT}`));
+  });
+});
+
+// spec 2026-11-18-dato-quincena-propuestas-datasets, 6: la sección «Propuestas de datasets nuevos», después de las propuestas y
+// antes del botón, en el HTML y en el texto. Sin la clave, nada: tests/dato-quincena-resguardo.test.js compara ese mail, byte por
+// byte, con el de main 8784663. Las propuestas son las inventadas de propuestasDatasetsDePrueba, una de cada prioridad
+describe('datoQuincenaTemplate: las propuestas de datasets nuevos (contrato v1.4)', () => {
+  const fila = {
+    id: 12, clave: 'dq:regular:2026-11-02', tipo: 'regular', fecha_edicion: '2026-11-02', referencia_piloto: null,
+    titulo: 'El dato de la quincena: edición de prueba', metadata: '{}', recibida_ts: 1793618040, numero: 1
+  };
+  // El modelo de la edición de prueba con `propuestas_datasets`; sin argumento, sin la clave
+  const modelo = (...lista) => {
+    const edicion = edicionDePrueba(lista.length === 0 ? {} : { propuestas_datasets: lista[0] });
+    const detalle = detalleDeLaEdicion({ fila, edicion, guardadas: [{ orden: 1, dataset_id: 1, dataset_activo: true }], adjuntos: [] });
+    return modeloDelMail({
+      detalle, fecha_edicion: '2026-11-02', nombreCompleto: 'Persona Uno Ejemplo',
+      url: 'https://rpad.ejemplo.test/dato-quincena.html?id=12', prueba: false
+    });
+  };
+  const mail = (m) => datoQuincenaTemplate(m, { conSvg: true });
+  const SIN = mail(modelo());
+  const TITULO = 'Propuestas de datasets nuevos';
+  const VACIA = 'Esta quincena no hay propuestas de datasets.';
+  const BOTON = 'Ver la edición en el RPAD';
+  const RAYA = '\n          </tr>';
+  const veces = (texto, parte) => texto.split(parte).length - 1;
+  // La fila del marco que trae la sección, y el HTML sin ella: tiene que ser el de siempre
+  const filaDeLaSeccion = (html) => {
+    const titulo = html.indexOf(`>${TITULO}</h3>`);
+    return html.slice(html.lastIndexOf('\n          <tr>', titulo), html.indexOf(RAYA, titulo) + RAYA.length);
+  };
+  const sinLaSeccion = (html) => html.replace(filaDeLaSeccion(html), '');
+  // Cada tarjeta, de su franja a la siguiente
+  const tarjetasDe = (html) => filaDeLaSeccion(html).split('>Dataset nuevo ').slice(1);
+  // Que cada parte esté en ese orden en el texto
+  const enOrden = (texto, partes) => {
+    const lugares = partes.map((parte) => texto.indexOf(parte));
+    assert.ok(lugares.every((lugar) => lugar >= 0), `faltan: ${partes.filter((_, i) => lugares[i] < 0).join(' | ')}`);
+    assert.deepEqual([...lugares].sort((a, b) => a - b), lugares, partes.join(' | '));
+  };
+  const PASTILLA_NEUTRA = 'background-color: #E4E9EF; color: #2B3A4A; font-size: 12px; font-weight: 600; padding: 2px 10px; '
+    + 'border-radius: 10px;';
+  const pastillaNeutra = (texto) => `<span style="display: inline-block; margin: 0 6px 6px 0; ${PASTILLA_NEUTRA}">${texto}</span>`;
+  const ENLACES = '<p style="margin: 0; color: #2B3A4A; font-size: 13px; line-height: 1.6; word-break: break-word; overflow-wrap: anywhere; word-wrap: break-word;">';
+  const CAMPOS = '<p style="margin: 0; color: #2B3A4A; font-size: 13px; line-height: 1.7; font-family: Consolas, Menlo, monospace; '
+    + 'word-break: break-word; overflow-wrap: anywhere; word-wrap: break-word;">';
+  const enlace = (url, texto) => `<a href="${url}" style="color: #3E6B96; text-decoration: none;">${texto}</a>`;
+  const JUSTIFICACION = 'Una justificación inventada: el tema aparece en la agenda de prueba y en dos pedidos de acceso inventados.';
+  const PORTAL = 'https://datos.comodoro.gov.ar/dataset/';
+  const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/u;
+  const ESCAPADO = '&lt;b&gt;x&lt;/b&gt;';
+
+  it('sin la clave (null), ninguna sección: ni su título en el HTML ni nada en el texto', () => {
+    assert.equal(modelo().propuestas_datasets, null);
+    assert.ok(!SIN.html.includes(TITULO) && !SIN.text.includes(TITULO));
+    assert.ok(!SIN.html.includes('Dataset nuevo') && !SIN.text.includes('Dataset nuevo'));
+    // Un modelo sin la clave o con algo que no es una lista: lo mismo
+    for (const valor of [undefined, 'tres', 3, {}]) {
+      const m = modelo();
+      if (valor === undefined) delete m.propuestas_datasets;
+      else m.propuestas_datasets = valor;
+      const otro = mail(m);
+      assert.equal(otro.html, SIN.html, String(valor));
+      assert.equal(otro.text, SIN.text, String(valor));
+    }
+  });
+
+  it('con []: el título y la línea, después de la última propuesta y antes del botón, en el HTML y en el texto', () => {
+    const { subject, html, text } = mail(modelo([]));
+    assert.equal(subject, SIN.subject);
+    assert.ok(html.includes(`<h3 style="margin: 0 0 10px 0; color: #1F3A5F; font-size: 14px; font-weight: 600;">${TITULO}</h3>`
+      + `<p style="margin: 0; color: #2B3A4A; font-size: 14px; line-height: 1.6;">${VACIA}</p>`));
+    // Una fila más del marco, entre la de las propuestas y la del botón: el resto, igual que sin la clave
+    assert.equal(sinLaSeccion(html), SIN.html);
+    enOrden(html, [enlace('https://datos.ejemplo.gob.ar/c.csv', 'https://datos.ejemplo.gob.ar/c.csv'), `>${TITULO}</h3>`,
+      `>${VACIA}</p>`, `>${BOTON}</a>`]);
+    assert.ok(!html.includes('Dataset nuevo'));
+    assert.equal(text, SIN.text.replace(`\n\n${BOTON}: `, `\n\n${TITULO}\n${VACIA}\n\n${BOTON}: `));
+    assert.ok(text.includes(`Fuentes\nhttps://datos.ejemplo.gob.ar/c.csv\n\n${TITULO}\n${VACIA}\n\n${BOTON}: https://rpad.ejemplo.test/`));
+  });
+
+  it('con tres: una tarjeta por propuesta, en su orden, con su franja verde clara y 16 px entre una y otra', () => {
+    const { html } = mail(modelo(propuestasDatasetsDePrueba()));
+    assert.equal(sinLaSeccion(html), SIN.html);
+    const franja = (n) => '<td bgcolor="#EEF6F1" style="padding: 8px 16px; background-color: #EEF6F1; border-bottom: 1px solid #D5E9DD;">'
+      + `<span style="color: #2E6B4C; font-size: 13px; font-weight: 700;">Dataset nuevo ${n} de 3</span></td>`;
+    enOrden(html, [enlace('https://datos.ejemplo.gob.ar/c.csv', 'https://datos.ejemplo.gob.ar/c.csv'), `>${TITULO}</h3>`,
+      franja(1), franja(2), franja(3), `>${BOTON}</a>`]);
+    assert.ok(!html.includes(VACIA));
+    assert.equal(veces(html, 'bgcolor="#EEF6F1"'), 3);
+    // Cada una en una tarjeta blanca con el borde de las propuestas que no son la principal
+    const tarjeta = 'background-color: #FFFFFF; border: 1px solid #E1EAF3; border-radius: 6px; border-collapse: separate; '
+      + 'border-spacing: 0; overflow: hidden;';
+    assert.equal(veces(html, tarjeta) - veces(SIN.html, tarjeta), 3);
+    // 16 px entre una tarjeta y otra, con una fila de alto fijo (Outlook)
+    assert.equal(veces(html, '<td height="16" style="height: 16px; font-size: 0; line-height: 0;">&nbsp;</td>'), 2);
+    assert.equal(tarjetasDe(html).length, 3);
+  });
+
+  it('cada tarjeta: los orígenes en pastillas neutras, el título, la prioridad con su color y su eje, y los campos en su orden', () => {
+    const [una, dos, tres] = tarjetasDe(mail(modelo(propuestasDatasetsDePrueba())).html);
+    // La prioridad, en negrita (700, como en la maqueta aprobada); las demás pastillas, en 600
+    const prioridad = (fondo, color, texto, eje) => `<p style="margin: 8px 0 0 0;"><span style="display: inline-block; margin: 0 8px 0 0; `
+      + `background-color: ${fondo}; color: ${color}; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 10px;">`
+      + `${texto}</span><span style="color: #5A7391; font-size: 12px;">${eje}</span></p>`;
+    const titulo = (texto) => `<h2 style="margin: 0; color: #1F3A5F; font-size: 16px; font-weight: 600; line-height: 1.3;">${texto}</h2>`;
+    const campo = (rotulo, html) => `<h3 style="margin: 14px 0 4px 0; color: #1F3A5F; font-size: 14px; font-weight: 600;">${rotulo}</h3>${html}`;
+    const parrafo = (texto) => `<p style="margin: 0; color: #2B3A4A; font-size: 14px; line-height: 1.6;">${texto}</p>`;
+    const comunes = (formato) => [
+      campo('Por qué abrirlo', parrafo(JUSTIFICACION)),
+      campo('Formato sugerido', parrafo(formato)),
+      campo('Campos sugeridos', `${CAMPOS}fecha, barrio, cantidad</p>`)
+    ];
+    enOrden(una, [
+      '1 de 3</span>', `<p style="margin: 0 0 6px 0;">${pastillaNeutra('Agenda')}${pastillaNeutra('Pedidos de acceso')}</p>`,
+      titulo('Un dataset nuevo inventado'), prioridad('#DDF1E6', '#2E6B4C', 'Prioridad alta', 'Valor alto · Riesgo bajo'),
+      ...comunes('CSV'), '>Datasets relacionados en el portal</h3>', '>Fuentes</h3>'
+    ]);
+    enOrden(dos, [
+      '2 de 3</span>', pastillaNeutra('Noticias'), titulo('Otro dataset nuevo inventado'),
+      prioridad('#DCEAF7', '#24507A', 'Publicar si hay recursos', 'Valor medio · Riesgo medio'), ...comunes('GeoJSON'),
+      '<strong>Cómo anonimizar</strong>', '>Fuentes</h3>'
+    ]);
+    enOrden(tres, [
+      '3 de 3</span>',
+      ['Cruce de datasets', 'Pedidos de acceso', 'Agenda', 'Noticias'].map(pastillaNeutra).join(''),
+      titulo('Un tercer dataset nuevo inventado'), prioridad('#FBF1DC', '#7A5A14', 'Evaluar riesgos', 'Valor alto · Riesgo alto'),
+      ...comunes('JSON'), '<strong>Cómo anonimizar</strong>', '>Datasets relacionados en el portal</h3>', '>Fuentes</h3>'
+    ]);
+    // «Agenda» es un origen: neutra, no en el celeste de la etiqueta de una propuesta
+    for (const tarjeta of [una, dos, tres]) assert.ok(!tarjeta.includes('background-color: #E3EEF8; color: #1F3A5F;'));
+  });
+
+  it('la anonimización, en el aviso ámbar, solo en las que la traen (riesgo Medio o Alto), con sus saltos de línea', () => {
+    const [una, dos, tres] = tarjetasDe(mail(modelo(propuestasDatasetsDePrueba())).html);
+    const aviso = (texto) => new RegExp('<td style="padding: 12px 0 0 0;">\\s*<table [^>]*style="width: 100%; background-color: #FBF1DC; '
+      + 'border: 1px solid #F0DDB0; border-radius: 6px;[^>]*>(\\s*<(tr|td)[^>]*>)*\\s*<p style="margin: 0; color: #7A5A14; font-size: 14px; '
+      + `line-height: 1\\.6;"><strong>Cómo anonimizar</strong><br>${texto.replace(/[.]/g, '\\.')}</p>`);
+    assert.ok(!una.includes('Cómo anonimizar') && !una.includes('#FBF1DC; border: 1px solid #F0DDB0'));
+    assert.match(dos, aviso('Agrupar por barrio, sin direcciones exactas.'));
+    assert.match(tres, aviso('Contar por mes y por zona.<br>Nunca por persona.'));
+  });
+
+  it('los datasets relacionados (si hay) y las fuentes, como enlaces https://', () => {
+    const [una, dos, tres] = tarjetasDe(mail(modelo(propuestasDatasetsDePrueba())).html);
+    const relacionados = `${ENLACES}${enlace(`${PORTAL}prueba-a`, 'Dataset de prueba A')}<br>`
+      + `${enlace(`${PORTAL}prueba_relacionada-2`, 'Dataset relacionado de prueba')}</p>`;
+    const fuente = 'https://datos.ejemplo.gob.ar/fuentes/dataset-nuevo-de-prueba.csv';
+    assert.ok(una.includes(`>Datasets relacionados en el portal</h3>${relacionados}`));
+    assert.ok(una.includes(`>Fuentes</h3>${ENLACES}${enlace(fuente, fuente)}</p>`));
+    assert.ok(!dos.includes('Datasets relacionados en el portal'));
+    assert.ok(dos.includes(`>Fuentes</h3>${ENLACES}${enlace(fuente, fuente)}</p>`));
+    assert.ok(tres.includes(`>Datasets relacionados en el portal</h3>${relacionados}`));
+    const cinco = [0, 1, 2, 3, 4].map((i) => `https://datos.ejemplo.gob.ar/${i}.csv`);
+    assert.ok(tres.includes(`>Fuentes</h3>${ENLACES}${cinco.map((url) => enlace(url, url)).join('<br>')}</p>`));
+  });
+
+  it('el texto plano: el mismo bloque, en el mismo lugar, con las tarjetas en su orden', () => {
+    const { text } = mail(modelo(propuestasDatasetsDePrueba()));
+    const relacionados = [
+      'Datasets relacionados en el portal',
+      `- Dataset de prueba A: ${PORTAL}prueba-a`,
+      `- Dataset relacionado de prueba: ${PORTAL}prueba_relacionada-2`
+    ];
+    const bloque = [
+      TITULO,
+      '',
+      'Dataset nuevo 1 de 3',
+      'Un dataset nuevo inventado [Agenda, Pedidos de acceso]',
+      'Prioridad alta (Valor alto · Riesgo bajo)',
+      'Por qué abrirlo',
+      JUSTIFICACION,
+      'Formato sugerido: CSV',
+      'Campos sugeridos: fecha, barrio, cantidad',
+      ...relacionados,
+      'Fuentes',
+      'https://datos.ejemplo.gob.ar/fuentes/dataset-nuevo-de-prueba.csv',
+      '',
+      'Dataset nuevo 2 de 3',
+      'Otro dataset nuevo inventado [Noticias]',
+      'Publicar si hay recursos (Valor medio · Riesgo medio)',
+      'Por qué abrirlo',
+      JUSTIFICACION,
+      'Formato sugerido: GeoJSON',
+      'Campos sugeridos: fecha, barrio, cantidad',
+      'Cómo anonimizar',
+      'Agrupar por barrio, sin direcciones exactas.',
+      'Fuentes',
+      'https://datos.ejemplo.gob.ar/fuentes/dataset-nuevo-de-prueba.csv',
+      '',
+      'Dataset nuevo 3 de 3',
+      'Un tercer dataset nuevo inventado [Cruce de datasets, Pedidos de acceso, Agenda, Noticias]',
+      'Evaluar riesgos (Valor alto · Riesgo alto)',
+      'Por qué abrirlo',
+      JUSTIFICACION,
+      'Formato sugerido: JSON',
+      'Campos sugeridos: fecha, barrio, cantidad',
+      'Cómo anonimizar',
+      'Contar por mes y por zona.',
+      'Nunca por persona.',
+      ...relacionados,
+      'Fuentes',
+      ...[0, 1, 2, 3, 4].map((i) => `https://datos.ejemplo.gob.ar/${i}.csv`)
+    ].join('\n');
+    assert.equal(text, SIN.text.replace(`\n\n${BOTON}: `, `\n\n${bloque}\n\n${BOTON}: `));
+    assert.doesNotMatch(text, /<\/?[a-z][^>]*>|&(amp|lt|gt|quot|nbsp);/i);
+  });
+
+  // Review Focus 1: los saltos de línea de la justificación (y de la anonimización, arriba) salen como <br> en el HTML y quedan
+  // en el texto
+  it('Review Focus 1: una justificación con saltos de línea sale con <br> en el HTML y con sus saltos en el texto', () => {
+    const m = modelo(propuestasDatasetsDePrueba());
+    m.propuestas_datasets[0].justificacion = 'Primer renglón inventado.\nSegundo renglón.\r\nTercer renglón.';
+    const { html, text } = mail(m);
+    assert.ok(tarjetasDe(html)[0].includes('>Por qué abrirlo</h3><p style="margin: 0; color: #2B3A4A; font-size: 14px; '
+      + 'line-height: 1.6;">Primer renglón inventado.<br>Segundo renglón.<br>Tercer renglón.</p>'));
+    assert.ok(text.includes('Por qué abrirlo\nPrimer renglón inventado.\nSegundo renglón.\r\nTercer renglón.\nFormato sugerido: CSV'));
+  });
+
+  // Review Focus 2: un texto largo sin espacios (un campo de 64, un slug de 100, una fuente larga) no rompe el ancho del mail
+  it('Review Focus 2: los campos y los enlaces llevan word-break: break-word', () => {
+    const m = modelo(propuestasDatasetsDePrueba());
+    const largo = 'c'.repeat(64);
+    const slug = 's'.repeat(100);
+    const fuente = `https://datos.ejemplo.gob.ar/${'f'.repeat(1900)}.csv`;
+    m.propuestas_datasets[0].campos = [largo, 'barrio', 'cantidad'];
+    m.propuestas_datasets[0].datasets_relacionados = [{ nombre: slug, url: `${PORTAL}${slug}` }];
+    m.propuestas_datasets[0].fuentes = [fuente];
+    const { html } = mail(m);
+    const [una] = tarjetasDe(html);
+    assert.ok(una.includes(`${CAMPOS}${largo}, barrio, cantidad</p>`));
+    assert.ok(una.includes(`>Datasets relacionados en el portal</h3>${ENLACES}${enlace(`${PORTAL}${slug}`, slug)}</p>`));
+    assert.ok(una.includes(`>Fuentes</h3>${ENLACES}${enlace(fuente, fuente)}</p>`));
+    // Los campos de las tres y sus listas de enlaces: 3 de campos, 2 de relacionados y 3 de fuentes. El mail de siempre no lo usa
+    assert.equal(veces(html, 'word-break: break-word'), 8);
+    assert.ok(!SIN.html.includes('word-break: break-word'));
+  });
+
+  // Review Focus 4: lo que escribió Datito nunca entra como HTML. En el HTML, escapado una sola vez; en el texto, tal cual. Un
+  // dataset relacionado o una fuente que no es https:// va sin enlace
+  it('Review Focus 4: el HTML de cada texto sale escapado en el HTML y tal cual en el texto; javascript: no es un enlace', () => {
+    const raro = '<b>x</b>';
+    const conComillas = 'https://datos.ejemplo.gob.ar/a.csv?b="c"&d=<e>';
+    const conComillasEscapada = 'https://datos.ejemplo.gob.ar/a.csv?b=&quot;c&quot;&amp;d=&lt;e&gt;';
+    const m = modelo(propuestasDatasetsDePrueba());
+    const [p] = m.propuestas_datasets;
+    Object.assign(p, {
+      franja: raro, titulo: raro, origenes: [raro, 'Agenda'], justificacion: `${raro}\n${raro}`, prioridad: { clave: 'alta', texto: raro },
+      valor_y_riesgo: raro, formato: raro, campos: [raro, raro], anonimizacion: raro,
+      datasets_relacionados: [{ nombre: raro, url: 'javascript:alert(1)' }, { nombre: raro, url: conComillas }],
+      fuentes: ['javascript:alert(1)', raro, 'http://datos.ejemplo.gob.ar/sin-https.csv', conComillas]
+    });
+    const { html, text } = mail(m);
+    assert.ok(!html.includes(raro));
+    assert.ok(!html.includes('&amp;lt;'), 'escapado dos veces');
+    // La franja, el origen, el título, la prioridad, el eje, la justificación (2), el formato, los campos (2), la anonimización,
+    // los nombres de los relacionados (2) y la fuente
+    assert.equal(veces(html, ESCAPADO), 14);
+    assert.ok(!html.includes('href="javascript:') && !html.includes('href="http://'));
+    // La franja ya no dice «Dataset nuevo 1 de 3»: se busca en toda la sección (las otras dos no traen nada de esto)
+    const una = filaDeLaSeccion(html);
+    assert.ok(una.includes(`>Datasets relacionados en el portal</h3>${ENLACES}${ESCAPADO}<br>${enlace(conComillasEscapada, ESCAPADO)}</p>`));
+    assert.ok(una.includes(`>Fuentes</h3>${ENLACES}javascript:alert(1)<br>${ESCAPADO}<br>http://datos.ejemplo.gob.ar/sin-https.csv<br>`
+      + `${enlace(conComillasEscapada, conComillasEscapada)}</p>`));
+    assert.ok(una.includes(`${CAMPOS}${ESCAPADO}, ${ESCAPADO}</p>`));
+    assert.ok(una.includes(`<strong>Cómo anonimizar</strong><br>${ESCAPADO}</p>`));
+    // El texto plano, tal cual: un relacionado que no es https:// va sin su dirección; las fuentes, como llegaron
+    assert.ok(text.includes([
+      raro, `${raro} [${raro}, Agenda]`, `${raro} (${raro})`, 'Por qué abrirlo', raro, raro, `Formato sugerido: ${raro}`,
+      `Campos sugeridos: ${raro}, ${raro}`, 'Cómo anonimizar', raro, 'Datasets relacionados en el portal', `- ${raro}`,
+      `- ${raro}: ${conComillas}`, 'Fuentes', 'javascript:alert(1)', raro, 'http://datos.ejemplo.gob.ar/sin-https.csv', conComillas
+    ].join('\n')), text);
+  });
+
+  it('con valores raros en el modelo no tira: una prioridad desconocida va en la pastilla neutra y lo que no es texto, vacío', () => {
+    const m = modelo([]);
+    m.propuestas_datasets = [
+      null, 7, 'x',
+      {
+        franja: 'Dataset nuevo 4 de 6', prioridad: { clave: '__proto__', texto: 'Rara' }, origenes: 'Agenda', campos: null, titulo: 7,
+        datasets_relacionados: [null, { nombre: 7, url: 7 }], fuentes: [7, null], anonimizacion: 7, justificacion: { a: 1 }
+      },
+      { franja: 'Dataset nuevo 5 de 6', prioridad: { clave: 'constructor', texto: 'Otra rara' }, anonimizacion: '   ' },
+      { franja: 'Dataset nuevo 6 de 6', prioridad: 'alta', valor_y_riesgo: null, fuentes: 'https://datos.ejemplo.gob.ar/a.csv' }
+    ];
+    let correo;
+    assert.doesNotThrow(() => { correo = mail(m); });
+    const { html, text } = correo;
+    const seccion = filaDeLaSeccion(html);
+    const neutraEnNegrita = PASTILLA_NEUTRA.replace('font-weight: 600', 'font-weight: 700');
+    assert.ok(seccion.includes(`<span style="display: inline-block; margin: 0 8px 0 0; ${neutraEnNegrita}">Rara</span>`));
+    assert.ok(seccion.includes(`<span style="display: inline-block; margin: 0 8px 0 0; ${neutraEnNegrita}">Otra rara</span>`));
+    assert.ok(!seccion.includes('Cómo anonimizar'), 'una anonimización que no es texto o es solo espacios no va');
+    assert.equal(veces(seccion, '<td height="16"'), 5);
+    for (const parte of [seccion, text]) assert.doesNotMatch(parte, /undefined|\[object|NaN/);
+    assert.equal(sinLaSeccion(html), SIN.html);
+  });
+
+  it('sin emojis, en el HTML y en el texto', () => {
+    const { html, text } = mail(modelo(propuestasDatasetsDePrueba()));
+    assert.doesNotMatch(filaDeLaSeccion(html), EMOJI);
+    assert.doesNotMatch(text, EMOJI);
+    const vacia = mail(modelo([]));
+    assert.doesNotMatch(filaDeLaSeccion(vacia.html), EMOJI);
+    assert.doesNotMatch(vacia.text, EMOJI);
   });
 });
 

@@ -166,6 +166,25 @@
         .dq-foto { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.84rem; color: var(--sg-suave); }
         .dq-foto dt { display: inline; font-weight: 600; }
         .dq-foto dd { display: inline; margin: 0 0 0 4px; color: var(--sg-texto); }
+        /* Propuestas de datasets nuevos: un verde muy claro, distinto del celeste de la agenda; la prioridad con su color y siempre con su texto */
+        .dq-nuevos { margin: 26px 0 0; padding: 14px 18px 18px; background: #EEF6F1; border-radius: 14px; }
+        .dq-nuevos-vacia { margin: 0; color: var(--sg-texto); font-size: 0.93rem; line-height: 1.5; }
+        .dq-nuevos-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+        .dq-nuevo { min-width: 0; background: #fff; border: 1px solid #CFE3D7; border-radius: 16px; padding: 18px 20px; overflow-wrap: anywhere; }
+        .dq-nuevo .dq-orden { color: var(--sg-verde); }
+        .dq-nuevo-titulo { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.15rem; letter-spacing: -0.01em; color: var(--sg-tinta); line-height: 1.25; }
+        .dq-cuad { margin: 10px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+        .dq-cuad-eje { color: var(--sg-suave); font-size: 0.84rem; font-weight: 600; }
+        .dq-prio-alta { background: var(--sg-verde-fondo); color: var(--sg-verde); }
+        .dq-prio-si_hay_recursos { background: var(--sg-azul-fondo); color: var(--sg-azul); }
+        .dq-prio-evaluar { background: var(--sg-sol); color: var(--sg-ambar); }
+        .dq-nuevo .dq-campos { margin-top: 14px; gap: 12px; }
+        .dq-nuevo .dq-campo a { text-decoration: underline; text-underline-offset: 3px; }
+        .dq-formatos { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+        .dq-formato { display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border-radius: 6px; border: 1px solid var(--sg-borde-control); font-size: 0.8rem; font-weight: 700; color: var(--sg-tinta); background: #fff; }
+        .dq-nuevo .dq-campos-min { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+        .dq-campos-min code { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--sg-sutil); color: var(--sg-texto); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82rem; }
+        .dq-anonimizar .dq-texto { color: inherit; }
         .dq-validar { margin: 14px 0 0; padding: 12px 14px; border-radius: 12px; background: #FFF6D6; border: 1px solid #F1D98A; color: #4A3500; font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
         .dq-validar h5 { margin: 0 0 4px; font-size: 0.9rem; font-weight: 700; display: flex; align-items: center; gap: 6px; }
         .dq-validar svg { flex: none; }
@@ -447,6 +466,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/dato-quincena.js?v=20261232"></script>
+    <script src="js/dato-quincena.js?v=20261234"></script>
 </body>
 </html>

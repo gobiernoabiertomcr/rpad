@@ -417,6 +417,57 @@ function htmlDelRecibo(detalle) {
 const LUGAR_DE_LA_CAJA_DEL_CORREO = '<div id="dq-envio-lugar"><section class="dq-envio-caja" aria-label="Correo"><h3>Correo</h3>'
   + `<p>${TEXTOS_DEL_ESTADO.cargando}</p></section></div>`;
 
+// =====================================================
+// Lo puro: las propuestas de datasets nuevos (spec 2026-11-18-dato-quincena-propuestas-datasets, 5)
+// =====================================================
+const TITULO_DATASETS_NUEVOS = 'Propuestas de datasets nuevos';
+const SIN_DATASETS_NUEVOS = 'Esta quincena no hay propuestas de datasets.';
+// La prioridad: su clase y su ícono salen de la clave del servidor (nunca del texto); el texto dice siempre la prioridad, así que el
+// color no es lo único que la distingue. Lucide decorativos: check (alta), info (si hay recursos) y shield (evaluar)
+const ICONO_CHECK_PRIORIDAD = `<svg ${ATRIBUTOS_DEL_ICONO}><path d="M20 6 9 17l-5-5"/></svg>`;
+const ICONO_INFO_PRIORIDAD = `<svg ${ATRIBUTOS_DEL_ICONO}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`;
+const ICONO_ESCUDO_PRIORIDAD = `<svg ${ATRIBUTOS_DEL_ICONO}><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>`;
+const CLASE_DE_LA_PRIORIDAD = Object.freeze({ alta: 'dq-prio-alta', si_hay_recursos: 'dq-prio-si_hay_recursos', evaluar: 'dq-prio-evaluar' });
+const ICONO_DE_LA_PRIORIDAD = Object.freeze({ alta: ICONO_CHECK_PRIORIDAD, si_hay_recursos: ICONO_INFO_PRIORIDAD, evaluar: ICONO_ESCUDO_PRIORIDAD });
+
+// Una lista de enlaces: cada uno va con enlace solo si es https://; si no, su texto a secas
+const htmlDeLosEnlaces = (lista) => `<ul>${lista.map(({ url, texto }) => `<li>${esEnlaceSeguro(url) ? enlaceDeAfuera(url, esc(texto)) : esc(texto)}</li>`).join('')}</ul>`;
+
+// Una propuesta de dataset nuevo, tal como la arma el servidor: número y orígenes, título, prioridad con su valor y riesgo, y los
+// campos. «Cómo anonimizar» y «Datasets relacionados» solo si hay
+function htmlDeUnDatasetNuevo(propuesta) {
+  const p = propuesta ?? {};
+  const clave = p.prioridad?.clave;
+  const conClave = typeof clave === 'string' && Object.hasOwn(CLASE_DE_LA_PRIORIDAD, clave);
+  const prioridad = `<span class="dq-etiqueta${conClave ? ` ${CLASE_DE_LA_PRIORIDAD[clave]}` : ''}">${conClave ? ICONO_DE_LA_PRIORIDAD[clave] : ''}${esc(p.prioridad?.texto)}</span>`;
+  const anonimizar = typeof p.anonimizacion === 'string' && p.anonimizacion !== ''
+    ? `<div class="dq-validar dq-anonimizar"><h5>${ICONO_VALIDAR}Cómo anonimizar</h5>${htmlDeTexto(p.anonimizacion)}</div>`
+    : '';
+  const relacionados = listaDe(p.datasets_relacionados).map((r) => ({ url: r?.url, texto: r?.nombre }));
+  const fuentes = listaDe(p.fuentes).map((url) => ({ url, texto: url }));
+  return '<li class="dq-nuevo">'
+    + `<div class="dq-prop-arriba"><span class="dq-orden">${esc(p.numero_texto)}</span>${listaDe(p.origenes).map((o) => `<span class="dq-etiqueta">${esc(o)}</span>`).join('')}</div>`
+    + `<h4 class="dq-nuevo-titulo">${esc(p.titulo)}</h4>`
+    + `<p class="dq-cuad">${prioridad}<span class="dq-cuad-eje">${esc(p.valor_y_riesgo)}</span></p>`
+    + '<div class="dq-campos">'
+    + htmlDeCampo('Por qué abrirlo', htmlDeTexto(p.justificacion))
+    + htmlDeCampo('Formato sugerido', `<p class="dq-formatos"><span class="dq-formato">${esc(p.formato)}</span></p>`)
+    + htmlDeCampo('Campos sugeridos', `<ul class="dq-campos-min">${listaDe(p.campos).map((c) => `<li><code>${esc(c)}</code></li>`).join('')}</ul>`)
+    + anonimizar
+    + (relacionados.length > 0 ? htmlDeCampo('Datasets relacionados en el portal', htmlDeLosEnlaces(relacionados)) : '')
+    + htmlDeCampo('Fuentes', htmlDeLosEnlaces(fuentes))
+    + '</div></li>';
+}
+
+// null (la edición no trae la clave) o algo que no es una lista: nada. Lista vacía: el título y una línea. Si no, una tarjeta por propuesta
+function htmlDeLosDatasetsNuevos(lista) {
+  if (!Array.isArray(lista)) return '';
+  const cuerpo = lista.length === 0
+    ? `<p class="dq-nuevos-vacia">${SIN_DATASETS_NUEVOS}</p>`
+    : `<ol class="dq-nuevos-lista">${lista.map(htmlDeUnDatasetNuevo).join('')}</ol>`;
+  return `<section class="dq-nuevos" aria-labelledby="dq-nuevos-titulo"><h3 class="dq-seccion-titulo" id="dq-nuevos-titulo">${TITULO_DATASETS_NUEVOS}</h3>${cuerpo}</section>`;
+}
+
 /**
  * El detalle de una edición: «Todas las ediciones», la fecha grande con la marca, el título, la llegada, el correo y la cantidad, y
  * la nota de archivo si hay (una vacía o de solo espacios no va). A un costado, la infografía (un lugar que la parte del DOM llena
@@ -454,6 +505,7 @@ function htmlDelDetalle(detalle, { admin = false } = {}) {
     + htmlDeLaAgenda(d.agenda_grupos)
     + '<section aria-labelledby="dq-propuestas-titulo"><h3 class="dq-seccion-titulo" id="dq-propuestas-titulo">Las propuestas</h3>'
     + `<ol class="dq-propuestas">${propuestas.map((propuesta) => htmlDePropuesta(propuesta)).join('')}</ol></section>`
+    + htmlDeLosDatasetsNuevos(d.propuestas_datasets)
     + '</div></div>';
 }
 

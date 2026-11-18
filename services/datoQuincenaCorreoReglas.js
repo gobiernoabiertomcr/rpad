@@ -854,13 +854,20 @@ export const alertaSinEstadoDelCorreo = () => ({
 // Lo que el detalle trae para la página y el mail no usa: la franja reemplaza al rótulo de la propuesta
 const FUERA_DEL_MAIL = Object.freeze(['orden_texto', 'para_copiar', 'borrador_para_copiar']);
 
+// Las propuestas de datasets nuevos del detalle (spec 2026-11-18-dato-quincena-propuestas-datasets, 6), en su orden y con la
+// franja «Dataset nuevo N de M» primero en cada una. null si el detalle no trae una lista (una edición sin la clave): la plantilla
+// no dibuja la sección y el mail queda igual que antes de la v1.4, byte por byte
+const propuestasDatasetsDelModelo = (lista) => (Array.isArray(lista)
+  ? lista.map((propuesta, i) => ({ franja: `Dataset nuevo ${i + 1} de ${lista.length}`, ...structuredClone(propuesta) }))
+  : null);
+
 /**
  * Lo que recibe la plantilla del mail (spec, 10), de `detalleDeLaEdicion` y la fecha de la edición: el asunto «Dato de la
  * Quincena - DD/MM/AAAA» (con «[PRUEBA] » delante en una prueba), el primer nombre de `nombreCompleto` (null sin nombre), el
  * título (el asunto sin la marca de la prueba), «Edición N.º N» (en un piloto, su marca), la bajada con la cantidad, la agenda
  * en sus grupos, como los arma el detalle (`agenda_grupos`, spec 2026-11-14-dato-quincena-agenda-grupos), y las propuestas en su
- * orden con su franja «Propuesta N de M», la dirección de la edición y el nombre del bot para la nota del pie (la plantilla no lo
- * nombra: vive solo en NOMBRE_DEL_BOT, spec 2.10).
+ * orden con su franja «Propuesta N de M», las propuestas de datasets nuevos (`propuestasDatasetsDelModelo`), la dirección de la
+ * edición y el nombre del bot para la nota del pie (la plantilla no lo nombra: vive solo en NOMBRE_DEL_BOT, spec 2.10).
  * Copia todo: el detalle no cambia.
  */
 export const modeloDelMail = ({ detalle, fecha_edicion, nombreCompleto, url, prueba }) => {
@@ -879,6 +886,7 @@ export const modeloDelMail = ({ detalle, fecha_edicion, nombreCompleto, url, pru
       franja: `Propuesta ${i + 1} de ${total}`,
       ...structuredClone(Object.fromEntries(Object.entries(propuesta).filter(([clave]) => !FUERA_DEL_MAIL.includes(clave))))
     })),
+    propuestas_datasets: propuestasDatasetsDelModelo(detalle.propuestas_datasets),
     url: url ?? `${RPAD_URL}/dato-quincena.html?id=${detalle.id}`,
     nombreDelBot: NOMBRE_DEL_BOT
   };
