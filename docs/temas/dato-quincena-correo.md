@@ -161,6 +161,8 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   Si las previas no se pueden leer, el mail sale igual en esa corrida, con la repetición sin enlace.
 - Las propuestas de datasets nuevos (`propuestas_datasets`, `docs/temas/dato-quincena.md`) van en su propia sección, «Propuestas de datasets nuevos», después de las propuestas y antes del botón.
   `modeloDelMail` pasa la lista del detalle, copiada, con la franja «Dataset nuevo N de M» primero en cada una; si el detalle no trae una lista, null.
+  `numero`, `valor` y `riesgo` viajan en cada una y la plantilla no los dibuja: la franja reemplaza al número y su rótulo.
+  De cada propuesta de comunicación, el modelo deja afuera `orden`, `orden_texto` y lo que se copia (`FUERA_DEL_MAIL`).
   Con null no hay sección: el bloque es null, `marcoEmail` lo saltea y el texto plano no suma nada.
   Sin la clave, el mail no lleva la sección y sale byte por byte como el del fixture: lo controla `tests/dato-quincena-resguardo.test.js`, cuyo fixture no se regenera nunca.
   Con `[]`, el título y la línea «Esta quincena no hay propuestas de datasets.».
@@ -185,12 +187,12 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
 
 ## La página
 
-- Pestañas «Ediciones» y «Correo» para administración (`tablist`, flechas, Home y End; `#correo` en la dirección, junto a `?id`, `?anio` y `&pagina`); los demás roles ven la página sin pestañas.
+- Pestañas «Ediciones» y «Correo» para administración (`tablist`, flechas, Home y End; `#correo` en la dirección, junto a `?id`, `&vista`, `&propuesta`, `?anio` y `&pagina`); los demás roles ven la página sin ellas.
   La lista en tarjetas «tipo diario» y sus páginas de a 18 están en `docs/temas/dato-quincena.md`; la pastilla la ven todos y administración ve además si a alguien no le llegó.
 - Correo: «Envío por correo», con el interruptor «Envío automático» (se guarda al cambiarlo; al prenderlo, una confirmación que dice qué va a pasar), la regla en dos oraciones y «Las próximas ediciones»;
   y «Quién lo recibe», con la tabla de personas activas (persona y cargo, rol, correo, «Lo recibe»), «Lo reciben N personas.» (`textoDeLosQueReciben`, con una copia en la página atada por un test de paridad para el conteo en vivo) y «Guardar».
-- El detalle: el N.º junto a la fecha, la línea del correo y, en «Archivos», la infografía editable.
-  Para administración, debajo de «Archivos», la caja «Correo» con el resumen, una fila por persona, «Reenviar…» (un diálogo: a todas o a una persona de la lista, con el aviso de que sale en el momento) y «Enviarme una prueba».
+- El detalle: el N.º en la cabecera, la línea del correo y, en «Archivos», la infografía editable.
+  Para administración, al final de la pestaña General de la edición, la caja «Correo» con el resumen, una fila por persona, «Reenviar…» (un diálogo: a todas o a una persona de la lista, con el aviso de que sale en el momento) y «Enviarme una prueba».
   Cualquier respuesta de Reenviar cierra el diálogo y vuelve a leer la caja.
 - Las reglas de siempre: lo que arma HTML es puro; todo texto del servidor por `Utils.escapeHtml`; los botones que mandan, deshabilitados hasta la respuesta; sin `ad-`; `VERSION_DATO_QUINCENA` en `tests/paginas.test.js`.
 

@@ -851,8 +851,8 @@ export const alertaSinEstadoDelCorreo = () => ({
 
 // El mail (sección 10)
 
-// Lo que el detalle trae para la página y el mail no usa: la franja reemplaza al rótulo de la propuesta
-const FUERA_DEL_MAIL = Object.freeze(['orden_texto', 'para_copiar', 'borrador_para_copiar']);
+// Lo que el detalle trae para la página y el mail no usa: la franja reemplaza al número y al rótulo de la propuesta
+const FUERA_DEL_MAIL = Object.freeze(['orden', 'orden_texto', 'para_copiar', 'borrador_para_copiar']);
 
 // Las propuestas de datasets nuevos del detalle (spec 2026-11-18-dato-quincena-propuestas-datasets, 6), en su orden y con la
 // franja «Dataset nuevo N de M» primero en cada una. null si el detalle no trae una lista (una edición sin la clave): la plantilla

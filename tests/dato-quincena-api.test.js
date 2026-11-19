@@ -788,11 +788,24 @@ describe('propuestas_datasets (contrato v1.4)', () => {
       [null, 'Agrupar por barrio, sin direcciones exactas.', 'Contar por mes y por zona.\nNunca por persona.']);
     // La forma, la de la respuesta con datasets que lee la página
     assert.deepEqual(forma(res.body), forma(RESPUESTAS.detalle_con_datasets));
+    // Lo que suma el servidor para las pestañas (spec 2026-11-18-dato-quincena-detalle-pestanas, 6), de la metadata guardada
+    const data = res.body.data;
+    assert.deepEqual(datasets.map((p) => [p.numero, p.valor, p.riesgo]), [[1, 'Alto', 'Bajo'], [2, 'Medio', 'Medio'], [3, 'Alto', 'Alto']]);
+    assert.deepEqual(data.matriz_de_prioridad, RESPUESTAS.detalle_con_datasets.data.matriz_de_prioridad);
+    assert.deepEqual(data.cantidades, { propuestas: 2, datasets_nuevos: 3 });
+    assert.deepEqual([data.ver_propuestas, data.aviso_datasets_nuevos, data.ver_datasets_nuevos],
+      ['Ver las 2 propuestas', 'Datito propone 3 datasets nuevos para abrir.', 'Ver los datasets nuevos']);
+    assert.deepEqual(data.propuestas.map((p) => p.orden), [1, 2]);
 
     const sin = await leer(`/dato-quincena/ediciones/${sinLaClave}`, 'lector');
     assert.equal(sin.status, 200, JSON.stringify(sin.body));
     assert.equal(sin.body.data.propuestas_datasets, null);
     assert.deepEqual(forma(sin.body), forma(RESPUESTAS.detalle));
+    // Sin la clave (una edición archivada antes de la v1.4): sin matriz, sin aviso y la cantidad de datasets nuevos en null
+    const sinData = sin.body.data;
+    assert.deepEqual([sinData.matriz_de_prioridad, sinData.aviso_datasets_nuevos, sinData.ver_datasets_nuevos], [null, null, null]);
+    assert.deepEqual(sinData.cantidades, { propuestas: 2, datasets_nuevos: null });
+    assert.equal(sinData.ver_propuestas, 'Ver las 2 propuestas');
   });
 });
 

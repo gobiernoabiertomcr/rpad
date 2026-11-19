@@ -1235,8 +1235,21 @@ describe('modeloDelMail: lo que recibe la plantilla (spec, 10)', () => {
     const { propuestas } = modelo();
     assert.deepEqual(propuestas.map((p) => [p.franja, p.principal]), [['Propuesta 1 de 2', true], ['Propuesta 2 de 2', false]]);
     const detalle = detalleDe(edicionDePrueba());
-    const { para_copiar, borrador_para_copiar, orden_texto, ...resto } = detalle.propuestas[0];
+    const { para_copiar, borrador_para_copiar, orden_texto, orden, ...resto } = detalle.propuestas[0];
     assert.deepEqual(propuestas[0], { franja: 'Propuesta 1 de 2', ...resto });
+  });
+
+  // spec 2026-11-18-dato-quincena-detalle-pestanas, 6: el detalle suma `orden` en cada propuesta (para la dirección y el índice de
+  // la página) y el mail lo deja afuera, como `orden_texto`: el modelo de las propuestas no cambia
+  it('las propuestas del modelo, con las claves de siempre: sin orden, orden_texto ni lo que se copia', () => {
+    const detalle = detalleDe(edicionDePrueba());
+    assert.deepEqual(detalle.propuestas.map((p) => p.orden), [1, 2]);
+    for (const propuesta of modelo({ detalle }).propuestas) {
+      assert.deepEqual(Object.keys(propuesta), [
+        'franja', 'etiquetas', 'principal', 'titulo', 'cifra_clave', 'dataset', 'foto', 'repeticion', 'notas_validacion', 'calculo',
+        'contexto_historico', 'por_que_hoy', 'angulo', 'idea_placa', 'texto_redes', 'puntos_centrales', 'borrador_nota', 'fuentes'
+      ]);
+    }
   });
 
   // spec 2026-11-14-dato-quincena-agenda-grupos: el mail muestra la agenda en sus grupos, como la página; la lista sin agrupar no va
@@ -1627,6 +1640,20 @@ describe('datoQuincenaTemplate: las propuestas de datasets nuevos (contrato v1.4
       assert.equal(otro.html, SIN.html, String(valor));
       assert.equal(otro.text, SIN.text, String(valor));
     }
+  });
+
+  // Ola final de la revisión de las pestañas: `numero`, `valor` y `riesgo` son de la página (la matriz y los marcadores); el mail no los dibuja
+  it('el mail es el mismo sin `numero`, `valor` ni `riesgo` en cada dataset', () => {
+    const con = modelo(propuestasDatasetsDePrueba());
+    assert.ok(con.propuestas_datasets.length > 0);
+    const sin = structuredClone(con);
+    sin.propuestas_datasets = sin.propuestas_datasets.map(({ numero: _n, valor: _v, riesgo: _r, ...resto }) => resto);
+    assert.ok(con.propuestas_datasets.some((p) => 'numero' in p || 'valor' in p || 'riesgo' in p));
+    const a = mail(con);
+    const b = mail(sin);
+    assert.equal(a.subject, b.subject);
+    assert.equal(a.html, b.html);
+    assert.equal(a.text, b.text);
   });
 
   it('con []: el título y la línea, después de la última propuesta y antes del botón, en el HTML y en el texto', () => {

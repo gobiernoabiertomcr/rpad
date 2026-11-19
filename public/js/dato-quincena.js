@@ -1,16 +1,19 @@
 /**
- * El dato de la quincena - RPAD (specs 2026-11-07-dato-quincena, 9, 10 y 11, y 2026-11-12-dato-quincena-correo, 12 y 13)
+ * El dato de la quincena - RPAD (specs 2026-11-07-dato-quincena, 9, 10 y 11, 2026-11-12-dato-quincena-correo, 12 y 13, y
+ * 2026-11-18-dato-quincena-detalle-pestanas)
  * El archivo de las ediciones que arma Datito (el bot: NOMBRE_DEL_BOT), de solo lectura, para todos los roles con sesión: la lista
  * de un año (sin ?id=; ?anio=AAAA elige el año, &pagina=N la página de a 18), en tarjetas tipo diario con la pastilla del envío del
- * correo, y el detalle de una edición (?id=N), con la infografía y los archivos a un costado y la agenda (en sus grupos: spec
- * 2026-11-14-dato-quincena-agenda-grupos) y las propuestas al otro.
- * La principal va abierta y las otras, cerradas; las notas para validar y la repetición de otra edición (spec
- * 2026-11-14-dato-quincena-v1-3, 4), siempre a la vista; y tres «Copiar» por propuesta (el texto para redes, el borrador y la
- * propuesta entera).
- * Para la administración (Auth.isAdmin()) hay además dos pestañas, Ediciones y Correo (#correo en la dirección, junto a ?id, ?anio
- * y &pagina, que son de Ediciones): Correo tiene el interruptor del envío automático (se guarda al cambiarlo; al prenderlo,
- * pregunta), las próximas ediciones y quién lo recibe, con «Guardar»; y el detalle suma, debajo de «Archivos», la caja del correo
- * de la edición, con «Reenviar…» (un diálogo) y «Enviarme una prueba». Los demás roles no ven ni piden nada de eso.
+ * correo, y el detalle de una edición (?id=N), en una hoja «tipo diario» con tres pestañas, dibujadas juntas y con la elegida a la
+ * vista: General (la principal, la infografía, la agenda en sus grupos, los archivos y el aviso de los datasets nuevos), Propuestas (un
+ * índice y una propuesta por vez, con anterior y siguiente) y Datasets nuevos (solo si la edición trae la clave). &vista= elige la
+ * pestaña y &propuesta=K, en Propuestas, la propuesta de orden K; cambiar de pestaña o de propuesta reemplaza la dirección (sin sumar
+ * al historial).
+ * Las notas para validar y la repetición de otra edición (spec 2026-11-14-dato-quincena-v1-3, 4), siempre a la vista; y tres
+ * «Copiar» por propuesta (el texto para redes, el borrador y la propuesta entera).
+ * Para la administración (Auth.isAdmin()) hay además dos pestañas de página, Ediciones y Correo (#correo en la dirección, junto a
+ * ?id, &vista, &propuesta, ?anio y &pagina, que son de Ediciones): Correo tiene el interruptor del envío automático (se guarda al
+ * cambiarlo; al prenderlo, pregunta), las próximas ediciones y quién lo recibe, con «Guardar»; y General suma, al final, la caja del
+ * correo de la edición, con «Reenviar…» (un diálogo) y «Enviarme una prueba». Los demás roles no ven ni piden nada de eso.
  * El servidor arma todos los textos (las fechas, la marca del piloto, la llegada, el correo, la cantidad, el resto, la foto del RPAD,
  * los tamaños, lo que se copia, las próximas, los estados de cada persona y los avisos: GET /api/dato-quincena/ediciones,
  * /ediciones/:id, /correo y /ediciones/:id/correo) y la página los imprime tal cual: no recalcula nada. La única copia de una regla
@@ -20,8 +23,8 @@
  * Al cargarse el archivo solo declara y engancha DOMContentLoaded: lo que arma HTML es puro y recibe los datos y quién mira por
  * parámetro (tests/dato-quincena-frontend.test.js lo carga en un vm, después del main.js y del api.js de verdad, como la página);
  * lo que toca el DOM o la API va aparte, al final (iniciarDatoQuincena): las cargas y los cambios (API.pedirJson: su error trae el
- * estado y el texto del servidor), la infografía desde un blob: (API.pedirArchivo + URL.createObjectURL, liberada al cambiar de
- * pestaña y al salir), «Ver» en un modal con textContent, «Descargar» con el nombre que manda el servidor (API.pedirArchivo no da
+ * estado y el texto del servidor), la infografía desde un blob: (API.pedirArchivo + URL.createObjectURL, liberada al pasar a
+ * Correo y al salir), «Ver» en un modal con textContent, «Descargar» con el nombre que manda el servidor (API.pedirArchivo no da
  * el Content-Disposition) y «Copiar». Los eventos van delegados en #dq-contenido, en las pestañas y en los dos diálogos, que no se
  * vuelven a dibujar; lo que cambia se anuncia en #dq-anuncio. Los botones que mandan algo quedan deshabilitados hasta la respuesta.
  */
@@ -55,6 +58,15 @@ const TEXTOS_DEL_ESTADO = Object.freeze({
 });
 const TEXTO_TODAS_LAS_EDICIONES = 'Todas las ediciones';
 
+// Las pestañas de una edición (spec 2026-11-18-dato-quincena-detalle-pestanas, 1 y 2): su clave, la de &vista=, y su texto.
+// «Datasets nuevos» solo va si la edición trae la clave propuestas_datasets
+const VISTAS_DE_LA_EDICION = Object.freeze(['general', 'propuestas', 'datasets']);
+const TEXTO_DE_LA_VISTA = Object.freeze({ general: 'General', propuestas: 'Propuestas', datasets: 'Datasets nuevos' });
+// Los botones de General llevan el texto del servidor (ver_propuestas y ver_datasets_nuevos); estos, solo si no llega (un servidor
+// de antes, durante el despliegue o con una vuelta atrás)
+const TEXTO_VER_PROPUESTAS = 'Ver las propuestas';
+const TEXTO_VER_DATASETS_NUEVOS = 'Ver los datasets nuevos';
+
 // Los títulos de la ventana: el de la página (la lista), el de la pestaña Correo y, en el detalle, la fecha delante
 const TITULO_DQ = 'El dato de la quincena - RPAD';
 const TITULO_CORREO_DQ = `Correo - ${TITULO_DQ}`;
@@ -78,18 +90,8 @@ const CLASE_DE_LA_ETIQUETA = Object.freeze({
   Principal: 'dq-et-principal', Agenda: 'dq-et-agenda', Validar: 'dq-et-validar', Repite: 'dq-et-repite'
 });
 
-// Los campos de texto de la propuesta completa, en el orden de la sección 9 (el mismo de «Copiar la propuesta»); después van el texto
-// para redes, los puntos centrales, el borrador y las fuentes
-const CAMPOS_DE_TEXTO = Object.freeze([
-  ['calculo', 'Cómo se calculó'],
-  ['contexto_historico', 'Contexto histórico'],
-  ['por_que_hoy', 'Por qué hoy'],
-  ['angulo', 'Ángulo'],
-  ['idea_placa', 'Idea de placa']
-]);
-
-// Los íconos de Lucide, decorativos: triangle-alert (Validar), history (Repite y la caja de la repetición), chevron-right (la
-// propuesta completa) y chevron-left (volver)
+// Los íconos de Lucide, decorativos: triangle-alert (Validar), history (Repite y la caja de la repetición), chevron-right (los plegados
+// y «Siguiente») y chevron-left (volver y «Anterior»)
 const ATRIBUTOS_DEL_ICONO = 'aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
 const ICONO_VALIDAR = `<svg ${ATRIBUTOS_DEL_ICONO}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`;
 const ICONO_REPITE = `<svg ${ATRIBUTOS_DEL_ICONO}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>`;
@@ -118,29 +120,42 @@ const numeroComoTexto = (valor) => (typeof valor === 'number' && Number.isFinite
 const idDeEdicion = (valor) => (Number.isSafeInteger(valor) && valor > 0 ? valor : null);
 const anioQueSirve = (valor) => (Number.isInteger(valor) && valor >= ANIO_MINIMO_DQ && valor <= ANIO_MAXIMO_DQ ? valor : null);
 
+// Una vista de la edición que sirve: una de la lista cerrada; si no, null
+const vistaQueSirve = (valor) => (typeof valor === 'string' && VISTAS_DE_LA_EDICION.includes(valor) ? valor : null);
+
 /**
- * Lo que pide la dirección: `{ id, anio, pagina, correo }`. El id, un entero positivo escrito con cifras (sin ceros adelante); el
- * año, cuatro cifras de 2000 a 2100; la página, un entero positivo (1 si no); el correo, solo con el #correo. Lo demás, null / 1 / false.
+ * Lo que pide la dirección: `{ id, anio, pagina, correo, vista, propuesta }`. El id y la propuesta, un entero positivo escrito con
+ * cifras (sin ceros adelante); el año, cuatro cifras de 2000 a 2100; la página, un entero positivo (1 si no); el correo, solo con el
+ * #correo; la vista, una de VISTAS_DE_LA_EDICION. Lo demás, null / 1 / false. La propuesta se lee sola: la página la usa solo en
+ * Propuestas (spec 2026-11-18-dato-quincena-detalle-pestanas, 1).
  */
 function estadoDeLaUrl(search, hash = '') {
   const parametros = new URLSearchParams(String(search ?? '').replace(/^\?/, ''));
   const textoDelId = parametros.get('id') ?? '';
   const textoDelAnio = parametros.get('anio') ?? '';
   const textoDeLaPagina = parametros.get('pagina') ?? '';
+  const textoDeLaPropuesta = parametros.get('propuesta') ?? '';
   const pagina = /^[1-9]\d{0,8}$/.test(textoDeLaPagina) ? Number(textoDeLaPagina) : 1;
   return {
     id: /^[1-9]\d*$/.test(textoDelId) ? idDeEdicion(Number(textoDelId)) : null,
     anio: /^\d{4}$/.test(textoDelAnio) ? anioQueSirve(Number(textoDelAnio)) : null,
     pagina,
-    correo: String(hash ?? '') === '#correo'
+    correo: String(hash ?? '') === '#correo',
+    vista: vistaQueSirve(parametros.get('vista')),
+    propuesta: /^[1-9]\d*$/.test(textoDeLaPropuesta) ? idDeEdicion(Number(textoDeLaPropuesta)) : null
   };
 }
 
 // La dirección de una vista: lo que pide Ediciones (el detalle con su id, la lista de un año con su página desde la 2, o la lista
-// sola) y, en la pestaña Correo, #correo al final (spec 2026-11-12-dato-quincena-correo, 13: así volver a Ediciones vuelve a lo mismo)
-function urlDeEstado({ id = null, anio = null, pagina = 1, correo = false } = {}) {
+// sola) y, en la pestaña Correo, #correo al final (spec 2026-11-12-dato-quincena-correo, 13: así volver a Ediciones vuelve a lo mismo).
+// El detalle suma &vista= si no es General y &propuesta= solo en Propuestas (spec 2026-11-18-dato-quincena-detalle-pestanas, 1)
+function urlDeEstado({ id = null, anio = null, pagina = 1, correo = false, vista = null, propuesta = null } = {}) {
   const hash = correo === true ? '#correo' : '';
-  if (idDeEdicion(id) !== null) return `${PAGINA_DATO_QUINCENA}?id=${String(id)}${hash}`;
+  if (idDeEdicion(id) !== null) {
+    const deVista = vistaQueSirve(vista) !== null && vista !== 'general' ? `&vista=${vista}` : '';
+    const dePropuesta = vista === 'propuestas' && idDeEdicion(propuesta) !== null ? `&propuesta=${String(propuesta)}` : '';
+    return `${PAGINA_DATO_QUINCENA}?id=${String(id)}${deVista}${dePropuesta}${hash}`;
+  }
   if (anioQueSirve(anio) !== null) {
     const dePagina = Number.isSafeInteger(pagina) && pagina > 1 ? `&pagina=${String(pagina)}` : '';
     return `${PAGINA_DATO_QUINCENA}?anio=${String(anio)}${dePagina}${hash}`;
@@ -167,6 +182,10 @@ function textoDeLaBajada() {
 
 const listaDe = (valor) => (Array.isArray(valor) ? valor : []);
 const htmlDeMarca = (marca) => (marca ? `<span class="dq-marca">${esc(marca)}</span>` : '');
+// Al lado de «El dato de la quincena», en la tarjeta y en la cabecera del detalle: la marca de un piloto o el N.º de una regular
+const htmlDelNumeroDiario = (edicion) => (edicion?.marca
+  ? htmlDeMarca(edicion.marca)
+  : (edicion?.numero ? `<span class="dq-numero">${esc(edicion.numero)}</span>` : ''));
 
 // =====================================================
 // Lo puro: los estados y la lista
@@ -241,12 +260,9 @@ function htmlDeTarjeta(item) {
   const fecha = partes !== null && typeof partes === 'object'
     ? `<span class="dq-fd-dia">${esc(partes.dia)}</span> <span class="dq-fd-fecha">${esc(partes.fecha)}</span> <span class="dq-fd-anio">${esc(partes.anio)}</span>`
     : `<span class="dq-fd-fecha">${esc(item?.fecha_texto)}</span>`;
-  const numero = item?.marca
-    ? htmlDeMarca(item.marca)
-    : (item?.numero ? `<span class="dq-numero">${esc(item.numero)}</span>` : '');
   const pastilla = htmlDeLaPastilla(item?.envio);
   return '<li class="dq-tarjeta">'
-    + `<p class="dq-cabecera-diario"><span>El dato de la quincena</span>${numero}</p>`
+    + `<p class="dq-cabecera-diario"><span>El dato de la quincena</span>${htmlDelNumeroDiario(item)}</p>`
     + `<h3 class="dq-fecha-diario">${id === null ? `<span class="dq-tarjeta-enlace">${fecha}</span>` : `<a class="dq-tarjeta-enlace" href="${esc(urlDeEstado({ id }))}">${fecha}</a>`}</h3>`
     + `${item?.cantidad ? `<p class="dq-cuantas-prop">${esc(item.cantidad)}</p>` : ''}`
     + `<p class="dq-principal-diario">${esc(item?.principal?.titulo)}</p>`
@@ -280,25 +296,27 @@ function htmlDeLaLista(datos, pagina = 1) {
 // Lo puro: el detalle
 // =====================================================
 
-// Un evento de la agenda: la fecha, el título, el detalle y, si es https://, el enlace
+// Un evento de la agenda, un punto de su línea de tiempo: la fecha, el título, el detalle y, si es https://, el enlace. Entre las
+// piezas va un espacio (la grilla no lo dibuja): copiado o leído en voz alta no queda todo pegado
 function htmlDeEventoDeLaAgenda(evento) {
   const enlace = esEnlaceSeguro(evento?.url)
     ? ` ${enlaceDeAfuera(evento.url, `Ver<span class="visualmente-oculto"> ${esc(evento?.titulo)}</span>`)}`
     : '';
-  return `<li><span class="dq-dia">${esc(evento?.fecha_texto)}</span>`
-    + `<span class="dq-evento"><b>${esc(evento?.titulo)}</b> <span>${esc(evento?.detalle)}</span>${enlace}</span></li>`;
+  return `<li><span class="dq-dia">${esc(evento?.fecha_texto)}</span> <b class="dq-evento-titulo">${esc(evento?.titulo)}</b> `
+    + `<span class="dq-evento-detalle">${esc(evento?.detalle)}${enlace}</span></li>`;
 }
 
 // La agenda de la quincena en sus grupos (agenda_grupos del detalle, spec 2026-11-14-dato-quincena-agenda-grupos), en el orden
-// en que los manda el servidor: el título de cada uno y sus eventos. Sin la pastilla «Efeméride»: el título del grupo ya lo dice.
-// Un grupo sin eventos no va; sin ninguno, nada
+// en que los manda el servidor: cada grupo en su columna, con su título y sus eventos como una línea de tiempo corta (spec
+// 2026-11-18-dato-quincena-detalle-pestanas, 3). Sin la pastilla «Efeméride»: el título del grupo ya lo dice. Un grupo sin eventos
+// no va; sin ninguno, nada
 function htmlDeLaAgenda(grupos) {
   const conEventos = listaDe(grupos).filter((grupo) => listaDe(grupo?.eventos).length > 0);
   if (conEventos.length === 0) return '';
-  const html = conEventos.map((grupo) => `<h4 class="dq-agenda-grupo">${esc(grupo.titulo)}</h4>`
-    + `<ul>${grupo.eventos.map(htmlDeEventoDeLaAgenda).join('')}</ul>`).join('');
+  const columnas = conEventos.map((grupo) => `<div class="dq-agenda-col"><h4 class="dq-agenda-grupo">${esc(grupo.titulo)}</h4>`
+    + `<ol class="dq-linea">${grupo.eventos.map(htmlDeEventoDeLaAgenda).join('')}</ol></div>`).join('');
   return '<section class="dq-agenda" aria-labelledby="dq-agenda-titulo">'
-    + `<h3 class="dq-seccion-titulo" id="dq-agenda-titulo">Agenda de la quincena</h3>${html}</section>`;
+    + `<h3 class="dq-seccion-titulo" id="dq-agenda-titulo">Agenda de la quincena</h3><div class="dq-agenda-cols">${columnas}</div></section>`;
 }
 
 // La foto del RPAD de ese día, cada fila { rotulo, valor } tal como la arma el servidor. Sin filas, nada
@@ -329,30 +347,53 @@ function htmlDeLaRepeticion(repeticion) {
 
 // Un «Copiar» con el texto tal como llega del servidor. Su nombre (aria-label) dice qué copia: hay tres por propuesta y el texto del
 // botón cambia a «Copiado» (lo anuncia #dq-anuncio)
-const htmlDeCopiar = (texto, nombre, { rotulo = 'Copiar', clase = 'dq-link dq-copiar' } = {}) => `<button type="button" class="${clase}" data-copiar="${esc(texto)}" aria-label="${esc(nombre)}">${rotulo}</button>`;
+const htmlDeCopiar = (texto, nombre, { rotulo = 'Copiar', clase } = {}) => `<button type="button" class="${clase}" data-copiar="${esc(texto)}" aria-label="${esc(nombre)}">${rotulo}</button>`;
 
-// Un campo de la propuesta completa: su título (con un «Copiar» al lado, si lo lleva) y su contenido
-const htmlDeCampo = (titulo, contenido, copiar = '') => `<div class="dq-campo"><div class="dq-campo-cabeza"><h5>${titulo}</h5>${copiar}</div>${contenido}</div>`;
+// Un campo de una propuesta de dataset nuevo: su título (h5: el de la tarjeta es h4) y su contenido
+const htmlDeCampo = (titulo, contenido) => `<div class="dq-campo"><div class="dq-campo-cabeza"><h5>${titulo}</h5></div>${contenido}</div>`;
 // Un texto del servidor, con sus saltos de línea (los muestra white-space: pre-line)
 const htmlDeTexto = (texto) => `<p class="dq-texto">${esc(texto)}</p>`;
 
+// El dataset de una propuesta: el nombre, con enlace a su página solo con id_enlace, y «en el portal», con enlace solo si es https://
+function partesDelDataset(dataset) {
+  const d = dataset ?? {};
+  const id = idDeEdicion(d.id_enlace);
+  return {
+    nombre: id === null ? esc(d.nombre) : `<a href="dataset.html?id=${String(id)}">${esc(d.nombre)}</a>`,
+    portal: esEnlaceSeguro(d.url) ? enlaceDeAfuera(d.url, 'en el portal') : 'en el portal'
+  };
+}
+
+// Un campo de la propuesta que se ve: su título (h4: el de la propuesta es h3) y su contenido
+const htmlDeCampoDeLaPropuesta = (titulo, contenido, clase = 'dq-campo') => `<div class="${clase}"><h4>${titulo}</h4>${contenido}</div>`;
+// Lo que va plegado (el cálculo, el contexto y las fuentes): un <details> cerrado, con la flecha decorativa
+const htmlDePlegado = (titulo, contenido) => `<details class="dq-plegado"><summary>${ICONO_ABRIR}<span>${titulo}</span></summary>`
+  + `<div class="dq-plegado-cuerpo">${contenido}</div></details>`;
+
+// «Anterior» o «Siguiente» (`sentido`): la propuesta vecina, `{ propuesta, orden }`, con su número y su título; sin vecina, nada. Entre el
+// rótulo y el título va un espacio (la grilla no lo dibuja): el nombre se lee «Anterior Otro título», empezando con lo que se ve
+function htmlDelPaso(vecina, sentido) {
+  if (vecina === null || typeof vecina !== 'object') return '';
+  const anterior = sentido === 'anterior';
+  return `<button type="button" class="dq-paso dq-paso-${anterior ? 'anterior' : 'siguiente'}" data-ver-propuesta="${String(vecina.orden)}">`
+    + `${anterior ? ICONO_VOLVER : ''}<span class="dq-paso-texto"><small>${anterior ? 'Anterior' : 'Siguiente'}</small> `
+    + `<span class="dq-paso-titulo">${esc(vecina.propuesta?.titulo)}</span></span>${anterior ? '' : ICONO_ABRIR}</button>`;
+}
+
 /**
- * Una propuesta: el número y las etiquetas, el título, la cifra, el dataset (con enlace a su página solo con id_enlace, y «en el
- * portal» siempre, con enlace si es https://), la foto del RPAD y, si hay, la repetición de otra edición y «Para validar antes de
- * publicar», siempre a la vista.
- * Después, en un <details> (abierto en la principal), la propuesta completa en el orden de la sección 9, y al pie, «Copiar la
- * propuesta».
+ * La propuesta que se ve en Propuestas (spec 2026-11-18-dato-quincena-detalle-pestanas, 4), en un <article> nombrado por su título:
+ * arriba, el número, las etiquetas, el título (h3, el que recibe el foco al elegirla) y la cifra; el dataset (con enlace a su página
+ * solo con id_enlace, y «en el portal» siempre, con enlace si es https://) y la foto del RPAD en una tira; la repetición, si hay, y
+ * «Para validar antes de publicar», siempre a la vista. En dos columnas, «Por qué hoy», «Ángulo» y «Puntos centrales» | «Texto para
+ * redes» con su «Copiar»; a lo ancho, el borrador con su «Copiar» y la idea de placa; plegados, el cálculo, el contexto y las fuentes;
+ * al pie, «Copiar la propuesta» y `anterior` y `siguiente` (las vecinas, o null).
  */
-function htmlDePropuesta(propuesta) {
+function htmlDePropuesta(propuesta, { anterior = null, siguiente = null } = {}) {
   const p = propuesta ?? {};
-  const principal = p.principal === true;
-  const dataset = p.dataset ?? {};
-  const idDelDataset = idDeEdicion(dataset.id_enlace);
-  const nombre = idDelDataset === null ? esc(dataset.nombre) : `<a href="dataset.html?id=${String(idDelDataset)}">${esc(dataset.nombre)}</a>`;
-  const portal = esEnlaceSeguro(dataset.url) ? enlaceDeAfuera(dataset.url, 'en el portal') : 'en el portal';
+  const { nombre, portal } = partesDelDataset(p.dataset);
   const notas = listaDe(p.notas_validacion);
   const validar = notas.length > 0
-    ? `<div class="dq-validar"><h5>${ICONO_VALIDAR}Para validar antes de publicar</h5><ul>${notas.map((nota) => `<li>${esc(nota)}</li>`).join('')}</ul></div>`
+    ? `<div class="dq-validar"><h4>${ICONO_VALIDAR}Para validar antes de publicar</h4><ul>${notas.map((nota) => `<li>${esc(nota)}</li>`).join('')}</ul></div>`
     : '';
   const borrador = p.borrador_nota ?? {};
   // «Copiar la propuesta (Propuesta 1)»: el de la propuesta entera nombra cuál, con el orden_texto del servidor, y empieza con el texto
@@ -360,32 +401,40 @@ function htmlDePropuesta(propuesta) {
   const copiarLaPropuesta = typeof p.orden_texto === 'string' && p.orden_texto !== ''
     ? `Copiar la propuesta (${p.orden_texto})`
     : 'Copiar la propuesta';
+  const copiarChico = { clase: 'dq-btn dq-btn-borde dq-btn-chico dq-copiar' };
   const fuentes = listaDe(p.fuentes).map((url) => `<li>${esEnlaceSeguro(url) ? enlaceDeAfuera(url, esc(url)) : esc(url)}</li>`).join('');
-  const campos = [
-    ...CAMPOS_DE_TEXTO.map(([clave, titulo]) => htmlDeCampo(titulo, htmlDeTexto(p[clave]))),
-    htmlDeCampo('Texto para redes', `<div class="dq-redes">${htmlDeTexto(p.texto_redes)}</div>`, htmlDeCopiar(p.texto_redes, 'Copiar el texto para redes')),
-    htmlDeCampo('Puntos centrales', `<ul>${listaDe(p.puntos_centrales).map((punto) => `<li>${esc(punto)}</li>`).join('')}</ul>`),
-    htmlDeCampo('Borrador de nota', `<div class="dq-nota"><p class="dq-nota-titulo">${esc(borrador.titulo)}</p>${listaDe(borrador.parrafos).map(htmlDeTexto).join('')}</div>`,
-      htmlDeCopiar(p.borrador_para_copiar, 'Copiar el borrador')),
-    htmlDeCampo('Fuentes', `<ul>${fuentes}</ul>`)
-  ].join('');
-  return `<li class="dq-propuesta${principal ? ' dq-principal' : ''}">`
+  const pasos = htmlDelPaso(anterior, 'anterior') + htmlDelPaso(siguiente, 'siguiente');
+  return '<article class="dq-propuesta" aria-labelledby="dq-propuesta-titulo">'
     + `<div class="dq-prop-arriba"><span class="dq-orden">${esc(p.orden_texto)}</span>${listaDe(p.etiquetas).map(htmlDeEtiqueta).join('')}</div>`
-    + `<h4 class="dq-prop-titulo">${esc(p.titulo)}</h4>`
+    + `<h3 class="dq-prop-titulo" id="dq-propuesta-titulo" tabindex="-1">${esc(p.titulo)}</h3>`
     + `<p class="dq-cifra">${esc(p.cifra_clave)}</p>`
-    + `<p class="dq-dataset">Dataset: ${nombre} · ${portal}</p>`
-    + htmlDeLaFoto(p.foto)
+    + `<div class="dq-tira"><p class="dq-dataset"><span class="dq-tira-rotulo">Dataset:</span> ${nombre} · ${portal}</p>${htmlDeLaFoto(p.foto)}</div>`
     + htmlDeLaRepeticion(p.repeticion)
     + validar
-    + `<details class="dq-completa"${principal ? ' open' : ''}><summary>${ICONO_ABRIR}<span>${principal ? 'La propuesta completa' : 'Ver la propuesta completa'}</span></summary>`
-    + `<div class="dq-campos">${campos}</div></details>`
-    + `<p class="dq-copiar-todo">${htmlDeCopiar(p.para_copiar, copiarLaPropuesta, { rotulo: 'Copiar la propuesta', clase: 'dq-btn dq-btn-borde dq-btn-chico dq-copiar' })}</p>`
-    + '</li>';
+    + '<div class="dq-dos"><div class="dq-dos-izq">'
+    + htmlDeCampoDeLaPropuesta('Por qué hoy', htmlDeTexto(p.por_que_hoy))
+    + htmlDeCampoDeLaPropuesta('Ángulo', htmlDeTexto(p.angulo))
+    + htmlDeCampoDeLaPropuesta('Puntos centrales', `<ul>${listaDe(p.puntos_centrales).map((punto) => `<li>${esc(punto)}</li>`).join('')}</ul>`)
+    + '</div><div class="dq-redes">'
+    + `<div class="dq-redes-cabeza"><h4>Texto para redes</h4>${htmlDeCopiar(p.texto_redes, 'Copiar el texto para redes', copiarChico)}</div>`
+    + `<div class="dq-redes-post">${htmlDeTexto(p.texto_redes)}</div></div></div>`
+    + '<div class="dq-borrador">'
+    + `<div class="dq-borrador-cabeza"><h4>Borrador de nota</h4>${htmlDeCopiar(p.borrador_para_copiar, 'Copiar el borrador', copiarChico)}</div>`
+    + `<div class="dq-borrador-cuerpo"><p class="dq-nota-titulo">${esc(borrador.titulo)}</p>${listaDe(borrador.parrafos).map(htmlDeTexto).join('')}</div></div>`
+    + htmlDeCampoDeLaPropuesta('Idea de placa', htmlDeTexto(p.idea_placa), 'dq-campo dq-placa')
+    + '<div class="dq-plegados">'
+    + htmlDePlegado('Cómo se calculó', htmlDeTexto(p.calculo))
+    + htmlDePlegado('Contexto histórico', htmlDeTexto(p.contexto_historico))
+    + htmlDePlegado('Fuentes', `<ul>${fuentes}</ul>`)
+    + '</div>'
+    + `<footer class="dq-prop-pie"><p class="dq-copiar-todo">${htmlDeCopiar(p.para_copiar, copiarLaPropuesta, { rotulo: 'Copiar la propuesta', clase: 'dq-btn dq-btn-tinta dq-copiar' })}</p>`
+    + (pasos ? `<nav class="dq-pasos" aria-label="Otras propuestas">${pasos}</nav>` : '')
+    + '</footer></article>';
 }
 
 /**
- * Los archivos de la edición, en el orden del servidor: «Descargar» en cada uno (guarda con el nombre que manda el servidor) y «Ver»
- * en los que se pueden ver (el texto del correo y los cálculos). Sin un id que sirva, nada: no hay a dónde pedirlos.
+ * Los archivos de la edición, en una fila y en el orden del servidor: «Descargar» en cada uno (guarda con el nombre que manda el
+ * servidor) y «Ver» en los que se pueden ver (el texto del correo y los cálculos). Sin un id que sirva, nada: no hay a dónde pedirlos.
  */
 function htmlDeArchivos(archivos, id) {
   const lista = listaDe(archivos);
@@ -400,7 +449,8 @@ function htmlDeArchivos(archivos, id) {
     return `<li><span class="dq-archivo">${rotulo} <small>${esc(archivo?.detalle)}</small></span>`
       + `<span class="dq-acciones">${ver}<button type="button" class="dq-link" data-descargar ${datos} aria-label="Descargar ${rotulo}">Descargar</button></span></li>`;
   }).join('');
-  return `<section class="dq-archivos" aria-labelledby="dq-archivos-titulo"><h3 id="dq-archivos-titulo">Archivos</h3><ul>${filas}</ul></section>`;
+  return '<section class="dq-archivos" aria-labelledby="dq-archivos-titulo">'
+    + `<h3 class="dq-seccion-titulo" id="dq-archivos-titulo">Archivos</h3><ul class="dq-archivos-fila">${filas}</ul></section>`;
 }
 
 // La llegada, el correo y la cantidad, tal como los manda el servidor; el punto después de la cantidad lo pone la página (la maqueta
@@ -435,78 +485,304 @@ const htmlDeLosEnlaces = (lista) => `<ul>${lista.map(({ url, texto }) => `<li>${
 
 // Una propuesta de dataset nuevo, tal como la arma el servidor: número y orígenes, título, prioridad con su valor y riesgo, y los
 // campos. «Cómo anonimizar» y «Datasets relacionados» solo si hay
-function htmlDeUnDatasetNuevo(propuesta) {
+function htmlDeUnDatasetNuevo(propuesta, indice = 0) {
   const p = propuesta ?? {};
-  const clave = p.prioridad?.clave;
-  const conClave = typeof clave === 'string' && Object.hasOwn(CLASE_DE_LA_PRIORIDAD, clave);
-  const prioridad = `<span class="dq-etiqueta${conClave ? ` ${CLASE_DE_LA_PRIORIDAD[clave]}` : ''}">${conClave ? ICONO_DE_LA_PRIORIDAD[clave] : ''}${esc(p.prioridad?.texto)}</span>`;
+  const prioridad = htmlDeLaPrioridad(p.prioridad);
   const anonimizar = typeof p.anonimizacion === 'string' && p.anonimizacion !== ''
     ? `<div class="dq-validar dq-anonimizar"><h5>${ICONO_VALIDAR}Cómo anonimizar</h5>${htmlDeTexto(p.anonimizacion)}</div>`
     : '';
   const relacionados = listaDe(p.datasets_relacionados).map((r) => ({ url: r?.url, texto: r?.nombre }));
   const fuentes = listaDe(p.fuentes).map((url) => ({ url, texto: url }));
-  return '<li class="dq-nuevo">'
-    + `<div class="dq-prop-arriba"><span class="dq-orden">${esc(p.numero_texto)}</span>${listaDe(p.origenes).map((o) => `<span class="dq-etiqueta">${esc(o)}</span>`).join('')}</div>`
-    + `<h4 class="dq-nuevo-titulo">${esc(p.titulo)}</h4>`
+  const enlaces = (relacionados.length > 0 ? htmlDeCampo('Datasets relacionados en el portal', htmlDeLosEnlaces(relacionados)) : '') + htmlDeCampo('Fuentes', htmlDeLosEnlaces(fuentes));
+  return `<li class="dq-nuevo" id="dq-nuevo-${String(indice)}">`
+    + '<div class="dq-nuevo-cabeza">'
+    + `<span class="dq-marcador dq-marcador-fijo dq-marcador-grande" aria-hidden="true">${String(numeroDelNuevo(p, indice))}</span>`
+    + '<div class="dq-nuevo-encabezado">'
+    + `<p class="dq-prop-arriba"><span class="dq-orden">${esc(p.numero_texto)}</span>${listaDe(p.origenes).map((o) => `<span class="dq-etiqueta">${esc(o)}</span>`).join('')}</p>`
+    + `<h4 class="dq-nuevo-titulo" tabindex="-1">${esc(p.titulo)}</h4>`
     + `<p class="dq-cuad">${prioridad}<span class="dq-cuad-eje">${esc(p.valor_y_riesgo)}</span></p>`
-    + '<div class="dq-campos">'
-    + htmlDeCampo('Por qué abrirlo', htmlDeTexto(p.justificacion))
+    + '</div></div>'
+    + '<div class="dq-nuevo-cuerpo">'
+    + `<div class="dq-nuevo-porque"><h5 class="visualmente-oculto">Por qué abrirlo</h5>${htmlDeTexto(p.justificacion)}</div>`
+    + '<div class="dq-nuevo-ficha">'
     + htmlDeCampo('Formato sugerido', `<p class="dq-formatos"><span class="dq-formato">${esc(p.formato)}</span></p>`)
     + htmlDeCampo('Campos sugeridos', `<ul class="dq-campos-min">${listaDe(p.campos).map((c) => `<li><code>${esc(c)}</code></li>`).join('')}</ul>`)
+    + '</div>'
     + anonimizar
-    + (relacionados.length > 0 ? htmlDeCampo('Datasets relacionados en el portal', htmlDeLosEnlaces(relacionados)) : '')
-    + htmlDeCampo('Fuentes', htmlDeLosEnlaces(fuentes))
+    + `<div class="dq-nuevo-enlaces">${enlaces}</div>`
     + '</div></li>';
 }
 
-// null (la edición no trae la clave) o algo que no es una lista: nada. Lista vacía: el título y una línea. Si no, una tarjeta por propuesta
-function htmlDeLosDatasetsNuevos(lista) {
-  if (!Array.isArray(lista)) return '';
-  const cuerpo = lista.length === 0
-    ? `<p class="dq-nuevos-vacia">${SIN_DATASETS_NUEVOS}</p>`
-    : `<ol class="dq-nuevos-lista">${lista.map(htmlDeUnDatasetNuevo).join('')}</ol>`;
-  return `<section class="dq-nuevos" aria-labelledby="dq-nuevos-titulo"><h3 class="dq-seccion-titulo" id="dq-nuevos-titulo">${TITULO_DATASETS_NUEVOS}</h3>${cuerpo}</section>`;
+// Las zonas de la matriz: la clase de cada clave del servidor (nunca del texto). «No se propone» va rayada además de su color
+const CLASE_DE_LA_ZONA = Object.freeze({ alta: 'dq-zona-alta', si_hay_recursos: 'dq-zona-si_hay_recursos', evaluar: 'dq-zona-evaluar', no_se_propone: 'dq-zona-no' });
+const NIVELES_DE_LA_MATRIZ = Object.freeze(['Alto', 'Medio', 'Bajo']);
+
+// El número de un dataset nuevo en su marcador: el del servidor (`numero`) o, sin él, su posición desde 1
+const numeroDelNuevo = (propuesta, indice) => (Number.isSafeInteger(propuesta?.numero) && propuesta.numero > 0 ? propuesta.numero : indice + 1);
+
+// La prioridad de la lista: clase e ícono por la clave del servidor, y siempre su texto
+function htmlDeLaPrioridad(prioridad) {
+  const clave = prioridad?.clave;
+  const conClave = typeof clave === 'string' && Object.hasOwn(CLASE_DE_LA_PRIORIDAD, clave);
+  return `<span class="dq-etiqueta${conClave ? ` ${CLASE_DE_LA_PRIORIDAD[clave]}` : ''}">${conClave ? ICONO_DE_LA_PRIORIDAD[clave] : ''}${esc(prioridad?.texto)}</span>`;
 }
 
-/**
- * El detalle de una edición: «Todas las ediciones», la fecha grande con la marca, el título, la llegada, el correo y la cantidad, y
- * la nota de archivo si hay (una vacía o de solo espacios no va). A un costado, la infografía (un lugar que la parte del DOM llena
- * desde un blob:) y los archivos; al otro, la agenda (si hay) y las propuestas. Para la administración (`admin`, el true literal),
- * debajo de «Archivos», el lugar de la caja del correo, que la parte del DOM pide y llena; con ella, el costado ya no queda fijo al
- * bajar (sería más alto que la pantalla y sus botones quedarían fuera de la vista).
- */
-function htmlDelDetalle(detalle, { admin = false } = {}) {
+// La matriz valor × riesgo de la guía: una tabla (filas, el riesgo de alto a bajo; columnas, el valor de bajo a alto) con las 9 celdas que
+// manda el servidor, cada una con la clase de su zona; su texto se ve solo con `con_rotulo` y en las otras va oculto. Cada dataset es
+// un botón con su número en la celda de su valor y su riesgo. Nunca se calcula una zona acá: sin `matriz_de_prioridad`, no hay matriz
+function htmlDeLaMatriz(matriz, lista) {
+  if (!Array.isArray(matriz) || matriz.length === 0) return '';
+  const marcadoresDe = (celda) => lista.map((p, i) => ({ p, i })).filter(({ p }) => p?.valor === celda.valor && p?.riesgo === celda.riesgo)
+    .map(({ p, i }) => `<button type="button" class="dq-marcador" data-ir-nuevo="${String(i)}" aria-label="${esc(p.numero_texto)}: ${esc(p.titulo)}">${String(numeroDelNuevo(p, i))}</button>`).join('');
+  const filas = NIVELES_DE_LA_MATRIZ.map((riesgo) => {
+    const celdas = ['Bajo', 'Medio', 'Alto'].map((valor) => {
+      const celda = matriz.find((c) => c?.riesgo === riesgo && c?.valor === valor);
+      if (!celda) return '<td class="dq-celda"></td>';
+      const clase = typeof celda.clave === 'string' && Object.hasOwn(CLASE_DE_LA_ZONA, celda.clave) ? ` ${CLASE_DE_LA_ZONA[celda.clave]}` : '';
+      const texto = `<span class="${celda.con_rotulo === true ? 'dq-zona-rotulo' : 'visualmente-oculto'}">${esc(celda.texto)}</span>`;
+      const marcadores = marcadoresDe(celda);
+      return `<td class="dq-celda${clase}">${texto}${marcadores ? `<span class="dq-marcadores">${marcadores}</span>` : ''}</td>`;
+    }).join('');
+    return `<tr><th scope="row">Riesgo ${riesgo.toLowerCase()}</th>${celdas}</tr>`;
+  }).join('');
+  return '<table class="dq-matriz"><caption class="visualmente-oculto">La matriz de valor y riesgo, con los datasets nuevos en su celda</caption>'
+    + `<thead><tr><td></td>${['Bajo', 'Medio', 'Alto'].map((valor) => `<th scope="col">Valor ${valor.toLowerCase()}</th>`).join('')}</tr></thead>`
+    + `<tbody>${filas}</tbody></table>`;
+}
+
+// La lista de al lado de la matriz: número, título, prioridad y eje; cada renglón lleva a su tarjeta
+function htmlDeLaListaDeNuevos(lista) {
+  return `<ol class="dq-nuevos-indice" aria-label="Los datasets nuevos">${lista.map((p, i) => `<li><button type="button" class="dq-nuevos-item" data-ir-nuevo="${String(i)}">`
+    + `<span class="dq-marcador dq-marcador-fijo" aria-hidden="true">${String(numeroDelNuevo(p, i))}</span>`
+    + `<span><span class="visualmente-oculto">${esc(p?.numero_texto)}: </span><span class="dq-nuevos-item-titulo">${esc(p?.titulo)}</span>`
+    + `<span class="dq-cuad">${htmlDeLaPrioridad(p?.prioridad)}<span class="dq-cuad-eje">${esc(p?.valor_y_riesgo)}</span></span></span></button></li>`).join('')}</ol>`;
+}
+
+// null (la edición no trae la clave) o algo que no es una lista: nada. Lista vacía: el título y una línea. Si no, la matriz (si el servidor
+// la manda) con la lista al lado y, debajo, una tarjeta por propuesta
+function htmlDeLosDatasetsNuevos(lista, matriz = null) {
+  if (!Array.isArray(lista)) return '';
+  const titulo = `<h3 class="dq-seccion-titulo" id="dq-nuevos-titulo">${TITULO_DATASETS_NUEVOS}</h3>`;
+  if (lista.length === 0) return `<section class="dq-nuevos" aria-labelledby="dq-nuevos-titulo">${titulo}<p class="dq-nuevos-vacia">${SIN_DATASETS_NUEVOS}</p></section>`;
+  const tabla = htmlDeLaMatriz(matriz, lista);
+  return `<section class="dq-nuevos" aria-labelledby="dq-nuevos-titulo">${titulo}`
+    + `<div class="dq-matriz-caja${tabla === '' ? ' dq-matriz-sola' : ''}">${tabla === '' ? '' : `<div class="dq-matriz-lugar">${tabla}</div>`}${htmlDeLaListaDeNuevos(lista)}</div>`
+    + `<ol class="dq-nuevos-lista">${lista.map(htmlDeUnDatasetNuevo).join('')}</ol></section>`;
+}
+
+// =====================================================
+// Lo puro: la edición en pestañas (spec 2026-11-18-dato-quincena-detalle-pestanas, 1 a 3)
+// =====================================================
+
+// Las pestañas que tiene una edición, en su orden, con su cantidad (de `cantidades`, que manda el servidor): General, Propuestas y,
+// si la edición trae la clave (también con []), Datasets nuevos. Sin cantidades (un servidor de antes) o con una que no es un entero
+// de 0 en adelante, la cuenta es null y la pestaña va sin número
+function pestanasDeLaEdicion(detalle) {
+  const cantidades = detalle?.cantidades;
+  const cuenta = (valor) => (Number.isSafeInteger(valor) && valor >= 0 ? valor : null);
+  const pestanas = [{ clave: 'general', cuenta: null }, { clave: 'propuestas', cuenta: cuenta(cantidades?.propuestas) }];
+  if (Array.isArray(detalle?.propuestas_datasets)) pestanas.push({ clave: 'datasets', cuenta: cuenta(cantidades?.datasets_nuevos) });
+  return pestanas;
+}
+
+// La pestaña que se ve: la pedida, si la edición la tiene; si no (otra, Datasets nuevos sin la clave, o ninguna), General
+function vistaElegida(detalle, vista) {
+  return pestanasDeLaEdicion(detalle).some((pestana) => pestana.clave === vista) ? vista : 'general';
+}
+
+// La pestaña vecina de `actual` con una tecla: las flechas dan la vuelta, Inicio va a la primera y Fin a la última. Otra tecla, o una
+// clave que no está, null
+function vistaVecina(claves, actual, tecla) {
+  const lista = listaDe(claves);
+  const aqui = lista.indexOf(actual);
+  if (aqui === -1) return null;
+  if (tecla === 'Home') return lista[0];
+  if (tecla === 'End') return lista[lista.length - 1];
+  if (tecla === 'ArrowRight') return lista[(aqui + 1) % lista.length];
+  if (tecla === 'ArrowLeft') return lista[(aqui - 1 + lista.length) % lista.length];
+  return null;
+}
+
+// El número de una propuesta: su `orden` (el del JSON) o, en un detalle sin él (un servidor de antes), su posición desde 1
+function ordenDeLaPropuesta(propuesta, indice) {
+  return Number.isSafeInteger(propuesta?.orden) && propuesta.orden > 0 ? propuesta.orden : indice + 1;
+}
+
+// La propuesta pedida (&propuesta=K), si la edición tiene una con ese número; si no, null: se mira la principal
+function propuestaElegida(detalle, propuesta) {
+  if (idDeEdicion(propuesta) === null) return null;
+  return listaDe(detalle?.propuestas).some((p, indice) => ordenDeLaPropuesta(p, indice) === propuesta) ? propuesta : null;
+}
+
+// La principal: la marcada o, si ninguna lo está, la primera. Sin propuestas, null
+function principalDeLaEdicion(detalle) {
+  const propuestas = listaDe(detalle?.propuestas);
+  return propuestas.find((p) => p?.principal === true) ?? propuestas[0] ?? null;
+}
+
+// La posición (desde 0) de la propuesta de orden `propuesta`; si no hay una con ese número (o es null), la de la principal (la marcada
+// o, si ninguna lo está, la primera). Sin propuestas, null
+function posicionDeLaPropuesta(detalle, propuesta) {
+  const propuestas = listaDe(detalle?.propuestas);
+  if (propuestas.length === 0) return null;
+  const pedida = propuestas.findIndex((p, indice) => ordenDeLaPropuesta(p, indice) === propuesta);
+  if (pedida !== -1) return pedida;
+  const principal = propuestas.findIndex((p) => p?.principal === true);
+  return principal === -1 ? 0 : principal;
+}
+
+// Las pestañas de la edición (role="tablist", spec 2): la elegida con aria-selected y en el orden del teclado; las otras, con
+// tabindex="-1" (las flechas, Inicio y Fin van de una a otra). Cada una controla su panel y lleva su cantidad, si la hay, con un
+// espacio antes: su nombre se lee «Propuestas 4»
+function htmlDePestanasDeLaEdicion(detalle, elegida) {
+  const botones = pestanasDeLaEdicion(detalle).map(({ clave, cuenta }) => {
+    const es = clave === elegida;
+    const numero = cuenta === null ? '' : ` <span class="dq-ed-cuenta">${String(cuenta)}</span>`;
+    return `<button type="button" class="dq-ed-pestana" role="tab" id="dq-tab-${clave}" aria-selected="${es}" aria-controls="dq-panel-${clave}"`
+      + `${es ? '' : ' tabindex="-1"'} data-vista="${clave}"><span>${TEXTO_DE_LA_VISTA[clave]}</span>${numero}</button>`;
+  }).join('');
+  return `<div class="dq-ed-pestanas" role="tablist" aria-label="La edición">${botones}</div>`;
+}
+
+// La cabecera «tipo diario», como la de las tarjetas de la lista: «El dato de la quincena» con el N.º o la marca, la fecha grande, el
+// título del paquete (si hay) y, pegadas a la doble línea, las pestañas
+function htmlDeLaCabeceraDeLaEdicion(detalle, elegida) {
   const d = detalle ?? {};
-  const id = idDeEdicion(d.id);
-  const conCorreo = admin === true && id !== null;
-  const propuestas = listaDe(d.propuestas);
-  const principal = propuestas.find((p) => p?.principal === true) ?? propuestas[0];
-  const alternativo = principal?.titulo ? `Infografía de la propuesta principal: ${principal.titulo}` : 'Infografía de la propuesta principal';
-  const infografia = id === null
-    ? ''
-    : `<div class="dq-infografia" data-infografia="${esc(rutaDelArchivo(id, 'infografia_png'))}" data-alt="${esc(alternativo)}"></div>`
-      + '<p class="dq-infografia-pie">La infografía de la propuesta principal.</p>';
-  const lateral = conCorreo
-    ? '<aside class="dq-lateral dq-lateral-con-correo" aria-label="Infografía, archivos y correo">'
-    : '<aside class="dq-lateral" aria-label="Infografía y archivos">';
+  const paquete = typeof d.titulo === 'string' && d.titulo !== '' ? `<p class="dq-ed-paquete">${esc(d.titulo)}</p>` : '';
+  return '<header class="dq-ed-cabecera">'
+    + `<p class="dq-mancheta"><span>El dato de la quincena</span>${htmlDelNumeroDiario(d)}</p>`
+    + `<h2 class="dq-ed-fecha">${esc(d.fecha_texto)}</h2>${paquete}`
+    + `${htmlDePestanasDeLaEdicion(d, elegida)}</header>`;
+}
+
+// Un panel de la edición, nombrado por su pestaña (tabindex="0": se llega con Tab aunque no tenga nada que enfocar); el que no se ve,
+// con hidden
+const htmlDelPanelDeLaEdicion = (clave, elegida, html) => `<div class="dq-ed-panel" role="tabpanel" id="dq-panel-${clave}" `
+  + `aria-labelledby="dq-tab-${clave}" tabindex="0"${clave === elegida ? '' : ' hidden'}>${html}</div>`;
+
+// «La principal», en General: su título, sus etiquetas (sin «Principal»: ya lo dice arriba), su cifra, su dataset y el botón que pasa
+// a Propuestas, con el texto del servidor (ver_propuestas). Debajo, la nota de Datito (si hay) y el renglón del recibo, que va siempre:
+// es el que se vuelve a dibujar después de un reenvío. Sin propuestas (no llega: el POST pide al menos una), solo eso
+function htmlDeLaPrincipal(detalle, principal) {
+  const d = detalle ?? {};
   const nota = typeof d.nota_archivo === 'string' && d.nota_archivo.trim() !== ''
     ? `<p class="dq-nota-archivo"><b>Nota de ${esc(NOMBRE_DEL_BOT)}:</b> ${esc(d.nota_archivo)}</p>`
     : '';
-  return `<p class="dq-volver-caja"><a class="dq-link dq-volver" href="${PAGINA_DATO_QUINCENA}">${ICONO_VOLVER}${TEXTO_TODAS_LAS_EDICIONES}</a></p>`
-    + '<div class="dq-cabecera">'
-    + `<h2 class="dq-fecha">${esc(d.fecha_texto)}${htmlDeMarca(d.marca || d.numero)}</h2>`
-    + `<p class="dq-titulo-paquete">${esc(d.titulo)}</p>`
-    + `<p class="dq-recibo">${htmlDelRecibo(d)}</p>`
-    + nota
-    + '</div>'
-    + '<div class="dq-detalle">'
-    + `${lateral}${infografia}${htmlDeArchivos(d.archivos, id)}${conCorreo ? LUGAR_DE_LA_CAJA_DEL_CORREO : ''}</aside>`
-    + '<div class="dq-columna">'
+  const pie = `<div class="dq-edicion-pie">${nota}<p class="dq-recibo">${htmlDelRecibo(d)}</p></div>`;
+  if (principal === null || typeof principal !== 'object') return `<div class="dq-la-principal">${pie}</div>`;
+  const { nombre, portal } = partesDelDataset(principal.dataset);
+  const etiquetas = listaDe(principal.etiquetas).filter((etiqueta) => etiqueta !== 'Principal').map(htmlDeEtiqueta).join('');
+  const ver = typeof d.ver_propuestas === 'string' && d.ver_propuestas !== '' ? d.ver_propuestas : TEXTO_VER_PROPUESTAS;
+  return '<div class="dq-la-principal"><p class="dq-sobre">La principal</p>'
+    + `<h3 class="dq-principal-titulo">${esc(principal.titulo)}</h3>`
+    + (etiquetas ? `<p class="dq-principal-etiquetas">${etiquetas}</p>` : '')
+    + `<p class="dq-principal-cifra">${esc(principal.cifra_clave)}</p>`
+    + `<p class="dq-principal-dataset">Dataset: ${nombre} · ${portal}</p>`
+    + `<p class="dq-ir"><button type="button" class="dq-btn dq-btn-tinta" data-ir-vista="propuestas">${esc(ver)}</button></p>`
+    + `${pie}</div>`;
+}
+
+// La infografía de la principal, grande y con su pie: un lugar que la parte del DOM llena desde un blob: una sola vez (cambiar de
+// pestaña no la vuelve a pedir). Sin un id que sirva, nada: no hay a dónde pedirla
+function htmlDeLaInfografia(detalle, principal) {
+  const id = idDeEdicion(detalle?.id);
+  if (id === null) return '';
+  const alternativo = principal?.titulo ? `Infografía de la propuesta principal: ${principal.titulo}` : 'Infografía de la propuesta principal';
+  return '<figure class="dq-figura">'
+    + `<div class="dq-infografia" data-infografia="${esc(rutaDelArchivo(id, 'infografia_png'))}" data-alt="${esc(alternativo)}"></div>`
+    + '<figcaption class="dq-infografia-pie">La infografía de la propuesta principal.</figcaption></figure>';
+}
+
+// El aviso de los datasets nuevos, con los textos del servidor (aviso_datasets_nuevos y ver_datasets_nuevos) y un botón a su pestaña.
+// Sin aviso (null: sin la clave o con []) o sin la pestaña a la que lleva, nada
+function htmlDelAvisoDeDatasetsNuevos(detalle) {
+  const d = detalle ?? {};
+  if (!Array.isArray(d.propuestas_datasets) || typeof d.aviso_datasets_nuevos !== 'string' || d.aviso_datasets_nuevos === '') return '';
+  const ver = typeof d.ver_datasets_nuevos === 'string' && d.ver_datasets_nuevos !== '' ? d.ver_datasets_nuevos : TEXTO_VER_DATASETS_NUEVOS;
+  return `<div class="dq-aviso-nuevos"><p>${esc(d.aviso_datasets_nuevos)}</p>`
+    + `<button type="button" class="dq-btn dq-btn-borde" data-ir-vista="datasets">${esc(ver)}</button></div>`;
+}
+
+/**
+ * General (spec 3): la principal y la infografía (en el teléfono, primero la principal: el orden del HTML; en la computadora, la
+ * infografía a la izquierda), la agenda a lo ancho, los archivos en una fila, el aviso de los datasets nuevos y, para la
+ * administración (`admin`, el true literal), el lugar de la caja del correo, que la parte del DOM pide y llena.
+ */
+function htmlDelPanelGeneral(detalle, { admin = false } = {}) {
+  const d = detalle ?? {};
+  const id = idDeEdicion(d.id);
+  const principal = principalDeLaEdicion(d);
+  return `<div class="dq-portada">${htmlDeLaPrincipal(d, principal)}${htmlDeLaInfografia(d, principal)}</div>`
     + htmlDeLaAgenda(d.agenda_grupos)
-    + '<section aria-labelledby="dq-propuestas-titulo"><h3 class="dq-seccion-titulo" id="dq-propuestas-titulo">Las propuestas</h3>'
-    + `<ol class="dq-propuestas">${propuestas.map((propuesta) => htmlDePropuesta(propuesta)).join('')}</ol></section>`
-    + htmlDeLosDatasetsNuevos(d.propuestas_datasets)
-    + '</div></div>';
+    + htmlDeArchivos(d.archivos, id)
+    + htmlDelAvisoDeDatasetsNuevos(d)
+    + (admin === true && id !== null ? `<div class="dq-correo-de-la-edicion">${LUGAR_DE_LA_CAJA_DEL_CORREO}</div>` : '');
+}
+
+/**
+ * El índice de Propuestas (spec 4): cada propuesta con su número de orden, su título (dos renglones) y las marcas «Principal» (la que
+ * lo es) y «Para validar» (la que trae la etiqueta Validar, con su ícono). La que se ve (`elegida`, su posición) lleva aria-current; el
+ * CSS la marca además con una barra, no solo con el color. El número se ve y no se lee: se lee el orden_texto del servidor
+ * («Propuesta 1:»), y sin él, el número. Entre las piezas va un espacio (la grilla no lo dibuja), para que no se lean pegadas.
+ */
+function htmlDelIndiceDePropuestas(propuestas, elegida) {
+  const items = listaDe(propuestas).map((p, indice) => {
+    const orden = ordenDeLaPropuesta(p, indice);
+    const conTexto = typeof p?.orden_texto === 'string' && p.orden_texto !== '';
+    const marcas = [
+      p?.principal === true ? '<span class="dq-im dq-im-principal">Principal</span>' : '',
+      (listaDe(p?.etiquetas).includes('Validar') || listaDe(p?.notas_validacion).length > 0) ? `<span class="dq-im dq-im-validar">${ICONO_VALIDAR}Para validar</span>` : ''
+    ].filter(Boolean).join(' ');
+    return `<li><button type="button" class="dq-indice-item" data-ver-propuesta="${String(orden)}"${indice === elegida ? ' aria-current="true"' : ''}>`
+      + `<span class="dq-indice-num"${conTexto ? ' aria-hidden="true"' : ''}>${String(orden)}</span> <span class="dq-indice-cuerpo">`
+      + `${conTexto ? `<span class="visualmente-oculto">${esc(p.orden_texto)}: </span>` : ''}<span class="dq-indice-titulo">${esc(p?.titulo)}</span>`
+      + `${marcas ? ` <span class="dq-indice-marcas">${marcas}</span>` : ''}</span></button></li>`;
+  }).join('');
+  return `<nav class="dq-indice" aria-label="Las propuestas"><ol>${items}</ol></nav>`;
+}
+
+// La propuesta de orden `propuesta` (una que no está, o null: la principal), con sus vecinas para «Anterior» y «Siguiente». Es lo que
+// la parte del DOM vuelve a dibujar en .dq-lectura al elegir otra. Sin propuestas, nada
+function htmlDeLaPropuestaElegida(detalle, propuesta) {
+  const propuestas = listaDe(detalle?.propuestas);
+  const posicion = posicionDeLaPropuesta(detalle, propuesta);
+  if (posicion === null) return '';
+  const vecina = (indice) => (indice >= 0 && indice < propuestas.length ? { propuesta: propuestas[indice], orden: ordenDeLaPropuesta(propuestas[indice], indice) } : null);
+  return htmlDePropuesta(propuestas[posicion], { anterior: vecina(posicion - 1), siguiente: vecina(posicion + 1) });
+}
+
+// Propuestas (spec 4): el índice a la izquierda (en el teléfono, una fila de chips arriba) y, a la derecha, una propuesta por vez.
+// `propuesta`, la que se mira, viene de propuestaElegida (un número de orden, o null: la principal). Sin propuestas, nada
+function htmlDelPanelPropuestas(detalle, { propuesta = null } = {}) {
+  const posicion = posicionDeLaPropuesta(detalle, propuesta);
+  if (posicion === null) return '';
+  return `<div class="dq-propuestas">${htmlDelIndiceDePropuestas(detalle.propuestas, posicion)}`
+    + `<div class="dq-lectura">${htmlDeLaPropuestaElegida(detalle, propuesta)}</div></div>`;
+}
+
+// Datasets nuevos: las propuestas de datasets (solo se dibuja si la edición trae la clave)
+function htmlDelPanelDatasets(detalle) {
+  return htmlDeLosDatasetsNuevos(detalle?.propuestas_datasets, detalle?.matriz_de_prioridad);
+}
+
+/**
+ * El detalle de una edición (spec 2): «Todas las ediciones» y una hoja con la cabecera, las pestañas y sus paneles, dibujados juntos:
+ * el de `vista` a la vista (si la edición no lo tiene, General) y los otros con hidden; cambiar de pestaña no vuelve a dibujar nada.
+ * `propuesta` es la que se mira en Propuestas (una que la edición no tiene, la principal); `admin`, el true literal, suma a General el
+ * lugar de la caja del correo.
+ */
+function htmlDelDetalle(detalle, { admin = false, vista = null, propuesta = null } = {}) {
+  const d = detalle ?? {};
+  const elegida = vistaElegida(d, vista);
+  const paneles = {
+    general: () => htmlDelPanelGeneral(d, { admin }),
+    propuestas: () => htmlDelPanelPropuestas(d, { propuesta: propuestaElegida(d, propuesta) }),
+    datasets: () => htmlDelPanelDatasets(d)
+  };
+  return `<p class="dq-volver-caja"><a class="dq-link dq-volver" href="${PAGINA_DATO_QUINCENA}">${ICONO_VOLVER}${TEXTO_TODAS_LAS_EDICIONES}</a></p>`
+    + `<div class="dq-hoja">${htmlDeLaCabeceraDeLaEdicion(d, elegida)}`
+    + pestanasDeLaEdicion(d).map(({ clave }) => htmlDelPanelDeLaEdicion(clave, elegida, paneles[clave]())).join('')
+    + '</div>';
 }
 
 // =====================================================
@@ -659,11 +935,12 @@ function anunciarDatoQuincena(texto) {
 // =====================================================
 
 // El estado de la página. `pedido` numera las cargas: una respuesta que llega después de otra más nueva se descarta. `admin` es de
-// Auth.isAdmin() al arrancar; `pestana`, la que se ve; `detalle` y `caja`, la edición abierta y su caja del correo; `reenvio`, el
-// diálogo abierto
+// Auth.isAdmin() al arrancar; `pestana`, la de página que se ve (Ediciones o Correo); `detalle` y `caja`, la edición abierta y su
+// caja del correo; `vista` y `propuesta`, la pestaña de la edición que se ve y la propuesta que se mira en Propuestas (null: la
+// principal); `reenvio`, el diálogo abierto
 const vistaDatoQuincena = {
   pedido: 0, anio: null, pagina: 1, cargando: false, datos: null, imagenes: new Set(), modal: null,
-  admin: false, pestana: 'ediciones', detalle: null, caja: null, reenvio: null
+  admin: false, pestana: 'ediciones', detalle: null, caja: null, vista: 'general', propuesta: null, reenvio: null
 };
 
 const elementoDq = (id) => document.getElementById(id);
@@ -779,9 +1056,10 @@ function escribirUrlDeLaListaDq() {
   window.history?.replaceState?.(null, '', urlDeEstado({ anio: datos.anio, pagina }));
 }
 
-// El detalle de una edición. Un 404 es «No existe esa edición.»; otro error, el error. Para la administración, después pide su caja
-// del correo (solo ella la pide)
-async function cargarDetalleDq(id) {
+// El detalle de una edición, en la pestaña `vista` y con la `propuesta` que pide la dirección: una pestaña que la edición no tiene
+// abre General, una propuesta que no tiene es la principal, y la dirección se corrige. Un 404 es «No existe esa edición.»; otro
+// error, el error. Para la administración, después pide su caja del correo (solo ella la pide)
+async function cargarDetalleDq(id, { vista = null, propuesta = null } = {}) {
   const pedido = ++vistaDatoQuincena.pedido;
   vistaDatoQuincena.detalle = null;
   vistaDatoQuincena.caja = null;
@@ -791,8 +1069,12 @@ async function cargarDetalleDq(id) {
     const detalle = (await API.pedirJson('GET', `/dato-quincena/ediciones/${String(id)}`))?.data;
     if (pedido !== vistaDatoQuincena.pedido) return;
     if (detalle === null || typeof detalle !== 'object' || idDeEdicion(detalle.id) === null) throw new TypeError('La respuesta no es una edición');
-    dibujarDatoQuincena(htmlDelDetalle(detalle, { admin: vistaDatoQuincena.admin }));
-    vistaDatoQuincena.detalle = detalle;
+    const elegida = vistaElegida(detalle, vista);
+    const mirada = elegida === 'propuestas' ? propuestaElegida(detalle, propuesta) : null;
+    dibujarDatoQuincena(htmlDelDetalle(detalle, { admin: vistaDatoQuincena.admin, vista: elegida, propuesta: mirada }));
+    Object.assign(vistaDatoQuincena, { detalle, vista: elegida, propuesta: mirada });
+    escribirUrlDeLaEdicionDq();
+    if (elegida === 'propuestas') correrLaFilaHastaDq(renglonElegidoDq(), { suave: false });
     if (typeof detalle.fecha_texto === 'string') document.title = `${detalle.fecha_texto} - ${TITULO_DQ}`;
     const lugar = elementoDq('dq-contenido').querySelector('[data-infografia]');
     if (lugar) ponerImagenDq(lugar, lugar.dataset.infografia, 'dq-infografia', lugar.dataset.alt ?? '');
@@ -818,13 +1100,14 @@ function mostrarNoExisteDq() {
   document.title = `No existe esa edición - ${TITULO_DQ}`;
 }
 
-// Lo que pide la pestaña Ediciones según la dirección (`search`): con ?id, el detalle (un id que no es un entero positivo, «No existe
-// esa edición.» sin pedirlo); sin él, la lista del año de ?anio (o el más reciente) en la página de &pagina
+// Lo que pide la pestaña Ediciones según la dirección (`search`): con ?id, el detalle en la pestaña de &vista y con la propuesta de
+// &propuesta (un id que no es un entero positivo, «No existe esa edición.» sin pedirlo); sin él, la lista del año de ?anio (o el más
+// reciente) en la página de &pagina
 function cargarEdicionesDq(search) {
   const texto = String(search ?? '');
   const estado = estadoDeLaUrl(texto);
   if (new URLSearchParams(texto.replace(/^\?/, '')).has('id')) {
-    if (estado.id !== null) return cargarDetalleDq(estado.id);
+    if (estado.id !== null) return cargarDetalleDq(estado.id, { vista: estado.vista, propuesta: estado.propuesta });
     vistaDatoQuincena.pedido += 1;
     mostrarNoExisteDq();
     return Promise.resolve();
@@ -852,7 +1135,7 @@ async function ponerImagenDq(lugar, ruta, clase, alternativo) {
   lugar.replaceWith(imagen);
 }
 
-// Libera las URL de las imágenes (la infografía del detalle: al cambiar de pestaña y al salir de la página)
+// Libera las URL de las imágenes (la infografía del detalle: al pasar a Correo y al salir de la página)
 function liberarImagenesDq() {
   for (const url of vistaDatoQuincena.imagenes) URL.revokeObjectURL(url);
   vistaDatoQuincena.imagenes.clear();
@@ -864,7 +1147,11 @@ function alTocarDq(evento) {
   const objetivo = evento.target;
   if (!objetivo || typeof objetivo.closest !== 'function') return;
   let boton;
-  if ((boton = objetivo.closest('button[data-anio]'))) elegirAnioDq(boton);
+  if ((boton = objetivo.closest('button[data-vista]'))) elegirVistaDq(boton.dataset.vista);
+  else if ((boton = objetivo.closest('button[data-ir-vista]'))) irAVistaDq(boton);
+  else if ((boton = objetivo.closest('button[data-ver-propuesta]'))) verPropuestaDq(boton);
+  else if ((boton = objetivo.closest('button[data-ir-nuevo]'))) irANuevoDq(boton);
+  else if ((boton = objetivo.closest('button[data-anio]'))) elegirAnioDq(boton);
   else if ((boton = objetivo.closest('button[data-pagina]'))) irAPaginaDq(boton);
   else if ((boton = objetivo.closest('button[data-copiar]'))) copiarTexto(boton, boton.dataset.copiar ?? '');
   else if ((boton = objetivo.closest('button[data-ver]'))) verArchivoDq(boton);
@@ -905,11 +1192,158 @@ function irAPaginaDq(boton) {
   const arriba = elementoDq('dq-lista-arriba');
   if (!arriba) return;
   arriba.focus({ preventScroll: true });
-  const sinMovimiento = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  arriba.scrollIntoView?.({ behavior: sinMovimiento ? 'instant' : 'smooth', block: 'start' });
+  arriba.scrollIntoView?.({ behavior: sinMovimientoDq() ? 'instant' : 'smooth', block: 'start' });
 }
 
-// ---- Las pestañas (administración) ----
+// ---- Las pestañas de la edición (spec 2026-11-18-dato-quincena-detalle-pestanas, 1 y 2) ----
+
+// La dirección del detalle con la pestaña y la propuesta que se ven, si cambió (sin sumar al historial: Atrás no recorre las
+// pestañas). El #correo queda como estaba
+function escribirUrlDeLaEdicionDq() {
+  const { detalle, vista, propuesta } = vistaDatoQuincena;
+  if (idDeEdicion(detalle?.id) === null) return;
+  const correo = estadoDeLaUrl('', window.location?.hash).correo;
+  const url = urlDeEstado({ id: detalle.id, vista, propuesta, correo });
+  if (url !== `${PAGINA_DATO_QUINCENA}${window.location?.search ?? ''}${window.location?.hash ?? ''}`) window.history?.replaceState?.(null, '', url);
+}
+
+// Las pestañas de la edición que están en la página, en su orden
+const pestanasDeLaHojaDq = () => [...(elementoDq('dq-contenido')?.querySelector('.dq-ed-pestanas')?.querySelectorAll('[role="tab"][data-vista]') ?? [])];
+
+// Con movimiento reducido, nada se desliza
+const sinMovimientoDq = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+
+// Si `elemento` quedó arriba de la vista (las pestañas, después de un botón del final de General; la propuesta, después de «Siguiente»
+// al pie de una larga), la página sube hasta él; si se ve, no se mueve
+function llevarALaVistaDq(elemento) {
+  const arriba = elemento?.getBoundingClientRect?.().top;
+  const encabezado = document.querySelector?.('.header')?.getBoundingClientRect?.().bottom ?? 0;
+  if (typeof arriba !== 'number' || arriba >= encabezado) return;
+  elemento.scrollIntoView?.({ behavior: sinMovimientoDq() ? 'instant' : 'smooth', block: 'start' });
+}
+
+/**
+ * Elige una pestaña de la edición: la marca (aria-selected, y solo ella en el orden del teclado), muestra su panel y esconde los otros
+ * (nada se vuelve a dibujar ni a pedir: la infografía y los «Copiar» quedan como estaban), reemplaza la dirección, le pasa el foco y,
+ * si quedó arriba de la vista, sube hasta ella. Una clave que la hoja no tiene no cambia nada (devuelve false).
+ */
+function elegirVistaDq(clave) {
+  const pestanas = pestanasDeLaHojaDq();
+  const elegida = pestanas.find((pestana) => pestana.dataset.vista === clave);
+  if (!elegida || vistaDatoQuincena.detalle === null) return false;
+  for (const pestana of pestanas) {
+    const es = pestana === elegida;
+    pestana.setAttribute('aria-selected', String(es));
+    if (es) pestana.removeAttribute('tabindex');
+    else pestana.setAttribute('tabindex', '-1');
+  }
+  for (const panel of elementoDq('dq-contenido').querySelectorAll('.dq-ed-panel')) panel.hidden = panel.id !== `dq-panel-${clave}`;
+  if (clave === 'propuestas') correrLaFilaHastaDq(renglonElegidoDq(), { suave: false });
+  vistaDatoQuincena.vista = clave;
+  escribirUrlDeLaEdicionDq();
+  elegida.focus?.({ preventScroll: true });
+  correrLaFilaHastaDq(elegida);
+  llevarALaVistaDq(elementoDq('dq-contenido').querySelector('.dq-ed-pestanas'));
+  return true;
+}
+
+// Un botón de General que lleva a otra pestaña: «Ver las N propuestas» a Propuestas, en la principal (spec 3; si se miraba otra,
+// vuelve a la principal), y el del aviso, a Datasets nuevos
+function irAVistaDq(boton) {
+  if (boton.dataset.irVista === 'propuestas') {
+    vistaDatoQuincena.propuesta = null;
+    mostrarPropuestaDq(null);
+  }
+  return elegirVistaDq(boton.dataset.irVista);
+}
+
+// Un marcador de la matriz o un renglón de la lista: lleva a la tarjeta de ese dataset (el foco a su título y la página sube hasta ella)
+function irANuevoDq(boton) {
+  const tarjeta = elementoDq(`dq-nuevo-${String(Number(boton.dataset.irNuevo))}`);
+  if (!tarjeta) return false;
+  tarjeta.querySelector?.('.dq-nuevo-titulo')?.focus?.({ preventScroll: true });
+  tarjeta.scrollIntoView?.({ behavior: sinMovimientoDq() ? 'instant' : 'smooth', block: 'start' });
+  return true;
+}
+
+// ---- Propuestas: una por vez (spec 2026-11-18-dato-quincena-detalle-pestanas, 4) ----
+
+/**
+ * Dibuja en .dq-lectura la propuesta de orden `propuesta` (null, o una que la edición no tiene: la principal) y la marca en el índice
+ * (aria-current solo en ella), sin tocar el foco ni la dirección. El índice no se vuelve a dibujar: la fila de chips del teléfono no
+ * pierde dónde estaba. Sin la lectura en la página o sin detalle, nada; si no, devuelve `{ orden, item }` (el renglón del índice).
+ */
+function mostrarPropuestaDq(propuesta) {
+  const detalle = vistaDatoQuincena.detalle;
+  const contenido = elementoDq('dq-contenido');
+  const lectura = contenido?.querySelector('.dq-lectura');
+  const posicion = posicionDeLaPropuesta(detalle, propuesta);
+  if (detalle === null || !lectura || posicion === null) return null;
+  const orden = ordenDeLaPropuesta(detalle.propuestas[posicion], posicion);
+  lectura.innerHTML = htmlDeLaPropuestaElegida(detalle, propuesta);
+  let item = null;
+  for (const renglon of contenido.querySelectorAll('.dq-indice-item')) {
+    if (Number(renglon.dataset.verPropuesta) === orden) {
+      renglon.setAttribute('aria-current', 'true');
+      item = renglon;
+    } else {
+      renglon.removeAttribute('aria-current');
+    }
+  }
+  return { orden, item };
+}
+
+// En el teléfono el índice (y la fila de las pestañas, con el foco del teclado) corre de costado: si el elegido no se ve entero, la fila
+// corre hasta él (en la computadora la lista no corre y el renglón siempre se ve; con el panel escondido, todo mide 0: no pasa nada). Al abrir la página o
+// la pestaña, de una (`suave`: false)
+function correrLaFilaHastaDq(item, { suave = true } = {}) {
+  const fila = (item?.closest?.('ol') ?? item?.closest?.('[role="tablist"]'));
+  const caja = fila?.getBoundingClientRect?.();
+  const chip = item?.getBoundingClientRect?.();
+  if (!caja || !chip) return;
+  const comportamiento = suave && !sinMovimientoDq() ? 'smooth' : 'instant';
+  if (chip.left < caja.left || chip.right > caja.right) fila.scrollTo?.({ left: fila.scrollLeft + chip.left - caja.left, behavior: comportamiento });
+  // El índice fijo de la computadora tiene un alto tope: si el renglón elegido quedó fuera de su caja, la caja corre hasta él
+  const indice = item.closest?.('.dq-indice');
+  const marco = indice?.getBoundingClientRect?.();
+  if (indice && marco && indice.scrollHeight > indice.clientHeight && (chip.top < marco.top || chip.bottom > marco.bottom)) {
+    indice.scrollTo?.({ top: indice.scrollTop + chip.top - marco.top, behavior: comportamiento });
+  }
+}
+
+// El renglón del índice de la propuesta que se ve
+const renglonElegidoDq = () => elementoDq('dq-contenido')?.querySelector('.dq-indice-item[aria-current]') ?? null;
+
+/**
+ * Un renglón del índice, «Anterior» o «Siguiente»: muestra esa propuesta, la deja en la dirección (&propuesta=K, sin sumar al historial),
+ * le pasa el foco a su título y, si quedó arriba de la vista, la página sube hasta ella. El foco va antes: un focus() después corta el
+ * desplazamiento suave. Un número que la edición no tiene no cambia nada (devuelve false).
+ */
+function verPropuestaDq(boton) {
+  const pedida = propuestaElegida(vistaDatoQuincena.detalle, Number(boton.dataset.verPropuesta));
+  const mostrada = pedida === null ? null : mostrarPropuestaDq(pedida);
+  if (mostrada === null) return false;
+  vistaDatoQuincena.propuesta = mostrada.orden;
+  escribirUrlDeLaEdicionDq();
+  correrLaFilaHastaDq(mostrada.item);
+  const lectura = elementoDq('dq-contenido').querySelector('.dq-lectura');
+  lectura.querySelector('.dq-prop-titulo')?.focus?.({ preventScroll: true });
+  llevarALaVistaDq(lectura);
+  return true;
+}
+
+// Las flechas, Inicio y Fin en las pestañas de la edición: la elegida cambia con el foco, como en Ediciones y Correo. Con Alt, Ctrl o
+// Meta, nada (son atajos del navegador)
+function alTeclearDq(evento) {
+  const pestana = evento.target?.closest?.('[role="tab"][data-vista]');
+  if (!pestana || evento.altKey || evento.ctrlKey || evento.metaKey) return;
+  const destino = vistaVecina(pestanasDeLaHojaDq().map((p) => p.dataset.vista), pestana.dataset.vista, evento.key);
+  if (destino === null) return;
+  evento.preventDefault?.();
+  if (destino !== pestana.dataset.vista) elegirVistaDq(destino);
+}
+
+// ---- Las pestañas de página (administración) ----
 
 // Las pestañas se dibujan en #dq-pestanas, fuera de lo que se vuelve a dibujar; el panel que controlan es #dq-contenido, que pasa a
 // ser su tabpanel, nombrado por la pestaña elegida
@@ -1053,7 +1487,7 @@ function guardarListaDq(boton) {
 
 /**
  * Pide la caja del correo de la edición `id` y la dibuja en su lugar (si no llega, el error en la caja). Con `conLinea`, también
- * vuelve a dibujar el renglón de la cabecera con la línea del correo que trae (después de un reenvío o una prueba). `foco`: los
+ * vuelve a dibujar el renglón del recibo de General con la línea del correo que trae (después de un reenvío o una prueba). `foco`: los
  * botones a enfocar, el primero que esté (el que se apretó se volvió a dibujar). Si la página ya mostró otra cosa, no dibuja nada.
  */
 async function cargarCajaDelCorreoDq(id, { conLinea = false, foco = [] } = {}) {
@@ -1145,7 +1579,7 @@ function aQuienDq() {
 
 /**
  * «Reenviar» del diálogo: POST …/reenvios con `{ a }`, deshabilitado hasta la respuesta. Con la respuesta (salió a todas, a algunas,
- * a nadie, o no se pudo), cierra el diálogo, avisa con el texto del servidor y vuelve a pedir la caja y la línea de la cabecera.
+ * a nadie, o no se pudo), cierra el diálogo, avisa con el texto del servidor y vuelve a pedir la caja y la línea del recibo.
  */
 function confirmarReenvioDq(boton) {
   const abierto = vistaDatoQuincena.reenvio;
@@ -1292,6 +1726,7 @@ function iniciarDatoQuincena() {
   }
   const contenido = elementoDq('dq-contenido');
   contenido.addEventListener('click', alTocarDq);
+  contenido.addEventListener('keydown', alTeclearDq);
   conectarModalDq();
   // Al salir se liberan las imágenes; no si la página queda guardada para «Atrás» (volvería con las imágenes rotas)
   window.addEventListener('pagehide', (evento) => {

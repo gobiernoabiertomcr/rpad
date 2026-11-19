@@ -1168,10 +1168,11 @@ const repeticionDelDetalle = (propuesta, fechaDeLaEdicion, previas) => {
   return { ...textosDeLaRepeticion(repeticionDeLaPropuesta), id_edicion: previa?.id ?? null };
 };
 
-// Una propuesta del detalle: sus textos como llegaron, las etiquetas como se muestran, la foto del RPAD, la repetición, lo que
-// se copia y el enlace al dataset (`enlaces`: el dataset_id de cada orden cuyo dataset existe y está activo). principal mira el
-// valor del JSON
+// Una propuesta del detalle: su orden (el número del JSON, que usan la dirección y el índice de la página; el mail lo deja afuera),
+// sus textos como llegaron, las etiquetas como se muestran, la foto del RPAD, la repetición, lo que se copia y el enlace al dataset
+// (`enlaces`: el dataset_id de cada orden cuyo dataset existe y está activo). principal mira el valor del JSON
 const propuestaDelDetalle = (propuesta, enlaces, fechaDeLaEdicion, previas) => ({
+  orden: propuesta.orden,
   orden_texto: `Propuesta ${propuesta.orden}`,
   etiquetas: propuesta.etiquetas.map(etiquetaParaMostrar),
   principal: propuesta.etiquetas.includes('Principal'),
@@ -1219,6 +1220,26 @@ export const prioridadDeDataset = (valor, riesgo) => {
   return { clave, texto: TEXTO_DE_LA_PRIORIDAD[clave] };
 };
 
+// La matriz de la pestaña Datasets nuevos (spec 2026-11-18-dato-quincena-detalle-pestanas, 6): riesgo en filas y valor en columnas,
+// en este orden. El rótulo de cada zona va en una sola celda, la de la maqueta aprobada (riesgo, valor); en las demás, la página lo
+// pone como texto oculto
+const RIESGOS_DE_LA_MATRIZ = Object.freeze(['Alto', 'Medio', 'Bajo']);
+const VALORES_DE_LA_MATRIZ = Object.freeze(['Bajo', 'Medio', 'Alto']);
+const CELDAS_CON_ROTULO = Object.freeze(['Alto Bajo', 'Alto Alto', 'Medio Bajo', 'Bajo Alto']);
+
+/**
+ * Las 9 celdas de la matriz de valor y riesgo, en su orden (riesgo Alto, Medio y Bajo; en cada uno, valor Bajo, Medio y Alto), cada
+ * una `{ valor, riesgo, clave, texto, con_rotulo }`, con la prioridad de `prioridadDeDataset`. Valor Bajo con riesgo Alto no se
+ * propone (el POST lo rechaza): `no_se_propone`, «No se propone». La página la dibuja tal cual: no copia la tabla. Cada vez una lista
+ * nueva.
+ */
+export const matrizDePrioridad = () => RIESGOS_DE_LA_MATRIZ.flatMap((riesgo) => VALORES_DE_LA_MATRIZ.map((valor) => ({
+  valor,
+  riesgo,
+  ...(valor === 'Bajo' && riesgo === 'Alto' ? { clave: 'no_se_propone', texto: 'No se propone' } : prioridadDeDataset(valor, riesgo)),
+  con_rotulo: CELDAS_CON_ROTULO.includes(`${riesgo} ${valor}`)
+})));
+
 // La dirección de un dataset del portal: se arma solo con el slug, que el POST ya validó (letras minúsculas, números, - y _)
 const DATASET_DEL_PORTAL = 'https://datos.comodoro.gov.ar/dataset/';
 
@@ -1226,16 +1247,20 @@ const DATASET_DEL_PORTAL = 'https://datos.comodoro.gov.ar/dataset/';
  * Las propuestas de datasets nuevos de una edición ya validada, para el detalle (spec 2026-11-18-dato-quincena-propuestas-datasets,
  * 4): null si la edición no trae la clave (todas las archivadas antes de la v1.4 y las v1.3), [] si llegó vacía y, si no, cada una
  * con sus textos ya armados: «Dataset nuevo N», la prioridad (`prioridadDeDataset`), «Valor alto · Riesgo bajo» con los dos en
- * minúscula y cada dataset relacionado `{ nombre, url }`, con la dirección del portal y su slug. Los demás textos, como llegaron
+ * minúscula y cada dataset relacionado `{ nombre, url }`, con la dirección del portal y su slug. El número, el valor y el riesgo,
+ * como llegaron, para el marcador de la matriz (spec 2026-11-18-dato-quincena-detalle-pestanas, 6). Los demás textos, como llegaron
  * (el HTML lo escapa quien imprime). No cambia la edición: las listas y los objetos son copias.
  */
 export const propuestasDatasetsDelDetalle = (edicion) => (Array.isArray(edicion.propuestas_datasets)
   ? edicion.propuestas_datasets.map((propuesta) => ({
+    numero: propuesta.numero,
     numero_texto: `Dataset nuevo ${propuesta.numero}`,
     titulo: propuesta.titulo,
     origenes: [...propuesta.origenes],
     justificacion: propuesta.justificacion,
     prioridad: prioridadDeDataset(propuesta.valor, propuesta.riesgo),
+    valor: propuesta.valor,
+    riesgo: propuesta.riesgo,
     valor_y_riesgo: `Valor ${propuesta.valor.toLowerCase()} · Riesgo ${propuesta.riesgo.toLowerCase()}`,
     formato: propuesta.formato_sugerido,
     campos: [...propuesta.campos_sugeridos],
@@ -1247,6 +1272,21 @@ export const propuestasDatasetsDelDetalle = (edicion) => (Array.isArray(edicion.
   }))
   : null);
 
+// Los textos de las pestañas del detalle (spec 2026-11-18-dato-quincena-detalle-pestanas, 6), con su plural: el botón de la principal
+// a Propuestas; y el aviso de General a Datasets nuevos y su botón, null sin datasets nuevos (sin la clave, n es null, o con [])
+const textoDeVerPropuestas = (n) => (n === 1 ? 'Ver la propuesta' : `Ver las ${n} propuestas`);
+const hayDatasetsNuevos = (n) => Number.isSafeInteger(n) && n > 0;
+const avisoDeDatasetsNuevos = (n) => {
+  if (!hayDatasetsNuevos(n)) return null;
+  return n === 1
+    ? `${NOMBRE_DEL_BOT} propone 1 dataset nuevo para abrir.`
+    : `${NOMBRE_DEL_BOT} propone ${n} datasets nuevos para abrir.`;
+};
+const textoDeVerDatasetsNuevos = (n) => {
+  if (!hayDatasetsNuevos(n)) return null;
+  return n === 1 ? 'Ver el dataset nuevo' : 'Ver los datasets nuevos';
+};
+
 /**
  * El detalle de una edición (sección 9), de leerEdicion: `fila` (con `metadata`, el texto guardado, `recibida_ts`, los
  * segundos UNIX de recibida_at, y `numero`, cuántas regulares hay con su fecha o antes), `edicion` (el JSON.parse de metadata,
@@ -1256,7 +1296,9 @@ export const propuestasDatasetsDelDetalle = (edicion) => (Array.isArray(edicion.
  * etiqueta de una efeméride, en el orden en que llegó (para una pestaña abierta con la página anterior), y `agenda_grupos`, la
  * misma agenda en sus grupos (gruposDeLaAgenda, con la fecha de la edición), que imprimen la página y el mail; cada propuesta con
  * `id_enlace` solo si su dataset existe y está activo; después, las propuestas de datasets (propuestasDatasetsDelDetalle: null sin
- * la clave); y los archivos en el orden de ARCHIVOS_DEL_DETALLE, con la edición completa al final y el nombre de cada descarga.
+ * la clave); lo de las pestañas de la página (spec 2026-11-18-dato-quincena-detalle-pestanas, 6): la matriz (null sin la clave),
+ * las cantidades, «Ver las N propuestas» y el aviso de los datasets nuevos con su botón (null sin la clave o con la lista vacía);
+ * y los archivos en el orden de ARCHIVOS_DEL_DETALLE, con la edición completa al final y el nombre de cada descarga.
  * `correo` es `lineaDelCorreo`, la línea del envío del RPAD que arma el controlador (spec 2026-11-12-dato-quincena-correo, 6),
  * tal cual. Sin ella, la del correo del bot (textoDelCorreo): el modelo del mail arma el detalle y no la usa.
  * `previas` (spec 2026-11-14-dato-quincena-v1-3, 3) es el Map de leerEdicionesPrevias(fechasPrevias(edicion)), que leen `ver` y el
@@ -1268,6 +1310,8 @@ export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDe
     .filter((guardada) => guardada.dataset_activo === true && guardada.dataset_id !== null)
     .map((guardada) => [guardada.orden, guardada.dataset_id]));
   const nota = edicion.nota_archivo;
+  const propuestasDatasets = propuestasDatasetsDelDetalle(edicion);
+  const datasetsNuevos = propuestasDatasets === null ? null : propuestasDatasets.length;
   return {
     id: fila.id,
     fecha_texto: fechaLarga(fila.fecha_edicion),
@@ -1285,7 +1329,12 @@ export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDe
     })),
     agenda_grupos: gruposDeLaAgenda(edicion.agenda, edicion.fecha_edicion),
     propuestas: edicion.propuestas.map((propuesta) => propuestaDelDetalle(propuesta, enlaces, edicion.fecha_edicion, lasPrevias)),
-    propuestas_datasets: propuestasDatasetsDelDetalle(edicion),
+    propuestas_datasets: propuestasDatasets,
+    matriz_de_prioridad: propuestasDatasets === null ? null : matrizDePrioridad(),
+    cantidades: { propuestas: edicion.propuestas.length, datasets_nuevos: datasetsNuevos },
+    ver_propuestas: textoDeVerPropuestas(edicion.propuestas.length),
+    aviso_datasets_nuevos: avisoDeDatasetsNuevos(datasetsNuevos),
+    ver_datasets_nuevos: textoDeVerDatasetsNuevos(datasetsNuevos),
     archivos: [
       ...ORDEN_DE_LOS_ARCHIVOS_DEL_DETALLE.flatMap((campo) => adjuntos
         .filter((adjunto) => adjunto.campo === campo)

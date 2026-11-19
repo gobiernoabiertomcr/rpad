@@ -15,7 +15,7 @@ import {
   fechaLarga, marcaDePiloto, horaArgentina, diaArgentino, textoDeLlegada, textoDelCorreo, textoDeCantidad, textoDelResto,
   textoDelNumero, tamanoTexto, fotoDelDataset, textoParaCopiar, borradorParaCopiar, filasDeLaEdicion, avisosDeLaEdicion,
   reciboDe, anioDeLaLista, nombreDeLaEdicion, TIPO_DE_DESCARGA, itemDeLaLista, detalleDeLaEdicion, fechasPrevias, gruposDeLaAgenda,
-  prioridadDeDataset, propuestasDatasetsDelDetalle
+  prioridadDeDataset, propuestasDatasetsDelDetalle, matrizDePrioridad
 } from '../services/datoQuincenaReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
 import { RPAD_URL } from '../services/emailTemplates.js';
@@ -2898,11 +2898,54 @@ describe('prioridadDeDataset', () => {
   });
 });
 
+// spec 2026-11-18-dato-quincena-detalle-pestanas, 6: la matriz de la pestaña Datasets nuevos, armada con prioridadDeDataset: riesgo
+// en filas (Alto, Medio, Bajo) y valor en columnas (Bajo, Medio, Alto). Valor Bajo con riesgo Alto es «No se propone». El rótulo de
+// cada zona va en una sola celda, la de la maqueta aprobada (con_rotulo); en las demás, la página lo pone como texto oculto
+describe('matrizDePrioridad', () => {
+  const celda = (riesgo, valor, clave, texto, con_rotulo) => ({ valor, riesgo, clave, texto, con_rotulo });
+  const MATRIZ = [
+    celda('Alto', 'Bajo', 'no_se_propone', 'No se propone', true),
+    celda('Alto', 'Medio', 'evaluar', 'Evaluar riesgos', false),
+    celda('Alto', 'Alto', 'evaluar', 'Evaluar riesgos', true),
+    celda('Medio', 'Bajo', 'si_hay_recursos', 'Publicar si hay recursos', true),
+    celda('Medio', 'Medio', 'si_hay_recursos', 'Publicar si hay recursos', false),
+    celda('Medio', 'Alto', 'evaluar', 'Evaluar riesgos', false),
+    celda('Bajo', 'Bajo', 'si_hay_recursos', 'Publicar si hay recursos', false),
+    celda('Bajo', 'Medio', 'si_hay_recursos', 'Publicar si hay recursos', false),
+    celda('Bajo', 'Alto', 'alta', 'Prioridad alta', true)
+  ];
+
+  it('las 9 celdas en el orden de la matriz, con su clave y su texto, y el rótulo en una sola celda por zona', () => {
+    const matriz = matrizDePrioridad();
+    assert.deepEqual(matriz, MATRIZ);
+    for (const una of matriz) assert.deepEqual(Object.keys(una), ['valor', 'riesgo', 'clave', 'texto', 'con_rotulo']);
+    assert.deepEqual(matriz.filter((una) => una.con_rotulo).map((una) => [una.riesgo, una.valor, una.texto]), [
+      ['Alto', 'Bajo', 'No se propone'], ['Alto', 'Alto', 'Evaluar riesgos'], ['Medio', 'Bajo', 'Publicar si hay recursos'],
+      ['Bajo', 'Alto', 'Prioridad alta']
+    ]);
+  });
+
+  it('cada celda, salvo la de valor Bajo con riesgo Alto, es la de prioridadDeDataset', () => {
+    for (const { valor, riesgo, clave, texto } of matrizDePrioridad()) {
+      if (valor === 'Bajo' && riesgo === 'Alto') continue;
+      assert.deepEqual({ clave, texto }, prioridadDeDataset(valor, riesgo), `${valor} ${riesgo}`);
+    }
+  });
+
+  it('cada vez una lista nueva: cambiar una no cambia la próxima', () => {
+    const una = matrizDePrioridad();
+    una[0].texto = 'Otro texto';
+    una[8].con_rotulo = false;
+    una.push({});
+    assert.deepEqual(matrizDePrioridad(), MATRIZ);
+  });
+});
+
 // spec 2026-11-18-dato-quincena-propuestas-datasets, 4: las propuestas de datasets del detalle, con los textos ya armados, de la
 // edición archivada (que no cambia): la página y el mail las imprimen tal cual
 describe('propuestasDatasetsDelDetalle', () => {
-  const CLAVES = ['numero_texto', 'titulo', 'origenes', 'justificacion', 'prioridad', 'valor_y_riesgo', 'formato', 'campos',
-    'anonimizacion', 'datasets_relacionados', 'fuentes'];
+  const CLAVES = ['numero', 'numero_texto', 'titulo', 'origenes', 'justificacion', 'prioridad', 'valor', 'riesgo', 'valor_y_riesgo',
+    'formato', 'campos', 'anonimizacion', 'datasets_relacionados', 'fuentes'];
   const conDatasets = (propuestas_datasets) => edicionDePrueba({ propuestas_datasets });
 
   it('sin la clave (las archivadas antes de la v1.4 y las v1.3), null; con la lista vacía, []', () => {
@@ -2916,11 +2959,14 @@ describe('propuestasDatasetsDelDetalle', () => {
     assert.deepEqual(otras, []);
     assert.deepEqual(Object.keys(propuesta), CLAVES);
     assert.deepEqual(propuesta, {
+      numero: 1,
       numero_texto: 'Dataset nuevo 1',
       titulo: 'Un dataset nuevo inventado',
       origenes: ['Agenda', 'Pedidos de acceso'],
       justificacion: 'Una justificación inventada: el tema aparece en la agenda de prueba y en dos pedidos de acceso inventados.',
       prioridad: { clave: 'alta', texto: 'Prioridad alta' },
+      valor: 'Alto',
+      riesgo: 'Bajo',
       valor_y_riesgo: 'Valor alto · Riesgo bajo',
       formato: 'CSV',
       campos: ['fecha', 'barrio', 'cantidad'],
@@ -2936,7 +2982,9 @@ describe('propuestasDatasetsDelDetalle', () => {
 
   it('las tres de prueba, en su orden: una de cada prioridad, con su valor y su riesgo, y la anonimización tal cual', () => {
     const tres = propuestasDatasetsDelDetalle(conDatasets(propuestasDatasetsDePrueba()));
-    assert.deepEqual(tres.map((p) => p.numero_texto), ['Dataset nuevo 1', 'Dataset nuevo 2', 'Dataset nuevo 3']);
+    assert.deepEqual(tres.map((p) => [p.numero, p.numero_texto]), [[1, 'Dataset nuevo 1'], [2, 'Dataset nuevo 2'], [3, 'Dataset nuevo 3']]);
+    // spec 2026-11-18-dato-quincena-detalle-pestanas, 6: el valor y el riesgo tal como llegaron, para el marcador de la matriz
+    assert.deepEqual(tres.map((p) => [p.valor, p.riesgo]), [['Alto', 'Bajo'], ['Medio', 'Medio'], ['Alto', 'Alto']]);
     assert.deepEqual(tres.map((p) => [p.prioridad, p.valor_y_riesgo]), [
       [{ clave: 'alta', texto: 'Prioridad alta' }, 'Valor alto · Riesgo bajo'],
       [{ clave: 'si_hay_recursos', texto: 'Publicar si hay recursos' }, 'Valor medio · Riesgo medio'],
@@ -2964,6 +3012,7 @@ describe('propuestasDatasetsDelDetalle', () => {
       const [propuesta] = propuestasDatasetsDelDetalle(edicion);
       assert.equal(propuesta.valor_y_riesgo, texto);
       assert.deepEqual(propuesta.prioridad, prioridadDeDataset(valor, riesgo));
+      assert.deepEqual([propuesta.valor, propuesta.riesgo], [valor, riesgo]);
     }
   });
 
@@ -3401,15 +3450,103 @@ describe('detalleDeLaEdicion', () => {
   });
 
   it('las dos respuestas con datasets: lo demás, igual que el detalle de prueba, salvo el tamaño de la edición completa', () => {
-    const { propuestas_datasets: sinLaClave, archivos: losDeHoy, ...elRestoDeHoy } = RESPUESTAS.detalle.data;
-    assert.equal(sinLaClave, null);
+    const {
+      propuestas_datasets: sinLaClave, archivos: losDeHoy, matriz_de_prioridad: sinMatriz, cantidades: lasDeHoy,
+      aviso_datasets_nuevos: sinAviso, ver_datasets_nuevos: sinBoton, ...elRestoDeHoy
+    } = RESPUESTAS.detalle.data;
+    assert.deepEqual([sinLaClave, sinMatriz, sinAviso, sinBoton], [null, null, null, null]);
     for (const nombre of ['detalle_con_datasets', 'detalle_datasets_vacia']) {
-      const { propuestas_datasets, archivos, ...elResto } = RESPUESTAS[nombre].data;
+      const {
+        propuestas_datasets, archivos, matriz_de_prioridad, cantidades, aviso_datasets_nuevos, ver_datasets_nuevos, ...elResto
+      } = RESPUESTAS[nombre].data;
       assert.ok(Array.isArray(propuestas_datasets), nombre);
+      assert.deepEqual(matriz_de_prioridad, matrizDePrioridad(), nombre);
+      assert.deepEqual(cantidades, { ...lasDeHoy, datasets_nuevos: propuestas_datasets.length }, nombre);
       assert.deepEqual(elResto, elRestoDeHoy, nombre);
       assert.deepEqual(archivos.slice(0, -1), losDeHoy.slice(0, -1), nombre);
       assert.deepEqual({ ...archivos.at(-1), detalle: null }, { ...losDeHoy.at(-1), detalle: null }, nombre);
     }
+  });
+
+  // spec 2026-11-18-dato-quincena-detalle-pestanas, 6: lo que suma el servidor para las pestañas (la página no recalcula nada), en
+  // todo detalle y en el mismo lugar: después de propuestas_datasets y antes de archivos
+  const CLAVES_DE_LAS_PESTANAS = ['matriz_de_prioridad', 'cantidades', 'ver_propuestas', 'aviso_datasets_nuevos', 'ver_datasets_nuevos'];
+
+  it('las claves de las pestañas van después de propuestas_datasets y antes de archivos, con la clave o sin ella', () => {
+    const piloto = detalle({ fila: filaDePrueba({ tipo: 'piloto', referencia_piloto: 'piloto-4' }), edicion: pilotoDePrueba() });
+    for (const d of [detalle(), detalleConRepeticion(), piloto, detalleConDatasets([]), detalleConDatasets(propuestasDatasetsDePrueba())]) {
+      const claves = Object.keys(d);
+      assert.deepEqual(claves.slice(claves.indexOf('propuestas_datasets')), ['propuestas_datasets', ...CLAVES_DE_LAS_PESTANAS, 'archivos']);
+      assert.deepEqual(Object.keys(d.cantidades), ['propuestas', 'datasets_nuevos']);
+    }
+  });
+
+  it('el orden de cada propuesta: el número del JSON, junto a «Propuesta N»', () => {
+    assert.deepEqual(detalle().propuestas.map((p) => [p.orden, p.orden_texto]), [[1, 'Propuesta 1'], [2, 'Propuesta 2']]);
+    assert.deepEqual(detalleConRepeticion().propuestas.map((p) => p.orden), [1, 2, 3]);
+    assert.equal(Object.keys(detalle().propuestas[0]).indexOf('orden'), 0);
+  });
+
+  it('sin la clave (una edición archivada antes de la v1.4): sin matriz ni aviso, y la cantidad de datasets nuevos en null', () => {
+    const d = detalle({ linea: lineaDePrueba() });
+    assert.equal(d.matriz_de_prioridad, null);
+    assert.deepEqual(d.cantidades, { propuestas: 2, datasets_nuevos: null });
+    assert.equal(d.ver_propuestas, 'Ver las 2 propuestas');
+    assert.equal(d.aviso_datasets_nuevos, null);
+    assert.equal(d.ver_datasets_nuevos, null);
+    const conRepeticion = detalleConRepeticion();
+    assert.deepEqual(conRepeticion.cantidades, { propuestas: 3, datasets_nuevos: null });
+    assert.equal(conRepeticion.ver_propuestas, 'Ver las 3 propuestas');
+    assert.deepEqual([conRepeticion.matriz_de_prioridad, conRepeticion.aviso_datasets_nuevos, conRepeticion.ver_datasets_nuevos],
+      [null, null, null]);
+  });
+
+  it('una sola propuesta: «Ver la propuesta»', () => {
+    const una = edicionDePrueba();
+    una.propuestas = [una.propuestas[0]];
+    const d = detalle({ edicion: una });
+    assert.equal(d.ver_propuestas, 'Ver la propuesta');
+    assert.deepEqual(d.cantidades, { propuestas: 1, datasets_nuevos: null });
+  });
+
+  it('con la lista vacía: la matriz, cero datasets nuevos y sin aviso ni botón', () => {
+    const d = detalleConDatasets([]);
+    assert.deepEqual(d.matriz_de_prioridad, matrizDePrioridad());
+    assert.deepEqual(d.cantidades, { propuestas: 2, datasets_nuevos: 0 });
+    assert.equal(d.ver_propuestas, 'Ver las 2 propuestas');
+    assert.equal(d.aviso_datasets_nuevos, null);
+    assert.equal(d.ver_datasets_nuevos, null);
+  });
+
+  it('con un dataset nuevo: el aviso y el botón en singular, y su número, su valor y su riesgo', () => {
+    const d = detalleConDatasets([propuestaDatasetDePrueba()]);
+    assert.deepEqual(d.matriz_de_prioridad, matrizDePrioridad());
+    assert.deepEqual(d.cantidades, { propuestas: 2, datasets_nuevos: 1 });
+    assert.equal(d.aviso_datasets_nuevos, 'Datito propone 1 dataset nuevo para abrir.');
+    assert.equal(d.ver_datasets_nuevos, 'Ver el dataset nuevo');
+    assert.ok(d.aviso_datasets_nuevos.startsWith(`${NOMBRE_DEL_BOT} `));
+    assert.deepEqual(d.propuestas_datasets.map((p) => [p.numero, p.valor, p.riesgo]), [[1, 'Alto', 'Bajo']]);
+  });
+
+  it('con tres datasets nuevos: el aviso y el botón en plural, y el número, el valor y el riesgo de cada uno', () => {
+    const d = detalleConDatasets(propuestasDatasetsDePrueba());
+    assert.deepEqual(d.cantidades, { propuestas: 2, datasets_nuevos: 3 });
+    assert.equal(d.aviso_datasets_nuevos, 'Datito propone 3 datasets nuevos para abrir.');
+    assert.equal(d.ver_datasets_nuevos, 'Ver los datasets nuevos');
+    assert.ok(d.aviso_datasets_nuevos.startsWith(`${NOMBRE_DEL_BOT} `));
+    assert.deepEqual(d.propuestas_datasets.map((p) => [p.numero, p.valor, p.riesgo]),
+      [[1, 'Alto', 'Bajo'], [2, 'Medio', 'Medio'], [3, 'Alto', 'Alto']]);
+    // Dos, también en plural
+    const dos = detalleConDatasets(propuestasDatasetsDePrueba().slice(0, 2));
+    assert.deepEqual([dos.aviso_datasets_nuevos, dos.ver_datasets_nuevos],
+      ['Datito propone 2 datasets nuevos para abrir.', 'Ver los datasets nuevos']);
+  });
+
+  it('cada detalle con su propia matriz: cambiar la de uno no cambia la del próximo', () => {
+    const uno = detalleConDatasets([]);
+    uno.matriz_de_prioridad[0].texto = 'Otro texto';
+    uno.matriz_de_prioridad.pop();
+    assert.deepEqual(detalleConDatasets([]).matriz_de_prioridad, matrizDePrioridad());
   });
 
   it('no cambia lo que recibe', () => {
