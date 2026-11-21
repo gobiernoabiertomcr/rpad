@@ -84,7 +84,9 @@ Si tocás esto, leé este documento de `docs/temas/`:
 | Configuración: usuarios, licencias, áreas, login, contraseñas y links | `configuracion.md` |
 | Feriados | `feriados.md` |
 | Proyectos | `proyectos.md` |
-| El dato de la quincena: el archivo de Datito, su token y su página | `dato-quincena.md` |
+| El dato de la quincena: el archivo de Datito, las lecturas y su página | `dato-quincena.md` |
+| El dato de la quincena: el POST de Datito, la edición, la clave y el token | `dato-quincena-contrato.md` |
+| El dato de la quincena: la principal del equipo | `dato-quincena-principal-equipo.md` |
 | El dato de la quincena: el correo, quién lo recibe, Reenviar, la prueba | `dato-quincena-correo.md` |
 | Carga de páginas, versiones, CSS, carcasa, sitio público | `frontend.md` |
 | Una tabla, una columna, una migración | `base-de-datos.md` |

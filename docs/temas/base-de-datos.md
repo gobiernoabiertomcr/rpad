@@ -17,10 +17,11 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-03-notas-firma-digital-design.md`
 - `docs/superpowers/specs/2026-11-07-dato-quincena-design.md`
 - `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
+- `docs/superpowers/specs/2026-11-21-dato-quincena-principal-equipo-design.md`
 
 ## Base de datos
 
-- 54 tablas (ver `database/schema.sql`).
+- 55 tablas (ver `database/schema.sql`).
   Usuarios:
   `usuarios` (rol, cargo, vínculo, `sesion_version`), `usuarios_tokens` (links de acceso, solo el hash), `usuarios_auditoria` (historial del panel), `usuarios_licencias` (licencias; nunca se borran, se anulan) y `usuarios_firmas` (firma de cada usuario para las notas).
   Notas de auditoría:
@@ -36,7 +37,7 @@ Historia y motivos, en las specs:
   `mi_espacio_eventos`, `mi_espacio_evento_personas`, `mi_espacio_evento_vistas` (a quién se le muestra un Personal (Público)), `mi_espacio_evento_informados`, `mi_espacio_evento_envios`, `mi_espacio_eventos_corridas` y `mi_espacio_diario_envios` (ver abajo)
   El dato de la quincena:
   `dato_quincena_ediciones`, `dato_quincena_propuestas` y `dato_quincena_adjuntos`, y su correo:
-  `dato_quincena_correo_config`, `dato_quincena_destinatarios`, `dato_quincena_correos` y `dato_quincena_envios` (ver abajo).
+  `dato_quincena_correo_config`, `dato_quincena_destinatarios`, `dato_quincena_correos` y `dato_quincena_envios`, y la principal que elige el equipo: `dato_quincena_principal_equipo` (ver abajo).
 - Campos JSON validados en `cambios_pendientes` (datos_nuevos, datos_anteriores)
 - Foreign keys con CASCADE en deletes relevantes
 
@@ -265,7 +266,7 @@ Historia y motivos, en las specs:
 ## El dato de la quincena
 
 - El archivo de las ediciones que manda Datito (spec 2026-11-07-dato-quincena, 8): tres tablas, sin `CHECK` (valida la API).
-  El contrato del POST, las lecturas y la página, en `docs/temas/dato-quincena.md`.
+  El contrato del POST, en `docs/temas/dato-quincena-contrato.md`; las lecturas y la página, en `docs/temas/dato-quincena.md`.
   `dato_quincena_ediciones`, una por clave (`id`;
   `clave` varchar(80) en `ascii_bin`, única con `uq_dato_quincena_clave`: `dq:regular:AAAA-MM-DD` o `dq:piloto:AAAA-MM-DD:piloto-N`;
   `tipo` enum('regular','piloto');
@@ -303,7 +304,7 @@ Historia y motivos, en las specs:
   Antes de correrla, `SELECT @@max_allowed_packet;` tiene que dar 16777216 o más: una infografía de hasta 5 MB necesita unos 6 MB en el `INSERT` y unos 11 MB al restaurar un respaldo de phpMyAdmin, que exporta los bytes en hexadecimal.
   `tests/schema.test.js` (compara `schema.sql` con la base del `.env`) y `tests/permisos.test.js` (la lista, el detalle y la descarga, sobre esa base) la necesitan: la base local también necesita la migración antes de correr la suite.
   `rollback-dato-quincena.sql` va después de volver a los archivos anteriores y borra las tres tablas, primero los adjuntos y las propuestas y al final las ediciones: se pierden las ediciones recibidas (si ya hay, exportar las tres tablas antes).
-  No se puede correr solo mientras esté `migracion-dato-quincena-correo.sql`: va después de `rollback-dato-quincena-correo.sql` (ver abajo).
+  No se puede correr solo mientras estén `migracion-dato-quincena-principal-equipo.sql` y `migracion-dato-quincena-correo.sql`: primero va `rollback-dato-quincena-principal-equipo.sql`, después `rollback-dato-quincena-correo.sql` y al final este (ver abajo).
 - El correo que manda el RPAD (spec 2026-11-12-dato-quincena-correo, 7): cuatro tablas y un valor nuevo, sin `CHECK` (valida la API).
   `dato_quincena_adjuntos.campo` suma `infografia_svg` al final del `ENUM` (la infografía editable que puede mandar Datito; los valores de antes no cambian).
   `dato_quincena_correo_config`, una sola fila (`id` = 1, que cargan la migración con `INSERT IGNORE` y `schema.sql`):
@@ -343,6 +344,20 @@ Historia y motivos, en las specs:
   `rollback-dato-quincena-correo.sql` va después de volver a los archivos anteriores: borra las cuatro tablas en el orden inverso, después los adjuntos `infografia_svg`, y vuelve el `ENUM` a tres valores (se pierden los SVG guardados, el registro de los envíos, la lista y el interruptor; las ediciones y sus otros archivos quedan).
   Las tablas van primero a propósito: si `rollback-dato-quincena.sql` se corrió solo y quedó a medias (sin los adjuntos ni las propuestas), esta vuelta atrás igual borra sus cuatro tablas, frena en el `DELETE` (`dato_quincena_adjuntos` ya no existe) y después `rollback-dato-quincena.sql` se vuelve a correr y termina (la cabecera de esta vuelta atrás lo dice).
   **Mientras esté esta migración, `rollback-dato-quincena.sql` no se puede correr solo**: los correos y los envíos apuntan a las ediciones, así que borra los adjuntos y las propuestas, falla en las ediciones y deja la base a medias; este va antes (su cabecera lo dice).
+- La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 1): una tabla, sin `CHECK` (valida la API).
+  La regla y la página, en `docs/temas/dato-quincena-principal-equipo.md`.
+  `dato_quincena_principal_equipo`, una fila por elección (`id`;
+  `edicion_id` y `orden` tinyint unsigned, la FK compuesta `fk_dato_quincena_principal_equipo_propuesta` `(edicion_id, orden)` a `dato_quincena_propuestas` ON DELETE CASCADE, que usa el `UNIQUE` `(edicion_id, orden)` de esa tabla como destino;
+  `elegida_por` FK `usuarios` ON DELETE SET NULL;
+  `elegida_at` DATETIME, escrito con `ahoraArgentina()`).
+  La vigente es la de mayor `id` de la edición: el RPAD nunca hace un UPDATE ni un DELETE, y la página muestra solo la vigente.
+  Una elección con un `orden` que la edición no tiene falla por la FK; borrar una edición (SQL a mano) borra sus elecciones y borrar una cuenta deja `elegida_por` en NULL.
+  `dato_quincena_ediciones` y `dato_quincena_propuestas`, incluida su columna `principal` (la marca de Datito), no cambian.
+  Va también en `schema.sql`.
+  `migracion-dato-quincena-principal-equipo.sql` (aditiva y repetible: un `CREATE TABLE IF NOT EXISTS`) va después de `migracion-dato-quincena-correo.sql` y **antes** del código, obligatoria: sin la tabla, la lista y el detalle de las ediciones dan error.
+  El código anterior anda con ella (no la lee).
+  `tests/schema.test.js` (compara `schema.sql` con la base del `.env`) y `tests/permisos.test.js` la necesitan: la base local también necesita la migración antes de correr la suite.
+  `rollback-dato-quincena-principal-equipo.sql` va después de volver a los archivos anteriores y **antes** de `rollback-dato-quincena-correo.sql` y de `rollback-dato-quincena.sql`: borra la tabla y se pierde quién eligió la principal de cada edición (si ya hay, exportarla antes).
 
 ## Archivos de tests
 

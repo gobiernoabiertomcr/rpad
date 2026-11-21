@@ -19,6 +19,10 @@
  * El contrato v1.3 (spec 2026-11-14-dato-quincena-v1-3, 2 y 3): el recibo y el detalle leen, con una consulta, las ediciones que
  * repiten las propuestas (edicionesPreviasSinFallar de fechasPrevias), para los avisos de la repetición y el enlace a la edición
  * previa. Esa lectura nunca da un 500: si falla, el recibo sale sin los avisos de la repetición y el detalle, sin el enlace.
+ *
+ * La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 2 y 3): `elegirPrincipalDelEquipo`, el PUT de
+ * administración (authMiddleware y adminOnly), guarda la elección en su tabla, sin tocar lo archivado ni mandar ningún mail; `ver`
+ * lee la vigente y el detalle la muestra, y la lista suma el orden vigente de cada edición.
  */
 import { ahoraArgentina } from '../services/notasDigitalesCalendario.js';
 import { leerCalendario } from '../services/feriadosDatos.js';
@@ -28,10 +32,11 @@ import { idPositivo } from '../services/proyectosReglas.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import {
   textoDeMetadata, erroresDeLaEdicion, claveDeEdicion, huellaDelPaquete, filasDeLaEdicion, avisosDeLaEdicion, reciboDe, sha256,
-  anioDeLaLista, itemDeLaLista, detalleDeLaEdicion, fechasPrevias
+  anioDeLaLista, itemDeLaLista, detalleDeLaEdicion, fechasPrevias, MENSAJES_PRINCIPAL_EQUIPO, mensajeDeLaEleccion, ordenDeLaEleccion
 } from '../services/datoQuincenaReglas.js';
 import {
-  guardarEdicion, leerRecibo, listarEdiciones, leerEdicion, leerArchivo, edicionesPreviasSinFallar
+  guardarEdicion, leerRecibo, listarEdiciones, leerEdicion, leerArchivo, edicionesPreviasSinFallar, leerPrincipalDelEquipo,
+  guardarPrincipalDelEquipo
 } from '../services/datoQuincenaDatos.js';
 import { envioDelRecibo, lineaDelCorreo, pastillaDelEnvio } from '../services/datoQuincenaCorreoReglas.js';
 import { leerConfig, correosDeLasEdiciones, listaDeHoy } from '../services/datoQuincenaCorreoDatos.js';
@@ -148,7 +153,8 @@ const parametrosDelEnvio = ({ envioActivo, lista, calendario, correos, ahora }, 
   return { tipo, fecha_edicion, correo, envios, reenvios, lista, correoDelBot, envioActivo, ahora, calendario };
 };
 
-// Un 500 de una lectura: el mensaje fijo de la operación y, en la consola, solo el código y el mensaje del error
+// Un 500 de una lectura (o de la elección de la principal del equipo): el mensaje fijo de la operación y, en la consola, solo el
+// código y el mensaje del error
 const errorDeLectura = (res, mensaje, error) => {
   console.error(mensaje, error?.code ?? '', error?.message ?? '');
   if (!res.headersSent) res.status(500).json({ success: false, error: mensaje });
@@ -176,7 +182,8 @@ export const listar = async (req, res) => {
 };
 
 // GET /api/dato-quincena/ediciones/:id: el detalle de una edición, con los textos ya armados. La línea del correo es la misma
-// para todos los roles; las ediciones previas dan el enlace de cada repetición
+// para todos los roles; las ediciones previas dan el enlace de cada repetición; la principal del equipo vigente, la del equipo
+// (la misma para todos los roles, también quién la eligió)
 export const ver = async (req, res) => {
   const id = idPositivo(req.params.id);
   if (id === null) return noExiste(res);
@@ -184,11 +191,37 @@ export const ver = async (req, res) => {
     const leida = await leerEdicion(id);
     if (leida === null) return noExiste(res);
     const edicion = JSON.parse(leida.fila.metadata);
-    const [envio, previas] = await Promise.all([leerElEnvio([leida.fila.id]), edicionesPreviasSinFallar(fechasPrevias(edicion))]);
+    const [envio, previas, eleccion] = await Promise.all([
+      leerElEnvio([leida.fila.id]), edicionesPreviasSinFallar(fechasPrevias(edicion)), leerPrincipalDelEquipo(leida.fila.id)
+    ]);
     const linea = lineaDelCorreo(parametrosDelEnvio(envio, leida.fila, edicion.correo));
-    res.json({ success: true, data: detalleDeLaEdicion({ ...leida, edicion, lineaDelCorreo: linea, previas }) });
+    res.json({ success: true, data: detalleDeLaEdicion({ ...leida, edicion, lineaDelCorreo: linea, previas, eleccion }) });
   } catch (error) {
     errorDeLectura(res, MENSAJE_AL_VER, error);
+  }
+};
+
+/**
+ * PUT /api/dato-quincena/ediciones/:id/principal-equipo (`{ orden: N }`), solo administración (spec
+ * 2026-11-21-dato-quincena-principal-equipo, 2): elige la principal del equipo de cualquier edición, regular o piloto. Como en
+ * «Reenviar», primero la edición: un id que no pasa idPositivo o que no existe, 404 «No existe esa edición.», sin mirar el cuerpo;
+ * después el orden: uno que no es un número entero de 1 a 255 (ordenDeLaEleccion) o que no es el de una propuesta de la edición,
+ * 400. Si ya es el de la vigente no escribe nada (`cambio` false); si no, guarda la elección con quien la pide y la hora argentina.
+ * 200 con `{ cambio }` y el texto de mensajeDeLaEleccion. No manda ningún mail. Un error de la base, 500 con su mensaje fijo.
+ */
+export const elegirPrincipalDelEquipo = async (req, res) => {
+  const id = idPositivo(req.params.id);
+  if (id === null) return noExiste(res);
+  try {
+    const orden = ordenDeLaEleccion(req.body?.orden);
+    const { existe, valida, cambio, coincide } = await guardarPrincipalDelEquipo({
+      edicionId: id, orden, usuarioId: req.user.userId, ahora: ahoraArgentina()
+    });
+    if (!existe) return noExiste(res);
+    if (!valida) return res.status(400).json({ success: false, error: MENSAJES_PRINCIPAL_EQUIPO.orden });
+    res.json({ success: true, data: { cambio }, message: mensajeDeLaEleccion({ orden, coincide, cambio }) });
+  } catch (error) {
+    errorDeLectura(res, MENSAJES_PRINCIPAL_EQUIPO.alGuardar, error);
   }
 };
 

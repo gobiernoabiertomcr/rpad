@@ -9,6 +9,9 @@
 -- Mientras esté migracion-dato-quincena-correo.sql, correr antes rollback-dato-quincena-correo.sql: los correos y los envíos
 -- apuntan a las ediciones y, sin borrarlos primero, esto borra los adjuntos y las propuestas, falla en las ediciones y deja la
 -- base a medias.
+-- Mientras esté migracion-dato-quincena-principal-equipo.sql, correr primero rollback-dato-quincena-principal-equipo.sql (y
+-- después la del correo): las elecciones del equipo apuntan a las propuestas con una FK compuesta y, sin borrarlas primero, esto
+-- borra los adjuntos, falla en las propuestas y deja la base a medias.
 -- Se puede volver a correr: si una tabla ya no existe, se saltea.
 -- =====================================================
 

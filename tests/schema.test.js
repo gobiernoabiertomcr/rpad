@@ -96,6 +96,12 @@ const TABLAS_DATO_QUINCENA = ['dato_quincena_ediciones', 'dato_quincena_propuest
 const TABLAS_DATO_QUINCENA_CORREO = ['dato_quincena_correo_config', 'dato_quincena_destinatarios', 'dato_quincena_correos', 'dato_quincena_envios'];
 const esDelCorreoDelDatoQuincena = (c) => TABLAS_DATO_QUINCENA_CORREO.some(tabla => c.startsWith(`${tabla}.`));
 
+// La tabla de la principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 1): una fila por elección, que apunta a una
+// propuesta (la edición y su orden) y a quien eligió. Va después de las del correo: al borrarlas en el orden inverso, sale primero,
+// antes que las propuestas a las que apunta
+const TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO = ['dato_quincena_principal_equipo'];
+const esDeLaPrincipalDelEquipo = (c) => TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO.some(tabla => c.startsWith(`${tabla}.`));
+
 // El campo de un adjunto del dato de la quincena: desde el correo, con 'infografia_svg' al final (cuatro valores); antes, tres
 const CAMPO_DEL_ADJUNTO_ANTES = "dato_quincena_adjuntos.campo enum('infografia_png','correo_texto','calculos') null=NO default=null key=";
 const CAMPO_DEL_ADJUNTO = "dato_quincena_adjuntos.campo enum('infografia_png','correo_texto','calculos','infografia_svg') null=NO default=null key=";
@@ -115,8 +121,9 @@ const sinLosDiasRestituidos = (lista) => lista
   .map(c => (c === TIPO_DE_LICENCIA ? TIPO_DE_LICENCIA_ANTES : c));
 
 // Las tablas que crea schema.sql: 41 hasta la agenda de Mi espacio, 42 con la planilla de contrato, 43 con el evento Personal
-// (Público), 45 con los días restituidos, 47 con el aviso diario de la agenda, 50 con el dato de la quincena y 54 con su correo
-const TOTAL_DE_TABLAS = 54;
+// (Público), 45 con los días restituidos, 47 con el aviso diario de la agenda, 50 con el dato de la quincena, 54 con su correo y
+// 55 con la principal del equipo
+const TOTAL_DE_TABLAS = 55;
 
 // Las columnas generadas de unas tablas, con cómo se guardan y su expresión: `columnas` no lee EXTRA
 const generadasDe = async (conexion, base, tablas) => {
@@ -865,6 +872,41 @@ describe('database/schema.sql', () => {
     assert.match(generadas[0], /`tipo` = 'automatico'/);
   });
 
+  // Una fila por elección, nunca un UPDATE ni un DELETE desde el RPAD: la vigente es la de mayor id de la edición. La propuesta va por
+  // la edición y su orden (el detalle no expone el id de la propuesta), con una FK compuesta al UNIQUE (edicion_id, orden)
+  it('La principal del equipo: una tabla con sus columnas, claves y FK (spec 2026-11-21-dato-quincena-principal-equipo, 1)', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(esDeLaPrincipalDelEquipo);
+    assert.deepEqual(lista, [
+      'dato_quincena_principal_equipo.id int(11) null=NO default=null key=PRI',
+      // El primer campo del índice de la FK a la propuesta: se repite (otra elección de la misma edición)
+      'dato_quincena_principal_equipo.edicion_id int(11) null=NO default=null key=MUL',
+      // El orden de la propuesta elegida, como dato_quincena_propuestas.orden
+      'dato_quincena_principal_equipo.orden tinyint(3) unsigned null=NO default=null key=',
+      // Quién eligió: NULL si la cuenta se borró
+      'dato_quincena_principal_equipo.elegida_por int(11) null=YES default=NULL key=MUL',
+      // Hora argentina (ahoraArgentina), nunca NOW()
+      'dato_quincena_principal_equipo.elegida_at datetime null=NO default=null key='
+    ]);
+    // Sin textos
+    assert.deepEqual(await collationsDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO), []);
+    // Borrar una edición (SQL a mano) borra sus propuestas y, en cascada, sus elecciones; borrar a quien eligió deja la elección sin
+    // autor. La FK compuesta da un renglón por columna
+    assert.deepEqual((await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO)).sort(), [
+      'dato_quincena_principal_equipo.edicion_id -> dato_quincena_propuestas.edicion_id (fk_dato_quincena_principal_equipo_propuesta) borrado=CASCADE',
+      'dato_quincena_principal_equipo.elegida_por -> usuarios.id (fk_dato_quincena_principal_equipo_usuario) borrado=SET NULL',
+      'dato_quincena_principal_equipo.orden -> dato_quincena_propuestas.orden (fk_dato_quincena_principal_equipo_propuesta) borrado=CASCADE'
+    ]);
+    // Sin UNIQUE: la misma propuesta se puede elegir otra vez después de elegir otra
+    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO), [
+      'dato_quincena_principal_equipo.fk_dato_quincena_principal_equipo_propuesta (edicion_id,orden) repetible=1',
+      'dato_quincena_principal_equipo.fk_dato_quincena_principal_equipo_usuario (elegida_por) repetible=1',
+      'dato_quincena_principal_equipo.PRIMARY (id) repetible=0'
+    ]);
+    assert.deepEqual(await motoresDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO),
+      ['dato_quincena_principal_equipo InnoDB utf8mb4_unicode_ci']);
+    assert.deepEqual(await generadasDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO), []);
+  });
+
   it('el tipo de una licencia de Mi espacio: el enum de schema.sql es TIPOS_LICENCIA de services/miEspacioReglas.js, en su orden', () => {
     const schema = fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8');
     const tabla = schema.match(/CREATE TABLE `mi_espacio_licencias` \(([\s\S]*?)\n\) ENGINE/);
@@ -906,7 +948,7 @@ describe('database/schema.sql', () => {
     assert.deepEqual({ ...fk }, { tabla: 'cambios_pendientes', columna: 'id', borrado: 'SET NULL' });
   });
 
-  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO, ...TABLAS_MI_ESPACIO_AGENDA, ...TABLAS_MI_ESPACIO_HORAS, ...TABLAS_MI_ESPACIO_RESTITUCIONES, ...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO.filter(tabla => tabla !== 'dato_quincena_correo_config')]) {
+  for (const tabla of ['usuarios', 'areas', 'datasets', 'cambios_pendientes', 'notificaciones_log', 'historial_actualizaciones', 'proyectos', 'metricas_manuales', 'notas_digitales', 'notas_digitales_datasets', 'usuarios_tokens', 'usuarios_auditoria', 'usuarios_licencias', 'usuarios_firmas', 'notas_digitales_cambios', 'metricas_fotos', 'actualizaciones_recibido', 'feriados', 'feriados_no_rige', ...TABLAS_MI_ESPACIO, ...TABLAS_MI_ESPACIO_AGENDA, ...TABLAS_MI_ESPACIO_HORAS, ...TABLAS_MI_ESPACIO_RESTITUCIONES, ...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO.filter(tabla => tabla !== 'dato_quincena_correo_config'), ...TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO]) {
     it(`no trae datos en ${tabla}`, async () => {
       assert.equal(await contar(tabla), 0);
     });
@@ -3769,6 +3811,9 @@ describe('migracion-dato-quincena.sql', () => {
   // esta, y su vuelta atrás, antes que la de esta: la base lo exige
   const MIGRACION_CORREO = 'migracion-dato-quincena-correo.sql';
   const ROLLBACK_CORREO = 'rollback-dato-quincena-correo.sql';
+  // Y la principal del equipo, que apunta a las propuestas: su migración va después de la del correo, y su vuelta atrás, primero
+  const MIGRACION_PRINCIPAL_EQUIPO = 'migracion-dato-quincena-principal-equipo.sql';
+  const ROLLBACK_PRINCIPAL_EQUIPO = 'rollback-dato-quincena-principal-equipo.sql';
   // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
   const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
   // Sin los comentarios: lo que de verdad se ejecuta
@@ -3776,15 +3821,16 @@ describe('migracion-dato-quincena.sql', () => {
   const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
   const esDeLasTablas = (c) => TABLAS_DATO_QUINCENA.some(tabla => c.startsWith(`${tabla}.`));
   const enLaBase = (tabla) => `\`${BASE_DATO_QUINCENA}\`.\`${tabla}\``;
-  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main): primero las tablas del correo,
-  // que apuntan a las ediciones
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main): primero la de la principal del
+  // equipo y las del correo, que apuntan a las propuestas y a las ediciones
   const crearBase = async ({ conLoNuevo }) => {
     await root.query(`DROP DATABASE IF EXISTS \`${BASE_DATO_QUINCENA}\``);
     await root.query(`CREATE DATABASE \`${BASE_DATO_QUINCENA}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
     await root.query(`USE \`${BASE_DATO_QUINCENA}\``);
     await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
     if (!conLoNuevo) {
-      await root.query([...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
+      await root.query([...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO, ...TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO].reverse()
+        .map(tabla => `DROP TABLE ${tabla};`).join('\n'));
     }
   };
   // Un área y un dataset (inventados) y un piloto con dos propuestas, una de ese dataset y otra de uno que no existe, y su infografía
@@ -3861,6 +3907,10 @@ describe('migracion-dato-quincena.sql', () => {
     assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
     // Mientras esté el correo, su vuelta atrás va antes (dos de sus tablas apuntan a las ediciones)
     assert.match(cabecera(ROLLBACK), /correr antes rollback-dato-quincena-correo\.sql/);
+    // Y, mientras esté la principal del equipo, la suya, antes de todo (las elecciones apuntan a las propuestas)
+    assert.match(cabecera(ROLLBACK),
+      /Mientras esté migracion-dato-quincena-principal-equipo\.sql, correr primero rollback-dato-quincena-principal-equipo\.sql/);
+    assert.match(cabecera(ROLLBACK), /falla en las propuestas/);
   });
 
   it('el rollback solo borra las tres tablas, de los adjuntos a las ediciones: no toca datasets ni ninguna otra', () => {
@@ -3874,8 +3924,9 @@ describe('migracion-dato-quincena.sql', () => {
     assert.ok(!(await columnas(root, BASE_DATO_QUINCENA)).some(esDeLasTablas), 'la base de partida ya tiene las tablas');
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION));
-    // Y lo que se le sumó después: el correo que manda el RPAD
+    // Y lo que se le sumó después: el correo que manda el RPAD y la principal del equipo
     await root.query(sql(MIGRACION_CORREO));
+    await root.query(sql(MIGRACION_PRINCIPAL_EQUIPO));
     await comoSchema();
   });
 
@@ -3883,17 +3934,21 @@ describe('migracion-dato-quincena.sql', () => {
     await crearBase({ conLoNuevo: true });
     await cargarDatos();
     assert.deepEqual(await Promise.all(TABLAS_DATO_QUINCENA.map(contarEn)), [1, 2, 1]);
-    // Primero la vuelta atrás del correo, como en el despliegue: con sus tablas puestas, la base no deja borrar las ediciones
+    // Primero las vueltas atrás de la principal del equipo y del correo, como en el despliegue: con sus tablas puestas, la base no deja
+    // borrar las propuestas ni las ediciones
+    await root.query(sql(ROLLBACK_PRINCIPAL_EQUIPO));
     await root.query(sql(ROLLBACK_CORREO));
     await root.query(sql(ROLLBACK));
     await root.query(sql(ROLLBACK));
-    // La estructura de main: la de schema.sql sin las tres tablas (ni las del correo)
-    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLasTablas(c) && !esDelCorreoDelDatoQuincena(c));
+    // La estructura de main: la de schema.sql sin las tres tablas (ni las del correo ni la de la principal del equipo)
+    const deMain = (await columnas(root, BASE_TEMPORAL))
+      .filter(c => !esDeLasTablas(c) && !esDelCorreoDelDatoQuincena(c) && !esDeLaPrincipalDelEquipo(c));
     assert.deepEqual(await columnas(root, BASE_DATO_QUINCENA), deMain);
     assert.equal(await contarEn('datasets'), 1);
-    // Las dos migraciones vuelven a dejar exactamente la estructura de schema.sql
+    // Las tres migraciones vuelven a dejar exactamente la estructura de schema.sql
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION_CORREO));
+    await root.query(sql(MIGRACION_PRINCIPAL_EQUIPO));
     await comoSchema();
   });
 
@@ -4053,6 +4108,10 @@ describe('migracion-dato-quincena-correo.sql', () => {
     assert.match(cabecera(ROLLBACK), /exportar/);
     // Va antes que la vuelta atrás del archivo de las ediciones, si también se deshace
     assert.match(cabecera(ROLLBACK), /antes que rollback-dato-quincena\.sql/);
+    // Y después de la de la principal del equipo, si está: sin ella, la del archivo falla en las propuestas
+    assert.match(cabecera(ROLLBACK),
+      /Mientras esté migracion-dato-quincena-principal-equipo\.sql, primero va rollback-dato-quincena-principal-equipo\.sql/);
+    assert.match(cabecera(ROLLBACK), /falla en el DROP de dato_quincena_propuestas/);
     // Y si ya se corrió ese solo y quedó a medias: esto borra las cuatro tablas, frena en el DELETE, y se vuelve a correr el otro
     assert.match(cabecera(ROLLBACK), /Si antes se corrió rollback-dato-quincena\.sql solo/);
     assert.match(cabecera(ROLLBACK), /volver a correr rollback-dato-quincena\.sql/);
@@ -4105,10 +4164,13 @@ describe('migracion-dato-quincena-correo.sql', () => {
   });
 
   // Si rollback-dato-quincena.sql se corrió solo (el orden equivocado), borra los adjuntos y las propuestas y falla en las ediciones. Esta
-  // vuelta atrás borra igual sus cuatro tablas y frena en el DELETE (ya no hay adjuntos); después, la otra se vuelve a correr y termina
+  // vuelta atrás borra igual sus cuatro tablas y frena en el DELETE (ya no hay adjuntos); después, la otra se vuelve a correr y termina.
+  // La de la principal del equipo ya se corrió: va primero, y sin ella la de las ediciones frena antes, en las propuestas (lo prueba
+  // su propio bloque)
   it('si rollback-dato-quincena.sql quedó a medias, esto borra igual las cuatro tablas y la otra se puede terminar', async () => {
     await crearBase({ conLoNuevo: true });
     await cargarDatos();
+    await root.query(sql('rollback-dato-quincena-principal-equipo.sql'));
     await assert.rejects(root.query(sql('rollback-dato-quincena.sql')), { code: 'ER_ROW_IS_REFERENCED_2' });
     const tablasDelDato = async () => (await root.query(
       `SELECT TABLE_NAME AS tabla FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'dato\\_quincena\\_%' ORDER BY TABLE_NAME`,
@@ -4117,8 +4179,9 @@ describe('migracion-dato-quincena-correo.sql', () => {
     await assert.rejects(root.query(sql(ROLLBACK)), { code: 'ER_NO_SUCH_TABLE' });
     assert.deepEqual(await tablasDelDato(), ['dato_quincena_ediciones']);
     await root.query(sql('rollback-dato-quincena.sql'));
-    // La estructura de antes del dato de la quincena: la de schema.sql sin las siete tablas, sin tocar a las personas
-    const sinElDato = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDelCorreoDelDatoQuincena(c) && !TABLAS_DATO_QUINCENA.some(tabla => c.startsWith(`${tabla}.`)));
+    // La estructura de antes del dato de la quincena: la de schema.sql sin las ocho tablas, sin tocar a las personas
+    const sinElDato = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDelCorreoDelDatoQuincena(c) && !esDeLaPrincipalDelEquipo(c)
+      && !TABLAS_DATO_QUINCENA.some(tabla => c.startsWith(`${tabla}.`)));
     assert.deepEqual(await columnas(root, BASE_CORREO), sinElDato);
     assert.equal(await contarEn('usuarios'), 2);
   });
@@ -4171,6 +4234,210 @@ describe('migracion-dato-quincena-correo.sql', () => {
       // La lista y el interruptor no dependen de las ediciones
       assert.equal(await contarEn('dato_quincena_destinatarios'), 1);
       assert.equal(await contarEn('dato_quincena_correo_config'), 1);
+    });
+  }
+});
+
+// La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 1): una tabla nueva, con una fila por elección, que apunta a
+// una propuesta (la edición y su orden) y a quien eligió. La migración y su vuelta atrás, sobre una base descartable creada con schema.sql
+describe('migracion-dato-quincena-principal-equipo.sql', () => {
+  const BASE_PRINCIPAL = 'rpad_schema_dato_quincena_principal_test';
+  const MIGRACION = 'migracion-dato-quincena-principal-equipo.sql';
+  const ROLLBACK = 'rollback-dato-quincena-principal-equipo.sql';
+  const TABLA = 'dato_quincena_principal_equipo';
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const sentencias = (archivo) => codigo(archivo).split(';').map(s => s.trim()).filter(Boolean);
+  const enLaBase = (tabla) => `\`${BASE_PRINCIPAL}\`.\`${tabla}\``;
+  const TODAS = [...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO, ...TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO];
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main): con las tablas del dato de la
+  // quincena y las del correo, sin la de la principal del equipo
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_PRINCIPAL}\``);
+    await root.query(`CREATE DATABASE \`${BASE_PRINCIPAL}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_PRINCIPAL}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) await root.query(`DROP TABLE ${TABLA}`);
+  };
+  // Dos personas (inventadas) y dos ediciones inventadas, cada una con dos propuestas: en la primera, una persona elige la 2 y la otra,
+  // la 1; en la segunda, la primera persona elige la 1
+  const persona = async (nombre) => {
+    const [{ insertId }] = await root.query(
+      `INSERT INTO ${enLaBase('usuarios')} (username, password_hash, nombre_completo, email, rol) VALUES (?, 'x', 'Persona Inventada', ?, 'admin')`,
+      [nombre, `${nombre}@rpad.test`]);
+    return insertId;
+  };
+  const edicionConPropuestas = async (fecha) => {
+    const [{ insertId: edicion }] = await root.query(
+      `INSERT INTO ${enLaBase('dato_quincena_ediciones')} (clave, tipo, fecha_edicion, titulo, metadata, huella)
+       VALUES (?, 'regular', ?, 'Edición inventada', '{}', ?)`, [`dq:regular:${fecha}`, fecha, 'a'.repeat(64)]);
+    await root.query(
+      `INSERT INTO ${enLaBase('dato_quincena_propuestas')} (edicion_id, orden, titulo, cifra_clave, principal, dataset_nombre)
+       VALUES (?, 1, 'Propuesta uno', 'Una cifra inventada', 1, 'Dataset inventado'), (?, 2, 'Propuesta dos', 'Otra cifra', 0, 'Otro')`,
+      [edicion, edicion]);
+    return edicion;
+  };
+  const elegir = (edicion, orden, persona, hora = '2026-11-23 10:12:00') => root.query(
+    `INSERT INTO ${enLaBase(TABLA)} (edicion_id, orden, elegida_por, elegida_at) VALUES (?, ?, ?, ?)`, [edicion, orden, persona, hora]);
+  const cargarDatos = async () => {
+    const una = await persona('t_una_principal');
+    const otra = await persona('t_otra_principal');
+    const primera = await edicionConPropuestas('2026-11-23');
+    const segunda = await edicionConPropuestas('2026-12-07');
+    await elegir(primera, 2, una);
+    await elegir(primera, 1, otra, '2026-11-23 11:30:00');
+    await elegir(segunda, 1, una, '2026-12-07 09:00:00');
+    return { una, otra, primera, segunda };
+  };
+  const elecciones = async () => (await root.query(
+    `SELECT edicion_id, orden, elegida_por, DATE_FORMAT(elegida_at, '%Y-%m-%d %H:%i:%s') AS elegida_at FROM ${enLaBase(TABLA)} ORDER BY id`
+  ))[0].map(fila => ({ ...fila }));
+  const contarEn = async (tabla) => {
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM ${enLaBase(tabla)}`);
+    return Number(total);
+  };
+  const tablasDelDato = async () => (await root.query(
+    `SELECT TABLE_NAME AS tabla FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'dato\\_quincena\\_%' ORDER BY TABLE_NAME`,
+    [BASE_PRINCIPAL]))[0].map(fila => fila.tabla);
+  // La misma estructura que schema.sql: las columnas y también las claves foráneas, los índices, el motor y las colaciones, que las
+  // columnas no muestran
+  const comoSchema = async () => {
+    assert.deepEqual(await columnas(root, BASE_PRINCIPAL), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_PRINCIPAL, TODAS), await clavesAjenasDe(root, BASE_TEMPORAL, TODAS));
+    assert.deepEqual(await indicesDe(root, BASE_PRINCIPAL, TODAS), await indicesDe(root, BASE_TEMPORAL, TODAS));
+    assert.deepEqual(await motoresDe(root, BASE_PRINCIPAL, TODAS), await motoresDe(root, BASE_TEMPORAL, TODAS));
+    assert.deepEqual(await collationsDe(root, BASE_PRINCIPAL, TODAS), await collationsDe(root, BASE_TEMPORAL, TODAS));
+    assert.deepEqual(await generadasDe(root, BASE_PRINCIPAL, TODAS), await generadasDe(root, BASE_TEMPORAL, TODAS));
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_PRINCIPAL}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER, USE, DROP, RENAME ni CHECK, y solo crea la tabla', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+    // Los acentos de los comentarios llegan bien desde phpMyAdmin
+    assert.match(codigo(MIGRACION), /^SET NAMES utf8mb4;/);
+    assert.match(codigo(ROLLBACK), /^SET NAMES utf8mb4;/);
+    // Lo único que se ejecuta, además de SET NAMES: la tabla, si todavía no está
+    const lista = sentencias(MIGRACION);
+    assert.equal(lista.length, 2, lista.join('\n---\n'));
+    assert.equal(lista[1].match(/^CREATE TABLE IF NOT EXISTS `(\w+)`/)?.[1], TABLA);
+  });
+
+  it('las cabeceras dicen la spec, qué crea, el orden, que es obligatoria, que se puede repetir y cómo se deshace; el rollback, qué se pierde', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-11-21-dato-quincena-principal-equipo-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    assert.match(cabecera(MIGRACION), new RegExp(`${TABLA}:`));
+    // La vigente es la última, y lo archivado no cambia
+    assert.match(cabecera(MIGRACION), /mayor id/);
+    assert.match(cabecera(MIGRACION), /dato_quincena_propuestas\.principal/);
+    assert.match(cabecera(MIGRACION), /El código anterior no la lee/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código nuevo, después de migracion-dato-quincena-correo\.sql/);
+    assert.match(cabecera(MIGRACION), /Es obligatoria/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-dato-quincena-principal-equipo\.sql/);
+    // Termina con la verificación, comentada: la migración se sigue pegando tal cual
+    assert.match(sql(MIGRACION), /\n-- Para verificar, en la misma pestaña SQL: tiene que dar 8 filas[^\n]*\n--   SHOW TABLES LIKE 'dato_quincena%';\s*$/);
+    assert.match(cabecera(ROLLBACK), /migracion-dato-quincena-principal-equipo\.sql/);
+    assert.match(cabecera(ROLLBACK), /ORDEN: primero volver a subir los archivos anteriores y hacer Restart; después correr esto/);
+    // Lo que se pierde, dicho con su nombre, y cómo conservarlo
+    assert.match(cabecera(ROLLBACK), /se pierden las elecciones/);
+    assert.match(cabecera(ROLLBACK), /exportar/);
+    // Va antes que las otras dos vueltas atrás del dato de la quincena, si también se deshacen: antes que la del archivo, porque la
+    // base lo exige (las elecciones apuntan a las propuestas); antes que la del correo, por el orden de las entregas
+    assert.match(cabecera(ROLLBACK), /Antes que rollback-dato-quincena\.sql, porque la base lo exige/);
+    assert.match(cabecera(ROLLBACK), /Antes que rollback-dato-quincena-correo\.sql, por el orden de las entregas/);
+    assert.doesNotMatch(cabecera(ROLLBACK), /antes que rollback-dato-quincena-correo\.sql y rollback-dato-quincena\.sql: la base lo exige/);
+    // Y si rollback-dato-quincena.sql se corrió antes y frenó en las propuestas: esto, y después volver a correr aquel
+    assert.match(cabecera(ROLLBACK), /Si antes se corrió rollback-dato-quincena\.sql/);
+    assert.match(cabecera(ROLLBACK), /volver a correr rollback-dato-quincena\.sql/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('el rollback solo borra la tabla: no toca las ediciones, las propuestas ni a las personas', () => {
+    assert.deepEqual(sentencias(ROLLBACK), ['SET NAMES utf8mb4', `DROP TABLE IF EXISTS \`${TABLA}\``]);
+  });
+
+  it('sobre una base con las tablas del dato de la quincena y del correo (la de main) deja la de schema.sql y se puede repetir', async () => {
+    await crearBase({ conLoNuevo: false });
+    assert.ok(!(await columnas(root, BASE_PRINCIPAL)).some(esDeLaPrincipalDelEquipo), 'la base de partida ya tiene la tabla');
+    assert.deepEqual((await tablasDelDato()).sort(), [...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO].sort());
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    // Otra vez, con elecciones guardadas: no las toca
+    const { primera } = await cargarDatos();
+    const antes = await elecciones();
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.deepEqual(await elecciones(), antes);
+    assert.equal(antes.filter(fila => fila.edicion_id === primera).length, 2);
+  });
+
+  it('el rollback se puede repetir: deja la estructura de main con las ediciones, las propuestas y las personas; la migración la recupera', async () => {
+    await crearBase({ conLoNuevo: true });
+    await cargarDatos();
+    assert.equal(await contarEn(TABLA), 3);
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin la tabla
+    assert.deepEqual(await columnas(root, BASE_PRINCIPAL), (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLaPrincipalDelEquipo(c)));
+    assert.deepEqual(await Promise.all(['dato_quincena_ediciones', 'dato_quincena_propuestas', 'usuarios'].map(contarEn)), [2, 4, 2]);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql, sin elecciones
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.equal(await contarEn(TABLA), 0);
+  });
+
+  // Si rollback-dato-quincena.sql se corrió antes (el orden equivocado), borra los adjuntos y frena en las propuestas, a las que apunta
+  // esta tabla. Esta vuelta atrás borra la tabla y la otra se vuelve a correr y termina. Con el correo ya deshecho, como en el despliegue
+  it('si rollback-dato-quincena.sql frenó en las propuestas, esto borra la tabla y la otra se puede terminar', async () => {
+    await crearBase({ conLoNuevo: true });
+    await cargarDatos();
+    await root.query(sql('rollback-dato-quincena-correo.sql'));
+    await assert.rejects(root.query(sql('rollback-dato-quincena.sql')), { code: 'ER_ROW_IS_REFERENCED_2' });
+    assert.deepEqual(await tablasDelDato(), ['dato_quincena_ediciones', TABLA, 'dato_quincena_propuestas']);
+    await root.query(sql(ROLLBACK));
+    await root.query(sql('rollback-dato-quincena.sql'));
+    assert.deepEqual(await tablasDelDato(), []);
+    // La estructura de antes del dato de la quincena, sin tocar a las personas
+    const sinElDato = (await columnas(root, BASE_TEMPORAL)).filter(c => !TODAS.some(tabla => c.startsWith(`${tabla}.`)));
+    assert.deepEqual(await columnas(root, BASE_PRINCIPAL), sinElDato);
+    assert.equal(await contarEn('usuarios'), 2);
+  });
+
+  // Una fila por elección, sin UNIQUE: la misma propuesta se elige otra vez. Borrar a quien eligió deja la elección sin autor; borrar
+  // una edición (SQL a mano) borra sus propuestas y, en cascada, sus elecciones, y no las de otra; un orden que la edición no tiene, o
+  // una edición que no existe, no entran. Con la estructura de schema.sql y con la de la migración
+  for (const origen of ['schema.sql', 'la migración']) {
+    it(`las elecciones: se repiten, quedan sin autor, se borran con la edición y no entran sin su propuesta (${origen})`, async () => {
+      await crearBase({ conLoNuevo: origen === 'schema.sql' });
+      if (origen === 'la migración') await root.query(sql(MIGRACION));
+      const { una, otra, primera, segunda } = await cargarDatos();
+      // La 2 otra vez, después de la 1
+      await elegir(primera, 2, una, '2026-11-23 12:00:00');
+      for (const [edicion, orden] of [[primera, 3], [primera, 0], [segunda + 1000, 1]]) {
+        await assert.rejects(elegir(edicion, orden, una), { code: 'ER_NO_REFERENCED_ROW_2' }, `${edicion} ${orden}`);
+      }
+      assert.deepEqual(await elecciones(), [
+        { edicion_id: primera, orden: 2, elegida_por: una, elegida_at: '2026-11-23 10:12:00' },
+        { edicion_id: primera, orden: 1, elegida_por: otra, elegida_at: '2026-11-23 11:30:00' },
+        { edicion_id: segunda, orden: 1, elegida_por: una, elegida_at: '2026-12-07 09:00:00' },
+        { edicion_id: primera, orden: 2, elegida_por: una, elegida_at: '2026-11-23 12:00:00' }
+      ]);
+
+      await root.query(`DELETE FROM ${enLaBase('usuarios')} WHERE id = ?`, [una]);
+      assert.deepEqual((await elecciones()).map(fila => fila.elegida_por), [null, otra, null, null]);
+
+      await root.query(`DELETE FROM ${enLaBase('dato_quincena_ediciones')} WHERE id = ?`, [primera]);
+      assert.deepEqual(await elecciones(), [
+        { edicion_id: segunda, orden: 1, elegida_por: null, elegida_at: '2026-12-07 09:00:00' }
+      ]);
+      assert.equal(await contarEn('dato_quincena_propuestas'), 2);
     });
   }
 });

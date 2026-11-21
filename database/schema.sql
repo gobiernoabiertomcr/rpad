@@ -1087,3 +1087,24 @@ CREATE TABLE `dato_quincena_envios` (
   CONSTRAINT `fk_dato_quincena_envio_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_dato_quincena_envio_creado_por` FOREIGN KEY (`creado_por`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- La principal del equipo (database/updates/migracion-dato-quincena-principal-equipo.sql): la propuesta que administración elige
+-- como principal del equipo en cada edición, una fila por elección (la vigente es la de mayor id de la edición), con la propuesta por
+-- la edición y su orden, quién eligió y cuándo. Lo archivado no cambia. Borrar una edición (SQL a mano) borra sus propuestas y, en
+-- cascada, sus elecciones
+-- =====================================================
+CREATE TABLE `dato_quincena_principal_equipo` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `edicion_id` int(11) NOT NULL,
+  `orden` tinyint(3) unsigned NOT NULL,
+  `elegida_por` int(11) DEFAULT NULL,
+  `elegida_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `fk_dato_quincena_principal_equipo_propuesta` (`edicion_id`, `orden`),
+  KEY `fk_dato_quincena_principal_equipo_usuario` (`elegida_por`),
+  CONSTRAINT `fk_dato_quincena_principal_equipo_propuesta` FOREIGN KEY (`edicion_id`, `orden`)
+    REFERENCES `dato_quincena_propuestas` (`edicion_id`, `orden`) ON DELETE CASCADE,
+  CONSTRAINT `fk_dato_quincena_principal_equipo_usuario` FOREIGN KEY (`elegida_por`)
+    REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -26,14 +26,17 @@ export const AVISO_DE_RESTITUCION = Object.freeze({
 // (services/datoQuincenaCorreoReglas.js): una regular inventada de dos propuestas, la primera la principal y con notas para
 // validar, y la agenda en sus tres grupos (spec 2026-11-14-dato-quincena-agenda-grupos), con un evento en cada uno (el segundo
 // renglón del detalle de la efeméride es un salto de línea); ninguna propuesta repite otra edición (repeticion null, spec
-// 2026-11-14-dato-quincena-v1-3). Ningún dato sale de una edición real. Cada llamada arma objetos nuevos: un test puede cambiarlos
-// sin tocar el próximo
+// 2026-11-14-dato-quincena-v1-3); con la frase de la principal y el recuadro al RPAD (spec
+// 2026-11-21-dato-quincena-principal-equipo, 5). Ningún dato sale de una edición real. Cada llamada arma objetos nuevos: un test
+// puede cambiarlos sin tocar el próximo
 export const modeloDelDatoQuincena = () => ({
   asunto: 'Dato de la Quincena - 09/11/2026',
   primerNombre: 'Persona',
   titulo: 'Dato de la Quincena - 09/11/2026',
   numero: 'Edición N.º 1',
   bajada: '2 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas.',
+  aclaracion: 'La principal de este correo es la de Datito, no la del equipo: el equipo elige la suya en el RPAD.',
+  recuadro: true,
   agenda_grupos: [
     {
       titulo: 'Lo que pasó',
@@ -109,7 +112,8 @@ export const modeloDelDatoQuincena = () => ({
   nombreDelBot: 'Datito'
 });
 
-// Cada caso: { nombre, email: { subject, html, text? }, boton }. boton: si el email tiene un botón
+// Cada caso: { nombre, email: { subject, html, text? }, boton, botones? }. boton: si el email tiene un botón; botones: cuántos,
+// si son más de uno (el dato de la quincena lleva el del recuadro y el del final)
 export const casosDeEmail = (t) => {
   const cambios = [
     { id: 1, tipo_cambio: 'editar', dataset_titulo: 'Padrón de comercios <b>2026</b>', usuario_nombre: 'Persona Editora', usuario_username: 'peditora', tiempo_pendiente: 'Hace 2 días' },
@@ -217,8 +221,9 @@ export const casosDeEmail = (t) => {
     },
     { nombre: 'evento: cancelación', email: t.eventoCancelacionTemplate({ creador: 'Persona de Prueba', evento }), boton: true },
     { nombre: 'evento: recordatorio', email: t.eventoRecordatorioTemplate({ evento, hoy: '2026-10-27' }), boton: true },
-    // El dato de la quincena (spec 2026-11-12-dato-quincena-correo, 10): el mail de la maqueta, con el SVG adjunto
-    { nombre: 'dato de la quincena', email: t.datoQuincenaTemplate(modeloDelDatoQuincena(), { conSvg: true }), boton: true }
+    // El dato de la quincena (spec 2026-11-12-dato-quincena-correo, 10): el mail de la maqueta, con el SVG adjunto, y el mismo
+    // botón en el recuadro de arriba y al final (spec 2026-11-21-dato-quincena-principal-equipo, 5)
+    { nombre: 'dato de la quincena', email: t.datoQuincenaTemplate(modeloDelDatoQuincena(), { conSvg: true }), boton: true, botones: 2 }
   ];
 };
 

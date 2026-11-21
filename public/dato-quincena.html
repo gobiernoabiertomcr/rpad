@@ -91,6 +91,10 @@
         .dq-fd-anio { font-weight: 600; font-size: 1.05rem; color: var(--sg-suave); letter-spacing: -0.01em; }
         .dq-tarjeta:hover .dq-fd-fecha { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 5px; }
         .dq-cuantas-prop { display: flex; align-items: center; gap: 8px; margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--sg-linea); font-size: 0.8rem; font-weight: 700; color: var(--sg-suave); }
+        /* El rótulo de la principal que cuenta (la del equipo o la del bot, como lo diga el servidor), arriba de su título */
+        .dq-tarjeta-rotulo { display: flex; align-items: center; gap: 5px; margin: 10px 0 0; font-size: 0.76rem; font-weight: 700; line-height: 1.2; color: var(--sg-suave); }
+        .dq-tarjeta-rotulo svg { flex: none; width: 14px; height: 14px; }
+        .dq-tarjeta-rotulo + .dq-principal-diario { margin-top: 3px; }
         .dq-principal-diario { margin: 4px 0 0; color: var(--sg-texto); font-weight: 600; font-size: 0.95rem; line-height: 1.4; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
         .dq-tarjeta-pie { margin-top: auto; padding-top: 14px; }
 
@@ -159,7 +163,9 @@
 
         .dq-seccion-titulo { margin: 0 0 14px; font-family: var(--f-titulo); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
         .dq-agenda { margin: 40px 0 0; padding: 22px 26px 24px; background: var(--sg-cielo); border-radius: 10px; }
-        .dq-agenda-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
+        /* Tantas columnas como grupos (spec 2026-11-21-dato-quincena-principal-equipo, 4): sin «Lo que pasó», las otras dos ocupan todo el
+           ancho y no queda un tercio vacío. Debajo de 820 px, una sola (más abajo) */
+        .dq-agenda-cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 28px; }
         .dq-agenda-col { min-width: 0; }
         .dq-agenda-grupo { margin: 0 0 14px; padding-bottom: 6px; border-bottom: 2px solid var(--sg-tinta); font-size: 0.95rem; font-weight: 700; color: var(--sg-tinta); }
         /* Cada grupo, una línea de tiempo corta: un punto por evento sobre una línea fina */
@@ -189,6 +195,20 @@
         .dq-aviso-nuevos p { margin: 0; max-width: 62ch; color: var(--sg-verde); font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; }
         .dq-correo-de-la-edicion { margin: 30px 0 0; max-width: 620px; }
 
+        /* La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 4, la maqueta B «Franja del equipo»): a lo ancho, arriba
+           de la portada, con el filete grueso de tinta arriba y el fino abajo, como una sección de diario, sobre el gris claro. El texto
+           dice de quién es («Principal del equipo:») y el ícono lo acompaña; sin elegir, el resumen va sin negrita */
+        .dq-franja { margin: 0 0 30px; padding: 14px 18px; background: var(--sg-sutil); border-top: 3px solid var(--sg-tinta); border-bottom: 1px solid var(--sg-tinta); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 24px; align-items: center; }
+        .dq-franja-texto { min-width: 0; }
+        .dq-franja-titulo { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.1rem; line-height: 1.3; letter-spacing: -0.01em; color: var(--sg-tinta); overflow-wrap: anywhere; text-wrap: pretty; }
+        .dq-franja-sin .dq-franja-titulo { font-weight: 600; }
+        .dq-franja-rotulo { display: inline-flex; align-items: center; gap: 6px; }
+        .dq-franja-rotulo b { font-weight: 800; }
+        .dq-franja-rotulo svg { flex: none; width: 18px; height: 18px; }
+        .dq-franja-cifra { margin: 4px 0 0; color: var(--sg-texto); font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .dq-franja-quien { margin: 4px 0 0; color: var(--sg-suave); font-size: 0.86rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .dq-franja-acciones { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+
         /* Propuestas (spec 4, la maqueta A): el índice fijo a la izquierda (~280 px) y una propuesta por vez. Lo largo sin cortes no
            ensancha ni el índice ni la propuesta (overflow-wrap: anywhere y columnas con minmax(0, …)) */
         .dq-propuestas { display: grid; grid-template-columns: 272px minmax(0, 1fr); gap: 40px; align-items: start; }
@@ -207,6 +227,8 @@
         .dq-im svg { width: 12px; height: 12px; flex: none; }
         .dq-im-principal { background: var(--sg-tinta); color: #fff; }
         .dq-im-validar { background: var(--sg-sol); color: var(--sg-ambar); }
+        /* La del equipo, blanca con un borde de tinta; la del bot, en tinta: además, cada una con su ícono y su texto */
+        .dq-im-equipo, .dq-et-equipo { background: #fff; color: var(--sg-tinta); box-shadow: inset 0 0 0 1.5px var(--sg-tinta); }
         /* La que se ve: el fondo, el número y el título en tinta y una barra gruesa a la izquierda (no es solo el color). Con [aria-current]
            a secas, que el script pone solo en ella: tests/paginas.test.js no deja escrito «aria-current» con un valor en esta página */
         .dq-indice-item[aria-current] { background: var(--sg-cielo); }
@@ -226,6 +248,9 @@
         .dq-et-validar { background: var(--sg-sol); color: var(--sg-ambar); }
         /* El borde por dentro: la etiqueta mide lo mismo que las otras */
         .dq-et-repite { background: #fff; color: var(--sg-texto); box-shadow: inset 0 0 0 1px var(--sg-borde-control); }
+        /* Para la administración, al final de la fila de las etiquetas: «Elegir como principal del equipo» o «Es la principal del equipo» */
+        .dq-elegir-esta, .dq-es-del-equipo { margin-left: auto; }
+        .dq-es-del-equipo { font-size: 0.84rem; font-weight: 600; color: var(--sg-suave); }
         /* El título recibe el foco al elegir la propuesta: con el teclado lleva el anillo de la página; con el mouse, no */
         .dq-prop-titulo { margin: 0; font-family: var(--f-titulo); font-weight: 750; font-size: clamp(1.55rem, 1.15rem + 1.25vw, 2.15rem); line-height: 1.13; letter-spacing: -0.024em; color: var(--sg-tinta); text-wrap: balance; overflow-wrap: anywhere; scroll-margin-top: calc(var(--header-height) + 20px); }
         .dq-prop-titulo:focus:not(:focus-visible) { outline: none; box-shadow: none; }
@@ -415,6 +440,12 @@
         .dq-opciones input[type="radio"] { width: 18px; height: 18px; margin: 2px 0 0; flex: none; accent-color: var(--sg-tinta); }
         .dq-opciones select { margin: -4px 0 0 28px; height: 38px; border-radius: 10px; border: 1px solid var(--sg-borde-control); padding: 0 10px; font: inherit; color: var(--sg-texto); background: #fff; max-width: calc(100% - 28px); min-width: min(260px, calc(100% - 28px)); }
         .dq-reenvio-nota { margin: 14px 0 0; color: var(--sg-suave); font-size: 0.88rem; }
+        /* El diálogo de «La principal del equipo»: el texto, una opción por propuesta (lo largo no ensancha) y «Guardar» apagado sin una
+           marcada */
+        .dq-dialogo-texto { margin: 0 0 14px; color: var(--sg-texto); line-height: 1.5; }
+        .dq-opcion-aclara { color: var(--sg-suave); font-weight: 600; }
+        #dq-principal .dq-opciones label { overflow-wrap: anywhere; }
+        #dq-principal-guardar:disabled { opacity: 0.55; }
 
         /* «Ver»: el texto del correo o los cálculos, en un <pre> */
         .dq-modal { max-width: 760px; border-radius: 18px; }
@@ -448,7 +479,7 @@
             .dq-portada { grid-template-columns: minmax(0, 1fr); }
             .dq-figura, .dq-la-principal { grid-column: auto; grid-row: auto; }
             .dq-figura { max-width: 520px; }
-            .dq-agenda-cols { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+            .dq-agenda-cols { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); gap: 22px; }
             .dq-propuestas { grid-template-columns: minmax(0, 1fr); gap: 20px; }
             .dq-indice { position: static; max-height: none; overflow-y: visible; }
             .dq-indice ol { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x proximity; border-top: 0; padding: 2px 2px 6px; scrollbar-width: thin; }
@@ -463,6 +494,9 @@
            en dos columnas y «Copiar la propuesta» a lo ancho */
         @media (max-width: 640px) {
             .dq-hoja { margin: 0 calc(-1 * var(--relleno-main, 16px)); padding: 20px 16px 28px; border-left: 0; border-right: 0; border-radius: 0; }
+            .dq-franja { grid-template-columns: minmax(0, 1fr); padding: 12px 14px; }
+            .dq-franja-acciones { justify-content: flex-start; }
+            .dq-elegir-esta, .dq-es-del-equipo { margin-left: 0; }
             .dq-ed-fecha { font-size: clamp(1.75rem, 1.2rem + 3vw, 2.2rem); }
             .dq-ed-pestana { gap: 6px; padding: 12px 8px 14px; font-size: 0.94rem; white-space: normal; text-align: left; line-height: 1.15; }
             .dq-ed-pestana + .dq-ed-pestana::before { top: 12px; bottom: 14px; }
@@ -503,7 +537,7 @@
            sin deslizarse */
         @media (prefers-reduced-motion: reduce) {
             .dq-plegado > summary svg { transition: none; }
-            #dq-modal, #dq-reenvio, .dq-modal, .modal-overlay.active .dq-modal { transform: none; transition: none; }
+            #dq-modal, #dq-reenvio, #dq-principal, .dq-modal, .modal-overlay.active .dq-modal { transform: none; transition: none; }
             .dq-switch input, .dq-switch input::after { transition: none; }
         }
     </style>
@@ -667,11 +701,30 @@
         </div>
     </div>
 
+    <!-- «La principal del equipo» (solo administración, spec 2026-11-21-dato-quincena-principal-equipo, 4): dato-quincena.js llena las
+         opciones (una por propuesta, marcada la vigente) y guarda con «Guardar», deshabilitado mientras no haya una marcada -->
+    <div class="modal-overlay" id="dq-principal">
+        <div class="modal dq-modal dq-modal-chico" role="dialog" aria-modal="true" aria-labelledby="dq-principal-titulo" aria-describedby="dq-principal-texto">
+            <div class="modal-header">
+                <h2 class="modal-title" id="dq-principal-titulo">La principal del equipo</h2>
+                <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="dq-dialogo-texto" id="dq-principal-texto">Elegí la propuesta que el equipo va a trabajar como principal. Se puede cambiar cuando quieran.</p>
+                <div id="dq-principal-cuerpo"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="dq-btn dq-btn-borde" data-cerrar>Cancelar</button>
+                <button type="button" class="dq-btn dq-btn-tinta" id="dq-principal-guardar" disabled>Guardar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts del RPAD -->
     <script src="js/config.js"></script>
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/dato-quincena.js?v=20261235"></script>
+    <script src="js/dato-quincena.js?v=20261236"></script>
 </body>
 </html>

@@ -145,7 +145,7 @@ import { listarSeguimiento, verSeguimiento, descargarSeguimientoPdf } from '../c
 import { verMetricas, descargarMetricasPdf } from '../controllers/metricasController.js';
 import { listarNotasDgmit, cargarNotaDgmit, corregirNotaDgmit, anularNotaDgmit } from '../controllers/notasDgmitController.js';
 import { subida, subidaDeNotaFirmada, subidaDelDatoQuincena } from '../config/upload.js';
-import { recibirEdicion, listar, ver, descargar } from '../controllers/datoQuincenaController.js';
+import { recibirEdicion, listar, ver, descargar, elegirPrincipalDelEquipo } from '../controllers/datoQuincenaController.js';
 import {
   verCorreo, cambiarEnvio, cambiarDestinatarios, verCorreoDeLaEdicion, reenviarEdicion, mandarPruebaDeLaEdicion
 } from '../controllers/datoQuincenaCorreoController.js';
@@ -400,6 +400,9 @@ router.put('/dato-quincena/correo/destinatarios', authMiddleware, adminOnly, cam
 router.get('/dato-quincena/ediciones/:id/correo', authMiddleware, adminOnly, verCorreoDeLaEdicion);
 router.post('/dato-quincena/ediciones/:id/reenvios', authMiddleware, adminOnly, reenviarEdicion);
 router.post('/dato-quincena/ediciones/:id/prueba', authMiddleware, adminOnly, mandarPruebaDeLaEdicion);
+// La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 2): la elige administración, como la caja Correo; la
+// edición no cambia (la elección vive en su tabla)
+router.put('/dato-quincena/ediciones/:id/principal-equipo', authMiddleware, adminOnly, elegirPrincipalDelEquipo);
 
 // =====================================================
 // Cron (protegido por clave secreta)

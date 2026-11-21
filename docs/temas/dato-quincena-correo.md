@@ -1,7 +1,7 @@
 # El dato de la quincena: el correo
 
 El mail «Dato de la Quincena» lo manda el RPAD, no el bot, siguiendo sus días hábiles: cuándo sale, a quién, con qué estados y textos, la corrida, Reenviar y la prueba, las fechas en la agenda de Mi espacio, el mail, la pestaña Correo y la transición.
-El archivo de las ediciones (el POST de Datito, la clave, la huella, las lecturas) está en `docs/temas/dato-quincena.md`.
+El archivo de las ediciones (las lecturas y la página) está en `docs/temas/dato-quincena.md`, y el POST de Datito, la clave, la huella y el recibo, en `docs/temas/dato-quincena-contrato.md`.
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
@@ -9,6 +9,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-14-dato-quincena-agenda-grupos-design.md` (la agenda en tres grupos)
 - `docs/superpowers/specs/2026-11-14-dato-quincena-en-mi-espacio-design.md` (las fechas en la agenda de Mi espacio)
 - `docs/superpowers/specs/2026-11-18-dato-quincena-propuestas-datasets-design.md` (las propuestas de datasets nuevos)
+- `docs/superpowers/specs/2026-11-21-dato-quincena-principal-equipo-design.md` (la frase y el recuadro del mail)
 
 ## Archivos
 
@@ -75,7 +76,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   una que el RPAD no mandó solo y que alguien reenvió a toda la lista dice «Reenviada por correo el miércoles 25/11/2026 a las 10:12.» (pastilla «Reenviada el mié 25/11»);
   un reenvío a una sola persona no cambia la línea que ven todos: se ve en la caja de administración.
 - Mientras quedan reintentos, la edición sigue «enviada» para todos y administración ve «1 persona en reintento».
-- El recibo del POST (`envio`) usa los mismos textos; su forma, en `docs/temas/dato-quincena.md`.
+- El recibo del POST (`envio`) usa los mismos textos; su forma, en `docs/temas/dato-quincena-contrato.md`.
   El de un piloto es un objeto (`estado: 'piloto'`) y no null, porque el texto es parte de lo que el bot lee.
 - Los textos de cada persona en la caja: «Enviado el 10/11 a las 8:05», «No se envió: de licencia», «No se pudo enviar (3 intentos)», «Sin confirmar».
 
@@ -144,7 +145,10 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
 
 - Asunto «Dato de la Quincena - DD/MM/AAAA», con la `fecha_edicion` también si sale corrido; remitente `remitente()`.
   Un mail por persona, con `marcoEmail` (tablas y estilos en línea, un solo `<!DOCTYPE>`, sin `<style>` ni emojis: lo controla `tests/email-diseno.test.js`).
-- Contenido: el título y debajo «Edición N.º N» y la cantidad («4 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas.»); «Buen día, <primer nombre>.»;
+- Contenido: el título y debajo «Edición N.º N» y la cantidad («4 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas.»);
+  justo después, la frase que aclara que la principal del correo es la de Datito y no la del equipo (abajo);
+  «Buen día, <primer nombre>.»;
+  el recuadro «Esta edición se lee mejor en el RPAD», con su botón (abajo);
   la infografía en línea (`cid`) con su pie;
   «Agenda de la quincena», en sus grupos («Lo que pasó», «Lo que viene» y «Efemérides», los de `agenda_grupos`: `docs/temas/dato-quincena.md`);
   una tarjeta por propuesta, con su franja («Propuesta 1 de 4», «Principal» en la principal) y la cifra, el dataset, la repetición si hay, por qué hoy, el ángulo, la idea de placa, el texto para redes, los puntos, el borrador, lo que hay que validar y las fuentes;
@@ -164,7 +168,8 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   `numero`, `valor` y `riesgo` viajan en cada una y la plantilla no los dibuja: la franja reemplaza al número y su rótulo.
   De cada propuesta de comunicación, el modelo deja afuera `orden`, `orden_texto` y lo que se copia (`FUERA_DEL_MAIL`).
   Con null no hay sección: el bloque es null, `marcoEmail` lo saltea y el texto plano no suma nada.
-  Sin la clave, el mail no lleva la sección y sale byte por byte como el del fixture: lo controla `tests/dato-quincena-resguardo.test.js`, cuyo fixture no se regenera nunca.
+  Sin la clave, el mail no lleva la sección y sale como el del fixture con exactamente dos inserciones, la frase y el recuadro de la principal del equipo (`docs/temas/dato-quincena-principal-equipo.md`); el resto, byte por byte.
+  Lo controla `tests/dato-quincena-resguardo.test.js`: el fixture no se regenera nunca, y las dos inserciones las suma el test.
   Con `[]`, el título y la línea «Esta quincena no hay propuestas de datasets.».
 - Cada una va en una tarjeta con el borde de las propuestas, con 16 px entre una y otra (una fila de alto fijo, por Outlook).
   Arriba, la franja verde clara (fondo `#EEF6F1`, borde `#D5E9DD`, texto `#2E6B4C`) con «Dataset nuevo 1 de 3».
@@ -174,6 +179,11 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   La pastilla de la prioridad va en negrita (700, como en la maqueta aprobada) y siempre dice la prioridad: el color nunca es lo único que la distingue.
   Un dataset relacionado es enlace a su `url` y una fuente, a sí misma, solo si la dirección es `https://`; si no, el texto solo.
   Los campos sugeridos y las listas de enlaces llevan `word-break: break-word` y `overflow-wrap: anywhere`: un campo de 64 caracteres, un slug de 100 o una fuente larga sin espacios no ensanchan el mail.
+- La frase y el recuadro de la principal (`aclaracion` y `recuadro` del modelo; la regla y el motivo, en `docs/temas/dato-quincena-principal-equipo.md`):
+  la frase dice que la principal del correo es la de Datito y no la del equipo, y es la misma antes y después de que el equipo elija, en cualquier envío;
+  va en un párrafo como el de la bajada, en `COLORES.subtitulo` (el gris de la bajada no llega a 4,5:1);
+  el recuadro, en celeste, lleva «Esta edición se lee mejor en el RPAD», qué hay en el RPAD y el mismo botón «Ver la edición en el RPAD»;
+  la plantilla dibuja cada uno solo si el modelo lo trae.
 - El nombre del bot llega a la plantilla por el modelo (`modeloDelMail`): la plantilla no lo escribe.
 - Todo texto de la edición va escapado y con sus saltos como `<br>`; una dirección es enlace solo si es `https://`.
 - El texto plano lo arma el servidor con lo mismo: no es el `correo_texto` del bot, que trae el saludo de otros destinatarios.
@@ -182,6 +192,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   Las propuestas de datasets nuevos, en el mismo lugar que en el HTML: «Propuestas de datasets nuevos», un renglón en blanco y cada una en renglones seguidos, separadas por un renglón en blanco.
   Cada una: la franja; el título con sus orígenes entre corchetes; la prioridad con «(Valor alto · Riesgo bajo)»; «Por qué abrirlo» y la justificación; «Formato sugerido: CSV»; «Campos sugeridos: fecha, barrio»; «Cómo anonimizar» y su texto, si hay; los relacionados, «- nombre: dirección» (la dirección solo si es `https://`); y las fuentes, como llegaron.
   Con `[]`, «Propuestas de datasets nuevos» y en el renglón siguiente «Esta quincena no hay propuestas de datasets.».
+  La frase va un renglón debajo de la bajada, en el mismo bloque, y el recuadro es un bloque «Esta edición se lee mejor en el RPAD: <dirección>» después del bloque del título.
 - Adjuntos: la infografía PNG en línea, la misma PNG como archivo y el SVG si llegó (`datoQuincenaTemplate(modelo, { conSvg })`), con los nombres del manifiesto.
 - Sin direcciones en lo que se muestra: ni la lista de ediciones ni el detalle traen emails ni nombres de quienes lo reciben; el texto de nodemailer, que puede traer la dirección, va a la consola solo con su código.
 
