@@ -22,7 +22,7 @@ import { sendEmail } from '../services/emailService.js';
 
 const ASUNTO_23 = 'Dato de la Quincena - 23/11/2026';
 const TABLAS = ['dato_quincena_envios', 'dato_quincena_correos', 'dato_quincena_destinatarios', 'dato_quincena_adjuntos',
-  'dato_quincena_propuestas', 'dato_quincena_ediciones', 'usuarios_licencias', 'usuarios'];
+  'dato_quincena_principal_equipo', 'dato_quincena_propuestas', 'dato_quincena_ediciones', 'usuarios_licencias', 'usuarios'];
 
 let base, dbReal, emailSoloA, servicio, datos, feriadosDatos, controlador, correos, pool;
 
@@ -283,10 +283,14 @@ describe('las propuestas de datasets nuevos en el mail (contrato v1.4)', () => {
   const SECCION = 'Propuestas de datasets nuevos';
   const BOTON = 'Ver la edición en el RPAD';
   const conDatasets = (lista) => (edicion) => { edicion.propuestas_datasets = lista; };
-  // Que cada parte esté, después de la última propuesta, y en ese orden
+  // Que cada parte esté, después de la última propuesta, y en ese orden. Se busca desde la última propuesta: el botón del
+  // recuadro al RPAD, arriba (spec 2026-11-21-dato-quincena-principal-equipo, 5), no cuenta. Y la sección, una sola vez en todo el
+  // mail: buscar desde ahí no tiene que esconder otra copia más arriba
   const enOrden = (texto, partes) => {
-    const lugares = partes.map((parte) => texto.indexOf(parte));
-    assert.ok(lugares.every((lugar) => lugar > texto.indexOf('Propuesta 2 de 2')), partes.join(' | '));
+    assert.equal(texto.split(SECCION).length - 1, 1, 'la sección aparece una sola vez en el mail');
+    const desde = texto.indexOf('Propuesta 2 de 2');
+    const lugares = partes.map((parte) => texto.indexOf(parte, desde));
+    assert.ok(lugares.every((lugar) => lugar > desde), partes.join(' | '));
     assert.deepEqual([...lugares].sort((a, b) => a - b), lugares, partes.join(' | '));
   };
   const TRES = [
@@ -340,6 +344,49 @@ describe('las propuestas de datasets nuevos en el mail (contrato v1.4)', () => {
     assert.ok(!completa.HTML.includes('Dataset nuevo'));
     enOrden(completa.Text.replace(/\r\n/g, '\n'),
       [`\n\n${SECCION}\nEsta quincena no hay propuestas de datasets.\n\n${BOTON}: `]);
+  });
+});
+
+// spec 2026-11-21-dato-quincena-principal-equipo, 5 (Review Focus 4 del plan): la frase de la principal es fija y el mail no lee la
+// elección del equipo, así que la prueba de una edición (como un reintento o un reenvío, que arman el mail igual, con mailPara)
+// sale igual antes y después de que el equipo elija otra principal. El mail se toma del transporte (`enviar`), sin Mailpit; la
+// elección se guarda con un INSERT, como la deja el PUT
+describe('la principal del equipo no cambia el mail (spec 2026-11-21-dato-quincena-principal-equipo, 5)', () => {
+  it('la prueba de una edición, antes y después de que el equipo elija otra principal, da el mismo HTML y el mismo texto', async () => {
+    const uno = await persona({ clave: 'Uno', rol: 'admin' });
+    const usuario = { id: uno.id, nombre_completo: 'PruebaUno Ejemplo', email: uno.email };
+    const id = await llega('2026-11-23', '2026-11-23 07:30:00');
+    const mails = [];
+    const enviar = async (mail) => {
+      mails.push(mail);
+      return { success: true };
+    };
+    const prueba = async (ahora) => assert.deepEqual(
+      await servicio.mandarPrueba({ edicion: { id, tipo: 'regular' }, usuario, ahora, enviar }), { estado: 'hecho', enviado: true }
+    );
+
+    await prueba('2026-11-23 10:00:00');
+    await query(
+      "INSERT INTO dato_quincena_principal_equipo (edicion_id, orden, elegida_por, elegida_at) VALUES (?, 2, ?, '2026-11-23 10:12:00')",
+      [id, uno.id]
+    );
+    await prueba('2026-11-23 10:30:00');
+
+    assert.equal(mails.length, 2);
+    const [antes, despues] = mails;
+    assert.equal(despues.subject, antes.subject);
+    assert.equal(despues.html, antes.html);
+    assert.equal(despues.text, antes.text);
+    // Con la frase fija y el recuadro; la principal del mail sigue siendo la de Datito (la 1)
+    const frase = 'La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.';
+    assert.ok(antes.html.includes(`>${frase}</p>`) && antes.text.includes(`\n${frase}\n`));
+    assert.ok(antes.html.includes('>Esta edición se lee mejor en el RPAD</p>'));
+    assert.ok(antes.text.includes('Propuesta 1 de 2 (principal)\n') && !antes.text.includes('Propuesta 2 de 2 (principal)'));
+    // La elección quedó guardada: el mail no la leyó
+    const [{ elecciones }] = await query(
+      'SELECT COUNT(*) AS elecciones FROM dato_quincena_principal_equipo WHERE edicion_id = ?', [id]
+    );
+    assert.equal(Number(elecciones), 1);
   });
 });
 

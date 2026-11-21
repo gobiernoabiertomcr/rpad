@@ -48,7 +48,9 @@ const RUTAS_DEL_CORREO_DEL_DATO = [
   ['PUT', '/dato-quincena/correo/destinatarios', 400, 'La lista de personas no es válida.'],
   ['GET', '/dato-quincena/ediciones/999999/correo', 404, 'No existe esa edición.'],
   ['POST', '/dato-quincena/ediciones/999999/reenvios', 404, 'No existe esa edición.'],
-  ['POST', '/dato-quincena/ediciones/999999/prueba', 404, 'No existe esa edición.']
+  ['POST', '/dato-quincena/ediciones/999999/prueba', 404, 'No existe esa edición.'],
+  // La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 2): solo administración, como la caja Correo
+  ['PUT', '/dato-quincena/ediciones/999999/principal-equipo', 404, 'No existe esa edición.']
 ];
 
 // Rutas que solo un admin puede usar. Los IDs no importan: el rol se valida antes.

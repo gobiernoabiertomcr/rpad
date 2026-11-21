@@ -1209,9 +1209,41 @@ describe('modeloDelMail: lo que recibe la plantilla (spec, 10)', () => {
     assert.equal(m.primerNombre, 'Persona');
     assert.equal(m.url, URL_DE_PRUEBA);
     assert.deepEqual(Object.keys(m), [
-      'asunto', 'primerNombre', 'titulo', 'numero', 'bajada', 'agenda_grupos', 'propuestas', 'propuestas_datasets', 'url',
-      'nombreDelBot'
+      'asunto', 'primerNombre', 'titulo', 'numero', 'bajada', 'aclaracion', 'recuadro', 'agenda_grupos', 'propuestas',
+      'propuestas_datasets', 'url', 'nombreDelBot'
     ]);
+  });
+
+  // spec 2026-11-21-dato-quincena-principal-equipo, 5: la frase de la principal, con el nombre de NOMBRE_DEL_BOT (la plantilla no
+  // lo nombra), y el recuadro con el botón al RPAD. Fijos: no leen la elección del equipo, así que la corrida, un reintento, un
+  // reenvío y la prueba salen iguales antes y después de que el equipo elija
+  it('la frase de la principal y el recuadro: fijos, con el nombre del bot', () => {
+    const m = modelo();
+    assert.equal(m.aclaracion, 'La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.');
+    assert.equal(m.aclaracion,
+      `La principal de este correo es la que marcó ${NOMBRE_DEL_BOT}: la del equipo se elige y se ve en el RPAD.`);
+    assert.equal(m.recuadro, true);
+    for (const cambios of [{ prueba: true }, { nombreCompleto: null }]) {
+      assert.equal(modelo(cambios).aclaracion, m.aclaracion, JSON.stringify(cambios));
+      assert.equal(modelo(cambios).recuadro, true, JSON.stringify(cambios));
+    }
+    const piloto = detalleDe(pilotoDePrueba(), { tipo: 'piloto', referencia_piloto: 'piloto-4', numero: null });
+    assert.equal(modelo({ detalle: piloto, prueba: true }).aclaracion, m.aclaracion);
+  });
+
+  // Review Focus 4 del plan 2026-11-21-dato-quincena-principal-equipo: lo que el detalle suma para la página (las dos principales)
+  // no entra al modelo. El detalle armado con una elección del equipo da el mismo modelo que el armado sin ella
+  it('el modelo no lee la principal del equipo: con una elegida, el mismo modelo', () => {
+    const base = { fila: fila(), guardadas: [{ orden: 1, dataset_id: 1, dataset_activo: true }], adjuntos: [] };
+    const sinElegir = detalleDeLaEdicion({ ...base, edicion: edicionDePrueba() });
+    const elegida = detalleDeLaEdicion({
+      ...base, edicion: edicionDePrueba(), eleccion: { orden: 2, nombre: 'Persona Inventada', elegida_at: '2026-11-23 10:12:00' }
+    });
+    // La elección sí llegó al detalle: la del equipo es otra que la de Datito
+    assert.equal(elegida.principal_equipo.orden, 2);
+    assert.equal(elegida.principal_equipo.coincide, false);
+    assert.notDeepEqual(elegida.principal_equipo, sinElegir.principal_equipo);
+    assert.deepEqual(modelo({ detalle: elegida }), modelo({ detalle: sinElegir }));
   });
 
   // El nombre del bot vive solo en NOMBRE_DEL_BOT (spec, 2.10): la plantilla lo recibe en el modelo para la nota del pie
@@ -1364,6 +1396,9 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
     'Dato de la Quincena - 02/11/2026',
     'Edición N.º 1',
     '2 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas.',
+    'La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.',
+    '',
+    'Esta edición se lee mejor en el RPAD: https://rpad.ejemplo.test/dato-quincena.html?id=12',
     '',
     'La infografía de la propuesta principal. Va adjunta en PNG y en SVG (para editarla).',
     '',
@@ -1470,6 +1505,20 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
     assert.ok(!text.includes('Propuesta 2 de 2 (principal)'));
     assert.doesNotMatch(text, /<\/?[a-z][^>]*>|&(amp|lt|gt|quot|nbsp);/i);
     assert.equal(text, TEXTO);
+  });
+
+  // spec 2026-11-21-dato-quincena-principal-equipo, 5: la frase, en el bloque del título, debajo de la bajada; el recuadro, en un
+  // bloque propio después del del título, con la misma dirección del final. Sin las dos claves, el texto de antes
+  it('la frase debajo de la bajada y el recuadro en su bloque, con la dirección del final; sin las claves, el texto de antes', () => {
+    const { text } = datoQuincenaTemplate(modelo(), { conSvg: true });
+    const FRASE = 'La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.';
+    const RECUADRO = 'Esta edición se lee mejor en el RPAD: https://rpad.ejemplo.test/dato-quincena.html?id=12';
+    assert.ok(text.includes(`ni publicadas.\n${FRASE}\n\n${RECUADRO}\n\nLa infografía`));
+    assert.equal(text.split('https://rpad.ejemplo.test/dato-quincena.html?id=12').length - 1, 2);
+    const m = modelo();
+    delete m.aclaracion;
+    delete m.recuadro;
+    assert.equal(datoQuincenaTemplate(m, { conSvg: true }).text, TEXTO.replace(`\n${FRASE}`, '').replace(`${RECUADRO}\n\n`, ''));
   });
 
   it('sin SVG, el pie de la infografía no lo nombra; sin nombre, «Buen día.»; una prueba lleva «[PRUEBA] » en el asunto', () => {
@@ -1615,6 +1664,9 @@ describe('datoQuincenaTemplate: las propuestas de datasets nuevos (contrato v1.4
     assert.ok(lugares.every((lugar) => lugar >= 0), `faltan: ${partes.filter((_, i) => lugares[i] < 0).join(' | ')}`);
     assert.deepEqual([...lugares].sort((a, b) => a - b), lugares, partes.join(' | '));
   };
+  // El mail desde la infografía: el botón del recuadro al RPAD, arriba (spec 2026-11-21-dato-quincena-principal-equipo, 5), queda
+  // afuera, y el que sigue a la sección es el del final
+  const desdeLaInfografia = (html) => html.slice(html.indexOf('<img src="cid:'));
   const PASTILLA_NEUTRA = 'background-color: #E4E9EF; color: #2B3A4A; font-size: 12px; font-weight: 600; padding: 2px 10px; '
     + 'border-radius: 10px;';
   const pastillaNeutra = (texto) => `<span style="display: inline-block; margin: 0 6px 6px 0; ${PASTILLA_NEUTRA}">${texto}</span>`;
@@ -1663,8 +1715,8 @@ describe('datoQuincenaTemplate: las propuestas de datasets nuevos (contrato v1.4
       + `<p style="margin: 0; color: #2B3A4A; font-size: 14px; line-height: 1.6;">${VACIA}</p>`));
     // Una fila más del marco, entre la de las propuestas y la del botón: el resto, igual que sin la clave
     assert.equal(sinLaSeccion(html), SIN.html);
-    enOrden(html, [enlace('https://datos.ejemplo.gob.ar/c.csv', 'https://datos.ejemplo.gob.ar/c.csv'), `>${TITULO}</h3>`,
-      `>${VACIA}</p>`, `>${BOTON}</a>`]);
+    enOrden(desdeLaInfografia(html), [enlace('https://datos.ejemplo.gob.ar/c.csv', 'https://datos.ejemplo.gob.ar/c.csv'),
+      `>${TITULO}</h3>`, `>${VACIA}</p>`, `>${BOTON}</a>`]);
     assert.ok(!html.includes('Dataset nuevo'));
     assert.equal(text, SIN.text.replace(`\n\n${BOTON}: `, `\n\n${TITULO}\n${VACIA}\n\n${BOTON}: `));
     assert.ok(text.includes(`Fuentes\nhttps://datos.ejemplo.gob.ar/c.csv\n\n${TITULO}\n${VACIA}\n\n${BOTON}: https://rpad.ejemplo.test/`));
@@ -1675,8 +1727,8 @@ describe('datoQuincenaTemplate: las propuestas de datasets nuevos (contrato v1.4
     assert.equal(sinLaSeccion(html), SIN.html);
     const franja = (n) => '<td bgcolor="#EEF6F1" style="padding: 8px 16px; background-color: #EEF6F1; border-bottom: 1px solid #D5E9DD;">'
       + `<span style="color: #2E6B4C; font-size: 13px; font-weight: 700;">Dataset nuevo ${n} de 3</span></td>`;
-    enOrden(html, [enlace('https://datos.ejemplo.gob.ar/c.csv', 'https://datos.ejemplo.gob.ar/c.csv'), `>${TITULO}</h3>`,
-      franja(1), franja(2), franja(3), `>${BOTON}</a>`]);
+    enOrden(desdeLaInfografia(html), [enlace('https://datos.ejemplo.gob.ar/c.csv', 'https://datos.ejemplo.gob.ar/c.csv'),
+      `>${TITULO}</h3>`, franja(1), franja(2), franja(3), `>${BOTON}</a>`]);
     assert.ok(!html.includes(VACIA));
     assert.equal(veces(html, 'bgcolor="#EEF6F1"'), 3);
     // Cada una en una tarjeta blanca con el borde de las propuestas que no son la principal

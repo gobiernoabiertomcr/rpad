@@ -7,6 +7,8 @@
  * Las fechas se leen como texto 'AAAA-MM-DD' (DATE_FORMAT: el pool no tiene `dateStrings`) y la llegada como segundos UNIX
  * (UNIX_TIMESTAMP: un TIMESTAMP está en UTC y `NOW()` da UTC en el Docker local y hora argentina en producción).
  * Los bytes de los archivos (`contenido`) solo los lee `leerArchivo`, la descarga: la lista y el detalle nunca los traen.
+ * La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo) vive en su propia tabla, una fila por elección: la leen la
+ * lista y el detalle, y la escribe `guardarPrincipalDelEquipo`, sin tocar lo archivado.
  */
 import pool from '../config/database.js';
 import { ARCHIVOS, TIPO_DE_DESCARGA, nombreDeLaEdicion } from './datoQuincenaReglas.js';
@@ -140,6 +142,8 @@ const numeroDeLaFila = (numero) => (numero === null || numero === undefined ? nu
  * orden (`principal` booleano) y `correo_del_bot`, el correo que el bot dice haber mandado (`{ estado, enviado_at }` del JSON
  * guardado, con JSON_VALUE: la lista no lee metadata entera), para la pastilla de una edición sin envío del RPAD.
  * Un año sin ediciones da `filas` vacía. Las propuestas, con `IN (?)` solo si hay ediciones.
+ * `orden_del_equipo` (spec 2026-11-21-dato-quincena-principal-equipo, 3): el orden de la principal del equipo vigente (la elección
+ * de mayor id de la edición), o null si nadie eligió; una sola consulta más, también con `IN (?)`.
  */
 export const listarEdiciones = async (anio) => {
   const [anios] = await pool.query(
@@ -174,6 +178,17 @@ export const listarEdiciones = async (anio) => {
      ORDER BY edicion_id, orden`,
     [ids]
   );
+  // La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 3): el orden de la elección vigente de cada edición, la
+  // de mayor id, con una sola consulta más
+  const [elecciones] = await pool.query(
+    `SELECT pe.edicion_id, pe.orden
+     FROM dato_quincena_principal_equipo pe
+     JOIN (
+       SELECT edicion_id, MAX(id) AS id FROM dato_quincena_principal_equipo WHERE edicion_id IN (?) GROUP BY edicion_id
+     ) vigente ON vigente.id = pe.id`,
+    [ids]
+  );
+  const delEquipo = new Map(elecciones.map((eleccion) => [Number(eleccion.edicion_id), Number(eleccion.orden)]));
   const porEdicion = new Map(ids.map((id) => [id, []]));
   for (const propuesta of propuestas) {
     porEdicion.get(Number(propuesta.edicion_id))?.push({
@@ -194,6 +209,7 @@ export const listarEdiciones = async (anio) => {
       referencia_piloto: edicion.referencia_piloto,
       numero: numeroDeLaFila(edicion.numero),
       propuestas: porEdicion.get(Number(edicion.id)),
+      orden_del_equipo: delEquipo.get(Number(edicion.id)) ?? null,
       correo_del_bot: { estado: edicion.correo_estado ?? null, enviado_at: edicion.correo_enviado_at ?? null }
     }))
   };
@@ -318,4 +334,80 @@ export const leerArchivo = async (id, campo) => {
     existe: true,
     archivo: adjunto ? { nombre: adjunto.nombre, mime: TIPO_DE_DESCARGA[campo], contenido: adjunto.contenido } : null
   };
+};
+
+/**
+ * La principal del equipo vigente de una edición (spec 2026-11-21-dato-quincena-principal-equipo, 3): la elección de mayor id, con el
+ * `nombre_completo` de quien eligió (null si la cuenta se borró: elegida_por quedó en NULL) y `elegida_at` como texto
+ * 'AAAA-MM-DD HH:MM:SS', ya en hora argentina (se guardó con ahoraArgentina). null si nadie eligió. La lee solo `ver`: el mail no.
+ */
+export const leerPrincipalDelEquipo = async (edicionId) => {
+  const [[fila]] = await pool.execute(
+    `SELECT pe.orden, u.nombre_completo AS nombre, DATE_FORMAT(pe.elegida_at, '%Y-%m-%d %H:%i:%s') AS elegida_at
+     FROM dato_quincena_principal_equipo pe
+     LEFT JOIN usuarios u ON u.id = pe.elegida_por
+     WHERE pe.edicion_id = ?
+     ORDER BY pe.id DESC
+     LIMIT 1`,
+    [edicionId]
+  );
+  return fila ? { orden: Number(fila.orden), nombre: fila.nombre ?? null, elegida_at: fila.elegida_at } : null;
+};
+
+/**
+ * Guarda la principal del equipo de una edición (spec 2026-11-21-dato-quincena-principal-equipo, 2), en una transacción con la fila
+ * de la edición bloqueada (FOR UPDATE): dos elecciones a la vez de la misma edición esperan una a la otra, así no se cruzan, gana la
+ * última y la misma no se repite. Las demás lecturas van sin candado, a propósito: con LOCK IN SHARE MODE, dos elecciones de
+ * ediciones distintas tomaban el mismo hueco del índice (edicion_id, orden) y el INSERT de cada una esperaba al otro (un deadlock y
+ * un 500). El FOR UPDATE ya ordena las de la misma edición, y la FK del INSERT toma sola el candado de la propuesta.
+ * `orden` es el de ordenDeLaEleccion (null si el cuerpo no trae un número que sirva). Si la edición no existe, `existe` false; si
+ * el orden no es el de una de sus propuestas, `valida` false; si ya es el de la vigente (la de mayor id), no escribe nada; si no,
+ * inserta una fila con quién (`usuarioId`) y cuándo (`ahora`, 'AAAA-MM-DD HH:MM:SS' de ahoraArgentina, nunca NOW()). Nunca un
+ * UPDATE ni un DELETE: lo archivado no cambia. `coincide`: si el orden es el de la principal de Datito (la columna principal o, si
+ * ninguna, la primera). Resuelve `{ existe, valida, cambio, coincide }`; un error de la base, tira. La conexión se devuelve
+ * siempre.
+ */
+export const guardarPrincipalDelEquipo = async ({ edicionId, orden, usuarioId, ahora = ahoraArgentina() }) => {
+  const sinGuardar = (existe) => ({ existe, valida: false, cambio: false, coincide: false });
+  const conexion = await pool.getConnection();
+  try {
+    await conexion.beginTransaction();
+    try {
+      const [[edicion]] = await conexion.execute('SELECT id FROM dato_quincena_ediciones WHERE id = ? FOR UPDATE', [edicionId]);
+      if (!edicion) {
+        await conexion.rollback();
+        return sinGuardar(false);
+      }
+      const [propuestas] = await conexion.execute(
+        'SELECT orden, principal FROM dato_quincena_propuestas WHERE edicion_id = ? ORDER BY orden', [edicionId]
+      );
+      const enOrden = propuestas.map((propuesta) => ({ orden: Number(propuesta.orden), principal: Number(propuesta.principal) === 1 }));
+      if (orden === null || !enOrden.some((propuesta) => propuesta.orden === orden)) {
+        await conexion.rollback();
+        return sinGuardar(true);
+      }
+      const deDatito = enOrden.find((propuesta) => propuesta.principal) ?? enOrden[0];
+      const coincide = deDatito.orden === orden;
+      // Con la edición bloqueada, la vigente es la última que se guardó: un SELECT común la ve, porque la foto de la transacción
+      // nace en su primera lectura sin candado, ya con el bloqueo tomado y lo de la elección anterior confirmado
+      const [[vigente]] = await conexion.execute(
+        'SELECT orden FROM dato_quincena_principal_equipo WHERE edicion_id = ? ORDER BY id DESC LIMIT 1', [edicionId]
+      );
+      if (vigente && Number(vigente.orden) === orden) {
+        await conexion.commit();
+        return { existe: true, valida: true, cambio: false, coincide };
+      }
+      await conexion.execute(
+        'INSERT INTO dato_quincena_principal_equipo (edicion_id, orden, elegida_por, elegida_at) VALUES (?, ?, ?, ?)',
+        [edicionId, orden, usuarioId, ahora]
+      );
+      await conexion.commit();
+      return { existe: true, valida: true, cambio: true, coincide };
+    } catch (error) {
+      await conexion.rollback().catch(() => {});
+      throw error;
+    }
+  } finally {
+    conexion.release();
+  }
 };

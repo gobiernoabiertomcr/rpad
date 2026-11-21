@@ -832,6 +832,9 @@ const notaDelDatoQuincena = (nombreDelBot) => {
 };
 const PIE_DE_LA_INFOGRAFIA = 'La infografía de la propuesta principal.';
 const BOTON_DEL_DATO_QUINCENA = 'Ver la edición en el RPAD';
+// El recuadro al RPAD (spec 2026-11-21-dato-quincena-principal-equipo, 5)
+const TITULO_DEL_RECUADRO_AL_RPAD = 'Esta edición se lee mejor en el RPAD';
+const TEXTO_DEL_RECUADRO_AL_RPAD = 'Las propuestas de a una, la agenda y los datasets nuevos, con todo listo para copiar.';
 const PARA_VALIDAR = 'Para validar antes de publicar';
 
 // Las pastillas de las etiquetas de una propuesta (Principal va en la franja): «Efeméride», la suave; «Repite», blanca con un
@@ -1107,6 +1110,31 @@ const datasetsNuevosDelDato = (lista) => {
               </table>`;
 };
 
+// La frase de la principal del modelo (spec 2026-11-21-dato-quincena-principal-equipo, 5), si es un texto con algo; si no, null:
+// un modelo armado sin ella sale como antes
+const aclaracionDelModelo = (modelo) => {
+  const aclaracion = textoDelDato(modelo?.aclaracion);
+  return aclaracion.trim() === '' ? null : aclaracion;
+};
+// La frase en un párrafo como el de la bajada, pero en el gris azulado del número (#5A7391, 4,89:1 sobre blanco): el gris de la
+// bajada no llega a 4,5:1. Sin frase, nada
+const parrafoDeLaAclaracion = (aclaracion) => (aclaracion === null
+  ? ''
+  : `<p style="margin: 6px 0 0 0; color: ${COLORES.subtitulo}; font-size: 14px;">${escapeHtml(aclaracion)}</p>`);
+
+// El recuadro al RPAD (spec 2026-11-21-dato-quincena-principal-equipo, 5): en el celeste del encabezado y centrado, el título en
+// negrita, el texto y el mismo botón del final, con la misma dirección (el del final queda). El párrafo deja 4 px abajo, que con
+// los 8 de arriba del botón son los 12 de la maqueta aprobada
+const recuadroAlRpad = (url) => `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; background-color: ${COLORES.encabezado}; border: 1px solid ${COLORES.bordeEncabezado}; border-radius: 6px; border-collapse: separate; border-spacing: 0;">
+                <tr>
+                  <td align="center" style="padding: 16px 20px;">
+                    <p style="margin: 0; color: ${COLORES.titulo}; font-size: 16px; font-weight: 700;">${escapeHtml(TITULO_DEL_RECUADRO_AL_RPAD)}</p>
+                    <p style="margin: 6px 0 4px 0; color: ${COLORES.texto}; font-size: 14px; line-height: 1.5;">${escapeHtml(TEXTO_DEL_RECUADRO_AL_RPAD)}</p>
+                    ${boton({ texto: BOTON_DEL_DATO_QUINCENA, url })}
+                  </td>
+                </tr>
+              </table>`;
+
 // La infografía en línea (cid), a lo ancho del cuerpo (600 menos 24 de cada lado), con su pie
 const infografiaDelDato = (propuestas, conSvg) => {
   const principal = principalDe(propuestas);
@@ -1198,6 +1226,9 @@ const datasetsNuevosEnTexto = (lista) => (lista.length === 0
  * caja de la repetición después de la foto: spec 2026-11-14-dato-quincena-v1-3, 5); si la edición trae la clave, las propuestas
  * de datasets nuevos (`propuestas_datasets`: spec 2026-11-18-dato-quincena-propuestas-datasets, 6); el botón «Ver la edición en el
  * RPAD» y la nota, con el nombre del bot del modelo.
+ * Si el modelo los trae (spec 2026-11-21-dato-quincena-principal-equipo, 5): la frase de la principal (`aclaracion`) después de la
+ * bajada y, después del saludo, el recuadro al RPAD (`recuadro`), con el mismo botón; en el texto plano, la frase debajo de la
+ * bajada y el recuadro en su bloque, después del del título.
  * Todo texto de la edición va escapado y con sus saltos de línea como <br>; una dirección es enlace solo si es https://. El
  * texto plano dice lo mismo, con los textos tal como llegaron.
  */
@@ -1212,6 +1243,9 @@ export const datoQuincenaTemplate = (modelo, { conSvg = false } = {}) => {
   const datasetsNuevos = Array.isArray(modelo?.propuestas_datasets) ? modelo.propuestas_datasets : null;
   const url = textoDelDato(modelo?.url);
   const nota = notaDelDatoQuincena(modelo?.nombreDelBot);
+  // La frase y el recuadro, solo si el modelo los trae (el recuadro, con el true literal): sin ellos, el mail de antes
+  const aclaracion = aclaracionDelModelo(modelo);
+  const conRecuadro = modelo?.recuadro === true;
   return {
     subject: textoDelDato(modelo?.asunto),
     html: marcoEmail({
@@ -1220,7 +1254,9 @@ export const datoQuincenaTemplate = (modelo, { conSvg = false } = {}) => {
         tituloCuerpo(textoDelDato(modelo?.titulo))
           + (numero === '' ? '' : `<p style="margin: 4px 0 0 0; color: ${COLORES.subtitulo}; font-size: 13px; font-weight: 600;">${escapeHtml(numero)}</p>`)
           + `<p style="margin: 6px 0 0 0; color: ${COLORES.secundario}; font-size: 14px;">${escapeHtml(textoDelDato(modelo?.bajada))}</p>`
+          + parrafoDeLaAclaracion(aclaracion)
           + parrafo(escapeHtml(saludo), '16px 0 0 0'),
+        conRecuadro ? recuadroAlRpad(url) : null,
         infografiaDelDato(propuestas, conElSvg),
         agendaDelDato(agenda),
         propuestasDelDato(propuestas),
@@ -1231,7 +1267,11 @@ export const datoQuincenaTemplate = (modelo, { conSvg = false } = {}) => {
     }),
     text: [
       saludo,
-      [textoDelDato(modelo?.titulo), ...(numero === '' ? [] : [numero]), textoDelDato(modelo?.bajada)].join('\n'),
+      [
+        textoDelDato(modelo?.titulo), ...(numero === '' ? [] : [numero]), textoDelDato(modelo?.bajada),
+        ...(aclaracion === null ? [] : [aclaracion])
+      ].join('\n'),
+      ...(conRecuadro ? [`${TITULO_DEL_RECUADRO_AL_RPAD}: ${url}`] : []),
       pieDeLaInfografia(conElSvg),
       ...(agenda.length > 0 ? [`Agenda de la quincena\n${agenda.map(grupoEnTexto).join('\n\n')}`] : []),
       ...propuestas.map(textoDeLaPropuesta),

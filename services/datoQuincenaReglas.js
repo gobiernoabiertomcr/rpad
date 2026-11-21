@@ -1085,6 +1085,11 @@ export const TIPO_DE_DESCARGA = Object.freeze({
 // traiga uno
 const numeroDe = ({ tipo, numero }) => (tipo === 'regular' ? textoDelNumero(numero) : null);
 
+// Los rótulos de las dos principales (spec 2026-11-21-dato-quincena-principal-equipo, 3): la de Datito es la que marcó el bot (la
+// columna principal, o la etiqueta del JSON); la del equipo, la que eligió administración, que vive en su propia tabla
+const PRINCIPAL_DEL_EQUIPO = 'Principal del equipo';
+const PRINCIPAL_DE_DATITO = `Principal de ${NOMBRE_DEL_BOT}`;
+
 /**
  * Una edición de la lista, de una fila de listarEdiciones: la fecha larga, la marca del piloto, el título y la cifra de la
  * principal, y el resto de las propuestas por el nombre de su dataset, en su orden. Sin ninguna marcada como principal (el POST
@@ -1092,16 +1097,24 @@ const numeroDe = ({ tipo, numero }) => (tipo === 'regular' ? textoDelNumero(nume
  * 2026-11-12-dato-quincena-correo, 12): el número de una regular, de `numero` de la fila (cuántas regulares hay con su fecha o
  * antes), la fecha en partes, la cantidad de propuestas y `envio`, la pastilla del envío que arma el controlador con
  * pastillaDelEnvio y lo de quien pide (`{ tipo, texto }`, o null si no lleva).
+ * La principal que cuenta (spec 2026-11-21-dato-quincena-principal-equipo, 3): la del equipo, si eligió (`orden_del_equipo` de la
+ * fila, el orden de la elección vigente; null o sin la clave, no eligió), y si no, la de Datito, con su `rotulo`. Un orden que la
+ * edición no tiene (solo con un SQL a mano: la FK no lo deja) cuenta como sin elegir. El resto, sin la que se muestra.
  */
 export const itemDeLaLista = (fila, envio = null) => {
   const { id, tipo, fecha_edicion, referencia_piloto, propuestas } = fila;
   const enOrden = [...propuestas].sort((a, b) => a.orden - b.orden);
-  const principal = enOrden.find((propuesta) => propuesta.principal) ?? enOrden[0] ?? null;
+  const delEquipo = enOrden.find((propuesta) => propuesta.orden === fila.orden_del_equipo) ?? null;
+  const principal = delEquipo ?? enOrden.find((propuesta) => propuesta.principal) ?? enOrden[0] ?? null;
   return {
     id,
     fecha_texto: fechaLarga(fecha_edicion),
     marca: marcaDePiloto(tipo, referencia_piloto),
-    principal: principal === null ? null : { titulo: principal.titulo, cifra_clave: principal.cifra_clave },
+    principal: principal === null ? null : {
+      titulo: principal.titulo,
+      cifra_clave: principal.cifra_clave,
+      rotulo: delEquipo === null ? PRINCIPAL_DE_DATITO : PRINCIPAL_DEL_EQUIPO
+    },
     resto: textoDelResto(enOrden.filter((propuesta) => propuesta !== principal).map((propuesta) => propuesta.dataset_nombre)),
     numero: numeroDe(fila),
     fecha_partes: partesDeLaFecha(fecha_edicion),
@@ -1287,6 +1300,80 @@ const textoDeVerDatasetsNuevos = (n) => {
   return n === 1 ? 'Ver el dataset nuevo' : 'Ver los datasets nuevos';
 };
 
+// La principal de Datito de una edición ya validada (spec 2026-11-21-dato-quincena-principal-equipo, 3): la que lleva la etiqueta
+// Principal en el JSON (el POST deja una sola) o, si ninguna, la primera; sin propuestas (solo con un SQL a mano), null
+const principalDeDatito = (propuestas) => propuestas.find((propuesta) => propuesta.etiquetas.includes('Principal'))
+  ?? propuestas[0] ?? null;
+
+// Lo de la principal de Datito en el detalle: su orden y sus textos (el rótulo de la portada, la pastilla de la propuesta, la marca del
+// índice, y el pie y el alt de la infografía, que es la suya), con el nombre del bot. null sin propuestas
+const principalDatitoDelDetalle = (propuesta) => (propuesta === null ? null : {
+  orden: propuesta.orden,
+  rotulo: `La principal de ${NOMBRE_DEL_BOT}`,
+  pastilla: PRINCIPAL_DE_DATITO,
+  marca: NOMBRE_DEL_BOT,
+  infografia_pie: `La infografía de la principal de ${NOMBRE_DEL_BOT}.`,
+  infografia_alt: `Infografía de la principal de ${NOMBRE_DEL_BOT}: ${propuesta.titulo}`
+});
+
+// «La eligió Persona Inventada el 23/11/2026 a las 10:12.», de la elección vigente: el nombre_completo de quien eligió (sin la cuenta,
+// que se borró, «el equipo») y `elegida_at`, 'AAAA-MM-DD HH:MM:SS' ya en hora argentina (se guardó con ahoraArgentina), cortada como
+// texto
+const quienEligio = ({ nombre, elegida_at }) => {
+  const quien = typeof nombre === 'string' && nombre.trim() !== '' ? nombre : 'el equipo';
+  return `La eligió ${quien} el ${formatoCorto(elegida_at.slice(0, 10))} a las ${elegida_at.slice(11, 16)}.`;
+};
+
+/**
+ * Lo de la principal del equipo en el detalle (spec 2026-11-21-dato-quincena-principal-equipo, 3), de la elección vigente
+ * (`eleccion`, `{ orden, nombre, elegida_at }` de leerPrincipalDelEquipo, o null) y de la principal de Datito: el orden elegido, si
+ * coincide con la de Datito, los rótulos, el resumen de la franja, la cifra (solo si es otra) y quién y cuándo. Sin elegir, o con un
+ * orden que la edición no tiene (solo con un SQL a mano: la FK no lo deja), «todavía no la eligió.», sin cifra ni quién.
+ */
+const principalEquipoDelDetalle = (propuestas, deDatito, eleccion) => {
+  const elegida = eleccion === null || eleccion === undefined
+    ? null
+    : propuestas.find((propuesta) => propuesta.orden === eleccion.orden) ?? null;
+  const rotulos = { rotulo: PRINCIPAL_DEL_EQUIPO, pastilla: PRINCIPAL_DEL_EQUIPO, marca: 'Equipo' };
+  if (elegida === null) {
+    return { orden: null, coincide: false, ...rotulos, resumen: 'todavía no la eligió.', cifra_clave: null, quien: null };
+  }
+  const coincide = elegida === deDatito;
+  return {
+    orden: elegida.orden,
+    coincide,
+    ...rotulos,
+    resumen: coincide
+      ? `la misma de ${NOMBRE_DEL_BOT} (propuesta ${elegida.orden}).`
+      : `Propuesta ${elegida.orden} · ${elegida.titulo}`,
+    cifra_clave: coincide ? null : elegida.cifra_clave,
+    quien: quienEligio(eleccion)
+  };
+};
+
+// Los textos fijos del PUT de la principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 2): un orden que no es el de
+// una propuesta de la edición (400) y el 500. El 404 es el de las lecturas, «No existe esa edición.»
+export const MENSAJES_PRINCIPAL_EQUIPO = Object.freeze({
+  orden: 'Elegí una de las propuestas de la edición.',
+  alGuardar: 'Error al guardar la principal del equipo'
+});
+
+/**
+ * El mensaje de la elección guardada (spec 2026-11-21-dato-quincena-principal-equipo, 2): «Quedó…» si cambió y «… ya era…» si no;
+ * «la de Datito» si el orden es el de la principal de Datito (`coincide`) y si no, «la propuesta N».
+ */
+export const mensajeDeLaEleccion = ({ orden, coincide, cambio }) => {
+  const cual = coincide ? `de ${NOMBRE_DEL_BOT}` : `propuesta ${orden}`;
+  return cambio ? `Quedó la ${cual} como principal del equipo.` : `La ${cual} ya era la principal del equipo.`;
+};
+
+// El orden más alto que puede tener una propuesta guardada: dato_quincena_propuestas.orden es un tinyint unsigned
+const ORDEN_MAXIMO = 255;
+
+// El `orden` del cuerpo del PUT: un número entero de 1 a ORDEN_MAXIMO, tal cual; otra cosa (un texto como '2', un 0, un decimal,
+// null o nada), null. Si es el de una propuesta de la edición lo mira la base
+export const ordenDeLaEleccion = (valor) => (Number.isSafeInteger(valor) && valor >= 1 && valor <= ORDEN_MAXIMO ? valor : null);
+
 /**
  * El detalle de una edición (sección 9), de leerEdicion: `fila` (con `metadata`, el texto guardado, `recibida_ts`, los
  * segundos UNIX de recibida_at, y `numero`, cuántas regulares hay con su fecha o antes), `edicion` (el JSON.parse de metadata,
@@ -1303,9 +1390,14 @@ const textoDeVerDatasetsNuevos = (n) => {
  * tal cual. Sin ella, la del correo del bot (textoDelCorreo): el modelo del mail arma el detalle y no la usa.
  * `previas` (spec 2026-11-14-dato-quincena-v1-3, 3) es el Map de leerEdicionesPrevias(fechasPrevias(edicion)), que leen `ver` y el
  * mail: da el id de la edición que repite cada propuesta. Sin él o con null (no se pudieron leer), ninguna repetición lleva enlace.
+ * Al final, las dos principales (spec 2026-11-21-dato-quincena-principal-equipo, 3): `principal_datito` (principalDatitoDelDetalle) y
+ * `principal_equipo` (principalEquipoDelDetalle), con `eleccion`, la elección vigente de leerPrincipalDelEquipo, que lee y pasa solo
+ * el controlador `ver`: el mail no la pasa, y sin ella la del equipo sale sin elegir. `propuestas` no cambia: cada una sigue con la
+ * principal de Datito.
  */
-export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDelCorreo, previas }) => {
+export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDelCorreo, previas, eleccion = null }) => {
   const lasPrevias = previas ?? new Map();
+  const deDatito = principalDeDatito(edicion.propuestas);
   const enlaces = new Map(guardadas
     .filter((guardada) => guardada.dataset_activo === true && guardada.dataset_id !== null)
     .map((guardada) => [guardada.orden, guardada.dataset_id]));
@@ -1340,6 +1432,8 @@ export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDe
         .filter((adjunto) => adjunto.campo === campo)
         .map((adjunto) => archivoDelDetalle(campo, adjunto.nombre, adjunto.bytes))),
       archivoDelDetalle('metadata', nombreDeLaEdicion(fila.clave), bytesDeMetadata(fila.metadata))
-    ]
+    ],
+    principal_datito: principalDatitoDelDetalle(deDatito),
+    principal_equipo: principalEquipoDelDetalle(edicion.propuestas, deDatito, eleccion)
   };
 };

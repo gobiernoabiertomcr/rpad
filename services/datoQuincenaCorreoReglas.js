@@ -868,6 +868,9 @@ const propuestasDatasetsDelModelo = (lista) => (Array.isArray(lista)
  * en sus grupos, como los arma el detalle (`agenda_grupos`, spec 2026-11-14-dato-quincena-agenda-grupos), y las propuestas en su
  * orden con su franja «Propuesta N de M», las propuestas de datasets nuevos (`propuestasDatasetsDelModelo`), la dirección de la
  * edición y el nombre del bot para la nota del pie (la plantilla no lo nombra: vive solo en NOMBRE_DEL_BOT, spec 2.10).
+ * Después de la bajada, la frase de la principal (`aclaracion`) y el recuadro al RPAD (`recuadro`), de la spec
+ * 2026-11-21-dato-quincena-principal-equipo, 5: fijos, no leen la elección del equipo (ni la recibe), así que la corrida, un
+ * reintento, un reenvío y la prueba de una edición salen iguales antes y después de que el equipo elija.
  * Copia todo: el detalle no cambia.
  */
 export const modeloDelMail = ({ detalle, fecha_edicion, nombreCompleto, url, prueba }) => {
@@ -881,6 +884,8 @@ export const modeloDelMail = ({ detalle, fecha_edicion, nombreCompleto, url, pru
     numero: detalle.numero != null ? `Edición ${detalle.numero}` : (detalle.marca ?? null),
     bajada: `${textoDeCantidad(total)} de comunicación que armó ${NOMBRE_DEL_BOT}. Son internas: todavía no están aprobadas ni `
       + 'publicadas.',
+    aclaracion: `La principal de este correo es la que marcó ${NOMBRE_DEL_BOT}: la del equipo se elige y se ve en el RPAD.`,
+    recuadro: true,
     agenda_grupos: structuredClone(detalle.agenda_grupos),
     propuestas: detalle.propuestas.map((propuesta, i) => ({
       franja: `Propuesta ${i + 1} de ${total}`,

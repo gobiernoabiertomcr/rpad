@@ -15,7 +15,7 @@ import {
   fechaLarga, marcaDePiloto, horaArgentina, diaArgentino, textoDeLlegada, textoDelCorreo, textoDeCantidad, textoDelResto,
   textoDelNumero, tamanoTexto, fotoDelDataset, textoParaCopiar, borradorParaCopiar, filasDeLaEdicion, avisosDeLaEdicion,
   reciboDe, anioDeLaLista, nombreDeLaEdicion, TIPO_DE_DESCARGA, itemDeLaLista, detalleDeLaEdicion, fechasPrevias, gruposDeLaAgenda,
-  prioridadDeDataset, propuestasDatasetsDelDetalle, matrizDePrioridad
+  prioridadDeDataset, propuestasDatasetsDelDetalle, matrizDePrioridad, MENSAJES_PRINCIPAL_EQUIPO, mensajeDeLaEleccion, ordenDeLaEleccion
 } from '../services/datoQuincenaReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
 import { RPAD_URL } from '../services/emailTemplates.js';
@@ -2722,7 +2722,7 @@ describe('itemDeLaLista', () => {
       id: 3,
       fecha_texto: 'Lunes 23 de noviembre de 2026',
       marca: null,
-      principal: { titulo: 'Título 2', cifra_clave: '2 casos' },
+      principal: { titulo: 'Título 2', cifra_clave: '2 casos', rotulo: 'Principal de Datito' },
       resto: 'Y 4 propuestas más: Dataset 1, Dataset 3, Dataset 4 y Dataset 5.',
       numero: null,
       fecha_partes: { dia: 'Lunes', fecha: '23 de noviembre', anio: 'de 2026' },
@@ -2740,9 +2740,48 @@ describe('itemDeLaLista', () => {
     const fila = filaDeLaLista(5, 'piloto', '2026-11-23', 'piloto-12', ['Dataset A', 'Dataset B']);
     fila.propuestas[0].principal = false;
     const item = itemDeLaLista(fila);
-    assert.deepEqual(item.principal, { titulo: 'Un título inventado', cifra_clave: '1.234 casos · septiembre de 2026' });
+    assert.deepEqual(item.principal, {
+      titulo: 'Un título inventado', cifra_clave: '1.234 casos · septiembre de 2026', rotulo: 'Principal de Datito'
+    });
     assert.equal(item.resto, 'Y 1 propuesta más: Dataset B.');
     assert.equal(item.marca, 'Piloto 12');
+  });
+
+  // spec 2026-11-21-dato-quincena-principal-equipo, 3: la tarjeta muestra la principal que cuenta, la del equipo si eligió (el orden
+  // de la elección vigente, `orden_del_equipo` de listarEdiciones) y, si no, la de Datito, con su rótulo; el resto, sin la que se muestra
+  it('la principal del equipo: la que eligió, con su rótulo, y el resto nombra las demás (también la de Datito)', () => {
+    const fila = { ...filaDeLaLista(14, 'regular', '2026-11-16', null, ['Dataset A', 'Dataset B', 'Dataset C'], 2), orden_del_equipo: 2 };
+    const item = itemDeLaLista(fila);
+    assert.deepEqual(item.principal, { titulo: 'Otro título 2', cifra_clave: '2 casos', rotulo: 'Principal del equipo' });
+    assert.equal(item.resto, 'Y 2 propuestas más: Dataset A y Dataset C.');
+    assert.ok(!item.resto.includes('Dataset B'));
+    assert.deepEqual(Object.keys(item), Object.keys(RESPUESTAS.lista.data.ediciones[0]));
+    assert.deepEqual(Object.keys(item.principal), Object.keys(RESPUESTAS.lista.data.ediciones[0].principal));
+  });
+
+  it('la del equipo es la misma de Datito: el rótulo del equipo, con la misma propuesta y el mismo resto', () => {
+    const fila = filaDeLaLista(14, 'regular', '2026-11-16', null, ['Dataset A', 'Dataset B', 'Dataset C'], 2);
+    const deDatito = itemDeLaLista(fila);
+    const delEquipo = itemDeLaLista({ ...fila, orden_del_equipo: 1 });
+    assert.deepEqual(delEquipo, { ...deDatito, principal: { ...deDatito.principal, rotulo: 'Principal del equipo' } });
+  });
+
+  it('sin orden_del_equipo (null o sin la clave), la de Datito: el ítem de las respuestas de la página', () => {
+    const fila = filaDeLaLista(14, 'regular', '2026-11-16', null, ['Dataset de prueba A', 'Dataset de prueba B', 'Dataset de prueba C'], 2);
+    for (const cambios of [{}, { orden_del_equipo: null }, { orden_del_equipo: undefined }]) {
+      const item = itemDeLaLista({ ...fila, ...cambios }, PASTILLAS[14]);
+      assert.deepEqual(item, RESPUESTAS.lista.data.ediciones[0], JSON.stringify(cambios));
+      assert.deepEqual(ordenDeLasClaves(item), ordenDeLasClaves(RESPUESTAS.lista.data.ediciones[0]));
+    }
+  });
+
+  // Solo con un SQL a mano: la FK no deja una elección sin su propuesta
+  it('un orden_del_equipo que la edición no tiene se toma como sin elegir; sin propuestas, principal null', () => {
+    const fila = filaDeLaLista(14, 'regular', '2026-11-16', null, ['Dataset A', 'Dataset B'], 2);
+    assert.deepEqual(itemDeLaLista({ ...fila, orden_del_equipo: 7 }), itemDeLaLista(fila));
+    const vacia = itemDeLaLista({ ...filaDeLaLista(6, 'regular', '2026-11-23', null, [], 2), orden_del_equipo: 1 });
+    assert.equal(vacia.principal, null);
+    assert.equal(vacia.resto, null);
   });
 
   it('sin propuestas (solo con un SQL a mano), principal y resto null, sin tirar', () => {
@@ -3063,8 +3102,11 @@ describe('detalleDeLaEdicion', () => {
     { orden: 1, dataset_id: 1, dataset_activo: true }, { orden: 2, dataset_id: 2, dataset_activo: false }
   ]);
   const adjuntosDe = (edicion) => edicion.adjuntos.map(({ campo, nombre, mime, bytes }) => ({ campo, nombre, mime, bytes }));
-  const detalle = ({ fila = filaDePrueba(), edicion = JSON.parse(fila.metadata), guardadas = GUARDADAS, adjuntos, linea, previas } = {}) =>
-    detalleDeLaEdicion({ fila, edicion, guardadas, adjuntos: adjuntos ?? adjuntosDe(edicion), lineaDelCorreo: linea, previas });
+  const detalle = ({
+    fila = filaDePrueba(), edicion = JSON.parse(fila.metadata), guardadas = GUARDADAS, adjuntos, linea, previas, eleccion
+  } = {}) => detalleDeLaEdicion({
+    fila, edicion, guardadas, adjuntos: adjuntos ?? adjuntosDe(edicion), lineaDelCorreo: linea, previas, eleccion
+  });
 
   // La línea del correo de la edición de prueba (spec 2026-11-12-dato-quincena-correo, 6), la que arma el controlador: archivada
   // con el envío automático apagado y con el correo de Datito, muestra el del bot (la transición)
@@ -3078,6 +3120,117 @@ describe('detalleDeLaEdicion', () => {
     const d = detalle({ linea: lineaDePrueba() });
     assert.deepEqual(d, RESPUESTAS.detalle.data);
     assert.deepEqual(ordenDeLasClaves(d), ordenDeLasClaves(RESPUESTAS.detalle.data));
+  });
+
+  // spec 2026-11-21-dato-quincena-principal-equipo, 3: las dos principales, al final, con los textos ya armados. `eleccion` es la
+  // vigente (leerPrincipalDelEquipo), que solo pasa el controlador `ver`: el mail no la pasa
+  const ELECCION = Object.freeze({ orden: 1, nombre: 'Persona Inventada', elegida_at: '2026-11-23 10:12:00' });
+
+  it('el equipo eligió la misma de Datito: el detalle de las respuestas de la página, entero y con las claves en su orden', () => {
+    const d = detalle({ linea: lineaDePrueba(), eleccion: ELECCION });
+    assert.deepEqual(d, RESPUESTAS.detalle_equipo_coincide.data);
+    assert.deepEqual(ordenDeLasClaves(d), ordenDeLasClaves(RESPUESTAS.detalle_equipo_coincide.data));
+    assert.equal(RESPUESTAS.detalle_equipo_coincide.success, true);
+  });
+
+  it('el equipo eligió otra: el detalle de las respuestas de la página, entero y con las claves en su orden', () => {
+    const d = detalle({ linea: lineaDePrueba(), eleccion: { ...ELECCION, orden: 2 } });
+    assert.deepEqual(d, RESPUESTAS.detalle_equipo_otra.data);
+    assert.deepEqual(ordenDeLasClaves(d), ordenDeLasClaves(RESPUESTAS.detalle_equipo_otra.data));
+    assert.equal(RESPUESTAS.detalle_equipo_otra.success, true);
+  });
+
+  it('las dos principales van al final, después de archivos, y lo demás no cambia con la elección', () => {
+    const sinElegir = detalle({ linea: lineaDePrueba() });
+    assert.deepEqual(Object.keys(sinElegir).slice(-3), ['archivos', 'principal_datito', 'principal_equipo']);
+    for (const orden of [1, 2]) {
+      const { principal_equipo: delEquipo, ...elResto } = detalle({ linea: lineaDePrueba(), eleccion: { ...ELECCION, orden } });
+      const { principal_equipo: sinEquipo, ...elRestoSinElegir } = sinElegir;
+      assert.deepEqual(elResto, elRestoSinElegir, String(orden));
+      assert.equal(delEquipo.orden, orden);
+      assert.equal(sinEquipo.orden, null);
+    }
+    // Las propuestas siguen con la principal de Datito y sus etiquetas
+    assert.deepEqual(sinElegir.propuestas.map((p) => [p.principal, p.etiquetas]), [[true, ['Principal', 'Validar']], [false, ['Agenda']]]);
+  });
+
+  it('sin elegir (sin eleccion o con null): «todavía no la eligió.», sin cifra ni quién', () => {
+    for (const eleccion of [undefined, null]) {
+      assert.deepEqual(detalle({ eleccion }).principal_equipo, {
+        orden: null, coincide: false, rotulo: 'Principal del equipo', pastilla: 'Principal del equipo', marca: 'Equipo',
+        resumen: 'todavía no la eligió.', cifra_clave: null, quien: null
+      }, String(eleccion));
+    }
+  });
+
+  it('la cuenta de quien eligió se borró (nombre null): «La eligió el equipo…»', () => {
+    for (const orden of [1, 2]) {
+      assert.equal(detalle({ eleccion: { orden, nombre: null, elegida_at: '2026-11-23 10:12:00' } }).principal_equipo.quien,
+        'La eligió el equipo el 23/11/2026 a las 10:12.', String(orden));
+    }
+    // Un nombre vacío o con solo espacios (solo con un SQL a mano), igual
+    for (const nombre of ['', '   ']) {
+      assert.equal(detalle({ eleccion: { ...ELECCION, nombre } }).principal_equipo.quien, 'La eligió el equipo el 23/11/2026 a las 10:12.');
+    }
+  });
+
+  it('la hora de la elección, tal como se guardó (hora argentina), con dos cifras', () => {
+    assert.equal(detalle({ eleccion: { ...ELECCION, elegida_at: '2026-12-01 08:05:59' } }).principal_equipo.quien,
+      'La eligió Persona Inventada el 01/12/2026 a las 08:05.');
+  });
+
+  // Solo con un SQL a mano: la FK no deja una elección sin su propuesta
+  it('una elección con un orden que la edición no tiene se toma como sin elegir', () => {
+    const sinElegir = detalle({ linea: lineaDePrueba() });
+    for (const orden of [3, 0, 99]) {
+      assert.deepEqual(detalle({ linea: lineaDePrueba(), eleccion: { ...ELECCION, orden } }), sinElegir, String(orden));
+    }
+  });
+
+  it('la principal de Datito: la marcada como Principal o, si ninguna, la primera; sin propuestas, null', () => {
+    const conLaSegunda = edicionDePrueba();
+    conLaSegunda.propuestas[0].etiquetas = ['Validar'];
+    conLaSegunda.propuestas[1].etiquetas = ['Principal', 'Agenda'];
+    const d = detalle({ edicion: conLaSegunda, eleccion: { ...ELECCION, orden: 2 } });
+    assert.deepEqual(d.principal_datito, {
+      orden: 2, rotulo: 'La principal de Datito', pastilla: 'Principal de Datito', marca: 'Datito',
+      infografia_pie: 'La infografía de la principal de Datito.',
+      infografia_alt: `Infografía de la principal de Datito: ${conLaSegunda.propuestas[1].titulo}`
+    });
+    // El equipo eligió la de Datito, que no es la primera
+    assert.equal(d.principal_equipo.coincide, true);
+    assert.equal(d.principal_equipo.resumen, 'la misma de Datito (propuesta 2).');
+    assert.equal(d.principal_equipo.cifra_clave, null);
+
+    const ninguna = edicionDePrueba();
+    ninguna.propuestas[0].etiquetas = ['Validar'];
+    assert.equal(detalle({ edicion: ninguna }).principal_datito.orden, 1);
+
+    const vacia = edicionDePrueba();
+    vacia.propuestas = [];
+    const sinPropuestas = detalle({ edicion: vacia, eleccion: ELECCION });
+    assert.equal(sinPropuestas.principal_datito, null);
+    assert.equal(sinPropuestas.principal_equipo.orden, null);
+    assert.equal(sinPropuestas.principal_equipo.resumen, 'todavía no la eligió.');
+  });
+
+  it('los textos nombran al bot con NOMBRE_DEL_BOT y no usan las palabras que el sistema evita', () => {
+    const d = detalle({ eleccion: ELECCION });
+    for (const clave of ['rotulo', 'pastilla', 'infografia_pie', 'infografia_alt']) {
+      assert.ok(d.principal_datito[clave].includes(NOMBRE_DEL_BOT), clave);
+    }
+    assert.equal(d.principal_datito.marca, NOMBRE_DEL_BOT);
+    assert.ok(d.principal_equipo.resumen.includes(NOMBRE_DEL_BOT));
+    for (const texto of [...Object.values(d.principal_datito), ...Object.values(d.principal_equipo)]) {
+      if (typeof texto === 'string') assert.doesNotMatch(texto, PALABRAS_EVITADAS, texto);
+    }
+  });
+
+  it('el título de la otra propuesta va tal cual en el resumen (lo escapa quien imprime)', () => {
+    const conHtml = edicionDePrueba();
+    conHtml.propuestas[1].titulo = '<img src=x onerror=alert(1)>';
+    assert.equal(detalle({ edicion: conHtml, eleccion: { ...ELECCION, orden: 2 } }).principal_equipo.resumen,
+      'Propuesta 2 · <img src=x onerror=alert(1)>');
   });
 
   // spec 2026-11-12-dato-quincena-correo, 6 y 12: la línea la arma el controlador con lineaDelCorreo (el envío del RPAD) y el
@@ -3472,11 +3625,13 @@ describe('detalleDeLaEdicion', () => {
   // todo detalle y en el mismo lugar: después de propuestas_datasets y antes de archivos
   const CLAVES_DE_LAS_PESTANAS = ['matriz_de_prioridad', 'cantidades', 'ver_propuestas', 'aviso_datasets_nuevos', 'ver_datasets_nuevos'];
 
+  // Después de archivos, las dos principales (spec 2026-11-21-dato-quincena-principal-equipo, 3)
   it('las claves de las pestañas van después de propuestas_datasets y antes de archivos, con la clave o sin ella', () => {
     const piloto = detalle({ fila: filaDePrueba({ tipo: 'piloto', referencia_piloto: 'piloto-4' }), edicion: pilotoDePrueba() });
     for (const d of [detalle(), detalleConRepeticion(), piloto, detalleConDatasets([]), detalleConDatasets(propuestasDatasetsDePrueba())]) {
       const claves = Object.keys(d);
-      assert.deepEqual(claves.slice(claves.indexOf('propuestas_datasets')), ['propuestas_datasets', ...CLAVES_DE_LAS_PESTANAS, 'archivos']);
+      assert.deepEqual(claves.slice(claves.indexOf('propuestas_datasets')),
+        ['propuestas_datasets', ...CLAVES_DE_LAS_PESTANAS, 'archivos', 'principal_datito', 'principal_equipo']);
       assert.deepEqual(Object.keys(d.cantidades), ['propuestas', 'datasets_nuevos']);
     }
   });
@@ -3554,9 +3709,10 @@ describe('detalleDeLaEdicion', () => {
     const edicion = JSON.parse(fila.metadata);
     const guardadas = structuredClone(GUARDADAS);
     const adjuntos = adjuntosDe(edicion).reverse();
-    const antes = structuredClone({ fila, edicion, guardadas, adjuntos });
-    detalleDeLaEdicion({ fila, edicion, guardadas, adjuntos });
-    assert.deepEqual({ fila, edicion, guardadas, adjuntos }, antes);
+    const eleccion = { orden: 2, nombre: 'Persona Inventada', elegida_at: '2026-11-23 10:12:00' };
+    const antes = structuredClone({ fila, edicion, guardadas, adjuntos, eleccion });
+    detalleDeLaEdicion({ fila, edicion, guardadas, adjuntos, eleccion });
+    assert.deepEqual({ fila, edicion, guardadas, adjuntos, eleccion }, antes);
     const conRepeticion = edicionConRepeticion();
     const otraAntes = structuredClone(conRepeticion);
     const previas = new Map(PREVIAS);
@@ -3567,5 +3723,43 @@ describe('detalleDeLaEdicion', () => {
     const conDatasetsAntes = structuredClone(conDatasets);
     detalleDeLaEdicion({ fila, edicion: conDatasets, guardadas, adjuntos }).propuestas_datasets[0].origenes.push('Otro');
     assert.deepEqual(conDatasets, conDatasetsAntes);
+  });
+});
+
+// La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 2): los textos del PUT al pie de la letra y qué orden vale
+describe('la elección de la principal del equipo', () => {
+  it('los mensajes fijos: el orden que no sirve (400) y el 500', () => {
+    assert.deepEqual({ ...MENSAJES_PRINCIPAL_EQUIPO }, {
+      orden: 'Elegí una de las propuestas de la edición.',
+      alGuardar: 'Error al guardar la principal del equipo'
+    });
+    assert.ok(Object.isFrozen(MENSAJES_PRINCIPAL_EQUIPO));
+  });
+
+  it('los cuatro textos de la respuesta: quedó o ya era, la de Datito o la propuesta N', () => {
+    assert.equal(mensajeDeLaEleccion({ orden: 1, coincide: true, cambio: true }), 'Quedó la de Datito como principal del equipo.');
+    assert.equal(mensajeDeLaEleccion({ orden: 2, coincide: false, cambio: true }), 'Quedó la propuesta 2 como principal del equipo.');
+    assert.equal(mensajeDeLaEleccion({ orden: 1, coincide: true, cambio: false }), 'La de Datito ya era la principal del equipo.');
+    assert.equal(mensajeDeLaEleccion({ orden: 5, coincide: false, cambio: false }), 'La propuesta 5 ya era la principal del equipo.');
+    // La de Datito no dice su número: puede ser cualquiera
+    assert.equal(mensajeDeLaEleccion({ orden: 3, coincide: true, cambio: true }), 'Quedó la de Datito como principal del equipo.');
+  });
+
+  it('los textos nombran al bot con NOMBRE_DEL_BOT y no usan las palabras que el sistema evita', () => {
+    for (const cambio of [true, false]) {
+      assert.ok(mensajeDeLaEleccion({ orden: 1, coincide: true, cambio }).includes(NOMBRE_DEL_BOT));
+      for (const coincide of [true, false]) {
+        assert.doesNotMatch(mensajeDeLaEleccion({ orden: 1, coincide, cambio }), PALABRAS_EVITADAS);
+      }
+    }
+    for (const mensaje of Object.values(MENSAJES_PRINCIPAL_EQUIPO)) assert.doesNotMatch(mensaje, PALABRAS_EVITADAS);
+  });
+
+  it('el orden: un número entero de 1 a 255 (el de una propuesta guardada); otra cosa, null', () => {
+    for (const orden of [1, 2, 5, 255]) assert.equal(ordenDeLaEleccion(orden), orden);
+    for (const valor of ['2', '1', 0, -1, 1.5, 256, 300, NaN, Infinity, null, undefined, true, [2], { orden: 2 }, 2n,
+      Number.MAX_SAFE_INTEGER + 1]) {
+      assert.equal(ordenDeLaEleccion(valor), null, String(valor));
+    }
   });
 });
