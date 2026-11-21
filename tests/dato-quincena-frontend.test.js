@@ -3248,6 +3248,38 @@ describe('dato-quincena.js: la principal del equipo (la parte del DOM)', () => {
     assert.deepEqual(enfocados.at(-1), 'radio 1');
   });
 
+  it('mientras se guarda una elección, «Reenviar…» no abre su diálogo (el redibujo llevaría el foco a «Cambiar», detrás del velo); con la respuesta, sí', async () => {
+    const reenvio = falso();
+    const enfocados = [];
+    const cambiar = botonCon('button[data-elegir-principal]', {});
+    cambiar.focus = () => enfocados.push('cambiar');
+    const contenido = contenidoFalso({ '#dq-panel-general button[data-elegir-principal]': cambiar });
+    let responderElPut = null;
+    const { c, pedidos, todos } = paginaFalsa({
+      search: '?id=12', lugares: { 'dq-reenvio': reenvio, 'dq-envio-lugar': falso(), 'dq-contenido': contenido },
+      responder: (metodo) => (metodo === 'PUT'
+        ? new Promise((listo) => { responderElPut = () => listo({ success: true, data: { cambio: true }, message: 'Listo.' }); })
+        : { success: true, data: COINCIDE() })
+    });
+    c.setTimeout = (f) => f();
+    conDetalle(c, SIN(), { caja: CAJA() });
+    // «Validar la de Datito», y antes de la respuesta, «Reenviar…»
+    c.alTocarDq({ target: botonCon('button[data-guardar-principal]', { guardarPrincipal: '1' }) });
+    const reenviar = botonCon('button[data-reenviar]', {});
+    c.alTocarDq({ target: reenviar });
+    assert.ok(!reenvio.classList.contains('active'), 'no abre mientras se guarda');
+    assert.equal(todos['dq-reenvio-cuerpo'].innerHTML, '');
+    assert.equal(vm.runInContext('vistaDatoQuincena.reenvio', c), null);
+    responderElPut();
+    await despues();
+    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/principal-equipo', { orden: 1 }], ['GET', '/dato-quincena/ediciones/12']]);
+    assert.deepEqual(enfocados, ['cambiar'], 'el foco en «Cambiar», sin un diálogo abierto encima');
+    // Con la respuesta, «Reenviar…» abre con la lista de hoy
+    c.alTocarDq({ target: reenviar });
+    assert.ok(reenvio.classList.contains('active'));
+    assert.equal(todos['dq-reenvio-cuerpo'].innerHTML, c.htmlDelReenvio(CAJA().lista_de_hoy));
+  });
+
   it('Tab y Mayúscula+Tab no salen de los diálogos «La principal del equipo» y «Reenviar» (aria-modal): del último al primero y del primero al último', async () => {
     const dialogo = dialogoFalso();
     const reenvio = falso();

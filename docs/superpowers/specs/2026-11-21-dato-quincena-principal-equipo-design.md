@@ -188,8 +188,9 @@ La referencia visual es la dirección B de la maqueta (`dir=B`), sin «Cambios (
 ## 5. El mail
 
 - `modeloDelMail` suma dos claves:
-  - `aclaracion`: «La principal de este correo es la de Datito, no la del equipo: el equipo elige la suya en el RPAD.», armada con `NOMBRE_DEL_BOT`;
+  - `aclaracion`: «La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.», armada con `NOMBRE_DEL_BOT`;
   - `recuadro: true`.
+- La frase no dice que la del equipo sea otra: tiene que ser cierta en todos los envíos, también si el equipo validó la de Datito antes del mail (un lunes feriado, el mail sale el martes).
 - La plantilla dibuja cada una solo si viene, así que un modelo armado a mano sin ellas sale como hoy.
 - **La frase**, en HTML:
   - va justo después de la bajada, en un `<p>` como el de la bajada (`margin: 6px 0 0 0; font-size: 14px`);

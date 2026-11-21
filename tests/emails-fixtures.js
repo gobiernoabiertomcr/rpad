@@ -35,7 +35,7 @@ export const modeloDelDatoQuincena = () => ({
   titulo: 'Dato de la Quincena - 09/11/2026',
   numero: 'Edición N.º 1',
   bajada: '2 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas.',
-  aclaracion: 'La principal de este correo es la de Datito, no la del equipo: el equipo elige la suya en el RPAD.',
+  aclaracion: 'La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.',
   recuadro: true,
   agenda_grupos: [
     {

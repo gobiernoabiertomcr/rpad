@@ -146,7 +146,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
 - Asunto «Dato de la Quincena - DD/MM/AAAA», con la `fecha_edicion` también si sale corrido; remitente `remitente()`.
   Un mail por persona, con `marcoEmail` (tablas y estilos en línea, un solo `<!DOCTYPE>`, sin `<style>` ni emojis: lo controla `tests/email-diseno.test.js`).
 - Contenido: el título y debajo «Edición N.º N» y la cantidad («4 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas.»);
-  justo después, la frase que aclara que la principal del correo es la de Datito y no la del equipo (abajo);
+  justo después, la frase que aclara que la principal del correo es la que marcó Datito (abajo);
   «Buen día, <primer nombre>.»;
   el recuadro «Esta edición se lee mejor en el RPAD», con su botón (abajo);
   la infografía en línea (`cid`) con su pie;
@@ -180,7 +180,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   Un dataset relacionado es enlace a su `url` y una fuente, a sí misma, solo si la dirección es `https://`; si no, el texto solo.
   Los campos sugeridos y las listas de enlaces llevan `word-break: break-word` y `overflow-wrap: anywhere`: un campo de 64 caracteres, un slug de 100 o una fuente larga sin espacios no ensanchan el mail.
 - La frase y el recuadro de la principal (`aclaracion` y `recuadro` del modelo; la regla y el motivo, en `docs/temas/dato-quincena-principal-equipo.md`):
-  la frase dice que la principal del correo es la de Datito y no la del equipo, y es la misma antes y después de que el equipo elija, en cualquier envío;
+  la frase, «La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.», es la misma antes y después de que el equipo elija, en cualquier envío;
   va en un párrafo como el de la bajada, en `COLORES.subtitulo` (el gris de la bajada no llega a 4,5:1);
   el recuadro, en celeste, lleva «Esta edición se lee mejor en el RPAD», qué hay en el RPAD y el mismo botón «Ver la edición en el RPAD»;
   la plantilla dibuja cada uno solo si el modelo lo trae.

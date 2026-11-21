@@ -102,6 +102,7 @@ Los textos los trae el servidor y la página los imprime, todos por `Utils.escap
   Un error muestra el mensaje del servidor y no cierra el diálogo.
 - Decisión: una elección por vez; mientras una espera su respuesta, el diálogo no se abre y los otros botones de elegir no hacen nada.
   Motivo: abierto antes de la respuesta, tendría las opciones de antes y quedaría abierto sobre la edición ya redibujada, con «Guardar» sin actualizar.
+  Tampoco abre «Reenviar…»: el redibujo correría con su diálogo abierto y el foco iría a «Cambiar», detrás del velo.
 - Después de guardar sale el `message` del servidor, y se vuelve a pedir el detalle y se redibuja en la misma pestaña y propuesta.
   El foco va a «Cambiar» si se eligió en General (con «Validar la de Datito» o con el diálogo), y al título de la propuesta si se eligió en Propuestas («Elegir como principal del equipo»).
 - La tarjeta de la lista suma, arriba del título, el `rotulo` de la principal con un ícono.
@@ -109,11 +110,12 @@ Los textos los trae el servidor y la página los imprime, todos por `Utils.escap
 
 ## El mail
 
-- `modeloDelMail` suma dos claves: `aclaracion`, una frase que dice que la principal del correo es la de Datito y no la del equipo, y `recuadro: true`.
+- `modeloDelMail` suma dos claves: `aclaracion`, «La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.», y `recuadro: true`.
   La frase se arma con `NOMBRE_DEL_BOT`: la plantilla no escribe el nombre del bot.
 - Decisión: la frase es fija, y dice lo mismo antes y después de que el equipo elija.
   El mail sale a las 8:05 y la elección puede no estar todavía, y un reintento, un reenvío o la prueba tienen que salir iguales al primero.
   Por eso no lee la elección al armarse (dos personas podrían recibir la misma edición distinta) ni se congela en el primer envío (otra columna, para nada).
+- Decisión: la frase no dice que la del equipo sea otra, porque tiene que ser cierta en todos los envíos, también si el equipo validó la de Datito antes del mail (un lunes feriado, el mail sale el martes).
 - La plantilla dibuja cada una solo si viene: un modelo armado a mano sin ellas sale como siempre.
 - La frase va justo después de la bajada, en un párrafo como el de la bajada, y en el texto plano un renglón debajo de la bajada, en el mismo bloque.
 - Decisión: su color es `COLORES.subtitulo` (#5A7391, 4,89:1 sobre blanco) y no el gris de la bajada, que no llega a 4,5:1.

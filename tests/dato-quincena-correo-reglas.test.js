@@ -1219,9 +1219,9 @@ describe('modeloDelMail: lo que recibe la plantilla (spec, 10)', () => {
   // reenvío y la prueba salen iguales antes y después de que el equipo elija
   it('la frase de la principal y el recuadro: fijos, con el nombre del bot', () => {
     const m = modelo();
-    assert.equal(m.aclaracion, 'La principal de este correo es la de Datito, no la del equipo: el equipo elige la suya en el RPAD.');
+    assert.equal(m.aclaracion, 'La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.');
     assert.equal(m.aclaracion,
-      `La principal de este correo es la de ${NOMBRE_DEL_BOT}, no la del equipo: el equipo elige la suya en el RPAD.`);
+      `La principal de este correo es la que marcó ${NOMBRE_DEL_BOT}: la del equipo se elige y se ve en el RPAD.`);
     assert.equal(m.recuadro, true);
     for (const cambios of [{ prueba: true }, { nombreCompleto: null }]) {
       assert.equal(modelo(cambios).aclaracion, m.aclaracion, JSON.stringify(cambios));
@@ -1396,7 +1396,7 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
     'Dato de la Quincena - 02/11/2026',
     'Edición N.º 1',
     '2 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas.',
-    'La principal de este correo es la de Datito, no la del equipo: el equipo elige la suya en el RPAD.',
+    'La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.',
     '',
     'Esta edición se lee mejor en el RPAD: https://rpad.ejemplo.test/dato-quincena.html?id=12',
     '',
@@ -1511,7 +1511,7 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
   // bloque propio después del del título, con la misma dirección del final. Sin las dos claves, el texto de antes
   it('la frase debajo de la bajada y el recuadro en su bloque, con la dirección del final; sin las claves, el texto de antes', () => {
     const { text } = datoQuincenaTemplate(modelo(), { conSvg: true });
-    const FRASE = 'La principal de este correo es la de Datito, no la del equipo: el equipo elige la suya en el RPAD.';
+    const FRASE = 'La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.';
     const RECUADRO = 'Esta edición se lee mejor en el RPAD: https://rpad.ejemplo.test/dato-quincena.html?id=12';
     assert.ok(text.includes(`ni publicadas.\n${FRASE}\n\n${RECUADRO}\n\nLa infografía`));
     assert.equal(text.split('https://rpad.ejemplo.test/dato-quincena.html?id=12').length - 1, 2);

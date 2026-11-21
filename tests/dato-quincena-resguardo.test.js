@@ -30,7 +30,7 @@ const modelo = (cambios = {}) => modeloDelMail({
 });
 
 // Las dos inserciones (spec 2026-11-21-dato-quincena-principal-equipo, 5), tal como salen
-const FRASE = 'La principal de este correo es la de Datito, no la del equipo: el equipo elige la suya en el RPAD.';
+const FRASE = 'La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.';
 const FRASE_HTML = `<p style="margin: 6px 0 0 0; color: #5A7391; font-size: 14px;">${FRASE}</p>`;
 // Una fila más del marco, con el recuadro en el celeste del encabezado y el mismo botón del final
 const RECUADRO_HTML = `

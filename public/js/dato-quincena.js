@@ -1100,7 +1100,7 @@ function anunciarDatoQuincena(texto) {
 // Auth.isAdmin() al arrancar; `pestana`, la de página que se ve (Ediciones o Correo); `detalle` y `caja`, la edición abierta y su
 // caja del correo; `vista` y `propuesta`, la pestaña de la edición que se ve y la propuesta que se mira en Propuestas (null: la del
 // equipo o la de Datito); `reenvio` y `principal`, los diálogos abiertos; `guardandoPrincipal`, mientras se guarda la del equipo (no
-// se abre el diálogo ni empieza otra elección)
+// se abre ninguno de los dos diálogos ni empieza otra elección)
 const vistaDatoQuincena = {
   pedido: 0, anio: null, pagina: 1, cargando: false, datos: null, imagenes: new Set(), modal: null,
   admin: false, pestana: 'ediciones', detalle: null, caja: null, vista: 'general', propuesta: null, reenvio: null,
@@ -1715,11 +1715,12 @@ function mandarPruebaDq(boton) {
 
 // ---- El diálogo de «Reenviar» (administración) ----
 
-// Abre el diálogo con la lista de hoy de la caja; el foco, en la opción elegida (después de la transición del velo)
+// Abre el diálogo con la lista de hoy de la caja; el foco, en la opción elegida (después de la transición del velo). Mientras se
+// guarda una elección, no abre: la edición se volvería a dibujar con el diálogo abierto y el foco iría a «Cambiar», detrás del velo
 function abrirReenvioDq(boton) {
   const id = idDeEdicion(vistaDatoQuincena.detalle?.id);
   const caja = vistaDatoQuincena.caja;
-  if (id === null || caja === null) return;
+  if (vistaDatoQuincena.guardandoPrincipal === true || id === null || caja === null) return;
   elementoDq('dq-reenvio-cuerpo').innerHTML = htmlDelReenvio(caja.lista_de_hoy);
   const abierto = { id, volverA: boton };
   vistaDatoQuincena.reenvio = abierto;

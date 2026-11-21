@@ -378,7 +378,7 @@ describe('la principal del equipo no cambia el mail (spec 2026-11-21-dato-quince
     assert.equal(despues.html, antes.html);
     assert.equal(despues.text, antes.text);
     // Con la frase fija y el recuadro; la principal del mail sigue siendo la de Datito (la 1)
-    const frase = 'La principal de este correo es la de Datito, no la del equipo: el equipo elige la suya en el RPAD.';
+    const frase = 'La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.';
     assert.ok(antes.html.includes(`>${frase}</p>`) && antes.text.includes(`\n${frase}\n`));
     assert.ok(antes.html.includes('>Esta edición se lee mejor en el RPAD</p>'));
     assert.ok(antes.text.includes('Propuesta 1 de 2 (principal)\n') && !antes.text.includes('Propuesta 2 de 2 (principal)'));

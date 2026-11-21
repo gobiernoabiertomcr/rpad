@@ -884,7 +884,7 @@ export const modeloDelMail = ({ detalle, fecha_edicion, nombreCompleto, url, pru
     numero: detalle.numero != null ? `Edición ${detalle.numero}` : (detalle.marca ?? null),
     bajada: `${textoDeCantidad(total)} de comunicación que armó ${NOMBRE_DEL_BOT}. Son internas: todavía no están aprobadas ni `
       + 'publicadas.',
-    aclaracion: `La principal de este correo es la de ${NOMBRE_DEL_BOT}, no la del equipo: el equipo elige la suya en el RPAD.`,
+    aclaracion: `La principal de este correo es la que marcó ${NOMBRE_DEL_BOT}: la del equipo se elige y se ve en el RPAD.`,
     recuadro: true,
     agenda_grupos: structuredClone(detalle.agenda_grupos),
     propuestas: detalle.propuestas.map((propuesta, i) => ({
