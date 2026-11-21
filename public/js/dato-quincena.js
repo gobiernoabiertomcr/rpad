@@ -1099,7 +1099,8 @@ function anunciarDatoQuincena(texto) {
 // El estado de la página. `pedido` numera las cargas: una respuesta que llega después de otra más nueva se descarta. `admin` es de
 // Auth.isAdmin() al arrancar; `pestana`, la de página que se ve (Ediciones o Correo); `detalle` y `caja`, la edición abierta y su
 // caja del correo; `vista` y `propuesta`, la pestaña de la edición que se ve y la propuesta que se mira en Propuestas (null: la del
-// equipo o la de Datito); `reenvio` y `principal`, los diálogos abiertos; `guardandoPrincipal`, mientras se guarda la del equipo
+// equipo o la de Datito); `reenvio` y `principal`, los diálogos abiertos; `guardandoPrincipal`, mientras se guarda la del equipo (no
+// se abre el diálogo ni empieza otra elección)
 const vistaDatoQuincena = {
   pedido: 0, anio: null, pagina: 1, cargando: false, datos: null, imagenes: new Set(), modal: null,
   admin: false, pestana: 'ediciones', detalle: null, caja: null, vista: 'general', propuesta: null, reenvio: null,
@@ -1771,8 +1772,8 @@ function confirmarReenvioDq(boton) {
   });
 }
 
-// Cierran la ×, «Cancelar» (data-cerrar), Escape y el clic en el velo (si empezó en el velo); elegir una persona de la lista marca
-// «A una persona»
+// Cierran la ×, «Cancelar» (data-cerrar), Escape y el clic en el velo (si empezó en el velo); Tab no sale del diálogo; elegir una
+// persona de la lista marca «A una persona»
 function conectarReenvioDq() {
   const modal = elementoDq('dq-reenvio');
   let desdeElVelo = false;
@@ -1790,9 +1791,11 @@ function conectarReenvioDq() {
     if (evento.target?.id === 'dq-reenvio-persona') marcarUnaPersonaDq();
   });
   document.addEventListener('keydown', (evento) => {
-    if (evento.key !== 'Escape' || !vistaDatoQuincena.reenvio) return;
-    evento.preventDefault?.();
-    cerrarReenvioDq();
+    if (!vistaDatoQuincena.reenvio) return;
+    if (evento.key === 'Escape') {
+      evento.preventDefault?.();
+      cerrarReenvioDq();
+    } else if (evento.key === 'Tab') retenerFocoDq(evento, modal);
   });
   elementoDq('dq-reenvio-confirmar').addEventListener('click', (evento) => confirmarReenvioDq(evento.currentTarget));
 }
@@ -1800,6 +1803,24 @@ function conectarReenvioDq() {
 function marcarUnaPersonaDq() {
   const una = elementoDq('dq-reenvio').querySelector('input[name="dq-a"][value="una"]');
   if (una) una.checked = true;
+}
+
+// Tab y Mayúscula+Tab no salen de un diálogo abierto (aria-modal), como en admin.js: entre sus controles se deja al navegador (que sabe
+// moverse, también entre las opciones); solo se interviene en los bordes (Mayúscula+Tab en el primero, Tab en el último) y si el foco
+// quedó afuera
+function retenerFocoDq(evento, dialogo) {
+  if (!dialogo) return;
+  const enfocables = [...dialogo.querySelectorAll('button, select, input, textarea, a[href], [tabindex]:not([tabindex="-1"])')]
+    .filter((elemento) => !elemento.disabled && elemento.getClientRects().length > 0);
+  if (enfocables.length === 0) return;
+  const primero = enfocables[0];
+  const ultimo = enfocables[enfocables.length - 1];
+  const enfocado = document.activeElement;
+  if (!dialogo.contains(enfocado)) (evento.shiftKey ? ultimo : primero).focus();
+  else if (evento.shiftKey && enfocado === primero) ultimo.focus();
+  else if (!evento.shiftKey && enfocado === ultimo) primero.focus();
+  else return;
+  evento.preventDefault?.();
 }
 
 // ---- La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 4) ----
@@ -1826,13 +1847,14 @@ const focoDespuesDeElegirDq = () => FOCO_DESPUES_DE_ELEGIR[vistaDatoQuincena.vis
 
 /**
  * Guarda `orden` como la principal del equipo de la edición que se ve (PUT …/principal-equipo con `{ orden }`), con el botón
- * deshabilitado hasta la respuesta (un doble clic manda un solo pedido). Si sale bien: `alGuardar` (el diálogo cierra), la edición se
- * vuelve a pedir y a dibujar en el lugar, con el foco en `foco`, y el aviso dice lo del servidor. Si no, el error del servidor (o uno
- * fijo) y nada más: el diálogo queda abierto. Un 401, al login.
+ * deshabilitado hasta la respuesta (un doble clic manda un solo pedido). Una elección por vez: mientras otra espera su respuesta, no
+ * hace nada (las dos volverían a dibujar la edición, y la primera en llegar dejaría abrir el diálogo con la otra pendiente). Si sale
+ * bien: `alGuardar` (el diálogo cierra), la edición se vuelve a pedir y a dibujar en el lugar, con el foco en `foco`, y el aviso dice
+ * lo del servidor. Si no, el error del servidor (o uno fijo) y nada más: el diálogo queda abierto. Un 401, al login.
  */
 function guardarLaPrincipalDq(boton, orden, { alGuardar = null, foco = null } = {}) {
   const id = idDeEdicion(vistaDatoQuincena.detalle?.id);
-  if (id === null || idDeEdicion(orden) === null) return undefined;
+  if (vistaDatoQuincena.guardandoPrincipal === true || id === null || idDeEdicion(orden) === null) return undefined;
   const pedido = vistaDatoQuincena.pedido;
   const sigue = () => pedido === vistaDatoQuincena.pedido && vistaDatoQuincena.detalle?.id === id;
   return conBotonBloqueadoDq(boton, async () => {
@@ -1914,11 +1936,12 @@ function actualizarGuardarLaPrincipalDq() {
 }
 
 // «Elegir otra» y «Cambiar» abren el diálogo con una opción por propuesta y la vigente marcada; el foco, en la marcada o en la primera
-// (después de la transición del velo)
+// (después de la transición del velo). Mientras se guarda una elección, no abre: tendría las opciones de antes, la edición se
+// volvería a dibujar con el diálogo abierto y «Guardar» no se actualizaría
 function abrirLaPrincipalDq(boton) {
   const detalle = vistaDatoQuincena.detalle;
   const modal = elementoDq('dq-principal');
-  if (idDeEdicion(detalle?.id) === null || !modal) return;
+  if (vistaDatoQuincena.guardandoPrincipal === true || idDeEdicion(detalle?.id) === null || !modal) return;
   elementoDq('dq-principal-cuerpo').innerHTML = htmlDelDialogoDeLaPrincipal(detalle);
   const abierto = { volverA: boton };
   vistaDatoQuincena.principal = abierto;
@@ -1952,7 +1975,8 @@ function confirmarLaPrincipalDq(boton) {
   });
 }
 
-// Cierran la ×, «Cancelar» (data-cerrar), Escape y el clic en el velo (si empezó en el velo); marcar una opción habilita «Guardar»
+// Cierran la ×, «Cancelar» (data-cerrar), Escape y el clic en el velo (si empezó en el velo); Tab no sale del diálogo; marcar una
+// opción habilita «Guardar»
 function conectarLaPrincipalDq() {
   const modal = elementoDq('dq-principal');
   if (!modal) return;
@@ -1967,9 +1991,11 @@ function conectarLaPrincipalDq() {
   });
   modal.addEventListener('change', actualizarGuardarLaPrincipalDq);
   document.addEventListener('keydown', (evento) => {
-    if (evento.key !== 'Escape' || !vistaDatoQuincena.principal) return;
-    evento.preventDefault?.();
-    cerrarLaPrincipalDq();
+    if (!vistaDatoQuincena.principal) return;
+    if (evento.key === 'Escape') {
+      evento.preventDefault?.();
+      cerrarLaPrincipalDq();
+    } else if (evento.key === 'Tab') retenerFocoDq(evento, modal);
   });
   elementoDq('dq-principal-guardar')?.addEventListener('click', (evento) => confirmarLaPrincipalDq(evento.currentTarget));
 }

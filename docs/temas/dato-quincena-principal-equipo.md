@@ -25,7 +25,7 @@ dato-quincena.html y dato-quincena.js (la franja, las marcas, el diálogo y la t
 - Decisión: la elección del equipo no va en `dato_quincena_ediciones` ni en `dato_quincena_propuestas.principal`.
   La edición es inmutable, y la columna `principal` es la marca de Datito: la leen la lista y el mail, y reusarla las confundiría.
 - Quién elige: administración (superadmin, admin y editor), en cualquier edición, regular o piloto, también las viejas.
-  Los demás roles ven la franja y las marcas sin botones.
+  Los demás roles ven la franja y las marcas sin las acciones de elegir («Validar la de Datito», «Elegir otra», «Cambiar» y «Elegir como principal del equipo»); «Ver la propuesta», sí.
 - No manda ningún mail al elegir.
 - «Copiar la propuesta» sigue copiando las etiquetas tal como las mandó Datito («[Principal, …]»): la copia es de lo archivado.
 
@@ -85,7 +85,7 @@ Los textos los trae el servidor y la página los imprime, todos por `Utils.escap
 - General: arriba de la portada, a lo ancho, una franja con el `rotulo` en negrita y el `resumen`; debajo, la `cifra_clave` en chico y `quien`, si hay.
   - Sin elegir, solo para administración: «Validar la de Datito», que guarda directo, y «Elegir otra».
   - Con elección: «Ver la propuesta», que lleva a la del equipo en Propuestas, y, solo para administración, «Cambiar».
-  - Un lector ve la franja sin botones.
+  - Un lector ve la franja sin «Validar la de Datito», «Elegir otra» ni «Cambiar»; con una elección, «Ver la propuesta», sí.
 - Decisión: la portada es la de la propuesta de Datito, con su infografía, y se rotula «La principal de Datito».
   Motivo: la infografía es la de la propuesta de Datito, y con la portada del equipo (la dirección que se descartó) quedaba al lado de una propuesta que no era la suya.
 - «Ver las N propuestas» lleva a la del equipo si hay y, si no, a la de Datito.
@@ -96,10 +96,14 @@ Los textos los trae el servidor y la página los imprime, todos por `Utils.escap
   - sin `&propuesta=`, se abre la del equipo si hay y, si no, la de Datito.
 - El diálogo «La principal del equipo» lo abren «Elegir otra» y «Cambiar».
   Es HTML estático de `dato-quincena.html`, como el de «Reenviar»: velo, Escape, foco y las opciones en `.dq-opciones`.
+  Tab y Mayúscula+Tab no salen de ninguno de los dos.
   Lleva una opción por propuesta, «Propuesta N · <título>» y, en la de Datito, « (la de Datito)», con la vigente marcada.
   «Guardar» está deshabilitado mientras no haya una opción marcada y hasta la respuesta.
   Un error muestra el mensaje del servidor y no cierra el diálogo.
-- Después de guardar sale el `message` del servidor, se vuelve a pedir el detalle y se redibuja en la misma pestaña y propuesta, y el foco vuelve a «Cambiar».
+- Decisión: una elección por vez; mientras una espera su respuesta, el diálogo no se abre y los otros botones de elegir no hacen nada.
+  Motivo: abierto antes de la respuesta, tendría las opciones de antes y quedaría abierto sobre la edición ya redibujada, con «Guardar» sin actualizar.
+- Después de guardar sale el `message` del servidor, y se vuelve a pedir el detalle y se redibuja en la misma pestaña y propuesta.
+  El foco va a «Cambiar» si se eligió en General (con «Validar la de Datito» o con el diálogo), y al título de la propuesta si se eligió en Propuestas («Elegir como principal del equipo»).
 - La tarjeta de la lista suma, arriba del título, el `rotulo` de la principal con un ícono.
 - Decisión: la agenda ocupa tantas columnas como grupos trae (con todos los eventos futuros, «Lo que pasó» no deja una columna vacía), arriba de 820 px; debajo, una sola.
 

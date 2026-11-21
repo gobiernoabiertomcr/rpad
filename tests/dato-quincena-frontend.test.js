@@ -3208,6 +3208,106 @@ describe('dato-quincena.js: la principal del equipo (la parte del DOM)', () => {
     assert.deepEqual(avisos.at(-1), ['No se pudo guardar la principal del equipo. Probá de nuevo en unos minutos.', 'error']);
   });
 
+  it('mientras se guarda una elección, «Elegir otra» no abre el diálogo ni empieza otra elección; con la respuesta, «Cambiar» lo abre con la vigente marcada', async () => {
+    const dialogo = dialogoFalso();
+    const enfocados = [];
+    const cambiar = botonCon('button[data-elegir-principal]', {});
+    cambiar.focus = () => enfocados.push('cambiar');
+    const contenido = contenidoFalso({ '#dq-panel-general button[data-elegir-principal]': cambiar });
+    let responderElPut = null;
+    const { c, pedidos, todos } = paginaFalsa({
+      search: '?id=12', lugares: { 'dq-principal': dialogo.modal, 'dq-principal-guardar': dialogo.guardar, 'dq-envio-lugar': falso(), 'dq-contenido': contenido },
+      responder: (metodo) => (metodo === 'PUT'
+        ? new Promise((listo) => { responderElPut = () => listo({ success: true, data: { cambio: true }, message: 'Listo.' }); })
+        : { success: true, data: COINCIDE() })
+    });
+    c.setTimeout = (f) => f();
+    conDetalle(c, SIN(), { caja: CAJA() });
+    dialogo.radios[0].focus = () => enfocados.push('radio 1');
+    // «Validar la de Datito», y antes de la respuesta, «Elegir otra» y «Elegir como principal del equipo»
+    c.alTocarDq({ target: botonCon('button[data-guardar-principal]', { guardarPrincipal: '1' }) });
+    const elegirOtra = botonCon('button[data-elegir-principal]', {});
+    elegirOtra.focus = () => enfocados.push('elegir otra');
+    c.alTocarDq({ target: elegirOtra });
+    assert.ok(!dialogo.modal.classList.contains('active'), 'no abre mientras se guarda');
+    assert.equal(todos['dq-principal-cuerpo'].innerHTML, '');
+    assert.equal(vm.runInContext('vistaDatoQuincena.principal', c), null);
+    c.alTocarDq({ target: botonCon('button[data-guardar-principal]', { guardarPrincipal: '2' }) });
+    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/principal-equipo', { orden: 1 }]], 'una elección por vez');
+    responderElPut();
+    await despues();
+    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/principal-equipo', { orden: 1 }], ['GET', '/dato-quincena/ediciones/12']]);
+    assert.deepEqual(enfocados, ['cambiar'], 'el foco en «Cambiar», no en el diálogo');
+    // Con la respuesta, «Cambiar» lo abre con las opciones de la edición nueva, la vigente marcada y «Guardar» habilitado
+    dialogo.marcar(dialogo.radios[0]);
+    c.alTocarDq({ target: cambiar });
+    assert.ok(dialogo.modal.classList.contains('active'));
+    assert.equal(todos['dq-principal-cuerpo'].innerHTML, c.htmlDelDialogoDeLaPrincipal(COINCIDE()));
+    assert.ok(todos['dq-principal-cuerpo'].innerHTML.includes('value="1" checked'));
+    assert.equal(dialogo.guardar.disabled, false);
+    assert.deepEqual(enfocados.at(-1), 'radio 1');
+  });
+
+  it('Tab y Mayúscula+Tab no salen de los diálogos «La principal del equipo» y «Reenviar» (aria-modal): del último al primero y del primero al último', async () => {
+    const dialogo = dialogoFalso();
+    const reenvio = falso();
+    const confirmar = falso();
+    const { c, oyentes } = paginaFalsa({
+      search: '?id=12',
+      lugares: { 'dq-principal': dialogo.modal, 'dq-principal-guardar': dialogo.guardar, 'dq-reenvio': reenvio, 'dq-reenvio-confirmar': confirmar,
+        'dq-envio-lugar': falso() },
+      responder: (_m, ruta) => ({ success: true, data: ruta.endsWith('/correo') ? CAJA() : SIN() })
+    });
+    c.setTimeout = () => {};
+    await c.iniciarDatoQuincena();
+    conDetalle(c, SIN(), { caja: CAJA() });
+    // Los controles de un diálogo, en el orden de la página; enfocar uno lo deja como document.activeElement
+    const conControles = (modal, controles) => {
+      for (const control of controles) {
+        control.getClientRects = () => [{}];
+        control.focus = () => { c.document.activeElement = control; };
+      }
+      modal.querySelectorAll = () => controles;
+      modal.contains = (elemento) => controles.includes(elemento);
+      return controles;
+    };
+    const afuera = falso();
+    const tab = (shiftKey = false) => {
+      let prevenido = false;
+      oyentes['document:keydown']({ key: 'Tab', shiftKey, preventDefault: () => { prevenido = true; } });
+      return prevenido;
+    };
+    const desde = (control, shiftKey) => {
+      c.document.activeElement = control;
+      return { prevenido: tab(shiftKey), enfocado: c.document.activeElement };
+    };
+    // «La principal del equipo»: la ×, las opciones, «Cancelar» y «Guardar» (deshabilitado sin una marcada: el último es «Cancelar»)
+    const [cerrar, opcion, , cancelar] = conControles(dialogo.modal, [falso(), ...dialogo.radios, falso(), dialogo.guardar]);
+    assert.deepEqual(desde(afuera, false), { prevenido: false, enfocado: afuera }, 'cerrado, Tab es del navegador');
+    c.alTocarDq({ target: botonCon('button[data-elegir-principal]', {}) });
+    assert.equal(dialogo.guardar.disabled, true);
+    assert.deepEqual(desde(cancelar, false), { prevenido: true, enfocado: cerrar });
+    assert.deepEqual(desde(cerrar, true), { prevenido: true, enfocado: cancelar });
+    dialogo.marcar(dialogo.radios[1]);
+    dialogo.oyentes.change({ target: dialogo.radios[1] });
+    assert.deepEqual(desde(dialogo.guardar, false), { prevenido: true, enfocado: cerrar });
+    assert.deepEqual(desde(cerrar, true), { prevenido: true, enfocado: dialogo.guardar });
+    assert.deepEqual(desde(opcion, false), { prevenido: false, enfocado: opcion }, 'entre los controles, el navegador');
+    assert.deepEqual(desde(afuera, false), { prevenido: true, enfocado: cerrar }, 'con el foco afuera, vuelve al diálogo');
+    assert.deepEqual(desde(afuera, true), { prevenido: true, enfocado: dialogo.guardar });
+    oyentes['document:keydown']({ key: 'Escape', preventDefault() {} });
+    assert.ok(!dialogo.modal.classList.contains('active'));
+    // «Reenviar»: la ×, las dos opciones, la lista, «Cancelar» y «Reenviar»
+    const [cerrarReenvio, todas] = conControles(reenvio, [falso(), falso(), falso(), falso(), falso(), confirmar]);
+    assert.deepEqual(desde(confirmar, false), { prevenido: false, enfocado: confirmar }, 'cerrado, Tab es del navegador');
+    c.alTocarDq({ target: botonCon('button[data-reenviar]', {}) });
+    assert.ok(reenvio.classList.contains('active'));
+    assert.deepEqual(desde(confirmar, false), { prevenido: true, enfocado: cerrarReenvio });
+    assert.deepEqual(desde(cerrarReenvio, true), { prevenido: true, enfocado: confirmar });
+    assert.deepEqual(desde(todas, true), { prevenido: false, enfocado: todas });
+    assert.deepEqual(desde(afuera, false), { prevenido: true, enfocado: cerrarReenvio });
+  });
+
   it('«Ver la propuesta» muestra la del equipo en Propuestas sin recargar (con &propuesta=2 en la dirección); con Ctrl, Meta, Mayúscula, Alt o la rueda, el navegador sigue el enlace', () => {
     const detalle = OTRA();
     const pestanas = hojaFalsa(['general', 'propuestas'], 'general');
